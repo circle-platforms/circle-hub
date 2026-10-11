@@ -1,0 +1,76 @@
+import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
+import { z } from 'zod';
+import { ApiError, requireCondition, sha256, type AuthContext, type Policy } from '../../contracts/src/index.ts';
+import type { Store, Transaction } from '../../storage/src/index.ts';
+
+const DevelopmentIdentity = z.object({ username: z.string().min(1), password: z.string().min(8),
+  principalId: z.string().regex(/^prn_/), tenantId: z.string().regex(/^tnt_/),
+  kind: z.enum(['user','service','worker']), workerId: z.string().optional(), scopes: z.array(z.string().regex(/^scp_/)),
+  grants: z.array(z.string()), targets: z.array(z.string()), defects: z.array(z.string()) });
+interface Credential { principalId: string; salt: Buffer; digest: Buffer }
+export class Auth {
+  store: Store;
+  credentials = new Map<string, Credential>();
+  constructor(store: Store) { this.store = store; }
+  async initializeDevelopment(path: string): Promise<void> {
+    const input = z.object({ identities: z.array(DevelopmentIdentity) }).parse(JSON.parse(await readFile(path, 'utf8')));
+    await this.store.transaction(async tx => {
+      for (const identity of input.identities) {
+        requireCondition(!this.credentials.has(identity.username), 'INVALID_PAYLOAD', 'Duplicate development username');
+        const salt = randomBytes(16);
+        this.credentials.set(identity.username, { principalId: identity.principalId, salt, digest: scryptSync(identity.password, salt, 32) });
+        await tx.query(`INSERT INTO policies(principal_id,tenant_id,kind,worker_id,scopes,grants,targets,defects)
+          VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(principal_id) DO NOTHING`,
+          [identity.principalId, identity.tenantId, identity.kind, identity.workerId ?? null,
+            JSON.stringify(identity.scopes), JSON.stringify(identity.grants), JSON.stringify(identity.targets), JSON.stringify(identity.defects)]);
+      }
+    });
+  }
+  async issue(username: string, password: string, ttlMs = 300_000): Promise<{ token: string; expiresAt: string }> {
+    const credential = this.credentials.get(username);
+    const salt = credential?.salt ?? Buffer.alloc(16); const actual = scryptSync(password, salt, 32);
+    requireCondition(credential && timingSafeEqual(actual, credential.digest), 'UNAUTHENTICATED', 'Invalid development credentials');
+    const policy = await this.policy({ principalId: credential.principalId } as AuthContext);
+    const token = randomBytes(32).toString('base64url');
+    const result = await this.store.pool.query(`INSERT INTO auth_tokens(digest,principal_id,expires_at)
+      VALUES($1,$2,clock_timestamp()+($3::double precision*interval '1 millisecond')) RETURNING expires_at`,
+      [sha256(token), policy.principalId, Math.min(ttlMs, 300_000)]);
+    return { token, expiresAt: result.rows[0].expires_at.toISOString() };
+  }
+  async authenticate(header?: string): Promise<AuthContext> {
+    requireCondition(typeof header === 'string' && header.startsWith('Bearer '), 'UNAUTHENTICATED', 'Bearer token required');
+    const result = await this.store.pool.query(`SELECT p.* FROM auth_tokens a JOIN policies p USING(principal_id)
+      WHERE a.digest=$1 AND a.expires_at>clock_timestamp() AND NOT p.disabled`, [sha256(header.slice(7))]);
+    const row = result.rows[0]; requireCondition(row, 'UNAUTHENTICATED', 'Token is invalid or expired');
+    return { principalId: row.principal_id, tenantId: row.tenant_id, kind: row.kind, ...(row.worker_id ? { workerId: row.worker_id } : {}) };
+  }
+  async policy(ctx: AuthContext, tx?: Transaction): Promise<Policy> {
+    const row = (await (tx ?? this.store.pool).query('SELECT * FROM policies WHERE principal_id=$1 AND NOT disabled', [ctx.principalId])).rows[0];
+    requireCondition(row, 'UNAUTHENTICATED', 'Principal is disabled or absent');
+    return { principalId: row.principal_id, tenantId: row.tenant_id, kind: row.kind, workerId: row.worker_id ?? undefined,
+      scopes: row.scopes, grants: row.grants, targets: row.targets, defects: row.defects };
+  }
+  async check(ctx: AuthContext, grant: string, scopeId?: string, tx?: Transaction): Promise<Policy> {
+    const policy = await this.policy(ctx, tx);
+    requireCondition(!scopeId || policy.scopes.includes(scopeId), 'FORBIDDEN_SCOPE', 'Scope is outside the authenticated principal policy');
+    requireCondition(policy.grants.includes(grant), 'FORBIDDEN_ACTION', `Permission ${grant} is required`);
+    return policy;
+  }
+  async target(ctx: AuthContext, grant: string, scopeId: string, target: string, tx?: Transaction): Promise<Policy> {
+    const policy = await this.check(ctx, grant, scopeId, tx);
+    requireCondition(policy.targets.includes(target), 'FORBIDDEN_TARGET', 'Target is outside the authenticated policy'); return policy;
+  }
+  async intersectService(serviceId: string, ownerId: string, tx?: Transaction): Promise<Policy> {
+    const service = await this.policy({ principalId: serviceId } as AuthContext, tx);
+    const owner = await this.policy({ principalId: ownerId } as AuthContext, tx);
+    requireCondition(service.kind === 'service' && service.tenantId === owner.tenantId, 'FORBIDDEN_ACTION', 'Rule requires a same-tenant service identity');
+    return { ...service, scopes: service.scopes.filter(value => owner.scopes.includes(value)),
+      targets: service.targets.filter(value => owner.targets.includes(value)), defects: service.defects.filter(value => owner.defects.includes(value)),
+      grants: service.grants.filter(value => owner.grants.includes(value)) };
+  }
+  async audit(ctx: AuthContext, action: string, detail: unknown, scopeId?: string, tx?: Transaction): Promise<void> {
+    await (tx ?? this.store.pool).query('INSERT INTO audit(tenant_id,scope_id,principal_id,action,detail) VALUES($1,$2,$3,$4,$5)',
+      [ctx.tenantId, scopeId ?? null, ctx.principalId, action, JSON.stringify(detail)]);
+  }
+}
