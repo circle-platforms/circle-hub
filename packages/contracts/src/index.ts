@@ -128,6 +128,10 @@ export const OperationRequest = z.object({ inputRevisionId: InputRevisionId, nam
   approvalId: z.string().optional() });
 export type OperationRequest = z.infer<typeof OperationRequest>;
 export const ApprovalProposal = OperationRequest.omit({idempotencyKey:true,deadlineMs:true,approvalId:true});
+export const ApprovalView=z.object({approvalId:z.string(),taskId:TaskId,inputRevisionId:InputRevisionId,applicantId:z.string(),
+  targetIdentity:z.string(),actionDigest:Sha256,action:ApprovalProposal,status:z.enum(['open','approved','declined']),
+  approvedBy:z.string().nullable(),expiresAt:z.string()});
+export type ApprovalView=z.infer<typeof ApprovalView>;
 export const ConclusionRequest=z.object({inputRevisionId:InputRevisionId,kind:ConclusionKind,methodId:z.literal('lbx-healthcheck').optional(),
   evidenceIds:z.array(z.string().regex(/^evd_/)).max(16).default([]),judgment:z.enum(['supports','refutes','abstained']).default('abstained'),rationale:z.string().max(2000).default('')});
 export const ChecklistPredicate=z.enum(['assessment-completed','configuration-conforms','professional-opinion','defect-reviewed','comment-reconciled','documents-converted']);
@@ -206,6 +210,8 @@ export const TaskView = z.object({ taskId: TaskId,tenantId:z.string(),scopeId:Sc
   pendingInputs:z.array(z.object({ requestId:z.string(),inputRevisionId:InputRevisionId,kind:z.string(),question:z.string(),
     binding:z.record(z.string(),z.unknown()),expiresAt:z.string(),status:z.string() })).optional(),
 });
+export type TaskView=z.infer<typeof TaskView>;
+export const TaskListQuery=z.object({limit:z.coerce.number().int().min(1).max(100).default(20)});
 export const SubmittedTask = TaskView.extend({ deduplicated:z.boolean() });
 export const EventPage = z.object({ events:z.array(Event),after:z.number().int().nonnegative() });
 export const CLIENT_ROUTES = {
@@ -213,6 +219,8 @@ export const CLIENT_ROUTES = {
   sources:{ method:'POST',path:'/v1/sources',request:SourceUpload,response:SourceReference },
   packs:{ method:'GET',path:'/v1/packs' },
   submit:{ method:'POST',path:'/v1/tasks/submit',request:SubmitRequest,response:SubmittedTask },
+  tasks:{ method:'GET',path:'/v1/tasks',query:TaskListQuery,response:z.array(TaskView) },
+  approvals:{ method:'GET',path:'/v1/tasks/{taskId}/approvals',response:z.array(ApprovalView) },
   status:{ method:'GET',path:'/v1/tasks/{taskId}/status',response:TaskView },
   events:{ method:'GET',path:'/v1/tasks/{taskId}/events?after={seq}',response:EventPage },
   result:{ method:'GET',path:'/v1/tasks/{taskId}/result',response:TaskResult },

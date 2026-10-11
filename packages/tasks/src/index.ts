@@ -1,5 +1,5 @@
 import { ApiError, FLOW_VERSION, PACK_FLOWS, IDEMPOTENCY_WINDOW_MS, MINDMAP_PACK_VERSION, canonicalHash, newId, requireCondition, terminalTask,
-  type AuthContext, type Event, type SubmitRequest, type Task } from '../../contracts/src/index.ts';
+  type AuthContext, type Event, type SubmitRequest, type Task, type TaskView } from '../../contracts/src/index.ts';
 import type { Store, Transaction } from '../../storage/src/index.ts';
 import type { Auth } from './auth.ts';
 
@@ -66,7 +66,13 @@ export class Tasks {
     };
     return tx ? execute(tx) : this.store.transaction(execute);
   }
-  async status(ctx: AuthContext, taskId: string): Promise<any> {
+  async list(ctx:AuthContext,limit:number):Promise<TaskView[]> {
+    const policy=await this.auth.check(ctx,'tasks.read');
+    const rows=(await this.store.pool.query(`SELECT task_id FROM tasks WHERE tenant_id=$1 AND scope_id=ANY($2::text[])
+      ORDER BY created_at DESC,task_id DESC LIMIT $3`,[policy.tenantId,policy.scopes,limit])).rows;
+    return Promise.all(rows.map(row=>this.status(ctx,row.task_id)));
+  }
+  async status(ctx: AuthContext, taskId: string): Promise<TaskView> {
     const task = await this.load(ctx, taskId);
     const pending = (await this.store.pool.query('SELECT * FROM pending_inputs WHERE task_id=$1 ORDER BY created_at,request_id', [taskId])).rows;
     return { ...task, pendingInputs: pending.map(row => ({ requestId: row.request_id, inputRevisionId: row.input_revision_id,

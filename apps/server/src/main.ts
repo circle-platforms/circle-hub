@@ -3,7 +3,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { mkdir } from 'node:fs/promises';
 import {randomUUID} from 'node:crypto';
 import { z } from 'zod';
-import { API_VERSION, MAX_BODY_BYTES, MAX_SOURCE_BYTES, MAX_WORKER_REPORT_BYTES, ApiError, SubmitRequest,
+import { API_VERSION, MAX_BODY_BYTES, MAX_SOURCE_BYTES, MAX_WORKER_REPORT_BYTES, CLIENT_ROUTES, TaskListQuery, ApiError, SubmitRequest,
   InputRequest, OperationRequest, ApprovalProposal, ApprovalRequest, ConclusionRequest, ChecklistRequest, ChecklistResponse, RuleRequest, DefectReviewPack, LbxPack, InputRevisionId, TaskId, ScopeId, SourceUpload, Base64Content, MindmapCompileInput, MindmapPack, DevLoginRequest, requireCondition } from '../../../packages/contracts/src/index.ts';
 import { Store } from '../../../packages/storage/src/index.ts';
 import { taskMigration } from '../../../packages/tasks/src/migration.ts';
@@ -102,6 +102,10 @@ const server = createServer(async (request, response) => {
     }
     const ctx = await auth.authenticate(request.headers.authorization);
     if (url.pathname === '/v1/status' && request.method === 'GET') { send(response,200,{data:{apiVersion:API_VERSION,syntheticOnly:true,bootId,processId:process.pid}});return; }
+    if (url.pathname === CLIENT_ROUTES.tasks.path && request.method === CLIENT_ROUTES.tasks.method) {
+      const {limit}=TaskListQuery.parse({limit:url.searchParams.get('limit')??undefined});
+      send(response,200,{data:await tasks.list(ctx,limit)});return;
+    }
     if (url.pathname === '/v1/packs' && request.method === 'GET') {
       await auth.check(ctx,'methods.use'); send(response,200,{ data:[MindmapPack,DefectReviewPack,LbxPack] }); return;
     }
@@ -156,6 +160,9 @@ const server = createServer(async (request, response) => {
       else send(response,200,{data:await checklists.deliver(ctx,id,z.object({inputRevisionId:InputRevisionId}).parse(input).inputRevisionId)});return;
     }
     const approvalRoute=/^\/v1\/tasks\/([^/]+)\/approvals(?:\/([^/]+))?$/.exec(url.pathname);
+    if(approvalRoute&&request.method===CLIENT_ROUTES.approvals.method&&!approvalRoute[2]){
+      send(response,200,{data:await approvals.list(ctx,TaskId.parse(approvalRoute[1]))});return;
+    }
     if(approvalRoute&&request.method==='POST'){
       const taskId=TaskId.parse(approvalRoute[1]);
       send(response,200,{data:approvalRoute[2]?await approvals.respond(ctx,taskId,approvalRoute[2],ApprovalRequest.parse(await body(request))):await approvals.propose(ctx,taskId,ApprovalProposal.parse(await body(request)))});return;

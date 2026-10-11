@@ -1,4 +1,4 @@
-import { ApiError,actionDigest,newId,requireCondition,type AuthContext } from '../../contracts/src/index.ts';
+import { ApiError,actionDigest,newId,requireCondition,type AuthContext,type ApprovalView } from '../../contracts/src/index.ts';
 import type { Store,Transaction } from '../../storage/src/index.ts';
 import type { Auth } from './auth.ts';
 import type { Tasks } from './index.ts';
@@ -6,8 +6,13 @@ import type { Tasks } from './index.ts';
 export class Approvals {
   store:Store;auth:Auth;tasks:Tasks;
   constructor(store:Store,auth:Auth,tasks:Tasks){this.store=store;this.auth=auth;this.tasks=tasks;}
-  view(row:any):any{return {approvalId:row.approval_id,taskId:row.task_id,inputRevisionId:row.input_revision_id,applicantId:row.applicant_id,
+  view(row:any):ApprovalView{return {approvalId:row.approval_id,taskId:row.task_id,inputRevisionId:row.input_revision_id,applicantId:row.applicant_id,
     targetIdentity:row.target_identity,actionDigest:row.action_digest,action:row.action,status:row.status,approvedBy:row.approved_by,expiresAt:row.expires_at.toISOString()};}
+  async list(ctx:AuthContext,taskId:string):Promise<ApprovalView[]> {
+    await this.tasks.load(ctx,taskId);
+    const rows=(await this.store.pool.query('SELECT * FROM approvals WHERE task_id=$1 ORDER BY created_at,approval_id',[taskId])).rows;
+    return rows.map(row=>this.view(row));
+  }
   async propose(ctx:AuthContext,id:string,action:any,tx?:Transaction):Promise<any>{
     const run=async(client:Transaction)=>{
       const task=await this.tasks.load(ctx,id,'tasks.read',client,true);

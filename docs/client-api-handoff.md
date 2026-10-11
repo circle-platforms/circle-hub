@@ -1,6 +1,6 @@
-# Circle 客户端接口交接：脑图编译
+# Circle 客户端接口交接：普通用户读取与脑图编译
 
-2026-10-12。实现位于隔离工作树 `/Users/jiangyongze/Public/circle-server-s1`，分支 `server-s1`。Circle 和连接插件由 Claude 负责；本分支只提供 server/worker。协议原件是 `packages/contracts/src/index.ts`：`CLIENT_ROUTES`、请求/回应 schema、`TaskView`、`TaskResult`、`EventPage`、标准操作与 `MindmapPack`。API 版本 `1.0.0`，能力包与映射规则版本 `1.0.0`，Excel 契约为 `Excel 输出契约 V1`。
+2026-10-12。实现位于隔离工作树 `/Users/jiangyongze/Public/circle-server-s1`，分支 `server-s1`。Circle 和连接插件由 Claude 负责；本分支只提供 server/worker。协议原件是 `packages/contracts/src/index.ts`：`CLIENT_ROUTES`、请求/回应 schema、`TaskListQuery`、`TaskView`、`ApprovalView`、`TaskResult`、`EventPage`、标准操作与 `MindmapPack`。API 版本 `1.0.0`，能力包与映射规则版本 `1.0.0`，Excel 契约为 `Excel 输出契约 V1`。
 
 ## 启动和登录
 
@@ -36,6 +36,23 @@ Node.js 24。启动命令使用锁定的 `embedded-postgres@18.4.0-beta.17` 在�
 ```
 
 登录以外的每个接口都需要 `Authorization: Bearer <token>`。JSON POST 用 `Content-Type: application/json`。普通请求体上限 64 KiB；上传原件上限 16 MiB（JSON/base64 信封预留相应编码空间）。token 无效或过期为 HTTP 401 `UNAUTHENTICATED`，范围拒绝为 403 `FORBIDDEN_SCOPE`。不要把 token 或原件内容写到会话/Git。
+
+## 普通用户只读接口
+
+桌面端与 circle-server 运行扩展使用同一个登录身份读取持久任务和审批记录。下面两个接口都只需要 `tasks.read`，返回普通成功信封，其中 `data` 是数组。权限按每次请求时的服务端策略核对。
+
+| CLIENT_ROUTES | 调用 | 成功 data |
+|---|---|---|
+| `tasks` | `GET /v1/tasks?limit=20` | `TaskView[]`；省略 limit 默认为 20，允许 1–100 的整数 |
+| `approvals` | `GET /v1/tasks/{taskId}/approvals` | `ApprovalView[]`；没有记录时为 `[]` |
+
+任务列表先按当前身份的 tenant 和授权 scope 筛选，再按创建时间倒序截取 limit；相同创建时间按 taskId 倒序，输入修改或后台推进不会改变创建顺序。它包含授权范围内其他人创建的可读任务，不按当前 principal 的创建记录缩小范围。没有可读任务或没有授权 scope 时返回 `[]`；无 `tasks.read` 返回 403 `FORBIDDEN_ACTION`。limit 为 0、负数、非整数、超过 100、空值或无法解析时返回 400 `INVALID_PAYLOAD`，不会静默截断。
+
+列表元素与 `/status` 使用同一个 `TaskView`，含 `taskId`、tenant/scope/principal、`title`、`phase`、当前 `inputRevisionId`、`input`、`revision`、`flowVersion` 和 `pendingInputs`。已绑定能力包的任务含 `capabilityPackId` / `packVersion`，通用任务沿用这些字段可省略的既有契约。`pendingInputs` 为数组，包含历史回应项；客户端沿用下文的当前修订与 open 状态判断。`CLIENT_ROUTES.tasks.query` 是 `TaskListQuery`，`response` 是 `TaskView` 数组 schema。
+
+审批列表先按该任务执行 `tasks.read`、tenant 与 scope 检查；跨 scope 或跨 tenant 返回 403 `FORBIDDEN_SCOPE`，无读取权限返回 403 `FORBIDDEN_ACTION`。不存在的 taskId 返回 404 `TARGET_NOT_FOUND`，格式无效返回 400 `INVALID_PAYLOAD`。用户无需 `admin.manage` 或 `decisions.approve`；读取权限不会授予回应审批或设备操作权限。
+
+审批元素保持 `approvals.view` 的形状：`approvalId`、`taskId`、`inputRevisionId`、`applicantId`、`targetIdentity`、`actionDigest`、`action`、`status`、`approvedBy`、`expiresAt`。`action` 为 `ApprovalProposal` 的修订/标准操作/目标/身份/参数；status 为 `open`、`approved` 或 `declined`。未作决定时 approvedBy 为 `null`，批准或拒绝后为回应人的 principalId；expiresAt 为 ISO 时间。按创建时间、approvalId 升序返回全部记录，包括旧修订的记录。旧修订上保存的 approved 状态不能证明当前动作仍获授权，执行出口仍核对修订、目标身份、动作摘要与有效期。读取不改变审批状态、不生成决定或事件。`CLIENT_ROUTES.approvals.response` 是 `ApprovalView` 数组 schema。
 
 ## 编译调用顺序
 
