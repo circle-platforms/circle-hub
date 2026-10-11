@@ -25,3 +25,7 @@ Circle 的旧 Git 历史也被保留，历史各版本的许可和通知仍属�
 `buffers@0.1.1` 的原 npm 包与元数据中未找到许可依据，相关 chain-v05 目前只作为参考保存；正式采用并分发该依赖前取得依据或替换。`unionfs@4.6.0` 虽缺少锁文件许可字段，原 npm 发布包包含 Unlicense LICENSE。
 
 本页不是全部依赖的逐文件通知清单。首次软件发行需根据实际制品生成组成与通知清单。具体来源、核对范围和剩余发行要求见[开源检查](docs/open-source-readiness.md)。
+
+## 前端设计 Demo
+
+`demo/server-ui` 是本项目自有的 TypeScript/React 交互原型，不包含第三方 Agent 平台的运行代码。其静态制品使用 React、React DOM、Scheduler 和 Lucide React，原许可完整保留在 [第三方运行组件说明](demo/server-ui/public/third-party-licenses.txt)，并随网页构建复制到输出。开发和测试依赖仍各按其原许可维护，不作为正式 server 的生产依赖声明。

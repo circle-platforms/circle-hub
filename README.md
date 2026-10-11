@@ -43,4 +43,10 @@ npm run test:references
 
 [参与方式](CONTRIBUTING.md) · [安全问题与支持范围](SECURITY.md)
 
+## 企业平台设计预览
+
+[可操作前端 Demo](demo/server-ui/README.md)展示 Agent 的配置、测试、发布与运行，以及 Circle 委派工作、公司知识接入、权限、长期与固定任务、同会话现场、观测、审计和研发交付。所有资料和运行均为合成样例，输入只保存到当前浏览器；没有正式后端、公司系统、模型或设备接入。
+
+[页面与交互设计](docs/enterprise-demo-design.md)记录四对象的状态归属、成熟产品调研、流程和本轮验证范围。
+
 [初始化记录](docs/bootstrap.md) · [来源清单](references/source-manifest.json) · [共同产品看板](https://github.com/users/qingshanfeihu/projects/1)
