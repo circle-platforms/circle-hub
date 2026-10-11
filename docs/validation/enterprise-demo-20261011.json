@@ -1,0 +1,106 @@
+{
+  "checkedAt": "2026-10-11T12:10:35.919Z",
+  "browser": "Existing isolated Chromium headless shell",
+  "scenarios": [
+    {
+      "name": "Agent draft, test, approval, publish and in-flight version",
+      "passed": true
+    },
+    {
+      "name": "Circle creates work using selected published Agent and retains it across disconnect",
+      "passed": true
+    },
+    {
+      "name": "published knowledge stays pinned until explicit input revision",
+      "passed": true
+    },
+    {
+      "name": "input revision preserves prior run and removes old approval",
+      "passed": true
+    },
+    {
+      "name": "ops and security identities do not read business or search snippets",
+      "passed": true
+    },
+    {
+      "name": "policy evaluator denies test operator in production and audit records are queryable",
+      "passed": true
+    },
+    {
+      "name": "long task stops only after explicit simulated observation",
+      "passed": true
+    },
+    {
+      "name": "automation rule pause and overlap rejection preserve independent runs",
+      "passed": true
+    },
+    {
+      "name": "task deep link opens same session and modal shares browser state",
+      "passed": true
+    },
+    {
+      "name": "viewer can observe but device control is rejected",
+      "passed": true
+    },
+    {
+      "name": "all management pages render for their intended identities without errors",
+      "passed": true
+    },
+    {
+      "name": "mobile navigation and page containment",
+      "passed": true
+    }
+  ],
+  "pageErrors": [],
+  "scope": "Frontend interactions and mock-model constraints only; not server authorization, model quality or device verification",
+  "modelCalls": 0,
+  "deviceConnections": 0,
+  "browserVersion": "148.0.7778.96",
+  "nodeVersion": "v24.17.0",
+  "unitTestsPassed": 18,
+  "typecheck": "passed",
+  "productionBuild": "passed",
+  "sourceBaseline": "d8399351c0619ffc79196273e84afd8ae37ec22c",
+  "foreignBusinessModulesExecuted": false,
+  "privateCompanySystemsContacted": false,
+  "frontendPrototypeOnly": true,
+  "sourceSha256": {
+    "demo/server-ui/.gitignore": "df24622ab8bd22338963d111cddcf503aeaaaadc2092f6919aac641ee7926e68",
+    "demo/server-ui/LICENSE": "77d867744e1f894cc354549330300e3e74c073e18e75f9cddacad366dbc959c6",
+    "demo/server-ui/README.md": "a42bdb784c20540bebd2e44b8fbb6377ca08da685ab47a6943c2676146fd1769",
+    "demo/server-ui/index.html": "8fcab201d4b20663927304c321405294a9d2a0f79be8486571dcb02b59842aea",
+    "demo/server-ui/package-lock.json": "03d2c2e74636e8a04a06800dd620837b1173f5220b3434a71c3fe5bf6ed69545",
+    "demo/server-ui/package.json": "03c29f891599079eca3cd440164047de3de83a18b9381280b77bd81dd6c8552d",
+    "demo/server-ui/public/circle.svg": "d1d11b782e1a4a9428cf90a41e34a499674701e8092972ae2dfe8a3519788005",
+    "demo/server-ui/public/third-party-licenses.txt": "1bdb0c4e7efecbdb636d2c2558ddf6be8d09cdec20a2d8c481877a42193ad688",
+    "demo/server-ui/scripts/verify-browser.ts": "792235ed780d41ad39dc578e305d5d07b535436c67565b06513ad2d5d9308617",
+    "demo/server-ui/src/App.tsx": "47edd008d4428918043ef6d74cdddfb9fb6c026813eeb4cb331594b04a0b388b",
+    "demo/server-ui/src/CircleView.tsx": "fad501da16a1e3c34c6cc058388ff59c1cb11402aaa0cec6a79107c7b0e159c5",
+    "demo/server-ui/src/agent-pages.tsx": "9d2a763841589c99506583562930fa6c75aabb0a6b13529dbb1cd1c9bf42a27a",
+    "demo/server-ui/src/components.tsx": "f0147c6cc35132d40206ca39b4c8ca9e3d023495efc9bed804d9284acaba0a20",
+    "demo/server-ui/src/design-pages.tsx": "6bfb1dd3a89e0ed715cc779f272f4a138a63cd4972a97865c309f9c8b7eee46a",
+    "demo/server-ui/src/domain.test.ts": "98b5ad5fa3d38fc090320fc35cab35283c14323b5e9b75de85f0ade63d622f1e",
+    "demo/server-ui/src/domain.ts": "7cff1706b4a9aa4f99f57e8d36f4167e4c45ead412fc38ca97ca71776dc95880",
+    "demo/server-ui/src/enterprise.css": "a7b7b5d9dabeeb36bcf9ce4c166b088021e734fdfcc4091e160df076c78f9c90",
+    "demo/server-ui/src/governance-pages.tsx": "6f30c4c8c288844808fcaa05d2767fbbb4fa12f58b8fd8686c2aa15df3b33b85",
+    "demo/server-ui/src/main.tsx": "233b6e94687c75aff72dbcab0fff60cc3ac1d85e730cb188775e9979b324840f",
+    "demo/server-ui/src/operations-pages.tsx": "b87327939dd371aa3fc9a791edcba16c38ab4a58bc4352e3166e9b4561fe5b26",
+    "demo/server-ui/src/pages.tsx": "37305fc8103848b1f1cd3ad43deb317be7541a5ba7e9fbfdc3c97250d37f3098",
+    "demo/server-ui/src/styles.css": "2db00fc4ad28709c171f7400e6030c5e28a457e0324e000283c62b3fe5815b43",
+    "demo/server-ui/src/ui-context.tsx": "70b9927808d276998bbf83eaa17e83831f54c3e920fdd85b4c88e3833ca6522e",
+    "demo/server-ui/tsconfig.json": "e6a77df23bffa496b801b71a04f8afc260e750647cc25b7a8f6328380898409f"
+  },
+  "localLinks": {
+    "checked": 30,
+    "errors": []
+  },
+  "secretScan": {
+    "tool": "gitleaks",
+    "version": "8.30.1",
+    "headCandidates": 0,
+    "scope": "Current complete worktree only; prior full history review remains bound to its recorded baseline"
+  },
+  "referenceArchiveFilesVerified": 714,
+  "sourceCommitIsNotProductionRelease": true,
+  "sourceFormattedWithExistingPrettier": true
+}

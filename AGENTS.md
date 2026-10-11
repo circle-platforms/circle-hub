@@ -6,6 +6,12 @@ This is the private circle-server repository. The user has authorized creating i
 
 Read README.md, docs/bootstrap.md and references/README.md first. The product boundaries follow infosec-platform ADR 0028. Circle remains a generic harness; its default plugin library owns the optional server connector. Do not create a separate connector repository, connector Project or Web administration site.
 
+## Frontend design demo
+
+The current user request authorizes the enterprise frontend demo under demo/server-ui, its isolated frontend dependencies, local preview and browser verification with synthetic data, and publication of the design artifact. This changes the earlier initialization-only scope for this frontend work; it does not authorize a production backend, real company connection, model spending, device operation or platform deployment.
+
+The demo uses browser-local mock records. Its identity picker, local reducer, test responses, metrics and SSH/Web surfaces are design simulations, not production authentication, persistence or execution. Do not import this simulator into formal B/C/D/E modules. Preserve all frozen sources and keep Circle's actual repository unchanged.
+
 ## Source and reference ownership
 
 - foundation/circle is the selected public TS source baseline. Keep its provenance and original license/notices. Do not run its client installers, updater or release scripts as server installation or deployment.
