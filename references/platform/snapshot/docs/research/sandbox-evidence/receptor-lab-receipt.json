@@ -1,0 +1,52 @@
+{
+  "startedAt": "2026-10-10T08:55:19.193Z",
+  "endedAt": "2026-10-10T08:55:36.186Z",
+  "sourceSha256": "e8a0530c9931cd636618baa5b470091f448d9029fbb707abdb00d3b50ada9c89",
+  "binarySha256": "5822c5d660b9949a8f7f6ebd699e48e22070ae2fbcba35d423bbf99b948f5ead",
+  "observations": [
+    {
+      "name": "three-node-routing",
+      "ping": "Reply from executor in 170.708µs\n",
+      "trace": "0: controller in 137.708µs\n1: relay in 191.667µs\n2: executor in 207.042µs\n"
+    },
+    {
+      "name": "relay-loss-remote-effect",
+      "localUnit": "controllerckV0ES8j",
+      "localBefore": "{\n    \"controllerckV0ES8j\": {\n        \"Detail\": \"Running: PID 38250\",\n        \"ExtraData\": {\n            \"Adopted\": false,\n            \"Expiration\": \"0001-01-01T00:00:00Z\",\n            \"LocalCancelled\": false,\n            \"LocalReleased\": false,\n            \"RemoteNode\": \"executor\",\n            \"RemoteParams\": {},\n            \"RemoteStarted\": true,\n            \"RemoteUnitID\": \"controllerckV0ES8j\",\n            \"RemoteWorkType\": \"synthetic\",\n            \"SignWork\": false,\n            \"TLSClient\": \"\"\n        },\n        \"State\": 1,\n        \"StateName\": \"Running\",\n        \"StdoutSize\": 38,\n        \"WorkType\": \"remote\"\n    }\n}\n",
+      "remoteBefore": "{\n    \"controllerckV0ES8j\": {\n        \"Detail\": \"Running: PID 38250\",\n        \"ExtraData\": {\n            \"Params\": \"<research-worktree>/research/sandbox/receptor-work.ts\",\n            \"Pid\": 38249\n        },\n        \"State\": 1,\n        \"StateName\": \"Running\",\n        \"StdoutSize\": 38,\n        \"WorkType\": \"synthetic\"\n    }\n}\n",
+      "duringFailure": "{\n    \"controllerckV0ES8j\": {\n        \"Detail\": \"Running: PID 38250\",\n        \"ExtraData\": {\n            \"Adopted\": false,\n            \"Expiration\": \"0001-01-01T00:00:00Z\",\n            \"LocalCancelled\": false,\n            \"LocalReleased\": false,\n            \"RemoteNode\": \"executor\",\n            \"RemoteParams\": {},\n            \"RemoteStarted\": true,\n            \"RemoteUnitID\": \"controllerckV0ES8j\",\n            \"RemoteWorkType\": \"synthetic\",\n            \"SignWork\": false,\n            \"TLSClient\": \"\"\n        },\n        \"State\": 1,\n        \"StateName\": \"Running\",\n        \"StdoutSize\": 38,\n        \"WorkType\": \"remote\"\n    }\n}\n",
+      "remoteEffect": {
+        "pid": 38250,
+        "completedAt": "2026-10-10T08:55:27.702Z"
+      }
+    },
+    {
+      "name": "relay-return-results-recovered",
+      "final": "{\n    \"controllerckV0ES8j\": {\n        \"Detail\": \"exit status 0\",\n        \"ExtraData\": {\n            \"Adopted\": false,\n            \"Expiration\": \"0001-01-01T00:00:00Z\",\n            \"LocalCancelled\": false,\n            \"LocalReleased\": false,\n            \"RemoteNode\": \"executor\",\n            \"RemoteParams\": {},\n            \"RemoteStarted\": true,\n            \"RemoteUnitID\": \"controllerckV0ES8j\",\n            \"RemoteWorkType\": \"synthetic\",\n            \"SignWork\": false,\n            \"TLSClient\": \"\"\n        },\n        \"State\": 2,\n        \"StateName\": \"Succeeded\",\n        \"StdoutSize\": 109,\n        \"WorkType\": \"remote\"\n    }\n}\n",
+      "outputSha256": "a6779c7c167ffbf424b700895816863e579be1ac310cf2c99f0ea2674d2ea5f1"
+    }
+  ],
+  "cleanup": [
+    {
+      "pid": 38261,
+      "exited": true,
+      "exitCode": null
+    },
+    {
+      "pid": 38245,
+      "exited": true,
+      "exitCode": null
+    },
+    {
+      "pid": 38244,
+      "exited": true,
+      "exitCode": null
+    },
+    {
+      "pid": 38243,
+      "exited": true,
+      "exitCode": null
+    }
+  ],
+  "scope": "Loopback three-node mesh; no TLS or production equipment"
+}

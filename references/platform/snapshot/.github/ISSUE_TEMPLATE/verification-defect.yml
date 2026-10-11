@@ -1,0 +1,31 @@
+name: 问题与检查结果
+description: 说明怎样复现问题、实际发生了什么、有什么依据
+title: "[验证] "
+labels: ["type:verification"]
+body:
+  - type: textarea
+    id: baseline
+    attributes:
+      label: 在哪版代码、什么环境中发生
+      description: 提交、产品/版本/环境、输入 SHA、包/方法、task/run/operation 与时间；不贴秘密或原始业务日志。
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: 应该发生什么，实际发生什么
+      description: 原依据、步骤、预期与实际作用；界面/模型/工具/设备结果分别说明。
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 可以核对的记录
+      description: 可访问的脱敏引用、当前 pass/fail/partial/unknown、未执行部分与残留。
+    validations:
+      required: true
+  - type: textarea
+    id: impact
+    attributes:
+      label: 影响哪些使用者，接下来怎么办
+      description: 哪些入口/产品/组合受到影响？修复如何防止同类问题和陈旧结果？

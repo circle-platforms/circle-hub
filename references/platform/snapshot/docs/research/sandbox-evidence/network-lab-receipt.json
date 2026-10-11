@@ -1,0 +1,148 @@
+{
+  "runId": "network-2026-10-10T08:50:48.520Z",
+  "sources": {
+    "run-network-lab.ts": "24b8a6c7ce11ee3fb1c9ba5bb7458cc2734cc22ed4bea2d917505ae698076a3c",
+    "lab-node.ts": "efb3783ae8421eebfefa09984f781826a337dae25586bf5c93ee34e5ab4067c7",
+    "remote-job.ts": "1852c8891ead0a34f489f1885a77b3027a76f55fdf15e72bcf118ac84f3f9a4c"
+  },
+  "dependencyLockSha256": "dc89bde08836f044291c2a94942d8848f14489d891d69b3c3e8f20f180fa49e6",
+  "startedAt": "2026-10-10T08:50:48.520Z",
+  "endedAt": "2026-10-10T08:50:54.416Z",
+  "isolation": "Owned local processes and loopback sockets; not VM/network-namespace isolation",
+  "cases": [
+    {
+      "name": "two-hop-ssh-real-protocol",
+      "outcome": "pass",
+      "startedAt": "2026-10-10T08:50:48.847Z",
+      "endedAt": "2026-10-10T08:50:48.849Z",
+      "evidence": {
+        "hops": 2,
+        "identity": "lab-device-01",
+        "bytes": 43,
+        "sha256": "eeea017864bd8592725a4570a0a66cbc86e090a4a3d5a9388984e719d2dffe17"
+      }
+    },
+    {
+      "name": "management-reachable-business-unconfigured",
+      "outcome": "pass",
+      "startedAt": "2026-10-10T08:50:48.849Z",
+      "endedAt": "2026-10-10T08:50:48.860Z",
+      "evidence": {
+        "managementStatus": 200,
+        "frontendStatus": 502,
+        "directBackendStatus": 200,
+        "explanation": "Management availability did not prove the business forwarding path worked"
+      }
+    },
+    {
+      "name": "ssh-configure-independent-business-verification",
+      "outcome": "pass",
+      "startedAt": "2026-10-10T08:50:48.860Z",
+      "endedAt": "2026-10-10T08:50:48.865Z",
+      "evidence": {
+        "mutations": 1,
+        "businessStatus": 200,
+        "receivedRole": "lab-business-backend"
+      }
+    },
+    {
+      "name": "receipt-loss-reconcile-and-no-duplicate-effect",
+      "outcome": "pass",
+      "startedAt": "2026-10-10T08:50:48.865Z",
+      "endedAt": "2026-10-10T08:50:48.871Z",
+      "evidence": {
+        "responseLost": true,
+        "reconciledRevision": 3,
+        "effectsBeforeRepeat": 2,
+        "effectsAfterRepeat": 2
+      }
+    },
+    {
+      "name": "ssh-long-output-original-bytes",
+      "outcome": "pass",
+      "startedAt": "2026-10-10T08:50:48.871Z",
+      "endedAt": "2026-10-10T08:50:48.878Z",
+      "evidence": {
+        "lines": 2001,
+        "bytes": 56013,
+        "sha256": "49071361bcc9347f82a913db1047e1ff0fcb7c922350ea058192744458e22ab0",
+        "crlfPreserved": true
+      }
+    },
+    {
+      "name": "local-call-disconnect-remote-job-still-running",
+      "outcome": "pass",
+      "startedAt": "2026-10-10T08:50:48.878Z",
+      "endedAt": "2026-10-10T08:50:52.884Z",
+      "evidence": {
+        "remotePid": 37656,
+        "aliveAfterLocalDisconnect": true,
+        "remoteEffectObservedAfterDisconnect": true,
+        "effectSha256": "436a88b9ac823a5e50c8f2f0f0f9930e33dbfdc437e4678e1ae117210da689c0"
+      }
+    },
+    {
+      "name": "identity-drift-observation",
+      "outcome": "pass",
+      "startedAt": "2026-10-10T08:50:52.884Z",
+      "endedAt": "2026-10-10T08:50:52.891Z",
+      "evidence": {
+        "expectedIdentity": "lab-device-01",
+        "observedIdentity": "lab-device-02",
+        "requiresRebindingBeforeFurtherWrites": true,
+        "detectionOnly": true
+      }
+    },
+    {
+      "name": "real-browser-configure-and-re-read",
+      "outcome": "pass",
+      "startedAt": "2026-10-10T08:50:52.891Z",
+      "endedAt": "2026-10-10T08:50:54.341Z",
+      "evidence": {
+        "realBrowser": "156.0.8078.4",
+        "sameVisibleAndActualRevision": 4,
+        "screenshotBeforeSha256": "3f131ac4033ad6c200de6c6831e15ddd4d25f1f688c758c751a07c8341b01bac",
+        "screenshotAfterSha256": "745a64b76e00aa79e8eae1014a2916896793fc8b7551f4f332bafdd688ac956c",
+        "scope": "Synthetic local site; no model and no real product"
+      }
+    },
+    {
+      "name": "browser-client-disconnect-does-not-stop-browser-server",
+      "outcome": "pass",
+      "startedAt": "2026-10-10T08:50:54.341Z",
+      "endedAt": "2026-10-10T08:50:54.403Z",
+      "evidence": {
+        "browserPid": 37666,
+        "aliveAfterClientDisconnect": true,
+        "stoppedAfterServerClose": true
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "pid": 37655,
+      "exited": true,
+      "exitCode": 0
+    },
+    {
+      "pid": 37654,
+      "exited": true,
+      "exitCode": 0
+    },
+    {
+      "pid": 37653,
+      "exited": true,
+      "exitCode": 0
+    },
+    {
+      "pid": 37652,
+      "exited": true,
+      "exitCode": 0
+    }
+  ],
+  "events": {
+    "sha256": "41307db9febb5a8c576edacd7b6a85c8b175bce67e5783a2caa9f2af4ec5164a",
+    "lines": 41
+  },
+  "productionClaims": false
+}

@@ -1,0 +1,12 @@
+{
+  "sourceCommit": "1cfba2117e92730b0fe1c32520a39aad8611bb8c",
+  "files": [
+    "tests/sdk/conversation/test_interrupt.py",
+    "tests/sdk/conversation/test_resource_lock_manager.py",
+    "tests/sdk/conversation/remote/test_websocket_subscription_ready.py"
+  ],
+  "result": "36 passed, 1 warning in 0.97s",
+  "logSha256": "24394196a58642b6c7c2c9c9ec7c61909d739ed12367338fac8317d1fbe1ceeb",
+  "junitSha256": "c1cb65cea10aa28e7327a475dae7b097efe31fc483b1e6fb37881694c5dc6a3b",
+  "scope": "Selected upstream mocked tests; no complete server deployment or model/provider evaluation"
+}

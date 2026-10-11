@@ -1,0 +1,31 @@
+{
+  "observedAt": "2026-10-11T08:00:09.768Z",
+  "nodeVersion": "v24.17.0",
+  "verification": {
+    "verified": true,
+    "files": 714,
+    "sources": {
+      "circle": {
+        "files": 287,
+        "commit": "9d23c09a0f8de2f71920b32b23db9af6c9a41100",
+        "tree": "a984196612a9d6da088a4a91245a60249d3a347f"
+      },
+      "infosec-platform": {
+        "files": 427,
+        "commit": "4ab6c5ea593eb1b1d71bed92374b3a013ba61ad9",
+        "tree": "bd8415959650e3505b09f2203c9166000582b20f"
+      }
+    },
+    "evidence": "Source bytes, Git blobs, complete source trees and declared archive placement only; no runtime verification"
+  },
+  "referenceTests": 7,
+  "sourceModulesExecuted": false,
+  "platformDependenciesInstalled": false,
+  "modelCalls": 0,
+  "productionDevicesConnected": false,
+  "inheritedWorkflowsActive": false,
+  "gitSnapshotOnlyScan": {
+    "privateKeyAndLongTokenPatternsFound": 0,
+    "scope": "Selected known literal patterns only, not a comprehensive secret audit"
+  }
+}

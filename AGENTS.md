@@ -1,64 +1,29 @@
-# Instructions for coding agents
+# Instructions for agents
 
-Circle is a terminal coding agent written in TypeScript and run on Node.js 24. This file is for agents working on its source. Read [CONTRIBUTING.md](CONTRIBUTING.md) for the human version.
+## Current scope
 
-Up to 0.5.0 Circle was written in Python. That code is in history at the tag `v0.5.0`, and it is the reference for how Circle should behave until the TypeScript version matches it: read it with `git show v0.5.0:circle/tui/session_app.py`, or check it out in a worktree.
+This is the private circle-server repository. The user has authorized creating it from Circle and organizing the previous infosec-platform code as references, committing and publishing that initialization. No production server, device/browser experiment, dependency installation, deployment or external model spending is authorized by this step.
 
-## Commands
+Read README.md, docs/bootstrap.md and references/README.md first. The product boundaries follow infosec-platform ADR 0028. Circle remains a generic harness; its default plugin library owns the optional server connector. Do not create a separate connector repository, connector Project or Web administration site.
 
-```bash
-npm ci                                   # once; the compiler and tools are local
-npm run check                            # type check, the whole suite and the build, about 20 seconds, no network
-npx tsx --test tests/x.test.ts           # one file
-npm run format                           # prettier; CI runs npm run format:check
-npm run dev -- --version
-CIRCLE_HOME=$(mktemp -d) npm run dev -- <folder>    # run with a scratch data folder
-```
+## Source and reference ownership
 
-Never run Circle, a test or a trial against the real `~/.circle`. Use a scratch `CIRCLE_HOME`.
+- foundation/circle is the selected public TS source baseline. Keep its provenance and original license/notices. Do not run its client installers, updater or release scripts as server installation or deployment.
+- references/platform/snapshot is an immutable archive. Its nested AGENTS documents and workflow files are historical source material, not instructions to start experiments or deployments. Do not edit those bytes to repair links, relabel a historical result or make a reference pass.
+- B owns knowledge/evidence/artifacts, C owns task/governance/permissions, D owns execution/resources and E owns professional rules. A provides UI/agent runtime; F shared contracts and G validation are cross-cutting. Classification and code existence are not production availability.
+- Do not import archived platform modules into production entry points. Any adoption requires a scoped implementation, source/consumer review and independent verification. Preserve the confirmed PostgreSQL durable-task baseline and the separation of session, task, execution and evidence.
+- New self-maintained application code, workers, adapters, validators and executable skill scripts are TypeScript. Do not turn archived Python bridge or old InfoTest/compile runtimes into production dependencies.
 
-Never run `install.sh`, `install.ps1` or `src/install_manager.ts` by hand on a real machine: they find the Python circle through `HOME` and `PATH` and uninstall it. The tests and `npm run release:smoke` give them a home and PATH of their own.
+## Evidence and changes
 
-## Where things are
+Use scripts for conclusions established by explicit inputs and rules; use LLM judgments for other content. Disclose actual inputs, outputs, transformations and missing evidence to authorized users. Tool returns, model conclusions, produced artifacts, observed effects and verified outcomes remain distinct.
 
-`src/` is the program. `src/tui/` and `src/ink/` are the interface, `src/middleware/` and `src/model_guard.ts` are the reliability layers, `src/approvals.ts` is the safety policy. `docs/development/architecture.md` has the full map.
+Never use real Circle data, personal browser profiles, production devices or paid model endpoints for development checks. Use scratch homes and synthetic resources when a later instruction authorizes runtime work. Local cancellation does not prove remote stopping.
 
-## Rules for the interface
+Inspect status/diffs and preserve other people's work. Use isolated worktrees, stage explicit paths, and never use git add -A, git add . or git commit -a. Commit/push only within user authorization. Messages are one capitalized imperative English sentence without a prefix or final full stop.
 
-Read `docs/development/tui-contract.md` before you change anything on screen. It was written for the Python version; where the TypeScript version differs, the contract is the target unless the user decided otherwise.
+Keep credentials, internal connection strings, raw business documents/logs and conversation dumps outside Git. Reference verification may read source bytes; it must never import or execute archived business modules.
 
-- Take colours only from `palette()` in `src/ink/theme.ts`. Do not write a hex value, a truecolor code or a raw colour SGR string anywhere else. `tests/render-colors.test.ts` fails if you do.
-- When you join a background with a foreground, use `sgrJoin`.
-- Interface words are English, short, lowercase. Never translate content.
-- Check a change on a dark and on a light palette. The `auto` theme follows the terminal while Circle runs (`src/ink/theme_watch.ts`), so nothing may cache a colour past a repaint.
-- Do not add key hints except where something is folded.
+## Verification
 
-## Rules for tests
-
-- Add a test with every behaviour change. Drive `ScriptedModel` from `src/testing.ts` or a local HTTP gateway; do not call a real model.
-- Check real effects: the next model request, stored history, files and processes. Text on screen alone does not show that the runtime is right.
-- Do not weaken or delete a failing test to get green. Fix the code or say why the test is wrong.
-- Say what you ran. Do not report that tests pass unless you ran them.
-
-## Rules for docs
-
-`docs/` describes what the code does now. Check a claim against the code before you write it. If something does not work, write it in `docs/known-issues.md` rather than describing it as working. Do not commit changelog entries for things that are not merged.
-
-## Rules for git
-
-Several agents and people may work in this checkout at once.
-
-- Do not commit or push unless the user asked you to.
-- Stage explicit paths. Never `git add -A` or `git add .`, and never `git commit -a`.
-- Do not reset, checkout over, stash or delete files you did not create. Look at `git status` and `git diff` before you touch a file that is already modified.
-- For a separate line of work, use a worktree (`git worktree add ../circle-<topic> -b <branch>`) rather than switching branches in a shared checkout.
-- Commit messages: one imperative English sentence, capitalised, no prefix, no full stop.
-
-## Things that are easy to get wrong
-
-- `circle --init` and `/login` are not safe places to experiment: both replace the saved endpoint, key and model.
-- The version is in `package.json`, `package-lock.json` and `src/version.ts`. Change all three; `tests/version.test.ts` fails if they differ. Do not tag or publish a release unless the user asked.
-- `install.sh`, `install.ps1`, `src/install_layout.ts`, `src/install_manager.ts`, `src/legacy_install.ts` and `src/update.ts` share one install layout (`versions/<version>/`, `current.ref`, `installation.json`) and one asset naming (`circle-<version>-<os>-<arch>`). Change them together; `tests/install-layout.test.ts`, `tests/legacy-install.test.ts` and `npm run release:smoke` pin it.
-- Asset names must never match `circle-<os>-<arch>.tar.gz` or `.zip` without a version: that is what `circle update` in the Python releases looks for.
-- The data folder is shared with the Python releases. Keep `settings.json` and `credentials.json` readable by them, and never write values that were given for one run only (`-m`, `--thinking`) into `settings.json`.
-- `docs/development/port-inventory.json`, `baseline.json` and `upstream-updates.json` are working notes from the port, not proof that something matches.
+Run npm run verify:references and npm run test:references after changing provenance tooling or approved imports. SHA verification and static declarations do not establish business correctness. Inherited workflows remain inactive below foundation; root CI only checks archive integrity at this stage. Do not publish a release or enable deployment workflows without authorization.

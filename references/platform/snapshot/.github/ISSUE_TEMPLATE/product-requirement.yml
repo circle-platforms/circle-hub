@@ -1,0 +1,36 @@
+name: 产品需求
+description: 说明谁要做什么、用在哪种产品上、完成后得到什么
+title: "[需求] "
+labels: ["type:requirement", "area:product"]
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: 用户与目标
+      description: 谁遇到什么问题，希望平台交付什么结果？
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: 产品与范围
+      description: 产品/型号/版本/环境、资料、目标、允许作用与约束。只提供脱敏引用。
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: 用户怎样使用，哪些部分一起完成
+      description: 正常、失败/未知、等待与干预场景；涉及哪些能力和对象？
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: 怎样知道这项工作完成了
+      description: 输入/样本、应交付结果、验收方法与未确定项。
+    validations:
+      required: true
+  - type: textarea
+    id: links
+    attributes:
+      label: 相关说明和已有工作
+      description: 关联需求、设计、函数、PR 和回执；注明设计/实现/验证各自状态。

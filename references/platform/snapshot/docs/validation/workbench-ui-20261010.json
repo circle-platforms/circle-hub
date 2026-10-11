@@ -1,0 +1,125 @@
+{
+  "testedAt": "2026-10-10T14:50:52.266Z",
+  "sourceFiles": [
+    {
+      "path": "dist/assets/index-BVxfAseR.css",
+      "sha256": "ccca0331b24c81abe73a848ce2b1f6a535ce84aa2c6c13de24131df24fc3331c"
+    },
+    {
+      "path": "dist/assets/index-CJKxsb8Z.js",
+      "sha256": "46ad6b6b78d9dd2f62f89eb51d8dd517a9f09e4e250d1b03c263340a3053b87d"
+    },
+    {
+      "path": "dist/assets/index-CJKxsb8Z.js.map",
+      "sha256": "14289cfaee526934ecf18594c7f92a4f4b2d36452437e0126497a412b9589592"
+    },
+    {
+      "path": "dist/index.html",
+      "sha256": "25e397df8758a87c95f66cc891f95c946e5fb03d0a8fa31c006817e6d938b82f"
+    },
+    {
+      "path": "index.html",
+      "sha256": "3bd5c5d0f2cee72fd5d257ae7531f2983c780a54a24bb4393fbd86ad7260785f"
+    },
+    {
+      "path": "package-lock.json",
+      "sha256": "d2a1fdb7f5c6d6a88db301cf33623ce2bbf40311b4b664fab827d2c1876b1506"
+    },
+    {
+      "path": "package.json",
+      "sha256": "ea30916b469869c3fe8cd5259bced68cb1b963dbf58d7773492d4e9e45794505"
+    },
+    {
+      "path": "src/app/App.tsx",
+      "sha256": "798a7e2f61759e5ed31f5190748b375dcd57f2edd3af7c1190012f36ba5611e1"
+    },
+    {
+      "path": "src/app/context.tsx",
+      "sha256": "84dae013218760162abbe79c19ca8b78551dfdaa73a7e72f8e55df6245282fe4"
+    },
+    {
+      "path": "src/app/navigation.ts",
+      "sha256": "2c65bb0a485a37bdeaf6ae0457fea67d63e8b8f6f86683de1979896821d3c6f4"
+    },
+    {
+      "path": "src/components/CommandMenu.tsx",
+      "sha256": "b27d102e68617ebac7e1d78552b1e937b9d61691acf4d40745d95b8158a7e083"
+    },
+    {
+      "path": "src/components/Sidebar.tsx",
+      "sha256": "29ceacaead2a9bff9010582d39d8c916274024a0800d06cfc887776dce4722ee"
+    },
+    {
+      "path": "src/components/ui.tsx",
+      "sha256": "f6d743e3019373138400628359b7d2f66663e25cef34fd0711ac98914288da73"
+    },
+    {
+      "path": "src/features/ContextPanel.tsx",
+      "sha256": "a3177b6c069429c6f03cd320f400ad735b9534f4c6c4e0d12cf5e89704753cdc"
+    },
+    {
+      "path": "src/features/ConversationView.tsx",
+      "sha256": "d4294b1d2f93357f43c953638dc48ddb33f4139d8df528a7e4f03ca629e48027"
+    },
+    {
+      "path": "src/features/Management.tsx",
+      "sha256": "fcc2e0e496fef1c39071dfa00dcae1881a405ce8b3a583f787a53aeaf7094fd2"
+    },
+    {
+      "path": "src/main.tsx",
+      "sha256": "6c155ea3a03fccd4edd02039736be97951108437a3e5b0a0c4415dae7f843626"
+    },
+    {
+      "path": "src/platform/browser.ts",
+      "sha256": "0f10a110fbc70e838637f28834b07b413d29d3d947aca6a58a7ca27c98b19b1f"
+    },
+    {
+      "path": "src/platform/types.ts",
+      "sha256": "5af33cf4a45c1c8d08baf320c11d7b10d8d78ba8cefbd541c64a93ebaf6017c7"
+    },
+    {
+      "path": "src/preview/fixtures.ts",
+      "sha256": "e13d58b519669b5d2c86e08a8306ed9c455ef86d7430e76283b3fc81bfc1909f"
+    },
+    {
+      "path": "src/preview/gateway.ts",
+      "sha256": "2bde375cc3e4ec9aad69cd45b98427ddf017139a3fedbc13cc415c96cce9513e"
+    },
+    {
+      "path": "src/styles/tokens.css",
+      "sha256": "d1dc64abe03db070978480b802831f02313113b8d9a852c9b746a9fcffa6a12e"
+    },
+    {
+      "path": "src/styles/workbench.css",
+      "sha256": "e8964835dbac097973ced9977f63f281f8a05938358e7927fa8533d3f188d0ba"
+    },
+    {
+      "path": "test/browser.ts",
+      "sha256": "6a3f0d332f4430b20300019cbe2c9fb2a1eaeb140d7cd85ec31aad6e91379869"
+    },
+    {
+      "path": "tsconfig.json",
+      "sha256": "53116d0cb1d396100d81cb9ead73b594be82a167712dea569ee4ca1519f1adb6"
+    },
+    {
+      "path": "vite.config.ts",
+      "sha256": "2476e327ff762c176ce40c722ce71dc9527825de97577add84f9efab863aadcd"
+    }
+  ],
+  "base": "http://127.0.0.1:4191",
+  "browser": "156.0.8078.4",
+  "checks": [
+    "Harness and management render in light and dark themes",
+    "Free input persists without inventing work or an agent reply",
+    "Older knowledge revisions are read-only until explicitly attached",
+    "Tool input and output open the associated owner record",
+    "Pausing A and requesting C pause do not claim D stopped",
+    "Capabilities load into the selected session without publishing candidates",
+    "Local attachments are preserved and truncation is disclosed",
+    "Viewer and maintainer interactions follow the preview role boundary",
+    "Command search opens records and a terminal command reports no execution",
+    "Mobile navigation and context use bounded dialogs"
+  ],
+  "errors": [],
+  "scope": "Synthetic frontend behavior only; no model, service, desktop host or device connected"
+}

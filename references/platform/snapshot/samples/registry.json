@@ -1,0 +1,217 @@
+{
+  "registryVersion": "1.0.0",
+  "generatedAt": "2026-10-10",
+  "samples": [
+    {
+      "sampleId": "SMP-V01-01",
+      "chain": "V01",
+      "type": "synthetic",
+      "path": "v01/smp-v01-01.json",
+      "sha256": "51b711950397d07d2c26d1ecfe87bcd6c647ef096426fca7968a93570fd0c1be",
+      "status": "frozen",
+      "humanVerification": {
+        "by": "qingshanfeihu",
+        "at": "2026-10-10",
+        "result": "approved",
+        "channel": "用户在 Muse 对话中整批确认（14 份全部通过）"
+      },
+      "note": "Frozen by user verification on 2026-10-10. Sample file contents unchanged since drafting; any in-file 'draft' wording is preparation-time text and is superseded by this registry."
+    },
+    {
+      "sampleId": "SMP-V01-02",
+      "chain": "V01",
+      "type": "synthetic",
+      "path": "v01/smp-v01-02.json",
+      "sha256": "939a54f40b9f5f97b658b79555ecba7cfbbd05231c9215f57fc23c95969847e2",
+      "status": "frozen",
+      "humanVerification": {
+        "by": "qingshanfeihu",
+        "at": "2026-10-10",
+        "result": "approved",
+        "channel": "用户在 Muse 对话中整批确认（14 份全部通过）"
+      },
+      "note": "Frozen by user verification on 2026-10-10. Sample file contents unchanged since drafting; any in-file 'draft' wording is preparation-time text and is superseded by this registry."
+    },
+    {
+      "sampleId": "SMP-V01-03",
+      "chain": "V01",
+      "type": "synthetic",
+      "path": "v01/smp-v01-03.json",
+      "sha256": "6c5fc68e4790fdccbfd54370fa3e2c25f0b7a6ff40967f434b92b7fdadb6f671",
+      "status": "frozen",
+      "humanVerification": {
+        "by": "qingshanfeihu",
+        "at": "2026-10-10",
+        "result": "approved",
+        "channel": "用户在 Muse 对话中整批确认（14 份全部通过）"
+      },
+      "note": "Frozen by user verification on 2026-10-10. Sample file contents unchanged since drafting; any in-file 'draft' wording is preparation-time text and is superseded by this registry."
+    },
+    {
+      "sampleId": "SMP-V01-04",
+      "chain": "V01",
+      "type": "synthetic",
+      "path": "v01/smp-v01-04.json",
+      "sha256": "59ed7bf27b5453bbd30236e516296f581f93cb9c063e23105220be520d671b08",
+      "status": "frozen",
+      "humanVerification": {
+        "by": "qingshanfeihu",
+        "at": "2026-10-10",
+        "result": "approved",
+        "channel": "用户在 Muse 对话中整批确认（14 份全部通过）"
+      },
+      "note": "Frozen by user verification on 2026-10-10. Sample file contents unchanged since drafting; any in-file 'draft' wording is preparation-time text and is superseded by this registry."
+    },
+    {
+      "sampleId": "SMP-V02-01",
+      "chain": "V02",
+      "type": "spec",
+      "path": "v02/smp-v02-01-fixture-spec.md",
+      "sha256": "f1823019f10fd920e5e1d2280b35b85973fa4d85531d72c8385ec4ffe900c646",
+      "status": "frozen",
+      "humanVerification": {
+        "by": "qingshanfeihu",
+        "at": "2026-10-10",
+        "result": "approved",
+        "channel": "用户在 Muse 对话中整批确认（14 份全部通过）"
+      },
+      "note": "Frozen by user verification on 2026-10-10. Sample file contents unchanged since drafting; any in-file 'draft' wording is preparation-time text and is superseded by this registry."
+    },
+    {
+      "sampleId": "SMP-V02-02",
+      "chain": "V02",
+      "type": "scenario-scripts",
+      "path": "v02/smp-v02-02.json",
+      "sha256": "b230258fa00e7277c0a1e79016ee56b0d5ae9b19262e633165806509afb5d662",
+      "status": "frozen",
+      "humanVerification": {
+        "by": "qingshanfeihu",
+        "at": "2026-10-10",
+        "result": "approved",
+        "channel": "用户在 Muse 对话中整批确认（14 份全部通过）"
+      },
+      "note": "Frozen by user verification on 2026-10-10. Sample file contents unchanged since drafting; any in-file 'draft' wording is preparation-time text and is superseded by this registry."
+    },
+    {
+      "sampleId": "SMP-V03-01",
+      "chain": "V03",
+      "type": "spec",
+      "path": "v03/smp-v03-01-site-spec.md",
+      "sha256": "1cb737f6b1c80f73d94f2a356054fd0115d9bbdbe097a573f307af2f24b6b464",
+      "status": "frozen",
+      "humanVerification": {
+        "by": "qingshanfeihu",
+        "at": "2026-10-10",
+        "result": "approved",
+        "channel": "用户在 Muse 对话中整批确认（14 份全部通过）"
+      },
+      "note": "Frozen by user verification on 2026-10-10. Sample file contents unchanged since drafting; any in-file 'draft' wording is preparation-time text and is superseded by this registry."
+    },
+    {
+      "sampleId": "SMP-V03-02",
+      "chain": "V03",
+      "type": "scenario-scripts",
+      "path": "v03/smp-v03-02.json",
+      "sha256": "5e95dfb82c01a3ece51855842227ad4a3bdbf34581e62e4d6e937509ebe6cc16",
+      "status": "frozen",
+      "humanVerification": {
+        "by": "qingshanfeihu",
+        "at": "2026-10-10",
+        "result": "approved",
+        "channel": "用户在 Muse 对话中整批确认（14 份全部通过）"
+      },
+      "note": "Frozen by user verification on 2026-10-10. Sample file contents unchanged since drafting; any in-file 'draft' wording is preparation-time text and is superseded by this registry."
+    },
+    {
+      "sampleId": "SMP-V04-01",
+      "chain": "V04",
+      "type": "synthetic",
+      "path": "v04/smp-v04-01-usecases.md",
+      "sha256": "6aa6bf6e673cf617a725243c0819736ab5605cf133c857414a9a1afa0f16df3a",
+      "status": "frozen",
+      "humanVerification": {
+        "by": "qingshanfeihu",
+        "at": "2026-10-10",
+        "result": "approved",
+        "channel": "用户在 Muse 对话中整批确认（14 份全部通过）"
+      },
+      "note": "Frozen by user verification on 2026-10-10. Sample file contents unchanged since drafting; any in-file 'draft' wording is preparation-time text and is superseded by this registry."
+    },
+    {
+      "sampleId": "SMP-V04-02",
+      "chain": "V04",
+      "type": "synthetic",
+      "path": "v04/smp-v04-02.json",
+      "sha256": "79f3dd1203a90dcb8ea1c04277ca6616836b48b4d7ab86e83193aa0c4a320c67",
+      "status": "frozen",
+      "humanVerification": {
+        "by": "qingshanfeihu",
+        "at": "2026-10-10",
+        "result": "approved",
+        "channel": "用户在 Muse 对话中整批确认（14 份全部通过）"
+      },
+      "note": "Frozen by user verification on 2026-10-10. Sample file contents unchanged since drafting; any in-file 'draft' wording is preparation-time text and is superseded by this registry."
+    },
+    {
+      "sampleId": "SMP-V05-01",
+      "chain": "V05",
+      "type": "synthetic",
+      "path": "v05/smp-v05-01-topic-tree.json",
+      "sha256": "1628cd72111c5ca7b76ab85e585681c3b5b1c44ee495d1108bc1316dcc63fee7",
+      "status": "frozen",
+      "humanVerification": {
+        "by": "qingshanfeihu",
+        "at": "2026-10-10",
+        "result": "approved",
+        "channel": "用户在 Muse 对话中整批确认（14 份全部通过）"
+      },
+      "note": "Frozen by user verification on 2026-10-10. Sample file contents unchanged since drafting; any in-file 'draft' wording is preparation-time text and is superseded by this registry."
+    },
+    {
+      "sampleId": "SMP-V05-01-XMIND",
+      "chain": "V05",
+      "type": "synthetic",
+      "path": "v05/smp-v05-01-content.json",
+      "sha256": "b3e881b5617cfa3e54f97f29d65747f449b507a182f9cbd206fc944914eb31e1",
+      "status": "frozen",
+      "humanVerification": {
+        "by": "qingshanfeihu",
+        "at": "2026-10-10",
+        "result": "approved",
+        "channel": "用户在 Muse 对话中整批确认（14 份全部通过）"
+      },
+      "note": "Frozen by user verification on 2026-10-10. Sample file contents unchanged since drafting; any in-file 'draft' wording is preparation-time text and is superseded by this registry."
+    },
+    {
+      "sampleId": "SMP-V05-02",
+      "chain": "V05",
+      "type": "expected-structure",
+      "path": "v05/smp-v05-02.json",
+      "sha256": "b24bb18d03b089eb39747ad1cd41e11404610b0d999865c31e89fcb07a691922",
+      "status": "frozen",
+      "humanVerification": {
+        "by": "qingshanfeihu",
+        "at": "2026-10-10",
+        "result": "approved",
+        "channel": "用户在 Muse 对话中整批确认（14 份全部通过）"
+      },
+      "note": "Frozen by user verification on 2026-10-10. Sample file contents unchanged since drafting; any in-file 'draft' wording is preparation-time text and is superseded by this registry."
+    },
+    {
+      "sampleId": "SMP-X-01",
+      "chain": "X",
+      "type": "scenario-cards",
+      "path": "x/smp-x-01-scenario-cards.md",
+      "sha256": "d4c16e360d8204a491ddf22ba376b36477285ce97aa7fe9139a118a3c95288d2",
+      "status": "frozen",
+      "humanVerification": {
+        "by": "qingshanfeihu",
+        "at": "2026-10-10",
+        "result": "approved",
+        "channel": "用户在 Muse 对话中整批确认（14 份全部通过）"
+      },
+      "note": "Frozen by user verification on 2026-10-10. Sample file contents unchanged since drafting; any in-file 'draft' wording is preparation-time text and is superseded by this registry."
+    }
+  ],
+  "frozenAt": "2026-10-10"
+}

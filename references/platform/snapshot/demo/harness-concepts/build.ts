@@ -1,0 +1,16 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { createRequire } from 'node:module';
+const here=path.dirname(new URL(import.meta.url).pathname);
+const parser=process.env.INFOSEC_TYPESCRIPT_PATH;
+if(!parser) throw new Error('Set INFOSEC_TYPESCRIPT_PATH to the isolated TypeScript compiler');
+const ts=createRequire(import.meta.url)(parser);
+const source=fs.readFileSync(path.join(here,'app.ts'),'utf8');
+const result=ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ES2022},reportDiagnostics:true});
+if(result.diagnostics?.length) throw new Error(ts.formatDiagnosticsWithColorAndContext(result.diagnostics,{getCurrentDirectory:()=>here,getCanonicalFileName:(f:string)=>f,getNewLine:()=> '\n'}));
+fs.mkdirSync(path.join(here,'dist'),{recursive:true});
+fs.writeFileSync(path.join(here,'dist/app.js'),result.outputText);
+for(const name of ['index.html','style.css']) fs.copyFileSync(path.join(here,name),path.join(here,'dist',name));
+const html=fs.readFileSync(path.join(here,'index.html'),'utf8').replace('<link rel="stylesheet" href="/style.css">',`<style>${fs.readFileSync(path.join(here,'style.css'),'utf8')}</style>`).replace('<script type="module" src="/app.js"></script>',`<script type="module">${result.outputText.replaceAll('</script','<\\/script')}</script>`);
+fs.writeFileSync(path.join(here,'dist/preview.html'),html);
+console.log('Built five harness interface concepts');

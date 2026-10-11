@@ -1,0 +1,27 @@
+{
+  "dependencies": {
+    "@infosec/contracts": "file:../contracts",
+    "@infosec/platform": "file:../platform",
+    "pg": "^8.13.0"
+  },
+  "description": "Durable PostgreSQL-backed task core for C (P3-1, ADR 0017): transactional accept (task + idempotency + outbox commit together before 'accepted'), optimistic-concurrency transitions bound to (tenantId, scopeId, taskId, expectedRevision), persisted pending-input decisions, checklist delivery gate (C-T01) and stale/cross-scope/role/concurrency rejections (C-T02), plus an outbox relay with consumer-side dedupe. Tests run against an embedded real PostgreSQL instance.",
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/pg": "^8.11.0",
+    "typescript": "^5.9.0",
+    "vitest": "^3.2.0",
+    "@embedded-postgres/linux-x64": "18.4.0-beta.17"
+  },
+  "main": "dist/index.js",
+  "name": "@infosec/platform-pg",
+  "private": true,
+  "scripts": {
+    "build": "tsc -b .",
+    "pretest": "npm --prefix ../contracts run build && npm --prefix ../platform run build && tsc -b .",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.test.json"
+  },
+  "type": "module",
+  "types": "dist/index.d.ts",
+  "version": "0.1.0"
+}

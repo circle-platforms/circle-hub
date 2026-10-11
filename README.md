@@ -1,95 +1,40 @@
-<p align="center">
-  <img src="docs/images/logo.svg" width="96" height="96" alt="Circle">
-</p>
+# Circle Server
 
-<h1 align="center">Circle</h1>
+Circle 的企业 Agent 服务端，面向网络安全产品的研发、测试、诊断和维护。
 
-<p align="center">A terminal coding agent for your own model endpoint.</p>
+普通用户使用 Circle 默认插件库中的连接插件，配置 server 的 IP 或域名并登录。Circle 保留通用 harness；服务端保存产品资料和证据、持续推进任务、管理实际执行资源，并提供版本化的专业方法。管理员和运维使用 server 自己的管理入口。
 
-<p align="center">
-  <a href="https://qingshanfeihu.github.io/circle/">Docs</a> ·
-  <a href="https://qingshanfeihu.github.io/circle/quickstart/">Quickstart</a> ·
-  <a href="https://qingshanfeihu.github.io/circle/known-issues/">Known issues</a> ·
-  <a href="CHANGELOG.md">Changelog</a> ·
-  <a href="README.zh-CN.md">中文</a>
-</p>
+## 当前已经做了什么
 
----
+仓库已从 Circle 的公开 TypeScript 主干派生，保留源历史及 upstream，作为独立私有仓库维护。共享基础放在 [foundation/circle](foundation/circle/README.md)，保持源文件原字节；旧客户端的安装、发布和 Pages 工作流随来源保留在子目录，不作为 server 的工作流启用。
 
-Circle reads and edits the code in a folder you choose, and runs commands there. It works with any service or gateway that speaks the OpenAI or Anthropic API. It asks before it runs a command or changes a file, and the screen shows at a glance whether it is working or waiting for you.
+之前 infosec-platform 的代码、契约、测试、样本、研究脚本和原型已经归入[参考库](references/README.md)。参考原件保留完整目录关系，按职责提供入口，并登记来源提交、Git blob 和 SHA-256。这里的代码没有接入新的生产运行路径。
 
-**Circle is early software.** There is no operating-system sandbox. Read [Known issues](https://qingshanfeihu.github.io/circle/known-issues/) and [Run Circle safely](https://qingshanfeihu.github.io/circle/security/) before you point it at anything you care about.
-
-## Install
-
-Install a prebuilt release. It carries its own Node.js; nothing else needs to be installed first.
-
-**macOS and Linux** (x64 or arm64):
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/qingshanfeihu/circle/main/install.sh | bash
-```
-
-**Windows** (x64 or arm64), in PowerShell:
-
-```powershell
-irm https://raw.githubusercontent.com/qingshanfeihu/circle/main/install.ps1 | iex
-```
-
-The installers download the latest release for your platform, verify its SHA-256, start it once, and put `circle` on your PATH. macOS and Linux need `bash`, `curl`, `tar`, and `sha256sum` or `shasum`. Windows needs PowerShell 5.1 or newer.
-
-Restart your terminal after installing, then run `circle`. Upgrade with `circle update`. See [Installation and updates](https://qingshanfeihu.github.io/circle/installation/) and [Releases](https://github.com/qingshanfeihu/circle/releases).
-
-**Coming from Circle 0.5.0 or older?** Those were written in Python. Run the install command above: it removes the Python version, keeps your settings, keys, skills and sessions, and installs 1.0 in its place. The old `circle update` cannot do this step. Python extensions have to be rewritten; see [Extensions](https://qingshanfeihu.github.io/circle/extensions/).
-
-## Run
-
-```bash
-cd ~/code/my-project
-circle
-```
-
-The first time, Circle asks for a base URL, a key and a model, then asks you to trust the folder. After that, type a task and press `enter`. Type `/` to see the commands and `?` to see the keys.
-
-```bash
-circle "fix the failing test"            # start with a message
-circle -c                                # go on with the last conversation here
-circle -r                                # pick a conversation from a list
-circle -p "summarize README.md"          # one prompt, answer on stdout
-git diff | circle -p "review this change"
-```
-
-While Circle works you can keep typing: `enter` steers the running turn. `esc` twice goes back to an earlier point of the conversation, `ctrl+l` switches models and `ctrl+f` finds text. The [CLI](https://qingshanfeihu.github.io/circle/cli/) also has a JSON event stream and an RPC mode for scripts and editors.
-
-The terminal interface uses conversation cards, status lamps and an `auto` theme that follows terminal colours. Use `/themes dark` or `/themes light` when your terminal cannot report its colours. See [The interface](https://qingshanfeihu.github.io/circle/interface/) for the signals and limits.
-
-## Learn more
-
-| | |
+| 服务端职责 | 对应参考 |
 |---|---|
-| [Quickstart](https://qingshanfeihu.github.io/circle/quickstart/) | Install, connect a model, run a first task. |
-| [The interface](https://qingshanfeihu.github.io/circle/interface/) | What the lamps, tints and frame mean. |
-| [Run Circle safely](https://qingshanfeihu.github.io/circle/security/) | What is asked, what is refused, what is not protected. |
-| [Choose a model](https://qingshanfeihu.github.io/circle/models/) | Endpoints, switching, thinking depth. |
-| [Skills](https://qingshanfeihu.github.io/circle/skills/), [Commands](https://qingshanfeihu.github.io/circle/custom-commands/), [MCP](https://qingshanfeihu.github.io/circle/mcp/), [Extensions](https://qingshanfeihu.github.io/circle/extensions/) | Make Circle yours. |
-| [All documentation](https://qingshanfeihu.github.io/circle/) | Guides and reference. |
+| B：产品知识、证据和制品 | [知识记录、快照与证据登记](references/platform/by-object/B.md) |
+| C：任务、权限和协作 | [内存与 PostgreSQL 任务服务](references/platform/by-object/C.md) |
+| D：实际执行和资源 | [操作、租约、进程和浏览器](references/platform/by-object/D.md) |
+| E：专业方法与规则 | [知识问答、用例评审和脑图编译](references/platform/by-object/E.md) |
+| 共享与验证 | [契约 F](references/platform/by-object/F.md)、[实验与样本 G](references/platform/by-object/G.md)、[界面 A](references/platform/by-object/A.md) |
 
-## Development
+## 接下来怎样建设
 
-Circle is written in TypeScript and runs on Node.js 24 or newer. Up to 0.5.0 it was written in Python; that code is at the tag `v0.5.0`.
+先核对共同代码的接口与使用者，再逐项建设 server 的身份、持久任务、执行节点和管理入口。已有知识和 PostgreSQL 决策继续沿用；真实输入输出、模型判断、实际操作和已验证结果分别记录。复杂网络调查覆盖物理到应用层，产品方法按型号、版本和环境限定。
 
-```bash
-git clone https://github.com/qingshanfeihu/circle
-cd circle
-npm ci
-npm run check                                    # type check, tests, build
-CIRCLE_HOME=$(mktemp -d) npm run dev -- ~/code/my-project
+Circle 和 server 分别发布，默认连接插件留在 Circle，不另建插件项目。共同代码通过来源记录和同步 PR 管理；兼容清单固定实际验证的客户端、API、worker、能力包和数据库版本。详见[工程计划](https://github.com/qingshanfeihu/infosec-platform/blob/main/docs/circle-server-plan.md)。
+
+当前还没有正式的 server/API 或管理端启动入口。此轮完成仓库、来源基线和参考归档；没有安装平台依赖、启动实验服务、调用模型或连接设备。原参考中的历史结果不作为新 server 的验收结果。
+
+## 核对参考原件
+
+使用 Node.js 24，无需安装依赖：
+
+```sh
+npm run verify:references
+npm run test:references
 ```
 
-Code pushes do not publish a new version: the release workflow publishes when a `v*` tag is pushed. See [Releasing](https://qingshanfeihu.github.io/circle/development/releasing/).
+检查包含文件摘要、Git blob、完整来源树、路径闭包，以及被改动的原件能否被拒绝。它只证明来源和归档完整性，不证明业务行为或设备兼容。
 
-See [CONTRIBUTING.md](CONTRIBUTING.md), [AGENTS.md](AGENTS.md) for coding agents, and the [architecture](https://qingshanfeihu.github.io/circle/development/architecture/). Report security problems as described in [SECURITY.md](SECURITY.md). Everyone taking part follows the [Code of Conduct](CODE_OF_CONDUCT.md).
-
-## License
-
-Circle is released under the [MIT License](LICENSE). The model catalogs in `src/data/` carry metadata from models.dev under its own MIT license; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+[初始化记录](docs/bootstrap.md) · [来源清单](references/source-manifest.json) · [共同产品看板](https://github.com/users/qingshanfeihu/projects/1)

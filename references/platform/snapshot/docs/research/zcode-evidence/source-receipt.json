@@ -1,0 +1,78 @@
+{
+  "readAt": "2026-10-10T13:21:09.776Z",
+  "repository": "https://github.com/zai-org/ZCode",
+  "commit": "aac4755666d09fdcd70272fcf063c077a639015f",
+  "version": "3.15.1",
+  "files": [
+    {
+      "file": "README.md",
+      "sha256": "71208cc8d744a431df7835109c5e7a018ae4dfcd3db42ce268147c931a31a393"
+    },
+    {
+      "file": "package.json",
+      "sha256": "aa5c2171f1240a90d5013db4ffc38695da8629485167c726ef12f79dd5bdcc32"
+    },
+    {
+      "file": "packages/desktop/package.json",
+      "sha256": "f748cb6e1b7db2813153290b8b25aba67badee60de2393169fe78f144de6880b"
+    },
+    {
+      "file": "packages/ui/package.json",
+      "sha256": "981f0047fa0bc00d20368fc4f7af9500d8906f3d825ff9cf00dfe95e17d61c5e"
+    },
+    {
+      "file": "LICENSE",
+      "sha256": "606c36baf38b973227273df12a74930e4b4137280eea835c5cd623aa4553c13b"
+    },
+    {
+      "file": "NOTICE.md",
+      "sha256": "6bd5e85b48a192ce100a9e5e0636e3a90d3f6e1ac1c4fe74369e13bd79bb4c45"
+    },
+    {
+      "file": "THIRD-PARTY-NOTICES.md",
+      "sha256": "5c9b538d09bd3769e6630db4032deb4f8ae01fb518e61712618bbef91f640057"
+    },
+    {
+      "file": "DESIGN.md",
+      "sha256": "741655ff09b25a79142ec42c75135aee38ad0a40edb259b57c5013cd7a6d79a9"
+    },
+    {
+      "file": "packages/shared/src/platform.ts",
+      "sha256": "3e8fa3858ae3e50678f51c73a939d6328da024b8b05a3c064a312051e941e44f"
+    },
+    {
+      "file": "packages/desktop/src/renderer/src/desktopPlatform.ts",
+      "sha256": "6a8132dbab08b04acb570f8f9315fe692be7047e34ecd9ab8a474884e2667e7f"
+    },
+    {
+      "file": "packages/desktop/src/host/index.ts",
+      "sha256": "c6a752ffd55ca48cc8d2be9f742b17cf450a627ec5d30c67290c69f432fa9128"
+    },
+    {
+      "file": "packages/desktop/src/host/windowHostAttachmentRegistry.ts",
+      "sha256": "0375e1729aa1cbfd8858e48d94dc99a5ade870880bda203cec6e70bf39a02a62"
+    },
+    {
+      "file": "packages/desktop/src/main/desktopHostProcess.ts",
+      "sha256": "7bbf7ef40532d202bd3987e041e4386925579b9384c718e0bc98430bb0bbd19b"
+    },
+    {
+      "file": "packages/desktop/src/main/desktopWindowChrome.ts",
+      "sha256": "ad28f07d5bdfce5d403e92399af740df4bc205c49ebd7c6cd34b8e9f731f0c87"
+    },
+    {
+      "file": "packages/desktop/src/main/browserView/browserGuestManager.ts",
+      "sha256": "0443395e8b28d89808e06fba9d336352d08b1b3f1005c3ad2d6cb533a2ee35a7"
+    },
+    {
+      "file": "packages/services/src/zcode-agent/zcodeAgentProcessManager.ts",
+      "sha256": "ab86ff750f195e8da965fd03fc89cf72aefb70c7d62a8167de9c70e9a6dc6a87"
+    },
+    {
+      "file": "packages/zcode-cua/index.js",
+      "sha256": "d93a5d161af8816e9de1a6914d89dc69a3f2464028106e05df7dab43c1309a00"
+    }
+  ],
+  "scope": "Read-only source and official documentation inspection; no dependency installation, build, runtime launch, model call, or device experiment",
+  "productionAdoption": false
+}

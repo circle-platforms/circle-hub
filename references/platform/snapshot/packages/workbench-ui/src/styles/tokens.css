@@ -1,0 +1,144 @@
+:root {
+  font-family:
+    Inter,
+    -apple-system,
+    BlinkMacSystemFont,
+    "PingFang SC",
+    "Microsoft YaHei",
+    sans-serif;
+  font-synthesis: none;
+  color-scheme: light;
+  --bg: #fff;
+  --sidebar: #f7f8fa;
+  --subtle-bg: #fafbfc;
+  --surface: #fff;
+  --hover: #f1f3f7;
+  --active: #eceefa;
+  --border: #e5e8ee;
+  --border-soft: #eef0f4;
+  --fg: #30343c;
+  --secondary: #6a7180;
+  --muted: #8e97a6;
+  --faint: #b4bdca;
+  --accent: #6667ca;
+  --accent-fg: #5556b2;
+  --accent-bg: #f1f1fc;
+  --green: #638c77;
+  --green-bg: #eff6f1;
+  --amber: #ab874b;
+  --amber-bg: #faf5e9;
+  --red: #bb636b;
+  --red-bg: #fbf1f2;
+  --shadow: 0 12px 48px #1c25411b;
+  --radius: 7px;
+  --text-ui: 13px;
+  --text-small: 11px;
+  --text-tiny: 10px;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background: var(--bg);
+  color: var(--fg);
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #17191f;
+  --sidebar: #12141a;
+  --subtle-bg: #1b1e26;
+  --surface: #20232d;
+  --hover: #292d39;
+  --active: #2d2e49;
+  --border: #303541;
+  --border-soft: #272c37;
+  --fg: #d6dbe6;
+  --secondary: #9da8be;
+  --muted: #7c8ba3;
+  --faint: #54617a;
+  --accent: #a2a0ef;
+  --accent-fg: #b5b1f4;
+  --accent-bg: #2b2a47;
+  --green: #9bbbab;
+  --green-bg: #24382f;
+  --amber: #d3b882;
+  --amber-bg: #3c3526;
+  --red: #df969e;
+  --red-bg: #3b282e;
+  --shadow: 0 12px 48px #00000060;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  font-size: var(--text-ui);
+}
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+button,
+a,
+input,
+textarea,
+select {
+  -webkit-tap-highlight-color: transparent;
+}
+button {
+  cursor: pointer;
+  color: inherit;
+}
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+button {
+  border: 0;
+  background: none;
+}
+a {
+  color: inherit;
+  text-decoration: none;
+}
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+svg {
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+h1,
+h2,
+h3,
+h4,
+p {
+  margin: 0;
+}
+button,
+select {
+  touch-action: manipulation;
+}
+code,
+pre,
+kbd {
+  font-family: var(--mono);
+}
+pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+::selection {
+  background: #aaa7f04d;
+}
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+#root {
+  height: 100dvh;
+  min-height: 0;
+}

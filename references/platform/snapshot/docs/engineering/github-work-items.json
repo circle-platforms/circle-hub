@@ -1,0 +1,94 @@
+{
+  "schemaVersion": "1.0.0",
+  "repository": "qingshanfeihu/infosec-platform",
+  "scope": "Planning and engineering governance only",
+  "milestone": "https://github.com/qingshanfeihu/infosec-platform/milestone/1",
+  "parentIssue": "https://github.com/qingshanfeihu/infosec-platform/issues/1",
+  "items": [
+    {
+      "id": "FRAMEWORK-001",
+      "number": 1,
+      "url": "https://github.com/qingshanfeihu/infosec-platform/issues/1",
+      "title": "平台整体设计与开发准备",
+      "designRefs": [
+        "docs/product-framework.md",
+        "docs/README.md"
+      ]
+    },
+    {
+      "id": "PRODUCT-001",
+      "number": 2,
+      "url": "https://github.com/qingshanfeihu/infosec-platform/issues/2",
+      "title": "接入不同产品并说明支持范围",
+      "designRefs": [
+        "docs/design/product-capability-composition.md",
+        "docs/knowledge-v1.md"
+      ]
+    },
+    {
+      "id": "COMPOSITION-001",
+      "number": 3,
+      "url": "https://github.com/qingshanfeihu/infosec-platform/issues/3",
+      "title": "把多种能力组合成一个完整任务",
+      "designRefs": [
+        "docs/product-framework.md",
+        "docs/design/product-capability-composition.md",
+        "docs/templates/task-composition.md"
+      ]
+    },
+    {
+      "id": "INTERACTION-001",
+      "number": 4,
+      "url": "https://github.com/qingshanfeihu/infosec-platform/issues/4",
+      "title": "用户怎样提任务、看操作和接管",
+      "designRefs": [
+        "docs/user-interaction-and-object-communication-v1.md",
+        "docs/operator-visibility-plan-v1.md",
+        "docs/ssh-responsibility-plan-v1.md"
+      ]
+    },
+    {
+      "id": "API-001",
+      "number": 5,
+      "url": "https://github.com/qingshanfeihu/infosec-platform/issues/5",
+      "title": "逐项说明现有模块和函数做什么",
+      "designRefs": [
+        "docs/reference/README.md",
+        "docs/design/critical-interface-contracts.md",
+        "docs/engineering/design-standard.md"
+      ]
+    },
+    {
+      "id": "MODULE-001",
+      "number": 6,
+      "url": "https://github.com/qingshanfeihu/infosec-platform/issues/6",
+      "title": "整理代码分工和各部分的依赖",
+      "designRefs": [
+        "docs/design/module-map.md",
+        "docs/object-boundaries-v1.md"
+      ]
+    },
+    {
+      "id": "VERIFICATION-001",
+      "number": 7,
+      "url": "https://github.com/qingshanfeihu/infosec-platform/issues/7",
+      "title": "检查不同产品和任务，并说明交付范围",
+      "designRefs": [
+        "docs/engineering/validation-and-delivery.md",
+        "docs/validation-matrix-v1.md",
+        "docs/templates/verification-receipt.md"
+      ]
+    },
+    {
+      "id": "ENGINEERING-001",
+      "number": 8,
+      "url": "https://github.com/qingshanfeihu/infosec-platform/issues/8",
+      "title": "整理文档、需求和开发流程",
+      "designRefs": [
+        "docs/engineering/repository-governance.md",
+        "docs/templates/README.md",
+        ".github/pull_request_template.md"
+      ]
+    }
+  ]
+}

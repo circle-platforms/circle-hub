@@ -1,0 +1,80 @@
+{
+  "sampleId": "SMP-V02-02",
+  "scenarios": [
+    {
+      "expect": [
+        "每步回执与期望状态一致，配置版本号只递增一次",
+        "commit 前设备配置不变（stage 不生效）",
+        "清理：回滚到基线版本并核对一致，关闭会话后无会话残留"
+      ],
+      "id": "apv-s1-normal-change",
+      "inject": null,
+      "steps": [
+        "open 会话",
+        "read 基线配置版本",
+        "stage 一项变更",
+        "read 确认未生效",
+        "commit",
+        "read 确认生效且版本递增",
+        "rollback 回滚",
+        "close 会话"
+      ],
+      "title": "正常变更全流程"
+    },
+    {
+      "expect": [
+        "commit 回执丢失后操作进 unknown",
+        "reconcile 按设备实际配置版本号确认已生效",
+        "不得因重试再提交第二次变更（设备侧变更计数为 1）",
+        "清理：回滚到基线版本并核对一致"
+      ],
+      "id": "apv-s2-receipt-loss",
+      "inject": "INJ-APV-1",
+      "steps": [
+        "open 会话",
+        "read 基线配置版本",
+        "stage 一项变更",
+        "commit（注入回执丢失）",
+        "reconcile 对账",
+        "rollback 回滚",
+        "close 会话"
+      ],
+      "title": "提交后回执丢失 → 对账确认已生效"
+    },
+    {
+      "expect": [
+        "基于旧版本的 commit 被拒为 conflict-stale",
+        "设备配置保持不变",
+        "清理：关闭会话，无暂存残留"
+      ],
+      "id": "apv-s3-version-conflict",
+      "inject": "INJ-APV-4",
+      "steps": [
+        "open 会话",
+        "read 配置版本 V",
+        "外部（夹具脚本）把配置推进到 V+1",
+        "用基于 V 的 stage/commit 提交",
+        "close 会话"
+      ],
+      "title": "版本冲突 → 拒绝且不变更"
+    },
+    {
+      "expect": [
+        "身份漂移被检出后立即停止后续操作",
+        "已暂存未提交的变更不生效",
+        "清理：断开会话并记录漂移证据"
+      ],
+      "id": "apv-s4-identity-drift",
+      "inject": "INJ-APV-3",
+      "steps": [
+        "open 会话（记录序列号）",
+        "read 配置",
+        "注入身份漂移后再次 read",
+        "（期望在此停手）"
+      ],
+      "title": "设备身份漂移 → 立即停手"
+    }
+  ],
+  "type": "scenario-scripts",
+  "usesFixture": "SMP-V02-01"
+}

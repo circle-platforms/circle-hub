@@ -1,0 +1,371 @@
+{
+  "comment": "P1-3 pairing and fault-injection vectors. Each scenario replays the same envelope sequence over MCP, CLI and HTTP against a fresh deterministic stub instance. Step fields: call; payload (with $op = operationId captured from submit); idem overrides the per-step idempotency key; scope overrides scopeId; schemaVersion overrides the envelope version; inputRevision = stale | current (current is taken from the pending input). Expectations assert the response status, optional error code, operation status, executor run count, duplicate and reconciled flags.",
+  "scenarios": [
+    {
+      "name": "instant-success",
+      "steps": [
+        {
+          "call": "submit",
+          "expectExecutorRuns": 1,
+          "expectOpStatus": "succeeded",
+          "expectStatus": "succeeded",
+          "payload": {
+            "echo": "hello",
+            "script": "instant"
+          }
+        },
+        {
+          "call": "result",
+          "expectOpStatus": "succeeded",
+          "expectStatus": "succeeded",
+          "payload": {
+            "operationId": "$op"
+          }
+        }
+      ]
+    },
+    {
+      "name": "slow-poll-success",
+      "steps": [
+        {
+          "call": "submit",
+          "expectExecutorRuns": 0,
+          "expectOpStatus": "accepted",
+          "expectStatus": "accepted",
+          "payload": {
+            "echo": "v",
+            "script": "slow"
+          }
+        },
+        {
+          "call": "status",
+          "expectOpStatus": "running",
+          "expectStatus": "running",
+          "payload": {
+            "operationId": "$op"
+          }
+        },
+        {
+          "call": "status",
+          "expectExecutorRuns": 1,
+          "expectOpStatus": "succeeded",
+          "expectStatus": "succeeded",
+          "payload": {
+            "operationId": "$op"
+          }
+        },
+        {
+          "call": "result",
+          "expectOpStatus": "succeeded",
+          "expectStatus": "succeeded",
+          "payload": {
+            "operationId": "$op"
+          }
+        }
+      ]
+    },
+    {
+      "name": "needs-input",
+      "steps": [
+        {
+          "call": "submit",
+          "expectStatus": "accepted",
+          "payload": {
+            "echo": "cfg",
+            "script": "needs-input"
+          }
+        },
+        {
+          "call": "status",
+          "expectOpStatus": "running",
+          "expectPending": true,
+          "expectStatus": "running",
+          "payload": {
+            "operationId": "$op"
+          }
+        },
+        {
+          "call": "input",
+          "expectStatus": "running",
+          "inputRevision": "current",
+          "payload": {
+            "decision": "proceed",
+            "operationId": "$op"
+          }
+        },
+        {
+          "call": "status",
+          "expectExecutorRuns": 1,
+          "expectOpStatus": "succeeded",
+          "expectStatus": "succeeded",
+          "payload": {
+            "operationId": "$op"
+          }
+        },
+        {
+          "call": "result",
+          "expectStatus": "succeeded",
+          "payload": {
+            "operationId": "$op"
+          }
+        }
+      ]
+    },
+    {
+      "name": "target-failure",
+      "steps": [
+        {
+          "call": "submit",
+          "expectStatus": "accepted",
+          "payload": {
+            "script": "fail-target"
+          }
+        },
+        {
+          "call": "status",
+          "expectError": "TARGET_UNREACHABLE",
+          "expectOpStatus": "failed",
+          "expectStatus": "failed",
+          "payload": {
+            "operationId": "$op"
+          }
+        },
+        {
+          "call": "result",
+          "expectError": "TARGET_UNREACHABLE",
+          "expectStatus": "failed",
+          "payload": {
+            "operationId": "$op"
+          }
+        }
+      ]
+    },
+    {
+      "name": "cancel-before-run",
+      "steps": [
+        {
+          "call": "submit",
+          "expectStatus": "accepted",
+          "payload": {
+            "script": "slow"
+          }
+        },
+        {
+          "call": "cancel",
+          "expectOpStatus": "cancel-requested",
+          "expectStatus": "cancel-requested",
+          "payload": {
+            "operationId": "$op"
+          }
+        },
+        {
+          "call": "status",
+          "expectOpStatus": "cancel-delivered",
+          "expectStatus": "cancel-requested",
+          "payload": {
+            "operationId": "$op"
+          }
+        },
+        {
+          "call": "status",
+          "expectExecutorRuns": 0,
+          "expectOpStatus": "stopped-observed",
+          "expectStatus": "cancelled",
+          "payload": {
+            "operationId": "$op"
+          }
+        },
+        {
+          "call": "result",
+          "expectOpStatus": "stopped-observed",
+          "expectStatus": "cancelled",
+          "payload": {
+            "operationId": "$op"
+          }
+        }
+      ]
+    },
+    {
+      "name": "drop-receipt-reconcile",
+      "steps": [
+        {
+          "call": "submit",
+          "expectError": "RECEIPT_LOST",
+          "expectExecutorRuns": 1,
+          "expectOpStatus": "unknown",
+          "expectStatus": "unknown",
+          "payload": {
+            "echo": "cfg",
+            "script": "drop-receipt"
+          }
+        },
+        {
+          "call": "status",
+          "expectOpStatus": "unknown",
+          "expectStatus": "unknown",
+          "payload": {
+            "operationId": "$op"
+          }
+        },
+        {
+          "call": "reconcile",
+          "expectOpStatus": "succeeded",
+          "expectReconciled": true,
+          "expectStatus": "succeeded",
+          "payload": {
+            "operationId": "$op"
+          }
+        },
+        {
+          "call": "result",
+          "expectStatus": "succeeded",
+          "payload": {
+            "operationId": "$op"
+          }
+        }
+      ]
+    },
+    {
+      "name": "duplicate-submit-idempotent",
+      "steps": [
+        {
+          "call": "submit",
+          "expectStatus": "accepted",
+          "idem": "dup-0001",
+          "payload": {
+            "echo": "once",
+            "script": "slow"
+          }
+        },
+        {
+          "call": "submit",
+          "expectDuplicate": true,
+          "expectStatus": "accepted",
+          "idem": "dup-0001",
+          "payload": {
+            "echo": "once",
+            "script": "slow"
+          }
+        },
+        {
+          "call": "status",
+          "expectStatus": "running",
+          "payload": {
+            "operationId": "$op"
+          }
+        },
+        {
+          "call": "status",
+          "expectExecutorRuns": 1,
+          "expectStatus": "succeeded",
+          "payload": {
+            "operationId": "$op"
+          }
+        }
+      ]
+    },
+    {
+      "name": "stale-input-rejected",
+      "steps": [
+        {
+          "call": "submit",
+          "expectStatus": "accepted",
+          "payload": {
+            "echo": "x",
+            "script": "needs-input"
+          }
+        },
+        {
+          "call": "status",
+          "expectPending": true,
+          "expectStatus": "running",
+          "payload": {
+            "operationId": "$op"
+          }
+        },
+        {
+          "call": "input",
+          "expectError": "INPUT_REVISION_STALE",
+          "expectStatus": "failed",
+          "inputRevision": "stale",
+          "payload": {
+            "decision": "proceed",
+            "operationId": "$op"
+          }
+        },
+        {
+          "call": "status",
+          "expectPending": true,
+          "expectStatus": "running",
+          "payload": {
+            "operationId": "$op"
+          }
+        },
+        {
+          "call": "input",
+          "expectStatus": "running",
+          "inputRevision": "current",
+          "payload": {
+            "decision": "proceed",
+            "operationId": "$op"
+          }
+        },
+        {
+          "call": "status",
+          "expectStatus": "succeeded",
+          "payload": {
+            "operationId": "$op"
+          }
+        }
+      ]
+    },
+    {
+      "name": "forbidden-scope",
+      "steps": [
+        {
+          "call": "submit",
+          "expectError": "FORBIDDEN_SCOPE",
+          "expectStatus": "failed",
+          "payload": {
+            "script": "instant"
+          },
+          "scope": "scp_forbidden_1"
+        }
+      ]
+    },
+    {
+      "name": "unsupported-version",
+      "steps": [
+        {
+          "call": "submit",
+          "expectError": "UNSUPPORTED_VERSION",
+          "expectStatus": "failed",
+          "payload": {
+            "script": "instant"
+          },
+          "schemaVersion": "2.0.0"
+        }
+      ]
+    },
+    {
+      "name": "cancel-after-final",
+      "steps": [
+        {
+          "call": "submit",
+          "expectStatus": "succeeded",
+          "payload": {
+            "script": "instant"
+          }
+        },
+        {
+          "call": "cancel",
+          "expectError": "DECISION_CONFLICT",
+          "expectStatus": "failed",
+          "payload": {
+            "operationId": "$op"
+          }
+        }
+      ]
+    }
+  ]
+}

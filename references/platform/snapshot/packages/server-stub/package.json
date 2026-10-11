@@ -1,0 +1,22 @@
+{
+  "dependencies": {
+    "@infosec/contracts": "file:../contracts",
+    "@modelcontextprotocol/sdk": "^1.17.0"
+  },
+  "description": "Minimal scripted long-task service with MCP, CLI and HTTP transports for P1-3 pairing tests. A test double for the contracts, not a product service.",
+  "devDependencies": {
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4",
+    "@types/node": "^24.0.0"
+  },
+  "name": "@infosec/server-stub",
+  "private": true,
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "pretest": "npm --prefix ../contracts run build && tsc -p tsconfig.json",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.test.json"
+  },
+  "type": "module",
+  "version": "0.1.0"
+}
