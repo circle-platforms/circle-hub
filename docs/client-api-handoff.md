@@ -10,7 +10,7 @@ npm ci
 npm run dev:stack
 ```
 
-Node.js 24。启动命令使用锁定的 `embedded-postgres@18.4.0-beta.17` 在新临时目录运行真实 PostgreSQL 18.4，不需要 Docker、系统 PostgreSQL 或系统用户安装。随后启动认证 API 和独立 `lab-east-01` worker。终端会打印：
+Node.js 24。启动命令使用锁定的 `embedded-postgres@18.4.0-beta.17` 在新临时目录运行真实 PostgreSQL 18.4，不需要 Docker、系统 PostgreSQL 或系统用户安装。随后启动受监管认证 API 和独立 `lab-east-01` / `lab-east-02` worker。终端会打印：
 
 ```text
 地址：http://127.0.0.1:<本次端口>
@@ -43,7 +43,7 @@ Node.js 24。启动命令使用锁定的 `embedded-postgres@18.4.0-beta.17` 在�
 |---|---|---|
 | `POST /v1/auth/dev-login` | `{ "username":"developer", "password":"<本次随机密码>" }` | 200：`token`、`tokenType:"Bearer"`、`expiresAt`、`principalId`、`tenantId`、`scopes`。`/v1/auth/token` 保留为同义旧路径 |
 | `POST /v1/sources` | `{ "scopeId":"scp_lab", "fileName":"cases.xmind", "contentBase64":"<原文件字节的标准 base64>" }` | 201：`sourceRevisionId`、原字节 `sha256`、字节数 `size`、`fileName`、`scopeId`。同项目同 SHA 上传复用原件修订 |
-| `GET /v1/packs` | 无 body | 200：能力包数组。当前只有 `capabilityPackId:"mindmap-compile"`，给出输入格式、输入 schema、固定版本与 `requiredOperations:["mindmaps.compile"]` |
+| `GET /v1/packs` | 无 body | 200：能力包数组。按 `capabilityPackId:"mindmap-compile"` 选择脑图能力，字段与版本保持原契约；另有合成 `lbx-healthcheck` 和 `defect-review` 能力 |
 | `POST /v1/tasks/submit` | 见下例 | 202：任务身份、当前 phase/inputRevisionId、流程/能力包版本、`deduplicated`。受理事务同时提交任务、幂等、outbox 与 wakeup |
 | `GET /v1/tasks/{taskId}/status` | 无 body | 200：`TaskView`，含当前修订、phase、输入引用与 `pendingInputs` |
 | `GET /v1/tasks/{taskId}/events?after=0` | 可加 `&waitMs=10000`（0–30000） | 200：`{ events:[{seq,taskId,kind,payload,createdAt}], after:<最新返回 seq> }`。每页最多 500 条，按 seq 升序 |
@@ -122,6 +122,6 @@ result 示例（省略摘要具体值）：
 
 `npm run typecheck`、`npm test`、`npm run verify:references` 和 `npm audit` 是本分支的检查入口；具体实际结果在进度文档登记。冻结 V05 的 content.json/主题树 JSON 通过 HTTP 上传、独立 worker 编译、server 再核验与下载，逐格匹配冻结的 8 行。另生成合成 `.xmind` zip。原 reference 文件保持原字节。
 
-Claude 的下一次验收：在真实 Otty 终端启动 Circle，连接上述地址并用秘密输入登录；上传 `samplePath` 或获准实际 `.xmind`，提交 mindmap-compile、补读事件、取得 result、下载工作簿并核 SHA。保留任务/操作/输入修订/源 SHA/产物 SHA 与终端观察记录。当前 HTTP 验收没有替代这项真实 Circle 组合验证。
+Claude 的真实 Otty/Circle 观察已由用户提供并登记在进度第 4 节，保留客户端提交 `e60ed96`、两个任务、原件/产物 SHA 与重连结果。新的 server 实现又通过脑图 HTTP/worker 兼容测试；本次没有将旧观察改写为新提交的客户端复跑。
 
-LBX 设备操作、目标主机密钥、设备审批、Bugzilla/Jira/OpenKM 桩、完整 admin 命令及 MCP 入口尚未随本次脑图故事交付。没有 push、PR、GitHub 设置变更或部署。
+第一阶段的合成 LBX 操作、主机身份拦截、审批/交付、Bugzilla/Jira/OpenKM 桩与完整 admin 已完成，见进度与管理说明；它们在现有脑图 API 之外增加入口，没有改变该故事的登录、上传、提交、状态、事件、结果、下载和 input 路径。MCP、真实模型/企业认证/设备系统及部署不由本次本地八幕验收覆盖。没有 push、PR、GitHub 设置变更或部署。

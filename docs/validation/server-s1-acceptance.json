@@ -1,0 +1,28 @@
+{
+  "schema": "circle-server.local-acceptance/1",
+  "runtimeCommit": "956fda9",
+  "branch": "server-s1",
+  "scope": "Local synthetic phase one with real temporary PostgreSQL and scripted model fixtures",
+  "commands": {
+    "npm run typecheck": "passed",
+    "npm test": "passed",
+    "npm run verify:references": "passed",
+    "npm audit": "0 reported vulnerabilities",
+    "git diff --check": "passed"
+  },
+  "tests": {"contracts": 4, "methods": 4, "acceptance": 20, "references": 7, "passed": 35, "failed": 0, "skipped": 0},
+  "acceptanceDurationMs": 93312.744042,
+  "scenes": {"1": "passed", "2": "passed", "3": "passed", "4": "passed", "5": "passed", "6": "passed", "7": "passed", "8": "passed"},
+  "additional": ["LBX observes 5 then independently approved change to 10 and fresh delivery", "Bugzilla and Jira use the same capability", "OpenKM fetch and synthetic JSON to text conversion", "All admin commands through authenticated HTTP", "Graceful restart changes PID and bootId", "Mindmap HTTP and worker compatibility"],
+  "archiveFilesVerified": 714,
+  "nodeVersion": "24.17.0",
+  "postgresVersion": "18.4",
+  "platform": "Darwin arm64; embedded PostgreSQL reports x86_64-apple-darwin24.6.0",
+  "paidOrRealModelCalled": false,
+  "realDeviceOrEnterpriseSystemConnected": false,
+  "circleWorktreeModified": false,
+  "circleOttyReplayThisRun": false,
+  "userReportedCircleObservation": "docs/server-s1-progress.md section 4, client e60ed96",
+  "pushed": false,
+  "deployed": false
+}

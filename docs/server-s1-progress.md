@@ -132,3 +132,22 @@ Claude 用 Python `zipfile` + XML 独立读取下载的工作簿，8 行与 `smp
 实际 `npm run typecheck` 和 `node --test tests/acceptance/admin.test.ts` 通过，2/2。覆盖普通用户调用管理命令被拒、作用范围内的查询/审批列表/审计/事件、连接器禁用阻止实际调用后再启用、worker 完成当前操作并停止接新操作，以及 supervisor 以相同端口实际重启 server。重启前后 PID 与 bootId 不同，PostgreSQL 原任务、inrev、待回应、事件游标、token 和 worker 状态保持；没有写取消请求。IPC 的重启请求/确认由已认证 server 与其 supervisor 完成，CLI 等新 bootId 出现后才报告完成。
 
 dev:stack 已随本阶段提供两个 worker、独立 approver 和服务身份；所有新增权限只针对合成目标，随机密码与配置仍在临时目录。审批人员没有设备操作权限。[管理命令说明](admin-cli.md)记录启动、秘密注入和使用方式。接下来进行最后的整套验收，未 push。
+
+## 10：第一阶段收口
+
+运行代码提交 `956fda9`（其后仅更新文档/摘要）。在此代码提交实际执行 `npm run typecheck`、`npm test`、`npm run verify:references`、`npm audit`、`git diff --check`，全部通过；commands/范围见[验收摘要](validation/server-s1-acceptance.json)。
+
+| 当前检查 | 结果 |
+|---|---|
+| contracts | 4/4，身份、统一词表、效果/连接器清单、禁止归档/旧编译运行链 import |
+| methods | 4/4，冻结 8 行逐格一致、合成 XMind、partial/失败、独立读取与宏/公式拒绝 |
+| acceptance | 20/20，八幕全部通过，另含完整 LBX 故事、admin 两组、脑图/stack 与边界场景；总时长约 93.3 秒 |
+| references | 7/7；另校验 714 原件与两份来源树完整 |
+| 总计 | 35/35，没有跳过或待办测试 |
+| 类型/依赖/差异 | typecheck 与 diff 检查通过，npm audit 0 个已报告漏洞 |
+
+八幕分别由 `01-login`、`02-submit`、`03-input`、`04-reconnect`、`05-worker-interruption`、`06-approvals`、`07-delivery`、`08-connectors` 的自动 HTTP 验收覆盖。第 5 幕实际 SIGKILL 并等待默认租约，未改时间戳；第 8 幕在两种连接器下分别通过同一个方法；优雅重启核对新 PID/bootId 和原数据库任务/游标；脑图按原 API 再次通过。
+
+本次用户指定的第一阶段剩余项目已完成，本地分支 server-s1 保存逐步提交。主工作树保持 `d839935` 且干净，Circle、foundation、references 和工作流字节未修改。没有 push、PR、GitHub 设置调整、发布或部署。
+
+验证范围为本机临时真实 PostgreSQL、开发身份、本地脚本模型桩和合成资源。真实模型质量、真实设备/企业系统、生产身份、MCP 及其他操作系统的发行/部署验收另行推进；没有从本次通过推断这些能力。用户提供的真实 Otty/Circle 脑图观察保留第 4 节的来源与时点，未在本次重跑 Circle 或触及其工作树。
