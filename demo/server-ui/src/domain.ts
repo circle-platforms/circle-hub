@@ -1,3 +1,18 @@
+import {
+  additionalAgents,
+  defaultScenario,
+  outlineRows,
+  pendingFindings,
+  reviewUsesFixture,
+  scenarios,
+  scenarioById,
+  workflowFor,
+  workflowSeed,
+  type Material,
+  type ScenarioId,
+  type WorkflowState,
+} from "./workflows.ts";
+
 export type Role =
   | "tester"
   | "expert"
@@ -135,7 +150,13 @@ export const roles: Record<
     person: "宋祎",
     initials: "宋",
     subtitle: "产品资料与许可范围",
-    permissions: ["knowledge.read", "commercial.read"],
+    permissions: [
+      "business.read",
+      "knowledge.read",
+      "commercial.read",
+      "task.create",
+      "task.respond",
+    ],
     environments: ["lab"],
   },
 };
@@ -165,6 +186,8 @@ export interface Context {
   project: string;
 }
 export interface Task {
+  scenarioId?: ScenarioId;
+  workflowState?: WorkflowState;
   id: string;
   title: string;
   prompt: string;
@@ -231,6 +254,7 @@ export interface AgentDefinition {
   versions: { version: string; state: string; date: string; change: string }[];
 }
 export interface RunRecord {
+  materials?: Material[];
   id: string;
   taskId: string;
   agentId: string;
@@ -392,7 +416,10 @@ export function visibleTasks(state: DemoState, context: Context): Task[] {
     ? state.tasks.filter(
         (t) =>
           t.environment === context.environment &&
-          t.project === context.project,
+          t.project === context.project &&
+          (t.scenarioId !== "commercial" ||
+            permitted(context, "commercial.read")) &&
+          (context.role !== "commercial" || t.scenarioId === "commercial"),
       )
     : [];
 }
@@ -856,7 +883,7 @@ export function initialState(): DemoState {
     worker: "LAB-WEST-01",
     inputRevision: 1,
   });
-  return {
+  return enrichState({
     schema: 3,
     agents,
     runs,
@@ -1469,7 +1496,37 @@ export function initialState(): DemoState {
       { name: "许澄", role: "ops", scope: "平台运维", status: "有效" },
       { name: "陆遥", role: "auditor", scope: "授权审计范围", status: "有效" },
     ],
-  };
+  });
+}
+
+export function enrichState(state: DemoState): DemoState {
+  for (const agent of additionalAgents())
+    if (!state.agents.some((a) => a.id === agent.id)) state.agents.push(agent);
+  for (const s of scenarios)
+    if (!state.methods.some((m) => m.id === `MTH-${s.id}`))
+      state.methods.push({
+        id: `MTH-${s.id}`,
+        title: s.title,
+        product: "合成演示",
+        version: "1.0-demo",
+        candidate: "1.1-demo",
+        description: s.boundary,
+        scripts: ["输入结构与来源登记"],
+        judgments: ["固定合成判断示例；未运行语义评测"],
+        coverage: 0,
+        samples: 0,
+        semantic: 0,
+        required: 90,
+        reviewed: false,
+        state: "candidate",
+        author: "演示配置",
+      });
+  for (const t of state.tasks)
+    if (!t.scenarioId && t.kind === "review") {
+      t.scenarioId = "review";
+      t.workflowState = workflowSeed(scenarioById("review")!);
+    }
+  return state;
 }
 
 export type DemoAction =
@@ -1478,6 +1535,8 @@ export type DemoAction =
       prompt: string;
       kind?: Task["kind"];
       agentId?: string;
+      scenarioId?: ScenarioId;
+      materials?: Material[];
     }
   | {
       type:
@@ -1508,6 +1567,22 @@ export type DemoAction =
       id: string;
     }
   | { type: "createAgent"; name: string; description: string }
+  | {
+      type: "findingDecision";
+      id: string;
+      findingId: string;
+      choice: "accept" | "dismiss";
+      reason: string;
+    }
+  | { type: "applyReviewEdits"; id: string }
+  | { type: "attachMaterial"; id: string; material: Material }
+  | {
+      type: "recordWorkbook";
+      id: string;
+      receipt: NonNullable<WorkflowState["artifactReceipt"]>;
+      base64: string;
+    }
+  | { type: "chooseOutput"; id: string; mode: "outline" | "compile" }
   | {
       type: "takeover" | "returnControl" | "webStep" | "identityChange";
       id: string;
@@ -1548,6 +1623,11 @@ const actionPermissions: Record<DemoAction["type"], Permission | null> = {
   returnControl: "execution.control",
   webStep: "execution.control",
   identityChange: "execution.control",
+  findingDecision: "task.respond",
+  applyReviewEdits: "task.respond",
+  attachMaterial: "task.respond",
+  recordWorkbook: "task.respond",
+  chooseOutput: "task.respond",
 };
 export interface DemoResult {
   ok: boolean;
@@ -1603,8 +1683,23 @@ export function execute(
   )
     return fail("该任务不属于当前项目与环境范围。");
   if (
+    task?.scenarioId === "commercial" &&
+    !permitted(context, "commercial.read")
+  )
+    return fail("当前身份没有这项商务工作的授权。");
+  if (
     task?.revoked &&
-    ["advance", "approve", "takeover", "webStep"].includes(action.type)
+    [
+      "advance",
+      "approve",
+      "takeover",
+      "webStep",
+      "findingDecision",
+      "applyReviewEdits",
+      "attachMaterial",
+      "recordWorkbook",
+      "chooseOutput",
+    ].includes(action.type)
   )
     return fail(
       "该任务的委托已撤回，下一项动作被拒绝。远端停止仍需独立核对。",
@@ -1612,9 +1707,17 @@ export function execute(
     );
   if (
     task?.targetChanged &&
-    ["advance", "approve", "takeover", "webStep", "reconcile"].includes(
-      action.type,
-    )
+    [
+      "advance",
+      "approve",
+      "takeover",
+      "webStep",
+      "reconcile",
+      "findingDecision",
+      "applyReviewEdits",
+      "attachMaterial",
+      "recordWorkbook",
+    ].includes(action.type)
   )
     return fail(
       "目标身份已经变化。旧授权不能继续使用，需要重新确认目标和连接。",
@@ -1640,6 +1743,7 @@ export function execute(
       duration: "刚刚",
       worker: task.worker,
       inputRevision: task.inputRevision,
+      materials: structuredClone(task.workflowState?.materials ?? []),
     });
   };
   switch (action.type) {
@@ -1650,9 +1754,31 @@ export function execute(
       );
       if (!agent || agent.status !== "published")
         return fail("选用已发布且启用的 Agent 后再发起工作。");
+      const scenario = scenarioById(
+        action.scenarioId ?? defaultScenario[agent.id],
+      );
+      if (action.scenarioId && !scenario) return fail("演示流程不存在。");
+      if (action.scenarioId && scenario?.agentId !== agent.id)
+        return fail("该演示流程不属于选定的 Agent。");
+      if (
+        scenario?.id === "commercial" &&
+        !permitted(context, "commercial.read")
+      )
+        return fail("报价工作需要商务资料授权。");
+      if (context.role === "commercial" && scenario?.id !== "commercial")
+        return fail("当前商务身份只能委派获准的商务工作。");
       const id = `TSK-${next.sequence}`;
       taskId = id;
       next.tasks.unshift({
+        scenarioId: scenario?.id,
+        workflowState: scenario
+          ? {
+              ...workflowSeed(scenario),
+              ...(action.materials
+                ? { materials: structuredClone(action.materials) }
+                : {}),
+            }
+          : undefined,
         id,
         title: action.prompt.trim().slice(0, 32),
         prompt: action.prompt,
@@ -1660,11 +1786,25 @@ export function execute(
         project: context.project,
         environment: context.environment,
         owner: roles[context.role].person,
-        phase: "queued",
+        phase:
+          scenario &&
+          [
+            "review",
+            "outline",
+            "compile",
+            "requirements",
+            "design",
+            "development",
+            "repair",
+          ].includes(scenario.id) &&
+          action.materials?.length === 0
+            ? "waiting"
+            : "queued",
         progress: 0,
         duration: "刚刚",
-        method:
-          action.kind === "long"
+        method: scenario
+          ? scenario.title
+          : action.kind === "long"
             ? "长期稳定性测试"
             : (next.methods.find((m) => m.id === agent.methods[0])?.title ??
               "负载均衡业务诊断"),
@@ -1673,10 +1813,15 @@ export function execute(
           "2.3.0",
         snapshot: next.stableSnapshot,
         inputRevision: 1,
-        workflow: "diagnose-v1-demo",
+        workflow: scenario ? `${scenario.id}-v1-demo` : "general-work-v1-demo",
         operation: `OP-${next.sequence}`,
-        session: `SSH-${next.sequence}`,
-        worker: "LAB-EAST-02",
+        session:
+          scenario?.scene === "ssh"
+            ? `SSH-${next.sequence}`
+            : scenario?.scene === "web"
+              ? `BROWSER-${next.sequence}`
+              : "",
+        worker: scenario?.scene === "none" ? "DOCUMENT-DEMO" : "LAB-EAST-02",
         kind:
           action.kind ??
           (agent.id === "AGT-003"
@@ -1709,6 +1854,9 @@ export function execute(
         duration: "刚刚",
         worker: "LAB-EAST-02",
         inputRevision: 1,
+        materials: structuredClone(
+          next.tasks[0].workflowState?.materials ?? [],
+        ),
       });
       append(
         "allowed",
@@ -1742,6 +1890,154 @@ export function execute(
         return fail("需要指定审批人对当前输入修订作决定。", task);
       if (task.controller === "human")
         return fail("当前现场由人员控制，请先交还控制权再继续 Agent。", task);
+      const scenario = workflowFor(task);
+      if (scenario && task.workflowState) {
+        const work = task.workflowState;
+        if (scenario.id === "review" && !reviewUsesFixture(task)) {
+          task.phase = "waiting";
+          task.unknowns = [
+            "当前原件不是固定合成评审样本。正式模型评审尚未接入，不能套用样例意见。请换回样例或保持未评审。",
+          ];
+          return fail(task.unknowns[0], task);
+        }
+        if (scenario.id === "outline") {
+          try {
+            outlineRows(work.materials[0]?.text ?? "");
+          } catch (e) {
+            task.phase = "waiting";
+            task.unknowns = [String(e)];
+            return fail("脑图结构无法完整解析，请在材料页修正输入。", task);
+          }
+        }
+        if (
+          task.phase === "waiting" &&
+          scenario.clarification &&
+          work.clarifiedRevision !== task.inputRevision
+        )
+          return fail("先在这项工作中补充澄清回应。", task);
+        if (
+          scenario.id === "review" &&
+          task.step >= 3 &&
+          pendingFindings(task).some(
+            (f) =>
+              !work.decisions.some(
+                (d) =>
+                  d.findingId === f.id && d.revision === task.inputRevision,
+              ),
+          )
+        )
+          return fail("请先逐条接受或驳回评审意见，并保留理由。", task);
+        if (
+          scenario.id === "review" &&
+          task.step >= 3 &&
+          work.decisions.some((d) => d.choice === "accept") &&
+          !work.appliedRevision
+        )
+          return fail(
+            "接受的建议尚未形成新用例修订，请查看差异并应用演示修改。",
+            task,
+          );
+        if (
+          scenario.id === "outline" &&
+          task.step >= 3 &&
+          (!work.artifactReceipt?.checked ||
+            work.artifactReceipt.inputRevision !== task.inputRevision)
+        )
+          return fail("先生成结构工作簿并完成读回检查。", task);
+        task.step++;
+        task.progress = Math.min(
+          100,
+          (task.step / scenario.steps.length) * 100,
+        );
+        task.phase = task.step >= scenario.steps.length ? "done" : "running";
+        if (
+          task.step === 2 &&
+          scenario.clarification &&
+          work.clarifiedRevision !== task.inputRevision
+        ) {
+          task.phase = "waiting";
+          task.unknowns = [scenario.clarification];
+        }
+        if (
+          task.step === 3 &&
+          scenario.id === "review" &&
+          pendingFindings(task).length
+        ) {
+          task.phase = "waiting";
+          task.unknowns = [
+            "请在工作内容中逐条处理评审意见；接受建议后产生新修订再复审。",
+          ];
+        }
+        if (
+          scenario.approval?.step === task.step &&
+          task.approvedRevision !== task.inputRevision
+        )
+          task.phase = "review";
+        task.notes.push(
+          scenario.steps[Math.min(task.step, scenario.steps.length) - 1] +
+            "（演示）",
+        );
+        if (task.step >= 2 && !task.evidence.length) {
+          const id = `EV-${next.sequence}`;
+          task.evidence.push(id);
+          next.artifacts.unshift({
+            id,
+            title: `${scenario.title} · 材料与结果示例`,
+            task: task.id,
+            kind: "工作记录",
+            source: `input-r${task.inputRevision} / ${scenario.id}`,
+            excerpt: scenario.boundary,
+            input: JSON.stringify(
+              {
+                taskId: task.id,
+                prompt: task.prompt,
+                materials: work.materials,
+                inputRevision: task.inputRevision,
+              },
+              null,
+              2,
+            ),
+            output: JSON.stringify(
+              {
+                source: "synthetic-demo",
+                columns: scenario.columns,
+                rows: scenario.rows,
+                modelCalls: 0,
+                externalEffects: 0,
+              },
+              null,
+              2,
+            ),
+            scope: "当前项目与演示范围",
+            method: task.method,
+            classification: "artifact",
+            locator: `${scenario.id} / input-r${task.inputRevision}`,
+          });
+        }
+        if (task.phase === "done")
+          task.unknowns = [
+            scenario.boundary,
+            ...(scenario.id === "outline"
+              ? outlineRows(work.materials[0].text).unmapped
+              : []),
+            "外部系统和产品行为没有在本 demo 中验证。",
+          ];
+        append(
+          "recorded",
+          `${scenario.title}：${scenario.steps[Math.min(task.step, scenario.steps.length) - 1]}`,
+          "task",
+          task,
+        );
+        message =
+          task.phase === "waiting"
+            ? "请处理当前工作的具体问题。"
+            : task.phase === "review"
+              ? "具体动作等待业务审批；请求绑定本次输入。"
+              : task.phase === "done"
+                ? "演示工作已交付；范围和未确认项随结果保留。"
+                : "已推进这项工作的专用步骤。";
+        break;
+      }
       task.step++;
       task.progress = Math.min(100, task.step * 20);
       task.phase =
@@ -1831,9 +2127,38 @@ export function execute(
         return fail("发起人不能批准自己的动作。", task);
       task.approvedRevision = task.inputRevision;
       task.phase = "running";
-      task.notes.push(`陈昕批准 input-r${task.inputRevision} 的测试域具体动作`);
+      task.notes.push(
+        `陈昕批准 input-r${task.inputRevision} 的${workflowFor(task)?.approval?.title ?? "测试域具体动作"}`,
+      );
       append("allowed", "审批绑定当前输入、目标和具体动作", "task", task);
       message = "批准已保存。修改输入后该决定会失效。";
+      if (workflowFor(task)?.approval) {
+        const accepted = workflowFor(task)!;
+        task.step = accepted.steps.length;
+        task.progress = 100;
+        task.phase = "done";
+        task.notes.push("合成后台继续已批准范围内的检查；没有真实外部操作");
+        task.unknowns = [
+          accepted.boundary,
+          "外部系统和产品行为没有在本 demo 中验证。",
+        ];
+        next.audit.unshift({
+          id: `AUD-${next.sequence}-agent`,
+          time: stamp(),
+          actor: "合成后台 Agent",
+          role: "演示服务身份",
+          action: "syntheticAgentContinue",
+          target: task.id,
+          task: task.id,
+          result: "recorded",
+          detail: "在当前已批准输入范围内保留后续检查样例；externalEffects=0",
+          category: "task",
+          inputRevision: task.inputRevision,
+          policy: "policy-r8-demo",
+          environment: task.environment,
+        });
+        message = "决定已保存，合成后台已继续并保留后续检查样例。";
+      }
       break;
     case "reject":
       if (!task || task.phase !== "review") return fail("当前没有待批准动作。");
@@ -1855,6 +2180,7 @@ export function execute(
           createdAt: task.createdAt,
         },
       ];
+      const answering = task.phase === "waiting";
       task.prompt += "\n\n补充：" + action.text;
       task.inputRevision++;
       task.inputs.push({
@@ -1864,12 +2190,197 @@ export function execute(
         createdAt: stamp(),
       });
       task.approvedRevision = undefined;
+      if (task.workflowState) {
+        task.workflowState.decisions = [];
+        task.workflowState.artifactReceipt = undefined;
+        task.workflowState.appliedRevision = undefined;
+        task.workflowState.clarifiedRevision = answering
+          ? task.inputRevision
+          : undefined;
+        task.step = Math.min(task.step, 2);
+        task.evidence = [];
+      }
       task.notes.push(`保存 input-r${task.inputRevision}，旧决定失效`);
       task.phase = "running";
       newAttempt(task);
       append("recorded", "新增输入修订，不覆盖旧决定", "task", task);
       message = "补充已保存，旧审批已失效；后续运行使用新输入。";
       break;
+    case "findingDecision": {
+      if (!task || task.scenarioId !== "review" || !task.workflowState)
+        return fail("这项工作没有用例评审意见。", task);
+      if (task.step < 3) return fail("评审意见尚未生成，不能提前处理。", task);
+      if (!pendingFindings(task).some((f) => f.id === action.findingId))
+        return fail("该评审意见不属于当前用例修订。", task);
+      if (!action.reason.trim()) return fail("请记录接受或驳回的理由。", task);
+      const work = task.workflowState;
+      work.decisions = work.decisions.filter(
+        (d) => d.findingId !== action.findingId,
+      );
+      work.decisions.push({
+        findingId: action.findingId,
+        choice: action.choice,
+        reason: action.reason.trim(),
+        revision: task.inputRevision,
+      });
+      append(
+        "recorded",
+        `${action.findingId} ${action.choice === "accept" ? "接受" : "驳回"}；理由：${action.reason.trim()}；绑定 input-r${task.inputRevision}`,
+        "task",
+        task,
+      );
+      message = "意见处理已保存；接受建议还需要形成新用例修订。";
+      break;
+    }
+    case "applyReviewEdits": {
+      if (!task || task.scenarioId !== "review" || !task.workflowState)
+        return fail("这项工作没有可修改的用例。", task);
+      const work = task.workflowState;
+      const findings = pendingFindings(task);
+      if (
+        findings.some(
+          (f) =>
+            !work.decisions.some(
+              (d) => d.findingId === f.id && d.revision === task.inputRevision,
+            ),
+        )
+      )
+        return fail("先处理全部评审意见。", task);
+      const accepted = findings.filter((f) =>
+        work.decisions.some(
+          (d) => d.findingId === f.id && d.choice === "accept",
+        ),
+      );
+      if (!accepted.length)
+        return fail("没有接受的建议；可以直接继续保留驳回记录。", task);
+      for (const f of accepted)
+        work.materials[0].text = work.materials[0].text.replace(
+          f.original,
+          f.proposed,
+        );
+      const oldInput = task.inputs?.at(-1)?.text ?? task.prompt;
+      task.inputRevision++;
+      task.prompt =
+        oldInput +
+        "\n\n用例已按所接受的演示建议生成新修订；通过阈值仍待产品规范确认。";
+      task.inputs ??= [];
+      task.inputs.push({
+        revision: task.inputRevision,
+        text: task.prompt,
+        actor: roles[context.role].person,
+        createdAt: stamp(),
+      });
+      work.appliedRevision = task.inputRevision;
+      work.artifactReceipt = undefined;
+      task.approvedRevision = undefined;
+      task.phase = "running";
+      task.step = 3;
+      task.evidence = [];
+      task.notes.push(
+        `形成 input-r${task.inputRevision}；旧评审与决定保留在事件中，开始复审演示`,
+      );
+      newAttempt(task);
+      append(
+        "recorded",
+        "应用已接受的合成建议，保留新用例修订并重新评审",
+        "task",
+        task,
+      );
+      message = "新修订已保存；原输入和上一轮运行保留。";
+      break;
+    }
+    case "attachMaterial": {
+      if (!task || !task.workflowState)
+        return fail("这项工作不支持材料修改。", task);
+      if (action.material.text.length > 200000)
+        return fail("材料超过演示范围（200 KB 文本）。", task);
+      task.workflowState.materials = [
+        structuredClone(action.material),
+        ...task.workflowState.materials.slice(1),
+      ];
+      task.workflowState.decisions = [];
+      task.workflowState.artifactReceipt = undefined;
+      task.workflowState.clarifiedRevision = undefined;
+      task.workflowState.appliedRevision = undefined;
+      task.inputRevision++;
+      task.approvedRevision = undefined;
+      task.step = 0;
+      task.phase = "queued";
+      task.evidence = [];
+      task.prompt += `\n\n更换材料：${action.material.name}（input-r${task.inputRevision}）`;
+      task.inputs ??= [];
+      task.inputs.push({
+        revision: task.inputRevision,
+        text: task.prompt,
+        actor: roles[context.role].person,
+        createdAt: stamp(),
+      });
+      newAttempt(task);
+      append("recorded", "材料变更使旧检查、评审和制品检查失效", "task", task);
+      message = "新材料已保存在当前浏览器，按新输入重新处理。";
+      break;
+    }
+    case "recordWorkbook": {
+      if (!task || task.scenarioId !== "outline" || !task.workflowState)
+        return fail("这项工作不是结构工作簿转换。", task);
+      if (
+        action.receipt.inputRevision !== task.inputRevision ||
+        !action.receipt.checked
+      )
+        return fail("制品不属于当前输入修订，不能记录为已检查。", task);
+      if (
+        !/^[a-f0-9]{64}$/.test(action.receipt.sourceSha256) ||
+        !/^[a-f0-9]{64}$/.test(action.receipt.artifactSha256)
+      )
+        return fail("制品摘要格式无效。", task);
+      task.workflowState.artifactReceipt = action.receipt;
+      task.workflowState.workbookBase64 = action.base64;
+      append(
+        "recorded",
+        `浏览器生成 ${action.receipt.rows} 行结构 .xlsx，并按七列合同读回检查`,
+        "task",
+        task,
+      );
+      message = "工作簿已生成并读回检查；这是结构清单，不是可执行用例。";
+      break;
+    }
+    case "chooseOutput": {
+      if (
+        !task ||
+        !["outline", "compile"].includes(task.scenarioId ?? "") ||
+        !task.workflowState
+      )
+        return fail("当前没有脑图输出需要选择。", task);
+      const selected = scenarioById(action.mode)!;
+      task.scenarioId = selected.id;
+      task.method = selected.title;
+      task.workflow = `${selected.id}-v1-demo`;
+      task.workflowState.outputChoice = action.mode;
+      task.workflowState.artifactReceipt = undefined;
+      task.workflowState.workbookBase64 = undefined;
+      task.inputRevision++;
+      task.step = 0;
+      task.phase = "queued";
+      task.approvedRevision = undefined;
+      task.evidence = [];
+      task.prompt += `\n\n输出选择：${selected.title}`;
+      task.inputs ??= [];
+      task.inputs.push({
+        revision: task.inputRevision,
+        text: task.prompt,
+        actor: roles[context.role].person,
+        createdAt: stamp(),
+      });
+      newAttempt(task);
+      append(
+        "recorded",
+        `用户选择 ${selected.title}，绑定新输入修订`,
+        "task",
+        task,
+      );
+      message = "输出要求已保存。";
+      break;
+    }
     case "bindSnapshot":
       if (!task) return fail("任务不存在。");
       task.inputs ??= [
@@ -1889,6 +2400,15 @@ export function execute(
         createdAt: stamp(),
       });
       task.approvedRevision = undefined;
+      if (task.workflowState) {
+        task.workflowState.decisions = [];
+        task.workflowState.artifactReceipt = undefined;
+        task.workflowState.clarifiedRevision = undefined;
+        task.workflowState.appliedRevision = undefined;
+        task.step = 0;
+        task.phase = "queued";
+        task.evidence = [];
+      }
       task.notes.push("显式更换知识快照并建立输入修订，旧决定失效");
       newAttempt(task);
       append("recorded", "显式改用新快照；未静默替换依据", "task", task);
@@ -2250,7 +2770,10 @@ export function execute(
       },
     ];
     const configured = next.agents.find((a) => a.id === created.agentId);
-    if (!configured?.tools.some((t) => t.includes("SSH") || t.includes("设备")))
+    if (
+      !created.scenarioId &&
+      !configured?.tools.some((t) => t.includes("SSH") || t.includes("设备"))
+    )
       created.session = "";
   }
   if (task) {

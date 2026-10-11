@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Activity,
   ArrowLeft,
@@ -44,6 +44,7 @@ import {
 } from "lucide-react";
 import {
   initialState,
+  enrichState,
   roles,
   phaseLabels,
   phaseTone,
@@ -92,6 +93,8 @@ import {
 } from "./pages.tsx";
 import { AgentsPage, InboxPage } from "./agent-pages.tsx";
 import CircleView from "./CircleView.tsx";
+import { ScenarioWork } from "./work-pages.tsx";
+import type { ScenarioId } from "./workflows.ts";
 
 const storageKey = "circle-server-design-demo-v3";
 function load(): DemoState {
@@ -106,7 +109,7 @@ function load(): DemoState {
         Array.isArray(v.runs) &&
         Array.isArray(v.audit)
       )
-        return v;
+        return enrichState(v);
     }
   } catch {}
   return initialState();
@@ -148,7 +151,15 @@ export default function App() {
   const [role, setRole] = useState<Role>("expert");
   const [environment, setEnvironment] = useState<Environment>("lab");
   const [project, setProject] = useState("lb");
-  const [page, setPage] = useState<Page>("agents");
+  const [page, setPage] = useState<Page>(
+    new URLSearchParams(window.location.search).get("view") === "server"
+      ? "agents"
+      : "circle",
+  );
+  const [scenarioSelection, setScenarioSelection] = useState<{
+    id: ScenarioId;
+    nonce: number;
+  } | null>(null);
   const [selectedTask, setSelectedTask] = useState<string | null>(null);
   const [focusTaskId, setFocusTaskId] = useState("TSK-2084");
   const [sceneRequested, setSceneRequested] = useState(false);
@@ -169,6 +180,10 @@ export default function App() {
   const [tour, setTour] = useState<number | null>(null);
   const [dark, setDark] = useState(false);
   const context = { role, environment, project };
+  const currentState = useRef(state);
+  const currentContext = useRef(context);
+  currentState.current = state;
+  currentContext.current = context;
   useEffect(() => {
     try {
       localStorage.setItem(storageKey, JSON.stringify(state));
@@ -226,10 +241,22 @@ export default function App() {
     setSidebar(false);
   };
   const act = (action: Parameters<typeof execute>[2]) => {
-    const result = execute(state, context, action);
+    const result = execute(
+      currentState.current,
+      currentContext.current,
+      action,
+    );
+    currentState.current = result.state;
     setState(result.state);
     notify(result.message, !result.ok);
     return result;
+  };
+  const startScenario = (id: ScenarioId) => {
+    setScenarioSelection((previous) => ({
+      id,
+      nonce: (previous?.nonce ?? 0) + 1,
+    }));
+    go("circle");
   };
   const startTour = (index: number) => {
     setTour(index);
@@ -397,9 +424,11 @@ export default function App() {
         focusTaskId,
         setRole,
         notify,
+        startScenario,
+        scenarioSelection,
       }}
     >
-      <div className="app-shell">
+      <div className={`app-shell ${page === "circle" ? "circle-mode" : ""}`}>
         {sidebar && (
           <div className="sidebar-scrim" onClick={() => setSidebar(false)} />
         )}
@@ -407,10 +436,8 @@ export default function App() {
           <div className="brand">
             <span className="circle-logo" />
             <div>
-              <strong>
-                circle<span> server</span>
-              </strong>
-              <small>企业 Agent 平台</small>
+              <strong>circle</strong>
+              <small>团队管理</small>
             </div>
           </div>
           <div className="mode-switch">
@@ -419,14 +446,14 @@ export default function App() {
               onClick={() => go("agents")}
             >
               <Server size={14} />
-              Server
+              团队管理
             </button>
             <button
               className={page === "circle" ? "active" : ""}
               onClick={() => go("circle")}
             >
               <MessageSquare size={14} />
-              Circle
+              返回会话
             </button>
           </div>
           <button className="sidebar-search" onClick={() => setSearch(true)}>
@@ -1483,6 +1510,8 @@ export function TaskDetail({
   const [showInput, setShowInput] = useState(false);
   const completed = task.phase === "done";
   const agent = state.agents.find((a) => a.id === task.agentId);
+  if (task.scenarioId && task.workflowState)
+    return <ScenarioWork task={task} onBack={onBack} />;
   return (
     <div className="task-detail">
       <button className="back-link" onClick={onBack}>

@@ -1,0 +1,158 @@
+{
+  "date": "2026-10-11",
+  "platformSource": "6184cdfbcb5e7b530e48773dfe4728cbb89ca6f6",
+  "scope": "frontend-conversation-demo-only",
+  "unit": {
+    "passed": 43,
+    "total": 43
+  },
+  "management": {
+    "checkedAt": "2026-10-11T14:05:35.312Z",
+    "baseUrl": "http://127.0.0.1:4318/",
+    "browser": "Existing isolated Chromium headless shell",
+    "scenarios": [
+      {
+        "name": "Agent draft, test, approval, publish and in-flight version",
+        "passed": true
+      },
+      {
+        "name": "Circle creates work using selected published Agent and retains it across disconnect",
+        "passed": true
+      },
+      {
+        "name": "published knowledge stays pinned until explicit input revision",
+        "passed": true
+      },
+      {
+        "name": "input revision preserves prior run and removes old approval",
+        "passed": true
+      },
+      {
+        "name": "ops and security identities do not read business or search snippets",
+        "passed": true
+      },
+      {
+        "name": "policy evaluator denies test operator in production and audit records are queryable",
+        "passed": true
+      },
+      {
+        "name": "long task stops only after explicit simulated observation",
+        "passed": true
+      },
+      {
+        "name": "automation rule pause and overlap rejection preserve independent runs",
+        "passed": true
+      },
+      {
+        "name": "task deep link opens same session and modal shares browser state",
+        "passed": true
+      },
+      {
+        "name": "viewer can observe but device control is rejected",
+        "passed": true
+      },
+      {
+        "name": "all management pages render for their intended identities without errors",
+        "passed": true
+      },
+      {
+        "name": "mobile navigation and page containment",
+        "passed": true
+      }
+    ],
+    "pageErrors": [],
+    "scope": "Frontend interactions and mock-model constraints only; not server authorization, model quality or device verification",
+    "modelCalls": 0,
+    "deviceConnections": 0
+  },
+  "conversation": {
+    "base": "http://127.0.0.1:4318/",
+    "results": [
+      {
+        "name": "产品答疑与支持",
+        "passed": true
+      },
+      {
+        "name": "型号、许可与报价分析",
+        "passed": true
+      },
+      {
+        "name": "友商产品比较",
+        "passed": true
+      },
+      {
+        "name": "需求澄清与规格分析",
+        "passed": true
+      },
+      {
+        "name": "设计与兼容性评审",
+        "passed": true
+      },
+      {
+        "name": "代码理解与需求开发",
+        "passed": true
+      },
+      {
+        "name": "缺陷复现、修复与回归",
+        "passed": true
+      },
+      {
+        "name": "测试用例评审",
+        "passed": true
+      },
+      {
+        "name": "脑图转换为结构 Excel",
+        "passed": true
+      },
+      {
+        "name": "脑图编成业务用例",
+        "passed": true
+      },
+      {
+        "name": "单元、集成与产品回归",
+        "passed": true
+      },
+      {
+        "name": "协议、性能与长时稳定性",
+        "passed": true
+      },
+      {
+        "name": "测试环境搭建与故障注入",
+        "passed": true
+      },
+      {
+        "name": "物理到应用层网络调查",
+        "passed": true
+      },
+      {
+        "name": "SSH 采集与受控配置",
+        "passed": true
+      },
+      {
+        "name": "管理 Web 操作与页面定位",
+        "passed": true
+      },
+      {
+        "name": "产品构建与发布准备",
+        "passed": true
+      },
+      {
+        "name": "产品升级、回退与版本维护",
+        "passed": true
+      },
+      {
+        "name": "mobile conversation and contextual artifact",
+        "passed": true
+      }
+    ],
+    "pageErrors": []
+  },
+  "limits": [
+    "No production server or authentication",
+    "No real model or device effects",
+    "Fixed synthetic semantic results",
+    "Actual browser-local structural xlsx only",
+    "No repository merge or visibility change"
+  ],
+  "siteSourceCommit": "c4ae2eade90159d77bd2c1d5406c221df7e23183"
+}

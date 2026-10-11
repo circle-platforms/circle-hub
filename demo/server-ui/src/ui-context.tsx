@@ -7,6 +7,7 @@ import type {
   Page,
   Role,
 } from "./domain.ts";
+import type { ScenarioId } from "./workflows.ts";
 export interface DemoContextValue {
   state: DemoState;
   context: Context;
@@ -23,6 +24,8 @@ export interface DemoContextValue {
   focusTaskId: string;
   setRole: (role: Role) => void;
   notify: (message: string, error?: boolean) => void;
+  startScenario: (id: ScenarioId) => void;
+  scenarioSelection: { id: ScenarioId; nonce: number } | null;
 }
 export const DemoContext = createContext<DemoContextValue | null>(null);
 export function useDemo() {

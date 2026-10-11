@@ -21,7 +21,7 @@ async function scenario(
   p.on("pageerror", (e) => pageErrors.push(name + ": " + e.message));
   p.setDefaultTimeout(8000);
   try {
-    await p.goto(base);
+    await p.goto(base + "?view=server");
     await fn(p);
     results.push({ name, passed: true });
     console.log("PASS " + name);
@@ -94,22 +94,24 @@ await scenario(
     await role(p, "tester");
     await p
       .locator(".mode-switch")
-      .getByRole("button", { name: "Circle", exact: true })
+      .getByRole("button", { name: "返回会话", exact: true })
       .click();
     await p.getByRole("button", { name: "新会话", exact: true }).click();
-    await p.getByLabel("新会话 Agent", { exact: true }).selectOption("AGT-003");
     await p
       .getByLabel("Circle 消息输入", { exact: true })
-      .fill("评审异常场景，保留缺少依据的预期");
+      .fill("评审这组用例，保留缺少依据的预期");
     await p.getByRole("button", { name: "发送消息", exact: true }).click();
     await p
       .locator(".conversation-header")
-      .filter({ hasText: "评审异常场景" })
+      .filter({ hasText: "评审这组用例" })
       .waitFor();
-    assert.ok(
-      (await p.locator(".conversation-header").innerText()).includes(
-        "用例评审 Agent",
+    assert.equal(
+      await p.evaluate(
+        () =>
+          JSON.parse(localStorage.getItem("circle-server-design-demo-v3")!)
+            .tasks[0].agentId,
       ),
+      "AGT-003",
     );
     await p.getByRole("button", { name: "模拟断开连接", exact: true }).click();
     assert.equal(

@@ -1,85 +1,154 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
-  ArrowRight,
   ArrowUpRight,
-  Bot,
-  BookOpen,
-  ChevronRight,
   FileText,
-  Globe,
-  Link2,
   MessageSquare,
+  Paperclip,
   Plus,
   Send,
   Settings2,
   ShieldCheck,
   Terminal,
-  Unplug,
-  AlertTriangle,
+  X,
 } from "lucide-react";
 import { useDemo } from "./ui-context.tsx";
+import { permitted, visibleTasks } from "./domain.ts";
+import { Badge, Button, Empty, Modal, Notice } from "./components.tsx";
 import {
-  permitted,
-  visibleTasks,
-  roles,
-  phaseLabels,
-  phaseTone,
-} from "./domain.ts";
-import {
-  Badge,
-  Button,
-  Empty,
-  JsonBlock,
-  KeyValues,
-  Modal,
-  Notice,
-  Progress,
-  Tabs,
-} from "./components.tsx";
+  chooseDemoScenario,
+  scenarioById,
+  workflowFor,
+  type Material,
+} from "./workflows.ts";
+import ConversationArtifact from "./ConversationArtifact.tsx";
 
 export default function CircleView() {
   const {
     state,
     context,
     act,
+    go,
     openTask,
     openScene,
-    openAgent,
-    openEvidence,
-    openDocument,
+    notify,
+    scenarioSelection,
   } = useDemo();
+  const [active, setActive] = useState<string | null>(null);
   const [prompt, setPrompt] = useState("");
-  const [active, setActive] = useState<string | null>("TSK-2084");
-  const [agentId, setAgentId] = useState("AGT-001");
-  const [side, setSide] = useState("context");
+  const [materials, setMaterials] = useState<Material[]>([]);
+  const [expanded, setExpanded] = useState(false);
   const [connection, setConnection] = useState(false);
   const [address, setAddress] = useState("https://server.example.test");
+  const [dialogue, setDialogue] = useState<{ user: string; reply: string }[]>(
+    [],
+  );
+  const input = useRef<HTMLTextAreaElement>(null);
   const tasks = visibleTasks(state, context);
-  const task = active ? tasks.find((t) => t.id === active) : undefined;
-  const agent = state.agents.find((a) => a.id === (task?.agentId ?? agentId));
+  const task = tasks.find((t) => t.id === active);
+  const scenario = task ? workflowFor(task) : undefined;
   const canRespond = permitted(context, task ? "task.respond" : "task.create");
+  const continueWork = (id: string) => {
+    for (let i = 0; i < 6; i++) {
+      const r = act({ type: "advance", id });
+      if (!r.ok) break;
+      const current = r.state.tasks.find((t) => t.id === id)!;
+      if (
+        ["done", "waiting", "review", "unknown", "stopping"].includes(
+          current.phase,
+        ) ||
+        (current.scenarioId === "outline" && current.step === 3)
+      )
+        break;
+    }
+  };
+  const example = (id: "review" | "outline") => {
+    const s = scenarioById(id)!;
+    setActive(null);
+    setExpanded(false);
+    setPrompt(s.prompt);
+    setMaterials(structuredClone(s.materials));
+    input.current?.focus();
+  };
+  useEffect(() => {
+    if (!scenarioSelection) return;
+    const s = scenarioById(scenarioSelection.id)!;
+    setActive(null);
+    setPrompt(s.prompt);
+    setMaterials(structuredClone(s.materials));
+    setExpanded(false);
+  }, [scenarioSelection]);
   if (!permitted(context, "business.read"))
     return (
       <Empty
         locked
         title="这个身份不能查看业务会话"
-        description="Circle 使用当前人员和项目范围连接 server。安全和运维人员不会自动获得业务正文。"
-      />
+        description="平台维护和安全管理有自己的授权范围."
+      >
+        <Button onClick={() => go("agents")}>打开服务端管理</Button>
+      </Empty>
     );
-  const assistant =
-    task?.phase === "unknown"
-      ? "连接暂时中断，原操作的结果还没有确认。我没有重复发送命令，会先核对执行端和已有输出。"
+  const needsMaterial =
+    task &&
+    [
+      "review",
+      "outline",
+      "compile",
+      "requirements",
+      "design",
+      "development",
+      "repair",
+    ].includes(task.scenarioId ?? "") &&
+    !task.workflowState?.materials.length;
+  const assistant = needsMaterial
+    ? "请把要处理的材料附上。我会保留原件，再给你可以逐项检查的结果。"
+    : task?.phase === "waiting" && scenario?.id === "review"
+      ? "我整理了两条需要讨论的意见。原文、依据和建议一起放在旁边，你可以逐条采用或继续讨论。"
       : task?.phase === "waiting"
-        ? `还需要补充一个信息：${task.unknowns[0] ?? "请说明目标与预期出处"}。我会把回应保存在这项工作里，再继续。`
+        ? (task.unknowns[0] ?? "还有一个条件需要你补充。")
         : task?.phase === "review"
-          ? "已经保留配置和三个观察点的样例记录。管理页面可达、后端直连可达，但业务入口有差异。调整测试域配置前，需要指定人员批准具体动作。"
-          : task?.kind === "long"
-            ? "观察窗口正在持续推进，采样由固定脚本完成。异常会保留现场，再进入分析；你断开连接后仍可以回到这项工作。"
-            : task?.phase === "done"
-              ? "报告和原始记录已保留。结论、判断和未确认内容分别列出，你可以打开对应出处。"
-              : "我会先明确目标、产品版本和允许的范围，再使用对应资料和工具。必要信息不足时会提出具体问题。";
+          ? "下一步涉及具体操作，需要指定人员决定：" +
+            (scenario?.approval?.title ?? "这次变更") +
+            "。"
+          : scenario?.id === "review"
+            ? task?.workflowState?.appliedRevision
+              ? "这轮修改已经保留。原用例、你的意见和新修订可以一起查看，缺少的产品判据仍待确认。"
+              : "我整理了两条需要讨论的意见，分别标到原用例的位置。你可以逐条采用，也可以继续和我讨论。"
+            : scenario?.id === "outline"
+              ? task?.workflowState?.artifactReceipt
+                ? "Excel 已生成并读回检查，可以下载了。原脑图和未映射元素随结果保留。"
+                : "我把原节点和 Excel 行对应起来了。先看看预览，确认后就可以生成工作簿。"
+              : task?.phase === "done"
+                ? "结果和依据已经保留。你可以展开查看，或继续补充修改要求。"
+                : "我会按当前产品、资料和允许的范围继续；需要你决定的地方会在这段会话里提出。";
+  const attach = async (file: File) => {
+    if (file.size > 200000) {
+      notify("演示最多处理 200 KB 文本材料。", true);
+      return;
+    }
+    if (!/\.(json|txt|md|csv)$/i.test(file.name)) {
+      notify("这个演示尚未接入该文件格式；请使用文本或主题树 JSON。", true);
+      return;
+    }
+    const material: Material = {
+      name: file.name,
+      text: await file.text(),
+      origin: "local",
+    };
+    if (task) {
+      const r = act({ type: "attachMaterial", id: task.id, material });
+      if (r.ok) {
+        continueWork(task.id);
+        setExpanded(true);
+      }
+    } else setMaterials((previous) => [material, ...previous.slice(1)]);
+  };
   return (
-    <div className="circle-workspace">
+    <div
+      className={
+        "circle-workspace conversation-first " +
+        (expanded && task?.workflowState ? "with-artifact" : "")
+      }
+    >
       <aside className="conversation-sidebar">
         <div className="conversation-brand">
           <span className="circle-logo" />
@@ -90,45 +159,37 @@ export default function CircleView() {
           onClick={() => {
             setActive(null);
             setPrompt("");
+            setMaterials([]);
+            setExpanded(false);
+            setDialogue([]);
           }}
         >
           <Plus size={14} />
           新会话
         </Button>
-        <label className="circle-agent-picker">
-          使用 Agent
-          <select
-            aria-label="Circle Agent"
-            value={agentId}
-            onChange={(e) => {
-              setAgentId(e.target.value);
-              setActive(null);
-            }}
-          >
-            {state.agents
-              .filter((a) => a.status === "published")
-              .map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name}
-                </option>
-              ))}
-          </select>
-        </label>
-        <div className="session-label">当前项目的工作</div>
+        <div className="session-label">最近的会话</div>
         {tasks.map((t) => (
           <button
-            className={`conversation-item ${t.id === task?.id ? "active" : ""}`}
+            className={"conversation-item " + (t.id === active ? "active" : "")}
             key={t.id}
             onClick={() => {
               setActive(t.id);
-              setAgentId(t.agentId ?? "AGT-001");
+              setExpanded(false);
+              setPrompt("");
+              setMaterials([]);
             }}
           >
             <MessageSquare size={14} />
             <div>
               <b>{t.title}</b>
               <small>
-                {state.agents.find((a) => a.id === t.agentId)?.name}
+                {t.phase === "done"
+                  ? "结果已保留"
+                  : t.phase === "waiting"
+                    ? "等你补充"
+                    : t.phase === "review"
+                      ? "等待决定"
+                      : "继续这项工作"}
               </small>
             </div>
           </button>
@@ -146,49 +207,50 @@ export default function CircleView() {
             {state.connected ? "模拟断开连接" : "重连同一组工作"}
           </button>
           <button className="text-link" onClick={() => setConnection(true)}>
-            <Settings2 size={11} />
+            <Settings2 size={12} />
             连接设置
+          </button>
+          <button className="text-link" onClick={() => go("agents")}>
+            团队管理 <ArrowUpRight size={12} />
           </button>
         </div>
       </aside>
       <section className="conversation-main">
         <div className="conversation-header">
           <div>
-            <b>{task?.title ?? agent?.name ?? "新会话"}</b>
+            <b>{task?.title ?? "新会话"}</b>
             <p>
-              {agent?.name} · {task?.agentVersion ?? agent?.version} ·{" "}
+              {context.project === "lb" ? "负载均衡研发" : "防火墙研发"} ·{" "}
               {context.environment === "lab" ? "测试域" : "生产域"}
             </p>
           </div>
-          {task ? (
-            <Button small onClick={() => openTask(task.id)}>
-              工作详情
-              <ArrowUpRight size={13} />
-            </Button>
-          ) : (
-            <Button small onClick={() => agent && openAgent(agent.id)}>
-              Agent 配置
-              <ArrowUpRight size={13} />
-            </Button>
-          )}
+          <div className="row gap">
+            {task && (
+              <button className="text-link" onClick={() => openTask(task.id)}>
+                查看记录 <ArrowUpRight size={12} />
+              </button>
+            )}
+            <button
+              className="text-link"
+              aria-label="会话设置"
+              onClick={() => setConnection(true)}
+            >
+              <Settings2 size={15} />
+            </button>
+          </div>
         </div>
         {!state.connected && (
           <Notice tone="amber">
-            Circle
-            连接已断开，工作记录没有被取消。重连后可取回原工作、运行和证据。
+            连接暂时断开，工作和原件仍保留。重连后可以继续。
           </Notice>
         )}
         <div className="messages">
-          {task ? (
-            <>
+          {dialogue.map((m, i) => (
+            <div className="plain-dialogue" key={i}>
               <div className="message user-message">
-                <span className="avatar">{task.owner[0]}</span>
+                <span className="avatar">我</span>
                 <div>
-                  <div className="message-author">
-                    {task.owner}
-                    <small>{task.createdAt}</small>
-                  </div>
-                  <p>{task.inputs?.[0]?.text ?? task.prompt}</p>
+                  <p>{m.user}</p>
                 </div>
               </div>
               <div className="message assistant-message">
@@ -196,74 +258,132 @@ export default function CircleView() {
                   <span className="circle-logo" />
                 </span>
                 <div>
+                  <p>{m.reply}</p>
+                </div>
+              </div>
+            </div>
+          ))}
+          {!task ? (
+            <div className="conversation-welcome">
+              <span className="circle-logo" />
+              <h2>说说你想完成什么</h2>
+              <p>附上材料，把目标交给我。需要哪些条件，我会在对话里问。</p>
+              <div className="conversation-examples">
+                <span>试用一段会话</span>
+                <button onClick={() => example("review")}>
+                  评审这份测试用例
+                </button>
+                <button onClick={() => example("outline")}>
+                  把这份脑图整理成 Excel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="message user-message">
+                <span className="avatar">{task.owner[0]}</span>
+                <div>
+                  <div className="message-author">{task.owner}</div>
+                  <p>{task.inputs?.[0]?.text ?? task.prompt}</p>
+                  {task.workflowState?.materials.map((m, i) => (
+                    <button
+                      className="message-file"
+                      key={i}
+                      onClick={() => setExpanded(true)}
+                    >
+                      <FileText size={14} />
+                      {m.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {task.inputs?.slice(1).map((m, i) => (
+                <div className="message user-message" key={m.revision}>
+                  <span className="avatar">{m.actor[0]}</span>
+                  <div>
+                    <div className="message-author">{m.actor}</div>
+                    <p>
+                      {m.text
+                        .slice(task.inputs?.[i]?.text.length ?? 0)
+                        .replace(/^\s*补充：/, "")}
+                    </p>
+                  </div>
+                </div>
+              ))}
+              <div className="message assistant-message">
+                <span className="agent-avatar">
+                  <span className="circle-logo" />
+                </span>
+                <div>
                   <div className="message-author">
-                    {agent?.name}
-                    <Badge>示例记录</Badge>
+                    Circle<small>合成对话演示</small>
                   </div>
                   <p>{assistant}</p>
-                  <div className="inline-task">
-                    <div className="row gap">
-                      <InboxGlyph />
-                      <b>{task.title}</b>
-                      <Badge tone={phaseTone[task.phase]}>
-                        {phaseLabels[task.phase]}
-                      </Badge>
-                    </div>
-                    <p>
-                      {task.id} · Agent {task.agentVersion} ·{" "}
-                      {task.kind === "long"
-                        ? task.duration
-                        : `${task.step} 个步骤已记录`}
-                    </p>
-                    {task.kind === "long" && <Progress value={task.progress} />}
+                  {!needsMaterial && task.workflowState && (
                     <button
-                      className="text-link"
-                      onClick={() => openTask(task.id)}
+                      className="conversation-result"
+                      onClick={() => setExpanded(true)}
                     >
-                      跟进这项工作
-                      <ChevronRight size={13} />
-                    </button>
-                  </div>
-                  {task.evidence.length > 0 && (
-                    <div className="tool-result">
+                      <span>
+                        <FileText size={19} />
+                      </span>
                       <div>
-                        <Terminal size={14} />
                         <b>
-                          {
-                            state.artifacts.find(
-                              (a) => a.id === task.evidence[0],
-                            )?.title
-                          }
+                          {scenario?.id === "review"
+                            ? "用例评审意见"
+                            : scenario?.id === "outline"
+                              ? "脑图与 Excel 预览"
+                              : (scenario?.title ?? "这项工作") +
+                                " · 结果与依据"}
                         </b>
-                        <Badge>输入输出样例</Badge>
+                        <small>
+                          {scenario?.id === "review"
+                            ? "原文位置、意见和修改一起查看"
+                            : scenario?.id === "outline"
+                              ? "原节点对应关系 · 结构工作簿"
+                              : "在这段会话中继续处理"}
+                        </small>
                       </div>
-                      <pre>
-                        {
-                          state.artifacts.find((a) => a.id === task.evidence[0])
-                            ?.output
-                        }
-                      </pre>
-                      <button
-                        className="text-link"
-                        onClick={() => openEvidence(task.evidence[0])}
-                      >
-                        打开完整记录与来源
-                        <ArrowUpRight size={12} />
-                      </button>
+                      <ArrowUpRight size={14} />
+                    </button>
+                  )}
+                  {task.phase === "review" && scenario?.approval && (
+                    <div className="chat-approval">
+                      <ShieldCheck size={16} />
+                      <div>
+                        <b>{scenario.approval.title}</b>
+                        <p>{scenario.approval.scope}</p>
+                        <div className="row gap">
+                          <Button
+                            small
+                            disabled={!permitted(context, "task.approve")}
+                            onClick={() => {
+                              const r = act({ type: "approve", id: task.id });
+                              if (
+                                r.ok &&
+                                r.state.tasks.find((t) => t.id === task.id)
+                                  ?.phase !== "done"
+                              )
+                                continueWork(task.id);
+                            }}
+                          >
+                            批准并继续
+                          </Button>
+                          <Button
+                            small
+                            disabled={!permitted(context, "task.approve")}
+                            onClick={() => act({ type: "reject", id: task.id })}
+                          >
+                            不批准
+                          </Button>
+                        </div>
+                        <small>
+                          由业务审批人员决定；目标或输入变化后需要重新决定。
+                        </small>
+                      </div>
                     </div>
                   )}
-                  {task.unknowns.length > 0 && (
-                    <div className="conversation-unknown">
-                      <small>还没有确认</small>
-                      {task.unknowns.map((u, i) => (
-                        <p key={i}>
-                          <AlertTriangle size={12} />
-                          {u}
-                        </p>
-                      ))}
-                    </div>
-                  )}
-                  <div className="conversation-follow-actions">
+                  {task.session && (
                     <button
                       className="text-link"
                       onClick={() => openScene(task.id)}
@@ -271,70 +391,10 @@ export default function CircleView() {
                       <Terminal size={13} />
                       查看同一执行现场
                     </button>
-                    <button
-                      className="text-link"
-                      onClick={() => openDocument("DOC-101")}
-                    >
-                      <BookOpen size={13} />
-                      相关产品资料
-                    </button>
-                  </div>
+                  )}
                 </div>
               </div>
-              {task.inputs?.slice(1).map((input, i) => (
-                <div className="message user-message" key={input.revision}>
-                  <span className="avatar">{input.actor[0]}</span>
-                  <div>
-                    <div className="message-author">
-                      {input.actor}
-                      <small>
-                        {input.createdAt} · input-r{input.revision}
-                      </small>
-                    </div>
-                    <p>
-                      {input.text
-                        .slice(task.inputs?.[i]?.text.length ?? 0)
-                        .replace(/^\s*补充：/, "")}
-                    </p>
-                  </div>
-                </div>
-              ))}
-              {task.phase === "review" && (
-                <div className="conversation-approval">
-                  <ShieldCheck size={18} />
-                  <div>
-                    <b>请批准这次具体变更</b>
-                    <p>由陈昕决定 · 绑定当前输入、目标与测试域动作</p>
-                  </div>
-                  <Button small onClick={() => openTask(task.id)}>
-                    查看请求
-                  </Button>
-                </div>
-              )}
             </>
-          ) : (
-            <div className="conversation-welcome">
-              <span className="circle-logo" />
-              <h2>把一项工作交给 Agent</h2>
-              <p>{agent?.description}</p>
-              <label className="conversation-agent-select">
-                Agent
-                <select
-                  aria-label="新会话 Agent"
-                  value={agentId}
-                  onChange={(e) => setAgentId(e.target.value)}
-                >
-                  {state.agents
-                    .filter((a) => a.status === "published")
-                    .map((a) => (
-                      <option value={a.id} key={a.id}>
-                        {a.name} · {a.version}
-                      </option>
-                    ))}
-                </select>
-              </label>
-              <p className="muted">当前项目与环境由连接身份限定</p>
-            </div>
           )}
         </div>
         <form
@@ -343,139 +403,123 @@ export default function CircleView() {
             e.preventDefault();
             if (task) {
               const r = act({ type: "revise", id: task.id, text: prompt });
-              if (r.ok) setPrompt("");
+              if (r.ok) {
+                setPrompt("");
+                continueWork(task.id);
+              }
             } else {
-              const r = act({ type: "createTask", prompt, agentId });
+              const chosen = chooseDemoScenario(prompt);
+              if (!chosen) {
+                setDialogue((previous) => [
+                  ...previous,
+                  {
+                    user: prompt,
+                    reply:
+                      "可以先说说当前遇到的问题，或把要处理的材料附上。我会在这段会话里继续。",
+                  },
+                ]);
+                setPrompt("");
+                return;
+              }
+              const needs = [
+                "review",
+                "outline",
+                "compile",
+                "requirements",
+                "design",
+                "development",
+                "repair",
+              ].includes(chosen.id);
+              const r = act({
+                type: "createTask",
+                prompt,
+                agentId: chosen.agentId,
+                scenarioId: chosen.id,
+                materials: materials.length
+                  ? materials
+                  : needs
+                    ? []
+                    : undefined,
+              });
               if (r.ok && r.taskId) {
                 setActive(r.taskId);
                 setPrompt("");
+                setMaterials([]);
+                if (!needs || materials.length) continueWork(r.taskId);
               }
             }
           }}
         >
+          {!!materials.length && (
+            <div className="composer-materials">
+              {materials.map((m, i) => (
+                <span key={i}>
+                  <FileText size={12} />
+                  {m.name}
+                  <button
+                    type="button"
+                    aria-label={"移除 " + m.name}
+                    onClick={() =>
+                      setMaterials(materials.filter((_, j) => j !== i))
+                    }
+                  >
+                    <X size={11} />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
           <textarea
+            ref={input}
             aria-label="Circle 消息输入"
             placeholder={
-              canRespond
-                ? "描述你的目标，或补充这项工作的上下文…"
-                : "当前身份只能观察这项工作"
+              task
+                ? "继续讨论，补充条件或提出修改…"
+                : "你想完成什么？可以先附上材料…"
             }
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
-            disabled={!state.connected || !canRespond}
+            disabled={!canRespond || !state.connected}
           />
           <div className="composer-bottom">
-            <span>
-              <Link2 size={13} />
-              {agent?.name ?? "选择 Agent"}
+            <label className="composer-attach">
+              <Paperclip size={15} />
+              <span>附材料</span>
+              <input
+                type="file"
+                aria-label="Circle 附加材料"
+                accept=".json,.txt,.md,.csv"
+                disabled={!canRespond}
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (file) await attach(file);
+                  e.target.value = "";
+                }}
+              />
+            </label>
+            <span className="composer-hint">
+              {task ? "在同一段会话里继续" : "使用当前项目获准的资料与工具"}
             </span>
-            <span>{task ? "在同一工作中继续" : "使用当前发布版本"}</span>
             <button
               type="submit"
               aria-label="发送消息"
-              disabled={!prompt.trim() || !state.connected || !canRespond}
+              disabled={!prompt.trim() || !canRespond || !state.connected}
             >
-              <ArrowUpRight size={17} />
+              <Send size={15} />
             </button>
           </div>
         </form>
+        <p className="conversation-demo-note">
+          输入留在当前浏览器。模型、设备和代码操作用合成样例演示。
+        </p>
       </section>
-      <aside className="circle-context">
-        <Tabs
-          tabs={[
-            { id: "context", label: "上下文" },
-            { id: "scene", label: "执行现场" },
-          ]}
-          value={side}
-          onChange={setSide}
+      {expanded && task?.workflowState && (
+        <ConversationArtifact
+          task={task}
+          continueWork={continueWork}
+          onClose={() => setExpanded(false)}
         />
-        {side === "context" ? (
-          <>
-            <div className="circle-panel-section">
-              <small>当前工作</small>
-              <h3>{task?.title ?? "尚未委派"}</h3>
-              <KeyValues
-                items={[
-                  { label: "执行 Agent", value: agent?.name },
-                  {
-                    label: "发布版本",
-                    value: task?.agentVersion ?? agent?.version,
-                  },
-                  { label: "产品范围", value: task?.product ?? agent?.product },
-                  {
-                    label: "资料版本",
-                    value: task?.snapshot ?? state.stableSnapshot,
-                  },
-                ]}
-              />
-            </div>
-            <div className="circle-panel-section">
-              <small>资料与证据</small>
-              {task?.evidence.map((id) => (
-                <button
-                  className="context-reference"
-                  key={id}
-                  onClick={() => openEvidence(id)}
-                >
-                  <FileText size={15} />
-                  <div>
-                    <b>{state.artifacts.find((a) => a.id === id)?.title}</b>
-                    <small>{id}</small>
-                  </div>
-                </button>
-              ))}
-              {!task?.evidence.length && (
-                <p className="context-note">
-                  运行后取得的原始记录会在这里关联。
-                </p>
-              )}
-            </div>
-            <div className="circle-panel-section">
-              <small>人员参与</small>
-              <p className="context-note">
-                需要具体动作批准、补充资料或接管时，在同一项工作中发出请求并保存回应。
-              </p>
-            </div>
-          </>
-        ) : task ? (
-          <>
-            <div className="mini-terminal">
-              <div>
-                <Terminal size={13} />
-                {task.session || "尚未建立"}
-                <Badge>同一会话</Badge>
-              </div>
-              <pre>
-                {state.artifacts.find((a) => a.id === task.evidence[0])
-                  ?.output ?? "[尚无输出样例]"}
-              </pre>
-            </div>
-            <div className="browser-preview">
-              <div>
-                <Globe size={13} />
-                关联操作 {task.operation}
-              </div>
-              <section>
-                <span>产品页面与终端由执行服务持有</span>
-                <h4>{task.worker}</h4>
-                <div>
-                  <i className="status-dot" />
-                  查看与控制分别授权
-                </div>
-              </section>
-            </div>
-            <Button small onClick={() => openScene(task.id)}>
-              展开终端与 Web 现场
-              <ArrowUpRight size={13} />
-            </Button>
-          </>
-        ) : (
-          <Empty
-            title="尚无执行现场"
-            description="委派工作后再关联目标和实际操作。"
-          />
-        )}
-      </aside>
+      )}
       {connection && (
         <Modal
           title="连接 Circle Server"
@@ -491,14 +535,9 @@ export default function CircleView() {
             />
             <small>这里只展示配置，不访问填写的地址或接收口令。</small>
           </label>
-          <KeyValues
-            items={[
-              { label: "登录身份", value: "公司身份来源，由 server 校验" },
-              { label: "项目与环境", value: "选择当前身份有权访问的范围" },
-              { label: "能力协商", value: "客户端 / 插件 / API 版本与能力" },
-              { label: "凭据", value: "受控存储引用，不写入提示词和 Git" },
-            ]}
-          />
+          <Notice>
+            正式连接使用公司身份和获准项目，使用平台不以 OpenAI 账号为前提。
+          </Notice>
           <div className="dialog-actions">
             <Button onClick={() => setConnection(false)}>关闭</Button>
             <Button
@@ -508,17 +547,11 @@ export default function CircleView() {
                 setConnection(false);
               }}
             >
-              演示重新连接
+              保存演示配置
             </Button>
           </div>
         </Modal>
       )}
     </div>
   );
-}
-function InboxGlyph() {
-  return <WorkflowIcon />;
-}
-function WorkflowIcon() {
-  return <Bot size={16} />;
 }
