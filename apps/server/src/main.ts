@@ -3,7 +3,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { mkdir } from 'node:fs/promises';
 import { z } from 'zod';
 import { API_VERSION, MAX_BODY_BYTES, MAX_SOURCE_BYTES, MAX_WORKER_REPORT_BYTES, ApiError, SubmitRequest,
-  InputRequest, OperationRequest, TaskId, ScopeId, SourceUpload, Base64Content, MindmapCompileInput, MindmapPack, DevLoginRequest, requireCondition } from '../../../packages/contracts/src/index.ts';
+  InputRequest, OperationRequest, ApprovalProposal, ApprovalRequest, TaskId, ScopeId, SourceUpload, Base64Content, MindmapCompileInput, MindmapPack, DevLoginRequest, requireCondition } from '../../../packages/contracts/src/index.ts';
 import { Store } from '../../../packages/storage/src/index.ts';
 import { taskMigration } from '../../../packages/tasks/src/migration.ts';
 import { Auth } from '../../../packages/tasks/src/auth.ts';
@@ -15,11 +15,13 @@ import { LocalObjects } from '../../../packages/knowledge/src/objects.ts';
 import { executionMigration } from '../../../packages/execution/src/migration.ts';
 import { Operations } from '../../../packages/execution/src/operations.ts';
 import { resourceMigration } from '../../../packages/execution/src/resource-migration.ts';
+import { approvalMigration } from '../../../packages/tasks/src/approval-migration.ts';
+import { Approvals } from '../../../packages/tasks/src/approvals.ts';
 import { MindmapRunner } from './mindmap-runner.ts';
 
 function environment(name: string): string { const value = process.env[name]; if (!value) throw new Error(`Required environment variable: ${name}`); return value; }
 const store = new Store(JSON.parse(environment('CIRCLE_SERVER_DATABASE_CONFIG')));
-await store.migrate([taskMigration,mindmapTaskMigration,knowledgeMigration,executionMigration,resourceMigration]);
+await store.migrate([taskMigration,mindmapTaskMigration,knowledgeMigration,executionMigration,resourceMigration,approvalMigration]);
 const auth = new Auth(store);
 requireCondition(process.env.CIRCLE_SERVER_DEV_AUTH === '1', 'INVALID_PAYLOAD', 'Phase one requires explicitly enabled development authentication');
 await auth.initializeDevelopment(environment('CIRCLE_SERVER_DEV_IDENTITIES'));
@@ -27,6 +29,7 @@ await mkdir(environment('CIRCLE_SERVER_DATA_DIR'), { recursive: true, mode: 0o70
 const tasks = new Tasks(store, auth, Number(process.env.CIRCLE_SERVER_INPUT_TTL_MS ?? 300_000));
 const knowledge = new Knowledge(store,auth,new LocalObjects(environment('CIRCLE_SERVER_DATA_DIR')));
 const execution = new Operations(store,auth,tasks,knowledge);
+const approvals=new Approvals(store,auth,tasks);execution.approvalCheck=(tx,task,spec)=>approvals.check(tx,task,spec);
 const mindmaps = new MindmapRunner(store,tasks,knowledge,execution);
 let closing = false;
 
@@ -105,6 +108,11 @@ const server = createServer(async (request, response) => {
         return tasks.submit(ctx,submission,tx);
       });
       send(response,202,{ data:accepted }); return;
+    }
+    const approvalRoute=/^\/v1\/tasks\/([^/]+)\/approvals(?:\/([^/]+))?$/.exec(url.pathname);
+    if(approvalRoute&&request.method==='POST'){
+      const taskId=TaskId.parse(approvalRoute[1]);
+      send(response,200,{data:approvalRoute[2]?await approvals.respond(ctx,taskId,approvalRoute[2],ApprovalRequest.parse(await body(request))):await approvals.propose(ctx,taskId,ApprovalProposal.parse(await body(request)))});return;
     }
     const operationRoute=/^\/v1\/tasks\/([^/]+)\/operations$/.exec(url.pathname);
     if(operationRoute){const id=TaskId.parse(operationRoute[1]);

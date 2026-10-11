@@ -119,6 +119,7 @@ export const OperationRequest = z.object({ inputRevisionId: InputRevisionId, nam
   idempotencyKey: z.string().min(8).max(200), deadlineMs: z.number().int().min(1).max(3_600_000).default(300_000),
   approvalId: z.string().optional() });
 export type OperationRequest = z.infer<typeof OperationRequest>;
+export const ApprovalProposal = OperationRequest.omit({idempotencyKey:true,deadlineMs:true,approvalId:true});
 export const actionDigest = (value: Pick<OperationRequest, 'inputRevisionId' | 'name' | 'target' | 'targetIdentity' | 'args'>): string => canonicalHash({
   inputRevisionId: value.inputRevisionId, name: value.name, target: value.target,
   targetIdentity: value.targetIdentity, args: value.args,

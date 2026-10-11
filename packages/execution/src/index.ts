@@ -96,7 +96,8 @@ export class Execution {
   async complete(tx: Transaction, row: any, status: 'succeeded' | 'failed', receipt: unknown): Promise<void> {
     await tx.query('UPDATE operations SET status=$2,result=$3,updated_at=clock_timestamp() WHERE operation_id=$1', [row.operation_id,status,JSON.stringify(receipt)]);
     await tx.query('DELETE FROM leases WHERE operation_id=$1', [row.operation_id]);
-    await this.tasks.emit(tx,row.task_id,`operation.${status}`,{ operationId: row.operation_id,workerId: row.worker_id,fencingToken: Number(row.fencing_token) });
+    await this.tasks.emit(tx,row.task_id,`operation.${status}`,{operationId:row.operation_id,
+      ...(row.worker_id?{workerId:row.worker_id,fencingToken:Number(row.fencing_token)}:{executionStarted:false})});
     await this.tasks.wake(tx,row.task_id,'worker-receipt');
   }
   async expire(): Promise<void> {
