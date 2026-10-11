@@ -1,0 +1,86 @@
+{
+  "schema": "circle-server.local-acceptance/1",
+  "runtimeCommit": "9ab3c8b47896a0e3b32cd24da8380e8fc40e6621",
+  "branch": "server-s1",
+  "scope": "Ordinary-client read-only task and approval APIs with real temporary PostgreSQL and synthetic identities",
+  "verificationTiming": "The full suite passed immediately before committing these unchanged runtime files",
+  "beforeImplementation": {
+    "runtimeCommit": "260d2e9",
+    "acceptanceFile": "tests/acceptance/client-read.test.ts",
+    "passed": 0,
+    "failed": 3,
+    "failure": "HTTP 404 TARGET_NOT_FOUND for the missing routes"
+  },
+  "clientRoutes": {
+    "tasks": {
+      "method": "GET",
+      "path": "/v1/tasks",
+      "grant": "tasks.read",
+      "querySchema": "TaskListQuery",
+      "responseSchema": "TaskView[]",
+      "defaultLimit": 20,
+      "minimumLimit": 1,
+      "maximumLimit": 100,
+      "sort": "created_at DESC, task_id DESC",
+      "visibility": "Authenticated tenant and live authorized scopes; filtered before LIMIT"
+    },
+    "approvals": {
+      "method": "GET",
+      "path": "/v1/tasks/{taskId}/approvals",
+      "grant": "tasks.read",
+      "responseSchema": "ApprovalView[]",
+      "shape": "Existing Approvals.view",
+      "sort": "created_at ASC, approval_id ASC",
+      "history": "All task records including earlier input revisions"
+    }
+  },
+  "commands": {
+    "node --test tests/acceptance/client-read.test.ts": "3 passed, 0 failed",
+    "npm run typecheck": "passed",
+    "npm test": "passed",
+    "npm run verify:references": "passed; 714 original files",
+    "git diff --check": "passed"
+  },
+  "tests": {
+    "contracts": 4,
+    "methods": 4,
+    "acceptance": 25,
+    "references": 7,
+    "passed": 40,
+    "failed": 0,
+    "skipped": 0
+  },
+  "acceptanceDurationMs": 110190.143958,
+  "scenes": {
+    "1": "passed",
+    "2": "passed",
+    "3": "passed",
+    "4": "passed",
+    "5": "passed",
+    "6": "passed",
+    "7": "passed",
+    "8": "passed"
+  },
+  "assertions": [
+    "Default 20, minimum 1 and maximum 100 with more than 100 visible persisted tasks",
+    "Limits 0, -1, 101, 1.5, NaN, Infinity, abc and an empty limit fail with INVALID_PAYLOAD",
+    "Newer hidden-scope and other-tenant tasks are excluded before limiting",
+    "Authorized peer-created tasks remain readable and input changes do not reorder creation time",
+    "TaskView includes current revisions, capability metadata and pending requests",
+    "Only tasks.read is sufficient; admin and approval-write permissions remain independent",
+    "Scope removal and read-grant revocation apply to existing tokens",
+    "Approval records retain original shape, earlier revisions, open/approved/declined statuses and nullable approvedBy",
+    "Cross-scope and cross-tenant approval reads fail with FORBIDDEN_SCOPE",
+    "Approval GET does not create decisions or change approval and task-event counts",
+    "Existing graceful restart regressions and mindmap HTTP/worker compatibility pass in the full suite"
+  ],
+  "nodeVersion": "24.17.0",
+  "postgresVersion": "18.4",
+  "archiveFilesVerified": 714,
+  "circleWorktreeModified": false,
+  "circleDesktopReplayThisRun": false,
+  "paidOrRealModelCalled": false,
+  "realDeviceOrEnterpriseSystemConnected": false,
+  "pushed": false,
+  "deployed": false
+}

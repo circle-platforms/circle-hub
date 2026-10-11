@@ -177,3 +177,17 @@ dev:stack 已随本阶段提供两个 worker、独立 approver 和服务身份�
 | 类型 / 依赖 / 差异 | typecheck 与 diff 检查通过，npm audit 0 个已报告漏洞 |
 
 [本次复核与验收摘要](validation/admin-graceful-restart-acceptance.json)记录修复前的失败与十轮重复结果；原单轮 JSON 保留原提交和结果。本次继续使用临时 PostgreSQL 与合成资源，未重跑 Circle/Otty、未调用真实模型或连接真实设备/企业系统。后续仅提交这份记录与 README，不改变已验证运行代码；本地提交、不 push。
+
+## 12：普通用户任务与审批读取（2026-10-12）
+
+先写 `tests/acceptance/client-read.test.ts` 的三条 HTTP 验收，再实现接口。在原运行代码 `260d2e9` 上三条都因路径不存在返回 404 `TARGET_NOT_FOUND`，0/3。实现后独立验收 3/3、typecheck 通过；随后完整检查通过后，本地提交代码、契约、测试与交接文档为 `9ab3c8b`。
+
+`CLIENT_ROUTES.tasks` 定义 `GET /v1/tasks`、`TaskListQuery` 与 `TaskView[]`：只需 `tasks.read`，先过滤实时策略允许的 tenant/scope，再按创建时间倒序截取；相同时间以 taskId 倒序稳定排序。limit 缺省 20，合法整数范围 1–100，非法值为 400 `INVALID_PAYLOAD`。C 的列表复用 status 读取，保持当前输入修订、能力包字段和 pendingInputs；授权范围内其他人创建的任务也按既有读取权限返回。
+
+`CLIENT_ROUTES.approvals` 定义 `GET /v1/tasks/{taskId}/approvals` 与 `ApprovalView[]`：按该任务检查 `tasks.read`、tenant 和 scope 后复用 `approvals.view`，返回全部修订的历史记录；跨 scope/tenant 拒绝为 `FORBIDDEN_SCOPE`。读取无需管理或批准权限，不会修改审批、生成决定或事件。交接文档补入查询边界、排序、nullable approvedBy、旧批准的修订绑定与完整字段；原脑图调用保持兼容。
+
+验收通过真实 HTTP 受理 100 多个可读任务，另建创建时间更晚、但不可见的 scope/tenant 任务，核对过滤发生在 limit 前；也覆盖默认值/1/100、0/负数/101/小数/非数字/空值拒绝、跨创建人可读、改输入后创建顺序不变、只读身份、现存 token 的授权撤回以及空列表。审批测试保留旧修订 approved、新修订 declined/open 三种记录，核对形状、权限拒绝、缺失/非法 taskId 和读前读后的决定/事件数量。
+
+完整检查在与 `9ab3c8b` 相同的运行文件上于提交前实际执行：contracts 4/4、methods 4/4、acceptance 25/25、references 7/7，总计 40/40，无失败、跳过或待办；acceptance 约 110.19 秒。八幕、三条重启回归和脑图 HTTP/worker 边界都通过，另有 typecheck、714 原件校验与 diff 检查通过。详见[本次验收摘要](validation/client-read-acceptance.json)。
+
+本次只提供 server 的普通用户读取 API；Circle 桌面组件/运行扩展由 Claude 配对，未在这里执行桌面组合验收。主工作树与 Circle 保持不动，未连接真实模型、设备或企业系统。本节与摘要/README 的后续提交只记录已完成验收，运行代码保持原字节；本地提交、不 push。

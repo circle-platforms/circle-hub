@@ -30,7 +30,9 @@ Circle 和 server 分别发布，默认连接插件留在 Circle，不另建插�
 
 [Circle 客户端接口交接](docs/client-api-handoff.md) · [第一阶段进度与实际验收](docs/server-s1-progress.md) · [参考采用清单](docs/server-s1-adoption.md)
 
-第一阶段八幕的本地合成验收、完整 LBX 审批/修正故事和 admin 命令已经通过，最新整套检查 37/37。优雅重启的间歇失败已修复，原案例与两条新增回归验收连续十轮通过，共 30/30。Bugzilla/Jira 角色替换、OpenKM 文档取回与转换、worker 中断后的独立核对、当前修订事实交付均由新的 TypeScript 模块实现；管理命令见[说明](docs/admin-cli.md)。真实 Otty/Circle 脑图组合观察已单独登记，Circle 插件仍由 Claude 维护，本分支未修改 Circle。
+第一阶段八幕的本地合成验收、完整 LBX 审批/修正故事和 admin 命令已经通过，最新整套检查 40/40。优雅重启的间歇失败已修复，原案例与两条新增回归验收在修复时连续十轮通过，共 30/30。Bugzilla/Jira 角色替换、OpenKM 文档取回与转换、worker 中断后的独立核对、当前修订事实交付均由新的 TypeScript 模块实现；管理命令见[说明](docs/admin-cli.md)。真实 Otty/Circle 脑图组合观察已单独登记，Circle 插件仍由 Claude 维护，本分支未修改 Circle。
+
+普通用户可通过 `GET /v1/tasks?limit=N` 和 `GET /v1/tasks/{taskId}/approvals` 读取授权范围内的任务与审批记录，只需 `tasks.read`。字段、排序与查询边界见[客户端接口交接](docs/client-api-handoff.md)。
 
 这些结果覆盖开发身份、临时 PostgreSQL 和合成设备/企业系统，真实模型、真实设备/企业系统、生产认证与部署兼容仍需后续授权和验收。原参考中的历史结果不作为新 server 的验收结果。本阶段没有 push、发布或部署。
 
