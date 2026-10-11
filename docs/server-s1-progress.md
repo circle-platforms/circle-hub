@@ -54,4 +54,37 @@
 
 [客户端交接文档](client-api-handoff.md)固定登录、上传、能力包、提交、状态、事件、结果、原件/制品下载和 input 的路径、schema、错误及重试行为，可交给 Claude 接入。所有工作只在 server-s1 提交；未 push、开 PR、改 GitHub 或部署。
 
-仍缺：真实 Otty/Circle 连接插件联合验收，原 brief 第 5–8 幕的 LBX 资源核对/设备审批/连接器全套行为、完整 admin 与 MCP。现有 D 仅用于脑图 worker，不能宣称设备执行端、独立设备核对或远端停止已经验证。
+server 交接时仍缺：真实 Otty/Circle 连接插件联合验收，原 brief 第 5–8 幕的 LBX 资源核对/设备审批/连接器全套行为、完整 admin 与 MCP。该时点 D 仅用于脑图 worker，尚未验证设备执行端、独立设备核对或远端停止。
+
+## 4：真实 Otty/Circle 组合验收（Claude 观察，用户提供）
+
+用户提供了 Claude 在真实 Otty 终端完成的观察，按本节登记。Codex 此次只整理记录，没有重跑该演示或读取其 scratch 数据；上一节的 HTTP/PTY 验证及其 JSON 中的 false 标志仍保留原范围，不改写成这次组合结果。
+
+| 环境 | 本次观察 |
+|---|---|
+| 客户端 | Circle 1.1.1，工作树 `../circle-extension-capabilities`，本地提交 `e60ed96`，内置连接插件 `circle-server` 0.1.0 |
+| 客户端隔离与模型 | scratch `CIRCLE_HOME`，本地脚本模型桩，未调用真实模型 |
+| server | `npm run dev:stack`，`http://127.0.0.1:7410`，PostgreSQL 18.4，worker `lab-east-01` |
+| 身份与范围 | 开发登录 `developer`，scope `scp_lab`；密码经 Circle 掩码卡输入，token 存入插件秘密存储，未进入会话。此处不保存密码或 token |
+
+任务 1 使用 `LBX-200-upgrade.xmind`，由冻结 `smp-v05-01-content.json` 打包：
+
+| 记录 | 值 |
+|---|---|
+| 源文件 SHA-256 | `f4678f70519c988382cc6c8140d300e85b138e728656dc21f463c6a5abec2196` |
+| sourceRevisionId | `src_1871691ac19148a0894c881b89f1cf4a` |
+| taskId | `task_50e7f1bcdb43495ca2faa981534c20d9` |
+| inputRevisionId | `inrev_10e0d16ed2b0487cb09f22d7264677e7` |
+| 事件与结果 | 事件 1–8，推进至 `delivered` / `succeeded` |
+| artifactId | `art_df1de0df6ea74bf78eb80d1cd7a09f8e` |
+| 产物 SHA-256 | `6207a5c6f75a2807f4fd0a8e3b7c897eec32c26bafef1c8b34a5af86fc535e69` |
+| 产物大小 | 8703 字节；客户端重算 SHA 与引用一致 |
+| evidenceId | `evd_e2c02d34be714cc58cf4639cfc64919b` |
+
+Claude 用 Python `zipfile` + XML 独立读取下载的工作簿，8 行与 `smp-v05-02` 的 `expectedRows` 逐格一致，层级深度为数值单元格，说明表源 SHA 与上传文件一致。该 Python 读取用于外部独立验收，不成为 TypeScript 编译运行链。同一文件重提返回同一任务，`deduplicated` 为 true。
+
+任务 2 使用 dev:stack 生成的 `synthetic-mindmap.xmind`：taskId `task_308d759d63b44c5ba4786bb304129afe`，事件 9–16，`delivered` / `succeeded`，3 行，artifactId `art_34ffb54ac3f74552bb65731bc7077f59`。用户提供的产物 SHA 前缀为 `dc72e4640389`；本节只登记此前缀，不从之前的独立运行补全本次完整摘要。
+
+关闭 Circle 后在新的 Otty 标签重开，`/server tasks` 从 server 取回两个任务的状态；`/server task` 按插件保存的游标补读，未重复下载。
+
+据这份观察，脑图编译经真实 Otty/Circle 的登录、上传、受理、事件、交付、下载、幂等及重连场景记为通过。原 brief 第 5–8 幕的 worker/资源核对、设备审批、交付清单和连接器全套行为，以及完整 admin 仍需继续完成；本节不扩大到真实模型、真实设备、企业系统或部署验收。
