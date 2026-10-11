@@ -3,7 +3,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { mkdir } from 'node:fs/promises';
 import { z } from 'zod';
 import { API_VERSION, MAX_BODY_BYTES, MAX_SOURCE_BYTES, MAX_WORKER_REPORT_BYTES, ApiError, SubmitRequest,
-  InputRequest, OperationRequest, ApprovalProposal, ApprovalRequest, TaskId, ScopeId, SourceUpload, Base64Content, MindmapCompileInput, MindmapPack, DevLoginRequest, requireCondition } from '../../../packages/contracts/src/index.ts';
+  InputRequest, OperationRequest, ApprovalProposal, ApprovalRequest, ConclusionRequest, ChecklistRequest, ChecklistResponse, InputRevisionId, TaskId, ScopeId, SourceUpload, Base64Content, MindmapCompileInput, MindmapPack, DevLoginRequest, requireCondition } from '../../../packages/contracts/src/index.ts';
 import { Store } from '../../../packages/storage/src/index.ts';
 import { taskMigration } from '../../../packages/tasks/src/migration.ts';
 import { Auth } from '../../../packages/tasks/src/auth.ts';
@@ -17,19 +17,25 @@ import { Operations } from '../../../packages/execution/src/operations.ts';
 import { resourceMigration } from '../../../packages/execution/src/resource-migration.ts';
 import { approvalMigration } from '../../../packages/tasks/src/approval-migration.ts';
 import { Approvals } from '../../../packages/tasks/src/approvals.ts';
+import { conclusionMigration } from '../../../packages/knowledge/src/conclusion-migration.ts';
+import { Records } from '../../../packages/knowledge/src/records.ts';
+import { Assessments } from '../../../packages/methods/src/assessments.ts';
+import { Checklists } from '../../../packages/tasks/src/checklists.ts';
+import { checklistMigration } from '../../../packages/tasks/src/checklist-migration.ts';
 import { MindmapRunner } from './mindmap-runner.ts';
 
 function environment(name: string): string { const value = process.env[name]; if (!value) throw new Error(`Required environment variable: ${name}`); return value; }
 const store = new Store(JSON.parse(environment('CIRCLE_SERVER_DATABASE_CONFIG')));
-await store.migrate([taskMigration,mindmapTaskMigration,knowledgeMigration,executionMigration,resourceMigration,approvalMigration]);
+await store.migrate([taskMigration,mindmapTaskMigration,knowledgeMigration,executionMigration,resourceMigration,approvalMigration,conclusionMigration,checklistMigration]);
 const auth = new Auth(store);
 requireCondition(process.env.CIRCLE_SERVER_DEV_AUTH === '1', 'INVALID_PAYLOAD', 'Phase one requires explicitly enabled development authentication');
 await auth.initializeDevelopment(environment('CIRCLE_SERVER_DEV_IDENTITIES'));
 await mkdir(environment('CIRCLE_SERVER_DATA_DIR'), { recursive: true, mode: 0o700 });
 const tasks = new Tasks(store, auth, Number(process.env.CIRCLE_SERVER_INPUT_TTL_MS ?? 300_000));
-const knowledge = new Knowledge(store,auth,new LocalObjects(environment('CIRCLE_SERVER_DATA_DIR')));
+const knowledge = new Records(store,auth,new LocalObjects(environment('CIRCLE_SERVER_DATA_DIR')));
 const execution = new Operations(store,auth,tasks,knowledge);
 const approvals=new Approvals(store,auth,tasks);execution.approvalCheck=(tx,task,spec)=>approvals.check(tx,task,spec);
+const assessments=new Assessments(store,tasks,knowledge),checklists=new Checklists(store,tasks,knowledge);
 const mindmaps = new MindmapRunner(store,tasks,knowledge,execution);
 let closing = false;
 
@@ -108,6 +114,18 @@ const server = createServer(async (request, response) => {
         return tasks.submit(ctx,submission,tx);
       });
       send(response,202,{ data:accepted }); return;
+    }
+    const professionalRoute=/^\/v1\/tasks\/([^/]+)\/(conclusions|checklist|delivery)(?:\/([^/]+))?$/.exec(url.pathname);
+    if(professionalRoute&&request.method==='GET'&&professionalRoute[2]==='conclusions'){
+      const id=TaskId.parse(professionalRoute[1]);await tasks.load(ctx,id);
+      const records=await store.transaction(async tx=>{const ids=(await tx.query('SELECT conclusion_id FROM conclusions WHERE task_id=$1 ORDER BY created_at,conclusion_id',[id])).rows;
+        return Promise.all(ids.map(row=>knowledge.conclusion(ctx,id,row.conclusion_id,tx)));});send(response,200,{data:records});return;
+    }
+    if(professionalRoute&&request.method==='POST'){
+      const id=TaskId.parse(professionalRoute[1]),action=professionalRoute[2],input=await body(request);
+      if(action==='conclusions')send(response,200,{data:await assessments.assess(ctx,id,ConclusionRequest.parse(input))});
+      else if(action==='checklist')send(response,200,{data:professionalRoute[3]?await checklists.satisfy(ctx,id,professionalRoute[3],ChecklistResponse.parse(input)):await checklists.set(ctx,id,ChecklistRequest.parse(input))});
+      else send(response,200,{data:await checklists.deliver(ctx,id,z.object({inputRevisionId:InputRevisionId}).parse(input).inputRevisionId)});return;
     }
     const approvalRoute=/^\/v1\/tasks\/([^/]+)\/approvals(?:\/([^/]+))?$/.exec(url.pathname);
     if(approvalRoute&&request.method==='POST'){

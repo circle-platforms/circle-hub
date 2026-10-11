@@ -24,7 +24,7 @@ export const ArtifactId = identity('art');
 export const Sha256 = z.string().regex(/^[a-f0-9]{64}$/);
 export const Base64Content = z.string().regex(/^[A-Za-z0-9+/]*={0,2}$/).refine(value =>
   value.length % 4 === 0 && Buffer.from(value,'base64').toString('base64') === value,'Expected canonical standard base64');
-export function newId(prefix: 'task' | 'inrev' | 'op' | 'pin' | 'src' | 'snap' | 'evd' | 'art' | 'rule' | 'audit'): string {
+export function newId(prefix: 'task' | 'inrev' | 'op' | 'pin' | 'src' | 'snap' | 'evd' | 'art' | 'rule' | 'audit' | 'rec'): string {
   return `${prefix}_${randomUUID().replaceAll('-', '')}`;
 }
 export function sha256(bytes: string | Uint8Array): string {
@@ -95,7 +95,7 @@ export const SourceUpload = z.object({ scopeId: ScopeId, fileName: z.string().mi
 export const SourceReference = z.object({ sourceRevisionId: SourceRevisionId, sha256: Sha256, size: z.number().int().nonnegative(), fileName: z.string(), scopeId: ScopeId });
 export const MindmapCompileInput = z.object({ sourceRevisionId: SourceRevisionId, sourceSha256: Sha256.optional() });
 export const ArtifactReference = z.object({ artifactId: ArtifactId, sha256: Sha256, size: z.number().int().positive(),
-  fileName: z.string(), mediaType: z.literal('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'),
+  fileName: z.string(), mediaType: z.enum(['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','application/json','text/plain']),
   downloadPath: z.string() });
 export const UnmappedElement = z.object({ path: z.string(), reason: z.string() });
 export type UnmappedElement = z.infer<typeof UnmappedElement>;
@@ -120,6 +120,11 @@ export const OperationRequest = z.object({ inputRevisionId: InputRevisionId, nam
   approvalId: z.string().optional() });
 export type OperationRequest = z.infer<typeof OperationRequest>;
 export const ApprovalProposal = OperationRequest.omit({idempotencyKey:true,deadlineMs:true,approvalId:true});
+export const ConclusionRequest=z.object({inputRevisionId:InputRevisionId,kind:ConclusionKind,methodId:z.literal('lbx-healthcheck').optional(),
+  evidenceIds:z.array(z.string().regex(/^evd_/)).max(16).default([]),judgment:z.enum(['supports','refutes','abstained']).default('abstained'),rationale:z.string().max(2000).default('')});
+export const ChecklistPredicate=z.enum(['assessment-completed','configuration-conforms','professional-opinion','defect-reviewed','comment-reconciled','documents-converted']);
+export const ChecklistRequest=z.object({inputRevisionId:InputRevisionId,items:z.array(z.object({itemId:z.string().min(1).max(100),requiresFact:z.boolean(),required:z.boolean(),predicate:ChecklistPredicate})).min(1).max(30)});
+export const ChecklistResponse=z.object({inputRevisionId:InputRevisionId,conclusionId:z.string().regex(/^rec_/)});
 export const actionDigest = (value: Pick<OperationRequest, 'inputRevisionId' | 'name' | 'target' | 'targetIdentity' | 'args'>): string => canonicalHash({
   inputRevisionId: value.inputRevisionId, name: value.name, target: value.target,
   targetIdentity: value.targetIdentity, args: value.args,
