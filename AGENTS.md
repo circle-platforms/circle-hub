@@ -2,9 +2,11 @@
 
 ## Current scope
 
-This is the private circle-server repository. The user has authorized creating it from Circle and organizing the previous infosec-platform code as references, committing and publishing that initialization. No production server, device/browser experiment, dependency installation, deployment or external model spending is authorized by this step.
+This is the private circle-server repository. On 2026-10-12 the user authorized phase one in docs/server-build-brief.md: new TypeScript application, package and acceptance-test directories; exact-version dependencies and a committed lockfile; local server and worker processes with synthetic resources; and real PostgreSQL through the exact-version embedded-postgres npm package in temporary directories and databases. Work in the isolated server-s1 branch and commit scoped changes there. If embedded-postgres cannot run locally, stop and ask; do not substitute SQLite or an in-memory database.
 
-Read README.md, docs/bootstrap.md and references/README.md first. The product boundaries follow infosec-platform ADR 0028. Circle remains a generic harness; its default plugin library owns the optional server connector. Do not create a separate connector repository, connector Project or Web administration site.
+Push, PR creation, GitHub settings or release-workflow changes, and any deployment require a further user decision. Paid or real models, real devices or enterprise systems, real Circle user data, Python runtime dependencies, and changes to Circle's repository are outside this authorization. Use scripted models and synthetic connector stubs only. Do not modify foundation/circle or references bytes or import their archived modules into runtime entry points.
+
+Read README.md, docs/bootstrap.md, references/README.md, docs/bcde-integration-plan.md and docs/server-build-brief.md first. The product boundaries follow infosec-platform ADR 0028. Circle remains a generic harness; its default plugin library owns the optional server connector in the next phase. Do not create a separate connector repository, connector Project or Web administration site. The authenticated HTTP API and circle-server admin CLI share one authorization path.
 
 ## Source and reference ownership
 
