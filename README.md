@@ -24,7 +24,13 @@ Circle 的企业 Agent 服务端，面向网络安全产品的研发、测试、
 
 Circle 和 server 分别发布，默认连接插件留在 Circle，不另建插件项目。共同代码通过来源记录和同步 PR 管理；兼容清单固定实际验证的客户端、API、worker、能力包和数据库版本。详见[工程计划](https://github.com/qingshanfeihu/infosec-platform/blob/main/docs/circle-server-plan.md)。
 
-当前还没有正式的 server/API 或管理端启动入口。此轮完成仓库、来源基线和参考归档；没有安装平台依赖、启动实验服务、调用模型或连接设备。原参考中的历史结果不作为新 server 的验收结果。
+开发分支已有认证 HTTP API、PostgreSQL 持久任务、独立 worker 和自写 TypeScript `mindmap-compile` 能力包。可上传 XMind 2020+ 的 `.xmind` / `content.json` 或主题树 JSON，生成固定两表七列 `.xlsx`，由独立读取器回读核对后交付。原件、IR 核验记录和工作簿保存 SHA-256；同键重提复用任务，同源内容跨键重提复用制品；未映射元素以 partial 披露。
+
+使用 Node.js 24，在本目录运行 `npm ci`，再运行 `npm run dev:stack`。命令启动临时真实 PostgreSQL、server 和 worker，打印仅本机可访问的地址、开发登录方式及合成 XMind 文件路径。Ctrl+C 停止并删除本次临时环境。它不使用现有 compile-excel skill、InfoTest 或 Python。
+
+[Circle 客户端接口交接](docs/client-api-handoff.md) · [第一阶段进度与实际验收](docs/server-s1-progress.md) · [参考采用清单](docs/server-s1-adoption.md)
+
+当前验收覆盖 HTTP/worker 脑图故事与 C 的前四幕；真实 Otty/Circle 组合演示、LBX 设备执行、连接器、设备审批及完整 admin 命令仍待后续完成。Circle 连接插件由 Claude 在 Circle 仓库实现。本分支没有修改 Circle 或发布、部署服务；原参考中的历史结果仍不作为新 server 的验收结果。
 
 ## 核对参考原件
 

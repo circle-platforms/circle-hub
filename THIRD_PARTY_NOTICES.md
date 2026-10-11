@@ -18,7 +18,11 @@ Circle 的旧 Git 历史也被保留，历史各版本的许可和通知仍属�
 
 ## 依赖记录与实际制品
 
-根 package 没有外部依赖。共享基础及参考包的锁文件记录了各自的依赖，但本仓库没有收录 node_modules，也没有以这些依赖构建或发行 server 制品。
+根 package 的当前直接运行依赖是 `pg@8.23.1`、`zod@4.6.5`、`exceljs@4.4.0`、`fflate@0.8.3` 和 `read-excel-file@9.3.12`，均按其发布包的 MIT 许可使用。开发依赖包括 MIT 的 `embedded-postgres@18.4.0-beta.17`、MIT 的类型声明，以及 Apache-2.0 的 TypeScript 5.9.3。嵌入式 PostgreSQL 的实际二进制与上游组件继续遵循其各自许可，不由 wrapper 的 MIT 替代。
+
+精确版本、下载完整性和传递依赖见根 `package-lock.json`。ExcelJS 的 uuid 依赖固定覆写为支持相同 CommonJS v4 API 的 `11.1.1`，修复 npm audit 检出的缓冲区越界公告；当前锁文件检查无已报告漏洞。组成检查仅说明本次依赖，不承诺未来公告状态。没有收录 node_modules 或发行 server 制品。
+
+共享基础及参考包的历史锁文件仍记录各自原依赖，未用于新 server 的构建入口。
 
 采用模块时核对实际使用的依赖，分发时随制品提供相应许可与通知。当前锁文件中的特别范围包括 jszip 的许可选项、pako 的 MIT/Zlib、lightningcss 的 MPL-2.0 和 caniuse-lite 的 CC-BY-4.0。它们不能一概改成项目 MIT。
 

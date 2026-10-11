@@ -1,0 +1,37 @@
+{
+  "transport": "HTTP against a dev stack started in a PTY",
+  "circleClientVerified": false,
+  "ottyApplicationVerified": false,
+  "postgresVersion": "18.4",
+  "taskId": "task_88d005ed2ffe4167b7f0a38dc57131f8",
+  "inputRevisionId": "inrev_7fab566dcccd4cfc96db6e44182cd440",
+  "operationId": "op_47f8dd132d5a4736b1306610edd084d7",
+  "workerId": "lab-east-01",
+  "fencingToken": 1,
+  "status": "succeeded",
+  "sourceSha256": "5db7b295890ea9513b49debee2914a3f65f6ac8549533400eec50e0928ac26ed",
+  "artifactSha256": "dc72e4640389bfd082926a6dd19ed1a9003b9af0141de5baf062224296eae88e",
+  "artifactSize": 8445,
+  "verification": {
+    "reader": "read-excel-file/9.3.12",
+    "irSha256": "a5c4d8d1f38fcac8df1baa813e63cbdbfc7d79b985c308a49c2685786c2b38e5",
+    "rowCount": 3,
+    "sourceSha256": "5db7b295890ea9513b49debee2914a3f65f6ac8549533400eec50e0928ac26ed",
+    "artifactSha256": "dc72e4640389bfd082926a6dd19ed1a9003b9af0141de5baf062224296eae88e"
+  },
+  "eventKinds": [
+    "task.accepted",
+    "task.running",
+    "operation.accepted",
+    "task.waiting-worker",
+    "operation.running",
+    "operation.succeeded",
+    "task.verifying",
+    "task.delivered"
+  ],
+  "resourcesRemovedAfterCtrlC": true,
+  "apiVersion": "1.0.0",
+  "capabilityPackId": "mindmap-compile",
+  "packVersion": "1.0.0",
+  "mappingRulesVersion": "1.0.0"
+}

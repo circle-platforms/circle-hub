@@ -2,55 +2,131 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { setTimeout as delay } from 'node:timers/promises';
 import { mkdir } from 'node:fs/promises';
 import { z } from 'zod';
-import { API_VERSION, MAX_BODY_BYTES, ApiError, SubmitRequest, InputRequest, TaskId, requireCondition } from '../../../packages/contracts/src/index.ts';
+import { API_VERSION, MAX_BODY_BYTES, MAX_SOURCE_BYTES, MAX_WORKER_REPORT_BYTES, ApiError, SubmitRequest,
+  InputRequest, TaskId, ScopeId, SourceUpload, Base64Content, MindmapCompileInput, MindmapPack, DevLoginRequest, requireCondition } from '../../../packages/contracts/src/index.ts';
 import { Store } from '../../../packages/storage/src/index.ts';
 import { taskMigration } from '../../../packages/tasks/src/migration.ts';
 import { Auth } from '../../../packages/tasks/src/auth.ts';
 import { Tasks } from '../../../packages/tasks/src/index.ts';
+import { mindmapTaskMigration } from '../../../packages/tasks/src/mindmap-migration.ts';
+import { knowledgeMigration } from '../../../packages/knowledge/src/migration.ts';
+import { Knowledge } from '../../../packages/knowledge/src/index.ts';
+import { LocalObjects } from '../../../packages/knowledge/src/objects.ts';
+import { executionMigration } from '../../../packages/execution/src/migration.ts';
+import { Execution } from '../../../packages/execution/src/index.ts';
+import { MindmapRunner } from './mindmap-runner.ts';
 
 function environment(name: string): string { const value = process.env[name]; if (!value) throw new Error(`Required environment variable: ${name}`); return value; }
 const store = new Store(JSON.parse(environment('CIRCLE_SERVER_DATABASE_CONFIG')));
-await store.migrate([taskMigration]);
+await store.migrate([taskMigration,mindmapTaskMigration,knowledgeMigration,executionMigration]);
 const auth = new Auth(store);
 requireCondition(process.env.CIRCLE_SERVER_DEV_AUTH === '1', 'INVALID_PAYLOAD', 'Phase one requires explicitly enabled development authentication');
 await auth.initializeDevelopment(environment('CIRCLE_SERVER_DEV_IDENTITIES'));
 await mkdir(environment('CIRCLE_SERVER_DATA_DIR'), { recursive: true, mode: 0o700 });
 const tasks = new Tasks(store, auth, Number(process.env.CIRCLE_SERVER_INPUT_TTL_MS ?? 300_000));
+const knowledge = new Knowledge(store,auth,new LocalObjects(environment('CIRCLE_SERVER_DATA_DIR')));
+const execution = new Execution(store,auth,tasks,knowledge);
+const mindmaps = new MindmapRunner(store,tasks,knowledge,execution);
 let closing = false;
 
-async function body(request: IncomingMessage): Promise<unknown> {
-  requireCondition(request.headers['content-type']?.split(';')[0] === 'application/json', 'INVALID_PAYLOAD', 'JSON content type required');
+async function bytes(request: IncomingMessage, limit: number): Promise<Buffer> {
   const chunks: Buffer[] = []; let size = 0;
   for await (const chunk of request) {
-    size += chunk.length; requireCondition(size <= MAX_BODY_BYTES, 'BODY_TOO_LARGE', 'Request body exceeds the limit'); chunks.push(Buffer.from(chunk));
+    size += chunk.length; requireCondition(size <= limit, 'BODY_TOO_LARGE', 'Request body exceeds the limit'); chunks.push(Buffer.from(chunk));
   }
-  try { return JSON.parse(Buffer.concat(chunks).toString('utf8')); }
+  return Buffer.concat(chunks);
+}
+async function body(request: IncomingMessage, limit = MAX_BODY_BYTES): Promise<unknown> {
+  requireCondition(request.headers['content-type']?.split(';')[0] === 'application/json', 'INVALID_PAYLOAD', 'JSON content type required');
+  const data = await bytes(request,limit);
+  try { return JSON.parse(data.toString('utf8')); }
   catch { throw new ApiError('INVALID_PAYLOAD', 'Invalid JSON'); }
 }
 function send(response: ServerResponse, status: number, data: unknown): void {
   response.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' });
-  response.end(JSON.stringify({ apiVersion: API_VERSION, status: status >= 400 ? 'failed' : 'succeeded', ...data as object }));
+  const object = data as any;
+  const phase = object.data?.phase;
+  const semanticStatus = object.data?.status ?? (phase === 'admitted' ? 'accepted' : phase && !['delivered','failed','cancelled'].includes(phase) ? 'running' : 'succeeded');
+  response.end(JSON.stringify({ apiVersion: API_VERSION, status: status >= 400 ? 'failed' : semanticStatus, ...object }));
+}
+function download(response: ServerResponse, value: { reference: any; bytes: Buffer }): void {
+  response.writeHead(200,{ 'content-type':value.reference.mediaType ?? 'application/octet-stream','content-length':value.bytes.length,
+    'cache-control':'no-store','x-content-sha256':value.reference.sha256,
+    'content-disposition':`attachment; filename*=UTF-8''${encodeURIComponent(value.reference.fileName)}` }); response.end(value.bytes);
+}
+function base64(value: string): Buffer {
+  Base64Content.parse(value);
+  return Buffer.from(value,'base64');
 }
 const server = createServer(async (request, response) => {
   try {
     const url = new URL(request.url ?? '/', 'http://127.0.0.1');
-    if (url.pathname === '/v1/auth/token' && request.method === 'POST') {
-      const input = z.object({ username: z.string().max(100), password: z.string().max(1000), expiresInMs: z.number().int().positive().optional() }).parse(await body(request));
-      send(response, 200, { data: await auth.issue(input.username, input.password, input.expiresInMs) }); return;
+    if (['/v1/auth/token','/v1/auth/dev-login'].includes(url.pathname) && request.method === 'POST') {
+      const input = DevLoginRequest.parse(await body(request));
+      const issued = await auth.issue(input.username,input.password,input.expiresInMs);
+      const identity = await auth.authenticate(`Bearer ${issued.token}`); const policy = await auth.policy(identity);
+      send(response,200,{ data:{ ...issued,tokenType:'Bearer',principalId:policy.principalId,tenantId:policy.tenantId,scopes:policy.scopes } }); return;
     }
     const ctx = await auth.authenticate(request.headers.authorization);
     if (url.pathname === '/v1/status' && request.method === 'GET') { send(response, 200, { data: { apiVersion: API_VERSION, syntheticOnly: true } }); return; }
+    if (url.pathname === '/v1/packs' && request.method === 'GET') {
+      await auth.check(ctx,'methods.use'); send(response,200,{ data:[MindmapPack] }); return;
+    }
+    if (url.pathname === '/v1/sources' && request.method === 'POST') {
+      let source;
+      if (request.headers['content-type']?.split(';')[0] === 'application/octet-stream') {
+        const scopeId = ScopeId.parse(request.headers['x-scope-id']); await auth.check(ctx,'sources.write',scopeId);
+        let fileName: string;
+        try { fileName = decodeURIComponent(z.string().parse(request.headers['x-file-name'])); } catch { throw new ApiError('INVALID_PAYLOAD','A percent-encoded x-file-name header is required'); }
+        source = await knowledge.upload(ctx,scopeId,fileName,await bytes(request,MAX_SOURCE_BYTES));
+      } else {
+        const input = SourceUpload.parse(await body(request,Math.ceil(MAX_SOURCE_BYTES*4/3)+4096));
+        source = await knowledge.upload(ctx,input.scopeId,input.fileName,base64(input.contentBase64));
+      }
+      send(response,201,{ data:source }); return;
+    }
+    const content = /^\/v1\/(sources|artifacts|evidence)\/([^/]+)\/content$/.exec(url.pathname);
+    if (content && request.method === 'GET') {
+      if (content[1] === 'sources') download(response,await knowledge.sourceBytes(ctx,content[2]));
+      else download(response,await knowledge.content(ctx,content[1] === 'artifacts' ? 'artifact' : 'evidence',content[2]));
+      return;
+    }
     if (url.pathname === '/v1/tasks/submit' && request.method === 'POST') {
-      send(response, 202, { data: await tasks.submit(ctx, SubmitRequest.parse(await body(request))) }); return;
+      const submission = SubmitRequest.parse(await body(request));
+      const accepted = await store.transaction(async tx => {
+        if (submission.capabilityPackId === 'mindmap-compile') {
+          await auth.check(ctx,'methods.use',submission.scopeId,tx);
+          const input = MindmapCompileInput.parse(submission.input);
+          const source = await knowledge.source(ctx,input.sourceRevisionId,submission.scopeId,tx);
+          requireCondition(!input.sourceSha256 || input.sourceSha256 === source.sha256,'SOURCE_HASH_MISMATCH','Submitted source hash differs');
+          submission.input = { ...input,sourceSha256:source.sha256 };
+        }
+        return tasks.submit(ctx,submission,tx);
+      });
+      send(response,202,{ data:accepted }); return;
     }
     const match = /^\/v1\/tasks\/([^/]+)\/(status|result|input|cancel|reconcile|events)$/.exec(url.pathname);
     if (match) {
       const taskId = TaskId.parse(match[1]); const action = match[2];
       if ((action === 'status' || action === 'result') && request.method === 'GET') {
-        send(response, 200, { data: await tasks.status(ctx, taskId) }); return;
+        send(response, 200, { data: action === 'result' ? await tasks.result(ctx,taskId) : await tasks.status(ctx, taskId) }); return;
       }
-      if (action === 'input' && request.method === 'POST') { send(response, 200, { data: await tasks.input(ctx, taskId, InputRequest.parse(await body(request))) }); return; }
+      if (action === 'input' && request.method === 'POST') {
+        const input = InputRequest.parse(await body(request)); const task = await tasks.load(ctx,taskId,'tasks.input');
+        if (task.capabilityPackId === 'mindmap-compile') {
+          requireCondition(!!input.replacement,'INVALID_PAYLOAD','Compilation input replacement must supply a source reference');
+          const replacement = MindmapCompileInput.parse(input.replacement);
+          const source = await knowledge.source(ctx,replacement.sourceRevisionId,task.scopeId);
+          requireCondition(!replacement.sourceSha256 || replacement.sourceSha256 === source.sha256,'SOURCE_HASH_MISMATCH','Replacement source hash differs');
+          input.replacement = { ...replacement,sourceSha256:source.sha256 };
+        }
+        send(response,200,{ data:await tasks.input(ctx,taskId,input) }); return;
+      }
       if (action === 'cancel' && request.method === 'POST') { await body(request); send(response, 202, { data: await tasks.cancel(ctx, taskId) }); return; }
+      if (action === 'reconcile' && request.method === 'POST') {
+        await body(request); await tasks.load(ctx,taskId,'tasks.input');
+        send(response,200,{ data:{ ...await tasks.result(ctx,taskId),reconciliation:'No independently observed receipt is available for an unknown compilation' } }); return;
+      }
       if (action === 'events' && request.method === 'GET') {
         const after = z.coerce.number().int().min(0).max(Number.MAX_SAFE_INTEGER).parse(url.searchParams.get('after') ?? 0);
         const waitMs = z.coerce.number().int().min(0).max(30_000).parse(url.searchParams.get('waitMs') ?? 0);
@@ -64,8 +140,35 @@ const server = createServer(async (request, response) => {
         if (!response.destroyed) send(response, 200, { data: { events, after: events.at(-1)?.seq ?? after } }); return;
       }
     }
+    if (url.pathname === '/v1/workers/register' && request.method === 'POST') {
+      await body(request); send(response,200,{ data:await execution.register(ctx) }); return;
+    }
+    if (url.pathname === '/v1/workers/claim' && request.method === 'POST') {
+      await body(request); send(response,200,{ data:await execution.claim(ctx) }); return;
+    }
+    const workerRoute = /^\/v1\/workers\/operations\/([^/]+)\/(preflight|heartbeat|source|report)$/.exec(url.pathname);
+    if (workerRoute) {
+      const id = workerRoute[1]; const action = workerRoute[2];
+      if (action === 'source' && request.method === 'GET') {
+        const fence = z.coerce.number().int().positive().parse(url.searchParams.get('fence'));
+        const { task,source } = await execution.preflight(ctx,id,fence);
+        download(response,await knowledge.sourceBytes({ principalId:task.principalId,tenantId:task.tenantId,kind:'user' },source.sourceRevisionId,task.scopeId)); return;
+      }
+      if (request.method === 'POST') {
+        const input = await body(request,action === 'report' ? MAX_WORKER_REPORT_BYTES : MAX_BODY_BYTES);
+        if (action === 'report') { send(response,200,{ data:await mindmaps.report(ctx,id,input) }); return; }
+        const fence = z.object({ fencingToken:z.number().int().positive() }).parse(input).fencingToken;
+        if (action === 'heartbeat') send(response,200,{ data:await execution.heartbeat(ctx,id,fence) });
+        else { const checked = await execution.preflight(ctx,id,fence); send(response,200,{ data:{ authorized:true,inputRevisionId:checked.task.inputRevisionId,source:checked.source } }); }
+        return;
+      }
+    }
     if (url.pathname.startsWith('/v1/admin/')) {
       const policy = await auth.check(ctx, 'admin.manage');
+      if (url.pathname === '/v1/admin/workers' && request.method === 'GET') {
+        const rows = (await store.pool.query('SELECT worker_id,draining,last_seen FROM workers WHERE tenant_id=$1 ORDER BY worker_id',[policy.tenantId])).rows;
+        send(response,200,{ data:rows.map(row => ({ workerId:row.worker_id,draining:row.draining,lastSeen:row.last_seen.toISOString() })) }); return;
+      }
       if (url.pathname === '/v1/admin/tasks' && request.method === 'GET') {
         const rows = (await store.pool.query('SELECT task_id FROM tasks WHERE tenant_id=$1 AND scope_id=ANY($2::text[])', [policy.tenantId, policy.scopes])).rows;
         send(response, 200, { data: await Promise.all(rows.map(row => tasks.status(ctx, row.task_id))) }); return;
@@ -83,7 +186,7 @@ server.requestTimeout = 10_000; server.headersTimeout = 10_000;
 let running: Promise<void> | undefined;
 const timer = setInterval(() => {
   if (running || closing) return;
-  running = tasks.runOnce().catch(() => { console.error('Durable runner transaction failed; pending work remains in PostgreSQL'); }).finally(() => { running = undefined; });
+  running = tasks.runOnce().then(() => mindmaps.runOnce()).catch(() => { console.error('Durable runner transaction failed; pending work remains in PostgreSQL'); }).finally(() => { running = undefined; });
 }, Number(process.env.CIRCLE_SERVER_POLL_MS ?? 100));
 await new Promise<void>(resolve => server.listen(Number(process.env.CIRCLE_SERVER_PORT ?? 8080), '127.0.0.1', resolve));
 const address = server.address() as { port: number };
@@ -92,5 +195,7 @@ async function shutdown(): Promise<void> {
   if (closing) return; closing = true; clearInterval(timer);
   await new Promise<void>(resolve => { server.close(() => resolve()); server.closeIdleConnections(); });
   await running; await store.pool.end();
+  if (process.connected) process.disconnect();
 }
-process.once('SIGTERM', () => { void shutdown(); }); process.once('SIGINT', () => { void shutdown(); });
+process.on('SIGTERM', () => { void shutdown(); }); process.on('SIGINT', () => { void shutdown(); });
+process.once('disconnect', () => { void shutdown(); });

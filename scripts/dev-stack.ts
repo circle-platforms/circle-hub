@@ -1,0 +1,79 @@
+import { spawn, type ChildProcess } from 'node:child_process';
+import { once } from 'node:events';
+import { randomBytes } from 'node:crypto';
+import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { createServer } from 'node:net';
+import { fileURLToPath } from 'node:url';
+import { zipSync, strToU8 } from 'fflate';
+
+const root = fileURLToPath(new URL('../',import.meta.url));
+const scratch = await mkdtemp(`${tmpdir()}/circle-server-dev-`);
+const socket = createServer(); await new Promise<void>(resolve => socket.listen(0,'127.0.0.1',resolve));
+const port = (socket.address() as { port:number }).port; await new Promise<void>(resolve => socket.close(() => resolve()));
+const dbPassword = randomBytes(24).toString('hex'); const userPassword = randomBytes(18).toString('base64url'); const workerPassword = randomBytes(18).toString('base64url');
+const config = { host:'127.0.0.1',port,user:'circle_synthetic',password:dbPassword,database:'postgres' };
+const children = new Set<ChildProcess>(); let closing = false;
+async function stop(child: ChildProcess): Promise<void> {
+  if (child.exitCode !== null || child.signalCode !== null) return;
+  const exited = once(child,'exit'); child.kill('SIGTERM');
+  const timeout = setTimeout(() => { if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL'); },5000);
+  try { await exited; } finally { clearTimeout(timeout); }
+}
+async function cleanup(): Promise<void> {
+  if (closing) return; closing = true;
+  // Reverse startup order: worker finishes its current local compilation, then server drains HTTP.
+  for (const child of Array.from(children).reverse()) await stop(child);
+  await rm(scratch,{ recursive:true,force:true });
+}
+// npm and the terminal can deliver the same signal twice. Keep handlers installed
+// until cleanup finishes; removing a once handler would let the second signal abort it.
+process.on('SIGINT',() => { void cleanup(); }); process.on('SIGTERM',() => { void cleanup(); }); process.on('SIGHUP',() => { void cleanup(); });
+async function launch(path: string,env: NodeJS.ProcessEnv,type: string): Promise<any> {
+  // Separate groups keep terminal Ctrl+C under this supervisor's ordered shutdown.
+  // IPC disconnect also lets children stop if this supervisor is killed.
+  const child = spawn(process.execPath,[path],{ cwd:root,env,detached:process.platform !== 'win32',stdio:['ignore','pipe','pipe','ipc'] }); children.add(child);
+  child.stderr!.on('data',data => { process.stderr.write(data); });
+  child.once('exit',(code) => { if (!closing) { console.error(JSON.stringify({ type:'dev-stack-child-exited',entryPoint:path,code })); process.exitCode = 1; void cleanup(); } });
+  return new Promise((resolve,reject) => {
+    let output = '';
+    const timeout = setTimeout(() => reject(new Error(`Startup timed out for ${path}`)),20_000);
+    child.once('error',error => { clearTimeout(timeout); reject(error); });
+    child.once('exit',() => { clearTimeout(timeout); reject(new Error(`Startup failed for ${path}`)); });
+    child.stdout!.on('data',data => {
+      output += data.toString();
+      const lines = output.split('\n'); output = lines.pop()!;
+      for (const line of lines) {
+        try { const value = JSON.parse(line); if (value.type === type) { clearTimeout(timeout); resolve(value); } } catch { /* incomplete or human-readable output */ }
+      }
+    });
+  });
+}
+try {
+  const database = await launch('scripts/postgres-process.ts',{ ...process.env,CIRCLE_SERVER_DATABASE_CONFIG:JSON.stringify(config),CIRCLE_SERVER_PG_DIR:`${scratch}/pg` },'postgres-ready');
+  if (closing) throw new Error('Stack startup was stopped');
+  await mkdir(`${scratch}/objects`);
+  await writeFile(`${scratch}/identities.json`,JSON.stringify({ identities:[
+    { username:'developer',password:userPassword,principalId:'prn_developer',tenantId:'tnt_synthetic',kind:'user',
+      scopes:['scp_lab'],grants:['tasks.read','tasks.submit','tasks.input','tasks.cancel','sources.read','sources.write','evidence.read','methods.use','admin.manage'],targets:[],defects:[] },
+    { username:'lab-east-01',password:workerPassword,principalId:'prn_lab_east_01',tenantId:'tnt_synthetic',kind:'worker',workerId:'lab-east-01',
+      scopes:['scp_lab'],grants:['workers.execute'],targets:[],defects:[] },
+  ] }),{ mode:0o600 });
+  const samplePath = `${scratch}/synthetic-mindmap.xmind`;
+  const content = [{ id:'sheet-circle-server',rootTopic:{ id:'root',title:'Circle Server 脑图编译验收',children:{ attached:[
+    { title:'认证与任务',children:{ attached:[{ title:'登录后提交用例',notes:{ plain:{ content:'合成场景；检查身份和 scope' } } },{ title:'重连补读事件' }] } },
+    { title:'制品',children:{ attached:[{ title:'下载并核对工作簿',notes:{ plain:{ content:'两表七列；核对源文件 SHA-256' } } }] } },
+  ] } } }];
+  await writeFile(samplePath,zipSync({ 'content.json':strToU8(JSON.stringify(content)),
+    'metadata.json':strToU8(JSON.stringify({ creator:'circle-server synthetic fixture' })) },{ mtime:new Date('2000-01-01T00:00:00Z') }),{ mode:0o600 });
+  const env = { ...process.env,CIRCLE_SERVER_DATABASE_CONFIG:JSON.stringify(config),CIRCLE_SERVER_DATA_DIR:`${scratch}/objects`,
+    CIRCLE_SERVER_DEV_IDENTITIES:`${scratch}/identities.json`,CIRCLE_SERVER_DEV_AUTH:'1',CIRCLE_SERVER_PORT:process.env.CIRCLE_SERVER_PORT ?? '0' };
+  const server = await launch('apps/server/src/main.ts',env,'ready');
+  await launch('apps/worker/src/main.ts',{ ...env,CIRCLE_SERVER_URL:server.url,CIRCLE_WORKER_USERNAME:'lab-east-01',CIRCLE_WORKER_PASSWORD:workerPassword },'worker-ready');
+  console.log(JSON.stringify({ type:'dev-stack-ready',pid:process.pid,url:server.url,apiVersion:server.apiVersion,
+    login:{ username:'developer',password:userPassword },scopeId:'scp_lab',samplePath,scratchDirectory:scratch,postgresVersion:database.version,syntheticOnly:true }));
+  console.log(`地址：${server.url}\n开发登录：POST /v1/auth/dev-login，用户名 developer，密码 ${userPassword}\n项目：scp_lab\n合成 XMind：${samplePath}\nCtrl+C 停止进程并删除本次临时数据库与制品`);
+} catch (error) {
+  console.error(JSON.stringify({ type:'dev-stack-startup-failed',message:error instanceof Error ? error.message : 'Unknown startup failure' }));
+  process.exitCode = 1; await cleanup();
+}

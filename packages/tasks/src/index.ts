@@ -1,4 +1,4 @@
-import { ApiError, FLOW_VERSION, IDEMPOTENCY_WINDOW_MS, canonicalHash, newId, requireCondition, terminalTask,
+import { ApiError, FLOW_VERSION, MINDMAP_FLOW_VERSION, IDEMPOTENCY_WINDOW_MS, MINDMAP_PACK_VERSION, canonicalHash, newId, requireCondition, terminalTask,
   type AuthContext, type Event, type SubmitRequest, type Task } from '../../contracts/src/index.ts';
 import type { Store, Transaction } from '../../storage/src/index.ts';
 import type { Auth } from './auth.ts';
@@ -6,7 +6,8 @@ import type { Auth } from './auth.ts';
 export function taskFromRow(row: Record<string, any>): Task {
   return { taskId: row.task_id, tenantId: row.tenant_id, scopeId: row.scope_id, principalId: row.principal_id,
     title: row.title, phase: row.phase, inputRevisionId: row.input_revision_id, input: row.input,
-    revision: row.revision, flowVersion: row.flow_version };
+    revision: row.revision, flowVersion: row.flow_version,
+    ...(row.capability_pack_id ? { capabilityPackId: row.capability_pack_id, packVersion: row.pack_version } : {}) };
 }
 export class Tasks {
   store: Store; auth: Auth; inputTtlMs: number;
@@ -32,7 +33,7 @@ export class Tasks {
       requireCondition(policy.kind !== 'worker', 'FORBIDDEN_ACTION', 'Workers cannot submit tasks');
       const keys = [policy.tenantId, request.scopeId, policy.principalId, 'submit', request.idempotencyKey];
       await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [JSON.stringify(keys)]);
-      const hash = canonicalHash({ title: request.title, input: request.input });
+      const hash = canonicalHash({ title: request.title, input: request.input, capabilityPackId: request.capabilityPackId });
       const old = (await client.query(`SELECT * FROM idempotency WHERE tenant_id=$1 AND scope_id=$2 AND principal_id=$3 AND action=$4 AND idem_key=$5
         AND created_at>clock_timestamp()-($6::double precision*interval '1 millisecond')`, [...keys, IDEMPOTENCY_WINDOW_MS])).rows[0];
       if (old) {
@@ -40,9 +41,10 @@ export class Tasks {
         return { ...await this.load(ctx, old.task_id, 'tasks.read', client), deduplicated: true };
       }
       const taskId = newId('task'); const inputRevisionId = newId('inrev');
-      await client.query(`INSERT INTO tasks(task_id,tenant_id,scope_id,principal_id,title,phase,input_revision_id,input,flow_version)
-        VALUES($1,$2,$3,$4,$5,'admitted',$6,$7,$8)`, [taskId, policy.tenantId, request.scopeId, policy.principalId,
-        request.title, inputRevisionId, JSON.stringify(request.input), FLOW_VERSION]);
+      await client.query(`INSERT INTO tasks(task_id,tenant_id,scope_id,principal_id,title,phase,input_revision_id,input,flow_version,capability_pack_id,pack_version)
+        VALUES($1,$2,$3,$4,$5,'admitted',$6,$7,$8,$9,$10)`, [taskId, policy.tenantId, request.scopeId, policy.principalId,
+        request.title, inputRevisionId, JSON.stringify(request.input), request.capabilityPackId ? MINDMAP_FLOW_VERSION : FLOW_VERSION, request.capabilityPackId ?? null,
+        request.capabilityPackId ? MINDMAP_PACK_VERSION : null]);
       await client.query('INSERT INTO input_revisions(input_revision_id,task_id,input,principal_id) VALUES($1,$2,$3,$4)',
         [inputRevisionId, taskId, JSON.stringify(request.input), policy.principalId]);
       await client.query(`INSERT INTO idempotency(tenant_id,scope_id,principal_id,action,idem_key,request_hash,task_id)
@@ -60,6 +62,36 @@ export class Tasks {
     const pending = (await this.store.pool.query('SELECT * FROM pending_inputs WHERE task_id=$1 ORDER BY created_at,request_id', [taskId])).rows;
     return { ...task, pendingInputs: pending.map(row => ({ requestId: row.request_id, inputRevisionId: row.input_revision_id,
       kind: row.kind, question: row.question, binding: row.binding, expiresAt: row.expires_at.toISOString(), status: row.status })) };
+  }
+  async result(ctx: AuthContext, taskId: string): Promise<any> {
+    return this.store.transaction(async tx => {
+      const task = await this.load(ctx,taskId,'tasks.read',tx,true);
+      const row = (await tx.query('SELECT result,result_status,cancel_requested FROM tasks WHERE task_id=$1',[taskId])).rows[0];
+      return { taskId,inputRevisionId:task.inputRevisionId,phase:task.phase,capabilityPackId:task.capabilityPackId,
+        status:row.result_status ?? (task.phase === 'cancelled' ? 'cancelled' : task.phase === 'unknown' ? 'unknown' : row.cancel_requested ? 'cancel-requested' : task.phase === 'admitted' ? 'accepted' : 'running'),
+        artifacts:[],evidence:[],unmapped:[],...row.result };
+    });
+  }
+  async stage(tx: Transaction, task: Task, phase: Task['phase'], stage: string, kind: string, payload: unknown = {}): Promise<void> {
+    await tx.query('UPDATE tasks SET phase=$2,stage=$3,revision=revision+1,updated_at=clock_timestamp() WHERE task_id=$1', [task.taskId, phase, stage]);
+    await this.emit(tx, task.taskId, kind, { inputRevisionId: task.inputRevisionId, ...payload as object });
+  }
+  async deliver(tx: Transaction, task: Task, result: any): Promise<void> {
+    requireCondition(result.verification && result.artifacts.length === 1 && result.evidence.some((item: any) => item.kind === 'script-conclusion'),
+      'EVIDENCE_INSUFFICIENT', 'Delivery requires independent fact verification');
+    requireCondition(result.verification.artifactSha256 === result.artifacts[0].sha256 && result.verification.sourceSha256 === task.input.sourceSha256,
+      'EVIDENCE_INSUFFICIENT', 'Delivery is not bound to the pinned input and artifact bytes');
+    await tx.query(`INSERT INTO checklist_items(task_id,input_revision_id,item_id,requires_fact,satisfied,conclusion_id)
+      VALUES($1,$2,'independent-workbook-readback',true,true,$3) ON CONFLICT DO NOTHING`,
+      [task.taskId, task.inputRevisionId, result.evidence.find((item: any) => item.kind === 'script-conclusion').evidenceId]);
+    await tx.query('UPDATE tasks SET result=$2,result_status=$3 WHERE task_id=$1', [task.taskId, JSON.stringify(result), result.status]);
+    await this.stage(tx, task, 'under-review', 'review', 'task.verifying');
+    await this.stage(tx, task, 'delivered', 'done', 'task.delivered', { status: result.status, artifacts: result.artifacts, unmapped: result.unmapped });
+  }
+  async fail(tx: Transaction, task: Task, error: unknown, evidence: unknown[] = []): Promise<void> {
+    await tx.query(`UPDATE tasks SET result_status='failed',result=$2 WHERE task_id=$1`,
+      [task.taskId, JSON.stringify({ error, artifacts: [], evidence, unmapped: [] })]);
+    await this.stage(tx, task, 'failed', 'done', 'task.failed', { error });
   }
   async events(ctx: AuthContext, taskId: string, after: number): Promise<Event[]> {
     await this.load(ctx, taskId);
@@ -118,7 +150,7 @@ export class Tasks {
     for (const candidate of candidates) await this.store.transaction(async tx => {
       const row = (await tx.query('SELECT * FROM tasks WHERE task_id=$1 FOR UPDATE SKIP LOCKED', [candidate.task_id])).rows[0];
       if (!row) return;
-      requireCondition(row.flow_version === FLOW_VERSION, 'UNSUPPORTED_VERSION', 'No runner for the pinned flow version');
+      requireCondition([FLOW_VERSION,MINDMAP_FLOW_VERSION].includes(row.flow_version), 'UNSUPPORTED_VERSION', 'No runner for the pinned flow version');
       const missing = Array.isArray(row.input.requiredFields) ? row.input.requiredFields.filter((key: string) => !row.input[key]) : [];
       if (row.stage === 'admit' && row.phase === 'admitted') {
         if (missing.length) {

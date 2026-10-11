@@ -3,17 +3,27 @@ import { z } from 'zod';
 
 export const API_VERSION = '1.0.0';
 export const FLOW_VERSION = 'synthetic-lbx/1';
+export const MINDMAP_FLOW_VERSION = 'mindmap-compile/1';
 export const LEASE_TTL_MS = 60_000;
 export const HEARTBEAT_MS = 20_000;
 export const IDEMPOTENCY_WINDOW_MS = 86_400_000;
 export const MAX_BODY_BYTES = 65_536;
+export const MAX_SOURCE_BYTES = 16 * 1024 * 1024;
+export const MAX_WORKER_REPORT_BYTES = 32 * 1024 * 1024;
+export const MINDMAP_CONTRACT_VERSION = 'Excel 输出契约 V1';
+export const MINDMAP_MAPPING_VERSION = '1.0.0';
+export const MINDMAP_PACK_VERSION = '1.0.0';
 
 const identity = (prefix: string) => z.string().regex(new RegExp(`^${prefix}_[A-Za-z0-9][A-Za-z0-9_-]*$`));
 export const TaskId = identity('task');
 export const InputRevisionId = identity('inrev');
 export const OperationId = identity('op');
 export const ScopeId = identity('scp');
+export const SourceRevisionId = identity('src');
+export const ArtifactId = identity('art');
 export const Sha256 = z.string().regex(/^[a-f0-9]{64}$/);
+export const Base64Content = z.string().regex(/^[A-Za-z0-9+/]*={0,2}$/).refine(value =>
+  value.length % 4 === 0 && Buffer.from(value,'base64').toString('base64') === value,'Expected canonical standard base64');
 export function newId(prefix: 'task' | 'inrev' | 'op' | 'pin' | 'src' | 'snap' | 'evd' | 'art' | 'rule' | 'audit'): string {
   return `${prefix}_${randomUUID().replaceAll('-', '')}`;
 }
@@ -47,6 +57,7 @@ export const STANDARD_OPERATIONS = {
   'defects.comment': { reads: ['external-system'], writes: ['external-system'] },
   'docs.fetch': { reads: ['knowledge'], writes: [] },
   'docs.convert': { reads: ['knowledge'], writes: ['artifacts-evidence'] },
+  'mindmaps.compile': { reads: ['knowledge'], writes: ['artifacts-evidence'] },
 } as const;
 export const StandardOperation = z.enum(Object.keys(STANDARD_OPERATIONS) as [keyof typeof STANDARD_OPERATIONS, ...Array<keyof typeof STANDARD_OPERATIONS>]);
 export type StandardOperation = z.infer<typeof StandardOperation>;
@@ -72,9 +83,30 @@ export const ConnectorManifest = z.object({
 });
 export type ConnectorManifest = z.infer<typeof ConnectorManifest>;
 
-export const SubmitRequest = z.object({ scopeId: ScopeId, title: z.string().min(1).max(2000),
-  idempotencyKey: z.string().min(8).max(200), input: z.record(z.string(), z.unknown()).default({}) });
+export const SubmitRequest = z.object({ scopeId: ScopeId, title: z.string().min(1).max(2000).default('Compile mindmap test cases'),
+  idempotencyKey: z.string().min(8).max(200), capabilityPackId: z.literal('mindmap-compile').optional(),
+  input: z.record(z.string(), z.unknown()).default({}) });
 export type SubmitRequest = z.infer<typeof SubmitRequest>;
+export const DevLoginRequest = z.object({ username: z.string().max(100), password: z.string().max(1000),
+  expiresInMs: z.number().int().positive().optional() });
+export const DevLoginResult = z.object({ token: z.string(), tokenType: z.literal('Bearer'), expiresAt: z.string(),
+  principalId: z.string(), tenantId: z.string(), scopes: z.array(ScopeId) });
+export const SourceUpload = z.object({ scopeId: ScopeId, fileName: z.string().min(1).max(240), contentBase64: Base64Content });
+export const SourceReference = z.object({ sourceRevisionId: SourceRevisionId, sha256: Sha256, size: z.number().int().nonnegative(), fileName: z.string(), scopeId: ScopeId });
+export const MindmapCompileInput = z.object({ sourceRevisionId: SourceRevisionId, sourceSha256: Sha256.optional() });
+export const ArtifactReference = z.object({ artifactId: ArtifactId, sha256: Sha256, size: z.number().int().positive(),
+  fileName: z.string(), mediaType: z.literal('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'),
+  downloadPath: z.string() });
+export const UnmappedElement = z.object({ path: z.string(), reason: z.string() });
+export type UnmappedElement = z.infer<typeof UnmappedElement>;
+export const MindmapPack = {
+  capabilityPackId: 'mindmap-compile', version: MINDMAP_PACK_VERSION,
+  title: '脑图用例结构编译', inputFormats: ['xmind-2020-content-json', 'xmind-content-json', 'topic-tree-json'],
+  contractVersion: MINDMAP_CONTRACT_VERSION, mappingRulesVersion: MINDMAP_MAPPING_VERSION,
+  requiredOperations: ['mindmaps.compile'], conclusionScope: 'structural-compilation',
+  inputSchema: { type: 'object', required: ['sourceRevisionId'], properties: {
+    sourceRevisionId: { type: 'string', pattern: '^src_' }, sourceSha256: { type: 'string', pattern: '^[a-f0-9]{64}$' } }, additionalProperties: false },
+} as const;
 export const InputRequest = z.object({ inputRevisionId: InputRevisionId, requestId: z.string().optional(),
   response: z.record(z.string(), z.unknown()).optional(),
   replacement: z.record(z.string(), z.unknown()).optional() }).refine(value => !!value.response !== !!value.replacement,
@@ -106,6 +138,8 @@ const registry = {
   FENCING_STALE: [409, 'lease'], LEASE_EXPIRED: [409, 'lease'], RESOURCE_BUSY: [409, 'lease'],
   CONNECTOR_DISABLED: [409, 'permission'], EVIDENCE_INSUFFICIENT: [409, 'semantic-insufficient'],
   UPSTREAM_TIMEOUT: [504, 'transient'], INTERNAL_ERROR: [500, 'internal'],
+  INVALID_MINDMAP: [422, 'validation'], UNSUPPORTED_MINDMAP: [422, 'validation'],
+  ARTIFACT_VERIFICATION_FAILED: [409, 'semantic-insufficient'], SOURCE_HASH_MISMATCH: [409, 'conflict-stale'],
 } as const;
 export type ErrorCode = keyof typeof registry;
 export class ApiError extends Error {
@@ -126,4 +160,41 @@ export interface Policy extends AuthContext { scopes: string[]; grants: string[]
 export interface Task {
   taskId: string; tenantId: string; scopeId: string; principalId: string; title: string; phase: TaskPhase;
   inputRevisionId: string; input: Record<string, unknown>; revision: number; flowVersion: string;
+  capabilityPackId?: string; packVersion?: string;
 }
+export const WorkerClaim = z.object({ operationId: OperationId, taskId: TaskId, inputRevisionId: InputRevisionId,
+  name: z.literal('mindmaps.compile'), fencingToken: z.number().int().positive(), source: SourceReference,
+  leaseTtlMs: z.literal(60_000), heartbeatMs: z.literal(20_000) });
+export const WorkerReport = z.object({ fencingToken: z.number().int().positive(), inputRevisionId: InputRevisionId,
+  status: z.enum(['succeeded','partial','failed']), artifactBase64: Base64Content.optional(),
+  error: z.object({ code: z.enum(['INVALID_MINDMAP','UNSUPPORTED_MINDMAP','ARTIFACT_VERIFICATION_FAILED','INTERNAL_ERROR']), message: z.string().max(1000) }).optional(),
+}).refine(value => value.status === 'failed' ? !!value.error && !value.artifactBase64 : !!value.artifactBase64 && !value.error,
+  'Provide an artifact for completion or an error for failure');
+export const TaskResult = z.object({ taskId: TaskId, inputRevisionId: InputRevisionId, phase: TaskPhase,
+  capabilityPackId: z.string().optional(), status: z.enum(['accepted','running','succeeded','partial','failed','unknown','cancel-requested','cancelled']),
+  artifacts: z.array(ArtifactReference), evidence: z.array(z.object({ evidenceId: z.string(), kind: ConclusionKind,
+    sha256: Sha256, size: z.number(), downloadPath: z.string() })), unmapped: z.array(UnmappedElement),
+  verification: z.object({ reader: z.string(), rowCount: z.number().int().nonnegative(), sourceSha256: Sha256,
+    irSha256: Sha256, artifactSha256: Sha256 }).optional(),
+  error: z.object({ code: z.string(), message: z.string() }).optional(),
+});
+export const TaskView = z.object({ taskId: TaskId,tenantId:z.string(),scopeId:ScopeId,principalId:z.string(),title:z.string(),
+  phase:TaskPhase,inputRevisionId:InputRevisionId,input:z.record(z.string(),z.unknown()),revision:z.number().int().positive(),
+  flowVersion:z.string(),capabilityPackId:z.string().optional(),packVersion:z.string().optional(),
+  pendingInputs:z.array(z.object({ requestId:z.string(),inputRevisionId:InputRevisionId,kind:z.string(),question:z.string(),
+    binding:z.record(z.string(),z.unknown()),expiresAt:z.string(),status:z.string() })).optional(),
+});
+export const SubmittedTask = TaskView.extend({ deduplicated:z.boolean() });
+export const EventPage = z.object({ events:z.array(Event),after:z.number().int().nonnegative() });
+export const CLIENT_ROUTES = {
+  devLogin:{ method:'POST',path:'/v1/auth/dev-login',request:DevLoginRequest,response:DevLoginResult },
+  sources:{ method:'POST',path:'/v1/sources',request:SourceUpload,response:SourceReference },
+  packs:{ method:'GET',path:'/v1/packs' },
+  submit:{ method:'POST',path:'/v1/tasks/submit',request:SubmitRequest,response:SubmittedTask },
+  status:{ method:'GET',path:'/v1/tasks/{taskId}/status',response:TaskView },
+  events:{ method:'GET',path:'/v1/tasks/{taskId}/events?after={seq}',response:EventPage },
+  result:{ method:'GET',path:'/v1/tasks/{taskId}/result',response:TaskResult },
+  input:{ method:'POST',path:'/v1/tasks/{taskId}/input',request:InputRequest,response:TaskView },
+  sourceContent:{ method:'GET',path:'/v1/sources/{sourceRevisionId}/content' },
+  artifactContent:{ method:'GET',path:'/v1/artifacts/{artifactId}/content' },
+} as const;

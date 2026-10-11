@@ -6,6 +6,8 @@ This is the private circle-server repository. On 2026-10-12 the user authorized 
 
 Push, PR creation, GitHub settings or release-workflow changes, and any deployment require a further user decision. Paid or real models, real devices or enterprise systems, real Circle user data, Python runtime dependencies, and changes to Circle's repository are outside this authorization. Use scripted models and synthetic connector stubs only. Do not modify foundation/circle or references bytes or import their archived modules into runtime entry points.
 
+The user's subsequent 2026-10-12 priority is the mindmap compilation story in docs/server-s1-priority.md: implement a new TypeScript mindmap-compile capability, authenticated source/artifact APIs and a temporary dev stack before the LBX execution scenes. The existing compile-excel skills, InfoTest, archived executables and Python must not implement this story. Claude owns the Circle client/plugin; prepare and commit docs/client-api-handoff.md for it, then report readiness in this terminal. HTTP/worker checks do not prove the later real Otty/Circle demonstration.
+
 Read README.md, docs/bootstrap.md, references/README.md, docs/bcde-integration-plan.md and docs/server-build-brief.md first. The product boundaries follow infosec-platform ADR 0028. Circle remains a generic harness; its default plugin library owns the optional server connector in the next phase. Do not create a separate connector repository, connector Project or Web administration site. The authenticated HTTP API and circle-server admin CLI share one authorization path.
 
 ## Source and reference ownership

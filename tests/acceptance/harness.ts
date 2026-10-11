@@ -12,7 +12,7 @@ import EmbeddedPostgres from 'embedded-postgres';
 import pg from 'pg';
 
 export const root = fileURLToPath(new URL('../../', import.meta.url));
-const taskGrants = ['tasks.read', 'tasks.submit', 'tasks.input', 'tasks.cancel', 'evidence.read', 'methods.use'];
+const taskGrants = ['tasks.read', 'tasks.submit', 'tasks.input', 'tasks.cancel', 'evidence.read', 'methods.use', 'sources.read', 'sources.write'];
 const deviceGrants = ['product.version', 'product.config.read', 'product.config.write', 'docs.fetch', 'docs.convert', 'defects.search', 'defects.comment'];
 export const identities = [
   { username: 'alice', principalId: 'prn_alice', tenantId: 'tnt_lab', kind: 'user', scopes: ['scp_lab', 'scp_second'],

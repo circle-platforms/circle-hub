@@ -12,16 +12,20 @@
     "verify:references": "node tools/verify-reference-archive.ts",
     "test:references": "node --test tools/verify-reference-archive.test.ts",
     "test:contracts": "node --test tests/contracts/*.test.ts",
+    "test:methods": "node --test tests/methods/*.test.ts",
     "test:acceptance": "node --test --test-concurrency=1 tests/acceptance/*.test.ts",
-    "test": "npm run test:contracts && npm run test:acceptance && npm run test:references",
+    "test": "npm run test:contracts && npm run test:methods && npm run test:acceptance && npm run test:references",
     "typecheck": "tsc --noEmit",
     "server": "node apps/server/src/main.ts",
     "worker": "node apps/worker/src/main.ts",
-    "admin": "node apps/server/src/admin.ts",
-    "verify:postgres": "node scripts/verify-postgres.ts"
+    "verify:postgres": "node scripts/verify-postgres.ts",
+    "dev:stack": "node scripts/dev-stack.ts"
   },
   "dependencies": {
+    "exceljs": "4.4.0",
+    "fflate": "0.8.3",
     "pg": "8.23.1",
+    "read-excel-file": "9.3.12",
     "zod": "4.6.5"
   },
   "devDependencies": {
@@ -29,5 +33,8 @@
     "@types/pg": "8.23.1",
     "embedded-postgres": "18.4.0-beta.17",
     "typescript": "5.9.3"
+  },
+  "overrides": {
+    "exceljs": { "uuid": "11.1.1" }
   }
 }
