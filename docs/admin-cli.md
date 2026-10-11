@@ -36,4 +36,8 @@ npm run admin -- restart --graceful
 
 server 的受监管启动入口是 `npm run server`（需要显式临时数据库/身份/对象目录配置）；`npm run dev:stack` 自动准备这些参数。直接运行 main.ts 没有 supervisor 时，restart 会明确拒绝。优雅重启保存 PostgreSQL 中的任务、输入、批准、操作、游标与事件；不将缺少回报的操作改成成功。Ctrl+C 停止整个 dev stack 并删除临时数据，下一次 dev:stack 是新环境。
 
+关停开始后，JSON 与制品响应带 `Connection: close`，task/admin 的 events 长轮询立即结束，返回已经读取的事件和原游标。server 每 50ms 清理空闲连接，5 秒 HTTP 宽限期后关闭仍未完成的连接，随后等已进入处理程序的请求和当前 runner 收尾，再关闭 PostgreSQL 连接池。CLI 取得新 bootId 后报告重启完成并返回进程 PID，验收另外核对 PID 已更换；客户端可按保存的游标向新进程补读事件。supervisor 的退出保护为 10 秒，dev:stack 的子进程退出保护为 15 秒，给 HTTP 排空和数据库清理留出时间。
+
+重复验证重启可运行 `node --test --test-name-pattern='admin graceful restart' tests/acceptance/admin.test.ts`。三条验收分别覆盖持久状态恢复、持续 keep-alive 轮询与两种挂起的 events 长轮询、未完成请求体的 5 秒关停上限；验证记录见[第一阶段进度](server-s1-progress.md)。
+
 合成缺陷能力使用 `defect-review`，绑定 `defects` / `documents` / `product` 角色。规则由 `POST /v1/rules` 创建；调用范围是服务身份与规则所有者的交集，不能通过服务身份读取所有者不可见的缺陷。Bugzilla 与 Jira 的清单提供相同标准操作，可在 bindings.defects 中替换。当前 OpenKM 桩的转换是显式的合成 JSON→文本，不声称通用 Office/PDF 转换或真实企业系统兼容。

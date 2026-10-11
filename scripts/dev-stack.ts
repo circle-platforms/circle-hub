@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { createServer } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { zipSync, strToU8 } from 'fflate';
+import {SUPERVISOR_STOP_TIMEOUT_MS} from '../apps/server/src/shutdown.ts';
 
 const root = fileURLToPath(new URL('../',import.meta.url));
 const scratch = await mkdtemp(`${tmpdir()}/circle-server-dev-`);
@@ -19,7 +20,7 @@ const children = new Set<ChildProcess>(); let closing = false;
 async function stop(child: ChildProcess): Promise<void> {
   if (child.exitCode !== null || child.signalCode !== null) return;
   const exited = once(child,'exit'); child.kill('SIGTERM');
-  const timeout = setTimeout(() => { if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL'); },5000);
+  const timeout = setTimeout(() => { if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL'); },SUPERVISOR_STOP_TIMEOUT_MS);
   try { await exited; } finally { clearTimeout(timeout); }
 }
 async function cleanup(): Promise<void> {

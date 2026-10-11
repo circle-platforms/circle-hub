@@ -28,6 +28,7 @@ import { ConnectorRegistry } from '../../../packages/tasks/src/connector-registr
 import { Rules } from '../../../packages/tasks/src/rules.ts';
 import { ProfessionalRunner } from './professional-runner.ts';
 import { MindmapRunner } from './mindmap-runner.ts';
+import { closeHttpServer } from './shutdown.ts';
 
 function environment(name: string): string { const value = process.env[name]; if (!value) throw new Error(`Required environment variable: ${name}`); return value; }
 const store = new Store(JSON.parse(environment('CIRCLE_SERVER_DATABASE_CONFIG')));
@@ -45,6 +46,8 @@ const registry=new ConnectorRegistry(store,auth);await registry.initialize();exe
 const rules=new Rules(store,auth,tasks,execution,registry),professional=new ProfessionalRunner(store,tasks,execution,knowledge,checklists,approvals,assessments);
 const mindmaps = new MindmapRunner(store,tasks,knowledge,execution);
 let closing = false;
+const shutdownSignal=new AbortController();
+const activeRequests=new Set<Promise<void>>();
 const bootId=randomUUID();
 let restartRequested=false;
 process.on('message',message=>{if(restartRequested&&(message as any)?.type==='graceful-restart-now')void shutdown();});
@@ -62,7 +65,15 @@ async function body(request: IncomingMessage, limit = MAX_BODY_BYTES): Promise<u
   try { return JSON.parse(data.toString('utf8')); }
   catch { throw new ApiError('INVALID_PAYLOAD', 'Invalid JSON'); }
 }
+function closeOnShutdown(response:ServerResponse):void{
+  if(closing){response.shouldKeepAlive=false;response.setHeader('connection','close');}
+}
+async function waitForEvents():Promise<void>{
+  try{await delay(30,undefined,{signal:shutdownSignal.signal});}
+  catch(error){if(!shutdownSignal.signal.aborted)throw error;}
+}
 function send(response: ServerResponse, status: number, data: unknown): void {
+  closeOnShutdown(response);
   response.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' });
   const object = data as any;
   const phase = object.data?.phase;
@@ -70,6 +81,7 @@ function send(response: ServerResponse, status: number, data: unknown): void {
   response.end(JSON.stringify({ apiVersion: API_VERSION, status: status >= 400 ? 'failed' : semanticStatus, ...object }));
 }
 function download(response: ServerResponse, value: { reference: any; bytes: Buffer }): void {
+  closeOnShutdown(response);
   response.writeHead(200,{ 'content-type':value.reference.mediaType ?? 'application/octet-stream','content-length':value.bytes.length,
     'cache-control':'no-store','x-content-sha256':value.reference.sha256,
     'content-disposition':`attachment; filename*=UTF-8''${encodeURIComponent(value.reference.fileName)}` }); response.end(value.bytes);
@@ -79,6 +91,7 @@ function base64(value: string): Buffer {
   return Buffer.from(value,'base64');
 }
 const server = createServer(async (request, response) => {
+  const completed=Promise.withResolvers<void>();activeRequests.add(completed.promise);
   try {
     const url = new URL(request.url ?? '/', 'http://127.0.0.1');
     if (['/v1/auth/token','/v1/auth/dev-login'].includes(url.pathname) && request.method === 'POST') {
@@ -183,7 +196,7 @@ const server = createServer(async (request, response) => {
           await auth.authenticate(request.headers.authorization);
           events = await tasks.events(ctx, taskId, after);
           if (events.length || Date.now() >= deadline || response.destroyed || closing) break;
-          await delay(30);
+          await waitForEvents();
         } while (true);
         if (!response.destroyed) send(response, 200, { data: { events, after: events.at(-1)?.seq ?? after } }); return;
       }
@@ -232,7 +245,7 @@ const server = createServer(async (request, response) => {
         const after=z.coerce.number().int().min(0).max(Number.MAX_SAFE_INTEGER).parse(url.searchParams.get('after')??0),wait=z.coerce.number().int().min(0).max(30_000).parse(url.searchParams.get('waitMs')??0),deadline=Date.now()+wait;let rows:any[];
         do{await auth.authenticate(request.headers.authorization);const current=await auth.check(ctx,'admin.manage');
           rows=(await store.pool.query('SELECT o.* FROM outbox o JOIN tasks t USING(task_id) WHERE t.tenant_id=$1 AND t.scope_id=ANY($2::text[]) AND o.seq>$3 ORDER BY o.seq LIMIT 500',[current.tenantId,current.scopes,after])).rows;
-          if(rows.length||Date.now()>=deadline||closing||response.destroyed)break;await delay(30);
+          if(rows.length||Date.now()>=deadline||closing||response.destroyed)break;await waitForEvents();
         }while(true);
         if(!response.destroyed)send(response,200,{data:{events:rows.map(row=>({seq:Number(row.seq),taskId:row.task_id,kind:row.kind,payload:row.payload,createdAt:row.created_at.toISOString()})),after:rows.length?Number(rows.at(-1).seq):after}});return;
       }
@@ -256,6 +269,8 @@ const server = createServer(async (request, response) => {
       : new ApiError('INTERNAL_ERROR', 'The transaction or server operation failed');
     if (!response.destroyed && !response.headersSent) send(response, failure.httpStatus, { error: { code: failure.code, category: failure.category,
       message: failure.message, details: failure.details, retryable: false } });
+  } finally {
+    activeRequests.delete(completed.promise);completed.resolve();
   }
 });
 server.requestTimeout = 10_000; server.headersTimeout = 10_000;
@@ -269,7 +284,10 @@ const address = server.address() as { port: number };
 console.log(JSON.stringify({ type: 'ready', url: `http://127.0.0.1:${address.port}`, apiVersion: API_VERSION, syntheticOnly: true }));
 async function shutdown(): Promise<void> {
   if (closing) return; closing = true; clearInterval(timer);
-  await new Promise<void>(resolve => { server.close(() => resolve()); server.closeIdleConnections(); });
+  shutdownSignal.abort();
+  await closeHttpServer(server);
+  // Closing a socket is not completion of the transaction it was waiting for.
+  await Promise.all(activeRequests);
   await running; await store.pool.end();
   if (process.connected) process.disconnect();
 }

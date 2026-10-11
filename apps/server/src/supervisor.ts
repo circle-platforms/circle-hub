@@ -1,12 +1,13 @@
 import {spawn,type ChildProcess} from 'node:child_process';
 import {once} from 'node:events';
 import {fileURLToPath} from 'node:url';
+import {SERVER_STOP_TIMEOUT_MS} from './shutdown.ts';
 
 const root=fileURLToPath(new URL('../../../',import.meta.url));
 let child:ChildProcess|undefined,closing=false,restarting=false;const env={...process.env};
 async function stop():Promise<void>{
   if(closing)return;closing=true;
-  if(child&&child.exitCode===null&&child.signalCode===null){const exited=once(child,'exit');child.kill('SIGTERM');const timeout=setTimeout(()=>{child?.kill('SIGKILL');},5000);try{await exited;}finally{clearTimeout(timeout);}}
+  if(child&&child.exitCode===null&&child.signalCode===null){const exited=once(child,'exit');child.kill('SIGTERM');const timeout=setTimeout(()=>{child?.kill('SIGKILL');},SERVER_STOP_TIMEOUT_MS);try{await exited;}finally{clearTimeout(timeout);}}
   if(process.connected)process.disconnect();
 }
 function start():void{
