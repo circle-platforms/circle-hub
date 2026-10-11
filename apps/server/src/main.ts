@@ -3,7 +3,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { mkdir } from 'node:fs/promises';
 import { z } from 'zod';
 import { API_VERSION, MAX_BODY_BYTES, MAX_SOURCE_BYTES, MAX_WORKER_REPORT_BYTES, ApiError, SubmitRequest,
-  InputRequest, TaskId, ScopeId, SourceUpload, Base64Content, MindmapCompileInput, MindmapPack, DevLoginRequest, requireCondition } from '../../../packages/contracts/src/index.ts';
+  InputRequest, OperationRequest, TaskId, ScopeId, SourceUpload, Base64Content, MindmapCompileInput, MindmapPack, DevLoginRequest, requireCondition } from '../../../packages/contracts/src/index.ts';
 import { Store } from '../../../packages/storage/src/index.ts';
 import { taskMigration } from '../../../packages/tasks/src/migration.ts';
 import { Auth } from '../../../packages/tasks/src/auth.ts';
@@ -13,19 +13,20 @@ import { knowledgeMigration } from '../../../packages/knowledge/src/migration.ts
 import { Knowledge } from '../../../packages/knowledge/src/index.ts';
 import { LocalObjects } from '../../../packages/knowledge/src/objects.ts';
 import { executionMigration } from '../../../packages/execution/src/migration.ts';
-import { Execution } from '../../../packages/execution/src/index.ts';
+import { Operations } from '../../../packages/execution/src/operations.ts';
+import { resourceMigration } from '../../../packages/execution/src/resource-migration.ts';
 import { MindmapRunner } from './mindmap-runner.ts';
 
 function environment(name: string): string { const value = process.env[name]; if (!value) throw new Error(`Required environment variable: ${name}`); return value; }
 const store = new Store(JSON.parse(environment('CIRCLE_SERVER_DATABASE_CONFIG')));
-await store.migrate([taskMigration,mindmapTaskMigration,knowledgeMigration,executionMigration]);
+await store.migrate([taskMigration,mindmapTaskMigration,knowledgeMigration,executionMigration,resourceMigration]);
 const auth = new Auth(store);
 requireCondition(process.env.CIRCLE_SERVER_DEV_AUTH === '1', 'INVALID_PAYLOAD', 'Phase one requires explicitly enabled development authentication');
 await auth.initializeDevelopment(environment('CIRCLE_SERVER_DEV_IDENTITIES'));
 await mkdir(environment('CIRCLE_SERVER_DATA_DIR'), { recursive: true, mode: 0o700 });
 const tasks = new Tasks(store, auth, Number(process.env.CIRCLE_SERVER_INPUT_TTL_MS ?? 300_000));
 const knowledge = new Knowledge(store,auth,new LocalObjects(environment('CIRCLE_SERVER_DATA_DIR')));
-const execution = new Execution(store,auth,tasks,knowledge);
+const execution = new Operations(store,auth,tasks,knowledge);
 const mindmaps = new MindmapRunner(store,tasks,knowledge,execution);
 let closing = false;
 
@@ -105,6 +106,11 @@ const server = createServer(async (request, response) => {
       });
       send(response,202,{ data:accepted }); return;
     }
+    const operationRoute=/^\/v1\/tasks\/([^/]+)\/operations$/.exec(url.pathname);
+    if(operationRoute){const id=TaskId.parse(operationRoute[1]);
+      if(request.method==='GET'){send(response,200,{data:await execution.list(ctx,id)});return;}
+      if(request.method==='POST'){send(response,202,{data:await execution.submit(ctx,id,OperationRequest.parse(await body(request)))});return;}
+    }
     const match = /^\/v1\/tasks\/([^/]+)\/(status|result|input|cancel|reconcile|events)$/.exec(url.pathname);
     if (match) {
       const taskId = TaskId.parse(match[1]); const action = match[2];
@@ -124,7 +130,8 @@ const server = createServer(async (request, response) => {
       }
       if (action === 'cancel' && request.method === 'POST') { await body(request); send(response, 202, { data: await tasks.cancel(ctx, taskId) }); return; }
       if (action === 'reconcile' && request.method === 'POST') {
-        await body(request); await tasks.load(ctx,taskId,'tasks.input');
+        const input=z.object({operationId:z.string().optional()}).parse(await body(request));await tasks.load(ctx,taskId,'tasks.input');
+        if(input.operationId){send(response,202,{data:await execution.requestReconcile(ctx,taskId,input.operationId)});return;}
         send(response,200,{ data:{ ...await tasks.result(ctx,taskId),reconciliation:'No independently observed receipt is available for an unknown compilation' } }); return;
       }
       if (action === 'events' && request.method === 'GET') {
@@ -156,7 +163,10 @@ const server = createServer(async (request, response) => {
       }
       if (request.method === 'POST') {
         const input = await body(request,action === 'report' ? MAX_WORKER_REPORT_BYTES : MAX_BODY_BYTES);
-        if (action === 'report') { send(response,200,{ data:await mindmaps.report(ctx,id,input) }); return; }
+        if (action === 'report') {
+          const row=(await store.pool.query('SELECT name FROM operations WHERE operation_id=$1',[id])).rows[0];
+          send(response,200,{data:row?.name==='mindmaps.compile'?await mindmaps.report(ctx,id,input):await execution.report(ctx,id,input)});return;
+        }
         const fence = z.object({ fencingToken:z.number().int().positive() }).parse(input).fencingToken;
         if (action === 'heartbeat') send(response,200,{ data:await execution.heartbeat(ctx,id,fence) });
         else { const checked = await execution.preflight(ctx,id,fence); send(response,200,{ data:{ authorized:true,inputRevisionId:checked.task.inputRevisionId,source:checked.source } }); }

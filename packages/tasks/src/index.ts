@@ -12,6 +12,10 @@ export function taskFromRow(row: Record<string, any>): Task {
 export class Tasks {
   store: Store; auth: Auth; inputTtlMs: number;
   constructor(store: Store, auth: Auth, inputTtlMs = 300_000) { this.store = store; this.auth = auth; this.inputTtlMs = inputTtlMs; }
+  async internal(tx:Transaction,taskId:string):Promise<Task> {
+    const row=(await tx.query('SELECT * FROM tasks WHERE task_id=$1',[taskId])).rows[0];
+    requireCondition(row,'TARGET_NOT_FOUND','Task not found for durable bookkeeping');return taskFromRow(row);
+  }
   async load(ctx: AuthContext, taskId: string, grant = 'tasks.read', tx?: Transaction, lock = false): Promise<Task> {
     const row = (await (tx ?? this.store.pool).query(`SELECT * FROM tasks WHERE task_id=$1${lock ? ' FOR UPDATE' : ''}`, [taskId])).rows[0];
     requireCondition(row, 'TARGET_NOT_FOUND', 'Task not found');

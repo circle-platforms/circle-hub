@@ -88,3 +88,13 @@ Claude 用 Python `zipfile` + XML 独立读取下载的工作簿，8 行与 `smp
 关闭 Circle 后在新的 Otty 标签重开，`/server tasks` 从 server 取回两个任务的状态；`/server task` 按插件保存的游标补读，未重复下载。
 
 据这份观察，脑图编译经真实 Otty/Circle 的登录、上传、受理、事件、交付、下载、幂等及重连场景记为通过。原 brief 第 5–8 幕的 worker/资源核对、设备审批、交付清单和连接器全套行为，以及完整 admin 仍需继续完成；本节不扩大到真实模型、真实设备、企业系统或部署验收。
+
+## 5：worker 中断与独立核对（第 5 幕通过）
+
+先写并运行 `05-worker-interruption.test.ts`，因 operations API 缺失失败；随后扩展同一个 PostgreSQL 操作账本与租约，不另建内存状态。合成设备 driver 只访问本次临时目录中的 `LBX-LAB-01.json`，执行前再次核对实时授权、目标主机身份与执行端 fence。
+
+实际运行 `node --test tests/acceptance/05-worker-interruption.test.ts`：1/1 通过，约 61.9 秒。执行后故意延迟回报并 SIGKILL `lab-east-01`；不修改数据库时钟或租约时间，等待默认 60 秒到期。原操作转 unknown，冲突写返回 RESOURCE_BUSY，不重派。`lab-east-02` 通过新的只读核对操作取得更高 fence、回读原操作收据并登记原字节证据后，原操作变 reconciled、资源解冻。旧 worker/fence 的迟到回报被拒，新操作 fence 继续增加。核对只证明本次合成资源观察，不证明真实远端进程停止。
+
+脑图仍使用原提交/结果/上传/下载接口和独立读取核验。审批、专业交付清单、连接器与完整 admin 正在按用户新指示继续，未 push。
+
+补充检查：`npm run typecheck` 通过；前四幕与脑图/stack 的十个既有 HTTP 验收全部通过；`npm run verify:references` 714 原件通过，`npm run test:references` 7/7 通过。权限被撤回也不阻止租约到期的后台记账；公开查询和新执行仍按当前权限检查。

@@ -165,6 +165,14 @@ export interface Task {
 export const WorkerClaim = z.object({ operationId: OperationId, taskId: TaskId, inputRevisionId: InputRevisionId,
   name: z.literal('mindmaps.compile'), fencingToken: z.number().int().positive(), source: SourceReference,
   leaseTtlMs: z.literal(60_000), heartbeatMs: z.literal(20_000) });
+export const ExecutionClaim = z.object({ operationId:OperationId,taskId:TaskId,inputRevisionId:InputRevisionId,
+  name:StandardOperation,kind:z.enum(['execute','reconcile']),target:z.string(),targetIdentity:z.string(),
+  args:z.record(z.string(),z.unknown()),actionDigest:Sha256,parentOperationId:OperationId.optional(),
+  fencingToken:z.number().int().positive(),leaseTtlMs:z.literal(60_000),heartbeatMs:z.literal(20_000) });
+export const AnyWorkerClaim = z.union([WorkerClaim,ExecutionClaim]);
+export const ExecutionReport = z.object({ fencingToken:z.number().int().positive(),inputRevisionId:InputRevisionId,
+  status:z.enum(['succeeded','failed','unknown']),output:z.record(z.string(),z.unknown()).default({}),
+  error:z.object({ code:z.string(),message:z.string().max(1000) }).optional() });
 export const WorkerReport = z.object({ fencingToken: z.number().int().positive(), inputRevisionId: InputRevisionId,
   status: z.enum(['succeeded','partial','failed']), artifactBase64: Base64Content.optional(),
   error: z.object({ code: z.enum(['INVALID_MINDMAP','UNSUPPORTED_MINDMAP','ARTIFACT_VERIFICATION_FAILED','INTERNAL_ERROR']), message: z.string().max(1000) }).optional(),

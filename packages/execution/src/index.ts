@@ -23,7 +23,7 @@ export class Execution {
     await tx.query('INSERT INTO resources(tenant_id,resource_id) VALUES($1,$2) ON CONFLICT DO NOTHING', [task.tenantId,resourceId]);
     const row = (await tx.query(`INSERT INTO operations(operation_id,tenant_id,scope_id,task_id,input_revision_id,principal_id,name,resource_id,source_revision_id,status,deadline_at)
       VALUES($1,$2,$3,$4,$5,$6,'mindmaps.compile',$7,$8,'accepted',clock_timestamp()+interval '15 minutes')
-      ON CONFLICT(task_id,input_revision_id,name) DO UPDATE SET name=EXCLUDED.name RETURNING operation_id`,
+      ON CONFLICT(task_id,input_revision_id,name) WHERE name='mindmaps.compile' DO UPDATE SET name=EXCLUDED.name RETURNING operation_id`,
       [operationId,task.tenantId,task.scopeId,task.taskId,task.inputRevisionId,task.principalId,resourceId,task.input.sourceRevisionId])).rows[0];
     await this.tasks.emit(tx, task.taskId, 'operation.accepted', { operationId: row.operation_id, name: 'mindmaps.compile', inputRevisionId: task.inputRevisionId });
     return row.operation_id;
@@ -35,7 +35,7 @@ export class Execution {
       const worker = (await tx.query('UPDATE workers SET last_seen=clock_timestamp() WHERE worker_id=$1 AND principal_id=$2 RETURNING *', [policy.workerId,policy.principalId])).rows[0];
       requireCondition(worker, 'FORBIDDEN_ACTION', 'Register the worker first');
       if (worker.draining) return null;
-      const row = (await tx.query(`SELECT * FROM operations WHERE status='accepted' AND tenant_id=$1 AND scope_id=ANY($2::text[])
+      const row = (await tx.query(`SELECT * FROM operations WHERE name='mindmaps.compile' AND status='accepted' AND tenant_id=$1 AND scope_id=ANY($2::text[])
         AND deadline_at>clock_timestamp() ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1`, [policy.tenantId,policy.scopes])).rows[0];
       if (!row) return null;
       const task = await this.tasks.load({ principalId: row.principal_id, tenantId: row.tenant_id, kind: 'user' }, row.task_id, 'methods.use', tx);
@@ -108,7 +108,8 @@ export class Execution {
       if (!row) return;
       await tx.query("UPDATE operations SET status='unknown',updated_at=clock_timestamp() WHERE operation_id=$1", [row.operation_id]);
       await tx.query('UPDATE resources SET frozen=true WHERE tenant_id=$1 AND resource_id=$2', [row.tenant_id,row.resource_id]);
-      const task = await this.tasks.load({ principalId: row.principal_id,tenantId: row.tenant_id,kind: 'user' },row.task_id,'tasks.read',tx);
+      // Lost authority prevents new execution, but must not prevent expiry bookkeeping.
+      const task = await this.tasks.internal(tx,row.task_id);
       const payload = { operationId:row.operation_id,inputRevisionId:row.input_revision_id,reason:'lease-expired',remoteStoppingVerified:false };
       if (task.inputRevisionId === row.input_revision_id && !['delivered','failed','cancelled'].includes(task.phase)) {
         await this.tasks.stage(tx,task,'unknown','reconcile','operation.unknown',payload);
