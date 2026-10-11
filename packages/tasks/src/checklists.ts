@@ -46,7 +46,7 @@ export class Checklists {
     }
     const status=conclusions.some(record=>record.body.verdict==='refutes'||record.kind==='unknown')?'partial':'succeeded';
     const result:any={status,inputRevisionId,checklist:items,conclusions,evidence:conclusions.map(record=>record.evidence),unmapped:[]};
-    const artifact=await this.knowledge.reportArtifact(tx,task,result);result.artifacts=[artifact];
+    await this.knowledge.reportArtifact(tx,task,result);result.artifacts=await this.knowledge.bindings(tx,task);
     await tx.query('UPDATE tasks SET result_status=$2,result=$3 WHERE task_id=$1',[id,status,JSON.stringify(result)]);
     await this.tasks.stage(tx,task,'under-review','review','task.verifying');await this.tasks.stage(tx,task,'delivered','done','task.delivered',{status,artifacts:result.artifacts,inputRevisionId});
     return {taskId:id,...result};

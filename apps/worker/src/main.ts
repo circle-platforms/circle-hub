@@ -2,6 +2,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { ApiError, HEARTBEAT_MS, AnyWorkerClaim, sha256 } from '../../../packages/contracts/src/index.ts';
 import { compileMindmap } from '../../../packages/methods/src/mindmap.ts';
 import { SyntheticDevice } from '../../../packages/execution/src/synthetic-device.ts';
+import { ConnectorSDK } from '../../../packages/connectors/src/index.ts';
 
 function env(name: string): string { const value = process.env[name]; if (!value) throw new Error(`Required environment variable: ${name}`); return value; }
 const base = new URL(env('CIRCLE_SERVER_URL'));
@@ -25,6 +26,8 @@ async function request(path: string,body: unknown): Promise<any> {
   if (!response.ok) throw new ApiError(envelope.error.code,envelope.error.message);
   return envelope.data;
 }
+const connectors=process.env.CIRCLE_SYNTHETIC_RESOURCE_DIR?new ConnectorSDK(process.env.CIRCLE_SYNTHETIC_RESOURCE_DIR):undefined;
+if(connectors)await connectors.initialize();
 await request('/v1/workers/register',{});
 console.log(JSON.stringify({ type:'worker-ready',username }));
 while (!stopped) {
@@ -41,11 +44,11 @@ while (!stopped) {
     try {
       if(claim.name!=='mindmaps.compile'&&'kind' in claim){
         let report;
-        try{const device=new SyntheticDevice(env('CIRCLE_SYNTHETIC_RESOURCE_DIR'));
-          const output=await device.execute(claim,()=>request(`/v1/workers/operations/${claim.operationId}/preflight`,fence),stopController.signal);
+        try{const check=()=>request(`/v1/workers/operations/${claim.operationId}/preflight`,fence);
+          const output=claim.target==='LBX-LAB-01'?await new SyntheticDevice(env('CIRCLE_SYNTHETIC_RESOURCE_DIR')).execute(claim,check,stopController.signal):await connectors!.execute(claim,check);
           report={...fence,inputRevisionId:claim.inputRevisionId,status:'succeeded',output};
         }catch(error){if(stopped)continue;const failure=error instanceof ApiError?error:new ApiError('INTERNAL_ERROR','Synthetic driver failed');
-          report={...fence,inputRevisionId:claim.inputRevisionId,status:'failed',error:{code:failure.code,message:failure.message},output:{}};}
+          report={...fence,inputRevisionId:claim.inputRevisionId,status:failure.code==='UPSTREAM_TIMEOUT'?'unknown':'failed',error:{code:failure.code,message:failure.message},output:{}};}
         if(heartbeatError)throw heartbeatError;await request(`/v1/workers/operations/${claim.operationId}/report`,report);continue;
       }
       if(!('source' in claim))throw new ApiError('INVALID_PAYLOAD','Compile claim has no source');

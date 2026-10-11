@@ -4,6 +4,7 @@ import { z } from 'zod';
 export const API_VERSION = '1.0.0';
 export const FLOW_VERSION = 'synthetic-lbx/1';
 export const MINDMAP_FLOW_VERSION = 'mindmap-compile/1';
+export const PACK_FLOWS={'mindmap-compile':MINDMAP_FLOW_VERSION,'defect-review':'defect-review/1','lbx-healthcheck':'lbx-healthcheck/1'} as const;
 export const LEASE_TTL_MS = 60_000;
 export const HEARTBEAT_MS = 20_000;
 export const IDEMPOTENCY_WINDOW_MS = 86_400_000;
@@ -84,7 +85,7 @@ export const ConnectorManifest = z.object({
 export type ConnectorManifest = z.infer<typeof ConnectorManifest>;
 
 export const SubmitRequest = z.object({ scopeId: ScopeId, title: z.string().min(1).max(2000).default('Compile mindmap test cases'),
-  idempotencyKey: z.string().min(8).max(200), capabilityPackId: z.literal('mindmap-compile').optional(),
+  idempotencyKey: z.string().min(8).max(200), capabilityPackId: z.enum(['mindmap-compile','defect-review','lbx-healthcheck']).optional(),
   input: z.record(z.string(), z.unknown()).default({}) });
 export type SubmitRequest = z.infer<typeof SubmitRequest>;
 export const DevLoginRequest = z.object({ username: z.string().max(100), password: z.string().max(1000),
@@ -107,6 +108,12 @@ export const MindmapPack = {
   inputSchema: { type: 'object', required: ['sourceRevisionId'], properties: {
     sourceRevisionId: { type: 'string', pattern: '^src_' }, sourceSha256: { type: 'string', pattern: '^[a-f0-9]{64}$' } }, additionalProperties: false },
 } as const;
+export const DefectReviewPack={capabilityPackId:'defect-review',version:'1.0.0',title:'合成缺陷核对与回写',
+  requiredOperations:['defects.search','defects.comment','docs.fetch','docs.convert','product.version'],conclusionScope:'synthetic-defect-review'} as const;
+export const LbxPack={capabilityPackId:'lbx-healthcheck',version:'1.0.0',title:'合成 LBX 健康检查',
+  requiredOperations:['product.version','product.config.read','product.config.write','docs.fetch'],conclusionScope:'synthetic-configuration-verification'} as const;
+export const RuleRequest=z.object({scopeId:ScopeId,capabilityPackId:z.literal('defect-review'),servicePrincipalId:z.string().regex(/^prn_/),
+  bindings:z.object({defects:z.string(),documents:z.string(),product:z.string()}),intervalMs:z.number().int().min(100).max(60_000).default(1000),simulateCommentTimeout:z.boolean().default(false)});
 export const InputRequest = z.object({ inputRevisionId: InputRevisionId, requestId: z.string().optional(),
   response: z.record(z.string(), z.unknown()).optional(),
   replacement: z.record(z.string(), z.unknown()).optional() }).refine(value => !!value.response !== !!value.replacement,

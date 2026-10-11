@@ -114,3 +114,13 @@ Claude 用 Python `zipfile` + XML 独立读取下载的工作簿，8 行与 `smp
 实际 `npm run typecheck` 与 `node --test tests/acceptance/07-delivery.test.ts` 通过，2/2。覆盖模型不能满足事实项、三类别分别存储、原件按 SHA 下载、输入变化后旧结论/清单失效、新修订重新观察及交付。合成设备的 timeout=5 与手册 §6.4 的最小值 10 比较得到 refutes，允许“比较已完成”的清单交付 partial，并完整披露不符合结果。未将它标签改成配置已修正。开放的操作和人工决定仍阻止交付。
 
 脑图/stack 与审批的八个已有验收也通过，接口保持兼容。B/C 迁移各自管理自己的表；没有新增模型调用或 Python 运行依赖。接下来完成连接器/规则的全部路径及 admin。
+
+## 8：角色连接器、规则触发与回写（第 8 幕通过）
+
+先写并运行 `08-connectors.test.ts`，因 defect-review 能力缺失 0/2 失败。新 SDK 的清单声明角色、标准操作、效果、幂等与核对方法以及事件模式；实际调用在独立 worker 内运行，只访问合成 Bugzilla/OpenKM/Jira JSON 桩。C 管理作用范围、连接器启用状态、规则、游标和事件去重；D 记录每次标准操作、租约与回读；B 保留原文/转换制品/结论原件；E 按 requiredOperations 与角色绑定推进，方法没有按具体缺陷系统分叉。
+
+实际 `npm run typecheck` 和 `node --test --test-concurrency=1 tests/acceptance/08-connectors.test.ts` 通过，2/2，分别使用 Bugzilla 和 Jira。服务身份按当前权限与规则所有者的交集取数据：隐藏的 SECRET-99 不生成事件或任务。cursor 前进至新位置，重复外部 id 不再建任务/评论。写入评论后模拟响应超时产生 unknown、冻结冲突资源；另一 worker 按 `[circle op_id]` 和动作绑定回读原评论后 reconciled，原评论数量始终为 1。OpenKM 原文 SHA 经 B 核对，合成 JSON→文本转换实际生成可下载且摘要匹配的制品。
+
+`07-delivery.test.ts` 增加并通过完整 LBX 能力故事：实际观察 timeout=5，按固定手册 §6.4 的 10 请求独立人员批准，写入一次后重新观察 timeout=10，再以当前事实清单交付 succeeded；原 refutes 记录仍保留。该文件现为 3/3，未把历史结论覆盖成 supports。
+
+接下来完成 admin 的管理查询、排空、事件补读、审计、启停和实际优雅重启，最后再跑当前 HEAD 的整套八幕与脑图兼容检查。未 push。

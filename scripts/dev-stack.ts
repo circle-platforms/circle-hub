@@ -67,7 +67,7 @@ try {
   await writeFile(samplePath,zipSync({ 'content.json':strToU8(JSON.stringify(content)),
     'metadata.json':strToU8(JSON.stringify({ creator:'circle-server synthetic fixture' })) },{ mtime:new Date('2000-01-01T00:00:00Z') }),{ mode:0o600 });
   const env = { ...process.env,CIRCLE_SERVER_DATABASE_CONFIG:JSON.stringify(config),CIRCLE_SERVER_DATA_DIR:`${scratch}/objects`,
-    CIRCLE_SERVER_DEV_IDENTITIES:`${scratch}/identities.json`,CIRCLE_SERVER_DEV_AUTH:'1',CIRCLE_SERVER_PORT:process.env.CIRCLE_SERVER_PORT ?? '0' };
+    CIRCLE_SERVER_DEV_IDENTITIES:`${scratch}/identities.json`,CIRCLE_SERVER_DEV_AUTH:'1',CIRCLE_SERVER_PORT:process.env.CIRCLE_SERVER_PORT ?? '0',CIRCLE_SYNTHETIC_RESOURCE_DIR:`${scratch}/resources` };
   const server = await launch('apps/server/src/main.ts',env,'ready');
   await launch('apps/worker/src/main.ts',{ ...env,CIRCLE_SERVER_URL:server.url,CIRCLE_WORKER_USERNAME:'lab-east-01',CIRCLE_WORKER_PASSWORD:workerPassword },'worker-ready');
   console.log(JSON.stringify({ type:'dev-stack-ready',pid:process.pid,url:server.url,apiVersion:server.apiVersion,

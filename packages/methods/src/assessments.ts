@@ -17,10 +17,12 @@ export class Assessments {
       requireCondition(request.methodId==='lbx-healthcheck','INVALID_PAYLOAD','A registered deterministic method is required');
       body={methodId:'lbx-healthcheck',methodVersion:'1.0.0',verdict:'undetermined',missingEvidence:[]};
       let manual:any,snapshot:any;
-      if(typeof task.input.manualSourceRevisionId==='string'){
-        const source=await this.knowledge.sourceBytes(ctx,task.input.manualSourceRevisionId,task.scopeId,tx);
+      const runtime=(await tx.query('SELECT context FROM tasks WHERE task_id=$1',[id])).rows[0].context;
+      const sourceId=task.input.manualSourceRevisionId??runtime.manualSourceRevisionId;
+      if(typeof sourceId==='string'){
+        const source=await this.knowledge.sourceBytes(ctx,sourceId,task.scopeId,tx);
         try{manual=JSON.parse(source.bytes.toString());}catch{body.missingEvidence.push('manual cannot be parsed');}
-        snapshot=await this.knowledge.snapshot(tx,ctx,task.scopeId,[task.input.manualSourceRevisionId]);body.snapshotId=snapshot.snapshotId;body.snapshotSha256=snapshot.sha256;body.sourceSha256=source.reference.sha256;
+        snapshot=await this.knowledge.snapshot(tx,ctx,task.scopeId,[sourceId]);body.snapshotId=snapshot.snapshotId;body.snapshotSha256=snapshot.sha256;body.sourceSha256=source.reference.sha256;
       }
       const observations=inputs.filter(row=>row.content.name==='product.config.read').map(row=>({row,output:row.content.output}));
       if(!manual||manual.product!=='LBX'||manual.versionSeries!==String(task.input.version??'').split('.').slice(0,2).join('.')||typeof manual.backendTimeoutMinimum!=='number'||!Number.isFinite(manual.backendTimeoutMinimum))body.missingEvidence.push('no applicable comparable minimum');

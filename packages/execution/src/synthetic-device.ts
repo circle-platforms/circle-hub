@@ -36,7 +36,7 @@ export class SyntheticDevice {
           requireCondition(job.args.key==='backend.timeout' && typeof job.args.value==='number' && Number.isFinite(job.args.value),'INVALID_PAYLOAD','Synthetic driver supports the declared numeric setting only');
           state.config[job.args.key]=job.args.value;state.writes.push({operationId:job.operationId,key:job.args.key,value:job.args.value,fencingToken:job.fencingToken});
         } else requireCondition(['product.config.read','product.version'].includes(job.name),'INVALID_PAYLOAD','Unsupported synthetic device operation');
-        output={product:state.product,version:state.version,identity:state.identity,config:{...state.config},synthetic:true};
+        output={product:state.product,version:state.version,identity:state.identity,synthetic:true,...(job.name==='product.version'?{}:{config:{...state.config}})};
         state.receipts[job.operationId]={outcome:'succeeded',actionDigest:job.actionDigest,fencingToken:job.fencingToken,output};
       }
       const temp=`${file}.${randomUUID()}.tmp`;await writeFile(temp,JSON.stringify(state),{mode:0o600});await rename(temp,file);

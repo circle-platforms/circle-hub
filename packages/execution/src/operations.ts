@@ -5,7 +5,7 @@ import { Execution } from './index.ts';
 
 export class Operations extends Execution {
   approvalCheck?: (tx:Transaction,task:any,spec:any)=>Promise<void>;
-  connectorCheck?: (tx:Transaction,actor:AuthContext,scope:string,spec:any)=>Promise<void>;
+  connectorCheck?: (tx:Transaction,actor:AuthContext,scope:string,spec:any)=>Promise<any>;
   view(row:any):any {return {operationId:row.operation_id,inputRevisionId:row.input_revision_id,name:row.name,kind:row.kind,status:row.status,
     target:row.target,targetIdentity:row.target_identity,actionDigest:row.action_digest,workerId:row.worker_id,fencingToken:row.fencing_token?Number(row.fencing_token):undefined,
     parentOperationId:row.parent_operation_id,result:row.result};}
@@ -47,7 +47,8 @@ export class Operations extends Execution {
       await this.auth.target(ctx,old.name.startsWith('product.')?'product.config.read':old.name==='defects.comment'?'defects.search':old.name,task.scopeId,old.target,tx);
       const operationId=newId('op'),row=(await tx.query(`INSERT INTO operations(operation_id,tenant_id,scope_id,task_id,input_revision_id,principal_id,name,resource_id,status,deadline_at,kind,target,target_identity,args,action_digest,effects,parent_operation_id,delegated_owner_id)
         VALUES($1,$2,$3,$4,$5,$6,$7,$8,'accepted',clock_timestamp()+interval '5 minutes','reconcile',$9,$10,'{}',$11,$12,$13,$14) RETURNING *`,
-        [operationId,task.tenantId,task.scopeId,taskId,task.inputRevisionId,ctx.principalId,old.name,old.resource_id,old.target,old.target_identity,old.action_digest,JSON.stringify({reads:['device-state','external-system'],writes:[]}),id,old.delegated_owner_id])).rows[0];
+        [operationId,task.tenantId,task.scopeId,taskId,task.inputRevisionId,ctx.principalId,old.name,old.resource_id,old.target,old.target_identity,old.action_digest,JSON.stringify(STANDARD_OPERATIONS[old.name.startsWith('product.')?'product.config.read':old.name==='defects.comment'?'defects.search':old.name as keyof typeof STANDARD_OPERATIONS]),id,old.delegated_owner_id])).rows[0];
+      await tx.query('UPDATE operations SET args=$2 WHERE operation_id=$1',[operationId,JSON.stringify({...old.args,holdAfterEffectMs:0,simulateTimeoutAfterWrite:false})]);
       await this.tasks.emit(tx,taskId,'operation.reconciliation-requested',{operationId,parentOperationId:id});return this.view(row);
     });
   }
@@ -80,9 +81,9 @@ export class Operations extends Execution {
   async preflight(ctx:AuthContext,id:string,fence:number,tx?:Transaction):Promise<any> {
     const run=async(client:Transaction)=>{
       const row=await this.lease(ctx,id,fence,client);if(row.name==='mindmaps.compile')return super.preflight(ctx,id,fence,client);
-      const task=await this.authorize(client,row);
+      const {task,authorization}=await this.authorize(client,row);
       const worker=await this.auth.policy(ctx,client);requireCondition(worker.targets.includes(row.target),'FORBIDDEN_TARGET','Worker cannot reach this target');
-      return {row,task};
+      return {row,task,authorization};
     };return tx?run(tx):this.store.transaction(run);
   }
   async authorize(client:Transaction,row:any):Promise<any>{
@@ -92,8 +93,8 @@ export class Operations extends Execution {
     await this.auth.target(actor,grant,row.scope_id,row.target,client);
     const cancel=(await client.query('SELECT cancel_requested FROM tasks WHERE task_id=$1',[row.task_id])).rows[0].cancel_requested;requireCondition(!cancel,'DECISION_CONFLICT','Task cancellation is pending');
     if(row.kind!=='reconcile'&&row.name==='product.config.write'){requireCondition(this.approvalCheck,'APPROVAL_REQUIRED','Approval required');await this.approvalCheck(client,task,{inputRevisionId:row.input_revision_id,name:row.name,target:row.target,targetIdentity:row.target_identity,args:row.args,approvalId:row.approval_id,requesterId:row.principal_id});}
-    if(this.connectorCheck)await this.connectorCheck(client,actor,row.scope_id,{...row,name:grant,delegatedOwnerId:row.delegated_owner_id});
-    return task;
+    const authorization=this.connectorCheck?await this.connectorCheck(client,actor,row.scope_id,{...row,name:grant,delegatedOwnerId:row.delegated_owner_id}):undefined;
+    return {task,authorization};
   }
   async report(ctx:AuthContext,id:string,body:unknown):Promise<any> {
     const report=ExecutionReport.parse(body);

@@ -16,7 +16,7 @@ const taskGrants = ['tasks.read', 'tasks.submit', 'tasks.input', 'tasks.cancel',
 const deviceGrants = ['product.version', 'product.config.read', 'product.config.write', 'docs.fetch', 'docs.convert', 'defects.search', 'defects.comment'];
 export const identities = [
   { username: 'alice', principalId: 'prn_alice', tenantId: 'tnt_lab', kind: 'user', scopes: ['scp_lab', 'scp_second'],
-    grants: [...taskGrants, ...deviceGrants, 'decisions.approve'], targets: ['LBX-LAB-01', 'bugzilla-synthetic', 'jira-synthetic', 'openkm-synthetic'], defects: ['LAB-42'] },
+    grants: [...taskGrants, ...deviceGrants, 'decisions.approve','rules.manage'], targets: ['LBX-LAB-01', 'bugzilla-synthetic', 'jira-synthetic', 'openkm-synthetic'], defects: ['LAB-42'] },
   { username: 'bob', principalId: 'prn_bob', tenantId: 'tnt_lab', kind: 'user', scopes: ['scp_lab'],
     grants: [...taskGrants, 'decisions.approve'], targets: [], defects: ['LAB-42'] },
   { username: 'outsider', principalId: 'prn_outsider', tenantId: 'tnt_other', kind: 'user', scopes: ['scp_lab'],

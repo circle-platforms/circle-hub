@@ -37,4 +37,11 @@ export class Records extends Knowledge {
       [newId('art'),task.tenantId,task.scopeId,key,digest,bytes.length,`${task.taskId}-report.json`])).rows[0];
     await tx.query("INSERT INTO artifact_bindings(task_id,input_revision_id,artifact_id,role) VALUES($1,$2,$3,'delivery-report') ON CONFLICT DO NOTHING",[task.taskId,task.inputRevisionId,row.artifact_id]);return this.artifactReference(row);
   }
+  async materialize(tx:Transaction,task:Task,role:string,fileName:string,mediaType:string,bytes:Buffer,metadata:unknown):Promise<any>{
+    const digest=sha256(bytes),key=canonicalHash({taskId:task.taskId,inputRevisionId:task.inputRevisionId,role});await this.objects.putObject({Bucket:'evidence',Key:digest,Body:bytes});
+    const row=(await tx.query(`INSERT INTO artifacts(artifact_id,tenant_id,scope_id,compilation_key,sha256,size,object_key,file_name,media_type,metadata)
+      VALUES($1,$2,$3,$4,$5,$6,$5,$7,$8,$9) ON CONFLICT(tenant_id,scope_id,compilation_key) DO UPDATE SET compilation_key=EXCLUDED.compilation_key RETURNING *`,[newId('art'),task.tenantId,task.scopeId,key,digest,bytes.length,fileName,mediaType,JSON.stringify(metadata)])).rows[0];
+    await tx.query('INSERT INTO artifact_bindings(task_id,input_revision_id,artifact_id,role) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING',[task.taskId,task.inputRevisionId,row.artifact_id,role]);return this.artifactReference(row);
+  }
+  async bindings(tx:Transaction,task:Task):Promise<any[]>{return (await tx.query('SELECT a.* FROM artifact_bindings b JOIN artifacts a USING(artifact_id) WHERE b.task_id=$1 AND b.input_revision_id=$2 ORDER BY b.role',[task.taskId,task.inputRevisionId])).rows.map(row=>this.artifactReference(row));}
 }

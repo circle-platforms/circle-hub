@@ -44,3 +44,15 @@ test('Act 7: citations without comparable values remain unknown rather than supp
   const conclusion=await h.request(`/v1/tasks/${task.taskId}/conclusions`,{inputRevisionId:task.inputRevisionId,kind:'script-conclusion',methodId:'lbx-healthcheck',evidenceIds:[]});
   assert.equal(conclusion.kind,'unknown');assert.equal(conclusion.body.verdict,'undetermined');
 });
+
+test('LBX capability observes 5, obtains a separate approval, changes to 10 and delivers a fresh verified comparison',async t=>{
+  const h=await setup(t);await h.startWorker();
+  const task=await h.request('/v1/tasks/submit',{scopeId:'scp_lab',title:'Check LBX-LAB-01 against 8.4 and correct in the test domain',capabilityPackId:'lbx-healthcheck',
+    input:{product:'LBX',version:'8.4.2',target:'LBX-LAB-01',correctIfNonConforming:true,bindings:{product:'LBX-LAB-01',documents:'openkm-synthetic'}},idempotencyKey:'lbx-complete-story'});
+  const waiting=await h.phase(task.taskId,'waiting-review'),pending=waiting.pendingInputs.find((item:any)=>item.kind==='approval'&&item.status==='open');
+  await h.request(`/v1/tasks/${task.taskId}/approvals/${pending.requestId}`,{inputRevisionId:task.inputRevisionId,targetIdentity:pending.binding.targetIdentity,actionDigest:pending.binding.actionDigest,approve:true},'bob');
+  await h.phase(task.taskId,'delivered');const result=await h.request(`/v1/tasks/${task.taskId}/result`);assert.equal(result.status,'succeeded');
+  assert.equal(result.conclusions[0].body.observedTimeout,10);assert.equal(result.conclusions[0].body.minimumTimeout,10);
+  const {readFile}=await import('node:fs/promises'),state=JSON.parse(await readFile(`${h.scratch}/resources/LBX-LAB-01.json`,'utf8'));assert.equal(state.config['backend.timeout'],10);assert.equal(state.writes.length,1);
+  const records=await h.request(`/v1/tasks/${task.taskId}/conclusions`);assert.ok(records.some((record:any)=>record.body.verdict==='refutes'));assert.ok(records.some((record:any)=>record.body.verdict==='supports'));
+});

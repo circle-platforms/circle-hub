@@ -1,4 +1,4 @@
-import { ApiError, FLOW_VERSION, MINDMAP_FLOW_VERSION, IDEMPOTENCY_WINDOW_MS, MINDMAP_PACK_VERSION, canonicalHash, newId, requireCondition, terminalTask,
+import { ApiError, FLOW_VERSION, PACK_FLOWS, IDEMPOTENCY_WINDOW_MS, MINDMAP_PACK_VERSION, canonicalHash, newId, requireCondition, terminalTask,
   type AuthContext, type Event, type SubmitRequest, type Task } from '../../contracts/src/index.ts';
 import type { Store, Transaction } from '../../storage/src/index.ts';
 import type { Auth } from './auth.ts';
@@ -16,6 +16,11 @@ export class Tasks {
     const row=(await tx.query('SELECT * FROM tasks WHERE task_id=$1',[taskId])).rows[0];
     requireCondition(row,'TARGET_NOT_FOUND','Task not found for durable bookkeeping');return taskFromRow(row);
   }
+  async context(ctx:AuthContext,id:string,inputRevisionId:string,patch?:Record<string,unknown>):Promise<any>{return this.store.transaction(async tx=>{
+    const task=await this.load(ctx,id,'tasks.read',tx,true);requireCondition(task.inputRevisionId===inputRevisionId,'INPUT_REVISION_STALE','Runtime context revision changed');
+    const old=(await tx.query('SELECT context FROM tasks WHERE task_id=$1',[id])).rows[0].context;
+    if(patch)await tx.query('UPDATE tasks SET context=$2 WHERE task_id=$1',[id,JSON.stringify({...old,...patch})]);return {...old,...patch};
+  });}
   async load(ctx: AuthContext, taskId: string, grant = 'tasks.read', tx?: Transaction, lock = false): Promise<Task> {
     const row = (await (tx ?? this.store.pool).query(`SELECT * FROM tasks WHERE task_id=$1${lock ? ' FOR UPDATE' : ''}`, [taskId])).rows[0];
     requireCondition(row, 'TARGET_NOT_FOUND', 'Task not found');
@@ -47,7 +52,7 @@ export class Tasks {
       const taskId = newId('task'); const inputRevisionId = newId('inrev');
       await client.query(`INSERT INTO tasks(task_id,tenant_id,scope_id,principal_id,title,phase,input_revision_id,input,flow_version,capability_pack_id,pack_version)
         VALUES($1,$2,$3,$4,$5,'admitted',$6,$7,$8,$9,$10)`, [taskId, policy.tenantId, request.scopeId, policy.principalId,
-        request.title, inputRevisionId, JSON.stringify(request.input), request.capabilityPackId ? MINDMAP_FLOW_VERSION : FLOW_VERSION, request.capabilityPackId ?? null,
+        request.title, inputRevisionId, JSON.stringify(request.input), request.capabilityPackId ? PACK_FLOWS[request.capabilityPackId] : FLOW_VERSION, request.capabilityPackId ?? null,
         request.capabilityPackId ? MINDMAP_PACK_VERSION : null]);
       await client.query('INSERT INTO input_revisions(input_revision_id,task_id,input,principal_id) VALUES($1,$2,$3,$4)',
         [inputRevisionId, taskId, JSON.stringify(request.input), policy.principalId]);
@@ -105,7 +110,8 @@ export class Tasks {
   async revise(tx: Transaction, task: Task, ctx: AuthContext, input: Record<string, unknown>): Promise<Task> {
     requireCondition(!terminalTask(task.phase) && task.phase !== 'unknown', 'DECISION_CONFLICT', 'Task revision is frozen in this phase');
     const revision = newId('inrev');
-    await tx.query(`UPDATE tasks SET input_revision_id=$2,input=$3,phase='admitted',stage='admit',revision=revision+1,updated_at=clock_timestamp()
+    await tx.query(`UPDATE tasks SET input_revision_id=$2,input=$3,phase='admitted',stage='admit',result=NULL,result_status=NULL,
+      context=jsonb_build_object('delegatedOwnerId',context->'delegatedOwnerId'),revision=revision+1,updated_at=clock_timestamp()
       WHERE task_id=$1`, [task.taskId, revision, JSON.stringify(input)]);
     await tx.query('INSERT INTO input_revisions(input_revision_id,task_id,input,principal_id) VALUES($1,$2,$3,$4)',
       [revision, task.taskId, JSON.stringify(input), ctx.principalId]);
@@ -154,7 +160,7 @@ export class Tasks {
     for (const candidate of candidates) await this.store.transaction(async tx => {
       const row = (await tx.query('SELECT * FROM tasks WHERE task_id=$1 FOR UPDATE SKIP LOCKED', [candidate.task_id])).rows[0];
       if (!row) return;
-      requireCondition([FLOW_VERSION,MINDMAP_FLOW_VERSION].includes(row.flow_version), 'UNSUPPORTED_VERSION', 'No runner for the pinned flow version');
+      requireCondition([FLOW_VERSION,...Object.values(PACK_FLOWS)].includes(row.flow_version), 'UNSUPPORTED_VERSION', 'No runner for the pinned flow version');
       const missing = Array.isArray(row.input.requiredFields) ? row.input.requiredFields.filter((key: string) => !row.input[key]) : [];
       if (row.stage === 'admit' && row.phase === 'admitted') {
         if (missing.length) {
