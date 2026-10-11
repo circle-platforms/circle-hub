@@ -1,44 +1,1454 @@
-import {useState} from 'react';
-import {Activity,AlertTriangle,ArrowRight,ArrowUpRight,Check,CheckCircle2,ChevronRight,Clock3,Code2,Database,Download,Eye,FileText,GitBranch,HardDrive,KeyRound,LockKeyhole,Network,Plus,RefreshCw,Server,Settings2,ShieldCheck,Terminal,Users,Workflow,XCircle} from 'lucide-react';
-import {useDemo} from './ui-context.tsx';
-import {permitted,visibleTasks,roles,phaseLabels,phaseTone,type AuditEvent,type Permission,type Role} from './domain.ts';
-import {Badge,Button,Card,Checklist,Empty,JsonBlock,KeyValues,Metric,Modal,Notice,Progress,SectionLink,Sparkline,Tabs} from './components.tsx';
+import { useState } from "react";
+import {
+  Activity,
+  AlertTriangle,
+  ArrowRight,
+  ArrowUpRight,
+  Check,
+  CheckCircle2,
+  ChevronRight,
+  Clock3,
+  Code2,
+  Database,
+  Download,
+  Eye,
+  FileText,
+  GitBranch,
+  HardDrive,
+  KeyRound,
+  LockKeyhole,
+  Network,
+  Plus,
+  RefreshCw,
+  Server,
+  Settings2,
+  ShieldCheck,
+  Terminal,
+  Users,
+  Workflow,
+  XCircle,
+} from "lucide-react";
+import { useDemo } from "./ui-context.tsx";
+import {
+  permitted,
+  visibleTasks,
+  roles,
+  phaseLabels,
+  phaseTone,
+  type AuditEvent,
+  type Permission,
+  type Role,
+} from "./domain.ts";
+import {
+  Badge,
+  Button,
+  Card,
+  Checklist,
+  Empty,
+  JsonBlock,
+  KeyValues,
+  Metric,
+  Modal,
+  Notice,
+  Progress,
+  SectionLink,
+  Sparkline,
+  Tabs,
+} from "./components.tsx";
 
-const permissionLabels:Record<Permission,string>={'business.read':'读取工作与现场','knowledge.read':'查询资料与原件','knowledge.manage':'接入与发布知识','task.create':'委派工作 / 手工触发','task.respond':'补充输入 / 请求停止','task.approve':'批准具体动作','execution.control':'设备操作 / 现场接管','method.edit':'编辑 Agent / 方法','method.publish':'发布 Agent / 方法','security.manage':'人员与策略维护','platform.manage':'节点与服务维护','audit.read':'读取审计元数据','commercial.read':'读取商务资料'};
-const actionLabels:Record<string,string>={createTask:'受理用户工作',advance:'推进工作',cancel:'请求停止',reconcile:'核对执行结果',approve:'批准具体动作',reject:'拒绝具体动作',revise:'保存输入修订',bindSnapshot:'更新任务资料依据',revoke:'撤回任务委托',disconnect:'Circle 断开连接',reconnect:'Circle 重新连接',syncSource:'同步来源修订',addSource:'接入来源配置',publishSnapshot:'发布知识快照',rollbackSnapshot:'回退默认快照',scheduleRun:'手工触发规则',scheduleToggle:'调整触发开关',workerDrain:'排空执行节点',workerReconnect:'恢复节点心跳',methodReview:'评审方法候选',methodPublish:'发布方法版本',maintenance:'维护窗口',backup:'恢复检查',addMember:'添加成员授权',storyMove:'调整工程故事',createAgent:'创建 Agent 草稿',saveAgent:'保存 Agent 配置',evaluateAgent:'生成测试示例记录',reviewAgent:'批准 Agent 草稿',publishAgent:'发布 Agent 版本',pauseAgent:'调整 Agent 使用入口',takeover:'接管执行现场',returnControl:'交还控制权',webStep:'推进页面流程样例',identityChange:'目标身份变化'};
-function downloadJson(name:string,value:unknown){const url=URL.createObjectURL(new Blob([JSON.stringify(value,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
-
-export function AccessPage(){
- const {state,context,act,go}=useDemo();const [tab,setTab]=useState(permitted(context,'security.manage')?'members':'mine');const [add,setAdd]=useState(false);const [name,setName]=useState('');const [role,setRole]=useState<Role>('viewer');const [checkRole,setCheckRole]=useState<Role>('tester');const [checkEnvironment,setCheckEnvironment]=useState<'lab'|'production'>('lab');const [checkPermission,setCheckPermission]=useState<Permission>('execution.control');const [evaluated,setEvaluated]=useState(false);const canManage=permitted(context,'security.manage');const checkAllowed=permitted({role:checkRole,environment:checkEnvironment,project:'lb'},checkPermission);
- return <><div className="identity-banner"><span className="avatar">{roles[context.role].initials}</span><div><b>{roles[context.role].person} · {roles[context.role].label}</b><p>{roles[context.role].subtitle} · 当前项目 {context.project==='lb'?'负载均衡研发':'防火墙研发'}</p></div><Badge tone="blue">{context.environment==='lab'?'测试域':'生产域'}</Badge></div><Tabs tabs={[{id:'mine',label:'我的权限'},{id:'members',label:'成员与角色'},{id:'policies',label:'资源授权'},{id:'identities',label:'企业身份接入'}]} value={tab} onChange={setTab}/>
- {tab==='mine'&&<div className="two-col"><Card title="这个身份能做什么"><div className="permission-list">{(Object.entries(permissionLabels) as [Permission,string][]).map(([p,label])=><div key={p}><span className={permitted(context,p)?'permission-allowed':'permission-denied'}>{permitted(context,p)?<Check size={13}/>:<LockKeyhole size={12}/>}</span><b>{label}</b><small>{permitted(context,p)?'在当前范围可用':'不包含这项权限'}</small></div>)}</div></Card><Card title="权限的作用范围"><div className="padded"><KeyValues items={[{label:'组织',value:'产品研发 · 示例组织'},{label:'项目',value:context.project==='lb'?'负载均衡研发':'防火墙研发'},{label:'环境',value:context.environment==='lab'?'测试域':'生产域'},{label:'角色',value:roles[context.role].label},{label:'可访问环境',value:roles[context.role].environments.map(x=>x==='lab'?'测试域':'生产域').join('、')},{label:'委托',value:'按任务、目标、动作、期限和输入修订限定'}]}/><Notice>安全管理、平台运维、业务操作与资料读取分别授权。管理身份不自动获得所有业务内容。</Notice><Button small onClick={()=>go('agents')}>查看 Agent 入口</Button></div></Card></div>}
- {tab==='members'&&(canManage?<><div className="toolbar"><p className="small-text secondary">一个人可以在不同项目承担不同职责。组织身份由可信来源接入。</p><Button primary onClick={()=>setAdd(true)}><Plus size={14}/>添加成员</Button></div><Card><div className="table-wrap"><table><thead><tr><th>成员</th><th>项目角色</th><th>作用范围</th><th>状态</th><th>身份来源</th></tr></thead><tbody>{state.members.map((m,i)=><tr key={i}><td><span className="avatar mini">{m.name[0]}</span><b>{m.name}</b></td><td>{roles[m.role].label}</td><td>{m.scope}</td><td><Badge tone="green">{m.status}</Badge></td><td>公司身份目录 · 示例</td></tr>)}</tbody></table></div></Card><Card title="服务与执行身份" className="mt-20"><div className="table-wrap"><table><thead><tr><th>身份</th><th>用途</th><th>授权</th><th>凭据</th></tr></thead><tbody><tr><td>svc-inspection</td><td>固定配置巡检</td><td>测试域、指定目标、只读</td><td>只保存受控引用</td></tr><tr><td>svc-knowledge</td><td>公司资料增量同步</td><td>来源 ACL 与采集范围</td><td>来源专用凭据引用</td></tr><tr><td>LAB-EAST-02</td><td>执行节点</td><td>任务委托与实时作用检查</td><td>独立服务身份</td></tr></tbody></table></div></Card></>:<Empty locked title="成员管理需要安全管理权限" description="你可以查看自己的授权，但不能修改其他人员、角色或服务身份。"/>)}
- {tab==='policies'&&(canManage?<><Card title="按角色区分资源和动作"><div className="table-wrap"><table className="permission-matrix"><thead><tr><th>动作</th>{(['tester','expert','approver','security','ops','auditor','viewer'] as Role[]).map(r=><th key={r}>{roles[r].label}</th>)}</tr></thead><tbody>{(['knowledge.read','knowledge.manage','task.create','task.approve','execution.control','method.publish','security.manage','platform.manage','audit.read'] as Permission[]).map(p=><tr key={p}><td>{permissionLabels[p]}</td>{(['tester','expert','approver','security','ops','auditor','viewer'] as Role[]).map(r=><td key={r}>{roles[r].permissions.includes(p)?<Check size={14} className="permission-allowed"/>:<span className="permission-dash">—</span>}</td>)}</tr>)}</tbody></table></div></Card><div className="two-col mt-20"><Card title="试一下具体授权"><div className="padded"><label className="field">人员职责<select aria-label="权限测试角色" value={checkRole} onChange={e=>{setCheckRole(e.target.value as Role);setEvaluated(false);}}>{Object.entries(roles).map(([id,r])=><option key={id} value={id}>{r.label}</option>)}</select></label><div className="form-row"><label className="field">目标环境<select aria-label="权限测试环境" value={checkEnvironment} onChange={e=>{setCheckEnvironment(e.target.value as 'lab'|'production');setEvaluated(false);}}><option value="lab">测试域</option><option value="production">生产域</option></select></label><label className="field">动作<select aria-label="权限测试动作" value={checkPermission} onChange={e=>{setCheckPermission(e.target.value as Permission);setEvaluated(false);}}>{Object.entries(permissionLabels).map(([p,t])=><option key={p} value={p}>{t}</option>)}</select></label></div><Button small primary onClick={()=>setEvaluated(true)}>查看授权示例</Button>{evaluated&&<div className={`policy-result ${checkAllowed?'allowed':'denied'}`}>{checkAllowed?<CheckCircle2 size={18}/>:<XCircle size={18}/>}<div><b>{checkAllowed?'这个范围内允许':'这个范围内拒绝'}</b><p>{checkAllowed?'角色包含该动作，环境在授权内；实际执行仍要核对具体目标、委托和修订。':'角色动作或环境范围不满足要求，不能因为安装插件或页面可见而扩权。'}</p></div></div>}</div></Card><Card title="正在生效的任务委托"><div className="delegation-list">{state.tasks.filter(t=>t.environment===context.environment&&t.project===context.project&&!['done','stopped'].includes(t.phase)).slice(0,4).map(t=><div key={t.id}><div><b>{t.id}</b><small>input-r{t.inputRevision} · {t.revoked?'已撤回':'限定目标与动作'}</small></div><Button small onClick={()=>act({type:'revoke',id:t.id})} disabled={t.revoked}>撤回委托</Button></div>)}</div><p className="card-note">撤回后拒绝下一项失效作用，在途操作仍要核对是否停止。</p></Card></div></>:<Empty locked title="策略维护需要安全管理权限" description="测试、生产、观察、控制、审批和发布不能靠前端选择扩大权限。"/>)}
- {tab==='identities'&&<><div className="two-col"><Card title="公司登录与人员目录"><div className="padded"><div className="connection-identity"><KeyRound size={22}/><div><h3>OIDC / SAML 与目录同步</h3><p>按已有身份系统接入，具体供应商与协议配置待实施时确定。</p></div><Badge>设计配置</Badge></div><KeyValues items={[{label:'人员登录',value:'可信公司身份来源，server 校验身份'},{label:'目录同步',value:'人员、群组与项目成员映射'},{label:'权限来源',value:'公司身份 + 项目角色 + 资源策略'},{label:'敏感动作',value:'按政策附加时效和必要认证'},{label:'客户端',value:'Circle、管理端、CLI 使用同一身份规则'}]}/></div></Card><Card title="Agent 访问公司系统"><div className="padded"><div className="connection-identity"><ShieldCheck size={22}/><div><h3>任务委托与受控凭据</h3><p>人员的业务授权与工具所用服务身份分别管理。</p></div></div><KeyValues items={[{label:'委托绑定',value:'人员、任务、项目、目标、动作和有效期'},{label:'执行权限',value:'人员授权、服务权限与委托的共同范围'},{label:'来源与工具',value:'专用只读身份或获准的代表用户访问'},{label:'秘密内容',value:'由秘密通道处理，不进入普通日志与提示词'},{label:'撤权',value:'查询、执行、恢复与导出都检查当前范围'}]}/></div></Card></div><Notice>顶部身份切换用于演示页面差异，不是正式登录或后端鉴权。实际身份接入与作用端强制检查属于后续 server 实现。</Notice></>}
- {add&&<Modal title="添加项目成员" subtitle="示例组织的人员授权演示" onClose={()=>setAdd(false)}><label className="field">成员名称<input autoFocus value={name} onChange={e=>setName(e.target.value)} placeholder="输入示例成员名称"/></label><label className="field">项目职责<select value={role} onChange={e=>setRole(e.target.value as Role)}>{Object.entries(roles).map(([id,r])=><option value={id} key={id}>{r.label}</option>)}</select></label><KeyValues items={[{label:'项目',value:context.project==='lb'?'负载均衡研发':'防火墙研发'},{label:'环境',value:context.environment==='lab'?'测试域':'生产域'}]}/><div className="dialog-actions"><Button onClick={()=>setAdd(false)}>取消</Button><Button primary onClick={()=>{const r=act({type:'addMember',name,role});if(r.ok)setAdd(false);}}>保存示例授权</Button></div></Modal>}
- </>;
+const permissionLabels: Record<Permission, string> = {
+  "business.read": "读取工作与现场",
+  "knowledge.read": "查询资料与原件",
+  "knowledge.manage": "接入与发布知识",
+  "task.create": "委派工作 / 手工触发",
+  "task.respond": "补充输入 / 请求停止",
+  "task.approve": "批准具体动作",
+  "execution.control": "设备操作 / 现场接管",
+  "method.edit": "编辑 Agent / 方法",
+  "method.publish": "发布 Agent / 方法",
+  "security.manage": "人员与策略维护",
+  "platform.manage": "节点与服务维护",
+  "audit.read": "读取审计元数据",
+  "commercial.read": "读取商务资料",
+};
+const actionLabels: Record<string, string> = {
+  createTask: "受理用户工作",
+  advance: "推进工作",
+  cancel: "请求停止",
+  reconcile: "核对执行结果",
+  approve: "批准具体动作",
+  reject: "拒绝具体动作",
+  revise: "保存输入修订",
+  bindSnapshot: "更新任务资料依据",
+  revoke: "撤回任务委托",
+  disconnect: "Circle 断开连接",
+  reconnect: "Circle 重新连接",
+  syncSource: "同步来源修订",
+  addSource: "接入来源配置",
+  publishSnapshot: "发布知识快照",
+  rollbackSnapshot: "回退默认快照",
+  scheduleRun: "手工触发规则",
+  scheduleToggle: "调整触发开关",
+  workerDrain: "排空执行节点",
+  workerReconnect: "恢复节点心跳",
+  methodReview: "评审方法候选",
+  methodPublish: "发布方法版本",
+  maintenance: "维护窗口",
+  backup: "恢复检查",
+  addMember: "添加成员授权",
+  storyMove: "调整工程故事",
+  createAgent: "创建 Agent 草稿",
+  saveAgent: "保存 Agent 配置",
+  evaluateAgent: "生成测试示例记录",
+  reviewAgent: "批准 Agent 草稿",
+  publishAgent: "发布 Agent 版本",
+  pauseAgent: "调整 Agent 使用入口",
+  takeover: "接管执行现场",
+  returnControl: "交还控制权",
+  webStep: "推进页面流程样例",
+  identityChange: "目标身份变化",
+};
+function downloadJson(name: string, value: unknown) {
+  const url = URL.createObjectURL(
+    new Blob([JSON.stringify(value, null, 2)], { type: "application/json" }),
+  );
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export function AuditPage(){const {state,context,go,openTask,openAgent,notify}=useDemo();const [tab,setTab]=useState(permitted(context,'audit.read')?'audit':permitted(context,'platform.manage')?'logs':'events');const [filter,setFilter]=useState('all');const [query,setQuery]=useState('');const [event,setEvent]=useState<AuditEvent|null>(null);const tasks=visibleTasks(state,context);const canAudit=permitted(context,'audit.read');const canBusiness=permitted(context,'business.read');const canOps=permitted(context,'platform.manage');const events=state.audit.filter(a=>(tab==='audit'?canAudit:tab==='events'?tasks.some(t=>t.id===a.task):canOps?a.category==='platform'||a.category==='execution':tasks.some(t=>t.id===a.task))&&(filter==='all'||a.result===filter)&&(`${a.action} ${a.actor} ${a.target} ${a.task??''}`).toLowerCase().includes(query.toLowerCase())&&a.environment===context.environment);
- if(!canAudit&&!canBusiness&&!canOps)return <Empty locked title="这个账号没有日志读取权限" description="日志和审计按项目与内容范围提供，不能从日志入口绕过资料或任务授权。"/>;
- return <><Tabs tabs={[{id:'audit',label:'审计事件'},{id:'events',label:'任务事件'},{id:'logs',label:'运行日志'}]} value={tab} onChange={setTab}/>{tab==='audit'&&!canAudit?<Empty locked title="组织审计需要独立授权" description="你可以查看自己有权访问的任务事件，不能读取全部组织审计。"/>:<><div className="toolbar"><div className="row gap"><label className="inline-search"><Code2 size={14}/><input aria-label="搜索日志" placeholder="人员、任务、操作…" value={query} onChange={e=>setQuery(e.target.value)}/></label><select aria-label="日志结果筛选" value={filter} onChange={e=>setFilter(e.target.value)}><option value="all">全部结果</option><option value="allowed">允许</option><option value="denied">拒绝</option><option value="recorded">已记录</option></select></div><Button small onClick={()=>{if(tab==='audit'&&!canAudit){notify('当前身份不能导出组织审计。',true);return;}downloadJson('circle-demo-events.json',{source:'synthetic-demo',scope:context,events:events.map(a=>({id:a.id,time:a.time,actor:a.actor,action:actionLabels[a.action]??a.action,target:a.target,taskId:a.task,result:a.result,inputRevision:a.inputRevision,policy:a.policy,environment:a.environment}))});notify('已导出当前筛选和授权范围的合成记录。');}}><Download size={13}/>导出当前范围</Button></div><Card><div className="table-wrap"><table><thead><tr><th>时间</th><th>人员 / 服务</th><th>{tab==='audit'?'审计动作':'事件'}</th><th>对象</th><th>结果</th><th>关联</th></tr></thead><tbody>{events.map(a=><tr key={a.id} className="clickable" onClick={()=>setEvent(a)}><td><code>{a.time}</code><small>{a.id}</small></td><td><b>{a.actor}</b><small>{a.role}</small></td><td>{actionLabels[a.action]??a.action}<small>{a.category} · {a.policy}</small></td><td><code>{a.target}</code></td><td><Badge tone={a.result==='denied'?'red':a.result==='allowed'?'green':'neutral'}>{a.result==='denied'?'拒绝':a.result==='allowed'?'允许':'已记录'}</Badge></td><td>{a.task??'配置 / 资源'}<ChevronRight size={12}/></td></tr>)}</tbody></table></div>{!events.length&&<Empty title="当前范围没有记录" description="切换日志类型、结果或执行一次获准的演示动作。"/>}</Card></>}
- <div className="three-col mt-20"><Card title="运行日志"><div className="padded"><p className="small-text secondary">服务、worker、工具调用的技术事件。敏感字段与业务正文按范围提供。</p></div></Card><Card title="任务事件"><div className="padded"><p className="small-text secondary">输入、阶段、等待、人工回应与交付，保留每次变化。</p></div></Card><Card title="审计事件"><div className="padded"><p className="small-text secondary">谁授权、操作、接管或发布，绑定范围、版本、结果与时间。</p></div></Card></div>
- {event&&<Modal title={actionLabels[event.action]??event.action} subtitle={`${event.id} · ${event.time}`} wide onClose={()=>setEvent(null)}><KeyValues items={[{label:'发起人 / 服务',value:`${event.actor} · ${event.role}`},{label:'作用对象',value:event.target},{label:'关联任务',value:event.task??'平台配置或资源'},{label:'输入与政策',value:`${event.inputRevision?`input-r${event.inputRevision} / `:''}${event.policy}`},{label:'返回结果',value:event.result},{label:'事件说明',value:event.detail}]}/><JsonBlock label="审计元数据" value={{eventId:event.id,actor:event.actor,target:event.target,taskId:event.task,inputRevision:event.inputRevision,policyVersion:event.policy,result:event.result,environment:event.environment,source:'synthetic-demo',secretValues:'not-collected'}}/><div className="dialog-actions">{event.task&&canBusiness&&<Button small onClick={()=>{openTask(event.task!);setEvent(null);}}>回到关联工作</Button>}{event.target.startsWith('AGT')&&canBusiness&&<Button small onClick={()=>{openAgent(event.target);setEvent(null);}}>查看 Agent 版本</Button>}<Button small onClick={()=>{setEvent(null);go('access');}}>查看授权范围</Button></div></Modal>}
- </>;
+export function AccessPage() {
+  const { state, context, act, go } = useDemo();
+  const [tab, setTab] = useState(
+    permitted(context, "security.manage") ? "members" : "mine",
+  );
+  const [add, setAdd] = useState(false);
+  const [name, setName] = useState("");
+  const [role, setRole] = useState<Role>("viewer");
+  const [checkRole, setCheckRole] = useState<Role>("tester");
+  const [checkEnvironment, setCheckEnvironment] = useState<
+    "lab" | "production"
+  >("lab");
+  const [checkPermission, setCheckPermission] =
+    useState<Permission>("execution.control");
+  const [evaluated, setEvaluated] = useState(false);
+  const canManage = permitted(context, "security.manage");
+  const checkAllowed = permitted(
+    { role: checkRole, environment: checkEnvironment, project: "lb" },
+    checkPermission,
+  );
+  return (
+    <>
+      <div className="identity-banner">
+        <span className="avatar">{roles[context.role].initials}</span>
+        <div>
+          <b>
+            {roles[context.role].person} · {roles[context.role].label}
+          </b>
+          <p>
+            {roles[context.role].subtitle} · 当前项目{" "}
+            {context.project === "lb" ? "负载均衡研发" : "防火墙研发"}
+          </p>
+        </div>
+        <Badge tone="blue">
+          {context.environment === "lab" ? "测试域" : "生产域"}
+        </Badge>
+      </div>
+      <Tabs
+        tabs={[
+          { id: "mine", label: "我的权限" },
+          { id: "members", label: "成员与角色" },
+          { id: "policies", label: "资源授权" },
+          { id: "identities", label: "企业身份接入" },
+        ]}
+        value={tab}
+        onChange={setTab}
+      />
+      {tab === "mine" && (
+        <div className="two-col">
+          <Card title="这个身份能做什么">
+            <div className="permission-list">
+              {(Object.entries(permissionLabels) as [Permission, string][]).map(
+                ([p, label]) => (
+                  <div key={p}>
+                    <span
+                      className={
+                        permitted(context, p)
+                          ? "permission-allowed"
+                          : "permission-denied"
+                      }
+                    >
+                      {permitted(context, p) ? (
+                        <Check size={13} />
+                      ) : (
+                        <LockKeyhole size={12} />
+                      )}
+                    </span>
+                    <b>{label}</b>
+                    <small>
+                      {permitted(context, p)
+                        ? "在当前范围可用"
+                        : "不包含这项权限"}
+                    </small>
+                  </div>
+                ),
+              )}
+            </div>
+          </Card>
+          <Card title="权限的作用范围">
+            <div className="padded">
+              <KeyValues
+                items={[
+                  { label: "组织", value: "产品研发 · 示例组织" },
+                  {
+                    label: "项目",
+                    value:
+                      context.project === "lb" ? "负载均衡研发" : "防火墙研发",
+                  },
+                  {
+                    label: "环境",
+                    value: context.environment === "lab" ? "测试域" : "生产域",
+                  },
+                  { label: "角色", value: roles[context.role].label },
+                  {
+                    label: "可访问环境",
+                    value: roles[context.role].environments
+                      .map((x) => (x === "lab" ? "测试域" : "生产域"))
+                      .join("、"),
+                  },
+                  {
+                    label: "委托",
+                    value: "按任务、目标、动作、期限和输入修订限定",
+                  },
+                ]}
+              />
+              <Notice>
+                安全管理、平台运维、业务操作与资料读取分别授权。管理身份不自动获得所有业务内容。
+              </Notice>
+              <Button small onClick={() => go("agents")}>
+                查看 Agent 入口
+              </Button>
+            </div>
+          </Card>
+        </div>
+      )}
+      {tab === "members" &&
+        (canManage ? (
+          <>
+            <div className="toolbar">
+              <p className="small-text secondary">
+                一个人可以在不同项目承担不同职责。组织身份由可信来源接入。
+              </p>
+              <Button primary onClick={() => setAdd(true)}>
+                <Plus size={14} />
+                添加成员
+              </Button>
+            </div>
+            <Card>
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>成员</th>
+                      <th>项目角色</th>
+                      <th>作用范围</th>
+                      <th>状态</th>
+                      <th>身份来源</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {state.members.map((m, i) => (
+                      <tr key={i}>
+                        <td>
+                          <span className="avatar mini">{m.name[0]}</span>
+                          <b>{m.name}</b>
+                        </td>
+                        <td>{roles[m.role].label}</td>
+                        <td>{m.scope}</td>
+                        <td>
+                          <Badge tone="green">{m.status}</Badge>
+                        </td>
+                        <td>公司身份目录 · 示例</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+            <Card title="服务与执行身份" className="mt-20">
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>身份</th>
+                      <th>用途</th>
+                      <th>授权</th>
+                      <th>凭据</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>svc-inspection</td>
+                      <td>固定配置巡检</td>
+                      <td>测试域、指定目标、只读</td>
+                      <td>只保存受控引用</td>
+                    </tr>
+                    <tr>
+                      <td>svc-knowledge</td>
+                      <td>公司资料增量同步</td>
+                      <td>来源 ACL 与采集范围</td>
+                      <td>来源专用凭据引用</td>
+                    </tr>
+                    <tr>
+                      <td>LAB-EAST-02</td>
+                      <td>执行节点</td>
+                      <td>任务委托与实时作用检查</td>
+                      <td>独立服务身份</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          </>
+        ) : (
+          <Empty
+            locked
+            title="成员管理需要安全管理权限"
+            description="你可以查看自己的授权，但不能修改其他人员、角色或服务身份。"
+          />
+        ))}
+      {tab === "policies" &&
+        (canManage ? (
+          <>
+            <Card title="按角色区分资源和动作">
+              <div className="table-wrap">
+                <table className="permission-matrix">
+                  <thead>
+                    <tr>
+                      <th>动作</th>
+                      {(
+                        [
+                          "tester",
+                          "expert",
+                          "approver",
+                          "security",
+                          "ops",
+                          "auditor",
+                          "viewer",
+                        ] as Role[]
+                      ).map((r) => (
+                        <th key={r}>{roles[r].label}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(
+                      [
+                        "knowledge.read",
+                        "knowledge.manage",
+                        "task.create",
+                        "task.approve",
+                        "execution.control",
+                        "method.publish",
+                        "security.manage",
+                        "platform.manage",
+                        "audit.read",
+                      ] as Permission[]
+                    ).map((p) => (
+                      <tr key={p}>
+                        <td>{permissionLabels[p]}</td>
+                        {(
+                          [
+                            "tester",
+                            "expert",
+                            "approver",
+                            "security",
+                            "ops",
+                            "auditor",
+                            "viewer",
+                          ] as Role[]
+                        ).map((r) => (
+                          <td key={r}>
+                            {roles[r].permissions.includes(p) ? (
+                              <Check size={14} className="permission-allowed" />
+                            ) : (
+                              <span className="permission-dash">—</span>
+                            )}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+            <div className="two-col mt-20">
+              <Card title="试一下具体授权">
+                <div className="padded">
+                  <label className="field">
+                    人员职责
+                    <select
+                      aria-label="权限测试角色"
+                      value={checkRole}
+                      onChange={(e) => {
+                        setCheckRole(e.target.value as Role);
+                        setEvaluated(false);
+                      }}
+                    >
+                      {Object.entries(roles).map(([id, r]) => (
+                        <option key={id} value={id}>
+                          {r.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <div className="form-row">
+                    <label className="field">
+                      目标环境
+                      <select
+                        aria-label="权限测试环境"
+                        value={checkEnvironment}
+                        onChange={(e) => {
+                          setCheckEnvironment(
+                            e.target.value as "lab" | "production",
+                          );
+                          setEvaluated(false);
+                        }}
+                      >
+                        <option value="lab">测试域</option>
+                        <option value="production">生产域</option>
+                      </select>
+                    </label>
+                    <label className="field">
+                      动作
+                      <select
+                        aria-label="权限测试动作"
+                        value={checkPermission}
+                        onChange={(e) => {
+                          setCheckPermission(e.target.value as Permission);
+                          setEvaluated(false);
+                        }}
+                      >
+                        {Object.entries(permissionLabels).map(([p, t]) => (
+                          <option key={p} value={p}>
+                            {t}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                  <Button small primary onClick={() => setEvaluated(true)}>
+                    查看授权示例
+                  </Button>
+                  {evaluated && (
+                    <div
+                      className={`policy-result ${checkAllowed ? "allowed" : "denied"}`}
+                    >
+                      {checkAllowed ? (
+                        <CheckCircle2 size={18} />
+                      ) : (
+                        <XCircle size={18} />
+                      )}
+                      <div>
+                        <b>
+                          {checkAllowed ? "这个范围内允许" : "这个范围内拒绝"}
+                        </b>
+                        <p>
+                          {checkAllowed
+                            ? "角色包含该动作，环境在授权内；实际执行仍要核对具体目标、委托和修订。"
+                            : "角色动作或环境范围不满足要求，不能因为安装插件或页面可见而扩权。"}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </Card>
+              <Card title="正在生效的任务委托">
+                <div className="delegation-list">
+                  {state.tasks
+                    .filter(
+                      (t) =>
+                        t.environment === context.environment &&
+                        t.project === context.project &&
+                        !["done", "stopped"].includes(t.phase),
+                    )
+                    .slice(0, 4)
+                    .map((t) => (
+                      <div key={t.id}>
+                        <div>
+                          <b>{t.id}</b>
+                          <small>
+                            input-r{t.inputRevision} ·{" "}
+                            {t.revoked ? "已撤回" : "限定目标与动作"}
+                          </small>
+                        </div>
+                        <Button
+                          small
+                          onClick={() => act({ type: "revoke", id: t.id })}
+                          disabled={t.revoked}
+                        >
+                          撤回委托
+                        </Button>
+                      </div>
+                    ))}
+                </div>
+                <p className="card-note">
+                  撤回后拒绝下一项失效作用，在途操作仍要核对是否停止。
+                </p>
+              </Card>
+            </div>
+          </>
+        ) : (
+          <Empty
+            locked
+            title="策略维护需要安全管理权限"
+            description="测试、生产、观察、控制、审批和发布不能靠前端选择扩大权限。"
+          />
+        ))}
+      {tab === "identities" && (
+        <>
+          <div className="two-col">
+            <Card title="公司登录与人员目录">
+              <div className="padded">
+                <div className="connection-identity">
+                  <KeyRound size={22} />
+                  <div>
+                    <h3>OIDC / SAML 与目录同步</h3>
+                    <p>
+                      按已有身份系统接入，具体供应商与协议配置待实施时确定。
+                    </p>
+                  </div>
+                  <Badge>设计配置</Badge>
+                </div>
+                <KeyValues
+                  items={[
+                    {
+                      label: "人员登录",
+                      value: "可信公司身份来源，server 校验身份",
+                    },
+                    { label: "目录同步", value: "人员、群组与项目成员映射" },
+                    {
+                      label: "权限来源",
+                      value: "公司身份 + 项目角色 + 资源策略",
+                    },
+                    { label: "敏感动作", value: "按政策附加时效和必要认证" },
+                    {
+                      label: "客户端",
+                      value: "Circle、管理端、CLI 使用同一身份规则",
+                    },
+                  ]}
+                />
+              </div>
+            </Card>
+            <Card title="Agent 访问公司系统">
+              <div className="padded">
+                <div className="connection-identity">
+                  <ShieldCheck size={22} />
+                  <div>
+                    <h3>任务委托与受控凭据</h3>
+                    <p>人员的业务授权与工具所用服务身份分别管理。</p>
+                  </div>
+                </div>
+                <KeyValues
+                  items={[
+                    {
+                      label: "委托绑定",
+                      value: "人员、任务、项目、目标、动作和有效期",
+                    },
+                    {
+                      label: "执行权限",
+                      value: "人员授权、服务权限与委托的共同范围",
+                    },
+                    {
+                      label: "来源与工具",
+                      value: "专用只读身份或获准的代表用户访问",
+                    },
+                    {
+                      label: "秘密内容",
+                      value: "由秘密通道处理，不进入普通日志与提示词",
+                    },
+                    {
+                      label: "撤权",
+                      value: "查询、执行、恢复与导出都检查当前范围",
+                    },
+                  ]}
+                />
+              </div>
+            </Card>
+          </div>
+          <Notice>
+            顶部身份切换用于演示页面差异，不是正式登录或后端鉴权。实际身份接入与作用端强制检查属于后续
+            server 实现。
+          </Notice>
+        </>
+      )}
+      {add && (
+        <Modal
+          title="添加项目成员"
+          subtitle="示例组织的人员授权演示"
+          onClose={() => setAdd(false)}
+        >
+          <label className="field">
+            成员名称
+            <input
+              autoFocus
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="输入示例成员名称"
+            />
+          </label>
+          <label className="field">
+            项目职责
+            <select
+              value={role}
+              onChange={(e) => setRole(e.target.value as Role)}
+            >
+              {Object.entries(roles).map(([id, r]) => (
+                <option value={id} key={id}>
+                  {r.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <KeyValues
+            items={[
+              {
+                label: "项目",
+                value: context.project === "lb" ? "负载均衡研发" : "防火墙研发",
+              },
+              {
+                label: "环境",
+                value: context.environment === "lab" ? "测试域" : "生产域",
+              },
+            ]}
+          />
+          <div className="dialog-actions">
+            <Button onClick={() => setAdd(false)}>取消</Button>
+            <Button
+              primary
+              onClick={() => {
+                const r = act({ type: "addMember", name, role });
+                if (r.ok) setAdd(false);
+              }}
+            >
+              保存示例授权
+            </Button>
+          </div>
+        </Modal>
+      )}
+    </>
+  );
 }
 
-export function MonitoringPage(){const {state,context,openTask,openAgent,go}=useDemo();const [range,setRange]=useState('24h');const [metric,setMetric]=useState('latency');const tasks=visibleTasks(state,context);const canOps=permitted(context,'platform.manage');const canRead=permitted(context,'business.read');if(!canOps&&!canRead)return <Empty locked title="这个账号没有运行观测权限" description="平台运维查看服务指标，业务人员查看获准工作的运行情况。"/>;
- const taskPool=canOps?state.tasks:tasks;const active=taskPool.filter(t=>!['done','stopped'].includes(t.phase));const exceptions=taskPool.filter(t=>['unknown','stopping','waiting'].includes(t.phase));
- return <><div className="toolbar"><div className="row gap"><Badge tone={state.maintenance?'amber':'green'}>{state.maintenance?'维护窗口':'服务状态样例'}</Badge><span className="small-text secondary">{canOps?'平台聚合指标，不包含业务正文':'当前项目与身份范围的运行'}</span></div><select aria-label="监控时间范围" value={range} onChange={e=>setRange(e.target.value)}><option value="1h">最近 1 小时</option><option value="24h">最近 24 小时</option><option value="7d">最近 7 天</option></select></div><div className="metrics-grid"><Metric label="在途工作" value={active.length} detail="任务状态与一次执行分开" values={[2,3,3,4,4,6,5]}/><Metric label="待派发" value={taskPool.filter(t=>t.phase==='queued').length} detail="授权与资源检查后派发" values={[0,1,0,2,0,1,1]}/><Metric label="需要核对" value={taskPool.filter(t=>t.phase==='unknown'||t.phase==='stopping').length} detail="保留操作身份与不明结果" values={[0,0,1,0,1,1,1]}/><Metric label="前端真实模型调用" value={0} detail="图表与其他用量均为预置样例" values={[0,0,0,0,0,0,0]}/></div>
- <div className="two-col"><Card title="运行趋势" extra={<div className="segmented"><button className={metric==='latency'?'active':''} onClick={()=>setMetric('latency')}>耗时</button><button className={metric==='queue'?'active':''} onClick={()=>setMetric('queue')}>队列</button><button className={metric==='errors'?'active':''} onClick={()=>setMetric('errors')}>异常</button></div>}><div className="monitor-chart"><div className="chart-axis"><span>{metric==='latency'?'600 ms':metric==='queue'?'8':'4'}</span><span>{metric==='latency'?'300 ms':metric==='queue'?'4':'2'}</span><span>0</span></div><div className="chart-plot"><div className="chart-grid"><i/><i/><i/></div><Sparkline area values={metric==='latency'?[12,14,13,18,16,27,32,23,21,22,19,18,25,20,19,24]:metric==='queue'?[5,6,8,4,12,15,20,14,7,9,6,11,8,5,4,6]:[2,1,1,2,6,8,20,2,1,1,4,3,8,1,1,2]}/><div className="chart-times"><span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>24:00</span></div></div></div><p className="card-note">{range==='24h'?'24 小时':range==='1h'?'1 小时':'7 天'}显示范围 · 合成时间序列，不作为实际计费或性能证明。</p></Card><Card title="异常与等待" extra={<SectionLink onClick={()=>go('tasks')}>相关工作</SectionLink>}><div className="monitor-exceptions">{exceptions.map(t=><button key={t.id} onClick={()=>canRead?openTask(t.id):go('execution')}><span className={`attention-icon ${phaseTone[t.phase]}`}><AlertTriangle size={16}/></span><div><b>{canRead?t.title:t.worker}</b><p>{canRead?t.unknowns[0]:`${t.operation} · ${phaseLabels[t.phase]} · 业务正文受限`}</p><small>{t.id} · {t.runId}</small></div><ChevronRight size={13}/></button>)}</div></Card></div>
- <Card title="按 Agent 定位运行" className="mt-20"><div className="table-wrap"><table><thead><tr><th>Agent</th><th>发布版本</th><th>工作数量</th><th>等待 / 异常</th><th>执行与预算</th><th>查看</th></tr></thead><tbody>{state.agents.map(a=><tr key={a.id}><td><b>{canRead?a.name:a.id}</b><small>{canRead?a.product:'运行配置元数据'}</small></td><td>{a.version}</td><td>{taskPool.filter(t=>t.agentId===a.id).length}</td><td>{taskPool.filter(t=>t.agentId===a.id&&['waiting','unknown','stopping','review'].includes(t.phase)).length}</td><td>{canRead?a.budget:'受限读取，平台聚合视图'}</td><td><Button small onClick={()=>canRead?openAgent(a.id,'runs'):go('execution')}>{canRead?'会话与运行':'节点状态'}</Button></td></tr>)}</tbody></table></div></Card><Notice>观测用于定位异常，再进入具体工作和执行步骤。交付证据、模型判断与审计决定各自保留，不由监控曲线替代。</Notice></>;
+export function AuditPage() {
+  const { state, context, go, openTask, openAgent, notify } = useDemo();
+  const [tab, setTab] = useState(
+    permitted(context, "audit.read")
+      ? "audit"
+      : permitted(context, "platform.manage")
+        ? "logs"
+        : "events",
+  );
+  const [filter, setFilter] = useState("all");
+  const [query, setQuery] = useState("");
+  const [event, setEvent] = useState<AuditEvent | null>(null);
+  const tasks = visibleTasks(state, context);
+  const canAudit = permitted(context, "audit.read");
+  const canBusiness = permitted(context, "business.read");
+  const canOps = permitted(context, "platform.manage");
+  const events = state.audit.filter(
+    (a) =>
+      (tab === "audit"
+        ? canAudit
+        : tab === "events"
+          ? tasks.some((t) => t.id === a.task)
+          : canOps
+            ? a.category === "platform" || a.category === "execution"
+            : tasks.some((t) => t.id === a.task)) &&
+      (filter === "all" || a.result === filter) &&
+      `${a.action} ${a.actor} ${a.target} ${a.task ?? ""}`
+        .toLowerCase()
+        .includes(query.toLowerCase()) &&
+      a.environment === context.environment,
+  );
+  if (!canAudit && !canBusiness && !canOps)
+    return (
+      <Empty
+        locked
+        title="这个账号没有日志读取权限"
+        description="日志和审计按项目与内容范围提供，不能从日志入口绕过资料或任务授权。"
+      />
+    );
+  return (
+    <>
+      <Tabs
+        tabs={[
+          { id: "audit", label: "审计事件" },
+          { id: "events", label: "任务事件" },
+          { id: "logs", label: "运行日志" },
+        ]}
+        value={tab}
+        onChange={setTab}
+      />
+      {tab === "audit" && !canAudit ? (
+        <Empty
+          locked
+          title="组织审计需要独立授权"
+          description="你可以查看自己有权访问的任务事件，不能读取全部组织审计。"
+        />
+      ) : (
+        <>
+          <div className="toolbar">
+            <div className="row gap">
+              <label className="inline-search">
+                <Code2 size={14} />
+                <input
+                  aria-label="搜索日志"
+                  placeholder="人员、任务、操作…"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                />
+              </label>
+              <select
+                aria-label="日志结果筛选"
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+              >
+                <option value="all">全部结果</option>
+                <option value="allowed">允许</option>
+                <option value="denied">拒绝</option>
+                <option value="recorded">已记录</option>
+              </select>
+            </div>
+            <Button
+              small
+              onClick={() => {
+                if (tab === "audit" && !canAudit) {
+                  notify("当前身份不能导出组织审计。", true);
+                  return;
+                }
+                downloadJson("circle-demo-events.json", {
+                  source: "synthetic-demo",
+                  scope: context,
+                  events: events.map((a) => ({
+                    id: a.id,
+                    time: a.time,
+                    actor: a.actor,
+                    action: actionLabels[a.action] ?? a.action,
+                    target: a.target,
+                    taskId: a.task,
+                    result: a.result,
+                    inputRevision: a.inputRevision,
+                    policy: a.policy,
+                    environment: a.environment,
+                  })),
+                });
+                notify("已导出当前筛选和授权范围的合成记录。");
+              }}
+            >
+              <Download size={13} />
+              导出当前范围
+            </Button>
+          </div>
+          <Card>
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>时间</th>
+                    <th>人员 / 服务</th>
+                    <th>{tab === "audit" ? "审计动作" : "事件"}</th>
+                    <th>对象</th>
+                    <th>结果</th>
+                    <th>关联</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {events.map((a) => (
+                    <tr
+                      key={a.id}
+                      className="clickable"
+                      onClick={() => setEvent(a)}
+                    >
+                      <td>
+                        <code>{a.time}</code>
+                        <small>{a.id}</small>
+                      </td>
+                      <td>
+                        <b>{a.actor}</b>
+                        <small>{a.role}</small>
+                      </td>
+                      <td>
+                        {actionLabels[a.action] ?? a.action}
+                        <small>
+                          {a.category} · {a.policy}
+                        </small>
+                      </td>
+                      <td>
+                        <code>{a.target}</code>
+                      </td>
+                      <td>
+                        <Badge
+                          tone={
+                            a.result === "denied"
+                              ? "red"
+                              : a.result === "allowed"
+                                ? "green"
+                                : "neutral"
+                          }
+                        >
+                          {a.result === "denied"
+                            ? "拒绝"
+                            : a.result === "allowed"
+                              ? "允许"
+                              : "已记录"}
+                        </Badge>
+                      </td>
+                      <td>
+                        {a.task ?? "配置 / 资源"}
+                        <ChevronRight size={12} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {!events.length && (
+              <Empty
+                title="当前范围没有记录"
+                description="切换日志类型、结果或执行一次获准的演示动作。"
+              />
+            )}
+          </Card>
+        </>
+      )}
+      <div className="three-col mt-20">
+        <Card title="运行日志">
+          <div className="padded">
+            <p className="small-text secondary">
+              服务、worker、工具调用的技术事件。敏感字段与业务正文按范围提供。
+            </p>
+          </div>
+        </Card>
+        <Card title="任务事件">
+          <div className="padded">
+            <p className="small-text secondary">
+              输入、阶段、等待、人工回应与交付，保留每次变化。
+            </p>
+          </div>
+        </Card>
+        <Card title="审计事件">
+          <div className="padded">
+            <p className="small-text secondary">
+              谁授权、操作、接管或发布，绑定范围、版本、结果与时间。
+            </p>
+          </div>
+        </Card>
+      </div>
+      {event && (
+        <Modal
+          title={actionLabels[event.action] ?? event.action}
+          subtitle={`${event.id} · ${event.time}`}
+          wide
+          onClose={() => setEvent(null)}
+        >
+          <KeyValues
+            items={[
+              {
+                label: "发起人 / 服务",
+                value: `${event.actor} · ${event.role}`,
+              },
+              { label: "作用对象", value: event.target },
+              { label: "关联任务", value: event.task ?? "平台配置或资源" },
+              {
+                label: "输入与政策",
+                value: `${event.inputRevision ? `input-r${event.inputRevision} / ` : ""}${event.policy}`,
+              },
+              { label: "返回结果", value: event.result },
+              { label: "事件说明", value: event.detail },
+            ]}
+          />
+          <JsonBlock
+            label="审计元数据"
+            value={{
+              eventId: event.id,
+              actor: event.actor,
+              target: event.target,
+              taskId: event.task,
+              inputRevision: event.inputRevision,
+              policyVersion: event.policy,
+              result: event.result,
+              environment: event.environment,
+              source: "synthetic-demo",
+              secretValues: "not-collected",
+            }}
+          />
+          <div className="dialog-actions">
+            {event.task && canBusiness && (
+              <Button
+                small
+                onClick={() => {
+                  openTask(event.task!);
+                  setEvent(null);
+                }}
+              >
+                回到关联工作
+              </Button>
+            )}
+            {event.target.startsWith("AGT") && canBusiness && (
+              <Button
+                small
+                onClick={() => {
+                  openAgent(event.target);
+                  setEvent(null);
+                }}
+              >
+                查看 Agent 版本
+              </Button>
+            )}
+            <Button
+              small
+              onClick={() => {
+                setEvent(null);
+                go("access");
+              }}
+            >
+              查看授权范围
+            </Button>
+          </div>
+        </Modal>
+      )}
+    </>
+  );
 }
 
-export function SettingsPage(){const {state,context,act,go}=useDemo();const [tab,setTab]=useState('deployment');if(!permitted(context,'platform.manage'))return <Empty locked title="服务维护需要平台运维权限" description="业务人员可以跟进任务，服务排空、备份恢复和数据库迁移由获准的维护人员处理。"/>;
- return <><Tabs tabs={[{id:'deployment',label:'部署组成'},{id:'recovery',label:'维护与恢复'},{id:'versions',label:'版本与兼容'},{id:'integrations',label:'平台连接'}]} value={tab} onChange={setTab}/>
- {tab==='deployment'&&<><div className="deployment-flow"><div><Server size={25}/><b>中心后台</b><small>受理、授权、Agent 运行接入</small></div><ArrowRight size={20}/><div><Database size={25}/><b>持久记录</b><small>PG 任务、操作、版本与事件</small></div><ArrowRight size={20}/><div><Network size={25}/><b>执行节点</b><small>目标网络内的受控工具</small></div><ArrowRight size={20}/><div><HardDrive size={25}/><b>原件与制品</b><small>证据原字节及来源修订</small></div></div><Card title="服务配置与状态样例"><div className="table-wrap"><table><thead><tr><th>组件</th><th>职责</th><th>状态</th><th>维护要求</th></tr></thead><tbody>{[['API / 身份入口','认证、协商与资源授权','获准入口'],['后台 Agent 接入','复用选定 Circle 通用内核','关闭管理窗口仍可运行'],['任务与治理 C','PG 事务、输入、等待、交付','单一任务权威'],['知识与证据 B','资料身份、快照、原件、制品','权限与恢复范围保留'],['执行控制 D','节点、操作、租约、停止核对','不把超时当成失败重发'],['专业方法 E','产品方法、规则与评测','版本与适用范围固定']].map(([name,desc,care])=><tr key={name}><td><b>{name}</b></td><td>{desc}</td><td><Badge>设计样例</Badge></td><td>{care}</td></tr>)}</tbody></table></div></Card></>}
- {tab==='recovery'&&<div className="two-col"><Card title="维护窗口"><div className="padded"><Badge tone={state.maintenance?'amber':'green'}>{state.maintenance?'维护窗口已开启':'正常受理（示例）'}</Badge><p className="paragraph">维护先停止新派发、排空节点，再处理在途任务、待审批和结果不明的操作。关闭窗口或回退代码不会自动完成这些工作。</p><Button small onClick={()=>act({type:'maintenance'})}>{state.maintenance?'结束维护窗口':'开启演示维护窗口'}</Button><div className="section-title">执行节点</div>{state.workers.slice(0,3).map(w=><div className="maintenance-worker" key={w.id}><span>{w.id}</span><Badge tone={w.status==='draining'?'amber':w.status==='online'?'green':'red'}>{w.status==='draining'?'排空中':w.status==='online'?'在线':'断线'}</Badge><Button small onClick={()=>act({type:'workerDrain',id:w.id})}>排空</Button></div>)}</div></Card><Card title="备份与恢复检查"><Checklist items={[{text:'目标、数据库和制品版本明确',done:true},{text:'任务、操作、待回应与证据引用一起核对',done:true},{text:'恢复后权限与服务身份重新检查',done:true},{text:'旧工作流与在途运行能够读取',done:true},{text:'原件、日志与摘要关联保留',done:true}]}/><div className="card-actions"><Button small primary onClick={()=>act({type:'backup'})}>生成恢复检查样例</Button></div><p className="card-note">这里不操作实际数据库或备份，只展示维护和核对方式。</p></Card></div>}
- {tab==='versions'&&<><Card title="客户端与服务端的兼容组合"><div className="table-wrap"><table><thead><tr><th>组合</th><th>客户端 / 默认插件</th><th>Server / Worker</th><th>方法与数据库</th><th>检查范围</th></tr></thead><tbody><tr><td><b>当前设计组合</b></td><td>Circle 固定来源 / 插件修订</td><td>server 0.1-demo / worker 0.1-demo</td><td>固定方法 / PG schema v1 提案</td><td><Badge>尚无正式组合发行</Badge></td></tr><tr><td>新 server + 旧 Circle</td><td>能力协商与缺少能力拒绝</td><td>API 兼容范围</td><td>在途输入与证据</td><td>待独立组合验证</td></tr><tr><td>升级 / 回滚</td><td>同一 taskId 与事件补读</td><td>排空、租约与未知操作</td><td>迁移、旧流程和原件恢复</td><td>代码回退不能代替恢复验收</td></tr></tbody></table></div></Card><div className="two-col mt-20"><Card title="共同代码同步"><div className="padded"><p className="paragraph">Circle 保存通用原件；server 固定版本复用，通过同步 PR 更新。通用修复从干净公开基线回流。</p><KeyValues items={[{label:'当前来源',value:'Circle 9d23c09 / TS 主干'},{label:'参考原件',value:'714 份来源文件，保持原字节'},{label:'桌面基础',value:'草稿 PR 与主干能力分开核验'},{label:'发布关系',value:'Circle 与 server 独立版本；连接插件随 Circle'}]}/></div></Card><Card title="实际发行必须留什么"><Checklist items={[{text:'构建 SHA 与制品摘要',done:false},{text:'实际验证的客户端 / API / worker 组合',done:false},{text:'方法、流程与数据库迁移范围',done:false},{text:'在途工作、恢复与回滚结果',done:false}]}/></Card></div></>}
- {tab==='integrations'&&<div className="three-col"><Card title="身份与目录"><div className="padded"><KeyRound size={21}/><p className="paragraph">公司 OIDC / SAML、目录与群组映射。业务权限仍在 server 资源和作用路径核对。</p><Button small onClick={()=>go('access')}>身份接入设计</Button></div></Card><Card title="遥测与告警"><div className="padded"><Activity size={21}/><p className="paragraph">调用、队列、错误、节点和预算通过关联身份定位，敏感正文按范围提供。</p><Button small onClick={()=>go('monitoring')}>运行观测</Button></div></Card><Card title="GitHub 与研发"><div className="padded"><GitBranch size={21}/><p className="paragraph">一个产品 Project 关联两侧故事、PR、验收与版本，不复制插件项目或产品待办。</p><Button small onClick={()=>go('delivery')}>研发交付</Button></div></Card></div>}
- </>;
+export function MonitoringPage() {
+  const { state, context, openTask, openAgent, go } = useDemo();
+  const [range, setRange] = useState("24h");
+  const [metric, setMetric] = useState("latency");
+  const tasks = visibleTasks(state, context);
+  const canOps = permitted(context, "platform.manage");
+  const canRead = permitted(context, "business.read");
+  if (!canOps && !canRead)
+    return (
+      <Empty
+        locked
+        title="这个账号没有运行观测权限"
+        description="平台运维查看服务指标，业务人员查看获准工作的运行情况。"
+      />
+    );
+  const taskPool = canOps ? state.tasks : tasks;
+  const active = taskPool.filter((t) => !["done", "stopped"].includes(t.phase));
+  const exceptions = taskPool.filter((t) =>
+    ["unknown", "stopping", "waiting"].includes(t.phase),
+  );
+  return (
+    <>
+      <div className="toolbar">
+        <div className="row gap">
+          <Badge tone={state.maintenance ? "amber" : "green"}>
+            {state.maintenance ? "维护窗口" : "服务状态样例"}
+          </Badge>
+          <span className="small-text secondary">
+            {canOps
+              ? "平台聚合指标，不包含业务正文"
+              : "当前项目与身份范围的运行"}
+          </span>
+        </div>
+        <select
+          aria-label="监控时间范围"
+          value={range}
+          onChange={(e) => setRange(e.target.value)}
+        >
+          <option value="1h">最近 1 小时</option>
+          <option value="24h">最近 24 小时</option>
+          <option value="7d">最近 7 天</option>
+        </select>
+      </div>
+      <div className="metrics-grid">
+        <Metric
+          label="在途工作"
+          value={active.length}
+          detail="任务状态与一次执行分开"
+          values={[2, 3, 3, 4, 4, 6, 5]}
+        />
+        <Metric
+          label="待派发"
+          value={taskPool.filter((t) => t.phase === "queued").length}
+          detail="授权与资源检查后派发"
+          values={[0, 1, 0, 2, 0, 1, 1]}
+        />
+        <Metric
+          label="需要核对"
+          value={
+            taskPool.filter(
+              (t) => t.phase === "unknown" || t.phase === "stopping",
+            ).length
+          }
+          detail="保留操作身份与不明结果"
+          values={[0, 0, 1, 0, 1, 1, 1]}
+        />
+        <Metric
+          label="前端真实模型调用"
+          value={0}
+          detail="图表与其他用量均为预置样例"
+          values={[0, 0, 0, 0, 0, 0, 0]}
+        />
+      </div>
+      <div className="two-col">
+        <Card
+          title="运行趋势"
+          extra={
+            <div className="segmented">
+              <button
+                className={metric === "latency" ? "active" : ""}
+                onClick={() => setMetric("latency")}
+              >
+                耗时
+              </button>
+              <button
+                className={metric === "queue" ? "active" : ""}
+                onClick={() => setMetric("queue")}
+              >
+                队列
+              </button>
+              <button
+                className={metric === "errors" ? "active" : ""}
+                onClick={() => setMetric("errors")}
+              >
+                异常
+              </button>
+            </div>
+          }
+        >
+          <div className="monitor-chart">
+            <div className="chart-axis">
+              <span>
+                {metric === "latency"
+                  ? "600 ms"
+                  : metric === "queue"
+                    ? "8"
+                    : "4"}
+              </span>
+              <span>
+                {metric === "latency"
+                  ? "300 ms"
+                  : metric === "queue"
+                    ? "4"
+                    : "2"}
+              </span>
+              <span>0</span>
+            </div>
+            <div className="chart-plot">
+              <div className="chart-grid">
+                <i />
+                <i />
+                <i />
+              </div>
+              <Sparkline
+                area
+                values={
+                  metric === "latency"
+                    ? [
+                        12, 14, 13, 18, 16, 27, 32, 23, 21, 22, 19, 18, 25, 20,
+                        19, 24,
+                      ]
+                    : metric === "queue"
+                      ? [5, 6, 8, 4, 12, 15, 20, 14, 7, 9, 6, 11, 8, 5, 4, 6]
+                      : [2, 1, 1, 2, 6, 8, 20, 2, 1, 1, 4, 3, 8, 1, 1, 2]
+                }
+              />
+              <div className="chart-times">
+                <span>00:00</span>
+                <span>06:00</span>
+                <span>12:00</span>
+                <span>18:00</span>
+                <span>24:00</span>
+              </div>
+            </div>
+          </div>
+          <p className="card-note">
+            {range === "24h" ? "24 小时" : range === "1h" ? "1 小时" : "7 天"}
+            显示范围 · 合成时间序列，不作为实际计费或性能证明。
+          </p>
+        </Card>
+        <Card
+          title="异常与等待"
+          extra={
+            <SectionLink onClick={() => go("tasks")}>相关工作</SectionLink>
+          }
+        >
+          <div className="monitor-exceptions">
+            {exceptions.map((t) => (
+              <button
+                key={t.id}
+                onClick={() => (canRead ? openTask(t.id) : go("execution"))}
+              >
+                <span className={`attention-icon ${phaseTone[t.phase]}`}>
+                  <AlertTriangle size={16} />
+                </span>
+                <div>
+                  <b>{canRead ? t.title : t.worker}</b>
+                  <p>
+                    {canRead
+                      ? t.unknowns[0]
+                      : `${t.operation} · ${phaseLabels[t.phase]} · 业务正文受限`}
+                  </p>
+                  <small>
+                    {t.id} · {t.runId}
+                  </small>
+                </div>
+                <ChevronRight size={13} />
+              </button>
+            ))}
+          </div>
+        </Card>
+      </div>
+      <Card title="按 Agent 定位运行" className="mt-20">
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Agent</th>
+                <th>发布版本</th>
+                <th>工作数量</th>
+                <th>等待 / 异常</th>
+                <th>执行与预算</th>
+                <th>查看</th>
+              </tr>
+            </thead>
+            <tbody>
+              {state.agents.map((a) => (
+                <tr key={a.id}>
+                  <td>
+                    <b>{canRead ? a.name : a.id}</b>
+                    <small>{canRead ? a.product : "运行配置元数据"}</small>
+                  </td>
+                  <td>{a.version}</td>
+                  <td>{taskPool.filter((t) => t.agentId === a.id).length}</td>
+                  <td>
+                    {
+                      taskPool.filter(
+                        (t) =>
+                          t.agentId === a.id &&
+                          ["waiting", "unknown", "stopping", "review"].includes(
+                            t.phase,
+                          ),
+                      ).length
+                    }
+                  </td>
+                  <td>{canRead ? a.budget : "受限读取，平台聚合视图"}</td>
+                  <td>
+                    <Button
+                      small
+                      onClick={() =>
+                        canRead ? openAgent(a.id, "runs") : go("execution")
+                      }
+                    >
+                      {canRead ? "会话与运行" : "节点状态"}
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+      <Notice>
+        观测用于定位异常，再进入具体工作和执行步骤。交付证据、模型判断与审计决定各自保留，不由监控曲线替代。
+      </Notice>
+    </>
+  );
+}
+
+export function SettingsPage() {
+  const { state, context, act, go } = useDemo();
+  const [tab, setTab] = useState("deployment");
+  if (!permitted(context, "platform.manage"))
+    return (
+      <Empty
+        locked
+        title="服务维护需要平台运维权限"
+        description="业务人员可以跟进任务，服务排空、备份恢复和数据库迁移由获准的维护人员处理。"
+      />
+    );
+  return (
+    <>
+      <Tabs
+        tabs={[
+          { id: "deployment", label: "部署组成" },
+          { id: "recovery", label: "维护与恢复" },
+          { id: "versions", label: "版本与兼容" },
+          { id: "integrations", label: "平台连接" },
+        ]}
+        value={tab}
+        onChange={setTab}
+      />
+      {tab === "deployment" && (
+        <>
+          <div className="deployment-flow">
+            <div>
+              <Server size={25} />
+              <b>中心后台</b>
+              <small>受理、授权、Agent 运行接入</small>
+            </div>
+            <ArrowRight size={20} />
+            <div>
+              <Database size={25} />
+              <b>持久记录</b>
+              <small>PG 任务、操作、版本与事件</small>
+            </div>
+            <ArrowRight size={20} />
+            <div>
+              <Network size={25} />
+              <b>执行节点</b>
+              <small>目标网络内的受控工具</small>
+            </div>
+            <ArrowRight size={20} />
+            <div>
+              <HardDrive size={25} />
+              <b>原件与制品</b>
+              <small>证据原字节及来源修订</small>
+            </div>
+          </div>
+          <Card title="服务配置与状态样例">
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>组件</th>
+                    <th>职责</th>
+                    <th>状态</th>
+                    <th>维护要求</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[
+                    ["API / 身份入口", "认证、协商与资源授权", "获准入口"],
+                    [
+                      "后台 Agent 接入",
+                      "复用选定 Circle 通用内核",
+                      "关闭管理窗口仍可运行",
+                    ],
+                    [
+                      "任务与治理 C",
+                      "PG 事务、输入、等待、交付",
+                      "单一任务权威",
+                    ],
+                    [
+                      "知识与证据 B",
+                      "资料身份、快照、原件、制品",
+                      "权限与恢复范围保留",
+                    ],
+                    [
+                      "执行控制 D",
+                      "节点、操作、租约、停止核对",
+                      "不把超时当成失败重发",
+                    ],
+                    [
+                      "专业方法 E",
+                      "产品方法、规则与评测",
+                      "版本与适用范围固定",
+                    ],
+                  ].map(([name, desc, care]) => (
+                    <tr key={name}>
+                      <td>
+                        <b>{name}</b>
+                      </td>
+                      <td>{desc}</td>
+                      <td>
+                        <Badge>设计样例</Badge>
+                      </td>
+                      <td>{care}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        </>
+      )}
+      {tab === "recovery" && (
+        <div className="two-col">
+          <Card title="维护窗口">
+            <div className="padded">
+              <Badge tone={state.maintenance ? "amber" : "green"}>
+                {state.maintenance ? "维护窗口已开启" : "正常受理（示例）"}
+              </Badge>
+              <p className="paragraph">
+                维护先停止新派发、排空节点，再处理在途任务、待审批和结果不明的操作。关闭窗口或回退代码不会自动完成这些工作。
+              </p>
+              <Button small onClick={() => act({ type: "maintenance" })}>
+                {state.maintenance ? "结束维护窗口" : "开启演示维护窗口"}
+              </Button>
+              <div className="section-title">执行节点</div>
+              {state.workers.slice(0, 3).map((w) => (
+                <div className="maintenance-worker" key={w.id}>
+                  <span>{w.id}</span>
+                  <Badge
+                    tone={
+                      w.status === "draining"
+                        ? "amber"
+                        : w.status === "online"
+                          ? "green"
+                          : "red"
+                    }
+                  >
+                    {w.status === "draining"
+                      ? "排空中"
+                      : w.status === "online"
+                        ? "在线"
+                        : "断线"}
+                  </Badge>
+                  <Button
+                    small
+                    onClick={() => act({ type: "workerDrain", id: w.id })}
+                  >
+                    排空
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </Card>
+          <Card title="备份与恢复检查">
+            <Checklist
+              items={[
+                { text: "目标、数据库和制品版本明确", done: true },
+                { text: "任务、操作、待回应与证据引用一起核对", done: true },
+                { text: "恢复后权限与服务身份重新检查", done: true },
+                { text: "旧工作流与在途运行能够读取", done: true },
+                { text: "原件、日志与摘要关联保留", done: true },
+              ]}
+            />
+            <div className="card-actions">
+              <Button small primary onClick={() => act({ type: "backup" })}>
+                生成恢复检查样例
+              </Button>
+            </div>
+            <p className="card-note">
+              这里不操作实际数据库或备份，只展示维护和核对方式。
+            </p>
+          </Card>
+        </div>
+      )}
+      {tab === "versions" && (
+        <>
+          <Card title="客户端与服务端的兼容组合">
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>组合</th>
+                    <th>客户端 / 默认插件</th>
+                    <th>Server / Worker</th>
+                    <th>方法与数据库</th>
+                    <th>检查范围</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>
+                      <b>当前设计组合</b>
+                    </td>
+                    <td>Circle 固定来源 / 插件修订</td>
+                    <td>server 0.1-demo / worker 0.1-demo</td>
+                    <td>固定方法 / PG schema v1 提案</td>
+                    <td>
+                      <Badge>尚无正式组合发行</Badge>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>新 server + 旧 Circle</td>
+                    <td>能力协商与缺少能力拒绝</td>
+                    <td>API 兼容范围</td>
+                    <td>在途输入与证据</td>
+                    <td>待独立组合验证</td>
+                  </tr>
+                  <tr>
+                    <td>升级 / 回滚</td>
+                    <td>同一 taskId 与事件补读</td>
+                    <td>排空、租约与未知操作</td>
+                    <td>迁移、旧流程和原件恢复</td>
+                    <td>代码回退不能代替恢复验收</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </Card>
+          <div className="two-col mt-20">
+            <Card title="共同代码同步">
+              <div className="padded">
+                <p className="paragraph">
+                  Circle 保存通用原件；server 固定版本复用，通过同步 PR
+                  更新。通用修复从干净公开基线回流。
+                </p>
+                <KeyValues
+                  items={[
+                    { label: "当前来源", value: "Circle 9d23c09 / TS 主干" },
+                    { label: "参考原件", value: "714 份来源文件，保持原字节" },
+                    { label: "桌面基础", value: "草稿 PR 与主干能力分开核验" },
+                    {
+                      label: "发布关系",
+                      value: "Circle 与 server 独立版本；连接插件随 Circle",
+                    },
+                  ]}
+                />
+              </div>
+            </Card>
+            <Card title="实际发行必须留什么">
+              <Checklist
+                items={[
+                  { text: "构建 SHA 与制品摘要", done: false },
+                  { text: "实际验证的客户端 / API / worker 组合", done: false },
+                  { text: "方法、流程与数据库迁移范围", done: false },
+                  { text: "在途工作、恢复与回滚结果", done: false },
+                ]}
+              />
+            </Card>
+          </div>
+        </>
+      )}
+      {tab === "integrations" && (
+        <div className="three-col">
+          <Card title="身份与目录">
+            <div className="padded">
+              <KeyRound size={21} />
+              <p className="paragraph">
+                公司 OIDC / SAML、目录与群组映射。业务权限仍在 server
+                资源和作用路径核对。
+              </p>
+              <Button small onClick={() => go("access")}>
+                身份接入设计
+              </Button>
+            </div>
+          </Card>
+          <Card title="遥测与告警">
+            <div className="padded">
+              <Activity size={21} />
+              <p className="paragraph">
+                调用、队列、错误、节点和预算通过关联身份定位，敏感正文按范围提供。
+              </p>
+              <Button small onClick={() => go("monitoring")}>
+                运行观测
+              </Button>
+            </div>
+          </Card>
+          <Card title="GitHub 与研发">
+            <div className="padded">
+              <GitBranch size={21} />
+              <p className="paragraph">
+                一个产品 Project
+                关联两侧故事、PR、验收与版本，不复制插件项目或产品待办。
+              </p>
+              <Button small onClick={() => go("delivery")}>
+                研发交付
+              </Button>
+            </div>
+          </Card>
+        </div>
+      )}
+    </>
+  );
 }

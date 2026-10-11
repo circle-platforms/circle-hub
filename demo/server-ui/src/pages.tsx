@@ -1,36 +1,1034 @@
-import {useState} from 'react';
-import {BookOpen,FileText,Folder,GitBranch,Link2,Plus,RefreshCw,Search,ShieldCheck,ArrowRight,ArrowUpRight,Check,Layers,Terminal,Globe,Activity,Server,Clock3,Play,Pause,Network,AlertTriangle,ChevronRight,Users,LockKeyhole,Workflow,Download,Code2,SlidersHorizontal,CheckCircle2,XCircle,Brain,Database,HardDrive,Package,MoreHorizontal,Unplug,Eye,MousePointer2,RotateCcw,Send,KeyRound,ExternalLink} from 'lucide-react';
-import {useDemo} from './ui-context.tsx';
-import {permitted,visibleDocs,visibleTasks,roles,phaseLabels,phaseTone,type Role,type Source,type Task,type Story} from './domain.ts';
-import {Badge,Button,Card,Checklist,Classification,Empty,Flow,JsonBlock,KeyValues,Metric,Modal,Notice,Progress,SectionLink,Sparkline,Tabs} from './components.tsx';
+import { useState } from "react";
+import {
+  BookOpen,
+  FileText,
+  Folder,
+  GitBranch,
+  Link2,
+  Plus,
+  RefreshCw,
+  Search,
+  ShieldCheck,
+  ArrowRight,
+  ArrowUpRight,
+  Check,
+  Layers,
+  Terminal,
+  Globe,
+  Activity,
+  Server,
+  Clock3,
+  Play,
+  Pause,
+  Network,
+  AlertTriangle,
+  ChevronRight,
+  Users,
+  LockKeyhole,
+  Workflow,
+  Download,
+  Code2,
+  SlidersHorizontal,
+  CheckCircle2,
+  XCircle,
+  Brain,
+  Database,
+  HardDrive,
+  Package,
+  MoreHorizontal,
+  Unplug,
+  Eye,
+  MousePointer2,
+  RotateCcw,
+  Send,
+  KeyRound,
+  ExternalLink,
+} from "lucide-react";
+import { useDemo } from "./ui-context.tsx";
+import {
+  permitted,
+  visibleDocs,
+  visibleTasks,
+  roles,
+  phaseLabels,
+  phaseTone,
+  type Role,
+  type Source,
+  type Task,
+  type Story,
+} from "./domain.ts";
+import {
+  Badge,
+  Button,
+  Card,
+  Checklist,
+  Classification,
+  Empty,
+  Flow,
+  JsonBlock,
+  KeyValues,
+  Metric,
+  Modal,
+  Notice,
+  Progress,
+  SectionLink,
+  Sparkline,
+  Tabs,
+} from "./components.tsx";
 
-export function KnowledgePage(){
- const {state,context,act,openDocument,openEvidence}=useDemo();const [tab,setTab]=useState('library');const [query,setQuery]=useState('');const [filter,setFilter]=useState('全部类型');const [source,setSource]=useState<Source|null>(null);const [add,setAdd]=useState(false);const [title,setTitle]=useState('');const [sourceType,setSourceType]=useState('Confluence');const [address,setAddress]=useState('https://docs.example.test/product');
- const docs=visibleDocs(state,context).filter(d=>d.title.includes(query)&&(filter==='全部类型'||d.kind===filter));
- if(!permitted(context,'knowledge.read')&&!permitted(context,'knowledge.manage'))return <Empty locked title="资料正文不在当前授权内" description="安全管理员与运维人员不自动获得业务资料读取权。资料、检索摘要和原件分别检查相同来源范围。"/>;
- return <><div className="knowledge-summary"><div><BookOpen size={21}/><div><b>连接公司已有知识，不再另起一份资料孤岛。</b><p>手册、代码、命令树、测试、缺陷和维护经验，保留来源、权限与修订。</p></div></div><div><small>任务默认固定快照</small><code>{state.stableSnapshot}</code></div></div>
- <Tabs tabs={[{id:'library',label:'资料库',count:docs.length},{id:'sources',label:'公司系统接入',count:state.sources.length},{id:'snapshots',label:'版本与发布'},{id:'structure',label:'对象与关系'},{id:'evidence',label:'证据与制品'}]} value={tab} onChange={setTab}/>
- {tab==='library'&&<><div className="toolbar"><div className="row gap"><div className="inline-search"><Search size={14}/><input aria-label="搜索资料" placeholder="产品、命令或资料…" value={query} onChange={e=>setQuery(e.target.value)}/></div><select aria-label="资料类型" value={filter} onChange={e=>setFilter(e.target.value)}><option>全部类型</option>{[...new Set(state.docs.map(d=>d.kind))].map(k=><option key={k}>{k}</option>)}</select></div><Badge>正文与引用继承权限</Badge></div><Card><div className="table-wrap"><table><thead><tr><th>资料与来源</th><th>类型</th><th>产品范围</th><th>固定修订</th><th>来源性质</th><th>状态</th></tr></thead><tbody>{docs.map(d=><tr key={d.id} className="clickable" onClick={()=>openDocument(d.id)}><td><div className="row gap"><FileText size={17}/><div><b>{d.title}</b><small>{state.sources.find(s=>s.id===d.source)?.title} · {d.locator}</small></div></div></td><td>{d.kind}</td><td>{d.product}</td><td><code>{d.revision}</code></td><td>{d.nature}</td><td><Badge tone="green">已发布快照</Badge></td></tr>)}</tbody></table></div></Card><Notice>同一个原件可以形成章节、产品主题、命令与代码视图。索引是可重建的入口，固定来源修订保留为依据。</Notice></>}
- {tab==='sources'&&<><div className="toolbar"><p className="secondary small-text">已有系统保留原件。平台采集授权范围内的固定修订，并保存出处。</p><Button primary onClick={()=>setAdd(true)}><Plus size={14}/>接入来源</Button></div><div className="source-grid">{state.sources.filter(s=>s.id!=='SRC-05'||permitted(context,'commercial.read')).map(s=><Card key={s.id}><div className="source-card"><div className="row gap"><span className="source-icon">{s.type==='Git'?<GitBranch size={20}/>:s.type.includes('文件')?<Folder size={20}/>:<BookOpen size={20}/>}</span><div><h3>{s.title}</h3><small>{s.type}</small></div><Badge tone={s.status==='synced'?'green':s.status==='expired'?'red':'amber'}>{s.status==='synced'?'已同步':s.status==='expired'?'授权失效':'候选待评审'}</Badge></div><p>{s.acl}</p><div className="source-stats"><span><b>{s.records}</b>条来源记录</span><span><b>{s.revision}</b>当前修订</span><span><b>{s.lastSync}</b>上次同步</span></div><div className="source-actions"><button className="text-link" onClick={()=>setSource(s)}>来源与接入流程<ChevronRight size={12}/></button><Button small onClick={()=>act({type:'syncSource',id:s.id})}><RefreshCw size={12}/>同步演示</Button></div></div></Card>)}</div><Notice>接入方式与身份、网络区域、授权范围一起配置。Demo 不收取账号口令，也不会访问填写的系统地址。</Notice></>}
- {tab==='snapshots'&&<><div className="toolbar"><p className="secondary small-text">新版本发布与在途任务分开。旧任务继续使用原依据。</p><div className="row gap"><Button small onClick={()=>act({type:'rollbackSnapshot'})}><RotateCcw size={13}/>默认快照回退</Button><Button primary onClick={()=>act({type:'publishSnapshot'})}><Package size={14}/>发布候选演示</Button></div></div><Card title="发布快照"><div className="table-wrap"><table><thead><tr><th>快照</th><th>默认版本</th><th>来源与处理</th><th>任务使用策略</th><th>原件</th></tr></thead><tbody>{state.snapshotHistory.map((id,i)=><tr key={id}><td><b>{id}</b><small>{i===0?'最近一次':'历史保留'}</small></td><td>{id===state.stableSnapshot?<Badge tone="green">新任务默认</Badge>:<Badge>历史版本</Badge>}</td><td>来源修订 · 解析器 · 判断记录<small>处理器与 schema 版本随清单保留</small></td><td>在途任务固定，显式修订后重查</td><td>不覆盖原字节</td></tr>)}</tbody></table></div></Card><div className="two-col mt-20"><Card title="候选发布检查"><Checklist items={[{text:'来源身份、范围与原件登记',done:true},{text:'引用位置、schema 与机械规则核对',done:true},{text:'语义冲突、模型判断与未知项分别记录',done:true},{text:'项目权限和派生结果范围保留',done:true},{text:'形成固定修订清单',done:true}]}/></Card><Card title="版本变更对任务的影响"><div className="padded"><p className="paragraph">例如产品手册 r18 更新成 r19，正在排障的 TSK-2084 仍引用原快照。</p><p className="paragraph">用户选择改用新快照时，C 建立新的输入修订，旧审批失效，方法与交付要求重新检查。</p><Badge tone="violet">版本变化不等于任务已验证</Badge></div></Card></div></>}
- {tab==='structure'&&<><div className="two-col"><Card title="六类知识记录"><div className="record-list">{[['SourceRevision','固定来源修订','原件、摘要、路径、时间、权限、处理器'],['Evidence','可核对出处','章节、页、行、字节范围或运行产物'],['Entity','产品对象','产品、型号、功能、组件、测试和缺陷'],['Claim','有条件的声明','属性、规则、关系、适用范围和来源'],['Assessment','判断与检查','具体输入、规则或模型身份、结果与未知'],['KnowledgeSnapshot','可复现发布','固定修订集合、索引依赖和检查记录']].map(([id,t,desc])=><div key={id}><code>{id}</code><div><b>{t}</b><p>{desc}</p></div></div>)}</div></Card><Card title="产品对象的关系"><div className="relationship-map"><div className="relation-center"><span className="object-symbol symbol-B">B</span><b>LBX 8.4 · 健康检查</b></div>{[{name:'产品手册',edge:'说明行为',source:'DOC-101 / r18'},{name:'CLI / XML',edge:'描述命令结构',source:'DOC-102 / c91e7f2'},{name:'测试用例',edge:'验证部分行为',source:'UC-17 / revision-2'},{name:'维护经验',edge:'支持原因候选',source:'LAB-017 / r42'}].map(n=><div className="relation-branch" key={n.name}><small>{n.edge}</small><div><FileText size={15}/><b>{n.name}</b><code>{n.source}</code></div></div>)}</div><p className="card-note">关系保留条件和出处；文档、静态结构、观察和推断不能混成同一种事实。</p></Card></div></>}
- {tab==='evidence'&&<Card title="与任务关联的原始记录"><div className="table-wrap"><table><thead><tr><th>证据与制品</th><th>来源</th><th>类别</th><th>范围</th><th>关联任务</th></tr></thead><tbody>{state.artifacts.filter(a=>visibleTasks(state,context).some(t=>t.id===a.task)).map(a=><tr key={a.id} onClick={()=>openEvidence(a.id)} className="clickable"><td><b>{a.title}</b><small>{a.id} · {a.locator}</small></td><td>{a.source}</td><td><Classification kind={a.classification}/></td><td>{a.scope}</td><td><code>{a.task}</code></td></tr>)}</tbody></table></div></Card>}
- {source&&<Modal title={source.title} subtitle={`${source.type} · ${source.revision}`} wide onClose={()=>setSource(null)}><KeyValues items={[{label:'系统地址',value:source.address},{label:'权限映射',value:source.acl},{label:'采集身份',value:'来源专用只读服务身份（示例）'},{label:'网络位置',value:'公司授权区域内的采集节点'},{label:'变更处理',value:'增量修订，不覆盖原件或旧快照'}]}/><div className="integration-steps">{['连接已有系统','读取授权修订','保存原件与 ACL','解析确定结构','形成语义候选','检查并发布快照'].map((s,i)=><div key={s}><span>{i+1}</span><b>{s}</b>{i<5&&<ArrowRight size={13}/>}</div>)}</div><div className="two-col"><JsonBlock label="来源映射示例" value={{sourceId:source.id,revision:source.revision,identity:'source-service-readonly',permissions:'inherit-source-acl',scope:'product-rd',credentialReference:'server-managed-reference',originalBytes:'preserved'}}/><Card title="接入后的检查"><Checklist items={[{text:'来源删除或撤权影响检索和原件读取',done:true},{text:'资料更新生成新版本，旧任务固定原快照',done:true},{text:'解析失败、冲突与缺少条件可见',done:true},{text:'口令与 MFA 不进入模型上下文',done:true}]}/></Card></div></Modal>}
- {add&&<Modal title="接入公司知识来源" subtitle="连接配置演示，不请求实际公司系统" onClose={()=>setAdd(false)}><label className="field">来源名称<input autoFocus placeholder="例如产品文档中心" value={title} onChange={e=>setTitle(e.target.value)}/></label><label className="field">已有系统<select value={sourceType} onChange={e=>setSourceType(e.target.value)}>{['Confluence','Git','SharePoint','文件 / XML','Issue / Test','对象存储','数据库只读视图'].map(x=><option key={x}>{x}</option>)}</select></label><label className="field">示例地址<input value={address} onChange={e=>setAddress(e.target.value)}/><small>仅保存本地配置；不要填写口令或带凭据的地址。</small></label><KeyValues items={[{label:'权限方式',value:'继承原系统 ACL，叠加项目与内容范围'},{label:'更新方式',value:'增量采集固定修订，候选检查后发布'},{label:'凭据',value:'正式接入由 server 的受控秘密通道处理'}]}/><div className="dialog-actions"><Button onClick={()=>setAdd(false)}>取消</Button><Button primary onClick={()=>{const r=act({type:'addSource',title,sourceType,address});if(r.ok)setAdd(false);}}>保存演示来源</Button></div></Modal>}
- </>;
+export function KnowledgePage() {
+  const { state, context, act, openDocument, openEvidence } = useDemo();
+  const [tab, setTab] = useState("library");
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState("全部类型");
+  const [source, setSource] = useState<Source | null>(null);
+  const [add, setAdd] = useState(false);
+  const [title, setTitle] = useState("");
+  const [sourceType, setSourceType] = useState("Confluence");
+  const [address, setAddress] = useState("https://docs.example.test/product");
+  const docs = visibleDocs(state, context).filter(
+    (d) =>
+      d.title.includes(query) && (filter === "全部类型" || d.kind === filter),
+  );
+  if (
+    !permitted(context, "knowledge.read") &&
+    !permitted(context, "knowledge.manage")
+  )
+    return (
+      <Empty
+        locked
+        title="资料正文不在当前授权内"
+        description="安全管理员与运维人员不自动获得业务资料读取权。资料、检索摘要和原件分别检查相同来源范围。"
+      />
+    );
+  return (
+    <>
+      <div className="knowledge-summary">
+        <div>
+          <BookOpen size={21} />
+          <div>
+            <b>连接公司已有知识，不再另起一份资料孤岛。</b>
+            <p>
+              手册、代码、命令树、测试、缺陷和维护经验，保留来源、权限与修订。
+            </p>
+          </div>
+        </div>
+        <div>
+          <small>任务默认固定快照</small>
+          <code>{state.stableSnapshot}</code>
+        </div>
+      </div>
+      <Tabs
+        tabs={[
+          { id: "library", label: "资料库", count: docs.length },
+          { id: "sources", label: "公司系统接入", count: state.sources.length },
+          { id: "snapshots", label: "版本与发布" },
+          { id: "structure", label: "对象与关系" },
+          { id: "evidence", label: "证据与制品" },
+        ]}
+        value={tab}
+        onChange={setTab}
+      />
+      {tab === "library" && (
+        <>
+          <div className="toolbar">
+            <div className="row gap">
+              <div className="inline-search">
+                <Search size={14} />
+                <input
+                  aria-label="搜索资料"
+                  placeholder="产品、命令或资料…"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                />
+              </div>
+              <select
+                aria-label="资料类型"
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+              >
+                <option>全部类型</option>
+                {[...new Set(state.docs.map((d) => d.kind))].map((k) => (
+                  <option key={k}>{k}</option>
+                ))}
+              </select>
+            </div>
+            <Badge>正文与引用继承权限</Badge>
+          </div>
+          <Card>
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>资料与来源</th>
+                    <th>类型</th>
+                    <th>产品范围</th>
+                    <th>固定修订</th>
+                    <th>来源性质</th>
+                    <th>状态</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {docs.map((d) => (
+                    <tr
+                      key={d.id}
+                      className="clickable"
+                      onClick={() => openDocument(d.id)}
+                    >
+                      <td>
+                        <div className="row gap">
+                          <FileText size={17} />
+                          <div>
+                            <b>{d.title}</b>
+                            <small>
+                              {
+                                state.sources.find((s) => s.id === d.source)
+                                  ?.title
+                              }{" "}
+                              · {d.locator}
+                            </small>
+                          </div>
+                        </div>
+                      </td>
+                      <td>{d.kind}</td>
+                      <td>{d.product}</td>
+                      <td>
+                        <code>{d.revision}</code>
+                      </td>
+                      <td>{d.nature}</td>
+                      <td>
+                        <Badge tone="green">已发布快照</Badge>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+          <Notice>
+            同一个原件可以形成章节、产品主题、命令与代码视图。索引是可重建的入口，固定来源修订保留为依据。
+          </Notice>
+        </>
+      )}
+      {tab === "sources" && (
+        <>
+          <div className="toolbar">
+            <p className="secondary small-text">
+              已有系统保留原件。平台采集授权范围内的固定修订，并保存出处。
+            </p>
+            <Button primary onClick={() => setAdd(true)}>
+              <Plus size={14} />
+              接入来源
+            </Button>
+          </div>
+          <div className="source-grid">
+            {state.sources
+              .filter(
+                (s) =>
+                  s.id !== "SRC-05" || permitted(context, "commercial.read"),
+              )
+              .map((s) => (
+                <Card key={s.id}>
+                  <div className="source-card">
+                    <div className="row gap">
+                      <span className="source-icon">
+                        {s.type === "Git" ? (
+                          <GitBranch size={20} />
+                        ) : s.type.includes("文件") ? (
+                          <Folder size={20} />
+                        ) : (
+                          <BookOpen size={20} />
+                        )}
+                      </span>
+                      <div>
+                        <h3>{s.title}</h3>
+                        <small>{s.type}</small>
+                      </div>
+                      <Badge
+                        tone={
+                          s.status === "synced"
+                            ? "green"
+                            : s.status === "expired"
+                              ? "red"
+                              : "amber"
+                        }
+                      >
+                        {s.status === "synced"
+                          ? "已同步"
+                          : s.status === "expired"
+                            ? "授权失效"
+                            : "候选待评审"}
+                      </Badge>
+                    </div>
+                    <p>{s.acl}</p>
+                    <div className="source-stats">
+                      <span>
+                        <b>{s.records}</b>条来源记录
+                      </span>
+                      <span>
+                        <b>{s.revision}</b>当前修订
+                      </span>
+                      <span>
+                        <b>{s.lastSync}</b>上次同步
+                      </span>
+                    </div>
+                    <div className="source-actions">
+                      <button
+                        className="text-link"
+                        onClick={() => setSource(s)}
+                      >
+                        来源与接入流程
+                        <ChevronRight size={12} />
+                      </button>
+                      <Button
+                        small
+                        onClick={() => act({ type: "syncSource", id: s.id })}
+                      >
+                        <RefreshCw size={12} />
+                        同步演示
+                      </Button>
+                    </div>
+                  </div>
+                </Card>
+              ))}
+          </div>
+          <Notice>
+            接入方式与身份、网络区域、授权范围一起配置。Demo
+            不收取账号口令，也不会访问填写的系统地址。
+          </Notice>
+        </>
+      )}
+      {tab === "snapshots" && (
+        <>
+          <div className="toolbar">
+            <p className="secondary small-text">
+              新版本发布与在途任务分开。旧任务继续使用原依据。
+            </p>
+            <div className="row gap">
+              <Button small onClick={() => act({ type: "rollbackSnapshot" })}>
+                <RotateCcw size={13} />
+                默认快照回退
+              </Button>
+              <Button primary onClick={() => act({ type: "publishSnapshot" })}>
+                <Package size={14} />
+                发布候选演示
+              </Button>
+            </div>
+          </div>
+          <Card title="发布快照">
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>快照</th>
+                    <th>默认版本</th>
+                    <th>来源与处理</th>
+                    <th>任务使用策略</th>
+                    <th>原件</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {state.snapshotHistory.map((id, i) => (
+                    <tr key={id}>
+                      <td>
+                        <b>{id}</b>
+                        <small>{i === 0 ? "最近一次" : "历史保留"}</small>
+                      </td>
+                      <td>
+                        {id === state.stableSnapshot ? (
+                          <Badge tone="green">新任务默认</Badge>
+                        ) : (
+                          <Badge>历史版本</Badge>
+                        )}
+                      </td>
+                      <td>
+                        来源修订 · 解析器 · 判断记录
+                        <small>处理器与 schema 版本随清单保留</small>
+                      </td>
+                      <td>在途任务固定，显式修订后重查</td>
+                      <td>不覆盖原字节</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+          <div className="two-col mt-20">
+            <Card title="候选发布检查">
+              <Checklist
+                items={[
+                  { text: "来源身份、范围与原件登记", done: true },
+                  { text: "引用位置、schema 与机械规则核对", done: true },
+                  { text: "语义冲突、模型判断与未知项分别记录", done: true },
+                  { text: "项目权限和派生结果范围保留", done: true },
+                  { text: "形成固定修订清单", done: true },
+                ]}
+              />
+            </Card>
+            <Card title="版本变更对任务的影响">
+              <div className="padded">
+                <p className="paragraph">
+                  例如产品手册 r18 更新成 r19，正在排障的 TSK-2084
+                  仍引用原快照。
+                </p>
+                <p className="paragraph">
+                  用户选择改用新快照时，C
+                  建立新的输入修订，旧审批失效，方法与交付要求重新检查。
+                </p>
+                <Badge tone="violet">版本变化不等于任务已验证</Badge>
+              </div>
+            </Card>
+          </div>
+        </>
+      )}
+      {tab === "structure" && (
+        <>
+          <div className="two-col">
+            <Card title="六类知识记录">
+              <div className="record-list">
+                {[
+                  [
+                    "SourceRevision",
+                    "固定来源修订",
+                    "原件、摘要、路径、时间、权限、处理器",
+                  ],
+                  [
+                    "Evidence",
+                    "可核对出处",
+                    "章节、页、行、字节范围或运行产物",
+                  ],
+                  ["Entity", "产品对象", "产品、型号、功能、组件、测试和缺陷"],
+                  ["Claim", "有条件的声明", "属性、规则、关系、适用范围和来源"],
+                  [
+                    "Assessment",
+                    "判断与检查",
+                    "具体输入、规则或模型身份、结果与未知",
+                  ],
+                  [
+                    "KnowledgeSnapshot",
+                    "可复现发布",
+                    "固定修订集合、索引依赖和检查记录",
+                  ],
+                ].map(([id, t, desc]) => (
+                  <div key={id}>
+                    <code>{id}</code>
+                    <div>
+                      <b>{t}</b>
+                      <p>{desc}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+            <Card title="产品对象的关系">
+              <div className="relationship-map">
+                <div className="relation-center">
+                  <span className="object-symbol symbol-B">B</span>
+                  <b>LBX 8.4 · 健康检查</b>
+                </div>
+                {[
+                  {
+                    name: "产品手册",
+                    edge: "说明行为",
+                    source: "DOC-101 / r18",
+                  },
+                  {
+                    name: "CLI / XML",
+                    edge: "描述命令结构",
+                    source: "DOC-102 / c91e7f2",
+                  },
+                  {
+                    name: "测试用例",
+                    edge: "验证部分行为",
+                    source: "UC-17 / revision-2",
+                  },
+                  {
+                    name: "维护经验",
+                    edge: "支持原因候选",
+                    source: "LAB-017 / r42",
+                  },
+                ].map((n) => (
+                  <div className="relation-branch" key={n.name}>
+                    <small>{n.edge}</small>
+                    <div>
+                      <FileText size={15} />
+                      <b>{n.name}</b>
+                      <code>{n.source}</code>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <p className="card-note">
+                关系保留条件和出处；文档、静态结构、观察和推断不能混成同一种事实。
+              </p>
+            </Card>
+          </div>
+        </>
+      )}
+      {tab === "evidence" && (
+        <Card title="与任务关联的原始记录">
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>证据与制品</th>
+                  <th>来源</th>
+                  <th>类别</th>
+                  <th>范围</th>
+                  <th>关联任务</th>
+                </tr>
+              </thead>
+              <tbody>
+                {state.artifacts
+                  .filter((a) =>
+                    visibleTasks(state, context).some((t) => t.id === a.task),
+                  )
+                  .map((a) => (
+                    <tr
+                      key={a.id}
+                      onClick={() => openEvidence(a.id)}
+                      className="clickable"
+                    >
+                      <td>
+                        <b>{a.title}</b>
+                        <small>
+                          {a.id} · {a.locator}
+                        </small>
+                      </td>
+                      <td>{a.source}</td>
+                      <td>
+                        <Classification kind={a.classification} />
+                      </td>
+                      <td>{a.scope}</td>
+                      <td>
+                        <code>{a.task}</code>
+                      </td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+      {source && (
+        <Modal
+          title={source.title}
+          subtitle={`${source.type} · ${source.revision}`}
+          wide
+          onClose={() => setSource(null)}
+        >
+          <KeyValues
+            items={[
+              { label: "系统地址", value: source.address },
+              { label: "权限映射", value: source.acl },
+              { label: "采集身份", value: "来源专用只读服务身份（示例）" },
+              { label: "网络位置", value: "公司授权区域内的采集节点" },
+              { label: "变更处理", value: "增量修订，不覆盖原件或旧快照" },
+            ]}
+          />
+          <div className="integration-steps">
+            {[
+              "连接已有系统",
+              "读取授权修订",
+              "保存原件与 ACL",
+              "解析确定结构",
+              "形成语义候选",
+              "检查并发布快照",
+            ].map((s, i) => (
+              <div key={s}>
+                <span>{i + 1}</span>
+                <b>{s}</b>
+                {i < 5 && <ArrowRight size={13} />}
+              </div>
+            ))}
+          </div>
+          <div className="two-col">
+            <JsonBlock
+              label="来源映射示例"
+              value={{
+                sourceId: source.id,
+                revision: source.revision,
+                identity: "source-service-readonly",
+                permissions: "inherit-source-acl",
+                scope: "product-rd",
+                credentialReference: "server-managed-reference",
+                originalBytes: "preserved",
+              }}
+            />
+            <Card title="接入后的检查">
+              <Checklist
+                items={[
+                  { text: "来源删除或撤权影响检索和原件读取", done: true },
+                  { text: "资料更新生成新版本，旧任务固定原快照", done: true },
+                  { text: "解析失败、冲突与缺少条件可见", done: true },
+                  { text: "口令与 MFA 不进入模型上下文", done: true },
+                ]}
+              />
+            </Card>
+          </div>
+        </Modal>
+      )}
+      {add && (
+        <Modal
+          title="接入公司知识来源"
+          subtitle="连接配置演示，不请求实际公司系统"
+          onClose={() => setAdd(false)}
+        >
+          <label className="field">
+            来源名称
+            <input
+              autoFocus
+              placeholder="例如产品文档中心"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+            />
+          </label>
+          <label className="field">
+            已有系统
+            <select
+              value={sourceType}
+              onChange={(e) => setSourceType(e.target.value)}
+            >
+              {[
+                "Confluence",
+                "Git",
+                "SharePoint",
+                "文件 / XML",
+                "Issue / Test",
+                "对象存储",
+                "数据库只读视图",
+              ].map((x) => (
+                <option key={x}>{x}</option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            示例地址
+            <input
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+            />
+            <small>仅保存本地配置；不要填写口令或带凭据的地址。</small>
+          </label>
+          <KeyValues
+            items={[
+              {
+                label: "权限方式",
+                value: "继承原系统 ACL，叠加项目与内容范围",
+              },
+              { label: "更新方式", value: "增量采集固定修订，候选检查后发布" },
+              { label: "凭据", value: "正式接入由 server 的受控秘密通道处理" },
+            ]}
+          />
+          <div className="dialog-actions">
+            <Button onClick={() => setAdd(false)}>取消</Button>
+            <Button
+              primary
+              onClick={() => {
+                const r = act({
+                  type: "addSource",
+                  title,
+                  sourceType,
+                  address,
+                });
+                if (r.ok) setAdd(false);
+              }}
+            >
+              保存演示来源
+            </Button>
+          </div>
+        </Modal>
+      )}
+    </>
+  );
 }
 
-export function MethodsPage(){const {state,context,act,go}=useDemo();const [method,setMethod]=useState<string|null>(null);const [tab,setTab]=useState('catalog');const m=state.methods.find(x=>x.id===method);
- if(!permitted(context,'business.read'))return <Empty locked title="专业方法按业务范围提供" description="方法的使用、编辑、评审与发布分别授权。管理角色不自动获得业务方法操作权。"/>;
- return <><Tabs tabs={[{id:'catalog',label:'产品方法'},{id:'tools',label:'工具与接入方式'},{id:'candidates',label:'候选与评测'},{id:'rules',label:'规则与判断边界'}]} value={tab} onChange={setTab}/>
- {tab==='tools'&&<><Card title="Agent 调用的受控能力"><div className="table-wrap"><table><thead><tr><th>能力</th><th>拥有者</th><th>调用方式</th><th>执行位置</th><th>实际授权</th></tr></thead><tbody>{[['资料检索与原件','B 知识服务','共同契约 / MCP / HTTP','来源与证据服务','原系统 ACL、项目、内容范围'],['任务受理与回应','C 任务服务','共同契约 / CLI / MCP','持久任务后台','人员、项目、输入修订和动作'],['SSH 采集与配置','D 执行服务','受控 tool / driver','目标网络中的 worker','目标身份、委托、租约与作用端检查'],['产品 Web 观察与接管','D 执行服务','同会话流 / 受控操作','独立浏览器与工作区','查看、控制与接管分别授权'],['专业方法与能力包','E 方法服务','版本化包 / skill / tool','后台 Agent 与获准工具','产品、版本、方法使用与发布范围']].map(([name,owner,mechanism,where,scope])=><tr key={name}><td><b>{name}</b></td><td>{owner}</td><td>{mechanism}</td><td>{where}</td><td>{scope}</td></tr>)}</tbody></table></div></Card><div className="two-col mt-20"><Card title="接入方式不另存业务状态"><div className="padded"><p className="paragraph">Circle 默认连接插件负责地址、登录、协商、提交与显示。MCP、HTTP、CLI 或 skill 都引用同一套 server 记录。</p><p className="paragraph">普通用户插件不复制知识库、任务、租约和产品规则。切换客户端后仍能找到原工作与证据。</p></div></Card><Card title="工具声明示例"><div className="padded"><JsonBlock label="只读采集" value={{tool:'device.read_config',owner:'D',effect:'observe',requiredScope:['project','environment','target'],inputBinding:['taskId','inputRevision','operationId'],checks:['trusted-identity','target-identity','lease','current-delegation'],output:'registered-evidence-reference',availability:'design-demo'}}/></div></Card></div></>}
- {tab==='catalog'&&<div className="method-grid">{state.methods.map(m=><Card key={m.id}><div className="method-card"><div className="row gap"><span className="method-icon"><Workflow size={19}/></span><div><h3>{m.title}</h3><p>{m.product}</p></div><Badge tone="green">{m.version}</Badge></div><p className="method-description">{m.description}</p><div className="method-parts"><span><Terminal size={13}/>{m.scripts.length} 项确定规则</span><span><Brain size={13}/>{m.judgments.length} 类判断</span></div><div className="method-footer"><span>{m.coverage} / {m.samples} · 合成样本记录</span><Button small onClick={()=>setMethod(m.id)}>适用范围与接口<ChevronRight size={12}/></Button></div></div></Card>)}</div>}
- {tab==='candidates'&&<><Card title="候选方法的独立要求"><div className="table-wrap"><table><thead><tr><th>方法 / 候选版本</th><th>程序样本</th><th>语义样例</th><th>人员评审</th><th>发布</th></tr></thead><tbody>{state.methods.map(m=><tr key={m.id}><td><b>{m.title}</b><small>{m.version} → {m.candidate}</small></td><td>{m.coverage} / {m.samples}<small>合成设计数据</small></td><td><Badge tone={m.semantic>=m.required?'green':'amber'}>{m.semantic}% / 门槛 {m.required}%</Badge><small>示例评测，不是真实模型结果</small></td><td>{m.reviewed?<Badge tone="green">已评审</Badge>:<Button small onClick={()=>act({type:'methodReview',id:m.id})}>记录评审</Button>}</td><td><Button small onClick={()=>act({type:'methodPublish',id:m.id})}>发布候选</Button></td></tr>)}</tbody></table></div></Card><Notice tone="amber">引用核对、程序样本、模型语义评测和人员评审分别检查。未达标候选不能因为格式正确或看板完成而发布。</Notice></>}
- {tab==='rules'&&<div className="two-col"><Card title={<><Terminal size={15}/>确定内容交给脚本</>}><div className="padded"><ul className="plain-list"><li>固定字节的引用、原件与位置存在性</li><li>明确字段、参数、规则和版本范围比较</li><li>权限、身份、修订、租约和交付要求检查</li><li>真实执行状态和观察记录的归档</li></ul><Badge tone="blue">结果绑定具体输入与规则</Badge></div></Card><Card title={<><Brain size={15}/>其余内容保留判断</>}><div className="padded"><ul className="plain-list"><li>用户目标与适用方法的语义理解</li><li>资料是否足以支持产品结论</li><li>多观察点的因果解释与新问题分析</li><li>覆盖充分性、影响和未决条件</li></ul><Badge tone="violet">可以冲突、弃权或证据不足</Badge></div></Card><Card title="方法以版本化能力包使用"><div className="padded"><p className="paragraph">包括适用产品、版本、输入输出、依赖工具、脚本规则、判断步骤、故障样本和交付要求。</p><p className="paragraph">skill、MCP 和工具是调用方式，方法与业务状态留在 server，不复制到普通用户插件。</p><Button small onClick={()=>go('architecture')}>查看四对象接口</Button></div></Card><Card title="在途任务固定方法版本"><div className="padded"><p className="paragraph">发布 2.4.0 后，使用 2.3.0 的原任务继续按原版本执行。迁移需要明确条件和新的验收。</p><JsonBlock label="任务绑定示例" value={{taskId:'TSK-2084',methodVersion:'2.3.0',workflowVersion:'diagnose-v1',knowledgeSnapshot:'KS-20261010.3',inputRevision:3}}/></div></Card></div>}
- {m&&<Modal title={m.title} subtitle={`${m.id} · ${m.version} · ${m.product}`} wide onClose={()=>setMethod(null)}><p className="paragraph">{m.description}</p><KeyValues items={[{label:'适用范围',value:m.product},{label:'必要输入',value:'产品与版本、目标、环境、用户预期、知识快照'},{label:'实际执行',value:'D 的受控工具与执行节点'},{label:'提供给客户端',value:'版本化 server 契约，Circle 默认插件薄适配'},{label:'交付要求',value:'原始输入输出、依据、确定检查、判断与未知项'}]}/><div className="two-col"><Card title="脚本步骤"><div className="padded"><ul className="plain-list">{m.scripts.map(x=><li key={x}>{x}</li>)}</ul></div></Card><Card title="判断步骤"><div className="padded"><ul className="plain-list">{m.judgments.map(x=><li key={x}>{x}</li>)}</ul></div></Card></div><JsonBlock label="能力包调用示例" value={{methodId:m.id,version:m.version,taskId:'TSK-2084',inputRevision:3,scope:{project:'lb',environment:'lab'},knowledgeSnapshot:'KS-20261010.3',allowedEffects:['observe','read-config'],judgmentIdentity:'scripted-demo',unknowns:'preserved'}}/></Modal>}
- </>;
+export function MethodsPage() {
+  const { state, context, act, go } = useDemo();
+  const [method, setMethod] = useState<string | null>(null);
+  const [tab, setTab] = useState("catalog");
+  const m = state.methods.find((x) => x.id === method);
+  if (!permitted(context, "business.read"))
+    return (
+      <Empty
+        locked
+        title="专业方法按业务范围提供"
+        description="方法的使用、编辑、评审与发布分别授权。管理角色不自动获得业务方法操作权。"
+      />
+    );
+  return (
+    <>
+      <Tabs
+        tabs={[
+          { id: "catalog", label: "产品方法" },
+          { id: "tools", label: "工具与接入方式" },
+          { id: "candidates", label: "候选与评测" },
+          { id: "rules", label: "规则与判断边界" },
+        ]}
+        value={tab}
+        onChange={setTab}
+      />
+      {tab === "tools" && (
+        <>
+          <Card title="Agent 调用的受控能力">
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>能力</th>
+                    <th>拥有者</th>
+                    <th>调用方式</th>
+                    <th>执行位置</th>
+                    <th>实际授权</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[
+                    [
+                      "资料检索与原件",
+                      "B 知识服务",
+                      "共同契约 / MCP / HTTP",
+                      "来源与证据服务",
+                      "原系统 ACL、项目、内容范围",
+                    ],
+                    [
+                      "任务受理与回应",
+                      "C 任务服务",
+                      "共同契约 / CLI / MCP",
+                      "持久任务后台",
+                      "人员、项目、输入修订和动作",
+                    ],
+                    [
+                      "SSH 采集与配置",
+                      "D 执行服务",
+                      "受控 tool / driver",
+                      "目标网络中的 worker",
+                      "目标身份、委托、租约与作用端检查",
+                    ],
+                    [
+                      "产品 Web 观察与接管",
+                      "D 执行服务",
+                      "同会话流 / 受控操作",
+                      "独立浏览器与工作区",
+                      "查看、控制与接管分别授权",
+                    ],
+                    [
+                      "专业方法与能力包",
+                      "E 方法服务",
+                      "版本化包 / skill / tool",
+                      "后台 Agent 与获准工具",
+                      "产品、版本、方法使用与发布范围",
+                    ],
+                  ].map(([name, owner, mechanism, where, scope]) => (
+                    <tr key={name}>
+                      <td>
+                        <b>{name}</b>
+                      </td>
+                      <td>{owner}</td>
+                      <td>{mechanism}</td>
+                      <td>{where}</td>
+                      <td>{scope}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+          <div className="two-col mt-20">
+            <Card title="接入方式不另存业务状态">
+              <div className="padded">
+                <p className="paragraph">
+                  Circle
+                  默认连接插件负责地址、登录、协商、提交与显示。MCP、HTTP、CLI
+                  或 skill 都引用同一套 server 记录。
+                </p>
+                <p className="paragraph">
+                  普通用户插件不复制知识库、任务、租约和产品规则。切换客户端后仍能找到原工作与证据。
+                </p>
+              </div>
+            </Card>
+            <Card title="工具声明示例">
+              <div className="padded">
+                <JsonBlock
+                  label="只读采集"
+                  value={{
+                    tool: "device.read_config",
+                    owner: "D",
+                    effect: "observe",
+                    requiredScope: ["project", "environment", "target"],
+                    inputBinding: ["taskId", "inputRevision", "operationId"],
+                    checks: [
+                      "trusted-identity",
+                      "target-identity",
+                      "lease",
+                      "current-delegation",
+                    ],
+                    output: "registered-evidence-reference",
+                    availability: "design-demo",
+                  }}
+                />
+              </div>
+            </Card>
+          </div>
+        </>
+      )}
+      {tab === "catalog" && (
+        <div className="method-grid">
+          {state.methods.map((m) => (
+            <Card key={m.id}>
+              <div className="method-card">
+                <div className="row gap">
+                  <span className="method-icon">
+                    <Workflow size={19} />
+                  </span>
+                  <div>
+                    <h3>{m.title}</h3>
+                    <p>{m.product}</p>
+                  </div>
+                  <Badge tone="green">{m.version}</Badge>
+                </div>
+                <p className="method-description">{m.description}</p>
+                <div className="method-parts">
+                  <span>
+                    <Terminal size={13} />
+                    {m.scripts.length} 项确定规则
+                  </span>
+                  <span>
+                    <Brain size={13} />
+                    {m.judgments.length} 类判断
+                  </span>
+                </div>
+                <div className="method-footer">
+                  <span>
+                    {m.coverage} / {m.samples} · 合成样本记录
+                  </span>
+                  <Button small onClick={() => setMethod(m.id)}>
+                    适用范围与接口
+                    <ChevronRight size={12} />
+                  </Button>
+                </div>
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
+      {tab === "candidates" && (
+        <>
+          <Card title="候选方法的独立要求">
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>方法 / 候选版本</th>
+                    <th>程序样本</th>
+                    <th>语义样例</th>
+                    <th>人员评审</th>
+                    <th>发布</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {state.methods.map((m) => (
+                    <tr key={m.id}>
+                      <td>
+                        <b>{m.title}</b>
+                        <small>
+                          {m.version} → {m.candidate}
+                        </small>
+                      </td>
+                      <td>
+                        {m.coverage} / {m.samples}
+                        <small>合成设计数据</small>
+                      </td>
+                      <td>
+                        <Badge
+                          tone={m.semantic >= m.required ? "green" : "amber"}
+                        >
+                          {m.semantic}% / 门槛 {m.required}%
+                        </Badge>
+                        <small>示例评测，不是真实模型结果</small>
+                      </td>
+                      <td>
+                        {m.reviewed ? (
+                          <Badge tone="green">已评审</Badge>
+                        ) : (
+                          <Button
+                            small
+                            onClick={() =>
+                              act({ type: "methodReview", id: m.id })
+                            }
+                          >
+                            记录评审
+                          </Button>
+                        )}
+                      </td>
+                      <td>
+                        <Button
+                          small
+                          onClick={() =>
+                            act({ type: "methodPublish", id: m.id })
+                          }
+                        >
+                          发布候选
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+          <Notice tone="amber">
+            引用核对、程序样本、模型语义评测和人员评审分别检查。未达标候选不能因为格式正确或看板完成而发布。
+          </Notice>
+        </>
+      )}
+      {tab === "rules" && (
+        <div className="two-col">
+          <Card
+            title={
+              <>
+                <Terminal size={15} />
+                确定内容交给脚本
+              </>
+            }
+          >
+            <div className="padded">
+              <ul className="plain-list">
+                <li>固定字节的引用、原件与位置存在性</li>
+                <li>明确字段、参数、规则和版本范围比较</li>
+                <li>权限、身份、修订、租约和交付要求检查</li>
+                <li>真实执行状态和观察记录的归档</li>
+              </ul>
+              <Badge tone="blue">结果绑定具体输入与规则</Badge>
+            </div>
+          </Card>
+          <Card
+            title={
+              <>
+                <Brain size={15} />
+                其余内容保留判断
+              </>
+            }
+          >
+            <div className="padded">
+              <ul className="plain-list">
+                <li>用户目标与适用方法的语义理解</li>
+                <li>资料是否足以支持产品结论</li>
+                <li>多观察点的因果解释与新问题分析</li>
+                <li>覆盖充分性、影响和未决条件</li>
+              </ul>
+              <Badge tone="violet">可以冲突、弃权或证据不足</Badge>
+            </div>
+          </Card>
+          <Card title="方法以版本化能力包使用">
+            <div className="padded">
+              <p className="paragraph">
+                包括适用产品、版本、输入输出、依赖工具、脚本规则、判断步骤、故障样本和交付要求。
+              </p>
+              <p className="paragraph">
+                skill、MCP 和工具是调用方式，方法与业务状态留在
+                server，不复制到普通用户插件。
+              </p>
+              <Button small onClick={() => go("architecture")}>
+                查看四对象接口
+              </Button>
+            </div>
+          </Card>
+          <Card title="在途任务固定方法版本">
+            <div className="padded">
+              <p className="paragraph">
+                发布 2.4.0 后，使用 2.3.0
+                的原任务继续按原版本执行。迁移需要明确条件和新的验收。
+              </p>
+              <JsonBlock
+                label="任务绑定示例"
+                value={{
+                  taskId: "TSK-2084",
+                  methodVersion: "2.3.0",
+                  workflowVersion: "diagnose-v1",
+                  knowledgeSnapshot: "KS-20261010.3",
+                  inputRevision: 3,
+                }}
+              />
+            </div>
+          </Card>
+        </div>
+      )}
+      {m && (
+        <Modal
+          title={m.title}
+          subtitle={`${m.id} · ${m.version} · ${m.product}`}
+          wide
+          onClose={() => setMethod(null)}
+        >
+          <p className="paragraph">{m.description}</p>
+          <KeyValues
+            items={[
+              { label: "适用范围", value: m.product },
+              {
+                label: "必要输入",
+                value: "产品与版本、目标、环境、用户预期、知识快照",
+              },
+              { label: "实际执行", value: "D 的受控工具与执行节点" },
+              {
+                label: "提供给客户端",
+                value: "版本化 server 契约，Circle 默认插件薄适配",
+              },
+              {
+                label: "交付要求",
+                value: "原始输入输出、依据、确定检查、判断与未知项",
+              },
+            ]}
+          />
+          <div className="two-col">
+            <Card title="脚本步骤">
+              <div className="padded">
+                <ul className="plain-list">
+                  {m.scripts.map((x) => (
+                    <li key={x}>{x}</li>
+                  ))}
+                </ul>
+              </div>
+            </Card>
+            <Card title="判断步骤">
+              <div className="padded">
+                <ul className="plain-list">
+                  {m.judgments.map((x) => (
+                    <li key={x}>{x}</li>
+                  ))}
+                </ul>
+              </div>
+            </Card>
+          </div>
+          <JsonBlock
+            label="能力包调用示例"
+            value={{
+              methodId: m.id,
+              version: m.version,
+              taskId: "TSK-2084",
+              inputRevision: 3,
+              scope: { project: "lb", environment: "lab" },
+              knowledgeSnapshot: "KS-20261010.3",
+              allowedEffects: ["observe", "read-config"],
+              judgmentIdentity: "scripted-demo",
+              unknowns: "preserved",
+            }}
+          />
+        </Modal>
+      )}
+    </>
+  );
 }
 
-export {ExecutionPage,DiagnosisPage,SchedulesPage} from './operations-pages.tsx';
-export {AccessPage,MonitoringPage,AuditPage,SettingsPage} from './governance-pages.tsx';
-export {DeliveryPage,ArchitecturePage} from './design-pages.tsx';
+export {
+  ExecutionPage,
+  DiagnosisPage,
+  SchedulesPage,
+} from "./operations-pages.tsx";
+export {
+  AccessPage,
+  MonitoringPage,
+  AuditPage,
+  SettingsPage,
+} from "./governance-pages.tsx";
+export { DeliveryPage, ArchitecturePage } from "./design-pages.tsx";
