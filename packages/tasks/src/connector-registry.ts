@@ -26,4 +26,8 @@ export class ConnectorRegistry {
     const args=spec.args??{};if(args.defectId)requireCondition(policy.defects.includes(args.defectId),'FORBIDDEN_TARGET','Defect exceeds the rule owner visibility');
     return {principalId:policy.principalId,tenantId:policy.tenantId,defects:policy.defects,manifest};
   }
+  async enabled(ctx:AuthContext,scopeId:string,id:string,enabled:boolean):Promise<any>{return this.store.transaction(async tx=>{
+    const policy=await this.auth.check(ctx,'admin.manage',scopeId,tx);const row=(await tx.query('UPDATE connectors SET enabled=$4 WHERE tenant_id=$1 AND scope_id=$2 AND connector_id=$3 RETURNING *',[policy.tenantId,scopeId,id,enabled])).rows[0];
+    requireCondition(row,'TARGET_NOT_FOUND','Connector not found in this scope');await this.auth.audit(ctx,enabled?'connectors.enable':'connectors.disable',{connectorId:id},scopeId,tx);return {connectorId:id,scopeId,enabled};
+  });}
 }

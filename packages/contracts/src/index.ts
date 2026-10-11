@@ -114,6 +114,7 @@ export const LbxPack={capabilityPackId:'lbx-healthcheck',version:'1.0.0',title:'
   requiredOperations:['product.version','product.config.read','product.config.write','docs.fetch'],conclusionScope:'synthetic-configuration-verification'} as const;
 export const RuleRequest=z.object({scopeId:ScopeId,capabilityPackId:z.literal('defect-review'),servicePrincipalId:z.string().regex(/^prn_/),
   bindings:z.object({defects:z.string(),documents:z.string(),product:z.string()}),intervalMs:z.number().int().min(100).max(60_000).default(1000),simulateCommentTimeout:z.boolean().default(false)});
+export const ADMIN_ROUTES={tasks:'/v1/admin/tasks',workers:'/v1/admin/workers',approvals:'/v1/admin/approvals',events:'/v1/admin/events',audit:'/v1/admin/audit',connectors:'/v1/admin/connectors',restart:'/v1/admin/restart'} as const;
 export const InputRequest = z.object({ inputRevisionId: InputRevisionId, requestId: z.string().optional(),
   response: z.record(z.string(), z.unknown()).optional(),
   replacement: z.record(z.string(), z.unknown()).optional() }).refine(value => !!value.response !== !!value.replacement,

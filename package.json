@@ -5,6 +5,7 @@
   "description": "Authenticated Circle server with durable PostgreSQL tasks and synthetic workers",
   "type": "module",
   "license": "MIT",
+  "bin": { "circle-server": "apps/server/src/cli.ts" },
   "engines": {
     "node": ">=24"
   },
@@ -16,7 +17,8 @@
     "test:acceptance": "node --test --test-concurrency=1 tests/acceptance/*.test.ts",
     "test": "npm run test:contracts && npm run test:methods && npm run test:acceptance && npm run test:references",
     "typecheck": "tsc --noEmit",
-    "server": "node apps/server/src/main.ts",
+    "server": "node apps/server/src/supervisor.ts",
+    "admin": "node apps/server/src/cli.ts admin",
     "worker": "node apps/worker/src/main.ts",
     "verify:postgres": "node scripts/verify-postgres.ts",
     "dev:stack": "node scripts/dev-stack.ts"

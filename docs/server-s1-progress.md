@@ -124,3 +124,11 @@ Claude 用 Python `zipfile` + XML 独立读取下载的工作簿，8 行与 `smp
 `07-delivery.test.ts` 增加并通过完整 LBX 能力故事：实际观察 timeout=5，按固定手册 §6.4 的 10 请求独立人员批准，写入一次后重新观察 timeout=10，再以当前事实清单交付 succeeded；原 refutes 记录仍保留。该文件现为 3/3，未把历史结论覆盖成 supports。
 
 接下来完成 admin 的管理查询、排空、事件补读、审计、启停和实际优雅重启，最后再跑当前 HEAD 的整套八幕与脑图兼容检查。未 push。
+
+## 9：同一认证入口的 admin（已通过）
+
+先写并运行 `admin.test.ts`，因 CLI 缺失 0/2 失败。新增 TypeScript `circle-server admin` 及本地 bin 入口；所有管理动作走同一 Bearer HTTP API，没有直连数据库或自报身份后门。支持 tasks、workers drain、approvals、events --tail、audit、connectors enable/disable、restart --graceful。
+
+实际 `npm run typecheck` 和 `node --test tests/acceptance/admin.test.ts` 通过，2/2。覆盖普通用户调用管理命令被拒、作用范围内的查询/审批列表/审计/事件、连接器禁用阻止实际调用后再启用、worker 完成当前操作并停止接新操作，以及 supervisor 以相同端口实际重启 server。重启前后 PID 与 bootId 不同，PostgreSQL 原任务、inrev、待回应、事件游标、token 和 worker 状态保持；没有写取消请求。IPC 的重启请求/确认由已认证 server 与其 supervisor 完成，CLI 等新 bootId 出现后才报告完成。
+
+dev:stack 已随本阶段提供两个 worker、独立 approver 和服务身份；所有新增权限只针对合成目标，随机密码与配置仍在临时目录。审批人员没有设备操作权限。[管理命令说明](admin-cli.md)记录启动、秘密注入和使用方式。接下来进行最后的整套验收，未 push。

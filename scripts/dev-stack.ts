@@ -12,6 +12,8 @@ const scratch = await mkdtemp(`${tmpdir()}/circle-server-dev-`);
 const socket = createServer(); await new Promise<void>(resolve => socket.listen(0,'127.0.0.1',resolve));
 const port = (socket.address() as { port:number }).port; await new Promise<void>(resolve => socket.close(() => resolve()));
 const dbPassword = randomBytes(24).toString('hex'); const userPassword = randomBytes(18).toString('base64url'); const workerPassword = randomBytes(18).toString('base64url');
+const approverPassword=randomBytes(18).toString('base64url'),servicePassword=randomBytes(18).toString('base64url');
+const syntheticTargets=['LBX-LAB-01','bugzilla-synthetic','jira-synthetic','openkm-synthetic'];
 const config = { host:'127.0.0.1',port,user:'circle_synthetic',password:dbPassword,database:'postgres' };
 const children = new Set<ChildProcess>(); let closing = false;
 async function stop(child: ChildProcess): Promise<void> {
@@ -55,9 +57,12 @@ try {
   await mkdir(`${scratch}/objects`);
   await writeFile(`${scratch}/identities.json`,JSON.stringify({ identities:[
     { username:'developer',password:userPassword,principalId:'prn_developer',tenantId:'tnt_synthetic',kind:'user',
-      scopes:['scp_lab'],grants:['tasks.read','tasks.submit','tasks.input','tasks.cancel','sources.read','sources.write','evidence.read','methods.use','admin.manage'],targets:[],defects:[] },
+      scopes:['scp_lab'],grants:['tasks.read','tasks.submit','tasks.input','tasks.cancel','sources.read','sources.write','evidence.read','methods.use','operations.reconcile','admin.manage','admin.restart','rules.manage','decisions.approve','product.version','product.config.read','product.config.write','defects.search','defects.comment','docs.fetch','docs.convert'],targets:syntheticTargets,defects:['LAB-42'] },
+    {username:'approver',password:approverPassword,principalId:'prn_approver',tenantId:'tnt_synthetic',kind:'user',scopes:['scp_lab'],grants:['tasks.read','decisions.approve'],targets:[],defects:[]},
+    {username:'defect-bot',password:servicePassword,principalId:'prn_defectbot',tenantId:'tnt_synthetic',kind:'service',scopes:['scp_lab'],grants:['tasks.read','tasks.submit','tasks.input','sources.read','sources.write','evidence.read','methods.use','product.version','defects.search','defects.comment','docs.fetch','docs.convert'],targets:syntheticTargets,defects:['LAB-42','SECRET-99']},
     { username:'lab-east-01',password:workerPassword,principalId:'prn_lab_east_01',tenantId:'tnt_synthetic',kind:'worker',workerId:'lab-east-01',
-      scopes:['scp_lab'],grants:['workers.execute'],targets:[],defects:[] },
+      scopes:['scp_lab'],grants:['workers.execute'],targets:syntheticTargets,defects:['LAB-42','SECRET-99'] },
+    {username:'lab-east-02',password:workerPassword,principalId:'prn_lab_east_02',tenantId:'tnt_synthetic',kind:'worker',workerId:'lab-east-02',scopes:['scp_lab'],grants:['workers.execute'],targets:syntheticTargets,defects:['LAB-42','SECRET-99']},
   ] }),{ mode:0o600 });
   const samplePath = `${scratch}/synthetic-mindmap.xmind`;
   const content = [{ id:'sheet-circle-server',rootTopic:{ id:'root',title:'Circle Server 脑图编译验收',children:{ attached:[
@@ -68,11 +73,13 @@ try {
     'metadata.json':strToU8(JSON.stringify({ creator:'circle-server synthetic fixture' })) },{ mtime:new Date('2000-01-01T00:00:00Z') }),{ mode:0o600 });
   const env = { ...process.env,CIRCLE_SERVER_DATABASE_CONFIG:JSON.stringify(config),CIRCLE_SERVER_DATA_DIR:`${scratch}/objects`,
     CIRCLE_SERVER_DEV_IDENTITIES:`${scratch}/identities.json`,CIRCLE_SERVER_DEV_AUTH:'1',CIRCLE_SERVER_PORT:process.env.CIRCLE_SERVER_PORT ?? '0',CIRCLE_SYNTHETIC_RESOURCE_DIR:`${scratch}/resources` };
-  const server = await launch('apps/server/src/main.ts',env,'ready');
+  const server = await launch('apps/server/src/supervisor.ts',env,'ready');
   await launch('apps/worker/src/main.ts',{ ...env,CIRCLE_SERVER_URL:server.url,CIRCLE_WORKER_USERNAME:'lab-east-01',CIRCLE_WORKER_PASSWORD:workerPassword },'worker-ready');
+  await launch('apps/worker/src/main.ts',{ ...env,CIRCLE_SERVER_URL:server.url,CIRCLE_WORKER_USERNAME:'lab-east-02',CIRCLE_WORKER_PASSWORD:workerPassword },'worker-ready');
   console.log(JSON.stringify({ type:'dev-stack-ready',pid:process.pid,url:server.url,apiVersion:server.apiVersion,
-    login:{ username:'developer',password:userPassword },scopeId:'scp_lab',samplePath,scratchDirectory:scratch,postgresVersion:database.version,syntheticOnly:true }));
+    login:{ username:'developer',password:userPassword },approverLogin:{username:'approver',password:approverPassword},scopeId:'scp_lab',samplePath,scratchDirectory:scratch,postgresVersion:database.version,syntheticOnly:true }));
   console.log(`地址：${server.url}\n开发登录：POST /v1/auth/dev-login，用户名 developer，密码 ${userPassword}\n项目：scp_lab\n合成 XMind：${samplePath}\nCtrl+C 停止进程并删除本次临时数据库与制品`);
+  console.log(`独立审批登录：approver，密码 ${approverPassword}`);
 } catch (error) {
   console.error(JSON.stringify({ type:'dev-stack-startup-failed',message:error instanceof Error ? error.message : 'Unknown startup failure' }));
   process.exitCode = 1; await cleanup();

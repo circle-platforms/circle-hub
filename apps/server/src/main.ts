@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { setTimeout as delay } from 'node:timers/promises';
 import { mkdir } from 'node:fs/promises';
+import {randomUUID} from 'node:crypto';
 import { z } from 'zod';
 import { API_VERSION, MAX_BODY_BYTES, MAX_SOURCE_BYTES, MAX_WORKER_REPORT_BYTES, ApiError, SubmitRequest,
   InputRequest, OperationRequest, ApprovalProposal, ApprovalRequest, ConclusionRequest, ChecklistRequest, ChecklistResponse, RuleRequest, DefectReviewPack, LbxPack, InputRevisionId, TaskId, ScopeId, SourceUpload, Base64Content, MindmapCompileInput, MindmapPack, DevLoginRequest, requireCondition } from '../../../packages/contracts/src/index.ts';
@@ -44,6 +45,9 @@ const registry=new ConnectorRegistry(store,auth);await registry.initialize();exe
 const rules=new Rules(store,auth,tasks,execution,registry),professional=new ProfessionalRunner(store,tasks,execution,knowledge,checklists,approvals,assessments);
 const mindmaps = new MindmapRunner(store,tasks,knowledge,execution);
 let closing = false;
+const bootId=randomUUID();
+let restartRequested=false;
+process.on('message',message=>{if(restartRequested&&(message as any)?.type==='graceful-restart-now')void shutdown();});
 
 async function bytes(request: IncomingMessage, limit: number): Promise<Buffer> {
   const chunks: Buffer[] = []; let size = 0;
@@ -84,7 +88,7 @@ const server = createServer(async (request, response) => {
       send(response,200,{ data:{ ...issued,tokenType:'Bearer',principalId:policy.principalId,tenantId:policy.tenantId,scopes:policy.scopes } }); return;
     }
     const ctx = await auth.authenticate(request.headers.authorization);
-    if (url.pathname === '/v1/status' && request.method === 'GET') { send(response, 200, { data: { apiVersion: API_VERSION, syntheticOnly: true } }); return; }
+    if (url.pathname === '/v1/status' && request.method === 'GET') { send(response,200,{data:{apiVersion:API_VERSION,syntheticOnly:true,bootId,processId:process.pid}});return; }
     if (url.pathname === '/v1/packs' && request.method === 'GET') {
       await auth.check(ctx,'methods.use'); send(response,200,{ data:[MindmapPack,DefectReviewPack,LbxPack] }); return;
     }
@@ -212,6 +216,31 @@ const server = createServer(async (request, response) => {
     }
     if (url.pathname.startsWith('/v1/admin/')) {
       const policy = await auth.check(ctx, 'admin.manage');
+      const drain=/^\/v1\/admin\/workers\/([^/]+)\/drain$/.exec(url.pathname);
+      if(drain&&request.method==='POST'){await body(request);send(response,200,{data:await execution.drain(ctx,decodeURIComponent(drain[1]))});return;}
+      const connector=/^\/v1\/admin\/connectors\/([^/]+)$/.exec(url.pathname);
+      if(connector&&request.method==='POST'){const input=z.object({scopeId:ScopeId,enabled:z.boolean()}).parse(await body(request));send(response,200,{data:await registry.enabled(ctx,input.scopeId,decodeURIComponent(connector[1]),input.enabled)});return;}
+      if(url.pathname==='/v1/admin/approvals'&&request.method==='GET'){
+        const rows=(await store.pool.query('SELECT a.* FROM approvals a JOIN tasks t USING(task_id) WHERE t.tenant_id=$1 AND t.scope_id=ANY($2::text[]) ORDER BY a.created_at',[policy.tenantId,policy.scopes])).rows;
+        send(response,200,{data:rows.map(row=>approvals.view(row))});return;
+      }
+      if(url.pathname==='/v1/admin/audit'&&request.method==='GET'){
+        const rows=(await store.pool.query('SELECT id,principal_id,scope_id,action,detail,created_at FROM audit WHERE tenant_id=$1 AND (scope_id IS NULL OR scope_id=ANY($2::text[])) ORDER BY id DESC LIMIT 500',[policy.tenantId,policy.scopes])).rows;
+        send(response,200,{data:rows.map(row=>({id:Number(row.id),principalId:row.principal_id,scopeId:row.scope_id,action:row.action,detail:row.detail,createdAt:row.created_at.toISOString()}))});return;
+      }
+      if(url.pathname==='/v1/admin/events'&&request.method==='GET'){
+        const after=z.coerce.number().int().min(0).max(Number.MAX_SAFE_INTEGER).parse(url.searchParams.get('after')??0),wait=z.coerce.number().int().min(0).max(30_000).parse(url.searchParams.get('waitMs')??0),deadline=Date.now()+wait;let rows:any[];
+        do{await auth.authenticate(request.headers.authorization);const current=await auth.check(ctx,'admin.manage');
+          rows=(await store.pool.query('SELECT o.* FROM outbox o JOIN tasks t USING(task_id) WHERE t.tenant_id=$1 AND t.scope_id=ANY($2::text[]) AND o.seq>$3 ORDER BY o.seq LIMIT 500',[current.tenantId,current.scopes,after])).rows;
+          if(rows.length||Date.now()>=deadline||closing||response.destroyed)break;await delay(30);
+        }while(true);
+        if(!response.destroyed)send(response,200,{data:{events:rows.map(row=>({seq:Number(row.seq),taskId:row.task_id,kind:row.kind,payload:row.payload,createdAt:row.created_at.toISOString()})),after:rows.length?Number(rows.at(-1).seq):after}});return;
+      }
+      if(url.pathname==='/v1/admin/restart'&&request.method==='POST'){
+        await auth.check(ctx,'admin.restart');z.object({graceful:z.literal(true)}).parse(await body(request));requireCondition(process.connected,'INVALID_PAYLOAD','Start the server through its supervisor for graceful restart');
+        await auth.audit(ctx,'server.restart',{bootId,graceful:true});send(response,202,{data:{restartAccepted:true,previousBootId:bootId}});
+        restartRequested=true;process.send!({type:'graceful-restart'});return;
+      }
       if (url.pathname === '/v1/admin/workers' && request.method === 'GET') {
         const rows = (await store.pool.query('SELECT worker_id,draining,last_seen FROM workers WHERE tenant_id=$1 ORDER BY worker_id',[policy.tenantId])).rows;
         send(response,200,{ data:rows.map(row => ({ workerId:row.worker_id,draining:row.draining,lastSeen:row.last_seen.toISOString() })) }); return;

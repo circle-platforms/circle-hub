@@ -24,7 +24,7 @@ export const identities = [
   { username: 'limited', principalId: 'prn_limited', tenantId: 'tnt_lab', kind: 'user', scopes: ['scp_hidden'],
     grants: taskGrants, targets: [], defects: [] },
   { username: 'admin', principalId: 'prn_admin', tenantId: 'tnt_lab', kind: 'user', scopes: ['scp_lab', 'scp_second'],
-    grants: [...taskGrants, 'admin.manage', 'decisions.approve'], targets: [], defects: [] },
+    grants: [...taskGrants, 'admin.manage', 'admin.restart', 'decisions.approve'], targets: [], defects: [] },
   { username: 'defect-bot', principalId: 'prn_defectbot', tenantId: 'tnt_lab', kind: 'service', scopes: ['scp_lab'],
     grants: [...taskGrants, 'defects.search', 'defects.comment', 'docs.fetch', 'docs.convert', 'product.version'],
     targets: ['bugzilla-synthetic', 'jira-synthetic', 'openkm-synthetic', 'LBX-LAB-01'], defects: ['LAB-42', 'SECRET-99'] },

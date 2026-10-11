@@ -121,4 +121,10 @@ export class Operations extends Execution {
       return {operationId:id,status:report.status,deduplicated:false};
     });
   }
+  async drain(ctx:AuthContext,id:string):Promise<any>{return this.store.transaction(async tx=>{
+    const admin=await this.auth.check(ctx,'admin.manage',undefined,tx),worker=(await tx.query('SELECT w.*,p.scopes FROM workers w JOIN policies p USING(principal_id) WHERE w.worker_id=$1',[id])).rows[0];
+    requireCondition(worker,'TARGET_NOT_FOUND','Worker not found');requireCondition(worker.tenant_id===admin.tenantId&&worker.scopes.every((scope:string)=>admin.scopes.includes(scope)),'FORBIDDEN_SCOPE','Worker exceeds admin scope');
+    await tx.query('UPDATE workers SET draining=true WHERE worker_id=$1',[id]);await this.auth.audit(ctx,'workers.drain',{workerId:id},undefined,tx);
+    const count=(await tx.query("SELECT count(*)::integer AS count FROM operations WHERE worker_id=$1 AND status='running'",[id])).rows[0].count;return {workerId:id,draining:true,inFlight:count};
+  });}
 }
