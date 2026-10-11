@@ -39,6 +39,8 @@ npm run test:references
 
 [开源基础检查](docs/open-source-readiness.md) · [B/C/D/E 融合提案](docs/bcde-integration-plan.md)
 
-当前可以继续准备开源，但项目许可和完整私有归档的公开范围仍待确认，仓库保持私有。融合提案尚未实施或排期。
+基础检查已完成，自有内容采用 [MIT](LICENSE)，完整 platform 自有归档已由内容持有人确认可公开。第三方范围见[来源与许可说明](THIRD_PARTY_NOTICES.md)。项目可以作为开发中的开源项目公开；本轮没有执行可见性变更，GitHub 仓库仍为私有。融合提案尚未实施或排期。
+
+[参与方式](CONTRIBUTING.md) · [安全问题与支持范围](SECURITY.md)
 
 [初始化记录](docs/bootstrap.md) · [来源清单](references/source-manifest.json) · [共同产品看板](https://github.com/users/qingshanfeihu/projects/1)

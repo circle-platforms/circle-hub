@@ -13,7 +13,8 @@
     "blobs": 2345,
     "bytes": 34246329,
     "gzipBlobs": 6,
-    "largeSkipped": 0
+    "largeSkipped": 0,
+    "textProjection": "UTF-8 decoded bytes with replacement for invalid sequences and NUL separators replaced by newlines; gzip expanded; no serialization executed"
   },
   "scanner": {
     "name": "gitleaks",
@@ -23,7 +24,8 @@
     "repositoryConfigPresent": false,
     "ignoreAllowComments": true,
     "baselineFileUsed": false,
-    "redactPercent": 100
+    "redactPercent": 100,
+    "gitLogOptions": "--all --full-history"
   },
   "results": {
     "head": {
@@ -131,11 +133,11 @@
     "productionServiceValidated": false,
     "dependencyVulnerabilityAuditPerformed": false
   },
-  "openSourceDecision": "conditional-not-ready-for-visibility-change",
+  "openSourceDecision": "basic-source-review-passed-development-project",
   "pending": [
-    "project license selection",
-    "content-owner confirmation for the full private platform archive",
-    "root third-party scope notices and actual security reporting channel"
+    "explicit repository visibility change if requested",
+    "recheck current GitHub surfaces and enable private vulnerability reporting when making the repository public",
+    "actual dependency and license notices before software artifact distribution"
   ],
   "visibilityChanged": false,
   "archiveBytesChanged": false,
@@ -149,12 +151,36 @@
   "addedDocumentsScan": {
     "rawFindings": 0,
     "reportSha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
-    "localLinksChecked": 33,
+    "localLinksChecked": 49,
     "brokenLocalLinks": 0
   },
   "documentSha256": {
-    "README.md": "8da0e45a7c8c3532abdcd9dc112533780aa768b5228be3e74baefb8a1e895ecd",
-    "docs/open-source-readiness.md": "cd1b79ab7878c08a9c36603591f5ccf7935c5491ac83b112f1b5e58df734c6e9",
-    "docs/bcde-integration-plan.md": "e099e080a3358a1afb30b3bd10a11af9dd4b3beaf9e020bdf64eb309d7011fab"
-  }
+    "README.md": "e15a8accc2e19e8d7f98e055f35b2f2225f735d2d0e669b0cb5b40e4bae41462",
+    "CONTRIBUTING.md": "9977f872390dcaecd46a759e52b8382df4b5b50c0d3000795d2e2d2042bc8bae",
+    "SECURITY.md": "ec7e6d7b5582a1ee271f3c502516682b1fb534f127c64ef3810ea8f9e8343104",
+    "THIRD_PARTY_NOTICES.md": "ac8ddcc6b866c28b9264808f6554a3b845e5d9ec88391b1dc10d41fd4156dc20",
+    "docs/open-source-readiness.md": "e8fe82d38a851c6a6c861a47a3bcaf85327c0c158880f9f3c5ad97472c8710f0",
+    "docs/bcde-integration-plan.md": "a37a5709e5b02ab22b4f171337f517f0337f9282d44070764fa31119e8ca1f2e",
+    "LICENSE": "77d867744e1f894cc354549330300e3e74c073e18e75f9cddacad366dbc959c6",
+    "package.json": "f16c49a29b5bedb0c8c5bc3437174b3f0a39c5cb75d3d6fb5332ae698602be93"
+  },
+  "ownerConfirmation": {
+    "confirmedOn": "2026-10-11",
+    "projectLicense": "MIT",
+    "privatePlatformOwnCodeAndSyntheticMaterials": "User confirmed own code and synthetic materials are owned or authorized for public release",
+    "thirdPartyLicensesRetained": true
+  },
+  "initialAuditCommit": "0227d0531b3163b61d1080d06b99d89ed0143834",
+  "rootLicenseAdded": true,
+  "packageLicense": "MIT",
+  "githubVisibilityRemains": "PRIVATE",
+  "visibilityChangeAuthorized": false,
+  "licensePreparation": {
+    "rootLicense": "MIT",
+    "rootThirdPartyScopeNotice": true,
+    "contributionGuide": true,
+    "securityPolicy": true,
+    "privateVulnerabilityReporting": "Not enabled; configure and verify during an authorized public visibility change"
+  },
+  "referenceIntegrityRecheckedAfterLicensePreparation": true
 }

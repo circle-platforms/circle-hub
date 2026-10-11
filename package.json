@@ -4,7 +4,7 @@
   "private": true,
   "description": "Circle enterprise agent server foundation and source references",
   "type": "module",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "engines": {
     "node": ">=24"
   },

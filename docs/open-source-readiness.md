@@ -2,35 +2,35 @@
 
 2026-10-11。检查基线为 `26bf0a24d9c196cb11b5e264e732103de8483a06`，检查时 GitHub 仓库仍为 PRIVATE。
 
-**结论：可以继续准备开源，但当前还不能直接公开。** 本轮没有检出真实凭据，也没有发现需要放弃开源的技术原因；项目许可和私有归档的公开权利仍待确认。代码目前是共享基础、参考原件和来源校验工具，还没有正式 server 启动入口。
+**结论：基础检查通过，可以作为开发中的开源项目公开。** 本轮未检出真实凭据。用户随后确认自有内容采用 MIT，完整 platform 自有归档均自主或已获授权可公开；根许可与第三方范围说明已补齐。代码目前是共享基础、参考原件和来源校验工具，还没有正式 server 启动入口。仓库可见性仍保持 PRIVATE，本轮没有执行公开操作。
 
 这是一轮源码公开范围的基础检查，不是生产服务安全验收。具体检查范围和结果见[机器记录](validation/open-source-review-20261011.json)。
 
-## 公开前需要解决什么
+## 初审发现与当前处理
 
-### OS-01：项目尚未授予开源许可
+### OS-01：初审缺少根许可，现已补齐
 
-优先级：公开前必须完成。位置：[package.json 第 7 行](../package.json#L7)及缺失的根目录 LICENSE。
+状态：已处理。初审位置：package.json 第 7 行及缺失的根目录 LICENSE。
 
-根 package 声明 `UNLICENSED`。Circle 的 MIT 许可保留在 [foundation/circle/LICENSE](../foundation/circle/LICENSE)，只凭它不能宣称新增工具和全部 platform 归档都已经开源。16 个归档 package 没有声明自己的许可，也没有平台 LICENSE 原件。
+初审根 package 声明 `UNLICENSED`。Circle 的 MIT 许可保留在 [foundation/circle/LICENSE](../foundation/circle/LICENSE)，只凭它不能宣称新增工具和全部 platform 归档都已经开源。16 个归档 package 没有声明自己的许可，也没有平台 LICENSE 原件。
 
-建议自有代码沿用 MIT，在根目录放置许可，并明确自有文档、合成样本及界面资产是否包含在授权范围内。第三方内容继续保留各自许可和说明，不能把根许可当成对第三方的重新授权。许可选择目前仍是建议。没有许可时，公开可见与获得使用、修改、分发的许可是两回事，见 [GitHub 许可说明](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/licensing-a-repository)和 [MIT 条款](https://choosealicense.com/licenses/mit/)。
+2026-10-11 用户选择 MIT 并确认自有归档的公开权利。当前已添加根 [LICENSE](../LICENSE)，package 许可改为 MIT；自有文档、合成样本和界面资产范围见[第三方说明](../THIRD_PARTY_NOTICES.md)。第三方内容保留各自许可，根许可不重新授权第三方。没有许可时，公开可见与获得使用、修改、分发的许可是两回事，见 [GitHub 许可说明](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/licensing-a-repository)和 [MIT 条款](https://choosealicense.com/licenses/mit/)。
 
 `private: true` 用于防止误发 npm 包；确定开源许可后也可以保留，它不等同于 GitHub 仓库私有。
 
-### OS-02：完整私有归档的公开范围尚未确认
+### OS-02：完整私有归档的公开范围已由持有人确认
 
-优先级：公开前必须完成。位置：[来源清单](../references/source-manifest.json)、[platform 原件](../references/platform/snapshot)及[初始化记录](bootstrap.md)。
+状态：已确认；技术扫描不代替权利声明。位置：[来源清单](../references/source-manifest.json)、[platform 原件](../references/platform/snapshot)及[初始化记录](bootstrap.md)。
 
 新仓库包含旧私有平台全部 427 份跟踪文件，不只是将来要用的业务代码。范围包括研究记录、模型评测摘要、13 个旧项目的能力索引、GitHub 工作项、截图、样本和历史设计。静态扫描不能证明这些内容都由仓库持有人拥有公开权利，也不能替组织或客户决定公开范围。
 
-本轮未检出 platform 原件中的真实密钥、内部地址或原始业务日志。资料所称的合成样本与实际文件、截图相符；但整个范围能否公开，仍需内容持有人确认。公开 Circle 历史含作者元数据；受控旧会话夹具还保留了本机工作区路径。它们已经来自公开 Circle，不是本次新导入的企业凭据，仍应了解公开时会保留这些信息。
+本轮未检出 platform 原件中的真实密钥、内部地址或原始业务日志。资料所称的合成样本与实际文件、截图相符。2026-10-11 内容持有人确认归档的 platform 自有代码和合成资料均自主或已获授权可公开。公开 Circle 历史含作者元数据；受控旧会话夹具还保留了本机工作区路径。它们已经来自公开 Circle，不是本次新导入的企业凭据，公开时仍会保留这些信息。
 
 如果某部分不宜公开，保留私有原档，另建有清楚来源的公开材料。不能直接改冻结原件后继续声称原摘要未变；也不能只从最新提交删除文件，因为 `26bf0a2` 中的原件仍可从 Git 历史取得。历史重建或改写需要另行确定范围，本轮未执行。
 
-### OS-03：需要说明第三方内容和未来制品的许可范围
+### OS-03：源码第三方范围已说明，制品发行另作核对
 
-优先级：公开前补齐源码范围说明；软件制品发行前逐项核对实际包含的依赖。
+状态：根[第三方范围说明](../THIRD_PARTY_NOTICES.md)已补齐；软件制品发行前逐项核对实际包含的依赖。
 
 Circle 的 MIT 和 models.dev 数据说明原样保留。16 份 npm lockfile 记录了 717 个不同的外部包版本，多数声明宽松许可；其中还有复合许可、CC-BY-4.0 和 MPL-2.0。这个数字包含各参考包与开发工具，不能当成 server 已安装的依赖数量。根 package 当前没有外部依赖。
 
@@ -57,7 +57,7 @@ README 已说明没有正式服务入口；公开时应继续明确这是开发�
 
 根目录实际只启用来源校验工作流，权限为 `contents: read`，两个 action 使用完整 SHA。原 Circle 的安装、发行和 Pages 工作流，以及 platform 的实验工作流都在子目录，未成为 server 的根工作流。检查基线时，GitHub 只有初始化 Issue、一轮成功的来源校验，没有 PR、release 或 Actions artifact。现有 Actions 日志也纳入本轮扫描。
 
-开源前补 CONTRIBUTING、真实可用的安全问题私下报告渠道和支持范围说明。不要在公开 Issue 收集密钥或原始业务日志。公开仓库后 Actions 历史与日志也会可见，见 [GitHub 可见性说明](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/managing-repository-settings/setting-repository-visibility)。未来提交和 CI 需要持续扫描，不能永久沿用本次结果。
+已补 [CONTRIBUTING](../CONTRIBUTING.md)及 [SECURITY](../SECURITY.md)，当前私有协作者通过私有 Issue 报告。公开操作时启用并核对 GitHub 私下漏洞报告入口；当前没有宣称该公开仓库功能已开启。不要在公开 Issue 收集密钥或原始业务日志。公开仓库后 Actions 历史与日志也会可见，见 [GitHub 可见性说明](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/managing-repository-settings/setting-repository-visibility)。未来提交和 CI 需要持续扫描，不能永久沿用本次结果。
 
 ## 本轮实际核对的范围
 
@@ -71,10 +71,10 @@ README 已说明没有正式服务入口；公开时应继续明确这是开发�
 
 扫描使用内置规则，取消环境配置和仓库 allow 注释的影响，报告进行全值脱敏。没有用旧告警基线忽略结果。原始扫描报告、OCR 和展开文件仅用于本地检查，不将可能敏感的匹配正文写入本仓库。
 
-本轮没有启动 server、数据库、worker、浏览器或网络沙盒，没有执行归档业务模块，没有调用模型或连接设备，也没有做依赖漏洞清单或渗透测试。没有改仓库可见性、许可证或 Git 历史。
+本轮没有启动 server、数据库、worker、浏览器或网络沙盒，没有执行归档业务模块，没有调用模型或连接设备，也没有做依赖漏洞清单或渗透测试。用户确认后只补根许可、package 元数据与说明，没有改仓库可见性、冻结原件或 Git 历史。
 
 ## 开源与融合怎样继续
 
-先确认 OS-01/02，并补齐源码范围与第三方说明；若要删减公开范围，重新检查最终内容及其全部可达历史。正式公开前还要复核 Issue、PR、Actions 日志和制品，检查结论绑定最终提交。任何一步引入新文件，都不自动继承本轮扫描通过。
+OS-01/02 已在本轮确认，源码范围与第三方说明已补齐。公开操作前复核最终提交、Issue、PR、Actions 日志及制品，并启用安全报告入口；若期间有新内容或范围删减，重查最终内容及全部可达历史。任何新文件都不自动继承本轮扫描通过。
 
 四对象的[融合提案](bcde-integration-plan.md)可以先准备；实施仍按故事逐项授权。开源成立也不代表企业部署已验收。
