@@ -37,4 +37,8 @@ npm run test:references
 
 检查包含文件摘要、Git blob、完整来源树、路径闭包，以及被改动的原件能否被拒绝。它只证明来源和归档完整性，不证明业务行为或设备兼容。
 
+[开源基础检查](docs/open-source-readiness.md) · [B/C/D/E 融合提案](docs/bcde-integration-plan.md)
+
+当前可以继续准备开源，但项目许可和完整私有归档的公开范围仍待确认，仓库保持私有。融合提案尚未实施或排期。
+
 [初始化记录](docs/bootstrap.md) · [来源清单](references/source-manifest.json) · [共同产品看板](https://github.com/users/qingshanfeihu/projects/1)

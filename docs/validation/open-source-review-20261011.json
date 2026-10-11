@@ -1,0 +1,160 @@
+{
+  "schemaVersion": "1.0.0",
+  "checkedAt": "2026-10-11T10:37:27.653Z",
+  "repository": "qingshanfeihu/circle-server",
+  "sourceCommit": "26bf0a24d9c196cb11b5e264e732103de8483a06",
+  "visibilityAtReview": "PRIVATE",
+  "worktreeWasCleanAtStart": true,
+  "trackedFilesAtBaseline": 732,
+  "reachableCommits": 222,
+  "gitleaksPatchCommits": 199,
+  "reachableObjectInventory": {
+    "objects": 3661,
+    "blobs": 2345,
+    "bytes": 34246329,
+    "gzipBlobs": 6,
+    "largeSkipped": 0
+  },
+  "scanner": {
+    "name": "gitleaks",
+    "version": "8.30.1",
+    "rules": "built-in defaults",
+    "environmentConfigRemoved": true,
+    "repositoryConfigPresent": false,
+    "ignoreAllowComments": true,
+    "baselineFileUsed": false,
+    "redactPercent": 100
+  },
+  "results": {
+    "head": {
+      "rawFindings": 0,
+      "redactedReportSha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "manuallyConfirmedCredentialFindings": 0
+    },
+    "history": {
+      "rawFindings": 2,
+      "redactedReportSha256": "206134257637b04f987304062e77d0cbe21f12b2db6b51cbbe10fe0ddf90bbc2",
+      "manuallyConfirmedCredentialFindings": 0
+    },
+    "blobs": {
+      "rawFindings": 8,
+      "redactedReportSha256": "afe173913521fdb22f1d95500c0b4d5fffe432af6feb9436cf7a6bed6f40e21e",
+      "manuallyConfirmedCredentialFindings": 0
+    },
+    "expanded": {
+      "rawFindings": 0,
+      "redactedReportSha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "manuallyConfirmedCredentialFindings": 0
+    },
+    "ocr": {
+      "rawFindings": 0,
+      "redactedReportSha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "manuallyConfirmedCredentialFindings": 0
+    },
+    "actions": {
+      "rawFindings": 0,
+      "redactedReportSha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "manuallyConfirmedCredentialFindings": 0
+    }
+  },
+  "historyTriage": {
+    "falsePositiveCategories": [
+      "long model name assigned to auth.model in controlled UI tests",
+      "synthetic token in a deliberate exception used for redaction tests"
+    ],
+    "patchFindings": 2,
+    "uniqueBlobFindings": 8,
+    "sourceWasPublicCircleAncestry": true
+  },
+  "compressedHeadFiles": 5,
+  "sqliteReadOnly": true,
+  "sqliteImmutable": true,
+  "sqliteSerializationExecuted": false,
+  "screenshotTextReview": {
+    "pngFiles": 16,
+    "method": "local Apple Vision OCR plus candidate review",
+    "recognitionLanguages": [
+      "zh-Hans",
+      "en-US"
+    ],
+    "limitations": "OCR can miss visible or hidden image content",
+    "nonPixelMetadataChunks": 0
+  },
+  "licenseInventory": {
+    "trackedFiles": 732,
+    "lockfiles": 16,
+    "distinctExternalPackageVersions": 717,
+    "missingExternalLicenses": [
+      {
+        "file": "references/platform/snapshot/packages/chain-v05/package-lock.json",
+        "name": "buffers",
+        "version": "0.1.1"
+      },
+      {
+        "file": "references/platform/snapshot/packages/runtime-eval/package-lock.json",
+        "name": "unionfs",
+        "version": "4.6.0"
+      }
+    ],
+    "registryHosts": [
+      "registry.npmjs.org"
+    ]
+  },
+  "redistributionFollowup": [
+    {
+      "name": "unionfs",
+      "version": "4.6.0",
+      "result": "Original npm tarball contains Unlicense LICENSE"
+    },
+    {
+      "name": "buffers",
+      "version": "0.1.1",
+      "result": "No license found in original npm metadata or tarball; original repository returned 404; review before runtime adoption/distribution"
+    }
+  ],
+  "githubSurface": {
+    "issues": 1,
+    "pullRequests": 0,
+    "releases": 0,
+    "workflowRuns": 1,
+    "workflowArtifacts": 0,
+    "workflowLogScanned": true
+  },
+  "verification": {
+    "referenceFiles": 714,
+    "referenceTestsPassed": 7,
+    "commands": [
+      "npm run verify:references",
+      "npm run test:references"
+    ],
+    "businessModulesExecuted": false,
+    "productionServiceValidated": false,
+    "dependencyVulnerabilityAuditPerformed": false
+  },
+  "openSourceDecision": "conditional-not-ready-for-visibility-change",
+  "pending": [
+    "project license selection",
+    "content-owner confirmation for the full private platform archive",
+    "root third-party scope notices and actual security reporting channel"
+  ],
+  "visibilityChanged": false,
+  "archiveBytesChanged": false,
+  "historyRewritten": false,
+  "platformDependenciesInstalled": false,
+  "modelCalls": 0,
+  "deviceOperations": 0,
+  "browserExperiments": 0,
+  "servicesStarted": 0,
+  "rawReportsCommitted": false,
+  "addedDocumentsScan": {
+    "rawFindings": 0,
+    "reportSha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+    "localLinksChecked": 33,
+    "brokenLocalLinks": 0
+  },
+  "documentSha256": {
+    "README.md": "8da0e45a7c8c3532abdcd9dc112533780aa768b5228be3e74baefb8a1e895ecd",
+    "docs/open-source-readiness.md": "cd1b79ab7878c08a9c36603591f5ccf7935c5491ac83b112f1b5e58df734c6e9",
+    "docs/bcde-integration-plan.md": "e099e080a3358a1afb30b3bd10a11af9dd4b3beaf9e020bdf64eb309d7011fab"
+  }
+}
