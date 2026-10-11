@@ -133,7 +133,9 @@ Claude 用 Python `zipfile` + XML 独立读取下载的工作簿，8 行与 `smp
 
 dev:stack 已随本阶段提供两个 worker、独立 approver 和服务身份；所有新增权限只针对合成目标，随机密码与配置仍在临时目录。审批人员没有设备操作权限。[管理命令说明](admin-cli.md)记录启动、秘密注入和使用方式。接下来进行最后的整套验收，未 push。
 
-## 10：第一阶段收口
+## 10：第一阶段收口（初次单轮记录）
+
+本节保留当时的单轮运行结果。随后用户复核发现优雅重启间歇失败；修复、连续重跑和当前完整验收见第 11 节。
 
 运行代码提交 `956fda9`（其后仅更新文档/摘要）。在此代码提交实际执行 `npm run typecheck`、`npm test`、`npm run verify:references`、`npm audit`、`git diff --check`，全部通过；commands/范围见[验收摘要](validation/server-s1-acceptance.json)。
 
@@ -151,3 +153,27 @@ dev:stack 已随本阶段提供两个 worker、独立 approver 和服务身份�
 本次用户指定的第一阶段剩余项目已完成，本地分支 server-s1 保存逐步提交。主工作树保持 `d839935` 且干净，Circle、foundation、references 和工作流字节未修改。没有 push、PR、GitHub 设置调整、发布或部署。
 
 验证范围为本机临时真实 PostgreSQL、开发身份、本地脚本模型桩和合成资源。真实模型质量、真实设备/企业系统、生产身份、MCP 及其他操作系统的发行/部署验收另行推进；没有从本次通过推断这些能力。用户提供的真实 Otty/Circle 脑图观察保留第 4 节的来源与时点，未在本次重跑 Circle 或触及其工作树。
+
+## 11：优雅重启间歇失败修复（2026-10-12）
+
+用户复核原 `admin graceful restart actually changes the server process…`：单独连跑三次，一过两挂，失败约 21.9 秒，错误为 `Graceful restart did not produce a new server process`。本次在修复前代码 `a2b378b` 上再次独立跑三次，两过一挂，失败测试总时长 21.57 秒。第 10 节的 35/35 只代表当时的一次运行，未覆盖持续连接复用下的关停。
+
+先增加两条 HTTP 验收，再改运行源码。第一条保留一个实际复用的 keep-alive 状态轮询，并挂起 task/admin 两种 30 秒 events 长轮询；事件响应结束后继续用各自的 Agent 轮询，重启期间也持续请求。第二条通过 HTTP 100 Continue 确认请求已被 server 接收，再故意留下不完整的提交请求体。两条在旧实现上均失败，0/2，报同一重启超时。
+
+用户分析得到验证：关停只清理当时空闲的连接，正在处理的连接随后完成、进入 keep-alive 并被轮询复用时，`server.close()` 的回调一直等不到全部连接退出；supervisor 因旧进程还活着而无法替换它。本机 Node.js 24.17.0 的 HTTP 实现中，`close()` 自身也只在开始时执行空闲清理；重复一次相同筛选没有解决后续复用。接口语义参见 [Node HTTP 关停说明](https://nodejs.org/docs/latest-v24.x/api/http.html#serverclosecallback)。
+
+修复代码提交 `3e70233`：关停响应设置 `Connection: close`；每 50ms 清理空闲连接；5 秒宽限后调用 `closeAllConnections()`；关停信号立即唤醒两种 events 长轮询。server 等已进入处理程序的请求与当前 runner 收尾，再关闭连接池。共享退出时限由 main、supervisor、dev:stack 消费，外层保护分别留出 10 / 15 秒，避免与 HTTP 的 5 秒宽限抢先冲突。CLI 的 100ms 轮询和脑图接口契约保持原有方式。
+
+在同一修复代码上连续十轮运行 `node --test --test-name-pattern='admin graceful restart' tests/acceptance/admin.test.ts`，每轮三条，共 30/30，无失败、跳过或待办。每轮都核对新 PID/bootId、持久任务/修订/token/worker/游标恢复；两种挂起的长轮询在 2 秒内返回 `Connection: close`，空事件的游标保持；未完成请求体在 4.5–8 秒内断开，未产生任务。轮询覆盖重启前后的进程，允许连接断开/端口切换期间的传输错误；API 错误仍使验收失败。
+
+随后在代码提交 `3e70233` 实际执行完整检查：
+
+| 检查 | 结果 |
+|---|---|
+| contracts / methods | 4/4 + 4/4 |
+| acceptance | 22/22，八幕、admin 四组、脑图与边界验收全部通过；约 106.65 秒 |
+| references | 7/7；另校验 714 原件和两份来源树 |
+| 完整测试总计 | 37/37，无失败、跳过或待办 |
+| 类型 / 依赖 / 差异 | typecheck 与 diff 检查通过，npm audit 0 个已报告漏洞 |
+
+[本次复核与验收摘要](validation/admin-graceful-restart-acceptance.json)记录修复前的失败与十轮重复结果；原单轮 JSON 保留原提交和结果。本次继续使用临时 PostgreSQL 与合成资源，未重跑 Circle/Otty、未调用真实模型或连接真实设备/企业系统。后续仅提交这份记录与 README，不改变已验证运行代码；本地提交、不 push。

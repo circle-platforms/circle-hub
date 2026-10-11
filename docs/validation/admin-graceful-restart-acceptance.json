@@ -1,0 +1,109 @@
+{
+  "schema": "circle-server.local-acceptance/1",
+  "runtimeCommit": "3e70233da6aac0ca0d71c42e74398b743906e70c",
+  "branch": "server-s1",
+  "scope": "Graceful restart repair with local synthetic clients, real temporary PostgreSQL and the complete phase one suite",
+  "userReportedBaseline": {
+    "runs": 3,
+    "passed": 1,
+    "failed": 2,
+    "approximateFailedDurationMs": 21900,
+    "source": "User review of the original isolated restart test"
+  },
+  "reproducedBaseline": {
+    "commit": "a2b378b",
+    "original": {
+      "runs": 3,
+      "passed": 2,
+      "failed": 1,
+      "testDurationMs": [
+        21571.363625,
+        1825.59875,
+        1799.283542
+      ]
+    },
+    "newRegressions": {
+      "passed": 0,
+      "failed": 2,
+      "testDurationMs": [
+        26955.438833,
+        26750.674416
+      ]
+    },
+    "failure": "Graceful restart did not produce a new server process"
+  },
+  "repeatedRestart": {
+    "command": "node --test --test-name-pattern='admin graceful restart' tests/acceptance/admin.test.ts",
+    "rounds": 10,
+    "testsPerRound": 3,
+    "passed": 30,
+    "failed": 0,
+    "skipped": 0,
+    "roundDurationMs": [
+      10772.651125,
+      10889.464917,
+      10765.540833,
+      10664.67875,
+      10799.101542,
+      10717.830375,
+      10785.734875,
+      10881.107791,
+      10917.04625,
+      10928.584625
+    ]
+  },
+  "commands": {
+    "npm run typecheck": "passed",
+    "node --test tests/acceptance/admin.test.ts": "4 passed, 0 failed",
+    "node --test --test-name-pattern='admin graceful restart' tests/acceptance/admin.test.ts": "10 consecutive rounds; 30 passed, 0 failed",
+    "npm test": "passed on runtimeCommit",
+    "npm run verify:references": "passed; 714 original files",
+    "npm audit": "0 reported vulnerabilities",
+    "git diff --check": "passed"
+  },
+  "tests": {
+    "contracts": 4,
+    "methods": 4,
+    "acceptance": 22,
+    "references": 7,
+    "passed": 37,
+    "failed": 0,
+    "skipped": 0
+  },
+  "acceptanceDurationMs": 106652.164666,
+  "scenes": {
+    "1": "passed",
+    "2": "passed",
+    "3": "passed",
+    "4": "passed",
+    "5": "passed",
+    "6": "passed",
+    "7": "passed",
+    "8": "passed"
+  },
+  "shutdown": {
+    "httpGraceMs": 5000,
+    "idleSweepMs": 50,
+    "serverStopProtectionMs": 10000,
+    "stackChildStopProtectionMs": 15000
+  },
+  "assertions": [
+    "Existing task revision, waiting input, token, worker state and event cursor survive a new server PID and bootId",
+    "Keep-alive sockets are demonstrably reused before restart and status polling continues through the restart",
+    "Pending task and admin event long polls return within 2000ms with Connection: close and their unchanged empty cursors",
+    "The CLI observes the replacement server within 8000ms while keep-alive clients continue polling",
+    "An incomplete request body is disconnected between 4500ms and 8000ms and does not create a task",
+    "The full mindmap HTTP, artifact verification and worker boundary tests remain compatible"
+  ],
+  "historicalSingleRunReceipt": "docs/validation/server-s1-acceptance.json",
+  "nodeVersion": "24.17.0",
+  "postgresVersion": "18.4",
+  "platform": "Darwin arm64; embedded PostgreSQL reports x86_64-apple-darwin24.6.0",
+  "archiveFilesVerified": 714,
+  "paidOrRealModelCalled": false,
+  "realDeviceOrEnterpriseSystemConnected": false,
+  "circleWorktreeModified": false,
+  "circleOttyReplayThisRun": false,
+  "pushed": false,
+  "deployed": false
+}
