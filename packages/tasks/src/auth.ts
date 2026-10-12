@@ -9,10 +9,15 @@ const DevelopmentIdentity = z.object({ username: z.string().min(1), password: z.
   kind: z.enum(['user','service','worker']), workerId: z.string().optional(), scopes: z.array(z.string().regex(/^scp_/)),
   grants: z.array(z.string()), targets: z.array(z.string()), defects: z.array(z.string()) });
 interface Credential { principalId: string; salt: Buffer; digest: Buffer }
+export const DEFAULT_DEV_TOKEN_TTL_MS=8*60*60*1000;
+export const MAX_DEV_TOKEN_TTL_MS=24*60*60*1000;
 export class Auth {
   store: Store;
   credentials = new Map<string, Credential>();
-  constructor(store: Store) { this.store = store; }
+  developmentTtlMs:number;runTokenTtlMs:number;
+  constructor(store: Store,options:{developmentTtlMs?:number;runTokenTtlMs?:number}={}) { this.store = store;this.developmentTtlMs=options.developmentTtlMs??DEFAULT_DEV_TOKEN_TTL_MS;this.runTokenTtlMs=options.runTokenTtlMs??300_000;
+    requireCondition(Number.isInteger(this.developmentTtlMs)&&this.developmentTtlMs>=1000&&this.developmentTtlMs<=MAX_DEV_TOKEN_TTL_MS&&Number.isInteger(this.runTokenTtlMs)&&this.runTokenTtlMs>=1000&&this.runTokenTtlMs<=300_000,'INVALID_PAYLOAD','Development token lifetime configuration is invalid');
+  }
   async initializeDevelopment(path: string): Promise<void> {
     const input = z.object({ identities: z.array(DevelopmentIdentity) }).parse(JSON.parse(await readFile(path, 'utf8')));
     await this.store.transaction(async tx => {
@@ -27,7 +32,7 @@ export class Auth {
       }
     });
   }
-  async issue(username: string, password: string, ttlMs = 300_000): Promise<{ token: string; expiresAt: string }> {
+  async issue(username: string, password: string, ttlMs = this.developmentTtlMs): Promise<{ token: string; expiresAt: string }> {
     const credential = this.credentials.get(username);
     const salt = credential?.salt ?? Buffer.alloc(16); const actual = scryptSync(password, salt, 32);
     requireCondition(credential && timingSafeEqual(actual, credential.digest), 'UNAUTHENTICATED', 'Invalid development credentials');
@@ -35,15 +40,25 @@ export class Auth {
     const token = randomBytes(32).toString('base64url');
     const result = await this.store.pool.query(`INSERT INTO auth_tokens(digest,principal_id,expires_at)
       VALUES($1,$2,clock_timestamp()+($3::double precision*interval '1 millisecond')) RETURNING expires_at`,
-      [sha256(token), policy.principalId, Math.min(ttlMs, 300_000)]);
+      [sha256(token), policy.principalId, Math.min(ttlMs, MAX_DEV_TOKEN_TTL_MS)]);
     return { token, expiresAt: result.rows[0].expires_at.toISOString() };
+  }
+  async refresh(header:string):Promise<{token:string;expiresAt:string}>{
+    const ctx=await this.authenticate(header);requireCondition(!ctx.run,'FORBIDDEN_ACTION','Run delegation cannot refresh a development session');
+    const row=(await this.store.pool.query(`UPDATE auth_tokens a SET expires_at=GREATEST(a.expires_at,clock_timestamp()+($2::double precision*interval '1 millisecond'))
+      FROM policies p WHERE a.digest=$1 AND a.principal_id=p.principal_id AND a.constraints IS NULL AND a.expires_at>clock_timestamp() AND NOT p.disabled RETURNING a.expires_at`,[sha256(header.slice(7)),this.developmentTtlMs])).rows[0];
+    requireCondition(row,'UNAUTHENTICATED','Token is invalid or expired');return {token:header.slice(7),expiresAt:row.expires_at.toISOString()};
   }
   async authenticate(header?: string): Promise<AuthContext> {
     requireCondition(typeof header === 'string' && header.startsWith('Bearer '), 'UNAUTHENTICATED', 'Bearer token required');
     const result = await this.store.pool.query(`SELECT p.*,a.constraints,a.digest FROM auth_tokens a JOIN policies p USING(principal_id)
       WHERE a.digest=$1 AND a.expires_at>clock_timestamp() AND NOT p.disabled`, [sha256(header.slice(7))]);
     const row = result.rows[0]; requireCondition(row, 'UNAUTHENTICATED', 'Token is invalid or expired');
-    if(row.constraints){const task=(await this.store.pool.query('SELECT phase,cancel_requested FROM tasks WHERE task_id=$1',[row.constraints.taskId])).rows[0];requireCondition(task&&!task.cancel_requested&&!['failed','delivered','cancelled','unknown'].includes(task.phase),'UNAUTHENTICATED','Run token no longer authorizes new work');}
+    if(row.constraints){const task=(await this.store.pool.query('SELECT phase,cancel_requested FROM tasks WHERE task_id=$1',[row.constraints.taskId])).rows[0];requireCondition(task&&!task.cancel_requested&&!['failed','delivered','cancelled','unknown'].includes(task.phase),'UNAUTHENTICATED','Run token no longer authorizes new work');
+      if(row.constraints.operationId){const live=(await this.store.pool.query(`SELECT 1 FROM operations o JOIN leases l USING(operation_id) JOIN tasks t USING(task_id)
+        WHERE o.operation_id=$1 AND o.task_id=$2 AND o.fencing_token=$3 AND l.fencing_token=o.fencing_token AND l.worker_id=o.worker_id
+        AND o.principal_id=$4 AND o.status='running' AND o.deadline_at>clock_timestamp() AND l.expires_at>clock_timestamp() AND o.input_revision_id=t.input_revision_id`,[row.constraints.operationId,row.constraints.taskId,row.constraints.fencingToken,row.principal_id])).rowCount;requireCondition(live,'UNAUTHENTICATED','Run execution lease no longer authorizes new work');}
+    }
     return { principalId: row.principal_id, tenantId: row.tenant_id, kind: row.kind, ...(row.worker_id ? { workerId: row.worker_id } : {}),...(row.constraints?{run:row.constraints,tokenDigest:row.digest}:{}) };
   }
   async policy(ctx: AuthContext, tx?: Transaction): Promise<Policy> {
@@ -53,10 +68,14 @@ export class Auth {
       scopes:ctx.run?row.scopes.filter((scope:string)=>ctx.run!.scopes.includes(scope)):row.scopes,
       grants:ctx.run?row.grants.filter((grant:string)=>ctx.run!.grants.includes(grant)):row.grants,targets: row.targets, defects: row.defects,...(ctx.run?{run:ctx.run}:{}),...(ctx.tokenDigest?{tokenDigest:ctx.tokenDigest}:{}) };
   }
-  async issueRun(ctx:AuthContext,constraints:RunConstraint):Promise<{token:string;digest:string}>{
+  async issueRun(ctx:AuthContext,constraints:RunConstraint,deadline?:Date):Promise<{token:string;digest:string}>{
     const policy=await this.policy(ctx);requireCondition(constraints.scopes.every(scope=>policy.scopes.includes(scope))&&constraints.grants.every(grant=>policy.grants.includes(grant)),'FORBIDDEN_ACTION','Run delegation exceeds its owner');
     const token=randomBytes(32).toString('base64url'),digest=sha256(token);
-    await this.store.pool.query("INSERT INTO auth_tokens(digest,principal_id,expires_at,constraints) VALUES($1,$2,clock_timestamp()+interval '5 minutes',$3)",[digest,policy.principalId,JSON.stringify(constraints)]);return {token,digest};
+    await this.store.pool.query("INSERT INTO auth_tokens(digest,principal_id,expires_at,constraints) VALUES($1,$2,LEAST(clock_timestamp()+($4::double precision*interval '1 millisecond'),COALESCE($5::timestamptz,'infinity'::timestamptz)),$3)",[digest,policy.principalId,JSON.stringify(constraints),this.runTokenTtlMs,deadline??null]);return {token,digest};
+  }
+  async renewRun(tx:Transaction,operation:any):Promise<void>{
+    await tx.query(`UPDATE auth_tokens SET expires_at=LEAST(clock_timestamp()+($5::double precision*interval '1 millisecond'),$6)
+      WHERE principal_id=$1 AND constraints->>'taskId'=$2 AND constraints->>'operationId'=$3 AND constraints->>'fencingToken'=$4 AND expires_at>clock_timestamp()`,[operation.principal_id,operation.task_id,operation.operation_id,String(operation.fencing_token),this.runTokenTtlMs,operation.deadline_at]);
   }
   async revokeRun(digest:string):Promise<void>{await this.store.pool.query('UPDATE auth_tokens SET expires_at=clock_timestamp() WHERE digest=$1 AND constraints IS NOT NULL',[digest]);}
   async check(ctx: AuthContext, grant: string, scopeId?: string, tx?: Transaction): Promise<Policy> {

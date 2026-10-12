@@ -5,7 +5,7 @@ import {randomUUID} from 'node:crypto';
 import { z } from 'zod';
 import { API_VERSION, MAX_BODY_BYTES, MAX_SOURCE_BYTES, MAX_WORKER_REPORT_BYTES, CLIENT_ROUTES, TaskListQuery, ApiError, SubmitRequest,
   InputRequest, OperationRequest, ApprovalProposal, ApprovalRequest, ConclusionRequest, ChecklistRequest, ChecklistResponse, RuleRequest, InputRevisionId, TaskId, ScopeId, SourceUpload, Base64Content, DevLoginRequest, requireCondition,
-  EntityId,RelationId,ObjectListQuery,ObjectTypePackage,ObjectObservation,RelationObservation,
+  EntityId,RelationId,ObjectListQuery,ObjectTypePackage,ObjectObservation,RelationObservation,AuthRefreshRequest,
   AssetId,AssetRegistration,AssetListQuery,AssetTransition,CredentialRegistration,KnowledgeRecordId,KnowledgeSearchQuery,KnowledgeReviewRequest,ToolName,ToolCallInput,SkillPackId,StandardOperation } from '../../../packages/contracts/src/index.ts';
 import { Store } from '../../../packages/storage/src/index.ts';
 import { taskMigration } from '../../../packages/tasks/src/migration.ts';
@@ -51,7 +51,7 @@ import {Ingestions} from '../../../packages/knowledge/src/ingestion.ts';
 function environment(name: string): string { const value = process.env[name]; if (!value) throw new Error(`Required environment variable: ${name}`); return value; }
 const store = new Store(JSON.parse(environment('CIRCLE_SERVER_DATABASE_CONFIG')));
 await store.migrate([taskMigration,deliveryMigration,knowledgeMigration,executionMigration,...packageMigrations,approvalMigration,conclusionMigration,checklistMigration,connectorMigration,entityMigration,assetMigration,graphMigration,toolMigration,skillMigration,automationMigration,automationOutcomeMigration,knowledgePageMigration,automationOriginMigration,ingestionMigration]);
-const auth = new Auth(store);
+const auth = new Auth(store,{developmentTtlMs:process.env.CIRCLE_SERVER_DEV_TOKEN_TTL_MS?Number(process.env.CIRCLE_SERVER_DEV_TOKEN_TTL_MS):undefined,runTokenTtlMs:process.env.CIRCLE_SERVER_RUN_TOKEN_TTL_MS?Number(process.env.CIRCLE_SERVER_RUN_TOKEN_TTL_MS):undefined});
 requireCondition(process.env.CIRCLE_SERVER_DEV_AUTH === '1', 'INVALID_PAYLOAD', 'Phase one requires explicitly enabled development authentication');
 await auth.initializeDevelopment(environment('CIRCLE_SERVER_DEV_IDENTITIES'));
 await mkdir(environment('CIRCLE_SERVER_DATA_DIR'), { recursive: true, mode: 0o700 });
@@ -135,6 +135,9 @@ const server = createServer(async (request, response) => {
     }
     const ctx = await auth.authenticate(request.headers.authorization);
     if(ctx.run){const allowed=request.method==='GET'&&['/v1/tools','/v1/tasks','/v1/status'].includes(url.pathname)||request.method==='POST'&&/^\/v1\/tools\/[^/]+\/call$/.test(url.pathname)||request.method==='GET'&&/^\/v1\/tasks\/[^/]+\/(?:status|result|events)$/.test(url.pathname)||request.method==='GET'&&/^\/v1\/(?:sources|artifacts|evidence)\/[^/]+\/content$/.test(url.pathname);requireCondition(allowed,'FORBIDDEN_ACTION','Run token authorizes only its declared tools and task reads');}
+    if(url.pathname===CLIENT_ROUTES.authRefresh.path&&request.method==='POST'){
+      AuthRefreshRequest.parse(await body(request));const issued=await auth.refresh(request.headers.authorization!),policy=await auth.policy(ctx);send(response,200,{data:{...issued,tokenType:'Bearer',principalId:policy.principalId,tenantId:policy.tenantId,scopes:policy.scopes}});return;
+    }
     if(request.method==='POST'&&url.pathname==='/v1/automations/triggers'){send(response,201,{data:await automations.trigger(ctx,await body(request))});return;}
     if(request.method==='POST'&&url.pathname==='/v1/automations/bots'){send(response,201,{data:await automations.bot(ctx,await body(request))});return;}
     const botRuns=/^\/v1\/automations\/bots\/([^/]+)\/runs$/.exec(url.pathname);if(botRuns&&request.method==='GET'){send(response,200,{data:await automations.runs(ctx,AssetId.parse(botRuns[1]))});return;}

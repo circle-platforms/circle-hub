@@ -96,6 +96,7 @@ export const DevLoginRequest = z.object({ username: z.string().max(100), passwor
   expiresInMs: z.number().int().positive().optional() });
 export const DevLoginResult = z.object({ token: z.string(), tokenType: z.literal('Bearer'), expiresAt: z.string(),
   principalId: z.string(), tenantId: z.string(), scopes: z.array(ScopeId) });
+export const AuthRefreshRequest=z.object({}).strict();
 export const SourceUpload = z.object({ scopeId: ScopeId, fileName: z.string().min(1).max(240), contentBase64: Base64Content });
 export const SourceReference = z.object({ sourceRevisionId: SourceRevisionId, sha256: Sha256, size: z.number().int().nonnegative(), fileName: z.string(), scopeId: ScopeId });
 const PackageName=z.string().regex(/^[a-z][a-z0-9-]{0,99}$/);
@@ -246,7 +247,7 @@ export function requireCondition(condition: unknown, code: ErrorCode, message: s
   if (!condition) throw new ApiError(code, message);
 }
 
-export interface RunConstraint {taskId:string;tools:string[];scopes:string[];grants:string[]}
+export interface RunConstraint {taskId:string;tools:string[];scopes:string[];grants:string[];operationId?:string;fencingToken?:number}
 export interface AuthContext { principalId: string; tenantId: string; kind: 'user' | 'service' | 'worker'; workerId?: string;run?:RunConstraint;tokenDigest?:string }
 export interface Policy extends AuthContext { scopes: string[]; grants: string[]; targets: string[]; defects: string[] }
 export interface Task {
@@ -284,6 +285,7 @@ export const SubmittedTask = TaskView.extend({ deduplicated:z.boolean() });
 export const EventPage = z.object({ events:z.array(Event),after:z.number().int().nonnegative() });
 export const CLIENT_ROUTES = {
   devLogin:{ method:'POST',path:'/v1/auth/dev-login',request:DevLoginRequest,response:DevLoginResult },
+  authRefresh:{method:'POST',path:'/v1/auth/refresh',request:AuthRefreshRequest,response:DevLoginResult},
   sources:{ method:'POST',path:'/v1/sources',request:SourceUpload,response:SourceReference },
   packs:{ method:'GET',path:'/v1/packs' },
   submit:{ method:'POST',path:'/v1/tasks/submit',request:SubmitRequest,response:SubmittedTask },

@@ -95,3 +95,14 @@ test('Act R2.5: run delegation stays off disk and cancellation observes local ex
   assert.equal((await h.raw('/v1/tools',{token:secret.serverToken})).status,401);
   await h.reject(`/v1/skillpacks/${pack.skillPackId}/runs`,{inputs:{},idempotencyKey:'after-local-cancel'},'RESOURCE_BUSY');
 });
+
+test('Run sessions: slow pinned RPC keeps its short token alive through fenced preflight and never upgrades it to a login session',runtimeTest,async t=>{
+  const stub=await readonlySources(t),model=await scriptModel(t),h=await setup(t,{CIRCLE_SERVER_RUN_TOKEN_TTL_MS:'1000'});model.state.delayMs=1600;
+  await prepare(h,stub.origin,{circleBin,circleCommit,circleVersion:'1.1.1',model:{kind:'scripted',base_url:model.url,model:'scripted-fixture',protocol:'openai',api_key:model.key}});
+  const pack=await submit(h);await approve(h,pack);await h.startWorker();const run=await h.request(`/v1/skillpacks/${pack.skillPackId}/runs`,{inputs:{},idempotencyKey:'slow-renewing-runtime'});await until(async()=>model.requests.length>0);
+  const operation=(await h.db.query("SELECT * FROM operations WHERE task_id=$1 AND name='assets.execute'",[run.taskId])).rows[0],workerToken=await h.login('lab-east-01'),checked=await h.raw(`/v1/workers/operations/${operation.operation_id}/preflight`,{token:workerToken,body:{fencingToken:Number(operation.fencing_token)}}),secret=await privateRequest(checked.body.data.authorization.privateSocketPath,{authorization:`Bearer ${workerToken}`,operationId:operation.operation_id,fencingToken:Number(operation.fencing_token)});
+  const upgrade=await h.raw('/v1/auth/refresh',{token:secret.serverToken,body:{}});assert.equal(upgrade.status,403);assert.equal(upgrade.body.error.code,'FORBIDDEN_ACTION');
+  await new Promise(resolve=>setTimeout(resolve,1300));assert.equal((await h.raw('/v1/tools',{token:secret.serverToken})).status,200,'The token survives past its initial one-second expiry while its fenced worker remains live');
+  const row=(await h.db.query('SELECT expires_at,constraints FROM auth_tokens WHERE digest=$1',[sha256(secret.serverToken)])).rows[0];assert.equal(row.constraints.operationId,operation.operation_id);assert.equal(row.constraints.fencingToken,Number(operation.fencing_token));assert.ok(row.expires_at<=operation.deadline_at);
+  const result=await until(async()=>{const result=await h.request(`/v1/tasks/${run.taskId}/result`);assert.notEqual(result.phase,'failed',JSON.stringify(result));return result.phase==='delivered'?result:false;},15_000);assert.equal(result.status,'succeeded');assert.equal((await h.raw('/v1/tools',{token:secret.serverToken})).status,401);
+});

@@ -87,6 +87,7 @@ export class SkillPacks {
     return {effects:{reads:['registered-assets'],writes:['artifacts-evidence']},skillPackId:row.skill_pack_id,manifest:row.manifest,files:row.files,runtime:this.runtime,scopeId:row.scope_id};
   }
   async preflight(tx:Transaction,ctx:AuthContext,operation:any,authorization:any):Promise<any>{
+    await this.auth.renewRun(tx,operation);
     return {skillPackId:authorization.skillPackId,manifest:authorization.manifest,files:authorization.files,privateSocketPath:this.privateSocketPath,scopeId:authorization.scopeId,principalId:ctx.principalId};
   }
   async privateSecret(worker:AuthContext,operationId:string,fence:number,revoke=false):Promise<any>{
@@ -97,7 +98,7 @@ export class SkillPacks {
     await this.checkWithDetails(actor,row.manifest,row.trial);const p=await this.auth.policy(actor),entries=(await this.catalog.available(actor)).filter(entry=>row.manifest.tools.includes(entry.view.name));
     const grants=[...new Set(['tasks.read','tasks.submit','sources.read','evidence.read','credentials.use',...entries.map(entry=>entry.definition.permission)])].filter(grant=>p.grants.includes(grant));
     const scopes=[...new Set([row.scope_id,...entries.map(entry=>entry.row.scope_id)])];
-    const secret=prior??await this.auth.issueRun(actor,{taskId:checked.task.taskId,tools:row.manifest.tools,grants,scopes});this.secrets.set(key,secret);
+    const secret=prior??await this.auth.issueRun(actor,{taskId:checked.task.taskId,tools:row.manifest.tools,grants,scopes,operationId:checked.row.operation_id,fencingToken:Number(checked.row.fencing_token)},checked.row.deadline_at);this.secrets.set(key,secret);
     return {runtime:this.runtime,serverToken:secret.token};
   }
   async event(ctx:AuthContext,id:string,fence:number,inputRevisionId:string,event:any):Promise<any>{return this.store.transaction(async tx=>{

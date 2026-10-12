@@ -14,7 +14,8 @@ test('Publication follow-up A: rebuilt identities select the latest build time a
   fixture.state.conflicts=true;fixture.state.rebuilds=false;const profile={origin:fixture.origin,index:'/builds/',requestIntervalMs:0,buildSite:fixture.policy},versions=await executeTool('build-site','build.versions',{},profile);assert.equal(versions.result.builds.length,8);assert.equal(versions.result.coverage.conflicts.length,2);assert.equal(versions.result.coverage.complete,false);
   const good=versions.result.builds.find((build:any)=>build.name===fixture.builds[1].name&&build.platform===null);assert.equal((await executeTool('build-site','build.check',{build:good.buildId,commands:['service mode active']},profile)).result.commands[0].violations.length,0);
   const bad=versions.result.builds.find((build:any)=>build.name===fixture.builds[0].name&&build.platform===null);await assert.rejects(executeTool('build-site','build.tree',{build:bad.buildId},profile),(error:any)=>error.details.reason==='build_revision_conflict');
-  await assert.rejects(site.commandTree(bad),(error:any)=>error.details.reason==='build_revision_conflict');const partial=await site.releasesFor('401',[bad,good]);assert.equal(partial.status,'published');assert.equal(partial.all.length,1);assert.equal(partial.coverage.missing.length,1);
+  const complete=(await site.listing('/builds/rel_photon_10_8.html')).result,originalBad=complete.find(build=>build.name===bad.name)!,originalGood=complete.find(build=>build.name===good.name)!;
+  await assert.rejects(site.commandTree(originalBad),(error:any)=>error.details.reason==='build_revision_conflict');const partial=await site.releasesFor('401',[originalBad,originalGood]);assert.equal(partial.status,'published');assert.equal(partial.all.length,1);assert.equal(partial.coverage.missing.length,1);
 });
 
 test('Publication follow-up C: build ids and names locate one fresh page across worker restarts even when another line fails',async t=>{
@@ -32,7 +33,7 @@ test('Publication follow-up C: build ids and names locate one fresh page across 
 test('Publication follow-up D and E: platform aliases ignore case and new hyphenated variants disclose absent trees',async t=>{
   const fixture=await publicationLayout(t);fixture.state.mixedCase=true;fixture.state.extraVariants=true;
   const profile={origin:fixture.origin,index:'/builds/',requestIntervalMs:0,buildSite:fixture.policy},versions=await executeTool('build-site','build.versions',{},profile);
-  assert.equal(versions.result.builds.length,9);assert.ok(versions.result.builds.filter((build:any)=>build.listingPath.includes('syntheticOS')).every((build:any)=>build.platform==='synthetic-os'));
-  const variant=versions.result.builds.find((build:any)=>build.name.includes('PHOTON-CHIP-U'));assert.ok(variant);assert.equal(variant.platform,'chip_os');assert.equal(variant.commandTreeAvailable,false);assert.ok(variant.files.image.endsWith('.click'));
+  assert.equal(versions.result.builds.length,9);assert.equal(versions.result.builds.filter((build:any)=>build.platform==='synthetic-os').length,4);
+  const variant=versions.result.builds.find((build:any)=>build.name.includes('PHOTON-CHIP-U'));assert.ok(variant);assert.equal(variant.platform,'chip_os');assert.equal(variant.commandTreeAvailable,false);assert.ok((await new BuildSite(new HttpSource(fixture.origin)).listing('/builds/rel_photon_10_8_chip_os.html')).result[0].files.image!.endsWith('.click'));
   await assert.rejects(executeTool('build-site','build.tree',{build:variant.buildId},profile),(error:any)=>error.code==='SOURCE_ABSENT');assert.ok(!fixture.requests.some(path=>path.includes('command_tree-')&&path.includes('CHIP')));
 });

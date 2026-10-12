@@ -3,7 +3,7 @@ import type {TestContext} from 'node:test';
 
 // Fictional content with the observed summary/listing/variant structure.
 export async function publicationLayout(t:TestContext){
-  const state={rebuilds:false,conflicts:false,overloads:false,mixedCase:false,extraVariants:false,brokenOtherLine:false};
+  const state={rebuilds:false,conflicts:false,overloads:false,mixedCase:false,extraVariants:false,brokenOtherLine:false,extraBuilds:0};
   const requests:string[]=[],builds=[
     {name:'Rel_PHOTON_10_8_1_701',date:'2026-04-01'},
     {name:'Rel_PHOTON_10_8_1_711',date:'2026-04-09'},
@@ -18,7 +18,7 @@ export async function publicationLayout(t:TestContext){
     if(path==='/builds/rel_photon_10_8_chip_os.html'){res.end('<h2>Variant</h2>Beta_PHOTON-CHIP-U_10_8_1_801 (build on  2026-04-02 01:02:03 ): </br><BLOCKQUOTE><A href="nodebug-Beta_PHOTON-CHIP-U_10_8_1_801.click">image</A><BR><A href="CA-SNMP-MIB-Beta_PHOTON-CHIP-U_10_8_1_801.txt">MIB</A><BR><A href="Bugs_Fixed_with_Beta_PHOTON-CHIP-U_10_8_1_801.html">fixes</A></BLOCKQUOTE>');return;}
     if(/^\/builds\/rel_photon_10_8(?:_SyntheticOS)?\.html$/i.test(path)){
       const variant=/syntheticos/i.test(path),prefix=variant?'SyntheticOS-':'',fixedPrefix=variant?'SyntheticOS_':'';
-      const rows=[...(state.rebuilds||state.conflicts?[{...builds[0],time:state.conflicts?'2026-03-31 01:02:03':'2026-04-01 01:02:03',hash:'d'}]:[]),...builds.map(build=>({...build,time:'2026-03-31 01:02:03',hash:'c'}))];
+      const rows=[...(state.rebuilds||state.conflicts?[{...builds[0],time:state.conflicts?'2026-03-31 01:02:03':'2026-04-01 01:02:03',hash:'d'}]:[]),...builds.map(build=>({...build,time:'2026-03-31 01:02:03',hash:'c'})),...Array.from({length:state.extraBuilds},(_,index)=>({name:`Rel_PHOTON_10_8_1_${1000+index}`,date:'2026-05-01',time:'2026-04-30 01:02:03',hash:'e'}))];
       res.end(`<h2> PHOTON10.x Builds</h2>${rows.map(build=>{
         const title=`${build.name} (build on  ${build.time} ): ${build.date?`Released on ${build.date}`:''}`;
         return `${build.date?`<font color=red>${title}</font>`:title} </br><BLOCKQUOTE>

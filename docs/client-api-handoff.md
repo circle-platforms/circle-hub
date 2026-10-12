@@ -21,7 +21,11 @@ Node.js 24。启动命令使用锁定的 `embedded-postgres@18.4.0-beta.17` 在�
 
 同时输出一条 `type: "dev-stack-ready"` JSON，含 `url`、`login`、`scopeId`、`samplePath`、`pid` 和 PostgreSQL 实际版本。端口默认随机；需要固定时用 `CIRCLE_SERVER_PORT=8080 npm run dev:stack`。全部服务只监听 127.0.0.1。本次登录密码只保存在临时配置并打印到该终端，不固定在 Git。Ctrl+C 有序停止 worker、server 和 PostgreSQL 并删除临时数据库、原件及制品。再次启动是新环境；server 在同一个仍存活的 PostgreSQL 中重启才会恢复原任务。
 
-开发身份源仅在 `CIRCLE_SERVER_DEV_AUTH=1` 且显式指定临时身份配置时启用。它不是企业认证。token 默认有效 5 分钟；客户端用秘密存储保存登录材料，过期后重新登录并补读事件。账号和授权来自服务端配置/策略表，请求体自报的 principal、role、actor 或 tenant 都不授予权限。
+开发身份源仅在 `CIRCLE_SERVER_DEV_AUTH=1` 且显式指定临时身份配置时启用。它不是企业认证。token 默认有效 **8 小时**；`CIRCLE_SERVER_DEV_TOKEN_TTL_MS` 可配置 1000–86400000ms（最多 24 小时），显式请求的短 expiresInMs 仍有效。客户端用秘密存储保存 token，到期前无交互续期。账号和授权来自服务端配置/策略表，请求体自报的 principal、role、actor 或 tenant 都不授予权限。
+
+`POST /v1/auth/refresh` 带当前 Bearer 和空 JSON `{}`，响应沿用 dev-login 的 `{token,tokenType,expiresAt,principalId,tenantId,scopes}`（CLIENT_ROUTES.authRefresh）。仅仍有效、未撤销且身份未禁用的开发会话可续期；不要求密码、不接受自报期限/身份/范围。当前实现延长同一 token，避免并发旧请求因换 token 被拒；scopes 重新取当前策略。已过期返回 401，不从过期凭据恢复会话；受约束 run token 返回 403，不能升级成普通登录。
+
+Circle 2035247 已由维护者报告支持：保存 expiresAt、到期前约 2 分钟或短期限的 1/5（至少 5 秒）及请求前续期；旧 server 的 404/405 只尝试一次。任何工具/任务轮询的 401 都只提示 sign-in expired 和显式 `/server login`，不自动弹密码框；run token 不由客户端续期。已过期的旧 5 分钟会话需要主动登录一次，随后使用新期限。正式企业身份/刷新 token 仍未接入。
 
 ## 通用信封
 
@@ -181,7 +185,7 @@ task 工具返回 202 `{"taskId":"task_...","phase":"admitted"}`（phase 以实�
 
 | 工具 | args | result 主要字段 |
 |---|---|---|
-| `buildsite.versions` | `{versionLine?}` | `versionLines`, `platforms`, `builds[]`；每个构建含 name/versionLine/formal/releasedOn/platform/buildTime/镜像声明 SHA 与大小 |
+| `buildsite.versions` | `{versionLine?,page?,limit?,formal?,platform?,current?,commandTreeAvailable?}` | versionLines/builds/page/limit/total/totalPages/hasMore/nextPage/revision/coverage；构建仅返回七个精简字段 |
 | `buildsite.command_tree` | `{build,platform?,scope?,versionLine?}` | build/buildId/platform/parserVersion/sourceSha256/commands；固定构建 XML 投影，保留 scope/menuPath |
 | `buildsite.fixed_releases` | `{issueId,issueSystem,builds:[1–20 个相关构建],platform?,versionLine?}`；旧 `{legacyIssueId,...}` 仍可用 | issue/status/earliestFormal/all/coverage；体系为 zentao 或 bugzilla，旧请求默认 bugzilla，空编号 unknown，Beta 不作正式发布 |
 | `buildsite.command_heads` | `{build,prefix}` | heads/count/limit/ruleVersion；上限 128，超出报 `RESULT_TOO_LARGE`，details.outcome=`result_too_large`，不截断 |
@@ -201,6 +205,10 @@ E 的 `command-tree/1.1.0` 规则采用 POSIX quote/escape 分词并转小写，
 同一命令头可有多个参数签名，heads 去重后列出，不因其他头重载而失败。param 总是返回 signatures；单签名仍把该签名放在旧 parameters 中，多签名时 parameters=[]、overloaded=true，调用者须读完整 signatures。重复的相同签名去重，签名携带 scope；可选 scope 先筛选 XML，再匹配。check 检查全部签名，至少一条完全通过则 violations=[]，matchedSignatures 列出通过项；全部失败时保留一组确定性违规并在 signatureChecks 列出每条失败原因。不会把不同签名的参数拼成一个签名。异步产品知识也合并完整签名，不取最后一条覆盖其他重载。
 
 版本线来自首页链接标题或页面文件名；平台是独立维度，不是型号。正式发布需要 `Rel_` 且有 Released on 日期。构建段落没变时不重取 XML 和修复清单；ISO-8859-1 XML 按声明解码，引用 SHA 始终来自解码前原字节。命令存在只证明结构，完整功能语义需要产品证据。
+
+versions 默认 page=1、limit=20，limit 为 1–100；page 为正整数（最多 1000000）。先按版本线取元数据，再按 formal/platform/current/commandTreeAvailable 过滤后计数与分页。正式构建优先，发布日期倒序，再按 current/平台/名称稳定排序。`builds` 每项只有 name/buildId/formal/releasedOn/current/platform/commandTreeAvailable；文件、镜像、完整替代历史不进入列表回复。主平台最新可用正式构建可调用 `{versionLine:"<版本线>",formal:true,platform:null,current:true,commandTreeAvailable:true,limit:1}`，不需要让模型读完整目录。
+
+nextPage=null 表示已到匹配结果末尾，hasMore 明确标识分页，不能把当前页视为全量。revision 是当前元数据及筛选条件摘要；跨页值变更时应重新读取，以免混用源修订。coverage 仍保留 complete 和有限 missing/conflicts/superseded 摘要（每种最多 20 项），counts 给出全部数量，detailsTruncated 说明诊断是否省略；不回传嵌套整份历史。完整 HTML 原件、全部定位和异步知识投影照常保留，即使列表只返回一页。
 
 版本列表支持首页 → 汇总页 → 列表页。产品线清单的 `connectorOptions.build-site.buildSite` 声明 listingPathPattern（可带 versionLine/variant 命名捕获）与 variantPlatforms，通用连接器按该配置筛选汇总页链接和映射平台。遍历有 maxDepth（默认 3、最多 5）及 maxPages（默认 128、最多 256），循环页去重；旧的直接列表仍支持。列表按标题文本加紧随 BLOCKQUOTE 取构建，font 仅是展示标记；支持带变体前缀的 .click 镜像、命令 XML 和修复页，绝对/相对链接都须同源。
 
@@ -289,5 +297,7 @@ worker 的回报处理若因 ApiError 拒绝，知识/制品写入回滚，操�
 新连接器资产可在 configuration 带 `productLineId`，由该产品线清单选择工具前缀。例如 `{"packageId":"documents","productLineId":"meridian","runtimeProfileRef":"<运行时引用>"}` 自动登记 meridian_docs 工具。可选 alias 仍覆盖实例前缀，同一 tenant 内工具名称冲突仍拒绝。省略 productLineId 时沿用第一个声明该连接器的清单前缀；公共 knowledge 工具独立保留。移除产品线并重启后，该产品线明确绑定的工具从目录隐藏；恢复安装后可继续使用原已批准绑定。ETag 和普通调用权限规则不变。
 
 清单安装只读取声明，不导入其中的可执行路径，也不等于技能包已经获批。技能提交/审批/运行仍查当前目录，沿用原接口；既有编译能力和历史迁移保留。
+
+运行 token 仍默认短期 5 分钟（CIRCLE_SERVER_RUN_TOKEN_TTL_MS 1000–300000ms 可缩短用于验收），绑定操作/fence/任务和固定 scopes/grants/tools。只有持有效租约的 worker 在完整 preflight 校验后续期，截止不超过该操作 deadline；任务结束、取消、租约过期、旧 fence 或输入修订变化立即阻止新访问。客户端不能调用 auth/refresh 续这种 token，也不因本地会话断开就声称远端停止。
 
 权限、类别和能力包筛选先于 limit，按创建时间、taskId 倒序；游标取保存的完整 PostgreSQL 创建时间，不按 phase/更新时间排序，server 重启可续读。after 必须是当前身份可读的任务；越 scope/个人任务返回 FORBIDDEN_SCOPE，格式错误、未知类别和越界 limit 为 INVALID_PAYLOAD。省略新参数时行为与第一阶段相同。

@@ -17,9 +17,11 @@ export interface ToolPackage {id:string;prefix:string;productLinePrefixes?:Recor
 const tool=(suffix:string,title:string,schema:z.ZodObject<any>,permission:string,handler:string,effect:'read'|'write'='read',mode:'sync'|'task'='sync'):ToolDefinition=>({suffix,title,description:title,schema,permission,handler,effect,mode});
 const short=z.string().min(1).max(500),build=z.string().min(1).max(200);
 const selection={build,platform:short.nullable().optional(),scope:short.optional(),versionLine:short.optional()};
+const versionQuery=z.object({versionLine:short.optional(),page:z.number().int().min(1).max(1_000_000).default(1),limit:z.number().int().min(1).max(100).default(20),formal:z.boolean().optional(),platform:short.nullable().optional(),current:z.boolean().optional(),commandTreeAvailable:z.boolean().optional()}).strict();
+const compactCoverage=(coverage:ReturnType<typeof buildCoverage>)=>({complete:coverage.complete,counts:{readPages:coverage.readPages.length,missing:coverage.missing.length,conflicts:coverage.conflicts.length,superseded:coverage.superseded.length},missing:coverage.missing.slice(0,20),conflicts:coverage.conflicts.slice(0,20).map(item=>({buildId:item.buildId,name:item.name,platform:item.platform,code:item.code})),superseded:coverage.superseded.slice(0,20).map(item=>({buildId:item.buildId,name:item.name,platform:item.platform,count:item.revisions.length})),detailsTruncated:[coverage.missing,coverage.conflicts,coverage.superseded].some(items=>items.length>20)});
 export const toolPackages:ToolPackage[]=[
   {id:'build-site',prefix:'buildsite',tools:[
-    tool('versions','列出版本线和构建发布记录',z.object({versionLine:short.optional()}).strict(),'builds.read','build.versions'),
+    tool('versions','分页列出精简构建：默认20、最多100；按正式发布日期倒序；可筛选版本线、主平台和可用命令树',versionQuery,'builds.read','build.versions'),
     tool('command_tree','取固定构建的命令树投影',z.object(selection).strict(),'builds.read','build.tree'),
     tool('fixed_releases','按编号体系核对相关构建修复清单；保留覆盖范围',z.object({legacyIssueId:z.string().regex(/^\d*$/).optional(),issueId:z.string().regex(/^\d*$/).optional(),issueSystem:z.enum(['bugzilla','zentao']).default('bugzilla'),builds:z.array(build).min(1).max(20),platform:short.nullable().optional(),versionLine:short.optional()}).strict().refine(args=>args.issueId!==undefined||args.legacyIssueId!==undefined,'Provide an issue identifier').refine(args=>args.issueId===undefined||args.legacyIssueId===undefined||args.issueId===args.legacyIssueId,'Issue identifiers disagree'),'builds.read','build.fixed'),
     tool('command_heads','查命令头；超过 128 条明确失败',z.object({...selection,prefix:z.string().max(500)}).strict(),'builds.read','build.heads'),
@@ -57,6 +59,7 @@ export async function executeTool(packageId:string,handler:string,args:any,profi
   if(handler==='consolidation.fragments')return {result:args,raw:[],sourceType:'shared-session'};
   const source=new HttpSource(profile.origin,{...(credential?{authorization:()=>credential}:{}),timeoutMs:5000,requestConcurrency:profile.requestConcurrency??2,requestIntervalMs:profile.requestIntervalMs??(packageId==='build-site'?200:0)});
   if(packageId==='build-site'){
+    if(handler==='build.versions')args=versionQuery.parse(args);
     const site=new BuildSite(source,options.cache??defaultToolCache,canonicalHash([options.cacheNamespace??profile.origin,credential??null]));
     let catalog:Awaited<ReturnType<BuildSite['catalog']>>;
     const references: string[]=handler==='build.fixed'?args.builds:handler==='build.versions'?[]:[args.build],locations=references.length?await site.locations(references,args.platform,profile.buildSite):[];
@@ -72,7 +75,11 @@ export async function executeTool(packageId:string,handler:string,args:any,profi
       if(candidates.length!==1)throw new ApiError('INVALID_PAYLOAD','Build name requires an explicit platform or build id',{reason:'ambiguous_build',builds:candidates.map(build=>({buildId:build.buildId,platform:build.platform}))});
       if(candidates[0].conflict)throw new ApiError('INVALID_PAYLOAD','Build has unresolved page revisions',{reason:'build_revision_conflict',buildId:candidates[0].buildId});return candidates[0];
     };
-    if(handler==='build.versions')return {result:{versionLines:index.lines.map(line=>({versionLine:line.versionLine,title:line.title})),platforms:index.platforms,builds,coverage:catalog.coverage},raw,sourceType:'build-record'};
+    if(handler==='build.versions'){
+      const selected=builds.filter(build=>(args.formal===undefined||build.formal===args.formal)&&(args.current===undefined||build.current===args.current)&&(args.commandTreeAvailable===undefined||build.commandTreeAvailable===args.commandTreeAvailable)&&(args.platform===undefined||args.platform===null?args.platform===undefined||build.platform===null:build.platform?.toLowerCase()===args.platform.toLowerCase())).sort((a,b)=>Number(b.formal)-Number(a.formal)||(b.releasedOn??'').localeCompare(a.releasedOn??'')||Number(b.current)-Number(a.current)||(a.platform??'').localeCompare(b.platform??'')||a.name.localeCompare(b.name)||a.buildId.localeCompare(b.buildId));
+      const total=selected.length,offset=(args.page-1)*args.limit,hasMore=offset+args.limit<total,filters={versionLine:args.versionLine,formal:args.formal,platform:args.platform,current:args.current,commandTreeAvailable:args.commandTreeAvailable};
+      return {result:{versionLines:index.lines.map(line=>({versionLine:line.versionLine,title:line.title})),builds:selected.slice(offset,offset+args.limit).map(({name,buildId,formal,releasedOn,current,platform,commandTreeAvailable})=>({name,buildId,formal,releasedOn,current,platform,commandTreeAvailable})),page:args.page,limit:args.limit,total,totalPages:Math.ceil(total/args.limit),hasMore,nextPage:hasMore?args.page+1:null,revision:canonicalHash({filters,pages:catalog.pages.map(page=>[page.path,page.sha256]).sort()}),coverage:compactCoverage(catalog.coverage)},raw,sourceType:'build-record'};
+    }
     if(handler==='build.fixed'){
       const candidates:BuildRecord[]=[...new Map<string,BuildRecord>(args.builds.map((reference:string)=>{const build=select(reference);return [build.buildId,build];})).values()];
       const fixed=await site.releasesFor({system:args.issueSystem??'bugzilla',id:args.issueId??args.legacyIssueId},candidates);raw.push(...fixed.evidence.map((evidence:RawReturn)=>({...evidence,sourceType:'build-record'})));const {evidence,...result}=fixed;return {result,raw,sourceType:'build-record'};
