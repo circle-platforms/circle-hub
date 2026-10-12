@@ -513,3 +513,5 @@ claim 不可用证据仅增加调用者提交项的 details={field:evidence,inde
 连跑短期限验收又发现 token 复用阈值的整数除法在两秒 TTL 时变成零。补确定性边界：暂停 worker，在 operation 锁下把可用 token 期限改为剩150ms，旧实现仍复用该引用，实际失败。改为提前量向上取整且至少一秒（最多15秒），每次跨资源请求重新获得有余量的令牌；不会用临期零余量令牌去碰资源。复验与最终全套继续，未把测试时序失败当真实环境结果。
 
 最终固定 Circle 8b2ceb6 的整套已实际通过：contracts **4/4**、methods **19/19**、acceptance **143/143**、references **7/7**，共 **173/173**，无 skip；typecheck 与 diff 检查通过、归档原件 **714** 保持。长任务/窄 scope/临期/旧 fence/取消/另一 worker 核对联合验收另连续三轮 **3/3**。原技能目录与 9931f20 同字节，未修改、删除或替换，后续以独立包为准。资源身份接口和 TLS/原件交接已通过 Otty 告知 Claude；本笔只在 server-s2 本地提交并交其复核，不 push、不改实际网关，不启用 HTTP 例外。网络/HTTPS可达部署仍待用户选择，模块清单/安装入口仍待对齐，不把本机合成通过表述为真实上机。
+
+后送达的结构确认补充：objects 为 **14** 个对象的数组，无字符串项；每项都有 e/python_type/status/reason/status_authority:string、mro:array(string)（长度 **1–7**）、source:object，source 键形状与 entries 一致。对象状态为 enabled **11**、disabled **3**，无 internal；internal 出现在 entries。与既有消费解析器和完整形状合成验收兼容，本次仅记录，不改校验。用户报告 8009864 独立复核仍在运行，完成后由其部署 7420并回报；尚无新的部署确认。用户再次明确 C 自身签发优先于外部 OAuth，执行资源身份已在 **436a9ec** 本地实现并交接，维持无 HTTP 例外、无反代、未改跳板机；外部 OAuth 只保留其他连接器用途，不作为当前执行签发路径。
