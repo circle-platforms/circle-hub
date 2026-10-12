@@ -9,8 +9,9 @@ import {EnvironmentView} from './environment-view.ts';
 import {SourceCache} from './source-cache.ts';
 import {projectSource} from './product-projections.ts';
 import type {ProductObservation} from '../../knowledge/src/product-records.ts';
+import type {SourceArtifactSnapshot} from '../../knowledge/src/source-artifacts.ts';
 
-export interface ToolDefinition {suffix:string;title:string;description:string;schema:z.ZodObject<any>;effect:'read'|'write';mode:'sync'|'task';permission:string;handler:string}
+export interface ToolDefinition {suffix:string;title:string;description:string;schema:z.ZodObject<any>;effect:'read'|'write';mode:'sync'|'task';permission:string;handler:string;sourceParameter?:string}
 export const ConnectorOptions=z.object({buildSite:BuildSiteOptions.optional(),documents:DocumentOptions.optional()}).strict();
 export type ConnectorOptions=z.infer<typeof ConnectorOptions>;
 export interface ToolPackage {id:string;prefix:string;productLinePrefixes?:Record<string,string>;profileOptions?:ConnectorOptions;productLineOptions?:Record<string,ConnectorOptions>;tools:ToolDefinition[];projection?:{version:string;extract:(raw:RawReturn[],profile:ConnectorProfile)=>Promise<ProductObservation[]>}}
@@ -56,15 +57,25 @@ export const toolPackages:ToolPackage[]=[
     tool('claim_submit','提交个人沉淀候选；不自动提升为团队知识',z.object({claim:z.object({subject:short,predicate:short,value:z.unknown(),conditions:z.record(z.string(),z.unknown()).default({})}).strict(),evidence:z.array(z.object({evidenceId:z.string(),sha256:z.string().regex(/^[a-f0-9]{64}$/)}).strict()).min(1).max(100)}).strict(),'knowledge.submit','candidate.submit','write','task'),
   ]},
 ];
-for(const pack of toolPackages)if(pack.id!=='knowledge')pack.projection={version:pack.id==='build-site'?'source-projection/3':pack.id==='query-mirror'?'source-projection/2':'source-projection/1',extract:(raw,profile)=>projectSource(pack.id,raw,profile)};
-export interface ConnectorProfile {origin:string;root?:string;index?:string;payloadField?:string;requestConcurrency?:number;requestIntervalMs?:number;buildSite?:BuildSiteOptions;documents?:DocumentOptions}
+for(const pack of toolPackages){if(pack.id==='build-site')for(const definition of pack.tools)if(Object.hasOwn(definition.schema.shape,'build'))definition.sourceParameter='build';if(pack.id!=='knowledge')pack.projection={version:pack.id==='build-site'?'source-projection/3':pack.id==='query-mirror'?'source-projection/2':'source-projection/1',extract:(raw,profile)=>projectSource(pack.id,raw,profile)};}
+export interface ConnectorProfile {origin:string;root?:string;index?:string;payloadField?:string;requestConcurrency?:number;requestIntervalMs?:number;authorizationScheme?:'raw'|'bearer';buildSite?:BuildSiteOptions;documents?:DocumentOptions;sourceArtifact?:SourceArtifactSnapshot}
 export interface ToolReturn {result:any;raw:RawReturn[];sourceType:string}
 const defaultToolCache=new SourceCache();
-export async function executeTool(packageId:string,handler:string,args:any,profile:ConnectorProfile,credential?:string,options:{cache?:SourceCache;cacheNamespace?:string;freshCommands?:boolean}={}):Promise<ToolReturn>{
+export async function executeTool(packageId:string,handler:string,args:any,profile:ConnectorProfile,credential?:string,options:{cache?:SourceCache;cacheNamespace?:string;freshCommands?:boolean;sourceArtifact?:SourceArtifactSnapshot;originals?:RawReturn[]}={}):Promise<ToolReturn>{
   if(handler==='candidate.submit')return {result:args,raw:[],sourceType:'skill-run'};
   if(handler==='consolidation.fragments')return {result:args,raw:[],sourceType:'shared-session'};
   if(handler==='mirror.search'&&!mirrorQuery.safeParse(args).success)throw new ApiError('INVALID_PAYLOAD','Provide product, status or date filters; keyword also requires product. Use page and limit for compact results',{requiredFilters:['product','status','lastEditedDate_start','lastEditedDate_end']});
-  const source=new HttpSource(profile.origin,{...(credential?{authorization:()=>credential}:{}),timeoutMs:packageId==='query-mirror'?30000:5000,requestConcurrency:profile.requestConcurrency??2,requestIntervalMs:profile.requestIntervalMs??(packageId==='build-site'?200:0)});
+  const source=new HttpSource(profile.origin,{...(credential?{authorization:()=>profile.authorizationScheme==='bearer'?`Bearer ${credential}`:credential}:{}),timeoutMs:packageId==='query-mirror'?30000:5000,requestConcurrency:profile.requestConcurrency??2,requestIntervalMs:profile.requestIntervalMs??(packageId==='build-site'?200:0)});
+  if(options.sourceArtifact){
+    const artifact=options.sourceArtifact,originals=options.originals??[];
+    source.read=async(reference,request={})=>{const path=source.path(reference),method=request.method??'GET',binding=artifact.metadata.requests?.[`${method} ${path} ${canonicalHash(request.json??null)}`]??artifact.metadata.requests?.[`${method} ${path}`]??artifact.metadata.requests?.[path],selected=binding?`/${binding.path}`:path,raw=originals.find(file=>file.path===selected);requireCondition(raw,'SOURCE_ABSENT','Bound source artifact has no original for this request');return {...raw,path,artifactFilePath:raw.path,httpStatus:binding?.status??200};};
+    if(packageId==='build-site'&&['build.tree','build.heads','build.parameters','build.check'].includes(handler)){
+      const file=artifact.files.find(file=>file.role==='command-tree');requireCondition(file,'INVALID_PAYLOAD','Selected artifact needs a command-tree file');const raw=originals.find(raw=>raw.path===`/${file.path}`);requireCondition(raw&&raw.sha256===file.sha256,'SOURCE_HASH_MISMATCH','Selected command tree original is absent or changed');
+      const commands=await new BuildSite(source).commandsFrom(raw.bytes);requireCondition(commands.length>0,'INVALID_PAYLOAD','Selected command tree has no recognized items');const selected=args.scope?commands.filter(command=>command.scope===args.scope):commands;
+      const result=handler==='build.tree'?{commands:selected,parserVersion:'menu-path/2'}:handler==='build.heads'?commandHeads(selected,args.prefix):handler==='build.parameters'?commandParam(selected,args.head):commandCheck(selected,args.commands);
+      return {result:{...result,source:{sourceArtifactId:artifact.sourceArtifactId,assetId:artifact.assetId,assetVersion:artifact.assetVersion,commandTreeSha256:file.sha256,buildName:artifact.metadata.buildName??null,association:'operator-declared',live:false}},raw:[raw],sourceType:'external-artifact'};
+    }
+  }
   if(packageId==='build-site'){
     if(handler==='build.versions')args=versionQuery.parse(args);
     const site=new BuildSite(source,options.cache??defaultToolCache,canonicalHash([options.cacheNamespace??profile.origin,credential??null]));

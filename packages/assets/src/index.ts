@@ -14,6 +14,7 @@ export class Assets {
   store:Store;auth:Auth;vault:PrivateVault;
   healthCheck?: (ctx:AuthContext,asset:any)=>Promise<{result:string;reason:string}>;
   validateRegistration?: (ctx:AuthContext,definition:AssetRegistration,id:string,tx:Transaction)=>Promise<void>;
+  materializeCredential?: (ctx:AuthContext,row:any,link:any,value:string)=>Promise<string>;
   constructor(store:Store,auth:Auth,directory:string){this.store=store;this.auth=auth;this.vault=new PrivateVault(directory);}
   binding(row:any):string{return JSON.stringify([row.tenant_id,row.scope_id,row.owner_principal_id,row.asset_id,row.version]);}
   view(row:any):any{return {assetId:row.asset_id,scopeId:row.scope_id,kind:row.kind,ownerPrincipalId:row.owner_principal_id,version:row.version,name:row.name,
@@ -68,7 +69,7 @@ export class Assets {
     await this.auth.audit(ctx,'assets.lifecycle',{assetId:id,version:row.version,sha256:row.sha256,state:input.state},row.scope_id,tx);
     return this.view((await tx.query(`SELECT a.*,v.* FROM ${join} WHERE a.asset_id=$1`,[id])).rows[0]);
   });}
-  async credential(ctx:AuthContext,id:string,input:{version:string;value:string;ownerPrincipalId?:string}):Promise<any>{
+  async credential(ctx:AuthContext,id:string,input:{version:string;value:string;ownerPrincipalId?:string},metadata:Record<string,unknown>={},credentialAssetId?:string):Promise<any>{
     const parent=await this.row(ctx,id);await this.auth.check(ctx,'credentials.register',parent.scope_id);
     if(parent.kind==='credential-reference'){
       requireCondition(ctx.kind==='user'&&parent.owner_principal_id===ctx.principalId&&(!input.ownerPrincipalId||input.ownerPrincipalId===ctx.principalId)&&parent.lifecycle!=='disabled','FORBIDDEN_ACTION','Only the owner replaces an active personal session');requireCondition(input.version===parent.version,'APPROVAL_STALE','Credential reference revision changed');
@@ -76,11 +77,12 @@ export class Assets {
       await this.vault.withLock(link.secret_key,()=>this.vault.replace(link.secret_key,input.value,this.binding(parent)));await this.auth.audit(ctx,'credentials.session-replaced',{assetId:id,version:parent.version,connectorAssetId:link.connector_asset_id},parent.scope_id);return this.view(parent);
     }
     requireCondition(ctx.kind==='user'&&parent.kind==='connector-instance'&&parent.owner_principal_id===ctx.principalId&&(!input.ownerPrincipalId||input.ownerPrincipalId===ctx.principalId),'FORBIDDEN_ACTION','Only the owner binds their own personal credential');
-    const assetId=newId('ast'),binding=JSON.stringify([parent.tenant_id,parent.scope_id,ctx.principalId,assetId,input.version]);
+    const assetId=credentialAssetId??newId('ast'),binding=JSON.stringify([parent.tenant_id,parent.scope_id,ctx.principalId,assetId,input.version]);
+    if(credentialAssetId){const old=(await this.store.pool.query('SELECT 1 FROM assets WHERE asset_id=$1',[credentialAssetId])).rows[0];if(old){const row=await this.row(ctx,credentialAssetId),link=(await this.store.pool.query('SELECT secret_key FROM personal_credentials WHERE asset_id=$1 AND version=$2',[credentialAssetId,input.version])).rows[0];requireCondition(row.kind==='credential-reference'&&row.owner_principal_id===ctx.principalId&&row.configuration.connectorAssetId===id&&row.version===input.version&&link,'FORBIDDEN_ACTION','Credential receipt binding differs');requireCondition(await this.vault.get(link.secret_key,binding)===input.value,'IDEMPOTENCY_MISMATCH','Credential receipt differs');return this.view(row);}}
     const key=await this.vault.put(input.value,binding);
     try{return await this.store.transaction(async tx=>{
       const asset=await this.register(ctx,{assetId,scopeId:parent.scope_id,kind:'credential-reference',name:'Personal connector credential',version:input.version,
-        declaration:{reads:[],writes:[],credentials:[]},configuration:{connectorAssetId:id},readers:[ctx.principalId]},tx,true);
+        declaration:{reads:[],writes:[],credentials:[]},configuration:{connectorAssetId:id,...metadata},readers:[ctx.principalId]},tx,true);
       await tx.query('INSERT INTO personal_credentials(asset_id,version,connector_asset_id,secret_key) VALUES($1,$2,$3,$4)',[assetId,input.version,id,key]);return asset;
     });}catch(error){await this.vault.remove(key);throw error;}
   }
@@ -88,7 +90,7 @@ export class Assets {
     const row=await this.row(ctx,reference,undefined,'credentials.use');
     requireCondition(row.kind==='credential-reference'&&row.owner_principal_id===ctx.principalId&&row.lifecycle!=='disabled','FORBIDDEN_ACTION','Personal credential is not available to this execution identity');
     const link=(await this.store.pool.query('SELECT * FROM personal_credentials WHERE asset_id=$1 AND version=$2',[row.asset_id,row.version])).rows[0];
-    requireCondition(link&&link.connector_asset_id===connectorId,'FORBIDDEN_ACTION','Credential is bound to another connector');return this.vault.get(link.secret_key,this.binding(row));
+    requireCondition(link&&link.connector_asset_id===connectorId,'FORBIDDEN_ACTION','Credential is bound to another connector');const value=await this.vault.get(link.secret_key,this.binding(row));return this.materializeCredential?this.materializeCredential(ctx,row,link,value):value;
   }
   async check(ctx:AuthContext,id:string):Promise<any>{
     const row=await this.row(ctx,id);await this.auth.check(ctx,'assets.check',row.scope_id);

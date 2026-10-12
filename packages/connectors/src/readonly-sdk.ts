@@ -1,7 +1,7 @@
 import {ApiError,MAX_SOURCE_BYTES,canonicalHash,requireCondition,sha256} from '../../contracts/src/index.ts';
 import {setTimeout as delay} from 'node:timers/promises';
 
-export interface RawReturn {path:string;bytes:Buffer;sha256:string;mediaType:string;etag:string|null;sourceType?:string;requestKey?:string;httpStatus?:number}
+export interface RawReturn {path:string;bytes:Buffer;sha256:string;mediaType:string;etag:string|null;sourceType?:string;requestKey?:string;httpStatus?:number;artifactFilePath?:string}
 export interface SourceOptions {authorization?:()=>string|Promise<string>;timeoutMs?:number;maxBytes?:number;absenceTtlMs?:number;requestConcurrency?:number;requestIntervalMs?:number}
 export interface Incremental<T> {items:T[];cursor:Record<string,string>;evidence:RawReturn[]}
 

@@ -2,12 +2,13 @@ import ExcelJS from 'exceljs';
 import {unzipSync} from 'fflate';
 import {ApiError,MAX_SOURCE_BYTES,requireCondition,sha256} from '../../../packages/contracts/src/index.ts';
 import {frameworkArguments,shellHost} from './dialect.ts';
+import type {FunctionContract} from './function-contract.ts';
 
 export interface ExecutionStep {row:number;type:number;description:string;object:string;method:string;data:string;commands:string[];saveAs?:string;inputRegister?:string;call?:{command:string;kwargs:Record<string,string|number>}}
 export interface ExecutionCase {autoid:string;steps:ExecutionStep[]}
 export interface ExecutionBook {sha256:string;cases:ExecutionCase[];initialization:ExecutionStep[];commands:{autoid:string|null;row:number;object:string;deviceIndex:number;command:string}[];hostCommands:{autoid:string|null;row:number;object:string;method:string;host:string;command:string;kwargs:Record<string,string|number>}[]}
 const headers=['自动化ID','优先级','语句类型','描述','测试对象','方法','数据','临时保存期望结果','输入变量'];
-export async function readExecutionWorkbook(bytes:Buffer):Promise<ExecutionBook>{
+export async function readExecutionWorkbook(bytes:Buffer,functions?:FunctionContract):Promise<ExecutionBook>{
   let location:{row:number|null;autoid:string|null;object:string|null;method:string|null}={row:null,autoid:null,object:null,method:null};
   const invalid=(message:string,details:Record<string,unknown>={})=>new ApiError('INVALID_EXECUTION_WORKBOOK',message,{...location,...details});
   try{
@@ -32,6 +33,7 @@ export async function readExecutionWorkbook(bytes:Buffer):Promise<ExecutionBook>
       if(type>=2&&cells[0]){if(!/^\d{1,32}$/.test(cells[0])||cases.some(item=>item.autoid===cells[0]))throw invalid('Case identities must be unique numeric strings');current={autoid:cells[0],steps:[]};cases.push(current);}
       if(type>=2&&!current)throw invalid('A step has no case identity');
       const step:ExecutionStep={row,type,description:cells[3],object:cells[4],method:cells[5],data:cells[6],commands:[],...(cells[7]?{saveAs:cells[7]}:{}),...(cells[8]?{inputRegister:cells[8]}:{})};
+      if(functions&&(step.object||step.method||step.data)&&functions.status(step.object,step.method)!=='enabled')throw invalid('Execution function is not enabled in the bound function contract',{functionStatus:functions.status(step.object,step.method)});
       const device=/^(?:APV_(\d+)|Seg(\d+)_tmp)$/.exec(step.object);
       if(device){
         if(!['cmd','cmd_config','cmds_config','cmd_enable'].includes(step.method)||cells[8]!==''||/\b(?:Reg|Seg)\d+_tmp\b|\$\{/.test(step.data))throw invalid('Device rows need literal command methods without runtime input substitution; expand fuzzy execute and disabled helpers first');

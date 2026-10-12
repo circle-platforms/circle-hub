@@ -10,6 +10,8 @@ import {ExecutionInput,ExecutionPack} from './contracts.ts';
 import {readExecutionWorkbook,type ExecutionBook} from './workbook.ts';
 import {executionResults} from './results.ts';
 import {SHELL_HOST_METHODS} from './dialect.ts';
+import {FunctionContract} from './function-contract.ts';
+import {z as schema} from 'zod';
 
 export class CaseExecution {
   services:any;
@@ -44,27 +46,30 @@ export class CaseExecution {
     try{return z.object({profiles:z.record(z.string(),GatewayProfile)}).strict().parse(JSON.parse(await readFile(process.env.CIRCLE_SERVER_EXECUTION_GATEWAYS??'','utf8'))).profiles;}
     catch{throw new ApiError('SOURCE_UNREACHABLE','Runtime execution gateway profile is not configured');}
   }
-  async asset(ctx:AuthContext,id:string,scope:string,tx?:any){
+  async asset(ctx:AuthContext,id:string,scope:string,tx?:any,kinds=['connector-instance']){
     const row=await this.services.assets.row(ctx,id,tx);requireCondition(row.scope_id===scope,'FORBIDDEN_SCOPE','Execution asset is outside the task scope');
-    requireCondition(row.kind==='connector-instance'&&row.lifecycle==='running'&&row.approved_digest===row.sha256,'APPROVAL_STALE','Execution asset must be current and approved');return row;
+    requireCondition(kinds.includes(row.kind)&&(row.kind==='knowledge-source'?['approved','running'].includes(row.lifecycle):row.lifecycle==='running')&&row.approved_digest===row.sha256,'APPROVAL_STALE','Execution asset must be current and approved');return row;
   }
   async credential(ctx:AuthContext,row:any,tx:any){
     requireCondition(row.declaration.credentials.length===1,'SOURCE_LOGIN_EXPIRED','Register one personal gateway credential including its refresh token');
     const credential=await this.services.assets.row(ctx,row.declaration.credentials[0],tx,'credentials.use');
     requireCondition(credential.owner_principal_id===ctx.principalId&&credential.lifecycle!=='disabled'&&credential.configuration.connectorAssetId===row.asset_id,'FORBIDDEN_ACTION','Credential is not available to the execution identity');
-    const link=(await tx.query('SELECT secret_key FROM personal_credentials WHERE asset_id=$1 AND version=$2',[credential.asset_id,credential.version])).rows[0];requireCondition(link,'SOURCE_LOGIN_EXPIRED','Personal gateway credential is unavailable');return {key:link.secret_key,binding:this.services.assets.binding(credential)};
+    const link=(await tx.query('SELECT secret_key FROM personal_credentials WHERE asset_id=$1 AND version=$2',[credential.asset_id,credential.version])).rows[0];requireCondition(link,'SOURCE_LOGIN_EXPIRED','Personal gateway credential is unavailable');const oauth=await this.services.oauth?.credentialProfile(ctx,credential);return {key:link.secret_key,binding:this.services.assets.binding(credential),...(oauth?{oauth}:{})};
   }
   async bindings(ctx:AuthContext,input:any,scope:string,tx:any){
     await this.services.auth.check(ctx,'cases.execute',scope,tx);await this.services.auth.check(ctx,'methods.use',scope,tx);
-    const gateway=await this.asset(ctx,input.gatewayAssetId,scope,tx),build=await this.asset(ctx,input.commandSourceAssetId,scope,tx);
+    const gateway=await this.asset(ctx,input.gatewayAssetId,scope,tx),build=await this.asset(ctx,input.commandSourceAssetId,scope,tx,['connector-instance','knowledge-source']);
     requireCondition(gateway.configuration.packageId==='case-gateway'&&gateway.declaration.writes.includes('device-config'),'INVALID_PAYLOAD','Gateway must declare device execution');
-    requireCondition(build.configuration.packageId==='build-site','INVALID_PAYLOAD','Bind an approved build-site command source');await this.services.auth.check(ctx,'builds.read',scope,tx);
+    await this.services.auth.check(ctx,'builds.read',scope,tx);
+    const sourceArtifact=build.kind==='knowledge-source'?await this.services.sourceArtifacts.snapshot(ctx,build.asset_id,scope,tx):null;
+    if(sourceArtifact){const declaration=schema.object({buildName:schema.string().min(1).max(200),platform:schema.string().nullable().optional()}).passthrough().parse(sourceArtifact.metadata);requireCondition(input.build===sourceArtifact.sourceArtifactId||input.build===declaration.buildName,'INPUT_REVISION_STALE','Execution must bind the selected source artifact id');requireCondition(input.platform===undefined||input.platform===declaration.platform,'INPUT_REVISION_STALE','Execution platform differs from the source declaration');requireCondition(sourceArtifact.files.filter((file:any)=>file.role==='command-tree').length===1&&sourceArtifact.files.filter((file:any)=>file.role==='function-contract').length===1,'INVALID_PAYLOAD','Execution source artifact needs one command-tree and one function-contract file');}
+    else requireCondition(build.configuration.packageId==='build-site','INVALID_PAYLOAD','Bind an approved command source');
     const configured=(await this.profiles())[gateway.configuration.runtimeProfileRef],buildProfile=this.services.catalog.profileFor(build.configuration);
     const profile=configured?{...configured,caSha256:(await resolveTrust(configured)).caSha256,issuerCaSha256:(await resolveTrust({caFile:configured.issuerCaFile??configured.caFile,caSha256:configured.issuerCaSha256??configured.caSha256})).caSha256}:undefined;
-    requireCondition(profile?.issuer&&buildProfile,'SOURCE_UNREACHABLE','Gateway issuer and command source must be configured at runtime');
     const gatewayInjection=await this.credential(ctx,gateway,tx);let buildInjection:any;
+    requireCondition(profile&&(profile.issuer||gatewayInjection.oauth)&&(buildProfile||sourceArtifact),'SOURCE_UNREACHABLE','Gateway issuer and command source must be configured at runtime');
     if(build.declaration.credentials.length)buildInjection=await this.credential(ctx,build,tx);
-    return {gateway,build,profile,buildProfile,gatewayInjection,buildInjection,pin:canonicalHash({gateway:[gateway.asset_id,gateway.version,gateway.sha256,profile],source:[build.asset_id,build.version,build.sha256,buildProfile]})};
+    return {gateway,build,profile,buildProfile,gatewayInjection,buildInjection,sourceArtifact,pin:canonicalHash({gateway:[gateway.asset_id,gateway.version,gateway.sha256,profile,...(gatewayInjection.oauth?[gatewayInjection.oauth]:[])],source:[build.asset_id,build.version,build.sha256,buildProfile,...(sourceArtifact?[sourceArtifact]:[])]})};
   }
   async prepare(ctx:AuthContext,scope:string,value:any,tx:any,idempotencyKey?:string){
     const input=ExecutionInput.parse(value),{knowledge}=this.services;
@@ -72,7 +77,7 @@ export class CaseExecution {
     if(input.artifactId){const artifact=await knowledge.content(ctx,'artifact',input.artifactId);requireCondition(!input.sourceSha256||input.sourceSha256===artifact.reference.sha256,'SOURCE_HASH_MISMATCH','Artifact hash differs');source=(await knowledge.upload(ctx,scope,'case.xlsx',artifact.bytes,tx)).sourceRevisionId;}
     const original=await knowledge.sourceBytes(ctx,source,scope,tx),book=await readExecutionWorkbook(original.bytes);
     requireCondition(book.sha256===original.reference.sha256&&(!input.sourceSha256||input.sourceSha256===book.sha256),'SOURCE_HASH_MISMATCH','Execution source hash differs');
-    const binding=await this.bindings(ctx,input,scope,tx);this.hosts(book,binding.profile);
+    const binding=await this.bindings(ctx,input,scope,tx);if(binding.sourceArtifact){const raws=await this.services.sourceArtifacts.bytes(ctx,binding.sourceArtifact,scope,tx),contract=binding.sourceArtifact.files.find((file:any)=>file.role==='function-contract');await readExecutionWorkbook(original.bytes,new FunctionContract(raws.find((raw:any)=>raw.sha256===contract.sha256).bytes));}this.hosts(book,binding.profile);
     const resource=(await tx.query('SELECT frozen FROM resources WHERE tenant_id=$1 AND resource_id=$2',[ctx.tenantId,`gateway:${sha256(binding.profile.endpoint)}`])).rows[0],existing=idempotencyKey?(await tx.query("SELECT 1 FROM idempotency WHERE tenant_id=$1 AND scope_id=$2 AND principal_id=$3 AND action='submit' AND idem_key=$4 AND created_at>clock_timestamp()-($5::double precision*interval '1 millisecond')",[ctx.tenantId,scope,ctx.principalId,idempotencyKey,IDEMPOTENCY_WINDOW_MS])).rowCount:0;requireCondition(!resource?.frozen||existing,'RESOURCE_BUSY','Gateway environment is frozen until independent reconciliation');const {artifactId,...rest}=input;return {...rest,sourceRevisionId:source,sourceSha256:book.sha256};
   }
   hosts(book:ExecutionBook,profile:GatewayProfile){
@@ -101,26 +106,29 @@ export class CaseExecution {
     }else requireCondition(spec.target===task.input.commandSourceAssetId&&canonicalHash(spec.args)===canonicalHash(task.input),'INPUT_REVISION_STALE','Verification arguments differ from the workbook binding');
     return {...binding,gate,effects:{reads:['knowledge','registered-source','test-bed'],writes:spec.name==='cases.execute'?['device-config','artifacts-evidence']:['artifacts-evidence']},resourceId:spec.name==='cases.verify'?`case-verify:${task.taskId}:${task.inputRevisionId}`:`gateway:${sha256(binding.profile.endpoint)}`};
   }
-  action(task:any,gate:any){return {name:'cases.execute',inputRevisionId:task.inputRevisionId,target:task.input.gatewayAssetId,targetIdentity:canonicalHash([gate.bindingPin,gate.treeSha256]),args:{...task.input,treeSha256:gate.treeSha256,buildId:gate.buildId,buildName:gate.buildName,commandReportSha256:gate.reportSha256,commandCheckArtifactId:gate.reportArtifactId,commandCheckArtifactSha256:gate.reportArtifactSha256,hostDispatch:gate.hostDispatch}};}
+  action(task:any,gate:any){return {name:'cases.execute',inputRevisionId:task.inputRevisionId,target:task.input.gatewayAssetId,targetIdentity:canonicalHash([gate.bindingPin,gate.treeSha256]),args:{...task.input,treeSha256:gate.treeSha256,buildId:gate.buildId,buildName:gate.buildName,...(gate.excelContractSha256?{excelContractSha256:gate.excelContractSha256,sourceArtifactId:gate.sourceArtifactId}:{}) ,commandReportSha256:gate.reportSha256,commandCheckArtifactId:gate.reportArtifactId,commandCheckArtifactSha256:gate.reportArtifactSha256,hostDispatch:gate.hostDispatch}};}
   async preflight(ctx:AuthContext,id:string,fence:number,tx:any){
     const row=await this.services.execution.lease(ctx,id,fence,tx),task=await this.services.tasks.internal(tx,row.task_id),actor=this.actor(task),binding=await this.authorize(tx,actor,task,row),source=await this.services.knowledge.source(actor,task.input.sourceRevisionId,task.scopeId,tx);
     requireCondition(source.sha256===task.input.sourceSha256,'SOURCE_HASH_MISMATCH','Execution source binding changed');
     const remote=row.parent_operation_id?(await tx.query('SELECT * FROM case_gateway_receipts WHERE operation_id=$1',[row.parent_operation_id])).rows[0]:null;
-    return {row,task,source,authorization:{profile:binding.profile,buildProfile:binding.buildProfile,buildCacheNamespace:canonicalHash([actor.tenantId,actor.principalId,binding.build.asset_id,binding.build.version,binding.build.declaration.credentials]),gatewayInjection:binding.gatewayInjection,buildInjection:binding.buildInjection,gate:binding.gate,remoteTaskId:remote?.gateway_task_id}};
+    return {row,task,source,authorization:{profile:binding.profile,buildProfile:binding.buildProfile,sourceArtifact:binding.sourceArtifact,buildCacheNamespace:canonicalHash([actor.tenantId,actor.principalId,binding.build.asset_id,binding.build.version,binding.build.declaration.credentials]),gatewayInjection:binding.gatewayInjection,buildInjection:binding.buildInjection,gate:binding.gate,remoteTaskId:remote?.gateway_task_id}};
   }
   async validation(tx:any,task:any,output:any){
-    const original=await this.services.knowledge.sourceBytes(this.actor(task),task.input.sourceRevisionId,task.scopeId,tx),book=await readExecutionWorkbook(original.bytes),binding=await this.bindings(this.actor(task),task.input,task.scopeId,tx),raw:RawReturn[]=z.array(z.object({path:z.string(),sha256:z.string(),contentBase64:z.string(),sourceType:z.string().optional()})).min(1).max(256).parse(output.raw).map(item=>{
+    const original=await this.services.knowledge.sourceBytes(this.actor(task),task.input.sourceRevisionId,task.scopeId,tx),binding=await this.bindings(this.actor(task),task.input,task.scopeId,tx),raw:RawReturn[]=z.array(z.object({path:z.string(),sha256:z.string(),contentBase64:z.string(),sourceType:z.string().optional()})).min(1).max(256).parse(output.raw).map(item=>{
       const bytes=Buffer.from(item.contentBase64,'base64');requireCondition(sha256(bytes)===item.sha256,'SOURCE_HASH_MISMATCH','Command source bytes differ from the worker receipt');return {...item,bytes,mediaType:'application/octet-stream',etag:null};
     });
-    const byPath=new Map(raw.map(item=>[item.path,item])),replay=new HttpSource(binding.buildProfile.origin);replay.read=async path=>{const value=byPath.get(replay.path(path));requireCondition(value,'EVIDENCE_INSUFFICIENT','Bound listing bytes are missing');return value;};
-    const site=new BuildSite(replay),records=[];
-    for(const page of raw.filter(item=>item.sourceType==='build-record'))records.push(...(await site.listing(page.path,site.contextFor(page.path,binding.buildProfile.buildSite))).result);
-    const selected=resolveBuilds(records).filter(build=>(build.buildId===task.input.build||build.name===task.input.build)&&(task.input.platform===undefined||build.platform===task.input.platform));requireCondition(selected.length===1&&!selected[0].conflict,'EVIDENCE_INSUFFICIENT','Command tree requires one unambiguous current build');
-    const build=selected[0],xml=byPath.get(build.files.commands??'');requireCondition(xml,'EVIDENCE_INSUFFICIENT','Command tree is not linked by the bound build listing');
+    const byPath=new Map(raw.map(item=>[item.path,item])),replay=new HttpSource(binding.buildProfile?.origin??'http://127.0.0.1');replay.read=async path=>{const value=byPath.get(replay.path(path));requireCondition(value,'EVIDENCE_INSUFFICIENT','Bound listing bytes are missing');return value;};
+    const site=new BuildSite(replay);let build:any,xml:RawReturn|undefined,functions:FunctionContract|undefined,sourceProof:Record<string,unknown>={};
+    if(binding.sourceArtifact){const artifact=binding.sourceArtifact,originals=await this.services.sourceArtifacts.bytes(this.actor(task),artifact,task.scopeId,tx),tree=artifact.files.find((file:any)=>file.role==='command-tree'),contract=artifact.files.find((file:any)=>file.role==='function-contract');
+      for(const file of [tree,contract])requireCondition(byPath.get(`/${file.path}`)?.sha256===file.sha256,'SOURCE_HASH_MISMATCH','Worker proof does not contain the pinned external original');
+      xml=originals.find((raw:any)=>raw.sha256===tree.sha256);functions=new FunctionContract(originals.find((raw:any)=>raw.sha256===contract.sha256).bytes);build={buildId:artifact.sourceArtifactId,name:artifact.metadata.buildName};sourceProof={sourceArtifactId:artifact.sourceArtifactId,excelContractSha256:contract.sha256,association:'operator-declared'};
+    }else{const records=[];for(const page of raw.filter(item=>item.sourceType==='build-record'))records.push(...(await site.listing(page.path,site.contextFor(page.path,binding.buildProfile.buildSite))).result);
+      const selected=resolveBuilds(records).filter(build=>(build.buildId===task.input.build||build.name===task.input.build)&&(task.input.platform===undefined||build.platform===task.input.platform));requireCondition(selected.length===1&&!selected[0].conflict,'EVIDENCE_INSUFFICIENT','Command tree requires one unambiguous current build');build=selected[0];xml=byPath.get(build.files.commands??'');}
+    requireCondition(xml,'EVIDENCE_INSUFFICIENT','Command tree is not linked by the bound source');const book=await readExecutionWorkbook(original.bytes,functions);
     requireCondition(book.sha256===task.input.sourceSha256,'SOURCE_HASH_MISMATCH','Server workbook bytes differ from the accepted input');this.hosts(book,binding.profile);const checked=commandCheck(await site.commandsFrom(xml.bytes),book.commands.map(item=>item.command));
     const invalid=checked.commands.flatMap((command:any,index:number)=>command.status!=='hit'||command.violations.length?[{...book.commands[index],status:command.status,violations:command.violations}]:[]);
     if(invalid.length)throw new ApiError('COMMAND_VALIDATION_FAILED','Workbook device commands do not satisfy the bound build command tree',{invalid:invalid.slice(0,100),invalidCount:invalid.length});
-    return {book,binding,gate:{inputRevisionId:task.inputRevisionId,bindingPin:binding.pin,treeSha256:xml.sha256,buildId:build.buildId,buildName:build.name,caseIds:book.cases.map(item=>item.autoid),hostDispatch:{count:book.hostCommands.length,hosts:[...new Set(book.hostCommands.map(row=>row.host))],sha256:canonicalHash(book.hostCommands)},reportSha256:canonicalHash({checked,rows:book.commands,hostCommands:book.hostCommands,treeSha256:xml.sha256})},report:{checked,rows:book.commands,hostCommands:book.hostCommands,buildId:build.buildId,buildName:build.name,treeSha256:xml.sha256,raw:output.raw}};
+    return {book,binding,gate:{inputRevisionId:task.inputRevisionId,bindingPin:binding.pin,treeSha256:xml.sha256,...sourceProof,buildId:build.buildId,buildName:build.name,caseIds:book.cases.map(item=>item.autoid),hostDispatch:{count:book.hostCommands.length,hosts:[...new Set(book.hostCommands.map(row=>row.host))],sha256:canonicalHash(book.hostCommands)},reportSha256:canonicalHash({checked,rows:book.commands,hostCommands:book.hostCommands,treeSha256:xml.sha256,...sourceProof})},report:{checked,rows:book.commands,hostCommands:book.hostCommands,buildId:build.buildId,buildName:build.name,treeSha256:xml.sha256,...sourceProof,raw:output.raw}};
   }
   async runOnce(){
     const {store,tasks,execution}=this.services,rows=(await store.pool.query("SELECT task_id FROM tasks WHERE capability_pack_id=$1 AND ((phase='running' AND stage='inspect') OR (cancel_requested AND phase NOT IN ('delivered','failed','cancelled','unknown')))",[ExecutionPack.capabilityPackId])).rows;

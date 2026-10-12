@@ -33,8 +33,11 @@ import {TypeCatalog} from '../../../packages/knowledge/src/type-catalog.ts';
 import {Entities} from '../../../packages/knowledge/src/entities.ts';
 import {assetMigration} from '../../../packages/assets/src/migration.ts';
 import {Assets} from '../../../packages/assets/src/index.ts';
+import {OAuthCredentials} from '../../../packages/assets/src/oauth.ts';
+import {oauthMigration} from '../../../packages/assets/src/oauth-migration.ts';
 import {graphMigration} from '../../../packages/knowledge/src/graph-migration.ts';
 import {KnowledgeGraph} from '../../../packages/knowledge/src/graph.ts';
+import {SourceArtifacts} from '../../../packages/knowledge/src/source-artifacts.ts';
 import {toolMigration} from '../../../packages/tools/src/migration.ts';
 import {ToolCatalog} from '../../../packages/tools/src/catalog.ts';
 import {skillMigration} from '../../../packages/skillpacks/src/migration.ts';
@@ -50,7 +53,7 @@ import {Ingestions} from '../../../packages/knowledge/src/ingestion.ts';
 
 function environment(name: string): string { const value = process.env[name]; if (!value) throw new Error(`Required environment variable: ${name}`); return value; }
 const store = new Store(JSON.parse(environment('CIRCLE_SERVER_DATABASE_CONFIG')));
-await store.migrate([taskMigration,deliveryMigration,knowledgeMigration,executionMigration,...packageMigrations,approvalMigration,conclusionMigration,checklistMigration,connectorMigration,entityMigration,assetMigration,graphMigration,toolMigration,skillMigration,automationMigration,automationOutcomeMigration,knowledgePageMigration,automationOriginMigration,ingestionMigration]);
+await store.migrate([taskMigration,deliveryMigration,knowledgeMigration,executionMigration,...packageMigrations,approvalMigration,conclusionMigration,checklistMigration,connectorMigration,entityMigration,assetMigration,graphMigration,toolMigration,skillMigration,automationMigration,automationOutcomeMigration,knowledgePageMigration,automationOriginMigration,ingestionMigration,oauthMigration]);
 const auth = new Auth(store,{developmentTtlMs:process.env.CIRCLE_SERVER_DEV_TOKEN_TTL_MS?Number(process.env.CIRCLE_SERVER_DEV_TOKEN_TTL_MS):undefined,runTokenTtlMs:process.env.CIRCLE_SERVER_RUN_TOKEN_TTL_MS?Number(process.env.CIRCLE_SERVER_RUN_TOKEN_TTL_MS):undefined});
 requireCondition(process.env.CIRCLE_SERVER_DEV_AUTH === '1', 'INVALID_PAYLOAD', 'Phase one requires explicitly enabled development authentication');
 await auth.initializeDevelopment(environment('CIRCLE_SERVER_DEV_IDENTITIES'));
@@ -59,12 +62,16 @@ const tasks = new Tasks(store, auth, Number(process.env.CIRCLE_SERVER_INPUT_TTL_
 const knowledge = new Records(store,auth,new LocalObjects(environment('CIRCLE_SERVER_DATA_DIR')));
 const objectTypes=new TypeCatalog(store,auth),entities=new Entities(store,auth,knowledge,objectTypes);
 const assets=new Assets(store,auth,`${environment('CIRCLE_SERVER_DATA_DIR')}/private-credentials`);
+const oauth=new OAuthCredentials(store,auth,assets,process.env.CIRCLE_SERVER_OAUTH_PROFILES);
+assets.materializeCredential=(ctx,row,link,value)=>oauth.materialize(ctx,row,link,value);
 const graph=new KnowledgeGraph(store,auth,knowledge);
+const sourceArtifacts=new SourceArtifacts(store,auth,assets,knowledge,graph);
 knowledge.sourceAccess=async(ctx,id,tx)=>{await entities.checkSourceAccess(ctx,id,tx);await graph.checkSourceAccess(ctx,id,tx);};
 const execution = new Operations(store,auth,tasks,knowledge);
 const catalog=new ToolCatalog(store,auth,assets,tasks,execution,graph,installedToolPackages);await catalog.initialize(process.env.CIRCLE_SERVER_CONNECTOR_PROFILES);
 const ingestions=new Ingestions(store,tasks,graph,installedToolPackages);catalog.ingestions=ingestions;
-assets.validateRegistration=(ctx,input,id,tx)=>catalog.register(ctx,input,id,tx);
+catalog.sourceArtifacts=sourceArtifacts;
+assets.validateRegistration=async(ctx,input,id,tx)=>{await sourceArtifacts.validate(ctx,input,id,tx);await catalog.register(ctx,input,id,tx);};
 const approvals=new Approvals(store,auth,tasks,Number(process.env.CIRCLE_SERVER_APPROVAL_TTL_MS??86400000));execution.approvalCheck=(tx,task,spec)=>approvals.check(tx,task,spec);
 const skills=new SkillPacks(store,auth,tasks,approvals,assets,catalog,execution,knowledge);await skills.initialize(process.env.CIRCLE_RUNTIME_CONFIG);
 execution.managedNames.add('assets.execute');
@@ -77,7 +84,7 @@ const automations=new Automations(store,auth,tasks,assets,skills);catalog.observ
 await privateIPC.start(async(message)=>{const worker=await auth.authenticate(message.authorization),id=z.string().parse(message.operationId),fence=z.number().int().positive().parse(message.fencingToken);return skills.privateSecret(worker,id,fence,message.revoke===true);});
 const assessments=new Assessments(store,tasks,knowledge),checklists=new Checklists(store,tasks,knowledge);
 const registry=new ConnectorRegistry(store,auth,packageConnectors);await registry.initialize();execution.connectorCheck=(tx,actor,scope,spec)=>registry.check(tx,actor,scope,spec);
-const packages=installPackages({store,auth,tasks,knowledge,execution,registry,checklists,approvals,assessments,assets,catalog}),rules=packages.rules;
+const packages=installPackages({store,auth,tasks,knowledge,execution,registry,checklists,approvals,assessments,assets,catalog,sourceArtifacts,oauth}),rules=packages.rules;
 let closing = false;
 const shutdownSignal=new AbortController();
 const activeRequests=new Set<Promise<void>>();
@@ -142,6 +149,10 @@ const server = createServer(async (request, response) => {
     if(request.method==='POST'&&url.pathname==='/v1/automations/bots'){send(response,201,{data:await automations.bot(ctx,await body(request))});return;}
     const botRuns=/^\/v1\/automations\/bots\/([^/]+)\/runs$/.exec(url.pathname);if(botRuns&&request.method==='GET'){send(response,200,{data:await automations.runs(ctx,AssetId.parse(botRuns[1]))});return;}
     const connectorEvent=/^\/v1\/connectors\/([^/]+)\/events$/.exec(url.pathname);if(connectorEvent&&request.method==='POST'){send(response,201,{data:await automations.event(ctx,AssetId.parse(connectorEvent[1]),await body(request))});return;}
+    if(url.pathname===CLIENT_ROUTES.sourceArtifactSubmit.path&&request.method==='POST'){send(response,201,{data:await sourceArtifacts.register(ctx,await body(request))});return;}
+    const sourceArtifact=/^\/v1\/source-artifacts\/([^/]+)$/.exec(url.pathname);if(sourceArtifact&&request.method==='GET'){send(response,200,{data:await sourceArtifacts.get(ctx,AssetId.parse(sourceArtifact[1]))});return;}
+    if(request.method==='POST'&&[CLIENT_ROUTES.oauthDevice.path,CLIENT_ROUTES.oauthClientCredentials.path].includes(url.pathname as any)){send(response,201,{data:await oauth.start(ctx,await body(request),url.pathname===CLIENT_ROUTES.oauthDevice.path?'device_authorization':'client_credentials')});return;}
+    const oauthPoll=/^\/v1\/credentials\/oauth\/device\/(ofl_[a-f0-9]{32})\/poll$/.exec(url.pathname);if(oauthPoll&&request.method==='POST'){CLIENT_ROUTES.oauthPoll.request.parse(await body(request));send(response,200,{data:await oauth.poll(ctx,oauthPoll[1])});return;}
     if(url.pathname===CLIENT_ROUTES.skillpacks.path){
       if(request.method==='GET'){send(response,200,{data:await skills.list(ctx)});return;}
       if(request.method==='POST'){send(response,201,{data:await skills.submit(ctx,await body(request,MAX_WORKER_REPORT_BYTES),z.string().optional().parse(request.headers['x-scope-id']))});return;}

@@ -7,6 +7,8 @@ import {McpGateway} from '../../../packages/connectors/src/case-gateway.ts';
 import {executeTool} from '../../../packages/connectors/src/tool-packages.ts';
 import {SourceCache} from '../../../packages/connectors/src/source-cache.ts';
 import {readExecutionWorkbook} from './workbook.ts';
+import {LocalObjects} from '../../../packages/knowledge/src/objects.ts';
+import {OAuthToken} from '../../../packages/assets/src/oauth-token.ts';
 
 export interface CaseWorkerContext {check:()=>Promise<any>;source:()=>Promise<Buffer>;signal:AbortSignal;directory:string;event:(event:any)=>Promise<any>}
 const rawOutput=(output:any)=>({result:output.result,raw:output.raw.map((raw:any)=>({path:raw.path,sha256:raw.sha256,sourceType:raw.sourceType??output.sourceType,contentBase64:raw.bytes.toString('base64')}))});
@@ -16,12 +18,16 @@ export async function executeCases(claim:any,context:CaseWorkerContext){
     const preflight=await context.check(),authorization=preflight.authorization,vault=new PrivateVault(join(context.directory,'private-credentials'));
     if(claim.name==='cases.verify'||claim.name==='cases.execute'){
       const bytes=await context.source(),book=await readExecutionWorkbook(bytes);requireCondition(book.sha256===claim.args.sourceSha256,'SOURCE_HASH_MISMATCH','Worker workbook differs from the task source');
+      if(authorization.sourceArtifact){const objects=new LocalObjects(context.directory),originals=await Promise.all(authorization.sourceArtifact.files.map(async(file:any)=>({path:`/${file.path}`,sha256:file.sha256,bytes:await objects.getObject({Bucket:'evidence',Key:file.sha256}),sourceType:'external-artifact',mediaType:file.mediaType,etag:null}))),proof={result:{},raw:originals,sourceType:'external-artifact'};
+        if(claim.name==='cases.verify')return {...fence,status:'succeeded',output:rawOutput(proof)};await context.event({stage:'validation',output:rawOutput(proof)});
+      }else{
       const credential=authorization.buildInjection?await vault.get(authorization.buildInjection.key,authorization.buildInjection.binding):undefined;
       const checked=await executeTool('build-site','build.check',{build:claim.args.build,platform:claim.args.platform,commands:book.commands.map(command=>command.command)},authorization.buildProfile,credential,{cache:new SourceCache(join(context.directory,'connector-cache')),cacheNamespace:authorization.buildCacheNamespace,freshCommands:true});
       if(claim.name==='cases.verify')return {...fence,status:'succeeded',output:rawOutput(checked)};
       await context.event({stage:'validation',output:rawOutput(checked)});
+      }
     }
-    const profile=authorization.profile,tokens=new RotatingToken(vault,authorization.gatewayInjection,{issuer:profile.issuer,caFile:profile.issuerCaFile??profile.caFile,caSha256:profile.issuerCaSha256??profile.caSha256});gateway=new McpGateway(profile,()=>tokens.access());
+    const profile=authorization.profile,oauth=authorization.gatewayInjection.oauth,client=oauth?.clientReference?JSON.parse(await vault.get(oauth.clientReference.key,oauth.clientReference.binding)):undefined,tokens=oauth?new OAuthToken(vault,authorization.gatewayInjection,oauth.profile,oauth.grantType,client?.client_secret):new RotatingToken(vault,authorization.gatewayInjection,{issuer:profile.issuer,caFile:profile.issuerCaFile??profile.caFile,caSha256:profile.issuerCaSha256??profile.caSha256});gateway=new McpGateway(profile,()=>tokens.access());
     if(claim.name==='cases.observe'){
       requireCondition(authorization.remoteTaskId,'EVIDENCE_INSUFFICIENT','Unknown submission has no remote task identity');
       const status=await gateway.call('case_status',{task_id:authorization.remoteTaskId},context.signal),results=await gateway.call('case_results',{task_id:authorization.remoteTaskId},context.signal);requireCondition(status.state==='done','EVIDENCE_INSUFFICIENT','Independent gateway observation is not terminal');return {...fence,status:'succeeded',output:{status,results}};

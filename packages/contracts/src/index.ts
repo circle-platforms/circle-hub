@@ -25,7 +25,7 @@ export const AssetId=identity('ast');
 export const Sha256 = z.string().regex(/^[a-f0-9]{64}$/);
 export const Base64Content = z.string().regex(/^[A-Za-z0-9+/]*={0,2}$/).refine(value =>
   value.length % 4 === 0 && Buffer.from(value,'base64').toString('base64') === value,'Expected canonical standard base64');
-export function newId(prefix: 'task' | 'inrev' | 'op' | 'pin' | 'src' | 'snap' | 'evd' | 'art' | 'rule' | 'audit' | 'rec' | 'ent' | 'erev' | 'rel' | 'rrev' | 'ast' | 'knr' | 'skp'): string {
+export function newId(prefix: 'task' | 'inrev' | 'op' | 'pin' | 'src' | 'snap' | 'evd' | 'art' | 'rule' | 'audit' | 'rec' | 'ent' | 'erev' | 'rel' | 'rrev' | 'ast' | 'knr' | 'skp' | 'ofl'): string {
   return `${prefix}_${randomUUID().replaceAll('-', '')}`;
 }
 export function sha256(bytes: string | Uint8Array): string {
@@ -109,6 +109,7 @@ export const AssetRegistration=z.object({assetId:AssetId.optional(),scopeId:Scop
 export type AssetRegistration=z.infer<typeof AssetRegistration>;
 export const AssetTransition=z.object({version:PackageVersion,sha256:Sha256,state:AssetLifecycle});
 export const CredentialRegistration=z.object({version:PackageVersion,value:z.string().min(1).max(65536),ownerPrincipalId:z.string().regex(/^prn_/).optional()}).strict();
+export const OAuthGrantInput=z.object({connectorAssetId:AssetId,connectorVersion:PackageVersion,profileRef:z.string().min(1).max(200),clientCredentialId:AssetId.optional(),idempotencyKey:z.string().min(8).max(200)}).strict();
 export const AssetListQuery=z.object({limit:z.coerce.number().int().min(1).max(100).default(20),after:AssetId.optional(),kind:AssetKind.optional()});
 export const ObjectTypeReference=z.object({packageId:PackageName,version:PackageVersion,typeId:PackageName}).strict();
 export const AttributeKind=z.enum(['string','number','boolean','string[]','object','any']);
@@ -134,8 +135,9 @@ export const EntityView=z.object({entityId:EntityId,entityRevisionId:EntityRevis
   provenance:z.object({observationKey:z.string(),observedAt:z.string(),observerId:z.string(),origin:z.literal('manual-observation'),raw:SourceReference})});
 export const ObjectPage=z.object({items:z.array(EntityView),total:z.number().int().nonnegative(),nextCursor:EntityId.nullable()});
 export const KnowledgeRecordId=identity('knr');
+export const SourceArtifactId=identity('sar');
 export const KnowledgeCategory=z.enum(['product','consolidated']);
-export const KnowledgeSourceType=z.enum(['document','command-tree','query-mirror','build-record','environment-view','shared-session','skill-run','bot-run','review-correction','footprint']);
+export const KnowledgeSourceType=z.enum(['document','command-tree','external-artifact','query-mirror','build-record','environment-view','shared-session','skill-run','bot-run','review-correction','footprint']);
 export const KnowledgeSourceInput=z.object({scopeId:ScopeId,sourceId:z.string().min(1).max(1000),revision:z.string().min(1).max(300),path:z.string().min(1).max(2000),
   knowledgeCategory:KnowledgeCategory,sourceType:KnowledgeSourceType,parserVersion:z.string().min(1).max(100),contentBase64:Base64Content,sha256:Sha256.optional(),
   acl:ObjectAccess,sharing:z.object({allowed:z.boolean(),teamPromotion:z.boolean()}).strict().optional()}).strict();
@@ -153,10 +155,13 @@ export const KnowledgeSearchQuery=z.object({q:z.string().max(1000).default(''),m
 export const ToolName=z.string().min(1).max(150).regex(/^[a-z0-9._]+$/);
 export const ToolView=z.object({name:ToolName,title:z.string(),description:z.string(),inputSchema:z.object({type:z.literal('object')}).catchall(z.unknown()),
   effect:z.enum(['read','write']),mode:z.enum(['sync','task']),permission:z.string(),assetId:AssetId,assetVersion:PackageVersion});
-export const ToolCallInput=z.object({args:z.record(z.string(),z.unknown()),idempotencyKey:z.string().min(8).max(200)}).strict();
+export const ToolCallInput=z.object({args:z.record(z.string(),z.unknown()),idempotencyKey:z.string().min(8).max(200),sourceArtifactId:SourceArtifactId.optional()}).strict();
 export const ToolEvidence=z.object({evidenceId:z.string(),sha256:Sha256});
 export const ToolCallResult=z.union([z.object({result:z.unknown(),evidence:z.array(ToolEvidence)}),z.object({taskId:TaskId,phase:TaskPhase})]);
 export const SafeRelativePath=z.string().min(1).max(500).refine(path=>!path.startsWith('/')&&!/^[a-z]:/i.test(path)&&!path.includes('\\')&&!/[\x00-\x1f]/.test(path)&&path.split('/').every(part=>part!==''&&part!=='.'&&part!=='..'&&part!=='.git'),'Use a safe relative path');
+export const SourceArtifactFileInput=z.object({path:SafeRelativePath,role:z.string().min(1).max(100),mediaType:z.string().min(1).max(200).default('application/octet-stream'),sourceRevisionId:SourceRevisionId.optional(),sourceRecordId:KnowledgeRecordId.optional(),sha256:Sha256.optional()}).strict().refine(value=>!!value.sourceRevisionId!==!!value.sourceRecordId,'Provide one original source revision or product SourceRevision record');
+export const SourceArtifactRegistration=z.object({scopeId:ScopeId,name:z.string().min(1).max(200),version:PackageVersion,metadata:z.record(z.string(),z.unknown()).default({}),files:z.array(SourceArtifactFileInput).min(1).max(100),readers:z.array(z.string()).max(1000).optional()}).strict().refine(value=>new Set(value.files.map(file=>file.path)).size===value.files.length,'Artifact file paths must be unique');
+export const SourceArtifactView=z.object({assetId:AssetId,scopeId:ScopeId,version:PackageVersion,sha256:Sha256,lifecycle:AssetLifecycle,sourceArtifactId:SourceArtifactId.nullable(),metadata:z.record(z.string(),z.unknown()),files:z.array(z.object({path:SafeRelativePath,role:z.string(),mediaType:z.string(),sourceRevisionId:SourceRevisionId,sourceRecordId:KnowledgeRecordId,sha256:Sha256,size:z.number().int().positive()})),provenance:z.object({kind:z.literal('user-upload'),semanticQuality:z.literal('not-asserted')})});
 export const SkillPackId=identity('skp');
 export const SkillManifest=z.object({id:PackageName,version:PackageVersion,title:z.string().min(1).max(500),owner:z.string().min(1).max(200),
   tools:z.array(ToolName).max(100).refine(values=>new Set(values).size===values.length),triggers:z.array(z.enum(['manual','schedule','event'])).min(1).max(3),
@@ -293,6 +298,11 @@ export const CLIENT_ROUTES = {
   approvals:{ method:'GET',path:'/v1/tasks/{taskId}/approvals',response:z.array(ApprovalView) },
   objectTypes:{method:'GET',path:'/v1/object-types'},
   assets:{method:'GET',path:'/v1/assets',query:AssetListQuery},
+  sourceArtifactSubmit:{method:'POST',path:'/v1/source-artifacts',request:SourceArtifactRegistration,response:SourceArtifactView},
+  sourceArtifact:{method:'GET',path:'/v1/source-artifacts/{assetId}',response:SourceArtifactView},
+  oauthDevice:{method:'POST',path:'/v1/credentials/oauth/device',request:OAuthGrantInput},
+  oauthPoll:{method:'POST',path:'/v1/credentials/oauth/device/{flowId}/poll',request:z.object({}).strict()},
+  oauthClientCredentials:{method:'POST',path:'/v1/credentials/oauth/client-credentials',request:OAuthGrantInput},
   tools:{method:'GET',path:'/v1/tools',response:z.array(ToolView)},
   toolCall:{method:'POST',path:'/v1/tools/{name}/call',request:ToolCallInput,response:ToolCallResult},
   skillpacks:{method:'GET',path:'/v1/skillpacks',response:z.array(SkillPackView)},

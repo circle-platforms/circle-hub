@@ -14,6 +14,10 @@ export async function projectSource(packageId:string,originals:RawReturn[],profi
       const text=raw.bytes.toString('utf8'),plain=/\.(txt|md|html?)$/i.test(raw.path)&&Buffer.from(text).equals(raw.bytes)&&raw.bytes.length<=1_000_000;
       add(raw,raw.path,'document',raw.path,plain?'document-text':'document-sha256',plain?text:raw.sha256,{}, {sha256:raw.sha256,conversion:plain?'literal-utf8':'not-run'});
     }
+  }else if(packageId==='build-site'&&profile.sourceArtifact){
+    const artifact=profile.sourceArtifact,file=artifact.files.find(file=>file.role==='command-tree'),xml=originals.find(raw=>raw.path===`/${file?.path}`);requireCondition(file&&xml&&xml.sha256===file.sha256,'SOURCE_HASH_MISMATCH','External command projection requires its bound original');
+    const site=new BuildSite(new HttpSource('http://127.0.0.1')),groups=new Map<string,CommandRecord[]>();for(const command of await site.commandsFrom(xml.bytes)){const key=canonicalHash([command.scope,shlex(command.name)]),group=groups.get(key)??[];group.push(command);groups.set(key,group);}
+    for(const commands of groups.values()){const command=commands[0],parsed=commandParam(commands,command.name);add(xml,`command:${artifact.sourceArtifactId}:${parsed.head}`,'command',parsed.head,'command-definition',{head:parsed.head,parameters:parsed.parameters,signatures:parsed.signatures,overloaded:parsed.overloaded,scope:command.scope,menuPath:command.menuPath},{build:artifact.metadata.buildName??null,buildId:artifact.sourceArtifactId,platform:artifact.metadata.platform??null,scope:command.scope,sourceArtifactId:artifact.sourceArtifactId,association:'operator-declared',live:false});}
   }else if(packageId==='build-site'){
     // Re-extract from the retained originals. This reader cannot reach the network.
     const source=new HttpSource(profile.origin);source.read=async(path)=>{const raw=originals.find(raw=>raw.path===source.path(path));requireCondition(raw,'EVIDENCE_INSUFFICIENT','Publication projection needs its retained page');return raw;};

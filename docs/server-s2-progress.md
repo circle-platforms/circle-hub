@@ -455,3 +455,27 @@ Claude 独立报告 typecheck、contracts 4/4、methods 10/10、references 7/7�
 再先写“受理后目录撤销”的回归，实际 **0/1**：claim 拒绝的 HTTP 有 details，但操作及 task result 的失败记录只留 code/message，丢完整清单。通用 C 回报路径统一保留 ApiError.details，后台拒绝仍不启动运行；审批和运行仍核对当时的身份目录。交接已补格式，专项与最终全套正在复验，真实网关/设备仍未投递。
 
 最终联合技能/RPC 专项 **10/10**，完整最终实现 contracts **4/4**、methods **15/15**、acceptance **120/120**、references **7/7**，共 **146/146**，固定 Circle 8b2ceb6，**无 skip**。typecheck、diff 检查通过，引用 **714** 核验、APV 包内另 **4/4**；技能目录仍与 9931f20 字节相同。整套规模回归 p95 **195ms**，异步索引期间读 **226/123/141/157ms**。接口和错误清单形状兼容，未修改 Circle、旧网关、InfoTest 或归档，主工作树 clean。只在 server-s2 本地提交并经 Otty 交给 Claude 复核部署；当前已获部署确认的是 121c9cb，本笔新修改待其更新 7420，不 push，也没有真实设备验收。
+
+## 27：独立部署复核、撤回误报与通用外部来源制品
+
+用户报告 e46dd89 独立 typecheck、contracts 4/4、methods 15/15、acceptance 120/120、references 7/7，共 **146/146**、无 skip，7420 已更新至该提交且执行权限正常。网关配置尚未填写，未投递网关或设备。Circle 修复了错误 details 展示（dfba0a4）；真实失败的 undeclaredTools 仅 env.framework_files、missingTools 空，原因是中途问框架没有重开试跑记录。新试跑技能版本已可受理，后因缺命令核对被人工驳回。现有 server 治理判定正确，不放宽工具匹配。
+
+用户也撤回 claim_submit 接口故障：实际 data.error 为 SOURCE_FORBIDDEN，提交证据与拟登记的命令原件无关，一次 SHA 为空。保留原证据校验，候选 claim 不变成可执行来源；本代理未读取这些真实任务或原件。后续必须原件上传、来源资产登记、另一人批准后绑定。只保存安全工具名和结论，不保存失败请求、业务文本或凭据。
+
+床的真实构建尚未确认，旧客户端、本机旧安装配置和上游 healthz 的声明相互不一致。它们不能建立床构建事实；执行以 env_prepare 核对为准，上传者的构建关联只是预期声明。命令原件和函数契约等待用户在新接口上传，本代理不访问真实文件、InfoTest/旧客户端配置或网关。远端签发服务为明文 HTTP，网关为 HTTPS；默认私有请求 TLS 规则保留，已向用户/Claude 提交 HTTPS 入口或限定签发端点例外的待决定项，未修改真实配置或默默降级。
+
+按用户通用平台方向，未提交的专用命令源草案改为通用外部来源制品：POST /v1/source-artifacts 接收任意已上传原件的 files/metadata，GET /v1/source-artifacts/{assetId} 查询；复用 knowledge-source 资产和独立生命周期审批，批准后才提供 sar_ 稳定 id。id 绑定资产版本、声明和原件 SHA，版本替换不自动选择新字节。平台仅核对权限、来源身份、字节、修订与审批，不验证格式或声明的语义。
+
+工具目录统一增加可选 sourceArtifactId，普通连接器按绑定 id 使用保留原件，任务、fence、证据和幂等机制沿用；结果标 uploaded-artifact/live=false。命令树消费者仍用既有 buildsite command_heads/param/check，build 参数可使用 sar_ id。InfoTest 函数契约解释仅在现有 APV 模块，执行绑定树/函数契约 SHA并再次独立检查；disabled/internal/absent 拒绝，既有不透明函数限制不扩大。现有目录结构、技能原件、打包/独立仓库安排不变，产品包是否另发仍由用户确认。
+
+先写四条原件/独立批准/查询/上机/换版验收，草案接口实际 **0/4**；改成通用制品后加入文档连接器共享测试，首轮 **3/5**，两红分别为测试遗漏审核者读者声明和错误期待文档返回纯文本（既有接口是 base64），修正测试后 **5/5**。共享读者进一步先复现仅有读权限却被要求 knowledge.submit；改为受权读取的内部证据记录，保持其写权限不变，共享索引独立完成。typecheck 通过；后续还需更多绑定边界、真实 RPC、全套回归及通用 OAuth device/client_credentials 合成验收，本步尚未提交或部署。
+
+新增固定 Circle 8b2ceb6 的真实 RPC 源绑定先失败：短 run token 没有资产/知识读取权限，在工具任务受理前被拒。委托增加调用者原本已有的内部读 grant，HTTP 路由白名单仍禁止资产列表；修后源/RPC **6/6**、无 skip。再写未批准/停用/冲突选择器验收，两个有效 id 冲突时旧实现等 worker 而超时，修为受理前明确 INVALID_PAYLOAD，专项通过。旧工具/执行联合 **21/21**。
+
+通用 OAuth 按 RFC 8628/RFC 6749 配置任意签发方的 device/client_credentials 端点、客户端认证方式与私有引用，不保存真实地址或 credential 值。先写流程验收（草案接口尚未存在），首次运行被合成资产工具名碰撞挡住，改为不同别名后设备流程两条复现 INTERNAL_ERROR：SQL 同一参数被推断为整数和 double，独立临时 PostgreSQL 确认 42P08，显式整数 cast 后四条通过。存储 code/token 在私有加密 vault，流程绑定 owner/connector version/profile digest，轮询限速与 slow_down/过期/拒绝持久，不把源授权当平台登录。
+
+新增标准 token 续期测试先因缺模块失败，再自写通用 OAuthToken：client_credentials 无刷新令牌也可单写者重取，标准非轮换刷新可保留旧 refresh_token，未知结果停止重放，端点来自配置。再覆盖回执持久后重启恢复同一 credential id，以及连接器实际用 bearer header/到期前续期；流程/续期联合 **8/8**。既有手工 token bundle 路径兼容，新网关凭据走通用 provider；令牌未在 API、任务、审计或仓库出现。引用 RFC 只读协议，未采用旧 auth 客户端代码，也未访问真实签发方。
+
+client-api-handoff 的通用来源/凭据接口已通过 Otty 交给 Claude。case-execution-handoff 已补预期构建与真实床核对边界。当前 typecheck、引用 714、APV 包内 4/4 通过，原技能目录与 9931f20 字节相同；完整固定 Circle 最终回归正在运行。真实 HTTP 签发处置决定仍待回复，默认拒绝不变，未操作 7420、网关或设备，也未调整产品包目录/发布结构。
+
+完整最终实现已实际通过：contracts **4/4**、methods **17/17**、acceptance **133/133**、references **7/7**，共 **161/161**，固定 Circle 8b2ceb6，**无 skip**。typecheck、diff 检查与引用 **714** 通过；APV 包内另 **4/4**，原技能目录保持 9931f20 字节。源/RPC 七条和通用 OAuth 六条均在整套内通过，核心/连接器守卫通过；新源与 OAuth 特定规则未加到平台主进程，InfoTest 解释在既有产品模块。实际床构建仍未知，real HTTP issuer 未启用例外，未读取或投递真实系统。接下来只在 server-s2 本地提交，经 Otty 交给 Claude 更新其控制的 7420；不 push、不改已有产品目录。

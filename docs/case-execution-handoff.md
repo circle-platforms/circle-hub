@@ -23,6 +23,12 @@
 
 sourceRevisionId 与 artifactId 二选一。sourceSha256 可省略，由 server 钉住；module 可选，只接受字母/数字/下划线/连字符；deadlineMs 默认一小时、范围 1000–3600000。build 优先用 buildId，构建名必须唯一，可用 platform 消歧。必须是单表「执行」、隐藏行一精确标记 `APV_EXCEL_CONTRACT | apv.excel.runtime | v1` 和九列执行契约；第一阶段两表七列结构工作簿不可执行。
 
+命令核对也可绑定通用外部来源制品。先分别上传命令 XML 和函数契约 JSON 原字节，再 POST /v1/source-artifacts：metadata={buildName:<预期构建名>,platform:<可选平台>}，files 中一份 role=command-tree、一份 role=function-contract，分别带 path/sourceRevisionId/sha256。另一人批准该 knowledge-source 资产后，GET /v1/source-artifacts/{assetId} 取得 sar_ id。buildsite.command_heads/param/check 的 build 填此 id；执行 input.commandSourceAssetId 填该来源 assetId，build 填 sar_ id。同一制品 id 也能绑定其他连接器工具，通用平台只管理原件和治理。
+
+APV 消费者独立解析两份文件。函数契约数据需完整、包含唯一 e/f/status 条目，只有 enabled 才满足该关口；disabled/internal/absent 立即拒绝并给工作簿行定位。它不能使未实现的不透明函数、禁用生命周期或未确认 console 角色绕过现有执行限制。树与函数契约 SHA 同时进入 command-check.json、审批动作和投递前复核；源资产未批准、停用、修订或权限变化时不自动换源、不读取旧绑定作为新版本。
+
+上传者声明的 buildName 是命令原件的预期关联，不代表测试床实际构建。当前床构建尚未确认，不采用历史客户端配置或 healthz 样例标签作为事实；运行时 env_prepare 必须确认构建，ready/build_checked 不满足则拒绝投递。绑定读取标 uploaded-artifact/live=false；XML 的命令存在性是脚本核对结果，真实设备行为仍以网关证据为准。
+
 本版执行关口支持 APV_n/Segn_tmp 的字面 cmd/cmd_config/cmds_config/cmd_enable、check_point 的 found/not_found/abs_found/found_times、time.sleep。初始化行也受同一核对。输入变量、设备命令里的临时寄存器替换和模糊 execute/未验证的设备函数返回 INVALID_EXECUTION_WORKBOOK，需先展开成可核对的字面行。reboot 等禁用生命周期方法不放行。最多 5000 条显式设备/主机分派，按网关 device_count 再查设备索引。
 
 test_env 的 F 是框架主机方法，不是 APV 命令头。闭集允许 clientc/clientd/cliente/routera/routerb/server213/server231/server232，G 为字面 shell，I 输入寄存器替换禁止，H 输出寄存器保留。引用的是用户给出的只读 Excel 函数契约结构，无主机地址或框架代码。可用 runtime allowedTestHosts 缩小该闭集，省略或空数组沿用专业契约；此设置进入目标身份摘要。主机直接作 E 的同类字面 cmd 分派也支持，模糊 execute 须展开。console 的角色以床配置为准，本版尚无已验证角色映射，明确拒绝，不能按名称推断它是 DUT 或 SQL 主机。
@@ -65,6 +71,8 @@ APV_0 与 APV_1 分别按床配置 comm.ssh_ips 的顺序取第 0/1 台，设备
 ```
 
 issuer 使用 POST /token 的 refresh_token grant；若签发服务使用另一 CA，配置 issuerCaFile/issuerCaSha256。远端私有请求要求 HTTPS，HTTP 只给回环合成验收。每次请求重读并核对配置指纹，拒绝重定向，不关闭全局 TLS 校验。需要由用户或运维先提供并核验 CA；server 不从未验证连接自动建立信任。
+
+上述 issuer 字段保留既有手工会话兼容；新凭据优先用通用 OAuth 登记（见 client-api-handoff），明确配置任意签发方的 tokenEndpoint/deviceAuthorizationEndpoint，再将返回的私有 credentialAssetId 加入网关资产新修订。执行适配器通过同一通用令牌续期器读取该引用，不把 OAuth 绑定某个旧客户端。签发方 HTTP 与网关 HTTPS 是两条独立连接；实际签发方明文 HTTP 目前仍受阻，不能因网关有 TLS 就静默放宽。处理方案待用户明确选择 HTTPS 入口或限定签发端点例外，当前未启用真实例外。
 
 网关资产是 connector-instance，configuration={packageId:"case-gateway",productLineId:"apv",runtimeProfileRef:"<配置引用>"}，declaration.reads 包含 test-bed、writes 包含 device-config。该连接器不把底层写工具直接暴露给模型，执行只走能力包。资产独立审批并激活。
 

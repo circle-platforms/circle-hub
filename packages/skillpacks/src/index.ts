@@ -105,7 +105,7 @@ export class SkillPacks {
     if(revoke){if(prior){await this.auth.revokeRun(prior.digest);this.secrets.delete(key);}return {revoked:true};}
     const actor={principalId:checked.task.principalId,tenantId:checked.task.tenantId,kind:'user'} as AuthContext,row=await this.row(actor,checked.task.input.skillPackId,'skillpacks.run');
     await this.checkWithDetails(actor,row.manifest,row.trial);const p=await this.auth.policy(actor),entries=(await this.catalog.available(actor)).filter(entry=>row.manifest.tools.includes(entry.view.name));
-    const grants=[...new Set(['tasks.read','tasks.submit','sources.read','evidence.read','credentials.use',...entries.map(entry=>entry.definition.permission)])].filter(grant=>p.grants.includes(grant));
+    const grants=[...new Set(['tasks.read','tasks.submit','sources.read','evidence.read','credentials.use','assets.read','knowledge.read',...entries.map(entry=>entry.definition.permission)])].filter(grant=>p.grants.includes(grant));
     const scopes=[...new Set([row.scope_id,...entries.map(entry=>entry.row.scope_id)])];
     const secret=prior??await this.auth.issueRun(actor,{taskId:checked.task.taskId,tools:row.manifest.tools,grants,scopes,operationId:checked.row.operation_id,fencingToken:Number(checked.row.fencing_token)},checked.row.deadline_at);this.secrets.set(key,secret);
     return {runtime:this.runtime,serverToken:secret.token};

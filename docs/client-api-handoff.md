@@ -261,6 +261,24 @@ POST 成功是 201，status 初始 `candidate`，额外返回 manifest/ownerPrin
 
 工具不匹配的 message 直接列具体名称与原因，例如 `Undeclared trial tools: docs.get; Tools unavailable in caller catalog: zentao.products`；示例不表示这些工具在某个实际身份下不可用。单条消息最多 1000 字符，长清单保留完整名称、显示剩余数量，并指向 details.check；details.check.undeclaredTools/missingTools 完整、去重且稳定排序。名称用 GET /v1/tools 的规范名称，不用 Circle 的 srv_* 名称。缺失与无权限仍统一表示“当前调用者目录不可用”，不泄露隐藏资产、地址、凭据或输入。提交、审批和运行共用该格式；受理后目录撤销导致后台失败时，task result/error 和任务事件保留完整 details.check。客户端应展示 message，并允许查看完整两张清单。
 
+## 通用外部来源制品
+
+先用 POST /v1/sources 上传原件（已有产品 SourceRevision 也可用其 sourceRecordId）。POST /v1/source-artifacts 接收 `{scopeId,name,version,metadata,files:[{path,role,mediaType?,sourceRevisionId|sourceRecordId,sha256?}],readers?}`，返回 knowledge-source 资产及原件引用，初始 lifecycle=draft/sourceArtifactId=null。平台只校验来源权限、字节 SHA、路径与修订，metadata/role 是消费者的数据约定；候选 Claim 不能作原件引用，格式和语义由对应连接器/技能模块校验。
+
+由另一人 POST /v1/assets/{assetId}/lifecycle `{version,sha256,state:"approved"}` 后，GET /v1/source-artifacts/{assetId} 返回可用 sourceArtifactId（sar_ 前缀）。相同所有者/scope/name/version/内容复用资产，变内容必须新版本；id 绑定版本、metadata 和所有文件摘要。无需猜构建 id：命令树工具的 build 可直接填该 sar_ id。APV 消费者的数据约定见 case-execution-handoff，通用平台不会据上传者 metadata 判断真实床构建。
+
+所有工具输入 schema 都增加可选 sourceArtifactId；调用可放 args.sourceArtifactId，或 POST 工具 body 的同名字段，两处有值必须一致。绑定源须与工具任务同 scope、当前已独立批准且原件可读。绑定后仅使用制品原件，不回退到网络；必要时 metadata.requests 可将 `METHOD /path`（或加请求 JSON 的 canonical SHA）映射到 `{path:<制品文件路径>,status:<响应状态>}`，供连接器读取保留响应。结果标 source.origin=uploaded-artifact/live=false，包含来源资产版本/摘要；这不能证明远端当前状态或写效果。原件与读取上下文留 B 证据，索引仍异步。
+
+## 通用 OAuth 凭据登记
+
+签发方与端点从仓库外 CIRCLE_SERVER_OAUTH_PROFILES 读取 `{profiles:{<ref>:{issuer,tokenEndpoint,deviceAuthorizationEndpoint?,clientId,clientAuthentication:"none"|"client_secret_basic"|"client_secret_post",scope?,accessTtlSeconds?,caFile?,caSha256?}}}`。没有固定签发方或固定 token 路径。连接器 configuration.oauthProfileRef 必须绑定该 ref；请求不能传任意端点。远端端点默认必须 HTTPS；HTTP 只供回环合成测试，真实明文签发接入另需明确决策，当前没有默认例外。CA 每次核验，不跟随重定向。
+
+POST /v1/credentials/oauth/device 接收 `{connectorAssetId,connectorVersion,profileRef,clientCredentialId?,idempotencyKey}`，返回 flowId/status/userCode/verificationUri/intervalSeconds/expiresAt。用户去签发方确认，再 POST /v1/credentials/oauth/device/{flowId}/poll 空 JSON。轮询遵守 interval，slow_down 后增加五秒，拒绝/过期停止；流程按用户和连接器修订持久化，设备 code 在私有加密 vault 中，未返回。
+
+POST /v1/credentials/oauth/client-credentials 使用同形请求；clientCredentialId 是本人通过既有私有凭据端点登记的 `{client_id?,client_secret}` JSON 引用，绑定同一连接器。只支持配置好的保密客户端认证方式。两种授权成功均只返回 credentialAssetId 与到期元数据，值不在 API、事件、审计或 Git 中；把新引用放入连接器新修订并批准后使用。不同 scope/所有者不能借用凭据。
+
+令牌临期在私有单写者锁内续期；标准刷新未返回新 refresh_token 时保留旧的非轮换令牌，返回新值则原子替换；client_credentials 无 refresh_token 时重取该 grant。未知刷新回执停止重放，明确 5xx 保留原会话，撤销需重新授权。未返回 expires_in 且无配置默认 TTL 时到期未知（null），不虚构期限。连接器 runtime profile 的 authorizationScheme 可为 raw 或 bearer，旧 raw 默认保持兼容。授权流程与 token/credential 引用分开，流程完成并不自动批准连接器或设备动作。
+
 运行请求 202 `{taskId}`，inputs 原 JSON 作为 `inputs.json` 写进 workspace；可用 `inputs.files:[{path,base64,sha256?}]` 附输入文件。输入不能覆盖 .circle/控制文件/声明输出；改输入使用新幂等键，同键不同输入拒绝。结果返回实际 artifacts/evidence/runtime，产物只在 CLI agent_settled、进程退出和声明文件完整、独立字节 SHA 核对后交付。文件完整性/摘要属于 script-conclusion，最后回答另记 model-judgment，不用回答替代产物或专业事实。artifact/content 与个人任务权限一并检查。
 
 `CIRCLE_RUNTIME_CONFIG` 指向仓库外的运行时 JSON：
