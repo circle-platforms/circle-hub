@@ -27,7 +27,9 @@ export async function executeCases(claim:any,context:CaseWorkerContext){
       await context.event({stage:'validation',output:rawOutput(checked)});
       }
     }
-    const profile=authorization.profile,oauth=authorization.gatewayInjection.oauth,client=oauth?.clientReference?JSON.parse(await vault.get(oauth.clientReference.key,oauth.clientReference.binding)):undefined,tokens=oauth?new OAuthToken(vault,authorization.gatewayInjection,oauth.profile,oauth.grantType,client?.client_secret):new RotatingToken(vault,authorization.gatewayInjection,{issuer:profile.issuer,caFile:profile.issuerCaFile??profile.caFile,caSha256:profile.issuerCaSha256??profile.caSha256});gateway=new McpGateway(profile,()=>tokens.access());
+    const profile=authorization.profile;
+    if(authorization.gatewayInjection.provider==='server')gateway=new McpGateway(profile,async()=>{const checked=await context.check(),injection=checked.authorization.gatewayInjection;requireCondition(injection.provider==='server','APPROVAL_STALE','Resource authorization provider changed');return vault.get(injection.key,injection.binding);});
+    else{const oauth=authorization.gatewayInjection.oauth,client=oauth?.clientReference?JSON.parse(await vault.get(oauth.clientReference.key,oauth.clientReference.binding)):undefined,tokens=oauth?new OAuthToken(vault,authorization.gatewayInjection,oauth.profile,oauth.grantType,client?.client_secret):new RotatingToken(vault,authorization.gatewayInjection,{issuer:profile.issuer,caFile:profile.issuerCaFile??profile.caFile,caSha256:profile.issuerCaSha256??profile.caSha256});gateway=new McpGateway(profile,()=>tokens.access());}
     if(claim.name==='cases.observe'){
       requireCondition(authorization.remoteTaskId,'EVIDENCE_INSUFFICIENT','Unknown submission has no remote task identity');
       const status=await gateway.call('case_status',{task_id:authorization.remoteTaskId},context.signal),results=await gateway.call('case_results',{task_id:authorization.remoteTaskId},context.signal);requireCondition(status.state==='done','EVIDENCE_INSUFFICIENT','Independent gateway observation is not terminal');return {...fence,status:'succeeded',output:{status,results}};

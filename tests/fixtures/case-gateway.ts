@@ -2,12 +2,20 @@ import {createServer} from 'node:http';
 import type {TestContext} from 'node:test';
 
 export async function caseGateway(t:TestContext){
-  const state={unavailable:false,lost:false,hold:false,dropSubmit:false,wrongSha:false,failCase:false,hostLog:'',command:'service create port 443',sha:'',taskId:'cex_synthetic_301',calls:[] as string[]};
+  const state={unavailable:false,lost:false,hold:false,dropSubmit:false,wrongSha:false,failCase:false,hostLog:'',command:'service create port 443',sha:'',taskId:'cex_synthetic_301',calls:[] as string[],identityServer:'',clientId:'',clientSecret:'',ruleBuild:'',ruleSha:'',verified:[] as any[]};
   const server=createServer(async(req,res)=>{
     if(req.method!=='POST'||req.url!=='/mcp'){res.writeHead(405);res.end();return;}
     let rpc:any;try{let input='';for await(const bytes of req)input+=bytes;rpc=JSON.parse(input);}catch{res.writeHead(400);res.end();return;}
     const name=rpc.params?.name;state.calls.push(name??rpc.method);
     if(state.unavailable){res.writeHead(503);res.end('{"error":"cannot verify token: server unreachable"}');return;}
+    if(state.identityServer){try{
+      const auth=`Basic ${Buffer.from(`${encodeURIComponent(state.clientId)}:${encodeURIComponent(state.clientSecret)}`).toString('base64')}`,token=(req.headers.authorization??'').slice(7),checked=await fetch(`${state.identityServer}/v1/introspect`,{method:'POST',headers:{authorization:auth,'content-type':'application/x-www-form-urlencoded'},body:new URLSearchParams({token})}),info=await checked.json() as any;
+      if(!checked.ok){res.writeHead(503);res.end();return;}if(!info.active||!info.scope.split(' ').includes('jumphost:run')){res.writeHead(401);res.end();return;}state.verified.push({...info,tokenDigest:(await import('node:crypto')).createHash('sha256').update(token).digest('hex')});
+      if(name==='env_prepare'){
+        const issued=await fetch(`${state.identityServer}/token`,{method:'POST',headers:{authorization:auth,'content-type':'application/x-www-form-urlencoded'},body:'grant_type=client_credentials&scope=bundles%3Aread'}),session=await issued.json() as any,headers={authorization:`Bearer ${session.access_token}`},bundle=await fetch(`${state.identityServer}/v1/builds/${encodeURIComponent(state.ruleBuild)}/bundle`,{headers}),manifest=await bundle.json() as any,file=manifest.entries?.find((entry:any)=>entry.path==='projections/domain_grammar.json');
+        if(!issued.ok||!bundle.ok||!file){res.writeHead(503);res.end();return;}const blob=await fetch(`${state.identityServer}/v1/blobs/${file.sha256}`,{headers}),bytes=Buffer.from(await blob.arrayBuffer());state.ruleSha=(await import('node:crypto')).createHash('sha256').update(bytes).digest('hex');if(!blob.ok||state.ruleSha!==file.sha256){res.writeHead(503);res.end();return;}
+      }
+    }catch{res.writeHead(503);res.end();return;}}
     let result:any={ok:true};
     if(name==='lease_acquire')result={ok:true,lease_id:'synthetic-lease',token:1,expires_in_s:1800};
     if(name==='env_prepare')result={ok:true,ready:true,build_checked:true,device_count:2,checks:[{check:'device_build',ok:true}]};

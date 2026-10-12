@@ -60,6 +60,22 @@ export class SourceArtifacts{
   async bytes(ctx:AuthContext,snapshot:SourceArtifactSnapshot,scope:string,tx?:Transaction){
     const originals=[];for(const entry of snapshot.files){const original=await this.originals.sourceBytes(ctx,entry.sourceRevisionId,scope,tx);requireCondition(original.reference.sha256===entry.sha256&&sha256(original.bytes)===entry.sha256,'SOURCE_HASH_MISMATCH','Registered original bytes differ');originals.push({path:`/${entry.path}`,bytes:original.bytes,sha256:entry.sha256,mediaType:entry.mediaType,etag:null,sourceType:'external-artifact'});}return originals;
   }
+  async reference(ctx:AuthContext,namespace:string,selector:string){
+    const p=await this.auth.check(ctx,'sources.read'),rows=(await this.store.pool.query(`SELECT a.asset_id FROM assets a JOIN asset_versions v ON v.asset_id=a.asset_id AND v.version=a.current_version
+      WHERE a.tenant_id=$1 AND a.scope_id=ANY($2::text[]) AND a.kind='knowledge-source' AND v.configuration->>'schema'='external-source-artifact/1'
+      AND (a.owner_principal_id=$3 OR v.readers ? $3 OR v.readers ? '*')
+      AND (v.configuration->>'sourceArtifactId'=$4 OR v.configuration->'metadata'->'bindings'->>$5=$4)`,[p.tenantId,p.scopes,p.principalId,selector,namespace])).rows;
+    requireCondition(rows.length,'SOURCE_FORBIDDEN','Source artifact is not available to this identity');requireCondition(rows.length===1,'INVALID_PAYLOAD','Registered selector is ambiguous; use a sourceArtifactId');return this.snapshot(ctx,rows[0].asset_id);
+  }
+  async bundle(ctx:AuthContext,selector:string){const source=await this.reference(ctx,'build',selector);return {sourceArtifactId:source.sourceArtifactId,assetId:source.assetId,version:source.assetVersion,sha256:source.assetSha256,entries:source.files.map(file=>({path:file.path,sha256:file.sha256,size:file.size,mediaType:file.mediaType}))};}
+  async blob(ctx:AuthContext,digest:string){
+    Sha256.parse(digest);const p=await this.auth.check(ctx,'sources.read'),rows=(await this.store.pool.query(`SELECT a.asset_id,a.scope_id FROM assets a JOIN asset_versions v ON v.asset_id=a.asset_id AND v.version=a.current_version
+      WHERE a.tenant_id=$1 AND a.scope_id=ANY($2::text[]) AND a.kind='knowledge-source' AND v.configuration->>'schema'='external-source-artifact/1'
+      AND v.lifecycle IN ('approved','running') AND v.approved_digest=v.sha256 AND (a.owner_principal_id=$3 OR v.readers ? $3 OR v.readers ? '*')
+      AND EXISTS(SELECT 1 FROM jsonb_array_elements(v.configuration->'files') f WHERE f->>'sha256'=$4)`,[p.tenantId,p.scopes,p.principalId,digest])).rows;
+    for(const row of rows){try{const source=await this.snapshot(ctx,row.asset_id),file=source.files.find(file=>file.sha256===digest)!;const original=await this.originals.sourceBytes(ctx,file.sourceRevisionId,row.scope_id);requireCondition(original.reference.sha256===digest&&sha256(original.bytes)===digest,'SOURCE_HASH_MISMATCH','Source blob bytes differ');return {bytes:original.bytes,reference:{sha256:digest,mediaType:file.mediaType,fileName:file.path.split('/').at(-1)}};}catch(error){if(!(error instanceof ApiError)||!['SOURCE_FORBIDDEN','FORBIDDEN_ACTION','ASSET_NOT_VISIBLE','APPROVAL_REQUIRED'].includes(error.code))throw error;}}
+    throw new ApiError('SOURCE_FORBIDDEN','Source blob is not available to this identity');
+  }
   async capture(tx:Transaction,ctx:AuthContext,scope:string,snapshot:SourceArtifactSnapshot,raw:any,permission:string){
     const entry=snapshot.files.find(entry=>`/${entry.path}`===(raw.artifactFilePath??raw.path)),bytes=Buffer.from(raw.contentBase64,'base64');requireCondition(entry&&entry.sha256===raw.sha256&&bytes.length===entry.size&&sha256(bytes)===entry.sha256,'SOURCE_HASH_MISMATCH','Tool receipt exceeds its approved source artifact');
     await this.graph.get(ctx,entry.sourceRecordId,tx);const sourceIdentity=canonicalHash(['artifact-read',snapshot.assetId,ctx.principalId,raw.path,entry.path]),payload={sourceId:`artifact-read:${sourceIdentity}`,sourceIdentity,revision:entry.sha256,path:raw.path,parserVersion:'external-artifact-return/1',acl:{sourceReaders:[ctx.principalId],platformReaders:[ctx.principalId]},asset:{assetId:snapshot.assetId,permission},sourceArtifactId:snapshot.sourceArtifactId,origin:'uploaded-artifact',live:false,sharing:null,raw:await this.originals.source(ctx,entry.sourceRevisionId,scope,tx)};

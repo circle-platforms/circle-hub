@@ -1,4 +1,6 @@
-import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { createServer, type IncomingMessage, type ServerResponse,type RequestListener } from 'node:http';
+import {createServer as createHttpsServer} from 'node:https';
+import {serverTLS} from './tls.ts';
 import { setTimeout as delay } from 'node:timers/promises';
 import { mkdir } from 'node:fs/promises';
 import {randomUUID} from 'node:crypto';
@@ -6,7 +8,7 @@ import { z } from 'zod';
 import { API_VERSION, MAX_BODY_BYTES, MAX_SOURCE_BYTES, MAX_WORKER_REPORT_BYTES, CLIENT_ROUTES, TaskListQuery, ApiError, SubmitRequest,
   InputRequest, OperationRequest, ApprovalProposal, ApprovalRequest, ConclusionRequest, ChecklistRequest, ChecklistResponse, RuleRequest, InputRevisionId, TaskId, ScopeId, SourceUpload, Base64Content, DevLoginRequest, requireCondition,
   EntityId,RelationId,ObjectListQuery,ObjectTypePackage,ObjectObservation,RelationObservation,AuthRefreshRequest,
-  AssetId,AssetRegistration,AssetListQuery,AssetTransition,CredentialRegistration,KnowledgeRecordId,KnowledgeSearchQuery,KnowledgeReviewRequest,ToolName,ToolCallInput,SkillPackId,StandardOperation } from '../../../packages/contracts/src/index.ts';
+  AssetId,AssetRegistration,AssetListQuery,AssetTransition,CredentialRegistration,KnowledgeRecordId,KnowledgeSearchQuery,KnowledgeReviewRequest,ToolName,ToolCallInput,SkillPackId,StandardOperation,ServiceClientId } from '../../../packages/contracts/src/index.ts';
 import { Store } from '../../../packages/storage/src/index.ts';
 import { taskMigration } from '../../../packages/tasks/src/migration.ts';
 import { Auth } from '../../../packages/tasks/src/auth.ts';
@@ -50,10 +52,12 @@ import {knowledgePageMigration} from '../../../packages/knowledge/src/page-migra
 import {automationOriginMigration} from '../../../packages/tasks/src/automation-origin-migration.ts';
 import {ingestionMigration} from '../../../packages/knowledge/src/ingestion-migration.ts';
 import {Ingestions} from '../../../packages/knowledge/src/ingestion.ts';
+import {resourceIdentityMigration} from '../../../packages/tasks/src/resource-identity-migration.ts';
+import {ServiceClients} from '../../../packages/tasks/src/service-clients.ts';
 
 function environment(name: string): string { const value = process.env[name]; if (!value) throw new Error(`Required environment variable: ${name}`); return value; }
 const store = new Store(JSON.parse(environment('CIRCLE_SERVER_DATABASE_CONFIG')));
-await store.migrate([taskMigration,deliveryMigration,knowledgeMigration,executionMigration,...packageMigrations,approvalMigration,conclusionMigration,checklistMigration,connectorMigration,entityMigration,assetMigration,graphMigration,toolMigration,skillMigration,automationMigration,automationOutcomeMigration,knowledgePageMigration,automationOriginMigration,ingestionMigration,oauthMigration]);
+await store.migrate([taskMigration,deliveryMigration,knowledgeMigration,executionMigration,...packageMigrations,approvalMigration,conclusionMigration,checklistMigration,connectorMigration,entityMigration,assetMigration,graphMigration,toolMigration,skillMigration,automationMigration,automationOutcomeMigration,knowledgePageMigration,automationOriginMigration,ingestionMigration,oauthMigration,resourceIdentityMigration]);
 const auth = new Auth(store,{developmentTtlMs:process.env.CIRCLE_SERVER_DEV_TOKEN_TTL_MS?Number(process.env.CIRCLE_SERVER_DEV_TOKEN_TTL_MS):undefined,runTokenTtlMs:process.env.CIRCLE_SERVER_RUN_TOKEN_TTL_MS?Number(process.env.CIRCLE_SERVER_RUN_TOKEN_TTL_MS):undefined});
 requireCondition(process.env.CIRCLE_SERVER_DEV_AUTH === '1', 'INVALID_PAYLOAD', 'Phase one requires explicitly enabled development authentication');
 await auth.initializeDevelopment(environment('CIRCLE_SERVER_DEV_IDENTITIES'));
@@ -66,6 +70,7 @@ const oauth=new OAuthCredentials(store,auth,assets,process.env.CIRCLE_SERVER_OAU
 assets.materializeCredential=(ctx,row,link,value)=>oauth.materialize(ctx,row,link,value);
 const graph=new KnowledgeGraph(store,auth,knowledge);
 const sourceArtifacts=new SourceArtifacts(store,auth,assets,knowledge,graph);
+const serviceClients=new ServiceClients(store,auth,assets,Number(process.env.CIRCLE_SERVER_RESOURCE_TOKEN_TTL_SECONDS??300));
 knowledge.sourceAccess=async(ctx,id,tx)=>{await entities.checkSourceAccess(ctx,id,tx);await graph.checkSourceAccess(ctx,id,tx);};
 const execution = new Operations(store,auth,tasks,knowledge);
 const catalog=new ToolCatalog(store,auth,assets,tasks,execution,graph,installedToolPackages);await catalog.initialize(process.env.CIRCLE_SERVER_CONNECTOR_PROFILES);
@@ -86,7 +91,7 @@ const automations=new Automations(store,auth,tasks,assets,skills);catalog.observ
 await privateIPC.start(async(message)=>{const worker=await auth.authenticate(message.authorization),id=z.string().parse(message.operationId),fence=z.number().int().positive().parse(message.fencingToken);return skills.privateSecret(worker,id,fence,message.revoke===true);});
 const assessments=new Assessments(store,tasks,knowledge),checklists=new Checklists(store,tasks,knowledge);
 const registry=new ConnectorRegistry(store,auth,packageConnectors);await registry.initialize();execution.connectorCheck=(tx,actor,scope,spec)=>registry.check(tx,actor,scope,spec);
-const packages=installPackages({store,auth,tasks,knowledge,execution,registry,checklists,approvals,assessments,assets,catalog,sourceArtifacts,oauth}),rules=packages.rules;
+const packages=installPackages({store,auth,tasks,knowledge,execution,registry,checklists,approvals,assessments,assets,catalog,sourceArtifacts,oauth,serviceClients}),rules=packages.rules;
 let closing = false;
 const shutdownSignal=new AbortController();
 const activeRequests=new Set<Promise<void>>();
@@ -128,14 +133,25 @@ function download(response: ServerResponse, value: { reference: any; bytes: Buff
     'cache-control':'no-store','x-content-sha256':value.reference.sha256,
     'content-disposition':`attachment; filename*=UTF-8''${encodeURIComponent(value.reference.fileName)}` }); response.end(value.bytes);
 }
+function protocolJSON(response:ServerResponse,status:number,value:unknown){closeOnShutdown(response);response.writeHead(status,{'content-type':'application/json','cache-control':'no-store','pragma':'no-cache'});response.end(JSON.stringify(value));}
+async function form(request:IncomingMessage){requireCondition(request.headers['content-type']?.split(';')[0]==='application/x-www-form-urlencoded','INVALID_PAYLOAD','Form content type required');const values=new URLSearchParams((await bytes(request,MAX_BODY_BYTES)).toString('utf8')),result:Record<string,string>={};for(const [key,value] of values){requireCondition(!Object.hasOwn(result,key),'INVALID_PAYLOAD','Duplicate form field');result[key]=value;}return result;}
 function base64(value: string): Buffer {
   Base64Content.parse(value);
   return Buffer.from(value,'base64');
 }
-const server = createServer(async (request, response) => {
+const tls=await serverTLS(process.env.CIRCLE_SERVER_TLS_CONFIG),createListener=tls?(handler:RequestListener)=>createHttpsServer(tls,handler):createServer;
+const server = createListener(async (request, response) => {
   const completed=Promise.withResolvers<void>();activeRequests.add(completed.promise);
   try {
     const url = new URL(request.url ?? '/', 'http://127.0.0.1');
+    if(['/token','/v1/introspect'].includes(url.pathname)&&request.method==='POST'){
+      try{const client=await serviceClients.basic(request.headers.authorization),input=await form(request);
+        if(url.pathname==='/token'){if(input.grant_type!=='client_credentials')throw new ApiError('INVALID_PAYLOAD','Client credentials grant required',{oauthError:'unsupported_grant_type'});protocolJSON(response,200,await serviceClients.grant(client,input.scope??''));}
+        else{const token=z.string().min(1).max(16384).parse(input.token);protocolJSON(response,200,await serviceClients.introspect(client,token));}
+      }catch(error){const failure=error instanceof ApiError?error:error instanceof z.ZodError?new ApiError('INVALID_PAYLOAD','Invalid protocol request'):new ApiError('INTERNAL_ERROR','Service authorization is unavailable'),unauth=failure.code==='UNAUTHENTICATED';if(unauth)response.setHeader('www-authenticate','Basic realm="resource-identity"');protocolJSON(response,unauth?401:failure.code==='FORBIDDEN_ACTION'?403:failure.httpStatus>=500?500:failure.code==='BODY_TOO_LARGE'?413:400,{error:unauth?'invalid_client':failure.httpStatus>=500?'server_error':failure.details.oauthError??(failure.code==='FORBIDDEN_ACTION'?'insufficient_scope':'invalid_request')});}return;
+    }
+    const bundle=/^\/v1\/builds\/([^/]+)\/bundle$/.exec(url.pathname),blob=/^\/v1\/blobs\/([a-f0-9]{64})$/.exec(url.pathname);
+    if((bundle||blob)&&request.method==='GET'){let identity;try{identity=await auth.authenticate(request.headers.authorization);}catch(error){if(!(error instanceof ApiError)||error.code!=='UNAUTHENTICATED')throw error;identity=await serviceClients.bundleIdentity(request.headers.authorization);}requireCondition(!identity.run,'FORBIDDEN_ACTION','Run delegation cannot download resource bundles');if(bundle)protocolJSON(response,200,await sourceArtifacts.bundle(identity,z.string().min(1).max(200).parse(decodeURIComponent(bundle[1]))));else download(response,await sourceArtifacts.blob(identity,blob![1]));return;}
     if (['/v1/auth/token','/v1/auth/dev-login'].includes(url.pathname) && request.method === 'POST') {
       const input = DevLoginRequest.parse(await body(request));
       const issued = await auth.issue(input.username,input.password,input.expiresInMs);
@@ -147,6 +163,8 @@ const server = createServer(async (request, response) => {
     if(url.pathname===CLIENT_ROUTES.authRefresh.path&&request.method==='POST'){
       AuthRefreshRequest.parse(await body(request));const issued=await auth.refresh(request.headers.authorization!),policy=await auth.policy(ctx);send(response,200,{data:{...issued,tokenType:'Bearer',principalId:policy.principalId,tenantId:policy.tenantId,scopes:policy.scopes}});return;
     }
+    if(url.pathname==='/v1/service-clients'){if(request.method==='POST')send(response,201,{data:await serviceClients.register(ctx,await body(request))});else if(request.method==='GET')send(response,200,{data:await serviceClients.list(ctx,z.coerce.number().int().min(1).max(100).default(20).parse(url.searchParams.get('limit')??undefined),ServiceClientId.optional().parse(url.searchParams.get('after')??undefined))});else throw new ApiError('INVALID_PAYLOAD','Unsupported service client method');return;}
+    const serviceClient=/^\/v1\/service-clients\/([^/]+)(?:\/(rotate|revoke))?$/.exec(url.pathname);if(serviceClient){const id=ServiceClientId.parse(serviceClient[1]);if(request.method==='GET'&&!serviceClient[2])send(response,200,{data:serviceClients.view(await serviceClients.row(ctx,id))});else if(request.method==='POST'&&serviceClient[2]==='rotate')send(response,200,{data:await serviceClients.rotate(ctx,id,await body(request))});else if(request.method==='POST'&&serviceClient[2]==='revoke'){z.object({}).strict().parse(await body(request));send(response,200,{data:await serviceClients.revoke(ctx,id)});}else throw new ApiError('INVALID_PAYLOAD','Unsupported service client method');return;}
     if(request.method==='POST'&&url.pathname==='/v1/automations/triggers'){send(response,201,{data:await automations.trigger(ctx,await body(request))});return;}
     if(request.method==='POST'&&url.pathname==='/v1/automations/bots'){send(response,201,{data:await automations.bot(ctx,await body(request))});return;}
     const botRuns=/^\/v1\/automations\/bots\/([^/]+)\/runs$/.exec(url.pathname);if(botRuns&&request.method==='GET'){send(response,200,{data:await automations.runs(ctx,AssetId.parse(botRuns[1]))});return;}
@@ -397,7 +415,7 @@ let indexing:Promise<void>|undefined;
 const indexTimer=setInterval(()=>{if(indexing||closing)return;indexing=ingestions.runOnce().catch(error=>{console.error(JSON.stringify({type:'source-index-transaction-failed',code:error instanceof ApiError?error.code:'INTERNAL_ERROR'}));}).finally(()=>{indexing=undefined;});},Number(process.env.CIRCLE_SERVER_INDEX_POLL_MS??100));
 await new Promise<void>(resolve => server.listen(Number(process.env.CIRCLE_SERVER_PORT ?? 8080), '127.0.0.1', resolve));
 const address = server.address() as { port: number };
-console.log(JSON.stringify({ type: 'ready', url: `http://127.0.0.1:${address.port}`, apiVersion: API_VERSION, syntheticOnly: true }));
+console.log(JSON.stringify({ type: 'ready', url: `${tls?'https':'http'}://127.0.0.1:${address.port}`, apiVersion: API_VERSION, syntheticOnly: true }));
 async function shutdown(): Promise<void> {
   if (closing) return; closing = true; clearInterval(timer);clearInterval(indexTimer);
   shutdownSignal.abort();

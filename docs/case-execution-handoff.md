@@ -2,6 +2,8 @@
 
 能力包 `apv-case-execute/1.0.0` 使用既有 sources、submit、approvals、status、events、result 和 artifacts/content。实现归 packs/apv/execution，不导入或运行旧客户端、InfoTest 或 Python。现有网关只作为 HTTP JSON-RPC 服务消费；不会调用 init_device。
 
+执行身份改用 [C 的资源客户端与短期令牌](resource-identity-handoff.md)：资源资产 configuration.serviceClientId，经独立批准后由平台在操作/fence 下私有注入，worker 每次请求前重核与临期重签。该模式不配置外部 issuer，不登记个人刷新令牌。规则原件由已批准 source-artifact 的 bundle/blob 提供，平台不解释；原网关的本地缓存仍由其管理。下面的旧手工会话说明仅保留既有已验接口兼容，用户当前部署不再接旧签发服务。
+
 先上传 `case.xlsx`，或引用当前身份可读的编译 artifact，再提交：
 
 ```json

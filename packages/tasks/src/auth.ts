@@ -25,10 +25,10 @@ export class Auth {
         requireCondition(!this.credentials.has(identity.username), 'INVALID_PAYLOAD', 'Duplicate development username');
         const salt = randomBytes(16);
         this.credentials.set(identity.username, { principalId: identity.principalId, salt, digest: scryptSync(identity.password, salt, 32) });
-        await tx.query(`INSERT INTO policies(principal_id,tenant_id,kind,worker_id,scopes,grants,targets,defects)
-          VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(principal_id) DO NOTHING`,
+        await tx.query(`INSERT INTO policies(principal_id,tenant_id,kind,worker_id,scopes,grants,targets,defects,username)
+          VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(principal_id) DO UPDATE SET username=EXCLUDED.username`,
           [identity.principalId, identity.tenantId, identity.kind, identity.workerId ?? null,
-            JSON.stringify(identity.scopes), JSON.stringify(identity.grants), JSON.stringify(identity.targets), JSON.stringify(identity.defects)]);
+            JSON.stringify(identity.scopes), JSON.stringify(identity.grants), JSON.stringify(identity.targets), JSON.stringify(identity.defects),identity.username]);
       }
     });
   }

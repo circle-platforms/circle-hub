@@ -25,7 +25,7 @@ export const AssetId=identity('ast');
 export const Sha256 = z.string().regex(/^[a-f0-9]{64}$/);
 export const Base64Content = z.string().regex(/^[A-Za-z0-9+/]*={0,2}$/).refine(value =>
   value.length % 4 === 0 && Buffer.from(value,'base64').toString('base64') === value,'Expected canonical standard base64');
-export function newId(prefix: 'task' | 'inrev' | 'op' | 'pin' | 'src' | 'snap' | 'evd' | 'art' | 'rule' | 'audit' | 'rec' | 'ent' | 'erev' | 'rel' | 'rrev' | 'ast' | 'knr' | 'skp' | 'ofl'): string {
+export function newId(prefix: 'task' | 'inrev' | 'op' | 'pin' | 'src' | 'snap' | 'evd' | 'art' | 'rule' | 'audit' | 'rec' | 'ent' | 'erev' | 'rel' | 'rrev' | 'ast' | 'knr' | 'skp' | 'ofl' | 'svc'): string {
   return `${prefix}_${randomUUID().replaceAll('-', '')}`;
 }
 export function sha256(bytes: string | Uint8Array): string {
@@ -108,6 +108,10 @@ export const AssetRegistration=z.object({assetId:AssetId.optional(),scopeId:Scop
   ownerPrincipalId:z.string().regex(/^prn_/).optional(),declaration:AssetDeclaration,configuration:z.record(z.string(),z.unknown()).default({}),readers:z.array(z.string()).max(1000).optional()}).strict();
 export type AssetRegistration=z.infer<typeof AssetRegistration>;
 export const AssetTransition=z.object({version:PackageVersion,sha256:Sha256,state:AssetLifecycle});
+export const ServiceClientId=identity('svc');
+const OAuthScope=z.string().regex(/^[\x21\x23-\x5b\x5d-\x7e]{1,150}$/);
+export const ServiceClientRegistration=z.object({scopeId:ScopeId,resourceAssetId:AssetId,name:z.string().min(1).max(200),secret:z.string().min(32).max(2048),scopes:z.array(OAuthScope).max(100),resourceScopes:z.array(OAuthScope).max(100).default([])}).strict();
+export const ServiceClientRotation=z.object({secret:ServiceClientRegistration.shape.secret}).strict();
 export const CredentialRegistration=z.object({version:PackageVersion,value:z.string().min(1).max(65536),ownerPrincipalId:z.string().regex(/^prn_/).optional()}).strict();
 export const OAuthGrantInput=z.object({connectorAssetId:AssetId,connectorVersion:PackageVersion,profileRef:z.string().min(1).max(200),clientCredentialId:AssetId.optional(),idempotencyKey:z.string().min(8).max(200)}).strict();
 export const AssetListQuery=z.object({limit:z.coerce.number().int().min(1).max(100).default(20),after:AssetId.optional(),kind:AssetKind.optional()});
@@ -302,6 +306,14 @@ export const CLIENT_ROUTES = {
   assetSubmit:{method:'POST',path:'/v1/assets',request:AssetRegistration},
   asset:{method:'GET',path:'/v1/assets/{assetId}'},
   assetLifecycle:{method:'POST',path:'/v1/assets/{assetId}/lifecycle',request:AssetTransition},
+  serviceClients:{method:'POST',path:'/v1/service-clients',request:ServiceClientRegistration},
+  serviceClient:{method:'GET',path:'/v1/service-clients/{clientId}'},
+  serviceClientRotate:{method:'POST',path:'/v1/service-clients/{clientId}/rotate',request:ServiceClientRotation},
+  serviceClientRevoke:{method:'POST',path:'/v1/service-clients/{clientId}/revoke',request:z.object({}).strict()},
+  serviceToken:{method:'POST',path:'/token',contentType:'application/x-www-form-urlencoded'},
+  introspect:{method:'POST',path:'/v1/introspect',contentType:'application/x-www-form-urlencoded'},
+  sourceBundle:{method:'GET',path:'/v1/builds/{build}/bundle'},
+  sourceBlob:{method:'GET',path:'/v1/blobs/{sha}'},
   sourceArtifactSubmit:{method:'POST',path:'/v1/source-artifacts',request:SourceArtifactRegistration,response:SourceArtifactView},
   sourceArtifact:{method:'GET',path:'/v1/source-artifacts/{assetId}',response:SourceArtifactView},
   oauthDevice:{method:'POST',path:'/v1/credentials/oauth/device',request:OAuthGrantInput},

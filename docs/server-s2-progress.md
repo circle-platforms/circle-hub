@@ -493,3 +493,23 @@ client-api-handoff 的通用来源/凭据接口已通过 Otty 交给 Claude。ca
 claim 不可用证据仅增加调用者提交项的 details={field:evidence,index,evidenceId}，缺失和隐藏记录同码同文，成功仍是个人沉淀候选。新增失效 SHA、跨 scope、重复路径及伪造生成字段验收，拒绝事务不留下半份知识。另先写旧版重提不得回滚当前来源 head 的回归，实际 **0/1**；登记旧版本虽然复用资产，却先把 source head 写回旧原件。修为重复版本不更新来源 head，仍核对不可变摘要。当前来源/执行/固定 RPC 联合 **11/11**、无 skip，包含 POST /assets 原件上传到合成网关投递的完整批准链路。接下来跑最终全套；未操作 7420、真实签发方、网关或设备，明文远端签发接入决策仍待回复，目录/发布安排不变。
 
 最终验收已通过：contracts **4/4**、methods **19/19**（原整套 17 条及补充完整契约形状两条）、acceptance **137/137**、references **7/7**，共 **167/167**，固定 Circle 8b2ceb6，**无 skip**。typecheck、归档原件 **714** 核验与 diff 检查通过，APV 包内另 **4/4**；skills 与 9931f20 原字节相同。规模回归四次读取 p95 **167ms**，异步索引时读取 **228/144/120/143ms**。新登记接口和旧辅助接口共用现有批准治理；claim 失败仍在 data.error，仅新增请求证据项定位。本笔只在 server-s2 本地提交并交给 Claude 复核/部署，已获部署确认的最新 server 为 e46dd89；真实来源上传、床构建核对、网关令牌及设备执行仍由用户在环境恢复后验收，本代理未投递，也未 push。
+
+## 29：平台签发资源身份与独立模块方向
+
+用户已决定由 circle-server C 接管执行令牌签发，旧签发服务退役，**不设远端 HTTP 例外、不加反代**。HTTPS 可达性、证书和跳板机配置由用户后续决定，本代理不连接或调整真实系统。先只读核对既有网关的协议：Basic 内省 POST /v1/introspect 表单 token，读取顶层 active/sub/scope/exp/username；它读规则还用 Basic POST /token client_credentials 取得 bundles:read，GET build bundle，再按条目 SHA 取 blob。未运行、导入或复制旧代码/配置值。标准参考 RFC 7662/6749。
+
+先写客户端管理、标准令牌/内省、受众/表单与原件分发四条 HTTP 验收，实际 **0/4**（路由不存在）；自写 C 服务客户端、资源令牌账本及迁移 22 后 **4/4**。客户端绑定同 tenant/scope 的资源资产，密钥只写为盐化摘要，能轮换/吊销；独立服务 principal 只有读取原件所需平台权限，原件必须显式授权 readers。OAuth 客户端令牌与平台登录分开，scope 不升级用户权限，不发 refresh_token。
+
+再先写实际 C/D 执行验收，无个人凭据时被旧关口 SOURCE_LOGIN_EXPIRED 拒绝。资源资产以 serviceClientId 选平台签发，专业适配只声明所需外部 scope，通用 C 核对声明、调用者权限、资源/操作/输入/fence/有效租约，私有 vault 注入 worker；每次请求前重新核对，跨短期限重签。两秒合成令牌跨长任务续行，用户 sub/username 正确，原件规则按 SHA 回读，任务/事件/结果不带令牌或密钥，personal_credentials 为零，撤权后 unknown，不重派。
+
+增加取消/旧 fence/独立核对验收。首轮在投递回执尚未持久化时就撤权，合理地无法核对；改为等持久回执。核对需另一 worker，补第二 worker 后复现取消时内省仍 active；暂停两 worker 保持租约、改变 fence 即 inactive、恢复 fence 后取消仍 active，定位为漏了取消状态。修为普通执行取消立即 inactive，通用 reconcile 操作使用新 worker/fence 可继续独立观察，不推断远端停止。原生 HTTPS 另先跑 **0/1**，运行时证书/私钥配置后通过：验证合成 CA 的 token/introspect 均成功，未信任证书失败；默认绑定回环不变，未部署或开放网络。
+
+来源 bundle/blob 使用既有批准、修订与 ACL，只按 metadata.bindings 命名空间选固定原件；稳定 sar_ id 同样可用。平台不解析 domain_grammar 或其他规则，非 JSON 字节亦可按 SHA 交付；全局 CAS 不开放，隐藏、缺失、停用和异 scope不能借摘要取原件。新的 CLIENT_ROUTES、client-api-handoff、resource-identity-handoff 和执行交接已写明形状。当前专项 **6/6**、typecheck 通过，最终固定 Circle 回归待完成。
+
+用户另确认技能已迁入独立 circle-packs：20a5ba9 字节导入旧版、7a9e634 采用已批准 0.2.4 回执指针形状、21d814d 的 0.2.5 用 --contract 按 enabled 主机方法验证，误写 reboot 的客户端行不支持，技能不写死产品号。用户报告包内 **5/5** 和实际批次聚合 **20** 通过、**4** 未写入、**2** 被拒；这是其观察，本代理未运行实际批次。本代理只读 README/manifest 确认版本，旧 server 技能目录仍与 9931f20 原字节一致，未修改。通用模块清单/安装入口已通过 Otty 向 Claude 提出与 product-line/1、skillpacks 试跑/独立批准复用的接口问题，待对齐后再迁出目录；不复制新技能回 server，不擅改私有包。
+
+最终复核补同一操作以更窄 scope/另一权限委托的回归，旧查询复用原较宽令牌，实际失败；复用改为主体、权限与 canonical scope 集合完全相同。该通用入口并发验收还触发 40P01：入口先持 token 咨询锁，再在 FK 插入时等 operation 行锁，与执行 preflight 的反向顺序冲突。统一为先锁 operation 行再锁 token，未降低 fence/权限检查。第一轮整套在新增 scope 验收处失败，其他检查通过；修后继续专项与最终树，不把之前的整套算作通过。
+
+连跑短期限验收又发现 token 复用阈值的整数除法在两秒 TTL 时变成零。补确定性边界：暂停 worker，在 operation 锁下把可用 token 期限改为剩150ms，旧实现仍复用该引用，实际失败。改为提前量向上取整且至少一秒（最多15秒），每次跨资源请求重新获得有余量的令牌；不会用临期零余量令牌去碰资源。复验与最终全套继续，未把测试时序失败当真实环境结果。
+
+最终固定 Circle 8b2ceb6 的整套已实际通过：contracts **4/4**、methods **19/19**、acceptance **143/143**、references **7/7**，共 **173/173**，无 skip；typecheck 与 diff 检查通过、归档原件 **714** 保持。长任务/窄 scope/临期/旧 fence/取消/另一 worker 核对联合验收另连续三轮 **3/3**。原技能目录与 9931f20 同字节，未修改、删除或替换，后续以独立包为准。资源身份接口和 TLS/原件交接已通过 Otty 告知 Claude；本笔只在 server-s2 本地提交并交其复核，不 push、不改实际网关，不启用 HTTP 例外。网络/HTTPS可达部署仍待用户选择，模块清单/安装入口仍待对齐，不把本机合成通过表述为真实上机。

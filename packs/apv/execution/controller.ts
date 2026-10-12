@@ -66,10 +66,12 @@ export class CaseExecution {
     else requireCondition(build.configuration.packageId==='build-site','INVALID_PAYLOAD','Bind an approved command source');
     const configured=(await this.profiles())[gateway.configuration.runtimeProfileRef],buildProfile=this.services.catalog.profileFor(build.configuration);
     const profile=configured?{...configured,caSha256:(await resolveTrust(configured)).caSha256,issuerCaSha256:(await resolveTrust({caFile:configured.issuerCaFile??configured.caFile,caSha256:configured.issuerCaSha256??configured.caSha256})).caSha256}:undefined;
-    const gatewayInjection=await this.credential(ctx,gateway,tx);let buildInjection:any;
-    requireCondition(profile&&(profile.issuer||gatewayInjection.oauth)&&(buildProfile||sourceArtifact),'SOURCE_UNREACHABLE','Gateway issuer and command source must be configured at runtime');
+    const serviceClientId=gateway.configuration.serviceClientId;let gatewayInjection:any;
+    if(serviceClientId){requireCondition(!gateway.declaration.credentials.length&&!configured?.issuer,'INVALID_PAYLOAD','Server-issued resource authorization does not use an external issuer or personal credential');await this.services.serviceClients.binding(ctx,serviceClientId,gateway.asset_id,scope,['jumphost:run'],tx);gatewayInjection={provider:'server',clientId:serviceClientId};}
+    else gatewayInjection=await this.credential(ctx,gateway,tx);let buildInjection:any;
+    requireCondition(profile&&(gatewayInjection.provider==='server'||profile.issuer||gatewayInjection.oauth)&&(buildProfile||sourceArtifact),'SOURCE_UNREACHABLE','Gateway authorization and command source must be configured at runtime');
     if(build.declaration.credentials.length)buildInjection=await this.credential(ctx,build,tx);
-    return {gateway,build,profile,buildProfile,gatewayInjection,buildInjection,sourceArtifact,pin:canonicalHash({gateway:[gateway.asset_id,gateway.version,gateway.sha256,profile,...(gatewayInjection.oauth?[gatewayInjection.oauth]:[])],source:[build.asset_id,build.version,build.sha256,buildProfile,...(sourceArtifact?[sourceArtifact]:[])]})};
+    return {gateway,build,profile,buildProfile,gatewayInjection,buildInjection,sourceArtifact,pin:canonicalHash({gateway:[gateway.asset_id,gateway.version,gateway.sha256,profile,...(gatewayInjection.oauth?[gatewayInjection.oauth]:[]),...(serviceClientId?[{serviceClientId}]:[])],source:[build.asset_id,build.version,build.sha256,buildProfile,...(sourceArtifact?[sourceArtifact]:[])]})};
   }
   async prepare(ctx:AuthContext,scope:string,value:any,tx:any,idempotencyKey?:string){
     const input=ExecutionInput.parse(value),{knowledge}=this.services;
@@ -111,6 +113,7 @@ export class CaseExecution {
     const row=await this.services.execution.lease(ctx,id,fence,tx),task=await this.services.tasks.internal(tx,row.task_id),actor=this.actor(task),binding=await this.authorize(tx,actor,task,row),source=await this.services.knowledge.source(actor,task.input.sourceRevisionId,task.scopeId,tx);
     requireCondition(source.sha256===task.input.sourceSha256,'SOURCE_HASH_MISMATCH','Execution source binding changed');
     const remote=row.parent_operation_id?(await tx.query('SELECT * FROM case_gateway_receipts WHERE operation_id=$1',[row.parent_operation_id])).rows[0]:null;
+    if(binding.gatewayInjection.provider==='server'&&row.name!=='cases.verify')binding.gatewayInjection=await this.services.serviceClients.issueForOperation(tx,actor,row,binding.gatewayInjection.clientId,['jumphost:run'],'cases.execute');
     return {row,task,source,authorization:{profile:binding.profile,buildProfile:binding.buildProfile,sourceArtifact:binding.sourceArtifact,buildCacheNamespace:canonicalHash([actor.tenantId,actor.principalId,binding.build.asset_id,binding.build.version,binding.build.declaration.credentials]),gatewayInjection:binding.gatewayInjection,buildInjection:binding.buildInjection,gate:binding.gate,remoteTaskId:remote?.gateway_task_id}};
   }
   async validation(tx:any,task:any,output:any){

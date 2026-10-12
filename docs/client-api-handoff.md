@@ -300,7 +300,9 @@ knowledge.claim_submit 拒绝不可用证据时，失败任务的 GET /result �
 
 ## 通用 OAuth 凭据登记
 
-签发方与端点从仓库外 CIRCLE_SERVER_OAUTH_PROFILES 读取 `{profiles:{<ref>:{issuer,tokenEndpoint,deviceAuthorizationEndpoint?,clientId,clientAuthentication:"none"|"client_secret_basic"|"client_secret_post",scope?,accessTtlSeconds?,caFile?,caSha256?}}}`。没有固定签发方或固定 token 路径。连接器 configuration.oauthProfileRef 必须绑定该 ref；请求不能传任意端点。远端端点默认必须 HTTPS；HTTP 只供回环合成测试，真实明文签发接入另需明确决策，当前没有默认例外。CA 每次核验，不跟随重定向。
+执行资源改用 C 签发的短期访问令牌，无旧外部签发服务、设备授权或个人刷新令牌。服务客户端、标准 /token 与 /v1/introspect、SHA bundle/blob 及原生 HTTPS 配置见 [资源身份交接](resource-identity-handoff.md)。以下外部 OAuth 仍供其他连接器的配置签发方使用，不构成执行资源身份或 HTTP 例外。
+
+签发方与端点从仓库外 CIRCLE_SERVER_OAUTH_PROFILES 读取 `{profiles:{<ref>:{issuer,tokenEndpoint,deviceAuthorizationEndpoint?,clientId,clientAuthentication:"none"|"client_secret_basic"|"client_secret_post",scope?,accessTtlSeconds?,caFile?,caSha256?}}}`。没有固定签发方或固定 token 路径。连接器 configuration.oauthProfileRef 必须绑定该 ref；请求不能传任意端点。远端端点必须 HTTPS；HTTP 只供回环合成测试，用户已决定不开放真实明文签发例外。CA 每次核验，不跟随重定向。
 
 POST /v1/credentials/oauth/device 接收 `{connectorAssetId,connectorVersion,profileRef,clientCredentialId?,idempotencyKey}`，返回 flowId/status/userCode/verificationUri/intervalSeconds/expiresAt。用户去签发方确认，再 POST /v1/credentials/oauth/device/{flowId}/poll 空 JSON。轮询遵守 interval，slow_down 后增加五秒，拒绝/过期停止；流程按用户和连接器修订持久化，设备 code 在私有加密 vault 中，未返回。
 
