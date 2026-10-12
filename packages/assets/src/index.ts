@@ -13,6 +13,7 @@ function clean(value:unknown):void{
 export class Assets {
   store:Store;auth:Auth;vault:PrivateVault;
   healthCheck?: (ctx:AuthContext,asset:any)=>Promise<{result:string;reason:string}>;
+  validateRegistration?: (ctx:AuthContext,definition:AssetRegistration,id:string,tx:Transaction)=>Promise<void>;
   constructor(store:Store,auth:Auth,directory:string){this.store=store;this.auth=auth;this.vault=new PrivateVault(directory);}
   binding(row:any):string{return JSON.stringify([row.tenant_id,row.scope_id,row.owner_principal_id,row.asset_id,row.version]);}
   view(row:any):any{return {assetId:row.asset_id,scopeId:row.scope_id,kind:row.kind,ownerPrincipalId:row.owner_principal_id,version:row.version,name:row.name,
@@ -46,6 +47,7 @@ export class Assets {
       if(!existing)await client.query('INSERT INTO assets(asset_id,tenant_id,scope_id,kind,owner_principal_id,current_version) VALUES($1,$2,$3,$4,$5,$6)',[id,p.tenantId,definition.scopeId,definition.kind,owner,definition.version]);
       await client.query('INSERT INTO asset_versions(asset_id,version,sha256,name,declaration,configuration,readers) VALUES($1,$2,$3,$4,$5,$6,$7)',[id,definition.version,digest,definition.name,JSON.stringify(definition.declaration),JSON.stringify(definition.configuration),JSON.stringify(readers)]);
       await client.query('UPDATE assets SET current_version=$2 WHERE asset_id=$1',[id,definition.version]);
+      await this.validateRegistration?.(ctx,definition,id,client);
       await this.auth.audit(ctx,'assets.register',{assetId:id,version:definition.version,sha256:digest,kind:definition.kind},definition.scopeId,client);
       return {...this.view((await client.query(`SELECT a.*,v.* FROM ${join} WHERE a.asset_id=$1`,[id])).rows[0]),deduplicated:false};
     };return tx?run(tx):this.store.transaction(run);

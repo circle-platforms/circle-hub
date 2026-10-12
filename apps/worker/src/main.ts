@@ -3,6 +3,8 @@ import { ApiError, HEARTBEAT_MS, AnyWorkerClaim, sha256 } from '../../../package
 import { compileMindmap } from '../../../packages/methods/src/mindmap.ts';
 import { SyntheticDevice } from '../../../packages/execution/src/synthetic-device.ts';
 import { ConnectorSDK } from '../../../packages/connectors/src/index.ts';
+import {executeTool} from '../../../packages/connectors/src/tool-packages.ts';
+import {PrivateVault} from '../../../packages/assets/src/vault.ts';
 
 function env(name: string): string { const value = process.env[name]; if (!value) throw new Error(`Required environment variable: ${name}`); return value; }
 const base = new URL(env('CIRCLE_SERVER_URL'));
@@ -35,13 +37,23 @@ while (!stopped) {
     const next = await request('/v1/workers/claim',{});
     if (!next) { await delay(100); continue; }
     const claim = AnyWorkerClaim.parse(next); const fence = { fencingToken:claim.fencingToken };
-    await request(`/v1/workers/operations/${claim.operationId}/preflight`,fence);
+    const preflight=await request(`/v1/workers/operations/${claim.operationId}/preflight`,fence);
     let heartbeatError: unknown; let pendingHeartbeat: Promise<void> | undefined;
     const timer = setInterval(() => {
       if (pendingHeartbeat) return;
       pendingHeartbeat = request(`/v1/workers/operations/${claim.operationId}/heartbeat`,fence).then(() => {}).catch(error => { heartbeatError = error; }).finally(() => { pendingHeartbeat = undefined; });
     },HEARTBEAT_MS);
     try {
+      if(claim.name==='tools.invoke'&&'args' in claim){
+        let report;
+        try{
+          const authorization=preflight.authorization,credential=authorization.injection?await new PrivateVault(`${env('CIRCLE_SERVER_DATA_DIR')}/private-credentials`).get(authorization.injection.key,authorization.injection.binding):undefined;
+          await request(`/v1/workers/operations/${claim.operationId}/preflight`,fence);
+          const output=await executeTool(authorization.packageId,authorization.handler,claim.args.input,authorization.profile,credential);
+          report={...fence,inputRevisionId:claim.inputRevisionId,status:'succeeded',output:{result:output.result,sourceType:output.sourceType,raw:output.raw.map(raw=>({path:raw.path,sha256:raw.sha256,sourceType:raw.sourceType??output.sourceType,contentBase64:raw.bytes.toString('base64')}))}};
+        }catch(error){const failure=error instanceof ApiError?error:new ApiError('INTERNAL_ERROR','Registered tool failed');report={...fence,inputRevisionId:claim.inputRevisionId,status:'failed',output:{},error:{code:failure.code,message:failure.message,details:failure.details}};}
+        if(heartbeatError)throw heartbeatError;await request(`/v1/workers/operations/${claim.operationId}/report`,report);continue;
+      }
       if(claim.name!=='mindmaps.compile'&&'kind' in claim){
         let report;
         try{const check=()=>request(`/v1/workers/operations/${claim.operationId}/preflight`,fence);

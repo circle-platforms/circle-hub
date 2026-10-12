@@ -22,6 +22,10 @@ test('npm run dev:stack starts PostgreSQL server and worker and cleans its scrat
   assert.match(ready.postgresVersion,/PostgreSQL 18\.4/);
   const login = await fetch(`${ready.url}/v1/auth/dev-login`,{ method:'POST',headers:{ 'content-type':'application/json' },body:JSON.stringify(ready.login) });
   assert.equal(login.status,200); const token = (await login.json() as any).data.token;
+  const directory=await fetch(`${ready.url}/v1/tools`,{headers:{authorization:`Bearer ${token}`}});assert.equal(directory.status,200);
+  const tools=(await directory.json() as any).data;for(const name of ['buildsite.command_check','docs.search','zentao.bug_detail','env.inventory','knowledge.claim_submit'])assert.ok(tools.some((tool:any)=>tool.name===name));
+  const checked=await fetch(`${ready.url}/v1/tools/buildsite.command_check/call`,{method:'POST',headers:{authorization:`Bearer ${token}`,'content-type':'application/json'},body:JSON.stringify({args:{build:'Rel_PHOTON_10_5_0_101',commands:['service create port 443']},idempotencyKey:'dev-stack-command-check'})});
+  assert.equal(checked.status,200);assert.equal((await checked.json() as any).data.result.commands[0].status,'hit');
   const sourceResponse = await fetch(`${ready.url}/v1/sources`,{ method:'POST',headers:{ authorization:`Bearer ${token}`,'content-type':'application/octet-stream',
     'x-scope-id':ready.scopeId,'x-file-name':'synthetic-mindmap.xmind' },body:await readFile(ready.samplePath) });
   assert.equal(sourceResponse.status,201); const source = (await sourceResponse.json() as any).data;

@@ -142,3 +142,71 @@ result 示例（省略摘要具体值）：
 Claude 的真实 Otty/Circle 观察已由用户提供并登记在进度第 4 节，保留客户端提交 `e60ed96`、两个任务、原件/产物 SHA 与重连结果。新的 server 实现又通过脑图 HTTP/worker 兼容测试；本次没有将旧观察改写为新提交的客户端复跑。
 
 第一阶段的合成 LBX 操作、主机身份拦截、审批/交付、Bugzilla/Jira/OpenKM 桩与完整 admin 已完成，见进度与管理说明；它们在现有脑图 API 之外增加入口，没有改变该故事的登录、上传、提交、状态、事件、结果、下载和 input 路径。MCP、真实模型/企业认证/设备系统及部署不由本次本地八幕验收覆盖。没有 push、PR、GitHub 设置变更或部署。
+
+## 第二阶段：工具目录
+
+第一阶段的 envelope、Bearer 登录、scope/tenant 检查和任务补读方式继续使用。以下响应形状是 `data` 的内容，错误仍在 `error`。单一原件和产物下载保持原路径。工具契约定义在 `packages/contracts/src/index.ts` 的 `CLIENT_ROUTES.tools` / `toolCall`。
+
+`GET /v1/tools` 返回调用者当前可用的数组：
+
+```json
+[{"name":"buildsite.command_check","title":"按固定 XML 与确定性规则核对命令",
+  "description":"按固定 XML 与确定性规则核对命令",
+  "inputSchema":{"type":"object","properties":{"build":{"type":"string"},"commands":{"type":"array","items":{"type":"string"}}},"required":["build","commands"],"additionalProperties":false},
+  "effect":"read","mode":"sync","permission":"builds.read","assetId":"ast_...","assetVersion":"1.0.0"}]
+```
+
+名称只用小写字母、数字、点和下划线，在 tenant 内唯一；多连接器实例使用 `docs_apv.search` 等别名。同名登记被 `TOOL_NAME_CONFLICT` 拒绝。目录按当前身份权限、范围、资产读权限、个人凭据权限及已批准运行中的当前资产修订过滤。停用、修订和撤销权限立即影响后续目录与执行出口；普通客户端基础角色需 `tasks.read` / `tasks.submit`，再授予条目里的业务 permission。
+
+响应带 `ETag` 与 `Vary: Authorization`。Circle 可发送 `If-None-Match`：同一身份的目录未变化返回 **304 无 body**，保留已有工具；200 时整体替换目录。不要对 304 调用 JSON 解析，也不要在不同身份之间共用目录缓存。schema 的 `type` 始终为 `object`；Circle 以实际返回的完整 schema 校验参数，不自行维护第二份。
+
+`POST /v1/tools/{name}/call` body 为 `{"args":{...},"idempotencyKey":"<每次逻辑调用的稳定键，8–200 字符>"}`。读工具返回 200：
+
+```json
+{"result":{"build":"Rel_PHOTON_10_5_0_101","commands":[]},
+ "evidence":[{"evidenceId":"knr_...","sha256":"<64位 SHA-256>"}]}
+```
+
+即使同步返回，读取也由已认证 worker 执行，C/D 保存任务、当前输入修订、操作、租约与 fence；B 收到原字节且核对 SHA 后才返回。相同身份/范围/工具/键及规范化输入复用原任务和结果；同键不同内容报 `IDEMPOTENCY_MISMATCH`。同步等待超时给 `UPSTREAM_TIMEOUT`，details 中保留 `taskId` 和 `remoteStoppingVerified:false`，可通过旧任务接口检查；这不是取消。需要更改工具参数时使用新调用，工具任务的 input 修订固定。
+
+工具调用任务和事件初始归调用者个人，其他 scope 内用户也不能通过 tasks/status/result/events 读到其查询返回或候选内容；列表在 limit 前过滤。来源 ACL 和普通任务 scope 权限不能互相代替。后续团队知识提升通过知识审核与发布表达，不直接公开个人任务。
+
+task 工具返回 202 `{"taskId":"task_...","phase":"admitted"}`（phase 以实际值为准），随后按第一阶段 status/events/result 补读。结束后的 result 增加 `data.result` 保存工具结果，`data.evidence` 保存出处；原 artifacts/unmapped/status 等字段继续保留。证据原件可经 `GET /v1/knowledge/records/{evidenceId}/content` 取回，返回 `x-content-sha256`，客户端应重算 SHA；下载再次检查当前来源权限。
+
+失败分类包含 `SOURCE_ABSENT`、`SOURCE_FORBIDDEN`、`SOURCE_LOGIN_EXPIRED`、`SOURCE_UNREACHABLE`。用户已确认：普通调用将缺失/无权限统一隐藏为 `SOURCE_FORBIDDEN`；具备 `sources.diagnose` 的诊断者可见完整分类。只有确认不存在可进入来源不存在缓存，登录失效/权限拒绝/源不可达不能当作缺失。幂等键保存的失败收据仍可重读；一次新的查询使用新键。
+
+### 脑图知识工具
+
+工具名表展示默认实例，多实例以目录中的别名为准。除候选提交外均为 **read/sync**。
+
+| 工具 | args | result 主要字段 |
+|---|---|---|
+| `buildsite.versions` | `{versionLine?}` | `versionLines`, `platforms`, `builds[]`；每个构建含 name/versionLine/formal/releasedOn/platform/buildTime/镜像声明 SHA 与大小 |
+| `buildsite.command_tree` | `{build}` | build/sourceSha256/commands；固定构建 XML 投影 |
+| `buildsite.command_heads` | `{build,prefix}` | heads/count/limit/ruleVersion；上限 128，超出报 `RESULT_TOO_LARGE`，details.outcome=`result_too_large`，不截断 |
+| `buildsite.command_param` | `{build,head}` | status/head/parameters/ruleVersion；参数含 position/type/optional/help/range/enum，position 从 1 开始 |
+| `buildsite.command_check` | `{build,commands:[...]}` | build/sourceSha256/ruleVersion/commands；每条含 status=`hit` 或 `missing`、head、arguments、violations |
+| `docs.list` / `docs.get` | `{path?}` / `{file}` | files / path/contentBase64 |
+| `docs.search` | `{query,version?}` | hits：file/line/snippet/sourceSha256；行号从 1 开始；version 以文档路径维度过滤 |
+| `docs.section` | `{file,anchor}` 或 `{file,line,window?}` | file/lines[{line,text}]/sourceSha256；anchor 对应以 `**<命令头>**` 开头的小节；窗口默认 40、最多 80 行，超长小节明确失败 |
+| `zentao.bug_search` | `{keyword?,product?,status?,severity?,assignedTo?,openedBy?,lastEditedDate_start?,lastEditedDate_end?}` | items；镜像列表不分页，keyword 在取回的授权列表上按标题字面过滤 |
+| `zentao.bug_detail` | `{ids:[...]}`（1–100） | items；数字/日期统一，未知 resolution 留在 unmapped |
+| `env.inventory` / `env.topology` / `env.device_status` | `{}` / `{environmentId}` / `{deviceId}` | 只读跳板返回；没有执行或改环境入口 |
+| `env.framework_files` / `env.framework_get` | `{}` / `{path}` | 框架只读镜像目录/文件 |
+| `knowledge.claim_submit` | `{claim:{subject,predicate,value,conditions?},evidence:[{evidenceId,sha256}]}` | **write/task**；最终 `result` 为个人沉淀候选记录，附原工具返回，不自动提升 |
+
+E 的 `command-tree/1.0.0` 规则采用 POSIX quote/escape 分词并转小写，最多八词的最长前缀匹配。hit 表示命令头存在，参数另报 `ARGUMENT_COUNT`、`TYPE_MISMATCH`、`ENUM_MISMATCH`、`OUT_OF_RANGE` 或 `UNSUPPORTED_PARAMETER_TYPE`；missing 报 `HEAD_MISSING`，不能用手册命中改成 hit。STRING/XSTRING 为非空字符串，U16/U32 检查整数和位宽及 XML 范围；IPADDR 支持 IP 地址，DOTTEDIP 为 IPv4，IPMASK 为连续位的 IPv4 点分掩码。未知参数类型保留违规，不猜测支持。同一固定 XML 和输入产生相同结果，构建树不同的 missing 保持独立。
+
+版本线来自首页链接标题或页面文件名；平台是独立维度，不是型号。正式发布需要 `Rel_` 且有 Released on 日期。构建段落没变时不重取 XML 和修复清单；ISO-8859-1 XML 按声明解码，引用 SHA 始终来自解码前原字节。命令存在只证明结构，完整功能语义需要产品证据。
+
+来源地址只在运行时配置文件提供。`CIRCLE_SERVER_CONNECTOR_PROFILES` 指向仓库外的 JSON 文件，形状为 `{"profiles":{"<配置引用>":{"origin":"<运行时来源>","root":"<文档根>","index":"<构建首页>","payloadField":"data"}}}`。连接器资产 configuration 使用 `packageId`（documents/build-site/query-mirror/environment-view/knowledge）、`runtimeProfileRef`、可选 alias；个人凭据走 `/v1/assets/{id}/credentials`，之后在新资产修订的 declaration.credentials 中引用。PLM 的 JWT 只在 worker 内注入，无 Bearer；值不回到注册/目录/调用响应或审计。当前仅合成来源验收，真实源冒烟仍需授权。
+
+`npm run dev:stack` 一次启动临时 PostgreSQL、server、两个 worker 和合成来源，并登记/独立批准/启用上述五个工具资产。终端打印 server 地址、developer 与 approver 的临时登录方式；developer 登录后立即可取非空工具目录。默认合成版本线为 10.5，正式构建 `Rel_PHOTON_10_5_0_101` / `Rel_PHOTON_10_5_0_109`，前者有 `feature.enable`，后者缺失；两者都有几十条 service 命令。Ctrl+C 也关闭合成来源并删除 scratch。
+
+## 第二阶段：技能包约定与 RPC 边界
+
+以下是已确认的第 5 幕目标形状，技能包路由会随该幕验收转绿后开放，不能把协议约定当作当前运行已通过。
+
+`POST /v1/skillpacks` 接收 `{manifest,files:[{path,base64,sha256}],trial:{toolCalls:[{name,argsSha256,ok}],outputs:[{path,sha256}]}}`。manifest 含 id/version/title/owner/tools[]/triggers[]/inputs/outputs/model，trigger 为 manual/schedule/event；owner 仅为声明，认证身份来自 token。使用可选请求头 `X-Scope-Id`；只有一个授权 scope 时可省略，多 scope 必须明确。响应 `{skillPackId,digest,status,check:{undeclaredTools,missingTools},approvalTaskId}`；用户确认额外 approvalTaskId 复用第一阶段审批。missingTools 是声明但当前调用者目录不可用的工具，undeclaredTools 是试跑用到但未声明的工具；提交、批准、运行都重查目录。目录是 `GET /v1/skillpacks`，运行是 `POST /v1/skillpacks/{id}/runs` body `{inputs,idempotencyKey}`，返回 `{taskId}`。提交状态不能代替批准，批准绑定 digest，输入或目标修订变化需重新核对。
+
+Circle 运行边界由用户确认改为正式 CLI RPC；固定 Git 提交 `551dc46ecc702df755b37eb69df3898b0807a547`，同时核对 `--version` 为 1.1.1，禁止 import Circle 源码或改 foundation。开发期 CIRCLE_BIN 在运行时指向本机构建。每次运行独立 CIRCLE_HOME 与 HOME，准备可信 workspace、技能目录和输入；启动 `node <CIRCLE_BIN> --mode rpc --extensions --yolo <workspace>`，发 prompt，读 JSON 事件直到 agent_settled；取消先 abort/关 stdin，超时 kill，记录本地停止与远端未知的区别。运行 token 短期且只经环境注入，不落盘；模型使用脚本桩，付费模型仍需授权。详见 Circle 仓库 `docs/rpc.md` 与 `docs/cli.md#json-events`。

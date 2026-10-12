@@ -1,4 +1,4 @@
-import {ApiError,canonicalHash,canonicalJson,newId,requireCondition,sha256,type AuthContext,
+import {ApiError,Base64Content,MAX_SOURCE_BYTES,canonicalHash,canonicalJson,newId,requireCondition,sha256,type AuthContext,
   KnowledgeSourceInput,KnowledgeEvidenceInput,KnowledgeEntityInput,KnowledgeClaimInput,KnowledgeReviewInput,KnowledgeSnapshotInput} from '../../contracts/src/index.ts';
 import type {Store,Transaction} from '../../storage/src/index.ts';
 import type {Auth} from '../../tasks/src/auth.ts';
@@ -81,7 +81,7 @@ export class KnowledgeGraph {
     if(input.entityRevisionId){const observation=(await tx.query('SELECT e.tenant_id,e.scope_id FROM entity_observations o JOIN entities e USING(entity_id) WHERE entity_revision_id=$1',[input.entityRevisionId])).rows[0];requireCondition(observation?.tenant_id===ctx.tenantId&&observation.scope_id===source.scope_id,'SOURCE_FORBIDDEN','Entity revision is outside this source partition');}
     return this.save(tx,ctx,'Entity',source.scope_id,canonicalHash(input),input,[source.record_id],{category:source.knowledge_category,sourceType:source.source_type,visibility:source.visibility,state:'candidate'});
   });}
-  async claim(ctx:AuthContext,value:unknown):Promise<any>{const input=KnowledgeClaimInput.parse(value);return this.store.transaction(async tx=>{
+  async claim(ctx:AuthContext,value:unknown,transaction?:Transaction):Promise<any>{const input=KnowledgeClaimInput.parse(value);const run=async(tx:Transaction)=>{
     await this.auth.check(ctx,'knowledge.submit',input.scopeId,tx);const evidence:Row[]=[];
     for(const id of input.evidenceIds)evidence.push(await this.need(ctx,id,'Evidence',tx));
     const first=evidence[0];requireCondition(evidence.every(e=>e.scope_id===input.scopeId&&e.knowledge_category===first.knowledge_category),'INVALID_PAYLOAD','Claim evidence must share its scope and category');
@@ -90,7 +90,33 @@ export class KnowledgeGraph {
     const result=await this.save(tx,ctx,'Claim',input.scopeId,canonicalHash([ctx.principalId,input]),payload,[...input.evidenceIds,...input.entityIds],{
       category:first.knowledge_category,sourceType:first.source_type,visibility:first.knowledge_category==='consolidated'?'personal':'team',state:'candidate',searchText:[input.subject,input.predicate,canonicalJson(input.value),...evidence.map(e=>e.payload.text)].join(' ')});
     return {...result,conflicts:await this.conflicts(ctx,(await this.row(result.recordId,tx))!,tx)};
-  });}
+  };return transaction?run(transaction):this.store.transaction(run);}
+  // Internal B capture, called only after D has verified the live operation/fence.
+  // A read tool can retain its own observations without granting a public ingestion API.
+  async capture(tx:Transaction,ctx:AuthContext,scopeId:string,assetId:string,raw:{path:string;sha256:string;contentBase64:string;sourceType:string}):Promise<any>{
+    const p=await this.auth.policy(ctx,tx);requireCondition(p.tenantId===ctx.tenantId&&p.scopes.includes(scopeId),'FORBIDDEN_SCOPE','Observation exceeds the execution partition');
+    Base64Content.parse(raw.contentBase64);const bytes=Buffer.from(raw.contentBase64,'base64');requireCondition(bytes.length>0&&bytes.length<=MAX_SOURCE_BYTES,'BODY_TOO_LARGE','Observation exceeds the byte limit');requireCondition(sha256(bytes)===raw.sha256,'SOURCE_HASH_MISMATCH','Worker original SHA differs');
+    await this.objects.objects.putObject({Bucket:'evidence',Key:raw.sha256,Body:bytes});
+    const stored=(await tx.query(`INSERT INTO sources(source_revision_id,tenant_id,scope_id,principal_id,sha256,size,object_key,file_name) VALUES($1,$2,$3,$4,$5,$6,$5,$7)
+      ON CONFLICT(tenant_id,scope_id,sha256) DO UPDATE SET sha256=EXCLUDED.sha256 RETURNING *`,[newId('src'),ctx.tenantId,scopeId,ctx.principalId,raw.sha256,bytes.length,`tool-${raw.sha256.slice(0,16)}.bin`])).rows[0];
+    const sourceId=canonicalJson([assetId,ctx.principalId,raw.path]),sourceIdentity=canonicalHash([sourceId,'product']),payload={sourceId,sourceIdentity,revision:raw.sha256,path:raw.path,parserVersion:'tool-return/1',acl:{sourceReaders:[ctx.principalId],platformReaders:[ctx.principalId]},sharing:null,raw:this.objects.sourceReference(stored)};
+    const source=await this.save(tx,ctx,'SourceRevision',scopeId,canonicalHash([sourceIdentity,raw.sha256]),payload,[],{category:'product',sourceType:raw.sourceType,visibility:'team',state:'observed',digest:raw.sha256});
+    await tx.query(`INSERT INTO knowledge_source_heads(tenant_id,scope_id,identity_key,record_id) VALUES($1,$2,$3,$4) ON CONFLICT(tenant_id,scope_id,identity_key) DO UPDATE SET record_id=EXCLUDED.record_id`,[ctx.tenantId,scopeId,sourceIdentity,source.recordId]);
+    const evidence=await this.save(tx,ctx,'Evidence',scopeId,canonicalHash([source.recordId,0,bytes.length]),{sourceRecordId:source.recordId,start:0,end:bytes.length,sha256:raw.sha256,text:bytes.toString('utf8'),path:raw.path},[source.recordId],{category:'product',sourceType:raw.sourceType,visibility:'team',state:'observed',digest:raw.sha256});
+    return {evidenceId:evidence.recordId,sha256:evidence.sha256};
+  }
+  async candidateFromReturns(tx:Transaction,ctx:AuthContext,scopeId:string,taskId:string,input:any):Promise<any>{
+    await this.auth.check(ctx,'knowledge.submit',scopeId,tx);const evidence:Row[]=[];
+    for(const ref of input.evidence){const row=await this.need(ctx,ref.evidenceId,'Evidence',tx);requireCondition(row.scope_id===scopeId&&row.sha256===ref.sha256,'SOURCE_HASH_MISMATCH','Submitted evidence differs from the authorized return');evidence.push(row);}
+    const bytes=Buffer.from(canonicalJson({claim:input.claim,toolReturns:input.evidence})),digest=sha256(bytes);await this.objects.objects.putObject({Bucket:'evidence',Key:digest,Body:bytes});
+    const stored=(await tx.query(`INSERT INTO sources(source_revision_id,tenant_id,scope_id,principal_id,sha256,size,object_key,file_name) VALUES($1,$2,$3,$4,$5,$6,$5,$7)
+      ON CONFLICT(tenant_id,scope_id,sha256) DO UPDATE SET sha256=EXCLUDED.sha256 RETURNING *`,[newId('src'),ctx.tenantId,scopeId,ctx.principalId,digest,bytes.length,`candidate-${digest.slice(0,16)}.json`])).rows[0];
+    const sourceIdentity=canonicalHash(['candidate-submit',ctx.principalId,canonicalHash(input)]),payload={sourceId:`candidate:${sourceIdentity}`,sourceIdentity,revision:digest,path:`candidate:${sourceIdentity}`,parserVersion:'candidate-submit/1',acl:{sourceReaders:[ctx.principalId],platformReaders:[ctx.principalId]},sharing:{allowed:true,teamPromotion:false},raw:this.objects.sourceReference(stored)};
+    const source=await this.save(tx,ctx,'SourceRevision',scopeId,sourceIdentity,payload,evidence.map(e=>e.record_id),{category:'consolidated',sourceType:'skill-run',visibility:'personal',state:'observed',digest});
+    await tx.query(`INSERT INTO knowledge_source_heads(tenant_id,scope_id,identity_key,record_id) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING`,[ctx.tenantId,scopeId,sourceIdentity,source.recordId]);
+    const quote=await this.save(tx,ctx,'Evidence',scopeId,canonicalHash([source.recordId,digest]),{sourceRecordId:source.recordId,start:0,end:bytes.length,sha256:digest,text:bytes.toString(),path:payload.path},[source.recordId,...evidence.map(e=>e.record_id)],{category:'consolidated',sourceType:'skill-run',visibility:'personal',state:'observed',digest});
+    return this.claim(ctx,{scopeId,subject:input.claim.subject,predicate:input.claim.predicate,value:input.claim.value,conditions:input.claim.conditions??{},evidenceIds:[quote.recordId],origin:'model'},tx);
+  }
   async conflicts(ctx:AuthContext,claim:Row,tx?:Transaction):Promise<any[]>{
     const rows=(await (tx??this.store.pool).query(`SELECT * FROM knowledge_records WHERE kind='Claim' AND tenant_id=$1 AND scope_id=$2
       AND payload->>'subject'=$3 AND payload->>'predicate'=$4 AND record_id<>$5`,[claim.tenant_id,claim.scope_id,claim.payload.subject,claim.payload.predicate,claim.record_id])).rows;

@@ -141,3 +141,17 @@ Claude 复核 `9a8efd3` 后补充实际构建页结构，本轮先改桩和回�
 实际 `node --test --test-concurrency=1 tests/acceptance/r2-03-knowledge.test.ts tests/acceptance/s2-objects.test.ts` **9/9**（知识 6 + 对象 3），`npm run typecheck` 通过。中途发现 JSONB 不保留对象键序，改为在快照中保存 canonical manifest 字符串并校验其原字节；独立客户端下载验收通过。
 
 用户确认 `knowledge.claim_submit` 为 write/task，其余新增脑图知识工具为 read/sync，Circle 已支持调用前询问写工具与后台等待 task 结束。工具需求已纳入第 4 幕：构建列表、命令头/参数/确定性命令检查、手册全文/章节、查询镜像搜索/详情和候选提交。产品线包统一位于 `packs/<产品线>/`；Claude 在独立 apv-pack 分支提交 `e147364`，尚未合入或作为本分支运行验收。已通过 Otty 向 Claude 确认 headless Circle 的精确依赖入口，当前本地 Circle 1.1.1 仍为 private 且无 library exports，先继续目录步骤。
+
+## 10：目录与脑图知识工具（2026-10-12）
+
+先写 `r2-04-tools.test.ts` 并确认 0/4，再实现调用者过滤目录、tenant 唯一名称/别名、对象 JSON Schema、ETag/304、同步调用和候选 task。连接器 SDK 通过 C 受理及 D 原有操作账本/租约/fence 推进，worker 执行真实本机合成 HTTP 请求；B 核对回传原字节 SHA 并保存来源/证据，结果再交付。同键同内容及 server 重启复用收据，同键不同内容拒绝，工具参数固定在当前修订。个人凭据仅通过共享本机的加密注入引用交给 worker，值不在 API 元数据、操作 args/result、审计或日志里。
+
+新增构建列表、命令树、命令头/参数/核对，文档目录/原件/全文/章节，镜像缺陷列表/详情，环境清单/拓扑/状态/框架查看和个人候选提交。E 的命令规则独立写了验收，原模块缺席失败后实现，2/2；几十条虚构命令覆盖 STRING/U16/IPADDR/枚举和构建缺失。最长八词匹配、参数数量/类型/位宽/枚举/范围违规分别输出；超过 128 头明确 result_too_large，不截断，手册不改变 missing。
+
+新工具任务/事件归调用者个人，普通同 scope 读者不能从 task/result/events 绕过来源 ACL 或读到个人候选；task/admin 列表和事件在 limit 前过滤。包里同时返回构建页与 XML 时，来源类型按原件分别记录，修复首次联验发现的同一页被误标成两种类型而撞上不可变修订的问题。资产清单允许暂未安装执行包的资产，但不为其发布工具；修复目录 hook 误拦资产第 1 幕的回归。
+
+`npm run dev:stack` 已加入合成来源和五个经独立批准的工具资产，developer 登录后即有工具；原脑图上传/编译/下载仍通过，一条命令启动/清理验收增加了实际 command_check。交接文档已写入 `docs/client-api-handoff.md` 并通过当前终端与 Otty 告知 Claude，客户端开始核对。第 5 幕协议在文档明确标为待开放。
+
+实际验收：目录/资产/一键栈联合 **8/8**；新增命令与连接器包 **8/8**；最新完整 `npm test` 的 contracts **4/4**、methods **6/6**、acceptance **47/48**，唯一失败仍是原先 15 个核心专业位置的第 7 幕守卫，没有屏蔽它。第一阶段 40 项继续通过；参考另跑 **7/7**，714 原件核对通过，typecheck 通过。最后补验了 environment.inventory 的 D/B 链及超限错误的 wire details，`r2-04-tools.test.ts` **4/4**。尚未完成自动产品声明发布、技能包/真实 RPC 执行、定时整理/bot 和核心专业代码迁出；不能声称第二阶段或整套已全绿。
+
+用户确认技能包 scope 走可选 `X-Scope-Id`，多 scope 必须明确；manifest.owner 是声明。missingTools 是声明但目录不可用的工具，undeclaredTools 是试跑未声明调用；提交/批准/运行重查。第 5 幕正式边界改为 Circle CLI RPC，固定 `551dc46ecc702df755b37eb69df3898b0807a547` + 1.1.1；开发期 CIRCLE_BIN 仅运行时提供，HOME/CIRCLE_HOME 都隔离，不 import Circle、不改 foundation。Claude 的构建与协议已就绪，下一步先写技能包/RPC 验收。

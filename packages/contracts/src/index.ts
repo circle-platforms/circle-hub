@@ -4,7 +4,7 @@ import { z } from 'zod';
 export const API_VERSION = '1.0.0';
 export const FLOW_VERSION = 'synthetic-lbx/1';
 export const MINDMAP_FLOW_VERSION = 'mindmap-compile/1';
-export const PACK_FLOWS={'mindmap-compile':MINDMAP_FLOW_VERSION,'defect-review':'defect-review/1','lbx-healthcheck':'lbx-healthcheck/1'} as const;
+export const PACK_FLOWS={'mindmap-compile':MINDMAP_FLOW_VERSION,'defect-review':'defect-review/1','lbx-healthcheck':'lbx-healthcheck/1','asset-tool':'asset-tool/1'} as const;
 export const LEASE_TTL_MS = 60_000;
 export const HEARTBEAT_MS = 20_000;
 export const IDEMPOTENCY_WINDOW_MS = 86_400_000;
@@ -63,6 +63,7 @@ export const STANDARD_OPERATIONS = {
   'docs.fetch': { reads: ['knowledge'], writes: [] },
   'docs.convert': { reads: ['knowledge'], writes: ['artifacts-evidence'] },
   'mindmaps.compile': { reads: ['knowledge'], writes: ['artifacts-evidence'] },
+  'tools.invoke': { reads: ['registered-source'], writes: ['artifacts-evidence'] },
 } as const;
 export const StandardOperation = z.enum(Object.keys(STANDARD_OPERATIONS) as [keyof typeof STANDARD_OPERATIONS, ...Array<keyof typeof STANDARD_OPERATIONS>]);
 export type StandardOperation = z.infer<typeof StandardOperation>;
@@ -89,7 +90,7 @@ export const ConnectorManifest = z.object({
 export type ConnectorManifest = z.infer<typeof ConnectorManifest>;
 
 export const SubmitRequest = z.object({ scopeId: ScopeId, title: z.string().min(1).max(2000).default('Compile mindmap test cases'),
-  idempotencyKey: z.string().min(8).max(200), capabilityPackId: z.enum(['mindmap-compile','defect-review','lbx-healthcheck']).optional(),
+  idempotencyKey: z.string().min(8).max(200), capabilityPackId: z.enum(['mindmap-compile','defect-review','lbx-healthcheck','asset-tool']).optional(),
   input: z.record(z.string(), z.unknown()).default({}) });
 export type SubmitRequest = z.infer<typeof SubmitRequest>;
 export const DevLoginRequest = z.object({ username: z.string().max(100), password: z.string().max(1000),
@@ -149,6 +150,12 @@ export const KnowledgeReviewInput=z.object({decision:z.enum(['approve','reject']
 export const KnowledgeSnapshotInput=z.object({scopeId:ScopeId,knowledgeCategory:KnowledgeCategory,expectedSnapshotId:KnowledgeRecordId.nullable()}).strict();
 export const KnowledgeSearchQuery=z.object({q:z.string().max(1000).default(''),mode:z.enum(['exact','prefix','directory','fulltext']).default('fulltext'),
   limit:z.coerce.number().int().min(1).max(100).default(20),includeCandidates:z.enum(['true','false']).default('false')});
+export const ToolName=z.string().min(1).max(150).regex(/^[a-z0-9._]+$/);
+export const ToolView=z.object({name:ToolName,title:z.string(),description:z.string(),inputSchema:z.object({type:z.literal('object')}).catchall(z.unknown()),
+  effect:z.enum(['read','write']),mode:z.enum(['sync','task']),permission:z.string(),assetId:AssetId,assetVersion:PackageVersion});
+export const ToolCallInput=z.object({args:z.record(z.string(),z.unknown()),idempotencyKey:z.string().min(8).max(200)}).strict();
+export const ToolEvidence=z.object({evidenceId:z.string(),sha256:Sha256});
+export const ToolCallResult=z.union([z.object({result:z.unknown(),evidence:z.array(ToolEvidence)}),z.object({taskId:TaskId,phase:TaskPhase})]);
 export const MindmapCompileInput = z.object({ sourceRevisionId: SourceRevisionId, sourceSha256: Sha256.optional() });
 export const ArtifactReference = z.object({ artifactId: ArtifactId, sha256: Sha256, size: z.number().int().positive(),
   fileName: z.string(), mediaType: z.enum(['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','application/json','text/plain']),
@@ -217,6 +224,7 @@ const registry = {
   ARTIFACT_VERIFICATION_FAILED: [409, 'semantic-insufficient'], SOURCE_HASH_MISMATCH: [409, 'conflict-stale'],
   SOURCE_ABSENT:[404,'source-absent'],SOURCE_FORBIDDEN:[403,'permission'],SOURCE_LOGIN_EXPIRED:[401,'authentication'],SOURCE_UNREACHABLE:[503,'source-unreachable'],
   SHARING_REQUIRED:[403,'permission'],
+  TOOL_NAME_CONFLICT:[409,'conflict-stale'],RESULT_TOO_LARGE:[413,'validation'],
 } as const;
 export type ErrorCode = keyof typeof registry;
 export class ApiError extends Error {
@@ -249,13 +257,14 @@ export const ExecutionClaim = z.object({ operationId:OperationId,taskId:TaskId,i
 export const AnyWorkerClaim = z.union([WorkerClaim,ExecutionClaim]);
 export const ExecutionReport = z.object({ fencingToken:z.number().int().positive(),inputRevisionId:InputRevisionId,
   status:z.enum(['succeeded','failed','unknown']),output:z.record(z.string(),z.unknown()).default({}),
-  error:z.object({ code:z.string(),message:z.string().max(1000) }).optional() });
+  error:z.object({ code:z.string(),message:z.string().max(1000),details:z.record(z.string(),z.unknown()).optional() }).optional() });
 export const WorkerReport = z.object({ fencingToken: z.number().int().positive(), inputRevisionId: InputRevisionId,
   status: z.enum(['succeeded','partial','failed']), artifactBase64: Base64Content.optional(),
   error: z.object({ code: z.enum(['INVALID_MINDMAP','UNSUPPORTED_MINDMAP','ARTIFACT_VERIFICATION_FAILED','INTERNAL_ERROR']), message: z.string().max(1000) }).optional(),
 }).refine(value => value.status === 'failed' ? !!value.error && !value.artifactBase64 : !!value.artifactBase64 && !value.error,
   'Provide an artifact for completion or an error for failure');
 export const TaskResult = z.object({ taskId: TaskId, inputRevisionId: InputRevisionId, phase: TaskPhase,
+  result:z.unknown().optional(),
   capabilityPackId: z.string().optional(), status: z.enum(['accepted','running','succeeded','partial','failed','unknown','cancel-requested','cancelled']),
   artifacts: z.array(ArtifactReference), evidence: z.array(z.object({ evidenceId: z.string(), kind: ConclusionKind,
     sha256: Sha256, size: z.number(), downloadPath: z.string() })), unmapped: z.array(UnmappedElement),
@@ -282,6 +291,8 @@ export const CLIENT_ROUTES = {
   approvals:{ method:'GET',path:'/v1/tasks/{taskId}/approvals',response:z.array(ApprovalView) },
   objectTypes:{method:'GET',path:'/v1/object-types'},
   assets:{method:'GET',path:'/v1/assets',query:AssetListQuery},
+  tools:{method:'GET',path:'/v1/tools',response:z.array(ToolView)},
+  toolCall:{method:'POST',path:'/v1/tools/{name}/call',request:ToolCallInput,response:ToolCallResult},
   objects:{method:'GET',path:'/v1/objects',query:ObjectListQuery,response:ObjectPage},
   object:{method:'GET',path:'/v1/objects/{entityId}',response:EntityView},
   objectObservations:{method:'GET',path:'/v1/objects/{entityId}/observations'},

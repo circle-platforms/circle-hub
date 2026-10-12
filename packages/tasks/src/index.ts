@@ -26,6 +26,7 @@ export class Tasks {
     requireCondition(row, 'TARGET_NOT_FOUND', 'Task not found');
     const policy = await this.auth.check(ctx, grant, row.scope_id, tx);
     requireCondition(policy.tenantId === row.tenant_id, 'FORBIDDEN_SCOPE', 'Task belongs to a different tenant');
+    requireCondition(!row.context?.privateOwnerId||row.context.privateOwnerId===policy.principalId,'FORBIDDEN_SCOPE','Task is outside the readable partition');
     return taskFromRow(row);
   }
   async emit(tx: Transaction, taskId: string, kind: string, payload: unknown): Promise<void> {
@@ -69,7 +70,8 @@ export class Tasks {
   async list(ctx:AuthContext,limit:number):Promise<TaskView[]> {
     const policy=await this.auth.check(ctx,'tasks.read');
     const rows=(await this.store.pool.query(`SELECT task_id FROM tasks WHERE tenant_id=$1 AND scope_id=ANY($2::text[])
-      ORDER BY created_at DESC,task_id DESC LIMIT $3`,[policy.tenantId,policy.scopes,limit])).rows;
+      AND (context->>'privateOwnerId' IS NULL OR context->>'privateOwnerId'=$3)
+      ORDER BY created_at DESC,task_id DESC LIMIT $4`,[policy.tenantId,policy.scopes,policy.principalId,limit])).rows;
     return Promise.all(rows.map(row=>this.status(ctx,row.task_id)));
   }
   async status(ctx: AuthContext, taskId: string): Promise<TaskView> {

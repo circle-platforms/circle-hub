@@ -21,15 +21,15 @@ export class BuildSite {
       if(node.name==='item'){
         const name=node.attributes.name??node.children.find(n=>n.name==='name')?.text;
         requireCondition(!!name,'INVALID_PAYLOAD','Command item requires a name');
-        commands.push({name,scope:nextScope,menu:nextMenu,arguments:xmlNodes(node,'arg').map(arg=>({...arg.attributes,...(arg.text.trim()?{text:arg.text.trim()}:{})})),results:xmlNodes(node,'result').map(result=>({...result.attributes,...(result.text.trim()?{text:result.text.trim()}:{})}))});
+        commands.push({name,scope:nextScope,menu:nextMenu,arguments:xmlNodes(node,'arg').map(arg=>({...arg.attributes,...Object.fromEntries(arg.children.filter(child=>child.text.trim()).map(child=>[child.name,child.text.trim()])),...(arg.text.trim()?{text:arg.text.trim()}:{})})),results:xmlNodes(node,'result').map(result=>({...result.attributes,...(result.text.trim()?{text:result.text.trim()}:{})}))});
       }for(const child of node.children)visit(child,nextScope,nextMenu);
     };visit(root,null,null);return commands;
   }
-  async sync(path:string,previous:Record<string,string>={},context:{versionLine?:string;platform?:string}={}):Promise<Incremental<BuildRecord>> {
+  async listing(path:string,context:{versionLine?:string;platform?:string}={}):Promise<{result:BuildRecord[];evidence:RawReturn}> {
     const fileVersion=path.split('/').at(-1)?.match(/(?:^|[_-])(\d{1,2})[_-](\d{1,2})(?:[_-](\d{1,2}))?(?:[_-]|\.html?$)/);
     const versionLine=context.versionLine??(fileVersion?fileVersion.slice(1).filter(Boolean).join('.'):'unknown');
     const page=await this.source.read(path),root=html(page.bytes);
-    const items:BuildRecord[]=[],cursor:Record<string,string>={},evidence=[page];
+    const result:BuildRecord[]=[],identities=new Map<string,string>();
     const blocks:{header:string;node:HtmlNode}[]=[];let header:string|null=null;
     const visit=(node:HtmlNode)=>{
       if('tagName' in node&&node.tagName==='font'&&/\b(?:Rel|Beta)_[A-Za-z0-9_]+\s*\(\s*build on/i.test(textOf(node)))header=textOf(node);
@@ -41,8 +41,7 @@ export class BuildSite {
       const links=elements(block.node,'a').map(a=>({href:attribute(a,'href'),text:textOf(a)}));
       // Page segment identity is checked before downloading XML and fixed lists.
       const segmentSha256=canonicalHash({header:text,body:textOf(block.node),links});
-      requireCondition(!cursor[name]||cursor[name]===segmentSha256,'INVALID_PAYLOAD','Build identity appears in conflicting page segments');cursor[name]=segmentSha256;
-      if(previous[name]===segmentSha256)continue;
+      requireCondition(!identities.has(name)||identities.get(name)===segmentSha256,'INVALID_PAYLOAD','Build identity appears in conflicting page segments');if(identities.has(name))continue;identities.set(name,segmentSha256);
       const files:BuildRecord['files']={};
       for(const {href} of links){if(!href)continue;const reference=this.source.path(href,path);
         if(/\.array(?:\?|$)/i.test(href))files.image=reference;
@@ -53,6 +52,12 @@ export class BuildSite {
       const releasedOn=text.match(/Released on\s+(\d{4}-\d{2}-\d{2})/i)?.[1]??null,buildTime=text.match(/build on\s+(\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}:\d{2})?)/i)?.[1]??null;
       const body=textOf(block.node),imageSha256=body.match(/SHA(?:256)?\s*:\s*([a-f0-9]{64})\b/i)?.[1]?.toLowerCase()??null,imageSize=body.match(/\(\s*([\d.]+\s*[KMGT](?:i?B)?)\s*,\s*SHA/i)?.[1]??null;
       const record:BuildRecord={name,versionLine,platform:context.platform??null,buildTime,releasedOn,formal:name.startsWith('Rel_')&&!!releasedOn,imageSha256,imageSize,segmentSha256,files,fixedIds:[],commands:[]};
+      result.push(record);
+    }return {result,evidence:page};
+  }
+  async sync(path:string,previous:Record<string,string>={},context:{versionLine?:string;platform?:string}={}):Promise<Incremental<BuildRecord>> {
+    const listing=await this.listing(path,context),items:BuildRecord[]=[],cursor:Record<string,string>={},evidence=[listing.evidence];
+    for(const record of listing.result){const {name,files,segmentSha256}=record;cursor[name]=segmentSha256;if(previous[name]===segmentSha256)continue;
       if(files.commands){const xml=await this.source.read(files.commands);record.commands=await this.commandsFrom(xml.bytes);evidence.push(xml);}
       if(files.fixed){const fixed=await this.source.read(files.fixed);evidence.push(fixed);
         record.fixedIds=[...new Set(elements(html(fixed.bytes),'a').flatMap(a=>{const href=attribute(a,'href');if(!href)return [];const link=new URL(href,'https://synthetic.invalid');const id=link.searchParams.get('id');return /\/show_bug\.cgi$/.test(link.pathname)&&id&&/^\d+$/.test(id)?[id]:[];}))];

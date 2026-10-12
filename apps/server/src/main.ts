@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { API_VERSION, MAX_BODY_BYTES, MAX_SOURCE_BYTES, MAX_WORKER_REPORT_BYTES, CLIENT_ROUTES, TaskListQuery, ApiError, SubmitRequest,
   InputRequest, OperationRequest, ApprovalProposal, ApprovalRequest, ConclusionRequest, ChecklistRequest, ChecklistResponse, RuleRequest, DefectReviewPack, LbxPack, InputRevisionId, TaskId, ScopeId, SourceUpload, Base64Content, MindmapCompileInput, MindmapPack, DevLoginRequest, requireCondition,
   EntityId,RelationId,ObjectListQuery,ObjectTypePackage,ObjectObservation,RelationObservation,
-  AssetId,AssetRegistration,AssetListQuery,AssetTransition,CredentialRegistration,KnowledgeRecordId,KnowledgeSearchQuery,KnowledgeReviewRequest } from '../../../packages/contracts/src/index.ts';
+  AssetId,AssetRegistration,AssetListQuery,AssetTransition,CredentialRegistration,KnowledgeRecordId,KnowledgeSearchQuery,KnowledgeReviewRequest,ToolName,ToolCallInput } from '../../../packages/contracts/src/index.ts';
 import { Store } from '../../../packages/storage/src/index.ts';
 import { taskMigration } from '../../../packages/tasks/src/migration.ts';
 import { Auth } from '../../../packages/tasks/src/auth.ts';
@@ -38,10 +38,13 @@ import {assetMigration} from '../../../packages/assets/src/migration.ts';
 import {Assets} from '../../../packages/assets/src/index.ts';
 import {graphMigration} from '../../../packages/knowledge/src/graph-migration.ts';
 import {KnowledgeGraph} from '../../../packages/knowledge/src/graph.ts';
+import {toolMigration} from '../../../packages/tools/src/migration.ts';
+import {ToolCatalog} from '../../../packages/tools/src/catalog.ts';
+import {toolPackages} from '../../../packages/connectors/src/tool-packages.ts';
 
 function environment(name: string): string { const value = process.env[name]; if (!value) throw new Error(`Required environment variable: ${name}`); return value; }
 const store = new Store(JSON.parse(environment('CIRCLE_SERVER_DATABASE_CONFIG')));
-await store.migrate([taskMigration,mindmapTaskMigration,knowledgeMigration,executionMigration,resourceMigration,approvalMigration,conclusionMigration,checklistMigration,connectorMigration,entityMigration,assetMigration,graphMigration]);
+await store.migrate([taskMigration,mindmapTaskMigration,knowledgeMigration,executionMigration,resourceMigration,approvalMigration,conclusionMigration,checklistMigration,connectorMigration,entityMigration,assetMigration,graphMigration,toolMigration]);
 const auth = new Auth(store);
 requireCondition(process.env.CIRCLE_SERVER_DEV_AUTH === '1', 'INVALID_PAYLOAD', 'Phase one requires explicitly enabled development authentication');
 await auth.initializeDevelopment(environment('CIRCLE_SERVER_DEV_IDENTITIES'));
@@ -53,6 +56,11 @@ const assets=new Assets(store,auth,`${environment('CIRCLE_SERVER_DATA_DIR')}/pri
 const graph=new KnowledgeGraph(store,auth,knowledge);
 knowledge.sourceAccess=async(ctx,id,tx)=>{await entities.checkSourceAccess(ctx,id,tx);await graph.checkSourceAccess(ctx,id,tx);};
 const execution = new Operations(store,auth,tasks,knowledge);
+const catalog=new ToolCatalog(store,auth,assets,tasks,execution,graph,toolPackages);await catalog.initialize(process.env.CIRCLE_SERVER_CONNECTOR_PROFILES);
+assets.validateRegistration=(ctx,input,id,tx)=>catalog.register(ctx,input,id,tx);
+execution.managedAuthorization=(tx,actor,scope,spec,task)=>catalog.authorize(tx,actor,scope,spec,task);
+execution.managedPreflight=(tx,actor,row,authorization)=>catalog.preflight(tx,actor,row,authorization);
+execution.managedReport=(tx,task,row,report)=>catalog.report(tx,task,row,report);
 const approvals=new Approvals(store,auth,tasks);execution.approvalCheck=(tx,task,spec)=>approvals.check(tx,task,spec);
 const assessments=new Assessments(store,tasks,knowledge),checklists=new Checklists(store,tasks,knowledge);
 const registry=new ConnectorRegistry(store,auth);await registry.initialize();execution.connectorCheck=(tx,actor,scope,spec)=>registry.check(tx,actor,scope,spec);
@@ -114,6 +122,13 @@ const server = createServer(async (request, response) => {
       send(response,200,{ data:{ ...issued,tokenType:'Bearer',principalId:policy.principalId,tenantId:policy.tenantId,scopes:policy.scopes } }); return;
     }
     const ctx = await auth.authenticate(request.headers.authorization);
+    if(url.pathname===CLIENT_ROUTES.tools.path&&request.method==='GET'){
+      const listing=await catalog.list(ctx);response.setHeader('etag',listing.etag);response.setHeader('vary','Authorization');
+      if(request.headers['if-none-match']===listing.etag){closeOnShutdown(response);response.writeHead(304);response.end();}
+      else send(response,200,{data:listing.tools});return;
+    }
+    const toolCall=/^\/v1\/tools\/([^/]+)\/call$/.exec(url.pathname);
+    if(toolCall&&request.method==='POST'){const name=ToolName.parse(decodeURIComponent(toolCall[1])),value=await catalog.call(ctx,name,ToolCallInput.parse(await body(request)),shutdownSignal.signal);send(response,'taskId' in value?202:200,{data:value});return;}
     if(url.pathname==='/v1/knowledge/search'&&request.method==='GET'){
       const query=KnowledgeSearchQuery.parse({q:url.searchParams.get('q')??undefined,mode:url.searchParams.get('mode')??undefined,limit:url.searchParams.get('limit')??undefined,includeCandidates:url.searchParams.get('includeCandidates')??undefined});
       send(response,200,{data:await graph.search(ctx,query)});return;
@@ -241,6 +256,7 @@ const server = createServer(async (request, response) => {
       }
       if (action === 'input' && request.method === 'POST') {
         const input = InputRequest.parse(await body(request)); const task = await tasks.load(ctx,taskId,'tasks.input');
+        requireCondition(task.capabilityPackId!=='asset-tool','DECISION_CONFLICT','Tool arguments are pinned; submit a new tool call');
         if (task.capabilityPackId === 'mindmap-compile') {
           requireCondition(!!input.replacement,'INVALID_PAYLOAD','Compilation input replacement must supply a source reference');
           const replacement = MindmapCompileInput.parse(input.replacement);
@@ -315,7 +331,7 @@ const server = createServer(async (request, response) => {
       if(url.pathname==='/v1/admin/events'&&request.method==='GET'){
         const after=z.coerce.number().int().min(0).max(Number.MAX_SAFE_INTEGER).parse(url.searchParams.get('after')??0),wait=z.coerce.number().int().min(0).max(30_000).parse(url.searchParams.get('waitMs')??0),deadline=Date.now()+wait;let rows:any[];
         do{await auth.authenticate(request.headers.authorization);const current=await auth.check(ctx,'admin.manage');
-          rows=(await store.pool.query('SELECT o.* FROM outbox o JOIN tasks t USING(task_id) WHERE t.tenant_id=$1 AND t.scope_id=ANY($2::text[]) AND o.seq>$3 ORDER BY o.seq LIMIT 500',[current.tenantId,current.scopes,after])).rows;
+          rows=(await store.pool.query("SELECT o.* FROM outbox o JOIN tasks t USING(task_id) WHERE t.tenant_id=$1 AND t.scope_id=ANY($2::text[]) AND o.seq>$3 AND (t.context->>'privateOwnerId' IS NULL OR t.context->>'privateOwnerId'=$4) ORDER BY o.seq LIMIT 500",[current.tenantId,current.scopes,after,current.principalId])).rows;
           if(rows.length||Date.now()>=deadline||closing||response.destroyed)break;await waitForEvents();
         }while(true);
         if(!response.destroyed)send(response,200,{data:{events:rows.map(row=>({seq:Number(row.seq),taskId:row.task_id,kind:row.kind,payload:row.payload,createdAt:row.created_at.toISOString()})),after:rows.length?Number(rows.at(-1).seq):after}});return;
@@ -330,7 +346,7 @@ const server = createServer(async (request, response) => {
         send(response,200,{ data:rows.map(row => ({ workerId:row.worker_id,draining:row.draining,lastSeen:row.last_seen.toISOString() })) }); return;
       }
       if (url.pathname === '/v1/admin/tasks' && request.method === 'GET') {
-        const rows = (await store.pool.query('SELECT task_id FROM tasks WHERE tenant_id=$1 AND scope_id=ANY($2::text[])', [policy.tenantId, policy.scopes])).rows;
+        const rows = (await store.pool.query("SELECT task_id FROM tasks WHERE tenant_id=$1 AND scope_id=ANY($2::text[]) AND (context->>'privateOwnerId' IS NULL OR context->>'privateOwnerId'=$3)", [policy.tenantId, policy.scopes,policy.principalId])).rows;
         send(response, 200, { data: await Promise.all(rows.map(row => tasks.status(ctx, row.task_id))) }); return;
       }
     }

@@ -1,6 +1,6 @@
 import {ApiError,MAX_SOURCE_BYTES,requireCondition,sha256} from '../../contracts/src/index.ts';
 
-export interface RawReturn {path:string;bytes:Buffer;sha256:string;mediaType:string;etag:string|null}
+export interface RawReturn {path:string;bytes:Buffer;sha256:string;mediaType:string;etag:string|null;sourceType?:string}
 export interface SourceOptions {authorization?:()=>string|Promise<string>;timeoutMs?:number;absenceTtlMs?:number}
 export interface Incremental<T> {items:T[];cursor:Record<string,string>;evidence:RawReturn[]}
 
