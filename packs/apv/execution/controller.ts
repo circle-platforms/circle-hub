@@ -7,7 +7,7 @@ import {HttpSource,type RawReturn} from '../../../packages/connectors/src/readon
 import {BuildSite,resolveBuilds} from '../../../packages/connectors/src/build-site.ts';
 import {commandCheck} from '../../../packages/methods/src/command-tree.ts';
 import {ExecutionInput,ExecutionPack} from './contracts.ts';
-import {readExecutionWorkbook} from './workbook.ts';
+import {readExecutionWorkbook,type ExecutionBook} from './workbook.ts';
 import {executionResults} from './results.ts';
 import {SHELL_HOST_METHODS} from './dialect.ts';
 
@@ -75,7 +75,18 @@ export class CaseExecution {
     const binding=await this.bindings(ctx,input,scope,tx);this.hosts(book,binding.profile);
     const resource=(await tx.query('SELECT frozen FROM resources WHERE tenant_id=$1 AND resource_id=$2',[ctx.tenantId,`gateway:${sha256(binding.profile.endpoint)}`])).rows[0],existing=idempotencyKey?(await tx.query("SELECT 1 FROM idempotency WHERE tenant_id=$1 AND scope_id=$2 AND principal_id=$3 AND action='submit' AND idem_key=$4 AND created_at>clock_timestamp()-($5::double precision*interval '1 millisecond')",[ctx.tenantId,scope,ctx.principalId,idempotencyKey,IDEMPOTENCY_WINDOW_MS])).rowCount:0;requireCondition(!resource?.frozen||existing,'RESOURCE_BUSY','Gateway environment is frozen until independent reconciliation');const {artifactId,...rest}=input;return {...rest,sourceRevisionId:source,sourceSha256:book.sha256};
   }
-  hosts(book:any,profile:any){const allowed=profile.allowedTestHosts.length?profile.allowedTestHosts:SHELL_HOST_METHODS;requireCondition(book.hostCommands.every((row:any)=>allowed.includes(row.host)),'INVALID_EXECUTION_WORKBOOK','Host dispatch is not in the registered gateway host allowlist');}
+  hosts(book:ExecutionBook,profile:GatewayProfile){
+    const allowed:readonly string[]=profile.allowedTestHosts.length?profile.allowedTestHosts:SHELL_HOST_METHODS;
+    for(const row of book.hostCommands){
+      const details={row:row.row,autoid:row.autoid,object:row.object,method:row.method},reject=(condition:boolean,message:string,policy?:string)=>{if(!condition)throw new ApiError('INVALID_EXECUTION_WORKBOOK',message,{...details,...(policy?{policy}:{})});};
+      reject(allowed.includes(row.host),'Host dispatch is not in the registered gateway host allowlist');
+      const policy=profile.hostCommandPolicies?.[row.host];if(!policy)continue;
+      reject(policy.allowedCommands===undefined||policy.allowedCommands.includes(row.command),'Host command is not in the runtime exact-command allowlist','allowedCommands');
+      reject(policy.maxCommandBytes===undefined||Buffer.byteLength(row.command)<=policy.maxCommandBytes,'Host command exceeds the runtime byte limit','maxCommandBytes');
+      reject(policy.maxTimeoutSeconds===undefined||Number(row.kwargs.timeout??10)<=policy.maxTimeoutSeconds,'Host timeout exceeds the runtime limit','maxTimeoutSeconds');
+      reject(policy.allowMultiline!==false||!row.command.includes('\n'),'Multiline host command is disabled by the runtime policy','allowMultiline');
+    }
+  }
   async authorize(tx:any,ctx:AuthContext,task:any,spec:any){
     requireCondition(task.capabilityPackId===ExecutionPack.capabilityPackId&&task.principalId===ctx.principalId,'FORBIDDEN_ACTION','Use the accepted execution capability task');
     const binding=await this.bindings(ctx,task.input,task.scopeId,tx),context=(await tx.query('SELECT context,cancel_requested FROM tasks WHERE task_id=$1',[task.taskId])).rows[0];

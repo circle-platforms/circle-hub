@@ -2,7 +2,8 @@ import {z} from 'zod';
 import {ApiError,requireCondition} from '../../contracts/src/index.ts';
 import {privateHttp} from './private-http.ts';
 
-export const GatewayProfile=z.object({endpoint:z.string().url(),issuer:z.string().url().optional(),caFile:z.string().optional(),caSha256:z.string().regex(/^(?:[a-fA-F0-9]{64}|(?:[a-fA-F0-9]{2}:){31}[a-fA-F0-9]{2})$/).optional(),issuerCaFile:z.string().optional(),issuerCaSha256:z.string().optional(),allowedTestHosts:z.array(z.string().regex(/^[a-z][a-z0-9_]{0,63}$/)).max(100).default([]),timeoutMs:z.number().int().min(100).max(120000).default(60000),pollMs:z.number().int().min(25).max(30000).default(2000)}).strict();
+const HostCommandPolicy=z.object({allowedCommands:z.array(z.string().min(1).max(16384)).max(256).optional(),maxCommandBytes:z.number().int().min(1).max(16384).optional(),maxTimeoutSeconds:z.number().int().min(1).max(3600).optional(),allowMultiline:z.boolean().optional()}).strict();
+export const GatewayProfile=z.object({endpoint:z.string().url(),issuer:z.string().url().optional(),caFile:z.string().optional(),caSha256:z.string().regex(/^(?:[a-fA-F0-9]{64}|(?:[a-fA-F0-9]{2}:){31}[a-fA-F0-9]{2})$/).optional(),issuerCaFile:z.string().optional(),issuerCaSha256:z.string().optional(),allowedTestHosts:z.array(z.string().regex(/^[a-z][a-z0-9_]{0,63}$/)).max(100).default([]),hostCommandPolicies:z.record(z.string().regex(/^[a-z][a-z0-9_]{0,63}$/),HostCommandPolicy).optional(),timeoutMs:z.number().int().min(100).max(120000).default(60000),pollMs:z.number().int().min(25).max(30000).default(2000)}).strict();
 export type GatewayProfile=z.infer<typeof GatewayProfile>;
 export class McpGateway {
   profile:GatewayProfile;token:(force?:boolean)=>Promise<string>;seq=0;

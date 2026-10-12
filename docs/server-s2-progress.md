@@ -429,3 +429,29 @@ Claude 独立报告 typecheck、contracts 4/4、methods 10/10、references 7/7�
 本机单跑也复现 record-feed-b 等待 unknown 阶段 10 秒超时，下一轮加状态诊断后未再复现；不能只认定是游标等待。按独立复核建议，仅 Act 8 的事件/阶段/游标等待扩到 30 秒，原期待值、去重数量、标记与资源核对不变，其他验收默认期限不变。保留合成超时状态/操作诊断，联合两条均通过。
 
 最终固定 Circle 8b2ceb6 的整套 contracts **4/4**、methods **13/13**、acceptance **113/113**、references **7/7**，共 **137/137**，无 skip；typecheck、diff 检查和引用 **714** 核验通过，APV 包内另 **4/4**。技能目录仍与 9931f20 字节相同，主工作树未改。本步只在 server-s2 本地提交，通知 Claude 复核并更新其控制的 7420，未 push、未操作现有栈。真实设备任务仍未提交，网关上游和用户会话待恢复；合法 test_env 接受不代表客户端未知 reboot 或模糊 APV execute 被放行。
+
+### 延迟旧消息撤回、离线实件观察与错误定位
+
+用户确认再次送达的 test_env/reboot 建议是最早排队的旧消息，已撤回“reboot 是框架已知动作”：Env 无此方法，APV.reboot 在专业契约里 disabled，仍明确拒绝。其在 121c9cb 离线用实际单表工作簿调用读取器，四条 test_env/reboot 被拒；清空后通过，**24** 例、**268** 条设备命令、**20** 条 routera 主机命令。旧定稿双表格式被拒符合契约。这里只记录用户报告的结构及聚合，本代理未读取、修改或投递真实工作簿。
+
+按新建议先写四条验收：HTTP/读取器定位与运行时策略实际失败 **3/4**，默认多种字面 shell 分派已通过。补 INVALID_EXECUTION_WORKBOOK 的 row/autoid/object(E)/method(F)，继承用例头、初始化空身份，非字面格附 column；不回显命令或寄存器内容。框架实参错误同样补定位，客户端修订无须猜错误发生在哪一例。
+
+不采纳默认 dig 白名单，合成覆盖 routera 的 dig/sleep/echo/curl/chmod/kdig/for/dnsperf 与 server231 的 rm/tc/iptables/systemctl。新增可选仓库外 hostCommandPolicies：逐主机完整命令精确名单、字节/timeout 上限、多行开关；全部默认不附加限制，不能扩大闭集或开启 disabled 方法。受理、后台证明、投递前重核对；策略钉入原目标身份，变化使旧审批失效。交接已更新，HTTP 与后台失败定位正在联合复验，随后跑完整最终树。本代理未操作 7420、旧框架、Circle 或网关，真实设备仍未投递。
+
+用户后续报告 121c9cb 独立复核完整 **137/137**、无 skip、typecheck 通过，已由其部署 7420；开发身份有 cases.execute，执行网关 profile 文件仍未填写。真实只读复测的文档规范化/千级 spec 分页、products **190** 项、查询修复提示与执行包发现正常；实际件四条 reboot 被拒且去掉后离线读取通过。没有真实投递，不把此观察算成本代理的设备验收。
+
+回答执行路由时只读核对既有网关 tools/framework 文档与源码、镜像 test_xlsx/Env 的接口，未执行、导入、采纳旧代码或连接值：网关原样冻结工作簿交给原框架；server 是闭集验证，原框架按 E/F 派发。routera 方法找床配置 env.RouterA，APV_n 按 comm.ssh_ips 的有序索引，不能从标签猜 DUT 顺序。重启步骤维持未实现，普通重启协议未提供，init_device 是清空/重建基线，不能替代“重启后保留配置”测试；未向用户推荐会重启测试主机的误写。
+
+联合复验中另遇合成网关空请求导致 JSON.parse 未捕获错误。用空 GET 独立复现并先写失败验收 **0/1**；仅桩修为非 MCP POST 返回 405、坏 JSON 返回 400，避免把桩异常当真实网关故障。第一轮新验收还有误把 C 的同步 admitted 写成 accepted，已按既有契约修正期待值；实现中的受理阶段未改。完整最终树待复验。
+
+工作簿这轮最终实现的整套已实际通过：固定 Circle 8b2ceb6，contracts **4/4**、methods **15/15**、acceptance **116/116**、references **7/7**，共 **142/142**，无 skip；typecheck、引用 **714**、APV 包内另 **4/4**，技能目录保持 9931f20 原字节。期间用户新增技能推送诊断问题，以下继续处理，未把尚未通过的新验收提交。
+
+### 技能推送目录不匹配诊断
+
+用户报告 SKILLPACK_CHECK_FAILED 泛称无法定位，怀疑新工具未进入当前目录。只读核对现有 server 已在 details.check 返回 undeclaredTools/missingTools；当前 Circle 扩展源码也会附 details，但 message 本身只有泛称。没有取得其失败请求的实际安全清单，因此不能据口述工具数猜是哪一项。已通过 Otty 请 Claude 核对同次错误的两张工具名清单与当前身份 GET /v1/tools，未请求凭据、业务内容或完整回执，也未改客户端。
+
+先写提交混合不匹配、长清单和批准/运行复核验收，实际 **0/3**，失败均为泛称不含具体名称。补 message 分别列试跑未声明/当前目录不可用的规范工具名；保留原完整、排序、去重的 details.check，消息最多 1000 字符，过长留完整名称和剩余数量，提示查看完整清单。普通身份仍不区分来源缺失/无权限，不新增全目录、内部地址或真实凭据输出，不放宽 manifest/试跑/审批边界。
+
+再先写“受理后目录撤销”的回归，实际 **0/1**：claim 拒绝的 HTTP 有 details，但操作及 task result 的失败记录只留 code/message，丢完整清单。通用 C 回报路径统一保留 ApiError.details，后台拒绝仍不启动运行；审批和运行仍核对当时的身份目录。交接已补格式，专项与最终全套正在复验，真实网关/设备仍未投递。
+
+最终联合技能/RPC 专项 **10/10**，完整最终实现 contracts **4/4**、methods **15/15**、acceptance **120/120**、references **7/7**，共 **146/146**，固定 Circle 8b2ceb6，**无 skip**。typecheck、diff 检查通过，引用 **714** 核验、APV 包内另 **4/4**；技能目录仍与 9931f20 字节相同。整套规模回归 p95 **195ms**，异步索引期间读 **226/123/141/157ms**。接口和错误清单形状兼容，未修改 Circle、旧网关、InfoTest 或归档，主工作树 clean。只在 server-s2 本地提交并经 Otty 交给 Claude 复核部署；当前已获部署确认的是 121c9cb，本笔新修改待其更新 7420，不 push，也没有真实设备验收。

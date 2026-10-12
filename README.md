@@ -38,7 +38,7 @@ Circle 和 server 分别发布，默认连接插件留在 Circle，不另建插�
 
 已安装产品线由运行时 `CIRCLE_SERVER_PRODUCT_LINES` 文件选择，逐个加载 product-line/1 清单及工具别名；格式见 [产品包安装说明](packs/README.md)。连接器资产可带 productLineId，复用既有连接器的新增产品线无需改核心或安装入口。合成源数据归 packs/synthetic，核心和连接器守卫均拒绝产品线名。
 
-工作列表可用 `GET /v1/tasks?kind=work&limit=20` 先过滤内部工具/索引任务，再以末项 taskId 作为 after 续页。构建版本工具默认精简分页（20、最多 100），主平台最新可用正式构建可筛选后 limit=1；开发登录默认八小时，支持无密码续期。完整回归当前 contracts 4/4、methods 13/13、acceptance 113/113、references 7/7，显式固定 Circle 构建、无跳过；APV 包内测试另 4/4。构建站点的重建、重载、变体和单页定位，以及版本目录的有界 WebDAV 搜索已补同形合成回归，实际来源复测仍由用户/Claude 执行。独立 Otty 编译、bot 与规模复测观察见[第二阶段进度](docs/server-s2-progress.md)。这些数字不代表真实来源权限同步、正式企业身份、付费模型或设备验收。
+工作列表可用 `GET /v1/tasks?kind=work&limit=20` 先过滤内部工具/索引任务，再以末项 taskId 作为 after 续页。构建版本工具默认精简分页（20、最多 100），主平台最新可用正式构建可筛选后 limit=1；开发登录默认八小时，支持无密码续期。完整回归当前 contracts 4/4、methods 15/15、acceptance 120/120、references 7/7，显式固定 Circle 构建、无跳过；APV 包内测试另 4/4。构建站点的重建、重载、变体和单页定位，以及版本目录的有界 WebDAV 搜索已补同形合成回归，实际来源复测仍由用户/Claude 执行。独立 Otty 编译、bot 与规模复测观察见[第二阶段进度](docs/server-s2-progress.md)。这些数字不代表真实来源权限同步、正式企业身份、付费模型或设备验收。
 
 `apv-case-execute` 已补合成网关验收：执行单表工作簿先由 server 从绑定来源独立核对全部字面设备命令，另一人审批后再强制取当前 XML 复核，才通过既有 MCP 网关投递。逐案、步骤和检查点结果保留原件与 SHA；取消/中断后 unknown、冻结和独立核对恢复。个人访问/刷新令牌只在私有 vault，由单写者轮换，配置和恢复见[执行交接](docs/case-execution-handoff.md)。文档目录自动补尾斜杠、列表/搜索分页；缺陷查询先用 `zentao.products` 查 id，再有界筛选。审批默认一天，可配置。Claude 已部署并复测读侧版本，执行版部署交接在进度记录中；真实网关的上游核验尚需恢复，真实投递等用户上传工作簿。
 

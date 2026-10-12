@@ -11,6 +11,15 @@ import {sha256} from '../../packages/contracts/src/index.ts';
 import {PrivateVault} from '../../packages/assets/src/vault.ts';
 import {RotatingToken} from '../../packages/assets/src/rotating-token.ts';
 import {McpGateway} from '../../packages/connectors/src/case-gateway.ts';
+import {caseGateway} from '../fixtures/case-gateway.ts';
+
+test('Gateway fixture: non-MCP probes and malformed JSON are rejected without an uncaught request error',async t=>{
+  const gateway=await caseGateway(t);
+  for(const [method,path,body,status] of [['GET','/',undefined,405],['GET','/mcp',undefined,405],['POST','/mcp','{',400]] as const){
+    const response=await fetch(`${gateway.origin}${path}`,{method,body,signal:AbortSignal.timeout(1000)});assert.equal(response.status,status);await response.arrayBuffer();
+  }
+  assert.equal(gateway.state.calls.length,0);
+});
 
 test('Gateway session: concurrent refresh has one writer, persists the new refresh token across instances and never replays an uncertain rotation',async t=>{
   const directory=await mkdtemp(`${tmpdir()}/circle-server-token-`);t.after(()=>rm(directory,{recursive:true,force:true}));

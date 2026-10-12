@@ -10,6 +10,12 @@ import type {Knowledge} from '../../knowledge/src/index.ts';
 import {readFile} from 'node:fs/promises';
 import {z} from 'zod';
 
+function summarizeTools(names:string[]):string{
+  const shown:string[]=[];let length=0;
+  for(const name of names){const next=length+name.length+(shown.length?2:0);if(next>360)break;shown.push(name);length=next;}
+  return `${shown.join(', ')}${shown.length<names.length?`, ${names.length-shown.length} more (see details.check)`:''}`;
+}
+
 export class SkillPacks {
   store:Store;auth:Auth;tasks:Tasks;approvals:Approvals;assets:Assets;catalog:ToolCatalog;execution:Operations;objects:Knowledge;
   runtime:any;
@@ -25,7 +31,10 @@ export class SkillPacks {
   }
   async checkWithDetails(ctx:AuthContext,manifest:any,trial:any,tx?:Transaction):Promise<any>{
     const available=new Set((await this.catalog.available(ctx,tx)).map(entry=>entry.view.name)),declared=new Set<string>(manifest.tools),check={undeclaredTools:[...new Set<string>(trial.toolCalls.map((call:any)=>call.name).filter((name:string)=>!declared.has(name)))].sort(),missingTools:manifest.tools.filter((name:string)=>!available.has(name)).sort()};
-    if(check.undeclaredTools.length||check.missingTools.length)throw new ApiError('SKILLPACK_CHECK_FAILED','Skill tools do not match the declared accessible catalog',{check});return check;
+    if(check.undeclaredTools.length||check.missingTools.length){
+      const reasons=[];if(check.undeclaredTools.length)reasons.push(`Undeclared trial tools: ${summarizeTools(check.undeclaredTools)}`);if(check.missingTools.length)reasons.push(`Tools unavailable in caller catalog: ${summarizeTools(check.missingTools)}`);
+      throw new ApiError('SKILLPACK_CHECK_FAILED',reasons.join('; '),{check});
+    }return check;
   }
   async submit(ctx:AuthContext,value:unknown,requestedScope?:string):Promise<any>{
     const input=SkillPackSubmission.parse(value),policy=await this.auth.check(ctx,'skillpacks.submit');

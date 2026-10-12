@@ -4,7 +4,9 @@ import type {TestContext} from 'node:test';
 export async function caseGateway(t:TestContext){
   const state={unavailable:false,lost:false,hold:false,dropSubmit:false,wrongSha:false,failCase:false,hostLog:'',command:'service create port 443',sha:'',taskId:'cex_synthetic_301',calls:[] as string[]};
   const server=createServer(async(req,res)=>{
-    let input='';for await(const bytes of req)input+=bytes;const rpc=JSON.parse(input),name=rpc.params?.name;state.calls.push(name??rpc.method);
+    if(req.method!=='POST'||req.url!=='/mcp'){res.writeHead(405);res.end();return;}
+    let rpc:any;try{let input='';for await(const bytes of req)input+=bytes;rpc=JSON.parse(input);}catch{res.writeHead(400);res.end();return;}
+    const name=rpc.params?.name;state.calls.push(name??rpc.method);
     if(state.unavailable){res.writeHead(503);res.end('{"error":"cannot verify token: server unreachable"}');return;}
     let result:any={ok:true};
     if(name==='lease_acquire')result={ok:true,lease_id:'synthetic-lease',token:1,expires_in_s:1800};

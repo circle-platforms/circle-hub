@@ -94,3 +94,36 @@ test('Device execution: approved host traffic dispatch is not a device head and 
   const proof=(await h.request(`/v1/tasks/${task.taskId}/operations`)).find((op:any)=>op.name==='cases.verify').result.artifact,response=await fetch(`${h.url}${proof.downloadPath}`,{headers:{authorization:`Bearer ${await h.login()}`}}),checked=await response.json() as any;assert.equal(checked.checked.commands.length,1);assert.deepEqual(checked.hostCommands.map((row:any)=>[row.host,row.command]),[['routera',hostCommand.command]]);
   await writeFile(`${h.scratch}/gateways.json`,JSON.stringify({profiles:{lab:{endpoint:`${gateway.origin}/mcp`,issuer:gateway.origin,allowedTestHosts:['clientc'],pollMs:25}}}));await h.reject('/v1/tasks/submit',{...payload,idempotencyKey:'unregistered-host-rejected'},'INVALID_EXECUTION_WORKBOOK');assert.equal(gateway.state.calls.filter(name=>name==='case_submit').length,1);
 });
+
+test('Device execution: workbook errors expose authorized row locations through HTTP without command text',async t=>{
+  const {h,gateway,bed,build}=await environment(t);
+  for(const method of ['reboot','routera']){
+    const bytes=await executionWorkbook({hostCommand:{host:method,command:method==='reboot'?'private-command-text':'private-command-text,unsafe=1'}}),source=await h.request('/v1/sources',{scopeId:'scp_lab',fileName:'case.xlsx',contentBase64:bytes.toString('base64')});
+    const error=await h.reject('/v1/tasks/submit',{scopeId:'scp_lab',capabilityPackId:'apv-case-execute',idempotencyKey:`locate-${method}`,input:{sourceRevisionId:source.sourceRevisionId,gatewayAssetId:bed.assetId,commandSourceAssetId:build.assetId,build:'Rel_PHOTON_10_5_0_101'}},'INVALID_EXECUTION_WORKBOOK');
+    assert.deepEqual(error.details,{row:4,autoid:'301',object:'test_env',method});assert.ok(!JSON.stringify(error).includes('private-command-text'));
+  }
+  assert.equal(gateway.state.calls.length,0);
+});
+
+test('Device execution: optional host command policies only narrow runtime dispatch and policy changes invalidate approval',async t=>{
+  const {h,gateway,bed,build}=await environment(t);
+  const payload=async(command:string,key:string)=>{const bytes=await executionWorkbook({command:'service create port 443',hostCommand:{host:'routera',command}}),source=await h.request('/v1/sources',{scopeId:'scp_lab',fileName:'case.xlsx',contentBase64:bytes.toString('base64')});return {scopeId:'scp_lab',capabilityPackId:'apv-case-execute',idempotencyKey:key,input:{sourceRevisionId:source.sourceRevisionId,gatewayAssetId:bed.assetId,commandSourceAssetId:build.assetId,build:'Rel_PHOTON_10_5_0_101'}};};
+  const worker=await h.startWorker(),original=await h.request('/v1/tasks/submit',await payload('curl http://service.example.test/','policy-default'));
+  await h.phase(original.taskId,'waiting-review');await h.stop(worker);const approval=(await h.request(`/v1/tasks/${original.taskId}/approvals`)).at(-1);
+  const setPolicy=async(policy:Record<string,unknown>|null)=>writeFile(`${h.scratch}/gateways.json`,JSON.stringify({profiles:{lab:{endpoint:`${gateway.origin}/mcp`,issuer:gateway.origin,pollMs:25,...(policy?{hostCommandPolicies:{routera:policy}}:{})}}}));
+  await setPolicy({allowedCommands:['dig example.test'],maxTimeoutSeconds:15,allowMultiline:false,maxCommandBytes:200});
+  await h.reject(`/v1/tasks/${original.taskId}/approvals/${approval.approvalId}`,{inputRevisionId:approval.inputRevisionId,targetIdentity:approval.targetIdentity,actionDigest:approval.actionDigest,approve:true},'APPROVAL_STALE','bob');
+  for(const [rule,policy,command] of [
+    ['allowedCommands',{allowedCommands:['dig example.test']},'curl http://service.example.test/'],
+    ['maxTimeoutSeconds',{maxTimeoutSeconds:15},'dig example.test,timeout=30'],
+    ['allowMultiline',{allowMultiline:false},'dig example.test\necho second'],
+    ['maxCommandBytes',{maxCommandBytes:5},'dig example.test'],
+  ] as const){
+    await setPolicy(policy);const error=await h.reject('/v1/tasks/submit',await payload(command,`restricted-${rule}`),'INVALID_EXECUTION_WORKBOOK');assert.deepEqual(error.details,{row:4,autoid:'301',object:'test_env',method:'routera',policy:rule});
+  }
+  await setPolicy({allowedCommands:['dig example.test'],maxTimeoutSeconds:15,allowMultiline:false,maxCommandBytes:200});
+  assert.equal((await h.request('/v1/tasks/submit',await payload('dig example.test,timeout=5','policy-allowed'))).phase,'admitted');
+  await setPolicy(null);const accepted=await h.request('/v1/tasks/submit',await payload('curl http://service.example.test/','policy-tightened-after-admission'));
+  await setPolicy({allowedCommands:['dig example.test']});await h.startWorker();await h.phase(accepted.taskId,'failed');
+  const failure=(await h.request(`/v1/tasks/${accepted.taskId}/result`)).error;assert.equal(failure.code,'INVALID_EXECUTION_WORKBOOK');assert.deepEqual(failure.details,{row:4,autoid:'301',object:'test_env',method:'routera',policy:'allowedCommands'});assert.equal(gateway.state.calls.length,0);
+});

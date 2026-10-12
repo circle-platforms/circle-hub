@@ -29,6 +29,16 @@ test_env 的 F 是框架主机方法，不是 APV 命令头。闭集允许 clien
 
 G 按框架实参契约解释：多行整体为一个参数；单行仅引号外逗号分隔，外层引号去掉，kwargs 只允许 prompt/timeout（timeout 为 1–3600 整数）。设备 cmd_config 的换行按运行时规则去除后再核对。设备实际命令与测试主机 shell 分开列入完整 command-check.json，审批 action.args.hostDispatch 带数量/主机/摘要；shell 不冒充 APV command_check hit，设备命令仍逐条由 server 核对。日志只在精确主机/命令派发行匹配时记 observed，不能据此推断协议内容或检查点已通过。
 
+INVALID_EXECUTION_WORKBOOK 的 details 带 row（Excel 从 1 起的行号）、autoid（沿用当前用例头的字符串）、object（E）、method（F）；非字面单元格另带 column。初始化的 autoid 为 null，无法定位到具体行的整本格式错误对应字段为 null。不回显 G 命令、H/I 寄存器内容。同步提交拒绝和后台核对失败保留同一定位形状，运行时策略拒绝另带 policy 字段名。
+
+默认不限定 shell 程序名，字面 dig、curl、循环和测试主机状态命令仍按启用的主机方法、工作簿原件及审批披露受理。运维可在网关 profile 的 hostCommandPolicies 中按主机显式收窄：allowedCommands 为解析实参后的完整命令精确名单（省略不限、空数组全拒绝）；maxCommandBytes 为字节上限（1–16384）；maxTimeoutSeconds 为 timeout 上限（1–3600，省略 timeout 的主机调用按框架默认 10 秒）；allowMultiline=false 拒绝多行。未配置策略时不增加命令/参数限制。策略不能启用未知或禁用方法；策略随 profile 钉入目标身份，改变后旧批准失效，投递前再次核对。所有策略和真实命令都在仓库外运行时配置，不由模型输入选择。
+
+server 使用专业契约的主机方法闭集校验，不从客户端或旧框架反射出任意可调用方法。既有网关未因本次修复改动：case_submit 冻结并运行原工作簿，原 InfoTest 按 E/F 派发。E=test_env/F=routera 调用 Env.routera，再用框架床配置的 env.RouterA 找测试主机，通过 SSH 执行 G 的实际命令；routerb 同样映射 env.RouterB，其余启用方法对应其同名 env 配置项。F 使用小写方法名，不能替换成测试床的任意设备标签或地址。H 捕获的主机返回值可供后续检查点使用，返回值本身不证明检查点通过。
+
+APV_0 与 APV_1 分别按床配置 comm.ssh_ips 的顺序取第 0/1 台，设备标签不是排序依据。绑定构建由 env_prepare 核对，device_count 再限制工作簿索引；真实标签与索引对应关系须从该床当前配置/拓扑核对，本代理未读取床配置或猜测映射。主机方法与 DUT 索引是两条独立路由。
+
+本版不执行重启后配置保留步骤：Env 没有 reboot，APV.reboot 契约 disabled；不能把该行改成 routera 的 reboot 去重启测试主机。已核对的网关工具没有普通重启能力，init_device 是清空并重建基线，不能代替重启。涉及重启的用例应保留未实现/需要决定的结论，不能删掉步骤后声称原用例完整通过；后续需先有明确受支持的 DUT 生命周期协议，再独立绑定设备身份、审批与停止/恢复证据。
+
 当前身份需要 tasks.submit/read、sources.read、methods.use、assets.read、credentials.use、builds.read、cases.execute；上传另需 sources.write，artifact 输入需 evidence.read。跨 tenant/scope 和不可见资产拒绝。原件 SHA 在受理、worker、server 读取、投递回执和结果再核对。同键/同输入重提返回同一任务；新键表示新的物理执行，仍须独立审批。
 
 任务先进入 cases.verify。worker 从绑定来源读取构建列表和当前命令 XML，server 用保留的原字节重新定位构建、解析完整命令路径和重载，重读工作簿所有设备命令，包括初始化行，再执行确定性 command_check。missing、参数违规或不能证明的输入会失败，结果含 COMMAND_VALIDATION_FAILED；不会触碰网关。客户端或技能包的回执不是输入字段，伪造回执会被 schema 拒绝。

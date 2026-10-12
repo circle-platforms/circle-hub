@@ -80,9 +80,10 @@ export class Operations extends Execution {
         if((await tx.query('SELECT 1 FROM leases WHERE tenant_id=$1 AND resource_id=$2 AND expires_at>clock_timestamp()',[row.tenant_id,row.resource_id])).rowCount)continue;
         try{await this.authorize(tx,row);}catch(error){
           if(!(error instanceof ApiError))throw error;
-          await this.complete(tx,row,'failed',{error:{code:error.code,message:error.message},executionStarted:false});
-          if(this.managedNames.has(row.name)&&row.kind!=='reconcile')await this.tasks.fail(tx,await this.tasks.internal(tx,row.task_id),{code:error.code,message:error.message});
-          else if(row.kind==='reconcile')await this.tasks.emit(tx,row.task_id,'operation.reconciliation-failed',{operationId:row.operation_id,parentOperationId:row.parent_operation_id,error:{code:error.code,message:error.message},remoteStoppingVerified:false});
+          const failure={code:error.code,message:error.message,details:error.details};
+          await this.complete(tx,row,'failed',{error:failure,executionStarted:false});
+          if(this.managedNames.has(row.name)&&row.kind!=='reconcile')await this.tasks.fail(tx,await this.tasks.internal(tx,row.task_id),failure);
+          else if(row.kind==='reconcile')await this.tasks.emit(tx,row.task_id,'operation.reconciliation-failed',{operationId:row.operation_id,parentOperationId:row.parent_operation_id,error:failure,remoteStoppingVerified:false});
           return {denial:error};
         }
         const token=Number((await tx.query('UPDATE resources SET next_fencing=next_fencing+1 WHERE tenant_id=$1 AND resource_id=$2 RETURNING next_fencing',[row.tenant_id,row.resource_id])).rows[0].next_fencing);
