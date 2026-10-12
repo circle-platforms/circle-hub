@@ -6,6 +6,7 @@ import type { Tasks } from './index.ts';
 export class Approvals {
   store:Store;auth:Auth;tasks:Tasks;
   constructor(store:Store,auth:Auth,tasks:Tasks){this.store=store;this.auth=auth;this.tasks=tasks;}
+  policies=new Map<string,{authorize:(tx:Transaction,ctx:AuthContext,task:any,action:any)=>Promise<void>;check:(tx:Transaction,ctx:AuthContext,task:any,row:any,answer:any)=>Promise<void>;accepted:(tx:Transaction,ctx:AuthContext,task:any,row:any,answer:any)=>Promise<void>}>();
   view(row:any):ApprovalView{return {approvalId:row.approval_id,taskId:row.task_id,inputRevisionId:row.input_revision_id,applicantId:row.applicant_id,
     targetIdentity:row.target_identity,actionDigest:row.action_digest,action:row.action,status:row.status,approvedBy:row.approved_by,expiresAt:row.expires_at.toISOString()};}
   async list(ctx:AuthContext,taskId:string):Promise<ApprovalView[]> {
@@ -17,8 +18,9 @@ export class Approvals {
     const run=async(client:Transaction)=>{
       const task=await this.tasks.load(ctx,id,'tasks.read',client,true);
       requireCondition(task.inputRevisionId===action.inputRevisionId,'INPUT_REVISION_STALE','Approval input differs');
-      await this.auth.target(ctx,action.name,task.scopeId,action.target,client);
-      requireCondition(action.name==='product.config.write','INVALID_PAYLOAD','This approval policy applies to synthetic device changes');
+      const policy=this.policies.get(action.name);
+      if(policy)await policy.authorize(client,ctx,task,action);
+      else{await this.auth.target(ctx,action.name,task.scopeId,action.target,client);requireCondition(action.name==='product.config.write','INVALID_PAYLOAD','This approval policy applies to synthetic device changes');}
       const requestId=newId('pin'),digest=actionDigest(action);
       const row=(await client.query(`INSERT INTO approvals(approval_id,task_id,input_revision_id,applicant_id,target_identity,action_digest,action,expires_at)
         VALUES($1,$2,$3,$4,$5,$6,$7,clock_timestamp()+interval '5 minutes') RETURNING *`,[requestId,id,task.inputRevisionId,ctx.principalId,action.targetIdentity,digest,JSON.stringify(action)])).rows[0];
@@ -43,9 +45,12 @@ export class Approvals {
       await tx.query('INSERT INTO decisions(request_id,task_id,principal_id,input_revision_id,outcome,response) VALUES($1,$2,$3,$4,$5,$6)',[id,taskId,ctx.principalId,answer.inputRevisionId,outcome,JSON.stringify(answer)]);
       await this.tasks.emit(tx,taskId,'approval.response',{approvalId:id,principalId:ctx.principalId,outcome});
       if(code)return {error:new ApiError(code,`Approval rejected: ${outcome}`)};
+      const registered=this.policies.get(row.action.name);
+      if(registered){try{await registered.check(tx,ctx,task,row,answer);}catch(error){if(!(error instanceof ApiError))throw error;await tx.query('UPDATE decisions SET outcome=$2 WHERE request_id=$1 AND principal_id=$3 AND input_revision_id=$4',[id,error.code,ctx.principalId,answer.inputRevisionId]);return {error};}}
       await tx.query('UPDATE approvals SET status=$2,approved_by=$3 WHERE approval_id=$1',[id,outcome,ctx.principalId]);
       await tx.query("UPDATE pending_inputs SET status='answered' WHERE request_id=$1",[id]);
       await this.tasks.stage(tx,task,'running','inspect','task.approval-decided',{approvalId:id,outcome});await this.tasks.wake(tx,taskId,'approval');
+      await registered?.accepted(tx,ctx,task,row,answer);
       return {approval:{...this.view(row),status:outcome,approvedBy:ctx.principalId}};
     });if(result.error)throw result.error;return result.approval;
   }

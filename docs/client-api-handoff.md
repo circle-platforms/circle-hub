@@ -205,8 +205,28 @@ E 的 `command-tree/1.0.0` 规则采用 POSIX quote/escape 分词并转小写，
 
 ## 第二阶段：技能包约定与 RPC 边界
 
-以下是已确认的第 5 幕目标形状，技能包路由会随该幕验收转绿后开放，不能把协议约定当作当前运行已通过。
+以下路由已实现，技能包/RPC 合成验收已通过。实际采用提交与全部检查结果见第二阶段进度。
 
 `POST /v1/skillpacks` 接收 `{manifest,files:[{path,base64,sha256}],trial:{toolCalls:[{name,argsSha256,ok}],outputs:[{path,sha256}]}}`。manifest 含 id/version/title/owner/tools[]/triggers[]/inputs/outputs/model，trigger 为 manual/schedule/event；owner 仅为声明，认证身份来自 token。使用可选请求头 `X-Scope-Id`；只有一个授权 scope 时可省略，多 scope 必须明确。响应 `{skillPackId,digest,status,check:{undeclaredTools,missingTools},approvalTaskId}`；用户确认额外 approvalTaskId 复用第一阶段审批。missingTools 是声明但当前调用者目录不可用的工具，undeclaredTools 是试跑用到但未声明的工具；提交、批准、运行都重查目录。目录是 `GET /v1/skillpacks`，运行是 `POST /v1/skillpacks/{id}/runs` body `{inputs,idempotencyKey}`，返回 `{taskId}`。提交状态不能代替批准，批准绑定 digest，输入或目标修订变化需重新核对。
 
-Circle 运行边界由用户确认改为正式 CLI RPC；固定 Git 提交 `551dc46ecc702df755b37eb69df3898b0807a547`，同时核对 `--version` 为 1.1.1，禁止 import Circle 源码或改 foundation。开发期 CIRCLE_BIN 在运行时指向本机构建。每次运行独立 CIRCLE_HOME 与 HOME，准备可信 workspace、技能目录和输入；启动 `node <CIRCLE_BIN> --mode rpc --extensions --yolo <workspace>`，发 prompt，读 JSON 事件直到 agent_settled；取消先 abort/关 stdin，超时 kill，记录本地停止与远端未知的区别。运行 token 短期且只经环境注入，不落盘；模型使用脚本桩，付费模型仍需授权。详见 Circle 仓库 `docs/rpc.md` 与 `docs/cli.md#json-events`。
+Circle 运行边界由用户确认改为正式 CLI RPC；当前固定 Git 提交 `d9f8ec6261597bc2cfcfa91dc8903965a6df7fe7`，同时核对 `--version` 为 1.1.1，禁止 import Circle 源码或改 foundation。开发期 CIRCLE_BIN 在运行时指向本机构建。每次运行独立 CIRCLE_HOME 与 HOME，准备可信 workspace、技能目录和输入；启动 `node <CIRCLE_BIN> --mode rpc --extensions --yolo <workspace>`，发 prompt，读 JSON 事件直到 agent_settled；取消先 abort/关 stdin，超时 kill，记录本地停止与远端未知的区别。运行 token 短期且只经环境注入，不落盘；模型使用脚本桩，付费模型仍需授权。详见 Circle 仓库 `docs/rpc.md` 与 `docs/cli.md#json-events`。
+
+POST 成功是 201，status 初始 `candidate`，额外返回 manifest/ownerPrincipalId/scopeId/assetId/assetVersion 供展示；ownerPrincipalId 才是实际登记者。文件路径必须是安全相对路径，必有 SKILL.md，按原字节 SHA 核对，每份/总量均最多 16 MiB；整个清单、文件摘要、试跑记录参与 digest。相同人员/scope/内容复用 skillPackId 与 approvalTaskId；原版本不能改字节，变更需要新版本。试跑是客户端记录的证据声明，机械检查只能核对声明工具/可用目录，不能凭它宣称业务正确或确实试跑完成。
+
+未声明或不可用工具拒绝为 422 `SKILLPACK_CHECK_FAILED`，details.check 带两张清单。用 `GET /v1/tasks/{approvalTaskId}/approvals` 取得 approvalId、inputRevisionId、targetIdentity、actionDigest，再由独立人员按第一阶段 respond body 批准；申请人不能自批。审批者需 decisions.approve 和 assets.approve，不因此获得执行权限；批准时重新核对申请人目录，运行时核对实际运行者目录。批准后包状态 `registered`，绑定 sealed digest 和当前资产修订；停用或修订变化阻止新运行。
+
+运行请求 202 `{taskId}`，inputs 原 JSON 作为 `inputs.json` 写进 workspace；可用 `inputs.files:[{path,base64,sha256?}]` 附输入文件。输入不能覆盖 .circle/控制文件/声明输出；改输入使用新幂等键，同键不同输入拒绝。结果返回实际 artifacts/evidence/runtime，产物只在 CLI agent_settled、进程退出和声明文件完整、独立字节 SHA 核对后交付。文件完整性/摘要属于 script-conclusion，最后回答另记 model-judgment，不用回答替代产物或专业事实。artifact/content 与个人任务权限一并检查。
+
+`CIRCLE_RUNTIME_CONFIG` 指向仓库外的运行时 JSON：
+
+```json
+{"circleBin":"<本机构建的 dist/cli.js>",
+ "circleCommit":"d9f8ec6261597bc2cfcfa91dc8903965a6df7fe7","circleVersion":"1.1.1",
+ "model":{"kind":"scripted","base_url":"<本机脚本模型 /v1>","model":"scripted-fixture","protocol":"openai","api_key":"<运行时值>"}}
+```
+
+在设置这个运行时配置后启动 `npm run dev:stack`；developer 有提交/运行权限，approver 可审批。当前 runtime 只允许 loopback 脚本模型，未配置时运行返回 SOURCE_UNREACHABLE，登记/审批仍可用。CircleBin 与所有地址只在运行时提供；CLI/模型安装由对应构建提供，这里不运行安装/更新脚本。
+
+每次运行短期 token 仅授权声明的目录工具、其 scope 和该运行/子工具任务；不允许借它直接登记资产、提交其他能力任务或审批。token 通过认证 worker 的本机私有 IPC 交给进程，只存在内存/子进程环境，公开 worker preflight 不返回值，运行目录中不落盘；结束/取消失效。单 worker 留一个 RPC 运行槽，同时处理它的子工具调用，避免互相等待。
+
+任务 events 增加 `runtime.<RPC type>`（例如 runtime.tool_result/runtime.agent_settled），payload.event 为实际 RPC 事件。取消发 abort、关 stdin，超时 kill；观察到本地进程退出后任务保持 unknown、资源冻结，返回 remoteStoppingVerified:false。未完成独立远端核对，不把本地退出记为远端停止或已交付；后续事件按原游标补读。

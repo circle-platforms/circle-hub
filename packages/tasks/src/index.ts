@@ -27,6 +27,7 @@ export class Tasks {
     const policy = await this.auth.check(ctx, grant, row.scope_id, tx);
     requireCondition(policy.tenantId === row.tenant_id, 'FORBIDDEN_SCOPE', 'Task belongs to a different tenant');
     requireCondition(!row.context?.privateOwnerId||row.context.privateOwnerId===policy.principalId,'FORBIDDEN_SCOPE','Task is outside the readable partition');
+    requireCondition(!ctx.run||row.task_id===ctx.run.taskId||row.context?.parentRunTaskId===ctx.run.taskId,'FORBIDDEN_SCOPE','Task is outside the delegated run');
     return taskFromRow(row);
   }
   async emit(tx: Transaction, taskId: string, kind: string, payload: unknown): Promise<void> {
@@ -57,6 +58,7 @@ export class Tasks {
         request.capabilityPackId ? MINDMAP_PACK_VERSION : null]);
       await client.query('INSERT INTO input_revisions(input_revision_id,task_id,input,principal_id) VALUES($1,$2,$3,$4)',
         [inputRevisionId, taskId, JSON.stringify(request.input), policy.principalId]);
+      if(ctx.run)await client.query('UPDATE tasks SET context=$2 WHERE task_id=$1',[taskId,JSON.stringify({privateOwnerId:ctx.principalId,parentRunTaskId:ctx.run.taskId})]);
       await client.query(`INSERT INTO idempotency(tenant_id,scope_id,principal_id,action,idem_key,request_hash,task_id)
         VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(tenant_id,scope_id,principal_id,action,idem_key)
         DO UPDATE SET request_hash=EXCLUDED.request_hash,task_id=EXCLUDED.task_id,created_at=clock_timestamp()`, [...keys, hash, taskId]);
@@ -71,7 +73,8 @@ export class Tasks {
     const policy=await this.auth.check(ctx,'tasks.read');
     const rows=(await this.store.pool.query(`SELECT task_id FROM tasks WHERE tenant_id=$1 AND scope_id=ANY($2::text[])
       AND (context->>'privateOwnerId' IS NULL OR context->>'privateOwnerId'=$3)
-      ORDER BY created_at DESC,task_id DESC LIMIT $4`,[policy.tenantId,policy.scopes,policy.principalId,limit])).rows;
+      AND ($4::text IS NULL OR task_id=$4 OR context->>'parentRunTaskId'=$4)
+      ORDER BY created_at DESC,task_id DESC LIMIT $5`,[policy.tenantId,policy.scopes,policy.principalId,ctx.run?.taskId??null,limit])).rows;
     return Promise.all(rows.map(row=>this.status(ctx,row.task_id)));
   }
   async status(ctx: AuthContext, taskId: string): Promise<TaskView> {

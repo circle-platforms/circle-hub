@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { API_VERSION, MAX_BODY_BYTES, MAX_SOURCE_BYTES, MAX_WORKER_REPORT_BYTES, CLIENT_ROUTES, TaskListQuery, ApiError, SubmitRequest,
   InputRequest, OperationRequest, ApprovalProposal, ApprovalRequest, ConclusionRequest, ChecklistRequest, ChecklistResponse, RuleRequest, DefectReviewPack, LbxPack, InputRevisionId, TaskId, ScopeId, SourceUpload, Base64Content, MindmapCompileInput, MindmapPack, DevLoginRequest, requireCondition,
   EntityId,RelationId,ObjectListQuery,ObjectTypePackage,ObjectObservation,RelationObservation,
-  AssetId,AssetRegistration,AssetListQuery,AssetTransition,CredentialRegistration,KnowledgeRecordId,KnowledgeSearchQuery,KnowledgeReviewRequest,ToolName,ToolCallInput } from '../../../packages/contracts/src/index.ts';
+  AssetId,AssetRegistration,AssetListQuery,AssetTransition,CredentialRegistration,KnowledgeRecordId,KnowledgeSearchQuery,KnowledgeReviewRequest,ToolName,ToolCallInput,SkillPackId,StandardOperation } from '../../../packages/contracts/src/index.ts';
 import { Store } from '../../../packages/storage/src/index.ts';
 import { taskMigration } from '../../../packages/tasks/src/migration.ts';
 import { Auth } from '../../../packages/tasks/src/auth.ts';
@@ -41,10 +41,13 @@ import {KnowledgeGraph} from '../../../packages/knowledge/src/graph.ts';
 import {toolMigration} from '../../../packages/tools/src/migration.ts';
 import {ToolCatalog} from '../../../packages/tools/src/catalog.ts';
 import {toolPackages} from '../../../packages/connectors/src/tool-packages.ts';
+import {skillMigration} from '../../../packages/skillpacks/src/migration.ts';
+import {SkillPacks} from '../../../packages/skillpacks/src/index.ts';
+import {PrivateIPC} from '../../../packages/runtime/src/private-ipc.ts';
 
 function environment(name: string): string { const value = process.env[name]; if (!value) throw new Error(`Required environment variable: ${name}`); return value; }
 const store = new Store(JSON.parse(environment('CIRCLE_SERVER_DATABASE_CONFIG')));
-await store.migrate([taskMigration,mindmapTaskMigration,knowledgeMigration,executionMigration,resourceMigration,approvalMigration,conclusionMigration,checklistMigration,connectorMigration,entityMigration,assetMigration,graphMigration,toolMigration]);
+await store.migrate([taskMigration,mindmapTaskMigration,knowledgeMigration,executionMigration,resourceMigration,approvalMigration,conclusionMigration,checklistMigration,connectorMigration,entityMigration,assetMigration,graphMigration,toolMigration,skillMigration]);
 const auth = new Auth(store);
 requireCondition(process.env.CIRCLE_SERVER_DEV_AUTH === '1', 'INVALID_PAYLOAD', 'Phase one requires explicitly enabled development authentication');
 await auth.initializeDevelopment(environment('CIRCLE_SERVER_DEV_IDENTITIES'));
@@ -58,10 +61,15 @@ knowledge.sourceAccess=async(ctx,id,tx)=>{await entities.checkSourceAccess(ctx,i
 const execution = new Operations(store,auth,tasks,knowledge);
 const catalog=new ToolCatalog(store,auth,assets,tasks,execution,graph,toolPackages);await catalog.initialize(process.env.CIRCLE_SERVER_CONNECTOR_PROFILES);
 assets.validateRegistration=(ctx,input,id,tx)=>catalog.register(ctx,input,id,tx);
-execution.managedAuthorization=(tx,actor,scope,spec,task)=>catalog.authorize(tx,actor,scope,spec,task);
-execution.managedPreflight=(tx,actor,row,authorization)=>catalog.preflight(tx,actor,row,authorization);
-execution.managedReport=(tx,task,row,report)=>catalog.report(tx,task,row,report);
 const approvals=new Approvals(store,auth,tasks);execution.approvalCheck=(tx,task,spec)=>approvals.check(tx,task,spec);
+const skills=new SkillPacks(store,auth,tasks,approvals,assets,catalog,execution,knowledge);await skills.initialize(process.env.CIRCLE_RUNTIME_CONFIG);
+execution.managedNames.add('assets.execute');
+execution.managedAuthorization=(tx,actor,scope,spec,task)=>spec.name==='assets.execute'?skills.authorize(tx,actor,scope,spec,task):catalog.authorize(tx,actor,scope,spec,task);
+execution.managedPreflight=(tx,actor,row,authorization)=>row.name==='assets.execute'?skills.preflight(tx,actor,row,authorization):catalog.preflight(tx,actor,row,authorization);
+execution.managedReport=(tx,task,row,report)=>row.name==='assets.execute'?skills.report(tx,task,row,report):catalog.report(tx,task,row,report);
+approvals.policies.set('assets.publish',{authorize:(tx,ctx,task,action)=>skills.approvalAuthorize(tx,ctx,task,action),check:(tx,ctx,task,row,answer)=>skills.approvalCheck(tx,ctx,task,row,answer),accepted:(tx,ctx,task,row,answer)=>skills.approved(tx,ctx,task,row,answer)});
+const privateIPC=new PrivateIPC();skills.privateSocketPath=privateIPC.path;
+await privateIPC.start(async(message)=>{const worker=await auth.authenticate(message.authorization),id=z.string().parse(message.operationId),fence=z.number().int().positive().parse(message.fencingToken);return skills.privateSecret(worker,id,fence,message.revoke===true);});
 const assessments=new Assessments(store,tasks,knowledge),checklists=new Checklists(store,tasks,knowledge);
 const registry=new ConnectorRegistry(store,auth);await registry.initialize();execution.connectorCheck=(tx,actor,scope,spec)=>registry.check(tx,actor,scope,spec);
 const rules=new Rules(store,auth,tasks,execution,registry),professional=new ProfessionalRunner(store,tasks,execution,knowledge,checklists,approvals,assessments);
@@ -122,6 +130,13 @@ const server = createServer(async (request, response) => {
       send(response,200,{ data:{ ...issued,tokenType:'Bearer',principalId:policy.principalId,tenantId:policy.tenantId,scopes:policy.scopes } }); return;
     }
     const ctx = await auth.authenticate(request.headers.authorization);
+    if(ctx.run){const allowed=request.method==='GET'&&['/v1/tools','/v1/tasks','/v1/status'].includes(url.pathname)||request.method==='POST'&&/^\/v1\/tools\/[^/]+\/call$/.test(url.pathname)||request.method==='GET'&&/^\/v1\/tasks\/[^/]+\/(?:status|result|events)$/.test(url.pathname)||request.method==='GET'&&/^\/v1\/(?:sources|artifacts|evidence)\/[^/]+\/content$/.test(url.pathname);requireCondition(allowed,'FORBIDDEN_ACTION','Run token authorizes only its declared tools and task reads');}
+    if(url.pathname===CLIENT_ROUTES.skillpacks.path){
+      if(request.method==='GET'){send(response,200,{data:await skills.list(ctx)});return;}
+      if(request.method==='POST'){send(response,201,{data:await skills.submit(ctx,await body(request,MAX_WORKER_REPORT_BYTES),z.string().optional().parse(request.headers['x-scope-id']))});return;}
+    }
+    const skillRun=/^\/v1\/skillpacks\/([^/]+)\/runs$/.exec(url.pathname);
+    if(skillRun&&request.method==='POST'){send(response,202,{data:await skills.run(ctx,SkillPackId.parse(skillRun[1]),await body(request,MAX_WORKER_REPORT_BYTES))});return;}
     if(url.pathname===CLIENT_ROUTES.tools.path&&request.method==='GET'){
       const listing=await catalog.list(ctx);response.setHeader('etag',listing.etag);response.setHeader('vary','Authorization');
       if(request.headers['if-none-match']===listing.etag){closeOnShutdown(response);response.writeHead(304);response.end();}
@@ -289,9 +304,9 @@ const server = createServer(async (request, response) => {
       await body(request); send(response,200,{ data:await execution.register(ctx) }); return;
     }
     if (url.pathname === '/v1/workers/claim' && request.method === 'POST') {
-      await body(request); send(response,200,{ data:await execution.claim(ctx) }); return;
+      const input=z.object({exclude:z.array(StandardOperation).max(10).default([])}).parse(await body(request));send(response,200,{ data:await execution.claim(ctx,input.exclude) }); return;
     }
-    const workerRoute = /^\/v1\/workers\/operations\/([^/]+)\/(preflight|heartbeat|source|report)$/.exec(url.pathname);
+    const workerRoute = /^\/v1\/workers\/operations\/([^/]+)\/(preflight|heartbeat|source|report|events|local-stopped)$/.exec(url.pathname);
     if (workerRoute) {
       const id = workerRoute[1]; const action = workerRoute[2];
       if (action === 'source' && request.method === 'GET') {
@@ -305,6 +320,8 @@ const server = createServer(async (request, response) => {
           const row=(await store.pool.query('SELECT name FROM operations WHERE operation_id=$1',[id])).rows[0];
           send(response,200,{data:row?.name==='mindmaps.compile'?await mindmaps.report(ctx,id,input):await execution.report(ctx,id,input)});return;
         }
+        if(action==='events'){const event=z.object({fencingToken:z.number().int().positive(),inputRevisionId:InputRevisionId,event:z.record(z.string(),z.unknown())}).parse(input);send(response,200,{data:await skills.event(ctx,id,event.fencingToken,event.inputRevisionId,event.event)});return;}
+        if(action==='local-stopped'){const stopped=z.object({fencingToken:z.number().int().positive(),inputRevisionId:InputRevisionId,localExitObserved:z.literal(true)}).parse(input);send(response,200,{data:await skills.stopped(ctx,id,stopped)});return;}
         const fence = z.object({ fencingToken:z.number().int().positive() }).parse(input).fencingToken;
         if (action === 'heartbeat') send(response,200,{ data:await execution.heartbeat(ctx,id,fence) });
         else { const checked = await execution.preflight(ctx,id,fence); send(response,200,{ data:{ authorized:true,inputRevisionId:checked.task.inputRevisionId,source:checked.source,authorization:checked.authorization } }); }
@@ -373,6 +390,7 @@ async function shutdown(): Promise<void> {
   if (closing) return; closing = true; clearInterval(timer);
   shutdownSignal.abort();
   await closeHttpServer(server);
+  await privateIPC.close();
   // Closing a socket is not completion of the transaction it was waiting for.
   await Promise.all(activeRequests);
   await running; await store.pool.end();

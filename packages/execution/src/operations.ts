@@ -4,6 +4,7 @@ import type { Transaction } from '../../storage/src/index.ts';
 import { Execution } from './index.ts';
 
 export class Operations extends Execution {
+  managedNames=new Set(['tools.invoke']);
   approvalCheck?: (tx:Transaction,task:any,spec:any)=>Promise<void>;
   connectorCheck?: (tx:Transaction,actor:AuthContext,scope:string,spec:any)=>Promise<any>;
   managedAuthorization?: (tx:Transaction,actor:AuthContext,scope:string,spec:any,task:any)=>Promise<any>;
@@ -19,7 +20,7 @@ export class Operations extends Execution {
       requireCondition(task.inputRevisionId===spec.inputRevisionId,'INPUT_REVISION_STALE','Operation is not bound to the current revision');
       requireCondition(!['delivered','failed','cancelled'].includes(task.phase),'DECISION_CONFLICT','Task is terminal');
       requireCondition(spec.name!=='mindmaps.compile','FORBIDDEN_ACTION','Compile through the capability task interface');
-      const managed=spec.name==='tools.invoke';
+      const managed=this.managedNames.has(spec.name);
       const authorization=managed?await this.managedAuthorization?.(client,ctx,task.scopeId,spec,task):undefined;
       if(managed)requireCondition(authorization,'FORBIDDEN_ACTION','Registered execution authorizer is unavailable');else await this.auth.target(ctx,spec.name,task.scopeId,spec.target,client);
       const effects=authorization?.effects??STANDARD_OPERATIONS[spec.name];
@@ -58,13 +59,13 @@ export class Operations extends Execution {
       await this.tasks.emit(tx,taskId,'operation.reconciliation-requested',{operationId,parentOperationId:id});return this.view(row);
     });
   }
-  async claim(ctx:AuthContext):Promise<any> {
+  async claim(ctx:AuthContext,exclude:string[]=[]):Promise<any> {
     const generic=await this.store.transaction(async tx=>{
       const policy=await this.auth.check(ctx,'workers.execute',undefined,tx);requireCondition(policy.kind==='worker'&&policy.workerId,'FORBIDDEN_ACTION','Worker required');
       const worker=(await tx.query('UPDATE workers SET last_seen=clock_timestamp() WHERE worker_id=$1 AND principal_id=$2 RETURNING *',[policy.workerId,policy.principalId])).rows[0];requireCondition(worker,'FORBIDDEN_ACTION','Register first');if(worker.draining)return null;
       const rows=(await tx.query(`SELECT o.* FROM operations o LEFT JOIN operations parent ON parent.operation_id=o.parent_operation_id
         WHERE o.name<>'mindmaps.compile' AND o.status='accepted' AND o.tenant_id=$1 AND o.scope_id=ANY($2::text[]) AND o.deadline_at>clock_timestamp()
-        AND (o.kind<>'reconcile' OR parent.worker_id<>$3) ORDER BY o.created_at FOR UPDATE OF o SKIP LOCKED LIMIT 10`,[policy.tenantId,policy.scopes,policy.workerId])).rows;
+        AND o.name<>ALL($4::text[]) AND (o.kind<>'reconcile' OR parent.worker_id<>$3) ORDER BY o.created_at FOR UPDATE OF o SKIP LOCKED LIMIT 10`,[policy.tenantId,policy.scopes,policy.workerId,exclude])).rows;
       for(const row of rows){
         const resource=(await tx.query('SELECT * FROM resources WHERE tenant_id=$1 AND resource_id=$2 FOR UPDATE',[row.tenant_id,row.resource_id])).rows[0];
         if(resource.frozen&&row.kind!=='reconcile')continue;
@@ -72,7 +73,7 @@ export class Operations extends Execution {
         try{await this.authorize(tx,row);}catch(error){
           if(!(error instanceof ApiError))throw error;
           await this.complete(tx,row,'failed',{error:{code:error.code,message:error.message},executionStarted:false});
-          if(row.name==='tools.invoke')await this.tasks.fail(tx,await this.tasks.internal(tx,row.task_id),{code:error.code,message:error.message});
+          if(this.managedNames.has(row.name))await this.tasks.fail(tx,await this.tasks.internal(tx,row.task_id),{code:error.code,message:error.message});
           return {denial:error};
         }
         const token=Number((await tx.query('UPDATE resources SET next_fencing=next_fencing+1 WHERE tenant_id=$1 AND resource_id=$2 RETURNING next_fencing',[row.tenant_id,row.resource_id])).rows[0].next_fencing);
@@ -90,7 +91,7 @@ export class Operations extends Execution {
       const row=await this.lease(ctx,id,fence,client);if(row.name==='mindmaps.compile')return super.preflight(ctx,id,fence,client);
       const {task,authorization}=await this.authorize(client,row);
       const worker=await this.auth.policy(ctx,client);
-      if(row.name==='tools.invoke'){
+      if(this.managedNames.has(row.name)){
         requireCondition(worker.scopes.includes(row.scope_id),'FORBIDDEN_SCOPE','Worker cannot reach this asset scope');
         const actor={principalId:row.principal_id,tenantId:row.tenant_id,kind:'user'} as AuthContext;
         return {row,task,authorization:await this.managedPreflight?.(client,actor,row,authorization)};
@@ -102,7 +103,7 @@ export class Operations extends Execution {
     const actor={principalId:row.principal_id,tenantId:row.tenant_id,kind:'user'} as const,task=await this.tasks.load(actor,row.task_id,'tasks.read',client);
     requireCondition(task.inputRevisionId===row.input_revision_id,'INPUT_REVISION_STALE','Operation input changed');
     const cancel=(await client.query('SELECT cancel_requested FROM tasks WHERE task_id=$1',[row.task_id])).rows[0].cancel_requested;requireCondition(!cancel,'DECISION_CONFLICT','Task cancellation is pending');
-    if(row.name==='tools.invoke'){
+    if(this.managedNames.has(row.name)){
       requireCondition(this.managedAuthorization,'FORBIDDEN_ACTION','Registered execution authorizer is unavailable');return {task,authorization:await this.managedAuthorization(client,actor,row.scope_id,row,task)};
     }
     const grant=row.kind==='reconcile'?(row.name.startsWith('product.')?'product.config.read':row.name==='defects.comment'?'defects.search':row.name):row.name;
@@ -117,7 +118,7 @@ export class Operations extends Execution {
       const prior=await this.lease(ctx,id,report.fencingToken,tx,true);
       if(['succeeded','failed'].includes(prior.status)){requireCondition(prior.result.reportHash===canonicalHash(report),'IDEMPOTENCY_MISMATCH','Different completed receipt');return {deduplicated:true};}
       const {row,task}=await this.preflight(ctx,id,report.fencingToken,tx);requireCondition(report.inputRevisionId===row.input_revision_id,'INPUT_REVISION_STALE','Report revision differs');
-      if(row.name==='tools.invoke'&&report.status!=='unknown'){
+      if(this.managedNames.has(row.name)&&report.status!=='unknown'){
         requireCondition(this.managedReport,'EVIDENCE_INSUFFICIENT','Registered receipt processor is unavailable');return this.managedReport(tx,task,row,report);
       }
       const evidence=await this.knowledge.evidence(tx,task,id,row.kind==='reconcile'?'script-conclusion':'unknown',{

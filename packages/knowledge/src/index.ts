@@ -72,6 +72,8 @@ export class Knowledge {
     requireCondition(row, 'TARGET_NOT_FOUND', 'Object reference not found');
     const policy = await this.auth.check(ctx, 'evidence.read', row.scope_id);
     requireCondition(policy.tenantId === row.tenant_id, 'FORBIDDEN_SCOPE', 'Object belongs to a different tenant');
+    const bindings=(await this.store.pool.query(kind==='artifact'?'SELECT t.* FROM artifact_bindings b JOIN tasks t USING(task_id) WHERE b.artifact_id=$1':'SELECT t.* FROM tasks t WHERE task_id=$1',[kind==='artifact'?id:row.task_id])).rows;
+    if(bindings.length)requireCondition(bindings.some(task=>(!task.context?.privateOwnerId||task.context.privateOwnerId===ctx.principalId)&&(!ctx.run||task.task_id===ctx.run.taskId||task.context?.parentRunTaskId===ctx.run.taskId)),'FORBIDDEN_SCOPE','Object is outside the readable task partition');
     const bytes = await this.objects.getObject({ Bucket: 'evidence', Key: row.object_key });
     return { reference: kind === 'artifact' ? this.artifactReference(row) : { sha256: row.sha256, size: Number(row.size), mediaType: 'application/json', fileName: `${id}.json` }, bytes };
   }

@@ -38,6 +38,7 @@ export class ToolCatalog {
       AND (a.owner_principal_id=$3 OR v.readers ? $3 OR v.readers ? '*') ORDER BY b.name`,[p.tenantId,p.scopes,p.principalId])).rows;
     const results=[];
     for(const row of rows){const definition=this.definition(row.package_id,row.suffix);if(!definition||!p.grants.includes(definition.permission))continue;
+      if(ctx.run&&!ctx.run.tools.includes(row.name))continue;
       let credentials=true;for(const reference of row.declaration.credentials){try{const record=await this.assets.row(ctx,reference,tx,'credentials.use');if(record.owner_principal_id!==ctx.principalId||record.lifecycle==='disabled'||record.configuration.connectorAssetId!==row.asset_id)credentials=false;}catch{credentials=false;}}
       if(!credentials)continue;
       results.push({row,definition,view:{name:row.name,title:definition.title,description:definition.description,inputSchema:z.toJSONSchema(definition.schema),effect:definition.effect,mode:definition.mode,permission:definition.permission,assetId:row.asset_id,assetVersion:row.version}});
@@ -56,6 +57,8 @@ export class ToolCatalog {
     const item=await this.entry(ctx,spec.args.toolName,tx);
     requireCondition(task.capabilityPackId==='asset-tool'&&task.principalId===ctx.principalId,'FORBIDDEN_ACTION','Registered calls require their own accepted task');
     requireCondition(task.input.toolName===spec.args.toolName&&canonicalHash(task.input.args)===canonicalHash(spec.args.input)&&task.input.assetId===spec.target&&task.input.assetVersion===spec.args.assetVersion&&task.input.assetSha256===(spec.targetIdentity??spec.target_identity),'INPUT_REVISION_STALE','Operation differs from the pinned tool input');
+    const context=(await tx.query('SELECT context FROM tasks WHERE task_id=$1',[task.taskId])).rows[0].context;
+    if(context.parentRunTaskId){const parent=(await tx.query('SELECT phase,cancel_requested FROM tasks WHERE task_id=$1',[context.parentRunTaskId])).rows[0];requireCondition(parent&&!parent.cancel_requested&&!['failed','delivered','unknown','cancelled'].includes(parent.phase),'DECISION_CONFLICT','Parent run no longer authorizes new child effects');}
     requireCondition(item.row.scope_id===scope&&item.row.asset_id===(spec.target??spec.assetId),'FORBIDDEN_SCOPE','Tool asset partition differs');
     requireCondition(item.row.version===spec.args.assetVersion&&item.row.sha256===(spec.targetIdentity??spec.target_identity),'APPROVAL_STALE','Tool asset revision changed');
     item.definition.schema.parse(spec.args.input);
@@ -96,8 +99,8 @@ export class ToolCatalog {
     const accepted=await this.store.transaction(async tx=>{
       const item=await this.entry(ctx,name,tx);
       requireCondition(item.row.sha256===initial.row.sha256&&item.row.version===initial.row.version,'APPROVAL_STALE','Tool revision changed during admission');
-      const task=await this.tasks.submit(ctx,{scopeId:item.row.scope_id,title:item.definition.title,capabilityPackId:'asset-tool',idempotencyKey:canonicalHash(['tool-call',name,input.idempotencyKey]),input:{toolName:name,args,assetId:item.row.asset_id,assetVersion:item.row.version,assetSha256:item.row.sha256}},tx);
-      if(!task.deduplicated){await tx.query("UPDATE tasks SET context=jsonb_build_object('privateOwnerId',$2::text) WHERE task_id=$1",[task.taskId,ctx.principalId]);await this.tasks.stage(tx,task,'running','tool-pending','task.running');await this.execution.submit(ctx,task.taskId,{name:'tools.invoke',inputRevisionId:task.inputRevisionId,target:item.row.asset_id,targetIdentity:item.row.sha256,args:{toolName:name,input:args,assetVersion:item.row.version},idempotencyKey:input.idempotencyKey,deadlineMs:300_000},tx);}
+      const task=await this.tasks.submit(ctx,{scopeId:item.row.scope_id,title:item.definition.title,capabilityPackId:'asset-tool',idempotencyKey:canonicalHash(['tool-call',ctx.run?.taskId??null,name,input.idempotencyKey]),input:{toolName:name,args,assetId:item.row.asset_id,assetVersion:item.row.version,assetSha256:item.row.sha256}},tx);
+      if(!task.deduplicated){await tx.query('UPDATE tasks SET context=$2 WHERE task_id=$1',[task.taskId,JSON.stringify({privateOwnerId:ctx.principalId,...(ctx.run?{parentRunTaskId:ctx.run.taskId}:{})})]);await this.tasks.stage(tx,task,'running','tool-pending','task.running');await this.execution.submit(ctx,task.taskId,{name:'tools.invoke',inputRevisionId:task.inputRevisionId,target:item.row.asset_id,targetIdentity:item.row.sha256,args:{toolName:name,input:args,assetVersion:item.row.version},idempotencyKey:canonicalHash([ctx.run?.taskId??null,input.idempotencyKey]),deadlineMs:300_000},tx);}
       return task;
     });
     if(initial.definition.mode==='task')return {taskId:accepted.taskId,phase:accepted.phase};

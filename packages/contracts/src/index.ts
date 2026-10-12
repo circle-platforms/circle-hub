@@ -4,7 +4,7 @@ import { z } from 'zod';
 export const API_VERSION = '1.0.0';
 export const FLOW_VERSION = 'synthetic-lbx/1';
 export const MINDMAP_FLOW_VERSION = 'mindmap-compile/1';
-export const PACK_FLOWS={'mindmap-compile':MINDMAP_FLOW_VERSION,'defect-review':'defect-review/1','lbx-healthcheck':'lbx-healthcheck/1','asset-tool':'asset-tool/1'} as const;
+export const PACK_FLOWS={'mindmap-compile':MINDMAP_FLOW_VERSION,'defect-review':'defect-review/1','lbx-healthcheck':'lbx-healthcheck/1','asset-tool':'asset-tool/1','asset-registration':'asset-registration/1','skill-run':'skill-run/1'} as const;
 export const LEASE_TTL_MS = 60_000;
 export const HEARTBEAT_MS = 20_000;
 export const IDEMPOTENCY_WINDOW_MS = 86_400_000;
@@ -29,7 +29,7 @@ export const AssetId=identity('ast');
 export const Sha256 = z.string().regex(/^[a-f0-9]{64}$/);
 export const Base64Content = z.string().regex(/^[A-Za-z0-9+/]*={0,2}$/).refine(value =>
   value.length % 4 === 0 && Buffer.from(value,'base64').toString('base64') === value,'Expected canonical standard base64');
-export function newId(prefix: 'task' | 'inrev' | 'op' | 'pin' | 'src' | 'snap' | 'evd' | 'art' | 'rule' | 'audit' | 'rec' | 'ent' | 'erev' | 'rel' | 'rrev' | 'ast' | 'knr'): string {
+export function newId(prefix: 'task' | 'inrev' | 'op' | 'pin' | 'src' | 'snap' | 'evd' | 'art' | 'rule' | 'audit' | 'rec' | 'ent' | 'erev' | 'rel' | 'rrev' | 'ast' | 'knr' | 'skp'): string {
   return `${prefix}_${randomUUID().replaceAll('-', '')}`;
 }
 export function sha256(bytes: string | Uint8Array): string {
@@ -64,6 +64,8 @@ export const STANDARD_OPERATIONS = {
   'docs.convert': { reads: ['knowledge'], writes: ['artifacts-evidence'] },
   'mindmaps.compile': { reads: ['knowledge'], writes: ['artifacts-evidence'] },
   'tools.invoke': { reads: ['registered-source'], writes: ['artifacts-evidence'] },
+  'assets.publish':{reads:['registered-assets'],writes:['asset-registry']},
+  'assets.execute':{reads:['registered-assets'],writes:['artifacts-evidence']},
 } as const;
 export const StandardOperation = z.enum(Object.keys(STANDARD_OPERATIONS) as [keyof typeof STANDARD_OPERATIONS, ...Array<keyof typeof STANDARD_OPERATIONS>]);
 export type StandardOperation = z.infer<typeof StandardOperation>;
@@ -90,7 +92,7 @@ export const ConnectorManifest = z.object({
 export type ConnectorManifest = z.infer<typeof ConnectorManifest>;
 
 export const SubmitRequest = z.object({ scopeId: ScopeId, title: z.string().min(1).max(2000).default('Compile mindmap test cases'),
-  idempotencyKey: z.string().min(8).max(200), capabilityPackId: z.enum(['mindmap-compile','defect-review','lbx-healthcheck','asset-tool']).optional(),
+  idempotencyKey: z.string().min(8).max(200), capabilityPackId: z.enum(['mindmap-compile','defect-review','lbx-healthcheck','asset-tool','asset-registration','skill-run']).optional(),
   input: z.record(z.string(), z.unknown()).default({}) });
 export type SubmitRequest = z.infer<typeof SubmitRequest>;
 export const DevLoginRequest = z.object({ username: z.string().max(100), password: z.string().max(1000),
@@ -156,6 +158,17 @@ export const ToolView=z.object({name:ToolName,title:z.string(),description:z.str
 export const ToolCallInput=z.object({args:z.record(z.string(),z.unknown()),idempotencyKey:z.string().min(8).max(200)}).strict();
 export const ToolEvidence=z.object({evidenceId:z.string(),sha256:Sha256});
 export const ToolCallResult=z.union([z.object({result:z.unknown(),evidence:z.array(ToolEvidence)}),z.object({taskId:TaskId,phase:TaskPhase})]);
+export const SafeRelativePath=z.string().min(1).max(500).refine(path=>!path.startsWith('/')&&!/^[a-z]:/i.test(path)&&!path.includes('\\')&&!/[\x00-\x1f]/.test(path)&&path.split('/').every(part=>part!==''&&part!=='.'&&part!=='..'&&part!=='.git'),'Use a safe relative path');
+export const SkillPackId=identity('skp');
+export const SkillManifest=z.object({id:PackageName,version:PackageVersion,title:z.string().min(1).max(500),owner:z.string().min(1).max(200),
+  tools:z.array(ToolName).max(100).refine(values=>new Set(values).size===values.length),triggers:z.array(z.enum(['manual','schedule','event'])).min(1).max(3),
+  inputs:z.record(z.string(),z.unknown()),outputs:z.array(SafeRelativePath).min(1).max(100).refine(paths=>new Set(paths).size===paths.length),model:z.unknown()}).strict();
+export const SkillPackSubmission=z.object({manifest:SkillManifest,files:z.array(z.object({path:SafeRelativePath,base64:Base64Content,sha256:Sha256}).strict()).min(1).max(100),
+  trial:z.object({toolCalls:z.array(z.object({name:ToolName,argsSha256:Sha256,ok:z.boolean()}).strict()).max(1000),outputs:z.array(z.object({path:SafeRelativePath,sha256:Sha256}).strict()).max(100)}).strict()}).strict();
+export const SkillPackCheck=z.object({undeclaredTools:z.array(ToolName),missingTools:z.array(ToolName)});
+export const SkillPackView=z.object({skillPackId:SkillPackId,digest:Sha256,status:z.enum(['candidate','registered','declined']),check:SkillPackCheck,approvalTaskId:TaskId,
+  manifest:SkillManifest,ownerPrincipalId:z.string(),scopeId:ScopeId,assetId:AssetId,assetVersion:PackageVersion});
+export const SkillRunInput=z.object({inputs:z.record(z.string(),z.unknown()),idempotencyKey:z.string().min(8).max(200)}).strict();
 export const MindmapCompileInput = z.object({ sourceRevisionId: SourceRevisionId, sourceSha256: Sha256.optional() });
 export const ArtifactReference = z.object({ artifactId: ArtifactId, sha256: Sha256, size: z.number().int().positive(),
   fileName: z.string(), mediaType: z.enum(['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','application/json','text/plain']),
@@ -225,6 +238,7 @@ const registry = {
   SOURCE_ABSENT:[404,'source-absent'],SOURCE_FORBIDDEN:[403,'permission'],SOURCE_LOGIN_EXPIRED:[401,'authentication'],SOURCE_UNREACHABLE:[503,'source-unreachable'],
   SHARING_REQUIRED:[403,'permission'],
   TOOL_NAME_CONFLICT:[409,'conflict-stale'],RESULT_TOO_LARGE:[413,'validation'],
+  SKILLPACK_CHECK_FAILED:[422,'validation'],RUNTIME_VERSION_MISMATCH:[409,'conflict-stale'],RUNTIME_FAILED:[502,'execution'],
 } as const;
 export type ErrorCode = keyof typeof registry;
 export class ApiError extends Error {
@@ -240,7 +254,8 @@ export function requireCondition(condition: unknown, code: ErrorCode, message: s
   if (!condition) throw new ApiError(code, message);
 }
 
-export interface AuthContext { principalId: string; tenantId: string; kind: 'user' | 'service' | 'worker'; workerId?: string }
+export interface RunConstraint {taskId:string;tools:string[];scopes:string[];grants:string[]}
+export interface AuthContext { principalId: string; tenantId: string; kind: 'user' | 'service' | 'worker'; workerId?: string;run?:RunConstraint;tokenDigest?:string }
 export interface Policy extends AuthContext { scopes: string[]; grants: string[]; targets: string[]; defects: string[] }
 export interface Task {
   taskId: string; tenantId: string; scopeId: string; principalId: string; title: string; phase: TaskPhase;
@@ -265,6 +280,7 @@ export const WorkerReport = z.object({ fencingToken: z.number().int().positive()
   'Provide an artifact for completion or an error for failure');
 export const TaskResult = z.object({ taskId: TaskId, inputRevisionId: InputRevisionId, phase: TaskPhase,
   result:z.unknown().optional(),
+  runtime:z.record(z.string(),z.unknown()).optional(),
   capabilityPackId: z.string().optional(), status: z.enum(['accepted','running','succeeded','partial','failed','unknown','cancel-requested','cancelled']),
   artifacts: z.array(ArtifactReference), evidence: z.array(z.object({ evidenceId: z.string(), kind: ConclusionKind,
     sha256: Sha256, size: z.number(), downloadPath: z.string() })), unmapped: z.array(UnmappedElement),
@@ -293,6 +309,9 @@ export const CLIENT_ROUTES = {
   assets:{method:'GET',path:'/v1/assets',query:AssetListQuery},
   tools:{method:'GET',path:'/v1/tools',response:z.array(ToolView)},
   toolCall:{method:'POST',path:'/v1/tools/{name}/call',request:ToolCallInput,response:ToolCallResult},
+  skillpacks:{method:'GET',path:'/v1/skillpacks',response:z.array(SkillPackView)},
+  skillpackSubmit:{method:'POST',path:'/v1/skillpacks',request:SkillPackSubmission,response:SkillPackView,scopeHeader:'X-Scope-Id'},
+  skillpackRun:{method:'POST',path:'/v1/skillpacks/{id}/runs',request:SkillRunInput,response:z.object({taskId:TaskId})},
   objects:{method:'GET',path:'/v1/objects',query:ObjectListQuery,response:ObjectPage},
   object:{method:'GET',path:'/v1/objects/{entityId}',response:EntityView},
   objectObservations:{method:'GET',path:'/v1/objects/{entityId}/observations'},

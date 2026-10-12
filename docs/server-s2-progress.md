@@ -155,3 +155,25 @@ Claude 复核 `9a8efd3` 后补充实际构建页结构，本轮先改桩和回�
 实际验收：目录/资产/一键栈联合 **8/8**；新增命令与连接器包 **8/8**；最新完整 `npm test` 的 contracts **4/4**、methods **6/6**、acceptance **47/48**，唯一失败仍是原先 15 个核心专业位置的第 7 幕守卫，没有屏蔽它。第一阶段 40 项继续通过；参考另跑 **7/7**，714 原件核对通过，typecheck 通过。最后补验了 environment.inventory 的 D/B 链及超限错误的 wire details，`r2-04-tools.test.ts` **4/4**。尚未完成自动产品声明发布、技能包/真实 RPC 执行、定时整理/bot 和核心专业代码迁出；不能声称第二阶段或整套已全绿。
 
 用户确认技能包 scope 走可选 `X-Scope-Id`，多 scope 必须明确；manifest.owner 是声明。missingTools 是声明但目录不可用的工具，undeclaredTools 是试跑未声明调用；提交/批准/运行重查。第 5 幕正式边界改为 Circle CLI RPC，固定 `551dc46ecc702df755b37eb69df3898b0807a547` + 1.1.1；开发期 CIRCLE_BIN 仅运行时提供，HOME/CIRCLE_HOME 都隔离，不 import Circle、不改 foundation。Claude 的构建与协议已就绪，下一步先写技能包/RPC 验收。
+
+### 用户提供的第 4 幕 Otty/Circle 独立观察
+
+Claude 在另外的固定 `87efb41` 临时 worktree 起 dev:stack，用真实 Otty 的 Circle server-tools 分支登录，自动发现 **17 个工具**，没有修改本工作区。脚本模型按 APV 技能依次调用 versions（选择最新正式构建 109）、command_heads、command_param、docs.search、command_check；写出 2 个用例，109 的 feature.enable 为 missing，相应用例标不支持，缺期望的用例标需要决定。Claude 用 openpyxl 独立读出 case.xlsx。用户未提供工作簿 SHA，本节不补造；试跑记录留在原 Circle 会话，待技能包路由开放后由同会话推送。独立整套复核同为 contracts 4/4、methods 6/6、acceptance 47/48，唯一红项核心守卫。这是用户提供的客户端观察，不冒充本 agent 已复跑或真实模型/设备验收。
+
+后续排队：第 5 幕告一段落后，把构建同步改为按需 XML/修复清单，按 SHA 缓存、限制并发/间隔，增加 versions 不触发 XML 下载的明确验收；不连接真实站点。当前 versions 已只读首页/版本页，SDK 首次全量 sync 仍需改造。此项不提前打断第 5 幕。
+
+Circle 固定版本更新：用户提供当前构建提交 `d9f8ec6261597bc2cfcfa91dc8903965a6df7fe7`，版本仍 1.1.1；551dc46 后的三个提交只改扩展/桌面展示和 X-Scope-Id，RPC/--extensions 行为保持。活动交接和新验收改用此完整提交号，旧观察保留原基线。
+
+## 11：技能包登记、审批与真实 Circle RPC（2026-10-12）
+
+先写第 5 幕验收并确认 0/4（路由缺席），再实现 skillpacks 的 F schema/CLIENT_ROUTES、内容寻址提交/列表/运行、绑定 digest/当前资产修订的既有审批、短期运行委托、worker RPC 槽和 C 事件/B 产物。X-Scope-Id 单 scope 可省略、多 scope 必须明确；manifest.owner 不作身份。文件路径/原字节 SHA/总量检查，必有 SKILL.md；trial 未声明工具或目录不可用工具拒绝并带两张清单。提交、批准、运行重查目录；批准核对申请人而非给审核者执行权。相同内容复用包与审批任务，原版本不可覆盖；同键不同运行输入拒绝。
+
+真实 Circle 使用用户提供的本机构建、Git 完整提交 `d9f8ec6261597bc2cfcfa91dc8903965a6df7fe7` 和版本 1.1.1 双重核对，未 import 源码、未改 foundation。每次运行独立 HOME/CIRCLE_HOME/workspace，加载提交的 SKILL.md，OpenAI 兼容脚本模型从首轮可见声明工具，实际调用 server 文档工具并写出 JSON 文件。worker 保留一个 RPC 槽，同时执行子工具读，单 worker 也不会互等。发现 Mac /var 与 /private/var 的规范路径别名会误报输出逃逸，改为比较 realpath 后的工作目录，真实回归通过。
+
+run token 仅授予声明工具/对应 scope/该任务及子工具任务，直接资产/其他任务/审批入口不可用。token 值只在 server 内存和认证 worker 的私有本机 IPC/子进程环境，不进公开 preflight/日志/运行文件；运行结束/取消失效。验收用同一授权私有通道取到实际 token，扫描已写出的 Circle home/workspace 字节没有值，目录仅显示声明的 docs.search，API 不能借它扩权。
+
+RPC prompt/turn/tool/settled 等真实事件进入 C。只在 agent_settled、进程退出、声明输出存在且原字节 SHA 匹配后交付；B 保存输入/产物/独立字节收据，机械完整性与模型回答分开。个人产物下载也核对可读任务绑定，不能只凭 scope 绕过个人结果权限。取消先 abort/关 stdin，超时 kill；已观察本地退出仍保持 unknown、冻结资源、remoteStoppingVerified:false，旧 run token 不再可用，不把本地停止当远端停止。
+
+实际 `r2-05-skillpacks.test.ts` **5/5**；完整 `npm test` contracts **4/4**、methods **6/6**、acceptance **52/53**，仍仅核心迁出守卫失败；参考另跑 **7/7**、714 原件完整，typecheck 通过。实际 CLI 入口字节 SHA 在运行收据登记；Git HEAD/版本校验不是整个编译 bundle 的发布证明。本阶段无付费模型、真实源/设备或部署，未 push。已更新交接文档为路由开放，并准备通知 Claude 从原会话推送 APV 包；APV 分支尚未合入/在 server 上重跑，auto-consolidation/bot、产品自动声明发布和核心迁出仍未完成。
+
+只读查询确认 [PR #5](https://github.com/qingshanfeihu/circle-server/pull/5) 仍 OPEN，未触发 rebase。下一步按用户排队要求先改按需构建抓取，再继续第 6、7 幕。

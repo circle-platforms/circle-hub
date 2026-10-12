@@ -5,6 +5,10 @@ import { SyntheticDevice } from '../../../packages/execution/src/synthetic-devic
 import { ConnectorSDK } from '../../../packages/connectors/src/index.ts';
 import {executeTool} from '../../../packages/connectors/src/tool-packages.ts';
 import {PrivateVault} from '../../../packages/assets/src/vault.ts';
+import {LocalObjects} from '../../../packages/knowledge/src/objects.ts';
+import {runCircle} from '../../../packages/runtime/src/circle-rpc.ts';
+import {privateRequest} from '../../../packages/runtime/src/private-ipc.ts';
+import {join} from 'node:path';
 
 function env(name: string): string { const value = process.env[name]; if (!value) throw new Error(`Required environment variable: ${name}`); return value; }
 const base = new URL(env('CIRCLE_SERVER_URL'));
@@ -32,12 +36,36 @@ const connectors=process.env.CIRCLE_SYNTHETIC_RESOURCE_DIR?new ConnectorSDK(proc
 if(connectors)await connectors.initialize();
 await request('/v1/workers/register',{});
 console.log(JSON.stringify({ type:'worker-ready',username }));
+let runtimeJob:Promise<void>|undefined;
+async function executeRuntime(claim:any,preflight:any):Promise<void>{
+  const fence={fencingToken:claim.fencingToken},abort=new AbortController();const onStop=()=>abort.abort();stopController.signal.addEventListener('abort',onStop,{once:true});
+  let pendingHeartbeat:Promise<void>|undefined;const timer=setInterval(()=>{if(pendingHeartbeat)return;pendingHeartbeat=request(`/v1/workers/operations/${claim.operationId}/heartbeat`,fence).then(()=>{}).catch(()=>abort.abort()).finally(()=>{pendingHeartbeat=undefined;});},HEARTBEAT_MS);
+  let pendingCheck:Promise<void>|undefined;const cancelPoll=setInterval(()=>{if(pendingCheck)return;pendingCheck=request(`/v1/workers/operations/${claim.operationId}/preflight`,fence).then(()=>{}).catch(()=>abort.abort()).finally(()=>{pendingCheck=undefined;});},500);
+  const authorization=preflight.authorization,channel={authorization:`Bearer ${token}`,operationId:claim.operationId,fencingToken:claim.fencingToken};let report:any;
+  try{
+    const secret=await privateRequest(authorization.privateSocketPath,channel),objects=new LocalObjects(env('CIRCLE_SERVER_DATA_DIR'));
+    const files=await Promise.all(authorization.files.map(async(file:any)=>({...file,bytes:await objects.getObject({Bucket:'evidence',Key:file.sha256})})));
+    const output=await runCircle({runtime:secret.runtime,folder:join(env('CIRCLE_SERVER_DATA_DIR'),'runs',claim.operationId),manifest:authorization.manifest,files,inputs:claim.args.inputs,
+      serverUrl:base.origin,serverToken:secret.serverToken,scopeId:authorization.scopeId,principalId:authorization.principalId,signal:abort.signal,
+      event:async event=>{await request(`/v1/workers/operations/${claim.operationId}/events`,{...fence,inputRevisionId:claim.inputRevisionId,event});}});
+    report={...fence,inputRevisionId:claim.inputRevisionId,status:'succeeded',output};
+  }catch(error){const failure=error instanceof ApiError?error:new ApiError('RUNTIME_FAILED','Circle runtime failed');
+    if(failure.details.localExitObserved===true){await request(`/v1/workers/operations/${claim.operationId}/local-stopped`,{...fence,inputRevisionId:claim.inputRevisionId,localExitObserved:true});return;}
+    report={...fence,inputRevisionId:claim.inputRevisionId,status:'failed',output:{},error:{code:failure.code,message:failure.message}};}
+  finally{clearInterval(timer);clearInterval(cancelPoll);await pendingHeartbeat;await pendingCheck;stopController.signal.removeEventListener('abort',onStop);try{await privateRequest(authorization.privateSocketPath,{...channel,revoke:true});}catch{/* A cancelled/expired run token already authorizes no new work. */}}
+  if(!stopped)await request(`/v1/workers/operations/${claim.operationId}/report`,report);
+}
 while (!stopped) {
   try {
-    const next = await request('/v1/workers/claim',{});
+    const next = await request('/v1/workers/claim',{exclude:runtimeJob?['assets.execute']:[]});
     if (!next) { await delay(100); continue; }
     const claim = AnyWorkerClaim.parse(next); const fence = { fencingToken:claim.fencingToken };
     const preflight=await request(`/v1/workers/operations/${claim.operationId}/preflight`,fence);
+    if(claim.name==='assets.execute'){
+      // Keep one runtime slot and continue claiming its child tool calls. A single
+      // worker must not deadlock while its Circle waits on a read from that worker.
+      runtimeJob=executeRuntime(claim,preflight).catch(error=>{console.error(JSON.stringify({type:'worker-runtime-error',code:error instanceof ApiError?error.code:'RUNTIME_FAILED'}));}).finally(()=>{runtimeJob=undefined;});continue;
+    }
     let heartbeatError: unknown; let pendingHeartbeat: Promise<void> | undefined;
     const timer = setInterval(() => {
       if (pendingHeartbeat) return;
@@ -87,4 +115,5 @@ while (!stopped) {
     await delay(300);
   }
 }
+await runtimeJob;
 if (process.connected) process.disconnect();
