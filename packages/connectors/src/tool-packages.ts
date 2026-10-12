@@ -16,6 +16,10 @@ export type ConnectorOptions=z.infer<typeof ConnectorOptions>;
 export interface ToolPackage {id:string;prefix:string;productLinePrefixes?:Record<string,string>;profileOptions?:ConnectorOptions;productLineOptions?:Record<string,ConnectorOptions>;tools:ToolDefinition[];projection?:{version:string;extract:(raw:RawReturn[],profile:ConnectorProfile)=>Promise<ProductObservation[]>}}
 const tool=(suffix:string,title:string,schema:z.ZodObject<any>,permission:string,handler:string,effect:'read'|'write'='read',mode:'sync'|'task'='sync'):ToolDefinition=>({suffix,title,description:title,schema,permission,handler,effect,mode});
 const short=z.string().min(1).max(500),build=z.string().min(1).max(200);
+const pagination={page:z.number().int().min(1).max(1_000_000).default(1),limit:z.number().int().min(1).max(100).default(20)};
+const mirrorQuery=z.object({keyword:short.optional(),product:z.union([short,z.number().int().nonnegative()]).optional(),status:short.optional(),severity:z.number().int().min(1).max(5).optional(),assignedTo:short.optional(),openedBy:short.optional(),lastEditedDate_start:short.optional(),lastEditedDate_end:short.optional(),...pagination}).strict().superRefine((value,ctx)=>{
+  if(value.keyword!==undefined&&value.product===undefined||![value.product,value.status,value.lastEditedDate_start,value.lastEditedDate_end].some(v=>v!==undefined&&String(v).trim()!==''))ctx.addIssue({code:'custom',message:'Provide product, status or date filters; keyword also requires product'});
+});
 const selection={build,platform:short.nullable().optional(),scope:short.optional(),versionLine:short.optional()};
 const versionQuery=z.object({versionLine:short.optional(),page:z.number().int().min(1).max(1_000_000).default(1),limit:z.number().int().min(1).max(100).default(20),formal:z.boolean().optional(),platform:short.nullable().optional(),current:z.boolean().optional(),commandTreeAvailable:z.boolean().optional()}).strict();
 const compactCoverage=(coverage:ReturnType<typeof buildCoverage>)=>({complete:coverage.complete,counts:{readPages:coverage.readPages.length,missing:coverage.missing.length,conflicts:coverage.conflicts.length,superseded:coverage.superseded.length},missing:coverage.missing.slice(0,20),conflicts:coverage.conflicts.slice(0,20).map(item=>({buildId:item.buildId,name:item.name,platform:item.platform,code:item.code})),superseded:coverage.superseded.slice(0,20).map(item=>({buildId:item.buildId,name:item.name,platform:item.platform,count:item.revisions.length})),detailsTruncated:[coverage.missing,coverage.conflicts,coverage.superseded].some(items=>items.length>20)});
@@ -29,13 +33,13 @@ export const toolPackages:ToolPackage[]=[
     tool('command_check','按固定 XML 与确定性规则核对命令',z.object({...selection,commands:z.array(z.string().max(2000)).min(1).max(200)}).strict(),'builds.read','build.check'),
   ]},
   {id:'documents',prefix:'docs',tools:[
-    tool('list','列出只读文档目录',z.object({path:short.optional()}).strict(),'docs.fetch','document.list'),
+    tool('list','分页列文档目录；path 省略用已登记根，须为站点绝对目录路径',z.object({path:short.optional(),...pagination}).strict(),'docs.fetch','document.list'),
     tool('get','取文档原件与摘要',z.object({file:short}).strict(),'docs.fetch','document.get'),
-    tool('search','在选定版本目录内有界递归查询文档并复用原件',z.object({query:short,path:short.optional(),version:short.optional()}).strict(),'docs.fetch','document.search'),
+    tool('search','分页查选定目录；每页最多20个原件（limit上限100），按 nextCursor 传 after 补读，coverage.complete 才是完整搜索',z.object({query:short,path:short.optional(),version:short.optional(),limit:pagination.limit,after:z.string().min(1).max(2048).optional()}).strict(),'docs.fetch','document.search'),
     tool('section','取命令小节或行窗口，最多 80 行',z.object({file:short,anchor:short.optional(),line:z.number().int().positive().optional(),window:z.number().int().min(1).max(80).default(40)}).strict().refine(value=>!!value.anchor!==!!value.line,'Provide an anchor or line'),'docs.fetch','document.section'),
   ]},
   {id:'query-mirror',prefix:'query',tools:[
-    tool('bug_search','查询只读缺陷镜像',z.object({keyword:short.optional(),product:z.union([short,z.number().int().nonnegative()]).optional(),status:short.optional(),severity:z.number().int().min(1).max(5).optional(),assignedTo:short.optional(),openedBy:short.optional(),lastEditedDate_start:short.optional(),lastEditedDate_end:short.optional()}).strict(),'defects.search','mirror.search'),
+    tool('bug_search','分页查询镜像；必须带 product、status 或日期；keyword 还必须带 product，避免全表扫描',mirrorQuery,'defects.search','mirror.search'),
     tool('bug_detail','批量取缺陷详情（每批最多 100）',z.object({ids:z.array(z.union([z.number().int().nonnegative(),z.string().regex(/^\d+$/)])).min(1).max(100)}).strict(),'defects.search','mirror.detail'),
   ]},
   {id:'environment-view',prefix:'env',tools:[
@@ -54,10 +58,11 @@ for(const pack of toolPackages)if(pack.id!=='knowledge')pack.projection={version
 export interface ConnectorProfile {origin:string;root?:string;index?:string;payloadField?:string;requestConcurrency?:number;requestIntervalMs?:number;buildSite?:BuildSiteOptions;documents?:DocumentOptions}
 export interface ToolReturn {result:any;raw:RawReturn[];sourceType:string}
 const defaultToolCache=new SourceCache();
-export async function executeTool(packageId:string,handler:string,args:any,profile:ConnectorProfile,credential?:string,options:{cache?:SourceCache;cacheNamespace?:string}={}):Promise<ToolReturn>{
+export async function executeTool(packageId:string,handler:string,args:any,profile:ConnectorProfile,credential?:string,options:{cache?:SourceCache;cacheNamespace?:string;freshCommands?:boolean}={}):Promise<ToolReturn>{
   if(handler==='candidate.submit')return {result:args,raw:[],sourceType:'skill-run'};
   if(handler==='consolidation.fragments')return {result:args,raw:[],sourceType:'shared-session'};
-  const source=new HttpSource(profile.origin,{...(credential?{authorization:()=>credential}:{}),timeoutMs:5000,requestConcurrency:profile.requestConcurrency??2,requestIntervalMs:profile.requestIntervalMs??(packageId==='build-site'?200:0)});
+  if(handler==='mirror.search'&&!mirrorQuery.safeParse(args).success)throw new ApiError('INVALID_PAYLOAD','Provide product, status or date filters; keyword also requires product. Use page and limit for compact results',{requiredFilters:['product','status','lastEditedDate_start','lastEditedDate_end']});
+  const source=new HttpSource(profile.origin,{...(credential?{authorization:()=>credential}:{}),timeoutMs:packageId==='query-mirror'?30000:5000,requestConcurrency:profile.requestConcurrency??2,requestIntervalMs:profile.requestIntervalMs??(packageId==='build-site'?200:0)});
   if(packageId==='build-site'){
     if(handler==='build.versions')args=versionQuery.parse(args);
     const site=new BuildSite(source,options.cache??defaultToolCache,canonicalHash([options.cacheNamespace??profile.origin,credential??null]));
@@ -85,14 +90,16 @@ export async function executeTool(packageId:string,handler:string,args:any,profi
       const fixed=await site.releasesFor({system:args.issueSystem??'bugzilla',id:args.issueId??args.legacyIssueId},candidates);raw.push(...fixed.evidence.map((evidence:RawReturn)=>({...evidence,sourceType:'build-record'})));const {evidence,...result}=fixed;return {result,raw,sourceType:'build-record'};
     }
     const build=select(args.build);requireCondition(build.files.commands,'SOURCE_ABSENT','Build has no command tree');
-    const tree=await site.commandTree(build),xml=tree.evidence;raw.push({...xml,sourceType:'command-tree'});const commands=args.scope===undefined?tree.result:tree.result.filter(command=>command.scope===args.scope);
+    const tree=await site.commandTree(build,options.freshCommands),xml=tree.evidence;raw.push({...xml,sourceType:'command-tree'});const commands=args.scope===undefined?tree.result:tree.result.filter(command=>command.scope===args.scope);
     requireCondition(args.scope===undefined||commands.length>0,'SOURCE_ABSENT','Command scope is absent from the authorized source');
     const result=handler==='build.heads'?commandHeads(commands,args.prefix):handler==='build.parameters'?commandParam(commands,args.head):handler==='build.check'?commandCheck(commands,args.commands):{commands};
     return {result:{build:build.name,buildId:build.buildId,platform:build.platform,scope:args.scope??null,parserVersion:tree.parserVersion,sourceSha256:xml.sha256,coverage:catalog.coverage,...result},raw,sourceType:'command-tree'};
   }
   if(packageId==='documents'){
     const documents=new Documents(source);
-    if(handler==='document.list'){const listed=await documents.list(args.path??profile.root??'/');return {result:{files:listed.result},raw:[listed.evidence],sourceType:'document'};}
+    if(handler==='document.list'){const selected=z.object({path:short.optional(),...pagination}).strict().parse(args),root=source.path(profile.root??'/'),path=source.path(selected.path??root);if(!path.startsWith(root.endsWith('/')?root:`${root}/`))throw new ApiError('INVALID_PAYLOAD','Use a directory within the registered document root',{root});
+      let listed;try{listed=await documents.list(path);}catch(error){if(error instanceof ApiError)throw new ApiError(error.code,error.message,{...error.details,root});throw error;}
+      const files=listed.result.filter(entry=>entry.path!==path).sort((a,b)=>a.path.localeCompare(b.path)),offset=(selected.page-1)*selected.limit,hasMore=offset+selected.limit<files.length;return {result:{root,path,files:files.slice(offset,offset+selected.limit),page:selected.page,limit:selected.limit,total:files.length,nextPage:hasMore?selected.page+1:null,revision:listed.evidence.sha256},raw:[listed.evidence],sourceType:'document'};}
     if(handler==='document.get'){const file=await documents.get(args.file);if(file.evidence.etag)await (options.cache??defaultToolCache).put(canonicalHash({namespace:canonicalHash([options.cacheNamespace??profile.origin,credential??null]),origin:source.identity(),path:file.evidence.path,revision:file.evidence.etag}),file.evidence);return {result:file.result,raw:[file.evidence],sourceType:'document'};}
     if(handler==='document.search'){
       const searched=await documents.search(args,profile.root??'/',profile.documents,options.cache??defaultToolCache,canonicalHash([options.cacheNamespace??profile.origin,credential??null]));return {...searched,sourceType:'document'};
@@ -106,8 +113,8 @@ export async function executeTool(packageId:string,handler:string,args:any,profi
   if(packageId==='query-mirror'){
     const mirror=new QueryMirror(source,profile.payloadField??'data');
     if(handler==='mirror.detail'){const detail=await mirror.detail(args.ids);return {result:{items:detail.items},raw:[detail.evidence],sourceType:'query-mirror'};}
-    const {keyword,...filters}=args,listed=await mirror.list(filters);requireCondition(Array.isArray(listed.result),'SOURCE_UNREACHABLE','Mirror list payload is malformed');
-    return {result:{items:listed.result.filter((bug:any)=>!keyword||String(bug.title??'').toLowerCase().includes(keyword.toLowerCase()))},raw:[listed.evidence],sourceType:'query-mirror'};
+    const {keyword,page,limit,...filters}=mirrorQuery.parse(args),listed=await mirror.list(filters);requireCondition(Array.isArray(listed.result),'SOURCE_UNREACHABLE','Mirror list payload is malformed');
+    const items=listed.result.filter((bug:any)=>!keyword||String(bug.title??'').toLowerCase().includes(keyword.toLowerCase())).sort((a:any,b:any)=>Number(a.id)-Number(b.id)),offset=(page-1)*limit;return {result:{items:items.slice(offset,offset+limit),total:items.length,page,limit,nextPage:offset+limit<items.length?page+1:null,revision:listed.evidence.sha256},raw:[listed.evidence],sourceType:'query-mirror'};
   }
   if(packageId==='environment-view'){const result=await new EnvironmentView(source).call(handler,args);return {result:result.result,raw:[result.evidence],sourceType:'environment-view'};}
   throw new ApiError('INVALID_PAYLOAD','Tool handler is not registered');

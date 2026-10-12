@@ -126,9 +126,9 @@ export class BuildSite {
       items.push(record);
     }return {items,cursor,evidence};
   }
-  async commandTree(build:BuildRecord):Promise<{result:CommandRecord[];evidence:RawReturn;parserVersion:string}>{
+  async commandTree(build:BuildRecord,fresh=false):Promise<{result:CommandRecord[];evidence:RawReturn;parserVersion:string}>{
     if(build.conflict)throw new ApiError('INVALID_PAYLOAD','Build has unresolved page revisions',{reason:'build_revision_conflict',buildId:build.buildId});
-    requireCondition(build.files.commands,'SOURCE_ABSENT','Build has no command tree');const evidence=await this.cache.load({namespace:this.namespace,origin:this.source.identity(),path:build.files.commands,revision:build.segmentSha256},async()=>{const raw=await this.source.read(build.files.commands!);requireCondition((await this.commandsFrom(raw.bytes)).length>0,'INVALID_PAYLOAD','Command tree has no recognized command items');return raw;});
+    requireCondition(build.files.commands,'SOURCE_ABSENT','Build has no command tree');const identity={namespace:this.namespace,origin:this.source.identity(),path:build.files.commands,revision:build.segmentSha256},read=async()=>{const raw=await this.source.read(build.files.commands!);requireCondition((await this.commandsFrom(raw.bytes)).length>0,'INVALID_PAYLOAD','Command tree has no recognized command items');return raw;},evidence=fresh?await read():await this.cache.load(identity,read);if(fresh)await this.cache.put(canonicalHash(identity),evidence);
     return {result:await this.commandsFrom(evidence.bytes),evidence,parserVersion:'menu-path/2'};
   }
   async fixed(build:BuildRecord):Promise<{result:string[];issues:IssueReference[];evidence:RawReturn}>{

@@ -1,6 +1,6 @@
 import {HttpSource,type Incremental,type RawReturn} from './readonly-sdk.ts';
 import {xmlTree,xmlNodes} from './structure.ts';
-import {ApiError,requireCondition} from '../../contracts/src/index.ts';
+import {ApiError,canonicalHash,requireCondition} from '../../contracts/src/index.ts';
 import {SourceCache} from './source-cache.ts';
 import {z} from 'zod';
 
@@ -13,7 +13,9 @@ export class Documents {
   source:HttpSource;
   constructor(source:HttpSource){this.source=source;}
   async list(path:string):Promise<{result:DocumentEntry[];evidence:RawReturn}> {
-    const evidence=await this.source.read(path,{method:'PROPFIND',headers:{depth:'1'}}),root=xmlTree(evidence.bytes);
+    const evidence=await this.source.read(path,{method:'PROPFIND',headers:{depth:'1'}});
+    if(evidence.httpStatus!==207)throw new ApiError('SOURCE_UNREACHABLE','Directory source must return WebDAV Multi-Status',{httpStatus:evidence.httpStatus,expectedStatus:207});
+    const root=xmlTree(evidence.bytes);
     const result=xmlNodes(root,'response').flatMap(response=>{
       const href=xmlNodes(response,'href')[0]?.text;
       if(!href)return [];
@@ -24,8 +26,8 @@ export class Documents {
     });return {result,evidence};
   }
   async get(path:string):Promise<{result:{path:string;contentBase64:string};evidence:RawReturn}>{const evidence=await this.source.read(path);return {result:{path:evidence.path,contentBase64:evidence.bytes.toString('base64')},evidence};}
-  async search(args:{query:string;path?:string;version?:string},root:string,options:DocumentOptions={},cache=new SourceCache(),namespace='anonymous'){
-    const policy=DocumentOptions.parse(options),base=this.source.path(root),rootPath=base.endsWith('/')?base:`${base}/`;let selected=args.path??rootPath;
+  async search(args:{query:string;path?:string;version?:string;limit?:number;after?:string},root:string,options:DocumentOptions={},cache=new SourceCache(),namespace='anonymous'){
+    const limit=z.number().int().min(1).max(100).parse(args.limit??20),policy=DocumentOptions.parse(options),base=this.source.path(root),rootPath=base.endsWith('/')?base:`${base}/`;let selected=args.path??rootPath;
     if(!args.path&&args.version&&policy.versionDirectoryTemplate){requireCondition(/^\d+(?:\.\d+){1,2}$/.test(args.version),'INVALID_PAYLOAD','Version line is malformed');selected=this.source.path(policy.versionDirectoryTemplate.replace('{version}',args.version.split('.').join(policy.versionSeparator)),rootPath);}
     selected=this.source.path(selected);if(!selected.endsWith('/'))selected+='/';
     requireCondition(selected.startsWith(rootPath),'INVALID_PAYLOAD','Search directory must stay within the registered document root');
@@ -37,7 +39,7 @@ export class Documents {
       const listed=await this.list(path);retain(listed.evidence);
       const directories:string[]=[];
       for(const entry of listed.result){if(entry.path===path)continue;requireCondition(entry.path.startsWith(selected),'INVALID_PAYLOAD','Directory entry escapes the selected search root');
-        if(entry.directory){directories.push(entry.path.endsWith('/')?entry.path:`${entry.path}/`);continue;}if(seenFiles.has(entry.path))continue;seenFiles.add(entry.path);if(seenFiles.size>policy.maxFiles)exceeded('files',policy.maxFiles,seenFiles.size);
+        if(entry.directory){directories.push(entry.path.endsWith('/')?entry.path:`${entry.path}/`);continue;}if(seenFiles.has(entry.path))continue;seenFiles.add(entry.path);if(seenFiles.size>5000)exceeded('directory_entries',5000,seenFiles.size);
         requireCondition(Number.isSafeInteger(entry.size)&&entry.size>=0,'INVALID_PAYLOAD','Source size is malformed');
         if(!/\.(txt|md|html?)$/i.test(entry.path)){skipped.push({file:entry.path,code:'UNSUPPORTED_TEXT_FORMAT'});continue;}
         if(args.version&&!policy.versionDirectoryTemplate&&!entry.path.includes(args.version))continue;files.push(entry);
@@ -45,11 +47,21 @@ export class Documents {
       for(const directory of directories)await walk(directory,depth+1);
     };
     await walk(selected,0);
-    for(const file of files){const revision=file.etag??(file.modifiedAt?`${file.modifiedAt}/${file.size}`:null),original=revision?await cache.load({namespace,origin:this.source.identity(),path:file.path,revision},async()=>{const fetched=(await this.get(file.path)).evidence;requireCondition(!file.etag||!fetched.etag||file.etag===fetched.etag,'SOURCE_UNREACHABLE','Document revision changed during search');return fetched;}):(await this.get(file.path)).evidence;retain(original);
-      const text=original.bytes.toString('utf8');if(!Buffer.from(text).equals(original.bytes)){skipped.push({file:file.path,code:'UNSUPPORTED_TEXT_ENCODING'});continue;}
-      for(const [index,line] of text.split(/\r?\n/).entries())if(line.toLowerCase().includes(args.query.toLowerCase())){hits.push({file:file.path,line:index+1,snippet:line,sourceSha256:original.sha256});if(hits.length>100)exceeded('hits',100,hits.length);}
+    files.sort((a,b)=>a.path.localeCompare(b.path));
+    const binding=canonicalHash({namespace,origin:this.source.identity(),path:selected,query:args.query,version:args.version}),revision=canonicalHash(raw.map(item=>[item.path,item.sha256]));
+    let fileIndex=0,lineIndex=0,readFiles=0;
+    if(args.after){let cursor:any;try{cursor=z.object({binding:z.string(),revision:z.string(),file:z.number().int().nonnegative(),line:z.number().int().nonnegative()}).strict().parse(JSON.parse(Buffer.from(args.after,'base64url').toString('utf8')));}catch{throw new ApiError('INVALID_PAYLOAD','Search cursor is malformed');}
+      requireCondition(cursor.binding===binding&&cursor.file<files.length,'INVALID_PAYLOAD','Search cursor belongs to another query or identity');requireCondition(cursor.revision===revision,'INPUT_REVISION_STALE','Document directory changed; restart search');fileIndex=cursor.file;lineIndex=cursor.line;
     }
-    return {result:{hits,coverage:{path:selected,complete:skipped.length===0,files:files.length,directories:visited.size,bytes,skipped},limits:{maxDepth:policy.maxDepth,maxFiles:policy.maxFiles,maxDirectories:policy.maxDirectories,maxBytes:policy.maxBytes}},raw};
+    const pageLimit=Math.min(limit,policy.maxFiles);
+    while(fileIndex<files.length&&readFiles<pageLimit&&hits.length<100){const file=files[fileIndex],fileRevision=file.etag??(file.modifiedAt?`${file.modifiedAt}/${file.size}`:null),original=fileRevision?await cache.load({namespace,origin:this.source.identity(),path:file.path,revision:fileRevision},async()=>{const fetched=(await this.get(file.path)).evidence;requireCondition(!file.etag||!fetched.etag||file.etag===fetched.etag,'INPUT_REVISION_STALE','Document revision changed during search');return fetched;}):(await this.get(file.path)).evidence;retain(original);readFiles++;
+      const text=original.bytes.toString('utf8');if(!Buffer.from(text).equals(original.bytes)){skipped.push({file:file.path,code:'UNSUPPORTED_TEXT_ENCODING'});fileIndex++;lineIndex=0;continue;}
+      const lines=text.split(/\r?\n/);requireCondition(lineIndex<=lines.length,'INVALID_PAYLOAD','Search line cursor is outside its document');
+      while(lineIndex<lines.length&&hits.length<100){const line=lines[lineIndex++];if(line.toLowerCase().includes(args.query.toLowerCase()))hits.push({file:file.path,line:lineIndex,snippet:line.slice(0,2000),...(line.length>2000?{snippetTruncated:true}:{}),sourceSha256:original.sha256});}
+      if(lineIndex===lines.length){fileIndex++;lineIndex=0;}
+    }
+    const nextCursor=fileIndex<files.length?Buffer.from(JSON.stringify({binding,revision,file:fileIndex,line:lineIndex})).toString('base64url'):null;
+    return {result:{hits,nextCursor,revision,coverage:{path:selected,complete:nextCursor===null&&skipped.length===0,files:readFiles,totalFiles:files.length,directories:visited.size,bytes,skipped:skipped.slice(0,20),skippedCount:skipped.length},limits:{maxDepth:policy.maxDepth,maxFiles:pageLimit,maxDirectories:policy.maxDirectories,maxBytes:policy.maxBytes,maxHits:100,maxDirectoryEntries:5000}},raw};
   }
   async sync(path:string,previous:Record<string,string>={}):Promise<Incremental<{entry:DocumentEntry;evidence:RawReturn}>> {
     const listed=await this.list(path),cursor:Record<string,string>={},items:{entry:DocumentEntry;evidence:RawReturn}[]=[],evidence=[listed.evidence];
