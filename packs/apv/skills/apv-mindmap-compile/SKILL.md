@@ -15,12 +15,12 @@ Read `references/contract.md` before writing any JSON: it has the exact shapes.
 - The version line (for example `10.4`), and a build if the user names one.
 - circle-server tools, offered after `/server login` as `srv_*`: `srv_buildsite_versions`, `srv_buildsite_command_heads`, `srv_buildsite_command_param`, `srv_buildsite_command_check`, `srv_docs_search`, `srv_docs_section`, `srv_zentao_bug_search`, `srv_zentao_bug_detail`, `srv_knowledge_claim_submit`. If they are missing, say so and stop: do not write commands from memory.
 
-Use a batch folder per mindmap, `compile/<mindmap name>/`.
+The batch folder is `out/`; the scripts write every result there, and these are the files a run on the server hands back. On the server there is nobody to ask: the request is in `inputs.json` (`mindmap`, `versionLine`, optionally `build`), and the mindmap file is next to it.
 
 ## 1. Prep (script)
 
 ```
-node <skill>/scripts/prep.mjs <mindmap.json> <batch>
+node <skill>/scripts/prep.mjs <mindmap.json> out
 ```
 
 It writes `manifest.json`: every case with its autoid, group path, layout and step intents, and never a command. On `ok:false`, tell the user the reason; the whole batch stops (one root only, 18-digit autoids, no duplicates).
@@ -31,7 +31,7 @@ Call `srv_buildsite_versions` for the version line. Use the build the user named
 
 ## 3. Recompose (you), then check (script)
 
-Write `<batch>/machine_mindmap.json`: for each case its bucket, its contract triple (intent, verification method, expectation) and its expectations by step, each with an origin.
+Write `out/machine_mindmap.json`: for each case its bucket, its contract triple (intent, verification method, expectation) and its expectations by step, each with an origin.
 
 - **Relocate, never write.** Every contract field and expectation is the whole text of one source atom: the case title, a step, or an expectation (`title`, `step:<n>`, `expectation:<label or n>`). A numbering prefix such as `1.` or `[check1]` may be left off; nothing else may change.
 - A spec sentence or a ZenTao bug may also be a source (`spec:<file>:<line>`, `defect:zentao:BUG-<n>:title|description`), only verbatim and only after you read it with the tools.
@@ -39,14 +39,14 @@ Write `<batch>/machine_mindmap.json`: for each case its bucket, its contract tri
 - Manuals are never a source for the contract.
 
 ```
-node <skill>/scripts/check-recompose.mjs <batch>
+node <skill>/scripts/check-recompose.mjs out
 ```
 
 Fix every violation it lists and run it again until `ok:true`.
 
 ## 4. Author (you)
 
-For each case that is not `true_gap`, write `<batch>/cases/<autoid>.json`, the mechanical case.
+For each case that is not `true_gap`, write `out/cases/<autoid>.json`, the mechanical case.
 
 - `description.intent_verbatim` and `description.group_path` are copied byte for byte from the contract and the manifest.
 - **Every device command comes from the bound build.** Find heads with `srv_buildsite_command_heads`, arguments with `srv_buildsite_command_param`, and the manual section with `srv_docs_section` (the section that starts `**<head>**`). Never write a command from memory, and never "repair" a command the author wrote.
@@ -59,7 +59,7 @@ For each case that is not `true_gap`, write `<batch>/cases/<autoid>.json`, the m
 ## 5. Gate (script)
 
 ```
-node <skill>/scripts/gate.mjs <batch>
+node <skill>/scripts/gate.mjs out
 ```
 
 For each rejected case, fix what the violations name and run it again; at most three rounds per case, then leave it rejected. `command_not_in_tree` means the build does not have the command: the case is an **unsupported feature** for this build. Do not look for another command and do not retry it.
@@ -67,7 +67,7 @@ For each rejected case, fix what the violations name and run it again; at most t
 ## 6. Emit (script) and report
 
 ```
-node <skill>/scripts/emit.mjs <batch> --author <user>
+node <skill>/scripts/emit.mjs out --author <user>
 ```
 
 Report the totals from `compile_report.json`, the path and SHA-256 of `case.xlsx`, and the cases that were not written with their reasons (`unsuccessful_cases.md`). Say plainly that nothing has run on a device.

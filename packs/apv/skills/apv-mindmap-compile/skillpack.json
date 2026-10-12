@@ -14,12 +14,20 @@
     "zentao.bug_detail",
     "knowledge.claim_submit"
   ],
-  "triggers": ["manual"],
+  "triggers": [
+    "manual"
+  ],
   "inputs": {
-    "mindmap": "the mindmap JSON export: a one-element [root] array, cases carry an 18-digit data.autoid",
-    "versionLine": "the product version line, such as 10.4",
-    "build": "optional: the build to write for; the latest formal build of the version line otherwise"
+    "mindmap": "path of the mindmap JSON export in the workspace: a one-element [root] array, cases carry an 18-digit data.autoid",
+    "versionLine": "the product version line, such as 10.5",
+    "build": "optional: the build to write for; the latest formal build of the version line otherwise",
+    "files": "on the server: the mindmap file itself, [{path, base64}]"
   },
-  "outputs": ["case.xlsx", "compile_report.json", "delivery_report.md", "unsuccessful_cases.md"],
+  "outputs": [
+    "out/case.xlsx",
+    "out/compile_report.json",
+    "out/delivery_report.md",
+    "out/unsuccessful_cases.md"
+  ],
   "model": "any capable model; prep, checks and the workbook are scripts"
 }
