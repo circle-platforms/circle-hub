@@ -78,12 +78,14 @@ try {
   ] } } }];
   await writeFile(samplePath,zipSync({ 'content.json':strToU8(JSON.stringify(content)),
     'metadata.json':strToU8(JSON.stringify({ creator:'circle-server synthetic fixture' })) },{ mtime:new Date('2000-01-01T00:00:00Z') }),{ mode:0o600 });
-  const env = { ...process.env,CIRCLE_SERVER_DATABASE_CONFIG:JSON.stringify(config),CIRCLE_SERVER_DATA_DIR:`${scratch}/objects`,
+  // Node loads NODE_EXTRA_CA_CERTS at process startup: bootstrap requests use
+  // this process's trust, and the same runtime trust reaches server and workers.
+  const env = { ...process.env,NODE_EXTRA_CA_CERTS:process.env.NODE_EXTRA_CA_CERTS,CIRCLE_SERVER_DATABASE_CONFIG:JSON.stringify(config),CIRCLE_SERVER_DATA_DIR:`${scratch}/objects`,
     CIRCLE_SERVER_DEV_IDENTITIES:`${scratch}/identities.json`,CIRCLE_SERVER_DEV_AUTH:'1',CIRCLE_SERVER_PORT:process.env.CIRCLE_SERVER_PORT ?? '0',CIRCLE_SYNTHETIC_RESOURCE_DIR:`${scratch}/resources`,CIRCLE_SERVER_CONNECTOR_PROFILES:`${scratch}/connector-profiles.json` };
   const server = await launch('apps/server/src/supervisor.ts',env,'ready');
-  const login=async(username:string,password:string)=>{const response=await fetch(`${server.url}/v1/auth/dev-login`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({username,password})});if(!response.ok)throw new Error('Synthetic asset login failed');return (await response.json() as any).data.token;};
+  const login=async(username:string,password:string)=>{const response=await fetch(`${server.url}/v1/auth/dev-login`,{method:'POST',redirect:'error',headers:{'content-type':'application/json'},body:JSON.stringify({username,password})});if(!response.ok)throw new Error('Synthetic asset login failed');return (await response.json() as any).data.token;};
   const developerToken=await login('developer',userPassword),approverToken=await login('approver',approverPassword);
-  const post=async(path:string,value:unknown,token=developerToken)=>{const response=await fetch(`${server.url}${path}`,{method:'POST',headers:{authorization:`Bearer ${token}`,'content-type':'application/json'},body:JSON.stringify(value)});const body=await response.json() as any;if(!response.ok)throw new Error(`Synthetic asset setup failed: ${body.error?.code}`);return body.data;};
+  const post=async(path:string,value:unknown,token=developerToken)=>{const response=await fetch(`${server.url}${path}`,{method:'POST',redirect:'error',headers:{authorization:`Bearer ${token}`,'content-type':'application/json'},body:JSON.stringify(value)});const body=await response.json() as any;if(!response.ok)throw new Error(`Synthetic asset setup failed: ${body.error?.code}`);return body.data;};
   for(const packageId of ['documents','build-site','query-mirror','environment-view','knowledge']){
     const definition={scopeId:'scp_lab',kind:'connector-instance',name:`Synthetic ${packageId}`,version:'1.0.0',declaration:{reads:['registered-source'],writes:packageId==='knowledge'?['knowledge-candidates']:[],credentials:[] as string[]},configuration:{packageId,runtimeProfileRef:'synthetic'},readers:['prn_developer','prn_approver']};
     let asset=await post('/v1/assets',definition);

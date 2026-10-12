@@ -46,4 +46,25 @@ GET /v1/builds/{build}/bundle 带 bundles:read 客户端 Bearer，直接返回 `
 
 资源资产 configuration.serviceClientId 引用客户端 id，以新资产版本独立批准；该模式 declaration.credentials 为空、执行 profile 不配外部 issuer。现有受理、命令证明、任务审批和投递前核对保留。客户端密钥给资源端用于 Basic 内省/读原件；平台调用资源使用自己签发的短期用户令牌。
 
-CIRCLE_SERVER_TLS_CONFIG 可指向仓库外 `{certFile,keyFile}`，server 原生 HTTPS；证书、密钥和运行时路径不进 Git。默认仍仅绑定回环，不打开网络。不启用真实 HTTP 例外、不加反代、不修改跳板机。部署可达性、证书信任及资源端地址/client id/私有密钥文件/CA 均等用户决定；本轮仅本机合成验收。
+CIRCLE_SERVER_TLS_CONFIG 可指向仓库外 `{certFile,keyFile}`，server 原生 HTTPS；证书、密钥和运行时路径不进 Git。仍仅监听 127.0.0.1。worker 和 admin CLI 接受 http://127.0.0.1 或 https://127.0.0.1，拒绝远端、URL 内嵌凭据和重定向。TLS 保留 Node 默认 CA 与主机名核验；自签 CA 通过启动进程时的 NODE_EXTRA_CA_CERTS 指向仓库外 CA 文件。仅设置 server 的证书/密钥不会自动让客户端信任它，也不在已运行进程中动态修改信任。
+
+本机完整开发栈可以这样启动，示例路径须换成仓库外运行配置：
+
+```sh
+CIRCLE_SERVER_TLS_CONFIG=../runtime-config/server-tls.json \
+NODE_EXTRA_CA_CERTS=../runtime-config/ca.pem \
+npm run dev:stack
+```
+
+bootstrap 请求、两个 worker 及 admin 子进程使用相同的启动信任；无界面 Circle 的精简环境只补传 NODE_EXTRA_CA_CERTS，不复制 TLS 私钥或关闭校验。ready.url 是实际 HTTPS 地址。验收覆盖 PostgreSQL + server + worker 的登录/受理/原件下载/回报/产物 SHA、HTTPS 下优雅重启和固定 Circle 的真实工具操作；未信任 CA、主机名不匹配均拒绝，不能用只产生文件替代工具实际完成的证据。
+
+用户已选择由 Mac 发起 SSH 反向隧道：网关主机的 127.0.0.1 端口转发到 Mac 的本机监听端口，转发 TLS 原字节，不在 server 开放外部监听，也不改为 HTTP 或增加反代。可按仓库外设置的用户/主机/端口准备命令：
+
+```sh
+ssh -N -T -o ExitOnForwardFailure=yes \
+  -o ServerAliveInterval=30 -o ServerAliveCountMax=3 \
+  -R "127.0.0.1:${CIRCLE_TUNNEL_PORT}:127.0.0.1:${CIRCLE_LOCAL_PORT}" \
+  "${CIRCLE_TUNNEL_USER}@${CIRCLE_TUNNEL_HOST}"
+```
+
+CIRCLE_LOCAL_PORT 取实际 server 端口，不取开发栈请求随机端口时的 0。隧道由用户建立；用户按维护者准备的内容修改网关配置，并核对远端仅监听回环。网关连接 https://127.0.0.1:<隧道端口> 时，server 证书需有 IP:127.0.0.1 的 SAN，网关进程另行信任同一 CA。资源端地址/client id/私有密钥文件/CA 都只在运行时提供。本代理未开隧道、未更新真实栈或网关，真实 env_prepare 和床构建仍待此部署后核对。

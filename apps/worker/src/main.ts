@@ -11,7 +11,7 @@ import {SourceCache} from '../../../packages/connectors/src/source-cache.ts';
 
 function env(name: string): string { const value = process.env[name]; if (!value) throw new Error(`Required environment variable: ${name}`); return value; }
 const base = new URL(env('CIRCLE_SERVER_URL'));
-if (base.protocol !== 'http:' || base.hostname !== '127.0.0.1') throw new Error('Phase one worker only connects to the authorized loopback development server');
+if (!['http:','https:'].includes(base.protocol) || base.hostname !== '127.0.0.1' || base.username || base.password) throw new Error('Worker requires HTTP or HTTPS on the authorized 127.0.0.1 loopback server without embedded credentials');
 const username = env('CIRCLE_WORKER_USERNAME'); const password = env('CIRCLE_WORKER_PASSWORD');
 let token = ''; let expires = 0; let stopped = false;
 const stopController=new AbortController();
@@ -19,14 +19,14 @@ const stop=()=>{stopped=true;stopController.abort();};
 process.on('SIGTERM',stop);process.on('SIGINT',stop);process.once('disconnect',stop);
 async function authenticate(): Promise<void> {
   if (token && Date.now() < expires - 5000) return;
-  const response = await fetch(new URL('/v1/auth/dev-login',base), { method: 'POST', headers: { 'content-type':'application/json' }, body: JSON.stringify({ username,password }) });
+  const response = await fetch(new URL('/v1/auth/dev-login',base), { method: 'POST', redirect:'error', headers: { 'content-type':'application/json' }, body: JSON.stringify({ username,password }) });
   const envelope = await response.json() as any;
   if (!response.ok) throw new ApiError('UNAUTHENTICATED','Worker development login failed');
   token = envelope.data.token; expires = Date.parse(envelope.data.expiresAt);
 }
 async function request(path: string,body: unknown): Promise<any> {
   await authenticate();
-  const response = await fetch(new URL(path,base), { method:'POST',headers:{ authorization:`Bearer ${token}`,'content-type':'application/json' },body: JSON.stringify(body) });
+  const response = await fetch(new URL(path,base), { method:'POST',redirect:'error',headers:{ authorization:`Bearer ${token}`,'content-type':'application/json' },body: JSON.stringify(body) });
   const envelope = await response.json() as any;
   if (!response.ok) throw new ApiError(envelope.error.code,envelope.error.message);
   return envelope.data;
@@ -40,7 +40,7 @@ async function executeProfessional(claim:any):Promise<void>{
   const fence={fencingToken:claim.fencingToken},abort=new AbortController(),onStop=()=>abort.abort();stopController.signal.addEventListener('abort',onStop,{once:true});
   let pendingHeartbeat:Promise<void>|undefined;const timer=setInterval(()=>{if(pendingHeartbeat)return;pendingHeartbeat=request(`/v1/workers/operations/${claim.operationId}/heartbeat`,fence).then(()=>{}).catch(()=>abort.abort()).finally(()=>{pendingHeartbeat=undefined;});},HEARTBEAT_MS);
   try{
-    const report=await methods.execute(claim,{check:()=>request(`/v1/workers/operations/${claim.operationId}/preflight`,fence),signal:abort.signal,directory:env('CIRCLE_SERVER_DATA_DIR'),event:event=>request(`/v1/workers/operations/${claim.operationId}/events`,{...fence,inputRevisionId:claim.inputRevisionId,event}),source:async()=>{await authenticate();const response=await fetch(new URL(`/v1/workers/operations/${claim.operationId}/source?fence=${claim.fencingToken}`,base),{headers:{authorization:`Bearer ${token}`}});if(!response.ok)throw new ApiError('EVIDENCE_INSUFFICIENT','Source download failed');return Buffer.from(await response.arrayBuffer());}});
+    const report=await methods.execute(claim,{check:()=>request(`/v1/workers/operations/${claim.operationId}/preflight`,fence),signal:abort.signal,directory:env('CIRCLE_SERVER_DATA_DIR'),event:event=>request(`/v1/workers/operations/${claim.operationId}/events`,{...fence,inputRevisionId:claim.inputRevisionId,event}),source:async()=>{await authenticate();const response=await fetch(new URL(`/v1/workers/operations/${claim.operationId}/source?fence=${claim.fencingToken}`,base),{redirect:'error',headers:{authorization:`Bearer ${token}`}});if(!response.ok)throw new ApiError('EVIDENCE_INSUFFICIENT','Source download failed');return Buffer.from(await response.arrayBuffer());}});
     if(!stopped)await request(`/v1/workers/operations/${claim.operationId}/report`,report);
   }finally{clearInterval(timer);await pendingHeartbeat;stopController.signal.removeEventListener('abort',onStop);}
 }
@@ -93,7 +93,7 @@ while (!stopped) {
         }catch(error){const failure=error instanceof ApiError?error:new ApiError('INTERNAL_ERROR','Registered tool failed');report={...fence,inputRevisionId:claim.inputRevisionId,status:'failed',output:{},error:{code:failure.code,message:failure.message,details:failure.details}};}
         if(heartbeatError)throw heartbeatError;await request(`/v1/workers/operations/${claim.operationId}/report`,report);continue;
       }
-      const report=await methods.execute(claim,{check:()=>request(`/v1/workers/operations/${claim.operationId}/preflight`,fence),signal:stopController.signal,directory:env('CIRCLE_SERVER_DATA_DIR'),event:event=>request(`/v1/workers/operations/${claim.operationId}/events`,{...fence,inputRevisionId:claim.inputRevisionId,event}),source:async()=>{await authenticate();const response=await fetch(new URL(`/v1/workers/operations/${claim.operationId}/source?fence=${claim.fencingToken}`,base),{headers:{authorization:`Bearer ${token}`}});if(!response.ok)throw new ApiError("EVIDENCE_INSUFFICIENT","Source download failed");return Buffer.from(await response.arrayBuffer());}});
+      const report=await methods.execute(claim,{check:()=>request(`/v1/workers/operations/${claim.operationId}/preflight`,fence),signal:stopController.signal,directory:env('CIRCLE_SERVER_DATA_DIR'),event:event=>request(`/v1/workers/operations/${claim.operationId}/events`,{...fence,inputRevisionId:claim.inputRevisionId,event}),source:async()=>{await authenticate();const response=await fetch(new URL(`/v1/workers/operations/${claim.operationId}/source?fence=${claim.fencingToken}`,base),{redirect:'error',headers:{authorization:`Bearer ${token}`}});if(!response.ok)throw new ApiError("EVIDENCE_INSUFFICIENT","Source download failed");return Buffer.from(await response.arrayBuffer());}});
       if(stopped)continue;
       if(heartbeatError)throw heartbeatError;
       await request(`/v1/workers/operations/${claim.operationId}/report`,report);

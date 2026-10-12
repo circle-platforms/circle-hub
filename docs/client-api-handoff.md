@@ -21,6 +21,8 @@ Node.js 24。启动命令使用锁定的 `embedded-postgres@18.4.0-beta.17` 在�
 
 同时输出一条 `type: "dev-stack-ready"` JSON，含 `url`、`login`、`scopeId`、`samplePath`、`pid` 和 PostgreSQL 实际版本。端口默认随机；需要固定时用 `CIRCLE_SERVER_PORT=8080 npm run dev:stack`。全部服务只监听 127.0.0.1。本次登录密码只保存在临时配置并打印到该终端，不固定在 Git。Ctrl+C 有序停止 worker、server 和 PostgreSQL 并删除临时数据库、原件及制品。再次启动是新环境；server 在同一个仍存活的 PostgreSQL 中重启才会恢复原任务。
 
+第二阶段完整栈支持原生 HTTPS：在启动 Node/npm 进程前设置仓库外 `CIRCLE_SERVER_TLS_CONFIG`（certFile/keyFile）及 `NODE_EXTRA_CA_CERTS`（自签 CA 文件），ready.url 会是 https://127.0.0.1。worker、admin 和无界面 Circle 均保留证书/主机名校验并使用该信任；不放宽为远端 worker 地址。启动示例及用户选定的 SSH 反向隧道交接见[资源身份与 HTTPS](resource-identity-handoff.md#执行接入与-https)。
+
 开发身份源仅在 `CIRCLE_SERVER_DEV_AUTH=1` 且显式指定临时身份配置时启用。它不是企业认证。token 默认有效 **8 小时**；`CIRCLE_SERVER_DEV_TOKEN_TTL_MS` 可配置 1000–86400000ms（最多 24 小时），显式请求的短 expiresInMs 仍有效。客户端用秘密存储保存 token，到期前无交互续期。账号和授权来自服务端配置/策略表，请求体自报的 principal、role、actor 或 tenant 都不授予权限。
 
 `POST /v1/auth/refresh` 带当前 Bearer 和空 JSON `{}`，响应沿用 dev-login 的 `{token,tokenType,expiresAt,principalId,tenantId,scopes}`（CLIENT_ROUTES.authRefresh）。仅仍有效、未撤销且身份未禁用的开发会话可续期；不要求密码、不接受自报期限/身份/范围。当前实现延长同一 token，避免并发旧请求因换 token 被拒；scopes 重新取当前策略。已过期返回 401，不从过期凭据恢复会话；受约束 run token 返回 403，不能升级成普通登录。

@@ -549,3 +549,17 @@ RPC 验收用独立合成模块和脚本模型：批准后改动外部源文件�
 补充零字节与生命周期回归先确认失败：模块包含空文件时旧公开上传非空规则阻止封存；已经停用的技能重提被响应误标 approved。实现 B 的内部 storeOriginal 以保留清单中的空文件，公开 sources 上传仍拒空；来源制品 size 允许零，实际生命周期从当前资产取得。模块总字节预算回归亦通过。模块安装交接已写 docs/module-installation.md 和 docs/client-api-handoff.md，并经 Otty 先告知 Claude 开始客户端适配。
 
 最终模块专项 **9/9**；完整 contracts **4/4**、methods **23/23**、acceptance **151/151**、references **7/7**，共 **185/185**，固定 Circle 8b2ceb6，**无 skip**。typecheck、diff 检查和 **714** 归档核验通过；四次读取规模回归 p95 **165ms**。独立技能 manifest 另通过现有 SkillManifest 契约只读核验；独立仓库和主工作树保持干净。当前分支已包含 ae0c6dc 的待批审批人自动可见、eebb178 的 sar_ command_check 顶层 build/buildId，以及 436a9ec 的 C 资源签发。只在 server-s2 本地提交并交 Claude 复核；无 push、部署或真实系统/设备/付费模型操作，7420 保持由 Claude 管理。真实网络/HTTPS 和网关配置仍等用户决定，不把模块或合成执行验收表述为实际床已运行。
+
+## 33：完整栈的原生 HTTPS 与反向隧道交接
+
+用户报告 ae0c6dc 独立复核 **176/176**，在实际 7420 尝试 CIRCLE_SERVER_TLS_CONFIG + 自签 CA + NODE_EXTRA_CA_CERTS 时，worker 的仅 HTTP 启动限制阻止完整栈就绪。原 TLS 验收确实只覆盖 server。核实同类限制也在 admin CLI；Circle RPC 的精简子进程环境还漏传了 CA 信任。未操作该真实栈或网关。
+
+先加完整 TLS 验收，HTTP 基线和新增 HTTPS/拒绝边界联合实际 **1/6**，失败含 worker 拒绝 HTTPS 及旧重定向抵达另一合成监听者。worker/admin 接受 HTTP 或 HTTPS，但仍只准 127.0.0.1、禁止 URL 内嵌凭据，登录、回报、原件下载和管理请求拒绝重定向。没有关闭证书或主机名校验；自签 CA 由 Node 启动时 NODE_EXTRA_CA_CERTS 提供，TLS 配置/CA/私钥均在仓库外。dev-stack 传递相同启动信任，bootstrap 保持同 origin，两个真实 worker 注册后才就绪。
+
+中间联合 **5/6** 的余项先修正合成知识资产遗漏 candidate writes 的测试声明。随后单独 RPC **0/1** 暴露更强的验收缺口：未传 CA 时 Circle 仍写出产物，但 C 中没有对应的工具操作；不能拿文件存在作为 server 工具完成的证据。补传 NODE_EXTRA_CA_CERTS 至正式 CLI 子进程，不传 TLS 私钥/完整进程环境/关闭校验的变量。新 RPC 验收要求同一任务下实际 tools.invoke=succeeded，再核对产物；固定 Circle 和脚本模型联合 **6/6**、无 skip，typecheck 通过。
+
+组合验收用临时 PostgreSQL 和独立合成 CA/签发证书：HTTPS worker 登录/claim/preflight/下载原件/回报，脑图编译完成、事件补读、下载产物并重算 SHA；dev-stack 的两个 worker 在 HTTPS 下注册，admin 优雅重启改变 bootId 并保留交付结果。未信任 CA、已信任但 SAN 不匹配均不能注册 worker；远端地址在登录前拒绝，重定向接收端保持零请求。另有原 HTTP dev-stack 与清理基线，HTTPS 固定 Circle 真实调用 scoped 工具并交付封存脚本产物。
+
+用户已决定由 Mac 建 SSH 反向隧道，把网关主机的回环端口映射到 server 的本机端口；网关配置由用户按维护者准备的内容修改。已在 docs/resource-identity-handoff.md 写运行时参数化命令、HTTPS/CA/SAN 要求和启动方式，client-api-handoff.md 与 AGENTS.md 同步。server 仍只监听回环，隧道传 TLS 原字节，不增加 HTTP 例外或反代。本代理未建立实际隧道、未更改 7420/网关、未投递真实设备。
+
+最终完整 contracts **4/4**、methods **23/23**、acceptance **156/156**、references **7/7**，共 **190/190**，固定 Circle 8b2ceb6，**无 skip**；HTTPS/HTTP 组合专项 **6/6**。typecheck、diff 和 **714** 归档核验通过；四次读取规模回归 p95 **169ms**，原 HTTP、模块安装、资源身份、脑图编译和审批/bot 机制均继续通过。主工作树与独立 circle-packs 保持干净，仅 server-s2 本地提交，经 Otty 交 Claude 复核/部署；未 push。真实 HTTPS 栈与 SSH/网关接入仍由用户和维护者按此交接操作，真实床构建仍须 env_prepare 核对。

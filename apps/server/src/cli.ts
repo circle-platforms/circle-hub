@@ -9,12 +9,12 @@ async function main():Promise<void>{
   const mode=args.shift();if(mode==='modules'){await moduleCommand(args);return;}
   if(mode!=='admin')throw new ApiError('INVALID_PAYLOAD','Usage: circle-server admin <command> | modules check|install');
   const target=new URL(process.env.CIRCLE_SERVER_URL??'http://127.0.0.1:8080');
-  if(target.protocol!=='http:'||target.hostname!=='127.0.0.1')throw new ApiError('INVALID_PAYLOAD','Phase one admin requires the local development server');
+  if(!['http:','https:'].includes(target.protocol)||target.hostname!=='127.0.0.1'||target.username||target.password)throw new ApiError('INVALID_PAYLOAD','Admin requires HTTP or HTTPS on the authorized 127.0.0.1 loopback server without embedded credentials');
   let token=process.env.CIRCLE_SERVER_TOKEN;
   if(!token&&process.env.CIRCLE_SERVER_TOKEN_FILE)token=(await readFile(process.env.CIRCLE_SERVER_TOKEN_FILE,'utf8')).trim();
   if(!token)throw new ApiError('UNAUTHENTICATED','Set CIRCLE_SERVER_TOKEN or CIRCLE_SERVER_TOKEN_FILE');
   const request=async(path:string,body?:unknown)=>{
-    const response=await fetch(new URL(path,target),{method:body===undefined?'GET':'POST',headers:{authorization:`Bearer ${token}`,...(body===undefined?{}:{'content-type':'application/json'})},...(body===undefined?{}:{body:JSON.stringify(body)})});
+    const response=await fetch(new URL(path,target),{method:body===undefined?'GET':'POST',redirect:'error',headers:{authorization:`Bearer ${token}`,...(body===undefined?{}:{'content-type':'application/json'})},...(body===undefined?{}:{body:JSON.stringify(body)})});
     const envelope=await response.json() as any;if(!response.ok)throw new ApiError(envelope.error.code,envelope.error.message);return envelope.data;
   };
   const output=(value:unknown)=>{console.log(JSON.stringify(value));},command=args.shift();
