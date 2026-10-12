@@ -189,3 +189,19 @@ RPC prompt/turn/tool/settled 等真实事件进入 C。只在 agent_settled、�
 新增 read/sync `buildsite.fixed_releases`，只按指定的 1–20 个相关构建抓清单，保留所有匹配和候选内最早正式发布；空编号 unknown、Beta-only 不当正式版。coverage 明确不是全站完整覆盖。请求并发/开始间隔可配，默认构建工具 2/200ms，验收同时检查最大活跃请求数和开始间隔。没有连接真实构建站点。
 
 实际 SDK/按需/限额 **9/9**，目录/RPC 在显式 3f08f0 Circle 上 **9/9**（无跳过），typecheck 通过。先前超限用例直接换 XML 而没换构建段落，现在按新缓存契约更新虚构镜像摘要后再测，wire RESULT_TOO_LARGE 保持。旧同步案例调整为明确按需取树/清单，原正式/Beta/ISO 编码/不访问旧跟踪链接机制继续通过。下一步第 6 幕定时整理和 bot，以及自动产品声明/第 7 幕专业核心迁出；这些仍未完成。
+
+### 独立复核和真实云运行观察
+
+用户提供 Claude 对 `2aa991f` 的复核：contracts 4/4、methods 6/6、acceptance 55/56，只有核心守卫失败，RPC 使用显式 cf32f7f 没有跳过。真实 Otty/Circle 在独立批准后把包变成 registered，worker 以无界面 Circle cf32f7f 执行 APV 包，15 次工具调用与本地一致，4 个产物 SHA 与本地相同（用户给出 case.xlsx 前缀 `6fcd622b`），remoteStoppingVerified=false。完整 Circle 提交只读核对为 `cf32f7f288ef1f0477d9537a138bfc6996654699`。这是用户观察，未补造完整制品 SHA。
+
+用户复现缺失 fixed 链接/404 会令 releasesFor 全量失败，排在第 6 幕后补 allSettled/coverage 验收；页面不变原地替换 XML 会沿用缓存、暂无淘汰也记为现有限制，未宣称解决。
+
+## 13：定时整理、事件与 bot
+
+先写第 6 幕并确认入口失败（普通两条 0/2，实际 RPC 初始未配置而注明 skip），随后显式 cf32f7f 本机构建实现/验收。资产组合保留技能、触发、渠道与执行身份，第一版执行身份限登记者本人，权限/目录每次重查，尚未声称支持另一服务身份代理个人凭据。定时 dueAt、事件游标、task/occurrence 唯一键同事务落地；重启不丢不重，范围越权隐藏，外部 id 同内容去重/异内容拒绝。D 原件收据按 path/SHA 发 source.changed，未调用真实连接器。
+
+整理用共用包 `packs/common/skills/knowledge-consolidation`，只读参考 InfoTest 的 session-checkpoint/memory-consolidator 边界说明，未执行或复制其代码/固定章节。运行者共享许可/所有权/当前源权限由程序固定；只取已授权合成片段，未共享原件不参与。真实 Circle 的脚本模型实际加载 SKILL.md、取共享片段、运行自写 TypeScript normalize、提交有原片段/工具返回的个人候选；规则去重，不声称真实会话的语义质量。候选不进正式快照、他人不可见，团队审核与产品来源权威边界沿用第 3 幕。
+
+联验发现 z.toJSONSchema 默认输出形状把 default 参数也标为 required，Circle 拒绝省略 limit/conditions；改为 io=input，真实 RPC 省略参数后通过。渠道仅 Circle 事件、bot.output 与发布游标同事务保存，渠道注册可扩展，未做企业微信。当前声明仍未被自动提升到产品 stable，专业核心迁出待第 7 幕。
+
+实际第 6 幕及规范器 **4/4**；显式 cf32f7f 的完整 `npm test` contracts **4/4**、methods **7/7**、acceptance **58/59**、无 skip，唯一红项仍旧专业核心守卫；typecheck/diff 检查通过。本阶段所有验收为合成资料/脚本模型，不是实际 auto dream 质量或生产部署。下一步修缺失修复清单，再第 7 幕。

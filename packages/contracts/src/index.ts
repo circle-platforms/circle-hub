@@ -169,6 +169,13 @@ export const SkillPackCheck=z.object({undeclaredTools:z.array(ToolName),missingT
 export const SkillPackView=z.object({skillPackId:SkillPackId,digest:Sha256,status:z.enum(['candidate','registered','declined']),check:SkillPackCheck,approvalTaskId:TaskId,
   manifest:SkillManifest,ownerPrincipalId:z.string(),scopeId:ScopeId,assetId:AssetId,assetVersion:PackageVersion});
 export const SkillRunInput=z.object({inputs:z.record(z.string(),z.unknown()),idempotencyKey:z.string().min(8).max(200)}).strict();
+const TriggerBase=z.object({scopeId:ScopeId,version:PackageVersion,name:z.string().min(1).max(200)});
+export const TriggerRegistration=z.discriminatedUnion('kind',[
+  TriggerBase.extend({kind:z.literal('schedule'),intervalMs:z.number().int().min(100).max(31536000000),startsAt:z.iso.datetime()} ).strict(),
+  TriggerBase.extend({kind:z.literal('event'),sourceAssetId:AssetId,eventName:z.string().min(1).max(100)}).strict(),
+]);
+export const BotRegistration=TriggerBase.extend({skillPackId:SkillPackId,triggerAssetId:AssetId,identityPrincipalId:z.string().regex(/^prn_/),channel:z.string().min(1).max(100),inputs:z.record(z.string(),z.unknown())}).strict();
+export const ConnectorEventInput=z.object({externalId:z.string().min(1).max(300),name:z.string().min(1).max(100),payload:z.record(z.string(),z.unknown())}).strict();
 export const MindmapCompileInput = z.object({ sourceRevisionId: SourceRevisionId, sourceSha256: Sha256.optional() });
 export const ArtifactReference = z.object({ artifactId: ArtifactId, sha256: Sha256, size: z.number().int().positive(),
   fileName: z.string(), mediaType: z.enum(['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','application/json','text/plain']),
@@ -312,6 +319,10 @@ export const CLIENT_ROUTES = {
   skillpacks:{method:'GET',path:'/v1/skillpacks',response:z.array(SkillPackView)},
   skillpackSubmit:{method:'POST',path:'/v1/skillpacks',request:SkillPackSubmission,response:SkillPackView,scopeHeader:'X-Scope-Id'},
   skillpackRun:{method:'POST',path:'/v1/skillpacks/{id}/runs',request:SkillRunInput,response:z.object({taskId:TaskId})},
+  trigger:{method:'POST',path:'/v1/automations/triggers',request:TriggerRegistration},
+  bot:{method:'POST',path:'/v1/automations/bots',request:BotRegistration},
+  botRuns:{method:'GET',path:'/v1/automations/bots/{assetId}/runs'},
+  connectorEvent:{method:'POST',path:'/v1/connectors/{assetId}/events',request:ConnectorEventInput},
   objects:{method:'GET',path:'/v1/objects',query:ObjectListQuery,response:ObjectPage},
   object:{method:'GET',path:'/v1/objects/{entityId}',response:EntityView},
   objectObservations:{method:'GET',path:'/v1/objects/{entityId}/observations'},

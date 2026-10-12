@@ -235,3 +235,13 @@ POST 成功是 201，status 初始 `candidate`，额外返回 manifest/ownerPrin
 任务 events 增加 `runtime.<RPC type>`（例如 runtime.tool_result/runtime.agent_settled），payload.event 为实际 RPC 事件。取消发 abort、关 stdin，超时 kill；观察到本地进程退出后任务保持 unknown、资源冻结，返回 remoteStoppingVerified:false。未完成独立远端核对，不把本地退出记为远端停止或已交付；后续事件按原游标补读。
 
 真实 RPC 验收需显式设置 `CIRCLE_BIN` 和 `CIRCLE_COMMIT` 再运行 `r2-05-skillpacks.test.ts` 或整套；没有时三个实际 CLI 用例显示原因并跳过，不能把 skip 当作运行通过。Circle 工作树升级时选择新的已确认构建或独立固定旧提交的 worktree，运行器不会因此放宽固定版本检查。
+
+## 第二阶段：触发、整理与 Circle 渠道
+
+`POST /v1/automations/triggers` 登记草稿资产：共同字段 scopeId/version/name，定时追加 `{kind:"schedule",intervalMs,startsAt}`，事件追加 `{kind:"event",sourceAssetId,eventName}`。`POST /v1/automations/bots` 共同字段追加 skillPackId/triggerAssetId/identityPrincipalId/channel/inputs；第一版 identity 必须是登记者本人，channel 为 `circle-events`。组件须同 scope，技能 manifest 必须允许相应 trigger。需要 automations.manage，资产经独立人员批准并由主人激活才运行；不跳过资产生命周期。
+
+`GET /v1/automations/bots/{assetId}/runs` 返回个人任务及 occurrenceKey/channel/published，需 automations.read。`POST /v1/connectors/{assetId}/events` 接收 `{externalId,name,payload}`，需 connectors.events、当前源主人及运行中的连接器；同源/范围/外部 id 去重，不同 payload 同 id 拒绝。正常连接器读收据也会按 path/SHA 生成 source.changed；不连接旧缺陷系统。
+
+定时 dueAt 和事件游标、任务/唯一 occurrence 同事务保存，重启重读不会丢/重派。C 最终新增 bot.output，含 channel/botAssetId/status/artifacts/evidence/unknowns；输出只在 Circle 事件流，渠道注册可扩展，没有企业微信桩。
+
+`knowledge.shared_fragments {limit?}` 是 read/sync：只取 caller 明确允许共享、当前可见的 shared-session 修订，返回原片段、工具返回和 Evidence；未共享输入不进入整理。目录现在正确导出输入 schema，带默认值字段仍可省略。`packs/common/skills/knowledge-consolidation` 的 TypeScript 脚本只规范/去重有证据的结构化 facts/practices/corrections，真实文本的语义抽取没有验收；整理运行使用脚本模型，候选仍为 personal/consolidated，产品优先、冲突保留、不自动发布团队快照。普通 bot 读者不能看他人个人任务/候选。

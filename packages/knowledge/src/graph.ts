@@ -117,6 +117,21 @@ export class KnowledgeGraph {
     const quote=await this.save(tx,ctx,'Evidence',scopeId,canonicalHash([source.recordId,digest]),{sourceRecordId:source.recordId,start:0,end:bytes.length,sha256:digest,text:bytes.toString(),path:payload.path},[source.recordId,...evidence.map(e=>e.record_id)],{category:'consolidated',sourceType:'skill-run',visibility:'personal',state:'observed',digest});
     return this.claim(ctx,{scopeId,subject:input.claim.subject,predicate:input.claim.predicate,value:input.claim.value,conditions:input.claim.conditions??{},evidenceIds:[quote.recordId],origin:'model'},tx);
   }
+  async sharedFragments(tx:Transaction,ctx:AuthContext,scopeId:string,limit:number):Promise<any>{
+    await this.auth.check(ctx,'knowledge.read',scopeId,tx);const rows=(await tx.query(`SELECT r.* FROM knowledge_records r JOIN knowledge_source_heads h ON h.record_id=r.record_id
+      WHERE r.tenant_id=$1 AND r.scope_id=$2 AND r.owner_id=$3 AND r.kind='SourceRevision' AND r.knowledge_category='consolidated' AND r.source_type='shared-session'
+      AND r.payload->'sharing'->>'allowed'='true' ORDER BY r.created_at,r.record_id`,[ctx.tenantId,scopeId,ctx.principalId])).rows;
+    const fragments=[],evidence=[],unmapped=[];
+    for(const row of rows){if(!await this.visible(ctx,row,tx))continue;const bytes=await this.objects.objects.getObject({Bucket:'evidence',Key:row.sha256});let value:any;
+      try{value=JSON.parse(bytes.toString());}catch{unmapped.push({sourceRecordId:row.record_id,reason:'No structured synthetic fragments; semantic extraction was not run'});continue;}
+      if(!Array.isArray(value.fragments)){unmapped.push({sourceRecordId:row.record_id,reason:'Structured fragments are absent'});continue;}
+      const quoted=await this.save(tx,ctx,'Evidence',scopeId,canonicalHash([row.record_id,0,bytes.length]),{sourceRecordId:row.record_id,start:0,end:bytes.length,sha256:row.sha256,text:bytes.toString(),path:row.payload.path},[row.record_id],{category:'consolidated',sourceType:'shared-session',visibility:'personal',state:'observed',digest:row.sha256});
+      const ref={evidenceId:quoted.recordId,sha256:quoted.sha256};evidence.push(ref);
+      for(const fragment of value.fragments){if(!fragment||typeof fragment.id!=='string'||!['fact','practice','correction'].includes(fragment.kind)||typeof fragment.quote!=='string'){unmapped.push({sourceRecordId:row.record_id,reason:'Fragment schema is not recognized'});continue;}
+        fragments.push({...fragment,sourceRecordId:row.record_id,knowledgeCategory:'consolidated',sharingAllowed:true,evidence:[ref]});}
+    }
+    requireCondition(fragments.length<=limit,'RESULT_TOO_LARGE','Shared fragment result exceeds the requested bound');return {result:{fragments,unmapped,scope:'personal',sharing:'explicit-only'},evidence};
+  }
   async conflicts(ctx:AuthContext,claim:Row,tx?:Transaction):Promise<any[]>{
     const rows=(await (tx??this.store.pool).query(`SELECT * FROM knowledge_records WHERE kind='Claim' AND tenant_id=$1 AND scope_id=$2
       AND payload->>'subject'=$3 AND payload->>'predicate'=$4 AND record_id<>$5`,[claim.tenant_id,claim.scope_id,claim.payload.subject,claim.payload.predicate,claim.record_id])).rows;

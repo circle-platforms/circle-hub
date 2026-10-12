@@ -39,6 +39,7 @@ export const toolPackages:ToolPackage[]=[
     tool('framework_get','取框架镜像文件',z.object({path:short}).strict(),'environment.read','framework.get'),
   ]},
   {id:'knowledge',prefix:'knowledge',tools:[
+    tool('shared_fragments','只取本人明确许可共享的片段与原始证据',z.object({limit:z.number().int().min(1).max(100).default(20)}).strict(),'knowledge.read','consolidation.fragments'),
     tool('claim_submit','提交个人沉淀候选；不自动提升为团队知识',z.object({claim:z.object({subject:short,predicate:short,value:z.unknown(),conditions:z.record(z.string(),z.unknown()).default({})}).strict(),evidence:z.array(z.object({evidenceId:z.string(),sha256:z.string().regex(/^[a-f0-9]{64}$/)}).strict()).min(1).max(100)}).strict(),'knowledge.submit','candidate.submit','write','task'),
   ]},
 ];
@@ -46,6 +47,7 @@ export interface ConnectorProfile {origin:string;root?:string;index?:string;payl
 export interface ToolReturn {result:any;raw:RawReturn[];sourceType:string}
 export async function executeTool(packageId:string,handler:string,args:any,profile:ConnectorProfile,credential?:string,options:{cache?:SourceCache;cacheNamespace?:string}={}):Promise<ToolReturn>{
   if(handler==='candidate.submit')return {result:args,raw:[],sourceType:'skill-run'};
+  if(handler==='consolidation.fragments')return {result:args,raw:[],sourceType:'shared-session'};
   const source=new HttpSource(profile.origin,{...(credential?{authorization:()=>credential}:{}),timeoutMs:5000,requestConcurrency:profile.requestConcurrency??2,requestIntervalMs:profile.requestIntervalMs??(packageId==='build-site'?200:0)});
   if(packageId==='build-site'){
     const site=new BuildSite(source,options.cache,options.cacheNamespace??canonicalHash([profile.origin,credential??null])),index=await site.index(profile.index??'/');const raw:RawReturn[]=[{...index.evidence,sourceType:'build-record'}],builds:BuildRecord[]=[];

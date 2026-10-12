@@ -44,10 +44,12 @@ import {toolPackages} from '../../../packages/connectors/src/tool-packages.ts';
 import {skillMigration} from '../../../packages/skillpacks/src/migration.ts';
 import {SkillPacks} from '../../../packages/skillpacks/src/index.ts';
 import {PrivateIPC} from '../../../packages/runtime/src/private-ipc.ts';
+import {automationMigration} from '../../../packages/tasks/src/automation-migration.ts';
+import {Automations} from '../../../packages/tasks/src/automations.ts';
 
 function environment(name: string): string { const value = process.env[name]; if (!value) throw new Error(`Required environment variable: ${name}`); return value; }
 const store = new Store(JSON.parse(environment('CIRCLE_SERVER_DATABASE_CONFIG')));
-await store.migrate([taskMigration,mindmapTaskMigration,knowledgeMigration,executionMigration,resourceMigration,approvalMigration,conclusionMigration,checklistMigration,connectorMigration,entityMigration,assetMigration,graphMigration,toolMigration,skillMigration]);
+await store.migrate([taskMigration,mindmapTaskMigration,knowledgeMigration,executionMigration,resourceMigration,approvalMigration,conclusionMigration,checklistMigration,connectorMigration,entityMigration,assetMigration,graphMigration,toolMigration,skillMigration,automationMigration]);
 const auth = new Auth(store);
 requireCondition(process.env.CIRCLE_SERVER_DEV_AUTH === '1', 'INVALID_PAYLOAD', 'Phase one requires explicitly enabled development authentication');
 await auth.initializeDevelopment(environment('CIRCLE_SERVER_DEV_IDENTITIES'));
@@ -69,6 +71,7 @@ execution.managedPreflight=(tx,actor,row,authorization)=>row.name==='assets.exec
 execution.managedReport=(tx,task,row,report)=>row.name==='assets.execute'?skills.report(tx,task,row,report):catalog.report(tx,task,row,report);
 approvals.policies.set('assets.publish',{authorize:(tx,ctx,task,action)=>skills.approvalAuthorize(tx,ctx,task,action),check:(tx,ctx,task,row,answer)=>skills.approvalCheck(tx,ctx,task,row,answer),accepted:(tx,ctx,task,row,answer)=>skills.approved(tx,ctx,task,row,answer)});
 const privateIPC=new PrivateIPC();skills.privateSocketPath=privateIPC.path;
+const automations=new Automations(store,auth,tasks,assets,skills);catalog.observed=(tx,ctx,id,raw)=>automations.observed(tx,ctx,id,raw);
 await privateIPC.start(async(message)=>{const worker=await auth.authenticate(message.authorization),id=z.string().parse(message.operationId),fence=z.number().int().positive().parse(message.fencingToken);return skills.privateSecret(worker,id,fence,message.revoke===true);});
 const assessments=new Assessments(store,tasks,knowledge),checklists=new Checklists(store,tasks,knowledge);
 const registry=new ConnectorRegistry(store,auth);await registry.initialize();execution.connectorCheck=(tx,actor,scope,spec)=>registry.check(tx,actor,scope,spec);
@@ -131,6 +134,10 @@ const server = createServer(async (request, response) => {
     }
     const ctx = await auth.authenticate(request.headers.authorization);
     if(ctx.run){const allowed=request.method==='GET'&&['/v1/tools','/v1/tasks','/v1/status'].includes(url.pathname)||request.method==='POST'&&/^\/v1\/tools\/[^/]+\/call$/.test(url.pathname)||request.method==='GET'&&/^\/v1\/tasks\/[^/]+\/(?:status|result|events)$/.test(url.pathname)||request.method==='GET'&&/^\/v1\/(?:sources|artifacts|evidence)\/[^/]+\/content$/.test(url.pathname);requireCondition(allowed,'FORBIDDEN_ACTION','Run token authorizes only its declared tools and task reads');}
+    if(request.method==='POST'&&url.pathname==='/v1/automations/triggers'){send(response,201,{data:await automations.trigger(ctx,await body(request))});return;}
+    if(request.method==='POST'&&url.pathname==='/v1/automations/bots'){send(response,201,{data:await automations.bot(ctx,await body(request))});return;}
+    const botRuns=/^\/v1\/automations\/bots\/([^/]+)\/runs$/.exec(url.pathname);if(botRuns&&request.method==='GET'){send(response,200,{data:await automations.runs(ctx,AssetId.parse(botRuns[1]))});return;}
+    const connectorEvent=/^\/v1\/connectors\/([^/]+)\/events$/.exec(url.pathname);if(connectorEvent&&request.method==='POST'){send(response,201,{data:await automations.event(ctx,AssetId.parse(connectorEvent[1]),await body(request))});return;}
     if(url.pathname===CLIENT_ROUTES.skillpacks.path){
       if(request.method==='GET'){send(response,200,{data:await skills.list(ctx)});return;}
       if(request.method==='POST'){send(response,201,{data:await skills.submit(ctx,await body(request,MAX_WORKER_REPORT_BYTES),z.string().optional().parse(request.headers['x-scope-id']))});return;}
@@ -381,7 +388,7 @@ server.requestTimeout = 10_000; server.headersTimeout = 10_000;
 let running: Promise<void> | undefined;
 const timer = setInterval(() => {
   if (running || closing) return;
-  running = tasks.runOnce().then(() => mindmaps.runOnce()).then(()=>rules.tick()).then(()=>professional.runOnce()).catch(error => { console.error(JSON.stringify({type:'runner-transaction-failed',code:error instanceof ApiError?error.code:(error as any).code??'INTERNAL_ERROR'})); }).finally(() => { running = undefined; });
+  running = tasks.runOnce().then(() => mindmaps.runOnce()).then(()=>rules.tick()).then(()=>professional.runOnce()).then(()=>automations.tick()).catch(error => { console.error(JSON.stringify({type:'runner-transaction-failed',code:error instanceof ApiError?error.code:(error as any).code??'INTERNAL_ERROR'})); }).finally(() => { running = undefined; });
 }, Number(process.env.CIRCLE_SERVER_POLL_MS ?? 100));
 await new Promise<void>(resolve => server.listen(Number(process.env.CIRCLE_SERVER_PORT ?? 8080), '127.0.0.1', resolve));
 const address = server.address() as { port: number };

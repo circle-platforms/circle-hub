@@ -12,6 +12,7 @@ import type {ToolPackage,ToolDefinition,ConnectorProfile} from '../../connectors
 
 export class ToolCatalog {
   store:Store;auth:Auth;assets:Assets;tasks:Tasks;execution:Operations;knowledge:KnowledgeGraph;packages:ToolPackage[];profiles:Record<string,ConnectorProfile>={};
+  observed?: (tx:Transaction,ctx:AuthContext,assetId:string,raw:any)=>Promise<void>;
   constructor(store:Store,auth:Auth,assets:Assets,tasks:Tasks,execution:Operations,knowledge:KnowledgeGraph,packages:ToolPackage[]){Object.assign(this,{store,auth,assets,tasks,execution,knowledge,packages});this.store=store;this.auth=auth;this.assets=assets;this.tasks=tasks;this.execution=execution;this.knowledge=knowledge;this.packages=packages;}
   async initialize(profileFile?:string):Promise<void>{
     if(profileFile){const schema=z.object({profiles:z.record(z.string(),z.object({origin:z.string().url(),root:z.string().optional(),index:z.string().optional(),payloadField:z.string().optional(),requestConcurrency:z.number().int().min(1).max(8).optional(),requestIntervalMs:z.number().int().min(0).max(60000).optional()}).strict())}).strict();this.profiles=schema.parse(JSON.parse(await readFile(profileFile,'utf8'))).profiles;}
@@ -41,7 +42,7 @@ export class ToolCatalog {
       if(ctx.run&&!ctx.run.tools.includes(row.name))continue;
       let credentials=true;for(const reference of row.declaration.credentials){try{const record=await this.assets.row(ctx,reference,tx,'credentials.use');if(record.owner_principal_id!==ctx.principalId||record.lifecycle==='disabled'||record.configuration.connectorAssetId!==row.asset_id)credentials=false;}catch{credentials=false;}}
       if(!credentials)continue;
-      results.push({row,definition,view:{name:row.name,title:definition.title,description:definition.description,inputSchema:z.toJSONSchema(definition.schema),effect:definition.effect,mode:definition.mode,permission:definition.permission,assetId:row.asset_id,assetVersion:row.version}});
+      results.push({row,definition,view:{name:row.name,title:definition.title,description:definition.description,inputSchema:z.toJSONSchema(definition.schema,{io:'input'}),effect:definition.effect,mode:definition.mode,permission:definition.permission,assetId:row.asset_id,assetVersion:row.version}});
     }return results;
   }
   async list(ctx:AuthContext):Promise<{tools:any[];etag:string}>{return this.store.transaction(async tx=>{
@@ -62,12 +63,12 @@ export class ToolCatalog {
     requireCondition(item.row.scope_id===scope&&item.row.asset_id===(spec.target??spec.assetId),'FORBIDDEN_SCOPE','Tool asset partition differs');
     requireCondition(item.row.version===spec.args.assetVersion&&item.row.sha256===(spec.targetIdentity??spec.target_identity),'APPROVAL_STALE','Tool asset revision changed');
     item.definition.schema.parse(spec.args.input);
-    requireCondition(item.definition.handler==='candidate.submit'||this.profiles[item.row.configuration.runtimeProfileRef],'SOURCE_UNREACHABLE','Runtime source profile is not configured');
+    requireCondition(['candidate.submit','consolidation.fragments'].includes(item.definition.handler)||this.profiles[item.row.configuration.runtimeProfileRef],'SOURCE_UNREACHABLE','Runtime source profile is not configured');
     return {effects:{reads:item.definition.effect==='read'?['registered-source']:['knowledge'],writes:item.definition.effect==='write'?['knowledge-candidates']:[]},assetId:item.row.asset_id,assetVersion:item.row.version,
       packageId:item.row.package_id,handler:item.definition.handler,profile:this.profiles[item.row.configuration.runtimeProfileRef],credentialReferences:item.row.declaration.credentials};
   }
   async preflight(tx:Transaction,actor:AuthContext,operation:any,authorization:any):Promise<any>{
-    const workerProfile=authorization.profile??(authorization.handler==='candidate.submit'?{origin:'http://127.0.0.1'}:null);
+    const workerProfile=authorization.profile??(['candidate.submit','consolidation.fragments'].includes(authorization.handler)?{origin:'http://127.0.0.1'}:null);
     requireCondition(workerProfile,'SOURCE_UNREACHABLE','Runtime source profile is not configured');
     let injection:any=null;
     for(const reference of authorization.credentialReferences){const value=await this.assets.executionValue(actor,reference,authorization.assetId);
@@ -83,8 +84,9 @@ export class ToolCatalog {
     let result=report.output.result;
     if(report.status==='succeeded'){
       if(item.definition.handler==='candidate.submit')result=await this.knowledge.candidateFromReturns(tx,actor,task.scopeId,task.taskId,operation.args.input);
+      else if(item.definition.handler==='consolidation.fragments'){const selected=await this.knowledge.sharedFragments(tx,actor,task.scopeId,operation.args.input.limit??20);result=selected.result;evidence.push(...selected.evidence);}
       else{requireCondition(Array.isArray(report.output.raw)&&report.output.raw.length>0,'EVIDENCE_INSUFFICIENT','Read tools require original returns');
-        for(const raw of report.output.raw)evidence.push(await this.knowledge.capture(tx,actor,task.scopeId,item.row.asset_id,{...raw,sourceType:raw.sourceType??report.output.sourceType}));}
+        for(const raw of report.output.raw){evidence.push(await this.knowledge.capture(tx,actor,task.scopeId,item.row.asset_id,{...raw,sourceType:raw.sourceType??report.output.sourceType}));await this.observed?.(tx,actor,item.row.asset_id,raw);}}
     }
     const receipt={output:{result},evidence,reportHash:canonicalHash(report),error:report.error};
     await this.execution.complete(tx,operation,report.status,receipt);
