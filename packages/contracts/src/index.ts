@@ -197,6 +197,7 @@ const registry = {
   OBJECT_NOT_VISIBLE: [404, 'permission'], IDENTITY_UNMAPPED: [409, 'permission'],
   ASSET_NOT_VISIBLE: [404,'permission'],
   ARTIFACT_VERIFICATION_FAILED: [409, 'semantic-insufficient'], SOURCE_HASH_MISMATCH: [409, 'conflict-stale'],
+  SOURCE_ABSENT:[404,'source-absent'],SOURCE_FORBIDDEN:[403,'permission'],SOURCE_LOGIN_EXPIRED:[401,'authentication'],SOURCE_UNREACHABLE:[503,'source-unreachable'],
 } as const;
 export type ErrorCode = keyof typeof registry;
 export class ApiError extends Error {

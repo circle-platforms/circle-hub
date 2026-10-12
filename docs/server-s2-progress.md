@@ -118,3 +118,12 @@ Bugs_Fixed 页每行的 show_bug.cgi?id 链接承载历史 Bugzilla 编号。将
 实际 `npm run typecheck` 通过，资产与既有对象存储的六条 HTTP 验收 6/6；`npm run verify:references` 714 原件、`npm run test:references` 7/7；diff 和新内容地址/令牌扫描通过。采用 parse5 8.0.1、saxes 5.0.1 的精确依赖与锁文件；此时尚未实现四类只读连接器、知识入库、工具目录或执行引擎，核心守卫仍是最终迁移待办。
 
 客户端工具/技能包 shape 已收到：工具数组含 name/title/description/inputSchema/effect/mode/permission/assetId/assetVersion，调用含 args/idempotencyKey；目录 ETag；技能包清单、文件摘要与试跑记录。正在澄清名称在多实例下的唯一性、来源不可见的错误披露、技能审批所用的 taskId；当前资产步骤独立完成，不依赖这些答案。
+## 8：只读连接器 SDK 与合成来源（2026-10-12）
+
+先新增 `r2-02-connectors.test.ts`，运行因 SDK 文件缺席而失败，再实现 TypeScript HTTP 传输、WebDAV、HTML/XML 构建站点、PLM 查询镜像、跳板查看协议。parse5/saxes 解析结构；拒绝 XML DTD、跨来源抓取和跳板白名单外的命令。原始返回逐份保存字节与 SHA-256，增量分别采用文件修订、构建内容摘要、缺陷 `(id,lastEditedDate)` 和环境资源修订。PLM 使用无 Bearer 的运行时 Authorization，日期按 +08:00 统一；未掌握的 resolution 明示未映射。成功载荷暂按 `data`，支持配置字段，尚待真实结构补充。
+
+构建站点桩含首页、版本线、四种文件链接、修复清单和命令 XML。只提取历史编号链接，不访问旧缺陷系统；正式发布与 Beta 分开。多构建修复选最早正式发布并保留全部；版本线命令查询选择最新正式构建，并明确命令存在不能证明完整功能语义。平台维度独立保留。自动化仅通过合成跳板 HTTP 查看协议读清单、拓扑、状态与框架文件；真实跳板协议和源系统连接没有验收。
+
+实际验证：`node --test tests/acceptance/r2-02-connectors.test.ts` **5/5**；`npm run typecheck` 通过。这证明合成来源上的连接器包行为，尚未证明 C/D 调度、B 持久留证和源 ACL 入库链路；这些会随知识库和工具调用入口接通，不能把包级结果当成整个第 2 幕交付。
+
+用户已确认客户端补充约定：工具名在 tenant 内唯一，多实例用别名；普通调用将缺失/无权限统一隐藏为 `SOURCE_FORBIDDEN`，诊断权限可见完整失败分类；技能包提交可增加 `approvalTaskId`，复用绑定 digest 的任务审批。其他请求形状保持原约定。
