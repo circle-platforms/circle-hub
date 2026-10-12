@@ -347,3 +347,15 @@ docs.search 新增 path，产品包声明版本目录模板；APV 的 cli/版本
 专项知识/规模/构建/WebDAV/守卫 **19/19**，规模 p95 **164ms**、索引中版本读 **196/145/148/151ms**；目录/工具联合此前 **6/6**，方法重载 **3/3**，typecheck/diff 检查通过。完整固定 Circle 8b2ceb6 回归正在运行，真实站点和 WebDAV 待 Claude 同一套只读复测；只在 server-s2 本地提交，不 push，不动 7420 或 Circle。
 
 收尾实际完整 `npm test`：固定 8b2ceb6，contracts **4/4**、methods **8/8**、acceptance **88/88**、references **7/7**，**无 skip**。整套规模 p95 **164ms**、索引中版本读 **239/134/135/177ms**。typecheck/diff 检查通过，verify:references **714**，APV 包内另 **4/4**且技能目录仍与 5f11c5d 字节相同。通过 Otty 已向 Claude 的唯一窗口发送 signatures/doc.search 交接预告，实际修改的仅产品配置/通用代码/合成夹具。PR #5 只读确认仍 OPEN。本笔只本地提交，接下来由 Claude 复测真实构建站点/WebDAV；PLM 不做未授权探测。缓存暂无淘汰、列表段落不变而 XML 原地替换的限制仍在，不把回归数字当成真实站点已通过。
+
+## 23：第三轮真实只读观察与 APV 技能适配采用
+
+用户提供 Claude 对 f36613a 的独立复核：临时工作树、固定 Circle 8b2ceb6，contracts **4/4**、methods **8/8**、acceptance **88/88**、typecheck 通过、无 skip。其控制的 7420 栈以 productLineId=apv 做第三轮真实只读冒烟，报告基本通过；本代理没有访问真实来源。
+
+八条版本线均可列出，冷遍历 **9.9s**、**4521** 个构建，superseded **9**、conflicts **1**；冲突仅影响一条线，complete=false，其余正常。无 versionLine 的选定 XML 冷取 **605ms**、缓存读 **143ms**；一个命令前缀列出 **36** 个头，重载有 **2** 个签名，TYPE_MISMATCH/ARGUMENT_COUNT/OUT_OF_RANGE 与逐签名原因符合观察。按直接缺陷编号查修复约 **347ms**，published 且 earliestFormalCertain=true。文档 version 定位到包声明的 CLI 目录，查到 **92** 个命中，无 version 明确 RESULT_TOO_LARGE；异步入库约 **2s** 后可全文查命令声明。此处只保存结构、聚合及延迟，不写真实构建名、编号、地址、域名或原文。
+
+按用户明确授权 cherry-pick APV 分支 **eb10d12 → 42977fd**，原作者、作者日期、提交正文与 Claude co-author 保留。仅 SKILL.md 变化：默认绑定主平台上 current 不为 false 且有命令树的最新正式构建；后续用 buildId、报告保留构建名；重载读 signatures；手册搜索用 version，缺少手册可继续并披露。整个技能目录与 eb10d12 字节相同，脚本和测试未由本代理修改。Claude 报告合成栈上这版完成试跑、推送、批准和 server 运行，case.xlsx SHA 仍以 **6fcd622b** 开头；只记录用户给出的前缀，不补造完整 SHA。
+
+本次实际只验证适用范围：APV 包内 **4/4**、两条核心/连接器守卫 **2/2**，无 skip，diff 检查通过。没有重新运行未变的整套代码，也没有把用户观察冒充本代理的真实复跑。PR #5 只读确认仍 OPEN；本步只在 server-s2 本地提交，不 push、不改 Circle 或运行中的 7420 栈。
+
+两条非阻塞观察保留：部分后缀可能是功能分支或平台/架构，当前统一作为 platform 标签，不能据名称认定其类型；后续清单可增加 platform/branch/unknown 的变体类别，经确认后填写。同名多平台只传构建名时失败是明确选择要求，交接已有说明。PLM 等用户本人提供并注册运行时 token 后由 Claude 测试，本代理不取得 token 或探测真实服务。另已核对普通身份的缺失/无权限仍统一 SOURCE_FORBIDDEN，只有 sources.diagnose 才暴露 SOURCE_ABSENT；技能中的缺手册披露应同时尊重这条已确认隐藏规则，已通过 Otty 提醒维护者，不改其原件。
