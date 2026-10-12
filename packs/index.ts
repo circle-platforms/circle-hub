@@ -8,14 +8,18 @@ import {ProfessionalRunner} from './synthetic/runtime.ts';
 import {Rules} from './synthetic/rules.ts';
 import {CONNECTOR_MANIFESTS} from './synthetic/connectors.ts';
 import {loadProductLines} from './product-lines.ts';
+import {CaseExecution} from './apv/execution/controller.ts';
+import {ExecutionPack} from './apv/execution/contracts.ts';
+import {caseExecutionMigration} from './apv/execution/migration.ts';
 const installed=await loadProductLines(process.env.CIRCLE_SERVER_PRODUCT_LINES);
-export const packageMigrations=[resourceMigration];
+export const packageMigrations=[resourceMigration,caseExecutionMigration];
 export const packageConnectors=CONNECTOR_MANIFESTS;
 export const installedProductLines=installed.productLines;
 export const installedToolPackages=installed.toolPackages;
 
 export function installPackages(services:any){
   const {store,auth,tasks,knowledge,execution,registry,checklists,approvals,assessments}=services;
+  const cases=new CaseExecution(services);
   // Preserve the former unqualified task flow pin without relabeling its history.
   tasks.baseFlows.add('synthetic-lbx/1');
   registry.resourceTargets.add('RESOURCE-LAB-01');
@@ -33,13 +37,14 @@ export function installPackages(services:any){
   });
   const sourceInput=async(ctx:AuthContext,scope:string,value:unknown,tx?:any)=>{await auth.check(ctx,'methods.use',scope,tx);const input=MindmapCompileInput.parse(value),source=await knowledge.source(ctx,input.sourceRevisionId,scope,tx);requireCondition(!input.sourceSha256||input.sourceSha256===source.sha256,'SOURCE_HASH_MISMATCH','Submitted source hash differs');return {...input,sourceSha256:source.sha256};};
   return {
-    descriptors:[MindmapPack,DefectReviewPack,ResourceCheckPack],rules,
+    descriptors:[MindmapPack,DefectReviewPack,ResourceCheckPack,ExecutionPack],rules,
     prepare:async(ctx:AuthContext,submission:any,tx:any)=>{
       requireCondition(!submission.capabilityPackId||tasks.capabilities.has(submission.capabilityPackId),'UNSUPPORTED_VERSION','Capability package is not installed');
       if(submission.capabilityPackId===MindmapPack.capabilityPackId)submission.input=await sourceInput(ctx,submission.scopeId,submission.input,tx);
+      if(submission.capabilityPackId===ExecutionPack.capabilityPackId)submission.input=await cases.prepare(ctx,submission.scopeId,submission.input,tx,submission.idempotencyKey);
       return submission.capabilityPackId===DefectReviewPack.capabilityPackId?rules.authorizeSubmission(ctx,submission.input,submission.scopeId,tx):undefined;
     },
-    replacement:async(ctx:AuthContext,task:any,input:any)=>{if(task.capabilityPackId===MindmapPack.capabilityPackId){requireCondition(input.replacement,'INVALID_PAYLOAD','Compilation replacement requires a source');input.replacement=await sourceInput(ctx,task.scopeId,input.replacement);}},
-    runOnce:async()=>{await compilation.runOnce();await rules.tick();await synthetic.runOnce();},
+    replacement:async(ctx:AuthContext,task:any,input:any)=>{if(task.capabilityPackId===MindmapPack.capabilityPackId){requireCondition(input.replacement,'INVALID_PAYLOAD','Compilation replacement requires a source');input.replacement=await sourceInput(ctx,task.scopeId,input.replacement);}if(task.capabilityPackId===ExecutionPack.capabilityPackId){requireCondition(input.replacement,'INVALID_PAYLOAD','Execution replacement requires a workbook binding');input.replacement=await store.transaction((tx:any)=>cases.prepare(ctx,task.scopeId,input.replacement,tx));}},
+    runOnce:async()=>{await compilation.runOnce();await cases.runOnce();await rules.tick();await synthetic.runOnce();},
   };
 }

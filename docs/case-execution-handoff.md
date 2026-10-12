@@ -1,0 +1,69 @@
+# APV 工作簿执行交接
+
+能力包 `apv-case-execute/1.0.0` 使用既有 sources、submit、approvals、status、events、result 和 artifacts/content。实现归 packs/apv/execution，不导入或运行旧客户端、InfoTest 或 Python。现有网关只作为 HTTP JSON-RPC 服务消费；不会调用 init_device。
+
+先上传 `case.xlsx`，或引用当前身份可读的编译 artifact，再提交：
+
+```json
+{
+  "scopeId":"<授权 scope>",
+  "title":"执行已编译工作簿",
+  "idempotencyKey":"<本次投递的唯一键>",
+  "capabilityPackId":"apv-case-execute",
+  "input":{
+    "sourceRevisionId":"<上传返回的 src id>",
+    "sourceSha256":"<上传返回的 SHA-256>",
+    "gatewayAssetId":"<测试床网关资产 id>",
+    "commandSourceAssetId":"<构建来源资产 id>",
+    "build":"<版本工具返回的 buildId>",
+    "platform":null
+  }
+}
+```
+
+sourceRevisionId 与 artifactId 二选一。sourceSha256 可省略，由 server 钉住；module 可选，只接受字母/数字/下划线/连字符；deadlineMs 默认一小时、范围 1000–3600000。build 优先用 buildId，构建名必须唯一，可用 platform 消歧。必须是单表「执行」、隐藏行一精确标记 `APV_EXCEL_CONTRACT | apv.excel.runtime | v1` 和九列执行契约；第一阶段两表七列结构工作簿不可执行。
+
+本版执行关口支持 APV_n/Segn_tmp 的字面 cmd_config/cmds_config/cmd_enable/cmds_enable、check_point 的 found/not_found/abs_found/found_times、time.sleep。初始化行也受同一核对。输入变量、设备命令里的临时寄存器替换和 opaque test_env/其他方法无法证明实际展开的设备命令，返回 INVALID_EXECUTION_WORKBOOK，需先展开成可核对的字面行；不会把它们当已核对。最多 5000 条设备命令，按网关 device_count 再查设备索引。
+
+当前身份需要 tasks.submit/read、sources.read、methods.use、assets.read、credentials.use、builds.read、cases.execute；上传另需 sources.write，artifact 输入需 evidence.read。跨 tenant/scope 和不可见资产拒绝。原件 SHA 在受理、worker、server 读取、投递回执和结果再核对。同键/同输入重提返回同一任务；新键表示新的物理执行，仍须独立审批。
+
+任务先进入 cases.verify。worker 从绑定来源读取构建列表和当前命令 XML，server 用保留的原字节重新定位构建、解析完整命令路径和重载，重读工作簿所有设备命令，包括初始化行，再执行确定性 command_check。missing、参数违规或不能证明的输入会失败，结果含 COMMAND_VALIDATION_FAILED；不会触碰网关。客户端或技能包的回执不是输入字段，伪造回执会被 schema 拒绝。
+
+验证通过后进入 waiting-review。现有审批记录的 action.args 带构建名/buildId、treeSha256、commandReportSha256、commandCheckArtifactId/Sha256。commandReportSha256 是确定性命令证明摘要；commandCheckArtifactSha256 是完整 command-check.json 原件的字节 SHA。审批人可下载 artifact 核对，申请人不能自批。默认一天，可配置审批期限；改输入、资产修订、目标运行配置或 CA 身份使旧批准失效。
+
+另一人批准后，worker 在投递前强制重新获取当前 XML，server 再核对一次，结果必须与批准的树和命令证明一致；普通查询的旧 XML 缓存不能放行。server 持久化与当前操作/fence 绑定的复核记录，一次性消费后才授权 submit intent。随后取网关租约，env_prepare 核对绑定构建、设备数和 ready，再 case_submit。不会自动换构建、换测试床或初始化设备。
+
+运行时配置都在仓库外：CIRCLE_SERVER_EXECUTION_GATEWAYS 指向以下文件（所有占位均需由运维填写）：
+
+```json
+{
+  "profiles":{
+    "<配置引用>":{
+      "endpoint":"<网关 HTTPS /mcp URL>",
+      "issuer":"<既有令牌签发服务 origin>",
+      "caFile":"<本机已核验 CA 文件>",
+      "caSha256":"<CA DER 字节 SHA-256>",
+      "timeoutMs":60000,
+      "pollMs":2000
+    }
+  }
+}
+```
+
+issuer 使用 POST /token 的 refresh_token grant；若签发服务使用另一 CA，配置 issuerCaFile/issuerCaSha256。远端私有请求要求 HTTPS，HTTP 只给回环合成验收。每次请求重读并核对配置指纹，拒绝重定向，不关闭全局 TLS 校验。需要由用户或运维先提供并核验 CA；server 不从未验证连接自动建立信任。
+
+网关资产是 connector-instance，configuration={packageId:"case-gateway",productLineId:"apv",runtimeProfileRef:"<配置引用>"}，declaration.reads 包含 test-bed、writes 包含 device-config。该连接器不把底层写工具直接暴露给模型，执行只走能力包。资产独立审批并激活。
+
+网关凭据按个人、按实例登记：POST /v1/assets/{gatewayAssetId}/credentials，value 是包含 access_token、refresh_token、expires_at（Unix 秒）、scope 的 JSON 字符串；可含 server，用于检查签发来源。值只写入私有加密 vault，不回到响应、事件、审计或仓库。将返回的 credential asset id 放进网关新修订 declaration.credentials，批准后激活。为 server 单独授权一份会话，避免另一个客户端同时消费同族刷新令牌。
+
+重新登录时可向同一路径的 credential reference id POST {version,value}，仅所有者、当前修订且未停用可替换，仍不返回值。替换与自动刷新共用同一单写者锁，引用/连接器修订不变，避免未知任务因换引用而丢失原目标绑定；审计只记 id/version。它不会重新投递任务，恢复后仍由另一 worker 做独立只读核对。独立核对未见终态或回报不完整时，仅核对操作 failed，原任务继续 unknown、资源仍冻结。
+
+访问令牌临近到期由单写者刷新，并原子持久化新访问/刷新令牌。并发运行重读同一最新值，不重复消费旧刷新令牌；invalid_grant 标失效，明确 5xx 保留原凭据。请求中断或成功结果不完整时保留 rotationPending，停止重放并要求重新登记，避免旧令牌重放撤销整族。网关 503（含上游 introspect 不可达）是 SOURCE_UNREACHABLE；401 才是 SOURCE_LOGIN_EXPIRED，不弹密码框。
+
+事件包含 execution.commands.rechecked、execution.gateway.submit-intent/submitted/status。submitted 持久保存 remoteTaskId、原件 SHA、用例身份及 fence；worker 保持 C 和网关两层租约。result.result 返回 executionStatus/channel/rc、逐 cases[{autoid,verdict,steps,checkPoints}]、logSpan、unmapped、parserVersion；artifacts 包含 command-check.json、gateway-results.json、execution-results.json，可按 SHA 下载。原始 case log/sessions 在网关原件中保留。
+
+每个检查点只由明确日志帧与工作簿行匹配：四种 Success/Fail × successed/fail 对应 found/not_found；支持跨行模式，收尾重列不重复计算。数量、模式、方法、日志时效或用例身份不匹配时 unknown/unmapped。命令步骤仅在明确且唯一的派发行出现时 observed；整案 PASS 不证明每一步 PASS，静态回放也不替代框架判定。用例 fail 可以是已成功交付的执行结果；任务 status=succeeded 不等于测试全部通过。缺失证据交付 partial。
+
+超时、lost、worker 断开或投递后取消转 unknown，资源冻结，后续新投递 RESOURCE_BUSY，不自动重新 case_submit。旧 fence 的回报拒绝。取消前未派发的任务关闭审批并 cancelled；本地取消不证明远端停止。已有 remoteTaskId 时，由另一 worker 经原身份只读 case_status/results 独立核对，终态与工作簿 SHA 对上后 reconciled、交付并解冻；没有 remoteTaskId 的投递断线不能自动恢复，必须先在网关侧对账，不能盲重投。
+
+当前只完成合成网关验收。真实网关上游核验不可达是环境阻塞，待用户/运维恢复并登记个人凭据后再做真实投递；真实 case.xlsx 由用户上传，未以合成结果冒充上机通过。

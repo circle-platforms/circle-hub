@@ -2,7 +2,7 @@
   "schemaVersion": "product-line/1",
   "id": "apv",
   "version": "1.0.0",
-  "connectorPackages": ["documents", "build-site", "query-mirror", "environment-view"],
+  "connectorPackages": ["documents", "build-site", "query-mirror", "environment-view", "case-gateway"],
   "toolAliases": {"documents": "docs", "build-site": "buildsite", "query-mirror": "zentao", "environment-view": "env", "knowledge": "knowledge"},
   "connectorOptions": {
     "documents": {"documents": {"versionDirectoryTemplate": "cli/rel_apv_{version}/", "versionSeparator": "_", "maxDepth": 3, "maxFiles": 100}},
@@ -12,7 +12,7 @@
     }}
   },
   "skills": ["skills/apv-mindmap-compile"],
-  "methods": ["methods/mindmap.ts"],
+  "methods": ["methods/mindmap.ts", "execution/contracts.ts"],
   "configuration": "Source addresses and credential references are supplied at runtime",
   "knowledgeMappings": {
     "commandAuthority": "The exact build command-tree revision",

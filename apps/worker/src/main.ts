@@ -35,6 +35,15 @@ const methods=installedWorkerMethods(process.env.CIRCLE_SYNTHETIC_RESOURCE_DIR);
 await request('/v1/workers/register',{});
 console.log(JSON.stringify({ type:'worker-ready',username }));
 let runtimeJob:Promise<void>|undefined;
+const professionalJobs=new Map<string,Promise<void>>();
+async function executeProfessional(claim:any):Promise<void>{
+  const fence={fencingToken:claim.fencingToken},abort=new AbortController(),onStop=()=>abort.abort();stopController.signal.addEventListener('abort',onStop,{once:true});
+  let pendingHeartbeat:Promise<void>|undefined;const timer=setInterval(()=>{if(pendingHeartbeat)return;pendingHeartbeat=request(`/v1/workers/operations/${claim.operationId}/heartbeat`,fence).then(()=>{}).catch(()=>abort.abort()).finally(()=>{pendingHeartbeat=undefined;});},HEARTBEAT_MS);
+  try{
+    const report=await methods.execute(claim,{check:()=>request(`/v1/workers/operations/${claim.operationId}/preflight`,fence),signal:abort.signal,directory:env('CIRCLE_SERVER_DATA_DIR'),event:event=>request(`/v1/workers/operations/${claim.operationId}/events`,{...fence,inputRevisionId:claim.inputRevisionId,event}),source:async()=>{await authenticate();const response=await fetch(new URL(`/v1/workers/operations/${claim.operationId}/source?fence=${claim.fencingToken}`,base),{headers:{authorization:`Bearer ${token}`}});if(!response.ok)throw new ApiError('EVIDENCE_INSUFFICIENT','Source download failed');return Buffer.from(await response.arrayBuffer());}});
+    if(!stopped)await request(`/v1/workers/operations/${claim.operationId}/report`,report);
+  }finally{clearInterval(timer);await pendingHeartbeat;stopController.signal.removeEventListener('abort',onStop);}
+}
 async function executeRuntime(claim:any,preflight:any):Promise<void>{
   const fence={fencingToken:claim.fencingToken},abort=new AbortController();const onStop=()=>abort.abort();stopController.signal.addEventListener('abort',onStop,{once:true});
   let pendingHeartbeat:Promise<void>|undefined;const timer=setInterval(()=>{if(pendingHeartbeat)return;pendingHeartbeat=request(`/v1/workers/operations/${claim.operationId}/heartbeat`,fence).then(()=>{}).catch(()=>abort.abort()).finally(()=>{pendingHeartbeat=undefined;});},HEARTBEAT_MS);
@@ -55,10 +64,13 @@ async function executeRuntime(claim:any,preflight:any):Promise<void>{
 }
 while (!stopped) {
   try {
-    const next = await request('/v1/workers/claim',{exclude:runtimeJob?['assets.execute']:[]});
+    const next = await request('/v1/workers/claim',{exclude:[...(runtimeJob?['assets.execute']:[]),...professionalJobs.keys()]});
     if (!next) { await delay(100); continue; }
     const claim = AnyWorkerClaim.parse(next); const fence = { fencingToken:claim.fencingToken };
     const preflight=await request(`/v1/workers/operations/${claim.operationId}/preflight`,fence);
+    if(methods.backgroundNames.has(claim.name)){
+      const job=executeProfessional(claim).catch(error=>{console.error(JSON.stringify({type:'worker-professional-error',code:error instanceof ApiError?error.code:'TRANSPORT_CLOSED'}));}).finally(()=>{professionalJobs.delete(claim.name);});professionalJobs.set(claim.name,job);continue;
+    }
     if(claim.name==='assets.execute'){
       // Keep one runtime slot and continue claiming its child tool calls. A single
       // worker must not deadlock while its Circle waits on a read from that worker.
@@ -80,7 +92,7 @@ while (!stopped) {
         }catch(error){const failure=error instanceof ApiError?error:new ApiError('INTERNAL_ERROR','Registered tool failed');report={...fence,inputRevisionId:claim.inputRevisionId,status:'failed',output:{},error:{code:failure.code,message:failure.message,details:failure.details}};}
         if(heartbeatError)throw heartbeatError;await request(`/v1/workers/operations/${claim.operationId}/report`,report);continue;
       }
-      const report=await methods.execute(claim,{check:()=>request(`/v1/workers/operations/${claim.operationId}/preflight`,fence),signal:stopController.signal,source:async()=>{await authenticate();const response=await fetch(new URL(`/v1/workers/operations/${claim.operationId}/source?fence=${claim.fencingToken}`,base),{headers:{authorization:`Bearer ${token}`}});if(!response.ok)throw new ApiError("EVIDENCE_INSUFFICIENT","Source download failed");return Buffer.from(await response.arrayBuffer());}});
+      const report=await methods.execute(claim,{check:()=>request(`/v1/workers/operations/${claim.operationId}/preflight`,fence),signal:stopController.signal,directory:env('CIRCLE_SERVER_DATA_DIR'),event:event=>request(`/v1/workers/operations/${claim.operationId}/events`,{...fence,inputRevisionId:claim.inputRevisionId,event}),source:async()=>{await authenticate();const response=await fetch(new URL(`/v1/workers/operations/${claim.operationId}/source?fence=${claim.fencingToken}`,base),{headers:{authorization:`Bearer ${token}`}});if(!response.ok)throw new ApiError("EVIDENCE_INSUFFICIENT","Source download failed");return Buffer.from(await response.arrayBuffer());}});
       if(stopped)continue;
       if(heartbeatError)throw heartbeatError;
       await request(`/v1/workers/operations/${claim.operationId}/report`,report);
@@ -91,4 +103,5 @@ while (!stopped) {
   }
 }
 await runtimeJob;
+await Promise.allSettled(professionalJobs.values());
 if (process.connected) process.disconnect();

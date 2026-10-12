@@ -17,7 +17,7 @@ export interface ToolPackage {id:string;prefix:string;productLinePrefixes?:Recor
 const tool=(suffix:string,title:string,schema:z.ZodObject<any>,permission:string,handler:string,effect:'read'|'write'='read',mode:'sync'|'task'='sync'):ToolDefinition=>({suffix,title,description:title,schema,permission,handler,effect,mode});
 const short=z.string().min(1).max(500),build=z.string().min(1).max(200);
 const pagination={page:z.number().int().min(1).max(1_000_000).default(1),limit:z.number().int().min(1).max(100).default(20)};
-const mirrorQuery=z.object({keyword:short.optional(),product:z.union([short,z.number().int().nonnegative()]).optional(),status:short.optional(),severity:z.number().int().min(1).max(5).optional(),assignedTo:short.optional(),openedBy:short.optional(),lastEditedDate_start:short.optional(),lastEditedDate_end:short.optional(),...pagination}).strict().superRefine((value,ctx)=>{
+const mirrorQuery=z.object({keyword:short.optional(),product:z.union([z.string().regex(/^[1-9]\d*$/,'Use a positive product id from the products tool'),z.number().int().positive()]).optional(),status:z.enum(['active','resolved','closed']).optional(),severity:z.number().int().min(1).max(5).optional(),assignedTo:short.optional(),openedBy:short.optional(),lastEditedDate_start:short.optional(),lastEditedDate_end:short.optional(),...pagination}).strict().superRefine((value,ctx)=>{
   if(value.keyword!==undefined&&value.product===undefined||![value.product,value.status,value.lastEditedDate_start,value.lastEditedDate_end].some(v=>v!==undefined&&String(v).trim()!==''))ctx.addIssue({code:'custom',message:'Provide product, status or date filters; keyword also requires product'});
 });
 const selection={build,platform:short.nullable().optional(),scope:short.optional(),versionLine:short.optional()};
@@ -39,6 +39,7 @@ export const toolPackages:ToolPackage[]=[
     tool('section','取命令小节或行窗口，最多 80 行',z.object({file:short,anchor:short.optional(),line:z.number().int().positive().optional(),window:z.number().int().min(1).max(80).default(40)}).strict().refine(value=>!!value.anchor!==!!value.line,'Provide an anchor or line'),'docs.fetch','document.section'),
   ]},
   {id:'query-mirror',prefix:'query',tools:[
+    tool('products','分页列出当前镜像身份可读的产品 id/name，用于有界缺陷搜索',z.object(pagination).strict(),'defects.search','mirror.products'),
     tool('bug_search','分页查询镜像；必须带 product、status 或日期；keyword 还必须带 product，避免全表扫描',mirrorQuery,'defects.search','mirror.search'),
     tool('bug_detail','批量取缺陷详情（每批最多 100）',z.object({ids:z.array(z.union([z.number().int().nonnegative(),z.string().regex(/^\d+$/)])).min(1).max(100)}).strict(),'defects.search','mirror.detail'),
   ]},
@@ -49,12 +50,13 @@ export const toolPackages:ToolPackage[]=[
     tool('framework_files','查看框架镜像文件目录',z.object({}).strict(),'environment.read','framework.files'),
     tool('framework_get','取框架镜像文件',z.object({path:short}).strict(),'environment.read','framework.get'),
   ]},
+  {id:'case-gateway',prefix:'gateway',tools:[]},
   {id:'knowledge',prefix:'knowledge',tools:[
     tool('shared_fragments','分页取本人明确许可共享的片段与原始证据',z.object({limit:z.number().int().min(1).max(100).default(20),after:z.string().min(1).max(2048).optional()}).strict(),'knowledge.read','consolidation.fragments'),
     tool('claim_submit','提交个人沉淀候选；不自动提升为团队知识',z.object({claim:z.object({subject:short,predicate:short,value:z.unknown(),conditions:z.record(z.string(),z.unknown()).default({})}).strict(),evidence:z.array(z.object({evidenceId:z.string(),sha256:z.string().regex(/^[a-f0-9]{64}$/)}).strict()).min(1).max(100)}).strict(),'knowledge.submit','candidate.submit','write','task'),
   ]},
 ];
-for(const pack of toolPackages)if(pack.id!=='knowledge')pack.projection={version:pack.id==='build-site'?'source-projection/3':'source-projection/1',extract:(raw,profile)=>projectSource(pack.id,raw,profile)};
+for(const pack of toolPackages)if(pack.id!=='knowledge')pack.projection={version:pack.id==='build-site'?'source-projection/3':pack.id==='query-mirror'?'source-projection/2':'source-projection/1',extract:(raw,profile)=>projectSource(pack.id,raw,profile)};
 export interface ConnectorProfile {origin:string;root?:string;index?:string;payloadField?:string;requestConcurrency?:number;requestIntervalMs?:number;buildSite?:BuildSiteOptions;documents?:DocumentOptions}
 export interface ToolReturn {result:any;raw:RawReturn[];sourceType:string}
 const defaultToolCache=new SourceCache();
@@ -97,7 +99,7 @@ export async function executeTool(packageId:string,handler:string,args:any,profi
   }
   if(packageId==='documents'){
     const documents=new Documents(source);
-    if(handler==='document.list'){const selected=z.object({path:short.optional(),...pagination}).strict().parse(args),root=source.path(profile.root??'/'),path=source.path(selected.path??root);if(!path.startsWith(root.endsWith('/')?root:`${root}/`))throw new ApiError('INVALID_PAYLOAD','Use a directory within the registered document root',{root});
+    if(handler==='document.list'){const selected=z.object({path:short.optional(),...pagination}).strict().parse(args),root=source.path(profile.root??'/'),requested=source.path(selected.path??root),path=requested.endsWith('/')?requested:`${requested}/`;if(!path.startsWith(root.endsWith('/')?root:`${root}/`))throw new ApiError('INVALID_PAYLOAD','Use a directory within the registered document root',{root});
       let listed;try{listed=await documents.list(path);}catch(error){if(error instanceof ApiError)throw new ApiError(error.code,error.message,{...error.details,root});throw error;}
       const files=listed.result.filter(entry=>entry.path!==path).sort((a,b)=>a.path.localeCompare(b.path)),offset=(selected.page-1)*selected.limit,hasMore=offset+selected.limit<files.length;return {result:{root,path,files:files.slice(offset,offset+selected.limit),page:selected.page,limit:selected.limit,total:files.length,nextPage:hasMore?selected.page+1:null,revision:listed.evidence.sha256},raw:[listed.evidence],sourceType:'document'};}
     if(handler==='document.get'){const file=await documents.get(args.file);if(file.evidence.etag)await (options.cache??defaultToolCache).put(canonicalHash({namespace:canonicalHash([options.cacheNamespace??profile.origin,credential??null]),origin:source.identity(),path:file.evidence.path,revision:file.evidence.etag}),file.evidence);return {result:file.result,raw:[file.evidence],sourceType:'document'};}
@@ -112,6 +114,7 @@ export async function executeTool(packageId:string,handler:string,args:any,profi
   }
   if(packageId==='query-mirror'){
     const mirror=new QueryMirror(source,profile.payloadField??'data');
+    if(handler==='mirror.products'){const {page,limit}=z.object(pagination).strict().parse(args),listed=await mirror.products();requireCondition(Array.isArray(listed.result),'SOURCE_UNREACHABLE','Mirror product payload is malformed');const items=listed.result.map((item:any)=>({id:item.id,name:item.name})).sort((a:any,b:any)=>Number(a.id)-Number(b.id)),offset=(page-1)*limit;return {result:{items:items.slice(offset,offset+limit),total:items.length,page,limit,nextPage:offset+limit<items.length?page+1:null,revision:listed.evidence.sha256},raw:[listed.evidence],sourceType:'query-mirror'};}
     if(handler==='mirror.detail'){const detail=await mirror.detail(args.ids);return {result:{items:detail.items},raw:[detail.evidence],sourceType:'query-mirror'};}
     const {keyword,page,limit,...filters}=mirrorQuery.parse(args),listed=await mirror.list(filters);requireCondition(Array.isArray(listed.result),'SOURCE_UNREACHABLE','Mirror list payload is malformed');
     const items=listed.result.filter((bug:any)=>!keyword||String(bug.title??'').toLowerCase().includes(keyword.toLowerCase())).sort((a:any,b:any)=>Number(a.id)-Number(b.id)),offset=(page-1)*limit;return {result:{items:items.slice(offset,offset+limit),total:items.length,page,limit,nextPage:offset+limit<items.length?page+1:null,revision:listed.evidence.sha256},raw:[listed.evidence],sourceType:'query-mirror'};

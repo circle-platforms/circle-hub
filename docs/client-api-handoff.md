@@ -195,6 +195,7 @@ task 工具返回 202 `{"taskId":"task_...","phase":"admitted"}`（phase 以实�
 | `docs.search` | `{query,path?,version?,limit?,after?}` | hits：file/line/snippet/sourceSha256；行号从 1 开始；nextCursor/revision/coverage/limits 说明当前页与完整范围 |
 | `docs.section` | `{file,anchor}` 或 `{file,line,window?}` | file/lines[{line,text}]/sourceSha256；anchor 对应以 `**<命令头>**` 开头的小节；窗口默认 40、最多 80 行，超长小节明确失败 |
 | `zentao.bug_search` | `{keyword?,product?,status?,severity?,assignedTo?,openedBy?,lastEditedDate_start?,lastEditedDate_end?,page?,limit?}` | items/total/page/limit/nextPage/revision；必须有 product、status 或日期筛选；keyword 还必须带 product |
+| `zentao.products` | `{page?,limit?}` | items[{id,name}]/total/page/limit/nextPage/revision；先查产品名对应的 id，不猜编号 |
 | `zentao.bug_detail` | `{ids:[...]}`（1–100） | items；数字/日期统一，未知 resolution 留在 unmapped |
 | `env.inventory` / `env.topology` / `env.device_status` | `{}` / `{environmentId}` / `{deviceId}` | 只读跳板返回；没有执行或改环境入口 |
 | `env.framework_files` / `env.framework_get` | `{}` / `{path}` | 框架只读镜像目录/文件 |
@@ -222,11 +223,15 @@ nextPage=null 表示已到匹配结果末尾，hasMore 明确标识分页，不�
 
 文档 list/get/section 的 path/file，以及 search.path，都是站点绝对路径，采用 list 返回的值；服务根未必是 `/`，须在运行时 root 配置实际 WebDAV 根，不能假定 `/` 支持 PROPFIND。search 优先使用显式 path；只有 version 时按产品线 `connectorOptions.documents.documents.versionDirectoryTemplate` 定位，APV 声明 `cli/rel_apv_{version}/`，点分版本用 versionSeparator 转成目录形式。没有目录模板的旧包保留 version 路径过滤。
 
-list 默认 page=1/limit=20，limit 为 1–100，nextPage=null 才到目录末尾。省略 path 使用 profile.root；传 `/` 而已登记根是子目录时返回 INVALID_PAYLOAD 和 details.root。PROPFIND 405 返回可读的路径错误；其他非 207 回应说明预期的 WebDAV 状态，不把错误页面当目录。
+list 默认 page=1/limit=20，limit 为 1–100，nextPage=null 才到目录末尾。目录路径自动补尾斜杠，再发 PROPFIND，避免目录 301；省略 path 使用 profile.root。传 `/` 而已登记根是子目录时返回 INVALID_PAYLOAD 和 details.root。PROPFIND 405 返回可读的路径错误；其他非 207 回应说明预期的 WebDAV 状态，不把错误页面当目录。
 
 search 对选定目录做有界递归（PROPFIND Depth:1），默认深度 3、64 个目录、总原件每页 4 MiB；目录元数据最多 5000 个文件。默认每页只读 20 个文本原件，limit 为 1–100，并受产品 maxFiles 上限约束。每页最多 100 命中，命中页满时可从同一文件下一行继续，不会丢后续行。把 nextCursor 作为同 query/path/version 的 after 补读；coverage.complete=false 不能说“全目录无命中”，只有 nextCursor=null 且无 skipped 才完整。游标绑定身份和当前目录修订，其他身份/查询 INVALID_PAYLOAD，目录变化 INPUT_REVISION_STALE，应从第一页重读。深度/目录数/元数据/字节超限仍明确 RESULT_TOO_LARGE，可缩小 path；不会为一次 spec 查询下载上千个原件。先核对当前目录 etag，再复用同身份缓存的原件；无稳定修订时重取。coverage 带本页 files、totalFiles、directories、bytes、skipped/skippedCount；非文本或非 UTF-8 明确列出。超长片段标 snippetTruncated，完整原件仍以 SHA 保留；已入库产品文档也可走 knowledge/search 的 fulltext。
 
-缺陷镜像列表本身不分页，不能把 keyword 发送到源后假定服务端已过滤。无 product/status/日期约束的查询、或 keyword 没有 product 时，在 HTTP 前返回 INVALID_PAYLOAD；severity/assignedTo 单独不算有界查询。先发送允许的源筛选，再做标题字面过滤与本地分页，page/limit/keyword 不发给镜像。默认 20、最多 100，跨页 revision 变化应重新读取。过滤后依然超过 16 MiB 时明确 RESULT_TOO_LARGE，须收窄 product/status/日期；镜像请求允许 30 秒，登录失效与真正不可达保持独立分类。
+缺陷镜像列表本身不分页，不能把 keyword 发送到源后假定服务端已过滤。无 product/status/日期约束的查询、或 keyword 没有 product 时，在 HTTP 前返回 INVALID_PAYLOAD；severity/assignedTo 单独不算有界查询。product 必须为 products 返回的正数字 id（数字或数字串），不能传产品名或 0；status 为 active/resolved/closed。先发送允许的源筛选，再做标题字面过滤与本地分页，page/limit/keyword 不发给镜像。默认 20、最多 100，跨页 revision 变化应重新读取。过滤后依然超过 16 MiB 时明确 RESULT_TOO_LARGE，须收窄 product/status/日期；镜像请求允许 30 秒，登录失效与真正不可达保持独立分类。schema 错误的 details.issues 提供 path/code/message，可据此补过滤条件；不回显提交值或凭据。
+
+审批默认有效一天，由 CIRCLE_SERVER_APPROVAL_TTL_MS 配置（1000–2592000000 毫秒）；审批 pending input 使用同一到期时间。普通澄清仍由 CIRCLE_SERVER_INPUT_TTL_MS 控制，默认五分钟。延长审批时间不解除修订、目标身份、动作摘要、当前目录/权限以及 D 出口复核。
+
+`apv-case-execute` 用既有 submit/approvals/events/result 执行 APV 单表工作簿，输入可带 sourceRevisionId 或 artifactId、gatewayAssetId、commandSourceAssetId、build/buildId。服务端两次独立核对命令，投递需另一人批准；网关访问/刷新令牌为个人私有凭据引用，原件、逐步结果与检查点证据按 SHA 存 B。配置、输入边界、恢复与权限详见 [执行交接](case-execution-handoff.md)。Circle `circle_server_submit` 可附加 input，上传源的 id/SHA 由客户端填；同步返回落工作区是 Circle 的职责，server 不写客户端目录。
 
 版本列表与同步只取首页/版本页元数据，**不下载任何 XML/修复清单**。命令 XML 在对应构建首次被命令工具用到时获取，内容按 SHA 持久缓存，索引绑定调用身份/资产修订/来源与构建段落修订，不跨个人凭据复用；元数据变化重新取。修复清单只有 fixed_releases 查询才按指定候选取，结果声明 coverage.completeSite=false，不把候选中的最早发布冒充全站最早。运行时 profile 可配置 requestConcurrency（1–8，默认 2）与 requestIntervalMs（构建工具默认 200）；相同连接器调用的请求同时受并发与开始间隔限制。
 

@@ -70,6 +70,11 @@ export class Assets {
   });}
   async credential(ctx:AuthContext,id:string,input:{version:string;value:string;ownerPrincipalId?:string}):Promise<any>{
     const parent=await this.row(ctx,id);await this.auth.check(ctx,'credentials.register',parent.scope_id);
+    if(parent.kind==='credential-reference'){
+      requireCondition(ctx.kind==='user'&&parent.owner_principal_id===ctx.principalId&&(!input.ownerPrincipalId||input.ownerPrincipalId===ctx.principalId)&&parent.lifecycle!=='disabled','FORBIDDEN_ACTION','Only the owner replaces an active personal session');requireCondition(input.version===parent.version,'APPROVAL_STALE','Credential reference revision changed');
+      const link=(await this.store.pool.query('SELECT * FROM personal_credentials WHERE asset_id=$1 AND version=$2',[id,parent.version])).rows[0];requireCondition(link,'SOURCE_LOGIN_EXPIRED','Personal credential reference is unavailable');
+      await this.vault.withLock(link.secret_key,()=>this.vault.replace(link.secret_key,input.value,this.binding(parent)));await this.auth.audit(ctx,'credentials.session-replaced',{assetId:id,version:parent.version,connectorAssetId:link.connector_asset_id},parent.scope_id);return this.view(parent);
+    }
     requireCondition(ctx.kind==='user'&&parent.kind==='connector-instance'&&parent.owner_principal_id===ctx.principalId&&(!input.ownerPrincipalId||input.ownerPrincipalId===ctx.principalId),'FORBIDDEN_ACTION','Only the owner binds their own personal credential');
     const assetId=newId('ast'),binding=JSON.stringify([parent.tenant_id,parent.scope_id,ctx.principalId,assetId,input.version]);
     const key=await this.vault.put(input.value,binding);

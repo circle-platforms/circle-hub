@@ -62,6 +62,8 @@ test('Act R2.4: manuals expose line and command-section evidence and mirror call
   const hits=await call(h,'docs.search',{query:'service create port'});assert.equal(hits.result.hits[0].line,2);
   const section=await call(h,'docs.section',{file:'/dav/manual.txt',anchor:'service create port'});assert.ok(section.result.lines[0].text.startsWith('**service create port**'));assert.ok(section.result.lines.length<=80);
   const detail=await call(h,'zentao.bug_detail',{ids:[51]});assert.equal(detail.result.items[0].id,'51');assert.ok(stub.requests.filter(r=>r.path.startsWith('/plmquery/')).every(r=>r.authorization===stub.secret));
+  const products=await call(h,'zentao.products');assert.deepEqual(products.result.items,[{id:7,name:'Synthetic product'}]);
+  const hint=await h.reject('/v1/tools/zentao.bug_search/call',{args:{keyword:'port'},idempotencyKey:'missing-product-filter'},'INVALID_PAYLOAD');assert.ok(hint.details.issues.some((issue:any)=>issue.message.includes('product')));
   const dump=JSON.stringify((await h.db.query('SELECT result,args FROM operations')).rows);assert.ok(!dump.includes(stub.secret));
   await asset(h,'environment-view');const environment=await call(h,'env.inventory',{});assert.equal(environment.result[0].id,'lab-a');assert.ok(environment.evidence.length>0);
   await h.reject('/v1/tools/buildsite.command_param/call',{args:{},idempotencyKey:'bad-schema'},'SOURCE_FORBIDDEN');

@@ -6,6 +6,8 @@ import { Execution } from './index.ts';
 export class Operations extends Execution {
   capabilityOnlyOperations=new Set<string>();
   customReports=new Map<string,(ctx:AuthContext,id:string,body:unknown)=>Promise<any>>();
+  customEvents=new Map<string,(ctx:AuthContext,id:string,fence:number,revision:string,event:any)=>Promise<any>>();
+  customReconciliations=new Map<string,(ctx:AuthContext,taskId:string,id:string)=>Promise<any>>();
   managedNames=new Set(['tools.invoke']);
   approvalCheck?: (tx:Transaction,task:any,spec:any)=>Promise<void>;
   connectorCheck?: (tx:Transaction,actor:AuthContext,scope:string,spec:any)=>Promise<any>;
@@ -30,7 +32,7 @@ export class Operations extends Execution {
       await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[JSON.stringify(keys)]);
       const hash=canonicalHash(spec),old=(await client.query('SELECT k.*,o.status FROM operation_keys k JOIN operations o USING(operation_id) WHERE k.tenant_id=$1 AND k.scope_id=$2 AND k.principal_id=$3 AND k.name=$4 AND k.idem_key=$5',[...keys])).rows[0];
       if(old){requireCondition(old.request_hash===hash,'IDEMPOTENCY_MISMATCH','Operation key has different content');return {...this.view((await client.query('SELECT * FROM operations WHERE operation_id=$1',[old.operation_id])).rows[0]),deduplicated:true};}
-      const resource=`target:${spec.target}`;
+      const resource=authorization?.resourceId??`target:${spec.target}`;
       await client.query('INSERT INTO resources(tenant_id,resource_id) VALUES($1,$2) ON CONFLICT DO NOTHING',[task.tenantId,resource]);
       const res=(await client.query('SELECT * FROM resources WHERE tenant_id=$1 AND resource_id=$2 FOR UPDATE',[task.tenantId,resource])).rows[0];
       requireCondition(!res.frozen,'RESOURCE_BUSY','Resource is frozen until independent reconciliation');
@@ -48,6 +50,7 @@ export class Operations extends Execution {
     };return tx?run(tx):this.store.transaction(run);
   }
   async requestReconcile(ctx:AuthContext,taskId:string,id:string):Promise<any> {
+    const name=(await this.store.pool.query('SELECT name FROM operations WHERE operation_id=$1 AND task_id=$2',[id,taskId])).rows[0]?.name,custom=this.customReconciliations.get(name);if(custom)return custom(ctx,taskId,id);
     return this.store.transaction(async tx=>{
       const task=await this.tasks.load(ctx,taskId,'operations.reconcile',tx);
       const old=(await tx.query('SELECT * FROM operations WHERE operation_id=$1 AND task_id=$2 FOR UPDATE',[id,taskId])).rows[0];
@@ -60,6 +63,9 @@ export class Operations extends Execution {
       await tx.query('UPDATE operations SET args=$2 WHERE operation_id=$1',[operationId,JSON.stringify({...old.args,holdAfterEffectMs:0,simulateTimeoutAfterWrite:false})]);
       await this.tasks.emit(tx,taskId,'operation.reconciliation-requested',{operationId,parentOperationId:id});return this.view(row);
     });
+  }
+  async event(ctx:AuthContext,id:string,fence:number,revision:string,event:any):Promise<any>{
+    const name=(await this.store.pool.query('SELECT name FROM operations WHERE operation_id=$1',[id])).rows[0]?.name,handler=this.customEvents.get(name);requireCondition(handler,'FORBIDDEN_ACTION','Worker event handler is not registered');return handler(ctx,id,fence,revision,event);
   }
   async claim(ctx:AuthContext,exclude:string[]=[]):Promise<any> {
     const generic=await this.store.transaction(async tx=>{
@@ -75,7 +81,8 @@ export class Operations extends Execution {
         try{await this.authorize(tx,row);}catch(error){
           if(!(error instanceof ApiError))throw error;
           await this.complete(tx,row,'failed',{error:{code:error.code,message:error.message},executionStarted:false});
-          if(this.managedNames.has(row.name))await this.tasks.fail(tx,await this.tasks.internal(tx,row.task_id),{code:error.code,message:error.message});
+          if(this.managedNames.has(row.name)&&row.kind!=='reconcile')await this.tasks.fail(tx,await this.tasks.internal(tx,row.task_id),{code:error.code,message:error.message});
+          else if(row.kind==='reconcile')await this.tasks.emit(tx,row.task_id,'operation.reconciliation-failed',{operationId:row.operation_id,parentOperationId:row.parent_operation_id,error:{code:error.code,message:error.message},remoteStoppingVerified:false});
           return {denial:error};
         }
         const token=Number((await tx.query('UPDATE resources SET next_fencing=next_fencing+1 WHERE tenant_id=$1 AND resource_id=$2 RETURNING next_fencing',[row.tenant_id,row.resource_id])).rows[0].next_fencing);
@@ -104,7 +111,7 @@ export class Operations extends Execution {
   async authorize(client:Transaction,row:any):Promise<any>{
     const actor={principalId:row.principal_id,tenantId:row.tenant_id,kind:'user'} as const,task=await this.tasks.load(actor,row.task_id,'tasks.read',client);
     requireCondition(task.inputRevisionId===row.input_revision_id,'INPUT_REVISION_STALE','Operation input changed');
-    const cancel=(await client.query('SELECT cancel_requested FROM tasks WHERE task_id=$1',[row.task_id])).rows[0].cancel_requested;requireCondition(!cancel,'DECISION_CONFLICT','Task cancellation is pending');
+    const cancel=(await client.query('SELECT cancel_requested FROM tasks WHERE task_id=$1',[row.task_id])).rows[0].cancel_requested;if(row.kind!=='reconcile')requireCondition(!cancel,'DECISION_CONFLICT','Task cancellation is pending');
     if(this.managedNames.has(row.name)){
       requireCondition(this.managedAuthorization,'FORBIDDEN_ACTION','Registered execution authorizer is unavailable');return {task,authorization:await this.managedAuthorization(client,actor,row.scope_id,row,task)};
     }

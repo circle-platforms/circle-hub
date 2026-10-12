@@ -65,7 +65,7 @@ const execution = new Operations(store,auth,tasks,knowledge);
 const catalog=new ToolCatalog(store,auth,assets,tasks,execution,graph,installedToolPackages);await catalog.initialize(process.env.CIRCLE_SERVER_CONNECTOR_PROFILES);
 const ingestions=new Ingestions(store,tasks,graph,installedToolPackages);catalog.ingestions=ingestions;
 assets.validateRegistration=(ctx,input,id,tx)=>catalog.register(ctx,input,id,tx);
-const approvals=new Approvals(store,auth,tasks);execution.approvalCheck=(tx,task,spec)=>approvals.check(tx,task,spec);
+const approvals=new Approvals(store,auth,tasks,Number(process.env.CIRCLE_SERVER_APPROVAL_TTL_MS??86400000));execution.approvalCheck=(tx,task,spec)=>approvals.check(tx,task,spec);
 const skills=new SkillPacks(store,auth,tasks,approvals,assets,catalog,execution,knowledge);await skills.initialize(process.env.CIRCLE_RUNTIME_CONFIG);
 execution.managedNames.add('assets.execute');
 execution.managedAuthorization=(tx,actor,scope,spec,task)=>spec.name==='assets.execute'?skills.authorize(tx,actor,scope,spec,task):catalog.authorize(tx,actor,scope,spec,task);
@@ -77,7 +77,7 @@ const automations=new Automations(store,auth,tasks,assets,skills);catalog.observ
 await privateIPC.start(async(message)=>{const worker=await auth.authenticate(message.authorization),id=z.string().parse(message.operationId),fence=z.number().int().positive().parse(message.fencingToken);return skills.privateSecret(worker,id,fence,message.revoke===true);});
 const assessments=new Assessments(store,tasks,knowledge),checklists=new Checklists(store,tasks,knowledge);
 const registry=new ConnectorRegistry(store,auth,packageConnectors);await registry.initialize();execution.connectorCheck=(tx,actor,scope,spec)=>registry.check(tx,actor,scope,spec);
-const packages=installPackages({store,auth,tasks,knowledge,execution,registry,checklists,approvals,assessments}),rules=packages.rules;
+const packages=installPackages({store,auth,tasks,knowledge,execution,registry,checklists,approvals,assessments,assets,catalog}),rules=packages.rules;
 let closing = false;
 const shutdownSignal=new AbortController();
 const activeRequests=new Set<Promise<void>>();
@@ -312,12 +312,12 @@ const server = createServer(async (request, response) => {
         download(response,await knowledge.sourceBytes({ principalId:task.principalId,tenantId:task.tenantId,kind:'user' },source.sourceRevisionId,task.scopeId)); return;
       }
       if (request.method === 'POST') {
-        const input = await body(request,action === 'report' ? MAX_WORKER_REPORT_BYTES : MAX_BODY_BYTES);
+        const input = await body(request,['report','events'].includes(action) ? MAX_WORKER_REPORT_BYTES : MAX_BODY_BYTES);
         if (action === 'report') {
           const row=(await store.pool.query('SELECT name FROM operations WHERE operation_id=$1',[id])).rows[0];
           send(response,200,{data:await execution.report(ctx,id,input)});return;
         }
-        if(action==='events'){const event=z.object({fencingToken:z.number().int().positive(),inputRevisionId:InputRevisionId,event:z.record(z.string(),z.unknown())}).parse(input);send(response,200,{data:await skills.event(ctx,id,event.fencingToken,event.inputRevisionId,event.event)});return;}
+        if(action==='events'){const event=z.object({fencingToken:z.number().int().positive(),inputRevisionId:InputRevisionId,event:z.record(z.string(),z.unknown())}).parse(input),name=(await store.pool.query('SELECT name FROM operations WHERE operation_id=$1',[id])).rows[0]?.name;send(response,200,{data:execution.customEvents.has(name)?await execution.event(ctx,id,event.fencingToken,event.inputRevisionId,event.event):await skills.event(ctx,id,event.fencingToken,event.inputRevisionId,event.event)});return;}
         if(action==='local-stopped'){const stopped=z.object({fencingToken:z.number().int().positive(),inputRevisionId:InputRevisionId,localExitObserved:z.literal(true)}).parse(input);send(response,200,{data:await skills.stopped(ctx,id,stopped)});return;}
         const fence = z.object({ fencingToken:z.number().int().positive() }).parse(input).fencingToken;
         if (action === 'heartbeat') send(response,200,{ data:await execution.heartbeat(ctx,id,fence) });
@@ -366,7 +366,7 @@ const server = createServer(async (request, response) => {
     }
     throw new ApiError('TARGET_NOT_FOUND', 'API route not found');
   } catch (error) {
-    const failure = error instanceof ApiError ? error : error instanceof z.ZodError ? new ApiError('INVALID_PAYLOAD', 'Payload does not satisfy the contract')
+    const failure = error instanceof ApiError ? error : error instanceof z.ZodError ? new ApiError('INVALID_PAYLOAD', 'Payload does not satisfy the contract',{issues:error.issues.slice(0,20).map(issue=>({path:issue.path,code:issue.code,message:issue.message}))})
       : new ApiError('INTERNAL_ERROR', 'The transaction or server operation failed');
     if (!response.destroyed && !response.headersSent) send(response, failure.httpStatus, { error: { code: failure.code, category: failure.category,
       message: failure.message, details: failure.details, retryable: false } });

@@ -32,7 +32,8 @@ export async function projectSource(packageId:string,originals:RawReturn[],profi
     }
   }else if(packageId==='query-mirror'){
     for(const raw of originals){const envelope=JSON.parse(raw.bytes.toString()),items=envelope[profile.payloadField??'data'];requireCondition(Number(envelope.code)===1000&&Array.isArray(items),'INVALID_PAYLOAD','Mirror projection needs a successful array');
-      for(const row of items){const bug=mirrorBug(row);add(raw,`issue:${bug.id}`,'issue',bug.title||bug.id,'mirror-observation',bug,{product:bug.product,projectionKind:raw.path.includes('/detail/')?'detail':'list'});}
+      if(raw.path.startsWith('/plmquery/product/all/'))for(const row of items)add(raw,`product:${row.id}`,'product',String(row.name),'product-observation',{id:String(row.id),name:String(row.name)});
+      else if(raw.path.startsWith('/plmquery/bug/'))for(const row of items){const bug=mirrorBug(row);add(raw,`issue:${bug.id}`,'issue',bug.title||bug.id,'mirror-observation',bug,{product:bug.product,projectionKind:raw.path.includes('/detail/')?'detail':'list'});}
     }
   }else if(packageId==='environment-view'){
     for(const raw of originals){const value=JSON.parse(raw.bytes.toString());add(raw,`environment:${raw.path}:${raw.requestKey??canonicalHash(value.result)}`,'environment-observation',raw.path,'environment-read',value.result,{revision:value.revision});}

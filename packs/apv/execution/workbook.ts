@@ -1,0 +1,48 @@
+import ExcelJS from 'exceljs';
+import {unzipSync} from 'fflate';
+import {ApiError,MAX_SOURCE_BYTES,requireCondition,sha256} from '../../../packages/contracts/src/index.ts';
+
+export interface ExecutionStep {row:number;type:number;description:string;object:string;method:string;data:string;commands:string[]}
+export interface ExecutionCase {autoid:string;steps:ExecutionStep[]}
+export interface ExecutionBook {sha256:string;cases:ExecutionCase[];initialization:ExecutionStep[];commands:{autoid:string|null;row:number;object:string;deviceIndex:number;command:string}[]}
+const headers=['自动化ID','优先级','语句类型','描述','测试对象','方法','数据','临时保存期望结果','输入变量'];
+const invalid=(message:string)=>new ApiError('INVALID_EXECUTION_WORKBOOK',message);
+export async function readExecutionWorkbook(bytes:Buffer):Promise<ExecutionBook>{
+  try{
+    requireCondition(bytes.length>0&&bytes.length<=MAX_SOURCE_BYTES,'INVALID_EXECUTION_WORKBOOK','Execution workbook exceeds the input limit');
+    let expanded=0,entries=0;
+    unzipSync(bytes,{filter:file=>{expanded+=file.originalSize;entries++;if(entries>256||expanded>64*1024*1024||file.name.includes('..')||file.name.startsWith('/'))throw invalid('Workbook zip exceeds the safe contract bounds');return true;}});
+    const workbook=new ExcelJS.Workbook();await workbook.xlsx.load(bytes as any);
+    if(workbook.worksheets.length!==1||workbook.worksheets[0].name!=='执行')throw invalid('Use the single execution sheet contract');
+    const sheet=workbook.worksheets[0];if(sheet.getRow(1).hidden!==true||sheet.getCell('A1').value!=='APV_EXCEL_CONTRACT | apv.excel.runtime | v1')throw invalid('The execution marker must be exact and row one hidden');
+    if(sheet.rowCount>50000||sheet.columnCount>9)throw invalid('Workbook row or column bound exceeded');
+    const value=(row:number,col:number)=>{const cell=sheet.getCell(row,col).value;if(cell===null)return '';if(typeof cell!=='string'&&typeof cell!=='number')throw invalid('Execution cells must be literal strings or numbers');return String(cell);};
+    let header=0;for(let row=2;row<=Math.min(sheet.rowCount,100);row++)if(headers.every((text,index)=>value(row,index+1)===text)){header=row;break;}if(!header)throw invalid('Execution columns are missing or reordered');
+    const cases:ExecutionCase[]=[],initialization:ExecutionStep[]=[],commands:ExecutionBook['commands']=[];let current:ExecutionCase|undefined,sentinel=false;
+    for(let row=header+1;row<=sheet.rowCount;row++){
+      const cells=Array.from({length:9},(_,i)=>value(row,i+1));if(cells.every(value=>value===''))continue;
+      if(cells[0]==='999999999999999'){sentinel=true;current=undefined;continue;}if(sentinel)throw invalid('The sentinel must follow every executable case');
+      const type=Number(cells[2]);if(cells[2]===''||!Number.isInteger(type)||type<0)throw invalid('Every execution row needs a numeric statement type');
+      if(type===0)continue;
+      if(type>=2&&cells[0]){if(!/^\d{1,32}$/.test(cells[0])||cases.some(item=>item.autoid===cells[0]))throw invalid('Case identities must be unique numeric strings');current={autoid:cells[0],steps:[]};cases.push(current);}
+      if(type>=2&&!current)throw invalid('A step has no case identity');
+      const step:ExecutionStep={row,type,description:cells[3],object:cells[4],method:cells[5],data:cells[6],commands:[]};
+      const device=/^(?:APV_(\d+)|Seg(\d+)_tmp)$/.exec(step.object);
+      if(device){
+        if(!['cmd_config','cmds_config','cmd_enable','cmds_enable'].includes(step.method)||cells[8]!==''||/\b(?:Reg|Seg)\d+_tmp\b|\$\{/.test(step.data))throw invalid('Device rows need literal commands without runtime input substitution');
+        step.commands=step.method.startsWith('cmds_')?step.data.split(/\r?\n/).filter(command=>command.trim()!==''):[step.data];
+        if(!step.commands.length||step.commands.some(command=>!command.trim()||command.length>2000||/[\x00-\x08\x0b-\x1f]/.test(command)))throw invalid('Device command is empty or outside the contract bounds');
+        for(const command of step.commands)commands.push({autoid:type===1?null:current!.autoid,row,object:step.object,deviceIndex:Number(device[1]??device[2]),command});
+      }else if(step.object==='check_point'){
+        if(!['found','not_found','abs_found','found_times'].includes(step.method))throw invalid('Checkpoint method is outside the supported execution contract');
+      }else if(step.object==='time'&&step.method==='sleep'){
+        if(!Number.isFinite(Number(step.data))||Number(step.data)<0||Number(step.data)>3600)throw invalid('Sleep duration is outside the execution bounds');
+      }else if(step.object||step.method||step.data)throw invalid('Opaque execution rows cannot prove every device command against the bound build');
+      if(type===1)initialization.push(step);else current!.steps.push(step);
+    }
+    if(!cases.length||!commands.length)throw invalid('An execution workbook needs real cases and device commands');
+    if(commands.length>5000)throw invalid('Execution command count exceeds the bounded validation limit');
+    if(cases.some(item=>!item.steps.some(step=>step.object==='check_point')))throw invalid('Every case needs an explicit checkpoint');
+    return {sha256:sha256(bytes),cases,initialization,commands};
+  }catch(error){if(error instanceof ApiError)throw error;throw invalid('Workbook could not be read as the execution contract');}
+}
