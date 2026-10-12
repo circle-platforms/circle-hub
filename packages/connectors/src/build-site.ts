@@ -1,4 +1,4 @@
-import {canonicalHash,requireCondition} from '../../contracts/src/index.ts';
+import {ApiError,canonicalHash,requireCondition} from '../../contracts/src/index.ts';
 import {HttpSource,type Incremental,type RawReturn} from './readonly-sdk.ts';
 import {html,elements,attribute,textOf,xmlTree,xmlNodes,children,type HtmlNode} from './structure.ts';
 import {SourceCache} from './source-cache.ts';
@@ -72,9 +72,11 @@ export class BuildSite {
     const result=[...new Set(elements(html(evidence.bytes),'a').flatMap(a=>{const href=attribute(a,'href');if(!href)return [];const link=new URL(href,'https://synthetic.invalid'),id=link.searchParams.get('id');return /\/show_bug\.cgi$/.test(link.pathname)&&id&&/^\d+$/.test(id)?[id]:[];}))];return {result,evidence};
   }
   async releasesFor(externalId:string,candidates:BuildRecord[]):Promise<any>{
-    if(!externalId)return {status:'unknown',earliestFormal:null,all:[],evidence:[],coverage:{builds:[]}};
-    const hydrated=await Promise.all(candidates.map(async build=>{const fixed=await this.fixed(build);return {build:{...build,fixedIds:fixed.result},evidence:fixed.evidence};}));
-    return {...this.matches(hydrated.map(item=>item.build),externalId),evidence:hydrated.map(item=>item.evidence),coverage:{builds:candidates.map(build=>build.name),completeSite:false}};
+    if(!externalId)return {status:'unknown',earliestFormal:null,all:[],evidence:[],coverage:{builds:[],read:[],missing:[],completeSite:false}};
+    const settled=await Promise.allSettled(candidates.map(async build=>{const fixed=await this.fixed(build);return {build:{...build,fixedIds:fixed.result},evidence:fixed.evidence};}));
+    const hydrated:{build:BuildRecord;evidence:RawReturn}[]=[],missing:{build:string;code:string}[]=[];
+    for(const [index,result] of settled.entries())if(result.status==='fulfilled')hydrated.push(result.value);else missing.push({build:candidates[index].name,code:result.reason instanceof ApiError?result.reason.code:'SOURCE_UNREACHABLE'});
+    return {...this.matches(hydrated.map(item=>item.build),externalId),evidence:hydrated.map(item=>item.evidence),coverage:{builds:candidates.map(build=>build.name),read:hydrated.map(item=>item.build.name),missing,completeSite:false}};
   }
   matches(builds:BuildRecord[],externalId:string):any {
     if(!externalId)return {status:'unknown',earliestFormal:null,all:[]};

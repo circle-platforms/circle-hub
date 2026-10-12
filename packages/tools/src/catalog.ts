@@ -83,6 +83,8 @@ export class ToolCatalog {
     const actor={principalId:task.principalId,tenantId:task.tenantId,kind:'user'} as AuthContext,item=await this.entry(actor,operation.args.toolName,tx),evidence=[];
     let result=report.output.result;
     if(report.status==='succeeded'){
+      const policy=await this.auth.policy(actor,tx);
+      if(Array.isArray(result?.coverage?.missing)&&!policy.grants.includes('sources.diagnose'))result={...result,coverage:{...result.coverage,missing:result.coverage.missing.map((item:any)=>({...item,code:['SOURCE_ABSENT','SOURCE_FORBIDDEN'].includes(item.code)?'SOURCE_FORBIDDEN':item.code}))}};
       if(item.definition.handler==='candidate.submit')result=await this.knowledge.candidateFromReturns(tx,actor,task.scopeId,task.taskId,operation.args.input);
       else if(item.definition.handler==='consolidation.fragments'){const selected=await this.knowledge.sharedFragments(tx,actor,task.scopeId,operation.args.input.limit??20);result=selected.result;evidence.push(...selected.evidence);}
       else{requireCondition(Array.isArray(report.output.raw)&&report.output.raw.length>0,'EVIDENCE_INSUFFICIENT','Read tools require original returns');

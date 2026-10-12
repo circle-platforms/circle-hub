@@ -205,3 +205,9 @@ RPC prompt/turn/tool/settled 等真实事件进入 C。只在 agent_settled、�
 联验发现 z.toJSONSchema 默认输出形状把 default 参数也标为 required，Circle 拒绝省略 limit/conditions；改为 io=input，真实 RPC 省略参数后通过。渠道仅 Circle 事件、bot.output 与发布游标同事务保存，渠道注册可扩展，未做企业微信。当前声明仍未被自动提升到产品 stable，专业核心迁出待第 7 幕。
 
 实际第 6 幕及规范器 **4/4**；显式 cf32f7f 的完整 `npm test` contracts **4/4**、methods **7/7**、acceptance **58/59**、无 skip，唯一红项仍旧专业核心守卫；typecheck/diff 检查通过。本阶段所有验收为合成资料/脚本模型，不是实际 auto dream 质量或生产部署。下一步修缺失修复清单，再第 7 幕。
+
+## 14：缺失修复清单的部分覆盖
+
+先增加 missing-link/404 的合成回归，确认抛 SOURCE_ABSENT 失败，再把 releasesFor 改为逐构建 Promise.allSettled。成功清单保留匹配、最早正式发布和原件 evidence；失败进入 coverage.missing（build/code），coverage.read 保留实际读到的构建。status 只由已读清单决定，全部缺失为 unknown，不因一份缺失丢掉其他答案；不宣称候选集合覆盖全站。普通工具结果仍把缺失/无权限分类统一隐藏，诊断者才看到完整来源分类。缓存原地替换/淘汰限制继续保留。
+
+实际 `r2-buildsite-missing` + lazy + connectors **10/10**，typecheck 通过。没有连接真实站点。这项与第 6 幕分笔提交，下一步处理第 7 幕及自动产品来源提炼/第二产品线。
