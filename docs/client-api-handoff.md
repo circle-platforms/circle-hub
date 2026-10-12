@@ -204,7 +204,7 @@ E 的 `command-tree/1.0.0` 规则采用 POSIX quote/escape 分词并转小写，
 
 个别构建无 fixed 链接或页面失败时保留其他答案，coverage.read/missing[{build,code}] 分别列出已读/缺失，全部缺失时 unknown；普通身份缺失/无权限代码统一隐藏。`coverage.earliestFormalCertain` 仅针对指定候选：已读到正式命中、且没有日期更早或相同的正式构建清单缺失才为 true；否则保留观察到的 earliestFormal 并标为不确定。缓存目前无淘汰；若发布站原地替换 XML 而段落摘要不变，会沿用旧缓存，不能用该缓存证明源站字节仍未变化。
 
-来源地址只在运行时配置文件提供。`CIRCLE_SERVER_CONNECTOR_PROFILES` 指向仓库外的 JSON 文件，形状为 `{"profiles":{"<配置引用>":{"origin":"<运行时来源>","root":"<文档根>","index":"<构建首页>","payloadField":"data"}}}`。连接器资产 configuration 使用 `packageId`（documents/build-site/query-mirror/environment-view/knowledge）、`runtimeProfileRef`、可选 alias；个人凭据走 `/v1/assets/{id}/credentials`，之后在新资产修订的 declaration.credentials 中引用。PLM 的 JWT 只在 worker 内注入，无 Bearer；值不回到注册/目录/调用响应或审计。当前仅合成来源验收，真实源冒烟仍需授权。
+来源地址只在运行时配置文件提供。`CIRCLE_SERVER_CONNECTOR_PROFILES` 指向仓库外的 JSON 文件，形状为 `{"profiles":{"<配置引用>":{"origin":"<运行时来源>","root":"<文档根>","index":"<构建首页>","payloadField":"data"}}}`。连接器资产 configuration 使用 `packageId`（documents/build-site/query-mirror/environment-view/knowledge）、`runtimeProfileRef`、可选 productLineId 和 alias；个人凭据走 `/v1/assets/{id}/credentials`，之后在新资产修订的 declaration.credentials 中引用。PLM 的 JWT 只在 worker 内注入，无 Bearer；值不回到注册/目录/调用响应或审计。当前仅合成来源验收，真实源冒烟仍需授权。
 
 成功的只读回执自动进入产品知识，采用最终一致的异步入库。同步回报只验 SHA、保存原件/证据和持久 outbox，读取立即返回，响应 `{result,evidence}` 保持不变；无须等待声明或快照。server 的独立 runner 从原件抽取结构观察，按批写实体/声明/评估，整个索引任务成功后再更新产品 stable。声明 origin=script，评估 semantic=not-asserted，仅证明字面内容/结构，不能凭命令存在宣称整个功能支持。
 
@@ -265,5 +265,13 @@ worker 的回报处理若因 ApiError 拒绝，知识/制品写入回滚，操�
 ## 第二阶段：工作列表过滤与续页
 
 `GET /v1/tasks` 仍返回 TaskView 数组，limit 默认 20、最多 100。新增可选 `kind=work|tool|index`、`capabilityPackId=<精确包 id>`、`after=<上一页末项 taskId>`，请求 schema 在 CLIENT_ROUTES.tasks.query。kind 的分类为 asset-tool→tool、asset-index→index，其余及未指定能力包的任务→work；同时提供 kind 和 capabilityPackId 时取交集。客户端工作页使用 `?kind=work&limit=20`，下一页追加 after，数组为空即读完；不必先下载内部任务再过滤。
+
+## 产品线安装与工具别名
+
+启动时 `CIRCLE_SERVER_PRODUCT_LINES` 可指向仓库外的安装 JSON：`{"schemaVersion":"installed-product-lines/1","productLines":["apv/product-line.json","meridian/product-line.json"]}`。清单路径相对安装文件解析；未设置时使用 packs/installed-product-lines.json，默认客户端工具名保持兼容。每份 product-line/1 清单声明 connectorPackages、toolAliases、skills、methods 和 knowledgeMappings；包 id、版本、重复声明和安全相对路径在启动前校验。格式及边界见 [packs/README.md](../packs/README.md)。
+
+新连接器资产可在 configuration 带 `productLineId`，由该产品线清单选择工具前缀。例如 `{"packageId":"documents","productLineId":"meridian","runtimeProfileRef":"<运行时引用>"}` 自动登记 meridian_docs 工具。可选 alias 仍覆盖实例前缀，同一 tenant 内工具名称冲突仍拒绝。省略 productLineId 时沿用第一个声明该连接器的清单前缀；公共 knowledge 工具独立保留。移除产品线并重启后，该产品线明确绑定的工具从目录隐藏；恢复安装后可继续使用原已批准绑定。ETag 和普通调用权限规则不变。
+
+清单安装只读取声明，不导入其中的可执行路径，也不等于技能包已经获批。技能提交/审批/运行仍查当前目录，沿用原接口；既有编译能力和历史迁移保留。
 
 权限、类别和能力包筛选先于 limit，按创建时间、taskId 倒序；游标取保存的完整 PostgreSQL 创建时间，不按 phase/更新时间排序，server 重启可续读。after 必须是当前身份可读的任务；越 scope/个人任务返回 FORBIDDEN_SCOPE，格式错误、未知类别和越界 limit 为 INVALID_PAYLOAD。省略新参数时行为与第一阶段相同。

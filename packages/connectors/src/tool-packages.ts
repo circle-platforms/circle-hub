@@ -11,7 +11,7 @@ import {projectSource} from './product-projections.ts';
 import type {ProductObservation} from '../../knowledge/src/product-records.ts';
 
 export interface ToolDefinition {suffix:string;title:string;description:string;schema:z.ZodObject<any>;effect:'read'|'write';mode:'sync'|'task';permission:string;handler:string}
-export interface ToolPackage {id:string;prefix:string;tools:ToolDefinition[];projection?:{version:string;extract:(raw:RawReturn[],profile:ConnectorProfile)=>Promise<ProductObservation[]>}}
+export interface ToolPackage {id:string;prefix:string;productLinePrefixes?:Record<string,string>;tools:ToolDefinition[];projection?:{version:string;extract:(raw:RawReturn[],profile:ConnectorProfile)=>Promise<ProductObservation[]>}}
 const tool=(suffix:string,title:string,schema:z.ZodObject<any>,permission:string,handler:string,effect:'read'|'write'='read',mode:'sync'|'task'='sync'):ToolDefinition=>({suffix,title,description:title,schema,permission,handler,effect,mode});
 const short=z.string().min(1).max(500),build=z.string().min(1).max(200);
 export const toolPackages:ToolPackage[]=[

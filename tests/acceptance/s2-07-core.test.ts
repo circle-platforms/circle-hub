@@ -5,13 +5,13 @@ import {fileURLToPath} from 'node:url';
 
 const root=fileURLToPath(new URL('../../',import.meta.url));
 const packages=['packages/connectors/','packages/object-mappings/','packages/methods/','packages/policies/'];
-const specific=/bugzilla|zentao|禅道|lbx|mindmaps?|defect[-_]review|openkm|jira/i;
+const specific=/bugzilla|zentao|禅道|lbx|mindmaps?|defect[-_]review|openkm|jira|apv|photon|meridian|xmind/i;
+const productLine=/apv|photon|meridian|xmind/i;
 
 async function files(directory:string):Promise<string[]>{
   const result:string[]=[];
   for(const entry of await readdir(`${root}${directory}`,{withFileTypes:true})){
     const path=`${directory}/${entry.name}`;
-    if(packages.some(allowed=>path.startsWith(allowed)))continue;
     if(entry.isDirectory())result.push(...await files(path));
     else if(/\.(ts|json)$/.test(entry.name))result.push(path);
   }
@@ -21,9 +21,20 @@ async function files(directory:string):Promise<string[]>{
 test('Act S2.7: core contains no specific system product or capability knowledge',async()=>{
   const violations:{path:string;lines:number[]}[]=[];
   for(const path of [...await files('apps'),...await files('packages')].sort()){
-    const lines=(await readFile(`${root}${path}`,'utf8')).split('\n').flatMap((line,index)=>specific.test(line)?[index+1]:[]);
-    if(specific.test(path))lines.unshift(0);
+    const pattern=packages.some(allowed=>path.startsWith(allowed))?productLine:specific;
+    const lines=(await readFile(`${root}${path}`,'utf8')).split('\n').flatMap((line,index)=>pattern.test(line)?[index+1]:[]);
+    if(pattern.test(path))lines.unshift(0);
     if(lines.length)violations.push({path,lines});
   }
   assert.equal(violations.length,0,`Move specific behavior into declared packages: ${JSON.stringify(violations)}`);
+});
+
+test('Act S2.7: connector implementations contain no product-line names or product fixtures',async()=>{
+  const violations:{path:string;lines:number[]}[]=[];
+  for(const path of (await files('packages/connectors')).sort()){
+    const lines=(await readFile(`${root}${path}`,'utf8')).split('\n').flatMap((line,index)=>productLine.test(line)?[index+1]:[]);
+    if(productLine.test(path))lines.unshift(0);
+    if(lines.length)violations.push({path,lines});
+  }
+  assert.equal(violations.length,0,`Move product fixtures into declared packages: ${JSON.stringify(violations)}`);
 });

@@ -285,3 +285,23 @@ C 使用已安装能力/流程版本及交付验证注册表；D 使用声明的
 用户另指出内部任务挤满最近 100 条，Circle f505db0 已先在客户端隐藏工具/索引。服务端先写 **0/1** 回归（110 条内部任务挤掉工作），再增加 kind=work|tool|index、精确 capabilityPackId 和 after taskId；TaskView 数组不变，权限/类别过滤先于 limit，游标按完整创建时间/taskId，跨 scope/个人游标拒绝。新分页及原客户端读接口联合 **4/4**，交接文档已写明。
 
 本次本机实际：迁出编译与中性治理专项 **20/20**；注册/第二产品线和 RPC 联合 **7/7**，固定 8b2ceb6，无 skip；完整 `npm test` contracts **4/4**、methods **7/7**、acceptance **75/75**、references **7/7**，**无 skip**，第 7 幕守卫通过。APV 包内另 **4/4**，与 b00ce21 的技能目录字节相同。当前是修订 2 七幕合成范围全绿；真实源、正式身份刷新、模型质量、付费模型、自动化环境改动、网络开放和部署未验收/授权，缓存原地换 XML/淘汰限制继续存在。本步只本地提交，不 push/开 PR，Circle、server-s1 和运行中 Otty 栈未改。
+
+### 第 7 幕独立认可与客户端任务分类
+
+用户提供 Claude 对 330edae+a04f84c 的独立复核：临时工作树、固定 Circle 8b2ceb6，contracts 4/4、methods 7/7、acceptance 75/75、references 7/7、typecheck 通过，没有 skip；R2.7 两条含实际 Meridian RPC 通过。a04f84c 只移除一个空行，APV 技能目录与 5f11c5d 相同。额外用 apv/photon/xmind/plmquery/show_bug/bugs_fixed/meridian 扫描非连接器核心未发现具体名，核心只从 packs/index.ts 和 packs/worker.ts 安装入口接包。用户认可第 7 幕，并建议扩大守卫和通用安装清单。
+
+Claude 报告 Circle bd646a5 已把工作页改用 kind=work&limit=20，工具/索引 kind 各 limit=100 只计数，对旧 server 保留 capabilityPackId 过滤。客户端 npm run check 425 条中 423 通过、2 跳过，workbench 24/24。server a04f84c + Circle bd646a5 的最后一轮真实 Otty 联验由 Claude 控制 7420 栈，尚未提供最终结果；本轮没有操作该栈。固定 8b2ceb6 工作树保留用于服务端验收。
+
+## 20：产品线守卫与运行时清单加载
+
+先写更宽守卫和连接器独立守卫；实际连接器守卫初次失败，指出 synthetic-readonly.ts 的 7 处 PHOTON 合成名。将整份合成源移到 packs/synthetic/readonly-sources.ts，dev:stack 与测试夹具改从这里加载，源字节和场景未改变。核心加入 apv/photon/meridian/xmind，所有 apps/packages 的产品线名均扫描，连接器/映射/方法/策略只豁免具体系统行为，不豁免产品线名。连接器另有独立扫描。
+
+再写运行时第三产品线和无效声明验收，实际 **0/2**：清单未生效导致两个文档实例使用同前缀冲突，通用加载器也尚不存在。随后按 installed-product-lines/1 文件逐个读取 product-line/1，不再从 index.ts 写死 APV 清单或别名。清单文件从 CIRCLE_SERVER_PRODUCT_LINES 选择，缺省使用 packs 的版本化安装列表；支持原来的字符串 connectorPackages 和 Meridian 的 packageId/alias 对象。未知包、重复产品线/连接器、冲突声明、非法相对文件路径或 schema 版本拒绝启动，错误不回显配置原文或本机路径。
+
+连接器资产可用 configuration.productLineId 选清单默认前缀，显式 alias 继续作为实例别名；名称唯一、当前权限、个人凭据、ETag、worker 受理/证据路径保持。移除产品线后明确绑定的工具隐藏；省略 productLineId 的旧资产使用已安装通用连接器，默认名称兼容。清单不会自动导入可执行文件或绕过技能审批，历史迁移和既有编译实现继续安装。新产品线复用已有连接器和受治理技能运行器，仅增加清单、文件与运行配置即可。接口及配置写入 client-api-handoff 和 packs/README。
+
+新增守卫/安装专项 **4/4**、typecheck 通过；第三条虚构产品线实际读原件并留 SHA 证据，移除后调用拒绝、恢复后绑定可见，跨实例冲突门禁保留，空安装列表只保留公共知识工具。原 Meridian RPC 验收改为只带 productLineId，由服务器加载其别名。完整固定 Circle 回归 contracts **4/4**、methods **7/7**、acceptance **78/78**、references **7/7**，**无 skip**；规模四次读 p95 **164ms**。APV 技能目录与 5f11c5d 字节相同、包内 4/4，references 验证 714 原件，typecheck/diff 检查通过。本轮只本地提交，不 push。
+
+### 真实构建站点冒烟发现的下一步阻塞
+
+Claude 报告以 a04f84c 连接器和其控制的 7420 栈新资产做过只读冒烟，并发 2、间隔 200ms，只取 1 个 XML 和少量页面；本代理没有访问真实源。发现四项结构差异：索引先链接汇总页，汇总页混合多个产品及变体再链接列表；只有正式已发布构建标题被 font 包住，其余是纯文本紧随 BLOCKQUOTE，变体文件有前缀和不同镜像后缀；命令头须由全部祖先 menu 与 item 拼接、scope 独立保留；修复链接同时有直接缺陷编号和历史外部编号，须标识编号体系。现有合成全绿不覆盖这些结构，真实连接器路径尚不可用。下一步先用同形虚构数据验收，再修通用解析、产品包过滤/平台配置与知识投影，保持按需下载和来源证据，不写内网地址、域名或真实构建名，也不改 Claude 的技能脚本。

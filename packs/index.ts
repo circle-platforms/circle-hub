@@ -7,12 +7,12 @@ import {DefectReviewPack,ResourceCheckPack,PACK_FLOWS} from './synthetic/contrac
 import {ProfessionalRunner} from './synthetic/runtime.ts';
 import {Rules} from './synthetic/rules.ts';
 import {CONNECTOR_MANIFESTS} from './synthetic/connectors.ts';
-import {readFileSync} from 'node:fs';
-import {toolPackages,type ToolPackage} from '../packages/connectors/src/tool-packages.ts';
-const productLine=JSON.parse(readFileSync(new URL('./apv/product-line.json',import.meta.url),'utf8'));
+import {loadProductLines} from './product-lines.ts';
+const installed=await loadProductLines(process.env.CIRCLE_SERVER_PRODUCT_LINES);
 export const packageMigrations=[resourceMigration];
 export const packageConnectors=CONNECTOR_MANIFESTS;
-export const installedToolPackages:ToolPackage[]=toolPackages.map(pack=>({...pack,prefix:productLine.toolAliases[pack.id]??pack.prefix}));
+export const installedProductLines=installed.productLines;
+export const installedToolPackages=installed.toolPackages;
 
 export function installPackages(services:any){
   const {store,auth,tasks,knowledge,execution,registry,checklists,approvals,assessments}=services;

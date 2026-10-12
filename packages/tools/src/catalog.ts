@@ -19,13 +19,18 @@ export class ToolCatalog {
   async initialize(profileFile?:string):Promise<void>{
     if(profileFile){const schema=z.object({profiles:z.record(z.string(),z.object({origin:z.string().url(),root:z.string().optional(),index:z.string().optional(),payloadField:z.string().optional(),requestConcurrency:z.number().int().min(1).max(8).optional(),requestIntervalMs:z.number().int().min(0).max(60000).optional()}).strict())}).strict();this.profiles=schema.parse(JSON.parse(await readFile(profileFile,'utf8'))).profiles;}
   }
-  definition(packageId:string,suffix:string):ToolDefinition|undefined{return this.packages.find(p=>p.id===packageId)?.tools.find(t=>t.suffix===suffix);}
+  packageFor(configuration:Record<string,unknown>):ToolPackage|undefined{
+    const pack=this.packages.find(p=>p.id===configuration.packageId),line=configuration.productLineId;
+    return line===undefined||typeof line==='string'&&Object.hasOwn(pack?.productLinePrefixes??{},line)?pack:undefined;
+  }
+  definition(packageId:string,suffix:string,configuration?:Record<string,unknown>):ToolDefinition|undefined{return (configuration?this.packageFor(configuration):this.packages.find(p=>p.id===packageId))?.tools.find(t=>t.suffix===suffix);}
   async register(ctx:AuthContext,input:AssetRegistration,assetId:string,tx:Transaction):Promise<void>{
-    if(input.kind!=='connector-instance'||!input.configuration.packageId)return;const pack=this.packages.find(p=>p.id===input.configuration.packageId);
+    if(input.kind!=='connector-instance'||!input.configuration.packageId)return;const pack=this.packageFor(input.configuration);
+    requireCondition(input.configuration.productLineId===undefined||!!pack,'INVALID_PAYLOAD','Product line does not install this tool package');
     // Inventory can retain assets whose execution package has not been installed.
     // They have no advertised tools and do not gain execution from registration.
     if(!pack){await tx.query('DELETE FROM tool_bindings WHERE asset_id=$1',[assetId]);return;}
-    const prefix=ToolName.parse(input.configuration.alias??pack.prefix);
+    const prefix=ToolName.parse(input.configuration.alias??(input.configuration.productLineId===undefined?pack.prefix:pack.productLinePrefixes![input.configuration.productLineId as string]));
     await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[`tool-names:${ctx.tenantId}`]);
     for(const definition of pack.tools){const name=ToolName.parse(`${prefix}.${definition.suffix}`),existing=(await tx.query('SELECT asset_id FROM tool_bindings WHERE tenant_id=$1 AND name=$2',[ctx.tenantId,name])).rows[0];requireCondition(!existing||existing.asset_id===assetId,'TOOL_NAME_CONFLICT','Tool name is already registered in this tenant');}
     if(pack.tools.some(tool=>tool.effect==='write'))requireCondition(input.declaration.writes.includes('knowledge-candidates'),'INVALID_PAYLOAD','Asset declaration must include its candidate writes');
@@ -40,7 +45,7 @@ export class ToolCatalog {
       WHERE b.tenant_id=$1 AND a.scope_id=ANY($2::text[]) AND v.lifecycle='running' AND v.approved_digest=v.sha256
       AND (a.owner_principal_id=$3 OR v.readers ? $3 OR v.readers ? '*') ORDER BY b.name`,[p.tenantId,p.scopes,p.principalId])).rows;
     const results=[];
-    for(const row of rows){const definition=this.definition(row.package_id,row.suffix);if(!definition||!p.grants.includes(definition.permission))continue;
+    for(const row of rows){const definition=this.definition(row.package_id,row.suffix,row.configuration);if(!definition||!p.grants.includes(definition.permission))continue;
       if(ctx.run&&!ctx.run.tools.includes(row.name))continue;
       let credentials=true;for(const reference of row.declaration.credentials){try{const record=await this.assets.row(ctx,reference,tx,'credentials.use');if(record.owner_principal_id!==ctx.principalId||record.lifecycle==='disabled'||record.configuration.connectorAssetId!==row.asset_id)credentials=false;}catch{credentials=false;}}
       if(!credentials)continue;

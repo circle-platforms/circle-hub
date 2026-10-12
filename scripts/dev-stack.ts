@@ -7,7 +7,7 @@ import { createServer } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { zipSync, strToU8 } from 'fflate';
 import {SUPERVISOR_STOP_TIMEOUT_MS} from '../apps/server/src/shutdown.ts';
-import {createSyntheticSources} from '../packages/connectors/src/synthetic-readonly.ts';
+import {createSyntheticSources} from '../packs/synthetic/readonly-sources.ts';
 
 const root = fileURLToPath(new URL('../',import.meta.url));
 const scratch = await mkdtemp(`${tmpdir()}/circle-server-dev-`);

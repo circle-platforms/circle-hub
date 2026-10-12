@@ -36,7 +36,9 @@ Circle 和 server 分别发布，默认连接插件留在 Circle，不另建插�
 
 第二阶段 `server-s2` 已完成资产、只读连接器、两类六种知识记录、工具目录、审批技能包、Circle RPC 执行、定时/事件 bot 和产品包注册的本机合成验收。产品知识从 SHA 原件异步投影，批量入库并增量发布，索引进度使用任务和事件补读。APV 编译代码及 Claude 提供的技能包归 [packs/apv](packs/apv/)，第二条虚构产品线 [Meridian](packs/meridian/) 使用相同核心、权限、审批和 RPC。旧产品健康能力撤下，合成设备/记录协议仅保留机制验收；脑图编译 HTTP 与两表七列契约兼容。
 
-工作列表可用 `GET /v1/tasks?kind=work&limit=20` 先过滤内部工具/索引任务，再以末项 taskId 作为 after 续页。完整回归当前 contracts 4/4、methods 7/7、acceptance 75/75、references 7/7，显式固定 Circle 构建、无跳过；APV 包内测试另 4/4。独立 Otty 编译、bot 与规模复测观察见[第二阶段进度](docs/server-s2-progress.md)。这些数字不代表真实来源权限同步、正式身份刷新、付费模型、设备或生产部署验收。
+已安装产品线由运行时 `CIRCLE_SERVER_PRODUCT_LINES` 文件选择，逐个加载 product-line/1 清单及工具别名；格式见 [产品包安装说明](packs/README.md)。连接器资产可带 productLineId，复用既有连接器的新增产品线无需改核心或安装入口。合成源数据归 packs/synthetic，核心和连接器守卫均拒绝产品线名。
+
+工作列表可用 `GET /v1/tasks?kind=work&limit=20` 先过滤内部工具/索引任务，再以末项 taskId 作为 after 续页。完整回归当前 contracts 4/4、methods 7/7、acceptance 78/78、references 7/7，显式固定 Circle 构建、无跳过；APV 包内测试另 4/4。独立 Otty 编译、bot 与规模复测观察见[第二阶段进度](docs/server-s2-progress.md)。这些数字不代表真实来源权限同步、正式身份刷新、付费模型、设备或生产部署验收。
 
 这些结果覆盖开发身份、临时 PostgreSQL 和合成设备/企业系统，真实模型、真实设备/企业系统、生产认证与部署兼容仍需后续授权和验收。原参考中的历史结果不作为新 server 的验收结果。本阶段没有 push、发布或部署。
 
