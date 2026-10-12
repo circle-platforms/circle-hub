@@ -4,7 +4,7 @@ import { z } from 'zod';
 export const API_VERSION = '1.0.0';
 export const FLOW_VERSION = 'synthetic-lbx/1';
 export const MINDMAP_FLOW_VERSION = 'mindmap-compile/1';
-export const PACK_FLOWS={'mindmap-compile':MINDMAP_FLOW_VERSION,'defect-review':'defect-review/1','lbx-healthcheck':'lbx-healthcheck/1','asset-tool':'asset-tool/1','asset-registration':'asset-registration/1','skill-run':'skill-run/1'} as const;
+export const PACK_FLOWS={'mindmap-compile':MINDMAP_FLOW_VERSION,'defect-review':'defect-review/1','lbx-healthcheck':'lbx-healthcheck/1','asset-tool':'asset-tool/1','asset-registration':'asset-registration/1','skill-run':'skill-run/1','asset-index':'asset-index/1'} as const;
 export const LEASE_TTL_MS = 60_000;
 export const HEARTBEAT_MS = 20_000;
 export const IDEMPOTENCY_WINDOW_MS = 86_400_000;
@@ -92,7 +92,7 @@ export const ConnectorManifest = z.object({
 export type ConnectorManifest = z.infer<typeof ConnectorManifest>;
 
 export const SubmitRequest = z.object({ scopeId: ScopeId, title: z.string().min(1).max(2000).default('Compile mindmap test cases'),
-  idempotencyKey: z.string().min(8).max(200), capabilityPackId: z.enum(['mindmap-compile','defect-review','lbx-healthcheck','asset-tool','asset-registration','skill-run']).optional(),
+  idempotencyKey: z.string().min(8).max(200), capabilityPackId: z.enum(['mindmap-compile','defect-review','lbx-healthcheck','asset-tool','asset-registration','skill-run','asset-index']).optional(),
   input: z.record(z.string(), z.unknown()).default({}) });
 export type SubmitRequest = z.infer<typeof SubmitRequest>;
 export const DevLoginRequest = z.object({ username: z.string().max(100), password: z.string().max(1000),

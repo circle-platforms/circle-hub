@@ -5,7 +5,7 @@ import {randomBytes} from 'node:crypto';
 export async function createSyntheticSources() {
   const secret=randomBytes(24).toString('hex');
   const requests:{method:string;path:string;authorization?:string;body:any}[]=[];
-  const state={revision:1,mode:'ready',fixed:['401'],command:'feature.enable',changedBuild:'',encoding:'UTF-8',expandedCommands:false,manualText:'',headCount:36,mirrorIds:[51],dynamicDocuments:false,documentReads:0};
+  const state={revision:1,mode:'ready',fixed:['401'],command:'feature.enable',changedBuild:'',encoding:'UTF-8',expandedCommands:false,manualText:'',headCount:36,mirrorIds:[51],dynamicDocuments:false,documentReads:0,badCommandIndex:-1};
   const xml=(command:string,name:string)=>{
     const first=state.expandedCommands&&name.includes('_109')?'':`<item name="${command}"><arguments><arg position="1" name="mode" type="STRING" optional="true"/></arguments><results><result name="status"/></results></item>`;
     const expanded=state.expandedCommands?[
@@ -13,7 +13,7 @@ export async function createSyntheticSources() {
       '<item name="service create address"><arguments><arg position="1" type="IPADDR"/></arguments></item>',
       '<item name="service create name"><arguments><arg position="1" type="STRING"/></arguments></item>',
       '<item name="service create mode"><arguments><arg position="1" type="STRING" enum="active|standby"/></arguments></item>',
-      ...Array.from({length:state.headCount},(_,i)=>`<item name="service inspect ${i}"><arguments><arg position="1" type="STRING" optional="true"/></arguments></item>`),
+      ...Array.from({length:state.headCount},(_,i)=>`<item name="${i===state.badCommandIndex?'x'.repeat(600):`service inspect ${i}`}"><arguments><arg position="1" type="STRING" optional="true"/></arguments></item>`),
     ].join(''):'';
     return `<commands><scope name="configuration"><menu name="service">${first}${expanded}</menu></scope></commands>`;
   };

@@ -49,10 +49,12 @@ import {Automations} from '../../../packages/tasks/src/automations.ts';
 import {automationOutcomeMigration} from '../../../packages/tasks/src/automation-outcome-migration.ts';
 import {knowledgePageMigration} from '../../../packages/knowledge/src/page-migration.ts';
 import {automationOriginMigration} from '../../../packages/tasks/src/automation-origin-migration.ts';
+import {ingestionMigration} from '../../../packages/knowledge/src/ingestion-migration.ts';
+import {Ingestions} from '../../../packages/knowledge/src/ingestion.ts';
 
 function environment(name: string): string { const value = process.env[name]; if (!value) throw new Error(`Required environment variable: ${name}`); return value; }
 const store = new Store(JSON.parse(environment('CIRCLE_SERVER_DATABASE_CONFIG')));
-await store.migrate([taskMigration,mindmapTaskMigration,knowledgeMigration,executionMigration,resourceMigration,approvalMigration,conclusionMigration,checklistMigration,connectorMigration,entityMigration,assetMigration,graphMigration,toolMigration,skillMigration,automationMigration,automationOutcomeMigration,knowledgePageMigration,automationOriginMigration]);
+await store.migrate([taskMigration,mindmapTaskMigration,knowledgeMigration,executionMigration,resourceMigration,approvalMigration,conclusionMigration,checklistMigration,connectorMigration,entityMigration,assetMigration,graphMigration,toolMigration,skillMigration,automationMigration,automationOutcomeMigration,knowledgePageMigration,automationOriginMigration,ingestionMigration]);
 const auth = new Auth(store);
 requireCondition(process.env.CIRCLE_SERVER_DEV_AUTH === '1', 'INVALID_PAYLOAD', 'Phase one requires explicitly enabled development authentication');
 await auth.initializeDevelopment(environment('CIRCLE_SERVER_DEV_IDENTITIES'));
@@ -65,6 +67,7 @@ const graph=new KnowledgeGraph(store,auth,knowledge);
 knowledge.sourceAccess=async(ctx,id,tx)=>{await entities.checkSourceAccess(ctx,id,tx);await graph.checkSourceAccess(ctx,id,tx);};
 const execution = new Operations(store,auth,tasks,knowledge);
 const catalog=new ToolCatalog(store,auth,assets,tasks,execution,graph,toolPackages);await catalog.initialize(process.env.CIRCLE_SERVER_CONNECTOR_PROFILES);
+const ingestions=new Ingestions(store,tasks,graph,toolPackages);catalog.ingestions=ingestions;
 assets.validateRegistration=(ctx,input,id,tx)=>catalog.register(ctx,input,id,tx);
 const approvals=new Approvals(store,auth,tasks);execution.approvalCheck=(tx,task,spec)=>approvals.check(tx,task,spec);
 const skills=new SkillPacks(store,auth,tasks,approvals,assets,catalog,execution,knowledge);await skills.initialize(process.env.CIRCLE_RUNTIME_CONFIG);
@@ -393,17 +396,19 @@ const timer = setInterval(() => {
   if (running || closing) return;
   running = tasks.runOnce().then(() => mindmaps.runOnce()).then(()=>rules.tick()).then(()=>professional.runOnce()).then(()=>automations.tick()).catch(error => { console.error(JSON.stringify({type:'runner-transaction-failed',code:error instanceof ApiError?error.code:(error as any).code??'INTERNAL_ERROR'})); }).finally(() => { running = undefined; });
 }, Number(process.env.CIRCLE_SERVER_POLL_MS ?? 100));
+let indexing:Promise<void>|undefined;
+const indexTimer=setInterval(()=>{if(indexing||closing)return;indexing=ingestions.runOnce().catch(error=>{console.error(JSON.stringify({type:'source-index-transaction-failed',code:error instanceof ApiError?error.code:'INTERNAL_ERROR'}));}).finally(()=>{indexing=undefined;});},Number(process.env.CIRCLE_SERVER_INDEX_POLL_MS??100));
 await new Promise<void>(resolve => server.listen(Number(process.env.CIRCLE_SERVER_PORT ?? 8080), '127.0.0.1', resolve));
 const address = server.address() as { port: number };
 console.log(JSON.stringify({ type: 'ready', url: `http://127.0.0.1:${address.port}`, apiVersion: API_VERSION, syntheticOnly: true }));
 async function shutdown(): Promise<void> {
-  if (closing) return; closing = true; clearInterval(timer);
+  if (closing) return; closing = true; clearInterval(timer);clearInterval(indexTimer);
   shutdownSignal.abort();
   await closeHttpServer(server);
   await privateIPC.close();
   // Closing a socket is not completion of the transaction it was waiting for.
   await Promise.all(activeRequests);
-  await running; await store.pool.end();
+  await running;await indexing; await store.pool.end();
   if (process.connected) process.disconnect();
 }
 process.on('SIGTERM', () => { void shutdown(); }); process.on('SIGINT', () => { void shutdown(); });

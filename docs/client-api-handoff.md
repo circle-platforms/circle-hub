@@ -206,7 +206,11 @@ E 的 `command-tree/1.0.0` 规则采用 POSIX quote/escape 分词并转小写，
 
 来源地址只在运行时配置文件提供。`CIRCLE_SERVER_CONNECTOR_PROFILES` 指向仓库外的 JSON 文件，形状为 `{"profiles":{"<配置引用>":{"origin":"<运行时来源>","root":"<文档根>","index":"<构建首页>","payloadField":"data"}}}`。连接器资产 configuration 使用 `packageId`（documents/build-site/query-mirror/environment-view/knowledge）、`runtimeProfileRef`、可选 alias；个人凭据走 `/v1/assets/{id}/credentials`，之后在新资产修订的 declaration.credentials 中引用。PLM 的 JWT 只在 worker 内注入，无 Bearer；值不回到注册/目录/调用响应或审计。当前仅合成来源验收，真实源冒烟仍需授权。
 
-成功的只读回执现在自动进入产品知识：server 从已验 SHA 原件重新抽取结构观察，生成实体、脚本声明和评估，连同源修订/证据发布到产品 stable；`GET /v1/knowledge/search` 可检索，无需客户端另行手工导入。声明 origin=script，评估 semantic=not-asserted，仅证明字面内容/结构，不能凭命令存在宣称整个功能支持。重复原件复用记录，当前快照排除被替换的来源声明，历史证据保留；空列表修订也更新。检索继续按实际读取者、当前资产与源权限、读 grant 和个人凭据状态过滤，不因快照发布扩权。共享会话和 footprint 等模型来源必须 consolidated、显式许可，仍从个人候选开始。
+成功的只读回执自动进入产品知识，采用最终一致的异步入库。同步回报只验 SHA、保存原件/证据和持久 outbox，读取立即返回，响应 `{result,evidence}` 保持不变；无须等待声明或快照。server 的独立 runner 从原件抽取结构观察，按批写实体/声明/评估，整个索引任务成功后再更新产品 stable。声明 origin=script，评估 semantic=not-asserted，仅证明字面内容/结构，不能凭命令存在宣称整个功能支持。
+
+通过 `GET /v1/tasks` 可见本人 `capabilityPackId="asset-index"` 的索引任务，其 input.originTaskId 关联原读取任务。原任务 events 的 `knowledge.indexing.linked` 含 `{jobId,taskId,status}`；索引任务的 queued/started/progress/completed 事件带 jobId、processed/total 或 indexed，失败沿用 task.failed/result.error。须补读索引任务事件或 status 后再要求知识检索完整；读取 succeeded 不代表索引已完成。相同源修订/投影版本复用工作，server 中断后 outbox 可恢复；索引失败不把原读取改判失败。
+
+批量记录先暂存成员，成功后增量替换来源的声明闭包，不逐声明遍历整个 scope；旧快照的成员在升级时回填保留。当前快照排除被替换的来源，历史证据保留，空列表修订也更新。源 head 的 generation 区分再次观察到旧字节，避免误用旧的已完成工作。检索按实际读取者、当前资产与源权限、读 grant 和个人凭据状态过滤；每批和发布时重查，不因快照发布扩权。共享会话和 footprint 等模型来源必须 consolidated、显式许可，仍从个人候选开始。
 
 `npm run dev:stack` 一次启动临时 PostgreSQL、server、两个 worker 和合成来源，并登记/独立批准/启用上述五个工具资产。终端打印 server 地址、developer 与 approver 的临时登录方式；developer 登录后立即可取非空工具目录。默认合成版本线为 10.5，正式构建 `Rel_PHOTON_10_5_0_101` / `Rel_PHOTON_10_5_0_109`，前者有 `feature.enable`，后者缺失；两者都有几十条 service 命令。Ctrl+C 也关闭合成来源并删除 scratch。
 

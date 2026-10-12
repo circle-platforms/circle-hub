@@ -3,7 +3,7 @@ import {test} from 'node:test';
 import {randomBytes} from 'node:crypto';
 import {writeFile} from 'node:fs/promises';
 import {sha256} from '../../packages/contracts/src/index.ts';
-import {setup,type Harness} from './harness.ts';
+import {setup,until,type Harness} from './harness.ts';
 import {readonlySources} from '../fixtures/readonly-sources.ts';
 
 async function prepare(h:Harness,origin:string){
@@ -16,7 +16,10 @@ async function asset(h:Harness,packageId:string,version='1.0.0',assetId?:string,
   const value=await h.request('/v1/assets',{assetId,scopeId:'scp_lab',kind:'connector-instance',name:'Synthetic product authority',version,declaration:{reads:['registered-source'],writes:[],credentials:[]},configuration:{packageId,runtimeProfileRef:'fixture'},readers});
   await h.request(`/v1/assets/${value.assetId}/lifecycle`,{version:value.version,sha256:value.sha256,state:'approved'},readers.includes('prn_bob')?'bob':'admin');return h.request(`/v1/assets/${value.assetId}/lifecycle`,{version:value.version,sha256:value.sha256,state:'running'});
 }
-const call=(h:Harness,name:string,args:unknown,username='alice')=>h.request(`/v1/tools/${name}/call`,{args,idempotencyKey:randomBytes(12).toString('hex')},username);
+async function call(h:Harness,name:string,args:unknown,username='alice'){
+  const result=await h.request(`/v1/tools/${name}/call`,{args,idempotencyKey:randomBytes(12).toString('hex')},username);
+  await until(async()=>{const jobs=(await h.db.query('SELECT status,error FROM knowledge_projection_jobs')).rows;assert.ok(!jobs.some(job=>job.status==='failed'),JSON.stringify(jobs));return jobs.every(job=>job.status==='succeeded');});return result;
+}
 
 test('Act R2.3 ingestion: a connector read automatically pins six product records and publishes only its current structural observations',async t=>{
   const stub=await readonlySources(t),h=await setup(t);stub.state.manualText='Synthetic source states a port procedure';await prepare(h,stub.origin);const docs=await asset(h,'documents');await h.startWorker();
@@ -29,6 +32,7 @@ test('Act R2.3 ingestion: a connector read automatically pins six product record
   stub.state.manualText='Synthetic source changed its port procedure';await call(h,'docs.get',{file:'/dav/manual.txt'});const changed=await h.request('/v1/knowledge/search?mode=exact&q=/dav/manual.txt');assert.equal(changed.items.length,1);assert.equal(changed.items[0].payload.value,stub.state.manualText);assert.notEqual(changed.items[0].recordId,official.recordId);assert.notEqual(changed.items[0].snapshotId,official.snapshotId);
   assert.equal((await h.request(`/v1/knowledge/records/${official.recordId}`)).payload.value,'Synthetic source states a port procedure','Historical bytes and statements remain immutable');
   await h.stop();await h.startServer();assert.equal((await h.request('/v1/knowledge/search?mode=exact&q=/dav/manual.txt')).items[0].recordId,changed.items[0].recordId);
+  await h.startWorker();stub.state.manualText='Synthetic source states a port procedure';await call(h,'docs.get',{file:'/dav/manual.txt'});assert.equal((await h.request('/v1/knowledge/search?mode=exact&q=/dav/manual.txt')).items[0].recordId,official.recordId,'Reobserving old bytes uses a new head generation and restores its original statement');
 });
 
 test('Act R2.3 ingestion: program observations do not grant source access and command facts stay bound to an exact build',async t=>{
@@ -58,4 +62,14 @@ test('Act R2.3 ingestion: mirror and environment projections retain source evide
   stub.state.mirrorIds=[];assert.equal((await call(h,'zentao.bug_search',{})).result.items.length,0);const current=await h.request('/v1/knowledge/search?mode=exact&q=issue:51');assert.equal(current.items.length,1,'An empty revision must remove the prior list observation while retaining the independent detail');assert.equal(current.items[0].payload.conditions.projectionKind,'detail');
   await h.request(`/v1/assets/${credential.assetId}/lifecycle`,{version:credential.version,sha256:credential.sha256,state:'disabled'});assert.equal((await h.request('/v1/knowledge/search?mode=exact&q=issue:51')).items.length,0,'Disabled source credentials revoke derived access');
   const environment=await call(h,'env.inventory',{}),inventory=await h.request('/v1/knowledge/search?mode=prefix&q=environment:');assert.equal(inventory.items.length,1);assert.deepEqual(inventory.items[0].payload.value,environment.result);assert.equal(inventory.items[0].sourceType,'environment-view');
+});
+
+test('Act R2.3 ingestion: the async migration rebuilds existing product snapshot membership without losing reviewed records',async t=>{
+  const stub=await readonlySources(t),h=await setup(t);await prepare(h,stub.origin);await asset(h,'documents');await asset(h,'environment-view');const worker=await h.startWorker();
+  await call(h,'docs.get',{file:'/dav/manual.txt'});const original=(await h.request('/v1/knowledge/search?mode=exact&q=/dav/manual.txt')).items[0];
+  await h.stop(worker);await h.stop();
+  // Recreate the pre-outbox schema around a sealed source/claim/snapshot closure.
+  await h.db.query('DROP TABLE knowledge_projection_members,knowledge_projection_jobs,knowledge_active_statements,knowledge_indexed_sources');await h.db.query('ALTER TABLE knowledge_source_heads DROP COLUMN generation');await h.db.query('DELETE FROM schema_migrations WHERE version=19');
+  await h.startServer();assert.ok(Number((await h.db.query('SELECT count(*) AS n FROM knowledge_active_statements WHERE claim_id=$1',[original.recordId])).rows[0].n)>0);
+  await h.startWorker();await call(h,'env.inventory',{});const preserved=await h.request('/v1/knowledge/search?mode=exact&q=/dav/manual.txt');assert.equal(preserved.items.length,1);assert.equal(preserved.items[0].recordId,original.recordId);
 });

@@ -58,7 +58,7 @@ export class KnowledgeGraph {
     if(old){requireCondition(old.request_hash===hash,'IDEMPOTENCY_MISMATCH','Knowledge revision identity is immutable');return {...this.view(old),deduplicated:true};}
     const id=newId('knr');const row=(await tx.query(`INSERT INTO knowledge_records(record_id,kind,tenant_id,scope_id,owner_id,knowledge_category,source_type,visibility,state,identity_key,request_hash,sha256,payload,reference_ids,search_text)
       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *`,[id,kind,ctx.tenantId,scope,ctx.principalId,settings.category,settings.sourceType,settings.visibility,settings.state,key,hash,settings.digest??canonicalHash(payload),JSON.stringify(payload),references,settings.searchText??''])).rows[0];
-    for(const reference of new Set(references))await tx.query('INSERT INTO knowledge_references(record_id,reference_id) VALUES($1,$2)',[id,reference]);
+    if(references.length)await tx.query('INSERT INTO knowledge_references(record_id,reference_id) SELECT $1,unnest($2::text[]) ON CONFLICT DO NOTHING',[id,[...new Set(references)]]);
     await this.auth.audit(ctx,'knowledge.record',{recordId:id,kind,sha256:row.sha256,knowledgeCategory:settings.category},scope,tx);return {...this.view(row),deduplicated:false};
   }
   async source(ctx:AuthContext,value:unknown):Promise<any>{
@@ -114,9 +114,11 @@ export class KnowledgeGraph {
       ON CONFLICT(tenant_id,scope_id,sha256) DO UPDATE SET sha256=EXCLUDED.sha256 RETURNING *`,[newId('src'),ctx.tenantId,scopeId,ctx.principalId,raw.sha256,bytes.length,`tool-${raw.sha256.slice(0,16)}.bin`])).rows[0];
     const sourceId=canonicalJson([assetId,ctx.principalId,raw.path,raw.requestKey??null,'source-authority/1']),sourceIdentity=canonicalHash([sourceId,'product']),payload={sourceId,sourceIdentity,revision:raw.sha256,path:raw.path,parserVersion:'tool-return/1',acl:{sourceReaders:[ctx.principalId],platformReaders:[ctx.principalId]},asset:{assetId,...(permission?{permission}:{})},sharing:null,raw:this.objects.sourceReference(stored)};
     const source=await this.save(tx,ctx,'SourceRevision',scopeId,canonicalHash([sourceIdentity,raw.sha256]),payload,[],{category:'product',sourceType:raw.sourceType,visibility:'team',state:'observed',digest:raw.sha256});
-    await tx.query(`INSERT INTO knowledge_source_heads(tenant_id,scope_id,identity_key,record_id) VALUES($1,$2,$3,$4) ON CONFLICT(tenant_id,scope_id,identity_key) DO UPDATE SET record_id=EXCLUDED.record_id`,[ctx.tenantId,scopeId,sourceIdentity,source.recordId]);
+    const previous=(await tx.query('SELECT record_id FROM knowledge_source_heads WHERE tenant_id=$1 AND scope_id=$2 AND identity_key=$3',[ctx.tenantId,scopeId,sourceIdentity])).rows[0]?.record_id;
+    const head=(await tx.query(`INSERT INTO knowledge_source_heads(tenant_id,scope_id,identity_key,record_id) VALUES($1,$2,$3,$4)
+      ON CONFLICT(tenant_id,scope_id,identity_key) DO UPDATE SET record_id=EXCLUDED.record_id,generation=knowledge_source_heads.generation+CASE WHEN knowledge_source_heads.record_id=EXCLUDED.record_id THEN 0 ELSE 1 END RETURNING generation`,[ctx.tenantId,scopeId,sourceIdentity,source.recordId])).rows[0];
     const evidence=await this.save(tx,ctx,'Evidence',scopeId,canonicalHash([source.recordId,0,bytes.length]),{sourceRecordId:source.recordId,start:0,end:bytes.length,sha256:raw.sha256,text:bytes.toString('utf8'),path:raw.path},[source.recordId],{category:'product',sourceType:raw.sourceType,visibility:'team',state:'observed',digest:raw.sha256});
-    return {evidenceId:evidence.recordId,sha256:evidence.sha256};
+    return {evidenceId:evidence.recordId,sha256:evidence.sha256,sourceRecordId:source.recordId,generation:Number(head.generation),requestKey:raw.requestKey,supersededSourceId:previous&&previous!==source.recordId?previous:null};
   }
   async candidateFromReturns(tx:Transaction,ctx:AuthContext,scopeId:string,taskId:string,input:any):Promise<any>{
     await this.auth.check(ctx,'knowledge.submit',scopeId,tx);const evidence:Row[]=[];
@@ -218,6 +220,11 @@ export class KnowledgeGraph {
     for(const claim of claims){if(!await this.visible(ctx,claim,tx))continue;for(const member of await this.closure(claim,tx))records.set(member.record_id,member);
       const assessments=(await tx.query("SELECT * FROM knowledge_records WHERE kind='Assessment' AND payload->>'claimId'=$1 ORDER BY record_id",[claim.record_id])).rows;
       for(const assessment of assessments)if(await this.visible(ctx,assessment,tx))for(const member of await this.closure(assessment,tx))records.set(member.record_id,member);
+    }
+    if(input.knowledgeCategory==='product')for(const claim of claims.filter(claim=>records.has(claim.record_id))){
+      const closure=await this.closure(claim,tx),assessments=[...records.values()].filter(row=>row.kind==='Assessment'&&row.payload.claimId===claim.record_id);
+      await tx.query(`INSERT INTO knowledge_active_statements(tenant_id,scope_id,statement_key,claim_id,source_ids,member_ids) VALUES($1,$2,$3,$4,$5,$6)
+        ON CONFLICT(tenant_id,scope_id,statement_key) DO UPDATE SET claim_id=EXCLUDED.claim_id,source_ids=EXCLUDED.source_ids,member_ids=EXCLUDED.member_ids`,[ctx.tenantId,input.scopeId,canonicalHash([claim.owner_id,claim.payload.subject,claim.payload.predicate,claim.payload.conditions]),claim.record_id,closure.filter(row=>row.kind==='SourceRevision').map(row=>row.record_id),[...closure,...assessments].map(row=>row.record_id)]);
     }
     const members=[...records.values()].sort((a,b)=>a.record_id.localeCompare(b.record_id)).map(r=>({recordId:r.record_id,kind:r.kind,sha256:r.sha256,knowledgeCategory:r.knowledge_category,sourceType:r.source_type}));
     const canonicalManifest=canonicalJson({schemaVersion:'knowledge/1',knowledgeCategory:input.knowledgeCategory,records:members}),digest=sha256(canonicalManifest);
