@@ -15,8 +15,8 @@ test('state identities and the execution vocabulary have one definition', () => 
 });
 
 test('submission strips self-declared identity and uses canonical content hashes', () => {
-  const content = { scopeId: 'scp_lab', title: 'Inspect LBX', idempotencyKey: 'synthetic-key-1',
-    input: { product: 'LBX', version: '8.4.2' }, principal: 'admin', role: 'admin' };
+  const content = { scopeId: 'scp_lab', title: 'Inspect synthetic resource', idempotencyKey: 'synthetic-key-1',
+    input: { product: 'SYNTH', version: '8.4.2' }, principal: 'admin', role: 'admin' };
   const parsed = SubmitRequest.parse(content);
   assert.equal('principal' in parsed, false);
   assert.equal('role' in parsed, false);
@@ -25,7 +25,7 @@ test('submission strips self-declared identity and uses canonical content hashes
 });
 
 test('connector manifests require declared effects, idempotency and independent reconciliation', () => {
-  const base = { id: 'bugzilla-synthetic', version: '1.0.0', synthetic: true, roles: ['defects'],
+  const base = { id: 'record-feed-a', version: '1.0.0', synthetic: true, roles: ['defects'],
     operations: [{ name: 'defects.comment', effects: STANDARD_OPERATIONS['defects.comment'],
       idempotency: 'marker', reconciliation: 'read-back' }], events: { mode: 'cursor-poll' } };
   assert.ok(ConnectorManifest.safeParse(base).success);

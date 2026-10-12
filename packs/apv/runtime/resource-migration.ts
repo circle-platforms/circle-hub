@@ -1,4 +1,4 @@
-import type { Migration } from '../../storage/src/index.ts';
+import type { Migration } from '../../../packages/storage/src/index.ts';
 export const resourceMigration: Migration = { version:5,name:'Scoped effects and independent resource reconciliation',sql:`
 ALTER TABLE operations ALTER COLUMN source_revision_id DROP NOT NULL;
 ALTER TABLE operations DROP CONSTRAINT operations_task_id_input_revision_id_name_key;

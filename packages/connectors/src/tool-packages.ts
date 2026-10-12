@@ -29,7 +29,7 @@ export const toolPackages:ToolPackage[]=[
     tool('search','按文件、行号、片段查询文档',z.object({query:short,version:short.optional()}).strict(),'docs.fetch','document.search'),
     tool('section','取命令小节或行窗口，最多 80 行',z.object({file:short,anchor:short.optional(),line:z.number().int().positive().optional(),window:z.number().int().min(1).max(80).default(40)}).strict().refine(value=>!!value.anchor!==!!value.line,'Provide an anchor or line'),'docs.fetch','document.section'),
   ]},
-  {id:'query-mirror',prefix:'zentao',tools:[
+  {id:'query-mirror',prefix:'query',tools:[
     tool('bug_search','查询只读缺陷镜像',z.object({keyword:short.optional(),product:z.union([short,z.number().int().nonnegative()]).optional(),status:short.optional(),severity:z.number().int().min(1).max(5).optional(),assignedTo:short.optional(),openedBy:short.optional(),lastEditedDate_start:short.optional(),lastEditedDate_end:short.optional()}).strict(),'defects.search','mirror.search'),
     tool('bug_detail','批量取缺陷详情（每批最多 100）',z.object({ids:z.array(z.union([z.number().int().nonnegative(),z.string().regex(/^\d+$/)])).min(1).max(100)}).strict(),'defects.search','mirror.detail'),
   ]},

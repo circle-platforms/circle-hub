@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { writeFile } from 'node:fs/promises';
-import { compileMindmap } from '../../packages/methods/src/mindmap.ts';
+import { compileMindmap } from '../../packs/apv/methods/mindmap.ts';
 import { TaskResult, sha256 } from '../../packages/contracts/src/index.ts';
 import { setup, until } from './harness.ts';
 

@@ -1,4 +1,4 @@
-import { ApiError, FLOW_VERSION, PACK_FLOWS, IDEMPOTENCY_WINDOW_MS, MINDMAP_PACK_VERSION, canonicalHash, newId, requireCondition, terminalTask,
+import { ApiError, FLOW_VERSION, PACK_FLOWS, IDEMPOTENCY_WINDOW_MS, canonicalHash, newId, requireCondition, terminalTask,
   type AuthContext, type Event, type SubmitRequest, type Task, type TaskView } from '../../contracts/src/index.ts';
 import type { Store, Transaction } from '../../storage/src/index.ts';
 import type { Auth } from './auth.ts';
@@ -11,6 +11,9 @@ export function taskFromRow(row: Record<string, any>): Task {
 }
 export class Tasks {
   store: Store; auth: Auth; inputTtlMs: number;
+  capabilities=new Map<string,{version:string;flowVersion:string;privateByDefault?:boolean}>(Object.entries(PACK_FLOWS).map(([id,flowVersion])=>[id,{version:'1.0.0',flowVersion,privateByDefault:id!=='asset-registration'}]));
+  deliveryValidators=new Map<string,(tx:Transaction,task:Task,result:any)=>Promise<{itemId:string;conclusionId:string}[]>>();
+  baseFlows=new Set<string>([FLOW_VERSION]);
   constructor(store: Store, auth: Auth, inputTtlMs = 300_000) { this.store = store; this.auth = auth; this.inputTtlMs = inputTtlMs; }
   async internal(tx:Transaction,taskId:string):Promise<Task> {
     const row=(await tx.query('SELECT * FROM tasks WHERE task_id=$1',[taskId])).rows[0];
@@ -41,6 +44,8 @@ export class Tasks {
   async submit(ctx: AuthContext, request: SubmitRequest, tx?: Transaction): Promise<Task & { deduplicated: boolean }> {
     const execute = async (client: Transaction) => {
       const policy = await this.auth.check(ctx, 'tasks.submit', request.scopeId, client);
+      const capability=request.capabilityPackId?this.capabilities.get(request.capabilityPackId):undefined;
+      requireCondition(!request.capabilityPackId||capability,'UNSUPPORTED_VERSION','Capability package is not installed');
       requireCondition(policy.kind !== 'worker', 'FORBIDDEN_ACTION', 'Workers cannot submit tasks');
       const keys = [policy.tenantId, request.scopeId, policy.principalId, 'submit', request.idempotencyKey];
       await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [JSON.stringify(keys)]);
@@ -54,11 +59,12 @@ export class Tasks {
       const taskId = newId('task'); const inputRevisionId = newId('inrev');
       await client.query(`INSERT INTO tasks(task_id,tenant_id,scope_id,principal_id,title,phase,input_revision_id,input,flow_version,capability_pack_id,pack_version)
         VALUES($1,$2,$3,$4,$5,'admitted',$6,$7,$8,$9,$10)`, [taskId, policy.tenantId, request.scopeId, policy.principalId,
-        request.title, inputRevisionId, JSON.stringify(request.input), request.capabilityPackId ? PACK_FLOWS[request.capabilityPackId] : FLOW_VERSION, request.capabilityPackId ?? null,
-        request.capabilityPackId ? MINDMAP_PACK_VERSION : null]);
+        request.title, inputRevisionId, JSON.stringify(request.input), capability?.flowVersion??FLOW_VERSION, request.capabilityPackId ?? null,
+        capability?.version??null]);
       await client.query('INSERT INTO input_revisions(input_revision_id,task_id,input,principal_id) VALUES($1,$2,$3,$4)',
         [inputRevisionId, taskId, JSON.stringify(request.input), policy.principalId]);
       if(ctx.run)await client.query('UPDATE tasks SET context=$2 WHERE task_id=$1',[taskId,JSON.stringify({privateOwnerId:ctx.principalId,parentRunTaskId:ctx.run.taskId})]);
+      else if(capability?.privateByDefault)await client.query('UPDATE tasks SET context=$2 WHERE task_id=$1',[taskId,JSON.stringify({privateOwnerId:ctx.principalId})]);
       await client.query(`INSERT INTO idempotency(tenant_id,scope_id,principal_id,action,idem_key,request_hash,task_id)
         VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(tenant_id,scope_id,principal_id,action,idem_key)
         DO UPDATE SET request_hash=EXCLUDED.request_hash,task_id=EXCLUDED.task_id,created_at=clock_timestamp()`, [...keys, hash, taskId]);
@@ -69,12 +75,16 @@ export class Tasks {
     };
     return tx ? execute(tx) : this.store.transaction(execute);
   }
-  async list(ctx:AuthContext,limit:number):Promise<TaskView[]> {
+  async list(ctx:AuthContext,limit:number,query:{kind?:string;capabilityPackId?:string;after?:string}={}):Promise<TaskView[]> {
     const policy=await this.auth.check(ctx,'tasks.read');
+    if(query.after)await this.load(ctx,query.after);
     const rows=(await this.store.pool.query(`SELECT task_id FROM tasks WHERE tenant_id=$1 AND scope_id=ANY($2::text[])
       AND (context->>'privateOwnerId' IS NULL OR context->>'privateOwnerId'=$3)
       AND ($4::text IS NULL OR task_id=$4 OR context->>'parentRunTaskId'=$4)
-      ORDER BY created_at DESC,task_id DESC LIMIT $5`,[policy.tenantId,policy.scopes,policy.principalId,ctx.run?.taskId??null,limit])).rows;
+      AND ($6::text IS NULL OR CASE capability_pack_id WHEN 'asset-tool' THEN 'tool' WHEN 'asset-index' THEN 'index' ELSE 'work' END=$6)
+      AND ($7::text IS NULL OR capability_pack_id=$7)
+      AND ($8::text IS NULL OR (created_at,task_id)<(SELECT created_at,task_id FROM tasks WHERE task_id=$8))
+      ORDER BY created_at DESC,task_id DESC LIMIT $5`,[policy.tenantId,policy.scopes,policy.principalId,ctx.run?.taskId??null,limit,query.kind??null,query.capabilityPackId??null,query.after??null])).rows;
     return Promise.all(rows.map(row=>this.status(ctx,row.task_id)));
   }
   async status(ctx: AuthContext, taskId: string): Promise<TaskView> {
@@ -97,13 +107,9 @@ export class Tasks {
     await this.emit(tx, task.taskId, kind, { inputRevisionId: task.inputRevisionId, ...payload as object });
   }
   async deliver(tx: Transaction, task: Task, result: any): Promise<void> {
-    requireCondition(result.verification && result.artifacts.length === 1 && result.evidence.some((item: any) => item.kind === 'script-conclusion'),
-      'EVIDENCE_INSUFFICIENT', 'Delivery requires independent fact verification');
-    requireCondition(result.verification.artifactSha256 === result.artifacts[0].sha256 && result.verification.sourceSha256 === task.input.sourceSha256,
-      'EVIDENCE_INSUFFICIENT', 'Delivery is not bound to the pinned input and artifact bytes');
-    await tx.query(`INSERT INTO checklist_items(task_id,input_revision_id,item_id,requires_fact,satisfied,conclusion_id)
-      VALUES($1,$2,'independent-workbook-readback',true,true,$3) ON CONFLICT DO NOTHING`,
-      [task.taskId, task.inputRevisionId, result.evidence.find((item: any) => item.kind === 'script-conclusion').evidenceId]);
+    const validator=this.deliveryValidators.get(task.capabilityPackId??'');requireCondition(validator,'EVIDENCE_INSUFFICIENT','No registered delivery verifier');
+    const checked=await validator(tx,task,result);
+    for(const item of checked)await tx.query(`INSERT INTO checklist_items(task_id,input_revision_id,item_id,requires_fact,satisfied,conclusion_id) VALUES($1,$2,$3,true,true,$4) ON CONFLICT DO NOTHING`,[task.taskId,task.inputRevisionId,item.itemId,item.conclusionId]);
     await tx.query('UPDATE tasks SET result=$2,result_status=$3 WHERE task_id=$1', [task.taskId, JSON.stringify(result), result.status]);
     await this.stage(tx, task, 'under-review', 'review', 'task.verifying');
     await this.stage(tx, task, 'delivered', 'done', 'task.delivered', { status: result.status, artifacts: result.artifacts, unmapped: result.unmapped });
@@ -171,7 +177,7 @@ export class Tasks {
     for (const candidate of candidates) await this.store.transaction(async tx => {
       const row = (await tx.query('SELECT * FROM tasks WHERE task_id=$1 FOR UPDATE SKIP LOCKED', [candidate.task_id])).rows[0];
       if (!row) return;
-      requireCondition([FLOW_VERSION,...Object.values(PACK_FLOWS)].includes(row.flow_version), 'UNSUPPORTED_VERSION', 'No runner for the pinned flow version');
+      requireCondition(this.baseFlows.has(row.flow_version)||[...this.capabilities.values()].some(capability=>capability.flowVersion===row.flow_version), 'UNSUPPORTED_VERSION', 'No runner for the pinned flow version');
       const missing = Array.isArray(row.input.requiredFields) ? row.input.requiredFields.filter((key: string) => !row.input[key]) : [];
       if (row.stage === 'admit' && row.phase === 'admitted') {
         if (missing.length) {

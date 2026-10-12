@@ -14,8 +14,8 @@ export class Assessments {
     if(kind==='model-judgment')body={modelId:'scripted-fixture',actualModelCalled:false,verdict:request.judgment,rationale:request.rationale,evidenceIds:request.evidenceIds};
     else if(kind==='unknown')body={verdict:'undetermined',rationale:request.rationale,missingEvidence:true};
     else {
-      requireCondition(request.methodId==='lbx-healthcheck','INVALID_PAYLOAD','A registered deterministic method is required');
-      body={methodId:'lbx-healthcheck',methodVersion:'1.0.0',verdict:'undetermined',missingEvidence:[]};
+      requireCondition(request.methodId==='resource-comparison','INVALID_PAYLOAD','A registered deterministic method is required');
+      body={methodId:'resource-comparison',methodVersion:'1.0.0',verdict:'undetermined',missingEvidence:[]};
       let manual:any,snapshot:any;
       const runtime=(await tx.query('SELECT context FROM tasks WHERE task_id=$1',[id])).rows[0].context;
       const sourceId=task.input.manualSourceRevisionId??runtime.manualSourceRevisionId;
@@ -25,7 +25,7 @@ export class Assessments {
         snapshot=await this.knowledge.snapshot(tx,ctx,task.scopeId,[sourceId]);body.snapshotId=snapshot.snapshotId;body.snapshotSha256=snapshot.sha256;body.sourceSha256=source.reference.sha256;
       }
       const observations=inputs.filter(row=>row.content.name==='product.config.read').map(row=>({row,output:row.content.output}));
-      if(!manual||manual.product!=='LBX'||manual.versionSeries!==String(task.input.version??'').split('.').slice(0,2).join('.')||typeof manual.backendTimeoutMinimum!=='number'||!Number.isFinite(manual.backendTimeoutMinimum))body.missingEvidence.push('no applicable comparable minimum');
+      if(!manual||manual.product!=='SYNTH'||manual.versionSeries!==String(task.input.version??'').split('.').slice(0,2).join('.')||typeof manual.backendTimeoutMinimum!=='number'||!Number.isFinite(manual.backendTimeoutMinimum))body.missingEvidence.push('no applicable comparable minimum');
       if(!observations.length||observations.some(item=>typeof item.output?.config?.['backend.timeout']!=='number'||item.output.product!==task.input.product||item.output.version!==task.input.version||(task.input.target&&item.row.content?.target!==task.input.target)))body.missingEvidence.push('no matching numeric device observation');
       const distinct=new Set(observations.map(item=>item.output?.config?.['backend.timeout']));if(distinct.size>1)body.missingEvidence.push('cited observations conflict');
       if(body.missingEvidence.length)kind='unknown';

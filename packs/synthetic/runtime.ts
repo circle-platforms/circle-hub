@@ -1,18 +1,19 @@
-import {ApiError,OperationRequest,sha256,requireCondition,PACK_FLOWS,type AuthContext} from '../../../packages/contracts/src/index.ts';
-import {connectorIdentity} from '../../../packages/connectors/src/index.ts';
-import type {Store} from '../../../packages/storage/src/index.ts';
-import type {Tasks} from '../../../packages/tasks/src/index.ts';
-import type {Operations} from '../../../packages/execution/src/operations.ts';
-import type {Records} from '../../../packages/knowledge/src/records.ts';
-import type {Checklists} from '../../../packages/tasks/src/checklists.ts';
-import type {Approvals} from '../../../packages/tasks/src/approvals.ts';
-import type {Assessments} from '../../../packages/methods/src/assessments.ts';
+import {PACK_FLOWS,DefectReviewPack} from './contracts.ts';
+import {ApiError,OperationRequest,sha256,requireCondition,type AuthContext} from '../../packages/contracts/src/index.ts';
+import {connectorIdentity} from './connectors.ts';
+import type {Store} from '../../packages/storage/src/index.ts';
+import type {Tasks} from '../../packages/tasks/src/index.ts';
+import type {Operations} from '../../packages/execution/src/operations.ts';
+import type {Records} from '../../packages/knowledge/src/records.ts';
+import type {Checklists} from '../../packages/tasks/src/checklists.ts';
+import type {Approvals} from '../../packages/tasks/src/approvals.ts';
+import type {Assessments} from '../../packages/methods/src/assessments.ts';
 
 export class ProfessionalRunner {
   store:Store;tasks:Tasks;operations:Operations;knowledge:Records;checklists:Checklists;approvals:Approvals;assessments:Assessments;
   constructor(store:Store,tasks:Tasks,operations:Operations,knowledge:Records,checklists:Checklists,approvals:Approvals,assessments:Assessments){Object.assign(this,{store,tasks,operations,knowledge,checklists,approvals,assessments});this.store=store;this.tasks=tasks;this.operations=operations;this.knowledge=knowledge;this.checklists=checklists;this.approvals=approvals;this.assessments=assessments;}
   async runOnce():Promise<void>{
-    const rows=(await this.store.pool.query("SELECT * FROM tasks WHERE capability_pack_id IN ('defect-review','lbx-healthcheck') AND phase IN ('running','waiting-resource') ORDER BY created_at")).rows;
+    const rows=(await this.store.pool.query("SELECT * FROM tasks WHERE capability_pack_id IN ('defect-review','synthetic-resource-check') AND phase IN ('running','waiting-resource') ORDER BY created_at")).rows;
     for(const row of rows){
       try{await this.advance(row);}catch(error){
         if(error instanceof ApiError&&['INPUT_REVISION_STALE','RESOURCE_BUSY','DECISION_CONFLICT'].includes(error.code))continue;
@@ -30,7 +31,7 @@ export class ProfessionalRunner {
     const ensure=async(key:string,name:string,target:string,args:any,approvalId?:string):Promise<any|undefined>=>{
       const token=`op_${key}`;
       if(!context[token]){
-        const operation=await this.operations.submit(actor,task.taskId,OperationRequest.parse({inputRevisionId:task.inputRevisionId,name,target,targetIdentity:target===bindings.product?'synthetic-host-key:lbx-01':connectorIdentity(target),args,approvalId,idempotencyKey:`${task.taskId}-${task.inputRevisionId}-${key}`}),undefined,context.delegatedOwnerId);
+        const operation=await this.operations.submit(actor,task.taskId,OperationRequest.parse({inputRevisionId:task.inputRevisionId,name,target,targetIdentity:target===bindings.product?'synthetic-host-key:resource-01':connectorIdentity(target),args,approvalId,idempotencyKey:`${task.taskId}-${task.inputRevisionId}-${key}`}),undefined,context.delegatedOwnerId);
         await patch({[token]:operation.operationId});return undefined;
       }
       const op=(await this.store.pool.query('SELECT * FROM operations WHERE operation_id=$1',[context[token]])).rows[0];
@@ -38,30 +39,30 @@ export class ProfessionalRunner {
       requireCondition(['succeeded','reconciled'].includes(op.status),'EVIDENCE_INSUFFICIENT',`Required operation ${name} did not complete`);return op;
     };
     const version=await ensure('version','product.version',bindings.product,{});if(!version)return;
-    const document=await ensure('document','docs.fetch',bindings.documents,{documentId:'lbx-8.4-healthcheck'});if(!document)return;
+    const document=await ensure('document','docs.fetch',bindings.documents,{documentId:'fixture-resource-policy'});if(!document)return;
     if(!context.manualSourceRevisionId){
       const bytes=Buffer.from(document.result.output.originalBase64,'base64');requireCondition(sha256(bytes)===document.result.output.sourceSha256,'SOURCE_HASH_MISMATCH','Fetched document hash differs');
       const source=await this.knowledge.upload(actor,task.scopeId,document.result.output.fileName,bytes);await patch({manualSourceRevisionId:source.sourceRevisionId});
     }
-    if(task.capabilityPackId==='lbx-healthcheck'){
+    if(task.capabilityPackId==='synthetic-resource-check'){
       const observation=await ensure('observation','product.config.read',bindings.product,{});if(!observation)return;
-      if(!context.assessment){const fact=await this.assessments.assess(actor,task.taskId,{inputRevisionId:task.inputRevisionId,kind:'script-conclusion',methodId:'lbx-healthcheck',evidenceIds:[observation.result.evidence[0].evidenceId]});await patch({assessment:fact});}
+      if(!context.assessment){const fact=await this.assessments.assess(actor,task.taskId,{inputRevisionId:task.inputRevisionId,kind:'script-conclusion',methodId:'resource-comparison',evidenceIds:[observation.result.evidence[0].evidenceId]});await patch({assessment:fact});}
       requireCondition(context.assessment.kind==='script-conclusion','EVIDENCE_INSUFFICIENT','No applicable factual comparison');
       let final=context.assessment;
       if(final.body.verdict==='refutes'&&task.input.correctIfNonConforming===true){
-        const action={inputRevisionId:task.inputRevisionId,name:'product.config.write',target:bindings.product,targetIdentity:'synthetic-host-key:lbx-01',args:{key:'backend.timeout',value:final.body.minimumTimeout,sourceSha256:final.body.sourceSha256}};
+        const action={inputRevisionId:task.inputRevisionId,name:'product.config.write',target:bindings.product,targetIdentity:'synthetic-host-key:resource-01',args:{key:'backend.timeout',value:final.body.minimumTimeout,sourceSha256:final.body.sourceSha256}};
         if(!context.approval){await patch({approval:await this.approvals.propose(actor,task.taskId,action)});return;}
         const approved=(await this.store.pool.query('SELECT status FROM approvals WHERE approval_id=$1',[context.approval.approvalId])).rows[0];if(approved.status==='open')return;requireCondition(approved.status==='approved','APPROVAL_REQUIRED','Change was not approved');
         const changed=await ensure('change','product.config.write',bindings.product,action.args,context.approval.approvalId);if(!changed)return;
         const verified=await ensure('verified','product.config.read',bindings.product,{});if(!verified)return;
-        if(!context.finalAssessment)await patch({finalAssessment:await this.assessments.assess(actor,task.taskId,{inputRevisionId:task.inputRevisionId,kind:'script-conclusion',methodId:'lbx-healthcheck',evidenceIds:[verified.result.evidence[0].evidenceId]})});final=context.finalAssessment;
+        if(!context.finalAssessment)await patch({finalAssessment:await this.assessments.assess(actor,task.taskId,{inputRevisionId:task.inputRevisionId,kind:'script-conclusion',methodId:'resource-comparison',evidenceIds:[verified.result.evidence[0].evidenceId]})});final=context.finalAssessment;
       }
       const predicate=task.input.correctIfNonConforming===true?'configuration-conforms':'assessment-completed';
       await this.checklists.set(actor,task.taskId,{inputRevisionId:task.inputRevisionId,items:[{itemId:'configuration-check',required:true,requiresFact:true,predicate}]});
       await this.checklists.satisfy(actor,task.taskId,'configuration-check',{inputRevisionId:task.inputRevisionId,conclusionId:final.conclusionId});await this.checklists.deliver(actor,task.taskId,task.inputRevisionId);return;
     }
     const defect=await ensure('defect','defects.search',bindings.defects,{defectId:task.input.defectId});if(!defect)return;
-    const conversion=await ensure('conversion','docs.convert',bindings.documents,{documentId:'lbx-8.4-healthcheck'});if(!conversion)return;
+    const conversion=await ensure('conversion','docs.convert',bindings.documents,{documentId:'fixture-resource-policy'});if(!conversion)return;
     if(!context.convertedArtifact){const output=conversion.result.output,bytes=Buffer.from(output.convertedBase64,'base64');requireCondition(sha256(bytes)===output.convertedSha256,'SOURCE_HASH_MISMATCH','Converted document hash differs');
       const artifact=await this.store.transaction(tx=>this.knowledge.materialize(tx,task,'converted-document',output.fileName,'text/plain',bytes,{sourceSha256:output.sourceSha256,conversion:output.conversion}));await patch({convertedArtifact:artifact});}
     const issue=defect.result.output.defects[0],manual=JSON.parse((await this.knowledge.sourceBytes(actor,context.manualSourceRevisionId,task.scopeId)).bytes.toString());
@@ -77,3 +78,4 @@ export class ProfessionalRunner {
     await this.checklists.deliver(actor,task.taskId,task.inputRevisionId);
   }
 }
+

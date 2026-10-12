@@ -1,7 +1,7 @@
 import ExcelJS from 'exceljs';
 import { unzipSync, zipSync } from 'fflate';
-import { ApiError, MINDMAP_CONTRACT_VERSION, MINDMAP_MAPPING_VERSION, MAX_SOURCE_BYTES,
-  canonicalHash, sha256, type UnmappedElement } from '../../contracts/src/index.ts';
+import { ApiError, MAX_SOURCE_BYTES,canonicalHash, sha256, type UnmappedElement } from '../../../packages/contracts/src/index.ts';
+import {MINDMAP_CONTRACT_VERSION,MINDMAP_MAPPING_VERSION} from '../contracts.ts';
 import { verifyMindmapWorkbook } from './mindmap-verify.ts';
 
 export interface Topic { title: string; note?: string; children: Topic[] }

@@ -4,20 +4,19 @@ import { mkdir } from 'node:fs/promises';
 import {randomUUID} from 'node:crypto';
 import { z } from 'zod';
 import { API_VERSION, MAX_BODY_BYTES, MAX_SOURCE_BYTES, MAX_WORKER_REPORT_BYTES, CLIENT_ROUTES, TaskListQuery, ApiError, SubmitRequest,
-  InputRequest, OperationRequest, ApprovalProposal, ApprovalRequest, ConclusionRequest, ChecklistRequest, ChecklistResponse, RuleRequest, DefectReviewPack, LbxPack, InputRevisionId, TaskId, ScopeId, SourceUpload, Base64Content, MindmapCompileInput, MindmapPack, DevLoginRequest, requireCondition,
+  InputRequest, OperationRequest, ApprovalProposal, ApprovalRequest, ConclusionRequest, ChecklistRequest, ChecklistResponse, RuleRequest, InputRevisionId, TaskId, ScopeId, SourceUpload, Base64Content, DevLoginRequest, requireCondition,
   EntityId,RelationId,ObjectListQuery,ObjectTypePackage,ObjectObservation,RelationObservation,
   AssetId,AssetRegistration,AssetListQuery,AssetTransition,CredentialRegistration,KnowledgeRecordId,KnowledgeSearchQuery,KnowledgeReviewRequest,ToolName,ToolCallInput,SkillPackId,StandardOperation } from '../../../packages/contracts/src/index.ts';
 import { Store } from '../../../packages/storage/src/index.ts';
 import { taskMigration } from '../../../packages/tasks/src/migration.ts';
 import { Auth } from '../../../packages/tasks/src/auth.ts';
 import { Tasks } from '../../../packages/tasks/src/index.ts';
-import { mindmapTaskMigration } from '../../../packages/tasks/src/mindmap-migration.ts';
+import { deliveryMigration } from '../../../packages/tasks/src/delivery-migration.ts';
 import { knowledgeMigration } from '../../../packages/knowledge/src/migration.ts';
 import { Knowledge } from '../../../packages/knowledge/src/index.ts';
 import { LocalObjects } from '../../../packages/knowledge/src/objects.ts';
 import { executionMigration } from '../../../packages/execution/src/migration.ts';
 import { Operations } from '../../../packages/execution/src/operations.ts';
-import { resourceMigration } from '../../../packages/execution/src/resource-migration.ts';
 import { approvalMigration } from '../../../packages/tasks/src/approval-migration.ts';
 import { Approvals } from '../../../packages/tasks/src/approvals.ts';
 import { conclusionMigration } from '../../../packages/knowledge/src/conclusion-migration.ts';
@@ -27,9 +26,7 @@ import { Checklists } from '../../../packages/tasks/src/checklists.ts';
 import { checklistMigration } from '../../../packages/tasks/src/checklist-migration.ts';
 import { connectorMigration } from '../../../packages/tasks/src/connector-migration.ts';
 import { ConnectorRegistry } from '../../../packages/tasks/src/connector-registry.ts';
-import { Rules } from '../../../packages/tasks/src/rules.ts';
-import { ProfessionalRunner } from './professional-runner.ts';
-import { MindmapRunner } from './mindmap-runner.ts';
+import {installPackages,packageMigrations,packageConnectors,installedToolPackages} from '../../../packs/index.ts';
 import { closeHttpServer } from './shutdown.ts';
 import {entityMigration} from '../../../packages/knowledge/src/entity-migration.ts';
 import {TypeCatalog} from '../../../packages/knowledge/src/type-catalog.ts';
@@ -40,7 +37,6 @@ import {graphMigration} from '../../../packages/knowledge/src/graph-migration.ts
 import {KnowledgeGraph} from '../../../packages/knowledge/src/graph.ts';
 import {toolMigration} from '../../../packages/tools/src/migration.ts';
 import {ToolCatalog} from '../../../packages/tools/src/catalog.ts';
-import {toolPackages} from '../../../packages/connectors/src/tool-packages.ts';
 import {skillMigration} from '../../../packages/skillpacks/src/migration.ts';
 import {SkillPacks} from '../../../packages/skillpacks/src/index.ts';
 import {PrivateIPC} from '../../../packages/runtime/src/private-ipc.ts';
@@ -54,7 +50,7 @@ import {Ingestions} from '../../../packages/knowledge/src/ingestion.ts';
 
 function environment(name: string): string { const value = process.env[name]; if (!value) throw new Error(`Required environment variable: ${name}`); return value; }
 const store = new Store(JSON.parse(environment('CIRCLE_SERVER_DATABASE_CONFIG')));
-await store.migrate([taskMigration,mindmapTaskMigration,knowledgeMigration,executionMigration,resourceMigration,approvalMigration,conclusionMigration,checklistMigration,connectorMigration,entityMigration,assetMigration,graphMigration,toolMigration,skillMigration,automationMigration,automationOutcomeMigration,knowledgePageMigration,automationOriginMigration,ingestionMigration]);
+await store.migrate([taskMigration,deliveryMigration,knowledgeMigration,executionMigration,...packageMigrations,approvalMigration,conclusionMigration,checklistMigration,connectorMigration,entityMigration,assetMigration,graphMigration,toolMigration,skillMigration,automationMigration,automationOutcomeMigration,knowledgePageMigration,automationOriginMigration,ingestionMigration]);
 const auth = new Auth(store);
 requireCondition(process.env.CIRCLE_SERVER_DEV_AUTH === '1', 'INVALID_PAYLOAD', 'Phase one requires explicitly enabled development authentication');
 await auth.initializeDevelopment(environment('CIRCLE_SERVER_DEV_IDENTITIES'));
@@ -66,8 +62,8 @@ const assets=new Assets(store,auth,`${environment('CIRCLE_SERVER_DATA_DIR')}/pri
 const graph=new KnowledgeGraph(store,auth,knowledge);
 knowledge.sourceAccess=async(ctx,id,tx)=>{await entities.checkSourceAccess(ctx,id,tx);await graph.checkSourceAccess(ctx,id,tx);};
 const execution = new Operations(store,auth,tasks,knowledge);
-const catalog=new ToolCatalog(store,auth,assets,tasks,execution,graph,toolPackages);await catalog.initialize(process.env.CIRCLE_SERVER_CONNECTOR_PROFILES);
-const ingestions=new Ingestions(store,tasks,graph,toolPackages);catalog.ingestions=ingestions;
+const catalog=new ToolCatalog(store,auth,assets,tasks,execution,graph,installedToolPackages);await catalog.initialize(process.env.CIRCLE_SERVER_CONNECTOR_PROFILES);
+const ingestions=new Ingestions(store,tasks,graph,installedToolPackages);catalog.ingestions=ingestions;
 assets.validateRegistration=(ctx,input,id,tx)=>catalog.register(ctx,input,id,tx);
 const approvals=new Approvals(store,auth,tasks);execution.approvalCheck=(tx,task,spec)=>approvals.check(tx,task,spec);
 const skills=new SkillPacks(store,auth,tasks,approvals,assets,catalog,execution,knowledge);await skills.initialize(process.env.CIRCLE_RUNTIME_CONFIG);
@@ -80,9 +76,8 @@ const privateIPC=new PrivateIPC();skills.privateSocketPath=privateIPC.path;
 const automations=new Automations(store,auth,tasks,assets,skills);catalog.observed=(tx,ctx,id,raw,taskId)=>automations.observed(tx,ctx,id,raw,taskId);
 await privateIPC.start(async(message)=>{const worker=await auth.authenticate(message.authorization),id=z.string().parse(message.operationId),fence=z.number().int().positive().parse(message.fencingToken);return skills.privateSecret(worker,id,fence,message.revoke===true);});
 const assessments=new Assessments(store,tasks,knowledge),checklists=new Checklists(store,tasks,knowledge);
-const registry=new ConnectorRegistry(store,auth);await registry.initialize();execution.connectorCheck=(tx,actor,scope,spec)=>registry.check(tx,actor,scope,spec);
-const rules=new Rules(store,auth,tasks,execution,registry),professional=new ProfessionalRunner(store,tasks,execution,knowledge,checklists,approvals,assessments);
-const mindmaps = new MindmapRunner(store,tasks,knowledge,execution);
+const registry=new ConnectorRegistry(store,auth,packageConnectors);await registry.initialize();execution.connectorCheck=(tx,actor,scope,spec)=>registry.check(tx,actor,scope,spec);
+const packages=installPackages({store,auth,tasks,knowledge,execution,registry,checklists,approvals,assessments}),rules=packages.rules;
 let closing = false;
 const shutdownSignal=new AbortController();
 const activeRequests=new Set<Promise<void>>();
@@ -207,11 +202,11 @@ const server = createServer(async (request, response) => {
     }
     if (url.pathname === '/v1/status' && request.method === 'GET') { send(response,200,{data:{apiVersion:API_VERSION,syntheticOnly:true,bootId,processId:process.pid}});return; }
     if (url.pathname === CLIENT_ROUTES.tasks.path && request.method === CLIENT_ROUTES.tasks.method) {
-      const {limit}=TaskListQuery.parse({limit:url.searchParams.get('limit')??undefined});
-      send(response,200,{data:await tasks.list(ctx,limit)});return;
+      const query=TaskListQuery.parse({limit:url.searchParams.get('limit')??undefined,kind:url.searchParams.get('kind')??undefined,capabilityPackId:url.searchParams.get('capabilityPackId')??undefined,after:url.searchParams.get('after')??undefined});
+      send(response,200,{data:await tasks.list(ctx,query.limit,query)});return;
     }
     if (url.pathname === '/v1/packs' && request.method === 'GET') {
-      await auth.check(ctx,'methods.use'); send(response,200,{ data:[MindmapPack,DefectReviewPack,LbxPack] }); return;
+      await auth.check(ctx,'methods.use'); send(response,200,{ data:packages.descriptors }); return;
     }
     if(url.pathname==='/v1/rules'&&request.method==='POST'){send(response,201,{data:await rules.create(ctx,RuleRequest.parse(await body(request)))});return;}
     const ruleRoute=/^\/v1\/rules\/([^/]+)$/.exec(url.pathname);if(ruleRoute&&request.method==='GET'){send(response,200,{data:await rules.get(ctx,ruleRoute[1])});return;}
@@ -237,15 +232,7 @@ const server = createServer(async (request, response) => {
     if (url.pathname === '/v1/tasks/submit' && request.method === 'POST') {
       const submission = SubmitRequest.parse(await body(request));
       const accepted = await store.transaction(async tx => {
-        if (submission.capabilityPackId === 'mindmap-compile') {
-          await auth.check(ctx,'methods.use',submission.scopeId,tx);
-          const input = MindmapCompileInput.parse(submission.input);
-          const source = await knowledge.source(ctx,input.sourceRevisionId,submission.scopeId,tx);
-          requireCondition(!input.sourceSha256 || input.sourceSha256 === source.sha256,'SOURCE_HASH_MISMATCH','Submitted source hash differs');
-          submission.input = { ...input,sourceSha256:source.sha256 };
-        }
-        let owner:string|undefined;
-        if(submission.capabilityPackId==='defect-review')owner=await rules.authorizeSubmission(ctx,submission.input,submission.scopeId,tx);
+        const owner=await packages.prepare(ctx,submission,tx);
         const task=await tasks.submit(ctx,submission,tx);
         if(owner&&!task.deduplicated)await tx.query('UPDATE tasks SET context=$2 WHERE task_id=$1',[task.taskId,JSON.stringify({delegatedOwnerId:owner})]);return task;
       });
@@ -285,20 +272,14 @@ const server = createServer(async (request, response) => {
       if (action === 'input' && request.method === 'POST') {
         const input = InputRequest.parse(await body(request)); const task = await tasks.load(ctx,taskId,'tasks.input');
         requireCondition(task.capabilityPackId!=='asset-tool','DECISION_CONFLICT','Tool arguments are pinned; submit a new tool call');
-        if (task.capabilityPackId === 'mindmap-compile') {
-          requireCondition(!!input.replacement,'INVALID_PAYLOAD','Compilation input replacement must supply a source reference');
-          const replacement = MindmapCompileInput.parse(input.replacement);
-          const source = await knowledge.source(ctx,replacement.sourceRevisionId,task.scopeId);
-          requireCondition(!replacement.sourceSha256 || replacement.sourceSha256 === source.sha256,'SOURCE_HASH_MISMATCH','Replacement source hash differs');
-          input.replacement = { ...replacement,sourceSha256:source.sha256 };
-        }
+        await packages.replacement(ctx,task,input);
         send(response,200,{ data:await tasks.input(ctx,taskId,input) }); return;
       }
       if (action === 'cancel' && request.method === 'POST') { await body(request); send(response, 202, { data: await tasks.cancel(ctx, taskId) }); return; }
       if (action === 'reconcile' && request.method === 'POST') {
         const input=z.object({operationId:z.string().optional()}).parse(await body(request));await tasks.load(ctx,taskId,'tasks.input');
         if(input.operationId){send(response,202,{data:await execution.requestReconcile(ctx,taskId,input.operationId)});return;}
-        send(response,200,{ data:{ ...await tasks.result(ctx,taskId),reconciliation:'No independently observed receipt is available for an unknown compilation' } }); return;
+        send(response,200,{ data:{ ...await tasks.result(ctx,taskId),reconciliation:'No independently observed receipt is available for an unknown execution' } }); return;
       }
       if (action === 'events' && request.method === 'GET') {
         const after = z.coerce.number().int().min(0).max(Number.MAX_SAFE_INTEGER).parse(url.searchParams.get('after') ?? 0);
@@ -331,7 +312,7 @@ const server = createServer(async (request, response) => {
         const input = await body(request,action === 'report' ? MAX_WORKER_REPORT_BYTES : MAX_BODY_BYTES);
         if (action === 'report') {
           const row=(await store.pool.query('SELECT name FROM operations WHERE operation_id=$1',[id])).rows[0];
-          send(response,200,{data:row?.name==='mindmaps.compile'?await mindmaps.report(ctx,id,input):await execution.report(ctx,id,input)});return;
+          send(response,200,{data:await execution.report(ctx,id,input)});return;
         }
         if(action==='events'){const event=z.object({fencingToken:z.number().int().positive(),inputRevisionId:InputRevisionId,event:z.record(z.string(),z.unknown())}).parse(input);send(response,200,{data:await skills.event(ctx,id,event.fencingToken,event.inputRevisionId,event.event)});return;}
         if(action==='local-stopped'){const stopped=z.object({fencingToken:z.number().int().positive(),inputRevisionId:InputRevisionId,localExitObserved:z.literal(true)}).parse(input);send(response,200,{data:await skills.stopped(ctx,id,stopped)});return;}
@@ -394,7 +375,7 @@ server.requestTimeout = 10_000; server.headersTimeout = 10_000;
 let running: Promise<void> | undefined;
 const timer = setInterval(() => {
   if (running || closing) return;
-  running = tasks.runOnce().then(() => mindmaps.runOnce()).then(()=>rules.tick()).then(()=>professional.runOnce()).then(()=>automations.tick()).catch(error => { console.error(JSON.stringify({type:'runner-transaction-failed',code:error instanceof ApiError?error.code:(error as any).code??'INTERNAL_ERROR'})); }).finally(() => { running = undefined; });
+  running = tasks.runOnce().then(()=>packages.runOnce()).then(()=>automations.tick()).catch(error => { console.error(JSON.stringify({type:'runner-transaction-failed',code:error instanceof ApiError?error.code:(error as any).code??'INTERNAL_ERROR'})); }).finally(() => { running = undefined; });
 }, Number(process.env.CIRCLE_SERVER_POLL_MS ?? 100));
 let indexing:Promise<void>|undefined;
 const indexTimer=setInterval(()=>{if(indexing||closing)return;indexing=ingestions.runOnce().catch(error=>{console.error(JSON.stringify({type:'source-index-transaction-failed',code:error instanceof ApiError?error.code:'INTERNAL_ERROR'}));}).finally(()=>{indexing=undefined;});},Number(process.env.CIRCLE_SERVER_INDEX_POLL_MS??100));

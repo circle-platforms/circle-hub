@@ -8,12 +8,12 @@ const root = fileURLToPath(new URL('../../',import.meta.url));
 async function files(path: string): Promise<string[]> {
   const result: string[] = [];
   for (const entry of await readdir(path,{ withFileTypes:true })) {
-    const target = join(path,entry.name); if (entry.isDirectory()) result.push(...await files(target)); else if (entry.name.endsWith('.ts')) result.push(target);
+    const target = join(path,entry.name); if (entry.isDirectory()) result.push(...await files(target)); else if (/\.(ts|mjs)$/.test(entry.name)) result.push(target);
   }
   return result;
 }
 test('application imports cannot reach frozen business modules or historical compiler runtimes', async () => {
-  for (const directory of ['apps','packages','scripts']) for (const path of await files(join(root,directory))) {
+  for (const directory of ['apps','packages','packs','scripts']) for (const path of await files(join(root,directory))) {
     const code = await readFile(path,'utf8');
     for (const match of code.matchAll(/(?:from\s*|import\s*\(|require\s*\()\s*['"]([^'"]+)['"]/g)) {
       const specifier = match[1];

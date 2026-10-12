@@ -2,19 +2,19 @@ import {mkdir,readFile,writeFile,rename,rmdir} from 'node:fs/promises';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {setTimeout as delay} from 'node:timers/promises';
-import {ApiError,ConnectorManifest,STANDARD_OPERATIONS,canonicalHash,sha256,requireCondition} from '../../contracts/src/index.ts';
+import {ApiError,ConnectorManifest,STANDARD_OPERATIONS,canonicalHash,sha256,requireCondition} from '../../packages/contracts/src/index.ts';
 
 const op=(name:keyof typeof STANDARD_OPERATIONS,idempotency:'none'|'marker'|'content-hash',reconciliation:'read-back'|'content-hash')=>({name,effects:STANDARD_OPERATIONS[name],idempotency,reconciliation});
 export const CONNECTOR_MANIFESTS:ConnectorManifest[]=[
-  ...['bugzilla-synthetic','jira-synthetic'].map(id=>ConnectorManifest.parse({id,version:'1.0.0',synthetic:true,roles:['defects'],operations:[op('defects.search','none','read-back'),op('defects.comment','marker','read-back')],events:{mode:'cursor-poll'}})),
-  ConnectorManifest.parse({id:'openkm-synthetic',version:'1.0.0',synthetic:true,roles:['documents'],operations:[op('docs.fetch','none','content-hash'),op('docs.convert','content-hash','content-hash')],events:{mode:'none'}}),
+  ...['record-feed-a','record-feed-b'].map(id=>ConnectorManifest.parse({id,version:'1.0.0',synthetic:true,roles:['defects'],operations:[op('defects.search','none','read-back'),op('defects.comment','marker','read-back')],events:{mode:'cursor-poll'}})),
+  ConnectorManifest.parse({id:'document-store',version:'1.0.0',synthetic:true,roles:['documents'],operations:[op('docs.fetch','none','content-hash'),op('docs.convert','content-hash','content-hash')],events:{mode:'none'}}),
 ];
 export const connectorIdentity=(id:string):string=>`synthetic-connector:${id}`;
-const manual=Buffer.from(JSON.stringify({product:'LBX',versionSeries:'8.4',section:'6.4',backendTimeoutMinimum:10}));
+const manual=Buffer.from(JSON.stringify({product:'SYNTH',versionSeries:'8.4',section:'6.4',backendTimeoutMinimum:10}));
 function initial(id:string):any {
-  if(id==='openkm-synthetic')return {synthetic:true,identity:connectorIdentity(id),documents:{'lbx-8.4-healthcheck':{fileName:'LBX-8.4-manual-6.4.json',contentBase64:manual.toString('base64')}},receipts:{}};
-  return {synthetic:true,identity:connectorIdentity(id),defects:{'LAB-42':{id:'LAB-42',title:'Synthetic health check timeout below minimum',product:'LBX',version:'8.4.2',observedTimeout:5,comments:[]},
-    'SECRET-99':{id:'SECRET-99',title:'Owner cannot see this synthetic defect',product:'LBX',version:'8.4.2',comments:[]}},
+  if(id==='document-store')return {synthetic:true,identity:connectorIdentity(id),documents:{'fixture-resource-policy':{fileName:'Synthetic-resource-policy.json',contentBase64:manual.toString('base64')}},receipts:{}};
+  return {synthetic:true,identity:connectorIdentity(id),defects:{'LAB-42':{id:'LAB-42',title:'Synthetic health check timeout below minimum',product:'SYNTH',version:'8.4.2',observedTimeout:5,comments:[]},
+    'SECRET-99':{id:'SECRET-99',title:'Owner cannot see this synthetic defect',product:'SYNTH',version:'8.4.2',comments:[]}},
     events:[{cursor:1,externalId:'defect-42-updated',defectId:'LAB-42'},{cursor:2,externalId:'secret-99-updated',defectId:'SECRET-99'}],receipts:{}};
 }
 export class ConnectorSDK {
@@ -59,9 +59,9 @@ export class ConnectorSDK {
         const original=Buffer.from(document.contentBase64,'base64'),digest=sha256(original);
         if(job.name==='docs.fetch')output={documentId:job.args.documentId,fileName:document.fileName,originalBase64:document.contentBase64,sourceSha256:digest};
         else{
-          const parsed=JSON.parse(original.toString());requireCondition(parsed.product==='LBX'&&typeof parsed.backendTimeoutMinimum==='number','INVALID_PAYLOAD','Unsupported synthetic document conversion');
+          const parsed=JSON.parse(original.toString());requireCondition(parsed.product==='SYNTH'&&typeof parsed.backendTimeoutMinimum==='number','INVALID_PAYLOAD','Unsupported synthetic document conversion');
           const converted=Buffer.from(`${parsed.product} ${parsed.versionSeries} section ${parsed.section}\nbackend.timeout minimum = ${parsed.backendTimeoutMinimum}\n`);
-          output={documentId:job.args.documentId,fileName:'LBX-8.4-manual-6.4.txt',mediaType:'text/plain',convertedBase64:converted.toString('base64'),sourceSha256:digest,convertedSha256:sha256(converted),conversion:'synthetic-json-to-text/1'};
+          output={documentId:job.args.documentId,fileName:'Synthetic-resource-policy.txt',mediaType:'text/plain',convertedBase64:converted.toString('base64'),sourceSha256:digest,convertedSha256:sha256(converted),conversion:'synthetic-json-to-text/1'};
         }
       }
       const temp=`${file}.${randomUUID()}.tmp`;await writeFile(temp,JSON.stringify(state),{mode:0o600});await rename(temp,file);

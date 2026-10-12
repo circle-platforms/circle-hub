@@ -9,7 +9,7 @@ test('client task list filters before limiting and returns newest TaskViews with
     visible.push(await h.request('/v1/tasks/submit',{scopeId:index%3===0?'scp_second':'scp_lab',title:`Visible task ${index}`,
       input:{requiredFields:['target']},idempotencyKey:`client-list-visible-${index}`}));
   }
-  const packed=await h.request('/v1/tasks/submit',{scopeId:'scp_lab',title:'LBX clarification for the desktop',capabilityPackId:'lbx-healthcheck',
+  const packed=await h.request('/v1/tasks/submit',{scopeId:'scp_lab',title:'SYNTH clarification for the desktop',capabilityPackId:'synthetic-resource-check',
     input:{requiredFields:['target']},idempotencyKey:'client-list-packed-task'});visible.push(packed);
   await h.phase(packed.taskId,'waiting-input');
   const peer=await h.request('/v1/tasks/submit',{scopeId:'scp_lab',title:'Another person in the same scope',input:{requiredFields:['target']},
@@ -32,7 +32,7 @@ test('client task list filters before limiting and returns newest TaskViews with
   assert.equal(maximum.find(task=>task.taskId===revised.taskId)!.inputRevisionId,revised.inputRevisionId);
   const packedView=defaults.find(task=>task.taskId===packed.taskId)!;
   assert.equal(packedView.title,packed.title);assert.equal(packedView.phase,'waiting-input');
-  assert.equal(packedView.inputRevisionId,packed.inputRevisionId);assert.equal(packedView.capabilityPackId,'lbx-healthcheck');
+  assert.equal(packedView.inputRevisionId,packed.inputRevisionId);assert.equal(packedView.capabilityPackId,'synthetic-resource-check');
   assert.ok(packedView.pendingInputs!.some(input=>input.status==='open'&&input.inputRevisionId===packedView.inputRevisionId));
   for(const value of ['0','-1','101','1.5','NaN','Infinity','abc','']){
     const rejected=await h.raw(`/v1/tasks?limit=${value}`,{token});assert.equal(rejected.status,400,`limit=${value}`);
@@ -62,13 +62,13 @@ test('client task reads require live tasks.read and cannot expand the authentica
 });
 
 test('client approval reads need only tasks.read and preserve bound approval history without decisions or cross-scope access',async t=>{
-  const h=await setup(t),task=await h.submit({target:'LBX-LAB-01'});
-  const proposal=(revision:string,value:number)=>({inputRevisionId:revision,name:'product.config.write',target:'LBX-LAB-01',
-    targetIdentity:'synthetic-host-key:lbx-01',args:{key:'backend.timeout',value}});
+  const h=await setup(t),task=await h.submit({target:'RESOURCE-LAB-01'});
+  const proposal=(revision:string,value:number)=>({inputRevisionId:revision,name:'product.config.write',target:'RESOURCE-LAB-01',
+    targetIdentity:'synthetic-host-key:resource-01',args:{key:'backend.timeout',value}});
   const decision=(approval:any,approve:boolean)=>({inputRevisionId:approval.inputRevisionId,targetIdentity:approval.targetIdentity,actionDigest:approval.actionDigest,approve});
   const first=await h.request(`/v1/tasks/${task.taskId}/approvals`,proposal(task.inputRevisionId,10));
   const approved=await h.request(`/v1/tasks/${task.taskId}/approvals/${first.approvalId}`,decision(first,true),'bob');
-  const revised=await h.request(`/v1/tasks/${task.taskId}/input`,{inputRevisionId:task.inputRevisionId,replacement:{target:'LBX-LAB-01',note:'New revision'}});
+  const revised=await h.request(`/v1/tasks/${task.taskId}/input`,{inputRevisionId:task.inputRevisionId,replacement:{target:'RESOURCE-LAB-01',note:'New revision'}});
   const second=await h.request(`/v1/tasks/${task.taskId}/approvals`,proposal(revised.inputRevisionId,11));
   const declined=await h.request(`/v1/tasks/${task.taskId}/approvals/${second.approvalId}`,decision(second,false),'bob');
   const open=await h.request(`/v1/tasks/${task.taskId}/approvals`,proposal(revised.inputRevisionId,12));

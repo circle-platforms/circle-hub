@@ -2,17 +2,17 @@ import { mkdir,readFile,writeFile,rename,rmdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
-import { ApiError,canonicalHash,requireCondition } from '../../contracts/src/index.ts';
+import { ApiError,canonicalHash,requireCondition } from '../../packages/contracts/src/index.ts';
 
 export class SyntheticDevice {
   directory:string;
   constructor(directory:string) { this.directory=directory; }
   async execute(job:any,recheck:()=>Promise<unknown>,signal?:AbortSignal):Promise<Record<string,unknown>> {
-    requireCondition(job.target === 'LBX-LAB-01','TARGET_NOT_FOUND','Only the synthetic LBX device is supported');
+    requireCondition(job.target === 'RESOURCE-LAB-01','TARGET_NOT_FOUND','Only the synthetic SYNTH device is supported');
     const hold=Number(job.args.holdAfterEffectMs ?? 0);
     requireCondition(Number.isInteger(hold) && hold>=0 && hold<=120_000,'INVALID_PAYLOAD','Invalid synthetic receipt delay');
     await mkdir(this.directory,{recursive:true,mode:0o700});
-    const file=join(this.directory,'LBX-LAB-01.json'),lock=`${file}.lock`;
+    const file=join(this.directory,'RESOURCE-LAB-01.json'),lock=`${file}.lock`;
     let held=false;
     for(let i=0;i<100;i++) { try{await mkdir(lock);held=true;break;}catch(error){if((error as NodeJS.ErrnoException).code!=='EEXIST')throw error;await delay(10);} }
     requireCondition(held,'RESOURCE_BUSY','Synthetic device is locked');
@@ -20,7 +20,7 @@ export class SyntheticDevice {
     try {
       let state:any;
       try{state=JSON.parse(await readFile(file,'utf8'));}catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;
-        state={synthetic:true,identity:'synthetic-host-key:lbx-01',product:'LBX',version:'8.4.2',config:{'backend.timeout':5},fencing:0,receipts:{},writes:[]};}
+        state={synthetic:true,identity:'synthetic-host-key:resource-01',product:'SYNTH',version:'8.4.2',config:{'backend.timeout':5},fencing:0,receipts:{},writes:[]};}
       requireCondition(state.synthetic === true,'FORBIDDEN_TARGET','Resource is not an authorized synthetic device');
       // Check both the live authority and the endpoint's observed host identity at the last exit point.
       await recheck();

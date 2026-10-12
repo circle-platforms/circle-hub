@@ -18,7 +18,7 @@ test('Act 4: replay resumes without loss or duplicate events across server proce
   assert.equal((await h.status(task.taskId)).inputRevisionId, waiting.inputRevisionId);
   const pending = waiting.pendingInputs[0];
   await h.request(`/v1/tasks/${task.taskId}/input`, { requestId: pending.requestId,
-    inputRevisionId: task.inputRevisionId, response: { target: 'LBX-LAB-01' } });
+    inputRevisionId: task.inputRevisionId, response: { target: 'RESOURCE-LAB-01' } });
   await until(async () => (await h.status(task.taskId)).phase === 'running');
   const replay = await h.request(`/v1/tasks/${task.taskId}/events?after=${after}`);
   assert.ok(replay.events.length >= 2);
@@ -26,5 +26,5 @@ test('Act 4: replay resumes without loss or duplicate events across server proce
   assert.ok(replay.events.every((event: any) => event.seq > after));
   assert.deepEqual((await h.request(`/v1/tasks/${task.taskId}/events?after=${after}`)).events, replay.events);
   assert.equal((await h.db.query("SELECT 1 FROM outbox WHERE task_id=$1 AND kind='task.cancel-requested'", [task.taskId])).rowCount, 0);
-  assert.equal((await h.status(task.taskId)).flowVersion, 'synthetic-lbx/1');
+  assert.equal((await h.status(task.taskId)).flowVersion, 'task/1');
 });

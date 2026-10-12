@@ -15,7 +15,7 @@ const socket = createServer(); await new Promise<void>(resolve => socket.listen(
 const port = (socket.address() as { port:number }).port; await new Promise<void>(resolve => socket.close(() => resolve()));
 const dbPassword = randomBytes(24).toString('hex'); const userPassword = randomBytes(18).toString('base64url'); const workerPassword = randomBytes(18).toString('base64url');
 const approverPassword=randomBytes(18).toString('base64url'),servicePassword=randomBytes(18).toString('base64url');
-const syntheticTargets=['LBX-LAB-01','bugzilla-synthetic','jira-synthetic','openkm-synthetic'];
+const syntheticTargets=['RESOURCE-LAB-01','record-feed-a','record-feed-b','document-store'];
 const config = { host:'127.0.0.1',port,user:'circle_synthetic',password:dbPassword,database:'postgres' };
 const children = new Set<ChildProcess>(); let closing = false;
 let syntheticSources:Awaited<ReturnType<typeof createSyntheticSources>>|undefined;

@@ -4,6 +4,8 @@ import type { Transaction } from '../../storage/src/index.ts';
 import { Execution } from './index.ts';
 
 export class Operations extends Execution {
+  capabilityOnlyOperations=new Set<string>();
+  customReports=new Map<string,(ctx:AuthContext,id:string,body:unknown)=>Promise<any>>();
   managedNames=new Set(['tools.invoke']);
   approvalCheck?: (tx:Transaction,task:any,spec:any)=>Promise<void>;
   connectorCheck?: (tx:Transaction,actor:AuthContext,scope:string,spec:any)=>Promise<any>;
@@ -19,7 +21,7 @@ export class Operations extends Execution {
       const task=await this.tasks.load(ctx,taskId,'tasks.read',client);
       requireCondition(task.inputRevisionId===spec.inputRevisionId,'INPUT_REVISION_STALE','Operation is not bound to the current revision');
       requireCondition(!['delivered','failed','cancelled'].includes(task.phase),'DECISION_CONFLICT','Task is terminal');
-      requireCondition(spec.name!=='mindmaps.compile','FORBIDDEN_ACTION','Compile through the capability task interface');
+      requireCondition(!this.capabilityOnlyOperations.has(spec.name),'FORBIDDEN_ACTION','Use the registered capability controller');
       const managed=this.managedNames.has(spec.name);
       const authorization=managed?await this.managedAuthorization?.(client,ctx,task.scopeId,spec,task):undefined;
       if(managed)requireCondition(authorization,'FORBIDDEN_ACTION','Registered execution authorizer is unavailable');else await this.auth.target(ctx,spec.name,task.scopeId,spec.target,client);
@@ -64,8 +66,8 @@ export class Operations extends Execution {
       const policy=await this.auth.check(ctx,'workers.execute',undefined,tx);requireCondition(policy.kind==='worker'&&policy.workerId,'FORBIDDEN_ACTION','Worker required');
       const worker=(await tx.query('UPDATE workers SET last_seen=clock_timestamp() WHERE worker_id=$1 AND principal_id=$2 RETURNING *',[policy.workerId,policy.principalId])).rows[0];requireCondition(worker,'FORBIDDEN_ACTION','Register first');if(worker.draining)return null;
       const rows=(await tx.query(`SELECT o.* FROM operations o LEFT JOIN operations parent ON parent.operation_id=o.parent_operation_id
-        WHERE o.name<>'mindmaps.compile' AND o.status='accepted' AND o.tenant_id=$1 AND o.scope_id=ANY($2::text[]) AND o.deadline_at>clock_timestamp()
-        AND o.name<>ALL($4::text[]) AND (o.kind<>'reconcile' OR parent.worker_id<>$3) ORDER BY o.created_at FOR UPDATE OF o SKIP LOCKED LIMIT 10`,[policy.tenantId,policy.scopes,policy.workerId,exclude])).rows;
+        WHERE o.name<>ALL($5::text[]) AND o.status='accepted' AND o.tenant_id=$1 AND o.scope_id=ANY($2::text[]) AND o.deadline_at>clock_timestamp()
+        AND o.name<>ALL($4::text[]) AND (o.kind<>'reconcile' OR parent.worker_id<>$3) ORDER BY o.created_at FOR UPDATE OF o SKIP LOCKED LIMIT 10`,[policy.tenantId,policy.scopes,policy.workerId,exclude,[...this.customClaimers.keys()]])).rows;
       for(const row of rows){
         const resource=(await tx.query('SELECT * FROM resources WHERE tenant_id=$1 AND resource_id=$2 FOR UPDATE',[row.tenant_id,row.resource_id])).rows[0];
         if(resource.frozen&&row.kind!=='reconcile')continue;
@@ -84,11 +86,11 @@ export class Operations extends Execution {
         return {operationId:row.operation_id,taskId:row.task_id,inputRevisionId:row.input_revision_id,name:row.name,kind:row.kind,target:row.target,targetIdentity:row.target_identity,args:row.args,
           actionDigest:row.action_digest,parentOperationId:row.parent_operation_id??undefined,fencingToken:token,leaseTtlMs:LEASE_TTL_MS,heartbeatMs:HEARTBEAT_MS};
       }return null;
-    });if(generic?.denial)throw generic.denial;return generic??super.claim(ctx);
+    });if(generic?.denial)throw generic.denial;return generic??super.claim(ctx,exclude);
   }
   async preflight(ctx:AuthContext,id:string,fence:number,tx?:Transaction):Promise<any> {
     const run=async(client:Transaction)=>{
-      const row=await this.lease(ctx,id,fence,client);if(row.name==='mindmaps.compile')return super.preflight(ctx,id,fence,client);
+      const row=await this.lease(ctx,id,fence,client);if(this.customPreflights.has(row.name))return super.preflight(ctx,id,fence,client);
       const {task,authorization}=await this.authorize(client,row);
       const worker=await this.auth.policy(ctx,client);
       if(this.managedNames.has(row.name)){
@@ -113,6 +115,7 @@ export class Operations extends Execution {
     return {task,authorization};
   }
   async report(ctx:AuthContext,id:string,body:unknown):Promise<any> {
+    const declared=(await this.store.pool.query('SELECT name FROM operations WHERE operation_id=$1',[id])).rows[0]?.name,custom=this.customReports.get(declared);if(custom)return custom(ctx,id,body);
     const report=ExecutionReport.parse(body);
     return this.store.transaction(async tx=>{
       const prior=await this.lease(ctx,id,report.fencingToken,tx,true);

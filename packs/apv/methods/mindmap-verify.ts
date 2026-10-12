@@ -1,6 +1,7 @@
 import readWorkbook from 'read-excel-file/node';
 import { unzipSync, strFromU8 } from 'fflate';
-import { ApiError, MINDMAP_CONTRACT_VERSION, MINDMAP_MAPPING_VERSION, sha256 } from '../../contracts/src/index.ts';
+import { ApiError, sha256 } from '../../../packages/contracts/src/index.ts';
+import {MINDMAP_CONTRACT_VERSION,MINDMAP_MAPPING_VERSION} from '../contracts.ts';
 import type { ParsedMindmap, Topic } from './mindmap.ts';
 
 // This reader does not use ExcelJS, the writer's row list, or its worksheet models.

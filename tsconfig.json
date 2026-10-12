@@ -10,6 +10,6 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["apps/**/*.ts", "packages/**/*.ts", "tests/**/*.ts", "scripts/**/*.ts"],
+  "include": ["apps/**/*.ts", "packages/**/*.ts", "packs/**/*.ts", "tests/**/*.ts", "scripts/**/*.ts"],
   "exclude": ["foundation", "references", "node_modules"]
 }

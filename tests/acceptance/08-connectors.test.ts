@@ -4,12 +4,12 @@ import {readFile,writeFile} from 'node:fs/promises';
 import {setup,until} from './harness.ts';
 import {sha256} from '../../packages/contracts/src/index.ts';
 
-for(const tracker of ['bugzilla-synthetic','jira-synthetic'])test(`Act 8: ${tracker} cursor trigger owner-scoped service dedupe docs conversion and marker read-back`,async t=>{
+for(const tracker of ['record-feed-a','record-feed-b'])test(`Act 8: ${tracker} cursor trigger owner-scoped service dedupe docs conversion and marker read-back`,async t=>{
   const h=await setup(t);await h.startWorker('lab-east-01');await h.startWorker('lab-east-02');
   const packs=await h.request('/v1/packs'),pack=packs.find((item:any)=>item.capabilityPackId==='defect-review');
   assert.deepEqual(pack.requiredOperations,['defects.search','defects.comment','docs.fetch','docs.convert','product.version']);
   const rule=await h.request('/v1/rules',{scopeId:'scp_lab',capabilityPackId:'defect-review',servicePrincipalId:'prn_defectbot',
-    bindings:{defects:tracker,documents:'openkm-synthetic',product:'LBX-LAB-01'},intervalMs:100,simulateCommentTimeout:true,ownerId:'prn_admin'});
+    bindings:{defects:tracker,documents:'document-store',product:'RESOURCE-LAB-01'},intervalMs:100,simulateCommentTimeout:true,ownerId:'prn_admin'});
   assert.equal(rule.ownerId,'prn_alice');
   const event=await until(async()=> (await h.db.query('SELECT * FROM connector_events WHERE rule_id=$1',[rule.ruleId])).rows[0],15_000);
   assert.equal(event.external_event_id,'defect-42-updated');assert.equal(event.payload.defectId,'LAB-42');

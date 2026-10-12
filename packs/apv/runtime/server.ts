@@ -1,14 +1,15 @@
-import { ApiError, MINDMAP_PACK_VERSION, MINDMAP_CONTRACT_VERSION, MINDMAP_MAPPING_VERSION, WorkerReport, canonicalHash, sha256, type AuthContext } from '../../../packages/contracts/src/index.ts';
+import { ApiError, canonicalHash, sha256, type AuthContext } from '../../../packages/contracts/src/index.ts';
+import {MINDMAP_PACK_VERSION,MINDMAP_CONTRACT_VERSION,MINDMAP_MAPPING_VERSION,WorkerReport} from '../contracts.ts';
 import type { Store } from '../../../packages/storage/src/index.ts';
 import type { Tasks } from '../../../packages/tasks/src/index.ts';
 import type { Knowledge } from '../../../packages/knowledge/src/index.ts';
-import type { Execution } from '../../../packages/execution/src/index.ts';
-import { parseMindmap } from '../../../packages/methods/src/mindmap.ts';
-import { verifyMindmapWorkbook } from '../../../packages/methods/src/mindmap-verify.ts';
+import type { CompilerExecution } from './operations.ts';
+import { parseMindmap } from '../methods/mindmap.ts';
+import { verifyMindmapWorkbook } from '../methods/mindmap-verify.ts';
 
 export class MindmapRunner {
-  store: Store; tasks: Tasks; knowledge: Knowledge; execution: Execution;
-  constructor(store: Store,tasks: Tasks,knowledge: Knowledge,execution: Execution) {
+  store: Store; tasks: Tasks; knowledge: Knowledge; execution: CompilerExecution;
+  constructor(store: Store,tasks: Tasks,knowledge: Knowledge,execution: CompilerExecution) {
     this.store = store; this.tasks = tasks; this.knowledge = knowledge; this.execution = execution;
   }
   async runOnce(): Promise<void> {
@@ -47,7 +48,8 @@ export class MindmapRunner {
       const verification = await verifyMindmapWorkbook(bytes,parsed,source.sha256);
       const status = parsed.unmapped.length ? 'partial' : 'succeeded';
       if (report.status !== status) throw new ApiError('ARTIFACT_VERIFICATION_FAILED','Worker status differs from the parsed unmapped list');
-      const artifact = await this.knowledge.artifact(tx,task,source.sourceRevisionId,bytes,{ packVersion: MINDMAP_PACK_VERSION,verification,unmapped: parsed.unmapped });
+      const artifact = await this.knowledge.artifact(tx,task,source.sourceRevisionId,bytes,{ packVersion: MINDMAP_PACK_VERSION,verification,unmapped: parsed.unmapped },{
+        key:canonicalHash({sourceSha256:source.sha256,packVersion:MINDMAP_PACK_VERSION,contractVersion:MINDMAP_CONTRACT_VERSION,mappingRulesVersion:MINDMAP_MAPPING_VERSION}),fileName:`${source.fileName.replace(/\.(json|xmind)$/i,'')}.xlsx`,mediaType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',role:'workbook'});
       if (artifact.sha256 !== verification.artifactSha256) throw new ApiError('ARTIFACT_VERIFICATION_FAILED','Cached artifact bytes differ from the deterministic compilation');
       const evidence = await this.knowledge.evidence(tx,task,id,'script-conclusion',{ conclusion: 'structural-workbook-verified',
         inputRevisionId:task.inputRevisionId,ir:parsed.ir,contractVersion:MINDMAP_CONTRACT_VERSION,mappingRulesVersion:MINDMAP_MAPPING_VERSION,

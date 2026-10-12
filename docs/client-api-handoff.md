@@ -1,6 +1,6 @@
 # Circle 客户端接口交接：普通用户读取与脑图编译
 
-2026-10-12。第一阶段实现位于隔离工作树 `../circle-server-s1`，分支 `server-s1`；第二阶段增补在 `../circle-server-s2` 的 `server-s2` 分支。Circle 和连接插件由 Claude 负责；本分支只提供 server/worker。协议原件是 `packages/contracts/src/index.ts`：`CLIENT_ROUTES`、请求/回应 schema、`TaskListQuery`、`TaskView`、`ApprovalView`、`TaskResult`、`EventPage`、标准操作与 `MindmapPack`。API 版本 `1.0.0`，能力包与映射规则版本 `1.0.0`，Excel 契约为 `Excel 输出契约 V1`。
+2026-10-12。第一阶段实现位于隔离工作树 `../circle-server-s1`，分支 `server-s1`；第二阶段增补在 `../circle-server-s2` 的 `server-s2` 分支。Circle 和连接插件由 Claude 负责；本分支只提供 server/worker。共享协议原件是 `packages/contracts/src/index.ts`：`CLIENT_ROUTES`、请求/回应 schema、`TaskListQuery`、`TaskView`、`ApprovalView`、`TaskResult`、`EventPage` 和标准操作。编译包的描述及专用协议在 `packs/apv/contracts.ts`，HTTP 形状保持兼容。API 版本 `1.0.0`，能力包与映射规则版本 `1.0.0`，Excel 契约为 `Excel 输出契约 V1`。
 
 ## 启动和登录
 
@@ -242,7 +242,7 @@ POST 成功是 201，status 初始 `candidate`，额外返回 manifest/ownerPrin
 
 任务 events 增加 `runtime.<RPC type>`（例如 runtime.tool_result/runtime.agent_settled），payload.event 为实际 RPC 事件。取消发 abort、关 stdin，超时 kill；观察到本地进程退出后任务保持 unknown、资源冻结，返回 remoteStoppingVerified:false。未完成独立远端核对，不把本地退出记为远端停止或已交付；后续事件按原游标补读。
 
-真实 RPC 验收需显式设置 `CIRCLE_BIN` 和 `CIRCLE_COMMIT` 再运行 `r2-05-skillpacks.test.ts` 或整套；没有时三个实际 CLI 用例显示原因并跳过，不能把 skip 当作运行通过。Circle 工作树升级时选择新的已确认构建或独立固定旧提交的 worktree，运行器不会因此放宽固定版本检查。
+真实 RPC 验收需显式设置 `CIRCLE_BIN` 和 `CIRCLE_COMMIT` 再运行 `r2-05-skillpacks.test.ts` 或整套；没有时实际 CLI 用例（第 5 幕三条、第 6 幕两条、第 7 幕一条）显示原因并跳过，不能把 skip 当作运行通过。Circle 工作树升级时选择新的已确认构建或独立固定旧提交的 worktree，运行器不会因此放宽固定版本检查。
 
 ## 第二阶段：触发、整理与 Circle 渠道
 
@@ -261,3 +261,9 @@ runs 保留上述字段，追加 `status:"admitted"|"failed"`、`trigger`、`err
 `knowledge.shared_fragments {limit?,after?}` 是 read/sync：只取 caller 明确允许共享、当前可见的 shared-session 修订，返回原片段、工具返回和 Evidence；未共享输入不进入整理。limit 默认 20、范围 1–100，每页片段和未映射条目的总数受限；SQL 按创建时间/recordId 限量读源，游标也记录同一源内的片段位置。`result.nextCursor` 是不透明字符串或 null，非空时传作下一次 after；游标绑定身份和 scope，重启可继续，同键回放原页，后续修订保持各自来源证据。目录正确导出输入 schema，默认值参数可省略。`packs/common/skills/knowledge-consolidation` 逐页处理，其 TypeScript 脚本只规范/去重有证据的结构化 facts/practices/corrections，真实文本的语义抽取没有验收；候选仍为 personal/consolidated，产品优先、冲突保留、不自动发布团队快照。普通 bot 读者不能看他人个人任务/候选。
 
 worker 的回报处理若因 ApiError 拒绝，知识/制品写入回滚，操作与任务保存为 failed、释放租约，保留原回报 hash 供同回报幂等重传；不会停留 running 阻塞下一次调用。租约、fence、当前输入校验仍在回报处理前执行，迟到或越权回报仍拒绝。
+
+## 第二阶段：工作列表过滤与续页
+
+`GET /v1/tasks` 仍返回 TaskView 数组，limit 默认 20、最多 100。新增可选 `kind=work|tool|index`、`capabilityPackId=<精确包 id>`、`after=<上一页末项 taskId>`，请求 schema 在 CLIENT_ROUTES.tasks.query。kind 的分类为 asset-tool→tool、asset-index→index，其余及未指定能力包的任务→work；同时提供 kind 和 capabilityPackId 时取交集。客户端工作页使用 `?kind=work&limit=20`，下一页追加 after，数组为空即读完；不必先下载内部任务再过滤。
+
+权限、类别和能力包筛选先于 limit，按创建时间、taskId 倒序；游标取保存的完整 PostgreSQL 创建时间，不按 phase/更新时间排序，server 重启可续读。after 必须是当前身份可读的任务；越 scope/个人任务返回 FORBIDDEN_SCOPE，格式错误、未知类别和越界 limit 为 INVALID_PAYLOAD。省略新参数时行为与第一阶段相同。

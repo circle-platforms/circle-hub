@@ -1,8 +1,6 @@
 import { setTimeout as delay } from 'node:timers/promises';
 import { ApiError, HEARTBEAT_MS, AnyWorkerClaim, sha256 } from '../../../packages/contracts/src/index.ts';
-import { compileMindmap } from '../../../packages/methods/src/mindmap.ts';
-import { SyntheticDevice } from '../../../packages/execution/src/synthetic-device.ts';
-import { ConnectorSDK } from '../../../packages/connectors/src/index.ts';
+import {installedWorkerMethods} from '../../../packs/worker.ts';
 import {executeTool} from '../../../packages/connectors/src/tool-packages.ts';
 import {PrivateVault} from '../../../packages/assets/src/vault.ts';
 import {LocalObjects} from '../../../packages/knowledge/src/objects.ts';
@@ -33,8 +31,7 @@ async function request(path: string,body: unknown): Promise<any> {
   if (!response.ok) throw new ApiError(envelope.error.code,envelope.error.message);
   return envelope.data;
 }
-const connectors=process.env.CIRCLE_SYNTHETIC_RESOURCE_DIR?new ConnectorSDK(process.env.CIRCLE_SYNTHETIC_RESOURCE_DIR):undefined;
-if(connectors)await connectors.initialize();
+const methods=installedWorkerMethods(process.env.CIRCLE_SYNTHETIC_RESOURCE_DIR);await methods.initialize();
 await request('/v1/workers/register',{});
 console.log(JSON.stringify({ type:'worker-ready',username }));
 let runtimeJob:Promise<void>|undefined;
@@ -83,32 +80,9 @@ while (!stopped) {
         }catch(error){const failure=error instanceof ApiError?error:new ApiError('INTERNAL_ERROR','Registered tool failed');report={...fence,inputRevisionId:claim.inputRevisionId,status:'failed',output:{},error:{code:failure.code,message:failure.message,details:failure.details}};}
         if(heartbeatError)throw heartbeatError;await request(`/v1/workers/operations/${claim.operationId}/report`,report);continue;
       }
-      if(claim.name!=='mindmaps.compile'&&'kind' in claim){
-        let report;
-        try{const check=()=>request(`/v1/workers/operations/${claim.operationId}/preflight`,fence);
-          const output=claim.target==='LBX-LAB-01'?await new SyntheticDevice(env('CIRCLE_SYNTHETIC_RESOURCE_DIR')).execute(claim,check,stopController.signal):await connectors!.execute(claim,check);
-          report={...fence,inputRevisionId:claim.inputRevisionId,status:'succeeded',output};
-        }catch(error){if(stopped)continue;const failure=error instanceof ApiError?error:new ApiError('INTERNAL_ERROR','Synthetic driver failed');
-          report={...fence,inputRevisionId:claim.inputRevisionId,status:failure.code==='UPSTREAM_TIMEOUT'?'unknown':'failed',error:{code:failure.code,message:failure.message},output:{}};}
-        if(heartbeatError)throw heartbeatError;await request(`/v1/workers/operations/${claim.operationId}/report`,report);continue;
-      }
-      if(!('source' in claim))throw new ApiError('INVALID_PAYLOAD','Compile claim has no source');
-      await authenticate();
-      const response = await fetch(new URL(`/v1/workers/operations/${claim.operationId}/source?fence=${claim.fencingToken}`,base),{ headers:{ authorization:`Bearer ${token}` } });
-      if (!response.ok) throw new ApiError('EVIDENCE_INSUFFICIENT','Source download failed');
-      const bytes = Buffer.from(await response.arrayBuffer());
-      if (sha256(bytes) !== claim.source.sha256) throw new ApiError('SOURCE_HASH_MISMATCH','Worker source hash mismatch');
-      // The executing process repeats live authorization immediately before computing/writing an artifact.
-      await request(`/v1/workers/operations/${claim.operationId}/preflight`,fence);
-      let report;
-      try {
-        const compiled = await compileMindmap(bytes,claim.source.fileName);
-        report = { ...fence,inputRevisionId:claim.inputRevisionId,status:compiled.status,artifactBase64:compiled.workbook.toString('base64') };
-      } catch (error) {
-        const failure = error instanceof ApiError ? error : new ApiError('INTERNAL_ERROR','Compiler failed');
-        report = { ...fence,inputRevisionId:claim.inputRevisionId,status:'failed',error:{ code:failure.code,message:failure.message } };
-      }
-      if (heartbeatError) throw heartbeatError;
+      const report=await methods.execute(claim,{check:()=>request(`/v1/workers/operations/${claim.operationId}/preflight`,fence),signal:stopController.signal,source:async()=>{await authenticate();const response=await fetch(new URL(`/v1/workers/operations/${claim.operationId}/source?fence=${claim.fencingToken}`,base),{headers:{authorization:`Bearer ${token}`}});if(!response.ok)throw new ApiError("EVIDENCE_INSUFFICIENT","Source download failed");return Buffer.from(await response.arrayBuffer());}});
+      if(stopped)continue;
+      if(heartbeatError)throw heartbeatError;
       await request(`/v1/workers/operations/${claim.operationId}/report`,report);
     } finally { clearInterval(timer); await pendingHeartbeat; }
   } catch (error) {

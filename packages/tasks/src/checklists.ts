@@ -6,6 +6,7 @@ import type {Tasks} from './index.ts';
 export class Checklists {
   store:Store;tasks:Tasks;knowledge:Records;
   constructor(store:Store,tasks:Tasks,knowledge:Records){this.store=store;this.tasks=tasks;this.knowledge=knowledge;}
+  predicates=new Map<string,(record:any)=>boolean>();
   async set(ctx:AuthContext,id:string,request:any):Promise<any>{return this.store.transaction(async tx=>{
     const task=await this.tasks.load(ctx,id,'tasks.input',tx,true);requireCondition(task.inputRevisionId===request.inputRevisionId,'INPUT_REVISION_STALE','Checklist input differs');
     requireCondition(!['delivered','failed','cancelled','unknown'].includes(task.phase),'DECISION_CONFLICT','Checklist is frozen in this phase');
@@ -16,9 +17,7 @@ export class Checklists {
   });}
   accepts(predicate:string,record:any):boolean {
     if(record.kind==='unknown')return false;
-    if(predicate==='professional-opinion')return record.body.verdict==='supports';
-    if(predicate==='assessment-completed')return record.body.methodId==='lbx-healthcheck'&&typeof record.body.observedTimeout==='number'&&typeof record.body.minimumTimeout==='number';
-    if(predicate==='configuration-conforms')return record.body.methodId==='lbx-healthcheck'&&record.body.verdict==='supports';
+    const checker=this.predicates.get(predicate);if(checker)return checker(record);
     return record.body.predicate===predicate&&record.body.verified===true;
   }
   async satisfy(ctx:AuthContext,id:string,itemId:string,request:any):Promise<any>{return this.store.transaction(async tx=>{

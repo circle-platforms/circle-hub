@@ -1,0 +1,9 @@
+{
+  "schemaVersion": "product-line/1",
+  "id": "meridian",
+  "version": "1.0.0",
+  "synthetic": true,
+  "connectorPackages": [{"packageId": "documents", "alias": "meridian_docs"}],
+  "skills": ["skills/meridian-source-review"],
+  "knowledgeMappings": {"authority": "Pinned original document bytes", "finding": "Literal line match; semantic feature support is not asserted"}
+}

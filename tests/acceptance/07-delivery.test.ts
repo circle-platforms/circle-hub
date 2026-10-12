@@ -5,9 +5,9 @@ import {sha256} from '../../packages/contracts/src/index.ts';
 
 test('Act 7: revision-bound checklist separates facts opinions and unknown and preserves originals',async t=>{
   const h=await setup(t);await h.startWorker();
-  const manual=Buffer.from(JSON.stringify({product:'LBX',versionSeries:'8.4',section:'6.4',backendTimeoutMinimum:10}));
+  const manual=Buffer.from(JSON.stringify({product:'SYNTH',versionSeries:'8.4',section:'6.4',backendTimeoutMinimum:10}));
   const source=await h.request('/v1/sources',{scopeId:'scp_lab',fileName:'synthetic-manual-6.4.json',contentBase64:manual.toString('base64')});
-  const task=await h.submit({product:'LBX',version:'8.4.2',target:'LBX-LAB-01',manualSourceRevisionId:source.sourceRevisionId});
+  const task=await h.submit({product:'SYNTH',version:'8.4.2',target:'RESOURCE-LAB-01',manualSourceRevisionId:source.sourceRevisionId});
   const checklist={inputRevisionId:task.inputRevisionId,items:[{itemId:'compare-config',requiresFact:true,required:true,predicate:'assessment-completed'}]};
   await h.request(`/v1/tasks/${task.taskId}/checklist`,checklist);
   const model=await h.request(`/v1/tasks/${task.taskId}/conclusions`,{inputRevisionId:task.inputRevisionId,kind:'model-judgment',judgment:'supports',rationale:'Synthetic opinion claims compliance'});
@@ -15,18 +15,18 @@ test('Act 7: revision-bound checklist separates facts opinions and unknown and p
   assert.equal(model.kind,'model-judgment');assert.equal(unknown.kind,'unknown');
   await h.reject(`/v1/tasks/${task.taskId}/checklist/compare-config`,{inputRevisionId:task.inputRevisionId,conclusionId:model.conclusionId},'EVIDENCE_INSUFFICIENT');
   await h.reject(`/v1/tasks/${task.taskId}/delivery`,{inputRevisionId:task.inputRevisionId},'EVIDENCE_INSUFFICIENT');
-  const read=await h.request(`/v1/tasks/${task.taskId}/operations`,{inputRevisionId:task.inputRevisionId,name:'product.config.read',target:'LBX-LAB-01',targetIdentity:'synthetic-host-key:lbx-01',args:{},idempotencyKey:'delivery-observation'});
+  const read=await h.request(`/v1/tasks/${task.taskId}/operations`,{inputRevisionId:task.inputRevisionId,name:'product.config.read',target:'RESOURCE-LAB-01',targetIdentity:'synthetic-host-key:resource-01',args:{},idempotencyKey:'delivery-observation'});
   const observed=await until(async()=>(await h.request(`/v1/tasks/${task.taskId}/operations`)).find((row:any)=>row.operationId===read.operationId&&row.status==='succeeded'));
-  const fact=await h.request(`/v1/tasks/${task.taskId}/conclusions`,{inputRevisionId:task.inputRevisionId,kind:'script-conclusion',methodId:'lbx-healthcheck',evidenceIds:[observed.result.evidence[0].evidenceId]});
+  const fact=await h.request(`/v1/tasks/${task.taskId}/conclusions`,{inputRevisionId:task.inputRevisionId,kind:'script-conclusion',methodId:'resource-comparison',evidenceIds:[observed.result.evidence[0].evidenceId]});
   assert.equal(fact.kind,'script-conclusion');assert.equal(fact.body.verdict,'refutes');assert.equal(fact.body.observedTimeout,5);assert.equal(fact.body.minimumTimeout,10);assert.ok(fact.body.snapshotId);
   await h.request(`/v1/tasks/${task.taskId}/checklist/compare-config`,{inputRevisionId:task.inputRevisionId,conclusionId:fact.conclusionId});
   const revised=await h.request(`/v1/tasks/${task.taskId}/input`,{inputRevisionId:task.inputRevisionId,replacement:{...task.input,note:'new revision'}});
   await h.reject(`/v1/tasks/${task.taskId}/checklist/compare-config`,{inputRevisionId:revised.inputRevisionId,conclusionId:fact.conclusionId},'INPUT_REVISION_STALE');
   await h.reject(`/v1/tasks/${task.taskId}/delivery`,{inputRevisionId:revised.inputRevisionId},'EVIDENCE_INSUFFICIENT');
   await h.request(`/v1/tasks/${task.taskId}/checklist`,{...checklist,inputRevisionId:revised.inputRevisionId});
-  const second=await h.request(`/v1/tasks/${task.taskId}/operations`,{inputRevisionId:revised.inputRevisionId,name:'product.config.read',target:'LBX-LAB-01',targetIdentity:'synthetic-host-key:lbx-01',args:{},idempotencyKey:'revised-delivery-observation'});
+  const second=await h.request(`/v1/tasks/${task.taskId}/operations`,{inputRevisionId:revised.inputRevisionId,name:'product.config.read',target:'RESOURCE-LAB-01',targetIdentity:'synthetic-host-key:resource-01',args:{},idempotencyKey:'revised-delivery-observation'});
   const next=await until(async()=>(await h.request(`/v1/tasks/${task.taskId}/operations`)).find((row:any)=>row.operationId===second.operationId&&row.status==='succeeded'));
-  const current=await h.request(`/v1/tasks/${task.taskId}/conclusions`,{inputRevisionId:revised.inputRevisionId,kind:'script-conclusion',methodId:'lbx-healthcheck',evidenceIds:[next.result.evidence[0].evidenceId]});
+  const current=await h.request(`/v1/tasks/${task.taskId}/conclusions`,{inputRevisionId:revised.inputRevisionId,kind:'script-conclusion',methodId:'resource-comparison',evidenceIds:[next.result.evidence[0].evidenceId]});
   await h.request(`/v1/tasks/${task.taskId}/checklist/compare-config`,{inputRevisionId:revised.inputRevisionId,conclusionId:current.conclusionId});
   await h.request(`/v1/tasks/${task.taskId}/delivery`,{inputRevisionId:revised.inputRevisionId});
   const delivered=await h.request(`/v1/tasks/${task.taskId}/result`);assert.equal(delivered.phase,'delivered');assert.equal(delivered.status,'partial');
@@ -38,21 +38,21 @@ test('Act 7: revision-bound checklist separates facts opinions and unknown and p
 });
 
 test('Act 7: citations without comparable values remain unknown rather than support',async t=>{
-  const h=await setup(t);const raw=Buffer.from(JSON.stringify({product:'LBX',versionSeries:'8.4',section:'6.4',note:'citation without extracted minimum'}));
+  const h=await setup(t);const raw=Buffer.from(JSON.stringify({product:'SYNTH',versionSeries:'8.4',section:'6.4',note:'citation without extracted minimum'}));
   const source=await h.request('/v1/sources',{scopeId:'scp_lab',fileName:'incomplete-manual.json',contentBase64:raw.toString('base64')});
-  const task=await h.submit({product:'LBX',version:'8.4.2',manualSourceRevisionId:source.sourceRevisionId});
-  const conclusion=await h.request(`/v1/tasks/${task.taskId}/conclusions`,{inputRevisionId:task.inputRevisionId,kind:'script-conclusion',methodId:'lbx-healthcheck',evidenceIds:[]});
+  const task=await h.submit({product:'SYNTH',version:'8.4.2',manualSourceRevisionId:source.sourceRevisionId});
+  const conclusion=await h.request(`/v1/tasks/${task.taskId}/conclusions`,{inputRevisionId:task.inputRevisionId,kind:'script-conclusion',methodId:'resource-comparison',evidenceIds:[]});
   assert.equal(conclusion.kind,'unknown');assert.equal(conclusion.body.verdict,'undetermined');
 });
 
-test('LBX capability observes 5, obtains a separate approval, changes to 10 and delivers a fresh verified comparison',async t=>{
+test('SYNTH capability observes 5, obtains a separate approval, changes to 10 and delivers a fresh verified comparison',async t=>{
   const h=await setup(t);await h.startWorker();
-  const task=await h.request('/v1/tasks/submit',{scopeId:'scp_lab',title:'Check LBX-LAB-01 against 8.4 and correct in the test domain',capabilityPackId:'lbx-healthcheck',
-    input:{product:'LBX',version:'8.4.2',target:'LBX-LAB-01',correctIfNonConforming:true,bindings:{product:'LBX-LAB-01',documents:'openkm-synthetic'}},idempotencyKey:'lbx-complete-story'});
+  const task=await h.request('/v1/tasks/submit',{scopeId:'scp_lab',title:'Check RESOURCE-LAB-01 against 8.4 and correct in the test domain',capabilityPackId:'synthetic-resource-check',
+    input:{product:'SYNTH',version:'8.4.2',target:'RESOURCE-LAB-01',correctIfNonConforming:true,bindings:{product:'RESOURCE-LAB-01',documents:'document-store'}},idempotencyKey:'lbx-complete-story'});
   const waiting=await h.phase(task.taskId,'waiting-review'),pending=waiting.pendingInputs.find((item:any)=>item.kind==='approval'&&item.status==='open');
   await h.request(`/v1/tasks/${task.taskId}/approvals/${pending.requestId}`,{inputRevisionId:task.inputRevisionId,targetIdentity:pending.binding.targetIdentity,actionDigest:pending.binding.actionDigest,approve:true},'bob');
   await h.phase(task.taskId,'delivered');const result=await h.request(`/v1/tasks/${task.taskId}/result`);assert.equal(result.status,'succeeded');
   assert.equal(result.conclusions[0].body.observedTimeout,10);assert.equal(result.conclusions[0].body.minimumTimeout,10);
-  const {readFile}=await import('node:fs/promises'),state=JSON.parse(await readFile(`${h.scratch}/resources/LBX-LAB-01.json`,'utf8'));assert.equal(state.config['backend.timeout'],10);assert.equal(state.writes.length,1);
+  const {readFile}=await import('node:fs/promises'),state=JSON.parse(await readFile(`${h.scratch}/resources/RESOURCE-LAB-01.json`,'utf8'));assert.equal(state.config['backend.timeout'],10);assert.equal(state.writes.length,1);
   const records=await h.request(`/v1/tasks/${task.taskId}/conclusions`);assert.ok(records.some((record:any)=>record.body.verdict==='refutes'));assert.ok(records.some((record:any)=>record.body.verdict==='supports'));
 });

@@ -16,7 +16,7 @@ const taskGrants = ['tasks.read', 'tasks.submit', 'tasks.input', 'tasks.cancel',
 const deviceGrants = ['product.version', 'product.config.read', 'product.config.write', 'docs.fetch', 'docs.convert', 'defects.search', 'defects.comment'];
 export const identities = [
   { username: 'alice', principalId: 'prn_alice', tenantId: 'tnt_lab', kind: 'user', scopes: ['scp_lab', 'scp_second'],
-    grants: [...taskGrants, ...deviceGrants, 'decisions.approve','rules.manage'], targets: ['LBX-LAB-01', 'bugzilla-synthetic', 'jira-synthetic', 'openkm-synthetic'], defects: ['LAB-42'] },
+    grants: [...taskGrants, ...deviceGrants, 'decisions.approve','rules.manage'], targets: ['RESOURCE-LAB-01', 'record-feed-a', 'record-feed-b', 'document-store'], defects: ['LAB-42'] },
   { username: 'bob', principalId: 'prn_bob', tenantId: 'tnt_lab', kind: 'user', scopes: ['scp_lab'],
     grants: [...taskGrants, 'decisions.approve'], targets: [], defects: ['LAB-42'] },
   { username: 'outsider', principalId: 'prn_outsider', tenantId: 'tnt_other', kind: 'user', scopes: ['scp_lab'],
@@ -27,10 +27,10 @@ export const identities = [
     grants: [...taskGrants, 'admin.manage', 'admin.restart', 'decisions.approve'], targets: [], defects: [] },
   { username: 'defect-bot', principalId: 'prn_defectbot', tenantId: 'tnt_lab', kind: 'service', scopes: ['scp_lab'],
     grants: [...taskGrants, 'defects.search', 'defects.comment', 'docs.fetch', 'docs.convert', 'product.version'],
-    targets: ['bugzilla-synthetic', 'jira-synthetic', 'openkm-synthetic', 'LBX-LAB-01'], defects: ['LAB-42', 'SECRET-99'] },
+    targets: ['record-feed-a', 'record-feed-b', 'document-store', 'RESOURCE-LAB-01'], defects: ['LAB-42', 'SECRET-99'] },
   ...['lab-east-01', 'lab-east-02'].map(workerId => ({ username: workerId, principalId: `prn_${workerId}`,
     tenantId: 'tnt_lab', kind: 'worker', workerId, scopes: ['scp_lab', 'scp_second'], grants: ['workers.execute'],
-    targets: ['LBX-LAB-01', 'bugzilla-synthetic', 'jira-synthetic', 'openkm-synthetic'], defects: ['LAB-42', 'SECRET-99'] })),
+    targets: ['RESOURCE-LAB-01', 'record-feed-a', 'record-feed-b', 'document-store'], defects: ['LAB-42', 'SECRET-99'] })),
 ].map(identity => ({ ...identity, password: 'synthetic-only-password' }));
 
 export async function until<T>(check: () => Promise<T | undefined | false>, timeoutMs = 10_000): Promise<T> {
@@ -92,7 +92,7 @@ export class Harness {
     assert.ok(result.status >= 400, JSON.stringify(result.body)); assert.equal(result.body.error.code, code); return result.body.error;
   }
   async submit(input: Record<string, unknown> = {}, scopeId = 'scp_lab', key = randomBytes(12).toString('hex')): Promise<any> {
-    return this.request('/v1/tasks/submit', { scopeId, title: 'Inspect synthetic LBX health checks', input, idempotencyKey: key });
+    return this.request('/v1/tasks/submit', { scopeId, title: 'Inspect synthetic SYNTH health checks', input, idempotencyKey: key });
   }
   async status(taskId: string): Promise<any> { return this.request(`/v1/tasks/${taskId}/status`); }
   async phase(taskId: string, phase: string): Promise<any> {

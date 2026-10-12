@@ -1,10 +1,11 @@
-import {DefectReviewPack,OperationRequest,canonicalHash,newId,requireCondition,type AuthContext} from '../../contracts/src/index.ts';
-import {connectorIdentity} from '../../connectors/src/index.ts';
-import type {Store,Transaction} from '../../storage/src/index.ts';
-import type {Auth} from './auth.ts';
-import type {Tasks} from './index.ts';
-import type {Operations} from '../../execution/src/operations.ts';
-import type {ConnectorRegistry} from './connector-registry.ts';
+import {PACK_FLOWS,DefectReviewPack} from './contracts.ts';
+import {OperationRequest,canonicalHash,newId,requireCondition,type AuthContext} from '../../packages/contracts/src/index.ts';
+import {connectorIdentity} from './connectors.ts';
+import type {Store,Transaction} from '../../packages/storage/src/index.ts';
+import type {Auth} from '../../packages/tasks/src/auth.ts';
+import type {Tasks} from '../../packages/tasks/src/index.ts';
+import type {Operations} from '../../packages/execution/src/operations.ts';
+import type {ConnectorRegistry} from '../../packages/tasks/src/connector-registry.ts';
 
 export class Rules {
   store:Store;auth:Auth;tasks:Tasks;operations:Operations;registry:ConnectorRegistry;

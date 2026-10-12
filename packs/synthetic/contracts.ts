@@ -1,0 +1,3 @@
+export const DefectReviewPack={capabilityPackId:'defect-review',version:'1.0.0',title:'合成记录核对与回写',requiredOperations:['defects.search','defects.comment','docs.fetch','docs.convert','product.version'],conclusionScope:'synthetic-record-review'} as const;
+export const ResourceCheckPack={capabilityPackId:'synthetic-resource-check',version:'1.0.0',title:'合成资源规则核验',requiredOperations:['product.version','product.config.read','product.config.write','docs.fetch'],conclusionScope:'synthetic-configuration-verification'} as const;
+export const PACK_FLOWS={'defect-review':'defect-review/1','synthetic-resource-check':'synthetic-resource-check/1'} as const;

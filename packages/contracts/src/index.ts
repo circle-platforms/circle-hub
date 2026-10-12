@@ -2,18 +2,14 @@ import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
 
 export const API_VERSION = '1.0.0';
-export const FLOW_VERSION = 'synthetic-lbx/1';
-export const MINDMAP_FLOW_VERSION = 'mindmap-compile/1';
-export const PACK_FLOWS={'mindmap-compile':MINDMAP_FLOW_VERSION,'defect-review':'defect-review/1','lbx-healthcheck':'lbx-healthcheck/1','asset-tool':'asset-tool/1','asset-registration':'asset-registration/1','skill-run':'skill-run/1','asset-index':'asset-index/1'} as const;
+export const FLOW_VERSION = 'task/1';
+export const PACK_FLOWS={'asset-tool':'asset-tool/1','asset-registration':'asset-registration/1','skill-run':'skill-run/1','asset-index':'asset-index/1'} as const;
 export const LEASE_TTL_MS = 60_000;
 export const HEARTBEAT_MS = 20_000;
 export const IDEMPOTENCY_WINDOW_MS = 86_400_000;
 export const MAX_BODY_BYTES = 65_536;
 export const MAX_SOURCE_BYTES = 16 * 1024 * 1024;
 export const MAX_WORKER_REPORT_BYTES = 32 * 1024 * 1024;
-export const MINDMAP_CONTRACT_VERSION = 'Excel 输出契约 V1';
-export const MINDMAP_MAPPING_VERSION = '1.0.0';
-export const MINDMAP_PACK_VERSION = '1.0.0';
 
 const identity = (prefix: string) => z.string().regex(new RegExp(`^${prefix}_[A-Za-z0-9][A-Za-z0-9_-]*$`));
 export const TaskId = identity('task');
@@ -54,7 +50,7 @@ export const ConclusionKind = z.enum(['script-conclusion', 'model-judgment', 'un
 export type ConclusionKind = z.infer<typeof ConclusionKind>;
 export const terminalTask = (phase: TaskPhase): boolean => ['delivered', 'failed', 'cancelled'].includes(phase);
 
-export const STANDARD_OPERATIONS = {
+export const STANDARD_OPERATIONS:Record<string,{reads:string[];writes:string[]}> = {
   'product.version': { reads: ['device-state'], writes: [] },
   'product.config.read': { reads: ['device-state'], writes: [] },
   'product.config.write': { reads: ['device-state'], writes: ['device-config'] },
@@ -62,12 +58,13 @@ export const STANDARD_OPERATIONS = {
   'defects.comment': { reads: ['external-system'], writes: ['external-system'] },
   'docs.fetch': { reads: ['knowledge'], writes: [] },
   'docs.convert': { reads: ['knowledge'], writes: ['artifacts-evidence'] },
-  'mindmaps.compile': { reads: ['knowledge'], writes: ['artifacts-evidence'] },
   'tools.invoke': { reads: ['registered-source'], writes: ['artifacts-evidence'] },
   'assets.publish':{reads:['registered-assets'],writes:['asset-registry']},
   'assets.execute':{reads:['registered-assets'],writes:['artifacts-evidence']},
-} as const;
-export const StandardOperation = z.enum(Object.keys(STANDARD_OPERATIONS) as [keyof typeof STANDARD_OPERATIONS, ...Array<keyof typeof STANDARD_OPERATIONS>]);
+};
+const OperationName=z.string().regex(/^[a-z][a-z0-9._-]{0,149}$/);
+export function registerOperation(name:string,effects:{reads:string[];writes:string[]}):void{OperationName.parse(name);const old=STANDARD_OPERATIONS[name];if(old&&canonicalHash(old)!==canonicalHash(effects))throw new Error('Operation effect registration conflicts');STANDARD_OPERATIONS[name]=effects;}
+export const StandardOperation=OperationName.refine(name=>Object.hasOwn(STANDARD_OPERATIONS,name),'Operation is not registered');
 export type StandardOperation = z.infer<typeof StandardOperation>;
 export const Effects = z.object({ reads: z.array(z.string()), writes: z.array(z.string()) });
 export const ConnectorManifest = z.object({
@@ -80,7 +77,7 @@ export const ConnectorManifest = z.object({
 }).superRefine((manifest, context) => {
   const seen = new Set<string>();
   for (const [index, operation] of manifest.operations.entries()) {
-    if (canonicalHash(operation.effects) !== canonicalHash(STANDARD_OPERATIONS[operation.name]) || seen.has(operation.name)) {
+    if (!STANDARD_OPERATIONS[operation.name]||canonicalHash(operation.effects) !== canonicalHash(STANDARD_OPERATIONS[operation.name]) || seen.has(operation.name)) {
       context.addIssue({ code: 'custom', path: ['operations', index], message: 'Operation effect declaration or identity is inconsistent' });
     }
     if (operation.effects.writes.length && operation.idempotency === 'none') {
@@ -91,8 +88,8 @@ export const ConnectorManifest = z.object({
 });
 export type ConnectorManifest = z.infer<typeof ConnectorManifest>;
 
-export const SubmitRequest = z.object({ scopeId: ScopeId, title: z.string().min(1).max(2000).default('Compile mindmap test cases'),
-  idempotencyKey: z.string().min(8).max(200), capabilityPackId: z.enum(['mindmap-compile','defect-review','lbx-healthcheck','asset-tool','asset-registration','skill-run','asset-index']).optional(),
+export const SubmitRequest = z.object({ scopeId: ScopeId, title: z.string().min(1).max(2000).default('Run a task'),
+  idempotencyKey: z.string().min(8).max(200), capabilityPackId:z.string().regex(/^[a-z][a-z0-9-]{0,99}$/).optional(),
   input: z.record(z.string(), z.unknown()).default({}) });
 export type SubmitRequest = z.infer<typeof SubmitRequest>;
 export const DevLoginRequest = z.object({ username: z.string().max(100), password: z.string().max(1000),
@@ -177,26 +174,13 @@ export const TriggerRegistration=z.discriminatedUnion('kind',[
 ]);
 export const BotRegistration=TriggerBase.extend({skillPackId:SkillPackId,triggerAssetId:AssetId,identityPrincipalId:z.string().regex(/^prn_/),channel:z.string().min(1).max(100),inputs:z.record(z.string(),z.unknown())}).strict();
 export const ConnectorEventInput=z.object({externalId:z.string().min(1).max(300),name:z.string().min(1).max(100),payload:z.record(z.string(),z.unknown())}).strict();
-export const MindmapCompileInput = z.object({ sourceRevisionId: SourceRevisionId, sourceSha256: Sha256.optional() });
 export const ArtifactReference = z.object({ artifactId: ArtifactId, sha256: Sha256, size: z.number().int().positive(),
   fileName: z.string(), mediaType: z.enum(['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','application/json','text/plain']),
   downloadPath: z.string() });
 export const UnmappedElement = z.object({ path: z.string(), reason: z.string() });
 export type UnmappedElement = z.infer<typeof UnmappedElement>;
-export const MindmapPack = {
-  capabilityPackId: 'mindmap-compile', version: MINDMAP_PACK_VERSION,
-  title: '脑图用例结构编译', inputFormats: ['xmind-2020-content-json', 'xmind-content-json', 'topic-tree-json'],
-  contractVersion: MINDMAP_CONTRACT_VERSION, mappingRulesVersion: MINDMAP_MAPPING_VERSION,
-  requiredOperations: ['mindmaps.compile'], conclusionScope: 'structural-compilation',
-  inputSchema: { type: 'object', required: ['sourceRevisionId'], properties: {
-    sourceRevisionId: { type: 'string', pattern: '^src_' }, sourceSha256: { type: 'string', pattern: '^[a-f0-9]{64}$' } }, additionalProperties: false },
-} as const;
-export const DefectReviewPack={capabilityPackId:'defect-review',version:'1.0.0',title:'合成缺陷核对与回写',
-  requiredOperations:['defects.search','defects.comment','docs.fetch','docs.convert','product.version'],conclusionScope:'synthetic-defect-review'} as const;
-export const LbxPack={capabilityPackId:'lbx-healthcheck',version:'1.0.0',title:'合成 LBX 健康检查',
-  requiredOperations:['product.version','product.config.read','product.config.write','docs.fetch'],conclusionScope:'synthetic-configuration-verification'} as const;
-export const RuleRequest=z.object({scopeId:ScopeId,capabilityPackId:z.literal('defect-review'),servicePrincipalId:z.string().regex(/^prn_/),
-  bindings:z.object({defects:z.string(),documents:z.string(),product:z.string()}),intervalMs:z.number().int().min(100).max(60_000).default(1000),simulateCommentTimeout:z.boolean().default(false)});
+export const RuleRequest=z.object({scopeId:ScopeId,capabilityPackId:z.string().regex(/^[a-z][a-z0-9-]{0,99}$/),servicePrincipalId:z.string().regex(/^prn_/),
+  bindings:z.record(z.string(),z.string()),intervalMs:z.number().int().min(100).max(60_000).default(1000),simulateCommentTimeout:z.boolean().default(false)});
 export const ADMIN_ROUTES={tasks:'/v1/admin/tasks',workers:'/v1/admin/workers',approvals:'/v1/admin/approvals',events:'/v1/admin/events',audit:'/v1/admin/audit',connectors:'/v1/admin/connectors',restart:'/v1/admin/restart'} as const;
 export const InputRequest = z.object({ inputRevisionId: InputRevisionId, requestId: z.string().optional(),
   response: z.record(z.string(), z.unknown()).optional(),
@@ -215,9 +199,9 @@ export const ApprovalView=z.object({approvalId:z.string(),taskId:TaskId,inputRev
   targetIdentity:z.string(),actionDigest:Sha256,action:ApprovalProposal,status:z.enum(['open','approved','declined']),
   approvedBy:z.string().nullable(),expiresAt:z.string()});
 export type ApprovalView=z.infer<typeof ApprovalView>;
-export const ConclusionRequest=z.object({inputRevisionId:InputRevisionId,kind:ConclusionKind,methodId:z.literal('lbx-healthcheck').optional(),
+export const ConclusionRequest=z.object({inputRevisionId:InputRevisionId,kind:ConclusionKind,methodId:z.string().regex(/^[a-z][a-z0-9-]{0,99}$/).optional(),
   evidenceIds:z.array(z.string().regex(/^evd_/)).max(16).default([]),judgment:z.enum(['supports','refutes','abstained']).default('abstained'),rationale:z.string().max(2000).default('')});
-export const ChecklistPredicate=z.enum(['assessment-completed','configuration-conforms','professional-opinion','defect-reviewed','comment-reconciled','documents-converted']);
+export const ChecklistPredicate=z.string().min(1).max(100);
 export const ChecklistRequest=z.object({inputRevisionId:InputRevisionId,items:z.array(z.object({itemId:z.string().min(1).max(100),requiresFact:z.boolean(),required:z.boolean(),predicate:ChecklistPredicate})).min(1).max(30)});
 export const ChecklistResponse=z.object({inputRevisionId:InputRevisionId,conclusionId:z.string().regex(/^rec_/)});
 export const actionDigest = (value: Pick<OperationRequest, 'inputRevisionId' | 'name' | 'target' | 'targetIdentity' | 'args'>): string => canonicalHash({
@@ -228,7 +212,7 @@ export const Event = z.object({ seq: z.number().int().positive(), taskId: TaskId
   payload: z.record(z.string(), z.unknown()), createdAt: z.string() });
 export type Event = z.infer<typeof Event>;
 
-const registry = {
+const registry:Record<string,[number,string]> = {
   INVALID_PAYLOAD: [400, 'validation'], BODY_TOO_LARGE: [413, 'validation'], UNSUPPORTED_VERSION: [400, 'validation'],
   UNAUTHENTICATED: [401, 'permission'], FORBIDDEN_SCOPE: [403, 'permission'], FORBIDDEN_ACTION: [403, 'permission'],
   FORBIDDEN_TARGET: [403, 'permission'], SELF_APPROVAL: [403, 'permission'],
@@ -239,7 +223,6 @@ const registry = {
   FENCING_STALE: [409, 'lease'], LEASE_EXPIRED: [409, 'lease'], RESOURCE_BUSY: [409, 'lease'],
   CONNECTOR_DISABLED: [409, 'permission'], EVIDENCE_INSUFFICIENT: [409, 'semantic-insufficient'],
   UPSTREAM_TIMEOUT: [504, 'transient'], INTERNAL_ERROR: [500, 'internal'],
-  INVALID_MINDMAP: [422, 'validation'], UNSUPPORTED_MINDMAP: [422, 'validation'],
   OBJECT_NOT_VISIBLE: [404, 'permission'], IDENTITY_UNMAPPED: [409, 'permission'],
   ASSET_NOT_VISIBLE: [404,'permission'],
   ARTIFACT_VERIFICATION_FAILED: [409, 'semantic-insufficient'], SOURCE_HASH_MISMATCH: [409, 'conflict-stale'],
@@ -247,15 +230,16 @@ const registry = {
   SHARING_REQUIRED:[403,'permission'],
   TOOL_NAME_CONFLICT:[409,'conflict-stale'],RESULT_TOO_LARGE:[413,'validation'],
   SKILLPACK_CHECK_FAILED:[422,'validation'],RUNTIME_VERSION_MISMATCH:[409,'conflict-stale'],RUNTIME_FAILED:[502,'execution'],
-} as const;
-export type ErrorCode = keyof typeof registry;
+};
+export function registerErrorCodes(errors:Record<string,[number,string]>):void{for(const [code,definition] of Object.entries(errors)){if(registry[code]&&canonicalHash(registry[code])!==canonicalHash(definition))throw new Error('Error registration conflicts');registry[code]=definition;}}
+export type ErrorCode = string;
 export class ApiError extends Error {
   readonly code: ErrorCode;
   readonly httpStatus: number;
   readonly category: string;
   readonly details: Record<string, unknown>;
   constructor(code: ErrorCode, message: string, details: Record<string, unknown> = {}) {
-    super(message); this.code = code; this.httpStatus = registry[code][0]; this.category = registry[code][1]; this.details = details;
+    super(message); this.code = code; const definition=registry[code]??registry.INTERNAL_ERROR;this.httpStatus = definition[0]; this.category = definition[1]; this.details = details;
   }
 }
 export function requireCondition(condition: unknown, code: ErrorCode, message: string): asserts condition {
@@ -270,22 +254,14 @@ export interface Task {
   inputRevisionId: string; input: Record<string, unknown>; revision: number; flowVersion: string;
   capabilityPackId?: string; packVersion?: string;
 }
-export const WorkerClaim = z.object({ operationId: OperationId, taskId: TaskId, inputRevisionId: InputRevisionId,
-  name: z.literal('mindmaps.compile'), fencingToken: z.number().int().positive(), source: SourceReference,
-  leaseTtlMs: z.literal(60_000), heartbeatMs: z.literal(20_000) });
 export const ExecutionClaim = z.object({ operationId:OperationId,taskId:TaskId,inputRevisionId:InputRevisionId,
   name:StandardOperation,kind:z.enum(['execute','reconcile']),target:z.string(),targetIdentity:z.string(),
   args:z.record(z.string(),z.unknown()),actionDigest:Sha256,parentOperationId:OperationId.optional(),
   fencingToken:z.number().int().positive(),leaseTtlMs:z.literal(60_000),heartbeatMs:z.literal(20_000) });
-export const AnyWorkerClaim = z.union([WorkerClaim,ExecutionClaim]);
+export const AnyWorkerClaim = ExecutionClaim.partial({kind:true,target:true,targetIdentity:true,actionDigest:true}).extend({source:SourceReference.optional(),args:z.record(z.string(),z.unknown()).default({})});
 export const ExecutionReport = z.object({ fencingToken:z.number().int().positive(),inputRevisionId:InputRevisionId,
   status:z.enum(['succeeded','failed','unknown']),output:z.record(z.string(),z.unknown()).default({}),
   error:z.object({ code:z.string(),message:z.string().max(1000),details:z.record(z.string(),z.unknown()).optional() }).optional() });
-export const WorkerReport = z.object({ fencingToken: z.number().int().positive(), inputRevisionId: InputRevisionId,
-  status: z.enum(['succeeded','partial','failed']), artifactBase64: Base64Content.optional(),
-  error: z.object({ code: z.enum(['INVALID_MINDMAP','UNSUPPORTED_MINDMAP','ARTIFACT_VERIFICATION_FAILED','INTERNAL_ERROR']), message: z.string().max(1000) }).optional(),
-}).refine(value => value.status === 'failed' ? !!value.error && !value.artifactBase64 : !!value.artifactBase64 && !value.error,
-  'Provide an artifact for completion or an error for failure');
 export const TaskResult = z.object({ taskId: TaskId, inputRevisionId: InputRevisionId, phase: TaskPhase,
   result:z.unknown().optional(),
   runtime:z.record(z.string(),z.unknown()).optional(),
@@ -303,7 +279,7 @@ export const TaskView = z.object({ taskId: TaskId,tenantId:z.string(),scopeId:Sc
     binding:z.record(z.string(),z.unknown()),expiresAt:z.string(),status:z.string() })).optional(),
 });
 export type TaskView=z.infer<typeof TaskView>;
-export const TaskListQuery=z.object({limit:z.coerce.number().int().min(1).max(100).default(20)});
+export const TaskListQuery=z.object({limit:z.coerce.number().int().min(1).max(100).default(20),kind:z.enum(['work','tool','index']).optional(),capabilityPackId:z.string().regex(/^[a-z][a-z0-9-]{0,99}$/).optional(),after:TaskId.optional()});
 export const SubmittedTask = TaskView.extend({ deduplicated:z.boolean() });
 export const EventPage = z.object({ events:z.array(Event),after:z.number().int().nonnegative() });
 export const CLIENT_ROUTES = {

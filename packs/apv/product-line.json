@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "product-line/1",
+  "id": "apv",
+  "version": "1.0.0",
+  "connectorPackages": ["documents", "build-site", "query-mirror", "environment-view"],
+  "toolAliases": {"documents": "docs", "build-site": "buildsite", "query-mirror": "zentao", "environment-view": "env", "knowledge": "knowledge"},
+  "skills": ["skills/apv-mindmap-compile"],
+  "methods": ["methods/mindmap.ts"],
+  "configuration": "Source addresses and credential references are supplied at runtime",
+  "knowledgeMappings": {
+    "commandAuthority": "The exact build command-tree revision",
+    "releaseAuthority": "Rel_ builds with an explicit publication date",
+    "repairJoin": {"mirrorField": "bugzillaID", "normalizedField": "legacyIssueId", "publicationPredicate": "fixed-identifiers"},
+    "resolvedBuild": "Supplementary build evidence which does not prove a formal release",
+    "platform": "A dimension separate from versionLine"
+  }
+}

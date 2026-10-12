@@ -1,4 +1,4 @@
-import { MINDMAP_CONTRACT_VERSION, MINDMAP_MAPPING_VERSION, MINDMAP_PACK_VERSION, MAX_SOURCE_BYTES,
+import { MAX_SOURCE_BYTES,
   canonicalHash, canonicalJson, newId, requireCondition, sha256, type AuthContext, type Task } from '../../contracts/src/index.ts';
 import type { Store, Transaction } from '../../storage/src/index.ts';
 import type { Auth } from '../../tasks/src/auth.ts';
@@ -49,21 +49,20 @@ export class Knowledge {
       ?? (await tx.query('SELECT * FROM evidence WHERE operation_id=$1 AND kind=$2', [operationId, kind])).rows[0];
     return { evidenceId: row.evidence_id, kind: row.kind, sha256: row.sha256, size: Number(row.size), downloadPath: `/v1/evidence/${row.evidence_id}/content` };
   }
-  async artifact(tx: Transaction, task: Task, sourceRevisionId: string, bytes: Buffer, metadata: Record<string, unknown>): Promise<any> {
+  async artifact(tx: Transaction, task: Task, sourceRevisionId: string, bytes: Buffer, metadata: Record<string, unknown>,descriptor:{key:string;fileName:string;mediaType:string;role:string}): Promise<any> {
     const source = await this.source({ principalId: task.principalId, tenantId: task.tenantId, kind: 'user' }, sourceRevisionId, task.scopeId, tx);
-    const key = canonicalHash({ sourceSha256: source.sha256, packVersion: MINDMAP_PACK_VERSION,
-      contractVersion: MINDMAP_CONTRACT_VERSION, mappingRulesVersion: MINDMAP_MAPPING_VERSION });
+    const key = descriptor.key;
     await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [JSON.stringify([task.tenantId,task.scopeId,key])]);
     let row = (await tx.query('SELECT * FROM artifacts WHERE tenant_id=$1 AND scope_id=$2 AND compilation_key=$3', [task.tenantId, task.scopeId, key])).rows[0];
     if (!row) {
       const digest = sha256(bytes); await this.objects.putObject({ Bucket: 'evidence', Key: digest, Body: bytes });
-      const fileName = `${source.fileName.replace(/\.(json|xmind)$/i, '')}.xlsx`;
+      const fileName = descriptor.fileName;
       row = (await tx.query(`INSERT INTO artifacts(artifact_id,tenant_id,scope_id,source_revision_id,compilation_key,sha256,size,object_key,file_name,media_type,metadata)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$6,$8,'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',$9) RETURNING *`,
-        [newId('art'),task.tenantId,task.scopeId,sourceRevisionId,key,digest,bytes.length,fileName,JSON.stringify(metadata)])).rows[0];
+        VALUES($1,$2,$3,$4,$5,$6,$7,$6,$8,$9,$10) RETURNING *`,
+        [newId('art'),task.tenantId,task.scopeId,sourceRevisionId,key,digest,bytes.length,fileName,descriptor.mediaType,JSON.stringify(metadata)])).rows[0];
     }
-    await tx.query('INSERT INTO artifact_bindings(task_id,input_revision_id,artifact_id,role) VALUES($1,$2,$3,\'workbook\') ON CONFLICT DO NOTHING',
-      [task.taskId,task.inputRevisionId,row.artifact_id]);
+    await tx.query('INSERT INTO artifact_bindings(task_id,input_revision_id,artifact_id,role) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING',
+      [task.taskId,task.inputRevisionId,row.artifact_id,descriptor.role]);
     return this.artifactReference(row);
   }
   async content(ctx: AuthContext, kind: 'artifact' | 'evidence', id: string): Promise<{ reference: any; bytes: Buffer }> {

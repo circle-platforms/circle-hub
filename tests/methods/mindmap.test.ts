@@ -4,8 +4,8 @@ import { test } from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
 import { zipSync, unzipSync, strToU8 } from 'fflate';
 import readWorkbook from 'read-excel-file/node';
-import { compileMindmap, parseMindmap } from '../../packages/methods/src/mindmap.ts';
-import { verifyMindmapWorkbook } from '../../packages/methods/src/mindmap-verify.ts';
+import { compileMindmap, parseMindmap } from '../../packs/apv/methods/mindmap.ts';
+import { verifyMindmapWorkbook } from '../../packs/apv/methods/mindmap-verify.ts';
 import { sha256 } from '../../packages/contracts/src/index.ts';
 
 const samples = new URL('../../references/platform/snapshot/samples/v05/', import.meta.url);
