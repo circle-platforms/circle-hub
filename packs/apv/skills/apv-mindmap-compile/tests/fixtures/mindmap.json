@@ -1,0 +1,39 @@
+[
+  {
+    "data": { "text": "LBX 合成会话验证" },
+    "children": [
+      {
+        "data": { "text": "会话超时" },
+        "children": [
+          {
+            "data": { "text": "默认会话超时为 90 秒", "autoid": "100000000000000001", "priority": 1 },
+            "children": [
+              { "data": { "text": "查看会话超时配置" }, "children": [ { "data": { "text": "显示 timeout 90" } } ] }
+            ]
+          },
+          {
+            "data": { "text": "1. 配置会话超时为 120 [check1]\n2. 查看会话超时配置 [check2]", "autoid": 100000000000000002 },
+            "children": [ { "data": { "text": "[check1] 配置成功\n[check2] 显示 timeout 120\n[check3] 不出现错误提示" } } ]
+          },
+          {
+            "data": { "text": "手工检查会话老化", "autoid": "100000000000000003", "auto": "NO" },
+            "children": [ { "data": { "text": "观察日志" } } ]
+          }
+        ]
+      },
+      {
+        "data": { "text": "健康检查" },
+        "children": [
+          {
+            "data": { "text": "配置健康检查间隔", "autoid": "100000000000000004" },
+            "children": [ { "data": { "text": "配置健康检查间隔为 5 秒" } }, { "data": { "text": "等待两个间隔" } } ]
+          },
+          {
+            "data": { "text": "启用会话镜像", "autoid": "100000000000000005" },
+            "children": [ { "data": { "text": "启用会话镜像" }, "children": [ { "data": { "text": "显示 mirror on" } } ] } ]
+          }
+        ]
+      }
+    ]
+  }
+]

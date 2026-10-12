@@ -1,0 +1,25 @@
+{
+  "id": "apv-mindmap-compile",
+  "version": "0.1.0",
+  "title": "APV 脑图用例编译",
+  "owner": "apv-product-line",
+  "tools": [
+    "buildsite.versions",
+    "buildsite.command_heads",
+    "buildsite.command_param",
+    "buildsite.command_check",
+    "docs.search",
+    "docs.section",
+    "zentao.bug_search",
+    "zentao.bug_detail",
+    "knowledge.claim_submit"
+  ],
+  "triggers": ["manual"],
+  "inputs": {
+    "mindmap": "the mindmap JSON export: a one-element [root] array, cases carry an 18-digit data.autoid",
+    "versionLine": "the product version line, such as 10.4",
+    "build": "optional: the build to write for; the latest formal build of the version line otherwise"
+  },
+  "outputs": ["case.xlsx", "compile_report.json", "delivery_report.md", "unsuccessful_cases.md"],
+  "model": "any capable model; prep, checks and the workbook are scripts"
+}

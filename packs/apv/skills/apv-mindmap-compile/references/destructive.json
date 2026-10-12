@@ -1,0 +1,12 @@
+{
+  "schema": "apv.destructive-commands",
+  "note": "Commands a compiled case must never run on a shared device. Product-line data: change it here, not in the scripts.",
+  "patterns": [
+    "^\\s*(system\\s+)?reboot\\b",
+    "^\\s*(system\\s+)?shutdown\\b",
+    "^\\s*system\\s+(reset|restore)\\b",
+    "^\\s*(clear|erase)\\s+(config|startup|all)\\b",
+    "^\\s*write\\s+erase\\b",
+    "^\\s*(no\\s+)?admin\\s+(user|password)\\b"
+  ]
+}
