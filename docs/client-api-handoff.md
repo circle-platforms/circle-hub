@@ -294,6 +294,8 @@ AssetListQuery/CLIENT_ROUTES.assets 增加 lifecycle（draft/approved/running/di
 
 命令树工具的 build 直接填 sar_ id。也可调用 `buildsite.versions`，args={sourceArtifactId:<sar_ id>}，返回一条精简构建，其 buildId 即该 sar_ id；name 来自 buildName，platform 来自声明，formal=false/releasedOn=null，不能据文件名或上传者声明推成正式发布。分页和过滤沿用 versions 契约，此调用读取本地固定原件，不遍历站点。APV 执行 input={commandSourceAssetId:<来源 assetId>,build:<sar_ id>,...}，函数契约与树 SHA 共同进入审批和投递前检查。实际床构建仍由 env_prepare 确认。
 
+上传来源的 command_tree/command_heads/command_param/command_check 也返回顶层 result.build 与 result.buildId，两者均为实际绑定的 sar_ id，供 gate 直接核对该回执的来源身份。source 块继续带 sourceArtifactId、assetId/assetVersion、commandTreeSha256、buildName、association=operator-declared、origin=uploaded-artifact、live=false。metadata.buildName 只是用户声明的预期构建名，不替代顶层稳定 id；不把其他未知 metadata 字段当成 buildName，也不据上传原件证明床构建。
+
 早期 `/v1/source-artifacts` 辅助登记/查询仍保留兼容，内部使用同一 assets 登记、版本和批准机制；新客户端只使用现有 sources/assets 链路，不新增产品专用命令源路由。CLIENT_ROUTES 已补 assetSubmit/asset/assetLifecycle；SourceArtifactConfiguration 为确切的 configuration 输入形状。
 
 所有工具输入 schema 都增加可选 sourceArtifactId；调用可放 args.sourceArtifactId，或 POST 工具 body 的同名字段，两处有值必须一致。绑定源须与工具任务同 scope、当前已独立批准且原件可读。绑定后仅使用制品原件，不回退到网络；必要时 metadata.requests 可将 `METHOD /path`（或加请求 JSON 的 canonical SHA）映射到 `{path:<制品文件路径>,status:<响应状态>}`，供连接器读取保留响应。结果标 source.origin=uploaded-artifact/live=false，包含来源资产版本/摘要；这不能证明远端当前状态或写效果。原件与读取上下文留 B 证据，索引仍异步。

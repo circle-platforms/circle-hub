@@ -525,3 +525,13 @@ claim 不可用证据仅增加调用者提交项的 details={field:evidence,inde
 AssetListQuery 增 lifecycle 过滤，待批查询 GET /v1/assets?lifecycle=draft，范围和可见性在 SQL 中先过滤再计数/分页。批准锁资产后重新核对元数据可见性和批准权限，version/sha256、自批及作用范围规则不变；批准完成后返回状态和来源 id，原本没有 readers 的审批人不因此获得长期资料访问。源码原件/知识记录在批准前后对无源读权的审批人仍拒绝，凭据即使 draft 也不进入审批发现。专项及原资产验收 **6/6**、typecheck 通过；交接已补精确权限与查询说明，待最终回归、本地提交并交 Claude 复核。未改 Circle、技能副本、私有包或实际 7420 栈。
 
 最终固定 Circle 8b2ceb6 的整套通过：contracts **4/4**、methods **19/19**、acceptance **146/146**、references **7/7**，共 **176/176**、无 skip；typecheck、diff 检查和 **714** 归档核验通过。规模回归 p95 **169ms**，索引活跃时读 **204/167/139/148ms**。新的审批发现、换版、边界和原件拒绝均在完整树内通过，技能 RPC/任务个人范围、bot 私有输出及资源身份回归继续通过。原技能目录仍与 9931f20 同字节。只在 server-s2 本地提交并通过 Otty 交 Claude 复核/部署，不 push；当前已确认部署的是用户报告的 8009864，待其更新后另记录真实审批联验。
+
+## 31：外部命令回执的构建标识兼容
+
+用户报告 8009864 真实流程已通：Circle 上传命令 XML 和函数契约、登记来源（临时写入批准者 readers）、另一身份批准后获得 sar_ id，再绑定命令核对。返回 uploaded-artifact/live=false；同一作者输入在不同固定树上产生合规、参数个数违规或 HEAD_MISSING，符合按真实来源分别判断。这里只记录结构观察，不复制实际构建名、源 id、命令原文、文件或日志；不能把该比较视为床构建已确认。
+
+用户发现上传来源的回执缺 result.build/buildId，技能 gate 无法用同一套字段核对，站点来源已有这些字段。先加强原 HTTP 验收，核对 tree/heads/param/check 的两字段和原 source/证据；实际 **0/1**（build=undefined）。统一四工具返回 build=buildId=实际绑定 sar_，来源说明、原件 SHA、origin/live、确定性命令判定保持。metadata.expectedBuild 是客户端误写，由 Circle 改为既定 buildName，server 不加猜测或兼容字段。
+
+签发状态已在此轮直接答复用户：C 自身资源客户端、轮换/吊销、短期资源令牌、RFC 7662 内省及 SHA 规则分发在 **436a9ec** 完成，合成身份/资源联合和完整回归已通过；真实 HTTPS 可达部署及网关配置仍由用户决定。本代理未连接或修改跳板机/真实设备，未因本地原件核对就声明实际床版本。当前接口修复正在跑来源/RPC/站点联合与最终回归，完成后只本地提交并通过 Otty 交接。
+
+来源/站点/固定 RPC 联合 **15/15**，完整最终树 contracts **4/4**、methods **19/19**、acceptance **146/146**、references **7/7**，共 **176/176**，固定 Circle 8b2ceb6、无 skip。typecheck、diff 和 **714** 归档核验通过；规模 p95 **144ms**、索引活跃读取 **228/121/160/147ms**，原技能副本仍与 9931f20 同字节。本笔只本地提交，经 Otty 交给 Claude，未 push、未更新真实栈。当前用户确认的 7420/8009864 尚不含 436a9ec 的 C 签发；升级后仍待其与用户确定可达 HTTPS、证书信任、客户端配置，再做真实 env_prepare/床构建核对。

@@ -80,7 +80,7 @@ export async function executeTool(packageId:string,handler:string,args:any,profi
       const file=artifact.files.find(file=>file.role==='command-tree');requireCondition(file,'INVALID_PAYLOAD','Selected artifact needs a command-tree file');const raw=originals.find(raw=>raw.path===`/${file.path}`);requireCondition(raw&&raw.sha256===file.sha256,'SOURCE_HASH_MISMATCH','Selected command tree original is absent or changed');
       const commands=await new BuildSite(source).commandsFrom(raw.bytes);requireCondition(commands.length>0,'INVALID_PAYLOAD','Selected command tree has no recognized items');const selected=args.scope?commands.filter(command=>command.scope===args.scope):commands;
       const result=handler==='build.tree'?{commands:selected,parserVersion:'menu-path/2'}:handler==='build.heads'?commandHeads(selected,args.prefix):handler==='build.parameters'?commandParam(selected,args.head):commandCheck(selected,args.commands);
-      return {result:{...result,source:{sourceArtifactId:artifact.sourceArtifactId,assetId:artifact.assetId,assetVersion:artifact.assetVersion,commandTreeSha256:file.sha256,buildName:artifact.metadata.buildName??null,association:'operator-declared',live:false}},raw:[raw],sourceType:'external-artifact'};
+      return {result:{...result,build:artifact.sourceArtifactId,buildId:artifact.sourceArtifactId,source:{sourceArtifactId:artifact.sourceArtifactId,assetId:artifact.assetId,assetVersion:artifact.assetVersion,commandTreeSha256:file.sha256,buildName:artifact.metadata.buildName??null,association:'operator-declared',live:false}},raw:[raw],sourceType:'external-artifact'};
     }
   }
   if(packageId==='build-site'){
