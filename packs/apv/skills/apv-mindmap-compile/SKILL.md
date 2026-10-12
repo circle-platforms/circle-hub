@@ -15,7 +15,7 @@ Read `references/contract.md` before writing any JSON: it has the exact shapes.
 - The version line (for example `10.4`), and a build if the user names one.
 - circle-server tools, offered after `/server login` as `srv_*`: `srv_buildsite_versions`, `srv_buildsite_command_heads`, `srv_buildsite_command_param`, `srv_buildsite_command_check`, `srv_docs_search`, `srv_docs_section`, `srv_zentao_bug_search`, `srv_zentao_bug_detail`, `srv_knowledge_claim_submit`. If they are missing, say so and stop: do not write commands from memory.
 
-The batch folder is `out/`; the scripts write every result there, and these are the files a run on the server hands back. On the server there is nobody to ask: the request is in `inputs.json` (`mindmap`, `versionLine`, optionally `build`), and the mindmap file is next to it.
+The batch folder is `out/`; the scripts write every result there, and these are the files a run on the server hands back. On the server there is nobody to ask: the request is in `inputs.json` (`mindmap`, `versionLine`, optionally `build`), and the mindmap file is next to it. A bot's run also carries `trigger` (the schedule time or the connector event that started it); it changes nothing in the steps, and with no `build` named a scheduled run compiles for the latest formal build of that day.
 
 ## 1. Prep (script)
 

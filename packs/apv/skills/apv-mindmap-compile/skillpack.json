@@ -15,7 +15,9 @@
     "knowledge.claim_submit"
   ],
   "triggers": [
-    "manual"
+    "manual",
+    "schedule",
+    "event"
   ],
   "inputs": {
     "mindmap": "path of the mindmap JSON export in the workspace: a one-element [root] array, cases carry an 18-digit data.autoid",
