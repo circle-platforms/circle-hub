@@ -127,3 +127,5 @@ Bugs_Fixed 页每行的 show_bug.cgi?id 链接承载历史 Bugzilla 编号。将
 实际验证：`node --test tests/acceptance/r2-02-connectors.test.ts` **5/5**；`npm run typecheck` 通过。这证明合成来源上的连接器包行为，尚未证明 C/D 调度、B 持久留证和源 ACL 入库链路；这些会随知识库和工具调用入口接通，不能把包级结果当成整个第 2 幕交付。
 
 用户已确认客户端补充约定：工具名在 tenant 内唯一，多实例用别名；普通调用将缺失/无权限统一隐藏为 `SOURCE_FORBIDDEN`，诊断权限可见完整失败分类；技能包提交可增加 `approvalTaskId`，复用绑定 digest 的任务审批。其他请求形状保持原约定。
+
+Claude 复核 `9a8efd3` 后补充实际构建页结构，本轮先改桩和回归验收，原解析在两个案例失败（4/6）。随后改为大小写混用的 `font + blockquote + a + br + hr`，不依赖 table/tr 或泛化 h2 中的版本号；版本线来自首页链接或文件名。记录 ArrayOS 镜像大小/页面声明 SHA-256、英文/中文 `.txt` MIB，`build on` 空白与正式发布日期分别解析。增量摘要绑定构建段落文字及链接，未变化仅取版本页，单个变化只多取该构建的 XML 与修复清单；验收直接检查 HTTP 请求次数。XML 按声明解码 ISO-8859-1，保留解码前原字节 SHA。`node --test tests/acceptance/r2-02-connectors.test.ts` **6/6**，`npm run typecheck` 通过；来源声明的镜像 SHA 是页面证据，没有下载镜像而声称独立核实它。

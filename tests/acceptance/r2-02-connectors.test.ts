@@ -34,7 +34,10 @@ test('Act R2.2: publication HTML and XML preserve release/platform dimensions an
   const stub=await readonlySources(t),site=new BuildSite(new HttpSource(stub.origin));
   const index=await site.index('/builds/');assert.equal(index.lines[0].title,'PHOTON 10.5 builds');
   assert.equal(index.platforms[0].platform,'kvm');
-  const synced=await site.sync(index.lines[0].path);assert.equal(synced.items.length,3);
+  const synced=await site.sync(index.lines[0].path);assert.equal(synced.items.length,4);
+  assert.equal(synced.items[0].versionLine,'10.5');assert.equal(synced.items.at(-1)!.formal,false);
+  assert.equal(synced.items[0].imageSha256,'a'.repeat(64));assert.equal(synced.items[0].imageSize,'999M');
+  assert.ok(synced.items[0].files.mib!.endsWith('.txt'));assert.ok(synced.items[0].files.mibChinese!.endsWith('.txt'));
   assert.equal(synced.items[0].commands[0].name,'feature.enable');assert.equal(synced.items[0].commands[0].arguments[0].name,'mode');
   assert.equal(site.matches(synced.items,'401').earliestFormal.name,'Rel_PHOTON_10_5_0_101');
   assert.equal(site.matches(synced.items,'401').all.length,2);assert.equal(site.matches(synced.items,'').status,'unknown');
@@ -45,6 +48,19 @@ test('Act R2.2: publication HTML and XML preserve release/platform dimensions an
   assert.ok(!stub.requests.some(r=>r.path.startsWith('/legacy/')));
   assert.ok(synced.evidence.every(e=>e.sha256===sha256(e.bytes)));
   await assert.rejects(site.commandsFrom(Buffer.from('<!DOCTYPE x [<!ENTITY evil SYSTEM "file:///etc/passwd">]><commands>&evil;</commands>')),(e:any)=>e.code==='INVALID_PAYLOAD');
+});
+
+test('Act R2.2: block publication incrementals fetch only changed builds and decode Latin-1 XML',async t=>{
+  const stub=await readonlySources(t),site=new BuildSite(new HttpSource(stub.origin));
+  const line=(await site.index('/builds/')).lines[0];assert.equal(line.versionLine,'10.5');
+  const first=await site.sync(line.path,{}, {versionLine:line.versionLine});
+  const before=stub.requests.length;const same=await site.sync(line.path,first.cursor,{versionLine:line.versionLine});
+  assert.equal(same.items.length,0);assert.equal(stub.requests.length,before+1);
+  stub.state.changedBuild='Rel_PHOTON_10_5_0_109';stub.state.encoding='ISO-8859-1';stub.state.command='feature.caf\u00e9';
+  const previous=stub.requests.length;const changed=await site.sync(line.path,same.cursor,{versionLine:line.versionLine});
+  assert.equal(changed.items.length,1);assert.equal(changed.items[0].name,stub.state.changedBuild);
+  assert.equal(changed.items[0].commands[0].name,'feature.caf\u00e9');assert.equal(stub.requests.length,previous+3);
+  assert.equal(changed.evidence[1].sha256,sha256(changed.evidence[1].bytes));
 });
 
 test('Act R2.2: mirror uses raw authorization and normalizes mixed numeric dates and sentinel accounts',async t=>{

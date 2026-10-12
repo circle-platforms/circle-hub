@@ -6,7 +6,7 @@ import type {TestContext} from 'node:test';
 export async function readonlySources(t:TestContext) {
   const secret=randomBytes(24).toString('hex');
   const requests:{method:string;path:string;authorization?:string;body:any}[]=[];
-  const state={revision:1,mode:'ready',fixed:['401'],command:'feature.enable'};
+  const state={revision:1,mode:'ready',fixed:['401'],command:'feature.enable',changedBuild:'',encoding:'UTF-8'};
   const xml=(command:string)=>`<commands><scope name="configuration"><menu name="service"><item name="${command}"><arguments><arg name="mode" type="string"/></arguments><results><result name="status"/></results></item></menu></scope></commands>`;
   const builds=[
     {name:'Rel_PHOTON_10_5_0_101',released:'2026-01-02',bugs:['401','402']},
@@ -30,13 +30,25 @@ export async function readonlySources(t:TestContext) {
       res.end(`<d:multistatus xmlns:d="DAV:"><d:response><d:href>/dav/manual.txt</d:href><d:propstat><d:prop><d:getetag>"r${state.revision}"</d:getetag><d:getcontentlength>23</d:getcontentlength><d:getlastmodified>Thu, 01 Jan 2026 00:00:00 GMT</d:getlastmodified><d:resourcetype/></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response></d:multistatus>`);return;
     }
     if(url.pathname==='/dav/manual.txt'){res.setHeader('etag',`"r${state.revision}"`);res.end(`Synthetic manual ${state.revision}`);return;}
-    if(url.pathname==='/builds/'){res.end('<html><a href="line.html">PHOTON 10.5 builds</a><a href="kvm.html">kvm builds</a></html>');return;}
-    if(url.pathname==='/builds/line.html'){
-      res.end(`<html><h1>PHOTON 10.5 builds</h1><table>${builds.map(b=>`<tr><td>${b.name}</td><td>Built on ${b.released} 01:00:00</td><td>Released on ${b.released}</td><td><a href="${b.name}.array">Image</a><a href="${b.name}.mib">MIB</a><a href="command_tree-${b.name}.xml">Command tree</a><a href="Bugs_Fixed_with_${b.name}.html">Fixed bugs</a></td></tr>`).join('')}</table></html>`);return;
+    if(url.pathname==='/builds/'){res.end('<html><a href="PHOTON_10_5.html">PHOTON 10.5 builds</a><a href="kvm.html">kvm builds</a></html>');return;}
+    if(url.pathname==='/builds/PHOTON_10_5.html'){
+      const rows=[...builds,{name:'Rel_PHOTON_10_5_0_150',released:'',bugs:[]}];
+      res.end(`<html><h2> PHOTON10.x Builds</h2>${rows.map(b=>{
+        const imageHash=(b.name===state.changedBuild?'b':'a').repeat(64);
+        return `<font color=red>${b.name} (build on  2026-01-01 01:00:00 ): ${b.released?`Released on ${b.released}`:''} </font> </br> <BLOCKQUOTE>
+          <A href="ArrayOS-${b.name}.array">${url.origin}/builds/ArrayOS-${b.name}.array</A> ( 999M , SHA256: ${imageHash} )<BR>
+          <A href="CA-SNMP-MIB-${b.name}.txt">${url.origin}/builds/CA-SNMP-MIB-${b.name}.txt</A><BR>
+          <A href="CA-SNMP-MIB_cn-${b.name}.txt">${url.origin}/builds/CA-SNMP-MIB_cn-${b.name}.txt</A><BR>
+          <A href="command_tree-${b.name}.xml">${url.origin}/builds/command_tree-${b.name}.xml</A><BR>
+          <A href="Bugs_Fixed_with_${b.name}.html">${url.origin}/builds/Bugs_Fixed_with_${b.name}.html</A><BR></BLOCKQUOTE><hr>`;
+      }).join('')}</html>`);return;
     }
     const fixed=/\/Bugs_Fixed_with_(.+)\.html$/.exec(url.pathname);
     if(fixed){const b=builds.find(b=>b.name===fixed[1]);res.end(`<table>${(b?.bugs??[]).map(id=>`<tr><td><a href="/legacy/show_bug.cgi?id=${id}">${id}</a></td></tr>`).join('')}</table>`);return;}
-    if(url.pathname.includes('/command_tree-')){res.end(xml(state.command));return;}
+    if(url.pathname.includes('/command_tree-')){
+      const content=`<?xml version="1.0" encoding="${state.encoding}"?>${xml(state.command)}`;
+      res.end(Buffer.from(content,state.encoding==='ISO-8859-1'?'latin1':'utf8'));return;
+    }
     if(url.pathname==='/plmquery/product/all/'){res.end(JSON.stringify({code:1000,data:[{id:7,name:'Synthetic product'}]}));return;}
     if(url.pathname==='/plmquery/bug/'){
       res.end(JSON.stringify({code:1000,data:[{id:51,title:'Synthetic defect',severity:2,pri:3,status:'resolved',product:7,assignedTo:'closed',openedDate:'2026-01-01T08:00:00',resolvedDate:'0000-00-00 00:00:00',deleted:0}]}));return;

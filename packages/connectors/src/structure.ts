@@ -9,7 +9,10 @@ export function xmlTree(bytes:Buffer):XmlNode {
   parser.on('error',()=>{throw new ApiError('INVALID_PAYLOAD','Source XML is malformed');});
   parser.on('opentag',tag=>{requireCondition(stack.length<100,'INVALID_PAYLOAD','XML nesting exceeds the limit');const node={name:tag.name.split(':').at(-1)!,attributes:tag.attributes as Record<string,string>,text:'',children:[]};stack.at(-1)!.children.push(node);stack.push(node);});
   parser.on('text',value=>{stack.at(-1)!.text+=value;});parser.on('cdata',value=>{stack.at(-1)!.text+=value;});
-  parser.on('closetag',()=>{stack.pop();});parser.write(bytes.toString('utf8')).close();return root;
+  const encoding=bytes.subarray(0,300).toString('ascii').match(/<\?xml\b[^?]*encoding\s*=\s*["']([^"']+)["']/i)?.[1]?.toLowerCase()??'utf-8';
+  requireCondition(['utf-8','utf8','iso-8859-1','latin1','us-ascii'].includes(encoding),'INVALID_PAYLOAD','XML encoding is not supported');
+  const decoded=bytes.toString(['iso-8859-1','latin1'].includes(encoding)?'latin1':'utf8');
+  parser.on('closetag',()=>{stack.pop();});parser.write(decoded).close();return root;
 }
 export function xmlNodes(node:XmlNode,name:string):XmlNode[]{return [...(node.name===name?[node]:[]),...node.children.flatMap(child=>xmlNodes(child,name))];}
 export type HtmlNode=DefaultTreeAdapterTypes.Node;
