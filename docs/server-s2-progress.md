@@ -177,3 +177,7 @@ RPC prompt/turn/tool/settled 等真实事件进入 C。只在 agent_settled、�
 实际 `r2-05-skillpacks.test.ts` **5/5**；完整 `npm test` contracts **4/4**、methods **6/6**、acceptance **52/53**，仍仅核心迁出守卫失败；参考另跑 **7/7**、714 原件完整，typecheck 通过。实际 CLI 入口字节 SHA 在运行收据登记；Git HEAD/版本校验不是整个编译 bundle 的发布证明。本阶段无付费模型、真实源/设备或部署，未 push。已更新交接文档为路由开放，并准备通知 Claude 从原会话推送 APV 包；APV 分支尚未合入/在 server 上重跑，auto-consolidation/bot、产品自动声明发布和核心迁出仍未完成。
 
 只读查询确认 [PR #5](https://github.com/qingshanfeihu/circle-server/pull/5) 仍 OPEN，未触发 rebase。下一步按用户排队要求先改按需构建抓取，再继续第 6、7 幕。
+
+### 第 5 幕独立复核与 Circle 版本选择
+
+用户提供 Claude 对 `7be8576` 的独立复核：contracts 4/4、methods 6/6，在单独固定 d9f8ec6 的 Circle 构建上 r2-05 **5/5**。其他工作树向前移动导致 RUNTIME_VERSION_MISMATCH，是版本门禁按预期拒绝，不是业务失败。按用户建议，真实 CLI 验收现在明确读 `CIRCLE_BIN` 和 `CIRCLE_COMMIT`，缺少时三个用例标出原因并跳过；运行器的 profile/版本门禁保持严格。实际本机指定新提交 `3f08f0ed4216c356bbbd7db49531cb3ea22caf97`（1.1.1）联合复验目录/RPC **9/9**，没有跳过。新提交包含稳定 srv_ 后缀消歧、--file 输入和 X-Scope-Id，活动交接已更新。APV 分支更新到 `e8ecbc8`，outputs 改到 out/ 并读 inputs.json；尚未合入本分支。

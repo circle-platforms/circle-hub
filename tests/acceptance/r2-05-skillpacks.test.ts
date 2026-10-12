@@ -1,15 +1,15 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {writeFile,readFile,readdir} from 'node:fs/promises';
-import {fileURLToPath} from 'node:url';
 import {canonicalHash,sha256} from '../../packages/contracts/src/index.ts';
 import {setup,type Harness,until} from './harness.ts';
 import {readonlySources} from '../fixtures/readonly-sources.ts';
 import {scriptModel} from '../fixtures/script-model.ts';
 import {privateRequest} from '../../packages/runtime/src/private-ipc.ts';
 
-const circleCommit='d9f8ec6261597bc2cfcfa91dc8903965a6df7fe7';
-const circleBin=process.env.CIRCLE_BIN??fileURLToPath(new URL('../../../circle-extension-capabilities/dist/cli.js',import.meta.url));
+const circleCommit=process.env.CIRCLE_COMMIT??'';
+const circleBin=process.env.CIRCLE_BIN??'';
+const runtimeTest={skip:(!circleBin||!circleCommit)&&'Set CIRCLE_BIN and CIRCLE_COMMIT to verify a real pinned Circle build'};
 const manifest={id:'rpc-fixture',version:'1.0.0',title:'Synthetic RPC fixture',owner:'synthetic-team',tools:['docs.search'],triggers:['manual'],inputs:{},outputs:['result.json'],model:'scripted'};
 const bytes=Buffer.from('---\nname: rpc-fixture\ndescription: Run the synthetic RPC acceptance.\n---\nSYNTHETIC_SKILL_LOADED\nUse docs.search and write result.json in this workspace.');
 const submission={manifest,files:[{path:'SKILL.md',base64:bytes.toString('base64'),sha256:sha256(bytes)}],trial:{toolCalls:[{name:'docs.search',argsSha256:canonicalHash({query:'service'}),ok:true}],outputs:[{path:'result.json',sha256:sha256('{"synthetic":true}')}]}};
@@ -57,7 +57,7 @@ test('Act R2.5: existing approvals bind the package digest prohibit self approva
   assert.equal((await h.request(`/v1/tasks/${pack.approvalTaskId}/approvals`))[0].status,'open');
 });
 
-test('Act R2.5: real pinned Circle RPC loads the skill discovers scoped tools and delivers SHA checked artifacts',async t=>{
+test('Act R2.5: real pinned Circle RPC loads the skill discovers scoped tools and delivers SHA checked artifacts',runtimeTest,async t=>{
   const stub=await readonlySources(t),model=await scriptModel(t),h=await setup(t);
   await prepare(h,stub.origin,{circleBin,circleCommit,circleVersion:'1.1.1',model:{kind:'scripted',base_url:model.url,model:'scripted-fixture',protocol:'openai',api_key:model.key}});
   const pack=await submit(h);await approve(h,pack);await h.startWorker();
@@ -72,13 +72,13 @@ test('Act R2.5: real pinned Circle RPC loads the skill discovers scoped tools an
   await h.reject(`/v1/tasks/${accepted.taskId}/result`,undefined,'FORBIDDEN_SCOPE','bob');
 });
 
-test('Act R2.5: a mismatched Circle Git commit fails before any model request',async t=>{
+test('Act R2.5: a mismatched Circle Git commit fails before any model request',runtimeTest,async t=>{
   const stub=await readonlySources(t),model=await scriptModel(t),h=await setup(t);await prepare(h,stub.origin,{circleBin,circleCommit:'0'.repeat(40),circleVersion:'1.1.1',model:{kind:'scripted',base_url:model.url,model:'scripted-fixture',protocol:'openai',api_key:model.key}});
   const pack=await submit(h);await approve(h,pack);await h.startWorker();const run=await h.request(`/v1/skillpacks/${pack.skillPackId}/runs`,{inputs:{},idempotencyKey:'bad-runtime-commit'});await h.phase(run.taskId,'failed');
   assert.equal((await h.request(`/v1/tasks/${run.taskId}/result`)).error.code,'RUNTIME_VERSION_MISMATCH');assert.equal(model.requests.length,0);
 });
 
-test('Act R2.5: run delegation stays off disk and cancellation observes local exit while freezing an unknown remote outcome',async t=>{
+test('Act R2.5: run delegation stays off disk and cancellation observes local exit while freezing an unknown remote outcome',runtimeTest,async t=>{
   const stub=await readonlySources(t),model=await scriptModel(t),h=await setup(t);model.state.hold=true;
   await prepare(h,stub.origin,{circleBin,circleCommit,circleVersion:'1.1.1',model:{kind:'scripted',base_url:model.url,model:'scripted-fixture',protocol:'openai',api_key:model.key}});
   const pack=await submit(h);await approve(h,pack);await h.startWorker();const run=await h.request(`/v1/skillpacks/${pack.skillPackId}/runs`,{inputs:{},idempotencyKey:'cancel-runtime'});
