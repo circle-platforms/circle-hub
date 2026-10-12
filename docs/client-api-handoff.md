@@ -1,11 +1,11 @@
 # Circle 客户端接口交接：普通用户读取与脑图编译
 
-2026-10-12。实现位于隔离工作树 `/Users/jiangyongze/Public/circle-server-s1`，分支 `server-s1`。Circle 和连接插件由 Claude 负责；本分支只提供 server/worker。协议原件是 `packages/contracts/src/index.ts`：`CLIENT_ROUTES`、请求/回应 schema、`TaskListQuery`、`TaskView`、`ApprovalView`、`TaskResult`、`EventPage`、标准操作与 `MindmapPack`。API 版本 `1.0.0`，能力包与映射规则版本 `1.0.0`，Excel 契约为 `Excel 输出契约 V1`。
+2026-10-12。第一阶段实现位于隔离工作树 `../circle-server-s1`，分支 `server-s1`；第二阶段增补在 `../circle-server-s2` 的 `server-s2` 分支。Circle 和连接插件由 Claude 负责；本分支只提供 server/worker。协议原件是 `packages/contracts/src/index.ts`：`CLIENT_ROUTES`、请求/回应 schema、`TaskListQuery`、`TaskView`、`ApprovalView`、`TaskResult`、`EventPage`、标准操作与 `MindmapPack`。API 版本 `1.0.0`，能力包与映射规则版本 `1.0.0`，Excel 契约为 `Excel 输出契约 V1`。
 
 ## 启动和登录
 
 ```sh
-cd /Users/jiangyongze/Public/circle-server-s1
+cd ../circle-server-s1
 npm ci
 npm run dev:stack
 ```
@@ -202,7 +202,7 @@ E 的 `command-tree/1.0.0` 规则采用 POSIX quote/escape 分词并转小写，
 
 版本列表与同步只取首页/版本页元数据，**不下载任何 XML/修复清单**。命令 XML 在对应构建首次被命令工具用到时获取，内容按 SHA 持久缓存，索引绑定调用身份/资产修订/来源与构建段落修订，不跨个人凭据复用；元数据变化重新取。修复清单只有 fixed_releases 查询才按指定候选取，结果声明 coverage.completeSite=false，不把候选中的最早发布冒充全站最早。运行时 profile 可配置 requestConcurrency（1–8，默认 2）与 requestIntervalMs（构建工具默认 200）；相同连接器调用的请求同时受并发与开始间隔限制。
 
-个别构建无 fixed 链接或页面失败时保留其他答案，coverage.read/missing[{build,code}] 分别列出已读/缺失，全部缺失时 unknown；普通身份缺失/无权限代码统一隐藏。缓存目前无淘汰；若发布站原地替换 XML 而段落摘要不变，会沿用旧缓存，不能用该缓存证明源站字节仍未变化。
+个别构建无 fixed 链接或页面失败时保留其他答案，coverage.read/missing[{build,code}] 分别列出已读/缺失，全部缺失时 unknown；普通身份缺失/无权限代码统一隐藏。`coverage.earliestFormalCertain` 仅针对指定候选：已读到正式命中、且没有日期更早或相同的正式构建清单缺失才为 true；否则保留观察到的 earliestFormal 并标为不确定。缓存目前无淘汰；若发布站原地替换 XML 而段落摘要不变，会沿用旧缓存，不能用该缓存证明源站字节仍未变化。
 
 来源地址只在运行时配置文件提供。`CIRCLE_SERVER_CONNECTOR_PROFILES` 指向仓库外的 JSON 文件，形状为 `{"profiles":{"<配置引用>":{"origin":"<运行时来源>","root":"<文档根>","index":"<构建首页>","payloadField":"data"}}}`。连接器资产 configuration 使用 `packageId`（documents/build-site/query-mirror/environment-view/knowledge）、`runtimeProfileRef`、可选 alias；个人凭据走 `/v1/assets/{id}/credentials`，之后在新资产修订的 declaration.credentials 中引用。PLM 的 JWT 只在 worker 内注入，无 Bearer；值不回到注册/目录/调用响应或审计。当前仅合成来源验收，真实源冒烟仍需授权。
 
@@ -214,7 +214,7 @@ E 的 `command-tree/1.0.0` 规则采用 POSIX quote/escape 分词并转小写，
 
 `POST /v1/skillpacks` 接收 `{manifest,files:[{path,base64,sha256}],trial:{toolCalls:[{name,argsSha256,ok}],outputs:[{path,sha256}]}}`。manifest 含 id/version/title/owner/tools[]/triggers[]/inputs/outputs/model，trigger 为 manual/schedule/event；owner 仅为声明，认证身份来自 token。使用可选请求头 `X-Scope-Id`；只有一个授权 scope 时可省略，多 scope 必须明确。响应 `{skillPackId,digest,status,check:{undeclaredTools,missingTools},approvalTaskId}`；用户确认额外 approvalTaskId 复用第一阶段审批。missingTools 是声明但当前调用者目录不可用的工具，undeclaredTools 是试跑用到但未声明的工具；提交、批准、运行都重查目录。目录是 `GET /v1/skillpacks`，运行是 `POST /v1/skillpacks/{id}/runs` body `{inputs,idempotencyKey}`，返回 `{taskId}`。提交状态不能代替批准，批准绑定 digest，输入或目标修订变化需重新核对。
 
-Circle 运行边界由用户确认改为正式 CLI RPC；当前固定 Git 提交 `3f08f0ed4216c356bbbd7db49531cb3ea22caf97`，同时核对 `--version` 为 1.1.1，禁止 import Circle 源码或改 foundation。开发期 CIRCLE_BIN 在运行时指向本机构建。每次运行独立 CIRCLE_HOME 与 HOME，准备可信 workspace、技能目录和输入；启动 `node <CIRCLE_BIN> --mode rpc --extensions --yolo <workspace>`，发 prompt，读 JSON 事件直到 agent_settled；取消先 abort/关 stdin，超时 kill，记录本地停止与远端未知的区别。运行 token 短期且只经环境注入，不落盘；模型使用脚本桩，付费模型仍需授权。详见 Circle 仓库 `docs/rpc.md` 与 `docs/cli.md#json-events`。
+Circle 运行边界由用户确认改为正式 CLI RPC；当前固定 Git 提交 `8b2ceb6df620832bfd7925aede93bb35f4a605a2`，同时核对 `--version` 为 1.1.1，禁止 import Circle 源码或改 foundation。开发期 CIRCLE_BIN 在运行时指向独立固定提交的本机构建；不要指向仍在提交的客户端工作树。每次运行独立 CIRCLE_HOME 与 HOME，准备可信 workspace、技能目录和输入；启动 `node <CIRCLE_BIN> --mode rpc --extensions --yolo <workspace>`，发 prompt，读 JSON 事件直到 agent_settled；取消先 abort/关 stdin，超时 kill，记录本地停止与远端未知的区别。运行 token 短期且只经环境注入，不落盘；模型使用脚本桩，付费模型仍需授权。详见 Circle 仓库 `docs/rpc.md` 与 `docs/cli.md#json-events`。
 
 POST 成功是 201，status 初始 `candidate`，额外返回 manifest/ownerPrincipalId/scopeId/assetId/assetVersion 供展示；ownerPrincipalId 才是实际登记者。文件路径必须是安全相对路径，必有 SKILL.md，按原字节 SHA 核对，每份/总量均最多 16 MiB；整个清单、文件摘要、试跑记录参与 digest。相同人员/scope/内容复用 skillPackId 与 approvalTaskId；原版本不能改字节，变更需要新版本。试跑是客户端记录的证据声明，机械检查只能核对声明工具/可用目录，不能凭它宣称业务正确或确实试跑完成。
 
@@ -226,7 +226,7 @@ POST 成功是 201，status 初始 `candidate`，额外返回 manifest/ownerPrin
 
 ```json
 {"circleBin":"<本机构建的 dist/cli.js>",
- "circleCommit":"3f08f0ed4216c356bbbd7db49531cb3ea22caf97","circleVersion":"1.1.1",
+ "circleCommit":"8b2ceb6df620832bfd7925aede93bb35f4a605a2","circleVersion":"1.1.1",
  "model":{"kind":"scripted","base_url":"<本机脚本模型 /v1>","model":"scripted-fixture","protocol":"openai","api_key":"<运行时值>"}}
 ```
 
@@ -242,8 +242,14 @@ POST 成功是 201，status 初始 `candidate`，额外返回 manifest/ownerPrin
 
 `POST /v1/automations/triggers` 登记草稿资产：共同字段 scopeId/version/name，定时追加 `{kind:"schedule",intervalMs,startsAt}`，事件追加 `{kind:"event",sourceAssetId,eventName}`。`POST /v1/automations/bots` 共同字段追加 skillPackId/triggerAssetId/identityPrincipalId/channel/inputs；第一版 identity 必须是登记者本人，channel 为 `circle-events`。组件须同 scope，技能 manifest 必须允许相应 trigger。需要 automations.manage，资产经独立人员批准并由主人激活才运行；不跳过资产生命周期。
 
+`intervalMs` 至少 60000。迟批或关机错过的定时 occurrence 合并成最近一次到期运行，不逐条补跑。任务 `inputs.trigger`、`bot.started.payload.trigger` 和 runs 的 trigger 均含 `{kind:"schedule",dueAt,firstDueAt,skippedOccurrences}`；firstDueAt 是原游标，dueAt 是本次实际受理的到期点，下一游标严格推进到未来。
+
 `GET /v1/automations/bots/{assetId}/runs` 返回个人任务及 occurrenceKey/channel/published，需 automations.read。`POST /v1/connectors/{assetId}/events` 接收 `{externalId,name,payload}`，需 connectors.events、当前源主人及运行中的连接器；同源/范围/外部 id 去重，不同 payload 同 id 拒绝。正常连接器读收据也会按 path/SHA 生成 source.changed；不连接旧缺陷系统。
+
+runs 保留上述字段，追加 `status:"admitted"|"failed"`、`trigger`、`error`。status 描述受理结果：admitted 的 taskId 非空，最终执行结果仍从该任务读取；failed 的 taskId 为 null，error 含失败分类和不带来源细节的说明，客户端直接显示 error。每个 occurrence 的受理 ApiError 独立回滚并保存失败，事件游标继续前进，不重复尝试已拒绝的事件；后续新事件照常受理。失败受理没有任务，不伪造 bot.output。
 
 定时 dueAt 和事件游标、任务/唯一 occurrence 同事务保存，重启重读不会丢/重派。C 最终新增 bot.output，含 channel/botAssetId/status/artifacts/evidence/unknowns；输出只在 Circle 事件流，渠道注册可扩展，没有企业微信桩。
 
-`knowledge.shared_fragments {limit?}` 是 read/sync：只取 caller 明确允许共享、当前可见的 shared-session 修订，返回原片段、工具返回和 Evidence；未共享输入不进入整理。目录现在正确导出输入 schema，带默认值字段仍可省略。`packs/common/skills/knowledge-consolidation` 的 TypeScript 脚本只规范/去重有证据的结构化 facts/practices/corrections，真实文本的语义抽取没有验收；整理运行使用脚本模型，候选仍为 personal/consolidated，产品优先、冲突保留、不自动发布团队快照。普通 bot 读者不能看他人个人任务/候选。
+`knowledge.shared_fragments {limit?,after?}` 是 read/sync：只取 caller 明确允许共享、当前可见的 shared-session 修订，返回原片段、工具返回和 Evidence；未共享输入不进入整理。limit 默认 20、范围 1–100，每页片段和未映射条目的总数受限；SQL 按创建时间/recordId 限量读源，游标也记录同一源内的片段位置。`result.nextCursor` 是不透明字符串或 null，非空时传作下一次 after；游标绑定身份和 scope，重启可继续，同键回放原页，后续修订保持各自来源证据。目录正确导出输入 schema，默认值参数可省略。`packs/common/skills/knowledge-consolidation` 逐页处理，其 TypeScript 脚本只规范/去重有证据的结构化 facts/practices/corrections，真实文本的语义抽取没有验收；候选仍为 personal/consolidated，产品优先、冲突保留、不自动发布团队快照。普通 bot 读者不能看他人个人任务/候选。
+
+worker 的回报处理若因 ApiError 拒绝，知识/制品写入回滚，操作与任务保存为 failed、释放租约，保留原回报 hash 供同回报幂等重传；不会停留 running 阻塞下一次调用。租约、fence、当前输入校验仍在回报处理前执行，迟到或越权回报仍拒绝。

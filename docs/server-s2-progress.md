@@ -211,3 +211,19 @@ RPC prompt/turn/tool/settled 等真实事件进入 C。只在 agent_settled、�
 先增加 missing-link/404 的合成回归，确认抛 SOURCE_ABSENT 失败，再把 releasesFor 改为逐构建 Promise.allSettled。成功清单保留匹配、最早正式发布和原件 evidence；失败进入 coverage.missing（build/code），coverage.read 保留实际读到的构建。status 只由已读清单决定，全部缺失为 unknown，不因一份缺失丢掉其他答案；不宣称候选集合覆盖全站。普通工具结果仍把缺失/无权限分类统一隐藏，诊断者才看到完整来源分类。缓存原地替换/淘汰限制继续保留。
 
 实际 `r2-buildsite-missing` + lazy + connectors **10/10**，typecheck 通过。没有连接真实站点。这项与第 6 幕分笔提交，下一步处理第 7 幕及自动产品来源提炼/第二产品线。
+
+## 15：第 6 幕独立复核后的故障修复
+
+用户提供 Claude 在临时工作树的独立复核：4700ef0 contracts 4/4、methods 7/7、acceptance 58/59，没有 skip，唯一红项 S2.7；2cdbca4 missing/lazy/r2-02 10/10，缺清单时 unknown 和 coverage.missing 正确。另复现晚批补跑洪泛、共享片段超过默认 20 后回报事务回滚而操作停在 running；单事件 ApiError 毒化整批是代码阅读发现，本轮新增回归确认同样失败。
+
+先写四条验收并运行 **0/4**。定时案例进一步单跑确认原行为 31 个运行而预期 1；事件受理失败没有 runs 记录、游标停住；21 个共享来源首次读取留下 running；错误证据回报同样不能进入 failed。随后实现最近一次到期合并：原 due 游标到当前最新 due 之间只受理一次，skippedOccurrences/firstDueAt/dueAt 进输入、bot.started 事件与 runs，下一 due 严格在未来。新登记 intervalMs 下限 60000，runtime 也拒绝旧的过小间隔。bot 激活状态在受理事务内再次锁定核对。新增第 16 号迁移，不修改已经执行的迁移字节。
+
+每个 occurrence 用 savepoint 隔离受理 ApiError，失败单独保存 status/error/trigger、taskId=null、审计原因并推进游标；后续新事件不受影响。没有为失败受理伪造任务或 bot.output。runs 保留 occurrenceKey/channel/published，新增字段已写客户端交接，Claude 将相应显示 error。非 ApiError 的数据库/程序故障仍回滚，不把它伪装成已处理事件。
+
+共享片段改为 SQL 级 LIMIT 和基于源创建时间、recordId、片段 offset 的 after 游标，原件/历史引用仍验 SHA 与当前权限。默认 20、边界 1–100；返回 nextCursor，null 表示本次已到末尾。支持同一源包含超过一页的片段、来源之间翻页、重启续页、同键原页回放和身份隔离。索引在第 17 号迁移登记；整理 SKILL.md 明确逐页处理，未宣称每次 bot 自动保存已整理位置。
+
+托管 worker 回报处理用 savepoint 回滚被拒绝的知识/制品写入，再落 failed 操作/任务、删除租约，并保存原回报 hash；迟到 fence、租约和输入校验仍在前置门禁。修复四条回归 **4/4**、typecheck 通过。来源返回 JSON null/非片段结构明确记 unmapped，不因访问空结构挂起。缺修复清单的补充验收先失败后通过：若有早于或同日于观察 earliestFormal 的正式构建清单未读，coverage.earliestFormalCertain=false；这个标志只覆盖候选集合，不宣称全站最早。
+
+联验期间 Circle 的活动工作树由 cf32f7f 前进，严格 Git 门禁拒绝三个实际 RPC 用例。用户确认新提交 `8b2ceb6df620832bfd7925aede93bb35f4a605a2`（1.1.1）已构建，并提供固定 detached 工作树；后续验收使用其运行时 CIRCLE_BIN/CIRCLE_COMMIT，地址和本机路径不入库。Claude 正在 7420 的独立 2cdbca4 dev stack 做 Otty bot 联验，本轮没有操作该进程，也没有修改 Circle。
+
+实际只读资产/连接器/知识/工具/按需/缺清单/分页专项 **25/25**。在用户提供的固定 8b2ceb6 构建上完整运行：contracts **4/4**、methods **7/7**、acceptance **63/64**，**无 skip**，实际 RPC、取消与定时整理均通过；唯一红项仍是已有 S2.7 的 15 处专业核心迁出。因 npm test 在这一红项处退出，另行执行 test:references **7/7**，verify:references 验证 **714** 原件。typecheck 和 diff 检查通过；相同被拒回报的幂等重传另补验证。第 7 幕、自动产品知识声明/快照和第二产品线仍未完成，没有宣称全阶段通过或远端停止，未 push。

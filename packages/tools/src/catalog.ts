@@ -86,7 +86,7 @@ export class ToolCatalog {
       const policy=await this.auth.policy(actor,tx);
       if(Array.isArray(result?.coverage?.missing)&&!policy.grants.includes('sources.diagnose'))result={...result,coverage:{...result.coverage,missing:result.coverage.missing.map((item:any)=>({...item,code:['SOURCE_ABSENT','SOURCE_FORBIDDEN'].includes(item.code)?'SOURCE_FORBIDDEN':item.code}))}};
       if(item.definition.handler==='candidate.submit')result=await this.knowledge.candidateFromReturns(tx,actor,task.scopeId,task.taskId,operation.args.input);
-      else if(item.definition.handler==='consolidation.fragments'){const selected=await this.knowledge.sharedFragments(tx,actor,task.scopeId,operation.args.input.limit??20);result=selected.result;evidence.push(...selected.evidence);}
+      else if(item.definition.handler==='consolidation.fragments'){const selected=await this.knowledge.sharedFragments(tx,actor,task.scopeId,operation.args.input.limit??20,operation.args.input.after);result=selected.result;evidence.push(...selected.evidence);}
       else{requireCondition(Array.isArray(report.output.raw)&&report.output.raw.length>0,'EVIDENCE_INSUFFICIENT','Read tools require original returns');
         for(const raw of report.output.raw){evidence.push(await this.knowledge.capture(tx,actor,task.scopeId,item.row.asset_id,{...raw,sourceType:raw.sourceType??report.output.sourceType}));await this.observed?.(tx,actor,item.row.asset_id,raw);}}
     }

@@ -3,6 +3,7 @@ import {ApiError,Base64Content,MAX_SOURCE_BYTES,canonicalHash,canonicalJson,newI
 import type {Store,Transaction} from '../../storage/src/index.ts';
 import type {Auth} from '../../tasks/src/auth.ts';
 import type {Knowledge} from './index.ts';
+import {z} from 'zod';
 
 type Row=Record<string,any>;
 const permit=(readers:string[],id:string)=>readers.includes(id)||readers.includes('*');
@@ -117,20 +118,46 @@ export class KnowledgeGraph {
     const quote=await this.save(tx,ctx,'Evidence',scopeId,canonicalHash([source.recordId,digest]),{sourceRecordId:source.recordId,start:0,end:bytes.length,sha256:digest,text:bytes.toString(),path:payload.path},[source.recordId,...evidence.map(e=>e.record_id)],{category:'consolidated',sourceType:'skill-run',visibility:'personal',state:'observed',digest});
     return this.claim(ctx,{scopeId,subject:input.claim.subject,predicate:input.claim.predicate,value:input.claim.value,conditions:input.claim.conditions??{},evidenceIds:[quote.recordId],origin:'model'},tx);
   }
-  async sharedFragments(tx:Transaction,ctx:AuthContext,scopeId:string,limit:number):Promise<any>{
-    await this.auth.check(ctx,'knowledge.read',scopeId,tx);const rows=(await tx.query(`SELECT r.* FROM knowledge_records r JOIN knowledge_source_heads h ON h.record_id=r.record_id
+  async sharedFragments(tx:Transaction,ctx:AuthContext,scopeId:string,limit:number,after?:string):Promise<any>{
+    await this.auth.check(ctx,'knowledge.read',scopeId,tx);
+    requireCondition(Number.isSafeInteger(limit)&&limit>=1&&limit<=100,'INVALID_PAYLOAD','Fragment page limit must be between 1 and 100');
+    const binding=canonicalHash([ctx.tenantId,scopeId,ctx.principalId]);
+    const cursorSchema=z.object({binding:z.string(),at:z.iso.datetime(),id:z.string().regex(/^knr_[a-f0-9]{32}$/),offset:z.number().int().min(0).max(MAX_SOURCE_BYTES),done:z.boolean()}).strict();
+    let cursor:z.infer<typeof cursorSchema>|undefined;
+    if(after){
+      try{const bytes=Buffer.from(after,'base64url');if(bytes.toString('base64url')!==after)throw new Error('Noncanonical cursor');cursor=cursorSchema.parse(JSON.parse(bytes.toString()));}
+      catch{throw new ApiError('INVALID_PAYLOAD','Shared fragment cursor is invalid');}
+      requireCondition(cursor.binding===binding,'INVALID_PAYLOAD','Shared fragment cursor belongs to another identity or scope');
+    }
+    const rows=(await tx.query(`SELECT r.*,to_char(r.created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_time
+      FROM knowledge_records r JOIN knowledge_source_heads h ON h.record_id=r.record_id
       WHERE r.tenant_id=$1 AND r.scope_id=$2 AND r.owner_id=$3 AND r.kind='SourceRevision' AND r.knowledge_category='consolidated' AND r.source_type='shared-session'
-      AND r.payload->'sharing'->>'allowed'='true' ORDER BY r.created_at,r.record_id`,[ctx.tenantId,scopeId,ctx.principalId])).rows;
+      AND r.payload->'sharing'->>'allowed'='true'
+      AND (r.payload->'acl'->'sourceReaders' ? $3 OR r.payload->'acl'->'sourceReaders' ? '*')
+      AND (r.payload->'acl'->'platformReaders' ? $3 OR r.payload->'acl'->'platformReaders' ? '*')
+      AND ($4::timestamptz IS NULL OR (r.created_at,r.record_id)>($4::timestamptz,$5::text)
+        OR ($6::boolean AND (r.created_at,r.record_id)=($4::timestamptz,$5::text)))
+      ORDER BY r.created_at,r.record_id LIMIT $7`,[ctx.tenantId,scopeId,ctx.principalId,cursor?.at??null,cursor?.id??null,cursor?!cursor.done:false,limit+1])).rows;
     const fragments=[],evidence=[],unmapped=[];
-    for(const row of rows){if(!await this.visible(ctx,row,tx))continue;const bytes=await this.objects.objects.getObject({Bucket:'evidence',Key:row.sha256});let value:any;
+    let last:z.infer<typeof cursorSchema>|undefined,hasMore=false;
+    for(let rowIndex=0;rowIndex<Math.min(rows.length,limit);rowIndex++){
+      const row=rows[rowIndex];last={binding,at:row.cursor_time,id:row.record_id,offset:0,done:true};hasMore=rowIndex+1<rows.length;
+      if(!await this.visible(ctx,row,tx))continue;const bytes=await this.objects.objects.getObject({Bucket:'evidence',Key:row.sha256});let value:any;
+      requireCondition(sha256(bytes)===row.sha256,'SOURCE_HASH_MISMATCH','Shared source bytes differ from their SHA');
       try{value=JSON.parse(bytes.toString());}catch{unmapped.push({sourceRecordId:row.record_id,reason:'No structured synthetic fragments; semantic extraction was not run'});continue;}
-      if(!Array.isArray(value.fragments)){unmapped.push({sourceRecordId:row.record_id,reason:'Structured fragments are absent'});continue;}
+      if(!Array.isArray(value?.fragments)){unmapped.push({sourceRecordId:row.record_id,reason:'Structured fragments are absent'});continue;}
       const quoted=await this.save(tx,ctx,'Evidence',scopeId,canonicalHash([row.record_id,0,bytes.length]),{sourceRecordId:row.record_id,start:0,end:bytes.length,sha256:row.sha256,text:bytes.toString(),path:row.payload.path},[row.record_id],{category:'consolidated',sourceType:'shared-session',visibility:'personal',state:'observed',digest:row.sha256});
       const ref={evidenceId:quoted.recordId,sha256:quoted.sha256};evidence.push(ref);
-      for(const fragment of value.fragments){if(!fragment||typeof fragment.id!=='string'||!['fact','practice','correction'].includes(fragment.kind)||typeof fragment.quote!=='string'){unmapped.push({sourceRecordId:row.record_id,reason:'Fragment schema is not recognized'});continue;}
+      let offset=cursor&&cursor.id===row.record_id&&!cursor.done?cursor.offset:0;
+      requireCondition(offset<=value.fragments.length,'INVALID_PAYLOAD','Shared fragment cursor offset exceeds its source');
+      while(offset<value.fragments.length&&fragments.length+unmapped.length<limit){const fragment=value.fragments[offset++];
+        if(!fragment||typeof fragment.id!=='string'||!['fact','practice','correction'].includes(fragment.kind)||typeof fragment.quote!=='string'){unmapped.push({sourceRecordId:row.record_id,reason:'Fragment schema is not recognized'});continue;}
         fragments.push({...fragment,sourceRecordId:row.record_id,knowledgeCategory:'consolidated',sharingAllowed:true,evidence:[ref]});}
+      last={...last,offset,done:offset===value.fragments.length};hasMore=hasMore||!last.done;
+      if(fragments.length+unmapped.length===limit)break;
     }
-    requireCondition(fragments.length<=limit,'RESULT_TOO_LARGE','Shared fragment result exceeds the requested bound');return {result:{fragments,unmapped,scope:'personal',sharing:'explicit-only'},evidence};
+    const nextCursor=last&&hasMore?Buffer.from(canonicalJson(last)).toString('base64url'):null;
+    return {result:{fragments,unmapped,scope:'personal',sharing:'explicit-only',nextCursor},evidence};
   }
   async conflicts(ctx:AuthContext,claim:Row,tx?:Transaction):Promise<any[]>{
     const rows=(await (tx??this.store.pool).query(`SELECT * FROM knowledge_records WHERE kind='Claim' AND tenant_id=$1 AND scope_id=$2

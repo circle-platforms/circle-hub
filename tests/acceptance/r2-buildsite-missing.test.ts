@@ -9,5 +9,8 @@ test('Missing fixed links and confirmed 404 pages preserve readable release matc
   const first=builds[0],second={...builds[1],files:{...builds[1].files,fixed:undefined}},third={...builds[2],files:{...builds[2].files,fixed:'/builds/missing-fixed.html'}};
   const result=await site.releasesFor('401',[first,second,third]);assert.equal(result.status,'published');assert.equal(result.earliestFormal.name,first.name);assert.equal(result.all.length,1);
   assert.deepEqual(result.coverage.missing,[{build:second.name,code:'SOURCE_ABSENT'},{build:third.name,code:'SOURCE_ABSENT'}]);assert.equal(result.coverage.completeSite,false);assert.equal(result.evidence.length,1);
+  assert.equal(result.coverage.earliestFormalCertain,true,'Later missing lists do not change the earliest date among the supplied candidates');
   const none=await site.releasesFor('401',[second,third]);assert.equal(none.status,'unknown');assert.equal(none.earliestFormal,null);assert.equal(none.coverage.missing.length,2);
+  const earlierMissing={...first,files:{...first.files,fixed:undefined}},uncertain=await site.releasesFor('401',[earlierMissing,builds[1]]);
+  assert.equal(uncertain.status,'published');assert.equal(uncertain.earliestFormal.name,builds[1].name);assert.equal(uncertain.coverage.earliestFormalCertain,false,'An unread earlier formal build makes the observed earliest release uncertain');
 });

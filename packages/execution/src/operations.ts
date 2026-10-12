@@ -119,7 +119,18 @@ export class Operations extends Execution {
       if(['succeeded','failed'].includes(prior.status)){requireCondition(prior.result.reportHash===canonicalHash(report),'IDEMPOTENCY_MISMATCH','Different completed receipt');return {deduplicated:true};}
       const {row,task}=await this.preflight(ctx,id,report.fencingToken,tx);requireCondition(report.inputRevisionId===row.input_revision_id,'INPUT_REVISION_STALE','Report revision differs');
       if(this.managedNames.has(row.name)&&report.status!=='unknown'){
-        requireCondition(this.managedReport,'EVIDENCE_INSUFFICIENT','Registered receipt processor is unavailable');return this.managedReport(tx,task,row,report);
+        await tx.query('SAVEPOINT managed_receipt');
+        try{
+          requireCondition(this.managedReport,'EVIDENCE_INSUFFICIENT','Registered receipt processor is unavailable');
+          const result=await this.managedReport(tx,task,row,report);await tx.query('RELEASE SAVEPOINT managed_receipt');return result;
+        }catch(error){
+          await tx.query('ROLLBACK TO SAVEPOINT managed_receipt');await tx.query('RELEASE SAVEPOINT managed_receipt');
+          if(!(error instanceof ApiError))throw error;
+          const failure={code:error.code,message:error.message,details:error.details};
+          await this.complete(tx,row,'failed',{output:{},error:failure,evidence:[],reportHash:canonicalHash(report),receiptRejected:true,workerStatus:report.status});
+          await this.tasks.fail(tx,task,failure);
+          return {operationId:id,status:'failed',receiptRejected:true,deduplicated:false};
+        }
       }
       const evidence=await this.knowledge.evidence(tx,task,id,row.kind==='reconcile'?'script-conclusion':'unknown',{
         source:'authenticated-worker-observation',workerId:ctx.workerId,inputRevisionId:row.input_revision_id,operationId:id,name:row.name,target:row.target,

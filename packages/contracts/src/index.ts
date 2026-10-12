@@ -170,8 +170,9 @@ export const SkillPackView=z.object({skillPackId:SkillPackId,digest:Sha256,statu
   manifest:SkillManifest,ownerPrincipalId:z.string(),scopeId:ScopeId,assetId:AssetId,assetVersion:PackageVersion});
 export const SkillRunInput=z.object({inputs:z.record(z.string(),z.unknown()),idempotencyKey:z.string().min(8).max(200)}).strict();
 const TriggerBase=z.object({scopeId:ScopeId,version:PackageVersion,name:z.string().min(1).max(200)});
+export const MIN_SCHEDULE_INTERVAL_MS=60_000;
 export const TriggerRegistration=z.discriminatedUnion('kind',[
-  TriggerBase.extend({kind:z.literal('schedule'),intervalMs:z.number().int().min(100).max(31536000000),startsAt:z.iso.datetime()} ).strict(),
+  TriggerBase.extend({kind:z.literal('schedule'),intervalMs:z.number().int().min(MIN_SCHEDULE_INTERVAL_MS).max(31536000000),startsAt:z.iso.datetime()} ).strict(),
   TriggerBase.extend({kind:z.literal('event'),sourceAssetId:AssetId,eventName:z.string().min(1).max(100)}).strict(),
 ]);
 export const BotRegistration=TriggerBase.extend({skillPackId:SkillPackId,triggerAssetId:AssetId,identityPrincipalId:z.string().regex(/^prn_/),channel:z.string().min(1).max(100),inputs:z.record(z.string(),z.unknown())}).strict();

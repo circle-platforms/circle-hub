@@ -46,10 +46,12 @@ import {SkillPacks} from '../../../packages/skillpacks/src/index.ts';
 import {PrivateIPC} from '../../../packages/runtime/src/private-ipc.ts';
 import {automationMigration} from '../../../packages/tasks/src/automation-migration.ts';
 import {Automations} from '../../../packages/tasks/src/automations.ts';
+import {automationOutcomeMigration} from '../../../packages/tasks/src/automation-outcome-migration.ts';
+import {knowledgePageMigration} from '../../../packages/knowledge/src/page-migration.ts';
 
 function environment(name: string): string { const value = process.env[name]; if (!value) throw new Error(`Required environment variable: ${name}`); return value; }
 const store = new Store(JSON.parse(environment('CIRCLE_SERVER_DATABASE_CONFIG')));
-await store.migrate([taskMigration,mindmapTaskMigration,knowledgeMigration,executionMigration,resourceMigration,approvalMigration,conclusionMigration,checklistMigration,connectorMigration,entityMigration,assetMigration,graphMigration,toolMigration,skillMigration,automationMigration]);
+await store.migrate([taskMigration,mindmapTaskMigration,knowledgeMigration,executionMigration,resourceMigration,approvalMigration,conclusionMigration,checklistMigration,connectorMigration,entityMigration,assetMigration,graphMigration,toolMigration,skillMigration,automationMigration,automationOutcomeMigration,knowledgePageMigration]);
 const auth = new Auth(store);
 requireCondition(process.env.CIRCLE_SERVER_DEV_AUTH === '1', 'INVALID_PAYLOAD', 'Phase one requires explicitly enabled development authentication');
 await auth.initializeDevelopment(environment('CIRCLE_SERVER_DEV_IDENTITIES'));

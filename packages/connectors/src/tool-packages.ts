@@ -39,7 +39,7 @@ export const toolPackages:ToolPackage[]=[
     tool('framework_get','取框架镜像文件',z.object({path:short}).strict(),'environment.read','framework.get'),
   ]},
   {id:'knowledge',prefix:'knowledge',tools:[
-    tool('shared_fragments','只取本人明确许可共享的片段与原始证据',z.object({limit:z.number().int().min(1).max(100).default(20)}).strict(),'knowledge.read','consolidation.fragments'),
+    tool('shared_fragments','分页取本人明确许可共享的片段与原始证据',z.object({limit:z.number().int().min(1).max(100).default(20),after:z.string().min(1).max(2048).optional()}).strict(),'knowledge.read','consolidation.fragments'),
     tool('claim_submit','提交个人沉淀候选；不自动提升为团队知识',z.object({claim:z.object({subject:short,predicate:short,value:z.unknown(),conditions:z.record(z.string(),z.unknown()).default({})}).strict(),evidence:z.array(z.object({evidenceId:z.string(),sha256:z.string().regex(/^[a-f0-9]{64}$/)}).strict()).min(1).max(100)}).strict(),'knowledge.submit','candidate.submit','write','task'),
   ]},
 ];

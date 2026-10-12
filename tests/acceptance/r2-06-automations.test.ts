@@ -6,6 +6,7 @@ import {canonicalHash,sha256} from '../../packages/contracts/src/index.ts';
 import {setup,type Harness,until} from './harness.ts';
 import {readonlySources} from '../fixtures/readonly-sources.ts';
 import {scriptModel} from '../fixtures/script-model.ts';
+import {setTimeout as delay} from 'node:timers/promises';
 
 const runtimeTest={skip:(!process.env.CIRCLE_BIN||!process.env.CIRCLE_COMMIT)&&'Set CIRCLE_BIN and CIRCLE_COMMIT to verify scheduled consolidation with real Circle'};
 async function prepare(h:Harness,origin:string,runtime?:any){
@@ -42,6 +43,38 @@ test('Act R2.6: connector event ids deduplicate and event triggers keep the same
   await h.reject(`/v1/connectors/${source.assetId}/events`,{...event,payload:{revision:'changed'}},'IDEMPOTENCY_MISMATCH');
   const runs=await until(async()=>{const runs=await h.request(`/v1/automations/bots/${active.assetId}/runs`);return runs.length===1?runs:false;});
   await h.stop();await h.startServer();await h.request(`/v1/connectors/${source.assetId}/events`,event);assert.equal((await h.request(`/v1/automations/bots/${active.assetId}/runs`)).length,1);assert.equal((await h.request(`/v1/tasks/${runs[0].taskId}/status`)).input.skillPackId,skill.skillPackId);
+});
+
+test('Act R2.6 regression: late schedule activation coalesces missed occurrences and rejects sub-minute intervals',async t=>{
+  const stub=await readonlySources(t),h=await setup(t);await prepare(h,stub.origin);const skill=await pack(h);
+  const startsAt=new Date(Date.now()-30*60_000).toISOString(),input={scopeId:'scp_lab',version:'1.0.0',name:'Synthetic delayed schedule',kind:'schedule',intervalMs:60_000,startsAt};
+  const trigger=await activate(h,await h.request('/v1/automations/triggers',input)),active=await bot(h,skill,trigger);
+  await until(async()=>{const runs=await h.request(`/v1/automations/bots/${active.assetId}/runs`);return runs.length>0;});await delay(350);
+  const runs=await h.request(`/v1/automations/bots/${active.assetId}/runs`);assert.equal(runs.length,1,'A late approval must not flood C with historical runs');
+  const task=await h.status(runs[0].taskId),occurrence=task.input.inputs.trigger;
+  assert.equal(occurrence.skippedOccurrences,30);assert.equal(occurrence.firstDueAt,startsAt);assert.equal(Date.parse(occurrence.dueAt),Date.parse(startsAt)+30*60_000);
+  const events=(await h.request(`/v1/tasks/${task.taskId}/events?after=0`)).events;
+  assert.equal(events.find((event:any)=>event.kind==='bot.started').payload.trigger.skippedOccurrences,30);
+  const position=(await h.db.query('SELECT next_due_at FROM automation_positions WHERE bot_id=$1',[active.assetId])).rows[0];assert.ok(position.next_due_at.getTime()>Date.now());
+  await h.stop();await h.startServer();await delay(150);assert.equal((await h.request(`/v1/automations/bots/${active.assetId}/runs`)).length,1);
+  for(const intervalMs of [0,100,59_999])await h.reject('/v1/automations/triggers',{...input,intervalMs},'INVALID_PAYLOAD');
+});
+
+test('Act R2.6 regression: a rejected event admission records its failure and does not poison the cursor',async t=>{
+  const stub=await readonlySources(t),h=await setup(t);await prepare(h,stub.origin);const skill=await pack(h);
+  const source=await activate(h,await h.request('/v1/assets',{scopeId:'scp_lab',kind:'connector-instance',name:'Synthetic failing event source',version:'1.0.0',declaration:{reads:['source-records'],writes:[],credentials:[]},configuration:{packageId:'fixture-reader'},readers:['prn_alice','prn_bob']}));
+  const trigger=await activate(h,await h.request('/v1/automations/triggers',{scopeId:'scp_lab',version:'1.0.0',name:'Synthetic isolated event trigger',kind:'event',sourceAssetId:source.assetId,eventName:'source.changed'})),active=await bot(h,skill,trigger);
+  await h.db.query("UPDATE policies SET grants=grants-'skillpacks.run' WHERE principal_id='prn_alice'");
+  const failed=await h.request(`/v1/connectors/${source.assetId}/events`,{externalId:'denied-event',name:'source.changed',payload:{revision:'r1'}});
+  const failures=await until(async()=>{const runs=await h.request(`/v1/automations/bots/${active.assetId}/runs`);return runs.length===1?runs:false;},2000);
+  assert.equal(failures[0].status,'failed');assert.equal(failures[0].taskId,null);assert.equal(failures[0].error.code,'FORBIDDEN_ACTION');assert.equal(failures[0].occurrenceKey,`event:${failed.eventId}`);
+  const cursor=(await h.db.query('SELECT event_cursor FROM automation_positions WHERE bot_id=$1',[active.assetId])).rows[0].event_cursor;
+  assert.equal(String(cursor),String((await h.db.query('SELECT id FROM automation_events WHERE event_id=$1',[failed.eventId])).rows[0].id));
+  await h.db.query("UPDATE policies SET grants=grants || '[\"skillpacks.run\"]'::jsonb WHERE principal_id='prn_alice'");
+  await h.request(`/v1/connectors/${source.assetId}/events`,{externalId:'accepted-after-denial',name:'source.changed',payload:{revision:'r2'}});
+  const runs=await until(async()=>{const runs=await h.request(`/v1/automations/bots/${active.assetId}/runs`);return runs.length===2?runs:false;});assert.equal(runs[1].status,'admitted');assert.ok(runs[1].taskId);
+  assert.equal(Number((await h.db.query("SELECT count(*) AS n FROM tasks WHERE capability_pack_id='skill-run'")).rows[0].n),1);
+  await h.stop();await h.startServer();await delay(150);assert.equal((await h.request(`/v1/automations/bots/${active.assetId}/runs`)).length,2);
 });
 
 test('Act R2.6: scheduled real Circle consolidates opted-in fragments as deduplicated personal candidates with tool evidence',runtimeTest,async t=>{

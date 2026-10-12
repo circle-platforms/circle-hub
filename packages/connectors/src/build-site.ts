@@ -72,11 +72,13 @@ export class BuildSite {
     const result=[...new Set(elements(html(evidence.bytes),'a').flatMap(a=>{const href=attribute(a,'href');if(!href)return [];const link=new URL(href,'https://synthetic.invalid'),id=link.searchParams.get('id');return /\/show_bug\.cgi$/.test(link.pathname)&&id&&/^\d+$/.test(id)?[id]:[];}))];return {result,evidence};
   }
   async releasesFor(externalId:string,candidates:BuildRecord[]):Promise<any>{
-    if(!externalId)return {status:'unknown',earliestFormal:null,all:[],evidence:[],coverage:{builds:[],read:[],missing:[],completeSite:false}};
+    if(!externalId)return {status:'unknown',earliestFormal:null,all:[],evidence:[],coverage:{builds:[],read:[],missing:[],completeSite:false,earliestFormalCertain:false}};
     const settled=await Promise.allSettled(candidates.map(async build=>{const fixed=await this.fixed(build);return {build:{...build,fixedIds:fixed.result},evidence:fixed.evidence};}));
     const hydrated:{build:BuildRecord;evidence:RawReturn}[]=[],missing:{build:string;code:string}[]=[];
     for(const [index,result] of settled.entries())if(result.status==='fulfilled')hydrated.push(result.value);else missing.push({build:candidates[index].name,code:result.reason instanceof ApiError?result.reason.code:'SOURCE_UNREACHABLE'});
-    return {...this.matches(hydrated.map(item=>item.build),externalId),evidence:hydrated.map(item=>item.evidence),coverage:{builds:candidates.map(build=>build.name),read:hydrated.map(item=>item.build.name),missing,completeSite:false}};
+    const matches=this.matches(hydrated.map(item=>item.build),externalId),earliest=matches.earliestFormal;
+    const unread=new Set(missing.map(item=>item.build)),earliestFormalCertain=!!earliest&&!candidates.some(build=>unread.has(build.name)&&build.formal&&build.releasedOn!<=earliest.releasedOn);
+    return {...matches,evidence:hydrated.map(item=>item.evidence),coverage:{builds:candidates.map(build=>build.name),read:hydrated.map(item=>item.build.name),missing,completeSite:false,earliestFormalCertain}};
   }
   matches(builds:BuildRecord[],externalId:string):any {
     if(!externalId)return {status:'unknown',earliestFormal:null,all:[]};
