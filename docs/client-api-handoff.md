@@ -252,6 +252,8 @@ runs 保留上述字段，追加 `status:"admitted"|"failed"`、`trigger`、`err
 
 定时 dueAt 和事件游标、任务/唯一 occurrence 同事务保存，重启重读不会丢/重派。C 最终新增 bot.output，含 channel/botAssetId/status/artifacts/evidence/unknowns；输出只在 Circle 事件流，渠道注册可扩展，没有企业微信桩。
 
+为避免动态页面的自触发和 bot 互相触发，C 根据持久的运行/子工具关系忽略任何 bot 运行产生的 observed source.changed；原件、证据、知识和 bot.output 仍保存。显式连接器事件和普通人工工具读取继续触发，用户输入的 trigger 字段不能伪造来源分类。
+
 `knowledge.shared_fragments {limit?,after?}` 是 read/sync：只取 caller 明确允许共享、当前可见的 shared-session 修订，返回原片段、工具返回和 Evidence；未共享输入不进入整理。limit 默认 20、范围 1–100，每页片段和未映射条目的总数受限；SQL 按创建时间/recordId 限量读源，游标也记录同一源内的片段位置。`result.nextCursor` 是不透明字符串或 null，非空时传作下一次 after；游标绑定身份和 scope，重启可继续，同键回放原页，后续修订保持各自来源证据。目录正确导出输入 schema，默认值参数可省略。`packs/common/skills/knowledge-consolidation` 逐页处理，其 TypeScript 脚本只规范/去重有证据的结构化 facts/practices/corrections，真实文本的语义抽取没有验收；候选仍为 personal/consolidated，产品优先、冲突保留、不自动发布团队快照。普通 bot 读者不能看他人个人任务/候选。
 
 worker 的回报处理若因 ApiError 拒绝，知识/制品写入回滚，操作与任务保存为 failed、释放租约，保留原回报 hash 供同回报幂等重传；不会停留 running 阻塞下一次调用。租约、fence、当前输入校验仍在回报处理前执行，迟到或越权回报仍拒绝。

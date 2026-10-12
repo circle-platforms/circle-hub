@@ -13,7 +13,7 @@ import type {ToolPackage,ToolDefinition,ConnectorProfile} from '../../connectors
 
 export class ToolCatalog {
   store:Store;auth:Auth;assets:Assets;tasks:Tasks;execution:Operations;knowledge:KnowledgeGraph;packages:ToolPackage[];profiles:Record<string,ConnectorProfile>={};
-  observed?: (tx:Transaction,ctx:AuthContext,assetId:string,raw:any)=>Promise<void>;
+  observed?: (tx:Transaction,ctx:AuthContext,assetId:string,raw:any,originTaskId:string)=>Promise<void>;
   constructor(store:Store,auth:Auth,assets:Assets,tasks:Tasks,execution:Operations,knowledge:KnowledgeGraph,packages:ToolPackage[]){Object.assign(this,{store,auth,assets,tasks,execution,knowledge,packages});this.store=store;this.auth=auth;this.assets=assets;this.tasks=tasks;this.execution=execution;this.knowledge=knowledge;this.packages=packages;}
   async initialize(profileFile?:string):Promise<void>{
     if(profileFile){const schema=z.object({profiles:z.record(z.string(),z.object({origin:z.string().url(),root:z.string().optional(),index:z.string().optional(),payloadField:z.string().optional(),requestConcurrency:z.number().int().min(1).max(8).optional(),requestIntervalMs:z.number().int().min(0).max(60000).optional()}).strict())}).strict();this.profiles=schema.parse(JSON.parse(await readFile(profileFile,'utf8'))).profiles;}
@@ -90,7 +90,7 @@ export class ToolCatalog {
       else if(item.definition.handler==='consolidation.fragments'){const selected=await this.knowledge.sharedFragments(tx,actor,task.scopeId,operation.args.input.limit??20,operation.args.input.after);result=selected.result;evidence.push(...selected.evidence);}
       else{requireCondition(Array.isArray(report.output.raw)&&report.output.raw.length>0,'EVIDENCE_INSUFFICIENT','Read tools require original returns');
         const references=new Map<string,{evidenceId:string;sha256:string}>();
-        for(const raw of report.output.raw){const ref=await this.knowledge.capture(tx,actor,task.scopeId,item.row.asset_id,{...raw,sourceType:raw.sourceType??report.output.sourceType},item.definition.permission);evidence.push(ref);references.set(raw.path,ref);await this.observed?.(tx,actor,item.row.asset_id,raw);}
+        for(const raw of report.output.raw){const ref=await this.knowledge.capture(tx,actor,task.scopeId,item.row.asset_id,{...raw,sourceType:raw.sourceType??report.output.sourceType},item.definition.permission);evidence.push(ref);references.set(raw.path,ref);await this.observed?.(tx,actor,item.row.asset_id,raw,task.taskId);}
         const projection=this.packages.find(pack=>pack.id===item.row.package_id)?.projection;
         if(projection){const originals=report.output.raw.map((raw:any)=>({...raw,bytes:Buffer.from(raw.contentBase64,'base64'),mediaType:'application/octet-stream',etag:null}));const profile=this.profiles[item.row.configuration.runtimeProfileRef];
           await new ProductRecords(this.knowledge).import(tx,actor,task.scopeId,item.row.asset_id,projection.version,await projection.extract(originals,profile),references);

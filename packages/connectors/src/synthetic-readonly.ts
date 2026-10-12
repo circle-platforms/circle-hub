@@ -5,7 +5,7 @@ import {randomBytes} from 'node:crypto';
 export async function createSyntheticSources() {
   const secret=randomBytes(24).toString('hex');
   const requests:{method:string;path:string;authorization?:string;body:any}[]=[];
-  const state={revision:1,mode:'ready',fixed:['401'],command:'feature.enable',changedBuild:'',encoding:'UTF-8',expandedCommands:false,manualText:'',headCount:36,mirrorIds:[51]};
+  const state={revision:1,mode:'ready',fixed:['401'],command:'feature.enable',changedBuild:'',encoding:'UTF-8',expandedCommands:false,manualText:'',headCount:36,mirrorIds:[51],dynamicDocuments:false,documentReads:0};
   const xml=(command:string,name:string)=>{
     const first=state.expandedCommands&&name.includes('_109')?'':`<item name="${command}"><arguments><arg position="1" name="mode" type="STRING" optional="true"/></arguments><results><result name="status"/></results></item>`;
     const expanded=state.expandedCommands?[
@@ -38,7 +38,7 @@ export async function createSyntheticSources() {
       res.writeHead(207,{'content-type':'application/xml'});
       res.end(`<d:multistatus xmlns:d="DAV:"><d:response><d:href>/dav/manual.txt</d:href><d:propstat><d:prop><d:getetag>"r${state.revision}"</d:getetag><d:getcontentlength>${Buffer.byteLength(state.manualText||`Synthetic manual ${state.revision}`)}</d:getcontentlength><d:getlastmodified>Thu, 01 Jan 2026 00:00:00 GMT</d:getlastmodified><d:resourcetype/></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response></d:multistatus>`);return;
     }
-    if(url.pathname==='/dav/manual.txt'){res.setHeader('etag',`"r${state.revision}"`);res.end(state.manualText||`Synthetic manual ${state.revision}`);return;}
+    if(url.pathname==='/dav/manual.txt'){state.documentReads++;res.setHeader('etag',`"r${state.revision}"`);res.end(state.dynamicDocuments?`Synthetic dynamic observation ${state.documentReads}`:state.manualText||`Synthetic manual ${state.revision}`);return;}
     if(url.pathname==='/builds/'){res.end('<html><a href="PHOTON_10_5.html">PHOTON 10.5 builds</a><a href="kvm.html">kvm builds</a></html>');return;}
     if(url.pathname==='/builds/PHOTON_10_5.html'){
       const rows=[...builds,{name:'Rel_PHOTON_10_5_0_150',released:'',bugs:[]}];

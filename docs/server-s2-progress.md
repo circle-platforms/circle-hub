@@ -243,3 +243,15 @@ RPC prompt/turn/tool/settled 等真实事件进入 C。只在 agent_settled、�
 shared-session/skill-run/bot-run/review-correction/footprint 必须标 consolidated 且有显式共享许可；模型候选不自动变产品事实或进正式快照。单独人工审核/API 能力沿用第 3 幕。当前没有使用真实知识、会话或企业来源；源系统自身的权限观察仍以取得的来源 ACL/执行身份为准，没有实时探测真实系统撤权。
 
 实际新增入库验收 **4/4**，与原知识/目录联合 **14/14**；固定 8b2ceb6 的 SDK/按需/RPC/bot 联验 **19/19**，无 skip，typecheck/diff 检查通过。核心迁出与第二产品线仍待完成，下一步先隔离 bot 自己的 observed 事件，再迁出核心；APV 三笔已由用户明确指定 cherry-pick，保持 Claude 作者/信息，不修改其技能脚本或 SKILL.md。
+
+### 4b7866d 独立复核与规模问题
+
+用户提供 Claude 对 4b7866d 的独立复核：固定 Circle 8b2ceb6，contracts 4/4、methods 7/7、acceptance 67/68 无 skip、references 7/7，只有 S2.7 红。同时量化出同步入库的性能缺陷：2000 条命令、两个构建的四次读耗时约 9.7/19.5/18.0/11.7 秒，原 494b4a2 对照约 0.55/0.55/0.36/0.36 秒。缓存命中和仅版本页也随整个 scope 的已审声明数量增长，说明本节通过的是行为/权限验收，未达到真实规模的延迟要求。须补规模验收，改为持久异步入库、批量投影写入、增量或去抖快照发布；原件仍在同步回报留证，读取结果不等待知识发布。该修复排在核心迁出之前。
+
+## 17：APV 技能包采用与 bot observed 隔离
+
+按用户明确指示 cherry-pick 三笔 APV 提交，原作者、日期、提交信息和 co-author 保留：e147364 → 4fcf98c，e8ecbc8 → c6471d0，b00ce21 → 5f11c5d。包内脚本、SKILL.md、清单和合成材料字节未改，`node --test packs/apv/skills/apv-mindmap-compile/tests/compile.test.mjs` **4/4**。后续要改技能脚本/SKILL.md 时先通过 Otty 告知 Claude，由他修改和复核；第一阶段兼容方法、配置与知识映射也归 packs/apv，尚未迁出核心。
+
+先新增固定 Circle/脚本模型的动态来源回归，确认 bot 读回执立即产生第二个运行而失败（2 对 1）。随后按 C 保存的子工具任务 → parentRunTaskId → automation_runs 关系识别 bot 来源，不相信输入 trigger 或客户端声明；任何 bot 运行产生的 observed 事件不进入触发流，仍保留 SHA 原件、证据和知识观察。外部显式连接器事件与普通人工工具读取仍触发，避免自循环和多个 bot 互相放大。新增第 18 号来源索引迁移，旧迁移不改。
+
+实际 RPC/bot/分页/产品入库联合 **17/17**，固定 8b2ceb6，无 skip；动态来源原件至少读取三次，但仅外部事件和人工读产生两个触发、两个 bot 运行；入库可检索、产物交付未损。typecheck/diff 检查通过。性能修复、核心迁出和第二产品线仍待完成，未 push，未动 Claude 的 Otty 栈。

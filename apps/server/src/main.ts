@@ -48,10 +48,11 @@ import {automationMigration} from '../../../packages/tasks/src/automation-migrat
 import {Automations} from '../../../packages/tasks/src/automations.ts';
 import {automationOutcomeMigration} from '../../../packages/tasks/src/automation-outcome-migration.ts';
 import {knowledgePageMigration} from '../../../packages/knowledge/src/page-migration.ts';
+import {automationOriginMigration} from '../../../packages/tasks/src/automation-origin-migration.ts';
 
 function environment(name: string): string { const value = process.env[name]; if (!value) throw new Error(`Required environment variable: ${name}`); return value; }
 const store = new Store(JSON.parse(environment('CIRCLE_SERVER_DATABASE_CONFIG')));
-await store.migrate([taskMigration,mindmapTaskMigration,knowledgeMigration,executionMigration,resourceMigration,approvalMigration,conclusionMigration,checklistMigration,connectorMigration,entityMigration,assetMigration,graphMigration,toolMigration,skillMigration,automationMigration,automationOutcomeMigration,knowledgePageMigration]);
+await store.migrate([taskMigration,mindmapTaskMigration,knowledgeMigration,executionMigration,resourceMigration,approvalMigration,conclusionMigration,checklistMigration,connectorMigration,entityMigration,assetMigration,graphMigration,toolMigration,skillMigration,automationMigration,automationOutcomeMigration,knowledgePageMigration,automationOriginMigration]);
 const auth = new Auth(store);
 requireCondition(process.env.CIRCLE_SERVER_DEV_AUTH === '1', 'INVALID_PAYLOAD', 'Phase one requires explicitly enabled development authentication');
 await auth.initializeDevelopment(environment('CIRCLE_SERVER_DEV_IDENTITIES'));
@@ -73,7 +74,7 @@ execution.managedPreflight=(tx,actor,row,authorization)=>row.name==='assets.exec
 execution.managedReport=(tx,task,row,report)=>row.name==='assets.execute'?skills.report(tx,task,row,report):catalog.report(tx,task,row,report);
 approvals.policies.set('assets.publish',{authorize:(tx,ctx,task,action)=>skills.approvalAuthorize(tx,ctx,task,action),check:(tx,ctx,task,row,answer)=>skills.approvalCheck(tx,ctx,task,row,answer),accepted:(tx,ctx,task,row,answer)=>skills.approved(tx,ctx,task,row,answer)});
 const privateIPC=new PrivateIPC();skills.privateSocketPath=privateIPC.path;
-const automations=new Automations(store,auth,tasks,assets,skills);catalog.observed=(tx,ctx,id,raw)=>automations.observed(tx,ctx,id,raw);
+const automations=new Automations(store,auth,tasks,assets,skills);catalog.observed=(tx,ctx,id,raw,taskId)=>automations.observed(tx,ctx,id,raw,taskId);
 await privateIPC.start(async(message)=>{const worker=await auth.authenticate(message.authorization),id=z.string().parse(message.operationId),fence=z.number().int().positive().parse(message.fencingToken);return skills.privateSecret(worker,id,fence,message.revoke===true);});
 const assessments=new Assessments(store,tasks,knowledge),checklists=new Checklists(store,tasks,knowledge);
 const registry=new ConnectorRegistry(store,auth);await registry.initialize();execution.connectorCheck=(tx,actor,scope,spec)=>registry.check(tx,actor,scope,spec);
