@@ -1,4 +1,4 @@
-import {ApiError,SourceArtifactRegistration,AssetId,SourceArtifactId,SourceRevisionId,KnowledgeRecordId,Sha256,SafeRelativePath,MAX_SOURCE_BYTES,canonicalHash,requireCondition,sha256,type AuthContext} from '../../contracts/src/index.ts';
+import {ApiError,SourceArtifactRegistration,SourceArtifactConfiguration,AssetId,SourceArtifactId,SourceRevisionId,KnowledgeRecordId,Sha256,SafeRelativePath,MAX_SOURCE_BYTES,canonicalHash,requireCondition,sha256,type AuthContext,type AssetRegistration} from '../../contracts/src/index.ts';
 import {z} from 'zod';
 import type {Store,Transaction} from '../../storage/src/index.ts';
 import type {Auth} from '../../tasks/src/auth.ts';
@@ -21,27 +21,32 @@ export class SourceArtifacts{
     const row=(await tx.query('SELECT principal_id FROM sources WHERE source_revision_id=$1',[result.reference.sourceRevisionId])).rows[0];requireCondition(record||row.principal_id===ctx.principalId,'FORBIDDEN_ACTION','Register your own upload or an authorized product source record');return {...result,originalRecordId:record?.recordId};
   }
   async register(ctx:AuthContext,value:unknown){
-    const input=SourceArtifactRegistration.parse(value);return this.store.transaction(async tx=>{
-      await this.auth.check(ctx,'assets.register',input.scopeId,tx);await this.auth.check(ctx,'knowledge.read',input.scopeId,tx);
-      const originals=[];let total=0;for(const entry of input.files){const original=await this.original(ctx,entry,input.scopeId,tx);total+=original.bytes.length;requireCondition(total<=MAX_SOURCE_BYTES,'BODY_TOO_LARGE','Source artifact originals exceed sixteen MiB');originals.push({entry,original});}
-      const assetId=`ast_${canonicalHash([ctx.tenantId,input.scopeId,ctx.principalId,input.name]).slice(0,32)}`,readers=[...new Set([ctx.principalId,...input.readers??[]])],files=[];
-      for(const {entry,original} of originals){
-        const sourceIdentity=canonicalHash(['external-source-artifact',assetId,entry.path]),path=`/${entry.path}`;
-        const payload={sourceId:`external-source-artifact:${assetId}:${entry.path}`,sourceIdentity,revision:`${input.version}:${original.reference.sha256}`,path,parserVersion:'external-source-artifact/1',acl:{sourceReaders:readers,platformReaders:readers},sharing:null,asset:{assetId,permission:'sources.read'},raw:original.reference};
-        const source=await this.graph.save(tx,ctx,'SourceRevision',input.scopeId,canonicalHash([sourceIdentity,input.version,original.reference.sha256]),payload,original.originalRecordId?[original.originalRecordId]:[],{category:'product',sourceType:'external-artifact',visibility:'team',state:'observed',digest:original.reference.sha256});
-        await tx.query(`INSERT INTO knowledge_source_heads(tenant_id,scope_id,identity_key,record_id) VALUES($1,$2,$3,$4) ON CONFLICT(tenant_id,scope_id,identity_key) DO UPDATE SET record_id=EXCLUDED.record_id,generation=knowledge_source_heads.generation+CASE WHEN knowledge_source_heads.record_id=EXCLUDED.record_id THEN 0 ELSE 1 END`,[ctx.tenantId,input.scopeId,sourceIdentity,source.recordId]);
-        files.push({path:entry.path,role:entry.role,mediaType:entry.mediaType,sourceRevisionId:original.reference.sourceRevisionId,sha256:original.reference.sha256,size:original.bytes.length,sourceRecordId:source.recordId});
-      }
-      const sourceArtifactId=`sar_${canonicalHash([assetId,input.version,input.metadata,files]).slice(0,32)}`;
-      const asset=await this.assets.register(ctx,{assetId,scopeId:input.scopeId,kind:'knowledge-source',name:input.name,version:input.version,declaration:{reads:['registered-source'],writes:[],credentials:[]},configuration:{schema:'external-source-artifact/1',sourceArtifactId,metadata:input.metadata,files},readers},tx);return this.view(asset);
-    });
+    const input=SourceArtifactRegistration.parse(value),assetId=`ast_${canonicalHash([ctx.tenantId,input.scopeId,ctx.principalId,input.name]).slice(0,32)}`;
+    return this.view(await this.assets.register(ctx,{assetId,scopeId:input.scopeId,kind:'knowledge-source',name:input.name,version:input.version,declaration:{reads:['registered-source'],writes:[],credentials:[]},configuration:{schema:'external-source-artifact/1',metadata:input.metadata,files:input.files},readers:input.readers}));
+  }
+  async prepare(ctx:AuthContext,definition:AssetRegistration,assetId:string,tx:Transaction):Promise<AssetRegistration>{
+    if(definition.configuration.schema!=='external-source-artifact/1')return definition;
+    requireCondition(definition.kind==='knowledge-source'&&definition.declaration.reads.includes('registered-source')&&!definition.declaration.writes.length&&!definition.declaration.credentials.length,'INVALID_PAYLOAD','External originals require a read-only knowledge-source declaration');
+    const input=SourceArtifactConfiguration.parse(definition.configuration);await this.auth.check(ctx,'knowledge.read',definition.scopeId,tx);
+    const originals=[];let total=0;for(const entry of input.files){const original=await this.original(ctx,entry,definition.scopeId,tx);total+=original.bytes.length;requireCondition(total<=MAX_SOURCE_BYTES,'BODY_TOO_LARGE','Source artifact originals exceed sixteen MiB');originals.push({entry,original});}
+    const readers=[...new Set([ctx.principalId,...definition.readers??[]])],files=[];
+    const replay=!!(await tx.query('SELECT 1 FROM asset_versions WHERE asset_id=$1 AND version=$2',[assetId,definition.version])).rowCount;
+    for(const {entry,original} of originals){
+      const sourceIdentity=canonicalHash(['external-source-artifact',assetId,entry.path]),path=`/${entry.path}`;
+      const payload={sourceId:`external-source-artifact:${assetId}:${entry.path}`,sourceIdentity,revision:`${definition.version}:${original.reference.sha256}`,path,parserVersion:'external-source-artifact/1',acl:{sourceReaders:readers,platformReaders:readers},sharing:null,asset:{assetId,permission:'sources.read'},raw:original.reference};
+      const source=await this.graph.save(tx,ctx,'SourceRevision',definition.scopeId,canonicalHash([sourceIdentity,definition.version,original.reference.sha256]),payload,original.originalRecordId?[original.originalRecordId]:[],{category:'product',sourceType:'external-artifact',visibility:'team',state:'observed',digest:original.reference.sha256});
+      if(!replay)await tx.query(`INSERT INTO knowledge_source_heads(tenant_id,scope_id,identity_key,record_id) VALUES($1,$2,$3,$4) ON CONFLICT(tenant_id,scope_id,identity_key) DO UPDATE SET record_id=EXCLUDED.record_id,generation=knowledge_source_heads.generation+CASE WHEN knowledge_source_heads.record_id=EXCLUDED.record_id THEN 0 ELSE 1 END`,[ctx.tenantId,definition.scopeId,sourceIdentity,source.recordId]);
+      files.push({path:entry.path,role:entry.role,mediaType:entry.mediaType,sourceRevisionId:original.reference.sourceRevisionId,sha256:original.reference.sha256,size:original.bytes.length,sourceRecordId:source.recordId});
+    }
+    const sourceArtifactId=`sar_${canonicalHash([assetId,definition.version,input.metadata,files]).slice(0,32)}`;
+    return {...definition,configuration:{schema:'external-source-artifact/1',sourceArtifactId,metadata:input.metadata,files},readers};
   }
   view(asset:any){const source=configuration.parse(asset.configuration),approved=['approved','running'].includes(asset.lifecycle)&&(!('approved_digest' in asset)||asset.approved_digest===asset.sha256);return {assetId:asset.assetId??asset.asset_id,scopeId:asset.scopeId??asset.scope_id,version:asset.version,sha256:asset.sha256,lifecycle:asset.lifecycle,sourceArtifactId:approved?source.sourceArtifactId:null,metadata:source.metadata,files:source.files,provenance:{kind:'user-upload',semanticQuality:'not-asserted'}};}
   async get(ctx:AuthContext,id:string){const asset=await this.assets.row(ctx,id);requireCondition(asset.kind==='knowledge-source'&&asset.configuration.schema==='external-source-artifact/1','INVALID_PAYLOAD','Asset is not an external source artifact');return this.view(asset);}
   async validate(ctx:AuthContext,definition:any,id:string,tx:Transaction){
     if(definition.configuration.schema!=='external-source-artifact/1')return;
     requireCondition(definition.kind==='knowledge-source','INVALID_PAYLOAD','External artifact requires a knowledge-source asset');const source=configuration.parse(definition.configuration);
-    for(const entry of source.files){const record=await this.graph.get(ctx,entry.sourceRecordId,tx);requireCondition(record.kind==='SourceRevision'&&record.knowledgeCategory==='product'&&record.payload.asset?.assetId===id&&record.sha256===entry.sha256&&record.payload.raw.sourceRevisionId===entry.sourceRevisionId,'INVALID_PAYLOAD','Use the source artifact registration endpoint to bind originals');requireCondition(record.scopeId===definition.scopeId,'FORBIDDEN_SCOPE','Original crosses the artifact scope');}
+    for(const entry of source.files){const record=await this.graph.get(ctx,entry.sourceRecordId,tx);requireCondition(record.kind==='SourceRevision'&&record.knowledgeCategory==='product'&&record.payload.asset?.assetId===id&&record.sha256===entry.sha256&&record.payload.raw.sourceRevisionId===entry.sourceRevisionId,'INVALID_PAYLOAD','Registered asset must bind its authorized originals');requireCondition(record.scopeId===definition.scopeId,'FORBIDDEN_SCOPE','Original crosses the artifact scope');}
   }
   async snapshot(ctx:AuthContext,id:string,scope?:string,tx?:Transaction):Promise<SourceArtifactSnapshot>{
     const asset=await this.assets.row(ctx,id,tx);requireCondition(!scope||asset.scope_id===scope,'FORBIDDEN_SCOPE','Source artifact is outside the execution partition');requireCondition(asset.kind==='knowledge-source'&&asset.configuration.schema==='external-source-artifact/1','INVALID_PAYLOAD','Asset is not an external source artifact');requireCondition(['approved','running'].includes(asset.lifecycle)&&asset.approved_digest===asset.sha256,'APPROVAL_REQUIRED','Source artifact needs current independent approval');

@@ -263,11 +263,40 @@ POST 成功是 201，status 初始 `candidate`，额外返回 manifest/ownerPrin
 
 ## 通用外部来源制品
 
-先用 POST /v1/sources 上传原件（已有产品 SourceRevision 也可用其 sourceRecordId）。POST /v1/source-artifacts 接收 `{scopeId,name,version,metadata,files:[{path,role,mediaType?,sourceRevisionId|sourceRecordId,sha256?}],readers?}`，返回 knowledge-source 资产及原件引用，初始 lifecycle=draft/sourceArtifactId=null。平台只校验来源权限、字节 SHA、路径与修订，metadata/role 是消费者的数据约定；候选 Claim 不能作原件引用，格式和语义由对应连接器/技能模块校验。
+客户端沿用 `POST /v1/sources` → `POST /v1/assets` → 独立资产批准这一条链路。先上传每份原始字节，保存响应里的 sourceRevisionId/sha256，再登记 kind=knowledge-source。configuration 的 F 契约是 `SourceArtifactConfiguration`：`{schema:"external-source-artifact/1",metadata:{...},files:[{path,role,mediaType?,sourceRevisionId|sourceRecordId,sha256?}]}`。每个文件只能给一个原件引用；已有产品 SourceRevision 可填 sourceRecordId，候选 Claim 不可作原件。path 是制品内唯一相对路径，不能含绝对路径、点段或反斜杠。
 
-由另一人 POST /v1/assets/{assetId}/lifecycle `{version,sha256,state:"approved"}` 后，GET /v1/source-artifacts/{assetId} 返回可用 sourceArtifactId（sar_ 前缀）。相同所有者/scope/name/version/内容复用资产，变内容必须新版本；id 绑定版本、metadata 和所有文件摘要。无需猜构建 id：命令树工具的 build 可直接填该 sar_ id。APV 消费者的数据约定见 case-execution-handoff，通用平台不会据上传者 metadata 判断真实床构建。
+命令树及函数契约的完整登记示例（占位值由客户端替换）：
+
+```json
+{
+  "scopeId": "<登录授权的 scopeId>",
+  "kind": "knowledge-source",
+  "name": "<来源名称>",
+  "version": "1.0.0",
+  "declaration": {"reads": ["registered-source"], "writes": [], "credentials": []},
+  "configuration": {
+    "schema": "external-source-artifact/1",
+    "metadata": {"packageId": "apv", "buildName": "<预期构建名>", "platform": "<平台>", "versionLine": "<可选版本线>"},
+    "files": [
+      {"path": "commands.xml", "role": "command-tree", "mediaType": "application/xml", "sourceRevisionId": "<XML 上传响应的 id>", "sha256": "<XML 上传响应的 SHA-256>"},
+      {"path": "functions.json", "role": "function-contract", "mediaType": "application/json", "sourceRevisionId": "<JSON 上传响应的 id>", "sha256": "<JSON 上传响应的 SHA-256>"}
+    ]
+  },
+  "readers": ["<所有者 principalId>", "<批准者 principalId>"]
+}
+```
+
+metadata 是消费者的声明数据，不参与平台的产品派发；packageId/buildName/platform/versionLine 在通用层均不解释。APV 模块使用 buildName 作为待 env_prepare 核对的预期构建。平台只校验来源权限、字节 SHA、路径、修订及只读声明，格式和语义由消费模块校验。上传原件先成为 product/SourceRevision（sourceType=external-artifact），响应 files 包含实际 size/sha256/sourceRecordId；绑定工具读取得到 Evidence，命令结构再异步入库，可用索引任务/事件观察进度。文件内自报摘要或 certification 不替代上传原字节 SHA 和独立批准。
+
+登记返回完整资产，初始 lifecycle=draft、顶层 sourceArtifactId=null。另一人用 `POST /v1/assets/{assetId}/lifecycle` `{version,sha256,state:"approved"}` 批准后，该响应及 `GET /v1/assets/{assetId}` 顶层直接返回可用 sourceArtifactId（sar_ 前缀），无需额外激活。相同 assetId/version/原件/声明重提复用资产，变内容必须新版本；更新要带首次响应的 assetId。来源 id 绑定资产版本、metadata 和全部文件摘要，旧 id 不自动换成新字节。configuration 里的生成字段只读；提交时使用上述原件引用形状，不复制返回里的 size/sourceRecordId/sourceArtifactId 作为客户端生成字段。
+
+命令树工具的 build 直接填 sar_ id。也可调用 `buildsite.versions`，args={sourceArtifactId:<sar_ id>}，返回一条精简构建，其 buildId 即该 sar_ id；name 来自 buildName，platform 来自声明，formal=false/releasedOn=null，不能据文件名或上传者声明推成正式发布。分页和过滤沿用 versions 契约，此调用读取本地固定原件，不遍历站点。APV 执行 input={commandSourceAssetId:<来源 assetId>,build:<sar_ id>,...}，函数契约与树 SHA 共同进入审批和投递前检查。实际床构建仍由 env_prepare 确认。
+
+早期 `/v1/source-artifacts` 辅助登记/查询仍保留兼容，内部使用同一 assets 登记、版本和批准机制；新客户端只使用现有 sources/assets 链路，不新增产品专用命令源路由。CLIENT_ROUTES 已补 assetSubmit/asset/assetLifecycle；SourceArtifactConfiguration 为确切的 configuration 输入形状。
 
 所有工具输入 schema 都增加可选 sourceArtifactId；调用可放 args.sourceArtifactId，或 POST 工具 body 的同名字段，两处有值必须一致。绑定源须与工具任务同 scope、当前已独立批准且原件可读。绑定后仅使用制品原件，不回退到网络；必要时 metadata.requests 可将 `METHOD /path`（或加请求 JSON 的 canonical SHA）映射到 `{path:<制品文件路径>,status:<响应状态>}`，供连接器读取保留响应。结果标 source.origin=uploaded-artifact/live=false，包含来源资产版本/摘要；这不能证明远端当前状态或写效果。原件与读取上下文留 B 证据，索引仍异步。
+
+knowledge.claim_submit 拒绝不可用证据时，失败任务的 GET /result 仍是 HTTP 200、信封 status=failed，原因在 data.error。SOURCE_FORBIDDEN 的 details={field:"evidence",index:<从0开始>,evidenceId:<请求中的引用>} 仅定位调用者提交的项；不存在与无权限同码同文，不泄露实际记录内容、存在性或归属。无效 SHA、非 Evidence 引用及无依据声明的原有拒绝规则保留；它不能代替原件上传和产品来源批准。
 
 ## 通用 OAuth 凭据登记
 

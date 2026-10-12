@@ -101,3 +101,47 @@ test('Source artifacts: drafts disabled revisions and conflicting selector field
   await h.reject('/v1/tools/buildsite.command_heads/call',{args:{build:approved.sourceArtifactId,prefix:'',sourceArtifactId:second.sourceArtifactId},idempotencyKey:'conflicting-source-selectors'},'INVALID_PAYLOAD');
   await h.request(`/v1/assets/${approved.assetId}/lifecycle`,{version:approved.version,sha256:approved.sha256,state:'disabled'});await h.reject('/v1/tools/buildsite.command_heads/call',{args:{build:approved.sourceArtifactId,prefix:''},idempotencyKey:'disabled-source-blocked'},'APPROVAL_REQUIRED');assert.equal(source.requests.length,0);
 });
+
+test('Source artifacts: existing assets registration binds uploaded originals and approved status supplies a stable command build id',async t=>{
+  const {h,source,gateway,upload,submit}=await environment(t),xml=await upload(externalTree,'commands.xml'),functions=await upload(functionContract(),'functions.json');
+  const input={scopeId:'scp_lab',kind:'knowledge-source',name:'Existing asset source registration',version:'1.0.0',declaration:{reads:['registered-source'],writes:[],credentials:[]},configuration:{schema:'external-source-artifact/1',metadata:{packageId:'synthetic',buildName,platform:'synthetic-os',versionLine:'7.1'},files:[{path:'commands.xml',role:'command-tree',sourceRevisionId:xml.sourceRevisionId,sha256:xml.sha256},{path:'functions.json',role:'function-contract',sourceRevisionId:functions.sourceRevisionId,sha256:functions.sha256}]},readers:['prn_alice','prn_bob']};
+  const draft=await h.request('/v1/assets',input);assert.equal(draft.sourceArtifactId,null);assert.equal(draft.lifecycle,'draft');assert.equal(draft.configuration.files[0].sourceRevisionId,xml.sourceRevisionId);assert.equal(draft.configuration.files[0].size,externalTree.length);assert.match(draft.configuration.files[0].sourceRecordId,/^knr_/);
+  const replay=await h.request('/v1/assets',{...input,assetId:draft.assetId});assert.equal(replay.sha256,draft.sha256);assert.equal(replay.deduplicated,true);
+  await h.reject(`/v1/assets/${draft.assetId}/lifecycle`,{version:draft.version,sha256:draft.sha256,state:'approved'},'SELF_APPROVAL');
+  const approved=await h.request(`/v1/assets/${draft.assetId}/lifecycle`,{version:draft.version,sha256:draft.sha256,state:'approved'},'bob');assert.match(approved.sourceArtifactId,/^sar_/);assert.equal((await h.request(`/v1/assets/${draft.assetId}`)).sourceArtifactId,approved.sourceArtifactId);
+  await h.startWorker();const listed=await h.request('/v1/tools/buildsite.versions/call',{args:{sourceArtifactId:approved.sourceArtifactId},idempotencyKey:'asset-source-versions'});assert.equal(listed.result.total,1);assert.deepEqual(listed.result.builds,[{name:buildName,buildId:approved.sourceArtifactId,formal:false,releasedOn:null,current:true,platform:'synthetic-os',commandTreeAvailable:true}]);assert.equal(listed.evidence[0].sha256,xml.sha256);
+  const checked=await call(h,'command_check',{build:listed.result.builds[0].buildId,commands:['service create port 443']});assert.equal(checked.result.commands[0].status,'hit');assert.equal(checked.result.commands[0].violations.length,0);assert.equal(source.requests.length,0);
+  const task=await submit({...approved,buildId:approved.sourceArtifactId});await h.phase(task.taskId,'waiting-review');const approval=(await h.request(`/v1/tasks/${task.taskId}/approvals`)).at(-1);assert.equal(approval.action.args.treeSha256,xml.sha256);assert.equal(approval.action.args.excelContractSha256,functions.sha256);await h.request(`/v1/tasks/${task.taskId}/approvals/${approval.approvalId}`,{inputRevisionId:approval.inputRevisionId,targetIdentity:approval.targetIdentity,actionDigest:approval.actionDigest,approve:true},'bob');await h.phase(task.taskId,'delivered');assert.equal(gateway.state.calls.filter(name=>name==='case_submit').length,1);
+  await h.stop();await h.startServer();assert.equal((await h.request(`/v1/assets/${draft.assetId}`)).sourceArtifactId,approved.sourceArtifactId);
+});
+
+test('Source artifacts: replaying an older asset version never rolls back current product source heads',async t=>{
+  const {h,upload}=await environment(t),xml=await upload(externalTree,'commands.xml');
+  const input={scopeId:'scp_lab',kind:'knowledge-source',name:'Versioned raw source',version:'1.0.0',declaration:{reads:['registered-source'],writes:[],credentials:[]},configuration:{schema:'external-source-artifact/1',files:[{path:'commands.xml',role:'command-tree',sourceRevisionId:xml.sourceRevisionId}]},readers:['prn_alice','prn_bob']};
+  const first=await h.request('/v1/assets',input),replacement=await upload(Buffer.from(externalTree.toString().replace('alpha','omega')),'commands.xml'),latest=await h.request('/v1/assets',{...input,assetId:first.assetId,version:'1.0.1',configuration:{...input.configuration,files:[{...input.configuration.files[0],sourceRevisionId:replacement.sourceRevisionId}]}});
+  const replay=await h.request('/v1/assets',{...input,assetId:first.assetId});assert.equal(replay.deduplicated,true);assert.equal((await h.request(`/v1/assets/${first.assetId}`)).version,latest.version);
+  const records=(await h.db.query("SELECT r.sha256 FROM knowledge_source_heads h JOIN knowledge_records r USING(record_id) WHERE r.payload->'asset'->>'assetId'=$1",[first.assetId])).rows;assert.deepEqual(records.map(row=>row.sha256),[replacement.sha256]);
+});
+
+test('Source artifacts: assets registration rejects forged hashes cross-scope originals and duplicate paths without storing partial knowledge',async t=>{
+  const {h,upload}=await environment(t),xml=await upload(externalTree,'commands.xml');
+  const input={scopeId:'scp_lab',kind:'knowledge-source',name:'Rejected source registration',version:'1.0.0',declaration:{reads:['registered-source'],writes:[],credentials:[]},configuration:{schema:'external-source-artifact/1',metadata:{},files:[{path:'commands.xml',role:'command-tree',sourceRevisionId:xml.sourceRevisionId,sha256:xml.sha256}]},readers:['prn_alice','prn_bob']};
+  const counts=async()=>[Number((await h.db.query('SELECT count(*) AS n FROM assets')).rows[0].n),Number((await h.db.query('SELECT count(*) AS n FROM knowledge_records')).rows[0].n)];const before=await counts();
+  await h.reject('/v1/assets',{...input,configuration:{...input.configuration,files:[{...input.configuration.files[0],sha256:'0'.repeat(64)}]}},'SOURCE_HASH_MISMATCH');
+  await h.reject('/v1/assets',{...input,configuration:{...input.configuration,files:[...input.configuration.files,...input.configuration.files]}},'INVALID_PAYLOAD');
+  const foreign=await h.request('/v1/sources',{scopeId:'scp_second',fileName:'foreign.xml',contentBase64:externalTree.toString('base64')});await h.reject('/v1/assets',{...input,configuration:{...input.configuration,files:[{...input.configuration.files[0],sourceRevisionId:foreign.sourceRevisionId}]}},'FORBIDDEN_SCOPE');
+  await h.reject('/v1/assets',{...input,configuration:{...input.configuration,sourceArtifactId:`sar_${'0'.repeat(32)}`}},'INVALID_PAYLOAD');assert.deepEqual(await counts(),before);
+});
+
+test('Knowledge candidates: failed results locate caller-supplied evidence while missing and hidden records remain indistinguishable',async t=>{
+  const {h,register,approveSource}=await environment(t),source=await approveSource(await register()),candidate=await h.request('/v1/assets',{scopeId:'scp_lab',kind:'connector-instance',name:'Candidate writer',version:'1.0.0',declaration:{reads:[],writes:['knowledge-candidates'],credentials:[]},configuration:{packageId:'knowledge'},readers:['prn_alice','prn_bob']});
+  await h.request(`/v1/assets/${candidate.assetId}/lifecycle`,{version:candidate.version,sha256:candidate.sha256,state:'approved'},'bob');await h.request(`/v1/assets/${candidate.assetId}/lifecycle`,{version:candidate.version,sha256:candidate.sha256,state:'running'});await h.startWorker();
+  const checked=await call(h,'command_check',{build:source.sourceArtifactId,commands:['service create port 443']}),valid=checked.evidence[0];
+  const good=await h.request('/v1/tools/knowledge.claim_submit/call',{args:{claim:{subject:'synthetic',predicate:'observed',value:true},evidence:[valid]},idempotencyKey:'candidate-evidence-valid'});await h.phase(good.taskId,'delivered');assert.equal((await h.request(`/v1/tasks/${good.taskId}/result`)).result.state,'candidate');
+  await h.db.query("UPDATE policies SET grants=grants-'builds.read' WHERE principal_id='prn_alice'");
+  const failures=[];for(const [index,evidenceId] of [valid.evidenceId,`knr_${'0'.repeat(32)}`].entries()){
+    const accepted=await h.request('/v1/tools/knowledge.claim_submit/call',{args:{claim:{subject:'synthetic',predicate:'unverified',value:true},evidence:[{evidenceId,sha256:valid.sha256}]},idempotencyKey:`candidate-evidence-hidden-${index}`});await h.phase(accepted.taskId,'failed');
+    const response=await h.raw(`/v1/tasks/${accepted.taskId}/result`,{token:await h.login()});assert.equal(response.status,200);assert.equal(response.body.status,'failed');assert.equal(response.body.data.result??null,null);const error=response.body.data.error;assert.equal(error.code,'SOURCE_FORBIDDEN');assert.deepEqual(error.details,{field:'evidence',index:0,evidenceId});failures.push(error);
+  }
+  assert.equal(failures[0].message,failures[1].message);
+});

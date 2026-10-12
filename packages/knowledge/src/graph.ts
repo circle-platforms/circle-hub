@@ -122,7 +122,14 @@ export class KnowledgeGraph {
   }
   async candidateFromReturns(tx:Transaction,ctx:AuthContext,scopeId:string,taskId:string,input:any):Promise<any>{
     await this.auth.check(ctx,'knowledge.submit',scopeId,tx);const evidence:Row[]=[];
-    for(const ref of input.evidence){const row=await this.need(ctx,ref.evidenceId,'Evidence',tx);requireCondition(row.scope_id===scopeId&&row.sha256===ref.sha256,'SOURCE_HASH_MISMATCH','Submitted evidence differs from the authorized return');evidence.push(row);}
+    for(const [index,ref] of input.evidence.entries()){
+      let row:Row;try{row=await this.need(ctx,ref.evidenceId,'Evidence',tx);}catch(error){
+        // Echo only the submitted reference; absent and hidden records keep the
+        // same classification and never reveal the referenced object's fields.
+        if(error instanceof ApiError&&error.code==='SOURCE_FORBIDDEN')throw new ApiError(error.code,error.message,{field:'evidence',index,evidenceId:ref.evidenceId});throw error;
+      }
+      requireCondition(row.scope_id===scopeId&&row.sha256===ref.sha256,'SOURCE_HASH_MISMATCH','Submitted evidence differs from the authorized return');evidence.push(row);
+    }
     const bytes=Buffer.from(canonicalJson({claim:input.claim,toolReturns:input.evidence})),digest=sha256(bytes);await this.objects.objects.putObject({Bucket:'evidence',Key:digest,Body:bytes});
     const stored=(await tx.query(`INSERT INTO sources(source_revision_id,tenant_id,scope_id,principal_id,sha256,size,object_key,file_name) VALUES($1,$2,$3,$4,$5,$6,$5,$7)
       ON CONFLICT(tenant_id,scope_id,sha256) DO UPDATE SET sha256=EXCLUDED.sha256 RETURNING *`,[newId('src'),ctx.tenantId,scopeId,ctx.principalId,digest,bytes.length,`candidate-${digest.slice(0,16)}.json`])).rows[0];

@@ -23,7 +23,7 @@
 
 sourceRevisionId 与 artifactId 二选一。sourceSha256 可省略，由 server 钉住；module 可选，只接受字母/数字/下划线/连字符；deadlineMs 默认一小时、范围 1000–3600000。build 优先用 buildId，构建名必须唯一，可用 platform 消歧。必须是单表「执行」、隐藏行一精确标记 `APV_EXCEL_CONTRACT | apv.excel.runtime | v1` 和九列执行契约；第一阶段两表七列结构工作簿不可执行。
 
-命令核对也可绑定通用外部来源制品。先分别上传命令 XML 和函数契约 JSON 原字节，再 POST /v1/source-artifacts：metadata={buildName:<预期构建名>,platform:<可选平台>}，files 中一份 role=command-tree、一份 role=function-contract，分别带 path/sourceRevisionId/sha256。另一人批准该 knowledge-source 资产后，GET /v1/source-artifacts/{assetId} 取得 sar_ id。buildsite.command_heads/param/check 的 build 填此 id；执行 input.commandSourceAssetId 填该来源 assetId，build 填 sar_ id。同一制品 id 也能绑定其他连接器工具，通用平台只管理原件和治理。
+命令核对也可绑定通用外部来源制品。先分别用 POST /v1/sources 上传命令 XML 和函数契约 JSON 原字节，再 POST /v1/assets 登记 kind=knowledge-source；确切的 configuration 示例见 [通用来源交接](client-api-handoff.md#通用外部来源制品)。configuration.schema=external-source-artifact/1，metadata={packageId:apv,buildName:<预期构建名>,platform:<可选平台>}，files 中一份 role=command-tree、一份 role=function-contract，分别带 path/sourceRevisionId/sha256。另一人批准后，生命周期响应及 GET /v1/assets/{assetId} 顶层直接给 sourceArtifactId（sar_ id）；绑定来源调用 versions 也返回同一 buildId。buildsite.command_heads/param/check 的 build 填此 id；执行 input.commandSourceAssetId 填该来源 assetId，build 填 sar_ id。同一制品 id 也能绑定其他连接器工具，通用平台只管理原件和治理。
 
 APV 消费者独立解析两份文件。函数契约数据需完整、包含唯一 e/f/status 条目，只有 enabled 才满足该关口；disabled/internal/absent 立即拒绝并给工作簿行定位。它不能使未实现的不透明函数、禁用生命周期或未确认 console 角色绕过现有执行限制。树与函数契约 SHA 同时进入 command-check.json、审批动作和投递前复核；源资产未批准、停用、修订或权限变化时不自动换源、不读取旧绑定作为新版本。
 

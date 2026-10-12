@@ -160,6 +160,7 @@ export const ToolEvidence=z.object({evidenceId:z.string(),sha256:Sha256});
 export const ToolCallResult=z.union([z.object({result:z.unknown(),evidence:z.array(ToolEvidence)}),z.object({taskId:TaskId,phase:TaskPhase})]);
 export const SafeRelativePath=z.string().min(1).max(500).refine(path=>!path.startsWith('/')&&!/^[a-z]:/i.test(path)&&!path.includes('\\')&&!/[\x00-\x1f]/.test(path)&&path.split('/').every(part=>part!==''&&part!=='.'&&part!=='..'&&part!=='.git'),'Use a safe relative path');
 export const SourceArtifactFileInput=z.object({path:SafeRelativePath,role:z.string().min(1).max(100),mediaType:z.string().min(1).max(200).default('application/octet-stream'),sourceRevisionId:SourceRevisionId.optional(),sourceRecordId:KnowledgeRecordId.optional(),sha256:Sha256.optional()}).strict().refine(value=>!!value.sourceRevisionId!==!!value.sourceRecordId,'Provide one original source revision or product SourceRevision record');
+export const SourceArtifactConfiguration=z.object({schema:z.literal('external-source-artifact/1'),metadata:z.record(z.string(),z.unknown()).default({}),files:z.array(SourceArtifactFileInput).min(1).max(100)}).strict().refine(value=>new Set(value.files.map(file=>file.path)).size===value.files.length,'Artifact file paths must be unique');
 export const SourceArtifactRegistration=z.object({scopeId:ScopeId,name:z.string().min(1).max(200),version:PackageVersion,metadata:z.record(z.string(),z.unknown()).default({}),files:z.array(SourceArtifactFileInput).min(1).max(100),readers:z.array(z.string()).max(1000).optional()}).strict().refine(value=>new Set(value.files.map(file=>file.path)).size===value.files.length,'Artifact file paths must be unique');
 export const SourceArtifactView=z.object({assetId:AssetId,scopeId:ScopeId,version:PackageVersion,sha256:Sha256,lifecycle:AssetLifecycle,sourceArtifactId:SourceArtifactId.nullable(),metadata:z.record(z.string(),z.unknown()),files:z.array(z.object({path:SafeRelativePath,role:z.string(),mediaType:z.string(),sourceRevisionId:SourceRevisionId,sourceRecordId:KnowledgeRecordId,sha256:Sha256,size:z.number().int().positive()})),provenance:z.object({kind:z.literal('user-upload'),semanticQuality:z.literal('not-asserted')})});
 export const SkillPackId=identity('skp');
@@ -298,6 +299,9 @@ export const CLIENT_ROUTES = {
   approvals:{ method:'GET',path:'/v1/tasks/{taskId}/approvals',response:z.array(ApprovalView) },
   objectTypes:{method:'GET',path:'/v1/object-types'},
   assets:{method:'GET',path:'/v1/assets',query:AssetListQuery},
+  assetSubmit:{method:'POST',path:'/v1/assets',request:AssetRegistration},
+  asset:{method:'GET',path:'/v1/assets/{assetId}'},
+  assetLifecycle:{method:'POST',path:'/v1/assets/{assetId}/lifecycle',request:AssetTransition},
   sourceArtifactSubmit:{method:'POST',path:'/v1/source-artifacts',request:SourceArtifactRegistration,response:SourceArtifactView},
   sourceArtifact:{method:'GET',path:'/v1/source-artifacts/{assetId}',response:SourceArtifactView},
   oauthDevice:{method:'POST',path:'/v1/credentials/oauth/device',request:OAuthGrantInput},

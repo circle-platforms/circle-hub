@@ -13,12 +13,14 @@ function clean(value:unknown):void{
 export class Assets {
   store:Store;auth:Auth;vault:PrivateVault;
   healthCheck?: (ctx:AuthContext,asset:any)=>Promise<{result:string;reason:string}>;
+  prepareRegistration?: (ctx:AuthContext,definition:AssetRegistration,id:string,tx:Transaction)=>Promise<AssetRegistration>;
   validateRegistration?: (ctx:AuthContext,definition:AssetRegistration,id:string,tx:Transaction)=>Promise<void>;
+  decorateView?: (row:any)=>Record<string,unknown>;
   materializeCredential?: (ctx:AuthContext,row:any,link:any,value:string)=>Promise<string>;
   constructor(store:Store,auth:Auth,directory:string){this.store=store;this.auth=auth;this.vault=new PrivateVault(directory);}
   binding(row:any):string{return JSON.stringify([row.tenant_id,row.scope_id,row.owner_principal_id,row.asset_id,row.version]);}
   view(row:any):any{return {assetId:row.asset_id,scopeId:row.scope_id,kind:row.kind,ownerPrincipalId:row.owner_principal_id,version:row.version,name:row.name,
-    sha256:row.sha256,declaration:row.declaration,configuration:row.configuration,lifecycle:row.lifecycle,health:row.health};}
+    sha256:row.sha256,declaration:row.declaration,configuration:row.configuration,lifecycle:row.lifecycle,health:row.health,...this.decorateView?.(row)};}
   async row(ctx:AuthContext,id:string,tx?:Transaction,grant='assets.read'):Promise<any>{
     const policy=await this.auth.check(ctx,grant,undefined,tx);
     const row=(await (tx??this.store.pool).query(`SELECT a.*,v.* FROM ${join} WHERE ${visibility} AND a.asset_id=$4`,[policy.tenantId,policy.scopes,policy.principalId,id])).rows[0];
@@ -33,14 +35,16 @@ export class Assets {
     const items=rows.slice(0,query.limit).map(row=>this.view(row));return {items,total,nextCursor:rows.length>query.limit?items.at(-1).assetId:null};
   });}
   async register(ctx:AuthContext,input:AssetRegistration,tx?:Transaction,credential=false):Promise<any>{
-    const definition=Registration.parse(input);clean(definition.configuration);
-    requireCondition(credential||definition.kind!=='credential-reference','INVALID_PAYLOAD','Register personal credentials through the write-only endpoint');
+    const parsed=Registration.parse(input);clean(parsed.configuration);
+    requireCondition(credential||parsed.kind!=='credential-reference','INVALID_PAYLOAD','Register personal credentials through the write-only endpoint');
     const run=async(client:Transaction)=>{
+      let definition=parsed;
       const p=await this.auth.check(ctx,'assets.register',definition.scopeId,client),owner=definition.ownerPrincipalId??p.principalId;
       requireCondition(owner===p.principalId,'FORBIDDEN_ACTION','A person registers only their own asset');
       const id=definition.assetId??newId('ast');await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[id]);
       const existing=(await client.query('SELECT * FROM assets WHERE asset_id=$1',[id])).rows[0];
       requireCondition(!existing||existing.tenant_id===p.tenantId&&existing.scope_id===definition.scopeId&&existing.owner_principal_id===owner&&existing.kind===definition.kind,'FORBIDDEN_ACTION','Asset ownership and partition cannot be reassigned');
+      definition=await this.prepareRegistration?.(ctx,definition,id,client)??definition;clean(definition.configuration);
       const readers=credential?[owner]:definition.readers??[owner];
       const digest=canonicalHash({scopeId:definition.scopeId,kind:definition.kind,owner,name:definition.name,version:definition.version,declaration:definition.declaration,configuration:definition.configuration,readers});
       const old=(await client.query('SELECT * FROM asset_versions WHERE asset_id=$1 AND version=$2',[id,definition.version])).rows[0];
