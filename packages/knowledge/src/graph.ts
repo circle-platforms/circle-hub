@@ -29,6 +29,17 @@ export class KnowledgeGraph {
         WHERE h.tenant_id=$1 AND h.scope_id=$2 AND h.identity_key=$3`,[source.tenant_id,source.scope_id,source.payload.sourceIdentity])).rows[0];
       if(!current)return false;
       for(const revision of [source,current])if(!permit(revision.payload.acl.sourceReaders,p.principalId)||!permit(revision.payload.acl.platformReaders,p.principalId))return false;
+      let asset=source.payload.asset;
+      // Older retained tool sources also obey the current asset's reader policy.
+      if(!asset&&source.payload.parserVersion==='tool-return/1')try{const key=JSON.parse(source.payload.sourceId);if(Array.isArray(key)&&typeof key[0]==='string'&&key[0].startsWith('ast_'))asset={assetId:key[0]};}catch{/* A manually ingested source has no implicit asset binding. */}
+      if(asset){const authority=(await (tx??this.store.pool).query(`SELECT a.tenant_id,a.scope_id,a.owner_principal_id,v.readers,v.declaration FROM assets a JOIN asset_versions v ON v.asset_id=a.asset_id AND v.version=a.current_version WHERE a.asset_id=$1`,[asset.assetId])).rows[0];
+        if(!authority||authority.tenant_id!==p.tenantId||!p.scopes.includes(authority.scope_id)||authority.owner_principal_id!==p.principalId&&!permit(authority.readers,p.principalId)||asset.permission&&!p.grants.includes(asset.permission))return false;
+        for(const reference of authority.declaration.credentials){
+          if(!p.grants.includes('credentials.use'))return false;
+          const credential=(await (tx??this.store.pool).query(`SELECT a.tenant_id,a.scope_id,a.owner_principal_id,v.lifecycle,v.configuration FROM assets a JOIN asset_versions v ON v.asset_id=a.asset_id AND v.version=a.current_version WHERE a.asset_id=$1 AND a.kind='credential-reference'`,[reference])).rows[0];
+          if(!credential||credential.tenant_id!==p.tenantId||!p.scopes.includes(credential.scope_id)||credential.owner_principal_id!==p.principalId||credential.lifecycle==='disabled'||credential.configuration.connectorAssetId!==asset.assetId)return false;
+        }
+      }
     }return true;
   }
   async get(ctx:AuthContext,id:string,tx?:Transaction):Promise<any>{const row=await this.row(id,tx);if(!await this.visible(ctx,row,tx))this.denied();return this.view(row!);}
@@ -53,6 +64,7 @@ export class KnowledgeGraph {
   async source(ctx:AuthContext,value:unknown):Promise<any>{
     const input=KnowledgeSourceInput.parse(value),bytes=Buffer.from(input.contentBase64,'base64');
     requireCondition(!input.sha256||input.sha256===sha256(bytes),'SOURCE_HASH_MISMATCH','Original bytes differ from the declared SHA');
+    if(['shared-session','skill-run','bot-run','review-correction','footprint'].includes(input.sourceType))requireCondition(input.knowledgeCategory==='consolidated','INVALID_PAYLOAD','Shared or model sources must be consolidated knowledge');
     if(input.knowledgeCategory==='consolidated')requireCondition(input.sharing?.allowed===true,'SHARING_REQUIRED','Consolidation requires explicit sharing consent');
     return this.store.transaction(async tx=>{
       const p=await this.auth.check(ctx,'knowledge.ingest',input.scopeId,tx);
@@ -94,13 +106,13 @@ export class KnowledgeGraph {
   };return transaction?run(transaction):this.store.transaction(run);}
   // Internal B capture, called only after D has verified the live operation/fence.
   // A read tool can retain its own observations without granting a public ingestion API.
-  async capture(tx:Transaction,ctx:AuthContext,scopeId:string,assetId:string,raw:{path:string;sha256:string;contentBase64:string;sourceType:string}):Promise<any>{
+  async capture(tx:Transaction,ctx:AuthContext,scopeId:string,assetId:string,raw:{path:string;sha256:string;contentBase64:string;sourceType:string;requestKey?:string},permission?:string):Promise<any>{
     const p=await this.auth.policy(ctx,tx);requireCondition(p.tenantId===ctx.tenantId&&p.scopes.includes(scopeId),'FORBIDDEN_SCOPE','Observation exceeds the execution partition');
     Base64Content.parse(raw.contentBase64);const bytes=Buffer.from(raw.contentBase64,'base64');requireCondition(bytes.length>0&&bytes.length<=MAX_SOURCE_BYTES,'BODY_TOO_LARGE','Observation exceeds the byte limit');requireCondition(sha256(bytes)===raw.sha256,'SOURCE_HASH_MISMATCH','Worker original SHA differs');
     await this.objects.objects.putObject({Bucket:'evidence',Key:raw.sha256,Body:bytes});
     const stored=(await tx.query(`INSERT INTO sources(source_revision_id,tenant_id,scope_id,principal_id,sha256,size,object_key,file_name) VALUES($1,$2,$3,$4,$5,$6,$5,$7)
       ON CONFLICT(tenant_id,scope_id,sha256) DO UPDATE SET sha256=EXCLUDED.sha256 RETURNING *`,[newId('src'),ctx.tenantId,scopeId,ctx.principalId,raw.sha256,bytes.length,`tool-${raw.sha256.slice(0,16)}.bin`])).rows[0];
-    const sourceId=canonicalJson([assetId,ctx.principalId,raw.path]),sourceIdentity=canonicalHash([sourceId,'product']),payload={sourceId,sourceIdentity,revision:raw.sha256,path:raw.path,parserVersion:'tool-return/1',acl:{sourceReaders:[ctx.principalId],platformReaders:[ctx.principalId]},sharing:null,raw:this.objects.sourceReference(stored)};
+    const sourceId=canonicalJson([assetId,ctx.principalId,raw.path,raw.requestKey??null,'source-authority/1']),sourceIdentity=canonicalHash([sourceId,'product']),payload={sourceId,sourceIdentity,revision:raw.sha256,path:raw.path,parserVersion:'tool-return/1',acl:{sourceReaders:[ctx.principalId],platformReaders:[ctx.principalId]},asset:{assetId,...(permission?{permission}:{})},sharing:null,raw:this.objects.sourceReference(stored)};
     const source=await this.save(tx,ctx,'SourceRevision',scopeId,canonicalHash([sourceIdentity,raw.sha256]),payload,[],{category:'product',sourceType:raw.sourceType,visibility:'team',state:'observed',digest:raw.sha256});
     await tx.query(`INSERT INTO knowledge_source_heads(tenant_id,scope_id,identity_key,record_id) VALUES($1,$2,$3,$4) ON CONFLICT(tenant_id,scope_id,identity_key) DO UPDATE SET record_id=EXCLUDED.record_id`,[ctx.tenantId,scopeId,sourceIdentity,source.recordId]);
     const evidence=await this.save(tx,ctx,'Evidence',scopeId,canonicalHash([source.recordId,0,bytes.length]),{sourceRecordId:source.recordId,start:0,end:bytes.length,sha256:raw.sha256,text:bytes.toString('utf8'),path:raw.path},[source.recordId],{category:'product',sourceType:raw.sourceType,visibility:'team',state:'observed',digest:raw.sha256});

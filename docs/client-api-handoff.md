@@ -206,6 +206,8 @@ E 的 `command-tree/1.0.0` 规则采用 POSIX quote/escape 分词并转小写，
 
 来源地址只在运行时配置文件提供。`CIRCLE_SERVER_CONNECTOR_PROFILES` 指向仓库外的 JSON 文件，形状为 `{"profiles":{"<配置引用>":{"origin":"<运行时来源>","root":"<文档根>","index":"<构建首页>","payloadField":"data"}}}`。连接器资产 configuration 使用 `packageId`（documents/build-site/query-mirror/environment-view/knowledge）、`runtimeProfileRef`、可选 alias；个人凭据走 `/v1/assets/{id}/credentials`，之后在新资产修订的 declaration.credentials 中引用。PLM 的 JWT 只在 worker 内注入，无 Bearer；值不回到注册/目录/调用响应或审计。当前仅合成来源验收，真实源冒烟仍需授权。
 
+成功的只读回执现在自动进入产品知识：server 从已验 SHA 原件重新抽取结构观察，生成实体、脚本声明和评估，连同源修订/证据发布到产品 stable；`GET /v1/knowledge/search` 可检索，无需客户端另行手工导入。声明 origin=script，评估 semantic=not-asserted，仅证明字面内容/结构，不能凭命令存在宣称整个功能支持。重复原件复用记录，当前快照排除被替换的来源声明，历史证据保留；空列表修订也更新。检索继续按实际读取者、当前资产与源权限、读 grant 和个人凭据状态过滤，不因快照发布扩权。共享会话和 footprint 等模型来源必须 consolidated、显式许可，仍从个人候选开始。
+
 `npm run dev:stack` 一次启动临时 PostgreSQL、server、两个 worker 和合成来源，并登记/独立批准/启用上述五个工具资产。终端打印 server 地址、developer 与 approver 的临时登录方式；developer 登录后立即可取非空工具目录。默认合成版本线为 10.5，正式构建 `Rel_PHOTON_10_5_0_101` / `Rel_PHOTON_10_5_0_109`，前者有 `feature.enable`，后者缺失；两者都有几十条 service 命令。Ctrl+C 也关闭合成来源并删除 scratch。
 
 ## 第二阶段：技能包约定与 RPC 边界

@@ -5,7 +5,7 @@ import {randomBytes} from 'node:crypto';
 export async function createSyntheticSources() {
   const secret=randomBytes(24).toString('hex');
   const requests:{method:string;path:string;authorization?:string;body:any}[]=[];
-  const state={revision:1,mode:'ready',fixed:['401'],command:'feature.enable',changedBuild:'',encoding:'UTF-8',expandedCommands:false,manualText:'',headCount:36};
+  const state={revision:1,mode:'ready',fixed:['401'],command:'feature.enable',changedBuild:'',encoding:'UTF-8',expandedCommands:false,manualText:'',headCount:36,mirrorIds:[51]};
   const xml=(command:string,name:string)=>{
     const first=state.expandedCommands&&name.includes('_109')?'':`<item name="${command}"><arguments><arg position="1" name="mode" type="STRING" optional="true"/></arguments><results><result name="status"/></results></item>`;
     const expanded=state.expandedCommands?[
@@ -60,7 +60,7 @@ export async function createSyntheticSources() {
     }
     if(url.pathname==='/plmquery/product/all/'){res.end(JSON.stringify({code:1000,data:[{id:7,name:'Synthetic product'}]}));return;}
     if(url.pathname==='/plmquery/bug/'){
-      res.end(JSON.stringify({code:1000,data:[{id:51,title:'Synthetic defect',severity:2,pri:3,status:'resolved',product:7,assignedTo:'closed',openedDate:'2026-01-01T08:00:00',resolvedDate:'0000-00-00 00:00:00',deleted:0}]}));return;
+      res.end(JSON.stringify({code:1000,data:state.mirrorIds.map(id=>({id,title:'Synthetic defect',severity:2,pri:3,status:'resolved',product:7,assignedTo:'closed',openedDate:'2026-01-01T08:00:00',resolvedDate:'0000-00-00 00:00:00',deleted:0}))}));return;
     }
     if(url.pathname==='/plmquery/bug/detail/'){
       res.end(JSON.stringify({code:1000,data:payload.bug_ids.map((id:number)=>({id:String(id),title:'Synthetic defect',severity:'2',pri:'3',status:'resolved',resolution:id===52?'future-resolution':'fixed',product:'7',assignedTo:'closed',openedDate:'2026-01-01 08:00:00',resolvedDate:'',lastEditedDate:`2026-01-02 08:00:0${state.revision}`,resolvedBuild:'99',openedBuild:'trunk',bugzillaID:'401',actions:[{id:'9',actor:'synthetic-user',action:'resolved',date:'2026-01-02 08:00:00',comment:'Synthetic correction',extra:''}]}))}));return;

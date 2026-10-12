@@ -1,7 +1,7 @@
-import {ApiError,MAX_SOURCE_BYTES,requireCondition,sha256} from '../../contracts/src/index.ts';
+import {ApiError,MAX_SOURCE_BYTES,canonicalHash,requireCondition,sha256} from '../../contracts/src/index.ts';
 import {setTimeout as delay} from 'node:timers/promises';
 
-export interface RawReturn {path:string;bytes:Buffer;sha256:string;mediaType:string;etag:string|null;sourceType?:string}
+export interface RawReturn {path:string;bytes:Buffer;sha256:string;mediaType:string;etag:string|null;sourceType?:string;requestKey?:string}
 export interface SourceOptions {authorization?:()=>string|Promise<string>;timeoutMs?:number;absenceTtlMs?:number;requestConcurrency?:number;requestIntervalMs?:number}
 export interface Incremental<T> {items:T[];cursor:Record<string,string>;evidence:RawReturn[]}
 
@@ -41,7 +41,7 @@ export class HttpSource {
       if(!response.ok)throw new ApiError('SOURCE_UNREACHABLE','Source did not return a readable response');
       const chunks:Buffer[]=[];let size=0;
       for await(const chunk of response.body??[]){size+=chunk.length;requireCondition(size<=MAX_SOURCE_BYTES,'BODY_TOO_LARGE','Source return exceeds the byte limit');chunks.push(Buffer.from(chunk));}
-      const bytes=Buffer.concat(chunks);return {path:target,bytes,sha256:sha256(bytes),mediaType:response.headers.get('content-type')??'application/octet-stream',etag:response.headers.get('etag')};
+      const bytes=Buffer.concat(chunks);return {path:target,bytes,sha256:sha256(bytes),mediaType:response.headers.get('content-type')??'application/octet-stream',etag:response.headers.get('etag'),requestKey:canonicalHash({method:options.method??'GET',path:target,body:options.json??null})};
     }catch(error){if(error instanceof ApiError)throw error;throw new ApiError('SOURCE_UNREACHABLE','Source cannot be reached');}finally{release();}
   }
   async json(path:string,options:{method?:'GET'|'POST';json?:unknown}={}):Promise<{result:any;evidence:RawReturn}> {

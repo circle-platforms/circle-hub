@@ -8,6 +8,7 @@ import type {Tasks} from '../../tasks/src/index.ts';
 import type {Assets} from '../../assets/src/index.ts';
 import type {Operations} from '../../execution/src/operations.ts';
 import type {KnowledgeGraph} from '../../knowledge/src/graph.ts';
+import {ProductRecords} from '../../knowledge/src/product-records.ts';
 import type {ToolPackage,ToolDefinition,ConnectorProfile} from '../../connectors/src/tool-packages.ts';
 
 export class ToolCatalog {
@@ -88,7 +89,13 @@ export class ToolCatalog {
       if(item.definition.handler==='candidate.submit')result=await this.knowledge.candidateFromReturns(tx,actor,task.scopeId,task.taskId,operation.args.input);
       else if(item.definition.handler==='consolidation.fragments'){const selected=await this.knowledge.sharedFragments(tx,actor,task.scopeId,operation.args.input.limit??20,operation.args.input.after);result=selected.result;evidence.push(...selected.evidence);}
       else{requireCondition(Array.isArray(report.output.raw)&&report.output.raw.length>0,'EVIDENCE_INSUFFICIENT','Read tools require original returns');
-        for(const raw of report.output.raw){evidence.push(await this.knowledge.capture(tx,actor,task.scopeId,item.row.asset_id,{...raw,sourceType:raw.sourceType??report.output.sourceType}));await this.observed?.(tx,actor,item.row.asset_id,raw);}}
+        const references=new Map<string,{evidenceId:string;sha256:string}>();
+        for(const raw of report.output.raw){const ref=await this.knowledge.capture(tx,actor,task.scopeId,item.row.asset_id,{...raw,sourceType:raw.sourceType??report.output.sourceType},item.definition.permission);evidence.push(ref);references.set(raw.path,ref);await this.observed?.(tx,actor,item.row.asset_id,raw);}
+        const projection=this.packages.find(pack=>pack.id===item.row.package_id)?.projection;
+        if(projection){const originals=report.output.raw.map((raw:any)=>({...raw,bytes:Buffer.from(raw.contentBase64,'base64'),mediaType:'application/octet-stream',etag:null}));const profile=this.profiles[item.row.configuration.runtimeProfileRef];
+          await new ProductRecords(this.knowledge).import(tx,actor,task.scopeId,item.row.asset_id,projection.version,await projection.extract(originals,profile),references);
+        }
+      }
     }
     const receipt={output:{result},evidence,reportHash:canonicalHash(report),error:report.error};
     await this.execution.complete(tx,operation,report.status,receipt);

@@ -227,3 +227,19 @@ RPC prompt/turn/tool/settled 等真实事件进入 C。只在 agent_settled、�
 联验期间 Circle 的活动工作树由 cf32f7f 前进，严格 Git 门禁拒绝三个实际 RPC 用例。用户确认新提交 `8b2ceb6df620832bfd7925aede93bb35f4a605a2`（1.1.1）已构建，并提供固定 detached 工作树；后续验收使用其运行时 CIRCLE_BIN/CIRCLE_COMMIT，地址和本机路径不入库。Claude 正在 7420 的独立 2cdbca4 dev stack 做 Otty bot 联验，本轮没有操作该进程，也没有修改 Circle。
 
 实际只读资产/连接器/知识/工具/按需/缺清单/分页专项 **25/25**。在用户提供的固定 8b2ceb6 构建上完整运行：contracts **4/4**、methods **7/7**、acceptance **63/64**，**无 skip**，实际 RPC、取消与定时整理均通过；唯一红项仍是已有 S2.7 的 15 处专业核心迁出。因 npm test 在这一红项处退出，另行执行 test:references **7/7**，verify:references 验证 **714** 原件。typecheck 和 diff 检查通过；相同被拒回报的幂等重传另补验证。第 7 幕、自动产品知识声明/快照和第二产品线仍未完成，没有宣称全阶段通过或远端停止，未 push。
+
+### 494b4a2 独立复核与 Otty bot 观察
+
+用户提供 Claude 独立复核：固定 Circle 8b2ceb6，contracts 4/4、methods 7/7、acceptance 63/64 无 skip、references 7/7，只有 S2.7 红；原两个复现脚本确认 startsAt 早 30 分钟只建 1 个任务、skippedOccurrences=30，21 片段为 20+nextCursor 再 1+null，操作 succeeded。真实 Otty 使用 server 494b4a2 + Circle 8ed6660：晚 3 小时的每小时 bot 只编译 1 次，Circle 显示合并 3 次错过项，4 个产物 SHA 与手动运行一致；停用技能资产后的事件受理记录 null/failed/APPROVAL_STALE，未编译且显示 not started；事件同 id 去重和异内容拒绝在该栈确认。这些是用户观察，不补造制品摘要。
+
+新发现的设计风险是动态页面可能让 bot 的工具读回执产生 source.changed 再触发自己；排在本步入库收尾之后，须增加真实脚本模型的回归。开发登录 token 有效 5 分钟，Circle 后台 401 只提示 sign-in expired、不弹密码；正式身份的刷新机制是第 7 幕之外的已知限制，当前没有实现刷新或声称接入正式身份。
+
+## 16：产品来源的自动知识入库
+
+先写三条验收，确认 **0/3**：读回执只存 SourceRevision/Evidence，没有正式检索声明；共享/footprint 类型误标 product 可绕过许可检查。新增通用 B 的产品观察接收/快照机制；具体结构抽取在连接器包。server 从已验 SHA 的原字节重新抽取，保留 来源修订 → 证据 → 实体 → 脚本声明 → 脚本评估 → 快照 闭包；原件、类别、来源类型、抽取规则版本固定。脚本仅确认文档字面内容、构建发布字段、命令定义/参数、镜像字段和环境读回值，不声明功能语义或模型判断正确。非 UTF-8/过大正文仅入原件摘要，未运行文档转换。
+
+来源身份增加不含凭据的请求 hash，批量 POST 和不同查看参数不会互相覆盖修订。重复读取同字节不新增知识记录；当前产品 stable 排除已被新源修订替代的声明，历史原件和声明不改。空列表也更新快照，新增验收先确认旧列表声明残留，再修复；不删除独立详情来源的观察。源读取权限仍只授予实际读取者，按当前资产读者、相应读取 grant、个人凭据所有者/引用/停用状态再过滤；停用凭据的派生访问回归先失败后通过。旧工具来源也补上当前资产读者约束，不读取任何凭据值做知识检索。
+
+shared-session/skill-run/bot-run/review-correction/footprint 必须标 consolidated 且有显式共享许可；模型候选不自动变产品事实或进正式快照。单独人工审核/API 能力沿用第 3 幕。当前没有使用真实知识、会话或企业来源；源系统自身的权限观察仍以取得的来源 ACL/执行身份为准，没有实时探测真实系统撤权。
+
+实际新增入库验收 **4/4**，与原知识/目录联合 **14/14**；固定 8b2ceb6 的 SDK/按需/RPC/bot 联验 **19/19**，无 skip，typecheck/diff 检查通过。核心迁出与第二产品线仍待完成，下一步先隔离 bot 自己的 observed 事件，再迁出核心；APV 三笔已由用户明确指定 cherry-pick，保持 Claude 作者/信息，不修改其技能脚本或 SKILL.md。

@@ -7,9 +7,11 @@ import {BuildSite,type BuildRecord} from './build-site.ts';
 import {QueryMirror} from './query-mirror.ts';
 import {EnvironmentView} from './environment-view.ts';
 import {SourceCache} from './source-cache.ts';
+import {projectSource} from './product-projections.ts';
+import type {ProductObservation} from '../../knowledge/src/product-records.ts';
 
 export interface ToolDefinition {suffix:string;title:string;description:string;schema:z.ZodObject<any>;effect:'read'|'write';mode:'sync'|'task';permission:string;handler:string}
-export interface ToolPackage {id:string;prefix:string;tools:ToolDefinition[]}
+export interface ToolPackage {id:string;prefix:string;tools:ToolDefinition[];projection?:{version:string;extract:(raw:RawReturn[],profile:ConnectorProfile)=>Promise<ProductObservation[]>}}
 const tool=(suffix:string,title:string,schema:z.ZodObject<any>,permission:string,handler:string,effect:'read'|'write'='read',mode:'sync'|'task'='sync'):ToolDefinition=>({suffix,title,description:title,schema,permission,handler,effect,mode});
 const short=z.string().min(1).max(500),build=z.string().min(1).max(200);
 export const toolPackages:ToolPackage[]=[
@@ -43,6 +45,7 @@ export const toolPackages:ToolPackage[]=[
     tool('claim_submit','提交个人沉淀候选；不自动提升为团队知识',z.object({claim:z.object({subject:short,predicate:short,value:z.unknown(),conditions:z.record(z.string(),z.unknown()).default({})}).strict(),evidence:z.array(z.object({evidenceId:z.string(),sha256:z.string().regex(/^[a-f0-9]{64}$/)}).strict()).min(1).max(100)}).strict(),'knowledge.submit','candidate.submit','write','task'),
   ]},
 ];
+for(const pack of toolPackages)if(pack.id!=='knowledge')pack.projection={version:'source-projection/1',extract:(raw,profile)=>projectSource(pack.id,raw,profile)};
 export interface ConnectorProfile {origin:string;root?:string;index?:string;payloadField?:string;requestConcurrency?:number;requestIntervalMs?:number}
 export interface ToolReturn {result:any;raw:RawReturn[];sourceType:string}
 export async function executeTool(packageId:string,handler:string,args:any,profile:ConnectorProfile,credential?:string,options:{cache?:SourceCache;cacheNamespace?:string}={}):Promise<ToolReturn>{
