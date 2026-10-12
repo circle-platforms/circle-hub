@@ -263,6 +263,8 @@ POST 成功是 201，status 初始 `candidate`，额外返回 manifest/ownerPrin
 
 未声明或不可用工具拒绝为 422 `SKILLPACK_CHECK_FAILED`，details.check 带两张清单。用 `GET /v1/tasks/{approvalTaskId}/approvals` 取得 approvalId、inputRevisionId、targetIdentity、actionDigest，再由独立人员按第一阶段 respond body 批准；申请人不能自批。审批者需 decisions.approve 和 assets.approve，不因此获得执行权限；批准时重新核对申请人目录，运行时核对实际运行者目录。批准后包状态 `registered`，绑定 sealed digest 和当前资产修订；停用或修订变化阻止新运行。
 
+同 id 提交新版本后，旧的待批申请可由独立审批人用原 respond body 的 `approve:false` 驳回。绑定字段从旧任务的 approvals 取得，不替换成最新资产的 SHA。驳回核对原任务修订/申请人/技能摘要/历史资产版本与 SHA，以及审批人当前 decisions.approve、assets.approve 和 scope；不要求原申请人仍有提交/读取权限或旧版本仍是当前资产。批准仍重查当前版本与目录，旧版不能借此获批。成功后 approval 和旧技能状态为 declined、pending input 为 answered，登记任务以 delivered 结束；这是治理流程完成，不代表技能获批。新版本的批准、资产状态和执行资格不受影响；重复决定为 DECISION_CONFLICT。此行为无需新契约或迁移，升级后适用于已有未过期、输入未换版的待批旧申请。
+
 工具不匹配的 message 直接列具体名称与原因，例如 `Undeclared trial tools: docs.get; Tools unavailable in caller catalog: zentao.products`；示例不表示这些工具在某个实际身份下不可用。单条消息最多 1000 字符，长清单保留完整名称、显示剩余数量，并指向 details.check；details.check.undeclaredTools/missingTools 完整、去重且稳定排序。名称用 GET /v1/tools 的规范名称，不用 Circle 的 srv_* 名称。缺失与无权限仍统一表示“当前调用者目录不可用”，不泄露隐藏资产、地址、凭据或输入。提交、审批和运行共用该格式；受理后目录撤销导致后台失败时，task result/error 和任务事件保留完整 details.check。客户端应展示 message，并允许查看完整两张清单。
 
 ## 通用外部来源制品

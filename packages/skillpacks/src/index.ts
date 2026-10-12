@@ -69,9 +69,16 @@ export class SkillPacks {
     const asset=await this.assets.row(ctx,row.asset_id,tx);requireCondition(asset.sha256===action.targetIdentity&&asset.asset_id===action.target&&asset.version===row.asset_version,'APPROVAL_STALE','Package target revision differs');
   }
   async approvalCheck(tx:Transaction,ctx:AuthContext,task:any,approval:any,answer:any):Promise<void>{
-    const actor={principalId:approval.applicant_id,tenantId:task.tenantId,kind:'user'} as AuthContext;await this.approvalAuthorize(tx,actor,task,approval.action);
-    const row=await this.row(actor,approval.action.args.skillPackId,'skillpacks.submit',tx);if(answer.approve)await this.checkWithDetails(actor,row.manifest,row.trial,tx);
     await this.auth.check(ctx,'assets.approve',task.scopeId,tx);
+    if(!answer.approve){
+      // Declining closes the sealed request; it neither authorizes execution nor
+      // publishes the current asset. Check historical identity, not live grants.
+      const row=(await tx.query(`SELECT s.*,v.sha256 AS asset_sha256 FROM skill_packages s JOIN asset_versions v ON v.asset_id=s.asset_id AND v.version=s.asset_version
+        WHERE s.skill_pack_id=$1 AND s.approval_task_id=$2 AND s.tenant_id=$3 AND s.scope_id=$4`,[approval.action.args.skillPackId,task.taskId,task.tenantId,task.scopeId])).rows[0];
+      requireCondition(row&&row.owner_id===approval.applicant_id&&row.digest===approval.action.args.digest&&task.input.skillPackId===row.skill_pack_id&&task.input.digest===row.digest&&task.input.assetId===row.asset_id&&task.input.assetVersion===row.asset_version&&approval.action.target===row.asset_id&&approval.action.targetIdentity===row.asset_sha256,'APPROVAL_STALE','Frozen package approval binding differs');return;
+    }
+    const actor={principalId:approval.applicant_id,tenantId:task.tenantId,kind:'user'} as AuthContext;await this.approvalAuthorize(tx,actor,task,approval.action);
+    const row=await this.row(actor,approval.action.args.skillPackId,'skillpacks.submit',tx);await this.checkWithDetails(actor,row.manifest,row.trial,tx);
   }
   async approved(tx:Transaction,ctx:AuthContext,task:any,approval:any,answer:any):Promise<void>{
     const row=(await tx.query('SELECT * FROM skill_packages WHERE approval_task_id=$1',[task.taskId])).rows[0];

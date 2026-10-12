@@ -573,3 +573,13 @@ RPC 验收用独立合成模块和脚本模型：批准后改动外部源文件�
 用户/Claude 报告 Mac→网关回环的 SSH 反向隧道已建立，网关主机请求 /v1/status 得到未认证 401。该观察确认 API 可达，未证明有身份的 introspection、资源授权、env_prepare 或设备执行。平台→网关的 CA 核验，与网关/worker/客户端→circle-server 的 HTTPS 信任分别配置；不把一侧证书验证结果推成另一侧已经受信。本代理未建立、修改或探测该实际隧道和网关。
 
 当前等待的 worker 回环 HTTPS 支持已经包含在 333f3ce，同时修了 admin 和 Circle RPC 的 CA 传递；第 33 节已有完整 **190/190**、无 skip 和 HTTPS 组合 **6/6**。已通过 Otty 通知维护者复核/更新真实栈，本次只更正进度与交接，无实现变更，不重跑无关回归；本地文档提交，未 push。
+
+## 35：被新版取代的技能申请可驳回关单
+
+用户报告旧版本登记任务仍 waiting-review，新版获批后再驳回旧版却收到 APPROVAL_STALE/Package target revision differs，只能等过期。问题属于通用 C 技能治理：approvalCheck 不区分批准/驳回，都调用要求当前资产和申请人权限的 approvalAuthorize。没有读取实际任务、版本文件或业务内容；用同一合成技能 id 的两个版本复现，新增四条 HTTP 验收先 **0/4**。
+
+选择允许独立审批人驳回原申请，沿用现有 declined/answered/delivered 状态，不引入产品规则、自动版本比较或新的任务阶段。驳回从同 tenant/scope 的技能记录和不可变 asset_versions 核对原申请人、taskId、skillPackId、digest、assetId/version/历史 SHA，仍要求原输入修订、动作摘要和回应绑定一致，以及审批人当前 decisions.approve + assets.approve；不查原申请人的现时提交/读取权限或资产当前指针。批准保留现时申请人权限、当前修订和目录复查。整个决定、旧技能状态、pending input 和任务关闭沿用同一 C 事务，不能写新版本的批准状态。
+
+专项 **4/4**，typecheck 通过：新版批准后旧版批准仍被拒，但驳回立即关单；最新资产完整元数据不变，最新运行可受理并通过 worker preflight；重启后旧决定保持。申请人失去原 scope/提交/读取权限也不阻止独立 reviewer 关单。自决、越 scope/tenant、错误修订/目标/动作摘要、缺 assets.approve 仍拒绝；两个 reviewer 并发仅一次成功，其余 DECISION_CONFLICT。原 admin 接口保留审批历史，但 open 队列无该旧记录。交接已补旧绑定原样 approve:false 的调用方式，升级后现有未过期待批旧申请即可处理，无迁移。
+
+完整最终 contracts **4/4**、methods **23/23**、acceptance **160/160**、references **7/7**，共 **194/194**，固定 Circle 8b2ceb6，**无 skip**。typecheck、diff 与 **714** 归档核验通过。第一阶段、模块、HTTPS、技能 RPC、bot、资源身份和上机关口均继续通过。本笔只在 server-s2 本地提交，交复核部署人；未 push、未读取或处理实际任务、未更改真实栈和独立产品包。
