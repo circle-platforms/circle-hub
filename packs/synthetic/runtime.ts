@@ -78,4 +78,3 @@ export class ProfessionalRunner {
     await this.checklists.deliver(actor,task.taskId,task.inputRevisionId);
   }
 }
-
