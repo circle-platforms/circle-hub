@@ -34,17 +34,17 @@ Circle 和 server 分别发布，默认连接插件留在 Circle，不另建插�
 
 普通用户可通过 `GET /v1/tasks?limit=N` 和 `GET /v1/tasks/{taskId}/approvals` 读取授权范围内的任务与审批记录，只需 `tasks.read`。字段、排序与查询边界见[客户端接口交接](docs/client-api-handoff.md)。
 
-第二阶段 `server-s2` 已完成资产、只读连接器、两类六种知识记录、工具目录、审批技能包、Circle RPC 执行、定时/事件 bot 和产品包注册的本机合成验收。产品知识从 SHA 原件异步投影，批量入库并增量发布，索引进度使用任务和事件补读。APV 编译代码及 Claude 提供的技能包归 [packs/apv](packs/apv/)，第二条虚构产品线 [Meridian](packs/meridian/) 使用相同核心、权限、审批和 RPC。旧产品健康能力撤下，合成设备/记录协议仅保留机制验收；脑图编译 HTTP 与两表七列契约兼容。
+第二阶段 `server-s2` 已完成资产、只读连接器、两类六种知识记录、工具目录、审批技能包、Circle RPC 执行、定时/事件 bot 和产品包注册的本机合成验收。产品知识从 SHA 原件异步投影，批量入库并增量发布，索引进度使用任务和事件补读。剩余 APV 方法适配器归 [packs/apv](packs/apv/)，编译技能以独立 circle-packs 为准，第二条虚构产品线 [Meridian](packs/meridian/) 使用相同核心、权限、审批和 RPC。旧产品健康能力撤下，合成设备/记录协议仅保留机制验收；脑图编译 HTTP 与两表七列契约兼容。
 
 已安装产品线由运行时 `CIRCLE_SERVER_PRODUCT_LINES` 文件选择，逐个加载 product-line/1 清单及工具别名；格式见 [产品包安装说明](packs/README.md)。连接器资产可带 productLineId，复用既有连接器的新增产品线无需改核心或安装入口。合成源数据归 packs/synthetic，核心和连接器守卫均拒绝产品线名。
 
-工作列表可用 `GET /v1/tasks?kind=work&limit=20` 先过滤内部工具/索引任务，再以末项 taskId 作为 after 续页。构建版本工具默认精简分页（20、最多 100），主平台最新可用正式构建可筛选后 limit=1；开发登录默认八小时，支持无密码续期。完整回归当前 contracts 4/4、methods 19/19、acceptance 146/146、references 7/7，显式固定 Circle 构建、无跳过。构建站点的重建、重载、变体和单页定位，以及版本目录的有界 WebDAV 搜索已补同形合成回归，实际来源复测仍由用户/Claude 执行。独立 Otty 编译、bot 与规模复测观察见[第二阶段进度](docs/server-s2-progress.md)。这些数字不代表真实来源权限同步、正式企业身份、付费模型或设备验收。
+工作列表可用 `GET /v1/tasks?kind=work&limit=20` 先过滤内部工具/索引任务，再以末项 taskId 作为 after 续页。构建版本工具默认精简分页（20、最多 100），主平台最新可用正式构建可筛选后 limit=1；开发登录默认八小时，支持无密码续期。完整回归当前 contracts 4/4、methods 23/23、acceptance 151/151、references 7/7，显式固定 Circle 构建、无跳过。构建站点的重建、重载、变体和单页定位，以及版本目录的有界 WebDAV 搜索已补同形合成回归，实际来源复测仍由用户/Claude 执行。独立 Otty 编译、bot 与规模复测观察见[第二阶段进度](docs/server-s2-progress.md)。这些数字不代表真实来源权限同步、正式企业身份、付费模型或设备验收。
 
 外部原件可通过 `POST /v1/sources` 上传，再用 `POST /v1/assets` 登记 knowledge-source；另一人批准后，资产状态直接给出可绑定所有连接器工具的稳定来源 id。命令树和函数契约由消费模块解释，命令工具及上机核对可使用该来源；原件 SHA、修订与权限保留在 B，候选声明不替代可执行来源。确切请求形状见[来源交接](docs/client-api-handoff.md#通用外部来源制品)。
 
 同 tenant、授权 scope 内的 assets.approve 审批人可用 `GET /v1/assets?lifecycle=draft` 发现待批定义并批准，无需登记人先填写其 principalId。审批可见性不增加 readers 或原件/凭据/执行权限，私有任务与运行结果继续隔离。
 
-C 已提供资源服务客户端、密钥轮换/吊销、资源和有效操作/fence 绑定的短期令牌，以及标准 Basic `/token` 与 `/v1/introspect`。资源读取规则通过批准来源的 bundle/blob 按 SHA 分发，平台不解析内容。可用仓库外证书/密钥配置启用原生 HTTPS，默认仍绑定回环；真实网络和网关接入等用户决定，见[资源身份交接](docs/resource-identity-handoff.md)。编译技能的权威来源已转为独立 circle-packs；server 内旧副本暂保持原字节，模块安装接口对齐后迁出。
+C 已提供资源服务客户端、密钥轮换/吊销、资源和有效操作/fence 绑定的短期令牌，以及标准 Basic `/token` 与 `/v1/introspect`。资源读取规则通过批准来源的 bundle/blob 按 SHA 分发，平台不解析内容。可用仓库外证书/密钥配置启用原生 HTTPS，默认仍绑定回环；真实网络和网关接入等用户决定，见[资源身份交接](docs/resource-identity-handoff.md)。独立模块可用 CLI `modules check/install` 或 `POST /v1/modules/install` 冻结清单、验证原字节后受治理提交；技能需要试跑和独立批准，产品线定义不自动激活。server 内旧编译技能副本已删除，见[模块安装交接](docs/module-installation.md)。
 
 `apv-case-execute` 已补合成网关验收：执行单表工作簿先由 server 从绑定来源独立核对全部字面设备命令，另一人审批后再强制取当前 XML 复核，才通过既有 MCP 网关投递。逐案、步骤和检查点结果保留原件与 SHA；取消/中断后 unknown、冻结和独立核对恢复。个人访问/刷新令牌只在私有 vault，由单写者轮换，配置和恢复见[执行交接](docs/case-execution-handoff.md)。文档目录自动补尾斜杠、列表/搜索分页；缺陷查询先用 `zentao.products` 查 id，再有界筛选。审批默认一天，可配置。Claude 已部署并复测读侧版本，执行版部署交接在进度记录中；真实网关的上游核验尚需恢复，真实投递等用户上传工作簿。
 

@@ -251,6 +251,8 @@ search 对选定目录做有界递归（PROPFIND Depth:1），默认深度 3、6
 
 以下路由已实现，技能包/RPC 合成验收已通过。实际采用提交与全部检查结果见第二阶段进度。
 
+独立仓库模块新增 `POST /v1/modules/install`，body `{module,files,trial?}`、可选 `X-Scope-Id`，F 路由为 CLIENT_ROUTES.moduleInstall。module 来自 `circle-packs/modules/1` 的单个条目，files 是其精确文件集的原字节 base64/SHA；server 重新核对路径、清单摘要及自身 manifest 的 id/version。技能模块 trial 必填，响应里的 digest 是模块清单摘要，skillPackDigest 才是原技能包审批摘要；复用 approvalTaskId 和既有 runs。产品线模块登记为 draft 原件资产，批准不自动激活运行配置。CLI `modules check/install`、确切 body/响应和边界见[模块安装交接](module-installation.md)。原 skillpacks body 可选带 module，未带时保持原行为。
+
 `POST /v1/skillpacks` 接收 `{manifest,files:[{path,base64,sha256}],trial:{toolCalls:[{name,argsSha256,ok}],outputs:[{path,sha256}]}}`。manifest 含 id/version/title/owner/tools[]/triggers[]/inputs/outputs/model，trigger 为 manual/schedule/event；owner 仅为声明，认证身份来自 token。使用可选请求头 `X-Scope-Id`；只有一个授权 scope 时可省略，多 scope 必须明确。响应 `{skillPackId,digest,status,check:{undeclaredTools,missingTools},approvalTaskId}`；用户确认额外 approvalTaskId 复用第一阶段审批。missingTools 是声明但当前调用者目录不可用的工具，undeclaredTools 是试跑用到但未声明的工具；提交、批准、运行都重查目录。目录是 `GET /v1/skillpacks`，运行是 `POST /v1/skillpacks/{id}/runs` body `{inputs,idempotencyKey}`，返回 `{taskId}`。提交状态不能代替批准，批准绑定 digest，输入或目标修订变化需重新核对。
 
 Circle 运行边界由用户确认改为正式 CLI RPC；当前固定 Git 提交 `8b2ceb6df620832bfd7925aede93bb35f4a605a2`，同时核对 `--version` 为 1.1.1，禁止 import Circle 源码或改 foundation。开发期 CIRCLE_BIN 在运行时指向独立固定提交的本机构建；不要指向仍在提交的客户端工作树。每次运行独立 CIRCLE_HOME 与 HOME，准备可信 workspace、技能目录和输入；启动 `node <CIRCLE_BIN> --mode rpc --extensions --yolo <workspace>`，发 prompt，读 JSON 事件直到 agent_settled；取消先 abort/关 stdin，超时 kill，记录本地停止与远端未知的区别。运行 token 短期且只经环境注入，不落盘；模型使用脚本桩，付费模型仍需授权。详见 Circle 仓库 `docs/rpc.md` 与 `docs/cli.md#json-events`。

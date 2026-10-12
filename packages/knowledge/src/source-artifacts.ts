@@ -6,7 +6,7 @@ import type {Assets} from '../../assets/src/index.ts';
 import type {Knowledge} from './index.ts';
 import type {KnowledgeGraph} from './graph.ts';
 
-const file=z.object({path:SafeRelativePath,role:z.string(),mediaType:z.string(),sourceRevisionId:SourceRevisionId,sha256:Sha256,size:z.number().int().positive(),sourceRecordId:KnowledgeRecordId});
+const file=z.object({path:SafeRelativePath,role:z.string(),mediaType:z.string(),sourceRevisionId:SourceRevisionId,sha256:Sha256,size:z.number().int().nonnegative(),sourceRecordId:KnowledgeRecordId});
 const configuration=z.object({schema:z.literal('external-source-artifact/1'),sourceArtifactId:SourceArtifactId,metadata:z.record(z.string(),z.unknown()),files:z.array(file).min(1).max(100)}).strict();
 export interface SourceArtifactSnapshot{sourceArtifactId:string;assetId:string;assetVersion:string;assetSha256:string;metadata:Record<string,any>;files:z.infer<typeof file>[]}
 // The platform binds opaque originals and declared metadata. Consumers interpret
@@ -20,9 +20,9 @@ export class SourceArtifacts{
     const result=await this.originals.sourceBytes(ctx,input.sourceRevisionId??record.payload.raw.sourceRevisionId,scope,tx);requireCondition(!input.sha256||input.sha256===result.reference.sha256,'SOURCE_HASH_MISMATCH','Original differs from the declared SHA');
     const row=(await tx.query('SELECT principal_id FROM sources WHERE source_revision_id=$1',[result.reference.sourceRevisionId])).rows[0];requireCondition(record||row.principal_id===ctx.principalId,'FORBIDDEN_ACTION','Register your own upload or an authorized product source record');return {...result,originalRecordId:record?.recordId};
   }
-  async register(ctx:AuthContext,value:unknown){
+  async register(ctx:AuthContext,value:unknown,transaction?:Transaction){
     const input=SourceArtifactRegistration.parse(value),assetId=`ast_${canonicalHash([ctx.tenantId,input.scopeId,ctx.principalId,input.name]).slice(0,32)}`;
-    return this.view(await this.assets.register(ctx,{assetId,scopeId:input.scopeId,kind:'knowledge-source',name:input.name,version:input.version,declaration:{reads:['registered-source'],writes:[],credentials:[]},configuration:{schema:'external-source-artifact/1',metadata:input.metadata,files:input.files},readers:input.readers}));
+    return this.view(await this.assets.register(ctx,{assetId,scopeId:input.scopeId,kind:'knowledge-source',name:input.name,version:input.version,declaration:{reads:['registered-source'],writes:[],credentials:[]},configuration:{schema:'external-source-artifact/1',metadata:input.metadata,files:input.files},readers:input.readers},transaction));
   }
   async prepare(ctx:AuthContext,definition:AssetRegistration,assetId:string,tx:Transaction):Promise<AssetRegistration>{
     if(definition.configuration.schema!=='external-source-artifact/1')return definition;

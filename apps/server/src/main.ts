@@ -54,6 +54,7 @@ import {ingestionMigration} from '../../../packages/knowledge/src/ingestion-migr
 import {Ingestions} from '../../../packages/knowledge/src/ingestion.ts';
 import {resourceIdentityMigration} from '../../../packages/tasks/src/resource-identity-migration.ts';
 import {ServiceClients} from '../../../packages/tasks/src/service-clients.ts';
+import {Modules} from '../../../packages/modules/src/index.ts';
 
 function environment(name: string): string { const value = process.env[name]; if (!value) throw new Error(`Required environment variable: ${name}`); return value; }
 const store = new Store(JSON.parse(environment('CIRCLE_SERVER_DATABASE_CONFIG')));
@@ -81,6 +82,7 @@ assets.decorateView=row=>row.kind==='knowledge-source'&&row.configuration.schema
 assets.validateRegistration=async(ctx,input,id,tx)=>{await sourceArtifacts.validate(ctx,input,id,tx);await catalog.register(ctx,input,id,tx);};
 const approvals=new Approvals(store,auth,tasks,Number(process.env.CIRCLE_SERVER_APPROVAL_TTL_MS??86400000));execution.approvalCheck=(tx,task,spec)=>approvals.check(tx,task,spec);
 const skills=new SkillPacks(store,auth,tasks,approvals,assets,catalog,execution,knowledge);await skills.initialize(process.env.CIRCLE_RUNTIME_CONFIG);
+const modules=new Modules(skills,sourceArtifacts,knowledge,auth);
 execution.managedNames.add('assets.execute');
 execution.managedAuthorization=(tx,actor,scope,spec,task)=>spec.name==='assets.execute'?skills.authorize(tx,actor,scope,spec,task):catalog.authorize(tx,actor,scope,spec,task);
 execution.managedPreflight=(tx,actor,row,authorization)=>row.name==='assets.execute'?skills.preflight(tx,actor,row,authorization):catalog.preflight(tx,actor,row,authorization);
@@ -177,6 +179,7 @@ const server = createListener(async (request, response) => {
       if(request.method==='GET'){send(response,200,{data:await skills.list(ctx)});return;}
       if(request.method==='POST'){send(response,201,{data:await skills.submit(ctx,await body(request,MAX_WORKER_REPORT_BYTES),z.string().optional().parse(request.headers['x-scope-id']))});return;}
     }
+    if(url.pathname===CLIENT_ROUTES.moduleInstall.path&&request.method==='POST'){send(response,201,{data:await modules.install(ctx,await body(request,MAX_WORKER_REPORT_BYTES),z.string().optional().parse(request.headers['x-scope-id']))});return;}
     const skillRun=/^\/v1\/skillpacks\/([^/]+)\/runs$/.exec(url.pathname);
     if(skillRun&&request.method==='POST'){send(response,202,{data:await skills.run(ctx,SkillPackId.parse(skillRun[1]),await body(request,MAX_WORKER_REPORT_BYTES))});return;}
     if(url.pathname===CLIENT_ROUTES.tools.path&&request.method==='GET'){

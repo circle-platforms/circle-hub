@@ -535,3 +535,17 @@ AssetListQuery 增 lifecycle 过滤，待批查询 GET /v1/assets?lifecycle=draf
 签发状态已在此轮直接答复用户：C 自身资源客户端、轮换/吊销、短期资源令牌、RFC 7662 内省及 SHA 规则分发在 **436a9ec** 完成，合成身份/资源联合和完整回归已通过；真实 HTTPS 可达部署及网关配置仍由用户决定。本代理未连接或修改跳板机/真实设备，未因本地原件核对就声明实际床版本。当前接口修复正在跑来源/RPC/站点联合与最终回归，完成后只本地提交并通过 Otty 交接。
 
 来源/站点/固定 RPC 联合 **15/15**，完整最终树 contracts **4/4**、methods **19/19**、acceptance **146/146**、references **7/7**，共 **176/176**，固定 Circle 8b2ceb6、无 skip。typecheck、diff 和 **714** 归档核验通过；规模 p95 **144ms**、索引活跃读取 **228/121/160/147ms**，原技能副本仍与 9931f20 同字节。本笔只本地提交，经 Otty 交给 Claude，未 push、未更新真实栈。当前用户确认的 7420/8009864 尚不含 436a9ec 的 C 签发；升级后仍待其与用户确定可达 HTTPS、证书信任、客户端配置，再做真实 env_prepare/床构建核对。
+
+## 32：独立模块清单、冻结安装与旧技能副本移除
+
+用户确认独立 circle-packs 的 94aab54 已推送：modules.json 使用 circle-packs/modules/1，skill-pack/product-line 分别放 skills/products，id/版本必须与目录及自身清单一致。非隐藏文件全部计入 files，digest 是按生成器排序的 `<sha256>  <path>\n` 原字节拼接摘要；清单证明字节身份，不自动批准。只读运行本平台 CLI check 核验独立仓库的 apv-mindmap-compile **0.2.5**、**13** 文件、摘要 **5fcd1dea65477decf50a89c5746cce617a0d5ba9dd5ae3bc5c2ed6fcc56fdf42**，未运行、复制或修改该仓库脚本和测试。
+
+先写文件集/路径/摘要/清单身份及 HTTP/CLI 安装验收：缺实现时方法导入失败，HTTP **0/4**。实现通用 F 清单和路由、modules check/install、本地文件冻结与服务端复核。最初联合 **5/7** 的问题分别是测试误带顶层 manifest 和模块相对路径不能直接作 sources 的 basename，修正为保留制品相对路径、上传使用 basename 后 **7/7**。新增固定 Circle 的合成 RPC 封存运行，首次 **7/8** 暴露技能旧 localeCompare 排序与模块清单不一致；仅模块提交改用清单字符串顺序，原 skillpack 摘要保持兼容，随后 **8/8**、无 skip。
+
+POST /v1/modules/install 接收 `{module,files,trial?}`，scope 与既有技能提交规则一致；CLI 读完整非隐藏文件集，拒绝符号链接、额外/缺失文件、目录/manifest id 不一致及摘要变化。每模块最多 100 个文件、1000 个子目录、16 MiB，读取时按剩余预算限制。技能试跑必填，复用工具目录检查、approvalTaskId、独立批准和 C/RPC 运行；响应区分模块 digest 与 skillPackDigest，元数据参与既有批准摘要。相同提交复用既有包，资产停用不会因再次安装自动启用。产品线模块原件作为普通 draft knowledge-source 封存，批准不 import 代码、不启用产品线、不改运行配置。
+
+RPC 验收用独立合成模块和脚本模型：批准后改动外部源文件，运行仍读取 B 中封存脚本，产物 SHA 和内容一致；安装过程没有执行模块 tests。该验收通过后才按用户授权删除 server 内旧 packs/apv/skills，移除 product-line 清单中的旧路径。剩余第一阶段产品方法适配器和编译 API 保持兼容；新的技能版本以独立仓库为准，产品线其余目录未擅自迁移。
+
+补充零字节与生命周期回归先确认失败：模块包含空文件时旧公开上传非空规则阻止封存；已经停用的技能重提被响应误标 approved。实现 B 的内部 storeOriginal 以保留清单中的空文件，公开 sources 上传仍拒空；来源制品 size 允许零，实际生命周期从当前资产取得。模块总字节预算回归亦通过。模块安装交接已写 docs/module-installation.md 和 docs/client-api-handoff.md，并经 Otty 先告知 Claude 开始客户端适配。
+
+最终模块专项 **9/9**；完整 contracts **4/4**、methods **23/23**、acceptance **151/151**、references **7/7**，共 **185/185**，固定 Circle 8b2ceb6，**无 skip**。typecheck、diff 检查和 **714** 归档核验通过；四次读取规模回归 p95 **165ms**。独立技能 manifest 另通过现有 SkillManifest 契约只读核验；独立仓库和主工作树保持干净。当前分支已包含 ae0c6dc 的待批审批人自动可见、eebb178 的 sar_ command_check 顶层 build/buildId，以及 436a9ec 的 C 资源签发。只在 server-s2 本地提交并交 Claude 复核；无 push、部署或真实系统/设备/付费模型操作，7420 保持由 Claude 管理。真实网络/HTTPS 和网关配置仍等用户决定，不把模块或合成执行验收表述为实际床已运行。

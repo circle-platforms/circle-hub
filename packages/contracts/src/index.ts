@@ -163,16 +163,20 @@ export const ToolCallInput=z.object({args:z.record(z.string(),z.unknown()),idemp
 export const ToolEvidence=z.object({evidenceId:z.string(),sha256:Sha256});
 export const ToolCallResult=z.union([z.object({result:z.unknown(),evidence:z.array(ToolEvidence)}),z.object({taskId:TaskId,phase:TaskPhase})]);
 export const SafeRelativePath=z.string().min(1).max(500).refine(path=>!path.startsWith('/')&&!/^[a-z]:/i.test(path)&&!path.includes('\\')&&!/[\x00-\x1f]/.test(path)&&path.split('/').every(part=>part!==''&&part!=='.'&&part!=='..'&&part!=='.git'),'Use a safe relative path');
+export const ModuleEntry=z.object({id:PackageName,kind:z.enum(['skill-pack','product-line']),root:SafeRelativePath,manifestPath:SafeRelativePath,version:PackageVersion,files:z.array(z.object({path:SafeRelativePath.refine(path=>path.split('/').every(part=>!part.startsWith('.')),'Module files cannot be hidden'),sha256:Sha256}).strict()).min(1).max(100),digest:Sha256}).strict();
+export const ModuleCatalog=z.object({schema:z.literal('circle-packs/modules/1'),modules:z.array(ModuleEntry).max(1000)}).strict().refine(value=>new Set(value.modules.map(module=>module.id)).size===value.modules.length,'Module ids must be unique');
+export const ModuleBytes=z.array(z.object({path:SafeRelativePath,base64:Base64Content,sha256:Sha256}).strict()).min(1).max(100);
 export const SourceArtifactFileInput=z.object({path:SafeRelativePath,role:z.string().min(1).max(100),mediaType:z.string().min(1).max(200).default('application/octet-stream'),sourceRevisionId:SourceRevisionId.optional(),sourceRecordId:KnowledgeRecordId.optional(),sha256:Sha256.optional()}).strict().refine(value=>!!value.sourceRevisionId!==!!value.sourceRecordId,'Provide one original source revision or product SourceRevision record');
 export const SourceArtifactConfiguration=z.object({schema:z.literal('external-source-artifact/1'),metadata:z.record(z.string(),z.unknown()).default({}),files:z.array(SourceArtifactFileInput).min(1).max(100)}).strict().refine(value=>new Set(value.files.map(file=>file.path)).size===value.files.length,'Artifact file paths must be unique');
 export const SourceArtifactRegistration=z.object({scopeId:ScopeId,name:z.string().min(1).max(200),version:PackageVersion,metadata:z.record(z.string(),z.unknown()).default({}),files:z.array(SourceArtifactFileInput).min(1).max(100),readers:z.array(z.string()).max(1000).optional()}).strict().refine(value=>new Set(value.files.map(file=>file.path)).size===value.files.length,'Artifact file paths must be unique');
-export const SourceArtifactView=z.object({assetId:AssetId,scopeId:ScopeId,version:PackageVersion,sha256:Sha256,lifecycle:AssetLifecycle,sourceArtifactId:SourceArtifactId.nullable(),metadata:z.record(z.string(),z.unknown()),files:z.array(z.object({path:SafeRelativePath,role:z.string(),mediaType:z.string(),sourceRevisionId:SourceRevisionId,sourceRecordId:KnowledgeRecordId,sha256:Sha256,size:z.number().int().positive()})),provenance:z.object({kind:z.literal('user-upload'),semanticQuality:z.literal('not-asserted')})});
+export const SourceArtifactView=z.object({assetId:AssetId,scopeId:ScopeId,version:PackageVersion,sha256:Sha256,lifecycle:AssetLifecycle,sourceArtifactId:SourceArtifactId.nullable(),metadata:z.record(z.string(),z.unknown()),files:z.array(z.object({path:SafeRelativePath,role:z.string(),mediaType:z.string(),sourceRevisionId:SourceRevisionId,sourceRecordId:KnowledgeRecordId,sha256:Sha256,size:z.number().int().nonnegative()})),provenance:z.object({kind:z.literal('user-upload'),semanticQuality:z.literal('not-asserted')})});
 export const SkillPackId=identity('skp');
 export const SkillManifest=z.object({id:PackageName,version:PackageVersion,title:z.string().min(1).max(500),owner:z.string().min(1).max(200),
   tools:z.array(ToolName).max(100).refine(values=>new Set(values).size===values.length),triggers:z.array(z.enum(['manual','schedule','event'])).min(1).max(3),
   inputs:z.record(z.string(),z.unknown()),outputs:z.array(SafeRelativePath).min(1).max(100).refine(paths=>new Set(paths).size===paths.length),model:z.unknown()}).strict();
-export const SkillPackSubmission=z.object({manifest:SkillManifest,files:z.array(z.object({path:SafeRelativePath,base64:Base64Content,sha256:Sha256}).strict()).min(1).max(100),
-  trial:z.object({toolCalls:z.array(z.object({name:ToolName,argsSha256:Sha256,ok:z.boolean()}).strict()).max(1000),outputs:z.array(z.object({path:SafeRelativePath,sha256:Sha256}).strict()).max(100)}).strict()}).strict();
+export const SkillPackSubmission=z.object({manifest:SkillManifest,files:ModuleBytes,
+  trial:z.object({toolCalls:z.array(z.object({name:ToolName,argsSha256:Sha256,ok:z.boolean()}).strict()).max(1000),outputs:z.array(z.object({path:SafeRelativePath,sha256:Sha256}).strict()).max(100)}).strict(),module:ModuleEntry.optional()}).strict();
+export const ModuleInstallRequest=z.object({module:ModuleEntry,files:ModuleBytes,trial:SkillPackSubmission.shape.trial.optional()}).strict();
 export const SkillPackCheck=z.object({undeclaredTools:z.array(ToolName),missingTools:z.array(ToolName)});
 export const SkillPackView=z.object({skillPackId:SkillPackId,digest:Sha256,status:z.enum(['candidate','registered','declined']),check:SkillPackCheck,approvalTaskId:TaskId,
   manifest:SkillManifest,ownerPrincipalId:z.string(),scopeId:ScopeId,assetId:AssetId,assetVersion:PackageVersion});
@@ -324,6 +328,7 @@ export const CLIENT_ROUTES = {
   skillpacks:{method:'GET',path:'/v1/skillpacks',response:z.array(SkillPackView)},
   skillpackSubmit:{method:'POST',path:'/v1/skillpacks',request:SkillPackSubmission,response:SkillPackView,scopeHeader:'X-Scope-Id'},
   skillpackRun:{method:'POST',path:'/v1/skillpacks/{id}/runs',request:SkillRunInput,response:z.object({taskId:TaskId})},
+  moduleInstall:{method:'POST',path:'/v1/modules/install',request:ModuleInstallRequest,scopeHeader:'X-Scope-Id'},
   trigger:{method:'POST',path:'/v1/automations/triggers',request:TriggerRegistration},
   bot:{method:'POST',path:'/v1/automations/bots',request:BotRegistration},
   botRuns:{method:'GET',path:'/v1/automations/bots/{assetId}/runs'},

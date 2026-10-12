@@ -9,6 +9,7 @@ import type {Operations} from '../../execution/src/operations.ts';
 import type {Knowledge} from '../../knowledge/src/index.ts';
 import {readFile} from 'node:fs/promises';
 import {z} from 'zod';
+import {verifyModule} from '../../modules/src/verify.ts';
 
 function summarizeTools(names:string[]):string{
   const shown:string[]=[];let length=0;
@@ -38,19 +39,20 @@ export class SkillPacks {
   }
   async submit(ctx:AuthContext,value:unknown,requestedScope?:string):Promise<any>{
     const input=SkillPackSubmission.parse(value),policy=await this.auth.check(ctx,'skillpacks.submit');
+    if(input.module){const frozen=verifyModule(input.module,input.files);requireCondition(frozen.module.kind==='skill-pack'&&canonicalHash(SkillPackSubmission.shape.manifest.parse(frozen.manifest))===canonicalHash(input.manifest),'INVALID_PAYLOAD','Skill submission differs from its module manifest');}
     const scope=requestedScope?ScopeId.parse(requestedScope):policy.scopes.length===1?policy.scopes[0]:null;requireCondition(scope,'INVALID_PAYLOAD','Specify X-Scope-Id when more than one scope is authorized');await this.auth.check(ctx,'skillpacks.submit',scope);
     requireCondition(new Set(input.files.map(file=>file.path)).size===input.files.length&&input.files.some(file=>file.path==='SKILL.md'),'INVALID_PAYLOAD','Skill files require one SKILL.md and unique paths');
-    const files=input.files.map(file=>{const bytes=Buffer.from(file.base64,'base64');requireCondition(bytes.length<=MAX_SOURCE_BYTES&&sha256(bytes)===file.sha256,'SOURCE_HASH_MISMATCH','Submitted file SHA differs');return {path:file.path,sha256:file.sha256,size:bytes.length};}).sort((a,b)=>a.path.localeCompare(b.path));
+    const files=input.files.map(file=>{const bytes=Buffer.from(file.base64,'base64');requireCondition(bytes.length<=MAX_SOURCE_BYTES&&sha256(bytes)===file.sha256,'SOURCE_HASH_MISMATCH','Submitted file SHA differs');return {path:file.path,sha256:file.sha256,size:bytes.length};}).sort((a,b)=>input.module?(a.path<b.path?-1:a.path>b.path?1:0):a.path.localeCompare(b.path));
     requireCondition(files.reduce((sum,file)=>sum+file.size,0)<=MAX_SOURCE_BYTES,'BODY_TOO_LARGE','Skill files exceed sixteen MiB');
     await this.checkWithDetails(ctx,input.manifest,input.trial);
-    const digest=canonicalHash({manifest:input.manifest,files,trial:input.trial});
+    const digest=canonicalHash({manifest:input.manifest,files,trial:input.trial,...(input.module?{module:input.module}:{})});
     for(const file of input.files)await this.objects.objects.putObject({Bucket:'evidence',Key:file.sha256,Body:Buffer.from(file.base64,'base64')});
     return this.store.transaction(async tx=>{
       await this.checkWithDetails(ctx,input.manifest,input.trial,tx);await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[canonicalJson([ctx.tenantId,scope,ctx.principalId,digest])]);
       const old=(await tx.query('SELECT * FROM skill_packages WHERE tenant_id=$1 AND scope_id=$2 AND owner_id=$3 AND digest=$4',[ctx.tenantId,scope,ctx.principalId,digest])).rows[0];if(old)return this.view(old);
       const prior=(await tx.query("SELECT s.* FROM skill_packages s WHERE tenant_id=$1 AND scope_id=$2 AND owner_id=$3 AND manifest->>'id'=$4 ORDER BY created_at DESC LIMIT 1",[ctx.tenantId,scope,ctx.principalId,input.manifest.id])).rows[0];
       const id=newId('skp'),asset=await this.assets.register(ctx,{...(prior?{assetId:prior.asset_id}:{}),scopeId:scope,kind:'skill-package',name:input.manifest.title,version:input.manifest.version,
-        declaration:{reads:input.manifest.tools,writes:['artifacts-evidence'],credentials:[]},configuration:{skillPackId:id,digest},readers:[ctx.principalId,'*']},tx);
+        declaration:{reads:input.manifest.tools,writes:['artifacts-evidence'],credentials:[]},configuration:{skillPackId:id,digest,...(input.module?{module:input.module}:{})},readers:[ctx.principalId,'*']},tx);
       const task=await this.tasks.submit(ctx,{scopeId:scope,title:`Register ${input.manifest.title}`,capabilityPackId:'asset-registration',idempotencyKey:canonicalHash(['skill-register',digest]),input:{skillPackId:id,digest,assetId:asset.assetId,assetVersion:asset.version}},tx);
       await tx.query(`INSERT INTO skill_packages(skill_pack_id,tenant_id,scope_id,owner_id,digest,manifest,files,trial,asset_id,asset_version,approval_task_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,[id,ctx.tenantId,scope,ctx.principalId,digest,JSON.stringify(input.manifest),JSON.stringify(files),JSON.stringify(input.trial),asset.assetId,asset.version,task.taskId]);
       const approval=await this.approvals.propose(ctx,task.taskId,{inputRevisionId:task.inputRevisionId,name:'assets.publish',target:asset.assetId,targetIdentity:asset.sha256,args:{skillPackId:id,digest}},tx);

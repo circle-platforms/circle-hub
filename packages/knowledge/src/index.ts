@@ -14,6 +14,11 @@ export class Knowledge {
     size: Number(row.size), fileName: row.file_name, mediaType: row.media_type, downloadPath: `/v1/artifacts/${row.artifact_id}/content` }; }
   async upload(ctx: AuthContext, scopeId: string, fileName: string, bytes: Buffer, transaction?:Transaction): Promise<any> {
     requireCondition(bytes.length > 0,'INVALID_PAYLOAD','Source must be nonempty');
+    return this.storeOriginal(ctx,scopeId,fileName,bytes,transaction);
+  }
+  // Module byte manifests can include empty files; public source uploads retain
+  // their nonempty-input contract through upload(). Both use the same B storage.
+  async storeOriginal(ctx: AuthContext, scopeId: string, fileName: string, bytes: Buffer, transaction?:Transaction): Promise<any> {
     requireCondition(bytes.length <= MAX_SOURCE_BYTES,'BODY_TOO_LARGE','Source must be at most 16 MiB');
     requireCondition(fileName.length > 0 && fileName.length <= 240 && !/[\x00-\x1f/\\]/.test(fileName), 'INVALID_PAYLOAD', 'Use a safe source basename');
     const run=async (tx:Transaction) => {

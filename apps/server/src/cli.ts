@@ -2,10 +2,12 @@
 import {readFile} from 'node:fs/promises';
 import {setTimeout as delay} from 'node:timers/promises';
 import {ADMIN_ROUTES,ApiError,ScopeId} from '../../../packages/contracts/src/index.ts';
+import {moduleCommand} from '../../../packages/modules/src/cli.ts';
 
 const args=process.argv.slice(2);
 async function main():Promise<void>{
-  if(args.shift()!=='admin')throw new ApiError('INVALID_PAYLOAD','Usage: circle-server admin tasks|workers drain|approvals|events --tail|audit|connectors enable/disable|restart --graceful');
+  const mode=args.shift();if(mode==='modules'){await moduleCommand(args);return;}
+  if(mode!=='admin')throw new ApiError('INVALID_PAYLOAD','Usage: circle-server admin <command> | modules check|install');
   const target=new URL(process.env.CIRCLE_SERVER_URL??'http://127.0.0.1:8080');
   if(target.protocol!=='http:'||target.hostname!=='127.0.0.1')throw new ApiError('INVALID_PAYLOAD','Phase one admin requires the local development server');
   let token=process.env.CIRCLE_SERVER_TOKEN;
