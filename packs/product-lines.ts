@@ -3,7 +3,7 @@ import {dirname,isAbsolute,resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {z} from 'zod';
 import {ApiError,ToolName,requireCondition} from '../packages/contracts/src/index.ts';
-import {toolPackages,type ToolPackage} from '../packages/connectors/src/tool-packages.ts';
+import {toolPackages,ConnectorOptions,type ToolPackage} from '../packages/connectors/src/tool-packages.ts';
 
 const name=z.string().regex(/^[a-z][a-z0-9-]{0,99}$/);
 const relativePath=z.string().min(1).max(500).refine(path=>!isAbsolute(path)&&!path.includes('\\')&&!path.includes(':')&&path.split('/').every(part=>!!part&&part!=='.'&&part!=='..'),'Package paths must stay inside the product line');
@@ -11,6 +11,7 @@ const binding=z.object({packageId:name,alias:ToolName.optional()}).strict();
 export const ProductLineManifest=z.object({
   schemaVersion:z.literal('product-line/1'),id:name,version:z.string().regex(/^\d+\.\d+\.\d+$/),synthetic:z.boolean().optional(),
   connectorPackages:z.array(z.union([name,binding])).max(100),toolAliases:z.record(name,ToolName).default({}),
+  connectorOptions:z.record(name,ConnectorOptions).default({}),
   skills:z.array(relativePath).max(100).default([]),methods:z.array(relativePath).max(100).default([]),
   configuration:z.string().max(2000).optional(),knowledgeMappings:z.record(z.string(),z.unknown()).default({}),
 }).strict();
@@ -33,13 +34,15 @@ export async function loadProductLines(configFile?:string):Promise<{productLines
         requireCondition(packageId===shared.id||bindings.some(binding=>binding.packageId===packageId),'INVALID_PAYLOAD','Product-line alias requires a declared tool package');
       }
       if(manifest.toolAliases[shared.id]&&!bindings.some(binding=>binding.packageId===shared.id))bindings.push({packageId:shared.id});
+      for(const packageId of Object.keys(manifest.connectorOptions))requireCondition(bindings.some(binding=>binding.packageId===packageId),'INVALID_PAYLOAD','Product-line options require a declared tool package');
       for(const binding of bindings){
         const definition=toolPackages.find(pack=>pack.id===binding.packageId);
         requireCondition(definition&&!seen.has(binding.packageId),'INVALID_PAYLOAD','Product-line tool packages must be known and unique');seen.add(binding.packageId);
         const alias=manifest.toolAliases[binding.packageId];requireCondition(!binding.alias||!alias||binding.alias===alias,'INVALID_PAYLOAD','Product-line tool aliases disagree');
         const prefix=binding.alias??alias??definition.prefix;
-        let pack=installed.get(definition.id);if(!pack){pack={...definition,prefix,productLinePrefixes:{}};installed.set(pack.id,pack);}
+        let pack=installed.get(definition.id);if(!pack){pack={...definition,prefix,productLinePrefixes:{},profileOptions:manifest.connectorOptions[definition.id],productLineOptions:{}};installed.set(pack.id,pack);}
         pack.productLinePrefixes![manifest.id]=prefix;
+        pack.productLineOptions??={};pack.productLineOptions[manifest.id]=manifest.connectorOptions[definition.id]??{};
       }
       productLines.push({...manifest,directory:dirname(manifestFile)});
     }

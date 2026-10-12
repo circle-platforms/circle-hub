@@ -17,16 +17,16 @@ export async function projectSource(packageId:string,originals:RawReturn[],profi
   }else if(packageId==='build-site'){
     // Re-extract from the retained originals. This reader cannot reach the network.
     const source=new HttpSource(profile.origin);source.read=async(path)=>{const raw=originals.find(raw=>raw.path===source.path(path));requireCondition(raw,'EVIDENCE_INSUFFICIENT','Publication projection needs its retained page');return raw;};
-    const site=new BuildSite(source),index=await site.index(profile.index??'/');
-    for(const line of index.lines){const raw=originals.find(raw=>raw.path===line.path);if(!raw)continue;
-      for(const build of (await site.listing(line.path,{versionLine:line.versionLine})).result){
-        add(raw,`build:${build.name}`,'build',build.name,'build-record',{name:build.name,formal:build.formal,releasedOn:build.releasedOn,buildTime:build.buildTime,platform:build.platform,imageSha256:build.imageSha256},{versionLine:build.versionLine});
+    const site=new BuildSite(source),catalog=await site.catalog(profile.index??'/',{buildSite:profile.buildSite,availablePaths:new Set(originals.map(raw=>raw.path))});
+    for(const build of catalog.builds){
+        const raw=originals.find(page=>page.path===build.listingPath);requireCondition(raw,'EVIDENCE_INSUFFICIENT','Build observation needs its retained listing');
+        const identity=build.platform===null?build.name:`${build.name}:${build.platform}`;
+        add(raw,`build:${identity}`,'build',build.name,'build-record',{name:build.name,buildId:build.buildId,formal:build.formal,releasedOn:build.releasedOn,buildTime:build.buildTime,platform:build.platform,imageSha256:build.imageSha256},{versionLine:build.versionLine,platform:build.platform});
         const xml=originals.find(raw=>raw.path===build.files.commands);if(xml)for(const command of await site.commandsFrom(xml.bytes)){
           const parameters=commandParam([command],command.name).parameters;
-          add(xml,`command:${build.name}:${command.name}`,'command',command.name,'command-definition',{head:command.name,parameters},{build:build.name,versionLine:build.versionLine,platform:build.platform});
+          add(xml,`command:${identity}:${command.name}`,'command',command.name,'command-definition',{head:command.name,parameters,scope:command.scope,menuPath:command.menuPath},{build:build.name,buildId:build.buildId,versionLine:build.versionLine,platform:build.platform,scope:command.scope},{scope:command.scope,menuPath:command.menuPath});
         }
-        const fixed=originals.find(raw=>raw.path===build.files.fixed);if(fixed){const ids=await site.fixed(build);add(fixed,`fixed:${build.name}`,'repair-list',build.name,'fixed-identifiers',ids.result,{build:build.name,formal:build.formal,releasedOn:build.releasedOn,versionLine:build.versionLine});}
-      }
+        const fixed=originals.find(raw=>raw.path===build.files.fixed);if(fixed){const ids=await site.fixed(build),conditions={build:build.name,buildId:build.buildId,platform:build.platform,formal:build.formal,releasedOn:build.releasedOn,versionLine:build.versionLine};add(fixed,`fixed:${identity}`,'repair-list',build.name,'fixed-identifiers',ids.result,{...conditions,issueSystem:'bugzilla'});add(fixed,`fixed:${identity}`,'repair-list',build.name,'fixed-issues',ids.issues,conditions);}
     }
   }else if(packageId==='query-mirror'){
     for(const raw of originals){const envelope=JSON.parse(raw.bytes.toString()),items=envelope[profile.payloadField??'data'];requireCondition(Number(envelope.code)===1000&&Array.isArray(items),'INVALID_PAYLOAD','Mirror projection needs a successful array');

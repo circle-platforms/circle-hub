@@ -9,7 +9,7 @@ import type {Assets} from '../../assets/src/index.ts';
 import type {Operations} from '../../execution/src/operations.ts';
 import type {KnowledgeGraph} from '../../knowledge/src/graph.ts';
 import {Ingestions} from '../../knowledge/src/ingestion.ts';
-import type {ToolPackage,ToolDefinition,ConnectorProfile} from '../../connectors/src/tool-packages.ts';
+import {ConnectorOptions,type ToolPackage,type ToolDefinition,type ConnectorProfile} from '../../connectors/src/tool-packages.ts';
 
 export class ToolCatalog {
   store:Store;auth:Auth;assets:Assets;tasks:Tasks;execution:Operations;knowledge:KnowledgeGraph;packages:ToolPackage[];profiles:Record<string,ConnectorProfile>={};
@@ -17,7 +17,11 @@ export class ToolCatalog {
   ingestions?:Ingestions;
   constructor(store:Store,auth:Auth,assets:Assets,tasks:Tasks,execution:Operations,knowledge:KnowledgeGraph,packages:ToolPackage[]){Object.assign(this,{store,auth,assets,tasks,execution,knowledge,packages});this.store=store;this.auth=auth;this.assets=assets;this.tasks=tasks;this.execution=execution;this.knowledge=knowledge;this.packages=packages;}
   async initialize(profileFile?:string):Promise<void>{
-    if(profileFile){const schema=z.object({profiles:z.record(z.string(),z.object({origin:z.string().url(),root:z.string().optional(),index:z.string().optional(),payloadField:z.string().optional(),requestConcurrency:z.number().int().min(1).max(8).optional(),requestIntervalMs:z.number().int().min(0).max(60000).optional()}).strict())}).strict();this.profiles=schema.parse(JSON.parse(await readFile(profileFile,'utf8'))).profiles;}
+    if(profileFile){const schema=z.object({profiles:z.record(z.string(),z.object({origin:z.string().url(),root:z.string().optional(),index:z.string().optional(),payloadField:z.string().optional(),requestConcurrency:z.number().int().min(1).max(8).optional(),requestIntervalMs:z.number().int().min(0).max(60000).optional(),...ConnectorOptions.shape}).strict())}).strict();this.profiles=schema.parse(JSON.parse(await readFile(profileFile,'utf8'))).profiles;}
+  }
+  profileFor(configuration:Record<string,unknown>):ConnectorProfile|undefined{
+    const profile=this.profiles[configuration.runtimeProfileRef as string],pack=this.packageFor(configuration);if(!profile)return undefined;
+    return {...profile,...(configuration.productLineId===undefined?pack?.profileOptions:pack?.productLineOptions?.[configuration.productLineId as string])};
   }
   packageFor(configuration:Record<string,unknown>):ToolPackage|undefined{
     const pack=this.packages.find(p=>p.id===configuration.packageId),line=configuration.productLineId;
@@ -72,7 +76,7 @@ export class ToolCatalog {
     item.definition.schema.parse(spec.args.input);
     requireCondition(['candidate.submit','consolidation.fragments'].includes(item.definition.handler)||this.profiles[item.row.configuration.runtimeProfileRef],'SOURCE_UNREACHABLE','Runtime source profile is not configured');
     return {effects:{reads:item.definition.effect==='read'?['registered-source']:['knowledge'],writes:item.definition.effect==='write'?['knowledge-candidates']:[]},assetId:item.row.asset_id,assetVersion:item.row.version,
-      packageId:item.row.package_id,handler:item.definition.handler,profile:this.profiles[item.row.configuration.runtimeProfileRef],credentialReferences:item.row.declaration.credentials};
+      packageId:item.row.package_id,handler:item.definition.handler,profile:this.profileFor(item.row.configuration),credentialReferences:item.row.declaration.credentials};
   }
   async preflight(tx:Transaction,actor:AuthContext,operation:any,authorization:any):Promise<any>{
     const workerProfile=authorization.profile??(['candidate.submit','consolidation.fragments'].includes(authorization.handler)?{origin:'http://127.0.0.1'}:null);
@@ -98,7 +102,7 @@ export class ToolCatalog {
         const references=new Map<string,any>();
         for(const raw of report.output.raw){const ref=await this.knowledge.capture(tx,actor,task.scopeId,item.row.asset_id,{...raw,sourceType:raw.sourceType??report.output.sourceType},item.definition.permission);evidence.push({evidenceId:ref.evidenceId,sha256:ref.sha256});references.set(raw.path,ref);await this.observed?.(tx,actor,item.row.asset_id,raw,task.taskId);}
         const projection=this.packages.find(pack=>pack.id===item.row.package_id)?.projection;
-        if(projection){requireCondition(this.ingestions,'INTERNAL_ERROR','Source ingestion outbox is not configured');const indexed=await this.ingestions.enqueue(tx,task,item.row.package_id,projection.version,this.profiles[item.row.configuration.runtimeProfileRef],[...references.values()]);await this.tasks.emit(tx,task.taskId,'knowledge.indexing.linked',indexed);}
+        if(projection){requireCondition(this.ingestions,'INTERNAL_ERROR','Source ingestion outbox is not configured');const indexed=await this.ingestions.enqueue(tx,task,item.row.package_id,projection.version,this.profileFor(item.row.configuration)!,[...references.values()]);await this.tasks.emit(tx,task.taskId,'knowledge.indexing.linked',indexed);}
       }
     }
     const receipt={output:{result},evidence,reportHash:canonicalHash(report),error:report.error};

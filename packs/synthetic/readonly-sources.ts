@@ -15,7 +15,7 @@ export async function createSyntheticSources() {
       '<item name="service create mode"><arguments><arg position="1" type="STRING" enum="active|standby"/></arguments></item>',
       ...Array.from({length:state.headCount},(_,i)=>`<item name="${i===state.badCommandIndex?'x'.repeat(600):`service inspect ${i}`}"><arguments><arg position="1" type="STRING" optional="true"/></arguments></item>`),
     ].join(''):'';
-    return `<commands><scope name="configuration"><menu name="service">${first}${expanded}</menu></scope></commands>`;
+    return `<commands><scope name="configuration">${first}${expanded}</scope></commands>`;
   };
   const builds=[
     {name:'Rel_PHOTON_10_5_0_101',released:'2026-01-02',bugs:['401','402']},

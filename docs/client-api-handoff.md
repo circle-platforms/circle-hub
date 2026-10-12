@@ -182,8 +182,8 @@ task 工具返回 202 `{"taskId":"task_...","phase":"admitted"}`（phase 以实�
 | 工具 | args | result 主要字段 |
 |---|---|---|
 | `buildsite.versions` | `{versionLine?}` | `versionLines`, `platforms`, `builds[]`；每个构建含 name/versionLine/formal/releasedOn/platform/buildTime/镜像声明 SHA 与大小 |
-| `buildsite.command_tree` | `{build}` | build/sourceSha256/commands；固定构建 XML 投影 |
-| `buildsite.fixed_releases` | `{legacyIssueId,builds:[1–20 个相关构建],versionLine?}` | status/earliestFormal/all/coverage；仅核对候选构建，空编号 unknown，Beta 不作正式发布 |
+| `buildsite.command_tree` | `{build,platform?,scope?,versionLine?}` | build/buildId/platform/parserVersion/sourceSha256/commands；固定构建 XML 投影，保留 scope/menuPath |
+| `buildsite.fixed_releases` | `{issueId,issueSystem,builds:[1–20 个相关构建],platform?,versionLine?}`；旧 `{legacyIssueId,...}` 仍可用 | issue/status/earliestFormal/all/coverage；体系为 zentao 或 bugzilla，旧请求默认 bugzilla，空编号 unknown，Beta 不作正式发布 |
 | `buildsite.command_heads` | `{build,prefix}` | heads/count/limit/ruleVersion；上限 128，超出报 `RESULT_TOO_LARGE`，details.outcome=`result_too_large`，不截断 |
 | `buildsite.command_param` | `{build,head}` | status/head/parameters/ruleVersion；参数含 position/type/optional/help/range/enum，position 从 1 开始 |
 | `buildsite.command_check` | `{build,commands:[...]}` | build/sourceSha256/ruleVersion/commands；每条含 status=`hit` 或 `missing`、head、arguments、violations |
@@ -199,6 +199,12 @@ task 工具返回 202 `{"taskId":"task_...","phase":"admitted"}`（phase 以实�
 E 的 `command-tree/1.0.0` 规则采用 POSIX quote/escape 分词并转小写，最多八词的最长前缀匹配。hit 表示命令头存在，参数另报 `ARGUMENT_COUNT`、`TYPE_MISMATCH`、`ENUM_MISMATCH`、`OUT_OF_RANGE` 或 `UNSUPPORTED_PARAMETER_TYPE`；missing 报 `HEAD_MISSING`，不能用手册命中改成 hit。STRING/XSTRING 为非空字符串，U16/U32 检查整数和位宽及 XML 范围；IPADDR 支持 IP 地址，DOTTEDIP 为 IPv4，IPMASK 为连续位的 IPv4 点分掩码。未知参数类型保留违规，不猜测支持。同一固定 XML 和输入产生相同结果，构建树不同的 missing 保持独立。
 
 版本线来自首页链接标题或页面文件名；平台是独立维度，不是型号。正式发布需要 `Rel_` 且有 Released on 日期。构建段落没变时不重取 XML 和修复清单；ISO-8859-1 XML 按声明解码，引用 SHA 始终来自解码前原字节。命令存在只证明结构，完整功能语义需要产品证据。
+
+版本列表支持首页 → 汇总页 → 列表页。产品线清单的 `connectorOptions.build-site.buildSite` 声明 listingPathPattern（可带 versionLine/variant 命名捕获）与 variantPlatforms，通用连接器按该配置筛选汇总页链接和映射平台。遍历有 maxDepth（默认 3、最多 5）及 maxPages（默认 128、最多 256），循环页去重；旧的直接列表仍支持。列表按标题文本加紧随 BLOCKQUOTE 取构建，font 仅是展示标记；支持带变体前缀的 .click 镜像、命令 XML 和修复页，绝对/相对链接都须同源。
+
+`buildId` 是名称与 platform 的稳定身份。所有命令工具的 build、修复工具的 builds 都可用版本列表给出的 buildId；旧构建名仅在结果唯一时使用。同名多平台时返回 INVALID_PAYLOAD，details.reason=ambiguous_build；也可传 platform（null 为普通平台）明确选择。command_heads/param/check 同样新增可选 platform/scope/versionLine。XML 命令头由全部祖先 menu 名加 item 名组成，scope 单独保留；parserVersion=menu-path/2，所有命令工具和产品投影共用该解析。不同 scope 的同头冲突仍须明确 scope，不猜测选择。
+
+修复链接识别 show_bug.cgi?id=... 为 bugzilla、index.php?m=bug&f=view&id=... 为 zentao，**只读清单、不跟随缺陷链接**。两种同号不能互相匹配：zentao 用缺陷 id，bugzilla 用镜像 bugzillaID/legacyIssueId。普通响应带 issue={system,id}，all/earliestFormal 保留平台；coverage.buildRefs/readRefs 带完整身份，缺失变体也带 buildId/platform。SDK fixed.result/fixedIds 继续只表示 bugzilla 编号，新增 issues/fixedIssues 表示带体系编号；知识中 fixed-identifiers 保留旧含义，fixed-issues 保存两类。新版 source-projection/2 重读时替换该源旧脚本投影的正式成员，历史声明和 SHA 原件保留。
 
 版本列表与同步只取首页/版本页元数据，**不下载任何 XML/修复清单**。命令 XML 在对应构建首次被命令工具用到时获取，内容按 SHA 持久缓存，索引绑定调用身份/资产修订/来源与构建段落修订，不跨个人凭据复用；元数据变化重新取。修复清单只有 fixed_releases 查询才按指定候选取，结果声明 coverage.completeSite=false，不把候选中的最早发布冒充全站最早。运行时 profile 可配置 requestConcurrency（1–8，默认 2）与 requestIntervalMs（构建工具默认 200）；相同连接器调用的请求同时受并发与开始间隔限制。
 

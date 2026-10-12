@@ -4,13 +4,19 @@
   "version": "1.0.0",
   "connectorPackages": ["documents", "build-site", "query-mirror", "environment-view"],
   "toolAliases": {"documents": "docs", "build-site": "buildsite", "query-mirror": "zentao", "environment-view": "env", "knowledge": "knowledge"},
+  "connectorOptions": {
+    "build-site": {"buildSite": {
+      "listingPathPattern": "(?:^|/)rel_apv_(?<versionLine>\\d+(?:_\\d+){1,2})(?<variant>_[^.]+)?\\.html$",
+      "variantPlatforms": {"InfosecOS": "InfosecOS", "hg_k": "hg_k", "ft_k": "ft_k", "infose_hg_k": "infose_hg_k"}
+    }}
+  },
   "skills": ["skills/apv-mindmap-compile"],
   "methods": ["methods/mindmap.ts"],
   "configuration": "Source addresses and credential references are supplied at runtime",
   "knowledgeMappings": {
     "commandAuthority": "The exact build command-tree revision",
     "releaseAuthority": "Rel_ builds with an explicit publication date",
-    "repairJoin": {"mirrorField": "bugzillaID", "normalizedField": "legacyIssueId", "publicationPredicate": "fixed-identifiers"},
+    "repairJoin": {"direct": {"system": "zentao", "mirrorField": "id"}, "legacy": {"system": "bugzilla", "mirrorField": "bugzillaID", "normalizedField": "legacyIssueId"}, "publicationPredicate": "fixed-issues"},
     "resolvedBuild": "Supplementary build evidence which does not prove a formal release",
     "platform": "A dimension separate from versionLine"
   }

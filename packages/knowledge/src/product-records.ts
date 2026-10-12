@@ -44,9 +44,14 @@ export class ProductRecords {
     await this.graph.auth.audit(ctx,'knowledge.projected-batch',{ruleVersion,claims:claims.map(claim=>claim.record_id)},scopeId,tx);
   }
   async publishIncremental(tx:Transaction,ctx:AuthContext,scopeId:string,jobId:string,sources:any[]):Promise<void>{
+    await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[canonicalJson(['stable',ctx.tenantId,scopeId,'product'])]);
     const obsolete=sources.map(source=>source.supersededSourceId).filter(Boolean);
     if(obsolete.length)await tx.query('DELETE FROM knowledge_active_statements WHERE tenant_id=$1 AND scope_id=$2 AND source_ids && $3::text[]',[ctx.tenantId,scopeId,obsolete]);
-    await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[canonicalJson(['stable',ctx.tenantId,scopeId,'product'])]);
+    // A newer projector may change statement identities for unchanged bytes.
+    // Replace its full source projection, retaining unrelated/manual statements.
+    if(sources.length)await tx.query(`DELETE FROM knowledge_active_statements a USING knowledge_records r
+      WHERE a.claim_id=r.record_id AND a.tenant_id=$1 AND a.scope_id=$2 AND a.source_ids && $3::text[]
+      AND r.payload->>'projectionVersion' IS NOT NULL`,[ctx.tenantId,scopeId,sources.map(source=>source.sourceRecordId)]);
     await tx.query(`INSERT INTO knowledge_active_statements(tenant_id,scope_id,statement_key,claim_id,source_ids,member_ids)
       SELECT $1,$2,m.statement_key,m.claim_id,m.source_ids,m.member_ids FROM knowledge_projection_members m WHERE m.job_id=$3
       AND EXISTS(SELECT 1 FROM knowledge_source_heads h WHERE h.record_id=m.source_ids[1])

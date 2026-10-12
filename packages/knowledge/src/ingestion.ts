@@ -42,7 +42,8 @@ export class Ingestions {
       });
       await this.store.transaction(async tx=>{
         await this.held(tx,job);for(const ref of payload.sources){await this.graph.get(ctx,ref.sourceRecordId,tx);await tx.query('INSERT INTO knowledge_indexed_sources(source_id,package_id,rule_version,generation) VALUES($1,$2,$3,$4) ON CONFLICT(source_id,package_id,rule_version) DO UPDATE SET generation=EXCLUDED.generation',[ref.sourceRecordId,payload.packageId,payload.ruleVersion,ref.generation]);}
-        await products.publishIncremental(tx,ctx,job.scope_id,job.job_id,payload.sources);
+        const changedSources=[...references].filter(([path])=>pending.has(path)).map(([,reference])=>reference);
+        await products.publishIncremental(tx,ctx,job.scope_id,job.job_id,changedSources);
         await tx.query("UPDATE knowledge_projection_jobs SET status='succeeded',lease_until=NULL WHERE job_id=$1",[job.job_id]);const task=await this.tasks.internal(tx,job.task_id);
         await tx.query("UPDATE tasks SET result_status='succeeded',result=$2 WHERE task_id=$1",[task.taskId,JSON.stringify({jobId:job.job_id,indexed:observations.length,artifacts:[],evidence:[],unmapped:[]})]);await this.tasks.stage(tx,task,'delivered','done','knowledge.indexing.completed',{jobId:job.job_id,indexed:observations.length});
       });
