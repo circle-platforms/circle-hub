@@ -27,7 +27,9 @@ It writes `manifest.json`: every case with its autoid, group path, layout and st
 
 ## 2. Bind the build
 
-Call `srv_buildsite_versions` for the version line. Use the build the user named; otherwise the latest **formal** build (a `Rel_` build with a release date). A Beta build only when the user asks for it. Every later query uses this one build.
+Call `srv_buildsite_versions` for the version line. Use the build the user named; otherwise the latest **formal** build (a `Rel_` build with a release date) on the main platform (`platform` null), unless the user names a platform. A Beta build only when the user asks for it. Skip a build marked `current: false`: the site lists conflicting rebuilds of it. If the bound build has `commandTreeAvailable: false`, stop and say so: there is no command tree to check against.
+
+Every later query passes this build's `buildId` as `build`, because the same build name exists on several platforms. The case files keep the build name, as the tools return it in `build`.
 
 ## 3. Recompose (you), then check (script)
 
@@ -49,12 +51,14 @@ Fix every violation it lists and run it again until `ok:true`.
 For each case that is not `true_gap`, write `out/cases/<autoid>.json`, the mechanical case.
 
 - `description.intent_verbatim` and `description.group_path` are copied byte for byte from the contract and the manifest.
-- **Every device command comes from the bound build.** Find heads with `srv_buildsite_command_heads`, arguments with `srv_buildsite_command_param`, and the manual section with `srv_docs_section` (the section that starts `**<head>**`). Never write a command from memory, and never "repair" a command the author wrote.
+- **Every device command comes from the bound build.** Find heads with `srv_buildsite_command_heads`, arguments with `srv_buildsite_command_param`, and the manual with `srv_docs_search` for the version line (`version`, which searches that version's CLI manual) and `srv_docs_section` (the section that starts `**<head>**`). Never write a command from memory, and never "repair" a command the author wrote.
+- `srv_buildsite_command_param` lists every signature of a head. When `overloaded` is true there is more than one and `parameters` is empty: pick the signature whose parameters say what the case does, and write the arguments in that signature's order.
+- When the version line has no CLI manual, `srv_docs_search` answers `SOURCE_ABSENT`. Go on without the manual and say so in the report: the manual only explains how a value shows on screen; it never decides a command or an expectation.
 - Blocks: `CONFIG` (commands to configure), `OBSERVE_ASSERT` (a show command and one or more checks: `found`, `not_found`, `abs_found` with a pattern), `SLEEP` (seconds), `STEP` (a row the blocks cannot express, with a reason in `escape_hatches`).
 - Each expectation of the case is asserted **exactly once**, carrying its id `u1:<autoid>:<n>:<index>`, and listed in `expectation_binding` with what backs it (`Author`, `Manual`, `CapabilityXml`, `Spec`, `DefectSpec`).
 - Expected values come from the contract's expectations. A manual may explain how a value shows on screen; device output never decides what is expected.
 - Clean up what the case configures: add the inverse commands after the checks.
-- Then call `srv_buildsite_command_check` once with **all** the case's device commands and copy each result into `command_receipts` as returned (`command`, `build`, `status`, `head`, `violations`, `evidenceId`). Do not write a receipt yourself.
+- Then call `srv_buildsite_command_check` once with **all** the case's device commands and copy each result into `command_receipts` as returned (`command`, `build`, `status`, `head`, `violations`, `evidenceId`). A command passes when it matches one whole signature; `violations` then is empty, otherwise it holds the codes of the closest signature (`ARGUMENT_COUNT`, `TYPE_MISMATCH`, `OUT_OF_RANGE`, …). Do not write a receipt yourself.
 
 ## 5. Gate (script)
 
