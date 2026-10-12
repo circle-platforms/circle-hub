@@ -4,7 +4,8 @@ import { mkdir } from 'node:fs/promises';
 import {randomUUID} from 'node:crypto';
 import { z } from 'zod';
 import { API_VERSION, MAX_BODY_BYTES, MAX_SOURCE_BYTES, MAX_WORKER_REPORT_BYTES, CLIENT_ROUTES, TaskListQuery, ApiError, SubmitRequest,
-  InputRequest, OperationRequest, ApprovalProposal, ApprovalRequest, ConclusionRequest, ChecklistRequest, ChecklistResponse, RuleRequest, DefectReviewPack, LbxPack, InputRevisionId, TaskId, ScopeId, SourceUpload, Base64Content, MindmapCompileInput, MindmapPack, DevLoginRequest, requireCondition } from '../../../packages/contracts/src/index.ts';
+  InputRequest, OperationRequest, ApprovalProposal, ApprovalRequest, ConclusionRequest, ChecklistRequest, ChecklistResponse, RuleRequest, DefectReviewPack, LbxPack, InputRevisionId, TaskId, ScopeId, SourceUpload, Base64Content, MindmapCompileInput, MindmapPack, DevLoginRequest, requireCondition,
+  EntityId,RelationId,ObjectListQuery,ObjectTypePackage,ObjectObservation,RelationObservation } from '../../../packages/contracts/src/index.ts';
 import { Store } from '../../../packages/storage/src/index.ts';
 import { taskMigration } from '../../../packages/tasks/src/migration.ts';
 import { Auth } from '../../../packages/tasks/src/auth.ts';
@@ -29,16 +30,21 @@ import { Rules } from '../../../packages/tasks/src/rules.ts';
 import { ProfessionalRunner } from './professional-runner.ts';
 import { MindmapRunner } from './mindmap-runner.ts';
 import { closeHttpServer } from './shutdown.ts';
+import {entityMigration} from '../../../packages/knowledge/src/entity-migration.ts';
+import {TypeCatalog} from '../../../packages/knowledge/src/type-catalog.ts';
+import {Entities} from '../../../packages/knowledge/src/entities.ts';
 
 function environment(name: string): string { const value = process.env[name]; if (!value) throw new Error(`Required environment variable: ${name}`); return value; }
 const store = new Store(JSON.parse(environment('CIRCLE_SERVER_DATABASE_CONFIG')));
-await store.migrate([taskMigration,mindmapTaskMigration,knowledgeMigration,executionMigration,resourceMigration,approvalMigration,conclusionMigration,checklistMigration,connectorMigration]);
+await store.migrate([taskMigration,mindmapTaskMigration,knowledgeMigration,executionMigration,resourceMigration,approvalMigration,conclusionMigration,checklistMigration,connectorMigration,entityMigration]);
 const auth = new Auth(store);
 requireCondition(process.env.CIRCLE_SERVER_DEV_AUTH === '1', 'INVALID_PAYLOAD', 'Phase one requires explicitly enabled development authentication');
 await auth.initializeDevelopment(environment('CIRCLE_SERVER_DEV_IDENTITIES'));
 await mkdir(environment('CIRCLE_SERVER_DATA_DIR'), { recursive: true, mode: 0o700 });
 const tasks = new Tasks(store, auth, Number(process.env.CIRCLE_SERVER_INPUT_TTL_MS ?? 300_000));
 const knowledge = new Records(store,auth,new LocalObjects(environment('CIRCLE_SERVER_DATA_DIR')));
+const objectTypes=new TypeCatalog(store,auth),entities=new Entities(store,auth,knowledge,objectTypes);
+knowledge.sourceAccess=(ctx,id,tx)=>entities.checkSourceAccess(ctx,id,tx);
 const execution = new Operations(store,auth,tasks,knowledge);
 const approvals=new Approvals(store,auth,tasks);execution.approvalCheck=(tx,task,spec)=>approvals.check(tx,task,spec);
 const assessments=new Assessments(store,tasks,knowledge),checklists=new Checklists(store,tasks,knowledge);
@@ -101,6 +107,21 @@ const server = createServer(async (request, response) => {
       send(response,200,{ data:{ ...issued,tokenType:'Bearer',principalId:policy.principalId,tenantId:policy.tenantId,scopes:policy.scopes } }); return;
     }
     const ctx = await auth.authenticate(request.headers.authorization);
+    if(url.pathname===CLIENT_ROUTES.objectTypes.path&&request.method==='GET'){send(response,200,{data:await objectTypes.list(ctx)});return;}
+    if(url.pathname===CLIENT_ROUTES.objects.path&&request.method==='GET'){
+      const query=ObjectListQuery.parse({limit:url.searchParams.get('limit')??undefined,after:url.searchParams.get('after')??undefined,
+        typeId:url.searchParams.get('typeId')??undefined,system:url.searchParams.get('system')??undefined});
+      send(response,200,{data:await entities.list(ctx,query)});return;
+    }
+    const objectRoute=/^\/v1\/objects\/([^/]+)(?:\/(observations|relations))?$/.exec(url.pathname);
+    if(objectRoute&&request.method==='GET'){
+      const id=EntityId.parse(objectRoute[1]);
+      if(objectRoute[2]==='observations')send(response,200,{data:await entities.observations(ctx,id)});
+      else if(objectRoute[2]==='relations'){
+        const limit=ObjectListQuery.shape.limit.parse(url.searchParams.get('limit')??undefined),after=RelationId.optional().parse(url.searchParams.get('after')??undefined);
+        send(response,200,{data:await entities.relations(ctx,id,limit,after)});
+      }else send(response,200,{data:await entities.get(ctx,id)});return;
+    }
     if (url.pathname === '/v1/status' && request.method === 'GET') { send(response,200,{data:{apiVersion:API_VERSION,syntheticOnly:true,bootId,processId:process.pid}});return; }
     if (url.pathname === CLIENT_ROUTES.tasks.path && request.method === CLIENT_ROUTES.tasks.method) {
       const {limit}=TaskListQuery.parse({limit:url.searchParams.get('limit')??undefined});
@@ -236,6 +257,9 @@ const server = createServer(async (request, response) => {
     }
     if (url.pathname.startsWith('/v1/admin/')) {
       const policy = await auth.check(ctx, 'admin.manage');
+      if(url.pathname==='/v1/admin/object-types'&&request.method==='POST'){send(response,201,{data:await objectTypes.register(ctx,ObjectTypePackage.parse(await body(request)))});return;}
+      if(url.pathname==='/v1/admin/objects/observe'&&request.method==='POST'){send(response,201,{data:await entities.observe(ctx,ObjectObservation.parse(await body(request,MAX_WORKER_REPORT_BYTES)))});return;}
+      if(url.pathname==='/v1/admin/objects/relations'&&request.method==='POST'){send(response,201,{data:await entities.link(ctx,RelationObservation.parse(await body(request,MAX_WORKER_REPORT_BYTES)))});return;}
       const drain=/^\/v1\/admin\/workers\/([^/]+)\/drain$/.exec(url.pathname);
       if(drain&&request.method==='POST'){await body(request);send(response,200,{data:await execution.drain(ctx,decodeURIComponent(drain[1]))});return;}
       const connector=/^\/v1\/admin\/connectors\/([^/]+)$/.exec(url.pathname);

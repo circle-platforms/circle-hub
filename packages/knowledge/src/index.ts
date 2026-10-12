@@ -6,16 +6,17 @@ import type { ObjectStore } from './objects.ts';
 
 export class Knowledge {
   store: Store; auth: Auth; objects: ObjectStore;
+  sourceAccess?: (ctx:AuthContext,id:string,tx?:Transaction)=>Promise<void>;
   constructor(store: Store, auth: Auth, objects: ObjectStore) { this.store = store; this.auth = auth; this.objects = objects; }
   sourceReference(row: Record<string, any>): any { return { sourceRevisionId: row.source_revision_id, sha256: row.sha256,
     size: Number(row.size), fileName: row.file_name, scopeId: row.scope_id }; }
   artifactReference(row: Record<string, any>): any { return { artifactId: row.artifact_id, sha256: row.sha256,
     size: Number(row.size), fileName: row.file_name, mediaType: row.media_type, downloadPath: `/v1/artifacts/${row.artifact_id}/content` }; }
-  async upload(ctx: AuthContext, scopeId: string, fileName: string, bytes: Buffer): Promise<any> {
+  async upload(ctx: AuthContext, scopeId: string, fileName: string, bytes: Buffer, transaction?:Transaction): Promise<any> {
     requireCondition(bytes.length > 0,'INVALID_PAYLOAD','Source must be nonempty');
     requireCondition(bytes.length <= MAX_SOURCE_BYTES,'BODY_TOO_LARGE','Source must be at most 16 MiB');
     requireCondition(fileName.length > 0 && fileName.length <= 240 && !/[\x00-\x1f/\\]/.test(fileName), 'INVALID_PAYLOAD', 'Use a safe source basename');
-    return this.store.transaction(async tx => {
+    const run=async (tx:Transaction) => {
       const policy = await this.auth.check(ctx, 'sources.write', scopeId, tx);
       const digest = sha256(bytes); await this.objects.putObject({ Bucket: 'evidence', Key: digest, Body: bytes });
       const row = (await tx.query(`INSERT INTO sources(source_revision_id,tenant_id,scope_id,principal_id,sha256,size,object_key,file_name)
@@ -23,13 +24,15 @@ export class Knowledge {
         [newId('src'), policy.tenantId, scopeId, policy.principalId, digest, bytes.length, fileName])).rows[0];
       await this.auth.audit(ctx, 'sources.upload', { sourceRevisionId: row.source_revision_id, sha256: digest, size: bytes.length }, scopeId, tx);
       return this.sourceReference(row);
-    });
+    };
+    return transaction?run(transaction):this.store.transaction(run);
   }
   async source(ctx: AuthContext, id: string, scopeId?: string, tx?: Transaction): Promise<any> {
     const row = (await (tx ?? this.store.pool).query('SELECT * FROM sources WHERE source_revision_id=$1', [id])).rows[0];
     requireCondition(row, 'TARGET_NOT_FOUND', 'Source revision not found');
     const policy = await this.auth.check(ctx, 'sources.read', row.scope_id, tx);
     requireCondition(policy.tenantId === row.tenant_id && (!scopeId || row.scope_id === scopeId), 'FORBIDDEN_SCOPE', 'Source is outside the task partition');
+    await this.sourceAccess?.(ctx,id,tx);
     return this.sourceReference(row);
   }
   async sourceBytes(ctx: AuthContext, id: string, scopeId?: string, tx?: Transaction): Promise<{ reference: any; bytes: Buffer }> {

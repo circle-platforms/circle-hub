@@ -22,10 +22,13 @@ export const OperationId = identity('op');
 export const ScopeId = identity('scp');
 export const SourceRevisionId = identity('src');
 export const ArtifactId = identity('art');
+export const EntityId=identity('ent');
+export const EntityRevisionId=identity('erev');
+export const RelationId=identity('rel');
 export const Sha256 = z.string().regex(/^[a-f0-9]{64}$/);
 export const Base64Content = z.string().regex(/^[A-Za-z0-9+/]*={0,2}$/).refine(value =>
   value.length % 4 === 0 && Buffer.from(value,'base64').toString('base64') === value,'Expected canonical standard base64');
-export function newId(prefix: 'task' | 'inrev' | 'op' | 'pin' | 'src' | 'snap' | 'evd' | 'art' | 'rule' | 'audit' | 'rec'): string {
+export function newId(prefix: 'task' | 'inrev' | 'op' | 'pin' | 'src' | 'snap' | 'evd' | 'art' | 'rule' | 'audit' | 'rec' | 'ent' | 'erev' | 'rel' | 'rrev'): string {
   return `${prefix}_${randomUUID().replaceAll('-', '')}`;
 }
 export function sha256(bytes: string | Uint8Array): string {
@@ -94,6 +97,30 @@ export const DevLoginResult = z.object({ token: z.string(), tokenType: z.literal
   principalId: z.string(), tenantId: z.string(), scopes: z.array(ScopeId) });
 export const SourceUpload = z.object({ scopeId: ScopeId, fileName: z.string().min(1).max(240), contentBase64: Base64Content });
 export const SourceReference = z.object({ sourceRevisionId: SourceRevisionId, sha256: Sha256, size: z.number().int().nonnegative(), fileName: z.string(), scopeId: ScopeId });
+const PackageName=z.string().regex(/^[a-z][a-z0-9-]{0,99}$/);
+const PackageVersion=z.string().regex(/^\d+\.\d+\.\d+$/);
+export const ObjectTypeReference=z.object({packageId:PackageName,version:PackageVersion,typeId:PackageName}).strict();
+export const AttributeKind=z.enum(['string','number','boolean','string[]','object','any']);
+export const ObjectTypeDefinition=z.object({id:PackageName,attributes:z.record(z.string().min(1).max(100),AttributeKind),
+  required:z.array(z.string()).max(100).default([])}).strict().refine(value=>value.required.every(key=>Object.hasOwn(value.attributes,key)),'Required attributes must be declared');
+export const ObjectTypePackage=z.object({id:PackageName,version:PackageVersion,types:z.array(ObjectTypeDefinition).min(1).max(100)}).strict()
+  .refine(value=>new Set(value.types.map(type=>type.id)).size===value.types.length,'Object type identities must be unique');
+export type ObjectTypePackage=z.infer<typeof ObjectTypePackage>;
+export const ObjectSourceKey=z.object({system:PackageName,objectType:z.string().min(1).max(100),externalId:z.string().min(1).max(200)}).strict();
+export const ObjectSource=ObjectSourceKey.extend({revision:z.string().min(1).max(300),contentBase64:Base64Content,sha256:Sha256.optional()}).strict();
+export const ObjectAccess=z.object({sourceReaders:z.array(z.string().min(1).max(200)).max(1000),platformReaders:z.array(z.string().min(1).max(200)).max(1000)}).strict();
+export const ObjectObservation=z.object({scopeId:ScopeId,observationKey:z.string().min(1).max(200),source:ObjectSource,type:ObjectTypeReference,
+  attributes:z.record(z.string(),z.unknown()),acl:ObjectAccess}).strict();
+export type ObjectObservation=z.infer<typeof ObjectObservation>;
+export const RelationObservation=z.object({scopeId:ScopeId,observationKey:z.string().min(1).max(200),type:PackageName,
+  fromEntityId:EntityId,toEntityId:EntityId,source:ObjectSource,acl:ObjectAccess}).strict();
+export type RelationObservation=z.infer<typeof RelationObservation>;
+export const ObjectListQuery=z.object({limit:z.coerce.number().int().min(1).max(100).default(20),after:EntityId.optional(),
+  typeId:PackageName.optional(),system:PackageName.optional()});
+export const EntityView=z.object({entityId:EntityId,entityRevisionId:EntityRevisionId,scopeId:ScopeId,type:ObjectTypeReference,
+  source:ObjectSourceKey.extend({revision:z.string()}),attributes:z.record(z.string(),z.unknown()),
+  provenance:z.object({observationKey:z.string(),observedAt:z.string(),observerId:z.string(),origin:z.literal('manual-observation'),raw:SourceReference})});
+export const ObjectPage=z.object({items:z.array(EntityView),total:z.number().int().nonnegative(),nextCursor:EntityId.nullable()});
 export const MindmapCompileInput = z.object({ sourceRevisionId: SourceRevisionId, sourceSha256: Sha256.optional() });
 export const ArtifactReference = z.object({ artifactId: ArtifactId, sha256: Sha256, size: z.number().int().positive(),
   fileName: z.string(), mediaType: z.enum(['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','application/json','text/plain']),
@@ -157,6 +184,7 @@ const registry = {
   CONNECTOR_DISABLED: [409, 'permission'], EVIDENCE_INSUFFICIENT: [409, 'semantic-insufficient'],
   UPSTREAM_TIMEOUT: [504, 'transient'], INTERNAL_ERROR: [500, 'internal'],
   INVALID_MINDMAP: [422, 'validation'], UNSUPPORTED_MINDMAP: [422, 'validation'],
+  OBJECT_NOT_VISIBLE: [404, 'permission'], IDENTITY_UNMAPPED: [409, 'permission'],
   ARTIFACT_VERIFICATION_FAILED: [409, 'semantic-insufficient'], SOURCE_HASH_MISMATCH: [409, 'conflict-stale'],
 } as const;
 export type ErrorCode = keyof typeof registry;
@@ -221,6 +249,11 @@ export const CLIENT_ROUTES = {
   submit:{ method:'POST',path:'/v1/tasks/submit',request:SubmitRequest,response:SubmittedTask },
   tasks:{ method:'GET',path:'/v1/tasks',query:TaskListQuery,response:z.array(TaskView) },
   approvals:{ method:'GET',path:'/v1/tasks/{taskId}/approvals',response:z.array(ApprovalView) },
+  objectTypes:{method:'GET',path:'/v1/object-types'},
+  objects:{method:'GET',path:'/v1/objects',query:ObjectListQuery,response:ObjectPage},
+  object:{method:'GET',path:'/v1/objects/{entityId}',response:EntityView},
+  objectObservations:{method:'GET',path:'/v1/objects/{entityId}/observations'},
+  objectRelations:{method:'GET',path:'/v1/objects/{entityId}/relations'},
   status:{ method:'GET',path:'/v1/tasks/{taskId}/status',response:TaskView },
   events:{ method:'GET',path:'/v1/tasks/{taskId}/events?after={seq}',response:EventPage },
   result:{ method:'GET',path:'/v1/tasks/{taskId}/result',response:TaskResult },
