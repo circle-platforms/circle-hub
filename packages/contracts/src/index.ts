@@ -29,7 +29,7 @@ export const AssetId=identity('ast');
 export const Sha256 = z.string().regex(/^[a-f0-9]{64}$/);
 export const Base64Content = z.string().regex(/^[A-Za-z0-9+/]*={0,2}$/).refine(value =>
   value.length % 4 === 0 && Buffer.from(value,'base64').toString('base64') === value,'Expected canonical standard base64');
-export function newId(prefix: 'task' | 'inrev' | 'op' | 'pin' | 'src' | 'snap' | 'evd' | 'art' | 'rule' | 'audit' | 'rec' | 'ent' | 'erev' | 'rel' | 'rrev' | 'ast'): string {
+export function newId(prefix: 'task' | 'inrev' | 'op' | 'pin' | 'src' | 'snap' | 'evd' | 'art' | 'rule' | 'audit' | 'rec' | 'ent' | 'erev' | 'rel' | 'rrev' | 'ast' | 'knr'): string {
   return `${prefix}_${randomUUID().replaceAll('-', '')}`;
 }
 export function sha256(bytes: string | Uint8Array): string {
@@ -128,9 +128,27 @@ export type RelationObservation=z.infer<typeof RelationObservation>;
 export const ObjectListQuery=z.object({limit:z.coerce.number().int().min(1).max(100).default(20),after:EntityId.optional(),
   typeId:PackageName.optional(),system:PackageName.optional()});
 export const EntityView=z.object({entityId:EntityId,entityRevisionId:EntityRevisionId,scopeId:ScopeId,type:ObjectTypeReference,
+  knowledgeCategory:z.enum(['product','consolidated']),sourceType:z.string(),
   source:ObjectSourceKey.extend({revision:z.string()}),attributes:z.record(z.string(),z.unknown()),
   provenance:z.object({observationKey:z.string(),observedAt:z.string(),observerId:z.string(),origin:z.literal('manual-observation'),raw:SourceReference})});
 export const ObjectPage=z.object({items:z.array(EntityView),total:z.number().int().nonnegative(),nextCursor:EntityId.nullable()});
+export const KnowledgeRecordId=identity('knr');
+export const KnowledgeCategory=z.enum(['product','consolidated']);
+export const KnowledgeSourceType=z.enum(['document','command-tree','query-mirror','build-record','environment-view','shared-session','skill-run','bot-run','review-correction','footprint']);
+export const KnowledgeSourceInput=z.object({scopeId:ScopeId,sourceId:z.string().min(1).max(1000),revision:z.string().min(1).max(300),path:z.string().min(1).max(2000),
+  knowledgeCategory:KnowledgeCategory,sourceType:KnowledgeSourceType,parserVersion:z.string().min(1).max(100),contentBase64:Base64Content,sha256:Sha256.optional(),
+  acl:ObjectAccess,sharing:z.object({allowed:z.boolean(),teamPromotion:z.boolean()}).strict().optional()}).strict();
+export const KnowledgeEvidenceInput=z.object({sourceRecordId:KnowledgeRecordId,start:z.number().int().nonnegative(),end:z.number().int().positive(),quoteBase64:Base64Content.optional()}).strict();
+export const KnowledgeEntityInput=z.object({sourceRecordId:KnowledgeRecordId,subject:z.string().min(1).max(500),kind:z.string().min(1).max(100),name:z.string().min(1).max(500),
+  aliases:z.array(z.string()).max(100).default([]),attributes:z.record(z.string(),z.unknown()).default({}),entityRevisionId:EntityRevisionId.optional()}).strict();
+export const KnowledgeClaimInput=z.object({scopeId:ScopeId,subject:z.string().min(1).max(500),predicate:z.string().min(1).max(200),value:z.unknown(),
+  conditions:z.record(z.string(),z.unknown()).default({}),evidenceIds:z.array(KnowledgeRecordId).min(1).max(100),entityIds:z.array(KnowledgeRecordId).max(100).default([]),
+  origin:z.enum(['manual','script','model']).default('manual')}).strict();
+export const KnowledgeReviewRequest=z.object({reviewerId:z.string().regex(/^prn_/)}).strict();
+export const KnowledgeReviewInput=z.object({decision:z.enum(['approve','reject']),promote:z.boolean().default(false),reason:z.string().min(1).max(2000),ruleVersion:z.string().min(1).max(100),productClaimId:KnowledgeRecordId.optional()}).strict();
+export const KnowledgeSnapshotInput=z.object({scopeId:ScopeId,knowledgeCategory:KnowledgeCategory,expectedSnapshotId:KnowledgeRecordId.nullable()}).strict();
+export const KnowledgeSearchQuery=z.object({q:z.string().max(1000).default(''),mode:z.enum(['exact','prefix','directory','fulltext']).default('fulltext'),
+  limit:z.coerce.number().int().min(1).max(100).default(20),includeCandidates:z.enum(['true','false']).default('false')});
 export const MindmapCompileInput = z.object({ sourceRevisionId: SourceRevisionId, sourceSha256: Sha256.optional() });
 export const ArtifactReference = z.object({ artifactId: ArtifactId, sha256: Sha256, size: z.number().int().positive(),
   fileName: z.string(), mediaType: z.enum(['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','application/json','text/plain']),
@@ -198,6 +216,7 @@ const registry = {
   ASSET_NOT_VISIBLE: [404,'permission'],
   ARTIFACT_VERIFICATION_FAILED: [409, 'semantic-insufficient'], SOURCE_HASH_MISMATCH: [409, 'conflict-stale'],
   SOURCE_ABSENT:[404,'source-absent'],SOURCE_FORBIDDEN:[403,'permission'],SOURCE_LOGIN_EXPIRED:[401,'authentication'],SOURCE_UNREACHABLE:[503,'source-unreachable'],
+  SHARING_REQUIRED:[403,'permission'],
 } as const;
 export type ErrorCode = keyof typeof registry;
 export class ApiError extends Error {

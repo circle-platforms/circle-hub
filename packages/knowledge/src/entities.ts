@@ -15,7 +15,7 @@ export class Entities {
   notVisible():never{throw new ApiError('OBJECT_NOT_VISIBLE','Object is not visible to the authenticated principal');}
   parameters(policy:Policy):[string,string[],string]{return [policy.tenantId,policy.scopes,policy.principalId];}
   view(row:any):any{
-    return {entityId:row.entity_id,entityRevisionId:row.entity_revision_id,scopeId:row.scope_id,
+    return {entityId:row.entity_id,entityRevisionId:row.entity_revision_id,scopeId:row.scope_id,knowledgeCategory:row.knowledge_category,sourceType:row.knowledge_source_type,
       type:{packageId:row.type_package_id,version:row.type_package_version,typeId:row.type_id},
       source:{system:row.source_system,objectType:row.source_type,externalId:row.external_id,revision:row.source_revision},attributes:row.attributes,
       provenance:{observationKey:row.observation_key,observedAt:row.observed_at.toISOString(),observerId:row.observer_id,origin:row.origin,

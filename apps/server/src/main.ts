@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { API_VERSION, MAX_BODY_BYTES, MAX_SOURCE_BYTES, MAX_WORKER_REPORT_BYTES, CLIENT_ROUTES, TaskListQuery, ApiError, SubmitRequest,
   InputRequest, OperationRequest, ApprovalProposal, ApprovalRequest, ConclusionRequest, ChecklistRequest, ChecklistResponse, RuleRequest, DefectReviewPack, LbxPack, InputRevisionId, TaskId, ScopeId, SourceUpload, Base64Content, MindmapCompileInput, MindmapPack, DevLoginRequest, requireCondition,
   EntityId,RelationId,ObjectListQuery,ObjectTypePackage,ObjectObservation,RelationObservation,
-  AssetId,AssetRegistration,AssetListQuery,AssetTransition,CredentialRegistration } from '../../../packages/contracts/src/index.ts';
+  AssetId,AssetRegistration,AssetListQuery,AssetTransition,CredentialRegistration,KnowledgeRecordId,KnowledgeSearchQuery,KnowledgeReviewRequest } from '../../../packages/contracts/src/index.ts';
 import { Store } from '../../../packages/storage/src/index.ts';
 import { taskMigration } from '../../../packages/tasks/src/migration.ts';
 import { Auth } from '../../../packages/tasks/src/auth.ts';
@@ -36,10 +36,12 @@ import {TypeCatalog} from '../../../packages/knowledge/src/type-catalog.ts';
 import {Entities} from '../../../packages/knowledge/src/entities.ts';
 import {assetMigration} from '../../../packages/assets/src/migration.ts';
 import {Assets} from '../../../packages/assets/src/index.ts';
+import {graphMigration} from '../../../packages/knowledge/src/graph-migration.ts';
+import {KnowledgeGraph} from '../../../packages/knowledge/src/graph.ts';
 
 function environment(name: string): string { const value = process.env[name]; if (!value) throw new Error(`Required environment variable: ${name}`); return value; }
 const store = new Store(JSON.parse(environment('CIRCLE_SERVER_DATABASE_CONFIG')));
-await store.migrate([taskMigration,mindmapTaskMigration,knowledgeMigration,executionMigration,resourceMigration,approvalMigration,conclusionMigration,checklistMigration,connectorMigration,entityMigration,assetMigration]);
+await store.migrate([taskMigration,mindmapTaskMigration,knowledgeMigration,executionMigration,resourceMigration,approvalMigration,conclusionMigration,checklistMigration,connectorMigration,entityMigration,assetMigration,graphMigration]);
 const auth = new Auth(store);
 requireCondition(process.env.CIRCLE_SERVER_DEV_AUTH === '1', 'INVALID_PAYLOAD', 'Phase one requires explicitly enabled development authentication');
 await auth.initializeDevelopment(environment('CIRCLE_SERVER_DEV_IDENTITIES'));
@@ -48,7 +50,8 @@ const tasks = new Tasks(store, auth, Number(process.env.CIRCLE_SERVER_INPUT_TTL_
 const knowledge = new Records(store,auth,new LocalObjects(environment('CIRCLE_SERVER_DATA_DIR')));
 const objectTypes=new TypeCatalog(store,auth),entities=new Entities(store,auth,knowledge,objectTypes);
 const assets=new Assets(store,auth,`${environment('CIRCLE_SERVER_DATA_DIR')}/private-credentials`);
-knowledge.sourceAccess=(ctx,id,tx)=>entities.checkSourceAccess(ctx,id,tx);
+const graph=new KnowledgeGraph(store,auth,knowledge);
+knowledge.sourceAccess=async(ctx,id,tx)=>{await entities.checkSourceAccess(ctx,id,tx);await graph.checkSourceAccess(ctx,id,tx);};
 const execution = new Operations(store,auth,tasks,knowledge);
 const approvals=new Approvals(store,auth,tasks);execution.approvalCheck=(tx,task,spec)=>approvals.check(tx,task,spec);
 const assessments=new Assessments(store,tasks,knowledge),checklists=new Checklists(store,tasks,knowledge);
@@ -111,6 +114,26 @@ const server = createServer(async (request, response) => {
       send(response,200,{ data:{ ...issued,tokenType:'Bearer',principalId:policy.principalId,tenantId:policy.tenantId,scopes:policy.scopes } }); return;
     }
     const ctx = await auth.authenticate(request.headers.authorization);
+    if(url.pathname==='/v1/knowledge/search'&&request.method==='GET'){
+      const query=KnowledgeSearchQuery.parse({q:url.searchParams.get('q')??undefined,mode:url.searchParams.get('mode')??undefined,limit:url.searchParams.get('limit')??undefined,includeCandidates:url.searchParams.get('includeCandidates')??undefined});
+      send(response,200,{data:await graph.search(ctx,query)});return;
+    }
+    const knowledgeContent=/^\/v1\/knowledge\/records\/([^/]+)\/content$/.exec(url.pathname);
+    if(knowledgeContent&&request.method==='GET'){download(response,await graph.content(ctx,KnowledgeRecordId.parse(knowledgeContent[1])));return;}
+    const knowledgeRead=/^\/v1\/knowledge\/(records|reviews)\/([^/]+)$/.exec(url.pathname);
+    if(knowledgeRead&&request.method==='GET'){const id=KnowledgeRecordId.parse(knowledgeRead[2]);send(response,200,{data:knowledgeRead[1]==='records'?await graph.get(ctx,id):await graph.reviewBundle(ctx,id)});return;}
+    const knowledgeReview=/^\/v1\/knowledge\/claims\/([^/]+)\/(request-review|review)$/.exec(url.pathname);
+    if(knowledgeReview&&request.method==='POST'){const id=KnowledgeRecordId.parse(knowledgeReview[1]),value=await body(request);
+      send(response,200,{data:knowledgeReview[2]==='request-review'?await graph.requestReview(ctx,id,KnowledgeReviewRequest.parse(value).reviewerId):await graph.review(ctx,id,value)});return;}
+    if(request.method==='POST'&&url.pathname.startsWith('/v1/knowledge/')){
+      const action=url.pathname.slice('/v1/knowledge/'.length),value=await body(request,MAX_WORKER_REPORT_BYTES);
+      if(action==='sources')send(response,201,{data:await graph.source(ctx,value)});
+      else if(action==='evidence')send(response,201,{data:await graph.evidence(ctx,value)});
+      else if(action==='entities')send(response,201,{data:await graph.entity(ctx,value)});
+      else if(action==='claims')send(response,201,{data:await graph.claim(ctx,value)});
+      else if(action==='snapshots')send(response,201,{data:await graph.snapshot(ctx,value)});
+      else throw new ApiError('TARGET_NOT_FOUND','API route not found');return;
+    }
     if(url.pathname==='/v1/assets'){
       if(request.method==='POST'){send(response,201,{data:await assets.register(ctx,AssetRegistration.parse(await body(request)))});return;}
       if(request.method==='GET'){const query=AssetListQuery.parse({limit:url.searchParams.get('limit')??undefined,after:url.searchParams.get('after')??undefined,kind:url.searchParams.get('kind')??undefined});send(response,200,{data:await assets.list(ctx,query)});return;}
