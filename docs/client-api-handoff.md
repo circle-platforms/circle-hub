@@ -185,10 +185,10 @@ task 工具返回 202 `{"taskId":"task_...","phase":"admitted"}`（phase 以实�
 | `buildsite.command_tree` | `{build,platform?,scope?,versionLine?}` | build/buildId/platform/parserVersion/sourceSha256/commands；固定构建 XML 投影，保留 scope/menuPath |
 | `buildsite.fixed_releases` | `{issueId,issueSystem,builds:[1–20 个相关构建],platform?,versionLine?}`；旧 `{legacyIssueId,...}` 仍可用 | issue/status/earliestFormal/all/coverage；体系为 zentao 或 bugzilla，旧请求默认 bugzilla，空编号 unknown，Beta 不作正式发布 |
 | `buildsite.command_heads` | `{build,prefix}` | heads/count/limit/ruleVersion；上限 128，超出报 `RESULT_TOO_LARGE`，details.outcome=`result_too_large`，不截断 |
-| `buildsite.command_param` | `{build,head}` | status/head/parameters/ruleVersion；参数含 position/type/optional/help/range/enum，position 从 1 开始 |
-| `buildsite.command_check` | `{build,commands:[...]}` | build/sourceSha256/ruleVersion/commands；每条含 status=`hit` 或 `missing`、head、arguments、violations |
+| `buildsite.command_param` | `{build,head}` | status/head/signatures/overloaded/parameters/ruleVersion；签名含 signatureId/scope/parameters，参数含 position/type/optional/help/range/enum，position 从 1 开始 |
+| `buildsite.command_check` | `{build,commands:[...]}` | build/sourceSha256/ruleVersion/commands；每条含 status=`hit` 或 `missing`、head、arguments、violations、matchedSignatures、signatureChecks |
 | `docs.list` / `docs.get` | `{path?}` / `{file}` | files / path/contentBase64 |
-| `docs.search` | `{query,version?}` | hits：file/line/snippet/sourceSha256；行号从 1 开始；version 以文档路径维度过滤 |
+| `docs.search` | `{query,path?,version?}` | hits：file/line/snippet/sourceSha256；行号从 1 开始；coverage 和 limits 说明选定目录与搜索边界 |
 | `docs.section` | `{file,anchor}` 或 `{file,line,window?}` | file/lines[{line,text}]/sourceSha256；anchor 对应以 `**<命令头>**` 开头的小节；窗口默认 40、最多 80 行，超长小节明确失败 |
 | `zentao.bug_search` | `{keyword?,product?,status?,severity?,assignedTo?,openedBy?,lastEditedDate_start?,lastEditedDate_end?}` | items；镜像列表不分页，keyword 在取回的授权列表上按标题字面过滤 |
 | `zentao.bug_detail` | `{ids:[...]}`（1–100） | items；数字/日期统一，未知 resolution 留在 unmapped |
@@ -196,15 +196,25 @@ task 工具返回 202 `{"taskId":"task_...","phase":"admitted"}`（phase 以实�
 | `env.framework_files` / `env.framework_get` | `{}` / `{path}` | 框架只读镜像目录/文件 |
 | `knowledge.claim_submit` | `{claim:{subject,predicate,value,conditions?},evidence:[{evidenceId,sha256}]}` | **write/task**；最终 `result` 为个人沉淀候选记录，附原工具返回，不自动提升 |
 
-E 的 `command-tree/1.0.0` 规则采用 POSIX quote/escape 分词并转小写，最多八词的最长前缀匹配。hit 表示命令头存在，参数另报 `ARGUMENT_COUNT`、`TYPE_MISMATCH`、`ENUM_MISMATCH`、`OUT_OF_RANGE` 或 `UNSUPPORTED_PARAMETER_TYPE`；missing 报 `HEAD_MISSING`，不能用手册命中改成 hit。STRING/XSTRING 为非空字符串，U16/U32 检查整数和位宽及 XML 范围；IPADDR 支持 IP 地址，DOTTEDIP 为 IPv4，IPMASK 为连续位的 IPv4 点分掩码。未知参数类型保留违规，不猜测支持。同一固定 XML 和输入产生相同结果，构建树不同的 missing 保持独立。
+E 的 `command-tree/1.1.0` 规则采用 POSIX quote/escape 分词并转小写，最多八词的最长前缀匹配。hit 表示命令头存在，参数另报 `ARGUMENT_COUNT`、`TYPE_MISMATCH`、`ENUM_MISMATCH`、`OUT_OF_RANGE` 或 `UNSUPPORTED_PARAMETER_TYPE`；missing 报 `HEAD_MISSING`，不能用手册命中改成 hit。STRING/XSTRING 为非空字符串，U16/U32 检查整数和位宽及 XML 范围；IPADDR 支持 IP 地址，DOTTEDIP 为 IPv4，IPMASK 为连续位的 IPv4 点分掩码。未知参数类型保留违规，不猜测支持。同一固定 XML 和输入产生相同结果，构建树不同的 missing 保持独立。
+
+同一命令头可有多个参数签名，heads 去重后列出，不因其他头重载而失败。param 总是返回 signatures；单签名仍把该签名放在旧 parameters 中，多签名时 parameters=[]、overloaded=true，调用者须读完整 signatures。重复的相同签名去重，签名携带 scope；可选 scope 先筛选 XML，再匹配。check 检查全部签名，至少一条完全通过则 violations=[]，matchedSignatures 列出通过项；全部失败时保留一组确定性违规并在 signatureChecks 列出每条失败原因。不会把不同签名的参数拼成一个签名。异步产品知识也合并完整签名，不取最后一条覆盖其他重载。
 
 版本线来自首页链接标题或页面文件名；平台是独立维度，不是型号。正式发布需要 `Rel_` 且有 Released on 日期。构建段落没变时不重取 XML 和修复清单；ISO-8859-1 XML 按声明解码，引用 SHA 始终来自解码前原字节。命令存在只证明结构，完整功能语义需要产品证据。
 
 版本列表支持首页 → 汇总页 → 列表页。产品线清单的 `connectorOptions.build-site.buildSite` 声明 listingPathPattern（可带 versionLine/variant 命名捕获）与 variantPlatforms，通用连接器按该配置筛选汇总页链接和映射平台。遍历有 maxDepth（默认 3、最多 5）及 maxPages（默认 128、最多 256），循环页去重；旧的直接列表仍支持。列表按标题文本加紧随 BLOCKQUOTE 取构建，font 仅是展示标记；支持带变体前缀的 .click 镜像、命令 XML 和修复页，绝对/相对链接都须同源。
 
-`buildId` 是名称与 platform 的稳定身份。所有命令工具的 build、修复工具的 builds 都可用版本列表给出的 buildId；旧构建名仅在结果唯一时使用。同名多平台时返回 INVALID_PAYLOAD，details.reason=ambiguous_build；也可传 platform（null 为普通平台）明确选择。command_heads/param/check 同样新增可选 platform/scope/versionLine。XML 命令头由全部祖先 menu 名加 item 名组成，scope 单独保留；parserVersion=menu-path/2，所有命令工具和产品投影共用该解析。不同 scope 的同头冲突仍须明确 scope，不猜测选择。
+`buildId` 是名称与 platform 的稳定身份。所有命令工具的 build、修复工具的 builds 都可用版本列表给出的 buildId；旧构建名仅在结果唯一时使用。同名多平台时返回 INVALID_PAYLOAD，details.reason=ambiguous_build；也可传 platform（null 为普通平台）明确选择。command_heads/param/check 同样新增可选 platform/scope/versionLine。XML 命令头由全部祖先 menu 名加 item 名组成，scope 单独保留；parserVersion=menu-path/2，所有命令工具和产品投影共用该解析。
 
-修复链接识别 show_bug.cgi?id=... 为 bugzilla、index.php?m=bug&f=view&id=... 为 zentao，**只读清单、不跟随缺陷链接**。两种同号不能互相匹配：zentao 用缺陷 id，bugzilla 用镜像 bugzillaID/legacyIssueId。普通响应带 issue={system,id}，all/earliestFormal 保留平台；coverage.buildRefs/readRefs 带完整身份，缺失变体也带 buildId/platform。SDK fixed.result/fixedIds 继续只表示 bugzilla 编号，新增 issues/fixedIssues 表示带体系编号；知识中 fixed-identifiers 保留旧含义，fixed-issues 保存两类。新版 source-projection/2 重读时替换该源旧脚本投影的正式成员，历史声明和 SHA 原件保留。
+版本列表记住 buildId/名称到列表页、版本线和平台的定位，保存在 worker 私有缓存，绑定调用身份/资产修订/凭据及产品策略；worker 重启后继续使用。后续命令调用只重读相关列表页，再按段落修订复用或重新取选定 XML；fixed_releases 只重读相关列表页与选定清单。未建立定位的冷调用先发现一次。定位只减少访问范围，当前段落和权限仍重查，不直接采用旧元数据。
+
+同名同平台的重建段落按有效 build on 选唯一最新条，旧条进入 superseded；时间相同/缺失而内容冲突时 current=false、conflict 明确，查询该构建返回 INVALID_PAYLOAD（build_revision_conflict）。列表的 coverage.superseded/conflicts/missing 记录局部替代、冲突和不可读页面，coverage.complete=false 不影响其他构建/版本线返回。平台映射忽略大小写，未知后缀保留规范化源标签；带连字符的构建名与 nodebug-*.click 镜像照样列出。commandTreeAvailable=false 明确表示页面没有命令树，不把它静默丢掉或断言命令 missing。
+
+修复链接识别 show_bug.cgi?id=... 为 bugzilla、index.php?m=bug&f=view&id=... 为 zentao，**只读清单、不跟随缺陷链接**。两种同号不能互相匹配：zentao 用缺陷 id，bugzilla 用镜像 bugzillaID/legacyIssueId。普通响应带 issue={system,id}，all/earliestFormal 保留平台；coverage.buildRefs/readRefs 带完整身份，缺失变体也带 buildId/platform。SDK fixed.result/fixedIds 继续只表示 bugzilla 编号，新增 issues/fixedIssues 表示带体系编号；知识中 fixed-identifiers 保留旧含义，fixed-issues 保存两类。新版 source-projection/3 重读时替换该源旧脚本投影的正式成员，历史声明和 SHA 原件保留。
+
+文档 list/get/section 的 path/file，以及 search.path，都是站点绝对路径，采用 list 返回的值；服务根未必是 `/`，须在运行时 root 配置实际 WebDAV 根，不能假定 `/` 支持 PROPFIND。search 优先使用显式 path；只有 version 时按产品线 `connectorOptions.documents.documents.versionDirectoryTemplate` 定位，APV 声明 `cli/rel_apv_{version}/`，点分版本用 versionSeparator 转成目录形式。没有目录模板的旧包保留 version 路径过滤。
+
+search 对选定目录做有界递归（PROPFIND Depth:1），默认深度 3、100 个文件、64 个目录、总原件 4 MiB，最多 100 个命中；可由产品选项声明边界，超过返回 RESULT_TOO_LARGE（details.bound/limit/count），不截断或假装零命中。目录扫描先完成，文件数超限时尚不下载正文。先核对当前目录 etag，再复用同身份缓存的 get/search 原件；无稳定修订时重取。结果附 coverage.path/files/directories/bytes/skipped，非文本或非 UTF-8 明确列出；搜索仍提供文件/行号/片段和 SHA，已入库产品文档也可走 knowledge/search 的 fulltext。
 
 版本列表与同步只取首页/版本页元数据，**不下载任何 XML/修复清单**。命令 XML 在对应构建首次被命令工具用到时获取，内容按 SHA 持久缓存，索引绑定调用身份/资产修订/来源与构建段落修订，不跨个人凭据复用；元数据变化重新取。修复清单只有 fixed_releases 查询才按指定候选取，结果声明 coverage.completeSite=false，不把候选中的最早发布冒充全站最早。运行时 profile 可配置 requestConcurrency（1–8，默认 2）与 requestIntervalMs（构建工具默认 200）；相同连接器调用的请求同时受并发与开始间隔限制。
 

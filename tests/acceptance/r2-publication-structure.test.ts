@@ -54,7 +54,7 @@ test('Publication regression: repair identifiers retain their systems and never 
 });
 
 test('Publication regression: manifest filtering and platform commands flow through worker receipts into asynchronous knowledge',async t=>{
-  const fixture=await publicationLayout(t),directory=await mkdtemp(`${tmpdir()}/circle-server-publication-`);t.after(()=>rm(directory,{recursive:true,force:true}));
+  const fixture=await publicationLayout(t),directory=await mkdtemp(`${tmpdir()}/circle-server-publication-`);fixture.state.overloads=true;t.after(()=>rm(directory,{recursive:true,force:true}));
   await writeFile(`${directory}/product-line.json`,JSON.stringify({schemaVersion:'product-line/1',id:'fixture',version:'1.0.0',connectorPackages:[{packageId:'build-site',alias:'fixture_builds'}],connectorOptions:{'build-site':{buildSite:fixture.policy}},skills:[]}));
   await writeFile(`${directory}/installed.json`,JSON.stringify({schemaVersion:'installed-product-lines/1',productLines:['product-line.json']}));
   const h=await setup(t,{CIRCLE_SERVER_PRODUCT_LINES:`${directory}/installed.json`});
@@ -64,11 +64,13 @@ test('Publication regression: manifest filtering and platform commands flow thro
   const call=(suffix:string,args:any)=>h.request(`/v1/tools/fixture_builds.${suffix}/call`,{args,idempotencyKey:`publication-${suffix}`});
   const versions=await call('versions',{});assert.equal(versions.result.builds.length,8);assert.ok(!fixture.requests.some(path=>/command_tree|Bugs_Fixed/.test(path)));
   const build=versions.result.builds.find((build:any)=>build.name===fixture.builds[1].name&&build.platform==='synthetic-os');
-  const checked=await call('command_check',{build:build.buildId,commands:['aaa ldap attribute group value','group value']});assert.deepEqual(checked.result.commands.map((command:any)=>command.status),['hit','missing']);assert.equal(checked.result.platform,'synthetic-os');
+  const checked=await call('command_check',{build:build.buildId,commands:['aaa ldap attribute group value','group value','service mode active 5']});assert.deepEqual(checked.result.commands.map((command:any)=>command.status),['hit','missing','hit']);assert.equal(checked.result.commands[2].violations.length,0);assert.equal(checked.result.platform,'synthetic-os');
+  const parameters=await call('command_param',{build:build.buildId,head:'service mode'});assert.equal(parameters.result.signatures.length,2);assert.deepEqual(parameters.result.parameters,[]);
   const repairs=await call('fixed_releases',{issueSystem:'zentao',issueId:'51',builds:[build.buildId]});assert.equal(repairs.result.earliestFormal.name,build.name);
   for(const ref of [...checked.evidence,...repairs.evidence]){const response=await fetch(`${h.url}/v1/knowledge/records/${ref.evidenceId}/content`,{headers:{authorization:`Bearer ${await h.login()}`}});assert.equal(response.status,200);assert.equal(sha256(Buffer.from(await response.arrayBuffer())),ref.sha256);}
   await until(async()=>{const jobs=(await h.db.query('SELECT status,error FROM knowledge_projection_jobs')).rows;assert.ok(!jobs.some(job=>job.status==='failed'),JSON.stringify(jobs));return jobs.length>=3&&jobs.every(job=>job.status==='succeeded');});
   const hits=await h.request(`/v1/knowledge/search?mode=fulltext&q=${encodeURIComponent('aaa ldap attribute group')}`);assert.ok(hits.items.some((item:any)=>item.payload.value.head==='aaa ldap attribute group'&&item.payload.conditions.platform==='synthetic-os'&&item.payload.conditions.scope==='configuration'));
+  const overloaded=await h.request(`/v1/knowledge/search?mode=exact&q=${encodeURIComponent(`command:${build.name}:synthetic-os:service mode`)}`);assert.equal(overloaded.items.length,1);assert.equal(overloaded.items[0].payload.value.signatures.length,2);
   const claims=(await h.db.query("SELECT payload FROM knowledge_records WHERE kind='Claim' AND payload->>'predicate'='fixed-issues'")).rows;assert.ok(claims.some(row=>row.payload.value.some((issue:any)=>issue.system==='zentao'&&issue.id==='51')));
   // Seed the former leaf-name projector around the same sealed source, then
   // publish a newer projector. Changing rules must retire old statement keys.

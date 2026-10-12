@@ -323,3 +323,27 @@ Claude 报告以 a04f84c 连接器和其控制的 7420 栈新资产做过只读�
 专项首次收尾 **26/26**；再加入同 SHA 投影替换回归后，知识/规模/结构专项 **12/12**，p95 **170ms**、索引中版本读 **204/146/146/122ms**。typecheck 通过，APV 技能目录字节未改。固定 8b2ceb6 的完整回归正在运行，真实站点仍待 Claude 复测，不把合成通过当成真实来源通过。本轮不 push、不改 Circle/7420。
 
 收尾完整回归：固定 Circle 8b2ceb6，contracts **4/4**、methods **7/7**、acceptance **83/83**、references **7/7**，**无 skip**；实际 RPC、脑图接口、审批/中断/连接器、bot、守卫均通过。整套规模 p95 **167ms**、索引中版本读 **210/142/121/152ms**。verify:references **714** 原件，typecheck/diff 检查通过，APV 包内另 **4/4**、技能目录仍与 5f11c5d 相同。本代理只读确认 PR #5 仍 OPEN，无需改基线；主工作树 clean。本笔只在 server-s2 本地提交，更新交接并通过 Otty 告知 Claude 可复测，未访问真实来源。真实复测结果与非合成的业务正确性继续待确认。
+
+### 7dae089 独立复核与第二轮真实只读观察
+
+Claude 报告临时工作树、固定 Circle 8b2ceb6，contracts 4/4、methods 7/7、acceptance 83/83、typecheck 通过。其控制的 7420 栈新 build-site 资产按 productLineId 和实例别名接入真实站点：汇总遍历、纯文本标题已通，多条版本线可列出，一条线的普通/OS 页面共 260 个构建、正式 2 个；直接缺陷编号能找到正式发布，同号历史体系 unknown，不串编号。真实完整命令最长 7 词。此处仅保留结构和汇总，不记录真实构建名、缺陷编号、地址或域名。
+
+仍有 A–E 阻塞：同号同平台重建导致整页冲突；同 scope 同头的不同参数是重载；单 build 调用每次遍历全站、任一线失败就整体失败；平台映射大小写不同且变体词表需扩展；带连字符、只有 nodebug 镜像/MIB/修复页而无 XML 的构建被漏掉。
+
+Claude 另报告匿名 WebDAV PROPFIND 207，不需要账号：list 根目录约 124ms、一个 md get 约 138ms、重读 SHA 相同；两个平铺目录各约千文件，命令目录按版本、多层组织。原 search 只看一层而根下均是目录，真实搜索为零；不能改成每次全站下载。路径是站点绝对路径，`/` 不支持该站 PROPFIND。PLM 等用户本人重新注册运行时凭据后再测。本代理未访问这些真实来源或取得 token。
+
+## 22：重建、重载、单页定位与文档搜索
+
+先加 A/C/D/E 三条连接器验收和 B 方法验收，四条新增实际 **0/4**（另两条原方法通过）：重建抛 conflicting page segments，单构建被另一线 404 拖垮，连字符变体少一条，重载导致任意 prefix 失败。再加两条版本目录/WebDAV 验收，实际 **0/2**：目录搜索零命中，产品文档选项尚不支持。所有夹具为同形虚构数据、临时 HTTP/PostgreSQL，不含真实源内容。
+
+重建按有效时间取唯一最新条，旧段落及 SHA/时间留在 superseded；相同或缺失时间的冲突标 current=false/coverage.conflicts，不选一个冒充最新。source/listing/catalog 都局部返回，页面读取失败进入 coverage.missing；其余构建、版本线照常可用。SDK 直接取 XML/清单也核对冲突，另补先失败后通过的调用回归；release allSettled 仍保留其他匹配。带连字符名称、nodebug click 和无命令树元数据保留，commandTreeAvailable 明确。平台映射忽略大小写，APV 词表增加所报告的新后缀；未知值保留规范化来源标签，不推测其芯片/系统含义。
+
+同头按 scope/完整参数签名去重，heads 唯一列出；param 返回完整 signatures，单签名旧 parameters 保留，多签名为空并标 overloaded。check 独立评估每条签名，任一完整通过才无违规；matchedSignatures/signatureChecks 留下依据，不混拼参数。command-tree 升级 1.1.0，构建投影升级 source-projection/3；知识里一组命令签名只一条声明，历史版本仍留原件/旧结论。实际 worker/API 与稳定检索覆盖重载，不只测方法函数。通过 Otty 提前告知 Claude 检查 APV 包的 signatures 适配；本代理未改脚本或 SKILL.md。
+
+版本列表建立私有持久定位：身份/资产修订/凭据/来源/策略绑定的 buildId 或名称 → 列表页与平台。已知构建只重读相关页，更新当前段落，再取按 SHA 缓存的选定 XML/清单；冷调用先发现一次。元数据索引加原子文件写入和并发锁，worker 重启仍定位；不拿缓存代替当前源权限和段落核对。原件投影可以仅靠保留的列表页，不再要求每次带全站首页；未引入同步知识扫描。
+
+docs.search 新增 path，产品包声明版本目录模板；APV 的 cli/版本目录约定留在包中。按选定目录有界递归，默认深度 3、文件 100、目录 64、原件 4 MiB、命中 100；超限明确 RESULT_TOO_LARGE，不截断或伪造无命中。先扫目录，文件超限不下载正文；get/search 原件按当前目录 etag 复用，无稳定标识才重取。返回行号/片段/SHA、coverage 和 skipped，原件进 B 后仍异步进入产品全文检索。越权调用拒绝、许可沿用当前资产/源身份；站点绝对路径约定已写交接。
+
+专项知识/规模/构建/WebDAV/守卫 **19/19**，规模 p95 **164ms**、索引中版本读 **196/145/148/151ms**；目录/工具联合此前 **6/6**，方法重载 **3/3**，typecheck/diff 检查通过。完整固定 Circle 8b2ceb6 回归正在运行，真实站点和 WebDAV 待 Claude 同一套只读复测；只在 server-s2 本地提交，不 push，不动 7420 或 Circle。
+
+收尾实际完整 `npm test`：固定 8b2ceb6，contracts **4/4**、methods **8/8**、acceptance **88/88**、references **7/7**，**无 skip**。整套规模 p95 **164ms**、索引中版本读 **239/134/135/177ms**。typecheck/diff 检查通过，verify:references **714**，APV 包内另 **4/4**且技能目录仍与 5f11c5d 字节相同。通过 Otty 已向 Claude 的唯一窗口发送 signatures/doc.search 交接预告，实际修改的仅产品配置/通用代码/合成夹具。PR #5 只读确认仍 OPEN。本笔只本地提交，接下来由 Claude 复测真实构建站点/WebDAV；PLM 不做未授权探测。缓存暂无淘汰、列表段落不变而 XML 原地替换的限制仍在，不把回归数字当成真实站点已通过。

@@ -5,9 +5,10 @@
   "connectorPackages": ["documents", "build-site", "query-mirror", "environment-view"],
   "toolAliases": {"documents": "docs", "build-site": "buildsite", "query-mirror": "zentao", "environment-view": "env", "knowledge": "knowledge"},
   "connectorOptions": {
+    "documents": {"documents": {"versionDirectoryTemplate": "cli/rel_apv_{version}/", "versionSeparator": "_", "maxDepth": 3, "maxFiles": 100}},
     "build-site": {"buildSite": {
       "listingPathPattern": "(?:^|/)rel_apv_(?<versionLine>\\d+(?:_\\d+){1,2})(?<variant>_[^.]+)?\\.html$",
-      "variantPlatforms": {"InfosecOS": "InfosecOS", "hg_k": "hg_k", "ft_k": "ft_k", "infose_hg_k": "infose_hg_k"}
+      "variantPlatforms": {"InfosecOS": "InfosecOS", "hg_k": "hg_k", "ft_k": "ft_k", "infose_hg_k": "infose_hg_k", "ft_kylinv10": "ft_kylinv10", "hg_uos": "hg_uos", "infose_hg_uos": "infose_hg_uos", "rocky86_hg": "rocky86_hg"}
     }}
   },
   "skills": ["skills/apv-mindmap-compile"],

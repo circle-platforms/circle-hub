@@ -23,3 +23,11 @@ test('Command heads never truncate and unsupported XML parameter types remain un
   assert.throws(()=>commandHeads(tree,'service',2),(e:any)=>e.code==='RESULT_TOO_LARGE');
   const unknown=commandCheck([{name:'unknown',arguments:[{type:'VENDOR_TYPE'}]}],['unknown token']);assert.equal(unknown.commands[0].violations[0].code,'UNSUPPORTED_PARAMETER_TYPE');
 });
+
+test('Command overloads merge heads return every unique signature and accept any fully matching signature',()=>{
+  const one:Parameters<typeof commandParam>[0][number]={name:'monitor sample memory utilization',scope:'configuration',arguments:[{type:'U16',min:'1',max:'90'}]},many:typeof one={...one,arguments:[{type:'STRING',enum:'high|low'},{type:'U16',min:'1',max:'90'},{type:'IPADDR'},{type:'STRING'},{type:'STRING',optional:'true'}]},commands=[...tree,one,many,many];
+  assert.deepEqual(commandHeads(commands,'service').heads,commandHeads(tree,'service').heads,'Overloads elsewhere must not poison a prefix lookup');assert.equal(commandHeads(commands,'monitor').heads.length,1);
+  const params=commandParam(commands,one.name);assert.equal(params.signatures.length,2);assert.deepEqual(params.signatures.map((item:any)=>item.parameters.length),[1,5]);assert.deepEqual(params.parameters,[]);assert.equal(params.overloaded,true);
+  const input=[`${one.name} 80`,`${one.name} high 80 203.0.113.7 tag`,`${one.name} high 91 203.0.113.7 tag`,`${one.name} wrong`,`${one.name} high 80 invalid tag`],checked=commandCheck(commands,input);
+  assert.equal(checked.commands[0].violations.length,0);assert.equal(checked.commands[1].violations.length,0);assert.ok(checked.commands[2].violations.length);assert.ok(checked.commands[3].violations.length);assert.ok(checked.commands[4].violations.length);assert.equal(checked.commands[1].matchedSignatures.length,1);assert.equal(checked.commands[2].signatureChecks.length,2);assert.deepEqual(commandCheck(commands,input),checked);
+});

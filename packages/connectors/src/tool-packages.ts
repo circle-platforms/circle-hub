@@ -2,8 +2,8 @@ import {z} from 'zod';
 import {ApiError,canonicalHash,requireCondition} from '../../contracts/src/index.ts';
 import {commandHeads,commandParam,commandCheck} from '../../methods/src/command-tree.ts';
 import {HttpSource,type RawReturn} from './readonly-sdk.ts';
-import {Documents} from './documents.ts';
-import {BuildSite,BuildSiteOptions,type BuildRecord} from './build-site.ts';
+import {Documents,DocumentOptions} from './documents.ts';
+import {BuildSite,BuildSiteOptions,buildCoverage,resolveBuilds,type BuildRecord} from './build-site.ts';
 import {QueryMirror} from './query-mirror.ts';
 import {EnvironmentView} from './environment-view.ts';
 import {SourceCache} from './source-cache.ts';
@@ -11,7 +11,7 @@ import {projectSource} from './product-projections.ts';
 import type {ProductObservation} from '../../knowledge/src/product-records.ts';
 
 export interface ToolDefinition {suffix:string;title:string;description:string;schema:z.ZodObject<any>;effect:'read'|'write';mode:'sync'|'task';permission:string;handler:string}
-export const ConnectorOptions=z.object({buildSite:BuildSiteOptions.optional()}).strict();
+export const ConnectorOptions=z.object({buildSite:BuildSiteOptions.optional(),documents:DocumentOptions.optional()}).strict();
 export type ConnectorOptions=z.infer<typeof ConnectorOptions>;
 export interface ToolPackage {id:string;prefix:string;productLinePrefixes?:Record<string,string>;profileOptions?:ConnectorOptions;productLineOptions?:Record<string,ConnectorOptions>;tools:ToolDefinition[];projection?:{version:string;extract:(raw:RawReturn[],profile:ConnectorProfile)=>Promise<ProductObservation[]>}}
 const tool=(suffix:string,title:string,schema:z.ZodObject<any>,permission:string,handler:string,effect:'read'|'write'='read',mode:'sync'|'task'='sync'):ToolDefinition=>({suffix,title,description:title,schema,permission,handler,effect,mode});
@@ -29,7 +29,7 @@ export const toolPackages:ToolPackage[]=[
   {id:'documents',prefix:'docs',tools:[
     tool('list','列出只读文档目录',z.object({path:short.optional()}).strict(),'docs.fetch','document.list'),
     tool('get','取文档原件与摘要',z.object({file:short}).strict(),'docs.fetch','document.get'),
-    tool('search','按文件、行号、片段查询文档',z.object({query:short,version:short.optional()}).strict(),'docs.fetch','document.search'),
+    tool('search','在选定版本目录内有界递归查询文档并复用原件',z.object({query:short,path:short.optional(),version:short.optional()}).strict(),'docs.fetch','document.search'),
     tool('section','取命令小节或行窗口，最多 80 行',z.object({file:short,anchor:short.optional(),line:z.number().int().positive().optional(),window:z.number().int().min(1).max(80).default(40)}).strict().refine(value=>!!value.anchor!==!!value.line,'Provide an anchor or line'),'docs.fetch','document.section'),
   ]},
   {id:'query-mirror',prefix:'query',tools:[
@@ -48,21 +48,31 @@ export const toolPackages:ToolPackage[]=[
     tool('claim_submit','提交个人沉淀候选；不自动提升为团队知识',z.object({claim:z.object({subject:short,predicate:short,value:z.unknown(),conditions:z.record(z.string(),z.unknown()).default({})}).strict(),evidence:z.array(z.object({evidenceId:z.string(),sha256:z.string().regex(/^[a-f0-9]{64}$/)}).strict()).min(1).max(100)}).strict(),'knowledge.submit','candidate.submit','write','task'),
   ]},
 ];
-for(const pack of toolPackages)if(pack.id!=='knowledge')pack.projection={version:pack.id==='build-site'?'source-projection/2':'source-projection/1',extract:(raw,profile)=>projectSource(pack.id,raw,profile)};
-export interface ConnectorProfile {origin:string;root?:string;index?:string;payloadField?:string;requestConcurrency?:number;requestIntervalMs?:number;buildSite?:BuildSiteOptions}
+for(const pack of toolPackages)if(pack.id!=='knowledge')pack.projection={version:pack.id==='build-site'?'source-projection/3':'source-projection/1',extract:(raw,profile)=>projectSource(pack.id,raw,profile)};
+export interface ConnectorProfile {origin:string;root?:string;index?:string;payloadField?:string;requestConcurrency?:number;requestIntervalMs?:number;buildSite?:BuildSiteOptions;documents?:DocumentOptions}
 export interface ToolReturn {result:any;raw:RawReturn[];sourceType:string}
+const defaultToolCache=new SourceCache();
 export async function executeTool(packageId:string,handler:string,args:any,profile:ConnectorProfile,credential?:string,options:{cache?:SourceCache;cacheNamespace?:string}={}):Promise<ToolReturn>{
   if(handler==='candidate.submit')return {result:args,raw:[],sourceType:'skill-run'};
   if(handler==='consolidation.fragments')return {result:args,raw:[],sourceType:'shared-session'};
   const source=new HttpSource(profile.origin,{...(credential?{authorization:()=>credential}:{}),timeoutMs:5000,requestConcurrency:profile.requestConcurrency??2,requestIntervalMs:profile.requestIntervalMs??(packageId==='build-site'?200:0)});
   if(packageId==='build-site'){
-    const site=new BuildSite(source,options.cache,options.cacheNamespace??canonicalHash([profile.origin,credential??null])),catalog=await site.catalog(profile.index??'/',{versionLine:args.versionLine,buildSite:profile.buildSite}),{index,builds}=catalog,raw:RawReturn[]=catalog.pages.map(page=>({...page,sourceType:'build-record'}));
+    const site=new BuildSite(source,options.cache??defaultToolCache,canonicalHash([options.cacheNamespace??profile.origin,credential??null]));
+    let catalog:Awaited<ReturnType<BuildSite['catalog']>>;
+    const references: string[]=handler==='build.fixed'?args.builds:handler==='build.versions'?[]:[args.build],locations=references.length?await site.locations(references,args.platform,profile.buildSite):[];
+    if(references.length&&references.every(reference=>locations.some(location=>location.buildId===reference||location.name===reference))){
+      const pages:RawReturn[]=[],builds:BuildRecord[]=[];
+      for(const location of [...new Map(locations.map(location=>[location.listingPath,location])).values()]){const page=await site.listing(location.listingPath,site.contextFor(location.listingPath,profile.buildSite,location));pages.push(page.evidence);builds.push(...page.result);}
+      const resolved=resolveBuilds(builds);catalog={index:{lines:[],platforms:[],evidence:pages[0]},builds:resolved,pages,coverage:buildCoverage(resolved,[],pages.map(page=>page.path))};
+    }else catalog=await site.catalog(profile.index??'/',{versionLine:args.versionLine,buildSite:profile.buildSite});
+    const {index,builds}=catalog,raw:RawReturn[]=catalog.pages.map(page=>({...page,sourceType:'build-record'}));await site.remember(builds,catalog.pages.map(page=>page.path),profile.buildSite);
     const select=(reference:string)=>{
-      const candidates=builds.filter(build=>(build.buildId===reference||build.name===reference)&&(args.platform===undefined||build.platform===args.platform));
+      const candidates=builds.filter(build=>(build.buildId===reference||build.name===reference)&&(args.platform===undefined||args.platform===null?args.platform===undefined||build.platform===null:build.platform?.toLowerCase()===args.platform.toLowerCase()));
       requireCondition(candidates.length,'SOURCE_ABSENT','Build is absent from the authorized source');
-      if(candidates.length!==1)throw new ApiError('INVALID_PAYLOAD','Build name requires an explicit platform or build id',{reason:'ambiguous_build',builds:candidates.map(build=>({buildId:build.buildId,platform:build.platform}))});return candidates[0];
+      if(candidates.length!==1)throw new ApiError('INVALID_PAYLOAD','Build name requires an explicit platform or build id',{reason:'ambiguous_build',builds:candidates.map(build=>({buildId:build.buildId,platform:build.platform}))});
+      if(candidates[0].conflict)throw new ApiError('INVALID_PAYLOAD','Build has unresolved page revisions',{reason:'build_revision_conflict',buildId:candidates[0].buildId});return candidates[0];
     };
-    if(handler==='build.versions')return {result:{versionLines:index.lines.map(line=>({versionLine:line.versionLine,title:line.title})),platforms:index.platforms,builds},raw,sourceType:'build-record'};
+    if(handler==='build.versions')return {result:{versionLines:index.lines.map(line=>({versionLine:line.versionLine,title:line.title})),platforms:index.platforms,builds,coverage:catalog.coverage},raw,sourceType:'build-record'};
     if(handler==='build.fixed'){
       const candidates:BuildRecord[]=[...new Map<string,BuildRecord>(args.builds.map((reference:string)=>{const build=select(reference);return [build.buildId,build];})).values()];
       const fixed=await site.releasesFor({system:args.issueSystem??'bugzilla',id:args.issueId??args.legacyIssueId},candidates);raw.push(...fixed.evidence.map((evidence:RawReturn)=>({...evidence,sourceType:'build-record'})));const {evidence,...result}=fixed;return {result,raw,sourceType:'build-record'};
@@ -71,18 +81,14 @@ export async function executeTool(packageId:string,handler:string,args:any,profi
     const tree=await site.commandTree(build),xml=tree.evidence;raw.push({...xml,sourceType:'command-tree'});const commands=args.scope===undefined?tree.result:tree.result.filter(command=>command.scope===args.scope);
     requireCondition(args.scope===undefined||commands.length>0,'SOURCE_ABSENT','Command scope is absent from the authorized source');
     const result=handler==='build.heads'?commandHeads(commands,args.prefix):handler==='build.parameters'?commandParam(commands,args.head):handler==='build.check'?commandCheck(commands,args.commands):{commands};
-    return {result:{build:build.name,buildId:build.buildId,platform:build.platform,scope:args.scope??null,parserVersion:tree.parserVersion,sourceSha256:xml.sha256,...result},raw,sourceType:'command-tree'};
+    return {result:{build:build.name,buildId:build.buildId,platform:build.platform,scope:args.scope??null,parserVersion:tree.parserVersion,sourceSha256:xml.sha256,coverage:catalog.coverage,...result},raw,sourceType:'command-tree'};
   }
   if(packageId==='documents'){
     const documents=new Documents(source);
     if(handler==='document.list'){const listed=await documents.list(args.path??profile.root??'/');return {result:{files:listed.result},raw:[listed.evidence],sourceType:'document'};}
-    if(handler==='document.get'){const file=await documents.get(args.file);return {result:file.result,raw:[file.evidence],sourceType:'document'};}
+    if(handler==='document.get'){const file=await documents.get(args.file);if(file.evidence.etag)await (options.cache??defaultToolCache).put(canonicalHash({namespace:canonicalHash([options.cacheNamespace??profile.origin,credential??null]),origin:source.identity(),path:file.evidence.path,revision:file.evidence.etag}),file.evidence);return {result:file.result,raw:[file.evidence],sourceType:'document'};}
     if(handler==='document.search'){
-      const listed=await documents.list(profile.root??'/'),raw=[listed.evidence],hits:any[]=[];
-      for(const file of listed.result){if(file.directory||args.version&&!file.path.includes(args.version))continue;const original=(await documents.get(file.path)).evidence;raw.push(original);
-        for(const [index,line] of original.bytes.toString('utf8').split(/\r?\n/).entries())if(line.toLowerCase().includes(args.query.toLowerCase()))hits.push({file:file.path,line:index+1,snippet:line,sourceSha256:original.sha256});
-      }if(hits.length>100)throw new ApiError('RESULT_TOO_LARGE','Document search result exceeds the limit',{outcome:'result_too_large',count:hits.length,limit:100});
-      return {result:{hits},raw,sourceType:'document'};
+      const searched=await documents.search(args,profile.root??'/',profile.documents,options.cache??defaultToolCache,canonicalHash([options.cacheNamespace??profile.origin,credential??null]));return {...searched,sourceType:'document'};
     }
     const original=(await documents.get(args.file)).evidence,lines=original.bytes.toString('utf8').split(/\r?\n/);let start=0,end=0;
     if(args.anchor){start=lines.findIndex(line=>line.toLowerCase().startsWith(`**${args.anchor.toLowerCase()}**`));requireCondition(start>=0,'SOURCE_ABSENT','Document section is absent');end=lines.findIndex((line,index)=>index>start&&/^\*\*[^*]+\*\*/.test(line));if(end<0)end=lines.length;
