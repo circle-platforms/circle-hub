@@ -1,13 +1,15 @@
 import {canonicalHash,requireCondition} from '../../contracts/src/index.ts';
 import {HttpSource,type Incremental,type RawReturn} from './readonly-sdk.ts';
 import {html,elements,attribute,textOf,xmlTree,xmlNodes,children,type HtmlNode} from './structure.ts';
+import {SourceCache} from './source-cache.ts';
 
 export interface BuildRecord {name:string;versionLine:string;platform:string|null;buildTime:string|null;releasedOn:string|null;formal:boolean;
   imageSize:string|null;imageSha256:string|null;segmentSha256:string;
   files:{image?:string;mib?:string;mibChinese?:string;commands?:string;fixed?:string};fixedIds:string[];commands:CommandRecord[]}
 export interface CommandRecord {name:string;scope:string|null;menu:string|null;arguments:Record<string,string>[];results:Record<string,string>[]}
 export class BuildSite {
-  source:HttpSource;constructor(source:HttpSource){this.source=source;}
+  source:HttpSource;cache:SourceCache;namespace:string;
+  constructor(source:HttpSource,cache=new SourceCache(),namespace='anonymous'){this.source=source;this.cache=cache;this.namespace=namespace;}
   async index(path:string){const evidence=await this.source.read(path),links=elements(html(evidence.bytes),'a').map(a=>({title:textOf(a),href:attribute(a,'href')})).filter(a=>a.href);
     const lines:{title:string;path:string;versionLine:string}[]=[],platforms:{platform:string;path:string}[]=[];
     for(const a of links){const entry={title:a.title,path:this.source.path(a.href!,path)},versionLine=a.title.match(/\d+\.\d+(?:\.\d+)?(?=.*builds)/i)?.[0];
@@ -57,13 +59,22 @@ export class BuildSite {
   }
   async sync(path:string,previous:Record<string,string>={},context:{versionLine?:string;platform?:string}={}):Promise<Incremental<BuildRecord>> {
     const listing=await this.listing(path,context),items:BuildRecord[]=[],cursor:Record<string,string>={},evidence=[listing.evidence];
-    for(const record of listing.result){const {name,files,segmentSha256}=record;cursor[name]=segmentSha256;if(previous[name]===segmentSha256)continue;
-      if(files.commands){const xml=await this.source.read(files.commands);record.commands=await this.commandsFrom(xml.bytes);evidence.push(xml);}
-      if(files.fixed){const fixed=await this.source.read(files.fixed);evidence.push(fixed);
-        record.fixedIds=[...new Set(elements(html(fixed.bytes),'a').flatMap(a=>{const href=attribute(a,'href');if(!href)return [];const link=new URL(href,'https://synthetic.invalid');const id=link.searchParams.get('id');return /\/show_bug\.cgi$/.test(link.pathname)&&id&&/^\d+$/.test(id)?[id]:[];}))];
-      }
+    for(const record of listing.result){const {name,segmentSha256}=record;cursor[name]=segmentSha256;if(previous[name]===segmentSha256)continue;
       items.push(record);
     }return {items,cursor,evidence};
+  }
+  async commandTree(build:BuildRecord):Promise<{result:CommandRecord[];evidence:RawReturn}>{
+    requireCondition(build.files.commands,'SOURCE_ABSENT','Build has no command tree');const evidence=await this.cache.load({namespace:this.namespace,origin:this.source.identity(),path:build.files.commands,revision:build.segmentSha256},async()=>{const raw=await this.source.read(build.files.commands!);requireCondition((await this.commandsFrom(raw.bytes)).length>0,'INVALID_PAYLOAD','Command tree has no recognized command items');return raw;});
+    return {result:await this.commandsFrom(evidence.bytes),evidence};
+  }
+  async fixed(build:BuildRecord):Promise<{result:string[];evidence:RawReturn}>{
+    requireCondition(build.files.fixed,'SOURCE_ABSENT','Build has no fixed list');const evidence=await this.cache.load({namespace:this.namespace,origin:this.source.identity(),path:build.files.fixed,revision:build.segmentSha256},()=>this.source.read(build.files.fixed!));
+    const result=[...new Set(elements(html(evidence.bytes),'a').flatMap(a=>{const href=attribute(a,'href');if(!href)return [];const link=new URL(href,'https://synthetic.invalid'),id=link.searchParams.get('id');return /\/show_bug\.cgi$/.test(link.pathname)&&id&&/^\d+$/.test(id)?[id]:[];}))];return {result,evidence};
+  }
+  async releasesFor(externalId:string,candidates:BuildRecord[]):Promise<any>{
+    if(!externalId)return {status:'unknown',earliestFormal:null,all:[],evidence:[],coverage:{builds:[]}};
+    const hydrated=await Promise.all(candidates.map(async build=>{const fixed=await this.fixed(build);return {build:{...build,fixedIds:fixed.result},evidence:fixed.evidence};}));
+    return {...this.matches(hydrated.map(item=>item.build),externalId),evidence:hydrated.map(item=>item.evidence),coverage:{builds:candidates.map(build=>build.name),completeSite:false}};
   }
   matches(builds:BuildRecord[],externalId:string):any {
     if(!externalId)return {status:'unknown',earliestFormal:null,all:[]};

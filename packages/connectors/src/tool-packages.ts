@@ -1,11 +1,12 @@
 import {z} from 'zod';
-import {ApiError,requireCondition} from '../../contracts/src/index.ts';
+import {ApiError,canonicalHash,requireCondition} from '../../contracts/src/index.ts';
 import {commandHeads,commandParam,commandCheck} from '../../methods/src/command-tree.ts';
 import {HttpSource,type RawReturn} from './readonly-sdk.ts';
 import {Documents} from './documents.ts';
 import {BuildSite,type BuildRecord} from './build-site.ts';
 import {QueryMirror} from './query-mirror.ts';
 import {EnvironmentView} from './environment-view.ts';
+import {SourceCache} from './source-cache.ts';
 
 export interface ToolDefinition {suffix:string;title:string;description:string;schema:z.ZodObject<any>;effect:'read'|'write';mode:'sync'|'task';permission:string;handler:string}
 export interface ToolPackage {id:string;prefix:string;tools:ToolDefinition[]}
@@ -15,6 +16,7 @@ export const toolPackages:ToolPackage[]=[
   {id:'build-site',prefix:'buildsite',tools:[
     tool('versions','列出版本线和构建发布记录',z.object({versionLine:short.optional()}).strict(),'builds.read','build.versions'),
     tool('command_tree','取固定构建的命令树投影',z.object({build}).strict(),'builds.read','build.tree'),
+    tool('fixed_releases','按需核对相关构建的修复清单；保留查询覆盖范围',z.object({legacyIssueId:z.string().regex(/^\d*$/),builds:z.array(build).min(1).max(20),versionLine:short.optional()}).strict(),'builds.read','build.fixed'),
     tool('command_heads','查命令头；超过 128 条明确失败',z.object({build,prefix:z.string().max(500)}).strict(),'builds.read','build.heads'),
     tool('command_param','最长匹配命令头及参数；最多八词',z.object({build,head:short}).strict(),'builds.read','build.parameters'),
     tool('command_check','按固定 XML 与确定性规则核对命令',z.object({build,commands:z.array(z.string().max(2000)).min(1).max(200)}).strict(),'builds.read','build.check'),
@@ -40,17 +42,21 @@ export const toolPackages:ToolPackage[]=[
     tool('claim_submit','提交个人沉淀候选；不自动提升为团队知识',z.object({claim:z.object({subject:short,predicate:short,value:z.unknown(),conditions:z.record(z.string(),z.unknown()).default({})}).strict(),evidence:z.array(z.object({evidenceId:z.string(),sha256:z.string().regex(/^[a-f0-9]{64}$/)}).strict()).min(1).max(100)}).strict(),'knowledge.submit','candidate.submit','write','task'),
   ]},
 ];
-export interface ConnectorProfile {origin:string;root?:string;index?:string;payloadField?:string}
+export interface ConnectorProfile {origin:string;root?:string;index?:string;payloadField?:string;requestConcurrency?:number;requestIntervalMs?:number}
 export interface ToolReturn {result:any;raw:RawReturn[];sourceType:string}
-export async function executeTool(packageId:string,handler:string,args:any,profile:ConnectorProfile,credential?:string):Promise<ToolReturn>{
+export async function executeTool(packageId:string,handler:string,args:any,profile:ConnectorProfile,credential?:string,options:{cache?:SourceCache;cacheNamespace?:string}={}):Promise<ToolReturn>{
   if(handler==='candidate.submit')return {result:args,raw:[],sourceType:'skill-run'};
-  const source=new HttpSource(profile.origin,{...(credential?{authorization:()=>credential}:{}),timeoutMs:5000});
+  const source=new HttpSource(profile.origin,{...(credential?{authorization:()=>credential}:{}),timeoutMs:5000,requestConcurrency:profile.requestConcurrency??2,requestIntervalMs:profile.requestIntervalMs??(packageId==='build-site'?200:0)});
   if(packageId==='build-site'){
-    const site=new BuildSite(source),index=await site.index(profile.index??'/');const raw:RawReturn[]=[{...index.evidence,sourceType:'build-record'}],builds:BuildRecord[]=[];
+    const site=new BuildSite(source,options.cache,options.cacheNamespace??canonicalHash([profile.origin,credential??null])),index=await site.index(profile.index??'/');const raw:RawReturn[]=[{...index.evidence,sourceType:'build-record'}],builds:BuildRecord[]=[];
     for(const line of index.lines){if(args.versionLine&&line.versionLine!==args.versionLine)continue;const page=await site.listing(line.path,{versionLine:line.versionLine});raw.push({...page.evidence,sourceType:'build-record'});builds.push(...page.result);}
     if(handler==='build.versions')return {result:{versionLines:index.lines.map(line=>({versionLine:line.versionLine,title:line.title})),platforms:index.platforms,builds},raw,sourceType:'build-record'};
+    if(handler==='build.fixed'){
+      const candidates=builds.filter(build=>args.builds.includes(build.name));requireCondition(candidates.length===new Set(args.builds).size,'SOURCE_ABSENT','A selected build is absent from the authorized source');
+      const fixed=await site.releasesFor(args.legacyIssueId,candidates);raw.push(...fixed.evidence.map((evidence:RawReturn)=>({...evidence,sourceType:'build-record'})));const {evidence,...result}=fixed;return {result,raw,sourceType:'build-record'};
+    }
     const build=builds.find(build=>build.name===args.build);requireCondition(build,'SOURCE_ABSENT','Build is absent from the authorized source');requireCondition(build.files.commands,'SOURCE_ABSENT','Build has no command tree');
-    const xml=await source.read(build.files.commands);raw.push({...xml,sourceType:'command-tree'});const commands=await site.commandsFrom(xml.bytes);
+    const tree=await site.commandTree(build),xml=tree.evidence;raw.push({...xml,sourceType:'command-tree'});const commands=tree.result;
     const result=handler==='build.heads'?commandHeads(commands,args.prefix):handler==='build.parameters'?commandParam(commands,args.head):handler==='build.check'?commandCheck(commands,args.commands):{commands};
     return {result:{build:build.name,sourceSha256:xml.sha256,...result},raw,sourceType:'command-tree'};
   }

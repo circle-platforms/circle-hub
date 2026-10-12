@@ -181,3 +181,11 @@ RPC prompt/turn/tool/settled 等真实事件进入 C。只在 agent_settled、�
 ### 第 5 幕独立复核与 Circle 版本选择
 
 用户提供 Claude 对 `7be8576` 的独立复核：contracts 4/4、methods 6/6，在单独固定 d9f8ec6 的 Circle 构建上 r2-05 **5/5**。其他工作树向前移动导致 RUNTIME_VERSION_MISMATCH，是版本门禁按预期拒绝，不是业务失败。按用户建议，真实 CLI 验收现在明确读 `CIRCLE_BIN` 和 `CIRCLE_COMMIT`，缺少时三个用例标出原因并跳过；运行器的 profile/版本门禁保持严格。实际本机指定新提交 `3f08f0ed4216c356bbbd7db49531cb3ea22caf97`（1.1.1）联合复验目录/RPC **9/9**，没有跳过。新提交包含稳定 srv_ 后缀消歧、--file 输入和 X-Scope-Id，活动交接已更新。APV 分支更新到 `e8ecbc8`，outputs 改到 out/ 并读 inputs.json；尚未合入本分支。
+
+## 12：按需构建资料与 SHA 缓存
+
+按用户排队顺序，在第 5 幕提交后先写 `r2-buildsite-lazy.test.ts`，确认缺模块失败，再实现 metadata-only sync、按需 commandTree/fixed、持久 SHA 缓存和抓取限额。版本首页/版本线不抓 XML 或修复清单；命令首次使用才抓，后续不同 SourceCache 实例/worker 通过相同身份/资产版本/来源/构建段落索引复用原字节，构建声明变化重新抓。blob 每次读取验 SHA，文件锁避免重复并发下载，坏格式不入成功 XML 缓存；不存在/权限/登录/不通的失败不会成为成功缓存。
+
+新增 read/sync `buildsite.fixed_releases`，只按指定的 1–20 个相关构建抓清单，保留所有匹配和候选内最早正式发布；空编号 unknown、Beta-only 不当正式版。coverage 明确不是全站完整覆盖。请求并发/开始间隔可配，默认构建工具 2/200ms，验收同时检查最大活跃请求数和开始间隔。没有连接真实构建站点。
+
+实际 SDK/按需/限额 **9/9**，目录/RPC 在显式 3f08f0 Circle 上 **9/9**（无跳过），typecheck 通过。先前超限用例直接换 XML 而没换构建段落，现在按新缓存契约更新虚构镜像摘要后再测，wire RESULT_TOO_LARGE 保持。旧同步案例调整为明确按需取树/清单，原正式/Beta/ISO 编码/不访问旧跟踪链接机制继续通过。下一步第 6 幕定时整理和 bot，以及自动产品声明/第 7 幕专业核心迁出；这些仍未完成。

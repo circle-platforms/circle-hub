@@ -9,6 +9,7 @@ import {LocalObjects} from '../../../packages/knowledge/src/objects.ts';
 import {runCircle} from '../../../packages/runtime/src/circle-rpc.ts';
 import {privateRequest} from '../../../packages/runtime/src/private-ipc.ts';
 import {join} from 'node:path';
+import {SourceCache} from '../../../packages/connectors/src/source-cache.ts';
 
 function env(name: string): string { const value = process.env[name]; if (!value) throw new Error(`Required environment variable: ${name}`); return value; }
 const base = new URL(env('CIRCLE_SERVER_URL'));
@@ -77,7 +78,7 @@ while (!stopped) {
         try{
           const authorization=preflight.authorization,credential=authorization.injection?await new PrivateVault(`${env('CIRCLE_SERVER_DATA_DIR')}/private-credentials`).get(authorization.injection.key,authorization.injection.binding):undefined;
           await request(`/v1/workers/operations/${claim.operationId}/preflight`,fence);
-          const output=await executeTool(authorization.packageId,authorization.handler,claim.args.input,authorization.profile,credential);
+          const output=await executeTool(authorization.packageId,authorization.handler,claim.args.input,authorization.profile,credential,{cache:new SourceCache(join(env('CIRCLE_SERVER_DATA_DIR'),'connector-cache')),cacheNamespace:authorization.cacheNamespace});
           report={...fence,inputRevisionId:claim.inputRevisionId,status:'succeeded',output:{result:output.result,sourceType:output.sourceType,raw:output.raw.map(raw=>({path:raw.path,sha256:raw.sha256,sourceType:raw.sourceType??output.sourceType,contentBase64:raw.bytes.toString('base64')}))}};
         }catch(error){const failure=error instanceof ApiError?error:new ApiError('INTERNAL_ERROR','Registered tool failed');report={...fence,inputRevisionId:claim.inputRevisionId,status:'failed',output:{},error:{code:failure.code,message:failure.message,details:failure.details}};}
         if(heartbeatError)throw heartbeatError;await request(`/v1/workers/operations/${claim.operationId}/report`,report);continue;

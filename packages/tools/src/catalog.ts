@@ -14,7 +14,7 @@ export class ToolCatalog {
   store:Store;auth:Auth;assets:Assets;tasks:Tasks;execution:Operations;knowledge:KnowledgeGraph;packages:ToolPackage[];profiles:Record<string,ConnectorProfile>={};
   constructor(store:Store,auth:Auth,assets:Assets,tasks:Tasks,execution:Operations,knowledge:KnowledgeGraph,packages:ToolPackage[]){Object.assign(this,{store,auth,assets,tasks,execution,knowledge,packages});this.store=store;this.auth=auth;this.assets=assets;this.tasks=tasks;this.execution=execution;this.knowledge=knowledge;this.packages=packages;}
   async initialize(profileFile?:string):Promise<void>{
-    if(profileFile){const schema=z.object({profiles:z.record(z.string(),z.object({origin:z.string().url(),root:z.string().optional(),index:z.string().optional(),payloadField:z.string().optional()}).strict())}).strict();this.profiles=schema.parse(JSON.parse(await readFile(profileFile,'utf8'))).profiles;}
+    if(profileFile){const schema=z.object({profiles:z.record(z.string(),z.object({origin:z.string().url(),root:z.string().optional(),index:z.string().optional(),payloadField:z.string().optional(),requestConcurrency:z.number().int().min(1).max(8).optional(),requestIntervalMs:z.number().int().min(0).max(60000).optional()}).strict())}).strict();this.profiles=schema.parse(JSON.parse(await readFile(profileFile,'utf8'))).profiles;}
   }
   definition(packageId:string,suffix:string):ToolDefinition|undefined{return this.packages.find(p=>p.id===packageId)?.tools.find(t=>t.suffix===suffix);}
   async register(ctx:AuthContext,input:AssetRegistration,assetId:string,tx:Transaction):Promise<void>{
@@ -76,7 +76,7 @@ export class ToolCatalog {
       const existing=(await tx.query('SELECT * FROM tool_injections WHERE operation_id=$1',[operation.operation_id])).rows[0];
       if(existing){requireCondition(existing.binding===binding,'FENCING_STALE','Credential injection belongs to another execution');injection={key:existing.secret_key,binding};}
       else{const key=await this.assets.vault.put(value,binding);await tx.query('INSERT INTO tool_injections(operation_id,secret_key,binding) VALUES($1,$2,$3)',[operation.operation_id,key,binding]);injection={key,binding};}
-    }return {packageId:authorization.packageId,handler:authorization.handler,profile:workerProfile,injection};
+    }return {packageId:authorization.packageId,handler:authorization.handler,profile:workerProfile,injection,cacheNamespace:canonicalHash([actor.tenantId,actor.principalId,authorization.assetId,authorization.assetVersion,authorization.credentialReferences])};
   }
   async report(tx:Transaction,task:any,operation:any,report:any):Promise<any>{
     const actor={principalId:task.principalId,tenantId:task.tenantId,kind:'user'} as AuthContext,item=await this.entry(actor,operation.args.toolName,tx),evidence=[];

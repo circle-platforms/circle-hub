@@ -1,15 +1,18 @@
 import {ApiError,MAX_SOURCE_BYTES,requireCondition,sha256} from '../../contracts/src/index.ts';
+import {setTimeout as delay} from 'node:timers/promises';
 
 export interface RawReturn {path:string;bytes:Buffer;sha256:string;mediaType:string;etag:string|null;sourceType?:string}
-export interface SourceOptions {authorization?:()=>string|Promise<string>;timeoutMs?:number;absenceTtlMs?:number}
+export interface SourceOptions {authorization?:()=>string|Promise<string>;timeoutMs?:number;absenceTtlMs?:number;requestConcurrency?:number;requestIntervalMs?:number}
 export interface Incremental<T> {items:T[];cursor:Record<string,string>;evidence:RawReturn[]}
 
 // Transport errors never interpolate a URL, authorization value or source body.
 export class HttpSource {
   #origin:URL;#options:SourceOptions;#absent=new Map<string,number>();
+  #active=0;#queue:(()=>void)[]=[];#nextStart=0;
   constructor(origin:string,options:SourceOptions={}) {
     let url:URL;try{url=new URL(origin);}catch{throw new ApiError('INVALID_PAYLOAD','Use a valid runtime HTTP origin');}
     requireCondition(['http:','https:'].includes(url.protocol)&&!url.username&&!url.password,'INVALID_PAYLOAD','Use a runtime HTTP origin without embedded credentials');
+    requireCondition(Number.isInteger(options.requestConcurrency??2)&&(options.requestConcurrency??2)>=1&&(options.requestConcurrency??2)<=8&&Number.isFinite(options.requestIntervalMs??0)&&(options.requestIntervalMs??0)>=0,'INVALID_PAYLOAD','Source request limits are malformed');
     this.#origin=url;this.#options=options;
   }
   path(reference:string,relativeTo?:string):string {
@@ -17,10 +20,17 @@ export class HttpSource {
     requireCondition(url.origin===this.#origin.origin&&!url.username&&!url.password,'INVALID_PAYLOAD','Source links must remain on the configured origin');
     return url.pathname+url.search;
   }
+  identity():string{return sha256(this.#origin.href);}
+  async slot():Promise<()=>void>{
+    if(this.#active<(this.#options.requestConcurrency??2))this.#active++;else await new Promise<void>(resolve=>this.#queue.push(resolve));
+    const start=Math.max(Date.now(),this.#nextStart);this.#nextStart=start+(this.#options.requestIntervalMs??0);if(start>Date.now())await delay(start-Date.now());
+    return ()=>{const next=this.#queue.shift();if(next)next();else this.#active--;};
+  }
   async read(path:string,options:{method?:'GET'|'POST'|'PROPFIND';json?:unknown;headers?:Record<string,string>}={}):Promise<RawReturn> {
     const target=this.path(path),authorization=await this.#options.authorization?.();
     const key=sha256(JSON.stringify([authorization??'',target,options.method??'GET',options.json??null]));
     if((this.#absent.get(key)??0)>Date.now())throw new ApiError('SOURCE_ABSENT','Source object is absent');
+    const release=await this.slot();
     try {
       const response=await fetch(new URL(target,this.#origin),{method:options.method??'GET',redirect:'manual',signal:AbortSignal.timeout(this.#options.timeoutMs??5000),
         headers:{...options.headers,...(authorization?{authorization}:{}),...(options.json===undefined?{}:{'content-type':'application/json'})},
@@ -32,7 +42,7 @@ export class HttpSource {
       const chunks:Buffer[]=[];let size=0;
       for await(const chunk of response.body??[]){size+=chunk.length;requireCondition(size<=MAX_SOURCE_BYTES,'BODY_TOO_LARGE','Source return exceeds the byte limit');chunks.push(Buffer.from(chunk));}
       const bytes=Buffer.concat(chunks);return {path:target,bytes,sha256:sha256(bytes),mediaType:response.headers.get('content-type')??'application/octet-stream',etag:response.headers.get('etag')};
-    }catch(error){if(error instanceof ApiError)throw error;throw new ApiError('SOURCE_UNREACHABLE','Source cannot be reached');}
+    }catch(error){if(error instanceof ApiError)throw error;throw new ApiError('SOURCE_UNREACHABLE','Source cannot be reached');}finally{release();}
   }
   async json(path:string,options:{method?:'GET'|'POST';json?:unknown}={}):Promise<{result:any;evidence:RawReturn}> {
     const evidence=await this.read(path,options);

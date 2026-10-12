@@ -49,7 +49,7 @@ test('Act R2.4: read tools execute on a fenced worker and persist input/output o
   const count=Number((await h.db.query('SELECT count(*) AS n FROM operations')).rows[0].n),again=await call(h,'buildsite.command_check',input,key);assert.deepEqual(again,checked);assert.equal(Number((await h.db.query('SELECT count(*) AS n FROM operations')).rows[0].n),count);
   await h.reject('/v1/tools/buildsite.command_check/call',{args:{...input,commands:['changed']},idempotencyKey:key},'IDEMPOTENCY_MISMATCH');
   const missing=await call(h,'buildsite.command_check',{build:'Rel_PHOTON_10_5_0_109',commands:['feature.enable']});assert.equal(missing.result.commands[0].status,'missing');
-  stub.state.headCount=140;const tooLarge=await h.reject('/v1/tools/buildsite.command_heads/call',{args:{build:'Rel_PHOTON_10_5_0_101',prefix:'service'},idempotencyKey:'oversized-heads'},'RESULT_TOO_LARGE');assert.equal(tooLarge.details.outcome,'result_too_large');assert.equal(tooLarge.details.limit,128);
+  stub.state.headCount=140;stub.state.changedBuild='Rel_PHOTON_10_5_0_101';const tooLarge=await h.reject('/v1/tools/buildsite.command_heads/call',{args:{build:'Rel_PHOTON_10_5_0_101',prefix:'service'},idempotencyKey:'oversized-heads'},'RESULT_TOO_LARGE');assert.equal(tooLarge.details.outcome,'result_too_large');assert.equal(tooLarge.details.limit,128);
   for(const ref of checked.evidence){const response=await fetch(`${h.url}/v1/knowledge/records/${ref.evidenceId}/content`,{headers:{authorization:`Bearer ${await h.login()}`}});assert.equal(response.status,200);assert.equal(sha256(Buffer.from(await response.arrayBuffer())),ref.sha256);}
   await h.stop();await h.startServer();assert.deepEqual(await call(h,'buildsite.command_check',input,key),checked);
 });

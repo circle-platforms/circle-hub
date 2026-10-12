@@ -38,11 +38,12 @@ test('Act R2.2: publication HTML and XML preserve release/platform dimensions an
   assert.equal(synced.items[0].versionLine,'10.5');assert.equal(synced.items.at(-1)!.formal,false);
   assert.equal(synced.items[0].imageSha256,'a'.repeat(64));assert.equal(synced.items[0].imageSize,'999M');
   assert.ok(synced.items[0].files.mib!.endsWith('.txt'));assert.ok(synced.items[0].files.mibChinese!.endsWith('.txt'));
-  assert.equal(synced.items[0].commands[0].name,'feature.enable');assert.equal(synced.items[0].commands[0].arguments[0].name,'mode');
-  assert.equal(site.matches(synced.items,'401').earliestFormal.name,'Rel_PHOTON_10_5_0_101');
-  assert.equal(site.matches(synced.items,'401').all.length,2);assert.equal(site.matches(synced.items,'').status,'unknown');
-  assert.equal(site.matches(synced.items,'499').status,'beta-only');
-  const recommended=site.forCommand(synced.items,'feature.enable');assert.equal(recommended.latestFormal.name,'Rel_PHOTON_10_5_0_109');
+  const trees=await Promise.all(synced.items.map(async build=>({...build,commands:(await site.commandTree(build)).result})));
+  assert.equal(trees[0].commands[0].name,'feature.enable');assert.equal(trees[0].commands[0].arguments[0].name,'mode');
+  const matches=await site.releasesFor('401',synced.items);assert.equal(matches.earliestFormal.name,'Rel_PHOTON_10_5_0_101');
+  assert.equal(matches.all.length,2);assert.equal(site.matches(synced.items,'').status,'unknown');
+  assert.equal((await site.releasesFor('499',synced.items)).status,'beta-only');
+  const recommended=site.forCommand(trees,'feature.enable');assert.equal(recommended.latestFormal.name,'Rel_PHOTON_10_5_0_109');
   assert.equal(recommended.proves,'command-presence');
   assert.equal((await site.sync(index.lines[0].path,synced.cursor)).items.length,0);
   assert.ok(!stub.requests.some(r=>r.path.startsWith('/legacy/')));
@@ -59,8 +60,8 @@ test('Act R2.2: block publication incrementals fetch only changed builds and dec
   stub.state.changedBuild='Rel_PHOTON_10_5_0_109';stub.state.encoding='ISO-8859-1';stub.state.command='feature.caf\u00e9';
   const previous=stub.requests.length;const changed=await site.sync(line.path,same.cursor,{versionLine:line.versionLine});
   assert.equal(changed.items.length,1);assert.equal(changed.items[0].name,stub.state.changedBuild);
-  assert.equal(changed.items[0].commands[0].name,'feature.caf\u00e9');assert.equal(stub.requests.length,previous+3);
-  assert.equal(changed.evidence[1].sha256,sha256(changed.evidence[1].bytes));
+  assert.equal(stub.requests.length,previous+1);const tree=await site.commandTree(changed.items[0]);assert.equal(tree.result[0].name,'feature.caf\u00e9');assert.equal(stub.requests.length,previous+2);
+  assert.equal(tree.evidence.sha256,sha256(tree.evidence.bytes));
 });
 
 test('Act R2.2: mirror uses raw authorization and normalizes mixed numeric dates and sentinel accounts',async t=>{
