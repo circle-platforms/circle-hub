@@ -417,3 +417,15 @@ cases.verify 的 worker 只取已授权来源，server 从保留的列表/XML �
 最终执行/凭据/资产专项 **15/15**、方法 **2/2**、只读隐藏与失败核对加强回归 **2/2**、typecheck 通过。此前固定 Circle 8b2ceb6 的两轮整套 contracts **4/4**、methods **10/10**、acceptance **112/112**、references **7/7**，无 skip；最后恢复边界变更后的整套正在复验。APV 包内 **4/4**，引用 **714**。交接写入 case-execution-handoff 和 client-api-handoff。本次只本地提交；真实上机仍待恢复网关核验、登记用户凭据并上传工作簿，结果不能冒充真实通过。
 
 最终树整套收尾：固定 Circle 8b2ceb6，contracts **4/4**、methods **10/10**、acceptance **112/112**、references **7/7**，共 **133/133**，无 skip；实际 RPC、原脑图、admin 重启、源映射、bot、核心守卫和执行恢复均覆盖。typecheck/diff 检查通过，引用 **714**；APV 包内另 **4/4**，技能目录与 9931f20 相同。PR #5 只读确认仍 OPEN，主工作树 clean。本地提交后通过 Otty 将最终提交和执行交接交给 Claude，在其控制的 7420 复核部署；本代理不 push、不改 Circle/旧网关，不把未完成的真实投递记成通过。
+
+### ea72b08 独立部署复核与 test_env 阻断更正
+
+Claude 独立报告 typecheck、contracts 4/4、methods 10/10、references 7/7、原件核验通过；acceptance 111/112，record-feed-a 的游标 10 秒超时，单跑三轮均 2/2。已由其将 7420 部署到 ea72b08，开发身份增加 cases.execute；网关 profile 变量指向仓库外尚待填写的文件。真实只读复测：不带斜杠的 spec 和版本 app 目录正常规范化，spec 1017 项；products 总 190 项、分页正常；错误产品名/无条件查询有修复提示；packs/inputSchema 能发现新执行包。只保留聚合和结构，不写真实产品 id、连接值或业务原件。
+
+用户指出过严的 test_env 拒绝使两份真实工作簿无法提交，并提供脱敏行形状及框架接口。其 F 是启用的主机方法，G 是 shell 实参，返回值供紧邻检查点；不是不透明设备函数。生命周期/未知 reboot 由客户端纠正，APV execute 的模糊分派仍须拒绝或展开。console 真实用途不能据名字猜，须以床配置角色为准。只读核对用户指定的 ../InfoTest_Engine/knowledge/framework/mirror 的 test_xlsx/env/ssh_server 源函数及 compile_ref/excel_contract，未运行、导入或复制代码/配置值。
+
+先写 test_env 分派验收，实际失败；再写实参/闭集规则，缺模块失败后自写 TS dialect。支持八个明确测试主机方法、引号外逗号、prompt/timeout、多行整体、H 捕获，拒绝 I 替换、未知/生命周期/禁用方法和未验证 console。APV 字面 cmd 及 kwargs 也按实际实参重新 command_check；shell 单列证明与审批摘要，不当 APV 命令头。直接主机的字面 cmd 支持，模糊 execute 拒绝。新增合成 HTTP 流量/检查点、默认闭集、运行时缩小名单、证据分离和未知方法门禁，执行/旧连接器/方言联合 **17/17**；最终实参/读取方法 **5/5**，typecheck 通过。未改 Claude 的技能包，不以来源统计冒充真实投递。
+
+本机单跑也复现 record-feed-b 等待 unknown 阶段 10 秒超时，下一轮加状态诊断后未再复现；不能只认定是游标等待。按独立复核建议，仅 Act 8 的事件/阶段/游标等待扩到 30 秒，原期待值、去重数量、标记与资源核对不变，其他验收默认期限不变。保留合成超时状态/操作诊断，联合两条均通过。
+
+最终固定 Circle 8b2ceb6 的整套 contracts **4/4**、methods **13/13**、acceptance **113/113**、references **7/7**，共 **137/137**，无 skip；typecheck、diff 检查和引用 **714** 核验通过，APV 包内另 **4/4**。技能目录仍与 9931f20 字节相同，主工作树未改。本步只在 server-s2 本地提交，通知 Claude 复核并更新其控制的 7420，未 push、未操作现有栈。真实设备任务仍未提交，网关上游和用户会话待恢复；合法 test_env 接受不代表客户端未知 reboot 或模糊 APV execute 被放行。

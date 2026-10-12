@@ -95,8 +95,8 @@ export class Harness {
     return this.request('/v1/tasks/submit', { scopeId, title: 'Inspect synthetic SYNTH health checks', input, idempotencyKey: key });
   }
   async status(taskId: string): Promise<any> { return this.request(`/v1/tasks/${taskId}/status`); }
-  async phase(taskId: string, phase: string): Promise<any> {
-    return until(async () => { const task = await this.status(taskId); return task.phase === phase ? task : false; });
+  async phase(taskId: string, phase: string,timeoutMs=10_000): Promise<any> {
+    return until(async () => { const task = await this.status(taskId); return task.phase === phase ? task : false; },timeoutMs);
   }
   async startWorker(workerId = 'lab-east-01', extraEnv: Record<string, string> = {}): Promise<ChildProcess> {
     const child = spawn(process.execPath, ['apps/worker/src/main.ts'], { cwd: root, env: { ...this.env,

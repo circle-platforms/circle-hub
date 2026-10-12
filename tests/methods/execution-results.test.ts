@@ -20,3 +20,10 @@ test('Execution results: four checkpoint truth pairs, multiline patterns, summar
   const multiline=structuredClone(book);multiline.cases[0].steps[1].data='healthy\nready';const multiResult=executionResults(multiline,{...raw,cases:[{...raw.cases[0],log:log.replace('healthy in:', 'healthy\nready in:')}]});assert.equal(multiResult.cases[0].checkPoints[0].status,'passed');assert.equal(multiResult.cases[0].checkPoints[0].pattern,'healthy\nready');
   await assert.rejects(readExecutionWorkbook(Buffer.from('not a zip')));
 });
+
+test('Execution contract: test_env dispatch remains a host command and is observed separately from device command heads',async()=>{
+  const book=await readExecutionWorkbook(await executionWorkbook({hostCommand:{host:'routera',command:'curl --http1.1 http://service.example.test/'}}));
+  assert.equal(book.commands.length,1);assert.equal(book.hostCommands.length,1);assert.equal(book.hostCommands[0].host,'routera');assert.equal(book.hostCommands[0].command,'curl --http1.1 http://service.example.test/');
+  const raw={channel:'ready',cases:[{case_id:'301',result:'pass',log_stale:false,log:log.replace('#### Success Num 1:', 'routera executes command: curl --http1.1 http://service.example.test/\nHTTP/1.1 200 OK\n#### Success Num 1:')}]};
+  const result=executionResults(book,raw);assert.equal(result.cases[0].steps[1].status,'observed');assert.equal(result.cases[0].steps[1].object,'test_env');assert.ok(result.cases[0].checkPoints.every((point:any)=>point.status==='passed'));
+});

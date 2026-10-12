@@ -9,6 +9,7 @@ import {commandCheck} from '../../../packages/methods/src/command-tree.ts';
 import {ExecutionInput,ExecutionPack} from './contracts.ts';
 import {readExecutionWorkbook} from './workbook.ts';
 import {executionResults} from './results.ts';
+import {SHELL_HOST_METHODS} from './dialect.ts';
 
 export class CaseExecution {
   services:any;
@@ -71,8 +72,10 @@ export class CaseExecution {
     if(input.artifactId){const artifact=await knowledge.content(ctx,'artifact',input.artifactId);requireCondition(!input.sourceSha256||input.sourceSha256===artifact.reference.sha256,'SOURCE_HASH_MISMATCH','Artifact hash differs');source=(await knowledge.upload(ctx,scope,'case.xlsx',artifact.bytes,tx)).sourceRevisionId;}
     const original=await knowledge.sourceBytes(ctx,source,scope,tx),book=await readExecutionWorkbook(original.bytes);
     requireCondition(book.sha256===original.reference.sha256&&(!input.sourceSha256||input.sourceSha256===book.sha256),'SOURCE_HASH_MISMATCH','Execution source hash differs');
-    const binding=await this.bindings(ctx,input,scope,tx),resource=(await tx.query('SELECT frozen FROM resources WHERE tenant_id=$1 AND resource_id=$2',[ctx.tenantId,`gateway:${sha256(binding.profile.endpoint)}`])).rows[0],existing=idempotencyKey?(await tx.query("SELECT 1 FROM idempotency WHERE tenant_id=$1 AND scope_id=$2 AND principal_id=$3 AND action='submit' AND idem_key=$4 AND created_at>clock_timestamp()-($5::double precision*interval '1 millisecond')",[ctx.tenantId,scope,ctx.principalId,idempotencyKey,IDEMPOTENCY_WINDOW_MS])).rowCount:0;requireCondition(!resource?.frozen||existing,'RESOURCE_BUSY','Gateway environment is frozen until independent reconciliation');const {artifactId,...rest}=input;return {...rest,sourceRevisionId:source,sourceSha256:book.sha256};
+    const binding=await this.bindings(ctx,input,scope,tx);this.hosts(book,binding.profile);
+    const resource=(await tx.query('SELECT frozen FROM resources WHERE tenant_id=$1 AND resource_id=$2',[ctx.tenantId,`gateway:${sha256(binding.profile.endpoint)}`])).rows[0],existing=idempotencyKey?(await tx.query("SELECT 1 FROM idempotency WHERE tenant_id=$1 AND scope_id=$2 AND principal_id=$3 AND action='submit' AND idem_key=$4 AND created_at>clock_timestamp()-($5::double precision*interval '1 millisecond')",[ctx.tenantId,scope,ctx.principalId,idempotencyKey,IDEMPOTENCY_WINDOW_MS])).rowCount:0;requireCondition(!resource?.frozen||existing,'RESOURCE_BUSY','Gateway environment is frozen until independent reconciliation');const {artifactId,...rest}=input;return {...rest,sourceRevisionId:source,sourceSha256:book.sha256};
   }
+  hosts(book:any,profile:any){const allowed=profile.allowedTestHosts.length?profile.allowedTestHosts:SHELL_HOST_METHODS;requireCondition(book.hostCommands.every((row:any)=>allowed.includes(row.host)),'INVALID_EXECUTION_WORKBOOK','Host dispatch is not in the registered gateway host allowlist');}
   async authorize(tx:any,ctx:AuthContext,task:any,spec:any){
     requireCondition(task.capabilityPackId===ExecutionPack.capabilityPackId&&task.principalId===ctx.principalId,'FORBIDDEN_ACTION','Use the accepted execution capability task');
     const binding=await this.bindings(ctx,task.input,task.scopeId,tx),context=(await tx.query('SELECT context,cancel_requested FROM tasks WHERE task_id=$1',[task.taskId])).rows[0];
@@ -87,7 +90,7 @@ export class CaseExecution {
     }else requireCondition(spec.target===task.input.commandSourceAssetId&&canonicalHash(spec.args)===canonicalHash(task.input),'INPUT_REVISION_STALE','Verification arguments differ from the workbook binding');
     return {...binding,gate,effects:{reads:['knowledge','registered-source','test-bed'],writes:spec.name==='cases.execute'?['device-config','artifacts-evidence']:['artifacts-evidence']},resourceId:spec.name==='cases.verify'?`case-verify:${task.taskId}:${task.inputRevisionId}`:`gateway:${sha256(binding.profile.endpoint)}`};
   }
-  action(task:any,gate:any){return {name:'cases.execute',inputRevisionId:task.inputRevisionId,target:task.input.gatewayAssetId,targetIdentity:canonicalHash([gate.bindingPin,gate.treeSha256]),args:{...task.input,treeSha256:gate.treeSha256,buildId:gate.buildId,buildName:gate.buildName,commandReportSha256:gate.reportSha256,commandCheckArtifactId:gate.reportArtifactId,commandCheckArtifactSha256:gate.reportArtifactSha256}};}
+  action(task:any,gate:any){return {name:'cases.execute',inputRevisionId:task.inputRevisionId,target:task.input.gatewayAssetId,targetIdentity:canonicalHash([gate.bindingPin,gate.treeSha256]),args:{...task.input,treeSha256:gate.treeSha256,buildId:gate.buildId,buildName:gate.buildName,commandReportSha256:gate.reportSha256,commandCheckArtifactId:gate.reportArtifactId,commandCheckArtifactSha256:gate.reportArtifactSha256,hostDispatch:gate.hostDispatch}};}
   async preflight(ctx:AuthContext,id:string,fence:number,tx:any){
     const row=await this.services.execution.lease(ctx,id,fence,tx),task=await this.services.tasks.internal(tx,row.task_id),actor=this.actor(task),binding=await this.authorize(tx,actor,task,row),source=await this.services.knowledge.source(actor,task.input.sourceRevisionId,task.scopeId,tx);
     requireCondition(source.sha256===task.input.sourceSha256,'SOURCE_HASH_MISMATCH','Execution source binding changed');
@@ -103,10 +106,10 @@ export class CaseExecution {
     for(const page of raw.filter(item=>item.sourceType==='build-record'))records.push(...(await site.listing(page.path,site.contextFor(page.path,binding.buildProfile.buildSite))).result);
     const selected=resolveBuilds(records).filter(build=>(build.buildId===task.input.build||build.name===task.input.build)&&(task.input.platform===undefined||build.platform===task.input.platform));requireCondition(selected.length===1&&!selected[0].conflict,'EVIDENCE_INSUFFICIENT','Command tree requires one unambiguous current build');
     const build=selected[0],xml=byPath.get(build.files.commands??'');requireCondition(xml,'EVIDENCE_INSUFFICIENT','Command tree is not linked by the bound build listing');
-    requireCondition(book.sha256===task.input.sourceSha256,'SOURCE_HASH_MISMATCH','Server workbook bytes differ from the accepted input');const checked=commandCheck(await site.commandsFrom(xml.bytes),book.commands.map(item=>item.command));
+    requireCondition(book.sha256===task.input.sourceSha256,'SOURCE_HASH_MISMATCH','Server workbook bytes differ from the accepted input');this.hosts(book,binding.profile);const checked=commandCheck(await site.commandsFrom(xml.bytes),book.commands.map(item=>item.command));
     const invalid=checked.commands.flatMap((command:any,index:number)=>command.status!=='hit'||command.violations.length?[{...book.commands[index],status:command.status,violations:command.violations}]:[]);
     if(invalid.length)throw new ApiError('COMMAND_VALIDATION_FAILED','Workbook device commands do not satisfy the bound build command tree',{invalid:invalid.slice(0,100),invalidCount:invalid.length});
-    return {book,binding,gate:{inputRevisionId:task.inputRevisionId,bindingPin:binding.pin,treeSha256:xml.sha256,buildId:build.buildId,buildName:build.name,caseIds:book.cases.map(item=>item.autoid),reportSha256:canonicalHash({checked,rows:book.commands,treeSha256:xml.sha256})},report:{checked,rows:book.commands,buildId:build.buildId,buildName:build.name,treeSha256:xml.sha256,raw:output.raw}};
+    return {book,binding,gate:{inputRevisionId:task.inputRevisionId,bindingPin:binding.pin,treeSha256:xml.sha256,buildId:build.buildId,buildName:build.name,caseIds:book.cases.map(item=>item.autoid),hostDispatch:{count:book.hostCommands.length,hosts:[...new Set(book.hostCommands.map(row=>row.host))],sha256:canonicalHash(book.hostCommands)},reportSha256:canonicalHash({checked,rows:book.commands,hostCommands:book.hostCommands,treeSha256:xml.sha256})},report:{checked,rows:book.commands,hostCommands:book.hostCommands,buildId:build.buildId,buildName:build.name,treeSha256:xml.sha256,raw:output.raw}};
   }
   async runOnce(){
     const {store,tasks,execution}=this.services,rows=(await store.pool.query("SELECT task_id FROM tasks WHERE capability_pack_id=$1 AND ((phase='running' AND stage='inspect') OR (cancel_requested AND phase NOT IN ('delivered','failed','cancelled','unknown')))",[ExecutionPack.capabilityPackId])).rows;
