@@ -53,11 +53,15 @@ test('R2 Act 1: asset lifecycle approvals bind the version digest and scope and 
 test('R2 Act 1: asset queries filter before pagination and health reports missing handlers honestly',async t=>{
   const h=await setup(t);await grants(h);
   const visible=await h.request('/v1/assets',registration);
-  await h.request('/v1/assets',{...registration,name:'Owner-only synthetic asset',readers:['prn_alice']});
-  const list=await h.request('/v1/assets?limit=1',undefined,'bob');assert.equal(list.total,1);assert.equal(list.items[0].assetId,visible.assetId);assert.equal(list.nextCursor,null);
+  const pending=await h.request('/v1/assets',{...registration,name:'Owner-only synthetic asset',readers:['prn_alice']});
+  const list=await h.request('/v1/assets?limit=1',undefined,'bob');assert.equal(list.total,2);assert.equal(list.items.length,1);assert.ok(list.nextCursor);
+  const next=await h.request(`/v1/assets?limit=1&after=${list.nextCursor}`,undefined,'bob');assert.deepEqual(new Set([...list.items,...next.items].map((item:any)=>item.assetId)),new Set([visible.assetId,pending.assetId]));assert.equal(next.nextCursor,null);
+  await h.request(`/v1/assets/${pending.assetId}/lifecycle`,{version:pending.version,sha256:pending.sha256,state:'approved'},'bob');assert.equal((await h.request('/v1/assets',undefined,'bob')).total,1);
   const health=await h.request(`/v1/assets/${visible.assetId}/health`,{});assert.equal(health.health.result,'unknown');assert.equal(health.health.reason,'checker-not-registered');
   for(const limit of ['0','101','1.5',''])await h.reject(`/v1/assets?limit=${limit}`,undefined,'INVALID_PAYLOAD');
   await h.db.query("UPDATE policies SET grants=grants-'assets.read' WHERE principal_id='prn_bob'");
+  assert.equal((await h.request('/v1/assets',undefined,'bob')).items[0].assetId,visible.assetId);
+  await h.db.query("UPDATE policies SET grants=grants-'assets.approve' WHERE principal_id='prn_bob'");
   await h.reject('/v1/assets',undefined,'FORBIDDEN_ACTION','bob');
   await h.reject('/v1/assets',undefined,'FORBIDDEN_ACTION','lab-east-01');
 });

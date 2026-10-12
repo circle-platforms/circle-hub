@@ -515,3 +515,13 @@ claim 不可用证据仅增加调用者提交项的 details={field:evidence,inde
 最终固定 Circle 8b2ceb6 的整套已实际通过：contracts **4/4**、methods **19/19**、acceptance **143/143**、references **7/7**，共 **173/173**，无 skip；typecheck 与 diff 检查通过、归档原件 **714** 保持。长任务/窄 scope/临期/旧 fence/取消/另一 worker 核对联合验收另连续三轮 **3/3**。原技能目录与 9931f20 同字节，未修改、删除或替换，后续以独立包为准。资源身份接口和 TLS/原件交接已通过 Otty 告知 Claude；本笔只在 server-s2 本地提交并交其复核，不 push、不改实际网关，不启用 HTTP 例外。网络/HTTPS可达部署仍待用户选择，模块清单/安装入口仍待对齐，不把本机合成通过表述为真实上机。
 
 后送达的结构确认补充：objects 为 **14** 个对象的数组，无字符串项；每项都有 e/python_type/status/reason/status_authority:string、mro:array(string)（长度 **1–7**）、source:object，source 键形状与 entries 一致。对象状态为 enabled **11**、disabled **3**，无 internal；internal 出现在 entries。与既有消费解析器和完整形状合成验收兼容，本次仅记录，不改校验。用户报告 8009864 独立复核仍在运行，完成后由其部署 7420并回报；尚无新的部署确认。用户再次明确 C 自身签发优先于外部 OAuth，执行资源身份已在 **436a9ec** 本地实现并交接，维持无 HTTP 例外、无反代、未改跳板机；外部 OAuth 只保留其他连接器用途，不作为当前执行签发路径。
+
+## 30：待批资产的通用治理可见性
+
+用户报告 8009864 独立 typecheck、contracts **4/4**、methods **17/17**、acceptance **133/133**、references **7/7**，共 **161/161**、无 skip，7420 已更新，工具 schema 已有 sourceArtifactId。实际 source-artifacts 草稿两原件 SHA 正确、user-upload/not-asserted，却因未声明批准者 readers 导致 ASSET_NOT_VISIBLE。Circle 已透传 readers 作为临时办法；这是 server 通用资产治理缺口，不能要求申请人知道批准者 principalId。
+
+先写三条 source 草稿发现/批准、tenant/scope/实时权限/凭据边界、原件和换版边界验收，实际 **0/3**；同时修订原资产列表验收，加入待批可见和分页后的过滤，原实现也失败。新增 metadataRow/metadataPolicy 仅用于管理 GET、列表、来源定义查询及 approved 转换：同 tenant、授权 scope、有 assets.approve 的人可看非 credential-reference 当前 draft，无须普通 assets.read 或 readers。正常资产数据 row、原件、工具、运行与私有凭据的权限路径保持严格，不把审批权变成源读权。
+
+AssetListQuery 增 lifecycle 过滤，待批查询 GET /v1/assets?lifecycle=draft，范围和可见性在 SQL 中先过滤再计数/分页。批准锁资产后重新核对元数据可见性和批准权限，version/sha256、自批及作用范围规则不变；批准完成后返回状态和来源 id，原本没有 readers 的审批人不因此获得长期资料访问。源码原件/知识记录在批准前后对无源读权的审批人仍拒绝，凭据即使 draft 也不进入审批发现。专项及原资产验收 **6/6**、typecheck 通过；交接已补精确权限与查询说明，待最终回归、本地提交并交 Claude 复核。未改 Circle、技能副本、私有包或实际 7420 栈。
+
+最终固定 Circle 8b2ceb6 的整套通过：contracts **4/4**、methods **19/19**、acceptance **146/146**、references **7/7**，共 **176/176**、无 skip；typecheck、diff 检查和 **714** 归档核验通过。规模回归 p95 **169ms**，索引活跃时读 **204/167/139/148ms**。新的审批发现、换版、边界和原件拒绝均在完整树内通过，技能 RPC/任务个人范围、bot 私有输出及资源身份回归继续通过。原技能目录仍与 9931f20 同字节。只在 server-s2 本地提交并通过 Otty 交 Claude 复核/部署，不 push；当前已确认部署的是用户报告的 8009864，待其更新后另记录真实审批联验。

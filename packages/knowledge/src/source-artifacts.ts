@@ -42,7 +42,7 @@ export class SourceArtifacts{
     return {...definition,configuration:{schema:'external-source-artifact/1',sourceArtifactId,metadata:input.metadata,files},readers};
   }
   view(asset:any){const source=configuration.parse(asset.configuration),approved=['approved','running'].includes(asset.lifecycle)&&(!('approved_digest' in asset)||asset.approved_digest===asset.sha256);return {assetId:asset.assetId??asset.asset_id,scopeId:asset.scopeId??asset.scope_id,version:asset.version,sha256:asset.sha256,lifecycle:asset.lifecycle,sourceArtifactId:approved?source.sourceArtifactId:null,metadata:source.metadata,files:source.files,provenance:{kind:'user-upload',semanticQuality:'not-asserted'}};}
-  async get(ctx:AuthContext,id:string){const asset=await this.assets.row(ctx,id);requireCondition(asset.kind==='knowledge-source'&&asset.configuration.schema==='external-source-artifact/1','INVALID_PAYLOAD','Asset is not an external source artifact');return this.view(asset);}
+  async get(ctx:AuthContext,id:string){const asset=await this.assets.metadataRow(ctx,id);requireCondition(asset.kind==='knowledge-source'&&asset.configuration.schema==='external-source-artifact/1','INVALID_PAYLOAD','Asset is not an external source artifact');return this.view(asset);}
   async validate(ctx:AuthContext,definition:any,id:string,tx:Transaction){
     if(definition.configuration.schema!=='external-source-artifact/1')return;
     requireCondition(definition.kind==='knowledge-source','INVALID_PAYLOAD','External artifact requires a knowledge-source asset');const source=configuration.parse(definition.configuration);

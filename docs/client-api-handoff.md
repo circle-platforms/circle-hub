@@ -288,7 +288,9 @@ POST 成功是 201，status 初始 `candidate`，额外返回 manifest/ownerPrin
 
 metadata 是消费者的声明数据，不参与平台的产品派发；packageId/buildName/platform/versionLine 在通用层均不解释。APV 模块使用 buildName 作为待 env_prepare 核对的预期构建。平台只校验来源权限、字节 SHA、路径、修订及只读声明，格式和语义由消费模块校验。上传原件先成为 product/SourceRevision（sourceType=external-artifact），响应 files 包含实际 size/sha256/sourceRecordId；绑定工具读取得到 Evidence，命令结构再异步入库，可用索引任务/事件观察进度。文件内自报摘要或 certification 不替代上传原字节 SHA 和独立批准。
 
-登记返回完整资产，初始 lifecycle=draft、顶层 sourceArtifactId=null。另一人用 `POST /v1/assets/{assetId}/lifecycle` `{version,sha256,state:"approved"}` 批准后，该响应及 `GET /v1/assets/{assetId}` 顶层直接返回可用 sourceArtifactId（sar_ 前缀），无需额外激活。相同 assetId/version/原件/声明重提复用资产，变内容必须新版本；更新要带首次响应的 assetId。来源 id 绑定资产版本、metadata 和全部文件摘要，旧 id 不自动换成新字节。configuration 里的生成字段只读；提交时使用上述原件引用形状，不复制返回里的 size/sourceRecordId/sourceArtifactId 作为客户端生成字段。
+登记返回完整资产，初始 lifecycle=draft、顶层 sourceArtifactId=null。草稿作为待批定义，自动对同 tenant、同授权 scope 且有 assets.approve 的审批人可见；登记者不必知道或列出审批人。审批人可用 `GET /v1/assets?lifecycle=draft&kind=knowledge-source&limit=20`（kind 可省略）发现，再 GET 资产或旧 source-artifacts 查询定义，只需 assets.approve。另一人用 `POST /v1/assets/{assetId}/lifecycle` `{version,sha256,state:"approved"}` 批准后，该响应直接返回可用 sourceArtifactId（sar_ 前缀），无需额外激活；所有者或原本 readers 可从 GET 资产继续读取。相同 assetId/version/原件/声明重提复用资产，变内容必须新版本；更新要带首次响应的 assetId。来源 id 绑定资产版本、metadata 和全部文件摘要，旧 id 不自动换成新字节。configuration 里的生成字段只读；提交时使用上述原件引用形状，不复制返回里的 size/sourceRecordId/sourceArtifactId 作为客户端生成字段。
+
+AssetListQuery/CLIENT_ROUTES.assets 增加 lifecycle（draft/approved/running/disabled）过滤，与 kind、scope、权限一起先过滤再计数/分页。审批可见性只覆盖当前草稿的定义和摘要，不把审批人加进 readers，不授予原件/知识内容、凭据、工具或运行权限；credential-reference 保持私有，审批完成/停用后不再借待批规则可见。需要长期共享资料时仍由所有者明确声明 readers 并以新修订批准。审批出口在锁定当前资产后重新检查权限，仍拒自批、旧 version/sha256、跨 tenant/scope。技能登记审批沿用任务接口，个人工具/技能运行/bot 结果的可见性不变。
 
 命令树工具的 build 直接填 sar_ id。也可调用 `buildsite.versions`，args={sourceArtifactId:<sar_ id>}，返回一条精简构建，其 buildId 即该 sar_ id；name 来自 buildName，platform 来自声明，formal=false/releasedOn=null，不能据文件名或上传者声明推成正式发布。分页和过滤沿用 versions 契约，此调用读取本地固定原件，不遍历站点。APV 执行 input={commandSourceAssetId:<来源 assetId>,build:<sar_ id>,...}，函数契约与树 SHA 共同进入审批和投递前检查。实际床构建仍由 env_prepare 确认。
 

@@ -208,7 +208,7 @@ const server = createListener(async (request, response) => {
     }
     if(url.pathname==='/v1/assets'){
       if(request.method==='POST'){send(response,201,{data:await assets.register(ctx,AssetRegistration.parse(await body(request)))});return;}
-      if(request.method==='GET'){const query=AssetListQuery.parse({limit:url.searchParams.get('limit')??undefined,after:url.searchParams.get('after')??undefined,kind:url.searchParams.get('kind')??undefined});send(response,200,{data:await assets.list(ctx,query)});return;}
+      if(request.method==='GET'){const query=AssetListQuery.parse({limit:url.searchParams.get('limit')??undefined,after:url.searchParams.get('after')??undefined,kind:url.searchParams.get('kind')??undefined,lifecycle:url.searchParams.get('lifecycle')??undefined});send(response,200,{data:await assets.list(ctx,query)});return;}
     }
     const assetRoute=/^\/v1\/assets\/([^/]+)(?:\/(credentials|lifecycle|health))?$/.exec(url.pathname);
     if(assetRoute){const id=AssetId.parse(assetRoute[1]);

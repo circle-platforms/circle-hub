@@ -5,6 +5,7 @@ import {PrivateVault} from './vault.ts';
 
 const join='assets a JOIN asset_versions v ON v.asset_id=a.asset_id AND v.version=a.current_version';
 const visibility="a.tenant_id=$1 AND a.scope_id=ANY($2::text[]) AND (a.owner_principal_id=$3 OR v.readers ? $3 OR v.readers ? '*')";
+const metadataVisibility="a.tenant_id=$1 AND a.scope_id=ANY($2::text[]) AND (($4::boolean AND (a.owner_principal_id=$3 OR v.readers ? $3 OR v.readers ? '*')) OR ($5::boolean AND v.lifecycle='draft' AND a.kind<>'credential-reference'))";
 const sensitive=/^(?:token|password|secret|authorization|cookie|jwt|privatekey|credentialvalue)$/i;
 function clean(value:unknown):void{
   if(!value||typeof value!=='object')return;
@@ -26,12 +27,16 @@ export class Assets {
     const row=(await (tx??this.store.pool).query(`SELECT a.*,v.* FROM ${join} WHERE ${visibility} AND a.asset_id=$4`,[policy.tenantId,policy.scopes,policy.principalId,id])).rows[0];
     requireCondition(row,'ASSET_NOT_VISIBLE','Asset is not visible to the authenticated principal');return row;
   }
-  async get(ctx:AuthContext,id:string):Promise<any>{return this.view(await this.row(ctx,id));}
-  async list(ctx:AuthContext,query:{limit:number;after?:string;kind?:string}):Promise<any>{return this.store.transaction(async tx=>{
-    await tx.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');const p=await this.auth.check(ctx,'assets.read',undefined,tx),args=[p.tenantId,p.scopes,p.principalId,query.kind??null];
-    const filter=`${visibility} AND ($4::text IS NULL OR a.kind=$4)`;
+  async metadataPolicy(ctx:AuthContext,tx?:Transaction){const p=await this.auth.policy(ctx,tx),read=p.grants.includes('assets.read'),approve=p.grants.includes('assets.approve');requireCondition(read||approve,'FORBIDDEN_ACTION','Permission assets.read or assets.approve is required');return [p.tenantId,p.scopes,p.principalId,read,approve];}
+  // Governance visibility exposes only the submitted definition. Data readers,
+  // credentials and execution consumers keep using the strict row() authority.
+  async metadataRow(ctx:AuthContext,id:string,tx?:Transaction):Promise<any>{const args=await this.metadataPolicy(ctx,tx),row=(await(tx??this.store.pool).query(`SELECT a.*,v.* FROM ${join} WHERE ${metadataVisibility} AND a.asset_id=$6`,[...args,id])).rows[0];requireCondition(row,'ASSET_NOT_VISIBLE','Asset is not visible to the authenticated principal');return row;}
+  async get(ctx:AuthContext,id:string):Promise<any>{return this.view(await this.metadataRow(ctx,id));}
+  async list(ctx:AuthContext,query:{limit:number;after?:string;kind?:string;lifecycle?:string}):Promise<any>{return this.store.transaction(async tx=>{
+    await tx.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');const args=[...await this.metadataPolicy(ctx,tx),query.kind??null,query.lifecycle??null];
+    const filter=`${metadataVisibility} AND ($6::text IS NULL OR a.kind=$6) AND ($7::text IS NULL OR v.lifecycle=$7)`;
     const total=Number((await tx.query(`SELECT count(*) AS count FROM ${join} WHERE ${filter}`,args)).rows[0].count);
-    const rows=(await tx.query(`SELECT a.*,v.* FROM ${join} WHERE ${filter} AND ($5::text IS NULL OR a.asset_id<$5) ORDER BY a.asset_id DESC LIMIT $6`,[...args,query.after??null,query.limit+1])).rows;
+    const rows=(await tx.query(`SELECT a.*,v.* FROM ${join} WHERE ${filter} AND ($8::text IS NULL OR a.asset_id<$8) ORDER BY a.asset_id DESC LIMIT $9`,[...args,query.after??null,query.limit+1])).rows;
     const items=rows.slice(0,query.limit).map(row=>this.view(row));return {items,total,nextCursor:rows.length>query.limit?items.at(-1).assetId:null};
   });}
   async register(ctx:AuthContext,input:AssetRegistration,tx?:Transaction,credential=false):Promise<any>{
@@ -58,7 +63,8 @@ export class Assets {
     };return tx?run(tx):this.store.transaction(run);
   }
   async transition(ctx:AuthContext,id:string,input:{version:string;sha256:string;state:string}):Promise<any>{return this.store.transaction(async tx=>{
-    await this.row(ctx,id,tx);await tx.query('SELECT 1 FROM assets WHERE asset_id=$1 FOR UPDATE',[id]);const row=await this.row(ctx,id,tx);
+    const load=input.state==='approved'?()=>this.metadataRow(ctx,id,tx):()=>this.row(ctx,id,tx);
+    await load();await tx.query('SELECT 1 FROM assets WHERE asset_id=$1 FOR UPDATE',[id]);const row=await load();
     requireCondition(row.version===input.version&&row.sha256===input.sha256,'APPROVAL_STALE','Asset version or digest differs');
     if(input.state==='approved'){
       requireCondition(row.owner_principal_id!==ctx.principalId,'SELF_APPROVAL','An owner cannot approve their own asset');await this.auth.check(ctx,'assets.approve',row.scope_id,tx);
