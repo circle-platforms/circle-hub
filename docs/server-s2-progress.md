@@ -563,3 +563,13 @@ RPC 验收用独立合成模块和脚本模型：批准后改动外部源文件�
 用户已决定由 Mac 建 SSH 反向隧道，把网关主机的回环端口映射到 server 的本机端口；网关配置由用户按维护者准备的内容修改。已在 docs/resource-identity-handoff.md 写运行时参数化命令、HTTPS/CA/SAN 要求和启动方式，client-api-handoff.md 与 AGENTS.md 同步。server 仍只监听回环，隧道传 TLS 原字节，不增加 HTTP 例外或反代。本代理未建立实际隧道、未更改 7420/网关、未投递真实设备。
 
 最终完整 contracts **4/4**、methods **23/23**、acceptance **156/156**、references **7/7**，共 **190/190**，固定 Circle 8b2ceb6，**无 skip**；HTTPS/HTTP 组合专项 **6/6**。typecheck、diff 和 **714** 归档核验通过；四次读取规模回归 p95 **169ms**，原 HTTP、模块安装、资源身份、脑图编译和审批/bot 机制均继续通过。主工作树与独立 circle-packs 保持干净，仅 server-s2 本地提交，经 Otty 交 Claude 复核/部署；未 push。真实 HTTPS 栈与 SSH/网关接入仍由用户和维护者按此交接操作，真实床构建仍须 env_prepare 核对。
+
+## 34：签发服务事实更正与隧道可达观察
+
+用户/Claude 更正：网关实际使用的旧签发服务是本机可达的 HTTPS，证书与网关来自同一实验 CA；此前“明文 HTTP”取自旧客户端配置，判断错误。第 27 节的相应环境事实撤回，当前执行交接已纠正。用户知道实际 HTTPS 后仍决定由 circle-server 的通用 C 身份管理接管签发、旧服务退役；无需 HTTP 例外，不回到外部签发方的个人刷新令牌方案。
+
+网关当前配置包含一个构建标签，这是配置声明，不是设备观测；设备实际构建仍须 env_prepare 核对。实验 CA 已由维护者只读取回，本机验证网关证书通过，使用 DER SHA-256 记录指纹；最终信任确认仍待用户。本代理不自动信任或投递，只记录状态，不写内网地址、实际构建名、CA 原件/指纹值或凭据。
+
+用户/Claude 报告 Mac→网关回环的 SSH 反向隧道已建立，网关主机请求 /v1/status 得到未认证 401。该观察确认 API 可达，未证明有身份的 introspection、资源授权、env_prepare 或设备执行。平台→网关的 CA 核验，与网关/worker/客户端→circle-server 的 HTTPS 信任分别配置；不把一侧证书验证结果推成另一侧已经受信。本代理未建立、修改或探测该实际隧道和网关。
+
+当前等待的 worker 回环 HTTPS 支持已经包含在 333f3ce，同时修了 admin 和 Circle RPC 的 CA 传递；第 33 节已有完整 **190/190**、无 skip 和 HTTPS 组合 **6/6**。已通过 Otty 通知维护者复核/更新真实栈，本次只更正进度与交接，无实现变更，不重跑无关回归；本地文档提交，未 push。

@@ -74,7 +74,7 @@ APV_0 与 APV_1 分别按床配置 comm.ssh_ips 的顺序取第 0/1 台，设备
 
 issuer 使用 POST /token 的 refresh_token grant；若签发服务使用另一 CA，配置 issuerCaFile/issuerCaSha256。远端私有请求要求 HTTPS，HTTP 只给回环合成验收。每次请求重读并核对配置指纹，拒绝重定向，不关闭全局 TLS 校验。需要由用户或运维先提供并核验 CA；server 不从未验证连接自动建立信任。
 
-上述 issuer 字段保留既有手工会话兼容；新凭据优先用通用 OAuth 登记（见 client-api-handoff），明确配置任意签发方的 tokenEndpoint/deviceAuthorizationEndpoint，再将返回的私有 credentialAssetId 加入网关资产新修订。执行适配器通过同一通用令牌续期器读取该引用，不把 OAuth 绑定某个旧客户端。签发方 HTTP 与网关 HTTPS 是两条独立连接；实际签发方明文 HTTP 目前仍受阻，不能因网关有 TLS 就静默放宽。处理方案待用户明确选择 HTTPS 入口或限定签发端点例外，当前未启用真实例外。
+上述 issuer 字段仅保留既有手工会话兼容，通用 OAuth 登记可供其他来源使用（见 client-api-handoff）。当前执行部署已由用户选择 C 自身资源签发模式，不登记外部 issuer 或个人刷新令牌。用户更正环境事实：网关原实际签发方使用 HTTPS，与网关证书共享同一实验 CA，本机可达；先前“明文 HTTP”来自旧客户端配置，不能作为网关现状。环境更正后，circle-server 接管签发、旧服务退役的决定保持不变，无需 HTTP 例外。原地址、配置构建名、CA 原件及指纹值只在运行时保留。
 
 网关资产是 connector-instance，configuration={packageId:"case-gateway",productLineId:"apv",runtimeProfileRef:"<配置引用>"}，declaration.reads 包含 test-bed、writes 包含 device-config。该连接器不把底层写工具直接暴露给模型，执行只走能力包。资产独立审批并激活。
 
