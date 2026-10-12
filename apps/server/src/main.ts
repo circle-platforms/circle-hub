@@ -5,7 +5,8 @@ import {randomUUID} from 'node:crypto';
 import { z } from 'zod';
 import { API_VERSION, MAX_BODY_BYTES, MAX_SOURCE_BYTES, MAX_WORKER_REPORT_BYTES, CLIENT_ROUTES, TaskListQuery, ApiError, SubmitRequest,
   InputRequest, OperationRequest, ApprovalProposal, ApprovalRequest, ConclusionRequest, ChecklistRequest, ChecklistResponse, RuleRequest, DefectReviewPack, LbxPack, InputRevisionId, TaskId, ScopeId, SourceUpload, Base64Content, MindmapCompileInput, MindmapPack, DevLoginRequest, requireCondition,
-  EntityId,RelationId,ObjectListQuery,ObjectTypePackage,ObjectObservation,RelationObservation } from '../../../packages/contracts/src/index.ts';
+  EntityId,RelationId,ObjectListQuery,ObjectTypePackage,ObjectObservation,RelationObservation,
+  AssetId,AssetRegistration,AssetListQuery,AssetTransition,CredentialRegistration } from '../../../packages/contracts/src/index.ts';
 import { Store } from '../../../packages/storage/src/index.ts';
 import { taskMigration } from '../../../packages/tasks/src/migration.ts';
 import { Auth } from '../../../packages/tasks/src/auth.ts';
@@ -33,10 +34,12 @@ import { closeHttpServer } from './shutdown.ts';
 import {entityMigration} from '../../../packages/knowledge/src/entity-migration.ts';
 import {TypeCatalog} from '../../../packages/knowledge/src/type-catalog.ts';
 import {Entities} from '../../../packages/knowledge/src/entities.ts';
+import {assetMigration} from '../../../packages/assets/src/migration.ts';
+import {Assets} from '../../../packages/assets/src/index.ts';
 
 function environment(name: string): string { const value = process.env[name]; if (!value) throw new Error(`Required environment variable: ${name}`); return value; }
 const store = new Store(JSON.parse(environment('CIRCLE_SERVER_DATABASE_CONFIG')));
-await store.migrate([taskMigration,mindmapTaskMigration,knowledgeMigration,executionMigration,resourceMigration,approvalMigration,conclusionMigration,checklistMigration,connectorMigration,entityMigration]);
+await store.migrate([taskMigration,mindmapTaskMigration,knowledgeMigration,executionMigration,resourceMigration,approvalMigration,conclusionMigration,checklistMigration,connectorMigration,entityMigration,assetMigration]);
 const auth = new Auth(store);
 requireCondition(process.env.CIRCLE_SERVER_DEV_AUTH === '1', 'INVALID_PAYLOAD', 'Phase one requires explicitly enabled development authentication');
 await auth.initializeDevelopment(environment('CIRCLE_SERVER_DEV_IDENTITIES'));
@@ -44,6 +47,7 @@ await mkdir(environment('CIRCLE_SERVER_DATA_DIR'), { recursive: true, mode: 0o70
 const tasks = new Tasks(store, auth, Number(process.env.CIRCLE_SERVER_INPUT_TTL_MS ?? 300_000));
 const knowledge = new Records(store,auth,new LocalObjects(environment('CIRCLE_SERVER_DATA_DIR')));
 const objectTypes=new TypeCatalog(store,auth),entities=new Entities(store,auth,knowledge,objectTypes);
+const assets=new Assets(store,auth,`${environment('CIRCLE_SERVER_DATA_DIR')}/private-credentials`);
 knowledge.sourceAccess=(ctx,id,tx)=>entities.checkSourceAccess(ctx,id,tx);
 const execution = new Operations(store,auth,tasks,knowledge);
 const approvals=new Approvals(store,auth,tasks);execution.approvalCheck=(tx,task,spec)=>approvals.check(tx,task,spec);
@@ -107,6 +111,19 @@ const server = createServer(async (request, response) => {
       send(response,200,{ data:{ ...issued,tokenType:'Bearer',principalId:policy.principalId,tenantId:policy.tenantId,scopes:policy.scopes } }); return;
     }
     const ctx = await auth.authenticate(request.headers.authorization);
+    if(url.pathname==='/v1/assets'){
+      if(request.method==='POST'){send(response,201,{data:await assets.register(ctx,AssetRegistration.parse(await body(request)))});return;}
+      if(request.method==='GET'){const query=AssetListQuery.parse({limit:url.searchParams.get('limit')??undefined,after:url.searchParams.get('after')??undefined,kind:url.searchParams.get('kind')??undefined});send(response,200,{data:await assets.list(ctx,query)});return;}
+    }
+    const assetRoute=/^\/v1\/assets\/([^/]+)(?:\/(credentials|lifecycle|health))?$/.exec(url.pathname);
+    if(assetRoute){const id=AssetId.parse(assetRoute[1]);
+      if(request.method==='GET'&&!assetRoute[2]){send(response,200,{data:await assets.get(ctx,id)});return;}
+      if(request.method==='POST'){
+        if(assetRoute[2]==='credentials')send(response,201,{data:await assets.credential(ctx,id,CredentialRegistration.parse(await body(request,MAX_BODY_BYTES*2)))});
+        else if(assetRoute[2]==='lifecycle')send(response,200,{data:await assets.transition(ctx,id,AssetTransition.parse(await body(request)))});
+        else if(assetRoute[2]==='health'){await body(request);send(response,200,{data:await assets.check(ctx,id)});}else throw new ApiError('TARGET_NOT_FOUND','API route not found');return;
+      }
+    }
     if(url.pathname===CLIENT_ROUTES.objectTypes.path&&request.method==='GET'){send(response,200,{data:await objectTypes.list(ctx)});return;}
     if(url.pathname===CLIENT_ROUTES.objects.path&&request.method==='GET'){
       const query=ObjectListQuery.parse({limit:url.searchParams.get('limit')??undefined,after:url.searchParams.get('after')??undefined,

@@ -26,8 +26,10 @@
   "dependencies": {
     "exceljs": "4.4.0",
     "fflate": "0.8.3",
+    "parse5": "8.0.1",
     "pg": "8.23.1",
     "read-excel-file": "9.3.12",
+    "saxes": "5.0.1",
     "zod": "4.6.5"
   },
   "devDependencies": {

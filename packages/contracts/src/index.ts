@@ -25,10 +25,11 @@ export const ArtifactId = identity('art');
 export const EntityId=identity('ent');
 export const EntityRevisionId=identity('erev');
 export const RelationId=identity('rel');
+export const AssetId=identity('ast');
 export const Sha256 = z.string().regex(/^[a-f0-9]{64}$/);
 export const Base64Content = z.string().regex(/^[A-Za-z0-9+/]*={0,2}$/).refine(value =>
   value.length % 4 === 0 && Buffer.from(value,'base64').toString('base64') === value,'Expected canonical standard base64');
-export function newId(prefix: 'task' | 'inrev' | 'op' | 'pin' | 'src' | 'snap' | 'evd' | 'art' | 'rule' | 'audit' | 'rec' | 'ent' | 'erev' | 'rel' | 'rrev'): string {
+export function newId(prefix: 'task' | 'inrev' | 'op' | 'pin' | 'src' | 'snap' | 'evd' | 'art' | 'rule' | 'audit' | 'rec' | 'ent' | 'erev' | 'rel' | 'rrev' | 'ast'): string {
   return `${prefix}_${randomUUID().replaceAll('-', '')}`;
 }
 export function sha256(bytes: string | Uint8Array): string {
@@ -99,6 +100,15 @@ export const SourceUpload = z.object({ scopeId: ScopeId, fileName: z.string().mi
 export const SourceReference = z.object({ sourceRevisionId: SourceRevisionId, sha256: Sha256, size: z.number().int().nonnegative(), fileName: z.string(), scopeId: ScopeId });
 const PackageName=z.string().regex(/^[a-z][a-z0-9-]{0,99}$/);
 const PackageVersion=z.string().regex(/^\d+\.\d+\.\d+$/);
+export const AssetKind=z.enum(['connector-instance','credential-reference','knowledge-source','knowledge-snapshot','environment-resource','skill-package','trigger','bot']);
+export const AssetLifecycle=z.enum(['draft','approved','running','disabled']);
+export const AssetDeclaration=z.object({reads:z.array(z.string()).max(100),writes:z.array(z.string()).max(100),credentials:z.array(AssetId).max(100)}).strict();
+export const AssetRegistration=z.object({assetId:AssetId.optional(),scopeId:ScopeId,kind:AssetKind,name:z.string().min(1).max(200),version:PackageVersion,
+  ownerPrincipalId:z.string().regex(/^prn_/).optional(),declaration:AssetDeclaration,configuration:z.record(z.string(),z.unknown()).default({}),readers:z.array(z.string()).max(1000).optional()}).strict();
+export type AssetRegistration=z.infer<typeof AssetRegistration>;
+export const AssetTransition=z.object({version:PackageVersion,sha256:Sha256,state:AssetLifecycle});
+export const CredentialRegistration=z.object({version:PackageVersion,value:z.string().min(1).max(65536),ownerPrincipalId:z.string().regex(/^prn_/).optional()}).strict();
+export const AssetListQuery=z.object({limit:z.coerce.number().int().min(1).max(100).default(20),after:AssetId.optional(),kind:AssetKind.optional()});
 export const ObjectTypeReference=z.object({packageId:PackageName,version:PackageVersion,typeId:PackageName}).strict();
 export const AttributeKind=z.enum(['string','number','boolean','string[]','object','any']);
 export const ObjectTypeDefinition=z.object({id:PackageName,attributes:z.record(z.string().min(1).max(100),AttributeKind),
@@ -185,6 +195,7 @@ const registry = {
   UPSTREAM_TIMEOUT: [504, 'transient'], INTERNAL_ERROR: [500, 'internal'],
   INVALID_MINDMAP: [422, 'validation'], UNSUPPORTED_MINDMAP: [422, 'validation'],
   OBJECT_NOT_VISIBLE: [404, 'permission'], IDENTITY_UNMAPPED: [409, 'permission'],
+  ASSET_NOT_VISIBLE: [404,'permission'],
   ARTIFACT_VERIFICATION_FAILED: [409, 'semantic-insufficient'], SOURCE_HASH_MISMATCH: [409, 'conflict-stale'],
 } as const;
 export type ErrorCode = keyof typeof registry;
@@ -250,6 +261,7 @@ export const CLIENT_ROUTES = {
   tasks:{ method:'GET',path:'/v1/tasks',query:TaskListQuery,response:z.array(TaskView) },
   approvals:{ method:'GET',path:'/v1/tasks/{taskId}/approvals',response:z.array(ApprovalView) },
   objectTypes:{method:'GET',path:'/v1/object-types'},
+  assets:{method:'GET',path:'/v1/assets',query:AssetListQuery},
   objects:{method:'GET',path:'/v1/objects',query:ObjectListQuery,response:ObjectPage},
   object:{method:'GET',path:'/v1/objects/{entityId}',response:EntityView},
   objectObservations:{method:'GET',path:'/v1/objects/{entityId}/observations'},
