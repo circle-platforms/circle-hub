@@ -102,7 +102,7 @@ export const SourceUpload = z.object({ scopeId: ScopeId, fileName: z.string().mi
 export const SourceReference = z.object({ sourceRevisionId: SourceRevisionId, sha256: Sha256, size: z.number().int().nonnegative(), fileName: z.string(), scopeId: ScopeId });
 const PackageName=z.string().regex(/^[a-z][a-z0-9-]{0,99}$/);
 const PackageVersion=z.string().regex(/^\d+\.\d+\.\d+$/);
-export const AssetKind=z.enum(['connector-instance','credential-reference','knowledge-source','knowledge-snapshot','environment-resource','skill-package','trigger','bot','scope-role','scope-policy']);
+export const AssetKind=z.enum(['connector-instance','credential-reference','knowledge-source','knowledge-snapshot','environment-resource','skill-package','trigger','bot','scope-role','scope-policy','runtime-profile']);
 export const AssetLifecycle=z.enum(['draft','approved','running','disabled','declined']);
 export const AssetDeclaration=z.object({reads:z.array(z.string()).max(100),writes:z.array(z.string()).max(100),credentials:z.array(AssetId).max(100)}).strict();
 export const AssetRegistration=z.object({assetId:AssetId.optional(),scopeId:ScopeId,kind:AssetKind,name:z.string().min(1).max(200),version:PackageVersion,
@@ -179,7 +179,7 @@ export const SkillPackSubmission=z.object({manifest:SkillManifest,files:ModuleBy
   trial:z.object({toolCalls:z.array(z.object({name:ToolName,argsSha256:Sha256,ok:z.boolean()}).strict()).max(1000),outputs:z.array(z.object({path:SafeRelativePath,sha256:Sha256}).strict()).max(100)}).strict(),module:ModuleEntry.optional()}).strict();
 export const ModuleInstallRequest=z.object({module:ModuleEntry,files:ModuleBytes,trial:SkillPackSubmission.shape.trial.optional()}).strict();
 export const SkillPackCheck=z.object({undeclaredTools:z.array(ToolName),missingTools:z.array(ToolName)});
-export const SkillPackView=z.object({skillPackId:SkillPackId,digest:Sha256,status:z.enum(['candidate','registered','declined']),check:SkillPackCheck,approvalTaskId:TaskId,
+export const SkillPackView=z.object({skillPackId:SkillPackId,digest:Sha256,status:z.enum(['candidate','registered','declined','superseded']),check:SkillPackCheck,changeSetId:z.string().nullable().optional(),approvalTaskId:TaskId,
   manifest:SkillManifest,ownerPrincipalId:z.string(),scopeId:ScopeId,assetId:AssetId,assetVersion:PackageVersion});
 export const SkillRunInput=z.object({inputs:z.record(z.string(),z.unknown()),idempotencyKey:z.string().min(8).max(200)}).strict();
 const TriggerBase=z.object({scopeId:ScopeId,version:PackageVersion,name:z.string().min(1).max(200)});
@@ -212,7 +212,7 @@ export const OperationRequest = z.object({ inputRevisionId: InputRevisionId, nam
 export type OperationRequest = z.infer<typeof OperationRequest>;
 export const ApprovalProposal = OperationRequest.omit({idempotencyKey:true,deadlineMs:true,approvalId:true});
 export const ApprovalView=z.object({approvalId:z.string(),taskId:TaskId,inputRevisionId:InputRevisionId,applicantId:z.string(),
-  targetIdentity:z.string(),actionDigest:Sha256,action:ApprovalProposal,status:z.enum(['open','approved','declined']),
+  targetIdentity:z.string(),actionDigest:Sha256,action:ApprovalProposal,status:z.enum(['open','approved','declined','superseded','expired']),
   approvedBy:z.string().nullable(),expiresAt:z.string(),decisionMode:z.enum(['self','independent']).nullable().optional(),singleAdminMode:z.boolean().optional(),verification:z.unknown().optional()});
 export type ApprovalView=z.infer<typeof ApprovalView>;
 export const ScopeRolePatch=z.object({principalId:z.string().regex(/^prn_/),role:z.enum(['admin','member','viewer']).nullable(),idempotencyKey:z.string().min(8).max(200)}).strict();
@@ -249,6 +249,7 @@ const registry:Record<string,[number,string]> = {
   SHARING_REQUIRED:[403,'permission'],
   TOOL_NAME_CONFLICT:[409,'conflict-stale'],RESULT_TOO_LARGE:[413,'validation'],
   SKILLPACK_CHECK_FAILED:[422,'validation'],RUNTIME_VERSION_MISMATCH:[409,'conflict-stale'],RUNTIME_FAILED:[502,'execution'],
+  DEPENDENCY_NOT_APPROVED:[409,'dependency'],
 };
 export function registerErrorCodes(errors:Record<string,[number,string]>):void{for(const [code,definition] of Object.entries(errors)){if(registry[code]&&canonicalHash(registry[code])!==canonicalHash(definition))throw new Error('Error registration conflicts');registry[code]=definition;}}
 export type ErrorCode = string;
@@ -314,6 +315,9 @@ export const CLIENT_ROUTES = {
   scopeRoleSubmit:{method:'POST',path:'/v1/scopes/{scopeId}/roles',request:ScopeRolePatch},
   scopePolicySubmit:{method:'POST',path:'/v1/scopes/{scopeId}/policy',request:ScopePolicyPatch},
   changeSetSubmit:{method:'POST',path:'/v1/change-sets',request:ChangeSetSubmission},
+  changeSets:{method:'GET',path:'/v1/change-sets'},
+  changeSet:{method:'GET',path:'/v1/change-sets/{changeSetId}'},
+  runtimeProfiles:{method:'GET',path:'/v1/runtime-profiles'},
   objectTypes:{method:'GET',path:'/v1/object-types'},
   assets:{method:'GET',path:'/v1/assets',query:AssetListQuery},
   assetSubmit:{method:'POST',path:'/v1/assets',request:AssetRegistration},

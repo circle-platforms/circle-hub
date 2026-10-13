@@ -27,7 +27,7 @@ export class Modules {
                 files.push({ path: file.path, role: 'module-file', sourceRevisionId: source.sourceRevisionId, sha256: source.sha256 });
             }
             const asset = await this.sources.register(ctx, { scopeId: scope, name: `Module ${frozen.module.id}`, version: frozen.module.version, metadata: { module: frozen.module, manifest: frozen.manifest, usage: 'module-definition' }, files }, tx);
-            return { moduleId: frozen.module.id, kind: frozen.module.kind, version: frozen.module.version, digest: frozen.module.digest, assetId: asset.assetId, assetVersion: asset.version, lifecycle: asset.lifecycle, assetSha256: asset.sha256 };
+            return { moduleId: frozen.module.id, kind: frozen.module.kind, version: frozen.module.version, digest: frozen.module.digest, assetId: asset.assetId, assetVersion: asset.version, lifecycle: asset.lifecycle, assetSha256: asset.sha256,changeSetId:asset.changeSetId,approvalTaskId:asset.approvalTaskId };
         });
     }
 }

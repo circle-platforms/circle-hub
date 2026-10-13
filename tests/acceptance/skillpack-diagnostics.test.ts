@@ -44,7 +44,7 @@ test('Skill diagnostics: approval and run rechecks report the same catalog misma
   const {h,asset}=await prepare(t),candidate=await post(h,submission(['docs.search'],['docs.search'],'diagnostic-approval')),registered=await post(h,submission(['docs.search'],['docs.search'],'diagnostic-run'));
   assert.equal(candidate.status,201);assert.equal(registered.status,201);const accepted=await approval(h,registered.body.data);await h.request(accepted.path,accepted.body,'bob');
   await h.request(`/v1/assets/${asset.assetId}/lifecycle`,{version:asset.version,sha256:asset.sha256,state:'disabled'});
-  const pending=await approval(h,candidate.body.data),approvalError=await h.reject(pending.path,pending.body,'SKILLPACK_CHECK_FAILED','bob');mismatch(approvalError,['docs.search']);
+  const pending=await approval(h,candidate.body.data),approvalError=await h.reject(pending.path,pending.body,'DEPENDENCY_NOT_APPROVED','bob');assert.deepEqual(approvalError.details.check,{undeclaredTools:[],missingTools:['docs.search']});assert.equal((await h.request(`/v1/change-sets/${candidate.body.data.changeSetId}`)).status,'blocked');
   const runError=await h.reject(`/v1/skillpacks/${registered.body.data.skillPackId}/runs`,{inputs:{},idempotencyKey:'diagnostic-tool-disabled'},'SKILLPACK_CHECK_FAILED');mismatch(runError,['docs.search']);
   assert.equal((await h.db.query("SELECT 1 FROM tasks WHERE capability_pack_id='skill-run'")).rowCount,0);
 });

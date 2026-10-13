@@ -101,3 +101,15 @@ dev-login 保留。现有 `developer`、`approver` 都映射为 scp_lab 管理�
 ## 10. 交接
 
 按 3 → 4 → 5 → 6 → 7 → 8 的顺序本地提交，每节一个提交即可；更新 `docs/server-s2-progress.md` 和 `docs/client-api-handoff.md`；每个提交号通过 Otty 发给 Claude，由 Claude 在独立工作树复核后就地升级 7420。不 push、不部署、不碰 7420 和跳板机。
+
+## 11. 接口决定（Claude 已确认，2026-10-13）
+
+针对第 3 节提出的三项建议，决定如下，第 4、5 节按此做：
+
+1. **executionIsChange 的冻结执行申请资产**：同意。声明了 `executionIsChange: true` 的资源，执行提交先登记为 `execution-submission` 草稿资产，冻结 inputRevisionId、方法摘要、资源版本、原件 sourceArtifactId、工作簿 sha；它作为变更集的一项，批准后才进入执行链，且只能消费一次（审计高危项的修法与此合并）。默认资源不产生这个资产，直接走执行链。全平台只有变更集这一个审批概念。
+2. **列表兼容**：采用。列表默认维持旧数组形状，固定 8b2ceb6 的 RPC 测试与扩展 4076953 的调用不变；`?view=page` 返回 `total / items / cursor`，接受统一分面与排序；新 Circle 一律用 `view=page`。
+3. **runtime-profile 资产**：按此迁移。资产绑定 profile ref、版本、配置摘要（不含端点与密钥本身），依赖要求 approved / running；已有真实部署由管理员补登记并批准，平台不因配置文件存在而自动 approved；合成旧用例显式登记并批准依赖。
+
+角色层的其余表述全部同意：按范围的角色是唯一的人权限源，旧动作串只做一次迁移；机器用 scope 串；targets / readers 保留；根管理员管角色与范围，不自动继承子范围资料读取；角色变更先走单项变更集骨架，第 4 节扩到多资产。
+
+另：代码审计（只读，f45cdc8）的报告与修复顺序在 Claude 本机的 `scratchpad/security-audit-20261013.md`，路径已通过 Otty 发出；不进仓库，修完只把结论写进进度记录。

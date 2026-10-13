@@ -7,7 +7,7 @@ export class Approvals {
   store:Store;auth:Auth;tasks:Tasks;
   ttlMs:number;
   constructor(store:Store,auth:Auth,tasks:Tasks,ttlMs=86400000){this.store=store;this.auth=auth;this.tasks=tasks;requireCondition(Number.isInteger(ttlMs)&&ttlMs>=1000&&ttlMs<=30*86400000,'INVALID_PAYLOAD','Approval lifetime must be one second to thirty days');this.ttlMs=ttlMs;}
-  policies=new Map<string,{authorize:(tx:Transaction,ctx:AuthContext,task:any,action:any)=>Promise<void>;check:(tx:Transaction,ctx:AuthContext,task:any,row:any,answer:any)=>Promise<void>;accepted:(tx:Transaction,ctx:AuthContext,task:any,row:any,answer:any)=>Promise<void>}>();
+  policies=new Map<string,{digest?:(action:any)=>string;authorize:(tx:Transaction,ctx:AuthContext,task:any,action:any)=>Promise<void>;check:(tx:Transaction,ctx:AuthContext,task:any,row:any,answer:any)=>Promise<void>;accepted:(tx:Transaction,ctx:AuthContext,task:any,row:any,answer:any)=>Promise<void>}>();
   view(row:any):ApprovalView{return {approvalId:row.approval_id,taskId:row.task_id,inputRevisionId:row.input_revision_id,applicantId:row.applicant_id,
     targetIdentity:row.target_identity,actionDigest:row.action_digest,action:row.action,status:row.status,approvedBy:row.approved_by,expiresAt:row.expires_at.toISOString(),decisionMode:row.decision_mode??null,singleAdminMode:row.single_admin_mode??false,verification:row.eligibility_verification??null};}
   async list(ctx:AuthContext,taskId:string):Promise<ApprovalView[]> {
@@ -22,7 +22,7 @@ export class Approvals {
       const policy=this.policies.get(action.name);
       if(policy)await policy.authorize(client,ctx,task,action);
       else{await this.auth.target(ctx,action.name,task.scopeId,action.target,client);requireCondition(action.name==='product.config.write','INVALID_PAYLOAD','This approval policy applies to synthetic device changes');}
-      const requestId=newId('pin'),digest=actionDigest(action);
+      const requestId=newId('pin'),digest=policy?.digest?.(action)??actionDigest(action);
       const row=(await client.query(`INSERT INTO approvals(approval_id,task_id,input_revision_id,applicant_id,target_identity,action_digest,action,expires_at)
         VALUES($1,$2,$3,$4,$5,$6,$7,clock_timestamp()+($8::double precision*interval '1 millisecond')) RETURNING *`,[requestId,id,task.inputRevisionId,ctx.principalId,action.targetIdentity,digest,JSON.stringify(action),this.ttlMs])).rows[0];
       await client.query(`INSERT INTO pending_inputs(request_id,task_id,input_revision_id,kind,question,binding,expires_at)

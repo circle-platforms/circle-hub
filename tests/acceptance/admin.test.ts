@@ -118,6 +118,7 @@ test('admin graceful restart drains sustained keep-alive polling and pending tas
 test('admin graceful restart bounds a stalled request body and preserves only admitted tasks',async t=>{
   const ready=await developmentStack(t),{headers,token}=ready;
   const before=(await(await fetch(`${ready.url}/v1/status`,{headers})).json() as any).data;
+  const admitted=(await(await fetch(`${ready.url}/v1/admin/tasks`,{headers})).json() as any).data;
   const stalled=httpRequest(`${ready.url}/v1/tasks/submit`,{method:'POST',agent:false,headers:{...headers,'content-length':'1024',expect:'100-continue',connection:'keep-alive'}});
   let closedAt=0;stalled.on('error',()=>{});stalled.once('close',()=>{closedAt=Date.now();});t.after(()=>stalled.destroy());
   const accepted=once(stalled,'continue');stalled.flushHeaders();await accepted;
@@ -129,5 +130,5 @@ test('admin graceful restart bounds a stalled request body and preserves only ad
   assert.ok(closedAt-started<8000,'Force-close a request that never completes its body');
   const after=(await(await fetch(`${ready.url}/v1/status`,{headers})).json() as any).data;
   assert.notEqual(after.bootId,before.bootId);assert.notEqual(after.processId,before.processId);
-  assert.deepEqual((await(await fetch(`${ready.url}/v1/admin/tasks`,{headers})).json() as any).data,[]);
+  assert.deepEqual((await(await fetch(`${ready.url}/v1/admin/tasks`,{headers})).json() as any).data,admitted);
 });

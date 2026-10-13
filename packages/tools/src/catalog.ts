@@ -22,7 +22,7 @@ export class ToolCatalog {
     if(profileFile){const schema=z.object({profiles:z.record(z.string(),z.object({origin:z.string().url(),root:z.string().optional(),index:z.string().optional(),payloadField:z.string().optional(),authorizationScheme:z.enum(['raw','bearer']).optional(),requestConcurrency:z.number().int().min(1).max(8).optional(),requestIntervalMs:z.number().int().min(0).max(60000).optional(),...ConnectorOptions.shape}).strict())}).strict();this.profiles=schema.parse(JSON.parse(await readFile(profileFile,'utf8'))).profiles;}
   }
   profileFor(configuration:Record<string,unknown>):ConnectorProfile|undefined{
-    const profile=this.profiles[configuration.runtimeProfileRef as string],pack=this.packageFor(configuration);if(!profile)return undefined;
+    const ref=configuration.runtimeProfileRef as string,profile=Object.hasOwn(this.profiles,ref)?this.profiles[ref]:undefined,pack=this.packageFor(configuration);if(!profile)return undefined;
     return {...profile,...(configuration.productLineId===undefined?pack?.profileOptions:pack?.productLineOptions?.[configuration.productLineId as string])};
   }
   packageFor(configuration:Record<string,unknown>):ToolPackage|undefined{

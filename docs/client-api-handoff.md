@@ -383,3 +383,15 @@ POST /v1/scopes/{scopeId}/roles 接收 {principalId,role,idempotencyKey}（role:
 成员的申请须管理员决定。twoPersonRule 默认 true；两名管理员时申请人不能批自己，规则 false 或仅一名管理员时可本人明确决定。ApprovalView 和响应新增 decisionMode:"self"|"independent"|null、singleAdminMode、verification，审计保存同样字段和 policyVersion。自决会有决定记录，不静默批准。每次决定记录保持其当时策略，不随后续回应或策略修改重写。verification 只表示规则 id/版本的程序核验，不能当作人的批准。
 
 B 资料、C 任务、D 执行、E 方法各有记录、资产、审批策略、证据、扩展点：记录保持原 id/修订；资产版本有 SHA、声明、配置与生命周期；审批绑定三项；工具/外部交互原样证据与模型判断分开；扩展实现通过对象声明的接口安装。后续变更集与执行链继续使用这五样，保留原客户端接口。
+
+## 修订 3：变更集与依赖核验
+
+POST /v1/change-sets 接收 {scopeId,title?,items:[{assetId,version,sha256}],idempotencyKey}，1–100 项，各资产只能出现一次，必须是本人、同 scope 的当前 draft。items 的请求顺序固定：targetIdentity=canonicalHash(items.map(item=>item.sha256))，actionDigest=canonicalHash(items.map(({assetId,version})=>({assetId,version})))；输入修订仍单独绑定。返回 changeSetId/approvalTaskId/status/items/submission/targetIdentity/identityDigest/verification/blockedReasons/supersededBy，identityDigest 即该审批的 actionDigest。GET /v1/change-sets/{id} 和列表按任务读权限与 tenant/scope 过滤。审批请求 action.name=changesets.apply；原审批回应接口不变，客户端原样回传绑定三项。
+
+一次决定原子处理所有项：approved 或 declined，并交付治理任务。新变更集含同一资产时，旧的 open 请求和 pending input 关闭为 superseded，旧任务 delivered；旧资产版本不会因此批准，另一项也不会被部分批准。ApprovalView、技能 status 和 pending input 支持 superseded。同键同申请返回同一变更集，不同申请为 IDEMPOTENCY_MISMATCH；已决定的请求不能再应用。
+
+声明工具的实例须 running，runtimeProfileRef/sourceArtifactId/配置 dependsOn 的依赖须 approved 或 running。configuration.dependsOn 可以是资产 id 数组；sourceArtifactId 引用已批准的外部制品，其自身的 id 不视为自依赖。缺依赖时 status=blocked，原因列入 blockedReasons，审批保持 open；批准返回 DEPENDENCY_NOT_APPROVED 和 blockedReasons（工具缺失同时有 details.check）。依赖生命周期变化通过持久队列触发重核，重启也会重核；没有每 100ms 扫描整份登记簿。verification 仅包含规则 id/版本和 passed/blocked，不代表批准。
+
+GET /v1/runtime-profiles 需 admin，返回当前运行配置的 {profileType:"connector"|"runtime"|"execution",profileRef,profileSha256,verification} 数组。没有地址、文件路径或密钥值；这只是配置观察。管理员再 POST /v1/assets，kind=runtime-profile、configuration={profileType,profileRef,profileSha256}、version/作用 scope/声明/readers 仍按普通资产；另一名管理员决定后才满足依赖。配置 ref 在每 scope/type 唯一，改配置后登记新版本并重新决定。连接器配置仍用 runtimeProfileRef；同名 ref 跨类型时另带 runtimeProfileType 明确选择。Circle runtime 的 ref 为 circle-runtime。旧真实部署须管理员补登记，平台不会因仓库外配置存在而批准。
+
+既有 POST /v1/assets、/v1/source-artifacts、/v1/skillpacks 和 /v1/modules/install 自动产生单项变更集并追加 changeSetId/approvalTaskId。原 lifecycle state=approved 调用继续可用，内部回应该单项的请求；多项必须使用其任务审批接口，不能逐项批准。技能缺声明的工具继续 SKILLPACK_CHECK_FAILED；仅声明工具当前不可用时受理为 blocked，check.missingTools 保留具体名称，就绪后仍须人决定。技能决定与运行时继续查目录。旧数据库的 assets.publish 请求保留历史绑定批准/驳回规则，旧单仍可驳回；新请求用自动 superseded 关单。

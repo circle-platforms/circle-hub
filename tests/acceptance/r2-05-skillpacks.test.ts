@@ -40,11 +40,11 @@ test('Act R2.5: sealed skill submissions enforce scope hashes safe files and tri
   assert.equal((await post(h,'/v1/skillpacks',submission,'alice','scp_hidden')).body.error.code,'FORBIDDEN_SCOPE');
   const undeclared=await post(h,'/v1/skillpacks',{...submission,trial:{...submission.trial,toolCalls:[...submission.trial.toolCalls,{name:'admin.secret',argsSha256:sha256('{}'),ok:true}]}});
   assert.equal(undeclared.body.error.code,'SKILLPACK_CHECK_FAILED');assert.deepEqual(undeclared.body.error.details.check.undeclaredTools,['admin.secret']);
-  const absent=await post(h,'/v1/skillpacks',{...submission,manifest:{...manifest,tools:['hidden.read']},trial:{...submission.trial,toolCalls:[]}});assert.equal(absent.body.error.code,'SKILLPACK_CHECK_FAILED');assert.deepEqual(absent.body.error.details.check.missingTools,['hidden.read']);
+  const absent=await post(h,'/v1/skillpacks',{...submission,manifest:{...manifest,id:'missing-fixture',tools:['hidden.read']},trial:{...submission.trial,toolCalls:[]}});assert.equal(absent.status,201);assert.deepEqual(absent.body.data.check.missingTools,['hidden.read']);assert.equal((await h.request(`/v1/change-sets/${absent.body.data.changeSetId}`)).status,'blocked');
   const corrupt=await post(h,'/v1/skillpacks',{...submission,files:[{...submission.files[0],sha256:'0'.repeat(64)}]});assert.equal(corrupt.body.error.code,'SOURCE_HASH_MISMATCH');
   const escaped=await post(h,'/v1/skillpacks',{...submission,files:[{...submission.files[0],path:'../SKILL.md'}]});assert.equal(escaped.body.error.code,'INVALID_PAYLOAD');
   const pack=await submit(h),same=await submit(h);assert.equal(pack.skillPackId,same.skillPackId);assert.equal(pack.digest,same.digest);assert.equal(pack.approvalTaskId,same.approvalTaskId);assert.equal(pack.status,'candidate');
-  assert.deepEqual(pack.check,{undeclaredTools:[],missingTools:[]});assert.equal((await h.request('/v1/skillpacks')).length,1);
+  assert.deepEqual(pack.check,{undeclaredTools:[],missingTools:[]});assert.equal((await h.request('/v1/skillpacks')).length,2);
 });
 
 test('Act R2.5: existing approvals bind the package digest prohibit self approval and recheck tools',async t=>{
@@ -53,7 +53,7 @@ test('Act R2.5: existing approvals bind the package digest prohibit self approva
   await h.reject(`/v1/tasks/${pack.approvalTaskId}/approvals/${approval.approvalId}`,answer,'SELF_APPROVAL');
   await h.reject(`/v1/skillpacks/${pack.skillPackId}/runs`,{inputs:{},idempotencyKey:'before-approval'},'APPROVAL_REQUIRED');
   await h.request(`/v1/assets/${asset.assetId}/lifecycle`,{version:asset.version,sha256:asset.sha256,state:'disabled'});
-  await h.reject(`/v1/tasks/${pack.approvalTaskId}/approvals/${approval.approvalId}`,answer,'SKILLPACK_CHECK_FAILED','bob');
+  const error=await h.reject(`/v1/tasks/${pack.approvalTaskId}/approvals/${approval.approvalId}`,answer,'DEPENDENCY_NOT_APPROVED','bob');assert.deepEqual(error.details.check.missingTools,['docs.search']);
   assert.equal((await h.request(`/v1/tasks/${pack.approvalTaskId}/approvals`))[0].status,'open');
 });
 

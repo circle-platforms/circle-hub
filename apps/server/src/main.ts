@@ -2,10 +2,10 @@ import { createServer, type IncomingMessage, type ServerResponse,type RequestLis
 import {createServer as createHttpsServer} from 'node:https';
 import {serverTLS} from './tls.ts';
 import { setTimeout as delay } from 'node:timers/promises';
-import { mkdir } from 'node:fs/promises';
+import { mkdir,readFile } from 'node:fs/promises';
 import {randomUUID} from 'node:crypto';
 import { z } from 'zod';
-import { API_VERSION, MAX_BODY_BYTES, MAX_SOURCE_BYTES, MAX_WORKER_REPORT_BYTES, CLIENT_ROUTES, TaskListQuery, ApiError, SubmitRequest,
+import { API_VERSION, MAX_BODY_BYTES, MAX_SOURCE_BYTES, MAX_WORKER_REPORT_BYTES, CLIENT_ROUTES, TaskListQuery, ApiError, SubmitRequest,canonicalHash,
   InputRequest, OperationRequest, ApprovalProposal, ApprovalRequest, ConclusionRequest, ChecklistRequest, ChecklistResponse, RuleRequest, InputRevisionId, TaskId, ScopeId, SourceUpload, Base64Content, DevLoginRequest, requireCondition,
   EntityId,RelationId,ObjectListQuery,ObjectTypePackage,ObjectObservation,RelationObservation,AuthRefreshRequest,
   AssetId,AssetRegistration,AssetListQuery,AssetTransition,CredentialRegistration,KnowledgeRecordId,KnowledgeSearchQuery,KnowledgeReviewRequest,ToolName,ToolCallInput,SkillPackId,StandardOperation,ServiceClientId } from '../../../packages/contracts/src/index.ts';
@@ -57,12 +57,13 @@ import {ServiceClients} from '../../../packages/tasks/src/service-clients.ts';
 import {Modules} from '../../../packages/modules/src/index.ts';
 import {roleMigration} from '../../../packages/tasks/src/role-migration.ts';
 import {changeSetMigration} from '../../../packages/tasks/src/change-set-migration.ts';
+import {changeSetDependenciesMigration} from '../../../packages/tasks/src/change-set-dependencies-migration.ts';
 import {ChangeSets} from '../../../packages/tasks/src/change-sets.ts';
 import {ChangeSetSubmission} from '../../../packages/contracts/src/index.ts';
 
 function environment(name: string): string { const value = process.env[name]; if (!value) throw new Error(`Required environment variable: ${name}`); return value; }
 const store = new Store(JSON.parse(environment('CIRCLE_SERVER_DATABASE_CONFIG')));
-await store.migrate([taskMigration,deliveryMigration,knowledgeMigration,executionMigration,...packageMigrations,approvalMigration,conclusionMigration,checklistMigration,connectorMigration,entityMigration,assetMigration,graphMigration,toolMigration,skillMigration,automationMigration,automationOutcomeMigration,knowledgePageMigration,automationOriginMigration,ingestionMigration,oauthMigration,resourceIdentityMigration,roleMigration,changeSetMigration]);
+await store.migrate([taskMigration,deliveryMigration,knowledgeMigration,executionMigration,...packageMigrations,approvalMigration,conclusionMigration,checklistMigration,connectorMigration,entityMigration,assetMigration,graphMigration,toolMigration,skillMigration,automationMigration,automationOutcomeMigration,knowledgePageMigration,automationOriginMigration,ingestionMigration,oauthMigration,resourceIdentityMigration,roleMigration,changeSetMigration,changeSetDependenciesMigration]);
 const auth = new Auth(store,{developmentTtlMs:process.env.CIRCLE_SERVER_DEV_TOKEN_TTL_MS?Number(process.env.CIRCLE_SERVER_DEV_TOKEN_TTL_MS):undefined,runTokenTtlMs:process.env.CIRCLE_SERVER_RUN_TOKEN_TTL_MS?Number(process.env.CIRCLE_SERVER_RUN_TOKEN_TTL_MS):undefined});
 requireCondition(process.env.CIRCLE_SERVER_DEV_AUTH === '1', 'INVALID_PAYLOAD', 'Phase one requires explicitly enabled development authentication');
 await auth.initializeDevelopment(environment('CIRCLE_SERVER_DEV_IDENTITIES'));
@@ -87,8 +88,15 @@ assets.decorateView=row=>row.kind==='knowledge-source'&&row.configuration.schema
 assets.validateRegistration=async(ctx,input,id,tx)=>{await sourceArtifacts.validate(ctx,input,id,tx);await catalog.register(ctx,input,id,tx);};
 const approvals=new Approvals(store,auth,tasks,Number(process.env.CIRCLE_SERVER_APPROVAL_TTL_MS??86400000));execution.approvalCheck=(tx,task,spec)=>approvals.check(tx,task,spec);
 const changeSets=new ChangeSets(store,auth,assets,tasks,approvals);
-const registrationValidation=assets.validateRegistration;assets.validateRegistration=async(ctx,input,id,tx)=>{await changeSets.validateDefinition(tx,ctx,input);await registrationValidation?.(ctx,input,id,tx);};
+const registrationValidation=assets.validateRegistration;assets.validateRegistration=async(ctx,input,id,tx)=>{await changeSets.validateDefinition(tx,ctx,{...input,assetId:id});await registrationValidation?.(ctx,input,id,tx);};
 const skills=new SkillPacks(store,auth,tasks,approvals,assets,catalog,execution,knowledge);await skills.initialize(process.env.CIRCLE_RUNTIME_CONFIG);
+skills.changeSets=changeSets;
+let executionProfiles:Record<string,unknown>={};if(process.env.CIRCLE_SERVER_EXECUTION_GATEWAYS)try{executionProfiles=JSON.parse(await readFile(process.env.CIRCLE_SERVER_EXECUTION_GATEWAYS,'utf8')).profiles??{};}catch{/* Unavailable profiles remain blocked dependencies. */}
+changeSets.profileIdentity=(type,ref)=>{const value=type==='connector'?(Object.hasOwn(catalog.profiles,ref)?catalog.profiles[ref]:null):type==='execution'?(Object.hasOwn(executionProfiles,ref)?executionProfiles[ref]:null):ref==='circle-runtime'?skills.runtime:null;return value?canonicalHash(value):null;};
+const runtimeProfiles=()=>[...Object.keys(catalog.profiles).map(profileRef=>({profileType:'connector',profileRef})),...Object.keys(executionProfiles).map(profileRef=>({profileType:'execution',profileRef})),...(skills.runtime?[{profileType:'runtime',profileRef:'circle-runtime'}]:[])].map(profile=>({...profile,profileSha256:changeSets.profileIdentity!(profile.profileType,profile.profileRef),verification:{ruleId:'runtime-profile-observation',ruleVersion:'1.0.0',result:'observed'}}));
+changeSets.validators.set('skill-package',(tx,ctx,asset)=>skills.changeDependencies(tx,ctx,asset));
+changeSets.decisionHandlers.set('skill-package',async(tx,ctx,asset,approved)=>{await tx.query('UPDATE skill_packages SET status=$3 WHERE asset_id=$1 AND asset_version=$2',[asset.asset_id,asset.version,approved?'registered':'declined']);});
+await changeSets.initialize();
 const modules=new Modules(skills,sourceArtifacts,knowledge,auth);
 execution.managedNames.add('assets.execute');
 execution.managedAuthorization=(tx,actor,scope,spec,task)=>spec.name==='assets.execute'?skills.authorize(tx,actor,scope,spec,task):catalog.authorize(tx,actor,scope,spec,task);
@@ -178,6 +186,9 @@ const server = createListener(async (request, response) => {
     if(scopeRoles&&request.method==='POST'){send(response,201,{data:await changeSets.roleSubmission(ctx,ScopeId.parse(scopeRoles[1]),await body(request))});return;}
     const scopePolicy=/^\/v1\/scopes\/([^/]+)\/policy$/.exec(url.pathname);if(scopePolicy&&request.method==='POST'){send(response,201,{data:await changeSets.policySubmission(ctx,ScopeId.parse(scopePolicy[1]),await body(request))});return;}
     if(url.pathname==='/v1/change-sets'&&request.method==='POST'){send(response,201,{data:await changeSets.submit(ctx,ChangeSetSubmission.parse(await body(request)))});return;}
+    if(url.pathname==='/v1/change-sets'&&request.method==='GET'){send(response,200,{data:await changeSets.list(ctx)});return;}
+    if(url.pathname==='/v1/runtime-profiles'&&request.method==='GET'){await auth.check(ctx,'admin.manage');send(response,200,{data:runtimeProfiles()});return;}
+    const changeSet=/^\/v1\/change-sets\/(cst_[a-f0-9]{32})$/.exec(url.pathname);if(changeSet&&request.method==='GET'){send(response,200,{data:await changeSets.get(ctx,changeSet[1])});return;}
     if(url.pathname==='/v1/service-clients'){if(request.method==='POST')send(response,201,{data:await serviceClients.register(ctx,await body(request))});else if(request.method==='GET')send(response,200,{data:await serviceClients.list(ctx,z.coerce.number().int().min(1).max(100).default(20).parse(url.searchParams.get('limit')??undefined),ServiceClientId.optional().parse(url.searchParams.get('after')??undefined))});else throw new ApiError('INVALID_PAYLOAD','Unsupported service client method');return;}
     const serviceClient=/^\/v1\/service-clients\/([^/]+)(?:\/(rotate|revoke))?$/.exec(url.pathname);if(serviceClient){const id=ServiceClientId.parse(serviceClient[1]);if(request.method==='GET'&&!serviceClient[2])send(response,200,{data:serviceClients.view(await serviceClients.row(ctx,id))});else if(request.method==='POST'&&serviceClient[2]==='rotate')send(response,200,{data:await serviceClients.rotate(ctx,id,await body(request))});else if(request.method==='POST'&&serviceClient[2]==='revoke'){z.object({}).strict().parse(await body(request));send(response,200,{data:await serviceClients.revoke(ctx,id)});}else throw new ApiError('INVALID_PAYLOAD','Unsupported service client method');return;}
     if(request.method==='POST'&&url.pathname==='/v1/automations/triggers'){send(response,201,{data:await automations.trigger(ctx,await body(request))});return;}
@@ -425,7 +436,7 @@ server.requestTimeout = 10_000; server.headersTimeout = 10_000;
 let running: Promise<void> | undefined;
 const timer = setInterval(() => {
   if (running || closing) return;
-  running = tasks.runOnce().then(()=>packages.runOnce()).then(()=>automations.tick()).catch(error => { console.error(JSON.stringify({type:'runner-transaction-failed',code:error instanceof ApiError?error.code:(error as any).code??'INTERNAL_ERROR'})); }).finally(() => { running = undefined; });
+  running = tasks.runOnce().then(()=>packages.runOnce()).then(()=>automations.tick()).then(()=>changeSets.tick()).catch(error => { console.error(JSON.stringify({type:'runner-transaction-failed',code:error instanceof ApiError?error.code:(error as any).code??'INTERNAL_ERROR'})); }).finally(() => { running = undefined; });
 }, Number(process.env.CIRCLE_SERVER_POLL_MS ?? 100));
 let indexing:Promise<void>|undefined;
 const indexTimer=setInterval(()=>{if(indexing||closing)return;indexing=ingestions.runOnce().catch(error=>{console.error(JSON.stringify({type:'source-index-transaction-failed',code:error instanceof ApiError?error.code:'INTERNAL_ERROR'}));}).finally(()=>{indexing=undefined;});},Number(process.env.CIRCLE_SERVER_INDEX_POLL_MS??100));

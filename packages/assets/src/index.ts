@@ -18,6 +18,9 @@ export class Assets {
   validateRegistration?: (ctx:AuthContext,definition:AssetRegistration,id:string,tx:Transaction)=>Promise<void>;
   decorateView?: (row:any)=>Record<string,unknown>;
   materializeCredential?: (ctx:AuthContext,row:any,link:any,value:string)=>Promise<string>;
+  onDraft?:(tx:Transaction,ctx:AuthContext,row:any)=>Promise<Record<string,unknown>>;
+  governedTransition?:(ctx:AuthContext,id:string,input:{version:string;sha256:string;state:string})=>Promise<any>;
+  dependencyChanged?:(tx:Transaction,tenant:string,scope:string)=>Promise<void>;
   constructor(store:Store,auth:Auth,directory:string){this.store=store;this.auth=auth;this.vault=new PrivateVault(directory);}
   binding(row:any):string{return JSON.stringify([row.tenant_id,row.scope_id,row.owner_principal_id,row.asset_id,row.version]);}
   view(row:any):any{return {assetId:row.asset_id,scopeId:row.scope_id,kind:row.kind,ownerPrincipalId:row.owner_principal_id,version:row.version,name:row.name,
@@ -59,10 +62,12 @@ export class Assets {
       await client.query('UPDATE assets SET current_version=$2 WHERE asset_id=$1',[id,definition.version]);
       await this.validateRegistration?.(ctx,definition,id,client);
       await this.auth.audit(ctx,'assets.register',{assetId:id,version:definition.version,sha256:digest,kind:definition.kind},definition.scopeId,client);
-      return {...this.view((await client.query(`SELECT a.*,v.* FROM ${join} WHERE a.asset_id=$1`,[id])).rows[0]),deduplicated:false};
+      await this.dependencyChanged?.(client,p.tenantId,definition.scopeId);
+      const row=(await client.query(`SELECT a.*,v.* FROM ${join} WHERE a.asset_id=$1`,[id])).rows[0],governance=await this.onDraft?.(client,ctx,row)??{};
+      return {...this.view(row),...governance,deduplicated:false};
     };return tx?run(tx):this.store.transaction(run);
   }
-  async transition(ctx:AuthContext,id:string,input:{version:string;sha256:string;state:string}):Promise<any>{return this.store.transaction(async tx=>{
+  async transition(ctx:AuthContext,id:string,input:{version:string;sha256:string;state:string}):Promise<any>{if(this.governedTransition&&['approved','declined'].includes(input.state))return this.governedTransition(ctx,id,input);return this.store.transaction(async tx=>{
     const load=input.state==='approved'?()=>this.metadataRow(ctx,id,tx):()=>this.row(ctx,id,tx);
     await load();await tx.query('SELECT 1 FROM assets WHERE asset_id=$1 FOR UPDATE',[id]);const row=await load();
     requireCondition(!['scope-role','scope-policy'].includes(row.kind),'FORBIDDEN_ACTION','Scope role and policy submissions require a change-set decision');
@@ -79,6 +84,7 @@ export class Assets {
       await tx.query('UPDATE asset_versions SET lifecycle=$3 WHERE asset_id=$1 AND version=$2',[id,row.version,input.state]);
     }
     await this.auth.audit(ctx,'assets.lifecycle',{assetId:id,version:row.version,sha256:row.sha256,state:input.state},row.scope_id,tx);
+    await this.dependencyChanged?.(tx,row.tenant_id,row.scope_id);
     return this.view((await tx.query(`SELECT a.*,v.* FROM ${join} WHERE a.asset_id=$1`,[id])).rows[0]);
   });}
   async credential(ctx:AuthContext,id:string,input:{version:string;value:string;ownerPrincipalId?:string},metadata:Record<string,unknown>={},credentialAssetId?:string):Promise<any>{

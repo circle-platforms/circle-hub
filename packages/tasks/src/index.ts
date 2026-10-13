@@ -15,8 +15,8 @@ export class Tasks {
   deliveryValidators=new Map<string,(tx:Transaction,task:Task,result:any)=>Promise<{itemId:string;conclusionId:string}[]>>();
   baseFlows=new Set<string>([FLOW_VERSION]);
   constructor(store: Store, auth: Auth, inputTtlMs = 300_000) { this.store = store; this.auth = auth; this.inputTtlMs = inputTtlMs; }
-  async internal(tx:Transaction,taskId:string):Promise<Task> {
-    const row=(await tx.query('SELECT * FROM tasks WHERE task_id=$1',[taskId])).rows[0];
+  async internal(tx:Transaction,taskId:string,lock=false):Promise<Task> {
+    const row=(await tx.query(`SELECT * FROM tasks WHERE task_id=$1${lock?' FOR UPDATE':''}`,[taskId])).rows[0];
     requireCondition(row,'TARGET_NOT_FOUND','Task not found for durable bookkeeping');return taskFromRow(row);
   }
   async context(ctx:AuthContext,id:string,inputRevisionId:string,patch?:Record<string,unknown>):Promise<any>{return this.store.transaction(async tx=>{

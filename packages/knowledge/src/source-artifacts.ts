@@ -22,7 +22,7 @@ export class SourceArtifacts{
   }
   async register(ctx:AuthContext,value:unknown,transaction?:Transaction){
     const input=SourceArtifactRegistration.parse(value),assetId=`ast_${canonicalHash([ctx.tenantId,input.scopeId,ctx.principalId,input.name]).slice(0,32)}`;
-    return this.view(await this.assets.register(ctx,{assetId,scopeId:input.scopeId,kind:'knowledge-source',name:input.name,version:input.version,declaration:{reads:['registered-source'],writes:[],credentials:[]},configuration:{schema:'external-source-artifact/1',metadata:input.metadata,files:input.files},readers:input.readers},transaction));
+    const asset=await this.assets.register(ctx,{assetId,scopeId:input.scopeId,kind:'knowledge-source',name:input.name,version:input.version,declaration:{reads:['registered-source'],writes:[],credentials:[]},configuration:{schema:'external-source-artifact/1',metadata:input.metadata,files:input.files},readers:input.readers},transaction);return {...this.view(asset),...(asset.changeSetId?{changeSetId:asset.changeSetId,approvalTaskId:asset.approvalTaskId,blockedReasons:asset.blockedReasons}:{})};
   }
   async prepare(ctx:AuthContext,definition:AssetRegistration,assetId:string,tx:Transaction):Promise<AssetRegistration>{
     if(definition.configuration.schema!=='external-source-artifact/1')return definition;

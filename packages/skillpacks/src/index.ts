@@ -3,6 +3,7 @@ import type {Store,Transaction} from '../../storage/src/index.ts';
 import type {Auth} from '../../tasks/src/auth.ts';
 import type {Tasks} from '../../tasks/src/index.ts';
 import type {Approvals} from '../../tasks/src/approvals.ts';
+import type {ChangeSets} from '../../tasks/src/change-sets.ts';
 import type {Assets} from '../../assets/src/index.ts';
 import type {ToolCatalog} from '../../tools/src/catalog.ts';
 import type {Operations} from '../../execution/src/operations.ts';
@@ -20,19 +21,20 @@ function summarizeTools(names:string[]):string{
 export class SkillPacks {
   store:Store;auth:Auth;tasks:Tasks;approvals:Approvals;assets:Assets;catalog:ToolCatalog;execution:Operations;objects:Knowledge;
   runtime:any;
+  changeSets?:ChangeSets;
   privateSocketPath='';
   secrets=new Map<string,{token:string;digest:string}>();
   constructor(store:Store,auth:Auth,tasks:Tasks,approvals:Approvals,assets:Assets,catalog:ToolCatalog,execution:Operations,objects:Knowledge){this.store=store;this.auth=auth;this.tasks=tasks;this.approvals=approvals;this.assets=assets;this.catalog=catalog;this.execution=execution;this.objects=objects;}
   async initialize(file?:string):Promise<void>{if(!file)return;const schema=z.object({circleBin:z.string().min(1),circleCommit:z.string().regex(/^[a-f0-9]{40}$/),circleVersion:z.string().min(1),model:z.object({kind:z.literal('scripted'),base_url:z.string().url(),model:z.string().min(1),protocol:z.literal('openai'),api_key:z.string().min(1)}).strict()}).strict();this.runtime=schema.parse(JSON.parse(await readFile(file,'utf8')));const url=new URL(this.runtime.model.base_url);requireCondition(url.hostname==='127.0.0.1'&&url.protocol==='http:','FORBIDDEN_ACTION','Development execution permits a loopback script model only');}
-  view(row:any):any{return {skillPackId:row.skill_pack_id,digest:row.digest,status:row.status,check:{undeclaredTools:[],missingTools:[]},approvalTaskId:row.approval_task_id,
+  view(row:any):any{return {skillPackId:row.skill_pack_id,digest:row.digest,status:row.status,check:row.check_result??{undeclaredTools:[],missingTools:[]},changeSetId:row.change_set_id??null,approvalTaskId:row.approval_task_id,
     manifest:row.manifest,ownerPrincipalId:row.owner_id,scopeId:row.scope_id,assetId:row.asset_id,assetVersion:row.asset_version};}
   async row(ctx:AuthContext,id:string,grant:string,tx?:Transaction):Promise<any>{
     const p=await this.auth.check(ctx,grant,undefined,tx),row=(await (tx??this.store.pool).query('SELECT * FROM skill_packages WHERE skill_pack_id=$1 AND tenant_id=$2 AND scope_id=ANY($3::text[])',[id,p.tenantId,p.scopes])).rows[0];
     requireCondition(row,'SOURCE_FORBIDDEN','Skill package is not available to this identity');await this.assets.row(ctx,row.asset_id,tx,'assets.read');return row;
   }
-  async checkWithDetails(ctx:AuthContext,manifest:any,trial:any,tx?:Transaction):Promise<any>{
+  async checkWithDetails(ctx:AuthContext,manifest:any,trial:any,tx?:Transaction,allowMissing=false):Promise<any>{
     const available=new Set((await this.catalog.available(ctx,tx)).map(entry=>entry.view.name)),declared=new Set<string>(manifest.tools),check={undeclaredTools:[...new Set<string>(trial.toolCalls.map((call:any)=>call.name).filter((name:string)=>!declared.has(name)))].sort(),missingTools:manifest.tools.filter((name:string)=>!available.has(name)).sort()};
-    if(check.undeclaredTools.length||check.missingTools.length){
+    if(check.undeclaredTools.length||check.missingTools.length&&!allowMissing){
       const reasons=[];if(check.undeclaredTools.length)reasons.push(`Undeclared trial tools: ${summarizeTools(check.undeclaredTools)}`);if(check.missingTools.length)reasons.push(`Tools unavailable in caller catalog: ${summarizeTools(check.missingTools)}`);
       throw new ApiError('SKILLPACK_CHECK_FAILED',reasons.join('; '),{check});
     }return check;
@@ -44,21 +46,22 @@ export class SkillPacks {
     requireCondition(new Set(input.files.map(file=>file.path)).size===input.files.length&&input.files.some(file=>file.path==='SKILL.md'),'INVALID_PAYLOAD','Skill files require one SKILL.md and unique paths');
     const files=input.files.map(file=>{const bytes=Buffer.from(file.base64,'base64');requireCondition(bytes.length<=MAX_SOURCE_BYTES&&sha256(bytes)===file.sha256,'SOURCE_HASH_MISMATCH','Submitted file SHA differs');return {path:file.path,sha256:file.sha256,size:bytes.length};}).sort((a,b)=>input.module?(a.path<b.path?-1:a.path>b.path?1:0):a.path.localeCompare(b.path));
     requireCondition(files.reduce((sum,file)=>sum+file.size,0)<=MAX_SOURCE_BYTES,'BODY_TOO_LARGE','Skill files exceed sixteen MiB');
-    await this.checkWithDetails(ctx,input.manifest,input.trial);
+    const check=await this.checkWithDetails(ctx,input.manifest,input.trial,undefined,true);
     const digest=canonicalHash({manifest:input.manifest,files,trial:input.trial,...(input.module?{module:input.module}:{})});
     for(const file of input.files)await this.objects.objects.putObject({Bucket:'evidence',Key:file.sha256,Body:Buffer.from(file.base64,'base64')});
     return this.store.transaction(async tx=>{
-      await this.checkWithDetails(ctx,input.manifest,input.trial,tx);await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[canonicalJson([ctx.tenantId,scope,ctx.principalId,digest])]);
+      await this.checkWithDetails(ctx,input.manifest,input.trial,tx,true);await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[canonicalJson([ctx.tenantId,scope,ctx.principalId,digest])]);
       const old=(await tx.query('SELECT * FROM skill_packages WHERE tenant_id=$1 AND scope_id=$2 AND owner_id=$3 AND digest=$4',[ctx.tenantId,scope,ctx.principalId,digest])).rows[0];if(old)return this.view(old);
       const prior=(await tx.query("SELECT s.* FROM skill_packages s WHERE tenant_id=$1 AND scope_id=$2 AND owner_id=$3 AND manifest->>'id'=$4 ORDER BY created_at DESC LIMIT 1",[ctx.tenantId,scope,ctx.principalId,input.manifest.id])).rows[0];
       const id=newId('skp'),asset=await this.assets.register(ctx,{...(prior?{assetId:prior.asset_id}:{}),scopeId:scope,kind:'skill-package',name:input.manifest.title,version:input.manifest.version,
-        declaration:{reads:input.manifest.tools,writes:['artifacts-evidence'],credentials:[]},configuration:{skillPackId:id,digest,...(input.module?{module:input.module}:{})},readers:[ctx.principalId,'*']},tx);
-      const task=await this.tasks.submit(ctx,{scopeId:scope,title:`Register ${input.manifest.title}`,capabilityPackId:'asset-registration',idempotencyKey:canonicalHash(['skill-register',digest]),input:{skillPackId:id,digest,assetId:asset.assetId,assetVersion:asset.version}},tx);
-      await tx.query(`INSERT INTO skill_packages(skill_pack_id,tenant_id,scope_id,owner_id,digest,manifest,files,trial,asset_id,asset_version,approval_task_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,[id,ctx.tenantId,scope,ctx.principalId,digest,JSON.stringify(input.manifest),JSON.stringify(files),JSON.stringify(input.trial),asset.assetId,asset.version,task.taskId]);
-      const approval=await this.approvals.propose(ctx,task.taskId,{inputRevisionId:task.inputRevisionId,name:'assets.publish',target:asset.assetId,targetIdentity:asset.sha256,args:{skillPackId:id,digest}},tx);
-      await tx.query('UPDATE skill_packages SET approval_id=$2 WHERE skill_pack_id=$1',[id,approval.approvalId]);return this.view((await tx.query('SELECT * FROM skill_packages WHERE skill_pack_id=$1',[id])).rows[0]);
+        declaration:{reads:input.manifest.tools,writes:['artifacts-evidence'],credentials:[]},configuration:{skillPackId:id,digest,...(this.runtime?{runtimeProfileRef:'circle-runtime'}:{}),...(input.module?{module:input.module}:{})},readers:[ctx.principalId,'*']},tx);
+      requireCondition(this.changeSets,'INTERNAL_ERROR','Skill change governance is not installed');
+      await tx.query(`INSERT INTO skill_packages(skill_pack_id,tenant_id,scope_id,owner_id,digest,manifest,files,trial,asset_id,asset_version,check_result) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,[id,ctx.tenantId,scope,ctx.principalId,digest,JSON.stringify(input.manifest),JSON.stringify(files),JSON.stringify(input.trial),asset.assetId,asset.version,JSON.stringify(check)]);
+      const change=await this.changeSets.single(tx,ctx,await this.assets.row(ctx,asset.assetId,tx)),approval=(await tx.query('SELECT approval_id FROM approvals WHERE task_id=$1',[change.approvalTaskId])).rows[0];
+      await tx.query('UPDATE skill_packages SET approval_id=$2,approval_task_id=$3,change_set_id=$4 WHERE skill_pack_id=$1',[id,approval.approval_id,change.approvalTaskId,change.changeSetId]);return {...this.view((await tx.query('SELECT * FROM skill_packages WHERE skill_pack_id=$1',[id])).rows[0]),blockedReasons:change.blockedReasons};
     });
   }
+  async changeDependencies(tx:Transaction,ctx:AuthContext,asset:any){const row=(await tx.query('SELECT * FROM skill_packages WHERE asset_id=$1 AND asset_version=$2',[asset.asset_id,asset.version])).rows[0];requireCondition(row,'APPROVAL_STALE','Skill submission is missing');const check=await this.checkWithDetails(ctx,row.manifest,row.trial,tx,true);await tx.query('UPDATE skill_packages SET check_result=$2 WHERE skill_pack_id=$1',[row.skill_pack_id,JSON.stringify(check)]);return check.missingTools.map((name:string)=>({tool:name,reason:'tool-instance-not-running'}));}
   async list(ctx:AuthContext):Promise<any[]>{
     const p=await this.auth.check(ctx,'skillpacks.read'),rows=(await this.store.pool.query('SELECT * FROM skill_packages WHERE tenant_id=$1 AND scope_id=ANY($2::text[]) ORDER BY created_at DESC,skill_pack_id',[p.tenantId,p.scopes])).rows,visible=[];
     for(const row of rows){try{await this.assets.row(ctx,row.asset_id);visible.push(this.view(row));}catch(error){if(!(error instanceof ApiError))throw error;}}return visible;

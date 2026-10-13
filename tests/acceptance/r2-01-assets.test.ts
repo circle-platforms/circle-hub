@@ -10,7 +10,7 @@ async function grants(h:Harness){
   await h.db.query("UPDATE policies SET grants=grants||$1::jsonb WHERE principal_id=ANY($2::text[])",[JSON.stringify(['assets.read']),['prn_limited','prn_outsider']]);
 }
 const registration={scopeId:'scp_lab',kind:'connector-instance',name:'Synthetic read source',version:'1.0.0',
-  declaration:{reads:['source-records'],writes:[],credentials:[]},configuration:{packageId:'fixture-reader',runtimeProfileRef:'profile_synthetic'},readers:['prn_alice','prn_bob']};
+  declaration:{reads:['source-records'],writes:[],credentials:[]},configuration:{packageId:'fixture-reader'},readers:['prn_alice','prn_bob']};
 
 test('R2 Act 1: register assets and write-only personal credentials without exposing values in metadata audit or logs',async t=>{
   const h=await setup(t);await grants(h);let logs='';h.server!.stdout!.on('data',data=>{logs+=data.toString();});h.server!.stderr!.on('data',data=>{logs+=data.toString();});
