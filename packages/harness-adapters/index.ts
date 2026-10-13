@@ -1,6 +1,7 @@
 import type { ExportResult, HarnessId, HubManifest, ImportResult, VirtualFiles } from './neutral.ts';
 import { exportClaudeCode, importClaudeCode } from './claude-code.ts';
 import { exportCodex, importCodex } from './codex.ts';
+import { exportOpencode, importOpencode } from './opencode.ts';
 
 export * from './neutral.ts';
 
@@ -13,6 +14,8 @@ export function importFrom(harness: HarnessId, files: VirtualFiles): ImportResul
       return importClaudeCode(files);
     case 'codex':
       return importCodex(files);
+    case 'opencode':
+      return importOpencode(files);
     default:
       throw new TypeError(`unknown harness: ${String(harness)}`);
   }
@@ -31,6 +34,8 @@ export function exportTo(harness: HarnessId, manifests: HubManifest[], files: Vi
       return exportClaudeCode(manifests, files);
     case 'codex':
       return exportCodex(manifests, files);
+    case 'opencode':
+      return exportOpencode(manifests, files);
     default:
       throw new TypeError(`unknown harness: ${String(harness)}`);
   }
