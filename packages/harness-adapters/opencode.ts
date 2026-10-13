@@ -1,6 +1,7 @@
 import type {
   AdapterWarning,
   ExportResult,
+  HubCommand,
   HubManifest,
   HubProvider,
   ImportResult,
@@ -31,19 +32,23 @@ const HARNESS = 'opencode';
 
 // OpenCode v2 (docs/design/harness-formats.md). Skills: `.opencode/skills/`
 // with SKILL.md at any depth (id = last directory segment) or `<id>.md` at
-// the skills root. Commands: `.opencode/commands/` (and legacy
-// `.opencode/command/`), nested names join with `/`. Agents:
-// `.opencode/agents/`, nested paths count into the id. Instruction:
-// AGENTS.md only. Hooks: no standalone file (plugins register hooks in code)
-// — nothing to import. MCP: `opencode.json(c)` or `.opencode/opencode.json(c)`,
-// key `mcp.servers`. User-level (~/.config/opencode) files are never part of
-// the virtual file table.
+// the skills root, plus the documented `.claude/skills/` and
+// `.agents/skills/` compat locations. Commands: `.opencode/commands/` (and
+// legacy `.opencode/command/`), nested names join with `/`; plus
+// `commands.<name>` (with required `template`) in the config file — the same
+// primitive in another spelling. Agents: `.opencode/agents/`, nested paths
+// count into the id. Instruction: AGENTS.md only. Hooks: no standalone file
+// (plugins register hooks in code) — nothing to import. Config:
+// `opencode.json(c)` at the project root or in `.opencode/` only, key
+// `mcp.servers`. User-level (~/.config/opencode) files are never part of the
+// virtual file table.
 const SKILL_ENTRY = /(^|\/)\.opencode\/skills\/(.+)\/SKILL\.md$/;
+const SKILL_COMPAT = /(^|\/)\.(?:claude|agents)\/skills\/(.+)\/SKILL\.md$/;
 const SKILL_ROOT_FILE = /(^|\/)\.opencode\/skills\/([^/]+)\.md$/;
 const COMMAND_FILE = /(^|\/)\.opencode\/commands?\/(.+)\.md$/;
 const AGENT_FILE = /(^|\/)\.opencode\/agents\/(.+)\.md$/;
 const INSTRUCTION_FILE = /(^|\/)AGENTS\.md$/;
-const CONFIG_FILE = /(^|\/)(\.opencode\/)?opencode\.jsonc?$/;
+const CONFIG_FILE = /^(?:\.opencode\/)?opencode\.jsonc?$/;
 
 const SKILL_SPEC: MarkdownSpec = {
   kind: 'hub-skill/1',
@@ -79,7 +84,7 @@ function importSkills(
   claimed: Set<string>,
 ): void {
   for (const [path, value] of Object.entries(files)) {
-    const directory = SKILL_ENTRY.exec(path);
+    const directory = SKILL_ENTRY.exec(path) ?? SKILL_COMPAT.exec(path);
     if (directory) {
       claimed.add(path);
       const id = baseName(directory[2]);
@@ -208,12 +213,12 @@ function importConfig(
     }
     const record = parseJsoncFile(path, text, warnings);
     if (record === undefined) continue;
-    const extraKeys = Object.keys(record).filter((key) => key !== 'mcp');
+    const extraKeys = Object.keys(record).filter((key) => key !== 'mcp' && key !== 'commands');
     if (extraKeys.length > 0) {
       warnings.push({
         code: 'CONFIG_EXTRA_KEYS',
         path,
-        detail: `keys not governed as hub providers and dropped on export: ${extraKeys.join(', ')}`,
+        detail: `keys not governed as hub primitives and dropped on export: ${extraKeys.join(', ')}`,
       });
     }
     const mcp = record.mcp;
@@ -231,15 +236,48 @@ function importConfig(
       });
     }
     const servers = mcpRecord.servers;
-    if (servers === undefined || (typeof servers === 'object' && servers !== null && !Array.isArray(servers) && Object.keys(servers).length === 0)) {
-      warnings.push({ code: 'EMPTY_CONFIG', path, detail: 'no mcp.servers entries; no providers imported' });
-      continue;
-    }
-    if (!servers || typeof servers !== 'object' || Array.isArray(servers)) {
+    const serversValid = servers && typeof servers === 'object' && !Array.isArray(servers);
+    const commands = record.commands;
+    const commandsValid = commands && typeof commands === 'object' && !Array.isArray(commands);
+    const serversEmpty = !serversValid || Object.keys(servers as Record<string, unknown>).length === 0;
+    const commandsEmpty = !commandsValid || Object.keys(commands as Record<string, unknown>).length === 0;
+    if (servers !== undefined && !serversValid) {
       warnings.push({ code: 'CONFIG_JSON_INVALID', path, detail: 'mcp.servers is not an object; no providers imported' });
+    }
+    if (commands !== undefined && !commandsValid) {
+      warnings.push({ code: 'CONFIG_JSON_INVALID', path, detail: 'commands is not an object; no commands imported' });
+    }
+    if (serversEmpty && commandsEmpty) {
+      warnings.push({ code: 'EMPTY_CONFIG', path, detail: 'no mcp.servers or commands entries; nothing imported' });
       continue;
     }
     const fileRef = { path, sha256: sha256Hex(value) };
+    if (commandsValid && !commandsEmpty) {
+      for (const [name, rawEntry] of Object.entries(commands as Record<string, unknown>)) {
+        const entry = rawEntry as Record<string, unknown> | null;
+        if (!entry || typeof entry !== 'object' || Array.isArray(entry) || typeof entry.template !== 'string') {
+          warnings.push({
+            code: 'CONFIG_JSON_INVALID',
+            path,
+            detail: `commands.${name} has no template string; skipped`,
+          });
+          continue;
+        }
+        manifests.push({
+          kind: 'hub-command/1',
+          name,
+          description: typeof entry.description === 'string' ? entry.description : '',
+          sourceHarness: HARNESS,
+          knownCompatible: [],
+          files: [fileRef],
+          harnessSpecific: { path, configKey: name },
+        });
+      }
+    }
+    if (serversEmpty) {
+      checkCanonical(path, stripJsonc(text), record, [...extraKeys, ...mcpExtra], warnings);
+      continue;
+    }
     for (const [name, rawEntry] of Object.entries(servers as Record<string, unknown>)) {
       if (!rawEntry || typeof rawEntry !== 'object' || Array.isArray(rawEntry)) {
         warnings.push({ code: 'PROVIDER_SHAPE_UNKNOWN', path, detail: `mcp.servers.${name} is not an object; skipped` });
@@ -293,7 +331,7 @@ function importConfig(
       }
       const shape = entrySkeleton(entry);
       const credentials = skeletonCredentials(shape);
-      const stripped = skeletonStripped(shape, hasUrl);
+      const stripped = skeletonStripped(shape, hasUrl ? 'url' : undefined);
       if (stripped.length > 0) {
         warnings.push({
           code: 'PROVIDER_VALUES_STRIPPED',
@@ -395,51 +433,119 @@ function exportMarkdown(
   }
 }
 
-function exportProviders(
+// The config file carries two governed sections — mcp.servers and
+// commands.<name> — rebuilt together in the original top-level key order.
+// Commands entries take template and extra keys from the original file;
+// description is the one mapped field. Original entries without a manifest
+// (skipped at import) are preserved verbatim.
+function exportConfig(
+  commands: HubCommand[],
   providers: HubProvider[],
   source: VirtualFiles,
   out: VirtualFiles,
   warnings: AdapterWarning[],
 ): void {
-  const byPath = new Map<string, HubProvider[]>();
-  for (const provider of providers) {
-    const specific = provider.harnessSpecific as { filePath?: unknown };
-    const path = typeof specific.filePath === 'string' ? specific.filePath : 'opencode.json';
-    const list = byPath.get(path) ?? [];
-    list.push(provider);
-    byPath.set(path, list);
-  }
-  for (const [path, list] of byPath) {
+  const paths = new Set<string>();
+  for (const command of commands) paths.add(manifestPath(command) || 'opencode.json');
+  for (const provider of providers) paths.add(manifestPath(provider) || 'opencode.json');
+  for (const path of paths) {
     const sourceText = source[path] === undefined ? undefined : toText(source[path]);
     const record = sourceText === undefined ? undefined : parseJsoncFile(path, sourceText, warnings);
-    const servers = record?.mcp;
-    const mcpServers: Record<string, unknown> = {};
-    for (const provider of list) {
-      const specific = provider.harnessSpecific as { server?: unknown };
-      const serverName = typeof specific.server === 'string' ? specific.server : provider.name;
-      const original =
+    const sections: Record<string, unknown> = {};
+    const fileProviders = providers.filter((provider) => (manifestPath(provider) || 'opencode.json') === path);
+    if (fileProviders.length > 0) {
+      const servers = record?.mcp;
+      const originalServers =
         servers && typeof servers === 'object' && !Array.isArray(servers)
-          ? ((servers as Record<string, unknown>).servers as Record<string, unknown> | undefined)?.[serverName]
+          ? ((servers as Record<string, unknown>).servers as Record<string, unknown> | undefined)
           : undefined;
-      if (!original || typeof original !== 'object' || Array.isArray(original)) {
+      const mcpServers: Record<string, unknown> = {};
+      for (const provider of fileProviders) {
+        const specific = provider.harnessSpecific as { server?: unknown };
+        const serverName = typeof specific.server === 'string' ? specific.server : provider.name;
+        const original = originalServers?.[serverName];
+        if (!original || typeof original !== 'object' || Array.isArray(original)) {
+          warnings.push({
+            code: 'SOURCE_FILE_MISSING',
+            path,
+            detail: `mcp.servers.${serverName}: entry not found in the export file table; provider ${provider.name} not exported`,
+          });
+          continue;
+        }
+        const { entry, missing } = rebuildProviderEntry(original as Record<string, unknown>, provider.name, path, 'mcp.servers', warnings);
+        mcpServers[provider.name] = entry;
+        if (missing.length > 0) {
+          warnings.push({
+            code: 'SECRET_PLACEHOLDER',
+            path,
+            detail: `mcp.servers.${provider.name}: stripped values written as ${REDACTED} placeholders, refill before use: ${missing.join(', ')}`,
+          });
+        }
+      }
+      if (Object.keys(mcpServers).length > 0) sections.mcp = { servers: mcpServers };
+    }
+    const fileCommands = commands.filter((command) => (manifestPath(command) || 'opencode.json') === path);
+    if (fileCommands.length > 0) {
+      const originalCommands =
+        record?.commands && typeof record.commands === 'object' && !Array.isArray(record.commands)
+          ? (record.commands as Record<string, unknown>)
+          : undefined;
+      const rebuiltCommands: Record<string, unknown> = {};
+      const remaining = new Map(fileCommands.map((command) => [command.name, command]));
+      if (originalCommands !== undefined) {
+        for (const [name, originalEntry] of Object.entries(originalCommands)) {
+          const command = remaining.get(name);
+          remaining.delete(name);
+          if (command === undefined) {
+            rebuiltCommands[name] = originalEntry;
+            continue;
+          }
+          const entry: Record<string, unknown> = {};
+          if (originalEntry && typeof originalEntry === 'object' && !Array.isArray(originalEntry)) {
+            for (const [key, value] of Object.entries(originalEntry as Record<string, unknown>)) {
+              if (key !== 'description') entry[key] = value;
+            }
+          }
+          if (command.description !== '') {
+            entry.description = command.description;
+            // Keep the original key order with description back in place.
+            const ordered: Record<string, unknown> = {};
+            let placed = false;
+            for (const key of Object.keys(originalEntry as Record<string, unknown>)) {
+              if (key === 'description') {
+                ordered.description = command.description;
+                placed = true;
+              } else {
+                ordered[key] = entry[key];
+              }
+            }
+            if (!placed) ordered.description = command.description;
+            rebuiltCommands[name] = ordered;
+          } else {
+            rebuiltCommands[name] = entry;
+          }
+        }
+      }
+      for (const [name] of remaining) {
         warnings.push({
           code: 'SOURCE_FILE_MISSING',
           path,
-          detail: `mcp.servers.${serverName}: entry not found in the export file table; provider ${provider.name} not exported`,
-        });
-        continue;
-      }
-      const { entry, missing } = rebuildProviderEntry(original as Record<string, unknown>, provider.name, path, 'mcp.servers', warnings);
-      mcpServers[provider.name] = entry;
-      if (missing.length > 0) {
-        warnings.push({
-          code: 'SECRET_PLACEHOLDER',
-          path,
-          detail: `mcp.servers.${provider.name}: stripped values written as ${REDACTED} placeholders, refill before use: ${missing.join(', ')}`,
+          detail: `commands.${name}: entry not found in the export file table; command not exported`,
         });
       }
+      if (Object.keys(rebuiltCommands).length > 0) sections.commands = rebuiltCommands;
     }
-    if (Object.keys(mcpServers).length > 0) out[path] = canonicalJson({ mcp: { servers: mcpServers } });
+    if (Object.keys(sections).length === 0) continue;
+    let order: string[] = [];
+    if (record !== undefined) {
+      order = Object.keys(record).filter((key) => key in sections);
+    }
+    for (const key of ['mcp', 'commands']) {
+      if (key in sections && !order.includes(key)) order.push(key);
+    }
+    const composed: Record<string, unknown> = {};
+    for (const key of order) composed[key] = sections[key];
+    out[path] = canonicalJson(composed);
   }
 }
 
@@ -447,6 +553,7 @@ export function exportOpencode(manifests: HubManifest[], files: VirtualFiles): E
   const source = normalizedFiles(files);
   const out: VirtualFiles = {};
   const warnings: AdapterWarning[] = [];
+  const configCommands: HubCommand[] = [];
   const providers: HubProvider[] = [];
   for (const manifest of manifests) {
     const parsed = hubManifestSchema.safeParse(manifest);
@@ -467,6 +574,12 @@ export function exportOpencode(manifests: HubManifest[], files: VirtualFiles): E
       });
       continue;
     }
+    // Config-backed commands (commands.<name>) rebuild the config section;
+    // markdown commands rewrite frontmatter like any markdown primitive.
+    if (valid.kind === 'hub-command/1' && typeof (valid.harnessSpecific as { configKey?: unknown }).configKey === 'string') {
+      configCommands.push(valid);
+      continue;
+    }
     const spec = MARKDOWN_SPECS[valid.kind];
     if (spec !== undefined) {
       exportMarkdown(valid, spec, source, out, warnings);
@@ -482,6 +595,6 @@ export function exportOpencode(manifests: HubManifest[], files: VirtualFiles): E
       });
     }
   }
-  exportProviders(providers, source, out, warnings);
+  exportConfig(configCommands, providers, source, out, warnings);
   return { files: out, warnings };
 }

@@ -42,6 +42,8 @@ const { files: outFiles, warnings: exportWarnings } = exportTo(harness, manifest
 | `HOOK_ENTRY_SKIPPED` | 钩子条目跳过（非 command 类型或形状残缺；只报位置和类型名） |
 | `HOOK_COMMAND_PATH` | 钩子命令的程序名是绝对路径，降为 basename |
 | `HOOK_ARG_REDACTED` | 钩子命令某词命中脱敏规则（Bearer、端点、绝对路径、`--x=y`） |
+| `HOOK_ENTRY_DROPPED_ON_EXPORT` | Cursor 专用：原 hooks 文件不在导出文件表里，导入时被跳过的条目无法原样保留 |
+| `SKILL_SHADOWED` | 同名技能被同层别名位置遮蔽（Gemini 的 `.agents/skills/` 优先于 `.gemini/skills/`），只导入会被加载的那份 |
 | `CONFIG_EXTRA_KEYS` | 配置文件里被治理节之外的顶层键；导出时丢弃 |
 | `CONFIG_JSON_INVALID` | 不是合法 JSON / 顶层不是对象 / 节形状错误 |
 | `EMPTY_CONFIG` | 配置文件为空、或被治理的节不存在 / 为空（共享设置文件只对「存在但为空」的节报） |
@@ -68,21 +70,21 @@ const { files: outFiles, warnings: exportWarnings } = exportTo(harness, manifest
 
 | 原语 | Claude Code | Codex | OpenCode | Gemini CLI | Cursor |
 |---|---|---|---|---|---|
-| Skill | `.claude/skills/**/SKILL.md` | `.agents/skills/**/SKILL.md` | `.opencode/skills/`：`SKILL.md` 任意深度、根上 `<id>.md` | `.gemini/skills/<name>/SKILL.md` | `.cursor/skills/**/SKILL.md`、`.agents/skills/<name>/SKILL.md` |
-| Command | `.claude/commands/**.md`（名 `dir:name`） | —（`~/.codex/prompts` 未做） | `.opencode/commands/**.md`（含旧 `command/`；名带 `/`） | `.gemini/commands/**.toml`（名 `dir:name`） | —（未查到用户/工作区级命令目录） |
+| Skill | `.claude/skills/**/SKILL.md` | `.agents/skills/**/SKILL.md` | `.opencode/skills/`：`SKILL.md` 任意深度、根上 `<id>.md`；兼容 `.claude/skills/`、`.agents/skills/` | `.gemini/skills/<name>/SKILL.md`、`.agents/skills/<name>/SKILL.md`（别名优先，被遮蔽报 `SKILL_SHADOWED`） | `.cursor/skills/**/SKILL.md`、`.agents/skills/**/SKILL.md`、`.claude/skills/**/SKILL.md`、`.codex/skills/**/SKILL.md` |
+| Command | `.claude/commands/**.md`（名 `dir:name`） | —（`~/.codex/prompts` 未做） | `.opencode/commands/**.md`（含旧 `command/`；名带 `/`）、配置文件 `commands.<name>`（template 留在文件字节里） | `.gemini/commands/**.toml`（名 `dir:name`） | —（未查到用户/工作区级命令目录） |
 | Agent | `.claude/agents/**.md` | —（`.codex/agents/*.toml` 未做） | `.opencode/agents/**.md`（嵌套计入 id） | `.gemini/agents/*.md` | `.cursor/agents/*.md` |
 | Instruction | `CLAUDE.md`、`CLAUDE.local.md`、`AGENTS.md`、`.claude/rules/**.md`（`paths`→applies） | `AGENTS.md`、`AGENTS.override.md` | `AGENTS.md` | `GEMINI.md` | `AGENTS.md`、`.cursor/rules/*.mdc`（`globs`→applies） |
-| Hook | `.claude/settings.json`、`.claude/settings.local.json` | `.codex/hooks.json` | —（无独立文件；插件代码注册，不导入） | `.gemini/settings.json` | `.cursor/hooks.json` |
-| MCP server | `.mcp.json` 的 `mcpServers` | `.codex/config.toml` 的 `mcp_servers` | `opencode.json(c)` 的 `mcp.servers` | `.gemini/settings.json` 的 `mcpServers` | `.cursor/mcp.json` 的 `mcpServers` |
+| Hook | `.claude/settings.json`、`.claude/settings.local.json` | `.codex/hooks.json` | —（无独立文件；插件代码注册，不导入） | `.gemini/settings.json` | `.cursor/hooks.json`（被跳过的条目导出时原样保留） |
+| MCP server | `.mcp.json` 的 `mcpServers` | `.codex/config.toml` 的 `mcp_servers` | `opencode.json(c)` 的 `mcp.servers`（只认项目根与 `.opencode/`） | `.gemini/settings.json` 的 `mcpServers` | `.cursor/mcp.json` 的 `mcpServers` |
 
 transport 映射：`command`（OpenCode 为 `type: local`）→ `stdio`；Claude `type: http`/`streamable-http`、Codex 只有 url、OpenCode `type: remote`、Gemini `httpUrl` → `streamable-http`；Claude 的 sse/ws、Gemini 的 `url`（SSE）、Cursor 的 `url`（文档写 HTTP 或 SSE，未钉死）→ transport 留空并告警。
 
 ### 各家明确不做的
 
 - Codex：`.codex/agents/*.toml`、`~/.codex/prompts`（deprecated 的 custom prompts）。
-- OpenCode：hooks（无独立文件）；兼容目录 `.claude/skills`、`.agents/skills` 里的内容归各自 harness 的适配器管。
+- OpenCode：hooks（无独立文件，插件代码注册；hub-hook/1 导出报 `NO_HARNESS_PROJECTION`）。兼容目录 `.claude/skills`、`.agents/skills` 会导入（同一目录被多家各自导入是正常的，`sourceHarness` 不同，不去重）。
 - Gemini：`settings.json` 的 `context.fileName` 指向的别名 instruction 文件不解析，只认 `GEMINI.md`；一个文件里多个远程代理的 YAML 列表超出 frontmatter 子集。
-- Cursor：commands（未查到目录）；兼容目录 `.claude/agents`、`.codex/agents` 等归各自 harness 的适配器管。
+- Cursor：commands（未查到目录）；agents 的兼容目录 `.claude/agents`、`.codex/agents` 不导入（归各自 harness 的适配器管；skills 的兼容目录会导入，见矩阵）。
 
 ## 测试
 

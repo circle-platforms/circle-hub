@@ -110,12 +110,11 @@ test('Cursor round trip: unchanged manifests reproduce the originals except stri
     '.cursor/skills/review/SKILL.md',
     '.agents/skills/shared/SKILL.md',
     '.cursor/agents/helper.md',
+    '.cursor/hooks.json',
   ];
   for (const path of byteIdentical) {
     assert.equal(exported.files[path], fixture[path], path);
   }
-  // hooks.json differs: the skipped prompt entry is not governed and does
-  // not come back (covered in the hooks round-trip test).
   const mcp = JSON.parse(exported.files['.cursor/mcp.json'] as string) as { mcpServers: Record<string, any> };
   assert.deepEqual(mcp.mcpServers['local-runner'].env, { RUNNER_KEY: '[redacted]' });
   assert.equal(mcp.mcpServers['remote-hub'].url, '[redacted]');
@@ -126,7 +125,7 @@ test('Cursor round trip: unchanged manifests reproduce the originals except stri
   );
 });
 
-test('Cursor round trip: hooks.json keeps version and extra keys from the original', () => {
+test('Cursor round trip: hooks.json keeps version, extra keys and skipped prompt entries', () => {
   const exported = exportTo('cursor', imported.manifests, fixture);
   const hooks = JSON.parse(exported.files['.cursor/hooks.json'] as string) as {
     version: number;
@@ -134,8 +133,36 @@ test('Cursor round trip: hooks.json keeps version and extra keys from the origin
   };
   assert.equal(hooks.version, 1);
   assert.deepEqual(hooks.hooks.beforeShellExecution, [{ command: 'sh scripts/verify-command.sh', timeout: 10 }]);
-  // The skipped prompt entry is not part of the manifests and does not return.
+  // The prompt entry was skipped at import but is preserved from the
+  // original bytes on export: a round trip never loses entries.
+  assert.deepEqual(hooks.hooks.sessionStart, [
+    { command: 'sh scripts/boot.sh' },
+    { type: 'prompt', prompt: 'synthetic prompt text' },
+  ]);
+});
+
+test('Cursor export: without the original hooks file, skipped entries cannot be preserved', () => {
+  const exported = exportTo('cursor', imported.manifests, {});
+  const hooks = JSON.parse(exported.files['.cursor/hooks.json'] as string) as {
+    version?: number;
+    hooks: Record<string, unknown[]>;
+  };
+  assert.equal(hooks.version, undefined);
   assert.deepEqual(hooks.hooks.sessionStart, [{ command: 'sh scripts/boot.sh' }]);
+  assert.ok(exported.warnings.some((warning) => warning.code === 'HOOK_ENTRY_DROPPED_ON_EXPORT' && warning.path === '.cursor/hooks.json'));
+});
+
+test('Cursor import: recursive .agents skills and .claude/.codex compat dirs are imported', () => {
+  const result = importFrom('cursor', {
+    '.agents/skills/category/deep-skill/SKILL.md': '---\nname: deep-skill\ndescription: Nested agents skill\n---\n\nBody.\n',
+    '.claude/skills/from-claude/SKILL.md': '---\nname: from-claude\ndescription: Claude compat\n---\n\nBody.\n',
+    '.codex/skills/from-codex/SKILL.md': '---\nname: from-codex\ndescription: Codex compat\n---\n\nBody.\n',
+  });
+  assert.deepEqual(
+    result.manifests.map((manifest) => (manifest as HubSkill).name).sort(),
+    ['deep-skill', 'from-claude', 'from-codex'],
+  );
+  assert.deepEqual(result.warnings, []);
 });
 
 test('Cursor import: empty configs are reported', () => {

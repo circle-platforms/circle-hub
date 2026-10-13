@@ -785,3 +785,9 @@ provider 已声明产品线但没有 alias 的，回落包 prefix/packageId；�
 成功终态也如实写 remoteLeaseReleased，失败释放写 false/leaseReleaseError；拒绝体有 task_id/dispatched:true、成功 submit 后 status 命中契约诊断都保持 unknown、不释放。维护者又提供跨设备相同命令被误判的统计（仅记数字：五例、十六步，不存真实日志/地址），先写设备归属方法复现 **0/3**。改为接收 {environment,topology} 原件，按 conf.device_ips 或 topology.applies_to.device_ssh_ips 顺序映射 APV_n；不唯一/缺失不猜。每设备独立推进日志游标，不再要求命令整例唯一。主机行维持主机归属，检查点/整案结论不替代设备步证据。
 
 合成方法与真实 worker 回报链：同命令跨两设备、同设备重复、仅缺 APV_1 命令、环境/拓扑两种映射、映射缺失/重复/冲突；专项 **21/21**、执行链联合 **41/41**，另空/null task_id 不许断言未派发方法 **1/1**，无 skip，typecheck/diff 通过。按需拓扑为已持租约内只读，原件随 gateway-results 入 B；取不到时仍可交付逐步 unknown/partial，不能标 observed。解析暂在 packs/apv，接口留给独立产品包 Tool 后续接管，未移动/修改私有产品包。完整冻结回归另跑；没有真实网关/设备投递。
+
+## 56：合入已确认的适配器第四轮
+
+按维护者授权签署 merge **ab12ed4**：SKILL_SHADOWED/HOOK_ENTRY_DROPPED_ON_EXPORT、OpenCode commands 配置、兼容 Skill 目录、导出时保留被略过 Hook。实际三方合并仅十二个适配器/其测试与该简报文件，没有冲突；不自行编辑分工库或权限规范。main 后续第五轮内容尚未在此笔吸入。方法/typecheck/归档核验结果另记；当前队列与分页负例保留工作区，不纳入 merge。
+
+合并后的方法 **145/145**、references **7/7**、typecheck 与 **714** 归档核验通过，无 skip。packages/harness-adapters 与 ab12ed4 字节相同，permission-export.md 未改。完整冻结验收从该 merge 单独运行，排除队列/分页未通过复现。

@@ -41,6 +41,9 @@ const SETTINGS_PATH = '.gemini/settings.json';
 // default name). Hooks and MCP servers share `.gemini/settings.json`.
 // User-level (~/.gemini) files are never part of the virtual file table.
 const SKILL_ENTRY = /^\.gemini\/skills\/([^/]+)\/SKILL\.md$/;
+// .agents/skills is the documented same-layer alias of .gemini/skills; the
+// alias wins on a name collision and the shadowed file is reported.
+const SKILL_ALIAS = /(?:^|\/)\.agents\/skills\/([^/]+)\/SKILL\.md$/;
 const COMMAND_FILE = /^\.gemini\/commands\/(.+)\.toml$/;
 const AGENT_FILE = /^\.gemini\/agents\/([^/]+)\.md$/;
 const INSTRUCTION_FILE = /(^|\/)GEMINI\.md$/;
@@ -70,9 +73,36 @@ function importSkills(
   warnings: AdapterWarning[],
   claimed: Set<string>,
 ): void {
+  // Collect candidates per skill name; the .agents alias wins over .gemini.
+  const candidates = new Map<string, { path: string; value: string | Uint8Array }>();
+  const shadowed: string[] = [];
   for (const [path, value] of Object.entries(files)) {
-    const match = SKILL_ENTRY.exec(path);
-    if (!match) continue;
+    const own = SKILL_ENTRY.exec(path);
+    const alias = SKILL_ALIAS.exec(path);
+    if (!own && !alias) continue;
+    const name = (own ?? alias)![1];
+    const existing = candidates.get(name);
+    if (existing === undefined) {
+      candidates.set(name, { path, value });
+      continue;
+    }
+    const existingIsAlias = SKILL_ALIAS.test(existing.path);
+    const currentIsAlias = alias !== null;
+    if (currentIsAlias && !existingIsAlias) {
+      shadowed.push(existing.path);
+      candidates.set(name, { path, value });
+    } else {
+      shadowed.push(path);
+    }
+  }
+  for (const winnerPath of shadowed) {
+    claimed.add(winnerPath);
+    const directory = dirName(winnerPath);
+    for (const other of Object.keys(files)) {
+      if (other !== winnerPath && other.startsWith(`${directory}/`)) claimed.add(other);
+    }
+  }
+  for (const [name, { path, value }] of candidates) {
     claimed.add(path);
     const directory = dirName(path);
     const fileRefs = [{ path, sha256: sha256Hex(value) }];
@@ -82,7 +112,7 @@ function importSkills(
         fileRefs.push({ path: other, sha256: sha256Hex(otherValue) });
       }
     }
-    const derived = deriveMarkdown(path, toText(value), match[1], SKILL_SPEC, warnings);
+    const derived = deriveMarkdown(path, toText(value), name, SKILL_SPEC, warnings);
     manifests.push({
       kind: 'hub-skill/1',
       name: derived.neutral.name!,
@@ -96,6 +126,15 @@ function importSkills(
       knownCompatible: [],
       files: fileRefs,
       harnessSpecific: markdownHarnessSpecific(path, derived),
+    });
+  }
+  for (const path of shadowed) {
+    const name = baseName(dirName(path));
+    const winner = [...candidates.values()].find((candidate) => baseName(dirName(candidate.path)) === name);
+    warnings.push({
+      code: 'SKILL_SHADOWED',
+      path,
+      detail: `skill "${name}" is shadowed by the same-layer alias and not loaded by Gemini: ${winner?.path ?? ''}`,
     });
   }
 }

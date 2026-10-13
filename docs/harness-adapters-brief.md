@@ -52,6 +52,14 @@ circle-hub 治理任何 harness 的原语（规范见 `docs/design/harness-primi
 - Gemini CLI：commands 是 TOML——prompt 是正文不进清单，description 是唯一映射字段；description 改了时按原键序重写该键、其余键从原文件带回；多行 `"""` 基本字符串已支持，重写时规范为单行基本字符串。agents 的 tools 通配符（`*`、`mcp_*`）原样保留不展开。settings.json 同文件装 hooks 与 mcpServers：两个 importer 共享该文件，extra keys 与 canonical 检查只报一次；文件为空报一次 EMPTY_CONFIG；只有其它键（两节都不在）只报 CONFIG_EXTRA_KEYS。SSE（`url`）transport 留空并报 PROVIDER_TRANSPORT_UNKNOWN。`context.fileName` 指向的别名 instruction 不解析，只认 GEMINI.md。一个文件里多个远程代理的 YAML 列表超出 frontmatter 子集：会报 FRONTMATTER_LINE_SKIPPED 并按文件名推导 name。
 - Cursor：commands 未查到用户/工作区级目录，不做（导出 hub-command/1 报 NO_HARNESS_PROJECTION）。rules `*.mdc` 的 `globs` → applies；description、alwaysApply 留在未映射键。hooks.json 的 `prompt` 类型跳过；version 从原文件带回。agent 的 `readonly` 不是工具白名单，tools 留空。技能 frontmatter 的 `paths` 是文件范围不是 triggers，留在未映射键。mcp.json：command（type 省略或 `stdio`）→ stdio；只有 url → transport 留空（文档写 HTTP 或 SSE，未钉死）。兼容目录 `.claude/agents`、`.codex/agents` 不导入（归各自适配器）。
 
+## 待定（第四轮收口）
+
+- OpenCode `commands.<name>`：template 留在配置文件字节里，清单 harnessSpecific 记 `path` + `configKey`；description 是唯一映射字段，导出写回同一节（template 与其余键从原文件合回，无清单的原始条目原样保留）。无 template 的条目跳过并报 CONFIG_JSON_INVALID。`opencode.json(c)` 只认项目根与 `.opencode/`，子目录里的同名文件报 UNRECOGNIZED_FILE。
+- Gemini `.agents/skills/` 是 `.gemini/skills/` 的同层别名：同名时只导入别名那份（会被实际加载），另一份报 SKILL_SHADOWED。
+- Cursor 技能位置补齐：`.cursor/skills/**`、`.agents/skills/**`（递归）、兼容 `.claude/skills/**`、`.codex/skills/**`；OpenCode 补齐兼容 `.claude/skills/**`、`.agents/skills/**`。同一目录被多家各自导入是正常的（sourceHarness 不同），不去重。
+- Cursor 被跳过的钩子条目（prompt 等）：导入跳过不变；导出时从原文件原样保留，往返不少条目；原文件缺失时报 HOOK_ENTRY_DROPPED_ON_EXPORT。
+- PROVIDER_VALUES_STRIPPED 的 detail 写实际键名（`httpUrl` 就写 `httpUrl`，不再统一写 url）。
+
 ## 复核第一轮（Claude 与独立复核人，2026-10-13，对 b544336）
 
 tsc 与 50 个测试通过；fixture 卫生合格；hooks / `.mcp.json` / `[mcp_servers]` 的基本形状对。下面是必须改的，按决定写，不是建议。改完升到第二轮提交，测试覆盖每一条。
@@ -106,3 +114,13 @@ A–F 基本到位；下面是第三轮要收口的，都是决定：
 4. `emitToml` 只有子表时不写空的 `[mcp_servers]` 头。
 5. `.claude/rules/` 递归发现（子目录里的 `*.md` 也是规则）；`.claude/agents/` 的子目录文件也导入（身份不随子目录改变）。
 6. 测试补：以上每条各一个失败路径；Codex 只有 url 的条目往返；`streamable-http` 别名；钩子命令里的 `Bearer x` 和 URL 不进清单；`headersHelper` 值不进清单；子目录 rules / agents。
+
+## 复核第三轮（Claude 与独立复核人，2026-10-13，对 c018cf9）
+
+三家字段无编造，脱敏与往返实测成立，README 与代码一致；已合入 main。第四轮收口（都是决定）：
+
+1. OpenCode：配置文件里的 `commands.<name>`（必有 `template`）与 `.opencode/commands/*.md` 是同一原语的两种写法——导入为 `hub-command/1`（entry 指向配置文件 + 键名），导出写回同一节；不再当作 `CONFIG_EXTRA_KEYS`。`opencode.json(c)` 只认项目根与 `.opencode/`，不吃子目录。
+2. 每个适配器导入它那个 harness **实际会加载**的全部位置（按调查）：Gemini 加 `.agents/skills/`（同层别名优先于 `.gemini/skills/`，同名时只导入会被加载的那份，另一份报 `SKILL_SHADOWED`）；Cursor 的 `.agents/skills/` 递归，并加 `.claude/skills/`、`.codex/skills/` 兼容目录；OpenCode 加 `.claude/skills/`、`.agents/skills/`。同一目录被多家各自导入是正常的（`sourceHarness` 不同），不去重。
+3. `PROVIDER_VALUES_STRIPPED` 的 detail 写实际键名（`httpUrl` 就写 `httpUrl`）。
+4. Cursor 的 `prompt` 钩子：跳过不变，但导出时把原文件中被跳过的条目原样保留（它们在 files 里），不要让往返少条目；做不到就报 `HOOK_ENTRY_DROPPED_ON_EXPORT`。
+5. README 覆盖矩阵随之更新；每条一个失败路径测试。
