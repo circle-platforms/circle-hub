@@ -302,7 +302,7 @@ export function skeletonStripped(shape: EntrySkeleton, hasEndpoint: boolean): st
   return stripped;
 }
 
-function sanitizeCommandValue(
+export function sanitizeCommandValue(
   command: unknown,
   path: string,
   name: string,
@@ -637,4 +637,174 @@ function originalHookEntry(
   const entry = entries[specific.entryIndex ?? 0];
   if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return undefined;
   return entry as Record<string, unknown>;
+}
+
+// Shared importer/exporter for the JSON `mcpServers` shape (Claude Code
+// .mcp.json, Gemini settings.json, Cursor mcp.json). The transport decision
+// is harness-specific and injected; disclosure warnings, skeleton building
+// and the rebuild-from-original export rule are shared.
+
+export interface TransportDecision {
+  transport?: 'stdio' | 'streamable-http';
+  skip?: boolean;
+}
+
+export interface McpServersJsonOptions {
+  governedKeys?: string[];
+  skipExtraKeysCheck?: boolean;
+  skipCanonicalCheck?: boolean;
+  emptyOk?: boolean;
+  decideTransport: (
+    entry: Record<string, unknown>,
+    context: { name: string; path: string; warnings: AdapterWarning[] },
+  ) => TransportDecision;
+}
+
+export function importMcpServersJson(
+  harness: string,
+  path: string,
+  files: VirtualFiles,
+  manifests: HubManifest[],
+  warnings: AdapterWarning[],
+  claimed: Set<string>,
+  options: McpServersJsonOptions,
+): void {
+  if (!(path in files)) return;
+  claimed.add(path);
+  const text = toText(files[path]);
+  if (text.trim() === '') {
+    warnings.push({ code: 'EMPTY_CONFIG', path, detail: 'file is empty; no providers imported' });
+    return;
+  }
+  const record = parseJsonFile(path, text, warnings);
+  if (record === undefined) return;
+  const governedKeys = options.governedKeys ?? ['mcpServers'];
+  const extraKeys = Object.keys(record).filter((key) => !governedKeys.includes(key));
+  if (!options.skipExtraKeysCheck && extraKeys.length > 0) {
+    warnings.push({
+      code: 'CONFIG_EXTRA_KEYS',
+      path,
+      detail: `keys not governed as hub providers and dropped on export: ${extraKeys.join(', ')}`,
+    });
+  }
+  if (record.mcpServers !== undefined && (typeof record.mcpServers !== 'object' || record.mcpServers === null || Array.isArray(record.mcpServers))) {
+    warnings.push({ code: 'CONFIG_JSON_INVALID', path, detail: 'mcpServers is not an object; no providers imported' });
+    return;
+  }
+  if (record.mcpServers === undefined && options.emptyOk) {
+    if (!options.skipCanonicalCheck) checkCanonical(path, text, record, extraKeys, warnings);
+    return;
+  }
+  const servers = (record.mcpServers ?? {}) as Record<string, unknown>;
+  if (Object.keys(servers).length === 0) {
+    warnings.push({ code: 'EMPTY_CONFIG', path, detail: 'mcpServers section is empty; no providers imported' });
+    return;
+  }
+  const fileRef = { path, sha256: sha256Hex(files[path]) };
+  for (const [name, rawEntry] of Object.entries(servers)) {
+    if (!rawEntry || typeof rawEntry !== 'object' || Array.isArray(rawEntry)) {
+      warnings.push({ code: 'PROVIDER_SHAPE_UNKNOWN', path, detail: `mcpServers.${name} is not an object; skipped` });
+      continue;
+    }
+    const entry = rawEntry as Record<string, unknown>;
+    const decision = options.decideTransport(entry, { name, path, warnings });
+    if (decision.skip) continue;
+    if (typeof entry.command === 'string' && entry.command !== '') {
+      sanitizeCommandValue(entry.command, path, name, warnings, 'mcpServers');
+      sanitizeArgs(entry.args, path, name, warnings, 'mcpServers');
+    }
+    if ('cwd' in entry) {
+      warnings.push({
+        code: 'PROVIDER_CWD_DROPPED',
+        path,
+        detail: `mcpServers.${name} cwd is a machine-local directory and was removed from the manifest`,
+      });
+    }
+    const hasEndpoint = URL_KEYS.some((key) => typeof entry[key] === 'string' && (entry[key] as string) !== '');
+    const shape = entrySkeleton(entry);
+    const credentials = skeletonCredentials(shape);
+    const stripped = skeletonStripped(shape, hasEndpoint);
+    if (stripped.length > 0) {
+      warnings.push({
+        code: 'PROVIDER_VALUES_STRIPPED',
+        path,
+        detail: `mcpServers.${name}: values kept out of the manifest (key names preserved): ${stripped.join(', ')}`,
+      });
+    }
+    manifests.push({
+      kind: 'hub-provider/1',
+      name,
+      ...(decision.transport !== undefined ? { transport: decision.transport } : {}),
+      reads: [],
+      writes: [],
+      credentials,
+      sourceHarness: harness,
+      knownCompatible: [],
+      files: [fileRef],
+      harnessSpecific: { filePath: path, server: name, shape },
+    });
+  }
+  if (!options.skipCanonicalCheck) checkCanonical(path, text, record, extraKeys, warnings);
+}
+
+// Rebuild the mcpServers object for one file from manifests plus the
+// original file bytes. Returns undefined when no entry could be rebuilt.
+export function buildMcpServersObject(
+  providers: HubManifest[],
+  path: string,
+  source: VirtualFiles,
+  warnings: AdapterWarning[],
+  serversKey: string,
+): Record<string, unknown> {
+  const sourceText = source[path] === undefined ? undefined : toText(source[path]);
+  const record = sourceText === undefined ? undefined : parseJsonFile(path, sourceText, warnings);
+  const servers =
+    record && record.mcpServers && typeof record.mcpServers === 'object' && !Array.isArray(record.mcpServers)
+      ? (record.mcpServers as Record<string, unknown>)
+      : undefined;
+  const mcpServers: Record<string, unknown> = {};
+  for (const provider of providers) {
+    const specific = provider.harnessSpecific as { server?: unknown };
+    const serverName = typeof specific.server === 'string' ? specific.server : (provider as { name: string }).name;
+    const original = servers?.[serverName];
+    if (!original || typeof original !== 'object' || Array.isArray(original)) {
+      warnings.push({
+        code: 'SOURCE_FILE_MISSING',
+        path,
+        detail: `mcpServers.${serverName}: entry not found in the export file table; provider ${(provider as { name: string }).name} not exported`,
+      });
+      continue;
+    }
+    const { entry, missing } = rebuildProviderEntry(original as Record<string, unknown>, (provider as { name: string }).name, path, serversKey, warnings);
+    mcpServers[(provider as { name: string }).name] = entry;
+    if (missing.length > 0) {
+      warnings.push({
+        code: 'SECRET_PLACEHOLDER',
+        path,
+        detail: `mcpServers.${(provider as { name: string }).name}: stripped values written as ${REDACTED} placeholders, refill before use: ${missing.join(', ')}`,
+      });
+    }
+  }
+  return mcpServers;
+}
+
+export function exportMcpServersJson(
+  defaultPath: string,
+  providers: HubManifest[],
+  source: VirtualFiles,
+  out: VirtualFiles,
+  warnings: AdapterWarning[],
+): void {
+  const byPath = new Map<string, HubManifest[]>();
+  for (const provider of providers) {
+    const specific = provider.harnessSpecific as { filePath?: unknown };
+    const path = typeof specific.filePath === 'string' ? specific.filePath : defaultPath;
+    const list = byPath.get(path) ?? [];
+    list.push(provider);
+    byPath.set(path, list);
+  }
+  for (const [path, list] of byPath) {
+    const mcpServers = buildMcpServersObject(list, path, source, warnings, 'mcpServers');
+    if (Object.keys(mcpServers).length > 0) out[path] = canonicalJson({ mcpServers });
+  }
 }
