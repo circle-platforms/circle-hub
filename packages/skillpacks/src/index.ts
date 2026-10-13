@@ -16,6 +16,7 @@ import {metadataVisibility} from '../../assets/src/index.ts';
 import type {RegistryPageQuery} from '../../contracts/src/index.ts';
 import {resolveTrust} from '../../connectors/src/private-http.ts';
 import {deriveCircleSkill} from './neutral.ts';
+import {approvedRuntimeRevision,boundRuntimeRevision,type RuntimeBinding} from '../../assets/src/runtime-revisions.ts';
 
 function summarizeTools(names:string[]):string{
   const shown:string[]=[];let length=0;
@@ -104,9 +105,9 @@ export class SkillPacks {
     await tx.query('UPDATE skill_packages SET status=$2 WHERE skill_pack_id=$1',[row.skill_pack_id,answer.approve?'registered':'declined']);
     await tx.query("UPDATE tasks SET result_status='succeeded',result=$2 WHERE task_id=$1",[task.taskId,JSON.stringify({skillPackId:row.skill_pack_id,digest:row.digest})]);await this.tasks.stage(tx,task,'delivered','done','task.delivered',{status:answer.approve?'registered':'declined',digest:row.digest});
   }
-  async runtimeBinding(tx:Transaction,ctx:AuthContext,scope:string){
-    requireCondition(this.runtime&&this.runtimeDigest,'SOURCE_UNREACHABLE','Circle runtime profile is not configured');const profile=(await tx.query("SELECT a.*,v.* FROM assets a JOIN asset_versions v ON v.asset_id=a.asset_id AND v.version=a.current_version WHERE a.tenant_id=$1 AND a.scope_id=$2 AND a.kind='runtime-profile' AND v.configuration->>'profileType'='runtime' AND v.configuration->>'profileRef'='circle-runtime'",[ctx.tenantId,scope])).rows[0];
-    requireCondition(profile&&['approved','running'].includes(profile.lifecycle)&&profile.approved_digest===profile.sha256&&profile.configuration.profileSha256===this.runtimeDigest,'SOURCE_NOT_APPROVED','Circle runtime requires its current independently approved profile');await this.assets.row(ctx,profile.asset_id,tx);
+  async runtimeBinding(tx:Transaction,ctx:AuthContext,scope:string,binding?:RuntimeBinding){
+    requireCondition(this.runtime&&this.runtimeDigest,'SOURCE_UNREACHABLE','Circle runtime profile is not configured');const profile=binding?await boundRuntimeRevision(this.store,ctx,scope,binding,this.runtimeDigest,tx):await approvedRuntimeRevision(this.store,ctx,scope,'runtime','circle-runtime',tx);
+    requireCondition(profile&&profile.configuration.profileSha256===this.runtimeDigest,'SOURCE_NOT_APPROVED','Circle runtime requires an independently approved matching profile');await this.assets.versionRow(ctx,profile.asset_id,profile.version,tx);
     return {assetId:profile.asset_id,version:profile.version,sha256:profile.sha256,profileSha256:this.runtimeDigest};
   }
   async run(ctx:AuthContext,id:string,value:unknown,origin='manual',transaction?:Transaction):Promise<any>{
@@ -124,7 +125,7 @@ export class SkillPacks {
     const row=await this.row(ctx,spec.args.skillPackId,'skillpacks.run',tx),asset=await this.assets.row(ctx,row.asset_id,tx);
     requireCondition(row.status==='registered'&&['approved','running'].includes(asset.lifecycle)&&asset.approved_digest===asset.sha256,'APPROVAL_REQUIRED','Package registration is not active');
     requireCondition(row.scope_id===scope&&task.principalId===ctx.principalId&&task.capabilityPackId==='skill-run'&&task.input.digest===row.digest&&spec.args.digest===row.digest&&asset.asset_id===spec.target&&asset.sha256===(spec.targetIdentity??spec.target_identity)&&canonicalHash(task.input.inputs)===canonicalHash(spec.args.inputs),'APPROVAL_STALE','Runtime input or package target differs');
-    await this.checkWithDetails(ctx,row.manifest,row.trial,tx);const runtimeProfile=await this.runtimeBinding(tx,ctx,scope);requireCondition(task.input.runtimeProfile&&canonicalHash(task.input.runtimeProfile)===canonicalHash(runtimeProfile),'APPROVAL_STALE','Runtime profile differs from the accepted run binding');
+    await this.checkWithDetails(ctx,row.manifest,row.trial,tx);requireCondition(task.input.runtimeProfile,'SOURCE_NOT_APPROVED','Run has no frozen runtime authority');const runtimeProfile=await this.runtimeBinding(tx,ctx,scope,task.input.runtimeProfile);
     return {effects:{reads:['registered-assets'],writes:['artifacts-evidence']},skillPackId:row.skill_pack_id,manifest:row.manifest,files:row.files,runtime:this.runtime,runtimeProfile,scopeId:row.scope_id};
   }
   async preflight(tx:Transaction,ctx:AuthContext,operation:any,authorization:any):Promise<any>{

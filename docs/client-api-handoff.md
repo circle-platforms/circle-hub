@@ -478,6 +478,8 @@ GET /v1/queues 返回 awaitingMyApproval/awaitingMyInput/submittedByMe/assignedT
 
 模型上游规则修正：runtime-profile 的模型端点是批准 allowlist，回环脚本模型仅为验收配置；非回环 HTTPS 可用，非回环认证 HTTP 拒绝。运行配置 model.kind 支持 scripted/remote，可加 caFile/caSha256；有自定义 CA 时验证实际 DER SHA/主机名，仍可用正常系统 CA。每次 run 冻结 runtimeProfile:{assetId,version,sha256,profileSha256}，派发前重核，换版本不会悄悄替换旧运行的模型端点。worker 的私有通道把对应端点交可信代理，sandbox 只见回环代理。模型原件/流量仍不属于 evidence。gateway.health 使用独立 gateway-health 资源，不占或解冻用例执行资源；lease_status 正常仍只证明链路读确认。
 
+Circle runtime 的新受理从同一 scope 的 circle-runtime 资产修订中选最新已 approved/running 且 approved_digest 等于该修订 SHA 的版本；登记草稿不会改变这个选择。已受理/已派发任务每次 preflight 核对自己冻结的 assetId/version/sha256/profileSha256，旧修订仍获批准且摘要与进程配置一致时继续，批准同配置的新修订不会终止它。新受理改用新的批准版本。停用旧修订可 POST /v1/assets/{id}/lifecycle，带旧 version/sha256/state=disabled，仅该资产所有者且当前有 assets.change 可做；只对 runtime-profile 开放历史修订停用。被停用或摘要与进程配置不再匹配时，worker 终止本地 Circle，观察本地退出并保持 remoteStoppingVerified=false/unknown，按现有核对路径处理。未配自定义 CA 的 HTTPS 使用系统信任库和主机名校验；要固定 CA 时同时配置 caFile/caSha256。
+
 ## 修订 3 第 9 节：中立原语与 MCP
 
 Circle 的 POST /v1/skillpacks 仍收原 body，响应增加 neutralManifest（hub-skill/1）。名称/描述/入口从 frontmatter 与清单推导，inputs 为声明输入名、outputs/triggers/tools 保留原清单；无法推导的为空，不把 harness 特有字段删出原件。knownCompatible 初始空；成功的固定 Circle 运行另存 harness/runtimeCommit/evidenceId/taskId 观察，GET skillpacks/{id} 与列表投影显示它，冻结提交原件与 digest 不改。

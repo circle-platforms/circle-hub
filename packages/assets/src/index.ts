@@ -32,6 +32,10 @@ export class Assets {
     const row=(await (tx??this.store.pool).query(`SELECT a.*,v.* FROM ${join} WHERE ${visibility} AND a.asset_id=$4`,[policy.tenantId,policy.scopes,policy.principalId,id])).rows[0];
     requireCondition(row,'ASSET_NOT_VISIBLE','Asset is not visible to the authenticated principal');return row;
   }
+  async versionRow(ctx:AuthContext,id:string,version:string,tx?:Transaction):Promise<any>{
+    const policy=await this.auth.check(ctx,'assets.read',undefined,tx),row=(await(tx??this.store.pool).query(`SELECT a.*,v.* FROM assets a JOIN asset_versions v USING(asset_id) WHERE ${visibility} AND a.asset_id=$4 AND v.version=$5`,[policy.tenantId,policy.scopes,policy.principalId,id,version])).rows[0];
+    requireCondition(row,'ASSET_NOT_VISIBLE','Asset revision is not visible to the authenticated principal');return row;
+  }
   async metadataPolicy(ctx:AuthContext,tx?:Transaction){const p=await this.auth.policy(ctx,tx),readScopes=p.scopes.filter(scope=>p.scopeGrants?.[scope]?.includes('assets.read')),approveScopes=p.scopes.filter(scope=>p.scopeGrants?.[scope]?.includes('assets.approve'));requireCondition(readScopes.length||approveScopes.length,'FORBIDDEN_ACTION','Scope role does not permit asset metadata');return [p.tenantId,readScopes,p.principalId,!!readScopes.length,approveScopes];}
   // Governance visibility exposes only the submitted definition. Data readers,
   // credentials and execution consumers keep using the strict row() authority.
@@ -72,9 +76,10 @@ export class Assets {
     };return tx?run(tx):this.store.transaction(run);
   }
   async transition(ctx:AuthContext,id:string,input:{version:string;sha256:string;state:string}):Promise<any>{if(this.governedTransition&&['approved','declined'].includes(input.state))return this.governedTransition(ctx,id,input);return this.store.transaction(async tx=>{
-    const load=input.state==='approved'?()=>this.metadataRow(ctx,id,tx):()=>this.row(ctx,id,tx);
+    const load=input.state==='approved'?()=>this.metadataRow(ctx,id,tx):input.state==='disabled'?()=>this.versionRow(ctx,id,input.version,tx):()=>this.row(ctx,id,tx);
     await load();await tx.query('SELECT 1 FROM assets WHERE asset_id=$1 FOR UPDATE',[id]);const row=await load();
     requireCondition(!['scope-role','scope-policy'].includes(row.kind),'FORBIDDEN_ACTION','Scope role and policy submissions require a change-set decision');
+    requireCondition(row.current_version===row.version||row.kind==='runtime-profile'&&input.state==='disabled','APPROVAL_STALE','Only runtime profile deactivation may target a historical revision');
     requireCondition(row.version===input.version&&row.sha256===input.sha256,'APPROVAL_STALE','Asset version or digest differs');
     if(input.state==='approved'){
       await this.auth.check(ctx,'assets.approve',row.scope_id,tx);const eligibility=await this.auth.roles.eligibility(ctx,row.scope_id,row.owner_principal_id,tx);requireCondition(eligibility.eligible,'SELF_APPROVAL','Scope policy requires an independent reviewer');
@@ -89,7 +94,7 @@ export class Assets {
     }
     await this.auth.audit(ctx,'assets.lifecycle',{assetId:id,version:row.version,sha256:row.sha256,state:input.state},row.scope_id,tx);
     await this.dependencyChanged?.(tx,row.tenant_id,row.scope_id);
-    return this.view((await tx.query(`SELECT a.*,v.* FROM ${join} WHERE a.asset_id=$1`,[id])).rows[0]);
+    return this.view((await tx.query(`SELECT a.*,v.* FROM assets a JOIN asset_versions v USING(asset_id) WHERE a.asset_id=$1 AND v.version=$2`,[id,row.version])).rows[0]);
   });}
   async credential(ctx:AuthContext,id:string,input:{version:string;value:string;ownerPrincipalId?:string;mode?:'static-secret'},metadata:Record<string,unknown>={},credentialAssetId?:string):Promise<any>{
     const parent=await this.row(ctx,id);await this.auth.check(ctx,'credentials.register',parent.scope_id);
