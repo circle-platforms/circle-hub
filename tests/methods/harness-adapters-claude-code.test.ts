@@ -53,14 +53,17 @@ test('Claude Code import: skill frontmatter maps to hub-skill/1 and proprietary 
   assert.equal(skill.model, undefined);
   assert.equal(skill.sourceHarness, 'claude-code');
   assert.deepEqual(skill.knownCompatible, []);
-  const specific = skill.harnessSpecific as {
-    path: string;
-    frontmatter: Record<string, string>;
-    files: Record<string, string>;
-  };
+  // Bytes stay out of the manifest: files carries path + sha256 references,
+  // harnessSpecific carries locations and unmapped frontmatter keys only.
+  assert.deepEqual(
+    skill.files.map((file) => file.path),
+    ['.claude/skills/review-code/SKILL.md', '.claude/skills/review-code/scripts/check.sh'],
+  );
+  for (const file of skill.files) assert.match(file.sha256, /^[0-9a-f]{64}$/);
+  const specific = skill.harnessSpecific as { path: string; frontmatter: Record<string, string> };
   assert.equal(specific.path, '.claude/skills/review-code/SKILL.md');
   assert.deepEqual(specific.frontmatter, { 'x-team': 'meridian' });
-  assert.deepEqual(Object.keys(specific.files), ['scripts/check.sh']);
+  assert.equal(JSON.stringify(skill.harnessSpecific).includes('# Review code'), false);
 });
 
 test('Claude Code import: command, agent and instruction map their fields', () => {
@@ -93,6 +96,7 @@ test('Claude Code import: multiple hooks become individual ordered manifests', (
   for (const hook of hooks) {
     assert.equal(hook.language, 'shell');
     assert.equal(hook.deterministic, false);
+    assert.deepEqual(hook.files.map((file) => file.path), ['.claude/settings.json']);
   }
   const specific = hooks.map((hook) => hook.harnessSpecific as { matcher?: string; groupIndex: number; entryIndex: number; entry: Record<string, unknown> });
   assert.equal(specific[0].matcher, 'Bash');
@@ -235,7 +239,7 @@ test('Claude Code import: absolute command paths and arg values are kept out of 
 
 test('Claude Code export: cross-harness manifests are refused with a warning', () => {
   const codex = importFrom('codex', { 'AGENTS.md': '# instructions\n' });
-  const result = exportTo('claude-code', codex.manifests);
+  const result = exportTo('claude-code', codex.manifests, {});
   assert.deepEqual(result.files, {});
   assert.deepEqual(
     result.warnings.map((warning) => warning.code),
@@ -244,7 +248,7 @@ test('Claude Code export: cross-harness manifests are refused with a warning', (
 });
 
 test('Claude Code export: manifests failing the neutral schema are rejected', () => {
-  const result = exportTo('claude-code', [{ kind: 'hub-skill/1', name: '' } as unknown as HubManifest]);
+  const result = exportTo('claude-code', [{ kind: 'hub-skill/1', name: '' } as unknown as HubManifest], {});
   assert.deepEqual(result.files, {});
   assert.deepEqual(
     result.warnings.map((warning) => warning.code),
@@ -260,13 +264,23 @@ test('Claude Code export: hub-tool/1 has no file projection', () => {
     inputSchema: {},
     sourceHarness: 'claude-code',
     knownCompatible: [],
+    files: [],
     harnessSpecific: {},
   } satisfies HubManifest;
-  const result = exportTo('claude-code', [tool]);
+  const result = exportTo('claude-code', [tool], {});
   assert.deepEqual(result.files, {});
   assert.deepEqual(
     result.warnings.map((warning) => warning.code),
     ['NO_HARNESS_PROJECTION'],
+  );
+});
+
+test('Claude Code export: source files missing from the file table are reported', () => {
+  const result = exportTo('claude-code', imported.manifests, {});
+  assert.deepEqual(Object.keys(result.files).sort(), ['.claude/settings.json', '.mcp.json']);
+  assert.equal(
+    result.warnings.filter((warning) => warning.code === 'SOURCE_FILE_MISSING').length,
+    4,
   );
 });
 
@@ -276,7 +290,7 @@ test('Claude Code round trip: binary sibling files stay byte-exact', () => {
     '.claude/skills/blob-skill/SKILL.md': '---\nname: blob-skill\n---\n\nBody.\n',
     '.claude/skills/blob-skill/data.bin': bytes,
   };
-  const result = exportTo('claude-code', importFrom('claude-code', input).manifests);
+  const result = exportTo('claude-code', importFrom('claude-code', input).manifests, input);
   assert.deepEqual(result.files['.claude/skills/blob-skill/data.bin'], bytes);
   assert.equal(result.files['.claude/skills/blob-skill/SKILL.md'], input['.claude/skills/blob-skill/SKILL.md']);
 });

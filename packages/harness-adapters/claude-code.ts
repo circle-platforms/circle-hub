@@ -9,18 +9,21 @@ import type {
   VirtualFiles,
 } from './neutral.ts';
 import { hubManifestSchema } from './neutral.ts';
-import type { StoredFile } from './files.ts';
 import {
   baseName,
   canonicalJson,
   dirName,
   normalizedFiles,
-  readStored,
-  storeFile,
-  storedText,
+  sha256Hex,
   toText,
 } from './files.ts';
-import { parseFrontmatter, parseNameList, scalar, splitFrontmatter } from './frontmatter.ts';
+import {
+  deriveMarkdown,
+  exportMarkdownFile,
+  markdownHarnessSpecific,
+  type MarkdownKind,
+  type MarkdownSpec,
+} from './markdown.ts';
 
 const HARNESS = 'claude-code';
 const SETTINGS_PATH = '.claude/settings.json';
@@ -34,48 +37,30 @@ const AGENT_FILE = /^\.claude\/agents\/([^/]+)\.md$/;
 const ABSOLUTE_PATH = /^([/~]|[A-Za-z]:[\\/])/;
 const URL_LIKE = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//;
 
-type MarkdownSource = {
-  path: string;
-  source: StoredFile;
-  frontmatter: Record<string, string | string[]>;
-}
-
-function markdownValues(
-  path: string,
-  text: string,
-  warnings: AdapterWarning[],
-): Record<string, string | string[]> {
-  const split = splitFrontmatter(text);
-  if (split.unclosed) {
-    warnings.push({
-      code: 'FRONTMATTER_UNCLOSED',
-      path,
-      detail: 'opening --- has no closing ---; the file is treated as plain markdown with no frontmatter fields',
-    });
-    return {};
-  }
-  if (!split.hasFrontmatter) return {};
-  const parsed = parseFrontmatter(split.frontmatter);
-  for (const line of parsed.badLines) {
-    warnings.push({
-      code: 'FRONTMATTER_LINE_SKIPPED',
-      path,
-      detail: `frontmatter line is outside the supported subset and was skipped: ${JSON.stringify(line)}`,
-    });
-  }
-  return parsed.values;
-}
-
-function proprietary(
-  values: Record<string, string | string[]>,
-  consumed: string[],
-): Record<string, string | string[]> {
-  const result: Record<string, string | string[]> = {};
-  for (const [key, value] of Object.entries(values)) {
-    if (!consumed.includes(key)) result[key] = value;
-  }
-  return result;
-}
+const SKILL_SPEC: MarkdownSpec = {
+  kind: 'hub-skill/1',
+  fields: { name: 'name', description: 'description', 'allowed-tools': 'tools' },
+  specific: {},
+  frontmatterName: true,
+};
+const COMMAND_SPEC: MarkdownSpec = {
+  kind: 'hub-command/1',
+  fields: { description: 'description', 'argument-hint': 'arguments' },
+  specific: {},
+  frontmatterName: false,
+};
+const AGENT_SPEC: MarkdownSpec = {
+  kind: 'hub-agent/1',
+  fields: { name: 'name', description: 'description', tools: 'tools', model: 'model' },
+  specific: {},
+  frontmatterName: true,
+};
+const INSTRUCTION_SPEC: MarkdownSpec = {
+  kind: 'hub-instruction/1',
+  fields: {},
+  specific: {},
+  frontmatterName: false,
+};
 
 function importSkills(
   files: VirtualFiles,
@@ -88,40 +73,27 @@ function importSkills(
     if (!match) continue;
     claimed.add(path);
     const directory = dirName(path);
-    const siblings: Record<string, StoredFile> = {};
+    const fileRefs = [{ path, sha256: sha256Hex(value) }];
     for (const [other, otherValue] of Object.entries(files)) {
       if (other !== path && other.startsWith(`${directory}/`)) {
         claimed.add(other);
-        siblings[other.slice(directory.length + 1)] = storeFile(otherValue);
+        fileRefs.push({ path: other, sha256: sha256Hex(otherValue) });
       }
     }
-    const values = markdownValues(path, toText(value), warnings);
-    let name = scalar(values.name);
-    if (name === undefined || name === '') {
-      name = match[1];
-      warnings.push({
-        code: 'NAME_DERIVED_FROM_PATH',
-        path,
-        detail: `frontmatter has no name; derived "${name}" from the skill directory`,
-      });
-    }
+    const derived = deriveMarkdown(path, toText(value), match[1], SKILL_SPEC, warnings);
     manifests.push({
       kind: 'hub-skill/1',
-      name,
-      description: scalar(values.description) ?? '',
+      name: derived.neutral.name!,
+      description: derived.neutral.description ?? '',
       entry: 'SKILL.md',
-      tools: parseNameList(values['allowed-tools']),
+      tools: derived.neutral.tools ?? [],
       inputs: [],
       outputs: [],
       triggers: [],
       sourceHarness: HARNESS,
       knownCompatible: [],
-      harnessSpecific: {
-        path,
-        source: storeFile(value),
-        frontmatter: proprietary(values, ['name', 'description', 'allowed-tools']),
-        files: siblings,
-      },
+      files: fileRefs,
+      harnessSpecific: markdownHarnessSpecific(path, derived),
     });
   }
 }
@@ -132,54 +104,35 @@ function importMarkdown(
   warnings: AdapterWarning[],
   claimed: Set<string>,
   pattern: RegExp,
-  kind: 'hub-agent/1' | 'hub-command/1',
+  spec: MarkdownSpec,
 ): void {
   for (const [path, value] of Object.entries(files)) {
     const match = pattern.exec(path);
     if (!match) continue;
     claimed.add(path);
-    const values = markdownValues(path, toText(value), warnings);
-    // Claude Code commands are named by file name and have no frontmatter
-    // name; agents carry name in frontmatter, with the file name as fallback.
-    let name = kind === 'hub-command/1' ? match[1] : scalar(values.name);
-    if (name === undefined || name === '') {
-      name = match[1];
-      warnings.push({
-        code: 'NAME_DERIVED_FROM_PATH',
-        path,
-        detail: `frontmatter has no name; derived "${name}" from the file name`,
-      });
-    }
-    const harnessSpecific: MarkdownSource = {
-      path,
-      source: storeFile(value),
-      frontmatter: proprietary(
-        values,
-        kind === 'hub-agent/1'
-          ? ['name', 'description', 'tools', 'model']
-          : ['description', 'argument-hint'],
-      ),
-    };
-    if (kind === 'hub-agent/1') {
+    const derived = deriveMarkdown(path, toText(value), match[1], spec, warnings);
+    if (spec.kind === 'hub-agent/1') {
       manifests.push({
-        kind,
-        name,
-        description: scalar(values.description) ?? '',
-        tools: parseNameList(values.tools),
-        ...(scalar(values.model) !== undefined ? { model: scalar(values.model) } : {}),
+        kind: 'hub-agent/1',
+        name: derived.neutral.name!,
+        description: derived.neutral.description ?? '',
+        tools: derived.neutral.tools ?? [],
+        ...(derived.neutral.model !== undefined ? { model: derived.neutral.model } : {}),
         sourceHarness: HARNESS,
         knownCompatible: [],
-        harnessSpecific,
+        files: [{ path, sha256: sha256Hex(value) }],
+        harnessSpecific: markdownHarnessSpecific(path, derived),
       });
     } else {
       manifests.push({
-        kind,
-        name,
-        description: scalar(values.description) ?? '',
-        ...(scalar(values['argument-hint']) !== undefined ? { arguments: scalar(values['argument-hint']) } : {}),
+        kind: 'hub-command/1',
+        name: derived.neutral.name!,
+        description: derived.neutral.description ?? '',
+        ...(derived.neutral.arguments !== undefined ? { arguments: derived.neutral.arguments } : {}),
         sourceHarness: HARNESS,
         knownCompatible: [],
-        harnessSpecific,
+        files: [{ path, sha256: sha256Hex(value) }],
+        harnessSpecific: markdownHarnessSpecific(path, derived),
       });
     }
   }
@@ -188,21 +141,22 @@ function importMarkdown(
 function importInstructions(
   files: VirtualFiles,
   manifests: HubManifest[],
-  _warnings: AdapterWarning[],
+  warnings: AdapterWarning[],
   claimed: Set<string>,
 ): void {
   for (const [path, value] of Object.entries(files)) {
     if (path !== 'CLAUDE.md' && !path.endsWith('/CLAUDE.md')) continue;
     claimed.add(path);
-    const directory = dirName(path);
+    const derived = deriveMarkdown(path, toText(value), undefined, INSTRUCTION_SPEC, warnings);
     manifests.push({
       kind: 'hub-instruction/1',
       scope: 'project',
-      applies: directory === '' ? [] : [directory],
-      fileName: 'CLAUDE.md',
+      applies: [],
+      fileName: baseName(path),
       sourceHarness: HARNESS,
       knownCompatible: [],
-      harnessSpecific: { path, source: storeFile(value) },
+      files: [{ path, sha256: sha256Hex(value) }],
+      harnessSpecific: markdownHarnessSpecific(path, derived),
     });
   }
 }
@@ -267,6 +221,7 @@ function importSettings(
     return;
   }
   const hooks = (record.hooks ?? {}) as Record<string, unknown>;
+  const fileRef = { path: SETTINGS_PATH, sha256: sha256Hex(files[SETTINGS_PATH]) };
   let order = 0;
   for (const [event, groups] of Object.entries(hooks)) {
     if (!Array.isArray(groups)) {
@@ -303,6 +258,7 @@ function importSettings(
           deterministic: false,
           sourceHarness: HARNESS,
           knownCompatible: [],
+          files: [fileRef],
           harnessSpecific: {
             filePath: SETTINGS_PATH,
             ...(typeof matcher === 'string' ? { matcher } : {}),
@@ -386,6 +342,7 @@ function importMcp(
     return;
   }
   const servers = (record.mcpServers ?? {}) as Record<string, unknown>;
+  const fileRef = { path: MCP_PATH, sha256: sha256Hex(files[MCP_PATH]) };
   for (const [name, rawEntry] of Object.entries(servers)) {
     if (!rawEntry || typeof rawEntry !== 'object' || Array.isArray(rawEntry)) {
       warnings.push({ code: 'PROVIDER_SHAPE_UNKNOWN', path: MCP_PATH, detail: `mcpServers.${name} is not an object; skipped` });
@@ -454,6 +411,7 @@ function importMcp(
       ...(credentials.length > 0 ? { credentialMode: 'static' as const } : {}),
       sourceHarness: HARNESS,
       knownCompatible: [],
+      files: [fileRef],
       harnessSpecific: { filePath: MCP_PATH, shape },
     });
   }
@@ -466,8 +424,8 @@ export function importClaudeCode(input: VirtualFiles): ImportResult {
   const warnings: AdapterWarning[] = [];
   const claimed = new Set<string>();
   importSkills(files, manifests, warnings, claimed);
-  importMarkdown(files, manifests, warnings, claimed, COMMAND_FILE, 'hub-command/1');
-  importMarkdown(files, manifests, warnings, claimed, AGENT_FILE, 'hub-agent/1');
+  importMarkdown(files, manifests, warnings, claimed, COMMAND_FILE, COMMAND_SPEC);
+  importMarkdown(files, manifests, warnings, claimed, AGENT_FILE, AGENT_SPEC);
   importInstructions(files, manifests, warnings, claimed);
   importSettings(files, manifests, warnings, claimed);
   importMcp(files, manifests, warnings, claimed);
@@ -489,28 +447,49 @@ function manifestPath(manifest: HubManifest): string {
   return typeof path === 'string' ? path : '';
 }
 
-function exportMarkdown(manifest: HubManifest, files: VirtualFiles, warnings: AdapterWarning[]): void {
-  const specific = manifest.harnessSpecific as Partial<MarkdownSource>;
-  const source = specific.source;
-  const sourceOk =
-    typeof source === 'string' ||
-    (source !== null && typeof source === 'object' && typeof (source as { base64?: unknown }).base64 === 'string');
-  if (typeof specific.path !== 'string' || !sourceOk) {
+const MARKDOWN_SPECS: Partial<Record<MarkdownKind, MarkdownSpec>> = {
+  'hub-skill/1': SKILL_SPEC,
+  'hub-command/1': COMMAND_SPEC,
+  'hub-agent/1': AGENT_SPEC,
+  'hub-instruction/1': INSTRUCTION_SPEC,
+};
+
+function defaultNameFor(kind: MarkdownKind, path: string): string | undefined {
+  if (kind === 'hub-skill/1') return baseName(dirName(path));
+  if (kind === 'hub-command/1' || kind === 'hub-agent/1') return baseName(path).replace(/\.md$/, '');
+  return undefined;
+}
+
+function exportMarkdown(
+  manifest: HubManifest,
+  spec: MarkdownSpec,
+  source: VirtualFiles,
+  out: VirtualFiles,
+  warnings: AdapterWarning[],
+): void {
+  const path = manifestPath(manifest);
+  const original = path === '' ? undefined : source[path];
+  if (path === '' || original === undefined) {
     warnings.push({
-      code: 'MANIFEST_INVALID',
-      path: manifestPath(manifest),
-      detail: `${manifest.kind} manifest carries no harnessSpecific source bytes; nothing exported`,
+      code: 'SOURCE_FILE_MISSING',
+      path,
+      detail: `${manifest.kind} manifest points at a file that is not in the export file table; nothing exported`,
     });
     return;
   }
-  files[specific.path] = readStored(source as StoredFile);
+  out[path] = exportMarkdownFile(manifest, spec, defaultNameFor(spec.kind, path), toText(original), path);
   if (manifest.kind === 'hub-skill/1') {
-    const siblings = (manifest.harnessSpecific as Record<string, unknown>).files;
-    if (siblings && typeof siblings === 'object' && !Array.isArray(siblings)) {
-      const directory = dirName(specific.path);
-      for (const [relative, stored] of Object.entries(siblings as Record<string, StoredFile>)) {
-        files[`${directory}/${relative}`] = readStored(stored);
+    for (const ref of manifest.files) {
+      if (ref.path === path) continue;
+      if (!(ref.path in source)) {
+        warnings.push({
+          code: 'SOURCE_FILE_MISSING',
+          path: ref.path,
+          detail: `skill file is not in the export file table; not exported`,
+        });
+        continue;
       }
+      out[ref.path] = source[ref.path];
     }
   }
 }
@@ -523,7 +502,7 @@ interface HookSpecific {
   entry?: Record<string, unknown>;
 }
 
-function exportHooks(hooks: HubHook[], files: VirtualFiles, _warnings: AdapterWarning[]): void {
+function exportHooks(hooks: HubHook[], out: VirtualFiles): void {
   const byPath = new Map<string, HubHook[]>();
   for (const hook of hooks) {
     const specific = hook.harnessSpecific as HookSpecific;
@@ -558,7 +537,7 @@ function exportHooks(hooks: HubHook[], files: VirtualFiles, _warnings: AdapterWa
           : { type: 'command', command: hook.handler };
       (groups.get(groupIndex)!.hooks as unknown[]).push(entry);
     }
-    files[path] = canonicalJson({ hooks: events });
+    out[path] = canonicalJson({ hooks: events });
   }
 }
 
@@ -567,7 +546,30 @@ interface ProviderSpecific {
   shape?: Record<string, unknown>;
 }
 
-function exportProviders(providers: HubProvider[], files: VirtualFiles, warnings: AdapterWarning[]): void {
+// Stripped values are written back as placeholders; the warning lists the
+// key names that must be refilled before the file is usable.
+function placeholderShape(shape: Record<string, unknown>): { out: Record<string, unknown>; missing: string[] } {
+  const out = structuredClone(shape) as Record<string, unknown>;
+  const missing: string[] = [];
+  for (const key of ['env', 'headers'] as const) {
+    const map = out[key];
+    if (map && typeof map === 'object' && !Array.isArray(map)) {
+      for (const [name, value] of Object.entries(map as Record<string, unknown>)) {
+        if (value === '') {
+          (map as Record<string, unknown>)[name] = REDACTED;
+          missing.push(`${key}.${name}`);
+        }
+      }
+    }
+  }
+  if (out.url === '') {
+    out.url = REDACTED;
+    missing.push('url');
+  }
+  return { out, missing };
+}
+
+function exportProviders(providers: HubProvider[], out: VirtualFiles, warnings: AdapterWarning[]): void {
   const byPath = new Map<string, HubProvider[]>();
   for (const provider of providers) {
     const specific = provider.harnessSpecific as ProviderSpecific;
@@ -588,32 +590,23 @@ function exportProviders(providers: HubProvider[], files: VirtualFiles, warnings
         });
         continue;
       }
-      mcpServers[provider.name] = specific.shape;
-      const missing: string[] = [];
-      const shape = specific.shape;
-      for (const key of ['env', 'headers'] as const) {
-        const map = shape[key];
-        if (map && typeof map === 'object' && !Array.isArray(map)) {
-          for (const [name, value] of Object.entries(map as Record<string, unknown>)) {
-            if (value === '') missing.push(`${key}.${name}`);
-          }
-        }
-      }
-      if (shape.url === '') missing.push('url');
+      const { out: shape, missing } = placeholderShape(specific.shape);
+      mcpServers[provider.name] = shape;
       if (missing.length > 0) {
         warnings.push({
-          code: 'PROVIDER_VALUES_EMPTY',
+          code: 'SECRET_PLACEHOLDER',
           path,
-          detail: `mcpServers.${provider.name}: values were stripped at import and must be refilled before use: ${missing.join(', ')}`,
+          detail: `mcpServers.${provider.name}: stripped values written as ${REDACTED} placeholders, refill before use: ${missing.join(', ')}`,
         });
       }
     }
-    files[path] = canonicalJson({ mcpServers });
+    out[path] = canonicalJson({ mcpServers });
   }
 }
 
-export function exportClaudeCode(manifests: HubManifest[]): ExportResult {
-  const files: VirtualFiles = {};
+export function exportClaudeCode(manifests: HubManifest[], files: VirtualFiles): ExportResult {
+  const source = normalizedFiles(files);
+  const out: VirtualFiles = {};
   const warnings: AdapterWarning[] = [];
   const hooks: HubHook[] = [];
   const providers: HubProvider[] = [];
@@ -636,29 +629,22 @@ export function exportClaudeCode(manifests: HubManifest[]): ExportResult {
       });
       continue;
     }
-    switch (valid.kind) {
-      case 'hub-skill/1':
-      case 'hub-agent/1':
-      case 'hub-command/1':
-      case 'hub-instruction/1':
-        exportMarkdown(valid, files, warnings);
-        break;
-      case 'hub-hook/1':
-        hooks.push(valid);
-        break;
-      case 'hub-provider/1':
-        providers.push(valid);
-        break;
-      case 'hub-tool/1':
-        warnings.push({
-          code: 'NO_HARNESS_PROJECTION',
-          path: manifestPath(valid),
-          detail: 'hub-tool/1 has no file projection in Claude Code; tools reach it through the hub MCP endpoint',
-        });
-        break;
+    const spec = MARKDOWN_SPECS[valid.kind as MarkdownKind];
+    if (spec !== undefined) {
+      exportMarkdown(valid, spec, source, out, warnings);
+    } else if (valid.kind === 'hub-hook/1') {
+      hooks.push(valid);
+    } else if (valid.kind === 'hub-provider/1') {
+      providers.push(valid);
+    } else {
+      warnings.push({
+        code: 'NO_HARNESS_PROJECTION',
+        path: manifestPath(valid),
+        detail: `${valid.kind} has no file projection in Claude Code; tools reach it through the hub MCP endpoint`,
+      });
     }
   }
-  exportHooks(hooks, files, warnings);
-  exportProviders(providers, files, warnings);
-  return { files, warnings };
+  exportHooks(hooks, out);
+  exportProviders(providers, out, warnings);
+  return { files: out, warnings };
 }

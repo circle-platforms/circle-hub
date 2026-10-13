@@ -18,15 +18,19 @@ export function importFrom(harness: HarnessId, files: VirtualFiles): ImportResul
   }
 }
 
-// Write neutral hub manifests back into a harness's file conventions. Only
-// manifests whose sourceHarness matches the target are exported; anything
-// else is reported as CROSS_HARNESS_EXPORT and skipped.
-export function exportTo(harness: HarnessId, manifests: HubManifest[]): ExportResult {
+// Write neutral hub manifests back into a harness's file conventions.
+// `files` is the original virtual file table the manifests were imported
+// from: markdown bodies and skill sibling files are taken from it (bytes
+// never live in manifests), while config files are regenerated from the
+// manifests with placeholders for stripped values. Only manifests whose
+// sourceHarness matches the target are exported; anything else is reported
+// as CROSS_HARNESS_EXPORT and skipped.
+export function exportTo(harness: HarnessId, manifests: HubManifest[], files: VirtualFiles): ExportResult {
   switch (harness) {
     case 'claude-code':
-      return exportClaudeCode(manifests);
+      return exportClaudeCode(manifests, files);
     case 'codex':
-      return exportCodex(manifests);
+      return exportCodex(manifests, files);
     default:
       throw new TypeError(`unknown harness: ${String(harness)}`);
   }

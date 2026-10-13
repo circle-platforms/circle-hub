@@ -12,7 +12,9 @@ export interface FrontmatterSplit {
 
 export interface FrontmatterParse {
   values: Record<string, string | string[]>;
-  badLines: string[];
+  // 0-based line index within the frontmatter block; file line = line + 2.
+  // Warning details must carry line numbers and key names only, never text.
+  badLines: { line: number; text: string }[];
 }
 
 export function splitFrontmatter(text: string): FrontmatterSplit {
@@ -46,16 +48,17 @@ function unquote(value: string): string {
 
 export function parseFrontmatter(frontmatter: string): FrontmatterParse {
   const values: Record<string, string | string[]> = {};
-  const badLines: string[] = [];
+  const badLines: { line: number; text: string }[] = [];
   const lines = frontmatter.split('\n');
   let index = 0;
   while (index < lines.length) {
     const raw = lines[index].replace(/\r$/, '');
+    const lineNumber = index;
     index += 1;
     if (raw.trim() === '' || raw.trim().startsWith('#')) continue;
     const match = /^([A-Za-z0-9_-]+):(.*)$/.exec(raw);
     if (!match) {
-      badLines.push(raw);
+      badLines.push({ line: lineNumber, text: raw });
       continue;
     }
     const [, key, rest] = match;
@@ -90,4 +93,26 @@ export function parseNameList(value: string | string[] | undefined): string[] {
 export function scalar(value: string | string[] | undefined): string | undefined {
   if (value === undefined) return undefined;
   return Array.isArray(value) ? value.join(', ') : value;
+}
+
+function renderScalar(value: string): string {
+  const plain =
+    value !== '' &&
+    value === value.trim() &&
+    !/^[-?:,[\]{}#&*!|>'"%@`]/.test(value) &&
+    !value.includes(': ') &&
+    !value.includes(' #') &&
+    !/[\n\r\t]/.test(value);
+  return plain ? value : JSON.stringify(value);
+}
+
+export function renderFrontmatterValue(value: string | string[]): string {
+  if (Array.isArray(value)) return value.map(renderScalar).join(', ');
+  return renderScalar(value);
+}
+
+// Canonical frontmatter for the export rewrite: one `key: value` line each,
+// arrays comma-joined, scalars bare unless they need quoting.
+export function serializeFrontmatter(pairs: Array<[string, string | string[]]>): string {
+  return pairs.map(([key, value]) => `${key}: ${renderFrontmatterValue(value)}`).join('\n');
 }

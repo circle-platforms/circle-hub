@@ -23,7 +23,8 @@ export const WARNING_CODES = [
   'CONFIG_EXTRA_KEYS',
   'CONFIG_JSON_INVALID',
   'PROVIDER_VALUES_STRIPPED',
-  'PROVIDER_VALUES_EMPTY',
+  'SECRET_PLACEHOLDER',
+  'SOURCE_FILE_MISSING',
   'PROVIDER_COMMAND_ABSOLUTE',
   'PROVIDER_ARG_REDACTED',
   'PROVIDER_TRANSPORT_UNKNOWN',
@@ -63,9 +64,15 @@ export const HOOK_LANGUAGES = ['ts', 'shell'] as const;
 export type HookLanguage = (typeof HOOK_LANGUAGES)[number];
 
 const harnessSpecific = z.record(z.string(), z.unknown()).default({});
+// Every manifest points at the files it was derived from; bytes stay out of
+// the manifest and are frozen by the hub on the asset side.
+const manifestFiles = z
+  .array(z.looseObject({ path: z.string().min(1), sha256: z.string().regex(/^[0-9a-f]{64}$/) }))
+  .default([]);
 const base = {
   sourceHarness: z.string().min(1),
   knownCompatible: z.array(z.string()).default([]),
+  files: manifestFiles,
   harnessSpecific,
 };
 

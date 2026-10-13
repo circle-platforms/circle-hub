@@ -19,6 +19,10 @@ test('Codex import: AGENTS.md becomes hub-instruction/1', () => {
   assert.deepEqual(instructions[0].applies, []);
   assert.equal(instructions[0].fileName, 'AGENTS.md');
   assert.equal(instructions[0].sourceHarness, 'codex');
+  assert.deepEqual(
+    instructions[0].files.map((file) => file.path),
+    ['AGENTS.md'],
+  );
 });
 
 test('Codex import: mcp_servers become hub-provider/1 without secret values', () => {
@@ -33,6 +37,10 @@ test('Codex import: mcp_servers become hub-provider/1 without secret values', ()
   assert.equal(shape.command, 'npx');
   assert.deepEqual(shape.args, ['-y', '@example/docs-mcp']);
   assert.deepEqual(shape.env, { DOCS_API_KEY: '' });
+  assert.deepEqual(
+    docs.files.map((file) => file.path),
+    ['.codex/config.toml'],
+  );
 
   const pings = providers.find((provider) => provider.name === 'pings')!;
   assert.equal(pings.transport, 'stdio');
@@ -71,16 +79,15 @@ test('Codex import: TOML subset boundaries skip unsupported lines instead of gue
 });
 
 test('Codex import: keys outside mcp_servers are reported and dropped on export', () => {
-  const result = importFrom('codex', {
-    '.codex/config.toml': 'model = "scripted-model"\n\n[mcp_servers.a]\ncommand = "node"\n',
-  });
+  const input = { '.codex/config.toml': 'model = "scripted-model"\n\n[mcp_servers.a]\ncommand = "node"\n' };
+  const result = importFrom('codex', input);
   assert.equal(result.manifests.length, 1);
   assert.deepEqual(
     result.warnings.map((warning) => warning.code),
     ['CONFIG_EXTRA_KEYS'],
   );
   assert.ok(result.warnings[0].detail.includes('model'));
-  const exported = exportTo('codex', result.manifests);
+  const exported = exportTo('codex', result.manifests, input);
   assert.equal((exported.files['.codex/config.toml'] as string).includes('model = '), false);
 });
 
@@ -105,9 +112,10 @@ test('Codex export: primitives without a Codex projection are reported, not sile
     triggers: [],
     sourceHarness: 'codex',
     knownCompatible: [],
+    files: [],
     harnessSpecific: {},
   } satisfies HubManifest;
-  const result = exportTo('codex', [skill]);
+  const result = exportTo('codex', [skill], {});
   assert.deepEqual(result.files, {});
   assert.deepEqual(
     result.warnings.map((warning) => warning.code),

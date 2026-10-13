@@ -1,7 +1,6 @@
 import type {
   AdapterWarning,
   ExportResult,
-  HubInstruction,
   HubManifest,
   HubProvider,
   ImportResult,
@@ -9,38 +8,49 @@ import type {
   VirtualFiles,
 } from './neutral.ts';
 import { hubManifestSchema } from './neutral.ts';
-import type { StoredFile } from './files.ts';
-import { baseName, dirName, normalizedFiles, readStored, storeFile, toText } from './files.ts';
+import { baseName, dirName, normalizedFiles, sha256Hex, toText } from './files.ts';
+import {
+  deriveMarkdown,
+  exportMarkdownFile,
+  markdownHarnessSpecific,
+  type MarkdownSpec,
+} from './markdown.ts';
 import { emitToml, parseToml } from './toml.ts';
 
 const HARNESS = 'codex';
 const CONFIG_PATH = '.codex/config.toml';
 const INSTRUCTION_NAME = 'AGENTS.md';
+const REDACTED = '[redacted]';
 
 const ABSOLUTE_PATH = /^([/~]|[A-Za-z]:[\\/])/;
 const URL_LIKE = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//;
-const REDACTED = '[redacted]';
 
-// Keys whose values may hold secrets; only the key names survive import.
-const SECRET_MAP_KEYS = ['env', 'headers', 'http_headers'];
+const INSTRUCTION_SPEC: MarkdownSpec = {
+  kind: 'hub-instruction/1',
+  fields: {},
+  specific: {},
+  frontmatterName: false,
+};
 
 function importInstructions(
   files: VirtualFiles,
   manifests: HubManifest[],
+  warnings: AdapterWarning[],
   claimed: Set<string>,
 ): void {
   for (const [path, value] of Object.entries(files)) {
     if (path !== INSTRUCTION_NAME && !path.endsWith(`/${INSTRUCTION_NAME}`)) continue;
     claimed.add(path);
-    const directory = dirName(path);
+    const derived = deriveMarkdown(path, toText(value), undefined, INSTRUCTION_SPEC, warnings);
     manifests.push({
       kind: 'hub-instruction/1',
       scope: 'project',
-      applies: directory === '' ? [] : [directory],
-      fileName: INSTRUCTION_NAME,
+      applies: [],
+      fileName: baseName(path),
       sourceHarness: HARNESS,
       knownCompatible: [],
-      harnessSpecific: { path, source: storeFile(value) },
+      files: [{ path, sha256: sha256Hex(value) }],
+      harnessSpecific: markdownHarnessSpecific(path, derived),
     });
   }
 }
@@ -112,6 +122,7 @@ function importConfig(
     warnings.push({ code: 'TOML_LINE_SKIPPED', path: CONFIG_PATH, detail: 'mcp_servers is not a table; no providers imported' });
     return;
   }
+  const fileRef = { path: CONFIG_PATH, sha256: sha256Hex(files[CONFIG_PATH]) };
   for (const [name, rawEntry] of Object.entries(servers as Record<string, unknown>)) {
     if (!rawEntry || typeof rawEntry !== 'object' || Array.isArray(rawEntry)) {
       warnings.push({ code: 'PROVIDER_SHAPE_UNKNOWN', path: CONFIG_PATH, detail: `mcp_servers.${name} is not a table; skipped` });
@@ -120,11 +131,9 @@ function importConfig(
     const shape: Record<string, unknown> = structuredClone(rawEntry) as Record<string, unknown>;
     const stripped: string[] = [];
     const credentials: string[] = [];
-    for (const key of SECRET_MAP_KEYS) {
-      for (const name2 of stripValueMap(shape, key)) {
-        credentials.push(name2);
-        stripped.push(`${key}.${name2}`);
-      }
+    for (const key of stripValueMap(shape, 'env')) {
+      credentials.push(key);
+      stripped.push(`env.${key}`);
     }
     let transport: Transport | undefined;
     if (typeof shape.command === 'string') {
@@ -169,6 +178,7 @@ function importConfig(
       ...(credentials.length > 0 ? { credentialMode: 'static' as const } : {}),
       sourceHarness: HARNESS,
       knownCompatible: [],
+      files: [fileRef],
       harnessSpecific: { filePath: CONFIG_PATH, shape },
     });
   }
@@ -179,7 +189,7 @@ export function importCodex(input: VirtualFiles): ImportResult {
   const manifests: HubManifest[] = [];
   const warnings: AdapterWarning[] = [];
   const claimed = new Set<string>();
-  importInstructions(files, manifests, claimed);
+  importInstructions(files, manifests, warnings, claimed);
   importConfig(files, manifests, warnings, claimed);
   for (const path of Object.keys(files)) {
     if (!claimed.has(path)) {
@@ -199,24 +209,45 @@ function manifestPath(manifest: HubManifest): string {
   return typeof path === 'string' ? path : '';
 }
 
-function exportInstruction(manifest: HubInstruction, files: VirtualFiles, warnings: AdapterWarning[]): void {
-  const specific = manifest.harnessSpecific as { path?: unknown; source?: unknown };
-  const source = specific.source as StoredFile | undefined;
-  const sourceOk =
-    typeof source === 'string' ||
-    (source !== null && typeof source === 'object' && typeof (source as { base64?: unknown }).base64 === 'string');
-  if (typeof specific.path !== 'string' || !sourceOk) {
+function exportInstruction(
+  manifest: HubManifest,
+  source: VirtualFiles,
+  out: VirtualFiles,
+  warnings: AdapterWarning[],
+): void {
+  const path = manifestPath(manifest);
+  const original = path === '' ? undefined : source[path];
+  if (path === '' || original === undefined) {
     warnings.push({
-      code: 'MANIFEST_INVALID',
-      path: manifestPath(manifest),
-      detail: 'hub-instruction/1 manifest carries no harnessSpecific source bytes; nothing exported',
+      code: 'SOURCE_FILE_MISSING',
+      path,
+      detail: 'hub-instruction/1 manifest points at a file that is not in the export file table; nothing exported',
     });
     return;
   }
-  files[specific.path] = readStored(source as StoredFile);
+  out[path] = exportMarkdownFile(manifest, INSTRUCTION_SPEC, undefined, toText(original), path);
 }
 
-function exportProviders(providers: HubProvider[], files: VirtualFiles, warnings: AdapterWarning[]): void {
+function placeholderShape(shape: Record<string, unknown>): { out: Record<string, unknown>; missing: string[] } {
+  const out = structuredClone(shape) as Record<string, unknown>;
+  const missing: string[] = [];
+  const env = out.env;
+  if (env && typeof env === 'object' && !Array.isArray(env)) {
+    for (const [name, value] of Object.entries(env as Record<string, unknown>)) {
+      if (value === '') {
+        (env as Record<string, unknown>)[name] = REDACTED;
+        missing.push(`env.${name}`);
+      }
+    }
+  }
+  if (out.url === '') {
+    out.url = REDACTED;
+    missing.push('url');
+  }
+  return { out, missing };
+}
+
+function exportProviders(providers: HubProvider[], out: VirtualFiles, warnings: AdapterWarning[]): void {
   const byPath = new Map<string, HubProvider[]>();
   for (const provider of providers) {
     const specific = provider.harnessSpecific as { filePath?: unknown };
@@ -237,32 +268,23 @@ function exportProviders(providers: HubProvider[], files: VirtualFiles, warnings
         });
         continue;
       }
-      const shape = specific.shape as Record<string, unknown>;
+      const { out: shape, missing } = placeholderShape(specific.shape as Record<string, unknown>);
       mcpServers[provider.name] = shape;
-      const missing: string[] = [];
-      for (const key of SECRET_MAP_KEYS) {
-        const map = shape[key];
-        if (map && typeof map === 'object' && !Array.isArray(map)) {
-          for (const [name, value] of Object.entries(map as Record<string, unknown>)) {
-            if (value === '') missing.push(`${key}.${name}`);
-          }
-        }
-      }
-      if (shape.url === '') missing.push('url');
       if (missing.length > 0) {
         warnings.push({
-          code: 'PROVIDER_VALUES_EMPTY',
+          code: 'SECRET_PLACEHOLDER',
           path,
-          detail: `mcp_servers.${provider.name}: values were stripped at import and must be refilled before use: ${missing.join(', ')}`,
+          detail: `mcp_servers.${provider.name}: stripped values written as ${REDACTED} placeholders, refill before use: ${missing.join(', ')}`,
         });
       }
     }
-    files[path] = emitToml({ mcp_servers: mcpServers });
+    out[path] = emitToml({ mcp_servers: mcpServers });
   }
 }
 
-export function exportCodex(manifests: HubManifest[]): ExportResult {
-  const files: VirtualFiles = {};
+export function exportCodex(manifests: HubManifest[], files: VirtualFiles): ExportResult {
+  const source = normalizedFiles(files);
+  const out: VirtualFiles = {};
   const warnings: AdapterWarning[] = [];
   const providers: HubProvider[] = [];
   for (const manifest of manifests) {
@@ -286,7 +308,7 @@ export function exportCodex(manifests: HubManifest[]): ExportResult {
     }
     switch (valid.kind) {
       case 'hub-instruction/1':
-        exportInstruction(valid, files, warnings);
+        exportInstruction(valid, source, out, warnings);
         break;
       case 'hub-provider/1':
         providers.push(valid);
@@ -300,6 +322,6 @@ export function exportCodex(manifests: HubManifest[]): ExportResult {
         break;
     }
   }
-  exportProviders(providers, files, warnings);
-  return { files, warnings };
+  exportProviders(providers, out, warnings);
+  return { files: out, warnings };
 }

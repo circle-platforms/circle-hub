@@ -1,25 +1,32 @@
+import { createHash } from 'node:crypto';
 import type { VirtualFiles } from './neutral.ts';
 
-// Shared virtual-file helpers for the adapters. Text files stay strings;
-// non-text bytes are carried as base64 so a round trip is byte-exact either
-// way.
-
-export type StoredFile = string | { base64: string };
+// Shared virtual-file helpers for the adapters.
 
 export function toText(value: string | Uint8Array): string {
   return typeof value === 'string' ? value : new TextDecoder().decode(value);
 }
 
-export function storeFile(value: string | Uint8Array): StoredFile {
-  return typeof value === 'string' ? value : { base64: Buffer.from(value).toString('base64') };
+export function sha256Hex(value: string | Uint8Array): string {
+  return createHash('sha256').update(typeof value === 'string' ? value : Buffer.from(value)).digest('hex');
 }
 
-export function readStored(stored: StoredFile): string | Uint8Array {
-  return typeof stored === 'string' ? stored : new Uint8Array(Buffer.from(stored.base64, 'base64'));
-}
-
-export function storedText(stored: StoredFile): string {
-  return toText(readStored(stored));
+// Structural equality for parsed frontmatter/config values: arrays ordered,
+// objects unordered.
+export function deepEqual(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (Array.isArray(a) && Array.isArray(b)) {
+    return a.length === b.length && a.every((item, index) => deepEqual(item, b[index]));
+  }
+  if (a && b && typeof a === 'object' && typeof b === 'object') {
+    const aKeys = Object.keys(a);
+    const bKeys = Object.keys(b);
+    return (
+      aKeys.length === bKeys.length &&
+      aKeys.every((key) => key in (b as object) && deepEqual((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key]))
+    );
+  }
+  return false;
 }
 
 export function normalizePath(path: string): string {
