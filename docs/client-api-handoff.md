@@ -502,6 +502,18 @@ apv-case-execute 现为 **1.1.1**，flowVersion 仍 apv-case-execute/1。实现�
 
 1.1.1 的来源口径更正：现网部署版没有前述两个有序字段，真实回退用 topology.devices。全部负载均衡设备名须为 APV<index>，索引集合与 env_prepare.device_count 精确一致；日志 IP 必须唯一落在对应设备 ipv4 的 CIDR 地址集合里。否则 device_map_unavailable，绝不据任意主机名或命令文本猜 APV_n。source 标 gateway.bed_topology.devices；三种候选优先级是 conf.device_ips、applies_to.device_ssh_ips、devices 名字规则，前两个只在实际返回时适用。排空无截止时间，claim 在途时仍可能完成一笔新领操作；不强杀的边界也已补入执行交接。
 
+工作查询与通知补项：GET /v1/tasks?view=page 增加 queue=awaitingMyApproval|awaitingMyInput|submittedByMe|assignedToMe|exceptions；exceptions 可加 exception=unknown|expired|superseded|failed。GET /v1/queues 接受同一分面及 kind/capabilityPackId，使用同一任务授权/私有范围/run 委托/分面与队列条件，计数发生在限制之前。过期但仍 open 的审批按 expired 分类，不再待批。exceptions.groups 分开给任务四类、workerOffline、botAdmissionFailed；后两类是各自记录查询，分面不适用时 omittedGroups 明示，不能当作全平台确为零。
+
+POST /v1/tasks/{taskId}/assignment：{inputRevisionId,assignee?:principalId|null,dueAt?:ISO时间|null}，须任务可读且拥有 tasks.input；所有者或该 scope 管理员可更新，成员不能改别人的任务。assignee 必须同 scope 活跃成员/管理员；分派不授予私有任务读取权限，私有任务当前只允许分给所有者。TaskView 返回 assignee/dueAt。dueAt 是队列 SLA 日期，独立于 D 的执行截止时间。Scope 的 slaMs 可随 POST /v1/scopes/{scopeId}/policy 的单项变更集独立决定：完整键为 awaitingMyApproval/awaitingMyInput/submittedByMe/assignedToMe/exceptions，值为正毫秒；未传时保留原策略。计数优先 task.dueAt，否则等待起点加该范围 slaMs；不同范围值不一致时 counter.slaMs=null，并在 slaByScope 给出依据。
+
+updatedAt 页游标冻结 PostgreSQL 微秒时间锚点，后续更新超过锚点的记录交由下一次新查询展示；total 是锚点下当前可见匹配数。年龄排序按创建时间与 id；同微秒两条记录仍有独立位置。没有该分面的登记簿返回 INVALID_PAYLOAD/details.facet，不把 NULL 比较当空页。service-clients 属管理登记簿，仍需管理员资格，成员为 FORBIDDEN_ACTION；这类管理接口是“身份仅改变可见数量”的明确例外。
+
+通知只含 id、状态/原因码与 evidence 引用；完整结果从任务 result 取。规范事件包括 approval.requested/decision/superseded、task.waiting-review/waiting-input/delivered/failed/cancelled、operation.unknown、bot.started/output/admission-failed，以及已实际发出的变更集状态。旧 task.approval-requested/approval.response 继续保留在任务事件兼容流，通知目录使用规范名字。输入改写与新变更集都会发 approval.superseded，并给 supersededBy。通知游标只推进到最后可见事件；权限后来增加时，客户端应从 cursor=0 重查先前被滤掉的区间。
+
+outbox 保留默认最近至少 **10000 条事件**的补读窗口、最多 **100000 行**，年龄目标 **7 天**（硬上限优先）；环境可配 CIRCLE_SERVER_OUTBOX_REPLAY_EVENTS、CIRCLE_SERVER_OUTBOX_MAX_ROWS、CIRCLE_SERVER_OUTBOX_MAX_AGE_MS。写入超限同事务批量裁剪，年龄每分钟维护，任务当前状态/结果、B 原件与审计不删除。通知返回 replayWindow；旧非零游标早于 minCursor 为 CURSOR_EXPIRED，明确从零重新查询当前窗口，不能宣称全历史仍在。task/admin events 同样拒绝过窗游标。SSE 每 tenant/主体默认四条连接，可配 CIRCLE_SERVER_NOTIFICATION_STREAMS；超限 NOTIFICATION_STREAM_LIMIT，断开释放名额，运行中游标过窗发 cursor.expired 并关闭。角色/会话失效仍关闭流。
+
+登记簿分页的接入顺序：已接 tasks/assets/skillpacks/change-sets/scopes/roles/service-clients/object-types/objects/tools，通知有独立持久序号游标。随后依次接普通审批与 admin approvals、来源/证据/制品、审计/worker、bot runs、通知的统一分面视图；这些接口的旧形状本笔保持，不把尚未接入的登记簿称作已完成统一分页。各步复用同一查询编译器，并分别补授权/游标验收。
+
 GET /v1/assets/{id}/harness-export?target=circle|<sourceHarness> 仅批准后的可读原语可用，返回 files 的相对目标路径/base64/sha256、warnings、provenance:{assetId,version,sha256,sourceHarness}。Circle Skill 原件移动到 .circle/skills/{name}/，字节不改；Instruction 投影为 AGENTS.md。Circle 尚无 Agent/Command 原生安装时明确 warning；MCP prompt 可读取批准的 Skill/Command。同来源 harness 由公开库导出；其不支持的跨 harness 映射继续 warning。这里只是冻结与装载投影，云运行仍用既有技能试跑/提交/批准接口；不自动批准或把原件搬运称作已执行。
 
 `POST /mcp` 是官方 @modelcontextprotocol/sdk 1.32.1 的 Streamable HTTP JSON transport，协议协商 2025-11-25；[传输规范](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports)。每请求带 hub 会话 Bearer；Origin 若存在须同 hub 原生地址。无会话 id 的 stateless 模式，GET/DELETE 405；Accept 同时支持 application/json、text/event-stream。官方纯 SDK 客户端、原始 JSON-RPC 客户端已验收，既有 Circle REST 扩展保持。

@@ -214,10 +214,11 @@ export type OperationRequest = z.infer<typeof OperationRequest>;
 export const ApprovalProposal = OperationRequest.omit({idempotencyKey:true,deadlineMs:true,approvalId:true});
 export const ApprovalView=z.object({approvalId:z.string(),taskId:TaskId,inputRevisionId:InputRevisionId,applicantId:z.string(),
   targetIdentity:z.string(),actionDigest:Sha256,action:ApprovalProposal,status:z.enum(['open','approved','declined','superseded','expired']),
-  approvedBy:z.string().nullable(),expiresAt:z.string(),decisionMode:z.enum(['self','independent']).nullable().optional(),singleAdminMode:z.boolean().optional(),verification:z.unknown().optional()});
+  approvedBy:z.string().nullable(),expiresAt:z.string(),supersededBy:z.string().nullable().optional(),decisionMode:z.enum(['self','independent']).nullable().optional(),singleAdminMode:z.boolean().optional(),verification:z.unknown().optional()});
 export type ApprovalView=z.infer<typeof ApprovalView>;
 export const ScopeRolePatch=z.object({principalId:z.string().regex(/^prn_/),role:z.enum(['admin','member','viewer']).nullable(),idempotencyKey:z.string().min(8).max(200)}).strict();
-export const ScopePolicyPatch=z.object({twoPersonRule:z.boolean(),idempotencyKey:z.string().min(8).max(200)}).strict();
+export const ScopeSla=z.object({awaitingMyApproval:z.number().int().positive().max(1e13),awaitingMyInput:z.number().int().positive().max(1e13),submittedByMe:z.number().int().positive().max(1e13),assignedToMe:z.number().int().positive().max(1e13),exceptions:z.number().int().positive().max(1e13)}).strict();
+export const ScopePolicyPatch=z.object({twoPersonRule:z.boolean(),slaMs:ScopeSla.optional(),idempotencyKey:z.string().min(8).max(200)}).strict();
 export const ChangeSetSubmission=z.object({scopeId:ScopeId,title:z.string().min(1).max(500).optional(),items:z.array(z.object({assetId:AssetId,version:PackageVersion,sha256:Sha256}).strict()).min(1).max(100),idempotencyKey:z.string().min(8).max(200)}).strict();
 export const ConclusionRequest=z.object({inputRevisionId:InputRevisionId,kind:ConclusionKind,methodId:z.string().regex(/^[a-z][a-z0-9-]{0,99}$/).optional(),
   evidenceIds:z.array(z.string().regex(/^evd_/)).max(16).default([]),judgment:z.enum(['supports','refutes','abstained']).default('abstained'),rationale:z.string().max(2000).default('')});
@@ -278,7 +279,7 @@ export interface Policy extends AuthContext { scopes: string[]; grants: string[]
 export interface Task {
   taskId: string; tenantId: string; scopeId: string; principalId: string; title: string; phase: TaskPhase;
   inputRevisionId: string; input: Record<string, unknown>; revision: number; flowVersion: string;
-  capabilityPackId?: string; packVersion?: string;waitingReason?:string|null;
+  capabilityPackId?: string; packVersion?: string;waitingReason?:string|null;assignee?:string|null;dueAt?:string|null;
 }
 export const ExecutionClaim = z.object({ operationId:OperationId,taskId:TaskId,inputRevisionId:InputRevisionId,
   name:StandardOperation,kind:z.enum(['execute','reconcile']),target:z.string(),targetIdentity:z.string(),
@@ -300,7 +301,7 @@ export const TaskResult = z.object({ taskId: TaskId, inputRevisionId: InputRevis
 });
 export const TaskView = z.object({ taskId: TaskId,tenantId:z.string(),scopeId:ScopeId,principalId:z.string(),title:z.string(),
   phase:TaskPhase,inputRevisionId:InputRevisionId,input:z.record(z.string(),z.unknown()),revision:z.number().int().positive(),
-  flowVersion:z.string(),capabilityPackId:z.string().optional(),packVersion:z.string().optional(),waitingReason:z.string().nullable().optional(),
+  flowVersion:z.string(),capabilityPackId:z.string().optional(),packVersion:z.string().optional(),waitingReason:z.string().nullable().optional(),assignee:z.string().nullable().optional(),dueAt:z.string().datetime().nullable().optional(),
   pendingInputs:z.array(z.object({ requestId:z.string(),inputRevisionId:InputRevisionId,kind:z.string(),question:z.string(),
     binding:z.record(z.string(),z.unknown()),expiresAt:z.string(),status:z.string() })).optional(),
 });
@@ -309,13 +310,17 @@ export const TaskListQuery=z.object({limit:z.coerce.number().int().min(1).max(10
 export const RegistryPageQuery=z.object({view:z.literal('page'),limit:z.coerce.number().int().min(1).max(100).default(20),cursor:z.string().min(1).max(4096).optional(),scopeId:ScopeId.optional(),productLineId:z.string().min(1).max(200).optional(),flowVersion:z.string().min(1).max(200).optional(),status:z.string().min(1).max(100).optional(),lifecycle:z.string().min(1).max(100).optional(),owner:z.string().min(1).max(200).optional(),minAgeMs:z.coerce.number().int().min(0).max(1e13).optional(),maxAgeMs:z.coerce.number().int().min(0).max(1e13).optional(),sort:z.enum(['age','updatedAt']).default('updatedAt'),order:z.enum(['asc','desc']).default('desc')}).refine(q=>q.minAgeMs===undefined||q.maxAgeMs===undefined||q.minAgeMs<=q.maxAgeMs,'Minimum age must not exceed maximum age');
 export type RegistryPageQuery=z.infer<typeof RegistryPageQuery>;
 export const RegistryPage=z.object({total:z.number().int().nonnegative(),items:z.array(z.unknown()),cursor:z.string().nullable()});
-export const TaskPageQuery=RegistryPageQuery.safeExtend({kind:TaskListQuery.shape.kind,capabilityPackId:TaskListQuery.shape.capabilityPackId});
+export const WorkQueue=z.enum(['awaitingMyApproval','awaitingMyInput','submittedByMe','assignedToMe','exceptions']);
+export const TaskPageQuery=RegistryPageQuery.safeExtend({kind:TaskListQuery.shape.kind,capabilityPackId:TaskListQuery.shape.capabilityPackId,queue:WorkQueue.optional(),exception:z.enum(['unknown','expired','superseded','failed']).optional()}).refine(value=>value.exception===undefined||value.queue==='exceptions','Exception group requires the exceptions queue');
+const {view:_queueView,limit:_queueLimit,cursor:_queueCursor,queue:_queueSelection,exception:_queueException,...queueFacetShape}=TaskPageQuery.shape;
+export const QueueQuery=z.object({...queueFacetShape,view:z.literal('page').optional()}).strict().refine(q=>q.minAgeMs===undefined||q.maxAgeMs===undefined||q.minAgeMs<=q.maxAgeMs,'Minimum age must not exceed maximum age');
+export const TaskAssignment=z.object({inputRevisionId:InputRevisionId,assignee:z.string().regex(/^prn_/).nullable().optional(),dueAt:z.string().datetime().nullable().optional()}).strict().refine(value=>value.assignee!==undefined||value.dueAt!==undefined,'Specify an assignee or dueAt');
 export const AssetPageQuery=RegistryPageQuery.extend({kind:AssetKind.optional()});
 export const NotificationQuery=z.object({cursor:z.coerce.number().int().nonnegative().default(0),limit:z.coerce.number().int().min(1).max(200).default(100)});
 export const NotificationView=z.object({seq:z.number().int().nonnegative(),taskId:TaskId.nullable(),scopeId:ScopeId,kind:z.string(),payload:z.record(z.string(),z.unknown()),createdAt:z.string()});
-export const NotificationPage=z.object({items:z.array(NotificationView),cursor:z.number().int().nonnegative(),hasMore:z.boolean()});
-export const QueueCounter=z.object({count:z.number().int().nonnegative(),oldestWaitMs:z.number().nonnegative(),overSla:z.number().int().nonnegative(),slaMs:z.number().int().positive()});
-export const QueueView=z.object({awaitingMyApproval:QueueCounter,awaitingMyInput:QueueCounter,submittedByMe:QueueCounter,assignedToMe:QueueCounter,exceptions:QueueCounter});
+export const NotificationPage=z.object({items:z.array(NotificationView),cursor:z.number().int().nonnegative(),hasMore:z.boolean(),replayWindow:z.object({minCursor:z.number().nonnegative(),replayEvents:z.number().int().positive(),maxRows:z.number().int().positive()}).optional()});
+export const QueueCounter=z.object({count:z.number().int().nonnegative(),oldestWaitMs:z.number().nonnegative(),overSla:z.number().int().nonnegative(),slaMs:z.number().int().positive().nullable()});
+export const QueueView=z.object({awaitingMyApproval:QueueCounter,awaitingMyInput:QueueCounter,submittedByMe:QueueCounter,assignedToMe:QueueCounter,exceptions:QueueCounter.extend({groups:z.record(z.string(),QueueCounter).optional(),omittedGroups:z.record(z.string(),z.object({reason:z.literal('facet-not-applicable'),facets:z.array(z.string())})).optional()}),slaByScope:z.record(ScopeId,ScopeSla).optional()});
 export const SubmittedTask = TaskView.extend({ deduplicated:z.boolean() });
 export const EventPage = z.object({ events:z.array(Event),after:z.number().int().nonnegative() });
 export const CLIENT_ROUTES = {
@@ -324,7 +329,8 @@ export const CLIENT_ROUTES = {
   authLogout:{method:'POST',path:'/v1/auth/logout',request:AuthRefreshRequest},
   notifications:{method:'GET',path:'/v1/notifications',query:NotificationQuery,response:NotificationPage},
   notificationStream:{method:'GET',path:'/v1/notifications/stream',contentType:'text/event-stream'},
-  queues:{method:'GET',path:'/v1/queues',response:QueueView},
+  queues:{method:'GET',path:'/v1/queues',query:QueueQuery,response:QueueView},
+  taskAssignment:{method:'POST',path:'/v1/tasks/{taskId}/assignment',request:TaskAssignment,response:TaskView},
   mcp:{method:'POST',path:'/mcp',protocolVersion:'2025-11-25'},
   harnessImport:{method:'POST',path:'/v1/harness/import'},
   harnessExport:{method:'GET',path:'/v1/assets/{id}/harness-export'},

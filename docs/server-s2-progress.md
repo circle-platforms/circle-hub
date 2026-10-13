@@ -799,3 +799,13 @@ provider 已声明产品线但没有 alias 的，回落包 prefix/packageId；�
 维护者只读核对指出：部署版 env_prepare 没有 conf.device_ips，topology 也没有 applies_to（它仅是生成器输入，不能当返回证据）。b65478e 因而无法覆盖现网映射；本笔更正该假设，不把合成两候选通过当真实协议通过。新增当前真实形状的合成方法复现：正例失败、负例通过。补第三候选 topology.devices：type=负载均衡、全部名字符合 APV<index>、索引集合恰为 0..device_count-1；日志 IP 唯一落在对应设备 ipv4/CIDR 中才归属，共享虚拟 IP 不猜。任意名字、缺/重复/越界序号或计数不符仍 unknown/device_map_unavailable。优先级保留未来 conf.device_ips、有序 applies_to、最后名字规则，实际无字段则回退。
 
 紧接升 **1.1.1**，不让已发出的 1.1.0 同版本不同实现摘要；两份交接同步三来源边界和 worker 排空无截止/在途 claim 仍可能完成一笔的限制。专项 **22/22**、无 skip，typecheck/diff 通过，新增真实 worker 路径返回 source=gateway.bed_topology.devices，未使用真实数据或访问网关。维护者 Grok 对迁移/worker/1.1.0 无高中项；两个迁移归因低项随后用追加修复处理，不覆盖已发迁移字节。队列/分页与通知完整性仍在工作区继续，不混入本笔。
+
+## 58：共同工作查询、SLA 与有界通知
+
+先写队列/更新页复现与通知五条失败：缺 assignment API、过期仍待批、后页更新漏/重、未知分面空页、通知正文/全局游标/SSE 不限/不裁剪。任务登记与队列现在共用 taskQueryPlan + facetedWhere，权限/私有范围/run 委托/分面/队列条件同源，不再让通知类自己全表读取计数。负责者/dueAt 为记录元数据并有受控写 API；分派不扩大私有读取。SLA 从迁移 **37** 的范围策略数据来，经变更集独立决定，任务 dueAt 优先。expired/open 按实际时间分类，四类任务异常分组，worker/bot 例外也使用分面编译器，不适用分面明示 omittedGroups。
+
+更新时间页有 PostgreSQL 微秒锚点，锚点后的更新项下一次查询展示；同微秒 id 平局继续可翻，未知分面明确 INVALID_PAYLOAD，源于对象类型未声明的 productLineId/flowVersion 已去掉伪 NULL 查询。管理类 service-client 权限例外写清。按维护者允许，尚未接的登记簿在 handoff 明列后续顺序，不冒充全部已接入。
+
+通知投影仅引用/状态/原因码，完整任务事件原文仍可按权限在保留窗口内补读；规范审批创建/决定/取代、waiting-review 与 bot.started 均有发出点，无发出点的白名单项去掉。游标只记最后可见项，权限新增后从零重查被滤区间。SSE 同主体连接上限，关闭释放名额。outbox 保最近至少一万条/最多十万行、七天年龄目标；写后同事务批量裁剪与每分钟维护，持久 minCursor 让过窗显式 CURSOR_EXPIRED，不默默漏读。不删除当前任务结果/B 原件/审计。
+
+专项与角色/变更集/旧查询/通知联合 **36/36**、无 skip，typecheck/diff 通过；两条迁移归因补充仍独立留工作区，完整冻结回归另跑。没有部署、真实源访问或付费模型调用。新接口和数据形状在 CLIENT_ROUTES 与 handoff，旧数组形状保持。

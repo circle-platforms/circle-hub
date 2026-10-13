@@ -11,7 +11,7 @@ export class Approvals {
   constructor(store:Store,auth:Auth,tasks:Tasks,ttlMs=86400000){this.store=store;this.auth=auth;this.tasks=tasks;requireCondition(Number.isInteger(ttlMs)&&ttlMs>=1000&&ttlMs<=30*86400000,'INVALID_PAYLOAD','Approval lifetime must be one second to thirty days');this.ttlMs=ttlMs;}
   policies=new Map<string,{digest?:(action:any)=>string;authorize:(tx:Transaction,ctx:AuthContext,task:any,action:any)=>Promise<void>;check:(tx:Transaction,ctx:AuthContext,task:any,row:any,answer:any)=>Promise<void>;accepted:(tx:Transaction,ctx:AuthContext,task:any,row:any,answer:any)=>Promise<void>}>();
   view(row:any):ApprovalView{return {approvalId:row.approval_id,taskId:row.task_id,inputRevisionId:row.input_revision_id,applicantId:row.applicant_id,
-    targetIdentity:row.target_identity,actionDigest:row.action_digest,action:row.action,status:row.status,approvedBy:row.approved_by,expiresAt:row.expires_at.toISOString(),decisionMode:row.decision_mode??null,singleAdminMode:row.single_admin_mode??false,verification:row.eligibility_verification??null};}
+    targetIdentity:row.target_identity,actionDigest:row.action_digest,action:row.action,status:row.status,approvedBy:row.approved_by,expiresAt:row.expires_at.toISOString(),supersededBy:row.superseded_by??null,decisionMode:row.decision_mode??null,singleAdminMode:row.single_admin_mode??false,verification:row.eligibility_verification??null};}
   async list(ctx:AuthContext,taskId:string):Promise<ApprovalView[]> {
     await this.tasks.load(ctx,taskId);
     const rows=(await this.store.pool.query('SELECT * FROM approvals WHERE task_id=$1 ORDER BY created_at,approval_id',[taskId])).rows;
@@ -32,6 +32,7 @@ export class Approvals {
         VALUES($1,$2,$3,'approval',$4,$5,$6)`,[requestId,id,task.inputRevisionId,`Approve ${action.name} on ${action.target}`,JSON.stringify({targetIdentity:action.targetIdentity,actionDigest:digest}),row.expires_at]);
       if(task.phase==='admitted')await this.tasks.stage(client,task,'running','inspect','task.running');
       await this.tasks.stage(client,task,'waiting-review','wait-approval','task.approval-requested',{approvalId:requestId,targetIdentity:action.targetIdentity,actionDigest:digest});
+      await this.tasks.emit(client,task.taskId,'task.waiting-review',{approvalId:requestId,inputRevisionId:task.inputRevisionId});await this.tasks.emit(client,task.taskId,'approval.requested',{approvalId:requestId,inputRevisionId:task.inputRevisionId,status:'open'});
       return this.view(row);
     };return tx?run(tx):this.store.transaction(run);
   }
@@ -59,6 +60,7 @@ export class Approvals {
       if(registered){try{await registered.check(tx,ctx,task,row,answer);}catch(error){if(!(error instanceof ApiError))throw error;await tx.query('UPDATE decisions SET outcome=$2 WHERE id=$1',[decision.id,error.code]);return {error};}}
       await tx.query('UPDATE approvals SET status=$2,approved_by=$3 WHERE approval_id=$1',[id,outcome,ctx.principalId]);
       await tx.query('UPDATE approvals SET decision_mode=$2,single_admin_mode=$3,eligibility_verification=$4 WHERE approval_id=$1',[id,eligibility.decisionMode,eligibility.singleAdminMode,JSON.stringify(eligibility.verification)]);await this.auth.audit(ctx,'approval.decision',{approvalId:id,outcome,decisionMode:eligibility.decisionMode,singleAdminMode:eligibility.singleAdminMode,policyVersion:eligibility.policyVersion,verification:eligibility.verification},task.scopeId,tx);
+      await this.tasks.emit(tx,taskId,'approval.decision',{approvalId:id,inputRevisionId:row.input_revision_id,outcome,status:outcome});
       await tx.query("UPDATE pending_inputs SET status='answered' WHERE request_id=$1",[id]);
       await this.tasks.stage(tx,task,'running','inspect','task.approval-decided',{approvalId:id,outcome});await this.tasks.wake(tx,taskId,'approval');
       await registered?.accepted(tx,ctx,task,row,answer);

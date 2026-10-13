@@ -3,12 +3,14 @@ import { ApiError, FLOW_VERSION, PACK_FLOWS, IDEMPOTENCY_WINDOW_MS, canonicalHas
 import type { Store, Transaction } from '../../storage/src/index.ts';
 import type { Auth } from './auth.ts';
 import {facetedPage} from '../../storage/src/faceted-query.ts';
-import type {RegistryPageQuery} from '../../contracts/src/index.ts';
+import {TaskAssignment, type TaskPageQuery} from '../../contracts/src/index.ts';import type {z} from 'zod';
+import {taskQueryPlan} from './task-query.ts';
+import {outboxWritten,replayWindow} from './outbox-retention.ts';
 
 export function taskFromRow(row: Record<string, any>): Task {
   return { taskId: row.task_id, tenantId: row.tenant_id, scopeId: row.scope_id, principalId: row.principal_id,
     title: row.title, phase: row.phase, inputRevisionId: row.input_revision_id, input: row.input,
-    revision: row.revision, flowVersion: row.flow_version,waitingReason:row.waiting_reason??null,
+    revision: row.revision, flowVersion: row.flow_version,waitingReason:row.waiting_reason??null,assignee:row.assignee_principal_id??null,dueAt:row.due_at?.toISOString()??null,
     ...(row.capability_pack_id ? { capabilityPackId: row.capability_pack_id, packVersion: row.pack_version } : {}) };
 }
 export class Tasks {
@@ -39,6 +41,7 @@ export class Tasks {
     // Serialize allocation through commit so after=seq cannot skip an uncommitted lower sequence.
     const seq = (await tx.query('UPDATE event_clock SET value=value+1 WHERE singleton RETURNING value')).rows[0].value;
     await tx.query('INSERT INTO outbox(seq,task_id,kind,payload) VALUES($1,$2,$3,$4)', [seq, taskId, kind, JSON.stringify(payload)]);
+    await outboxWritten(tx);
   }
   async wake(tx: Transaction, taskId: string, reason: string): Promise<void> {
     await tx.query('INSERT INTO wakeups(task_id,reason) VALUES($1,$2)', [taskId, reason]);
@@ -95,10 +98,14 @@ export class Tasks {
     return { ...task, pendingInputs: pending.map(row => ({ requestId: row.request_id, inputRevisionId: row.input_revision_id,
       kind: row.kind, question: row.question, binding: row.binding, expiresAt: row.expires_at.toISOString(), status: row.status })) };
   }
-  async page(ctx:AuthContext,query:RegistryPageQuery&{kind?:string;capabilityPackId?:string}){const p=await this.auth.check(ctx,'tasks.read',query.scopeId);return this.store.transaction(async tx=>{await tx.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');const params:any[]=[p.tenantId,p.scopes,p.principalId,ctx.run?.taskId??null],clauses=["tenant_id=$1 AND scope_id=ANY($2::text[]) AND (context->>'privateOwnerId' IS NULL OR context->>'privateOwnerId'=$3) AND ($4::text IS NULL OR task_id=$4 OR context->>'parentRunTaskId'=$4)"];
-    if(query.kind){params.push(query.kind);clauses.push(`CASE capability_pack_id WHEN 'asset-tool' THEN 'tool' WHEN 'asset-index' THEN 'index' ELSE 'work' END=$${params.length}`);}if(query.capabilityPackId){params.push(query.capabilityPackId);clauses.push(`capability_pack_id=$${params.length}`);}
-    const page=await facetedPage(tx,ctx,'tasks',query,'tasks',clauses.join(' AND '),params,{id:'task_id',created:'created_at',updated:'updated_at',scopeId:'scope_id',owner:'principal_id',productLineId:"context->>'productLineId'",flowVersion:'flow_version',status:'phase',lifecycle:'phase'},'*',taskFromRow);
+  async page(ctx:AuthContext,query:z.infer<typeof TaskPageQuery>){return this.store.transaction(async tx=>{await tx.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');const plan=await taskQueryPlan(this.auth,ctx,query,tx);
+    const page=await facetedPage(tx,ctx,'tasks',query,plan.from,plan.visible,plan.params,plan.columns,'t.*',taskFromRow);
     for(const task of page.items){const pending=(await tx.query('SELECT * FROM pending_inputs WHERE task_id=$1 ORDER BY created_at,request_id',[task.taskId])).rows;task.pendingInputs=pending.map(row=>({requestId:row.request_id,inputRevisionId:row.input_revision_id,kind:row.kind,question:row.question,binding:row.binding,expiresAt:row.expires_at.toISOString(),status:row.status}));}return page;});}
+  async assign(ctx:AuthContext,id:string,value:unknown){const input=TaskAssignment.parse(value);await this.store.transaction(async tx=>{
+    const task=await this.load(ctx,id,'tasks.input',tx,true);requireCondition(task.inputRevisionId===input.inputRevisionId,'INPUT_REVISION_STALE','Task assignment revision differs');requireCondition(!ctx.run&&(task.principalId===ctx.principalId||await this.auth.roles.role(ctx,task.scopeId,tx)==='admin'),'FORBIDDEN_ACTION','Only the owner or a scope administrator assigns readable tasks');
+    if(input.assignee){const target=(await tx.query("SELECT 1 FROM policies p JOIN principal_scope_roles r USING(principal_id) WHERE p.principal_id=$1 AND p.tenant_id=$2 AND NOT p.disabled AND p.kind='user' AND r.scope_id=$3 AND r.role IN ('member','admin')",[input.assignee,task.tenantId,task.scopeId])).rowCount;requireCondition(target,'FORBIDDEN_SCOPE','Assignee must be an active member of the task scope');const row=(await tx.query('SELECT context FROM tasks WHERE task_id=$1',[id])).rows[0];requireCondition(!row.context.privateOwnerId||row.context.privateOwnerId===input.assignee,'FORBIDDEN_SCOPE','Assignment does not grant access to a private task');}
+    await tx.query('UPDATE tasks SET assignee_principal_id=CASE WHEN $2 THEN $3 ELSE assignee_principal_id END,assigned_at=CASE WHEN $2 AND assignee_principal_id IS DISTINCT FROM $3 THEN clock_timestamp() ELSE assigned_at END,due_at=CASE WHEN $4 THEN $5::timestamptz ELSE due_at END,updated_at=clock_timestamp(),revision=revision+1 WHERE task_id=$1',[id,input.assignee!==undefined,input.assignee??null,input.dueAt!==undefined,input.dueAt??null]);await this.auth.audit(ctx,'task.assignment',{taskId:id,...input},task.scopeId,tx);await this.emit(tx,id,'task.assignment-changed',{inputRevisionId:task.inputRevisionId,assigneeId:input.assignee??null});
+   });return this.status(ctx,id);}
   async result(ctx: AuthContext, taskId: string): Promise<any> {
     return this.store.transaction(async tx => {
       const task = await this.load(ctx,taskId,'tasks.read',tx,true);
@@ -128,6 +135,7 @@ export class Tasks {
   }
   async events(ctx: AuthContext, taskId: string, after: number): Promise<Event[]> {
     await this.load(ctx, taskId);
+    await replayWindow(this.store,after);
     const rows = (await this.store.pool.query('SELECT * FROM outbox WHERE task_id=$1 AND seq>$2 ORDER BY seq LIMIT 500', [taskId, after])).rows;
     return rows.map(row => ({ seq: Number(row.seq), taskId: row.task_id, kind: row.kind, payload: row.payload, createdAt: row.created_at.toISOString() }));
   }
@@ -140,7 +148,7 @@ export class Tasks {
     await tx.query('INSERT INTO input_revisions(input_revision_id,task_id,input,principal_id) VALUES($1,$2,$3,$4)',
       [revision, task.taskId, JSON.stringify(input), ctx.principalId]);
     await tx.query("UPDATE pending_inputs SET status='superseded' WHERE task_id=$1 AND status='open'", [task.taskId]);
-    await tx.query("UPDATE approvals SET status='superseded' WHERE task_id=$1 AND status='open'",[task.taskId]);await tx.query("UPDATE change_sets SET status='superseded',updated_at=clock_timestamp() WHERE task_id=$1 AND status IN ('blocked','waiting-review')",[task.taskId]);
+    const superseded=(await tx.query("UPDATE approvals SET status='superseded',superseded_by=$2 WHERE task_id=$1 AND status='open' RETURNING approval_id",[task.taskId,revision])).rows;for(const row of superseded)await this.emit(tx,task.taskId,'approval.superseded',{approvalId:row.approval_id,inputRevisionId:task.inputRevisionId,supersededBy:revision});await tx.query("UPDATE change_sets SET status='superseded',updated_at=clock_timestamp() WHERE task_id=$1 AND status IN ('blocked','waiting-review')",[task.taskId]);
     await this.emit(tx, task.taskId, 'task.input-revised', { inputRevisionId: revision });
     await this.wake(tx, task.taskId, 'input');
     return { ...task, inputRevisionId: revision, input, phase: 'admitted', revision: task.revision + 1 };

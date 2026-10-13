@@ -30,7 +30,11 @@ import {ProductModules} from '../../../packages/methods/src/product-modules.ts';
 import {readEffectMigration} from '../../../packages/execution/src/read-effect-migration.ts';
 import {readReleaseAuditMigration} from '../../../packages/execution/src/read-release-audit-migration.ts';
 import {readCompensationMigration} from '../../../packages/execution/src/read-compensation-migration.ts';
+import {workQueryMigration} from '../../../packages/tasks/src/work-query-migration.ts';
+import {QueueQuery,TaskPageQuery} from '../../../packages/contracts/src/index.ts';
 import {Notifications,NotificationQuery} from '../../../packages/tasks/src/notifications.ts';
+import {WorkQueries} from '../../../packages/tasks/src/work-queries.ts';
+import {trimOutbox,replayWindow} from '../../../packages/tasks/src/outbox-retention.ts';
 import {notificationMigration} from '../../../packages/tasks/src/notification-events.ts';
 import {ExecutionSecrets} from '../../../packages/execution/src/secret-lifecycle.ts';
 import { Checklists } from '../../../packages/tasks/src/checklists.ts';
@@ -82,7 +86,7 @@ import {HarnessPrimitives} from '../../../packages/skillpacks/src/primitives.ts'
 
 function environment(name: string): string { const value = process.env[name]; if (!value) throw new Error(`Required environment variable: ${name}`); return value; }
 const store = new Store(JSON.parse(environment('CIRCLE_SERVER_DATABASE_CONFIG')));
-await store.migrate([taskMigration,deliveryMigration,knowledgeMigration,executionMigration,...packageMigrations,approvalMigration,conclusionMigration,checklistMigration,connectorMigration,entityMigration,assetMigration,graphMigration,toolMigration,skillMigration,automationMigration,automationOutcomeMigration,knowledgePageMigration,automationOriginMigration,ingestionMigration,oauthMigration,resourceIdentityMigration,roleMigration,changeSetMigration,changeSetDependenciesMigration,enforcementMigration,sessionMigration,toolRolesMigration,readEffectMigration,readReleaseAuditMigration,notificationMigration,queryMigration,neutralMigration,mcpMigration,compatibilityMigration,readCompensationMigration]);
+await store.migrate([taskMigration,deliveryMigration,knowledgeMigration,executionMigration,...packageMigrations,approvalMigration,conclusionMigration,checklistMigration,connectorMigration,entityMigration,assetMigration,graphMigration,toolMigration,skillMigration,automationMigration,automationOutcomeMigration,knowledgePageMigration,automationOriginMigration,ingestionMigration,oauthMigration,resourceIdentityMigration,roleMigration,changeSetMigration,changeSetDependenciesMigration,enforcementMigration,sessionMigration,toolRolesMigration,readEffectMigration,readReleaseAuditMigration,notificationMigration,queryMigration,neutralMigration,mcpMigration,compatibilityMigration,readCompensationMigration,workQueryMigration]);
 const auth = new Auth(store,{developmentTtlMs:process.env.CIRCLE_SERVER_DEV_TOKEN_TTL_MS?Number(process.env.CIRCLE_SERVER_DEV_TOKEN_TTL_MS):undefined,runTokenTtlMs:process.env.CIRCLE_SERVER_RUN_TOKEN_TTL_MS?Number(process.env.CIRCLE_SERVER_RUN_TOKEN_TTL_MS):undefined});
 requireCondition(process.env.CIRCLE_SERVER_DEV_AUTH === '1', 'INVALID_PAYLOAD', 'Phase one requires explicitly enabled development authentication');
 await auth.initializeDevelopment(environment('CIRCLE_SERVER_DEV_IDENTITIES'));
@@ -114,6 +118,7 @@ const registrationValidation=assets.validateRegistration;assets.validateRegistra
 const skills=new SkillPacks(store,auth,tasks,approvals,assets,catalog,execution,knowledge);await skills.initialize(process.env.CIRCLE_RUNTIME_CONFIG);
 const executionSecrets=new ExecutionSecrets(store,assets.vault,skills.secrets);
 const notifications=new Notifications(store,auth);
+const workQueries=new WorkQueries(store,auth);
 const primitives=new HarnessPrimitives({store,auth,assets,knowledge,changeSets});
 const mcp=new HubMcp({store,auth,catalog,graph,knowledge,primitives});
 const previousRegistration=assets.validateRegistration;assets.validateRegistration=async(ctx,input,id,tx)=>{if(input.configuration.harnessPrimitive||['instruction','agent','command'].includes(input.kind))await primitives.dependencies(tx,ctx,{...input,scope_id:input.scopeId});await previousRegistration?.(ctx,input,id,tx);};
@@ -217,13 +222,13 @@ const server = createListener(async (request, response) => {
     const harnessExport=/^\/v1\/assets\/(ast_[a-f0-9]{32})\/harness-export$/.exec(url.pathname);if(harnessExport&&request.method==='GET'){send(response,200,{data:await primitives.export(ctx,harnessExport[1],url.searchParams.get('target')??'circle')});return;}
     if(url.pathname===CLIENT_ROUTES.authLogout.path&&request.method==='POST'){AuthRefreshRequest.parse(await body(request));send(response,200,{data:await auth.logout(request.headers.authorization!)});return;}
     if(url.pathname===CLIENT_ROUTES.notifications.path&&request.method==='GET'){send(response,200,{data:await notifications.page(ctx,NotificationQuery.parse(Object.fromEntries(url.searchParams)))});return;}
-    if(url.pathname===CLIENT_ROUTES.queues.path&&request.method==='GET'){send(response,200,{data:await notifications.queues(ctx)});return;}
+    if(url.pathname===CLIENT_ROUTES.queues.path&&request.method==='GET'){send(response,200,{data:await workQueries.queues(ctx,QueueQuery.parse(Object.fromEntries(url.searchParams)))});return;}
     if(url.pathname===CLIENT_ROUTES.notificationStream.path&&request.method==='GET'){
-      await auth.check(ctx,'tasks.read');const query=NotificationQuery.parse({...Object.fromEntries(url.searchParams),...(request.headers['last-event-id']&&!url.searchParams.has('cursor')?{cursor:request.headers['last-event-id']}:{})});let cursor=query.cursor,closed=false,lastHeartbeat=0;response.once('close',()=>{closed=true;});response.writeHead(200,{'content-type':'text/event-stream; charset=utf-8','cache-control':'no-cache','connection':'keep-alive'});response.flushHeaders();
-      try{while(!closed&&!closing){let page;try{const current=await auth.authenticate(request.headers.authorization);page=await notifications.page(current,{...query,cursor});}catch(error){const event=error instanceof ApiError&&error.code==='UNAUTHENTICATED'?'session.expired':error instanceof ApiError&&error.code==='FORBIDDEN_ACTION'?'permission.revoked':'stream.error';response.write(`event: ${event}\ndata: {}\n\n`);break;}
+      await auth.check(ctx,'tasks.read');const query=NotificationQuery.parse({...Object.fromEntries(url.searchParams),...(request.headers['last-event-id']&&!url.searchParams.has('cursor')?{cursor:request.headers['last-event-id']}:{})});await notifications.page(ctx,query);const release=notifications.reserve(ctx);let cursor=query.cursor,closed=false,lastHeartbeat=0;response.once('close',()=>{closed=true;release();});response.writeHead(200,{'content-type':'text/event-stream; charset=utf-8','cache-control':'no-cache','connection':'keep-alive'});response.flushHeaders();
+      try{while(!closed&&!closing){let page;try{const current=await auth.authenticate(request.headers.authorization);page=await notifications.page(current,{...query,cursor});}catch(error){const event=error instanceof ApiError&&error.code==='UNAUTHENTICATED'?'session.expired':error instanceof ApiError&&error.code==='FORBIDDEN_ACTION'?'permission.revoked':error instanceof ApiError&&error.code==='CURSOR_EXPIRED'?'cursor.expired':'stream.error';response.write(`event: ${event}\ndata: ${JSON.stringify(error instanceof ApiError&&error.code==='CURSOR_EXPIRED'?error.details:{})}\n\n`);break;}
         for(const event of page.items){if(closed||closing)break;if(!response.write(`id: ${event.seq}\nevent: notification\ndata: ${JSON.stringify(event)}\n\n`))await new Promise<void>(resolve=>{const done=()=>{response.removeListener('drain',done);response.removeListener('close',done);shutdownSignal.signal.removeEventListener('abort',done);resolve();};response.once('drain',done);response.once('close',done);shutdownSignal.signal.addEventListener('abort',done,{once:true});if(closed||closing)done();});}
         if(cursor!==page.cursor||Date.now()-lastHeartbeat>15000){response.write(`event: cursor\ndata: ${JSON.stringify({cursor:page.cursor})}\n\n`);lastHeartbeat=Date.now();}cursor=page.cursor;if(page.hasMore)continue;try{await delay(500,undefined,{signal:shutdownSignal.signal});}catch{break;}
-      }}finally{if(!response.destroyed)response.end();}return;
+      }}finally{release();if(!response.destroyed)response.end();}return;
     }
     if(url.pathname===CLIENT_ROUTES.authRefresh.path&&request.method==='POST'){
       AuthRefreshRequest.parse(await body(request));const issued=await auth.refresh(request.headers.authorization!),policy=await auth.policy(ctx);send(response,200,{data:{...issued,tokenType:'Bearer',principalId:policy.principalId,tenantId:policy.tenantId,scopes:policy.scopes,subjectType:policy.kind==='user'?'human':'service-client',...(policy.kind==='user'?{roles:policy.roles}:{scope:policy.grants.join(' ')})}});return;
@@ -313,8 +318,9 @@ const server = createListener(async (request, response) => {
     if (url.pathname === '/v1/status' && request.method === 'GET') { send(response,200,{data:{apiVersion:API_VERSION,syntheticOnly:true,bootId,processId:process.pid}});return; }
     if (url.pathname === CLIENT_ROUTES.tasks.path && request.method === CLIENT_ROUTES.tasks.method) {
       const query=TaskListQuery.parse({limit:url.searchParams.get('limit')??undefined,kind:url.searchParams.get('kind')??undefined,capabilityPackId:url.searchParams.get('capabilityPackId')??undefined,after:url.searchParams.get('after')??undefined});
-      send(response,200,{data:url.searchParams.has('view')?await tasks.page(ctx,{...RegistryPageQuery.parse(Object.fromEntries(url.searchParams)),...(query.kind?{kind:query.kind}:{}),...(query.capabilityPackId?{capabilityPackId:query.capabilityPackId}:{})}):await tasks.list(ctx,query.limit,query)});return;
+      send(response,200,{data:url.searchParams.has('view')?await tasks.page(ctx,TaskPageQuery.parse(Object.fromEntries(url.searchParams))):await tasks.list(ctx,query.limit,query)});return;
     }
+    const assignment=/^\/v1\/tasks\/(task_[A-Za-z0-9_-]+)\/assignment$/.exec(url.pathname);if(assignment&&request.method==='POST'){send(response,200,{data:await tasks.assign(ctx,assignment[1],await body(request))});return;}
     if (url.pathname === '/v1/packs' && request.method === 'GET') {
       await auth.check(ctx,'methods.use'); send(response,200,{ data:packages.descriptors }); return;
     }
@@ -452,6 +458,7 @@ const server = createListener(async (request, response) => {
       }
       if(url.pathname==='/v1/admin/events'&&request.method==='GET'){
         const after=z.coerce.number().int().min(0).max(Number.MAX_SAFE_INTEGER).parse(url.searchParams.get('after')??0),wait=z.coerce.number().int().min(0).max(30_000).parse(url.searchParams.get('waitMs')??0),deadline=Date.now()+wait;let rows:any[];
+        await replayWindow(store,after);
         do{await auth.authenticate(request.headers.authorization);const current=await auth.check(ctx,'admin.manage');
           rows=(await store.pool.query("SELECT o.* FROM outbox o JOIN tasks t USING(task_id) WHERE t.tenant_id=$1 AND t.scope_id=ANY($2::text[]) AND o.seq>$3 AND (t.context->>'privateOwnerId' IS NULL OR t.context->>'privateOwnerId'=$4) ORDER BY o.seq LIMIT 500",[current.tenantId,current.scopes,after,current.principalId])).rows;
           if(rows.length||Date.now()>=deadline||closing||response.destroyed)break;await waitForEvents();
@@ -483,10 +490,10 @@ const server = createListener(async (request, response) => {
   }
 });
 server.requestTimeout = 10_000; server.headersTimeout = 10_000;
-let running: Promise<void> | undefined;
+let running: Promise<void> | undefined;let lastRetention=0;
 const timer = setInterval(() => {
   if (running || closing) return;
-  running = tasks.runOnce().then(()=>packages.runOnce()).then(()=>automations.tick()).then(()=>changeSets.tick()).then(()=>executionSecrets.tick()).catch(error => { console.error(JSON.stringify({type:'runner-transaction-failed',code:error instanceof ApiError?error.code:(error as any).code??'INTERNAL_ERROR'})); }).finally(() => { running = undefined; });
+  running = tasks.runOnce().then(()=>packages.runOnce()).then(()=>automations.tick()).then(()=>changeSets.tick()).then(()=>executionSecrets.tick()).then(async()=>{if(Date.now()-lastRetention>=60000){await store.transaction(tx=>trimOutbox(tx));lastRetention=Date.now();}}).catch(error => { console.error(JSON.stringify({type:'runner-transaction-failed',code:error instanceof ApiError?error.code:(error as any).code??'INTERNAL_ERROR'})); }).finally(() => { running = undefined; });
 }, Number(process.env.CIRCLE_SERVER_POLL_MS ?? 100));
 let indexing:Promise<void>|undefined;
 const indexTimer=setInterval(()=>{if(indexing||closing)return;indexing=ingestions.runOnce().catch(error=>{console.error(JSON.stringify({type:'source-index-transaction-failed',code:error instanceof ApiError?error.code:'INTERNAL_ERROR'}));}).finally(()=>{indexing=undefined;});},Number(process.env.CIRCLE_SERVER_INDEX_POLL_MS??100));
