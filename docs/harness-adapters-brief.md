@@ -36,13 +36,12 @@ circle-hub 治理任何 harness 的原语（规范见 `docs/design/harness-primi
 - `hub-hook/1` 的 event：规范固定了 hub 侧五个钩子点（`verify.*`、`beforeDispatch`、`afterResult`），但没写 harness 客户端事件（PreToolUse / PostToolUse / SessionStart…）到它们的对应关系；适配器原样保留 harness 事件名，每种事件一条 HOOK_EVENT_UNMAPPED（复核写的是「每个 hook 一条」，括号里又否定按命令计；按「每种事件一条」实现）。order 留空（harness 钩子并行，顺序是编的）；deterministic 留空（任意 shell 命令的可证真性推导不出，也不写 false）。matcher、timeout 等专有键放 harnessSpecific.entry / .matcher。
 - `hub-instruction/1` 的 scope 推导不出就留空；applies 只有 `.claude/rules/*.md` 能从 frontmatter `paths` 取到，其余为空数组。
 - `hub-provider/1` 规范表格没有 name 字段：清单加了 `name`（`mcpServers` / `mcp_servers` 的键），登记与导出都需要它。credentialMode 推导不出，留空（不写 static）。provides / reads / writes 从静态配置文件推导不出（要运行时发现）：provides 整个留空（undefined），reads / writes 为空数组。credentials 只列 env / headers / http_headers 的键名（oauth 键名不进 credentials）。
-- transport：规范只有 stdio / streamable-http 两个值。sse、ws 等没有对应值：transport 留空并报 PROVIDER_TRANSPORT_UNKNOWN。有 url 无 type、command 与 url 并存、command 配非 stdio 的 type：整条跳过并报 PROVIDER_ENTRY_INVALID（detail 只写条目名）。Codex 的 mcp_servers 没有 type 键，所以 Codex 的 http 条目目前全部被跳过——Codex http 配置的确切写法待规范或真实格式定论。
-- 字节与导出：清单只含字段，不含文件全文；每份清单记 `files: [{path, sha256}]` 指向来源文件。导出签名是 `exportTo(harness, manifests, files)`：markdown 类 = 清单重写 frontmatter + 原文件正文（实现为「与原文件推导值比对，一致就原样返回原文字节」，所以未改时逐字节相同，且不要求原 frontmatter 是任何规范形式）；配置类（settings.json / settings.local.json / hooks.json / .mcp.json / config.toml）由清单重生成，被脱敏的值写成 `[redacted]` 占位并报 SECRET_PLACEHOLDER。harnessSpecific 只放位置与结构信息（path、frontmatterKeys、hadFrontmatter、eventIndex / groupIndex / entryIndex、脱敏后的 shape）和未映射的 frontmatter 键。
-- 脱敏按结构：env / headers / http_headers / oauth 的值一律去掉只留键名；cwd 去掉并报 PROVIDER_CWD_DROPPED；args 元素含 `://`、以 `/` 或 `~` 开头、或形如 `--x=y` / `-x=y` 的替换为 `[redacted]`；钩子命令里的绝对路径段替换为 basename 并报 HOOK_COMMAND_PATH（`--opt=/abs/path` 这类 `=` 后接路径的也算）。藏在 args 其余值里的密钥无法可靠识别，不做猜测性清洗。所有 warning 的 detail 只写路径、行号、键名，不写值、不写整行。
-- MCP server 条目里适配器不认识的专有键原样保留在 harnessSpecific.shape——这是结构规则的边界：顶层散落的无名单密钥（既不在 env/headers/oauth 里）会随之进入清单，留待规范决定是否加键名单。
-- 位置覆盖：Claude Code 侧 `**/.claude/skills/<name>/SKILL.md`（任意层级）、`.claude/commands/<dir>/<name>.md`（名字 `dir:name`）、`.claude/rules/*.md`、CLAUDE.md / CLAUDE.local.md / AGENTS.md（任意层级）、`.claude/settings.json` 与 `.claude/settings.local.json`、`.mcp.json`。Codex 侧 `**/.agents/skills/<name>/SKILL.md`、AGENTS.md / AGENTS.override.md、`.codex/hooks.json`、`.codex/config.toml`。用户级（`~/...`）文件不在虚拟文件表里，不导入。Codex 的 `.codex/agents/*.toml` 与 `~/.codex/prompts` 本轮不做。
+- transport：规范只有 stdio / streamable-http 两个值。Claude `.mcp.json`：`type: "streamable-http"` 是 `http` 的别名；sse、ws 等没有对应值：transport 留空并报 PROVIDER_TRANSPORT_UNKNOWN；有 url 无 type、command 与 url 并存、command 配非 stdio 的 type：整条跳过并报 PROVIDER_ENTRY_INVALID（detail 只写条目名）。Codex 的 mcp_servers 没有 type 键：只有 url 的条目是合法的 Streamable HTTP（伴随键 auth / bearer_token_env_var / http_headers / env_http_headers 原样留在骨架键名里），command 与 url 并存仍整条跳过。
+- 字节与导出：清单只含字段，不含文件全文；每份清单记 `files: [{path, sha256}]` 指向来源文件。导出签名是 `exportTo(harness, manifests, files)`：markdown 类 = 清单重写 frontmatter + 原文件正文（实现为「与原文件推导值比对，一致就原样返回原文字节」，所以未改时逐字节相同，且不要求原 frontmatter 是任何规范形式）；配置类（settings.json / settings.local.json / hooks.json / .mcp.json / config.toml）由清单结构 + 原文件字节重生成：manifest 里的 shape 只留键名（对象值记嵌套键名），导出时从原文件取值并重新套用脱敏规则——对象值与 url 写成 `[redacted]` 占位并报 SECRET_PLACEHOLDER，cwd 不导出，args 重标红，绝对路径 command 降 basename。harnessSpecific 只放位置与结构信息（path、frontmatterKeys、hadFrontmatter、eventIndex / groupIndex / entryIndex、entryKeys、shape 骨架、server 原名）和未映射的 frontmatter 键。
+- 脱敏按结构且结构覆盖全：配置表进 harnessSpecific.shape 一律只留键名、值一律去掉，不分四类（headersHelper 这类未知键因此也不带值）；cwd 去掉并报 PROVIDER_CWD_DROPPED；args 元素含 `://`、以 `/` 或 `~` 开头、或形如 `--x=y` / `-x=y` 的替换为 `[redacted]`；钩子命令先按 shell 词法切词（尊重引号），程序名取 basename（HOOK_COMMAND_PATH），其余每个词套 args 同样的规则，另加 Bearer 关键词规则（`Bearer` 后一个词、或词内含 `Bearer <x>` 的整词替换为 `[redacted]`，报 HOOK_ARG_REDACTED）；handler 只保留处理后的命令。Markdown frontmatter 是例外：未映射键保留键和值——frontmatter 是模型可见的配置、本来就在 Git 里；边界写死在此：frontmatter 里的值不做秘密清洗，若某 harness 把秘密写进 frontmatter，会随清单走（目前的 Claude Code / Codex 格式都不这么用）。所有 warning 的 detail 只写路径、行号、键名，不写值、不写整行。
+- 位置覆盖：Claude Code 侧 `**/.claude/skills/<name>/SKILL.md`（任意层级）、`.claude/commands/<dir>/<name>.md`（名字 `dir:name`）、`.claude/rules/**/*.md`（递归；applies ← frontmatter `paths`）、`.claude/agents/**/*.md`（递归；身份不随子目录改变）、CLAUDE.md / CLAUDE.local.md / AGENTS.md（任意层级）、`.claude/settings.json` 与 `.claude/settings.local.json`、`.mcp.json`。Codex 侧 `**/.agents/skills/<name>/SKILL.md`、AGENTS.md / AGENTS.override.md、`.codex/hooks.json`、`.codex/config.toml`。用户级（`~/...`）文件不在虚拟文件表里，不导入。Codex 的 `.codex/agents/*.toml` 与 `~/.codex/prompts` 本轮不做。
 - `.codex/hooks.json` 的形状假定与 Claude 设置文件同构（`{hooks: {event: [{matcher?, hooks: [{type, command}]}]}}`），待真实 Codex 格式核实。
-- 配置文件里 hooks、mcpServers / mcp_servers 以外的顶层键不属于被治理原语：导入报 CONFIG_EXTRA_KEYS，导出丢弃。空配置（空文件、无对应节、节为空）报 EMPTY_CONFIG。TOML 注释无法随清单往返：导入报 TOML_COMMENT_DROPPED（只给行号）。JSON 配置文件的逐字节往返只在文件恰好是规范形式（2 空格缩进、末尾换行）时成立；否则导入报 CANONICAL_NORMALIZATION。emitToml 不产出空表头（如空的 `[mcp_servers]`）。
+- 配置文件里 hooks、mcpServers / mcp_servers 以外的顶层键不属于被治理原语：导入报 CONFIG_EXTRA_KEYS，导出丢弃。空配置（空文件、无对应节、节为空）报 EMPTY_CONFIG。TOML 注释无法随清单往返：导入报 TOML_COMMENT_DROPPED（只给行号）。JSON 配置文件的逐字节往返只在文件恰好是规范形式（2 空格缩进、末尾换行）时成立；否则导入报 CANONICAL_NORMALIZATION。emitToml 的表头规则：只有子表时不写空头（如 `[mcp_servers]`），空表整体不写。
 - Claude Code command 的名字由文件路径决定（其 frontmatter 没有 name 字段），直接取、不告警；skill / agent 的 frontmatter 缺 name 时才从路径推导并报 NAME_DERIVED_FROM_PATH。
 - 非 command 类型的钩子条目（http / prompt / agent / mcp_tool）跳过并报 HOOK_ENTRY_SKIPPED，detail 只带位置与类型名。
 
@@ -89,3 +88,14 @@ tsc 与 50 个测试通过；fixture 卫生合格；hooks / `.mcp.json` / `[mcp_
 ### F. 测试
 
 每条 A–E 一个失败路径测试；脱敏断言要能抓到嵌在长字符串中间的端点和路径；往返测试分「清单未改」和「清单改了 frontmatter」两种。
+
+## 复核第二轮（Claude 与独立复核人，2026-10-13，对 dd8c3e2）
+
+A–F 基本到位；下面是第三轮要收口的，都是决定：
+
+1. Codex `mcp_servers` 只有 `url` 的条目是合法的 Streamable HTTP（Codex 没有 `type` 键；可选 `auth`、`bearer_token_env_var`、`http_headers`、`env_http_headers`）：导入为 `transport: streamable-http`，url 值照脱敏规则清掉；不再报 `PROVIDER_ENTRY_INVALID`。Claude 的 `.mcp.json` 规则不变（无 `type` 的 url 仍是配置错误）。
+2. Claude `.mcp.json` 的 `type: "streamable-http"` 是 `http` 的别名：同样映射为 `streamable-http`。
+3. 密钥只按结构、但结构要覆盖全：a) 钩子命令按 shell 词法切词（尊重引号）后对每个词套用和 MCP `args` 相同的规则（含 `://`、以 `/` 或 `~` 开头、`--x=y` / `-x=y` → `[redacted]`），程序名取 basename；`handler` 只保留处理后的命令；b) 配置文件（`settings.json` 的 hook 条目、`.mcp.json`、`config.toml` 表）进 `harnessSpecific.shape` 时**只留键名，值一律去掉**，不分四类，`headersHelper` 这类自然就不带值；c) Markdown frontmatter 的未映射键保留键和值（frontmatter 是模型可见的配置，本来就在 Git 里），但在任务书「待定」里写明这条边界。
+4. `emitToml` 只有子表时不写空的 `[mcp_servers]` 头。
+5. `.claude/rules/` 递归发现（子目录里的 `*.md` 也是规则）；`.claude/agents/` 的子目录文件也导入（身份不随子目录改变）。
+6. 测试补：以上每条各一个失败路径；Codex 只有 url 的条目往返；`streamable-http` 别名；钩子命令里的 `Bearer x` 和 URL 不进清单；`headersHelper` 值不进清单；子目录 rules / agents。
