@@ -11,6 +11,6 @@
 | [角色与范围](roles.md) | 管理员 / 成员 / 访客按范围授予；两人规则；单管理员的自决；机器身份 |
 | [与 Circle 的集成](circle-integration.md) | hub 扩展 Circle 的菜单而不是另开一节；同步模型；只装 Circle 看不到什么 |
 | [产品线包典范](product-line-pack.md) | 一条产品线接进来的交付物：目录布局、适配单、验收清单，以合成产品线为样例 |
-| [harness 原语规范](harness-primitives.md) | hub 只认 Skill / Tool / MCP server / Hook 四种原语，用 harness 自己的格式；归并掉的旧词；每种原语的契约 |
+| [harness 原语规范](harness-primitives.md) | hub 治理任何 harness 的原语：治理 / 不治理清单、中立清单、每个 harness 的导入导出适配器、hub 自己作为 MCP server 的通用传输、原语在四对象五要素里的位置 |
 
 两条贯穿全部的原则来自更早的决定：确定内容交给脚本、其余交给模型判定并完整披露（ADR 0024）；本地取消、远端停止、任务交付分别记录（ADR 0025）。
