@@ -90,6 +90,17 @@ Transport mapping: `command` (`type: local` for OpenCode) → `stdio`; Claude `t
 - Gemini: alias instruction files pointed at by `settings.json`'s `context.fileName` are not resolved — only `GEMINI.md`; a YAML list of multiple remote agents in one file is beyond the frontmatter subset.
 - Cursor: commands (no documented directory); agent compat directories `.claude/agents`, `.codex/agents` are not imported (they belong to their own harnesses' adapters; skill compat directories are imported, see the matrix).
 
+## CLI
+
+A minimal command line (local inspection only; no hub, no network):
+
+```sh
+node packages/harness-adapters/cli.ts import <dir> --from <harness>
+node packages/harness-adapters/cli.ts export <manifests.json> --to <harness> [--dir <dir>]
+```
+
+`import` reads a real directory into the virtual file table (UTF-8-clean files become strings, anything else stays bytes) and prints `{ manifests, warnings }` as JSON on stdout. `export` reads a manifests JSON file, takes the original file table from `--dir` (markdown bodies, skill siblings and config regeneration all need it), and prints `{ files, warnings }` — file values are strings, binary ones `{ "base64": ... }`. Usage errors exit 1 with a single stderr line.
+
 ## Permission export
 
 Specification: `docs/design/permission-export.md`. `hub-permission/1` is a neutral JSON computed from the scope's role presets and the Tool annotations — **it stores inputs, never dispositions**; adapters only read it, and exporting approves nothing.

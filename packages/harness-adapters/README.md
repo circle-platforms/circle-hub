@@ -90,6 +90,17 @@ transport 映射：`command`（OpenCode 为 `type: local`）→ `stdio`；Claude
 - Gemini：`settings.json` 的 `context.fileName` 指向的别名 instruction 文件不解析，只认 `GEMINI.md`；一个文件里多个远程代理的 YAML 列表超出 frontmatter 子集。
 - Cursor：commands（未查到目录）；agents 的兼容目录 `.claude/agents`、`.codex/agents` 不导入（归各自 harness 的适配器管；skills 的兼容目录会导入，见矩阵）。
 
+## CLI
+
+最小命令行（仅本地查看用；不碰 hub、不联网）：
+
+```sh
+node packages/harness-adapters/cli.ts import <dir> --from <harness>
+node packages/harness-adapters/cli.ts export <manifests.json> --to <harness> [--dir <dir>]
+```
+
+`import` 把真实目录读成虚拟文件表（UTF-8 干净的存字符串，否则按字节存），stdout 输出 `{ manifests, warnings }` 的 JSON。`export` 读 manifests JSON，用 `--dir` 提供原文件表（markdown 正文、skill 附属文件、配置重生成都要它），stdout 输出 `{ files, warnings }`——文件值是字符串，二进制为 `{ "base64": ... }`。用法错误一律退出码 1 加 stderr 一句话。
+
 ## 权限导出
 
 规范：`docs/design/permission-export.md`。`hub-permission/1` 是从范围角色预设和 Tool 标注算出来的中立 JSON，**只存输入、不存处置**；适配器只读它，导出本身不批准任何东西。
