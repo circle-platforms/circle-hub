@@ -2,12 +2,13 @@ import {createServer} from 'node:http';
 import type {TestContext} from 'node:test';
 
 export async function caseGateway(t:TestContext){
-  const state={staticSecret:'',staticAccepted:false,refuseLease:false,unavailable:false,lost:false,hold:false,dropSubmit:false,submitRefusal:null as any,refuseRelease:false,wrongSha:false,failCase:false,hostLog:'',actualBuild:'Rel_PHOTON_10_5_0_101',missingBuild:false,command:'service create port 443',sha:'',taskId:'cex_synthetic_301',calls:[] as string[],identityServer:'',clientId:'',clientSecret:'',ruleBuild:'',ruleSha:'',verified:[] as any[]};
+  const state={staticSecret:'',staticAccepted:false,refuseLease:false,unavailable:false,healthDelayMs:0,lost:false,hold:false,dropSubmit:false,submitRefusal:null as any,refuseRelease:false,wrongSha:false,failCase:false,hostLog:'',actualBuild:'Rel_PHOTON_10_5_0_101',missingBuild:false,command:'service create port 443',sha:'',taskId:'cex_synthetic_301',calls:[] as string[],identityServer:'',clientId:'',clientSecret:'',ruleBuild:'',ruleSha:'',verified:[] as any[]};
   const server=createServer(async(req,res)=>{
     if(req.method!=='POST'||req.url!=='/mcp'){res.writeHead(405);res.end();return;}
     let rpc:any;try{let input='';for await(const bytes of req)input+=bytes;rpc=JSON.parse(input);}catch{res.writeHead(400);res.end();return;}
     const name=rpc.params?.name;state.calls.push(name??rpc.method);
     if(state.unavailable){res.writeHead(503);res.end('{"error":"cannot verify token: server unreachable"}');return;}
+    if(name==='lease_status'&&state.healthDelayMs)await new Promise(resolve=>setTimeout(resolve,state.healthDelayMs));
     if(state.staticSecret){if(req.headers.authorization!==`Bearer ${state.staticSecret}`){res.writeHead(401);res.end();return;}state.staticAccepted=true;}
     if(state.identityServer){try{
       const auth=`Basic ${Buffer.from(`${encodeURIComponent(state.clientId)}:${encodeURIComponent(state.clientSecret)}`).toString('base64')}`,token=(req.headers.authorization??'').slice(7),checked=await fetch(`${state.identityServer}/v1/introspect`,{method:'POST',headers:{authorization:auth,'content-type':'application/x-www-form-urlencoded'},body:new URLSearchParams({token})}),info=await checked.json() as any;

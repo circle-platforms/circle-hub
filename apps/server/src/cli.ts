@@ -34,8 +34,8 @@ async function main():Promise<void>{
     do{const page=await request(`${ADMIN_ROUTES.events}?after=${after}&waitMs=${args.includes('--once')?0:1000}`);after=page.after;output(page);}while(!stopped&&!args.includes('--once'));return;
   }
   if(command==='restart'&&args.length===1&&args[0]==='--graceful'){
-    const before=await request('/v1/status');await request(ADMIN_ROUTES.restart,{graceful:true});const until=Date.now()+20_000;
-    while(Date.now()<until){await delay(100);try{const status=await request('/v1/status');if(status.bootId!==before.bootId){output({restarted:true,previousBootId:before.bootId,bootId:status.bootId,processId:status.processId});return;}}catch(error){if(error instanceof ApiError)throw error;}}
+    const before=await request('/v1/status'),accepted=await request(ADMIN_ROUTES.restart,{graceful:true});const until=Date.now()+20_000;
+    while(Date.now()<until){await delay(100);try{const status=await request('/v1/status');if(status.bootId!==before.bootId){output({restarted:true,previousBootId:before.bootId,bootId:status.bootId,processId:status.processId,workersRestartRequested:accepted.workersRestartRequested===true});return;}}catch(error){if(error instanceof ApiError)throw error;}}
     throw new ApiError('INTERNAL_ERROR','Graceful restart did not produce a new server process');
   }
   throw new ApiError('INVALID_PAYLOAD','Unsupported admin command');

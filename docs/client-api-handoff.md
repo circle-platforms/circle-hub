@@ -492,6 +492,10 @@ MCP 的所有调用都校验 body.idempotencyKey（若有）与 _meta["hub/idemp
 
 迁移 36 是追加历史补偿，不重写 29/30。operation.read-release-compensated 审计的 correctsAudit 指向原 30 审计，originalState=unprovable 表示 29 前状态没有可证明日志；leasesRestored=false。task.read-release-phase-compensated 只记 36 前实际 phase 和原任务/read 审计引用，historicalPhase=unprovable。旧租约不恢复；新释放只针对当前 unknown/read，写 unknown 继续冻结与独立核对。33–35 仍分别保留中立清单、MCP 回执与兼容观察用途。
 
+dev:stack 的 admin restart --graceful 现在请求 server 换进程后逐个排空/替换受其监督的两个 worker。每次保留同伴处理运行中的子 Tool，旧 worker 停止领取新活、完成已有操作后退出，再用原身份起新代码；不强杀设备操作以赶升级期限。CLI 的 workersRestartRequested=true 表示后台已请求替换，完成看 dev-stack.worker.draining/exit/ready JSON 日志（pid、时间、码/信号、graceful）。worker 自身退出只替换该进程，不删除临时 PostgreSQL；退出仍走 C 的租约与 unknown 规则。停止整个栈才清理临时数据。单独部署的外部 worker 不由 dev-stack 管理，workersRestartRequested=false；管理员仍须先 drain，再由其进程管理器替换，server restart 不声称已升级这些 worker。
+
+已安装并为产品线声明的 provider Tool，缺别名时使用产品线默认 prefix、包 prefix，最后以 packageId（连字符改下划线）作 prefix；显式实例 alias 优先。没有安装/声明的产品线仍不获得 provider。名称冲突按现有 tenant 唯一规则拒绝，不让缺 alias 静默隐藏工具。
+
 GET /v1/assets/{id}/harness-export?target=circle|<sourceHarness> 仅批准后的可读原语可用，返回 files 的相对目标路径/base64/sha256、warnings、provenance:{assetId,version,sha256,sourceHarness}。Circle Skill 原件移动到 .circle/skills/{name}/，字节不改；Instruction 投影为 AGENTS.md。Circle 尚无 Agent/Command 原生安装时明确 warning；MCP prompt 可读取批准的 Skill/Command。同来源 harness 由公开库导出；其不支持的跨 harness 映射继续 warning。这里只是冻结与装载投影，云运行仍用既有技能试跑/提交/批准接口；不自动批准或把原件搬运称作已执行。
 
 `POST /mcp` 是官方 @modelcontextprotocol/sdk 1.32.1 的 Streamable HTTP JSON transport，协议协商 2025-11-25；[传输规范](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports)。每请求带 hub 会话 Bearer；Origin 若存在须同 hub 原生地址。无会话 id 的 stateless 模式，GET/DELETE 405；Accept 同时支持 application/json、text/event-stream。官方纯 SDK 客户端、原始 JSON-RPC 客户端已验收，既有 Circle REST 扩展保持。

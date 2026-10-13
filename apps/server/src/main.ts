@@ -460,7 +460,7 @@ const server = createListener(async (request, response) => {
       }
       if(url.pathname==='/v1/admin/restart'&&request.method==='POST'){
         await auth.check(ctx,'admin.restart');z.object({graceful:z.literal(true)}).parse(await body(request));requireCondition(process.connected,'INVALID_PAYLOAD','Start the server through its supervisor for graceful restart');
-        await auth.audit(ctx,'server.restart',{bootId,graceful:true});send(response,202,{data:{restartAccepted:true,previousBootId:bootId}});
+        await auth.audit(ctx,'server.restart',{bootId,graceful:true,workersRestartRequested:process.env.CIRCLE_SERVER_MANAGED_WORKERS==='1'});send(response,202,{data:{restartAccepted:true,previousBootId:bootId,workersRestartRequested:process.env.CIRCLE_SERVER_MANAGED_WORKERS==='1'}});
         restartRequested=true;process.send!({type:'graceful-restart'});return;
       }
       if (url.pathname === '/v1/admin/workers' && request.method === 'GET') {

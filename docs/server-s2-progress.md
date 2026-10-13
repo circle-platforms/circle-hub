@@ -756,6 +756,8 @@ main 的 ab12ed4 是适配器第四轮，用户允许后续再签署 merge；不
 
 专项与既有 RPC 联合 **10/10**、无 skip（固定 Circle 8b2ceb6）：草稿/新批准不停止实际运行的 Circle，停用其冻结版本后观察到本地进程退出、unknown 且不宣称远端已停；另一次真实固定 RPC 用新批准 2.0.0 成功交付，任务/代理事件/产物运行回执均绑定 2.0.0 和同一 profileSha。未调用真实模型。完整冻结回归随后在独立只读验证工作树运行，结果另记；不把专项当成完整回归。
 
+54f0ed7 的完整冻结回归 contracts **5/5**、methods **129/129**、acceptance **248/248**、references **7/7**，共 **389/389**、无 skip，固定 Circle 8b2ceb6 / APV 224daa6。该验证工作树没有后续补项文件，不混用正在编辑的版本。
+
 ## 52：中立 Skill 的即时治理与 MCP 回执
 
 先写四条复现 **0/4**：外部 Skill 导入漏变更集、平台读重放每次新 evidence、专业 Tool 体内键未比对、另一个 Skill 的成功装载误记本包兼容。仅 Circle 原生 skillpacks.submit 保留插入 skill_packages 后的建单顺序，普通 hub-skill/1 导入与 instruction/agent/command 在同事务直接建单；重复返回原治理引用，批准前不得导出。
@@ -767,3 +769,11 @@ main 的 ab12ed4 是适配器第四轮，用户允许后续再签署 merge；不
 按维护者确认新增 **36**（33–35 已部署用途不变）。29/30 的 SQL 字节、原释放审计都未改。36 只释放当前 unknown/read、只删这些操作租约，对受影响资源按仍有 unknown/write 重算；同任务的写仍 unknown 时不落 failed。30 的释放集合把当时已是 failed+UPSTREAM_TIMEOUT 的 read 也计入；29 释放时没有状态日志，这些操作在 29 之前的原始状态无法证明。逐条以 system:migration 的 operation.read-release-compensated 引用 correctsAudit 原 id，写 originalState=unprovable/migration=36。租约已被 30 删除且不恢复，failed/read 可重试、不持租约，因而不重新授予旧权限。
 
 29/30 也没有留下任务 phase 的修前日志，补偿记录引用原 read 审计及任务，历史 phase 标 unprovable，仅记 36 前实际观察的 phase。仍存在 unknown/write 的现态错误 failed/UPSTREAM_TIMEOUT 可修回 unknown；已由 30 修回的任务保持现态并追加同一来源说明，不猜历史。重复执行不重复补偿。先写缺模块验收，再按 **29→30→36** 合成序列跑历史 failed 被计入、任务 phase 修复、新 unknown/read、并存 unknown/write、无关租约和资源；联合只读机制 **5/5**、无 skip，typecheck/diff 通过。没有真实库操作或恢复租约，部署由维护者决定。
+
+## 54：受监督的 worker 升级、provider 默认名与健康失败
+
+升级/缺省前缀先复现 **0/3**：server 换进程时 worker pid 未变，直接退出一个 worker 会触发整栈删除。dev-stack 现在独立监督 worker，server ready 后顺序排空并换进程，保留同伴服务运行中的子 Tool，不以强杀赶升级期限；任何单 worker 退出都保留数据库并单独重新启动，整体停止才清理。每次 worker ready/draining/exit/restart-error 记录 JSON，含时间、pid、码/信号及 graceful。独立部署的外部 worker 明确仍由部署进程管理器 drain/替换，CLI workersRestartRequested 标明是否请求了栈内替换，不假装全部 worker 已换。
+
+provider 已声明产品线但没有 alias 的，回落包 prefix/packageId；未安装的产品线仍拒绝，租户名字冲突不隐藏。原通用装载器已有 manifest 缺 alias 时用默认 prefix 的分支，本笔补目录的直接 provider 防御与缺 prefix 兜底。健康 503/超时两条补例证明 gateway-health 与 gateway 资源均不冻结、不取远端租约。
+
+最后联合 HTTP/HTTPS dev-stack、admin keep-alive/长轮询重启、两 worker 真实 pid 替换与在途操作不丢、健康失败、prefix 方法 **14/14**、无 skip，typecheck/diff 通过。只合成数据库/网关；没有改现网部署脚本、7420 或外部产品包。

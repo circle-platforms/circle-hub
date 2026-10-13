@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { zipSync, strToU8 } from 'fflate';
 import {SUPERVISOR_STOP_TIMEOUT_MS} from '../apps/server/src/shutdown.ts';
 import {createSyntheticSources} from '../packs/synthetic/readonly-sources.ts';
+import {setTimeout as delay} from 'node:timers/promises';
 
 const root = fileURLToPath(new URL('../',import.meta.url));
 const scratch = await mkdtemp(`${tmpdir()}/circle-server-dev-`);
@@ -18,6 +19,16 @@ const approverPassword=randomBytes(18).toString('base64url'),servicePassword=ran
 const syntheticTargets=['RESOURCE-LAB-01','record-feed-a','record-feed-b','document-store'];
 const config = { host:'127.0.0.1',port,user:'circle_synthetic',password:dbPassword,database:'postgres' };
 const children = new Set<ChildProcess>(); let closing = false;
+const workerProcesses=new Map<string,ChildProcess>(),workerEnvironments=new Map<string,NodeJS.ProcessEnv>(),rollingWorkers=new WeakSet<ChildProcess>();let serverGeneration=0,workerRestart:Promise<void>|undefined;
+function workerRecord(type:string,facts:Record<string,unknown>){console.log(JSON.stringify({type,at:new Date().toISOString(),...facts}));}
+async function replaceWorkers(previousGeneration:number){
+  while(!closing&&serverGeneration<=previousGeneration)await delay(50);if(closing)return;
+  // Keep the peer serving child tools while one worker drains its existing jobs.
+  // No timeout kills a running device operation merely to finish an upgrade.
+  for(const [username,env] of workerEnvironments){if(closing)return;const child=workerProcesses.get(username);if(!child||child.exitCode!==null||child.signalCode!==null)continue;
+    rollingWorkers.add(child);const exited=once(child,'exit');workerRecord('dev-stack.worker.draining',{username,processId:child.pid});child.send({type:'worker-drain'});await exited;if(closing)return;await launch('apps/worker/src/main.ts',env,'worker-ready');
+  }
+}
 let syntheticSources:Awaited<ReturnType<typeof createSyntheticSources>>|undefined;
 async function stop(child: ChildProcess): Promise<void> {
   if (child.exitCode !== null || child.signalCode !== null) return;
@@ -39,8 +50,10 @@ async function launch(path: string,env: NodeJS.ProcessEnv,type: string): Promise
   // Separate groups keep terminal Ctrl+C under this supervisor's ordered shutdown.
   // IPC disconnect also lets children stop if this supervisor is killed.
   const child = spawn(process.execPath,[path],{ cwd:root,env,detached:process.platform !== 'win32',stdio:['ignore','pipe','pipe','ipc'] }); children.add(child);
+  const worker=path==='apps/worker/src/main.ts',username=env.CIRCLE_WORKER_USERNAME!;if(worker){workerProcesses.set(username,child);workerEnvironments.set(username,env);}
+  child.on('message',message=>{if((message as any)?.type==='workers-restart'&&!closing&&!workerRestart){workerRestart=replaceWorkers(serverGeneration).catch(()=>{workerRecord('dev-stack.worker.restart-error',{reason:'replacement-failed'});}).finally(()=>{workerRestart=undefined;});}});
   child.stderr!.on('data',data => { process.stderr.write(data); });
-  child.once('exit',(code) => { if (!closing) { console.error(JSON.stringify({ type:'dev-stack-child-exited',entryPoint:path,code })); process.exitCode = 1; void cleanup(); } });
+  child.once('exit',(code,signal) => {children.delete(child);if(worker){if(workerProcesses.get(username)===child)workerProcesses.delete(username);workerRecord('dev-stack.worker.exit',{username,processId:child.pid,code,signal,graceful:rollingWorkers.has(child)&&code===0});if(!closing&&!rollingWorkers.has(child))void launch(path,env,type).catch(()=>workerRecord('dev-stack.worker.restart-error',{username,reason:'replacement-failed'}));return;}if (!closing) { console.error(JSON.stringify({ type:'dev-stack-child-exited',entryPoint:path,code,signal })); process.exitCode = 1; void cleanup(); } });
   return new Promise((resolve,reject) => {
     let output = '';
     const timeout = setTimeout(() => reject(new Error(`Startup timed out for ${path}`)),20_000);
@@ -50,7 +63,7 @@ async function launch(path: string,env: NodeJS.ProcessEnv,type: string): Promise
       output += data.toString();
       const lines = output.split('\n'); output = lines.pop()!;
       for (const line of lines) {
-        try { const value = JSON.parse(line);if(typeof value.type==='string'&&value.type.startsWith('supervisor.'))process.stdout.write(line+'\n'); if (value.type === type) { clearTimeout(timeout); resolve(value); } } catch { /* incomplete or human-readable output */ }
+        try { const value = JSON.parse(line);if(typeof value.type==='string'&&value.type.startsWith('supervisor.'))process.stdout.write(line+'\n');if(path==='apps/server/src/supervisor.ts'&&value.type==='ready')serverGeneration++; if (value.type === type) { clearTimeout(timeout);if(worker)workerRecord('dev-stack.worker.ready',{username,processId:child.pid}); resolve(value); } } catch { /* incomplete or human-readable output */ }
       }
     });
   });
@@ -80,7 +93,7 @@ try {
     'metadata.json':strToU8(JSON.stringify({ creator:'circle-server synthetic fixture' })) },{ mtime:new Date('2000-01-01T00:00:00Z') }),{ mode:0o600 });
   // Node loads NODE_EXTRA_CA_CERTS at process startup: bootstrap requests use
   // this process's trust, and the same runtime trust reaches server and workers.
-  const env = { ...process.env,NODE_EXTRA_CA_CERTS:process.env.NODE_EXTRA_CA_CERTS,CIRCLE_SERVER_DATABASE_CONFIG:JSON.stringify(config),CIRCLE_SERVER_DATA_DIR:`${scratch}/objects`,
+  const env = { ...process.env,CIRCLE_SERVER_MANAGED_WORKERS:'1',NODE_EXTRA_CA_CERTS:process.env.NODE_EXTRA_CA_CERTS,CIRCLE_SERVER_DATABASE_CONFIG:JSON.stringify(config),CIRCLE_SERVER_DATA_DIR:`${scratch}/objects`,
     CIRCLE_SERVER_DEV_IDENTITIES:`${scratch}/identities.json`,CIRCLE_SERVER_DEV_AUTH:'1',CIRCLE_SERVER_PORT:process.env.CIRCLE_SERVER_PORT ?? '0',CIRCLE_SYNTHETIC_RESOURCE_DIR:`${scratch}/resources`,CIRCLE_SERVER_CONNECTOR_PROFILES:`${scratch}/connector-profiles.json` };
   const server = await launch('apps/server/src/supervisor.ts',env,'ready');
   const login=async(username:string,password:string)=>{const response=await fetch(`${server.url}/v1/auth/dev-login`,{method:'POST',redirect:'error',headers:{'content-type':'application/json'},body:JSON.stringify({username,password})});if(!response.ok)throw new Error('Synthetic asset login failed');return (await response.json() as any).data.token;};

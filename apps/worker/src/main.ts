@@ -14,10 +14,11 @@ function env(name: string): string { const value = process.env[name]; if (!value
 const base = new URL(env('CIRCLE_SERVER_URL'));
 if (!['http:','https:'].includes(base.protocol) || base.hostname !== '127.0.0.1' || base.username || base.password) throw new Error('Worker requires HTTP or HTTPS on the authorized 127.0.0.1 loopback server without embedded credentials');
 const username = env('CIRCLE_WORKER_USERNAME'); const password = env('CIRCLE_WORKER_PASSWORD');
-let token = ''; let expires = 0; let stopped = false;
+let token = ''; let expires = 0; let stopped = false;let draining=false;
 const stopController=new AbortController();
 const stop=()=>{stopped=true;stopController.abort();};
 process.on('SIGTERM',stop);process.on('SIGINT',stop);process.once('disconnect',stop);
+process.on('message',message=>{if((message as any)?.type==='worker-drain'){draining=true;console.log(JSON.stringify({type:'worker-draining',username,processId:process.pid}));}});
 async function authenticate(): Promise<void> {
   if (token && Date.now() < expires - 5000) return;
   const response = await fetch(new URL('/v1/auth/dev-login',base), { method: 'POST', redirect:'error', headers: { 'content-type':'application/json' }, body: JSON.stringify({ username,password }) });
@@ -63,7 +64,7 @@ async function executeRuntime(claim:any,preflight:any):Promise<void>{
   finally{clearInterval(timer);clearInterval(cancelPoll);await pendingHeartbeat;await pendingCheck;stopController.signal.removeEventListener('abort',onStop);try{await privateRequest(authorization.privateSocketPath,{...channel,revoke:true});}catch{/* A cancelled/expired run token already authorizes no new work. */}}
   if(!stopped)await request(`/v1/workers/operations/${claim.operationId}/report`,report);
 }
-while (!stopped) {
+while (!stopped&&!draining) {
   try {
     const next = await request('/v1/workers/claim',{exclude:[...(runtimeJob?['assets.execute']:[]),...professionalJobs.keys()]});
     if (!next) { await delay(100); continue; }
@@ -106,4 +107,5 @@ while (!stopped) {
 }
 await runtimeJob;
 await Promise.allSettled(professionalJobs.values());
+if(process.connected)process.send?.({type:'worker-stopped',graceful:draining});
 if (process.connected) process.disconnect();

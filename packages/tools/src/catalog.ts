@@ -44,7 +44,7 @@ export class ToolCatalog {
   }
   packageFor(configuration:Record<string,unknown>):ToolPackage|undefined{
     const pack=this.packages.find(p=>p.id===configuration.packageId),line=configuration.productLineId;
-    return line===undefined||typeof line==='string'&&Object.hasOwn(pack?.productLinePrefixes??{},line)?pack:undefined;
+    return line===undefined||typeof line==='string'&&(Object.hasOwn(pack?.productLinePrefixes??{},line)||Object.hasOwn(pack?.productLineOptions??{},line))?pack:undefined;
   }
   definition(packageId:string,suffix:string,configuration?:Record<string,unknown>):ToolDefinition|undefined{return (configuration?this.packageFor(configuration):this.packages.find(p=>p.id===packageId))?.tools.find(t=>t.suffix===suffix);}
   async register(ctx:AuthContext,input:AssetRegistration,assetId:string,tx:Transaction):Promise<void>{
@@ -53,7 +53,7 @@ export class ToolCatalog {
     // Inventory can retain assets whose execution package has not been installed.
     // They have no advertised tools and do not gain execution from registration.
     if(!pack){await tx.query('DELETE FROM tool_bindings WHERE asset_id=$1',[assetId]);return;}
-    const prefix=ToolName.parse(input.configuration.alias??(input.configuration.productLineId===undefined?pack.prefix:pack.productLinePrefixes![input.configuration.productLineId as string]));
+    const prefix=ToolName.parse(input.configuration.alias??pack.productLinePrefixes?.[input.configuration.productLineId as string]??pack.prefix??pack.id.replaceAll('-','_'));
     requireCondition(prefix!=='hub'&&!prefix.startsWith('hub.'),'TOOL_NAME_CONFLICT','The hub tool namespace is reserved for platform controls');
     await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[`tool-names:${ctx.tenantId}`]);
     for(const definition of pack.tools){const name=ToolName.parse(`${prefix}.${definition.suffix}`),existing=(await tx.query('SELECT asset_id FROM tool_bindings WHERE tenant_id=$1 AND name=$2',[ctx.tenantId,name])).rows[0];requireCondition(!existing||existing.asset_id===assetId,'TOOL_NAME_CONFLICT','Tool name is already registered in this tenant');}
