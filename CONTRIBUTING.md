@@ -6,7 +6,7 @@
 
 - 一般问题和建议写 Issue，说明输入、预期、实际观察和提交号。
 - 可能涉及安全或敏感信息的问题按 [SECURITY](SECURITY.md) 处理。
-- Circle 的客户端与连接扩展在 [Circle 仓库](https://github.com/qingshanfeihu/circle)维护；技能包和产品线包在各自的 packs 仓库，按[产品线包典范](docs/design/product-line-pack.md)写。
+- Circle 的客户端与连接扩展在 [Circle 仓库](https://github.com/circle-platforms/circle)维护；技能包和产品线包在各自的 packs 仓库，按[产品线包典范](docs/design/product-line-pack.md)写。
 
 ## 环境
 

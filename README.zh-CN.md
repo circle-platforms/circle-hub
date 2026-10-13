@@ -2,7 +2,7 @@
 
 [English](README.md)
 
-[Circle](https://github.com/qingshanfeihu/circle) 的团队 hub：一个团队跑一个常驻进程，让大家的 Circle 共用一套资料、任务、执行资源和方法，并让碰真实系统的 agent 始终在人批准过的规则里运行。
+[Circle](https://github.com/circle-platforms/circle) 的团队 hub：一个团队跑一个常驻进程，让大家的 Circle 共用一套资料、任务、执行资源和方法，并让碰真实系统的 agent 始终在人批准过的规则里运行。
 
 Circle 保持通用 harness 的身份。circle-hub 是对它的增强：Circle 登录 hub 后，原有菜单里多出 hub 的条目（工作、技能、工具、审批、资料、资源）。管理员就是在某个范围里持有管理员角色的 Circle 用户，没有第二个管理程序。
 
@@ -67,7 +67,7 @@ npm run typecheck
 
 ## 包
 
-技能包和产品线包不属于 hub。它们在自己的仓库里，各自有版本和 SHA，通过 hub 自己的机制装入（推送 → 试跑记录 → 独立审批）。第一个包仓库是 [circle-packs](https://github.com/qingshanfeihu/circle-packs)；[产品线包典范](docs/design/product-line-pack.md)给出目录布局和每个包都要填的适配单，以一条合成产品线为样例。
+技能包和产品线包不属于 hub。它们在自己的仓库里，各自有版本和 SHA，通过 hub 自己的机制装入（推送 → 试跑记录 → 独立审批）。第一个包仓库是 [circle-packs](https://github.com/circle-platforms/circle-packs)；[产品线包典范](docs/design/product-line-pack.md)给出目录布局和每个包都要填的适配单，以一条合成产品线为样例。
 
 ## 状态
 

@@ -2,7 +2,7 @@
 
 [中文](README.zh-CN.md)
 
-The team hub for [Circle](https://github.com/qingshanfeihu/circle): one daemon a team runs so that everyone's Circle shares the same knowledge, tasks, execution resources and methods — and so that agents touching real systems stay inside rules a person approved.
+The team hub for [Circle](https://github.com/circle-platforms/circle): one daemon a team runs so that everyone's Circle shares the same knowledge, tasks, execution resources and methods — and so that agents touching real systems stay inside rules a person approved.
 
 Circle stays a generic harness. circle-hub extends it: when a Circle signs in to a hub, its existing menus gain the hub's entries (work, skills, tools, approvals, knowledge, resources). An administrator is a Circle user with an admin role in a scope, not a separate console.
 
@@ -67,7 +67,7 @@ npm run typecheck
 
 ## Packs
 
-Skill packs and product-line packs are not part of the hub. They live in their own repositories, are versioned and SHA-pinned on their own, and are installed through the hub's own mechanism (push → trial record → independent approval). The first packs repository is [circle-packs](https://github.com/qingshanfeihu/circle-packs); [the product-line pack exemplar](docs/design/product-line-pack.md) shows the layout and the adaptation sheet every pack fills in, with a synthetic product line as the worked example.
+Skill packs and product-line packs are not part of the hub. They live in their own repositories, are versioned and SHA-pinned on their own, and are installed through the hub's own mechanism (push → trial record → independent approval). The first packs repository is [circle-packs](https://github.com/circle-platforms/circle-packs); [the product-line pack exemplar](docs/design/product-line-pack.md) shows the layout and the adaptation sheet every pack fills in, with a synthetic product line as the worked example.
 
 ## Status
 
