@@ -42,8 +42,8 @@ export class Approvals {
       const row=(await tx.query('SELECT *,expires_at<=clock_timestamp() AS expired FROM approvals WHERE approval_id=$1 AND task_id=$2 FOR UPDATE',[id,taskId])).rows[0];
       requireCondition(row,'TARGET_NOT_FOUND','Approval request not found');
       let eligibility=await this.auth.roles.eligibility(ctx,task.scopeId,row.applicant_id,tx);
-      let code:'SELF_APPROVAL'|'APPROVAL_STALE'|'INPUT_EXPIRED'|'DECISION_CONFLICT'|undefined,outcome=answer.approve?'approved':'declined';
-      if(!eligibility.eligible){code=row.applicant_id===ctx.principalId?'SELF_APPROVAL':'APPROVAL_STALE';outcome=row.applicant_id===ctx.principalId?'self-approval':'eligibility-mismatch';}
+      let code:'SELF_APPROVAL'|'FORBIDDEN_ACTION'|'APPROVAL_STALE'|'INPUT_EXPIRED'|'DECISION_CONFLICT'|undefined,outcome=answer.approve?'approved':'declined';
+      if(!eligibility.eligible){code=row.applicant_id===ctx.principalId?'SELF_APPROVAL':'FORBIDDEN_ACTION';outcome=row.applicant_id===ctx.principalId?'self-approval':'eligibility-mismatch';}
       else if(task.inputRevisionId!==row.input_revision_id||answer.inputRevisionId!==row.input_revision_id||answer.targetIdentity!==row.target_identity||answer.actionDigest!==row.action_digest){code='APPROVAL_STALE';outcome='binding-mismatch';}
       else if(row.expired){code='INPUT_EXPIRED';outcome='expired';}
       else if(row.status!=='open'){code='DECISION_CONFLICT';outcome='already-decided';}

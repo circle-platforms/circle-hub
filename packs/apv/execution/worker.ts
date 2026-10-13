@@ -30,6 +30,7 @@ export async function executeCases(claim:any,context:CaseWorkerContext){
     }
     const profile=authorization.profile;
     if(authorization.gatewayInjection.provider==='server')gateway=new McpGateway(profile,async()=>{const checked=await context.check(),injection=checked.authorization.gatewayInjection;requireCondition(injection.provider==='server','APPROVAL_STALE','Resource authorization provider changed');return vault.get(injection.key,injection.binding);});
+    else if(authorization.gatewayInjection.provider==='static-secret')gateway=new McpGateway(profile,async()=>{const checked=await context.check(),injection=checked.authorization.gatewayInjection;requireCondition(injection.provider==='static-secret','APPROVAL_STALE','Static credential binding changed');return vault.get(injection.key,injection.binding);});
     else{const oauth=authorization.gatewayInjection.oauth,client=oauth?.clientReference?JSON.parse(await vault.get(oauth.clientReference.key,oauth.clientReference.binding)):undefined,tokens=oauth?new OAuthToken(vault,authorization.gatewayInjection,oauth.profile,oauth.grantType,client?.client_secret):new RotatingToken(vault,authorization.gatewayInjection,{issuer:profile.issuer,caFile:profile.issuerCaFile??profile.caFile,caSha256:profile.issuerCaSha256??profile.caSha256});gateway=new McpGateway(profile,()=>tokens.access());}
     if(claim.name==='cases.observe'){
       requireCondition(authorization.remoteTaskId,'EVIDENCE_INSUFFICIENT','Unknown submission has no remote task identity');

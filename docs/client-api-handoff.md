@@ -406,10 +406,24 @@ Tool 保持原有 name/title/description/inputSchema/effect/mode/permission/asse
 
 product-line/1 使用 tools:[{manifest,imports}]、hooks:[{manifest,event,order}]、resources 与 flows。tools 的直接、动态、转导入及局部引用在安装前检查：文件须在冻结集合内；外部依赖只允许明确声明的 exceljs 4.4.0、read-excel-file 9.3.12、fflate 0.8.3、zod 4.6.5、saxes 5.0.1、parse5 8.0.1。Node 内建模块也不允许，未声明或计算式 import 为 IMPORT_NOT_DECLARED；不执行安装脚本。Tool 读取原字节并返回结构，模块文件不改写；散列可用全局 WebCrypto。产品线原件经变更集批准后装载，每次执行仍核对当前权限、版本和 SHA。
 
-Hook 契约严格为 hub-hook/1：handle({event,binding:{method,resource,source,inputRevision},subject}) 返回 {decision:"pass"} 或 {decision:"block",code,facts}。五个 event 为 verify.deviceCommand / verify.hostCommand / verify.workbook / beforeDispatch / afterResult。对应三个核验 subject 分别是 {command,tree:{heads:[{command,present}]}}、{command}、{client,contract:{testEnvEnabled:[]}}。处理器按 order 和稳定 id 顺序执行，block 即停；没有处理器时返回空判定列表，hub 不补产品规则。每项 hook.verification 事件及审计保留 ruleId/ruleVersion/event/result。block 的 code/facts 原样回传，补充授权行号、输入修订和原件 SHA。Hook 禁止 import、环境、网络、模型、动态代码和无限循环。
+Hook 契约严格为 hub-hook/1：handle({event,binding:{method,resource,source,inputRevision},subject}) 返回 {decision:"pass"} 或 {decision:"block",code,facts}。五个 event 为 verify.deviceCommand / verify.hostCommand / verify.workbook / beforeDispatch / afterResult。对应三个核验 subject 分别是 {command,tree:{heads:[{command,present}]}}、{command,host,method,kwargs}、{client,contract:{testEnvEnabled:[]}}。处理器按 order 和稳定 id 顺序执行，block 即停；没有处理器时返回空判定列表，hub 不补产品规则。每项 hook.verification 事件及审计保留 ruleId/ruleVersion/event/result。block 的 code/facts 原样回传，补充授权行号、输入修订和原件 SHA。Hook 禁止 import、环境、网络、模型、动态代码和无限循环。
 
 运行结果保留失败原因和 script-conclusion evidence。命令不存在、主机自毁、权限拒绝等为 failed；可由申请人修复的来源未批准、网关不可用、租约不足、床构建不符停在 waiting-input，TaskView 追加 waitingReason，pendingInputs 中有对应请求。申请人使用原 input 接口提交新修订；修订保留 privateOwnerId/委托关系并清掉旧执行绑定和等待原因。床构建只从 env_prepare 的结构化观测或确定性解析的设备回显取得；配置标签不作为观测。unknown 保持冻结、不重发、独立 reconcile、旧 fence 拒绝，不因本地停止声称远端已停。
 
 ## 修订 3：开发会话寿命与吊销
 
 POST /v1/auth/refresh 仍返回登录同形 token/expiresAt/roles，但 token 会轮换；旧 token 留五秒并发宽限，客户端须保存新 token。开发会话族的绝对寿命为 24 小时，续期不能突破；POST /v1/auth/logout 携带 Bearer 和空对象，立即吊销同族 token。短期 run token 不可 refresh/logout，仍由持当前租约的 worker 续期并受任务/fence/deadline 约束。开发身份从配置移除后重启失效；已治理的角色不被配置重写。开发密码失败锁定、请求桶和异步散列并发有上限，超额为 RATE_LIMITED，不回显凭据或用户名。
+
+## 修订 3：凭据模式、隔离与明确的明文例外
+
+执行 provider 可在 configuration 指定 credentialMode:"static-secret"；其 declaration.credentials 引用通过 POST /v1/assets/{providerId}/credentials 登记的凭据。body 为 {version,value,mode:"static-secret"}，value 至少 32 字符且无头部控制字符，响应只有引用和模式。以凭据资产 id 调同一 credentials 路由可轮换当前值，模式不能原地改变。密钥在 vault 中持久化，worker 每次已核授权的调用前取当前值，以 Authorization: Bearer 注入；此模式不访问签发 /token 或 introspect。批准且 running 的共享资源允许当前授权成员使用其绑定密钥，成员不因此获得别人的凭据元数据或明文。server-issued 与 external-oauth 模式继续兼容；停用凭据、资源修订、角色撤销、租约/fence 变化均重新核对。
+
+非回环带认证的资料源默认必须 HTTPS。需要接受纯内网 HTTP 时，管理员在对应 kind=runtime-profile 资产的 configuration 加 allowPlaintextAuthentication:true，其余 profileType/profileRef/profileSha256 不变；该版本经独立审批人决定后才生效，即使 scope 允许普通自决也不能自批这条例外。运行文件中直接塞该字段不会授予例外。当前 profile 版本不再 approved/running，或其配置摘要不匹配，工具调用返回 SOURCE_NOT_APPROVED；修改例外字段必须登记新版本并重新决定。未批准的 HTTP 认证为 SOURCE_FORBIDDEN，不带原地址或凭据。匿名 HTTP 和回环合成服务保留。
+
+每次获准的明文认证操作在派发意图、审计及取回的 SourceRevision/Evidence 里永久标 plaintextAuthentication:true，包含批准的 runtime-profile 资产/版本引用。缓存重读保留原标记；后续撤销不改写历史证据。目录页、命令原件或具体源内容仍遵循原读取权限。
+
+Skill、Tool 和 Hook 使用同一主机隔离边界。当前 Mac adapter 用 sandbox-exec 对未信任的进程及其后代限制文件内容读取、写入、网络出口及其他进程信息；只开放当前运行目录、固定 harness 的受信代码/依赖、明确的 CA 和 loopback server/model 端点。不能直接或经符号链接读取 vault 或运行配置。其它系统未配置受支持的隔离 adapter 时以 SANDBOX_UNAVAILABLE 失败，不退回同用户任意执行。Hook 与 Tool 在同一 tool-host 子进程执行，10 秒/16 MiB 返回上限；工作簿命令批量核验，避免每条命令启动一个进程。三种 subject 先按严格 schema 校验，主机客户端闭集属于批准的 Hook，解析器只读取字面行。
+
+Circle 的短期 run token 只在环境中，模型凭据临时写到单次 home，进程退出后清理 home/home-user；工作区产物仍按 SHA 留存。终态、过期租约和失效 fence 的短期令牌及工具注入副本由维护器清理，永久登记的静态凭据保留到轮换/吊销。来源证据与模型判断继续分开。开发身份中的角色只做初次种子，后续通过范围变更集管理；重启不以身份文件覆盖已治理角色。
+
+主机策略只能取 binding.resource.declaration 的已批准原声明：allowedTestHosts 为显式集合，hostCommandPolicies[host].allowPrefixes 为可选缩小策略；运行文件中的同名字段不作治理授权。三个 verify 挂点均带资源 assetId/version/sha256/declaration。APV 1.2.0 / 316760a 的 host-policy Hook 按新版四字段 subject 执行，闭集未声明、主机不在床、命令含模板、前缀不符分别给固定事实码。

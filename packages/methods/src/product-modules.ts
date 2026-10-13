@@ -3,7 +3,7 @@ import {SafeRelativePath,canonicalHash,requireCondition,type AuthContext} from '
 import type {Transaction} from '../../storage/src/index.ts';
 import type {SourceArtifacts} from '../../knowledge/src/source-artifacts.ts';
 import {HookRuntime,HOOK_EVENTS,verifyToolImports,type HookHandler} from './hooks.ts';
-import {callFrozenTool} from './tool-runtime.ts';
+import {callFrozenTool,callFrozenHooks} from './tool-runtime.ts';
 const definition=z.object({schemaVersion:z.literal('product-line/1'),id:z.string(),version:z.string(),tools:z.array(z.object({manifest:SafeRelativePath,imports:z.record(z.string(),z.string())}).strict()).default([]),hooks:z.array(z.object({manifest:SafeRelativePath,event:z.enum(HOOK_EVENTS),order:z.number().int()}).strict()).default([]),flows:z.array(SafeRelativePath).default([]),resources:z.array(SafeRelativePath).default([])}).passthrough();
 export function verifyProductLine(manifest:any,files:Map<string,string>){
   const parsed=definition.parse(manifest);verifyToolImports(files,parsed.tools);
@@ -28,5 +28,6 @@ export class ProductModules{
     return {...loaded,binding:{assetId:snapshot.assetId,version:snapshot.assetVersion,sha256:snapshot.assetSha256,digest:snapshot.metadata.module.digest}};
   }
   async call(ctx:AuthContext,assetId:string,scope:string,path:string,name:string,args:any[],tx?:Transaction){const loaded=await this.load(ctx,assetId,scope,tx);return callFrozenTool(loaded.files,loaded.manifest.tools,path,name,args);}
-  async run(ctx:AuthContext,assetId:string|undefined,scope:string,event:string,binding:any,subject:any,tx?:Transaction){const handlers=assetId?(await this.load(ctx,assetId,scope,tx)).handlers:[];return this.runtime.run(handlers,event,{binding,subject});}
+  async runBatch(ctx:AuthContext,assetId:string|undefined,scope:string,inputs:{event:string;binding:any;subject:any}[],tx?:Transaction){const handlers=assetId?(await this.load(ctx,assetId,scope,tx)).handlers:[];return callFrozenHooks(handlers,inputs);}
+  async run(ctx:AuthContext,assetId:string|undefined,scope:string,event:string,binding:any,subject:any,tx?:Transaction){return (await this.runBatch(ctx,assetId,scope,[{event,binding,subject}],tx))[0].decisions;}
 }

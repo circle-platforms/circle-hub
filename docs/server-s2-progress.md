@@ -625,3 +625,25 @@ Hook 运行器按 hub-hook/1 和既定三个 subject 原形实现，五个挂点
 审计中本节的修复有复现验收：执行批准单次消费、终态领取阻断、修订保留私有范围、开发会话族轮换/24 小时绝对寿命/退出吊销、移除开发身份失效、异步 scrypt 与请求/用户名/并发容量、实际解压字节上限及先核权限。文档 get/section 不能越过注册根，机器服务客户端不会继承创建者未持有的读取能力。脚本产品声明记录 verified 与规则核验，不冒充人的 approve。
 
 最终用冻结工作树复核，contracts **4/4**、methods **31/31**、acceptance **189/189**、references **7/7**，共 **231/231**，固定 Circle 8b2ceb6 和 APV ced41a6，**无 skip**。typecheck、diff 和 **714** 归档核验通过。独立包的 18 条另计；没有读取业务原件、连接真实系统/网关、付费模型、改 Circle 或部署。接口与条件执行说明已交接；下一笔按用户新顺序先做第 7 节，再第 6、8、9 节。harness-adapters 和权限导出规范分别由其他作者负责，本分支不修改。
+
+## 40：第 5 节独立复核与第 7 节边界补充
+
+维护者在独立工作树复核 8e212a6，固定 Circle 8b2ceb6、APV ced41a6，完整 **231/231** 与 **714** 归档核验通过；报告已就地升级演示栈、迁移 28 并轮换开发审批人口令。本代理未部署、未读取口令或业务文件。
+
+代码复核指出的第 5 节缺口并入第 7 节：所有归档入口改为实际字节 boundedUnzip；主机闭集移出工作簿 parser，由批准的资源声明与产品线 Hook 核验；Hook 和 Tool 同用隔离子进程及批量命令核验；三个 subject 形状校验；权限错误不冒充审批修订过期；变更集决定记录 singleAdminMode；访客去掉 credentials.use。增加三项绑定逐项篡改、非草稿所有者、blocked 决定、最后根管理员、权限/租约/来源错误、普通资源 unknown/独立 reconcile 的验收。开发身份 role_initialized 后不覆盖治理角色是既定行为；更改身份文件不会重新授予角色，范围角色须走变更集。
+
+简报 host subject 现为 {command,host,method,kwargs}，三个 verify 的 binding.resource 带批准版本的 {assetId,version,sha256,declaration}。allowedTestHosts/hostCommandPolicies 只从批准声明读取；运行文件里的同名策略不作授权。独立 APV 样本固定为 316760a / 1.2.0 / 28 条包内测试，原字节装入，未改独立包；Meridian 五挂点同形。
+
+用户决定纯内网明文认证可作显式例外：默认仍要求 HTTPS；只有管理员登记 runtime-profile 的 allowPlaintextAuthentication:true、经独立审批人才生效；修改需新版本重批。每次调用证据与审计永久留 plaintextAuthentication:true。执行网关及外部签发方的 HTTPS 要求保持。维护者确认当前某查询镜像为非回环 HTTP，认证来自注入的个人凭据而非 profile 文件；源地址、业务内容、令牌均不记录。
+
+另有两个现网问题排在第 7 节后、第 6 节前：只读工具超时/失联误入 unknown 并冻结资源；大文档 worker 回报失败、事务回滚后操作悬挂。只读失联的合成复现已失败，纯大文本回报尚未复现；加 NUL 的合成大文档能复现回报拒绝与悬挂，但不能据此认定真实文件含 NUL。本代理没有读取真实文件，继续以受控样本定位，修法包括 SHA 对象指针、异常干净失败、读取效果不冻结及搜索部分进度。
+
+## 41：修订 3 第 7 节，静态密钥、运行隔离与明文认证例外完成
+
+先写静态模式、隔离和明文例外验收，旧实现均能复现缺口后实现。static-secret 只写登记/轮换，模式不可原地改变；running 的批准资源按当前角色和 readers 绑定密钥，授权成员可以通过 worker 使用共享资源，不能读其他人的凭据。网关收到 Bearer、没有签发/introspect 调用，吊销和版本/权限/fence 再核有效；资源返回授权材料时拒绝保留，不将其写入日志或 API。
+
+Mac 内核隔离限制 Skill/Tool/Hook 及后代读取文件内容、写入、网络和其他进程信息，vault、运行配置直接/符号链接读取被拒；固定 Circle 实际执行合成脚本、工具与 HTTPS/CA 组合继续通过。模型凭据 home 在退出时清理，短期注入副本及无效令牌清理；未支持的平台以 SANDBOX_UNAVAILABLE 明确失败，没有无限权降级。Hook 在同一 tool-host 子进程按批次核验，10 秒/16 MiB 返回上限，subject 校验与批准声明保持原形。新版 APV 316760a 原字节装入，**28/28** 包内测试通过；独立包里 parser 的剩余闭集已提醒包作者，本代理不改包原件。
+
+非回环 HTTP 认证默认拒绝。管理员登记 runtime-profile 的 allowPlaintextAuthentication:true，经独立决定才注入 worker；即使 scope 普通允许自决，该例外仍不能自批。改字段变新 draft、立即阻止依赖运行。合成验收核对无例外拒绝、有例外批准后放行、修改重批，以及 SourceRevision/Evidence/派发审计的永久 plaintextAuthentication:true 标记。当前真实查询源的例外需部署管理员单独登记/批准；本代理未更改真实配置。
+
+第 40 节列出的第 5 节复核补项与盲区均加入本笔回归。最终冻结工作树 contracts **4/4**、methods **35/35**、acceptance **201/201**、references **7/7**，共 **247/247**，固定 Circle 8b2ceb6、APV 316760a，**无 skip**；typecheck、diff、**714** 归档核验通过。独立包 28 条另计。未 push、部署、改真实网关/Circle/独立包或读取业务原件；后续提交按用户新规则附 Signed-off-by。

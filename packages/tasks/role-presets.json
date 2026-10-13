@@ -111,7 +111,6 @@
         "docs.fetch",
         "objects.read",
         "assets.read",
-        "credentials.use",
         "builds.read",
         "environment.read",
         "knowledge.read",

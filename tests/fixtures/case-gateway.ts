@@ -2,12 +2,13 @@ import {createServer} from 'node:http';
 import type {TestContext} from 'node:test';
 
 export async function caseGateway(t:TestContext){
-  const state={unavailable:false,lost:false,hold:false,dropSubmit:false,wrongSha:false,failCase:false,hostLog:'',actualBuild:'Rel_PHOTON_10_5_0_101',missingBuild:false,command:'service create port 443',sha:'',taskId:'cex_synthetic_301',calls:[] as string[],identityServer:'',clientId:'',clientSecret:'',ruleBuild:'',ruleSha:'',verified:[] as any[]};
+  const state={staticSecret:'',staticAccepted:false,refuseLease:false,unavailable:false,lost:false,hold:false,dropSubmit:false,wrongSha:false,failCase:false,hostLog:'',actualBuild:'Rel_PHOTON_10_5_0_101',missingBuild:false,command:'service create port 443',sha:'',taskId:'cex_synthetic_301',calls:[] as string[],identityServer:'',clientId:'',clientSecret:'',ruleBuild:'',ruleSha:'',verified:[] as any[]};
   const server=createServer(async(req,res)=>{
     if(req.method!=='POST'||req.url!=='/mcp'){res.writeHead(405);res.end();return;}
     let rpc:any;try{let input='';for await(const bytes of req)input+=bytes;rpc=JSON.parse(input);}catch{res.writeHead(400);res.end();return;}
     const name=rpc.params?.name;state.calls.push(name??rpc.method);
     if(state.unavailable){res.writeHead(503);res.end('{"error":"cannot verify token: server unreachable"}');return;}
+    if(state.staticSecret){if(req.headers.authorization!==`Bearer ${state.staticSecret}`){res.writeHead(401);res.end();return;}state.staticAccepted=true;}
     if(state.identityServer){try{
       const auth=`Basic ${Buffer.from(`${encodeURIComponent(state.clientId)}:${encodeURIComponent(state.clientSecret)}`).toString('base64')}`,token=(req.headers.authorization??'').slice(7),checked=await fetch(`${state.identityServer}/v1/introspect`,{method:'POST',headers:{authorization:auth,'content-type':'application/x-www-form-urlencoded'},body:new URLSearchParams({token})}),info=await checked.json() as any;
       if(!checked.ok){res.writeHead(503);res.end();return;}if(!info.active||!info.scope.split(' ').includes('jumphost:run')){res.writeHead(401);res.end();return;}state.verified.push({...info,tokenDigest:(await import('node:crypto')).createHash('sha256').update(token).digest('hex')});
@@ -17,7 +18,7 @@ export async function caseGateway(t:TestContext){
       }
     }catch{res.writeHead(503);res.end();return;}}
     let result:any={ok:true};
-    if(name==='lease_acquire')result={ok:true,lease_id:'synthetic-lease',token:1,expires_in_s:1800};
+    if(name==='lease_acquire')result=state.refuseLease?{ok:false,error:'lease unavailable'}:{ok:true,lease_id:'synthetic-lease',token:1,expires_in_s:1800};
     if(name==='env_prepare'){const wanted=rpc.params.arguments.device_build,match=!state.missingBuild&&state.actualBuild===wanted;result={ok:true,ready:match,build_checked:true,device_count:2,checks:[{check:'device_build',ok:match,detail:state.missingBuild?'build not found in output':`device reports ${state.actualBuild}, gateway bundle is ${wanted}`} ]};}
     if(name==='case_submit'){
       const {createHash}=await import('node:crypto');state.sha=createHash('sha256').update(Buffer.from(rpc.params.arguments.xlsx_b64,'base64')).digest('hex');

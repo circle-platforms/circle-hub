@@ -33,7 +33,7 @@ export async function readExecutionWorkbook(bytes:Buffer,functions?:FunctionCont
       if(type>=2&&cells[0]){if(!/^\d{1,32}$/.test(cells[0])||cases.some(item=>item.autoid===cells[0]))throw invalid('Case identities must be unique numeric strings');current={autoid:cells[0],steps:[]};cases.push(current);}
       if(type>=2&&!current)throw invalid('A step has no case identity');
       const step:ExecutionStep={row,type,description:cells[3],object:cells[4],method:cells[5],data:cells[6],commands:[],...(cells[7]?{saveAs:cells[7]}:{}),...(cells[8]?{inputRegister:cells[8]}:{})};
-      if(functions&&(step.object||step.method||step.data)&&functions.status(step.object,step.method)!=='enabled')throw invalid('Execution function is not enabled in the bound function contract',{functionStatus:functions.status(step.object,step.method)});
+      if(functions&&step.object!=='test_env'&&(step.object||step.method||step.data)&&functions.status(step.object,step.method)!=='enabled')throw invalid('Execution function is not enabled in the bound function contract',{functionStatus:functions.status(step.object,step.method)});
       const device=/^(?:APV_(\d+)|Seg(\d+)_tmp)$/.exec(step.object);
       if(device){
         if(!['cmd','cmd_config','cmds_config','cmd_enable'].includes(step.method)||cells[8]!==''||/\b(?:Reg|Seg)\d+_tmp\b|\$\{/.test(step.data))throw invalid('Device rows need literal command methods without runtime input substitution; expand fuzzy execute and disabled helpers first');
@@ -42,7 +42,7 @@ export async function readExecutionWorkbook(bytes:Buffer,functions?:FunctionCont
         for(const command of step.commands)commands.push({autoid:type===1?null:current!.autoid,row,object:step.object,deviceIndex:Number(device[1]??device[2]),command});
       }else if(step.object==='test_env'||shellHost(step.object)){
         const host=step.object==='test_env'?step.method:step.object;
-        if(!shellHost(host)||step.object!=='test_env'&&step.method!=='cmd'||!step.data.trim()||step.data.length>16384||cells[8]!==''||/[\x00-\x08\x0b-\x1f]/.test(step.data))throw invalid('Host dispatch needs an enabled literal method; lifecycle, reboot, console without role evidence and input-register substitution are not supported');
+        if(!/^[a-z][a-z0-9_]{0,63}$/.test(host)||step.object!=='test_env'&&step.method!=='cmd'||!step.data.trim()||step.data.length>16384||cells[8]!==''||/[\x00-\x08\x0b-\x1f]/.test(step.data))throw invalid('Host dispatch needs an enabled literal method; lifecycle, reboot, console without role evidence and input-register substitution are not supported');
         step.call=frameworkArguments(step.data);hostCommands.push({autoid:type===1?null:current!.autoid,row,object:step.object,method:step.method,host,command:step.call.command,kwargs:step.call.kwargs});
       }else if(step.object==='check_point'){
         if(!['found','not_found','abs_found','found_times'].includes(step.method))throw invalid('Checkpoint method is outside the supported execution contract');

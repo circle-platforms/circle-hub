@@ -1,5 +1,6 @@
 import readWorkbook from 'read-excel-file/node';
-import { unzipSync, strFromU8 } from 'fflate';
+import {boundedUnzip} from '../../../packages/knowledge/src/zip.ts';
+import { zipSync, strFromU8 } from 'fflate';
 import { ApiError, sha256 } from '../../../packages/contracts/src/index.ts';
 import {MINDMAP_CONTRACT_VERSION,MINDMAP_MAPPING_VERSION} from '../contracts.ts';
 import type { ParsedMindmap, Topic } from './mindmap.ts';
@@ -9,21 +10,15 @@ export async function verifyMindmapWorkbook(bytes: Buffer, source: ParsedMindmap
   reader: string; rowCount: number; sourceSha256: string; irSha256: string; artifactSha256: string;
 }> {
   const fail = (message: string): never => { throw new ApiError('ARTIFACT_VERIFICATION_FAILED', message); };
-  let expandedSize = 0; const names = new Set<string>(); let archive: Record<string, Uint8Array>;
-  try {
-    archive = unzipSync(bytes,{ filter:entry => {
-      expandedSize += entry.originalSize;
-      if (expandedSize > 64*1024*1024 || names.size > 512 || names.has(entry.name) || entry.name.split('/').includes('..')) fail('Unsafe or oversized workbook archive');
-      names.add(entry.name); return true;
-    } });
-  } catch (error) { if (error instanceof ApiError) throw error; fail('Workbook is not a valid OOXML zip'); }
+  let archive:Record<string,Uint8Array>;
+  try{archive=boundedUnzip(bytes,{maxBytes:64*1024*1024,maxEntries:512});}catch{fail('Workbook is not a valid bounded OOXML zip');}
   if (!archive!['[Content_Types].xml'] || !archive!['xl/workbook.xml']) fail('Workbook OOXML parts are missing');
   if (Object.keys(archive!).some(name => /vbaProject|macrosheets|externalLinks/i.test(name)) || /macroEnabled|vbaProject/i.test(strFromU8(archive!['[Content_Types].xml']))) fail('V1 workbooks cannot contain macros or external workbook links');
   for (const [name,part] of Object.entries(archive!)) {
     if (/^xl\/worksheets\/.*\.xml$/.test(name) && /<(?:[\w-]+:)?f(?:\s|>)/.test(strFromU8(part))) fail('V1 cells must be literal values, not formulas');
     if (name.endsWith('.rels') && /TargetMode=["']External["']/.test(strFromU8(part))) fail('V1 workbook cannot contain active external targets');
   }
-  const sheets = await readWorkbook(bytes, { trim: false });
+  const sheets = await readWorkbook(Buffer.from(zipSync(archive!)), { trim: false });
   if (sheets.length !== 2 || sheets[0].sheet !== '用例清单' || sheets[1].sheet !== '说明') fail('Workbook sheet names or order differ from V1');
   const columns = ['编号','一级模块','二级模块','用例标题','备注','层级深度','路径'];
   if (JSON.stringify(sheets[0].data[0]) !== JSON.stringify(columns)) fail('Workbook columns differ from V1');

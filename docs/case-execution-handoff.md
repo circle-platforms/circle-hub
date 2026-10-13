@@ -94,3 +94,5 @@ issuer 使用 POST /token 的 refresh_token grant；若签发服务使用另一 
 超时、lost、worker 断开或投递后取消转 unknown，资源冻结，后续新投递 RESOURCE_BUSY，不自动重新 case_submit。旧 fence 的回报拒绝。取消前未派发的任务关闭审批并 cancelled；本地取消不证明远端停止。已有 remoteTaskId 时，由另一 worker 经原身份只读 case_status/results 独立核对，终态与工作簿 SHA 对上后 reconciled、交付并解冻；没有 remoteTaskId 的投递断线不能自动恢复，必须先在网关侧对账，不能盲重投。
 
 当前只完成合成网关验收。真实网关上游核验不可达是环境阻塞，待用户/运维恢复并登记个人凭据后再做真实投递；真实 case.xlsx 由用户上传，未以合成结果冒充上机通过。
+
+修订 3 的 static-secret 模式与明确的 HTTP 资料源例外见 [客户端交接](client-api-handoff.md#修订-3凭据模式隔离与明确的明文例外)。执行网关仍要求受信 HTTPS；资料源的明文例外不放宽网关或外部签发方。主机闭集、设备树与自毁核验由批准的产品线 Hook 决定，解析器不会在零 Hook 时补一份主机白名单。Scope 访客只能读取；没有 credentials.use 管理/直接使用权限，获准的只读 Tool 由 worker 代取自身绑定凭据。普通成员执行仍不审批，executionIsChange 资源继续用冻结变更集。

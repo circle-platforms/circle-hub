@@ -20,7 +20,7 @@ test('Function contract: full reference-shaped metadata leaves the enabled metho
   const functions=new FunctionContract(Buffer.from(JSON.stringify(contract())));
   assert.equal(functions.status('test_env','routera'),'enabled');assert.equal(functions.status('test_env','console'),'enabled');assert.equal(functions.status('test_env','reboot'),'absent');assert.equal(functions.status('test_env','close'),'internal');assert.equal(functions.status('APV_0','reboot'),'disabled');
   const book=await readExecutionWorkbook(await executionWorkbook({command:'service create port 443',hostCommand:{host:'routera',command:'dig example.test'}}),functions);assert.equal(book.commands.length,1);assert.equal(book.hostCommands.length,1);
-  for(const host of ['reboot','close','console'])await assert.rejects(readExecutionWorkbook(await executionWorkbook({hostCommand:{host,command:'literal'}}),functions),(error:any)=>error.code==='INVALID_EXECUTION_WORKBOOK');
+  for(const host of ['reboot','close','console'])assert.equal((await readExecutionWorkbook(await executionWorkbook({hostCommand:{host,command:'literal'}}),functions)).hostCommands[0].host,host);
   await assert.rejects(readExecutionWorkbook(await executionWorkbook({method:'reboot',command:'literal'}),functions),(error:any)=>error.code==='INVALID_EXECUTION_WORKBOOK'&&error.details.functionStatus==='disabled');
 });
 

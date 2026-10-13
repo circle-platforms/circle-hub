@@ -1,8 +1,8 @@
 import {ApiError,MAX_SOURCE_BYTES,canonicalHash,requireCondition,sha256} from '../../contracts/src/index.ts';
 import {setTimeout as delay} from 'node:timers/promises';
 
-export interface RawReturn {path:string;bytes:Buffer;sha256:string;mediaType:string;etag:string|null;sourceType?:string;requestKey?:string;httpStatus?:number;artifactFilePath?:string}
-export interface SourceOptions {authorization?:()=>string|Promise<string>;timeoutMs?:number;maxBytes?:number;absenceTtlMs?:number;requestConcurrency?:number;requestIntervalMs?:number}
+export interface RawReturn {path:string;bytes:Buffer;sha256:string;mediaType:string;etag:string|null;sourceType?:string;requestKey?:string;httpStatus?:number;artifactFilePath?:string;plaintextAuthentication?:true}
+export interface SourceOptions {authorization?:()=>string|Promise<string>;timeoutMs?:number;maxBytes?:number;absenceTtlMs?:number;requestConcurrency?:number;requestIntervalMs?:number;allowPlaintextAuthentication?:boolean}
 export interface Incremental<T> {items:T[];cursor:Record<string,string>;evidence:RawReturn[]}
 
 // Transport errors never interpolate a URL, authorization value or source body.
@@ -28,6 +28,8 @@ export class HttpSource {
   }
   async read(path:string,options:{method?:'GET'|'POST'|'PROPFIND';json?:unknown;headers?:Record<string,string>}={}):Promise<RawReturn> {
     const target=this.path(path),authorization=await this.#options.authorization?.();
+    const plaintextAuthentication=!!authorization&&this.#origin.protocol==='http:'&&!['127.0.0.1','localhost','[::1]'].includes(this.#origin.hostname);
+    requireCondition(!plaintextAuthentication||this.#options.allowPlaintextAuthentication===true,'SOURCE_FORBIDDEN','Authenticated remote sources require HTTPS or an independently approved runtime-profile exception');
     const key=sha256(JSON.stringify([authorization??'',target,options.method??'GET',options.json??null]));
     if((this.#absent.get(key)??0)>Date.now())throw new ApiError('SOURCE_ABSENT','Source object is absent');
     const release=await this.slot();
@@ -42,7 +44,7 @@ export class HttpSource {
       if(!response.ok)throw new ApiError('SOURCE_UNREACHABLE','Source did not return a readable response',{httpStatus:response.status});
       const chunks:Buffer[]=[];let size=0;
       for await(const chunk of response.body??[]){size+=chunk.length;if(size>(this.#options.maxBytes??MAX_SOURCE_BYTES))throw new ApiError('RESULT_TOO_LARGE','Source return exceeds the byte limit; narrow the source query',{outcome:'result_too_large',bound:'bytes',limit:this.#options.maxBytes??MAX_SOURCE_BYTES});chunks.push(Buffer.from(chunk));}
-      const bytes=Buffer.concat(chunks);return {path:target,bytes,sha256:sha256(bytes),httpStatus:response.status,mediaType:response.headers.get('content-type')??'application/octet-stream',etag:response.headers.get('etag'),requestKey:canonicalHash({method:options.method??'GET',path:target,body:options.json??null})};
+      const bytes=Buffer.concat(chunks);return {path:target,bytes,sha256:sha256(bytes),httpStatus:response.status,...(plaintextAuthentication?{plaintextAuthentication:true as const}:{}),mediaType:response.headers.get('content-type')??'application/octet-stream',etag:response.headers.get('etag'),requestKey:canonicalHash({method:options.method??'GET',path:target,body:options.json??null})};
     }catch(error){if(error instanceof ApiError)throw error;throw new ApiError('SOURCE_UNREACHABLE','Source cannot be reached');}finally{release();}
   }
   async json(path:string,options:{method?:'GET'|'POST';json?:unknown}={}):Promise<{result:any;evidence:RawReturn}> {

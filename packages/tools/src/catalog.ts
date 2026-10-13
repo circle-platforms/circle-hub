@@ -25,6 +25,12 @@ export class ToolCatalog {
     const ref=configuration.runtimeProfileRef as string,profile=Object.hasOwn(this.profiles,ref)?this.profiles[ref]:undefined,pack=this.packageFor(configuration);if(!profile)return undefined;
     return {...profile,...(configuration.productLineId===undefined?pack?.profileOptions:pack?.productLineOptions?.[configuration.productLineId as string])};
   }
+  async runtimePolicy(ctx:AuthContext,row:any,tx?:Transaction){
+    const ref=row.configuration.runtimeProfileRef;if(!ref)return {allowPlaintextAuthentication:false};
+    const profile=(await (tx??this.store.pool).query(`SELECT a.asset_id,v.* FROM assets a JOIN asset_versions v ON v.asset_id=a.asset_id AND v.version=a.current_version WHERE a.tenant_id=$1 AND a.scope_id=$2 AND a.kind='runtime-profile' AND v.configuration->>'profileType'='connector' AND v.configuration->>'profileRef'=$3`,[ctx.tenantId,row.scope_id,ref])).rows[0],expected=Object.hasOwn(this.profiles,ref)?canonicalHash(this.profiles[ref]):null;
+    requireCondition(profile&&['approved','running'].includes(profile.lifecycle)&&profile.approved_digest===profile.sha256&&profile.configuration.profileSha256===expected,'SOURCE_NOT_APPROVED','Runtime profile requires its current approved revision');
+    return {allowPlaintextAuthentication:profile.configuration.allowPlaintextAuthentication===true,runtimeProfileAssetId:profile.asset_id,runtimeProfileVersion:profile.version};
+  }
   packageFor(configuration:Record<string,unknown>):ToolPackage|undefined{
     const pack=this.packages.find(p=>p.id===configuration.packageId),line=configuration.productLineId;
     return line===undefined||typeof line==='string'&&Object.hasOwn(pack?.productLinePrefixes??{},line)?pack:undefined;
@@ -46,14 +52,14 @@ export class ToolCatalog {
   async available(ctx:AuthContext,tx?:Transaction):Promise<{row:any;definition:ToolDefinition;view:any}[]>{
     const p=await this.auth.policy(ctx,tx);
     if(!p.grants.includes('tasks.read')||!p.grants.some(grant=>['tasks.submit','tools.read'].includes(grant)))return [];
-    const rows=(await (tx??this.store.pool).query(`SELECT b.*,a.scope_id,a.owner_principal_id,v.sha256,v.configuration,v.declaration FROM tool_bindings b
+    const rows=(await (tx??this.store.pool).query(`SELECT b.*,a.scope_id,a.owner_principal_id,v.sha256,v.configuration,v.declaration,v.lifecycle,v.approved_digest FROM tool_bindings b
       JOIN assets a ON a.asset_id=b.asset_id AND a.current_version=b.version JOIN asset_versions v ON v.asset_id=b.asset_id AND v.version=b.version
       WHERE b.tenant_id=$1 AND a.scope_id=ANY($2::text[]) AND v.lifecycle='running' AND v.approved_digest=v.sha256
       AND (a.owner_principal_id=$3 OR v.readers ? $3 OR v.readers ? '*') ORDER BY b.name`,[p.tenantId,p.scopes,p.principalId])).rows;
     const results=[];
     for(const row of rows){const definition=this.definition(row.package_id,row.suffix,row.configuration);if(!definition||p.kind!=='user'&&!p.scopeGrants?.[row.scope_id]?.includes(definition.permission)||definition?.effect==='write'&&!p.scopeGrants?.[row.scope_id]?.includes('tasks.submit'))continue;
       if(ctx.run&&!ctx.run.tools.includes(row.name))continue;
-      if(p.kind==='user'){const role=await this.auth.roles.role(ctx,row.scope_id,tx),rank={viewer:0,member:1,admin:2};if(!role||rank[role]<rank[definition.minimumRole??(definition.effect==='read'?'viewer':'member')])continue;}let credentials=true;for(const reference of row.declaration.credentials){try{const record=await this.assets.row(ctx,reference,tx,'credentials.use');if(record.owner_principal_id!==ctx.principalId||record.lifecycle==='disabled'||record.configuration.connectorAssetId!==row.asset_id)credentials=false;}catch{credentials=false;}}
+      if(p.kind==='user'){const role=await this.auth.roles.role(ctx,row.scope_id,tx),rank={viewer:0,member:1,admin:2};if(!role||rank[role]<rank[definition.minimumRole??(definition.effect==='read'?'viewer':'member')])continue;}let credentials=true;for(const reference of row.declaration.credentials){try{await this.assets.resourceCredential(ctx,row,reference,tx,definition.effect==='read'?'tools.read':'credentials.use');}catch{credentials=false;}}
       if(!credentials)continue;
       const inputSchema=z.toJSONSchema(definition.schema,{io:'input'});inputSchema.properties={...inputSchema.properties,sourceArtifactId:{type:'string',pattern:'^sar_[a-f0-9]{32}$',description:'Bind an independently approved external source artifact; results retain its revision and provenance'}};
       results.push({row,definition,view:{name:row.name,title:definition.title,description:definition.description,inputSchema,effect:definition.effect,mode:definition.mode,permission:definition.permission,minimumRole:definition.minimumRole??(definition.effect==='read'?'viewer':'member'),approval:definition.approval??false,annotations:definition.annotations??{readOnlyHint:definition.effect==='read'},assetId:row.asset_id,assetVersion:row.version}});
@@ -78,17 +84,20 @@ export class ToolCatalog {
     requireCondition(item.row.version===spec.args.assetVersion&&item.row.sha256===(spec.targetIdentity??spec.target_identity),'APPROVAL_STALE','Tool asset revision changed');
     item.definition.schema.parse(spec.args.input);
     requireCondition(task.input.sourceArtifactId===spec.args.sourceArtifactId,'INPUT_REVISION_STALE','Tool source binding differs from its accepted input');
-    const sourceArtifact=spec.args.sourceArtifactId?await this.sourceArtifacts!.resolve(ctx,spec.args.sourceArtifactId,scope,tx):undefined;
+    const sourceArtifact=spec.args.sourceArtifactId?await this.sourceArtifacts!.resolve(ctx,spec.args.sourceArtifactId,scope,tx):undefined,policy=sourceArtifact?{allowPlaintextAuthentication:false}:await this.runtimePolicy(ctx,item.row,tx);
     requireCondition(sourceArtifact||['candidate.submit','consolidation.fragments'].includes(item.definition.handler)||this.profiles[item.row.configuration.runtimeProfileRef],'SOURCE_UNREACHABLE','Runtime source profile is not configured');
     return {effects:{reads:item.definition.effect==='read'?['registered-source']:['knowledge'],writes:item.definition.effect==='write'?['knowledge-candidates']:[]},assetId:item.row.asset_id,assetVersion:item.row.version,
-      packageId:item.row.package_id,handler:item.definition.handler,profile:this.profileFor(item.row.configuration),credentialReferences:item.row.declaration.credentials,sourceArtifact};
+      packageId:item.row.package_id,handler:item.definition.handler,profile:this.profileFor(item.row.configuration)?{...this.profileFor(item.row.configuration),...policy}:undefined,credentialReferences:item.row.declaration.credentials,sourceArtifact};
   }
   async preflight(tx:Transaction,actor:AuthContext,operation:any,authorization:any):Promise<any>{
     if(authorization.sourceArtifact)return {packageId:authorization.packageId,handler:authorization.handler,profile:authorization.profile??{origin:'http://127.0.0.1'},sourceArtifact:authorization.sourceArtifact,cacheNamespace:canonicalHash(authorization.sourceArtifact)};
     const workerProfile=authorization.profile??(['candidate.submit','consolidation.fragments'].includes(authorization.handler)?{origin:'http://127.0.0.1'}:null);
     requireCondition(workerProfile,'SOURCE_UNREACHABLE','Runtime source profile is not configured');
+    if(authorization.credentialReferences.length&&workerProfile.allowPlaintextAuthentication&&new URL(workerProfile.origin).protocol==='http:'&&!['127.0.0.1','localhost','[::1]'].includes(new URL(workerProfile.origin).hostname)){
+      const facts={operationId:operation.operation_id,assetId:authorization.assetId,plaintextAuthentication:true,stage:'dispatch',runtimeProfileAssetId:workerProfile.runtimeProfileAssetId,runtimeProfileVersion:workerProfile.runtimeProfileVersion};await this.auth.audit(actor,'tools.plaintext-authentication',facts,operation.scope_id,tx);const task=await this.tasks.internal(tx,operation.task_id);await this.execution.knowledge.evidence(tx,task,operation.operation_id,'script-conclusion',facts);
+    }
     let injection:any=null;
-    for(const reference of authorization.credentialReferences){const value=await this.assets.executionValue(actor,reference,authorization.assetId);
+    for(const reference of authorization.credentialReferences){const parent=await this.assets.row(actor,authorization.assetId,tx),privateReference=await this.assets.resourceCredential(actor,parent,reference,tx,'tools.read');let value=await this.assets.vault.get(privateReference.key,privateReference.binding);if(this.assets.materializeCredential&&privateReference.row.configuration.oauth)value=await this.assets.materializeCredential(actor,privateReference.row,{secret_key:privateReference.key},value);
       requireCondition(!injection,'INVALID_PAYLOAD','This connector uses one authorization credential');
       const binding=JSON.stringify([operation.operation_id,operation.worker_id,operation.fencing_token]);
       const existing=(await tx.query('SELECT * FROM tool_injections WHERE operation_id=$1',[operation.operation_id])).rows[0];
@@ -108,7 +117,8 @@ export class ToolCatalog {
         const references=new Map<string,any>();
         const artifact=task.input.sourceArtifactId?await this.sourceArtifacts!.resolve(actor,task.input.sourceArtifactId,task.scopeId,tx):null;
         if(artifact)result={...result,source:{...result?.source,sourceArtifactId:artifact.sourceArtifactId,assetId:artifact.assetId,assetVersion:artifact.assetVersion,manifestSha256:artifact.assetSha256,origin:'uploaded-artifact',live:false}};
-        for(const raw of report.output.raw){let ref:any;
+        for(const received of report.output.raw){let ref:any;const profile=this.profileFor(item.row.configuration),plaintextAuthentication=!artifact&&item.row.declaration.credentials.length>0&&profile&&new URL(profile.origin).protocol==='http:'&&!['127.0.0.1','localhost','[::1]'].includes(new URL(profile.origin).hostname),raw={...received,...(plaintextAuthentication?{plaintextAuthentication:true}:{} )};
+          if(plaintextAuthentication){const policy=await this.runtimePolicy(actor,item.row,tx);requireCondition(policy.allowPlaintextAuthentication,'SOURCE_FORBIDDEN','Plaintext exception is no longer approved');await this.auth.audit(actor,'tools.plaintext-authentication',{operationId:operation.operation_id,assetId:item.row.asset_id,plaintextAuthentication:true,runtimeProfileAssetId:policy.runtimeProfileAssetId,runtimeProfileVersion:policy.runtimeProfileVersion,sourceSha256:raw.sha256},task.scopeId,tx);}
           if(artifact)ref=await this.sourceArtifacts!.capture(tx,actor,task.scopeId,artifact,raw,item.definition.permission);
           else ref=await this.knowledge.capture(tx,actor,task.scopeId,item.row.asset_id,{...raw,sourceType:raw.sourceType??report.output.sourceType},item.definition.permission);
           evidence.push({evidenceId:ref.evidenceId,sha256:ref.sha256});references.set(raw.path,ref);if(!artifact)await this.observed?.(tx,actor,item.row.asset_id,raw,task.taskId);}

@@ -1,5 +1,6 @@
 import ExcelJS from 'exceljs';
-import { unzipSync, zipSync } from 'fflate';
+import {boundedUnzip} from '../../../packages/knowledge/src/zip.ts';
+import { zipSync } from 'fflate';
 import { ApiError, MAX_SOURCE_BYTES,canonicalHash, sha256, type UnmappedElement } from '../../../packages/contracts/src/index.ts';
 import {MINDMAP_CONTRACT_VERSION,MINDMAP_MAPPING_VERSION} from '../contracts.ts';
 import { verifyMindmapWorkbook } from './mindmap-verify.ts';
@@ -24,18 +25,11 @@ export function parseMindmap(source: Uint8Array, fileName: string): ParsedMindma
   let bytes = source; let zipped = false; const unmapped: UnmappedElement[] = [];
   const zipMagic = source[0] === 0x50 && source[1] === 0x4b;
   if (zipMagic) {
-    zipped = true; let size = 0; let entries = 0; let contentCount = 0;
-    try {
-      const archive = unzipSync(source, { filter: entry => {
-        entries++; size += entry.originalSize;
-        if (entries > 2048 || size > 64 * 1024 * 1024 || entry.name.startsWith('/') || entry.name.includes('\\') || entry.name.split('/').includes('..')) invalid('Unsafe or oversized XMind archive');
-        if (entry.name === 'content.json') { contentCount++; if (entry.originalSize > MAX_SOURCE_BYTES) invalid('XMind content.json exceeds the limit'); return true; }
-        if (!['metadata.json','manifest.json','Thumbnails/thumbnail.png'].includes(entry.name) && !entry.name.endsWith('/')) {
-          unmapped.push({ path: `zip:${entry.name}`, reason: 'Archive attachment or extension is not mapped to V1 cells' });
-        }
-        return false;
-      } });
-      if (contentCount !== 1 || !archive['content.json']) throw new ApiError('UNSUPPORTED_MINDMAP', 'XMind 2020+ requires exactly one root content.json; content.xml is unsupported');
+    zipped=true;
+    try{
+      const archive=boundedUnzip(source,{maxBytes:64*1024*1024,maxEntries:2048});
+      for(const name of Object.keys(archive))if(!['content.json','metadata.json','manifest.json','Thumbnails/thumbnail.png'].includes(name)&&!name.endsWith('/'))unmapped.push({path:'zip:'+name,reason:'Archive attachment or extension is not mapped to V1 cells'});
+      if(!archive['content.json'])throw new ApiError('UNSUPPORTED_MINDMAP','XMind 2020+ requires exactly one root content.json; content.xml is unsupported');
       bytes = archive['content.json'];
       if (bytes.byteLength > MAX_SOURCE_BYTES) invalid('Expanded content exceeds the limit');
     } catch (error) { if (error instanceof ApiError) throw error; invalid('Cannot parse the XMind zip archive'); }
@@ -129,7 +123,7 @@ export async function compileMindmap(source: Uint8Array, fileName: string): Prom
   }
   info.getRow(9).height = Math.min(240, Math.max(32, Math.ceil(JSON.stringify(parsed.unmapped).length / 100) * 16));
   // Freeze ZIP timestamps too, so retries across wall-clock seconds preserve the exact artifact SHA.
-  const output = Buffer.from(zipSync(unzipSync(Buffer.from(await workbook.xlsx.writeBuffer())),
+  const output = Buffer.from(zipSync(boundedUnzip(Buffer.from(await workbook.xlsx.writeBuffer())),
     { level: 6, mtime: new Date('2000-01-01T00:00:00Z') }));
   const verification = await verifyMindmapWorkbook(output, parsed, sha256(source));
   return { workbook: output, parsed, status, unmapped: parsed.unmapped, verification };

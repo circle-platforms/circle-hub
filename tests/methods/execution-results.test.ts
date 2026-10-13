@@ -9,7 +9,7 @@ test('Execution contract: hidden marker, single execution sheet and exact comman
   const book=await readExecutionWorkbook(await executionWorkbook());assert.deepEqual(book.cases.map(item=>item.autoid),['301']);assert.equal(book.cases[0].steps.length,3);assert.deepEqual(book.commands.map(item=>item.command),['service inspect alpha']);
   for(const options of [{hidden:false},{sheet:'Cases'},{extraSheet:true}])await assert.rejects(readExecutionWorkbook(await executionWorkbook(options)),(error:any)=>error.code==='INVALID_EXECUTION_WORKBOOK');
   const segment=await readExecutionWorkbook(await executionWorkbook({object:'Seg1_tmp'}));assert.equal(segment.commands.length,1);assert.equal(segment.commands[0].deviceIndex,1);
-  for(const options of [{object:'test_env'},{inputVariables:'{"command":"unverified"}'},{command:'service create name Reg0_tmp'}])await assert.rejects(readExecutionWorkbook(await executionWorkbook(options)),(error:any)=>error.code==='INVALID_EXECUTION_WORKBOOK');
+  for(const options of [{inputVariables:'{"command":"unverified"}'},{command:'service create name Reg0_tmp'}])await assert.rejects(readExecutionWorkbook(await executionWorkbook(options)),(error:any)=>error.code==='INVALID_EXECUTION_WORKBOOK');
 });
 test('Execution results: four checkpoint truth pairs, multiline patterns, summaries, stale and ambiguous logs never inherit a case pass',async()=>{
   const book=await readExecutionWorkbook(await executionWorkbook()),raw={task_id:'remote-one',channel:'ready',xlsx_sha256:book.sha256,rc:0,cases:[{case_id:'301',result:'pass',log_stale:false,log}]};

@@ -88,9 +88,10 @@ export class Assets {
     await this.dependencyChanged?.(tx,row.tenant_id,row.scope_id);
     return this.view((await tx.query(`SELECT a.*,v.* FROM ${join} WHERE a.asset_id=$1`,[id])).rows[0]);
   });}
-  async credential(ctx:AuthContext,id:string,input:{version:string;value:string;ownerPrincipalId?:string},metadata:Record<string,unknown>={},credentialAssetId?:string):Promise<any>{
+  async credential(ctx:AuthContext,id:string,input:{version:string;value:string;ownerPrincipalId?:string;mode?:'static-secret'},metadata:Record<string,unknown>={},credentialAssetId?:string):Promise<any>{
     const parent=await this.row(ctx,id);await this.auth.check(ctx,'credentials.register',parent.scope_id);
     if(parent.kind==='credential-reference'){
+      requireCondition(!input.mode||input.mode===parent.configuration.credentialMode,'INVALID_PAYLOAD','Rotation cannot change a credential mode');
       requireCondition(ctx.kind==='user'&&parent.owner_principal_id===ctx.principalId&&(!input.ownerPrincipalId||input.ownerPrincipalId===ctx.principalId)&&parent.lifecycle!=='disabled','FORBIDDEN_ACTION','Only the owner replaces an active personal session');requireCondition(input.version===parent.version,'APPROVAL_STALE','Credential reference revision changed');
       const link=(await this.store.pool.query('SELECT * FROM personal_credentials WHERE asset_id=$1 AND version=$2',[id,parent.version])).rows[0];requireCondition(link,'SOURCE_LOGIN_EXPIRED','Personal credential reference is unavailable');
       await this.vault.withLock(link.secret_key,()=>this.vault.replace(link.secret_key,input.value,this.binding(parent)));await this.auth.audit(ctx,'credentials.session-replaced',{assetId:id,version:parent.version,connectorAssetId:link.connector_asset_id},parent.scope_id);return this.view(parent);
@@ -101,15 +102,26 @@ export class Assets {
     const key=await this.vault.put(input.value,binding);
     try{return await this.store.transaction(async tx=>{
       const asset=await this.register(ctx,{assetId,scopeId:parent.scope_id,kind:'credential-reference',name:'Personal connector credential',version:input.version,
-        declaration:{reads:[],writes:[],credentials:[]},configuration:{connectorAssetId:id,...metadata},readers:[ctx.principalId]},tx,true);
+        declaration:{reads:[],writes:[],credentials:[]},configuration:{connectorAssetId:id,...metadata,...(input.mode?{credentialMode:input.mode}:{})},readers:[ctx.principalId]},tx,true);
       await tx.query('INSERT INTO personal_credentials(asset_id,version,connector_asset_id,secret_key) VALUES($1,$2,$3,$4)',[assetId,input.version,id,key]);return asset;
     });}catch(error){await this.vault.remove(key);throw error;}
   }
   async executionValue(ctx:AuthContext,reference:string,connectorId:string):Promise<string>{
+    const parent=await this.row(ctx,connectorId,undefined,'assets.read'),known=(await this.store.pool.query("SELECT v.configuration FROM assets a JOIN asset_versions v ON v.asset_id=a.asset_id AND v.version=a.current_version WHERE a.asset_id=$1 AND a.tenant_id=$2 AND a.scope_id=$3",[reference,ctx.tenantId,parent.scope_id])).rows[0];if(known?.configuration.credentialMode==='static-secret'){const binding=await this.resourceCredential(ctx,parent,reference);return this.vault.get(binding.key,binding.binding);}
     const row=await this.row(ctx,reference,undefined,'credentials.use');
     requireCondition(row.kind==='credential-reference'&&row.owner_principal_id===ctx.principalId&&row.lifecycle!=='disabled','FORBIDDEN_ACTION','Personal credential is not available to this execution identity');
     const link=(await this.store.pool.query('SELECT * FROM personal_credentials WHERE asset_id=$1 AND version=$2',[row.asset_id,row.version])).rows[0];
     requireCondition(link&&link.connector_asset_id===connectorId,'FORBIDDEN_ACTION','Credential is bound to another connector');const value=await this.vault.get(link.secret_key,this.binding(row));return this.materializeCredential?this.materializeCredential(ctx,row,link,value):value;
+  }
+  async resourceCredential(ctx:AuthContext,parent:any,reference:string,tx?:Transaction,grant:'credentials.use'|'tools.read'='credentials.use'):Promise<{row:any;key:string;binding:string}>{
+    await this.auth.check(ctx,grant,parent.scope_id,tx);
+    requireCondition(parent.tenant_id===ctx.tenantId&&parent.declaration.credentials.includes(reference)&&parent.lifecycle==='running'&&parent.approved_digest===parent.sha256,'FORBIDDEN_ACTION','Credential requires the current running provider binding');
+    const row=(await (tx??this.store.pool).query(`SELECT a.*,v.* FROM assets a JOIN asset_versions v ON v.asset_id=a.asset_id AND v.version=a.current_version WHERE a.asset_id=$1 AND a.tenant_id=$2 AND a.scope_id=$3 AND a.kind='credential-reference'`,[reference,parent.tenant_id,parent.scope_id])).rows[0];
+    requireCondition(row&&row.lifecycle!=='disabled'&&row.configuration.connectorAssetId===parent.asset_id,'FORBIDDEN_ACTION','Credential is not available to this provider');
+    if(row.configuration.credentialMode!=='static-secret')await this.row(ctx,reference,tx,grant==='tools.read'?'assets.read':'credentials.use');
+    requireCondition(row.configuration.credentialMode==='static-secret'||row.owner_principal_id===ctx.principalId,'FORBIDDEN_ACTION','Personal credential requires its owner');
+    const link=(await (tx??this.store.pool).query('SELECT secret_key FROM personal_credentials WHERE asset_id=$1 AND version=$2',[reference,row.version])).rows[0];requireCondition(link,'SOURCE_LOGIN_EXPIRED','Credential value is unavailable');
+    return {row,key:link.secret_key,binding:this.binding(row)};
   }
   async check(ctx:AuthContext,id:string):Promise<any>{
     const row=await this.row(ctx,id);await this.auth.check(ctx,'assets.check',row.scope_id);

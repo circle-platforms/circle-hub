@@ -26,6 +26,7 @@ import { Records } from '../../../packages/knowledge/src/records.ts';
 import { Assessments } from '../../../packages/methods/src/assessments.ts';
 import {ToolProviders} from '../../../packages/methods/src/providers.ts';
 import {ProductModules} from '../../../packages/methods/src/product-modules.ts';
+import {ExecutionSecrets} from '../../../packages/execution/src/secret-lifecycle.ts';
 import { Checklists } from '../../../packages/tasks/src/checklists.ts';
 import { checklistMigration } from '../../../packages/tasks/src/checklist-migration.ts';
 import { connectorMigration } from '../../../packages/tasks/src/connector-migration.ts';
@@ -99,6 +100,7 @@ const changeSets=new ChangeSets(store,auth,assets,tasks,approvals);
 const executionChanges=new ExecutionChanges(assets,changeSets,execution,tasks);
 const registrationValidation=assets.validateRegistration;assets.validateRegistration=async(ctx,input,id,tx)=>{await changeSets.validateDefinition(tx,ctx,{...input,assetId:id});await registrationValidation?.(ctx,input,id,tx);};
 const skills=new SkillPacks(store,auth,tasks,approvals,assets,catalog,execution,knowledge);await skills.initialize(process.env.CIRCLE_RUNTIME_CONFIG);
+const executionSecrets=new ExecutionSecrets(store,assets.vault,skills.secrets);
 skills.changeSets=changeSets;
 let executionProfiles:Record<string,unknown>={};if(process.env.CIRCLE_SERVER_EXECUTION_GATEWAYS)try{executionProfiles=JSON.parse(await readFile(process.env.CIRCLE_SERVER_EXECUTION_GATEWAYS,'utf8')).profiles??{};}catch{/* Unavailable profiles remain blocked dependencies. */}
 changeSets.profileIdentity=(type,ref)=>{const value=type==='connector'?(Object.hasOwn(catalog.profiles,ref)?catalog.profiles[ref]:null):type==='execution'?(Object.hasOwn(executionProfiles,ref)?executionProfiles[ref]:null):ref==='circle-runtime'?skills.runtime:null;return value?canonicalHash(value):null;};
@@ -450,7 +452,7 @@ server.requestTimeout = 10_000; server.headersTimeout = 10_000;
 let running: Promise<void> | undefined;
 const timer = setInterval(() => {
   if (running || closing) return;
-  running = tasks.runOnce().then(()=>packages.runOnce()).then(()=>automations.tick()).then(()=>changeSets.tick()).catch(error => { console.error(JSON.stringify({type:'runner-transaction-failed',code:error instanceof ApiError?error.code:(error as any).code??'INTERNAL_ERROR'})); }).finally(() => { running = undefined; });
+  running = tasks.runOnce().then(()=>packages.runOnce()).then(()=>automations.tick()).then(()=>changeSets.tick()).then(()=>executionSecrets.tick()).catch(error => { console.error(JSON.stringify({type:'runner-transaction-failed',code:error instanceof ApiError?error.code:(error as any).code??'INTERNAL_ERROR'})); }).finally(() => { running = undefined; });
 }, Number(process.env.CIRCLE_SERVER_POLL_MS ?? 100));
 let indexing:Promise<void>|undefined;
 const indexTimer=setInterval(()=>{if(indexing||closing)return;indexing=ingestions.runOnce().catch(error=>{console.error(JSON.stringify({type:'source-index-transaction-failed',code:error instanceof ApiError?error.code:'INTERNAL_ERROR'}));}).finally(()=>{indexing=undefined;});},Number(process.env.CIRCLE_SERVER_INDEX_POLL_MS??100));

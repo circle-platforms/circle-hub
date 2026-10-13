@@ -105,7 +105,7 @@ const PackageVersion=z.string().regex(/^\d+\.\d+\.\d+$/);
 export const AssetKind=z.enum(['connector-instance','credential-reference','knowledge-source','knowledge-snapshot','environment-resource','skill-package','trigger','bot','scope-role','scope-policy','runtime-profile','execution-submission']);
 export const AssetLifecycle=z.enum(['draft','approved','running','disabled','declined']);
 export const ToolDescriptor=z.object({name:z.string().min(1).max(160),description:z.string(),inputSchema:z.object({type:z.literal('object')}).catchall(z.unknown()),annotations:z.record(z.string(),z.unknown()).optional(),effect:z.enum(['read','write']),minimumRole:z.enum(['viewer','member','admin']),approval:z.boolean()}).strict();
-export const AssetDeclaration=z.object({reads:z.array(z.string()).max(100),writes:z.array(z.string()).max(100),credentials:z.array(AssetId).max(100),executionIsChange:z.boolean().optional(),provides:z.object({tools:z.array(ToolDescriptor).max(100).optional(),resources:z.array(z.record(z.string(),z.unknown())).max(100).optional(),prompts:z.array(z.record(z.string(),z.unknown())).max(100).optional()}).strict().optional()}).strict();
+export const AssetDeclaration=z.object({reads:z.array(z.string()).max(100),writes:z.array(z.string()).max(100),credentials:z.array(AssetId).max(100),executionIsChange:z.boolean().optional(),allowedTestHosts:z.array(z.string().min(1).max(200)).max(100).optional(),hostCommandPolicies:z.record(z.string(),z.record(z.string(),z.unknown())).optional(),provides:z.object({tools:z.array(ToolDescriptor).max(100).optional(),resources:z.array(z.record(z.string(),z.unknown())).max(100).optional(),prompts:z.array(z.record(z.string(),z.unknown())).max(100).optional()}).strict().optional()}).strict();
 export const AssetRegistration=z.object({assetId:AssetId.optional(),scopeId:ScopeId,kind:AssetKind,name:z.string().min(1).max(200),version:PackageVersion,
   ownerPrincipalId:z.string().regex(/^prn_/).optional(),declaration:AssetDeclaration,configuration:z.record(z.string(),z.unknown()).default({}),readers:z.array(z.string()).max(1000).optional()}).strict();
 export type AssetRegistration=z.infer<typeof AssetRegistration>;
@@ -114,7 +114,7 @@ export const ServiceClientId=identity('svc');
 const OAuthScope=z.string().regex(/^[\x21\x23-\x5b\x5d-\x7e]{1,150}$/);
 export const ServiceClientRegistration=z.object({scopeId:ScopeId,resourceAssetId:AssetId,name:z.string().min(1).max(200),secret:z.string().min(32).max(2048),scopes:z.array(OAuthScope).max(100),resourceScopes:z.array(OAuthScope).max(100).default([])}).strict();
 export const ServiceClientRotation=z.object({secret:ServiceClientRegistration.shape.secret}).strict();
-export const CredentialRegistration=z.object({version:PackageVersion,value:z.string().min(1).max(65536),ownerPrincipalId:z.string().regex(/^prn_/).optional()}).strict();
+export const CredentialRegistration=z.object({version:PackageVersion,value:z.string().min(1).max(65536),ownerPrincipalId:z.string().regex(/^prn_/).optional(),mode:z.literal('static-secret').optional()}).strict().refine(input=>input.mode!=='static-secret'||input.value.length>=32&&!/[\r\n\x00]/.test(input.value),'Static Bearer secrets need at least 32 characters and cannot contain header controls');
 export const OAuthGrantInput=z.object({connectorAssetId:AssetId,connectorVersion:PackageVersion,profileRef:z.string().min(1).max(200),clientCredentialId:AssetId.optional(),idempotencyKey:z.string().min(8).max(200)}).strict();
 export const AssetListQuery=z.object({limit:z.coerce.number().int().min(1).max(100).default(20),after:AssetId.optional(),kind:AssetKind.optional(),lifecycle:AssetLifecycle.optional()});
 export const ObjectTypeReference=z.object({packageId:PackageName,version:PackageVersion,typeId:PackageName}).strict();
@@ -254,6 +254,7 @@ const registry:Record<string,[number,string]> = {
   COMMAND_NOT_IN_TREE:[422,'execution'],DESTRUCTIVE_COMMAND:[422,'execution'],BUILD_MISMATCH:[409,'execution'],GATEWAY_UNREACHABLE:[503,'execution'],PERMISSION_DENIED:[403,'permission'],LEASE_UNAVAILABLE:[409,'execution'],SOURCE_NOT_APPROVED:[409,'dependency'],
   RATE_LIMITED:[429,'transient'],
   IMPORT_NOT_DECLARED:[422,'validation'],HOOK_FAILED:[422,'execution'],
+  SANDBOX_UNAVAILABLE:[503,'execution'],
 };
 export function registerErrorCodes(errors:Record<string,[number,string]>):void{for(const [code,definition] of Object.entries(errors)){if(registry[code]&&canonicalHash(registry[code])!==canonicalHash(definition))throw new Error('Error registration conflicts');registry[code]=definition;}}
 export type ErrorCode = string;

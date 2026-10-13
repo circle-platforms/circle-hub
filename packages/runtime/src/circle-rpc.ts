@@ -1,11 +1,12 @@
 import {spawn} from 'node:child_process';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
-import {mkdir,writeFile,readFile,lstat,realpath} from 'node:fs/promises';
+import {mkdir,writeFile,readFile,lstat,realpath,rm} from 'node:fs/promises';
 import {dirname,join,resolve,relative} from 'node:path';
 import {StringDecoder} from 'node:string_decoder';
 import {ApiError,MAX_SOURCE_BYTES,SafeRelativePath,canonicalJson,requireCondition,sha256} from '../../contracts/src/index.ts';
 
+import {isolatedProcess} from './isolation.ts';
 const execute=promisify(execFile);
 export interface CircleRun {
   runtime:{circleBin:string;circleCommit:string;circleVersion:string;model:{kind:'scripted';base_url:string;model:string;protocol:string;api_key:string}};
@@ -13,7 +14,8 @@ export interface CircleRun {
   serverUrl:string;serverToken:string;scopeId:string;principalId:string;signal?:AbortSignal;
   event:(event:any)=>Promise<void>;
 }
-export async function runCircle(input:CircleRun):Promise<any>{
+export async function runCircle(input:CircleRun):Promise<any>{try{return await runIsolatedCircle(input);}finally{await rm(join(input.folder,'home'),{recursive:true,force:true});await rm(join(input.folder,'home-user'),{recursive:true,force:true});}}
+async function runIsolatedCircle(input:CircleRun):Promise<any>{
   const {runtime}=input,circleBin=resolve(runtime.circleBin),repo=dirname(dirname(circleBin));
   const home=join(input.folder,'home'),homeUser=join(input.folder,'home-user'),workspace=join(input.folder,'workspace');
   for(const directory of [home,homeUser,workspace])await mkdir(directory,{recursive:true,mode:0o700});
@@ -29,7 +31,9 @@ export async function runCircle(input:CircleRun):Promise<any>{
   await writeFile(join(workspace,'inputs.json'),canonicalJson(input.inputs),{mode:0o600});
   if(Array.isArray(input.inputs.files))for(const file of input.inputs.files as any[]){SafeRelativePath.parse(file.path);requireCondition(!file.path.split('/').some((part:string)=>part.startsWith('.')||part.toLowerCase()==='agents.md')&&file.path!=='inputs.json'&&!input.manifest.outputs.includes(file.path),'INVALID_PAYLOAD','Input files cannot replace runtime control files or declared outputs');requireCondition(typeof file.base64==='string','INVALID_PAYLOAD','Input files require base64 bytes');const bytes=Buffer.from(file.base64,'base64');requireCondition(bytes.length<=MAX_SOURCE_BYTES&&(!file.sha256||sha256(bytes)===file.sha256),'SOURCE_HASH_MISMATCH','Input file SHA differs');const path=join(workspace,file.path);await mkdir(dirname(path),{recursive:true,mode:0o700});await writeFile(path,bytes,{mode:0o600});}
   let settled=false,failed=false,lastAnswer='',pending='',bytesSeen=0,eventChain=Promise.resolve(),eventError:unknown;const decoder=new StringDecoder('utf8');
-  const child=spawn(process.execPath,[circleBin,'--mode','rpc','--extensions','--yolo',workspace],{cwd:workspace,detached:process.platform!=='win32',stdio:['pipe','pipe','pipe'],env:{PATH:process.env.PATH,TMPDIR:process.env.TMPDIR,LANG:process.env.LANG,
+  const temporary=join(input.folder,'tmp');await mkdir(temporary,{recursive:true,mode:0o700});
+  const isolation=await isolatedProcess(process.execPath,[circleBin,'--mode','rpc','--extensions','--yolo',workspace],{read:[input.folder,dirname(circleBin),join(repo,'package.json'),...(await execute('git',['-C',repo,'ls-tree','-r','--name-only',runtime.circleCommit],{maxBuffer:1024*1024})).stdout.split('\n').filter(Boolean).map(path=>join(repo,path)),await realpath(join(repo,'node_modules')),...(process.env.NODE_EXTRA_CA_CERTS?[process.env.NODE_EXTRA_CA_CERTS]:[])],write:[input.folder],network:[input.serverUrl,runtime.model.base_url]});
+  const child=spawn(isolation.command,isolation.args,{cwd:workspace,detached:process.platform!=='win32',stdio:['pipe','pipe','pipe'],env:{PATH:process.env.PATH,TMPDIR:temporary,LANG:process.env.LANG,
     NODE_EXTRA_CA_CERTS:process.env.NODE_EXTRA_CA_CERTS,
     HOME:homeUser,CIRCLE_HOME:home,CIRCLE_NO_MODELS_REFRESH:'1',CIRCLE_JOB_WAIT:'120',CIRCLE_SERVER_URL:input.serverUrl,CIRCLE_SERVER_TOKEN:input.serverToken,CIRCLE_SERVER_USER:input.principalId,CIRCLE_SERVER_SCOPE:input.scopeId}});
   const redact=(value:unknown):any=>JSON.parse(JSON.stringify(value).replaceAll(input.serverToken,'[redacted-run-token]').replaceAll(runtime.model.api_key,'[redacted-model-key]'));
@@ -37,7 +41,7 @@ export async function runCircle(input:CircleRun):Promise<any>{
   const kill=()=>{if(child.exitCode!==null||child.signalCode!==null)return;try{if(process.platform==='win32')child.kill('SIGKILL');else process.kill(-child.pid!,'SIGKILL');}catch{/* process already ended */}};
   let stopTimer:NodeJS.Timeout|undefined;const abort=()=>{stop();stopTimer??=setTimeout(kill,5000);};input.signal?.addEventListener('abort',abort,{once:true});
   const timeout=setTimeout(()=>{failed=true;abort();},240_000);
-  child.stderr.on('data',()=>{/* CLI stderr may contain runtime paths; errors are summarized without raw logging. */});
+  child.stderr.on('data',()=>{/* Runtime paths and credential material never enter logs. */});
   const completion=new Promise<void>((accept,reject)=>{
     child.once('error',()=>reject(new ApiError('RUNTIME_FAILED','Circle process could not be started')));
     child.stdout.on('data',chunk=>{
