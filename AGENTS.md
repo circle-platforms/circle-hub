@@ -26,7 +26,7 @@ Reference verification may read source bytes; it must never import or execute ar
 
 ## Git and commits
 
-Inspect status and diffs and preserve other people's work; use isolated worktrees for parallel work. Stage explicit paths and never use `git add -A`, `git add .` or `git commit -a`. Commit messages are one capitalized imperative English sentence without a prefix or final full stop. Commit and push only within user authorization. Keep credentials, internal addresses and connection strings (samples use 192.0.2.0/24), raw business documents, logs, conversation dumps and local absolute paths out of Git. This section is identical in circle-hub and circle-packs; change it in both.
+Inspect status and diffs and preserve other people's work; use isolated worktrees for parallel work. Stage explicit paths and never use `git add -A`, `git add .` or `git commit -a`. Commit messages are one capitalized imperative English sentence without a prefix or final full stop, and every commit is signed off (`git commit -s`, see CONTRIBUTING.md). Commit and push only within user authorization; pull before pushing, because maintainers push from more than one machine. Keep credentials, internal addresses and connection strings (samples use 192.0.2.0/24), raw business documents, logs, conversation dumps and local absolute paths out of Git. This section is identical in circle-hub and circle-packs; change it in both.
 
 ## Verification
 
