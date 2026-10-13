@@ -719,3 +719,19 @@ health 与执行共用 gateway resource 会在冻结或忙时挡住状态检查�
 维护者允许第 9 节前以签署 merge 提交合入 main。合并其公开门面、Apache-2.0/贡献规范、五种 harness 的纯导入导出库及权限导出规范；未自行编辑 README、harness-adapters 或 permission-export。冲突仅 AGENTS.md/package.json：采用 main 的统一指令和公开名称/许可/仓库元数据，保留 server 实际运行需要的 TypeScript 依赖；锁文件根元数据同步。业务代码、Circle/产品包、真实配置均未更改。合并验证结果另记下一行。
 
 merge 内容本身 typecheck、methods **127/127**（含五种适配器原测试）、references **7/7**、**714** 归档核验与 diff 通过。待实现的第 9 节测试先证明缺模块/缺接口，未把它们算作合并的通过项；未改适配器内部文件或权限规范。
+
+## 49：修订 3 第 9 节，中立原语与通用 MCP
+
+先写中立方法缺模块与 MCP 404 验收，再接已授权合入的 importFrom/exportTo 公开 API，未修改 packages/harness-adapters 或 permission-export.md。Circle 从冻结 manifest/frontmatter 推导 hub-skill/1，不丢特有原文；已验证兼容性另存执行观察，不能由提交者自报，原 byte/digest 不改。四种 E 原语从虚拟文件表按 SHA 冻结，整批事务、同内容去重、共用 C 变更集，批准后导出可读原件；未支持的 Hook/provider 或 Circle 原生 Agent/Command 不伪造成功，明确 warning。缺模型/输出的原件投影不自动进入云运行。
+
+外部 Claude Code Skill 原样导入/独立批准，导出回原来源字节一致，并导出 Circle；固定 Circle 实际加载同一 SKILL.md/脚本、交付产物 SHA 一致。原语中立清单不把 permission hint 误认工具闭集；有真实声明才拒绝声明外试跑。Meridian 既有完整布局、五个挂点与原语夹具继续走同一装载器，后续完整验收包括它。
+
+MCP 使用官方 SDK 固定 1.32.1（仅增加公开依赖，安装禁 lifecycle scripts），按官方 2025-11-25 传输做 stateless JSON/会话 Bearer/Origin/协议协商。专业目录不改 inputSchema，写确认按维护者决定走 _meta 摘要；平台控制调用与幂等回执共用事务，上传一次、拒绝重复变参，确认不能越过独立审批。返回原样按 SHA 留 B 回执，mcr_ 仅操作者可读；审批失败决定也持久化。resources/prompts 授权后分页，纯 MCP SDK 客户端和原始客户端能列工具、读证据、调用读取；许可导出按中立规范，不把本机 allow/ask 说成平台批准。
+
+专项联合 **14/14**、另资源分页 **1/1**，typecheck；适配器合入后方法 **129/129**（含本笔两个方法），均无 skip。完整冻结验收待下一行。没有真实系统/模型、设备、付费调用或部署，标识继续 CIRCLE_SERVER_* 等兼容前缀，不在本笔零散改名。
+
+第 9 节首轮完整冻结 contracts **5/5**、methods **129/129**、acceptance **237/237**、references **7/7**，共 **378/378**，固定 Circle 8b2ceb6 / APV 224daa6，**无 skip**。最后复核将兼容性收紧为成功 Skill 装载事件（仅文件齐全的运行不能宣称兼容），重放在已解析 scope 再核权限，并给 MCP schema 错误保持 INVALID_PAYLOAD 分类。增加装载负例和参数错误不回显值两条；最终冻结回归运行中，不用首轮代替最后版本。
+
+第 47 节的小项继续列为未完成/待决定，尤其迁移 30 历史释放分类补偿尚无维护者答复；不重写历史校验、不直接修现网库。MCP 与中立库的实现不依赖它。运行身份/前缀统一改名、适配器第四轮 warning 更新、各 harness 本地权限文件映射、Agent/Command 的 Circle 原生执行仍留各自后续范围，不将协议接入算成这些实机能力已交付。
+
+第 9 节最后版本完整冻结 contracts **5/5**、methods **129/129**、acceptance **239/239**、references **7/7**，共 **380/380**，固定 Circle 8b2ceb6 / APV 224daa6，**无 skip**。typecheck、diff、**714** 原件归档核验通过。新增两个负例包含在此完整回归；原件投影、独立批准、固定 Circle 实际装载、工具/资源/提示/MCP 写确认及全部旧机制均通过。仅本地签署提交，未 push、PR、部署、连接真实系统或付费模型；主工作树、Circle、网关 Python、独立产品包和两处分工文件没有改动。当前 r3 第 3/4/5/7/6/8/9 各节已分别交付，明确列出的补项与历史补偿决定仍保留，不冒充全部已修。

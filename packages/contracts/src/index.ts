@@ -25,7 +25,7 @@ export const AssetId=identity('ast');
 export const Sha256 = z.string().regex(/^[a-f0-9]{64}$/);
 export const Base64Content = z.string().regex(/^[A-Za-z0-9+/]*={0,2}$/).refine(value =>
   value.length % 4 === 0 && Buffer.from(value,'base64').toString('base64') === value,'Expected canonical standard base64');
-export function newId(prefix: 'task' | 'inrev' | 'op' | 'pin' | 'src' | 'snap' | 'evd' | 'art' | 'rule' | 'audit' | 'rec' | 'ent' | 'erev' | 'rel' | 'rrev' | 'ast' | 'knr' | 'skp' | 'ofl' | 'svc' | 'cst'): string {
+export function newId(prefix: 'task' | 'inrev' | 'op' | 'pin' | 'src' | 'snap' | 'evd' | 'art' | 'rule' | 'audit' | 'rec' | 'ent' | 'erev' | 'rel' | 'rrev' | 'ast' | 'knr' | 'skp' | 'ofl' | 'svc' | 'cst' | 'mcr'): string {
   return `${prefix}_${randomUUID().replaceAll('-', '')}`;
 }
 export function sha256(bytes: string | Uint8Array): string {
@@ -102,7 +102,7 @@ export const SourceUpload = z.object({ scopeId: ScopeId, fileName: z.string().mi
 export const SourceReference = z.object({ sourceRevisionId: SourceRevisionId, sha256: Sha256, size: z.number().int().nonnegative(), fileName: z.string(), scopeId: ScopeId });
 const PackageName=z.string().regex(/^[a-z][a-z0-9-]{0,99}$/);
 const PackageVersion=z.string().regex(/^\d+\.\d+\.\d+$/);
-export const AssetKind=z.enum(['connector-instance','credential-reference','knowledge-source','knowledge-snapshot','environment-resource','skill-package','trigger','bot','scope-role','scope-policy','runtime-profile','execution-submission']);
+export const AssetKind=z.enum(['connector-instance','credential-reference','knowledge-source','knowledge-snapshot','environment-resource','skill-package','instruction','agent','command','trigger','bot','scope-role','scope-policy','runtime-profile','execution-submission']);
 export const AssetLifecycle=z.enum(['draft','approved','running','disabled','declined']);
 export const ToolDescriptor=z.object({name:z.string().min(1).max(160),description:z.string(),inputSchema:z.object({type:z.literal('object')}).catchall(z.unknown()),annotations:z.record(z.string(),z.unknown()).optional(),effect:z.enum(['read','write']),minimumRole:z.enum(['viewer','member','admin']),approval:z.boolean()}).strict();
 export const AssetDeclaration=z.object({reads:z.array(z.string()).max(100),writes:z.array(z.string()).max(100),credentials:z.array(AssetId).max(100),executionIsChange:z.boolean().optional(),allowedTestHosts:z.array(z.string().min(1).max(200)).max(100).optional(),hostCommandPolicies:z.record(z.string(),z.record(z.string(),z.unknown())).optional(),provides:z.object({tools:z.array(ToolDescriptor).max(100).optional(),resources:z.array(z.record(z.string(),z.unknown())).max(100).optional(),prompts:z.array(z.record(z.string(),z.unknown())).max(100).optional()}).strict().optional()}).strict();
@@ -325,6 +325,10 @@ export const CLIENT_ROUTES = {
   notifications:{method:'GET',path:'/v1/notifications',query:NotificationQuery,response:NotificationPage},
   notificationStream:{method:'GET',path:'/v1/notifications/stream',contentType:'text/event-stream'},
   queues:{method:'GET',path:'/v1/queues',response:QueueView},
+  mcp:{method:'POST',path:'/mcp',protocolVersion:'2025-11-25'},
+  harnessImport:{method:'POST',path:'/v1/harness/import'},
+  harnessExport:{method:'GET',path:'/v1/assets/{id}/harness-export'},
+  permissionExport:{method:'GET',path:'/v1/scopes/{scopeId}/permission-export'},
   sources:{ method:'POST',path:'/v1/sources',request:SourceUpload,response:SourceReference },
   packs:{ method:'GET',path:'/v1/packs' },
   submit:{ method:'POST',path:'/v1/tasks/submit',request:SubmitRequest,response:SubmittedTask },

@@ -477,3 +477,21 @@ GET /v1/queues 返回 awaitingMyApproval/awaitingMyInput/submittedByMe/assignedT
 分面只用记录里已声明的维度，不从产品名/平台名猜分类。任务 productLineId 取持久 context，资产/技能/工具取 configuration，企业对象取 attributes；flowVersion 使用任务 flow 或相应声明。owner 对任务/变更集/技能是申请人，资产/工具是资产所有者，对象是观测登记人，角色/服务客户端是其主体，词表是登记人。范围和租户级词表没有凭空补个人 owner/scope/productLine：不存在的维度不匹配该筛选。状态用各登记簿原状态（task phase、资产 lifecycle、skill status、change-set status、role、服务客户端 active/revoked、词表 registered）。
 
 模型上游规则修正：runtime-profile 的模型端点是批准 allowlist，回环脚本模型仅为验收配置；非回环 HTTPS 可用，非回环认证 HTTP 拒绝。运行配置 model.kind 支持 scripted/remote，可加 caFile/caSha256；有自定义 CA 时验证实际 DER SHA/主机名，仍可用正常系统 CA。每次 run 冻结 runtimeProfile:{assetId,version,sha256,profileSha256}，派发前重核，换版本不会悄悄替换旧运行的模型端点。worker 的私有通道把对应端点交可信代理，sandbox 只见回环代理。模型原件/流量仍不属于 evidence。gateway.health 使用独立 gateway-health 资源，不占或解冻用例执行资源；lease_status 正常仍只证明链路读确认。
+
+## 修订 3 第 9 节：中立原语与 MCP
+
+Circle 的 POST /v1/skillpacks 仍收原 body，响应增加 neutralManifest（hub-skill/1）。名称/描述/入口从 frontmatter 与清单推导，inputs 为声明输入名、outputs/triggers/tools 保留原清单；无法推导的为空，不把 harness 特有字段删出原件。knownCompatible 初始空；成功的固定 Circle 运行另存 harness/runtimeCommit/evidenceId/taskId 观察，GET skillpacks/{id} 与列表投影显示它，冻结提交原件与 digest 不改。
+
+POST /v1/harness/import：{scopeId,sourceHarness:"claude-code"|"codex"|"opencode"|"gemini"|"cursor",version,files:[{path,base64,sha256}],trial?:{toolCalls:[{name,argsSha256,ok}]}}。调用已合入的公开 importFrom/exportTo 纯库，创建 skill-package/instruction/agent/command 草稿，共用资产/变更集独立批准。整批事务，SHA/文件集/范围重核，重复同字节不重复登记；声明工具时拒绝试跑声明外调用，没有中立声明的只披露。各 harness 的 permission hint 由适配器保留，不擅自等同工具闭集。Hook/provider 需要产品模块/runtime-profile 的治理路径，返回 NO_HARNESS_PROJECTION，不自动装入或执行。
+
+GET /v1/assets/{id}/harness-export?target=circle|<sourceHarness> 仅批准后的可读原语可用，返回 files 的相对目标路径/base64/sha256、warnings、provenance:{assetId,version,sha256,sourceHarness}。Circle Skill 原件移动到 .circle/skills/{name}/，字节不改；Instruction 投影为 AGENTS.md。Circle 尚无 Agent/Command 原生安装时明确 warning；MCP prompt 可读取批准的 Skill/Command。同来源 harness 由公开库导出；其不支持的跨 harness 映射继续 warning。这里只是冻结与装载投影，云运行仍用既有技能试跑/提交/批准接口；不自动批准或把原件搬运称作已执行。
+
+`POST /mcp` 是官方 @modelcontextprotocol/sdk 1.32.1 的 Streamable HTTP JSON transport，协议协商 2025-11-25；[传输规范](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports)。每请求带 hub 会话 Bearer；Origin 若存在须同 hub 原生地址。无会话 id 的 stateless 模式，GET/DELETE 405；Accept 同时支持 application/json、text/event-stream。官方纯 SDK 客户端、原始 JSON-RPC 客户端已验收，既有 Circle REST 扩展保持。
+
+MCP tools/list 为调用者专业目录与 hub 平台控制 Tool，inputSchema 保持各专业工具原形；effect/minimumRole/approval 留标注/_meta。专业 tools/call 复用 C 的受理/幂等/事件及 B 原返回证据。所有调用 `_meta["hub/idempotencyKey"]` 必填；body 另有 key 时须相同。approval:true 首次没确认返回 isError 与 CONFIRMATION_REQUIRED，details:{argsDigest:canonicalHash(args),summary}；复调 `_meta["hub/confirmation"]={argsDigest}` 与当前 args 一致才执行，否则 CONFIRMATION_STALE。它是同一操作者确认，不能成为变更集审批人或替代角色/绑定/Hook/租约。响应 _meta 回显 hub/idempotencyKey 和 evidenceId 数组。
+
+平台 Tool 名保留 hub. 命名空间：hub.tasks_submit、hub.sources_upload、hub.skillpacks_submit、hub.approvals_decide、hub.skillpacks_run、hub.tasks_status、hub.tasks_result。写回执与原动作在同一 C 事务落库，重放不再写，改参数为 IDEMPOTENCY_MISMATCH；审批失败尝试也保留。控制返回以 SHA 入 B，mcr_ 为传输回执证据，不称业务事实或模型质量验证。
+
+resources/list/read 支持 hub://evidence/{knr_|evd_|mcr_}、hub://source/{knr_|src_}、hub://artifact/{art_}；逐次沿用 B 的 scope/来源 readers/私有任务/个人凭据权限，mcr_ 仅原操作者可读。列表在授权集合分页，nextCursor 原样续读且绑定身份。prompts/list/get 为批准可读的 Skill/Command 原件投影，返回资产 SHA/版本出处，不替换未声明参数，不执行原语；列表同样分页。
+
+GET /v1/scopes/{scopeId}/permission-export 返回 [Grok 的规范](design/permission-export.md)定义的 hub-permission/1：范围 twoPersonRule/singleAdminMode 原样披露、roleOrder=[guest,member,administrator]、可见 provider 的 tools name/effect/minimumRole/approval，不存 disposition。读权限和当前调用目录仍由平台执行；机器 scope 串不冒充人的角色，根管理员没有子范围资料权时不能借导出读取。未实现各 harness 的本地许可文件改写。

@@ -35,8 +35,8 @@ export class Approvals {
       return this.view(row);
     };return tx?run(tx):this.store.transaction(run);
   }
-  async respond(ctx:AuthContext,taskId:string,id:string,answer:any):Promise<any>{
-    const result=await this.store.transaction(async tx=>{
+  async respond(ctx:AuthContext,taskId:string,id:string,answer:any,transaction?:Transaction,retainError=false):Promise<any>{
+    const perform=async(tx:Transaction)=>{
       const task=await this.tasks.load(ctx,taskId,'decisions.approve',tx,true),policy=await this.auth.policy(ctx,tx);
       requireCondition(policy.kind==='user','FORBIDDEN_ACTION','Only an authenticated person can approve');
       const row=(await tx.query('SELECT *,expires_at<=clock_timestamp() AS expired FROM approvals WHERE approval_id=$1 AND task_id=$2 FOR UPDATE',[id,taskId])).rows[0];
@@ -63,7 +63,7 @@ export class Approvals {
       await this.tasks.stage(tx,task,'running','inspect','task.approval-decided',{approvalId:id,outcome});await this.tasks.wake(tx,taskId,'approval');
       await registered?.accepted(tx,ctx,task,row,answer);
       return {approval:{...this.view(row),status:outcome,approvedBy:ctx.principalId,decisionMode:eligibility.decisionMode,singleAdminMode:eligibility.singleAdminMode,verification:eligibility.verification}};
-    });if(result.error)throw result.error;return result.approval;
+    };const result=transaction?await perform(transaction):await this.store.transaction(perform);if(result.error){if(retainError)return {controlError:{code:result.error.code,message:result.error.message,details:result.error.details}};throw result.error;}return result.approval;
   }
   async check(tx:Transaction,task:any,spec:any):Promise<void>{
     requireCondition(spec.approvalId,'APPROVAL_REQUIRED','Device changes require approval');

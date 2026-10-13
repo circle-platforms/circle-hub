@@ -73,10 +73,15 @@ import {sessionMigration} from '../../../packages/tasks/src/session-migration.ts
 import {AuthenticationThrottle} from '../../../packages/tasks/src/throttle.ts';
 import {ChangeSets} from '../../../packages/tasks/src/change-sets.ts';
 import {ChangeSetSubmission} from '../../../packages/contracts/src/index.ts';
+import {permissionExport} from '../../../packages/mcp/src/permission.ts';
+import {mcpMigration} from '../../../packages/mcp/src/migration.ts';
+import {HubMcp} from '../../../packages/mcp/src/index.ts';
+import {neutralMigration,compatibilityMigration} from '../../../packages/skillpacks/src/neutral-migration.ts';
+import {HarnessPrimitives} from '../../../packages/skillpacks/src/primitives.ts';
 
 function environment(name: string): string { const value = process.env[name]; if (!value) throw new Error(`Required environment variable: ${name}`); return value; }
 const store = new Store(JSON.parse(environment('CIRCLE_SERVER_DATABASE_CONFIG')));
-await store.migrate([taskMigration,deliveryMigration,knowledgeMigration,executionMigration,...packageMigrations,approvalMigration,conclusionMigration,checklistMigration,connectorMigration,entityMigration,assetMigration,graphMigration,toolMigration,skillMigration,automationMigration,automationOutcomeMigration,knowledgePageMigration,automationOriginMigration,ingestionMigration,oauthMigration,resourceIdentityMigration,roleMigration,changeSetMigration,changeSetDependenciesMigration,enforcementMigration,sessionMigration,toolRolesMigration,readEffectMigration,readReleaseAuditMigration,notificationMigration,queryMigration]);
+await store.migrate([taskMigration,deliveryMigration,knowledgeMigration,executionMigration,...packageMigrations,approvalMigration,conclusionMigration,checklistMigration,connectorMigration,entityMigration,assetMigration,graphMigration,toolMigration,skillMigration,automationMigration,automationOutcomeMigration,knowledgePageMigration,automationOriginMigration,ingestionMigration,oauthMigration,resourceIdentityMigration,roleMigration,changeSetMigration,changeSetDependenciesMigration,enforcementMigration,sessionMigration,toolRolesMigration,readEffectMigration,readReleaseAuditMigration,notificationMigration,queryMigration,neutralMigration,mcpMigration,compatibilityMigration]);
 const auth = new Auth(store,{developmentTtlMs:process.env.CIRCLE_SERVER_DEV_TOKEN_TTL_MS?Number(process.env.CIRCLE_SERVER_DEV_TOKEN_TTL_MS):undefined,runTokenTtlMs:process.env.CIRCLE_SERVER_RUN_TOKEN_TTL_MS?Number(process.env.CIRCLE_SERVER_RUN_TOKEN_TTL_MS):undefined});
 requireCondition(process.env.CIRCLE_SERVER_DEV_AUTH === '1', 'INVALID_PAYLOAD', 'Phase one requires explicitly enabled development authentication');
 await auth.initializeDevelopment(environment('CIRCLE_SERVER_DEV_IDENTITIES'));
@@ -108,13 +113,17 @@ const registrationValidation=assets.validateRegistration;assets.validateRegistra
 const skills=new SkillPacks(store,auth,tasks,approvals,assets,catalog,execution,knowledge);await skills.initialize(process.env.CIRCLE_RUNTIME_CONFIG);
 const executionSecrets=new ExecutionSecrets(store,assets.vault,skills.secrets);
 const notifications=new Notifications(store,auth);
+const primitives=new HarnessPrimitives({store,auth,assets,knowledge,changeSets});
+const mcp=new HubMcp({store,auth,catalog,graph,knowledge,primitives});
+const previousRegistration=assets.validateRegistration;assets.validateRegistration=async(ctx,input,id,tx)=>{if(input.configuration.harnessPrimitive||['instruction','agent','command'].includes(input.kind))await primitives.dependencies(tx,ctx,{...input,scope_id:input.scopeId});await previousRegistration?.(ctx,input,id,tx);};
 skills.changeSets=changeSets;
 let executionProfiles:Record<string,unknown>={};if(process.env.CIRCLE_SERVER_EXECUTION_GATEWAYS)try{executionProfiles=JSON.parse(await readFile(process.env.CIRCLE_SERVER_EXECUTION_GATEWAYS,'utf8')).profiles??{};}catch{/* Unavailable profiles remain blocked dependencies. */}
 catalog.gatewayProfiles=executionProfiles;
 assets.healthCheck=async(ctx,asset)=>{if(asset.configuration.packageId!=='case-gateway')return {result:'unknown',reason:'checker-not-registered'};const entry=(await catalog.available(ctx)).find(item=>item.row.asset_id===asset.assetId&&item.definition.handler==='gateway.health');if(!entry)return {result:'unavailable',reason:'gateway-binding-unavailable'};try{await catalog.call(ctx,entry.view.name,{args:{},idempotencyKey:randomUUID()});return {result:'available',reason:'gateway-read-confirmed'};}catch(error){return {result:'unavailable',reason:error instanceof ApiError?error.code:'gateway-check-failed'};}};
 changeSets.profileIdentity=(type,ref)=>{if(type==='runtime')return ref==='circle-runtime'?skills.runtimeDigest:null;const value=type==='connector'?(Object.hasOwn(catalog.profiles,ref)?catalog.profiles[ref]:null):type==='execution'?(Object.hasOwn(executionProfiles,ref)?executionProfiles[ref]:null):null;return value?canonicalHash(value):null;};
 const runtimeProfiles=()=>[...Object.keys(catalog.profiles).map(profileRef=>({profileType:'connector',profileRef})),...Object.keys(executionProfiles).map(profileRef=>({profileType:'execution',profileRef})),...(skills.runtime?[{profileType:'runtime',profileRef:'circle-runtime'}]:[])].map(profile=>({...profile,profileSha256:changeSets.profileIdentity!(profile.profileType,profile.profileRef),verification:{ruleId:'runtime-profile-observation',ruleVersion:'1.0.0',result:'observed'}}));
-changeSets.validators.set('skill-package',(tx,ctx,asset)=>skills.changeDependencies(tx,ctx,asset));
+changeSets.validators.set('skill-package',(tx,ctx,asset)=>asset.configuration.harnessPrimitive?primitives.dependencies(tx,ctx,asset):skills.changeDependencies(tx,ctx,asset));
+for(const kind of ['instruction','agent','command'])changeSets.validators.set(kind,(tx,ctx,asset)=>primitives.dependencies(tx,ctx,asset));
 changeSets.validators.set('knowledge-source',async(_tx,_ctx,asset)=>asset.configuration.schema==='hub-tool-implementation/1'?methods.dependencies(asset):[]);
 changeSets.decisionHandlers.set('skill-package',async(tx,ctx,asset,approved)=>{await tx.query('UPDATE skill_packages SET status=$3 WHERE asset_id=$1 AND asset_version=$2',[asset.asset_id,asset.version,approved?'registered':'declined']);});
 await changeSets.initialize();
@@ -130,6 +139,7 @@ await privateIPC.start(async(message)=>{const worker=await auth.authenticate(mes
 const assessments=new Assessments(store,tasks,knowledge),checklists=new Checklists(store,tasks,knowledge);
 const registry=new ConnectorRegistry(store,auth,packageConnectors);await registry.initialize();execution.connectorCheck=(tx,actor,scope,spec)=>registry.check(tx,actor,scope,spec);
 const packages=installPackages({store,auth,tasks,knowledge,execution,registry,checklists,approvals,assessments,assets,catalog,sourceArtifacts,oauth,serviceClients,changeSets,methods,executionChanges,productModules}),rules=packages.rules;
+mcp.services={...mcp.services,tasks,skills,approvals,packages};
 
 let closing = false;
 const shutdownSignal=new AbortController();
@@ -200,7 +210,10 @@ const server = createListener(async (request, response) => {
       send(response,200,{ data:{ ...issued,tokenType:'Bearer',principalId:policy.principalId,tenantId:policy.tenantId,scopes:policy.scopes,subjectType:policy.kind==='user'?'human':'service-client',...(policy.kind==='user'?{roles:policy.roles}: {scope:policy.grants.join(' ')}) } }); return;
     }
     const ctx = await auth.authenticate(request.headers.authorization);
+    if(url.pathname==='/mcp'){requireCondition(!ctx.run,'FORBIDDEN_ACTION','Run tokens use their declared task and tool routes');await mcp.handle(ctx,request,response,request.method==='POST'?await body(request,MAX_WORKER_REPORT_BYTES):undefined,`${tls?'https':'http'}://127.0.0.1:${(server.address() as any).port}`);return;}
     if(ctx.run){const allowed=request.method==='GET'&&['/v1/tools','/v1/tasks','/v1/status'].includes(url.pathname)||request.method==='POST'&&/^\/v1\/tools\/[^/]+\/call$/.test(url.pathname)||request.method==='GET'&&/^\/v1\/tasks\/[^/]+\/(?:status|result|events)$/.test(url.pathname)||request.method==='GET'&&/^\/v1\/(?:sources|artifacts|evidence)\/[^/]+\/content$/.test(url.pathname);requireCondition(allowed,'FORBIDDEN_ACTION','Run token authorizes only its declared tools and task reads');}
+    if(url.pathname==='/v1/harness/import'&&request.method==='POST'){send(response,201,{data:await primitives.import(ctx,await body(request,MAX_WORKER_REPORT_BYTES))});return;}
+    const harnessExport=/^\/v1\/assets\/(ast_[a-f0-9]{32})\/harness-export$/.exec(url.pathname);if(harnessExport&&request.method==='GET'){send(response,200,{data:await primitives.export(ctx,harnessExport[1],url.searchParams.get('target')??'circle')});return;}
     if(url.pathname===CLIENT_ROUTES.authLogout.path&&request.method==='POST'){AuthRefreshRequest.parse(await body(request));send(response,200,{data:await auth.logout(request.headers.authorization!)});return;}
     if(url.pathname===CLIENT_ROUTES.notifications.path&&request.method==='GET'){send(response,200,{data:await notifications.page(ctx,NotificationQuery.parse(Object.fromEntries(url.searchParams)))});return;}
     if(url.pathname===CLIENT_ROUTES.queues.path&&request.method==='GET'){send(response,200,{data:await notifications.queues(ctx)});return;}
@@ -215,6 +228,7 @@ const server = createListener(async (request, response) => {
       AuthRefreshRequest.parse(await body(request));const issued=await auth.refresh(request.headers.authorization!),policy=await auth.policy(ctx);send(response,200,{data:{...issued,tokenType:'Bearer',principalId:policy.principalId,tenantId:policy.tenantId,scopes:policy.scopes,subjectType:policy.kind==='user'?'human':'service-client',...(policy.kind==='user'?{roles:policy.roles}:{scope:policy.grants.join(' ')})}});return;
     }
     if(url.pathname==='/v1/scopes'&&request.method==='GET'){send(response,200,{data:url.searchParams.has('view')?await auth.roles.page(ctx,RegistryPageQuery.parse(Object.fromEntries(url.searchParams))):await auth.roles.list(ctx)});return;}
+    const permissionRoute=/^\/v1\/scopes\/([^/]+)\/permission-export$/.exec(url.pathname);if(permissionRoute&&request.method==='GET'){send(response,200,{data:await permissionExport(ctx,ScopeId.parse(permissionRoute[1]),auth,catalog)});return;}
     const scopeRoles=/^\/v1\/scopes\/([^/]+)\/roles$/.exec(url.pathname);if(scopeRoles&&request.method==='GET'){send(response,200,{data:url.searchParams.has('view')?await auth.roles.page(ctx,RegistryPageQuery.parse(Object.fromEntries(url.searchParams)),ScopeId.parse(scopeRoles[1])):await auth.roles.members(ctx,ScopeId.parse(scopeRoles[1]))});return;}
     if(scopeRoles&&request.method==='POST'){send(response,201,{data:await changeSets.roleSubmission(ctx,ScopeId.parse(scopeRoles[1]),await body(request))});return;}
     const scopePolicy=/^\/v1\/scopes\/([^/]+)\/policy$/.exec(url.pathname);if(scopePolicy&&request.method==='POST'){send(response,201,{data:await changeSets.policySubmission(ctx,ScopeId.parse(scopePolicy[1]),await body(request))});return;}

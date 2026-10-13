@@ -54,6 +54,7 @@ export class ToolCatalog {
     // They have no advertised tools and do not gain execution from registration.
     if(!pack){await tx.query('DELETE FROM tool_bindings WHERE asset_id=$1',[assetId]);return;}
     const prefix=ToolName.parse(input.configuration.alias??(input.configuration.productLineId===undefined?pack.prefix:pack.productLinePrefixes![input.configuration.productLineId as string]));
+    requireCondition(prefix!=='hub'&&!prefix.startsWith('hub.'),'TOOL_NAME_CONFLICT','The hub tool namespace is reserved for platform controls');
     await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[`tool-names:${ctx.tenantId}`]);
     for(const definition of pack.tools){const name=ToolName.parse(`${prefix}.${definition.suffix}`),existing=(await tx.query('SELECT asset_id FROM tool_bindings WHERE tenant_id=$1 AND name=$2',[ctx.tenantId,name])).rows[0];requireCondition(!existing||existing.asset_id===assetId,'TOOL_NAME_CONFLICT','Tool name is already registered in this tenant');}
     if(pack.tools.some(tool=>tool.effect==='write'))requireCondition(input.declaration.writes.includes('knowledge-candidates'),'INVALID_PAYLOAD','Asset declaration must include its candidate writes');
