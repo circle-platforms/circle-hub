@@ -514,6 +514,8 @@ outbox 保留默认最近至少 **10000 条事件**的补读窗口、最多 **10
 
 登记簿分页的接入顺序：已接 tasks/assets/skillpacks/change-sets/scopes/roles/service-clients/object-types/objects/tools，通知有独立持久序号游标。随后依次接普通审批与 admin approvals、来源/证据/制品、审计/worker、bot runs、通知的统一分面视图；这些接口的旧形状本笔保持，不把尚未接入的登记簿称作已完成统一分页。各步复用同一查询编译器，并分别补授权/游标验收。
 
+迁移 38 追加修复 36 的归因细节：多条已释放读取统一为 UPSTREAM_TIMEOUT/sideEffects=none/sorted operationIds；不触动 unknown/write。task.read-release-audit-links-completed 的 correctsAudit 指原 36 任务补偿行，relatedAudits 列出该任务/输入全部 30 原释放审计；原行/原 min 引用保持历史原样，阅读完整链以追加行补足，不猜历史状态。29/30/36 的校验和均不改。
+
 GET /v1/assets/{id}/harness-export?target=circle|<sourceHarness> 仅批准后的可读原语可用，返回 files 的相对目标路径/base64/sha256、warnings、provenance:{assetId,version,sha256,sourceHarness}。Circle Skill 原件移动到 .circle/skills/{name}/，字节不改；Instruction 投影为 AGENTS.md。Circle 尚无 Agent/Command 原生安装时明确 warning；MCP prompt 可读取批准的 Skill/Command。同来源 harness 由公开库导出；其不支持的跨 harness 映射继续 warning。这里只是冻结与装载投影，云运行仍用既有技能试跑/提交/批准接口；不自动批准或把原件搬运称作已执行。
 
 `POST /mcp` 是官方 @modelcontextprotocol/sdk 1.32.1 的 Streamable HTTP JSON transport，协议协商 2025-11-25；[传输规范](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports)。每请求带 hub 会话 Bearer；Origin 若存在须同 hub 原生地址。无会话 id 的 stateless 模式，GET/DELETE 405；Accept 同时支持 application/json、text/event-stream。官方纯 SDK 客户端、原始 JSON-RPC 客户端已验收，既有 Circle REST 扩展保持。

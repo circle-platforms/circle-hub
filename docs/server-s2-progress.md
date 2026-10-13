@@ -809,3 +809,11 @@ provider 已声明产品线但没有 alias 的，回落包 prefix/packageId；�
 通知投影仅引用/状态/原因码，完整任务事件原文仍可按权限在保留窗口内补读；规范审批创建/决定/取代、waiting-review 与 bot.started 均有发出点，无发出点的白名单项去掉。游标只记最后可见项，权限新增后从零重查被滤区间。SSE 同主体连接上限，关闭释放名额。outbox 保最近至少一万条/最多十万行、七天年龄目标；写后同事务批量裁剪与每分钟维护，持久 minCursor 让过窗显式 CURSOR_EXPIRED，不默默漏读。不删除当前任务结果/B 原件/审计。
 
 专项与角色/变更集/旧查询/通知联合 **36/36**、无 skip，typecheck/diff 通过；两条迁移归因补充仍独立留工作区，完整冻结回归另跑。没有部署、真实源访问或付费模型调用。新接口和数据形状在 CLIENT_ROUTES 与 handoff，旧数组形状保持。
+
+defbeb2 的完整冻结回归 contracts **5/5**、methods **147/147**、acceptance **267/267**、references **7/7**，共 **426/426**，无 skip；其树没有共同查询/通知工作区改动。
+
+## 59：多读结果与完整历史链接
+
+针对维护者 Grok 两条低项，保留已发 **36** 字节/原审计，追加 **38**。只对 36 释放审计可证且仍同输入、failed/UPSTREAM_TIMEOUT 的多读任务聚合为一个固定结果：排序的 operationIds 与 sideEffects=none，不再采用 UPDATE FROM 不确定的一条操作。并存 unknown/write 不触动。任务级补偿原 min(id) 引用保留，追加 task.read-release-audit-links-completed 指回原 36 审计并列 relatedAudits 的全部同任务/输入 30 审计 id；历史 phase 仍不可证明，不填猜测。
+
+先写缺模块复现，多读/全部链接/重跑不重复/已聚合不改更新时间/写 unknown 冻结不动，与旧只读机制联合 **6/6**、无 skip，typecheck/diff 通过。37 为工作查询/通知迁移，38 只追加归因修复，未覆盖任何已经签发的迁移校验。没有现场 SQL 操作或部署。
