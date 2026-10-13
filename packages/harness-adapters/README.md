@@ -1,5 +1,7 @@
 # harness-adapters
 
+> English version: [README.en.md](README.en.md)
+
 把各 harness 自己格式的 Skill / Command / Agent / Instruction / Hook / MCP server 读成 hub 的中立清单（`hub-skill/1`、`hub-command/1`、`hub-agent/1`、`hub-instruction/1`、`hub-hook/1`、`hub-provider/1`），再从中立清单导出回该 harness 的文件。规范见 `docs/design/harness-primitives.md`，各 harness 的磁盘格式依据见 `docs/design/harness-formats.md`。
 
 纯 TypeScript，无运行时依赖（zod 仅用于导出边界校验）：不接 server、不读数据库、不连网、不读环境。
