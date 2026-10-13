@@ -45,6 +45,13 @@ circle-hub 治理任何 harness 的原语（规范见 `docs/design/harness-primi
 - Claude Code command 的名字由文件路径决定（其 frontmatter 没有 name 字段），直接取、不告警；skill / agent 的 frontmatter 缺 name 时才从路径推导并报 NAME_DERIVED_FROM_PATH。
 - 非 command 类型的钩子条目（http / prompt / agent / mcp_tool）跳过并报 HOOK_ENTRY_SKIPPED，detail 只带位置与类型名。
 
+## 待定（第三轮，OpenCode / Gemini CLI / Cursor）
+
+- 共享：codex hook 的 language 不填（调查写明「不能据此填写」）；hook 清单的 harnessSpecific 记 entryKeys / groupKeys（键名），导出从原文件合回额外键（含 Gemini 的 sequential、Cursor 的 version）；Cursor hooks.json 是扁平条目（无 matcher 组），自写导入导出，位置记 eventIndex / entryIndex。
+- OpenCode：技能 id 由路径决定（frontmatter `name` 只是显示名，留在未映射键）；根上 `<id>.md` 是单文件技能（entry 就是文件名）；命令名嵌套用 `/`（不是 `:`），旧单数目录 `.opencode/command/` 也导入；代理嵌套路径计入 id。兼容目录 `.claude/skills`、`.agents/skills` 不导入（归各自适配器）。`opencode.json(c)` 支持 JSONC（注释与尾逗号，stripJsonc），导出写规范 JSON。本地条目 command 是数组：首元素是程序（绝对路径降 basename），其余套 args 规则。`type` 缺失 → PROVIDER_SHAPE_UNKNOWN；其他 type 值 → PROVIDER_TRANSPORT_UNKNOWN。hooks 无独立文件不导入（插件代码里注册）；hub-hook/1 导出到 OpenCode 报 NO_HARNESS_PROJECTION。
+- Gemini CLI：commands 是 TOML——prompt 是正文不进清单，description 是唯一映射字段；description 改了时按原键序重写该键、其余键从原文件带回；多行 `"""` 基本字符串已支持，重写时规范为单行基本字符串。agents 的 tools 通配符（`*`、`mcp_*`）原样保留不展开。settings.json 同文件装 hooks 与 mcpServers：两个 importer 共享该文件，extra keys 与 canonical 检查只报一次；文件为空报一次 EMPTY_CONFIG；只有其它键（两节都不在）只报 CONFIG_EXTRA_KEYS。SSE（`url`）transport 留空并报 PROVIDER_TRANSPORT_UNKNOWN。`context.fileName` 指向的别名 instruction 不解析，只认 GEMINI.md。一个文件里多个远程代理的 YAML 列表超出 frontmatter 子集：会报 FRONTMATTER_LINE_SKIPPED 并按文件名推导 name。
+- Cursor：commands 未查到用户/工作区级目录，不做（导出 hub-command/1 报 NO_HARNESS_PROJECTION）。rules `*.mdc` 的 `globs` → applies；description、alwaysApply 留在未映射键。hooks.json 的 `prompt` 类型跳过；version 从原文件带回。agent 的 `readonly` 不是工具白名单，tools 留空。技能 frontmatter 的 `paths` 是文件范围不是 triggers，留在未映射键。mcp.json：command（type 省略或 `stdio`）→ stdio；只有 url → transport 留空（文档写 HTTP 或 SSE，未钉死）。兼容目录 `.claude/agents`、`.codex/agents` 不导入（归各自适配器）。
+
 ## 复核第一轮（Claude 与独立复核人，2026-10-13，对 b544336）
 
 tsc 与 50 个测试通过；fixture 卫生合格；hooks / `.mcp.json` / `[mcp_servers]` 的基本形状对。下面是必须改的，按决定写，不是建议。改完升到第二轮提交，测试覆盖每一条。
