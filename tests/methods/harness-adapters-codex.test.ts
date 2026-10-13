@@ -171,3 +171,43 @@ test('Sanitization: cwd is dropped and oauth values stripped in codex config', (
   );
   assert.equal(JSON.stringify(result.manifests).includes('synthetic-client'), false);
 });
+
+test('Codex import: empty config.toml is reported, not silently ignored', () => {
+  for (const text of ['', '# only a comment\n', 'model = "scripted-model"\n']) {
+    const result = importFrom('codex', { '.codex/config.toml': text });
+    assert.deepEqual(result.manifests, []);
+    const codes = result.warnings.map((warning) => warning.code);
+    assert.ok(codes.includes('EMPTY_CONFIG'), `${JSON.stringify(text)} -> ${codes.join(',')}`);
+  }
+});
+
+test('Codex import: TOML comments are reported by line and dropped on export', () => {
+  const input = {
+    '.codex/config.toml': [
+      '# Synthetic servers',
+      '[mcp_servers.a]',
+      'command = "node" # local runner',
+      '',
+    ].join('\n'),
+  };
+  const result = importFrom('codex', input);
+  const dropped = result.warnings.filter((warning) => warning.code === 'TOML_COMMENT_DROPPED');
+  assert.equal(dropped.length, 1);
+  assert.ok(dropped[0].detail.includes('1'));
+  assert.ok(dropped[0].detail.includes('3'));
+  assert.equal(dropped[0].detail.includes('Synthetic servers'), false);
+  const exported = exportTo('codex', result.manifests, input);
+  assert.equal((exported.files['.codex/config.toml'] as string).includes('#'), false);
+});
+
+test('Codex export: empty tables never produce a bare [mcp_servers] header', () => {
+  const result = importFrom('codex', {
+    '.codex/config.toml': '[mcp_servers.a]\ncommand = "node"\n\n[mcp_servers.a.env]\n',
+  });
+  const exported = exportTo('codex', result.manifests, {});
+  const text = exported.files['.codex/config.toml'] as string;
+  assert.ok(text.includes('[mcp_servers.a]'), text);
+  assert.equal(text.includes('[mcp_servers.a.env]'), false, text);
+  // And with zero providers at all, no file is written.
+  assert.deepEqual(exportTo('codex', [], {}).files, {});
+});

@@ -197,6 +197,10 @@ function importMcp(
   if (!(MCP_PATH in files)) return;
   claimed.add(MCP_PATH);
   const text = toText(files[MCP_PATH]);
+  if (text.trim() === '') {
+    warnings.push({ code: 'EMPTY_CONFIG', path: MCP_PATH, detail: 'file is empty; no providers imported' });
+    return;
+  }
   const record = parseJsonFile(MCP_PATH, text, warnings);
   if (record === undefined) return;
   const extraKeys = Object.keys(record).filter((key) => key !== 'mcpServers');
@@ -212,6 +216,10 @@ function importMcp(
     return;
   }
   const servers = (record.mcpServers ?? {}) as Record<string, unknown>;
+  if (Object.keys(servers).length === 0) {
+    warnings.push({ code: 'EMPTY_CONFIG', path: MCP_PATH, detail: 'mcpServers section is empty; no providers imported' });
+    return;
+  }
   const fileRef = { path: MCP_PATH, sha256: sha256Hex(files[MCP_PATH]) };
   for (const [name, rawEntry] of Object.entries(servers)) {
     if (!rawEntry || typeof rawEntry !== 'object' || Array.isArray(rawEntry)) {
@@ -427,7 +435,7 @@ function exportProviders(providers: HubProvider[], out: VirtualFiles, warnings: 
         });
       }
     }
-    out[path] = canonicalJson({ mcpServers });
+    if (Object.keys(mcpServers).length > 0) out[path] = canonicalJson({ mcpServers });
   }
 }
 

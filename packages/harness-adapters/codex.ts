@@ -16,7 +16,7 @@ import {
   markdownHarnessSpecific,
   type MarkdownSpec,
 } from './markdown.ts';
-import { emitToml, parseToml } from './toml.ts';
+import { emitToml, parseToml, commentLines } from './toml.ts';
 import {
   dropCwd,
   exportHooksFile,
@@ -130,6 +130,15 @@ function importConfig(
       detail: `line ${badLine.line} is outside the supported TOML subset and was skipped`,
     });
   }
+  // Comments cannot survive manifest regeneration; report their line numbers.
+  const comments = commentLines(text);
+  if (comments.length > 0) {
+    warnings.push({
+      code: 'TOML_COMMENT_DROPPED',
+      path: CONFIG_PATH,
+      detail: `comments on lines ${comments.join(', ')} are not preserved on export`,
+    });
+  }
   const extraKeys = Object.keys(parsed.values).filter((key) => key !== 'mcp_servers');
   if (extraKeys.length > 0) {
     warnings.push({
@@ -139,7 +148,10 @@ function importConfig(
     });
   }
   const servers = parsed.values.mcp_servers;
-  if (servers === undefined) return;
+  if (servers === undefined || (typeof servers === 'object' && servers !== null && !Array.isArray(servers) && Object.keys(servers).length === 0)) {
+    warnings.push({ code: 'EMPTY_CONFIG', path: CONFIG_PATH, detail: 'no mcp_servers entries; no providers imported' });
+    return;
+  }
   if (!servers || typeof servers !== 'object' || Array.isArray(servers)) {
     warnings.push({ code: 'TOML_LINE_SKIPPED', path: CONFIG_PATH, detail: 'mcp_servers is not a table; no providers imported' });
     return;
@@ -313,7 +325,7 @@ function exportProviders(providers: HubProvider[], out: VirtualFiles, warnings: 
         });
       }
     }
-    out[path] = emitToml({ mcp_servers: mcpServers });
+    if (Object.keys(mcpServers).length > 0) out[path] = emitToml({ mcp_servers: mcpServers });
   }
 }
 

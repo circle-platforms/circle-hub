@@ -176,6 +176,10 @@ export function importHooksFile(
   if (!(path in files)) return;
   claimed.add(path);
   const text = toText(files[path]);
+  if (text.trim() === '') {
+    warnings.push({ code: 'EMPTY_CONFIG', path, detail: 'file is empty; no hooks imported' });
+    return;
+  }
   const record = parseJsonFile(path, text, warnings);
   if (record === undefined) return;
   const extraKeys = Object.keys(record).filter((key) => key !== 'hooks');
@@ -191,6 +195,10 @@ export function importHooksFile(
     return;
   }
   const hooks = (record.hooks ?? {}) as Record<string, unknown>;
+  if (Object.keys(hooks).length === 0) {
+    warnings.push({ code: 'EMPTY_CONFIG', path, detail: 'hooks section is empty; no hooks imported' });
+    return;
+  }
   const fileRef = { path, sha256: sha256Hex(files[path]) };
   let eventIndex = 0;
   for (const [event, groups] of Object.entries(hooks)) {
@@ -222,7 +230,12 @@ export function importHooksFile(
           return;
         }
         if (recordEntry.type !== 'command' || typeof recordEntry.command !== 'string' || recordEntry.command === '') {
-          warnings.push({ code: 'HOOK_ENTRY_SKIPPED', path, detail: `hooks.${event}[${groupIndex}].hooks[${entryIndex}] is not a {type: "command", command} entry` });
+          const type = recordEntry.type;
+          warnings.push({
+            code: 'HOOK_ENTRY_SKIPPED',
+            path,
+            detail: `hooks.${event}[${groupIndex}].hooks[${entryIndex}] ${typeof type === 'string' ? `has type "${type}"` : 'is malformed'}; only {type: "command"} entries are imported`,
+          });
           return;
         }
         const command = sanitizeHookCommand(recordEntry.command, path, `hooks.${event}[${groupIndex}].hooks[${entryIndex}]`, warnings);

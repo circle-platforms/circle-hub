@@ -184,6 +184,16 @@ function quoteKey(key: string): string {
   return /^[A-Za-z0-9_-]+$/.test(key) ? key : JSON.stringify(key);
 }
 
+// 1-based line numbers of lines carrying a comment (full-line or trailing).
+export function commentLines(text: string): number[] {
+  const lines: number[] = [];
+  text.split('\n').forEach((raw, index) => {
+    const line = raw.replace(/\r$/, '');
+    if (stripComment(line).length !== line.length) lines.push(index + 1);
+  });
+  return lines;
+}
+
 function emitValue(value: unknown): string | undefined {
   if (typeof value === 'string') return JSON.stringify(value);
   if (typeof value === 'number' || typeof value === 'boolean') return String(value);
@@ -197,11 +207,20 @@ function emitValue(value: unknown): string | undefined {
 
 // Canonical TOML for the supported subset: scalars of a table first (in
 // insertion order), then sub-tables, one blank line before each section
-// header, trailing newline at the end.
+// header, trailing newline at the end. Empty tables are skipped entirely, so
+// no `[mcp_servers]`-style header is ever written without content.
 export function emitToml(values: Record<string, unknown>): string {
   const lines: string[] = [];
+  const tableHasContent = (table: Record<string, unknown>): boolean =>
+    Object.values(table).some(
+      (value) =>
+        !(value && typeof value === 'object' && !Array.isArray(value))
+          ? emitValue(value) !== undefined
+          : tableHasContent(value as Record<string, unknown>),
+    );
   const emitTable = (path: string[], table: Record<string, unknown>): void => {
     if (path.length > 0) {
+      if (!tableHasContent(table)) return;
       if (lines.length > 0) lines.push('');
       lines.push(`[${path.map(quoteKey).join('.')}]`);
     }
@@ -217,5 +236,6 @@ export function emitToml(values: Record<string, unknown>): string {
     }
   };
   emitTable([], values);
+  if (lines.length === 0) return '';
   return `${lines.join('\n')}\n`;
 }

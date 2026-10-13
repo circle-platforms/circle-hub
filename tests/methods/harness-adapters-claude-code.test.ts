@@ -491,3 +491,47 @@ test('Sanitization: frontmatter skip warnings carry line numbers, not content', 
   assert.ok(warning.detail.includes('line 3'), warning.detail);
   assert.equal(warning.detail.includes('SECRET-WORD'), false);
 });
+
+test('Empty config files are reported, not silently ignored', () => {
+  for (const [path, text] of [
+    ['.claude/settings.json', '{}'],
+    ['.claude/settings.json', '   \n'],
+    ['.mcp.json', '{}'],
+    ['.mcp.json', ''],
+  ]) {
+    const result = importFrom('claude-code', { [path]: text });
+    assert.deepEqual(result.manifests, []);
+    assert.deepEqual(
+      result.warnings.map((warning) => warning.code),
+      ['EMPTY_CONFIG'],
+      `${path} ${JSON.stringify(text)}`,
+    );
+  }
+});
+
+test('Claude Code import: non-command hook entries are skipped without copying content', () => {
+  const result = importFrom('claude-code', {
+    '.claude/settings.json': `${JSON.stringify({
+      hooks: {
+        PreToolUse: [
+          {
+            matcher: 'Bash',
+            hooks: [
+              { type: 'http', url: 'http://192.0.2.30/hook' },
+              { type: 'prompt', prompt: 'Should this secret-containing prompt text run?' },
+              { type: 'command', command: 'sh ok.sh' },
+            ],
+          },
+        ],
+      },
+    }, null, 2)}\n`,
+  });
+  assert.equal(result.manifests.length, 1);
+  const skipped = result.warnings.filter((warning) => warning.code === 'HOOK_ENTRY_SKIPPED');
+  assert.equal(skipped.length, 2);
+  assert.ok(skipped[0].detail.includes('"http"'));
+  assert.ok(skipped[1].detail.includes('"prompt"'));
+  const details = skipped.map((warning) => warning.detail).join('\n');
+  assert.equal(details.includes('192.0.2.30'), false);
+  assert.equal(details.includes('secret-containing'), false);
+});
