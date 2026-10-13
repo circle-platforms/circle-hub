@@ -1,6 +1,8 @@
 # APV 工作簿执行交接
 
-能力包 `apv-case-execute/1.0.0` 使用既有 sources、submit、approvals、status、events、result 和 artifacts/content。实现归 packs/apv/execution，不导入或运行旧客户端、InfoTest 或 Python。现有网关只作为 HTTP JSON-RPC 服务消费；不会调用 init_device。
+能力包 `apv-case-execute/1.1.0` 使用既有 sources、submit、approvals、status、events、result 和 artifacts/content，flowVersion 仍为 apv-case-execute/1。实现归 packs/apv/execution，不导入或运行旧客户端、InfoTest 或 Python。现有网关只作为 HTTP JSON-RPC 服务消费；不会调用 init_device。
+
+部署本版本后，内置实现的 implementationSha256 已改变。管理员须按 GET /v1/packs 的当前 version/flowVersion/implementationSha256 重新登记 hub-tool-implementation/1 来源资产并经独立审批人批准；旧的 1.0.0 实现资产不能满足新摘要。旧任务钉住的 methodAssetId 不自动迁移，需申请人明确改输入或新提交。已批准产品线模块按自身冻结字节/SHA 与 flow 解析，不受内置实现资产升版影响；产品包本身无需因本笔自动重新批准。
 
 执行身份改用 [C 的资源客户端与短期令牌](resource-identity-handoff.md)：资源资产 configuration.serviceClientId，经独立批准后由平台在操作/fence 下私有注入，worker 每次请求前重核与临期重签。该模式不配置外部 issuer，不登记个人刷新令牌。规则原件由已批准 source-artifact 的 bundle/blob 提供，平台不解释；原网关的本地缓存仍由其管理。下面的旧手工会话说明仅保留既有已验接口兼容，用户当前部署不再接旧签发服务。
 
@@ -92,6 +94,10 @@ issuer 使用 POST /token 的 refresh_token grant；若签发服务使用另一 
 每个检查点只由明确日志帧与工作簿行匹配：四种 Success/Fail × successed/fail 对应 found/not_found；支持跨行模式，收尾重列不重复计算。数量、模式、方法、日志时效或用例身份不匹配时 unknown/unmapped。命令步骤仅在明确且唯一的派发行出现时 observed；整案 PASS 不证明每一步 PASS，静态回放也不替代框架判定。用例 fail 可以是已成功交付的执行结果；任务 status=succeeded 不等于测试全部通过。缺失证据交付 partial。
 
 超时、lost、worker 断开或投递后取消转 unknown，资源冻结，后续新投递 RESOURCE_BUSY，不自动重新 case_submit。旧 fence 的回报拒绝。取消前未派发的任务关闭审批并 cancelled；本地取消不证明远端停止。已有 remoteTaskId 时，由另一 worker 经原身份只读 case_status/results 独立核对，终态与工作簿 SHA 对上后 reconciled、交付并解冻；没有 remoteTaskId 的投递断线不能自动恢复，必须先在网关侧对账，不能盲重投。
+
+明确派发前拒绝是 failed，不冻结：网关 lease/environment/validation 阶段声明的拒绝，以及旧网关已知的工作簿契约诊断可证明未派发时，原 reason/details/完整回执保留在 result.error.details.gatewayRefusal；有明确码用该码，否则 GATEWAY_REFUSED，不能把 environment 一律猜成 BUILD_MISMATCH。可修输入进入 waiting-input（gateway-refused/build-mismatch）。拒绝带 task_id 或 dispatched:true、成功提交后 case_status 再报契约文字、投递断线及无可证阶段的错误均保持 unknown，不释放可能仍运行的远端租约。已证未派发或确认终态才尝试 lease_release；remoteLeaseReleased=true/false 如实写回成功或失败回执，释放失败保留 leaseReleaseError，不覆盖原拒绝。
+
+execution.environment.observed 只表示 worker 先前 env_prepare 的观察（observationSource=gateway.env_prepare）；case_submit 可以再做网关内部契约/环境核验，其拒绝不被这条先前 passed 覆盖。设备结果解析接收独立归属输入 {environment,topology}：env_prepare.conf.device_ips 或 bed_topology.topology.applies_to.device_ssh_ips 为有序设备地址，对应 APV_0、APV_1 等。worker 在已有租约内按需只读 bed_topology(refresh:false)，与 env_prepare 原件一起存 gateway-results.json；映射缺失/冲突/无效为 device_map_unavailable，不猜设备名。去时间戳后按管理 IP 归属 sends command 日志，逐设备前进命令游标，同命令跨设备或同设备重复均可有各自 logSpan；缺命令只使对应步骤 unknown。test_env 仍按主机名匹配，检查点、整案结论各自独立。parserVersion 为 framework-checkpoints/2，解析接口保留供未来产品包 Tool 接管；本笔先修正确性，不把 APV 规则加进 hub 核心。
 
 当前只完成合成网关验收。真实网关上游核验不可达是环境阻塞，待用户/运维恢复并登记个人凭据后再做真实投递；真实 case.xlsx 由用户上传，未以合成结果冒充上机通过。
 

@@ -496,6 +496,10 @@ dev:stack 的 admin restart --graceful 现在请求 server 换进程后逐个排
 
 已安装并为产品线声明的 provider Tool，缺别名时使用产品线默认 prefix、包 prefix，最后以 packageId（连字符改下划线）作 prefix；显式实例 alias 优先。没有安装/声明的产品线仍不获得 provider。名称冲突按现有 tenant 唯一规则拒绝，不让缺 alias 静默隐藏工具。
 
+apv-case-execute 现为 **1.1.0**，flowVersion 仍 apv-case-execute/1。实现摘要变化后须用 GET /v1/packs 当前 version/flow/implementationSha256 重新登记并独立批准 hub-tool-implementation/1；旧任务的 methodAssetId 不自动改写。产品线模块资产仍按自身冻结 SHA/flow 解析，本笔未改变其字节或批准状态。成功终态的 gateway-results 原件与 result.result 也带 remoteLeaseReleased，释放失败为 false，不覆盖整案原结论。拒绝带 task_id/dispatched:true、已提交后的 status 错误均保留 unknown 且不释放潜在活动租约。
+
+设备日志归属与派发前拒绝的完整说明同步在 [执行交接](case-execution-handoff.md)：有序设备 IP 来自 env_prepare.conf.device_ips，或已有租约内按需读的 bed_topology.topology.applies_to.device_ssh_ips；原样入 B。解析按设备推进游标，每条已匹配命令有自己的 logSpan；拿不到唯一映射，设备步 unknown/unmapped=device_map_unavailable，主机步和检查点各按自身证据处理。设备归属接口 {environment,topology} 留给产品包解析 Tool 后续接管，尚未把这段旧兼容解析迁入独立产品包。
+
 GET /v1/assets/{id}/harness-export?target=circle|<sourceHarness> 仅批准后的可读原语可用，返回 files 的相对目标路径/base64/sha256、warnings、provenance:{assetId,version,sha256,sourceHarness}。Circle Skill 原件移动到 .circle/skills/{name}/，字节不改；Instruction 投影为 AGENTS.md。Circle 尚无 Agent/Command 原生安装时明确 warning；MCP prompt 可读取批准的 Skill/Command。同来源 harness 由公开库导出；其不支持的跨 harness 映射继续 warning。这里只是冻结与装载投影，云运行仍用既有技能试跑/提交/批准接口；不自动批准或把原件搬运称作已执行。
 
 `POST /mcp` 是官方 @modelcontextprotocol/sdk 1.32.1 的 Streamable HTTP JSON transport，协议协商 2025-11-25；[传输规范](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports)。每请求带 hub 会话 Bearer；Origin 若存在须同 hub 原生地址。无会话 id 的 stateless 模式，GET/DELETE 405；Accept 同时支持 application/json、text/event-stream。官方纯 SDK 客户端、原始 JSON-RPC 客户端已验收，既有 Circle REST 扩展保持。

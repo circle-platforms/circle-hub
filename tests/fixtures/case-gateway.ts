@@ -2,7 +2,7 @@ import {createServer} from 'node:http';
 import type {TestContext} from 'node:test';
 
 export async function caseGateway(t:TestContext){
-  const state={staticSecret:'',staticAccepted:false,refuseLease:false,unavailable:false,healthDelayMs:0,lost:false,hold:false,dropSubmit:false,submitRefusal:null as any,refuseRelease:false,wrongSha:false,failCase:false,hostLog:'',actualBuild:'Rel_PHOTON_10_5_0_101',missingBuild:false,command:'service create port 443',sha:'',taskId:'cex_synthetic_301',calls:[] as string[],identityServer:'',clientId:'',clientSecret:'',ruleBuild:'',ruleSha:'',verified:[] as any[]};
+  const state={staticSecret:'',staticAccepted:false,refuseLease:false,unavailable:false,healthDelayMs:0,lost:false,hold:false,dropSubmit:false,submitRefusal:null as any,statusRefusal:null as any,refuseRelease:false,wrongSha:false,failCase:false,hostLog:'',deviceIps:['192.0.2.10','192.0.2.11'],environmentMap:true,topologyMap:true,extraDeviceCommand:'',actualBuild:'Rel_PHOTON_10_5_0_101',missingBuild:false,command:'service create port 443',sha:'',taskId:'cex_synthetic_301',calls:[] as string[],identityServer:'',clientId:'',clientSecret:'',ruleBuild:'',ruleSha:'',verified:[] as any[]};
   const server=createServer(async(req,res)=>{
     if(req.method!=='POST'||req.url!=='/mcp'){res.writeHead(405);res.end();return;}
     let rpc:any;try{let input='';for await(const bytes of req)input+=bytes;rpc=JSON.parse(input);}catch{res.writeHead(400);res.end();return;}
@@ -21,9 +21,9 @@ export async function caseGateway(t:TestContext){
     let result:any={ok:true};
     if(name==='lease_status')result={ok:true,lease:null};
     if(name==='lease_release'&&state.refuseRelease)result={ok:false,error:'Synthetic lease release refused'};
-    if(name==='bed_topology')result={ok:true,topology:{devices:[{name:'routera',interfaces:[{address:'192.0.2.31'}]},{name:'node-a'},{name:'node-b'}]}};
+    if(name==='bed_topology')result={ok:true,topology:{...(state.topologyMap?{applies_to:{device_ssh_ips:state.deviceIps}}:{}),devices:[{name:'routera',interfaces:[{address:'192.0.2.31'}]},{name:'node-a'},{name:'node-b'}]}};
     if(name==='lease_acquire')result=state.refuseLease?{ok:false,error:'lease unavailable'}:{ok:true,lease_id:'synthetic-lease',token:1,expires_in_s:1800};
-    if(name==='env_prepare'){const wanted=rpc.params.arguments.device_build,match=!state.missingBuild&&state.actualBuild===wanted;result={ok:true,ready:match,build_checked:true,device_count:2,checks:[{check:'device_build',ok:match,detail:state.missingBuild?'build not found in output':`device reports ${state.actualBuild}, gateway bundle is ${wanted}`} ]};}
+    if(name==='env_prepare'){const wanted=rpc.params.arguments.device_build,match=!state.missingBuild&&state.actualBuild===wanted;result={ok:true,ready:match,build_checked:true,device_count:2,...(state.environmentMap?{conf:{device_ips:state.deviceIps}}:{}),checks:[{check:'device_build',ok:match,detail:state.missingBuild?'build not found in output':`device reports ${state.actualBuild}, gateway bundle is ${wanted}`} ]};}
     if(name==='case_submit'){
       const {createHash}=await import('node:crypto');state.sha=createHash('sha256').update(Buffer.from(rpc.params.arguments.xlsx_b64,'base64')).digest('hex');
       if(state.dropSubmit){req.socket.destroy();return;}
@@ -31,7 +31,8 @@ export async function caseGateway(t:TestContext){
       if(state.submitRefusal)result=state.submitRefusal;
     }
     if(name==='case_status')result={ok:true,task_id:state.taskId,state:state.lost?'lost':state.hold?'running':'done',rc:0};
-    if(name==='case_results')result={ok:true,task_id:state.taskId,channel:state.lost?'runner_lost':'ready',rc:state.lost?null:0,xlsx_sha256:state.sha,cases:state.lost?[]:[{case_id:'301',result:state.failCase?'fail':'pass',log_stale:false,log:`node-a - sends command in config: ${state.command}\nhealthy\nLAB#\n${state.hostLog}#### ${state.failCase?'Fail':'Success'} Num 1: ${state.failCase?'fail':'successed'} to find healthy in:\n${state.command}\nhealthy\nLAB#\n#### Success Num 2: fail to find panic in:\n${state.command}\nhealthy\nLAB#\n`,sessions:{}}],ignored_rows:0};
+    if(name==='case_status'&&state.statusRefusal)result=state.statusRefusal;
+    if(name==='case_results')result={ok:true,task_id:state.taskId,channel:state.lost?'runner_lost':'ready',rc:state.lost?null:0,xlsx_sha256:state.sha,cases:state.lost?[]:[{case_id:'301',result:state.failCase?'fail':'pass',log_stale:false,log:`${state.deviceIps[0]} - sends command in config: ${state.command}\nhealthy\nLAB#\n${state.extraDeviceCommand?`${state.deviceIps[1]} - sends command in config: ${state.extraDeviceCommand}\nhealthy\nLAB#\n`:''}${state.hostLog}#### ${state.failCase?'Fail':'Success'} Num 1: ${state.failCase?'fail':'successed'} to find healthy in:\n${state.command}\nhealthy\nLAB#\n#### Success Num 2: fail to find panic in:\n${state.command}\nhealthy\nLAB#\n`,sessions:{}}],ignored_rows:0};
     res.setHeader('content-type','application/json');res.end(JSON.stringify({jsonrpc:'2.0',id:rpc.id,result:{structuredContent:result,content:[{type:'text',text:JSON.stringify(result)}]}}));
   });await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));t.after(async()=>{server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));});
   return {origin:`http://127.0.0.1:${(server.address() as any).port}`,state};

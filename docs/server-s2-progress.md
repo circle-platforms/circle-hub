@@ -777,3 +777,11 @@ main 的 ab12ed4 是适配器第四轮，用户允许后续再签署 merge；不
 provider 已声明产品线但没有 alias 的，回落包 prefix/packageId；未安装的产品线仍拒绝，租户名字冲突不隐藏。原通用装载器已有 manifest 缺 alias 时用默认 prefix 的分支，本笔补目录的直接 provider 防御与缺 prefix 兜底。健康 503/超时两条补例证明 gateway-health 与 gateway 资源均不冻结、不取远端租约。
 
 最后联合 HTTP/HTTPS dev-stack、admin keep-alive/长轮询重启、两 worker 真实 pid 替换与在途操作不丢、健康失败、prefix 方法 **14/14**、无 skip，typecheck/diff 通过。只合成数据库/网关；没有改现网部署脚本、7420 或外部产品包。
+
+## 55：执行实现 1.1.0 与设备归属结果
+
+维护者独立复核 288faa5 全量 **386/386**，Grok 无高项；指出摘要变化但内置实现未升版。先写 1.1.0 负例与成功释放标记缺失、三条派发未知边界；升内置版本到 **1.1.0**，保留 flow/1 兼容，部署须管理员重新登记/独立批准当前 version/flow/implementationSha256。合成旧批准实现不能充当新版本；旧任务 methodAssetId 不自动迁移，新提交明确用新实现才执行。产品线模块 SHA 与治理状态未改，两份交接同步。
+
+成功终态也如实写 remoteLeaseReleased，失败释放写 false/leaseReleaseError；拒绝体有 task_id/dispatched:true、成功 submit 后 status 命中契约诊断都保持 unknown、不释放。维护者又提供跨设备相同命令被误判的统计（仅记数字：五例、十六步，不存真实日志/地址），先写设备归属方法复现 **0/3**。改为接收 {environment,topology} 原件，按 conf.device_ips 或 topology.applies_to.device_ssh_ips 顺序映射 APV_n；不唯一/缺失不猜。每设备独立推进日志游标，不再要求命令整例唯一。主机行维持主机归属，检查点/整案结论不替代设备步证据。
+
+合成方法与真实 worker 回报链：同命令跨两设备、同设备重复、仅缺 APV_1 命令、环境/拓扑两种映射、映射缺失/重复/冲突；专项 **21/21**、执行链联合 **41/41**，另空/null task_id 不许断言未派发方法 **1/1**，无 skip，typecheck/diff 通过。按需拓扑为已持租约内只读，原件随 gateway-results 入 B；取不到时仍可交付逐步 unknown/partial，不能标 observed。解析暂在 packs/apv，接口留给独立产品包 Tool 后续接管，未移动/修改私有产品包。完整冻结回归另跑；没有真实网关/设备投递。

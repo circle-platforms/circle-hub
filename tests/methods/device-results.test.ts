@@ -1,0 +1,16 @@
+import assert from 'node:assert/strict';import {test} from 'node:test';import {executionWorkbook} from '../fixtures/execution-workbook.ts';import {readExecutionWorkbook} from '../../packs/apv/execution/workbook.ts';import {executionResults} from '../../packs/apv/execution/results.ts';
+import {refusalFacts} from '../../packs/apv/execution/refusal.ts';
+async function book(){const value=await readExecutionWorkbook(await executionWorkbook()),step=value.cases[0].steps[0];value.cases[0].steps=[{...step,row:3,object:'APV_0',data:'service enabled on',commands:['service enabled on']},{...step,row:4,object:'APV_1',data:'service enabled on',commands:['service enabled on']},{...step,row:5,object:'APV_1',data:'service inspect alpha',commands:['service inspect alpha']},{...step,row:6,object:'APV_0',data:'service enabled on',commands:['service enabled on']}];return value;}
+const raw={channel:'ready',cases:[{case_id:'301',result:'pass',log_stale:false,log:'2042-03-04 05:06:07 192.0.2.10 - sends command in config: service enabled on\n192.0.2.11 - sends command in config: service enabled on\n192.0.2.10 - sends command in config: service enabled on\n192.0.2.11 - sends command in enable: service inspect alpha\n'}]};
+test('Device result attribution: equal commands on different devices and repeated commands on one device advance separate log cursors',async()=>{
+ const result=executionResults(await book(),raw,{environment:{conf:{device_ips:['192.0.2.10','192.0.2.11']}}} as any);assert.deepEqual(result.cases[0].steps.map((step:any)=>step.status),['observed','observed','observed','observed']);assert.deepEqual(result.cases[0].steps.map((step:any)=>step.logSpans[0].startLine),[1,2,4,3]);
+});
+test('Device result attribution: a missing command affects only its own device step and topology order supplies the same mapping',async()=>{
+ const result=executionResults(await book(),{...raw,cases:[{...raw.cases[0],log:raw.cases[0].log.split('\n').slice(0,3).join('\n')}]},{topology:{topology:{applies_to:{device_ssh_ips:['192.0.2.10','192.0.2.11']}}}} as any);assert.deepEqual(result.cases[0].steps.map((step:any)=>step.status),['observed','observed','unknown','observed']);assert.ok(result.unmapped.some((item:any)=>item.path==='cases/301/rows/5'&&item.reason==='step_outcome_not_proven'));
+});
+test('Device result attribution: missing duplicate contradictory or invalid device maps never infer ownership from command text',async()=>{
+ for(const attribution of [{},{environment:{conf:{device_ips:['192.0.2.10','192.0.2.10']}}},{environment:{conf:{device_ips:['node-a','node-b']}}},{environment:{conf:{device_ips:['192.0.2.10','192.0.2.11']}},topology:{topology:{applies_to:{device_ssh_ips:['192.0.2.11','192.0.2.10']}}}}]){const result=executionResults(await book(),raw,attribution as any);assert.ok(result.cases[0].steps.every((step:any)=>step.status==='unknown'));assert.ok(result.unmapped.some((item:any)=>item.reason==='device_map_unavailable'));}
+});
+test('Gateway dispatch proof: any supplied task identity including a malformed empty or null identity prevents a no-dispatch assertion',()=>{
+ for(const task_id of ['synthetic-task','',null])assert.equal(refusalFacts({ok:false,stage:'validation',task_id,error:"expected exactly one 'IST_EXCEL_CONTRACT' identity marker, found 0"}).preDispatch,false);
+});
