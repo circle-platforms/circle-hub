@@ -1,6 +1,7 @@
 import type {
   AdapterWarning,
   ExportResult,
+  HubHook,
   HubManifest,
   HubProvider,
   ImportResult,
@@ -18,6 +19,8 @@ import {
 import { emitToml, parseToml } from './toml.ts';
 import {
   dropCwd,
+  exportHooksFile,
+  importHooksFile,
   placeholderShape,
   sanitizeArgs,
   stripValueMap,
@@ -27,16 +30,66 @@ import {
 
 const HARNESS = 'codex';
 const CONFIG_PATH = '.codex/config.toml';
-const INSTRUCTION_NAME = 'AGENTS.md';
+const HOOKS_PATH = '.codex/hooks.json';
+
+// Skills live in .agents/skills at any depth; AGENTS.md and
+// AGENTS.override.md are the instruction files. `.codex/agents/*.toml` and
+// `~/.codex/prompts` are out of scope for this round (see the brief's 待定).
+// User-level (~/.codex) files are never part of the virtual file table.
+const SKILL_ENTRY = /(^|\/)\.agents\/skills\/([^/]+)\/SKILL\.md$/;
+const INSTRUCTION_FILE = /(^|\/)(AGENTS\.md|AGENTS\.override\.md)$/;
 
 const ABSOLUTE_PATH = /^([/~]|[A-Za-z]:[\\/])/;
 
+const SKILL_SPEC: MarkdownSpec = {
+  kind: 'hub-skill/1',
+  fields: { name: 'name', description: 'description', model: 'model' },
+  specific: { 'allowed-tools': 'allowedTools' },
+  frontmatterName: true,
+};
 const INSTRUCTION_SPEC: MarkdownSpec = {
   kind: 'hub-instruction/1',
   fields: {},
   specific: {},
   frontmatterName: false,
 };
+
+function importSkills(
+  files: VirtualFiles,
+  manifests: HubManifest[],
+  warnings: AdapterWarning[],
+  claimed: Set<string>,
+): void {
+  for (const [path, value] of Object.entries(files)) {
+    const match = SKILL_ENTRY.exec(path);
+    if (!match) continue;
+    claimed.add(path);
+    const directory = dirName(path);
+    const fileRefs = [{ path, sha256: sha256Hex(value) }];
+    for (const [other, otherValue] of Object.entries(files)) {
+      if (other !== path && other.startsWith(`${directory}/`)) {
+        claimed.add(other);
+        fileRefs.push({ path: other, sha256: sha256Hex(otherValue) });
+      }
+    }
+    const derived = deriveMarkdown(path, toText(value), match[2], SKILL_SPEC, warnings);
+    manifests.push({
+      kind: 'hub-skill/1',
+      name: derived.neutral.name!,
+      description: derived.neutral.description ?? '',
+      entry: 'SKILL.md',
+      tools: [],
+      inputs: [],
+      outputs: [],
+      triggers: [],
+      ...(derived.neutral.model !== undefined ? { model: derived.neutral.model } : {}),
+      sourceHarness: HARNESS,
+      knownCompatible: [],
+      files: fileRefs,
+      harnessSpecific: markdownHarnessSpecific(path, derived),
+    });
+  }
+}
 
 function importInstructions(
   files: VirtualFiles,
@@ -45,7 +98,7 @@ function importInstructions(
   claimed: Set<string>,
 ): void {
   for (const [path, value] of Object.entries(files)) {
-    if (path !== INSTRUCTION_NAME && !path.endsWith(`/${INSTRUCTION_NAME}`)) continue;
+    if (!INSTRUCTION_FILE.test(path)) continue;
     claimed.add(path);
     const derived = deriveMarkdown(path, toText(value), undefined, INSTRUCTION_SPEC, warnings);
     manifests.push({
@@ -172,7 +225,9 @@ export function importCodex(input: VirtualFiles): ImportResult {
   const manifests: HubManifest[] = [];
   const warnings: AdapterWarning[] = [];
   const claimed = new Set<string>();
+  importSkills(files, manifests, warnings, claimed);
   importInstructions(files, manifests, warnings, claimed);
+  importHooksFile(HARNESS, HOOKS_PATH, files, manifests, warnings, claimed);
   importConfig(files, manifests, warnings, claimed);
   for (const path of Object.keys(files)) {
     if (!claimed.has(path)) {
@@ -192,8 +247,9 @@ function manifestPath(manifest: HubManifest): string {
   return typeof path === 'string' ? path : '';
 }
 
-function exportInstruction(
+function exportMarkdown(
   manifest: HubManifest,
+  spec: MarkdownSpec,
   source: VirtualFiles,
   out: VirtualFiles,
   warnings: AdapterWarning[],
@@ -204,11 +260,26 @@ function exportInstruction(
     warnings.push({
       code: 'SOURCE_FILE_MISSING',
       path,
-      detail: 'hub-instruction/1 manifest points at a file that is not in the export file table; nothing exported',
+      detail: `${manifest.kind} manifest points at a file that is not in the export file table; nothing exported`,
     });
     return;
   }
-  out[path] = exportMarkdownFile(manifest, INSTRUCTION_SPEC, undefined, toText(original), path);
+  const defaultName = spec.kind === 'hub-skill/1' ? baseName(dirName(path)) : undefined;
+  out[path] = exportMarkdownFile(manifest, spec, defaultName, toText(original), path);
+  if (manifest.kind === 'hub-skill/1') {
+    for (const ref of manifest.files) {
+      if (ref.path === path) continue;
+      if (!(ref.path in source)) {
+        warnings.push({
+          code: 'SOURCE_FILE_MISSING',
+          path: ref.path,
+          detail: 'skill file is not in the export file table; not exported',
+        });
+        continue;
+      }
+      out[ref.path] = source[ref.path];
+    }
+  }
 }
 
 function exportProviders(providers: HubProvider[], out: VirtualFiles, warnings: AdapterWarning[]): void {
@@ -250,6 +321,7 @@ export function exportCodex(manifests: HubManifest[], files: VirtualFiles): Expo
   const source = normalizedFiles(files);
   const out: VirtualFiles = {};
   const warnings: AdapterWarning[] = [];
+  const hooks: HubHook[] = [];
   const providers: HubProvider[] = [];
   for (const manifest of manifests) {
     const parsed = hubManifestSchema.safeParse(manifest);
@@ -271,8 +343,14 @@ export function exportCodex(manifests: HubManifest[], files: VirtualFiles): Expo
       continue;
     }
     switch (valid.kind) {
+      case 'hub-skill/1':
+        exportMarkdown(valid, SKILL_SPEC, source, out, warnings);
+        break;
       case 'hub-instruction/1':
-        exportInstruction(valid, source, out, warnings);
+        exportMarkdown(valid, INSTRUCTION_SPEC, source, out, warnings);
+        break;
+      case 'hub-hook/1':
+        hooks.push(valid);
         break;
       case 'hub-provider/1':
         providers.push(valid);
@@ -281,11 +359,12 @@ export function exportCodex(manifests: HubManifest[], files: VirtualFiles): Expo
         warnings.push({
           code: 'NO_HARNESS_PROJECTION',
           path: manifestPath(valid),
-          detail: `${valid.kind} has no file projection in the Codex adapter; only instructions and MCP servers are covered`,
+          detail: `${valid.kind} has no file projection in the Codex adapter (skills, instructions, hooks and MCP servers only)`,
         });
         break;
     }
   }
+  exportHooksFile(hooks, out, HOOKS_PATH);
   exportProviders(providers, out, warnings);
   return { files: out, warnings };
 }

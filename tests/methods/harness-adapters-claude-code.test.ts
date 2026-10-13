@@ -20,24 +20,59 @@ function manifestsOfKind<K extends HubManifest['kind']>(kind: K): Extract<HubMan
   return imported.manifests.filter((manifest) => manifest.kind === kind) as Extract<HubManifest, { kind: K }>[];
 }
 
-test('Claude Code import: fixture covers every governed primitive kind', () => {
+test('Claude Code import: fixture covers every governed primitive kind and location', () => {
   assert.deepEqual(
     imported.manifests.map((manifest) => manifest.kind).sort(),
     [
       'hub-agent/1',
       'hub-command/1',
+      'hub-command/1',
+      'hub-hook/1',
       'hub-hook/1',
       'hub-hook/1',
       'hub-hook/1',
       'hub-instruction/1',
+      'hub-instruction/1',
+      'hub-instruction/1',
+      'hub-instruction/1',
       'hub-provider/1',
       'hub-provider/1',
+      'hub-skill/1',
       'hub-skill/1',
     ].sort(),
   );
   const expected = new Set(['PROVIDER_VALUES_STRIPPED', 'HOOK_EVENT_UNMAPPED']);
   const unexpected = imported.warnings.filter((warning) => !expected.has(warning.code));
   assert.deepEqual(unexpected, []);
+});
+
+test('Claude Code import: locations — nested skills, nested commands, rules, local files', () => {
+  const skills = manifestsOfKind('hub-skill/1');
+  assert.deepEqual(
+    skills.map((skill) => skill.name).sort(),
+    ['deep-skill', 'review-code'],
+  );
+  const deep = skills.find((skill) => skill.name === 'deep-skill')!;
+  assert.equal((deep.harnessSpecific as { path: string }).path, 'packages/demo/.claude/skills/deep-skill/SKILL.md');
+
+  const commands = manifestsOfKind('hub-command/1');
+  assert.deepEqual(
+    commands.map((command) => command.name).sort(),
+    ['review:code', 'summarize'],
+  );
+
+  const instructions = manifestsOfKind('hub-instruction/1');
+  assert.deepEqual(
+    instructions.map((instruction) => instruction.fileName).sort(),
+    ['AGENTS.md', 'CLAUDE.local.md', 'CLAUDE.md', 'style-guide.md'],
+  );
+  const rules = instructions.find((instruction) => instruction.fileName === 'style-guide.md')!;
+  assert.deepEqual(rules.applies, ['src/**', 'tests/**']);
+
+  const hooks = manifestsOfKind('hub-hook/1');
+  const local = hooks.find((hook) => (hook.harnessSpecific as { filePath: string }).filePath === '.claude/settings.local.json')!;
+  assert.equal(local.event, 'SessionStart');
+  assert.equal(local.handler, 'sh scripts/boot-check.sh');
 });
 
 test('Claude Code import: skill frontmatter maps to hub-skill/1 and proprietary keys survive', () => {
@@ -71,7 +106,7 @@ test('Claude Code import: skill frontmatter maps to hub-skill/1 and proprietary 
 });
 
 test('Claude Code import: command, agent and instruction map their fields', () => {
-  const [command] = manifestsOfKind('hub-command/1') as HubCommand[];
+  const command = (manifestsOfKind('hub-command/1') as HubCommand[]).find((entry) => entry.name === 'summarize')!;
   assert.equal(command.name, 'summarize');
   assert.equal(command.description, 'Summarize the current change set');
   // argument-hint is a prompt hint, not the arguments field.
@@ -84,7 +119,9 @@ test('Claude Code import: command, agent and instruction map their fields', () =
   assert.deepEqual(agent.tools, ['Read', 'Grep']);
   assert.equal(agent.model, 'scripted-model');
 
-  const [instruction] = manifestsOfKind('hub-instruction/1') as HubInstruction[];
+  const [instruction] = (manifestsOfKind('hub-instruction/1') as HubInstruction[]).filter(
+    (entry) => entry.fileName === 'CLAUDE.md',
+  );
   // scope is not derivable from a Claude Code instruction file: left empty.
   assert.equal(instruction.scope, undefined);
   assert.deepEqual(instruction.applies, []);
@@ -92,7 +129,9 @@ test('Claude Code import: command, agent and instruction map their fields', () =
 });
 
 test('Claude Code import: multiple hooks become individual manifests without invented order', () => {
-  const hooks = manifestsOfKind('hub-hook/1') as HubHook[];
+  const hooks = (manifestsOfKind('hub-hook/1') as HubHook[]).filter(
+    (hook) => (hook.harnessSpecific as { filePath: string }).filePath === '.claude/settings.json',
+  );
   assert.equal(hooks.length, 3);
   assert.deepEqual(hooks.map((hook) => hook.event), ['PreToolUse', 'PostToolUse', 'PostToolUse']);
   assert.deepEqual(
@@ -116,9 +155,10 @@ test('Claude Code import: multiple hooks become individual manifests without inv
   assert.equal(specific[2].entry.timeout, 30);
   // One HOOK_EVENT_UNMAPPED per harness event, not per command.
   const unmapped = imported.warnings.filter((warning) => warning.code === 'HOOK_EVENT_UNMAPPED');
-  assert.equal(unmapped.length, 2);
+  assert.equal(unmapped.length, 3);
   assert.ok(unmapped[0].detail.startsWith('hooks.PreToolUse'));
   assert.ok(unmapped[1].detail.startsWith('hooks.PostToolUse'));
+  assert.ok(unmapped[2].detail.startsWith('hooks.SessionStart'));
 });
 
 test('Claude Code import: stdio and http MCP servers keep names and shapes without secrets', () => {
@@ -325,10 +365,10 @@ test('Claude Code export: hub-tool/1 no longer exists as a manifest kind', () =>
 
 test('Claude Code export: source files missing from the file table are reported', () => {
   const result = exportTo('claude-code', imported.manifests, {});
-  assert.deepEqual(Object.keys(result.files).sort(), ['.claude/settings.json', '.mcp.json']);
+  assert.deepEqual(Object.keys(result.files).sort(), ['.claude/settings.json', '.claude/settings.local.json', '.mcp.json']);
   assert.equal(
     result.warnings.filter((warning) => warning.code === 'SOURCE_FILE_MISSING').length,
-    4,
+    9,
   );
 });
 

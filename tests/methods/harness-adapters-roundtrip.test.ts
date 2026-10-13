@@ -10,11 +10,17 @@ test('Claude Code round trip: unchanged manifests reproduce the original files b
 
   const byteIdentical = [
     'CLAUDE.md',
+    'CLAUDE.local.md',
+    'AGENTS.md',
+    '.claude/rules/style-guide.md',
     '.claude/skills/review-code/SKILL.md',
     '.claude/skills/review-code/scripts/check.sh',
     '.claude/commands/summarize.md',
+    '.claude/commands/review/code.md',
     '.claude/agents/test-reviewer.md',
     '.claude/settings.json',
+    '.claude/settings.local.json',
+    'packages/demo/.claude/skills/deep-skill/SKILL.md',
   ];
   for (const path of byteIdentical) {
     assert.equal(exported.files[path], fixture[path], path);
@@ -88,13 +94,21 @@ test('Claude Code round trip: settings.json keys outside hooks are reported and 
   assert.deepEqual(Object.keys(settings), ['hooks']);
 });
 
-test('Codex round trip: AGENTS.md is byte-identical, stripped env values become placeholders', async () => {
+test('Codex round trip: markdown files byte-identical, stripped env values become placeholders', async () => {
   const fixture = await loadVirtualFiles(codexFixtureRoot);
   const imported = importFrom('codex', fixture);
   const exported = exportTo('codex', imported.manifests, fixture);
 
-  assert.equal(exported.files['AGENTS.md'], fixture['AGENTS.md']);
-  assert.deepEqual(Object.keys(exported.files).sort(), ['.codex/config.toml', 'AGENTS.md']);
+  const byteIdentical = [
+    'AGENTS.md',
+    'AGENTS.override.md',
+    '.agents/skills/tidy/SKILL.md',
+    '.codex/hooks.json',
+  ];
+  for (const path of byteIdentical) {
+    assert.equal(exported.files[path], fixture[path], path);
+  }
+  assert.deepEqual(Object.keys(exported.files).sort(), [...byteIdentical, '.codex/config.toml'].sort());
 
   const config = exported.files['.codex/config.toml'] as string;
   assert.notEqual(config, fixture['.codex/config.toml']);

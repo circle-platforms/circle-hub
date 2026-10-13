@@ -5,6 +5,20 @@ import type { VirtualFiles } from '../../../packages/harness-adapters/neutral.ts
 export const claudeCodeFixtureRoot = join(import.meta.dirname, 'claude-code');
 export const codexFixtureRoot = join(import.meta.dirname, 'codex');
 
+// `**/.claude/settings.local.json` is covered by the global gitignore (the
+// name is machine-local by convention), so this fixture entry is synthesized
+// at load time instead of being committed as a real file. The virtual file
+// table key is what the adapter sees.
+const CLAUDE_SETTINGS_LOCAL = `${JSON.stringify(
+  {
+    hooks: {
+      SessionStart: [{ hooks: [{ type: 'command', command: 'sh scripts/boot-check.sh' }] }],
+    },
+  },
+  null,
+  2,
+)}\n`;
+
 export async function loadVirtualFiles(root: string): Promise<VirtualFiles> {
   const files: VirtualFiles = {};
   async function walk(directory: string): Promise<void> {
@@ -15,6 +29,7 @@ export async function loadVirtualFiles(root: string): Promise<VirtualFiles> {
     }
   }
   await walk(root);
+  if (root === claudeCodeFixtureRoot) files['.claude/settings.local.json'] = CLAUDE_SETTINGS_LOCAL;
   return files;
 }
 

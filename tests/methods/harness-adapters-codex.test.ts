@@ -12,17 +12,34 @@ import { codexFixtureRoot, loadVirtualFiles } from '../fixtures/harness/load.ts'
 const fixture = await loadVirtualFiles(codexFixtureRoot);
 const imported = importFrom('codex', fixture);
 
-test('Codex import: AGENTS.md becomes hub-instruction/1', () => {
+test('Codex import: AGENTS.md and AGENTS.override.md become hub-instruction/1', () => {
   const instructions = imported.manifests.filter((manifest) => manifest.kind === 'hub-instruction/1') as HubInstruction[];
-  assert.equal(instructions.length, 1);
-  assert.equal(instructions[0].scope, undefined);
-  assert.deepEqual(instructions[0].applies, []);
-  assert.equal(instructions[0].fileName, 'AGENTS.md');
-  assert.equal(instructions[0].sourceHarness, 'codex');
+  assert.equal(instructions.length, 2);
   assert.deepEqual(
-    instructions[0].files.map((file) => file.path),
-    ['AGENTS.md'],
+    instructions.map((instruction) => instruction.fileName).sort(),
+    ['AGENTS.md', 'AGENTS.override.md'],
   );
+  for (const instruction of instructions) {
+    assert.equal(instruction.scope, undefined);
+    assert.deepEqual(instruction.applies, []);
+    assert.equal(instruction.sourceHarness, 'codex');
+  }
+});
+
+test('Codex import: .agents skills and .codex/hooks.json become hub-skill/1 and hub-hook/1', () => {
+  const skills = imported.manifests.filter((manifest) => manifest.kind === 'hub-skill/1');
+  assert.equal(skills.length, 1);
+  assert.equal(skills[0].name, 'tidy');
+  // Space-separated allowed-tools lands in harnessSpecific, not tools.
+  assert.deepEqual(skills[0].tools, []);
+  assert.deepEqual((skills[0].harnessSpecific as { allowedTools?: string[] }).allowedTools, ['Read', 'Write']);
+
+  const hooks = imported.manifests.filter((manifest) => manifest.kind === 'hub-hook/1');
+  assert.equal(hooks.length, 1);
+  assert.equal(hooks[0].event, 'PreToolUse');
+  assert.equal(hooks[0].handler, 'sh scripts/codex-check.sh');
+  assert.equal(hooks[0].order, undefined);
+  assert.equal(hooks[0].deterministic, undefined);
 });
 
 test('Codex import: mcp_servers become hub-provider/1 without secret values', () => {
@@ -51,8 +68,8 @@ test('Codex import: mcp_servers become hub-provider/1 without secret values', ()
 
   assert.equal(JSON.stringify(imported.manifests).includes('synthetic-docs-key'), false);
   assert.deepEqual(
-    imported.warnings.map((warning) => warning.code),
-    ['PROVIDER_VALUES_STRIPPED'],
+    imported.warnings.map((warning) => warning.code).sort(),
+    ['HOOK_EVENT_UNMAPPED', 'PROVIDER_VALUES_STRIPPED'],
   );
 });
 
@@ -103,21 +120,17 @@ test('Codex import: unrecognized files are reported', () => {
 });
 
 test('Codex export: primitives without a Codex projection are reported, not silently dropped', () => {
-  const skill = {
-    kind: 'hub-skill/1',
-    name: 'review-code',
+  const agent = {
+    kind: 'hub-agent/1',
+    name: 'test-reviewer',
     description: '',
-    entry: 'SKILL.md',
     tools: [],
-    inputs: [],
-    outputs: [],
-    triggers: [],
     sourceHarness: 'codex',
     knownCompatible: [],
     files: [],
     harnessSpecific: {},
   } satisfies HubManifest;
-  const result = exportTo('codex', [skill], {});
+  const result = exportTo('codex', [agent], {});
   assert.deepEqual(result.files, {});
   assert.deepEqual(
     result.warnings.map((warning) => warning.code),

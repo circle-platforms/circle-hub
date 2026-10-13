@@ -25,22 +25,30 @@ import {
   type MarkdownSpec,
 } from './markdown.ts';
 import {
+  checkCanonical,
   dropCwd,
+  exportHooksFile,
+  importHooksFile,
+  parseJsonFile,
   placeholderShape,
   sanitizeArgs,
-  sanitizeHookCommand,
   stripValueMap,
   REDACTED,
   SECRET_MAP_KEYS,
 } from './configs.ts';
 
 const HARNESS = 'claude-code';
-const SETTINGS_PATH = '.claude/settings.json';
+const SETTINGS_PATHS = ['.claude/settings.json', '.claude/settings.local.json'];
 const MCP_PATH = '.mcp.json';
 
-const SKILL_ENTRY = /^\.claude\/skills\/([^/]+)\/SKILL\.md$/;
-const COMMAND_FILE = /^\.claude\/commands\/([^/]+)\.md$/;
+// Skills are picked up at any nesting depth; commands, agents, rules and
+// settings are project-level `.claude` files. User-level (`~/...`) files are
+// never part of the virtual file table and are therefore never imported.
+const SKILL_ENTRY = /(^|\/)\.claude\/skills\/([^/]+)\/SKILL\.md$/;
+const COMMAND_FILE = /^\.claude\/commands\/(.+)\.md$/;
 const AGENT_FILE = /^\.claude\/agents\/([^/]+)\.md$/;
+const RULES_FILE = /^\.claude\/rules\/[^/]+\.md$/;
+const INSTRUCTION_FILE = /(^|\/)(CLAUDE\.md|CLAUDE\.local\.md|AGENTS\.md)$/;
 
 const ABSOLUTE_PATH = /^([/~]|[A-Za-z]:[\\/])/;
 
@@ -70,6 +78,13 @@ const INSTRUCTION_SPEC: MarkdownSpec = {
   specific: {},
   frontmatterName: false,
 };
+// .claude/rules files scope themselves with a frontmatter `paths` list.
+const RULES_SPEC: MarkdownSpec = {
+  kind: 'hub-instruction/1',
+  fields: { paths: 'applies' },
+  specific: {},
+  frontmatterName: false,
+};
 
 function importSkills(
   files: VirtualFiles,
@@ -89,7 +104,7 @@ function importSkills(
         fileRefs.push({ path: other, sha256: sha256Hex(otherValue) });
       }
     }
-    const derived = deriveMarkdown(path, toText(value), match[1], SKILL_SPEC, warnings);
+    const derived = deriveMarkdown(path, toText(value), match[2], SKILL_SPEC, warnings);
     manifests.push({
       kind: 'hub-skill/1',
       name: derived.neutral.name!,
@@ -115,12 +130,13 @@ function importMarkdown(
   claimed: Set<string>,
   pattern: RegExp,
   spec: MarkdownSpec,
+  nameFor?: (match: RegExpExecArray) => string,
 ): void {
   for (const [path, value] of Object.entries(files)) {
     const match = pattern.exec(path);
     if (!match) continue;
     claimed.add(path);
-    const derived = deriveMarkdown(path, toText(value), match[1], spec, warnings);
+    const derived = deriveMarkdown(path, toText(value), nameFor ? nameFor(match) : match[1], spec, warnings);
     if (spec.kind === 'hub-agent/1') {
       manifests.push({
         kind: 'hub-agent/1',
@@ -133,7 +149,7 @@ function importMarkdown(
         files: [{ path, sha256: sha256Hex(value) }],
         harnessSpecific: markdownHarnessSpecific(path, derived),
       });
-    } else {
+    } else if (spec.kind === 'hub-command/1') {
       manifests.push({
         kind: 'hub-command/1',
         name: derived.neutral.name!,
@@ -155,12 +171,14 @@ function importInstructions(
   claimed: Set<string>,
 ): void {
   for (const [path, value] of Object.entries(files)) {
-    if (path !== 'CLAUDE.md' && !path.endsWith('/CLAUDE.md')) continue;
+    const isRulesFile = RULES_FILE.test(path);
+    if (!isRulesFile && !INSTRUCTION_FILE.test(path)) continue;
     claimed.add(path);
-    const derived = deriveMarkdown(path, toText(value), undefined, INSTRUCTION_SPEC, warnings);
+    const spec = isRulesFile ? RULES_SPEC : INSTRUCTION_SPEC;
+    const derived = deriveMarkdown(path, toText(value), undefined, spec, warnings);
     manifests.push({
       kind: 'hub-instruction/1',
-      applies: [],
+      applies: derived.neutral.applies ?? [],
       fileName: baseName(path),
       sourceHarness: HARNESS,
       knownCompatible: [],
@@ -168,128 +186,6 @@ function importInstructions(
       harnessSpecific: markdownHarnessSpecific(path, derived),
     });
   }
-}
-
-function parseJsonFile(
-  path: string,
-  text: string,
-  warnings: AdapterWarning[],
-): Record<string, unknown> | undefined {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text);
-  } catch {
-    warnings.push({ code: 'CONFIG_JSON_INVALID', path, detail: 'file is not valid JSON; nothing imported from it' });
-    return undefined;
-  }
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    warnings.push({ code: 'CONFIG_JSON_INVALID', path, detail: 'top level is not a JSON object; nothing imported from it' });
-    return undefined;
-  }
-  return parsed as Record<string, unknown>;
-}
-
-function checkCanonical(
-  path: string,
-  text: string,
-  value: Record<string, unknown>,
-  extraKeys: string[],
-  warnings: AdapterWarning[],
-): void {
-  if (extraKeys.length > 0) return;
-  if (canonicalJson(value) !== text) {
-    warnings.push({
-      code: 'CANONICAL_NORMALIZATION',
-      path,
-      detail: 'file is valid JSON but not in the adapter canonical form (2-space indent, trailing newline); export rewrites it in canonical form',
-    });
-  }
-}
-
-function importSettings(
-  files: VirtualFiles,
-  manifests: HubManifest[],
-  warnings: AdapterWarning[],
-  claimed: Set<string>,
-): void {
-  if (!(SETTINGS_PATH in files)) return;
-  claimed.add(SETTINGS_PATH);
-  const text = toText(files[SETTINGS_PATH]);
-  const record = parseJsonFile(SETTINGS_PATH, text, warnings);
-  if (record === undefined) return;
-  const extraKeys = Object.keys(record).filter((key) => key !== 'hooks');
-  if (extraKeys.length > 0) {
-    warnings.push({
-      code: 'CONFIG_EXTRA_KEYS',
-      path: SETTINGS_PATH,
-      detail: `settings.json keys not governed as hub hooks and dropped on export: ${extraKeys.join(', ')}`,
-    });
-  }
-  if (record.hooks !== undefined && (typeof record.hooks !== 'object' || record.hooks === null || Array.isArray(record.hooks))) {
-    warnings.push({ code: 'CONFIG_JSON_INVALID', path: SETTINGS_PATH, detail: 'hooks is not an object; no hooks imported' });
-    return;
-  }
-  const hooks = (record.hooks ?? {}) as Record<string, unknown>;
-  const fileRef = { path: SETTINGS_PATH, sha256: sha256Hex(files[SETTINGS_PATH]) };
-  let eventIndex = 0;
-  for (const [event, groups] of Object.entries(hooks)) {
-    if (!Array.isArray(groups)) {
-      warnings.push({ code: 'HOOK_ENTRY_SKIPPED', path: SETTINGS_PATH, detail: `hooks.${event} is not a list of matcher groups` });
-      eventIndex += 1;
-      continue;
-    }
-    // The spec fixes five hub hook points but defines no mapping from Claude
-    // Code client events; the harness event name is kept as-is.
-    warnings.push({
-      code: 'HOOK_EVENT_UNMAPPED',
-      path: SETTINGS_PATH,
-      detail: `hooks.${event}: harness event name kept as-is; the spec defines no mapping to hub hook points`,
-    });
-    groups.forEach((group, groupIndex) => {
-      if (!group || typeof group !== 'object' || Array.isArray(group)) {
-        warnings.push({ code: 'HOOK_ENTRY_SKIPPED', path: SETTINGS_PATH, detail: `hooks.${event}[${groupIndex}] is not an object` });
-        return;
-      }
-      const matcher = (group as Record<string, unknown>).matcher;
-      const entries = (group as Record<string, unknown>).hooks;
-      if (!Array.isArray(entries)) {
-        warnings.push({ code: 'HOOK_ENTRY_SKIPPED', path: SETTINGS_PATH, detail: `hooks.${event}[${groupIndex}] has no hooks list` });
-        return;
-      }
-      entries.forEach((entry, entryIndex) => {
-        const recordEntry = entry as Record<string, unknown> | null;
-        if (!recordEntry || typeof recordEntry !== 'object' || Array.isArray(recordEntry)) {
-          warnings.push({ code: 'HOOK_ENTRY_SKIPPED', path: SETTINGS_PATH, detail: `hooks.${event}[${groupIndex}].hooks[${entryIndex}] is not an object` });
-          return;
-        }
-        if (recordEntry.type !== 'command' || typeof recordEntry.command !== 'string' || recordEntry.command === '') {
-          warnings.push({ code: 'HOOK_ENTRY_SKIPPED', path: SETTINGS_PATH, detail: `hooks.${event}[${groupIndex}].hooks[${entryIndex}] is not a {type: "command", command} entry` });
-          return;
-        }
-        const location = `hooks.${event}[${groupIndex}].hooks[${entryIndex}]`;
-        const command = sanitizeHookCommand(recordEntry.command, SETTINGS_PATH, location, warnings);
-        manifests.push({
-          kind: 'hub-hook/1',
-          event,
-          handler: command,
-          language: 'shell',
-          sourceHarness: HARNESS,
-          knownCompatible: [],
-          files: [fileRef],
-          harnessSpecific: {
-            filePath: SETTINGS_PATH,
-            eventIndex,
-            ...(typeof matcher === 'string' ? { matcher } : {}),
-            groupIndex,
-            entryIndex,
-            entry: { ...recordEntry, command },
-          },
-        });
-      });
-    });
-    eventIndex += 1;
-  }
-  checkCanonical(SETTINGS_PATH, text, record, extraKeys, warnings);
 }
 
 function importMcp(
@@ -420,10 +316,14 @@ export function importClaudeCode(input: VirtualFiles): ImportResult {
   const warnings: AdapterWarning[] = [];
   const claimed = new Set<string>();
   importSkills(files, manifests, warnings, claimed);
-  importMarkdown(files, manifests, warnings, claimed, COMMAND_FILE, COMMAND_SPEC);
+  importMarkdown(files, manifests, warnings, claimed, COMMAND_FILE, COMMAND_SPEC, (match) =>
+    match[1].split('/').join(':'),
+  );
   importMarkdown(files, manifests, warnings, claimed, AGENT_FILE, AGENT_SPEC);
   importInstructions(files, manifests, warnings, claimed);
-  importSettings(files, manifests, warnings, claimed);
+  for (const settingsPath of SETTINGS_PATHS) {
+    importHooksFile(HARNESS, settingsPath, files, manifests, warnings, claimed);
+  }
   importMcp(files, manifests, warnings, claimed);
   for (const path of Object.keys(files)) {
     if (!claimed.has(path)) {
@@ -473,7 +373,8 @@ function exportMarkdown(
     });
     return;
   }
-  out[path] = exportMarkdownFile(manifest, spec, defaultNameFor(spec.kind, path), toText(original), path);
+  const effectiveSpec = spec.kind === 'hub-instruction/1' && RULES_FILE.test(path) ? RULES_SPEC : spec;
+  out[path] = exportMarkdownFile(manifest, effectiveSpec, defaultNameFor(spec.kind, path), toText(original), path);
   if (manifest.kind === 'hub-skill/1') {
     for (const ref of manifest.files) {
       if (ref.path === path) continue;
@@ -487,62 +388,6 @@ function exportMarkdown(
       }
       out[ref.path] = source[ref.path];
     }
-  }
-}
-
-interface HookSpecific {
-  filePath?: string;
-  matcher?: string;
-  eventIndex?: number;
-  groupIndex?: number;
-  entryIndex?: number;
-  entry?: Record<string, unknown>;
-}
-
-function exportHooks(hooks: HubHook[], out: VirtualFiles): void {
-  const byPath = new Map<string, HubHook[]>();
-  for (const hook of hooks) {
-    const specific = hook.harnessSpecific as HookSpecific;
-    const path = typeof specific.filePath === 'string' ? specific.filePath : SETTINGS_PATH;
-    const list = byPath.get(path) ?? [];
-    list.push(hook);
-    byPath.set(path, list);
-  }
-  for (const [path, list] of byPath) {
-    const position = (hook: HubHook): [number, number, number] => {
-      const specific = hook.harnessSpecific as HookSpecific;
-      return [specific.eventIndex ?? 0, specific.groupIndex ?? 0, specific.entryIndex ?? 0];
-    };
-    const sorted = [...list].sort((a, b) => {
-      const pa = position(a);
-      const pb = position(b);
-      return pa[0] - pb[0] || pa[1] - pb[1] || pa[2] - pb[2];
-    });
-    const events: Record<string, Array<Record<string, unknown>>> = {};
-    const groupKeys = new Map<string, Map<number, Record<string, unknown>>>();
-    for (const hook of sorted) {
-      const specific = hook.harnessSpecific as HookSpecific;
-      if (!(hook.event in events)) {
-        events[hook.event] = [];
-        groupKeys.set(hook.event, new Map());
-      }
-      const groups = groupKeys.get(hook.event)!;
-      const groupIndex = specific.groupIndex ?? 0;
-      if (!groups.has(groupIndex)) {
-        const group: Record<string, unknown> = {
-          ...(typeof specific.matcher === 'string' ? { matcher: specific.matcher } : {}),
-          hooks: [],
-        };
-        groups.set(groupIndex, group);
-        events[hook.event].push(group);
-      }
-      const entry =
-        specific.entry && typeof specific.entry === 'object'
-          ? specific.entry
-          : { type: 'command', command: hook.handler };
-      (groups.get(groupIndex)!.hooks as unknown[]).push(entry);
-    }
-    out[path] = canonicalJson({ hooks: events });
   }
 }
 
@@ -626,7 +471,7 @@ export function exportClaudeCode(manifests: HubManifest[], files: VirtualFiles):
       });
     }
   }
-  exportHooks(hooks, out);
+  exportHooksFile(hooks, out, SETTINGS_PATHS[0]);
   exportProviders(providers, out, warnings);
   return { files: out, warnings };
 }
