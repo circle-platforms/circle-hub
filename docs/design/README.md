@@ -13,5 +13,6 @@
 | [产品线包典范](product-line-pack.md) | 一条产品线接进来的交付物：目录布局、适配单、验收清单，以合成产品线为样例 |
 | [harness 原语规范](harness-primitives.md) | hub 治理任何 harness 的原语：治理 / 不治理清单、中立清单、每个 harness 的导入导出适配器、hub 自己作为 MCP server 的通用传输、原语在四对象五要素里的位置 |
 | [权限策略导出](permission-export.md) | harness 中立的第 4 条：hub-permission/1 从范围上的角色预设和 Tool 标注算出；Claude Code、Codex CLI、OpenCode、Gemini CLI、Cursor 各一张映射表与示例配置；表达不了的部分如实列出 |
+| [harness 原语格式调查](harness-formats.md) | Claude Code、Codex CLI、OpenCode、Gemini CLI、Cursor 五家的 Skill / Command / Agent / Instruction / Hook / MCP server 磁盘格式：路径、字段、能映射到中立清单的部分与映射不了的部分，每条带来源；适配器与 knownCompatible 的依据 |
 
 两条贯穿全部的原则来自更早的决定：确定内容交给脚本、其余交给模型判定并完整披露（ADR 0024）；本地取消、远端停止、任务交付分别记录（ADR 0025）。
