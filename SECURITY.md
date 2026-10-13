@@ -1,11 +1,36 @@
-# 安全问题与当前支持范围
+# Security policy
 
-Circle Server 仍处于开发准备阶段，没有正式 server/API 启动入口，也没有受支持的生产软件发行。参考归档和旧实验不能作为企业部署的安全保证。
+circle-hub is under development and is not a supported production release. The sign-in is a development sign-in, acceptance runs on synthetic sources and a temporary PostgreSQL, and the archived references and old experiments are no assurance for an enterprise deployment. Before you run it anywhere that matters, check your configuration against the roles, approvals and enforcement chain in the [design](docs/design/README.md).
 
-仓库目前私有。具有访问权限的协作者可以通过[本仓库私有 Issue](https://github.com/qingshanfeihu/circle-server/issues/new)报告问题，只提供最小复现、影响、版本与相关文件，避免上传口令、令牌、原始业务资料或完整用户会话。
+## Report a vulnerability
 
-若仓库公开且 Security 页面已经提供 **Report a vulnerability**，使用该入口私下报告安全问题，不在公开 Issue 披露漏洞细节或敏感内容。公开操作时需要启用并复核这个入口；当前没有宣称该功能已经开启。配置方式见 [GitHub 官方说明](https://docs.github.com/en/code-security/how-tos/report-and-fix-vulnerabilities/configure-vulnerability-reporting/configure-for-a-repository)。
+Please do not open a public issue for a security problem.
 
-一般功能缺陷和不含敏感内容的建议可以使用普通 Issue。报告安全问题时说明可影响的实际运行路径；冻结参考中的风险与正式运行入口的风险分别说明。
+Use GitHub's private reporting: open the repository's **Security** tab and choose **Report a vulnerability**. If that option is not available, open an issue that says only that you have a security report and ask for a private way to send it. Do not put details in the issue.
 
-维护者评估后按具体问题安排复现、修复、受影响使用者检查和披露，不在当前阶段承诺生产响应时限。基础开源检查只说明当时检查的内容和范围，详见[检查报告](docs/open-source-readiness.md)。
+Include the path that is affected (server, worker, a connector, the admin CLI or the Circle extension), the smallest reproduction, the impact, the commit or version, and the files involved. Do not upload passwords, tokens, business originals or whole user sessions. Keep a risk in the frozen references (`references/`) apart from a risk in a runtime entry point.
+
+Reports are handled on a best-effort basis. There is no guaranteed response time at this stage.
+
+## Supported versions
+
+Fixes go into the latest commit on `main` and the next release. Nothing older is patched.
+
+## What counts
+
+These are in scope:
+
+- A way for a change set to take effect, or for an execution to run, without the approval the [design](docs/design/approvals-and-enforcement.md) says it needs.
+- A way past the enforcement chain: a device command dispatched without the hub re-verifying it, or an error code or `waitingReason` that hides a refusal.
+- A credential, token or operation token leaking into a record, a log, an evidence file or a response it should not reach.
+- A role or a scope granting more than the [roles](docs/design/roles.md) say, including around the two-person rule.
+- Anything that lets text from a source, a tool result or a pack change approvals, roles or settings.
+
+Out of scope, by design: runtime addresses, credentials and certificates are kept by the deployer outside the repository, and this project does not host or rotate them. Connectors are read-only; writes to external systems go through execution resources only, under the enforcement chain.
+
+## How the repository is protected
+
+- Secret scanning and push protection: a commit that contains a key is rejected.
+- Dependabot alerts and updates.
+- `main` cannot be force-pushed or deleted.
+- The workflows run with the least permissions they need and touch no secrets.

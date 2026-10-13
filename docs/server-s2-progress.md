@@ -713,3 +713,9 @@ health 与执行共用 gateway resource 会在冻结或忙时挡住状态检查�
 迁移 29/30 的校验不重写。维护者指出第 30 版把已 failed/UPSTREAM_TIMEOUT 也纳入历史释放审计；第 29 版缺状态日志，不能用现态证明历史一定 unknown。已向维护者请求补偿口径：新增迁移只选当前 unknown read；历史保留并补偿说明“原状态无法证明”，不恢复失效租约。此项不依赖上游模型修复，也没有在本机/现网直接改库。
 
 模型/健康修复最终冻结 contracts **5/5**、methods **42/42**、acceptance **224/224**、references **7/7**，共 **278/278**，固定 Circle 8b2ceb6 / APV 224daa6，**无 skip**。typecheck、diff、**714** 原件归档核验通过。只本地签署提交，未连真实模型、网关或部署；随后按维护者授权合入 main 的中立适配器/公开规范，保留其文件和作者，不改那两个分工目录。
+
+## 48：按授权合并公开规范与中立适配器
+
+维护者允许第 9 节前以签署 merge 提交合入 main。合并其公开门面、Apache-2.0/贡献规范、五种 harness 的纯导入导出库及权限导出规范；未自行编辑 README、harness-adapters 或 permission-export。冲突仅 AGENTS.md/package.json：采用 main 的统一指令和公开名称/许可/仓库元数据，保留 server 实际运行需要的 TypeScript 依赖；锁文件根元数据同步。业务代码、Circle/产品包、真实配置均未更改。合并验证结果另记下一行。
+
+merge 内容本身 typecheck、methods **127/127**（含五种适配器原测试）、references **7/7**、**714** 归档核验与 diff 通过。待实现的第 9 节测试先证明缺模块/缺接口，未把它们算作合并的通过项；未改适配器内部文件或权限规范。

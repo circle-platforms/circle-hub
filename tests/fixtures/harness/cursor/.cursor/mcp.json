@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "local-runner": {
+      "command": "node",
+      "args": [
+        "server.js"
+      ],
+      "env": {
+        "RUNNER_KEY": "synthetic-cursor-key"
+      }
+    },
+    "remote-hub": {
+      "url": "https://mcp.example.com/cursor",
+      "headers": {
+        "Authorization": "Bearer synthetic-cursor-token"
+      }
+    }
+  }
+}

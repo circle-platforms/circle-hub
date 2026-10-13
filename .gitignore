@@ -10,3 +10,10 @@ coverage/
 *.tsbuildinfo
 .circle/
 runtime-data/
+
+# Documentation site build
+docs/_site/
+docs/.jekyll-cache/
+docs/.jekyll-metadata
+docs/.bundle/
+docs/vendor/

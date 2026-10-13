@@ -1,31 +1,31 @@
-# 来源与第三方范围
+# Third-party notices
 
-本项目自有代码、文档、合成样本和自有界面资产按根目录 [MIT 许可](LICENSE)提供。内容持有人已确认完整 platform 自有归档具有公开权利。第三方内容不因根许可而被重新授权。
+The project's own code, documentation, synthetic samples and interface assets are released under the [Apache License 2.0](LICENSE) in the root of the repository; until 2026-10-13 they were under the MIT License, as [NOTICE](NOTICE) records. The content holder has confirmed the right to publish the complete platform archive that is the project's own. Third-party content is not relicensed by the root license.
 
-## Circle 共享基础
+## The shared Circle baseline
 
-`foundation/circle` 来自公开 Circle 提交 `9d23c09a0f8de2f71920b32b23db9af6c9a41100`，保留原字节、[MIT 许可](foundation/circle/LICENSE)及[第三方说明](foundation/circle/THIRD_PARTY_NOTICES.md)。
+`foundation/circle` comes from the public Circle commit `9d23c09a0f8de2f71920b32b23db9af6c9a41100`. Its bytes, its [MIT license](foundation/circle/LICENSE) and its [third-party notices](foundation/circle/THIRD_PARTY_NOTICES.md) are kept as they were.
 
-其中 `src/data/` 的压缩模型资料包含 models.dev 衍生元数据，原 MIT 说明和版权通知位于上述第三方说明。采用或分发这部分内容时保留该说明。
+The compressed model catalogs in its `src/data/` contain metadata derived from models.dev; the original MIT notice and copyright are in the third-party notices named above. Keep that notice when adopting or distributing this content.
 
-Circle 的旧 Git 历史也被保留，历史各版本的许可和通知仍属于相应来源，不能用当前根文件覆盖它们。
+Circle's earlier Git history is kept as well. The licenses and notices of each historical version belong to their source; the current root files do not replace them.
 
-## Platform 参考
+## The platform references
 
-`references/platform/snapshot` 来自 infosec-platform 提交 `4ab6c5ea593eb1b1d71bed92374b3a013ba61ad9`。其中自有内容包含在根 MIT 授权范围内。原件中的 `private`、未声明许可的旧 package 元数据及历史范围记录保持原样，作为来源证据；当前授权范围以本页和根 LICENSE 为准。
+`references/platform/snapshot` comes from infosec-platform commit `4ab6c5ea593eb1b1d71bed92374b3a013ba61ad9`. The project's own content in it is covered by the root license. The `private` flags, the old package metadata without a declared license and the historical scope records in the originals stay as they are, as evidence of provenance; the current grant is what this page and the root LICENSE say.
 
-研究文档中的外部产品、项目名称、源码链接、商标和方法说明保留各自归属。链接到公开仓库或研究其机制，不代表取得该产品的商标权或把整套产品纳入本项目授权。
+External products, project names, source links, trademarks and method descriptions in the research documents keep their own ownership. Linking to a public repository or studying how it works confers no trademark right and does not bring that product into this project's license.
 
-## 依赖记录与实际制品
+## Dependencies and the actual artifacts
 
-根 package 的当前直接运行依赖是 `pg@8.23.1`、`zod@4.6.5`、`exceljs@4.4.0`、`fflate@0.8.3` 和 `read-excel-file@9.3.12`，均按其发布包的 MIT 许可使用。开发依赖包括 MIT 的 `embedded-postgres@18.4.0-beta.17`、MIT 的类型声明，以及 Apache-2.0 的 TypeScript 5.9.3。嵌入式 PostgreSQL 的实际二进制与上游组件继续遵循其各自许可，不由 wrapper 的 MIT 替代。
+The root package's current direct runtime dependencies are `pg@8.23.1`, `zod@4.6.5`, `exceljs@4.4.0`, `fflate@0.8.3`, `read-excel-file@9.3.12`, `parse5@8.0.1` and `saxes@5.0.1`, each used under the MIT license of its published package. Development dependencies include `embedded-postgres@18.4.0-beta.17` (MIT), type declarations (MIT) and TypeScript 5.9.3 (Apache-2.0). The actual PostgreSQL binaries and their upstream components follow their own licenses, which the wrapper's MIT license does not replace.
 
-精确版本、下载完整性和传递依赖见根 `package-lock.json`。ExcelJS 的 uuid 依赖固定覆写为支持相同 CommonJS v4 API 的 `11.1.1`，修复 npm audit 检出的缓冲区越界公告；当前锁文件检查无已报告漏洞。组成检查仅说明本次依赖，不承诺未来公告状态。没有收录 node_modules 或发行 server 制品。
+Exact versions, download integrity and transitive dependencies are in the root `package-lock.json`. ExcelJS's uuid dependency is pinned by an override to `11.1.1`, which supports the same CommonJS v4 API and fixes the out-of-bounds advisory that npm audit reported; the lockfile currently has no reported vulnerability. A composition check describes the dependencies of this moment and promises nothing about future advisories. No `node_modules` and no server artifact is included.
 
-共享基础及参考包的历史锁文件仍记录各自原依赖，未用于新 server 的构建入口。
+The historical lockfiles of the shared baseline and of the reference packages still record their original dependencies; they are not used by the new server's build entry points.
 
-采用模块时核对实际使用的依赖，分发时随制品提供相应许可与通知。当前锁文件中的特别范围包括 jszip 的许可选项、pako 的 MIT/Zlib、lightningcss 的 MPL-2.0 和 caniuse-lite 的 CC-BY-4.0。它们不能一概改成项目 MIT。
+When adopting a module, check the dependencies actually used, and ship the corresponding licenses and notices with the artifact. Special cases in the current lockfiles are jszip's license choice, pako's MIT/Zlib, lightningcss's MPL-2.0 and caniuse-lite's CC-BY-4.0. None of them can be turned into the project's license.
 
-`buffers@0.1.1` 的原 npm 包与元数据中未找到许可依据，相关 chain-v05 目前只作为参考保存；正式采用并分发该依赖前取得依据或替换。`unionfs@4.6.0` 虽缺少锁文件许可字段，原 npm 发布包包含 Unlicense LICENSE。
+No license basis was found in the original npm package or metadata of `buffers@0.1.1`; the chain-v05 that depends on it is kept as a reference only. Obtain a basis or replace it before adopting and distributing that dependency. `unionfs@4.6.0` lacks a license field in the lockfile, but the original npm package contains an Unlicense LICENSE.
 
-本页不是全部依赖的逐文件通知清单。首次软件发行需根据实际制品生成组成与通知清单。具体来源、核对范围和剩余发行要求见[开源检查](docs/open-source-readiness.md)。
+This page is not a file-by-file notice list of every dependency. The first software release needs a composition and notice list generated from the actual artifact. The sources, the scope that was checked and the remaining release requirements are in the [open-source readiness record](docs/open-source-readiness.md).

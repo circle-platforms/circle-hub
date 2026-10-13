@@ -1,0 +1,50 @@
+# 对象标准与数据流
+
+## 一、每个对象都是这五样
+
+hub 的四个对象——资料 B、工作 C、执行 D、方法 E——由同样五样组成。行是标准，列是对象，每格只写该对象的实例。
+
+| 标准 | B 资料 | C 工作 | D 执行 | E 方法 |
+|---|---|---|---|---|
+| **1 记录**：对象自己拥有的记录类型，各有 id 前缀和版本；字节记录带 sha256 | 来源修订 `src_` · 证据 `evd_` · 声明 `clm_`、评估 · 快照 `ks_`（不可变）· 制品 `art_`（带 sha） | 身份 `prn_` · 范围 `scp_` · 任务 `task_` · 输入修订 `inrev_` · 审批请求 `pin_` · 决定 · bot · 触发器 · 审计 | 资源（网关、worker、SSH 目标）· 操作 `op_` · 绑定 pin · 租约与 fencing token · 现场 · 未知结果 | 技能包 `skp_` + 试跑记录 · 产品线清单 `product-line/1` · 方法模块 · 规则 · 验证样本 |
+| **2 资产**：可插拔的东西，一种形状：kind · version · sha256 · declaration · configuration · lifecycle | knowledge-source（上传原件）· connector-instance（只读 MCP server：文档、构建站、工单镜像、环境）· runtime-profile | bot · 触发器 · 服务客户端（资源在 C 里的身份） | connector-instance（执行资源，即动手的 MCP server）· worker · runtime-profile | skill-package（Skill）· product-line 模块（Tool 实现与 Hook 处理器） |
+| **3 审批策略**：以变更集为单位，哪些动作需要独立审批人；绑定 inputRevision + targetIdentity + actionDigest | 来源 / 原件 lifecycle → approved · 声明候选 → 进快照 | 所有审批在这里落地 · bot 启用、人员授权 | 资源启用 running · 执行不审批：可证真报错，不可证真披露；资源可声明「对我执行算变更」 | 技能版本登记 · 模块安装 |
+| **4 证据**：与外界每次交互的原样记录；evidenceId 由平台发；脚本 / 模型分开标 | 连接器读取的原件 · 每次 Tool 调用的返回 | 试跑记录（Skill 实际调了哪些 Tool）· 决定与审计 | Hook 判定结果 · 现场回报、租约事件 | 试跑产物 sha · Hook 判定（规则 id、版本、对谁） |
+| **5 扩展点**：允许从哪里插东西进来；产品内容不进核心 | 只读 MCP server（连接器包，按系统类型）· 原件上传（文件 + role + metadata）· 对象词表 · 知识映射 | 身份提供方 · 策略（数据）· 流程版本 · 结果渠道 | 动手的 MCP server（资源适配器，MCP 协议为通用适配器）· 凭据模式 · profile 文件 · worker 协议 | Skill（packs 仓库 modules.json）· 产品线清单 · Tool 实现 · Hook 处理器 |
+
+Circle 里每个登记簿页面就是这五样的投影：左栏是记录（分面 + 计数 + 搜索），右栏五格固定为 资产 · 内容（平台核验 / 申请内容）· 审批 · 证据 · 扩展点。
+
+## 二、数据流：任何一件工作都走这条线
+
+每一步只传 id，agent 不重打内容。
+
+1. **A 提交**：Circle 的会话里交出工作（文件、触发）。
+2. **C 受理**：持久任务 + 输入修订 `task_ · inrev_ r1`；重发不成第二份。
+3. **E 选方法**：技能包决定调哪些工具、过哪些规则 `skp_ · digest`。
+4. **B 读资料**：连接器 / 原件；每次返回原样存 `src_ · sar_ · evd_`。
+5. **E 执行链核验**：权限 · 绑定 · 规则；可证真的失败直接报错回 Circle `rule · pin · 错误码`。
+6. **D 领取执行**：钉住资源版本 + 凭据 + 方法；worker 对资源 `op_ · pin · lease`。
+7. **B 回报入证据**：现场原样进 B；未知保持未知 `evd_ · unknown`。
+8. **C 结果与披露**：通过 → 交付；报错带事实；未知如实披露，申请人选下一步 `succeeded · failed · unknown`。
+9. **A 取回**：制品带 sha 回到会话；关掉 Circle 不停 `delivered · art_`。
+10. **B 沉淀**：候选声明 → 独立审 → 快照 `clm_ · ks_`。
+
+变更集审批发生在这条线之前：方法、资源、来源在登记时批一次；运行只走执行链，平台不是审批人。
+
+## 三、适配单：新能力或旧系统接进来，填这张表
+
+答案只能是「N 个资产 + M 条流程 + K 条规则」，不能是改 hub 代码。
+
+| 对象 | 要回答的问题 |
+|---|---|
+| B | 读哪些系统？每个系统类型一个连接器。有没有要上传的原件（文件 + role + metadata）？产生什么证据？能提交什么声明，来源是脚本还是模型？ |
+| C | 有哪些流程，各有版本号？哪些动作要独立审批人？有哪些身份——人、服务客户端？ |
+| D | 碰哪些资源？走哪种协议的适配器？凭据怎么给（静态密钥 / hub 签发 / 外部 OAuth）？什么叫未知、怎么核对？ |
+| E | 技能包里提示词做什么、脚本做什么？产品线清单声明什么？hub 在边界跑哪些确定性规则，哪些是模型判断？ |
+| A | 用户在 Circle 里看什么、做什么？只用现有的工具投影、命令、卡片和登记簿，不加新界面。 |
+
+填完的检验：hub 核心零改动；产品名只出现在清单、模块和数据里；每个资产都能被另一个人批、被 sha 钉住、被停用。填好的样例见[产品线包典范](product-line-pack.md)；扩展点里插进来的东西只有四种 harness 原语，见[harness 原语规范](harness-primitives.md)。
+
+---
+
+本文是 circle-hub 的设计规范之一，按 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/deed.zh-hans) 授权：引用、借鉴须署名 Circle Hub 与 qingshanfeihu 并注明原始出处链接。见[设计规范索引](README.md#许可)。
