@@ -26,6 +26,7 @@ import { Records } from '../../../packages/knowledge/src/records.ts';
 import { Assessments } from '../../../packages/methods/src/assessments.ts';
 import {ToolProviders} from '../../../packages/methods/src/providers.ts';
 import {ProductModules} from '../../../packages/methods/src/product-modules.ts';
+import {readEffectMigration} from '../../../packages/execution/src/read-effect-migration.ts';
 import {ExecutionSecrets} from '../../../packages/execution/src/secret-lifecycle.ts';
 import { Checklists } from '../../../packages/tasks/src/checklists.ts';
 import { checklistMigration } from '../../../packages/tasks/src/checklist-migration.ts';
@@ -71,7 +72,7 @@ import {ChangeSetSubmission} from '../../../packages/contracts/src/index.ts';
 
 function environment(name: string): string { const value = process.env[name]; if (!value) throw new Error(`Required environment variable: ${name}`); return value; }
 const store = new Store(JSON.parse(environment('CIRCLE_SERVER_DATABASE_CONFIG')));
-await store.migrate([taskMigration,deliveryMigration,knowledgeMigration,executionMigration,...packageMigrations,approvalMigration,conclusionMigration,checklistMigration,connectorMigration,entityMigration,assetMigration,graphMigration,toolMigration,skillMigration,automationMigration,automationOutcomeMigration,knowledgePageMigration,automationOriginMigration,ingestionMigration,oauthMigration,resourceIdentityMigration,roleMigration,changeSetMigration,changeSetDependenciesMigration,enforcementMigration,sessionMigration,toolRolesMigration]);
+await store.migrate([taskMigration,deliveryMigration,knowledgeMigration,executionMigration,...packageMigrations,approvalMigration,conclusionMigration,checklistMigration,connectorMigration,entityMigration,assetMigration,graphMigration,toolMigration,skillMigration,automationMigration,automationOutcomeMigration,knowledgePageMigration,automationOriginMigration,ingestionMigration,oauthMigration,resourceIdentityMigration,roleMigration,changeSetMigration,changeSetDependenciesMigration,enforcementMigration,sessionMigration,toolRolesMigration,readEffectMigration]);
 const auth = new Auth(store,{developmentTtlMs:process.env.CIRCLE_SERVER_DEV_TOKEN_TTL_MS?Number(process.env.CIRCLE_SERVER_DEV_TOKEN_TTL_MS):undefined,runTokenTtlMs:process.env.CIRCLE_SERVER_RUN_TOKEN_TTL_MS?Number(process.env.CIRCLE_SERVER_RUN_TOKEN_TTL_MS):undefined});
 requireCondition(process.env.CIRCLE_SERVER_DEV_AUTH === '1', 'INVALID_PAYLOAD', 'Phase one requires explicitly enabled development authentication');
 await auth.initializeDevelopment(environment('CIRCLE_SERVER_DEV_IDENTITIES'));
@@ -443,7 +444,7 @@ const server = createListener(async (request, response) => {
     const failure = error instanceof ApiError ? error : error instanceof z.ZodError ? new ApiError('INVALID_PAYLOAD', 'Payload does not satisfy the contract',{issues:error.issues.slice(0,20).map(issue=>({path:issue.path,code:issue.code,message:issue.message}))})
       : new ApiError('INTERNAL_ERROR', 'The transaction or server operation failed');
     if (!response.destroyed && !response.headersSent) send(response, failure.httpStatus, { error: { code: failure.code, category: failure.category,
-      message: failure.message, details: failure.details, retryable: false } });
+      message: failure.message, details: failure.details, retryable: failure.code==='UPSTREAM_TIMEOUT' } });
   } finally {
     activeRequests.delete(completed.promise);completed.resolve();
   }

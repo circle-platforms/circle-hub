@@ -8,6 +8,7 @@ import {runCircle} from '../../../packages/runtime/src/circle-rpc.ts';
 import {privateRequest} from '../../../packages/runtime/src/private-ipc.ts';
 import {join} from 'node:path';
 import {SourceCache} from '../../../packages/connectors/src/source-cache.ts';
+import {freezeReturns} from '../../../packages/connectors/src/return-pointers.ts';
 
 function env(name: string): string { const value = process.env[name]; if (!value) throw new Error(`Required environment variable: ${name}`); return value; }
 const base = new URL(env('CIRCLE_SERVER_URL'));
@@ -89,7 +90,7 @@ while (!stopped) {
           await request(`/v1/workers/operations/${claim.operationId}/preflight`,fence);
           const objects=new LocalObjects(env('CIRCLE_SERVER_DATA_DIR')),originals=authorization.sourceArtifact?await Promise.all(authorization.sourceArtifact.files.map(async(file:any)=>({path:`/${file.path}`,sha256:file.sha256,bytes:await objects.getObject({Bucket:'evidence',Key:file.sha256}),mediaType:file.mediaType,etag:null,sourceType:'external-artifact'}))):undefined;
           const output=await executeTool(authorization.packageId,authorization.handler,claim.args.input,authorization.profile,credential,{cache:new SourceCache(join(env('CIRCLE_SERVER_DATA_DIR'),'connector-cache')),cacheNamespace:authorization.cacheNamespace,sourceArtifact:authorization.sourceArtifact,originals});
-          report={...fence,inputRevisionId:claim.inputRevisionId,status:'succeeded',output:{result:output.result,sourceType:output.sourceType,raw:output.raw.map(raw=>({path:raw.path,sha256:raw.sha256,sourceType:raw.sourceType??output.sourceType,...(raw.requestKey?{requestKey:raw.requestKey}:{}),...(raw.artifactFilePath?{artifactFilePath:raw.artifactFilePath}:{}),contentBase64:raw.bytes.toString('base64')}))}};
+          report={...fence,inputRevisionId:claim.inputRevisionId,status:'succeeded',output:{result:output.result,sourceType:output.sourceType,raw:await freezeReturns(objects,output.raw,output.sourceType)}};
         }catch(error){const failure=error instanceof ApiError?error:new ApiError('INTERNAL_ERROR','Registered tool failed');report={...fence,inputRevisionId:claim.inputRevisionId,status:'failed',output:{},error:{code:failure.code,message:failure.message,details:failure.details}};}
         if(heartbeatError)throw heartbeatError;await request(`/v1/workers/operations/${claim.operationId}/report`,report);continue;
       }

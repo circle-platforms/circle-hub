@@ -35,9 +35,8 @@ export class KnowledgeGraph {
       if(asset){const authority=(await (tx??this.store.pool).query(`SELECT a.tenant_id,a.scope_id,a.owner_principal_id,v.readers,v.declaration FROM assets a JOIN asset_versions v ON v.asset_id=a.asset_id AND v.version=a.current_version WHERE a.asset_id=$1`,[asset.assetId])).rows[0];
         if(!authority||authority.tenant_id!==p.tenantId||!p.scopes.includes(authority.scope_id)||authority.owner_principal_id!==p.principalId&&!permit(authority.readers,p.principalId)||asset.permission&&!p.grants.includes(asset.permission))return false;
         for(const reference of authority.declaration.credentials){
-          if(!p.grants.includes('credentials.use'))return false;
           const credential=(await (tx??this.store.pool).query(`SELECT a.tenant_id,a.scope_id,a.owner_principal_id,v.lifecycle,v.configuration FROM assets a JOIN asset_versions v ON v.asset_id=a.asset_id AND v.version=a.current_version WHERE a.asset_id=$1 AND a.kind='credential-reference'`,[reference])).rows[0];
-          if(!credential||credential.tenant_id!==p.tenantId||!p.scopes.includes(credential.scope_id)||credential.owner_principal_id!==p.principalId||credential.lifecycle==='disabled'||credential.configuration.connectorAssetId!==asset.assetId)return false;
+          if(!credential||credential.tenant_id!==p.tenantId||!p.scopes.includes(credential.scope_id)||credential.configuration.credentialMode!=='static-secret'&&credential.owner_principal_id!==p.principalId||credential.lifecycle==='disabled'||credential.configuration.connectorAssetId!==asset.assetId)return false;
         }
       }
     }return true;
@@ -117,7 +116,8 @@ export class KnowledgeGraph {
     const previous=(await tx.query('SELECT record_id FROM knowledge_source_heads WHERE tenant_id=$1 AND scope_id=$2 AND identity_key=$3',[ctx.tenantId,scopeId,sourceIdentity])).rows[0]?.record_id;
     const head=(await tx.query(`INSERT INTO knowledge_source_heads(tenant_id,scope_id,identity_key,record_id) VALUES($1,$2,$3,$4)
       ON CONFLICT(tenant_id,scope_id,identity_key) DO UPDATE SET record_id=EXCLUDED.record_id,generation=knowledge_source_heads.generation+CASE WHEN knowledge_source_heads.record_id=EXCLUDED.record_id THEN 0 ELSE 1 END RETURNING generation`,[ctx.tenantId,scopeId,sourceIdentity,source.recordId])).rows[0];
-    const evidence=await this.save(tx,ctx,'Evidence',scopeId,canonicalHash([source.recordId,0,bytes.length]),{sourceRecordId:source.recordId,start:0,end:bytes.length,sha256:raw.sha256,...(raw.plaintextAuthentication?{plaintextAuthentication:true}:{}),text:bytes.toString('utf8'),path:raw.path},[source.recordId],{category:'product',sourceType:raw.sourceType,visibility:'team',state:'observed',digest:raw.sha256});
+    const text=bytes.toString('utf8'),inline=bytes.length<=65536&&!text.includes('\u0000')&&Buffer.from(text).equals(bytes);
+    const evidence=await this.save(tx,ctx,'Evidence',scopeId,canonicalHash([source.recordId,0,bytes.length,'original-pointer/1']),{sourceRecordId:source.recordId,start:0,end:bytes.length,sha256:raw.sha256,content:{objectKey:raw.sha256,size:bytes.length,encoding:inline?'utf8':'opaque'},...(raw.plaintextAuthentication?{plaintextAuthentication:true}:{}),...(inline?{text}:{textExcerpt:text.slice(0,2000).replaceAll('\u0000',''),textInline:false,sanitized:text.includes('\u0000')||!Buffer.from(text).equals(bytes),encodingValid:Buffer.from(text).equals(bytes),nulBytes:bytes.reduce((total,byte)=>total+(byte===0?1:0),0)}),path:raw.path},[source.recordId],{category:'product',sourceType:raw.sourceType,visibility:'team',state:'observed',digest:raw.sha256});
     return {evidenceId:evidence.recordId,sha256:evidence.sha256,sourceRecordId:source.recordId,generation:Number(head.generation),requestKey:raw.requestKey,supersededSourceId:previous&&previous!==source.recordId?previous:null};
   }
   async candidateFromReturns(tx:Transaction,ctx:AuthContext,scopeId:string,taskId:string,input:any):Promise<any>{

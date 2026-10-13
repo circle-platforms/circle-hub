@@ -45,6 +45,7 @@ export class Operations extends Execution {
         VALUES($1,$2,$3,$4,$5,$6,$7,$8,'accepted',clock_timestamp()+($9::double precision*interval '1 millisecond'),$10,$11,$12,$13,$14,$15,$16) RETURNING *`,
         [id,task.tenantId,task.scopeId,taskId,task.inputRevisionId,ctx.principalId,spec.name,resource,spec.deadlineMs,spec.target,spec.targetIdentity,JSON.stringify(spec.args),actionDigest(spec),JSON.stringify(effects),spec.approvalId??null,delegatedOwnerId??null])).rows[0];
       await client.query('UPDATE operations SET authorization_asset_id=$2,approval_consumed=$3 WHERE operation_id=$1',[id,spec.authorizationAssetId??null,!!spec.approvalId]);
+      await client.query('UPDATE operations SET source_effect=$2 WHERE operation_id=$1',[id,authorization?.sourceEffect??'write']);
       await client.query('INSERT INTO operation_keys(tenant_id,scope_id,principal_id,name,idem_key,request_hash,operation_id) VALUES($1,$2,$3,$4,$5,$6,$7)',[...keys,hash,id]);
       await this.tasks.emit(client,taskId,'operation.accepted',{operationId:id,name:spec.name,effects});await this.tasks.wake(client,taskId,'operation');
       await this.auth.audit(ctx,'operations.submit',{operationId:id,actionDigest:row.action_digest,effects:row.effects},task.scopeId,client);
@@ -128,10 +129,12 @@ export class Operations extends Execution {
   async report(ctx:AuthContext,id:string,body:unknown):Promise<any> {
     const declared=(await this.store.pool.query('SELECT name FROM operations WHERE operation_id=$1',[id])).rows[0]?.name,custom=this.customReports.get(declared);if(custom)return custom(ctx,id,body);
     const report=ExecutionReport.parse(body);
+    Object.defineProperty(report,'originalReportHash',{value:canonicalHash(report),enumerable:false});
     return this.store.transaction(async tx=>{
       const prior=await this.lease(ctx,id,report.fencingToken,tx,true);
       if(['succeeded','failed'].includes(prior.status)){requireCondition(prior.result.reportHash===canonicalHash(report),'IDEMPOTENCY_MISMATCH','Different completed receipt');return {deduplicated:true};}
       const {row,task}=await this.preflight(ctx,id,report.fencingToken,tx);requireCondition(report.inputRevisionId===row.input_revision_id,'INPUT_REVISION_STALE','Report revision differs');
+      if(row.source_effect==='read'&&report.status==='unknown'){report.status='failed';report.error={code:'UPSTREAM_TIMEOUT',message:'Read outcome is unavailable; retry the query',details:{sideEffects:'none'}};}
       if(this.managedNames.has(row.name)&&report.status!=='unknown'){
         await tx.query('SAVEPOINT managed_receipt');
         try{
@@ -139,9 +142,8 @@ export class Operations extends Execution {
           const result=await this.managedReport(tx,task,row,report);await tx.query('RELEASE SAVEPOINT managed_receipt');return result;
         }catch(error){
           await tx.query('ROLLBACK TO SAVEPOINT managed_receipt');await tx.query('RELEASE SAVEPOINT managed_receipt');
-          if(!(error instanceof ApiError))throw error;
-          const failure={code:error.code,message:error.message,details:error.details};
-          await this.complete(tx,row,'failed',{output:{},error:failure,evidence:[],reportHash:canonicalHash(report),receiptRejected:true,workerStatus:report.status});
+          const failure=error instanceof ApiError?{code:error.code,message:error.message,details:error.details}:{code:'RECEIPT_PROCESSING_FAILED',message:'Worker receipt could not be retained',details:{operationId:id,...(/^[0-9A-Z]{5}$/.test(String((error as any)?.code))?{storageCode:String((error as any).code)}:{})}};
+          await this.complete(tx,row,'failed',{output:{},error:failure,evidence:[],reportHash:(report as any).originalReportHash??canonicalHash(report),receiptRejected:true,workerStatus:report.status});
           await this.tasks.fail(tx,task,failure);
           return {operationId:id,status:'failed',receiptRejected:true,deduplicated:false};
         }

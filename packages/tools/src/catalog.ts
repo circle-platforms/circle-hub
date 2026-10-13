@@ -11,6 +11,7 @@ import type {KnowledgeGraph} from '../../knowledge/src/graph.ts';
 import {Ingestions} from '../../knowledge/src/ingestion.ts';
 import type {SourceArtifacts} from '../../knowledge/src/source-artifacts.ts';
 import {ConnectorOptions,type ToolPackage,type ToolDefinition,type ConnectorProfile} from '../../connectors/src/tool-packages.ts';
+import {hydrateReturn} from '../../connectors/src/return-pointers.ts';
 
 export class ToolCatalog {
   store:Store;auth:Auth;assets:Assets;tasks:Tasks;execution:Operations;knowledge:KnowledgeGraph;packages:ToolPackage[];profiles:Record<string,ConnectorProfile>={};
@@ -86,7 +87,7 @@ export class ToolCatalog {
     requireCondition(task.input.sourceArtifactId===spec.args.sourceArtifactId,'INPUT_REVISION_STALE','Tool source binding differs from its accepted input');
     const sourceArtifact=spec.args.sourceArtifactId?await this.sourceArtifacts!.resolve(ctx,spec.args.sourceArtifactId,scope,tx):undefined,policy=sourceArtifact?{allowPlaintextAuthentication:false}:await this.runtimePolicy(ctx,item.row,tx);
     requireCondition(sourceArtifact||['candidate.submit','consolidation.fragments'].includes(item.definition.handler)||this.profiles[item.row.configuration.runtimeProfileRef],'SOURCE_UNREACHABLE','Runtime source profile is not configured');
-    return {effects:{reads:item.definition.effect==='read'?['registered-source']:['knowledge'],writes:item.definition.effect==='write'?['knowledge-candidates']:[]},assetId:item.row.asset_id,assetVersion:item.row.version,
+    return {sourceEffect:item.definition.effect,effects:{reads:item.definition.effect==='read'?['registered-source']:['knowledge'],writes:item.definition.effect==='write'?['knowledge-candidates']:[]},assetId:item.row.asset_id,assetVersion:item.row.version,
       packageId:item.row.package_id,handler:item.definition.handler,profile:this.profileFor(item.row.configuration)?{...this.profileFor(item.row.configuration),...policy}:undefined,credentialReferences:item.row.declaration.credentials,sourceArtifact};
   }
   async preflight(tx:Transaction,actor:AuthContext,operation:any,authorization:any):Promise<any>{
@@ -117,7 +118,7 @@ export class ToolCatalog {
         const references=new Map<string,any>();
         const artifact=task.input.sourceArtifactId?await this.sourceArtifacts!.resolve(actor,task.input.sourceArtifactId,task.scopeId,tx):null;
         if(artifact)result={...result,source:{...result?.source,sourceArtifactId:artifact.sourceArtifactId,assetId:artifact.assetId,assetVersion:artifact.assetVersion,manifestSha256:artifact.assetSha256,origin:'uploaded-artifact',live:false}};
-        for(const received of report.output.raw){let ref:any;const profile=this.profileFor(item.row.configuration),plaintextAuthentication=!artifact&&item.row.declaration.credentials.length>0&&profile&&new URL(profile.origin).protocol==='http:'&&!['127.0.0.1','localhost','[::1]'].includes(new URL(profile.origin).hostname),raw={...received,...(plaintextAuthentication?{plaintextAuthentication:true}:{} )};
+        for(const pointer of report.output.raw){const received=await hydrateReturn(this.knowledge.objects.objects,pointer);let ref:any;const profile=this.profileFor(item.row.configuration),plaintextAuthentication=!artifact&&item.row.declaration.credentials.length>0&&profile&&new URL(profile.origin).protocol==='http:'&&!['127.0.0.1','localhost','[::1]'].includes(new URL(profile.origin).hostname),raw={...received,...(plaintextAuthentication?{plaintextAuthentication:true}:{} )};
           if(plaintextAuthentication){const policy=await this.runtimePolicy(actor,item.row,tx);requireCondition(policy.allowPlaintextAuthentication,'SOURCE_FORBIDDEN','Plaintext exception is no longer approved');await this.auth.audit(actor,'tools.plaintext-authentication',{operationId:operation.operation_id,assetId:item.row.asset_id,plaintextAuthentication:true,runtimeProfileAssetId:policy.runtimeProfileAssetId,runtimeProfileVersion:policy.runtimeProfileVersion,sourceSha256:raw.sha256},task.scopeId,tx);}
           if(artifact)ref=await this.sourceArtifacts!.capture(tx,actor,task.scopeId,artifact,raw,item.definition.permission);
           else ref=await this.knowledge.capture(tx,actor,task.scopeId,item.row.asset_id,{...raw,sourceType:raw.sourceType??report.output.sourceType},item.definition.permission);
@@ -126,11 +127,11 @@ export class ToolCatalog {
         if(projection){requireCondition(this.ingestions,'INTERNAL_ERROR','Source ingestion outbox is not configured');const profile=this.profileFor(item.row.configuration)??{origin:'http://127.0.0.1'};const indexed=await this.ingestions.enqueue(tx,task,item.row.package_id,projection.version,{...profile,...(artifact?{sourceArtifact:artifact}:{})},[...references.values()]);await this.tasks.emit(tx,task.taskId,'knowledge.indexing.linked',indexed);}
       }
     }
-    const receipt={output:{result},evidence,reportHash:canonicalHash(report),error:report.error};
+    const receipt={output:{result},evidence,reportHash:report.originalReportHash??canonicalHash(report),error:report.error};
     await this.execution.complete(tx,operation,report.status,receipt);
     if(report.status==='succeeded'){
-      await tx.query("UPDATE tasks SET result=$2,result_status='succeeded' WHERE task_id=$1",[task.taskId,JSON.stringify({result,evidence,artifacts:[],unmapped:[]})]);
-      await this.tasks.stage(tx,task,'delivered','done','task.delivered',{status:'succeeded',evidence,result});
+      const status=result?.coverage?.stopped?'partial':'succeeded';await tx.query("UPDATE tasks SET result=$2,result_status=$3 WHERE task_id=$1",[task.taskId,JSON.stringify({result,evidence,artifacts:[],unmapped:[]}),status]);
+      await this.tasks.stage(tx,task,'delivered','done','task.delivered',{status,evidence,result});
     }else await this.tasks.fail(tx,task,report.error??{code:'INTERNAL_ERROR',message:'Tool failed'});
     return {operationId:operation.operation_id,status:report.status,deduplicated:false};
   }
@@ -151,9 +152,9 @@ export class ToolCatalog {
     const deadline=Date.now()+30_000;
     do{
       const result=await this.tasks.result(ctx,accepted.taskId);
-      if(result.status==='succeeded')return {result:result.result,evidence:result.evidence.map((e:any)=>({evidenceId:e.evidenceId,sha256:e.sha256}))};
+      if(['succeeded','partial'].includes(result.status))return {result:result.result,evidence:result.evidence.map((e:any)=>({evidenceId:e.evidenceId,sha256:e.sha256}))};
       if(result.error){let error=result.error;const p=await this.auth.policy(ctx);if(['SOURCE_ABSENT','SOURCE_FORBIDDEN'].includes(error.code)&&!p.grants.includes('sources.diagnose'))error={code:'SOURCE_FORBIDDEN',message:'Source is not available to this identity'};throw new ApiError(error.code,error.message,error.details??{});}
-      if(signal?.aborted||Date.now()>deadline)throw new ApiError('UPSTREAM_TIMEOUT','Tool task has not returned a verified receipt',{taskId:accepted.taskId,remoteStoppingVerified:false});
+      if(signal?.aborted||Date.now()>deadline){await this.store.transaction(async tx=>{const row=(await tx.query("SELECT * FROM operations WHERE task_id=$1 AND source_effect='read' AND status IN ('accepted','running') FOR UPDATE",[accepted.taskId])).rows[0];if(row){const failure={code:'UPSTREAM_TIMEOUT',message:'Read query did not return before its deadline; retry it',details:{taskId:accepted.taskId,sideEffects:'none'}};await this.execution.complete(tx,row,'failed',{error:failure});await this.tasks.fail(tx,await this.tasks.internal(tx,accepted.taskId),failure);}});throw new ApiError('UPSTREAM_TIMEOUT','Tool task has not returned a verified receipt',{taskId:accepted.taskId,sideEffects:'none'});}
       await delay(25);
     }while(true);
   }

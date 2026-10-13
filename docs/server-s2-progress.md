@@ -647,3 +647,15 @@ Mac 内核隔离限制 Skill/Tool/Hook 及后代读取文件内容、写入、�
 非回环 HTTP 认证默认拒绝。管理员登记 runtime-profile 的 allowPlaintextAuthentication:true，经独立决定才注入 worker；即使 scope 普通允许自决，该例外仍不能自批。改字段变新 draft、立即阻止依赖运行。合成验收核对无例外拒绝、有例外批准后放行、修改重批，以及 SourceRevision/Evidence/派发审计的永久 plaintextAuthentication:true 标记。当前真实查询源的例外需部署管理员单独登记/批准；本代理未更改真实配置。
 
 第 40 节列出的第 5 节复核补项与盲区均加入本笔回归。最终冻结工作树 contracts **4/4**、methods **35/35**、acceptance **201/201**、references **7/7**，共 **247/247**，固定 Circle 8b2ceb6、APV 316760a，**无 skip**；typecheck、diff、**714** 归档核验通过。独立包 28 条另计。未 push、部署、改真实网关/Circle/独立包或读取业务原件；后续提交按用户新规则附 Signed-off-by。
+
+## 42：只读失联、原件指针与回报处理的修复验收
+
+用户给出文档统计：失败原件约 2.65MB、UTF-8 合法、有四个 NUL；成功对照约 1.52MB、无 NUL。未提供地址、内容或令牌，本代理未取真实件。纯 3MB/5MB 合成文本的原报告路径成功，加 NUL 可复现 JSONB 回报事务失败/操作仍 running；PostgreSQL 不允许 JSONB 字符串内的 NUL，实测合成存储拒绝及用户统计支持这一定位，真实数据库错误码仍未直接取得。
+
+worker 原件先以 SHA 存进 B，再回报 objectKey/sha256/size，C 在当前租约、fence、修订和来源授权下回读验证；伪造 SHA/size/缺对象拒绝。旧内联协议兼容，get 的客户端结果形状不改。Evidence 不再存大原件或任意字节的完整 text，保留引用/范围/SHA/编码统计；预览剔除 NUL 并标 sanitized。3MB、唯一词文本及 NUL 原件均经 worker/report/content 回读并逐字节 SHA 一致。人工触发存储拒绝以安全 storageCode 落为 RECEIPT_PROCESSING_FAILED，回报事务不再让操作悬挂；不回显 SQL、参数、原文。
+
+按 Tool effect 记录 source_effect；read 失联/unknown 回报/等待超时是 UPSTREAM_TIMEOUT + failed + retryable，不冻结、不要求副作用核对，重复回报保持幂等。迁移 29 清理历史只读 unknown 的任务/租约并重算冻结，写 unknown 规则不变。合成复现从失败到通过，旧数据库状态升级后自动恢复，随后同资源可重试读取。
+
+文档搜索文件读到一半超时，已读原件和命中保留，coverage.stopped 与 nextCursor 精确指向未完成文件，结果 partial；零进度/目录遍历超时给明确错误和覆盖统计。游标续页通过，没有截断或推断未读命中。工具消费者、异步知识投影及指针篡改验收通过；最终完整回归结果待冻结验证结束后补入。第 6 节通知/队列已先写验收；用户新审计要求排在本修复之后、第 6 节之前，独立包的新固定 224daa6 也在那笔核对。
+
+冻结验证完整 contracts **4/4**、methods **37/37**、acceptance **206/206**、references **7/7**，共 **254/254**，固定 Circle 8b2ceb6、APV 316760a，**无 skip**。最后按用户要求将预览替换改为剔除 NUL 并加 sanitized/编码统计，原件/存储拒绝回读专项重新 **2/2**；最终 typecheck、diff、**714** 归档核验通过。完整回归与最后的小元数据专项分别记录，未用真实设备或模型替代。仅本地签署提交，未 push、部署或改变演示栈。

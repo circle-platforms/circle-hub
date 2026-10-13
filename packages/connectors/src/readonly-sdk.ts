@@ -45,7 +45,7 @@ export class HttpSource {
       const chunks:Buffer[]=[];let size=0;
       for await(const chunk of response.body??[]){size+=chunk.length;if(size>(this.#options.maxBytes??MAX_SOURCE_BYTES))throw new ApiError('RESULT_TOO_LARGE','Source return exceeds the byte limit; narrow the source query',{outcome:'result_too_large',bound:'bytes',limit:this.#options.maxBytes??MAX_SOURCE_BYTES});chunks.push(Buffer.from(chunk));}
       const bytes=Buffer.concat(chunks);return {path:target,bytes,sha256:sha256(bytes),httpStatus:response.status,...(plaintextAuthentication?{plaintextAuthentication:true as const}:{}),mediaType:response.headers.get('content-type')??'application/octet-stream',etag:response.headers.get('etag'),requestKey:canonicalHash({method:options.method??'GET',path:target,body:options.json??null})};
-    }catch(error){if(error instanceof ApiError)throw error;throw new ApiError('SOURCE_UNREACHABLE','Source cannot be reached');}finally{release();}
+    }catch(error){if(error instanceof ApiError)throw error;if(['TimeoutError','AbortError'].includes((error as any)?.name))throw new ApiError('UPSTREAM_TIMEOUT','Source read timed out; retry or narrow the query',{sideEffects:'none'});throw new ApiError('SOURCE_UNREACHABLE','Source cannot be reached');}finally{release();}
   }
   async json(path:string,options:{method?:'GET'|'POST';json?:unknown}={}):Promise<{result:any;evidence:RawReturn}> {
     const evidence=await this.read(path,options);

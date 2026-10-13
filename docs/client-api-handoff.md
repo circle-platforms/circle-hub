@@ -427,3 +427,11 @@ Skill、Tool 和 Hook 使用同一主机隔离边界。当前 Mac adapter 用 sa
 Circle 的短期 run token 只在环境中，模型凭据临时写到单次 home，进程退出后清理 home/home-user；工作区产物仍按 SHA 留存。终态、过期租约和失效 fence 的短期令牌及工具注入副本由维护器清理，永久登记的静态凭据保留到轮换/吊销。来源证据与模型判断继续分开。开发身份中的角色只做初次种子，后续通过范围变更集管理；重启不以身份文件覆盖已治理角色。
 
 主机策略只能取 binding.resource.declaration 的已批准原声明：allowedTestHosts 为显式集合，hostCommandPolicies[host].allowPrefixes 为可选缩小策略；运行文件中的同名字段不作治理授权。三个 verify 挂点均带资源 assetId/version/sha256/declaration。APV 1.2.0 / 316760a 的 host-policy Hook 按新版四字段 subject 执行，闭集未声明、主机不在床、命令含模板、前缀不符分别给固定事实码。
+
+## 读取超时与大原件回报
+
+Tool effect=read 的操作按读取效果登记。上游 TimeoutError/AbortError、同步查询等待超时、worker 回报 unknown 或租约失联均为 failed + UPSTREAM_TIMEOUT，retryable=true，sideEffects="none"；不会冻结 provider，也不要求不存在的独立副作用核对。新键或修改查询可重试。写操作继续按原 unknown/fence/reconcile 规则冻结。迁移 29 会将历史只读 unknown 转为 failed 并重新计算资源冻结，仅解除没有写 unknown 的冻结。
+
+worker 先把原件按 SHA 放入 B，再在报告 raw[] 传 {path,sha256,objectKey:sha256,size,sourceType,...}；C 在当前租约/输入/资产授权下回读并验证实际字节和大小。旧 contentBase64 报告仍兼容；原件缺失、换 SHA 或错误 size 不被接纳。证据存指针、范围、SHA 与小片段，不把大文件或 NUL/不合法 UTF-8 的完整文本塞入 JSONB。GET /v1/knowledge/records/{evidenceId}/content 仍可在现有授权下读取原字节并复算 SHA。任何回报处理错误都原子落成 failed；数据库异常只给 RECEIPT_PROCESSING_FAILED 和安全 storageCode，不带 SQL、参数、内容或内部路径。
+
+docs.search 已完成文件后发生读取超时时，返回已观测 hits、nextCursor、coverage.complete=false 和 coverage.stopped:{code,file,fileIndex,lineIndex,completedFiles}；任务结果是 partial。游标指向未完成文件，不截掉也不猜测余下命中。该页没有完成文件，或目录遍历未完成时仍为 UPSTREAM_TIMEOUT，details.coverage 说明读取进度；没有伪造完整结果。正常分页形状保持。
