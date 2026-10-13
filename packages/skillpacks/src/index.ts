@@ -14,6 +14,7 @@ import {verifyModule} from '../../modules/src/verify.ts';
 import {facetedPage} from '../../storage/src/faceted-query.ts';
 import {metadataVisibility} from '../../assets/src/index.ts';
 import type {RegistryPageQuery} from '../../contracts/src/index.ts';
+import {resolveTrust} from '../../connectors/src/private-http.ts';
 
 function summarizeTools(names:string[]):string{
   const shown:string[]=[];let length=0;
@@ -30,7 +31,7 @@ export class SkillPacks {
   privateSocketPath='';
   secrets=new Map<string,{token:string;digest:string}>();
   constructor(store:Store,auth:Auth,tasks:Tasks,approvals:Approvals,assets:Assets,catalog:ToolCatalog,execution:Operations,objects:Knowledge){this.store=store;this.auth=auth;this.tasks=tasks;this.approvals=approvals;this.assets=assets;this.catalog=catalog;this.execution=execution;this.objects=objects;}
-  async initialize(file?:string):Promise<void>{if(!file)return;const schema=z.object({circleBin:z.string().min(1),circleCommit:z.string().regex(/^[a-f0-9]{40}$/),circleVersion:z.string().min(1),model:z.object({kind:z.literal('scripted'),base_url:z.string().url(),model:z.string().min(1),protocol:z.literal('openai'),api_key:z.string().min(1)}).strict()}).strict();const runtime=schema.parse(JSON.parse(await readFile(file,'utf8')));const url=new URL(runtime.model.base_url);requireCondition(url.hostname==='127.0.0.1'&&url.protocol==='http:','FORBIDDEN_ACTION','Development execution permits a loopback script model only');this.runtimeDigest=canonicalHash(runtime);const binding=canonicalJson(['circle-runtime-model',this.runtimeDigest]);this.modelSecret={key:await this.assets.vault.put(runtime.model.api_key,binding),binding};this.runtime={...runtime,model:{...runtime.model,api_key:'[vault-reference]'}};}
+  async initialize(file?:string):Promise<void>{if(!file)return;const schema=z.object({circleBin:z.string().min(1),circleCommit:z.string().regex(/^[a-f0-9]{40}$/),circleVersion:z.string().min(1),model:z.object({kind:z.enum(['scripted','remote']),base_url:z.string().url(),model:z.string().min(1),protocol:z.literal('openai'),api_key:z.string().min(1),caFile:z.string().optional(),caSha256:z.string().regex(/^[a-f0-9]{64}$/).optional()}).strict()}).strict();const runtime=schema.parse(JSON.parse(await readFile(file,'utf8')));const url=new URL(runtime.model.base_url);requireCondition(!url.username&&!url.password&&!url.search&&!url.hash&&(url.protocol==='https:'||url.protocol==='http:'&&['127.0.0.1','localhost','[::1]'].includes(url.hostname)),'FORBIDDEN_ACTION','Model endpoints require HTTPS outside loopback');const trust=await resolveTrust(runtime.model);if(trust.caSha256)runtime.model.caSha256=trust.caSha256;this.runtimeDigest=canonicalHash(runtime);const binding=canonicalJson(['circle-runtime-model',this.runtimeDigest]);this.modelSecret={key:await this.assets.vault.put(runtime.model.api_key,binding),binding};this.runtime={...runtime,model:{...runtime.model,api_key:'[vault-reference]'}};}
   view(row:any):any{return {skillPackId:row.skill_pack_id,digest:row.digest,status:row.status,check:row.check_result??{undeclaredTools:[],missingTools:[]},changeSetId:row.change_set_id??null,approvalTaskId:row.approval_task_id,
     manifest:row.manifest,ownerPrincipalId:row.owner_id,scopeId:row.scope_id,assetId:row.asset_id,assetVersion:row.asset_version};}
   async row(ctx:AuthContext,id:string,grant:string,tx?:Transaction):Promise<any>{
@@ -100,12 +101,17 @@ export class SkillPacks {
     await tx.query('UPDATE skill_packages SET status=$2 WHERE skill_pack_id=$1',[row.skill_pack_id,answer.approve?'registered':'declined']);
     await tx.query("UPDATE tasks SET result_status='succeeded',result=$2 WHERE task_id=$1",[task.taskId,JSON.stringify({skillPackId:row.skill_pack_id,digest:row.digest})]);await this.tasks.stage(tx,task,'delivered','done','task.delivered',{status:answer.approve?'registered':'declined',digest:row.digest});
   }
+  async runtimeBinding(tx:Transaction,ctx:AuthContext,scope:string){
+    requireCondition(this.runtime&&this.runtimeDigest,'SOURCE_UNREACHABLE','Circle runtime profile is not configured');const profile=(await tx.query("SELECT a.*,v.* FROM assets a JOIN asset_versions v ON v.asset_id=a.asset_id AND v.version=a.current_version WHERE a.tenant_id=$1 AND a.scope_id=$2 AND a.kind='runtime-profile' AND v.configuration->>'profileType'='runtime' AND v.configuration->>'profileRef'='circle-runtime'",[ctx.tenantId,scope])).rows[0];
+    requireCondition(profile&&['approved','running'].includes(profile.lifecycle)&&profile.approved_digest===profile.sha256&&profile.configuration.profileSha256===this.runtimeDigest,'SOURCE_NOT_APPROVED','Circle runtime requires its current independently approved profile');await this.assets.row(ctx,profile.asset_id,tx);
+    return {assetId:profile.asset_id,version:profile.version,sha256:profile.sha256,profileSha256:this.runtimeDigest};
+  }
   async run(ctx:AuthContext,id:string,value:unknown,origin='manual',transaction?:Transaction):Promise<any>{
     const input=SkillRunInput.parse(value);const perform=async(tx:Transaction)=>{
       const row=await this.row(ctx,id,'skillpacks.run',tx);requireCondition(row.status==='registered','APPROVAL_REQUIRED','Package requires bound registration approval');
       requireCondition(row.manifest.triggers.includes(origin),'FORBIDDEN_ACTION','Package does not allow this trigger');await this.checkWithDetails(ctx,row.manifest,row.trial,tx);
       const asset=await this.assets.row(ctx,row.asset_id,tx);requireCondition(asset.version===row.asset_version&&['approved','running'].includes(asset.lifecycle)&&asset.approved_digest===asset.sha256,'APPROVAL_STALE','Package asset revision is no longer approved');
-      const task=await this.tasks.submit(ctx,{scopeId:row.scope_id,title:`Run ${row.manifest.title}`,capabilityPackId:'skill-run',idempotencyKey:canonicalHash(['skill-run',id,input.idempotencyKey]),input:{skillPackId:id,digest:row.digest,assetId:row.asset_id,assetVersion:row.asset_version,assetSha256:asset.sha256,inputs:input.inputs}},tx);
+      const runtimeProfile=await this.runtimeBinding(tx,ctx,row.scope_id);const task=await this.tasks.submit(ctx,{scopeId:row.scope_id,title:`Run ${row.manifest.title}`,capabilityPackId:'skill-run',idempotencyKey:canonicalHash(['skill-run',id,input.idempotencyKey]),input:{skillPackId:id,digest:row.digest,assetId:row.asset_id,assetVersion:row.asset_version,assetSha256:asset.sha256,runtimeProfile,inputs:input.inputs}},tx);
       if(!task.deduplicated){await tx.query('UPDATE tasks SET context=$2 WHERE task_id=$1',[task.taskId,JSON.stringify({privateOwnerId:ctx.principalId})]);await this.tasks.stage(tx,task,'running','runtime-pending','task.running');
         await this.execution.submit(ctx,task.taskId,{name:'assets.execute',inputRevisionId:task.inputRevisionId,target:row.asset_id,targetIdentity:asset.sha256,args:{skillPackId:id,digest:row.digest,inputs:input.inputs},idempotencyKey:input.idempotencyKey,deadlineMs:300_000},tx);}
       return {taskId:task.taskId};
@@ -115,12 +121,12 @@ export class SkillPacks {
     const row=await this.row(ctx,spec.args.skillPackId,'skillpacks.run',tx),asset=await this.assets.row(ctx,row.asset_id,tx);
     requireCondition(row.status==='registered'&&['approved','running'].includes(asset.lifecycle)&&asset.approved_digest===asset.sha256,'APPROVAL_REQUIRED','Package registration is not active');
     requireCondition(row.scope_id===scope&&task.principalId===ctx.principalId&&task.capabilityPackId==='skill-run'&&task.input.digest===row.digest&&spec.args.digest===row.digest&&asset.asset_id===spec.target&&asset.sha256===(spec.targetIdentity??spec.target_identity)&&canonicalHash(task.input.inputs)===canonicalHash(spec.args.inputs),'APPROVAL_STALE','Runtime input or package target differs');
-    await this.checkWithDetails(ctx,row.manifest,row.trial,tx);requireCondition(this.runtime,'SOURCE_UNREACHABLE','Circle runtime profile is not configured');
-    return {effects:{reads:['registered-assets'],writes:['artifacts-evidence']},skillPackId:row.skill_pack_id,manifest:row.manifest,files:row.files,runtime:this.runtime,scopeId:row.scope_id};
+    await this.checkWithDetails(ctx,row.manifest,row.trial,tx);const runtimeProfile=await this.runtimeBinding(tx,ctx,scope);requireCondition(task.input.runtimeProfile&&canonicalHash(task.input.runtimeProfile)===canonicalHash(runtimeProfile),'APPROVAL_STALE','Runtime profile differs from the accepted run binding');
+    return {effects:{reads:['registered-assets'],writes:['artifacts-evidence']},skillPackId:row.skill_pack_id,manifest:row.manifest,files:row.files,runtime:this.runtime,runtimeProfile,scopeId:row.scope_id};
   }
   async preflight(tx:Transaction,ctx:AuthContext,operation:any,authorization:any):Promise<any>{
     await this.auth.renewRun(tx,operation);
-    return {skillPackId:authorization.skillPackId,manifest:authorization.manifest,files:authorization.files,privateSocketPath:this.privateSocketPath,scopeId:authorization.scopeId,principalId:ctx.principalId};
+    return {skillPackId:authorization.skillPackId,manifest:authorization.manifest,files:authorization.files,runtimeProfile:authorization.runtimeProfile,privateSocketPath:this.privateSocketPath,scopeId:authorization.scopeId,principalId:ctx.principalId};
   }
   async privateSecret(worker:AuthContext,operationId:string,fence:number,revoke=false):Promise<any>{
     const checked=await this.execution.preflight(worker,operationId,fence);requireCondition(checked.row.name==='assets.execute','FORBIDDEN_ACTION','Only an authorized runtime operation receives a run token');
@@ -134,7 +140,7 @@ export class SkillPacks {
     const scopes=[...new Set([row.scope_id,...entries.map(entry=>entry.row.scope_id)])];
     const secret=prior??await this.auth.issueRun(actor,{taskId:checked.task.taskId,tools:row.manifest.tools,grants,scopes,operationId:checked.row.operation_id,fencingToken:Number(checked.row.fencing_token)},checked.row.deadline_at);this.secrets.set(key,secret);
     requireCondition(this.modelSecret,'MODEL_PROXY_UNAVAILABLE','Model credential reference is unavailable');const modelKey=await this.assets.vault.get(this.modelSecret.key,this.modelSecret.binding);
-    return {runtime:{...this.runtime,model:{...this.runtime.model,api_key:modelKey}},serverToken:secret.token};
+    return {runtime:{...this.runtime,model:{...this.runtime.model,api_key:modelKey}},approvedModel:{endpoint:this.runtime.model.base_url,runtimeProfile:checked.authorization.runtimeProfile},serverToken:secret.token};
   }
   async event(ctx:AuthContext,id:string,fence:number,inputRevisionId:string,event:any):Promise<any>{return this.store.transaction(async tx=>{
     const checked=await this.execution.preflight(ctx,id,fence,tx);requireCondition(checked.row.name==='assets.execute'&&checked.task.inputRevisionId===inputRevisionId,'INPUT_REVISION_STALE','Runtime event input differs');
@@ -161,7 +167,7 @@ export class SkillPacks {
     for(const output of outputs){SafeRelativePath.parse(output.path);Base64Content.parse(output.contentBase64);const bytes=Buffer.from(output.contentBase64,'base64');total+=bytes.length;requireCondition(total<=MAX_SOURCE_BYTES&&sha256(bytes)===output.sha256,'SOURCE_HASH_MISMATCH','Runtime artifact SHA or byte limit differs');await this.objects.objects.putObject({Bucket:'evidence',Key:output.sha256,Body:bytes});
       const artifactKey=canonicalHash([row.digest,inputHash,output.path,output.sha256]),mediaType=output.path.endsWith('.xlsx')?'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':output.path.endsWith('.json')?'application/json':'text/plain';
       const artifact=(await tx.query(`INSERT INTO artifacts(artifact_id,tenant_id,scope_id,source_revision_id,compilation_key,sha256,size,object_key,file_name,media_type,metadata)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$6,$8,$9,$10) ON CONFLICT(tenant_id,scope_id,compilation_key) DO UPDATE SET compilation_key=EXCLUDED.compilation_key RETURNING *`,[newId('art'),task.tenantId,task.scopeId,source.source_revision_id,artifactKey,output.sha256,bytes.length,output.path,mediaType,JSON.stringify({skillPackId:row.skill_pack_id,digest:row.digest,producer:'scripted-Circle-RPC',semanticQuality:'not-asserted',sanitized:output.sanitized===true,runtime:report.output.runtime})])).rows[0];
+        VALUES($1,$2,$3,$4,$5,$6,$7,$6,$8,$9,$10) ON CONFLICT(tenant_id,scope_id,compilation_key) DO UPDATE SET compilation_key=EXCLUDED.compilation_key RETURNING *`,[newId('art'),task.tenantId,task.scopeId,source.source_revision_id,artifactKey,output.sha256,bytes.length,output.path,mediaType,JSON.stringify({skillPackId:row.skill_pack_id,digest:row.digest,producer:'Circle-RPC',semanticQuality:'not-asserted',sanitized:output.sanitized===true,runtime:report.output.runtime})])).rows[0];
       await tx.query('INSERT INTO artifact_bindings(task_id,input_revision_id,artifact_id,role) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING',[task.taskId,task.inputRevisionId,artifact.artifact_id,output.path]);artifacts.push(this.objects.artifactReference(artifact));
     }
     const facts=await this.objects.evidence(tx,task,operation.operation_id,'script-conclusion',{checks:{declaredOutputs:'passed',sha256:'passed'},inputRevisionId:task.inputRevisionId,inputSha256:inputHash,skillPackDigest:row.digest,artifacts,conclusionScope:'file-completeness-and-byte-integrity'});

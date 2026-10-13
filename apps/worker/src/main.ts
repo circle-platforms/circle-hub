@@ -53,7 +53,7 @@ async function executeRuntime(claim:any,preflight:any):Promise<void>{
   try{
     const secret=await privateRequest(authorization.privateSocketPath,channel),objects=new LocalObjects(env('CIRCLE_SERVER_DATA_DIR'));
     const files=await Promise.all(authorization.files.map(async(file:any)=>({...file,bytes:await objects.getObject({Bucket:'evidence',Key:file.sha256})})));
-    const output=await runCircle({runtime:secret.runtime,folder:join(env('CIRCLE_SERVER_DATA_DIR'),'runs',claim.operationId),manifest:authorization.manifest,files,inputs:claim.args.inputs,
+    const output=await runCircle({runtime:secret.runtime,approvedModel:secret.approvedModel,folder:join(env('CIRCLE_SERVER_DATA_DIR'),'runs',claim.operationId),manifest:authorization.manifest,files,inputs:claim.args.inputs,
       serverUrl:base.origin,serverToken:secret.serverToken,scopeId:authorization.scopeId,principalId:authorization.principalId,signal:abort.signal,
       event:async event=>{await request(`/v1/workers/operations/${claim.operationId}/events`,{...fence,inputRevisionId:claim.inputRevisionId,event});}});
     report={...fence,inputRevisionId:claim.inputRevisionId,status:'succeeded',output};

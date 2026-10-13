@@ -699,3 +699,17 @@ SSE 与轮询共用游标，保存已处理序号后补读；连接每轮重新�
 tasks/assets/skills/change-sets/scopes/roles/service-clients/object-types/objects 使用统一 SQL 分面，工具在完整调用者目录内筛选分页；未声明的维度不推断。范围、产品线、flow、状态/生命周期、owner、年龄区间、更新时间与年龄排序都交接；注册主体与观测者的 owner 含义逐项明确。迁移 32 补资产/技能/服务客户端更新时间及触发器，不更改既有版本内容摘要。原件/凭据不会进入额外计数或游标。typecheck、专项通过，冻结完整回归待下一行。
 
 第 8 节最终冻结 contracts **5/5**、methods **40/40**、acceptance **222/222**、references **7/7**，共 **274/274**，固定 Circle 8b2ceb6 / APV 224daa6，**无 skip**。typecheck、diff、**714** 原件归档核验通过。仅本地签署提交；维护者刚指出的模型上游批准 allowlist 修复及第 9 节 MCP 缺接口验收另留工作区，不混入本节。
+
+## 47：模型上游批准绑定与独立健康检查租约
+
+维护者独立审阅 4f49ac3 与 9b7485f，无高项；模型代理只允许回环是本代理将验收约束错当运行规则的缺口。本笔先写非回环 HTTPS + 合成 CA、未批准拒绝两条方法验收，正路径失败；C 上未批准 profile/运行版本绑定验收在旧实现因启动拒绝失败。现只允许该运行已批准 circle-runtime 版本配置的端点，非回环须 HTTPS，CA/指纹/主机名照常验证；入站 Host/路径仍不能改变上游，没有重定向和不校验证书的降级。
+
+每次技能运行冻结 runtime-profile 的 assetId/version/sha256/profileSha256，受理、派发及私有凭据通道再核；配置换版后旧运行为 APPROVAL_STALE，不拿新端点替代。沙箱还是只有单个临时回环代理和 nonce，真实 key 在保险箱/可信进程，模型流量不入证据。模型 kind 可 scripted/remote，元数据按实际配置记录；本代理验收只用合成 HTTPS/脚本模型，没有真实或付费模型调用。方法联合 **5/5**、C profile 正路径 **1/1**、固定 Circle RPC/隔离联合 **9/9** 通过。
+
+health 与执行共用 gateway resource 会在冻结或忙时挡住状态检查，合成冻结资源复现失败。改 gateway-health 独立资源，只做 lease_status；执行资源继续 frozen，健康调用不取远端 lease，不被当成设备就绪或独立 reconcile。专项 **1/1**。完整冻结回归待下一行。
+
+审阅的小项与盲区留补项：docs.get 小件统一指针/可选预览；拓扑 release 失败与读取超时；第二身份下载拒绝；supervisor spawn error；oauth/server-issued/写 Tool 的访客负路径；第 201 条 Hook 分批进程；unknown/内部超时/取消的代理端口关闭；含 nonce 的产物 sanitized 已有真实 RPC 落库验收。候选试跑当前契约严格只收 name/argsSha256/ok，不能提交参数值，后续加带秘密参数的拒绝验收。hostCommandPolicies 的未知键收紧需兼容检查。
+
+迁移 29/30 的校验不重写。维护者指出第 30 版把已 failed/UPSTREAM_TIMEOUT 也纳入历史释放审计；第 29 版缺状态日志，不能用现态证明历史一定 unknown。已向维护者请求补偿口径：新增迁移只选当前 unknown read；历史保留并补偿说明“原状态无法证明”，不恢复失效租约。此项不依赖上游模型修复，也没有在本机/现网直接改库。
+
+模型/健康修复最终冻结 contracts **5/5**、methods **42/42**、acceptance **224/224**、references **7/7**，共 **278/278**，固定 Circle 8b2ceb6 / APV 224daa6，**无 skip**。typecheck、diff、**714** 原件归档核验通过。只本地签署提交，未连真实模型、网关或部署；随后按维护者授权合入 main 的中立适配器/公开规范，保留其文件和作者，不改那两个分工目录。

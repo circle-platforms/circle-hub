@@ -475,3 +475,5 @@ GET /v1/queues 返回 awaitingMyApproval/awaitingMyInput/submittedByMe/assignedT
 时间游标保存数据库完整微秒和稳定 id，年龄条件钉住首个请求时间；总数是本页当前授权数据的总数，后续页仍可能因真实变更而改变，不承诺跨请求的永久快照。新增资产版本、技能和服务客户端更新时间用于排序，健康/轮换/状态的实际更新也会改变更新时间。tools 先用调用者目录做权限核对，再在该集合分页，ETag 跟随实际页与授权。
 
 分面只用记录里已声明的维度，不从产品名/平台名猜分类。任务 productLineId 取持久 context，资产/技能/工具取 configuration，企业对象取 attributes；flowVersion 使用任务 flow 或相应声明。owner 对任务/变更集/技能是申请人，资产/工具是资产所有者，对象是观测登记人，角色/服务客户端是其主体，词表是登记人。范围和租户级词表没有凭空补个人 owner/scope/productLine：不存在的维度不匹配该筛选。状态用各登记簿原状态（task phase、资产 lifecycle、skill status、change-set status、role、服务客户端 active/revoked、词表 registered）。
+
+模型上游规则修正：runtime-profile 的模型端点是批准 allowlist，回环脚本模型仅为验收配置；非回环 HTTPS 可用，非回环认证 HTTP 拒绝。运行配置 model.kind 支持 scripted/remote，可加 caFile/caSha256；有自定义 CA 时验证实际 DER SHA/主机名，仍可用正常系统 CA。每次 run 冻结 runtimeProfile:{assetId,version,sha256,profileSha256}，派发前重核，换版本不会悄悄替换旧运行的模型端点。worker 的私有通道把对应端点交可信代理，sandbox 只见回环代理。模型原件/流量仍不属于 evidence。gateway.health 使用独立 gateway-health 资源，不占或解冻用例执行资源；lease_status 正常仍只证明链路读确认。

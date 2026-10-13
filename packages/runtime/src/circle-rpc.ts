@@ -11,13 +11,15 @@ import {modelProxy} from './model-proxy.ts';
 import {redactBytes} from './redaction.ts';
 const execute=promisify(execFile);
 export interface CircleRun {
-  runtime:{circleBin:string;circleCommit:string;circleVersion:string;model:{kind:'scripted';base_url:string;model:string;protocol:string;api_key:string}};
+  runtime:{circleBin:string;circleCommit:string;circleVersion:string;model:{kind:'scripted'|'remote';base_url:string;model:string;protocol:string;api_key:string;caFile?:string;caSha256?:string}};
+  approvedModel:{endpoint:string;runtimeProfile:Record<string,string>};
   folder:string;manifest:any;files:{path:string;bytes:Buffer;sha256:string}[];inputs:Record<string,unknown>;
   serverUrl:string;serverToken:string;scopeId:string;principalId:string;signal?:AbortSignal;
   event:(event:any)=>Promise<void>;
 }
 export async function runCircle(input:CircleRun):Promise<any>{
-  const proxy=await modelProxy(input.runtime.model.base_url,input.runtime.model.api_key,{onMetadata:metadata=>input.event({type:'model.proxy',...metadata})});
+  requireCondition(input.approvedModel?.endpoint===input.runtime.model.base_url&&['assetId','version','sha256','profileSha256'].every(key=>typeof input.approvedModel.runtimeProfile?.[key]==='string'),'FORBIDDEN_ACTION','Model endpoint differs from the approved run binding');
+  const proxy=await modelProxy(input.runtime.model.base_url,input.runtime.model.api_key,{allowedUpstreams:[input.approvedModel.endpoint],caFile:input.runtime.model.caFile,caSha256:input.runtime.model.caSha256,onMetadata:metadata=>input.event({type:'model.proxy',runtimeProfile:input.approvedModel.runtimeProfile,...metadata})});
   const close=()=>{void proxy.close();};input.signal?.addEventListener('abort',close,{once:true});
   try{const result=await runIsolatedCircle({...input,runtime:{...input.runtime,model:{...input.runtime.model,base_url:proxy.url,api_key:proxy.nonce}}},input.runtime.model.api_key,close);await proxy.flush();if(proxy.failure)throw proxy.failure;return result;}
   catch(error){await proxy.flush();if(error instanceof ApiError&&error.details.localExitObserved===true)throw error;throw proxy.failure??error;}
@@ -31,7 +33,7 @@ async function runIsolatedCircle(input:CircleRun,upstreamModelKey:string,onStopp
   try{version=(await execute(process.execPath,[circleBin,'--version'],{timeout:5000,env:{PATH:process.env.PATH,HOME:homeUser,CIRCLE_HOME:home,CIRCLE_NO_MODELS_REFRESH:'1'}})).stdout.trim();commit=(await execute('git',['-C',repo,'rev-parse','HEAD'],{timeout:5000})).stdout.trim();}
   catch{throw new ApiError('RUNTIME_VERSION_MISMATCH','Circle executable or Git revision cannot be verified');}
   requireCondition(version===runtime.circleVersion&&commit===runtime.circleCommit,'RUNTIME_VERSION_MISMATCH','Circle version or Git revision differs from the pinned runtime');
-  const modelUrl=new URL(runtime.model.base_url);requireCondition(runtime.model.kind==='scripted'&&modelUrl.hostname==='127.0.0.1'&&modelUrl.protocol==='http:','FORBIDDEN_ACTION','Development runtime permits only a loopback scripted model');
+  const modelUrl=new URL(runtime.model.base_url);requireCondition(modelUrl.hostname==='127.0.0.1'&&modelUrl.protocol==='http:','FORBIDDEN_ACTION','Sandbox model requests must use the per-run loopback proxy');
   await writeFile(join(home,'settings.json'),JSON.stringify({version:1,initialized:true,auth:{base_url:runtime.model.base_url,model:runtime.model.model,protocol:runtime.model.protocol,api_key_ref:'api_key'},trusted_folders:[workspace],extensions:{'circle-server':{enabled:true}},mcp_servers:[],update_check:false}),{mode:0o600});
   await writeFile(join(home,'credentials.json'),JSON.stringify({api_key:runtime.model.api_key}),{mode:0o600});
   const skillRoot=join(workspace,'.circle','skills',input.manifest.id);
@@ -76,5 +78,5 @@ async function runIsolatedCircle(input:CircleRun,upstreamModelKey:string,onStopp
     requireCondition(bytes.length<=MAX_SOURCE_BYTES,'BODY_TOO_LARGE','Runtime output exceeds the byte limit');const redacted=redactBytes(bytes,[input.serverToken,runtime.model.api_key,upstreamModelKey]);bytes=redacted.bytes;const sanitized=redacted.sanitized;
     outputs.push({path:name,contentBase64:bytes.toString('base64'),sha256:sha256(bytes),sanitized});
   }
-  return {outputs,answer:redact(lastAnswer),runtime:{circleCommit:commit,circleVersion:version,entrySha256:sha256(await readFile(circleBin)),agentSettled:settled,localExitObserved:true,remoteStoppingVerified:false,model:{kind:'scripted',model:runtime.model.model}}};
+  return {outputs,answer:redact(lastAnswer),runtime:{circleCommit:commit,circleVersion:version,entrySha256:sha256(await readFile(circleBin)),agentSettled:settled,localExitObserved:true,remoteStoppingVerified:false,model:{kind:runtime.model.kind,model:runtime.model.model},runtimeProfile:input.approvedModel.runtimeProfile}};
 }
