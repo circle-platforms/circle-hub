@@ -761,3 +761,9 @@ main 的 ab12ed4 是适配器第四轮，用户允许后续再签署 merge；不
 先写四条复现 **0/4**：外部 Skill 导入漏变更集、平台读重放每次新 evidence、专业 Tool 体内键未比对、另一个 Skill 的成功装载误记本包兼容。仅 Circle 原生 skillpacks.submit 保留插入 skill_packages 后的建单顺序，普通 hub-skill/1 导入与 instruction/agent/command 在同事务直接建单；重复返回原治理引用，批准前不得导出。
 
 平台读写共用持久、当前权限重核的幂等回执；同键不重读/不加回执，改参拒绝。专业 Tool 也核对体内键，24 小时受理窗口与平台持久窗口在交接明确区分。RPC 成功装载按 call id 关联先前 assistant.tool_calls，args.name 必须为本包 manifest.id；固定 Circle 真加载另一个技能的负例不记兼容，本包装载正例记入。最后联合含方法 **20/20**、无 skip，typecheck/diff 通过。未改 adapters、设计分工文件或外部仓库，未 push/部署；完整补项回归单独冻结，不用专项代替。
+
+## 53：迁移历史的追加补偿
+
+按维护者确认新增 **36**（33–35 已部署用途不变）。29/30 的 SQL 字节、原释放审计都未改。36 只释放当前 unknown/read、只删这些操作租约，对受影响资源按仍有 unknown/write 重算；同任务的写仍 unknown 时不落 failed。30 的释放集合把当时已是 failed+UPSTREAM_TIMEOUT 的 read 也计入；29 释放时没有状态日志，这些操作在 29 之前的原始状态无法证明。逐条以 system:migration 的 operation.read-release-compensated 引用 correctsAudit 原 id，写 originalState=unprovable/migration=36。租约已被 30 删除且不恢复，failed/read 可重试、不持租约，因而不重新授予旧权限。
+
+29/30 也没有留下任务 phase 的修前日志，补偿记录引用原 read 审计及任务，历史 phase 标 unprovable，仅记 36 前实际观察的 phase。仍存在 unknown/write 的现态错误 failed/UPSTREAM_TIMEOUT 可修回 unknown；已由 30 修回的任务保持现态并追加同一来源说明，不猜历史。重复执行不重复补偿。先写缺模块验收，再按 **29→30→36** 合成序列跑历史 failed 被计入、任务 phase 修复、新 unknown/read、并存 unknown/write、无关租约和资源；联合只读机制 **5/5**、无 skip，typecheck/diff 通过。没有真实库操作或恢复租约，部署由维护者决定。

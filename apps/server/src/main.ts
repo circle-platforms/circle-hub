@@ -29,6 +29,7 @@ import {ToolProviders} from '../../../packages/methods/src/providers.ts';
 import {ProductModules} from '../../../packages/methods/src/product-modules.ts';
 import {readEffectMigration} from '../../../packages/execution/src/read-effect-migration.ts';
 import {readReleaseAuditMigration} from '../../../packages/execution/src/read-release-audit-migration.ts';
+import {readCompensationMigration} from '../../../packages/execution/src/read-compensation-migration.ts';
 import {Notifications,NotificationQuery} from '../../../packages/tasks/src/notifications.ts';
 import {notificationMigration} from '../../../packages/tasks/src/notification-events.ts';
 import {ExecutionSecrets} from '../../../packages/execution/src/secret-lifecycle.ts';
@@ -81,7 +82,7 @@ import {HarnessPrimitives} from '../../../packages/skillpacks/src/primitives.ts'
 
 function environment(name: string): string { const value = process.env[name]; if (!value) throw new Error(`Required environment variable: ${name}`); return value; }
 const store = new Store(JSON.parse(environment('CIRCLE_SERVER_DATABASE_CONFIG')));
-await store.migrate([taskMigration,deliveryMigration,knowledgeMigration,executionMigration,...packageMigrations,approvalMigration,conclusionMigration,checklistMigration,connectorMigration,entityMigration,assetMigration,graphMigration,toolMigration,skillMigration,automationMigration,automationOutcomeMigration,knowledgePageMigration,automationOriginMigration,ingestionMigration,oauthMigration,resourceIdentityMigration,roleMigration,changeSetMigration,changeSetDependenciesMigration,enforcementMigration,sessionMigration,toolRolesMigration,readEffectMigration,readReleaseAuditMigration,notificationMigration,queryMigration,neutralMigration,mcpMigration,compatibilityMigration]);
+await store.migrate([taskMigration,deliveryMigration,knowledgeMigration,executionMigration,...packageMigrations,approvalMigration,conclusionMigration,checklistMigration,connectorMigration,entityMigration,assetMigration,graphMigration,toolMigration,skillMigration,automationMigration,automationOutcomeMigration,knowledgePageMigration,automationOriginMigration,ingestionMigration,oauthMigration,resourceIdentityMigration,roleMigration,changeSetMigration,changeSetDependenciesMigration,enforcementMigration,sessionMigration,toolRolesMigration,readEffectMigration,readReleaseAuditMigration,notificationMigration,queryMigration,neutralMigration,mcpMigration,compatibilityMigration,readCompensationMigration]);
 const auth = new Auth(store,{developmentTtlMs:process.env.CIRCLE_SERVER_DEV_TOKEN_TTL_MS?Number(process.env.CIRCLE_SERVER_DEV_TOKEN_TTL_MS):undefined,runTokenTtlMs:process.env.CIRCLE_SERVER_RUN_TOKEN_TTL_MS?Number(process.env.CIRCLE_SERVER_RUN_TOKEN_TTL_MS):undefined});
 requireCondition(process.env.CIRCLE_SERVER_DEV_AUTH === '1', 'INVALID_PAYLOAD', 'Phase one requires explicitly enabled development authentication');
 await auth.initializeDevelopment(environment('CIRCLE_SERVER_DEV_IDENTITIES'));

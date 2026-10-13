@@ -490,6 +490,8 @@ POST /v1/harness/import：{scopeId,sourceHarness:"claude-code"|"codex"|"opencode
 
 MCP 的所有调用都校验 body.idempotencyKey（若有）与 _meta["hub/idempotencyKey"] 一致。平台控制 Tool 的读写共用持久幂等回执：同 tenant/主体/scope/工具/键重放返回同一 evidence，不再执行读取；要读最新状态使用新键，重放仍检查当前权限和任务可见性。改变参数为 IDEMPOTENCY_MISMATCH。平台控制回执当前无到期窗口；专业 Tool 沿用 C 的 24 小时受理去重窗口，窗口之外可以受理新任务。这两类窗口不同，客户端不得把专业工具旧键当作永久防重证明。
 
+迁移 36 是追加历史补偿，不重写 29/30。operation.read-release-compensated 审计的 correctsAudit 指向原 30 审计，originalState=unprovable 表示 29 前状态没有可证明日志；leasesRestored=false。task.read-release-phase-compensated 只记 36 前实际 phase 和原任务/read 审计引用，historicalPhase=unprovable。旧租约不恢复；新释放只针对当前 unknown/read，写 unknown 继续冻结与独立核对。33–35 仍分别保留中立清单、MCP 回执与兼容观察用途。
+
 GET /v1/assets/{id}/harness-export?target=circle|<sourceHarness> 仅批准后的可读原语可用，返回 files 的相对目标路径/base64/sha256、warnings、provenance:{assetId,version,sha256,sourceHarness}。Circle Skill 原件移动到 .circle/skills/{name}/，字节不改；Instruction 投影为 AGENTS.md。Circle 尚无 Agent/Command 原生安装时明确 warning；MCP prompt 可读取批准的 Skill/Command。同来源 harness 由公开库导出；其不支持的跨 harness 映射继续 warning。这里只是冻结与装载投影，云运行仍用既有技能试跑/提交/批准接口；不自动批准或把原件搬运称作已执行。
 
 `POST /mcp` 是官方 @modelcontextprotocol/sdk 1.32.1 的 Streamable HTTP JSON transport，协议协商 2025-11-25；[传输规范](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports)。每请求带 hub 会话 Bearer；Origin 若存在须同 hub 原生地址。无会话 id 的 stateless 模式，GET/DELETE 405；Accept 同时支持 application/json、text/event-stream。官方纯 SDK 客户端、原始 JSON-RPC 客户端已验收，既有 Circle REST 扩展保持。
