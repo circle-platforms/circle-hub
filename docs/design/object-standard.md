@@ -7,10 +7,10 @@ hub 的四个对象——资料 B、工作 C、执行 D、方法 E——由同�
 | 标准 | B 资料 | C 工作 | D 执行 | E 方法 |
 |---|---|---|---|---|
 | **1 记录**：对象自己拥有的记录类型，各有 id 前缀和版本；字节记录带 sha256 | 来源修订 `src_` · 证据 `evd_` · 声明 `clm_`、评估 · 快照 `ks_`（不可变）· 制品 `art_`（带 sha） | 身份 `prn_` · 范围 `scp_` · 任务 `task_` · 输入修订 `inrev_` · 审批请求 `pin_` · 决定 · bot · 触发器 · 审计 | 资源（网关、worker、SSH 目标）· 操作 `op_` · 绑定 pin · 租约与 fencing token · 现场 · 未知结果 | 技能包 `skp_` + 试跑记录 · 产品线清单 `product-line/1` · 方法模块 · 规则 · 验证样本 |
-| **2 资产**：可插拔的东西，一种形状：kind · version · sha256 · declaration · configuration · lifecycle | knowledge-source（上传原件）· connector-instance（文档、构建站、工单镜像、环境） | bot · 触发器 · 服务客户端（资源在 C 里的身份） | connector-instance（网关）· worker · ssh-target · runtime-profile | skill-package · product-line 模块 · 规则包 |
+| **2 资产**：可插拔的东西，一种形状：kind · version · sha256 · declaration · configuration · lifecycle | knowledge-source（上传原件）· connector-instance（只读 MCP server：文档、构建站、工单镜像、环境）· runtime-profile | bot · 触发器 · 服务客户端（资源在 C 里的身份） | connector-instance（执行资源，即动手的 MCP server）· worker · runtime-profile | skill-package（Skill）· product-line 模块（Tool 实现与 Hook 处理器） |
 | **3 审批策略**：以变更集为单位，哪些动作需要独立审批人；绑定 inputRevision + targetIdentity + actionDigest | 来源 / 原件 lifecycle → approved · 声明候选 → 进快照 | 所有审批在这里落地 · bot 启用、人员授权 | 资源启用 running · 执行不审批：可证真报错，不可证真披露；资源可声明「对我执行算变更」 | 技能版本登记 · 模块安装 |
-| **4 证据**：与外界每次交互的原样记录；evidenceId 由平台发；脚本 / 模型分开标 | 连接器读取的原件 · 工具返回 | 试跑记录（调了哪些工具）· 决定与审计 | 派发前重核结果 · 现场回报、租约事件 | 试跑产物 sha · 规则判定（哪条、对谁） |
-| **5 扩展点**：允许从哪里插东西进来；产品内容不进核心 | 连接器包（按系统类型）· 原件上传（文件 + role + metadata）· 对象词表 · 知识映射 | 身份提供方 · 策略（数据）· 流程版本 · 结果渠道 | 资源适配器（按协议）· 凭据模式 · profile 文件 · worker 协议 | 技能包（packs 仓库 modules.json）· 产品线清单 · 方法模块 · 规则包 |
+| **4 证据**：与外界每次交互的原样记录；evidenceId 由平台发；脚本 / 模型分开标 | 连接器读取的原件 · 每次 Tool 调用的返回 | 试跑记录（Skill 实际调了哪些 Tool）· 决定与审计 | Hook 判定结果 · 现场回报、租约事件 | 试跑产物 sha · Hook 判定（规则 id、版本、对谁） |
+| **5 扩展点**：允许从哪里插东西进来；产品内容不进核心 | 只读 MCP server（连接器包，按系统类型）· 原件上传（文件 + role + metadata）· 对象词表 · 知识映射 | 身份提供方 · 策略（数据）· 流程版本 · 结果渠道 | 动手的 MCP server（资源适配器，MCP 协议为通用适配器）· 凭据模式 · profile 文件 · worker 协议 | Skill（packs 仓库 modules.json）· 产品线清单 · Tool 实现 · Hook 处理器 |
 
 Circle 里每个登记簿页面就是这五样的投影：左栏是记录（分面 + 计数 + 搜索），右栏五格固定为 资产 · 内容（平台核验 / 申请内容）· 审批 · 证据 · 扩展点。
 
@@ -43,4 +43,4 @@ Circle 里每个登记簿页面就是这五样的投影：左栏是记录（分�
 | E | 技能包里提示词做什么、脚本做什么？产品线清单声明什么？hub 在边界跑哪些确定性规则，哪些是模型判断？ |
 | A | 用户在 Circle 里看什么、做什么？只用现有的工具投影、命令、卡片和登记簿，不加新界面。 |
 
-填完的检验：hub 核心零改动；产品名只出现在清单、模块和数据里；每个资产都能被另一个人批、被 sha 钉住、被停用。填好的样例见[产品线包典范](product-line-pack.md)。
+填完的检验：hub 核心零改动；产品名只出现在清单、模块和数据里；每个资产都能被另一个人批、被 sha 钉住、被停用。填好的样例见[产品线包典范](product-line-pack.md)；扩展点里插进来的东西只有四种 harness 原语，见[harness 原语规范](harness-primitives.md)。

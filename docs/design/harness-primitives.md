@@ -11,6 +11,20 @@ hub 是 harness 的 hub。它治理的东西就是 harness 已经有的原语，
 | **MCP server** | `mcp.md`：配置一个 server，得到它的 tools | 两类 provider 资产：**连接器实例**（B，只读；hub 自带的连接器包就是只读 MCP 形状的 provider）和**执行资源**（D，会动手；例如跳板机网关本来就是 streamable HTTP 的 MCP server） | declaration（reads / writes / credentials）；`runtime-profile` 资产绑定库外的端点 / CA / 超时；凭据模式（静态密钥 / 平台签发 / 外部 OAuth）；hub 的 worker 是 MCP client；任何 MCP server 都可登记为执行资源 | Circle 不直连这些 server，凭据不出 hub；只经目录看到它们的工具 |
 | **Hook** | Claude Code 一类 harness 的 PreToolUse / PostToolUse：JSON 入、JSON 出、放行或阻止 | 规则处理器：挂在执行链固定钩子点上的确定性脚本，作为产品线包的模块资产装入 | 钩子点：`verify.deviceCommand`、`verify.hostCommand`、`verify.workbook`、`beforeDispatch`、`afterResult`；入参 = 本次运行的绑定 + 待核对象；出参 = `pass` 或 `{code, facts}`；审计记录规则 id 与版本 | Circle 侧已有的等价物：扩展把 `srv_*` 返回原样落盘到 `.circle/server-returns/`、脱敏密钥——就是 post-tool hook；Circle 加 hooks 机制后由 hub 下发同形的客户端 hook |
 
+## 一之二、原语在四对象 × 五要素里的位置
+
+原语不是第五个对象，也不是第六个要素。每种原语都落在某个对象的某几个要素里：
+
+| 原语 | 对象 | 记录 | 资产 | 审批策略 | 证据 | 扩展点 |
+|---|---|---|---|---|---|---|
+| Skill | E 方法 | `skp_` + 试跑记录 | skill-package | 版本登记走变更集 | 试跑产物 sha、运行时每次工具调用 | 技能包（packs 仓库 modules.json） |
+| Tool | 属于 provider 所在对象：只读的在 B，动手的在 D | 每次调用的证据 `evd_` | 不是独立资产；是 provider declaration 的 `provides` | 无（权限跟着 minimumRole 走） | 返回原样保存 | 由 MCP server 带入 |
+| MCP server · 只读 provider | B 资料 | 来源修订 `src_` | connector-instance + runtime-profile | 实例启用走变更集 | 读取的原件 | 连接器包（按系统类型） |
+| MCP server · 执行资源 | D 执行 | 操作 `op_`、租约、现场 | connector-instance（执行资源）+ runtime-profile | 启用走变更集；`executionIsChange` 时执行提交也走 | 派发前核验、现场回报 | 资源适配器（MCP 协议为通用适配器）、凭据模式、profile 文件 |
+| Hook | E 方法（处理器）· 作用于 D 的执行链 | 每次判定的规则 id / 版本 | product-line 模块（处理器） | 装入走变更集 | 判定结果与事实 | 钩子点（五个固定） |
+
+对象标准里的五要素不变；原语只是说明「扩展点里插进来的到底是什么」以及它们在 Circle 里对应哪个已有概念。
+
 ## 二、归并掉的词
 
 | 以前的说法 | 现在 |
