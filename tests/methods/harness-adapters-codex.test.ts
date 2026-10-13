@@ -1,0 +1,116 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import {
+  exportTo,
+  importFrom,
+  type HubInstruction,
+  type HubManifest,
+  type HubProvider,
+} from '../../packages/harness-adapters/index.ts';
+import { codexFixtureRoot, loadVirtualFiles } from '../fixtures/harness/load.ts';
+
+const fixture = await loadVirtualFiles(codexFixtureRoot);
+const imported = importFrom('codex', fixture);
+
+test('Codex import: AGENTS.md becomes hub-instruction/1', () => {
+  const instructions = imported.manifests.filter((manifest) => manifest.kind === 'hub-instruction/1') as HubInstruction[];
+  assert.equal(instructions.length, 1);
+  assert.equal(instructions[0].scope, 'project');
+  assert.deepEqual(instructions[0].applies, []);
+  assert.equal(instructions[0].fileName, 'AGENTS.md');
+  assert.equal(instructions[0].sourceHarness, 'codex');
+});
+
+test('Codex import: mcp_servers become hub-provider/1 without secret values', () => {
+  const providers = imported.manifests.filter((manifest) => manifest.kind === 'hub-provider/1') as HubProvider[];
+  assert.equal(providers.length, 2);
+
+  const docs = providers.find((provider) => provider.name === 'docs_lookup')!;
+  assert.equal(docs.transport, 'stdio');
+  assert.deepEqual(docs.credentials, ['DOCS_API_KEY']);
+  assert.equal(docs.credentialMode, 'static');
+  const shape = docs.harnessSpecific.shape as Record<string, unknown>;
+  assert.equal(shape.command, 'npx');
+  assert.deepEqual(shape.args, ['-y', '@example/docs-mcp']);
+  assert.deepEqual(shape.env, { DOCS_API_KEY: '' });
+
+  const pings = providers.find((provider) => provider.name === 'pings')!;
+  assert.equal(pings.transport, 'stdio');
+  assert.deepEqual(pings.credentials, []);
+  assert.equal(pings.credentialMode, undefined);
+
+  assert.equal(JSON.stringify(imported.manifests).includes('synthetic-docs-key'), false);
+  assert.deepEqual(
+    imported.warnings.map((warning) => warning.code),
+    ['PROVIDER_VALUES_STRIPPED'],
+  );
+});
+
+test('Codex import: TOML subset boundaries skip unsupported lines instead of guessing', () => {
+  // The supported subset is documented in packages/harness-adapters/toml.ts:
+  // no inline tables, no multiline strings, no arrays of tables, no dates.
+  const result = importFrom('codex', {
+    '.codex/config.toml': [
+      '[mcp_servers.a]',
+      'command = "npx"',
+      'options = { mode = "fast" }',
+      'banner = """multiline"""',
+      'args = ["-y"]',
+      '',
+    ].join('\n'),
+  });
+  assert.equal(result.manifests.length, 1);
+  const [provider] = result.manifests as HubProvider[];
+  const shape = provider.harnessSpecific.shape as Record<string, unknown>;
+  assert.deepEqual(Object.keys(shape).sort(), ['args', 'command']);
+  assert.deepEqual(
+    result.warnings.map((warning) => warning.code).sort(),
+    ['TOML_LINE_SKIPPED', 'TOML_LINE_SKIPPED'],
+  );
+  assert.ok(result.warnings.every((warning) => warning.detail.includes('line')));
+});
+
+test('Codex import: keys outside mcp_servers are reported and dropped on export', () => {
+  const result = importFrom('codex', {
+    '.codex/config.toml': 'model = "scripted-model"\n\n[mcp_servers.a]\ncommand = "node"\n',
+  });
+  assert.equal(result.manifests.length, 1);
+  assert.deepEqual(
+    result.warnings.map((warning) => warning.code),
+    ['CONFIG_EXTRA_KEYS'],
+  );
+  assert.ok(result.warnings[0].detail.includes('model'));
+  const exported = exportTo('codex', result.manifests);
+  assert.equal((exported.files['.codex/config.toml'] as string).includes('model = '), false);
+});
+
+test('Codex import: unrecognized files are reported', () => {
+  const result = importFrom('codex', { 'notes.txt': 'synthetic\n' });
+  assert.deepEqual(result.manifests, []);
+  assert.deepEqual(
+    result.warnings.map((warning) => warning.code),
+    ['UNRECOGNIZED_FILE'],
+  );
+});
+
+test('Codex export: primitives without a Codex projection are reported, not silently dropped', () => {
+  const skill = {
+    kind: 'hub-skill/1',
+    name: 'review-code',
+    description: '',
+    entry: 'SKILL.md',
+    tools: [],
+    inputs: [],
+    outputs: [],
+    triggers: [],
+    sourceHarness: 'codex',
+    knownCompatible: [],
+    harnessSpecific: {},
+  } satisfies HubManifest;
+  const result = exportTo('codex', [skill]);
+  assert.deepEqual(result.files, {});
+  assert.deepEqual(
+    result.warnings.map((warning) => warning.code),
+    ['NO_HARNESS_PROJECTION'],
+  );
+});

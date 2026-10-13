@@ -1,0 +1,10 @@
+[mcp_servers.docs_lookup]
+command = "npx"
+args = ["-y", "@example/docs-mcp"]
+
+[mcp_servers.docs_lookup.env]
+DOCS_API_KEY = "synthetic-docs-key"
+
+[mcp_servers.pings]
+command = "node"
+args = ["server.js"]
