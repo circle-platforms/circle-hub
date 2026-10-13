@@ -73,6 +73,12 @@ circle-hub 治理任何 harness 的原语（规范见 `docs/design/harness-primi
 - 第五轮顺手项：Cursor 缺原 hooks 文件时 SOURCE_FILE_MISSING 与 HOOK_ENTRY_DROPPED_ON_EXPORT 两条都报（version/额外键不可恢复、被跳过条目无法保留是两个事实，不合并）。
 - 合成验收只检查文件形状与规则条数（tests/methods/harness-adapters-permissions.test.ts），不连接真实 harness。规范里两条「交付时核对」里提到的实际核对（Claude 的 doctor、Codex 当时的页面取值）是上线前人工事项，不在本库代码里。
 
+## 待定（第六轮）
+
+- `exportPermission(harness, policy, role)` 返回 `{ files, warnings }`，与其它导出一致。表达不了的格子逐条报 PERMISSION_NOT_EXPRESSIBLE（detail 写 harness、角色、工具、哪一格、原因），文件内容不变。本轮覆盖三格：Cursor 的 deny（无拒绝名单，只是不进 mcpAllowlist）、Codex 的 allow+`effect:write`（进 enabled_tools 但不写 approval_mode）、Gemini 的 ask_user（交互才有效，非交互即 deny）。Cursor 的 ask（靠省略）不算表达不了，不报。
+- README 双语：`README.md` 与 `README.en.md` 同结构同内容，顶部互链；以后两份一起改。
+- CLI（`packages/harness-adapters/cli.ts`）：`import <dir> --from <harness>` 把真实目录读成虚拟文件表（UTF-8 干净的存字符串，否则存字节），输出 `{manifests, warnings}`；`export <manifests.json> --to <harness> [--dir <dir>]` 输出 `{files, warnings}`（二进制值写作 `{base64}`）。不把导出文件写回磁盘——输出 JSON 就是交付物。CLI 是本地查看工具，不做退出码之外的协议（错误一律 1 + stderr 一句话）。方法测试在 tests/methods/harness-adapters-cli.test.ts；fixture 里全局 gitignore 覆盖的 `settings.local.json` 只在虚拟表合成，CLI 读真实目录会少这一份（测试里写明了）。
+
 ## 复核第一轮（Claude 与独立复核人，2026-10-13，对 b544336）
 
 tsc 与 50 个测试通过；fixture 卫生合格；hooks / `.mcp.json` / `[mcp_servers]` 的基本形状对。下面是必须改的，按决定写，不是建议。改完升到第二轮提交，测试覆盖每一条。
