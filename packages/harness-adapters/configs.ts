@@ -17,7 +17,10 @@ import { baseName, canonicalJson, sha256Hex, toText } from './files.ts';
 export const REDACTED = '[redacted]';
 
 // Object-valued entry keys whose nested names are also credential names.
-const CREDENTIAL_MAP_KEYS = ['env', 'headers', 'http_headers', 'env_http_headers'];
+const CREDENTIAL_MAP_KEYS = ['env', 'headers', 'http_headers', 'env_http_headers', 'environment'];
+
+// Entry keys that hold an endpoint; they come back as placeholders at export.
+const URL_KEYS = ['url', 'httpUrl'];
 
 const ABSOLUTE_PATH = /^([/~]|[A-Za-z]:[\\/])/;
 const KEY_VALUE_ARG = /^--?[A-Za-z0-9_.-]+=/;
@@ -39,6 +42,65 @@ export function parseJsonFile(
     return undefined;
   }
   return parsed as Record<string, unknown>;
+}
+
+// JSONC (opencode.jsonc): strip `//` and `/* */` comments outside strings
+// and drop trailing commas. Anything beyond that (none is known) stays
+// untouched and fails JSON parsing honestly.
+export function stripJsonc(text: string): string {
+  let out = '';
+  let index = 0;
+  let inString = false;
+  while (index < text.length) {
+    const char = text[index];
+    const next = text[index + 1];
+    if (inString) {
+      out += char;
+      if (char === '\\' && next !== undefined) {
+        out += next;
+        index += 2;
+        continue;
+      }
+      if (char === '"') inString = false;
+      index += 1;
+      continue;
+    }
+    if (char === '"') {
+      inString = true;
+      out += char;
+      index += 1;
+      continue;
+    }
+    if (char === '/' && next === '/') {
+      while (index < text.length && text[index] !== '\n') index += 1;
+      continue;
+    }
+    if (char === '/' && next === '*') {
+      index += 2;
+      while (index < text.length && !(text[index] === '*' && text[index + 1] === '/')) index += 1;
+      index += 2;
+      continue;
+    }
+    if (char === ',') {
+      let ahead = index + 1;
+      while (ahead < text.length && /\s/.test(text[ahead])) ahead += 1;
+      if (text[ahead] === '}' || text[ahead] === ']') {
+        index += 1;
+        continue;
+      }
+    }
+    out += char;
+    index += 1;
+  }
+  return out;
+}
+
+export function parseJsoncFile(
+  path: string,
+  text: string,
+  warnings: AdapterWarning[],
+): Record<string, unknown> | undefined {
+  return parseJsonFile(path, stripJsonc(text), warnings);
 }
 
 export function checkCanonical(
@@ -229,14 +291,58 @@ export function skeletonCredentials(shape: EntrySkeleton): string[] {
 }
 
 // Key names whose values come back as placeholders at export: every
-// object-valued key, plus url. Used for the import-side disclosure warning.
-export function skeletonStripped(shape: EntrySkeleton, hasUrl: boolean): string[] {
+// object-valued key, plus endpoint keys. Used for the import-side disclosure
+// warning.
+export function skeletonStripped(shape: EntrySkeleton, hasEndpoint: boolean): string[] {
   const stripped: string[] = [];
   for (const [key, names] of Object.entries(shape)) {
     if (Array.isArray(names)) for (const name of names) stripped.push(`${key}.${name}`);
   }
-  if (hasUrl) stripped.push('url');
+  if (hasEndpoint) stripped.push('url');
   return stripped;
+}
+
+function sanitizeCommandValue(
+  command: unknown,
+  path: string,
+  name: string,
+  warnings: AdapterWarning[],
+  serversKey: string,
+): unknown {
+  if (typeof command === 'string') {
+    if (ABSOLUTE_PATH.test(command)) {
+      warnings.push({
+        code: 'PROVIDER_COMMAND_ABSOLUTE',
+        path,
+        detail: `${serversKey}.${name} command is an absolute path; reduced to basename ${baseName(command.replace(/\\/g, '/'))}`,
+      });
+      return baseName(command.replace(/\\/g, '/'));
+    }
+    return command;
+  }
+  if (Array.isArray(command)) {
+    return command.map((part, index) => {
+      if (typeof part !== 'string') return part;
+      if (index === 0 && ABSOLUTE_PATH.test(part)) {
+        warnings.push({
+          code: 'PROVIDER_COMMAND_ABSOLUTE',
+          path,
+          detail: `${serversKey}.${name} command[0] is an absolute path; reduced to basename ${baseName(part)}`,
+        });
+        return baseName(part);
+      }
+      if (index > 0 && matchesArgRedaction(part)) {
+        warnings.push({
+          code: 'PROVIDER_ARG_REDACTED',
+          path,
+          detail: `${serversKey}.${name} command[${index}] matches a redaction rule and was replaced with ${REDACTED}`,
+        });
+        return REDACTED;
+      }
+      return part;
+    });
+  }
+  return command;
 }
 
 // Export side: rebuild an entry from the original file's entry, re-applying
@@ -265,26 +371,17 @@ export function rebuildProviderEntry(
       for (const nested of names) missing.push(`${key}.${nested}`);
       continue;
     }
-    if (key === 'url' && typeof value === 'string' && value !== '') {
-      entry.url = REDACTED;
-      missing.push('url');
+    if (URL_KEYS.includes(key) && typeof value === 'string' && value !== '') {
+      entry[key] = REDACTED;
+      missing.push(key);
       continue;
     }
     if (key === 'args') {
       entry.args = sanitizeArgs(value, path, name, warnings, serversKey);
       continue;
     }
-    if (key === 'command' && typeof value === 'string') {
-      if (ABSOLUTE_PATH.test(value)) {
-        warnings.push({
-          code: 'PROVIDER_COMMAND_ABSOLUTE',
-          path,
-          detail: `${serversKey}.${name} command is an absolute path; reduced to basename ${baseName(value.replace(/\\/g, '/'))}`,
-        });
-        entry.command = baseName(value.replace(/\\/g, '/'));
-      } else {
-        entry.command = value;
-      }
+    if (key === 'command') {
+      entry.command = sanitizeCommandValue(value, path, name, warnings, serversKey);
       continue;
     }
     entry[key] = value;
@@ -292,12 +389,29 @@ export function rebuildProviderEntry(
   return { entry, missing };
 }
 
+export interface HooksFileOptions {
+  // Mark 'shell' only where the harness documentation says the command is a
+  // shell command; otherwise leave the field out. Per-entry refinement (e.g.
+  // Claude's `shell: powershell` entries) goes through languageFromEntry.
+  language?: 'shell' | 'ts';
+  languageFromEntry?: (entry: Record<string, unknown>) => 'shell' | 'ts' | undefined;
+  // Top-level keys this file legitimately holds (other governed sections of a
+  // shared settings file go here so they are not flagged as extra).
+  governedKeys?: string[];
+  // Single-purpose files warn EMPTY_CONFIG when the section is absent; a
+  // shared settings file stays quiet unless the section is present but empty.
+  emptyOk?: boolean;
+  // One importer per file reports extra keys and the canonical-form check.
+  skipExtraKeysCheck?: boolean;
+  skipCanonicalCheck?: boolean;
+}
+
 // Hooks files (Claude Code settings.json / settings.local.json, Codex
-// hooks.json): { hooks: { event: [{ matcher?, hooks: [{type, command}] }] } }.
-// One hub-hook/1 per command entry. Harness event names are kept as-is (the
-// spec maps no client events onto hub hook points); order and deterministic
-// stay empty — harness hooks run in parallel and determinism is not
-// derivable from a shell command.
+// hooks.json, Gemini settings.json): { hooks: { event: [{ matcher?, ...,
+// hooks: [{type, command}] }] } }. One hub-hook/1 per command entry. Harness
+// event names are kept as-is (the spec maps no client events onto hub hook
+// points); order and deterministic stay empty — harness hooks run in
+// parallel and determinism is not derivable from a shell command.
 export function importHooksFile(
   harness: string,
   path: string,
@@ -305,6 +419,7 @@ export function importHooksFile(
   manifests: HubManifest[],
   warnings: AdapterWarning[],
   claimed: Set<string>,
+  options: HooksFileOptions = {},
 ): void {
   if (!(path in files)) return;
   claimed.add(path);
@@ -315,8 +430,9 @@ export function importHooksFile(
   }
   const record = parseJsonFile(path, text, warnings);
   if (record === undefined) return;
-  const extraKeys = Object.keys(record).filter((key) => key !== 'hooks');
-  if (extraKeys.length > 0) {
+  const governedKeys = options.governedKeys ?? ['hooks'];
+  const extraKeys = Object.keys(record).filter((key) => !governedKeys.includes(key));
+  if (!options.skipExtraKeysCheck && extraKeys.length > 0) {
     warnings.push({
       code: 'CONFIG_EXTRA_KEYS',
       path,
@@ -325,6 +441,10 @@ export function importHooksFile(
   }
   if (record.hooks !== undefined && (typeof record.hooks !== 'object' || record.hooks === null || Array.isArray(record.hooks))) {
     warnings.push({ code: 'CONFIG_JSON_INVALID', path, detail: 'hooks is not an object; no hooks imported' });
+    return;
+  }
+  if (record.hooks === undefined && options.emptyOk) {
+    if (!options.skipCanonicalCheck) checkCanonical(path, text, record, extraKeys, warnings);
     return;
   }
   const hooks = (record.hooks ?? {}) as Record<string, unknown>;
@@ -373,11 +493,12 @@ export function importHooksFile(
         }
         const location = `hooks.${event}[${groupIndex}].hooks[${entryIndex}]`;
         const command = sanitizeHookCommand(recordEntry.command, path, location, warnings);
+        const language = options.languageFromEntry ? options.languageFromEntry(recordEntry) : options.language;
         manifests.push({
           kind: 'hub-hook/1',
           event,
           handler: command,
-          language: 'shell',
+          ...(language !== undefined ? { language } : {}),
           sourceHarness: harness,
           knownCompatible: [],
           files: [fileRef],
@@ -387,16 +508,17 @@ export function importHooksFile(
             ...(typeof matcher === 'string' ? { matcher } : {}),
             groupIndex,
             entryIndex,
-            // Entry keys only (type, command, timeout, ...): values stay in
-            // the original file and are merged back at export.
+            // Entry and group keys only (type, command, timeout, sequential,
+            // ...): values stay in the original file and merge back at export.
             entryKeys: Object.keys(recordEntry),
+            groupKeys: Object.keys(group as Record<string, unknown>),
           },
         });
       });
     });
     eventIndex += 1;
   }
-  checkCanonical(path, text, record, extraKeys, warnings);
+  if (!options.skipCanonicalCheck) checkCanonical(path, text, record, extraKeys, warnings);
 }
 
 export interface HookSpecific {
@@ -455,10 +577,18 @@ export function exportHooksFile(
       const groups = groupKeys.get(hook.event)!;
       const groupIndex = specific.groupIndex ?? 0;
       if (!groups.has(groupIndex)) {
-        const group: Record<string, unknown> = {
-          ...(typeof specific.matcher === 'string' ? { matcher: specific.matcher } : {}),
-          hooks: [],
-        };
+        const originalGroup = originalHookGroup(original, hook);
+        const group: Record<string, unknown> = {};
+        if (originalGroup !== undefined) {
+          // Group-level keys (matcher, sequential, ...) come back from the
+          // original file in their original order.
+          for (const [key, value] of Object.entries(originalGroup)) {
+            if (key !== 'hooks') group[key] = value;
+          }
+        } else if (typeof specific.matcher === 'string') {
+          group.matcher = specific.matcher;
+        }
+        group.hooks = [];
         groups.set(groupIndex, group);
         events[hook.event].push(group);
       }
@@ -473,6 +603,21 @@ export function exportHooksFile(
     }
     out[path] = canonicalJson({ hooks: events });
   }
+}
+
+function originalHookGroup(
+  original: Record<string, unknown> | undefined,
+  hook: HubHook,
+): Record<string, unknown> | undefined {
+  if (original === undefined) return undefined;
+  const specific = hook.harnessSpecific as HookSpecific;
+  const hooks = original.hooks;
+  if (!hooks || typeof hooks !== 'object' || Array.isArray(hooks)) return undefined;
+  const groups = (hooks as Record<string, unknown>)[hook.event];
+  if (!Array.isArray(groups)) return undefined;
+  const group = groups[specific.groupIndex ?? 0];
+  if (!group || typeof group !== 'object' || Array.isArray(group)) return undefined;
+  return group as Record<string, unknown>;
 }
 
 function originalHookEntry(

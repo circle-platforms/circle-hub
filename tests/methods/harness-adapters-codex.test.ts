@@ -73,26 +73,36 @@ test('Codex import: mcp_servers become hub-provider/1 without secret values', ()
 
 test('Codex import: TOML subset boundaries skip unsupported lines instead of guessing', () => {
   // The supported subset is documented in packages/harness-adapters/toml.ts:
-  // no inline tables, no multiline strings, no arrays of tables, no dates.
+  // no inline tables, no arrays of tables, no multiline literal strings, no
+  // dates. (Multiline basic strings with """ ARE supported.)
   const result = importFrom('codex', {
     '.codex/config.toml': [
       '[mcp_servers.a]',
       'command = "npx"',
       'options = { mode = "fast" }',
-      'banner = """multiline"""',
+      'banner = \'\'\'literal',
+      'multiline\'\'\'',
       'args = ["-y"]',
       '',
     ].join('\n'),
   });
   assert.equal(result.manifests.length, 1);
   const [provider] = result.manifests as HubProvider[];
-  const shape = provider.harnessSpecific.shape as Record<string, unknown>;
-  assert.deepEqual(Object.keys(shape).sort(), ['args', 'command']);
+  assert.deepEqual(Object.keys(provider.harnessSpecific.shape as Record<string, unknown>).sort(), ['args', 'command']);
   assert.deepEqual(
     result.warnings.map((warning) => warning.code).sort(),
-    ['TOML_LINE_SKIPPED', 'TOML_LINE_SKIPPED'],
+    ['TOML_LINE_SKIPPED', 'TOML_LINE_SKIPPED', 'TOML_LINE_SKIPPED'],
   );
   assert.ok(result.warnings.every((warning) => warning.detail.includes('line')));
+});
+
+test('Codex import: multiline basic strings parse as single values', () => {
+  const result = importFrom('codex', {
+    '.codex/config.toml': '[mcp_servers.a]\ncommand = """\nnode\n"""\nargs = ["x"]\n',
+  });
+  const [provider] = result.manifests as HubProvider[];
+  assert.deepEqual(provider.harnessSpecific.shape, { command: true, args: true });
+  assert.deepEqual(result.warnings, []);
 });
 
 test('Codex import: keys outside mcp_servers are reported and dropped on export', () => {

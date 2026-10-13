@@ -1,9 +1,10 @@
-// TOML subset parser/emitter for Codex `.codex/config.toml`, written without
-// new dependencies. Supported: comments, `[a.b]` sections with bare or quoted
-// segments, `key = value` with basic strings ("..."), literal strings
+// TOML subset parser/emitter for harness config (Codex `.codex/config.toml`,
+// Gemini commands/*.toml), written without new dependencies. Supported:
+// comments, `[a.b]` sections with bare or quoted segments, `key = value` with
+// basic strings ("..."), multiline basic strings ("""..."""), literal strings
 // ('...'), integers, floats, booleans, and single-line arrays of scalars.
-// Unsupported (reported as bad lines, never guessed): multiline strings,
-// inline tables, arrays of tables, dates, nested arrays.
+// Unsupported (reported as bad lines, never guessed): multiline literal
+// strings, inline tables, arrays of tables, dates, nested arrays.
 
 export interface TomlParse {
   values: Record<string, unknown>;
@@ -128,6 +129,51 @@ function parseSectionPath(raw: string): string[] | undefined {
   return segments.length > 0 ? segments : undefined;
 }
 
+function parseMultilineBasic(text: string): string | undefined {
+  // text starts at the opening """
+  let index = 3;
+  if (text[index] === '\n') index += 1;
+  let content = '';
+  while (index < text.length) {
+    if (text.startsWith('"""', index)) {
+      const rest = stripComment(text.slice(index + 3)).trim();
+      return rest === '' ? content : undefined;
+    }
+    const char = text[index];
+    if (char === '\\') {
+      const escaped = text[index + 1];
+      if (escaped === 'n') content += '\n';
+      else if (escaped === 't') content += '\t';
+      else if (escaped === 'r') content += '\r';
+      else if (escaped === '"' || escaped === '\\') content += escaped;
+      else if (escaped === '\n' || escaped === undefined) {
+        // line-ending backslash: skip the newline and following whitespace
+        index += 2;
+        while (index < text.length && /[ \t\n]/.test(text[index])) index += 1;
+        continue;
+      } else return undefined;
+      index += 2;
+      continue;
+    }
+    content += char;
+    index += 1;
+  }
+  return undefined;
+}
+
+function multilineClosed(text: string): boolean {
+  let index = 3;
+  while (index < text.length) {
+    if (text[index] === '\\') {
+      index += 2;
+      continue;
+    }
+    if (text.startsWith('"""', index)) return true;
+    index += 1;
+  }
+  return false;
+}
+
 export function parseToml(text: string): TomlParse {
   const values: Record<string, unknown> = {};
   const badLines: { line: number; text: string }[] = [];
@@ -170,6 +216,22 @@ export function parseToml(text: string): TomlParse {
       continue;
     }
     const key = assignment[2] ?? assignment[3] ?? assignment[1];
+    // Multiline basic strings accumulate raw lines until the closing """.
+    const rawAssignment = /^([A-Za-z0-9_-]+|"([^"]*)"|'([^']*)')\s*=\s*(.+)$/.exec(rawLine.trim());
+    if (rawAssignment && rawAssignment[4].trimStart().startsWith('"""')) {
+      let full = rawAssignment[4].trimStart();
+      while (!multilineClosed(full) && index + 1 < lines.length) {
+        index += 1;
+        full += `\n${lines[index].replace(/\r$/, '')}`;
+      }
+      const multiline = parseMultilineBasic(full);
+      if (multiline === undefined) {
+        badLines.push({ line: index + 1, text: rawLine });
+        continue;
+      }
+      current[key] = multiline;
+      continue;
+    }
     const parsed = parseValue(assignment[4]);
     if (!parsed.ok) {
       badLines.push({ line: index + 1, text: rawLine });

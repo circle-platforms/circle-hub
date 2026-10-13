@@ -330,7 +330,12 @@ export function importClaudeCode(input: VirtualFiles): ImportResult {
   importMarkdown(files, manifests, warnings, claimed, AGENT_FILE, AGENT_SPEC, (match) => baseName(match[1]));
   importInstructions(files, manifests, warnings, claimed);
   for (const settingsPath of SETTINGS_PATHS) {
-    importHooksFile(HARNESS, settingsPath, files, manifests, warnings, claimed);
+    // Claude's hook command is a shell command; `shell: powershell` entries
+    // are the documented exception and keep the field empty.
+    importHooksFile(HARNESS, settingsPath, files, manifests, warnings, claimed, {
+      language: 'shell',
+      languageFromEntry: (entry) => (entry.shell === 'powershell' ? undefined : 'shell'),
+    });
   }
   importMcp(files, manifests, warnings, claimed);
   for (const path of Object.keys(files)) {

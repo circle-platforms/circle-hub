@@ -7,7 +7,7 @@ import { z } from 'zod';
 // values, or absolute paths; harness-specific data survives in
 // `harnessSpecific` with secret values stripped.
 
-export const HARNESS_IDS = ['claude-code', 'codex'] as const;
+export const HARNESS_IDS = ['claude-code', 'codex', 'opencode', 'gemini', 'cursor'] as const;
 export type HarnessId = (typeof HARNESS_IDS)[number];
 
 // The adapter boundary is a virtual file table: the hub hands bytes in at
@@ -127,7 +127,8 @@ export const hubHookSchema = z.looseObject({
   event: z.string().min(1),
   order: z.number().int().nonnegative().optional(),
   handler: z.string().min(1),
-  language: z.enum(HOOK_LANGUAGES),
+  // Not derivable for harnesses whose command strings may call any runtime.
+  language: z.enum(HOOK_LANGUAGES).optional(),
   deterministic: z.boolean().optional(),
   ...base,
 });
