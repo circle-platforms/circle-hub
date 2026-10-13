@@ -26,15 +26,15 @@ import {
 } from './markdown.ts';
 import {
   checkCanonical,
-  dropCwd,
+  entrySkeleton,
   exportHooksFile,
   importHooksFile,
   parseJsonFile,
-  placeholderShape,
+  rebuildProviderEntry,
   sanitizeArgs,
-  stripValueMap,
+  skeletonCredentials,
+  skeletonStripped,
   REDACTED,
-  SECRET_MAP_KEYS,
 } from './configs.ts';
 
 const HARNESS = 'claude-code';
@@ -42,12 +42,14 @@ const SETTINGS_PATHS = ['.claude/settings.json', '.claude/settings.local.json'];
 const MCP_PATH = '.mcp.json';
 
 // Skills are picked up at any nesting depth; commands, agents, rules and
-// settings are project-level `.claude` files. User-level (`~/...`) files are
-// never part of the virtual file table and are therefore never imported.
+// settings are project-level `.claude` files. Rules and agents directories
+// are walked recursively (subdirectory rules are rules; a subdirectory agent
+// keeps its plain name). User-level (`~/...`) files are never part of the
+// virtual file table and are therefore never imported.
 const SKILL_ENTRY = /(^|\/)\.claude\/skills\/([^/]+)\/SKILL\.md$/;
 const COMMAND_FILE = /^\.claude\/commands\/(.+)\.md$/;
-const AGENT_FILE = /^\.claude\/agents\/([^/]+)\.md$/;
-const RULES_FILE = /^\.claude\/rules\/[^/]+\.md$/;
+const AGENT_FILE = /^\.claude\/agents\/(.+)\.md$/;
+const RULES_FILE = /^\.claude\/rules\/.+\.md$/;
 const INSTRUCTION_FILE = /(^|\/)(CLAUDE\.md|CLAUDE\.local\.md|AGENTS\.md)$/;
 
 const ABSOLUTE_PATH = /^([/~]|[A-Za-z]:[\\/])/;
@@ -226,19 +228,10 @@ function importMcp(
       warnings.push({ code: 'PROVIDER_SHAPE_UNKNOWN', path: MCP_PATH, detail: `mcpServers.${name} is not an object; skipped` });
       continue;
     }
-    const shape: Record<string, unknown> = structuredClone(rawEntry) as Record<string, unknown>;
-    const stripped: string[] = [];
-    const credentials: string[] = [];
-    for (const key of SECRET_MAP_KEYS) {
-      for (const name2 of stripValueMap(shape, key)) {
-        if (key !== 'oauth') credentials.push(name2);
-        stripped.push(`${key}.${name2}`);
-      }
-    }
-    dropCwd(shape, MCP_PATH, name, warnings, 'mcpServers');
-    const hasCommand = typeof shape.command === 'string' && shape.command !== '';
-    const hasUrl = typeof shape.url === 'string' && shape.url !== '';
-    const type = typeof shape.type === 'string' ? shape.type : undefined;
+    const entry = rawEntry as Record<string, unknown>;
+    const hasCommand = typeof entry.command === 'string' && entry.command !== '';
+    const hasUrl = typeof entry.url === 'string' && entry.url !== '';
+    const type = typeof entry.type === 'string' ? entry.type : undefined;
     let transport: Transport | undefined;
     if (hasCommand && hasUrl) {
       warnings.push({
@@ -258,15 +251,14 @@ function importMcp(
         continue;
       }
       transport = 'stdio';
-      if (ABSOLUTE_PATH.test(shape.command as string)) {
+      if (ABSOLUTE_PATH.test(entry.command as string)) {
         warnings.push({
           code: 'PROVIDER_COMMAND_ABSOLUTE',
           path: MCP_PATH,
-          detail: `mcpServers.${name} command is an absolute path; reduced to basename ${baseName((shape.command as string).replace(/\\/g, '/'))}`,
+          detail: `mcpServers.${name} command is an absolute path; it is reduced to basename at export`,
         });
-        shape.command = baseName((shape.command as string).replace(/\\/g, '/'));
       }
-      shape.args = sanitizeArgs(shape.args, MCP_PATH, name, warnings, 'mcpServers');
+      sanitizeArgs(entry.args, MCP_PATH, name, warnings, 'mcpServers');
     } else if (hasUrl) {
       if (type === undefined) {
         warnings.push({
@@ -276,7 +268,7 @@ function importMcp(
         });
         continue;
       }
-      if (type === 'http') {
+      if (type === 'http' || type === 'streamable-http') {
         transport = 'streamable-http';
       } else {
         transport = undefined;
@@ -286,8 +278,6 @@ function importMcp(
           detail: `mcpServers.${name} type "${type}" has no hub-provider/1 transport; transport left empty`,
         });
       }
-      stripped.push('url');
-      shape.url = '';
     } else {
       warnings.push({
         code: 'PROVIDER_SHAPE_UNKNOWN',
@@ -295,11 +285,21 @@ function importMcp(
         detail: `mcpServers.${name} has neither command nor url; transport left empty`,
       });
     }
+    if ('cwd' in entry) {
+      warnings.push({
+        code: 'PROVIDER_CWD_DROPPED',
+        path: MCP_PATH,
+        detail: `mcpServers.${name} cwd is a machine-local directory and was removed from the manifest`,
+      });
+    }
+    const shape = entrySkeleton(entry);
+    const credentials = skeletonCredentials(shape);
+    const stripped = skeletonStripped(shape, hasUrl);
     if (stripped.length > 0) {
       warnings.push({
         code: 'PROVIDER_VALUES_STRIPPED',
         path: MCP_PATH,
-        detail: `mcpServers.${name}: values kept out of the manifest (names and shapes preserved): ${stripped.join(', ')}`,
+        detail: `mcpServers.${name}: values kept out of the manifest (key names preserved): ${stripped.join(', ')}`,
       });
     }
     manifests.push({
@@ -312,7 +312,7 @@ function importMcp(
       sourceHarness: HARNESS,
       knownCompatible: [],
       files: [fileRef],
-      harnessSpecific: { filePath: MCP_PATH, shape },
+      harnessSpecific: { filePath: MCP_PATH, server: name, shape },
     });
   }
   checkCanonical(MCP_PATH, text, record, extraKeys, warnings);
@@ -327,7 +327,7 @@ export function importClaudeCode(input: VirtualFiles): ImportResult {
   importMarkdown(files, manifests, warnings, claimed, COMMAND_FILE, COMMAND_SPEC, (match) =>
     match[1].split('/').join(':'),
   );
-  importMarkdown(files, manifests, warnings, claimed, AGENT_FILE, AGENT_SPEC);
+  importMarkdown(files, manifests, warnings, claimed, AGENT_FILE, AGENT_SPEC, (match) => baseName(match[1]));
   importInstructions(files, manifests, warnings, claimed);
   for (const settingsPath of SETTINGS_PATHS) {
     importHooksFile(HARNESS, settingsPath, files, manifests, warnings, claimed);
@@ -401,10 +401,16 @@ function exportMarkdown(
 
 interface ProviderSpecific {
   filePath?: string;
+  server?: string;
   shape?: Record<string, unknown>;
 }
 
-function exportProviders(providers: HubProvider[], out: VirtualFiles, warnings: AdapterWarning[]): void {
+function exportProviders(
+  providers: HubProvider[],
+  source: VirtualFiles,
+  out: VirtualFiles,
+  warnings: AdapterWarning[],
+): void {
   const byPath = new Map<string, HubProvider[]>();
   for (const provider of providers) {
     const specific = provider.harnessSpecific as ProviderSpecific;
@@ -414,19 +420,27 @@ function exportProviders(providers: HubProvider[], out: VirtualFiles, warnings: 
     byPath.set(path, list);
   }
   for (const [path, list] of byPath) {
+    const sourceText = source[path] === undefined ? undefined : toText(source[path]);
+    const record = sourceText === undefined ? undefined : parseJsonFile(path, sourceText, warnings);
     const mcpServers: Record<string, unknown> = {};
     for (const provider of list) {
       const specific = provider.harnessSpecific as ProviderSpecific;
-      if (!specific.shape || typeof specific.shape !== 'object') {
+      const serverName = typeof specific.server === 'string' ? specific.server : provider.name;
+      const servers = record?.mcpServers;
+      const original =
+        servers && typeof servers === 'object' && !Array.isArray(servers)
+          ? (servers as Record<string, unknown>)[serverName]
+          : undefined;
+      if (!original || typeof original !== 'object' || Array.isArray(original)) {
         warnings.push({
-          code: 'PROVIDER_SHAPE_UNKNOWN',
+          code: 'SOURCE_FILE_MISSING',
           path,
-          detail: `provider ${provider.name} carries no harnessSpecific shape; not exported`,
+          detail: `mcpServers.${serverName}: entry not found in the export file table; provider ${provider.name} not exported`,
         });
         continue;
       }
-      const { out: shape, missing } = placeholderShape(specific.shape);
-      mcpServers[provider.name] = shape;
+      const { entry, missing } = rebuildProviderEntry(original as Record<string, unknown>, provider.name, path, 'mcpServers', warnings);
+      mcpServers[provider.name] = entry;
       if (missing.length > 0) {
         warnings.push({
           code: 'SECRET_PLACEHOLDER',
@@ -479,7 +493,7 @@ export function exportClaudeCode(manifests: HubManifest[], files: VirtualFiles):
       });
     }
   }
-  exportHooksFile(hooks, out, SETTINGS_PATHS[0]);
-  exportProviders(providers, out, warnings);
+  exportHooksFile(hooks, out, SETTINGS_PATHS[0], source, warnings);
+  exportProviders(providers, source, out, warnings);
   return { files: out, warnings };
 }

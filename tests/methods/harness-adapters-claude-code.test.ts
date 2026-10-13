@@ -146,13 +146,14 @@ test('Claude Code import: multiple hooks become individual manifests without inv
     assert.equal(hook.deterministic, undefined);
     assert.deepEqual(hook.files.map((file) => file.path), ['.claude/settings.json']);
   }
-  const specific = hooks.map((hook) => hook.harnessSpecific as { matcher?: string; eventIndex: number; groupIndex: number; entryIndex: number; entry: Record<string, unknown> });
+  const specific = hooks.map((hook) => hook.harnessSpecific as { matcher?: string; eventIndex: number; groupIndex: number; entryIndex: number; entryKeys: string[] });
   assert.equal(specific[0].matcher, 'Bash');
   assert.deepEqual(
     specific.map((entry) => [entry.eventIndex, entry.groupIndex, entry.entryIndex]),
     [[0, 0, 0], [1, 0, 0], [1, 0, 1]],
   );
-  assert.equal(specific[2].entry.timeout, 30);
+  // Extra entry keys are disclosed by name only; values stay in the file.
+  assert.deepEqual(specific[2].entryKeys, ['type', 'command', 'timeout']);
   // One HOOK_EVENT_UNMAPPED per harness event, not per command.
   const unmapped = imported.warnings.filter((warning) => warning.code === 'HOOK_EVENT_UNMAPPED');
   assert.equal(unmapped.length, 3);
@@ -173,18 +174,13 @@ test('Claude Code import: stdio and http MCP servers keep names and shapes witho
   assert.equal(docs.credentialMode, undefined);
   assert.deepEqual(docs.reads, []);
   assert.deepEqual(docs.writes, []);
-  const docsShape = docs.harnessSpecific.shape as Record<string, unknown>;
-  assert.equal(docsShape.command, 'npx');
-  assert.deepEqual(docsShape.args, ['-y', '@example/docs-mcp']);
-  assert.deepEqual(docsShape.env, { DOCS_API_KEY: '', DOCS_REGION: '' });
+  // The shape is key names only: values never enter the manifest.
+  assert.deepEqual(docs.harnessSpecific.shape, { command: true, args: true, env: ['DOCS_API_KEY', 'DOCS_REGION'] });
 
   const knowledge = providers.find((provider) => provider.name === 'team-knowledge')!;
   assert.equal(knowledge.transport, 'streamable-http');
   assert.deepEqual(knowledge.credentials, ['Authorization']);
-  const knowledgeShape = knowledge.harnessSpecific.shape as Record<string, unknown>;
-  assert.equal(knowledgeShape.type, 'http');
-  assert.equal(knowledgeShape.url, '');
-  assert.deepEqual(knowledgeShape.headers, { Authorization: '' });
+  assert.deepEqual(knowledge.harnessSpecific.shape, { type: true, url: true, headers: ['Authorization'] });
 
   const stripped = imported.warnings.filter((warning) => warning.code === 'PROVIDER_VALUES_STRIPPED');
   assert.equal(stripped.length, 2);
@@ -318,13 +314,16 @@ test('Claude Code import: absolute command paths and arg values are kept out of 
     }),
   });
   const [provider] = result.manifests as HubProvider[];
-  const shape = provider.harnessSpecific.shape as Record<string, unknown>;
-  assert.equal(shape.command, 'server');
-  assert.deepEqual(shape.args, ['--root', '[redacted]', 'plain']);
+  // The shape discloses key names only; command and args values never enter.
+  assert.deepEqual(provider.harnessSpecific.shape, { command: true, args: true });
   assert.deepEqual(
     result.warnings.map((warning) => warning.code).sort(),
     ['CANONICAL_NORMALIZATION', 'PROVIDER_ARG_REDACTED', 'PROVIDER_COMMAND_ABSOLUTE'],
   );
+  const serialized = JSON.stringify(result.manifests);
+  for (const leaked of ['/opt/tools/bin/server', '/srv/data']) {
+    assert.equal(serialized.includes(leaked), false, `${leaked} leaked`);
+  }
 });
 
 test('Claude Code export: cross-harness manifests are refused with a warning', () => {
@@ -365,10 +364,15 @@ test('Claude Code export: hub-tool/1 no longer exists as a manifest kind', () =>
 
 test('Claude Code export: source files missing from the file table are reported', () => {
   const result = exportTo('claude-code', imported.manifests, {});
-  assert.deepEqual(Object.keys(result.files).sort(), ['.claude/settings.json', '.claude/settings.local.json', '.mcp.json']);
+  // Hooks still export with just {type, command}; providers cannot be
+  // rebuilt without the original entries, so no .mcp.json is written.
+  assert.deepEqual(Object.keys(result.files).sort(), ['.claude/settings.json', '.claude/settings.local.json']);
+  const settings = JSON.parse(result.files['.claude/settings.json'] as string) as { hooks: { PostToolUse: Array<{ hooks: unknown[] }> } };
+  assert.deepEqual(settings.hooks.PostToolUse[0].hooks[0], { type: 'command', command: 'sh scripts/format-check.sh' });
+  // 9 markdown files + 2 hooks files + 2 provider entries.
   assert.equal(
     result.warnings.filter((warning) => warning.code === 'SOURCE_FILE_MISSING').length,
-    9,
+    13,
   );
 });
 
@@ -396,9 +400,11 @@ test('Sanitization: env, headers and oauth values are stripped, only key names r
     }),
   });
   const [provider] = result.manifests as HubProvider[];
-  const shape = provider.harnessSpecific.shape as Record<string, unknown>;
-  assert.deepEqual(shape.env, { API_KEY: '' });
-  assert.deepEqual(shape.oauth, { clientId: '', clientSecret: '' });
+  assert.deepEqual(provider.harnessSpecific.shape, {
+    command: true,
+    env: ['API_KEY'],
+    oauth: ['clientId', 'clientSecret'],
+  });
   assert.deepEqual(provider.credentials, ['API_KEY']);
   const serialized = JSON.stringify(result.manifests);
   for (const secret of ['super-secret-value', 'synthetic-client', 'synthetic-secret']) {
@@ -416,7 +422,7 @@ test('Sanitization: cwd is dropped from MCP entries with a warning', () => {
     '.mcp.json': JSON.stringify({ mcpServers: { svc: { command: 'node', cwd: '/srv/app' } } }),
   });
   const [provider] = result.manifests as HubProvider[];
-  assert.equal('cwd' in (provider.harnessSpecific.shape as Record<string, unknown>), false);
+  assert.deepEqual(provider.harnessSpecific.shape, { command: true });
   assert.deepEqual(
     result.warnings.map((warning) => warning.code).sort(),
     ['CANONICAL_NORMALIZATION', 'PROVIDER_CWD_DROPPED'],
@@ -425,7 +431,7 @@ test('Sanitization: cwd is dropped from MCP entries with a warning', () => {
 });
 
 test('Sanitization: args redaction catches endpoints and paths embedded in long strings', () => {
-  const result = importFrom('claude-code', {
+  const input = {
     '.mcp.json': JSON.stringify({
       mcpServers: {
         svc: {
@@ -443,9 +449,20 @@ test('Sanitization: args redaction catches endpoints and paths embedded in long 
         },
       },
     }),
-  });
+  };
+  const result = importFrom('claude-code', input);
   const [provider] = result.manifests as HubProvider[];
-  assert.deepEqual((provider.harnessSpecific.shape as Record<string, unknown>).args, [
+  // Args values never enter the manifest; the shape discloses the key only.
+  assert.deepEqual(provider.harnessSpecific.shape, { command: true, args: true });
+  assert.equal(result.warnings.filter((warning) => warning.code === 'PROVIDER_ARG_REDACTED').length, 6);
+  const serialized = JSON.stringify(result.manifests);
+  for (const leaked of ['/srv/data', '192.0.2.5', '192.0.2.9', '~/bin/tool', '/abs/path', 'short']) {
+    assert.equal(serialized.includes(leaked), false, `${leaked} leaked`);
+  }
+  // Export re-applies the rules against the original file bytes.
+  const exported = exportTo('claude-code', result.manifests, input);
+  const mcp = JSON.parse(exported.files['.mcp.json'] as string) as { mcpServers: { svc: { args: string[] } } };
+  assert.deepEqual(mcp.mcpServers.svc.args, [
     'serve',
     '[redacted]',
     '[redacted]',
@@ -455,32 +472,101 @@ test('Sanitization: args redaction catches endpoints and paths embedded in long 
     '[redacted]',
     'plain',
   ]);
-  assert.equal(result.warnings.filter((warning) => warning.code === 'PROVIDER_ARG_REDACTED').length, 6);
-  const serialized = JSON.stringify(result.manifests);
-  for (const leaked of ['/srv/data', '192.0.2.5', '192.0.2.9', '~/bin/tool', '/abs/path', 'short']) {
-    assert.equal(serialized.includes(leaked), false, `${leaked} leaked`);
-  }
 });
 
-test('Sanitization: absolute path segments in hook commands become basenames', () => {
+test('Sanitization: hook commands are tokenized with shell quoting, then redacted per word', () => {
   const input = {
     '.claude/settings.json': `${JSON.stringify({
       hooks: {
         PreToolUse: [
           { matcher: 'Bash', hooks: [{ type: 'command', command: 'sh /opt/team/hooks/check.sh --flag' }] },
           { hooks: [{ type: 'command', command: 'node --config=~/hooks/c.json scripts/run.js' }] },
+          { hooks: [{ type: 'command', command: '/usr/bin/env bash scripts/x.sh' }] },
         ],
       },
     }, null, 2)}\n`,
   };
   const result = importFrom('claude-code', input);
   const hooks = result.manifests as HubHook[];
-  assert.equal(hooks[0].handler, 'sh check.sh --flag');
-  assert.equal(hooks[1].handler, 'node --config=c.json scripts/run.js');
-  assert.equal(result.warnings.filter((warning) => warning.code === 'HOOK_COMMAND_PATH').length, 2);
+  // Path words are redacted per the args rules; the program word is reduced
+  // to its basename.
+  assert.equal(hooks[0].handler, 'sh [redacted] --flag');
+  assert.equal(hooks[1].handler, 'node [redacted] scripts/run.js');
+  assert.equal(hooks[2].handler, 'env bash scripts/x.sh');
+  assert.equal(result.warnings.filter((warning) => warning.code === 'HOOK_ARG_REDACTED').length, 2);
+  assert.equal(result.warnings.filter((warning) => warning.code === 'HOOK_COMMAND_PATH').length, 1);
   const serialized = JSON.stringify(result.manifests);
   assert.equal(serialized.includes('/opt/team'), false);
   assert.equal(serialized.includes('~/hooks'), false);
+  assert.equal(serialized.includes('/usr/bin'), false);
+});
+
+test('Sanitization: Bearer tokens and URLs inside hook commands never enter manifests', () => {
+  const input = {
+    '.claude/settings.json': `${JSON.stringify({
+      hooks: {
+        PreToolUse: [
+          {
+            matcher: 'Bash',
+            hooks: [
+              { type: 'command', command: 'sh notify.sh Bearer synthetic-token-value' },
+              { type: 'command', command: 'sh -c "Authorization: Bearer synthetic-token" --verbose' },
+              { type: 'command', command: 'curl http://192.0.2.40/hook -d done' },
+            ],
+          },
+        ],
+      },
+    }, null, 2)}\n`,
+  };
+  const result = importFrom('claude-code', input);
+  const handlers = (result.manifests as HubHook[]).map((hook) => hook.handler);
+  assert.deepEqual(handlers, ['sh notify.sh Bearer [redacted]', 'sh -c [redacted] --verbose', 'curl [redacted] -d done']);
+  const serialized = JSON.stringify(result.manifests);
+  assert.equal(serialized.includes('synthetic-token'), false);
+  assert.equal(serialized.includes('192.0.2.40'), false);
+  const details = result.warnings.map((warning) => warning.detail).join('\n');
+  assert.equal(details.includes('synthetic-token'), false);
+});
+
+test('Sanitization: unknown config keys (headersHelper and friends) disclose names only', () => {
+  const result = importFrom('claude-code', {
+    '.mcp.json': JSON.stringify({
+      mcpServers: {
+        svc: { type: 'http', url: 'https://mcp.example.com/x', headersHelper: 'fetch-token --secret=abc' },
+      },
+    }),
+  });
+  const [provider] = result.manifests as HubProvider[];
+  assert.deepEqual(provider.harnessSpecific.shape, { type: true, url: true, headersHelper: true });
+  const serialized = JSON.stringify(result.manifests);
+  assert.equal(serialized.includes('fetch-token'), false);
+  assert.equal(serialized.includes('secret=abc'), false);
+});
+
+test('Claude Code import: type streamable-http is an alias of http', () => {
+  const result = importFrom('claude-code', {
+    '.mcp.json': JSON.stringify({ mcpServers: { svc: { type: 'streamable-http', url: 'https://mcp.example.com/x' } } }),
+  });
+  const [provider] = result.manifests as HubProvider[];
+  assert.equal(provider.transport, 'streamable-http');
+  assert.equal(
+    result.warnings.some((warning) => warning.code === 'PROVIDER_TRANSPORT_UNKNOWN' || warning.code === 'PROVIDER_ENTRY_INVALID'),
+    false,
+  );
+});
+
+test('Claude Code import: subdirectory rules and agents are discovered', () => {
+  const result = importFrom('claude-code', {
+    '.claude/rules/deep/rule.md': '---\npaths: packs/**\n---\n\nDeep rule.\n',
+    '.claude/agents/nested/helper.md': '---\nname: helper\ndescription: Nested agent\n---\n\nBody.\n',
+  });
+  const [instruction] = result.manifests.filter((manifest) => manifest.kind === 'hub-instruction/1') as HubInstruction[];
+  assert.equal(instruction.fileName, 'rule.md');
+  assert.deepEqual(instruction.applies, ['packs/**']);
+  const [agent] = result.manifests.filter((manifest) => manifest.kind === 'hub-agent/1') as HubAgent[];
+  // The subdirectory is a location, not part of the identity.
+  assert.equal(agent.name, 'helper');
+  assert.deepEqual(result.warnings, []);
 });
 
 test('Sanitization: frontmatter skip warnings carry line numbers, not content', () => {

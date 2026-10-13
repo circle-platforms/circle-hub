@@ -52,10 +52,8 @@ test('Codex import: mcp_servers become hub-provider/1 without secret values', ()
   // Not derivable from a static config file: provides, credentialMode.
   assert.equal(docs.provides, undefined);
   assert.equal(docs.credentialMode, undefined);
-  const shape = docs.harnessSpecific.shape as Record<string, unknown>;
-  assert.equal(shape.command, 'npx');
-  assert.deepEqual(shape.args, ['-y', '@example/docs-mcp']);
-  assert.deepEqual(shape.env, { DOCS_API_KEY: '' });
+  // The shape discloses key names only; values never enter the manifest.
+  assert.deepEqual(docs.harnessSpecific.shape, { command: true, args: true, env: ['DOCS_API_KEY'] });
   assert.deepEqual(
     docs.files.map((file) => file.path),
     ['.codex/config.toml'],
@@ -161,15 +159,54 @@ test('Sanitization: cwd is dropped and oauth values stripped in codex config', (
     ].join('\n'),
   });
   const [provider] = result.manifests as HubProvider[];
-  const shape = provider.harnessSpecific.shape as Record<string, unknown>;
-  assert.equal('cwd' in shape, false);
-  assert.deepEqual(shape.oauth, { client_id: '' });
+  assert.deepEqual(provider.harnessSpecific.shape, { command: true, oauth: ['client_id'] });
   assert.deepEqual(provider.credentials, []);
   assert.deepEqual(
     result.warnings.map((warning) => warning.code).sort(),
     ['PROVIDER_CWD_DROPPED', 'PROVIDER_VALUES_STRIPPED'],
   );
   assert.equal(JSON.stringify(result.manifests).includes('synthetic-client'), false);
+});
+
+test('Codex import: url-only entries are legal Streamable HTTP servers', () => {
+  const input = {
+    '.codex/config.toml': [
+      '[mcp_servers.remote]',
+      'url = "https://mcp.example.com/remote"',
+      'bearer_token_env_var = "REMOTE_TOKEN"',
+      '',
+    ].join('\n'),
+  };
+  const result = importFrom('codex', input);
+  const [provider] = result.manifests as HubProvider[];
+  assert.equal(provider.transport, 'streamable-http');
+  // The url value is stripped; the env-var *name* stays (it is a name, and
+  // value-dropping still applies on the entry skeleton).
+  assert.equal(JSON.stringify(result.manifests).includes('mcp.example.com'), false);
+  assert.equal(
+    result.warnings.some((warning) => warning.code === 'PROVIDER_ENTRY_INVALID'),
+    false,
+  );
+  // Round trip: the url comes back as a placeholder with a warning.
+  const exported = exportTo('codex', result.manifests, input);
+  const text = exported.files['.codex/config.toml'] as string;
+  assert.ok(text.includes('url = "[redacted]"'), text);
+  assert.ok(text.includes('bearer_token_env_var = "REMOTE_TOKEN"'), text);
+  assert.deepEqual(
+    exported.warnings.map((warning) => warning.code),
+    ['SECRET_PLACEHOLDER'],
+  );
+});
+
+test('Codex import: command and url together is still an invalid entry', () => {
+  const result = importFrom('codex', {
+    '.codex/config.toml': '[mcp_servers.bad]\ncommand = "node"\nurl = "https://mcp.example.com/x"\n',
+  });
+  assert.deepEqual(result.manifests, []);
+  assert.deepEqual(
+    result.warnings.map((warning) => warning.code),
+    ['PROVIDER_ENTRY_INVALID'],
+  );
 });
 
 test('Codex import: empty config.toml is reported, not silently ignored', () => {
@@ -201,13 +238,16 @@ test('Codex import: TOML comments are reported by line and dropped on export', (
 });
 
 test('Codex export: empty tables never produce a bare [mcp_servers] header', () => {
-  const result = importFrom('codex', {
+  const input = {
     '.codex/config.toml': '[mcp_servers.a]\ncommand = "node"\n\n[mcp_servers.a.env]\n',
-  });
-  const exported = exportTo('codex', result.manifests, {});
+  };
+  const result = importFrom('codex', input);
+  const exported = exportTo('codex', result.manifests, input);
   const text = exported.files['.codex/config.toml'] as string;
   assert.ok(text.includes('[mcp_servers.a]'), text);
   assert.equal(text.includes('[mcp_servers.a.env]'), false, text);
+  // The mcp_servers table holds only sub-tables: no bare header line.
+  assert.equal(text.split('\n').includes('[mcp_servers]'), false, text);
   // And with zero providers at all, no file is written.
   assert.deepEqual(exportTo('codex', [], {}).files, {});
 });

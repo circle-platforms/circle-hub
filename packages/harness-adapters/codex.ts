@@ -18,14 +18,14 @@ import {
 } from './markdown.ts';
 import { emitToml, parseToml, commentLines } from './toml.ts';
 import {
-  dropCwd,
+  entrySkeleton,
   exportHooksFile,
   importHooksFile,
-  placeholderShape,
+  rebuildProviderEntry,
   sanitizeArgs,
-  stripValueMap,
+  skeletonCredentials,
+  skeletonStripped,
   REDACTED,
-  SECRET_MAP_KEYS,
 } from './configs.ts';
 
 const HARNESS = 'codex';
@@ -162,18 +162,9 @@ function importConfig(
       warnings.push({ code: 'PROVIDER_SHAPE_UNKNOWN', path: CONFIG_PATH, detail: `mcp_servers.${name} is not a table; skipped` });
       continue;
     }
-    const shape: Record<string, unknown> = structuredClone(rawEntry) as Record<string, unknown>;
-    const stripped: string[] = [];
-    const credentials: string[] = [];
-    for (const key of SECRET_MAP_KEYS) {
-      for (const name2 of stripValueMap(shape, key)) {
-        if (key !== 'oauth') credentials.push(name2);
-        stripped.push(`${key}.${name2}`);
-      }
-    }
-    dropCwd(shape, CONFIG_PATH, name, warnings, 'mcp_servers');
-    const hasCommand = typeof shape.command === 'string' && shape.command !== '';
-    const hasUrl = typeof shape.url === 'string' && shape.url !== '';
+    const entry = rawEntry as Record<string, unknown>;
+    const hasCommand = typeof entry.command === 'string' && entry.command !== '';
+    const hasUrl = typeof entry.url === 'string' && entry.url !== '';
     let transport: Transport | undefined;
     if (hasCommand && hasUrl) {
       warnings.push({
@@ -185,24 +176,19 @@ function importConfig(
     }
     if (hasCommand) {
       transport = 'stdio';
-      if (ABSOLUTE_PATH.test(shape.command as string)) {
+      if (ABSOLUTE_PATH.test(entry.command as string)) {
         warnings.push({
           code: 'PROVIDER_COMMAND_ABSOLUTE',
           path: CONFIG_PATH,
-          detail: `mcp_servers.${name} command is an absolute path; reduced to basename ${baseName((shape.command as string).replace(/\\/g, '/'))}`,
+          detail: `mcp_servers.${name} command is an absolute path; it is reduced to basename at export`,
         });
-        shape.command = baseName((shape.command as string).replace(/\\/g, '/'));
       }
-      shape.args = sanitizeArgs(shape.args, CONFIG_PATH, name, warnings, 'mcp_servers');
+      sanitizeArgs(entry.args, CONFIG_PATH, name, warnings, 'mcp_servers');
     } else if (hasUrl) {
-      // Codex mcp_servers carry no type key, so a bare url is ambiguous; the
-      // review rule skips it instead of guessing streamable-http.
-      warnings.push({
-        code: 'PROVIDER_ENTRY_INVALID',
-        path: CONFIG_PATH,
-        detail: `mcp_servers.${name}: url without a type key is ambiguous; the entry is skipped`,
-      });
-      continue;
+      // Codex mcp_servers have no type key: a url-only entry is a legal
+      // Streamable HTTP server (auth / bearer_token_env_var / http_headers /
+      // env_http_headers are its optional companions).
+      transport = 'streamable-http';
     } else {
       warnings.push({
         code: 'PROVIDER_SHAPE_UNKNOWN',
@@ -210,11 +196,21 @@ function importConfig(
         detail: `mcp_servers.${name} has neither command nor url; transport left empty`,
       });
     }
+    if ('cwd' in entry) {
+      warnings.push({
+        code: 'PROVIDER_CWD_DROPPED',
+        path: CONFIG_PATH,
+        detail: `mcp_servers.${name} cwd is a machine-local directory and was removed from the manifest`,
+      });
+    }
+    const shape = entrySkeleton(entry);
+    const credentials = skeletonCredentials(shape);
+    const stripped = skeletonStripped(shape, hasUrl);
     if (stripped.length > 0) {
       warnings.push({
         code: 'PROVIDER_VALUES_STRIPPED',
         path: CONFIG_PATH,
-        detail: `mcp_servers.${name}: values kept out of the manifest (names and shapes preserved): ${stripped.join(', ')}`,
+        detail: `mcp_servers.${name}: values kept out of the manifest (key names preserved): ${stripped.join(', ')}`,
       });
     }
     manifests.push({
@@ -227,7 +223,7 @@ function importConfig(
       sourceHarness: HARNESS,
       knownCompatible: [],
       files: [fileRef],
-      harnessSpecific: { filePath: CONFIG_PATH, shape },
+      harnessSpecific: { filePath: CONFIG_PATH, server: name, shape },
     });
   }
 }
@@ -294,7 +290,12 @@ function exportMarkdown(
   }
 }
 
-function exportProviders(providers: HubProvider[], out: VirtualFiles, warnings: AdapterWarning[]): void {
+function exportProviders(
+  providers: HubProvider[],
+  source: VirtualFiles,
+  out: VirtualFiles,
+  warnings: AdapterWarning[],
+): void {
   const byPath = new Map<string, HubProvider[]>();
   for (const provider of providers) {
     const specific = provider.harnessSpecific as { filePath?: unknown };
@@ -304,19 +305,27 @@ function exportProviders(providers: HubProvider[], out: VirtualFiles, warnings: 
     byPath.set(path, list);
   }
   for (const [path, list] of byPath) {
+    const sourceText = source[path] === undefined ? undefined : toText(source[path]);
+    const parsed = sourceText === undefined ? undefined : parseToml(sourceText);
+    const servers = parsed?.values.mcp_servers;
     const mcpServers: Record<string, unknown> = {};
     for (const provider of list) {
-      const specific = provider.harnessSpecific as { shape?: unknown };
-      if (!specific.shape || typeof specific.shape !== 'object' || Array.isArray(specific.shape)) {
+      const specific = provider.harnessSpecific as { filePath?: unknown; server?: unknown };
+      const serverName = typeof specific.server === 'string' ? specific.server : provider.name;
+      const original =
+        servers && typeof servers === 'object' && !Array.isArray(servers)
+          ? (servers as Record<string, unknown>)[serverName]
+          : undefined;
+      if (!original || typeof original !== 'object' || Array.isArray(original)) {
         warnings.push({
-          code: 'PROVIDER_SHAPE_UNKNOWN',
+          code: 'SOURCE_FILE_MISSING',
           path,
-          detail: `provider ${provider.name} carries no harnessSpecific shape; not exported`,
+          detail: `mcp_servers.${serverName}: entry not found in the export file table; provider ${provider.name} not exported`,
         });
         continue;
       }
-      const { out: shape, missing } = placeholderShape(specific.shape as Record<string, unknown>);
-      mcpServers[provider.name] = shape;
+      const { entry, missing } = rebuildProviderEntry(original as Record<string, unknown>, provider.name, path, 'mcp_servers', warnings);
+      mcpServers[provider.name] = entry;
       if (missing.length > 0) {
         warnings.push({
           code: 'SECRET_PLACEHOLDER',
@@ -376,7 +385,7 @@ export function exportCodex(manifests: HubManifest[], files: VirtualFiles): Expo
         break;
     }
   }
-  exportHooksFile(hooks, out, HOOKS_PATH);
-  exportProviders(providers, out, warnings);
+  exportHooksFile(hooks, out, HOOKS_PATH, source, warnings);
+  exportProviders(providers, source, out, warnings);
   return { files: out, warnings };
 }

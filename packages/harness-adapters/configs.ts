@@ -3,125 +3,24 @@ import { baseName, canonicalJson, sha256Hex, toText } from './files.ts';
 
 // Structural sanitizing for MCP server entries and hook commands. Rules
 // follow the entry structure, never value guessing:
-// - env / headers / http_headers / oauth: all values removed, key names kept
-// - cwd: removed (it is a machine-local working directory)
-// - args: elements containing "://", starting with / or ~, or shaped
-//   --key=value / -k=value are replaced with [redacted]; the rest stay
-// - hook commands: absolute path segments are reduced to basenames
+// - manifests carry only the *shape* of config entries: key names (and, for
+//   object-valued keys, the nested key names); every value stays out
+// - export rebuilds values from the original file bytes and re-applies the
+//   rules: object values become [redacted] placeholders, url becomes a
+//   placeholder, cwd is dropped, args words matching the redaction rules are
+//   replaced, absolute program paths are reduced to basenames
+// - hook commands are tokenized with shell quoting rules first; each word is
+//   then checked with the same rules as MCP args, plus the Bearer keyword
 // Warning details carry paths, line numbers and key names only — never
 // values or whole lines.
 
 export const REDACTED = '[redacted]';
 
-export const SECRET_MAP_KEYS = ['env', 'headers', 'http_headers', 'oauth'] as const;
+// Object-valued entry keys whose nested names are also credential names.
+const CREDENTIAL_MAP_KEYS = ['env', 'headers', 'http_headers', 'env_http_headers'];
 
 const ABSOLUTE_PATH = /^([/~]|[A-Za-z]:[\\/])/;
 const KEY_VALUE_ARG = /^--?[A-Za-z0-9_.-]+=/;
-
-// Strips a secret-bearing map down to empty-string values; returns the key
-// names. A non-object value is dropped entirely.
-export function stripValueMap(entry: Record<string, unknown>, key: string): string[] {
-  const value = entry[key];
-  if (value === undefined) return [];
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    delete entry[key];
-    return [];
-  }
-  const names: string[] = [];
-  const map = value as Record<string, unknown>;
-  for (const name of Object.keys(map)) {
-    names.push(name);
-    map[name] = '';
-  }
-  return names;
-}
-
-export function dropCwd(
-  entry: Record<string, unknown>,
-  path: string,
-  server: string,
-  warnings: AdapterWarning[],
-  serversKey: string,
-): void {
-  if ('cwd' in entry) {
-    delete entry.cwd;
-    warnings.push({
-      code: 'PROVIDER_CWD_DROPPED',
-      path,
-      detail: `${serversKey}.${server} cwd is a machine-local directory and was removed from the manifest`,
-    });
-  }
-}
-
-export function sanitizeArgs(
-  args: unknown,
-  path: string,
-  server: string,
-  warnings: AdapterWarning[],
-  serversKey: string,
-): unknown {
-  if (!Array.isArray(args)) return args;
-  return args.map((arg, index) => {
-    if (
-      typeof arg === 'string' &&
-      (arg.includes('://') || arg.startsWith('/') || arg.startsWith('~') || KEY_VALUE_ARG.test(arg))
-    ) {
-      warnings.push({
-        code: 'PROVIDER_ARG_REDACTED',
-        path,
-        detail: `${serversKey}.${server} args[${index}] matches a redaction rule (endpoint, absolute path, or key=value) and was replaced with ${REDACTED}`,
-      });
-      return REDACTED;
-    }
-    return arg;
-  });
-}
-
-const HOOK_PATH_SEGMENT = /(^|[=\s"'`(])(\/[^\s"'();|&]+|~\/[^\s"'();|&]+)/g;
-
-export function sanitizeHookCommand(
-  command: string,
-  path: string,
-  location: string,
-  warnings: AdapterWarning[],
-): string {
-  let changed = false;
-  const sanitized = command.replace(HOOK_PATH_SEGMENT, (_match, prefix: string, segment: string) => {
-    changed = true;
-    return `${prefix}${baseName(segment)}`;
-  });
-  if (changed) {
-    warnings.push({
-      code: 'HOOK_COMMAND_PATH',
-      path,
-      detail: `${location}: absolute path segments in the hook command were reduced to basenames`,
-    });
-  }
-  return sanitized;
-}
-
-// Export side: write stripped values back as placeholders and report the key
-// names that must be refilled.
-export function placeholderShape(shape: Record<string, unknown>): { out: Record<string, unknown>; missing: string[] } {
-  const out = structuredClone(shape) as Record<string, unknown>;
-  const missing: string[] = [];
-  for (const key of SECRET_MAP_KEYS) {
-    const map = out[key];
-    if (map && typeof map === 'object' && !Array.isArray(map)) {
-      for (const [name, value] of Object.entries(map as Record<string, unknown>)) {
-        if (value === '') {
-          (map as Record<string, unknown>)[name] = REDACTED;
-          missing.push(`${key}.${name}`);
-        }
-      }
-    }
-  }
-  if (out.url === '') {
-    out.url = REDACTED;
-    missing.push('url');
-  }
-  return { out, missing };
-}
 
 export function parseJsonFile(
   path: string,
@@ -157,6 +56,240 @@ export function checkCanonical(
       detail: 'file is valid JSON but not in the adapter canonical form (2-space indent, trailing newline); export rewrites it in canonical form',
     });
   }
+}
+
+export function matchesArgRedaction(value: string): boolean {
+  return value.includes('://') || value.startsWith('/') || value.startsWith('~') || KEY_VALUE_ARG.test(value);
+}
+
+export function sanitizeArgs(
+  args: unknown,
+  path: string,
+  server: string,
+  warnings: AdapterWarning[],
+  serversKey: string,
+): unknown {
+  if (!Array.isArray(args)) return args;
+  return args.map((arg, index) => {
+    if (typeof arg === 'string' && matchesArgRedaction(arg)) {
+      warnings.push({
+        code: 'PROVIDER_ARG_REDACTED',
+        path,
+        detail: `${serversKey}.${server} args[${index}] matches a redaction rule (endpoint, absolute path, or key=value) and was replaced with ${REDACTED}`,
+      });
+      return REDACTED;
+    }
+    return arg;
+  });
+}
+
+// Shell word tokenizer: whitespace separates, single quotes are literal,
+// double quotes keep backslash escapes, backslash escapes the next character.
+// An unclosed quote runs to the end of the string.
+interface ShellToken {
+  raw: string;
+  value: string;
+  separator: boolean;
+}
+
+export function tokenizeShell(command: string): ShellToken[] {
+  const tokens: ShellToken[] = [];
+  let index = 0;
+  while (index < command.length) {
+    if (/\s/.test(command[index])) {
+      let end = index;
+      while (end < command.length && /\s/.test(command[end])) end += 1;
+      tokens.push({ raw: command.slice(index, end), value: command.slice(index, end), separator: true });
+      index = end;
+      continue;
+    }
+    let raw = '';
+    let value = '';
+    while (index < command.length && !/\s/.test(command[index])) {
+      const char = command[index];
+      if (char === "'") {
+        const end = command.indexOf("'", index + 1);
+        const stop = end === -1 ? command.length : end + 1;
+        raw += command.slice(index, stop);
+        value += command.slice(index + 1, end === -1 ? command.length : end);
+        index = stop;
+      } else if (char === '"') {
+        raw += char;
+        index += 1;
+        while (index < command.length && command[index] !== '"') {
+          if (command[index] === '\\' && index + 1 < command.length) {
+            raw += command[index] + command[index + 1];
+            value += command[index + 1];
+            index += 2;
+          } else {
+            raw += command[index];
+            value += command[index];
+            index += 1;
+          }
+        }
+        if (index < command.length) {
+          raw += '"';
+          index += 1;
+        }
+      } else if (char === '\\' && index + 1 < command.length) {
+        raw += command.slice(index, index + 2);
+        value += command[index + 1];
+        index += 2;
+      } else {
+        raw += char;
+        value += char;
+        index += 1;
+      }
+    }
+    tokens.push({ raw, value, separator: false });
+  }
+  return tokens;
+}
+
+// Hook commands: the program word is reduced to its basename; every other
+// word is checked with the MCP args rules (endpoint, leading / or ~,
+// --key=value) plus the Bearer keyword (the word after "Bearer", or any word
+// containing "Bearer <x>", is redacted). The handler keeps only the
+// processed command; the original bytes stay in the file table.
+export function sanitizeHookCommand(
+  command: string,
+  path: string,
+  location: string,
+  warnings: AdapterWarning[],
+): string {
+  const tokens = tokenizeShell(command);
+  const out: string[] = [];
+  let wordIndex = -1;
+  let redactNext = false;
+  for (const token of tokens) {
+    if (token.separator) {
+      out.push(token.raw);
+      continue;
+    }
+    wordIndex += 1;
+    if (wordIndex === 0) {
+      const base = baseName(token.value);
+      if (base !== token.value) {
+        warnings.push({ code: 'HOOK_COMMAND_PATH', path, detail: `${location}: program path reduced to basename` });
+      }
+      out.push(base);
+      continue;
+    }
+    if (redactNext) {
+      redactNext = false;
+      out.push(REDACTED);
+      warnings.push({
+        code: 'HOOK_ARG_REDACTED',
+        path,
+        detail: `${location}: word ${wordIndex} follows the Bearer keyword and was replaced with ${REDACTED}`,
+      });
+      continue;
+    }
+    if (token.value === 'Bearer') {
+      redactNext = true;
+      out.push(token.raw);
+      continue;
+    }
+    if (/\bBearer\s+\S+/.test(token.value) || matchesArgRedaction(token.value)) {
+      out.push(REDACTED);
+      warnings.push({
+        code: 'HOOK_ARG_REDACTED',
+        path,
+        detail: `${location}: word ${wordIndex} matches a redaction rule (Bearer, endpoint, absolute path, or key=value) and was replaced with ${REDACTED}`,
+      });
+      continue;
+    }
+    out.push(token.raw);
+  }
+  return out.join('');
+}
+
+// The manifest-side shape of a config entry: every key name, and for
+// object-valued keys the nested key names. Values never enter the manifest.
+export type EntrySkeleton = Record<string, string[] | true>;
+
+export function entrySkeleton(entry: Record<string, unknown>): EntrySkeleton {
+  const shape: EntrySkeleton = {};
+  for (const [key, value] of Object.entries(entry)) {
+    if (key === 'cwd') continue;
+    shape[key] = value !== null && typeof value === 'object' && !Array.isArray(value)
+      ? Object.keys(value as Record<string, unknown>)
+      : true;
+  }
+  return shape;
+}
+
+export function skeletonCredentials(shape: EntrySkeleton): string[] {
+  const credentials: string[] = [];
+  for (const key of CREDENTIAL_MAP_KEYS) {
+    const names = shape[key];
+    if (Array.isArray(names)) credentials.push(...names);
+  }
+  return credentials;
+}
+
+// Key names whose values come back as placeholders at export: every
+// object-valued key, plus url. Used for the import-side disclosure warning.
+export function skeletonStripped(shape: EntrySkeleton, hasUrl: boolean): string[] {
+  const stripped: string[] = [];
+  for (const [key, names] of Object.entries(shape)) {
+    if (Array.isArray(names)) for (const name of names) stripped.push(`${key}.${name}`);
+  }
+  if (hasUrl) stripped.push('url');
+  return stripped;
+}
+
+// Export side: rebuild an entry from the original file's entry, re-applying
+// every structural rule so redacted or secret values never leave as-is.
+export function rebuildProviderEntry(
+  original: Record<string, unknown>,
+  name: string,
+  path: string,
+  serversKey: string,
+  warnings: AdapterWarning[],
+): { entry: Record<string, unknown>; missing: string[] } {
+  const entry: Record<string, unknown> = {};
+  const missing: string[] = [];
+  for (const [key, value] of Object.entries(original)) {
+    if (key === 'cwd') {
+      warnings.push({
+        code: 'PROVIDER_CWD_DROPPED',
+        path,
+        detail: `${serversKey}.${name} cwd is a machine-local directory and was not exported`,
+      });
+      continue;
+    }
+    if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+      const names = Object.keys(value as Record<string, unknown>);
+      entry[key] = Object.fromEntries(names.map((nested) => [nested, REDACTED]));
+      for (const nested of names) missing.push(`${key}.${nested}`);
+      continue;
+    }
+    if (key === 'url' && typeof value === 'string' && value !== '') {
+      entry.url = REDACTED;
+      missing.push('url');
+      continue;
+    }
+    if (key === 'args') {
+      entry.args = sanitizeArgs(value, path, name, warnings, serversKey);
+      continue;
+    }
+    if (key === 'command' && typeof value === 'string') {
+      if (ABSOLUTE_PATH.test(value)) {
+        warnings.push({
+          code: 'PROVIDER_COMMAND_ABSOLUTE',
+          path,
+          detail: `${serversKey}.${name} command is an absolute path; reduced to basename ${baseName(value.replace(/\\/g, '/'))}`,
+        });
+        entry.command = baseName(value.replace(/\\/g, '/'));
+      } else {
+        entry.command = value;
+      }
+      continue;
+    }
+    entry[key] = value;
+  }
+  return { entry, missing };
 }
 
 // Hooks files (Claude Code settings.json / settings.local.json, Codex
@@ -238,7 +371,8 @@ export function importHooksFile(
           });
           return;
         }
-        const command = sanitizeHookCommand(recordEntry.command, path, `hooks.${event}[${groupIndex}].hooks[${entryIndex}]`, warnings);
+        const location = `hooks.${event}[${groupIndex}].hooks[${entryIndex}]`;
+        const command = sanitizeHookCommand(recordEntry.command, path, location, warnings);
         manifests.push({
           kind: 'hub-hook/1',
           event,
@@ -253,7 +387,9 @@ export function importHooksFile(
             ...(typeof matcher === 'string' ? { matcher } : {}),
             groupIndex,
             entryIndex,
-            entry: { ...recordEntry, command },
+            // Entry keys only (type, command, timeout, ...): values stay in
+            // the original file and are merged back at export.
+            entryKeys: Object.keys(recordEntry),
           },
         });
       });
@@ -269,12 +405,18 @@ export interface HookSpecific {
   eventIndex?: number;
   groupIndex?: number;
   entryIndex?: number;
-  entry?: Record<string, unknown>;
 }
 
 // Rebuild a hooks file from hook manifests, grouped by event and matcher
-// group in their original positions.
-export function exportHooksFile(hooks: HubHook[], out: VirtualFiles, defaultPath: string): void {
+// group in their original positions. The command comes from the (sanitized)
+// manifest handler; extra entry keys are merged back from the original file.
+export function exportHooksFile(
+  hooks: HubHook[],
+  out: VirtualFiles,
+  defaultPath: string,
+  source: VirtualFiles,
+  warnings: AdapterWarning[],
+): void {
   const byPath = new Map<string, HubHook[]>();
   for (const hook of hooks) {
     const specific = hook.harnessSpecific as HookSpecific;
@@ -284,6 +426,15 @@ export function exportHooksFile(hooks: HubHook[], out: VirtualFiles, defaultPath
     byPath.set(path, list);
   }
   for (const [path, list] of byPath) {
+    const originalText = source[path] === undefined ? undefined : toText(source[path]);
+    const original = originalText === undefined ? undefined : parseJsonFile(path, originalText, warnings);
+    if (original === undefined) {
+      warnings.push({
+        code: 'SOURCE_FILE_MISSING',
+        path,
+        detail: 'original hooks file is not in the export file table; extra entry keys (timeout, ...) cannot be recovered',
+      });
+    }
     const position = (hook: HubHook): [number, number, number] => {
       const specific = hook.harnessSpecific as HookSpecific;
       return [specific.eventIndex ?? 0, specific.groupIndex ?? 0, specific.entryIndex ?? 0];
@@ -311,12 +462,34 @@ export function exportHooksFile(hooks: HubHook[], out: VirtualFiles, defaultPath
         groups.set(groupIndex, group);
         events[hook.event].push(group);
       }
-      const entry =
-        specific.entry && typeof specific.entry === 'object'
-          ? specific.entry
-          : { type: 'command', command: hook.handler };
+      const entry: Record<string, unknown> = { type: 'command', command: hook.handler };
+      const originalEntry = originalHookEntry(original, hook);
+      if (originalEntry !== undefined) {
+        for (const [key, value] of Object.entries(originalEntry)) {
+          if (key !== 'type' && key !== 'command') entry[key] = value;
+        }
+      }
       (groups.get(groupIndex)!.hooks as unknown[]).push(entry);
     }
     out[path] = canonicalJson({ hooks: events });
   }
+}
+
+function originalHookEntry(
+  original: Record<string, unknown> | undefined,
+  hook: HubHook,
+): Record<string, unknown> | undefined {
+  if (original === undefined) return undefined;
+  const specific = hook.harnessSpecific as HookSpecific;
+  const hooks = original.hooks;
+  if (!hooks || typeof hooks !== 'object' || Array.isArray(hooks)) return undefined;
+  const groups = (hooks as Record<string, unknown>)[hook.event];
+  if (!Array.isArray(groups)) return undefined;
+  const group = groups[specific.groupIndex ?? 0];
+  if (!group || typeof group !== 'object' || Array.isArray(group)) return undefined;
+  const entries = (group as Record<string, unknown>).hooks;
+  if (!Array.isArray(entries)) return undefined;
+  const entry = entries[specific.entryIndex ?? 0];
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return undefined;
+  return entry as Record<string, unknown>;
 }

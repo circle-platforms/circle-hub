@@ -207,33 +207,26 @@ function emitValue(value: unknown): string | undefined {
 
 // Canonical TOML for the supported subset: scalars of a table first (in
 // insertion order), then sub-tables, one blank line before each section
-// header, trailing newline at the end. Empty tables are skipped entirely, so
-// no `[mcp_servers]`-style header is ever written without content.
+// header, trailing newline at the end. A table header is written only when
+// the table has own scalar entries — a table holding only sub-tables (like
+// `mcp_servers`) never gets a bare header, and empty tables vanish entirely.
 export function emitToml(values: Record<string, unknown>): string {
   const lines: string[] = [];
-  const tableHasContent = (table: Record<string, unknown>): boolean =>
-    Object.values(table).some(
-      (value) =>
-        !(value && typeof value === 'object' && !Array.isArray(value))
-          ? emitValue(value) !== undefined
-          : tableHasContent(value as Record<string, unknown>),
-    );
   const emitTable = (path: string[], table: Record<string, unknown>): void => {
-    if (path.length > 0) {
-      if (!tableHasContent(table)) return;
+    const scalars = Object.entries(table).filter(
+      ([, value]) => !(value && typeof value === 'object' && !Array.isArray(value)) && emitValue(value) !== undefined,
+    );
+    const subtables = Object.entries(table).filter(
+      ([, value]) => value && typeof value === 'object' && !Array.isArray(value),
+    ) as Array<[string, Record<string, unknown>]>;
+    if (path.length > 0 && scalars.length > 0) {
       if (lines.length > 0) lines.push('');
       lines.push(`[${path.map(quoteKey).join('.')}]`);
+      for (const [key, value] of scalars) lines.push(`${quoteKey(key)} = ${emitValue(value)}`);
+    } else if (path.length === 0) {
+      for (const [key, value] of scalars) lines.push(`${quoteKey(key)} = ${emitValue(value)}`);
     }
-    for (const [key, value] of Object.entries(table)) {
-      if (value && typeof value === 'object' && !Array.isArray(value)) continue;
-      const emitted = emitValue(value);
-      if (emitted !== undefined) lines.push(`${quoteKey(key)} = ${emitted}`);
-    }
-    for (const [key, value] of Object.entries(table)) {
-      if (value && typeof value === 'object' && !Array.isArray(value)) {
-        emitTable([...path, key], value as Record<string, unknown>);
-      }
-    }
+    for (const [key, value] of subtables) emitTable([...path, key], value);
   };
   emitTable([], values);
   if (lines.length === 0) return '';
