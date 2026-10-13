@@ -35,7 +35,7 @@ test('Claude Code import: fixture covers every governed primitive kind', () => {
       'hub-skill/1',
     ].sort(),
   );
-  const expected = new Set(['PROVIDER_VALUES_STRIPPED', 'HOOK_DETERMINISM_UNKNOWN']);
+  const expected = new Set(['PROVIDER_VALUES_STRIPPED', 'HOOK_EVENT_UNMAPPED']);
   const unexpected = imported.warnings.filter((warning) => !expected.has(warning.code));
   assert.deepEqual(unexpected, []);
 });
@@ -45,12 +45,16 @@ test('Claude Code import: skill frontmatter maps to hub-skill/1 and proprietary 
   assert.equal(skill.name, 'review-code');
   assert.equal(skill.description, 'Review a change set with synthetic checks only');
   assert.equal(skill.entry, 'SKILL.md');
-  assert.deepEqual(skill.tools, ['Read', 'Grep']);
+  assert.equal(skill.model, 'scripted-model');
+  // allowed-tools is a no-prompt permission hint, not a tool restriction: it
+  // lands in harnessSpecific, not in tools.
+  assert.deepEqual(skill.tools, []);
+  const specific = skill.harnessSpecific as { allowedTools?: string[] };
+  assert.deepEqual(specific.allowedTools, ['Read', 'Grep']);
   assert.deepEqual(skill.inputs, []);
   assert.deepEqual(skill.outputs, []);
   assert.deepEqual(skill.triggers, []);
   assert.equal(skill.version, undefined);
-  assert.equal(skill.model, undefined);
   assert.equal(skill.sourceHarness, 'claude-code');
   assert.deepEqual(skill.knownCompatible, []);
   // Bytes stay out of the manifest: files carries path + sha256 references,
@@ -60,9 +64,9 @@ test('Claude Code import: skill frontmatter maps to hub-skill/1 and proprietary 
     ['.claude/skills/review-code/SKILL.md', '.claude/skills/review-code/scripts/check.sh'],
   );
   for (const file of skill.files) assert.match(file.sha256, /^[0-9a-f]{64}$/);
-  const specific = skill.harnessSpecific as { path: string; frontmatter: Record<string, string> };
-  assert.equal(specific.path, '.claude/skills/review-code/SKILL.md');
-  assert.deepEqual(specific.frontmatter, { 'x-team': 'meridian' });
+  const specific2 = skill.harnessSpecific as { path: string; frontmatter: Record<string, string> };
+  assert.equal(specific2.path, '.claude/skills/review-code/SKILL.md');
+  assert.deepEqual(specific2.frontmatter, { 'x-team': 'meridian' });
   assert.equal(JSON.stringify(skill.harnessSpecific).includes('# Review code'), false);
 });
 
@@ -70,7 +74,9 @@ test('Claude Code import: command, agent and instruction map their fields', () =
   const [command] = manifestsOfKind('hub-command/1') as HubCommand[];
   assert.equal(command.name, 'summarize');
   assert.equal(command.description, 'Summarize the current change set');
-  assert.equal(command.arguments, '[scope]');
+  // argument-hint is a prompt hint, not the arguments field.
+  assert.equal(command.arguments, undefined);
+  assert.equal((command.harnessSpecific as { argumentHint?: string }).argumentHint, '[scope]');
 
   const [agent] = manifestsOfKind('hub-agent/1') as HubAgent[];
   assert.equal(agent.name, 'test-reviewer');
@@ -79,34 +85,40 @@ test('Claude Code import: command, agent and instruction map their fields', () =
   assert.equal(agent.model, 'scripted-model');
 
   const [instruction] = manifestsOfKind('hub-instruction/1') as HubInstruction[];
-  assert.equal(instruction.scope, 'project');
+  // scope is not derivable from a Claude Code instruction file: left empty.
+  assert.equal(instruction.scope, undefined);
   assert.deepEqual(instruction.applies, []);
   assert.equal(instruction.fileName, 'CLAUDE.md');
 });
 
-test('Claude Code import: multiple hooks become individual ordered manifests', () => {
+test('Claude Code import: multiple hooks become individual manifests without invented order', () => {
   const hooks = manifestsOfKind('hub-hook/1') as HubHook[];
   assert.equal(hooks.length, 3);
   assert.deepEqual(hooks.map((hook) => hook.event), ['PreToolUse', 'PostToolUse', 'PostToolUse']);
-  assert.deepEqual(hooks.map((hook) => hook.order), [0, 1, 2]);
   assert.deepEqual(
     hooks.map((hook) => hook.handler),
     ['sh scripts/check-command.sh', 'sh scripts/format-check.sh', 'sh scripts/lint-check.sh'],
   );
   for (const hook of hooks) {
     assert.equal(hook.language, 'shell');
-    assert.equal(hook.deterministic, false);
+    // Harness hooks run in parallel and their determinism is not derivable:
+    // both fields stay empty rather than being invented.
+    assert.equal(hook.order, undefined);
+    assert.equal(hook.deterministic, undefined);
     assert.deepEqual(hook.files.map((file) => file.path), ['.claude/settings.json']);
   }
-  const specific = hooks.map((hook) => hook.harnessSpecific as { matcher?: string; groupIndex: number; entryIndex: number; entry: Record<string, unknown> });
+  const specific = hooks.map((hook) => hook.harnessSpecific as { matcher?: string; eventIndex: number; groupIndex: number; entryIndex: number; entry: Record<string, unknown> });
   assert.equal(specific[0].matcher, 'Bash');
   assert.deepEqual(
-    specific.map((entry) => [entry.groupIndex, entry.entryIndex]),
-    [[0, 0], [0, 0], [0, 1]],
+    specific.map((entry) => [entry.eventIndex, entry.groupIndex, entry.entryIndex]),
+    [[0, 0, 0], [1, 0, 0], [1, 0, 1]],
   );
   assert.equal(specific[2].entry.timeout, 30);
-  const determinism = imported.warnings.filter((warning) => warning.code === 'HOOK_DETERMINISM_UNKNOWN');
-  assert.equal(determinism.length, 3);
+  // One HOOK_EVENT_UNMAPPED per harness event, not per command.
+  const unmapped = imported.warnings.filter((warning) => warning.code === 'HOOK_EVENT_UNMAPPED');
+  assert.equal(unmapped.length, 2);
+  assert.ok(unmapped[0].detail.startsWith('hooks.PreToolUse'));
+  assert.ok(unmapped[1].detail.startsWith('hooks.PostToolUse'));
 });
 
 test('Claude Code import: stdio and http MCP servers keep names and shapes without secrets', () => {
@@ -116,8 +128,9 @@ test('Claude Code import: stdio and http MCP servers keep names and shapes witho
   const docs = providers.find((provider) => provider.name === 'docs-lookup')!;
   assert.equal(docs.transport, 'stdio');
   assert.deepEqual(docs.credentials, ['DOCS_API_KEY', 'DOCS_REGION']);
-  assert.equal(docs.credentialMode, 'static');
-  assert.deepEqual(docs.provides, { tools: [], resources: [], prompts: [] });
+  // Not derivable from a static config file: provides, credentialMode.
+  assert.equal(docs.provides, undefined);
+  assert.equal(docs.credentialMode, undefined);
   assert.deepEqual(docs.reads, []);
   assert.deepEqual(docs.writes, []);
   const docsShape = docs.harnessSpecific.shape as Record<string, unknown>;
@@ -219,6 +232,43 @@ test('Claude Code import: legacy sse transport is left empty with a warning', ()
   assert.equal(JSON.stringify(result.manifests).includes('192.0.2.10'), false);
 });
 
+test('Claude Code import: ws transport is left empty with a warning', () => {
+  const result = importFrom('claude-code', {
+    '.mcp.json': JSON.stringify({ mcpServers: { realtime: { type: 'ws', url: 'ws://192.0.2.11:9001' } } }),
+  });
+  const [provider] = result.manifests as HubProvider[];
+  assert.equal(provider.transport, undefined);
+  assert.deepEqual(
+    result.warnings.map((warning) => warning.code).sort(),
+    ['CANONICAL_NORMALIZATION', 'PROVIDER_TRANSPORT_UNKNOWN', 'PROVIDER_VALUES_STRIPPED'],
+  );
+});
+
+test('Claude Code import: url without type, or command and url together, skips the entry', () => {
+  const result = importFrom('claude-code', {
+    '.mcp.json': JSON.stringify({
+      mcpServers: {
+        ambiguous: { url: 'https://mcp.example.com/x' },
+        conflict: { command: 'npx', url: 'https://mcp.example.com/y' },
+        ok: { command: 'node', args: ['server.js'] },
+      },
+    }),
+  });
+  assert.deepEqual(
+    result.manifests.map((manifest) => (manifest as HubProvider).name),
+    ['ok'],
+  );
+  assert.deepEqual(
+    result.warnings.map((warning) => warning.code).sort(),
+    ['CANONICAL_NORMALIZATION', 'PROVIDER_ENTRY_INVALID', 'PROVIDER_ENTRY_INVALID'],
+  );
+  // Details name the entry, never the endpoint values.
+  const details = result.warnings.map((warning) => warning.detail).join('\n');
+  assert.equal(details.includes('mcp.example.com'), false);
+  assert.ok(details.includes('ambiguous'));
+  assert.ok(details.includes('conflict'));
+});
+
 test('Claude Code import: absolute command paths and arg values are kept out of manifests', () => {
   const result = importFrom('claude-code', {
     '.mcp.json': JSON.stringify({
@@ -256,22 +306,20 @@ test('Claude Code export: manifests failing the neutral schema are rejected', ()
   );
 });
 
-test('Claude Code export: hub-tool/1 has no file projection', () => {
+test('Claude Code export: hub-tool/1 no longer exists as a manifest kind', () => {
   const tool = {
     kind: 'hub-tool/1',
     name: 'docs.lookup',
-    description: '',
-    inputSchema: {},
     sourceHarness: 'claude-code',
     knownCompatible: [],
     files: [],
     harnessSpecific: {},
-  } satisfies HubManifest;
+  } as unknown as HubManifest;
   const result = exportTo('claude-code', [tool], {});
   assert.deepEqual(result.files, {});
   assert.deepEqual(
     result.warnings.map((warning) => warning.code),
-    ['NO_HARNESS_PROJECTION'],
+    ['MANIFEST_INVALID'],
   );
 });
 

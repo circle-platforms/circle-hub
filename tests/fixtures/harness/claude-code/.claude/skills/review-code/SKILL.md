@@ -1,6 +1,7 @@
 ---
 name: review-code
 description: Review a change set with synthetic checks only
+model: scripted-model
 allowed-tools: Read, Grep
 x-team: meridian
 ---

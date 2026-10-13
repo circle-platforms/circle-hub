@@ -18,12 +18,13 @@ export const WARNING_CODES = [
   'FRONTMATTER_UNCLOSED',
   'FRONTMATTER_LINE_SKIPPED',
   'NAME_DERIVED_FROM_PATH',
-  'HOOK_DETERMINISM_UNKNOWN',
+  'HOOK_EVENT_UNMAPPED',
   'HOOK_ENTRY_SKIPPED',
   'CONFIG_EXTRA_KEYS',
   'CONFIG_JSON_INVALID',
   'PROVIDER_VALUES_STRIPPED',
   'PROVIDER_CWD_DROPPED',
+  'PROVIDER_ENTRY_INVALID',
   'HOOK_COMMAND_PATH',
   'SECRET_PLACEHOLDER',
   'SOURCE_FILE_MISSING',
@@ -96,18 +97,8 @@ export const hubSkillSchema = z.looseObject({
 });
 export type HubSkill = z.infer<typeof hubSkillSchema>;
 
-export const hubToolSchema = z.looseObject({
-  kind: z.literal('hub-tool/1'),
-  name: z.string().min(1),
-  description: z.string().default(''),
-  inputSchema: z.record(z.string(), z.unknown()).default({}),
-  annotations: z.record(z.string(), z.unknown()).optional(),
-  effect: z.enum(['read', 'write']).optional(),
-  minimumRole: z.string().optional(),
-  approval: z.boolean().optional(),
-  ...base,
-});
-export type HubTool = z.infer<typeof hubToolSchema>;
+// hub-tool/1 does not exist as a standalone manifest: the spec keeps tools
+// inside the provider's `provides`, not in a separate kind.
 
 export const hubProviderSchema = z.looseObject({
   kind: z.literal('hub-provider/1'),
@@ -119,7 +110,7 @@ export const hubProviderSchema = z.looseObject({
       resources: z.array(z.string()).default([]),
       prompts: z.array(z.string()).default([]),
     })
-    .default({ tools: [], resources: [], prompts: [] }),
+    .optional(),
   reads: z.array(z.string()).default([]),
   writes: z.array(z.string()).default([]),
   credentials: z.array(z.string()).default([]),
@@ -134,14 +125,14 @@ export const hubHookSchema = z.looseObject({
   order: z.number().int().nonnegative().optional(),
   handler: z.string().min(1),
   language: z.enum(HOOK_LANGUAGES),
-  deterministic: z.boolean(),
+  deterministic: z.boolean().optional(),
   ...base,
 });
 export type HubHook = z.infer<typeof hubHookSchema>;
 
 export const hubInstructionSchema = z.looseObject({
   kind: z.literal('hub-instruction/1'),
-  scope: z.string().min(1),
+  scope: z.string().min(1).optional(),
   applies: z.array(z.string()).default([]),
   fileName: z.string().min(1),
   ...base,
@@ -169,7 +160,6 @@ export type HubCommand = z.infer<typeof hubCommandSchema>;
 
 export const hubManifestSchema = z.discriminatedUnion('kind', [
   hubSkillSchema,
-  hubToolSchema,
   hubProviderSchema,
   hubHookSchema,
   hubInstructionSchema,

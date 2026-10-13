@@ -48,7 +48,7 @@ test('Claude Code round trip: an edited manifest frontmatter is reflected, the b
   assert.ok(text.includes('description: Edited in the hub'), text);
   assert.equal(text.includes('Review a change set with synthetic checks only'), false);
   // Unchanged keys keep their original form and order; the body is verbatim.
-  assert.ok(text.startsWith('---\nname: review-code\ndescription: Edited in the hub\nallowed-tools: Read, Grep\nx-team: meridian\n---\n'), text);
+  assert.ok(text.startsWith('---\nname: review-code\ndescription: Edited in the hub\nmodel: scripted-model\nallowed-tools: Read, Grep\nx-team: meridian\n---\n'), text);
   const originalBody = (fixture['.claude/skills/review-code/SKILL.md'] as string).split('---\n').pop()!;
   assert.ok(text.endsWith(originalBody), text);
   // Other files stay byte-identical.
@@ -62,7 +62,7 @@ test('Claude Code round trip: non-canonical settings.json is normalized with a w
   const imported = importFrom('claude-code', input);
   assert.deepEqual(
     imported.warnings.map((warning) => warning.code).sort(),
-    ['CANONICAL_NORMALIZATION', 'HOOK_DETERMINISM_UNKNOWN'],
+    ['CANONICAL_NORMALIZATION', 'HOOK_EVENT_UNMAPPED'],
   );
   const exported = exportTo('claude-code', imported.manifests, input);
   assert.notEqual(exported.files['.claude/settings.json'], text);
@@ -81,7 +81,7 @@ test('Claude Code round trip: settings.json keys outside hooks are reported and 
   const imported = importFrom('claude-code', input);
   assert.deepEqual(
     imported.warnings.map((warning) => warning.code).sort(),
-    ['CONFIG_EXTRA_KEYS', 'HOOK_DETERMINISM_UNKNOWN'],
+    ['CONFIG_EXTRA_KEYS', 'HOOK_EVENT_UNMAPPED'],
   );
   const exported = exportTo('claude-code', imported.manifests, input);
   const settings = JSON.parse(exported.files['.claude/settings.json'] as string) as Record<string, unknown>;

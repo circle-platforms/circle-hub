@@ -50,7 +50,6 @@ function importInstructions(
     const derived = deriveMarkdown(path, toText(value), undefined, INSTRUCTION_SPEC, warnings);
     manifests.push({
       kind: 'hub-instruction/1',
-      scope: 'project',
       applies: [],
       fileName: baseName(path),
       sourceHarness: HARNESS,
@@ -108,24 +107,37 @@ function importConfig(
       }
     }
     dropCwd(shape, CONFIG_PATH, name, warnings, 'mcp_servers');
+    const hasCommand = typeof shape.command === 'string' && shape.command !== '';
+    const hasUrl = typeof shape.url === 'string' && shape.url !== '';
     let transport: Transport | undefined;
-    if (typeof shape.command === 'string') {
+    if (hasCommand && hasUrl) {
+      warnings.push({
+        code: 'PROVIDER_ENTRY_INVALID',
+        path: CONFIG_PATH,
+        detail: `mcp_servers.${name}: entry has both command and url; the entry is skipped`,
+      });
+      continue;
+    }
+    if (hasCommand) {
       transport = 'stdio';
-      if (ABSOLUTE_PATH.test(shape.command)) {
+      if (ABSOLUTE_PATH.test(shape.command as string)) {
         warnings.push({
           code: 'PROVIDER_COMMAND_ABSOLUTE',
           path: CONFIG_PATH,
-          detail: `mcp_servers.${name} command is an absolute path; reduced to basename ${baseName(shape.command.replace(/\\/g, '/'))}`,
+          detail: `mcp_servers.${name} command is an absolute path; reduced to basename ${baseName((shape.command as string).replace(/\\/g, '/'))}`,
         });
-        shape.command = baseName(shape.command.replace(/\\/g, '/'));
+        shape.command = baseName((shape.command as string).replace(/\\/g, '/'));
       }
       shape.args = sanitizeArgs(shape.args, CONFIG_PATH, name, warnings, 'mcp_servers');
-    } else if (typeof shape.url === 'string') {
-      transport = 'streamable-http';
-      if (shape.url !== '') {
-        stripped.push('url');
-        shape.url = '';
-      }
+    } else if (hasUrl) {
+      // Codex mcp_servers carry no type key, so a bare url is ambiguous; the
+      // review rule skips it instead of guessing streamable-http.
+      warnings.push({
+        code: 'PROVIDER_ENTRY_INVALID',
+        path: CONFIG_PATH,
+        detail: `mcp_servers.${name}: url without a type key is ambiguous; the entry is skipped`,
+      });
+      continue;
     } else {
       warnings.push({
         code: 'PROVIDER_SHAPE_UNKNOWN',
@@ -144,11 +156,9 @@ function importConfig(
       kind: 'hub-provider/1',
       name,
       ...(transport !== undefined ? { transport } : {}),
-      provides: { tools: [], resources: [], prompts: [] },
       reads: [],
       writes: [],
       credentials,
-      ...(credentials.length > 0 ? { credentialMode: 'static' as const } : {}),
       sourceHarness: HARNESS,
       knownCompatible: [],
       files: [fileRef],

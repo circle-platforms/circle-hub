@@ -15,7 +15,7 @@ const imported = importFrom('codex', fixture);
 test('Codex import: AGENTS.md becomes hub-instruction/1', () => {
   const instructions = imported.manifests.filter((manifest) => manifest.kind === 'hub-instruction/1') as HubInstruction[];
   assert.equal(instructions.length, 1);
-  assert.equal(instructions[0].scope, 'project');
+  assert.equal(instructions[0].scope, undefined);
   assert.deepEqual(instructions[0].applies, []);
   assert.equal(instructions[0].fileName, 'AGENTS.md');
   assert.equal(instructions[0].sourceHarness, 'codex');
@@ -32,7 +32,9 @@ test('Codex import: mcp_servers become hub-provider/1 without secret values', ()
   const docs = providers.find((provider) => provider.name === 'docs_lookup')!;
   assert.equal(docs.transport, 'stdio');
   assert.deepEqual(docs.credentials, ['DOCS_API_KEY']);
-  assert.equal(docs.credentialMode, 'static');
+  // Not derivable from a static config file: provides, credentialMode.
+  assert.equal(docs.provides, undefined);
+  assert.equal(docs.credentialMode, undefined);
   const shape = docs.harnessSpecific.shape as Record<string, unknown>;
   assert.equal(shape.command, 'npx');
   assert.deepEqual(shape.args, ['-y', '@example/docs-mcp']);

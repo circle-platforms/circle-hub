@@ -46,14 +46,16 @@ const ABSOLUTE_PATH = /^([/~]|[A-Za-z]:[\\/])/;
 
 const SKILL_SPEC: MarkdownSpec = {
   kind: 'hub-skill/1',
-  fields: { name: 'name', description: 'description', 'allowed-tools': 'tools' },
-  specific: {},
+  fields: { name: 'name', description: 'description', model: 'model' },
+  // allowed-tools is a no-prompt permission hint, not a tool restriction, so
+  // it is not mapped to hub-skill/1.tools.
+  specific: { 'allowed-tools': 'allowedTools' },
   frontmatterName: true,
 };
 const COMMAND_SPEC: MarkdownSpec = {
   kind: 'hub-command/1',
-  fields: { description: 'description', 'argument-hint': 'arguments' },
-  specific: {},
+  fields: { description: 'description', arguments: 'arguments' },
+  specific: { 'argument-hint': 'argumentHint' },
   frontmatterName: false,
 };
 const AGENT_SPEC: MarkdownSpec = {
@@ -93,10 +95,11 @@ function importSkills(
       name: derived.neutral.name!,
       description: derived.neutral.description ?? '',
       entry: 'SKILL.md',
-      tools: derived.neutral.tools ?? [],
+      tools: [],
       inputs: [],
       outputs: [],
       triggers: [],
+      ...(derived.neutral.model !== undefined ? { model: derived.neutral.model } : {}),
       sourceHarness: HARNESS,
       knownCompatible: [],
       files: fileRefs,
@@ -157,7 +160,6 @@ function importInstructions(
     const derived = deriveMarkdown(path, toText(value), undefined, INSTRUCTION_SPEC, warnings);
     manifests.push({
       kind: 'hub-instruction/1',
-      scope: 'project',
       applies: [],
       fileName: baseName(path),
       sourceHarness: HARNESS,
@@ -229,12 +231,20 @@ function importSettings(
   }
   const hooks = (record.hooks ?? {}) as Record<string, unknown>;
   const fileRef = { path: SETTINGS_PATH, sha256: sha256Hex(files[SETTINGS_PATH]) };
-  let order = 0;
+  let eventIndex = 0;
   for (const [event, groups] of Object.entries(hooks)) {
     if (!Array.isArray(groups)) {
       warnings.push({ code: 'HOOK_ENTRY_SKIPPED', path: SETTINGS_PATH, detail: `hooks.${event} is not a list of matcher groups` });
+      eventIndex += 1;
       continue;
     }
+    // The spec fixes five hub hook points but defines no mapping from Claude
+    // Code client events; the harness event name is kept as-is.
+    warnings.push({
+      code: 'HOOK_EVENT_UNMAPPED',
+      path: SETTINGS_PATH,
+      detail: `hooks.${event}: harness event name kept as-is; the spec defines no mapping to hub hook points`,
+    });
     groups.forEach((group, groupIndex) => {
       if (!group || typeof group !== 'object' || Array.isArray(group)) {
         warnings.push({ code: 'HOOK_ENTRY_SKIPPED', path: SETTINGS_PATH, detail: `hooks.${event}[${groupIndex}] is not an object` });
@@ -261,29 +271,23 @@ function importSettings(
         manifests.push({
           kind: 'hub-hook/1',
           event,
-          order,
           handler: command,
           language: 'shell',
-          deterministic: false,
           sourceHarness: HARNESS,
           knownCompatible: [],
           files: [fileRef],
           harnessSpecific: {
             filePath: SETTINGS_PATH,
+            eventIndex,
             ...(typeof matcher === 'string' ? { matcher } : {}),
             groupIndex,
             entryIndex,
             entry: { ...recordEntry, command },
           },
         });
-        warnings.push({
-          code: 'HOOK_DETERMINISM_UNKNOWN',
-          path: SETTINGS_PATH,
-          detail: `hooks.${event}[${groupIndex}].hooks[${entryIndex}]: Claude Code hooks are arbitrary shell commands, determinism is not derivable; deterministic set to false`,
-        });
-        order += 1;
       });
     });
+    eventIndex += 1;
   }
   checkCanonical(SETTINGS_PATH, text, record, extraKeys, warnings);
 }
@@ -328,33 +332,58 @@ function importMcp(
       }
     }
     dropCwd(shape, MCP_PATH, name, warnings, 'mcpServers');
+    const hasCommand = typeof shape.command === 'string' && shape.command !== '';
+    const hasUrl = typeof shape.url === 'string' && shape.url !== '';
+    const type = typeof shape.type === 'string' ? shape.type : undefined;
     let transport: Transport | undefined;
-    if (typeof shape.command === 'string') {
+    if (hasCommand && hasUrl) {
+      warnings.push({
+        code: 'PROVIDER_ENTRY_INVALID',
+        path: MCP_PATH,
+        detail: `mcpServers.${name}: entry has both command and url; the entry is skipped`,
+      });
+      continue;
+    }
+    if (hasCommand) {
+      if (type !== undefined && type !== 'stdio') {
+        warnings.push({
+          code: 'PROVIDER_ENTRY_INVALID',
+          path: MCP_PATH,
+          detail: `mcpServers.${name}: command entry carries a conflicting type key; the entry is skipped`,
+        });
+        continue;
+      }
       transport = 'stdio';
-      if (ABSOLUTE_PATH.test(shape.command)) {
+      if (ABSOLUTE_PATH.test(shape.command as string)) {
         warnings.push({
           code: 'PROVIDER_COMMAND_ABSOLUTE',
           path: MCP_PATH,
-          detail: `mcpServers.${name} command is an absolute path; reduced to basename ${baseName(shape.command.replace(/\\/g, '/'))}`,
+          detail: `mcpServers.${name} command is an absolute path; reduced to basename ${baseName((shape.command as string).replace(/\\/g, '/'))}`,
         });
-        shape.command = baseName(shape.command.replace(/\\/g, '/'));
+        shape.command = baseName((shape.command as string).replace(/\\/g, '/'));
       }
       shape.args = sanitizeArgs(shape.args, MCP_PATH, name, warnings, 'mcpServers');
-    } else if (typeof shape.url === 'string' || shape.type === 'http' || shape.type === 'sse') {
-      if (shape.type === 'sse') {
+    } else if (hasUrl) {
+      if (type === undefined) {
+        warnings.push({
+          code: 'PROVIDER_ENTRY_INVALID',
+          path: MCP_PATH,
+          detail: `mcpServers.${name}: url without a type key is ambiguous; the entry is skipped`,
+        });
+        continue;
+      }
+      if (type === 'http') {
+        transport = 'streamable-http';
+      } else {
         transport = undefined;
         warnings.push({
           code: 'PROVIDER_TRANSPORT_UNKNOWN',
           path: MCP_PATH,
-          detail: `mcpServers.${name} uses the legacy sse transport, which has no hub-provider/1 transport; transport left empty`,
+          detail: `mcpServers.${name} type "${type}" has no hub-provider/1 transport; transport left empty`,
         });
-      } else {
-        transport = 'streamable-http';
       }
-      if (typeof shape.url === 'string' && shape.url !== '') {
-        stripped.push('url');
-        shape.url = '';
-      }
+      stripped.push('url');
+      shape.url = '';
     } else {
       warnings.push({
         code: 'PROVIDER_SHAPE_UNKNOWN',
@@ -373,11 +402,9 @@ function importMcp(
       kind: 'hub-provider/1',
       name,
       ...(transport !== undefined ? { transport } : {}),
-      provides: { tools: [], resources: [], prompts: [] },
       reads: [],
       writes: [],
       credentials,
-      ...(credentials.length > 0 ? { credentialMode: 'static' as const } : {}),
       sourceHarness: HARNESS,
       knownCompatible: [],
       files: [fileRef],
@@ -466,6 +493,7 @@ function exportMarkdown(
 interface HookSpecific {
   filePath?: string;
   matcher?: string;
+  eventIndex?: number;
   groupIndex?: number;
   entryIndex?: number;
   entry?: Record<string, unknown>;
@@ -481,7 +509,15 @@ function exportHooks(hooks: HubHook[], out: VirtualFiles): void {
     byPath.set(path, list);
   }
   for (const [path, list] of byPath) {
-    const sorted = [...list].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    const position = (hook: HubHook): [number, number, number] => {
+      const specific = hook.harnessSpecific as HookSpecific;
+      return [specific.eventIndex ?? 0, specific.groupIndex ?? 0, specific.entryIndex ?? 0];
+    };
+    const sorted = [...list].sort((a, b) => {
+      const pa = position(a);
+      const pb = position(b);
+      return pa[0] - pb[0] || pa[1] - pb[1] || pa[2] - pb[2];
+    });
     const events: Record<string, Array<Record<string, unknown>>> = {};
     const groupKeys = new Map<string, Map<number, Record<string, unknown>>>();
     for (const hook of sorted) {
@@ -586,7 +622,7 @@ export function exportClaudeCode(manifests: HubManifest[], files: VirtualFiles):
       warnings.push({
         code: 'NO_HARNESS_PROJECTION',
         path: manifestPath(valid),
-        detail: `${valid.kind} has no file projection in Claude Code; tools reach it through the hub MCP endpoint`,
+        detail: `${valid.kind} has no file projection in Claude Code`,
       });
     }
   }

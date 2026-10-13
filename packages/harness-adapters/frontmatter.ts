@@ -82,12 +82,13 @@ export function parseFrontmatter(frontmatter: string): FrontmatterParse {
   return { values, badLines };
 }
 
-// Harness frontmatter carries tool lists both as YAML arrays and as
-// comma-separated scalars (`tools: Read, Write`); accept both.
+// Harness frontmatter carries name lists both as YAML arrays and as
+// whitespace/comma-separated scalars (`tools: Read, Write` or
+// `allowed-tools: Read Grep`); accept both.
 export function parseNameList(value: string | string[] | undefined): string[] {
   if (value === undefined) return [];
   if (Array.isArray(value)) return value.map((entry) => entry.trim()).filter((entry) => entry !== '');
-  return value.split(',').map((entry) => entry.trim()).filter((entry) => entry !== '');
+  return value.split(/[\s,]+/).filter((entry) => entry !== '');
 }
 
 export function scalar(value: string | string[] | undefined): string | undefined {
