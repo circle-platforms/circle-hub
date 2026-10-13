@@ -387,6 +387,14 @@ function exportHooks(hooks: HubHook[], source: VirtualFiles, out: VirtualFiles, 
     const sourceText = source[path] === undefined ? undefined : toText(source[path]);
     const original = sourceText === undefined ? undefined : parseJsonFile(path, sourceText, warnings);
     if (original === undefined) {
+      // Two distinct facts, two codes: the version and extra entry keys of
+      // governed entries cannot be recovered, and the entries skipped at
+      // import cannot be preserved.
+      warnings.push({
+        code: 'SOURCE_FILE_MISSING',
+        path,
+        detail: 'original hooks file is not in the export file table; version and extra entry keys cannot be recovered',
+      });
       warnings.push({
         code: 'HOOK_ENTRY_DROPPED_ON_EXPORT',
         path,

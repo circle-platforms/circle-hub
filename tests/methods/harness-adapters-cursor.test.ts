@@ -141,7 +141,7 @@ test('Cursor round trip: hooks.json keeps version, extra keys and skipped prompt
   ]);
 });
 
-test('Cursor export: without the original hooks file, skipped entries cannot be preserved', () => {
+test('Cursor export: without the original hooks file, both facts are reported', () => {
   const exported = exportTo('cursor', imported.manifests, {});
   const hooks = JSON.parse(exported.files['.cursor/hooks.json'] as string) as {
     version?: number;
@@ -149,7 +149,9 @@ test('Cursor export: without the original hooks file, skipped entries cannot be 
   };
   assert.equal(hooks.version, undefined);
   assert.deepEqual(hooks.hooks.sessionStart, [{ command: 'sh scripts/boot.sh' }]);
-  assert.ok(exported.warnings.some((warning) => warning.code === 'HOOK_ENTRY_DROPPED_ON_EXPORT' && warning.path === '.cursor/hooks.json'));
+  const codes = exported.warnings.filter((warning) => warning.path === '.cursor/hooks.json').map((warning) => warning.code);
+  assert.ok(codes.includes('HOOK_ENTRY_DROPPED_ON_EXPORT'));
+  assert.ok(codes.includes('SOURCE_FILE_MISSING'));
 });
 
 test('Cursor import: recursive .agents skills and .claude/.codex compat dirs are imported', () => {
