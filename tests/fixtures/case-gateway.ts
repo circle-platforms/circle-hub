@@ -2,7 +2,7 @@ import {createServer} from 'node:http';
 import type {TestContext} from 'node:test';
 
 export async function caseGateway(t:TestContext){
-  const state={staticSecret:'',staticAccepted:false,refuseLease:false,unavailable:false,healthDelayMs:0,lost:false,hold:false,dropSubmit:false,submitRefusal:null as any,statusRefusal:null as any,refuseRelease:false,wrongSha:false,failCase:false,hostLog:'',deviceIps:['192.0.2.10','192.0.2.11'],environmentMap:true,topologyMap:true,extraDeviceCommand:'',actualBuild:'Rel_PHOTON_10_5_0_101',missingBuild:false,command:'service create port 443',sha:'',taskId:'cex_synthetic_301',calls:[] as string[],identityServer:'',clientId:'',clientSecret:'',ruleBuild:'',ruleSha:'',verified:[] as any[]};
+  const state={staticSecret:'',staticAccepted:false,refuseLease:false,unavailable:false,healthDelayMs:0,lost:false,hold:false,dropSubmit:false,submitRefusal:null as any,statusRefusal:null as any,refuseRelease:false,wrongSha:false,failCase:false,hostLog:'',deviceIps:['192.0.2.10','192.0.2.11'],environmentMap:true,topologyMap:true,namedTopology:false,extraDeviceCommand:'',actualBuild:'Rel_PHOTON_10_5_0_101',missingBuild:false,command:'service create port 443',sha:'',taskId:'cex_synthetic_301',calls:[] as string[],identityServer:'',clientId:'',clientSecret:'',ruleBuild:'',ruleSha:'',verified:[] as any[]};
   const server=createServer(async(req,res)=>{
     if(req.method!=='POST'||req.url!=='/mcp'){res.writeHead(405);res.end();return;}
     let rpc:any;try{let input='';for await(const bytes of req)input+=bytes;rpc=JSON.parse(input);}catch{res.writeHead(400);res.end();return;}
@@ -21,7 +21,7 @@ export async function caseGateway(t:TestContext){
     let result:any={ok:true};
     if(name==='lease_status')result={ok:true,lease:null};
     if(name==='lease_release'&&state.refuseRelease)result={ok:false,error:'Synthetic lease release refused'};
-    if(name==='bed_topology')result={ok:true,topology:{...(state.topologyMap?{applies_to:{device_ssh_ips:state.deviceIps}}:{}),devices:[{name:'routera',interfaces:[{address:'192.0.2.31'}]},{name:'node-a'},{name:'node-b'}]}};
+    if(name==='bed_topology')result={ok:true,topology:{...(state.topologyMap?{applies_to:{device_ssh_ips:state.deviceIps}}:{}),devices:state.namedTopology?state.deviceIps.map((ip,index)=>({name:`APV${index}`,type:'负载均衡',ipv4:[`${ip}/24`],ipv6:[],interfaces:{}})):[{name:'routera',interfaces:[{address:'192.0.2.31'}]},{name:'node-a'},{name:'node-b'}]}};
     if(name==='lease_acquire')result=state.refuseLease?{ok:false,error:'lease unavailable'}:{ok:true,lease_id:'synthetic-lease',token:1,expires_in_s:1800};
     if(name==='env_prepare'){const wanted=rpc.params.arguments.device_build,match=!state.missingBuild&&state.actualBuild===wanted;result={ok:true,ready:match,build_checked:true,device_count:2,...(state.environmentMap?{conf:{device_ips:state.deviceIps}}:{}),checks:[{check:'device_build',ok:match,detail:state.missingBuild?'build not found in output':`device reports ${state.actualBuild}, gateway bundle is ${wanted}`} ]};}
     if(name==='case_submit'){

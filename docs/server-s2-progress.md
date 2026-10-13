@@ -791,3 +791,11 @@ provider 已声明产品线但没有 alias 的，回落包 prefix/packageId；�
 按维护者授权签署 merge **ab12ed4**：SKILL_SHADOWED/HOOK_ENTRY_DROPPED_ON_EXPORT、OpenCode commands 配置、兼容 Skill 目录、导出时保留被略过 Hook。实际三方合并仅十二个适配器/其测试与该简报文件，没有冲突；不自行编辑分工库或权限规范。main 后续第五轮内容尚未在此笔吸入。方法/typecheck/归档核验结果另记；当前队列与分页负例保留工作区，不纳入 merge。
 
 合并后的方法 **145/145**、references **7/7**、typecheck 与 **714** 归档核验通过，无 skip。packages/harness-adapters 与 ab12ed4 字节相同，permission-export.md 未改。完整冻结验收从该 merge 单独运行，排除队列/分页未通过复现。
+
+774f65f 冻结全套 contracts **5/5**、methods **145/145**、acceptance **266/266**、references **7/7**，共 **423/423**、无 skip，固定 Circle 8b2ceb6 / APV 224daa6。队列/通知未完成补项不在该树中。
+
+## 57：按现网字段纠正设备映射
+
+维护者只读核对指出：部署版 env_prepare 没有 conf.device_ips，topology 也没有 applies_to（它仅是生成器输入，不能当返回证据）。b65478e 因而无法覆盖现网映射；本笔更正该假设，不把合成两候选通过当真实协议通过。新增当前真实形状的合成方法复现：正例失败、负例通过。补第三候选 topology.devices：type=负载均衡、全部名字符合 APV<index>、索引集合恰为 0..device_count-1；日志 IP 唯一落在对应设备 ipv4/CIDR 中才归属，共享虚拟 IP 不猜。任意名字、缺/重复/越界序号或计数不符仍 unknown/device_map_unavailable。优先级保留未来 conf.device_ips、有序 applies_to、最后名字规则，实际无字段则回退。
+
+紧接升 **1.1.1**，不让已发出的 1.1.0 同版本不同实现摘要；两份交接同步三来源边界和 worker 排空无截止/在途 claim 仍可能完成一笔的限制。专项 **22/22**、无 skip，typecheck/diff 通过，新增真实 worker 路径返回 source=gateway.bed_topology.devices，未使用真实数据或访问网关。维护者 Grok 对迁移/worker/1.1.0 无高中项；两个迁移归因低项随后用追加修复处理，不覆盖已发迁移字节。队列/分页与通知完整性仍在工作区继续，不混入本笔。

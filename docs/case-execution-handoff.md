@@ -1,6 +1,6 @@
 # APV 工作簿执行交接
 
-能力包 `apv-case-execute/1.1.0` 使用既有 sources、submit、approvals、status、events、result 和 artifacts/content，flowVersion 仍为 apv-case-execute/1。实现归 packs/apv/execution，不导入或运行旧客户端、InfoTest 或 Python。现有网关只作为 HTTP JSON-RPC 服务消费；不会调用 init_device。
+能力包 `apv-case-execute/1.1.1` 使用既有 sources、submit、approvals、status、events、result 和 artifacts/content，flowVersion 仍为 apv-case-execute/1。实现归 packs/apv/execution，不导入或运行旧客户端、InfoTest 或 Python。现有网关只作为 HTTP JSON-RPC 服务消费；不会调用 init_device。
 
 部署本版本后，内置实现的 implementationSha256 已改变。管理员须按 GET /v1/packs 的当前 version/flowVersion/implementationSha256 重新登记 hub-tool-implementation/1 来源资产并经独立审批人批准；旧的 1.0.0 实现资产不能满足新摘要。旧任务钉住的 methodAssetId 不自动迁移，需申请人明确改输入或新提交。已批准产品线模块按自身冻结字节/SHA 与 flow 解析，不受内置实现资产升版影响；产品包本身无需因本笔自动重新批准。
 
@@ -102,3 +102,7 @@ execution.environment.observed 只表示 worker 先前 env_prepare 的观察（o
 当前只完成合成网关验收。真实网关上游核验不可达是环境阻塞，待用户/运维恢复并登记个人凭据后再做真实投递；真实 case.xlsx 由用户上传，未以合成结果冒充上机通过。
 
 修订 3 的 static-secret 模式与明确的 HTTP 资料源例外见 [客户端交接](client-api-handoff.md#修订-3凭据模式隔离与明确的明文例外)。执行网关仍要求受信 HTTPS；资料源的明文例外不放宽网关或外部签发方。主机闭集、设备树与自毁核验由批准的产品线 Hook 决定，解析器不会在零 Hook 时补一份主机白名单。Scope 访客只能读取；没有 credentials.use 管理/直接使用权限，获准的只读 Tool 由 worker 代取自身绑定凭据。普通成员执行仍不审批，executionIsChange 资源继续用冻结变更集。
+
+设备归属来源更正（1.1.1）：当前部署版 env_prepare 没有有序 IP，bed_topology 也不输出 applies_to；先前两种候选不能证明现网归属。解析仍保留它们作为高优先级可选协议，按 conf.device_ips → applies_to.device_ssh_ips → topology.devices 顺序选择，实际有字段才使用。第三来源必须有 env_prepare.device_count，全部 type=负载均衡 设备的 name 匹配 ^APV([0-9]+)$，数量与序号集合恰为 0..device_count-1。每条设备日志的 IP 去 CIDR 前缀长度后在这些设备 ipv4 集合中匹配，只有唯一归属才采用；共享虚拟 IP 不被猜成管理地址。名称任意、索引缺失/重复/越界或计数不足均 device_map_unavailable。deviceMap.source 为 gateway.bed_topology.devices，原拓扑仍按 SHA 留 B。未来网关明确回 conf.device_ips 后优先使用该有序来源，不要求站点生成器提供并不存在的字段。
+
+dev-stack 的排空是合作式、没有截止时间：消息抵达时若 claim 已在途，新领的那一笔仍可能完成后才退出；没有强杀设备操作来赶升级期限。其余 worker 持续服务子 Tool，单 worker 退出保留数据库。独立部署的 worker 仍由部署管理器 drain/替换，CLI 请求标志不代表外部进程已升级。

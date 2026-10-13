@@ -27,7 +27,7 @@ export function executionResults(book:ExecutionBook,raw:any,attribution:DeviceAt
       if(!matches)unmapped.push({path:`cases/${item.autoid}/rows/${step.row}`,reason:'checkpoint_unmapped'});
       return {row:step.row,method:step.method,expected:step.data,...(matches?check:{status:'unknown',logSpan:null})};
     });
-    const commandLines=lines.flatMap((line,index)=>{const match=/^(\S+) - sends command in (?:config|enable): (.*)$/.exec(line);return match?[{host:deviceAddress(match[1]),command:match[2],line:index+1}]:[];}),deviceCursors=new Map<number,number>();
+    const commandLines=lines.flatMap((line,index)=>{const match=/^(\S+) - sends command in (?:config|enable): (.*)$/.exec(line);if(!match)return [];const host=deviceAddress(match[1]),owners=devices?.addresses.flatMap((ips,device)=>host&&ips.includes(host)?[device]:[])??[];if(devices&&owners.length!==1)unmapped.push({path:`cases/${item.autoid}/log/${index+1}`,reason:'device_map_unavailable'});return [{deviceIndex:owners.length===1?owners[0]:null,command:match[2],line:index+1}];}),deviceCursors=new Map<number,number>();
     const steps=item.steps.map(step=>{
       const checkpoint=checkPoints.find(check=>check.row===step.row);if(checkpoint)return {...step,...checkpoint};
       if(step.object==='test_env'||isHostToken(step.object)){
@@ -36,10 +36,10 @@ export function executionResults(book:ExecutionBook,raw:any,attribution:DeviceAt
         if(!observedDispatch)unmapped.push({path:`cases/${item.autoid}/rows/${step.row}`,reason:'host_dispatch_not_proven'});return {...step,status:observedDispatch?'observed':'unknown',logSpans:observedDispatch?matches:[]};
       }
       if(!step.commands.length)return {...step,status:'unknown',logSpans:[]};
-      const index=Number(/^APV_(\d+)$/.exec(step.object)?.[1]??/^Seg(\d+)_tmp$/.exec(step.object)?.[1]),host=devices?.ips[index];
-      if(!host){unmapped.push({path:`cases/${item.autoid}/rows/${step.row}`,reason:'device_map_unavailable'});return {...step,status:'unknown',logSpans:[]};}
-      const ownLines=commandLines.filter(line=>line.host===host),spans:{startLine:number;endLine:number}[]=[],missingCommandIndexes:number[]=[];let cursor=deviceCursors.get(index)??0;
-      for(const [ordinal,command] of step.commands.entries()){const position=ownLines.findIndex((line,at)=>at>=cursor&&line.command===command);if(position<0)missingCommandIndexes.push(ordinal);else{spans.push({startLine:ownLines[position].line,endLine:ownLines[position].line});cursor=position+1;}}
+      const index=Number(/^APV_(\d+)$/.exec(step.object)?.[1]??/^Seg(\d+)_tmp$/.exec(step.object)?.[1]);
+      if(!devices?.addresses[index]){unmapped.push({path:`cases/${item.autoid}/rows/${step.row}`,reason:'device_map_unavailable'});return {...step,status:'unknown',logSpans:[]};}
+      const ownLines=commandLines.filter(line=>line.deviceIndex===index),spans:{startLine:number;endLine:number}[]=[],missingCommandIndexes:number[]=[];let cursor=deviceCursors.get(index)??0;
+      for(const [ordinal,command] of step.commands.entries()){let position=cursor;while(position<ownLines.length&&ownLines[position].command!==command)position++;if(position===ownLines.length)missingCommandIndexes.push(ordinal);else{spans.push({startLine:ownLines[position].line,endLine:ownLines[position].line});cursor=position+1;}}
       deviceCursors.set(index,cursor);const usableCommands=observed&&!observed.log_stale&&!missingCommandIndexes.length;
       if(!usableCommands)unmapped.push({path:`cases/${item.autoid}/rows/${step.row}`,reason:'step_outcome_not_proven'});
       return {...step,status:usableCommands?'observed':'unknown',logSpans:observed&&!observed.log_stale?spans:[],...(missingCommandIndexes.length?{missingCommandIndexes}:{})};
@@ -48,5 +48,5 @@ export function executionResults(book:ExecutionBook,raw:any,attribution:DeviceAt
     return {autoid:item.autoid,verdict,logStale:Boolean(observed?.log_stale),steps,checkPoints};
   });
   for(const observed of Array.isArray(raw.cases)?raw.cases:[])if(!book.cases.some(item=>item.autoid===observed.case_id))unmapped.push({path:'cases',reason:'unexpected_case_identity'});
-  return {executionStatus:raw.channel==='runner_lost'?'unknown':'completed',channel:raw.channel,rc:raw.rc??null,sourceSha256:book.sha256,cases,unmapped,modelJudgments:[],remoteStoppingVerified:false,deviceMap:devices?{source:devices.source,deviceCount:devices.ips.length}:null,parserVersion:'framework-checkpoints/2'};
+  return {executionStatus:raw.channel==='runner_lost'?'unknown':'completed',channel:raw.channel,rc:raw.rc??null,sourceSha256:book.sha256,cases,unmapped,modelJudgments:[],remoteStoppingVerified:false,deviceMap:devices?{source:devices.source,deviceCount:devices.addresses.length}:null,parserVersion:'framework-checkpoints/2'};
 }

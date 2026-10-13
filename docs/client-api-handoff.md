@@ -496,9 +496,11 @@ dev:stack 的 admin restart --graceful 现在请求 server 换进程后逐个排
 
 已安装并为产品线声明的 provider Tool，缺别名时使用产品线默认 prefix、包 prefix，最后以 packageId（连字符改下划线）作 prefix；显式实例 alias 优先。没有安装/声明的产品线仍不获得 provider。名称冲突按现有 tenant 唯一规则拒绝，不让缺 alias 静默隐藏工具。
 
-apv-case-execute 现为 **1.1.0**，flowVersion 仍 apv-case-execute/1。实现摘要变化后须用 GET /v1/packs 当前 version/flow/implementationSha256 重新登记并独立批准 hub-tool-implementation/1；旧任务的 methodAssetId 不自动改写。产品线模块资产仍按自身冻结 SHA/flow 解析，本笔未改变其字节或批准状态。成功终态的 gateway-results 原件与 result.result 也带 remoteLeaseReleased，释放失败为 false，不覆盖整案原结论。拒绝带 task_id/dispatched:true、已提交后的 status 错误均保留 unknown 且不释放潜在活动租约。
+apv-case-execute 现为 **1.1.1**，flowVersion 仍 apv-case-execute/1。实现摘要变化后须用 GET /v1/packs 当前 version/flow/implementationSha256 重新登记并独立批准 hub-tool-implementation/1；旧任务的 methodAssetId 不自动改写。产品线模块资产仍按自身冻结 SHA/flow 解析，本笔未改变其字节或批准状态。成功终态的 gateway-results 原件与 result.result 也带 remoteLeaseReleased，释放失败为 false，不覆盖整案原结论。拒绝带 task_id/dispatched:true、已提交后的 status 错误均保留 unknown 且不释放潜在活动租约。
 
 设备日志归属与派发前拒绝的完整说明同步在 [执行交接](case-execution-handoff.md)：有序设备 IP 来自 env_prepare.conf.device_ips，或已有租约内按需读的 bed_topology.topology.applies_to.device_ssh_ips；原样入 B。解析按设备推进游标，每条已匹配命令有自己的 logSpan；拿不到唯一映射，设备步 unknown/unmapped=device_map_unavailable，主机步和检查点各按自身证据处理。设备归属接口 {environment,topology} 留给产品包解析 Tool 后续接管，尚未把这段旧兼容解析迁入独立产品包。
+
+1.1.1 的来源口径更正：现网部署版没有前述两个有序字段，真实回退用 topology.devices。全部负载均衡设备名须为 APV<index>，索引集合与 env_prepare.device_count 精确一致；日志 IP 必须唯一落在对应设备 ipv4 的 CIDR 地址集合里。否则 device_map_unavailable，绝不据任意主机名或命令文本猜 APV_n。source 标 gateway.bed_topology.devices；三种候选优先级是 conf.device_ips、applies_to.device_ssh_ips、devices 名字规则，前两个只在实际返回时适用。排空无截止时间，claim 在途时仍可能完成一笔新领操作；不强杀的边界也已补入执行交接。
 
 GET /v1/assets/{id}/harness-export?target=circle|<sourceHarness> 仅批准后的可读原语可用，返回 files 的相对目标路径/base64/sha256、warnings、provenance:{assetId,version,sha256,sourceHarness}。Circle Skill 原件移动到 .circle/skills/{name}/，字节不改；Instruction 投影为 AGENTS.md。Circle 尚无 Agent/Command 原生安装时明确 warning；MCP prompt 可读取批准的 Skill/Command。同来源 harness 由公开库导出；其不支持的跨 harness 映射继续 warning。这里只是冻结与装载投影，云运行仍用既有技能试跑/提交/批准接口；不自动批准或把原件搬运称作已执行。
 
