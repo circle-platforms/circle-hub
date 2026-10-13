@@ -262,7 +262,7 @@ A guest sets `decision` on the last two rules to `deny`.
 Read on 2026-10-13:
 
 - [permissions.json](https://cursor.com/docs/reference/permissions): `mcpAllowlist` is a list of `server:tool` strings. There is no deny list. An MCP tool left off the list is not refused because of that. `autoRun` only steers the classifier in Auto-review. The page says it is not enforcement.
-- [Run Modes](https://cursor.com/docs/agent/security/run-modes): in Allowlist mode, listed calls run and the rest ask. Run Mode is a setting, not a field of `permissions.json`. The same page says an allowlist is not a security boundary.
+- [Run Modes](https://cursor.com/docs/agent/security/run-modes): in Allowlist mode, listed calls run and the rest ask. Run Mode is a setting, not a field of `permissions.json`. The same page says that Auto-review is not a security boundary; it makes no such statement about Allowlist mode.
 
 | Hub | Lands on | How to write it |
 |---|---|---|

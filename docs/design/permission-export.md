@@ -262,7 +262,7 @@ priority = 100
 查阅 2026-10-13：
 
 - [permissions.json](https://cursor.com/docs/reference/permissions)：`mcpAllowlist` 是 `server:tool` 字符串，允许名单。没有 deny 名单。不在名单里的 MCP 工具不会因此被拒绝。`autoRun` 只在 Auto-review 里给分类器提示，文档写明不是强制。
-- [Run Modes](https://cursor.com/docs/agent/security/run-modes)：Allowlist 模式下列出的调用直接跑，其余再问。Run Mode 在设置里，不在 `permissions.json`。同页写明 allowlist 不是安全边界。
+- [Run Modes](https://cursor.com/docs/agent/security/run-modes)：Allowlist 模式下列出的调用直接跑，其余再问。Run Mode 在设置里，不在 `permissions.json`。同页写明的是 Auto-review 不是安全边界，对 Allowlist 模式没有这样的说明。
 
 | hub | 落到 | 怎么写 |
 |---|---|---|
