@@ -11,7 +11,7 @@ The three repositories are versioned separately: circle (harness), circle-hub (t
 | circle-hub `main` | The design documents are authoritative; code is merged from the `server-s2` branch after review | `docs/design` | The 7420 verification stack runs the reviewed commit from `server-s2` (currently 8e212a6, database migration 28), not the code on `main` |
 | `foundation/circle` | Circle **1.0.4** source baseline, frozen | the source record in `references/README.md` | Source reference only: it is not installed, and its installer is not run; it is not a runtime dependency of hub |
 | Circle runtime used for acceptance | Circle main-line commit **8b2ceb6** (confirmed by the user) | `CIRCLE_BIN` / `CIRCLE_COMMIT`, a strict Git gate | **This is the real test dependency**: acceptance RPC cases accept only this commit; changing the commit requires the user's confirmation and an update of the gate |
-| circle main line | 1.1.1 (`v1.1.1`) | the tag in the circle repository | the target version of hub's Circle-side extension |
+| circle main line | 1.2.1 (`v1.2.1`) | the tag in the circle repository | the target version of hub's Circle-side extension |
 | circle's hub extension | branch `server-tools` (4076953, not pushed), built on a Circle 1.1.1 checkout | hub's `docs/client-api-handoff.md` | the identifier is still `circle-server`; it is renamed together with hub |
 | circle-packs `main` | see its CHANGELOG | hub's pack loader and schemas | tests need hub's dependency set (CI clones hub `main` for `node_modules`) |
 | execution gateway cexg | 0.3.0 (static secret) | the compile-excel-server repository | hub's worker needs the §7 static-secret credential mode in order to call it |
