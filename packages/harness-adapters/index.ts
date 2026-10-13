@@ -6,6 +6,15 @@ import { exportGemini, importGemini } from './gemini.ts';
 import { exportCursor, importCursor } from './cursor.ts';
 
 export * from './neutral.ts';
+export {
+  disposition,
+  exportPermission,
+  hubPermissionSchema,
+  PERMISSION_ROLES,
+  type Disposition,
+  type HubPermission,
+  type PermissionRole,
+} from './permissions.ts';
 
 // Read a harness's own file formats into neutral hub manifests. Input is a
 // virtual file table ({path: bytes}); no filesystem, network, or environment
