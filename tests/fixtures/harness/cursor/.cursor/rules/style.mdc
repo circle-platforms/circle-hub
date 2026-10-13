@@ -1,0 +1,7 @@
+---
+description: Keep synthetic style
+globs: src/**, tests/**
+alwaysApply: false
+---
+
+Style rule body.

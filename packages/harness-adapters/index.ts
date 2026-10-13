@@ -3,6 +3,7 @@ import { exportClaudeCode, importClaudeCode } from './claude-code.ts';
 import { exportCodex, importCodex } from './codex.ts';
 import { exportOpencode, importOpencode } from './opencode.ts';
 import { exportGemini, importGemini } from './gemini.ts';
+import { exportCursor, importCursor } from './cursor.ts';
 
 export * from './neutral.ts';
 
@@ -19,6 +20,8 @@ export function importFrom(harness: HarnessId, files: VirtualFiles): ImportResul
       return importOpencode(files);
     case 'gemini':
       return importGemini(files);
+    case 'cursor':
+      return importCursor(files);
     default:
       throw new TypeError(`unknown harness: ${String(harness)}`);
   }
@@ -41,6 +44,8 @@ export function exportTo(harness: HarnessId, manifests: HubManifest[], files: Vi
       return exportOpencode(manifests, files);
     case 'gemini':
       return exportGemini(manifests, files);
+    case 'cursor':
+      return exportCursor(manifests, files);
     default:
       throw new TypeError(`unknown harness: ${String(harness)}`);
   }
