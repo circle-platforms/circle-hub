@@ -133,12 +133,12 @@ export class Tasks {
       [task.taskId, JSON.stringify({ error, artifacts: [], evidence, unmapped: [] })]);
     await this.stage(tx, task, 'failed', 'done', 'task.failed', { error });
   }
-  async events(ctx: AuthContext, taskId: string, after: number): Promise<Event[]> {
-    await this.load(ctx, taskId);
-    await replayWindow(this.store,after);
-    const rows = (await this.store.pool.query('SELECT * FROM outbox WHERE task_id=$1 AND seq>$2 ORDER BY seq LIMIT 500', [taskId, after])).rows;
+  async events(ctx: AuthContext, taskId: string, after: number): Promise<Event[]> {return this.store.transaction(async tx=>{
+    await tx.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');await this.load(ctx, taskId,'tasks.read',tx);
+    await replayWindow(this.store,after,tx);
+    const rows = (await tx.query('SELECT * FROM outbox WHERE task_id=$1 AND seq>$2 ORDER BY seq LIMIT 500', [taskId, after])).rows;
     return rows.map(row => ({ seq: Number(row.seq), taskId: row.task_id, kind: row.kind, payload: row.payload, createdAt: row.created_at.toISOString() }));
-  }
+  });}
   async revise(tx: Transaction, task: Task, ctx: AuthContext, input: Record<string, unknown>): Promise<Task> {
     requireCondition(!terminalTask(task.phase) && task.phase !== 'unknown', 'DECISION_CONFLICT', 'Task revision is frozen in this phase');
     const revision = newId('inrev');

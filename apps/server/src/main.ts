@@ -459,9 +459,8 @@ const server = createListener(async (request, response) => {
       }
       if(url.pathname==='/v1/admin/events'&&request.method==='GET'){
         const after=z.coerce.number().int().min(0).max(Number.MAX_SAFE_INTEGER).parse(url.searchParams.get('after')??0),wait=z.coerce.number().int().min(0).max(30_000).parse(url.searchParams.get('waitMs')??0),deadline=Date.now()+wait;let rows:any[];
-        await replayWindow(store,after);
-        do{await auth.authenticate(request.headers.authorization);const current=await auth.check(ctx,'admin.manage');
-          rows=(await store.pool.query("SELECT o.* FROM outbox o JOIN tasks t USING(task_id) WHERE t.tenant_id=$1 AND t.scope_id=ANY($2::text[]) AND o.seq>$3 AND (t.context->>'privateOwnerId' IS NULL OR t.context->>'privateOwnerId'=$4) ORDER BY o.seq LIMIT 500",[current.tenantId,current.scopes,after,current.principalId])).rows;
+        do{await auth.authenticate(request.headers.authorization);rows=await store.transaction(async tx=>{await tx.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');const current=await auth.check(ctx,'admin.manage',undefined,tx);await replayWindow(store,after,tx);
+          return (await tx.query("SELECT o.* FROM outbox o JOIN tasks t USING(task_id) WHERE t.tenant_id=$1 AND t.scope_id=ANY($2::text[]) AND o.seq>$3 AND (t.context->>'privateOwnerId' IS NULL OR t.context->>'privateOwnerId'=$4) ORDER BY o.seq LIMIT 500",[current.tenantId,current.scopes,after,current.principalId])).rows;});
           if(rows.length||Date.now()>=deadline||closing||response.destroyed)break;await waitForEvents();
         }while(true);
         if(!response.destroyed)send(response,200,{data:{events:rows.map(row=>({seq:Number(row.seq),taskId:row.task_id,kind:row.kind,payload:row.payload,createdAt:row.created_at.toISOString()})),after:rows.length?Number(rows.at(-1).seq):after}});return;

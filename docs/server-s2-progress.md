@@ -817,3 +817,9 @@ defbeb2 的完整冻结回归 contracts **5/5**、methods **147/147**、acceptan
 针对维护者 Grok 两条低项，保留已发 **36** 字节/原审计，追加 **38**。只对 36 释放审计可证且仍同输入、failed/UPSTREAM_TIMEOUT 的多读任务聚合为一个固定结果：排序的 operationIds 与 sideEffects=none，不再采用 UPDATE FROM 不确定的一条操作。并存 unknown/write 不触动。任务级补偿原 min(id) 引用保留，追加 task.read-release-audit-links-completed 指回原 36 审计并列 relatedAudits 的全部同任务/输入 30 审计 id；历史 phase 仍不可证明，不填猜测。
 
 先写缺模块复现，多读/全部链接/重跑不重复/已聚合不改更新时间/写 unknown 冻结不动，与旧只读机制联合 **6/6**、无 skip，typecheck/diff 通过。37 为工作查询/通知迁移，38 只追加归因修复，未覆盖任何已经签发的迁移校验。没有现场 SQL 操作或部署。
+
+## 60：裁剪与事件补读共用快照
+
+最终复查用 PostgreSQL 表锁稳定复现 task/admin 两条 **0/2**：游标先单独校验，随后 outbox 查询被锁住，裁剪提交后查询返回空页，形成静默缺页。改为每次权限重核/游标窗口校验/事件选择共用 REPEATABLE READ READ ONLY 事务；长轮询每次迭代重查窗口。并发裁剪期间返回校验时的完整可见快照，或显式 CURSOR_EXPIRED，不能把缺页伪装成空页。通知原本已有这一快照事务。
+
+abdb701 的完整验收 contracts **5/5**、methods **147/147**；acceptance **279/280**，唯一失败为旧 bot 断言读取通知 payload.error，按第 58 节精简契约应读取 reason.code。完整 bot 失败记录仍保留原 error，没有放宽治理规则。该断言已同步；新快照与通知/bot/admin 联合 **18/18**、无 skip，typecheck/diff 通过。最后版本重新全套回归，结果随后记录；不把上一轮或专项当作最后全绿。
