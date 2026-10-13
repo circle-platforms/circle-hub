@@ -1,11 +1,22 @@
-# 安全问题与当前支持范围
+# 安全问题与支持范围
 
-Circle Server 仍处于开发准备阶段，没有正式 server/API 启动入口，也没有受支持的生产软件发行。参考归档和旧实验不能作为企业部署的安全保证。
+circle-hub 在开发中，不是受支持的生产发行。登录是开发登录，验收跑在合成来源和临时 PostgreSQL 上；参考归档和旧实验不能作为企业部署的安全保证。把它部署到任何要紧的地方之前，先按 [设计文档](docs/design/README.md)里的角色、审批和执行链核对你的配置。
 
-仓库目前私有。具有访问权限的协作者可以通过[本仓库私有 Issue](https://github.com/qingshanfeihu/circle-server/issues/new)报告问题，只提供最小复现、影响、版本与相关文件，避免上传口令、令牌、原始业务资料或完整用户会话。
+## 报告安全问题
 
-若仓库公开且 Security 页面已经提供 **Report a vulnerability**，使用该入口私下报告安全问题，不在公开 Issue 披露漏洞细节或敏感内容。公开操作时需要启用并复核这个入口；当前没有宣称该功能已经开启。配置方式见 [GitHub 官方说明](https://docs.github.com/en/code-security/how-tos/report-and-fix-vulnerabilities/configure-vulnerability-reporting/configure-for-a-repository)。
+仓库已启用 GitHub 的私密漏洞报告：在仓库的 **Security** 页面点 **Report a vulnerability**，私下提交。不要在公开 Issue 里披露漏洞细节。
 
-一般功能缺陷和不含敏感内容的建议可以使用普通 Issue。报告安全问题时说明可影响的实际运行路径；冻结参考中的风险与正式运行入口的风险分别说明。
+报告时写清：可影响的实际运行路径（server、worker、连接器、管理命令或 Circle 扩展）、最小复现、影响、版本或提交号、相关文件。不要上传口令、令牌、原始业务资料或完整用户会话；冻结参考（`references/`）中的风险与正式运行入口的风险分别说明。
 
-维护者评估后按具体问题安排复现、修复、受影响使用者检查和披露，不在当前阶段承诺生产响应时限。基础开源检查只说明当时检查的内容和范围，详见[检查报告](docs/open-source-readiness.md)。
+维护者评估后按具体问题安排复现、修复、受影响使用者检查和披露；当前阶段不承诺生产响应时限。
+
+## 仓库自身的防护
+
+- secret scanning 与 push protection：含密钥的提交会被拒绝。
+- Dependabot 漏洞告警与自动修复。
+- `main` 禁止 force-push 和删除。
+- 唯一的工作流只做归档完整性检查，使用最小权限，不接触 secrets。
+
+## 不属于本项目安全范围的事
+
+运行时地址、凭据、证书和业务原件都在仓库之外，由部署方保管；本项目不提供这些的托管或轮换服务。连接器只读；对外部系统的写操作只经执行资源，按[审批与执行链](docs/design/approvals-and-enforcement.md)处理。

@@ -1,8 +1,8 @@
 {
-  "name": "circle-server",
+  "name": "circle-hub",
   "version": "0.0.0",
   "private": true,
-  "description": "Authenticated Circle server with durable PostgreSQL tasks and synthetic workers",
+  "description": "circle-hub: the team hub for Circle - shared knowledge, durable tasks, governed execution and versioned methods",
   "type": "module",
   "license": "MIT",
   "bin": { "circle-server": "apps/server/src/cli.ts" },
