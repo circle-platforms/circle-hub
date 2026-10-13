@@ -4,6 +4,7 @@ import type {Auth} from './auth.ts';
 import type {Tasks} from './index.ts';
 import type {Assets} from '../../assets/src/index.ts';
 import type {SkillPacks} from '../../skillpacks/src/index.ts';
+import {publishBotFailure} from './notification-events.ts';
 
 export class Automations {
   store:Store;auth:Auth;tasks:Tasks;assets:Assets;skills:SkillPacks;
@@ -60,7 +61,7 @@ export class Automations {
       const failure={code:error.code,message:'Bot occurrence was not admitted'};
       const inserted=await tx.query(`INSERT INTO automation_runs(bot_id,version,occurrence_key,task_id,channel,identity_principal_id,status,occurrence,error)
         VALUES($1,$2,$3,NULL,$4,$5,'failed',$6,$7) ON CONFLICT(bot_id,version,occurrence_key) DO NOTHING`,[bot.asset_id,bot.version,key,bot.configuration.channel,bot.owner_principal_id,JSON.stringify(occurrence),JSON.stringify(failure)]);
-      if(inserted.rowCount)await this.auth.audit({principalId:bot.owner_principal_id,tenantId:bot.tenant_id,kind:'user'},'bot.admission-failed',{botAssetId:bot.asset_id,occurrenceKey:key,error:failure},bot.scope_id,tx);
+      if(inserted.rowCount){const ctx={principalId:bot.owner_principal_id,tenantId:bot.tenant_id,kind:'user'} as AuthContext;await this.auth.audit(ctx,'bot.admission-failed',{botAssetId:bot.asset_id,occurrenceKey:key,error:failure},bot.scope_id,tx);await publishBotFailure(tx,{...ctx,scopeId:bot.scope_id},bot.asset_id,key,failure);}
     }
   }
   async tick():Promise<void>{

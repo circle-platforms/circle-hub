@@ -306,11 +306,19 @@ export const TaskView = z.object({ taskId: TaskId,tenantId:z.string(),scopeId:Sc
 });
 export type TaskView=z.infer<typeof TaskView>;
 export const TaskListQuery=z.object({limit:z.coerce.number().int().min(1).max(100).default(20),kind:z.enum(['work','tool','index']).optional(),capabilityPackId:z.string().regex(/^[a-z][a-z0-9-]{0,99}$/).optional(),after:TaskId.optional()});
+export const NotificationQuery=z.object({cursor:z.coerce.number().int().nonnegative().default(0),limit:z.coerce.number().int().min(1).max(200).default(100)});
+export const NotificationView=z.object({seq:z.number().int().nonnegative(),taskId:TaskId.nullable(),scopeId:ScopeId,kind:z.string(),payload:z.record(z.string(),z.unknown()),createdAt:z.string()});
+export const NotificationPage=z.object({items:z.array(NotificationView),cursor:z.number().int().nonnegative(),hasMore:z.boolean()});
+export const QueueCounter=z.object({count:z.number().int().nonnegative(),oldestWaitMs:z.number().nonnegative(),overSla:z.number().int().nonnegative(),slaMs:z.number().int().positive()});
+export const QueueView=z.object({awaitingMyApproval:QueueCounter,awaitingMyInput:QueueCounter,submittedByMe:QueueCounter,assignedToMe:QueueCounter,exceptions:QueueCounter});
 export const SubmittedTask = TaskView.extend({ deduplicated:z.boolean() });
 export const EventPage = z.object({ events:z.array(Event),after:z.number().int().nonnegative() });
 export const CLIENT_ROUTES = {
   devLogin:{ method:'POST',path:'/v1/auth/dev-login',request:DevLoginRequest,response:DevLoginResult },
   authRefresh:{method:'POST',path:'/v1/auth/refresh',request:AuthRefreshRequest,response:DevLoginResult},
+  notifications:{method:'GET',path:'/v1/notifications',query:NotificationQuery,response:NotificationPage},
+  notificationStream:{method:'GET',path:'/v1/notifications/stream',contentType:'text/event-stream'},
+  queues:{method:'GET',path:'/v1/queues',response:QueueView},
   authLogout:{method:'POST',path:'/v1/auth/logout',request:AuthRefreshRequest},
   sources:{ method:'POST',path:'/v1/sources',request:SourceUpload,response:SourceReference },
   packs:{ method:'GET',path:'/v1/packs' },

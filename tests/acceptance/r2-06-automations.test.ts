@@ -68,6 +68,7 @@ test('Act R2.6 regression: a rejected event admission records its failure and do
   const failed=await h.request(`/v1/connectors/${source.assetId}/events`,{externalId:'denied-event',name:'source.changed',payload:{revision:'r1'}});
   const failures=await until(async()=>{const runs=await h.request(`/v1/automations/bots/${active.assetId}/runs`);return runs.length===1?runs:false;},2000);
   assert.equal(failures[0].status,'failed');assert.equal(failures[0].taskId,null);assert.equal(failures[0].error.code,'APPROVAL_STALE');assert.equal(failures[0].occurrenceKey,`event:${failed.eventId}`);
+  const notice=(await h.request('/v1/notifications')).items.find((item:any)=>item.kind==='bot.admission-failed');assert.equal(notice.taskId,null);assert.equal(notice.payload.botAssetId,active.assetId);assert.equal(notice.payload.error.code,'APPROVAL_STALE');assert.ok(!(await h.request('/v1/notifications',undefined,'bob')).items.some((item:any)=>item.kind==='bot.admission-failed'));
   const cursor=(await h.db.query('SELECT event_cursor FROM automation_positions WHERE bot_id=$1',[active.assetId])).rows[0].event_cursor;
   assert.equal(String(cursor),String((await h.db.query('SELECT id FROM automation_events WHERE event_id=$1',[failed.eventId])).rows[0].id));
   // Restore the fixture's bound registration to exercise the next occurrence.

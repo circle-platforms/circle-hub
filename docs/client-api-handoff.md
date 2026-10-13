@@ -457,3 +457,11 @@ GET /v1/skillpacks/{id} 为候选内容的只读视图：原技能摘要、files
 case-gateway 资产的 POST /v1/assets/{id}/health 现在经 worker 的只读 gateway.health 调 lease_status，无远端租约；available/gateway-read-confirmed 表示本次凭据和网关读链路获确认，不代表设备就绪。gateway.topology 是 effect=read/mode=sync/最低成员的 provider Tool，实例别名遵循目录规则。worker 在 C 的当前租约/fence 与批准 runtime-profile 下，lease_acquire → bed_topology(refresh:false) → lease_release，立即释放；result 仅含 hosts（名字、没有地址）、remoteLeaseReleased、observation。原始拓扑 JSON 按 SHA 入 B，evidence 可由当前授权身份回读。管理员据这些观察登记新资源声明 allowedTestHosts，再经变更集独立批准；平台不自动批准或把返回拓扑当设备构建观察。静态密钥和 server-issued 两种方式均沿用保险箱注入，失效/无租约给明确错误，无旁路占床。
 
 supervisor 为每次子进程 start/exit/error 打一行 JSON：at/supervisorId/processId、code/signal、reason、graceful。dev:stack 会转出这些元数据；意外退出和明确 graceful 重启可区分，没有请求/响应体或凭据日志。
+
+## 修订 3 第 6 节：通知流与工作队列
+
+GET /v1/notifications?cursor=0&limit=100 需 tasks.read，返回 {items:[{seq,taskId,scopeId,kind,payload,createdAt}],cursor,hasMore}；limit 为 1–200。过滤当前 tenant/scope/私有任务之后分页，游标来自持久 outbox；没有当前可见事件时也可越过已过滤的序号。bot 受理失败没有伪造任务，通知 taskId=null、payload 带 botAssetId/occurrenceKey/error，只对运行所有者可见。
+
+GET /v1/notifications/stream 用同样的 cursor/limit 或 Last-Event-ID 建 SSE；事件 notification 带 id=seq 和通知 JSON，cursor 事件带下一游标（即使本页无通知）。客户端保存已处理游标，断线按它补读，轮询是同一条持久流。服务器每轮重核身份/角色，过期发 session.expired、撤权发 permission.revoked、流内部错误发 stream.error 后关闭；使用客户端已刷新会话重连，不在流中索取密码。流有心跳/背压处理，graceful shutdown 会结束连接。
+
+GET /v1/queues 返回 awaitingMyApproval/awaitingMyInput/submittedByMe/assignedToMe/exceptions，各为 {count,oldestWaitMs,overSla,slaMs}。审批计数按当前管理员资格、twoPersonRule 与申请人过滤；输入和 bot 失败仅归当前所有者，私有任务不借队列暴露。异常包括 unknown/failed、expired/superseded 请求、失败 bot occurrence 与管理员范围内离线 worker。SLA 默认审批24小时、输入5分钟、其它1小时，响应明示阈值；assignedToMe 只读持久的真实 assignment context，没有分派记录就是零，不从模型文本或申请人身份推断指派。

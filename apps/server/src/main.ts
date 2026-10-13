@@ -28,6 +28,8 @@ import {ToolProviders} from '../../../packages/methods/src/providers.ts';
 import {ProductModules} from '../../../packages/methods/src/product-modules.ts';
 import {readEffectMigration} from '../../../packages/execution/src/read-effect-migration.ts';
 import {readReleaseAuditMigration} from '../../../packages/execution/src/read-release-audit-migration.ts';
+import {Notifications,NotificationQuery} from '../../../packages/tasks/src/notifications.ts';
+import {notificationMigration} from '../../../packages/tasks/src/notification-events.ts';
 import {ExecutionSecrets} from '../../../packages/execution/src/secret-lifecycle.ts';
 import { Checklists } from '../../../packages/tasks/src/checklists.ts';
 import { checklistMigration } from '../../../packages/tasks/src/checklist-migration.ts';
@@ -73,7 +75,7 @@ import {ChangeSetSubmission} from '../../../packages/contracts/src/index.ts';
 
 function environment(name: string): string { const value = process.env[name]; if (!value) throw new Error(`Required environment variable: ${name}`); return value; }
 const store = new Store(JSON.parse(environment('CIRCLE_SERVER_DATABASE_CONFIG')));
-await store.migrate([taskMigration,deliveryMigration,knowledgeMigration,executionMigration,...packageMigrations,approvalMigration,conclusionMigration,checklistMigration,connectorMigration,entityMigration,assetMigration,graphMigration,toolMigration,skillMigration,automationMigration,automationOutcomeMigration,knowledgePageMigration,automationOriginMigration,ingestionMigration,oauthMigration,resourceIdentityMigration,roleMigration,changeSetMigration,changeSetDependenciesMigration,enforcementMigration,sessionMigration,toolRolesMigration,readEffectMigration,readReleaseAuditMigration]);
+await store.migrate([taskMigration,deliveryMigration,knowledgeMigration,executionMigration,...packageMigrations,approvalMigration,conclusionMigration,checklistMigration,connectorMigration,entityMigration,assetMigration,graphMigration,toolMigration,skillMigration,automationMigration,automationOutcomeMigration,knowledgePageMigration,automationOriginMigration,ingestionMigration,oauthMigration,resourceIdentityMigration,roleMigration,changeSetMigration,changeSetDependenciesMigration,enforcementMigration,sessionMigration,toolRolesMigration,readEffectMigration,readReleaseAuditMigration,notificationMigration]);
 const auth = new Auth(store,{developmentTtlMs:process.env.CIRCLE_SERVER_DEV_TOKEN_TTL_MS?Number(process.env.CIRCLE_SERVER_DEV_TOKEN_TTL_MS):undefined,runTokenTtlMs:process.env.CIRCLE_SERVER_RUN_TOKEN_TTL_MS?Number(process.env.CIRCLE_SERVER_RUN_TOKEN_TTL_MS):undefined});
 requireCondition(process.env.CIRCLE_SERVER_DEV_AUTH === '1', 'INVALID_PAYLOAD', 'Phase one requires explicitly enabled development authentication');
 await auth.initializeDevelopment(environment('CIRCLE_SERVER_DEV_IDENTITIES'));
@@ -104,6 +106,7 @@ const executionChanges=new ExecutionChanges(assets,changeSets,execution,tasks);
 const registrationValidation=assets.validateRegistration;assets.validateRegistration=async(ctx,input,id,tx)=>{await changeSets.validateDefinition(tx,ctx,{...input,assetId:id});await registrationValidation?.(ctx,input,id,tx);};
 const skills=new SkillPacks(store,auth,tasks,approvals,assets,catalog,execution,knowledge);await skills.initialize(process.env.CIRCLE_RUNTIME_CONFIG);
 const executionSecrets=new ExecutionSecrets(store,assets.vault,skills.secrets);
+const notifications=new Notifications(store,auth);
 skills.changeSets=changeSets;
 let executionProfiles:Record<string,unknown>={};if(process.env.CIRCLE_SERVER_EXECUTION_GATEWAYS)try{executionProfiles=JSON.parse(await readFile(process.env.CIRCLE_SERVER_EXECUTION_GATEWAYS,'utf8')).profiles??{};}catch{/* Unavailable profiles remain blocked dependencies. */}
 catalog.gatewayProfiles=executionProfiles;
@@ -198,6 +201,15 @@ const server = createListener(async (request, response) => {
     const ctx = await auth.authenticate(request.headers.authorization);
     if(ctx.run){const allowed=request.method==='GET'&&['/v1/tools','/v1/tasks','/v1/status'].includes(url.pathname)||request.method==='POST'&&/^\/v1\/tools\/[^/]+\/call$/.test(url.pathname)||request.method==='GET'&&/^\/v1\/tasks\/[^/]+\/(?:status|result|events)$/.test(url.pathname)||request.method==='GET'&&/^\/v1\/(?:sources|artifacts|evidence)\/[^/]+\/content$/.test(url.pathname);requireCondition(allowed,'FORBIDDEN_ACTION','Run token authorizes only its declared tools and task reads');}
     if(url.pathname===CLIENT_ROUTES.authLogout.path&&request.method==='POST'){AuthRefreshRequest.parse(await body(request));send(response,200,{data:await auth.logout(request.headers.authorization!)});return;}
+    if(url.pathname===CLIENT_ROUTES.notifications.path&&request.method==='GET'){send(response,200,{data:await notifications.page(ctx,NotificationQuery.parse(Object.fromEntries(url.searchParams)))});return;}
+    if(url.pathname===CLIENT_ROUTES.queues.path&&request.method==='GET'){send(response,200,{data:await notifications.queues(ctx)});return;}
+    if(url.pathname===CLIENT_ROUTES.notificationStream.path&&request.method==='GET'){
+      await auth.check(ctx,'tasks.read');const query=NotificationQuery.parse({...Object.fromEntries(url.searchParams),...(request.headers['last-event-id']&&!url.searchParams.has('cursor')?{cursor:request.headers['last-event-id']}:{})});let cursor=query.cursor,closed=false,lastHeartbeat=0;response.once('close',()=>{closed=true;});response.writeHead(200,{'content-type':'text/event-stream; charset=utf-8','cache-control':'no-cache','connection':'keep-alive'});response.flushHeaders();
+      try{while(!closed&&!closing){let page;try{const current=await auth.authenticate(request.headers.authorization);page=await notifications.page(current,{...query,cursor});}catch(error){const event=error instanceof ApiError&&error.code==='UNAUTHENTICATED'?'session.expired':error instanceof ApiError&&error.code==='FORBIDDEN_ACTION'?'permission.revoked':'stream.error';response.write(`event: ${event}\ndata: {}\n\n`);break;}
+        for(const event of page.items){if(closed||closing)break;if(!response.write(`id: ${event.seq}\nevent: notification\ndata: ${JSON.stringify(event)}\n\n`))await new Promise<void>(resolve=>{const done=()=>{response.removeListener('drain',done);response.removeListener('close',done);shutdownSignal.signal.removeEventListener('abort',done);resolve();};response.once('drain',done);response.once('close',done);shutdownSignal.signal.addEventListener('abort',done,{once:true});if(closed||closing)done();});}
+        if(cursor!==page.cursor||Date.now()-lastHeartbeat>15000){response.write(`event: cursor\ndata: ${JSON.stringify({cursor:page.cursor})}\n\n`);lastHeartbeat=Date.now();}cursor=page.cursor;if(page.hasMore)continue;try{await delay(500,undefined,{signal:shutdownSignal.signal});}catch{break;}
+      }}finally{if(!response.destroyed)response.end();}return;
+    }
     if(url.pathname===CLIENT_ROUTES.authRefresh.path&&request.method==='POST'){
       AuthRefreshRequest.parse(await body(request));const issued=await auth.refresh(request.headers.authorization!),policy=await auth.policy(ctx);send(response,200,{data:{...issued,tokenType:'Bearer',principalId:policy.principalId,tenantId:policy.tenantId,scopes:policy.scopes,subjectType:policy.kind==='user'?'human':'service-client',...(policy.kind==='user'?{roles:policy.roles}:{scope:policy.grants.join(' ')})}});return;
     }
