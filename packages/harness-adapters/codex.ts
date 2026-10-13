@@ -16,14 +16,20 @@ import {
   type MarkdownSpec,
 } from './markdown.ts';
 import { emitToml, parseToml } from './toml.ts';
+import {
+  dropCwd,
+  placeholderShape,
+  sanitizeArgs,
+  stripValueMap,
+  REDACTED,
+  SECRET_MAP_KEYS,
+} from './configs.ts';
 
 const HARNESS = 'codex';
 const CONFIG_PATH = '.codex/config.toml';
 const INSTRUCTION_NAME = 'AGENTS.md';
-const REDACTED = '[redacted]';
 
 const ABSOLUTE_PATH = /^([/~]|[A-Za-z]:[\\/])/;
-const URL_LIKE = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//;
 
 const INSTRUCTION_SPEC: MarkdownSpec = {
   kind: 'hub-instruction/1',
@@ -55,42 +61,6 @@ function importInstructions(
   }
 }
 
-function stripValueMap(entry: Record<string, unknown>, key: string): string[] {
-  const value = entry[key];
-  if (value === undefined) return [];
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    delete entry[key];
-    return [];
-  }
-  const names: string[] = [];
-  const map = value as Record<string, unknown>;
-  for (const name of Object.keys(map)) {
-    names.push(name);
-    map[name] = '';
-  }
-  return names;
-}
-
-function sanitizeArgs(
-  args: unknown,
-  path: string,
-  server: string,
-  warnings: AdapterWarning[],
-): unknown {
-  if (!Array.isArray(args)) return args;
-  return args.map((arg, index) => {
-    if (typeof arg === 'string' && (ABSOLUTE_PATH.test(arg) || URL_LIKE.test(arg))) {
-      warnings.push({
-        code: 'PROVIDER_ARG_REDACTED',
-        path,
-        detail: `mcp_servers.${server} args[${index}] is an absolute path or endpoint and was replaced with ${REDACTED}`,
-      });
-      return REDACTED;
-    }
-    return arg;
-  });
-}
-
 function importConfig(
   files: VirtualFiles,
   manifests: HubManifest[],
@@ -105,7 +75,7 @@ function importConfig(
     warnings.push({
       code: 'TOML_LINE_SKIPPED',
       path: CONFIG_PATH,
-      detail: `line ${badLine.line} is outside the supported TOML subset and was skipped: ${JSON.stringify(badLine.text)}`,
+      detail: `line ${badLine.line} is outside the supported TOML subset and was skipped`,
     });
   }
   const extraKeys = Object.keys(parsed.values).filter((key) => key !== 'mcp_servers');
@@ -131,10 +101,13 @@ function importConfig(
     const shape: Record<string, unknown> = structuredClone(rawEntry) as Record<string, unknown>;
     const stripped: string[] = [];
     const credentials: string[] = [];
-    for (const key of stripValueMap(shape, 'env')) {
-      credentials.push(key);
-      stripped.push(`env.${key}`);
+    for (const key of SECRET_MAP_KEYS) {
+      for (const name2 of stripValueMap(shape, key)) {
+        if (key !== 'oauth') credentials.push(name2);
+        stripped.push(`${key}.${name2}`);
+      }
     }
+    dropCwd(shape, CONFIG_PATH, name, warnings, 'mcp_servers');
     let transport: Transport | undefined;
     if (typeof shape.command === 'string') {
       transport = 'stdio';
@@ -146,7 +119,7 @@ function importConfig(
         });
         shape.command = baseName(shape.command.replace(/\\/g, '/'));
       }
-      shape.args = sanitizeArgs(shape.args, CONFIG_PATH, name, warnings);
+      shape.args = sanitizeArgs(shape.args, CONFIG_PATH, name, warnings, 'mcp_servers');
     } else if (typeof shape.url === 'string') {
       transport = 'streamable-http';
       if (shape.url !== '') {
@@ -226,25 +199,6 @@ function exportInstruction(
     return;
   }
   out[path] = exportMarkdownFile(manifest, INSTRUCTION_SPEC, undefined, toText(original), path);
-}
-
-function placeholderShape(shape: Record<string, unknown>): { out: Record<string, unknown>; missing: string[] } {
-  const out = structuredClone(shape) as Record<string, unknown>;
-  const missing: string[] = [];
-  const env = out.env;
-  if (env && typeof env === 'object' && !Array.isArray(env)) {
-    for (const [name, value] of Object.entries(env as Record<string, unknown>)) {
-      if (value === '') {
-        (env as Record<string, unknown>)[name] = REDACTED;
-        missing.push(`env.${name}`);
-      }
-    }
-  }
-  if (out.url === '') {
-    out.url = REDACTED;
-    missing.push('url');
-  }
-  return { out, missing };
 }
 
 function exportProviders(providers: HubProvider[], out: VirtualFiles, warnings: AdapterWarning[]): void {

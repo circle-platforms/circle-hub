@@ -24,18 +24,25 @@ import {
   type MarkdownKind,
   type MarkdownSpec,
 } from './markdown.ts';
+import {
+  dropCwd,
+  placeholderShape,
+  sanitizeArgs,
+  sanitizeHookCommand,
+  stripValueMap,
+  REDACTED,
+  SECRET_MAP_KEYS,
+} from './configs.ts';
 
 const HARNESS = 'claude-code';
 const SETTINGS_PATH = '.claude/settings.json';
 const MCP_PATH = '.mcp.json';
-const REDACTED = '[redacted]';
 
 const SKILL_ENTRY = /^\.claude\/skills\/([^/]+)\/SKILL\.md$/;
 const COMMAND_FILE = /^\.claude\/commands\/([^/]+)\.md$/;
 const AGENT_FILE = /^\.claude\/agents\/([^/]+)\.md$/;
 
 const ABSOLUTE_PATH = /^([/~]|[A-Za-z]:[\\/])/;
-const URL_LIKE = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//;
 
 const SKILL_SPEC: MarkdownSpec = {
   kind: 'hub-skill/1',
@@ -249,11 +256,13 @@ function importSettings(
           warnings.push({ code: 'HOOK_ENTRY_SKIPPED', path: SETTINGS_PATH, detail: `hooks.${event}[${groupIndex}].hooks[${entryIndex}] is not a {type: "command", command} entry` });
           return;
         }
+        const location = `hooks.${event}[${groupIndex}].hooks[${entryIndex}]`;
+        const command = sanitizeHookCommand(recordEntry.command, SETTINGS_PATH, location, warnings);
         manifests.push({
           kind: 'hub-hook/1',
           event,
           order,
-          handler: recordEntry.command,
+          handler: command,
           language: 'shell',
           deterministic: false,
           sourceHarness: HARNESS,
@@ -264,7 +273,7 @@ function importSettings(
             ...(typeof matcher === 'string' ? { matcher } : {}),
             groupIndex,
             entryIndex,
-            entry: recordEntry,
+            entry: { ...recordEntry, command },
           },
         });
         warnings.push({
@@ -277,45 +286,6 @@ function importSettings(
     });
   }
   checkCanonical(SETTINGS_PATH, text, record, extraKeys, warnings);
-}
-
-function stripValueMap(
-  entry: Record<string, unknown>,
-  key: 'env' | 'headers',
-): string[] {
-  const value = entry[key];
-  if (value === undefined) return [];
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    delete entry[key];
-    return [];
-  }
-  const names: string[] = [];
-  const map = value as Record<string, unknown>;
-  for (const name of Object.keys(map)) {
-    names.push(name);
-    map[name] = '';
-  }
-  return names;
-}
-
-function sanitizeArgs(
-  args: unknown,
-  path: string,
-  server: string,
-  warnings: AdapterWarning[],
-): unknown {
-  if (!Array.isArray(args)) return args;
-  return args.map((arg, index) => {
-    if (typeof arg === 'string' && (ABSOLUTE_PATH.test(arg) || URL_LIKE.test(arg))) {
-      warnings.push({
-        code: 'PROVIDER_ARG_REDACTED',
-        path,
-        detail: `mcpServers.${server} args[${index}] is an absolute path or endpoint and was replaced with ${REDACTED}`,
-      });
-      return REDACTED;
-    }
-    return arg;
-  });
 }
 
 function importMcp(
@@ -351,14 +321,13 @@ function importMcp(
     const shape: Record<string, unknown> = structuredClone(rawEntry) as Record<string, unknown>;
     const stripped: string[] = [];
     const credentials: string[] = [];
-    for (const key of stripValueMap(shape, 'env')) {
-      credentials.push(key);
-      stripped.push(`env.${key}`);
+    for (const key of SECRET_MAP_KEYS) {
+      for (const name2 of stripValueMap(shape, key)) {
+        if (key !== 'oauth') credentials.push(name2);
+        stripped.push(`${key}.${name2}`);
+      }
     }
-    for (const key of stripValueMap(shape, 'headers')) {
-      credentials.push(key);
-      stripped.push(`headers.${key}`);
-    }
+    dropCwd(shape, MCP_PATH, name, warnings, 'mcpServers');
     let transport: Transport | undefined;
     if (typeof shape.command === 'string') {
       transport = 'stdio';
@@ -370,7 +339,7 @@ function importMcp(
         });
         shape.command = baseName(shape.command.replace(/\\/g, '/'));
       }
-      shape.args = sanitizeArgs(shape.args, MCP_PATH, name, warnings);
+      shape.args = sanitizeArgs(shape.args, MCP_PATH, name, warnings, 'mcpServers');
     } else if (typeof shape.url === 'string' || shape.type === 'http' || shape.type === 'sse') {
       if (shape.type === 'sse') {
         transport = undefined;
@@ -544,29 +513,6 @@ function exportHooks(hooks: HubHook[], out: VirtualFiles): void {
 interface ProviderSpecific {
   filePath?: string;
   shape?: Record<string, unknown>;
-}
-
-// Stripped values are written back as placeholders; the warning lists the
-// key names that must be refilled before the file is usable.
-function placeholderShape(shape: Record<string, unknown>): { out: Record<string, unknown>; missing: string[] } {
-  const out = structuredClone(shape) as Record<string, unknown>;
-  const missing: string[] = [];
-  for (const key of ['env', 'headers'] as const) {
-    const map = out[key];
-    if (map && typeof map === 'object' && !Array.isArray(map)) {
-      for (const [name, value] of Object.entries(map as Record<string, unknown>)) {
-        if (value === '') {
-          (map as Record<string, unknown>)[name] = REDACTED;
-          missing.push(`${key}.${name}`);
-        }
-      }
-    }
-  }
-  if (out.url === '') {
-    out.url = REDACTED;
-    missing.push('url');
-  }
-  return { out, missing };
 }
 
 function exportProviders(providers: HubProvider[], out: VirtualFiles, warnings: AdapterWarning[]): void {

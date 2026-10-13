@@ -294,3 +294,112 @@ test('Claude Code round trip: binary sibling files stay byte-exact', () => {
   assert.deepEqual(result.files['.claude/skills/blob-skill/data.bin'], bytes);
   assert.equal(result.files['.claude/skills/blob-skill/SKILL.md'], input['.claude/skills/blob-skill/SKILL.md']);
 });
+
+test('Sanitization: env, headers and oauth values are stripped, only key names remain', () => {
+  const result = importFrom('claude-code', {
+    '.mcp.json': JSON.stringify({
+      mcpServers: {
+        svc: {
+          command: 'npx',
+          env: { API_KEY: 'super-secret-value' },
+          oauth: { clientId: 'synthetic-client', clientSecret: 'synthetic-secret' },
+        },
+      },
+    }),
+  });
+  const [provider] = result.manifests as HubProvider[];
+  const shape = provider.harnessSpecific.shape as Record<string, unknown>;
+  assert.deepEqual(shape.env, { API_KEY: '' });
+  assert.deepEqual(shape.oauth, { clientId: '', clientSecret: '' });
+  assert.deepEqual(provider.credentials, ['API_KEY']);
+  const serialized = JSON.stringify(result.manifests);
+  for (const secret of ['super-secret-value', 'synthetic-client', 'synthetic-secret']) {
+    assert.equal(serialized.includes(secret), false, `${secret} leaked`);
+  }
+  // Warning details carry key names only, never values.
+  const allDetails = result.warnings.map((warning) => warning.detail).join('\n');
+  for (const secret of ['super-secret-value', 'synthetic-client', 'synthetic-secret']) {
+    assert.equal(allDetails.includes(secret), false, `${secret} leaked into a warning detail`);
+  }
+});
+
+test('Sanitization: cwd is dropped from MCP entries with a warning', () => {
+  const result = importFrom('claude-code', {
+    '.mcp.json': JSON.stringify({ mcpServers: { svc: { command: 'node', cwd: '/srv/app' } } }),
+  });
+  const [provider] = result.manifests as HubProvider[];
+  assert.equal('cwd' in (provider.harnessSpecific.shape as Record<string, unknown>), false);
+  assert.deepEqual(
+    result.warnings.map((warning) => warning.code).sort(),
+    ['CANONICAL_NORMALIZATION', 'PROVIDER_CWD_DROPPED'],
+  );
+  assert.equal(JSON.stringify(result.manifests).includes('/srv/app'), false);
+});
+
+test('Sanitization: args redaction catches endpoints and paths embedded in long strings', () => {
+  const result = importFrom('claude-code', {
+    '.mcp.json': JSON.stringify({
+      mcpServers: {
+        svc: {
+          command: 'node',
+          args: [
+            'serve',
+            '--root=/srv/data',
+            '--config=https://192.0.2.5/x.json',
+            'see http://192.0.2.9/docs for details',
+            '~/bin/tool',
+            '-k=short',
+            '/abs/path',
+            'plain',
+          ],
+        },
+      },
+    }),
+  });
+  const [provider] = result.manifests as HubProvider[];
+  assert.deepEqual((provider.harnessSpecific.shape as Record<string, unknown>).args, [
+    'serve',
+    '[redacted]',
+    '[redacted]',
+    '[redacted]',
+    '[redacted]',
+    '[redacted]',
+    '[redacted]',
+    'plain',
+  ]);
+  assert.equal(result.warnings.filter((warning) => warning.code === 'PROVIDER_ARG_REDACTED').length, 6);
+  const serialized = JSON.stringify(result.manifests);
+  for (const leaked of ['/srv/data', '192.0.2.5', '192.0.2.9', '~/bin/tool', '/abs/path', 'short']) {
+    assert.equal(serialized.includes(leaked), false, `${leaked} leaked`);
+  }
+});
+
+test('Sanitization: absolute path segments in hook commands become basenames', () => {
+  const input = {
+    '.claude/settings.json': `${JSON.stringify({
+      hooks: {
+        PreToolUse: [
+          { matcher: 'Bash', hooks: [{ type: 'command', command: 'sh /opt/team/hooks/check.sh --flag' }] },
+          { hooks: [{ type: 'command', command: 'node --config=~/hooks/c.json scripts/run.js' }] },
+        ],
+      },
+    }, null, 2)}\n`,
+  };
+  const result = importFrom('claude-code', input);
+  const hooks = result.manifests as HubHook[];
+  assert.equal(hooks[0].handler, 'sh check.sh --flag');
+  assert.equal(hooks[1].handler, 'node --config=c.json scripts/run.js');
+  assert.equal(result.warnings.filter((warning) => warning.code === 'HOOK_COMMAND_PATH').length, 2);
+  const serialized = JSON.stringify(result.manifests);
+  assert.equal(serialized.includes('/opt/team'), false);
+  assert.equal(serialized.includes('~/hooks'), false);
+});
+
+test('Sanitization: frontmatter skip warnings carry line numbers, not content', () => {
+  const result = importFrom('claude-code', {
+    '.claude/agents/x.md': '---\nname: x\na line with SECRET-WORD inside\n---\n\nBody.\n',
+  });
+  const [warning] = result.warnings.filter((entry) => entry.code === 'FRONTMATTER_LINE_SKIPPED');
+  assert.ok(warning.detail.includes('line 3'), warning.detail);
+  assert.equal(warning.detail.includes('SECRET-WORD'), false);
+});

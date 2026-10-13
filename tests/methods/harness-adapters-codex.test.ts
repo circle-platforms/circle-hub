@@ -122,3 +122,37 @@ test('Codex export: primitives without a Codex projection are reported, not sile
     ['NO_HARNESS_PROJECTION'],
   );
 });
+
+test('Sanitization: TOML skip warnings carry line numbers, not content', () => {
+  const result = importFrom('codex', {
+    '.codex/config.toml': '[mcp_servers.a]\ncommand = "node"\ntoken = { secret = "super-secret-value" }\n',
+  });
+  const [warning] = result.warnings.filter((entry) => entry.code === 'TOML_LINE_SKIPPED');
+  assert.ok(warning.detail.includes('line 3'), warning.detail);
+  assert.equal(warning.detail.includes('super-secret-value'), false);
+  assert.equal(warning.detail.includes('secret'), false);
+});
+
+test('Sanitization: cwd is dropped and oauth values stripped in codex config', () => {
+  const result = importFrom('codex', {
+    '.codex/config.toml': [
+      '[mcp_servers.a]',
+      'command = "node"',
+      'cwd = "/srv/app"',
+      '',
+      '[mcp_servers.a.oauth]',
+      'client_id = "synthetic-client"',
+      '',
+    ].join('\n'),
+  });
+  const [provider] = result.manifests as HubProvider[];
+  const shape = provider.harnessSpecific.shape as Record<string, unknown>;
+  assert.equal('cwd' in shape, false);
+  assert.deepEqual(shape.oauth, { client_id: '' });
+  assert.deepEqual(provider.credentials, []);
+  assert.deepEqual(
+    result.warnings.map((warning) => warning.code).sort(),
+    ['PROVIDER_CWD_DROPPED', 'PROVIDER_VALUES_STRIPPED'],
+  );
+  assert.equal(JSON.stringify(result.manifests).includes('synthetic-client'), false);
+});
