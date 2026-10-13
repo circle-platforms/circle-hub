@@ -19,7 +19,7 @@ export class McpGateway {
   async call(name:string,args:Record<string,unknown>,signal?:AbortSignal):Promise<any>{
     const result=await this.rpc('tools/call',{name,arguments:args},signal);let outcome=result.structuredContent;
     if(!outcome){try{outcome=JSON.parse(result.content?.find((item:any)=>item.type==='text')?.text);}catch{throw new ApiError('SOURCE_UNREACHABLE','Gateway tool receipt is malformed');}}
-    if(result.isError||outcome?.ok===false)throw new ApiError('GATEWAY_REFUSED','Gateway refused the requested operation',{tool:name});
+    if(result.isError||outcome?.ok===false){const reason=typeof outcome?.reason==='string'?outcome.reason:typeof outcome?.error==='string'?outcome.error:'Gateway refused the requested operation';throw new ApiError('GATEWAY_REFUSED',reason,{tool:name,gatewayRefusal:outcome});}
     requireCondition(outcome?.ok===true,'SOURCE_UNREACHABLE','Gateway did not confirm its tool receipt');return outcome;
   }
 }

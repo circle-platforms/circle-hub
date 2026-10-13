@@ -10,11 +10,12 @@ import {readExecutionWorkbook} from './workbook.ts';
 import {LocalObjects} from '../../../packages/knowledge/src/objects.ts';
 import {environmentBuild} from './environment.ts';
 import {OAuthToken} from '../../../packages/assets/src/oauth-token.ts';
+import {refusalFacts} from './refusal.ts';
 
 export interface CaseWorkerContext {check:()=>Promise<any>;source:()=>Promise<Buffer>;signal:AbortSignal;directory:string;event:(event:any)=>Promise<any>}
 const rawOutput=(output:any)=>({result:output.result,raw:output.raw.map((raw:any)=>({path:raw.path,sha256:raw.sha256,sourceType:raw.sourceType??output.sourceType,contentBase64:raw.bytes.toString('base64')}))});
 export async function executeCases(claim:any,context:CaseWorkerContext){
-  const fence={fencingToken:claim.fencingToken,inputRevisionId:claim.inputRevisionId};let stage='source',submitIntent=false,terminalObserved=false,submitted:any,gateway:McpGateway|undefined,lease:any,heartbeat:NodeJS.Timeout|undefined,pendingHeartbeat:Promise<void>|undefined,heartbeatError:any;
+  const fence={fencingToken:claim.fencingToken,inputRevisionId:claim.inputRevisionId};let stage='source',submissionAttempted=false,noDispatchVerified=false,terminalObserved=false,submitted:any,report:any,gateway:McpGateway|undefined,lease:any,heartbeat:NodeJS.Timeout|undefined,pendingHeartbeat:Promise<void>|undefined,heartbeatError:any;
   try{
     const preflight=await context.check(),authorization=preflight.authorization,vault=new PrivateVault(join(context.directory,'private-credentials'));
     if(claim.name==='cases.verify'||claim.name==='cases.execute'){
@@ -41,8 +42,9 @@ export async function executeCases(claim:any,context:CaseWorkerContext){
     stage='environment';await context.check();const environment=await gateway.call('env_prepare',{...leaseArgs,device_build:claim.args.buildName},context.signal),observation=environmentBuild(environment,claim.args.buildName);
     await context.event({stage:'environment',environment});if(!observation.passed)throw new ApiError('BUILD_MISMATCH','Gateway has not observed the bound device build',observation);
     const bytes=await context.source(),book=await readExecutionWorkbook(bytes);requireCondition(book.commands.every(command=>command.deviceIndex<environment.device_count),'GATEWAY_REFUSED','Workbook targets a device absent from the gateway environment');
-    await context.check();await context.event({stage:'submit-intent'});submitIntent=true;
+    stage='submission';await context.check();await context.event({stage:'submit-intent'});
     await context.check();
+    submissionAttempted=true;
     submitted=await gateway.call('case_submit',{...leaseArgs,xlsx_b64:bytes.toString('base64'),...(claim.args.module?{module:claim.args.module}:{})},context.signal);
     const staged=await context.event({stage:'submitted',receipt:submitted});requireCondition(staged.bindingAccepted===true&&submitted.sha256===sha256(bytes)&&canonicalHash(submitted.case_ids)===canonicalHash(book.cases.map(item=>item.autoid)),'SOURCE_HASH_MISMATCH','Gateway staged workbook or case identities differ');
     while(true){
@@ -52,10 +54,10 @@ export async function executeCases(claim:any,context:CaseWorkerContext){
       if(status.state==='done'){terminalObserved=true;const results=await gateway.call('case_results',{task_id:submitted.task_id},context.signal);return {...fence,status:'succeeded',output:{submit:submitted,environment,status,results}};}
       requireCondition(status.state==='running','EVIDENCE_INSUFFICIENT','Gateway state is not recognized');await delay(profile.pollMs,undefined,{signal:context.signal});
     }
-  }catch(error){const failure=error instanceof ApiError?error:new ApiError('SOURCE_UNREACHABLE','Gateway execution channel was interrupted'),code=failure.code==='GATEWAY_REFUSED'?(stage==='lease'?'LEASE_UNAVAILABLE':stage==='environment'?'BUILD_MISMATCH':'GATEWAY_UNREACHABLE'):failure.code;return {...fence,status:submitIntent?'unknown':'failed',output:{remoteTaskId:submitted?.task_id,remoteStoppingVerified:false},error:{code,message:failure.message,details:{...failure.details,stage,...(code==='BUILD_MISMATCH'&&!Object.hasOwn(failure.details,'observedBuild')?{expectedBuild:claim.args.buildName,observedBuild:null}:{})}}};}
+  }catch(error){const failure=error instanceof ApiError?error:new ApiError('SOURCE_UNREACHABLE','Gateway execution channel was interrupted'),refusal=failure.details.gatewayRefusal,facts=refusal?refusalFacts(refusal):null;noDispatchVerified=!submissionAttempted||!submitted&&facts?.preDispatch===true;const code=failure.code==='GATEWAY_REFUSED'?(stage==='lease'?'LEASE_UNAVAILABLE':facts?.code??'GATEWAY_REFUSED'):failure.code;return report={...fence,status:submissionAttempted&&!noDispatchVerified?'unknown':'failed',output:{remoteTaskId:submitted?.task_id,submissionAttempted,dispatchVerified:false,...(refusal?{gatewayRefusal:refusal}:{}),remoteStoppingVerified:false},error:{code,message:failure.message,details:{...failure.details,stage:facts?.stage??stage,localStage:stage,classification:facts?.classification??'worker-local-stage',submissionAttempted,dispatchUncertain:submissionAttempted&&!noDispatchVerified}}};}
   finally{
     clearInterval(heartbeat);await pendingHeartbeat;
     // Releasing the logical lease never claims that a remote runner stopped.
-    if(gateway&&lease&&(!submitIntent||terminalObserved))try{await gateway.call('lease_release',{lease_id:lease.lease_id,token:lease.token});}catch{/* Preserve the primary failure. */}
+    if(gateway&&lease&&(!submissionAttempted||noDispatchVerified||terminalObserved))try{await gateway.call('lease_release',{lease_id:lease.lease_id,token:lease.token});if(report){report.output.remoteLeaseReleased=true;report.error.details.remoteLeaseReleased=true;}}catch(error){if(report){report.output.remoteLeaseReleased=false;report.error.details.remoteLeaseReleased=false;report.error.details.leaseReleaseError={code:error instanceof ApiError?error.code:'SOURCE_UNREACHABLE',message:error instanceof ApiError?error.message:'Gateway lease release was not observed'};}}
   }
 }

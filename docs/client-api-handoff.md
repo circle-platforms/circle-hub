@@ -495,3 +495,13 @@ MCP tools/list 为调用者专业目录与 hub 平台控制 Tool，inputSchema �
 resources/list/read 支持 hub://evidence/{knr_|evd_|mcr_}、hub://source/{knr_|src_}、hub://artifact/{art_}；逐次沿用 B 的 scope/来源 readers/私有任务/个人凭据权限，mcr_ 仅原操作者可读。列表在授权集合分页，nextCursor 原样续读且绑定身份。prompts/list/get 为批准可读的 Skill/Command 原件投影，返回资产 SHA/版本出处，不替换未声明参数，不执行原语；列表同样分页。
 
 GET /v1/scopes/{scopeId}/permission-export 返回 [Grok 的规范](design/permission-export.md)定义的 hub-permission/1：范围 twoPersonRule/singleAdminMode 原样披露、roleOrder=[guest,member,administrator]、可见 provider 的 tools name/effect/minimumRole/approval，不存 disposition。读权限和当前调用目录仍由平台执行；机器 scope 串不冒充人的角色，根管理员没有子范围资料权时不能借导出读取。未实现各 harness 的本地许可文件改写。
+
+## 派发前拒绝与两次环境观察
+
+execution.gateway.submit-intent 仅证明 C 已准许一次提交，不证明网关 runner 或设备已派发。worker 开始 case_submit 后若连接中断、结果不可确定，仍 unknown/frozen 且禁止重派；网关明确的 lease/environment/validation 阶段拒绝（无任务身份、没有 dispatched:true）是已核对的 failed，不冻资源。契约旧网关只回文字时，产品方法仅识别既定的契约校验诊断为派发前拒绝；其他无阶段文字不猜派发情况。
+
+网关拒绝的完整 JSON 留在 error.details.gatewayRefusal，reason/error 作为原消息，stage/code 有明确值才采用；不能把 environment 一律映射 BUILD_MISMATCH，也不能凭 local stage 造 observedBuild:null。明确构建拒绝为 build-mismatch 等待，未知语义拒绝用 GATEWAY_REFUSED/gateway-refused，网关明确契约码可为 workbook-contract；waiting-input 的 result.error 与任务事件包含同一事实/证据，申请人可以修订。操作本身 status=failed；不是业务执行成功。
+
+execution.environment.observed 的 observationSource=gateway.env_prepare，保存提交前外部 env_prepare 的原件和构建核验；case_submit 可能随后在网关内再次检查环境/契约。两个时间点、调用和规则不同，第一次 passed 不覆盖第二次拒绝。失败原件保留第二次的原始 reason/details，不能以第一次观察推断第二次原因。
+
+未尝试提交或已证实派发前拒绝时，worker finally 调 lease_release；报告 remoteLeaseReleased:true 只代表网关确认逻辑租约释放。释放失败报告 false 与 leaseReleaseError，保留主错误，不声称远端停止；真正已派发而回执不确定时保留远端租约与 unknown 核对流程。

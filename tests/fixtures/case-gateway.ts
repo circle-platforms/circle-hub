@@ -2,7 +2,7 @@ import {createServer} from 'node:http';
 import type {TestContext} from 'node:test';
 
 export async function caseGateway(t:TestContext){
-  const state={staticSecret:'',staticAccepted:false,refuseLease:false,unavailable:false,lost:false,hold:false,dropSubmit:false,wrongSha:false,failCase:false,hostLog:'',actualBuild:'Rel_PHOTON_10_5_0_101',missingBuild:false,command:'service create port 443',sha:'',taskId:'cex_synthetic_301',calls:[] as string[],identityServer:'',clientId:'',clientSecret:'',ruleBuild:'',ruleSha:'',verified:[] as any[]};
+  const state={staticSecret:'',staticAccepted:false,refuseLease:false,unavailable:false,lost:false,hold:false,dropSubmit:false,submitRefusal:null as any,refuseRelease:false,wrongSha:false,failCase:false,hostLog:'',actualBuild:'Rel_PHOTON_10_5_0_101',missingBuild:false,command:'service create port 443',sha:'',taskId:'cex_synthetic_301',calls:[] as string[],identityServer:'',clientId:'',clientSecret:'',ruleBuild:'',ruleSha:'',verified:[] as any[]};
   const server=createServer(async(req,res)=>{
     if(req.method!=='POST'||req.url!=='/mcp'){res.writeHead(405);res.end();return;}
     let rpc:any;try{let input='';for await(const bytes of req)input+=bytes;rpc=JSON.parse(input);}catch{res.writeHead(400);res.end();return;}
@@ -19,6 +19,7 @@ export async function caseGateway(t:TestContext){
     }catch{res.writeHead(503);res.end();return;}}
     let result:any={ok:true};
     if(name==='lease_status')result={ok:true,lease:null};
+    if(name==='lease_release'&&state.refuseRelease)result={ok:false,error:'Synthetic lease release refused'};
     if(name==='bed_topology')result={ok:true,topology:{devices:[{name:'routera',interfaces:[{address:'192.0.2.31'}]},{name:'node-a'},{name:'node-b'}]}};
     if(name==='lease_acquire')result=state.refuseLease?{ok:false,error:'lease unavailable'}:{ok:true,lease_id:'synthetic-lease',token:1,expires_in_s:1800};
     if(name==='env_prepare'){const wanted=rpc.params.arguments.device_build,match=!state.missingBuild&&state.actualBuild===wanted;result={ok:true,ready:match,build_checked:true,device_count:2,checks:[{check:'device_build',ok:match,detail:state.missingBuild?'build not found in output':`device reports ${state.actualBuild}, gateway bundle is ${wanted}`} ]};}
@@ -26,6 +27,7 @@ export async function caseGateway(t:TestContext){
       const {createHash}=await import('node:crypto');state.sha=createHash('sha256').update(Buffer.from(rpc.params.arguments.xlsx_b64,'base64')).digest('hex');
       if(state.dropSubmit){req.socket.destroy();return;}
       result={ok:true,task_id:state.taskId,sha256:state.wrongSha?'0'.repeat(64):state.sha,bytes:1,case_ids:['301'],submit_autoid:'301',module:'synthetic'};
+      if(state.submitRefusal)result=state.submitRefusal;
     }
     if(name==='case_status')result={ok:true,task_id:state.taskId,state:state.lost?'lost':state.hold?'running':'done',rc:0};
     if(name==='case_results')result={ok:true,task_id:state.taskId,channel:state.lost?'runner_lost':'ready',rc:state.lost?null:0,xlsx_sha256:state.sha,cases:state.lost?[]:[{case_id:'301',result:state.failCase?'fail':'pass',log_stale:false,log:`node-a - sends command in config: ${state.command}\nhealthy\nLAB#\n${state.hostLog}#### ${state.failCase?'Fail':'Success'} Num 1: ${state.failCase?'fail':'successed'} to find healthy in:\n${state.command}\nhealthy\nLAB#\n#### Success Num 2: fail to find panic in:\n${state.command}\nhealthy\nLAB#\n`,sessions:{}}],ignored_rows:0};
