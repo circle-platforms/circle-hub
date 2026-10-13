@@ -9,7 +9,6 @@ import {commandCheck} from '../../../packages/methods/src/command-tree.ts';
 import {ExecutionInput,ExecutionPack} from './contracts.ts';
 import {readExecutionWorkbook,type ExecutionBook} from './workbook.ts';
 import {executionResults} from './results.ts';
-import {SHELL_HOST_METHODS} from './dialect.ts';
 import {environmentBuild} from './environment.ts';
 import {FunctionContract} from './function-contract.ts';
 import {z as schema} from 'zod';
@@ -89,7 +88,7 @@ export class CaseExecution {
     const base=this.hookBinding(task,binding),inputs=[];
     for(const command of book.hostCommands){
       const hookBinding=base;
-      inputs.push({event:'verify.workbook',binding:hookBinding,subject:{client:command.host,contract:{testEnvEnabled:functions?[...functions.methods].filter(([key,status])=>JSON.parse(key)[0]==='test_env'&&functions.status('test_env',JSON.parse(key)[1])==='enabled').map(([key])=>JSON.parse(key)[1]):SHELL_HOST_METHODS}},location:{row:command.row,autoid:command.autoid,object:command.object,method:command.method}});
+      inputs.push({event:'verify.workbook',binding:hookBinding,subject:{client:command.host,contract:{testEnvEnabled:functions?[...functions.methods].filter(([key,status])=>JSON.parse(key)[0]==='test_env'&&functions.status('test_env',JSON.parse(key)[1])==='enabled').map(([key])=>JSON.parse(key)[1]):binding.gateway.declaration.allowedTestHosts??[]}},location:{row:command.row,autoid:command.autoid,object:command.object,method:command.method}});
       inputs.push({event:'verify.hostCommand',binding:hookBinding,subject:{command:command.command,host:command.host,method:command.method,kwargs:command.kwargs},location:command});
     }return inputs;
   }
@@ -166,7 +165,7 @@ export class CaseExecution {
       await tasks.emit(tx,task.taskId,'execution.commands.rechecked',{treeSha256:expected,commandReportSha256:verified.gate.reportSha256,commandCount:verified.book.commands.length});return {authorized:true};
     }
     if(event.stage==='submit-intent'){
-      const dispatched=await this.preflight(ctx,id,fence,tx);await this.hook(tx,task,{method:dispatched.authorization.method??(await this.bindings(this.actor(task),task.input,task.scopeId,tx)).method},'beforeDispatch',{method:row.args.methodAssetId,resource:row.target,source:task.input.sourceRevisionId,inputRevision:task.inputRevisionId},{input:task.input,operationId:id});const updated=await tx.query(`UPDATE case_gateway_receipts SET submit_intent=true,updated_at=clock_timestamp() WHERE operation_id=$1 AND input_revision_id=$2 AND workbook_sha256=$3 AND validation_fence=$4 AND verified_tree_sha256=$5 AND verified_report_sha256=$6 AND NOT submit_intent AND updated_at>clock_timestamp()-interval '5 minutes' RETURNING operation_id`,[id,revision,task.input.sourceSha256,fence,row.args.treeSha256,row.args.commandReportSha256]);requireCondition(updated.rowCount,'DECISION_CONFLICT','Fresh server command proof is required and a submit intent can be consumed only once');
+      const dispatched=await this.preflight(ctx,id,fence,tx);await this.hook(tx,task,{method:dispatched.authorization.method??(await this.bindings(this.actor(task),task.input,task.scopeId,tx)).method},'beforeDispatch',this.hookBinding(task,await this.bindings(this.actor(task),task.input,task.scopeId,tx)),{input:task.input,operationId:id});const updated=await tx.query(`UPDATE case_gateway_receipts SET submit_intent=true,updated_at=clock_timestamp() WHERE operation_id=$1 AND input_revision_id=$2 AND workbook_sha256=$3 AND validation_fence=$4 AND verified_tree_sha256=$5 AND verified_report_sha256=$6 AND NOT submit_intent AND updated_at>clock_timestamp()-interval '5 minutes' RETURNING operation_id`,[id,revision,task.input.sourceSha256,fence,row.args.treeSha256,row.args.commandReportSha256]);requireCondition(updated.rowCount,'DECISION_CONFLICT','Fresh server command proof is required and a submit intent can be consumed only once');
       await tasks.emit(tx,task.taskId,'execution.gateway.submit-intent',{operationId:id,sourceSha256:task.input.sourceSha256});return {authorized:true};
     }
     const receipt=(await tx.query('SELECT * FROM case_gateway_receipts WHERE operation_id=$1 FOR UPDATE',[id])).rows[0];requireCondition(receipt?.submit_intent,'DECISION_CONFLICT','Gateway submission has no persisted intent');

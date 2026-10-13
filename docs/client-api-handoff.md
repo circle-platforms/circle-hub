@@ -435,3 +435,13 @@ Tool effect=read 的操作按读取效果登记。上游 TimeoutError/AbortError
 worker 先把原件按 SHA 放入 B，再在报告 raw[] 传 {path,sha256,objectKey:sha256,size,sourceType,...}；C 在当前租约/输入/资产授权下回读并验证实际字节和大小。旧 contentBase64 报告仍兼容；原件缺失、换 SHA 或错误 size 不被接纳。证据存指针、范围、SHA 与小片段，不把大文件或 NUL/不合法 UTF-8 的完整文本塞入 JSONB。GET /v1/knowledge/records/{evidenceId}/content 仍可在现有授权下读取原字节并复算 SHA。任何回报处理错误都原子落成 failed；数据库异常只给 RECEIPT_PROCESSING_FAILED 和安全 storageCode，不带 SQL、参数、内容或内部路径。
 
 docs.search 已完成文件后发生读取超时时，返回已观测 hits、nextCursor、coverage.complete=false 和 coverage.stopped:{code,file,fileIndex,lineIndex,completedFiles}；任务结果是 partial。游标指向未完成文件，不截掉也不猜测余下命中。该页没有完成文件，或目录遍历未完成时仍为 UPSTREAM_TIMEOUT，details.coverage 说明读取进度；没有伪造完整结果。正常分页形状保持。
+
+## 审计补充：角色、Hook 形状与模型凭据
+
+任何带 credentials 引用的 provider（不限模式）的 Tool 最低为 scope member，目录与调用都拒绝 viewer；访客仅可调用无凭据的只读 provider。静态资源共享不扩大人的角色。Hook 的 binding.resource 按 assetId/version/sha256/declaration 校验；主机策略形状为 allowedTestHosts:string[]、hostCommandPolicies[host].allowPrefixes:string[]，未声明交产品 Hook 判定。beforeDispatch 的 subject 为 {input,operationId}，afterResult 为 {result,operationId}，不接受多余字段。主机行只按 token 形状解析，函数启用状态只标注 functionStatus，规则由批准模块核验。
+
+Tool/Hook 子进程带 256MiB V8 堆上限，Hook 以最多 200 个 subject 的批次执行，每批十秒，保持顺序和首次 block 停止。APV 验收固定 224daa6 / 1.2.1，29 条包内测试。
+
+模型密钥不再写进 Circle home：可信 worker 为本次运行起 loopback 模型代理，在内存中注入真实上游密钥；Circle settings/credentials 只有本次代理端点与随机 nonce，退出关闭代理。代理拒绝非模型路径、无 nonce 的请求及远程开发端点。Skill 产物出口对 run token、代理 nonce、模型密钥按字节替换，保留其它二进制字节，记录 sanitized 并重新算 SHA；事件同样脱敏。harness 自带 --yolo 不作为平台权限边界。仅一位管理员且其为 runtime-profile owner 时，明文例外仍不能自批，需先有独立 reviewer；这是明确的资格限制。
+
+每次模型代理只绑一个回环临时端口，256 位 nonce 仅本次有效，seatbelt 只开放该端口和 hub 端口。目标由当前独立批准的 circle-runtime 配置钉住，Host、查询和路径不能换目标；入站凭据头全部剥离，可信代理再注入上游 key。请求和响应各限 16MiB，SSE 按流透传，不记录体或把模型流量存为证据。runtime.model.proxy 仅记 upstreamHost/statusCode/requestBytes/responseBytes/durationMs/requestNumber。起不来/断连为 MODEL_PROXY_UNAVAILABLE，上游拒绝或超限为 MODEL_UPSTREAM_REJECTED，没有写真实 key 到 home 的降级。取消、超时、unknown、本地结束都关闭代理；取消后的事件拒绝不会覆盖已观测的本地退出。开发验收仍限回环脚本模型。

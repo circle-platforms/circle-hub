@@ -1,5 +1,5 @@
 import type {ExecutionBook,ExecutionStep} from './workbook.ts';
-import {shellHost} from './dialect.ts';
+import {isHostToken} from './dialect.ts';
 
 // Only explicit framework checkpoint lines establish a step verdict. Case verdicts
 // and session replay are kept separate from these observations.
@@ -28,7 +28,7 @@ export function executionResults(book:ExecutionBook,raw:any){
     const commandLines=lines.flatMap((line,index)=>{const match=/^\S+ (?:- sends command in (?:config|enable)|executes command): (.*)$/.exec(line);return match?[{command:match[1],line:index+1}]:[];});
     const steps=item.steps.map(step=>{
       const checkpoint=checkPoints.find(check=>check.row===step.row);if(checkpoint)return {...step,...checkpoint};
-      if(step.object==='test_env'||shellHost(step.object)){
+      if(step.object==='test_env'||isHostToken(step.object)){
         const host=step.object==='test_env'?step.method:step.object,command=(step.call?.command??step.data).split(/\r?\n/),matches=lines.flatMap((line,index)=>{const dispatch=/^(\S+) executes command: (.*)$/.exec(line);return dispatch&&dispatch[1].toLowerCase()===host&&dispatch[2]===command[0]&&command.slice(1).every((part,offset)=>lines[index+1+offset]===part)?[{startLine:index+1,endLine:index+command.length}]:[];});
         const unique=item.steps.filter(row=>row.object===step.object&&row.method===step.method&&row.data===step.data).length===1,observedDispatch=observed&&!observed.log_stale&&unique&&matches.length===1;
         if(!observedDispatch)unmapped.push({path:`cases/${item.autoid}/rows/${step.row}`,reason:'host_dispatch_not_proven'});return {...step,status:observedDispatch?'observed':'unknown',logSpans:observedDispatch?matches:[]};

@@ -1,10 +1,6 @@
 import {ApiError} from '../../../packages/contracts/src/index.ts';
 
-// Interface names from the read-only Excel function contract; no host addresses
-// or framework implementations are installed here. Console needs bed-specific
-// role evidence and is deliberately not inferred from its method name.
-export const SHELL_HOST_METHODS=['clientc','clientd','cliente','routera','routerb','server213','server231','server232'] as const;
-export const shellHost=(name:string)=>SHELL_HOST_METHODS.includes(name as typeof SHELL_HOST_METHODS[number]);
+export const isHostToken=(name:string)=>/^[A-Za-z][A-Za-z0-9_.-]{0,62}$/.test(name)&&!['test_env','check_point','time'].includes(name)&&!/^(?:APV_\d+|Seg\d+_tmp)$/.test(name);
 export function frameworkArguments(input:string):{command:string;kwargs:Record<string,string|number>}{
   const fail=(message:string):never=>{throw new ApiError('INVALID_EXECUTION_WORKBOOK',message);};
   if(input.includes('\n'))return {command:input,kwargs:{}};

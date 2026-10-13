@@ -7,6 +7,8 @@ import {StringDecoder} from 'node:string_decoder';
 import {ApiError,MAX_SOURCE_BYTES,SafeRelativePath,canonicalJson,requireCondition,sha256} from '../../contracts/src/index.ts';
 
 import {isolatedProcess} from './isolation.ts';
+import {modelProxy} from './model-proxy.ts';
+import {redactBytes} from './redaction.ts';
 const execute=promisify(execFile);
 export interface CircleRun {
   runtime:{circleBin:string;circleCommit:string;circleVersion:string;model:{kind:'scripted';base_url:string;model:string;protocol:string;api_key:string}};
@@ -14,8 +16,14 @@ export interface CircleRun {
   serverUrl:string;serverToken:string;scopeId:string;principalId:string;signal?:AbortSignal;
   event:(event:any)=>Promise<void>;
 }
-export async function runCircle(input:CircleRun):Promise<any>{try{return await runIsolatedCircle(input);}finally{await rm(join(input.folder,'home'),{recursive:true,force:true});await rm(join(input.folder,'home-user'),{recursive:true,force:true});}}
-async function runIsolatedCircle(input:CircleRun):Promise<any>{
+export async function runCircle(input:CircleRun):Promise<any>{
+  const proxy=await modelProxy(input.runtime.model.base_url,input.runtime.model.api_key,{onMetadata:metadata=>input.event({type:'model.proxy',...metadata})});
+  const close=()=>{void proxy.close();};input.signal?.addEventListener('abort',close,{once:true});
+  try{const result=await runIsolatedCircle({...input,runtime:{...input.runtime,model:{...input.runtime.model,base_url:proxy.url,api_key:proxy.nonce}}},input.runtime.model.api_key,close);await proxy.flush();if(proxy.failure)throw proxy.failure;return result;}
+  catch(error){await proxy.flush();if(error instanceof ApiError&&error.details.localExitObserved===true)throw error;throw proxy.failure??error;}
+  finally{input.signal?.removeEventListener('abort',close);await proxy.close();await rm(join(input.folder,'home'),{recursive:true,force:true});await rm(join(input.folder,'home-user'),{recursive:true,force:true});}
+}
+async function runIsolatedCircle(input:CircleRun,upstreamModelKey:string,onStopping:()=>void):Promise<any>{
   const {runtime}=input,circleBin=resolve(runtime.circleBin),repo=dirname(dirname(circleBin));
   const home=join(input.folder,'home'),homeUser=join(input.folder,'home-user'),workspace=join(input.folder,'workspace');
   for(const directory of [home,homeUser,workspace])await mkdir(directory,{recursive:true,mode:0o700});
@@ -36,10 +44,10 @@ async function runIsolatedCircle(input:CircleRun):Promise<any>{
   const child=spawn(isolation.command,isolation.args,{cwd:workspace,detached:process.platform!=='win32',stdio:['pipe','pipe','pipe'],env:{PATH:process.env.PATH,TMPDIR:temporary,LANG:process.env.LANG,
     NODE_EXTRA_CA_CERTS:process.env.NODE_EXTRA_CA_CERTS,
     HOME:homeUser,CIRCLE_HOME:home,CIRCLE_NO_MODELS_REFRESH:'1',CIRCLE_JOB_WAIT:'120',CIRCLE_SERVER_URL:input.serverUrl,CIRCLE_SERVER_TOKEN:input.serverToken,CIRCLE_SERVER_USER:input.principalId,CIRCLE_SERVER_SCOPE:input.scopeId}});
-  const redact=(value:unknown):any=>JSON.parse(JSON.stringify(value).replaceAll(input.serverToken,'[redacted-run-token]').replaceAll(runtime.model.api_key,'[redacted-model-key]'));
+  const redact=(value:any):any=>typeof value==='string'?value.replaceAll(input.serverToken,'[redacted-run-token]').replaceAll(runtime.model.api_key,'[redacted-model-proxy]').replaceAll(upstreamModelKey,'[redacted-model-key]'):Array.isArray(value)?value.map(redact):value&&typeof value==='object'?Object.fromEntries(Object.entries(value).map(([key,item])=>[redact(key),redact(item)])):value;
   const stop=()=>{if(child.exitCode!==null||child.signalCode!==null)return;if(!child.stdin.destroyed){child.stdin.write('{"type":"abort"}\n');child.stdin.end();}};
   const kill=()=>{if(child.exitCode!==null||child.signalCode!==null)return;try{if(process.platform==='win32')child.kill('SIGKILL');else process.kill(-child.pid!,'SIGKILL');}catch{/* process already ended */}};
-  let stopTimer:NodeJS.Timeout|undefined;const abort=()=>{stop();stopTimer??=setTimeout(kill,5000);};input.signal?.addEventListener('abort',abort,{once:true});
+  let stopTimer:NodeJS.Timeout|undefined;const abort=()=>{onStopping();stop();stopTimer??=setTimeout(kill,5000);};input.signal?.addEventListener('abort',abort,{once:true});
   const timeout=setTimeout(()=>{failed=true;abort();},240_000);
   child.stderr.on('data',()=>{/* Runtime paths and credential material never enter logs. */});
   const completion=new Promise<void>((accept,reject)=>{
@@ -65,8 +73,8 @@ async function runIsolatedCircle(input:CircleRun):Promise<any>{
   const outputs=[],canonicalWorkspace=await realpath(workspace);
   for(const name of input.manifest.outputs){SafeRelativePath.parse(name);const path=join(workspace,name);let bytes:Buffer;
     try{const metadata=await lstat(path);requireCondition(metadata.isFile()&&!metadata.isSymbolicLink(),'RUNTIME_FAILED','Declared output is not a regular file');const actual=await realpath(path);requireCondition(!relative(canonicalWorkspace,actual).startsWith('..'),'RUNTIME_FAILED','Declared output escaped its workspace');bytes=await readFile(path);}catch(error){if(error instanceof ApiError)throw error;throw new ApiError('RUNTIME_FAILED','A declared output file is missing');}
-    requireCondition(bytes.length<=MAX_SOURCE_BYTES,'BODY_TOO_LARGE','Runtime output exceeds the byte limit');requireCondition(!bytes.includes(Buffer.from(input.serverToken)),'RUNTIME_FAILED','Runtime output contains a private run credential');
-    outputs.push({path:name,contentBase64:bytes.toString('base64'),sha256:sha256(bytes)});
+    requireCondition(bytes.length<=MAX_SOURCE_BYTES,'BODY_TOO_LARGE','Runtime output exceeds the byte limit');const redacted=redactBytes(bytes,[input.serverToken,runtime.model.api_key,upstreamModelKey]);bytes=redacted.bytes;const sanitized=redacted.sanitized;
+    outputs.push({path:name,contentBase64:bytes.toString('base64'),sha256:sha256(bytes),sanitized});
   }
-  return {outputs,answer:lastAnswer,runtime:{circleCommit:commit,circleVersion:version,entrySha256:sha256(await readFile(circleBin)),agentSettled:settled,localExitObserved:true,remoteStoppingVerified:false,model:{kind:'scripted',model:runtime.model.model}}};
+  return {outputs,answer:redact(lastAnswer),runtime:{circleCommit:commit,circleVersion:version,entrySha256:sha256(await readFile(circleBin)),agentSettled:settled,localExitObserved:true,remoteStoppingVerified:false,model:{kind:'scripted',model:runtime.model.model}}};
 }

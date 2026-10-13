@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import ExcelJS from 'exceljs';
-import {frameworkArguments,SHELL_HOST_METHODS} from '../../packs/apv/execution/dialect.ts';
+import {frameworkArguments,isHostToken} from '../../packs/apv/execution/dialect.ts';
 import {readExecutionWorkbook} from '../../packs/apv/execution/workbook.ts';
 import {executionWorkbook} from '../fixtures/execution-workbook.ts';
 
@@ -14,8 +14,8 @@ test('Execution dialect: quoted comma arguments and prompt/timeout are parsed wi
 });
 
 test('Execution dialect: literal host dispatch is parsed without enforcing the product Hook client list',async()=>{
-  for(const host of SHELL_HOST_METHODS){const book=await readExecutionWorkbook(await executionWorkbook({hostCommand:{host,command:'dig @192.0.2.1 example.test,timeout=30'}}));assert.equal(book.hostCommands[0].command,'dig @192.0.2.1 example.test');assert.equal(book.hostCommands[0].kwargs.timeout,30);}
-  for(const host of ['__init__','RouterA'])await assert.rejects(readExecutionWorkbook(await executionWorkbook({hostCommand:{host,command:'dig example.test'}})),(error:any)=>error.code==='INVALID_EXECUTION_WORKBOOK');
+  for(const host of ['clientc','clientd','cliente','routera','routerb','server213','server231','server232']){const book=await readExecutionWorkbook(await executionWorkbook({hostCommand:{host,command:'dig @192.0.2.1 example.test,timeout=30'}}));assert.equal(book.hostCommands[0].command,'dig @192.0.2.1 example.test');assert.equal(book.hostCommands[0].kwargs.timeout,30);}
+  for(const host of ['__init__','invalid host'])await assert.rejects(readExecutionWorkbook(await executionWorkbook({hostCommand:{host,command:'dig example.test'}})),(error:any)=>error.code==='INVALID_EXECUTION_WORKBOOK');
   const book=await readExecutionWorkbook(await executionWorkbook({command:'"service create port 443",timeout=30,prompt=LAB#'}));assert.equal(book.commands[0].command,'service create port 443');
   const captured=await readExecutionWorkbook(await executionWorkbook({hostCommand:{host:'routera',command:'dig example.test',saveAs:'reply_one'}}));assert.equal(captured.cases[0].steps[1].saveAs,'reply_one');
   await assert.rejects(readExecutionWorkbook(await executionWorkbook({hostCommand:{host:'routera',command:'dig {}',inputRegister:'query_name'}})),(error:any)=>error.code==='INVALID_EXECUTION_WORKBOOK');
@@ -34,8 +34,8 @@ test('Execution workbook: rejected dispatch rows identify row case object and me
   workbook.worksheets[0].getCell('G4').value={formula:'1+1',result:2};
   await assert.rejects(readExecutionWorkbook(Buffer.from(await workbook.xlsx.writeBuffer())),(error:any)=>{assert.deepEqual(error.details,{row:4,autoid:'301',object:'test_env',method:'routera',column:7});return true;});
   workbook.worksheets[0].getCell('G4').value='dig example.test';
-  workbook.worksheets[0].spliceRows(7,0,['902','P1',2,'Synthetic second case','test_env','RouterA','private-command-text']);
-  await assert.rejects(readExecutionWorkbook(Buffer.from(await workbook.xlsx.writeBuffer())),(error:any)=>{assert.deepEqual(error.details,{row:7,autoid:'902',object:'test_env',method:'RouterA'});return true;});
+  workbook.worksheets[0].spliceRows(7,0,['902','P1',2,'Synthetic second case','test_env','invalid host','private-command-text']);
+  await assert.rejects(readExecutionWorkbook(Buffer.from(await workbook.xlsx.writeBuffer())),(error:any)=>{assert.deepEqual(error.details,{row:7,autoid:'902',object:'test_env',method:'invalid host'});return true;});
 });
 
 test('Execution workbook: default host dispatch retains literal shell recipes rather than restricting clients to dig',async()=>{

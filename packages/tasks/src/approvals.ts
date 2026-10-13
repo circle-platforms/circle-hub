@@ -53,7 +53,7 @@ export class Approvals {
       if(code)return {error:new ApiError(code,`Approval rejected: ${outcome}`)};
       // emit() holds the event clock until commit. All role/policy decisions
       // apply under that same lock, so re-read eligibility at the decision point.
-      eligibility=await this.auth.roles.eligibility(ctx,task.scopeId,row.applicant_id,tx);if(!eligibility.eligible){await tx.query('UPDATE decisions SET outcome=$2 WHERE id=$1',[decision.id,'eligibility-mismatch']);return {error:new ApiError('SELF_APPROVAL','Scope policy now requires an independent reviewer')};}
+      eligibility=await this.auth.roles.eligibility(ctx,task.scopeId,row.applicant_id,tx);if(!eligibility.eligible){await tx.query('UPDATE decisions SET outcome=$2 WHERE id=$1',[decision.id,'eligibility-mismatch']);return {error:new ApiError(row.applicant_id===ctx.principalId?'SELF_APPROVAL':'FORBIDDEN_ACTION','Scope policy no longer permits this decision')};}
       await tx.query('UPDATE decisions SET decision_mode=$2,single_admin_mode=$3,policy_version=$4 WHERE id=$1',[decision.id,eligibility.decisionMode,eligibility.singleAdminMode,eligibility.policyVersion]);
       const registered=this.policies.get(row.action.name);
       if(registered){try{await registered.check(tx,ctx,task,row,answer);}catch(error){if(!(error instanceof ApiError))throw error;await tx.query('UPDATE decisions SET outcome=$2 WHERE id=$1',[decision.id,error.code]);return {error};}}

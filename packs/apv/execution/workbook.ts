@@ -2,10 +2,10 @@ import ExcelJS from 'exceljs';
 import {zipSync} from 'fflate';
 import {boundedUnzip} from '../../../packages/knowledge/src/zip.ts';
 import {ApiError,MAX_SOURCE_BYTES,requireCondition,sha256} from '../../../packages/contracts/src/index.ts';
-import {frameworkArguments,shellHost} from './dialect.ts';
+import {frameworkArguments,isHostToken} from './dialect.ts';
 import type {FunctionContract} from './function-contract.ts';
 
-export interface ExecutionStep {row:number;type:number;description:string;object:string;method:string;data:string;commands:string[];saveAs?:string;inputRegister?:string;call?:{command:string;kwargs:Record<string,string|number>}}
+export interface ExecutionStep {row:number;type:number;description:string;object:string;method:string;data:string;commands:string[];saveAs?:string;inputRegister?:string;functionStatus?:string;call?:{command:string;kwargs:Record<string,string|number>}}
 export interface ExecutionCase {autoid:string;steps:ExecutionStep[]}
 export interface ExecutionBook {sha256:string;cases:ExecutionCase[];initialization:ExecutionStep[];commands:{autoid:string|null;row:number;object:string;deviceIndex:number;command:string}[];hostCommands:{autoid:string|null;row:number;object:string;method:string;host:string;command:string;kwargs:Record<string,string|number>}[]}
 const headers=['自动化ID','优先级','语句类型','描述','测试对象','方法','数据','临时保存期望结果','输入变量'];
@@ -33,16 +33,16 @@ export async function readExecutionWorkbook(bytes:Buffer,functions?:FunctionCont
       if(type>=2&&cells[0]){if(!/^\d{1,32}$/.test(cells[0])||cases.some(item=>item.autoid===cells[0]))throw invalid('Case identities must be unique numeric strings');current={autoid:cells[0],steps:[]};cases.push(current);}
       if(type>=2&&!current)throw invalid('A step has no case identity');
       const step:ExecutionStep={row,type,description:cells[3],object:cells[4],method:cells[5],data:cells[6],commands:[],...(cells[7]?{saveAs:cells[7]}:{}),...(cells[8]?{inputRegister:cells[8]}:{})};
-      if(functions&&step.object!=='test_env'&&(step.object||step.method||step.data)&&functions.status(step.object,step.method)!=='enabled')throw invalid('Execution function is not enabled in the bound function contract',{functionStatus:functions.status(step.object,step.method)});
+      if(functions)step.functionStatus=functions.status(step.object,step.method);
       const device=/^(?:APV_(\d+)|Seg(\d+)_tmp)$/.exec(step.object);
       if(device){
         if(!['cmd','cmd_config','cmds_config','cmd_enable'].includes(step.method)||cells[8]!==''||/\b(?:Reg|Seg)\d+_tmp\b|\$\{/.test(step.data))throw invalid('Device rows need literal command methods without runtime input substitution; expand fuzzy execute and disabled helpers first');
         step.call=frameworkArguments(step.method==='cmd_config'?step.data.replace(/[\r\n]/g,''):step.data);step.commands=step.method==='cmds_config'?step.call.command.split(/\r?\n/).filter(command=>command.trim()!==''):[step.call.command];
         if(!step.commands.length||step.commands.some(command=>!command.trim()||command.length>2000||/[\x00-\x08\x0b-\x1f]/.test(command)))throw invalid('Device command is empty or outside the contract bounds');
         for(const command of step.commands)commands.push({autoid:type===1?null:current!.autoid,row,object:step.object,deviceIndex:Number(device[1]??device[2]),command});
-      }else if(step.object==='test_env'||shellHost(step.object)){
+      }else if(step.object==='test_env'||isHostToken(step.object)){
         const host=step.object==='test_env'?step.method:step.object;
-        if(!/^[a-z][a-z0-9_]{0,63}$/.test(host)||step.object!=='test_env'&&step.method!=='cmd'||!step.data.trim()||step.data.length>16384||cells[8]!==''||/[\x00-\x08\x0b-\x1f]/.test(step.data))throw invalid('Host dispatch needs an enabled literal method; lifecycle, reboot, console without role evidence and input-register substitution are not supported');
+        if(!isHostToken(host)||step.object!=='test_env'&&step.method!=='cmd'||!step.data.trim()||step.data.length>16384||cells[8]!==''||/[\x00-\x08\x0b-\x1f]/.test(step.data))throw invalid('Host dispatch needs an enabled literal method; lifecycle, reboot, console without role evidence and input-register substitution are not supported');
         step.call=frameworkArguments(step.data);hostCommands.push({autoid:type===1?null:current!.autoid,row,object:step.object,method:step.method,host,command:step.call.command,kwargs:step.call.kwargs});
       }else if(step.object==='check_point'){
         if(!['found','not_found','abs_found','found_times'].includes(step.method))throw invalid('Checkpoint method is outside the supported execution contract');

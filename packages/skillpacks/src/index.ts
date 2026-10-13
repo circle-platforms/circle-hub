@@ -21,11 +21,13 @@ function summarizeTools(names:string[]):string{
 export class SkillPacks {
   store:Store;auth:Auth;tasks:Tasks;approvals:Approvals;assets:Assets;catalog:ToolCatalog;execution:Operations;objects:Knowledge;
   runtime:any;
+  runtimeDigest:string|null=null;
+  modelSecret?:{key:string;binding:string};
   changeSets?:ChangeSets;
   privateSocketPath='';
   secrets=new Map<string,{token:string;digest:string}>();
   constructor(store:Store,auth:Auth,tasks:Tasks,approvals:Approvals,assets:Assets,catalog:ToolCatalog,execution:Operations,objects:Knowledge){this.store=store;this.auth=auth;this.tasks=tasks;this.approvals=approvals;this.assets=assets;this.catalog=catalog;this.execution=execution;this.objects=objects;}
-  async initialize(file?:string):Promise<void>{if(!file)return;const schema=z.object({circleBin:z.string().min(1),circleCommit:z.string().regex(/^[a-f0-9]{40}$/),circleVersion:z.string().min(1),model:z.object({kind:z.literal('scripted'),base_url:z.string().url(),model:z.string().min(1),protocol:z.literal('openai'),api_key:z.string().min(1)}).strict()}).strict();this.runtime=schema.parse(JSON.parse(await readFile(file,'utf8')));const url=new URL(this.runtime.model.base_url);requireCondition(url.hostname==='127.0.0.1'&&url.protocol==='http:','FORBIDDEN_ACTION','Development execution permits a loopback script model only');}
+  async initialize(file?:string):Promise<void>{if(!file)return;const schema=z.object({circleBin:z.string().min(1),circleCommit:z.string().regex(/^[a-f0-9]{40}$/),circleVersion:z.string().min(1),model:z.object({kind:z.literal('scripted'),base_url:z.string().url(),model:z.string().min(1),protocol:z.literal('openai'),api_key:z.string().min(1)}).strict()}).strict();const runtime=schema.parse(JSON.parse(await readFile(file,'utf8')));const url=new URL(runtime.model.base_url);requireCondition(url.hostname==='127.0.0.1'&&url.protocol==='http:','FORBIDDEN_ACTION','Development execution permits a loopback script model only');this.runtimeDigest=canonicalHash(runtime);const binding=canonicalJson(['circle-runtime-model',this.runtimeDigest]);this.modelSecret={key:await this.assets.vault.put(runtime.model.api_key,binding),binding};this.runtime={...runtime,model:{...runtime.model,api_key:'[vault-reference]'}};}
   view(row:any):any{return {skillPackId:row.skill_pack_id,digest:row.digest,status:row.status,check:row.check_result??{undeclaredTools:[],missingTools:[]},changeSetId:row.change_set_id??null,approvalTaskId:row.approval_task_id,
     manifest:row.manifest,ownerPrincipalId:row.owner_id,scopeId:row.scope_id,assetId:row.asset_id,assetVersion:row.asset_version};}
   async row(ctx:AuthContext,id:string,grant:string,tx?:Transaction):Promise<any>{
@@ -116,11 +118,14 @@ export class SkillPacks {
     const key=`${operationId}/${fence}`,prior=this.secrets.get(key);
     if(revoke){if(prior){await this.auth.revokeRun(prior.digest);this.secrets.delete(key);}return {revoked:true};}
     const actor={principalId:checked.task.principalId,tenantId:checked.task.tenantId,kind:'user'} as AuthContext,row=await this.row(actor,checked.task.input.skillPackId,'skillpacks.run');
-    await this.checkWithDetails(actor,row.manifest,row.trial);const p=await this.auth.policy(actor),entries=(await this.catalog.available(actor)).filter(entry=>row.manifest.tools.includes(entry.view.name));
+    await this.checkWithDetails(actor,row.manifest,row.trial);
+    const asset=await this.assets.row(actor,row.asset_id),blocked=await this.store.transaction(tx=>this.changeSets!.dependencies(tx,actor,asset));if(blocked.length)throw new ApiError('SOURCE_NOT_APPROVED','Circle runtime dependency is not approved',{blockedReasons:blocked});
+    const p=await this.auth.policy(actor),entries=(await this.catalog.available(actor)).filter(entry=>row.manifest.tools.includes(entry.view.name));
     const grants=[...new Set(['tasks.read','tasks.submit','sources.read','evidence.read','credentials.use','assets.read','knowledge.read',...entries.map(entry=>entry.definition.permission)])].filter(grant=>p.grants.includes(grant));
     const scopes=[...new Set([row.scope_id,...entries.map(entry=>entry.row.scope_id)])];
     const secret=prior??await this.auth.issueRun(actor,{taskId:checked.task.taskId,tools:row.manifest.tools,grants,scopes,operationId:checked.row.operation_id,fencingToken:Number(checked.row.fencing_token)},checked.row.deadline_at);this.secrets.set(key,secret);
-    return {runtime:this.runtime,serverToken:secret.token};
+    requireCondition(this.modelSecret,'MODEL_PROXY_UNAVAILABLE','Model credential reference is unavailable');const modelKey=await this.assets.vault.get(this.modelSecret.key,this.modelSecret.binding);
+    return {runtime:{...this.runtime,model:{...this.runtime.model,api_key:modelKey}},serverToken:secret.token};
   }
   async event(ctx:AuthContext,id:string,fence:number,inputRevisionId:string,event:any):Promise<any>{return this.store.transaction(async tx=>{
     const checked=await this.execution.preflight(ctx,id,fence,tx);requireCondition(checked.row.name==='assets.execute'&&checked.task.inputRevisionId===inputRevisionId,'INPUT_REVISION_STALE','Runtime event input differs');
@@ -147,7 +152,7 @@ export class SkillPacks {
     for(const output of outputs){SafeRelativePath.parse(output.path);Base64Content.parse(output.contentBase64);const bytes=Buffer.from(output.contentBase64,'base64');total+=bytes.length;requireCondition(total<=MAX_SOURCE_BYTES&&sha256(bytes)===output.sha256,'SOURCE_HASH_MISMATCH','Runtime artifact SHA or byte limit differs');await this.objects.objects.putObject({Bucket:'evidence',Key:output.sha256,Body:bytes});
       const artifactKey=canonicalHash([row.digest,inputHash,output.path,output.sha256]),mediaType=output.path.endsWith('.xlsx')?'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':output.path.endsWith('.json')?'application/json':'text/plain';
       const artifact=(await tx.query(`INSERT INTO artifacts(artifact_id,tenant_id,scope_id,source_revision_id,compilation_key,sha256,size,object_key,file_name,media_type,metadata)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$6,$8,$9,$10) ON CONFLICT(tenant_id,scope_id,compilation_key) DO UPDATE SET compilation_key=EXCLUDED.compilation_key RETURNING *`,[newId('art'),task.tenantId,task.scopeId,source.source_revision_id,artifactKey,output.sha256,bytes.length,output.path,mediaType,JSON.stringify({skillPackId:row.skill_pack_id,digest:row.digest,producer:'scripted-Circle-RPC',semanticQuality:'not-asserted',runtime:report.output.runtime})])).rows[0];
+        VALUES($1,$2,$3,$4,$5,$6,$7,$6,$8,$9,$10) ON CONFLICT(tenant_id,scope_id,compilation_key) DO UPDATE SET compilation_key=EXCLUDED.compilation_key RETURNING *`,[newId('art'),task.tenantId,task.scopeId,source.source_revision_id,artifactKey,output.sha256,bytes.length,output.path,mediaType,JSON.stringify({skillPackId:row.skill_pack_id,digest:row.digest,producer:'scripted-Circle-RPC',semanticQuality:'not-asserted',sanitized:output.sanitized===true,runtime:report.output.runtime})])).rows[0];
       await tx.query('INSERT INTO artifact_bindings(task_id,input_revision_id,artifact_id,role) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING',[task.taskId,task.inputRevisionId,artifact.artifact_id,output.path]);artifacts.push(this.objects.artifactReference(artifact));
     }
     const facts=await this.objects.evidence(tx,task,operation.operation_id,'script-conclusion',{checks:{declaredOutputs:'passed',sha256:'passed'},inputRevisionId:task.inputRevisionId,inputSha256:inputHash,skillPackDigest:row.digest,artifacts,conclusionScope:'file-completeness-and-byte-integrity'});

@@ -114,7 +114,7 @@ export class Assets {
     requireCondition(link&&link.connector_asset_id===connectorId,'FORBIDDEN_ACTION','Credential is bound to another connector');const value=await this.vault.get(link.secret_key,this.binding(row));return this.materializeCredential?this.materializeCredential(ctx,row,link,value):value;
   }
   async resourceCredential(ctx:AuthContext,parent:any,reference:string,tx?:Transaction,grant:'credentials.use'|'tools.read'='credentials.use'):Promise<{row:any;key:string;binding:string}>{
-    await this.auth.check(ctx,grant,parent.scope_id,tx);
+    await this.auth.check(ctx,grant,parent.scope_id,tx);if(ctx.kind==='user'){const role=await this.auth.roles.role(ctx,parent.scope_id,tx);requireCondition(role==='admin'||role==='member','FORBIDDEN_ACTION','Authenticated providers require a scope member role');}
     requireCondition(parent.tenant_id===ctx.tenantId&&parent.declaration.credentials.includes(reference)&&parent.lifecycle==='running'&&parent.approved_digest===parent.sha256,'FORBIDDEN_ACTION','Credential requires the current running provider binding');
     const row=(await (tx??this.store.pool).query(`SELECT a.*,v.* FROM assets a JOIN asset_versions v ON v.asset_id=a.asset_id AND v.version=a.current_version WHERE a.asset_id=$1 AND a.tenant_id=$2 AND a.scope_id=$3 AND a.kind='credential-reference'`,[reference,parent.tenant_id,parent.scope_id])).rows[0];
     requireCondition(row&&row.lifecycle!=='disabled'&&row.configuration.connectorAssetId===parent.asset_id,'FORBIDDEN_ACTION','Credential is not available to this provider');
