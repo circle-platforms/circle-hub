@@ -60,6 +60,19 @@ circle-hub 治理任何 harness 的原语（规范见 `docs/design/harness-primi
 - Cursor 被跳过的钩子条目（prompt 等）：导入跳过不变；导出时从原文件原样保留，往返不少条目；原文件缺失时报 HOOK_ENTRY_DROPPED_ON_EXPORT。
 - PROVIDER_VALUES_STRIPPED 的 detail 写实际键名（`httpUrl` 就写 `httpUrl`，不再统一写 url）。
 
+## 待定（第五轮，权限导出）
+
+规范是 `docs/design/permission-export.md`。本轮没动 docs/design。
+
+- `disposition(policy, role, toolName)` 对不在 policy.tools 里的工具返回 `deny`：规范说「目录里不给这件 Tool」，没在目录里就是看不见。
+- 导出文件路径规范没写：五家都是「一个文件一个角色、操作者选用」，规范只给了文件内容形状。取 `.claude/settings.<role>.json`、`.codex/permissions.<role>.toml`、`opencode.permissions.<role>.json`、`.gemini/policies/hub.<role>.toml`、`.cursor/permissions.<role>.json`——都不是各家的自动加载位置（Gemini 的要复制到 `~/.gemini/policies/`，其工作区策略层是停用的）。
+- Codex 的 allow + `effect: write`：规范写「表达不了」——导出把工具放进 `enabled_tools` 但不写 `approval_mode`（不写就是没有近似开关），不造新档。
+- Cursor 的 ask 靠「不写进名单」表达，只在 Allowlist 模式下成立；deny 表达不了（没有拒绝名单），这两件对访客就是不在名单里。
+- Gemini 的 `ask_user` 在非交互时实为 deny（规范页注明）：导出照写 `ask_user`，由读文件的人知情。
+- `hub-permission/1` 的 `tools[].name` 形状（`<provider>.<tool>`）只校验非空，不用正则钉死字符集——各家的合法字符集文档都没写全。
+- 第五轮顺手项：Cursor 缺原 hooks 文件时 SOURCE_FILE_MISSING 与 HOOK_ENTRY_DROPPED_ON_EXPORT 两条都报（version/额外键不可恢复、被跳过条目无法保留是两个事实，不合并）。
+- 合成验收只检查文件形状与规则条数（tests/methods/harness-adapters-permissions.test.ts），不连接真实 harness。规范里两条「交付时核对」里提到的实际核对（Claude 的 doctor、Codex 当时的页面取值）是上线前人工事项，不在本库代码里。
+
 ## 复核第一轮（Claude 与独立复核人，2026-10-13，对 b544336）
 
 tsc 与 50 个测试通过；fixture 卫生合格；hooks / `.mcp.json` / `[mcp_servers]` 的基本形状对。下面是必须改的，按决定写，不是建议。改完升到第二轮提交，测试覆盖每一条。
