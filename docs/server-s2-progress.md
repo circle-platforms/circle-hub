@@ -583,3 +583,23 @@ RPC 验收用独立合成模块和脚本模型：批准后改动外部源文件�
 专项 **4/4**，typecheck 通过：新版批准后旧版批准仍被拒，但驳回立即关单；最新资产完整元数据不变，最新运行可受理并通过 worker preflight；重启后旧决定保持。申请人失去原 scope/提交/读取权限也不阻止独立 reviewer 关单。自决、越 scope/tenant、错误修订/目标/动作摘要、缺 assets.approve 仍拒绝；两个 reviewer 并发仅一次成功，其余 DECISION_CONFLICT。原 admin 接口保留审批历史，但 open 队列无该旧记录。交接已补旧绑定原样 approve:false 的调用方式，升级后现有未过期待批旧申请即可处理，无迁移。
 
 完整最终 contracts **4/4**、methods **23/23**、acceptance **160/160**、references **7/7**，共 **194/194**，固定 Circle 8b2ceb6，**无 skip**。typecheck、diff 与 **714** 归档核验通过。第一阶段、模块、HTTPS、技能 RPC、bot、资源身份和上机关口均继续通过。本笔只在 server-s2 本地提交，交复核部署人；未 push、未读取或处理实际任务、未更改真实栈和独立产品包。
+
+## 36：独立复核、就地升级观察与修订 3 开始
+
+用户/Claude 报告 f45cdc8 的独立工作树 typecheck、contracts **4/4**、methods **23/23**、acceptance **160/160**、references **7/7**，共 **194/194**、无 skip，归档核验通过。维护者已就地升级其真实栈并保留数据库和资源服务客户端；旧版申请驳回得到 approval=declined、task=delivered、pending input=answered，两份已批准的技能版本仍 registered，客户端 /token 和 introspect 正常。本代理未操作该真实任务或部署，未把凭据回读、版本标签或业务数据放进仓库。
+
+用户授权修订 3（docs/server-s2-brief-r3.md），文件实际已在 server-s2 工作区；主工作树无副本。按 **3→4→5→6→7→8** 每节一笔本地提交、验收先行：角色/范围策略、变更集、执行链、通知流/工作队列、静态密钥、列表即查询。原客户端调用和固定 Circle 8b2ceb6 RPC 保持；Circle/网关 Python 由 Claude 维护，不改名、不 push/PR、不部署或连接真实系统/设备/付费模型。
+
+角色与范围策略先写角色预设/审批资格方法验收，缺实现时导入失败。通过 Otty 向简报维护者提出三项接口边界：executionIsChange 的提交用冻结的执行申请资产表示；列表用显式 view=page 与旧数组兼容；runtime profile 作为待批依赖资产登记而非平台自动批准运行配置。继续做不依赖这些答复的角色验收与授权基础，后续每笔都补客户端交接和实际验收结果。
+
+用户补充仓库已改名并公开为 circle-hub，main 已快进至 f45cdc8 加上维护者的公开门面提交；本代理只继续 server-s2，合并由维护者处理，不自行 rebase/merge，不改 README 或运行时环境变量/路由前缀。进度只记本文档。按用户要求清理本分支 docs 中的本机绝对路径，旧 demo 引用改为相对路径；不写回不可变 references，也不修改维护者的 main 门面。
+
+## 37：修订 3 第 3 节，角色、范围策略与明确自决
+
+先写角色预设/资格方法和 HTTP 验收，缺实现时方法导入失败、HTTP **0/6**。实现 principal × scope × role 登记簿，人的内部授权只由三个数据预设和安装扩展的最小角色生成，历史动作串仅作一次迁移；机器继续使用 scope/动作串。角色撤销留下版本记录，重启不重授角色。根管理员管理权与子范围资料读取权分开；资源目标、来源 readers、个人任务和凭据边界继续检查。
+
+角色与范围策略修改冻结为单项变更集、生成绑定审批请求，明确决定后原子更新登记簿。twoPersonRule 默认开，两名管理员仍须独立决定；单管理员或规则关时允许明确自决，决定、响应、审计保存 decisionMode、singleAdminMode、policyVersion 与规则 id/版本核验。程序核验不写人的批准。新增直接资产注册绕过/机器角色和决定历史回归均先失败；修正后角色 HTTP **8/8**、预设方法 **2/2**、对象边界联合 **11/11**。
+
+首次完整回归 contracts **4/4**、methods **25/25**、acceptance **165/168**、无 skip。其中两个旧授权验收仍使用人的动作串或把资产停用误当源读权限撤销，改为当前来源 readers 变更、技能资产停用，保留原来的隐藏/缺失统一错误及失败事件游标边界，专项 **2/2**。另一项揭示资源 introspection 仍从旧 policies.grants 判断人，角色降为 viewer 后令牌仍 active；已改为当前范围角色生成的权限，并用原资源运行回归核实 **1/1**。不把第一轮算作全套通过，当前固定 Circle 8b2ceb6 重跑该节完整验收。
+
+第 3 节最终回归实际通过：contracts **4/4**、methods **25/25**、acceptance **168/168**、references **7/7**，共 **204/204**，固定 Circle 8b2ceb6、无 skip；typecheck、diff 检查与 **714** 原件归档核验通过。后续第 4 节四条多资产/依赖验收已先写，当前 **0/4**，未计入或提交本节。只本地提交并通过 Otty 交独立复核，不 push、不部署，不修改维护者的 README、Circle、私有产品包、真实栈或网关。

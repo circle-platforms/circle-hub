@@ -5,7 +5,7 @@ import {PrivateVault} from './vault.ts';
 
 const join='assets a JOIN asset_versions v ON v.asset_id=a.asset_id AND v.version=a.current_version';
 const visibility="a.tenant_id=$1 AND a.scope_id=ANY($2::text[]) AND (a.owner_principal_id=$3 OR v.readers ? $3 OR v.readers ? '*')";
-const metadataVisibility="a.tenant_id=$1 AND a.scope_id=ANY($2::text[]) AND (($4::boolean AND (a.owner_principal_id=$3 OR v.readers ? $3 OR v.readers ? '*')) OR ($5::boolean AND v.lifecycle='draft' AND a.kind<>'credential-reference'))";
+const metadataVisibility="a.tenant_id=$1 AND (($4::boolean AND a.scope_id=ANY($2::text[]) AND (a.owner_principal_id=$3 OR v.readers ? $3 OR v.readers ? '*')) OR (a.scope_id=ANY($5::text[]) AND v.lifecycle='draft' AND a.kind<>'credential-reference'))";
 const sensitive=/^(?:token|password|secret|authorization|cookie|jwt|privatekey|credentialvalue)$/i;
 function clean(value:unknown):void{
   if(!value||typeof value!=='object')return;
@@ -27,7 +27,7 @@ export class Assets {
     const row=(await (tx??this.store.pool).query(`SELECT a.*,v.* FROM ${join} WHERE ${visibility} AND a.asset_id=$4`,[policy.tenantId,policy.scopes,policy.principalId,id])).rows[0];
     requireCondition(row,'ASSET_NOT_VISIBLE','Asset is not visible to the authenticated principal');return row;
   }
-  async metadataPolicy(ctx:AuthContext,tx?:Transaction){const p=await this.auth.policy(ctx,tx),read=p.grants.includes('assets.read'),approve=p.grants.includes('assets.approve');requireCondition(read||approve,'FORBIDDEN_ACTION','Permission assets.read or assets.approve is required');return [p.tenantId,p.scopes,p.principalId,read,approve];}
+  async metadataPolicy(ctx:AuthContext,tx?:Transaction){const p=await this.auth.policy(ctx,tx),readScopes=p.scopes.filter(scope=>p.scopeGrants?.[scope]?.includes('assets.read')),approveScopes=p.scopes.filter(scope=>p.scopeGrants?.[scope]?.includes('assets.approve'));requireCondition(readScopes.length||approveScopes.length,'FORBIDDEN_ACTION','Scope role does not permit asset metadata');return [p.tenantId,readScopes,p.principalId,!!readScopes.length,approveScopes];}
   // Governance visibility exposes only the submitted definition. Data readers,
   // credentials and execution consumers keep using the strict row() authority.
   async metadataRow(ctx:AuthContext,id:string,tx?:Transaction):Promise<any>{const args=await this.metadataPolicy(ctx,tx),row=(await(tx??this.store.pool).query(`SELECT a.*,v.* FROM ${join} WHERE ${metadataVisibility} AND a.asset_id=$6`,[...args,id])).rows[0];requireCondition(row,'ASSET_NOT_VISIBLE','Asset is not visible to the authenticated principal');return row;}
@@ -65,11 +65,13 @@ export class Assets {
   async transition(ctx:AuthContext,id:string,input:{version:string;sha256:string;state:string}):Promise<any>{return this.store.transaction(async tx=>{
     const load=input.state==='approved'?()=>this.metadataRow(ctx,id,tx):()=>this.row(ctx,id,tx);
     await load();await tx.query('SELECT 1 FROM assets WHERE asset_id=$1 FOR UPDATE',[id]);const row=await load();
+    requireCondition(!['scope-role','scope-policy'].includes(row.kind),'FORBIDDEN_ACTION','Scope role and policy submissions require a change-set decision');
     requireCondition(row.version===input.version&&row.sha256===input.sha256,'APPROVAL_STALE','Asset version or digest differs');
     if(input.state==='approved'){
-      requireCondition(row.owner_principal_id!==ctx.principalId,'SELF_APPROVAL','An owner cannot approve their own asset');await this.auth.check(ctx,'assets.approve',row.scope_id,tx);
+      await this.auth.check(ctx,'assets.approve',row.scope_id,tx);const eligibility=await this.auth.roles.eligibility(ctx,row.scope_id,row.owner_principal_id,tx);requireCondition(eligibility.eligible,'SELF_APPROVAL','Scope policy requires an independent reviewer');
       requireCondition(row.lifecycle==='draft','DECISION_CONFLICT','Only a draft can be approved');
       await tx.query("UPDATE asset_versions SET lifecycle='approved',approved_by=$3,approved_digest=$4 WHERE asset_id=$1 AND version=$2",[id,row.version,ctx.principalId,row.sha256]);
+      await this.auth.audit(ctx,'asset.decision',{assetId:id,version:row.version,sha256:row.sha256,decisionMode:eligibility.decisionMode,singleAdminMode:eligibility.singleAdminMode,verification:eligibility.verification},row.scope_id,tx);
     }else{
       await this.auth.check(ctx,'assets.change',row.scope_id,tx);requireCondition(row.owner_principal_id===ctx.principalId,'FORBIDDEN_ACTION','Only the owner changes asset activity');
       if(input.state==='running')requireCondition(['approved','running'].includes(row.lifecycle)&&row.approved_digest===row.sha256,'APPROVAL_REQUIRED','This version needs a bound approval');

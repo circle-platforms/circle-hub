@@ -64,13 +64,14 @@ test('Act R2.6 regression: a rejected event admission records its failure and do
   const stub=await readonlySources(t),h=await setup(t);await prepare(h,stub.origin);const skill=await pack(h);
   const source=await activate(h,await h.request('/v1/assets',{scopeId:'scp_lab',kind:'connector-instance',name:'Synthetic failing event source',version:'1.0.0',declaration:{reads:['source-records'],writes:[],credentials:[]},configuration:{packageId:'fixture-reader'},readers:['prn_alice','prn_bob']}));
   const trigger=await activate(h,await h.request('/v1/automations/triggers',{scopeId:'scp_lab',version:'1.0.0',name:'Synthetic isolated event trigger',kind:'event',sourceAssetId:source.assetId,eventName:'source.changed'})),active=await bot(h,skill,trigger);
-  await h.db.query("UPDATE policies SET grants=grants-'skillpacks.run' WHERE principal_id='prn_alice'");
+  await h.request(`/v1/assets/${skill.assetId}/lifecycle`,{version:skill.assetVersion,sha256:(await h.request(`/v1/assets/${skill.assetId}`)).sha256,state:'disabled'});
   const failed=await h.request(`/v1/connectors/${source.assetId}/events`,{externalId:'denied-event',name:'source.changed',payload:{revision:'r1'}});
   const failures=await until(async()=>{const runs=await h.request(`/v1/automations/bots/${active.assetId}/runs`);return runs.length===1?runs:false;},2000);
-  assert.equal(failures[0].status,'failed');assert.equal(failures[0].taskId,null);assert.equal(failures[0].error.code,'FORBIDDEN_ACTION');assert.equal(failures[0].occurrenceKey,`event:${failed.eventId}`);
+  assert.equal(failures[0].status,'failed');assert.equal(failures[0].taskId,null);assert.equal(failures[0].error.code,'APPROVAL_STALE');assert.equal(failures[0].occurrenceKey,`event:${failed.eventId}`);
   const cursor=(await h.db.query('SELECT event_cursor FROM automation_positions WHERE bot_id=$1',[active.assetId])).rows[0].event_cursor;
   assert.equal(String(cursor),String((await h.db.query('SELECT id FROM automation_events WHERE event_id=$1',[failed.eventId])).rows[0].id));
-  await h.db.query("UPDATE policies SET grants=grants || '[\"skillpacks.run\"]'::jsonb WHERE principal_id='prn_alice'");
+  // Restore the fixture's bound registration to exercise the next occurrence.
+  await h.db.query("UPDATE asset_versions SET lifecycle='approved' WHERE asset_id=$1 AND version=$2",[skill.assetId,skill.assetVersion]);
   await h.request(`/v1/connectors/${source.assetId}/events`,{externalId:'accepted-after-denial',name:'source.changed',payload:{revision:'r2'}});
   const runs=await until(async()=>{const runs=await h.request(`/v1/automations/bots/${active.assetId}/runs`);return runs.length===2?runs:false;});assert.equal(runs[1].status,'admitted');assert.ok(runs[1].taskId);
   assert.equal(Number((await h.db.query("SELECT count(*) AS n FROM tasks WHERE capability_pack_id='skill-run'")).rows[0].n),1);

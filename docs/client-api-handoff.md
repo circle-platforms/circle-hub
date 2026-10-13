@@ -371,3 +371,15 @@ worker 的回报处理若因 ApiError 拒绝，知识/制品写入回滚，操�
 运行 token 仍默认短期 5 分钟（CIRCLE_SERVER_RUN_TOKEN_TTL_MS 1000–300000ms 可缩短用于验收），绑定操作/fence/任务和固定 scopes/grants/tools。只有持有效租约的 worker 在完整 preflight 校验后续期，截止不超过该操作 deadline；任务结束、取消、租约过期、旧 fence 或输入修订变化立即阻止新访问。客户端不能调用 auth/refresh 续这种 token，也不因本地会话断开就声称远端停止。
 
 权限、类别和能力包筛选先于 limit，按创建时间、taskId 倒序；游标取保存的完整 PostgreSQL 创建时间，不按 phase/更新时间排序，server 重启可续读。after 必须是当前身份可读的任务；越 scope/个人任务返回 FORBIDDEN_SCOPE，格式错误、未知类别和越界 limit 为 INVALID_PAYLOAD。省略新参数时行为与第一阶段相同。
+
+## 修订 3：人的范围角色与审批资格
+
+登录/续期保持 token、expiresAt 等原字段，追加 subjectType。人返回 roles:[{scopeId,role:"admin"|"member"|"viewer"}]，不暴露内部动作串；服务客户端只有授权 scope 串，没有角色。原有机器动作串、资源目标策略和来源 readers 继续约束访问。人的角色按每个 scope 独立计算，根范围 scp_root 管理员可管理范围，不能因此读取其他范围原件或私有任务。旧人类策略一次迁移为角色，重启不覆盖已决定的角色。developer、approver 是 scp_lab 的两个管理员。
+
+GET /v1/scopes 返回 {total,items}，每项含 scopeId/name/twoPersonRule/policyVersion/adminCount/singleAdminMode；GET /v1/scopes/{scopeId}/roles 返回 {total,items} 的当前人员角色登记簿，包含角色记录 revision、verification 和 changeSetId。内部预设数据位于 packages/tasks/role-presets.json；member 可以读、运行、提交草稿，viewer 可以读和调用获准的 read 工具，只有 admin 决定变更。动作与目标授权仍在每次访问实时检查。
+
+POST /v1/scopes/{scopeId}/roles 接收 {principalId,role,idempotencyKey}（role:null 移除）；POST /v1/scopes/{scopeId}/policy 接收 {twoPersonRule,idempotencyKey}。两者登记冻结的策略草稿并返回 {changeSetId,scopeId,owner,approvalTaskId,status,items,targetIdentity,identityDigest,verification}，角色/策略直到决定后才生效。审批沿用任务 approvals/input 接口，输入修订、目标摘要、动作摘要必须原样回应。只有同 tenant 的人可获得角色；最后一名根管理员不能移除。
+
+成员的申请须管理员决定。twoPersonRule 默认 true；两名管理员时申请人不能批自己，规则 false 或仅一名管理员时可本人明确决定。ApprovalView 和响应新增 decisionMode:"self"|"independent"|null、singleAdminMode、verification，审计保存同样字段和 policyVersion。自决会有决定记录，不静默批准。每次决定记录保持其当时策略，不随后续回应或策略修改重写。verification 只表示规则 id/版本的程序核验，不能当作人的批准。
+
+B 资料、C 任务、D 执行、E 方法各有记录、资产、审批策略、证据、扩展点：记录保持原 id/修订；资产版本有 SHA、声明、配置与生命周期；审批绑定三项；工具/外部交互原样证据与模型判断分开；扩展实现通过对象声明的接口安装。后续变更集与执行链继续使用这五样，保留原客户端接口。

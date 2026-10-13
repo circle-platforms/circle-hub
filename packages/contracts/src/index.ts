@@ -3,7 +3,7 @@ import { z } from 'zod';
 
 export const API_VERSION = '1.0.0';
 export const FLOW_VERSION = 'task/1';
-export const PACK_FLOWS={'asset-tool':'asset-tool/1','asset-registration':'asset-registration/1','skill-run':'skill-run/1','asset-index':'asset-index/1'} as const;
+export const PACK_FLOWS={'asset-tool':'asset-tool/1','asset-registration':'asset-registration/1','skill-run':'skill-run/1','asset-index':'asset-index/1','change-set':'change-set/1'} as const;
 export const LEASE_TTL_MS = 60_000;
 export const HEARTBEAT_MS = 20_000;
 export const IDEMPOTENCY_WINDOW_MS = 86_400_000;
@@ -25,7 +25,7 @@ export const AssetId=identity('ast');
 export const Sha256 = z.string().regex(/^[a-f0-9]{64}$/);
 export const Base64Content = z.string().regex(/^[A-Za-z0-9+/]*={0,2}$/).refine(value =>
   value.length % 4 === 0 && Buffer.from(value,'base64').toString('base64') === value,'Expected canonical standard base64');
-export function newId(prefix: 'task' | 'inrev' | 'op' | 'pin' | 'src' | 'snap' | 'evd' | 'art' | 'rule' | 'audit' | 'rec' | 'ent' | 'erev' | 'rel' | 'rrev' | 'ast' | 'knr' | 'skp' | 'ofl' | 'svc'): string {
+export function newId(prefix: 'task' | 'inrev' | 'op' | 'pin' | 'src' | 'snap' | 'evd' | 'art' | 'rule' | 'audit' | 'rec' | 'ent' | 'erev' | 'rel' | 'rrev' | 'ast' | 'knr' | 'skp' | 'ofl' | 'svc' | 'cst'): string {
   return `${prefix}_${randomUUID().replaceAll('-', '')}`;
 }
 export function sha256(bytes: string | Uint8Array): string {
@@ -61,6 +61,7 @@ export const STANDARD_OPERATIONS:Record<string,{reads:string[];writes:string[]}>
   'tools.invoke': { reads: ['registered-source'], writes: ['artifacts-evidence'] },
   'assets.publish':{reads:['registered-assets'],writes:['asset-registry']},
   'assets.execute':{reads:['registered-assets'],writes:['artifacts-evidence']},
+  'changesets.apply':{reads:['registered-assets'],writes:['asset-registry']},
 };
 const OperationName=z.string().regex(/^[a-z][a-z0-9._-]{0,149}$/);
 export function registerOperation(name:string,effects:{reads:string[];writes:string[]}):void{OperationName.parse(name);const old=STANDARD_OPERATIONS[name];if(old&&canonicalHash(old)!==canonicalHash(effects))throw new Error('Operation effect registration conflicts');STANDARD_OPERATIONS[name]=effects;}
@@ -95,14 +96,14 @@ export type SubmitRequest = z.infer<typeof SubmitRequest>;
 export const DevLoginRequest = z.object({ username: z.string().max(100), password: z.string().max(1000),
   expiresInMs: z.number().int().positive().optional() });
 export const DevLoginResult = z.object({ token: z.string(), tokenType: z.literal('Bearer'), expiresAt: z.string(),
-  principalId: z.string(), tenantId: z.string(), scopes: z.array(ScopeId) });
+  principalId: z.string(), tenantId: z.string(), scopes: z.array(ScopeId),subjectType:z.enum(['human','service-client']).optional(),roles:z.array(z.object({scopeId:ScopeId,role:z.enum(['admin','member','viewer'])})).optional() });
 export const AuthRefreshRequest=z.object({}).strict();
 export const SourceUpload = z.object({ scopeId: ScopeId, fileName: z.string().min(1).max(240), contentBase64: Base64Content });
 export const SourceReference = z.object({ sourceRevisionId: SourceRevisionId, sha256: Sha256, size: z.number().int().nonnegative(), fileName: z.string(), scopeId: ScopeId });
 const PackageName=z.string().regex(/^[a-z][a-z0-9-]{0,99}$/);
 const PackageVersion=z.string().regex(/^\d+\.\d+\.\d+$/);
-export const AssetKind=z.enum(['connector-instance','credential-reference','knowledge-source','knowledge-snapshot','environment-resource','skill-package','trigger','bot']);
-export const AssetLifecycle=z.enum(['draft','approved','running','disabled']);
+export const AssetKind=z.enum(['connector-instance','credential-reference','knowledge-source','knowledge-snapshot','environment-resource','skill-package','trigger','bot','scope-role','scope-policy']);
+export const AssetLifecycle=z.enum(['draft','approved','running','disabled','declined']);
 export const AssetDeclaration=z.object({reads:z.array(z.string()).max(100),writes:z.array(z.string()).max(100),credentials:z.array(AssetId).max(100)}).strict();
 export const AssetRegistration=z.object({assetId:AssetId.optional(),scopeId:ScopeId,kind:AssetKind,name:z.string().min(1).max(200),version:PackageVersion,
   ownerPrincipalId:z.string().regex(/^prn_/).optional(),declaration:AssetDeclaration,configuration:z.record(z.string(),z.unknown()).default({}),readers:z.array(z.string()).max(1000).optional()}).strict();
@@ -212,8 +213,11 @@ export type OperationRequest = z.infer<typeof OperationRequest>;
 export const ApprovalProposal = OperationRequest.omit({idempotencyKey:true,deadlineMs:true,approvalId:true});
 export const ApprovalView=z.object({approvalId:z.string(),taskId:TaskId,inputRevisionId:InputRevisionId,applicantId:z.string(),
   targetIdentity:z.string(),actionDigest:Sha256,action:ApprovalProposal,status:z.enum(['open','approved','declined']),
-  approvedBy:z.string().nullable(),expiresAt:z.string()});
+  approvedBy:z.string().nullable(),expiresAt:z.string(),decisionMode:z.enum(['self','independent']).nullable().optional(),singleAdminMode:z.boolean().optional(),verification:z.unknown().optional()});
 export type ApprovalView=z.infer<typeof ApprovalView>;
+export const ScopeRolePatch=z.object({principalId:z.string().regex(/^prn_/),role:z.enum(['admin','member','viewer']).nullable(),idempotencyKey:z.string().min(8).max(200)}).strict();
+export const ScopePolicyPatch=z.object({twoPersonRule:z.boolean(),idempotencyKey:z.string().min(8).max(200)}).strict();
+export const ChangeSetSubmission=z.object({scopeId:ScopeId,title:z.string().min(1).max(500).optional(),items:z.array(z.object({assetId:AssetId,version:PackageVersion,sha256:Sha256}).strict()).min(1).max(100),idempotencyKey:z.string().min(8).max(200)}).strict();
 export const ConclusionRequest=z.object({inputRevisionId:InputRevisionId,kind:ConclusionKind,methodId:z.string().regex(/^[a-z][a-z0-9-]{0,99}$/).optional(),
   evidenceIds:z.array(z.string().regex(/^evd_/)).max(16).default([]),judgment:z.enum(['supports','refutes','abstained']).default('abstained'),rationale:z.string().max(2000).default('')});
 export const ChecklistPredicate=z.string().min(1).max(100);
@@ -263,7 +267,7 @@ export function requireCondition(condition: unknown, code: ErrorCode, message: s
 
 export interface RunConstraint {taskId:string;tools:string[];scopes:string[];grants:string[];operationId?:string;fencingToken?:number}
 export interface AuthContext { principalId: string; tenantId: string; kind: 'user' | 'service' | 'worker'; workerId?: string;run?:RunConstraint;tokenDigest?:string }
-export interface Policy extends AuthContext { scopes: string[]; grants: string[]; targets: string[]; defects: string[] }
+export interface Policy extends AuthContext { scopes: string[]; grants: string[]; targets: string[]; defects: string[];scopeGrants?:Record<string,string[]>;roles?:{scopeId:string;role:'admin'|'member'|'viewer'}[] }
 export interface Task {
   taskId: string; tenantId: string; scopeId: string; principalId: string; title: string; phase: TaskPhase;
   inputRevisionId: string; input: Record<string, unknown>; revision: number; flowVersion: string;
@@ -305,6 +309,11 @@ export const CLIENT_ROUTES = {
   submit:{ method:'POST',path:'/v1/tasks/submit',request:SubmitRequest,response:SubmittedTask },
   tasks:{ method:'GET',path:'/v1/tasks',query:TaskListQuery,response:z.array(TaskView) },
   approvals:{ method:'GET',path:'/v1/tasks/{taskId}/approvals',response:z.array(ApprovalView) },
+  scopes:{method:'GET',path:'/v1/scopes'},
+  scopeRoles:{method:'GET',path:'/v1/scopes/{scopeId}/roles'},
+  scopeRoleSubmit:{method:'POST',path:'/v1/scopes/{scopeId}/roles',request:ScopeRolePatch},
+  scopePolicySubmit:{method:'POST',path:'/v1/scopes/{scopeId}/policy',request:ScopePolicyPatch},
+  changeSetSubmit:{method:'POST',path:'/v1/change-sets',request:ChangeSetSubmission},
   objectTypes:{method:'GET',path:'/v1/object-types'},
   assets:{method:'GET',path:'/v1/assets',query:AssetListQuery},
   assetSubmit:{method:'POST',path:'/v1/assets',request:AssetRegistration},

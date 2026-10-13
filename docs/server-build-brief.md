@@ -79,7 +79,7 @@
 - `execution/src/control-plane.ts`：内存 Map 要改成持久化。
 - `assessor/src/index.ts` 第 92–99 行：去掉"有引用就判定 supports"的回退分支。
 - `server-stub/src/http-server.ts` 没有认证，也没有请求体大小限制，不能改个名字就当正式 API。
-- 可选：Codex 旧 demo 里的脑图转 xlsx（`/Users/jiangyongze/Public/circle-server-ui-demo/src/workflows.ts` 第 1135–1208 行、`src/workflow-files.ts`）可以作为 E 的确定性方法候选。
+- 可选：Codex 旧 demo 里的脑图转 xlsx（`../circle-server-ui-demo/src/workflows.ts` 第 1135–1208 行、`../circle-server-ui-demo/src/workflow-files.ts`）可以作为 E 的确定性方法候选。
 
 ## 7. 构建顺序
 

@@ -38,7 +38,7 @@ test('admin tasks drain approvals tail audit and connector control use the same 
   const h=await setup(t);await h.startWorker();const task=await h.submit({target:'RESOURCE-LAB-01'});
   const env={...h.env,CIRCLE_SERVER_URL:h.url,CIRCLE_SERVER_TOKEN:await h.login('admin'),CIRCLE_SERVER_SCOPE:'scp_lab'};
   const tasks=await command(env,['tasks']);assert.equal(tasks.code,0,tasks.stderr);assert.ok(JSON.parse(tasks.stdout).some((item:any)=>item.taskId===task.taskId));
-  const denied=await command({...env,CIRCLE_SERVER_TOKEN:await h.login('alice')},['tasks']);assert.notEqual(denied.code,0);assert.match(denied.stderr,/FORBIDDEN_ACTION/);
+  const denied=await command({...env,CIRCLE_SERVER_TOKEN:await h.login('limited')},['tasks']);assert.notEqual(denied.code,0);assert.match(denied.stderr,/FORBIDDEN_ACTION/);
   const approval=await h.request(`/v1/tasks/${task.taskId}/approvals`,{inputRevisionId:task.inputRevisionId,name:'product.config.write',target:'RESOURCE-LAB-01',targetIdentity:'synthetic-host-key:resource-01',args:{key:'backend.timeout',value:10}});
   const approvals=await command(env,['approvals']);assert.equal(approvals.code,0,approvals.stderr);assert.ok(JSON.parse(approvals.stdout).some((item:any)=>item.approvalId===approval.approvalId));
   const events=await command(env,['events','--tail','--once']);assert.equal(events.code,0,events.stderr);assert.ok(JSON.parse(events.stdout).events.some((event:any)=>event.taskId===task.taskId));

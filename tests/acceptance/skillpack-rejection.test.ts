@@ -57,7 +57,7 @@ test('Skill rejection: retired applicant permissions do not prevent an independe
     const h = await prepare(t), old = await submit(h, '1.0.0'), latest = await submit(h, '1.0.1'), pending = await decision(h, old), current = await decision(h, latest);
     await h.request(current.path, current.body, 'bob');
     const before = (await h.db.query('SELECT lifecycle,sha256,approved_digest,approved_by FROM asset_versions WHERE asset_id=$1 AND version=$2', [latest.assetId, latest.assetVersion])).rows[0];
-    await h.db.query("UPDATE policies SET grants=grants-'skillpacks.submit'-'assets.read',scopes='[\"scp_hidden\"]'::jsonb WHERE principal_id='prn_alice'");
+    await h.setRole('prn_alice',null);
     const declined = await h.request(pending.path, { ...pending.body, approve: false }, 'bob');
     assert.equal(declined.status, 'declined');
     assert.equal((await h.request(`/v1/tasks/${old.approvalTaskId}/status`, undefined, 'bob')).phase, 'delivered');
@@ -69,12 +69,13 @@ test('Skill rejection: scope reviewer permission self decision and original resp
     const pending = await decision(h, old), reject = { ...pending.body, approve: false };
     await h.reject(pending.path, reject, 'SELF_APPROVAL');
     await h.db.query("UPDATE policies SET grants=grants || '[\"decisions.approve\",\"assets.approve\"]'::jsonb WHERE principal_id=ANY($1::text[])", [['prn_limited', 'prn_outsider']]);
+    await h.setRole('prn_limited','admin','scp_hidden');await h.setRole('prn_outsider','admin');
     await h.reject(pending.path, reject, 'FORBIDDEN_SCOPE', 'limited');
     await h.reject(pending.path, reject, 'FORBIDDEN_SCOPE', 'outsider');
     await h.reject(pending.path, { ...reject, actionDigest: '0'.repeat(64) }, 'APPROVAL_STALE', 'bob');
     await h.reject(pending.path, { ...reject, targetIdentity: 'different-target' }, 'APPROVAL_STALE', 'bob');
     await h.reject(pending.path, { ...reject, inputRevisionId: `inrev_${'0'.repeat(32)}` }, 'APPROVAL_STALE', 'bob');
-    await h.db.query("UPDATE policies SET grants=grants-'assets.approve' WHERE principal_id='prn_bob'");
+    await h.setRole('prn_bob','member');
     await h.reject(pending.path, reject, 'FORBIDDEN_ACTION', 'bob');
     assert.equal((await h.status(old.approvalTaskId)).phase, 'waiting-review');
     assert.equal((await h.request(`/v1/tasks/${old.approvalTaskId}/approvals`))[0].status, 'open');

@@ -89,10 +89,12 @@ export class ServiceClients {
         return this.store.transaction(async (tx) => {
             const row = (await tx.query(`SELECT r.*,c.resource_asset_id,c.principal_id AS client_principal_id,c.scopes AS client_scopes,c.resource_scopes,p.username,p.kind,p.grants,p.scopes AS platform_scopes FROM resource_access_tokens r JOIN service_clients c USING(client_id) JOIN policies cp ON cp.principal_id=c.principal_id JOIN policies p ON p.principal_id=r.subject_id
       WHERE r.digest=$1 AND r.expires_at>clock_timestamp() AND NOT c.revoked AND NOT cp.disabled AND NOT p.disabled AND r.secret_version=c.secret_version AND ($2::text IS NULL OR r.client_id=$2)`, [sha256(token), clientId ?? null])).rows[0];
-            if (!row || !row.platform_scopes.includes(row.scope_id))
+            if (!row)
                 return null;
+            const policy=await this.auth.policy({principalId:row.subject_id,tenantId:row.tenant_id,kind:row.kind},tx);
+            if(!policy.scopes.includes(row.scope_id))return null;
             if (row.operation_id) {
-                if (!row.grants.includes(row.permission) || !row.scopes.every((scope: string) => row.resource_scopes.includes(scope)) || !await this.operationLive(tx, row))
+                if (!policy.scopeGrants?.[row.scope_id]?.includes(row.permission) || !row.scopes.every((scope: string) => row.resource_scopes.includes(scope)) || !await this.operationLive(tx, row))
                     return null;
                 const asset = (await tx.query("SELECT v.lifecycle FROM assets a JOIN asset_versions v ON v.asset_id=a.asset_id AND v.version=a.current_version WHERE a.asset_id=$1 AND a.tenant_id=$2 AND a.scope_id=$3", [row.resource_asset_id, row.tenant_id, row.scope_id])).rows[0];
                 if (!asset || !['approved', 'running'].includes(asset.lifecycle))

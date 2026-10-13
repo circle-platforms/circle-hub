@@ -22,9 +22,9 @@ test('Asset approval visibility: same-scope approvers discover and approve a sou
 test('Asset approval visibility: tenant scope live permission and private credentials still bound approval metadata',async t=>{
   const {h,register}=await environment(t),source=await register();
   for(const actor of ['limited','outsider']){assert.equal((await h.request('/v1/assets?lifecycle=draft',undefined,actor)).total,0);await h.reject(`/v1/source-artifacts/${source.assetId}`,undefined,'ASSET_NOT_VISIBLE',actor);await h.reject(`/v1/assets/${source.assetId}/lifecycle`,{version:source.version,sha256:source.sha256,state:'approved'},'ASSET_NOT_VISIBLE',actor);}
-  await h.db.query("UPDATE policies SET grants=grants || '[\"assets.read\"]'::jsonb WHERE principal_id='prn_admin'");assert.equal((await h.request('/v1/assets',undefined,'admin')).total,0);await h.reject(`/v1/assets/${source.assetId}`,undefined,'ASSET_NOT_VISIBLE','admin');
+  await h.setRole('prn_admin',null);await h.setRole('prn_admin',null,'scp_second');assert.equal((await h.request('/v1/assets',undefined,'admin')).total,0);await h.reject(`/v1/assets/${source.assetId}`,undefined,'ASSET_NOT_VISIBLE','admin');
   const parent=await h.request('/v1/assets',{scopeId:'scp_lab',kind:'connector-instance',name:'Synthetic credential parent',version:'1.0.0',declaration:{reads:[],writes:[],credentials:[]},configuration:{}}),credential=await h.request(`/v1/assets/${parent.assetId}/credentials`,{version:'1.0.0',value:'synthetic-private-value'});await h.reject(`/v1/assets/${credential.assetId}`,undefined,'ASSET_NOT_VISIBLE','bob');assert.ok(!(await h.request('/v1/assets',undefined,'bob')).items.some((item:any)=>item.assetId===credential.assetId));
-  await h.db.query("UPDATE policies SET grants=grants-'assets.approve' || '[\"assets.read\"]'::jsonb WHERE principal_id='prn_bob'");await h.reject(`/v1/assets/${source.assetId}`,undefined,'ASSET_NOT_VISIBLE','bob');assert.equal((await h.request('/v1/assets',undefined,'bob')).total,0);
+  await h.setRole('prn_bob','member');await h.reject(`/v1/assets/${source.assetId}`,undefined,'ASSET_NOT_VISIBLE','bob');assert.equal((await h.request('/v1/assets',undefined,'bob')).total,0);
 });
 
 test('Asset approval visibility: reviewing metadata does not grant original bytes or execution access and stale versions cannot be approved',async t=>{

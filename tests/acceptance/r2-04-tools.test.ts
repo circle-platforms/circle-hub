@@ -15,7 +15,7 @@ async function prepare(h:Harness,origin:string){
 }
 async function asset(h:Harness,packageId:string,alias?:string){
   const item=await h.request('/v1/assets',{scopeId:'scp_lab',kind:'connector-instance',name:'Synthetic read source',version:'1.0.0',
-    declaration:{reads:['registered-source'],writes:packageId==='knowledge'?['knowledge-candidates']:[],credentials:[]},configuration:{packageId,runtimeProfileRef:'synthetic',...(alias?{alias}:{})},readers:['prn_alice','prn_bob']});
+    declaration:{reads:['registered-source'],writes:packageId==='knowledge'?['knowledge-candidates']:[],credentials:[]},configuration:{packageId,runtimeProfileRef:'synthetic',...(alias?{alias}:{})},readers:['prn_alice']});
   await h.request(`/v1/assets/${item.assetId}/lifecycle`,{version:item.version,sha256:item.sha256,state:'approved'},'bob');
   return h.request(`/v1/assets/${item.assetId}/lifecycle`,{version:item.version,sha256:item.sha256,state:'running'});
 }
@@ -35,7 +35,7 @@ test('Act R2.4: caller-filtered tool schemas aliases and ETags react to permissi
   await h.reject('/v1/assets',{scopeId:'scp_lab',kind:'connector-instance',name:'Duplicate',version:'1.0.0',declaration:{reads:[],writes:[],credentials:[]},configuration:{packageId:'build-site',runtimeProfileRef:'synthetic'}},'TOOL_NAME_CONFLICT');
   await h.request(`/v1/assets/${source.assetId}/lifecycle`,{version:source.version,sha256:source.sha256,state:'disabled'});
   const changed=await fetch(`${h.url}/v1/tools`,{headers:{authorization:`Bearer ${token}`,'if-none-match':etag!}});assert.equal(changed.status,200);assert.notEqual(changed.headers.get('etag'),etag);
-  await h.db.query("UPDATE policies SET grants=grants-'builds.read' WHERE principal_id='prn_alice'");assert.deepEqual(await h.request('/v1/tools'),[]);
+  const alias=(await h.request('/v1/assets')).items.find((item:any)=>item.configuration.alias==='buildsite_second');await h.request(`/v1/assets/${alias.assetId}/lifecycle`,{version:alias.version,sha256:alias.sha256,state:'disabled'});assert.deepEqual(await h.request('/v1/tools'),[]);
 });
 
 test('Act R2.4: read tools execute on a fenced worker and persist input/output originals before returning',async t=>{

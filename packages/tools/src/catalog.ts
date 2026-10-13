@@ -45,13 +45,13 @@ export class ToolCatalog {
   }
   async available(ctx:AuthContext,tx?:Transaction):Promise<{row:any;definition:ToolDefinition;view:any}[]>{
     const p=await this.auth.policy(ctx,tx);
-    if(!['tasks.read','tasks.submit'].every(grant=>p.grants.includes(grant)))return [];
+    if(!p.grants.includes('tasks.read')||!p.grants.some(grant=>['tasks.submit','tools.read'].includes(grant)))return [];
     const rows=(await (tx??this.store.pool).query(`SELECT b.*,a.scope_id,a.owner_principal_id,v.sha256,v.configuration,v.declaration FROM tool_bindings b
       JOIN assets a ON a.asset_id=b.asset_id AND a.current_version=b.version JOIN asset_versions v ON v.asset_id=b.asset_id AND v.version=b.version
       WHERE b.tenant_id=$1 AND a.scope_id=ANY($2::text[]) AND v.lifecycle='running' AND v.approved_digest=v.sha256
       AND (a.owner_principal_id=$3 OR v.readers ? $3 OR v.readers ? '*') ORDER BY b.name`,[p.tenantId,p.scopes,p.principalId])).rows;
     const results=[];
-    for(const row of rows){const definition=this.definition(row.package_id,row.suffix,row.configuration);if(!definition||!p.grants.includes(definition.permission))continue;
+    for(const row of rows){const definition=this.definition(row.package_id,row.suffix,row.configuration);if(!definition||!p.scopeGrants?.[row.scope_id]?.includes(definition.permission)||definition.effect==='write'&&!p.scopeGrants[row.scope_id]?.includes('tasks.submit'))continue;
       if(ctx.run&&!ctx.run.tools.includes(row.name))continue;
       let credentials=true;for(const reference of row.declaration.credentials){try{const record=await this.assets.row(ctx,reference,tx,'credentials.use');if(record.owner_principal_id!==ctx.principalId||record.lifecycle==='disabled'||record.configuration.connectorAssetId!==row.asset_id)credentials=false;}catch{credentials=false;}}
       if(!credentials)continue;
@@ -133,7 +133,7 @@ export class ToolCatalog {
     const accepted=await this.store.transaction(async tx=>{
       const item=await this.entry(ctx,name,tx);
       requireCondition(item.row.sha256===initial.row.sha256&&item.row.version===initial.row.version,'APPROVAL_STALE','Tool revision changed during admission');
-      const task=await this.tasks.submit(ctx,{scopeId:item.row.scope_id,title:item.definition.title,capabilityPackId:'asset-tool',idempotencyKey:canonicalHash(['tool-call',ctx.run?.taskId??null,name,input.idempotencyKey]),input:{toolName:name,args,assetId:item.row.asset_id,assetVersion:item.row.version,assetSha256:item.row.sha256,...(sourceArtifactId?{sourceArtifactId}:{})}},tx);
+      const policy=await this.auth.policy(ctx,tx),readAdmission=item.definition.effect==='read'&&policy.scopeGrants?.[item.row.scope_id]?.includes('tools.read');const task=await this.tasks.submit(ctx,{scopeId:item.row.scope_id,title:item.definition.title,capabilityPackId:'asset-tool',idempotencyKey:canonicalHash(['tool-call',ctx.run?.taskId??null,name,input.idempotencyKey]),input:{toolName:name,args,assetId:item.row.asset_id,assetVersion:item.row.version,assetSha256:item.row.sha256,...(sourceArtifactId?{sourceArtifactId}:{})}},tx,readAdmission?'tools.read':'tasks.submit');
       if(!task.deduplicated){await tx.query('UPDATE tasks SET context=$2 WHERE task_id=$1',[task.taskId,JSON.stringify({privateOwnerId:ctx.principalId,...(ctx.run?{parentRunTaskId:ctx.run.taskId}:{})})]);await this.tasks.stage(tx,task,'running','tool-pending','task.running');await this.execution.submit(ctx,task.taskId,{name:'tools.invoke',inputRevisionId:task.inputRevisionId,target:item.row.asset_id,targetIdentity:item.row.sha256,args:{toolName:name,input:args,assetVersion:item.row.version,...(sourceArtifactId?{sourceArtifactId}:{})},idempotencyKey:canonicalHash([ctx.run?.taskId??null,input.idempotencyKey]),deadlineMs:300_000},tx);}
       return task;
     });

@@ -95,6 +95,7 @@ export class Harness {
     return this.request('/v1/tasks/submit', { scopeId, title: 'Inspect synthetic SYNTH health checks', input, idempotencyKey: key });
   }
   async status(taskId: string): Promise<any> { return this.request(`/v1/tasks/${taskId}/status`); }
+  async setRole(principalId:string,role:'admin'|'member'|'viewer'|null,scopeId='scp_lab'):Promise<void>{const changed=await this.db.query("UPDATE principal_scope_roles SET role=$2,revision=revision+1,verification='{\"ruleId\":\"synthetic-role-fixture\",\"ruleVersion\":\"1.0.0\",\"result\":\"passed\"}'::jsonb WHERE principal_id=$1 AND scope_id=$3",[principalId,role,scopeId]);assert.equal(changed.rowCount,1,'The synthetic role assignment must exist');}
   async phase(taskId: string, phase: string,timeoutMs=10_000): Promise<any> {
     return until(async () => { const task = await this.status(taskId); return task.phase === phase ? task : false; },timeoutMs);
   }
@@ -113,7 +114,7 @@ export class Harness {
   }
 }
 
-export async function setup(t: TestContext, overrides: Record<string, string> = {}): Promise<Harness> {
+export async function setup(t: TestContext, overrides: Record<string, string> = {}, identityInput:unknown[]=identities): Promise<Harness> {
   const scratch = await mkdtemp(`${tmpdir()}/circle-server-acceptance-`);
   const listener = createServer(); await new Promise<void>(resolve => listener.listen(0, '127.0.0.1', resolve));
   const port = (listener.address() as { port: number }).port;
@@ -127,7 +128,7 @@ export async function setup(t: TestContext, overrides: Record<string, string> = 
   try {
     await postgres.initialise(); await postgres.start(); started = true;
     await mkdir(`${scratch}/objects`);
-    await writeFile(`${scratch}/identities.json`, JSON.stringify({ identities }), { mode: 0o600 });
+    await writeFile(`${scratch}/identities.json`, JSON.stringify({ identities:identityInput }), { mode: 0o600 });
     const env = { ...process.env, CIRCLE_SERVER_DATABASE_CONFIG: JSON.stringify(databaseConfig),
       CIRCLE_SERVER_DATA_DIR: `${scratch}/objects`, CIRCLE_SERVER_DEV_IDENTITIES: `${scratch}/identities.json`,
       CIRCLE_SERVER_DEV_AUTH: '1', CIRCLE_SERVER_PORT: '0', CIRCLE_SERVER_POLL_MS: '30',

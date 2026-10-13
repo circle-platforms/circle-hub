@@ -3,11 +3,12 @@ import { readFile } from 'node:fs/promises';
 import { z } from 'zod';
 import { ApiError, requireCondition, sha256, type AuthContext, type Policy,type RunConstraint } from '../../contracts/src/index.ts';
 import type { Store, Transaction } from '../../storage/src/index.ts';
+import {ScopeRoles,ScopeRole,rolePresets,type ScopeRole as RoleName} from './roles.ts';
 
 const DevelopmentIdentity = z.object({ username: z.string().min(1), password: z.string().min(8),
   principalId: z.string().regex(/^prn_/), tenantId: z.string().regex(/^tnt_/),
   kind: z.enum(['user','service','worker']), workerId: z.string().optional(), scopes: z.array(z.string().regex(/^scp_/)),
-  grants: z.array(z.string()), targets: z.array(z.string()), defects: z.array(z.string()) });
+  grants: z.array(z.string()).default([]), targets: z.array(z.string()).default([]), defects: z.array(z.string()).default([]),roles:z.array(z.object({scopeId:z.string().regex(/^scp_/),role:ScopeRole}).strict()).optional() }).refine(value=>value.kind==='user'||!value.roles?.length,'Machine identities use scopes without roles');
 interface Credential { principalId: string; salt: Buffer; digest: Buffer }
 export const DEFAULT_DEV_TOKEN_TTL_MS=8*60*60*1000;
 export const MAX_DEV_TOKEN_TTL_MS=24*60*60*1000;
@@ -15,20 +16,23 @@ export class Auth {
   store: Store;
   credentials = new Map<string, Credential>();
   developmentTtlMs:number;runTokenTtlMs:number;
+  roles:ScopeRoles;professionalPermissions=new Map<string,RoleName>();professionalLoaded=false;
   constructor(store: Store,options:{developmentTtlMs?:number;runTokenTtlMs?:number}={}) { this.store = store;this.developmentTtlMs=options.developmentTtlMs??DEFAULT_DEV_TOKEN_TTL_MS;this.runTokenTtlMs=options.runTokenTtlMs??300_000;
-    requireCondition(Number.isInteger(this.developmentTtlMs)&&this.developmentTtlMs>=1000&&this.developmentTtlMs<=MAX_DEV_TOKEN_TTL_MS&&Number.isInteger(this.runTokenTtlMs)&&this.runTokenTtlMs>=1000&&this.runTokenTtlMs<=300_000,'INVALID_PAYLOAD','Development token lifetime configuration is invalid');
+    this.roles=new ScopeRoles(store);requireCondition(Number.isInteger(this.developmentTtlMs)&&this.developmentTtlMs>=1000&&this.developmentTtlMs<=MAX_DEV_TOKEN_TTL_MS&&Number.isInteger(this.runTokenTtlMs)&&this.runTokenTtlMs>=1000&&this.runTokenTtlMs<=300_000,'INVALID_PAYLOAD','Development token lifetime configuration is invalid');
   }
   async initializeDevelopment(path: string): Promise<void> {
     const input = z.object({ identities: z.array(DevelopmentIdentity) }).parse(JSON.parse(await readFile(path, 'utf8')));
     await this.store.transaction(async tx => {
+      await this.roles.bootstrap(tx);
       for (const identity of input.identities) {
         requireCondition(!this.credentials.has(identity.username), 'INVALID_PAYLOAD', 'Duplicate development username');
         const salt = randomBytes(16);
         this.credentials.set(identity.username, { principalId: identity.principalId, salt, digest: scryptSync(identity.password, salt, 32) });
-        await tx.query(`INSERT INTO policies(principal_id,tenant_id,kind,worker_id,scopes,grants,targets,defects,username)
-          VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(principal_id) DO UPDATE SET username=EXCLUDED.username`,
+        const row=(await tx.query(`INSERT INTO policies(principal_id,tenant_id,kind,worker_id,scopes,grants,targets,defects,username)
+          VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(principal_id) DO UPDATE SET username=EXCLUDED.username RETURNING *`,
           [identity.principalId, identity.tenantId, identity.kind, identity.workerId ?? null,
-            JSON.stringify(identity.scopes), JSON.stringify(identity.grants), JSON.stringify(identity.targets), JSON.stringify(identity.defects),identity.username]);
+            JSON.stringify(identity.scopes), JSON.stringify(identity.grants), JSON.stringify(identity.targets), JSON.stringify(identity.defects),identity.username])).rows[0];
+        requireCondition(row.tenant_id===identity.tenantId&&row.kind===identity.kind,'INVALID_PAYLOAD','Development identity cannot change its tenant or kind');await this.roles.seed(tx,row,identity.roles);
       }
     });
   }
@@ -62,11 +66,15 @@ export class Auth {
     return { principalId: row.principal_id, tenantId: row.tenant_id, kind: row.kind, ...(row.worker_id ? { workerId: row.worker_id } : {}),...(row.constraints?{run:row.constraints,tokenDigest:row.digest}:{}) };
   }
   async policy(ctx: AuthContext, tx?: Transaction): Promise<Policy> {
+    if(!this.professionalLoaded){for(const permission of(await(tx??this.store.pool).query('SELECT permission,minimum_role FROM professional_permissions')).rows)this.professionalPermissions.set(permission.permission,permission.minimum_role);this.professionalLoaded=true;}
     const row = (await (tx ?? this.store.pool).query('SELECT * FROM policies WHERE principal_id=$1 AND NOT disabled', [ctx.principalId])).rows[0];
     requireCondition(row, 'UNAUTHENTICATED', 'Principal is disabled or absent');
+    const assignments=row.kind==='user'?await this.roles.assignments(row.principal_id,row.tenant_id,tx):[],scopeGrants:Record<string,string[]>={};
+    const ranks={viewer:0,member:1,admin:2};for(const assignment of assignments){const grants=[...new Set<string>([...assignment.grants,...[...this.professionalPermissions].filter(([_name,minimum])=>ranks[assignment.role as RoleName]>=ranks[minimum]).map(([name])=>name)])];scopeGrants[assignment.scope_id]=ctx.run?grants.filter(grant=>ctx.run!.grants.includes(grant)):grants;}
+    if(row.kind!=='user')for(const scope of row.scopes)scopeGrants[scope]=ctx.run?row.grants.filter((grant:string)=>ctx.run!.grants.includes(grant)):row.grants;
+    const scopes=Object.keys(scopeGrants).filter(scope=>!ctx.run||ctx.run.scopes.includes(scope));
     return { principalId: row.principal_id, tenantId: row.tenant_id, kind: row.kind, workerId: row.worker_id ?? undefined,
-      scopes:ctx.run?row.scopes.filter((scope:string)=>ctx.run!.scopes.includes(scope)):row.scopes,
-      grants:ctx.run?row.grants.filter((grant:string)=>ctx.run!.grants.includes(grant)):row.grants,targets: row.targets, defects: row.defects,...(ctx.run?{run:ctx.run}:{}),...(ctx.tokenDigest?{tokenDigest:ctx.tokenDigest}:{}) };
+      scopes,grants:[...new Set(scopes.flatMap(scope=>scopeGrants[scope]))],scopeGrants,roles:assignments.filter(assignment=>scopes.includes(assignment.scope_id)).map(assignment=>({scopeId:assignment.scope_id,role:assignment.role})),targets: row.targets, defects: row.defects,...(ctx.run?{run:ctx.run}:{}),...(ctx.tokenDigest?{tokenDigest:ctx.tokenDigest}:{}) };
   }
   async issueRun(ctx:AuthContext,constraints:RunConstraint,deadline?:Date):Promise<{token:string;digest:string}>{
     const policy=await this.policy(ctx);requireCondition(constraints.scopes.every(scope=>policy.scopes.includes(scope))&&constraints.grants.every(grant=>policy.grants.includes(grant)),'FORBIDDEN_ACTION','Run delegation exceeds its owner');
@@ -81,9 +89,11 @@ export class Auth {
   async check(ctx: AuthContext, grant: string, scopeId?: string, tx?: Transaction): Promise<Policy> {
     const policy = await this.policy(ctx, tx);
     requireCondition(!scopeId || policy.scopes.includes(scopeId), 'FORBIDDEN_SCOPE', 'Scope is outside the authenticated principal policy');
-    requireCondition(policy.grants.includes(grant), 'FORBIDDEN_ACTION', `Permission ${grant} is required`);
-    return policy;
+    const scopes=policy.scopes.filter(scope=>policy.scopeGrants?.[scope]?.includes(grant));requireCondition(scopes.length&&(!scopeId||scopes.includes(scopeId)), 'FORBIDDEN_ACTION', `Permission ${grant} is required`);
+    return {...policy,scopes};
   }
+  registerPermission(name:string,minimum:RoleName){const ranks={viewer:0,member:1,admin:2},defined=(['viewer','member','admin'] as const).find(role=>rolePresets[role].grants.includes(name));requireCondition(name!=='workers.execute'&&(!defined||ranks[minimum]>=ranks[defined]),'INVALID_PAYLOAD','Professional permission cannot weaken a platform permission');const prior=this.professionalPermissions.get(name);this.professionalPermissions.set(name,prior&&ranks[prior]>ranks[minimum]?prior:minimum);}
+  async publishPermissions(){await this.store.transaction(async tx=>{await tx.query('DELETE FROM professional_permissions');for(const [permission,minimum] of this.professionalPermissions)await tx.query('INSERT INTO professional_permissions(permission,minimum_role,verification) VALUES($1,$2,$3)',[permission,minimum,JSON.stringify({ruleId:'installed-permission-declaration',ruleVersion:'1.0.0',result:'passed'})]);});}
   async target(ctx: AuthContext, grant: string, scopeId: string, target: string, tx?: Transaction): Promise<Policy> {
     const policy = await this.check(ctx, grant, scopeId, tx);
     requireCondition(policy.targets.includes(target), 'FORBIDDEN_TARGET', 'Target is outside the authenticated policy'); return policy;
@@ -92,9 +102,9 @@ export class Auth {
     const service = await this.policy({ principalId: serviceId } as AuthContext, tx);
     const owner = await this.policy({ principalId: ownerId } as AuthContext, tx);
     requireCondition(service.kind === 'service' && service.tenantId === owner.tenantId, 'FORBIDDEN_ACTION', 'Rule requires a same-tenant service identity');
-    return { ...service, scopes: service.scopes.filter(value => owner.scopes.includes(value)),
+    const scopes=service.scopes.filter(value=>owner.scopes.includes(value)),scopeGrants=Object.fromEntries(scopes.map(scope=>[scope,(service.scopeGrants?.[scope]??[]).filter(grant=>owner.scopeGrants?.[scope]?.includes(grant))]));return { ...service, scopes,scopeGrants,
       targets: service.targets.filter(value => owner.targets.includes(value)), defects: service.defects.filter(value => owner.defects.includes(value)),
-      grants: service.grants.filter(value => owner.grants.includes(value)) };
+      grants: [...new Set(scopes.flatMap(scope=>scopeGrants[scope]))] };
   }
   async audit(ctx: AuthContext, action: string, detail: unknown, scopeId?: string, tx?: Transaction): Promise<void> {
     await (tx ?? this.store.pool).query('INSERT INTO audit(tenant_id,scope_id,principal_id,action,detail) VALUES($1,$2,$3,$4,$5)',

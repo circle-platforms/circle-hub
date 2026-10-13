@@ -11,7 +11,7 @@ export function taskFromRow(row: Record<string, any>): Task {
 }
 export class Tasks {
   store: Store; auth: Auth; inputTtlMs: number;
-  capabilities=new Map<string,{version:string;flowVersion:string;privateByDefault?:boolean}>(Object.entries(PACK_FLOWS).map(([id,flowVersion])=>[id,{version:'1.0.0',flowVersion,privateByDefault:id!=='asset-registration'}]));
+  capabilities=new Map<string,{version:string;flowVersion:string;privateByDefault?:boolean}>(Object.entries(PACK_FLOWS).map(([id,flowVersion])=>[id,{version:'1.0.0',flowVersion,privateByDefault:!['asset-registration','change-set'].includes(id)}]));
   deliveryValidators=new Map<string,(tx:Transaction,task:Task,result:any)=>Promise<{itemId:string;conclusionId:string}[]>>();
   baseFlows=new Set<string>([FLOW_VERSION]);
   constructor(store: Store, auth: Auth, inputTtlMs = 300_000) { this.store = store; this.auth = auth; this.inputTtlMs = inputTtlMs; }
@@ -41,9 +41,9 @@ export class Tasks {
   async wake(tx: Transaction, taskId: string, reason: string): Promise<void> {
     await tx.query('INSERT INTO wakeups(task_id,reason) VALUES($1,$2)', [taskId, reason]);
   }
-  async submit(ctx: AuthContext, request: SubmitRequest, tx?: Transaction): Promise<Task & { deduplicated: boolean }> {
+  async submit(ctx: AuthContext, request: SubmitRequest, tx?: Transaction,admissionGrant='tasks.submit'): Promise<Task & { deduplicated: boolean }> {
     const execute = async (client: Transaction) => {
-      const policy = await this.auth.check(ctx, 'tasks.submit', request.scopeId, client);
+      requireCondition(admissionGrant==='tasks.submit'||admissionGrant==='tools.read'&&request.capabilityPackId==='asset-tool','FORBIDDEN_ACTION','Internal read admission applies only to tool tasks');const policy = await this.auth.check(ctx, admissionGrant, request.scopeId, client);
       const capability=request.capabilityPackId?this.capabilities.get(request.capabilityPackId):undefined;
       requireCondition(!request.capabilityPackId||capability,'UNSUPPORTED_VERSION','Capability package is not installed');
       requireCondition(policy.kind !== 'worker', 'FORBIDDEN_ACTION', 'Workers cannot submit tasks');

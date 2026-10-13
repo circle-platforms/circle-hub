@@ -22,6 +22,7 @@ async function prepare(t: any) {
     await h.db.query("UPDATE policies SET grants=grants || '[\"service-clients.manage\",\"assets.read\",\"assets.register\",\"assets.change\",\"knowledge.read\"]'::jsonb WHERE principal_id='prn_alice'");
     await h.db.query("UPDATE policies SET grants=grants || '[\"assets.read\",\"assets.approve\"]'::jsonb WHERE principal_id='prn_bob'");
     await h.db.query("UPDATE policies SET grants=grants || '[\"service-clients.manage\",\"assets.read\"]'::jsonb WHERE principal_id='prn_outsider'");
+    await h.setRole('prn_outsider','admin');
     const resource = await h.request('/v1/assets', { scopeId: 'scp_lab', kind: 'environment-resource', name: 'Synthetic execution resource', version: '1.0.0', declaration: { reads: ['test-bed'], writes: ['device-config'], credentials: [] }, configuration: {}, readers: ['prn_alice', 'prn_bob'] });
     const body = { scopeId: 'scp_lab', resourceAssetId: resource.assetId, name: 'Synthetic resource client', secret, scopes: ['introspect', 'bundles:read'], resourceScopes: ['synthetic:run'] };
     return { h, resource, body };
@@ -170,10 +171,10 @@ test('Resource identity: approved execution uses server-issued user tokens renew
     await until(async () => gateway.state.calls.filter(name => name === 'case_submit').length === 2);
     await until(async () => (await h.db.query('SELECT 1 FROM case_gateway_receipts r JOIN operations o USING(operation_id) WHERE o.task_id=$1 AND r.gateway_task_id IS NOT NULL', [second.taskId])).rowCount);
     const secondToken = (await h.db.query('SELECT r.* FROM resource_access_tokens r JOIN operations o USING(operation_id) WHERE o.task_id=$1 ORDER BY r.expires_at DESC LIMIT 1', [second.taskId])).rows[0], access = await new PrivateVault(`${h.env.CIRCLE_SERVER_DATA_DIR}/private-credentials`).get(secondToken.secret_key, secondToken.secret_binding);
-    await h.db.query("UPDATE policies SET grants=grants-'cases.execute' WHERE principal_id='prn_alice'");
+    await h.setRole('prn_alice','viewer');
     assert.deepEqual((await form(h, '/v1/introspect', client.clientId, { token: access })).body, { active: false });
     await h.phase(second.taskId, 'unknown');
-    await h.db.query("UPDATE policies SET grants=grants || '[\"cases.execute\"]'::jsonb WHERE principal_id='prn_alice'");
+    await h.setRole('prn_alice','admin');
     const observer = await h.startWorker('lab-east-02');
     gateway.state.hold = false;
     await h.request(`/v1/tasks/${second.taskId}/reconcile`, { operationId: secondToken.operation_id });

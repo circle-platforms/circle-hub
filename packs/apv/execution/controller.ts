@@ -16,7 +16,7 @@ import {z as schema} from 'zod';
 export class CaseExecution {
   services:any;
   constructor(services:any){
-    this.services=services;const {tasks,execution,approvals}=services;
+    this.services=services;const {tasks,execution,approvals}=services;services.auth.registerPermission('cases.execute','member');
     tasks.capabilities.set(ExecutionPack.capabilityPackId,{version:ExecutionPack.version,flowVersion:'apv-case-execute/1'});
     const authorize=execution.managedAuthorization,preflight=execution.managedPreflight;
     for(const name of ['cases.verify','cases.execute','cases.observe']){

@@ -1,0 +1,20 @@
+import type {Migration} from '../../storage/src/index.ts';
+export const roleMigration:Migration={version:23,name:'Scoped human role presets and explicit self decision policy',sql:`
+CREATE TABLE role_presets(role text PRIMARY KEY CHECK(role IN ('admin','member','viewer')),version text NOT NULL,grants jsonb NOT NULL,initialized boolean NOT NULL DEFAULT false,verification jsonb);
+INSERT INTO role_presets(role,version,grants) VALUES ('admin','1.0.0','[]'),('member','1.0.0','[]'),('viewer','1.0.0','[]');
+CREATE TABLE professional_permissions(permission text PRIMARY KEY,minimum_role text NOT NULL REFERENCES role_presets,verification jsonb NOT NULL);
+CREATE TABLE scopes(tenant_id text NOT NULL,scope_id text NOT NULL,name text NOT NULL,is_root boolean NOT NULL DEFAULT false,two_person_rule boolean NOT NULL DEFAULT true,policy_version integer NOT NULL DEFAULT 1,created_at timestamptz NOT NULL DEFAULT clock_timestamp(),updated_at timestamptz NOT NULL DEFAULT clock_timestamp(),PRIMARY KEY(tenant_id,scope_id));
+CREATE TABLE principal_scope_roles(principal_id text NOT NULL REFERENCES policies,tenant_id text NOT NULL,scope_id text NOT NULL,role text REFERENCES role_presets,revision integer NOT NULL DEFAULT 1,verification jsonb NOT NULL,change_set_id text,updated_at timestamptz NOT NULL DEFAULT clock_timestamp(),PRIMARY KEY(principal_id,scope_id),FOREIGN KEY(tenant_id,scope_id) REFERENCES scopes);
+ALTER TABLE policies ADD COLUMN role_initialized boolean NOT NULL DEFAULT false;
+INSERT INTO scopes(tenant_id,scope_id,name) SELECT DISTINCT p.tenant_id,v.scope_id,v.scope_id FROM policies p CROSS JOIN LATERAL jsonb_array_elements_text(p.scopes) v(scope_id) ON CONFLICT DO NOTHING;
+INSERT INTO scopes(tenant_id,scope_id,name,is_root) SELECT DISTINCT tenant_id,'scp_root','Root',true FROM policies ON CONFLICT DO NOTHING;
+INSERT INTO principal_scope_roles(principal_id,tenant_id,scope_id,role,verification) SELECT p.principal_id,p.tenant_id,v.scope_id,CASE WHEN p.grants ?| ARRAY['admin.manage','assets.approve','decisions.approve','service-clients.manage'] THEN 'admin' WHEN p.grants ? 'tasks.submit' THEN 'member' ELSE 'viewer' END,'{"ruleId":"legacy-role-migration","ruleVersion":"1.0.0","result":"verified","basis":"former-policy"}'::jsonb FROM policies p CROSS JOIN LATERAL jsonb_array_elements_text(p.scopes) v(scope_id) WHERE p.kind='user';
+INSERT INTO principal_scope_roles(principal_id,tenant_id,scope_id,role,verification) SELECT principal_id,tenant_id,'scp_root','admin','{"ruleId":"legacy-role-migration","ruleVersion":"1.0.0","result":"verified","basis":"former-hub-management"}'::jsonb FROM policies WHERE kind='user' AND grants ? 'admin.manage' ON CONFLICT DO NOTHING;
+UPDATE policies SET role_initialized=true WHERE kind='user';
+ALTER TABLE approvals ADD COLUMN decision_mode text;
+ALTER TABLE approvals ADD COLUMN single_admin_mode boolean NOT NULL DEFAULT false;
+ALTER TABLE approvals ADD COLUMN eligibility_verification jsonb;
+ALTER TABLE decisions ADD COLUMN decision_mode text;
+ALTER TABLE decisions ADD COLUMN single_admin_mode boolean NOT NULL DEFAULT false;
+ALTER TABLE decisions ADD COLUMN policy_version integer;
+`};

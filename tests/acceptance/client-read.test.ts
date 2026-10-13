@@ -46,7 +46,7 @@ test('client task list filters before limiting and returns newest TaskViews with
 test('client task reads require live tasks.read and cannot expand the authenticated tenant or scopes',async t=>{
   const h=await setup(t),lab=await h.submit({requiredFields:['target']}),second=await h.submit({},'scp_second');
   const token=await h.login('bob');
-  await h.db.query("UPDATE policies SET grants='[\"tasks.read\"]'::jsonb WHERE principal_id='prn_bob'");
+  await h.setRole('prn_bob','viewer');
   const allowed=await h.raw('/v1/tasks?limit=100&scopeId=scp_second&tenantId=tnt_other&principalId=prn_admin&role=admin',{token});
   assert.equal(allowed.status,200,JSON.stringify(allowed.body));assert.deepEqual(allowed.body.data.map((task:any)=>task.taskId),[lab.taskId]);
   assert.equal((await h.raw('/v1/admin/tasks',{token})).body.error.code,'FORBIDDEN_ACTION');
@@ -55,9 +55,7 @@ test('client task reads require live tasks.read and cannot expand the authentica
   assert.equal((await h.raw('/v1/tasks')).body.error.code,'UNAUTHENTICATED');
   await h.reject('/v1/tasks',undefined,'FORBIDDEN_ACTION','lab-east-01');
   await h.reject(`/v1/tasks/${second.taskId}/status`,undefined,'FORBIDDEN_SCOPE','bob');
-  await h.db.query("UPDATE policies SET scopes='[]'::jsonb WHERE principal_id='prn_bob'");
-  assert.deepEqual((await h.raw('/v1/tasks',{token})).body.data,[]);
-  await h.db.query("UPDATE policies SET grants='[]'::jsonb WHERE principal_id='prn_bob'");
+  await h.setRole('prn_bob',null);
   const revoked=await h.raw('/v1/tasks',{token});assert.equal(revoked.status,403);assert.equal(revoked.body.error.code,'FORBIDDEN_ACTION');
 });
 
@@ -74,7 +72,7 @@ test('client approval reads need only tasks.read and preserve bound approval his
   const open=await h.request(`/v1/tasks/${task.taskId}/approvals`,proposal(revised.inputRevisionId,12));
   const empty=await h.submit({}),otherScope=await h.submit({},'scp_second');
   const token=await h.login('bob');
-  await h.db.query("UPDATE policies SET grants='[\"tasks.read\"]'::jsonb WHERE principal_id='prn_bob'");
+  await h.setRole('prn_bob','viewer');
   const counts=async()=> (await h.db.query(`SELECT (SELECT count(*) FROM approvals WHERE task_id=$1)::integer AS approvals,
     (SELECT count(*) FROM decisions WHERE task_id=$1)::integer AS decisions,
     (SELECT count(*) FROM outbox WHERE task_id=$1)::integer AS events`,[task.taskId])).rows[0];
@@ -92,7 +90,7 @@ test('client approval reads need only tasks.read and preserve bound approval his
   const missing=await h.raw('/v1/tasks/task_missing/approvals',{token});assert.equal(missing.status,404);assert.equal(missing.body.error.code,'TARGET_NOT_FOUND');
   const invalid=await h.raw('/v1/tasks/invalid/approvals',{token});assert.equal(invalid.status,400);assert.equal(invalid.body.error.code,'INVALID_PAYLOAD');
   const writeDenied=await h.raw(`${path}/${open.approvalId}`,{token,body:decision(open,true)});assert.equal(writeDenied.status,403);assert.equal(writeDenied.body.error.code,'FORBIDDEN_ACTION');
-  await h.db.query("UPDATE policies SET grants='[]'::jsonb WHERE principal_id='prn_bob'");
-  const revoked=await h.raw(path,{token});assert.equal(revoked.status,403);assert.equal(revoked.body.error.code,'FORBIDDEN_ACTION');
+  await h.setRole('prn_bob',null);
+  const revoked=await h.raw(path,{token});assert.equal(revoked.status,403);assert.equal(revoked.body.error.code,'FORBIDDEN_SCOPE');
   assert.deepEqual(await counts(),before);
 });
