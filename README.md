@@ -33,7 +33,7 @@ Every object is made of the same five parts — records, assets, an approval pol
 - **Approvals happen on change sets, never at run time.** A run goes through the enforcement chain — permission, binding, verification, lease, audit — and ends in success, a fixed error code with the facts, or an honestly disclosed unknown. The platform is never an approver.
 - **Evidence belongs to the hub.** Tool returns are stored verbatim with an evidence id; agents hold pointers; script facts and model judgments are labelled apart.
 
-The design is written up in [docs/design](docs/design/README.md).
+The design is written up in [docs/design](docs/design/README.md) (Chinese, with an [English translation](docs/design/en/README.md)).
 
 ## What works today
 
@@ -75,7 +75,7 @@ circle-hub is under development and not a supported production release: sign-in 
 
 ## Documentation
 
-- [Design](docs/design/README.md) — object standard, vocabulary and states, levels and elements, approvals and the enforcement chain, roles, Circle integration, product-line packs.
+- [Design](docs/design/README.md) ([English](docs/design/en/README.md)) — object standard, vocabulary and states, levels and elements, approvals and the enforcement chain, roles, Circle integration, product-line packs.
 - [Client API handoff](docs/client-api-handoff.md) · [Case execution](docs/case-execution-handoff.md) · [Resource identity](docs/resource-identity-handoff.md) · [Module installation](docs/module-installation.md) · [Admin CLI](docs/admin-cli.md)
 - [Phase records](docs/README.md) — briefs, progress and real-source observations.
 - [References](references/README.md) — the archived platform that preceded the hub; frozen, verified by SHA, never imported at runtime.

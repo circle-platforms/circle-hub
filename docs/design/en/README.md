@@ -1,6 +1,6 @@
 # circle-hub design
 
-This is the design finalized on 2026-10-13. Later development and adaptation of existing capabilities follow it. Each document writes only decisions and reasons, and does not write implementation progress; implementation progress is in the [phase record](../../README.md#阶段记录).
+This is the design finalized on 2026-10-13. Later development and adaptation of existing capabilities follow it. Each document writes only decisions and reasons, and does not write implementation progress; implementation progress is in the [phase record](../../README.md#阶段记录). These pages are translations of the [Chinese originals](../README.md); where the two differ, the Chinese text is authoritative.
 
 | Document | What it answers |
 |---|---|
