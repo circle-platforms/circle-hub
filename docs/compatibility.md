@@ -1,5 +1,7 @@
 # 兼容矩阵
 
+英文译文在 [compatibility.en.md](compatibility.en.md)，两者有出入以中文为准。
+
 三个仓库各自版本化：circle（harness）、circle-hub（平台）、circle-packs（包）。谁依赖谁、以什么为准，都写在这里；改动任何一行都是一次有意识的升级，不是顺手为之。
 
 ## 现状（2026-10-13）
