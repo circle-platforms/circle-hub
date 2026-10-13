@@ -62,6 +62,7 @@ const { files: outFiles, warnings: exportWarnings } = exportTo(harness, manifest
 | `UNRECOGNIZED_FILE` | 不匹配该 harness 任何原语位置，未导入 |
 | `CROSS_HARNESS_EXPORT` | 清单的 sourceHarness 与导出目标不同，跳过 |
 | `NO_HARNESS_PROJECTION` | 该原语在此 harness 没有文件投影（如 OpenCode 的 hook、Cursor 的 command） |
+| `PERMISSION_NOT_EXPRESSIBLE` | 权限导出里表达不了的一格：detail 写 harness、角色、工具、哪一格、原因（文件内容不变，格子保持不写） |
 | `MANIFEST_INVALID` | 清单没过中立 schema（导出边界校验） |
 
 ## 覆盖矩阵
@@ -95,7 +96,7 @@ transport 映射：`command`（OpenCode 为 `type: local`）→ `stdio`；Claude
 import { disposition, exportPermission, hubPermissionSchema } from './packages/harness-adapters/index.ts';
 
 const d = disposition(policy, 'member', 'case-gateway.dispatch'); // 'allow' | 'ask' | 'deny'
-const files = exportPermission('claude-code', policy, 'member'); // VirtualFiles，一个文件一个角色
+const { files, warnings } = exportPermission('claude-code', policy, 'member'); // 一个文件一个角色；表达不了的格子逐条 PERMISSION_NOT_EXPRESSIBLE
 ```
 
 三条处置规则：角色低于 `minimumRole` → deny（目录不给）；否则 `approval` 为真 → ask（同一个人确认参数，不是独立审批人）；否则 → allow（`effect: write` 且 `approval` 为假也是 allow）。不在 policy 里的 Tool 视为不在目录：deny。`twoPersonRule` / `singleAdminMode` 原样记录，从不翻译成工具规则。

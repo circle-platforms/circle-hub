@@ -4,7 +4,7 @@ import {
   disposition,
   exportPermission,
   hubPermissionSchema,
-  type HubPermission,
+  type PermissionExport,
   type PermissionRole,
 } from '../../packages/harness-adapters/index.ts';
 
@@ -24,6 +24,10 @@ const policy = hubPermissionSchema.parse({
 });
 
 const ROLES: PermissionRole[] = ['guest', 'member', 'administrator'];
+
+function filesOf(result: PermissionExport): Record<string, string> {
+  return result.files as Record<string, string>;
+}
 
 test('disposition: the three rules, and deny for tools outside the catalog', () => {
   assert.equal(disposition(policy, 'guest', 'documents.search'), 'allow');
@@ -48,30 +52,32 @@ test('hub-permission/1 stores inputs only, never a computed disposition', () => 
 });
 
 test('Claude Code permission export matches the spec table for all three roles', () => {
-  const member = JSON.parse(exportPermission('claude-code', policy, 'member')['.claude/settings.member.json'] as string);
-  assert.deepEqual(member, {
+  const member = exportPermission('claude-code', policy, 'member');
+  assert.deepEqual(JSON.parse(filesOf(member)['.claude/settings.member.json']), {
     permissions: {
       allow: ['mcp__hub__documents.search', 'mcp__hub__buildsite.command_check'],
       ask: ['mcp__hub__case-gateway.dispatch'],
       deny: [],
     },
   });
-  const guest = JSON.parse(exportPermission('claude-code', policy, 'guest')['.claude/settings.guest.json'] as string);
-  assert.deepEqual(guest, {
+  assert.deepEqual(member.warnings, []);
+  const guest = exportPermission('claude-code', policy, 'guest');
+  assert.deepEqual(JSON.parse(filesOf(guest)['.claude/settings.guest.json']), {
     permissions: {
       allow: ['mcp__hub__documents.search'],
       ask: [],
       deny: ['mcp__hub__buildsite.command_check', 'mcp__hub__case-gateway.dispatch'],
     },
   });
-  const administrator = JSON.parse(exportPermission('claude-code', policy, 'administrator')['.claude/settings.administrator.json'] as string);
-  assert.deepEqual(administrator, member);
+  assert.deepEqual(guest.warnings, []);
+  const administrator = exportPermission('claude-code', policy, 'administrator');
+  assert.deepEqual(JSON.parse(filesOf(administrator)['.claude/settings.administrator.json']), JSON.parse(filesOf(member)['.claude/settings.member.json']));
 });
 
 test('Codex permission export matches the spec example for all three roles', () => {
-  const member = exportPermission('codex', policy, 'member')['.codex/permissions.member.toml'] as string;
+  const member = exportPermission('codex', policy, 'member');
   assert.equal(
-    member,
+    filesOf(member)['.codex/permissions.member.toml'],
     '[mcp_servers.hub]\n' +
       'enabled_tools = ["documents.search", "buildsite.command_check", "case-gateway.dispatch"]\n' +
       'disabled_tools = []\n\n' +
@@ -79,32 +85,43 @@ test('Codex permission export matches the spec example for all three roles', () 
       '[mcp_servers.hub.tools."buildsite.command_check"]\napproval_mode = "auto"\n\n' +
       '[mcp_servers.hub.tools."case-gateway.dispatch"]\napproval_mode = "prompt"\n',
   );
-  const guest = exportPermission('codex', policy, 'guest')['.codex/permissions.guest.toml'] as string;
+  // The example has no allow+write tool, so no PERMISSION_NOT_EXPRESSIBLE.
+  assert.deepEqual(member.warnings, []);
+  const guest = exportPermission('codex', policy, 'guest');
   assert.equal(
-    guest,
+    filesOf(guest)['.codex/permissions.guest.toml'],
     '[mcp_servers.hub]\n' +
       'enabled_tools = ["documents.search"]\n' +
       'disabled_tools = ["buildsite.command_check", "case-gateway.dispatch"]\n\n' +
       '[mcp_servers.hub.tools."documents.search"]\napproval_mode = "auto"\n',
   );
-  assert.equal(exportPermission('codex', policy, 'administrator')['.codex/permissions.administrator.toml'], member);
+  assert.deepEqual(guest.warnings, []);
+  assert.equal(filesOf(exportPermission('codex', policy, 'administrator'))['.codex/permissions.administrator.toml'], filesOf(member)['.codex/permissions.member.toml']);
 });
 
-test('Codex permission export: allow + effect write is enabled without an approval_mode line', () => {
+test('Codex permission export: allow + effect write is enabled without an approval_mode line, with a warning', () => {
   const write = hubPermissionSchema.parse({
     ...policy,
     tools: [{ name: 'reports.publish', effect: 'write', minimumRole: 'member', approval: false }],
   });
-  const member = exportPermission('codex', write, 'member')['.codex/permissions.member.toml'] as string;
+  const member = exportPermission('codex', write, 'member');
   assert.equal(
-    member,
+    filesOf(member)['.codex/permissions.member.toml'],
     '[mcp_servers.hub]\nenabled_tools = ["reports.publish"]\ndisabled_tools = []\n',
   );
+  assert.equal(member.warnings.length, 1);
+  assert.equal(member.warnings[0].code, 'PERMISSION_NOT_EXPRESSIBLE');
+  assert.equal(member.warnings[0].path, '.codex/permissions.member.toml');
+  for (const part of ['codex', 'member', 'reports.publish', 'allow + effect:write']) {
+    assert.ok(member.warnings[0].detail.includes(part), member.warnings[0].detail);
+  }
+  // deny is expressible in Codex: no warning for the guest.
+  assert.deepEqual(exportPermission('codex', write, 'guest').warnings, []);
 });
 
 test('OpenCode permission export matches the spec example, with ask never written as allow', () => {
-  const member = JSON.parse(exportPermission('opencode', policy, 'member')['opencode.permissions.member.json'] as string);
-  assert.deepEqual(member, {
+  const member = exportPermission('opencode', policy, 'member');
+  assert.deepEqual(JSON.parse(filesOf(member)['opencode.permissions.member.json']), {
     $schema: 'https://opencode.ai/config.json',
     permissions: [
       { action: 'hub_documents_search', resource: '*', effect: 'allow' },
@@ -112,39 +129,58 @@ test('OpenCode permission export matches the spec example, with ask never writte
       { action: 'hub_case_gateway_dispatch', resource: '*', effect: 'ask' },
     ],
   });
-  const guest = JSON.parse(exportPermission('opencode', policy, 'guest')['opencode.permissions.guest.json'] as string);
+  assert.deepEqual(member.warnings, []);
+  const guest = JSON.parse(filesOf(exportPermission('opencode', policy, 'guest'))['opencode.permissions.guest.json']);
   assert.deepEqual(
     guest.permissions.map((rule: { effect: string }) => rule.effect),
     ['allow', 'deny', 'deny'],
   );
-  assert.equal(exportPermission('opencode', policy, 'administrator')['opencode.permissions.administrator.json'], exportPermission('opencode', policy, 'member')['opencode.permissions.member.json']);
+  assert.equal(filesOf(exportPermission('opencode', policy, 'administrator'))['opencode.permissions.administrator.json'], filesOf(member)['opencode.permissions.member.json']);
 });
 
-test('Gemini permission export matches the spec example (ask_user, priority 100)', () => {
-  const member = exportPermission('gemini', policy, 'member')['.gemini/policies/hub.member.toml'] as string;
+test('Gemini permission export matches the spec example (ask_user, priority 100) and flags the caveat', () => {
+  const member = exportPermission('gemini', policy, 'member');
   assert.equal(
-    member,
+    filesOf(member)['.gemini/policies/hub.member.toml'],
     '[[rule]]\nmcpName = "hub"\ntoolName = "documents.search"\ndecision = "allow"\npriority = 100\n\n' +
       '[[rule]]\nmcpName = "hub"\ntoolName = "buildsite.command_check"\ndecision = "allow"\npriority = 100\n\n' +
       '[[rule]]\nmcpName = "hub"\ntoolName = "case-gateway.dispatch"\ndecision = "ask_user"\npriority = 100\n',
   );
-  const guest = exportPermission('gemini', policy, 'guest')['.gemini/policies/hub.guest.toml'] as string;
-  assert.equal(guest.match(/\[\[rule\]\]/g)!.length, 3);
-  assert.ok(guest.includes('toolName = "case-gateway.dispatch"\ndecision = "deny"'));
+  // ask_user degrades to deny in non-interactive runs: flagged per ask tool.
+  assert.equal(member.warnings.length, 1);
+  assert.equal(member.warnings[0].code, 'PERMISSION_NOT_EXPRESSIBLE');
+  for (const part of ['gemini', 'member', 'case-gateway.dispatch', 'ask']) {
+    assert.ok(member.warnings[0].detail.includes(part), member.warnings[0].detail);
+  }
+  const guest = exportPermission('gemini', policy, 'guest');
+  assert.equal(filesOf(guest)['.gemini/policies/hub.guest.toml'].match(/\[\[rule\]\]/g)!.length, 3);
+  assert.ok(filesOf(guest)['.gemini/policies/hub.guest.toml'].includes('toolName = "case-gateway.dispatch"\ndecision = "deny"'));
+  // deny is expressible in Gemini: no warning for the guest.
+  assert.deepEqual(guest.warnings, []);
 });
 
-test('Cursor permission export: allowlist only, ask is omission, deny is not expressible', () => {
-  const member = JSON.parse(exportPermission('cursor', policy, 'member')['.cursor/permissions.member.json'] as string);
-  assert.deepEqual(member, { mcpAllowlist: ['hub:documents.search', 'hub:buildsite.command_check'] });
-  const guest = JSON.parse(exportPermission('cursor', policy, 'guest')['.cursor/permissions.guest.json'] as string);
-  assert.deepEqual(guest, { mcpAllowlist: ['hub:documents.search'] });
+test('Cursor permission export: allowlist only, ask is omission, deny warns', () => {
+  const member = exportPermission('cursor', policy, 'member');
+  assert.deepEqual(JSON.parse(filesOf(member)['.cursor/permissions.member.json']), { mcpAllowlist: ['hub:documents.search', 'hub:buildsite.command_check'] });
+  assert.deepEqual(member.warnings, []);
+  const guest = exportPermission('cursor', policy, 'guest');
+  assert.deepEqual(JSON.parse(filesOf(guest)['.cursor/permissions.guest.json']), { mcpAllowlist: ['hub:documents.search'] });
+  // deny has no Cursor cell: one warning per denied tool, file unchanged.
+  assert.equal(guest.warnings.length, 2);
+  assert.ok(guest.warnings.every((warning) => warning.code === 'PERMISSION_NOT_EXPRESSIBLE'));
+  assert.ok(guest.warnings.every((warning) => warning.detail.includes('deny')));
+  assert.deepEqual(
+    guest.warnings.map((warning) => warning.detail),
+    guest.warnings.map((warning) => warning.detail).sort(),
+  );
 });
 
 test('every harness: ask is never written as allow, and policy-level flags are not translated', () => {
   for (const harness of ['claude-code', 'codex', 'opencode', 'gemini', 'cursor'] as const) {
     for (const role of ROLES) {
-      const files = exportPermission(harness, policy, role);
+      const { files, warnings } = exportPermission(harness, policy, role);
       assert.equal(Object.keys(files).length, 1);
+      assert.ok(warnings.every((warning) => warning.code === 'PERMISSION_NOT_EXPRESSIBLE'));
       const text = Object.values(files)[0] as string;
       // twoPersonRule / singleAdminMode are recorded in the policy, never
       // translated into tool rules.

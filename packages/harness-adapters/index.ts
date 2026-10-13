@@ -13,6 +13,7 @@ export {
   PERMISSION_ROLES,
   type Disposition,
   type HubPermission,
+  type PermissionExport,
   type PermissionRole,
 } from './permissions.ts';
 

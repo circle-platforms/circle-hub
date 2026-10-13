@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { HarnessId, VirtualFiles } from './neutral.ts';
+import type { AdapterWarning, HarnessId, VirtualFiles } from './neutral.ts';
 import { canonicalJson } from './files.ts';
 import { emitToml } from './toml.ts';
 
@@ -50,7 +50,28 @@ export function disposition(policy: HubPermission, role: PermissionRole, toolNam
 // `permissions.<role>`-style path for the operator to pick up; they are not
 // auto-loaded locations (see the brief's 待定).
 
-function exportClaudeCodePermission(policy: HubPermission, role: PermissionRole): VirtualFiles {
+export interface PermissionExport {
+  files: VirtualFiles;
+  warnings: AdapterWarning[];
+}
+
+function notExpressible(
+  warnings: AdapterWarning[],
+  harness: HarnessId,
+  role: PermissionRole,
+  path: string,
+  tool: string,
+  cell: string,
+  reason: string,
+): void {
+  warnings.push({
+    code: 'PERMISSION_NOT_EXPRESSIBLE',
+    path,
+    detail: `${harness} / ${role}: tool ${tool}, cell ${cell} — ${reason}`,
+  });
+}
+
+function exportClaudeCodePermission(policy: HubPermission, role: PermissionRole): PermissionExport {
   const allow: string[] = [];
   const ask: string[] = [];
   const deny: string[] = [];
@@ -61,10 +82,12 @@ function exportClaudeCodePermission(policy: HubPermission, role: PermissionRole)
     else if (d === 'ask') ask.push(rule);
     else deny.push(rule);
   }
-  return { [`.claude/settings.${role}.json`]: canonicalJson({ permissions: { allow, ask, deny } }) };
+  return { files: { [`.claude/settings.${role}.json`]: canonicalJson({ permissions: { allow, ask, deny } }) }, warnings: [] };
 }
 
-function exportCodexPermission(policy: HubPermission, role: PermissionRole): VirtualFiles {
+function exportCodexPermission(policy: HubPermission, role: PermissionRole): PermissionExport {
+  const path = `.codex/permissions.${role}.toml`;
+  const warnings: AdapterWarning[] = [];
   const enabled: string[] = [];
   const disabled: string[] = [];
   const tools: Record<string, { approval_mode: string }> = {};
@@ -79,11 +102,21 @@ function exportCodexPermission(policy: HubPermission, role: PermissionRole): Vir
       tools[tool.name] = { approval_mode: 'prompt' };
     } else if (tool.effect === 'read') {
       tools[tool.name] = { approval_mode: 'auto' };
+    } else {
+      // allow + effect: write has no defined Codex tier: the tool is enabled
+      // without an approval_mode line, with no approximation invented.
+      notExpressible(
+        warnings,
+        'codex',
+        role,
+        path,
+        tool.name,
+        'allow + effect:write',
+        'no defined approval tier for allow-without-confirmation on a write tool; the tool is enabled with no approval_mode line',
+      );
     }
-    // allow + effect: write has no defined Codex tier: the tool is enabled
-    // without an approval_mode line, with no approximation invented.
   }
-  return { [`.codex/permissions.${role}.toml`]: emitToml({ mcp_servers: { hub: { enabled_tools: enabled, disabled_tools: disabled, tools } } }) };
+  return { files: { [path]: emitToml({ mcp_servers: { hub: { enabled_tools: enabled, disabled_tools: disabled, tools } } }) }, warnings };
 }
 
 // MCP action names replace unsupported characters with `_`; the page does
@@ -93,36 +126,65 @@ function opencodeAction(toolName: string): string {
   return `hub_${toolName.replace(/[.-]/g, '_')}`;
 }
 
-function exportOpencodePermission(policy: HubPermission, role: PermissionRole): VirtualFiles {
+function exportOpencodePermission(policy: HubPermission, role: PermissionRole): PermissionExport {
   const permissions = policy.tools.map((tool) => ({
     action: opencodeAction(tool.name),
     resource: '*',
     effect: disposition(policy, role, tool.name),
   }));
-  return { [`opencode.permissions.${role}.json`]: canonicalJson({ $schema: 'https://opencode.ai/config.json', permissions }) };
+  return { files: { [`opencode.permissions.${role}.json`]: canonicalJson({ $schema: 'https://opencode.ai/config.json', permissions }) }, warnings: [] };
 }
 
-function exportGeminiPermission(policy: HubPermission, role: PermissionRole): VirtualFiles {
+function exportGeminiPermission(policy: HubPermission, role: PermissionRole): PermissionExport {
+  const path = `.gemini/policies/hub.${role}.toml`;
+  const warnings: AdapterWarning[] = [];
   const lines: string[] = [];
   for (const tool of policy.tools) {
     const d = disposition(policy, role, tool.name);
     const decision = d === 'ask' ? 'ask_user' : d;
+    if (decision === 'ask_user') {
+      notExpressible(
+        warnings,
+        'gemini',
+        role,
+        path,
+        tool.name,
+        'ask',
+        'ask_user is honored in interactive sessions only; non-interactive runs treat it as deny',
+      );
+    }
     if (lines.length > 0) lines.push('');
     lines.push('[[rule]]', `mcpName = "hub"`, `toolName = ${JSON.stringify(tool.name)}`, `decision = "${decision}"`, 'priority = 100');
   }
-  return { [`.gemini/policies/hub.${role}.toml`]: `${lines.join('\n')}\n` };
+  return { files: { [path]: `${lines.join('\n')}\n` }, warnings };
 }
 
 // Cursor has an allowlist only: ask is written by omission (in Allowlist run
 // mode the operator is re-asked) and deny is not expressible (no deny list).
-function exportCursorPermission(policy: HubPermission, role: PermissionRole): VirtualFiles {
-  const mcpAllowlist = policy.tools
-    .filter((tool) => disposition(policy, role, tool.name) === 'allow')
-    .map((tool) => `hub:${tool.name}`);
-  return { [`.cursor/permissions.${role}.json`]: canonicalJson({ mcpAllowlist }) };
+function exportCursorPermission(policy: HubPermission, role: PermissionRole): PermissionExport {
+  const path = `.cursor/permissions.${role}.json`;
+  const warnings: AdapterWarning[] = [];
+  const mcpAllowlist: string[] = [];
+  for (const tool of policy.tools) {
+    const d = disposition(policy, role, tool.name);
+    if (d === 'allow') {
+      mcpAllowlist.push(`hub:${tool.name}`);
+    } else if (d === 'deny') {
+      notExpressible(
+        warnings,
+        'cursor',
+        role,
+        path,
+        tool.name,
+        'deny',
+        'no deny list exists; the tool is absent from mcpAllowlist, which does not reject it',
+      );
+    }
+  }
+  return { files: { [path]: canonicalJson({ mcpAllowlist }) }, warnings };
 }
 
-export function exportPermission(harness: HarnessId, policy: HubPermission, role: PermissionRole): VirtualFiles {
+export function exportPermission(harness: HarnessId, policy: HubPermission, role: PermissionRole): PermissionExport {
   const valid = hubPermissionSchema.parse(policy);
   switch (harness) {
     case 'claude-code':
