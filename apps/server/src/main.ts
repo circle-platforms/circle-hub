@@ -27,6 +27,7 @@ import { Assessments } from '../../../packages/methods/src/assessments.ts';
 import {ToolProviders} from '../../../packages/methods/src/providers.ts';
 import {ProductModules} from '../../../packages/methods/src/product-modules.ts';
 import {readEffectMigration} from '../../../packages/execution/src/read-effect-migration.ts';
+import {readReleaseAuditMigration} from '../../../packages/execution/src/read-release-audit-migration.ts';
 import {ExecutionSecrets} from '../../../packages/execution/src/secret-lifecycle.ts';
 import { Checklists } from '../../../packages/tasks/src/checklists.ts';
 import { checklistMigration } from '../../../packages/tasks/src/checklist-migration.ts';
@@ -72,7 +73,7 @@ import {ChangeSetSubmission} from '../../../packages/contracts/src/index.ts';
 
 function environment(name: string): string { const value = process.env[name]; if (!value) throw new Error(`Required environment variable: ${name}`); return value; }
 const store = new Store(JSON.parse(environment('CIRCLE_SERVER_DATABASE_CONFIG')));
-await store.migrate([taskMigration,deliveryMigration,knowledgeMigration,executionMigration,...packageMigrations,approvalMigration,conclusionMigration,checklistMigration,connectorMigration,entityMigration,assetMigration,graphMigration,toolMigration,skillMigration,automationMigration,automationOutcomeMigration,knowledgePageMigration,automationOriginMigration,ingestionMigration,oauthMigration,resourceIdentityMigration,roleMigration,changeSetMigration,changeSetDependenciesMigration,enforcementMigration,sessionMigration,toolRolesMigration,readEffectMigration]);
+await store.migrate([taskMigration,deliveryMigration,knowledgeMigration,executionMigration,...packageMigrations,approvalMigration,conclusionMigration,checklistMigration,connectorMigration,entityMigration,assetMigration,graphMigration,toolMigration,skillMigration,automationMigration,automationOutcomeMigration,knowledgePageMigration,automationOriginMigration,ingestionMigration,oauthMigration,resourceIdentityMigration,roleMigration,changeSetMigration,changeSetDependenciesMigration,enforcementMigration,sessionMigration,toolRolesMigration,readEffectMigration,readReleaseAuditMigration]);
 const auth = new Auth(store,{developmentTtlMs:process.env.CIRCLE_SERVER_DEV_TOKEN_TTL_MS?Number(process.env.CIRCLE_SERVER_DEV_TOKEN_TTL_MS):undefined,runTokenTtlMs:process.env.CIRCLE_SERVER_RUN_TOKEN_TTL_MS?Number(process.env.CIRCLE_SERVER_RUN_TOKEN_TTL_MS):undefined});
 requireCondition(process.env.CIRCLE_SERVER_DEV_AUTH === '1', 'INVALID_PAYLOAD', 'Phase one requires explicitly enabled development authentication');
 await auth.initializeDevelopment(environment('CIRCLE_SERVER_DEV_IDENTITIES'));
@@ -93,6 +94,7 @@ const execution = new Operations(store,auth,tasks,knowledge);
 const catalog=new ToolCatalog(store,auth,assets,tasks,execution,graph,installedToolPackages);await catalog.initialize(process.env.CIRCLE_SERVER_CONNECTOR_PROFILES);
 const ingestions=new Ingestions(store,tasks,graph,installedToolPackages);catalog.ingestions=ingestions;
 catalog.sourceArtifacts=sourceArtifacts;
+catalog.resourceClients=serviceClients;
 assets.prepareRegistration=(ctx,input,id,tx)=>sourceArtifacts.prepare(ctx,input,id,tx);
 assets.decorateView=row=>row.kind==='knowledge-source'&&row.configuration.schema==='external-source-artifact/1'?sourceArtifacts.view(row):{};
 assets.validateRegistration=async(ctx,input,id,tx)=>{await sourceArtifacts.validate(ctx,input,id,tx);await catalog.register(ctx,input,id,tx);};
@@ -104,6 +106,8 @@ const skills=new SkillPacks(store,auth,tasks,approvals,assets,catalog,execution,
 const executionSecrets=new ExecutionSecrets(store,assets.vault,skills.secrets);
 skills.changeSets=changeSets;
 let executionProfiles:Record<string,unknown>={};if(process.env.CIRCLE_SERVER_EXECUTION_GATEWAYS)try{executionProfiles=JSON.parse(await readFile(process.env.CIRCLE_SERVER_EXECUTION_GATEWAYS,'utf8')).profiles??{};}catch{/* Unavailable profiles remain blocked dependencies. */}
+catalog.gatewayProfiles=executionProfiles;
+assets.healthCheck=async(ctx,asset)=>{if(asset.configuration.packageId!=='case-gateway')return {result:'unknown',reason:'checker-not-registered'};const entry=(await catalog.available(ctx)).find(item=>item.row.asset_id===asset.assetId&&item.definition.handler==='gateway.health');if(!entry)return {result:'unavailable',reason:'gateway-binding-unavailable'};try{await catalog.call(ctx,entry.view.name,{args:{},idempotencyKey:randomUUID()});return {result:'available',reason:'gateway-read-confirmed'};}catch(error){return {result:'unavailable',reason:error instanceof ApiError?error.code:'gateway-check-failed'};}};
 changeSets.profileIdentity=(type,ref)=>{if(type==='runtime')return ref==='circle-runtime'?skills.runtimeDigest:null;const value=type==='connector'?(Object.hasOwn(catalog.profiles,ref)?catalog.profiles[ref]:null):type==='execution'?(Object.hasOwn(executionProfiles,ref)?executionProfiles[ref]:null):null;return value?canonicalHash(value):null;};
 const runtimeProfiles=()=>[...Object.keys(catalog.profiles).map(profileRef=>({profileType:'connector',profileRef})),...Object.keys(executionProfiles).map(profileRef=>({profileType:'execution',profileRef})),...(skills.runtime?[{profileType:'runtime',profileRef:'circle-runtime'}]:[])].map(profile=>({...profile,profileSha256:changeSets.profileIdentity!(profile.profileType,profile.profileRef),verification:{ruleId:'runtime-profile-observation',ruleVersion:'1.0.0',result:'observed'}}));
 changeSets.validators.set('skill-package',(tx,ctx,asset)=>skills.changeDependencies(tx,ctx,asset));
@@ -222,6 +226,7 @@ const server = createListener(async (request, response) => {
     if(url.pathname===CLIENT_ROUTES.moduleInstall.path&&request.method==='POST'){send(response,201,{data:await modules.install(ctx,await body(request,MAX_WORKER_REPORT_BYTES),z.string().optional().parse(request.headers['x-scope-id']))});return;}
     const skillRun=/^\/v1\/skillpacks\/([^/]+)\/runs$/.exec(url.pathname);
     if(skillRun&&request.method==='POST'){send(response,202,{data:await skills.run(ctx,SkillPackId.parse(skillRun[1]),await body(request,MAX_WORKER_REPORT_BYTES))});return;}
+    const skillCandidate=/^\/v1\/skillpacks\/(skp_[a-f0-9]{32})$/.exec(url.pathname);if(skillCandidate&&request.method==='GET'){send(response,200,{data:await skills.candidate(ctx,skillCandidate[1])});return;}
     if(url.pathname===CLIENT_ROUTES.tools.path&&request.method==='GET'){
       const listing=await catalog.list(ctx);response.setHeader('etag',listing.etag);response.setHeader('vary','Authorization');
       if(request.headers['if-none-match']===listing.etag){closeOnShutdown(response);response.writeHead(304);response.end();}

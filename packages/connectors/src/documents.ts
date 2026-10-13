@@ -25,7 +25,7 @@ export class Documents {
       return [{path:this.source.path(href,path),etag:get('getetag'),modifiedAt:get('getlastmodified'),size:Number(get('getcontentlength')??0),directory:xmlNodes(successful,'collection').length>0}];
     });return {result,evidence};
   }
-  async get(path:string):Promise<{result:{path:string;contentBase64:string};evidence:RawReturn}>{const evidence=await this.source.read(path);return {result:{path:evidence.path,contentBase64:evidence.bytes.toString('base64')},evidence};}
+  async get(path:string):Promise<{result:any;evidence:RawReturn}>{const evidence=await this.source.read(path);return {result:{path:evidence.path,...(evidence.bytes.length<=256*1024?{contentBase64:evidence.bytes.toString('base64')}:{content:{sha256:evidence.sha256,size:evidence.bytes.length}})},evidence};}
   async search(args:{query:string;path?:string;version?:string;limit?:number;after?:string},root:string,options:DocumentOptions={},cache=new SourceCache(),namespace='anonymous'){
     const limit=z.number().int().min(1).max(100).parse(args.limit??20),policy=DocumentOptions.parse(options),base=this.source.path(root),rootPath=base.endsWith('/')?base:`${base}/`;let selected=args.path??rootPath;
     if(!args.path&&args.version&&policy.versionDirectoryTemplate){requireCondition(/^\d+(?:\.\d+){1,2}$/.test(args.version),'INVALID_PAYLOAD','Version line is malformed');selected=this.source.path(policy.versionDirectoryTemplate.replace('{version}',args.version.split('.').join(policy.versionSeparator)),rootPath);}

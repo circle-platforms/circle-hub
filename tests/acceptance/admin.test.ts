@@ -18,7 +18,7 @@ async function developmentStack(t:TestContext):Promise<any>{
   const ready=await until(async()=>{if(child.exitCode!==null)throw new Error(errors);for(const line of output.split('\n'))try{const data=JSON.parse(line);if(data.type==='dev-stack-ready')return data;}catch{}return false;},20_000);pid=ready.pid;
   const login=await fetch(`${ready.url}/v1/auth/dev-login`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(ready.login)});
   const token=(await login.json() as any).data.token;
-  return {...ready,token,headers:{authorization:`Bearer ${token}`,'content-type':'application/json'}};
+  return {...ready,token,headers:{authorization:`Bearer ${token}`,'content-type':'application/json'},records:()=>output.split('\n').flatMap(line=>{try{return [JSON.parse(line)];}catch{return [];}})};
 }
 
 function keepAliveGet(url:string,headers:Record<string,string>,agent:Agent){
@@ -61,6 +61,8 @@ test('admin graceful restart actually changes the server process and keeps tasks
   const first=(await(await fetch(`${ready.url}/v1/tasks/${admitted.taskId}/events?after=0`,{headers})).json() as any).data;
   const restarted=await command({...process.env,CIRCLE_SERVER_URL:ready.url,CIRCLE_SERVER_TOKEN:token},['restart','--graceful']);assert.equal(restarted.code,0,restarted.stderr);
   const after=(await(await fetch(`${ready.url}/v1/status`,{headers})).json() as any).data;assert.notEqual(after.bootId,before.bootId);assert.notEqual(after.processId,before.processId);
+  assert.ok(ready.records().some((item:any)=>item.type==='supervisor.child.exit'&&item.processId===before.processId&&item.graceful===true));
+  assert.ok(ready.records().some((item:any)=>item.type==='supervisor.child.start'&&item.processId===after.processId&&item.reason==='graceful-restart'));
   const task=(await(await fetch(`${ready.url}/v1/tasks/${admitted.taskId}/status`,{headers})).json() as any).data;assert.equal(task.phase,'waiting-input');assert.equal(task.inputRevisionId,admitted.inputRevisionId);
   const replay=(await(await fetch(`${ready.url}/v1/tasks/${admitted.taskId}/events?after=${first.after}`,{headers})).json() as any).data;assert.deepEqual(replay.events,[]);
   const workers=(await(await fetch(`${ready.url}/v1/admin/workers`,{headers})).json() as any).data;assert.ok(workers.some((worker:any)=>worker.workerId==='lab-east-01'));

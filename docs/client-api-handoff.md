@@ -445,3 +445,15 @@ Tool/Hook 子进程带 256MiB V8 堆上限，Hook 以最多 200 个 subject 的�
 模型密钥不再写进 Circle home：可信 worker 为本次运行起 loopback 模型代理，在内存中注入真实上游密钥；Circle settings/credentials 只有本次代理端点与随机 nonce，退出关闭代理。代理拒绝非模型路径、无 nonce 的请求及远程开发端点。Skill 产物出口对 run token、代理 nonce、模型密钥按字节替换，保留其它二进制字节，记录 sanitized 并重新算 SHA；事件同样脱敏。harness 自带 --yolo 不作为平台权限边界。仅一位管理员且其为 runtime-profile owner 时，明文例外仍不能自批，需先有独立 reviewer；这是明确的资格限制。
 
 每次模型代理只绑一个回环临时端口，256 位 nonce 仅本次有效，seatbelt 只开放该端口和 hub 端口。目标由当前独立批准的 circle-runtime 配置钉住，Host、查询和路径不能换目标；入站凭据头全部剥离，可信代理再注入上游 key。请求和响应各限 16MiB，SSE 按流透传，不记录体或把模型流量存为证据。runtime.model.proxy 仅记 upstreamHost/statusCode/requestBytes/responseBytes/durationMs/requestNumber。起不来/断连为 MODEL_PROXY_UNAVAILABLE，上游拒绝或超限为 MODEL_UPSTREAM_REJECTED，没有写真实 key 到 home 的降级。取消、超时、unknown、本地结束都关闭代理；取消后的事件拒绝不会覆盖已观测的本地退出。开发验收仍限回环脚本模型。
+
+## 读结果与治理内容补充
+
+docs.section / docs.search 投影里的 NUL 统一剔除；有变换的 result 带 sanitized:true、nulBytes 总数，原件仍可按 evidenceId 下载、逐字节核 SHA。docs.get 原件超过 256KiB 时返回 {path,content:{sha256,size,evidenceId,downloadPath}}，不再把大件 contentBase64 塞入任务；小件保留既有字段。下载沿用 GET /v1/knowledge/records/{evidenceId}/content 和当前来源权限。
+
+Tool 必须显式声明 effect，缺失拒绝登记。迁移 30 保持第 29 版原校验值，逐个审计/发出 operation.read-unknown-released，租约删除只针对释放集合；同一任务还有 write unknown 时保持 unknown，不推成读失败，也不重派写操作。
+
+GET /v1/skillpacks/{id} 为候选内容的只读视图：原技能摘要、files:[{path,sha256,sizeBytes}]、declaredTools、trial:{toolCalls,outputs}。同 scope 的有资格审批人能查看待批候选，即使未列入 readers；只列冻结提交清单和试跑哈希，不返回文件字节或凭据。跨 tenant/scope、失去角色或不可见草稿仍拒绝。
+
+case-gateway 资产的 POST /v1/assets/{id}/health 现在经 worker 的只读 gateway.health 调 lease_status，无远端租约；available/gateway-read-confirmed 表示本次凭据和网关读链路获确认，不代表设备就绪。gateway.topology 是 effect=read/mode=sync/最低成员的 provider Tool，实例别名遵循目录规则。worker 在 C 的当前租约/fence 与批准 runtime-profile 下，lease_acquire → bed_topology(refresh:false) → lease_release，立即释放；result 仅含 hosts（名字、没有地址）、remoteLeaseReleased、observation。原始拓扑 JSON 按 SHA 入 B，evidence 可由当前授权身份回读。管理员据这些观察登记新资源声明 allowedTestHosts，再经变更集独立批准；平台不自动批准或把返回拓扑当设备构建观察。静态密钥和 server-issued 两种方式均沿用保险箱注入，失效/无租约给明确错误，无旁路占床。
+
+supervisor 为每次子进程 start/exit/error 打一行 JSON：at/supervisorId/processId、code/signal、reason、graceful。dev:stack 会转出这些元数据；意外退出和明确 graceful 重启可区分，没有请求/响应体或凭据日志。

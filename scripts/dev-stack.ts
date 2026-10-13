@@ -50,7 +50,7 @@ async function launch(path: string,env: NodeJS.ProcessEnv,type: string): Promise
       output += data.toString();
       const lines = output.split('\n'); output = lines.pop()!;
       for (const line of lines) {
-        try { const value = JSON.parse(line); if (value.type === type) { clearTimeout(timeout); resolve(value); } } catch { /* incomplete or human-readable output */ }
+        try { const value = JSON.parse(line);if(typeof value.type==='string'&&value.type.startsWith('supervisor.'))process.stdout.write(line+'\n'); if (value.type === type) { clearTimeout(timeout); resolve(value); } } catch { /* incomplete or human-readable output */ }
       }
     });
   });

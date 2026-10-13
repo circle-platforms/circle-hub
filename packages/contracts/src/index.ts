@@ -345,6 +345,7 @@ export const CLIENT_ROUTES = {
   oauthClientCredentials:{method:'POST',path:'/v1/credentials/oauth/client-credentials',request:OAuthGrantInput},
   tools:{method:'GET',path:'/v1/tools',response:z.array(ToolView)},
   toolCall:{method:'POST',path:'/v1/tools/{name}/call',request:ToolCallInput,response:ToolCallResult},
+  skillCandidate:{method:'GET',path:'/v1/skillpacks/{id}'},
   skillpacks:{method:'GET',path:'/v1/skillpacks',response:z.array(SkillPackView)},
   skillpackSubmit:{method:'POST',path:'/v1/skillpacks',request:SkillPackSubmission,response:SkillPackView,scopeHeader:'X-Scope-Id'},
   skillpackRun:{method:'POST',path:'/v1/skillpacks/{id}/runs',request:SkillRunInput,response:z.object({taskId:TaskId})},

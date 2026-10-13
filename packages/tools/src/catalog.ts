@@ -12,23 +12,31 @@ import {Ingestions} from '../../knowledge/src/ingestion.ts';
 import type {SourceArtifacts} from '../../knowledge/src/source-artifacts.ts';
 import {ConnectorOptions,type ToolPackage,type ToolDefinition,type ConnectorProfile} from '../../connectors/src/tool-packages.ts';
 import {hydrateReturn} from '../../connectors/src/return-pointers.ts';
+import {sanitizeResult} from '../../connectors/src/result-safety.ts';
+import {GatewayProfile} from '../../connectors/src/case-gateway.ts';
+import type {ServiceClients} from '../../tasks/src/service-clients.ts';
+import {sha256} from '../../contracts/src/index.ts';
 
 export class ToolCatalog {
   store:Store;auth:Auth;assets:Assets;tasks:Tasks;execution:Operations;knowledge:KnowledgeGraph;packages:ToolPackage[];profiles:Record<string,ConnectorProfile>={};
   observed?: (tx:Transaction,ctx:AuthContext,assetId:string,raw:any,originTaskId:string)=>Promise<void>;
   ingestions?:Ingestions;
   sourceArtifacts?:SourceArtifacts;
+  gatewayProfiles:Record<string,unknown>={};
+  resourceClients?:ServiceClients;
   constructor(store:Store,auth:Auth,assets:Assets,tasks:Tasks,execution:Operations,knowledge:KnowledgeGraph,packages:ToolPackage[]){Object.assign(this,{store,auth,assets,tasks,execution,knowledge,packages});this.store=store;this.auth=auth;this.assets=assets;this.tasks=tasks;this.execution=execution;this.knowledge=knowledge;this.packages=packages;}
   async initialize(profileFile?:string):Promise<void>{
     if(profileFile){const schema=z.object({profiles:z.record(z.string(),z.object({origin:z.string().url(),root:z.string().optional(),index:z.string().optional(),payloadField:z.string().optional(),authorizationScheme:z.enum(['raw','bearer']).optional(),requestConcurrency:z.number().int().min(1).max(8).optional(),requestIntervalMs:z.number().int().min(0).max(60000).optional(),...ConnectorOptions.shape}).strict())}).strict();this.profiles=schema.parse(JSON.parse(await readFile(profileFile,'utf8'))).profiles;}
   }
   profileFor(configuration:Record<string,unknown>):ConnectorProfile|undefined{
+    if(configuration.packageId==='case-gateway'){const value=this.gatewayProfiles[configuration.runtimeProfileRef as string];if(!value)return undefined;const gateway=GatewayProfile.parse(value);return {origin:new URL(gateway.endpoint).origin,gateway,authorizationScheme:'bearer'};}
     const ref=configuration.runtimeProfileRef as string,profile=Object.hasOwn(this.profiles,ref)?this.profiles[ref]:undefined,pack=this.packageFor(configuration);if(!profile)return undefined;
     return {...profile,...(configuration.productLineId===undefined?pack?.profileOptions:pack?.productLineOptions?.[configuration.productLineId as string])};
   }
   async runtimePolicy(ctx:AuthContext,row:any,tx?:Transaction){
     const ref=row.configuration.runtimeProfileRef;if(!ref)return {allowPlaintextAuthentication:false};
-    const profile=(await (tx??this.store.pool).query(`SELECT a.asset_id,v.* FROM assets a JOIN asset_versions v ON v.asset_id=a.asset_id AND v.version=a.current_version WHERE a.tenant_id=$1 AND a.scope_id=$2 AND a.kind='runtime-profile' AND v.configuration->>'profileType'='connector' AND v.configuration->>'profileRef'=$3`,[ctx.tenantId,row.scope_id,ref])).rows[0],expected=Object.hasOwn(this.profiles,ref)?canonicalHash(this.profiles[ref]):null;
+    const type=row.configuration.packageId==='case-gateway'?'execution':'connector',configured=type==='execution'?this.gatewayProfiles:this.profiles;
+    const profile=(await (tx??this.store.pool).query(`SELECT a.asset_id,v.* FROM assets a JOIN asset_versions v ON v.asset_id=a.asset_id AND v.version=a.current_version WHERE a.tenant_id=$1 AND a.scope_id=$2 AND a.kind='runtime-profile' AND v.configuration->>'profileType'=$4 AND v.configuration->>'profileRef'=$3`,[ctx.tenantId,row.scope_id,ref,type])).rows[0],expected=Object.hasOwn(configured,ref)?canonicalHash(configured[ref]):null;
     requireCondition(profile&&['approved','running'].includes(profile.lifecycle)&&profile.approved_digest===profile.sha256&&profile.configuration.profileSha256===expected,'SOURCE_NOT_APPROVED','Runtime profile requires its current approved revision');
     return {allowPlaintextAuthentication:profile.configuration.allowPlaintextAuthentication===true,runtimeProfileAssetId:profile.asset_id,runtimeProfileVersion:profile.version};
   }
@@ -86,14 +94,17 @@ export class ToolCatalog {
     item.definition.schema.parse(spec.args.input);
     requireCondition(task.input.sourceArtifactId===spec.args.sourceArtifactId,'INPUT_REVISION_STALE','Tool source binding differs from its accepted input');
     const sourceArtifact=spec.args.sourceArtifactId?await this.sourceArtifacts!.resolve(ctx,spec.args.sourceArtifactId,scope,tx):undefined,policy=sourceArtifact?{allowPlaintextAuthentication:false}:await this.runtimePolicy(ctx,item.row,tx);
-    requireCondition(sourceArtifact||['candidate.submit','consolidation.fragments'].includes(item.definition.handler)||this.profiles[item.row.configuration.runtimeProfileRef],'SOURCE_UNREACHABLE','Runtime source profile is not configured');
-    return {sourceEffect:item.definition.effect,effects:{reads:item.definition.effect==='read'?['registered-source']:['knowledge'],writes:item.definition.effect==='write'?['knowledge-candidates']:[]},assetId:item.row.asset_id,assetVersion:item.row.version,
+    requireCondition(sourceArtifact||['candidate.submit','consolidation.fragments'].includes(item.definition.handler)||this.profileFor(item.row.configuration),'SOURCE_UNREACHABLE','Runtime source profile is not configured');
+    const gateway=this.profileFor(item.row.configuration)?.gateway,serviceClientId=item.row.configuration.serviceClientId;
+    if(gateway&&serviceClientId){requireCondition(this.resourceClients&&!item.row.declaration.credentials.length,'INVALID_PAYLOAD','Resource client binding cannot mix personal credentials');await this.resourceClients.binding(ctx,serviceClientId,item.row.asset_id,scope,['jumphost:run'],tx);}
+    return {sourceEffect:item.definition.effect,...(gateway?{resourceId:`gateway:${sha256(gateway.endpoint)}`} :{}),...(gateway&&serviceClientId?{serviceClientId}:{}),effects:{reads:item.definition.effect==='read'?['registered-source']:['knowledge'],writes:item.definition.effect==='write'?['knowledge-candidates']:[]},assetId:item.row.asset_id,assetVersion:item.row.version,
       packageId:item.row.package_id,handler:item.definition.handler,profile:this.profileFor(item.row.configuration)?{...this.profileFor(item.row.configuration),...policy}:undefined,credentialReferences:item.row.declaration.credentials,sourceArtifact};
   }
   async preflight(tx:Transaction,actor:AuthContext,operation:any,authorization:any):Promise<any>{
     if(authorization.sourceArtifact)return {packageId:authorization.packageId,handler:authorization.handler,profile:authorization.profile??{origin:'http://127.0.0.1'},sourceArtifact:authorization.sourceArtifact,cacheNamespace:canonicalHash(authorization.sourceArtifact)};
     const workerProfile=authorization.profile??(['candidate.submit','consolidation.fragments'].includes(authorization.handler)?{origin:'http://127.0.0.1'}:null);
     requireCondition(workerProfile,'SOURCE_UNREACHABLE','Runtime source profile is not configured');
+    if(authorization.serviceClientId){const injection=await this.resourceClients!.issueForOperation(tx,actor,operation,authorization.serviceClientId,['jumphost:run'],'tools.read');return {packageId:authorization.packageId,handler:authorization.handler,profile:workerProfile,injection};}
     if(authorization.credentialReferences.length&&workerProfile.allowPlaintextAuthentication&&new URL(workerProfile.origin).protocol==='http:'&&!['127.0.0.1','localhost','[::1]'].includes(new URL(workerProfile.origin).hostname)){
       const facts={operationId:operation.operation_id,assetId:authorization.assetId,plaintextAuthentication:true,stage:'dispatch',runtimeProfileAssetId:workerProfile.runtimeProfileAssetId,runtimeProfileVersion:workerProfile.runtimeProfileVersion};await this.auth.audit(actor,'tools.plaintext-authentication',facts,operation.scope_id,tx);const task=await this.tasks.internal(tx,operation.task_id);await this.execution.knowledge.evidence(tx,task,operation.operation_id,'script-conclusion',facts);
     }
@@ -122,11 +133,14 @@ export class ToolCatalog {
           if(plaintextAuthentication){const policy=await this.runtimePolicy(actor,item.row,tx);requireCondition(policy.allowPlaintextAuthentication,'SOURCE_FORBIDDEN','Plaintext exception is no longer approved');await this.auth.audit(actor,'tools.plaintext-authentication',{operationId:operation.operation_id,assetId:item.row.asset_id,plaintextAuthentication:true,runtimeProfileAssetId:policy.runtimeProfileAssetId,runtimeProfileVersion:policy.runtimeProfileVersion,sourceSha256:raw.sha256},task.scopeId,tx);}
           if(artifact)ref=await this.sourceArtifacts!.capture(tx,actor,task.scopeId,artifact,raw,item.definition.permission);
           else ref=await this.knowledge.capture(tx,actor,task.scopeId,item.row.asset_id,{...raw,sourceType:raw.sourceType??report.output.sourceType},item.definition.permission);
-          evidence.push({evidenceId:ref.evidenceId,sha256:ref.sha256});references.set(raw.path,ref);if(!artifact)await this.observed?.(tx,actor,item.row.asset_id,raw,task.taskId);}
+          evidence.push({evidenceId:ref.evidenceId,sha256:ref.sha256});references.set(raw.path,ref);
+          if(item.definition.handler==='document.get'&&result?.path===raw.path){const size=Buffer.from(raw.contentBase64,'base64').length;if(size>256*1024){const {contentBase64,...summary}=result;result={...summary,content:{sha256:raw.sha256,size,evidenceId:ref.evidenceId,downloadPath:`/v1/knowledge/records/${ref.evidenceId}/content`}};}}
+          if(!artifact)await this.observed?.(tx,actor,item.row.asset_id,raw,task.taskId);}
         const projection=this.packages.find(pack=>pack.id===item.row.package_id)?.projection;
         if(projection){requireCondition(this.ingestions,'INTERNAL_ERROR','Source ingestion outbox is not configured');const profile=this.profileFor(item.row.configuration)??{origin:'http://127.0.0.1'};const indexed=await this.ingestions.enqueue(tx,task,item.row.package_id,projection.version,{...profile,...(artifact?{sourceArtifact:artifact}:{})},[...references.values()]);await this.tasks.emit(tx,task.taskId,'knowledge.indexing.linked',indexed);}
       }
     }
+    result=sanitizeResult(result);
     const receipt={output:{result},evidence,reportHash:report.originalReportHash??canonicalHash(report),error:report.error};
     await this.execution.complete(tx,operation,report.status,receipt);
     if(report.status==='succeeded'){

@@ -10,12 +10,15 @@ import {SourceCache} from './source-cache.ts';
 import {projectSource} from './product-projections.ts';
 import type {ProductObservation} from '../../knowledge/src/product-records.ts';
 import type {SourceArtifactSnapshot} from '../../knowledge/src/source-artifacts.ts';
+import {gatewayMetadata} from './gateway-metadata.ts';
+import type {GatewayProfile} from './case-gateway.ts';
 
 export interface ToolDefinition {suffix:string;title:string;description:string;schema:z.ZodObject<any>;effect:'read'|'write';mode:'sync'|'task';minimumRole?:'viewer'|'member'|'admin';approval?:boolean;annotations?:Record<string,unknown>;permission:string;handler:string;sourceParameter?:string}
 export const ConnectorOptions=z.object({buildSite:BuildSiteOptions.optional(),documents:DocumentOptions.optional()}).strict();
 export type ConnectorOptions=z.infer<typeof ConnectorOptions>;
 export interface ToolPackage {id:string;prefix:string;productLinePrefixes?:Record<string,string>;profileOptions?:ConnectorOptions;productLineOptions?:Record<string,ConnectorOptions>;tools:ToolDefinition[];projection?:{version:string;extract:(raw:RawReturn[],profile:ConnectorProfile)=>Promise<ProductObservation[]>}}
-const tool=(suffix:string,title:string,schema:z.ZodObject<any>,permission:string,handler:string,effect:'read'|'write'='read',mode:'sync'|'task'='sync'):ToolDefinition=>({suffix,title,description:title,schema,permission,handler,effect,mode,minimumRole:effect==='read'?'viewer':'member',approval:effect==='write',annotations:{readOnlyHint:effect==='read',destructiveHint:effect==='write'}});
+export const defineTool=(suffix:string,title:string,schema:z.ZodObject<any>,permission:string,handler:string,effect:'read'|'write',mode:'sync'|'task'='sync'):ToolDefinition=>{requireCondition(effect==='read'||effect==='write','INVALID_PAYLOAD','Tool effect must be explicitly declared');return ({suffix,title,description:title,schema,permission,handler,effect,mode,minimumRole:effect==='read'?'viewer':'member',approval:effect==='write',annotations:{readOnlyHint:effect==='read',destructiveHint:effect==='write'}});};
+const tool=defineTool;
 const short=z.string().min(1).max(500),build=z.string().min(1).max(200);
 const pagination={page:z.number().int().min(1).max(1_000_000).default(1),limit:z.number().int().min(1).max(100).default(20)};
 const mirrorQuery=z.object({keyword:short.optional(),product:z.union([z.string().regex(/^[1-9]\d*$/,'Use a positive product id from the products tool'),z.number().int().positive()]).optional(),status:z.enum(['active','resolved','closed']).optional(),severity:z.number().int().min(1).max(5).optional(),assignedTo:short.optional(),openedBy:short.optional(),lastEditedDate_start:short.optional(),lastEditedDate_end:short.optional(),...pagination}).strict().superRefine((value,ctx)=>{
@@ -26,42 +29,46 @@ const versionQuery=z.object({versionLine:short.optional(),page:z.number().int().
 const compactCoverage=(coverage:ReturnType<typeof buildCoverage>)=>({complete:coverage.complete,counts:{readPages:coverage.readPages.length,missing:coverage.missing.length,conflicts:coverage.conflicts.length,superseded:coverage.superseded.length},missing:coverage.missing.slice(0,20),conflicts:coverage.conflicts.slice(0,20).map(item=>({buildId:item.buildId,name:item.name,platform:item.platform,code:item.code})),superseded:coverage.superseded.slice(0,20).map(item=>({buildId:item.buildId,name:item.name,platform:item.platform,count:item.revisions.length})),detailsTruncated:[coverage.missing,coverage.conflicts,coverage.superseded].some(items=>items.length>20)});
 export const toolPackages:ToolPackage[]=[
   {id:'build-site',prefix:'buildsite',tools:[
-    tool('versions','分页列出精简构建：默认20、最多100；按正式发布日期倒序；可筛选版本线、主平台和可用命令树',versionQuery,'builds.read','build.versions'),
-    tool('command_tree','取固定构建的命令树投影',z.object(selection).strict(),'builds.read','build.tree'),
-    tool('fixed_releases','按编号体系核对相关构建修复清单；保留覆盖范围',z.object({legacyIssueId:z.string().regex(/^\d*$/).optional(),issueId:z.string().regex(/^\d*$/).optional(),issueSystem:z.enum(['bugzilla','zentao']).default('bugzilla'),builds:z.array(build).min(1).max(20),platform:short.nullable().optional(),versionLine:short.optional()}).strict().refine(args=>args.issueId!==undefined||args.legacyIssueId!==undefined,'Provide an issue identifier').refine(args=>args.issueId===undefined||args.legacyIssueId===undefined||args.issueId===args.legacyIssueId,'Issue identifiers disagree'),'builds.read','build.fixed'),
-    tool('command_heads','查命令头；超过 128 条明确失败',z.object({...selection,prefix:z.string().max(500)}).strict(),'builds.read','build.heads'),
-    tool('command_param','最长匹配命令头及参数；最多八词',z.object({...selection,head:short}).strict(),'builds.read','build.parameters'),
-    tool('command_check','按固定 XML 与确定性规则核对命令',z.object({...selection,commands:z.array(z.string().max(2000)).min(1).max(200)}).strict(),'builds.read','build.check'),
+    tool('versions','分页列出精简构建：默认20、最多100；按正式发布日期倒序；可筛选版本线、主平台和可用命令树',versionQuery,'builds.read','build.versions','read'),
+    tool('command_tree','取固定构建的命令树投影',z.object(selection).strict(),'builds.read','build.tree','read'),
+    tool('fixed_releases','按编号体系核对相关构建修复清单；保留覆盖范围',z.object({legacyIssueId:z.string().regex(/^\d*$/).optional(),issueId:z.string().regex(/^\d*$/).optional(),issueSystem:z.enum(['bugzilla','zentao']).default('bugzilla'),builds:z.array(build).min(1).max(20),platform:short.nullable().optional(),versionLine:short.optional()}).strict().refine(args=>args.issueId!==undefined||args.legacyIssueId!==undefined,'Provide an issue identifier').refine(args=>args.issueId===undefined||args.legacyIssueId===undefined||args.issueId===args.legacyIssueId,'Issue identifiers disagree'),'builds.read','build.fixed','read'),
+    tool('command_heads','查命令头；超过 128 条明确失败',z.object({...selection,prefix:z.string().max(500)}).strict(),'builds.read','build.heads','read'),
+    tool('command_param','最长匹配命令头及参数；最多八词',z.object({...selection,head:short}).strict(),'builds.read','build.parameters','read'),
+    tool('command_check','按固定 XML 与确定性规则核对命令',z.object({...selection,commands:z.array(z.string().max(2000)).min(1).max(200)}).strict(),'builds.read','build.check','read'),
   ]},
   {id:'documents',prefix:'docs',tools:[
-    tool('list','分页列文档目录；path 省略用已登记根，须为站点绝对目录路径',z.object({path:short.optional(),...pagination}).strict(),'docs.fetch','document.list'),
-    tool('get','取文档原件与摘要',z.object({file:short}).strict(),'docs.fetch','document.get'),
-    tool('search','分页查选定目录；每页最多20个原件（limit上限100），按 nextCursor 传 after 补读，coverage.complete 才是完整搜索',z.object({query:short,path:short.optional(),version:short.optional(),limit:pagination.limit,after:z.string().min(1).max(2048).optional()}).strict(),'docs.fetch','document.search'),
-    tool('section','取命令小节或行窗口，最多 80 行',z.object({file:short,anchor:short.optional(),line:z.number().int().positive().optional(),window:z.number().int().min(1).max(80).default(40)}).strict().refine(value=>!!value.anchor!==!!value.line,'Provide an anchor or line'),'docs.fetch','document.section'),
+    tool('list','分页列文档目录；path 省略用已登记根，须为站点绝对目录路径',z.object({path:short.optional(),...pagination}).strict(),'docs.fetch','document.list','read'),
+    tool('get','取文档原件与摘要',z.object({file:short}).strict(),'docs.fetch','document.get','read'),
+    tool('search','分页查选定目录；每页最多20个原件（limit上限100），按 nextCursor 传 after 补读，coverage.complete 才是完整搜索',z.object({query:short,path:short.optional(),version:short.optional(),limit:pagination.limit,after:z.string().min(1).max(2048).optional()}).strict(),'docs.fetch','document.search','read'),
+    tool('section','取命令小节或行窗口，最多 80 行',z.object({file:short,anchor:short.optional(),line:z.number().int().positive().optional(),window:z.number().int().min(1).max(80).default(40)}).strict().refine(value=>!!value.anchor!==!!value.line,'Provide an anchor or line'),'docs.fetch','document.section','read'),
   ]},
   {id:'query-mirror',prefix:'query',tools:[
-    tool('products','分页列出当前镜像身份可读的产品 id/name，用于有界缺陷搜索',z.object(pagination).strict(),'defects.search','mirror.products'),
-    tool('bug_search','分页查询镜像；必须带 product、status 或日期；keyword 还必须带 product，避免全表扫描',mirrorQuery,'defects.search','mirror.search'),
-    tool('bug_detail','批量取缺陷详情（每批最多 100）',z.object({ids:z.array(z.union([z.number().int().nonnegative(),z.string().regex(/^\d+$/)])).min(1).max(100)}).strict(),'defects.search','mirror.detail'),
+    tool('products','分页列出当前镜像身份可读的产品 id/name，用于有界缺陷搜索',z.object(pagination).strict(),'defects.search','mirror.products','read'),
+    tool('bug_search','分页查询镜像；必须带 product、status 或日期；keyword 还必须带 product，避免全表扫描',mirrorQuery,'defects.search','mirror.search','read'),
+    tool('bug_detail','批量取缺陷详情（每批最多 100）',z.object({ids:z.array(z.union([z.number().int().nonnegative(),z.string().regex(/^\d+$/)])).min(1).max(100)}).strict(),'defects.search','mirror.detail','read'),
   ]},
   {id:'environment-view',prefix:'env',tools:[
-    tool('inventory','经只读跳板列出环境资源',z.object({}).strict(),'environment.read','environment.inventory'),
-    tool('topology','查看环境拓扑',z.object({environmentId:short}).strict(),'environment.read','environment.topology'),
-    tool('device_status','查看设备状态',z.object({deviceId:short}).strict(),'environment.read','device.status'),
-    tool('framework_files','查看框架镜像文件目录',z.object({}).strict(),'environment.read','framework.files'),
-    tool('framework_get','取框架镜像文件',z.object({path:short}).strict(),'environment.read','framework.get'),
+    tool('inventory','经只读跳板列出环境资源',z.object({}).strict(),'environment.read','environment.inventory','read'),
+    tool('topology','查看环境拓扑',z.object({environmentId:short}).strict(),'environment.read','environment.topology','read'),
+    tool('device_status','查看设备状态',z.object({deviceId:short}).strict(),'environment.read','device.status','read'),
+    tool('framework_files','查看框架镜像文件目录',z.object({}).strict(),'environment.read','framework.files','read'),
+    tool('framework_get','取框架镜像文件',z.object({path:short}).strict(),'environment.read','framework.get','read'),
   ]},
-  {id:'case-gateway',prefix:'gateway',tools:[]},
+  {id:'case-gateway',prefix:'gateway',tools:[
+    {...tool('health','核对网关凭据链路，只调用 lease_status、不占租约',z.object({}).strict(),'tools.read','gateway.health','read'),minimumRole:'member'},
+    {...tool('topology','在 worker 租约内读取床拓扑，立即释放；仅返回主机名，原始观察保留为受控证据',z.object({}).strict(),'tools.read','gateway.topology','read'),minimumRole:'member'},
+  ]},
   {id:'knowledge',prefix:'knowledge',tools:[
-    tool('shared_fragments','分页取本人明确许可共享的片段与原始证据',z.object({limit:z.number().int().min(1).max(100).default(20),after:z.string().min(1).max(2048).optional()}).strict(),'knowledge.read','consolidation.fragments'),
+    tool('shared_fragments','分页取本人明确许可共享的片段与原始证据',z.object({limit:z.number().int().min(1).max(100).default(20),after:z.string().min(1).max(2048).optional()}).strict(),'knowledge.read','consolidation.fragments','read'),
     tool('claim_submit','提交个人沉淀候选；不自动提升为团队知识',z.object({claim:z.object({subject:short,predicate:short,value:z.unknown(),conditions:z.record(z.string(),z.unknown()).default({})}).strict(),evidence:z.array(z.object({evidenceId:z.string(),sha256:z.string().regex(/^[a-f0-9]{64}$/)}).strict()).min(1).max(100)}).strict(),'knowledge.submit','candidate.submit','write','task'),
   ]},
 ];
 for(const pack of toolPackages){if(pack.id==='build-site')for(const definition of pack.tools)if(Object.hasOwn(definition.schema.shape,'build'))definition.sourceParameter='build';if(pack.id!=='knowledge')pack.projection={version:pack.id==='build-site'?'source-projection/3':pack.id==='query-mirror'?'source-projection/2':'source-projection/1',extract:(raw,profile)=>projectSource(pack.id,raw,profile)};}
-export interface ConnectorProfile {origin:string;root?:string;index?:string;payloadField?:string;requestConcurrency?:number;requestIntervalMs?:number;authorizationScheme?:'raw'|'bearer';buildSite?:BuildSiteOptions;documents?:DocumentOptions;sourceArtifact?:SourceArtifactSnapshot;allowPlaintextAuthentication?:boolean;runtimeProfileAssetId?:string;runtimeProfileVersion?:string}
+export interface ConnectorProfile {origin:string;root?:string;index?:string;payloadField?:string;requestConcurrency?:number;requestIntervalMs?:number;authorizationScheme?:'raw'|'bearer';buildSite?:BuildSiteOptions;documents?:DocumentOptions;gateway?:GatewayProfile;sourceArtifact?:SourceArtifactSnapshot;allowPlaintextAuthentication?:boolean;runtimeProfileAssetId?:string;runtimeProfileVersion?:string}
 export interface ToolReturn {result:any;raw:RawReturn[];sourceType:string}
 const defaultToolCache=new SourceCache();
 export async function executeTool(packageId:string,handler:string,args:any,profile:ConnectorProfile,credential?:string,options:{cache?:SourceCache;cacheNamespace?:string;freshCommands?:boolean;sourceArtifact?:SourceArtifactSnapshot;originals?:RawReturn[]}={}):Promise<ToolReturn>{
+  if(packageId==='case-gateway'){requireCondition(profile.gateway&&credential,'SOURCE_LOGIN_EXPIRED','Gateway metadata requires its approved profile and credential');return gatewayMetadata(handler,profile.gateway,credential);}
   if(handler==='candidate.submit')return {result:args,raw:[],sourceType:'skill-run'};
   if(handler==='consolidation.fragments')return {result:args,raw:[],sourceType:'shared-session'};
   if(handler==='mirror.search'&&!mirrorQuery.safeParse(args).success)throw new ApiError('INVALID_PAYLOAD','Provide product, status or date filters; keyword also requires product. Use page and limit for compact results',{requiredFilters:['product','status','lastEditedDate_start','lastEditedDate_end']});

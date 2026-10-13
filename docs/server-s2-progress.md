@@ -671,3 +671,15 @@ worker 原件先以 SHA 存进 B，再回报 objectKey/sha256/size，C 在当前
 第一轮加入代理元数据后，取消验收发现事件权限撤销错误覆盖本地退出观察；已修正，专项 **1/1**，unknown 与远端停止未确认保持。重新完整冻结回归 contracts **4/4**、methods **40/40**、acceptance **207/207**、references **7/7**，共 **258/258**，固定 Circle 8b2ceb6 / APV 224daa6，**无 skip**。最后将旧脚本模型配置的 key 封入保险箱，授权记录只存占位引用，配置摘要不改；此小改动的固定 RPC/静态模式联合验证结果另记后续行。
 
 保险箱引用小改动最终固定 Circle 联合 **9/9**（含取消、慢运行续期、静态共享与隔离）、typecheck 通过；上述完整回归与最后的小改动专项分别记录。diff 检查通过。仅本地签署提交，后续只读/网关/通知代码和验收继续留工作区，未混入本笔。
+
+## 44：读结果、迁移审计、候选内容和网关元数据
+
+先写合成验收：含 NUL 的 section/search 复现任务 JSONB 失败；显式 effect 缺实现；候选 GET 返回 404；网关 health 没 checker；supervisor 重启没有日志。逐项实现后，NUL 投影剔除并计数/标记，原件 SHA 保持，大件 docs.get 只交付内容指针。Tool effect 必填。迁移 30 不改已部署的第 29 版，逐个记录释放审计与事件、限定租约集合、保留同任务的 unknown 写操作，并补偿第 29 版可能写错的任务 phase。
+
+候选技能的 GET 只展示冻结文件路径/SHA/大小、声明工具与试跑哈希，待批审批人可见，角色撤销和跨范围仍拒绝。supervisor 记录 start/exit/error 的时间、pid、退出码/信号、是否 graceful，dev-stack 也转出这些 JSON 行；合成意外退出与真实启动脚本的 graceful 重启分别通过，不据此推断先前现网 PID 变化的原因。
+
+网关 health 经 worker 调 lease_status，不占床租约。选择正规 gateway.topology Tool：C 的当前授权/资源租约/fence → 远端取得租约 → 读取缓存拓扑 → 立即释放，结果仅主机名字，原 JSON 按 SHA 保存并可由授权者回读；没有地址进入提示或元数据响应。管理员用观察登记 allowedTestHosts，再经变更集独立批准，程序不代批。静态密钥与 server-issued 合成路径 **2/2**；后者按操作租约签发，吊销客户端立刻阻止调用。未调用真实网关或设备。
+
+补充联合 **6/6**、完整原件两条与显式 effect 契约验证通过，完整冻结回归待下一行记录。第 6 节通知验收已扩为无任务的失败 bot 也有持久、私有通知，仍留在工作区，未混入这笔。
+
+最终冻结完整 contracts **5/5**、methods **40/40**、acceptance **213/213**、references **7/7**，共 **265/265**，固定 Circle 8b2ceb6 / APV 224daa6，**无 skip**。typecheck、diff 与 **714** 归档核验通过；补充联合为 **12/12**。仅本地签署提交，不 push、不部署、不改真实网关或 Circle。第 6/8 节的当前工作仍未混入本笔。

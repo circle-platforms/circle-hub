@@ -18,6 +18,8 @@ export async function caseGateway(t:TestContext){
       }
     }catch{res.writeHead(503);res.end();return;}}
     let result:any={ok:true};
+    if(name==='lease_status')result={ok:true,lease:null};
+    if(name==='bed_topology')result={ok:true,topology:{devices:[{name:'routera',interfaces:[{address:'192.0.2.31'}]},{name:'node-a'},{name:'node-b'}]}};
     if(name==='lease_acquire')result=state.refuseLease?{ok:false,error:'lease unavailable'}:{ok:true,lease_id:'synthetic-lease',token:1,expires_in_s:1800};
     if(name==='env_prepare'){const wanted=rpc.params.arguments.device_build,match=!state.missingBuild&&state.actualBuild===wanted;result={ok:true,ready:match,build_checked:true,device_count:2,checks:[{check:'device_build',ok:match,detail:state.missingBuild?'build not found in output':`device reports ${state.actualBuild}, gateway bundle is ${wanted}`} ]};}
     if(name==='case_submit'){

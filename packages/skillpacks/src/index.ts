@@ -68,6 +68,11 @@ export class SkillPacks {
     const p=await this.auth.check(ctx,'skillpacks.read'),rows=(await this.store.pool.query('SELECT * FROM skill_packages WHERE tenant_id=$1 AND scope_id=ANY($2::text[]) ORDER BY created_at DESC,skill_pack_id',[p.tenantId,p.scopes])).rows,visible=[];
     for(const row of rows){try{await this.assets.row(ctx,row.asset_id);visible.push(this.view(row));}catch(error){if(!(error instanceof ApiError))throw error;}}return visible;
   }
+  async candidate(ctx:AuthContext,id:string):Promise<any>{
+    const p=await this.auth.policy(ctx),row=(await this.store.pool.query('SELECT * FROM skill_packages WHERE skill_pack_id=$1 AND tenant_id=$2 AND scope_id=ANY($3::text[])',[id,p.tenantId,p.scopes])).rows[0];
+    requireCondition(row,'SOURCE_FORBIDDEN','Skill package is not available to this identity');await this.assets.metadataRow(ctx,row.asset_id);
+    return {...this.view(row),files:row.files.map((file:any)=>({path:file.path,sha256:file.sha256,sizeBytes:file.size})),declaredTools:row.manifest.tools,trial:row.trial};
+  }
   async approvalAuthorize(tx:Transaction,ctx:AuthContext,task:any,action:any):Promise<void>{
     const row=await this.row(ctx,action.args.skillPackId,'skillpacks.submit',tx);
     requireCondition(row.owner_id===ctx.principalId&&row.approval_task_id===task.taskId&&row.digest===action.args.digest&&task.input.digest===row.digest,'APPROVAL_STALE','Package approval binding differs');
