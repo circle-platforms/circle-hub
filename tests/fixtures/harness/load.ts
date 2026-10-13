@@ -5,6 +5,7 @@ import type { VirtualFiles } from '../../../packages/harness-adapters/neutral.ts
 export const claudeCodeFixtureRoot = join(import.meta.dirname, 'claude-code');
 export const codexFixtureRoot = join(import.meta.dirname, 'codex');
 export const opencodeFixtureRoot = join(import.meta.dirname, 'opencode');
+export const geminiFixtureRoot = join(import.meta.dirname, 'gemini');
 
 // `**/.claude/settings.local.json` is covered by the global gitignore (the
 // name is machine-local by convention), so this fixture entry is synthesized

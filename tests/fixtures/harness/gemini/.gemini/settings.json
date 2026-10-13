@@ -1,0 +1,38 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "Bash",
+        "sequential": true,
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh scripts/session-start.sh",
+            "name": "session-start",
+            "timeout": 5000
+          }
+        ]
+      }
+    ]
+  },
+  "mcpServers": {
+    "local-tools": {
+      "command": "node",
+      "args": [
+        "server.js"
+      ],
+      "env": {
+        "TOOLS_KEY": "synthetic-gemini-key"
+      }
+    },
+    "remote-hub": {
+      "httpUrl": "https://mcp.example.com/gemini",
+      "headers": {
+        "Authorization": "Bearer synthetic-gemini-token"
+      }
+    },
+    "legacy-sse": {
+      "url": "https://mcp.example.com/sse"
+    }
+  }
+}

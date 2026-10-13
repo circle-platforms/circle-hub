@@ -529,9 +529,73 @@ export interface HookSpecific {
   entryIndex?: number;
 }
 
-// Rebuild a hooks file from hook manifests, grouped by event and matcher
-// group in their original positions. The command comes from the (sanitized)
-// manifest handler; extra entry keys are merged back from the original file.
+// Rebuild the events object of one hooks file from hook manifests, grouped
+// by event and matcher group in their original positions. The command comes
+// from the (sanitized) manifest handler; extra entry and group keys are
+// merged back from the original file.
+export function buildHooksObject(
+  hooks: HubHook[],
+  path: string,
+  source: VirtualFiles,
+  warnings: AdapterWarning[],
+): Record<string, Array<Record<string, unknown>>> {
+  const originalText = source[path] === undefined ? undefined : toText(source[path]);
+  const original = originalText === undefined ? undefined : parseJsonFile(path, originalText, warnings);
+  if (original === undefined) {
+    warnings.push({
+      code: 'SOURCE_FILE_MISSING',
+      path,
+      detail: 'original hooks file is not in the export file table; extra entry keys (timeout, ...) cannot be recovered',
+    });
+  }
+  const position = (hook: HubHook): [number, number, number] => {
+    const specific = hook.harnessSpecific as HookSpecific;
+    return [specific.eventIndex ?? 0, specific.groupIndex ?? 0, specific.entryIndex ?? 0];
+  };
+  const sorted = [...hooks].sort((a, b) => {
+    const pa = position(a);
+    const pb = position(b);
+    return pa[0] - pb[0] || pa[1] - pb[1] || pa[2] - pb[2];
+  });
+  const events: Record<string, Array<Record<string, unknown>>> = {};
+  const groupKeys = new Map<string, Map<number, Record<string, unknown>>>();
+  for (const hook of sorted) {
+    const specific = hook.harnessSpecific as HookSpecific;
+    if (!(hook.event in events)) {
+      events[hook.event] = [];
+      groupKeys.set(hook.event, new Map());
+    }
+    const groups = groupKeys.get(hook.event)!;
+    const groupIndex = specific.groupIndex ?? 0;
+    if (!groups.has(groupIndex)) {
+      const originalGroup = originalHookGroup(original, hook);
+      const group: Record<string, unknown> = {};
+      if (originalGroup !== undefined) {
+        // Group-level keys (matcher, sequential, ...) come back from the
+        // original file in their original order.
+        for (const [key, value] of Object.entries(originalGroup)) {
+          if (key !== 'hooks') group[key] = value;
+        }
+      } else if (typeof specific.matcher === 'string') {
+        group.matcher = specific.matcher;
+      }
+      group.hooks = [];
+      groups.set(groupIndex, group);
+      events[hook.event].push(group);
+    }
+    const entry: Record<string, unknown> = { type: 'command', command: hook.handler };
+    const originalEntry = originalHookEntry(original, hook);
+    if (originalEntry !== undefined) {
+      for (const [key, value] of Object.entries(originalEntry)) {
+        if (key !== 'type' && key !== 'command') entry[key] = value;
+      }
+    }
+    (groups.get(groupIndex)!.hooks as unknown[]).push(entry);
+  }
+  return events;
+}
+
+// Rebuild a hooks file from hook manifests.
 export function exportHooksFile(
   hooks: HubHook[],
   out: VirtualFiles,
@@ -548,60 +612,7 @@ export function exportHooksFile(
     byPath.set(path, list);
   }
   for (const [path, list] of byPath) {
-    const originalText = source[path] === undefined ? undefined : toText(source[path]);
-    const original = originalText === undefined ? undefined : parseJsonFile(path, originalText, warnings);
-    if (original === undefined) {
-      warnings.push({
-        code: 'SOURCE_FILE_MISSING',
-        path,
-        detail: 'original hooks file is not in the export file table; extra entry keys (timeout, ...) cannot be recovered',
-      });
-    }
-    const position = (hook: HubHook): [number, number, number] => {
-      const specific = hook.harnessSpecific as HookSpecific;
-      return [specific.eventIndex ?? 0, specific.groupIndex ?? 0, specific.entryIndex ?? 0];
-    };
-    const sorted = [...list].sort((a, b) => {
-      const pa = position(a);
-      const pb = position(b);
-      return pa[0] - pb[0] || pa[1] - pb[1] || pa[2] - pb[2];
-    });
-    const events: Record<string, Array<Record<string, unknown>>> = {};
-    const groupKeys = new Map<string, Map<number, Record<string, unknown>>>();
-    for (const hook of sorted) {
-      const specific = hook.harnessSpecific as HookSpecific;
-      if (!(hook.event in events)) {
-        events[hook.event] = [];
-        groupKeys.set(hook.event, new Map());
-      }
-      const groups = groupKeys.get(hook.event)!;
-      const groupIndex = specific.groupIndex ?? 0;
-      if (!groups.has(groupIndex)) {
-        const originalGroup = originalHookGroup(original, hook);
-        const group: Record<string, unknown> = {};
-        if (originalGroup !== undefined) {
-          // Group-level keys (matcher, sequential, ...) come back from the
-          // original file in their original order.
-          for (const [key, value] of Object.entries(originalGroup)) {
-            if (key !== 'hooks') group[key] = value;
-          }
-        } else if (typeof specific.matcher === 'string') {
-          group.matcher = specific.matcher;
-        }
-        group.hooks = [];
-        groups.set(groupIndex, group);
-        events[hook.event].push(group);
-      }
-      const entry: Record<string, unknown> = { type: 'command', command: hook.handler };
-      const originalEntry = originalHookEntry(original, hook);
-      if (originalEntry !== undefined) {
-        for (const [key, value] of Object.entries(originalEntry)) {
-          if (key !== 'type' && key !== 'command') entry[key] = value;
-        }
-      }
-      (groups.get(groupIndex)!.hooks as unknown[]).push(entry);
-    }
-    out[path] = canonicalJson({ hooks: events });
+    out[path] = canonicalJson({ hooks: buildHooksObject(list, path, source, warnings) });
   }
 }
 

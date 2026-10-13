@@ -1,0 +1,7 @@
+description = "Commit synthetic changes"
+
+prompt = """
+Review the staged synthetic changes and commit them.
+
+Arguments: {{args}}
+"""
