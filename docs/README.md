@@ -2,7 +2,7 @@
 
 ## 设计
 
-[docs/design](design/README.md)：对象标准与数据流、术语与状态、层级与元素、审批与执行链、角色与范围、与 Circle 的集成、产品线包典范。这是后续开发和适配的依据。英文译文在 [design/en](design/en/README.md)。
+[docs/design](design/README.md)：对象标准与数据流、术语与状态、层级与元素、审批与执行链、角色与范围、与 Circle 的集成、产品线包典范。这是后续开发和适配的依据。英文译文在 [design/en](design/en/README.md)。三个仓库之间谁依赖谁、以什么为准，见[兼容矩阵](compatibility.md)。
 
 ## 接口交接
 

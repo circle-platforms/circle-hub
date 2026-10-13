@@ -78,6 +78,7 @@ circle-hub is under development and not a supported production release: sign-in 
 - [Design](docs/design/README.md) ([English](docs/design/en/README.md)) — object standard, vocabulary and states, levels and elements, approvals and the enforcement chain, roles, Circle integration, product-line packs.
 - [Client API handoff](docs/client-api-handoff.md) · [Case execution](docs/case-execution-handoff.md) · [Resource identity](docs/resource-identity-handoff.md) · [Module installation](docs/module-installation.md) · [Admin CLI](docs/admin-cli.md)
 - [Phase records](docs/README.md) — briefs, progress and real-source observations.
+- [Compatibility matrix](docs/compatibility.md) — which Circle commit the acceptance runs against, the frozen source baseline, the extension branch, pack schemas and the release order across the three repositories.
 - [References](references/README.md) — the archived platform that preceded the hub; frozen, verified by SHA, never imported at runtime.
 
 ## Contributing and security

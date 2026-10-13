@@ -22,9 +22,11 @@ Use scripts for conclusions established by explicit inputs and rules; use LLM ju
 
 Never use real Circle data, personal browser profiles, production devices or paid model endpoints for development checks. Use scratch homes and synthetic resources when a later instruction authorizes runtime work. Local cancellation does not prove remote stopping.
 
-Inspect status/diffs and preserve other people's work. Use isolated worktrees, stage explicit paths, and never use git add -A, git add . or git commit -a. Commit/push only within user authorization. Messages are one capitalized imperative English sentence without a prefix or final full stop.
+Reference verification may read source bytes; it must never import or execute archived business modules.
 
-Keep credentials, internal connection strings, raw business documents/logs and conversation dumps outside Git. Reference verification may read source bytes; it must never import or execute archived business modules.
+## Git and commits
+
+Inspect status and diffs and preserve other people's work; use isolated worktrees for parallel work. Stage explicit paths and never use `git add -A`, `git add .` or `git commit -a`. Commit messages are one capitalized imperative English sentence without a prefix or final full stop. Commit and push only within user authorization. Keep credentials, internal addresses and connection strings (samples use 192.0.2.0/24), raw business documents, logs, conversation dumps and local absolute paths out of Git. This section is identical in circle-hub and circle-packs; change it in both.
 
 ## Verification
 
