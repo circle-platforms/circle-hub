@@ -70,7 +70,7 @@
 - **连接器实例声明**：只写 declaration 和 configuration 的形状；地址、账号、CA 在管理员登记时填进库外 profile 或保险箱。
 - **原件**：每种 role 一段说明——文件是什么、metadata 必填哪些键、怎么核对 SHA、谁有权上传与阅读。metadata 是上传者的声明，hub 不验证；要验证的事在运行时由资源回报。
 - **Skill**：SKILL.md 先写输入、工具、输出，再按步骤写；每一步标明「脚本」或「判断」。脚本只处理 B 给的字节和自己的产物；工具返回由 hub 原样保存，脚本只拿 evidenceId 指针。试跑记录要覆盖技能声明的每条路径。
-- **Tool 实现**：纯函数，输入字节、输出结构；不读环境、不连网、不写文件。
+- **Tool 实现**：纯函数，输入字节、输出结构；不读环境、不连网、不写文件。在内存里用解析库处理字节是允许的（例如用 ExcelJS 读一个 Buffer），但只能 import hub 自带依赖集里的包（exceljs、read-excel-file、fflate、zod、saxes、parse5，精确版本），并在清单的 `tools[].imports` 里声明；包的测试需要 hub 的依赖集（node_modules 软链或安装同版本）。
 - **Hook 处理器**：输入一次运行的绑定与待核对象，输出通过或一个固定错误码加事实。判定不了的不写 Hook，交给披露。
 - **流程版本**：阶段枚举固定，等待原因是枚举字段，交付项列清楚。
 - **资源声明**：writes 写实话；要两人规则的生产资源声明 executionIsChange。
