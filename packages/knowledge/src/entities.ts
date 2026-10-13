@@ -3,6 +3,8 @@ import type {Store,Transaction} from '../../storage/src/index.ts';
 import type {Auth} from '../../tasks/src/auth.ts';
 import type {Knowledge} from './index.ts';
 import type {TypeCatalog} from './type-catalog.ts';
+import {facetedPage} from '../../storage/src/faceted-query.ts';
+import type {RegistryPageQuery} from '../../contracts/src/index.ts';
 
 const aclSql=(observation:string)=>`(${observation}.source_readers ? $3 OR ${observation}.source_readers ? '*') AND (${observation}.platform_readers ? $3 OR ${observation}.platform_readers ? '*')`;
 const visibleSql=(entity:string,observation:string)=>`${entity}.tenant_id=$1 AND ${entity}.scope_id=ANY($2::text[]) AND ${aclSql(observation)}`;
@@ -82,6 +84,7 @@ export class Entities {
       ORDER BY history.observed_at DESC,history.entity_revision_id DESC`,[...this.parameters(policy),id])).rows;
     if(!rows.length)this.notVisible();return rows.map(row=>this.observationView(row));
   }
+  async page(ctx:AuthContext,query:RegistryPageQuery&{typeId?:string;system?:string}){const p=await this.auth.check(ctx,'objects.read',query.scopeId);return this.store.transaction(async tx=>{await tx.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');const params:any[]=[...this.parameters(p)],clauses=[visibleSql('e','o')];if(query.typeId){params.push(query.typeId);clauses.push(`o.type_id=$${params.length}`);}if(query.system){params.push(query.system);clauses.push(`e.source_system=$${params.length}`);}return facetedPage(tx,ctx,'objects',query,entityJoin,clauses.join(' AND '),params,{id:'e.entity_id',created:'e.created_at',updated:'o.observed_at',scopeId:'e.scope_id',owner:'o.observer_id',productLineId:"o.attributes->>'productLineId'",flowVersion:"o.attributes->>'flowVersion'",status:"o.attributes->>'status'",lifecycle:"o.attributes->>'lifecycle'"},entityColumns,row=>this.view(row));});}
   async link(ctx:AuthContext,input:RelationObservation):Promise<any>{
     return this.store.transaction(async tx=>{
       const policy=await this.auth.check(ctx,'objects.ingest',input.scopeId,tx);

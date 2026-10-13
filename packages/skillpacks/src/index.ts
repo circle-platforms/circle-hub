@@ -11,6 +11,9 @@ import type {Knowledge} from '../../knowledge/src/index.ts';
 import {readFile} from 'node:fs/promises';
 import {z} from 'zod';
 import {verifyModule} from '../../modules/src/verify.ts';
+import {facetedPage} from '../../storage/src/faceted-query.ts';
+import {metadataVisibility} from '../../assets/src/index.ts';
+import type {RegistryPageQuery} from '../../contracts/src/index.ts';
 
 function summarizeTools(names:string[]):string{
   const shown:string[]=[];let length=0;
@@ -73,6 +76,7 @@ export class SkillPacks {
     requireCondition(row,'SOURCE_FORBIDDEN','Skill package is not available to this identity');await this.assets.metadataRow(ctx,row.asset_id);
     return {...this.view(row),files:row.files.map((file:any)=>({path:file.path,sha256:file.sha256,sizeBytes:file.size})),declaredTools:row.manifest.tools,trial:row.trial};
   }
+  async page(ctx:AuthContext,query:RegistryPageQuery){if(query.scopeId)await this.auth.check(ctx,'skillpacks.read',query.scopeId);return this.store.transaction(async tx=>{await tx.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');return facetedPage(tx,ctx,'skillpacks',query,'skill_packages s JOIN assets a ON a.asset_id=s.asset_id JOIN asset_versions v ON v.asset_id=a.asset_id AND v.version=a.current_version',metadataVisibility,[...await this.assets.metadataPolicy(ctx,tx)],{id:'s.skill_pack_id',created:'s.created_at',updated:'s.updated_at',scopeId:'s.scope_id',owner:'s.owner_id',productLineId:"v.configuration->>'productLineId'",flowVersion:"v.configuration->>'flowVersion'",status:'s.status',lifecycle:'v.lifecycle'},'s.*',row=>this.view(row));});}
   async approvalAuthorize(tx:Transaction,ctx:AuthContext,task:any,action:any):Promise<void>{
     const row=await this.row(ctx,action.args.skillPackId,'skillpacks.submit',tx);
     requireCondition(row.owner_id===ctx.principalId&&row.approval_task_id===task.taskId&&row.digest===action.args.digest&&task.input.digest===row.digest,'APPROVAL_STALE','Package approval binding differs');

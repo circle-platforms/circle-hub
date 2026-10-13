@@ -6,6 +6,8 @@ import type {Assets} from '../../assets/src/index.ts';
 import type {Tasks} from './index.ts';
 import type {Approvals} from './approvals.ts';
 import {ScopeRole,ROOT_SCOPE_ID} from './roles.ts';
+import {facetedPage} from '../../storage/src/faceted-query.ts';
+import type {RegistryPageQuery} from '../../contracts/src/index.ts';
 
 const roleConfig=z.object({schema:z.literal('scope-role/1'),scopeId:z.string(),principalId:z.string(),role:ScopeRole.nullable(),expectedRevision:z.number().int().nonnegative()}).strict();
 const policyConfig=z.object({schema:z.literal('scope-policy/1'),scopeId:z.string(),twoPersonRule:z.boolean(),expectedRevision:z.number().int().positive()}).strict();
@@ -26,6 +28,7 @@ export class ChangeSets{
   view(row:any){return {changeSetId:row.change_set_id,scopeId:row.scope_id,owner:row.principal_id,approvalTaskId:row.task_id,status:row.status,items:row.items,targetIdentity:row.target_identity,identityDigest:row.identity_digest,submission:row.submission,verification:row.verification,blockedReasons:row.blocked_reasons??[],supersededBy:row.superseded_by??null};}
   async get(ctx:AuthContext,id:string){const row=(await this.store.pool.query('SELECT * FROM change_sets WHERE change_set_id=$1 AND tenant_id=$2',[id,ctx.tenantId])).rows[0];requireCondition(row,'FORBIDDEN_SCOPE','Change set is not available');await this.tasks.load(ctx,row.task_id);return this.view(row);}
   async list(ctx:AuthContext){const p=await this.auth.check(ctx,'tasks.read'),rows=(await this.store.pool.query('SELECT * FROM change_sets WHERE tenant_id=$1 AND scope_id=ANY($2::text[]) ORDER BY created_at DESC,change_set_id DESC LIMIT 100',[p.tenantId,p.scopes])).rows;return {total:rows.length,items:rows.map(row=>this.view(row)),cursor:null};}
+  async page(ctx:AuthContext,query:RegistryPageQuery){const p=await this.auth.check(ctx,'tasks.read',query.scopeId);return this.store.transaction(async tx=>{await tx.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');return facetedPage(tx,ctx,'change-sets',query,'change_sets c JOIN tasks t USING(task_id)',"c.tenant_id=$1 AND c.scope_id=ANY($2::text[]) AND (t.context->>'privateOwnerId' IS NULL OR t.context->>'privateOwnerId'=$3)",[p.tenantId,p.scopes,p.principalId],{id:'c.change_set_id',created:'c.created_at',updated:'c.updated_at',scopeId:'c.scope_id',owner:'c.principal_id',productLineId:"c.submission->>'productLineId'",flowVersion:'t.flow_version',status:'c.status',lifecycle:'c.status'},'c.*',row=>this.view(row));});}
   async validateDefinition(tx:Transaction,ctx:AuthContext,input:any){
     if(input.kind==='runtime-profile'){await this.auth.check(ctx,'admin.manage',input.scopeId,tx);const config=RuntimeProfileConfiguration.parse(input.configuration),duplicate=(await tx.query("SELECT 1 FROM assets a JOIN asset_versions v ON v.asset_id=a.asset_id AND v.version=a.current_version WHERE a.tenant_id=$1 AND a.scope_id=$2 AND a.kind='runtime-profile' AND v.configuration->>'profileRef'=$3 AND v.configuration->>'profileType'=$4 AND a.asset_id<>$5",[ctx.tenantId,input.scopeId,config.profileRef,config.profileType,input.assetId??''])).rowCount;requireCondition(!duplicate,'INVALID_PAYLOAD','Runtime profile reference already has an asset');return;}
     if(!['scope-role','scope-policy'].includes(input.kind))return;

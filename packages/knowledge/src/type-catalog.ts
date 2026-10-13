@@ -1,6 +1,8 @@
 import {ObjectTypePackage,canonicalHash,requireCondition,type AuthContext} from '../../contracts/src/index.ts';
 import type {Store,Transaction} from '../../storage/src/index.ts';
 import type {Auth} from '../../tasks/src/auth.ts';
+import {facetedPage} from '../../storage/src/faceted-query.ts';
+import type {RegistryPageQuery} from '../../contracts/src/index.ts';
 
 export class TypeCatalog {
   store:Store;auth:Auth;
@@ -23,6 +25,7 @@ export class TypeCatalog {
     const policy=await this.auth.check(ctx,'objects.read');
     return (await this.store.pool.query('SELECT definition,sha256 FROM object_type_packages WHERE tenant_id=$1 ORDER BY package_id,version',[policy.tenantId])).rows.map(row=>({...row.definition,sha256:row.sha256}));
   }
+  async page(ctx:AuthContext,query:RegistryPageQuery){const p=await this.auth.check(ctx,'objects.read',query.scopeId);return this.store.transaction(async tx=>{await tx.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');return facetedPage(tx,ctx,'object-types',query,'object_type_packages p','p.tenant_id=$1',[p.tenantId],{id:"p.package_id||':'||p.version",created:'p.created_at',updated:'p.created_at',owner:'p.registered_by',productLineId:"p.definition->>'productLineId'",flowVersion:"p.definition->>'flowVersion'",status:"'registered'",lifecycle:"'registered'"},'p.*',row=>({...row.definition,sha256:row.sha256}));});}
   async validate(tenantId:string,ref:{packageId:string;version:string;typeId:string},attributes:Record<string,unknown>,tx:Transaction):Promise<void>{
     const row=(await tx.query('SELECT definition FROM object_type_packages WHERE tenant_id=$1 AND package_id=$2 AND version=$3',[tenantId,ref.packageId,ref.version])).rows[0];
     requireCondition(row,'TARGET_NOT_FOUND','Object vocabulary version is not registered');

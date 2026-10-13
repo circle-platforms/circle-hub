@@ -4,6 +4,8 @@ import type { Store, Transaction } from '../../storage/src/index.ts';
 import type { Assets } from '../../assets/src/index.ts';
 import {passwordDigest} from './password.ts';
 import type { Auth } from './auth.ts';
+import {facetedPage} from '../../storage/src/faceted-query.ts';
+import type {RegistryPageQuery} from '../../contracts/src/index.ts';
 const credential = async (value: string) => { const salt = randomBytes(16); return { salt: salt.toString('hex'), digest: (await passwordDigest(value, salt)).toString('hex') }; };
 export class ServiceClients {
     store: Store;
@@ -12,6 +14,7 @@ export class ServiceClients {
     ttlSeconds: number;
     constructor(store: Store, auth: Auth, assets: Assets, ttlSeconds = 300) { this.store = store; this.auth = auth; this.assets = assets; this.ttlSeconds = ttlSeconds; requireCondition(Number.isInteger(ttlSeconds) && ttlSeconds >= 1 && ttlSeconds <= 300, 'INVALID_PAYLOAD', 'Resource token lifetime must be between one and 300 seconds'); }
     view(row: any) { return { clientId: row.client_id, principalId: row.principal_id, scopeId: row.scope_id, resourceAssetId: row.resource_asset_id, name: row.name, scopes: row.scopes, resourceScopes: row.resource_scopes, secretVersion: row.secret_version, revoked: row.revoked }; }
+    async page(ctx:AuthContext,query:RegistryPageQuery){const p=await this.auth.check(ctx,'service-clients.manage',query.scopeId);return this.store.transaction(async tx=>{await tx.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');return facetedPage(tx,ctx,'service-clients',query,'service_clients c','c.tenant_id=$1 AND c.scope_id=ANY($2::text[])',[p.tenantId,p.scopes],{id:'c.client_id',created:'c.created_at',updated:'c.updated_at',scopeId:'c.scope_id',owner:'c.principal_id',status:"CASE WHEN c.revoked THEN 'revoked' ELSE 'active' END",lifecycle:"CASE WHEN c.revoked THEN 'revoked' ELSE 'active' END"},'c.*',row=>this.view(row));});}
     async row(ctx: AuthContext, id: string, tx?: Transaction) { const p = await this.auth.check(ctx, 'service-clients.manage', undefined, tx), row = (await (tx ?? this.store.pool).query('SELECT * FROM service_clients WHERE client_id=$1 AND tenant_id=$2 AND scope_id=ANY($3::text[])', [id, p.tenantId, p.scopes])).rows[0]; requireCondition(row, 'SOURCE_FORBIDDEN', 'Service client is not available to this identity'); return row; }
     async list(ctx: AuthContext, limit: number, after?: string) { const p = await this.auth.check(ctx, 'service-clients.manage'), rows = (await this.store.pool.query('SELECT * FROM service_clients WHERE tenant_id=$1 AND scope_id=ANY($2::text[]) AND ($3::text IS NULL OR client_id>$3) ORDER BY client_id LIMIT $4', [p.tenantId, p.scopes, after ?? null, limit + 1])).rows; return { items: rows.slice(0, limit).map(row => this.view(row)), nextCursor: rows.length > limit ? rows[limit - 1].client_id : null }; }
     async register(ctx: AuthContext, value: unknown) {

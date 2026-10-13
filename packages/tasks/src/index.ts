@@ -2,6 +2,8 @@ import { ApiError, FLOW_VERSION, PACK_FLOWS, IDEMPOTENCY_WINDOW_MS, canonicalHas
   type AuthContext, type Event, type SubmitRequest, type Task, type TaskView } from '../../contracts/src/index.ts';
 import type { Store, Transaction } from '../../storage/src/index.ts';
 import type { Auth } from './auth.ts';
+import {facetedPage} from '../../storage/src/faceted-query.ts';
+import type {RegistryPageQuery} from '../../contracts/src/index.ts';
 
 export function taskFromRow(row: Record<string, any>): Task {
   return { taskId: row.task_id, tenantId: row.tenant_id, scopeId: row.scope_id, principalId: row.principal_id,
@@ -93,6 +95,10 @@ export class Tasks {
     return { ...task, pendingInputs: pending.map(row => ({ requestId: row.request_id, inputRevisionId: row.input_revision_id,
       kind: row.kind, question: row.question, binding: row.binding, expiresAt: row.expires_at.toISOString(), status: row.status })) };
   }
+  async page(ctx:AuthContext,query:RegistryPageQuery&{kind?:string;capabilityPackId?:string}){const p=await this.auth.check(ctx,'tasks.read',query.scopeId);return this.store.transaction(async tx=>{await tx.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');const params:any[]=[p.tenantId,p.scopes,p.principalId,ctx.run?.taskId??null],clauses=["tenant_id=$1 AND scope_id=ANY($2::text[]) AND (context->>'privateOwnerId' IS NULL OR context->>'privateOwnerId'=$3) AND ($4::text IS NULL OR task_id=$4 OR context->>'parentRunTaskId'=$4)"];
+    if(query.kind){params.push(query.kind);clauses.push(`CASE capability_pack_id WHEN 'asset-tool' THEN 'tool' WHEN 'asset-index' THEN 'index' ELSE 'work' END=$${params.length}`);}if(query.capabilityPackId){params.push(query.capabilityPackId);clauses.push(`capability_pack_id=$${params.length}`);}
+    const page=await facetedPage(tx,ctx,'tasks',query,'tasks',clauses.join(' AND '),params,{id:'task_id',created:'created_at',updated:'updated_at',scopeId:'scope_id',owner:'principal_id',productLineId:"context->>'productLineId'",flowVersion:'flow_version',status:'phase',lifecycle:'phase'},'*',taskFromRow);
+    for(const task of page.items){const pending=(await tx.query('SELECT * FROM pending_inputs WHERE task_id=$1 ORDER BY created_at,request_id',[task.taskId])).rows;task.pendingInputs=pending.map(row=>({requestId:row.request_id,inputRevisionId:row.input_revision_id,kind:row.kind,question:row.question,binding:row.binding,expiresAt:row.expires_at.toISOString(),status:row.status}));}return page;});}
   async result(ctx: AuthContext, taskId: string): Promise<any> {
     return this.store.transaction(async tx => {
       const task = await this.load(ctx,taskId,'tasks.read',tx,true);

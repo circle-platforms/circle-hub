@@ -691,3 +691,11 @@ worker 原件先以 SHA 存进 B，再回报 objectKey/sha256/size，C 在当前
 SSE 与轮询共用游标，保存已处理序号后补读；连接每轮重新认证，过期/撤权/内部错误用明确控制事件结束，背压/断线/关停会释放等待。队列按当前资格与所有权算 count、最久等待与超 SLA；任务输入/原件不为计数全量载入。assignedToMe 不推断模型文本；没有持久分派即零。原件、决定、脚本事实与未知不混为通知中的平台批准。专项 **5/5**、第 6/8 节临时联合 **7/7**、typecheck 通过；完整冻结验证待下一行。
 
 第 6 节最终冻结 contracts **5/5**、methods **40/40**、acceptance **218/218**、references **7/7**，共 **270/270**，固定 Circle 8b2ceb6 / APV 224daa6，**无 skip**。typecheck、diff、**714** 原件归档核验通过。只本地签署提交，未 push 或部署；第 8 节查询代码和第 9 节的缺接口验收仍留工作区，未混入本节。
+
+## 46：修订 3 第 8 节，授权分面与稳定列表游标
+
+先写任务与资产分页验收，修正 fixture 的旧 submit 参数后确认 **0/2**；扩展到十种登记簿与 PostgreSQL 微秒回归，专项最终 **4/4**。view=page 显式启用 total/items/cursor，原数组/nextCursor 接口保持。授权、私有资料与分面先于 LIMIT/总数；查询/身份绑定游标、精准时间/id keyset，避免 Date 截掉微秒造成漏项。每页重新核角色与来源可见性，不能凭旧游标扩大权限。
+
+tasks/assets/skills/change-sets/scopes/roles/service-clients/object-types/objects 使用统一 SQL 分面，工具在完整调用者目录内筛选分页；未声明的维度不推断。范围、产品线、flow、状态/生命周期、owner、年龄区间、更新时间与年龄排序都交接；注册主体与观测者的 owner 含义逐项明确。迁移 32 补资产/技能/服务客户端更新时间及触发器，不更改既有版本内容摘要。原件/凭据不会进入额外计数或游标。typecheck、专项通过，冻结完整回归待下一行。
+
+第 8 节最终冻结 contracts **5/5**、methods **40/40**、acceptance **222/222**、references **7/7**，共 **274/274**，固定 Circle 8b2ceb6 / APV 224daa6，**无 skip**。typecheck、diff、**714** 原件归档核验通过。仅本地签署提交；维护者刚指出的模型上游批准 allowlist 修复及第 9 节 MCP 缺接口验收另留工作区，不混入本节。

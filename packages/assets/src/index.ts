@@ -2,10 +2,12 @@ import {ApiError,canonicalHash,newId,requireCondition,type AuthContext,type Asse
 import type {Store,Transaction} from '../../storage/src/index.ts';
 import type {Auth} from '../../tasks/src/auth.ts';
 import {PrivateVault} from './vault.ts';
+import {facetedPage} from '../../storage/src/faceted-query.ts';
+import type {RegistryPageQuery} from '../../contracts/src/index.ts';
 
 const join='assets a JOIN asset_versions v ON v.asset_id=a.asset_id AND v.version=a.current_version';
 const visibility="a.tenant_id=$1 AND a.scope_id=ANY($2::text[]) AND (a.owner_principal_id=$3 OR v.readers ? $3 OR v.readers ? '*')";
-const metadataVisibility="a.tenant_id=$1 AND (($4::boolean AND a.scope_id=ANY($2::text[]) AND (a.owner_principal_id=$3 OR v.readers ? $3 OR v.readers ? '*')) OR (a.scope_id=ANY($5::text[]) AND v.lifecycle='draft' AND a.kind<>'credential-reference'))";
+export const metadataVisibility="a.tenant_id=$1 AND (($4::boolean AND a.scope_id=ANY($2::text[]) AND (a.owner_principal_id=$3 OR v.readers ? $3 OR v.readers ? '*')) OR (a.scope_id=ANY($5::text[]) AND v.lifecycle='draft' AND a.kind<>'credential-reference'))";
 const sensitive=/^(?:token|password|secret|authorization|cookie|jwt|privatekey|credentialvalue)$/i;
 function clean(value:unknown):void{
   if(!value||typeof value!=='object')return;
@@ -35,6 +37,7 @@ export class Assets {
   // credentials and execution consumers keep using the strict row() authority.
   async metadataRow(ctx:AuthContext,id:string,tx?:Transaction):Promise<any>{const args=await this.metadataPolicy(ctx,tx),row=(await(tx??this.store.pool).query(`SELECT a.*,v.* FROM ${join} WHERE ${metadataVisibility} AND a.asset_id=$6`,[...args,id])).rows[0];requireCondition(row,'ASSET_NOT_VISIBLE','Asset is not visible to the authenticated principal');return row;}
   async get(ctx:AuthContext,id:string):Promise<any>{return this.view(await this.metadataRow(ctx,id));}
+  async page(ctx:AuthContext,query:RegistryPageQuery&{kind?:string}){if(query.scopeId)await this.auth.check(ctx,'assets.read',query.scopeId);return this.store.transaction(async tx=>{await tx.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');const args=[...await this.metadataPolicy(ctx,tx)],visible=metadataVisibility+(query.kind?' AND a.kind=$6':'');if(query.kind)args.push(query.kind);return facetedPage(tx,ctx,'assets',query,join,visible,args,{id:'a.asset_id',created:'a.created_at',updated:'v.updated_at',scopeId:'a.scope_id',owner:'a.owner_principal_id',productLineId:"v.configuration->>'productLineId'",flowVersion:"v.configuration->>'flowVersion'",status:'v.lifecycle',lifecycle:'v.lifecycle'},'a.*,v.*',row=>this.view(row));});}
   async list(ctx:AuthContext,query:{limit:number;after?:string;kind?:string;lifecycle?:string}):Promise<any>{return this.store.transaction(async tx=>{
     await tx.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');const args=[...await this.metadataPolicy(ctx,tx),query.kind??null,query.lifecycle??null];
     const filter=`${metadataVisibility} AND ($6::text IS NULL OR a.kind=$6) AND ($7::text IS NULL OR v.lifecycle=$7)`;

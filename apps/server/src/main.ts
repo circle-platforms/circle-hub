@@ -8,7 +8,8 @@ import { z } from 'zod';
 import { API_VERSION, MAX_BODY_BYTES, MAX_SOURCE_BYTES, MAX_WORKER_REPORT_BYTES, CLIENT_ROUTES, TaskListQuery, ApiError, SubmitRequest,canonicalHash,
   InputRequest, OperationRequest, ApprovalProposal, ApprovalRequest, ConclusionRequest, ChecklistRequest, ChecklistResponse, RuleRequest, InputRevisionId, TaskId, ScopeId, SourceUpload, Base64Content, DevLoginRequest, requireCondition,
   EntityId,RelationId,ObjectListQuery,ObjectTypePackage,ObjectObservation,RelationObservation,AuthRefreshRequest,
-  AssetId,AssetRegistration,AssetListQuery,AssetTransition,CredentialRegistration,KnowledgeRecordId,KnowledgeSearchQuery,KnowledgeReviewRequest,ToolName,ToolCallInput,SkillPackId,StandardOperation,ServiceClientId } from '../../../packages/contracts/src/index.ts';
+  AssetId,AssetRegistration,AssetListQuery,AssetTransition,CredentialRegistration,KnowledgeRecordId,KnowledgeSearchQuery,KnowledgeReviewRequest,ToolName,ToolCallInput,SkillPackId,StandardOperation,ServiceClientId,RegistryPageQuery } from '../../../packages/contracts/src/index.ts';
+import {queryMigration} from '../../../packages/storage/src/query-migration.ts';
 import { Store } from '../../../packages/storage/src/index.ts';
 import { taskMigration } from '../../../packages/tasks/src/migration.ts';
 import { Auth } from '../../../packages/tasks/src/auth.ts';
@@ -75,7 +76,7 @@ import {ChangeSetSubmission} from '../../../packages/contracts/src/index.ts';
 
 function environment(name: string): string { const value = process.env[name]; if (!value) throw new Error(`Required environment variable: ${name}`); return value; }
 const store = new Store(JSON.parse(environment('CIRCLE_SERVER_DATABASE_CONFIG')));
-await store.migrate([taskMigration,deliveryMigration,knowledgeMigration,executionMigration,...packageMigrations,approvalMigration,conclusionMigration,checklistMigration,connectorMigration,entityMigration,assetMigration,graphMigration,toolMigration,skillMigration,automationMigration,automationOutcomeMigration,knowledgePageMigration,automationOriginMigration,ingestionMigration,oauthMigration,resourceIdentityMigration,roleMigration,changeSetMigration,changeSetDependenciesMigration,enforcementMigration,sessionMigration,toolRolesMigration,readEffectMigration,readReleaseAuditMigration,notificationMigration]);
+await store.migrate([taskMigration,deliveryMigration,knowledgeMigration,executionMigration,...packageMigrations,approvalMigration,conclusionMigration,checklistMigration,connectorMigration,entityMigration,assetMigration,graphMigration,toolMigration,skillMigration,automationMigration,automationOutcomeMigration,knowledgePageMigration,automationOriginMigration,ingestionMigration,oauthMigration,resourceIdentityMigration,roleMigration,changeSetMigration,changeSetDependenciesMigration,enforcementMigration,sessionMigration,toolRolesMigration,readEffectMigration,readReleaseAuditMigration,notificationMigration,queryMigration]);
 const auth = new Auth(store,{developmentTtlMs:process.env.CIRCLE_SERVER_DEV_TOKEN_TTL_MS?Number(process.env.CIRCLE_SERVER_DEV_TOKEN_TTL_MS):undefined,runTokenTtlMs:process.env.CIRCLE_SERVER_RUN_TOKEN_TTL_MS?Number(process.env.CIRCLE_SERVER_RUN_TOKEN_TTL_MS):undefined});
 requireCondition(process.env.CIRCLE_SERVER_DEV_AUTH === '1', 'INVALID_PAYLOAD', 'Phase one requires explicitly enabled development authentication');
 await auth.initializeDevelopment(environment('CIRCLE_SERVER_DEV_IDENTITIES'));
@@ -213,15 +214,15 @@ const server = createListener(async (request, response) => {
     if(url.pathname===CLIENT_ROUTES.authRefresh.path&&request.method==='POST'){
       AuthRefreshRequest.parse(await body(request));const issued=await auth.refresh(request.headers.authorization!),policy=await auth.policy(ctx);send(response,200,{data:{...issued,tokenType:'Bearer',principalId:policy.principalId,tenantId:policy.tenantId,scopes:policy.scopes,subjectType:policy.kind==='user'?'human':'service-client',...(policy.kind==='user'?{roles:policy.roles}:{scope:policy.grants.join(' ')})}});return;
     }
-    if(url.pathname==='/v1/scopes'&&request.method==='GET'){send(response,200,{data:await auth.roles.list(ctx)});return;}
-    const scopeRoles=/^\/v1\/scopes\/([^/]+)\/roles$/.exec(url.pathname);if(scopeRoles&&request.method==='GET'){send(response,200,{data:await auth.roles.members(ctx,ScopeId.parse(scopeRoles[1]))});return;}
+    if(url.pathname==='/v1/scopes'&&request.method==='GET'){send(response,200,{data:url.searchParams.has('view')?await auth.roles.page(ctx,RegistryPageQuery.parse(Object.fromEntries(url.searchParams))):await auth.roles.list(ctx)});return;}
+    const scopeRoles=/^\/v1\/scopes\/([^/]+)\/roles$/.exec(url.pathname);if(scopeRoles&&request.method==='GET'){send(response,200,{data:url.searchParams.has('view')?await auth.roles.page(ctx,RegistryPageQuery.parse(Object.fromEntries(url.searchParams)),ScopeId.parse(scopeRoles[1])):await auth.roles.members(ctx,ScopeId.parse(scopeRoles[1]))});return;}
     if(scopeRoles&&request.method==='POST'){send(response,201,{data:await changeSets.roleSubmission(ctx,ScopeId.parse(scopeRoles[1]),await body(request))});return;}
     const scopePolicy=/^\/v1\/scopes\/([^/]+)\/policy$/.exec(url.pathname);if(scopePolicy&&request.method==='POST'){send(response,201,{data:await changeSets.policySubmission(ctx,ScopeId.parse(scopePolicy[1]),await body(request))});return;}
     if(url.pathname==='/v1/change-sets'&&request.method==='POST'){send(response,201,{data:await changeSets.submit(ctx,ChangeSetSubmission.parse(await body(request)))});return;}
-    if(url.pathname==='/v1/change-sets'&&request.method==='GET'){send(response,200,{data:await changeSets.list(ctx)});return;}
+    if(url.pathname==='/v1/change-sets'&&request.method==='GET'){send(response,200,{data:url.searchParams.has('view')?await changeSets.page(ctx,RegistryPageQuery.parse(Object.fromEntries(url.searchParams))):await changeSets.list(ctx)});return;}
     if(url.pathname==='/v1/runtime-profiles'&&request.method==='GET'){await auth.check(ctx,'admin.manage');send(response,200,{data:runtimeProfiles()});return;}
     const changeSet=/^\/v1\/change-sets\/(cst_[a-f0-9]{32})$/.exec(url.pathname);if(changeSet&&request.method==='GET'){send(response,200,{data:await changeSets.get(ctx,changeSet[1])});return;}
-    if(url.pathname==='/v1/service-clients'){if(request.method==='POST')send(response,201,{data:await serviceClients.register(ctx,await body(request))});else if(request.method==='GET')send(response,200,{data:await serviceClients.list(ctx,z.coerce.number().int().min(1).max(100).default(20).parse(url.searchParams.get('limit')??undefined),ServiceClientId.optional().parse(url.searchParams.get('after')??undefined))});else throw new ApiError('INVALID_PAYLOAD','Unsupported service client method');return;}
+    if(url.pathname==='/v1/service-clients'){if(request.method==='POST')send(response,201,{data:await serviceClients.register(ctx,await body(request))});else if(request.method==='GET')send(response,200,{data:url.searchParams.has('view')?await serviceClients.page(ctx,RegistryPageQuery.parse(Object.fromEntries(url.searchParams))):await serviceClients.list(ctx,z.coerce.number().int().min(1).max(100).default(20).parse(url.searchParams.get('limit')??undefined),ServiceClientId.optional().parse(url.searchParams.get('after')??undefined))});else throw new ApiError('INVALID_PAYLOAD','Unsupported service client method');return;}
     const serviceClient=/^\/v1\/service-clients\/([^/]+)(?:\/(rotate|revoke))?$/.exec(url.pathname);if(serviceClient){const id=ServiceClientId.parse(serviceClient[1]);if(request.method==='GET'&&!serviceClient[2])send(response,200,{data:serviceClients.view(await serviceClients.row(ctx,id))});else if(request.method==='POST'&&serviceClient[2]==='rotate')send(response,200,{data:await serviceClients.rotate(ctx,id,await body(request))});else if(request.method==='POST'&&serviceClient[2]==='revoke'){z.object({}).strict().parse(await body(request));send(response,200,{data:await serviceClients.revoke(ctx,id)});}else throw new ApiError('INVALID_PAYLOAD','Unsupported service client method');return;}
     if(request.method==='POST'&&url.pathname==='/v1/automations/triggers'){send(response,201,{data:await automations.trigger(ctx,await body(request))});return;}
     if(request.method==='POST'&&url.pathname==='/v1/automations/bots'){send(response,201,{data:await automations.bot(ctx,await body(request))});return;}
@@ -232,7 +233,7 @@ const server = createListener(async (request, response) => {
     if(request.method==='POST'&&[CLIENT_ROUTES.oauthDevice.path,CLIENT_ROUTES.oauthClientCredentials.path].includes(url.pathname as any)){send(response,201,{data:await oauth.start(ctx,await body(request),url.pathname===CLIENT_ROUTES.oauthDevice.path?'device_authorization':'client_credentials')});return;}
     const oauthPoll=/^\/v1\/credentials\/oauth\/device\/(ofl_[a-f0-9]{32})\/poll$/.exec(url.pathname);if(oauthPoll&&request.method==='POST'){CLIENT_ROUTES.oauthPoll.request.parse(await body(request));send(response,200,{data:await oauth.poll(ctx,oauthPoll[1])});return;}
     if(url.pathname===CLIENT_ROUTES.skillpacks.path){
-      if(request.method==='GET'){send(response,200,{data:await skills.list(ctx)});return;}
+      if(request.method==='GET'){send(response,200,{data:url.searchParams.has('view')?await skills.page(ctx,RegistryPageQuery.parse(Object.fromEntries(url.searchParams))):await skills.list(ctx)});return;}
       if(request.method==='POST'){send(response,201,{data:await skills.submit(ctx,await body(request,MAX_WORKER_REPORT_BYTES),z.string().optional().parse(request.headers['x-scope-id']))});return;}
     }
     if(url.pathname===CLIENT_ROUTES.moduleInstall.path&&request.method==='POST'){send(response,201,{data:await modules.install(ctx,await body(request,MAX_WORKER_REPORT_BYTES),z.string().optional().parse(request.headers['x-scope-id']))});return;}
@@ -240,9 +241,9 @@ const server = createListener(async (request, response) => {
     if(skillRun&&request.method==='POST'){send(response,202,{data:await skills.run(ctx,SkillPackId.parse(skillRun[1]),await body(request,MAX_WORKER_REPORT_BYTES))});return;}
     const skillCandidate=/^\/v1\/skillpacks\/(skp_[a-f0-9]{32})$/.exec(url.pathname);if(skillCandidate&&request.method==='GET'){send(response,200,{data:await skills.candidate(ctx,skillCandidate[1])});return;}
     if(url.pathname===CLIENT_ROUTES.tools.path&&request.method==='GET'){
-      const listing=await catalog.list(ctx);response.setHeader('etag',listing.etag);response.setHeader('vary','Authorization');
+      const listing=url.searchParams.has('view')?await catalog.page(ctx,RegistryPageQuery.parse(Object.fromEntries(url.searchParams))):await catalog.list(ctx);response.setHeader('etag',listing.etag);response.setHeader('vary','Authorization');
       if(request.headers['if-none-match']===listing.etag){closeOnShutdown(response);response.writeHead(304);response.end();}
-      else send(response,200,{data:listing.tools});return;
+      else send(response,200,{data:'tools' in listing?listing.tools:{total:listing.total,items:listing.items,cursor:listing.cursor}});return;
     }
     const toolCall=/^\/v1\/tools\/([^/]+)\/call$/.exec(url.pathname);
     if(toolCall&&request.method==='POST'){const name=ToolName.parse(decodeURIComponent(toolCall[1])),value=await catalog.call(ctx,name,ToolCallInput.parse(await body(request)),shutdownSignal.signal);send(response,'taskId' in value?202:200,{data:value});return;}
@@ -268,7 +269,7 @@ const server = createListener(async (request, response) => {
     }
     if(url.pathname==='/v1/assets'){
       if(request.method==='POST'){send(response,201,{data:await assets.register(ctx,AssetRegistration.parse(await body(request)))});return;}
-      if(request.method==='GET'){const query=AssetListQuery.parse({limit:url.searchParams.get('limit')??undefined,after:url.searchParams.get('after')??undefined,kind:url.searchParams.get('kind')??undefined,lifecycle:url.searchParams.get('lifecycle')??undefined});send(response,200,{data:await assets.list(ctx,query)});return;}
+      if(request.method==='GET'){const query=AssetListQuery.parse({limit:url.searchParams.get('limit')??undefined,after:url.searchParams.get('after')??undefined,kind:url.searchParams.get('kind')??undefined,lifecycle:url.searchParams.get('lifecycle')??undefined});send(response,200,{data:url.searchParams.has('view')?await assets.page(ctx,{...RegistryPageQuery.parse(Object.fromEntries(url.searchParams)),...(query.kind?{kind:query.kind}:{})}):await assets.list(ctx,query)});return;}
     }
     const assetRoute=/^\/v1\/assets\/([^/]+)(?:\/(credentials|lifecycle|health))?$/.exec(url.pathname);
     if(assetRoute){const id=AssetId.parse(assetRoute[1]);
@@ -279,11 +280,11 @@ const server = createListener(async (request, response) => {
         else if(assetRoute[2]==='health'){await body(request);send(response,200,{data:await assets.check(ctx,id)});}else throw new ApiError('TARGET_NOT_FOUND','API route not found');return;
       }
     }
-    if(url.pathname===CLIENT_ROUTES.objectTypes.path&&request.method==='GET'){send(response,200,{data:await objectTypes.list(ctx)});return;}
+    if(url.pathname===CLIENT_ROUTES.objectTypes.path&&request.method==='GET'){send(response,200,{data:url.searchParams.has('view')?await objectTypes.page(ctx,RegistryPageQuery.parse(Object.fromEntries(url.searchParams))):await objectTypes.list(ctx)});return;}
     if(url.pathname===CLIENT_ROUTES.objects.path&&request.method==='GET'){
       const query=ObjectListQuery.parse({limit:url.searchParams.get('limit')??undefined,after:url.searchParams.get('after')??undefined,
         typeId:url.searchParams.get('typeId')??undefined,system:url.searchParams.get('system')??undefined});
-      send(response,200,{data:await entities.list(ctx,query)});return;
+      send(response,200,{data:url.searchParams.has('view')?await entities.page(ctx,{...RegistryPageQuery.parse(Object.fromEntries(url.searchParams)),...(query.typeId?{typeId:query.typeId}:{}),...(query.system?{system:query.system}:{})}):await entities.list(ctx,query)});return;
     }
     const objectRoute=/^\/v1\/objects\/([^/]+)(?:\/(observations|relations))?$/.exec(url.pathname);
     if(objectRoute&&request.method==='GET'){
@@ -297,7 +298,7 @@ const server = createListener(async (request, response) => {
     if (url.pathname === '/v1/status' && request.method === 'GET') { send(response,200,{data:{apiVersion:API_VERSION,syntheticOnly:true,bootId,processId:process.pid}});return; }
     if (url.pathname === CLIENT_ROUTES.tasks.path && request.method === CLIENT_ROUTES.tasks.method) {
       const query=TaskListQuery.parse({limit:url.searchParams.get('limit')??undefined,kind:url.searchParams.get('kind')??undefined,capabilityPackId:url.searchParams.get('capabilityPackId')??undefined,after:url.searchParams.get('after')??undefined});
-      send(response,200,{data:await tasks.list(ctx,query.limit,query)});return;
+      send(response,200,{data:url.searchParams.has('view')?await tasks.page(ctx,{...RegistryPageQuery.parse(Object.fromEntries(url.searchParams)),...(query.kind?{kind:query.kind}:{}),...(query.capabilityPackId?{capabilityPackId:query.capabilityPackId}:{})}):await tasks.list(ctx,query.limit,query)});return;
     }
     if (url.pathname === '/v1/packs' && request.method === 'GET') {
       await auth.check(ctx,'methods.use'); send(response,200,{ data:packages.descriptors }); return;

@@ -306,6 +306,11 @@ export const TaskView = z.object({ taskId: TaskId,tenantId:z.string(),scopeId:Sc
 });
 export type TaskView=z.infer<typeof TaskView>;
 export const TaskListQuery=z.object({limit:z.coerce.number().int().min(1).max(100).default(20),kind:z.enum(['work','tool','index']).optional(),capabilityPackId:z.string().regex(/^[a-z][a-z0-9-]{0,99}$/).optional(),after:TaskId.optional()});
+export const RegistryPageQuery=z.object({view:z.literal('page'),limit:z.coerce.number().int().min(1).max(100).default(20),cursor:z.string().min(1).max(4096).optional(),scopeId:ScopeId.optional(),productLineId:z.string().min(1).max(200).optional(),flowVersion:z.string().min(1).max(200).optional(),status:z.string().min(1).max(100).optional(),lifecycle:z.string().min(1).max(100).optional(),owner:z.string().min(1).max(200).optional(),minAgeMs:z.coerce.number().int().min(0).max(1e13).optional(),maxAgeMs:z.coerce.number().int().min(0).max(1e13).optional(),sort:z.enum(['age','updatedAt']).default('updatedAt'),order:z.enum(['asc','desc']).default('desc')}).refine(q=>q.minAgeMs===undefined||q.maxAgeMs===undefined||q.minAgeMs<=q.maxAgeMs,'Minimum age must not exceed maximum age');
+export type RegistryPageQuery=z.infer<typeof RegistryPageQuery>;
+export const RegistryPage=z.object({total:z.number().int().nonnegative(),items:z.array(z.unknown()),cursor:z.string().nullable()});
+export const TaskPageQuery=RegistryPageQuery.safeExtend({kind:TaskListQuery.shape.kind,capabilityPackId:TaskListQuery.shape.capabilityPackId});
+export const AssetPageQuery=RegistryPageQuery.extend({kind:AssetKind.optional()});
 export const NotificationQuery=z.object({cursor:z.coerce.number().int().nonnegative().default(0),limit:z.coerce.number().int().min(1).max(200).default(100)});
 export const NotificationView=z.object({seq:z.number().int().nonnegative(),taskId:TaskId.nullable(),scopeId:ScopeId,kind:z.string(),payload:z.record(z.string(),z.unknown()),createdAt:z.string()});
 export const NotificationPage=z.object({items:z.array(NotificationView),cursor:z.number().int().nonnegative(),hasMore:z.boolean()});
@@ -316,25 +321,25 @@ export const EventPage = z.object({ events:z.array(Event),after:z.number().int()
 export const CLIENT_ROUTES = {
   devLogin:{ method:'POST',path:'/v1/auth/dev-login',request:DevLoginRequest,response:DevLoginResult },
   authRefresh:{method:'POST',path:'/v1/auth/refresh',request:AuthRefreshRequest,response:DevLoginResult},
+  authLogout:{method:'POST',path:'/v1/auth/logout',request:AuthRefreshRequest},
   notifications:{method:'GET',path:'/v1/notifications',query:NotificationQuery,response:NotificationPage},
   notificationStream:{method:'GET',path:'/v1/notifications/stream',contentType:'text/event-stream'},
   queues:{method:'GET',path:'/v1/queues',response:QueueView},
-  authLogout:{method:'POST',path:'/v1/auth/logout',request:AuthRefreshRequest},
   sources:{ method:'POST',path:'/v1/sources',request:SourceUpload,response:SourceReference },
   packs:{ method:'GET',path:'/v1/packs' },
   submit:{ method:'POST',path:'/v1/tasks/submit',request:SubmitRequest,response:SubmittedTask },
-  tasks:{ method:'GET',path:'/v1/tasks',query:TaskListQuery,response:z.array(TaskView) },
+  tasks:{ method:'GET',path:'/v1/tasks',query:z.union([TaskPageQuery,TaskListQuery.extend({view:z.undefined().optional()})]),response:z.union([z.array(TaskView),RegistryPage]) },
   approvals:{ method:'GET',path:'/v1/tasks/{taskId}/approvals',response:z.array(ApprovalView) },
-  scopes:{method:'GET',path:'/v1/scopes'},
+  scopes:{method:'GET',path:'/v1/scopes',pageQuery:RegistryPageQuery,pageResponse:RegistryPage},
   scopeRoles:{method:'GET',path:'/v1/scopes/{scopeId}/roles'},
   scopeRoleSubmit:{method:'POST',path:'/v1/scopes/{scopeId}/roles',request:ScopeRolePatch},
   scopePolicySubmit:{method:'POST',path:'/v1/scopes/{scopeId}/policy',request:ScopePolicyPatch},
   changeSetSubmit:{method:'POST',path:'/v1/change-sets',request:ChangeSetSubmission},
-  changeSets:{method:'GET',path:'/v1/change-sets'},
+  changeSets:{method:'GET',path:'/v1/change-sets',pageQuery:RegistryPageQuery,pageResponse:RegistryPage},
   changeSet:{method:'GET',path:'/v1/change-sets/{changeSetId}'},
   runtimeProfiles:{method:'GET',path:'/v1/runtime-profiles'},
-  objectTypes:{method:'GET',path:'/v1/object-types'},
-  assets:{method:'GET',path:'/v1/assets',query:AssetListQuery},
+  objectTypes:{method:'GET',path:'/v1/object-types',pageQuery:RegistryPageQuery,pageResponse:RegistryPage},
+  assets:{method:'GET',path:'/v1/assets',query:z.union([AssetPageQuery,AssetListQuery.extend({view:z.undefined().optional()})]),pageResponse:RegistryPage},
   assetSubmit:{method:'POST',path:'/v1/assets',request:AssetRegistration},
   asset:{method:'GET',path:'/v1/assets/{assetId}'},
   assetLifecycle:{method:'POST',path:'/v1/assets/{assetId}/lifecycle',request:AssetTransition},
@@ -351,10 +356,10 @@ export const CLIENT_ROUTES = {
   oauthDevice:{method:'POST',path:'/v1/credentials/oauth/device',request:OAuthGrantInput},
   oauthPoll:{method:'POST',path:'/v1/credentials/oauth/device/{flowId}/poll',request:z.object({}).strict()},
   oauthClientCredentials:{method:'POST',path:'/v1/credentials/oauth/client-credentials',request:OAuthGrantInput},
-  tools:{method:'GET',path:'/v1/tools',response:z.array(ToolView)},
+  tools:{method:'GET',path:'/v1/tools',pageQuery:RegistryPageQuery,response:z.union([z.array(ToolView),RegistryPage])},
   toolCall:{method:'POST',path:'/v1/tools/{name}/call',request:ToolCallInput,response:ToolCallResult},
   skillCandidate:{method:'GET',path:'/v1/skillpacks/{id}'},
-  skillpacks:{method:'GET',path:'/v1/skillpacks',response:z.array(SkillPackView)},
+  skillpacks:{method:'GET',path:'/v1/skillpacks',pageQuery:RegistryPageQuery,response:z.union([z.array(SkillPackView),RegistryPage])},
   skillpackSubmit:{method:'POST',path:'/v1/skillpacks',request:SkillPackSubmission,response:SkillPackView,scopeHeader:'X-Scope-Id'},
   skillpackRun:{method:'POST',path:'/v1/skillpacks/{id}/runs',request:SkillRunInput,response:z.object({taskId:TaskId})},
   moduleInstall:{method:'POST',path:'/v1/modules/install',request:ModuleInstallRequest,scopeHeader:'X-Scope-Id'},
@@ -362,7 +367,7 @@ export const CLIENT_ROUTES = {
   bot:{method:'POST',path:'/v1/automations/bots',request:BotRegistration},
   botRuns:{method:'GET',path:'/v1/automations/bots/{assetId}/runs'},
   connectorEvent:{method:'POST',path:'/v1/connectors/{assetId}/events',request:ConnectorEventInput},
-  objects:{method:'GET',path:'/v1/objects',query:ObjectListQuery,response:ObjectPage},
+  objects:{method:'GET',path:'/v1/objects',query:z.union([RegistryPageQuery.safeExtend({typeId:PackageName.optional(),system:PackageName.optional()}),ObjectListQuery.extend({view:z.undefined().optional()})]),response:z.union([ObjectPage,RegistryPage])},
   object:{method:'GET',path:'/v1/objects/{entityId}',response:EntityView},
   objectObservations:{method:'GET',path:'/v1/objects/{entityId}/observations'},
   objectRelations:{method:'GET',path:'/v1/objects/{entityId}/relations'},

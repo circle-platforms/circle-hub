@@ -465,3 +465,13 @@ GET /v1/notifications?cursor=0&limit=100 需 tasks.read，返回 {items:[{seq,ta
 GET /v1/notifications/stream 用同样的 cursor/limit 或 Last-Event-ID 建 SSE；事件 notification 带 id=seq 和通知 JSON，cursor 事件带下一游标（即使本页无通知）。客户端保存已处理游标，断线按它补读，轮询是同一条持久流。服务器每轮重核身份/角色，过期发 session.expired、撤权发 permission.revoked、流内部错误发 stream.error 后关闭；使用客户端已刷新会话重连，不在流中索取密码。流有心跳/背压处理，graceful shutdown 会结束连接。
 
 GET /v1/queues 返回 awaitingMyApproval/awaitingMyInput/submittedByMe/assignedToMe/exceptions，各为 {count,oldestWaitMs,overSla,slaMs}。审批计数按当前管理员资格、twoPersonRule 与申请人过滤；输入和 bot 失败仅归当前所有者，私有任务不借队列暴露。异常包括 unknown/failed、expired/superseded 请求、失败 bot occurrence 与管理员范围内离线 worker。SLA 默认审批24小时、输入5分钟、其它1小时，响应明示阈值；assignedToMe 只读持久的真实 assignment context，没有分派记录就是零，不从模型文本或申请人身份推断指派。
+
+## 修订 3 第 8 节：列表即查询
+
+登记簿的 GET 加 `view=page` 返回 `{total,items,cursor}`。覆盖 tasks、assets、skillpacks、change-sets、scopes、scopes/{id}/roles、service-clients、object-types、objects、tools；不带 view 保留各接口原数组或原分页形状。F 导出 RegistryPageQuery/RegistryPage 与各路由的 pageQuery/pageResponse（tasks/assets/objects 的 query 与 response 同时接受兼容形状）。Circle 新列表统一用 view=page。
+
+通用参数：limit 默认20、范围1–100；cursor 是原样回传的 opaque token；scopeId/productLineId/flowVersion/status/lifecycle/owner 可选；minAgeMs/maxAgeMs 非负，最小不得大于最大；sort=updatedAt|age、order=desc|asc，默认最近更新时间倒序。age/desc 表示最老在先。tasks 另支持 kind=work|tool|index、capabilityPackId；assets 另支持 kind；objects 另支持 typeId/system。权限、私有边界与分面先过滤，再计算总数和分页，权限每页重核。跨身份或改变筛选/排序/limit 的游标为 INVALID_PAYLOAD，越权 scope 为 FORBIDDEN_SCOPE；不手工拼 token。
+
+时间游标保存数据库完整微秒和稳定 id，年龄条件钉住首个请求时间；总数是本页当前授权数据的总数，后续页仍可能因真实变更而改变，不承诺跨请求的永久快照。新增资产版本、技能和服务客户端更新时间用于排序，健康/轮换/状态的实际更新也会改变更新时间。tools 先用调用者目录做权限核对，再在该集合分页，ETag 跟随实际页与授权。
+
+分面只用记录里已声明的维度，不从产品名/平台名猜分类。任务 productLineId 取持久 context，资产/技能/工具取 configuration，企业对象取 attributes；flowVersion 使用任务 flow 或相应声明。owner 对任务/变更集/技能是申请人，资产/工具是资产所有者，对象是观测登记人，角色/服务客户端是其主体，词表是登记人。范围和租户级词表没有凭空补个人 owner/scope/productLine：不存在的维度不匹配该筛选。状态用各登记簿原状态（task phase、资产 lifecycle、skill status、change-set status、role、服务客户端 active/revoked、词表 registered）。

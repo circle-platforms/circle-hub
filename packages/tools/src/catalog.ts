@@ -16,6 +16,8 @@ import {sanitizeResult} from '../../connectors/src/result-safety.ts';
 import {GatewayProfile} from '../../connectors/src/case-gateway.ts';
 import type {ServiceClients} from '../../tasks/src/service-clients.ts';
 import {sha256} from '../../contracts/src/index.ts';
+import type {RegistryPageQuery} from '../../contracts/src/index.ts';
+import {memoryPage} from '../../storage/src/faceted-query.ts';
 
 export class ToolCatalog {
   store:Store;auth:Auth;assets:Assets;tasks:Tasks;execution:Operations;knowledge:KnowledgeGraph;packages:ToolPackage[];profiles:Record<string,ConnectorProfile>={};
@@ -61,7 +63,7 @@ export class ToolCatalog {
   async available(ctx:AuthContext,tx?:Transaction):Promise<{row:any;definition:ToolDefinition;view:any}[]>{
     const p=await this.auth.policy(ctx,tx);
     if(!p.grants.includes('tasks.read')||!p.grants.some(grant=>['tasks.submit','tools.read'].includes(grant)))return [];
-    const rows=(await (tx??this.store.pool).query(`SELECT b.*,a.scope_id,a.owner_principal_id,v.sha256,v.configuration,v.declaration,v.lifecycle,v.approved_digest FROM tool_bindings b
+    const rows=(await (tx??this.store.pool).query(`SELECT b.*,a.scope_id,a.owner_principal_id,a.created_at AS registered_at,v.updated_at AS modified_at,v.sha256,v.configuration,v.declaration,v.lifecycle,v.approved_digest FROM tool_bindings b
       JOIN assets a ON a.asset_id=b.asset_id AND a.current_version=b.version JOIN asset_versions v ON v.asset_id=b.asset_id AND v.version=b.version
       WHERE b.tenant_id=$1 AND a.scope_id=ANY($2::text[]) AND v.lifecycle='running' AND v.approved_digest=v.sha256
       AND (a.owner_principal_id=$3 OR v.readers ? $3 OR v.readers ? '*') ORDER BY b.name`,[p.tenantId,p.scopes,p.principalId])).rows;
@@ -78,6 +80,7 @@ export class ToolCatalog {
     await tx.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');const entries=await this.available(ctx,tx),tools=entries.map(entry=>entry.view);
     return {tools,etag:`"${canonicalHash({principalId:ctx.principalId,tenantId:ctx.tenantId,tools,pins:entries.map(entry=>entry.row.sha256)})}"`};
   });}
+  async page(ctx:AuthContext,query:RegistryPageQuery){if(query.scopeId)await this.auth.check(ctx,'tools.read',query.scopeId);return this.store.transaction(async tx=>{await tx.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');const entries=await this.available(ctx,tx),page=memoryPage(ctx,'tools',query,entries.map(({row,view})=>({value:view,id:view.name,createdAt:row.registered_at.toISOString(),updatedAt:row.modified_at.toISOString(),scopeId:row.scope_id,owner:row.owner_principal_id,productLineId:row.configuration.productLineId,flowVersion:row.configuration.flowVersion,status:row.lifecycle,lifecycle:row.lifecycle})));return {...page,etag:`"${canonicalHash({principalId:ctx.principalId,query,page})}"`};});}
   async entry(ctx:AuthContext,name:string,tx?:Transaction):Promise<any>{
     const item=(await this.available(ctx,tx)).find(entry=>entry.row.name===name);if(item)return item;
     const p=await this.auth.policy(ctx,tx);if(p.grants.includes('sources.diagnose')){const exists=(await (tx??this.store.pool).query('SELECT 1 FROM tool_bindings WHERE tenant_id=$1 AND name=$2',[p.tenantId,name])).rowCount;if(!exists)throw new ApiError('SOURCE_ABSENT','Tool is absent from the authorized catalog');}
