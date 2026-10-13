@@ -395,3 +395,21 @@ POST /v1/change-sets 接收 {scopeId,title?,items:[{assetId,version,sha256}],ide
 GET /v1/runtime-profiles 需 admin，返回当前运行配置的 {profileType:"connector"|"runtime"|"execution",profileRef,profileSha256,verification} 数组。没有地址、文件路径或密钥值；这只是配置观察。管理员再 POST /v1/assets，kind=runtime-profile、configuration={profileType,profileRef,profileSha256}、version/作用 scope/声明/readers 仍按普通资产；另一名管理员决定后才满足依赖。配置 ref 在每 scope/type 唯一，改配置后登记新版本并重新决定。连接器配置仍用 runtimeProfileRef；同名 ref 跨类型时另带 runtimeProfileType 明确选择。Circle runtime 的 ref 为 circle-runtime。旧真实部署须管理员补登记，平台不会因仓库外配置存在而批准。
 
 既有 POST /v1/assets、/v1/source-artifacts、/v1/skillpacks 和 /v1/modules/install 自动产生单项变更集并追加 changeSetId/approvalTaskId。原 lifecycle state=approved 调用继续可用，内部回应该单项的请求；多项必须使用其任务审批接口，不能逐项批准。技能缺声明的工具继续 SKILLPACK_CHECK_FAILED；仅声明工具当前不可用时受理为 blocked，check.missingTools 保留具体名称，就绪后仍须人决定。技能决定与运行时继续查目录。旧数据库的 assets.publish 请求保留历史绑定批准/驳回规则，旧单仍可驳回；新请求用自动 superseded 关单。
+
+## 修订 3：Skill、Tool、MCP server 与 Hook 的执行绑定
+
+运行仍使用既有 submit/status/events/result/input 接口。默认资源不会产生审批请求或 execution-submission；成员以上按当前范围角色、来源 readers、资源策略、已批准的 Tool 实现/产品线模块、running 资源和 runtime-profile 依赖进入执行链。`apv-case-execute` 的 input 可带 `methodAssetId`，值为批准后的 product-line 模块资产 id；模块须声明对应 flow。来源保持 commandSourceAssetId/build/sourceArtifactId 的既有绑定。既有内置兼容实现也要有 scope 内明确批准的 knowledge-source 定义，configuration 为 `{schema:"hub-tool-implementation/1",capabilityPackId,flowVersion,implementationSha256}`；这不是新的资产 kind。
+
+资源声明 `executionIsChange:true` 时，程序冻结 inputRevisionId、输入摘要、Tool/模块摘要、资源和来源版本、原件 id 与工作簿 SHA，登记 execution-submission 草稿，并作为一个变更集项。回应仍走任务 approvals；action.name 为 changesets.apply。批准只能被对应操作消费一次，决定不能重派另一操作；旧客户端原样回应三项绑定即可。默认资源不需要这一决定。
+
+Tool 保持原有 name/title/description/inputSchema/effect/mode/permission/assetId/assetVersion，追加 MCP annotations、minimumRole、approval。人的权限以范围角色和 minimumRole 为准，旧 permission 仅为机器 scope/客户端兼容标识；professional_permissions 登记表撤下。provider declaration 可带 provides:{tools,resources,prompts}，tools 使用 MCP name/description/object inputSchema/annotations 与 effect/minimumRole/approval 标注。
+
+product-line/1 使用 tools:[{manifest,imports}]、hooks:[{manifest,event,order}]、resources 与 flows。tools 的直接、动态、转导入及局部引用在安装前检查：文件须在冻结集合内；外部依赖只允许明确声明的 exceljs 4.4.0、read-excel-file 9.3.12、fflate 0.8.3、zod 4.6.5、saxes 5.0.1、parse5 8.0.1。Node 内建模块也不允许，未声明或计算式 import 为 IMPORT_NOT_DECLARED；不执行安装脚本。Tool 读取原字节并返回结构，模块文件不改写；散列可用全局 WebCrypto。产品线原件经变更集批准后装载，每次执行仍核对当前权限、版本和 SHA。
+
+Hook 契约严格为 hub-hook/1：handle({event,binding:{method,resource,source,inputRevision},subject}) 返回 {decision:"pass"} 或 {decision:"block",code,facts}。五个 event 为 verify.deviceCommand / verify.hostCommand / verify.workbook / beforeDispatch / afterResult。对应三个核验 subject 分别是 {command,tree:{heads:[{command,present}]}}、{command}、{client,contract:{testEnvEnabled:[]}}。处理器按 order 和稳定 id 顺序执行，block 即停；没有处理器时返回空判定列表，hub 不补产品规则。每项 hook.verification 事件及审计保留 ruleId/ruleVersion/event/result。block 的 code/facts 原样回传，补充授权行号、输入修订和原件 SHA。Hook 禁止 import、环境、网络、模型、动态代码和无限循环。
+
+运行结果保留失败原因和 script-conclusion evidence。命令不存在、主机自毁、权限拒绝等为 failed；可由申请人修复的来源未批准、网关不可用、租约不足、床构建不符停在 waiting-input，TaskView 追加 waitingReason，pendingInputs 中有对应请求。申请人使用原 input 接口提交新修订；修订保留 privateOwnerId/委托关系并清掉旧执行绑定和等待原因。床构建只从 env_prepare 的结构化观测或确定性解析的设备回显取得；配置标签不作为观测。unknown 保持冻结、不重发、独立 reconcile、旧 fence 拒绝，不因本地停止声称远端已停。
+
+## 修订 3：开发会话寿命与吊销
+
+POST /v1/auth/refresh 仍返回登录同形 token/expiresAt/roles，但 token 会轮换；旧 token 留五秒并发宽限，客户端须保存新 token。开发会话族的绝对寿命为 24 小时，续期不能突破；POST /v1/auth/logout 携带 Bearer 和空对象，立即吊销同族 token。短期 run token 不可 refresh/logout，仍由持当前租约的 worker 续期并受任务/fence/deadline 约束。开发身份从配置移除后重启失效；已治理的角色不被配置重写。开发密码失败锁定、请求桶和异步散列并发有上限，超额为 RATE_LIMITED，不回显凭据或用户名。

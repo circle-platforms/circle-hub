@@ -24,6 +24,8 @@ import { Approvals } from '../../../packages/tasks/src/approvals.ts';
 import { conclusionMigration } from '../../../packages/knowledge/src/conclusion-migration.ts';
 import { Records } from '../../../packages/knowledge/src/records.ts';
 import { Assessments } from '../../../packages/methods/src/assessments.ts';
+import {ToolProviders} from '../../../packages/methods/src/providers.ts';
+import {ProductModules} from '../../../packages/methods/src/product-modules.ts';
 import { Checklists } from '../../../packages/tasks/src/checklists.ts';
 import { checklistMigration } from '../../../packages/tasks/src/checklist-migration.ts';
 import { connectorMigration } from '../../../packages/tasks/src/connector-migration.ts';
@@ -58,25 +60,31 @@ import {Modules} from '../../../packages/modules/src/index.ts';
 import {roleMigration} from '../../../packages/tasks/src/role-migration.ts';
 import {changeSetMigration} from '../../../packages/tasks/src/change-set-migration.ts';
 import {changeSetDependenciesMigration} from '../../../packages/tasks/src/change-set-dependencies-migration.ts';
+import {enforcementMigration} from '../../../packages/execution/src/enforcement-migration.ts';
+import {ExecutionChanges} from '../../../packages/execution/src/governance.ts';
+import {toolRolesMigration} from '../../../packages/tasks/src/tool-roles-migration.ts';
+import {sessionMigration} from '../../../packages/tasks/src/session-migration.ts';
+import {AuthenticationThrottle} from '../../../packages/tasks/src/throttle.ts';
 import {ChangeSets} from '../../../packages/tasks/src/change-sets.ts';
 import {ChangeSetSubmission} from '../../../packages/contracts/src/index.ts';
 
 function environment(name: string): string { const value = process.env[name]; if (!value) throw new Error(`Required environment variable: ${name}`); return value; }
 const store = new Store(JSON.parse(environment('CIRCLE_SERVER_DATABASE_CONFIG')));
-await store.migrate([taskMigration,deliveryMigration,knowledgeMigration,executionMigration,...packageMigrations,approvalMigration,conclusionMigration,checklistMigration,connectorMigration,entityMigration,assetMigration,graphMigration,toolMigration,skillMigration,automationMigration,automationOutcomeMigration,knowledgePageMigration,automationOriginMigration,ingestionMigration,oauthMigration,resourceIdentityMigration,roleMigration,changeSetMigration,changeSetDependenciesMigration]);
+await store.migrate([taskMigration,deliveryMigration,knowledgeMigration,executionMigration,...packageMigrations,approvalMigration,conclusionMigration,checklistMigration,connectorMigration,entityMigration,assetMigration,graphMigration,toolMigration,skillMigration,automationMigration,automationOutcomeMigration,knowledgePageMigration,automationOriginMigration,ingestionMigration,oauthMigration,resourceIdentityMigration,roleMigration,changeSetMigration,changeSetDependenciesMigration,enforcementMigration,sessionMigration,toolRolesMigration]);
 const auth = new Auth(store,{developmentTtlMs:process.env.CIRCLE_SERVER_DEV_TOKEN_TTL_MS?Number(process.env.CIRCLE_SERVER_DEV_TOKEN_TTL_MS):undefined,runTokenTtlMs:process.env.CIRCLE_SERVER_RUN_TOKEN_TTL_MS?Number(process.env.CIRCLE_SERVER_RUN_TOKEN_TTL_MS):undefined});
 requireCondition(process.env.CIRCLE_SERVER_DEV_AUTH === '1', 'INVALID_PAYLOAD', 'Phase one requires explicitly enabled development authentication');
 await auth.initializeDevelopment(environment('CIRCLE_SERVER_DEV_IDENTITIES'));
-for(const pack of installedToolPackages)for(const tool of pack.tools)auth.registerPermission(tool.permission,tool.effect==='read'?'viewer':'member');
 await mkdir(environment('CIRCLE_SERVER_DATA_DIR'), { recursive: true, mode: 0o700 });
 const tasks = new Tasks(store, auth, Number(process.env.CIRCLE_SERVER_INPUT_TTL_MS ?? 300_000));
 const knowledge = new Records(store,auth,new LocalObjects(environment('CIRCLE_SERVER_DATA_DIR')));
 const objectTypes=new TypeCatalog(store,auth),entities=new Entities(store,auth,knowledge,objectTypes);
 const assets=new Assets(store,auth,`${environment('CIRCLE_SERVER_DATA_DIR')}/private-credentials`);
+const methods=new ToolProviders(assets);
 const oauth=new OAuthCredentials(store,auth,assets,process.env.CIRCLE_SERVER_OAUTH_PROFILES);
 assets.materializeCredential=(ctx,row,link,value)=>oauth.materialize(ctx,row,link,value);
 const graph=new KnowledgeGraph(store,auth,knowledge);
 const sourceArtifacts=new SourceArtifacts(store,auth,assets,knowledge,graph);
+const productModules=new ProductModules(sourceArtifacts);methods.products=productModules;
 const serviceClients=new ServiceClients(store,auth,assets,Number(process.env.CIRCLE_SERVER_RESOURCE_TOKEN_TTL_SECONDS??300));
 knowledge.sourceAccess=async(ctx,id,tx)=>{await entities.checkSourceAccess(ctx,id,tx);await graph.checkSourceAccess(ctx,id,tx);};
 const execution = new Operations(store,auth,tasks,knowledge);
@@ -88,6 +96,7 @@ assets.decorateView=row=>row.kind==='knowledge-source'&&row.configuration.schema
 assets.validateRegistration=async(ctx,input,id,tx)=>{await sourceArtifacts.validate(ctx,input,id,tx);await catalog.register(ctx,input,id,tx);};
 const approvals=new Approvals(store,auth,tasks,Number(process.env.CIRCLE_SERVER_APPROVAL_TTL_MS??86400000));execution.approvalCheck=(tx,task,spec)=>approvals.check(tx,task,spec);
 const changeSets=new ChangeSets(store,auth,assets,tasks,approvals);
+const executionChanges=new ExecutionChanges(assets,changeSets,execution,tasks);
 const registrationValidation=assets.validateRegistration;assets.validateRegistration=async(ctx,input,id,tx)=>{await changeSets.validateDefinition(tx,ctx,{...input,assetId:id});await registrationValidation?.(ctx,input,id,tx);};
 const skills=new SkillPacks(store,auth,tasks,approvals,assets,catalog,execution,knowledge);await skills.initialize(process.env.CIRCLE_RUNTIME_CONFIG);
 skills.changeSets=changeSets;
@@ -95,6 +104,7 @@ let executionProfiles:Record<string,unknown>={};if(process.env.CIRCLE_SERVER_EXE
 changeSets.profileIdentity=(type,ref)=>{const value=type==='connector'?(Object.hasOwn(catalog.profiles,ref)?catalog.profiles[ref]:null):type==='execution'?(Object.hasOwn(executionProfiles,ref)?executionProfiles[ref]:null):ref==='circle-runtime'?skills.runtime:null;return value?canonicalHash(value):null;};
 const runtimeProfiles=()=>[...Object.keys(catalog.profiles).map(profileRef=>({profileType:'connector',profileRef})),...Object.keys(executionProfiles).map(profileRef=>({profileType:'execution',profileRef})),...(skills.runtime?[{profileType:'runtime',profileRef:'circle-runtime'}]:[])].map(profile=>({...profile,profileSha256:changeSets.profileIdentity!(profile.profileType,profile.profileRef),verification:{ruleId:'runtime-profile-observation',ruleVersion:'1.0.0',result:'observed'}}));
 changeSets.validators.set('skill-package',(tx,ctx,asset)=>skills.changeDependencies(tx,ctx,asset));
+changeSets.validators.set('knowledge-source',async(_tx,_ctx,asset)=>asset.configuration.schema==='hub-tool-implementation/1'?methods.dependencies(asset):[]);
 changeSets.decisionHandlers.set('skill-package',async(tx,ctx,asset,approved)=>{await tx.query('UPDATE skill_packages SET status=$3 WHERE asset_id=$1 AND asset_version=$2',[asset.asset_id,asset.version,approved?'registered':'declined']);});
 await changeSets.initialize();
 const modules=new Modules(skills,sourceArtifacts,knowledge,auth);
@@ -108,12 +118,13 @@ const automations=new Automations(store,auth,tasks,assets,skills);catalog.observ
 await privateIPC.start(async(message)=>{const worker=await auth.authenticate(message.authorization),id=z.string().parse(message.operationId),fence=z.number().int().positive().parse(message.fencingToken);return skills.privateSecret(worker,id,fence,message.revoke===true);});
 const assessments=new Assessments(store,tasks,knowledge),checklists=new Checklists(store,tasks,knowledge);
 const registry=new ConnectorRegistry(store,auth,packageConnectors);await registry.initialize();execution.connectorCheck=(tx,actor,scope,spec)=>registry.check(tx,actor,scope,spec);
-const packages=installPackages({store,auth,tasks,knowledge,execution,registry,checklists,approvals,assessments,assets,catalog,sourceArtifacts,oauth,serviceClients}),rules=packages.rules;
-await auth.publishPermissions();
+const packages=installPackages({store,auth,tasks,knowledge,execution,registry,checklists,approvals,assessments,assets,catalog,sourceArtifacts,oauth,serviceClients,changeSets,methods,executionChanges,productModules}),rules=packages.rules;
+
 let closing = false;
 const shutdownSignal=new AbortController();
 const activeRequests=new Set<Promise<void>>();
 const bootId=randomUUID();
+const authenticationThrottle=new AuthenticationThrottle();
 let restartRequested=false;
 process.on('message',message=>{if(restartRequested&&(message as any)?.type==='graceful-restart-now')void shutdown();});
 
@@ -162,6 +173,7 @@ const server = createListener(async (request, response) => {
   const completed=Promise.withResolvers<void>();activeRequests.add(completed.promise);
   try {
     const url = new URL(request.url ?? '/', 'http://127.0.0.1');
+    if(request.method==='POST'&&['/token','/v1/introspect','/v1/auth/dev-login','/v1/auth/token'].includes(url.pathname))authenticationThrottle.enter(request.socket.remoteAddress??'unknown');
     if(['/token','/v1/introspect'].includes(url.pathname)&&request.method==='POST'){
       try{const client=await serviceClients.basic(request.headers.authorization),input=await form(request);
         if(url.pathname==='/token'){if(input.grant_type!=='client_credentials')throw new ApiError('INVALID_PAYLOAD','Client credentials grant required',{oauthError:'unsupported_grant_type'});protocolJSON(response,200,await serviceClients.grant(client,input.scope??''));}
@@ -178,6 +190,7 @@ const server = createListener(async (request, response) => {
     }
     const ctx = await auth.authenticate(request.headers.authorization);
     if(ctx.run){const allowed=request.method==='GET'&&['/v1/tools','/v1/tasks','/v1/status'].includes(url.pathname)||request.method==='POST'&&/^\/v1\/tools\/[^/]+\/call$/.test(url.pathname)||request.method==='GET'&&/^\/v1\/tasks\/[^/]+\/(?:status|result|events)$/.test(url.pathname)||request.method==='GET'&&/^\/v1\/(?:sources|artifacts|evidence)\/[^/]+\/content$/.test(url.pathname);requireCondition(allowed,'FORBIDDEN_ACTION','Run token authorizes only its declared tools and task reads');}
+    if(url.pathname===CLIENT_ROUTES.authLogout.path&&request.method==='POST'){AuthRefreshRequest.parse(await body(request));send(response,200,{data:await auth.logout(request.headers.authorization!)});return;}
     if(url.pathname===CLIENT_ROUTES.authRefresh.path&&request.method==='POST'){
       AuthRefreshRequest.parse(await body(request));const issued=await auth.refresh(request.headers.authorization!),policy=await auth.policy(ctx);send(response,200,{data:{...issued,tokenType:'Bearer',principalId:policy.principalId,tenantId:policy.tenantId,scopes:policy.scopes,subjectType:policy.kind==='user'?'human':'service-client',...(policy.kind==='user'?{roles:policy.roles}:{scope:policy.grants.join(' ')})}});return;
     }
@@ -292,6 +305,7 @@ const server = createListener(async (request, response) => {
     }
     if (url.pathname === '/v1/tasks/submit' && request.method === 'POST') {
       const submission = SubmitRequest.parse(await body(request));
+      await auth.check(ctx,'tasks.submit',submission.scopeId);
       const accepted = await store.transaction(async tx => {
         const owner=await packages.prepare(ctx,submission,tx);
         const task=await tasks.submit(ctx,submission,tx);

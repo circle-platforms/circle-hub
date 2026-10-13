@@ -613,3 +613,15 @@ Claude 已在简报第 11 节确认冻结 execution-submission、view=page 与 r
 第 4 节验收扩展到 **7/7**，技能/诊断及固定 RPC 联合 **17/17**；原待批可见性、历史技能驳回、模块封存兼容 **12/12**。依赖再核会实时拒绝不就绪的决定并保留完整工具名；同项不能重复、跨 tenant/scope 拒绝；并发决定只有一个生效。typecheck 与 diff 检查通过，当前固定 Circle 全套回归运行中。未动真实栈、Circle、网关 Python 或独立技能仓库。
 
 首次全套 acceptance **169/175**：开发栈与第二产品线缺少显式批准的运行依赖，已按新规则补合成身份登记/决定；重启验收从“空队列”改为“已受理任务集合前后相同”，仍证明未完成请求体不受理。最终完整 contracts **4/4**、methods **25/25**、acceptance **175/175**、references **7/7**，共 **211/211**，固定 Circle 8b2ceb6、无 skip；typecheck、diff 和原件归档核验通过。本节只本地提交并交复核，下一节的私有修订/终态 claim 两条复现已先写，**0/2**，未包含在本节验收或提交中。
+
+## 39：修订 3 第 5 节，执行链、Hook 与运行报错
+
+验收先覆盖普通执行不审批、未知命令、网关修复等待、床构建观测、一次性执行变更、终态任务领取和私有任务修订，再实现。默认资源直接走当前角色/来源 readers/资源策略、批准的 Tool/产品线模块、running 资源与依赖、Hook、租约/fence、执行和证据；executionIsChange 资源冻结执行-submission 资产并走唯一的变更集决定，只能由对应操作消费一次。旧审批三项回应和生产资源机制继续兼容，终态任务不会领取旧操作。等待原因持久化为 waitingReason，申请人修订保留私有所有者和父运行授权，丢弃旧绑定；unknown 仍冻结、不重派、独立核对并拒绝旧 fence。床配置标签不当成设备构建观测。
+
+Hook 运行器按 hub-hook/1 和既定三个 subject 原形实现，五个挂点均接入，按顺序运行批准模块中的纯 TS 处理器。零处理器无产品判定；block 原 code/facts、规则 id/版本、授权行与原件 SHA 进入事件、审计和失败证据。处理器不能读取环境/网络、动态生成代码或无限运行。Tool 装载前核对直接/动态/局部 imports 与冻结集合、明确声明及精确六种依赖，Node 内建与计算式 import 拒绝为 IMPORT_NOT_DECLARED。原件不改写；Tool 字节在独立进程中执行，OS 运行隔离和静态密钥留给下一笔第 7 节。professional_permissions 撤下，Tool 增加 MCP annotations/minimumRole/approval；人的授权跟随范围角色，兼容机器和旧客户端 permission 标识。
+
+独立 circle-packs ced41a6 的 products/apv 按原字节冻结与批准，**18/18** 包内测试在 hub 依赖集下通过，实际 Tool 读取工作簿通过。先以零 Hook 派发，再批准 APV Hook 后同一本工作簿报 COMMAND_NOT_IN_TREE 且没有第二次网关提交。Meridian 扩为 Tool+imports、五个 Hook、resources/flows 的完整夹具，并由同一装载器执行。包作者在回归期间继续推进 main 后，验收改为从 Git 固定读取约定提交，避免把移动样本计数当成平台失败；未修改独立包。
+
+审计中本节的修复有复现验收：执行批准单次消费、终态领取阻断、修订保留私有范围、开发会话族轮换/24 小时绝对寿命/退出吊销、移除开发身份失效、异步 scrypt 与请求/用户名/并发容量、实际解压字节上限及先核权限。文档 get/section 不能越过注册根，机器服务客户端不会继承创建者未持有的读取能力。脚本产品声明记录 verified 与规则核验，不冒充人的 approve。
+
+最终用冻结工作树复核，contracts **4/4**、methods **31/31**、acceptance **189/189**、references **7/7**，共 **231/231**，固定 Circle 8b2ceb6 和 APV ced41a6，**无 skip**。typecheck、diff 和 **714** 归档核验通过。独立包的 18 条另计；没有读取业务原件、连接真实系统/网关、付费模型、改 Circle 或部署。接口与条件执行说明已交接；下一笔按用户新顺序先做第 7 节，再第 6、8、9 节。harness-adapters 和权限导出规范分别由其他作者负责，本分支不修改。

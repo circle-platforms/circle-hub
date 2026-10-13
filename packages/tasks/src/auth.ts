@@ -1,8 +1,9 @@
-import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
+import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { z } from 'zod';
 import { ApiError, requireCondition, sha256, type AuthContext, type Policy,type RunConstraint } from '../../contracts/src/index.ts';
 import type { Store, Transaction } from '../../storage/src/index.ts';
+import {passwordDigest} from './password.ts';
 import {ScopeRoles,ScopeRole,rolePresets,type ScopeRole as RoleName} from './roles.ts';
 
 const DevelopmentIdentity = z.object({ username: z.string().min(1), password: z.string().min(8),
@@ -16,7 +17,8 @@ export class Auth {
   store: Store;
   credentials = new Map<string, Credential>();
   developmentTtlMs:number;runTokenTtlMs:number;
-  roles:ScopeRoles;professionalPermissions=new Map<string,RoleName>();professionalLoaded=false;
+  attempts=new Map<string,{count:number;start:number;lockedUntil:number}>();activeHashes=0;
+  roles:ScopeRoles;
   constructor(store: Store,options:{developmentTtlMs?:number;runTokenTtlMs?:number}={}) { this.store = store;this.developmentTtlMs=options.developmentTtlMs??DEFAULT_DEV_TOKEN_TTL_MS;this.runTokenTtlMs=options.runTokenTtlMs??300_000;
     this.roles=new ScopeRoles(store);requireCondition(Number.isInteger(this.developmentTtlMs)&&this.developmentTtlMs>=1000&&this.developmentTtlMs<=MAX_DEV_TOKEN_TTL_MS&&Number.isInteger(this.runTokenTtlMs)&&this.runTokenTtlMs>=1000&&this.runTokenTtlMs<=300_000,'INVALID_PAYLOAD','Development token lifetime configuration is invalid');
   }
@@ -27,36 +29,37 @@ export class Auth {
       for (const identity of input.identities) {
         requireCondition(!this.credentials.has(identity.username), 'INVALID_PAYLOAD', 'Duplicate development username');
         const salt = randomBytes(16);
-        this.credentials.set(identity.username, { principalId: identity.principalId, salt, digest: scryptSync(identity.password, salt, 32) });
+        this.credentials.set(identity.username, { principalId: identity.principalId, salt, digest: await passwordDigest(identity.password, salt) });
         const row=(await tx.query(`INSERT INTO policies(principal_id,tenant_id,kind,worker_id,scopes,grants,targets,defects,username)
-          VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(principal_id) DO UPDATE SET username=EXCLUDED.username RETURNING *`,
+          VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(principal_id) DO UPDATE SET username=EXCLUDED.username,disabled=false,targets=EXCLUDED.targets,defects=EXCLUDED.defects,scopes=CASE WHEN policies.kind='user' THEN policies.scopes ELSE EXCLUDED.scopes END,grants=CASE WHEN policies.kind='user' THEN policies.grants ELSE EXCLUDED.grants END RETURNING *`,
           [identity.principalId, identity.tenantId, identity.kind, identity.workerId ?? null,
             JSON.stringify(identity.scopes), JSON.stringify(identity.grants), JSON.stringify(identity.targets), JSON.stringify(identity.defects),identity.username])).rows[0];
-        requireCondition(row.tenant_id===identity.tenantId&&row.kind===identity.kind,'INVALID_PAYLOAD','Development identity cannot change its tenant or kind');await this.roles.seed(tx,row,identity.roles);
+        requireCondition(row.tenant_id===identity.tenantId&&row.kind===identity.kind,'INVALID_PAYLOAD','Development identity cannot change its tenant or kind');await this.roles.seed(tx,row,identity.roles);await tx.query("UPDATE policies SET identity_source='development' WHERE principal_id=$1",[identity.principalId]);
       }
+      await tx.query("UPDATE policies SET disabled=true WHERE identity_source='development' AND principal_id<>ALL($1::text[])",[input.identities.map(identity=>identity.principalId)]);
     });
   }
   async issue(username: string, password: string, ttlMs = this.developmentTtlMs): Promise<{ token: string; expiresAt: string }> {
     const credential = this.credentials.get(username);
-    const salt = credential?.salt ?? Buffer.alloc(16); const actual = scryptSync(password, salt, 32);
+    for(const [key,attempt]of this.attempts)if(Date.now()-attempt.start>60000&&attempt.lockedUntil<=Date.now())this.attempts.delete(key);requireCondition(this.attempts.has(username)||this.attempts.size<1000,'RATE_LIMITED','Authentication account capacity is exhausted');
+    const entry=this.attempts.get(username)??{count:0,start:Date.now(),lockedUntil:0};if(Date.now()-entry.start>60000&&entry.lockedUntil<=Date.now()){entry.count=0;entry.start=Date.now();}this.attempts.set(username,entry);requireCondition(entry.lockedUntil<=Date.now()&&this.activeHashes<8,'RATE_LIMITED','Development authentication is temporarily rate limited');this.activeHashes++;let actual:Buffer;try{actual=await passwordDigest(password,credential?.salt??Buffer.alloc(16));}finally{this.activeHashes--;}if(!credential||!timingSafeEqual(actual,credential.digest)){entry.count++;if(entry.count>=5)entry.lockedUntil=Date.now()+60000;}else entry.count=0;const salt=credential?.salt;
     requireCondition(credential && timingSafeEqual(actual, credential.digest), 'UNAUTHENTICATED', 'Invalid development credentials');
     const policy = await this.policy({ principalId: credential.principalId } as AuthContext);
     const token = randomBytes(32).toString('base64url');
-    const result = await this.store.pool.query(`INSERT INTO auth_tokens(digest,principal_id,expires_at)
-      VALUES($1,$2,clock_timestamp()+($3::double precision*interval '1 millisecond')) RETURNING expires_at`,
+    const result = await this.store.pool.query(`INSERT INTO auth_tokens(digest,principal_id,expires_at,family_id,absolute_expires_at)
+      VALUES($1,$2,clock_timestamp()+($3::double precision*interval '1 millisecond'),$1,clock_timestamp()+interval '24 hours') RETURNING expires_at`,
       [sha256(token), policy.principalId, Math.min(ttlMs, MAX_DEV_TOKEN_TTL_MS)]);
     return { token, expiresAt: result.rows[0].expires_at.toISOString() };
   }
   async refresh(header:string):Promise<{token:string;expiresAt:string}>{
     const ctx=await this.authenticate(header);requireCondition(!ctx.run,'FORBIDDEN_ACTION','Run delegation cannot refresh a development session');
-    const row=(await this.store.pool.query(`UPDATE auth_tokens a SET expires_at=GREATEST(a.expires_at,clock_timestamp()+($2::double precision*interval '1 millisecond'))
-      FROM policies p WHERE a.digest=$1 AND a.principal_id=p.principal_id AND a.constraints IS NULL AND a.expires_at>clock_timestamp() AND NOT p.disabled RETURNING a.expires_at`,[sha256(header.slice(7)),this.developmentTtlMs])).rows[0];
-    requireCondition(row,'UNAUTHENTICATED','Token is invalid or expired');return {token:header.slice(7),expiresAt:row.expires_at.toISOString()};
+    const token=randomBytes(32).toString('base64url');return this.store.transaction(async tx=>{const prior=(await tx.query('SELECT * FROM auth_tokens WHERE digest=$1 AND expires_at>clock_timestamp() AND absolute_expires_at>clock_timestamp() FOR UPDATE',[sha256(header.slice(7))])).rows[0];requireCondition(prior,'UNAUTHENTICATED','Development session reached its absolute lifetime');const row=(await tx.query("INSERT INTO auth_tokens(digest,principal_id,expires_at,family_id,absolute_expires_at) VALUES($1,$2,LEAST(clock_timestamp()+($3::double precision*interval '1 millisecond'),$4),$5,$4) RETURNING expires_at",[sha256(token),prior.principal_id,this.developmentTtlMs,prior.absolute_expires_at,prior.family_id])).rows[0];await tx.query("UPDATE auth_tokens SET expires_at=LEAST(expires_at,clock_timestamp()+interval '5 seconds') WHERE digest=$1",[prior.digest]);return {token,expiresAt:row.expires_at.toISOString()};});
   }
+  async logout(header:string){const ctx=await this.authenticate(header);requireCondition(!ctx.run,'FORBIDDEN_ACTION','Run tokens cannot change platform sessions');await this.store.pool.query('DELETE FROM auth_tokens WHERE family_id=(SELECT family_id FROM auth_tokens WHERE digest=$1)',[sha256(header.slice(7))]);return {signedOut:true};}
   async authenticate(header?: string): Promise<AuthContext> {
     requireCondition(typeof header === 'string' && header.startsWith('Bearer '), 'UNAUTHENTICATED', 'Bearer token required');
     const result = await this.store.pool.query(`SELECT p.*,a.constraints,a.digest FROM auth_tokens a JOIN policies p USING(principal_id)
-      WHERE a.digest=$1 AND a.expires_at>clock_timestamp() AND NOT p.disabled`, [sha256(header.slice(7))]);
+      WHERE a.digest=$1 AND a.expires_at>clock_timestamp() AND (a.constraints IS NOT NULL OR a.absolute_expires_at>clock_timestamp()) AND NOT p.disabled`, [sha256(header.slice(7))]);
     const row = result.rows[0]; requireCondition(row, 'UNAUTHENTICATED', 'Token is invalid or expired');
     if(row.constraints){const task=(await this.store.pool.query('SELECT phase,cancel_requested FROM tasks WHERE task_id=$1',[row.constraints.taskId])).rows[0];requireCondition(task&&!task.cancel_requested&&!['failed','delivered','cancelled','unknown'].includes(task.phase),'UNAUTHENTICATED','Run token no longer authorizes new work');
       if(row.constraints.operationId){const live=(await this.store.pool.query(`SELECT 1 FROM operations o JOIN leases l USING(operation_id) JOIN tasks t USING(task_id)
@@ -66,11 +69,10 @@ export class Auth {
     return { principalId: row.principal_id, tenantId: row.tenant_id, kind: row.kind, ...(row.worker_id ? { workerId: row.worker_id } : {}),...(row.constraints?{run:row.constraints,tokenDigest:row.digest}:{}) };
   }
   async policy(ctx: AuthContext, tx?: Transaction): Promise<Policy> {
-    if(!this.professionalLoaded){for(const permission of(await(tx??this.store.pool).query('SELECT permission,minimum_role FROM professional_permissions')).rows)this.professionalPermissions.set(permission.permission,permission.minimum_role);this.professionalLoaded=true;}
     const row = (await (tx ?? this.store.pool).query('SELECT * FROM policies WHERE principal_id=$1 AND NOT disabled', [ctx.principalId])).rows[0];
     requireCondition(row, 'UNAUTHENTICATED', 'Principal is disabled or absent');
     const assignments=row.kind==='user'?await this.roles.assignments(row.principal_id,row.tenant_id,tx):[],scopeGrants:Record<string,string[]>={};
-    const ranks={viewer:0,member:1,admin:2};for(const assignment of assignments){const grants=[...new Set<string>([...assignment.grants,...[...this.professionalPermissions].filter(([_name,minimum])=>ranks[assignment.role as RoleName]>=ranks[minimum]).map(([name])=>name)])];scopeGrants[assignment.scope_id]=ctx.run?grants.filter(grant=>ctx.run!.grants.includes(grant)):grants;}
+    const ranks={viewer:0,member:1,admin:2};for(const assignment of assignments){const grants=[...new Set<string>(assignment.grants)];scopeGrants[assignment.scope_id]=ctx.run?grants.filter(grant=>ctx.run!.grants.includes(grant)):grants;}
     if(row.kind!=='user')for(const scope of row.scopes)scopeGrants[scope]=ctx.run?row.grants.filter((grant:string)=>ctx.run!.grants.includes(grant)):row.grants;
     const scopes=Object.keys(scopeGrants).filter(scope=>!ctx.run||ctx.run.scopes.includes(scope));
     return { principalId: row.principal_id, tenantId: row.tenant_id, kind: row.kind, workerId: row.worker_id ?? undefined,
@@ -92,8 +94,6 @@ export class Auth {
     const scopes=policy.scopes.filter(scope=>policy.scopeGrants?.[scope]?.includes(grant));requireCondition(scopes.length&&(!scopeId||scopes.includes(scopeId)), 'FORBIDDEN_ACTION', `Permission ${grant} is required`);
     return {...policy,scopes};
   }
-  registerPermission(name:string,minimum:RoleName){const ranks={viewer:0,member:1,admin:2},defined=(['viewer','member','admin'] as const).find(role=>rolePresets[role].grants.includes(name));requireCondition(name!=='workers.execute'&&(!defined||ranks[minimum]>=ranks[defined]),'INVALID_PAYLOAD','Professional permission cannot weaken a platform permission');const prior=this.professionalPermissions.get(name);this.professionalPermissions.set(name,prior&&ranks[prior]>ranks[minimum]?prior:minimum);}
-  async publishPermissions(){await this.store.transaction(async tx=>{await tx.query('DELETE FROM professional_permissions');for(const [permission,minimum] of this.professionalPermissions)await tx.query('INSERT INTO professional_permissions(permission,minimum_role,verification) VALUES($1,$2,$3)',[permission,minimum,JSON.stringify({ruleId:'installed-permission-declaration',ruleVersion:'1.0.0',result:'passed'})]);});}
   async target(ctx: AuthContext, grant: string, scopeId: string, target: string, tx?: Transaction): Promise<Policy> {
     const policy = await this.check(ctx, grant, scopeId, tx);
     requireCondition(policy.targets.includes(target), 'FORBIDDEN_TARGET', 'Target is outside the authenticated policy'); return policy;

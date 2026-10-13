@@ -10,6 +10,7 @@ export class Operations extends Execution {
   customReconciliations=new Map<string,(ctx:AuthContext,taskId:string,id:string)=>Promise<any>>();
   managedNames=new Set(['tools.invoke']);
   approvalCheck?: (tx:Transaction,task:any,spec:any)=>Promise<void>;
+  consumeChange?:(tx:Transaction,task:any,spec:any,id:string)=>Promise<void>;
   connectorCheck?: (tx:Transaction,actor:AuthContext,scope:string,spec:any)=>Promise<any>;
   managedAuthorization?: (tx:Transaction,actor:AuthContext,scope:string,spec:any,task:any)=>Promise<any>;
   managedPreflight?: (tx:Transaction,actor:AuthContext,row:any,authorization:any)=>Promise<any>;
@@ -36,13 +37,14 @@ export class Operations extends Execution {
       await client.query('INSERT INTO resources(tenant_id,resource_id) VALUES($1,$2) ON CONFLICT DO NOTHING',[task.tenantId,resource]);
       const res=(await client.query('SELECT * FROM resources WHERE tenant_id=$1 AND resource_id=$2 FOR UPDATE',[task.tenantId,resource])).rows[0];
       requireCondition(!res.frozen,'RESOURCE_BUSY','Resource is frozen until independent reconciliation');
-      if(STANDARD_OPERATIONS[spec.name].writes.includes('device-config' as never)) {
-        requireCondition(this.approvalCheck,'APPROVAL_REQUIRED','Device changes require a bound approval');await this.approvalCheck(client,task,{...spec,requesterId:ctx.principalId});
+      if(spec.approvalId) {
+        requireCondition(this.approvalCheck,'APPROVAL_REQUIRED','Execution change verification is unavailable');const proof={...spec,requesterId:ctx.principalId};await this.approvalCheck(client,task,proof);if(proof.authorizationAssetId)spec.authorizationAssetId=proof.authorizationAssetId;
       }
       if(this.connectorCheck&&!managed)await this.connectorCheck(client,ctx,task.scopeId,{...spec,delegatedOwnerId});
-      const id=newId('op'),row=(await client.query(`INSERT INTO operations(operation_id,tenant_id,scope_id,task_id,input_revision_id,principal_id,name,resource_id,status,deadline_at,target,target_identity,args,action_digest,effects,approval_id,delegated_owner_id)
+      const id=newId('op');await this.consumeChange?.(client,task,spec,id);const row=(await client.query(`INSERT INTO operations(operation_id,tenant_id,scope_id,task_id,input_revision_id,principal_id,name,resource_id,status,deadline_at,target,target_identity,args,action_digest,effects,approval_id,delegated_owner_id)
         VALUES($1,$2,$3,$4,$5,$6,$7,$8,'accepted',clock_timestamp()+($9::double precision*interval '1 millisecond'),$10,$11,$12,$13,$14,$15,$16) RETURNING *`,
         [id,task.tenantId,task.scopeId,taskId,task.inputRevisionId,ctx.principalId,spec.name,resource,spec.deadlineMs,spec.target,spec.targetIdentity,JSON.stringify(spec.args),actionDigest(spec),JSON.stringify(effects),spec.approvalId??null,delegatedOwnerId??null])).rows[0];
+      await client.query('UPDATE operations SET authorization_asset_id=$2,approval_consumed=$3 WHERE operation_id=$1',[id,spec.authorizationAssetId??null,!!spec.approvalId]);
       await client.query('INSERT INTO operation_keys(tenant_id,scope_id,principal_id,name,idem_key,request_hash,operation_id) VALUES($1,$2,$3,$4,$5,$6,$7)',[...keys,hash,id]);
       await this.tasks.emit(client,taskId,'operation.accepted',{operationId:id,name:spec.name,effects});await this.tasks.wake(client,taskId,'operation');
       await this.auth.audit(ctx,'operations.submit',{operationId:id,actionDigest:row.action_digest,effects:row.effects},task.scopeId,client);
@@ -111,6 +113,7 @@ export class Operations extends Execution {
   }
   async authorize(client:Transaction,row:any):Promise<any>{
     const actor={principalId:row.principal_id,tenantId:row.tenant_id,kind:'user'} as const,task=await this.tasks.load(actor,row.task_id,'tasks.read',client);
+    if(row.kind!=='reconcile')requireCondition(!['delivered','failed','cancelled','unknown'].includes(task.phase),'DECISION_CONFLICT','Task no longer authorizes execution');
     requireCondition(task.inputRevisionId===row.input_revision_id,'INPUT_REVISION_STALE','Operation input changed');
     const cancel=(await client.query('SELECT cancel_requested FROM tasks WHERE task_id=$1',[row.task_id])).rows[0].cancel_requested;if(row.kind!=='reconcile')requireCondition(!cancel,'DECISION_CONFLICT','Task cancellation is pending');
     if(this.managedNames.has(row.name)){
@@ -118,7 +121,7 @@ export class Operations extends Execution {
     }
     const grant=row.kind==='reconcile'?(row.name.startsWith('product.')?'product.config.read':row.name==='defects.comment'?'defects.search':row.name):row.name;
     await this.auth.target(actor,grant,row.scope_id,row.target,client);
-    if(row.kind!=='reconcile'&&row.name==='product.config.write'){requireCondition(this.approvalCheck,'APPROVAL_REQUIRED','Approval required');await this.approvalCheck(client,task,{inputRevisionId:row.input_revision_id,name:row.name,target:row.target,targetIdentity:row.target_identity,args:row.args,approvalId:row.approval_id,requesterId:row.principal_id});}
+    if(row.kind!=='reconcile'&&row.approval_id){requireCondition(this.approvalCheck,'APPROVAL_REQUIRED','Bound change verification is unavailable');await this.approvalCheck(client,task,{operationId:row.operation_id,inputRevisionId:row.input_revision_id,name:row.name,target:row.target,targetIdentity:row.target_identity,args:row.args,approvalId:row.approval_id,requesterId:row.principal_id});}
     const authorization=this.connectorCheck?await this.connectorCheck(client,actor,row.scope_id,{...row,name:grant,delegatedOwnerId:row.delegated_owner_id}):undefined;
     return {task,authorization};
   }

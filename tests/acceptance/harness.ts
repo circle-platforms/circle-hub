@@ -11,6 +11,8 @@ import { setTimeout as delay } from 'node:timers/promises';
 import type { TestContext } from 'node:test';
 import EmbeddedPostgres from 'embedded-postgres';
 import pg from 'pg';
+import {canonicalHash} from '../../packages/contracts/src/index.ts';
+import {hookModule} from '../fixtures/hook-module.ts';
 
 export const root = fileURLToPath(new URL('../../', import.meta.url));
 const taskGrants = ['tasks.read', 'tasks.submit', 'tasks.input', 'tasks.cancel', 'evidence.read', 'methods.use', 'sources.read', 'sources.write','operations.reconcile'];
@@ -50,6 +52,8 @@ export class Harness {
   children = new Set<ChildProcess>();
   clientCA?:Buffer;
   autoRuntimeProfiles=true;
+  autoMethodProfiles=true;
+  autoHooks=true;
   constructor(scratch: string, postgres: EmbeddedPostgres, db: pg.Pool, env: NodeJS.ProcessEnv) {
     this.scratch = scratch; this.postgres = postgres; this.db = db; this.env = env;
   }
@@ -67,6 +71,13 @@ export class Harness {
       return false;
     });
     if(this.autoRuntimeProfiles)await this.approveRuntimeProfiles();
+    if(this.autoMethodProfiles&&this.env.CIRCLE_SERVER_EXECUTION_GATEWAYS)await this.approveMethods();
+  }
+  async approveMethods(scope='scp_lab',reviewer='bob',owner='admin'){
+    if(this.autoHooks){const fixture=await hookModule(),existing=(await this.db.query("SELECT a.asset_id,v.lifecycle FROM assets a JOIN asset_versions v ON v.asset_id=a.asset_id AND v.version=a.current_version WHERE a.scope_id=$1 AND v.configuration->'metadata'->'module'->>'id'=$2",[scope,fixture.module.id])).rows[0];if(!existing){const response=await this.raw('/v1/modules/install',{token:await this.login(owner),body:fixture,headers:{'x-scope-id':scope}});assert.equal(response.status,201,JSON.stringify(response.body));const asset=await this.request(`/v1/assets/${response.body.data.assetId}`,undefined,owner);await this.request(`/v1/assets/${asset.assetId}/lifecycle`,{version:asset.version,sha256:asset.sha256,state:'approved'},reviewer);}}
+    for(const method of await this.request('/v1/packs',undefined,owner)){if(!method.implementationSha256)continue;const assetId=`ast_${canonicalHash([scope,method.capabilityPackId,method.implementationSha256]).slice(0,32)}`,old=(await this.db.query('SELECT lifecycle FROM asset_versions WHERE asset_id=$1 AND version=$2',[assetId,method.version])).rows[0];if(old?.lifecycle==='approved'||old?.lifecycle==='running')continue;
+      const asset=await this.request('/v1/assets',{assetId,scopeId:scope,kind:'knowledge-source',name:'Synthetic installed Tool',version:method.version,declaration:{reads:['method-parameters'],writes:['artifacts-evidence'],credentials:[]},configuration:{schema:'hub-tool-implementation/1',capabilityPackId:method.capabilityPackId,flowVersion:method.flowVersion,implementationSha256:method.implementationSha256},readers:['*']},owner);await this.request(`/v1/assets/${asset.assetId}/lifecycle`,{version:asset.version,sha256:asset.sha256,state:'approved'},reviewer);
+    }
   }
   // Synthetic fixtures explicitly submit and independently decide their runtime
   // settings. The production server never approves runtime configuration.
@@ -87,10 +98,10 @@ export class Harness {
     for (const child of this.children) await this.stop(child);
     await this.db.end(); await this.postgres.stop(); await rm(this.scratch, { recursive: true, force: true });
   }
-  async raw(path: string, options: { method?: string; body?: unknown; token?: string } = {}): Promise<{ status: number; body: any }> {
-    if(this.url.startsWith('https:')){const ca=this.clientCA??await readFile(this.env.NODE_EXTRA_CA_CERTS!),response=await checkedRequest(`${this.url}${path}`,{ca,headers:{...(options.body===undefined?{}:{'content-type':'application/json'}),...(options.token?{authorization:`Bearer ${options.token}`}:{})},...(options.body===undefined?{}:{body:JSON.stringify(options.body)})});return {status:response.status,body:await response.json()};}
+  async raw(path: string, options: { method?: string; body?: unknown; token?: string; headers?:Record<string,string> } = {}): Promise<{ status: number; body: any }> {
+    if(this.url.startsWith('https:')){const ca=this.clientCA??await readFile(this.env.NODE_EXTRA_CA_CERTS!),response=await checkedRequest(`${this.url}${path}`,{ca,headers:{...options.headers,...(options.body===undefined?{}:{'content-type':'application/json'}),...(options.token?{authorization:`Bearer ${options.token}`}:{})},...(options.body===undefined?{}:{body:JSON.stringify(options.body)})});return {status:response.status,body:await response.json()};}
     const response = await fetch(`${this.url}${path}`, { method: options.method ?? (options.body === undefined ? 'GET' : 'POST'),
-      headers: { ...(options.body === undefined ? {} : { 'content-type': 'application/json' }),
+      headers: { ...options.headers,...(options.body === undefined ? {} : { 'content-type': 'application/json' }),
         ...(options.token ? { authorization: `Bearer ${options.token}` } : {}) },
       ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }) });
     return { status: response.status, body: await response.json() };

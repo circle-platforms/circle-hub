@@ -41,7 +41,7 @@ export class ToolCatalog {
     for(const definition of pack.tools){const name=ToolName.parse(`${prefix}.${definition.suffix}`),existing=(await tx.query('SELECT asset_id FROM tool_bindings WHERE tenant_id=$1 AND name=$2',[ctx.tenantId,name])).rows[0];requireCondition(!existing||existing.asset_id===assetId,'TOOL_NAME_CONFLICT','Tool name is already registered in this tenant');}
     if(pack.tools.some(tool=>tool.effect==='write'))requireCondition(input.declaration.writes.includes('knowledge-candidates'),'INVALID_PAYLOAD','Asset declaration must include its candidate writes');
     await tx.query('DELETE FROM tool_bindings WHERE asset_id=$1',[assetId]);
-    for(const definition of pack.tools)await tx.query('INSERT INTO tool_bindings(tenant_id,name,asset_id,version,package_id,suffix) VALUES($1,$2,$3,$4,$5,$6)',[ctx.tenantId,`${prefix}.${definition.suffix}`,assetId,input.version,pack.id,definition.suffix]);
+    for(const definition of pack.tools)await tx.query('INSERT INTO tool_bindings(tenant_id,name,asset_id,version,package_id,suffix,minimum_role,approval,annotations) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)',[ctx.tenantId,`${prefix}.${definition.suffix}`,assetId,input.version,pack.id,definition.suffix,definition.minimumRole??(definition.effect==='read'?'viewer':'member'),definition.approval??false,JSON.stringify(definition.annotations??{readOnlyHint:definition.effect==='read'})]);
   }
   async available(ctx:AuthContext,tx?:Transaction):Promise<{row:any;definition:ToolDefinition;view:any}[]>{
     const p=await this.auth.policy(ctx,tx);
@@ -51,12 +51,12 @@ export class ToolCatalog {
       WHERE b.tenant_id=$1 AND a.scope_id=ANY($2::text[]) AND v.lifecycle='running' AND v.approved_digest=v.sha256
       AND (a.owner_principal_id=$3 OR v.readers ? $3 OR v.readers ? '*') ORDER BY b.name`,[p.tenantId,p.scopes,p.principalId])).rows;
     const results=[];
-    for(const row of rows){const definition=this.definition(row.package_id,row.suffix,row.configuration);if(!definition||!p.scopeGrants?.[row.scope_id]?.includes(definition.permission)||definition.effect==='write'&&!p.scopeGrants[row.scope_id]?.includes('tasks.submit'))continue;
+    for(const row of rows){const definition=this.definition(row.package_id,row.suffix,row.configuration);if(!definition||p.kind!=='user'&&!p.scopeGrants?.[row.scope_id]?.includes(definition.permission)||definition?.effect==='write'&&!p.scopeGrants?.[row.scope_id]?.includes('tasks.submit'))continue;
       if(ctx.run&&!ctx.run.tools.includes(row.name))continue;
-      let credentials=true;for(const reference of row.declaration.credentials){try{const record=await this.assets.row(ctx,reference,tx,'credentials.use');if(record.owner_principal_id!==ctx.principalId||record.lifecycle==='disabled'||record.configuration.connectorAssetId!==row.asset_id)credentials=false;}catch{credentials=false;}}
+      if(p.kind==='user'){const role=await this.auth.roles.role(ctx,row.scope_id,tx),rank={viewer:0,member:1,admin:2};if(!role||rank[role]<rank[definition.minimumRole??(definition.effect==='read'?'viewer':'member')])continue;}let credentials=true;for(const reference of row.declaration.credentials){try{const record=await this.assets.row(ctx,reference,tx,'credentials.use');if(record.owner_principal_id!==ctx.principalId||record.lifecycle==='disabled'||record.configuration.connectorAssetId!==row.asset_id)credentials=false;}catch{credentials=false;}}
       if(!credentials)continue;
       const inputSchema=z.toJSONSchema(definition.schema,{io:'input'});inputSchema.properties={...inputSchema.properties,sourceArtifactId:{type:'string',pattern:'^sar_[a-f0-9]{32}$',description:'Bind an independently approved external source artifact; results retain its revision and provenance'}};
-      results.push({row,definition,view:{name:row.name,title:definition.title,description:definition.description,inputSchema,effect:definition.effect,mode:definition.mode,permission:definition.permission,assetId:row.asset_id,assetVersion:row.version}});
+      results.push({row,definition,view:{name:row.name,title:definition.title,description:definition.description,inputSchema,effect:definition.effect,mode:definition.mode,permission:definition.permission,minimumRole:definition.minimumRole??(definition.effect==='read'?'viewer':'member'),approval:definition.approval??false,annotations:definition.annotations??{readOnlyHint:definition.effect==='read'},assetId:row.asset_id,assetVersion:row.version}});
     }return results;
   }
   async list(ctx:AuthContext):Promise<{tools:any[];etag:string}>{return this.store.transaction(async tx=>{

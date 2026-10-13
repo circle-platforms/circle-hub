@@ -2,6 +2,7 @@ import { constants } from 'node:fs';
 import { lstat, open, readdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { ApiError, ModuleCatalog, ModuleEntry, ModuleBytes, MAX_SOURCE_BYTES, requireCondition, sha256 } from '../../contracts/src/index.ts';
+import {verifyProductLine} from '../../methods/src/product-modules.ts';
 export function verifyModule(entry: unknown, input: unknown) {
     const module = ModuleEntry.parse(entry), files = ModuleBytes.parse(input), directory = module.kind === 'skill-pack' ? 'skills' : 'products', manifestName = module.kind === 'skill-pack' ? 'skillpack.json' : 'product-line.json';
     requireCondition(module.root === `${directory}/${module.id}` && module.manifestPath === `${module.root}/${manifestName}`, 'INVALID_PAYLOAD', 'Module id root and manifestPath differ');
@@ -31,8 +32,10 @@ export function verifyModule(entry: unknown, input: unknown) {
         throw new ApiError('INVALID_PAYLOAD', 'Module manifest is not valid UTF-8 JSON');
     }
     requireCondition(manifest && typeof manifest === 'object' && !Array.isArray(manifest) && manifest.id === module.id && manifest.version === module.version, 'INVALID_PAYLOAD', 'Module identity differs from its own manifest');
-    if (module.kind === 'product-line')
+    if (module.kind === 'product-line'){
         requireCondition(manifest.schemaVersion === 'product-line/1', 'UNSUPPORTED_VERSION', 'Product line manifest version is unsupported');
+        verifyProductLine(manifest,new Map(frozen.map(file=>[file.path,Buffer.from(file.base64,'base64').toString('utf8')])));
+    }
     return { module, files: frozen, manifest };
 }
 async function bytes(path: string, budget = MAX_SOURCE_BYTES) { let handle; try {

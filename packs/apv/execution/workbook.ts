@@ -1,5 +1,6 @@
 import ExcelJS from 'exceljs';
-import {unzipSync} from 'fflate';
+import {zipSync} from 'fflate';
+import {boundedUnzip} from '../../../packages/knowledge/src/zip.ts';
 import {ApiError,MAX_SOURCE_BYTES,requireCondition,sha256} from '../../../packages/contracts/src/index.ts';
 import {frameworkArguments,shellHost} from './dialect.ts';
 import type {FunctionContract} from './function-contract.ts';
@@ -13,9 +14,8 @@ export async function readExecutionWorkbook(bytes:Buffer,functions?:FunctionCont
   const invalid=(message:string,details:Record<string,unknown>={})=>new ApiError('INVALID_EXECUTION_WORKBOOK',message,{...location,...details});
   try{
     requireCondition(bytes.length>0&&bytes.length<=MAX_SOURCE_BYTES,'INVALID_EXECUTION_WORKBOOK','Execution workbook exceeds the input limit');
-    let expanded=0,entries=0;
-    unzipSync(bytes,{filter:file=>{expanded+=file.originalSize;entries++;if(entries>256||expanded>64*1024*1024||file.name.includes('..')||file.name.startsWith('/'))throw invalid('Workbook zip exceeds the safe contract bounds');return true;}});
-    const workbook=new ExcelJS.Workbook();await workbook.xlsx.load(bytes as any);
+    const entries=boundedUnzip(bytes),normalized=Buffer.from(zipSync(entries));
+    const workbook=new ExcelJS.Workbook();await workbook.xlsx.load(normalized as any);
     if(workbook.worksheets.length!==1||workbook.worksheets[0].name!=='执行')throw invalid('Use the single execution sheet contract');
     const sheet=workbook.worksheets[0];if(sheet.getRow(1).hidden!==true||sheet.getCell('A1').value!=='APV_EXCEL_CONTRACT | apv.excel.runtime | v1')throw invalid('The execution marker must be exact and row one hidden',{row:1});
     if(sheet.rowCount>50000||sheet.columnCount>9)throw invalid('Workbook row or column bound exceeded');

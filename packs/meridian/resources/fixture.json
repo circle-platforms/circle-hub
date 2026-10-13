@@ -1,0 +1,1 @@
+{"schema":"circle-packs/resource/1","id":"fixture","kind":"connector-instance","protocol":"mcp","credentialMode":"static-secret","runtimeProfileRef":"fixture","executionIsChange":false}

@@ -1,9 +1,10 @@
-import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
+import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { ApiError, ServiceClientRegistration, ServiceClientRotation, newId, sha256, requireCondition, type AuthContext } from '../../contracts/src/index.ts';
 import type { Store, Transaction } from '../../storage/src/index.ts';
 import type { Assets } from '../../assets/src/index.ts';
+import {passwordDigest} from './password.ts';
 import type { Auth } from './auth.ts';
-const credential = (value: string) => { const salt = randomBytes(16); return { salt: salt.toString('hex'), digest: scryptSync(value, salt, 32).toString('hex') }; };
+const credential = async (value: string) => { const salt = randomBytes(16); return { salt: salt.toString('hex'), digest: (await passwordDigest(value, salt)).toString('hex') }; };
 export class ServiceClients {
     store: Store;
     auth: Auth;
@@ -19,14 +20,14 @@ export class ServiceClients {
             const p = await this.auth.check(ctx, 'service-clients.manage', input.scopeId, tx), asset = await this.assets.row(ctx, input.resourceAssetId, tx);
             requireCondition(asset.scope_id === input.scopeId, 'FORBIDDEN_SCOPE', 'Resource crosses the client scope');
             requireCondition(['connector-instance', 'environment-resource'].includes(asset.kind), 'INVALID_PAYLOAD', 'Register a client for an execution resource');
-            const id = newId('svc'), principalId = `prn_${id.slice(4)}`, key = credential(input.secret);
-            await tx.query("INSERT INTO policies(principal_id,tenant_id,kind,scopes,grants,targets,defects) VALUES($1,$2,'service',$3,$4,'[]','[]')", [principalId, p.tenantId, JSON.stringify([input.scopeId]), JSON.stringify(['assets.read', 'sources.read', 'knowledge.read'])]);
+            const id = newId('svc'), principalId = `prn_${id.slice(4)}`, key = await credential(input.secret);
+            await tx.query("INSERT INTO policies(principal_id,tenant_id,kind,scopes,grants,targets,defects) VALUES($1,$2,'service',$3,$4,'[]','[]')", [principalId, p.tenantId, JSON.stringify([input.scopeId]), JSON.stringify(['assets.read', 'sources.read', 'knowledge.read'].filter(grant=>p.scopeGrants?.[input.scopeId]?.includes(grant)))]);
             const row = (await tx.query('INSERT INTO service_clients(client_id,principal_id,tenant_id,scope_id,resource_asset_id,name,scopes,resource_scopes,secret_salt,secret_digest) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *', [id, principalId, p.tenantId, input.scopeId, input.resourceAssetId, input.name, JSON.stringify([...new Set(input.scopes)]), JSON.stringify([...new Set(input.resourceScopes)]), key.salt, key.digest])).rows[0];
             await this.auth.audit(ctx, 'service-clients.register', { clientId: id, resourceAssetId: input.resourceAssetId }, input.scopeId, tx);
             return this.view(row);
         });
     }
-    async rotate(ctx: AuthContext, id: string, value: unknown) { const input = ServiceClientRotation.parse(value); return this.store.transaction(async (tx) => { const row = await this.row(ctx, id, tx); requireCondition(!row.revoked, 'DECISION_CONFLICT', 'Revoked clients cannot rotate'); const key = credential(input.secret), updated = (await tx.query('UPDATE service_clients SET secret_salt=$2,secret_digest=$3,secret_version=secret_version+1 WHERE client_id=$1 AND NOT revoked RETURNING *', [id, key.salt, key.digest])).rows[0]; requireCondition(updated, 'DECISION_CONFLICT', 'Client was revoked'); await this.auth.audit(ctx, 'service-clients.rotate', { clientId: id, secretVersion: updated.secret_version }, row.scope_id, tx); return this.view(updated); }); }
+    async rotate(ctx: AuthContext, id: string, value: unknown) { const input = ServiceClientRotation.parse(value); return this.store.transaction(async (tx) => { const row = await this.row(ctx, id, tx); requireCondition(!row.revoked, 'DECISION_CONFLICT', 'Revoked clients cannot rotate'); const key = await credential(input.secret), updated = (await tx.query('UPDATE service_clients SET secret_salt=$2,secret_digest=$3,secret_version=secret_version+1 WHERE client_id=$1 AND NOT revoked RETURNING *', [id, key.salt, key.digest])).rows[0]; requireCondition(updated, 'DECISION_CONFLICT', 'Client was revoked'); await this.auth.audit(ctx, 'service-clients.rotate', { clientId: id, secretVersion: updated.secret_version }, row.scope_id, tx); return this.view(updated); }); }
     async revoke(ctx: AuthContext, id: string) { return this.store.transaction(async (tx) => { const row = await this.row(ctx, id, tx), updated = (await tx.query('UPDATE service_clients SET revoked=true WHERE client_id=$1 RETURNING *', [id])).rows[0]; await tx.query('UPDATE policies SET disabled=true WHERE principal_id=$1', [row.principal_id]); await this.auth.audit(ctx, 'service-clients.revoke', { clientId: id }, row.scope_id, tx); return this.view(updated); }); }
     async basic(header?: string) {
         let id = '', secret = '';
@@ -47,7 +48,7 @@ export class ServiceClients {
         catch {
             throw new ApiError('UNAUTHENTICATED', 'Invalid service client credentials');
         }
-        const row = (await this.store.pool.query('SELECT c.* FROM service_clients c JOIN policies p USING(principal_id) WHERE c.client_id=$1 AND NOT c.revoked AND NOT p.disabled', [id])).rows[0], digest = scryptSync(secret, Buffer.from(row?.secret_salt ?? '0'.repeat(32), 'hex'), 32);
+        const row = (await this.store.pool.query('SELECT c.* FROM service_clients c JOIN policies p USING(principal_id) WHERE c.client_id=$1 AND NOT c.revoked AND NOT p.disabled', [id])).rows[0], digest = await passwordDigest(secret, Buffer.from(row?.secret_salt ?? '0'.repeat(32), 'hex'));
         requireCondition(row && timingSafeEqual(digest, Buffer.from(row.secret_digest, 'hex')), 'UNAUTHENTICATED', 'Invalid service client credentials');
         return row;
     }

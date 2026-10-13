@@ -16,16 +16,16 @@ async function environment(t:any){
   const register=(name:string,configuration:any,declaration:any,assetId?:string,version='1.0.0')=>h.request('/v1/assets',{assetId,scopeId:'scp_lab',kind:'connector-instance',name,version,configuration,declaration,readers:['prn_alice','prn_bob']});
   const activate=async(item:any)=>{await h.request(`/v1/assets/${item.assetId}/lifecycle`,{version:item.version,sha256:item.sha256,state:'approved'},'bob');return h.request(`/v1/assets/${item.assetId}/lifecycle`,{version:item.version,sha256:item.sha256,state:'running'});};
   const build=await activate(await register('Synthetic command source',{packageId:'build-site',runtimeProfileRef:'source'},{reads:['registered-source'],writes:[],credentials:[]}));
-  const draft=await register('Synthetic lab gateway',{packageId:'case-gateway',productLineId:'apv',runtimeProfileRef:'lab'},{reads:['test-bed'],writes:['device-config'],credentials:[]});
+  const draft=await register('Synthetic lab gateway',{packageId:'case-gateway',productLineId:'apv',runtimeProfileRef:'lab'},{reads:['test-bed'],writes:['device-config'],executionIsChange:true,credentials:[]});
   const credential=await h.request(`/v1/assets/${draft.assetId}/credentials`,{version:'1.0.0',value:JSON.stringify({access_token:'synthetic-access',refresh_token:'synthetic-refresh',expires_at:Date.now()/1000+900,scope:'jumphost:run'})});
-  const bed=await activate(await register('Synthetic lab gateway',draft.configuration,{reads:['test-bed'],writes:['device-config'],credentials:[credential.assetId]},draft.assetId,'2.0.0'));
+  const bed=await activate(await register('Synthetic lab gateway',draft.configuration,{reads:['test-bed'],writes:['device-config'],executionIsChange:true,credentials:[credential.assetId]},draft.assetId,'2.0.0'));
   const workbooks=new Map<string,Buffer>();const submit=async(command='service create port 443',key=`execute-${Math.random()}`)=>{let bytes=workbooks.get(command);if(!bytes){bytes=await executionWorkbook({command});workbooks.set(command,bytes);}const original=await h.request('/v1/sources',{scopeId:'scp_lab',fileName:'case.xlsx',contentBase64:bytes.toString('base64')});return h.request('/v1/tasks/submit',{scopeId:'scp_lab',title:'Run synthetic workbook',capabilityPackId:'apv-case-execute',idempotencyKey:key,input:{sourceRevisionId:original.sourceRevisionId,sourceSha256:original.sha256,gatewayAssetId:bed.assetId,commandSourceAssetId:build.assetId,build:'Rel_PHOTON_10_5_0_101'}});};
   const approve=async(task:any)=>{await h.phase(task.taskId,'waiting-review');const approval=(await h.request(`/v1/tasks/${task.taskId}/approvals`)).at(-1);const answer={inputRevisionId:approval.inputRevisionId,targetIdentity:approval.targetIdentity,actionDigest:approval.actionDigest,approve:true};await h.reject(`/v1/tasks/${task.taskId}/approvals/${approval.approvalId}`,answer,'SELF_APPROVAL');await h.request(`/v1/tasks/${task.taskId}/approvals/${approval.approvalId}`,answer,'bob');return approval;};
   return {h,source,gateway,build,bed,credential,submit,approve};
 }
 
 test('Device execution: server rejects unknown workbook commands and forged client receipts before any gateway call',async t=>{
-  const {h,gateway,submit,bed,build}=await environment(t);await h.startWorker();const invalid=await submit('invented command 123');await h.phase(invalid.taskId,'failed');assert.equal((await h.request(`/v1/tasks/${invalid.taskId}/result`)).error.code,'COMMAND_VALIDATION_FAILED');assert.equal(gateway.state.calls.length,0);
+  const {h,gateway,submit,bed,build}=await environment(t);await h.startWorker();const invalid=await submit('invented command 123');await h.phase(invalid.taskId,'failed');assert.equal((await h.request(`/v1/tasks/${invalid.taskId}/result`)).error.code,'COMMAND_NOT_IN_TREE');assert.equal(gateway.state.calls.length,0);
   const bytes=await executionWorkbook(),source=await h.request('/v1/sources',{scopeId:'scp_lab',fileName:'case.xlsx',contentBase64:bytes.toString('base64')});
   await h.reject('/v1/tasks/submit',{scopeId:'scp_lab',capabilityPackId:'apv-case-execute',idempotencyKey:'forged-client-receipt',input:{sourceRevisionId:source.sourceRevisionId,gatewayAssetId:bed.assetId,commandSourceAssetId:build.assetId,build:'Rel_PHOTON_10_5_0_101',commandReceipt:{status:'hit'}}},'INVALID_PAYLOAD');
   const absent=await h.request('/v1/tasks/submit',{scopeId:'scp_lab',capabilityPackId:'apv-case-execute',idempotencyKey:'absent-build-hidden',input:{sourceRevisionId:source.sourceRevisionId,gatewayAssetId:bed.assetId,commandSourceAssetId:build.assetId,build:'unlisted-build'}});await h.phase(absent.taskId,'failed');assert.equal((await h.request(`/v1/tasks/${absent.taskId}/result`)).error.code,'SOURCE_FORBIDDEN');
@@ -40,8 +40,8 @@ test('Device execution: approved fenced gateway run returns bound per-case step 
 });
 
 test('Device execution: tree change after approval is rejected by a second server check and an upstream introspection outage never masquerades as login expiry',async t=>{
-  const {h,source,gateway,submit,approve}=await environment(t);const worker=await h.startWorker(),task=await submit();await h.phase(task.taskId,'waiting-review');await h.stop(worker);await approve(task);source.state.expandedCommands=false;await h.startWorker();await h.phase(task.taskId,'failed');assert.ok(['COMMAND_VALIDATION_FAILED','APPROVAL_STALE'].includes((await h.request(`/v1/tasks/${task.taskId}/result`)).error.code));assert.equal(gateway.state.calls.length,0);
-  source.state.expandedCommands=true;const unavailable=await submit();gateway.state.unavailable=true;await approve(unavailable);await h.phase(unavailable.taskId,'failed');assert.equal((await h.request(`/v1/tasks/${unavailable.taskId}/result`)).error.code,'SOURCE_UNREACHABLE');assert.ok(!gateway.state.calls.includes('case_submit'));
+  const {h,source,gateway,submit,approve}=await environment(t);const worker=await h.startWorker(),task=await submit();await h.phase(task.taskId,'waiting-review');await h.stop(worker);await approve(task);source.state.expandedCommands=false;await h.startWorker();await h.phase(task.taskId,'failed');assert.ok(['COMMAND_NOT_IN_TREE','APPROVAL_STALE'].includes((await h.request(`/v1/tasks/${task.taskId}/result`)).error.code));assert.equal(gateway.state.calls.length,0);
+  source.state.expandedCommands=true;const unavailable=await submit();gateway.state.unavailable=true;await approve(unavailable);await h.phase(unavailable.taskId,'waiting-input');assert.equal((await h.request(`/v1/tasks/${unavailable.taskId}/result`)).error.code,'GATEWAY_UNREACHABLE');assert.ok(!gateway.state.calls.includes('case_submit'));
 });
 
 test('Device execution: lost submission and local cancellation freeze the bed without automatic replay; independent read-back reconciles an observed terminal run',async t=>{
@@ -119,11 +119,11 @@ test('Device execution: optional host command policies only narrow runtime dispa
     ['allowMultiline',{allowMultiline:false},'dig example.test\necho second'],
     ['maxCommandBytes',{maxCommandBytes:5},'dig example.test'],
   ] as const){
-    await setPolicy(policy);const error=await h.reject('/v1/tasks/submit',await payload(command,`restricted-${rule}`),'INVALID_EXECUTION_WORKBOOK');assert.deepEqual(error.details,{row:4,autoid:'301',object:'test_env',method:'routera',policy:rule});
+    await setPolicy(policy);const error=await h.reject('/v1/tasks/submit',await payload(command,`restricted-${rule}`),'INVALID_EXECUTION_WORKBOOK');assert.deepEqual(Object.fromEntries(['row','autoid','object','method','policy'].map(key=>[key,error.details[key]])),{row:4,autoid:'301',object:'test_env',method:'routera',policy:rule});
   }
   await setPolicy({allowedCommands:['dig example.test'],maxTimeoutSeconds:15,allowMultiline:false,maxCommandBytes:200});
   assert.equal((await h.request('/v1/tasks/submit',await payload('dig example.test,timeout=5','policy-allowed'))).phase,'admitted');
   await setPolicy(null);const accepted=await h.request('/v1/tasks/submit',await payload('curl http://service.example.test/','policy-tightened-after-admission'));
   await setPolicy({allowedCommands:['dig example.test']});await h.startWorker();await h.phase(accepted.taskId,'failed');
-  const failure=(await h.request(`/v1/tasks/${accepted.taskId}/result`)).error;assert.equal(failure.code,'INVALID_EXECUTION_WORKBOOK');assert.deepEqual(failure.details,{row:4,autoid:'301',object:'test_env',method:'routera',policy:'allowedCommands'});assert.equal(gateway.state.calls.length,0);
+  const failure=(await h.request(`/v1/tasks/${accepted.taskId}/result`)).error;assert.equal(failure.code,'INVALID_EXECUTION_WORKBOOK');assert.deepEqual(Object.fromEntries(['row','autoid','object','method','policy'].map(key=>[key,failure.details[key]])),{row:4,autoid:'301',object:'test_env',method:'routera',policy:'allowedCommands'});assert.ok(failure.details.evidenceId);assert.equal(gateway.state.calls.length,0);
 });

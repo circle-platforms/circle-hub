@@ -13,6 +13,7 @@ export const ProductLineManifest=z.object({
   connectorPackages:z.array(z.union([name,binding])).max(100),toolAliases:z.record(name,ToolName).default({}),
   connectorOptions:z.record(name,ConnectorOptions).default({}),
   skills:z.array(relativePath).max(100).default([]),methods:z.array(relativePath).max(100).default([]),
+  tools:z.array(z.object({manifest:relativePath,imports:z.record(z.string(),z.string())}).strict()).default([]),hooks:z.array(z.object({manifest:relativePath,event:z.enum(['verify.deviceCommand','verify.hostCommand','verify.workbook','beforeDispatch','afterResult']),order:z.number().int()}).strict()).default([]),resources:z.array(relativePath).default([]),flows:z.array(relativePath).default([]),
   configuration:z.string().max(2000).optional(),knowledgeMappings:z.record(z.string(),z.unknown()).default({}),
 }).strict();
 const Installation=z.object({schemaVersion:z.literal('installed-product-lines/1'),productLines:z.array(z.string().min(1).max(4096)).max(100)}).strict();

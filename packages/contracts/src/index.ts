@@ -102,9 +102,10 @@ export const SourceUpload = z.object({ scopeId: ScopeId, fileName: z.string().mi
 export const SourceReference = z.object({ sourceRevisionId: SourceRevisionId, sha256: Sha256, size: z.number().int().nonnegative(), fileName: z.string(), scopeId: ScopeId });
 const PackageName=z.string().regex(/^[a-z][a-z0-9-]{0,99}$/);
 const PackageVersion=z.string().regex(/^\d+\.\d+\.\d+$/);
-export const AssetKind=z.enum(['connector-instance','credential-reference','knowledge-source','knowledge-snapshot','environment-resource','skill-package','trigger','bot','scope-role','scope-policy','runtime-profile']);
+export const AssetKind=z.enum(['connector-instance','credential-reference','knowledge-source','knowledge-snapshot','environment-resource','skill-package','trigger','bot','scope-role','scope-policy','runtime-profile','execution-submission']);
 export const AssetLifecycle=z.enum(['draft','approved','running','disabled','declined']);
-export const AssetDeclaration=z.object({reads:z.array(z.string()).max(100),writes:z.array(z.string()).max(100),credentials:z.array(AssetId).max(100)}).strict();
+export const ToolDescriptor=z.object({name:z.string().min(1).max(160),description:z.string(),inputSchema:z.object({type:z.literal('object')}).catchall(z.unknown()),annotations:z.record(z.string(),z.unknown()).optional(),effect:z.enum(['read','write']),minimumRole:z.enum(['viewer','member','admin']),approval:z.boolean()}).strict();
+export const AssetDeclaration=z.object({reads:z.array(z.string()).max(100),writes:z.array(z.string()).max(100),credentials:z.array(AssetId).max(100),executionIsChange:z.boolean().optional(),provides:z.object({tools:z.array(ToolDescriptor).max(100).optional(),resources:z.array(z.record(z.string(),z.unknown())).max(100).optional(),prompts:z.array(z.record(z.string(),z.unknown())).max(100).optional()}).strict().optional()}).strict();
 export const AssetRegistration=z.object({assetId:AssetId.optional(),scopeId:ScopeId,kind:AssetKind,name:z.string().min(1).max(200),version:PackageVersion,
   ownerPrincipalId:z.string().regex(/^prn_/).optional(),declaration:AssetDeclaration,configuration:z.record(z.string(),z.unknown()).default({}),readers:z.array(z.string()).max(1000).optional()}).strict();
 export type AssetRegistration=z.infer<typeof AssetRegistration>;
@@ -159,7 +160,7 @@ export const KnowledgeSearchQuery=z.object({q:z.string().max(1000).default(''),m
   limit:z.coerce.number().int().min(1).max(100).default(20),includeCandidates:z.enum(['true','false']).default('false')});
 export const ToolName=z.string().min(1).max(150).regex(/^[a-z0-9._]+$/);
 export const ToolView=z.object({name:ToolName,title:z.string(),description:z.string(),inputSchema:z.object({type:z.literal('object')}).catchall(z.unknown()),
-  effect:z.enum(['read','write']),mode:z.enum(['sync','task']),permission:z.string(),assetId:AssetId,assetVersion:PackageVersion});
+  effect:z.enum(['read','write']),mode:z.enum(['sync','task']),permission:z.string(),minimumRole:z.enum(['viewer','member','admin']).optional(),approval:z.boolean().optional(),annotations:z.record(z.string(),z.unknown()).optional(),assetId:AssetId,assetVersion:PackageVersion});
 export const ToolCallInput=z.object({args:z.record(z.string(),z.unknown()),idempotencyKey:z.string().min(8).max(200),sourceArtifactId:SourceArtifactId.optional()}).strict();
 export const ToolEvidence=z.object({evidenceId:z.string(),sha256:Sha256});
 export const ToolCallResult=z.union([z.object({result:z.unknown(),evidence:z.array(ToolEvidence)}),z.object({taskId:TaskId,phase:TaskPhase})]);
@@ -208,7 +209,7 @@ export const OperationRequest = z.object({ inputRevisionId: InputRevisionId, nam
   target: z.string().min(1).max(200), targetIdentity: z.string().min(1).max(300),
   args: z.record(z.string(), z.unknown()).default({}),
   idempotencyKey: z.string().min(8).max(200), deadlineMs: z.number().int().min(1).max(3_600_000).default(300_000),
-  approvalId: z.string().optional() });
+  approvalId: z.string().optional(),authorizationAssetId:AssetId.optional() });
 export type OperationRequest = z.infer<typeof OperationRequest>;
 export const ApprovalProposal = OperationRequest.omit({idempotencyKey:true,deadlineMs:true,approvalId:true});
 export const ApprovalView=z.object({approvalId:z.string(),taskId:TaskId,inputRevisionId:InputRevisionId,applicantId:z.string(),
@@ -250,6 +251,9 @@ const registry:Record<string,[number,string]> = {
   TOOL_NAME_CONFLICT:[409,'conflict-stale'],RESULT_TOO_LARGE:[413,'validation'],
   SKILLPACK_CHECK_FAILED:[422,'validation'],RUNTIME_VERSION_MISMATCH:[409,'conflict-stale'],RUNTIME_FAILED:[502,'execution'],
   DEPENDENCY_NOT_APPROVED:[409,'dependency'],
+  COMMAND_NOT_IN_TREE:[422,'execution'],DESTRUCTIVE_COMMAND:[422,'execution'],BUILD_MISMATCH:[409,'execution'],GATEWAY_UNREACHABLE:[503,'execution'],PERMISSION_DENIED:[403,'permission'],LEASE_UNAVAILABLE:[409,'execution'],SOURCE_NOT_APPROVED:[409,'dependency'],
+  RATE_LIMITED:[429,'transient'],
+  IMPORT_NOT_DECLARED:[422,'validation'],HOOK_FAILED:[422,'execution'],
 };
 export function registerErrorCodes(errors:Record<string,[number,string]>):void{for(const [code,definition] of Object.entries(errors)){if(registry[code]&&canonicalHash(registry[code])!==canonicalHash(definition))throw new Error('Error registration conflicts');registry[code]=definition;}}
 export type ErrorCode = string;
@@ -272,7 +276,7 @@ export interface Policy extends AuthContext { scopes: string[]; grants: string[]
 export interface Task {
   taskId: string; tenantId: string; scopeId: string; principalId: string; title: string; phase: TaskPhase;
   inputRevisionId: string; input: Record<string, unknown>; revision: number; flowVersion: string;
-  capabilityPackId?: string; packVersion?: string;
+  capabilityPackId?: string; packVersion?: string;waitingReason?:string|null;
 }
 export const ExecutionClaim = z.object({ operationId:OperationId,taskId:TaskId,inputRevisionId:InputRevisionId,
   name:StandardOperation,kind:z.enum(['execute','reconcile']),target:z.string(),targetIdentity:z.string(),
@@ -294,7 +298,7 @@ export const TaskResult = z.object({ taskId: TaskId, inputRevisionId: InputRevis
 });
 export const TaskView = z.object({ taskId: TaskId,tenantId:z.string(),scopeId:ScopeId,principalId:z.string(),title:z.string(),
   phase:TaskPhase,inputRevisionId:InputRevisionId,input:z.record(z.string(),z.unknown()),revision:z.number().int().positive(),
-  flowVersion:z.string(),capabilityPackId:z.string().optional(),packVersion:z.string().optional(),
+  flowVersion:z.string(),capabilityPackId:z.string().optional(),packVersion:z.string().optional(),waitingReason:z.string().nullable().optional(),
   pendingInputs:z.array(z.object({ requestId:z.string(),inputRevisionId:InputRevisionId,kind:z.string(),question:z.string(),
     binding:z.record(z.string(),z.unknown()),expiresAt:z.string(),status:z.string() })).optional(),
 });
@@ -305,6 +309,7 @@ export const EventPage = z.object({ events:z.array(Event),after:z.number().int()
 export const CLIENT_ROUTES = {
   devLogin:{ method:'POST',path:'/v1/auth/dev-login',request:DevLoginRequest,response:DevLoginResult },
   authRefresh:{method:'POST',path:'/v1/auth/refresh',request:AuthRefreshRequest,response:DevLoginResult},
+  authLogout:{method:'POST',path:'/v1/auth/logout',request:AuthRefreshRequest},
   sources:{ method:'POST',path:'/v1/sources',request:SourceUpload,response:SourceReference },
   packs:{ method:'GET',path:'/v1/packs' },
   submit:{ method:'POST',path:'/v1/tasks/submit',request:SubmitRequest,response:SubmittedTask },

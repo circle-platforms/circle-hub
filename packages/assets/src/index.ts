@@ -42,9 +42,10 @@ export class Assets {
     const rows=(await tx.query(`SELECT a.*,v.* FROM ${join} WHERE ${filter} AND ($8::text IS NULL OR a.asset_id<$8) ORDER BY a.asset_id DESC LIMIT $9`,[...args,query.after??null,query.limit+1])).rows;
     const items=rows.slice(0,query.limit).map(row=>this.view(row));return {items,total,nextCursor:rows.length>query.limit?items.at(-1).assetId:null};
   });}
-  async register(ctx:AuthContext,input:AssetRegistration,tx?:Transaction,credential=false):Promise<any>{
+  async register(ctx:AuthContext,input:AssetRegistration,tx?:Transaction,credential=false,executionSubmission=false):Promise<any>{
     const parsed=Registration.parse(input);clean(parsed.configuration);
     requireCondition(credential||parsed.kind!=='credential-reference','INVALID_PAYLOAD','Register personal credentials through the write-only endpoint');
+    requireCondition(executionSubmission||parsed.kind!=='execution-submission','FORBIDDEN_ACTION','Execution submissions are frozen by the enforcement chain');
     const run=async(client:Transaction)=>{
       let definition=parsed;
       const p=await this.auth.check(ctx,'assets.register',definition.scopeId,client),owner=definition.ownerPrincipalId??p.principalId;

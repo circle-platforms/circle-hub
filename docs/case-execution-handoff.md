@@ -4,6 +4,8 @@
 
 执行身份改用 [C 的资源客户端与短期令牌](resource-identity-handoff.md)：资源资产 configuration.serviceClientId，经独立批准后由平台在操作/fence 下私有注入，worker 每次请求前重核与临期重签。该模式不配置外部 issuer，不登记个人刷新令牌。规则原件由已批准 source-artifact 的 bundle/blob 提供，平台不解释；原网关的本地缓存仍由其管理。下面的旧手工会话说明仅保留既有已验接口兼容，用户当前部署不再接旧签发服务。
 
+修订 3 的执行默认不审批。资源、runtime-profile、Tool/产品线模块和外部来源先由变更集批准；只有资源 declaration.executionIsChange=true 时本次冻结执行提交才再作为变更集项。Hook 按批准的模块装载，hub 自带零条；本页旧独立执行审批描述仅适用于这一资源声明。
+
 先上传 `case.xlsx`，或引用当前身份可读的编译 artifact，再提交：
 
 ```json
@@ -16,6 +18,7 @@
     "sourceRevisionId":"<上传返回的 src id>",
     "sourceSha256":"<上传返回的 SHA-256>",
     "gatewayAssetId":"<测试床网关资产 id>",
+    "methodAssetId":"<批准后的 product-line 模块资产 id>",
     "commandSourceAssetId":"<构建来源资产 id>",
     "build":"<版本工具返回的 buildId>",
     "platform":null
@@ -33,7 +36,7 @@ APV 消费者独立解析两份文件。函数契约数据需完整、包含唯�
 
 本版执行关口支持 APV_n/Segn_tmp 的字面 cmd/cmd_config/cmds_config/cmd_enable、check_point 的 found/not_found/abs_found/found_times、time.sleep。初始化行也受同一核对。输入变量、设备命令里的临时寄存器替换和模糊 execute/未验证的设备函数返回 INVALID_EXECUTION_WORKBOOK，需先展开成可核对的字面行。reboot 等禁用生命周期方法不放行。最多 5000 条显式设备/主机分派，按网关 device_count 再查设备索引。
 
-test_env 的 F 是框架主机方法，不是 APV 命令头。闭集允许 clientc/clientd/cliente/routera/routerb/server213/server231/server232，G 为字面 shell，I 输入寄存器替换禁止，H 输出寄存器保留。引用的是用户给出的只读 Excel 函数契约结构，无主机地址或框架代码。可用 runtime allowedTestHosts 缩小该闭集，省略或空数组沿用专业契约；此设置进入目标身份摘要。主机直接作 E 的同类字面 cmd 分派也支持，模糊 execute 须展开。console 的角色以床配置为准，本版尚无已验证角色映射，明确拒绝，不能按名称推断它是 DUT 或 SQL 主机。
+test_env 的 F 是框架主机方法，不是 APV 命令头。闭集允许 clientc/clientd/cliente/routera/routerb/server213/server231/server232，G 为字面 shell，I 输入寄存器替换禁止，H 输出寄存器保留。引用的是用户给出的只读 Excel 函数契约结构，无主机地址或框架代码。可由已批准的产品线 Hook 使用 runtime allowedTestHosts 缩小该闭集，省略或空数组沿用专业契约；此设置进入目标身份摘要。主机直接作 E 的同类字面 cmd 分派也支持，模糊 execute 须展开。console 的角色以床配置为准，本版尚无已验证角色映射，明确拒绝，不能按名称推断它是 DUT 或 SQL 主机。
 
 G 按框架实参契约解释：多行整体为一个参数；单行仅引号外逗号分隔，外层引号去掉，kwargs 只允许 prompt/timeout（timeout 为 1–3600 整数）。设备 cmd_config 的换行按运行时规则去除后再核对。设备实际命令与测试主机 shell 分开列入完整 command-check.json，审批 action.args.hostDispatch 带数量/主机/摘要；shell 不冒充 APV command_check hit，设备命令仍逐条由 server 核对。日志只在精确主机/命令派发行匹配时记 observed，不能据此推断协议内容或检查点已通过。
 
@@ -47,13 +50,13 @@ APV_0 与 APV_1 分别按床配置 comm.ssh_ips 的顺序取第 0/1 台，设备
 
 本版不执行重启后配置保留步骤：Env 没有 reboot，APV.reboot 契约 disabled；不能把该行改成 routera 的 reboot 去重启测试主机。已核对的网关工具没有普通重启能力，init_device 是清空并重建基线，不能代替重启。涉及重启的用例应保留未实现/需要决定的结论，不能删掉步骤后声称原用例完整通过；后续需先有明确受支持的 DUT 生命周期协议，再独立绑定设备身份、审批与停止/恢复证据。
 
-当前身份需要 tasks.submit/read、sources.read、methods.use、assets.read、credentials.use、builds.read、cases.execute；上传另需 sources.write，artifact 输入需 evidence.read。跨 tenant/scope 和不可见资产拒绝。原件 SHA 在受理、worker、server 读取、投递回执和结果再核对。同键/同输入重提返回同一任务；新键表示新的物理执行，仍须独立审批。
+人的授权由范围角色及 Tool minimumRole 决定，保留来源 readers 和资源策略；机器兼容动作包括 tasks.submit/read、sources.read、methods.use、assets.read、credentials.use、builds.read。上传另需 sources.write，artifact 输入需 evidence.read。跨 tenant/scope 和不可见资产拒绝。原件 SHA 在受理、worker、server 读取、投递回执和结果再核对。同键/同输入重提返回同一任务；新键表示新的物理执行，仍走完整执行链；executionIsChange 资源另需变更集决定。
 
-任务先进入 cases.verify。worker 从绑定来源读取构建列表和当前命令 XML，server 用保留的原字节重新定位构建、解析完整命令路径和重载，重读工作簿所有设备命令，包括初始化行，再执行确定性 command_check。missing、参数违规或不能证明的输入会失败，结果含 COMMAND_VALIDATION_FAILED；不会触碰网关。客户端或技能包的回执不是输入字段，伪造回执会被 schema 拒绝。
+任务先进入 cases.verify。worker 从绑定来源读取构建列表和当前命令 XML，server 用保留的原字节重新定位构建、解析完整命令路径和重载，重读工作簿所有设备命令，包括初始化行，再执行确定性 command_check。missing、参数违规或不能证明的输入会失败，结果包含已装载 Hook 的原始 code/facts（APV 设备树 Hook 为 COMMAND_NOT_IN_TREE）；不会触碰网关。客户端或技能包的回执不是输入字段，伪造回执会被 schema 拒绝。
 
-验证通过后进入 waiting-review。现有审批记录的 action.args 带构建名/buildId、treeSha256、commandReportSha256、commandCheckArtifactId/Sha256。commandReportSha256 是确定性命令证明摘要；commandCheckArtifactSha256 是完整 command-check.json 原件的字节 SHA。审批人可下载 artifact 核对，申请人不能自批。默认一天，可配置审批期限；改输入、资产修订、目标运行配置或 CA 身份使旧批准失效。
+默认资源验证通过后直接领取执行租约；只有 executionIsChange=true 才进入 waiting-review。现有审批记录的 action.args 带构建名/buildId、treeSha256、commandReportSha256、commandCheckArtifactId/Sha256。commandReportSha256 是确定性命令证明摘要；commandCheckArtifactSha256 是完整 command-check.json 原件的字节 SHA。审批人可下载 artifact 核对，申请人不能自批。默认一天，可配置审批期限；改输入、资产修订、目标运行配置或 CA 身份使旧批准失效。
 
-另一人批准后，worker 在投递前强制重新获取当前 XML，server 再核对一次，结果必须与批准的树和命令证明一致；普通查询的旧 XML 缓存不能放行。server 持久化与当前操作/fence 绑定的复核记录，一次性消费后才授权 submit intent。随后取网关租约，env_prepare 核对绑定构建、设备数和 ready，再 case_submit。不会自动换构建、换测试床或初始化设备。
+满足当前执行链与资源声明要求后，worker 在投递前强制重新获取当前 XML，server 再核对一次，结果必须与批准的树和命令证明一致；普通查询的旧 XML 缓存不能放行。server 持久化与当前操作/fence 绑定的复核记录，一次性消费后才授权 submit intent。随后取网关租约，env_prepare 核对绑定构建、设备数和 ready，再 case_submit。不会自动换构建、换测试床或初始化设备。
 
 运行时配置都在仓库外：CIRCLE_SERVER_EXECUTION_GATEWAYS 指向以下文件（所有占位均需由运维填写）：
 

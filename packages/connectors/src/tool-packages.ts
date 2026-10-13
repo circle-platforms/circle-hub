@@ -11,11 +11,11 @@ import {projectSource} from './product-projections.ts';
 import type {ProductObservation} from '../../knowledge/src/product-records.ts';
 import type {SourceArtifactSnapshot} from '../../knowledge/src/source-artifacts.ts';
 
-export interface ToolDefinition {suffix:string;title:string;description:string;schema:z.ZodObject<any>;effect:'read'|'write';mode:'sync'|'task';permission:string;handler:string;sourceParameter?:string}
+export interface ToolDefinition {suffix:string;title:string;description:string;schema:z.ZodObject<any>;effect:'read'|'write';mode:'sync'|'task';minimumRole?:'viewer'|'member'|'admin';approval?:boolean;annotations?:Record<string,unknown>;permission:string;handler:string;sourceParameter?:string}
 export const ConnectorOptions=z.object({buildSite:BuildSiteOptions.optional(),documents:DocumentOptions.optional()}).strict();
 export type ConnectorOptions=z.infer<typeof ConnectorOptions>;
 export interface ToolPackage {id:string;prefix:string;productLinePrefixes?:Record<string,string>;profileOptions?:ConnectorOptions;productLineOptions?:Record<string,ConnectorOptions>;tools:ToolDefinition[];projection?:{version:string;extract:(raw:RawReturn[],profile:ConnectorProfile)=>Promise<ProductObservation[]>}}
-const tool=(suffix:string,title:string,schema:z.ZodObject<any>,permission:string,handler:string,effect:'read'|'write'='read',mode:'sync'|'task'='sync'):ToolDefinition=>({suffix,title,description:title,schema,permission,handler,effect,mode});
+const tool=(suffix:string,title:string,schema:z.ZodObject<any>,permission:string,handler:string,effect:'read'|'write'='read',mode:'sync'|'task'='sync'):ToolDefinition=>({suffix,title,description:title,schema,permission,handler,effect,mode,minimumRole:effect==='read'?'viewer':'member',approval:effect==='write',annotations:{readOnlyHint:effect==='read',destructiveHint:effect==='write'}});
 const short=z.string().min(1).max(500),build=z.string().min(1).max(200);
 const pagination={page:z.number().int().min(1).max(1_000_000).default(1),limit:z.number().int().min(1).max(100).default(20)};
 const mirrorQuery=z.object({keyword:short.optional(),product:z.union([z.string().regex(/^[1-9]\d*$/,'Use a positive product id from the products tool'),z.number().int().positive()]).optional(),status:z.enum(['active','resolved','closed']).optional(),severity:z.number().int().min(1).max(5).optional(),assignedTo:short.optional(),openedBy:short.optional(),lastEditedDate_start:short.optional(),lastEditedDate_end:short.optional(),...pagination}).strict().superRefine((value,ctx)=>{
@@ -116,7 +116,7 @@ export async function executeTool(packageId:string,handler:string,args:any,profi
     return {result:{build:build.name,buildId:build.buildId,platform:build.platform,scope:args.scope??null,parserVersion:tree.parserVersion,sourceSha256:xml.sha256,coverage:catalog.coverage,...result},raw,sourceType:'command-tree'};
   }
   if(packageId==='documents'){
-    const documents=new Documents(source);
+    const documents=new Documents(source);if(['document.get','document.section'].includes(handler)){const base=source.path(profile.root??'/'),root=base.endsWith('/')?base:base+'/',file=source.path(args.file);requireCondition(file.startsWith(root),'SOURCE_FORBIDDEN','Document is outside the registered source root');args={...args,file};}
     if(handler==='document.list'){const selected=z.object({path:short.optional(),...pagination}).strict().parse(args),root=source.path(profile.root??'/'),requested=source.path(selected.path??root),path=requested.endsWith('/')?requested:`${requested}/`;if(!path.startsWith(root.endsWith('/')?root:`${root}/`))throw new ApiError('INVALID_PAYLOAD','Use a directory within the registered document root',{root});
       let listed;try{listed=await documents.list(path);}catch(error){if(error instanceof ApiError)throw new ApiError(error.code,error.message,{...error.details,root});throw error;}
       const files=listed.result.filter(entry=>entry.path!==path).sort((a,b)=>a.path.localeCompare(b.path)),offset=(selected.page-1)*selected.limit,hasMore=offset+selected.limit<files.length;return {result:{root,path,files:files.slice(offset,offset+selected.limit),page:selected.page,limit:selected.limit,total:files.length,nextPage:hasMore?selected.page+1:null,revision:listed.evidence.sha256},raw:[listed.evidence],sourceType:'document'};}

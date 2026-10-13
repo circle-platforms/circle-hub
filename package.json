@@ -5,7 +5,9 @@
   "description": "Authenticated Circle server with durable PostgreSQL tasks and synthetic workers",
   "type": "module",
   "license": "MIT",
-  "bin": { "circle-server": "apps/server/src/cli.ts" },
+  "bin": {
+    "circle-server": "apps/server/src/cli.ts"
+  },
   "engines": {
     "node": ">=24"
   },
@@ -30,15 +32,17 @@
     "pg": "8.23.1",
     "read-excel-file": "9.3.12",
     "saxes": "5.0.1",
-    "zod": "4.6.5"
+    "zod": "4.6.5",
+    "typescript": "5.9.3"
   },
   "devDependencies": {
     "@types/node": "24.10.0",
     "@types/pg": "8.23.1",
-    "embedded-postgres": "18.4.0-beta.17",
-    "typescript": "5.9.3"
+    "embedded-postgres": "18.4.0-beta.17"
   },
   "overrides": {
-    "exceljs": { "uuid": "11.1.1" }
+    "exceljs": {
+      "uuid": "11.1.1"
+    }
   }
 }

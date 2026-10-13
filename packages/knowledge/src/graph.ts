@@ -206,15 +206,15 @@ export class KnowledgeGraph {
     if(input.productClaimId){
       await this.auth.check(ctx,'knowledge.submit',row.scope_id,tx);requireCondition(row.owner_id===ctx.principalId&&input.decision==='approve','FORBIDDEN_ACTION','Product verification is requested by the candidate owner');
       const product=await this.need(ctx,input.productClaimId,'Claim',tx);
-      requireCondition(product.knowledge_category==='product'&&product.state==='reviewed'&&canonicalHash([product.payload.subject,product.payload.predicate,product.payload.value,product.payload.conditions])===canonicalHash([row.payload.subject,row.payload.predicate,row.payload.value,row.payload.conditions]),'ARTIFACT_VERIFICATION_FAILED','Product evidence does not match the proposed statement');
+      requireCondition(product.knowledge_category==='product'&&['reviewed','verified'].includes(product.state)&&canonicalHash([product.payload.subject,product.payload.predicate,product.payload.value,product.payload.conditions])===canonicalHash([row.payload.subject,row.payload.predicate,row.payload.value,row.payload.conditions]),'ARTIFACT_VERIFICATION_FAILED','Product evidence does not match the proposed statement');
       assessor='script';questionVersion='exact-reviewed-product-match/1';
     }else await this.reviewBundle(ctx,id,tx);
     const closure=await this.closure(row,tx);
     if(input.promote)for(const source of closure.filter(r=>r.kind==='SourceRevision'&&r.knowledge_category==='consolidated'))requireCondition(source.payload.sharing?.teamPromotion===true,'SHARING_REQUIRED','Team promotion requires source consent');
-    const state=input.decision==='approve'?'reviewed':'rejected';
-    await tx.query('UPDATE knowledge_records SET state=$2,visibility=CASE WHEN $3 THEN \'team\' ELSE visibility END WHERE record_id=$1',[id,state,input.promote&&state==='reviewed']);
+    const state=input.decision==='approve'?(assessor==='script'?'verified':'reviewed'):'rejected';
+    await tx.query('UPDATE knowledge_records SET state=$2,visibility=CASE WHEN $3 THEN \'team\' ELSE visibility END WHERE record_id=$1',[id,state,input.promote&&['reviewed','verified'].includes(state)]);
     if(input.promote&&state==='reviewed')await tx.query("UPDATE knowledge_records SET visibility='team' WHERE record_id=ANY($1::text[]) AND knowledge_category='consolidated'",[closure.map(r=>r.record_id)]);
-    const payload={claimId:id,assessor,assessorId:ctx.principalId,questionVersion,decision:input.decision,reason:input.reason,productClaimId:input.productClaimId??null,checks:{references:'passed',semantic:assessor==='human'?'human-reviewed':'exact-equality-only'}};
+    const payload={claimId:id,assessor,assessorId:ctx.principalId,questionVersion,...(assessor==='script'?{verification:{ruleId:'exact-product-match',ruleVersion:questionVersion,result:'passed'}}:{decision:input.decision}),reason:input.reason,productClaimId:input.productClaimId??null,checks:{references:'passed',semantic:assessor==='human'?'human-reviewed':'exact-equality-only'}};
     const assessment=await this.save(tx,ctx,'Assessment',row.scope_id,canonicalHash([id,payload]),payload,[id,...(input.productClaimId?[input.productClaimId]:[])],{category:row.knowledge_category,sourceType:row.source_type,visibility:input.promote?'team':row.visibility,state:'recorded'});
     await this.auth.audit(ctx,'knowledge.review',{recordId:id,assessmentId:assessment.recordId,state,promote:input.promote},row.scope_id,tx);return {claim:this.view((await this.row(id,tx))!),assessment};
   });}
@@ -222,7 +222,7 @@ export class KnowledgeGraph {
     await this.auth.check(ctx,'knowledge.publish',input.scopeId,tx);await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[canonicalJson(['stable',ctx.tenantId,input.scopeId,input.knowledgeCategory])]);
     const prior=(await tx.query('SELECT record_id FROM knowledge_stable WHERE tenant_id=$1 AND scope_id=$2 AND knowledge_category=$3',[ctx.tenantId,input.scopeId,input.knowledgeCategory])).rows[0]?.record_id??null;
     requireCondition(prior===input.expectedSnapshotId,'INPUT_REVISION_STALE','Stable snapshot changed');
-    const claims=(await tx.query("SELECT * FROM knowledge_records WHERE tenant_id=$1 AND scope_id=$2 AND knowledge_category=$3 AND kind='Claim' AND state='reviewed' AND visibility='team' ORDER BY record_id",[ctx.tenantId,input.scopeId,input.knowledgeCategory])).rows;
+    const claims=(await tx.query("SELECT * FROM knowledge_records WHERE tenant_id=$1 AND scope_id=$2 AND knowledge_category=$3 AND kind='Claim' AND state IN ('reviewed','verified') AND visibility='team' ORDER BY record_id",[ctx.tenantId,input.scopeId,input.knowledgeCategory])).rows;
     const records=new Map<string,Row>();
     for(const claim of claims){if(!await this.visible(ctx,claim,tx))continue;for(const member of await this.closure(claim,tx))records.set(member.record_id,member);
       const assessments=(await tx.query("SELECT * FROM knowledge_records WHERE kind='Assessment' AND payload->>'claimId'=$1 ORDER BY record_id",[claim.record_id])).rows;

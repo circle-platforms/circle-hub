@@ -6,7 +6,7 @@ import type { Auth } from './auth.ts';
 export function taskFromRow(row: Record<string, any>): Task {
   return { taskId: row.task_id, tenantId: row.tenant_id, scopeId: row.scope_id, principalId: row.principal_id,
     title: row.title, phase: row.phase, inputRevisionId: row.input_revision_id, input: row.input,
-    revision: row.revision, flowVersion: row.flow_version,
+    revision: row.revision, flowVersion: row.flow_version,waitingReason:row.waiting_reason??null,
     ...(row.capability_pack_id ? { capabilityPackId: row.capability_pack_id, packVersion: row.pack_version } : {}) };
 }
 export class Tasks {
@@ -106,6 +106,7 @@ export class Tasks {
     await tx.query('UPDATE tasks SET phase=$2,stage=$3,revision=revision+1,updated_at=clock_timestamp() WHERE task_id=$1', [task.taskId, phase, stage]);
     await this.emit(tx, task.taskId, kind, { inputRevisionId: task.inputRevisionId, ...payload as object });
   }
+  async waitForInput(tx:Transaction,task:Task,reason:string,error:any,evidence:any[]=[]){const requestId=newId('pin');await tx.query("UPDATE pending_inputs SET status='superseded' WHERE task_id=$1 AND status='open'",[task.taskId]);await tx.query("INSERT INTO pending_inputs(request_id,task_id,input_revision_id,kind,question,binding,expires_at) VALUES($1,$2,$3,'repair',$4,$5,clock_timestamp()+($6::double precision*interval '1 millisecond'))",[requestId,task.taskId,task.inputRevisionId,`Repair ${reason} and replace the bound input`,JSON.stringify({waitingReason:reason}),this.inputTtlMs]);await tx.query("UPDATE tasks SET waiting_reason=$2,result_status='running',result=$3 WHERE task_id=$1",[task.taskId,reason,JSON.stringify({error,evidence,artifacts:[],unmapped:[],waitingReason:reason})]);await this.stage(tx,task,'waiting-input','enforcement-wait','task.waiting-input',{requestId,waitingReason:reason,error});}
   async deliver(tx: Transaction, task: Task, result: any): Promise<void> {
     const validator=this.deliveryValidators.get(task.capabilityPackId??'');requireCondition(validator,'EVIDENCE_INSUFFICIENT','No registered delivery verifier');
     const checked=await validator(tx,task,result);
@@ -128,11 +129,12 @@ export class Tasks {
     requireCondition(!terminalTask(task.phase) && task.phase !== 'unknown', 'DECISION_CONFLICT', 'Task revision is frozen in this phase');
     const revision = newId('inrev');
     await tx.query(`UPDATE tasks SET input_revision_id=$2,input=$3,phase='admitted',stage='admit',result=NULL,result_status=NULL,
-      context=jsonb_build_object('delegatedOwnerId',context->'delegatedOwnerId'),revision=revision+1,updated_at=clock_timestamp()
+      context=jsonb_strip_nulls(jsonb_build_object('delegatedOwnerId',context->'delegatedOwnerId','privateOwnerId',context->'privateOwnerId','parentRunTaskId',context->'parentRunTaskId')),waiting_reason=NULL,revision=revision+1,updated_at=clock_timestamp()
       WHERE task_id=$1`, [task.taskId, revision, JSON.stringify(input)]);
     await tx.query('INSERT INTO input_revisions(input_revision_id,task_id,input,principal_id) VALUES($1,$2,$3,$4)',
       [revision, task.taskId, JSON.stringify(input), ctx.principalId]);
     await tx.query("UPDATE pending_inputs SET status='superseded' WHERE task_id=$1 AND status='open'", [task.taskId]);
+    await tx.query("UPDATE approvals SET status='superseded' WHERE task_id=$1 AND status='open'",[task.taskId]);await tx.query("UPDATE change_sets SET status='superseded',updated_at=clock_timestamp() WHERE task_id=$1 AND status IN ('blocked','waiting-review')",[task.taskId]);
     await this.emit(tx, task.taskId, 'task.input-revised', { inputRevisionId: revision });
     await this.wake(tx, task.taskId, 'input');
     return { ...task, inputRevisionId: revision, input, phase: 'admitted', revision: task.revision + 1 };

@@ -100,7 +100,7 @@ dev-login 保留。现有 `developer`、`approver` 都映射为 scp_lab 管理�
 
 ## 10. 交接
 
-按 3 → 4 → 5 → 6 → 7 → 8 的顺序本地提交，每节一个提交即可；更新 `docs/server-s2-progress.md` 和 `docs/client-api-handoff.md`；每个提交号通过 Otty 发给 Claude，由 Claude 在独立工作树复核后就地升级 7420。不 push、不部署、不碰 7420 和跳板机。
+按用户更新的 3 → 4 → 5 → 7 → 6 → 8 → 9（第 14 节）的顺序本地提交，每节一个提交即可；更新 `docs/server-s2-progress.md` 和 `docs/client-api-handoff.md`；每个提交号通过 Otty 发给 Claude，由 Claude 在独立工作树复核后就地升级 7420。不 push、不部署、不碰 7420 和跳板机。
 
 ## 11. 接口决定（Claude 已确认，2026-10-13）
 
@@ -113,3 +113,38 @@ dev-login 保留。现有 `developer`、`approver` 都映射为 scp_lab 管理�
 角色层的其余表述全部同意：按范围的角色是唯一的人权限源，旧动作串只做一次迁移；机器用 scope 串；targets / readers 保留；根管理员管角色与范围，不自动继承子范围资料读取；角色变更先走单项变更集骨架，第 4 节扩到多资产。
 
 另：代码审计（只读，f45cdc8）的报告与修复顺序在 Claude 本机的 `scratchpad/security-audit-20261013.md`，路径已通过 Otty 发出；不进仓库，修完只把结论写进进度记录。
+
+## 12. 规则即 hook（第 5 节的实现形式，Claude 与用户 2026-10-13 定）
+
+hub 不维护任何允许清单或黑名单；执行链第 3 步「核验」由**钩子点 + 规则处理器**构成：
+
+- 钩子点：`verify.deviceCommand`、`verify.hostCommand`、`verify.workbook`、`beforeDispatch`、`afterResult`。每个点传入本次运行的绑定（方法摘要、资源版本、原件 id、输入修订）和待核对象（一条命令 / 一份工作簿 / 一次结果）。
+- 处理器：产品线包里的规则模块（纯 TS，作为 product-line 模块资产装入，经变更集批准），在清单里声明挂到哪个点和顺序；按序执行，返回 `pass` 或 `{code, facts}`；任一返回错误码即停，错误码与事实原样回 Circle，审计记录规则 id 与版本。
+- 约束：处理器是 100% 可证真的脚本——不调模型、不连网、不读环境；hub 核心不认识任何规则内容，也没有缺省放行 / 缺省拒绝的分支（删除 `if(!policy)continue` 一类默认）。
+- 主机 shell 命令：主机闭集（床 conf）、命令字面量（不模板展开）、策略可缩小，这三条由 APV 产品线包里的规则实现；再加一条主机自毁模式规则（如 `rm -rf /`、`mkfs`、`dd of=/dev/`、`shutdown`、`reboot`、改口令、清空防火墙），命中报 `DESTRUCTIVE_COMMAND`。正常的 dig / curl / ping / tc 不受影响。
+- 设备命令：现有的命令树核对与函数契约核对改成挂在 `verify.deviceCommand` 的规则，行为不变。
+- 验收：零规则时任何工作簿都能派发（证明 hub 无内建判定）；装入规则后同一工作簿按规则报错；规则版本变化后审计里的规则 id / 版本随之变化。
+
+## 13. harness 原语规范（取代第 12 节的用词；第 5–8 节按此做）
+
+hub 只认四种原语，用 harness 自己的格式：**Skill**（Circle 的 SKILL.md 目录 + skillpack.json 登记清单）、**Tool**（MCP tool 形状 + hub 标注 effect / minimumRole / approval）、**MCP server**（provider 资产：只读连接器实例在 B，动手的执行资源在 D，runtime-profile 绑定库外端点，worker 是 MCP client）、**Hook**（执行链钩子点上的确定性处理器，来自产品线包）。「方法模块」「规则包」「连接器包」「工具目录」不再作为对象名出现。完整契约在 circle-hub 主分支 `docs/design/harness-primitives.md`。
+
+对实现的要求：
+1. `professional_permissions` 取消，改为 tool 标注 `minimumRole`；权限跟着工具走。
+2. 第 12 节的「规则处理器」即 Hook：钩子点与入出契约按规范（`{binding, subject}` → `pass | {code, facts}`），hub 自带零条，无缺省放行 / 拒绝分支。
+3. `product-line/1` 清单的 `methods` 改为 `tools`（provider 实现）与 `hooks`（处理器 + 挂点 + 顺序）。
+4. 网关 `TOOL_SPECS` 与 hub `ToolView` 统一为 MCP tool + hub 标注。
+5. 登记簿与 handoff 文档按 skill / tool / MCP server / hook 分组命名。
+6. 真实样本已在 circle-packs main（ced41a6，原 b817a23 的 Node import 已由包作者去除）的 `products/apv`：`product-line.json` 的 `tools[]`（含 `imports`）与 `hooks[]`、`tools/*.ts`（纯函数）、`hooks/*.ts`（`hub-hook/1`：`handle({event, binding, subject})` → `{decision:'pass'}` | `{decision:'block', code, facts}`，与 `docs/design/harness-primitives.md` 一致；第 2 条的 `pass | {code, facts}` 按此形状实现）。hub 的装载器与钩子运行器必须原样装入它，并按挂点喂这些 subject：`verify.deviceCommand` → `{command, tree:{heads:[{command, present}]}}`；`verify.hostCommand` → `{command}`；`verify.workbook` → `{client, contract:{testEnvEnabled:[]}}`。Tool 实现只能 import hub 依赖集（exceljs 4.4.0、read-excel-file 9.3.12、fflate 0.8.3、zod 4.6.5、saxes 5.0.1、parse5 8.0.1）且每个 import 必须出现在 `tools[].imports`；装载时核对，声明外的 import 以固定错误码拒绝装入（`IMPORT_NOT_DECLARED`），不是运行时才发现。
+7. `packs/meridian` 扩成完整布局（至少一个带 `imports` 的 Tool 实现、每个钩子点一个处理器、resources / flows 声明），作为「第二条产品线装进去不改核心」的验收夹具；验收同时装入 circle-packs 的 `products/apv`，其 18 个测试在 hub 依赖集下通过，零规则派发 → 装入 hooks 后按规则报错的那条验收用它跑。
+
+## 14. harness 中立（第 13 节的扩展；§5–8 之后排 §9）
+
+hub 是公开的通用平台，治理任何 harness 的原语。完整规范见 circle-hub main 的 `docs/design/harness-primitives.md`。对 server 的新增要求：
+1. **中立清单**：技能登记时从 skillpack.json / frontmatter 推导 `hub-skill/1`（name、description、version、entry、tools、inputs、outputs、triggers、model、sourceHarness、knownCompatible）；推导不出的留空；harness 专有字段留在字节里不丢。
+2. **新资产 kind**：instruction、agent、command，与 skill-package 共用登记、变更集审批；agent / command 试跑可省。
+3. **hub 的 MCP 端点** `/mcp`（streamable HTTP）：按当前身份暴露 tools（目录原形）、resources（`hub://evidence/<id>`、`hub://source/<id>`、`hub://artifact/<id>`，只读）、prompts（Skill 与 Command 的投影）；鉴权用会话令牌；每次调用留证据、过权限；approval 标注的写工具要求显式确认参数。Circle 扩展之后改为建立在它之上。
+4. **Permission policy 导出**：角色预设 + tool minimumRole 能导出为各 harness 的权限设置（先出一个中立 JSON）。
+5. 验收：一个用其它 harness 格式写的 Skill 导入 hub、经审批、再导出到 Circle 能加载；一个只会 MCP 的客户端连 `/mcp` 能列工具、读证据资源、调一个只读工具并留下 evidenceId。
+
+第 9 节分工：packages/harness-adapters/ 的其它 harness 纯库由 Kimi 负责，docs/design/permission-export.md 的中立权限规范由 Grok 负责；本分支不改这两块。Circle 清单推导、MCP 接入与 Meridian 完整夹具仍在本分支实现。
