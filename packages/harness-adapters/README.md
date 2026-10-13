@@ -76,6 +76,7 @@ const { files: outFiles, warnings: exportWarnings } = exportTo(harness, manifest
 | Instruction | `CLAUDE.md`、`CLAUDE.local.md`、`AGENTS.md`、`.claude/rules/**.md`（`paths`→applies） | `AGENTS.md`、`AGENTS.override.md` | `AGENTS.md` | `GEMINI.md` | `AGENTS.md`、`.cursor/rules/*.mdc`（`globs`→applies） |
 | Hook | `.claude/settings.json`、`.claude/settings.local.json` | `.codex/hooks.json` | —（无独立文件；插件代码注册，不导入） | `.gemini/settings.json` | `.cursor/hooks.json`（被跳过的条目导出时原样保留） |
 | MCP server | `.mcp.json` 的 `mcpServers` | `.codex/config.toml` 的 `mcp_servers` | `opencode.json(c)` 的 `mcp.servers`（只认项目根与 `.opencode/`） | `.gemini/settings.json` 的 `mcpServers` | `.cursor/mcp.json` 的 `mcpServers` |
+| Permission policy | `.claude/settings.<role>.json` | `.codex/permissions.<role>.toml` | `opencode.permissions.<role>.json` | `.gemini/policies/hub.<role>.toml` | `.cursor/permissions.<role>.json`（仅 allowlist，ask 靠省略） |
 
 transport 映射：`command`（OpenCode 为 `type: local`）→ `stdio`；Claude `type: http`/`streamable-http`、Codex 只有 url、OpenCode `type: remote`、Gemini `httpUrl` → `streamable-http`；Claude 的 sse/ws、Gemini 的 `url`（SSE）、Cursor 的 `url`（文档写 HTTP 或 SSE，未钉死）→ transport 留空并告警。
 
@@ -85,6 +86,31 @@ transport 映射：`command`（OpenCode 为 `type: local`）→ `stdio`；Claude
 - OpenCode：hooks（无独立文件，插件代码注册；hub-hook/1 导出报 `NO_HARNESS_PROJECTION`）。兼容目录 `.claude/skills`、`.agents/skills` 会导入（同一目录被多家各自导入是正常的，`sourceHarness` 不同，不去重）。
 - Gemini：`settings.json` 的 `context.fileName` 指向的别名 instruction 文件不解析，只认 `GEMINI.md`；一个文件里多个远程代理的 YAML 列表超出 frontmatter 子集。
 - Cursor：commands（未查到目录）；agents 的兼容目录 `.claude/agents`、`.codex/agents` 不导入（归各自 harness 的适配器管；skills 的兼容目录会导入，见矩阵）。
+
+## 权限导出
+
+规范：`docs/design/permission-export.md`。`hub-permission/1` 是从范围角色预设和 Tool 标注算出来的中立 JSON，**只存输入、不存处置**；适配器只读它，导出本身不批准任何东西。
+
+```ts
+import { disposition, exportPermission, hubPermissionSchema } from './packages/harness-adapters/index.ts';
+
+const d = disposition(policy, 'member', 'case-gateway.dispatch'); // 'allow' | 'ask' | 'deny'
+const files = exportPermission('claude-code', policy, 'member'); // VirtualFiles，一个文件一个角色
+```
+
+三条处置规则：角色低于 `minimumRole` → deny（目录不给）；否则 `approval` 为真 → ask（同一个人确认参数，不是独立审批人）；否则 → allow（`effect: write` 且 `approval` 为假也是 allow）。不在 policy 里的 Tool 视为不在目录：deny。`twoPersonRule` / `singleAdminMode` 原样记录，从不翻译成工具规则。
+
+各 harness 的落点（ask 永远不写成 allow；表达不了的格子保持不写）：
+
+| harness | 文件 | allow | ask | deny |
+|---|---|---|---|---|
+| Claude Code | `.claude/settings.<role>.json` | `permissions.allow` 里写 `mcp__hub__<tool>` | `permissions.ask` | `permissions.deny` |
+| Codex | `.codex/permissions.<role>.toml` | `enabled_tools` + read 工具 `approval_mode = "auto"`；write 工具表达不了（只进名单，不写 approval_mode） | `approval_mode = "prompt"` | `disabled_tools` |
+| OpenCode | `opencode.permissions.<role>.json` | `permissions[]` 里 `effect: "allow"`，action 名 `hub_<tool>`（`.`/`-` → `_`） | `effect: "ask"` | `effect: "deny"` |
+| Gemini CLI | `.gemini/policies/hub.<role>.toml` | `[[rule]]` `decision = "allow"`，`priority = 100` | `decision = "ask_user"`（非交互时实为 deny，写文件的人要知道） | `decision = "deny"` |
+| Cursor | `.cursor/permissions.<role>.json` | `mcpAllowlist` 写 `hub:<tool>` | 不写入名单（仅 Allowlist 模式下会再问） | 表达不了（没有拒绝名单） |
+
+这些路径不是各家的自动加载位置：一个文件装一个角色，由操作者选用（Gemini 的要复制到 `~/.gemini/policies/`）。会话基线（`defaultMode`、`sandbox_mode`、`defaultApprovalMode`、Run Mode 等）一律不导出。
 
 ## 测试
 
