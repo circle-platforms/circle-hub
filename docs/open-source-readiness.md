@@ -78,3 +78,7 @@ README 已说明没有正式服务入口；公开时应继续明确这是开发�
 OS-01/02 已在本轮确认，源码范围与第三方说明已补齐。公开操作前复核最终提交、Issue、PR、Actions 日志及制品，并启用安全报告入口；若期间有新内容或范围删减，重查最终内容及全部可达历史。任何新文件都不自动继承本轮扫描通过。
 
 四对象的[融合提案](bcde-integration-plan.md)可以先准备；实施仍按故事逐项授权。开源成立也不代表企业部署已验收。
+
+## 2026-10-13 补记：许可改为 Apache-2.0，与 Circle 对齐
+
+Circle 于 2026-10-13 改用 Apache License 2.0，并在其[开源就绪记录](https://github.com/circle-platforms/circle/blob/main/docs/open-source-readiness.md)里要求兄弟仓库采用同样的文件和条款。本仓库同日：根 [LICENSE](../LICENSE) 换为 Apache-2.0 正文，附录写明著作权人；`package.json` 的 `license` 改为 `Apache-2.0`；新增 [NOTICE](../NOTICE)，写明产品、著作权人、MIT 历史、第三方说明的位置、设计规范的 CC BY 4.0 条款和商标保留；[docs/design](design/README.md) 里的设计规范按 CC BY 4.0 授权，索引和每篇末尾注明；[CONTRIBUTING](../CONTRIBUTING.md) 加入贡献者条款（每个提交签署 DCO 1.1，并向项目授予可再许可的版权与专利许可）；[SECURITY](../SECURITY.md)、[THIRD_PARTY_NOTICES](../THIRD_PARTY_NOTICES.md)、Issue 与 PR 模板、`.gitattributes` 和文档站配置按 Circle 的样式改写为英文。2026-10-13 之前的提交按 MIT 提交，仍可按 MIT 使用，NOTICE 已写明；提交者只有著作权人本人的几个身份和其代理的编程助手。`foundation/circle` 与 `references/` 的许可和字节不变。OS-01 里"用户选择 MIT"是 2026-10-11 的决定，本补记取代它。

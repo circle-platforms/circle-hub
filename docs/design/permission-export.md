@@ -298,3 +298,7 @@ priority = 100
 1. 导出的处置与上表三行一致，不把 ask 写成 allow 来少弹窗。
 2. 表达不了的格子保持不写，不另造近似开关。
 3. 合成验收只检查文件形状和规则条数，不连接真实 harness，不调用付费模型。
+
+---
+
+本文是 circle-hub 的设计规范之一，按 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/deed.zh-hans) 授权：引用、借鉴须署名 Circle Hub 与 qingshanfeihu 并注明原始出处链接。见[设计规范索引](README.md#许可)。

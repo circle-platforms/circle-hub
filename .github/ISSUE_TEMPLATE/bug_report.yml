@@ -1,0 +1,42 @@
+name: Bug report
+description: Something in circle-hub does not work the way the docs say it should.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Keep it short and concrete. Do not paste credentials, internal addresses, business originals or whole user sessions; see SECURITY.md for anything sensitive.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: State the bug in a few sentences. Paste the exact error text or error code if there is one.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The smallest sequence that shows it, on synthetic sources and the development sign-in.
+    validations:
+      required: true
+  - type: input
+    id: commit
+    attributes:
+      label: Commit or version
+      description: The commit of circle-hub you ran, and the Circle version if the Circle extension is involved.
+    validations:
+      required: true
+  - type: input
+    id: path
+    attributes:
+      label: Where it runs
+      description: Which path is affected, for example server, worker, a connector, the admin CLI or the Circle extension.
+    validations:
+      required: true

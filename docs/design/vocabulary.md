@@ -57,3 +57,7 @@
 9. **审批在变更时，不在运行时**：变更集批一次；运行走执行链，可证真的直接报错，不可证真的如实披露。记录里只写「按规则核验」，不写「hub approved」。
 
 hub 要补的字段：`task.priority · task.assignee · task.dueAt · task.waitingReason · approval.supersededBy · operation.unknownSince · asset.productLineId`，保存视图，变更集，审批策略数据化，执行链错误码与披露格式，通知流。
+
+---
+
+本文是 circle-hub 的设计规范之一，按 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/deed.zh-hans) 授权：引用、借鉴须署名 Circle Hub 与 qingshanfeihu 并注明原始出处链接。见[设计规范索引](README.md#许可)。

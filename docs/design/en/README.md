@@ -16,3 +16,13 @@ This is the design finalized on 2026-10-13. Later development and adaptation of 
 | [Harness format survey](harness-formats.md) | The on-disk formats of Skill / Command / Agent / Instruction / Hook / MCP server in Claude Code, Codex CLI, OpenCode, Gemini CLI and Cursor: paths, fields, what maps onto the neutral manifests and what does not, each with its source; the basis for the adapters and knownCompatible |
 
 Two principles run through all of the documents, from earlier decisions: determined content is given to the script, and the rest is given to the model to judge and disclosed in full (ADR 0024); local cancel, remote stop, and task delivery are recorded separately (ADR 0025).
+
+## License
+
+The architecture standards, design diagrams and terminology in the specifications listed above, and in their Chinese originals in the parent folder, are licensed under the [Creative Commons Attribution 4.0 International License (CC BY 4.0)](https://creativecommons.org/licenses/by/4.0/).
+
+Copyright (c) 2026 qingshanfeihu. Anyone who quotes, reuses, adapts or builds on these specifications, in a document, a product or another project, must keep a clear attribution to Circle Hub and qingshanfeihu, a link to the original at <https://github.com/circle-platforms/circle-hub/tree/main/docs/design>, a link to the CC BY 4.0 license, and a note of any changes made, as the license requires. A suitable attribution:
+
+> Based on the Circle Hub design specifications by qingshanfeihu, <https://github.com/circle-platforms/circle-hub/tree/main/docs/design>, licensed under CC BY 4.0.
+
+The license covers the specifications as texts and drawings. It grants no right to the Circle or Circle Hub names, the Circle logo or the application icons; see [NOTICE](../../../NOTICE). The rest of `docs/` and the code are under the [Apache License 2.0](../../../LICENSE).

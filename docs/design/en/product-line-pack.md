@@ -96,3 +96,7 @@ To bring one capability in, fill in this table first; the answer can only be "N 
 ## Sample: meridian
 
 [packs/meridian](../../../packs/meridian/) is a fictional product line: one product-line/1 manifest and one source-review skill, `meridian-source-review`. It reads a document connector, submits candidate claims, and produces a review report. It touches no resource, and only registration needs approval. The reason it exists is to prove this: a second product line goes through on the same core, the same permission, the same approval, and the same execution, without changing one line of core code.
+
+---
+
+This document is one of circle-hub's design specifications, licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/): quote or build on it with attribution to Circle Hub and qingshanfeihu and a link to the original. See the [design specifications index](README.md#license).

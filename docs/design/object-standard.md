@@ -44,3 +44,7 @@ Circle 里每个登记簿页面就是这五样的投影：左栏是记录（分�
 | A | 用户在 Circle 里看什么、做什么？只用现有的工具投影、命令、卡片和登记簿，不加新界面。 |
 
 填完的检验：hub 核心零改动；产品名只出现在清单、模块和数据里；每个资产都能被另一个人批、被 sha 钉住、被停用。填好的样例见[产品线包典范](product-line-pack.md)；扩展点里插进来的东西只有四种 harness 原语，见[harness 原语规范](harness-primitives.md)。
+
+---
+
+本文是 circle-hub 的设计规范之一，按 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/deed.zh-hans) 授权：引用、借鉴须署名 Circle Hub 与 qingshanfeihu 并注明原始出处链接。见[设计规范索引](README.md#许可)。

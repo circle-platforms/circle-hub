@@ -4,7 +4,12 @@
   "private": true,
   "description": "circle-hub: the team hub for Circle - shared knowledge, durable tasks, governed execution and versioned methods",
   "type": "module",
-  "license": "MIT",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/circle-platforms/circle-hub.git"
+  },
+  "homepage": "https://circle-platforms.github.io/circle-hub/",
   "bin": { "circle-server": "apps/server/src/cli.ts" },
   "engines": {
     "node": ">=24"

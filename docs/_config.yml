@@ -1,0 +1,76 @@
+title: circle-hub
+description: The team hub for Circle — shared knowledge, durable tasks, governed execution and versioned methods for agents that touch real systems
+lang: zh-CN
+url: https://circle-platforms.github.io
+baseurl: /circle-hub
+repository: circle-platforms/circle-hub
+
+theme: just-the-docs
+permalink: pretty
+
+plugins:
+  - jekyll-seo-tag
+  - jekyll-include-cache
+  - jekyll-sitemap
+  - jekyll-optional-front-matter
+  - jekyll-titles-from-headings
+  - jekyll-relative-links
+
+optional_front_matter:
+  remove_originals: false
+titles_from_headings:
+  enabled: true
+  strip_title: false
+relative_links:
+  enabled: true
+  collections: false
+
+defaults:
+  - scope:
+      path: ""
+    values:
+      layout: default
+
+exclude:
+  - vendor
+  - .bundle
+  # The GitHub index of this folder; the site starts at index.md instead.
+  - README.md
+  # Licensing and review records. They stay in the repository, like CONTRIBUTING.md.
+  - open-source-readiness.md
+  - validation
+
+aux_links:
+  GitHub:
+    - https://github.com/circle-platforms/circle-hub
+  Circle:
+    - https://circle-platforms.github.io/circle/
+aux_links_new_tab: true
+
+nav_external_links:
+  - title: Contributing
+    url: https://github.com/circle-platforms/circle-hub/blob/main/CONTRIBUTING.md
+  - title: Security policy
+    url: https://github.com/circle-platforms/circle-hub/blob/main/SECURITY.md
+  - title: Changelog
+    url: https://github.com/circle-platforms/circle-hub/blob/main/CHANGELOG.md
+nav_external_links_new_tab: true
+
+back_to_top: true
+back_to_top_text: Back to top
+
+gh_edit_link: true
+gh_edit_link_text: Edit this page on GitHub
+gh_edit_repository: https://github.com/circle-platforms/circle-hub
+gh_edit_branch: main
+gh_edit_source: docs
+gh_edit_view_mode: blob
+
+search_enabled: true
+heading_anchors: true
+nav_enabled: true
+
+kramdown:
+  input: GFM
+  syntax_highlighter: rouge
+  auto_ids: true

@@ -16,3 +16,13 @@
 | [harness 原语格式调查](harness-formats.md) | Claude Code、Codex CLI、OpenCode、Gemini CLI、Cursor 五家的 Skill / Command / Agent / Instruction / Hook / MCP server 磁盘格式：路径、字段、能映射到中立清单的部分与映射不了的部分，每条带来源；适配器与 knownCompatible 的依据 |
 
 两条贯穿全部的原则来自更早的决定：确定内容交给脚本、其余交给模型判定并完整披露（ADR 0024）；本地取消、远端停止、任务交付分别记录（ADR 0025）。
+
+## 许可
+
+上表所列设计规范（含 [en/](en/README.md) 的英文译文）中的架构标准、设计图和术语按 [Creative Commons Attribution 4.0 International（CC BY 4.0）](https://creativecommons.org/licenses/by/4.0/deed.zh-hans)授权。
+
+Copyright (c) 2026 qingshanfeihu。任何人在文档、产品或其他项目里引用、复用、改编或在其基础上创作这些规范，须按许可证要求保留对 Circle Hub 与 qingshanfeihu 的清楚署名、指向原文 <https://github.com/circle-platforms/circle-hub/tree/main/docs/design> 的链接、指向 CC BY 4.0 许可证的链接，并注明所作修改。可用的署名写法：
+
+> 基于 qingshanfeihu 的 Circle Hub 设计规范，<https://github.com/circle-platforms/circle-hub/tree/main/docs/design>，按 CC BY 4.0 授权。
+
+该许可覆盖作为文本和图的规范本身，不授予 Circle、Circle Hub 名称、Circle Logo 或应用图标的任何权利，见 [NOTICE](../../NOTICE)。`docs/` 的其余页面和代码按 [Apache License 2.0](../../LICENSE) 授权。

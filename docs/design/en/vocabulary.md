@@ -57,3 +57,7 @@ This still holds when tasks number in the thousands, approvals in the hundreds, 
 9. **Approval is at change time, not at run time**: a Change set is approved once; a run goes through the Enforcement chain; what is provably true is reported as an error directly, and what is not provably true is disclosed as observed. The record writes only "verified according to the rules", and does not write "hub approved".
 
 Fields for hub to add: `task.priority · task.assignee · task.dueAt · task.waitingReason · approval.supersededBy · operation.unknownSince · asset.productLineId`, saved views, Change set, Approval policy as data, Enforcement chain Error codes and the disclosure format, notification stream.
+
+---
+
+This document is one of circle-hub's design specifications, licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/): quote or build on it with attribution to Circle Hub and qingshanfeihu and a link to the original. See the [design specifications index](README.md#license).

@@ -298,3 +298,7 @@ A guest can only write:
 1. The exported disposition matches the three rows above. Do not turn ask into allow to avoid a prompt.
 2. A cell that cannot be expressed stays unwritten. Do not add a nearby switch as a substitute.
 3. The synthetic acceptance checks file shape and rule count. It does not connect to a real harness and does not call a paid model.
+
+---
+
+This document is one of circle-hub's design specifications, licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/): quote or build on it with attribution to Circle Hub and qingshanfeihu and a link to the original. See the [design specifications index](README.md#license).

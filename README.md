@@ -1,6 +1,16 @@
-# circle-hub
+<h1 align="center">circle-hub</h1>
 
-[中文](README.zh-CN.md)
+<p align="center">The team hub for Circle: shared knowledge, durable tasks, governed execution and versioned methods for agents that touch real systems.</p>
+
+<p align="center">
+  <a href="https://circle-platforms.github.io/circle-hub/">Docs</a> ·
+  <a href="docs/design/README.md">Design</a> ·
+  <a href="docs/compatibility.md">Compatibility</a> ·
+  <a href="CHANGELOG.md">Changelog</a> ·
+  <a href="README.zh-CN.md">中文</a>
+</p>
+
+---
 
 The team hub for [Circle](https://github.com/circle-platforms/circle): one daemon a team runs so that everyone's Circle shares the same knowledge, tasks, execution resources and methods — and so that agents touching real systems stay inside rules a person approved.
 
@@ -83,8 +93,10 @@ circle-hub is under development and not a supported production release: sign-in 
 
 ## Contributing and security
 
-[CONTRIBUTING.md](CONTRIBUTING.md) explains how changes are made and verified; [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) applies to every interaction. Report security problems through the repository's private vulnerability reporting, as described in [SECURITY.md](SECURITY.md).
+See [CONTRIBUTING.md](CONTRIBUTING.md), [AGENTS.md](AGENTS.md) for coding agents, and the [compatibility matrix](docs/compatibility.md) for what the three repositories expect of each other. Report security problems as described in [SECURITY.md](SECURITY.md). Everyone taking part follows the [Code of Conduct](CODE_OF_CONDUCT.md).
+
+circle-hub is one of three repositories: [circle](https://github.com/circle-platforms/circle) is the agent, circle-hub is the hub it signs in to, and [circle-packs](https://github.com/circle-platforms/circle-packs) holds the skill packs and product-line packs installed on the hub.
 
 ## License
 
-[MIT](LICENSE). Third-party components and the archived references are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+circle-hub is released under the [Apache License 2.0](LICENSE). The [NOTICE](NOTICE) file names the copyright holder and reserves the Circle and Circle Hub names, logos and icons: the license covers the code and its documentation, not the marks. The design specifications in [docs/design](docs/design/README.md) are under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) and must be credited, with a link to the original, when reused. Until 2026-10-13 the repository was under the MIT License. The frozen Circle source baseline in `foundation/circle` keeps its MIT license; it, the archived platform in `references/` and the dependencies are described in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Contributions are accepted under the [contributor terms](CONTRIBUTING.md#contributor-terms).

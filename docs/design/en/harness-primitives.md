@@ -132,3 +132,7 @@ A primitive is not a fifth object, and it is not a sixth element; each primitive
 - Add hub's MCP endpoint `/mcp` (tools / resources / prompts), as the basic access for every harness; the Circle extension is changed to be built on top of it.
 - Add three Asset kinds, Instruction, Agent, and Command, sharing with Skill the registration, the trial run (which may be omitted), and approval.
 - Documents and the interface are named by primitive group; "method module", "rule package", and "connector package" no longer appear as object names.
+
+---
+
+This document is one of circle-hub's design specifications, licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/): quote or build on it with attribution to Circle Hub and qingshanfeihu and a link to the original. See the [design specifications index](README.md#license).

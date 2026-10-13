@@ -52,3 +52,7 @@
 | 停用 | 资产 retired |
 
 没有「确认」「提交」「保存」这类不指向对象的词。
+
+---
+
+本文是 circle-hub 的设计规范之一，按 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/deed.zh-hans) 授权：引用、借鉴须署名 Circle Hub 与 qingshanfeihu 并注明原始出处链接。见[设计规范索引](README.md#许可)。

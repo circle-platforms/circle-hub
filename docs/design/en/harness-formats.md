@@ -666,3 +666,7 @@ Each cell is the main file for that primitive. Compatibility directories, system
 | Instruction | `CLAUDE.md`; `.claude/CLAUDE.md`; `.claude/rules/*.md`; `AGENTS.md` | `AGENTS.md`; `AGENTS.override.md`; `~/.codex/AGENTS.md` | `AGENTS.md`; `~/.config/opencode/AGENTS.md` | `GEMINI.md`; `~/.gemini/GEMINI.md` | `.cursor/rules/*.mdc`; `AGENTS.md` |
 | Hook | `.claude/settings.json`; `~/.claude/settings.json` | `~/.codex/hooks.json`; `.codex/hooks.json`; `[hooks]` in `config.toml` in the same layer | No separate file found. Plugin code in `.opencode/plugins/`, `~/.config/opencode/plugins/` | `.gemini/settings.json`; `~/.gemini/settings.json` | `.cursor/hooks.json`; `~/.cursor/hooks.json` |
 | MCP server | `.mcp.json`; `~/.claude.json` | `~/.codex/config.toml`; `.codex/config.toml` | `mcp.servers` in `opencode.json(c)` | `.gemini/settings.json`; `~/.gemini/settings.json` | `.cursor/mcp.json`; `~/.cursor/mcp.json` |
+
+---
+
+This document is one of circle-hub's design specifications, licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/): quote or build on it with attribution to Circle Hub and qingshanfeihu and a link to the original. See the [design specifications index](README.md#license).

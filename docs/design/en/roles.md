@@ -32,3 +32,7 @@ The open-source default: the two-person rule is on; when the first administrator
 - "If Circle connects to hub as an administrator, can it approve its own request?": yes, in single-administrator mode or when the rule is off; but the record marks the self-decision, the Decision still binds the digest, and the audit is unchanged.
 - "Does a submission need approval only when a user submits it?": yes, a member's submission always needs an administrator.
 - "Permissions are too scattered": a person has only a role, a machine has only a scope string, and everything else is data.
+
+---
+
+This document is one of circle-hub's design specifications, licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/): quote or build on it with attribution to Circle Hub and qingshanfeihu and a link to the original. See the [design specifications index](README.md#license).

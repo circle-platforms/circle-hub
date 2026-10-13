@@ -32,3 +32,7 @@
 - 「Circle 用管理员身份连 hub 就能自己批自己吗」：能，在单管理员模式或规则关时；但记录标注自决，决定仍绑定摘要，审计不变。
 - 「用户提交才需要审批吗」：是，成员提交永远需要管理员。
 - 「权限太散」：人只有角色，机器只有 scope 串，别的都是数据。
+
+---
+
+本文是 circle-hub 的设计规范之一，按 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/deed.zh-hans) 授权：引用、借鉴须署名 Circle Hub 与 qingshanfeihu 并注明原始出处链接。见[设计规范索引](README.md#许可)。

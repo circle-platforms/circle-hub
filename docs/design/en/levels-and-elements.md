@@ -52,3 +52,7 @@ Everything else is expressed with tables and counts; do not draw a schematic arc
 | disable | an Asset is retired |
 
 There are no words like "confirm", "submit", or "save" that do not point at an object.
+
+---
+
+This document is one of circle-hub's design specifications, licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/): quote or build on it with attribution to Circle Hub and qingshanfeihu and a link to the original. See the [design specifications index](README.md#license).

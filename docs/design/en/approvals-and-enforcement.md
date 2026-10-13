@@ -44,3 +44,7 @@ Do not invent another concept. When a resource is registered it declares `execut
 - There are three credential modes: a short-lived token issued by the platform, external OAuth, and a static key. A resource with only one caller (for example, the gateway that hub's worker calls) uses a static key, compared locally, and does not call back to the platform.
 - The endpoint, the CA, and the timeout live in the runtime profile file on the platform host, not in the database and not in Git; runtime-profile, as an Asset, binds the profile name, the version, and the configuration digest, and a dependency requires approved / running.
 - Local cancel ≠ remote stop; on timeout, first check the original operation and the scene; if it cannot be confirmed, it stays unknown.
+
+---
+
+This document is one of circle-hub's design specifications, licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/): quote or build on it with attribution to Circle Hub and qingshanfeihu and a link to the original. See the [design specifications index](README.md#license).

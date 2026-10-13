@@ -96,3 +96,7 @@
 ## 样例：meridian
 
 [packs/meridian](../../packs/meridian/) 是一条虚构的产品线：一份 product-line/1 清单和一个源码评审技能 `meridian-source-review`。它读文档连接器、提交候选声明、产出评审报告，不碰任何资源，只有登记要审批。它存在的意义是证明：第二条产品线用同一套核心、权限、审批和执行走通，不改一行核心代码。
+
+---
+
+本文是 circle-hub 的设计规范之一，按 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/deed.zh-hans) 授权：引用、借鉴须署名 Circle Hub 与 qingshanfeihu 并注明原始出处链接。见[设计规范索引](README.md#许可)。

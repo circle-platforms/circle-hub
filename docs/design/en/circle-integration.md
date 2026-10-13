@@ -36,3 +36,7 @@ Circle stores no B/C/D/E locally; what it shows is always the projection hub com
 ## What a session (L0) looks like
 
 Left column: the "needs me" count, the "work" list (local sessions and hub tasks mixed), and Circle's existing menu (including the extended items). Middle: the session; hub's accepted, Evidence, passed the gate, and Verification come back as event lines; things that need a person are inline cards — an error card (Error code + the facts + the applicant's choice) and an approval card (Change set + Binding + Eligibility + approve / decline). The side column on the right: this task's phase, Binding, Evidence, and output. Bottom: the input box and the status line.
+
+---
+
+This document is one of circle-hub's design specifications, licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/): quote or build on it with attribution to Circle Hub and qingshanfeihu and a link to the original. See the [design specifications index](README.md#license).

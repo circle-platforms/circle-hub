@@ -44,3 +44,7 @@ The answer can only be "N Assets + M flows + K rules", and it cannot be a change
 | A | What does the user see and do in Circle? Use only the existing tool projection, commands, cards, and Registry, and add no new interface. |
 
 The check once it is filled in: zero changes to the hub core; the product name appears only in the manifest, the modules, and the data; every Asset can be approved by an Independent reviewer, pinned by sha, and disabled. For a filled-in sample see the [product-line pack exemplar](product-line-pack.md); the only things inserted at an Extension point are four kinds of harness primitives, see the [harness primitive specification](harness-primitives.md).
+
+---
+
+This document is one of circle-hub's design specifications, licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/): quote or build on it with attribution to Circle Hub and qingshanfeihu and a link to the original. See the [design specifications index](README.md#license).

@@ -127,3 +127,7 @@ harness 里实际存在的东西，分成 hub 治理的和不治理的。治理 
 - 新增 hub 的 MCP 端点 `/mcp`（tools / resources / prompts），作为所有 harness 的基础接入；Circle 扩展改为建立在它之上。
 - 新增 Instruction、Agent、Command 三种资产 kind，与 Skill 共用登记、试跑（可省）、审批。
 - 文档与界面按原语分组命名；「方法模块」「规则包」「连接器包」不再作为对象名出现。
+
+---
+
+本文是 circle-hub 的设计规范之一，按 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/deed.zh-hans) 授权：引用、借鉴须署名 Circle Hub 与 qingshanfeihu 并注明原始出处链接。见[设计规范索引](README.md#许可)。
