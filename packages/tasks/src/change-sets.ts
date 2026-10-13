@@ -22,7 +22,7 @@ export class ChangeSets{
   constructor(store:Store,auth:Auth,assets:Assets,tasks:Tasks,approvals:Approvals){
     Object.assign(this,{store,auth,assets,tasks,approvals});this.store=store;this.auth=auth;this.assets=assets;this.tasks=tasks;this.approvals=approvals;
     approvals.policies.set('changesets.apply',{digest:action=>action.args.identityDigest,authorize:(tx,ctx,task,action)=>this.binding(tx,ctx,task,action,true),check:(tx,ctx,task,row,answer)=>this.check(tx,ctx,task,row,answer),accepted:(tx,ctx,task,row,answer)=>this.decided(tx,ctx,task,row,answer)});
-    assets.onDraft=(tx,ctx,row)=>['credential-reference','scope-role','scope-policy','skill-package','execution-submission'].includes(row.kind)?Promise.resolve({}):this.single(tx,ctx,row);
+    assets.onDraft=(tx,ctx,row)=>['credential-reference','scope-role','scope-policy','execution-submission'].includes(row.kind)||row.kind==='skill-package'&&row.configuration.skillPackId?Promise.resolve({}):this.single(tx,ctx,row);
     assets.governedTransition=(ctx,id,input)=>this.legacyTransition(ctx,id,input);
     assets.dependencyChanged=(tx,tenant,scope)=>this.wake(tx,tenant,scope);
   }

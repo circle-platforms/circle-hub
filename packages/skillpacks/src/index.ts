@@ -16,6 +16,7 @@ import {metadataVisibility} from '../../assets/src/index.ts';
 import type {RegistryPageQuery} from '../../contracts/src/index.ts';
 import {resolveTrust} from '../../connectors/src/private-http.ts';
 import {deriveCircleSkill} from './neutral.ts';
+import {skillWasLoaded} from './loader-observation.ts';
 import {approvedRuntimeRevision,boundRuntimeRevision,type RuntimeBinding} from '../../assets/src/runtime-revisions.ts';
 
 function summarizeTools(names:string[]):string{
@@ -175,7 +176,7 @@ export class SkillPacks {
       await tx.query('INSERT INTO artifact_bindings(task_id,input_revision_id,artifact_id,role) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING',[task.taskId,task.inputRevisionId,artifact.artifact_id,output.path]);artifacts.push(this.objects.artifactReference(artifact));
     }
     const facts=await this.objects.evidence(tx,task,operation.operation_id,'script-conclusion',{checks:{declaredOutputs:'passed',sha256:'passed'},inputRevisionId:task.inputRevisionId,inputSha256:inputHash,skillPackDigest:row.digest,artifacts,conclusionScope:'file-completeness-and-byte-integrity'});
-    const loaded=(await tx.query("SELECT 1 FROM outbox WHERE task_id=$1 AND kind='runtime.tool_result' AND payload->'event'->>'name'='skill' AND payload->'event'->>'status'='success' LIMIT 1",[task.taskId])).rowCount;
+    const loaded=skillWasLoaded((await tx.query("SELECT payload->'event' AS event FROM outbox WHERE task_id=$1 AND kind IN ('runtime.assistant','runtime.tool_result') ORDER BY seq",[task.taskId])).rows.map(row=>row.event),row.manifest.id);
     if(loaded)await tx.query("INSERT INTO harness_compatibility(asset_id,version,harness,runtime_commit,evidence_id,task_id) VALUES($1,$2,'circle',$3,$4,$5) ON CONFLICT DO NOTHING",[row.asset_id,row.asset_version,report.output.runtime.circleCommit,facts.evidenceId,task.taskId]);
     const judgment=await this.objects.evidence(tx,task,operation.operation_id,'model-judgment',{model:report.output.runtime.model,answer:report.output.answer??'',semanticVerification:'not-asserted'});
     const result={status:'succeeded',artifacts,evidence:[facts,judgment],unmapped:[],runtime:report.output.runtime};await this.execution.complete(tx,operation,'succeeded',{...result,reportHash:canonicalHash(report)});
