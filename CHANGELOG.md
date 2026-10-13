@@ -7,7 +7,7 @@ All notable changes to circle-hub are listed here, newest first. Versions start 
 ### Changed
 
 - **Renamed to circle-hub.** The repository and the project are now circle-hub, the team hub for Circle. Identifiers inside the code (`circle-server`, `CIRCLE_SERVER_*`, the `/server` command of the Circle extension) keep the former name until the current brief is complete and are renamed in one step.
-- **Public repository.** The hub is public with secret scanning, push protection, Dependabot alerts and private vulnerability reporting enabled. Packs moved to their own public repository, [circle-packs](https://github.com/qingshanfeihu/circle-packs).
+- **Public repository.** The hub is public with secret scanning, push protection, Dependabot alerts and private vulnerability reporting enabled. Packs moved to their own public repository, [circle-packs](https://github.com/circle-platforms/circle-packs).
 - **Design written down.** The object standard, the vocabulary and state enumerations, the five levels and their elements, approvals on change sets with a run-time enforcement chain, roles per scope, the Circle integration and the product-line pack exemplar are in [docs/design](docs/design/README.md).
 
 ### Added (phase 2, branch server-s2)
