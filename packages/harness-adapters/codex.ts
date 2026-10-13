@@ -205,7 +205,7 @@ function importConfig(
     }
     const shape = entrySkeleton(entry);
     const credentials = skeletonCredentials(shape);
-    const stripped = skeletonStripped(shape, hasUrl);
+    const stripped = skeletonStripped(shape, hasUrl ? 'url' : undefined);
     if (stripped.length > 0) {
       warnings.push({
         code: 'PROVIDER_VALUES_STRIPPED',

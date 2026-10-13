@@ -184,3 +184,25 @@ test('Gemini export: cross-harness manifests are refused with a warning', () => 
     ['CROSS_HARNESS_EXPORT'],
   );
 });
+
+test('Gemini import: the .agents/skills alias wins over .gemini/skills, the loser is reported', () => {
+  const result = importFrom('gemini', {
+    '.gemini/skills/tidy/SKILL.md': '---\nname: tidy\ndescription: Gemini copy\n---\n\nGemini body.\n',
+    '.agents/skills/tidy/SKILL.md': '---\nname: tidy\ndescription: Alias copy\n---\n\nAlias body.\n',
+  });
+  assert.equal(result.manifests.length, 1);
+  const [skill] = result.manifests as HubSkill[];
+  assert.equal(skill.description, 'Alias copy');
+  assert.equal((skill.harnessSpecific as { path: string }).path, '.agents/skills/tidy/SKILL.md');
+  const [warning] = result.warnings;
+  assert.equal(warning.code, 'SKILL_SHADOWED');
+  assert.equal(warning.path, '.gemini/skills/tidy/SKILL.md');
+  assert.ok(warning.detail.includes('.agents/skills/tidy/SKILL.md'));
+});
+
+test('Gemini import: PROVIDER_VALUES_STRIPPED names the actual endpoint key', () => {
+  const stripped = imported.warnings.filter((warning) => warning.code === 'PROVIDER_VALUES_STRIPPED');
+  const remote = stripped.find((warning) => warning.detail.includes('remote-hub'))!;
+  assert.ok(remote.detail.includes('httpUrl'), remote.detail);
+  assert.equal(remote.detail.includes('mcp.example.com'), false);
+});

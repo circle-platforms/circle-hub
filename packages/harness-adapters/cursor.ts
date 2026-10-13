@@ -41,8 +41,12 @@ const MCP_PATH = '.cursor/mcp.json';
 // `.cursor/hooks.json` (flat entries per event). MCP: `.cursor/mcp.json`.
 // Commands have no documented user/workspace directory — not imported.
 // User-level (~/.cursor) files are never part of the virtual file table.
-const SKILL_ENTRY = /(^|\/)\.cursor\/skills\/(.+)\/SKILL\.md$/;
-const SKILL_COMPAT = /(^|\/)\.agents\/skills\/([^/]+)\/SKILL\.md$/;
+const SKILL_LOCATIONS = [
+  /(^|\/)\.cursor\/skills\/(.+)\/SKILL\.md$/,
+  /(^|\/)\.agents\/skills\/(.+)\/SKILL\.md$/,
+  /(^|\/)\.claude\/skills\/(.+)\/SKILL\.md$/,
+  /(^|\/)\.codex\/skills\/(.+)\/SKILL\.md$/,
+];
 const AGENT_FILE = /(^|\/)\.cursor\/agents\/([^/]+)\.md$/;
 const RULES_FILE = /^\.cursor\/rules\/[^/]+\.mdc$/;
 const INSTRUCTION_FILE = /(^|\/)AGENTS\.md$/;
@@ -79,7 +83,7 @@ function importSkills(
   claimed: Set<string>,
 ): void {
   for (const [path, value] of Object.entries(files)) {
-    const match = SKILL_ENTRY.exec(path) ?? SKILL_COMPAT.exec(path);
+    const match = SKILL_LOCATIONS.map((pattern) => pattern.exec(path)).find((hit) => hit !== null);
     if (!match) continue;
     claimed.add(path);
     const directory = dirName(path);
@@ -366,8 +370,11 @@ function exportMarkdown(
   }
 }
 
-// Rebuild hooks.json: version comes from the original file; entries take the
-// sanitized command from the manifest and any extra keys from the original.
+// Rebuild hooks.json: version comes from the original file. Entries that
+// were skipped at import (non-command types, malformed) carry no manifest;
+// they are preserved verbatim from the original bytes so a round trip never
+// loses entries. If the original file is missing, that is impossible and
+// reported.
 function exportHooks(hooks: HubHook[], source: VirtualFiles, out: VirtualFiles, warnings: AdapterWarning[]): void {
   const byPath = new Map<string, HubHook[]>();
   for (const hook of hooks) {
@@ -381,37 +388,70 @@ function exportHooks(hooks: HubHook[], source: VirtualFiles, out: VirtualFiles, 
     const original = sourceText === undefined ? undefined : parseJsonFile(path, sourceText, warnings);
     if (original === undefined) {
       warnings.push({
-        code: 'SOURCE_FILE_MISSING',
+        code: 'HOOK_ENTRY_DROPPED_ON_EXPORT',
         path,
-        detail: 'original hooks file is not in the export file table; version and extra entry keys cannot be recovered',
+        detail: 'original hooks file is not in the export file table; entries skipped at import cannot be preserved',
       });
     }
-    const sorted = [...list].sort((a, b) => {
-      const sa = a.harnessSpecific as { eventIndex?: number; entryIndex?: number };
-      const sb = b.harnessSpecific as { eventIndex?: number; entryIndex?: number };
-      return (sa.eventIndex ?? 0) - (sb.eventIndex ?? 0) || (sa.entryIndex ?? 0) - (sb.entryIndex ?? 0);
-    });
-    const events: Record<string, unknown[]> = {};
-    for (const hook of sorted) {
-      if (!(hook.event in events)) events[hook.event] = [];
+    const originalHooks =
+      original && original.hooks && typeof original.hooks === 'object' && !Array.isArray(original.hooks)
+        ? (original.hooks as Record<string, unknown>)
+        : undefined;
+    const byEvent = new Map<string, Map<number, HubHook>>();
+    for (const hook of list) {
       const specific = hook.harnessSpecific as { entryIndex?: number };
-      const originalHooks = original?.hooks;
-      const originalEntries =
-        originalHooks && typeof originalHooks === 'object' && !Array.isArray(originalHooks)
-          ? (originalHooks as Record<string, unknown>)[hook.event]
-          : undefined;
-      const originalEntry =
-        Array.isArray(originalEntries) && originalEntries[specific.entryIndex ?? 0] !== null
-          ? originalEntries[specific.entryIndex ?? 0]
-          : undefined;
-      const entry: Record<string, unknown> = {};
-      if (originalEntry && typeof originalEntry === 'object' && !Array.isArray(originalEntry)) {
-        for (const [key, value] of Object.entries(originalEntry as Record<string, unknown>)) {
-          entry[key] = key === 'command' ? hook.handler : value;
+      const entries = byEvent.get(hook.event) ?? new Map<number, HubHook>();
+      entries.set(specific.entryIndex ?? 0, hook);
+      byEvent.set(hook.event, entries);
+    }
+    const events: Record<string, unknown[]> = {};
+    // Original event order first (with skipped entries preserved), then any
+    // events that only exist in manifests.
+    const eventOrder: string[] = [];
+    if (originalHooks) {
+      for (const event of Object.keys(originalHooks)) eventOrder.push(event);
+    }
+    for (const hook of list) {
+      if (!eventOrder.includes(hook.event)) eventOrder.push(hook.event);
+    }
+    for (const event of eventOrder) {
+      const manifestEntries = byEvent.get(event) ?? new Map<number, HubHook>();
+      const originalEntries = originalHooks?.[event];
+      if (Array.isArray(originalEntries)) {
+        const rebuilt: unknown[] = [];
+        originalEntries.forEach((originalEntry, entryIndex) => {
+          const hook = manifestEntries.get(entryIndex);
+          manifestEntries.delete(entryIndex);
+          if (hook === undefined) {
+            rebuilt.push(originalEntry);
+            return;
+          }
+          const entry: Record<string, unknown> = {};
+          if (originalEntry && typeof originalEntry === 'object' && !Array.isArray(originalEntry)) {
+            for (const [key, value] of Object.entries(originalEntry as Record<string, unknown>)) {
+              entry[key] = key === 'command' ? hook.handler : value;
+            }
+          }
+          if (!('command' in entry)) entry.command = hook.handler;
+          rebuilt.push(entry);
+        });
+        // Manifests positioned beyond the original array append at the end.
+        for (const hook of [...manifestEntries.values()].sort((a, b) => {
+          const ai = (a.harnessSpecific as { entryIndex?: number }).entryIndex ?? 0;
+          const bi = (b.harnessSpecific as { entryIndex?: number }).entryIndex ?? 0;
+          return ai - bi;
+        })) {
+          rebuilt.push({ command: hook.handler });
         }
+        events[event] = rebuilt;
+      } else {
+        const sorted = [...manifestEntries.values()].sort((a, b) => {
+          const ai = (a.harnessSpecific as { entryIndex?: number }).entryIndex ?? 0;
+          const bi = (b.harnessSpecific as { entryIndex?: number }).entryIndex ?? 0;
+          return ai - bi;
+        });
+        events[event] = sorted.map((hook) => ({ command: hook.handler }));
       }
-      if (!('command' in entry)) entry.command = hook.handler;
-      events[hook.event].push(entry);
     }
     const composed: Record<string, unknown> = {};
     if (original !== undefined && 'version' in original) composed.version = original.version;

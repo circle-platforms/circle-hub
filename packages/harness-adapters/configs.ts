@@ -293,12 +293,12 @@ export function skeletonCredentials(shape: EntrySkeleton): string[] {
 // Key names whose values come back as placeholders at export: every
 // object-valued key, plus endpoint keys. Used for the import-side disclosure
 // warning.
-export function skeletonStripped(shape: EntrySkeleton, hasEndpoint: boolean): string[] {
+export function skeletonStripped(shape: EntrySkeleton, endpointKey?: string): string[] {
   const stripped: string[] = [];
   for (const [key, names] of Object.entries(shape)) {
     if (Array.isArray(names)) for (const name of names) stripped.push(`${key}.${name}`);
   }
-  if (hasEndpoint) stripped.push('url');
+  if (endpointKey !== undefined) stripped.push(endpointKey);
   return stripped;
 }
 
@@ -731,10 +731,10 @@ export function importMcpServersJson(
         detail: `mcpServers.${name} cwd is a machine-local directory and was removed from the manifest`,
       });
     }
-    const hasEndpoint = URL_KEYS.some((key) => typeof entry[key] === 'string' && (entry[key] as string) !== '');
+    const endpointKey = URL_KEYS.find((key) => typeof entry[key] === 'string' && (entry[key] as string) !== '');
     const shape = entrySkeleton(entry);
     const credentials = skeletonCredentials(shape);
-    const stripped = skeletonStripped(shape, hasEndpoint);
+    const stripped = skeletonStripped(shape, endpointKey);
     if (stripped.length > 0) {
       warnings.push({
         code: 'PROVIDER_VALUES_STRIPPED',

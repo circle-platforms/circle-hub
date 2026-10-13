@@ -16,5 +16,11 @@
         "headers": { "Authorization": "Bearer synthetic-opencode-header" }
       }
     }
+  },
+  "commands": {
+    "release": {
+      "template": "Release the synthetic build with $ARGUMENTS",
+      "description": "Release a synthetic build"
+    }
   }
 }

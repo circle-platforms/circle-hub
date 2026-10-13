@@ -19,10 +19,10 @@ function manifestsOfKind<K extends HubManifest['kind']>(kind: K): Extract<HubMan
   return imported.manifests.filter((manifest) => manifest.kind === kind) as Extract<HubManifest, { kind: K }>[];
 }
 
-test('OpenCode import: fixture covers skills (both forms), command, agent, instruction, providers', () => {
+test('OpenCode import: fixture covers skills (both forms), commands (file and config), agent, instruction, providers', () => {
   assert.deepEqual(
     imported.manifests.map((manifest) => manifest.kind).sort(),
-    ['hub-agent/1', 'hub-command/1', 'hub-instruction/1', 'hub-provider/1', 'hub-provider/1', 'hub-skill/1', 'hub-skill/1'].sort(),
+    ['hub-agent/1', 'hub-command/1', 'hub-command/1', 'hub-instruction/1', 'hub-provider/1', 'hub-provider/1', 'hub-skill/1', 'hub-skill/1'].sort(),
   );
   // No hub-hook/1: OpenCode registers hooks from plugin code, there is no
   // hooks file to import.
@@ -50,8 +50,7 @@ test('OpenCode import: skill names come from path ids, display name stays propri
 });
 
 test('OpenCode import: nested command and agent names keep their path', () => {
-  const [command] = manifestsOfKind('hub-command/1') as HubCommand[];
-  assert.equal(command.name, 'team/review');
+  const command = (manifestsOfKind('hub-command/1') as HubCommand[]).find((entry) => entry.name === 'team/review')!;
   assert.equal(command.description, 'Nested team review');
   // agent/model/subagent have no hub-command fields and stay proprietary.
   assert.deepEqual((command.harnessSpecific as { frontmatter?: unknown }).frontmatter, {
@@ -68,6 +67,15 @@ test('OpenCode import: nested command and agent names keep their path', () => {
   const [instruction] = manifestsOfKind('hub-instruction/1') as HubInstruction[];
   assert.equal(instruction.fileName, 'AGENTS.md');
   assert.deepEqual(instruction.applies, []);
+});
+
+test('OpenCode import: config commands.<name> imports as hub-command/1 pointing at the file', () => {
+  const command = (manifestsOfKind('hub-command/1') as HubCommand[]).find((entry) => entry.name === 'release')!;
+  assert.equal(command.description, 'Release a synthetic build');
+  // The template stays in the config file bytes; the manifest points at it.
+  assert.equal(JSON.stringify(command).includes('Release the synthetic build'), false);
+  assert.deepEqual(command.harnessSpecific, { path: 'opencode.jsonc', configKey: 'release' });
+  assert.deepEqual(command.files.map((file) => file.path), ['opencode.jsonc']);
 });
 
 test('OpenCode import: mcp.servers map local to stdio and remote to streamable-http', () => {
@@ -110,12 +118,19 @@ test('OpenCode round trip: markdown byte-identical, jsonc config regenerated wit
   assert.notEqual(exported.files['opencode.jsonc'], fixture['opencode.jsonc']);
   const config = JSON.parse(exported.files['opencode.jsonc'] as string) as {
     mcp: { servers: Record<string, Record<string, any>> };
+    commands: Record<string, Record<string, any>>;
   };
   assert.deepEqual(Object.keys(config.mcp.servers), ['local-runner', 'remote-hub']);
   assert.deepEqual(config.mcp.servers['local-runner'].command, ['node', 'server.js']);
   assert.deepEqual(config.mcp.servers['local-runner'].environment, { RUNNER_TOKEN: '[redacted]' });
   assert.equal(config.mcp.servers['remote-hub'].url, '[redacted]');
-  assert.equal(JSON.stringify(config).includes('synthetic'), false);
+  // Config commands write back to the same section, template from the bytes.
+  assert.deepEqual(config.commands.release, {
+    template: 'Release the synthetic build with $ARGUMENTS',
+    description: 'Release a synthetic build',
+  });
+  assert.equal(JSON.stringify(config).includes('synthetic-opencode-token'), false);
+  assert.equal(JSON.stringify(config).includes('synthetic-opencode-header'), false);
   assert.deepEqual(
     exported.warnings.map((warning) => warning.code).sort(),
     ['SECRET_PLACEHOLDER', 'SECRET_PLACEHOLDER'],
@@ -204,4 +219,59 @@ test('OpenCode export: cross-harness manifests are refused with a warning', () =
     result.warnings.map((warning) => warning.code),
     ['CROSS_HARNESS_EXPORT'],
   );
+});
+
+test('OpenCode import: config files below the project root are not picked up', () => {
+  const result = importFrom('opencode', { 'packages/demo/opencode.json': '{}' });
+  assert.deepEqual(result.manifests, []);
+  assert.deepEqual(
+    result.warnings.map((warning) => warning.code),
+    ['UNRECOGNIZED_FILE'],
+  );
+});
+
+test('OpenCode import: a config command without template is skipped', () => {
+  const result = importFrom('opencode', {
+    'opencode.json': JSON.stringify({ commands: { broken: { description: 'no template here' } } }),
+  });
+  assert.deepEqual(result.manifests, []);
+  assert.deepEqual(
+    result.warnings.map((warning) => warning.code).sort(),
+    ['CANONICAL_NORMALIZATION', 'CONFIG_JSON_INVALID'],
+  );
+});
+
+test('OpenCode import: a config with only commands is not an empty config', () => {
+  const result = importFrom('opencode', {
+    'opencode.json': JSON.stringify({ commands: { release: { template: 'do $ARGUMENTS' } } }),
+  });
+  assert.equal(result.manifests.length, 1);
+  assert.equal(result.manifests[0].kind, 'hub-command/1');
+  assert.equal(result.warnings.filter((warning) => warning.code === 'EMPTY_CONFIG').length, 0);
+});
+
+test('OpenCode import: compat skill locations are imported', () => {
+  const result = importFrom('opencode', {
+    '.claude/skills/from-claude/SKILL.md': '---\ndescription: From claude dir\n---\n\nBody.\n',
+    '.agents/skills/from-agents/SKILL.md': '---\ndescription: From agents dir\n---\n\nBody.\n',
+  });
+  assert.deepEqual(
+    result.manifests.map((manifest) => (manifest as HubSkill).name).sort(),
+    ['from-agents', 'from-claude'],
+  );
+  assert.deepEqual(result.warnings, []);
+});
+
+test('OpenCode export: an edited config command description is reflected, template untouched', () => {
+  const manifests = structuredClone(imported.manifests);
+  const command = manifests.find((manifest) => manifest.kind === 'hub-command/1' && manifest.name === 'release')!;
+  command.description = 'Edited in the hub';
+  const exported = exportTo('opencode', manifests, fixture);
+  const config = JSON.parse(exported.files['opencode.jsonc'] as string) as {
+    commands: Record<string, Record<string, unknown>>;
+  };
+  assert.deepEqual(config.commands.release, {
+    template: 'Release the synthetic build with $ARGUMENTS',
+    description: 'Edited in the hub',
+  });
 });
