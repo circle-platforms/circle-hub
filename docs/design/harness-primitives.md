@@ -67,6 +67,7 @@ harness 里实际存在的东西，分成 hub 治理的和不治理的。治理 
 
 - `/mcp`（streamable HTTP）按当前身份暴露：**tools**（目录里的工具，形状不变）、**resources**（资料与证据：`hub://evidence/<id>`、`hub://source/<id>`、`hub://artifact/<id>`，只读）、**prompts**（Skill 和 Command 的 MCP prompt 投影，给没有技能机制的 harness 用）。
 - 鉴权用 hub 的会话令牌；每次调用照常留证据、过权限；写操作（交活、推送、审批）也是 tools，`approval` 标注的那些在没有卡片界面的 harness 里会要求显式确认参数。
+- 显式确认走 MCP 的 `_meta`，不改工具的 inputSchema：`tools/call` 的 `params._meta["hub/idempotencyKey"]` 必填；`approval` 标注的工具第一次调用若没有确认，返回 `CONFIRMATION_REQUIRED`，details 带 `argsDigest`（参数的规范摘要）和一行人读摘要；客户端再次调用时在 `_meta["hub/confirmation"]` 回传同一 `argsDigest`，与当前参数摘要一致才执行，不一致是 `CONFIRMATION_STALE`。确认绑定参数，不能盲确认；响应的 `_meta` 回显 idempotencyKey 与 evidenceId。
 - Circle 扩展是这条传输之上的富客户端：卡片、队列、登记簿。其它 harness 先得到基础能力，再按需要写适配器。
 
 ## 五、原语在四对象 × 五要素里的位置
