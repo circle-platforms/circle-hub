@@ -1243,3 +1243,13 @@ beforeDispatch 的 C 内部工作项通过私有 Symbol 保存，摘要绑定代
 worker-capability-negotiation 的旧 mock 只给 UPDATE workers 返回注册行，新 claim 先 SELECT 核已注册身份，故真实复现 **3/4** / FORBIDDEN_ACTION。更新为精确响应当前注册 SELECT / last_seen UPDATE，只有真正 flow / resource / lease 查询才计入选择操作；追加未注册 worker 仍拒绝且不能选择操作的断言。注册核验与旧 worker 无 capability 不领 flow 的生产边界不改。
 
 同文件修后 **5/5，无 skip**，typecheck / diff 通过。仅一个测试文件及本记录，本地签署、不跑 PG / 全套、不 push 或部署。
+
+## 116：确定性红例，轻预检只披露本动作引用
+
+旧用例先领取没有 byteArgs 的 meridian_prepare，却要求 light 返回全部三 MiB 原件引用，原 31 行真实 **0/1** 红。C2 的本动作最小引用过滤正确，不修改生产返回。夹具改为三 MiB 合法 JSON，由实际声明的 Tool 通过 byteSlots / 第三个字节参数消费；used 动作核同上传 SHA 的引用、不含 base64、重复 light / heartbeat 零 B 读取。新增 unused 动作引用为空 / 零 B；原来源、角色、方法、资源、运行时及凭据撤销断言全部保留。
+
+测试 direct 服务按真实 server 采用 Records、TypeCatalog / Entities→Graph 来源授权与 flow 锁接线，没有空方法 stub 或绕过 ACL。修夹具首轮 **4/5** 的剩余红是旧 direct 误用 Knowledge 缺 materialize，更新真实 Records 后单叶 **1/1**；完整来源接线后相关三叶 **3/3**，最终五叶各有实际绿证据、无 skip。typecheck / diff 通过。只改一个验收文件及进度，不改生产 / 原生 / 独立包，PG 串行清理，不跑全套、不 push 或部署。
+
+本轮按高项→中项→三个低项→两条确定性红例，各一笔本地签署。最终集成只核交叉消费者：纯初 **18/22** 的四红是新锁集合 / 事务外入口的旧 mock 表示（清理三叶与能力一叶），精确补合法任务 / run / 资源 / lease 和 operation-name 查询后 **22/22**，原假终态、fence / 来源 / release、冻结及活能力撤销断言未改；补丁并回共享锁那一笔，仍七笔问题提交。实际 PostgreSQL 跨消费者 **7/7 + 1/1**（明文核对、已用 / 未用引用、活授权和协议受理），固定 **3c46f707** 严格准备 / submit / status / results 全链 **1/1**，无 skip / fail。
+
+最终 typecheck / diff 通过，原生 packs/apv / foundation / references / harness-adapters 相对本轮基线零差异；工作区收尾干净，全部 PostgreSQL 单进程串行清理，没有全套、真实模型或设备运行。六条上轮配套仍在前序提交，未被这些修复覆盖。不 push、不部署、不触 7420 / 网关 / Circle / 独立包；全量和合 main 留维护者独立完成。
