@@ -293,9 +293,9 @@ observations 为 `{operationId, reference, facts}`。原件 reference 是四种�
 }
 ```
 
-env_prepare 与 bed_topology 并不是 Hub 硬编码的特殊 Tool：名字、read effect 与输入结构来自该 provider 的批准声明。bed_topology 的观察同样由它自己的 provider.call 产生。当前 worker 的普通 read 分支直接调用只读 Tool，**不自动取得远端租约**；若该服务的观察接口要求先持有远端租约，裸 read 动作不能凭空满足它，也不能让 transition 传入 lease token。这样的观察须由已批准且实际可独立读取的 provider Tool，或 Hub 管理的写协议所留存的原件提供。本示例不证明任一既有网关无租约可调用这两个名字。
+env_prepare 与 bed_topology 并不是 Hub 硬编码的特殊 Tool：名字、read effect 与输入结构来自该 provider 的批准声明。bed_topology 的观察同样由它自己的 provider.call 产生。缺少显式租约映射时，worker 的普通 read 分支直接调用只读 Tool，**不自动取得远端租约**；显式 argumentsByTool 要求租约的 read 会临时 acquire / read / release。若该服务的观察接口要求先持有远端租约，裸 read 动作不能凭空满足它，也不能让 transition 传入 lease token。这样的观察须由已批准且实际可独立读取的 provider Tool，或 Hub 管理的写协议所留存的原件提供。本示例不证明任一既有网关无租约可调用这两个名字。
 
-后续 C 的已确认方向是在 receiptPolicy 增加**可选 prepare 阶段**：由批准的工具名与参数映射决定调用，worker 在同一远端租约内、submit 之前执行，Hub 持久化准备观察，再以这份观察供 beforeDispatch 核验。本轮不实现该阶段，也不把 prepare 写进当前 ProviderPolicy schema 或示例；精确字段/映射 schema 与新的 worker ABI 尚待后续设计与验收，不能由产品在现有 args 中自行补出。
+C4 已在 receiptPolicy 增加**可选 prepare 阶段**（当前字段见文末 C4）：由批准的工具名与参数映射决定调用，worker 在同一远端租约内、submit 之前执行，Hub 持久化准备观察，再以这份观察供 beforeDispatch 核验。ProviderPolicy 已定义 prepare 列表与相应 worker 事件；精确映射和证明边界见 C4，产品不能在 args 中自行补租约权限。
 
 时序也需要在 C 实施时调整并验收：当前强制 beforeDispatch 位于 C 预检、早于 worker acquire/准备；未来要让该出口在准备观察已经持久化后再次核验，且仍在提交意图与 submit 之前，不让旧的出口通过记录替代新观察。prepare 不证明已派发，也不把准备成功扩大为提交成功。原生 APV 路径的 execution.environment.observed 来自其提交前 env_prepare；网关 case_submit 内部仍可再次观察或拒绝，属于另一调用/时间点。未来通用 prepare 的观察也保留独立原件与操作身份，不拿这两种既有观察冒充新增阶段已经完成。当前真实 env_prepare/bed_topology 需要远端租约，因此前面的裸 read 示例仅说明参数形状，不能作为现有真实网关可执行路径。
 
@@ -310,7 +310,9 @@ env_prepare 与 bed_topology 并不是 Hub 硬编码的特殊 Tool：名字、re
 
 这份注入说明沿用 A2 的全部预算：state 256 KiB、input metadata 512 KiB、transition output 256 KiB、普通 JSON 字符串 32 KiB、数组/动作 256 项、深度 16、controlled 解码合计 8 MiB，以及实际 Tool wire 输入 24 MiB / 输出 16 MiB；上述示例没有新字段容量或隐式扩容。expectedOccurrences 是现有可选合同字段，产品若不使用重复步骤也不能据其缺席自造许可。完整字节只在实际执行所需的 frame 中给出；轻预检重核授权与原件引用，不向 transition 改发另一种协议。
 
-### C 阶段待办：同形网关协议兼容
+### C 阶段协议差异与实施清单
+
+以下保留实施前协议差异；当前落实情况以文末 C1–C5 及驱动 schema 为准，严格合成验收不等于现网部署。
 
 下面是用户确认并经本机网关源码只读核对的协议形状；只记录键名、类型与行为，不引入地址、配置值或真实回报。它不是已经实现的新 ProviderPolicy schema，也不是任意 MCP 服务都应采用的统一回执。C 后续实现须用已批准的通用 policy 描述差异，不能把这些产品工具名写成 Hub 分支。
 
@@ -411,7 +413,7 @@ B 的 16 MiB 上传上限不意味着每个 Tool 或受控槽都能容纳这么�
 
 观察终态与取得结果正文是两个不同事实。status 回报已满足批准的终态与身份核验时先保存 D 终态，再取结果和解释；后续失败保留真实解释错误，不把 status 内容当成结果或生成默认成功行。provider 的解析后 JSON 以 canonicalJson 原字节留 B，worker 事件和回报用绑定操作 / stage 的指针；C 回读核 SHA / 大小。原件、大文本 / NUL 的小投影和产品解释各自保留身份，既不把正文写进 JSONB，也不以脱敏预览覆盖原件。这个 canonical 化是明确的转换，不宣称保留了原 HTTP wire 的空白与字段顺序。
 
-方法摘要的版本化算法覆盖冻结模块 digest、flow、驱动版本与支持的精确依赖版本；模块清单已覆盖 Tool / Hook / 相对依赖的完整文件集合。批准历史 pin 与最新批准 readers 的交集继续逐次核验，草稿不改运行绑定；新受理要显式选方法，旧任务不自动升级。运行资源和 runtime-profile 也冻结实际修订，不把配置文件存在当作批准。单 run 转换次数与总步骤数使用已有 256 项预算，超限解释失败，不无限产生空转换。
+方法摘要的版本化算法覆盖冻结模块 digest、flow、驱动版本与支持的精确依赖版本；模块清单已覆盖 Tool / Hook / 相对依赖的完整文件集合。批准历史 pin 与最新批准 readers 的交集继续逐次核验，草稿不改运行绑定；新受理要显式选方法，旧任务不自动升级。运行资源和 runtime-profile 也冻结实际修订，不把配置文件存在当作批准。C5 将总步骤预算独立为 1024，转换仍 256 代，单批数组仍 256；超限明确失败，不无限产生空转换。
 
 A3 的验收前提仍是 macOS seatbelt、临时 PostgreSQL 和合成网关。两份合成模块分别冻结 / 批准 / 停用并交替执行，只证明此通用驱动与它们的协议；原生 1.1.1、APV 新模块、真实设备、真实模型及任意 MCP 服务兼容性不由这些验收推定。完整验收结论只记 [阶段进度](../server-s2-progress.md)，本附录不记录部署成功。
 
@@ -442,3 +444,21 @@ D 成功回报先按 SHA 冻结原件，再做阶段校验；不匹配原件仍�
 迁移 43 的 prepare_ref 保存操作、输入修订、fence、请求摘要、资源 pin、租约摘要、顺序、实际参数摘要和原件引用。C 独立回读 B、重算映射与摘要，完整准备后才调用 beforeDispatch；subject 为 `{input,operationId,preparations:[{index,tool,reference,result}]}`。准备 result 在 Hook 入口去除凭据 / 租约字段及 NUL，并标 sanitized；原件保存在 B，不把原文秘密或 NUL 放进 JSONB。超 Hook JSON 预算明确失败，不截断为通过。出口证明绑定本次 preparationDigest / fence，intent 还核同一 leaseDigest；旧出口证据不能豁免新观察。
 
 准备失败、撤权或 Hook 拦截在意图前落 failed，无提交 / unknown 冻结；本地取消仍不证明远端停止。清理仅用本次已取得的凭据调用批准的 lease_release，不授新 dispatch；明文例外清理的有限 transport 元数据仍按冻结 runtime 修订核验并永久写审计 / 证据。释放失败照实记 false。已派发不确定写仍不清理、不重派；原生 1.1.1 不改。初始环境观察来自模块的独立 read，写租约里的 prepare 是更晚的一次观察，gateway submit 内部还可独立观察 / 拒绝，不能互相冒充。
+
+### C5：运行容量、观察窗口与结构投影
+
+运行预算独立为 1024 个持久步骤 / 256 代转换；单批动作、普通 JSON 数组仍最多 256。这是按 21 案最大估算 258 步留两倍余量后取整为 1024；256 代保持既有通用档位，32 代只属先前具体排程估算，未改为全平台默认。同 key 重放不新增预算，跨上限整批原子拒绝，不先派发前缀。
+
+模块只有显式声明 `historyMode:"controlled"` 才能使用超窗历史。可选 observationWindow / expectedOccurrenceArchive 为 `{total,returned,complete,archive?:{slot,reference}}`；全集由 C 以 SHA 留作 B 制品，并经真实 `flow-history` / `flow-occurrences` 受控槽送给需要它的 Tool，计入原有 8 MiB 总量。内联最多 256，窗口保留意图、unknown、已消费授权与活动步骤；无 worker 回报的活动记录标明 hub-step-ledger，不伪称 provider 结果。关键记录自身超过 256 则明确失败，1024 不表示可内联任意数量的写历史。未声明窗口协议的旧模块超窗也明确拒绝。
+
+全集原件仍逐项重核当前 B 可见性、SHA 与大小；受控槽同名只有相同 role / reference 才可复用。轻预检保留输入修订双摘要验证、冻结请求引用与来源授权。交付引用查询本任务 / 输入修订的全部观察和 C 生成的历史 B 绑定，再核 B 权限；不以退出内联窗口为由拒合法旧引用，也不接受跨修订 / 隐藏对象。
+
+结构投影除 256 KiB 与 32 KiB 字符串外，也检查 UTF-8 键、256 项数组和实际 frame 包装后的 16 层深度。小体积 257 项结果亦走已有 hub.result 原件槽；结果从包装深度 5 计，错误元数据从 6 计，省略的元数据给 SHA / 大小 / reason，原始工作者回报继续保留。预算不扩大，数据不静默截断。来源框架、设备与产品解析仍归模块，原生 1.1.1 字节不变。
+
+### C1：逐工具租约注入与 schema
+
+`receiptPolicy.lease.argumentsByTool` 以工具名为键，每项为 `{idArgument?,fenceArgument?}`；空对象或未列工具不注入任何租约参数。整份映射缺席则保持旧协议的全局名字。只有资源已声明、schema 有对应字段的 Tool 可获注入，目标不得相互冲突或覆盖普通 / 字节 / 远端身份参数；acquire 不可注入尚未取得的身份。
+
+C 入队只延后批准映射字段的必需性约束，保留其它字段验证；无法安全延后的顶层组合 / 跨字段 schema 失败封闭，不删除约束伪造许可。D 真正调用前按实际 lease、普通映射与原字节填入后完整验证批准 schema / wire。需要租约的普通 read 临时 acquire / read / release，并核 acquire / heartbeat / release 的角色；status/results 的空映射保证只传已声明远端身份。
+
+C5 的 ledger / B 绑定也要求一致的数据库锁序：通用 flow 的任务→run→operation / step，claim 在 task 被锁住时跳过候选，不先占 operation 等上级锁。同 Store 的 flow 前置锁回调供两个 executor wrapper、心跳与过期实例共用；无注册回调的原生路径不新增 flow 锁。锁是序列化边界，不能替代身份、范围、fence、期限或源授权检查；本实现不靠重试死锁推进任务。

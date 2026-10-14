@@ -657,3 +657,5 @@ node --test --test-concurrency=1 tests/acceptance/c-cexg-protocol.test.ts
 冻结 `5cdbc2b` 的实际结果为 **1 pass / 1 fail / 0 skip**：原件与模块登记、另一身份批准完成，主目标在 `C.validateBatch:env_prepare` 缺租约而 failed / INVALID_PAYLOAD，provider RPC、case_submit 与 write intent 都是零。主断言仍要求成功完成执行，没有把拒绝标成通过。提交、status/results 与原始回执的后续缺口尚未到达；完整清单见[中英 C 待办](design/execution-flow-packs.md#c-阶段待办同形网关协议兼容)，本轮未改驱动或网关，也未证明真实设备兼容。
 
 C 驱动升级不声明新旧 flow.invoke worker 混跑安全。启用含逐工具注入 / 阶段回执 / prepare 的资源新修订前，必须先排空并退出全部旧 flow worker，确认在途任务已结束或已留下独立核对所需事实，再启动新 worker，最后激活新 policy；仅替换 server 不够。drain 不能把已派发 unknown 当作停止，也不得补发远端写。本轮没有新增 worker feature 协商接口，维护者的 C 后半滚动替换须遵守这个顺序。
+
+C 实施接口仍沿用既有模块 / 资源 / 任务 / worker 路径；receiptPolicy 的逐工具参数、分阶段回执与 prepare，以及模块的 controlled-history 协议见 [执行流设计 C 实施附录](design/execution-flow-packs.md)。开启严格合成协议验收：`CIRCLE_PACKS_CATALOG=../circle-packs/modules.json CIRCLE_PACKS_REF=b02122a CIRCLE_HUB_CEXG_PROTOCOL_ACCEPTANCE=1 node --test tests/acceptance/c-cexg-protocol.test.ts`；该固定原件已覆盖同租约 prepare / 一次 submit / 独立终态 / 结果解析，不能替代现网冒烟。

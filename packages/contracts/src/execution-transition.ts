@@ -18,6 +18,7 @@ export const EXECUTION_TRANSITION_LIMITS=Object.freeze({
   stateBytes:ceilPowerOfTwo(2*(4219626-2577744-1527460)),
   metadataBytes:ceilPowerOfTwo(2*208866),outputBytes:ceilPowerOfTwo(2*119582),
   jsonStringBytes:ceilPowerOfTwo(2*10420),arrayItems:ceilPowerOfTwo(216),jsonDepth:ceilPowerOfTwo(2*7),
+  runSteps:1024,generations:256,
   controlledBytes:ceilPowerOfTwo(149702+9970+7209+4219626),
   // Existing tool-host channel ceilings, not newly enlarged execution limits.
   toolInputWireBytes:24*1024*1024,toolOutputWireBytes:16*1024*1024,
@@ -46,6 +47,7 @@ export function createExecutionTransitionContracts(shared:Shared){
   const byteReference=controlled.omit({encoding:true,contentBase64:true}).strict(),byteBinding=z.union([byteReference,controlled]);
   const byteParameter=z.string().min(1).max(limits.jsonStringBytes).refine(key=>!['__proto__','constructor','prototype'].includes(key)&&!/[\x00-\x1f]/.test(key),'Use a plain provider parameter key');
   const observation=z.object({operationId:shared.OperationId,reference,facts:object}).strict();
+  const window=z.object({total:safeSize,returned:safeSize.max(limits.arrayItems),complete:z.boolean(),archive:z.object({slot:stepId,reference:reference.refine(ref=>ref.kind==='artifact')}).strict().optional()}).strict();
   const common={stepId,occurrence:safeSize};
   const action=z.discriminatedUnion('kind',[
     z.object({...common,kind:z.literal('tool.call'),path:shared.SafeRelativePath,export:z.string().min(1).max(200).regex(/^[A-Za-z_$][A-Za-z0-9_$]*$/),args:z.array(json).max(limits.arrayItems),byteSlots:z.array(stepId).max(limits.arrayItems).optional()}).strict(),
@@ -102,11 +104,15 @@ export function createExecutionTransitionContracts(shared:Shared){
     if(bytes(shared.canonicalJson(metadata))>limits.metadataBytes)issue(ctx,'Transition metadata exceeds its cumulative JSON byte budget',[],'BODY_TOO_LARGE');
   }
   const inputBase=z.object({schema:z.literal(EXECUTION_TRANSITION_SCHEMA),binding,currentInput:z.object({value:json,sha256:shared.Sha256}).strict(),state:json,
-    observations:z.array(observation).max(limits.arrayItems),controlledBytes:z.array(controlled).max(limits.arrayItems),expectedOccurrences:z.array(z.object({stepId,nextOccurrence:safeSize}).strict()).max(limits.arrayItems).optional()}).strict().superRefine((value,ctx)=>{
+    observations:z.array(observation).max(limits.arrayItems),controlledBytes:z.array(controlled).max(limits.arrayItems),expectedOccurrences:z.array(z.object({stepId,nextOccurrence:safeSize}).strict()).max(limits.arrayItems).optional(),observationWindow:window.optional(),expectedOccurrenceArchive:window.optional()}).strict().superRefine((value,ctx)=>{
     stateBudget(value.state,ctx,'input');
     const expectedSteps=new Set<string>();for(const [index,row]of (value.expectedOccurrences??[]).entries()){if(expectedSteps.has(row.stepId))issue(ctx,'Expected occurrence identities must be unique',['expectedOccurrences',index,'stepId']);expectedSteps.add(row.stepId);}
     if(shared.canonicalHash(value.currentInput.value)!==value.currentInput.sha256||value.currentInput.sha256!==value.binding.inputSha256)issue(ctx,'Current input differs from its canonical SHA or frozen binding',['currentInput','sha256'],'SOURCE_HASH_MISMATCH');
     metadataBudget(value,ctx);byteBudget(value.controlledBytes,ctx);
+    for(const [name,role,rows]of [['observationWindow','flow-history',value.observations],['expectedOccurrenceArchive','flow-occurrences',value.expectedOccurrences??[]]] as const){const detail=value[name];if(!detail)continue;
+      if(detail.returned!==rows.length||detail.total<detail.returned||detail.complete!==(detail.total===detail.returned)||!detail.complete&&!detail.archive)issue(ctx,'History window must disclose exact counts and an incomplete archive',[name]);
+      if(detail.archive){const entry=value.controlledBytes.find(byte=>byte.slot===detail.archive!.slot);if(!entry||entry.role!==role||shared.canonicalHash(entry.reference)!==shared.canonicalHash(detail.archive.reference))issue(ctx,'History archive must name its actual authorized controlled slot',[name,'archive']);}
+    }
   });
   const outputBase=z.object({schema:z.literal(EXECUTION_TRANSITION_SCHEMA),state:json,actions:z.array(action).max(limits.arrayItems)}).strict().superRefine((value,ctx)=>{
     stateBudget(value.state,ctx,'output');

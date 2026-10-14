@@ -1127,3 +1127,27 @@ C 拒绝产品实参 / byteArgs 遮蔽租约字段，只延后注入字段的 re
 第四项收尾集成前，按只读 ref 更新固定 b02122af1533286de00ffc6342c19c3bad7cff39，APV 1.3.0 / digest f186993fe20407b893b29c69462e3858653cb0b01df64c85ec17189ba5ebd86e。正式模块内解析工作簿 / 契约、消耗真实 hub.result 投影原件、由真实命令核对原件导出 present。A3 正例和三类 Hook 负例、严格协议纯叶 / 整链共 **6/6、无 skip**；strict delivered、一次 submit / intent，status/results 仅 task_id，原始 submit/results 无自造三 hash/state，已获 lease 随终态释放。该阶段还未启同租约 prepare，不能扩成第四项已证，也不证明 cexg 现网兼容。全套仍由维护者跑。
 
 C4 同租约 prepare 目标已用相同 b02122af 原件再跑严格文件 **2/2、无 skip**：实际顺序为独立 env_prepare 读租约释放，再 acquire→env_prepare→bed_topology→case_submit→task-only status/results→release。case_submit / intent 各一次；两份 prepare_ref 完整、beforeDispatch 绑定本次 preparationDigest，终态交付逐步 / 检查点、unmapped 空。原始成功体仍无补造字段，此为严格合成协议，不是现网设备验收。新旧 worker 不能混版本消费新 policy 的部署先后已写入交接。
+
+## 101：C5 独立运行预算与完整历史原件
+
+分离每次运行最多 **1024** 个持久步骤与 **256** 代 transition，单批 / 普通 JSON 数组仍为 **256**。批次先按已有唯一 step key 加新增动作原子核预算，同键重放不多计；在途动作先完成，不因累计计数取消未知写。8 MiB 受控字节、512 KiB 元数据及 24 / 16 MiB 宿主 wire 上限均未扩大。
+
+FlowDefinition 可显式声明 historyMode=controlled；内联 observations / expectedOccurrences 超窗时给出 total / returned / complete 与对应真实受控槽，全集由 C 按 SHA 留作 B 制品，不静默冒充完整历史。意图、未知、授权与活动步骤保留内联，未有 provider 回报的活动记录标 origin=hub-step-ledger；所有历史 B 引用先按当前身份核 ACL / SHA / 长度，原件读取沿同一事务授权。旧包未声明受控历史时明确拒超窗；已完成写的 intent 与已消费授权仍保守视作关键记录，累计关键记录超过 256 会失败封闭，1024 不代表任意写历史都可内联。
+
+先写三个契约用例复现旧 F 不识别独立预算 / 窗口，再补关键窗口、槽冲突、活动记录与事务 ACL，纯测试 **6/6**。真实临时 PostgreSQL / worker 定向 **4/4，无 skip / fail**：21 个合成用例产生 238 Hook 与 21 其他动作，最终 264 持久步交付；300 条观察 / occurrence 的完整 B 归档 SHA 与旧交付引用通过，最终 305 步；耗尽 1024 步零新增远端调用；已有 769 步加 256 动作整批拒绝、无 write 前缀。两条 scale 实测约 147 / 167 秒，未放宽 180 秒成功预算。旧 scale baseline 曾仅超时，不能作为精确 quota 拒绝证据。旧交付引用的定向验收使用维护者的全历史 B 权限 helper，最终由维护者同项集成，不纳入本分支 helper 所有权。
+
+基 C4 重新逐函数合并后纯测试 6/6、typecheck / diff-check 通过，未重复 PG 或全套。保留 C3 阶段原件身份与 C4 同租约准备机制；原生 APV1.1.1 / packs/apv、独立包、实际网关 / 设备 / 模型与部署未动。仅本地签署，不 push。
+
+第五项最终集成补齐全历史交付授权 helper：旧 terminal / unknown 及明确 C ledger / archive 原件沿相同任务修订的 B 绑定、操作 lineage、当前 ACL / SHA / 长度重核，窗口不是授权边界。新增引用机制两叶先红后 **2/2**。结构投影旧字节 / 字符串条件复现小 257 项数组、包装深度及超长键三项红；新增 helper **4/4**，真实 record / F frame 消费者旧实现 **0/3**，接线后 **3/3**，原文 SHA / B 字节不变，错误元数据显式省略并保散列。相关 F / 历史 / 投影 / 引用定向合跑 **22/22，无 skip**；不扩单批或字节上限。
+
+最后固定 b02122af 的两条外部入口文件再次 **6/6、无 skip**，包括合成正例 / 三种真实 Hook 负例与严格同租约准备、一次提交、终态、解析 / 交付。没有运行独立包脚本以外的模型或设备，也未改独立包字节。全套仍留维护者独立运行，现场切换仍由维护者负责。
+
+最终整合 Meridian 相关回归分两次定向 **3/3 + 2/2、无 skip**，覆盖正常原件交付、重启后独立核对 / 不重派、afterResult 拦截、终态后解析失败与释放失败 partial；未重跑整份旧验收或全套。原生实现摘要 / 树冻结断言通过，packs/apv、foundation、references 与 harness-adapters 相对本轮基线零改动；本轮不提交实际地址、凭据、原始业务数据或本机绝对路径。
+
+最后交叉消费者发现并稳定复现 C5 新 ledger 的 **40P01**：claim / 部分 preflight 先持 operation / flow FK，B 绑定再等 task，与 runner 的 task→flow_run 锁序相反。结果 staged 正例在零 provider RPC 时 task 已 failed、操作仍 running；不能把它归负载假红。临时本地栈与数据库诊断未进 Git，未放宽 30 秒或通过事务重试掩盖。
+
+新增 flow 专用 task→run 前置锁回调，跨同 Store 的 Execution 实例共享，覆盖 preflight / heartbeat 与 expiry；claim 先无锁取候选，再 task SKIP LOCKED→run→operation 重核，worker touch 不在前面持锁等待 task。report / event / reconcile / 审批消费 / own expiry 同序，scope / tenant / fence 在回调前核、锁内照旧再核；无回调的原生授权路径保持。新纯顺序旧 **1/3**、修后含 worker 顺序 **4/4**，回调失败不得进入 lease / handler 旧 **0/1**→新 **1/1**；真实持 task barrier 旧 **0/1**→新 **1/1**，解锁后有效 fence 领取、错误 fence 拒绝。原稳定 staged 正例修后 **1/1（5.85 秒）**；该屏障和纯测试证明已测入口的锁序，不宣称穷尽全部数据库竞态。
+
+修锁最终整合后，阶段回执七叶＋真实锁屏障联跑 **8/8，无 skip**；原失败 staged 正例正常交付，错误提交 / status 拒绝仍 unknown 不释放，已证终态后的坏结果 / 拒绝保持 D 事实，渠道不完整仍 partial，客户端伪投影拒绝。F / 历史 / 投影 / 引用 / 锁序纯回归 **27/27，无 skip**；准备同租约小正例 **1/1**。锁机制只对注册的通用 flow 启用，不修改原生能力包字节或把数据库死锁当成设备不确定副作用。
+
+最终锁修后的撤权释放与重启 / 独立核对定向 **2/2**，固定 b02122af 严格入口再次 **2/2**，全部无 skip；actual RPC 顺序仍同租约准备→一次 submit→task-only status/results→release。最终 typecheck / diff、90 个本地文档链接目标通过。五项按序各一笔签署，修复与证据都收在对应项；工作区收尾干净，只本地提交，不 push、不部署、不动现场栈 / 网关 / Circle / 独立包。全量与现网 C 后半仍由维护者独立验收。
