@@ -622,7 +622,7 @@ provider 沿既有 connector-instance 与批准 execution runtime-profile，conf
 CIRCLE_HUB_APV_MODULE_ACCEPTANCE=1 \
 CIRCLE_PACKS_CATALOG=../circle-packs/modules.json \
 CIRCLE_PACKS_REF=apv-execution-flow \
-node --test --test-concurrency=1 tests/acceptance/a3-apv-module-flow.test.ts
+node --test --test-concurrency=1 tests/acceptance/a3-apv-module-flow-synthetic-provider-protocol.test.ts
 ```
 
 catalog 路径按实际独立包检出位置在运行时提供。REF 可为本地分支或提交，优先于 CIRCLE_PACKS_COMMIT；均未指定时沿已有验收 pin。入口将 ref 解析一次为 Git commit，按该提交核对完整模块清单、文件 SHA 和 digest，要求 products/apv 为 1.3.0。它不 checkout 或改产品包工作树。未设置启用开关时明确 skip，跳过不计通过；显式启用后的目录、ref、清单、版本或模块 ABI 错误为失败。

@@ -5,13 +5,14 @@ import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {sha256} from '../../packages/contracts/src/index.ts';
 import {FlowDefinition} from '../../packages/execution/src/flow-contracts.ts';
-import {APV_MODULE_FLOW,frozenApvModule,apvModuleFlow,terminalFlowState,apvDeviceCommand,apvHostCommand} from '../fixtures/apv-module-flow.ts';
+import {APV_MODULE_FLOW,frozenApvModule,apvModuleFlow,terminalFlowState,apvDeviceCommand,apvHostCommand} from '../fixtures/apv-module-flow-synthetic-provider-protocol.ts';
 
 const enabled=process.env.CIRCLE_HUB_APV_MODULE_ACCEPTANCE==='1';
 const nativeImplementation='5df9fdc0eccc88834f59c9295b94879f752e1582c8a84b03292c8cd14cbc0ebc',nativeTree='f566a87eaa80c35833581cb263b164aac1ef0c94c5685905e4a8dafd54fa6f21';
 async function frozenNativeTree(){const files:{path:string;sha256:string}[]=[];async function walk(folder:string,prefix=''){for(const entry of await readdir(folder,{withFileTypes:true})){const path=prefix+entry.name;if(entry.isDirectory())await walk(join(folder,entry.name),path+'/');else files.push({path,sha256:sha256(await readFile(join(folder,entry.name)))});}}await walk(fileURLToPath(new URL('../../packs/apv/execution/',import.meta.url)));files.sort((a,b)=>a.path<b.path?-1:1);return sha256(files.map(file=>`${file.sha256}  ${file.path}\n`).join(''));}
 
-test('A3 APV module: an opt-in immutable external product flow executes through governed generic steps and real product Hooks', {skip:enabled?false:'Set CIRCLE_HUB_APV_MODULE_ACCEPTANCE=1 with an independently versioned CIRCLE_PACKS_CATALOG and CIRCLE_PACKS_REF to run the external APV module acceptance'}, async t=>{
+test('A3 APV module synthetic provider protocol: does not prove cexg live compatibility', {skip:enabled?false:'Synthetic provider protocol, not cexg live compatibility; set CIRCLE_HUB_APV_MODULE_ACCEPTANCE=1 with CIRCLE_PACKS_CATALOG and CIRCLE_PACKS_REF'}, async t=>{
+ t.diagnostic('synthetic provider protocol，不证明 cexg 现网兼容');
  // An explicitly selected broken repository/ref/catalog/module is a failure,
  // even on a host whose process-isolation capability is unavailable.
  const frozen=await frozenApvModule();t.diagnostic(`External APV module ${frozen.module.version}, ref ${frozen.requestedRef}, resolved ${frozen.commit}, digest ${frozen.module.digest}`);assert.equal(frozen.module.version,'1.3.0');

@@ -1045,3 +1045,9 @@ H1 期限 **4e84ba0**、H2 拒绝来源 **8cf4998**、M3 终态后结果与补�
 维护者确认当前 Hook 实际接法：beforeDispatch 由 C preflight 自动执行；afterResult 由 transition 显式 hook.verify，交付闸核已证终态写 operationId、真实成功证据与完整 candidate SHA。真实 env_prepare / bed_topology 需要远端租约，当前 read provider.call 不取得租约，示例不能冒充现网可执行路径。后续 C 已定为可选 receiptPolicy.prepare：批准工具名与参数映射、worker 在同一租约 submit 前调用、观察持久供 beforeDispatch 核；当前 preflight / 准备 / 意图时序需要未来独立实施验收，本轮只记方向，不自行确定字段 schema 或实现。
 
 两份设计 **25** 个本地链接 / 锚点通过，两份完整 frame 与动作示例各由当前 F 合同解析通过，canonical 输入 SHA / 原件 SHA / 长度静态核验通过；handoff 连同检查 **64** 链接有效，diff 通过。只改设计与进度，不改驱动语义、生产代码、原生实现或独立包，不跑全套 / 真实系统 / 模型，也不 push / 部署；两件本地分笔签署后交维护者与 Circle 迭代。
+
+## 91：合成协议验收名称与范围披露
+
+按维护者确认，A3 第一条仅证明模块接法，afterResult 仍由产品显式发 Hook、Hub 交付闸核证据，驱动语义不改。验收及夹具文件名追加 synthetic-provider-protocol，t.diagnostic 明示“synthetic provider protocol，不证明 cexg 现网兼容”，测试名与默认 skip 原因同样披露；handoff 命令同步改路径。原三 Hook、原件 / byteArgs、单次提交、逐步 / 检查点与未映射断言均保留。
+
+本项只重跑改名的默认入口，**1 skip / 0 pass / 0 fail**；源码参考只读，未运行生产或外部包测试，也未启动 PostgreSQL。严格 cexg 第二条与 C 协议修复待办另行提交，默认跳过不被称验收通过；不改驱动 / 网关 / 产品包，不 push 或部署。
