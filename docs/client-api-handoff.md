@@ -613,3 +613,20 @@ provider 沿既有 connector-instance 与批准 execution runtime-profile，conf
 - worker 报告顶层 error / output.resultError 及其 details 规范为 F 错误码，未知 INTERNAL_ERROR；output.result 全树 opaque，嵌套业务 error / resultError 也保原值，inline / pointer 回读一致。完整 API JSON body 以 canonicalJson UTF-8 留 B（不含认证头）；其字节 SHA 与契约解析后、投影前 reportHash 是不同转换口径，同 hash 幂等 / 异 hash 拒绝。
 
 本轮只用 Meridian 与另一份合成模块，未执行 APV 新 flow。原生 apv-case-execute **1.1.1** 的文件 / 摘要 / 旧 task 绑定保持；APV 新 Tool / flow、部署切换和退役由独立 circle-packs 与维护者接续。历史合成验收及维护者外部观察见进度，不据此推定真实设备、模型或任意 MCP 服务兼容性。
+
+### APV 外部模块接入验收（C 前置）
+
+从任意 Hub 检出的仓库根目录运行以下单文件验收；依赖使用该 Hub 工作树的锁定版本，不在产品包仓库运行安装脚本：
+
+```sh
+CIRCLE_HUB_APV_MODULE_ACCEPTANCE=1 \
+CIRCLE_PACKS_CATALOG=../circle-packs/modules.json \
+CIRCLE_PACKS_REF=apv-execution-flow \
+node --test --test-concurrency=1 tests/acceptance/a3-apv-module-flow.test.ts
+```
+
+catalog 路径按实际独立包检出位置在运行时提供。REF 可为本地分支或提交，优先于 CIRCLE_PACKS_COMMIT；均未指定时沿已有验收 pin。入口将 ref 解析一次为 Git commit，按该提交核对完整模块清单、文件 SHA 和 digest，要求 products/apv 为 1.3.0。它不 checkout 或改产品包工作树。未设置启用开关时明确 skip，跳过不计通过；显式启用后的目录、ref、清单、版本或模块 ABI 错误为失败。
+
+初次冻结 1.3.0 的 `702d039` 时，v2 描述的 id 仍指旧 flow，显式开启在静态接法校验报红。后续冻结 `5cdbc2b` 后已通过真实临时 PostgreSQL 完成原件上传、模块安装与独立变更集批准、派发、终态、纯 Tool 解析和交付：case_submit 一次，原件只经 xlsx_b64 的 byteArgs、字节 SHA 一致，设备和主机步骤 observed、两个检查点 passed、unmapped 为空。验收仍为 **1 fail / 0 skip**，因为包未发 verify.workbook；device / host Hook 的真实处理器回执及 B 字节 SHA 已核对。保留三个 verify 挂点完整性断言，不以 delivered 冒充整条验收通过。默认单项 skip 保持普通全套可运行，跳过不计通过。
+
+本验收只使用 A3 合成协议：env_prepare / bed_topology 可独立只读，status/results 接受 worker 携带的可选租约字段，回执声明合成的 request_hash / input_sha256 / byte_hashes / state，用于原操作机械关联；xlsx_b64 和 expires_in_s 使用网关的字段名。它不证明现网网关已支持这些关联字段、参数或调用时序。实际网关的两个准备观察要求远端租约；后续可选 receiptPolicy.prepare 的方向见[执行流设计 A2 附录](design/execution-flow-packs.md#附录-a2有界-transition-内部契约)的驱动注入形状小节，本轮未实现，也不宣布现网切换。

@@ -1029,3 +1029,11 @@ H1 期限 **4e84ba0**、H2 拒绝来源 **8cf4998**、M3 终态后结果与补�
 补齐 **49f8f98** 注册契约记录：严格对象拒绝顶层未知键（含 workerId），capabilities 内未知操作名 / 重复项同样拒绝；合法身份仍由认证 policy 提供。保持全部原小节标题，原 **31/31、3/3、57/57、4/4、61/61** 验收字样、冻结提交 / digest 与配置键无遗漏；技能 57 加 catalog 4 合 61 的原口径没有改成技能 61。
 
 主树两文档 **63 + 18 = 81** 个本地链接 / 锚点通过，代码围栏成对，diff 检查通过。对照表自身原有“状态、事件和交付”带顿号的坏锚点未在本轮改写，新增指向均有效。只签署客户端文档和进度，不运行代码测试 / PostgreSQL，不改变代码、设计规范、README、验证栈或独立产品包；两份 handoff 分笔提交，无 push / 部署。
+
+## 89：APV 外部模块接入验收门禁
+
+新增单文件 a3-apv-module-flow 验收与纯合成 provider / 原件夹具。默认开关未设时 **1 skip / 0 pass**，不读取外部 catalog、不启动 PostgreSQL；显式开启读取 CIRCLE_PACKS_CATALOG，CIRCLE_PACKS_REF 优先于既有 CIRCLE_PACKS_COMMIT / pin，只解析一次 commit，再按 Git 原字节核完整非隐藏文件集、SHA 与模块 digest，要求 products/apv **1.3.0**。坏目录 / ref / 清单 / ABI 明确失败，不变成 skip；未改写包 transition 或安装字节来放行。handoff 写入一条可在 Hub 仓库根运行的命令。
+
+初次只读 **702d039** 在旧 flow id 报红，尚无数据库执行。维护者更新 ref 后冻结 **5cdbc2b**，真实临时 PostgreSQL 已完成来源与模块安装、Bob 独立变更集批准、准备 / 派发 / 终态 / 纯 Tool 解析 / 交付；主树定向 **1 fail / 0 skip**，明确缺 verify.workbook。此前的原件 SHA、byteArgs、单次 case_submit、设备 / 主机步骤与两个检查点、unmapped 空列表、device / host Hook 非空处理器决定及 B 字节 SHA 断言均成立，未把 delivered 或部分通过称完整验收绿。三类 verify 与全部结果断言保持，整改归独立包；工作簿投影由冻结模块 Tool 读取合成原字节产生，不借原生解析器。
+
+本轮只验 A3 合成协议扩展：只读准备可独立调用，status/results 接受当前 worker 的可选租约参数，合成回执含机械关联 hash/state，不宣称现网网关已有这些字段或时序。C 后续同租约 prepare 观察由维护者另行授权实现。本项只跑新文件，默认 skip 与坏 ref 已核，typecheck / diff 通过；原生 **1.1.1** 路径未调用，源码 / 摘要未改，未跑全套 / 真实系统 / 模型，未改外部包或 checkout，不 push / 部署。验收未整体通过，门禁用于 Circle 迭代，不作为 C 现网切换批准。
