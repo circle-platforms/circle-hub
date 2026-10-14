@@ -1,0 +1,34 @@
+import assert from 'node:assert/strict';
+import {test} from 'node:test';
+import {EXECUTION_TRANSITION_LIMITS,canonicalHash,sha256,parseExecutionTransitionInput,parseExecutionTransitionOutput} from '../../packages/contracts/src/index.ts';
+import {selectFlowHistory,requireSameHistorySlot,flowLedgerFacts,authorizedHistoryBytes,authorizeFlowHistory} from '../../packages/execution/src/flow-history.ts';
+
+const id=(prefix:string,char:string)=>prefix+'_'+char.repeat(32),hash=(char:string)=>char.repeat(64);
+const value={},input:any={schema:'hub-execution-transition/1',binding:{taskId:id('task','a'),inputRevisionId:id('inrev','b'),inputSha256:canonicalHash(value),method:{assetId:id('ast','c'),version:'1.0.0',sha256:hash('d'),capabilityPackId:'synthetic-flow',flowVersion:'synthetic-flow/1',implementationSha256:hash('e')},resources:{},sources:{}},currentInput:{value,sha256:canonicalHash(value)},state:null,observations:[],controlledBytes:[],expectedOccurrences:[]};
+test('Execution history contract: run and generation limits are separate from unchanged ordinary arrays and wire ceilings',()=>{
+ assert.equal((EXECUTION_TRANSITION_LIMITS as any).runSteps,1024);assert.equal((EXECUTION_TRANSITION_LIMITS as any).generations,256);assert.equal(EXECUTION_TRANSITION_LIMITS.arrayItems,256);assert.equal(EXECUTION_TRANSITION_LIMITS.controlledBytes,8*1024*1024);assert.equal(EXECUTION_TRANSITION_LIMITS.metadataBytes,512*1024);assert.equal(EXECUTION_TRANSITION_LIMITS.toolInputWireBytes,24*1024*1024);assert.equal(EXECUTION_TRANSITION_LIMITS.toolOutputWireBytes,16*1024*1024);
+ assert.throws(()=>parseExecutionTransitionOutput({schema:input.schema,state:null,actions:Array.from({length:257},(_,i)=>({kind:'outcome.error',stepId:`fail-${i}`,occurrence:0,code:'HOOK_FAILED',facts:{}}))}),(error:any)=>error.code==='RESULT_TOO_LARGE');
+});
+test('Execution history contract: incomplete inline windows name only a real SHA checked controlled archive',()=>{
+ const bytes=Buffer.from(JSON.stringify({schema:'hub-flow-history/1',observations:[]})),reference={kind:'artifact',artifactId:id('art','f'),sha256:sha256(bytes),size:bytes.length},archive={slot:'hub.history.observations.test',reference},controlled={slot:archive.slot,role:'flow-history',encoding:'base64',reference,contentBase64:bytes.toString('base64')};
+ const parsed=parseExecutionTransitionInput({...input,observationWindow:{total:300,returned:0,complete:false,archive},controlledBytes:[controlled]});assert.deepEqual((parsed as any).observationWindow.archive,archive);
+ for(const changed of [{total:300,returned:1,complete:false,archive},{total:300,returned:0,complete:true,archive},{total:300,returned:0,complete:false},{total:300,returned:0,complete:false,archive:{...archive,slot:'not-present'}}])assert.throws(()=>parseExecutionTransitionInput({...input,observationWindow:changed,controlledBytes:[controlled]}));
+});
+test('Execution history contract: occurrence archives are explicitly incomplete and cannot consume observation or original byte budgets twice',()=>{
+ const bytes=Buffer.from(JSON.stringify({schema:'hub-flow-occurrences/1',expectedOccurrences:[]})),reference={kind:'artifact',artifactId:id('art','f'),sha256:sha256(bytes),size:bytes.length},archive={slot:'hub.history.occurrences.test',reference},controlled={slot:archive.slot,role:'flow-occurrences',encoding:'base64',reference,contentBase64:bytes.toString('base64')};
+ const parsed=parseExecutionTransitionInput({...input,expectedOccurrenceArchive:{total:300,returned:0,complete:false,archive},controlledBytes:[controlled]});assert.equal((parsed as any).expectedOccurrenceArchive.complete,false);
+ assert.throws(()=>parseExecutionTransitionInput({...input,expectedOccurrenceArchive:{total:300,returned:0,complete:false,archive},controlledBytes:[{...controlled,role:'workbook'}]}));
+});
+test('Execution history window: exactly 256 critical records never admit a 257th success and an additional unknown fails closed',()=>{
+ const required=Array.from({length:256},(_,i)=>({step_id:`critical-${i}`,status:'succeeded',intent:true})),extra={step_id:'archivable-hook',status:'succeeded',intent:false};const selected=selectFlowHistory([...required,extra]);assert.equal(selected.selected.length,256);assert.deepEqual(selected.selected,required);assert.equal(selected.complete,false);
+ assert.throws(()=>selectFlowHistory([...required,{step_id:'unknown-write',status:'unknown',intent:true}]),(error:any)=>error.code==='RESULT_TOO_LARGE');const mixed=selectFlowHistory([{step_id:'unknown-write',status:'unknown',intent:true},...Array.from({length:300},(_,i)=>({step_id:`completed-${i}`,status:'succeeded',intent:false}))]);assert.equal(mixed.selected.length,256);assert.equal(mixed.selected[0].step_id,'unknown-write');assert.equal(mixed.selected.at(-1)!.step_id,'completed-299');
+});
+test('Execution history ledger: pending facts disclose their C origin and same-slot reuse requires the same role and reference',()=>{
+ const row={step_id:'pending-read',occurrence:0,status:'accepted',intent:false,terminal:false};assert.deepEqual(flowLedgerFacts(row),{stepId:'pending-read',occurrence:0,status:'accepted',origin:'hub-step-ledger',intent:false,terminal:false});assert.equal(selectFlowHistory([row]).selected[0],row);
+ const entry={slot:'hub.history.same',role:'flow-history',reference:{kind:'artifact',artifactId:id('art','f'),sha256:hash('a'),size:12}};requireSameHistorySlot(entry,structuredClone(entry));for(const changed of [{...entry,role:'workbook'},{...entry,reference:{...entry.reference,sha256:hash('b')}},{...entry,reference:{...entry.reference,artifactId:id('art','e')}}])assert.throws(()=>requireSameHistorySlot(entry,changed),(error:any)=>error.code==='SOURCE_HASH_MISMATCH');
+});
+test('Execution history B reads use the current transaction ACL before bytes and include noncritical archived records',async()=>{
+ const tx={},actor={},bytes=Buffer.from('synthetic-history'),reference={kind:'artifact',artifactId:id('art','f'),sha256:sha256(bytes),size:bytes.length},calls:string[]=[],knowledge={contentReference:async(_actor:any,_kind:string,_id:string,transaction:any)=>{assert.equal(transaction,tx);calls.push('acl');return reference;},objects:{getObject:async()=>{calls.push('bytes');return bytes;}},content:()=>{throw new Error('Pool content would miss a transaction-local artifact');}};
+ assert.deepEqual(await authorizedHistoryBytes(knowledge,tx,actor,reference),bytes);assert.deepEqual(calls,['acl','bytes']);await authorizeFlowHistory(knowledge,tx,actor,[{reference},{reference}]);assert.equal(calls.filter(value=>value==='acl').length,3);
+ let read=false;await assert.rejects(authorizedHistoryBytes({...knowledge,contentReference:async()=>{throw new Error('Current identity no longer reads the original');},objects:{getObject:async()=>{read=true;return bytes;}}},tx,actor,reference));assert.equal(read,false);
+});

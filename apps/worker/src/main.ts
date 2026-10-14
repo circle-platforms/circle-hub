@@ -73,9 +73,14 @@ while (!stopped&&!draining) {
     const next = await request('/v1/workers/claim',{exclude:[...(runtimeJob?['assets.execute']:[]),...professionalJobs.keys()]});
     if (!next) { await delay(100); continue; }
     const claim = AnyWorkerClaim.parse(next); const fence = { fencingToken:claim.fencingToken };
+    if(claim.name===FLOW_OPERATION){
+      // Flow's first check must run inside its fenced reporting boundary. A
+      // proved pre-dispatch refusal still needs a failed report after claim.
+      const job=executeProfessional(claim).catch(error=>{console.error(JSON.stringify({type:'worker-professional-error',code:error instanceof ApiError?error.code:'TRANSPORT_CLOSED'}));}).finally(()=>{professionalJobs.delete(claim.name);});professionalJobs.set(claim.name,job);continue;
+    }
     const preflight=await request(`/v1/workers/operations/${claim.operationId}/preflight`,fence);
-    if(claim.name===FLOW_OPERATION||methods.backgroundNames.has(claim.name)){
-      const job=executeProfessional(claim,claim.name===FLOW_OPERATION?preflight.authorization:undefined).catch(error=>{console.error(JSON.stringify({type:'worker-professional-error',code:error instanceof ApiError?error.code:'TRANSPORT_CLOSED'}));}).finally(()=>{professionalJobs.delete(claim.name);});professionalJobs.set(claim.name,job);continue;
+    if(methods.backgroundNames.has(claim.name)){
+      const job=executeProfessional(claim).catch(error=>{console.error(JSON.stringify({type:'worker-professional-error',code:error instanceof ApiError?error.code:'TRANSPORT_CLOSED'}));}).finally(()=>{professionalJobs.delete(claim.name);});professionalJobs.set(claim.name,job);continue;
     }
     if(claim.name==='assets.execute'){
       // Keep one runtime slot and continue claiming its child tool calls. A single

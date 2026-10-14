@@ -1075,3 +1075,197 @@ H1 期限 **4e84ba0**、H2 拒绝来源 **8cf4998**、M3 终态后结果与补�
 实际 **1/1 通过、无 skip / fail**，11.50 秒：原件上传、完整模块登记 / 独立批准、准备、派发、终态、纯 Tool 解析和交付全部到达；56,413 字节工作簿仅 byteArgs，原件 SHA 一致，case_submit 1 次，设备 / 主机 observed、检查点 2 passed、unmapped 0。三类 verify Hook 均为已批准的非空处理器决定，B 回读 SHA 全部原断言通过；无原生 APV 操作，未删断言或改包 / 夹具。记录更新只改 handoff 与进度，测试本身字节不变。
 
 此绿只证明 A3 合成协议的模块接法，不证明 cexg 现网兼容。严格 C 的驱动缺口未实施，本轮不重复其旧红，不跑全套 / 真实网关 / 设备 / 模型；PG 单 runner 且已清理，只读外部 ref 不 checkout / 改写。生产代码、原生 1.1.1 与部署不变，记录仅本地签署、不 push。
+
+## 95：二轮受控来源与规则负例门禁
+
+深度复核发现第 94 节正例仍带流程外投影，本轮先在旧夹具加输入来源约束复现红，再移除 fixture 的 callFrozenTool 与 workbookBook / deviceCommands / hostDispatches / tree / present 等字段。本场景 value 仅 build；四份原件分别以 workbook / command-tree / command-check / function-contract 角色真实上传 B 并由另一身份批准。command-check 来自现有确定性规则读取独立合成树，保留同步工具 result.ruleVersion / commands / sourceSha256 原形，evidence 空如实披露，无伪造 evd 或 present。约定仅属本轮合成素材，不新建平台角色词表或 API 限制。
+
+正例要求正式 C Tool action 读取工作簿、真实 preflight frame 原件字节 / SHA 和 expectedOccurrences 对照持久行；33 KiB 合成描述触发真实大结果 hub.result.*，后续动作必须引用返回槽与 B SHA，不转录大 book。device Hook 的 actual present 对照冻结 check 条目与独立树 SHA；同命令缺树、主机不在床、方法 disabled 三负例要求对应 Hook block、真实 B 决定、顶码 HOOK_FAILED / details.code、零提交 / 意图 / 冻结。错挂点或解析错误不能作为规则通过。
+
+固定 **6a8cb799** 新四项实际 **0/4 通过、无 skip**：包不读 B 工作簿 / 依据，四项均先停 verify.workbook，顶码误为 COMMAND_NOT_IN_TREE，case_submit 0，目标来源与负门禁尚未到达。旧 1/1 正向结果保留原阶段事实，不扩为二轮证明。默认消费者只跑相关两文件，**1 pass / 5 skip / 0 fail**；typecheck / diff 通过，独立静态复核未见明显夹具假红。只改验收、夹具、handoff 与进度，不改驱动 / F / 原生 / 网关 / 独立包，不跑全套 / 真实模型或设备，PG 串行已清理，不 push / 部署。
+
+## 96：二轮 C 预算建议与回报口径
+
+中英附录对照当前源码区分单批 / JSON 数组 256、generation 与累计 flow_steps 三个预算。21 案 216 设备命令 + 21 主机 + 1 工作簿为 238 Hook 动作；主机双处理器共 259 次决定不是 259 步。旧排程 H238 + O5 + T7 = 250，可选 topology 为 252；串行加三原件 Tool 与转换的明确假设估算为 256 / 258，不称新 flow 实测或优化下限。
+
+推荐待 C 实施把 per-run 与 per-batch 分开，按估算两倍余量 pow2ceil(2×258)=1024；512 仅一档取整，转换次数 32 只是该排程候选而非任意 flow 的通用常量。另一方案 hook.verify subjects 数组会改变 F 契约，必须有逐项绑定 / 索引 / B 决定、未处理前缀、失败容量与多资源归属；优先保现单 subject 契约。observations / expectedOccurrences / references 256、metadata / wire 等仍需配套有界设计，不宣称只改计数就解决规模，本轮不实施。
+
+补准三条字段：outcome 顶码须 F 注册，四 HOST 规则码留 facts→error.details；inputSha256Path 核整份 FlowSubmission 的 canonicalHash，不是工作簿 SHA，真网关不回显；拒绝的小原文在 facts.result，worker 删 error.details.gatewayRefusal，大原件仍须读 B envelope.refusal。受控 role 约定与 hub.result 条件槽也如实说明，小结果当前可以 inline。两份设计 **25** 本地链接 / 锚点与已有 frame / 动作 F 校验通过，算术静态核对通过；只设计和进度分笔签署，无代码 / F / 驱动 / 包 / 网关改动，无全套 / 模型 / 真实设备 / push / 部署。
+
+## 97：C 逐工具租约注入与完整出站校验
+
+先写新 policy / schema 纯测试与真实临时 PostgreSQL、worker、合成 MCP 验收，旧实现 3 个纯用例与 2 个集成用例均红。实现可选 `receiptPolicy.lease.argumentsByTool`：每 Tool 值为 `{idArgument?,fenceArgument?}`，目标是已批准 inputSchema 的字段；显式 map 下未列 Tool 或 `{}` 不注入。整个 map 缺省保留旧 write / 协议回报的全局参数名与普通 read 不取租约行为。典型映射：submit / heartbeat / release 取 lease_id、token，status / results 为 `{}`；不同读接口也可映射到 ticket、epoch。只允许 lease 的 id / fence，不向产品 Tool 传端点、凭据或租约令牌。
+
+English: `lease.argumentsByTool` is an optional closed per-Tool map. Each entry selects `idArgument` and/or `fenceArgument`; an empty or absent entry injects no fields. Omitting the whole map preserves legacy behavior. Admission delays only declared injected-field constraints; the actual RPC is checked against the complete approved schema and wire budget.
+
+C 拒绝产品实参 / byteArgs 遮蔽租约字段，只延后注入字段的 required 与字段约束，保留普通实参类型、未知键与对象大小检查；实际取得租约后、意图前与每次 RPC 前均完整校验原 schema。部分校验遇顶层组合 / 跨字段 schema 如 anyOf、if / then、dependentRequired 时以 SOURCE_NOT_APPROVED 失败封闭，不填假 token 或删远端 required。providerBinding 拒绝未声明 Tool、acquire 自注入、目标重名及普通 / 字节参数映射冲突。声明需要租约的 read 自动临时 acquire / heartbeat / read / release，并重核全链最低角色；read 的失败仍无设备副作用，不改 unknown / fence / pin 规则。
+
+实际新专项 **4/4 纯 + 2/2 PG = 6/6、无 skip**：必需 submit 注入字段通过、重命名读字段正确、task-only status / results 无额外租约参数、临时读 / 写各释放一次；缺少 release 的管理员资格时 RPC 0 / submit 0。既有协议边界纯测试 **12/12**，合计本轮定向 **18/18**；typecheck / diff-check 通过。PG 单 runner 已清理并释放。不改原生 APV1.1.1、产品包、真实网关 / 设备 / 模型，不跑全套、push 或部署。严格 cexg 的 legacy 回执与后续 prepare / 参数映射仍待后项，不把这笔绿扩大为现网兼容。
+
+## 98：C2 提交参数与受控原件映射
+
+批准的 receiptPolicy.toolArguments 只从整份冻结 FlowSubmission 的安全路径或有限 literal 派生普通参数；byteArguments 一对一把 action.byteArgs 逻辑参数映到实际 wire 名称。C 入队、D 调用、byteBindings / 回执哈希与撤权后的历史身份核对使用同一映射链，原动作 requestHash 和原件引用保持冻结。普通映射不能覆盖产品 args、原件或租约权限，不读 profile / 环境 / 密钥；未声明工具、非有限 JSON、原型字段、超长字符串、字节遗漏或重复全部拒绝。submit 的 module 可以来自批准 literal，status / results 仍只传批准 taskIdArgument 与各自租约映射。
+
+先复现旧契约拒新字段及真实 worker 缺 wire 参数的红，再实现。新增纯映射 **4/4**、真实 executeFlowStep 的 64 KiB 原件 / wire 参数 / module / task-only 观察 **1/1**、真实 PostgreSQL+worker 整链 **1/1**；历史回执 / 提交后拒绝 / 协议角色相关 **6/6**，均无 skip。第二项目标共 **12/12**，typecheck / diff 通过。原生 1.1.1 与 packs/apv 零改动；严格外部包链尚待阶段回执与准备观察，不称现网通过。只本地签署，不跑全套、不 push / 部署 / 接真实环境。
+
+## 99：C3 分阶段回执与批准原件身份投影
+
+新增 receiptPolicy.receipts 按 submit / status / results / reconcile 声明独立 schema、remote 身份及 state/channel/rc 判别；没有新声明时完整兼容旧 echo 校验与返回形状。新模式必须具有提交原件 SHA / 身份列表、结果原件 SHA 与 identityProjection，缺关联 fail closed。C 只从本修订成功的冻结 Tool path/export/byteSlots 与 B 原件读取身份投影，核原操作 requestHash、所用受控原件及投影字节 SHA；不采用客户端 value 的 caseIds 或 SHA。追加迁移 **42** 保存 receipt_facts 于 intent 前，submit 后复制至 remote_identity；physical wire 参数、历史证明与阶段回读共用已批准映射。成功 raw 先按 SHA 留 B 再核验，提交后 schema/身份拒绝仍 unknown / 不释放；已持久 status 终态后的坏结果或拒绝只影响解释，释放与完整原件继续留存。
+
+纯机制旧实现 **1/4**，新机制补缺关联声明负例后 **5/5**；独立合成模块实际 PostgreSQL+worker 七叶 **7/7，无 skip**，分别覆盖无虚构 state/echo 的提交、status state、results channel/rc、坏提交 SHA、提交后 status 拒绝、终态后坏结果 SHA / 拒绝、渠道不完整 partial，以及拒绝客户端冒充身份投影。初次整链因夹具缺 Tool.description 被契约拒绝；补齐后发现 C 对已去正文但仍含 encoding 的 review 引用重算严格 ref-only requestHash 而 failed / 零 RPC，规范化引用形状后七叶绿，未放宽断言或时限。相关方法联合 **25/25**（含新五叶与旧回执 / 映射 / 租约消费者），typecheck / diff 通过。此为定向合成证明，严格外部产品包还须后续准备阶段，不能称真实网关或设备可用；原生 1.1.1 / packs/apv 字节未改。只本地签署，不跑全套、不 push / 部署 / 接真实系统。
+
+## 100：C4 同租约准备原件与派发前核验
+
+批准的 receiptPolicy.prepare 为有限只读 Tool 列表，普通参数复用 toolArguments，租约字段复用逐工具映射。D 在同一次远端租约内按顺序读取准备观察，再提交；准备本身不产生远端任务身份。C 独立重算实际参数摘要，核 B 原件 SHA / 长度、操作 / 输入修订 / fence / 资源 pin，迁移 **43** 持久化 prepare_ref。原件以指针保留，beforeDispatch 只接有界、去 NUL 与凭据的观察投影；完成准备后才重新调用真实 Hook，意图必须核新 preparationDigest、同租约摘要及当前 fence，旧 Hook 决定不能复用。
+
+准备失败、Hook 阻断或准备期间撤权均不写派发意图、不提交、不冻结；失败报告按冻结历史声明记账，不重新授予执行权限。清理仅绑定的 lease_release 可使用本运行已取得的凭据（含匿名空串），不扩到 acquire / heartbeat / 观察 / submit，未知写仍不释放。已批准明文认证例外的释放通过受控 cleanupTransport 留永久审计 / 证据，历史资源与 runtime pin 仍独立核验；该 HTTP 清理分支由纯测试核边界，PG 只用回环合成源，不称真实源验证。
+
+先恢复旧实现运行新正例，实际 **0/1 红**（契约拒 prepare）；初版三叶 **3/3 绿**。合入 C3 后完整九叶首轮 **7 pass / 2 fail / 0 skip**，两失败来自测试观察代理在 server 收尾后 fetch 被拒导致夹具 teardown 未结束；仅对该代理补固定 502，未改产品断言 / 时限或生产错误处理，仅重跑两叶 **2/2 绿、无 skip**。收尾只终止已核实的测试自有 worker，未触保护进程。九叶覆盖同租约原件 / 新 Hook 证据、准备超时 / 失联、撤权后仅释放、坏参数零 RPC、伪 SHA / 参数摘要 / 旧 fence、Hook 阻断；B 回读保留原始 NUL 并重算 SHA。纯准备专项 **5/5**、typecheck / diff 通过，PG 串行已清理并释放。
+
+只在独立树本地签署；原生 APV1.1.1 / packs/apv 与独立包字节不变，不跑全套、不接真实模型 / 网关 / 设备，不 push 或部署。严格外部包的同租约准备验收由维护者随后串行运行，当前记录不把合成证明扩大为现网兼容。
+
+第四项收尾集成前，按只读 ref 更新固定 b02122af1533286de00ffc6342c19c3bad7cff39，APV 1.3.0 / digest f186993fe20407b893b29c69462e3858653cb0b01df64c85ec17189ba5ebd86e。正式模块内解析工作簿 / 契约、消耗真实 hub.result 投影原件、由真实命令核对原件导出 present。A3 正例和三类 Hook 负例、严格协议纯叶 / 整链共 **6/6、无 skip**；strict delivered、一次 submit / intent，status/results 仅 task_id，原始 submit/results 无自造三 hash/state，已获 lease 随终态释放。该阶段还未启同租约 prepare，不能扩成第四项已证，也不证明 cexg 现网兼容。全套仍由维护者跑。
+
+C4 同租约 prepare 目标已用相同 b02122af 原件再跑严格文件 **2/2、无 skip**：实际顺序为独立 env_prepare 读租约释放，再 acquire→env_prepare→bed_topology→case_submit→task-only status/results→release。case_submit / intent 各一次；两份 prepare_ref 完整、beforeDispatch 绑定本次 preparationDigest，终态交付逐步 / 检查点、unmapped 空。原始成功体仍无补造字段，此为严格合成协议，不是现网设备验收。新旧 worker 不能混版本消费新 policy 的部署先后已写入交接。
+
+## 101：C5 独立运行预算与完整历史原件
+
+分离每次运行最多 **1024** 个持久步骤与 **256** 代 transition，单批 / 普通 JSON 数组仍为 **256**。批次先按已有唯一 step key 加新增动作原子核预算，同键重放不多计；在途动作先完成，不因累计计数取消未知写。8 MiB 受控字节、512 KiB 元数据及 24 / 16 MiB 宿主 wire 上限均未扩大。
+
+FlowDefinition 可显式声明 historyMode=controlled；内联 observations / expectedOccurrences 超窗时给出 total / returned / complete 与对应真实受控槽，全集由 C 按 SHA 留作 B 制品，不静默冒充完整历史。意图、未知、授权与活动步骤保留内联，未有 provider 回报的活动记录标 origin=hub-step-ledger；所有历史 B 引用先按当前身份核 ACL / SHA / 长度，原件读取沿同一事务授权。旧包未声明受控历史时明确拒超窗；已完成写的 intent 与已消费授权仍保守视作关键记录，累计关键记录超过 256 会失败封闭，1024 不代表任意写历史都可内联。
+
+先写三个契约用例复现旧 F 不识别独立预算 / 窗口，再补关键窗口、槽冲突、活动记录与事务 ACL，纯测试 **6/6**。真实临时 PostgreSQL / worker 定向 **4/4，无 skip / fail**：21 个合成用例产生 238 Hook 与 21 其他动作，最终 264 持久步交付；300 条观察 / occurrence 的完整 B 归档 SHA 与旧交付引用通过，最终 305 步；耗尽 1024 步零新增远端调用；已有 769 步加 256 动作整批拒绝、无 write 前缀。两条 scale 实测约 147 / 167 秒，未放宽 180 秒成功预算。旧 scale baseline 曾仅超时，不能作为精确 quota 拒绝证据。旧交付引用的定向验收使用维护者的全历史 B 权限 helper，最终由维护者同项集成，不纳入本分支 helper 所有权。
+
+基 C4 重新逐函数合并后纯测试 6/6、typecheck / diff-check 通过，未重复 PG 或全套。保留 C3 阶段原件身份与 C4 同租约准备机制；原生 APV1.1.1 / packs/apv、独立包、实际网关 / 设备 / 模型与部署未动。仅本地签署，不 push。
+
+第五项最终集成补齐全历史交付授权 helper：旧 terminal / unknown 及明确 C ledger / archive 原件沿相同任务修订的 B 绑定、操作 lineage、当前 ACL / SHA / 长度重核，窗口不是授权边界。新增引用机制两叶先红后 **2/2**。结构投影旧字节 / 字符串条件复现小 257 项数组、包装深度及超长键三项红；新增 helper **4/4**，真实 record / F frame 消费者旧实现 **0/3**，接线后 **3/3**，原文 SHA / B 字节不变，错误元数据显式省略并保散列。相关 F / 历史 / 投影 / 引用定向合跑 **22/22，无 skip**；不扩单批或字节上限。
+
+最后固定 b02122af 的两条外部入口文件再次 **6/6、无 skip**，包括合成正例 / 三种真实 Hook 负例与严格同租约准备、一次提交、终态、解析 / 交付。没有运行独立包脚本以外的模型或设备，也未改独立包字节。全套仍留维护者独立运行，现场切换仍由维护者负责。
+
+最终整合 Meridian 相关回归分两次定向 **3/3 + 2/2、无 skip**，覆盖正常原件交付、重启后独立核对 / 不重派、afterResult 拦截、终态后解析失败与释放失败 partial；未重跑整份旧验收或全套。原生实现摘要 / 树冻结断言通过，packs/apv、foundation、references 与 harness-adapters 相对本轮基线零改动；本轮不提交实际地址、凭据、原始业务数据或本机绝对路径。
+
+最后交叉消费者发现并稳定复现 C5 新 ledger 的 **40P01**：claim / 部分 preflight 先持 operation / flow FK，B 绑定再等 task，与 runner 的 task→flow_run 锁序相反。结果 staged 正例在零 provider RPC 时 task 已 failed、操作仍 running；不能把它归负载假红。临时本地栈与数据库诊断未进 Git，未放宽 30 秒或通过事务重试掩盖。
+
+新增 flow 专用 task→run 前置锁回调，跨同 Store 的 Execution 实例共享，覆盖 preflight / heartbeat 与 expiry；claim 先无锁取候选，再 task SKIP LOCKED→run→operation 重核，worker touch 不在前面持锁等待 task。report / event / reconcile / 审批消费 / own expiry 同序，scope / tenant / fence 在回调前核、锁内照旧再核；无回调的原生授权路径保持。新纯顺序旧 **1/3**、修后含 worker 顺序 **4/4**，回调失败不得进入 lease / handler 旧 **0/1**→新 **1/1**；真实持 task barrier 旧 **0/1**→新 **1/1**，解锁后有效 fence 领取、错误 fence 拒绝。原稳定 staged 正例修后 **1/1（5.85 秒）**；该屏障和纯测试证明已测入口的锁序，不宣称穷尽全部数据库竞态。
+
+修锁最终整合后，阶段回执七叶＋真实锁屏障联跑 **8/8，无 skip**；原失败 staged 正例正常交付，错误提交 / status 拒绝仍 unknown 不释放，已证终态后的坏结果 / 拒绝保持 D 事实，渠道不完整仍 partial，客户端伪投影拒绝。F / 历史 / 投影 / 引用 / 锁序纯回归 **27/27，无 skip**；准备同租约小正例 **1/1**。锁机制只对注册的通用 flow 启用，不修改原生能力包字节或把数据库死锁当成设备不确定副作用。
+
+最终锁修后的撤权释放与重启 / 独立核对定向 **2/2**，固定 b02122af 严格入口再次 **2/2**，全部无 skip；actual RPC 顺序仍同租约准备→一次 submit→task-only status/results→release。最终 typecheck / diff、90 个本地文档链接目标通过。五项按序各一笔签署，修复与证据都收在对应项；工作区收尾干净，只本地提交，不 push、不部署、不动现场栈 / 网关 / Circle / 独立包。全量与现网 C 后半仍由维护者独立验收。
+
+## 102：确认动态投影原件的消费边界
+
+维护者确认选择方案 (a)：实际大工作簿投影必须通过另一条受控 JSON 读取 Tool action 消费，byteSlots 指向返回的真实 hub.result.<stepKey>；不得把指针当 book、重跑原 workbook / function-contract 替代，或同 key 重跑冒充消费。现有合成夹具继续核正式大投影、B 字节 SHA、后续不同 step key 使用真实槽及 frame 中同 SHA 原件，不削弱要求。identityProjection 批准配置使用实际 projectWorkbook export；Hub 核成功 Tool、action.byteSlots、冻结方法 / 输入修订与 B 原件 SHA，不从 caller value 取用例身份。
+
+三项此前包侧问题仍由维护者交给 Kimi，Hub 不代改独立包。本次只读 ref 已为 **757dac18de0b514a7ddb04386d21c0ce08b6af9e**；静态看到 projectWorkbookSlim 解析动态槽的 UTF-8 JSON，原件路径只用该返回槽，不重跑原工作簿；观察按 occurrence / expectedOccurrences 选取；testEnvEnabled 由原件契约注解派生。该静态结果不是本次新 ref 的运行证明，此前固定 b02122af 的合成验收仍保留自己的 SHA 与证明范围。仅记录决定并核差异，不跑全套 / 额外 PG、不改驱动 / 夹具 / 独立包、不 push 或部署。
+
+## 103：严格环境核对的旧映射缺失诊断
+
+维护者在 7b359a3 配外部包 **3c46f707b67f380d962ab79e3b3c8e759cf1f9da** 报 BUILD_MISMATCH。本机只读核日志 / Git 两头：实际 RPC 只有 acquire→env_prepare→release，submit **0**、intent **0**，旧阶段提示 delivery 并不代表进入交付。value.build 与 checks.device_build.detail 中两处合成构建名都为 SYNTHETIC_BUILD_301；无顶层 build / observedBuild，包的 environmentBuild 能按真实详情词式提取。cexg 的 conf.device_names 只在配置有名时出现，缺该可选字段不是此故障。
+
+根因是 7b 的严格 receiptPolicy 未读取资源批准的 toolArguments，包 3c46 env_prepare args={} 依赖映射注入 device_build；不带时 build_checked=false 是正确协议事实。后续 C4 的 01d53b2 已复制冻结资源映射，当前代码无需再改生产或包解析，不加假顶层字段、不强置 build_checked=true。新增严格纯回归：故意去掉该映射的旧变体 **0/1 红**、恢复后 **1/1 绿**，实际请求的构建、ready / checks.detail / build_checked 与无顶层字段分别核对。诊断优先使用原失败事实的 stage，零 submit 不再误标 delivery，并输出有限的期望 / env 实参构建元数据。
+
+在当前 Hub 固定同一 **3c46f707** / APV1.3.0 / digest **992a57b93375e7824b803b431064a931a56b579fad76cc67936a0093b4ae4b90** 只跑严格单文件 **4/4，无 skip**：两次 env_prepare 实参同 expectedBuild，先独立读、再同租约准备 / topology→一次 submit→task-only status/results→release，最终 delivered/succeeded。默认开关未开时 **3 pass / 1 skip**，skip 不计通过。typecheck / diff 通过；只补验收与进度，未改生产 / 原生 / 独立包、未跑全套、未 push / 部署或接真实系统。包侧旧提取问题不作为当前仍未修的结论。
+
+## 104：C 后续 1，失败 Tool 的有界错误事实
+
+失败观察原先已有 facts.error，但大 details 会使整个错误元数据被省略。本项保留 error.code / registered / 有界 message，详情独立按 F 预算投影；未经登记的报告码固定为 INTERNAL_ERROR、reportedRegistered=false，原文与完整 canonical report 留 B，不把未登记产品判断码变成平台终态码。失败 Tool 未给错误时只披露固定 INTERNAL_ERROR / missingError，不推断真实原因；成功的空对象不添加失败事实。registered 仅表示注册表成员性，不表示故障因果已经验证。中英附录补清该形状。
+
+先验收：新纯旧 **0/4**→新 **4/4**，真实脚本 Tool / worker 旧 **0/1**→新 **1/1**，大错误仍保分类且 B 原报告 SHA 不变、空成功没有 error；旧报告消费者 **2/2**、record 投影 **3/3**，定向共 **10/10，无 skip**。typecheck / diff 通过，PG 串行已释放。不修改原生 / 独立包，不跑全套，不 push / 部署或触现场环境。
+
+## 105：C 后续 2，核对后的结果读绑定原投递
+
+普通 resultTool 读先由 C 解析同任务 / 输入修订 / 资源 pin / 远端 id 的唯一已证终态父写，并冻结 resultBinding。submitted 原件 SHA 从真实事件持久化，同事件重放核同 SHA、终态更新保留；reconcile 以独立核过的 status 原件为终态证明。原写 requestHash / inputSha256 / byteHashes / 投影证明分别核对，不能用普通读的空 byteArgs 代替。worker 与 C 回报独立核 receipts.results；旧 echo 仍核全部原写散列，没有 submitted 原件证明的旧运行拒绝补造。
+
+坏回执和报告前失效的关联落只读 failed，不挂 running、不冻结资源或重派；未再证实的关联不追加父缺口。完整缺口表按 SHA 留 B、逐次回读去重，父只保有界摘要 / 数量 / 真实制品引用，既有终态、释放及原件引用不覆盖。轻预检每次核父元数据和当前授权，不读 B 字节；首次完整预检与报告仍回读原件。中英附录同步。
+
+先写验收，前两次仅暴露夹具的 profile 字段 / 重复登记错误，不计产品红。修夹具后旧实现真实 **0/3**：缺冻结关联，两个坏 SHA 被当 succeeded（含 worker 伪报成功）。修后四个不同边界均实际绿；首轮 **3/4**、伪成功单复跑 **1/1**、去掉 gate 在途停启窗口后受影响两叶 **2/2**，未确认首轮超时的具体数据库挂点，不归为负载假红。原断言及 30 秒预算未变。纯新 **6/6**（含 257 缺口、有界真实摘要、轻预检零 B 和旧 echo）及相关旧边界 **12/12**，旧阶段正例 **1/1**，全部无 skip；typecheck / diff 通过。只本地签署，PG 串行退出，不跑全套或触现场。
+
+## 106：C 后续 3，已证终态后的解释缺口交付 partial
+
+错误 / 缺失结果 SHA、结果拒绝或终态事件后整份回报失联，保留独立核过的 D 终态与已知释放事实，不冒充结果成功，也不把已证终态改 unknown。C 留 interpretationStatus=failed / 登记错误 / unmapped 与原件引用；由已批准 transition 继续提出候选、经过原 afterResult 闸再交付 partial。带这种终态解释缺口却提出 succeeded 的候选拒绝；不由 Hub 自动构造产品结果或绕 Hook。旧输入修订失联只记旧操作，迟到原 fence 补原件与释放不改已交付 partial 的候选 / phase / 原 unmapped。中英设计同步。
+
+先验收三个旧问题的真实失败，再实现。相关 PostgreSQL / worker **13/13**、纯 helper **2/2，无 skip**，含坏 SHA / 拒绝 / 缺字段、终态后失联与迟到补报、不合格 succeeded 提议拒绝；typecheck / diff 通过。原生 APV、独立包与现场零改动，只本地签署，未跑全套。
+
+## 107：C 后续 4，合成流程消费完整冻结包配置
+
+夹具改为原样读取冻结资源模板的完整 receiptPolicy，不再挑参数映射后自带 echo；独立身份批准后，核已批准 / running 修订的配置 canonical 摘要相同。toolArguments / argumentsByTool / 分阶段 receipts / identityProjection 都由真实登记配置生效，投影核实际 projectWorkbook、受控 byteSlots、B 原件 SHA 与导出的用例身份。合成 submit / status / results 只提供本阶段实际字段，无假通用散列；保留一次 submit、三类 verify Hook、真实大投影后不同 Tool 消费动态槽、逐步 / 检查点 / unmapped 断言。
+
+纯回归旧 **0/2**→新 **2/2**；固定维护者给的 **3c46f707** / APV1.3.0 实际合成入口 **4/4，无 skip**，默认关闭时 **4 skip** 不计通过。typecheck / diff 通过。仅夹具、验收及中英说明，证明 synthetic provider protocol 接法，不证明真实 cexg / 设备；未改核心驱动、原生 / 独立包，不跑全套、push 或部署。
+
+## 108：C 后续 5，通用执行校验码不依赖原生导入
+
+INVALID_EXECUTION_WORKBOOK 与 COMMAND_VALIDATION_FAILED 登记进核心 F 错误目录，定义仍为 HTTP 422 / validation。原生原有同定义登记不改，重复登记保持幂等，未登记产品规则码仍不能作为 outcome.error。平台登记的是通用错误分类，不在核心解析产品工作簿或命令规则。
+
+独立 Node 测试文件只导入核心 contracts，未装产品模块的旧实现新三叶 **1/3**→新 **3/3**；连同原通用网关拒绝码消费者 **4/4，无 skip**。typecheck / diff 通过。原生 / 独立包字节零改，只本地签署，不跑全套或部署。
+
+## 109：C 后续 6，严格状态词表与退出事实
+
+严格合成夹具 status schema 明列 queued / running / done / lost，实际轮询 queued(null rc)→running(null rc)→done(0)。只有 done 加有限整数 rc 可证明该协议的 runner 终态；lost 虽是合法原始形状仍不能证明停止，缺 / 空 rc 的 done 同样不证明终态。写操作保 unknown，不取 results、不重派、不释放远端租约，原 status 字节及 SHA 留 B、资源冻结。非零整数 rc 只说明 runner 退出，不推断用例通过。
+
+新纯词表用例旧 **0/1**→新 **1/1**；默认文件 **4 pass / 4 skip**，显式固定 **3c46f707** 严格文件 **8/8，无 skip**（四项纯、完整正常链与三项未知写），逐项核 submit 一次、未知写无 results / write lease_release、B 原回执 SHA。typecheck / diff 通过。仅验收、夹具及中英附录，通用驱动 / 原生 / 独立包零改动，不跑全套、不 push 或部署。
+
+六项按维护者顺序各一笔签署。最终集成针对交叉消费者再核：结果关联 / partial / 完整模板 / 核心码纯 **14/14**；四种普通结果读边界与终态坏 SHA 合跑 **4/4 + 1/1**，没有 skip / fail，证实新增 partial 交付闸与父缺口摘要配合，篡改关联的原报告可按 SHA 回读、仍走真实 afterResult。最终 typecheck / diff 通过；packs/apv / foundation / references / harness-adapters 相对本轮基线零差异，工作区收尾干净。只运行针对性用例，全部 PostgreSQL 串行清理，全套仍由维护者独立执行；本轮不 push、不部署、不触 7420 / 网关 / Circle / 独立包。
+
+## 110：复核高项，明文例外下的独立核对清理
+
+原 reconcile 的释放调用只留下 cleanupTransport，C 却在核对结果前按父 intent / terminal 审计，合法回报也被 FORBIDDEN_ACTION 回滚。仅对成功 reconcile 候选延后这条清理审计：C 先回读并核原始 status 的操作身份 / 原件 SHA / 批准 policy，record 持久终态，再核同一原件引用后审计原已批准明文例外。不以 row.kind 或 worker 自报 terminal 放行；错误来源、fence、远端身份、非终态、自报终态及错误 release Tool 继续拒绝。该调整不扩大派发授权，也不改原生路径。
+
+先写验收，纯旧 **1/3**→新 **3/3**，相关准备消费者 **5/5**；合成 DNS 只映射回环、runtime-profile 例外由管理员登记 / Bob 独立批准。旧真实 worker 回报明确 FORBIDDEN_ACTION、父 unknown / 核对 running 且 release 已发生；修后 **1/1**，核 submit / release 各一次、父 reconciled、资源解冻、永久 plaintext 审计和证据。最初夹具 owner 错误不计目标红。定向共 **9/9，无 skip**，typecheck / diff / 保护目录零差异；PG 串行退出，不跑全套、不 push / 部署或触现场。
+
+## 111：复核中项，共享资源锁与事务外 Hook
+
+先用两任务同 provider 的真实事务屏障复现 **40P01**：fenced transition 回报持 clock 等资源，另一任务持资源调用真实 emitter 等 clock。此红不是负载或 mock SQL。Flow 现在按完整关联集合分层排序，task→flow_run→operation→flow_step→resources / leases→event_clock；首 emit 前锁各冻结资源，Store 共享回调覆盖模块事件及执行提交变更集的提交 / 决定入口，多任务不逐个拿完全部锁才拿下一任务。只收集冻结执行提交所引用的任务，不扩到整范围，也不以锁函数替代原授权、审批资格或单次消费。现有原生 capability 不调用该 flow 回调，不加死锁自动重试。
+
+beforeDispatch 的 C 内部工作项通过私有 Symbol 保存，摘要绑定代码、subject、方法 / 来源 / 资源 / 运行时、输入 / request / fence / 准备原件。首事务释放后真实 Tool-host 计算，第二事务重新核活权限、pin、原件及同摘要才存 proof。prepared 先提交原件、事务外真跑 Hook，再回实际允许；intent 强制完整检查且内事务再核当前 digest / 无 pending。普通 light / heartbeat 只查活授权与证明元数据，不读 B 或计算 Hook。Worker 无回报处理器结论的权限；公开接口与事件形状未扩。中英设计说明仅声明已测 flow 入口的锁边界，不声称穷尽全部数据库锁。
+
+真实 PostgreSQL 定向 **7/7，无 skip**：原死锁屏障、同租约准备、七表 NOWAIT 证明 Hook 门内无行锁 / clock 锁且真实角色变更独立批准撤权后拒 proof、Hook 阻断、单项执行批准消费、审批后期限刷新、同 provider 双任务合并变更集各消费 / 派发一次且重复决定拒绝。纯工作项 **2/2**、旧锁消费者精确 mock **5/5**，保身份 / fence / early-fail / 排序 / SKIP LOCKED 断言。typecheck / diff / 原生与保护目录零差异，PG 串行清理，只本地签署；全套仍由维护者跑，不 push / 部署或触现场。
+
+## 112：复核低项，非终止批次预留后续容量
+
+非 delivery / outcome 批次在受理前预留下一条持久 transition 和下一代预算，空批次与同键重放同样需要继续问批准的 transition。已 claim 的 transition 已计入现有步骤，不重复计数；最后一代 / 恰满 1024 的终止提议仍可完成。不能先接受写动作再必然无容量解释 / 交付，也不因预算修改既有派发 / unknown 事实。中英 C5 明示边界。
+
+纯旧两边界 **0/2**→新 **4/4**；真实 PostgreSQL 恰 1023 现有步再提出写、generation=255 再提出写两叶 **2/2**，均受理前 RESULT_TOO_LARGE、零 provider RPC / 无 accepted 写；已有整批原子额度消费者 **1/1**。typecheck / diff 通过，PG 清理；只本地签署、不扩字节 / 数组预算，不跑全套或触现场。
+
+## 113：复核低项，自动协议参数在受理核齐
+
+租约维护显式映射按已批准 helper schema 的必填字段核齐，合法只需 id 的 provider 不被拍成必须两字段。Flow.prepare 对真实冻结输入派生 acquire / heartbeat / release / status / results / reconcile / prepare 普通参数；仅延后 D 实际产生的 lease / remote id 字段，保其它 required / type / enum / 属性数量约束，跨生成字段的不可安全分离组合 schema 拒绝，不用假 task_id / fence 充数。实际调用前仍核完整 schema。旧全局模式 prepare 的 C 与 D 均按持有租约注入，普通独立 read 的旧行为保留；submit byteArgs 映射不改。
+
+新纯旧 **0/3**→新 **3/3**，相关映射 / worker 消费者共 **8/8**。四项真实受理负例 **4/4**（缺 heartbeat / release 必填映射、status 输入路径缺失、results 未声明字段），均无 module task / RPC / 派发 / 冻结；旧正常 Meridian 流程 **1/1**。typecheck / diff 及独立只读参数边界复核通过，原生 / 保护目录零差异，PG 清理；仅本地签署，不跑全套、push 或部署。
+
+## 114：复核低项，锁序文档与准备构建原件
+
+中英 A3 的过时锁序改为 task→flow_run→operation→flow_step→resources / leases→event_clock，与当前 C / 锁 helper 对齐。严格合成 cexg 正例新增从 prepare_ref 引用回读 B 原件，核 SHA / 大小，以 argsDigest 找到实际 env_prepare 请求，断 device_build 等于冻结输入构建、build_checked / ready / device_build 检查为真；不造顶层构建字段或仅凭 complete=true 推定核过环境。
+
+固定 **3c46f707** 严格正例实际 **1/1，无 skip**，原 submit 一次、queued / running / done、Hooks / 结果断言保留；默认文件 **4 pass / 4 skip** 不把 opt-in 跳过计为成功。typecheck / diff 通过。只改三份文档 / 验收文件，PG 清理、不改驱动 / 原生 / 独立包，不跑全套、不 push 或部署。
+
+## 115：确定性红例，旧 worker 注册 mock 过时
+
+worker-capability-negotiation 的旧 mock 只给 UPDATE workers 返回注册行，新 claim 先 SELECT 核已注册身份，故真实复现 **3/4** / FORBIDDEN_ACTION。更新为精确响应当前注册 SELECT / last_seen UPDATE，只有真正 flow / resource / lease 查询才计入选择操作；追加未注册 worker 仍拒绝且不能选择操作的断言。注册核验与旧 worker 无 capability 不领 flow 的生产边界不改。
+
+同文件修后 **5/5，无 skip**，typecheck / diff 通过。仅一个测试文件及本记录，本地签署、不跑 PG / 全套、不 push 或部署。
+
+## 116：确定性红例，轻预检只披露本动作引用
+
+旧用例先领取没有 byteArgs 的 meridian_prepare，却要求 light 返回全部三 MiB 原件引用，原 31 行真实 **0/1** 红。C2 的本动作最小引用过滤正确，不修改生产返回。夹具改为三 MiB 合法 JSON，由实际声明的 Tool 通过 byteSlots / 第三个字节参数消费；used 动作核同上传 SHA 的引用、不含 base64、重复 light / heartbeat 零 B 读取。新增 unused 动作引用为空 / 零 B；原来源、角色、方法、资源、运行时及凭据撤销断言全部保留。
+
+测试 direct 服务按真实 server 采用 Records、TypeCatalog / Entities→Graph 来源授权与 flow 锁接线，没有空方法 stub 或绕过 ACL。修夹具首轮 **4/5** 的剩余红是旧 direct 误用 Knowledge 缺 materialize，更新真实 Records 后单叶 **1/1**；完整来源接线后相关三叶 **3/3**，最终五叶各有实际绿证据、无 skip。typecheck / diff 通过。只改一个验收文件及进度，不改生产 / 原生 / 独立包，PG 串行清理，不跑全套、不 push 或部署。
+
+本轮按高项→中项→三个低项→两条确定性红例，各一笔本地签署。最终集成只核交叉消费者：纯初 **18/22** 的四红是新锁集合 / 事务外入口的旧 mock 表示（清理三叶与能力一叶），精确补合法任务 / run / 资源 / lease 和 operation-name 查询后 **22/22**，原假终态、fence / 来源 / release、冻结及活能力撤销断言未改；补丁并回共享锁那一笔，仍七笔问题提交。实际 PostgreSQL 跨消费者 **7/7 + 1/1**（明文核对、已用 / 未用引用、活授权和协议受理），固定 **3c46f707** 严格准备 / submit / status / results 全链 **1/1**，无 skip / fail。
+
+最终 typecheck / diff 通过，原生 packs/apv / foundation / references / harness-adapters 相对本轮基线零差异；工作区收尾干净，全部 PostgreSQL 单进程串行清理，没有全套、真实模型或设备运行。六条上轮配套仍在前序提交，未被这些修复覆盖。不 push、不部署、不触 7420 / 网关 / Circle / 独立包；全量和合 main 留维护者独立完成。
+
+## 117：单跑复核，强制 Hook 阻断的失败回报回归
+
+读取维护者单跑日志并原样复现 A3 首叶：新事务外 fullCheck 已保存 blocking proof 后抛 HOOK_FAILED，但 worker 主循环在进入专业执行的 try / 报告边界前做首次 full preflight，只记日志，已领取操作仍 running 等 60 秒租约。另一个同链缺口是普通 provider failed 回报默认交产品继续解释；省略 Hook 的 transition 可再次提出同一写，不能保证以强制阻断结论终止。这是生产回归，不调整原 30 秒 / HOOK_FAILED / 零派发断言。
+
+仅 Flow 首次检查移入 executeFlowStep 的失败回报边界，回原 fence / 输入修订的 failed；非 Flow 的原生 / runtime 预检路径保留。C 只在未 intent、无 remote identity、未 terminal 的 provider write 下，独立核当前分区 / worker / fence / 元数据绑定与 beforeDispatch B 证据 SHA / 大小、冻结方法 / 资源 / request / 准备摘要和真实 block 决策后终结任务。Worker 错误标签、普通失败、reconcile 和已证终态解释缺口均不能触发此闸。
+
+原首叶旧 **0/1**（30 秒超时）→新 **1/1**（约 3.7 秒），原另外两叶 **2/2**，新纯报告 / 假证据及异绑定负界 **2/2**，全部无 skip。typecheck / diff 和独立只读回报边界复核通过，原生 / 产品包 / 归档零差异，PG 串行清理；只本地签署，不跑全套 / push / 部署或触现场。
+
+## 118：单跑复核，准备参数受理拒绝的消费者预期
+
+abc5af6 提前核自动协议参数，夹具把 undeclared:true 放进 additionalProperties=false 的 prepare args，现于 POST tasks.submit 直接 INVALID_PAYLOAD。旧用例仍以 h.request 要求受理成功再等任务 failed，单跑真实 **0/1** 红；这是期望过时，不放宽受理校验。仅该叶改为断 HTTP 400 / INVALID_PAYLOAD、scope 内无新 module task / 操作、proxy / provider RPC / submit / intent / frozen 均为零，不启动 worker；其余八叶及期限断言字节保留。
+
+更新后该叶实际 **1/1，无 skip**，typecheck / diff 通过。只改一个测试叶与进度，原生 / 独立包 / 生产校验零改，PG 清理，不跑全套。维护者已确认 08-connectors 的超时单跑 **2/2**、按负载假红处理，本轮不改它的实现或断言。
+
+两项按顺序各一笔签署。最终合并针对两条原失败消费者 **2/2**、新纯边界 **2/2**，无 skip / fail，typecheck / diff 通过；原生 packs/apv / packs/meridian / foundation / references / harness-adapters 相对本轮基线零差异，树收尾干净。PG 串行清理，不跑全套、不 push / 部署、不触 7420 / 网关 / Circle / 独立包。最终 HEAD 交维护者独立全量。

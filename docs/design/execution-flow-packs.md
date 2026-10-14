@@ -293,9 +293,9 @@ observations 为 `{operationId, reference, facts}`。原件 reference 是四种�
 }
 ```
 
-env_prepare 与 bed_topology 并不是 Hub 硬编码的特殊 Tool：名字、read effect 与输入结构来自该 provider 的批准声明。bed_topology 的观察同样由它自己的 provider.call 产生。当前 worker 的普通 read 分支直接调用只读 Tool，**不自动取得远端租约**；若该服务的观察接口要求先持有远端租约，裸 read 动作不能凭空满足它，也不能让 transition 传入 lease token。这样的观察须由已批准且实际可独立读取的 provider Tool，或 Hub 管理的写协议所留存的原件提供。本示例不证明任一既有网关无租约可调用这两个名字。
+env_prepare 与 bed_topology 并不是 Hub 硬编码的特殊 Tool：名字、read effect 与输入结构来自该 provider 的批准声明。bed_topology 的观察同样由它自己的 provider.call 产生。缺少显式租约映射时，worker 的普通 read 分支直接调用只读 Tool，**不自动取得远端租约**；显式 argumentsByTool 要求租约的 read 会临时 acquire / read / release。若该服务的观察接口要求先持有远端租约，裸 read 动作不能凭空满足它，也不能让 transition 传入 lease token。这样的观察须由已批准且实际可独立读取的 provider Tool，或 Hub 管理的写协议所留存的原件提供。本示例不证明任一既有网关无租约可调用这两个名字。
 
-后续 C 的已确认方向是在 receiptPolicy 增加**可选 prepare 阶段**：由批准的工具名与参数映射决定调用，worker 在同一远端租约内、submit 之前执行，Hub 持久化准备观察，再以这份观察供 beforeDispatch 核验。本轮不实现该阶段，也不把 prepare 写进当前 ProviderPolicy schema 或示例；精确字段/映射 schema 与新的 worker ABI 尚待后续设计与验收，不能由产品在现有 args 中自行补出。
+C4 已在 receiptPolicy 增加**可选 prepare 阶段**（当前字段见文末 C4）：由批准的工具名与参数映射决定调用，worker 在同一远端租约内、submit 之前执行，Hub 持久化准备观察，再以这份观察供 beforeDispatch 核验。ProviderPolicy 已定义 prepare 列表与相应 worker 事件；精确映射和证明边界见 C4，产品不能在 args 中自行补租约权限。
 
 时序也需要在 C 实施时调整并验收：当前强制 beforeDispatch 位于 C 预检、早于 worker acquire/准备；未来要让该出口在准备观察已经持久化后再次核验，且仍在提交意图与 submit 之前，不让旧的出口通过记录替代新观察。prepare 不证明已派发，也不把准备成功扩大为提交成功。原生 APV 路径的 execution.environment.observed 来自其提交前 env_prepare；网关 case_submit 内部仍可再次观察或拒绝，属于另一调用/时间点。未来通用 prepare 的观察也保留独立原件与操作身份，不拿这两种既有观察冒充新增阶段已经完成。当前真实 env_prepare/bed_topology 需要远端租约，因此前面的裸 read 示例仅说明参数形状，不能作为现有真实网关可执行路径。
 
@@ -310,7 +310,9 @@ env_prepare 与 bed_topology 并不是 Hub 硬编码的特殊 Tool：名字、re
 
 这份注入说明沿用 A2 的全部预算：state 256 KiB、input metadata 512 KiB、transition output 256 KiB、普通 JSON 字符串 32 KiB、数组/动作 256 项、深度 16、controlled 解码合计 8 MiB，以及实际 Tool wire 输入 24 MiB / 输出 16 MiB；上述示例没有新字段容量或隐式扩容。expectedOccurrences 是现有可选合同字段，产品若不使用重复步骤也不能据其缺席自造许可。完整字节只在实际执行所需的 frame 中给出；轻预检重核授权与原件引用，不向 transition 改发另一种协议。
 
-### C 阶段待办：同形网关协议兼容
+### C 阶段协议差异与实施清单
+
+以下保留实施前协议差异；当前落实情况以文末 C1–C5 及驱动 schema 为准，严格合成验收不等于现网部署。
 
 下面是用户确认并经本机网关源码只读核对的协议形状；只记录键名、类型与行为，不引入地址、配置值或真实回报。它不是已经实现的新 ProviderPolicy schema，也不是任意 MCP 服务都应采用的统一回执。C 后续实现须用已批准的通用 policy 描述差异，不能把这些产品工具名写成 Hub 分支。
 
@@ -339,6 +341,37 @@ C 的后续工作须分别覆盖以下边界，而不是改弱某个合成夹具
 同租约的 prepare、持久化观察与 beforeDispatch 在 submit/意图之前重核的方向见上节；当前普通 read 不取远端租约，这一缺口不能由模块裸调 env_prepare/bed_topology 规避。afterResult 仍按用户确认的显式 hook.verify 与 delivery 证据闸执行，不在本待办改为自动调用。
 
 C 的目标验收采用完全合成、与上述协议同形的严格网关：required 租约、status/results 仅 task_id、真实字段名、submit 无 state、完成 results 无通用 hash、status 有 state。默认跳过的是尚未开始实施的 C 兼容验收；显式启用后在当前实现上必须出现可复现的红例，不把 skip/todo 当作通过。后续逐项实现后才将这些边界转绿，并核对 RPC 参数、B 原件与实际派发次数。A3 的合成协议通过只能证明其已测协议，不能替代这条同形验收，更不能证明真实网关 / 设备已接入。本轮仅补待办与验收目标，不实现、注册未来 schema、改网关或投递真实环境。
+
+### C 二轮待办：运行预算与受控来源门禁
+
+本节只补 C 的设计待办，不改变 F 常量、Hook 动作 schema、驱动器或独立产品包。旧前置投影路径的 `5cdbc2b` / `6a8cb799` 旁证只覆盖它们当时的 synthetic-provider-protocol 接法：输入还携带流外生成的工作簿/命令投影。`6a8cb799` 的旧正向路径通过，不表示正式 flow 已读取全部受控原件，或下面二轮来源、错误与规模门禁已经全绿。严格 cexg 同形验收也与该旁证分开，不据其推定现网兼容。
+
+当前 `arrayItems=256` 同时限制单批 actions / 普通 JSON 数组、runOnce 的 generation / 总 flow_steps，以及 validateBatch 的累计步骤 key。每批大小、每次运行的转换次数和持久步骤总数是不同预算，不能用同一个常量代替它们。以已有 21 案数字为例，216 个设备命令 + 21 个主机命令 + 1 个工作簿核验 = **238 个核验 subject / Hook 动作**；主机 subject 各经过两个已附处理器时，实际处理器判定数为 216 + 42 + 1 = **259**，不是 259 个持久步骤。
+
+设 H 为核验动作数、O 为其它持久动作数、T 为 Hub transition 次数，则总持久步骤为 `H + O + T`。旧排程的 H=238、O=5（env/map/submit/parser/afterResult）、T=7，共 **250**；可选 topology 的观察与转换再加 2，为 **252**。若读取工作簿、命令核对、函数契约三个原件各需一个 Tool 与一次转换，再加 6，预估 **256 / 258**。这是在旧排程上串行加三次原件读取的可复核估算，既非新 flow 实测，也非不可优化的下限；批量读取可以改变 O/T。当前总步骤 256 只给旧路径留 6 / 4 项余量，不能拿一案通过证明整批有容量。
+
+推荐 C 将每 run 步骤预算单独命名并有界化。按上述最大估算留两倍余量，`pow2ceil(2 * 258)=1024`；若只取 `pow2ceil(258)=512`，余量为 254 项，不能称两倍余量。转换次数另按实际排程测量：本估算 T=7+1+3=11，`pow2ceil(2 * 11)=32` 可作为待确认档位，不能把它当成任意产品流程的通用容量。单批 / 单个 JSON 数组的 256 项及所有字节预算不因 per-run 提额改变。
+
+只提高步骤计数仍不够：当前 frame.observations、expectedOccurrences、交付 references 仍各最多 256 项，metadata 总量仍 512 KiB，Tool wire 仍 24 MiB / 16 MiB。C 必须配套设计有界观察窗口与受控原件投影，保留历史 B 原件和准确引用，不截断冒充完整，也不能隐藏未核步骤或丢弃 unknown 写。相关容量与失败路径都要独立验收后才决定常量；本轮不扩大现有合同。
+
+优先方案是保留当前“一项 hook.verify 对应一个 subject”的动作契约，分离每 run 计数并明确观察窗口。另一方案是给 hook.verify 增加 subjects 数组，但那是 F 契约变更，不是现有字段：必须逐项验证实际任务/修订、方法/来源/资源 pin 与原操作关联，固定 item 身份及输入索引，并在 B 留每项真实决定的索引/摘要关系。首个 block 后只记录实际处理过的前缀，余项明确未核 / 未运行，不能变成 pass；完整失败或部分回报都要保原件、覆盖整批最坏输出的字节预算、处理器数量、顺序、超时与堆上限。不能用一个无归属的 batch binding 套到多资源，或以部分成功满足整批派发/交付关口。精确新字段与部分证据协议留给 C 的后续设计，本轮优先不改 F 动作形状。
+
+本轮合成接法可使用以下原件角色约定；它们是 SourceArtifact.files.role 的通用字符串，不是平台强制产品词表。现有旁证使用 workbook、command-tree、function-contract；新增 command-check 是二轮合成约定，不表示旧模块已经支持读取它：
+
+| role / 槽 | 原件与消费边界 |
+|---|---|
+| `workbook` | 冻结工作簿原字节；批准的纯 Tool 从 B 字节派生用例、设备命令和主机分派，不用客户端预投影代替原件读取 |
+| `command-check` | 保留同步 command_check 回执原形的 result.ruleVersion / result.commands 及实际 sourceSha256。正式 flow 按原字段核对绑定输入、构建/来源与命令身份，再由批准方法派生 Hook 所需布尔；不能预造 present:true，role 名或上传批准本身也不证明一次工具调用发生 |
+| `command-tree` / `function-contract` | 对应树与函数契约原字节；由批准的产品 Tool 解释，Hub 不解析产品格式。command-check 不能免去所需的树/契约对应核验，角色与槽名不自动授予读取权限 |
+| `hub.result.<stepKey>` | C 对大 JSON 或超长字符串结果生成的动态 B 原件槽，位于 observation.facts.result.original.slot/reference，frame 再按权限取回并注入 controlledBytes；小结果目前可以直接在 facts.result 内联，**并非所有 Tool 输出都有该槽** |
+
+Tool 的 byteSlots 从当前 frame 中选择真实槽，按顺序追加字节参数；不能猜动态槽名、假定 result 总为内联，或把 artifact id / 下载路径当作 slot。正式解释在小结果和原件指针两种表示下都要按实际形状读取并核 SHA，证据不齐保留未映射，不能拿旧投影正向路径充当二轮门禁证明。
+
+三条错误与绑定口径也按当前源码保留：
+
+- `outcome.error` 顶层 code 只能使用已登记的平台码。HOST_SET_UNDECLARED、HOST_NOT_IN_BED、COMMAND_NOT_LITERAL、HOST_COMMAND_OUTSIDE_POLICY 四个 APV Hook 规则码不是直接可用的顶层平台码；它们保留在产品 facts，再进入 error.details（例如 details.code），顶层可用已登记的 HOOK_FAILED。不要把产品 facts 伪装成另一条 Hub error/resultError 通道。
+- `receiptPolicy.inputSha256Path` 比较的是 `canonicalHash(整份 FlowSubmission)`，不是 workbook SHA。A3 合成 provider 回显 input_sha256，当前真实网关不提供这一回显；不能把 xlsx_sha256 改名或拿来替代完整输入摘要。
+- provider 拒绝时，worker 从 error.details 删除 gatewayRefusal，把原件保存在 B 的 `{schema,tool,phase,refusal}` envelope；C 回读后，小型原文在 `observation.facts.result`（内层 raw），大型表示走 facts.result.original 的引用，其 B 原文仍是 envelope，须取 refusal。state.errors 若记录原拒绝，应取这些实际字段与来源引用，不假设普通 worker 错误 details 总有原文。独立已证终态后的结果失败可以由 C 另附解释事实，但不能据此改写所有拒绝回报的形状。
 
 ### 数字来源与初版预算
 
@@ -376,14 +409,86 @@ B 的 16 MiB 上传上限不意味着每个 Tool 或受控槽都能容纳这么�
 
 原件进入网络参数前由 C/D 按 B 清单与当前权限重新取字节、核 SHA / 大小，byteArgs / byteSlots 只引用受控槽。派发意图先持久；失联时不使用步骤重试去重放写动作。未知写及独立核对失败保留冻结，明确未派发的失败与读取超时不冻结。执行变更的申请内容含实际 Tool、字面参数摘要、原件引用和三类 pin，独立批准仅消费一次；默认资源仍不产生审批。
 
-写出口强制执行已附 beforeDispatch Hook，并在意图前绑定实际资源、输入、操作与通过证据；产品省略 Hook 动作不构成豁免。afterResult 的实际成功回执同时关联终态原操作与最终交付候选的 canonical SHA，每个已声明挂点对应的写都须核验整份候选，不能验证甲正文后交付乙正文。未附处理器时仍不添加缺省规则。独立核对的证据保留真实子操作身份，产品逻辑步骤继续指向原操作。租约过期的统一处理器按 Store 实例共享，避免同库其它运行器绕过通用终态 / 意图分类；带处理器的路径按 task → operation → flowrun 锁序推进。
+写出口强制执行已附 beforeDispatch Hook，并在意图前绑定实际资源、输入、操作与通过证据；产品省略 Hook 动作不构成豁免。afterResult 的实际成功回执同时关联终态原操作与最终交付候选的 canonical SHA，每个已声明挂点对应的写都须核验整份候选，不能验证甲正文后交付乙正文。未附处理器时仍不添加缺省规则。独立核对的证据保留真实子操作身份，产品逻辑步骤继续指向原操作。租约过期的统一处理器按 Store 实例共享，避免同库其它运行器绕过通用终态 / 意图分类；带处理器的路径按 task → flow_run → operation → flow_step → resources / leases → event_clock 锁序推进。
 
 观察终态与取得结果正文是两个不同事实。status 回报已满足批准的终态与身份核验时先保存 D 终态，再取结果和解释；后续失败保留真实解释错误，不把 status 内容当成结果或生成默认成功行。provider 的解析后 JSON 以 canonicalJson 原字节留 B，worker 事件和回报用绑定操作 / stage 的指针；C 回读核 SHA / 大小。原件、大文本 / NUL 的小投影和产品解释各自保留身份，既不把正文写进 JSONB，也不以脱敏预览覆盖原件。这个 canonical 化是明确的转换，不宣称保留了原 HTTP wire 的空白与字段顺序。
 
-方法摘要的版本化算法覆盖冻结模块 digest、flow、驱动版本与支持的精确依赖版本；模块清单已覆盖 Tool / Hook / 相对依赖的完整文件集合。批准历史 pin 与最新批准 readers 的交集继续逐次核验，草稿不改运行绑定；新受理要显式选方法，旧任务不自动升级。运行资源和 runtime-profile 也冻结实际修订，不把配置文件存在当作批准。单 run 转换次数与总步骤数使用已有 256 项预算，超限解释失败，不无限产生空转换。
+方法摘要的版本化算法覆盖冻结模块 digest、flow、驱动版本与支持的精确依赖版本；模块清单已覆盖 Tool / Hook / 相对依赖的完整文件集合。批准历史 pin 与最新批准 readers 的交集继续逐次核验，草稿不改运行绑定；新受理要显式选方法，旧任务不自动升级。运行资源和 runtime-profile 也冻结实际修订，不把配置文件存在当作批准。C5 将总步骤预算独立为 1024，转换仍 256 代，单批数组仍 256；超限明确失败，不无限产生空转换。
 
 A3 的验收前提仍是 macOS seatbelt、临时 PostgreSQL 和合成网关。两份合成模块分别冻结 / 批准 / 停用并交替执行，只证明此通用驱动与它们的协议；原生 1.1.1、APV 新模块、真实设备、真实模型及任意 MCP 服务兼容性不由这些验收推定。完整验收结论只记 [阶段进度](../server-s2-progress.md)，本附录不记录部署成功。
 
 ---
 
 本文是 circle-hub 的设计规范之一，按 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/deed.zh-hans) 授权：引用、借鉴须署名 Circle Hub 与 qingshanfeihu 并注明原始出处链接。见[设计规范索引](README.md#许可)。
+
+### C2：批准的普通参数与原件参数映射
+
+receiptPolicy.toolArguments 以工具名、目标参数名为键，每项只能是 `{literal: 有限JSON}` 或 `{inputPath: [字段路径]}`。路径从 C 冻结的整份 FlowSubmission 开始，例如 `['value','build']`；不读取环境变量、profile、凭据或产品 transition state。声明由资源修订批准并被冻结，参数由 C 入队与 D 实际调用各重算；产品 args 与批准映射重名时拒绝，而不是悄悄覆盖。未声明工具、原型路径、访问器、循环、非有限数、超 32 KiB 字符串或其它 A2 预算拒绝。
+
+receiptPolicy.byteArguments 以工具名、实际 wire 参数名为键，值是 action.byteArgs 的逻辑参数名。例如 `{case_submit:{xlsx_b64:'workbook'}}` 对应产品动作 `byteArgs:{workbook:'workbook'}`；已有动作直接使用 xlsx_b64 时可以不声明映射。映射必须一对一覆盖所有逻辑原件参数，不能漏掉或复制同一参数；目标与普通参数 / 租约权限冲突时拒绝。C 的请求摘要仍绑定原动作与获授权的 B 引用，D 在调用时取原字节，wire byteBindings 和回执核验使用实际参数名。不会为工作簿扩大普通 JSON 字符串预算。
+
+status/results/reconcile 仍由 taskIdArgument 注入持久远端身份，并只按工具明确声明的租约映射补字段；目标为只收 task_id 的工具时，argumentsByTool 对这些名字写空对象。不将 lease_id/token 或 submit 的 module/base64 带入观察调用。
+
+### C3：按阶段核验 provider 回执
+
+APV 合成模块验收把冻结包资源模板中的完整 receiptPolicy 原样登记并经另一身份批准，核批准摘要及配置的 canonical 摘要，不只复制参数或租约映射后回退 echo 协议。合成原始 submit / status / results 分别提供实际阶段的工作簿 SHA / 用例身份、状态与结果 SHA；这是合成协议接法验收，不证明真实网关或设备兼容。
+
+严格 cexg 合成状态夹具的 raw state 词表为 queued / running / done / lost；批准的 completion 将 queued / running 视为非终态，只将带有限整数 rc 的 done 视为已观察退出。lost 的形状合法，但不证明完成，核验以固定 EVIDENCE_INSUFFICIENT 停止轮询并保留未知写、原件与远端租约；done 缺 rc 或 rc=null 同样不可证。非零整数 rc 只表示 runner 退出事实，不自动生成整案或逐步通过结论。此词表属于该批准协议的测试数据，不是新增通用 uncertainValues 字段，也未改变原生路径。
+
+`receiptPolicy.receipts` 分 submit / status / results / 可选 reconcile，每项声明自己的 receiptSchema、remoteIdPath，以及可选 sha256Path / caseIdsPath / completion。completion 为 `{path,runningValues,terminalValues,rcPath?}`：path 可以指向 state、channel 或有限整数 rc，词表互斥；rc 只是 runner 退出事实，ready / rc=0 都不扩大为逐用例通过。未声明 receipts 时继续完整旧 echo 协议；新模式不要求网关不存在的 request_hash / input_sha256 / byte_hashes，也不把工作簿 SHA 当整份 FlowSubmission 的摘要。
+
+新模式要求批准的 `identityProjection:{stepId,path,export,byteArgument,sha256Path,caseIdsPath,idPath?}`。byteArgument 是映射后的实际 wire 参数。C 在意图前从本任务 / 输入修订的成功 tool.call 查询实际 action、方法 pin、请求摘要、受控槽引用及 B 投影原件，核对其确实接收同份工作簿，再按字段路径取 SHA 与身份列表。来源不是 caller value；投影原件、operationId、方法 pin、原件 SHA 和身份保存在 receipt_facts（迁移 42），此时不产生 remote_identity。submit 必须核原件 SHA / 身份，results 必须核原件 SHA，随后阶段均核持久远端身份；历史报告重新核冻结证据，撤权不抹已发生事实。
+
+D 成功回报先按 SHA 冻结原件，再做阶段校验；不匹配原件仍留存为未验证证据。已 submitted 后的查询 / 心跳拒绝不能当派发前拒绝，仍 unknown、不释放也不重派；已证 status 终态先持久化，随后 results 拒绝或 SHA 错误仅使解释失败，终态与释放事实保留。已证终态后的不完整结果渠道可由批准产品方法解释为 partial，不猜设备结果。原生 1.1.1 不参与本链。
+
+已证终态后的解释错误或完整 worker 报告失联 / 过期，C 保留 D 的 succeeded / reconciled、terminal 原件 SHA 与实际释放事实（未取得释放回执时为 null），并记 `interpretationStatus:"failed"`、error、unmapped 和 B 引用。批准的 transition 继续消费这些事实，通过既有 afterResult / 同候选字节核验提出 partial；已知解释缺口的 succeeded 候选被拒，Hub 不自动调用模型、Hook 或制造交付。迟到的原 fence 报告只按既有补充边界加入 B 原件与释放事实，不改已交付候选及其 partial / unmapped；旧输入修订的记账也不写入新修订的解释观察。治理或候选合同违例仍可使任务 failed，未证终态的写仍 unknown，不借解释路径解冻或重派。
+
+### C4：同租约准备观察与派发出口
+
+受理 flow 时同时校验协议的 acquire / heartbeat / release、status / results / reconcile 及 prepare 参数；普通参数从冻结输入真实派生，缺路径、非法 literal、未知字段直接拒绝，不等写意图后暴露。租约映射按各工具 schema 所需字段核对，允许只需要 id 的协议，不强加两字段；远端任务 id、真实租约值仅延后其自身约束，调用前仍核完整 schema。旧全局映射在自动观察及同租约 prepare 中按实际已持 lease 注入，与 C 部分校验一致；不使用假 task_id 或 fence 证明可执行。
+
+批准的 receiptPolicy 可声明 `prepare:[{tool,args?}]`，均须在资源 provides 中唯一声明为 read；参数经过 toolArguments 和逐工具租约映射，工具链 minimumRole 也包括这些准备调用。worker 在该写操作同一 acquire / heartbeat 租约内，按批准顺序调用准备 Tool，再持久化每份 canonical JSON 原件的 SHA / 大小 / 指针；准备不会产生 submitted 身份。
+
+迁移 43 的 prepare_ref 保存操作、输入修订、fence、请求摘要、资源 pin、租约摘要、顺序、实际参数摘要和原件引用。C 独立回读 B、重算映射与摘要，完整准备后才调用 beforeDispatch；subject 为 `{input,operationId,preparations:[{index,tool,reference,result}]}`。准备 result 在 Hook 入口去除凭据 / 租约字段及 NUL，并标 sanitized；原件保存在 B，不把原文秘密或 NUL 放进 JSONB。超 Hook JSON 预算明确失败，不截断为通过。出口证明绑定本次 preparationDigest / fence，intent 还核同一 leaseDigest；旧出口证据不能豁免新观察。
+
+准备失败、撤权或 Hook 拦截在意图前落 failed，无提交 / unknown 冻结；本地取消仍不证明远端停止。清理仅用本次已取得的凭据调用批准的 lease_release，不授新 dispatch；明文例外清理的有限 transport 元数据仍按冻结 runtime 修订核验并永久写审计 / 证据。释放失败照实记 false。已派发不确定写仍不清理、不重派；原生 1.1.1 不改。初始环境观察来自模块的独立 read，写租约里的 prepare 是更晚的一次观察，gateway submit 内部还可独立观察 / 拒绝，不能互相冒充。
+
+### C5：运行容量、观察窗口与结构投影
+
+运行预算独立为 1024 个持久步骤 / 256 代转换；单批动作、普通 JSON 数组仍最多 256。这是按 21 案最大估算 258 步留两倍余量后取整为 1024；256 代保持既有通用档位，32 代只属先前具体排程估算，未改为全平台默认。同 key 重放不新增预算，跨上限整批原子拒绝，不先派发前缀。
+
+非终止动作批次还须预留一个后续 transition 的持久步骤和一代转换容量，包括空批次及同 key 重放；它不能先派发写，再因没有容量取得最终解释而必然失败。当前已领取的 transition 已计入现有步骤，回报前 generation 为已完成转换计数：254 可继续，255 只能发单独的 delivery.propose / outcome.error 终止批次。终止批次不新增动作行，可以使用恰满 1024 步的末次转换；此受理闸不取消已经派发的写，也不改已证终态或 unknown。
+
+模块只有显式声明 `historyMode:"controlled"` 才能使用超窗历史。可选 observationWindow / expectedOccurrenceArchive 为 `{total,returned,complete,archive?:{slot,reference}}`；全集由 C 以 SHA 留作 B 制品，并经真实 `flow-history` / `flow-occurrences` 受控槽送给需要它的 Tool，计入原有 8 MiB 总量。内联最多 256，窗口保留意图、unknown、已消费授权与活动步骤；无 worker 回报的活动记录标明 hub-step-ledger，不伪称 provider 结果。关键记录自身超过 256 则明确失败，1024 不表示可内联任意数量的写历史。未声明窗口协议的旧模块超窗也明确拒绝。
+
+全集原件仍逐项重核当前 B 可见性、SHA 与大小；受控槽同名只有相同 role / reference 才可复用。轻预检保留输入修订双摘要验证、冻结请求引用与来源授权。交付引用查询本任务 / 输入修订的全部观察和 C 生成的历史 B 绑定，再核 B 权限；不以退出内联窗口为由拒合法旧引用，也不接受跨修订 / 隐藏对象。
+
+结构投影除 256 KiB 与 32 KiB 字符串外，也检查 UTF-8 键、256 项数组和实际 frame 包装后的 16 层深度。小体积 257 项结果亦走已有 hub.result 原件槽；结果从包装深度 5 计，错误元数据从 6 计，省略的元数据给 SHA / 大小 / reason，原始工作者回报继续保留。预算不扩大，数据不静默截断。来源框架、设备与产品解析仍归模块，原生 1.1.1 字节不变。
+
+### C1：逐工具租约注入与 schema
+
+`receiptPolicy.lease.argumentsByTool` 以工具名为键，每项为 `{idArgument?,fenceArgument?}`；空对象或未列工具不注入任何租约参数。整份映射缺席则保持旧协议的全局名字。只有资源已声明、schema 有对应字段的 Tool 可获注入，目标不得相互冲突或覆盖普通 / 字节 / 远端身份参数；acquire 不可注入尚未取得的身份。
+
+C 入队只延后批准映射字段的必需性约束，保留其它字段验证；无法安全延后的顶层组合 / 跨字段 schema 失败封闭，不删除约束伪造许可。D 真正调用前按实际 lease、普通映射与原字节填入后完整验证批准 schema / wire。需要租约的普通 read 临时 acquire / read / release，并核 acquire / heartbeat / release 的角色；status/results 的空映射保证只传已声明远端身份。
+
+C5 的 ledger / B 绑定也要求一致的数据库锁序：通用 flow 的任务→run→operation / step，claim 在 task 被锁住时跳过候选，不先占 operation 等上级锁。同 Store 的 flow 前置锁回调供两个 executor wrapper、心跳与过期实例共用；无注册回调的原生路径不新增 flow 锁。锁是序列化边界，不能替代身份、范围、fence、期限或源授权检查；本实现不靠重试死锁推进任务。
+
+
+### 失败 Tool 观察与空成功结果
+
+C 记录的失败观察必须有 `facts.error`，保留有界的 `{code, registered:true, message, details}`。`registered` 只表示投影后的平台码属于 F 登记簿，不证明报错原因或设备效果；未登记的回报码投影为 `INTERNAL_ERROR`，并标 `reportedRegistered:false`，任意原码仅保留在 B 的完整 worker 报告。错误详情超过元数据预算时，仅 `details` 变为含 SHA、大小和省略原因的摘要，不再连同分类码整体省略；超长 message 使用有界说明，原错误仍可从 B 核对。失败回报没给 error 时，C 用 `INTERNAL_ERROR` 和 `details.missingError:true` 披露缺失，不猜真实原因。成功 Tool 返回 `{}` 仍是成功的空结果，不附失败 error。上述投影不改变回报原字节、fence、读写效果或独立已证的 D 终态。
+
+### Flow 的共享资源与 Hook 事务边界
+
+通用 flow 在发送首个事件前，按任务集合、run、flow operation、step、资源 / 租约、event_clock 的顺序锁住完整已冻结资源集合；资源 ID 去重排序，后续批次入队不会在已持 clock 时首次请求另一共享资源。Store 共享回调覆盖 flow 事件、审批决定及合并既有 execution-submission 的待批集合，分层锁所有实际关联任务，不逐任务拿完下层锁后再追加。回调只建立序列化边界，审批资格、范围、当前输入 / pin、单次消费和权限仍独立核验。这一保证针对通用 flow 的行 / 资源 / 事件时钟及已测入口，不声称覆盖资产 advisory 等其它数据库锁域；不以自动重试 40P01 掩盖锁序问题。
+
+beforeDispatch 由 C 先在交易内读取并校验冻结输入，提交后在交易外调用真实已批准 Hook，再开交易重核活权限、worker capability、原件 / 参数摘要、method / resource / source / runtime pin、fence、期限和 preparationDigest，只有相同权威工作摘要才保存证明。工作对象只在 C 的私有符号中传递，不接受 worker 的处理结果。prepared 回执在真实 Hook 决定后才表示允许，intent 再核当前完整摘要且不得 pending；普通 light / heartbeat 只检查证明元数据和活授权，不读取原件或重跑 Hook。原生 1.1.1 与公开事件形状不变，也不自动运行模型或修改远端设备。
+
+
+### 独立核对之后的普通结果读取
+
+普通只读 provider 动作调用批准 policy 的 `resultTool` 时，C 先找到同任务、输入修订、资源 pin 和远端 id 的唯一已证终态写操作。C 生成并持久化内部 `resultBinding`，冻结父操作 id、原请求/输入摘要、完整 byteHashes、原件投影证明及真实 submitted / terminal B 原件 SHA；读动作自己的摘要和空 byteArgs 不代替原写身份。worker 和 C 回报各自按 `receipts.results`（旧 echo policy 保持兼容）核对结果；核对后的父观察可提供已验证的终态 status 原件，仍须回读并验 SHA。没有真实 submitted 原件证明的旧运行、未独立核对的 unknown 写、歧义或跨任务/修订/资源关联都拒绝，不能靠当前 input.value 补造证明。
+
+坏 SHA、错误远端 id 或回报前关联失效落只读 failed，并保留原件和有界登记错误，不冻结资源、不重派原写，也不把读标成 D 终态。只有父证明重新核实后才追加父的解释缺口；完整缺口表按 SHA 存 B，父只带有界摘要、数量和真实制品引用，追加回读旧表并去重，不覆盖既有原件、终态和租约释放事实。解释缺口的 partial 交付仍由产品 transition 提议并经过交付闸，平台不伪造成功用例。
+
+首次实际派发与 C 回报完整回读并核 SHA；已有绑定的 lightweight 预检只重核父元数据、分区、pin、状态、远端 id、请求及原件引用和绑定摘要，不读 B 字节，也不缓存活授权。`sourceByteProofSha256` 在单原件/投影时是该原件 SHA，多 byteHashes 的旧 echo 情形是整个映射的摘要，完整映射仍逐项保留。

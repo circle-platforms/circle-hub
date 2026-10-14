@@ -631,6 +631,12 @@ catalog 路径按实际独立包检出位置在运行时提供。REF 可为本�
 
 分支随后前进到 `6a8cb799125a749e69ba4b6f32de8ee1a92437ab`，验收按该 SHA 冻结 APV 1.3.0（digest `54c681c1e8380cad5509c7dbf18774052b432d0b903c59ebaeb6748239a2df48`），完整 **1/1 通过，无 skip**。三个 verify 挂点的实际处理器决定与 B 证据 SHA、56,413 字节原件的 byteArgs / SHA、单次 case_submit、逐步 / 两个检查点和 unmapped 全部原断言通过；旧 `5cdbc2b` 红记录保持。此结果仅属于下面的 synthetic provider protocol，不能代替严格 cexg 验收或批准现网切换。
 
+二轮复核发现上述路径仍携带流程外预生成的 workbookBook / 命令投影，不能证明正式 flow 自行读取全部原件。夹具现改为只提供本场景的 build、冻结 pins 和四个 B 受控槽：workbook、command-tree、command-check、function-contract；不提供 book、命令清单、client、tree 或 present。command-check 为 `{result:{build,buildId,sourceSha256,ruleVersion,commands:[...]},evidence:[]}`，由独立合成树经确定性 commandCheck 计算，sourceSha256 对应树原字节，未伪造 evd；正式产品依原件算 Hook 布尔，不能自造命中。
+
+相同命令缺树、合法主机不在已批准床、合法契约中方法 disabled 三个负例与正例共四项。它们要求正式 Workbook Tool 读取原件、真实 C frame 的 expectedOccurrences、实际 B 投影 / 动态 hub.result.* 槽及后续 byteSlots，逐项核源 SHA；负例须有对应 Hook 的真实 block 与 B 决策、`HOOK_FAILED` 和 `error.details.code`，解析 / schema 或错挂点拒绝不能算通过。合成工作簿保留 33 KiB 描述以触发实际大投影，不为绿删小；小结果原有 inline 表示仍合法，槽必须来自 C 的实际回报。
+
+新二轮门禁固定 `6a8cb7` 为 **0 pass / 4 fail / 0 skip**：包仍未正式读 B 工作簿，全部先停在 verify.workbook，且误把顶码写为 COMMAND_NOT_IN_TREE；case_submit=0。来源缺失 / 不在床 / disabled 的预期规则尚未被正确路径到达。旧 1/1 正向旁证保持为当时记录，不套为新门禁绿。默认四项 skip，不访问外部包或启动 PostgreSQL；与严格文件同跑为纯协议 **1 pass、5 skip**。新 ref 需另行冻结后重验，运行命令不变。
+
 本验收只使用 A3 合成协议：env_prepare / bed_topology 可独立只读，status/results 接受 worker 携带的可选租约字段，回执声明合成的 request_hash / input_sha256 / byte_hashes / state，用于原操作机械关联；xlsx_b64 和 expires_in_s 使用网关的字段名。它不证明现网网关已支持这些关联字段、参数或调用时序。实际网关的两个准备观察要求远端租约；后续可选 receiptPolicy.prepare 的方向见[执行流设计 A2 附录](design/execution-flow-packs.md#附录-a2有界-transition-内部契约)的驱动注入形状小节，本轮未实现，也不宣布现网切换。
 
 ### C 严格 cexg 协议目标验收
@@ -649,3 +655,7 @@ node --test --test-concurrency=1 tests/acceptance/c-cexg-protocol.test.ts
 严格输入不放宽：env_prepare / bed_topology / case_submit 必需 lease_id/token，提交原件字段为 xlsx_b64、module 可选，case_status / case_results 仅 task_id、拒绝额外字段。原始成功回报保持 submit 的 sha256/case_ids、status 的 state、results 的 ready/xlsx_sha256/cases；不填三种 A3 hash，不给 submit 或完成 results 填 state。当前批准策略仍沿未改驱动的旧 schema，正是待修兼容边界之一；后续必须同步批准的 policy 映射与机械核验，不能在夹具原件补字段做绿，也不在本轮定义未来 schema。
 
 冻结 `5cdbc2b` 的实际结果为 **1 pass / 1 fail / 0 skip**：原件与模块登记、另一身份批准完成，主目标在 `C.validateBatch:env_prepare` 缺租约而 failed / INVALID_PAYLOAD，provider RPC、case_submit 与 write intent 都是零。主断言仍要求成功完成执行，没有把拒绝标成通过。提交、status/results 与原始回执的后续缺口尚未到达；完整清单见[中英 C 待办](design/execution-flow-packs.md#c-阶段待办同形网关协议兼容)，本轮未改驱动或网关，也未证明真实设备兼容。
+
+C 驱动升级不声明新旧 flow.invoke worker 混跑安全。启用含逐工具注入 / 阶段回执 / prepare 的资源新修订前，必须先排空并退出全部旧 flow worker，确认在途任务已结束或已留下独立核对所需事实，再启动新 worker，最后激活新 policy；仅替换 server 不够。drain 不能把已派发 unknown 当作停止，也不得补发远端写。本轮没有新增 worker feature 协商接口，维护者的 C 后半滚动替换须遵守这个顺序。
+
+C 实施接口仍沿用既有模块 / 资源 / 任务 / worker 路径；receiptPolicy 的逐工具参数、分阶段回执与 prepare，以及模块的 controlled-history 协议见 [执行流设计 C 实施附录](design/execution-flow-packs.md)。开启严格合成协议验收：`CIRCLE_PACKS_CATALOG=../circle-packs/modules.json CIRCLE_PACKS_REF=b02122a CIRCLE_HUB_CEXG_PROTOCOL_ACCEPTANCE=1 node --test tests/acceptance/c-cexg-protocol.test.ts`；该固定原件已覆盖同租约 prepare / 一次 submit / 独立终态 / 结果解析，不能替代现网冒烟。

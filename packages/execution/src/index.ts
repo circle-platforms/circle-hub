@@ -6,9 +6,11 @@ import type { Knowledge } from '../../knowledge/src/index.ts';
 
 type ExpirationHandler=(tx:Transaction,row:any)=>Promise<boolean>;
 const storeExpirationHandlers=new WeakMap<Store,Map<string,ExpirationHandler>>();
+type PreflightLock=(tx:Transaction,row:any)=>Promise<unknown>;
+const storePreflightLocks=new WeakMap<Store,Map<string,PreflightLock>>();
 export class Execution {
   store: Store; auth: Auth; tasks: Tasks; knowledge: Knowledge;
-  constructor(store: Store, auth: Auth, tasks: Tasks, knowledge: Knowledge) { this.store = store; this.auth = auth; this.tasks = tasks; this.knowledge = knowledge;let handlers=storeExpirationHandlers.get(store);if(!handlers){handlers=new Map();storeExpirationHandlers.set(store,handlers);}this.customExpirations=handlers; }
+  constructor(store: Store, auth: Auth, tasks: Tasks, knowledge: Knowledge) { this.store = store; this.auth = auth; this.tasks = tasks; this.knowledge = knowledge;let handlers=storeExpirationHandlers.get(store);if(!handlers){handlers=new Map();storeExpirationHandlers.set(store,handlers);}this.customExpirations=handlers;let locks=storePreflightLocks.get(store);if(!locks){locks=new Map();storePreflightLocks.set(store,locks);}this.customPreflightLocks=locks; }
   async register(ctx: AuthContext,value:unknown={}): Promise<any> {
     const policy = await this.auth.check(ctx, 'workers.execute');
     requireCondition(policy.kind === 'worker' && policy.workerId, 'FORBIDDEN_ACTION', 'Authenticated worker identity required');
@@ -19,8 +21,16 @@ export class Execution {
     return { workerId: policy.workerId, capabilities:input.capabilities,leaseTtlMs: LEASE_TTL_MS, heartbeatMs: HEARTBEAT_MS };
   }
   customExpirations:Map<string,ExpirationHandler>;
+  customPreflightLocks:Map<string,PreflightLock>;
+  async lockPreflight(ctx:AuthContext,id:string,fence:number,tx:Transaction):Promise<void>{
+    const row=(await tx.query('SELECT * FROM operations WHERE operation_id=$1',[id])).rows[0],lock=this.customPreflightLocks.get(row?.name);if(!lock)return;
+    const policy=await this.auth.check(ctx,'workers.execute',undefined,tx);requireCondition(policy.kind==='worker','FORBIDDEN_ACTION','Worker identity required');
+    requireCondition(row.tenant_id===policy.tenantId&&policy.scopes.includes(row.scope_id),'FORBIDDEN_SCOPE','Operation is outside worker scope');
+    requireCondition(row.worker_id===policy.workerId&&Number(row.fencing_token)===fence,'FENCING_STALE','Worker or fence is stale');await lock(tx,row);
+  }
   customClaimers=new Map<string,(ctx:AuthContext)=>Promise<any>>();
   customPreflights=new Map<string,(ctx:AuthContext,id:string,fence:number,tx:Transaction,lightweight?:boolean)=>Promise<any>>();
+  customOutsidePreflights=new Map<string,(ctx:AuthContext,id:string,fence:number,lightweight?:boolean)=>Promise<any>>();
   requiredWorkerCapabilities=new Set<string>();
   async workerCapability(ctx:AuthContext,row:any,tx:Transaction):Promise<void>{
     if(!this.requiredWorkerCapabilities.has(row.name)&&!row.required_worker_capability)return;
@@ -43,7 +53,7 @@ export class Execution {
     requireCondition(lease, 'LEASE_EXPIRED', 'Execution lease has expired');
     return row;
   }
-  async preflight(ctx:AuthContext,id:string,fence:number,tx?:Transaction,lightweight=false):Promise<any>{const check=async(client:Transaction)=>{const row=await this.lease(ctx,id,fence,client);await this.workerCapability(ctx,row,client);const handler=this.customPreflights.get(row.name);requireCondition(handler,"FORBIDDEN_ACTION","Execution preflight is not registered");return handler(ctx,id,fence,client,lightweight);};return tx?check(tx):this.store.transaction(check);}
+  async preflight(ctx:AuthContext,id:string,fence:number,tx?:Transaction,lightweight=false):Promise<any>{if(!tx){const name=(await this.store.pool.query('SELECT name FROM operations WHERE operation_id=$1',[id])).rows[0]?.name,outer=this.customOutsidePreflights.get(name);if(outer)return outer(ctx,id,fence,lightweight);}const check=async(client:Transaction)=>{await this.lockPreflight(ctx,id,fence,client);const row=await this.lease(ctx,id,fence,client);await this.workerCapability(ctx,row,client);const handler=this.customPreflights.get(row.name);requireCondition(handler,"FORBIDDEN_ACTION","Execution preflight is not registered");return handler(ctx,id,fence,client,lightweight);};return tx?check(tx):this.store.transaction(check);}
   async heartbeat(ctx: AuthContext, id: string, fence: number): Promise<any> {
     return this.store.transaction(async tx => {
       const { row } = await this.preflight(ctx,id,fence,tx,true);
@@ -61,10 +71,10 @@ export class Execution {
     await this.tasks.wake(tx,row.task_id,'worker-receipt');
   }
   async expire(): Promise<void> {
-    const expired = (await this.store.pool.query(`SELECT o.operation_id,o.task_id,o.name FROM operations o LEFT JOIN leases l USING(operation_id)
+    const expired = (await this.store.pool.query(`SELECT o.operation_id,o.task_id,o.input_revision_id,o.name FROM operations o LEFT JOIN leases l USING(operation_id)
       WHERE o.status='running' AND (l.expires_at<=clock_timestamp() OR l.operation_id IS NULL)`)).rows;
     for (const item of expired) await this.store.transaction(async tx => {
-      if(this.customExpirations.has(item.name))await this.tasks.internal(tx,item.task_id,true);
+      if(this.customPreflightLocks.has(item.name))await this.customPreflightLocks.get(item.name)!(tx,item);else if(this.customExpirations.has(item.name))await this.tasks.internal(tx,item.task_id,true);
       const row = (await tx.query(`SELECT o.* FROM operations o LEFT JOIN leases l USING(operation_id) WHERE o.operation_id=$1
         AND o.status='running' AND (l.expires_at<=clock_timestamp() OR l.operation_id IS NULL) FOR UPDATE OF o`, [item.operation_id])).rows[0];
       if (!row) return;

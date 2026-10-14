@@ -1,0 +1,18 @@
+import assert from 'node:assert/strict';
+import {sandboxTest,until} from './harness.ts';
+import {meridianFlow} from '../fixtures/meridian-flow.ts';
+import {Tasks} from '../../packages/tasks/src/index.ts';
+import {Store} from '../../packages/storage/src/index.ts';
+
+sandboxTest('Shared provider locking: a transition receipt and another task event cannot invert the resource and global event clock',async t=>{
+ const f=await meridianFlow(t),{h}=f;await h.request('/v1/workers/register',{capabilities:['flow.invoke']},'lab-east-01');const first=await f.submit('shared-resource-first'),second=await f.submit('shared-resource-second');const claim=await until(async()=>await h.request('/v1/workers/claim',{},'lab-east-01'),30_000);assert.equal(claim.taskId,first.taskId);assert.equal((await h.request(`/v1/workers/operations/${claim.operationId}/preflight`,{fencingToken:claim.fencingToken},'lab-east-01')).authorization.kind,'transition');
+ const resourceId=`provider:${f.resource.assetId}`;await h.db.query('INSERT INTO resources(tenant_id,resource_id) VALUES($1,$2) ON CONFLICT DO NOTHING',['tnt_lab',resourceId]);const barrier=await h.db.connect();await barrier.query('BEGIN');const pid=Number((await barrier.query('SELECT pg_backend_pid() AS pid')).rows[0].pid);await barrier.query('SELECT task_id FROM tasks WHERE task_id=$1 FOR UPDATE',[second.taskId]);await barrier.query('SELECT task_id FROM flow_runs WHERE task_id=$1 FOR UPDATE',[second.taskId]);await barrier.query('SELECT operation_id FROM operations WHERE task_id=$1 ORDER BY operation_id FOR UPDATE',[second.taskId]);await barrier.query('SELECT step_key FROM flow_steps WHERE task_id=$1 ORDER BY step_key FOR UPDATE',[second.taskId]);await barrier.query('SELECT resource_id FROM resources WHERE tenant_id=$1 AND resource_id=$2 FOR UPDATE',['tnt_lab',resourceId]);
+ const storageCodes=new Set<string>();h.server?.stderr?.on('data',(bytes:Buffer)=>{if(/\b40P01\b/.test(bytes.toString()))storageCodes.add('40P01');});const store=Object.create(Store.prototype) as Store;store.pool=h.db;const tasks=new Tasks(store,null as any);let report:any,eventError:any;const reported=h.raw(`/v1/workers/operations/${claim.operationId}/report`,{token:await h.login('lab-east-01'),body:{fencingToken:claim.fencingToken,inputRevisionId:claim.inputRevisionId,status:'succeeded',output:{result:{schema:'hub-execution-transition/1',state:{stage:'prepared'},actions:[{kind:'provider.call',stepId:'prepare',occurrence:0,resource:'gateway',tool:'meridian_prepare',args:{}}]}}}}).then(value=>{report=value;});
+ try{
+  await until(async()=>(await h.db.query("SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query ILIKE '%resources%' AND $1=ANY(pg_blocking_pids(pid))",[pid])).rowCount,10_000);
+  // The second transaction already owns its task/ledger/provider rows and uses
+  // the real emitter. The first is a real fenced HTTP receipt, not mocked SQL.
+  try{await tasks.emit(barrier,second.taskId,'test.transaction-barrier',{reason:'synthetic-lock-order'});await barrier.query('COMMIT');}catch(error){eventError=error;await barrier.query('ROLLBACK');}
+  await reported;assert.deepEqual([...storageCodes],[],'The real fenced receipt caught PostgreSQL deadlock 40P01');assert.equal((eventError as any)?.code,undefined,'The actual PostgreSQL wait cycle raised a deadlock');assert.equal(report.status,200,JSON.stringify(report.body));assert.equal(report.body.data.status,'succeeded');assert.equal((await h.db.query("SELECT count(*)::int AS n FROM flow_steps WHERE task_id=$1 AND step_id='prepare'",[first.taskId])).rows[0].n,1);assert.equal(f.provider.state.submissions,0);
+ }finally{await barrier.query('ROLLBACK').catch(()=>{});barrier.release();await reported;}
+});
