@@ -426,3 +426,11 @@ receiptPolicy.toolArguments 以工具名、目标参数名为键，每项只能�
 receiptPolicy.byteArguments 以工具名、实际 wire 参数名为键，值是 action.byteArgs 的逻辑参数名。例如 `{case_submit:{xlsx_b64:'workbook'}}` 对应产品动作 `byteArgs:{workbook:'workbook'}`；已有动作直接使用 xlsx_b64 时可以不声明映射。映射必须一对一覆盖所有逻辑原件参数，不能漏掉或复制同一参数；目标与普通参数 / 租约权限冲突时拒绝。C 的请求摘要仍绑定原动作与获授权的 B 引用，D 在调用时取原字节，wire byteBindings 和回执核验使用实际参数名。不会为工作簿扩大普通 JSON 字符串预算。
 
 status/results/reconcile 仍由 taskIdArgument 注入持久远端身份，并只按工具明确声明的租约映射补字段；目标为只收 task_id 的工具时，argumentsByTool 对这些名字写空对象。不将 lease_id/token 或 submit 的 module/base64 带入观察调用。
+
+### C3：按阶段核验 provider 回执
+
+`receiptPolicy.receipts` 分 submit / status / results / 可选 reconcile，每项声明自己的 receiptSchema、remoteIdPath，以及可选 sha256Path / caseIdsPath / completion。completion 为 `{path,runningValues,terminalValues,rcPath?}`：path 可以指向 state、channel 或有限整数 rc，词表互斥；rc 只是 runner 退出事实，ready / rc=0 都不扩大为逐用例通过。未声明 receipts 时继续完整旧 echo 协议；新模式不要求网关不存在的 request_hash / input_sha256 / byte_hashes，也不把工作簿 SHA 当整份 FlowSubmission 的摘要。
+
+新模式要求批准的 `identityProjection:{stepId,path,export,byteArgument,sha256Path,caseIdsPath,idPath?}`。byteArgument 是映射后的实际 wire 参数。C 在意图前从本任务 / 输入修订的成功 tool.call 查询实际 action、方法 pin、请求摘要、受控槽引用及 B 投影原件，核对其确实接收同份工作簿，再按字段路径取 SHA 与身份列表。来源不是 caller value；投影原件、operationId、方法 pin、原件 SHA 和身份保存在 receipt_facts（迁移 42），此时不产生 remote_identity。submit 必须核原件 SHA / 身份，results 必须核原件 SHA，随后阶段均核持久远端身份；历史报告重新核冻结证据，撤权不抹已发生事实。
+
+D 成功回报先按 SHA 冻结原件，再做阶段校验；不匹配原件仍留存为未验证证据。已 submitted 后的查询 / 心跳拒绝不能当派发前拒绝，仍 unknown、不释放也不重派；已证 status 终态先持久化，随后 results 拒绝或 SHA 错误仅使解释失败，终态与释放事实保留。已证终态后的不完整结果渠道可由批准产品方法解释为 partial，不猜设备结果。原生 1.1.1 不参与本链。

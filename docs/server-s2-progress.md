@@ -1107,3 +1107,9 @@ C 拒绝产品实参 / byteArgs 遮蔽租约字段，只延后注入字段的 re
 批准的 receiptPolicy.toolArguments 只从整份冻结 FlowSubmission 的安全路径或有限 literal 派生普通参数；byteArguments 一对一把 action.byteArgs 逻辑参数映到实际 wire 名称。C 入队、D 调用、byteBindings / 回执哈希与撤权后的历史身份核对使用同一映射链，原动作 requestHash 和原件引用保持冻结。普通映射不能覆盖产品 args、原件或租约权限，不读 profile / 环境 / 密钥；未声明工具、非有限 JSON、原型字段、超长字符串、字节遗漏或重复全部拒绝。submit 的 module 可以来自批准 literal，status / results 仍只传批准 taskIdArgument 与各自租约映射。
 
 先复现旧契约拒新字段及真实 worker 缺 wire 参数的红，再实现。新增纯映射 **4/4**、真实 executeFlowStep 的 64 KiB 原件 / wire 参数 / module / task-only 观察 **1/1**、真实 PostgreSQL+worker 整链 **1/1**；历史回执 / 提交后拒绝 / 协议角色相关 **6/6**，均无 skip。第二项目标共 **12/12**，typecheck / diff 通过。原生 1.1.1 与 packs/apv 零改动；严格外部包链尚待阶段回执与准备观察，不称现网通过。只本地签署，不跑全套、不 push / 部署 / 接真实环境。
+
+## 99：C3 分阶段回执与批准原件身份投影
+
+新增 receiptPolicy.receipts 按 submit / status / results / reconcile 声明独立 schema、remote 身份及 state/channel/rc 判别；没有新声明时完整兼容旧 echo 校验与返回形状。新模式必须具有提交原件 SHA / 身份列表、结果原件 SHA 与 identityProjection，缺关联 fail closed。C 只从本修订成功的冻结 Tool path/export/byteSlots 与 B 原件读取身份投影，核原操作 requestHash、所用受控原件及投影字节 SHA；不采用客户端 value 的 caseIds 或 SHA。追加迁移 **42** 保存 receipt_facts 于 intent 前，submit 后复制至 remote_identity；physical wire 参数、历史证明与阶段回读共用已批准映射。成功 raw 先按 SHA 留 B 再核验，提交后 schema/身份拒绝仍 unknown / 不释放；已持久 status 终态后的坏结果或拒绝只影响解释，释放与完整原件继续留存。
+
+纯机制旧实现 **1/4**，新机制补缺关联声明负例后 **5/5**；独立合成模块实际 PostgreSQL+worker 七叶 **7/7，无 skip**，分别覆盖无虚构 state/echo 的提交、status state、results channel/rc、坏提交 SHA、提交后 status 拒绝、终态后坏结果 SHA / 拒绝、渠道不完整 partial，以及拒绝客户端冒充身份投影。初次整链因夹具缺 Tool.description 被契约拒绝；补齐后发现 C 对已去正文但仍含 encoding 的 review 引用重算严格 ref-only requestHash 而 failed / 零 RPC，规范化引用形状后七叶绿，未放宽断言或时限。相关方法联合 **25/25**（含新五叶与旧回执 / 映射 / 租约消费者），typecheck / diff 通过。此为定向合成证明，严格外部产品包还须后续准备阶段，不能称真实网关或设备可用；原生 1.1.1 / packs/apv 字节未改。只本地签署，不跑全套、不 push / 部署 / 接真实系统。

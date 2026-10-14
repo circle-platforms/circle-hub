@@ -28,6 +28,20 @@ function strictTools(){
  ].map(tool=>({...tool,description:'Synthetic strict cexg protocol Tool',minimumRole:tool.name==='init_device'?'admin':'member',approval:false,annotations:{readOnlyHint:tool.effect==='read',destructiveHint:tool.effect==='write'}}));
 }
 
+function strictReceiptPolicy(frozen:Awaited<ReturnType<typeof frozenApvModule>>){
+ const object=(properties:any={},required:string[]=[])=>({type:'object',properties,required,additionalProperties:true}),text={type:'string'},id={task_id:text,ok:{const:true}},base={remoteIdPath:['task_id']},leased={idArgument:'lease_id',fenceArgument:'token'};
+ return {schema:'hub-provider-observation/1',submitTool:'case_submit',statusTool:'case_status',resultTool:'case_results',reconcileTool:'case_status',taskIdArgument:'task_id',
+  identityProjection:{stepId:'workbook',path:'tools/workbook.ts',export:Buffer.from(frozen.files.find(file=>file.path==='tools/workbook.ts')!.base64,'base64').toString().includes('export async function projectWorkbook(')?'projectWorkbook':'readExecutionWorkbook',byteArgument:'xlsx_b64',sha256Path:['sha256'],caseIdsPath:['cases'],idPath:['autoid']},
+  receipts:{
+   submit:{...base,receiptSchema:object({...id,sha256:text,case_ids:{type:'array',items:text}},['ok','task_id','sha256','case_ids']),sha256Path:['sha256'],caseIdsPath:['case_ids']},
+   status:{...base,receiptSchema:object({...id,state:text,rc:{type:['integer','null']}},['ok','task_id','state']),completion:{path:['state'],runningValues:['queued','running'],terminalValues:['done'],rcPath:['rc']}},
+   results:{...base,receiptSchema:object({...id,channel:text,rc:{type:'integer'},xlsx_sha256:text},['ok','task_id','channel','rc','xlsx_sha256']),sha256Path:['xlsx_sha256'],completion:{path:['channel'],runningValues:['pending'],terminalValues:['ready'],rcPath:['rc']}},
+  },
+  lease:{acquireTool:'lease_acquire',heartbeatTool:'lease_heartbeat',releaseTool:'lease_release',idPath:['lease_id'],fencePath:['token'],idArgument:'lease_id',fenceArgument:'token',ttlSecondsPath:['expires_in_s'],argumentsByTool:{env_prepare:leased,bed_topology:leased,case_submit:leased,lease_heartbeat:leased,lease_release:leased,case_status:{},case_results:{}}},
+  refusal:{stagePath:['stage'],preDispatchStages:['lease','environment','validation'],dispatchedPath:['dispatched'],remoteIdPath:['task_id'],codePath:['code'],reasonPath:['reason']},
+ };
+}
+
 function strictState(){return {secret:randomBytes(32).toString('hex'),calls:[] as {name:string;args:any;meta:any}[],submissions:0,releases:0,workbook:Buffer.alloc(0),leaseId:'',fence:0,leaseActive:false,taskId:'synthetic_cexg_task_301'};}
 function strictReply(state:ReturnType<typeof strictState>,name:string,args:any):Record<string,any>{
  const tool=strictTools().find(tool=>tool.name===name);assert.ok(tool,'The strict fixture has no undeclared Tool');validateProviderSchema(tool.inputSchema,args);
@@ -75,7 +89,7 @@ test('C cexg strict protocol: the approved unchanged external APV flow must comp
  const frozen=await frozenApvModule();t.diagnostic(`Frozen external APV ${frozen.module.version}, ${frozen.commit}, ${frozen.module.digest}`);assert.equal(frozen.module.version,'1.3.0');
  const file=frozen.files.find(file=>file.path==='flows/apv-case-execute-v2.json');assert.ok(file,'Package ABI: declare the v2 descriptor');const descriptor=JSON.parse(Buffer.from(file.base64,'base64').toString());assert.equal(descriptor.id,APV_MODULE_FLOW,'Package ABI: select the new flow id');FlowDefinition.parse(descriptor);
  const {sandboxHost,until}=await import('./harness.ts');if(!sandboxHost.available){t.skip(sandboxHost.reason);return;}
- const provider=await strictProvider(t),f=await apvModuleFlow(t,frozen,{provider,tools:strictTools()}),{h}=f;await h.startWorker();const task=await f.submit();
+ const provider=await strictProvider(t),f=await apvModuleFlow(t,frozen,{provider,tools:strictTools(),receiptPolicy:strictReceiptPolicy(frozen)}),{h}=f;await h.startWorker();const task=await f.submit();
  const status=await until(async()=>{const row=await h.status(task.taskId);return ['delivered','failed','cancelled','unknown','waiting-input'].includes(row.phase)?row:false;},30_000),result=await h.request(`/v1/tasks/${task.taskId}/result`),steps=(await h.db.query('SELECT step_id,kind,action,status,intent,terminal,evidence_ref,observation FROM flow_steps WHERE task_id=$1 ORDER BY created_at,step_key',[task.taskId])).rows;
  const pendingBatch=[...steps].reverse().find(step=>step.kind==='transition')?.observation?.facts?.result?.actions,proposed=pendingBatch?.find((action:any)=>action.kind==='provider.call'),phase=steps.find(step=>step.status==='failed'||step.status==='unknown')?.step_id??(status.phase==='failed'&&proposed?`C.validateBatch:${proposed.tool}`:'delivery');t.diagnostic(`Strict protocol stage=${phase}, phase=${status.phase}, code=${result.error?.code??'none'}, RPC Tools=${provider.state.calls.map(call=>call.name).join(',')||'none'}, case_submit=${provider.state.submissions}, writeIntent=${steps.filter(step=>step.intent).length}`);
  // A correctly diagnosed refusal is still a red acceptance. Do not relabel
