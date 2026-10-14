@@ -1171,3 +1171,11 @@ FlowDefinition 可显式声明 historyMode=controlled；内联 observations / ex
 失败观察原先已有 facts.error，但大 details 会使整个错误元数据被省略。本项保留 error.code / registered / 有界 message，详情独立按 F 预算投影；未经登记的报告码固定为 INTERNAL_ERROR、reportedRegistered=false，原文与完整 canonical report 留 B，不把未登记产品判断码变成平台终态码。失败 Tool 未给错误时只披露固定 INTERNAL_ERROR / missingError，不推断真实原因；成功的空对象不添加失败事实。registered 仅表示注册表成员性，不表示故障因果已经验证。中英附录补清该形状。
 
 先验收：新纯旧 **0/4**→新 **4/4**，真实脚本 Tool / worker 旧 **0/1**→新 **1/1**，大错误仍保分类且 B 原报告 SHA 不变、空成功没有 error；旧报告消费者 **2/2**、record 投影 **3/3**，定向共 **10/10，无 skip**。typecheck / diff 通过，PG 串行已释放。不修改原生 / 独立包，不跑全套，不 push / 部署或触现场环境。
+
+## 105：C 后续 2，核对后的结果读绑定原投递
+
+普通 resultTool 读先由 C 解析同任务 / 输入修订 / 资源 pin / 远端 id 的唯一已证终态父写，并冻结 resultBinding。submitted 原件 SHA 从真实事件持久化，同事件重放核同 SHA、终态更新保留；reconcile 以独立核过的 status 原件为终态证明。原写 requestHash / inputSha256 / byteHashes / 投影证明分别核对，不能用普通读的空 byteArgs 代替。worker 与 C 回报独立核 receipts.results；旧 echo 仍核全部原写散列，没有 submitted 原件证明的旧运行拒绝补造。
+
+坏回执和报告前失效的关联落只读 failed，不挂 running、不冻结资源或重派；未再证实的关联不追加父缺口。完整缺口表按 SHA 留 B、逐次回读去重，父只保有界摘要 / 数量 / 真实制品引用，既有终态、释放及原件引用不覆盖。轻预检每次核父元数据和当前授权，不读 B 字节；首次完整预检与报告仍回读原件。中英附录同步。
+
+先写验收，前两次仅暴露夹具的 profile 字段 / 重复登记错误，不计产品红。修夹具后旧实现真实 **0/3**：缺冻结关联，两个坏 SHA 被当 succeeded（含 worker 伪报成功）。修后四个不同边界均实际绿；首轮 **3/4**、伪成功单复跑 **1/1**、去掉 gate 在途停启窗口后受影响两叶 **2/2**，未确认首轮超时的具体数据库挂点，不归为负载假红。原断言及 30 秒预算未变。纯新 **6/6**（含 257 缺口、有界真实摘要、轻预检零 B 和旧 echo）及相关旧边界 **12/12**，旧阶段正例 **1/1**，全部无 skip；typecheck / diff 通过。只本地签署，PG 串行退出，不跑全套或触现场。

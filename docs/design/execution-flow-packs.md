@@ -467,3 +467,12 @@ C5 的 ledger / B 绑定也要求一致的数据库锁序：通用 flow 的任�
 ### 失败 Tool 观察与空成功结果
 
 C 记录的失败观察必须有 `facts.error`，保留有界的 `{code, registered:true, message, details}`。`registered` 只表示投影后的平台码属于 F 登记簿，不证明报错原因或设备效果；未登记的回报码投影为 `INTERNAL_ERROR`，并标 `reportedRegistered:false`，任意原码仅保留在 B 的完整 worker 报告。错误详情超过元数据预算时，仅 `details` 变为含 SHA、大小和省略原因的摘要，不再连同分类码整体省略；超长 message 使用有界说明，原错误仍可从 B 核对。失败回报没给 error 时，C 用 `INTERNAL_ERROR` 和 `details.missingError:true` 披露缺失，不猜真实原因。成功 Tool 返回 `{}` 仍是成功的空结果，不附失败 error。上述投影不改变回报原字节、fence、读写效果或独立已证的 D 终态。
+
+
+### 独立核对之后的普通结果读取
+
+普通只读 provider 动作调用批准 policy 的 `resultTool` 时，C 先找到同任务、输入修订、资源 pin 和远端 id 的唯一已证终态写操作。C 生成并持久化内部 `resultBinding`，冻结父操作 id、原请求/输入摘要、完整 byteHashes、原件投影证明及真实 submitted / terminal B 原件 SHA；读动作自己的摘要和空 byteArgs 不代替原写身份。worker 和 C 回报各自按 `receipts.results`（旧 echo policy 保持兼容）核对结果；核对后的父观察可提供已验证的终态 status 原件，仍须回读并验 SHA。没有真实 submitted 原件证明的旧运行、未独立核对的 unknown 写、歧义或跨任务/修订/资源关联都拒绝，不能靠当前 input.value 补造证明。
+
+坏 SHA、错误远端 id 或回报前关联失效落只读 failed，并保留原件和有界登记错误，不冻结资源、不重派原写，也不把读标成 D 终态。只有父证明重新核实后才追加父的解释缺口；完整缺口表按 SHA 存 B，父只带有界摘要、数量和真实制品引用，追加回读旧表并去重，不覆盖既有原件、终态和租约释放事实。解释缺口的 partial 交付仍由产品 transition 提议并经过交付闸，平台不伪造成功用例。
+
+首次实际派发与 C 回报完整回读并核 SHA；已有绑定的 lightweight 预检只重核父元数据、分区、pin、状态、远端 id、请求及原件引用和绑定摘要，不读 B 字节，也不缓存活授权。`sourceByteProofSha256` 在单原件/投影时是该原件 SHA，多 byteHashes 的旧 echo 情形是整个映射的摘要，完整映射仍逐项保留。
