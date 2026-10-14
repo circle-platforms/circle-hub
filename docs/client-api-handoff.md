@@ -631,6 +631,12 @@ catalog 路径按实际独立包检出位置在运行时提供。REF 可为本�
 
 分支随后前进到 `6a8cb799125a749e69ba4b6f32de8ee1a92437ab`，验收按该 SHA 冻结 APV 1.3.0（digest `54c681c1e8380cad5509c7dbf18774052b432d0b903c59ebaeb6748239a2df48`），完整 **1/1 通过，无 skip**。三个 verify 挂点的实际处理器决定与 B 证据 SHA、56,413 字节原件的 byteArgs / SHA、单次 case_submit、逐步 / 两个检查点和 unmapped 全部原断言通过；旧 `5cdbc2b` 红记录保持。此结果仅属于下面的 synthetic provider protocol，不能代替严格 cexg 验收或批准现网切换。
 
+二轮复核发现上述路径仍携带流程外预生成的 workbookBook / 命令投影，不能证明正式 flow 自行读取全部原件。夹具现改为只提供本场景的 build、冻结 pins 和四个 B 受控槽：workbook、command-tree、command-check、function-contract；不提供 book、命令清单、client、tree 或 present。command-check 为 `{result:{build,buildId,sourceSha256,ruleVersion,commands:[...]},evidence:[]}`，由独立合成树经确定性 commandCheck 计算，sourceSha256 对应树原字节，未伪造 evd；正式产品依原件算 Hook 布尔，不能自造命中。
+
+相同命令缺树、合法主机不在已批准床、合法契约中方法 disabled 三个负例与正例共四项。它们要求正式 Workbook Tool 读取原件、真实 C frame 的 expectedOccurrences、实际 B 投影 / 动态 hub.result.* 槽及后续 byteSlots，逐项核源 SHA；负例须有对应 Hook 的真实 block 与 B 决策、`HOOK_FAILED` 和 `error.details.code`，解析 / schema 或错挂点拒绝不能算通过。合成工作簿保留 33 KiB 描述以触发实际大投影，不为绿删小；小结果原有 inline 表示仍合法，槽必须来自 C 的实际回报。
+
+新二轮门禁固定 `6a8cb7` 为 **0 pass / 4 fail / 0 skip**：包仍未正式读 B 工作簿，全部先停在 verify.workbook，且误把顶码写为 COMMAND_NOT_IN_TREE；case_submit=0。来源缺失 / 不在床 / disabled 的预期规则尚未被正确路径到达。旧 1/1 正向旁证保持为当时记录，不套为新门禁绿。默认四项 skip，不访问外部包或启动 PostgreSQL；与严格文件同跑为纯协议 **1 pass、5 skip**。新 ref 需另行冻结后重验，运行命令不变。
+
 本验收只使用 A3 合成协议：env_prepare / bed_topology 可独立只读，status/results 接受 worker 携带的可选租约字段，回执声明合成的 request_hash / input_sha256 / byte_hashes / state，用于原操作机械关联；xlsx_b64 和 expires_in_s 使用网关的字段名。它不证明现网网关已支持这些关联字段、参数或调用时序。实际网关的两个准备观察要求远端租约；后续可选 receiptPolicy.prepare 的方向见[执行流设计 A2 附录](design/execution-flow-packs.md#附录-a2有界-transition-内部契约)的驱动注入形状小节，本轮未实现，也不宣布现网切换。
 
 ### C 严格 cexg 协议目标验收

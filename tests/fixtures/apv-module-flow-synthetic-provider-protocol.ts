@@ -6,10 +6,11 @@ import {writeFile} from 'node:fs/promises';
 import {createServer} from 'node:http';
 import type {TestContext} from 'node:test';
 import {zipSync,unzipSync} from 'fflate';
+import ExcelJS from 'exceljs';
 import {ModuleCatalog,sha256} from '../../packages/contracts/src/index.ts';
 import {verifyModule} from '../../packages/modules/src/verify.ts';
 import {validateProviderSchema} from '../../packages/execution/src/flow-provider.ts';
-import {callFrozenTool} from '../../packages/methods/src/tool-runtime.ts';
+import {commandCheck} from '../../packages/methods/src/command-tree.ts';
 import type {Harness} from '../acceptance/harness.ts';
 import {executionWorkbook} from './execution-workbook.ts';
 
@@ -34,12 +35,13 @@ export async function frozenApvModule(environment:NodeJS.ProcessEnv=process.env)
  return {...verifyModule(module,files),commit,requestedRef,catalogPath};
 }
 
-export async function apvModuleWorkbook(){
- const original=await executionWorkbook({command:'service inspect alpha',hostCommand:{host:'routera',command:'echo synthetic'}});
+export const apvProjectionDescription='Synthetic projection original: '+'x'.repeat(33*1024);
+export async function apvModuleWorkbook(host='routera'){
+ const original=await executionWorkbook({command:'service inspect alpha',hostCommand:{host,command:'echo synthetic'}}),document=new ExcelJS.Workbook();await document.xlsx.load(original as any);document.worksheets[0].getCell('D3').value=apvProjectionDescription;const described=Buffer.from(await document.xlsx.writeBuffer());
  // An unrelated synthetic ZIP member makes the valid workbook cross the
  // ordinary 32-KiB string boundary without adding fabricated device steps.
  const filler=Buffer.alloc(48*1024);let seed=17;for(let i=0;i<filler.length;i++){seed=(Math.imul(seed,1664525)+1013904223)>>>0;filler[i]=seed>>>24;}
- const bytes=Buffer.from(zipSync({...unzipSync(original),'synthetic/padding.bin':filler}));assert.ok(bytes.toString('base64').length>32768);return bytes;
+ const bytes=Buffer.from(zipSync({...unzipSync(described),'synthetic/padding.bin':filler}));assert.ok(bytes.toString('base64').length>32768);return bytes;
 }
 
 export const apvSyntheticBuild='SYNTHETIC_BUILD_301';
@@ -98,7 +100,7 @@ export async function apvModuleProvider(t:TestContext){
 }
 
 export interface ApvFlowProvider {endpoint:string;state:{secret:string;calls:{name:string;args:any;meta:any}[];submissions:number;releases:number;workbook:Buffer}}
-export async function apvModuleFlow(t:TestContext,frozen:Awaited<ReturnType<typeof frozenApvModule>>,options:{provider?:ApvFlowProvider;tools?:ReturnType<typeof apvProviderTools>}={}){
+export async function apvModuleFlow(t:TestContext,frozen:Awaited<ReturnType<typeof frozenApvModule>>,options:{provider?:ApvFlowProvider;tools?:ReturnType<typeof apvProviderTools>;commandMissing?:boolean;hostOutsideBed?:boolean;contractDisabled?:boolean}={}){
  const {setup}=await import('../acceptance/harness.ts');
  // Node omits undefined environment keys in children. Clear both names so an
  // operator's ambient real profile cannot become this synthetic test's input.
@@ -109,17 +111,27 @@ export async function apvModuleFlow(t:TestContext,frozen:Awaited<ReturnType<type
  const configuration={schema:'hub-provider/1',transport:'streamable-http',runtimeProfileType:'execution',runtimeProfileRef:'apvfixture',credentialMode:'static-secret',receiptPolicy},declaration={reads:['synthetic-bed'],writes:['synthetic-device-config'],credentials:[] as string[],allowedTestHosts:['routera'],provides:{tools:options.tools??apvProviderTools()}};
  const draft=await h.request('/v1/assets',{scopeId:'scp_lab',kind:'connector-instance',name:'Synthetic APV module provider',version:'1.0.0',configuration,declaration,readers:['prn_alice','prn_bob']}),credential=await h.request(`/v1/assets/${draft.assetId}/credentials`,{version:'1.0.0',mode:'static-secret',value:provider.state.secret}),resource=await h.request('/v1/assets',{assetId:draft.assetId,scopeId:'scp_lab',kind:'connector-instance',name:draft.name,version:'2.0.0',configuration,declaration:{...declaration,credentials:[credential.assetId]},readers:['prn_alice','prn_bob']});
  await h.request(`/v1/assets/${resource.assetId}/lifecycle`,{version:resource.version,sha256:resource.sha256,state:'approved'},'bob');await h.request(`/v1/assets/${resource.assetId}/lifecycle`,{version:resource.version,sha256:resource.sha256,state:'running'});
- const workbook=await apvModuleWorkbook(),tree={heads:[{command:apvDeviceCommand,present:true}]},contract={schema:'ist.excel.function-contract',complete:true,objects:[{e:'APV_0',status:'enabled'},{e:'test_env',status:'enabled'}],entries:[{e:'APV_0',f:'cmd_config',status:'enabled'},{e:'test_env',f:'routera',status:'enabled'},{e:'APV_0',f:'reboot',status:'disabled'}]};
- const workbookBook=await callFrozenTool(new Map(frozen.files.map(file=>[file.path,Buffer.from(file.base64,'base64').toString('utf8')])),frozen.manifest.tools,'tools/workbook.ts','readExecutionWorkbook',[workbook]);assert.equal(workbookBook.sha256,sha256(workbook));
- const originals=[{path:'case.xlsx',role:'workbook',bytes:workbook},{path:'command-tree.json',role:'command-tree',bytes:Buffer.from(JSON.stringify(tree))},{path:'excel-contract.json',role:'function-contract',bytes:Buffer.from(JSON.stringify(contract))}],files=[];
+ const host=options.hostOutsideBed?'outside-bed':'routera',workbook=await apvModuleWorkbook(host),tree={commands:[{name:options.commandMissing?'service inspect beta':apvDeviceCommand,scope:'configuration',arguments:[]}]},treeBytes=Buffer.from(JSON.stringify(tree)),checked={result:{build:apvSyntheticBuild,buildId:apvSyntheticBuild,sourceSha256:sha256(treeBytes),...commandCheck(tree.commands,[apvDeviceCommand])},evidence:[]},contract={schema:'ist.excel.function-contract',complete:true,objects:[{e:'APV_0',status:'enabled'},{e:'test_env',status:'enabled'}],entries:[{e:'APV_0',f:'cmd_config',status:'enabled'},{e:'test_env',f:host,status:options.contractDisabled?'disabled':'enabled'},{e:'APV_0',f:'reboot',status:'disabled'}]};
+ const originals=[{path:'case.xlsx',role:'workbook',bytes:workbook},{path:'command-tree.json',role:'command-tree',bytes:treeBytes},{path:'command-check.json',role:'command-check',bytes:Buffer.from(JSON.stringify(checked))},{path:'excel-contract.json',role:'function-contract',bytes:Buffer.from(JSON.stringify(contract))}],files=[];
  for(const original of originals){const uploaded=await h.request('/v1/sources',{scopeId:'scp_lab',fileName:original.path,contentBase64:original.bytes.toString('base64')});assert.equal(uploaded.sha256,sha256(original.bytes));files.push({path:original.path,role:original.role,sourceRevisionId:uploaded.sourceRevisionId,sha256:uploaded.sha256});}
  const source=await h.request('/v1/source-artifacts',{scopeId:'scp_lab',name:'Synthetic APV execution originals',version:'1.0.0',metadata:{buildName:apvSyntheticBuild,synthetic:true},files,readers:['prn_alice','prn_bob']});await h.request(`/v1/assets/${source.assetId}/lifecycle`,{version:source.version,sha256:source.sha256,state:'approved'},'bob');
  const installed=await h.raw('/v1/modules/install',{token:await h.login(),headers:{'x-scope-id':'scp_lab'},body:{module:frozen.module,files:frozen.files}});assert.equal(installed.status,201,JSON.stringify(installed.body));const method=installed.body.data;assert.equal(method.digest,frozen.module.digest);assert.ok(method.changeSetId);const change=await h.request(`/v1/change-sets/${method.changeSetId}`,undefined,'bob');assert.equal(change.changeSetId,method.changeSetId);await h.request(`/v1/assets/${method.assetId}/lifecycle`,{version:method.assetVersion,sha256:method.assetSha256,state:'approved'},'bob');
- const input={flowId:APV_MODULE_FLOW,methodPin:assetPin(method),resources:{gateway:assetPin(resource)},sources:{originals:assetPin(source)},value:{build:apvSyntheticBuild,gatewayAssetId:'gateway',client:'routera',testEnvEnabled:['routera'],tree,workbookBook,deviceCommands:workbookBook.commands,hostDispatches:workbookBook.hostCommands},controlledBytes:originals.map(original=>({slot:original.role==='workbook'?'workbook':original.role,role:original.role,source:'originals',path:original.path}))};
- return {h,provider,method,resource,source,workbook,input,submit:()=>h.request('/v1/tasks/submit',{scopeId:'scp_lab',capabilityPackId:'module-execute',title:'Synthetic APV module execution',idempotencyKey:'apv-module-flow-301',input})};
+ const input={flowId:APV_MODULE_FLOW,methodPin:assetPin(method),resources:{gateway:assetPin(resource)},sources:{originals:assetPin(source)},value:{build:apvSyntheticBuild},controlledBytes:originals.map(original=>({slot:original.role,role:original.role,source:'originals',path:original.path}))};
+ return {h,provider,method,resource,source,workbook,input,originals,checked,submit:()=>h.request('/v1/tasks/submit',{scopeId:'scp_lab',capabilityPackId:'module-execute',title:'Synthetic APV module execution',idempotencyKey:'apv-module-flow-301',input})};
 }
 
 export async function terminalFlowState(h:Harness,taskId:string){
  const row=await h.status(taskId);if(!['delivered','failed','cancelled','unknown','waiting-input'].includes(row.phase))return false;
- if(row.phase!=='delivered')throw new Error(`APV module stopped at ${row.phase}: ${JSON.stringify(await h.request(`/v1/tasks/${taskId}/result`))}`);return row;
+ if(row.phase!=='delivered'){const result=await h.request(`/v1/tasks/${taskId}/result`);throw new Error(`APV module stopped at ${row.phase}: ${JSON.stringify(result.error)}`);}return row;
+}
+
+// Observe only the public transition frame returned to the trusted worker.
+// Injection/profile/auth headers are forwarded but never retained by this test.
+export async function observedApvWorker(t:TestContext,h:Harness){
+ const frames:{operationId:string;kind:string;frame:any;rows:any[]}[]=[],proxy=createServer(async(req,res)=>{
+  try{const parts=[];for await(const chunk of req)parts.push(chunk);const body=Buffer.concat(parts),headers:Record<string,string>={};for(const key of ['authorization','content-type','accept'])if(typeof req.headers[key]==='string')headers[key]=req.headers[key];const response=await fetch(new URL(req.url??'/',h.url),{method:req.method,headers,...(body.length?{body}:{})}),bytes=Buffer.from(await response.arrayBuffer()),route=/^\/v1\/workers\/operations\/([^/]+)\/preflight$/.exec(req.url??'');
+   if(route&&response.ok){const authorization=JSON.parse(bytes.toString()).data?.authorization;if(authorization?.frame){const frame=authorization.frame,rows=(await h.db.query("SELECT step_id,occurrence,status FROM flow_steps WHERE task_id=$1 AND input_revision_id=$2 AND kind<>'transition' ORDER BY step_id,occurrence",[frame.binding.taskId,frame.binding.inputRevisionId])).rows;frames.push({operationId:route[1],kind:authorization.kind,frame,rows});}}
+   res.writeHead(response.status,Object.fromEntries([...response.headers].filter(([key])=>!['connection','transfer-encoding'].includes(key))));res.end(bytes);
+  }catch{res.writeHead(502);res.end('{"error":"Synthetic frame observer failed"}');}
+ });await new Promise<void>(resolve=>proxy.listen(0,'127.0.0.1',resolve));t.after(async()=>{proxy.closeAllConnections();await new Promise<void>(resolve=>proxy.close(()=>resolve()));});const worker=await h.startWorker('lab-east-01',{CIRCLE_HUB_URL:`http://127.0.0.1:${(proxy.address() as any).port}`});return {worker,frames};
 }

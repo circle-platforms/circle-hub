@@ -1075,3 +1075,11 @@ H1 期限 **4e84ba0**、H2 拒绝来源 **8cf4998**、M3 终态后结果与补�
 实际 **1/1 通过、无 skip / fail**，11.50 秒：原件上传、完整模块登记 / 独立批准、准备、派发、终态、纯 Tool 解析和交付全部到达；56,413 字节工作簿仅 byteArgs，原件 SHA 一致，case_submit 1 次，设备 / 主机 observed、检查点 2 passed、unmapped 0。三类 verify Hook 均为已批准的非空处理器决定，B 回读 SHA 全部原断言通过；无原生 APV 操作，未删断言或改包 / 夹具。记录更新只改 handoff 与进度，测试本身字节不变。
 
 此绿只证明 A3 合成协议的模块接法，不证明 cexg 现网兼容。严格 C 的驱动缺口未实施，本轮不重复其旧红，不跑全套 / 真实网关 / 设备 / 模型；PG 单 runner 且已清理，只读外部 ref 不 checkout / 改写。生产代码、原生 1.1.1 与部署不变，记录仅本地签署、不 push。
+
+## 95：二轮受控来源与规则负例门禁
+
+深度复核发现第 94 节正例仍带流程外投影，本轮先在旧夹具加输入来源约束复现红，再移除 fixture 的 callFrozenTool 与 workbookBook / deviceCommands / hostDispatches / tree / present 等字段。本场景 value 仅 build；四份原件分别以 workbook / command-tree / command-check / function-contract 角色真实上传 B 并由另一身份批准。command-check 来自现有确定性规则读取独立合成树，保留同步工具 result.ruleVersion / commands / sourceSha256 原形，evidence 空如实披露，无伪造 evd 或 present。约定仅属本轮合成素材，不新建平台角色词表或 API 限制。
+
+正例要求正式 C Tool action 读取工作簿、真实 preflight frame 原件字节 / SHA 和 expectedOccurrences 对照持久行；33 KiB 合成描述触发真实大结果 hub.result.*，后续动作必须引用返回槽与 B SHA，不转录大 book。device Hook 的 actual present 对照冻结 check 条目与独立树 SHA；同命令缺树、主机不在床、方法 disabled 三负例要求对应 Hook block、真实 B 决定、顶码 HOOK_FAILED / details.code、零提交 / 意图 / 冻结。错挂点或解析错误不能作为规则通过。
+
+固定 **6a8cb799** 新四项实际 **0/4 通过、无 skip**：包不读 B 工作簿 / 依据，四项均先停 verify.workbook，顶码误为 COMMAND_NOT_IN_TREE，case_submit 0，目标来源与负门禁尚未到达。旧 1/1 正向结果保留原阶段事实，不扩为二轮证明。默认消费者只跑相关两文件，**1 pass / 5 skip / 0 fail**；typecheck / diff 通过，独立静态复核未见明显夹具假红。只改验收、夹具、handoff 与进度，不改驱动 / F / 原生 / 网关 / 独立包，不跑全套 / 真实模型或设备，PG 串行已清理，不 push / 部署。
