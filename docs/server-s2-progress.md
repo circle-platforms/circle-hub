@@ -1275,3 +1275,13 @@ abc5af6 提前核自动协议参数，夹具把 undeclared:true 放进 additiona
 两侧验收去掉固定等于 1.3.0，改为用现有冻结目录与已 SHA 核过的文件集合读取产品线清单版本，要求与 catalog 版本相同且 SemVer 不低于稳定 1.3.0。核主 / 次 / 补丁数字、同基版本 prerelease 低于 release、build metadata 不影响优先级；不读运行中的工作区清单、不改 F 版本 schema / 默认 pin、不造新的 provider 或模块夹具。诊断仍打印冻结版本、ref / commit 与 digest，未改变其文本。
 
 新增版本规则纯 **3/3**，两个文件默认 opt-in gate 与相关纯测试合跑 **7 pass / 8 skip / 0 fail**，skip 不计通过。typecheck / diff 通过，没有 PG / 外包执行或网络访问。实际产品包 1.3.1 / CIRCLE_PACKS_REF=main 的两侧验收按维护者安排由维护者执行，本笔只证明版本门；仅测试与现有夹具 / 本记录，本地签署、不 push / 部署或触现场。
+
+## 120：被拒流程动作的 Hub 校验详情
+
+transition 的动作被 C 拒绝时，原 generic failure.code / message 保留，failure.details 增加有界 stepId / kind 和 cause（Hub ApiError 的登记码、message / details 沿原 projectWorkerErrors / errorMetadata 处理）。动作上下文由 F 已通过的实际动作产生，覆盖首个 requestHash / 缺槽检查、后续 provider 校验与最终 enqueue；整体 parse / 批次错误定位到持久 transition，不猜未经校验的产品动作。固定上下文与 cause.details 独立预算，巨大的详情可省略并给 SHA / 大小，不吞掉动作与原因字段。
+
+不复制 args、byteSlots 内容、原件字节、产品 result 或 transcript；普通 worker / 非 ApiError 不新增 Hub cause。既有投影是错误码与预算 / NUL 处理，不把它描述为任意文本凭据过滤。事件种类和投影不变，批准 / afterResult / 原子拒绝门不放宽。
+
+先写两动作合成验收：合法写前缀后接缺失槽 Tool。旧 **0/1** 精准失败只在 details.stepId 缺失，原 INVALID_PAYLOAD、零 RPC / accepted 写 / intent / frozen 已成立；修后 **1/1**（约 3.8 秒），详情为真正被拒 stepId / kind 与缺少冻结字节绑定的原因，参数 sentinel 不披露。新纯 **2/2**、既有错误预算消费者 **4/4**，无 skip；typecheck / diff 与独立只读复核通过。worker / 原生 / 包 / 归档零差异，PG 串行清理，仅本地签署、不跑全套、push 或部署。
+
+两项各一笔本地签署，最终合并的新版本门 / 错误详情纯 **5/5**，typecheck / diff 通过；工作区干净。相对 f5b8845，worker / 原生 / 产品包 / foundation / references / harness-adapters 零差异，事件种类 / 投影未变，没有新增 provider / 模块夹具。全套与产品包 1.3.1/main 的实际 opt-in 两侧验收留维护者，不 push、不触 7420 / 网关 / worker / Circle / 独立包。
