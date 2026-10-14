@@ -1,3 +1,4 @@
+import {sandboxTest} from './harness.ts';
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {writeFile} from 'node:fs/promises';
@@ -30,7 +31,7 @@ test('Runtime revisions: draft registration leaves accepted and new runs on the 
   await h.request(`/v1/assets/${profile.asset_id}/lifecycle`,{version:profile.version,sha256:profile.sha256,state:'disabled'},'admin');await h.reject(`/v1/workers/operations/${leased.operation.operationId}/preflight`,{fencingToken:leased.operation.fencingToken},'SOURCE_NOT_APPROVED','lab-east-01');
 });
 
-test('Runtime revisions: dispatched pinned Circle continues across draft and approval then is stopped when its own bound revision is disabled',{skip:(!process.env.CIRCLE_BIN||!process.env.CIRCLE_COMMIT)&&'Set CIRCLE_BIN and CIRCLE_COMMIT for the pinned Circle revision test'},async t=>{
+sandboxTest('Runtime revisions: dispatched pinned Circle continues across draft and approval then is stopped when its own bound revision is disabled',{skip:(!process.env.CIRCLE_BIN||!process.env.CIRCLE_COMMIT)&&'Set CIRCLE_BIN and CIRCLE_COMMIT for the pinned Circle revision test'},async t=>{
   const {h,model,profile,run,draft}=await prepare(t,true);await h.startWorker();const first=await run('live-first');await until(async()=>model.requests.length>0,15_000);
   const op=(await h.db.query("SELECT * FROM operations WHERE task_id=$1 AND name='assets.execute'",[first.taskId])).rows[0],workerToken=await h.login('lab-east-01');
   const check=()=>h.raw(`/v1/workers/operations/${op.operation_id}/preflight`,{token:workerToken,body:{fencingToken:Number(op.fencing_token)}});
@@ -41,6 +42,6 @@ test('Runtime revisions: dispatched pinned Circle continues across draft and app
   const stopped=(await h.db.query('SELECT result FROM operations WHERE operation_id=$1',[op.operation_id])).rows[0].result;assert.equal(stopped.localExitObserved,true);assert.equal(stopped.remoteStoppingVerified,false);assert.equal((await check()).status,409);
 });
 
-test('Runtime revisions: a newly approved revision is frozen by a new pinned Circle execution and the approved endpoint delivers its result',{skip:(!process.env.CIRCLE_BIN||!process.env.CIRCLE_COMMIT)&&'Set CIRCLE_BIN and CIRCLE_COMMIT for the pinned Circle revision test'},async t=>{
+sandboxTest('Runtime revisions: a newly approved revision is frozen by a new pinned Circle execution and the approved endpoint delivers its result',{skip:(!process.env.CIRCLE_BIN||!process.env.CIRCLE_COMMIT)&&'Set CIRCLE_BIN and CIRCLE_COMMIT for the pinned Circle revision test'},async t=>{
  const {h,model,profile,run,draft}=await prepare(t,true);model.state.hold=false;model.state.sequence=[{name:'write_file',args:{file_path:'out.txt',content:'Synthetic revision two'}}];const next=await draft('2.0.0');await h.request(`/v1/assets/${next.assetId}/lifecycle`,{version:next.version,sha256:next.sha256,state:'approved'},'bob');await h.startWorker();const accepted=await run('new-approved-execution');await h.phase(accepted.taskId,'delivered',15_000);const status=await h.status(accepted.taskId),result=await h.request(`/v1/tasks/${accepted.taskId}/result`);assert.equal(status.input.runtimeProfile.version,'2.0.0');assert.deepEqual(result.runtime.runtimeProfile,status.input.runtimeProfile);assert.equal(result.runtime.runtimeProfile.sha256,next.sha256);assert.equal(result.runtime.runtimeProfile.profileSha256,profile.configuration.profileSha256);assert.equal(result.artifacts[0].sha256,sha256('Synthetic revision two'));assert.ok(model.requests.length>0);assert.ok((await h.request(`/v1/tasks/${accepted.taskId}/events?after=0`)).events.some((event:any)=>event.kind==='runtime.model.proxy'&&event.payload.event.runtimeProfile.version==='2.0.0'));
 });

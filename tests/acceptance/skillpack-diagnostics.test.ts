@@ -14,7 +14,7 @@ async function prepare(t:Parameters<typeof setup>[0]){
   const grants=['assets.read','assets.register','assets.change','credentials.use','knowledge.read','knowledge.submit','skillpacks.read','skillpacks.submit','skillpacks.run'];
   await h.db.query('UPDATE policies SET grants=grants || $1::jsonb WHERE principal_id=ANY($2::text[])',[JSON.stringify(grants),['prn_alice','prn_bob']]);
   await h.db.query("UPDATE policies SET grants=grants || '[\"assets.approve\"]'::jsonb WHERE principal_id='prn_bob'");
-  await writeFile(`${h.scratch}/profiles.json`,JSON.stringify({profiles:{fixture:{origin:source.origin,root:'/dav/'}}}));h.env.CIRCLE_SERVER_CONNECTOR_PROFILES=`${h.scratch}/profiles.json`;await h.stop();await h.startServer();
+  await writeFile(`${h.scratch}/profiles.json`,JSON.stringify({profiles:{fixture:{origin:source.origin,root:'/dav/'}}}));h.env.CIRCLE_HUB_CONNECTOR_PROFILES=`${h.scratch}/profiles.json`;await h.stop();await h.startServer();
   const asset=await h.request('/v1/assets',{scopeId:'scp_lab',kind:'connector-instance',name:'Synthetic diagnostic documents',version:'1.0.0',declaration:{reads:['registered-source'],writes:[],credentials:[]},configuration:{packageId:'documents',runtimeProfileRef:'fixture'},readers:['prn_alice','prn_bob']});
   await h.request(`/v1/assets/${asset.assetId}/lifecycle`,{version:asset.version,sha256:asset.sha256,state:'approved'},'bob');await h.request(`/v1/assets/${asset.assetId}/lifecycle`,{version:asset.version,sha256:asset.sha256,state:'running'});
   return {h,asset,source};

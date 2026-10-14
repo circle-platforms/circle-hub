@@ -10,7 +10,7 @@ async function prepare(h:Harness,origin:string){
   const grants=['assets.read','assets.register','assets.change','assets.approve','builds.read','docs.fetch','knowledge.read','knowledge.ingest','knowledge.submit','knowledge.publish','credentials.register','credentials.use','environment.read'];
   await h.db.query('UPDATE policies SET grants=grants || $1::jsonb WHERE principal_id=ANY($2::text[])',[JSON.stringify(grants),['prn_alice','prn_bob']]);
   await h.db.query("UPDATE policies SET grants=grants || '[\"assets.read\",\"assets.approve\"]'::jsonb WHERE principal_id='prn_admin'");
-  await writeFile(`${h.scratch}/profiles.json`,JSON.stringify({profiles:{fixture:{origin,root:'/dav/',index:'/builds/',requestIntervalMs:0}}}),{mode:0o600});h.env.CIRCLE_SERVER_CONNECTOR_PROFILES=`${h.scratch}/profiles.json`;await h.stop();await h.startServer();
+  await writeFile(`${h.scratch}/profiles.json`,JSON.stringify({profiles:{fixture:{origin,root:'/dav/',index:'/builds/',requestIntervalMs:0}}}),{mode:0o600});h.env.CIRCLE_HUB_CONNECTOR_PROFILES=`${h.scratch}/profiles.json`;await h.stop();await h.startServer();
 }
 async function asset(h:Harness,packageId:string,version='1.0.0',assetId?:string,readers=['prn_alice','prn_bob']){
   const value=await h.request('/v1/assets',{assetId,scopeId:'scp_lab',kind:'connector-instance',name:'Synthetic product authority',version,declaration:{reads:['registered-source'],writes:[],credentials:[]},configuration:{packageId,runtimeProfileRef:'fixture'},readers});

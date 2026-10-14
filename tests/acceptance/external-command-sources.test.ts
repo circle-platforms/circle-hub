@@ -1,3 +1,4 @@
+import {sandboxTest,sandboxSubtest} from './harness.ts';
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {writeFile} from 'node:fs/promises';
@@ -17,8 +18,8 @@ async function environment(t:any){
   await h.db.query("UPDATE policies SET grants=grants || '[\"assets.read\",\"assets.register\",\"assets.change\",\"credentials.register\",\"credentials.use\",\"builds.read\",\"cases.execute\",\"knowledge.read\",\"knowledge.submit\"]'::jsonb WHERE principal_id='prn_alice'");
   await h.db.query("UPDATE policies SET grants=grants || '[\"assets.read\",\"assets.approve\",\"knowledge.read\"]'::jsonb WHERE principal_id='prn_bob'");
   await h.db.query("UPDATE policies SET grants=grants || '[\"assets.read\"]'::jsonb WHERE principal_id='prn_outsider'");
-  await writeFile(`${h.scratch}/profiles.json`,JSON.stringify({profiles:{source:{origin:source.origin,index:'/builds/'}}}));h.env.CIRCLE_SERVER_CONNECTOR_PROFILES=`${h.scratch}/profiles.json`;
-  await writeFile(`${h.scratch}/gateways.json`,JSON.stringify({profiles:{lab:{endpoint:`${gateway.origin}/mcp`,issuer:gateway.origin,pollMs:25}}}));h.env.CIRCLE_SERVER_EXECUTION_GATEWAYS=`${h.scratch}/gateways.json`;await h.stop();await h.startServer();
+  await writeFile(`${h.scratch}/profiles.json`,JSON.stringify({profiles:{source:{origin:source.origin,index:'/builds/'}}}));h.env.CIRCLE_HUB_CONNECTOR_PROFILES=`${h.scratch}/profiles.json`;
+  await writeFile(`${h.scratch}/gateways.json`,JSON.stringify({profiles:{lab:{endpoint:`${gateway.origin}/mcp`,issuer:gateway.origin,pollMs:25}}}));h.env.CIRCLE_HUB_EXECUTION_GATEWAYS=`${h.scratch}/gateways.json`;await h.stop();await h.startServer();
   const activate=async(asset:any)=>{await h.request(`/v1/assets/${asset.assetId}/lifecycle`,{version:asset.version,sha256:asset.sha256,state:'approved'},'bob');return h.request(`/v1/assets/${asset.assetId}/lifecycle`,{version:asset.version,sha256:asset.sha256,state:'running'});};
   const commands=await activate(await h.request('/v1/assets',{scopeId:'scp_lab',kind:'connector-instance',name:'Synthetic build tool surface',version:'1.0.0',declaration:{reads:['registered-source'],writes:[],credentials:[]},configuration:{packageId:'build-site',runtimeProfileRef:'source'},readers:['prn_alice','prn_bob']}));
   const upload=(bytes:Buffer,fileName:string)=>h.request('/v1/sources',{scopeId:'scp_lab',fileName,contentBase64:bytes.toString('base64')});
@@ -54,7 +55,7 @@ test('Source artifacts: registration checks bytes and hashes while semantic vali
   const approved=await approveSource(opaque);await h.startWorker();await h.reject('/v1/tools/buildsite.command_heads/call',{args:{build:approved.sourceArtifactId,prefix:''},idempotencyKey:'bad-external-xml'},'INVALID_PAYLOAD');
 });
 
-test('External commands: execution uses the imported XML and function contract and keeps source proof in the approved action',async t=>{
+sandboxTest('External commands: execution uses the imported XML and function contract and keeps source proof in the approved action',async t=>{
   const {h,gateway,register,approveSource,submit}=await environment(t),binding=await approveSource(await register());await h.startWorker();gateway.state.hostLog='routera executes command: dig @192.0.2.1 example.test TXT\nhealthy\n';
   const task=await submit(binding);await h.phase(task.taskId,'waiting-review');const approval=(await h.request(`/v1/tasks/${task.taskId}/approvals`)).at(-1);assert.equal(approval.action.args.treeSha256,binding.commandTree.sha256);assert.equal(approval.action.args.excelContractSha256,binding.excelContract.sha256);
   await h.request(`/v1/tasks/${task.taskId}/approvals/${approval.approvalId}`,{inputRevisionId:approval.inputRevisionId,targetIdentity:approval.targetIdentity,actionDigest:approval.actionDigest,approve:true},'bob');await h.phase(task.taskId,'delivered');assert.equal(gateway.state.calls.filter(name=>name==='case_submit').length,1);
@@ -62,7 +63,7 @@ test('External commands: execution uses the imported XML and function contract a
   const replacement=await approveSource(await register(externalTree,functionContract([{e:'test_env',f:'routera'}]),'1.0.1'));const rejected=await assert.rejects(submit(replacement),(error:any)=>/COMMAND_VALIDATION_FAILED/.test(error.message));assert.equal(rejected,undefined);assert.equal(gateway.state.calls.filter(name=>name==='case_submit').length,1);
 });
 
-test('External commands: a changed source version invalidates pending execution approval and old ids never select new bytes',async t=>{
+sandboxTest('External commands: a changed source version invalidates pending execution approval and old ids never select new bytes',async t=>{
   const {h,gateway,register,approveSource,submit}=await environment(t),binding=await approveSource(await register()),worker=await h.startWorker();
   const task=await submit(binding);await h.phase(task.taskId,'waiting-review');await h.stop(worker);const approval=(await h.request(`/v1/tasks/${task.taskId}/approvals`)).at(-1);
   await register(Buffer.from(externalTree.toString('latin1').replace('max="65535"','max="80"'),'latin1'),functionContract(),'1.0.1');
@@ -80,7 +81,7 @@ test('Source artifacts: the same generic binding supplies a document connector w
   await until(async()=>{const jobs=(await h.db.query("SELECT status,error FROM knowledge_projection_jobs WHERE owner_id='prn_bob'")).rows;assert.ok(!jobs.some(row=>row.status==='failed'),JSON.stringify(jobs));return jobs.length&&jobs.every(row=>row.status==='succeeded');},10_000);
 });
 
-test('Source artifacts: real pinned RPC can use a declared tool with the approved artifact while the run token cannot list assets', {skip:(!circleBin||!circleCommit)&&'Set CIRCLE_BIN and CIRCLE_COMMIT for the real RPC source binding'},async t=>{
+sandboxTest('Source artifacts: real pinned RPC can use a declared tool with the approved artifact while the run token cannot list assets', {skip:(!circleBin||!circleCommit)&&'Set CIRCLE_BIN and CIRCLE_COMMIT for the real RPC source binding'},async t=>{
   const {h}=await environment(t),model=await scriptModel(t);
   await h.db.query("UPDATE policies SET grants=grants || '[\"skillpacks.read\",\"skillpacks.submit\",\"skillpacks.run\",\"knowledge.submit\"]'::jsonb WHERE principal_id='prn_alice'");
   await h.db.query("UPDATE policies SET grants=grants || '[\"skillpacks.read\",\"skillpacks.submit\"]'::jsonb WHERE principal_id='prn_bob'");
@@ -112,7 +113,9 @@ test('Source artifacts: existing assets registration binds uploaded originals an
   const approved=await h.request(`/v1/assets/${draft.assetId}/lifecycle`,{version:draft.version,sha256:draft.sha256,state:'approved'},'bob');assert.match(approved.sourceArtifactId,/^sar_/);assert.equal((await h.request(`/v1/assets/${draft.assetId}`)).sourceArtifactId,approved.sourceArtifactId);
   await h.startWorker();const listed=await h.request('/v1/tools/buildsite.versions/call',{args:{sourceArtifactId:approved.sourceArtifactId},idempotencyKey:'asset-source-versions'});assert.equal(listed.result.total,1);assert.deepEqual(listed.result.builds,[{name:buildName,buildId:approved.sourceArtifactId,formal:false,releasedOn:null,current:true,platform:'synthetic-os',commandTreeAvailable:true}]);assert.equal(listed.evidence[0].sha256,xml.sha256);
   const checked=await call(h,'command_check',{build:listed.result.builds[0].buildId,commands:['service create port 443']});assert.equal(checked.result.commands[0].status,'hit');assert.equal(checked.result.commands[0].violations.length,0);assert.equal(source.requests.length,0);
+  await sandboxSubtest(t,'Source artifacts: the approved asset dispatch uses the imported contract and tree in an isolated execution',async()=>{
   const task=await submit({...approved,buildId:approved.sourceArtifactId});await h.phase(task.taskId,'waiting-review');const approval=(await h.request(`/v1/tasks/${task.taskId}/approvals`)).at(-1);assert.equal(approval.action.args.treeSha256,xml.sha256);assert.equal(approval.action.args.excelContractSha256,functions.sha256);await h.request(`/v1/tasks/${task.taskId}/approvals/${approval.approvalId}`,{inputRevisionId:approval.inputRevisionId,targetIdentity:approval.targetIdentity,actionDigest:approval.actionDigest,approve:true},'bob');await h.phase(task.taskId,'delivered');assert.equal(gateway.state.calls.filter(name=>name==='case_submit').length,1);
+  });
   await h.stop();await h.startServer();assert.equal((await h.request(`/v1/assets/${draft.assetId}`)).sourceArtifactId,approved.sourceArtifactId);
 });
 

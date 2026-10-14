@@ -1,3 +1,4 @@
+import {sandboxTest} from './harness.ts';
 import {writeFile} from 'node:fs/promises';
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
@@ -6,7 +7,7 @@ import {setup} from './harness.ts';
 import {scriptModel} from '../fixtures/script-model.ts';
 import {sha256} from '../../packages/contracts/src/index.ts';
 import {access} from 'node:fs/promises';
-test('R3 static secret: write-only registration rotation and worker Bearer injection execute without issuer token or introspection',async t=>{
+sandboxTest('R3 static secret: write-only registration rotation and worker Bearer injection execute without issuer token or introspection',async t=>{
   const {h,gateway,bed,payload}=await enforcementEnvironment(t);const secret='synthetic-static-resource-secret-'.repeat(2),rotated='synthetic-rotated-resource-secret-'.repeat(2);
   const credential=await h.request(`/v1/assets/${bed.assetId}/credentials`,{version:'1.0.0',mode:'static-secret',value:secret});assert.equal(credential.configuration.credentialMode,'static-secret');assert.ok(!JSON.stringify(credential).includes(secret));await h.reject(`/v1/assets/${credential.assetId}`,undefined,'ASSET_NOT_VISIBLE','bob');
   await h.request(`/v1/assets/${credential.assetId}/credentials`,{version:'1.0.0',mode:'static-secret',value:rotated});(gateway.state as any).staticSecret=rotated;
@@ -15,10 +16,10 @@ test('R3 static secret: write-only registration rotation and worker Bearer injec
   await h.startWorker();const task=await h.request('/v1/tasks/submit',await payload());await h.phase(task.taskId,'delivered');assert.equal((gateway.state as any).staticAccepted,true);assert.equal(gateway.state.verified.length,0);assert.ok(!JSON.stringify(await h.request(`/v1/tasks/${task.taskId}/result`)).includes(rotated));assert.ok(!JSON.stringify(await h.request(`/v1/tasks/${task.taskId}/events?after=0`)).includes(rotated));
   await h.request(`/v1/assets/${credential.assetId}/lifecycle`,{version:credential.version,sha256:credential.sha256,state:'disabled'});await h.reject('/v1/tasks/submit',await payload(),'FORBIDDEN_ACTION');
 });
-test('R3 static secret: an authorized team member uses the resource credential without seeing another owners credential metadata',async t=>{
+sandboxTest('R3 static secret: an authorized team member uses the resource credential without seeing another owners credential metadata',async t=>{
   const {h,gateway,bed,payload}=await enforcementEnvironment(t);const secret='synthetic-team-resource-secret-'.repeat(2),credential=await h.request(`/v1/assets/${bed.assetId}/credentials`,{version:'1.0.0',mode:'static-secret',value:secret});gateway.state.staticSecret=secret;const old=await h.request(`/v1/assets/${bed.assetId}`),asset=await h.request('/v1/assets',{assetId:bed.assetId,scopeId:'scp_lab',kind:old.kind,name:old.name,version:'3.0.0',configuration:{...old.configuration,credentialMode:'static-secret'},declaration:{...old.declaration,credentials:[credential.assetId]},readers:['*']});await h.request(`/v1/assets/${asset.assetId}/lifecycle`,{version:asset.version,sha256:asset.sha256,state:'approved'},'bob');await h.request(`/v1/assets/${asset.assetId}/lifecycle`,{version:asset.version,sha256:asset.sha256,state:'running'});await h.setRole('prn_bob','member','scp_lab');await h.reject(`/v1/assets/${credential.assetId}`,undefined,'ASSET_NOT_VISIBLE','bob');await h.startWorker();const task=await h.request('/v1/tasks/submit',await payload(),'bob');await h.phase(task.taskId,'delivered');assert.equal(gateway.state.staticAccepted,true);assert.equal(gateway.state.verified.length,0);
 });
-test('R3 runtime isolation: pinned Circle can execute approved scripts but cannot read the vault key or runtime configuration and removes model credentials', {skip:(!process.env.CIRCLE_BIN||!process.env.CIRCLE_COMMIT)&&'Set CIRCLE_BIN and CIRCLE_COMMIT'},async t=>{
+sandboxTest('R3 runtime isolation: pinned Circle can execute approved scripts but cannot read the vault key or runtime configuration and removes model credentials', {skip:(!process.env.CIRCLE_BIN||!process.env.CIRCLE_COMMIT)&&'Set CIRCLE_BIN and CIRCLE_COMMIT'},async t=>{
   const model=await scriptModel(t),h=await setup(t),runtime={circleBin:process.env.CIRCLE_BIN,circleCommit:process.env.CIRCLE_COMMIT,circleVersion:'1.1.1',model:{kind:'scripted',base_url:model.url,model:'scripted-fixture',protocol:'openai',api_key:model.key}};await writeFile(`${h.scratch}/runtime.json`,JSON.stringify(runtime),{mode:0o600});h.env.CIRCLE_RUNTIME_CONFIG=`${h.scratch}/runtime.json`;await h.stop();await h.startServer();
   const credentialParent=await h.request('/v1/assets',{scopeId:'scp_lab',kind:'connector-instance',name:'Synthetic private vault fixture',version:'1.0.0',declaration:{reads:[],writes:[],credentials:[]},configuration:{}});await h.request(`/v1/assets/${credentialParent.assetId}/credentials`,{version:'1.0.0',value:'synthetic-private-value'});await access(`${h.scratch}/objects/private-credentials/.key`);
   model.state.sequence=[{name:'skill',args:{name:'isolation-fixture'}},{name:'execute',args:{command:'node .circle/skills/isolation-fixture/check.mjs'}}];

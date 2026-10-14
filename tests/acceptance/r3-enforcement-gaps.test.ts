@@ -1,3 +1,4 @@
+import {sandboxTest} from './harness.ts';
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {setup} from './harness.ts';
@@ -17,10 +18,10 @@ test('R3 governance: each binding mutation leaves the entire group draft and oth
 test('R3 governance: the last root administrator cannot remove or downgrade its role',async t=>{
   const h=await setup(t);for(const role of [null,'member','viewer'])await h.reject('/v1/scopes/scp_root/roles',{principalId:'prn_admin',role,idempotencyKey:'root-must-remain-'+String(role)},'FORBIDDEN_ACTION','admin');
 });
-test('R3 execution errors: gateway lease refusal reports LEASE_UNAVAILABLE with its persisted waiting reason',async t=>{
+sandboxTest('R3 execution errors: gateway lease refusal reports LEASE_UNAVAILABLE with its persisted waiting reason',async t=>{
   const {h,gateway,submit}=await enforcementEnvironment(t);gateway.state.refuseLease=true;await h.startWorker();const task=await submit();await h.phase(task.taskId,'waiting-input');assert.equal((await h.request(`/v1/tasks/${task.taskId}/result`)).error.code,'LEASE_UNAVAILABLE');assert.equal((await h.status(task.taskId)).waitingReason,'lease-unavailable');assert.equal(gateway.state.calls.filter(name=>name==='case_submit').length,0);
 });
-test('R3 ordinary execution: unknown effects freeze without replay and an independent worker reconciles the original receipt',async t=>{
+sandboxTest('R3 ordinary execution: unknown effects freeze without replay and an independent worker reconciles the original receipt',async t=>{
   const {h,gateway,submit}=await enforcementEnvironment(t);gateway.state.lost=true;const worker=await h.startWorker(),task=await submit();await h.phase(task.taskId,'unknown');const original=(await h.db.query("SELECT operation_id FROM operations WHERE task_id=$1 AND name='cases.execute'",[task.taskId])).rows[0];await h.reject('/v1/tasks/submit',{scopeId:'scp_lab',capabilityPackId:'apv-case-execute',input:(await h.db.query('SELECT input FROM tasks WHERE task_id=$1',[task.taskId])).rows[0].input,idempotencyKey:'unknown-no-replay'},'RESOURCE_BUSY');await h.stop(worker);gateway.state.lost=false;await h.request(`/v1/tasks/${task.taskId}/reconcile`,{operationId:original.operation_id});await h.startWorker('lab-east-02');await h.phase(task.taskId,'delivered');assert.equal((await h.db.query('SELECT status FROM operations WHERE operation_id=$1',[original.operation_id])).rows[0].status,'reconciled');assert.equal(gateway.state.calls.filter(name=>name==='case_submit').length,1);
 });
 test('R3 governance: a blocked group cannot decide or partially approve its ready member',async t=>{

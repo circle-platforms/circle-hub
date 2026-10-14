@@ -19,7 +19,7 @@ test('Publication follow-up A: rebuilt identities select the latest build time a
 });
 
 test('Publication follow-up C: build ids and names locate one fresh page across worker restarts even when another line fails',async t=>{
-  const fixture=await publicationLayout(t),directory=await mkdtemp(`${tmpdir()}/circle-server-locators-`);t.after(()=>rm(directory,{recursive:true,force:true}));
+  const fixture=await publicationLayout(t),directory=await mkdtemp(`${tmpdir()}/circle-hub-locators-`);t.after(()=>rm(directory,{recursive:true,force:true}));
   const profile={origin:fixture.origin,index:'/builds/',requestIntervalMs:0,buildSite:fixture.policy},options={cache:new SourceCache(directory),cacheNamespace:'owner-one'},versions=await executeTool('build-site','build.versions',{},profile,undefined,options),build=versions.result.builds.find((build:any)=>build.name===fixture.builds[1].name&&build.platform===null);
   fixture.state.brokenOtherLine=true;fixture.requests.length=0;
   const call=(handler:string,args:any)=>executeTool('build-site',handler,args,profile,undefined,{...options,cache:new SourceCache(directory)});

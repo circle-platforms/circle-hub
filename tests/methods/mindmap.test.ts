@@ -36,7 +36,7 @@ test('synthetic XMind zip, title normalization, literal formulas and unknown ele
     children: { attached: [{ title: '=literal test', notes: { plain: { content: '注释\n第二行' } },
       href: 'https://synthetic.invalid', unknownExtension: { format: 'future' } }] } }] } } }];
   const bytes = Buffer.from(zipSync({ 'content.json': strToU8(JSON.stringify(content)),
-    'metadata.json': strToU8(JSON.stringify({ creator: 'circle-server synthetic' })) }));
+    'metadata.json': strToU8(JSON.stringify({ creator: 'circle-hub synthetic' })) }));
   const result = await compileMindmap(bytes, 'synthetic.xmind');
   assert.equal(result.status, 'partial');
   assert.ok(result.unmapped.some(entry => entry.path.endsWith('href')));

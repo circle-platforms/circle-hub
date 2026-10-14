@@ -10,7 +10,7 @@ import {promisify} from 'node:util';
 import {sha256} from '../../packages/contracts/src/index.ts';
 
 for(const protocol of ['http','https'])test(`npm run dev:stack starts PostgreSQL server and workers over ${protocol} and cleans its scratch directory`, async t => {
-  const tls=protocol==='https'?await loopbackTLS(t):undefined,env={...process.env,CIRCLE_SERVER_PORT:'0',CIRCLE_SERVER_TLS_CONFIG:tls?.configFile,NODE_EXTRA_CA_CERTS:tls?.caFile,NODE_TLS_REJECT_UNAUTHORIZED:undefined};
+  const tls=protocol==='https'?await loopbackTLS(t):undefined,env={...process.env,CIRCLE_HUB_PORT:'0',CIRCLE_HUB_TLS_CONFIG:tls?.configFile,NODE_EXTRA_CA_CERTS:tls?.caFile,NODE_TLS_REJECT_UNAUTHORIZED:undefined};
   const fetch=(url:string,options:{method?:string;headers?:Record<string,string>;body?:string|Buffer}={})=>checkedRequest(url,{...options,ca:tls?.ca});
   const child = spawn('npm',['run','dev:stack'],{ cwd:root,env,
     detached:process.platform !== 'win32',stdio:['ignore','pipe','pipe'] });
@@ -46,7 +46,7 @@ for(const protocol of ['http','https'])test(`npm run dev:stack starts PostgreSQL
   });
   assert.equal(result.status,'succeeded'); assert.equal(result.artifacts.length,1);
   const artifact=await fetch(`${ready.url}${result.artifacts[0].downloadPath}`,{headers:{authorization:`Bearer ${token}`}});assert.equal(artifact.status,200);assert.equal(sha256(Buffer.from(await artifact.arrayBuffer())),result.artifacts[0].sha256);
-  if(tls){const before=(await(await fetch(`${ready.url}/v1/status`,{headers:{authorization:`Bearer ${token}`}})).json() as any).data,restarted=await promisify(execFile)(process.execPath,['apps/server/src/cli.ts','admin','restart','--graceful'],{cwd:root,env:{...env,CIRCLE_SERVER_URL:ready.url,CIRCLE_SERVER_TOKEN:token}});assert.equal(JSON.parse(restarted.stdout).restarted,true);const after=(await(await fetch(`${ready.url}/v1/status`,{headers:{authorization:`Bearer ${token}`}})).json() as any).data;assert.notEqual(after.bootId,before.bootId);const delivered=(await(await fetch(`${ready.url}/v1/tasks/${task.taskId}/result`,{headers:{authorization:`Bearer ${token}`}})).json() as any).data;assert.equal(delivered.status,'succeeded');}
+  if(tls){const before=(await(await fetch(`${ready.url}/v1/status`,{headers:{authorization:`Bearer ${token}`}})).json() as any).data,restarted=await promisify(execFile)(process.execPath,['apps/server/src/cli.ts','admin','restart','--graceful'],{cwd:root,env:{...env,CIRCLE_HUB_URL:ready.url,CIRCLE_HUB_TOKEN:token}});assert.equal(JSON.parse(restarted.stdout).restarted,true);const after=(await(await fetch(`${ready.url}/v1/status`,{headers:{authorization:`Bearer ${token}`}})).json() as any).data;assert.notEqual(after.bootId,before.bootId);const delivered=(await(await fetch(`${ready.url}/v1/tasks/${task.taskId}/result`,{headers:{authorization:`Bearer ${token}`}})).json() as any).data;assert.equal(delivered.status,'succeeded');}
   const exited = once(child,'exit');
   if (process.platform === 'win32') process.kill(ready.pid,'SIGTERM'); else process.kill(-child.pid!,'SIGINT');
   await exited;

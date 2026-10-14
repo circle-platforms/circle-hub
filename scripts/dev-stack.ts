@@ -1,3 +1,4 @@
+import {hubChildEnvironment} from '../packages/contracts/src/hub-environment.ts';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
 import { randomBytes } from 'node:crypto';
@@ -11,7 +12,7 @@ import {createSyntheticSources} from '../packs/synthetic/readonly-sources.ts';
 import {setTimeout as delay} from 'node:timers/promises';
 
 const root = fileURLToPath(new URL('../',import.meta.url));
-const scratch = await mkdtemp(`${tmpdir()}/circle-server-dev-`);
+const scratch = await mkdtemp(`${tmpdir()}/circle-hub-dev-`);
 const socket = createServer(); await new Promise<void>(resolve => socket.listen(0,'127.0.0.1',resolve));
 const port = (socket.address() as { port:number }).port; await new Promise<void>(resolve => socket.close(() => resolve()));
 const dbPassword = randomBytes(24).toString('hex'); const userPassword = randomBytes(18).toString('base64url'); const workerPassword = randomBytes(18).toString('base64url');
@@ -49,7 +50,7 @@ process.on('SIGINT',() => { void cleanup(); }); process.on('SIGTERM',() => { voi
 async function launch(path: string,env: NodeJS.ProcessEnv,type: string): Promise<any> {
   // Separate groups keep terminal Ctrl+C under this supervisor's ordered shutdown.
   // IPC disconnect also lets children stop if this supervisor is killed.
-  const child = spawn(process.execPath,[path],{ cwd:root,env,detached:process.platform !== 'win32',stdio:['ignore','pipe','pipe','ipc'] }); children.add(child);
+  const child = spawn(process.execPath,[path],{ cwd:root,env:hubChildEnvironment(env),detached:process.platform !== 'win32',stdio:['ignore','pipe','pipe','ipc'] }); children.add(child);
   const worker=path==='apps/worker/src/main.ts',username=env.CIRCLE_WORKER_USERNAME!;if(worker){workerProcesses.set(username,child);workerEnvironments.set(username,env);}
   child.on('message',message=>{if((message as any)?.type==='workers-restart'&&!closing&&!workerRestart){workerRestart=replaceWorkers(serverGeneration).catch(()=>{workerRecord('dev-stack.worker.restart-error',{reason:'replacement-failed'});}).finally(()=>{workerRestart=undefined;});}});
   child.stderr!.on('data',data => { process.stderr.write(data); });
@@ -69,7 +70,7 @@ async function launch(path: string,env: NodeJS.ProcessEnv,type: string): Promise
   });
 }
 try {
-  const database = await launch('scripts/postgres-process.ts',{ ...process.env,CIRCLE_SERVER_DATABASE_CONFIG:JSON.stringify(config),CIRCLE_SERVER_PG_DIR:`${scratch}/pg` },'postgres-ready');
+  const database = await launch('scripts/postgres-process.ts',{ ...process.env,CIRCLE_HUB_DATABASE_CONFIG:JSON.stringify(config),CIRCLE_HUB_PG_DIR:`${scratch}/pg` },'postgres-ready');
   if (closing) throw new Error('Stack startup was stopped');
   await mkdir(`${scratch}/objects`);
   syntheticSources=await createSyntheticSources();syntheticSources.state.expandedCommands=true;
@@ -85,16 +86,16 @@ try {
     {username:'lab-east-02',password:workerPassword,principalId:'prn_lab_east_02',tenantId:'tnt_synthetic',kind:'worker',workerId:'lab-east-02',scopes:['scp_lab'],grants:['workers.execute'],targets:syntheticTargets,defects:['LAB-42','SECRET-99']},
   ] }),{ mode:0o600 });
   const samplePath = `${scratch}/synthetic-mindmap.xmind`;
-  const content = [{ id:'sheet-circle-server',rootTopic:{ id:'root',title:'Circle Server 脑图编译验收',children:{ attached:[
+  const content = [{ id:'sheet-circle-hub',rootTopic:{ id:'root',title:'Circle Hub 脑图编译验收',children:{ attached:[
     { title:'认证与任务',children:{ attached:[{ title:'登录后提交用例',notes:{ plain:{ content:'合成场景；检查身份和 scope' } } },{ title:'重连补读事件' }] } },
     { title:'制品',children:{ attached:[{ title:'下载并核对工作簿',notes:{ plain:{ content:'两表七列；核对源文件 SHA-256' } } }] } },
   ] } } }];
   await writeFile(samplePath,zipSync({ 'content.json':strToU8(JSON.stringify(content)),
-    'metadata.json':strToU8(JSON.stringify({ creator:'circle-server synthetic fixture' })) },{ mtime:new Date('2000-01-01T00:00:00Z') }),{ mode:0o600 });
+    'metadata.json':strToU8(JSON.stringify({ creator:'circle-hub synthetic fixture' })) },{ mtime:new Date('2000-01-01T00:00:00Z') }),{ mode:0o600 });
   // Node loads NODE_EXTRA_CA_CERTS at process startup: bootstrap requests use
   // this process's trust, and the same runtime trust reaches server and workers.
-  const env = { ...process.env,CIRCLE_SERVER_MANAGED_WORKERS:'1',NODE_EXTRA_CA_CERTS:process.env.NODE_EXTRA_CA_CERTS,CIRCLE_SERVER_DATABASE_CONFIG:JSON.stringify(config),CIRCLE_SERVER_DATA_DIR:`${scratch}/objects`,
-    CIRCLE_SERVER_DEV_IDENTITIES:`${scratch}/identities.json`,CIRCLE_SERVER_DEV_AUTH:'1',CIRCLE_SERVER_PORT:process.env.CIRCLE_SERVER_PORT ?? '0',CIRCLE_SYNTHETIC_RESOURCE_DIR:`${scratch}/resources`,CIRCLE_SERVER_CONNECTOR_PROFILES:`${scratch}/connector-profiles.json` };
+  const env = { ...process.env,CIRCLE_HUB_MANAGED_WORKERS:'1',NODE_EXTRA_CA_CERTS:process.env.NODE_EXTRA_CA_CERTS,CIRCLE_HUB_DATABASE_CONFIG:JSON.stringify(config),CIRCLE_HUB_DATA_DIR:`${scratch}/objects`,
+    CIRCLE_HUB_DEV_IDENTITIES:`${scratch}/identities.json`,CIRCLE_HUB_DEV_AUTH:'1',CIRCLE_HUB_PORT:process.env.CIRCLE_HUB_PORT ?? '0',CIRCLE_SYNTHETIC_RESOURCE_DIR:`${scratch}/resources`,CIRCLE_HUB_CONNECTOR_PROFILES:`${scratch}/connector-profiles.json` };
   const server = await launch('apps/server/src/supervisor.ts',env,'ready');
   const login=async(username:string,password:string)=>{const response=await fetch(`${server.url}/v1/auth/dev-login`,{method:'POST',redirect:'error',headers:{'content-type':'application/json'},body:JSON.stringify({username,password})});if(!response.ok)throw new Error('Synthetic asset login failed');return (await response.json() as any).data.token;};
   const developerToken=await login('developer',userPassword),approverToken=await login('approver',approverPassword);
@@ -108,8 +109,8 @@ try {
     await post(`/v1/assets/${asset.assetId}/lifecycle`,{version:asset.version,sha256:asset.sha256,state:'approved'},approverToken);
     await post(`/v1/assets/${asset.assetId}/lifecycle`,{version:asset.version,sha256:asset.sha256,state:'running'});
   }
-  await launch('apps/worker/src/main.ts',{ ...env,CIRCLE_SERVER_URL:server.url,CIRCLE_WORKER_USERNAME:'lab-east-01',CIRCLE_WORKER_PASSWORD:workerPassword },'worker-ready');
-  await launch('apps/worker/src/main.ts',{ ...env,CIRCLE_SERVER_URL:server.url,CIRCLE_WORKER_USERNAME:'lab-east-02',CIRCLE_WORKER_PASSWORD:workerPassword },'worker-ready');
+  await launch('apps/worker/src/main.ts',{ ...env,CIRCLE_HUB_URL:server.url,CIRCLE_WORKER_USERNAME:'lab-east-01',CIRCLE_WORKER_PASSWORD:workerPassword },'worker-ready');
+  await launch('apps/worker/src/main.ts',{ ...env,CIRCLE_HUB_URL:server.url,CIRCLE_WORKER_USERNAME:'lab-east-02',CIRCLE_WORKER_PASSWORD:workerPassword },'worker-ready');
   console.log(JSON.stringify({ type:'dev-stack-ready',pid:process.pid,url:server.url,apiVersion:server.apiVersion,
     login:{ username:'developer',password:userPassword },approverLogin:{username:'approver',password:approverPassword},scopeId:'scp_lab',samplePath,scratchDirectory:scratch,postgresVersion:database.version,syntheticOnly:true }));
   console.log(`地址：${server.url}\n开发登录：POST /v1/auth/dev-login，用户名 developer，密码 ${userPassword}\n项目：scp_lab\n合成 XMind：${samplePath}\nCtrl+C 停止进程并删除本次临时数据库与制品`);

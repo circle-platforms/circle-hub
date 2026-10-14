@@ -2,26 +2,26 @@
 
 在隔离工作树运行 `npm run dev:stack`。它启动临时 PostgreSQL、受监管 server、`lab-east-01` / `lab-east-02` 和合成连接器资源。打印 developer 与独立 approver 的随机开发登录方式；账号 `defect-bot` / principal `prn_defectbot` 仅用于获准规则的服务身份。developer 的管理与合成操作权限在开发配置中显式授予；approver 只具备任务读取和批准权限，不具备设备操作权限。
 
-登录仍是 `POST /v1/auth/dev-login`。将 token 放在 Git 外的权限受限文件，设置 `CIRCLE_SERVER_TOKEN_FILE`；或通过 `CIRCLE_SERVER_TOKEN` 注入。CLI 不打印 token，不接受 principal/role 参数。`CIRCLE_SERVER_URL` 为启动时打印的本机地址，`CIRCLE_SERVER_SCOPE` 默认 `scp_lab`。CLI 和 worker 当前只支持该本机开发配置。
+登录仍是 `POST /v1/auth/dev-login`。将 token 放在 Git 外的权限受限文件，设置 `CIRCLE_HUB_TOKEN_FILE`；或通过 `CIRCLE_HUB_TOKEN` 注入。CLI 不打印 token，不接受 principal/role 参数。`CIRCLE_HUB_URL` 为启动时打印的本机地址，`CIRCLE_HUB_SCOPE` 默认 `scp_lab`。CLI 和 worker 当前只支持该本机开发配置。
 
-本地可执行入口为 `./bin/circle-server admin ...`，也可运行 `npm run admin -- ...`。发布包 bin 指向同一个 TypeScript CLI，本阶段没有软件发行或全局安装。
+本地可执行入口为 `./bin/circle-hub admin ...`，也可运行 `npm run admin -- ...`。发布包 bin 指向同一个 TypeScript CLI，本阶段没有软件发行或全局安装。
 
 | 命令 | 行为与权限 |
 |---|---|
-| `circle-server admin tasks` | 当前 tenant 和获准 scope 的持久任务；需要 admin.manage 与相应任务读取权限 |
-| `circle-server admin workers drain lab-east-01` | 不再接新操作，等待已有操作完成后返回 inFlight=0；不把排空当作取消或远端停止 |
-| `circle-server admin approvals` | 作用范围内的审批绑定和状态；列表访问不授予批准或设备操作权限 |
-| `circle-server admin events --tail` | 从 seq=0 按游标持续补读当前范围的事件；`--once` 输出一页，Ctrl+C 退出尾读 |
-| `circle-server admin audit` | 当前范围的管理/受理审计记录，最多 500 条；没有密码或 token |
-| `circle-server admin connectors disable bugzilla-synthetic` | 在当前 scope 禁用连接器，后续准入与执行出口拒绝调用 |
-| `circle-server admin connectors enable bugzilla-synthetic` | 在当前 scope 恢复连接器；仍按调用人的数据和动作权限检查 |
-| `circle-server admin restart --graceful` | 需要独立 admin.restart 权限；停止接新请求、提交已有事务，由 supervisor 以相同端口启动新 server，CLI 确认新 bootId 后返回 |
+| `circle-hub admin tasks` | 当前 tenant 和获准 scope 的持久任务；需要 admin.manage 与相应任务读取权限 |
+| `circle-hub admin workers drain lab-east-01` | 不再接新操作，等待已有操作完成后返回 inFlight=0；不把排空当作取消或远端停止 |
+| `circle-hub admin approvals` | 作用范围内的审批绑定和状态；列表访问不授予批准或设备操作权限 |
+| `circle-hub admin events --tail` | 从 seq=0 按游标持续补读当前范围的事件；`--once` 输出一页，Ctrl+C 退出尾读 |
+| `circle-hub admin audit` | 当前范围的管理/受理审计记录，最多 500 条；没有密码或 token |
+| `circle-hub admin connectors disable bugzilla-synthetic` | 在当前 scope 禁用连接器，后续准入与执行出口拒绝调用 |
+| `circle-hub admin connectors enable bugzilla-synthetic` | 在当前 scope 恢复连接器；仍按调用人的数据和动作权限检查 |
+| `circle-hub admin restart --graceful` | 需要独立 admin.restart 权限；停止接新请求、提交已有事务，由 supervisor 以相同端口启动新 server，CLI 确认新 bootId 后返回 |
 
 例如使用 npm 的项目入口：
 
 ```sh
-export CIRCLE_SERVER_URL=http://127.0.0.1:7410
-export CIRCLE_SERVER_TOKEN_FILE=/tmp/circle-server-dev-token
+export CIRCLE_HUB_URL=http://127.0.0.1:7410
+export CIRCLE_HUB_TOKEN_FILE=/tmp/circle-hub-dev-token
 npm run admin -- tasks
 npm run admin -- workers drain lab-east-01
 npm run admin -- approvals

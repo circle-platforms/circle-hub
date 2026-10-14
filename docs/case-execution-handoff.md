@@ -60,7 +60,7 @@ APV_0 与 APV_1 分别按床配置 comm.ssh_ips 的顺序取第 0/1 台，设备
 
 满足当前执行链与资源声明要求后，worker 在投递前强制重新获取当前 XML，server 再核对一次，结果必须与批准的树和命令证明一致；普通查询的旧 XML 缓存不能放行。server 持久化与当前操作/fence 绑定的复核记录，一次性消费后才授权 submit intent。随后取网关租约，env_prepare 核对绑定构建、设备数和 ready，再 case_submit。不会自动换构建、换测试床或初始化设备。
 
-运行时配置都在仓库外：CIRCLE_SERVER_EXECUTION_GATEWAYS 指向以下文件（所有占位均需由运维填写）：
+运行时配置都在仓库外：CIRCLE_HUB_EXECUTION_GATEWAYS 指向以下文件（所有占位均需由运维填写）：
 
 ```json
 {
@@ -79,7 +79,7 @@ APV_0 与 APV_1 分别按床配置 comm.ssh_ips 的顺序取第 0/1 台，设备
 
 issuer 使用 POST /token 的 refresh_token grant；若签发服务使用另一 CA，配置 issuerCaFile/issuerCaSha256。远端私有请求要求 HTTPS，HTTP 只给回环合成验收。每次请求重读并核对配置指纹，拒绝重定向，不关闭全局 TLS 校验。需要由用户或运维先提供并核验 CA；server 不从未验证连接自动建立信任。
 
-上述 issuer 字段仅保留既有手工会话兼容，通用 OAuth 登记可供其他来源使用（见 client-api-handoff）。当前执行部署已由用户选择 C 自身资源签发模式，不登记外部 issuer 或个人刷新令牌。用户更正环境事实：网关原实际签发方使用 HTTPS，与网关证书共享同一实验 CA，本机可达；先前“明文 HTTP”来自旧客户端配置，不能作为网关现状。环境更正后，circle-server 接管签发、旧服务退役的决定保持不变，无需 HTTP 例外。原地址、配置构建名、CA 原件及指纹值只在运行时保留。
+上述 issuer 字段仅保留既有手工会话兼容，通用 OAuth 登记可供其他来源使用（见 client-api-handoff）。当前执行部署已由用户选择 C 自身资源签发模式，不登记外部 issuer 或个人刷新令牌。用户更正环境事实：网关原实际签发方使用 HTTPS，与网关证书共享同一实验 CA，本机可达；先前“明文 HTTP”来自旧客户端配置，不能作为网关现状。环境更正后，circle-hub 接管签发、旧服务退役的决定保持不变，无需 HTTP 例外。原地址、配置构建名、CA 原件及指纹值只在运行时保留。
 
 网关资产是 connector-instance，configuration={packageId:"case-gateway",productLineId:"apv",runtimeProfileRef:"<配置引用>"}，declaration.reads 包含 test-bed、writes 包含 device-config。该连接器不把底层写工具直接暴露给模型，执行只走能力包。资产独立审批并激活。
 

@@ -23,7 +23,7 @@ test('Registry operation pages: audit facets count only authorized tenant and sc
 });
 
 test('Registry operation pages: worker scope intersections do not duplicate workers and liveness is a declared facet',async t=>{
- const h=await setup(t,{CIRCLE_SERVER_WORKER_OFFLINE_MS:'60000'});
+ const h=await setup(t,{CIRCLE_HUB_WORKER_OFFLINE_MS:'60000'});
  for(const name of ['lab-east-01','lab-east-02'])await h.request('/v1/workers/register',{},name);
  await h.db.query("UPDATE workers SET last_seen='2020-01-01T00:00:00.000001Z',draining=false WHERE worker_id='lab-east-01'");
  await h.db.query("UPDATE workers SET draining=true WHERE worker_id='lab-east-02'");

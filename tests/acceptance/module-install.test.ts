@@ -1,3 +1,4 @@
+import {sandboxTest} from './harness.ts';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { writeFile, mkdir } from 'node:fs/promises';
@@ -76,12 +77,12 @@ test('Module install: CLI freezes a local catalog and submits its complete modul
         await writeFile(`${folder}/${file.path}`, Buffer.from(file.base64, 'base64'));
     await writeFile(`${directory}/modules.json`, JSON.stringify({ schema: 'circle-packs/modules/1', modules: [fixture.module] }));
     await writeFile(`${h.scratch}/trial.json`, JSON.stringify(fixture.trial));
-    const { stdout } = await promisify(execFile)(process.execPath, ['apps/server/src/cli.ts', 'modules', 'install', '--catalog', `${directory}/modules.json`, '--module', fixture.module.id, '--trial', `${h.scratch}/trial.json`, '--scope', 'scp_lab'], { cwd: root, env: { ...h.env, CIRCLE_SERVER_URL: h.url, CIRCLE_SERVER_TOKEN: await h.login() } }), receipt = JSON.parse(stdout);
+    const { stdout } = await promisify(execFile)(process.execPath, ['apps/server/src/cli.ts', 'modules', 'install', '--catalog', `${directory}/modules.json`, '--module', fixture.module.id, '--trial', `${h.scratch}/trial.json`, '--scope', 'scp_lab'], { cwd: root, env: { ...h.env, CIRCLE_HUB_URL: h.url, CIRCLE_HUB_TOKEN: await h.login() } }), receipt = JSON.parse(stdout);
     assert.equal(receipt.digest, fixture.module.digest);
     assert.equal(receipt.status, 'candidate');
     assert.ok(!stdout.includes(h.scratch));
 });
-test('Module install: approved frozen bytes run through real pinned Circle even after the external source changes', { skip: (!process.env.CIRCLE_BIN || !process.env.CIRCLE_COMMIT) && 'Set CIRCLE_BIN and CIRCLE_COMMIT for module RPC acceptance' }, async (t) => {
+sandboxTest('Module install: approved frozen bytes run through real pinned Circle even after the external source changes', { skip: (!process.env.CIRCLE_BIN || !process.env.CIRCLE_COMMIT) && 'Set CIRCLE_BIN and CIRCLE_COMMIT for module RPC acceptance' }, async (t) => {
     const { h, post } = await environment(t), model = await scriptModel(t), fixture = moduleFixture();
     await writeFile(`${h.scratch}/runtime.json`, JSON.stringify({ circleBin: process.env.CIRCLE_BIN, circleCommit: process.env.CIRCLE_COMMIT, circleVersion: '1.1.1', model: { kind: 'scripted', base_url: model.url, model: 'scripted-fixture', protocol: 'openai', api_key: model.key } }));
     h.env.CIRCLE_RUNTIME_CONFIG = `${h.scratch}/runtime.json`;

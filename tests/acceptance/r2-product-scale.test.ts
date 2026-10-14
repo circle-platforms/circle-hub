@@ -9,7 +9,7 @@ test('Act R2.3 scale: two 2000-command builds keep tool reads below one second w
   const stub=await readonlySources(t),h=await setup(t);stub.state.expandedCommands=true;stub.state.headCount=2000;
   await h.db.query("UPDATE policies SET grants=grants || '[\"assets.read\",\"assets.register\",\"assets.change\",\"builds.read\",\"knowledge.read\"]'::jsonb WHERE principal_id='prn_alice'");
   await h.db.query("UPDATE policies SET grants=grants || '[\"assets.read\",\"assets.approve\"]'::jsonb WHERE principal_id='prn_bob'");
-  await writeFile(`${h.scratch}/profiles.json`,JSON.stringify({profiles:{fixture:{origin:stub.origin,index:'/builds/',requestIntervalMs:0}}}),{mode:0o600});h.env.CIRCLE_SERVER_CONNECTOR_PROFILES=`${h.scratch}/profiles.json`;h.env.CIRCLE_SERVER_INDEX_POLL_MS='60000';await h.stop();await h.startServer();
+  await writeFile(`${h.scratch}/profiles.json`,JSON.stringify({profiles:{fixture:{origin:stub.origin,index:'/builds/',requestIntervalMs:0}}}),{mode:0o600});h.env.CIRCLE_HUB_CONNECTOR_PROFILES=`${h.scratch}/profiles.json`;h.env.CIRCLE_HUB_INDEX_POLL_MS='60000';await h.stop();await h.startServer();
   const asset=await h.request('/v1/assets',{scopeId:'scp_lab',kind:'connector-instance',name:'Synthetic large command source',version:'1.0.0',declaration:{reads:['registered-source'],writes:[],credentials:[]},configuration:{packageId:'build-site',runtimeProfileRef:'fixture'},readers:['prn_alice','prn_bob']});
   await h.request(`/v1/assets/${asset.assetId}/lifecycle`,{version:asset.version,sha256:asset.sha256,state:'approved'},'bob');await h.request(`/v1/assets/${asset.assetId}/lifecycle`,{version:asset.version,sha256:asset.sha256,state:'running'});const worker=await h.startWorker();
   const token=await h.login(),elapsed:number[]=[];
@@ -24,7 +24,7 @@ test('Act R2.3 scale: two 2000-command builds keep tool reads below one second w
   }
   const p95=[...elapsed].sort((a,b)=>a-b)[Math.ceil(elapsed.length*0.95)-1];assert.ok(p95<1000);t.diagnostic(`Four-read p95 ${p95.toFixed(0)}ms`);
   assert.equal(Number((await h.db.query("SELECT count(*) AS n FROM knowledge_records WHERE kind='Claim'")).rows[0].n),0,'Reads must finish before projection starts');
-  await h.stop(worker);await h.stop(h.server,'SIGKILL');h.env.CIRCLE_SERVER_INDEX_POLL_MS='30';await h.startServer();await h.startWorker();
+  await h.stop(worker);await h.stop(h.server,'SIGKILL');h.env.CIRCLE_HUB_INDEX_POLL_MS='30';await h.startServer();await h.startWorker();
   await until(async()=>(await h.db.query("SELECT 1 FROM knowledge_projection_jobs WHERE status='running'")).rowCount!>0);
   const active:number[]=[];
   for(let index=0;index<4;index++){
@@ -43,7 +43,7 @@ test('Act R2.3 scale: a failed later projection batch cannot enter another job s
   const stub=await readonlySources(t),h=await setup(t);stub.state.expandedCommands=true;stub.state.headCount=400;stub.state.badCommandIndex=300;
   await h.db.query("UPDATE policies SET grants=grants || '[\"assets.read\",\"assets.register\",\"assets.change\",\"builds.read\",\"knowledge.read\"]'::jsonb WHERE principal_id='prn_alice'");
   await h.db.query("UPDATE policies SET grants=grants || '[\"assets.read\",\"assets.approve\"]'::jsonb WHERE principal_id='prn_bob'");
-  await writeFile(`${h.scratch}/profiles.json`,JSON.stringify({profiles:{fixture:{origin:stub.origin,index:'/builds/',root:'/dav/',requestIntervalMs:0}}}),{mode:0o600});h.env.CIRCLE_SERVER_CONNECTOR_PROFILES=`${h.scratch}/profiles.json`;await h.stop();await h.startServer();
+  await writeFile(`${h.scratch}/profiles.json`,JSON.stringify({profiles:{fixture:{origin:stub.origin,index:'/builds/',root:'/dav/',requestIntervalMs:0}}}),{mode:0o600});h.env.CIRCLE_HUB_CONNECTOR_PROFILES=`${h.scratch}/profiles.json`;await h.stop();await h.startServer();
   for(const packageId of ['build-site','documents']){const asset=await h.request('/v1/assets',{scopeId:'scp_lab',kind:'connector-instance',name:'Synthetic staged source',version:'1.0.0',declaration:{reads:['registered-source'],writes:[],credentials:[]},configuration:{packageId,runtimeProfileRef:'fixture'},readers:['prn_alice','prn_bob']});await h.request(`/v1/assets/${asset.assetId}/lifecycle`,{version:asset.version,sha256:asset.sha256,state:'approved'},'bob');await h.request(`/v1/assets/${asset.assetId}/lifecycle`,{version:asset.version,sha256:asset.sha256,state:'running'});}
   await h.startWorker();await h.request('/v1/tools/buildsite.command_check/call',{args:{build:'Rel_PHOTON_10_5_0_101',commands:['feature.enable']},idempotencyKey:'later-batch-failure'});
   const failed=await until(async()=>{const job=(await h.db.query("SELECT * FROM knowledge_projection_jobs WHERE status='failed'")).rows[0];return job;});assert.ok(failed.progress>=200);

@@ -889,3 +889,13 @@ B 三类先写旧路由 **0/4**（与 operations 三例顺序复现合计 **0/7*
 最后读取维护者消息后接通知登记页，先复现 **0/2**。仅 /v1/notifications 的 view=page 分流到共同分面页，旧整数游标补读/SSE 与冻结的 projectedEvent 均未改；按当前保留窗口查询，不把普通页游标当 seq 补读或完整历史。对象项、taskless owner-only、私有任务计数、状态/未支持维度、查询/身份绑定与过窗当前查询边界均验收。通知/SSE/冻结事件兼容相关 **16/16**，最终新增页专项 **2/2**，无 skip，typecheck/diff 通过。整轮只跑上述相关文件，全套交维护者；39 是唯一新迁移，未 push/部署，未改 7420/网关/Circle/独立包或事件挑选表。
 
 最终 **cb4d485** 定向收尾验收按文件串行运行：registry-approval-pages **3/3**、registry-content-pages **5/5**、registry-mcp-pages **1/1**、registry-operations-pages **3/3**、registry-notification-pages **2/2**、worker-liveness-query **1/1**，共 **15/15**，失败/取消/跳过均为零；typecheck 通过。验收时工作区与生产提交冻结，未出现 terminating connection，不需要文件重跑；随后仅追加本条验证记录。没有运行 npm test 或全套，完整独立验收由维护者负责。只用临时 PostgreSQL 与合成资料，未 push/部署或访问 7420/真实网关/Circle/独立包；B 当前范围内存 ACL 与分页成本保持 handoff 已披露口径，不以页大小推断查询成本上限。
+
+## 65：统一标识、冻结包基线与执行流迁移设计
+
+按维护者一份简报顺序签署三笔：**69363e3** 统一 circle-hub 标识与 `CIRCLE_HUB_*`，新名优先（包含显式空值），仅新名未定义时读取旧名，启动只输出一行不含值的旧键弃用提示；旧 controller lookup 集中适配、编译器 creator 与 Circle 扩展旧协议保留，原生 Execution **1.1.1** 及实现摘要不变，HTTP 路由、dev-login 与数据库 schema 不改，专项 **54/54**（新用例 5、直接消费者 38、mindmap 4、归档 7）及 typecheck 通过。**dfd8144** 默认样本改钉 **ba06eed**，Hub hooks **3/3**、冻结产品线 **31/31**、技能 **57/57** 与 catalog **4/4**（合计 **61/61**）通过，TAP 用例数动态读取，均无 skip，typecheck 通过；只读冻结包字节，不修改独立包。**b87c64c** 提交 148 行中文执行流迁移设计，四个相对文档链接及路径/凭据静态检查通过；明确当前 loader 不会运行完整 controller，后续需通用驱动、历史批准 pin、设备终态与产品解析隔离及 Meridian 双产品执行验收，旧任务不改数据库重绑，本轮未实施迁移，待维护者复核与后续实施授权。最终仅对齐 packs/README 的主配置新名说明并追加本段；未运行全套（由维护者独立执行），未 push、部署、访问 7420/真实网关或改 Circle 与独立包源，只用合成验收与只读冻结样本，不扩事件、通知或分页面。
+
+## 66：公开 CI 的隔离前提显式跳过
+
+维护者核对 f03f91d 的 Hub checks：244 通过、42 失败、18 跳过，失败来自执行宿主不支持当前 macOS seatbelt 隔离。统一测试 harness 每进程探测一次当前 adapter 的实际启动与文件拒读；只有明确 SANDBOX_UNAVAILABLE 才跳过，Tool/Hook/依赖/版本/断言错误仍失败。59 个 acceptance 隔离 leaf 与方法阳性用例在资源/worker/模型调用前明确 skip，负例、普通连接器与治理登记不跳过；混合外部来源用例保留上传/批准/命令查询，把实际执行拆为有前提的子用例，跳过不计通过。
+
+实际 macOS 定向 45/45 加外部来源 12/12，共 **57/57，无 skip**；最终 unsupported 模拟定向 108 项为 **48 通过、60 跳过、0 失败/取消**，typecheck/diff 通过。模拟仅用测试 preload 将 server/worker 置于不支持平台，PostgreSQL 父进程保留真实宿主；这是失败闭合与报告边界验证，不是 Ubuntu 实机验收，不能启用假隔离。生产 isolation 与其它生产字节、原业务断言保持不变，只改测试和兼容说明；未跑全套、未 push/部署或访问 7420、真实网关、Circle 或独立包工作树。

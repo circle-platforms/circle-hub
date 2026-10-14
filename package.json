@@ -11,7 +11,7 @@
   },
   "homepage": "https://circle-platforms.github.io/circle-hub/",
   "bin": {
-    "circle-server": "apps/server/src/cli.ts"
+    "circle-hub": "apps/server/src/cli.ts"
   },
   "engines": {
     "node": ">=24"

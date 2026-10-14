@@ -8,15 +8,15 @@ import {setup} from './harness.ts';
 import {readonlySources} from '../fixtures/readonly-sources.ts';
 
 test('Act R2.7: runtime manifests install a new product line and select its tool aliases without source edits',async t=>{
-  const directory=await mkdtemp(`${tmpdir()}/circle-server-product-lines-`);t.after(()=>rm(directory,{recursive:true,force:true}));
+  const directory=await mkdtemp(`${tmpdir()}/circle-hub-product-lines-`);t.after(()=>rm(directory,{recursive:true,force:true}));
   await mkdir(`${directory}/third`);
   await writeFile(`${directory}/third/product-line.json`,JSON.stringify({schemaVersion:'product-line/1',id:'third',version:'1.0.0',synthetic:true,connectorPackages:[{packageId:'documents',alias:'third_docs'}],skills:[],knowledgeMappings:{authority:'Pinned synthetic document bytes'}}));
   const first=fileURLToPath(new URL('../../packs/apv/product-line.json',import.meta.url)),second=fileURLToPath(new URL('../../packs/meridian/product-line.json',import.meta.url)),config=`${directory}/installed.json`;
   await writeFile(config,JSON.stringify({schemaVersion:'installed-product-lines/1',productLines:[first,second,'third/product-line.json']}));
-  const stub=await readonlySources(t),h=await setup(t,{CIRCLE_SERVER_PRODUCT_LINES:config});
+  const stub=await readonlySources(t),h=await setup(t,{CIRCLE_HUB_PRODUCT_LINES:config});
   await h.db.query("UPDATE policies SET grants=grants || '[\"assets.read\",\"assets.register\",\"assets.change\",\"knowledge.read\"]'::jsonb WHERE principal_id='prn_alice'");
   await h.db.query("UPDATE policies SET grants=grants || '[\"assets.read\",\"assets.approve\"]'::jsonb WHERE principal_id='prn_admin'");
-  await writeFile(`${h.scratch}/profiles.json`,JSON.stringify({profiles:{synthetic:{origin:stub.origin,root:'/dav/'}}}));h.env.CIRCLE_SERVER_CONNECTOR_PROFILES=`${h.scratch}/profiles.json`;await h.stop();await h.startServer();
+  await writeFile(`${h.scratch}/profiles.json`,JSON.stringify({profiles:{synthetic:{origin:stub.origin,root:'/dav/'}}}));h.env.CIRCLE_HUB_CONNECTOR_PROFILES=`${h.scratch}/profiles.json`;await h.stop();await h.startServer();
   const register=async(packageId:string,productLineId?:string,alias?:string)=>{
     const asset=await h.request('/v1/assets',{scopeId:'scp_lab',kind:'connector-instance',name:'Synthetic manifest binding',version:'1.0.0',declaration:{reads:['registered-source'],writes:[],credentials:[]},configuration:{packageId,productLineId,alias,runtimeProfileRef:'synthetic'},readers:['prn_alice','prn_admin']});
     await h.request(`/v1/assets/${asset.assetId}/lifecycle`,{version:asset.version,sha256:asset.sha256,state:'approved'},'admin');
@@ -39,7 +39,7 @@ test('Act R2.7: runtime manifests install a new product line and select its tool
 
 test('Act R2.7: product-line installation rejects malformed declarations before startup',async t=>{
   const {loadProductLines}=await import('../../packs/product-lines.ts');
-  const directory=await mkdtemp(`${tmpdir()}/circle-server-invalid-product-lines-`);t.after(()=>rm(directory,{recursive:true,force:true}));
+  const directory=await mkdtemp(`${tmpdir()}/circle-hub-invalid-product-lines-`);t.after(()=>rm(directory,{recursive:true,force:true}));
   const manifest={schemaVersion:'product-line/1',id:'fixture',version:'1.0.0',connectorPackages:[{packageId:'documents',alias:'fixture_docs'}],skills:[]};
   const config=`${directory}/installed.json`,file=`${directory}/product-line.json`;
   await writeFile(config,JSON.stringify({schemaVersion:'installed-product-lines/1',productLines:['product-line.json']}));

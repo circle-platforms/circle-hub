@@ -54,12 +54,12 @@ test('Publication regression: repair identifiers retain their systems and never 
 });
 
 test('Publication regression: manifest filtering and platform commands flow through worker receipts into asynchronous knowledge',async t=>{
-  const fixture=await publicationLayout(t),directory=await mkdtemp(`${tmpdir()}/circle-server-publication-`);fixture.state.overloads=true;t.after(()=>rm(directory,{recursive:true,force:true}));
+  const fixture=await publicationLayout(t),directory=await mkdtemp(`${tmpdir()}/circle-hub-publication-`);fixture.state.overloads=true;t.after(()=>rm(directory,{recursive:true,force:true}));
   await writeFile(`${directory}/product-line.json`,JSON.stringify({schemaVersion:'product-line/1',id:'fixture',version:'1.0.0',connectorPackages:[{packageId:'build-site',alias:'fixture_builds'}],connectorOptions:{'build-site':{buildSite:fixture.policy}},skills:[]}));
   await writeFile(`${directory}/installed.json`,JSON.stringify({schemaVersion:'installed-product-lines/1',productLines:['product-line.json']}));
-  const h=await setup(t,{CIRCLE_SERVER_PRODUCT_LINES:`${directory}/installed.json`});
+  const h=await setup(t,{CIRCLE_HUB_PRODUCT_LINES:`${directory}/installed.json`});
   await h.db.query("UPDATE policies SET grants=grants || '[\"assets.read\",\"assets.register\",\"assets.change\",\"builds.read\",\"knowledge.read\"]'::jsonb WHERE principal_id='prn_alice'");await h.db.query("UPDATE policies SET grants=grants || '[\"assets.read\",\"assets.approve\"]'::jsonb WHERE principal_id='prn_admin'");
-  await writeFile(`${h.scratch}/profiles.json`,JSON.stringify({profiles:{fixture:{origin:fixture.origin,index:'/builds/',requestIntervalMs:0}}}));h.env.CIRCLE_SERVER_CONNECTOR_PROFILES=`${h.scratch}/profiles.json`;await h.stop();await h.startServer();
+  await writeFile(`${h.scratch}/profiles.json`,JSON.stringify({profiles:{fixture:{origin:fixture.origin,index:'/builds/',requestIntervalMs:0}}}));h.env.CIRCLE_HUB_CONNECTOR_PROFILES=`${h.scratch}/profiles.json`;await h.stop();await h.startServer();
   const asset=await h.request('/v1/assets',{scopeId:'scp_lab',kind:'connector-instance',name:'Synthetic publication source',version:'1.0.0',declaration:{reads:['registered-source'],writes:[],credentials:[]},configuration:{packageId:'build-site',productLineId:'fixture',runtimeProfileRef:'fixture'},readers:['prn_alice','prn_admin']});await h.request(`/v1/assets/${asset.assetId}/lifecycle`,{version:asset.version,sha256:asset.sha256,state:'approved'},'admin');await h.request(`/v1/assets/${asset.assetId}/lifecycle`,{version:asset.version,sha256:asset.sha256,state:'running'});await h.startWorker();
   const call=(suffix:string,args:any)=>h.request(`/v1/tools/fixture_builds.${suffix}/call`,{args,idempotencyKey:`publication-${suffix}`});
   const versions=await call('versions',{});assert.equal(versions.result.builds.length,8);assert.ok(!fixture.requests.some(path=>/command_tree|Bugs_Fixed/.test(path)));
@@ -75,8 +75,8 @@ test('Publication regression: manifest filtering and platform commands flow thro
   // Seed the former leaf-name projector around the same sealed source, then
   // publish a newer projector. Changing rules must retire old statement keys.
   const job=(await h.db.query('SELECT * FROM knowledge_projection_jobs')).rows.find(row=>row.payload.sources.some((source:any)=>source.sha256===checked.result.sourceSha256)),ref=job.payload.sources.find((source:any)=>source.sha256===checked.result.sourceSha256);
-  const evidence=await h.request(`/v1/knowledge/records/${ref.evidenceId}`),path=evidence.payload.path,store=new Store(JSON.parse(h.env.CIRCLE_SERVER_DATABASE_CONFIG!));store.pool=h.db;
-  const auth=new Auth(store),graph=new KnowledgeGraph(store,auth,new Records(store,auth,new LocalObjects(h.env.CIRCLE_SERVER_DATA_DIR!))),products=new ProductRecords(graph),ctx={principalId:'prn_alice',tenantId:'tnt_lab',kind:'user'} as AuthContext;
+  const evidence=await h.request(`/v1/knowledge/records/${ref.evidenceId}`),path=evidence.payload.path,store=new Store(JSON.parse(h.env.CIRCLE_HUB_DATABASE_CONFIG!));store.pool=h.db;
+  const auth=new Auth(store),graph=new KnowledgeGraph(store,auth,new Records(store,auth,new LocalObjects(h.env.CIRCLE_HUB_DATA_DIR!))),products=new ProductRecords(graph),ctx={principalId:'prn_alice',tenantId:'tnt_lab',kind:'user'} as AuthContext;
   const publish=async(ruleVersion:string,subject:string,head:string)=>{
     const jobId=newId('rec');
     await h.db.query("INSERT INTO knowledge_projection_jobs(job_id,job_key,task_id,origin_task_id,tenant_id,scope_id,owner_id,payload,status) SELECT $1,$2,task_id,origin_task_id,tenant_id,scope_id,owner_id,$3,'succeeded' FROM knowledge_projection_jobs WHERE job_id=$4",[jobId,canonicalHash([jobId]),JSON.stringify({...job.payload,ruleVersion,sources:[ref]}),job.job_id]);

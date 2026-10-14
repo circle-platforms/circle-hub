@@ -1,3 +1,4 @@
+import {sandboxTest} from './harness.ts';
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {randomBytes} from 'node:crypto';
@@ -14,7 +15,7 @@ async function prepare(h:Harness,origin:string,runtime?:any){
   await h.db.query('UPDATE policies SET grants=grants || $1::jsonb WHERE principal_id=ANY($2::text[])',[JSON.stringify(grants),['prn_alice','prn_bob']]);
   await h.db.query("UPDATE policies SET grants=grants || '[\"admin.manage\"]'::jsonb WHERE principal_id='prn_alice'");
   await h.db.query("UPDATE policies SET grants=grants || '[\"automations.read\"]'::jsonb WHERE principal_id='prn_outsider'");
-  await writeFile(`${h.scratch}/profiles.json`,JSON.stringify({profiles:{fixture:{origin,root:'/dav/'}}}),{mode:0o600});h.env.CIRCLE_SERVER_CONNECTOR_PROFILES=`${h.scratch}/profiles.json`;
+  await writeFile(`${h.scratch}/profiles.json`,JSON.stringify({profiles:{fixture:{origin,root:'/dav/'}}}),{mode:0o600});h.env.CIRCLE_HUB_CONNECTOR_PROFILES=`${h.scratch}/profiles.json`;
   await writeFile(`${h.scratch}/runtime.json`,JSON.stringify(runtime??{circleBin:'synthetic-runtime-not-executed',circleCommit:'0'.repeat(40),circleVersion:'1.1.1',model:{kind:'scripted',base_url:`${origin}/v1`,model:'synthetic',protocol:'openai',api_key:randomBytes(20).toString('hex')}}),{mode:0o600});h.env.CIRCLE_RUNTIME_CONFIG=`${h.scratch}/runtime.json`;await h.stop();await h.startServer();
 }
 async function activate(h:Harness,asset:any){await h.request(`/v1/assets/${asset.assetId}/lifecycle`,{version:asset.version,sha256:asset.sha256,state:'approved'},'bob');return h.request(`/v1/assets/${asset.assetId}/lifecycle`,{version:asset.version,sha256:asset.sha256,state:'running'});}
@@ -79,7 +80,7 @@ test('Act R2.6 regression: a rejected event admission records its failure and do
   await h.stop();await h.startServer();await delay(150);assert.equal((await h.request(`/v1/automations/bots/${active.assetId}/runs`)).length,2);
 });
 
-test('Act R2.6: scheduled real Circle consolidates opted-in fragments as deduplicated personal candidates with tool evidence',runtimeTest,async t=>{
+sandboxTest('Act R2.6: scheduled real Circle consolidates opted-in fragments as deduplicated personal candidates with tool evidence',runtimeTest,async t=>{
   const stub=await readonlySources(t),model=await scriptModel(t),h=await setup(t);await prepare(h,stub.origin,{circleBin:process.env.CIRCLE_BIN,circleCommit:process.env.CIRCLE_COMMIT,circleVersion:'1.1.1',model:{kind:'scripted',base_url:model.url,model:'scripted-fixture',protocol:'openai',api_key:model.key}});
   await activate(h,await h.request('/v1/assets',{scopeId:'scp_lab',kind:'connector-instance',name:'Synthetic shared knowledge',version:'1.0.0',declaration:{reads:['knowledge'],writes:['knowledge-candidates'],credentials:[]},configuration:{packageId:'knowledge'},readers:['prn_alice','prn_bob']}));
   const fragment={id:'fragment-1',kind:'correction',subject:'synthetic-feature',predicate:'command-choice',value:'preferred',quote:'Synthetic corrected procedure',toolReturn:{name:'synthetic.read',result:{observed:true}}},raw=Buffer.from(JSON.stringify({fragments:[fragment]}));
@@ -95,7 +96,7 @@ test('Act R2.6: scheduled real Circle consolidates opted-in fragments as dedupli
   const channel=await until(async()=>{const events=await h.request(`/v1/tasks/${runs[0].taskId}/events?after=0`);return events.events.some((event:any)=>event.kind==='bot.output')?events:false;});assert.equal(channel.events.find((event:any)=>event.kind==='bot.output').payload.channel,'circle-events');
 });
 
-test('Act R2.6 regression: bot reads of a changing source retain evidence without creating recursive observed events',runtimeTest,async t=>{
+sandboxTest('Act R2.6 regression: bot reads of a changing source retain evidence without creating recursive observed events',runtimeTest,async t=>{
   const stub=await readonlySources(t),model=await scriptModel(t),h=await setup(t);stub.state.dynamicDocuments=true;
   await prepare(h,stub.origin,{circleBin:process.env.CIRCLE_BIN,circleCommit:process.env.CIRCLE_COMMIT,circleVersion:'1.1.1',model:{kind:'scripted',base_url:model.url,model:'scripted-fixture',protocol:'openai',api_key:model.key}});
   const source=await activate(h,await h.request('/v1/assets',{scopeId:'scp_lab',kind:'connector-instance',name:'Synthetic dynamic document source',version:'1.0.0',declaration:{reads:['registered-source'],writes:[],credentials:[]},configuration:{packageId:'documents',runtimeProfileRef:'fixture'},readers:['prn_alice','prn_bob']}));
