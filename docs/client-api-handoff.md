@@ -630,3 +630,20 @@ catalog 路径按实际独立包检出位置在运行时提供。REF 可为本�
 初次冻结 1.3.0 的 `702d039` 时，v2 描述的 id 仍指旧 flow，显式开启在静态接法校验报红。后续冻结 `5cdbc2b` 后已通过真实临时 PostgreSQL 完成原件上传、模块安装与独立变更集批准、派发、终态、纯 Tool 解析和交付：case_submit 一次，原件只经 xlsx_b64 的 byteArgs、字节 SHA 一致，设备和主机步骤 observed、两个检查点 passed、unmapped 为空。验收仍为 **1 fail / 0 skip**，因为包未发 verify.workbook；device / host Hook 的真实处理器回执及 B 字节 SHA 已核对。保留三个 verify 挂点完整性断言，不以 delivered 冒充整条验收通过。默认单项 skip 保持普通全套可运行，跳过不计通过。
 
 本验收只使用 A3 合成协议：env_prepare / bed_topology 可独立只读，status/results 接受 worker 携带的可选租约字段，回执声明合成的 request_hash / input_sha256 / byte_hashes / state，用于原操作机械关联；xlsx_b64 和 expires_in_s 使用网关的字段名。它不证明现网网关已支持这些关联字段、参数或调用时序。实际网关的两个准备观察要求远端租约；后续可选 receiptPolicy.prepare 的方向见[执行流设计 A2 附录](design/execution-flow-packs.md#附录-a2有界-transition-内部契约)的驱动注入形状小节，本轮未实现，也不宣布现网切换。
+
+### C 严格 cexg 协议目标验收
+
+第二条使用与 cexg 0.3.1 Tool schema 同形的自写合成 provider，与第一条的 synthetic provider protocol 分开：
+
+```sh
+CIRCLE_HUB_CEXG_PROTOCOL_ACCEPTANCE=1 \
+CIRCLE_PACKS_CATALOG=../circle-packs/modules.json \
+CIRCLE_PACKS_REF=apv-execution-flow \
+node --test --test-concurrency=1 tests/acceptance/c-cexg-protocol.test.ts
+```
+
+未设置开关时，纯协议夹具 **1 pass**、主兼容验收 **1 skip**；不开启主验收时不读取外部模块或启动 PostgreSQL。显式启用仍冻结一次 ref，目录 / ABI 错误不变成 skip。夹具只用文档示例与运行时生成的模拟值；认证值随机生成，监听地址仅由本机临时端口构造，没有真实配置、凭据或床地址。
+
+严格输入不放宽：env_prepare / bed_topology / case_submit 必需 lease_id/token，提交原件字段为 xlsx_b64、module 可选，case_status / case_results 仅 task_id、拒绝额外字段。原始成功回报保持 submit 的 sha256/case_ids、status 的 state、results 的 ready/xlsx_sha256/cases；不填三种 A3 hash，不给 submit 或完成 results 填 state。当前批准策略仍沿未改驱动的旧 schema，正是待修兼容边界之一；后续必须同步批准的 policy 映射与机械核验，不能在夹具原件补字段做绿，也不在本轮定义未来 schema。
+
+冻结 `5cdbc2b` 的实际结果为 **1 pass / 1 fail / 0 skip**：原件与模块登记、另一身份批准完成，主目标在 `C.validateBatch:env_prepare` 缺租约而 failed / INVALID_PAYLOAD，provider RPC、case_submit 与 write intent 都是零。主断言仍要求成功完成执行，没有把拒绝标成通过。提交、status/results 与原始回执的后续缺口尚未到达；完整清单见[中英 C 待办](design/execution-flow-packs.md#c-阶段待办同形网关协议兼容)，本轮未改驱动或网关，也未证明真实设备兼容。

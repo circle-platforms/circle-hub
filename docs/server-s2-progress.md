@@ -1059,3 +1059,11 @@ H1 期限 **4e84ba0**、H2 拒绝来源 **8cf4998**、M3 终态后结果与补�
 未来驱动必须补逐工具租约注入映射、注入后完整 schema 或允许声明的注入字段、提交字节参数 / module 的批准 policy 映射、各工具真实 state 或 channel/rc 终态映射、冻结原件 sha256 与批准方法用例身份 case_ids 的核验。声明外参数和现网不存在的三 hash 不能充当兼容方案；映射属于通用 policy，不在 Hub 写 APV 分支。租约内 prepare 观察与 beforeDispatch 证据时序、已证 D 终态和结果渠道失败的区分仍按前次方向，afterResult 仍产品显式核验。
 
 本轮只写清单，不定未来 JSON/schema 或实现。两份设计 **25** 本地链接 / 锚点与已有 frame / 动作 F 解析均通过，diff 检查通过；本机网关源码仅作只读形状参考，不运行 / 导入 / 复制其实现或配置。A3 合成协议与严格目标的证明范围分开，不 push / 部署 / 改驱动、网关、独立包或原生字节。
+
+## 93：严格 cexg 协议目标验收
+
+新增 c-cexg-protocol 单文件：纯协议叶验证 required / unknown 参数、真实租约身份、仅 task_id 的观察参数及不扩写的原始成功字段；主目标复用同一外部 APV v2 flow 的原件、模块安装 / Bob 独立批准与通用流程提交。provider 的 TS 数据按只读 TOOL_SPECS 形状自写，不导入 / 执行 Python 或复制实现 / 配置；凭据随机生成，地址仅本机运行时端口及文档示例值。原始 submit/results 不补 state 或三 hash，status 保留 state；release、lease_status、build_checked 和 MCP isError 均按协议分开。
+
+默认严格文件 **1 pass / 1 skip**，与第一条合成入口同跑为 **1 pass / 2 skip / 0 fail**，skip 不计兼容通过。显式冻结 **5cdbc2b**，独立树与主树均 **1 pass / 1 fail / 0 skip**：真实临时 PostgreSQL 完成原件 / 资源 / 运行 profile / 模块登记和另一身份批准，主目标在 C.validateBatch:env_prepare 缺租约而 failed / INVALID_PAYLOAD，RPC 0、case_submit 0、write intent 0。主断言要求 delivered，不把准确拒绝改为 PASS；后续提交 / 观察 / 原始证明关系尚未到达。该红点与 A3 合成链漏 verify.workbook 分开披露。
+
+只参数化既有测试夹具的 provider/tools，未改变第一条默认样本，单文件命令和政策同步需求写入 handoff。未来 C 的批准 policy 与核验必须一起更新，不能补伪 hash 做绿，也不在此猜未来 schema。最终 typecheck / diff 与 **65** 个 handoff 本地链接通过；仅针对性测试，PG 串行且已清理，不跑全套 / 真实环境 / 模型，不改生产驱动、原生 1.1.1、网关或独立包，不 push / 部署。
