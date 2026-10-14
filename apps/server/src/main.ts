@@ -32,6 +32,7 @@ import {readReleaseAuditMigration} from '../../../packages/execution/src/read-re
 import {readCompensationMigration} from '../../../packages/execution/src/read-compensation-migration.ts';
 import {readAttributionMigration} from '../../../packages/execution/src/read-attribution-migration.ts';
 import {workQueryMigration} from '../../../packages/tasks/src/work-query-migration.ts';
+import {registryPageMigration} from '../../../packages/tasks/src/registry-page-migration.ts';
 import {QueueQuery,TaskPageQuery} from '../../../packages/contracts/src/index.ts';
 import {Notifications,NotificationQuery} from '../../../packages/tasks/src/notifications.ts';
 import {WorkQueries} from '../../../packages/tasks/src/work-queries.ts';
@@ -87,7 +88,7 @@ import {HarnessPrimitives} from '../../../packages/skillpacks/src/primitives.ts'
 
 function environment(name: string): string { const value = process.env[name]; if (!value) throw new Error(`Required environment variable: ${name}`); return value; }
 const store = new Store(JSON.parse(environment('CIRCLE_SERVER_DATABASE_CONFIG')));
-await store.migrate([taskMigration,deliveryMigration,knowledgeMigration,executionMigration,...packageMigrations,approvalMigration,conclusionMigration,checklistMigration,connectorMigration,entityMigration,assetMigration,graphMigration,toolMigration,skillMigration,automationMigration,automationOutcomeMigration,knowledgePageMigration,automationOriginMigration,ingestionMigration,oauthMigration,resourceIdentityMigration,roleMigration,changeSetMigration,changeSetDependenciesMigration,enforcementMigration,sessionMigration,toolRolesMigration,readEffectMigration,readReleaseAuditMigration,notificationMigration,queryMigration,neutralMigration,mcpMigration,compatibilityMigration,readCompensationMigration,workQueryMigration,readAttributionMigration]);
+await store.migrate([taskMigration,deliveryMigration,knowledgeMigration,executionMigration,...packageMigrations,approvalMigration,conclusionMigration,checklistMigration,connectorMigration,entityMigration,assetMigration,graphMigration,toolMigration,skillMigration,automationMigration,automationOutcomeMigration,knowledgePageMigration,automationOriginMigration,ingestionMigration,oauthMigration,resourceIdentityMigration,roleMigration,changeSetMigration,changeSetDependenciesMigration,enforcementMigration,sessionMigration,toolRolesMigration,readEffectMigration,readReleaseAuditMigration,notificationMigration,queryMigration,neutralMigration,mcpMigration,compatibilityMigration,readCompensationMigration,workQueryMigration,readAttributionMigration,registryPageMigration]);
 const auth = new Auth(store,{developmentTtlMs:process.env.CIRCLE_SERVER_DEV_TOKEN_TTL_MS?Number(process.env.CIRCLE_SERVER_DEV_TOKEN_TTL_MS):undefined,runTokenTtlMs:process.env.CIRCLE_SERVER_RUN_TOKEN_TTL_MS?Number(process.env.CIRCLE_SERVER_RUN_TOKEN_TTL_MS):undefined});
 requireCondition(process.env.CIRCLE_SERVER_DEV_AUTH === '1', 'INVALID_PAYLOAD', 'Phase one requires explicitly enabled development authentication');
 await auth.initializeDevelopment(environment('CIRCLE_SERVER_DEV_IDENTITIES'));
@@ -372,7 +373,7 @@ const server = createListener(async (request, response) => {
     const eventOriginal=/^\/v1\/tasks\/(task_[A-Za-z0-9_-]+)\/events\/(\d+)\/content$/.exec(url.pathname);if(eventOriginal&&request.method==='GET'){download(response,await tasks.eventContent(ctx,TaskId.parse(eventOriginal[1]),z.coerce.number().int().positive().max(Number.MAX_SAFE_INTEGER).parse(eventOriginal[2])));return;}
     const approvalRoute=/^\/v1\/tasks\/([^/]+)\/approvals(?:\/([^/]+))?$/.exec(url.pathname);
     if(approvalRoute&&request.method===CLIENT_ROUTES.approvals.method&&!approvalRoute[2]){
-      send(response,200,{data:await approvals.list(ctx,TaskId.parse(approvalRoute[1]))});return;
+      const id=TaskId.parse(approvalRoute[1]);send(response,200,{data:url.searchParams.has('view')?await approvals.page(ctx,RegistryPageQuery.parse(Object.fromEntries(url.searchParams)),id):await approvals.list(ctx,id)});return;
     }
     if(approvalRoute&&request.method==='POST'){
       const taskId=TaskId.parse(approvalRoute[1]);
@@ -452,7 +453,8 @@ const server = createListener(async (request, response) => {
       const connector=/^\/v1\/admin\/connectors\/([^/]+)$/.exec(url.pathname);
       if(connector&&request.method==='POST'){const input=z.object({scopeId:ScopeId,enabled:z.boolean()}).parse(await body(request));send(response,200,{data:await registry.enabled(ctx,input.scopeId,decodeURIComponent(connector[1]),input.enabled)});return;}
       if(url.pathname==='/v1/admin/approvals'&&request.method==='GET'){
-        const rows=(await store.pool.query('SELECT a.* FROM approvals a JOIN tasks t USING(task_id) WHERE t.tenant_id=$1 AND t.scope_id=ANY($2::text[]) ORDER BY a.created_at',[policy.tenantId,policy.scopes])).rows;
+        if(url.searchParams.has('view')){send(response,200,{data:await approvals.page(ctx,RegistryPageQuery.parse(Object.fromEntries(url.searchParams)))});return;}
+        const rows=(await store.pool.query("SELECT a.* FROM approvals a JOIN tasks t USING(task_id) WHERE t.tenant_id=$1 AND t.scope_id=ANY($2::text[]) AND (t.context->>'privateOwnerId' IS NULL OR t.context->>'privateOwnerId'=$3) ORDER BY a.created_at",[policy.tenantId,policy.scopes,policy.principalId])).rows;
         send(response,200,{data:rows.map(row=>approvals.view(row))});return;
       }
       if(url.pathname==='/v1/admin/audit'&&request.method==='GET'){

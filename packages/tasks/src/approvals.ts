@@ -2,6 +2,9 @@ import { ApiError,actionDigest,newId,requireCondition,type AuthContext,type Appr
 import type { Store,Transaction } from '../../storage/src/index.ts';
 import type { Auth } from './auth.ts';
 import type { Tasks } from './index.ts';
+import {facetedPage} from '../../storage/src/faceted-query.ts';
+import {taskQueryPlan} from './task-query.ts';
+import {TaskPageQuery,type RegistryPageQuery} from '../../contracts/src/index.ts';
 
 export class Approvals {
   store:Store;auth:Auth;tasks:Tasks;
@@ -17,6 +20,11 @@ export class Approvals {
     const rows=(await this.store.pool.query('SELECT * FROM approvals WHERE task_id=$1 ORDER BY created_at,approval_id',[taskId])).rows;
     return rows.map(row=>this.view(row));
   }
+  async page(ctx:AuthContext,query:RegistryPageQuery,taskId?:string){return this.store.transaction(async tx=>{
+    await tx.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');const admin=taskId?undefined:await this.auth.check(ctx,'admin.manage',query.scopeId,tx);if(taskId)await this.tasks.load(ctx,taskId,'tasks.read',tx);
+    const plan=await taskQueryPlan(this.auth,ctx,TaskPageQuery.parse({...query,status:undefined,lifecycle:undefined,owner:undefined}),tx),status="CASE WHEN a.status='open' AND a.expires_at<=clock_timestamp() THEN 'expired' ELSE a.status END",params=[...plan.params],visible=plan.visible+(taskId?` AND a.task_id=$${params.push(taskId)}`:` AND t.scope_id=ANY($${params.push(admin!.scopes)}::text[])`);
+    return facetedPage(tx,ctx,taskId?'task-approvals/'+taskId:'admin-approvals',query,'approvals a JOIN tasks t USING(task_id)',visible,params,{...plan.columns,id:'a.approval_id',created:'a.created_at',updated:'a.updated_at',owner:'a.applicant_id',status,lifecycle:status},`a.*,${status} AS query_status`,row=>({...this.view(row),status:row.query_status,createdAt:row.created_at.toISOString(),updatedAt:row.updated_at.toISOString()}));
+  });}
   async propose(ctx:AuthContext,id:string,action:any,tx?:Transaction):Promise<any>{
     const run=async(client:Transaction)=>{
       const task=await this.tasks.load(ctx,id,'tasks.read',client,true);

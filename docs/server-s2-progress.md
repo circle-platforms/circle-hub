@@ -857,3 +857,11 @@ abdb701 的完整验收 contracts **5/5**、methods **147/147**；acceptance **2
 23407a3 第二轮 contracts **6/6**、methods **150/150**，acceptance **289/290**；角色夹具和根不可继承读取已过，唯一失败是主机策略在改版后等待 failed 超过十秒。单独重跑该项 **1/1**；不把偶发时限称作已确定的产品错误。进一步纠正就绪 helper：旧注册记录也不能证明新进程已就绪，改等新子进程自己的 worker-ready/username 回执，维持十秒启动限。主机策略用例包含多次批准、排空重启与多笔验证排队，失败等待设有界三十秒，断言与权限不放宽。新就绪逻辑下主机策略连续三次 **1/1**、角色/worker/admin **14/14**，无 skip，typecheck/diff 通过；最终重新冻结验收。
 
 最终 **9fa2420** 冻结全套 contracts **6/6**、methods **150/150**、acceptance **290/290**、references **7/7**，共 **453/453，无 skip**；typecheck、diff 与 **714** 归档核验通过。固定 Circle 8b2ceb6 / APV 224daa6，只用脚本模型和合成数据库/资料源/网关。生产实现提交 **82ad8bc**，测试边界修正 **23407a3、9fa2420**，均已签署、本地保留；随后只追加这条验证记录。五条元数据/内容约束与 worker 阈值交接已写明，未 push、部署或碰 7420/真实网关/独立产品包，执行实现仍 **1.1.1**。
+
+## 64：按合并简报继续登记簿查询
+
+维护者合并意见替代旧队列：事件冻结，不扩字段选择或增加接口；只把首次 minCursor 说明限定通知补读页，task/admin events 仍 events/after，过窗读错误 details.minCursor。维护者独立 23407a3 **453/453**、试验栈升级与 cexg 0.3.1 实际 conf.device_ips 均作为外部观察记录，不再改设备映射。全套从本轮只由维护者在独立树运行，Codex 只跑变更相关文件，避免两套临时 PostgreSQL 干扰。
+
+第一组先复现审批/服务客户端 **0/3**。task/admin approvals 复用 facetedPage 与任务授权/私有边界；原数组保留，admin 集合不借别的范围角色放宽读取。页的过期状态显式 expired，迁移 **39** 初始化 approvals.updated_at 到既存 created_at，后续行更新用既有 registry_touch，不猜缺失历史。service-client 列表先筛拥有管理权限的 scope，没有则同形空集合，limit/游标/分面仍校验；详情、登记、轮换、吊销权限不改。三新例与原列表/签发验收 **13/13**、无 skip，typecheck/diff 通过；未跑全套。
+
+来源/证据/制品原先没有 HTTP 集合 GET；按维护者 Otty 明确答复，在既有资源路径补集合页，并令 MCP resources/list 投影复用同一分页权限核心；不另起 MCP 查询规则。后续按 B 三类、审计/worker、bot runs、通知次序，分组本地签署，不 push/部署，不触碰 7420/网关/Circle/独立包。

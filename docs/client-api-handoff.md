@@ -506,7 +506,7 @@ apv-case-execute 现为 **1.1.1**，flowVersion 仍 apv-case-execute/1。实现�
 
 POST /v1/tasks/{taskId}/assignment：{inputRevisionId,assignee?:principalId|null,dueAt?:ISO时间|null}，须任务可读且拥有 tasks.input；所有者或该 scope 管理员可更新，成员不能改别人的任务。assignee 必须同 scope 活跃成员/管理员；分派不授予私有任务读取权限，私有任务当前只允许分给所有者。TaskView 返回 assignee/dueAt。dueAt 是队列 SLA 日期，独立于 D 的执行截止时间。Scope 的 slaMs 可随 POST /v1/scopes/{scopeId}/policy 的单项变更集独立决定：完整键为 awaitingMyApproval/awaitingMyInput/submittedByMe/assignedToMe/exceptions，值为正毫秒；未传时保留原策略。计数优先 task.dueAt，否则等待起点加该范围 slaMs；不同范围值不一致时 counter.slaMs=null，并在 slaByScope 给出依据。
 
-updatedAt 页游标冻结 PostgreSQL 微秒时间锚点，后续更新超过锚点的记录交由下一次新查询展示；total 是锚点下当前可见匹配数。年龄排序按创建时间与 id；同微秒两条记录仍有独立位置。没有该分面的登记簿返回 INVALID_PAYLOAD/details.facet，不把 NULL 比较当空页。service-clients 属管理登记簿，仍需管理员资格，成员为 FORBIDDEN_ACTION；这类管理接口是“身份仅改变可见数量”的明确例外。
+updatedAt 页游标冻结 PostgreSQL 微秒时间锚点，后续更新超过锚点的记录交由下一次新查询展示；total 是锚点下当前可见匹配数。年龄排序按创建时间与 id；同微秒两条记录仍有独立位置。没有该分面的登记簿返回 INVALID_PAYLOAD/details.facet，不把 NULL 比较当空页。service-clients 的集合查询只在调用者拥有 service-clients.manage 的范围计数；没有这种范围时，旧 items/nextCursor 与 view=page 均返回同形空集合，仍校验 limit/游标/分面。详情、登记、轮换和吊销继续要求管理资格，不因集合可查而授权。
 
 通知只含 id、状态/原因码与 evidence 引用；完整结果从任务 result 取。规范事件包括 approval.requested/decision/superseded、task.waiting-review/waiting-input/delivered/failed/cancelled、operation.unknown、bot.started/output/admission-failed，以及已实际发出的变更集状态。旧 task.approval-requested/approval.response 继续保留在任务事件兼容流，通知目录使用规范名字。输入改写与新变更集都会发 approval.superseded，并给 supersededBy。通知游标只推进到最后可见事件；权限后来增加时，客户端应从 cursor=0 重查先前被滤掉的区间。
 
@@ -514,13 +514,15 @@ outbox 保留默认最近至少 **10000 条事件**的补读窗口、最多 **10
 
 登记簿分页的接入顺序：已接 tasks/assets/skillpacks/change-sets/scopes/roles/service-clients/object-types/objects/tools，通知有独立持久序号游标。随后依次接普通审批与 admin approvals、来源/证据/制品、审计/worker、bot runs、通知的统一分面视图；这些接口的旧形状本笔保持，不把尚未接入的登记簿称作已完成统一分页。各步复用同一查询编译器，并分别补授权/游标验收。
 
+审批登记簿已接：/v1/tasks/{taskId}/approvals 与 /v1/admin/approvals 加 view=page，旧数组保留。任务页沿用 tasks.read/私有任务/run 边界，admin 页限定当前 admin.manage 范围，旧 admin 数组同样遵守私有读取。owner 为 applicantId，产品线/流程取绑定任务已记录的 context/flowVersion；status/lifecycle 在页上把 open 且已到期投影为 expired，原审批行与旧数组状态不改。createdAt/updatedAt 用审批自己的时间，迁移 39 从 createdAt 初始化历史更新时间，仅后续实际审批行变更用触发器记录；不推断缺失历史决定时间。
+
 迁移 38 追加修复 36 的归因细节：多条已释放读取统一为 UPSTREAM_TIMEOUT/sideEffects=none/sorted operationIds；不触动 unknown/write。task.read-release-audit-links-completed 的 correctsAudit 指原 36 任务补偿行，relatedAudits 列出该任务/输入全部 30 原释放审计；原行/原 min 引用保持历史原样，阅读完整链以追加行补足，不猜历史状态。29/30/36 的校验和均不改。
 
 task/admin events 的权限、窗口校验与取页也在同一只读快照内；裁剪并发时返回该次校验的完整可见页或明确 CURSOR_EXPIRED，长轮询逐次重核，不返回静默缺失的空页。bot.admission-failed 的通知原因读取 payload.reason.code；完整运行错误仍从 bot runs 的 error 或任务 result.error 获取。
 
 复核补充：床 conf.device_names 的自定义名称会让第三来源的 APV<index> 规则失效；日志 IP 只能定位到拓扑设备，任意名字不能推断工作簿索引。cexg 0.3.1 的计划接口是 env_prepare.conf.device_ips，实际出现后使用第一来源，因而不受改名影响；hub 不根据版本号假定字段已出现。共享地址日志不归属、不消费设备游标。
 
-客户端恢复契约：首次 cursor=0 也返回 replayWindow.minCursor；大于零表示窗口之前已有事件被裁剪，这次响应不代表完整历史。CURSOR_EXPIRED 的 details.minCursor 用来提示缺口，随后从 cursor=0 重拉保留窗口，按 seq 去重，并从 GET /v1/tasks?view=page（遍历当前状态页）及 /v1/tasks/{id}/approvals 补窗口外的任务/审批当前事实；历史正文仍需持久 B 原件/产物，不从当前状态反推过去发生顺序。SSE 的 cursor.expired 使用同一恢复过程。
+客户端恢复契约：通知补读页首次 cursor=0 也返回 replayWindow.minCursor；大于零表示窗口之前已有事件被裁剪，这次响应不代表完整历史。task/admin events 仍只返回 events/after，不带 replayWindow；过窗依据 CURSOR_EXPIRED 的 details.minCursor。随后通知从 cursor=0、事件从 after=0 重拉保留窗口，按 seq 去重，并从 GET /v1/tasks?view=page（遍历当前状态页）及 /v1/tasks/{id}/approvals 补窗口外的任务/审批当前事实；历史正文仍需持久 B 原件/产物，不从当前状态反推过去发生顺序。SSE 的 cursor.expired 使用同一恢复过程。
 
 保留策略当前没有按主体已读水位保护未读事件；全局其它 scope 的事件产出也会缩短本人的时间窗口，离线七天并不保证能补全。推荐 SSE 在线跟随，轮询/重连及处理一页的总预算不超过 min(30 秒、replayEvents/(4×全局峰值事件速率)、maxAgeMs/4)。例如一万条窗口、全局峰值每秒 200 条，预算应小于约 12.5 秒；未掌握峰值时可从 5 秒轮询开始，并以 minCursor/游标缺口触发状态重建。它是降低缺口的运行建议，不是未读永久保留保证。
 
