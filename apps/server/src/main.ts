@@ -2,6 +2,7 @@ import '../../../packages/contracts/src/hub-environment.ts';
 import { createServer, type IncomingMessage, type ServerResponse,type RequestListener } from 'node:http';
 import {createServer as createHttpsServer} from 'node:https';
 import {serverTLS} from './tls.ts';
+import {runRunnerCycle} from './runner-cycle.ts';
 import { setTimeout as delay } from 'node:timers/promises';
 import { mkdir,readFile } from 'node:fs/promises';
 import {randomUUID} from 'node:crypto';
@@ -509,7 +510,7 @@ server.requestTimeout = 10_000; server.headersTimeout = 10_000;
 let running: Promise<void> | undefined;let lastRetention=0;
 const timer = setInterval(() => {
   if (running || closing) return;
-  running = tasks.runOnce().then(()=>flows.runOnce()).then(()=>packages.runOnce()).then(()=>automations.tick()).then(()=>changeSets.tick()).then(()=>executionSecrets.tick()).then(async()=>{if(Date.now()-lastRetention>=60000){await store.transaction(tx=>trimOutbox(tx));lastRetention=Date.now();}}).catch(error => { console.error(JSON.stringify({type:'runner-transaction-failed',code:error instanceof ApiError?error.code:(error as any).code??'INTERNAL_ERROR'})); }).finally(() => { running = undefined; });
+  running = runRunnerCycle([{name:'tasks',run:()=>tasks.runOnce()},{name:'execution-flows',run:()=>flows.runOnce()},{name:'capability-packs',run:()=>packages.runOnce()},{name:'automations',run:()=>automations.tick()},{name:'change-sets',run:()=>changeSets.tick()},{name:'execution-secrets',run:()=>executionSecrets.tick()},{name:'outbox-retention',run:async()=>{if(Date.now()-lastRetention>=60000){await store.transaction(tx=>trimOutbox(tx));lastRetention=Date.now();}}}],(runner,error)=>console.error(JSON.stringify({type:'runner-transaction-failed',runner,code:error instanceof ApiError?error.code:'INTERNAL_ERROR'}))).finally(() => { running = undefined; });
 }, Number(process.env.CIRCLE_HUB_POLL_MS ?? 100));
 let indexing:Promise<void>|undefined;
 const indexTimer=setInterval(()=>{if(indexing||closing)return;indexing=ingestions.runOnce().catch(error=>{console.error(JSON.stringify({type:'source-index-transaction-failed',code:error instanceof ApiError?error.code:'INTERNAL_ERROR'}));}).finally(()=>{indexing=undefined;});},Number(process.env.CIRCLE_HUB_INDEX_POLL_MS??100));

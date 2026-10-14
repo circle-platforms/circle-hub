@@ -937,3 +937,9 @@ A1 **b0c3172**、A2 **da3d679** 提交后工作区干净，按维护者授权将
 先用合成数据库时间压缩复现五例，旧实现 **1/5**：活跃写跨旧五分钟的兼容例原本成立，另外四例复现晚审批不刷新、输入 / flow 期限字段拒绝、accepted 真过期无人清理及真实写期限不触发。期限按 input → 批准 flow → 默认一小时冻结，数值沿现有 OperationRequest 的正整数 / 一小时上界；入队、审批消费刷新与核对步骤共同使用冻结时长。waiting-review 不按执行期限清理；accepted 真过期 failed / UPSTREAM_TIMEOUT / sideEffects:none，有意图写超真实期限按 unknown 保留核对。没有通过延长断言时间模拟正确性。
 
 独立 worktree 新五例 **5/5**、晚审批 / 核对 / 变更相关旧例 **3/3**，均无 skip；应用补丁后的 typecheck/diff 通过。只暂存本项的合同、驱动、验收与交接 / 进度，单独本地签署；迁移 40、原生执行 1.1.1 字节不改。其余复核项仍逐项进行，不跑全套、不 push / 部署或访问真实系统。
+
+## 74：M4 运行器与任务事务隔离
+
+先以真实 makeRun 路径及 PostgreSQL 事务中止语义复现 **0/1**：state 的 JSONB 错误后直接写 failed 仍触发 25P02，回滚整笔。逐 flow 任务加 savepoint，撤销失败写入后再落明确失败；候选任务之间与 task / flow / 原生 packages / automation / change-set / secrets 各运行器之间独立捕错，诊断不带 state 或 SQL 原文。不会用单一总 catch 抑制后续运行器。
+
+故障方法 **2/2**，组合 H1 后的实际临时 PostgreSQL 新验收 **1/1**：含 NUL 的已批准初状态只失败一次，另一历史批准 flow、原生知识读取、bot 定时受理失败记录和变更依赖 wakeup 均继续推进。首个实际测试夹具漏声明 knowledge-candidates，被既有资产规则正确拒绝；补合法声明后验证通过，生产授权规则未放宽。typecheck/diff 通过，独立本地签署，不跑全套或部署。
