@@ -629,6 +629,8 @@ status 原始回报达到已批准终态并与原操作、输入摘要、原件 
 
 交付另带 `executionObservations` 小元数据，包含真实操作身份、terminal、remoteLeaseReleased 与原件引用；释放事实取自 D 回报，不要求产品把它转录进自己的 result。产品结果和执行观察分别读取、核验，false 不改成 true，未知释放也不猜成功。
 
+已证终态之后，result Tool 的 ok:false 或身份 / SHA / schema 不合格是解释失败；完整结果拒绝 / 坏结果另存 B，D 始终从已持久终态原件重验，真实释放事实先落，不以拒绝正文校验终态而回滚。若终态事件之后、最终报告之前 worker 中断，期限 / 租约收尾保留 D succeeded、释放 null 与明确解释失败。此特殊完成在尚无最终 reportHash 时可接收一次原 worker / fence / 修订的合法补报，追加原件 / 释放事实及审计；同 hash 再报去重、异 hash 拒绝，不复活已失败任务或再次派发。
+
 provider 返回先由 worker 按 canonicalJson UTF-8 字节以 SHA 入 B；事件与回报只带绑定 operation / stage 的原件指针，C 回读核验 SHA 与大小。该转换明确是解析后的 provider JSON，不冒充原始 HTTP wire 字节。原件与小投影 / 解释分别保留，NUL 或大文本不直接入 JSONB；解析 Tool 可通过受控槽读取授权原件。客户端按 result 中的 evidence / artifacts 下载并重算 SHA，普通事件不内联正文。非回环带认证 HTTP 默认拒绝；只有已独立批准的 runtime-profile 明文例外才能生效，实际使用时每次审计与证据记录 plaintextAuthentication:true，文件自报例外不生效。
 
 A3 只用 Meridian 与另一份完全合成模块交替验证同一驱动，不执行 APV 新 flow。原生 apv-case-execute **1.1.1** 的实现文件、摘要及旧任务绑定保持原样；APV 新 Tool / flow 由独立 circle-packs 负责，部署切换与退役另由维护者协调。这里不代表真实设备、真实模型或任意远端 MCP 服务已通过验收。
