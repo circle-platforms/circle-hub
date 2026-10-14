@@ -637,6 +637,8 @@ status 原始回报达到已批准终态并与原操作、输入摘要、原件 
 
 交付另带 `executionObservations` 小元数据，包含真实操作身份、terminal、remoteLeaseReleased 与原件引用；释放事实取自 D 回报，不要求产品把它转录进自己的 result。产品结果和执行观察分别读取、核验，false 不改成 true，未知释放也不猜成功。
 
+历史报告只沿原 worker / fence / inputRevision 的记账路径核冻结资源声明、定义 SHA、已持久 request / input / byteHashes 与 B 终态原件；不获取端点、凭据或新的执行许可。来源 / 资源停用不阻止真实未知写及时冻结，也不丢已证终态的释放和解释事实。新受理、派发、独立 reconcile 仍完整核当前批准、角色与 readers；过去回执不能恢复这些许可。
+
 已证终态之后，result Tool 的 ok:false 或身份 / SHA / schema 不合格是解释失败；完整结果拒绝 / 坏结果另存 B，D 始终从已持久终态原件重验，真实释放事实先落，不以拒绝正文校验终态而回滚。若终态事件之后、最终报告之前 worker 中断，期限 / 租约收尾保留 D succeeded、释放 null 与明确解释失败。此特殊完成在尚无最终 reportHash 时可接收一次原 worker / fence / 修订的合法补报，追加原件 / 释放事实及审计；同 hash 再报去重、异 hash 拒绝，不复活已失败任务或再次派发。
 
 provider 返回先由 worker 按 canonicalJson UTF-8 字节以 SHA 入 B；事件与回报只带绑定 operation / stage 的原件指针，C 回读核验 SHA 与大小。该转换明确是解析后的 provider JSON，不冒充原始 HTTP wire 字节。原件与小投影 / 解释分别保留，NUL 或大文本不直接入 JSONB；解析 Tool 可通过受控槽读取授权原件。客户端按 result 中的 evidence / artifacts 下载并重算 SHA，普通事件不内联正文。非回环带认证 HTTP 默认拒绝；只有已独立批准的 runtime-profile 明文例外才能生效，实际使用时每次审计与证据记录 plaintextAuthentication:true，文件自报例外不生效。
