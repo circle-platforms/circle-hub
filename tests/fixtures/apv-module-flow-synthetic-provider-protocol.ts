@@ -35,6 +35,14 @@ export async function frozenApvModule(environment:NodeJS.ProcessEnv=process.env)
  return {...verifyModule(module,files),commit,requestedRef,catalogPath};
 }
 
+// This acceptance gate consumes only the already SHA-verified frozen catalog
+// and manifest bytes. It does not expand the platform's package-version schema.
+export function assertFrozenApvModuleVersion(frozen:{module:{root:string;manifestPath:string;version:string};files:{path:string;base64:string}[]}){
+ const prefix=frozen.module.root+'/',manifestPath=frozen.module.manifestPath;assert.ok(manifestPath.startsWith(prefix),'The frozen manifest must belong to the module root');const file=frozen.files.find(file=>file.path===manifestPath.slice(prefix.length));assert.ok(file,'The frozen APV manifest must be present');const declared=JSON.parse(Buffer.from(file.base64,'base64').toString()).version;assert.equal(frozen.module.version,declared,'The catalog version must match the frozen APV manifest');
+ const match=/^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/.exec(declared);assert.ok(match,'The frozen APV module must declare a semantic version');if(match[4])for(const id of match[4].split('.'))if(/^\d+$/.test(id))assert.match(id,/^(0|[1-9][0-9]*)$/,'Numeric prerelease identifiers cannot have leading zeroes');
+ const version=match.slice(1,4).map(BigInt),minimum=[1n,3n,0n];let precedence=0;for(let index=0;index<3;index++)if(version[index]!==minimum[index]){precedence=version[index]>minimum[index]?1:-1;break;}if(precedence===0&&match[4])precedence=-1;assert.ok(precedence>=0,'APV module acceptance requires semver >= 1.3.0');return declared as string;
+}
+
 export const apvProjectionDescription='Synthetic projection original: '+'x'.repeat(33*1024);
 export async function apvModuleWorkbook(host='routera'){
  const original=await executionWorkbook({command:'service inspect alpha',hostCommand:{host,command:'echo synthetic'}}),document=new ExcelJS.Workbook();await document.xlsx.load(original as any);document.worksheets[0].getCell('D3').value=apvProjectionDescription;const described=Buffer.from(await document.xlsx.writeBuffer());

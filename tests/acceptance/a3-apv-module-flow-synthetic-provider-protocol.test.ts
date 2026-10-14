@@ -5,7 +5,7 @@ import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {sha256,canonicalHash} from '../../packages/contracts/src/index.ts';
 import {FlowDefinition} from '../../packages/execution/src/flow-contracts.ts';
-import {APV_MODULE_FLOW,frozenApvModule,apvModuleFlow,terminalFlowState,apvDeviceCommand,apvHostCommand,apvSyntheticBuild,apvProjectionDescription,observedApvWorker} from '../fixtures/apv-module-flow-synthetic-provider-protocol.ts';
+import {APV_MODULE_FLOW,frozenApvModule,assertFrozenApvModuleVersion,apvModuleFlow,terminalFlowState,apvDeviceCommand,apvHostCommand,apvSyntheticBuild,apvProjectionDescription,observedApvWorker} from '../fixtures/apv-module-flow-synthetic-provider-protocol.ts';
 
 const enabled=process.env.CIRCLE_HUB_APV_MODULE_ACCEPTANCE==='1';
 const optIn={skip:enabled?false:'Synthetic provider protocol, not cexg live compatibility; set CIRCLE_HUB_APV_MODULE_ACCEPTANCE=1 with CIRCLE_PACKS_CATALOG and CIRCLE_PACKS_REF'};
@@ -38,7 +38,7 @@ test('A3 APV module synthetic provider protocol: does not prove cexg live compat
  t.diagnostic('synthetic provider protocol，不证明 cexg 现网兼容');
  // An explicitly selected broken repository/ref/catalog/module is a failure,
  // even on a host whose process-isolation capability is unavailable.
- const frozen=await externalModule();t.diagnostic(`External APV module ${frozen.module.version}, ref ${frozen.requestedRef}, resolved ${frozen.commit}, digest ${frozen.module.digest}`);assert.equal(frozen.module.version,'1.3.0');
+ const frozen=await externalModule();t.diagnostic(`External APV module ${frozen.module.version}, ref ${frozen.requestedRef}, resolved ${frozen.commit}, digest ${frozen.module.digest}`);assertFrozenApvModuleVersion(frozen);
  const descriptors=frozen.manifest.flows.map((path:string)=>({path,value:JSON.parse(Buffer.from(frozen.files.find(file=>file.path===path)!.base64,'base64').toString())}));
  const descriptor=descriptors.find((entry:any)=>entry.path==='flows/apv-case-execute-v2.json');assert.ok(descriptor,'The entire external module must declare its v2 execution flow');assert.equal(descriptor.value.id,APV_MODULE_FLOW,'The new product flow must not select the native legacy capability');FlowDefinition.parse(descriptor.value);
  const {sandboxHost,until}=await import('./harness.ts');if(!sandboxHost.available){t.skip(sandboxHost.reason);return;}

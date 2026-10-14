@@ -1269,3 +1269,9 @@ abc5af6 提前核自动协议参数，夹具把 undeclared:true 放进 additiona
 更新后该叶实际 **1/1，无 skip**，typecheck / diff 通过。只改一个测试叶与进度，原生 / 独立包 / 生产校验零改，PG 清理，不跑全套。维护者已确认 08-connectors 的超时单跑 **2/2**、按负载假红处理，本轮不改它的实现或断言。
 
 两项按顺序各一笔签署。最终合并针对两条原失败消费者 **2/2**、新纯边界 **2/2**，无 skip / fail，typecheck / diff 通过；原生 packs/apv / packs/meridian / foundation / references / harness-adapters 相对本轮基线零差异，树收尾干净。PG 串行清理，不跑全套、不 push / 部署、不触 7420 / 网关 / Circle / 独立包。最终 HEAD 交维护者独立全量。
+
+## 119：新版产品包验收的冻结版本门
+
+两侧验收去掉固定等于 1.3.0，改为用现有冻结目录与已 SHA 核过的文件集合读取产品线清单版本，要求与 catalog 版本相同且 SemVer 不低于稳定 1.3.0。核主 / 次 / 补丁数字、同基版本 prerelease 低于 release、build metadata 不影响优先级；不读运行中的工作区清单、不改 F 版本 schema / 默认 pin、不造新的 provider 或模块夹具。诊断仍打印冻结版本、ref / commit 与 digest，未改变其文本。
+
+新增版本规则纯 **3/3**，两个文件默认 opt-in gate 与相关纯测试合跑 **7 pass / 8 skip / 0 fail**，skip 不计通过。typecheck / diff 通过，没有 PG / 外包执行或网络访问。实际产品包 1.3.1 / CIRCLE_PACKS_REF=main 的两侧验收按维护者安排由维护者执行，本笔只证明版本门；仅测试与现有夹具 / 本记录，本地签署、不 push / 部署或触现场。
