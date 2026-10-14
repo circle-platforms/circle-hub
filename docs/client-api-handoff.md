@@ -619,6 +619,8 @@ beforeDispatch 由 C 在真实写出口按实际 resource / operationId / curren
 
 只有已持久化写意图之后、且尚不能证明终态的失联才进入 unknown；不重派，同资源冻结，核对由独立 worker 读取原远端身份。明确的 `ok:false`、已批准派发前阶段、`dispatched:false` 且没有远端 id 字段的拒绝为 failed；成功回报或包含远端 id（包括 null / 空值）的回报不能用于证明未派发。只读超时为 failed / UPSTREAM_TIMEOUT，无写意图时不冻结；核对失败仍保留原写 unknown 和冻结。取消只证明本地停止，不证明远端已停。
 
+拒绝还必须来自绑定 submit 调用本身：worker 在 B 原件中附有限调用来源 `{schema:"hub-provider-refusal/1",tool,phase,refusal}`，内层保留 provider 原始拒绝。C 根据实际绑定工具及已持久化 remote_identity 再核，不能只信 worker 的 submitted:false 或 stage 字符串。提交成功或远端身份已记录后，status / heartbeat 等返回外观像派发前的拒绝仍是 unknown，不释放远端租约；不能用后续拒绝抹去已派发事实。
+
 status 原始回报达到已批准终态并与原操作、输入摘要、原件 SHA 和远端身份一致时，D 终态先独立持久化，再取结果和调用解释 Tool。结果获取、parser 抛错 / 超时 / 超限 / 无效协议 / 缺映射，或 afterResult 失败只影响解释与交付，不能将已证 D 终态改为派发 unknown 或重发写动作。租约释放成功 / 失败单独保留事实，不从本地退出推断远端停止，也不拿 status 原件冒充结果正文。
 
 交付另带 `executionObservations` 小元数据，包含真实操作身份、terminal、remoteLeaseReleased 与原件引用；释放事实取自 D 回报，不要求产品把它转录进自己的 result。产品结果和执行观察分别读取、核验，false 不改成 true，未知释放也不猜成功。

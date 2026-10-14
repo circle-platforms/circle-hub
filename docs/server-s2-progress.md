@@ -943,3 +943,9 @@ A1 **b0c3172**、A2 **da3d679** 提交后工作区干净，按维护者授权将
 先以真实 makeRun 路径及 PostgreSQL 事务中止语义复现 **0/1**：state 的 JSONB 错误后直接写 failed 仍触发 25P02，回滚整笔。逐 flow 任务加 savepoint，撤销失败写入后再落明确失败；候选任务之间与 task / flow / 原生 packages / automation / change-set / secrets 各运行器之间独立捕错，诊断不带 state 或 SQL 原文。不会用单一总 catch 抑制后续运行器。
 
 故障方法 **2/2**，组合 H1 后的实际临时 PostgreSQL 新验收 **1/1**：含 NUL 的已批准初状态只失败一次，另一历史批准 flow、原生知识读取、bot 定时受理失败记录和变更依赖 wakeup 均继续推进。首个实际测试夹具漏声明 knowledge-candidates，被既有资产规则正确拒绝；补合法声明后验证通过，生产授权规则未放宽。typecheck/diff 通过，独立本地签署，不跑全套或部署。
+
+## 75：H2 拒绝来源与已派发事实
+
+纯边界先 **1/3**、实际合成 submit / status / 短 TTL heartbeat 三例先 **0/3**。B 拒绝原件增加有限来源 envelope，保存实际调用工具 / 阶段及内层原文；只有绑定 submit 调用本身、没有已成功提交或持久远端身份，且原文机械满足未派发，才能 failed / 释放。提交成功之后的 status / heartbeat 拒绝仍 unknown / 冻结 / 不释放。C 独立检查持久 remote_identity，新增把 worker submitted:false 与伪 submit 来源都改写的回报，不能撤销已派发事实；旧来源不明的原文不猜未派发。
+
+独立临时 PostgreSQL 四例 **4/4**，新纯三例与既有协议边界 **15/15**，均无 skip；应用到已含 H1/M4 的主工作树后纯例与 typecheck/diff 通过。仅本项来源 / 分类及夹具单独签署；M3 终态后 result 拒绝的处理随后独立修，不把本项当成解释错误已解决。原生执行 / 迁移字节、真实系统和全套均未改动或运行。
