@@ -597,4 +597,30 @@ execution.environment.observed 的 observationSource=gateway.env_prepare，保�
 
 每次装载、原件读取与缓存调用前均核当前身份/范围权限，并取选定批准修订与最新批准修订 readers 的交集。未批准的 reader 修改不撤销旧 pin；批准后的 reader 撤销或当前角色撤销即时生效。旧修订 disabled/retired 或批准摘要失效时拒绝使用，不自动换新 parser。内部 pin 只适用于该批准来源制品文件清单内的自有 SourceRevision，原始 basis 引用、企业对象 ACL 与其它来源仍沿原实时授权链核对；不绕保险箱、原件检查或对象存储直接放行。
 
-A1 不修改既有任务的 methodAssetId/回执，也不把旧任务自动转成精确 pin；原生执行 1.1.1 的实现字节和 SAR 稳定 id 的既有公开解析/失效语义保持。历史绑定解析不代表通用执行流已可运行；A2 驱动契约仍待复核，A3 实施未开始。
+A1 不修改既有任务的 methodAssetId/回执，也不把旧任务自动转成精确 pin；原生执行 1.1.1 的实现字节和 SAR 稳定 id 的既有公开解析/失效语义保持。A2 已经维护者复核，内部 transition 契约及字节预算见 [执行流设计附录](design/execution-flow-packs.md#附录-a2有界-transition-内部契约)。通用驱动的合成验收范围见下段，不能据此把原生任务迁到新方法。
+
+## A3：通用模块执行与受控原件
+
+`GET /v1/packs` 增加 `module-execute/1.0.0`，Hub 驱动版本为 `module-execute/1`。沿用 `POST /v1/tasks/submit`，`capabilityPackId="module-execute"`；input 的严格形状为 `{flowId,methodPin,resources,sources?,value?,controlledBytes?}`。methodPin 必须显式提供 `{assetId,version,sha256,digest?}`，resources / sources 是别名到精确 pin 的映射，value 是产品输入。controlledBytes 每项为 `{slot,role,source,path}`：source 指 sources 的别名，path 是该批准制品内的相对文件路径，role 必须与文件的已批准角色一致。不能直接给端点、令牌、任意 B 对象路径或客户端构造的字节回执。状态、事件、结果、下载、修订、取消与核对继续使用现有任务接口，没有新的执行专用 HTTP 路由。
+
+模块仍经 modules/install 冻结文件、既有变更集批准；所选 `circle-packs/flow/1` 文件需含 `{id,version,driver:"hub-execution-transition/1",transition:{path,export},initialState}`。transition 入口必须在模块已声明的 tools[] 中，按原 imports 边界装入隔离进程。Hub 保存任务 / 修订、方法与来源 / 资源 pin、实际 runtime-profile pin、产品状态、每步身份、请求摘要、派发意图、原始回报引用及终态。实现摘要的版本化算法覆盖冻结模块 digest、flow、驱动版本与精确依赖版本；新批准模块只供明确选择它的新任务，旧任务不自动换方法、parser 或原件。
+
+provider 资源为已批准并启用的 connector-instance，configuration 使用 `schema="hub-provider/1"`、`transport="streamable-http"`、`runtimeProfileType="execution"`、runtimeProfileRef 及 receiptPolicy。地址 / CA 只取仓库外运行文件，摘要必须匹配独立批准的 runtime-profile。凭据沿用现有凭据引用 / server-issued 机制；只有明确未声明凭据的资源才允许匿名，声明了凭据但缺值时为 SOURCE_LOGIN_EXPIRED。带凭据或 write Tool 的人调用者至少是 member；机器沿既有 scope 权限核验，不虚构人的角色。各 Tool 的 name、inputSchema、effect、minimumRole 只取已批准 declaration.provides.tools，再核对远端 tools/list；网络与凭据不进入产品 Tool。
+
+receiptPolicy 的严格形状见 [ProviderPolicy](../packages/execution/src/flow-contracts.ts)：submitTool / statusTool / resultTool / reconcileTool、taskIdArgument、remoteIdPath / requestHashPath / inputSha256Path / byteHashesPath / statePath、runningValues / terminalValues、receiptSchema，以及 lease 与 refusal 映射。字段路径是字符串数组；lease 声明 acquireTool / heartbeatTool / releaseTool、idPath / fencePath / ttlSecondsPath 与 idArgument / fenceArgument，refusal 声明 stagePath / preDispatchStages / dispatchedPath / remoteIdPath / codePath / reasonPath。status / result / reconcile 必须 read，提交与租约工具必须 write，产品不能把 write 降成 read 或注入租约身份。当前复用网关的 JSON-RPC tools/list 与 tools/call 调用方式，不宣称任意 MCP 服务的初始化或会话协商均已兼容。
+
+`provider.call.byteArgs={参数名:slot}` 只提出原件绑定，驱动按 B 授权清单重新读取、核对 SHA / 大小后填入 base64；禁止覆盖普通 args。请求摘要包含实际所用槽的原件身份，步骤 key 不包含参数摘要；同 key 改参数或换原件为 IDEMPOTENCY_MISMATCH。普通字符串仍限 32 KiB，受控原件合计仍限 8 MiB，完整 Tool 输入 / 输出仍限 24 / 16 MiB；B 的 16 MiB 上传上限不代表每个执行流程都能使用这么大的原件。单 run 的步骤与转换次数还受现有 256 项预算限制，超限失败，不无限推进空转换。
+
+默认资源直接走执行链。声明 executionIsChange 的写步骤生成 execution-submission 草稿，审批内容冻结实际 Tool、字面参数摘要、B 原件引用及方法 / 资源 / 来源 pin；批准后只消费一次。module-execute 是范围内可读的 work 任务；来自 run 的委托仍保留原有 privateOwnerId / parentRunTaskId 边界，技能运行与工具任务的私有规则不变。批准不会免除派发前实时权限、生命周期、Hook、输入修订和 fence 核验。
+
+beforeDispatch 由 C 在真实写出口按实际 resource / operationId / currentInput 强制运行已附 Hook；产品省略 hook.verify 不能跳过，意图必须引用该通过证据。零处理器不引入缺省规则。声明了 afterResult 时，每个终态写的真实成功 Hook 必须核验同一最终交付候选（subject.result 的 canonical SHA 与候选相等）；多写流程要先合成候选，再对相关操作核验，不能拿局部结果或另一份正文的 Hook 回执交付。证据仍分别绑定逻辑原操作与真实核对操作，不把核对子操作替换成产品步骤身份。
+
+只有已持久化写意图之后、且尚不能证明终态的失联才进入 unknown；不重派，同资源冻结，核对由独立 worker 读取原远端身份。明确的 `ok:false`、已批准派发前阶段、`dispatched:false` 且没有远端 id 字段的拒绝为 failed；成功回报或包含远端 id（包括 null / 空值）的回报不能用于证明未派发。只读超时为 failed / UPSTREAM_TIMEOUT，无写意图时不冻结；核对失败仍保留原写 unknown 和冻结。取消只证明本地停止，不证明远端已停。
+
+status 原始回报达到已批准终态并与原操作、输入摘要、原件 SHA 和远端身份一致时，D 终态先独立持久化，再取结果和调用解释 Tool。结果获取、parser 抛错 / 超时 / 超限 / 无效协议 / 缺映射，或 afterResult 失败只影响解释与交付，不能将已证 D 终态改为派发 unknown 或重发写动作。租约释放成功 / 失败单独保留事实，不从本地退出推断远端停止，也不拿 status 原件冒充结果正文。
+
+交付另带 `executionObservations` 小元数据，包含真实操作身份、terminal、remoteLeaseReleased 与原件引用；释放事实取自 D 回报，不要求产品把它转录进自己的 result。产品结果和执行观察分别读取、核验，false 不改成 true，未知释放也不猜成功。
+
+provider 返回先由 worker 按 canonicalJson UTF-8 字节以 SHA 入 B；事件与回报只带绑定 operation / stage 的原件指针，C 回读核验 SHA 与大小。该转换明确是解析后的 provider JSON，不冒充原始 HTTP wire 字节。原件与小投影 / 解释分别保留，NUL 或大文本不直接入 JSONB；解析 Tool 可通过受控槽读取授权原件。客户端按 result 中的 evidence / artifacts 下载并重算 SHA，普通事件不内联正文。非回环带认证 HTTP 默认拒绝；只有已独立批准的 runtime-profile 明文例外才能生效，实际使用时每次审计与证据记录 plaintextAuthentication:true，文件自报例外不生效。
+
+A3 只用 Meridian 与另一份完全合成模块交替验证同一驱动，不执行 APV 新 flow。原生 apv-case-execute **1.1.1** 的实现文件、摘要及旧任务绑定保持原样；APV 新 Tool / flow 由独立 circle-packs 负责，部署切换与退役另由维护者协调。这里不代表真实设备、真实模型或任意远端 MCP 服务已通过验收。

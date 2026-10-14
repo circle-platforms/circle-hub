@@ -1,1 +1,1 @@
-export default function handle(input:any){return input.binding.method?.deny===true?{decision:'block',code:'FIXTURE_BLOCKED',facts:{event:input.event}}:{decision:'pass'};}
+export default function handle(input:any){return input.binding.method?.deny===true?{decision:'block',code:'FIXTURE_BLOCKED',facts:{event:input.event}}:input.subject.result?.syntheticAfterResultBlock===true?{decision:'block',code:'HOOK_FAILED',facts:{event:input.event}}:{decision:'pass'};}

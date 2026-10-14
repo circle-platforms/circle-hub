@@ -4,9 +4,11 @@ import type { Auth } from '../../tasks/src/auth.ts';
 import type { Tasks } from '../../tasks/src/index.ts';
 import type { Knowledge } from '../../knowledge/src/index.ts';
 
+type ExpirationHandler=(tx:Transaction,row:any)=>Promise<boolean>;
+const storeExpirationHandlers=new WeakMap<Store,Map<string,ExpirationHandler>>();
 export class Execution {
   store: Store; auth: Auth; tasks: Tasks; knowledge: Knowledge;
-  constructor(store: Store, auth: Auth, tasks: Tasks, knowledge: Knowledge) { this.store = store; this.auth = auth; this.tasks = tasks; this.knowledge = knowledge; }
+  constructor(store: Store, auth: Auth, tasks: Tasks, knowledge: Knowledge) { this.store = store; this.auth = auth; this.tasks = tasks; this.knowledge = knowledge;let handlers=storeExpirationHandlers.get(store);if(!handlers){handlers=new Map();storeExpirationHandlers.set(store,handlers);}this.customExpirations=handlers; }
   async register(ctx: AuthContext): Promise<any> {
     const policy = await this.auth.check(ctx, 'workers.execute');
     requireCondition(policy.kind === 'worker' && policy.workerId, 'FORBIDDEN_ACTION', 'Authenticated worker identity required');
@@ -14,6 +16,7 @@ export class Execution {
       ON CONFLICT(worker_id) DO UPDATE SET last_seen=clock_timestamp()`, [policy.workerId, policy.principalId, policy.tenantId]);
     return { workerId: policy.workerId, leaseTtlMs: LEASE_TTL_MS, heartbeatMs: HEARTBEAT_MS };
   }
+  customExpirations:Map<string,ExpirationHandler>;
   customClaimers=new Map<string,(ctx:AuthContext)=>Promise<any>>();
   customPreflights=new Map<string,(ctx:AuthContext,id:string,fence:number,tx:Transaction)=>Promise<any>>();
   async claim(ctx:AuthContext,exclude:string[]=[]):Promise<any>{for(const [name,claim] of this.customClaimers)if(!exclude.includes(name)){const accepted=await claim(ctx);if(accepted)return accepted;}return null;}
@@ -49,12 +52,14 @@ export class Execution {
     await this.tasks.wake(tx,row.task_id,'worker-receipt');
   }
   async expire(): Promise<void> {
-    const expired = (await this.store.pool.query(`SELECT o.operation_id FROM operations o LEFT JOIN leases l USING(operation_id)
+    const expired = (await this.store.pool.query(`SELECT o.operation_id,o.task_id,o.name FROM operations o LEFT JOIN leases l USING(operation_id)
       WHERE o.status='running' AND (l.expires_at<=clock_timestamp() OR l.operation_id IS NULL)`)).rows;
     for (const item of expired) await this.store.transaction(async tx => {
+      if(this.customExpirations.has(item.name))await this.tasks.internal(tx,item.task_id,true);
       const row = (await tx.query(`SELECT o.* FROM operations o LEFT JOIN leases l USING(operation_id) WHERE o.operation_id=$1
         AND o.status='running' AND (l.expires_at<=clock_timestamp() OR l.operation_id IS NULL) FOR UPDATE OF o`, [item.operation_id])).rows[0];
       if (!row) return;
+      if(await this.customExpirations.get(row.name)?.(tx,row))return;
       if(row.source_effect==='read'){
         const failure={code:'UPSTREAM_TIMEOUT',message:'Read authority expired; retry the query',details:{sideEffects:'none',operationId:row.operation_id,reason:'lease-expired'}};await this.complete(tx,row,'failed',{error:failure});const task=await this.tasks.internal(tx,row.task_id);if(task.inputRevisionId===row.input_revision_id&&!['delivered','failed','cancelled'].includes(task.phase))await this.tasks.fail(tx,task,failure);return;
       }
