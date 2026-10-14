@@ -16,7 +16,11 @@ test('M6 registration stores an explicit operation capability and legacy re-regi
 });
 
 test('M6 a registered legacy worker never even selects generic flow operations',async()=>{
- let selected=false;const flow=Object.create(ExecutionFlows.prototype) as ExecutionFlows;flow.services={auth:{check:async()=>policy},store:{transaction:async(callback:any)=>callback({query:async(sql:string)=>{if(sql.startsWith('UPDATE workers'))return {rows:[{worker_id:policy.workerId,capabilities:[],draining:false}]};selected=true;return {rows:[]};}})}};assert.equal(await flow.claim(ctx),null);assert.equal(selected,false,'The worker must be filtered before any flow row or lease can be assigned');
+ let selected=false,registrationReads=0,lastSeenUpdates=0;const flow=Object.create(ExecutionFlows.prototype) as ExecutionFlows;flow.services={auth:{check:async()=>policy},store:{transaction:async(callback:any)=>callback({query:async(sql:string,args:any[])=>{if(sql.startsWith('SELECT * FROM workers')){registrationReads++;assert.deepEqual(args,[policy.workerId,policy.principalId]);return {rows:[{worker_id:policy.workerId,principal_id:policy.principalId,tenant_id:policy.tenantId,capabilities:[],draining:false}]};}if(sql.startsWith('UPDATE workers')){lastSeenUpdates++;return {rows:[]};}if(/FROM (?:operations|resources|leases)\b/.test(sql))selected=true;assert.fail('Unexpected legacy-worker lookup: '+sql);}})}};assert.equal(await flow.claim(ctx),null);assert.equal(registrationReads,1);assert.equal(lastSeenUpdates,1);assert.equal(selected,false,'The worker must be filtered before any flow row or lease can be assigned');
+});
+
+test('M6 an unregistered worker is rejected without selecting flow operations or touching leases',async()=>{
+ const selections:string[]=[],flow=Object.create(ExecutionFlows.prototype) as ExecutionFlows;flow.services={auth:{check:async()=>policy},store:{transaction:async(callback:any)=>callback({query:async(sql:string)=>{selections.push(sql);assert.ok(sql.startsWith('SELECT * FROM workers'),'Missing registration cannot proceed to a flow resource or lease');return {rows:[]};}})}};await assert.rejects(flow.claim(ctx),error=>error instanceof ApiError&&error.code==='FORBIDDEN_ACTION');assert.equal(selections.length,1);
 });
 
 test('M6 preflight requires both its persisted capability grant and the live worker declaration',async()=>{

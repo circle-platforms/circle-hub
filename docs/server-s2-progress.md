@@ -1237,3 +1237,9 @@ beforeDispatch 的 C 内部工作项通过私有 Symbol 保存，摘要绑定代
 中英 A3 的过时锁序改为 task→flow_run→operation→flow_step→resources / leases→event_clock，与当前 C / 锁 helper 对齐。严格合成 cexg 正例新增从 prepare_ref 引用回读 B 原件，核 SHA / 大小，以 argsDigest 找到实际 env_prepare 请求，断 device_build 等于冻结输入构建、build_checked / ready / device_build 检查为真；不造顶层构建字段或仅凭 complete=true 推定核过环境。
 
 固定 **3c46f707** 严格正例实际 **1/1，无 skip**，原 submit 一次、queued / running / done、Hooks / 结果断言保留；默认文件 **4 pass / 4 skip** 不把 opt-in 跳过计为成功。typecheck / diff 通过。只改三份文档 / 验收文件，PG 清理、不改驱动 / 原生 / 独立包，不跑全套、不 push 或部署。
+
+## 115：确定性红例，旧 worker 注册 mock 过时
+
+worker-capability-negotiation 的旧 mock 只给 UPDATE workers 返回注册行，新 claim 先 SELECT 核已注册身份，故真实复现 **3/4** / FORBIDDEN_ACTION。更新为精确响应当前注册 SELECT / last_seen UPDATE，只有真正 flow / resource / lease 查询才计入选择操作；追加未注册 worker 仍拒绝且不能选择操作的断言。注册核验与旧 worker 无 capability 不领 flow 的生产边界不改。
+
+同文件修后 **5/5，无 skip**，typecheck / diff 通过。仅一个测试文件及本记录，本地签署、不跑 PG / 全套、不 push 或部署。
