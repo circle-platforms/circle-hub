@@ -180,6 +180,166 @@ observations 为 `{operationId, reference, facts}`。原件 reference 是四种�
 
 `executionTransitionRequestHash(binding, action, byteBindings?)` 的第三参可提供仅引用的 `{slot, role, reference}`，也兼容完整 controlled entry；有正文时仍核对规范 base64、解码大小和 SHA。provider.byteArgs 与 tool.byteSlots 引用的每个槽都必须在其中；重复槽、缺槽、错 SHA 或总量超现有 8 MiB 上限拒绝。散列加入所用槽的 role 和 reference（kind、原件 id、sha256、size），不加入 base64 正文；同名槽换原件会改变 requestHash，未用且合法的槽不改变它。后续驱动器从授权 B 查询得到仅引用的绑定即可计算散列，不必把大原件送进 transition；客户端自己声明的 ref 不因此变成已授权原件。step key 的组成保持不变。
 
+### 驱动注入形状
+
+以下是当前 A3 驱动给 transition 的实际注入形状，不是新的 HTTP 提交体。入口仍收 [FlowSubmission](../../packages/execution/src/flow-contracts.ts)，[C 构造完整 frame](../../packages/execution/src/flow-driver.ts) 后，[worker 作为一个参数调用 transition](../../packages/execution/src/flow-worker.ts)。纯 Tool 不从环境读取配置，也不接收 worker 的 provider、凭据或租约对象。
+
+| 字段 | 当前来源与消费方式 |
+|---|---|
+| `currentInput.value` | C 冻结的**整份 FlowSubmission**，包含 flowId、methodPin、resources、sources、value、controlledBytes 及可选 deadlineMs。产品自定义值位于 `input.currentInput.value.value`，不是直接位于 `input.currentInput.value`。其 SHA 同时绑定 currentInput.sha256 / binding.inputSha256 |
+| `binding.resources` / `provider.call.resource` | resources 是提交中按别名登记的资源 pin；动作的 resource 填该别名，例如 `bed`，不是 assetId、URL 或 provider 对象。C 解析实际批准的资产与运行配置，逐次核权限、完整协议工具角色及 effect |
+| `state` | 模块 flow.initialState 起始、产品上次输出的 state 后续持久化；不是 Hub 任务 phase。产品不能在 state 内创建或恢复 D 租约 |
+| `observations` | C 保存的 `{operationId,reference,facts}`。facts 带 stepId/status/result 等已记录字段；用逻辑 stepId 定位观察后保留其 operationId，不能用工具名、数组下标或虚构 id 替代原操作关联 |
+| `expectedOccurrences` | Hub 按当前任务/修订的持久步骤计算 `{stepId,nextOccurrence}`。新 step 从 0 起；已完成连续 occurrence 才允许下一项。产品按 [occurrence 核验](../../packages/execution/src/flow-occurrences.ts) 提案，不能跳号、使用保留的 `hub.` stepId 或靠换 occurrence 重派 unknown 写 |
+| `controlledBytes` | B 授权原件的 slot / role / reference / 规范 base64。Tool 动作的 byteSlots 按声明顺序解码并追加到 args 尾部，成为实际字节参数；不是路径或可联网句柄。provider.byteArgs 按参数名映射槽，在派发时由 Hub 填入 base64 |
+
+下面的完整 frame 使用合成占位 pin；它展示字段与摘要关系，不是批准记录或可直接运行的资源配置。currentInput 的摘要与整份 value 的 canonicalHash 一致；payload 的原字节 SHA 和 17 字节长度也一致。实际 frame 只能由 C 注入，不能从这个示例复制身份来取得权限。
+
+```json
+{
+  "schema": "hub-execution-transition/1",
+  "binding": {
+    "taskId": "task_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "inputRevisionId": "inrev_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "inputSha256": "f6abf0fd6ebbde51ccbe34c18865e60a5fa65e0c8f19c0583744af963cbbe764",
+    "method": {
+      "assetId": "ast_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "version": "1.0.0",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "capabilityPackId": "synthetic-flow",
+      "flowVersion": "synthetic-flow/1",
+      "implementationSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+    },
+    "resources": {
+      "bed": {
+        "assetId": "ast_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "version": "1.0.0",
+        "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    },
+    "sources": {
+      "payload": {
+        "assetId": "ast_cccccccccccccccccccccccccccccccc",
+        "version": "1.0.0",
+        "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      }
+    }
+  },
+  "currentInput": {
+    "value": {
+      "flowId": "synthetic-flow",
+      "methodPin": {
+        "assetId": "ast_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "version": "1.0.0",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "resources": {
+        "bed": {
+          "assetId": "ast_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "version": "1.0.0",
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      },
+      "sources": {
+        "payload": {
+          "assetId": "ast_cccccccccccccccccccccccccccccccc",
+          "version": "1.0.0",
+          "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        }
+      },
+      "value": {
+        "expectedBuild": "synthetic-build"
+      },
+      "controlledBytes": [
+        {
+          "slot": "payload",
+          "role": "payload",
+          "source": "payload",
+          "path": "payload.txt"
+        }
+      ]
+    },
+    "sha256": "f6abf0fd6ebbde51ccbe34c18865e60a5fa65e0c8f19c0583744af963cbbe764"
+  },
+  "state": {
+    "stage": "prepare"
+  },
+  "observations": [],
+  "controlledBytes": [
+    {
+      "slot": "payload",
+      "role": "payload",
+      "encoding": "base64",
+      "reference": {
+        "kind": "source",
+        "sourceRevisionId": "src_dddddddddddddddddddddddddddddddd",
+        "sha256": "2d7c09188d414c888f37b661e27aecdd54231e027ea2c8ad9c1e313aab34c5d9",
+        "size": 17
+      },
+      "contentBase64": "c3ludGhldGljIHBheWxvYWQ="
+    }
+  ],
+  "expectedOccurrences": []
+}
+```
+
+例如准备阶段可提出一个已批准的只读观察，结果通过它自己的 operationId / B reference 进入下一次 frame：
+
+```json
+{
+  "schema":"hub-execution-transition/1",
+  "state":{"stage":"environment-requested"},
+  "actions":[{"kind":"provider.call","stepId":"environment","occurrence":0,"resource":"bed","tool":"env_prepare","args":{"device_build":"synthetic-build"}}]
+}
+```
+
+env_prepare 与 bed_topology 并不是 Hub 硬编码的特殊 Tool：名字、read effect 与输入结构来自该 provider 的批准声明。bed_topology 的观察同样由它自己的 provider.call 产生。当前 worker 的普通 read 分支直接调用只读 Tool，**不自动取得远端租约**；若该服务的观察接口要求先持有远端租约，裸 read 动作不能凭空满足它，也不能让 transition 传入 lease token。这样的观察须由已批准且实际可独立读取的 provider Tool，或 Hub 管理的写协议所留存的原件提供。本示例不证明任一既有网关无租约可调用这两个名字。
+
+后续 C 的已确认方向是在 receiptPolicy 增加**可选 prepare 阶段**：由批准的工具名与参数映射决定调用，worker 在同一远端租约内、submit 之前执行，Hub 持久化准备观察，再以这份观察供 beforeDispatch 核验。本轮不实现该阶段，也不把 prepare 写进当前 ProviderPolicy schema 或示例；精确字段/映射 schema 与新的 worker ABI 尚待后续设计与验收，不能由产品在现有 args 中自行补出。
+
+时序也需要在 C 实施时调整并验收：当前强制 beforeDispatch 位于 C 预检、早于 worker acquire/准备；未来要让该出口在准备观察已经持久化后再次核验，且仍在提交意图与 submit 之前，不让旧的出口通过记录替代新观察。prepare 不证明已派发，也不把准备成功扩大为提交成功。原生 APV 路径的 execution.environment.observed 来自其提交前 env_prepare；网关 case_submit 内部仍可再次观察或拒绝，属于另一调用/时间点。未来通用 prepare 的观察也保留独立原件与操作身份，不拿这两种既有观察冒充新增阶段已经完成。当前真实 env_prepare/bed_topology 需要远端租约，因此前面的裸 read 示例仅说明参数形状，不能作为现有真实网关可执行路径。
+
+对于写 provider.call，worker 按绑定 receiptPolicy 自动 acquire / heartbeat / submit / status / results / release，C 持久化意图、身份、终态与释放事实。transition 不接管这套租约状态，也不把 acquired token 放进下一轮参数。取得受控结果字节后，可提出 `tool.call`，普通 args 放小型格式参数，byteSlots 引用 frame 中真实存在的槽；例如 `args:[{"format":"synthetic"}]`、`byteSlots:["payload"]` 会得到 `parse({format:"synthetic"}, bytes)` 这类位置参数调用。槽不存在、role/来源不符、SHA/大小不符，或实际 wire 超限均拒绝，不能让模型转抄 base64 绕过关口。
+
+两个出口挂点的当前行为不同：
+
+- **beforeDispatch**：C 在每个 write 的 intent 前强制执行模块已附处理器，binding.resource 为该实际操作的冻结资源，subject 为 `{input:<整份冻结 FlowSubmission>,operationId:<本次写操作 id>}`；通过证据绑定操作后才准许意图。产品不提出 hook.verify 也不能省略这一出口。
+- **afterResult**：当前驱动不自动调用处理器。模块若附有 afterResult，产品须先提出 `hook.verify`，subject 为 `{result:<最终候选>,operationId:<该终态写的原操作 id>}`，等待成功回执后再单独提出 `delivery.propose`。C 对每个已证终态写检查真实 Hook 成功证据，且 subject.result 的 canonical SHA 必须等于交付候选；缺失或正文不同为 EVIDENCE_INSUFFICIENT。before/after 的资源由当前任务/修订的实际 provider 操作确定，不能选 JSONB 第一项；其他三个 verify 在多资源且无唯一归属时拒绝歧义。没有处理器时不添加缺省产品规则。
+
+`delivery.propose` 与 `outcome.error` 各自必须独占动作批次，不与待执行动作同批。`outcome.error.code` 必须已经在 F 错误目录注册；产品 Tool 不能 import Hub 或在执行时自行注册码，未登记的错误动作由合同拒绝。Hook 的规则 code/facts 是保留的产品判定数据，不因此成为新平台错误码；worker 报告的错误通道另由 C 投影到已登记码，完整原回报仍留 B。
+
+这份注入说明沿用 A2 的全部预算：state 256 KiB、input metadata 512 KiB、transition output 256 KiB、普通 JSON 字符串 32 KiB、数组/动作 256 项、深度 16、controlled 解码合计 8 MiB，以及实际 Tool wire 输入 24 MiB / 输出 16 MiB；上述示例没有新字段容量或隐式扩容。expectedOccurrences 是现有可选合同字段，产品若不使用重复步骤也不能据其缺席自造许可。完整字节只在实际执行所需的 frame 中给出；轻预检重核授权与原件引用，不向 transition 改发另一种协议。
+
+### C 阶段待办：同形网关协议兼容
+
+下面是用户确认并经本机网关源码只读核对的协议形状；只记录键名、类型与行为，不引入地址、配置值或真实回报。它不是已经实现的新 ProviderPolicy schema，也不是任意 MCP 服务都应采用的统一回执。C 后续实现须用已批准的通用 policy 描述差异，不能把这些产品工具名写成 Hub 分支。
+
+| 网关工具 / 回报 | 原生形状与约束 |
+|---|---|
+| `lease_acquire` | 请求 `{}`；回报有 `lease_id:string`、`token:integer`、`expires_in_s:number`。TTL 字段不是 expires_in 或 Hub 自行推断的期限 |
+| `lease_heartbeat` / `lease_release` | 请求只含当前 `lease_id` / `token`；release 成功体有 released=true |
+| `env_prepare` | read 工具，但要求 `lease_id` / `token`；可带 `device_build`。不带预期构建时 build_checked=false，不能代替绑定构建的核验 |
+| `bed_topology` | read 工具，但要求 `lease_id` / `token`；可带 `refresh:boolean` |
+| `case_submit` | 必须是 `xlsx_b64` + `lease_id` / `token`，可选 `module`；不是 payload_b64，module 省略时由网关取其配置默认值 |
+| `case_status` / `case_results` | 请求**只含 `task_id`**；公开 inputSchema 的 additionalProperties=false，不接受额外 lease_id/token |
+| 正常 submit 成功体 | 有 task_id、sha256、bytes、case_ids、deliver_epoch、submit_autoid、module；**没有 state，也不回显 request_hash/input_sha256/byte_hashes** |
+| status 回报 | **仍有 state**（running/done/lost 等），以及 task_id、rc、log_tail；不能概括成所有网关 raw 都没有 state |
+| 完成后的 results 回报 | 有 task_id、channel、rc、xlsx_sha256、cases 等；完整结果的 channel=ready；当前完成结果分支没有 state 或上述三项通用 hash。未完成 / runner_lost 的分支可以有 state；不能因一次省略而给所有 results 分支造相同字段 |
+
+成功工具包装仍有 ok=true；ok 不是上述 state/hash 字段的替代。channel=ready 说明结果渠道齐备，不是“所有用例通过”。rc 是 runner 退出事实，逐用例与逐步判定仍由产品解析；终态与解释结果继续分开。
+
+C 的后续工作须分别覆盖以下边界，而不是改弱某个合成夹具使它继续绿色：
+
+1. **逐工具租约参数映射**：当前 generic worker 给 submit/status/results/reconcile 的参数附加同一租约对象，这与 status/results 的严格入参不兼容。后续 policy 必须能声明哪些调用注入租约、哪些只传远端任务 id，不能对所有工具一律加 lease，也不能让产品获得 token 后自己拼参。
+2. **注入与 schema 顺序**：当前 C 在租约尚未获得时按 provider inputSchema 校验产品 args；真实 case_submit 又把 lease_id/token 列为 required。受理核验须区分产品实参与已声明的 worker 注入实参，最终以实际注入后的完整参数核对批准 schema / wire；批准 schema 也必须容纳实际租约字段。不能为过关删掉远端 required 或放开 additionalProperties。
+3. **submit 参数与 module 策略**：受控 workbook 槽映射到 xlsx_b64，module 的来源、是否可省略及约束由批准 policy 决定；产品不能靠重命名普通字符串参数绕过 B 字节 / SHA 核对。此处只确认需要参数映射，不定义未来 JSON 键或 ABI。
+4. **回执与终态映射**：当前 A3 成功观察要求一个同时有 state 与三项通用 hash 的回执，现有网关正常 submit / 完成 results 不提供这些字段。后续按批准 policy 使用实际 state 或 channel/rc 观察，分别绑定各阶段身份和原件；不得向 raw 补写未返回的字段，或把 RPC 元数据当作网关已回显的证明。state/channel/rc 的路径与判定须逐工具声明；query_error、missing_after_done 等不能任意当作 done 或结果成功，已由独立 status 证明的 D 终态也不能因结果渠道失败而改写。
+5. **原生证据绑定**：现有原生 1.1.1 提交核对 sha256 与冻结工作簿、case_ids 与工作簿用例身份；随后 status 的 task_id/state=done 与 results 的 task_id/xlsx_sha256 绑定原投递，channel!=ready 仍可留下 partial。这些 sha256/case_ids 是该网关协议的映射目标；Hub 应经批准 policy 按冻结原件 SHA 与已批准方法导出的用例身份核对，不在通用驱动器内写死 APV 字段或解析 Excel。精确 predicate/schema 留给 C 实施设计。后续兼容应保留这些可证关系，不把现网没有的三项 hash 设为唯一可接受证据。这里记录现有做法，不授权更改原生字节或将框架结论扩大成每步通过。
+
+同租约的 prepare、持久化观察与 beforeDispatch 在 submit/意图之前重核的方向见上节；当前普通 read 不取远端租约，这一缺口不能由模块裸调 env_prepare/bed_topology 规避。afterResult 仍按用户确认的显式 hook.verify 与 delivery 证据闸执行，不在本待办改为自动调用。
+
+C 的目标验收采用完全合成、与上述协议同形的严格网关：required 租约、status/results 仅 task_id、真实字段名、submit 无 state、完成 results 无通用 hash、status 有 state。默认跳过的是尚未开始实施的 C 兼容验收；显式启用后在当前实现上必须出现可复现的红例，不把 skip/todo 当作通过。后续逐项实现后才将这些边界转绿，并核对 RPC 参数、B 原件与实际派发次数。A3 的合成协议通过只能证明其已测协议，不能替代这条同形验收，更不能证明真实网关 / 设备已接入。本轮仅补待办与验收目标，不实现、注册未来 schema、改网关或投递真实环境。
+
 ### 数字来源与初版预算
 
 维护者对真实 21 案批次只提供数字统计；没有提供原件内容、真实地址或业务字段。gateway-results 原字节 149702，其中 results 147339、environment 670、status 958、submit 688；topology 9970，workbook 7209，解释产物 119582。逐案日志 UTF-8 最大 10234 / 合计 106734，JSON 转义后最大 10420 / 合计 109125，最多 167 行、最长行 127 字节。本批共 119 步、216 条设备命令、21 条主机命令、26 个检查点；每案最多 7 步、23 条设备命令、1 条主机命令、2 个检查点。最高 JSON 深度为 7，最大数组为 216。command-check 原件 4219626，其中两个 raw base64 段为 2577744、1527460；剩余部分 114422。

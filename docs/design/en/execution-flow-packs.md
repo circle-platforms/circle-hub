@@ -1,0 +1,258 @@
+# Execution flows in product-line packs
+
+This is the English companion to the [execution-flow migration design](../execution-flow-packs.md). The bounded A2 contract and driver-injection section below correspond to the Chinese text. The original migration plan keeps product interpretation in independent product modules and permissions, transport, leases, unknown decisions, evidence storage and governance in Hub. A3 is a generic-driver implementation proven with synthetic modules; it does not establish that native APV execution has moved to the new product module or that any real environment has been deployed.
+
+The design uses the existing [product-line pack contract](product-line-pack.md), [harness primitives](harness-primitives.md) and [approval and enforcement chain](approvals-and-enforcement.md). It adds no REST resource, permission concept, Hook point or event interface.
+
+## Ownership and loading
+
+`Modules.install` verifies the complete `modules.json` file set, individual SHA values, module identity and digest, then registers frozen originals as a knowledge-source asset with a Change set. Installation does not approve a module. `ProductModules.load` loads an approved `product-line/1` revision with declared tools, hooks, flows and resources. Pure Tool calls run in the restricted tool-host process. Relative imports stay inside the frozen file set; external imports require the supported exact version in that file's `tools[].imports`. Node built-ins, Hub source, computed imports and undeclared dependencies are refused with `IMPORT_NOT_DECLARED`.
+
+The product module owns workbook and function-contract interpretation, environment and log parsing, product states, parameter construction and interpretation candidates. Hub owns database transactions, task and input revisions, immutable binding, effect and role checks, profile and credential handling, provider RPC, both lease layers, fencing, cancellation, uncertain dispatch and B originals. Moving the existing controller or worker into a different directory does not make its SQL, vault, filesystem or network access a permitted pure Tool.
+
+Native `apv-case-execute` remains version `1.1.1` with flow `apv-case-execute/1`. Its existing implementation digest is distinct from an independent module digest. Migrated modules use a new implementation version and explicitly approved module/flow identity. Historical tasks retain their original methodAssetId, implementation and evidence; no database rewrite silently migrates pending or unknown work. The compatible native path is retired only through a separate maintainer decision after outstanding work has been accounted for.
+
+A1 supplies exact approved historical pins to `ProductModules.load` and `SourceArtifacts.snapshot`; a draft does not change a frozen run. Reading a pin still checks live authorization and the selected and latest-approved reader boundaries. Product Tool failures affect interpretation, not an independently proven D terminal: parser errors, timeouts, oversize output, invalid protocol, missing mappings and result-Hook failures cannot create a second submission or turn known execution into uncertain dispatch. The [Chinese migration plan](../execution-flow-packs.md#实现顺序与验收) records the broader migration sequence; the contract below is the executable data boundary.
+
+## Appendix A2: bounded internal transition contract
+
+`packages/contracts/src/execution-transition.ts` supplies a schema factory. F's index instantiates and exports it after the shared ID, SHA, hash and error definitions exist. The file depends only on zod, with no reverse import of B, D or E. `ExecutionTransitionAssetPin` has the same fields as A1's `AssetRevisionPin`: `{assetId, version, sha256, digest?}`. A method pin additionally includes the capability id, flow version and execution implementation digest. A2 defines and validates data; it does not itself register a driver, HTTP route, Hook or capability, or change native `1.1.1` bytes or its digest.
+
+Input is `{schema, binding, currentInput, state, observations, controlledBytes}`; output is `{schema, state, actions}`. The schema is `hub-execution-transition/1`. The binding holds taskId, inputRevisionId, inputSha256, the method pin and named resource/source pins. `currentInput` is `{value, sha256}`: C retrieves the immutable input revision and checks ownership and authorization before injection. `canonicalHash(value)` must equal both currentInput.sha256 and binding.inputSha256. Equal self-reported bytes and hashes prove consistency, not authority over that revision; the driver must check C's record. Workbooks are B original references, not full text copied into ordinary JSON. State, current input value, facts, args, subjects and result candidates must be finite JSON. NaN/Infinity, undefined, BigInt, functions, class/Date/Map instances, cycles, sparse arrays, symbols, accessors, prototype keys and properties lost by JSON serialization are refused. Product state cannot change Hub task phase.
+
+Every action has a strict top-level shape and `stepId / occurrence`. One output cannot repeat that step identity:
+
+| kind | Specific fields | Driver checks |
+|---|---|---|
+| `tool.call` | `path, export, args, byteSlots?` | Declared frozen Tool path, relative imports and export; authorized original slots |
+| `provider.call` | `resource, tool, args, byteArgs?` | Bound resource, approved provides, current permission, effect, minimumRole, input schema and request digest; authorized bytes cannot overwrite args |
+| `operation.wait` | `operationId` | An existing operation in this task/current revision; observe it without submitting another write |
+| `hook.verify` | `event, subject` | One of the existing five points; exact subject checked by `validateHookInput`, approved binding injected by Hub |
+| `outcome.error` | `code, facts` | Registered code and original-backed facts; no product authority over D unknown or resource freezing |
+| `delivery.propose` | `status, result, references` | succeeded/partial only; actual evidence and delivery checks before delivery |
+
+These actions expose no endpoint, credential, secret, CA, effect override, fence, approval decision or freeze instruction. Legitimate product/log strings may appear in args; A2 does not infer their meaning from a dangerous-word filter. Schema validity alone is not dispatch permission. A3 also checks the actual approved provider schema and Enforcement chain. Bounded Hook subject JSON does not permit arbitrary subjects at a Hook point.
+
+`provider.call.byteArgs` is an optional `{parameterName: slot}` map. `{payload_b64:"payload"}` names an original slot rather than asking a model or transition to copy base64. Parameter keys are nonempty, follow the ordinary JSON-key budget and exclude control characters and prototype injection keys such as `__proto__ / constructor / prototype`. The provider inputSchema defines the actual accepted names. A name also present in args is refused; the driver does not overwrite a literal parameter. Base64 longer than 32 KiB in ordinary args is refused like any other ordinary long string. Before dispatch, Hub reads B under the current permission, approved source pin and SHA, fills the parameter, then checks the provider input and entire wire. Access to bytes alone is not execution permission.
+
+Observations are `{operationId, reference, facts}`. A reference is one of four strict forms: sourceRevisionId/artifactId/evidenceId/recordId, with kind, sha256 and size, without a client download URL. Each controlled slot is `{slot, role, encoding:"base64", reference, contentBase64}`. Slots are unique, base64 is canonical, decoded length equals reference.size, and the original-byte SHA equals reference.sha256. Roles identify the originals a module needs. A3 also verifies that references belong to the approved source manifest, are currently authorized and were actually read from B. A client-created JSON value with a correct hash does not acquire original access.
+
+Controlled log bytes may contain addresses required for parsing. A pure Tool has no network capability and cannot turn them into connection targets. If facts are sanitized, environment and log identifiers must still match consistently. Words such as terminal/pass in observation facts remain interpretation data. Hub must independently verify and persist D terminal facts against the approved provider original, operation, workbook and remote identity; clients and product Tools cannot self-certify them. Parser failure does not change a proven terminal.
+
+This is an authorized-input inventory, not an APV-specific schema. The module declares roles; Hub supplies their B references and necessary bytes. Valid fields do not replace verification:
+
+| Consumer | Authorized B originals | Necessary facts and excluded authority |
+|---|---|---|
+| Environment Tool | Frozen env_prepare and bed_topology returns | Task/input revision, frozen method/source/resource pins, bound workbook SHA, remote task identity if known; original fields or consistently sanitized identifiers for build/device mapping. No credentials, endpoints, CA paths or callable handles |
+| Results Tool | Original case_submit/status/results, per-case logs/sessions, workbook; command-check original when its role is required | Task/revision, remote id, workbook SHA, pins, independently proven terminal and remote lease-release facts. Missing fields remain unmapped. The measured batch did not contain sessions |
+| Transition Tool | The above references and verified facts; explicit controlled byte slots for format interpretation | Step identities, frozen bindings, original observations and public terminal/release facts. No keys, lease tokens, endpoints, CA or provider objects; command-check is not copied into state |
+
+Hub derives the step key as `canonicalHash({taskId, inputRevisionId, methodPinDigest, flowVersion, stepId, occurrence})`. methodPinDigest is the canonicalHash of the frozen method pin and flowVersion must match that method. Products cannot select the raw key or jump occurrences. The request hash separately includes the frozen binding, inputSha256 and action/args. Adding argsDigest to the step key must not turn changed parameters into another write. currentInput.value/sha256 are also not added to the key; C owns input-revision immutability. The persistent driver rejects the same key with changed content as `IDEMPOTENCY_MISMATCH`. A2 itself only provides the two contract hash functions.
+
+`executionTransitionRequestHash(binding, action, byteBindings?)` accepts ref-only `{slot, role, reference}` entries as its third argument and also accepts full controlled entries. Full entries still check canonical base64, decoded size and SHA. Every slot used by provider.byteArgs or tool.byteSlots must exist; duplicate/missing slots, changed SHA and decoded totals beyond 8 MiB are refused. The request hash includes each used slot's role and reference identity/SHA/size, not base64 content. A changed original in the same slot changes requestHash; unused valid slots do not. The driver can hash references obtained from authorized B lookup without sending the original to transition. Self-reported references gain no authority, and the step-key formula stays unchanged.
+
+### Driver-injected shape
+
+This is the actual transition input injected by the current A3 driver, not a new HTTP submission body. The entry accepts [FlowSubmission](../../../packages/execution/src/flow-contracts.ts). [C constructs the full frame](../../../packages/execution/src/flow-driver.ts), and the [worker calls transition with that one argument](../../../packages/execution/src/flow-worker.ts). Pure Tools do not obtain configuration from the environment or receive the worker's provider, credentials or lease objects.
+
+| Field | Current source and consumption |
+|---|---|
+| `currentInput.value` | The **entire frozen FlowSubmission**, including flowId, methodPin, resources, sources, value, controlledBytes and optional deadlineMs. Product values are at `input.currentInput.value.value`, not directly at `input.currentInput.value`. Its digest is bound to both currentInput.sha256 and binding.inputSha256 |
+| `binding.resources` / `provider.call.resource` | Named resource pins from submission. The action names their alias, such as `bed`, not an assetId, URL or provider object. C resolves approved assets/configuration and repeatedly checks permission, actual protocol-tool roles and effect |
+| `state` | The module's flow.initialState initially, then its persistently recorded previous output state; not Hub task phase. Products cannot create or restore D leases here |
+| `observations` | C's `{operationId,reference,facts}` records, with recorded stepId/status/result fields. Locate an observation by its logical stepId and keep its actual operationId; do not substitute a Tool name, array index or invented id |
+| `expectedOccurrences` | Hub's `{stepId,nextOccurrence}` from durable task/revision steps. A new step starts at zero; only contiguous completed occurrences permit a later one. Products follow [occurrence checks](../../../packages/execution/src/flow-occurrences.ts), with no gaps, reserved `hub.` identities or replay of unknown writes by incrementing a number |
+| `controlledBytes` | Authorized B slot/role/reference/canonical base64. Tool byteSlots are decoded in the declared order and appended to args as byte arguments, not paths or network handles. Provider byteArgs map parameter names to slots filled by Hub at dispatch |
+
+The complete frame below uses synthetic placeholder pins. It illustrates fields and digest consistency, not approval or a ready resource configuration. currentInput.sha256 matches the canonicalHash of its entire value; the payload SHA and 17-byte length also match. Only C can inject a real frame; copying example identities does not grant permission.
+
+```json
+{
+  "schema": "hub-execution-transition/1",
+  "binding": {
+    "taskId": "task_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "inputRevisionId": "inrev_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "inputSha256": "f6abf0fd6ebbde51ccbe34c18865e60a5fa65e0c8f19c0583744af963cbbe764",
+    "method": {
+      "assetId": "ast_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "version": "1.0.0",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "capabilityPackId": "synthetic-flow",
+      "flowVersion": "synthetic-flow/1",
+      "implementationSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+    },
+    "resources": {
+      "bed": {
+        "assetId": "ast_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "version": "1.0.0",
+        "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    },
+    "sources": {
+      "payload": {
+        "assetId": "ast_cccccccccccccccccccccccccccccccc",
+        "version": "1.0.0",
+        "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      }
+    }
+  },
+  "currentInput": {
+    "value": {
+      "flowId": "synthetic-flow",
+      "methodPin": {
+        "assetId": "ast_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "version": "1.0.0",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "resources": {
+        "bed": {
+          "assetId": "ast_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "version": "1.0.0",
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      },
+      "sources": {
+        "payload": {
+          "assetId": "ast_cccccccccccccccccccccccccccccccc",
+          "version": "1.0.0",
+          "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        }
+      },
+      "value": {
+        "expectedBuild": "synthetic-build"
+      },
+      "controlledBytes": [
+        {
+          "slot": "payload",
+          "role": "payload",
+          "source": "payload",
+          "path": "payload.txt"
+        }
+      ]
+    },
+    "sha256": "f6abf0fd6ebbde51ccbe34c18865e60a5fa65e0c8f19c0583744af963cbbe764"
+  },
+  "state": {
+    "stage": "prepare"
+  },
+  "observations": [],
+  "controlledBytes": [
+    {
+      "slot": "payload",
+      "role": "payload",
+      "encoding": "base64",
+      "reference": {
+        "kind": "source",
+        "sourceRevisionId": "src_dddddddddddddddddddddddddddddddd",
+        "sha256": "2d7c09188d414c888f37b661e27aecdd54231e027ea2c8ad9c1e313aab34c5d9",
+        "size": 17
+      },
+      "contentBase64": "c3ludGhldGljIHBheWxvYWQ="
+    }
+  ],
+  "expectedOccurrences": []
+}
+```
+
+For example, a preparation stage may request an approved read observation. Its own operationId and B reference enter the next frame:
+
+```json
+{
+  "schema":"hub-execution-transition/1",
+  "state":{"stage":"environment-requested"},
+  "actions":[{"kind":"provider.call","stepId":"environment","occurrence":0,"resource":"bed","tool":"env_prepare","args":{"device_build":"synthetic-build"}}]
+}
+```
+
+env_prepare and bed_topology are not special hard-coded Hub Tools. Their names, read effect and input schema come from the approved provider declaration. A topology observation likewise has its own provider.call. The current ordinary read branch directly invokes the Tool and **does not automatically acquire a remote lease**. If an observation endpoint requires one, a bare read action cannot invent it and transition cannot supply a lease token. Observations must come from an approved Tool that really permits an independent read, or from originals retained by the Hub-managed write protocol. The example does not prove that an existing gateway accepts either name without a lease.
+
+The confirmed direction for the later C phase is an **optional prepare stage** in receiptPolicy. An approved Tool name and parameter mapping will select the call; the worker will execute it under the same remote lease before submit, Hub will persist its preparation observation, and beforeDispatch will verify that observation. This documentation round does not implement it or add prepare to the current ProviderPolicy schema or examples. The exact fields/mapping schema and new worker ABI still require later design and acceptance; products cannot invent that authority by adding keys to today's args.
+
+C implementation must also change and verify the ordering. The current forced beforeDispatch runs in C preflight, before worker acquire/preparation. The future exit must run again after the preparation observation has been persisted and before dispatch intent and submit; an earlier pass cannot stand in for the new observation. Preparation does not prove dispatch, and its success does not prove successful submission. Native APV execution.environment.observed comes from its pre-submit env_prepare, while the gateway may observe or reject again inside case_submit: these are different calls and times. A future generic prepare observation must likewise retain its own original and operation identity, without presenting either existing observation as an implemented new stage. The real env_prepare/bed_topology endpoints currently require a remote lease, so the bare read example above illustrates parameter shape rather than an executable path for that gateway.
+
+For a write provider.call, the worker automatically follows the bound receiptPolicy's acquire/heartbeat/submit/status/results/release protocol while C records intent, identity, terminal and release facts. Transition does not manage that lease state or carry acquired tokens into later args. Once controlled result bytes are available, it may propose a tool.call with small format parameters in args and real frame slots in byteSlots. For example, `args:[{"format":"synthetic"}]` and `byteSlots:["payload"]` produce a positional call such as `parse({format:"synthetic"}, bytes)`. Missing slots, invalid role/source, SHA/size mismatch and oversized actual wire are refused; model-transcribed base64 cannot bypass that boundary.
+
+The two exit points currently behave differently:
+
+- **beforeDispatch**: C forcibly calls the module's attached handlers before each write intent. binding.resource is that operation's frozen resource; subject is `{input:<entire frozen FlowSubmission>,operationId:<this write id>}`. Evidence must bind the pass to the operation before intent is authorized. Omitting a product hook.verify action cannot skip this exit.
+- **afterResult**: the current driver does not invoke handlers automatically. When a module attaches afterResult, the product must first propose hook.verify with `{result:<final candidate>,operationId:<original terminal write id>}`, await its successful receipt and then separately propose delivery.propose. C requires actual successful Hook evidence for every terminal write and the canonical SHA of subject.result must match the delivered candidate. Missing evidence or changed content is EVIDENCE_INSUFFICIENT. Before/after select resources from actual provider operations in this task/revision, never the first JSONB entry. Other verify points refuse ambiguous multiple resources. No attached handler means no added default product rule.
+
+Delivery and outcome-error actions must each be the sole action in their batch. `outcome.error.code` must already be registered in F. Product Tools cannot import Hub or register a code at execution time; an unregistered error action is refused by the contract. Hook rule code/facts remain product decision data, not a newly registered platform code. C separately projects worker error channels to registered codes while retaining the full original report in B.
+
+All A2 budgets remain unchanged: state 256 KiB, input metadata 512 KiB, transition output 256 KiB, ordinary JSON strings 32 KiB, arrays/actions 256 items, depth 16, controlled decoded bytes 8 MiB, and actual Tool wire input 24 MiB/output 16 MiB. expectedOccurrences is the existing optional contract field; its absence is not permission to invent an occurrence. Full bytes appear in the frame needed for execution; lightweight preflight checks live authority/references without replacing the transition protocol with another shape.
+
+### C-phase work: matching the gateway protocol
+
+The following shapes were confirmed by the user and checked read-only against the local gateway source. Only keys, types and behavior are recorded, with no endpoints, configuration values or real receipts. This is not an implemented extension to ProviderPolicy and does not prescribe one universal receipt for all MCP services. The later C work must express differences through approved generic policy rather than product Tool names in Hub code.
+
+| Gateway Tool / receipt | Native shape and constraint |
+|---|---|
+| `lease_acquire` | Request `{}`; returns lease_id:string, token:integer and expires_in_s:number. TTL is not expires_in or a duration invented by Hub |
+| `lease_heartbeat` / `lease_release` | Current lease_id/token only; a successful release body includes released=true |
+| `env_prepare` | Read Tool that requires lease_id/token; optional device_build. Without the expected build, build_checked=false is not verification of the bound build |
+| `bed_topology` | Read Tool that requires lease_id/token; optional refresh:boolean |
+| `case_submit` | Required xlsx_b64 plus lease_id/token, optional module. The byte parameter is not payload_b64; omitting module uses the gateway's configured default |
+| `case_status` / `case_results` | Request **task_id only**. Their public inputSchema has additionalProperties=false and rejects extra lease_id/token |
+| Normal successful submit | task_id, sha256, bytes, case_ids, deliver_epoch, submit_autoid and module; **no state and no echoed request_hash/input_sha256/byte_hashes** |
+| Status receipt | **Still has state** (running/done/lost, etc.), task_id, rc and log_tail. It is incorrect to say every gateway raw receipt lacks state |
+| Completed results | task_id, channel, rc, xlsx_sha256, cases and other result fields. The complete-result channel is ready; the current completed-results branch has no state or the three generic hashes. Incomplete/runner_lost branches may include state; do not fabricate one common set of fields across all branches |
+
+Successful Tool wrappers still include ok=true, but ok cannot replace state/hash fields. channel=ready means the results channel is complete, not that every case passed. rc is the runner's exit fact; product interpretation still separates case/step verdicts from execution terminal facts.
+
+Later C implementation must address distinct boundaries rather than weakening a synthetic fixture to keep it green:
+
+1. **Per-Tool lease mapping**: the current generic worker appends the same lease object to submit/status/results/reconcile args, which is incompatible with the strict status/results schema. Policy must describe which calls receive lease fields and which receive only the remote task id. Products must not obtain tokens and construct that authority themselves.
+2. **Injection and schema order**: C currently validates product args before a lease exists, while real case_submit requires lease_id/token. Admission must distinguish product parameters from declared worker-injected parameters, and the final injected args must satisfy the approved schema and actual wire limit. The schema must admit the real lease fields; removing remote required fields or widening additionalProperties is not a fix.
+3. **Submit parameters and module policy**: an authorized workbook slot maps to xlsx_b64. Approved policy determines module's source, optionality and constraints. Renaming an ordinary string does not bypass B byte/SHA checks. This identifies the mapping requirement without defining future JSON keys or a worker ABI.
+4. **Receipt and terminal mapping**: A3 currently requires successful observations with state and three generic hashes together. Normal gateway submit/completed-results receipts do not provide them. Future approved policy must use actual state or channel/rc observations, binding each stage's identity and original separately. It must not add fields to raw receipts or treat RPC metadata as echoed provider proof. State/channel/rc paths and decisions must be declared per Tool. query_error or missing_after_done cannot arbitrarily mean done or successful results; a separately proven status terminal cannot be rewritten by results-channel failure.
+5. **Native evidence binding**: native 1.1.1 checks submit sha256 against the frozen workbook and case_ids against workbook case identities, then binds status task_id/state=done and results task_id/xlsx_sha256 to that submission. channel other than ready can remain partial. sha256/case_ids are this gateway protocol's mapping targets. Hub must use approved policy to check frozen-original SHA and case identities produced by an approved method; it must not hard-code APV fields or parse Excel in the generic driver. Exact predicates/schema remain later C design work. Compatibility must preserve these proven relationships rather than requiring absent generic hashes as the only evidence. This records existing behavior without authorizing native-byte changes or promoting whole-case conclusions to per-step passes.
+
+The previous section records the later same-lease prepare/observation/beforeDispatch ordering before intent and submit. Ordinary reads currently acquire no remote lease; a module's bare env_prepare/bed_topology calls cannot resolve that gap. afterResult remains the user-confirmed explicit hook.verify plus delivery-evidence gate, not a new automatic call in this work list.
+
+The C acceptance target is an entirely synthetic strict gateway with these shapes: required lease fields, task_id-only status/results, actual parameter names, submit without state, completed results without generic hashes, and status with state. C compatibility acceptance is skipped by default until that implementation work begins. When explicitly enabled against the current implementation it must produce reproducible failures; skip/todo is not a pass. Each implemented boundary may turn green only with RPC-argument, B-original and actual-dispatch-count checks. Passing A3's synthetic protocol proves that tested protocol, not this matching acceptance or real gateway/device integration. This round records work and acceptance targets only; it implements no future schema, changes no gateway and dispatches no real environment.
+
+### Measurements and initial budgets
+
+The maintainer supplied only numerical measurements from a real 21-case batch, without originals, real addresses or business fields. gateway-results was 149702 bytes: results 147339, environment 670, status 958 and submit 688. Topology was 9970, workbook 7209 and interpreted output 119582. Per-case UTF-8 logs had maximum 10234/total 106734 bytes; JSON-escaped logs maximum 10420/total 109125, up to 167 lines and longest line 127 bytes. There were 119 steps, 216 device commands, 21 host commands and 26 checkpoints; per-case maxima were 7 steps, 23 device commands, 1 host command and 2 checkpoints. Maximum JSON depth was 7 and maximum array length 216. command-check was 4219626 bytes, including two raw-base64 segments of 2577744 and 1527460; the remainder was 114422.
+
+`pow2ceil(n)=2^ceil(log2(n))`. JSON-byte and depth budgets start with twice the measured size before rounding up to a power of two. Arrays use the measured largest array; controlled bytes use the stated original total. These are reproducible initial capacity choices, not a claim that one batch measures every valid workload:
+
+| Budget | Formula | Initial ceiling |
+|---|---|---|
+| State JSON bytes | `pow2ceil(2 * 114422)` | 262144 (256 KiB) |
+| Input metadata bytes | `pow2ceil(2 * 208866)` | 524288 (512 KiB) |
+| Output protocol bytes | `pow2ceil(2 * 119582)` | 262144 (256 KiB) |
+| Ordinary JSON string/key UTF-8 bytes | `pow2ceil(2 * 10420)` | 32768 (32 KiB) |
+| Each array / action batch | `pow2ceil(216)` | 256 |
+| JSON total depth | `pow2ceil(2 * 7)` | 16 |
+| Controlled decoded total (also bounds one item) | `pow2ceil(149702 + 9970 + 7209 + 4219626)` | 8388608 (8 MiB) |
+
+208866 is a **request estimate**: 38846 frozen source bytes plus 170020 parameter-JSON bytes, without source escaping or the actual envelope. 119582 is an interpreted file's size, not a measured stdout envelope. Neither estimate replaces actual wire validation. The measured sample contains Chinese and escaped characters, with zero NUL/other control bytes; contract cases check UTF-8 bytes, not merely character count.
+
+Metadata includes all input except controlled contentBase64: binding, currentInput value/sha256, state, facts, identities and pointers. State is a sub-budget, not an additional allowance. Controlled base64 is not incorrectly refused by the ordinary 32-KiB string limit, but canonical encoding, decoded size, per-slot SHA and the 8-MiB decoded total still apply. XML/base64 from command-check stays in B rather than growing in transition state. The output budget covers the entire output, not an unbounded product of per-action allowances.
+
+Every new sub-budget must also fit the existing Tool-host **24-MiB input / 16-MiB output** channel. Exact serialized wire includes frozen files, imports, base64, arguments and the whole UTF-8 envelope. `checkExecutionTransitionWire` accepts actual strings or Uint8Array and uses the intrinsic byte length rather than an arbitrary object's self-reported byteLength. Source-byte-plus-args estimates are insufficient. Individually valid budgets may still exceed the combined wire ceiling: refuse rather than truncate, enlarge production limits or fall back to an unisolated process.
+
+B's 16-MiB upload limit does not make every Tool or slot capable of taking such an original. The 8-MiB decoded total, ordinary 32-KiB string limit and other budgets are not enlarged by byteArgs. Provider byte mapping uses verified B references, not a model copying uploaded content into args. Parsers that require full originals use bounded controlledBytes and cannot bypass byte-reading/wire checks through ref-only hashing.
+
+The measured batch had **no sessions field**. This is neither a zero legal capacity nor proof that its real shape is covered. A2 adds no session/device-specific capacity assumption; controlled-byte and general JSON budgets apply. Over-budget interpretation is disclosed without changing a proven D terminal. Larger-result batching or range inputs require a separate design and acceptance.
+
+Exported JSON Schema describes strict fields, action unions, arrays and string structure. UTF-8 total bytes, plain-object/cycle checks, canonical base64, decoded SHA and registered error codes also require the same contract parser. A2 synthetic contract checks alone are not Enforcement-chain, real-device or deployment acceptance.
+
+## Appendix A3: generic driver and evidence boundary
+
+The driver uses the existing task-submit path with the `module-execute` capability, not a product-name switch. C persists flow_runs/flow_steps: definition and state, step keys/request hashes, operations/fences, dispatch intent, original remote identity, original references and terminal facts. The worker runs frozen transition/Tool/Hook code through declared imports. Only the generic provider connector receives runtime profiles and injected credentials. operation.wait observes an existing operation in the current task/revision, never another remote write.
+
+Providers use existing connector-instance, runtime-profile and credential assets. The approved `hub-provider/1` receiptPolicy declares Tool names, input/receipt schemas, states, identity/hash field paths, leases and pre-dispatch refusal paths. Hub checks mechanical receipt identity, not product workbook methods, device names or log regexes. Effect and minimumRole come from approved provides. The protocol fields are in the [driver contract](../../../packages/execution/src/flow-contracts.ts), and route-specific usage is recorded in the [client handoff](../../client-api-handoff.md#a3通用模块执行与受控原件).
+
+Hub verifies B authorization, source pins, SHA and size before mapping byteArgs/byteSlots. Dispatch intent is durable before submission, and uncertain writes are not replayed as step retries. Unknown writes and failed reconciliation retain freezing; proven pre-dispatch failure and read timeout do not. An execution-is-change submission freezes actual Tool, parameter digest, original references and three pin groups and consumes its approved Change set only once.
+
+The beforeDispatch exit and the current explicit afterResult receipt gate are described in A2's [driver-injected shape](#driver-injected-shape). A proven status terminal is recorded before results are fetched. Later result/interpretation failure keeps its cause and original; it does not use status as a result or invent successful rows. Provider parsed JSON is stored as canonicalJson bytes in B; worker event/report pointers are bound to operation/stage and C rereads them to verify size and SHA. Canonicalization is a stated transformation, not preservation of HTTP whitespace or field order. Small sanitized JSON projections and product interpretations remain distinct from originals.
+
+The implementation identity covers the frozen module digest, flow, driver version and supported exact dependencies. Frozen files cover Tools, Hooks and relative dependencies. Historical approved pins and latest-approved reader intersections are checked again for execution; drafts do not change binding, new admission selects an explicit method, and old tasks do not upgrade automatically. Resource/runtime-profile revisions are pinned, and the existence of a file is not approval. A run's transitions and total steps use the existing 256-item budget.
+
+A3 acceptance requires the supported macOS seatbelt adapter, temporary PostgreSQL and synthetic providers. Separately frozen, approved and disabled synthetic modules prove the generic driver for those protocols only, not native APV migration, real devices/models or compatibility with every MCP server. Verification observations belong in [progress](../../server-s2-progress.md), not a claim of deployment in this design.
+
+---
+
+This document is one of circle-hub's design specifications, licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/): quote or build on it with attribution to Circle Hub and qingshanfeihu and a link to the original. See the [design specifications index](README.md#license).

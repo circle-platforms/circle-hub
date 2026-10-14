@@ -1029,3 +1029,49 @@ H1 期限 **4e84ba0**、H2 拒绝来源 **8cf4998**、M3 终态后结果与补�
 补齐 **49f8f98** 注册契约记录：严格对象拒绝顶层未知键（含 workerId），capabilities 内未知操作名 / 重复项同样拒绝；合法身份仍由认证 policy 提供。保持全部原小节标题，原 **31/31、3/3、57/57、4/4、61/61** 验收字样、冻结提交 / digest 与配置键无遗漏；技能 57 加 catalog 4 合 61 的原口径没有改成技能 61。
 
 主树两文档 **63 + 18 = 81** 个本地链接 / 锚点通过，代码围栏成对，diff 检查通过。对照表自身原有“状态、事件和交付”带顿号的坏锚点未在本轮改写，新增指向均有效。只签署客户端文档和进度，不运行代码测试 / PostgreSQL，不改变代码、设计规范、README、验证栈或独立产品包；两份 handoff 分笔提交，无 push / 部署。
+
+## 89：APV 外部模块接入验收门禁
+
+新增单文件 a3-apv-module-flow 验收与纯合成 provider / 原件夹具。默认开关未设时 **1 skip / 0 pass**，不读取外部 catalog、不启动 PostgreSQL；显式开启读取 CIRCLE_PACKS_CATALOG，CIRCLE_PACKS_REF 优先于既有 CIRCLE_PACKS_COMMIT / pin，只解析一次 commit，再按 Git 原字节核完整非隐藏文件集、SHA 与模块 digest，要求 products/apv **1.3.0**。坏目录 / ref / 清单 / ABI 明确失败，不变成 skip；未改写包 transition 或安装字节来放行。handoff 写入一条可在 Hub 仓库根运行的命令。
+
+初次只读 **702d039** 在旧 flow id 报红，尚无数据库执行。维护者更新 ref 后冻结 **5cdbc2b**，真实临时 PostgreSQL 已完成来源与模块安装、Bob 独立变更集批准、准备 / 派发 / 终态 / 纯 Tool 解析 / 交付；主树定向 **1 fail / 0 skip**，明确缺 verify.workbook。此前的原件 SHA、byteArgs、单次 case_submit、设备 / 主机步骤与两个检查点、unmapped 空列表、device / host Hook 非空处理器决定及 B 字节 SHA 断言均成立，未把 delivered 或部分通过称完整验收绿。三类 verify 与全部结果断言保持，整改归独立包；工作簿投影由冻结模块 Tool 读取合成原字节产生，不借原生解析器。
+
+本轮只验 A3 合成协议扩展：只读准备可独立调用，status/results 接受当前 worker 的可选租约参数，合成回执含机械关联 hash/state，不宣称现网网关已有这些字段或时序。C 后续同租约 prepare 观察由维护者另行授权实现。本项只跑新文件，默认 skip 与坏 ref 已核，typecheck / diff 通过；原生 **1.1.1** 路径未调用，源码 / 摘要未改，未跑全套 / 真实系统 / 模型，未改外部包或 checkout，不 push / 部署。验收未整体通过，门禁用于 Circle 迭代，不作为 C 现网切换批准。
+
+## 90：A2 驱动注入形状与 C 准备观察方向
+
+中文 A2 新增驱动注入形状，英文新增对应 A2 伴随文档，保留原合同 / 实测预算与限制。明确 currentInput.value 是整份 FlowSubmission、产品值在其 value，resource 是绑定别名、观察保留 operationId 关联、occurrence 由 Hub 授予、byteSlots 只用注入槽及位置追加字节、错误动作只用 F 登记码。原件 / state / metadata / wire 各预算不扩大，未新增 driver 字段或 schema。
+
+维护者确认当前 Hook 实际接法：beforeDispatch 由 C preflight 自动执行；afterResult 由 transition 显式 hook.verify，交付闸核已证终态写 operationId、真实成功证据与完整 candidate SHA。真实 env_prepare / bed_topology 需要远端租约，当前 read provider.call 不取得租约，示例不能冒充现网可执行路径。后续 C 已定为可选 receiptPolicy.prepare：批准工具名与参数映射、worker 在同一租约 submit 前调用、观察持久供 beforeDispatch 核；当前 preflight / 准备 / 意图时序需要未来独立实施验收，本轮只记方向，不自行确定字段 schema 或实现。
+
+两份设计 **25** 个本地链接 / 锚点通过，两份完整 frame 与动作示例各由当前 F 合同解析通过，canonical 输入 SHA / 原件 SHA / 长度静态核验通过；handoff 连同检查 **64** 链接有效，diff 通过。只改设计与进度，不改驱动语义、生产代码、原生实现或独立包，不跑全套 / 真实系统 / 模型，也不 push / 部署；两件本地分笔签署后交维护者与 Circle 迭代。
+
+## 91：合成协议验收名称与范围披露
+
+按维护者确认，A3 第一条仅证明模块接法，afterResult 仍由产品显式发 Hook、Hub 交付闸核证据，驱动语义不改。验收及夹具文件名追加 synthetic-provider-protocol，t.diagnostic 明示“synthetic provider protocol，不证明 cexg 现网兼容”，测试名与默认 skip 原因同样披露；handoff 命令同步改路径。原三 Hook、原件 / byteArgs、单次提交、逐步 / 检查点与未映射断言均保留。
+
+本项只重跑改名的默认入口，**1 skip / 0 pass / 0 fail**；源码参考只读，未运行生产或外部包测试，也未启动 PostgreSQL。严格 cexg 第二条与 C 协议修复待办另行提交，默认跳过不被称验收通过；不改驱动 / 网关 / 产品包，不 push 或部署。
+
+## 92：C 严格网关协议待办清单
+
+按维护者决定，中英执行流设计新增 C 待办，逐项记录只读 TOOL_SPECS 的结构：env_prepare / bed_topology 必需 lease_id/token；case_submit 必需 xlsx_b64 与租约、module 可选；case_status / case_results 只收 task_id，additionalProperties=false；TTL 为 expires_in_s。正常提交和完成结果没有 state / request_hash / input_sha256 / byte_hashes，case_status 仍有 state，完成结果 channel=ready；不把完成结果分支扩大成所有回执都无 state。
+
+未来驱动必须补逐工具租约注入映射、注入后完整 schema 或允许声明的注入字段、提交字节参数 / module 的批准 policy 映射、各工具真实 state 或 channel/rc 终态映射、冻结原件 sha256 与批准方法用例身份 case_ids 的核验。声明外参数和现网不存在的三 hash 不能充当兼容方案；映射属于通用 policy，不在 Hub 写 APV 分支。租约内 prepare 观察与 beforeDispatch 证据时序、已证 D 终态和结果渠道失败的区分仍按前次方向，afterResult 仍产品显式核验。
+
+本轮只写清单，不定未来 JSON/schema 或实现。两份设计 **25** 本地链接 / 锚点与已有 frame / 动作 F 解析均通过，diff 检查通过；本机网关源码仅作只读形状参考，不运行 / 导入 / 复制其实现或配置。A3 合成协议与严格目标的证明范围分开，不 push / 部署 / 改驱动、网关、独立包或原生字节。
+
+## 93：严格 cexg 协议目标验收
+
+新增 c-cexg-protocol 单文件：纯协议叶验证 required / unknown 参数、真实租约身份、仅 task_id 的观察参数及不扩写的原始成功字段；主目标复用同一外部 APV v2 flow 的原件、模块安装 / Bob 独立批准与通用流程提交。provider 的 TS 数据按只读 TOOL_SPECS 形状自写，不导入 / 执行 Python 或复制实现 / 配置；凭据随机生成，地址仅本机运行时端口及文档示例值。原始 submit/results 不补 state 或三 hash，status 保留 state；release、lease_status、build_checked 和 MCP isError 均按协议分开。
+
+默认严格文件 **1 pass / 1 skip**，与第一条合成入口同跑为 **1 pass / 2 skip / 0 fail**，skip 不计兼容通过。显式冻结 **5cdbc2b**，独立树与主树均 **1 pass / 1 fail / 0 skip**：真实临时 PostgreSQL 完成原件 / 资源 / 运行 profile / 模块登记和另一身份批准，主目标在 C.validateBatch:env_prepare 缺租约而 failed / INVALID_PAYLOAD，RPC 0、case_submit 0、write intent 0。主断言要求 delivered，不把准确拒绝改为 PASS；后续提交 / 观察 / 原始证明关系尚未到达。该红点与 A3 合成链漏 verify.workbook 分开披露。
+
+只参数化既有测试夹具的 provider/tools，未改变第一条默认样本，单文件命令和政策同步需求写入 handoff。未来 C 的批准 policy 与核验必须一起更新，不能补伪 hash 做绿，也不在此猜未来 schema。最终 typecheck / diff 与 **65** 个 handoff 本地链接通过；仅针对性测试，PG 串行且已清理，不跑全套 / 真实环境 / 模型，不改生产驱动、原生 1.1.1、网关或独立包，不 push / 部署。
+
+## 94：外部模块修复后的合成协议验收
+
+维护者通知只读 ref 更新为 5cdbc2b；实际核对时已进一步前进到 **6a8cb799125a749e69ba4b6f32de8ee1a92437ab**，静态确认 workbook Hook 改为始终追加并计入等待数量。不能拿旧 SHA 的红套到新原件，遂按完整新 SHA 冻结 APV **1.3.0** / digest **54c681c1e8380cad5509c7dbf18774052b432d0b903c59ebaeb6748239a2df48**，只运行第一条 synthetic-provider-protocol 验收。
+
+实际 **1/1 通过、无 skip / fail**，11.50 秒：原件上传、完整模块登记 / 独立批准、准备、派发、终态、纯 Tool 解析和交付全部到达；56,413 字节工作簿仅 byteArgs，原件 SHA 一致，case_submit 1 次，设备 / 主机 observed、检查点 2 passed、unmapped 0。三类 verify Hook 均为已批准的非空处理器决定，B 回读 SHA 全部原断言通过；无原生 APV 操作，未删断言或改包 / 夹具。记录更新只改 handoff 与进度，测试本身字节不变。
+
+此绿只证明 A3 合成协议的模块接法，不证明 cexg 现网兼容。严格 C 的驱动缺口未实施，本轮不重复其旧红，不跑全套 / 真实网关 / 设备 / 模型；PG 单 runner 且已清理，只读外部 ref 不 checkout / 改写。生产代码、原生 1.1.1 与部署不变，记录仅本地签署、不 push。
