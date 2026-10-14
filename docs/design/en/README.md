@@ -20,6 +20,8 @@ This is the design finalized on 2026-10-13. Later development and adaptation of 
 | [Permission policy export](permission-export.md) | The fourth harness-neutral item: hub-permission/1 computed from the scope role presets and the Tool annotations; a mapping table and sample configuration for Claude Code, Codex CLI, OpenCode, Gemini CLI and Cursor; what cannot be expressed, stated as such |
 | [Harness format survey](harness-formats.md) | The on-disk formats of Skill / Command / Agent / Instruction / Hook / MCP server in Claude Code, Codex CLI, OpenCode, Gemini CLI and Cursor: paths, fields, what maps onto the neutral manifests and what does not, each with its source; the basis for the adapters and knownCompatible |
 
+The rules from the two handoff documents (client-api-handoff, case-execution-handoff) have been merged into the documents above; the passage-by-passage mapping is in [handoff-map.md](handoff-map.md) (for trimming the handoffs into change records, not itself a design specification).
+
 Two principles run through all of the documents, from earlier decisions: determined content is given to the script, and the rest is given to the model to judge and disclosed in full (ADR 0024); local cancel, remote stop, and task delivery are recorded separately (ADR 0025).
 
 ## License

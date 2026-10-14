@@ -61,6 +61,10 @@ harness 里实际存在的东西，分成 hub 治理的和不治理的。治理 
 
 表里写「以其机制为准」的格子，是这版还没写适配器的；适配器写好之前，hub 对那个 harness 的支持只有 MCP 传输那一层。每个适配器交付时附一张合成验收：一个用该 harness 写的 Skill 导入 hub、经审批、再导出到 Circle 和原 harness，两边都能加载。
 
+导入导出经两个端点。`POST /v1/harness/import` 接收来源 harness、版本与精确文件集的原字节/SHA：整批一个事务，创建对应原语的草稿并共用一个变更集；SHA、文件集、范围逐项重核，同字节的重复导入复用同一资产与审批请求，批准前的导出是 `SOURCE_NOT_APPROVED`。`GET /v1/assets/{id}/harness-export?target=…` 把已批准的原语投影成目标 harness 的文件表（相对路径、base64、SHA）加 warnings 与 provenance：原文字节不改，装不进目标 harness 的部分给 warning，不猜近似映射。Hook 与 provider 需要产品模块与运行配置的治理路径，没有投影时是 `NO_HARNESS_PROJECTION`，不自动装入或执行。各 harness 的 permission hint 由适配器原样保留，不等同于工具闭集。
+
+knownCompatible 只记真实运行里匹配本包 manifest.id 的成功装载（用工具返回的 id 关联模型发起的调用，不依据返回文本）；它可以在读取投影里展示，不改变冻结的提交原件与 digest。
+
 ## 四、通用传输：hub 自己是一个 MCP server
 
 不装任何适配器的 harness，只要会连 MCP，就能用 hub：
@@ -69,6 +73,11 @@ harness 里实际存在的东西，分成 hub 治理的和不治理的。治理 
 - 鉴权用 hub 的会话令牌；每次调用照常留证据、过权限；写操作（交活、推送、审批）也是 tools，`approval` 标注的那些在没有卡片界面的 harness 里会要求显式确认参数。
 - 显式确认走 MCP 的 `_meta`，不改工具的 inputSchema：`tools/call` 的 `params._meta["hub/idempotencyKey"]` 必填；`approval` 标注的工具第一次调用若没有确认，返回 `CONFIRMATION_REQUIRED`，details 带 `argsDigest`（参数的规范摘要）和一行人读摘要；客户端再次调用时在 `_meta["hub/confirmation"]` 回传同一 `argsDigest`，与当前参数摘要一致才执行，不一致是 `CONFIRMATION_STALE`。确认绑定参数，不能盲确认；响应的 `_meta` 回显 idempotencyKey 与 evidenceId。
 - Circle 扩展是这条传输之上的富客户端：卡片、队列、登记簿。其它 harness 先得到基础能力，再按需要写适配器。
+- 传输形状：Streamable HTTP 的 JSON 端点，按协议版本协商；每个请求带 hub 会话 Bearer，Origin 若存在必须与 hub 原生地址同源；无会话 id 的 stateless 模式，GET/DELETE 为 405；Accept 同时支持 JSON 与 SSE。
+- 幂等：body 的 idempotencyKey 与 `_meta["hub/idempotencyKey"]` 都有时必须一致。平台控制 Tool 的读写共用持久幂等回执：同租户/主体/范围/工具/键的重放返回同一证据，不再执行；改参数是 `IDEMPOTENCY_MISMATCH`；回执没有到期窗口，要读最新状态用新键，重放仍检查当前权限与任务可见性。专业 Tool 沿用受理的二十四小时去重窗口——两类窗口不同，客户端不得把专业工具的旧键当永久防重证明。
+- 平台控制 Tool 保留 `hub.` 命名空间（交活、上传原件、推送技能、审批决定、运行技能、任务状态与结果）；写回执与原动作在同一事务落库，重放不再写。控制调用的返回以 SHA 存 B，`mcr_` 是传输回执证据，不声称业务事实或模型质量。
+- resources 的 URI：`hub://evidence/<knr_|evd_|mcr_>`、`hub://source/<knr_|src_>`、`hub://artifact/<art_>`，逐次按当前身份的资料权限核对，`mcr_` 仅原操作者可读；列表在授权集合上分页，游标绑定身份、原样续读。prompts 是已批准 Skill/Command 的投影：返回资产 SHA 与版本出处，不替换未声明参数，不执行原语。
+- 显式确认不替代治理：它只证明同一操作者确认了同一组参数，不能成为变更集审批人，不替代角色、绑定、Hook 或租约。
 
 ## 五、原语在四对象 × 五要素里的位置
 
@@ -99,7 +108,7 @@ harness 里实际存在的东西，分成 hub 治理的和不治理的。治理 
 ### Skill / Agent / Command
 - 内容格式 = 作者所用 harness 的格式；hub 只冻结字节，不解析语义；中立清单从 frontmatter 和目录推导，推导不出的字段留空。
 - `tools` 一旦声明，试跑记录里出现声明外的工具就拒绝；没声明则试跑记录只作披露。
-- 执行：无界面 Circle 以固定版本运行，每次工具调用回到 hub 目录重新核权限和凭据。导出到其它 harness 的副本带 hub 的资产 id 与 sha，便于回溯。
+- 执行：无界面 Circle 以固定版本运行，每次工具调用回到 hub 目录重新核权限和凭据。导出到其它 harness 的副本带 hub 的资产 id 与 sha，便于回溯。运行的 harness 钉在已核对的提交与版本上，升级运行器不放松这个核对；每次运行用独立的 HOME 与工作区。产物只在进程正常结束、声明文件完整、字节 SHA 核对之后交付；文件完整性与摘要记 script-conclusion，模型的最后回答另记 model-judgment，不用回答替代产物或专业事实。取消先中断输入流、超时再终止进程；观察到本地退出后任务保持 unknown，并如实标注远端停止未核实。
 
 ### Tool
 - 形状 = MCP tool：`name`（`<provider>.<tool>`）、`description`、`inputSchema`、`annotations`（readOnlyHint 等）。
@@ -115,6 +124,8 @@ harness 里实际存在的东西，分成 hub 治理的和不治理的。治理 
 - 钩子点固定：`verify.deviceCommand`、`verify.hostCommand`、`verify.workbook`、`beforeDispatch`、`afterResult`；客户端侧的事件（PreToolUse / PostToolUse 一类）由适配器映射。
 - 入参 `{event, binding: {method, resource, source, inputRevision}, subject}`；出参 `{decision: "pass"}` 或 `{decision: "block", code, facts}`。
 - 处理器是 100% 可证真的脚本：不调模型、不连网、不读环境；按清单顺序执行；一个 block 即停。hub 核心自带零条处理器，没有缺省放行或缺省拒绝的分支；审计记录规则 id 与版本。
+- 三个 verify 挂点的 subject 分别是 `{command, tree:{heads:[{command, present}]}}`、`{command, host, method, kwargs}`、`{client, contract:{testEnvEnabled:[…]}}`；beforeDispatch 是 `{input, operationId}`，afterResult 是 `{result, operationId}`，不接受多余字段。block 的 code/facts 原样回传，并补授权行号、输入修订与原件 SHA；每次判定的事件与审计都保留规则 id/版本/挂点/结果。
+- 主机策略只取资源声明里已批准的原声明：allowedTestHosts 是显式集合，hostCommandPolicies 是可选的逐主机收窄；运行文件里的同名字段不作治理授权。
 
 ### Instruction
 - 按范围或产品线下发的 markdown；版本化、变更集审批；适配器按各 harness 的文件名投影。不含凭据、地址。

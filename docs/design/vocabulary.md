@@ -26,7 +26,7 @@
 | 执行链 | Enforcement chain | 运行时平台做的五步：权限 · 绑定 · 核验 · 租约 · 审计。结果只有通过 / 报错 / 未知；没有审批，平台不是审批人 | 运行审批、预授权、异常审批 |
 | 运行报错 | Run error · 可证真 | 执行链里脚本能确定的失败，带错误码和事实返回 Circle | 让审批人决定 |
 | 结果未知 | Unknown outcome · 如实披露 | 脚本确定不了的结果：披露观察到的一切，不重发；申请人选择核对、标记失败或放弃 | 当成失败或成功 |
-| 错误码 | Error code | 可证真失败的固定标识：COMMAND_NOT_IN_TREE · DESTRUCTIVE_COMMAND · BUILD_MISMATCH · GATEWAY_UNREACHABLE · PERMISSION_DENIED · LEASE_UNAVAILABLE · SOURCE_NOT_APPROVED | 自由文本的失败原因 |
+| 错误码 | Error code | 可证真失败的固定标识，目录见[审批与执行链](approvals-and-enforcement.md#错误码目录) | 自由文本的失败原因 |
 
 ## 状态枚举
 
@@ -55,6 +55,18 @@
 7. **状态是枚举，原因是字段**：筛选只按枚举。
 8. **身份只改计数**：管理员、成员看同一页面，结构不变。
 9. **审批在变更时，不在运行时**：变更集批一次；运行走执行链，可证真的直接报错，不可证真的如实披露。记录里只写「按规则核验」，不写「hub approved」。
+
+## 列表即查询的契约
+
+每个登记簿的集合读取带 `view=page` 时返回 `{total, items, cursor}`；不带 view 保留各接口原有形状。契约对所有登记簿一致：
+
+- limit 默认 20、范围 1–100；cursor 是不透明令牌，原样回传续读，不手工拼接。分面只取记录已声明的维度（scopeId、productLineId、flowVersion、status、lifecycle、owner），不从产品名或平台名猜分类；没有该维度的登记簿对该分面返回 `INVALID_PAYLOAD`，不把空值比较当空页。minAgeMs/maxAgeMs 非负且最小不大于最大；sort 为 updatedAt 或 age，age 按创建时间排。
+- 权限、私有边界与分面先过滤，再算总数与分页，权限每页重核。跨身份、或改变了筛选/排序/limit 的游标是 `INVALID_PAYLOAD`；越权范围是 `FORBIDDEN_SCOPE`。
+- owner 的归属逐登记簿固定：任务、变更集、技能是申请人；资产、工具是资产所有者；企业对象是观测登记人；角色、服务客户端是其主体；词表是登记人。范围和租户级记录没有个人 owner 维度，该分面对它们不匹配。状态用各登记簿自己的枚举（任务 phase、资产 lifecycle、技能 status、变更集 status、服务客户端 active/revoked、词表 registered），不另造。
+- 时间游标保存数据库完整精度的锚点与稳定 id：锚点之后的更新进下一次查询，同一刻的记录仍有独立位置；总数是锚点下当前可见的匹配数，不承诺跨请求的永久快照。显式回填时间或时钟回拨可能让已交出的行再次出现，客户端按稳定记录 id 合并去重；要严格不重复的扫描，用不可变的创建时间排序，并在扫描后发起新查询补更新。
+- 待批审批在页面上把 open 且已到期的投影为 expired，原记录与旧数组的状态不改。
+- 没有管理资格的集合查询返回同形空集合，仍校验 limit、游标与分面；详情与管理操作继续要求资格，不因集合可查而授权。
+- 分页的诚实规则对连接器与平台一致：nextPage=null 才表示匹配结果的末尾；hasMore 为真时当前页不是全量。coverage.complete=false 时不能说「全范围无命中」，只有游标耗尽且无跳过项才完整。超出上限明确 `RESULT_TOO_LARGE`，不截断冒充全量。跨页之间源修订变化时重新读取，不混用不同修订的页。列表投影只带精简字段，完整历史与定位不进入列表回复，原件与完整投影照常保留。
 
 hub 要补的字段：`task.priority · task.assignee · task.dueAt · task.waitingReason · approval.supersededBy · operation.unknownSince · asset.productLineId`，保存视图，变更集，审批策略数据化，执行链错误码与披露格式，通知流。
 

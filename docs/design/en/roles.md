@@ -17,6 +17,22 @@ A person's role is granted by scope: **administrator**, **member**, **guest**. A
 
 The existing targets / readers still limit which specific resources and sources are visible; the root administrator manages roles and scopes, and does not automatically inherit the reading of materials in a child scope.
 
+## Sessions and tokens
+
+- The development identity source is enabled only by explicit configuration, and it is not enterprise authentication; accounts and grants come only from the server's configuration and policy, and an identity, role, or tenant asserted in a request body grants nothing.
+- A session token is valid for eight hours by default (configurable, from one second to twenty-four hours); a shorter validity explicitly requested is honored. Renewal accepts only a session that is still valid, unrevoked, and not disabled: it asks no password, accepts no self-reported lifetime, identity, or scope, and re-reads the scopes from the current policy. Renewal rotates the token, with a five-second grace for the old one; a session family has an absolute lifetime of twenty-four hours that renewal cannot extend. An expired credential is a 401, and no session is recovered from it; an explicit logout revokes the whole family at once. Password failures lock out, and the request buckets and hashing concurrency are capped — exceeding them is `RATE_LIMITED`, and the error echoes neither credentials nor user names.
+- A short-lived run token is not a session: it can be neither renewed nor logged out, and only the worker holding a valid lease extends it, up to that operation's deadline.
+- The roles in a development identity file are only the initial seeding; afterwards roles are managed through scope Change sets, and a restart never overwrites governed roles with the identity file. An identity removed from the configuration lapses at restart.
+
+## Role registration and the disclosure of eligibility
+
+- A person's login response carries roles (one role per scope) and does not expose the internal action strings; a machine identity has only authorized scope strings. The scope endpoint discloses each scope's twoPersonRule, policyVersion, adminCount, and singleAdminMode; every record of the role registry carries its revision, the platform Verification, and the Change set reference.
+- A change to roles or scope policy is a Change set: it is registered as a frozen draft and takes effect only after an independent decision, and the response must carry the Binding back verbatim. Only a person in the same tenant can be granted a role; the last root administrator cannot be removed.
+- The disclosure of Eligibility and Decisions is fixed: decisionMode is self or independent, singleAdminMode is given as-is, and the audit records the same fields plus the policyVersion. A self-decision has a Decision record and is not a silent pass. A Verification means only a programmatic check by a rule id/version, and is never a person's approval.
+- Action and target authorization is still checked live on every access; a person's role does not replace source readers and resource policies, and a machine scope string never impersonates a person's role.
+- A Tool of any provider carrying a credential reference requires at least the member role, and both the catalog and calls refuse a guest; a guest may only call read-only providers without credentials. Sharing a static resource does not widen anyone's role.
+- A task of a tool call or a personal run belongs to its caller from the start: others in the scope cannot read its content or candidates, and lists are filtered before they are paged; a source ACL and a task's scope permission never substitute for each other. For a personal result to become team knowledge, it goes through knowledge review and publication — a personal task is never published directly.
+
 ## The two-person rule
 
 The scope policy `twoPersonRule` (boolean, on by default). Eligibility:
