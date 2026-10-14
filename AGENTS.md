@@ -30,4 +30,4 @@ Inspect status and diffs and preserve other people's work; use isolated worktree
 
 ## Verification
 
-Run npm run verify:references and npm run test:references after changing provenance tooling or approved imports. SHA verification and static declarations do not establish business correctness. Inherited workflows remain inactive below foundation; root CI only checks archive integrity at this stage. Do not publish a release or enable deployment workflows without authorization.
+Run npm run verify:references and npm run test:references after changing provenance tooling or approved imports. SHA verification and static declarations do not establish business correctness. Inherited workflows remain inactive below foundation; root CI checks types, contracts, methods, synthetic service acceptance and archive integrity. Acceptance uses temporary loopback PostgreSQL; Circle RPC cases requiring the separately confirmed runtime report skips when that runtime is absent, not verified passes. Do not publish a release or enable deployment workflows without authorization.

@@ -4,16 +4,17 @@ This page translates the [Chinese original](compatibility.md); where the two dif
 
 The three repositories are versioned separately: circle (harness), circle-hub (the platform), and circle-packs (packs). Who depends on whom, and what is authoritative, is written here. Changing any row is a deliberate upgrade, not something done in passing.
 
-## Current state (2026-10-13)
+## Current state (2026-10-14)
 
 | Component | Version / commit | Authoritative source | Notes |
 |---|---|---|---|
 | circle-hub `main` | The design documents are authoritative; code is merged from the `server-s2` branch after review | `docs/design` | The 7420 verification stack runs the reviewed commit from `server-s2` (currently 8e212a6, database migration 28), not the code on `main` |
 | `foundation/circle` | Circle **1.0.4** source baseline, frozen | the source record in `references/README.md` | Source reference only: it is not installed, and its installer is not run; it is not a runtime dependency of hub |
 | Circle runtime used for acceptance | Circle main-line commit **8b2ceb6** (confirmed by the user) | `CIRCLE_BIN` / `CIRCLE_COMMIT`, a strict Git gate | **This is the real test dependency**: acceptance RPC cases accept only this commit; changing the commit requires the user's confirmation and an update of the gate |
-| circle main line | 1.2.1 (`v1.2.1`) | the tag in the circle repository | the target version of hub's Circle-side extension |
+| Latest public Circle release (as of 2026-10-14) | 1.4.1 (`v1.4.1`) | the tag and Release in the circle repository | Release status only; this does not establish hub acceptance against that version |
+| Target baseline for hub's Circle-side extension | 1.2.1 (`v1.2.1`) | the previously selected extension target | The target remains unchanged when Circle releases a new version; it is separate from the pinned RPC acceptance commit above |
 | circle's hub extension | branch `server-tools` (4076953, not pushed), built on a Circle 1.1.1 checkout | hub's `docs/client-api-handoff.md` | the identifier is still `circle-server`; it is renamed together with hub |
-| circle-packs `main` | see its CHANGELOG | hub's pack loader and schemas | tests need hub's dependency set (CI clones hub `main` for `node_modules`) |
+| circle-packs `main` | see its CHANGELOG | hub's pack loader and schemas | product-line pack tests use the locked dependencies from hub commit `dc93c69826f73f16d2f20f7520ba4c6663d014ac`; circle-packs `.github/workflows/checks.yml` pins it instead of following main; this is a test dependency, not a production compatibility claim |
 | execution gateway cexg | 0.3.0 (static secret) | the compile-excel-server repository | hub's worker needs the §7 static-secret credential mode in order to call it |
 
 ## Schemas and contracts
@@ -39,3 +40,5 @@ Upgrading the Circle commit used for acceptance, replacing the `foundation/circl
 
 - 2026-10-13: this page was created. The rename has not started; the acceptance Circle commit is 8b2ceb6; foundation/circle is 1.0.4; circle's main line is 1.1.1.
 - Evening of 2026-10-13: 7420 upgraded in place to server-s2 8e212a6 (§5, migration 28); circle mainline 1.2.1; circle-hub and circle-packs relicensed under Apache-2.0 with signed-off commits; circle-packs acceptance pinned at 316760a (products/apv 1.2.0).
+
+- 2026-10-14: separated Circle's latest public release 1.4.1, the extension target baseline 1.2.1 and the pinned RPC acceptance commit; neither the acceptance commit nor the frozen reference was upgraded. The hub dependency set for circle-packs CI is pinned to dc93c69826f73f16d2f20f7520ba4c6663d014ac. Local synthetic test results are recorded separately and do not establish real-product or production acceptance.

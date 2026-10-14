@@ -31,6 +31,8 @@ npm run typecheck
 npm test              # contracts, methods, acceptance, references
 ```
 
+The `Hub checks` workflow runs type checking, contract tests, method tests and synthetic service acceptance in scratch Circle data directories with temporary loopback PostgreSQL. `Reference integrity` checks the frozen archives separately. The Circle RPC acceptance cases require the separately confirmed `CIRCLE_BIN` and `CIRCLE_COMMIT`; public CI does not provide that runtime, so those cases explicitly report skips rather than passes.
+
 - Every behaviour change comes with a standalone sample that reproduces the original problem. Old test records and source summaries are not evidence that something works today.
 - Acceptance runs on synthetic sources, synthetic devices and the development identity only: no real system, no paid model, no real device. Read-only observations of real sources are recorded separately and never counted as passes.
 - The core guard tests scan `apps/` and `packages/` for product and system names. A connector may name a system; nothing may name a product line.
