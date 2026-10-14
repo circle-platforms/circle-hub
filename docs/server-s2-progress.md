@@ -1211,3 +1211,11 @@ INVALID_EXECUTION_WORKBOOK 与 COMMAND_VALIDATION_FAILED 登记进核心 F 错�
 原 reconcile 的释放调用只留下 cleanupTransport，C 却在核对结果前按父 intent / terminal 审计，合法回报也被 FORBIDDEN_ACTION 回滚。仅对成功 reconcile 候选延后这条清理审计：C 先回读并核原始 status 的操作身份 / 原件 SHA / 批准 policy，record 持久终态，再核同一原件引用后审计原已批准明文例外。不以 row.kind 或 worker 自报 terminal 放行；错误来源、fence、远端身份、非终态、自报终态及错误 release Tool 继续拒绝。该调整不扩大派发授权，也不改原生路径。
 
 先写验收，纯旧 **1/3**→新 **3/3**，相关准备消费者 **5/5**；合成 DNS 只映射回环、runtime-profile 例外由管理员登记 / Bob 独立批准。旧真实 worker 回报明确 FORBIDDEN_ACTION、父 unknown / 核对 running 且 release 已发生；修后 **1/1**，核 submit / release 各一次、父 reconciled、资源解冻、永久 plaintext 审计和证据。最初夹具 owner 错误不计目标红。定向共 **9/9，无 skip**，typecheck / diff / 保护目录零差异；PG 串行退出，不跑全套、不 push / 部署或触现场。
+
+## 111：复核中项，共享资源锁与事务外 Hook
+
+先用两任务同 provider 的真实事务屏障复现 **40P01**：fenced transition 回报持 clock 等资源，另一任务持资源调用真实 emitter 等 clock。此红不是负载或 mock SQL。Flow 现在按完整关联集合分层排序，task→flow_run→operation→flow_step→resources / leases→event_clock；首 emit 前锁各冻结资源，Store 共享回调覆盖模块事件及执行提交变更集的提交 / 决定入口，多任务不逐个拿完全部锁才拿下一任务。只收集冻结执行提交所引用的任务，不扩到整范围，也不以锁函数替代原授权、审批资格或单次消费。现有原生 capability 不调用该 flow 回调，不加死锁自动重试。
+
+beforeDispatch 的 C 内部工作项通过私有 Symbol 保存，摘要绑定代码、subject、方法 / 来源 / 资源 / 运行时、输入 / request / fence / 准备原件。首事务释放后真实 Tool-host 计算，第二事务重新核活权限、pin、原件及同摘要才存 proof。prepared 先提交原件、事务外真跑 Hook，再回实际允许；intent 强制完整检查且内事务再核当前 digest / 无 pending。普通 light / heartbeat 只查活授权与证明元数据，不读 B 或计算 Hook。Worker 无回报处理器结论的权限；公开接口与事件形状未扩。中英设计说明仅声明已测 flow 入口的锁边界，不声称穷尽全部数据库锁。
+
+真实 PostgreSQL 定向 **7/7，无 skip**：原死锁屏障、同租约准备、七表 NOWAIT 证明 Hook 门内无行锁 / clock 锁且真实角色变更独立批准撤权后拒 proof、Hook 阻断、单项执行批准消费、审批后期限刷新、同 provider 双任务合并变更集各消费 / 派发一次且重复决定拒绝。纯工作项 **2/2**、旧锁消费者精确 mock **5/5**，保身份 / fence / early-fail / 排序 / SKIP LOCKED 断言。typecheck / diff / 原生与保护目录零差异，PG 串行清理，只本地签署；全套仍由维护者跑，不 push / 部署或触现场。

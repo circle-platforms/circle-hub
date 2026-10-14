@@ -14,13 +14,17 @@ const roleConfig=z.object({schema:z.literal('scope-role/1'),scopeId:z.string(),p
 const policyConfig=z.object({schema:z.literal('scope-policy/1'),scopeId:z.string(),twoPersonRule:z.boolean(),slaMs:ScopeSla.optional(),expectedRevision:z.number().int().positive()}).strict();
 export const RuntimeProfileConfiguration=z.object({profileType:z.enum(['connector','runtime','execution']),profileRef:z.string().min(1).max(200),profileSha256:Sha256,allowPlaintextAuthentication:z.boolean().optional()}).strict();
 type Item={assetId:string;version:string;sha256:string};
+type SubmissionLock=(tx:Transaction,ctx:AuthContext,scope:string,assets:any[],prior:any[])=>Promise<void>;
+const storeSubmissionLocks=new WeakMap<Store,Map<string,SubmissionLock>>();
 export class ChangeSets{
   store:Store;auth:Auth;assets:Assets;tasks:Tasks;approvals:Approvals;
   validators=new Map<string,(tx:Transaction,ctx:AuthContext,asset:any)=>Promise<any[]>>();
   decisionHandlers=new Map<string,(tx:Transaction,ctx:AuthContext,asset:any,approved:boolean)=>Promise<void>>();
   profileIdentity?:(type:string,ref:string)=>string|null;
+  submissionLocks:Map<string,SubmissionLock>;
   constructor(store:Store,auth:Auth,assets:Assets,tasks:Tasks,approvals:Approvals){
     Object.assign(this,{store,auth,assets,tasks,approvals});this.store=store;this.auth=auth;this.assets=assets;this.tasks=tasks;this.approvals=approvals;
+    let locks=storeSubmissionLocks.get(store);if(!locks){locks=new Map();storeSubmissionLocks.set(store,locks);}this.submissionLocks=locks;
     approvals.policies.set('changesets.apply',{digest:action=>action.args.identityDigest,authorize:(tx,ctx,task,action)=>this.binding(tx,ctx,task,action,true),check:(tx,ctx,task,row,answer)=>this.check(tx,ctx,task,row,answer),accepted:(tx,ctx,task,row,answer)=>this.decided(tx,ctx,task,row,answer)});
     assets.onDraft=(tx,ctx,row)=>['credential-reference','scope-role','scope-policy','execution-submission'].includes(row.kind)||row.kind==='skill-package'&&row.configuration.skillPackId?Promise.resolve({}):this.single(tx,ctx,row);
     assets.governedTransition=(ctx,id,input)=>this.legacyTransition(ctx,id,input);
@@ -61,6 +65,7 @@ export class ChangeSets{
     for(const id of items.map(item=>item.assetId).sort())await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[id]);
     const assets=[];for(const input of items){const asset=await this.item(tx,ctx,scope,input);if(['scope-role','scope-policy'].includes(asset.kind))await this.validatePolicyAsset(tx,ctx,asset);assets.push(asset);}
     const id=newId('cst');const prior=(await tx.query("SELECT * FROM change_sets WHERE tenant_id=$1 AND scope_id=$2 AND status=ANY($3::text[]) AND EXISTS(SELECT 1 FROM jsonb_array_elements(items) i WHERE i->>'assetId'=ANY($4::text[])) ORDER BY task_id",[ctx.tenantId,scope,['waiting-review','blocked'],items.map(item=>item.assetId)])).rows;
+    for(const kind of new Set(assets.map(asset=>asset.kind)))await this.submissionLocks.get(kind)?.(tx,ctx,scope,assets,prior);
     for(const old of prior){const task=await this.tasks.internal(tx,old.task_id,true);const current=(await tx.query('SELECT status FROM change_sets WHERE change_set_id=$1 FOR UPDATE',[old.change_set_id])).rows[0];if(!['waiting-review','blocked'].includes(current.status))continue;
       await tx.query("UPDATE change_sets SET status='superseded',updated_at=clock_timestamp() WHERE change_set_id=$1",[old.change_set_id]);const replaced=(await tx.query("UPDATE approvals SET status='superseded',superseded_by=$2 WHERE task_id=$1 AND status='open' RETURNING approval_id",[old.task_id,id])).rows;for(const row of replaced)await this.tasks.emit(tx,old.task_id,'approval.superseded',{approvalId:row.approval_id,inputRevisionId:task.inputRevisionId,supersededBy:id});await tx.query("UPDATE pending_inputs SET status='superseded' WHERE task_id=$1 AND kind='approval' AND status='open'",[old.task_id]);await tx.query("UPDATE skill_packages SET status='superseded' WHERE approval_task_id=$1",[old.task_id]);await tx.query("UPDATE tasks SET result_status='succeeded',result=$2 WHERE task_id=$1",[old.task_id,JSON.stringify({changeSetId:old.change_set_id,status:'superseded',supersededBy:id})]);await this.tasks.stage(tx,task,'delivered','done','change-set.superseded',{changeSetId:old.change_set_id,supersededBy:id});
     }

@@ -101,6 +101,8 @@ export class Operations extends Execution {
     });if(generic?.denial)throw generic.denial;return generic??super.claim(ctx,exclude);
   }
   async preflight(ctx:AuthContext,id:string,fence:number,tx?:Transaction,lightweight=false):Promise<any> {
+    const declared=(await (tx??this.store.pool).query('SELECT name FROM operations WHERE operation_id=$1',[id])).rows[0]?.name;
+    if(this.customPreflights.has(declared))return super.preflight(ctx,id,fence,tx,lightweight);
     const run=async(client:Transaction)=>{
       await this.lockPreflight(ctx,id,fence,client);const row=await this.lease(ctx,id,fence,client);if(this.customPreflights.has(row.name))return super.preflight(ctx,id,fence,client,lightweight);
       const {task,authorization}=await this.authorize(client,row);

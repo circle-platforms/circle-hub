@@ -14,12 +14,15 @@ export function taskFromRow(row: Record<string, any>): Task {
     revision: row.revision, flowVersion: row.flow_version,waitingReason:row.waiting_reason??null,assignee:row.assignee_principal_id??null,dueAt:row.due_at?.toISOString()??null,
     ...(row.capability_pack_id ? { capabilityPackId: row.capability_pack_id, packVersion: row.pack_version } : {}) };
 }
+type EventLock=(tx:Transaction,taskId:string)=>Promise<void>;
+const storeEventLocks=new WeakMap<Store,Map<string,EventLock>>();
 export class Tasks {
   store: Store; auth: Auth; inputTtlMs: number;
+  eventLocks:Map<string,EventLock>;
   capabilities=new Map<string,{version:string;flowVersion:string;privateByDefault?:boolean}>(Object.entries(PACK_FLOWS).map(([id,flowVersion])=>[id,{version:'1.0.0',flowVersion,privateByDefault:!['asset-registration','change-set'].includes(id)}]));
   deliveryValidators=new Map<string,(tx:Transaction,task:Task,result:any)=>Promise<{itemId:string;conclusionId:string}[]>>();
   baseFlows=new Set<string>([FLOW_VERSION]);
-  constructor(store: Store, auth: Auth, inputTtlMs = 300_000) { this.store = store; this.auth = auth; this.inputTtlMs = inputTtlMs; }
+  constructor(store: Store, auth: Auth, inputTtlMs = 300_000) { this.store = store; this.auth = auth; this.inputTtlMs = inputTtlMs;let locks=storeEventLocks.get(store);if(!locks){locks=new Map();storeEventLocks.set(store,locks);}this.eventLocks=locks; }
   async internal(tx:Transaction,taskId:string,lock=false):Promise<Task> {
     const row=(await tx.query(`SELECT * FROM tasks WHERE task_id=$1${lock?' FOR UPDATE':''}`,[taskId])).rows[0];
     requireCondition(row,'TARGET_NOT_FOUND','Task not found for durable bookkeeping');return taskFromRow(row);
@@ -39,6 +42,8 @@ export class Tasks {
     return taskFromRow(row);
   }
   async emit(tx: Transaction, taskId: string, kind: string, payload: unknown): Promise<void> {
+    const task=(await tx.query('SELECT capability_pack_id FROM tasks WHERE task_id=$1',[taskId])).rows[0];
+    if(task)await this.eventLocks.get(task.capability_pack_id)?.(tx,taskId);
     // Serialize allocation through commit so after=seq cannot skip an uncommitted lower sequence.
     const seq = (await tx.query('UPDATE event_clock SET value=value+1 WHERE singleton RETURNING value')).rows[0].value;
     await tx.query('INSERT INTO outbox(seq,task_id,kind,payload) VALUES($1,$2,$3,$4)', [seq, taskId, kind, JSON.stringify(payload)]);

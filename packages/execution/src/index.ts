@@ -30,6 +30,7 @@ export class Execution {
   }
   customClaimers=new Map<string,(ctx:AuthContext)=>Promise<any>>();
   customPreflights=new Map<string,(ctx:AuthContext,id:string,fence:number,tx:Transaction,lightweight?:boolean)=>Promise<any>>();
+  customOutsidePreflights=new Map<string,(ctx:AuthContext,id:string,fence:number,lightweight?:boolean)=>Promise<any>>();
   requiredWorkerCapabilities=new Set<string>();
   async workerCapability(ctx:AuthContext,row:any,tx:Transaction):Promise<void>{
     if(!this.requiredWorkerCapabilities.has(row.name)&&!row.required_worker_capability)return;
@@ -52,7 +53,7 @@ export class Execution {
     requireCondition(lease, 'LEASE_EXPIRED', 'Execution lease has expired');
     return row;
   }
-  async preflight(ctx:AuthContext,id:string,fence:number,tx?:Transaction,lightweight=false):Promise<any>{const check=async(client:Transaction)=>{await this.lockPreflight(ctx,id,fence,client);const row=await this.lease(ctx,id,fence,client);await this.workerCapability(ctx,row,client);const handler=this.customPreflights.get(row.name);requireCondition(handler,"FORBIDDEN_ACTION","Execution preflight is not registered");return handler(ctx,id,fence,client,lightweight);};return tx?check(tx):this.store.transaction(check);}
+  async preflight(ctx:AuthContext,id:string,fence:number,tx?:Transaction,lightweight=false):Promise<any>{if(!tx){const name=(await this.store.pool.query('SELECT name FROM operations WHERE operation_id=$1',[id])).rows[0]?.name,outer=this.customOutsidePreflights.get(name);if(outer)return outer(ctx,id,fence,lightweight);}const check=async(client:Transaction)=>{await this.lockPreflight(ctx,id,fence,client);const row=await this.lease(ctx,id,fence,client);await this.workerCapability(ctx,row,client);const handler=this.customPreflights.get(row.name);requireCondition(handler,"FORBIDDEN_ACTION","Execution preflight is not registered");return handler(ctx,id,fence,client,lightweight);};return tx?check(tx):this.store.transaction(check);}
   async heartbeat(ctx: AuthContext, id: string, fence: number): Promise<any> {
     return this.store.transaction(async tx => {
       const { row } = await this.preflight(ctx,id,fence,tx,true);

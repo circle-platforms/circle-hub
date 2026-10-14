@@ -5,13 +5,16 @@ import type { Tasks } from './index.ts';
 import {facetedPage} from '../../storage/src/faceted-query.ts';
 import {taskQueryPlan} from './task-query.ts';
 import {TaskPageQuery,type RegistryPageQuery} from '../../contracts/src/index.ts';
+type DecisionLock=(tx:Transaction,ctx:AuthContext,task:any,row:any)=>Promise<void>;
+const storeDecisionLocks=new WeakMap<Store,Map<string,DecisionLock>>();
 
 export class Approvals {
   store:Store;auth:Auth;tasks:Tasks;
   ttlMs:number;
+  decisionLocks:Map<string,DecisionLock>;
   legacyProposal?:(tx:Transaction,ctx:AuthContext,task:any,action:any)=>Promise<any>;
   changeCheck?:(tx:Transaction,task:any,spec:any,row:any)=>Promise<void>;
-  constructor(store:Store,auth:Auth,tasks:Tasks,ttlMs=86400000){this.store=store;this.auth=auth;this.tasks=tasks;requireCondition(Number.isInteger(ttlMs)&&ttlMs>=1000&&ttlMs<=30*86400000,'INVALID_PAYLOAD','Approval lifetime must be one second to thirty days');this.ttlMs=ttlMs;}
+  constructor(store:Store,auth:Auth,tasks:Tasks,ttlMs=86400000){this.store=store;this.auth=auth;this.tasks=tasks;requireCondition(Number.isInteger(ttlMs)&&ttlMs>=1000&&ttlMs<=30*86400000,'INVALID_PAYLOAD','Approval lifetime must be one second to thirty days');this.ttlMs=ttlMs;let locks=storeDecisionLocks.get(store);if(!locks){locks=new Map();storeDecisionLocks.set(store,locks);}this.decisionLocks=locks;}
   policies=new Map<string,{digest?:(action:any)=>string;authorize:(tx:Transaction,ctx:AuthContext,task:any,action:any)=>Promise<void>;check:(tx:Transaction,ctx:AuthContext,task:any,row:any,answer:any)=>Promise<void>;accepted:(tx:Transaction,ctx:AuthContext,task:any,row:any,answer:any)=>Promise<void>}>();
   view(row:any):ApprovalView{return {approvalId:row.approval_id,taskId:row.task_id,inputRevisionId:row.input_revision_id,applicantId:row.applicant_id,
     targetIdentity:row.target_identity,actionDigest:row.action_digest,action:row.action,status:row.status,approvedBy:row.approved_by,expiresAt:row.expires_at.toISOString(),supersededBy:row.superseded_by??null,decisionMode:row.decision_mode??null,singleAdminMode:row.single_admin_mode??false,verification:row.eligibility_verification??null};}
@@ -46,6 +49,8 @@ export class Approvals {
   }
   async respond(ctx:AuthContext,taskId:string,id:string,answer:any,transaction?:Transaction,retainError=false):Promise<any>{
     const perform=async(tx:Transaction)=>{
+      const visible=await this.tasks.load(ctx,taskId,'decisions.approve',tx),declared=(await tx.query('SELECT action FROM approvals WHERE approval_id=$1 AND task_id=$2',[id,taskId])).rows[0];
+      if(declared)await this.decisionLocks.get(declared.action.name)?.(tx,ctx,visible,declared);
       const task=await this.tasks.load(ctx,taskId,'decisions.approve',tx,true),policy=await this.auth.policy(ctx,tx);
       requireCondition(policy.kind==='user','FORBIDDEN_ACTION','Only an authenticated person can approve');
       const row=(await tx.query('SELECT *,expires_at<=clock_timestamp() AS expired FROM approvals WHERE approval_id=$1 AND task_id=$2 FOR UPDATE',[id,taskId])).rows[0];

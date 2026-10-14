@@ -474,6 +474,12 @@ C5 的 ledger / B 绑定也要求一致的数据库锁序：通用 flow 的任�
 
 C 记录的失败观察必须有 `facts.error`，保留有界的 `{code, registered:true, message, details}`。`registered` 只表示投影后的平台码属于 F 登记簿，不证明报错原因或设备效果；未登记的回报码投影为 `INTERNAL_ERROR`，并标 `reportedRegistered:false`，任意原码仅保留在 B 的完整 worker 报告。错误详情超过元数据预算时，仅 `details` 变为含 SHA、大小和省略原因的摘要，不再连同分类码整体省略；超长 message 使用有界说明，原错误仍可从 B 核对。失败回报没给 error 时，C 用 `INTERNAL_ERROR` 和 `details.missingError:true` 披露缺失，不猜真实原因。成功 Tool 返回 `{}` 仍是成功的空结果，不附失败 error。上述投影不改变回报原字节、fence、读写效果或独立已证的 D 终态。
 
+### Flow 的共享资源与 Hook 事务边界
+
+通用 flow 在发送首个事件前，按任务集合、run、flow operation、step、资源 / 租约、event_clock 的顺序锁住完整已冻结资源集合；资源 ID 去重排序，后续批次入队不会在已持 clock 时首次请求另一共享资源。Store 共享回调覆盖 flow 事件、审批决定及合并既有 execution-submission 的待批集合，分层锁所有实际关联任务，不逐任务拿完下层锁后再追加。回调只建立序列化边界，审批资格、范围、当前输入 / pin、单次消费和权限仍独立核验。这一保证针对通用 flow 的行 / 资源 / 事件时钟及已测入口，不声称覆盖资产 advisory 等其它数据库锁域；不以自动重试 40P01 掩盖锁序问题。
+
+beforeDispatch 由 C 先在交易内读取并校验冻结输入，提交后在交易外调用真实已批准 Hook，再开交易重核活权限、worker capability、原件 / 参数摘要、method / resource / source / runtime pin、fence、期限和 preparationDigest，只有相同权威工作摘要才保存证明。工作对象只在 C 的私有符号中传递，不接受 worker 的处理结果。prepared 回执在真实 Hook 决定后才表示允许，intent 再核当前完整摘要且不得 pending；普通 light / heartbeat 只检查证明元数据和活授权，不读取原件或重跑 Hook。原生 1.1.1 与公开事件形状不变，也不自动运行模型或修改远端设备。
+
 
 ### 独立核对之后的普通结果读取
 
