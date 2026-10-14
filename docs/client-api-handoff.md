@@ -615,6 +615,8 @@ receiptPolicy 的严格形状见 [ProviderPolicy](../packages/execution/src/flow
 
 `provider.call.byteArgs={参数名:slot}` 只提出原件绑定，驱动按 B 授权清单重新读取、核对 SHA / 大小后填入 base64；禁止覆盖普通 args。请求摘要包含实际所用槽的原件身份，步骤 key 不包含参数摘要；同 key 改参数或换原件为 IDEMPOTENCY_MISMATCH。普通字符串仍限 32 KiB，受控原件合计仍限 8 MiB，完整 Tool 输入 / 输出仍限 24 / 16 MiB；B 的 16 MiB 上传上限不代表每个执行流程都能使用这么大的原件。单 run 的步骤与转换次数还受现有 256 项预算限制，超限失败，不无限推进空转换。
 
+outcome.error 是解释终止屏障，C 要求它独占动作批次；混有 provider.call 或其它动作的 F 合格输出，在任何新动作入队前以 INVALID_PAYLOAD 拒绝。错误后不继续派发，已有在途写仍沿 unknown 与终态规则收尾。
+
 occurrence 由 C 在本任务 / 修订 / stepId 的持久行中计算，transition 输入另有可选 `expectedOccurrences:[{stepId,nextOccurrence}]`，不是产品 state 的字段。首次只能 0，已完成的连续前缀才推进下一值，pending 不授予新值；新动作的序号必须等于 Hub 期望，C 再赋值持久，不能跳到 999 或占用 hub. 身份。已存在同序号、同 requestHash 仍复用；同 key 改参数或原件仍 IDEMPOTENCY_MISMATCH。合法下一序号是一笔新的 Hub 授予步骤，不称同 key 重放；观察的 facts.occurrence 同样来自持久行。
 
 默认资源直接走执行链。声明 executionIsChange 的写步骤生成 execution-submission 草稿，审批内容冻结实际 Tool、字面参数摘要、B 原件引用及方法 / 资源 / 来源 pin；批准后只消费一次。module-execute 是范围内可读的 work 任务；来自 run 的委托仍保留原有 privateOwnerId / parentRunTaskId 边界，技能运行与工具任务的私有规则不变。批准不会免除派发前实时权限、生命周期、Hook、输入修订和 fence 核验。
