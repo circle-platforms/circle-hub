@@ -1253,3 +1253,11 @@ worker-capability-negotiation 的旧 mock 只给 UPDATE workers 返回注册行�
 本轮按高项→中项→三个低项→两条确定性红例，各一笔本地签署。最终集成只核交叉消费者：纯初 **18/22** 的四红是新锁集合 / 事务外入口的旧 mock 表示（清理三叶与能力一叶），精确补合法任务 / run / 资源 / lease 和 operation-name 查询后 **22/22**，原假终态、fence / 来源 / release、冻结及活能力撤销断言未改；补丁并回共享锁那一笔，仍七笔问题提交。实际 PostgreSQL 跨消费者 **7/7 + 1/1**（明文核对、已用 / 未用引用、活授权和协议受理），固定 **3c46f707** 严格准备 / submit / status / results 全链 **1/1**，无 skip / fail。
 
 最终 typecheck / diff 通过，原生 packs/apv / foundation / references / harness-adapters 相对本轮基线零差异；工作区收尾干净，全部 PostgreSQL 单进程串行清理，没有全套、真实模型或设备运行。六条上轮配套仍在前序提交，未被这些修复覆盖。不 push、不部署、不触 7420 / 网关 / Circle / 独立包；全量和合 main 留维护者独立完成。
+
+## 117：单跑复核，强制 Hook 阻断的失败回报回归
+
+读取维护者单跑日志并原样复现 A3 首叶：新事务外 fullCheck 已保存 blocking proof 后抛 HOOK_FAILED，但 worker 主循环在进入专业执行的 try / 报告边界前做首次 full preflight，只记日志，已领取操作仍 running 等 60 秒租约。另一个同链缺口是普通 provider failed 回报默认交产品继续解释；省略 Hook 的 transition 可再次提出同一写，不能保证以强制阻断结论终止。这是生产回归，不调整原 30 秒 / HOOK_FAILED / 零派发断言。
+
+仅 Flow 首次检查移入 executeFlowStep 的失败回报边界，回原 fence / 输入修订的 failed；非 Flow 的原生 / runtime 预检路径保留。C 只在未 intent、无 remote identity、未 terminal 的 provider write 下，独立核当前分区 / worker / fence / 元数据绑定与 beforeDispatch B 证据 SHA / 大小、冻结方法 / 资源 / request / 准备摘要和真实 block 决策后终结任务。Worker 错误标签、普通失败、reconcile 和已证终态解释缺口均不能触发此闸。
+
+原首叶旧 **0/1**（30 秒超时）→新 **1/1**（约 3.7 秒），原另外两叶 **2/2**，新纯报告 / 假证据及异绑定负界 **2/2**，全部无 skip。typecheck / diff 和独立只读回报边界复核通过，原生 / 产品包 / 归档零差异，PG 串行清理；只本地签署，不跑全套 / push / 部署或触现场。
