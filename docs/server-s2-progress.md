@@ -905,3 +905,7 @@ B 三类先写旧路由 **0/4**（与 operations 三例顺序复现合计 **0/7*
 先写历史产品/来源 pin 验收，旧实现 **1/5**（基础来源实时 ACL 负例原本成立），随后实现内部 `{assetId,version,sha256,digest?}` 精确绑定。来源制品与产品模块读取历史 approved/running 修订，未指定版本时选择本资产最新批准修订；跨产品/原生多实现必须显式选择，旧 assetId 字符串不被称作冻结。缓存与原件读取前重核批准摘要、历史与最新批准 readers 交集及当前角色；草稿收窄 readers 不撤旧批准 pin，批准 reader 撤销、旧修订 disabled/retired 和批准失效均拒绝。pin 只适用于批准清单中的自有原件记录，basis 引用、企业原件及其它来源继续原实时 ACL；补篡改记录摘要、空 digest 和缓存回执边界。合法合成 builders 明确选各自方法，通用请求/任务提交不偷注入 selector，无 selector 歧义负例仍有效。
 
 新历史绑定六例与既有 APV/执行链/外部来源/模块/服务客户端相关六文件 **47/47**，providers 方法 **8/8**，共 **55/55，无 skip**；typecheck/diff 通过，固定 Circle 8b2ceb6、冻结产品包 ba06eed，只用合成资源和脚本模型。原生 1.1.1 及摘要依赖、HTTP 路由、数据库迁移/归档字节不改；公开 SAR 语义与旧任务不自动重绑。A2 契约待复核、A3 未实施，本步单独本地签署，全套仍由维护者跑；未 push、部署或访问 7420/真实网关/Circle/独立包工作树。
+
+## 68：A2 有界 transition 内部契约
+
+仅定义 `hub-execution-transition/1` 的输入/输出 schema、六种严格动作、步骤身份与独立请求摘要，F 的 factory 不反向依赖 B/D/E。当前输入值、canonical SHA 与冻结 binding 双重相等，仍须由 C 按不可变修订提供并核验；自报一致不证明权限。依维护者提供的真实 21 案纯数字统计推导 state 256 KiB、metadata 512 KiB、output 256 KiB、受控解码字节 8 MiB 等初版预算，完整 wire 仍受现有 24/16 MiB 限制；明确请求估算与实测字节的区别、环境/结果 Tool 可见事实与原件清单。有限 JSON、累计预算、规范 base64、原件 SHA/大小与真实字节长度均有合成负例，不截断；sessions 缺样本如实记为覆盖缺口。定向合同 **6/6，无 skip**，typecheck/diff 通过，多 agent 交叉复核；只定义数据与校验函数，未注册驱动或新增 HTTP，原生执行 **1.1.1** 字节不改。A3 须待维护者复核本契约后才开始，仅 Meridian 合成流程；APV 新 Tool/flow 由独立产品包负责，旧任务不重绑。未跑全套、push、部署或访问真实系统，全套仍由维护者独立运行。

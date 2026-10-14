@@ -1,5 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
+import {createExecutionTransitionContracts} from './execution-transition.ts';
+export {EXECUTION_TRANSITION_LIMITS,EXECUTION_TRANSITION_SCHEMA} from './execution-transition.ts';
 
 export const API_VERSION = '1.0.0';
 export const FLOW_VERSION = 'task/1';
@@ -400,3 +402,11 @@ export const CLIENT_ROUTES = {
   artifacts:{method:'GET',path:'/v1/artifacts',query:RegistryPageQuery,response:RegistryPage},
   artifactContent:{ method:'GET',path:'/v1/artifacts/{artifactId}/content' },
 } as const;
+
+export const {
+  ExecutionTransitionAssetPin,ExecutionTransitionInput,ExecutionTransitionOutput,
+  parseExecutionTransitionInput,parseExecutionTransitionOutput,executionTransitionStepKey,
+  executionTransitionRequestHash,checkExecutionTransitionWire,executionTransitionJsonSchemas,
+}=createExecutionTransitionContracts({TaskId,InputRevisionId,OperationId,AssetId,SourceRevisionId,ArtifactId,
+  KnowledgeRecordId,EvidenceId:identity('evd'),Sha256,Base64Content,SafeRelativePath,ToolName,PackageName,PackageVersion,
+  sha256,canonicalJson,canonicalHash,registeredError:code=>Object.hasOwn(registry,code),error:(code,message)=>new ApiError(code,message)});
