@@ -340,6 +340,37 @@ C 的后续工作须分别覆盖以下边界，而不是改弱某个合成夹具
 
 C 的目标验收采用完全合成、与上述协议同形的严格网关：required 租约、status/results 仅 task_id、真实字段名、submit 无 state、完成 results 无通用 hash、status 有 state。默认跳过的是尚未开始实施的 C 兼容验收；显式启用后在当前实现上必须出现可复现的红例，不把 skip/todo 当作通过。后续逐项实现后才将这些边界转绿，并核对 RPC 参数、B 原件与实际派发次数。A3 的合成协议通过只能证明其已测协议，不能替代这条同形验收，更不能证明真实网关 / 设备已接入。本轮仅补待办与验收目标，不实现、注册未来 schema、改网关或投递真实环境。
 
+### C 二轮待办：运行预算与受控来源门禁
+
+本节只补 C 的设计待办，不改变 F 常量、Hook 动作 schema、驱动器或独立产品包。旧前置投影路径的 `5cdbc2b` / `6a8cb799` 旁证只覆盖它们当时的 synthetic-provider-protocol 接法：输入还携带流外生成的工作簿/命令投影。`6a8cb799` 的旧正向路径通过，不表示正式 flow 已读取全部受控原件，或下面二轮来源、错误与规模门禁已经全绿。严格 cexg 同形验收也与该旁证分开，不据其推定现网兼容。
+
+当前 `arrayItems=256` 同时限制单批 actions / 普通 JSON 数组、runOnce 的 generation / 总 flow_steps，以及 validateBatch 的累计步骤 key。每批大小、每次运行的转换次数和持久步骤总数是不同预算，不能用同一个常量代替它们。以已有 21 案数字为例，216 个设备命令 + 21 个主机命令 + 1 个工作簿核验 = **238 个核验 subject / Hook 动作**；主机 subject 各经过两个已附处理器时，实际处理器判定数为 216 + 42 + 1 = **259**，不是 259 个持久步骤。
+
+设 H 为核验动作数、O 为其它持久动作数、T 为 Hub transition 次数，则总持久步骤为 `H + O + T`。旧排程的 H=238、O=5（env/map/submit/parser/afterResult）、T=7，共 **250**；可选 topology 的观察与转换再加 2，为 **252**。若读取工作簿、命令核对、函数契约三个原件各需一个 Tool 与一次转换，再加 6，预估 **256 / 258**。这是在旧排程上串行加三次原件读取的可复核估算，既非新 flow 实测，也非不可优化的下限；批量读取可以改变 O/T。当前总步骤 256 只给旧路径留 6 / 4 项余量，不能拿一案通过证明整批有容量。
+
+推荐 C 将每 run 步骤预算单独命名并有界化。按上述最大估算留两倍余量，`pow2ceil(2 * 258)=1024`；若只取 `pow2ceil(258)=512`，余量为 254 项，不能称两倍余量。转换次数另按实际排程测量：本估算 T=7+1+3=11，`pow2ceil(2 * 11)=32` 可作为待确认档位，不能把它当成任意产品流程的通用容量。单批 / 单个 JSON 数组的 256 项及所有字节预算不因 per-run 提额改变。
+
+只提高步骤计数仍不够：当前 frame.observations、expectedOccurrences、交付 references 仍各最多 256 项，metadata 总量仍 512 KiB，Tool wire 仍 24 MiB / 16 MiB。C 必须配套设计有界观察窗口与受控原件投影，保留历史 B 原件和准确引用，不截断冒充完整，也不能隐藏未核步骤或丢弃 unknown 写。相关容量与失败路径都要独立验收后才决定常量；本轮不扩大现有合同。
+
+优先方案是保留当前“一项 hook.verify 对应一个 subject”的动作契约，分离每 run 计数并明确观察窗口。另一方案是给 hook.verify 增加 subjects 数组，但那是 F 契约变更，不是现有字段：必须逐项验证实际任务/修订、方法/来源/资源 pin 与原操作关联，固定 item 身份及输入索引，并在 B 留每项真实决定的索引/摘要关系。首个 block 后只记录实际处理过的前缀，余项明确未核 / 未运行，不能变成 pass；完整失败或部分回报都要保原件、覆盖整批最坏输出的字节预算、处理器数量、顺序、超时与堆上限。不能用一个无归属的 batch binding 套到多资源，或以部分成功满足整批派发/交付关口。精确新字段与部分证据协议留给 C 的后续设计，本轮优先不改 F 动作形状。
+
+本轮合成接法可使用以下原件角色约定；它们是 SourceArtifact.files.role 的通用字符串，不是平台强制产品词表。现有旁证使用 workbook、command-tree、function-contract；新增 command-check 是二轮合成约定，不表示旧模块已经支持读取它：
+
+| role / 槽 | 原件与消费边界 |
+|---|---|
+| `workbook` | 冻结工作簿原字节；批准的纯 Tool 从 B 字节派生用例、设备命令和主机分派，不用客户端预投影代替原件读取 |
+| `command-check` | 保留同步 command_check 回执原形的 result.ruleVersion / result.commands 及实际 sourceSha256。正式 flow 按原字段核对绑定输入、构建/来源与命令身份，再由批准方法派生 Hook 所需布尔；不能预造 present:true，role 名或上传批准本身也不证明一次工具调用发生 |
+| `command-tree` / `function-contract` | 对应树与函数契约原字节；由批准的产品 Tool 解释，Hub 不解析产品格式。command-check 不能免去所需的树/契约对应核验，角色与槽名不自动授予读取权限 |
+| `hub.result.<stepKey>` | C 对大 JSON 或超长字符串结果生成的动态 B 原件槽，位于 observation.facts.result.original.slot/reference，frame 再按权限取回并注入 controlledBytes；小结果目前可以直接在 facts.result 内联，**并非所有 Tool 输出都有该槽** |
+
+Tool 的 byteSlots 从当前 frame 中选择真实槽，按顺序追加字节参数；不能猜动态槽名、假定 result 总为内联，或把 artifact id / 下载路径当作 slot。正式解释在小结果和原件指针两种表示下都要按实际形状读取并核 SHA，证据不齐保留未映射，不能拿旧投影正向路径充当二轮门禁证明。
+
+三条错误与绑定口径也按当前源码保留：
+
+- `outcome.error` 顶层 code 只能使用已登记的平台码。HOST_SET_UNDECLARED、HOST_NOT_IN_BED、COMMAND_NOT_LITERAL、HOST_COMMAND_OUTSIDE_POLICY 四个 APV Hook 规则码不是直接可用的顶层平台码；它们保留在产品 facts，再进入 error.details（例如 details.code），顶层可用已登记的 HOOK_FAILED。不要把产品 facts 伪装成另一条 Hub error/resultError 通道。
+- `receiptPolicy.inputSha256Path` 比较的是 `canonicalHash(整份 FlowSubmission)`，不是 workbook SHA。A3 合成 provider 回显 input_sha256，当前真实网关不提供这一回显；不能把 xlsx_sha256 改名或拿来替代完整输入摘要。
+- provider 拒绝时，worker 从 error.details 删除 gatewayRefusal，把原件保存在 B 的 `{schema,tool,phase,refusal}` envelope；C 回读后，小型原文在 `observation.facts.result`（内层 raw），大型表示走 facts.result.original 的引用，其 B 原文仍是 envelope，须取 refusal。state.errors 若记录原拒绝，应取这些实际字段与来源引用，不假设普通 worker 错误 details 总有原文。独立已证终态后的结果失败可以由 C 另附解释事实，但不能据此改写所有拒绝回报的形状。
+
 ### 数字来源与初版预算
 
 维护者对真实 21 案批次只提供数字统计；没有提供原件内容、真实地址或业务字段。gateway-results 原字节 149702，其中 results 147339、environment 670、status 958、submit 688；topology 9970，workbook 7209，解释产物 119582。逐案日志 UTF-8 最大 10234 / 合计 106734，JSON 转义后最大 10420 / 合计 109125，最多 167 行、最长行 127 字节。本批共 119 步、216 条设备命令、21 条主机命令、26 个检查点；每案最多 7 步、23 条设备命令、1 条主机命令、2 个检查点。最高 JSON 深度为 7，最大数组为 216。command-check 原件 4219626，其中两个 raw base64 段为 2577744、1527460；剩余部分 114422。

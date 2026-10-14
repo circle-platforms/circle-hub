@@ -1083,3 +1083,11 @@ H1 期限 **4e84ba0**、H2 拒绝来源 **8cf4998**、M3 终态后结果与补�
 正例要求正式 C Tool action 读取工作簿、真实 preflight frame 原件字节 / SHA 和 expectedOccurrences 对照持久行；33 KiB 合成描述触发真实大结果 hub.result.*，后续动作必须引用返回槽与 B SHA，不转录大 book。device Hook 的 actual present 对照冻结 check 条目与独立树 SHA；同命令缺树、主机不在床、方法 disabled 三负例要求对应 Hook block、真实 B 决定、顶码 HOOK_FAILED / details.code、零提交 / 意图 / 冻结。错挂点或解析错误不能作为规则通过。
 
 固定 **6a8cb799** 新四项实际 **0/4 通过、无 skip**：包不读 B 工作簿 / 依据，四项均先停 verify.workbook，顶码误为 COMMAND_NOT_IN_TREE，case_submit 0，目标来源与负门禁尚未到达。旧 1/1 正向结果保留原阶段事实，不扩为二轮证明。默认消费者只跑相关两文件，**1 pass / 5 skip / 0 fail**；typecheck / diff 通过，独立静态复核未见明显夹具假红。只改验收、夹具、handoff 与进度，不改驱动 / F / 原生 / 网关 / 独立包，不跑全套 / 真实模型或设备，PG 串行已清理，不 push / 部署。
+
+## 96：二轮 C 预算建议与回报口径
+
+中英附录对照当前源码区分单批 / JSON 数组 256、generation 与累计 flow_steps 三个预算。21 案 216 设备命令 + 21 主机 + 1 工作簿为 238 Hook 动作；主机双处理器共 259 次决定不是 259 步。旧排程 H238 + O5 + T7 = 250，可选 topology 为 252；串行加三原件 Tool 与转换的明确假设估算为 256 / 258，不称新 flow 实测或优化下限。
+
+推荐待 C 实施把 per-run 与 per-batch 分开，按估算两倍余量 pow2ceil(2×258)=1024；512 仅一档取整，转换次数 32 只是该排程候选而非任意 flow 的通用常量。另一方案 hook.verify subjects 数组会改变 F 契约，必须有逐项绑定 / 索引 / B 决定、未处理前缀、失败容量与多资源归属；优先保现单 subject 契约。observations / expectedOccurrences / references 256、metadata / wire 等仍需配套有界设计，不宣称只改计数就解决规模，本轮不实施。
+
+补准三条字段：outcome 顶码须 F 注册，四 HOST 规则码留 facts→error.details；inputSha256Path 核整份 FlowSubmission 的 canonicalHash，不是工作簿 SHA，真网关不回显；拒绝的小原文在 facts.result，worker 删 error.details.gatewayRefusal，大原件仍须读 B envelope.refusal。受控 role 约定与 hub.result 条件槽也如实说明，小结果当前可以 inline。两份设计 **25** 本地链接 / 锚点与已有 frame / 动作 F 校验通过，算术静态核对通过；只设计和进度分笔签署，无代码 / F / 驱动 / 包 / 网关改动，无全套 / 模型 / 真实设备 / push / 部署。
