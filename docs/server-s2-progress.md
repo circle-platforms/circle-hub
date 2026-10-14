@@ -1151,3 +1151,9 @@ FlowDefinition 可显式声明 historyMode=controlled；内联 observations / ex
 修锁最终整合后，阶段回执七叶＋真实锁屏障联跑 **8/8，无 skip**；原失败 staged 正例正常交付，错误提交 / status 拒绝仍 unknown 不释放，已证终态后的坏结果 / 拒绝保持 D 事实，渠道不完整仍 partial，客户端伪投影拒绝。F / 历史 / 投影 / 引用 / 锁序纯回归 **27/27，无 skip**；准备同租约小正例 **1/1**。锁机制只对注册的通用 flow 启用，不修改原生能力包字节或把数据库死锁当成设备不确定副作用。
 
 最终锁修后的撤权释放与重启 / 独立核对定向 **2/2**，固定 b02122af 严格入口再次 **2/2**，全部无 skip；actual RPC 顺序仍同租约准备→一次 submit→task-only status/results→release。最终 typecheck / diff、90 个本地文档链接目标通过。五项按序各一笔签署，修复与证据都收在对应项；工作区收尾干净，只本地提交，不 push、不部署、不动现场栈 / 网关 / Circle / 独立包。全量与现网 C 后半仍由维护者独立验收。
+
+## 102：确认动态投影原件的消费边界
+
+维护者确认选择方案 (a)：实际大工作簿投影必须通过另一条受控 JSON 读取 Tool action 消费，byteSlots 指向返回的真实 hub.result.<stepKey>；不得把指针当 book、重跑原 workbook / function-contract 替代，或同 key 重跑冒充消费。现有合成夹具继续核正式大投影、B 字节 SHA、后续不同 step key 使用真实槽及 frame 中同 SHA 原件，不削弱要求。identityProjection 批准配置使用实际 projectWorkbook export；Hub 核成功 Tool、action.byteSlots、冻结方法 / 输入修订与 B 原件 SHA，不从 caller value 取用例身份。
+
+三项此前包侧问题仍由维护者交给 Kimi，Hub 不代改独立包。本次只读 ref 已为 **757dac18de0b514a7ddb04386d21c0ce08b6af9e**；静态看到 projectWorkbookSlim 解析动态槽的 UTF-8 JSON，原件路径只用该返回槽，不重跑原工作簿；观察按 occurrence / expectedOccurrences 选取；testEnvEnabled 由原件契约注解派生。该静态结果不是本次新 ref 的运行证明，此前固定 b02122af 的合成验收仍保留自己的 SHA 与证明范围。仅记录决定并核差异，不跑全套 / 额外 PG、不改驱动 / 夹具 / 独立包、不 push 或部署。
