@@ -1,6 +1,6 @@
 # Product-line installation
 
-`CIRCLE_SERVER_PRODUCT_LINES` selects a runtime JSON installation file. When unset, the server uses [installed-product-lines.json](installed-product-lines.json), which installs the APV and fictional Meridian manifests. Source addresses and credentials remain in separate runtime configuration.
+`CIRCLE_HUB_PRODUCT_LINES` selects a runtime JSON installation file; `CIRCLE_SERVER_PRODUCT_LINES` is accepted only as a deprecated fallback when the new name is undefined. When unset, the server uses [installed-product-lines.json](installed-product-lines.json), which installs the APV and fictional Meridian manifests. Source addresses and credentials remain in separate runtime configuration.
 
 ```json
 {
