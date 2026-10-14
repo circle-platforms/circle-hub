@@ -851,3 +851,5 @@ abdb701 的完整验收 contracts **5/5**、methods **147/147**；acceptance **2
 现在 task/admin/通知轮询/SSE 共用 projectedEvent 与同一字段类别白名单，保留 Circle 消费字段，任何大小的结果/工具输出/模型正文/参数仍不内联。所有 taskId 非空事件带 canonicalJson 字节引用，SHA 与 x-content-sha256 覆盖实际响应；taskless bot.admission-failed 只给原主体元数据，admin 目前不列无任务通知，不生成虚假路径。content.retained 并列事件已有的 B 原件/证据/产物引用，各自 SHA 独立；环境 JSON 与交付引用过窗仍按 B 权限可读，未留存事件仅窗口可读，不推断永久历史。
 
 新增 /v1/workers，兼容 admin workers 旧数组，披露 offline/workerOfflineAfterMs，和队列使用同一配置阈值；范围过滤与管理权限继续核对。专项 **6/6**、字段类别/knr 引用与契约 **3/3**；实际 worker 执行、固定 Circle RPC、bot、通知、权限/窗口与新阈值联合 **41/41**，无 skip，typecheck/diff 与 **714** 归档核验通过。执行实现、历史迁移、Circle、独立产品包与分工目录均不改。完整冻结回归另跑，不将专项替代全套；只本地签署，不 push/部署。
+
+82ad8bc 首轮冻结全套 contracts **6/6**、methods **150/150**，acceptance **288/289**；失败为角色验收的 worker 就绪观察超时，单独重现 **7/8**。原因可证：该夹具 admin 只有根范围，新的 worker 列表遵守子范围读取权限，harness 用根身份读列表判断注册因而永远看不到；worker 实际已注册。改测试 helper 从合成库观察注册，补普通/兼容列表均不让根管理员自动读子范围 worker 的验收，保留生产授权过滤、不放宽权限。角色/worker/admin 联合 **14/14**，typecheck/diff 通过；最后全套重新运行。

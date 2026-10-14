@@ -134,8 +134,10 @@ export class Harness {
     let errors = ''; child.stderr!.on('data', data => { errors += data.toString(); });
     await until(async () => {
       if (child.exitCode !== null) throw new Error(`Worker exited: ${errors}`);
-      const workers = await this.request('/v1/admin/workers', undefined, 'admin');
-      return workers.some((worker: any) => worker.workerId === workerId) ? child : false;
+      // Synthetic process readiness must not grant the fixture's root-only
+      // administrator implicit visibility into a worker's child scope.
+      const registered = await this.db.query('SELECT 1 FROM workers WHERE worker_id=$1', [workerId]);
+      return registered.rowCount ? child : false;
     });
     return child;
   }
