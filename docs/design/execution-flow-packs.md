@@ -437,6 +437,8 @@ status/results/reconcile 仍由 taskIdArgument 注入持久远端身份，并只
 
 D 成功回报先按 SHA 冻结原件，再做阶段校验；不匹配原件仍留存为未验证证据。已 submitted 后的查询 / 心跳拒绝不能当派发前拒绝，仍 unknown、不释放也不重派；已证 status 终态先持久化，随后 results 拒绝或 SHA 错误仅使解释失败，终态与释放事实保留。已证终态后的不完整结果渠道可由批准产品方法解释为 partial，不猜设备结果。原生 1.1.1 不参与本链。
 
+已证终态后的解释错误或完整 worker 报告失联 / 过期，C 保留 D 的 succeeded / reconciled、terminal 原件 SHA 与实际释放事实（未取得释放回执时为 null），并记 `interpretationStatus:"failed"`、error、unmapped 和 B 引用。批准的 transition 继续消费这些事实，通过既有 afterResult / 同候选字节核验提出 partial；已知解释缺口的 succeeded 候选被拒，Hub 不自动调用模型、Hook 或制造交付。迟到的原 fence 报告只按既有补充边界加入 B 原件与释放事实，不改已交付候选及其 partial / unmapped；旧输入修订的记账也不写入新修订的解释观察。治理或候选合同违例仍可使任务 failed，未证终态的写仍 unknown，不借解释路径解冻或重派。
+
 ### C4：同租约准备观察与派发出口
 
 批准的 receiptPolicy 可声明 `prepare:[{tool,args?}]`，均须在资源 provides 中唯一声明为 read；参数经过 toolArguments 和逐工具租约映射，工具链 minimumRole 也包括这些准备调用。worker 在该写操作同一 acquire / heartbeat 租约内，按批准顺序调用准备 Tool，再持久化每份 canonical JSON 原件的 SHA / 大小 / 指针；准备不会产生 submitted 身份。
