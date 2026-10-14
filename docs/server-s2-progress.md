@@ -1157,3 +1157,11 @@ FlowDefinition 可显式声明 historyMode=controlled；内联 observations / ex
 维护者确认选择方案 (a)：实际大工作簿投影必须通过另一条受控 JSON 读取 Tool action 消费，byteSlots 指向返回的真实 hub.result.<stepKey>；不得把指针当 book、重跑原 workbook / function-contract 替代，或同 key 重跑冒充消费。现有合成夹具继续核正式大投影、B 字节 SHA、后续不同 step key 使用真实槽及 frame 中同 SHA 原件，不削弱要求。identityProjection 批准配置使用实际 projectWorkbook export；Hub 核成功 Tool、action.byteSlots、冻结方法 / 输入修订与 B 原件 SHA，不从 caller value 取用例身份。
 
 三项此前包侧问题仍由维护者交给 Kimi，Hub 不代改独立包。本次只读 ref 已为 **757dac18de0b514a7ddb04386d21c0ce08b6af9e**；静态看到 projectWorkbookSlim 解析动态槽的 UTF-8 JSON，原件路径只用该返回槽，不重跑原工作簿；观察按 occurrence / expectedOccurrences 选取；testEnvEnabled 由原件契约注解派生。该静态结果不是本次新 ref 的运行证明，此前固定 b02122af 的合成验收仍保留自己的 SHA 与证明范围。仅记录决定并核差异，不跑全套 / 额外 PG、不改驱动 / 夹具 / 独立包、不 push 或部署。
+
+## 103：严格环境核对的旧映射缺失诊断
+
+维护者在 7b359a3 配外部包 **3c46f707b67f380d962ab79e3b3c8e759cf1f9da** 报 BUILD_MISMATCH。本机只读核日志 / Git 两头：实际 RPC 只有 acquire→env_prepare→release，submit **0**、intent **0**，旧阶段提示 delivery 并不代表进入交付。value.build 与 checks.device_build.detail 中两处合成构建名都为 SYNTHETIC_BUILD_301；无顶层 build / observedBuild，包的 environmentBuild 能按真实详情词式提取。cexg 的 conf.device_names 只在配置有名时出现，缺该可选字段不是此故障。
+
+根因是 7b 的严格 receiptPolicy 未读取资源批准的 toolArguments，包 3c46 env_prepare args={} 依赖映射注入 device_build；不带时 build_checked=false 是正确协议事实。后续 C4 的 01d53b2 已复制冻结资源映射，当前代码无需再改生产或包解析，不加假顶层字段、不强置 build_checked=true。新增严格纯回归：故意去掉该映射的旧变体 **0/1 红**、恢复后 **1/1 绿**，实际请求的构建、ready / checks.detail / build_checked 与无顶层字段分别核对。诊断优先使用原失败事实的 stage，零 submit 不再误标 delivery，并输出有限的期望 / env 实参构建元数据。
+
+在当前 Hub 固定同一 **3c46f707** / APV1.3.0 / digest **992a57b93375e7824b803b431064a931a56b579fad76cc67936a0093b4ae4b90** 只跑严格单文件 **4/4，无 skip**：两次 env_prepare 实参同 expectedBuild，先独立读、再同租约准备 / topology→一次 submit→task-only status/results→release，最终 delivered/succeeded。默认开关未开时 **3 pass / 1 skip**，skip 不计通过。typecheck / diff 通过；只补验收与进度，未改生产 / 原生 / 独立包、未跑全套、未 push / 部署或接真实系统。包侧旧提取问题不作为当前仍未修的结论。

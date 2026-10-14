@@ -6,6 +6,7 @@ import {randomBytes} from 'node:crypto';
 import {sha256} from '../../packages/contracts/src/index.ts';
 import {FlowDefinition} from '../../packages/execution/src/flow-contracts.ts';
 import {validateProviderSchema} from '../../packages/execution/src/flow-provider.ts';
+import {providerMappedArguments} from '../../packages/execution/src/flow-arguments.ts';
 import {APV_MODULE_FLOW,frozenApvModule,apvModuleFlow,apvEnvironment,apvTopology,apvRawResults,apvModuleWorkbook,apvSyntheticBuild} from '../fixtures/apv-module-flow-synthetic-provider-protocol.ts';
 
 // Self-written synthetic protocol data from a read-only schema review of the
@@ -42,6 +43,13 @@ function strictReceiptPolicy(frozen:Awaited<ReturnType<typeof frozenApvModule>>)
   lease:{acquireTool:'lease_acquire',heartbeatTool:'lease_heartbeat',releaseTool:'lease_release',idPath:['lease_id'],fencePath:['token'],idArgument:'lease_id',fenceArgument:'token',ttlSecondsPath:['expires_in_s'],argumentsByTool:{env_prepare:leased,bed_topology:leased,case_submit:leased,lease_heartbeat:leased,lease_release:leased,case_status:{},case_results:{}}},
   refusal:{stagePath:['stage'],preDispatchStages:['lease','environment','validation'],dispatchedPath:['dispatched'],remoteIdPath:['task_id'],codePath:['code'],reasonPath:['reason']},
  };
+}
+
+function strictProtocolStage(taskPhase:string,error:any,steps:any[],submissions:number){
+ if(typeof error?.details?.stage==='string')return error.details.stage;
+ const failed=steps.find(step=>step.status==='failed'||step.status==='unknown');if(failed)return failed.step_id;
+ const actions=[...steps].reverse().find(step=>step.kind==='transition')?.observation?.facts?.result?.actions,proposed=actions?.find((action:any)=>action.kind==='provider.call');
+ return taskPhase==='failed'&&proposed?`C.validateBatch:${proposed.tool}`:taskPhase==='failed'&&submissions===0?'before-submit':'delivery';
 }
 
 function strictState(){return {secret:randomBytes(32).toString('hex'),calls:[] as {name:string;args:any;meta:any}[],submissions:0,releases:0,workbook:Buffer.alloc(0),leaseId:'',fence:0,leaseActive:false,taskId:'synthetic_cexg_task_301',module:'synthetic'};}
@@ -87,16 +95,32 @@ test('C cexg strict fixture: required and unknown fields, granted leases and une
 });
 
 const enabled=process.env.CIRCLE_HUB_CEXG_PROTOCOL_ACCEPTANCE==='1';
+test('C cexg strict environment: approved expected-build mapping is required and the observed build stays inside checks detail',()=>{
+ const declared={toolArguments:{env_prepare:{device_build:{inputPath:['value','build']}},case_submit:{module:{literal:'synthetic'}}}},frozen={files:[{path:'resources/case-gateway.json',base64:Buffer.from(JSON.stringify({configuration:{receiptPolicy:declared}})).toString('base64')},{path:'tools/workbook.ts',base64:Buffer.from('export async function projectWorkbook() {}').toString('base64')}]} as unknown as Awaited<ReturnType<typeof frozenApvModule>>;
+ const policy=strictReceiptPolicy(frozen),input={value:{build:apvSyntheticBuild}},mapped=providerMappedArguments(policy,'env_prepare',{},input);assert.deepEqual(mapped,{device_build:input.value.build});
+ const state=strictState(),lease=strictReply(state,'lease_acquire',{}),args={lease_id:lease.lease_id,token:lease.token},unchecked=strictReply(state,'env_prepare',args),checked=strictReply(state,'env_prepare',{...args,...mapped});
+ assert.equal(unchecked.build_checked,false);assert.equal(checked.ready,true);assert.equal(checked.build_checked,true);assert.equal(checked.device_count,1);assert.deepEqual(checked.conf.device_ips,['192.0.2.11']);
+ const buildCheck=checked.checks.find((item:any)=>item.check==='device_build');assert.equal(buildCheck.ok,true);assert.equal(buildCheck.detail,`device reports ${input.value.build}, gateway bundle is ${input.value.build}`);
+ for(const name of ['build','observedBuild','device_build'])assert.ok(!Object.hasOwn(checked,name));
+ const oldPolicy={...policy};delete oldPolicy.toolArguments;const missing=providerMappedArguments(oldPolicy,'env_prepare',{},input);assert.deepEqual(missing,{});assert.equal(strictReply(state,'env_prepare',{...args,...missing}).build_checked,false);
+});
+
+test('C cexg strict diagnostics: an environment refusal with zero submits cannot be labelled delivery',()=>{
+ assert.equal(strictProtocolStage('failed',{code:'BUILD_MISMATCH',details:{stage:'device-map'}},[],0),'device-map');
+ assert.equal(strictProtocolStage('failed',{code:'BUILD_MISMATCH'},[],0),'before-submit');assert.equal(strictProtocolStage('delivered',undefined,[],1),'delivery');
+});
+
 test('C cexg strict protocol: the approved unchanged external APV flow must complete against lease-required Tools and legacy raw receipts',{skip:enabled?false:'Set CIRCLE_HUB_CEXG_PROTOCOL_ACCEPTANCE=1 with CIRCLE_PACKS_CATALOG and CIRCLE_PACKS_REF to run strict cexg protocol acceptance'},async t=>{
  const frozen=await frozenApvModule();t.diagnostic(`Frozen external APV ${frozen.module.version}, ${frozen.commit}, ${frozen.module.digest}`);assert.equal(frozen.module.version,'1.3.0');
  const file=frozen.files.find(file=>file.path==='flows/apv-case-execute-v2.json');assert.ok(file,'Package ABI: declare the v2 descriptor');const descriptor=JSON.parse(Buffer.from(file.base64,'base64').toString());assert.equal(descriptor.id,APV_MODULE_FLOW,'Package ABI: select the new flow id');FlowDefinition.parse(descriptor);
  const {sandboxHost,until}=await import('./harness.ts');if(!sandboxHost.available){t.skip(sandboxHost.reason);return;}
  const provider=await strictProvider(t),f=await apvModuleFlow(t,frozen,{provider,tools:strictTools(),receiptPolicy:strictReceiptPolicy(frozen)}),{h}=f;await h.startWorker();const task=await f.submit();
  const status=await until(async()=>{const row=await h.status(task.taskId);return ['delivered','failed','cancelled','unknown','waiting-input'].includes(row.phase)?row:false;},30_000),result=await h.request(`/v1/tasks/${task.taskId}/result`),steps=(await h.db.query('SELECT step_id,kind,action,status,intent,terminal,evidence_ref,observation,prepare_ref,before_dispatch_ref FROM flow_steps WHERE task_id=$1 ORDER BY created_at,step_key',[task.taskId])).rows;
- const pendingBatch=[...steps].reverse().find(step=>step.kind==='transition')?.observation?.facts?.result?.actions,proposed=pendingBatch?.find((action:any)=>action.kind==='provider.call'),phase=steps.find(step=>step.status==='failed'||step.status==='unknown')?.step_id??(status.phase==='failed'&&proposed?`C.validateBatch:${proposed.tool}`:'delivery');t.diagnostic(`Strict protocol stage=${phase}, phase=${status.phase}, code=${result.error?.code??'none'}, RPC Tools=${provider.state.calls.map(call=>call.name).join(',')||'none'}, case_submit=${provider.state.submissions}, writeIntent=${steps.filter(step=>step.intent).length}`);
+ const phase=strictProtocolStage(status.phase,result.error,steps,provider.state.submissions),requestedBuilds=provider.state.calls.filter(call=>call.name==='env_prepare').map(call=>call.args.device_build??null);t.diagnostic(`Strict protocol stage=${phase}, phase=${status.phase}, code=${result.error?.code??'none'}, expectedBuild=${f.input.value.build}, env_prepare.device_build=${JSON.stringify(requestedBuilds)}, RPC Tools=${provider.state.calls.map(call=>call.name).join(',')||'none'}, case_submit=${provider.state.submissions}, writeIntent=${steps.filter(step=>step.intent).length}`);
  // A correctly diagnosed refusal is still a red acceptance. Do not relabel
  // blocked execution as completion or add correlation fields to the raw data.
  assert.equal(status.phase,'delivered',`Strict cexg compatibility is incomplete at ${phase}: ${result.error?.code??status.phase}`);assert.equal(result.status,'succeeded');assert.equal(provider.state.submissions,1);assert.deepEqual(provider.state.workbook,f.workbook);assert.ok(provider.state.releases>=1);
+ assert.ok(requestedBuilds.length>=2);assert.ok(requestedBuilds.every(build=>build===f.input.value.build));
  const submitted=steps.find(step=>step.kind==='provider.call'&&step.action.tool==='case_submit');assert.ok(submitted?.intent&&submitted.terminal);assert.ok(submitted.prepare_ref?.complete);assert.equal(submitted.prepare_ref.records.length,2);assert.equal(submitted.before_dispatch_ref.preparationDigest,submitted.prepare_ref.digest);assert.equal(submitted.action.byteArgs.xlsx_b64,'workbook');assert.ok(!Object.hasOwn(submitted.action.args,'xlsx_b64'));
  for(const point of ['verify.deviceCommand','verify.hostCommand','verify.workbook'])assert.ok(steps.some(step=>step.kind==='hook.verify'&&step.action.event===point&&step.status==='succeeded'&&step.evidence_ref),point);
  const operations=await h.request(`/v1/tasks/${task.taskId}/operations`);assert.ok(operations.every((operation:any)=>operation.name==='flow.invoke'));assert.equal(result.result.cases[0].autoid,'301');assert.equal(result.result.cases[0].checkPoints.length,2);assert.ok(result.result.cases[0].checkPoints.every((checkpoint:any)=>checkpoint.status==='passed'));assert.deepEqual(result.result.unmapped,[]);
