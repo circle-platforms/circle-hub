@@ -125,6 +125,6 @@ test('Device execution: optional host command policies only narrow runtime dispa
   await setPolicy({allowedCommands:['dig example.test'],maxTimeoutSeconds:15,allowMultiline:false,maxCommandBytes:200});
   assert.equal((await h.request('/v1/tasks/submit',await payload('dig example.test,timeout=5','policy-allowed'))).phase,'admitted');
   await setPolicy(null);const accepted=await h.request('/v1/tasks/submit',await payload('curl http://service.example.test/','policy-tightened-after-admission'));
-  await setPolicy({allowedCommands:['dig example.test']});await h.startWorker();await h.phase(accepted.taskId,'failed');
+  await setPolicy({allowedCommands:['dig example.test']});await h.startWorker();await h.phase(accepted.taskId,'failed',30_000);
   const failure=(await h.request(`/v1/tasks/${accepted.taskId}/result`)).error;assert.equal(failure.code,'INVALID_EXECUTION_WORKBOOK');assert.deepEqual(Object.fromEntries(['row','autoid','object','method','policy'].map(key=>[key,failure.details[key]])),{row:4,autoid:'301',object:'test_env',method:'routera',policy:'allowedCommands'});assert.ok(failure.details.evidenceId);assert.equal(gateway.state.calls.length,0);
 });

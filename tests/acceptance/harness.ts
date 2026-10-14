@@ -131,13 +131,13 @@ export class Harness {
       CIRCLE_SERVER_URL: this.url, CIRCLE_WORKER_USERNAME: workerId,
       CIRCLE_WORKER_PASSWORD: 'synthetic-only-password', ...extraEnv }, stdio: ['ignore', 'pipe', 'pipe'] });
     this.children.add(child);
-    let errors = ''; child.stderr!.on('data', data => { errors += data.toString(); });
+    let errors = '',output=''; child.stderr!.on('data', data => { errors += data.toString(); });child.stdout!.on('data',data=>{output+=data.toString();});
     await until(async () => {
       if (child.exitCode !== null) throw new Error(`Worker exited: ${errors}`);
-      // Synthetic process readiness must not grant the fixture's root-only
-      // administrator implicit visibility into a worker's child scope.
-      const registered = await this.db.query('SELECT 1 FROM workers WHERE worker_id=$1', [workerId]);
-      return registered.rowCount ? child : false;
+      // Wait for this process, not an old durable registration or a root-only
+      // administrator's view of an unrelated child scope.
+      for(const line of output.split('\n')){let event;try{event=JSON.parse(line);}catch{continue;}if(event.type==='worker-ready'&&event.username===workerId)return child;}
+      return false;
     });
     return child;
   }

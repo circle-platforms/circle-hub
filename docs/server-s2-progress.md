@@ -853,3 +853,5 @@ abdb701 的完整验收 contracts **5/5**、methods **147/147**；acceptance **2
 新增 /v1/workers，兼容 admin workers 旧数组，披露 offline/workerOfflineAfterMs，和队列使用同一配置阈值；范围过滤与管理权限继续核对。专项 **6/6**、字段类别/knr 引用与契约 **3/3**；实际 worker 执行、固定 Circle RPC、bot、通知、权限/窗口与新阈值联合 **41/41**，无 skip，typecheck/diff 与 **714** 归档核验通过。执行实现、历史迁移、Circle、独立产品包与分工目录均不改。完整冻结回归另跑，不将专项替代全套；只本地签署，不 push/部署。
 
 82ad8bc 首轮冻结全套 contracts **6/6**、methods **150/150**，acceptance **288/289**；失败为角色验收的 worker 就绪观察超时，单独重现 **7/8**。原因可证：该夹具 admin 只有根范围，新的 worker 列表遵守子范围读取权限，harness 用根身份读列表判断注册因而永远看不到；worker 实际已注册。改测试 helper 从合成库观察注册，补普通/兼容列表均不让根管理员自动读子范围 worker 的验收，保留生产授权过滤、不放宽权限。角色/worker/admin 联合 **14/14**，typecheck/diff 通过；最后全套重新运行。
+
+23407a3 第二轮 contracts **6/6**、methods **150/150**，acceptance **289/290**；角色夹具和根不可继承读取已过，唯一失败是主机策略在改版后等待 failed 超过十秒。单独重跑该项 **1/1**；不把偶发时限称作已确定的产品错误。进一步纠正就绪 helper：旧注册记录也不能证明新进程已就绪，改等新子进程自己的 worker-ready/username 回执，维持十秒启动限。主机策略用例包含多次批准、排空重启与多笔验证排队，失败等待设有界三十秒，断言与权限不放宽。新就绪逻辑下主机策略连续三次 **1/1**、角色/worker/admin **14/14**，无 skip，typecheck/diff 通过；最终重新冻结验收。
