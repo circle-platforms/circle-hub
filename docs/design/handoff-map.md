@@ -11,7 +11,7 @@
 | [通用信封](../client-api-handoff.md#通用信封) | [circle-integration.md#接口的共同形状](circle-integration.md#接口的共同形状) |
 | [普通用户只读接口](../client-api-handoff.md#普通用户只读接口) | [circle-integration.md#任务与审批的读取投影](circle-integration.md#任务与审批的读取投影)；分页契约 → [vocabulary.md#列表即查询的契约](vocabulary.md#列表即查询的契约) |
 | [编译调用顺序](../client-api-handoff.md#编译调用顺序) | 调用教程不搬；其中：幂等与受理事务 → [circle-integration.md#接口的共同形状](circle-integration.md#接口的共同形状)；下载再验 SHA → [object-standard.md#四b-的原件与证据规则](object-standard.md#四b-的原件与证据规则) |
-| [状态、事件和交付](../client-api-handoff.md#状态、事件和交付) | 游标纪律与取消语义 → [circle-integration.md#事件补读](circle-integration.md#事件补读)；delivered 后仍看 result.status、unknown 不重派 → [approvals-and-enforcement.md#未知的纪律](approvals-and-enforcement.md#未知的纪律) |
+| [状态、事件和交付](../client-api-handoff.md#状态事件和交付) | 游标纪律与取消语义 → [circle-integration.md#事件补读](circle-integration.md#事件补读)；delivered 后仍看 result.status、unknown 不重派 → [approvals-and-enforcement.md#未知的纪律](approvals-and-enforcement.md#未知的纪律) |
 | [补充或更换输入](../client-api-handoff.md#补充或更换输入) | [approvals-and-enforcement.md#只有一个审批概念变更集](approvals-and-enforcement.md#只有一个审批概念变更集)（输入修订条） |
 | 当前验收与下一次组合验收 | 实现记录，不搬 |
 | [第二阶段：工具目录](../client-api-handoff.md#第二阶段工具目录) | [circle-integration.md#工具目录与调用](circle-integration.md#工具目录与调用)；失败分类收敛 → [approvals-and-enforcement.md#来源失败的分类](approvals-and-enforcement.md#来源失败的分类) |
@@ -38,25 +38,15 @@
 
 ## case-execution-handoff.md
 
-该文无小节标题，左列用各段首句。
+该文裁剪后按五节组织；左列是它的节标题。
 
-| handoff 段落首句 | 并入 |
+| handoff 节 | 并入 |
 |---|---|
-| 「能力包 `apv-case-execute/1.1.1` 使用既有 sources、submit……」 | 版本与部署记录不搬；执行默认不审批 → [approvals-and-enforcement.md#生产设备要两人规则怎么办](approvals-and-enforcement.md#生产设备要两人规则怎么办)；实现升版重新登记 → [product-line-pack.md#技能包与模块的登记契约](product-line-pack.md#技能包与模块的登记契约) |
-| 「先上传 `case.xlsx`，或引用当前身份可读的编译 artifact……」 | 提交体教程不搬；字面关口的通用规则 → [approvals-and-enforcement.md#核验](approvals-and-enforcement.md#核验)；APV 字面闭集留在 handoff（产品契约），随执行流迁入 products/apv 时再搬 |
-| 「命令核对也可绑定通用外部来源制品……」 | [object-standard.md#四b-的原件与证据规则](object-standard.md#四b-的原件与证据规则)；声明数据不当作事实同节 |
-| 「本版执行关口支持 APV_n/Segn_tmp 的字面……」（含 test_env、主机策略、错误定位段） | 通用规则 → [approvals-and-enforcement.md#核验](approvals-and-enforcement.md#核验)；APV 字面闭集与主机名闭集留在 handoff（产品契约），随执行流迁入 products/apv 时再搬 |
-| 「人的授权由范围角色及 Tool minimumRole 决定……」 | [roles.md#角色登记与资格披露](roles.md#角色登记与资格披露)；SHA 一路再核对 → [object-standard.md#四b-的原件与证据规则](object-standard.md#四b-的原件与证据规则) |
-| 「任务先进入 cases.verify……」（含审批记录与投递前复核两段） | [approvals-and-enforcement.md#核验](approvals-and-enforcement.md#核验)、[#派发与两次环境观察](approvals-and-enforcement.md#派发与两次环境观察)、[#运行时没有审批只有执行链](approvals-and-enforcement.md#运行时没有审批只有执行链)（派发前重核段） |
-| 「运行时配置都在仓库外……」（含凭据轮换与重新登录两段） | [approvals-and-enforcement.md#凭据与资源](approvals-and-enforcement.md#凭据与资源)；issuer 历史更正是实现记录，不搬 |
-| 「事件包含 execution.commands.rechecked……」（含检查点判定段） | [approvals-and-enforcement.md#设备归属与日志解析](approvals-and-enforcement.md#设备归属与日志解析) |
-| 「超时、lost、worker 断开或投递后取消转 unknown……」（含派发前拒绝段） | [approvals-and-enforcement.md#未知的纪律](approvals-and-enforcement.md#未知的纪律)、[#派发前拒绝与远端租约](approvals-and-enforcement.md#派发前拒绝与远端租约) |
-| 「execution.environment.observed 只表示……」 | [approvals-and-enforcement.md#派发与两次环境观察](approvals-and-enforcement.md#派发与两次环境观察)、[#设备归属与日志解析](approvals-and-enforcement.md#设备归属与日志解析) |
-| 「当前只完成合成网关验收……」 | 验收状态记录，不搬 |
-| 「修订 3 的 static-secret 模式与明确的 HTTP 资料源例外……」 | [approvals-and-enforcement.md#凭据与资源](approvals-and-enforcement.md#凭据与资源) |
-| 「设备归属来源更正（1.1.1）……」 | 通用归属规则 → [approvals-and-enforcement.md#设备归属与日志解析](approvals-and-enforcement.md#设备归属与日志解析)；APV_n 命名规则留在 handoff（产品契约），随执行流迁入 products/apv 时再搬 |
-| 「dev-stack 的排空是合作式……」 | [approvals-and-enforcement.md#凭据与资源](approvals-and-enforcement.md#凭据与资源)（worker 排空条） |
-| 「conf.device_names 的边界……」 | 通用归属规则 → [approvals-and-enforcement.md#设备归属与日志解析](approvals-and-enforcement.md#设备归属与日志解析)；APV_n 命名规则留在 handoff（产品契约），随执行流迁入 products/apv 时再搬 |
+| [版本与验收记录](../case-execution-handoff.md#版本与验收记录) | 版本与验收记录不搬；执行默认不审批 → [approvals-and-enforcement.md#生产设备要两人规则怎么办](approvals-and-enforcement.md#生产设备要两人规则怎么办)；实现升版重新登记 → [product-line-pack.md#技能包与模块的登记契约](product-line-pack.md#技能包与模块的登记契约) |
+| [原生提交操作](../case-execution-handoff.md#原生提交操作) | 提交操作教程留在 handoff；字面关口的通用规则 → [approvals-and-enforcement.md#核验](approvals-and-enforcement.md#核验)；外部来源绑定与声明数据的边界 → [object-standard.md#四b-的原件与证据规则](object-standard.md#四b-的原件与证据规则)；APV 字面闭集留在 handoff（产品契约），随执行流迁入 products/apv 时再搬 |
+| [APV 字面契约与框架路由](../case-execution-handoff.md#apv-字面契约与框架路由) | 通用规则 → [approvals-and-enforcement.md#核验](approvals-and-enforcement.md#核验)；APV 字面闭集与主机名闭集留在 handoff（产品契约），随执行流迁入 products/apv 时再搬 |
+| [仓库外配置与身份更正](../case-execution-handoff.md#仓库外配置与身份更正) | 凭据、信任与轮换规则 → [approvals-and-enforcement.md#凭据与资源](approvals-and-enforcement.md#凭据与资源)；签发方更正记录是实现记录，不搬 |
+| [原生结果字段与设备归属记录](../case-execution-handoff.md#原生结果字段与设备归属记录) | 通用归属与判定规则 → [approvals-and-enforcement.md#设备归属与日志解析](approvals-and-enforcement.md#设备归属与日志解析)；worker 排空 → [approvals-and-enforcement.md#凭据与资源](approvals-and-enforcement.md#凭据与资源)；APV_n 命名规则与原生字段清单留在 handoff（产品契约），随执行流迁入 products/apv 时再搬 |
 
 ---
 
