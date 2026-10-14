@@ -1185,3 +1185,9 @@ FlowDefinition 可显式声明 historyMode=controlled；内联 observations / ex
 错误 / 缺失结果 SHA、结果拒绝或终态事件后整份回报失联，保留独立核过的 D 终态与已知释放事实，不冒充结果成功，也不把已证终态改 unknown。C 留 interpretationStatus=failed / 登记错误 / unmapped 与原件引用；由已批准 transition 继续提出候选、经过原 afterResult 闸再交付 partial。带这种终态解释缺口却提出 succeeded 的候选拒绝；不由 Hub 自动构造产品结果或绕 Hook。旧输入修订失联只记旧操作，迟到原 fence 补原件与释放不改已交付 partial 的候选 / phase / 原 unmapped。中英设计同步。
 
 先验收三个旧问题的真实失败，再实现。相关 PostgreSQL / worker **13/13**、纯 helper **2/2，无 skip**，含坏 SHA / 拒绝 / 缺字段、终态后失联与迟到补报、不合格 succeeded 提议拒绝；typecheck / diff 通过。原生 APV、独立包与现场零改动，只本地签署，未跑全套。
+
+## 107：C 后续 4，合成流程消费完整冻结包配置
+
+夹具改为原样读取冻结资源模板的完整 receiptPolicy，不再挑参数映射后自带 echo；独立身份批准后，核已批准 / running 修订的配置 canonical 摘要相同。toolArguments / argumentsByTool / 分阶段 receipts / identityProjection 都由真实登记配置生效，投影核实际 projectWorkbook、受控 byteSlots、B 原件 SHA 与导出的用例身份。合成 submit / status / results 只提供本阶段实际字段，无假通用散列；保留一次 submit、三类 verify Hook、真实大投影后不同 Tool 消费动态槽、逐步 / 检查点 / unmapped 断言。
+
+纯回归旧 **0/2**→新 **2/2**；固定维护者给的 **3c46f707** / APV1.3.0 实际合成入口 **4/4，无 skip**，默认关闭时 **4 skip** 不计通过。typecheck / diff 通过。仅夹具、验收及中英说明，证明 synthetic provider protocol 接法，不证明真实 cexg / 设备；未改核心驱动、原生 / 独立包，不跑全套、push 或部署。

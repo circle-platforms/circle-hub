@@ -73,11 +73,21 @@ export function apvProviderTools(){
  ].map(tool=>({...tool,description:'Synthetic APV module provider protocol',minimumRole:'member',approval:false,annotations:{readOnlyHint:tool.effect==='read',destructiveHint:tool.effect==='write'}}));
 }
 
+export function frozenApvReceiptPolicy(frozen:{files:{path:string;base64:string}[]}){
+ const resource=frozen.files.find(file=>file.path==='resources/case-gateway.json');assert.ok(resource,'The frozen APV module must declare its gateway resource receipt policy');
+ const policy=JSON.parse(Buffer.from(resource.base64,'base64').toString()).configuration?.receiptPolicy;assert.ok(policy&&typeof policy==='object'&&!Array.isArray(policy),'The frozen gateway resource must contain a complete receipt policy');return structuredClone(policy);
+}
+
+// Self-written synthetic stage originals retain observable identity and state
+// fields rather than echoing the hub's private request metadata.
+export function apvProviderReceipt(state:{taskId:string;workbook:Buffer},tool:'case_submit'|'case_status'|'case_results'){
+ if(tool==='case_submit')return {ok:true,task_id:state.taskId,sha256:sha256(state.workbook),case_ids:['301']};
+ if(tool==='case_status')return {ok:true,task_id:state.taskId,state:'done',rc:0};
+ return {ok:true,task_id:state.taskId,...apvRawResults,xlsx_sha256:sha256(state.workbook)};
+}
+
 export async function apvModuleProvider(t:TestContext){
- const state={secret:'synthetic-apv-provider-secret-'.repeat(3),calls:[] as {name:string;args:any;meta:any}[],submissions:0,releases:0,workbook:Buffer.alloc(0),taskId:'synthetic_apv_task_301',requestHash:'',inputSha256:'',byteHashes:{} as Record<string,string>};
- // Hub correlation fields are synthetic protocol observations for A3's
- // mechanical proof. They do not assert that an existing gateway emits them.
- const receipt=(results=false)=>({ok:true,task_id:state.taskId,request_hash:state.requestHash,input_sha256:state.inputSha256,byte_hashes:state.byteHashes,state:'done',...(results?apvRawResults:{})});
+ const state={secret:'synthetic-apv-provider-secret-'.repeat(3),calls:[] as {name:string;args:any;meta:any}[],submissions:0,releases:0,workbook:Buffer.alloc(0),taskId:'synthetic_apv_task_301'};
  const server=createServer(async(req,res)=>{
   if(req.method!=='POST'||req.url!=='/mcp'){res.writeHead(405);res.end();return;}
   if(req.headers.authorization!==`Bearer ${state.secret}`){res.writeHead(401);res.end();return;}
@@ -90,9 +100,9 @@ export async function apvModuleProvider(t:TestContext){
   else if(name==='lease_release'){state.releases++;result={ok:true};}
   else if(name==='env_prepare')result=apvEnvironment;
   else if(name==='bed_topology')result=apvTopology;
-  else if(name==='case_submit'){assert.equal(args.lease_id,'synthetic_apv_lease');assert.equal(args.token,1);state.submissions++;state.workbook=Buffer.from(args.xlsx_b64??'','base64');state.requestHash=meta['hub/requestHash'];state.inputSha256=meta['hub/inputSha256'];state.byteHashes={xlsx_b64:sha256(state.workbook)};result={...receipt(),state:'running',dispatched:true};}
-  else if(name==='case_status')result=receipt();
-  else if(name==='case_results')result=receipt(true);
+  else if(name==='case_submit'){assert.equal(args.lease_id,'synthetic_apv_lease');assert.equal(args.token,1);state.submissions++;state.workbook=Buffer.from(args.xlsx_b64??'','base64');result=apvProviderReceipt(state,'case_submit');}
+  else if(name==='case_status')result=apvProviderReceipt(state,'case_status');
+  else if(name==='case_results')result=apvProviderReceipt(state,'case_results');
   else{res.writeHead(400);res.end();return;}
   res.setHeader('content-type','application/json');res.end(JSON.stringify({jsonrpc:'2.0',id:rpc.id,result:{structuredContent:result,content:[{type:'text',text:JSON.stringify(result)}]}}));
  });await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));t.after(async()=>{server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));});
@@ -107,9 +117,7 @@ export async function apvModuleFlow(t:TestContext,frozen:Awaited<ReturnType<type
  const cleared:NodeJS.ProcessEnv={};for(const suffix of ['EXECUTION_GATEWAYS','CONNECTOR_PROFILES','OAUTH_PROFILES','PRODUCT_LINES']){cleared[`CIRCLE_HUB_${suffix}`]=undefined;cleared[`CIRCLE_SERVER_${suffix}`]=undefined;}cleared.CIRCLE_RUNTIME_CONFIG=undefined;
  const provider=options.provider??await apvModuleProvider(t),h=await setup(t,cleared as Record<string,string>);h.autoMethodProfiles=false;h.autoHooks=false;
  await writeFile(`${h.scratch}/execution.json`,JSON.stringify({profiles:{apvfixture:{endpoint:provider.endpoint,pollMs:25}}}),{mode:0o600});h.env.CIRCLE_HUB_EXECUTION_GATEWAYS=`${h.scratch}/execution.json`;await h.stop();await h.startServer();
- const receiptPolicy={schema:'hub-provider-observation/1',submitTool:'case_submit',statusTool:'case_status',resultTool:'case_results',reconcileTool:'case_status',taskIdArgument:'task_id',remoteIdPath:['task_id'],requestHashPath:['request_hash'],inputSha256Path:['input_sha256'],byteHashesPath:['byte_hashes'],statePath:['state'],runningValues:['running'],terminalValues:['done'],receiptSchema:{type:'object',required:['ok','task_id','request_hash','input_sha256','byte_hashes','state'],properties:{ok:{const:true},task_id:{type:'string'},request_hash:{type:'string'},input_sha256:{type:'string'},byte_hashes:{type:'object'},state:{enum:['running','done']}},additionalProperties:true},lease:{acquireTool:'lease_acquire',heartbeatTool:'lease_heartbeat',releaseTool:'lease_release',idPath:['lease_id'],fencePath:['token'],idArgument:'lease_id',fenceArgument:'token',ttlSecondsPath:['expires_in_s']},refusal:{stagePath:['stage'],preDispatchStages:['lease','environment','validation'],dispatchedPath:['dispatched'],remoteIdPath:['task_id'],codePath:['code'],reasonPath:['reason']}};
- const declaredResource=frozen.files.find(file=>file.path==='resources/case-gateway.json'),declaredPolicy=declaredResource?JSON.parse(Buffer.from(declaredResource.base64,'base64').toString()).configuration?.receiptPolicy:undefined;
- if(declaredPolicy?.toolArguments)Object.assign(receiptPolicy,{toolArguments:declaredPolicy.toolArguments});if(declaredPolicy?.lease?.argumentsByTool)Object.assign(receiptPolicy.lease,{argumentsByTool:declaredPolicy.lease.argumentsByTool});
+ const receiptPolicy=frozenApvReceiptPolicy(frozen);
  const configuration={schema:'hub-provider/1',transport:'streamable-http',runtimeProfileType:'execution',runtimeProfileRef:'apvfixture',credentialMode:'static-secret',receiptPolicy:options.receiptPolicy??receiptPolicy},declaration={reads:['synthetic-bed'],writes:['synthetic-device-config'],credentials:[] as string[],allowedTestHosts:['routera'],provides:{tools:options.tools??apvProviderTools()}};
  const draft=await h.request('/v1/assets',{scopeId:'scp_lab',kind:'connector-instance',name:'Synthetic APV module provider',version:'1.0.0',configuration,declaration,readers:['prn_alice','prn_bob']}),credential=await h.request(`/v1/assets/${draft.assetId}/credentials`,{version:'1.0.0',mode:'static-secret',value:provider.state.secret}),resource=await h.request('/v1/assets',{assetId:draft.assetId,scopeId:'scp_lab',kind:'connector-instance',name:draft.name,version:'2.0.0',configuration,declaration:{...declaration,credentials:[credential.assetId]},readers:['prn_alice','prn_bob']});
  await h.request(`/v1/assets/${resource.assetId}/lifecycle`,{version:resource.version,sha256:resource.sha256,state:'approved'},'bob');await h.request(`/v1/assets/${resource.assetId}/lifecycle`,{version:resource.version,sha256:resource.sha256,state:'running'});
