@@ -1101,3 +1101,9 @@ English: `lease.argumentsByTool` is an optional closed per-Tool map. Each entry 
 C 拒绝产品实参 / byteArgs 遮蔽租约字段，只延后注入字段的 required 与字段约束，保留普通实参类型、未知键与对象大小检查；实际取得租约后、意图前与每次 RPC 前均完整校验原 schema。部分校验遇顶层组合 / 跨字段 schema 如 anyOf、if / then、dependentRequired 时以 SOURCE_NOT_APPROVED 失败封闭，不填假 token 或删远端 required。providerBinding 拒绝未声明 Tool、acquire 自注入、目标重名及普通 / 字节参数映射冲突。声明需要租约的 read 自动临时 acquire / heartbeat / read / release，并重核全链最低角色；read 的失败仍无设备副作用，不改 unknown / fence / pin 规则。
 
 实际新专项 **4/4 纯 + 2/2 PG = 6/6、无 skip**：必需 submit 注入字段通过、重命名读字段正确、task-only status / results 无额外租约参数、临时读 / 写各释放一次；缺少 release 的管理员资格时 RPC 0 / submit 0。既有协议边界纯测试 **12/12**，合计本轮定向 **18/18**；typecheck / diff-check 通过。PG 单 runner 已清理并释放。不改原生 APV1.1.1、产品包、真实网关 / 设备 / 模型，不跑全套、push 或部署。严格 cexg 的 legacy 回执与后续 prepare / 参数映射仍待后项，不把这笔绿扩大为现网兼容。
+
+## 98：C2 提交参数与受控原件映射
+
+批准的 receiptPolicy.toolArguments 只从整份冻结 FlowSubmission 的安全路径或有限 literal 派生普通参数；byteArguments 一对一把 action.byteArgs 逻辑参数映到实际 wire 名称。C 入队、D 调用、byteBindings / 回执哈希与撤权后的历史身份核对使用同一映射链，原动作 requestHash 和原件引用保持冻结。普通映射不能覆盖产品 args、原件或租约权限，不读 profile / 环境 / 密钥；未声明工具、非有限 JSON、原型字段、超长字符串、字节遗漏或重复全部拒绝。submit 的 module 可以来自批准 literal，status / results 仍只传批准 taskIdArgument 与各自租约映射。
+
+先复现旧契约拒新字段及真实 worker 缺 wire 参数的红，再实现。新增纯映射 **4/4**、真实 executeFlowStep 的 64 KiB 原件 / wire 参数 / module / task-only 观察 **1/1**、真实 PostgreSQL+worker 整链 **1/1**；历史回执 / 提交后拒绝 / 协议角色相关 **6/6**，均无 skip。第二项目标共 **12/12**，typecheck / diff 通过。原生 1.1.1 与 packs/apv 零改动；严格外部包链尚待阶段回执与准备观察，不称现网通过。只本地签署，不跑全套、不 push / 部署 / 接真实环境。

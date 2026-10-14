@@ -418,3 +418,11 @@ A3 的验收前提仍是 macOS seatbelt、临时 PostgreSQL 和合成网关。�
 ---
 
 本文是 circle-hub 的设计规范之一，按 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/deed.zh-hans) 授权：引用、借鉴须署名 Circle Hub 与 qingshanfeihu 并注明原始出处链接。见[设计规范索引](README.md#许可)。
+
+### C2：批准的普通参数与原件参数映射
+
+receiptPolicy.toolArguments 以工具名、目标参数名为键，每项只能是 `{literal: 有限JSON}` 或 `{inputPath: [字段路径]}`。路径从 C 冻结的整份 FlowSubmission 开始，例如 `['value','build']`；不读取环境变量、profile、凭据或产品 transition state。声明由资源修订批准并被冻结，参数由 C 入队与 D 实际调用各重算；产品 args 与批准映射重名时拒绝，而不是悄悄覆盖。未声明工具、原型路径、访问器、循环、非有限数、超 32 KiB 字符串或其它 A2 预算拒绝。
+
+receiptPolicy.byteArguments 以工具名、实际 wire 参数名为键，值是 action.byteArgs 的逻辑参数名。例如 `{case_submit:{xlsx_b64:'workbook'}}` 对应产品动作 `byteArgs:{workbook:'workbook'}`；已有动作直接使用 xlsx_b64 时可以不声明映射。映射必须一对一覆盖所有逻辑原件参数，不能漏掉或复制同一参数；目标与普通参数 / 租约权限冲突时拒绝。C 的请求摘要仍绑定原动作与获授权的 B 引用，D 在调用时取原字节，wire byteBindings 和回执核验使用实际参数名。不会为工作簿扩大普通 JSON 字符串预算。
+
+status/results/reconcile 仍由 taskIdArgument 注入持久远端身份，并只按工具明确声明的租约映射补字段；目标为只收 task_id 的工具时，argumentsByTool 对这些名字写空对象。不将 lease_id/token 或 submit 的 module/base64 带入观察调用。

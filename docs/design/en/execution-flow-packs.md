@@ -287,3 +287,11 @@ A3 acceptance requires the supported macOS seatbelt adapter, temporary PostgreSQ
 ---
 
 This document is one of circle-hub's design specifications, licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/): quote or build on it with attribution to Circle Hub and qingshanfeihu and a link to the original. See the [design specifications index](README.md#license).
+
+### C2: Approved ordinary and original-byte argument mappings
+
+receiptPolicy.toolArguments maps Tool names and target parameter names to exactly `{literal: finite JSON}` or `{inputPath: [field path]}`. Input paths start at C's frozen whole FlowSubmission, for example `['value','build']`; they cannot read environment variables, profiles, credentials or transition state. C admission and D invocation independently derive the approved revision's arguments. Product args that shadow mappings are rejected. Undeclared Tools, prototype paths, accessors, cycles, non-finite values, strings over 32 KiB and other A2 budget violations are rejected.
+
+receiptPolicy.byteArguments maps each wire parameter to its logical action.byteArgs parameter, for example `{case_submit:{xlsx_b64:'workbook'}}` for `byteArgs:{workbook:'workbook'}`. Existing actions that already use xlsx_b64 need no mapping. A mapping must cover every logical original exactly once, without omission or duplication; ordinary parameter or lease-authority collisions are rejected. C's request hash still binds the original action and authorized B references. D reads original bytes at invocation, and wire byteBindings and receipt checks use the mapped parameter names. Ordinary JSON string limits are not enlarged for workbooks.
+
+status/results/reconcile receive the persisted remote identity through taskIdArgument and only the lease parameters explicitly mapped for that Tool. Use empty argumentsByTool entries for Tools accepting only task_id. Submit-only module/base64 and undeclared lease fields do not leak into observation calls.
