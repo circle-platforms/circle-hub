@@ -101,3 +101,27 @@ test('Execution transition: step identity freezes method flow and occurrence whi
  assert.throws(()=>executionTransitionStepKey({...identity,flowVersion:'unbound/1'}));
  const dropped:any=[1];dropped.extra='lost';assert.throws(()=>executionTransitionRequestHash(binding,{...first,args:{dropped}}));
 });
+
+test('Execution transition: provider binary arguments bind authorized slot references without copying large base64 into ordinary JSON',()=>{
+ const bytes=Buffer.alloc(64*1024,65),full=controlled(bytes),refOnly={slot:full.slot,role:full.role,reference:full.reference};
+ const inline=action('provider.call',{resource:'gateway',tool:'case_submit',args:{xlsx_b64:full.contentBase64}});
+ assert.throws(()=>parseExecutionTransitionOutput(output([inline])),(error:any)=>error.code==='RESULT_TOO_LARGE');
+ const mapped=action('provider.call',{resource:'gateway',tool:'case_submit',args:{label:'literal'},byteArgs:{xlsx_b64:'original'}});
+ assert.equal(ExecutionTransitionOutput.safeParse(output([mapped])).success,true);
+ const original=executionTransitionRequestHash(binding,mapped,[refOnly]);assert.equal(executionTransitionRequestHash(binding,mapped,[full]),original);
+ const otherBytes=Buffer.from('different original'),otherFull=controlled(otherBytes),otherRef={slot:otherFull.slot,role:otherFull.role,reference:otherFull.reference};
+ assert.notEqual(executionTransitionRequestHash(binding,mapped,[otherRef]),original);
+ assert.notEqual(executionTransitionRequestHash(binding,mapped,[{...refOnly,reference:{...refOnly.reference,artifactId:'art_other'}}]),original);
+ const unused={...otherRef,slot:'unused'};assert.equal(executionTransitionRequestHash(binding,mapped,[refOnly,unused]),original);
+ const parser=action('tool.call',{path:'tools/results.ts',export:'parse',args:[],byteSlots:['original']});assert.notEqual(executionTransitionRequestHash(binding,parser,[refOnly]),executionTransitionRequestHash(binding,parser,[otherRef]));
+ assert.throws(()=>executionTransitionRequestHash(binding,parser));
+ assert.throws(()=>executionTransitionRequestHash(binding,mapped));
+ assert.throws(()=>executionTransitionRequestHash(binding,mapped,[refOnly,refOnly]));
+ assert.throws(()=>executionTransitionRequestHash(binding,mapped,[{...full,reference:{...full.reference,sha256:'0'.repeat(64)}}]),(error:any)=>error.code==='SOURCE_HASH_MISMATCH');
+ assert.throws(()=>executionTransitionRequestHash(binding,mapped,[{...refOnly,reference:{...refOnly.reference,size:limits.controlledBytes+1}}]),(error:any)=>error.code==='BODY_TOO_LARGE');
+ assert.equal(ExecutionTransitionOutput.safeParse(output([{...mapped,args:{xlsx_b64:'collision'}}])).success,false);
+ for(const key of ['constructor','prototype','__proto__'])assert.equal(ExecutionTransitionOutput.safeParse(output([{...mapped,byteArgs:JSON.parse(JSON.stringify({[key]:'original'}))}])).success,false);
+ assert.equal(ExecutionTransitionOutput.safeParse(output([{...mapped,effect:'read',endpoint:'https://invalid.example.test'}])).success,false);
+ const identity={taskId:binding.taskId,inputRevisionId:binding.inputRevisionId,method,flowVersion:method.flowVersion,stepId:mapped.stepId,occurrence:mapped.occurrence};
+ assert.equal(executionTransitionStepKey(identity),executionTransitionStepKey({...identity}));
+});

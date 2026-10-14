@@ -43,11 +43,13 @@ export function createExecutionTransitionContracts(shared:Shared){
   ]);
   const controlled=z.object({slot:stepId,role:z.string().min(1).max(100),encoding:z.literal('base64'),reference,
     contentBase64:z.string().max(Math.ceil(limits.controlledBytes/3)*4).pipe(shared.Base64Content)}).strict();
+  const byteReference=controlled.omit({encoding:true,contentBase64:true}).strict(),byteBinding=z.union([byteReference,controlled]);
+  const byteParameter=z.string().min(1).max(limits.jsonStringBytes).refine(key=>!['__proto__','constructor','prototype'].includes(key)&&!/[\x00-\x1f]/.test(key),'Use a plain provider parameter key');
   const observation=z.object({operationId:shared.OperationId,reference,facts:object}).strict();
   const common={stepId,occurrence:safeSize};
   const action=z.discriminatedUnion('kind',[
     z.object({...common,kind:z.literal('tool.call'),path:shared.SafeRelativePath,export:z.string().min(1).max(200).regex(/^[A-Za-z_$][A-Za-z0-9_$]*$/),args:z.array(json).max(limits.arrayItems),byteSlots:z.array(stepId).max(limits.arrayItems).optional()}).strict(),
-    z.object({...common,kind:z.literal('provider.call'),resource:shared.ToolName,tool:shared.ToolName,args:object}).strict(),
+    z.object({...common,kind:z.literal('provider.call'),resource:shared.ToolName,tool:shared.ToolName,args:object,byteArgs:z.record(byteParameter,stepId).optional()}).strict().refine(value=>!Object.keys(value.byteArgs??{}).some(key=>Object.hasOwn(value.args,key)),'A binary parameter cannot overwrite ordinary args'),
     z.object({...common,kind:z.literal('operation.wait'),operationId:shared.OperationId}).strict(),
     // Exact HookSubjects and frozen binding are checked by the future driver.
     z.object({...common,kind:z.literal('hook.verify'),event:z.enum(['verify.deviceCommand','verify.hostCommand','verify.workbook','beforeDispatch','afterResult']),subject:object}).strict(),
@@ -86,19 +88,24 @@ export function createExecutionTransitionContracts(shared:Shared){
   function stateBudget(value:unknown,ctx:z.RefinementCtx,direction:'input'|'output'){
     if(bytes(shared.canonicalJson(value))>limits.stateBytes)issue(ctx,'Product state exceeds its total JSON byte budget',['state'],direction==='input'?'BODY_TOO_LARGE':'RESULT_TOO_LARGE');
   }
+  function byteBudget(entries:z.infer<typeof byteBinding>[],ctx:z.RefinementCtx){
+    const slots=new Set<string>();let total=0;
+    for(const [index,entry]of entries.entries()){
+      if(slots.has(entry.slot))issue(ctx,'Controlled byte slots must be unique',['controlledBytes',index,'slot']);slots.add(entry.slot);
+      total+=entry.reference.size;
+      if('contentBase64' in entry){const decoded=Buffer.from(entry.contentBase64,'base64');if(decoded.length!==entry.reference.size||shared.sha256(decoded)!==entry.reference.sha256)issue(ctx,'Controlled bytes differ from their original SHA or decoded size',['controlledBytes',index],'SOURCE_HASH_MISMATCH');}
+    }
+    if(total>limits.controlledBytes)issue(ctx,'Controlled original bytes exceed their total budget',['controlledBytes'],'BODY_TOO_LARGE');
+  }
+  function metadataBudget(value:{controlledBytes:z.infer<typeof byteBinding>[]},ctx:z.RefinementCtx){
+    const metadata={...value,controlledBytes:value.controlledBytes.map(entry=>({slot:entry.slot,role:entry.role,reference:entry.reference,...('encoding' in entry?{encoding:entry.encoding}:{})}))};
+    if(bytes(shared.canonicalJson(metadata))>limits.metadataBytes)issue(ctx,'Transition metadata exceeds its cumulative JSON byte budget',[],'BODY_TOO_LARGE');
+  }
   const inputBase=z.object({schema:z.literal(EXECUTION_TRANSITION_SCHEMA),binding,currentInput:z.object({value:json,sha256:shared.Sha256}).strict(),state:json,
     observations:z.array(observation).max(limits.arrayItems),controlledBytes:z.array(controlled).max(limits.arrayItems)}).strict().superRefine((value,ctx)=>{
     stateBudget(value.state,ctx,'input');
     if(shared.canonicalHash(value.currentInput.value)!==value.currentInput.sha256||value.currentInput.sha256!==value.binding.inputSha256)issue(ctx,'Current input differs from its canonical SHA or frozen binding',['currentInput','sha256'],'SOURCE_HASH_MISMATCH');
-    const metadata={...value,controlledBytes:value.controlledBytes.map(({contentBase64:_,...entry})=>entry)};
-    if(bytes(shared.canonicalJson(metadata))>limits.metadataBytes)issue(ctx,'Transition metadata exceeds its cumulative JSON byte budget',[],'BODY_TOO_LARGE');
-    const slots=new Set<string>();let decodedTotal=0;
-    for(const [index,entry]of value.controlledBytes.entries()){
-      if(slots.has(entry.slot))issue(ctx,'Controlled byte slots must be unique',['controlledBytes',index,'slot']);slots.add(entry.slot);
-      const decoded=Buffer.from(entry.contentBase64,'base64');decodedTotal+=decoded.length;
-      if(decoded.length!==entry.reference.size||shared.sha256(decoded)!==entry.reference.sha256)issue(ctx,'Controlled bytes differ from their original SHA or decoded size',['controlledBytes',index],'SOURCE_HASH_MISMATCH');
-    }
-    if(decodedTotal>limits.controlledBytes)issue(ctx,'Controlled decoded bytes exceed their total budget',['controlledBytes'],'BODY_TOO_LARGE');
+    metadataBudget(value,ctx);byteBudget(value.controlledBytes,ctx);
   });
   const outputBase=z.object({schema:z.literal(EXECUTION_TRANSITION_SCHEMA),state:json,actions:z.array(action).max(limits.arrayItems)}).strict().superRefine((value,ctx)=>{
     stateBudget(value.state,ctx,'output');
@@ -110,6 +117,7 @@ export function createExecutionTransitionContracts(shared:Shared){
     flowVersion:z.string().min(1).max(200),stepId,occurrence:safeSize}).strict().refine(value=>value.flowVersion===value.method.flowVersion,'Step flow differs from its frozen method flow');
   const stepIdentity=guarded(identity,'input');
   const hashBinding=guarded(binding.superRefine((value,ctx)=>{if(bytes(shared.canonicalJson(value))>limits.metadataBytes)issue(ctx,'Request binding exceeds the metadata budget',[],'BODY_TOO_LARGE');}),'input');
+  const hashBytes=guarded(z.object({controlledBytes:z.array(byteBinding).max(limits.arrayItems)}).strict().superRefine((value,ctx)=>{metadataBudget(value,ctx);byteBudget(value.controlledBytes,ctx);}),'input');
   const parse=<T extends z.ZodType>(schema:T,value:unknown)=>{
     const parsed=schema.safeParse(value);if(parsed.success)return parsed.data;
     const issue=parsed.error.issues[0] as z.core.$ZodIssueCustom;
@@ -119,9 +127,12 @@ export function createExecutionTransitionContracts(shared:Shared){
     ExecutionTransitionAssetPin:pin,ExecutionTransitionInput:input,ExecutionTransitionOutput:output,
     parseExecutionTransitionInput:(value:unknown)=>parse(input,value),parseExecutionTransitionOutput:(value:unknown)=>parse(output,value),
     executionTransitionStepKey:(value:unknown)=>{const item=parse(stepIdentity,value);return shared.canonicalHash({taskId:item.taskId,inputRevisionId:item.inputRevisionId,methodPinDigest:shared.canonicalHash(item.method),flowVersion:item.flowVersion,stepId:item.stepId,occurrence:item.occurrence});},
-    executionTransitionRequestHash:(frozenBinding:unknown,proposedAction:unknown)=>{
+    executionTransitionRequestHash:(frozenBinding:unknown,proposedAction:unknown,byteBindings:unknown=[])=>{
       const checkedBinding=parse(hashBinding,frozenBinding),checkedOutput=parse(output,{schema:EXECUTION_TRANSITION_SCHEMA,state:null,actions:[proposedAction]});
-      return shared.canonicalHash({binding:checkedBinding,action:checkedOutput.actions[0]});
+      const item=checkedOutput.actions[0],checkedBytes=parse(hashBytes,{controlledBytes:byteBindings}).controlledBytes,bySlot=new Map(checkedBytes.map(entry=>[entry.slot,entry]));
+      const used=item.kind==='provider.call'?Object.values(item.byteArgs??{}):item.kind==='tool.call'?item.byteSlots??[]:[];
+      const resolved=[...new Set(used)].sort().map(slot=>{const entry=bySlot.get(slot);if(!entry)throw shared.error('INVALID_PAYLOAD','A referenced binary slot is absent from its frozen original bindings');return {slot:entry.slot,role:entry.role,reference:entry.reference};});
+      return shared.canonicalHash({binding:checkedBinding,action:item,...(resolved.length?{byteBindings:resolved}:{})});
     },
     checkExecutionTransitionWire:(serialized:string|Uint8Array,direction:'input'|'output')=>{
       z.enum(['input','output']).parse(direction);let size:number;

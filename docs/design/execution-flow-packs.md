@@ -154,13 +154,15 @@ meridian 现有 `tools/project.ts`、五个 Hook、`flows/fixture.json` 与资�
 | kind | 专属字段 | 后续驱动器必须核验的边界 |
 |---|---|---|
 | `tool.call` | `path, export, args, byteSlots?` | 路径与相对依赖属于冻结模块的 `tools[]`，导出可用；受控槽存在且只读授权原件 |
-| `provider.call` | `resource, tool, args` | resource 来自本次冻结绑定，Tool 在批准 provider 的 provides 中；实时权限、effect、minimumRole、输入 schema 和摘要均成立 |
+| `provider.call` | `resource, tool, args, byteArgs?` | resource 来自本次冻结绑定，Tool 在批准 provider 的 provides 中；实时权限、effect、minimumRole、输入 schema 和摘要均成立；byteArgs 参数由授权 B 原件填入，不能覆盖 args |
 | `operation.wait` | `operationId` | 原操作属于本任务 / 当前修订，读取原观察，不重新提交写动作 |
 | `hook.verify` | `event, subject` | event 仅五个现有挂点；继续用现有 `validateHookInput` 核对精确 subject，由 hub 注入批准 binding |
 | `outcome.error` | `code, facts` | code 已登记；事实可回到冻结原件；不能据产品自报决定 D unknown 或冻结资源 |
 | `delivery.propose` | `status, result, references` | status 只有 succeeded / partial；候选结果和 B 引用都经证据与交付项核验，不直接交付 |
 
 上述对象不提供 endpoint、凭据、密钥、CA、effect、fence、批准决定或冻结指令字段。`args` 仍可包含合法的产品数据和日志字符串，A2 不用危险禁词推测其语义；schema 合格不代表允许派发，A3 才根据已绑定 provider 的输入结构和执行链核验实际动作。Hook 的有界 JSON subject 同样不是允许任意形状派发。
+
+`provider.call.byteArgs` 是可选的 `{参数名: slot}`。例如 `{payload_b64:"payload"}` 只声明对应原件槽，不让模型或 transition 复制 base64。参数名非空，符合普通 JSON 键预算，排除控制字符与 `__proto__ / constructor / prototype` 这类原型注入键；合法的实际参数名称仍由 provider 的 inputSchema 决定。byteArgs 与 args 有同名字段即拒绝，驱动器不能覆盖原参数。普通 args 中超过 32 KiB 的 base64 与其它长字符串一样拒绝，不通过 byteArgs 扩大普通 JSON 预算。真正派发前由 hub 从 B 按当前权限、批准来源 pin 和 SHA 读取原件，填入对应参数，再核对 provider 输入结构及完整 wire；读到原件并不等于获得运行权限。
 
 observations 为 `{operationId, reference, facts}`。原件 reference 是四种严格形状之一：sourceRevisionId / artifactId / evidenceId / recordId，加 kind、sha256、size；没有客户端下载 URL。controlledBytes 的每个槽为 `{slot, role, encoding:"base64", reference, contentBase64}`，slot 唯一，base64 必须规范，解码长度与 reference.size 一致，原字节 SHA 与 reference.sha256 一致。role 对应模块需要的原件角色；A3 还必须核对这些引用属于已批准来源的原件清单、满足当前授权、且字节确实由 B 读取。客户端自己构造一份 SHA 正确的 JSON 不能获得原件权限。
 
@@ -175,6 +177,8 @@ observations 为 `{operationId, reference, facts}`。原件 reference 是四种�
 | transition Tool | 上述 B 原件的引用与已核对事实；确需格式解释时显式选择受控字节槽，command-check 不内嵌进 state | 步骤身份、冻结绑定、原操作观察、D 终态 / 租约状态。只提出动作和解释候选，不取得密钥、租约 token、端点、CA 或 provider 对象 |
 
 步骤 key 由 hub 派生为 `canonicalHash({taskId, inputRevisionId, methodPinDigest, flowVersion, stepId, occurrence})`，其中 methodPinDigest 是冻结方法 pin 的 canonicalHash，flowVersion 必须与该方法一致。产品不能指定原始 key 或自行跳到另一 occurrence。请求摘要另覆盖 frozen binding（包括 inputSha256）与 action（含 args），参数变化不能通过把 argsDigest 放进 key 变成另一笔写操作；currentInput.value / sha256 也不掺进 key，修订身份由 C 维护不变性。重复 key 的异内容由后续持久驱动器以 `IDEMPOTENCY_MISMATCH` 拒绝；A2 只提供两种散列的合同函数，没有建立步骤存储或派发入口。
+
+`executionTransitionRequestHash(binding, action, byteBindings?)` 的第三参可提供仅引用的 `{slot, role, reference}`，也兼容完整 controlled entry；有正文时仍核对规范 base64、解码大小和 SHA。provider.byteArgs 与 tool.byteSlots 引用的每个槽都必须在其中；重复槽、缺槽、错 SHA 或总量超现有 8 MiB 上限拒绝。散列加入所用槽的 role 和 reference（kind、原件 id、sha256、size），不加入 base64 正文；同名槽换原件会改变 requestHash，未用且合法的槽不改变它。后续驱动器从授权 B 查询得到仅引用的绑定即可计算散列，不必把大原件送进 transition；客户端自己声明的 ref 不因此变成已授权原件。step key 的组成保持不变。
 
 ### 数字来源与初版预算
 
@@ -197,6 +201,8 @@ observations 为 `{operationId, reference, facts}`。原件 reference 是四种�
 metadata 预算包含完整输入中除 controlled contentBase64 之外的字段：绑定、currentInput 的 value / sha256、state、facts、身份和原件指针；state 是其子预算，不额外叠加。controlled 的 base64 不被普通字符串 32 KiB 上限误拒，但规范 base64、逐槽解码长度、SHA、8 MiB 解码合计仍逐项核对。command-check 的 XML/base64 留在 B，不能随 transition state 每轮复制增长。输出预算包含完整 output，不能把每个动作预算相乘成无界容量。
 
 所有新预算还须同时满足现有 Tool 宿主 **24 MiB 输入 / 16 MiB 输出**。准确序列化后的 wire 要包括冻结 files、imports、base64、参数和信封全部 UTF-8 字节；`checkExecutionTransitionWire` 只接收实际字符串或 Uint8Array，采用固有长度读取而不是任意对象自报 byteLength，单独核验真实字节数，不以源码字节加 args 的估算代替。各个分预算合格不保证同时装满也能通过总 wire，超出时拒绝，不截断、不改生产通道上限、不回退到无隔离进程。
+
+B 的 16 MiB 上传上限不意味着每个 Tool 或受控槽都能容纳这么大的原件；这里的 8 MiB 原件合计、32 KiB 普通字符串与其它七项预算不因 byteArgs 改变。provider 字节映射从 B 的已核对引用读取，而非让模型把上传内容复写到 args；解析 Tool 确需完整字节时仍通过有界 controlledBytes，不能借仅引用散列绕过内容读取与 wire 限制。
 
 该批 **没有 sessions 字段**，不代表 sessions 合法容量为零，也不证明已覆盖其真实形状。A2 不加入 session / 设备专用容量假设，使用受控字节与通用 JSON 预算；超过预算按解释失败披露，已证 D 终态不受影响。更大结果的分批或范围输入属于后续独立设计与验收。
 
