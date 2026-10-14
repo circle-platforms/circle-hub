@@ -1091,3 +1091,13 @@ H1 期限 **4e84ba0**、H2 拒绝来源 **8cf4998**、M3 终态后结果与补�
 推荐待 C 实施把 per-run 与 per-batch 分开，按估算两倍余量 pow2ceil(2×258)=1024；512 仅一档取整，转换次数 32 只是该排程候选而非任意 flow 的通用常量。另一方案 hook.verify subjects 数组会改变 F 契约，必须有逐项绑定 / 索引 / B 决定、未处理前缀、失败容量与多资源归属；优先保现单 subject 契约。observations / expectedOccurrences / references 256、metadata / wire 等仍需配套有界设计，不宣称只改计数就解决规模，本轮不实施。
 
 补准三条字段：outcome 顶码须 F 注册，四 HOST 规则码留 facts→error.details；inputSha256Path 核整份 FlowSubmission 的 canonicalHash，不是工作簿 SHA，真网关不回显；拒绝的小原文在 facts.result，worker 删 error.details.gatewayRefusal，大原件仍须读 B envelope.refusal。受控 role 约定与 hub.result 条件槽也如实说明，小结果当前可以 inline。两份设计 **25** 本地链接 / 锚点与已有 frame / 动作 F 校验通过，算术静态核对通过；只设计和进度分笔签署，无代码 / F / 驱动 / 包 / 网关改动，无全套 / 模型 / 真实设备 / push / 部署。
+
+## 97：C 逐工具租约注入与完整出站校验
+
+先写新 policy / schema 纯测试与真实临时 PostgreSQL、worker、合成 MCP 验收，旧实现 3 个纯用例与 2 个集成用例均红。实现可选 `receiptPolicy.lease.argumentsByTool`：每 Tool 值为 `{idArgument?,fenceArgument?}`，目标是已批准 inputSchema 的字段；显式 map 下未列 Tool 或 `{}` 不注入。整个 map 缺省保留旧 write / 协议回报的全局参数名与普通 read 不取租约行为。典型映射：submit / heartbeat / release 取 lease_id、token，status / results 为 `{}`；不同读接口也可映射到 ticket、epoch。只允许 lease 的 id / fence，不向产品 Tool 传端点、凭据或租约令牌。
+
+English: `lease.argumentsByTool` is an optional closed per-Tool map. Each entry selects `idArgument` and/or `fenceArgument`; an empty or absent entry injects no fields. Omitting the whole map preserves legacy behavior. Admission delays only declared injected-field constraints; the actual RPC is checked against the complete approved schema and wire budget.
+
+C 拒绝产品实参 / byteArgs 遮蔽租约字段，只延后注入字段的 required 与字段约束，保留普通实参类型、未知键与对象大小检查；实际取得租约后、意图前与每次 RPC 前均完整校验原 schema。部分校验遇顶层组合 / 跨字段 schema 如 anyOf、if / then、dependentRequired 时以 SOURCE_NOT_APPROVED 失败封闭，不填假 token 或删远端 required。providerBinding 拒绝未声明 Tool、acquire 自注入、目标重名及普通 / 字节参数映射冲突。声明需要租约的 read 自动临时 acquire / heartbeat / read / release，并重核全链最低角色；read 的失败仍无设备副作用，不改 unknown / fence / pin 规则。
+
+实际新专项 **4/4 纯 + 2/2 PG = 6/6、无 skip**：必需 submit 注入字段通过、重命名读字段正确、task-only status / results 无额外租约参数、临时读 / 写各释放一次；缺少 release 的管理员资格时 RPC 0 / submit 0。既有协议边界纯测试 **12/12**，合计本轮定向 **18/18**；typecheck / diff-check 通过。PG 单 runner 已清理并释放。不改原生 APV1.1.1、产品包、真实网关 / 设备 / 模型，不跑全套、push 或部署。严格 cexg 的 legacy 回执与后续 prepare / 参数映射仍待后项，不把这笔绿扩大为现网兼容。
