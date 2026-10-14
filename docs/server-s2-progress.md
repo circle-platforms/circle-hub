@@ -1051,3 +1051,11 @@ H1 期限 **4e84ba0**、H2 拒绝来源 **8cf4998**、M3 终态后结果与补�
 按维护者确认，A3 第一条仅证明模块接法，afterResult 仍由产品显式发 Hook、Hub 交付闸核证据，驱动语义不改。验收及夹具文件名追加 synthetic-provider-protocol，t.diagnostic 明示“synthetic provider protocol，不证明 cexg 现网兼容”，测试名与默认 skip 原因同样披露；handoff 命令同步改路径。原三 Hook、原件 / byteArgs、单次提交、逐步 / 检查点与未映射断言均保留。
 
 本项只重跑改名的默认入口，**1 skip / 0 pass / 0 fail**；源码参考只读，未运行生产或外部包测试，也未启动 PostgreSQL。严格 cexg 第二条与 C 协议修复待办另行提交，默认跳过不被称验收通过；不改驱动 / 网关 / 产品包，不 push 或部署。
+
+## 92：C 严格网关协议待办清单
+
+按维护者决定，中英执行流设计新增 C 待办，逐项记录只读 TOOL_SPECS 的结构：env_prepare / bed_topology 必需 lease_id/token；case_submit 必需 xlsx_b64 与租约、module 可选；case_status / case_results 只收 task_id，additionalProperties=false；TTL 为 expires_in_s。正常提交和完成结果没有 state / request_hash / input_sha256 / byte_hashes，case_status 仍有 state，完成结果 channel=ready；不把完成结果分支扩大成所有回执都无 state。
+
+未来驱动必须补逐工具租约注入映射、注入后完整 schema 或允许声明的注入字段、提交字节参数 / module 的批准 policy 映射、各工具真实 state 或 channel/rc 终态映射、冻结原件 sha256 与批准方法用例身份 case_ids 的核验。声明外参数和现网不存在的三 hash 不能充当兼容方案；映射属于通用 policy，不在 Hub 写 APV 分支。租约内 prepare 观察与 beforeDispatch 证据时序、已证 D 终态和结果渠道失败的区分仍按前次方向，afterResult 仍产品显式核验。
+
+本轮只写清单，不定未来 JSON/schema 或实现。两份设计 **25** 本地链接 / 锚点与已有 frame / 动作 F 解析均通过，diff 检查通过；本机网关源码仅作只读形状参考，不运行 / 导入 / 复制其实现或配置。A3 合成协议与严格目标的证明范围分开，不 push / 部署 / 改驱动、网关、独立包或原生字节。

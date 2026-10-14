@@ -310,6 +310,36 @@ env_prepare 与 bed_topology 并不是 Hub 硬编码的特殊 Tool：名字、re
 
 这份注入说明沿用 A2 的全部预算：state 256 KiB、input metadata 512 KiB、transition output 256 KiB、普通 JSON 字符串 32 KiB、数组/动作 256 项、深度 16、controlled 解码合计 8 MiB，以及实际 Tool wire 输入 24 MiB / 输出 16 MiB；上述示例没有新字段容量或隐式扩容。expectedOccurrences 是现有可选合同字段，产品若不使用重复步骤也不能据其缺席自造许可。完整字节只在实际执行所需的 frame 中给出；轻预检重核授权与原件引用，不向 transition 改发另一种协议。
 
+### C 阶段待办：同形网关协议兼容
+
+下面是用户确认并经本机网关源码只读核对的协议形状；只记录键名、类型与行为，不引入地址、配置值或真实回报。它不是已经实现的新 ProviderPolicy schema，也不是任意 MCP 服务都应采用的统一回执。C 后续实现须用已批准的通用 policy 描述差异，不能把这些产品工具名写成 Hub 分支。
+
+| 网关工具 / 回报 | 原生形状与约束 |
+|---|---|
+| `lease_acquire` | 请求 `{}`；回报有 `lease_id:string`、`token:integer`、`expires_in_s:number`。TTL 字段不是 expires_in 或 Hub 自行推断的期限 |
+| `lease_heartbeat` / `lease_release` | 请求只含当前 `lease_id` / `token`；release 成功体有 released=true |
+| `env_prepare` | read 工具，但要求 `lease_id` / `token`；可带 `device_build`。不带预期构建时 build_checked=false，不能代替绑定构建的核验 |
+| `bed_topology` | read 工具，但要求 `lease_id` / `token`；可带 `refresh:boolean` |
+| `case_submit` | 必须是 `xlsx_b64` + `lease_id` / `token`，可选 `module`；不是 payload_b64，module 省略时由网关取其配置默认值 |
+| `case_status` / `case_results` | 请求**只含 `task_id`**；公开 inputSchema 的 additionalProperties=false，不接受额外 lease_id/token |
+| 正常 submit 成功体 | 有 task_id、sha256、bytes、case_ids、deliver_epoch、submit_autoid、module；**没有 state，也不回显 request_hash/input_sha256/byte_hashes** |
+| status 回报 | **仍有 state**（running/done/lost 等），以及 task_id、rc、log_tail；不能概括成所有网关 raw 都没有 state |
+| 完成后的 results 回报 | 有 task_id、channel、rc、xlsx_sha256、cases 等；完整结果的 channel=ready；当前完成结果分支没有 state 或上述三项通用 hash。未完成 / runner_lost 的分支可以有 state；不能因一次省略而给所有 results 分支造相同字段 |
+
+成功工具包装仍有 ok=true；ok 不是上述 state/hash 字段的替代。channel=ready 说明结果渠道齐备，不是“所有用例通过”。rc 是 runner 退出事实，逐用例与逐步判定仍由产品解析；终态与解释结果继续分开。
+
+C 的后续工作须分别覆盖以下边界，而不是改弱某个合成夹具使它继续绿色：
+
+1. **逐工具租约参数映射**：当前 generic worker 给 submit/status/results/reconcile 的参数附加同一租约对象，这与 status/results 的严格入参不兼容。后续 policy 必须能声明哪些调用注入租约、哪些只传远端任务 id，不能对所有工具一律加 lease，也不能让产品获得 token 后自己拼参。
+2. **注入与 schema 顺序**：当前 C 在租约尚未获得时按 provider inputSchema 校验产品 args；真实 case_submit 又把 lease_id/token 列为 required。受理核验须区分产品实参与已声明的 worker 注入实参，最终以实际注入后的完整参数核对批准 schema / wire；批准 schema 也必须容纳实际租约字段。不能为过关删掉远端 required 或放开 additionalProperties。
+3. **submit 参数与 module 策略**：受控 workbook 槽映射到 xlsx_b64，module 的来源、是否可省略及约束由批准 policy 决定；产品不能靠重命名普通字符串参数绕过 B 字节 / SHA 核对。此处只确认需要参数映射，不定义未来 JSON 键或 ABI。
+4. **回执与终态映射**：当前 A3 成功观察要求一个同时有 state 与三项通用 hash 的回执，现有网关正常 submit / 完成 results 不提供这些字段。后续按批准 policy 使用实际 state 或 channel/rc 观察，分别绑定各阶段身份和原件；不得向 raw 补写未返回的字段，或把 RPC 元数据当作网关已回显的证明。state/channel/rc 的路径与判定须逐工具声明；query_error、missing_after_done 等不能任意当作 done 或结果成功，已由独立 status 证明的 D 终态也不能因结果渠道失败而改写。
+5. **原生证据绑定**：现有原生 1.1.1 提交核对 sha256 与冻结工作簿、case_ids 与工作簿用例身份；随后 status 的 task_id/state=done 与 results 的 task_id/xlsx_sha256 绑定原投递，channel!=ready 仍可留下 partial。这些 sha256/case_ids 是该网关协议的映射目标；Hub 应经批准 policy 按冻结原件 SHA 与已批准方法导出的用例身份核对，不在通用驱动器内写死 APV 字段或解析 Excel。精确 predicate/schema 留给 C 实施设计。后续兼容应保留这些可证关系，不把现网没有的三项 hash 设为唯一可接受证据。这里记录现有做法，不授权更改原生字节或将框架结论扩大成每步通过。
+
+同租约的 prepare、持久化观察与 beforeDispatch 在 submit/意图之前重核的方向见上节；当前普通 read 不取远端租约，这一缺口不能由模块裸调 env_prepare/bed_topology 规避。afterResult 仍按用户确认的显式 hook.verify 与 delivery 证据闸执行，不在本待办改为自动调用。
+
+C 的目标验收采用完全合成、与上述协议同形的严格网关：required 租约、status/results 仅 task_id、真实字段名、submit 无 state、完成 results 无通用 hash、status 有 state。默认跳过的是尚未开始实施的 C 兼容验收；显式启用后在当前实现上必须出现可复现的红例，不把 skip/todo 当作通过。后续逐项实现后才将这些边界转绿，并核对 RPC 参数、B 原件与实际派发次数。A3 的合成协议通过只能证明其已测协议，不能替代这条同形验收，更不能证明真实网关 / 设备已接入。本轮仅补待办与验收目标，不实现、注册未来 schema、改网关或投递真实环境。
+
 ### 数字来源与初版预算
 
 维护者对真实 21 案批次只提供数字统计；没有提供原件内容、真实地址或业务字段。gateway-results 原字节 149702，其中 results 147339、environment 670、status 958、submit 688；topology 9970，workbook 7209，解释产物 119582。逐案日志 UTF-8 最大 10234 / 合计 106734，JSON 转义后最大 10420 / 合计 109125，最多 167 行、最长行 127 字节。本批共 119 步、216 条设备命令、21 条主机命令、26 个检查点；每案最多 7 步、23 条设备命令、1 条主机命令、2 个检查点。最高 JSON 深度为 7，最大数组为 216。command-check 原件 4219626，其中两个 raw base64 段为 2577744、1527460；剩余部分 114422。
