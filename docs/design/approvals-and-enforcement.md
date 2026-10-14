@@ -43,19 +43,65 @@
 
 ### 错误码目录
 
-可证真失败的标识全部固定；客户端按码分支，不解析自由文本。
+可证真失败的标识全部固定；客户端按码分支，不解析自由文本。本表与 `packages/contracts/src/index.ts` 的注册表逐项核对，HTTP 状态与类别以注册表为准；包可经 `registerErrorCodes` 扩展注册表，见表末两条注。
 
-| 组 | 码 | 含义 |
-|---|---|---|
-| 身份与权限 | `UNAUTHENTICATED` · `FORBIDDEN_SCOPE` · `FORBIDDEN_ACTION` | 凭据无效或过期；越出授权范围；未持有该动作 |
-| 受理 | `INVALID_PAYLOAD` · `TARGET_NOT_FOUND` · `IDEMPOTENCY_MISMATCH` · `RATE_LIMITED` | 请求形状或取值非法（不静默截断）；目标不存在；同键不同内容；超速率上限（不回显凭据与用户名） |
-| 输入 | `INPUT_REVISION_STALE` · `INPUT_EXPIRED` · `INVALID_EXECUTION_WORKBOOK` | 回应针对旧修订；回应超期；工作簿通不过确定性核验 |
-| 来源 | `SOURCE_ABSENT` · `SOURCE_FORBIDDEN` · `SOURCE_LOGIN_EXPIRED` · `SOURCE_UNREACHABLE` · `SOURCE_NOT_APPROVED` | 不存在；无权限；登录失效；不可达；未批准（含明文例外失效后的配置失配） |
-| 执行链 | `COMMAND_NOT_IN_TREE` · `DESTRUCTIVE_COMMAND` · `BUILD_MISMATCH` · `GATEWAY_UNREACHABLE` · `GATEWAY_REFUSED` · `PERMISSION_DENIED` · `LEASE_UNAVAILABLE` · `RESOURCE_BUSY` · `UPSTREAM_TIMEOUT` · `RESULT_TOO_LARGE` · `RECEIPT_PROCESSING_FAILED` | 命令不在树；自毁命令；构建不符；网关不可达；网关明确拒绝；权限拒绝；租约不可用；资源因 unknown 冻结；上游超时（只读，可重试）；结果超上限（不截断）；回报处理失败（不带内部细节） |
-| 变更与装载 | `DEPENDENCY_NOT_APPROVED` · `DECISION_CONFLICT` · `SKILLPACK_CHECK_FAILED` · `TOOL_NAME_CONFLICT` · `IMPORT_NOT_DECLARED` · `NO_HARNESS_PROJECTION` | 依赖未批准；重复决定；技能声明与试跑或目录不符；工具名冲突；模块声明外的 import；该原语没有到目标 harness 的投影 |
-| 运行环境 | `SANDBOX_UNAVAILABLE` · `MODEL_PROXY_UNAVAILABLE` · `MODEL_UPSTREAM_REJECTED` | 无受支持的隔离适配器；模型代理起不来或断连；模型上游拒绝或超限 |
-| 补读 | `CURSOR_EXPIRED` · `NOTIFICATION_STREAM_LIMIT` | 游标已出保留窗口；通知流连接超限 |
-| 调用确认 | `CONFIRMATION_REQUIRED` · `CONFIRMATION_STALE` | 需先显式确认；确认与当前参数摘要不一致 |
+| 组 | 码 | HTTP · 类别 | 含义 |
+|---|---|---|---|
+| 受理与请求 | `INVALID_PAYLOAD` | 400 · validation | 请求形状或取值非法；非法取值不静默截断 |
+| 受理与请求 | `BODY_TOO_LARGE` | 413 · validation | 请求体超过上限 |
+| 受理与请求 | `UNSUPPORTED_VERSION` | 400 · validation | 能力包未安装，或钉住的流程版本没有运行器 |
+| 受理与请求 | `RESULT_TOO_LARGE` | 413 · validation | 结果超过上限；不截断冒充全量 |
+| 受理与请求 | `SKILLPACK_CHECK_FAILED` | 422 · validation | 技能声明的工具与试跑记录或当前目录不符 |
+| 受理与请求 | `IMPORT_NOT_DECLARED` | 422 · validation | 模块出现声明外的 import |
+| 受理与请求 | `TARGET_NOT_FOUND` | 404 · target | 目标不存在 |
+| 受理与请求 | `RATE_LIMITED` | 429 · transient | 超过速率上限；不回显凭据或用户名 |
+| 身份与权限 | `UNAUTHENTICATED` | 401 · permission | 凭据无效或过期 |
+| 身份与权限 | `FORBIDDEN_SCOPE` | 403 · permission | 越出授权范围 |
+| 身份与权限 | `FORBIDDEN_ACTION` | 403 · permission | 未持有该动作 |
+| 身份与权限 | `FORBIDDEN_TARGET` | 403 · permission | 目标越出已认证的策略 |
+| 身份与权限 | `PERMISSION_DENIED` | 403 · permission | 执行链的权限拒绝 |
+| 身份与权限 | `SELF_APPROVAL` | 403 · permission | 申请人不能批准自己的请求 |
+| 身份与权限 | `SHARING_REQUIRED` | 403 · permission | 共享或提升需要显式许可 |
+| 身份与权限 | `APPROVAL_REQUIRED` | 409 · permission | 需要已批准且激活的登记 |
+| 身份与权限 | `CONNECTOR_DISABLED` | 409 · permission | 连接器已停用 |
+| 身份与权限 | `IDENTITY_UNMAPPED` | 409 · permission | 身份无法映射到授权主体（在册，暂无抛出处） |
+| 身份与权限 | `OBJECT_NOT_VISIBLE` | 404 · permission | 对象对当前身份不可见 |
+| 身份与权限 | `ASSET_NOT_VISIBLE` | 404 · permission | 资产对当前身份不可见 |
+| 绑定与冲突 | `IDEMPOTENCY_MISMATCH` | 409 · conflict-stale | 同一幂等键带了不同内容 |
+| 绑定与冲突 | `INPUT_REVISION_STALE` | 409 · conflict-stale | 回应针对旧的输入修订 |
+| 绑定与冲突 | `INPUT_EXPIRED` | 409 · conflict-stale | 回应超过有效期 |
+| 绑定与冲突 | `DECISION_CONFLICT` | 409 · conflict-stale | 同一请求的重复决定 |
+| 绑定与冲突 | `APPROVAL_STALE` | 409 · conflict-stale | 审批绑定的修订或记录已变化 |
+| 绑定与冲突 | `SOURCE_HASH_MISMATCH` | 409 · conflict-stale | 来源字节的 SHA 与登记不符 |
+| 绑定与冲突 | `TOOL_NAME_CONFLICT` | 409 · conflict-stale | 工具名冲突 |
+| 绑定与冲突 | `RUNTIME_VERSION_MISMATCH` | 409 · conflict-stale | 运行器的可执行文件或修订核对不符 |
+| 绑定与冲突 | `TARGET_IDENTITY_MISMATCH` | 409 · target | 目标身份与钉住的值不符 |
+| 租约 | `FENCING_STALE` | 409 · lease | fence 已不是当前租约 |
+| 租约 | `LEASE_EXPIRED` | 409 · lease | 执行租约已过期 |
+| 租约 | `RESOURCE_BUSY` | 409 · lease | 资源因 unknown 冻结，新投递被拒 |
+| 来源 | `SOURCE_ABSENT` | 404 · source-absent | 来源不存在 |
+| 来源 | `SOURCE_FORBIDDEN` | 403 · permission | 来源无权限；普通调用的收敛码 |
+| 来源 | `SOURCE_LOGIN_EXPIRED` | 401 · authentication | 来源登录失效 |
+| 来源 | `SOURCE_UNREACHABLE` | 503 · source-unreachable | 来源不可达 |
+| 来源 | `SOURCE_NOT_APPROVED` | 409 · dependency | 来源未批准，含明文例外失效后的配置失配 |
+| 执行 | `COMMAND_NOT_IN_TREE` | 422 · execution | 命令不在绑定的树里 |
+| 执行 | `DESTRUCTIVE_COMMAND` | 422 · execution | 命中自毁规则 |
+| 执行 | `BUILD_MISMATCH` | 409 · execution | 回报的构建与绑定的构建不符 |
+| 执行 | `GATEWAY_UNREACHABLE` | 503 · execution | 网关不可达 |
+| 执行 | `LEASE_UNAVAILABLE` | 409 · execution | 租约不可用 |
+| 执行 | `RUNTIME_FAILED` | 502 · execution | 运行器失败或私有执行请求被拒绝 |
+| 执行 | `SANDBOX_UNAVAILABLE` | 503 · execution | 没有受支持的隔离适配器 |
+| 执行 | `HOOK_FAILED` | 422 · execution | Hook 处理器未返回合法判定 |
+| 执行 | `RECEIPT_PROCESSING_FAILED` | 500 · execution | 回报处理失败，不带内部细节 |
+| 依赖与证据 | `DEPENDENCY_NOT_APPROVED` | 409 · dependency | 引用的依赖未批准或未运行 |
+| 依赖与证据 | `EVIDENCE_INSUFFICIENT` | 409 · semantic-insufficient | 证据不足以支撑结论 |
+| 依赖与证据 | `ARTIFACT_VERIFICATION_FAILED` | 409 · semantic-insufficient | 制品或证据与待证声明核对不符 |
+| 暂时与兜底 | `UPSTREAM_TIMEOUT` | 504 · transient | 上游超时；只读操作可换新键重试 |
+| 暂时与兜底 | `INTERNAL_ERROR` | 500 · internal | 内部兜底；未注册的码回落到它的状态与类别 |
+
+包经 `registerErrorCodes` 注册的码：`CURSOR_EXPIRED`（409 · validation）与 `NOTIFICATION_STREAM_LIMIT`（429 · permission）由 tasks 包注册；`INVALID_EXECUTION_WORKBOOK`（422 · validation）、`COMMAND_VALIDATION_FAILED`（422 · validation）与 `GATEWAY_REFUSED`（422 · execution）由执行产品包注册。
+
+抛出但未注册的码：`CONFIRMATION_REQUIRED`、`CONFIRMATION_STALE`、`MODEL_PROXY_UNAVAILABLE`、`MODEL_UPSTREAM_REJECTED`——它们回落到 `INTERNAL_ERROR` 的 HTTP 状态与类别，只保留码本身。
 
 ### 报错与等待输入
 

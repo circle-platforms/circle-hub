@@ -43,19 +43,65 @@ In these cases an approver can make no meaningful decision: they cannot make a c
 
 ### The error-code catalog
 
-The identifiers of provably true failures are all fixed; a client branches on the code and never parses free text.
+The identifiers of provably true failures are all fixed; a client branches on the code and never parses free text. This table is checked code by code against the registry in `packages/contracts/src/index.ts`, and the registry is authoritative for the HTTP status and the category; a package may extend the registry through `registerErrorCodes` — see the two notes after the table.
 
-| Group | Codes | Meaning |
-|---|---|---|
-| identity and permission | `UNAUTHENTICATED` · `FORBIDDEN_SCOPE` · `FORBIDDEN_ACTION` | credential invalid or expired; outside the authorized scope; the action not held |
-| admission | `INVALID_PAYLOAD` · `TARGET_NOT_FOUND` · `IDEMPOTENCY_MISMATCH` · `RATE_LIMITED` | request shape or value illegal (never silently truncated); target absent; same key with different content; over the rate limit (no credentials or user names echoed) |
-| input | `INPUT_REVISION_STALE` · `INPUT_EXPIRED` · `INVALID_EXECUTION_WORKBOOK` | response against an old revision; response past its deadline; the workbook fails the deterministic check |
-| source | `SOURCE_ABSENT` · `SOURCE_FORBIDDEN` · `SOURCE_LOGIN_EXPIRED` · `SOURCE_UNREACHABLE` · `SOURCE_NOT_APPROVED` | absent; no permission; login expired; unreachable; not approved (including a configuration-digest mismatch after a plaintext exception lapses) |
-| enforcement chain | `COMMAND_NOT_IN_TREE` · `DESTRUCTIVE_COMMAND` · `BUILD_MISMATCH` · `GATEWAY_UNREACHABLE` · `GATEWAY_REFUSED` · `PERMISSION_DENIED` · `LEASE_UNAVAILABLE` · `RESOURCE_BUSY` · `UPSTREAM_TIMEOUT` · `RESULT_TOO_LARGE` · `RECEIPT_PROCESSING_FAILED` | command not in the tree; destructive command; build mismatch; gateway unreachable; an explicit gateway refusal; permission denied; lease unavailable; resource frozen by an unknown; upstream timeout (read-only, retryable); result over the limit (never truncated); receipt processing failed (no internal details carried) |
-| change and loading | `DEPENDENCY_NOT_APPROVED` · `DECISION_CONFLICT` · `SKILLPACK_CHECK_FAILED` · `TOOL_NAME_CONFLICT` · `IMPORT_NOT_DECLARED` · `NO_HARNESS_PROJECTION` | dependency not approved; a repeated decision; skill declarations mismatching the trial or the catalog; a tool name conflict; an import outside the module's declarations; no projection of the primitive to the target harness |
-| run environment | `SANDBOX_UNAVAILABLE` · `MODEL_PROXY_UNAVAILABLE` · `MODEL_UPSTREAM_REJECTED` | no supported isolation adapter; the model proxy cannot start or broke; the model upstream rejected or is over the limit |
-| catch-up | `CURSOR_EXPIRED` · `NOTIFICATION_STREAM_LIMIT` | the cursor fell out of the retention window; too many notification streams |
-| call confirmation | `CONFIRMATION_REQUIRED` · `CONFIRMATION_STALE` | an explicit confirmation is required first; the confirmation does not match the current argument digest |
+| Group | Code | HTTP · category | Meaning |
+|---|---|---|---|
+| admission and request | `INVALID_PAYLOAD` | 400 · validation | the request shape or a value is illegal; an illegal value is never silently truncated |
+| admission and request | `BODY_TOO_LARGE` | 413 · validation | the request body exceeds the cap |
+| admission and request | `UNSUPPORTED_VERSION` | 400 · validation | the capability package is not installed, or no runner exists for the pinned flow version |
+| admission and request | `RESULT_TOO_LARGE` | 413 · validation | the result exceeds the cap; never truncated into posing as the whole |
+| admission and request | `SKILLPACK_CHECK_FAILED` | 422 · validation | the skill's declared tools mismatch the trial-run record or the current catalog |
+| admission and request | `IMPORT_NOT_DECLARED` | 422 · validation | the module has an import outside its declarations |
+| admission and request | `TARGET_NOT_FOUND` | 404 · target | the target does not exist |
+| admission and request | `RATE_LIMITED` | 429 · transient | over the rate limit; no credentials or user names echoed |
+| identity and permission | `UNAUTHENTICATED` | 401 · permission | the credential is invalid or expired |
+| identity and permission | `FORBIDDEN_SCOPE` | 403 · permission | outside the authorized scope |
+| identity and permission | `FORBIDDEN_ACTION` | 403 · permission | the action is not held |
+| identity and permission | `FORBIDDEN_TARGET` | 403 · permission | the target is outside the authenticated policy |
+| identity and permission | `PERMISSION_DENIED` | 403 · permission | a permission refusal in the Enforcement chain |
+| identity and permission | `SELF_APPROVAL` | 403 · permission | the applicant cannot approve its own request |
+| identity and permission | `SHARING_REQUIRED` | 403 · permission | sharing or promotion needs explicit consent |
+| identity and permission | `APPROVAL_REQUIRED` | 409 · permission | an approved and active registration is required |
+| identity and permission | `CONNECTOR_DISABLED` | 409 · permission | the connector is disabled |
+| identity and permission | `IDENTITY_UNMAPPED` | 409 · permission | the identity cannot be mapped to an authorized principal (registered, with no throw site yet) |
+| identity and permission | `OBJECT_NOT_VISIBLE` | 404 · permission | the object is not visible to the current identity |
+| identity and permission | `ASSET_NOT_VISIBLE` | 404 · permission | the asset is not visible to the current identity |
+| binding and conflict | `IDEMPOTENCY_MISMATCH` | 409 · conflict-stale | the same idempotency key carried different content |
+| binding and conflict | `INPUT_REVISION_STALE` | 409 · conflict-stale | the response targets an old input revision |
+| binding and conflict | `INPUT_EXPIRED` | 409 · conflict-stale | the response is past its validity |
+| binding and conflict | `DECISION_CONFLICT` | 409 · conflict-stale | a repeated decision on the same request |
+| binding and conflict | `APPROVAL_STALE` | 409 · conflict-stale | the revision or record the approval binds has changed |
+| binding and conflict | `SOURCE_HASH_MISMATCH` | 409 · conflict-stale | the source bytes' SHA differs from the registration |
+| binding and conflict | `TOOL_NAME_CONFLICT` | 409 · conflict-stale | a tool name conflict |
+| binding and conflict | `RUNTIME_VERSION_MISMATCH` | 409 · conflict-stale | the runner's executable or revision fails verification |
+| binding and conflict | `TARGET_IDENTITY_MISMATCH` | 409 · target | the target identity differs from the pinned value |
+| lease | `FENCING_STALE` | 409 · lease | the fence no longer is the current lease |
+| lease | `LEASE_EXPIRED` | 409 · lease | the execution lease has expired |
+| lease | `RESOURCE_BUSY` | 409 · lease | the resource is frozen by an unknown; a new submission is refused |
+| source | `SOURCE_ABSENT` | 404 · source-absent | the source does not exist |
+| source | `SOURCE_FORBIDDEN` | 403 · permission | no permission on the source; the collapsed code for an ordinary caller |
+| source | `SOURCE_LOGIN_EXPIRED` | 401 · authentication | the source login has expired |
+| source | `SOURCE_UNREACHABLE` | 503 · source-unreachable | the source is unreachable |
+| source | `SOURCE_NOT_APPROVED` | 409 · dependency | the source is not approved, including a configuration-digest mismatch after a plaintext exception lapses |
+| execution | `COMMAND_NOT_IN_TREE` | 422 · execution | the command is not in the bound tree |
+| execution | `DESTRUCTIVE_COMMAND` | 422 · execution | a destructive rule is hit |
+| execution | `BUILD_MISMATCH` | 409 · execution | the reported build differs from the bound build |
+| execution | `GATEWAY_UNREACHABLE` | 503 · execution | the gateway is unreachable |
+| execution | `LEASE_UNAVAILABLE` | 409 · execution | the lease is unavailable |
+| execution | `RUNTIME_FAILED` | 502 · execution | the runner failed, or a private execution request was rejected |
+| execution | `SANDBOX_UNAVAILABLE` | 503 · execution | no supported isolation adapter |
+| execution | `HOOK_FAILED` | 422 · execution | a Hook handler returned no legal verdict |
+| execution | `RECEIPT_PROCESSING_FAILED` | 500 · execution | processing a receipt failed, without internal details |
+| dependency and evidence | `DEPENDENCY_NOT_APPROVED` | 409 · dependency | a referenced dependency is not approved or not running |
+| dependency and evidence | `EVIDENCE_INSUFFICIENT` | 409 · semantic-insufficient | the evidence is insufficient for the conclusion |
+| dependency and evidence | `ARTIFACT_VERIFICATION_FAILED` | 409 · semantic-insufficient | the artifact or evidence fails verification against the statement to be proven |
+| transient and fallback | `UPSTREAM_TIMEOUT` | 504 · transient | an upstream timeout; a read-only operation may retry with a new key |
+| transient and fallback | `INTERNAL_ERROR` | 500 · internal | the internal fallback; an unregistered code falls back to its status and category |
+
+Codes a package registers through `registerErrorCodes`: `CURSOR_EXPIRED` (409 · validation) and `NOTIFICATION_STREAM_LIMIT` (429 · permission) are registered by the tasks package; `INVALID_EXECUTION_WORKBOOK` (422 · validation), `COMMAND_VALIDATION_FAILED` (422 · validation), and `GATEWAY_REFUSED` (422 · execution) are registered by the execution product pack.
+
+Codes thrown but not registered: `CONFIRMATION_REQUIRED`, `CONFIRMATION_STALE`, `MODEL_PROXY_UNAVAILABLE`, `MODEL_UPSTREAM_REJECTED` — they fall back to `INTERNAL_ERROR`'s HTTP status and category, keeping only the code itself.
 
 ### Errors and waiting-input
 
