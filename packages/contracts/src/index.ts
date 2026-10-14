@@ -261,7 +261,9 @@ const registry:Record<string,[number,string]> = {
   IMPORT_NOT_DECLARED:[422,'validation'],HOOK_FAILED:[422,'execution'],
   SANDBOX_UNAVAILABLE:[503,'execution'],
   RECEIPT_PROCESSING_FAILED:[500,'execution'],
+  GATEWAY_REFUSED:[422,'execution'],
 };
+export function registeredErrorCode(value:unknown):value is ErrorCode{return typeof value==='string'&&Object.hasOwn(registry,value);}
 export function registerErrorCodes(errors:Record<string,[number,string]>):void{for(const [code,definition] of Object.entries(errors)){if(registry[code]&&canonicalHash(registry[code])!==canonicalHash(definition))throw new Error('Error registration conflicts');registry[code]=definition;}}
 export type ErrorCode = string;
 export class ApiError extends Error {
