@@ -605,6 +605,8 @@ A1 不修改既有任务的 methodAssetId/回执，也不把旧任务自动转�
 
 步骤期限按 input 可选 `deadlineMs`、批准 flow 可选 `deadlineMs`、默认 3600000 毫秒的顺序派生，沿现有操作契约要求正整数且最多一小时；受理时冻结，不因配置后续修改漂移。每步入队按该时长设期限，waiting-review 不作为执行期限过期清理，批准消费时从当前时刻刷新执行期限。未领取步骤真正过期明确 failed / UPSTREAM_TIMEOUT，披露 sideEffects:none；已有写意图的运行步骤超过真实期限仍 unknown，保留远端租约与核对，不提前按固定五分钟中断。
 
+worker 的 `POST /v1/workers/register` 支持 `{capabilities:[已安装操作名]}`，旧 `{}` 表示没有新增能力；登记替换整个集合，未知或重复声明拒绝且不污染既有登记。新版 worker 显式声明 flow.invoke，通用 flow 只派给已声明此能力的 worker，操作另冻结 required_worker_capability，preflight 同时核实际授予与当前登记。旧 worker 可继续处理原生操作，不会领到自己不能解析的 flow。启用需迁移 41；能力声明不是软件版本或设备结果证明，仍执行 worker 身份 / scope / 租约 / fence 校验。
+
 模块仍经 modules/install 冻结文件、既有变更集批准；所选 `circle-packs/flow/1` 文件需含 `{id,version,driver:"hub-execution-transition/1",transition:{path,export},initialState}`。transition 入口必须在模块已声明的 tools[] 中，按原 imports 边界装入隔离进程。Hub 保存任务 / 修订、方法与来源 / 资源 pin、实际 runtime-profile pin、产品状态、每步身份、请求摘要、派发意图、原始回报引用及终态。实现摘要的版本化算法覆盖冻结模块 digest、flow、驱动版本与精确依赖版本；新批准模块只供明确选择它的新任务，旧任务不自动换方法、parser 或原件。
 
 provider 资源为已批准并启用的 connector-instance，configuration 使用 `schema="hub-provider/1"`、`transport="streamable-http"`、`runtimeProfileType="execution"`、runtimeProfileRef 及 receiptPolicy。地址 / CA 只取仓库外运行文件，摘要必须匹配独立批准的 runtime-profile。凭据沿用现有凭据引用 / server-issued 机制；只有明确未声明凭据的资源才允许匿名，声明了凭据但缺值时为 SOURCE_LOGIN_EXPIRED。带凭据或 write Tool 的人调用者至少是 member；机器沿既有 scope 权限核验，不虚构人的角色。各 Tool 的 name、inputSchema、effect、minimumRole 只取已批准 declaration.provides.tools，再核对远端 tools/list；网络与凭据不进入产品 Tool。

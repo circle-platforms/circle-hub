@@ -69,6 +69,7 @@ const OperationName=z.string().regex(/^[a-z][a-z0-9._-]{0,149}$/);
 export function registerOperation(name:string,effects:{reads:string[];writes:string[]}):void{OperationName.parse(name);const old=STANDARD_OPERATIONS[name];if(old&&canonicalHash(old)!==canonicalHash(effects))throw new Error('Operation effect registration conflicts');STANDARD_OPERATIONS[name]=effects;}
 export const StandardOperation=OperationName.refine(name=>Object.hasOwn(STANDARD_OPERATIONS,name),'Operation is not registered');
 export type StandardOperation = z.infer<typeof StandardOperation>;
+export const WorkerRegistration=z.object({capabilities:z.array(StandardOperation).max(256).default([])}).strict().refine(value=>new Set(value.capabilities).size===value.capabilities.length,'Worker capabilities must be unique');
 export const Effects = z.object({ reads: z.array(z.string()), writes: z.array(z.string()) });
 export const ConnectorManifest = z.object({
   id: z.string().regex(/^[a-z0-9-]+$/), version: z.literal('1.0.0'), synthetic: z.literal(true),

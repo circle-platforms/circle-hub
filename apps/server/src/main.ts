@@ -90,11 +90,12 @@ import {neutralMigration,compatibilityMigration} from '../../../packages/skillpa
 import {HarnessPrimitives} from '../../../packages/skillpacks/src/primitives.ts';
 import {ExecutionFlows} from '../../../packages/execution/src/flow-driver.ts';
 import {executionFlowMigration} from '../../../packages/execution/src/flow-migration.ts';
+import {workerCapabilityMigration} from '../../../packages/execution/src/worker-capability-migration.ts';
 import {MODULE_EXECUTE,FlowSubmission} from '../../../packages/execution/src/flow-contracts.ts';
 
 function environment(name: string): string { const value = process.env[name]; if (!value) throw new Error(`Required environment variable: ${name}`); return value; }
 const store = new Store(JSON.parse(environment('CIRCLE_HUB_DATABASE_CONFIG')));
-await store.migrate([taskMigration,deliveryMigration,knowledgeMigration,executionMigration,...packageMigrations,approvalMigration,conclusionMigration,checklistMigration,connectorMigration,entityMigration,assetMigration,graphMigration,toolMigration,skillMigration,automationMigration,automationOutcomeMigration,knowledgePageMigration,automationOriginMigration,ingestionMigration,oauthMigration,resourceIdentityMigration,roleMigration,changeSetMigration,changeSetDependenciesMigration,enforcementMigration,sessionMigration,toolRolesMigration,readEffectMigration,readReleaseAuditMigration,notificationMigration,queryMigration,neutralMigration,mcpMigration,compatibilityMigration,readCompensationMigration,workQueryMigration,readAttributionMigration,registryPageMigration,executionFlowMigration]);
+await store.migrate([taskMigration,deliveryMigration,knowledgeMigration,executionMigration,...packageMigrations,approvalMigration,conclusionMigration,checklistMigration,connectorMigration,entityMigration,assetMigration,graphMigration,toolMigration,skillMigration,automationMigration,automationOutcomeMigration,knowledgePageMigration,automationOriginMigration,ingestionMigration,oauthMigration,resourceIdentityMigration,roleMigration,changeSetMigration,changeSetDependenciesMigration,enforcementMigration,sessionMigration,toolRolesMigration,readEffectMigration,readReleaseAuditMigration,notificationMigration,queryMigration,neutralMigration,mcpMigration,compatibilityMigration,readCompensationMigration,workQueryMigration,readAttributionMigration,registryPageMigration,executionFlowMigration,workerCapabilityMigration]);
 const auth = new Auth(store,{developmentTtlMs:process.env.CIRCLE_HUB_DEV_TOKEN_TTL_MS?Number(process.env.CIRCLE_HUB_DEV_TOKEN_TTL_MS):undefined,runTokenTtlMs:process.env.CIRCLE_HUB_RUN_TOKEN_TTL_MS?Number(process.env.CIRCLE_HUB_RUN_TOKEN_TTL_MS):undefined});
 requireCondition(process.env.CIRCLE_HUB_DEV_AUTH === '1', 'INVALID_PAYLOAD', 'Phase one requires explicitly enabled development authentication');
 await auth.initializeDevelopment(environment('CIRCLE_HUB_DEV_IDENTITIES'));
@@ -429,7 +430,7 @@ const server = createListener(async (request, response) => {
       }
     }
     if (url.pathname === '/v1/workers/register' && request.method === 'POST') {
-      await body(request); send(response,200,{ data:await execution.register(ctx) }); return;
+      const registration=await body(request); send(response,200,{ data:await execution.register(ctx,registration) }); return;
     }
     if (url.pathname === '/v1/workers/claim' && request.method === 'POST') {
       const input=z.object({exclude:z.array(StandardOperation).max(10).default([])}).parse(await body(request));send(response,200,{ data:await execution.claim(ctx,input.exclude) }); return;
