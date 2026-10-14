@@ -229,8 +229,10 @@ export const actionDigest = (value: Pick<OperationRequest, 'inputRevisionId' | '
   inputRevisionId: value.inputRevisionId, name: value.name, target: value.target,
   targetIdentity: value.targetIdentity, args: value.args,
 });
+export const RetainedEventContent=z.object({evidenceId:z.string().optional(),artifactId:z.string().optional(),sha256:Sha256.optional(),fileName:z.string().optional(),downloadPath:z.string()}).refine(value=>Boolean(value.evidenceId)!==Boolean(value.artifactId),'Exactly one retained object id is required');
+export const EventContent=z.object({sha256:Sha256,size:z.number().int().nonnegative(),downloadPath:z.string(),retained:z.array(RetainedEventContent).optional()});
 export const Event = z.object({ seq: z.number().int().positive(), taskId: TaskId, kind: z.string(),
-  payload: z.record(z.string(), z.unknown()), createdAt: z.string(),content:z.object({sha256:Sha256,size:z.number().int().nonnegative(),downloadPath:z.string()}).optional() });
+  payload: z.record(z.string(), z.unknown()), createdAt: z.string(),content:EventContent.optional() });
 export type Event = z.infer<typeof Event>;
 
 const registry:Record<string,[number,string]> = {
@@ -317,10 +319,11 @@ export const QueueQuery=z.object({...queueFacetShape,view:z.literal('page').opti
 export const TaskAssignment=z.object({inputRevisionId:InputRevisionId,assignee:z.string().regex(/^prn_/).nullable().optional(),dueAt:z.string().datetime().nullable().optional()}).strict().refine(value=>value.assignee!==undefined||value.dueAt!==undefined,'Specify an assignee or dueAt');
 export const AssetPageQuery=RegistryPageQuery.extend({kind:AssetKind.optional()});
 export const NotificationQuery=z.object({cursor:z.coerce.number().int().nonnegative().default(0),limit:z.coerce.number().int().min(1).max(200).default(100)});
-export const NotificationView=z.object({seq:z.number().int().nonnegative(),taskId:TaskId.nullable(),scopeId:ScopeId,kind:z.string(),payload:z.record(z.string(),z.unknown()),createdAt:z.string()});
+export const NotificationView=z.object({seq:z.number().int().nonnegative(),taskId:TaskId.nullable(),scopeId:ScopeId,kind:z.string(),payload:z.record(z.string(),z.unknown()),createdAt:z.string(),content:EventContent.optional()});
 export const NotificationPage=z.object({items:z.array(NotificationView),cursor:z.number().int().nonnegative(),hasMore:z.boolean(),replayWindow:z.object({minCursor:z.number().nonnegative(),replayEvents:z.number().int().positive(),maxRows:z.number().int().positive()}).optional()});
 export const QueueCounter=z.object({count:z.number().int().nonnegative(),oldestWaitMs:z.number().nonnegative(),overSla:z.number().int().nonnegative(),slaMs:z.number().int().positive().nullable()});
 export const QueueView=z.object({awaitingMyApproval:QueueCounter,awaitingMyInput:QueueCounter,submittedByMe:QueueCounter,assignedToMe:QueueCounter,exceptions:QueueCounter.extend({groups:z.record(z.string(),QueueCounter).optional(),omittedGroups:z.record(z.string(),z.object({reason:z.literal('facet-not-applicable'),facets:z.array(z.string())})).optional()}),slaByScope:z.record(ScopeId,ScopeSla).optional(),workerOfflineAfterMs:z.number().int().positive().optional()});
+export const WorkerView=z.object({workerId:z.string(),draining:z.boolean(),lastSeen:z.string().datetime(),offline:z.boolean(),workerOfflineAfterMs:z.number().int().positive()});
 export const SubmittedTask = TaskView.extend({ deduplicated:z.boolean() });
 export const EventPage = z.object({ events:z.array(Event),after:z.number().int().nonnegative() });
 export const CLIENT_ROUTES = {
@@ -330,6 +333,7 @@ export const CLIENT_ROUTES = {
   notifications:{method:'GET',path:'/v1/notifications',query:NotificationQuery,response:NotificationPage},
   notificationStream:{method:'GET',path:'/v1/notifications/stream',contentType:'text/event-stream'},
   queues:{method:'GET',path:'/v1/queues',query:QueueQuery,response:QueueView},
+  workers:{method:'GET',path:'/v1/workers',response:z.array(WorkerView)},
   taskAssignment:{method:'POST',path:'/v1/tasks/{taskId}/assignment',request:TaskAssignment,response:TaskView},
   mcp:{method:'POST',path:'/mcp',protocolVersion:'2025-11-25'},
   harnessImport:{method:'POST',path:'/v1/harness/import'},

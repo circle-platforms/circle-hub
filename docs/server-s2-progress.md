@@ -843,3 +843,11 @@ abdb701 的完整验收 contracts **5/5**、methods **147/147**；acceptance **2
 只本地签署提交、不 push/部署，不改真实网关、Circle、产品包、历史迁移或分工目录；完整冻结回归随后跑最终版本，不将专项替代全套。
 
 最终 **f09fae9** 冻结全套 contracts **5/5**、methods **149/149**、acceptance **286/286**、references **7/7**，共 **447/447，无 skip**；typecheck、diff 与 **714** 原件归档核验通过。固定 Circle 8b2ceb6 / APV 224daa6，仅用本机脚本模型与合成资源。包含三轮稳定回放后的全套重验、共享地址不消费设备游标、锚点内升序回填的已披露限制、事件正文引用及权限/保留窗口、可配离线阈值。本轮执行实现字节未改，仍为 **1.1.1**；083cc44 与 f09fae9 已本地签署，随后仅提交这条最终验证记录，未 push 或部署。
+
+## 63：按客户端消费者统一事件元数据
+
+维护者给出 Circle 两个实际消费者：eventLine 的七个字符串与 bot.output 的状态/产物清单/未知项须保持内联，结果正文始终走 result。上一笔投影漏了 bot 清单/未知项，通知与任务事件又有两套字段；本笔先写合成 HTTP/SSE/原件保留验收，旧实现 **1/5**（taskless 元数据负例已通过），其余四条分别复现元数据缺失、B 引用缺失、普通 worker 列表缺失、投影分歧。纠正 handoff 中客户端读取工具 output 的假设，不要求 Circle 改动。
+
+现在 task/admin/通知轮询/SSE 共用 projectedEvent 与同一字段类别白名单，保留 Circle 消费字段，任何大小的结果/工具输出/模型正文/参数仍不内联。所有 taskId 非空事件带 canonicalJson 字节引用，SHA 与 x-content-sha256 覆盖实际响应；taskless bot.admission-failed 只给原主体元数据，admin 目前不列无任务通知，不生成虚假路径。content.retained 并列事件已有的 B 原件/证据/产物引用，各自 SHA 独立；环境 JSON 与交付引用过窗仍按 B 权限可读，未留存事件仅窗口可读，不推断永久历史。
+
+新增 /v1/workers，兼容 admin workers 旧数组，披露 offline/workerOfflineAfterMs，和队列使用同一配置阈值；范围过滤与管理权限继续核对。专项 **6/6**、字段类别/knr 引用与契约 **3/3**；实际 worker 执行、固定 Circle RPC、bot、通知、权限/窗口与新阈值联合 **41/41**，无 skip，typecheck/diff 与 **714** 归档核验通过。执行实现、历史迁移、Circle、独立产品包与分工目录均不改。完整冻结回归另跑，不将专项替代全套；只本地签署，不 push/部署。

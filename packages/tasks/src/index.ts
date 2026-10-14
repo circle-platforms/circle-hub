@@ -6,7 +6,7 @@ import {facetedPage} from '../../storage/src/faceted-query.ts';
 import {TaskAssignment, type TaskPageQuery} from '../../contracts/src/index.ts';import type {z} from 'zod';
 import {taskQueryPlan} from './task-query.ts';
 import {outboxWritten,replayWindow} from './outbox-retention.ts';
-import {notificationPayload} from './notification-payload.ts';
+import {projectedEvent} from './notification-payload.ts';
 
 export function taskFromRow(row: Record<string, any>): Task {
   return { taskId: row.task_id, tenantId: row.tenant_id, scopeId: row.scope_id, principalId: row.principal_id,
@@ -140,7 +140,7 @@ export class Tasks {
     const rows = (await tx.query('SELECT * FROM outbox WHERE task_id=$1 AND seq>$2 ORDER BY seq LIMIT 500', [taskId, after])).rows;
     return rows.map(row=>this.eventView(row));
   });}
-  eventView(row:any):Event{const bytes=Buffer.from(canonicalJson(row.payload));return {seq:Number(row.seq),taskId:row.task_id,kind:row.kind,payload:notificationPayload(row.payload,true),createdAt:row.created_at.toISOString(),content:{sha256:sha256(bytes),size:bytes.length,downloadPath:`/v1/tasks/${row.task_id}/events/${row.seq}/content`}};}
+  eventView(row:any):Event{return projectedEvent(row) as Event;}
   async eventContent(ctx:AuthContext,id:string,seq:number){return this.store.transaction(async tx=>{await tx.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');await this.load(ctx,id,'tasks.read',tx);const window=await replayWindow(this.store,seq,tx);if(seq<=window.minCursor)throw new ApiError('CURSOR_EXPIRED','Event content was pruned; rebuild current state',{minCursor:window.minCursor});const row=(await tx.query('SELECT payload FROM outbox WHERE task_id=$1 AND seq=$2',[id,seq])).rows[0];requireCondition(row,'TARGET_NOT_FOUND','Event content is unavailable');const bytes=Buffer.from(canonicalJson(row.payload));return {bytes,reference:{sha256:sha256(bytes),mediaType:'application/json',fileName:`event-${seq}.json`}};});}
   async revise(tx: Transaction, task: Task, ctx: AuthContext, input: Record<string, unknown>): Promise<Task> {
     requireCondition(!terminalTask(task.phase) && task.phase !== 'unknown', 'DECISION_CONFLICT', 'Task revision is frozen in this phase');

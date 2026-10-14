@@ -2,7 +2,7 @@ import {z} from 'zod';
 import type {Store} from '../../storage/src/index.ts';
 import type {Auth} from './auth.ts';
 import {ApiError,NotificationQuery,type AuthContext} from '../../contracts/src/index.ts';
-import {replayWindow} from './outbox-retention.ts';import {notificationKinds,notificationPayload} from './notification-payload.ts';
+import {replayWindow} from './outbox-retention.ts';import {notificationKinds,projectedEvent} from './notification-payload.ts';
 export {NotificationQuery};
 export class Notifications{
   store:Store;auth:Auth;
@@ -13,7 +13,7 @@ export class Notifications{
     await tx.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');
     const window=await replayWindow(this.store,query.cursor,tx);
     const rows=(await tx.query(`SELECT e.*,COALESCE(t.scope_id,e.notification_context->>'scopeId') AS scope_id FROM outbox e LEFT JOIN tasks t USING(task_id) WHERE e.seq>$1 AND ((t.tenant_id=$2 AND t.scope_id=ANY($3::text[]) AND (t.context->>'privateOwnerId' IS NULL OR t.context->>'privateOwnerId'=$4)) OR (e.task_id IS NULL AND e.notification_context->>'tenantId'=$2 AND e.notification_context->>'scopeId'=ANY($3::text[]) AND e.notification_context->>'principalId'=$4)) AND e.kind=ANY($5::text[]) ORDER BY e.seq LIMIT $6`,[query.cursor,p.tenantId,p.scopes,p.principalId,notificationKinds,query.limit+1])).rows;
-    const items=rows.slice(0,query.limit).map(row=>({seq:Number(row.seq),taskId:row.task_id,scopeId:row.scope_id,kind:row.kind,payload:notificationPayload(row.payload),createdAt:row.created_at.toISOString()})),last=items.at(-1)?.seq??query.cursor;
+    const items=rows.slice(0,query.limit).map(row=>({...projectedEvent(row),scopeId:row.scope_id})),last=items.at(-1)?.seq??query.cursor;
     return {items,cursor:last,hasMore:rows.length>query.limit,replayWindow:window};
   });}
 }

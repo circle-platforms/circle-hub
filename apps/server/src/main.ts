@@ -224,6 +224,7 @@ const server = createListener(async (request, response) => {
     if(url.pathname===CLIENT_ROUTES.authLogout.path&&request.method==='POST'){AuthRefreshRequest.parse(await body(request));send(response,200,{data:await auth.logout(request.headers.authorization!)});return;}
     if(url.pathname===CLIENT_ROUTES.notifications.path&&request.method==='GET'){send(response,200,{data:await notifications.page(ctx,NotificationQuery.parse(Object.fromEntries(url.searchParams)))});return;}
     if(url.pathname===CLIENT_ROUTES.queues.path&&request.method==='GET'){send(response,200,{data:await workQueries.queues(ctx,QueueQuery.parse(Object.fromEntries(url.searchParams)))});return;}
+    if(url.pathname===CLIENT_ROUTES.workers.path&&request.method==='GET'){send(response,200,{data:await workQueries.workers(ctx)});return;}
     if(url.pathname===CLIENT_ROUTES.notificationStream.path&&request.method==='GET'){
       await auth.check(ctx,'tasks.read');const query=NotificationQuery.parse({...Object.fromEntries(url.searchParams),...(request.headers['last-event-id']&&!url.searchParams.has('cursor')?{cursor:request.headers['last-event-id']}:{})});await notifications.page(ctx,query);const release=notifications.reserve(ctx);let cursor=query.cursor,closed=false,lastHeartbeat=0;response.once('close',()=>{closed=true;release();});response.writeHead(200,{'content-type':'text/event-stream; charset=utf-8','cache-control':'no-cache','connection':'keep-alive'});response.flushHeaders();
       try{while(!closed&&!closing){let page;try{const current=await auth.authenticate(request.headers.authorization);page=await notifications.page(current,{...query,cursor});}catch(error){const event=error instanceof ApiError&&error.code==='UNAUTHENTICATED'?'session.expired':error instanceof ApiError&&error.code==='FORBIDDEN_ACTION'?'permission.revoked':error instanceof ApiError&&error.code==='CURSOR_EXPIRED'?'cursor.expired':'stream.error';response.write(`event: ${event}\ndata: ${JSON.stringify(error instanceof ApiError&&error.code==='CURSOR_EXPIRED'?error.details:{})}\n\n`);break;}
@@ -472,8 +473,7 @@ const server = createListener(async (request, response) => {
         restartRequested=true;process.send!({type:'graceful-restart'});return;
       }
       if (url.pathname === '/v1/admin/workers' && request.method === 'GET') {
-        const rows = (await store.pool.query('SELECT worker_id,draining,last_seen FROM workers WHERE tenant_id=$1 ORDER BY worker_id',[policy.tenantId])).rows;
-        send(response,200,{ data:rows.map(row => ({ workerId:row.worker_id,draining:row.draining,lastSeen:row.last_seen.toISOString() })) }); return;
+        send(response,200,{ data:await workQueries.workers(ctx) }); return;
       }
       if (url.pathname === '/v1/admin/tasks' && request.method === 'GET') {
         const rows = (await store.pool.query("SELECT task_id FROM tasks WHERE tenant_id=$1 AND scope_id=ANY($2::text[]) AND (context->>'privateOwnerId' IS NULL OR context->>'privateOwnerId'=$3)", [policy.tenantId, policy.scopes,policy.principalId])).rows;
