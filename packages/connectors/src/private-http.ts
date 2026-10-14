@@ -11,8 +11,8 @@ export async function resolveTrust(trust:Trust):Promise<{ca?:Buffer;caSha256?:st
   catch(error){if(error instanceof ApiError)throw error;throw new ApiError('SOURCE_UNREACHABLE','Runtime CA is unavailable');}
 }
 // Runtime trust is per connection. Neither redirects nor global TLS bypasses are used.
-export async function privateHttp(url:URL,options:{headers?:Record<string,string>;body:string;timeoutMs?:number;signal?:AbortSignal}&Trust):Promise<{status:number;body:any}>{
-  requireCondition(['http:','https:'].includes(url.protocol)&&!url.username&&!url.password&&(url.protocol==='https:'||['127.0.0.1','[::1]','localhost'].includes(url.hostname)),'INVALID_PAYLOAD','Remote private HTTP requires TLS');
+export async function privateHttp(url:URL,options:{headers?:Record<string,string>;body:string;timeoutMs?:number;signal?:AbortSignal;allowPlaintextAuthentication?:boolean}&Trust):Promise<{status:number;body:any}>{
+  requireCondition(['http:','https:'].includes(url.protocol)&&!url.username&&!url.password&&(url.protocol==='https:'||['127.0.0.1','[::1]','localhost'].includes(url.hostname)||options.allowPlaintextAuthentication===true),'INVALID_PAYLOAD','Remote private HTTP requires TLS');
   const {ca}=await resolveTrust(options);
   return new Promise((resolve,reject)=>{
     const request=(url.protocol==='https:'?httpsRequest:httpRequest)(url,{method:'POST',headers:{...options.headers,'content-length':Buffer.byteLength(options.body)},...(ca?{ca}:{}),rejectUnauthorized:true,signal:options.signal},response=>{

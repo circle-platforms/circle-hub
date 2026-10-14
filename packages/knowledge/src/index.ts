@@ -4,9 +4,11 @@ import type { Store, Transaction } from '../../storage/src/index.ts';
 import type { Auth } from '../../tasks/src/auth.ts';
 import type { ObjectStore } from './objects.ts';
 
+export interface SourceAccessPin {assetId:string;version:string;sha256:string}
+
 export class Knowledge {
   store: Store; auth: Auth; objects: ObjectStore;
-  sourceAccess?: (ctx:AuthContext,id:string,tx?:Transaction)=>Promise<void>;
+  sourceAccess?: (ctx:AuthContext,id:string,tx?:Transaction,pin?:SourceAccessPin)=>Promise<void>;
   constructor(store: Store, auth: Auth, objects: ObjectStore) { this.store = store; this.auth = auth; this.objects = objects; }
   sourceReference(row: Record<string, any>): any { return { sourceRevisionId: row.source_revision_id, sha256: row.sha256,
     size: Number(row.size), fileName: row.file_name, scopeId: row.scope_id }; }
@@ -32,16 +34,16 @@ export class Knowledge {
     };
     return transaction?run(transaction):this.store.transaction(run);
   }
-  async source(ctx: AuthContext, id: string, scopeId?: string, tx?: Transaction): Promise<any> {
+  async source(ctx: AuthContext, id: string, scopeId?: string, tx?: Transaction, pin?:SourceAccessPin): Promise<any> {
     const row = (await (tx ?? this.store.pool).query('SELECT * FROM sources WHERE source_revision_id=$1', [id])).rows[0];
     requireCondition(row, 'TARGET_NOT_FOUND', 'Source revision not found');
     const policy = await this.auth.check(ctx, 'sources.read', row.scope_id, tx);
     requireCondition(policy.tenantId === row.tenant_id && (!scopeId || row.scope_id === scopeId), 'FORBIDDEN_SCOPE', 'Source is outside the task partition');
-    await this.sourceAccess?.(ctx,id,tx);
+    await this.sourceAccess?.(ctx,id,tx,pin);
     return this.sourceReference(row);
   }
-  async sourceBytes(ctx: AuthContext, id: string, scopeId?: string, tx?: Transaction): Promise<{ reference: any; bytes: Buffer }> {
-    const reference = await this.source(ctx, id, scopeId, tx);
+  async sourceBytes(ctx: AuthContext, id: string, scopeId?: string, tx?: Transaction,pin?:SourceAccessPin): Promise<{ reference: any; bytes: Buffer }> {
+    const reference = await this.source(ctx, id, scopeId, tx,pin);
     const bytes = await this.objects.getObject({ Bucket: 'evidence', Key: reference.sha256 });
     requireCondition(bytes.length === reference.size, 'SOURCE_HASH_MISMATCH', 'Source size differs'); return { reference, bytes };
   }
@@ -70,15 +72,17 @@ export class Knowledge {
       [task.taskId,task.inputRevisionId,row.artifact_id,descriptor.role]);
     return this.artifactReference(row);
   }
-  async content(ctx: AuthContext, kind: 'artifact' | 'evidence', id: string): Promise<{ reference: any; bytes: Buffer }> {
+  async contentReference(ctx: AuthContext, kind: 'artifact' | 'evidence', id: string, tx?:Transaction): Promise<any> {
     const table = kind === 'artifact' ? 'artifacts' : 'evidence'; const column = kind === 'artifact' ? 'artifact_id' : 'evidence_id';
-    const row = (await this.store.pool.query(`SELECT * FROM ${table} WHERE ${column}=$1`, [id])).rows[0];
+    const row = (await (tx??this.store.pool).query(`SELECT * FROM ${table} WHERE ${column}=$1`, [id])).rows[0];
     requireCondition(row, 'TARGET_NOT_FOUND', 'Object reference not found');
-    const policy = await this.auth.check(ctx, 'evidence.read', row.scope_id);
+    const policy = await this.auth.check(ctx, 'evidence.read', row.scope_id,tx);
     requireCondition(policy.tenantId === row.tenant_id, 'FORBIDDEN_SCOPE', 'Object belongs to a different tenant');
-    const bindings=(await this.store.pool.query(kind==='artifact'?'SELECT t.* FROM artifact_bindings b JOIN tasks t USING(task_id) WHERE b.artifact_id=$1':'SELECT t.* FROM tasks t WHERE task_id=$1',[kind==='artifact'?id:row.task_id])).rows;
+    const bindings=(await (tx??this.store.pool).query(kind==='artifact'?'SELECT t.* FROM artifact_bindings b JOIN tasks t USING(task_id) WHERE b.artifact_id=$1':'SELECT t.* FROM tasks t WHERE task_id=$1',[kind==='artifact'?id:row.task_id])).rows;
     if(bindings.length)requireCondition(bindings.some(task=>(!task.context?.privateOwnerId||task.context.privateOwnerId===ctx.principalId)&&(!ctx.run||task.task_id===ctx.run.taskId||task.context?.parentRunTaskId===ctx.run.taskId)),'FORBIDDEN_SCOPE','Object is outside the readable task partition');
-    const bytes = await this.objects.getObject({ Bucket: 'evidence', Key: row.object_key });
-    return { reference: kind === 'artifact' ? this.artifactReference(row) : { sha256: row.sha256, size: Number(row.size), mediaType: 'application/json', fileName: `${id}.json` }, bytes };
+    return kind === 'artifact' ? this.artifactReference(row) : { sha256: row.sha256, size: Number(row.size), mediaType: 'application/json', fileName: `${id}.json` };
+  }
+  async content(ctx: AuthContext, kind: 'artifact' | 'evidence', id: string): Promise<{ reference: any; bytes: Buffer }> {
+    const reference=await this.contentReference(ctx,kind,id),bytes=await this.objects.getObject({Bucket:'evidence',Key:reference.sha256});return {reference,bytes};
   }
 }

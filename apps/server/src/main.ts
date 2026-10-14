@@ -2,6 +2,7 @@ import '../../../packages/contracts/src/hub-environment.ts';
 import { createServer, type IncomingMessage, type ServerResponse,type RequestListener } from 'node:http';
 import {createServer as createHttpsServer} from 'node:https';
 import {serverTLS} from './tls.ts';
+import {runRunnerCycle} from './runner-cycle.ts';
 import { setTimeout as delay } from 'node:timers/promises';
 import { mkdir,readFile } from 'node:fs/promises';
 import {randomUUID} from 'node:crypto';
@@ -87,10 +88,14 @@ import {mcpMigration} from '../../../packages/mcp/src/migration.ts';
 import {HubMcp} from '../../../packages/mcp/src/index.ts';
 import {neutralMigration,compatibilityMigration} from '../../../packages/skillpacks/src/neutral-migration.ts';
 import {HarnessPrimitives} from '../../../packages/skillpacks/src/primitives.ts';
+import {ExecutionFlows} from '../../../packages/execution/src/flow-driver.ts';
+import {executionFlowMigration} from '../../../packages/execution/src/flow-migration.ts';
+import {workerCapabilityMigration} from '../../../packages/execution/src/worker-capability-migration.ts';
+import {MODULE_EXECUTE,FlowSubmission} from '../../../packages/execution/src/flow-contracts.ts';
 
 function environment(name: string): string { const value = process.env[name]; if (!value) throw new Error(`Required environment variable: ${name}`); return value; }
 const store = new Store(JSON.parse(environment('CIRCLE_HUB_DATABASE_CONFIG')));
-await store.migrate([taskMigration,deliveryMigration,knowledgeMigration,executionMigration,...packageMigrations,approvalMigration,conclusionMigration,checklistMigration,connectorMigration,entityMigration,assetMigration,graphMigration,toolMigration,skillMigration,automationMigration,automationOutcomeMigration,knowledgePageMigration,automationOriginMigration,ingestionMigration,oauthMigration,resourceIdentityMigration,roleMigration,changeSetMigration,changeSetDependenciesMigration,enforcementMigration,sessionMigration,toolRolesMigration,readEffectMigration,readReleaseAuditMigration,notificationMigration,queryMigration,neutralMigration,mcpMigration,compatibilityMigration,readCompensationMigration,workQueryMigration,readAttributionMigration,registryPageMigration]);
+await store.migrate([taskMigration,deliveryMigration,knowledgeMigration,executionMigration,...packageMigrations,approvalMigration,conclusionMigration,checklistMigration,connectorMigration,entityMigration,assetMigration,graphMigration,toolMigration,skillMigration,automationMigration,automationOutcomeMigration,knowledgePageMigration,automationOriginMigration,ingestionMigration,oauthMigration,resourceIdentityMigration,roleMigration,changeSetMigration,changeSetDependenciesMigration,enforcementMigration,sessionMigration,toolRolesMigration,readEffectMigration,readReleaseAuditMigration,notificationMigration,queryMigration,neutralMigration,mcpMigration,compatibilityMigration,readCompensationMigration,workQueryMigration,readAttributionMigration,registryPageMigration,executionFlowMigration,workerCapabilityMigration]);
 const auth = new Auth(store,{developmentTtlMs:process.env.CIRCLE_HUB_DEV_TOKEN_TTL_MS?Number(process.env.CIRCLE_HUB_DEV_TOKEN_TTL_MS):undefined,runTokenTtlMs:process.env.CIRCLE_HUB_RUN_TOKEN_TTL_MS?Number(process.env.CIRCLE_HUB_RUN_TOKEN_TTL_MS):undefined});
 requireCondition(process.env.CIRCLE_HUB_DEV_AUTH === '1', 'INVALID_PAYLOAD', 'Phase one requires explicitly enabled development authentication');
 await auth.initializeDevelopment(environment('CIRCLE_HUB_DEV_IDENTITIES'));
@@ -106,7 +111,7 @@ const graph=new KnowledgeGraph(store,auth,knowledge);
 const sourceArtifacts=new SourceArtifacts(store,auth,assets,knowledge,graph);
 const productModules=new ProductModules(sourceArtifacts);methods.products=productModules;
 const serviceClients=new ServiceClients(store,auth,assets,Number(process.env.CIRCLE_HUB_RESOURCE_TOKEN_TTL_SECONDS??300));
-knowledge.sourceAccess=async(ctx,id,tx)=>{await entities.checkSourceAccess(ctx,id,tx);await graph.checkSourceAccess(ctx,id,tx);};
+knowledge.sourceAccess=async(ctx,id,tx,pin)=>{await entities.checkSourceAccess(ctx,id,tx);await graph.checkSourceAccess(ctx,id,tx,pin);};
 const knowledgePages=new KnowledgeRegistryPages(knowledge,graph);
 const execution = new Operations(store,auth,tasks,knowledge);
 const catalog=new ToolCatalog(store,auth,assets,tasks,execution,graph,installedToolPackages);await catalog.initialize(process.env.CIRCLE_HUB_CONNECTOR_PROFILES);
@@ -151,6 +156,11 @@ const assessments=new Assessments(store,tasks,knowledge),checklists=new Checklis
 const registry=new ConnectorRegistry(store,auth,packageConnectors);await registry.initialize();execution.connectorCheck=(tx,actor,scope,spec)=>registry.check(tx,actor,scope,spec);
 const packages=installPackages({store,auth,tasks,knowledge,execution,registry,checklists,approvals,assessments,assets,catalog,sourceArtifacts,oauth,serviceClients,changeSets,methods,executionChanges,productModules}),rules=packages.rules;
 mcp.services={...mcp.services,tasks,skills,approvals,packages};
+const flows=new ExecutionFlows({store,auth,tasks,knowledge,execution,assets,sourceArtifacts,productModules,methods,executionChanges,serviceClients},executionProfiles);
+const packagePrepare=packages.prepare;packages.prepare=async(ctx,submission,tx)=>{if(submission.capabilityPackId===MODULE_EXECUTE){submission.input=await flows.prepare(ctx,submission.scopeId,submission.input,tx);return;}return packagePrepare(ctx,submission,tx);};
+packages.descriptors.push({capabilityPackId:MODULE_EXECUTE,version:'1.0.0',flowVersion:'module-execute/1',title:'Approved product module execution',inputFormats:['product-module-flow/1'],contractVersion:'hub-execution-transition/1',requiredOperations:['flow.invoke'],conclusionScope:'bound-provider-observation',inputSchema:z.toJSONSchema(FlowSubmission,{io:'input'})} as any);
+const managedAuthorize=execution.managedAuthorization;execution.managedAuthorization=async(tx,actor,scope,spec,task)=>{if(spec.name==='flow.invoke'){const row=(await tx.query('SELECT * FROM operations WHERE task_id=$1 AND args->>\'stepKey\'=$2',[task.taskId,spec.args.stepKey])).rows[0];requireCondition(row,'SOURCE_NOT_APPROVED','Flow step is not registered');return {sourceEffect:row.source_effect,effects:row.effects};}return managedAuthorize?.(tx,actor,scope,spec,task);};
+
 
 let closing = false;
 const shutdownSignal=new AbortController();
@@ -420,7 +430,7 @@ const server = createListener(async (request, response) => {
       }
     }
     if (url.pathname === '/v1/workers/register' && request.method === 'POST') {
-      await body(request); send(response,200,{ data:await execution.register(ctx) }); return;
+      const registration=await body(request); send(response,200,{ data:await execution.register(ctx,registration) }); return;
     }
     if (url.pathname === '/v1/workers/claim' && request.method === 'POST') {
       const input=z.object({exclude:z.array(StandardOperation).max(10).default([])}).parse(await body(request));send(response,200,{ data:await execution.claim(ctx,input.exclude) }); return;
@@ -441,9 +451,9 @@ const server = createListener(async (request, response) => {
         }
         if(action==='events'){const event=z.object({fencingToken:z.number().int().positive(),inputRevisionId:InputRevisionId,event:z.record(z.string(),z.unknown())}).parse(input),name=(await store.pool.query('SELECT name FROM operations WHERE operation_id=$1',[id])).rows[0]?.name;send(response,200,{data:execution.customEvents.has(name)?await execution.event(ctx,id,event.fencingToken,event.inputRevisionId,event.event):await skills.event(ctx,id,event.fencingToken,event.inputRevisionId,event.event)});return;}
         if(action==='local-stopped'){const stopped=z.object({fencingToken:z.number().int().positive(),inputRevisionId:InputRevisionId,localExitObserved:z.literal(true)}).parse(input);send(response,200,{data:await skills.stopped(ctx,id,stopped)});return;}
-        const fence = z.object({ fencingToken:z.number().int().positive() }).parse(input).fencingToken;
+        const checkedInput=z.object({fencingToken:z.number().int().positive(),lightweight:z.boolean().optional()}).parse(input),fence=checkedInput.fencingToken;
         if (action === 'heartbeat') send(response,200,{ data:await execution.heartbeat(ctx,id,fence) });
-        else { const checked = await execution.preflight(ctx,id,fence); send(response,200,{ data:{ authorized:true,inputRevisionId:checked.task.inputRevisionId,source:checked.source,authorization:checked.authorization } }); }
+        else { const checked = await execution.preflight(ctx,id,fence,undefined,checkedInput.lightweight===true); send(response,200,{ data:{ authorized:true,inputRevisionId:checked.task.inputRevisionId,source:checked.source,authorization:checked.authorization } }); }
         return;
       }
     }
@@ -501,7 +511,7 @@ server.requestTimeout = 10_000; server.headersTimeout = 10_000;
 let running: Promise<void> | undefined;let lastRetention=0;
 const timer = setInterval(() => {
   if (running || closing) return;
-  running = tasks.runOnce().then(()=>packages.runOnce()).then(()=>automations.tick()).then(()=>changeSets.tick()).then(()=>executionSecrets.tick()).then(async()=>{if(Date.now()-lastRetention>=60000){await store.transaction(tx=>trimOutbox(tx));lastRetention=Date.now();}}).catch(error => { console.error(JSON.stringify({type:'runner-transaction-failed',code:error instanceof ApiError?error.code:(error as any).code??'INTERNAL_ERROR'})); }).finally(() => { running = undefined; });
+  running = runRunnerCycle([{name:'tasks',run:()=>tasks.runOnce()},{name:'execution-flows',run:()=>flows.runOnce()},{name:'capability-packs',run:()=>packages.runOnce()},{name:'automations',run:()=>automations.tick()},{name:'change-sets',run:()=>changeSets.tick()},{name:'execution-secrets',run:()=>executionSecrets.tick()},{name:'outbox-retention',run:async()=>{if(Date.now()-lastRetention>=60000){await store.transaction(tx=>trimOutbox(tx));lastRetention=Date.now();}}}],(runner,error)=>console.error(JSON.stringify({type:'runner-transaction-failed',runner,code:error instanceof ApiError?error.code:'INTERNAL_ERROR'}))).finally(() => { running = undefined; });
 }, Number(process.env.CIRCLE_HUB_POLL_MS ?? 100));
 let indexing:Promise<void>|undefined;
 const indexTimer=setInterval(()=>{if(indexing||closing)return;indexing=ingestions.runOnce().catch(error=>{console.error(JSON.stringify({type:'source-index-transaction-failed',code:error instanceof ApiError?error.code:'INTERNAL_ERROR'}));}).finally(()=>{indexing=undefined;});},Number(process.env.CIRCLE_HUB_INDEX_POLL_MS??100));

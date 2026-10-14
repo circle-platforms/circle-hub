@@ -88,6 +88,8 @@ export class Harness {
   autoRuntimeProfiles=true;
   autoMethodProfiles=true;
   autoHooks=true;
+  methodAssetIds=new Map<string,string>();
+  approvedMethodAssetId(capabilityPackId='apv-case-execute',scope='scp_lab'){const id=this.methodAssetIds.get(`${scope}/${capabilityPackId}`);assert.ok(id,'The synthetic execution fixture must explicitly select its approved method');return id;}
   constructor(scratch: string, postgres: EmbeddedPostgres, db: pg.Pool, env: NodeJS.ProcessEnv) {
     this.scratch = scratch; this.postgres = postgres; this.db = db; this.env = env;
   }
@@ -108,10 +110,12 @@ export class Harness {
     if(this.autoMethodProfiles&&this.env.CIRCLE_HUB_EXECUTION_GATEWAYS)await this.approveMethods();
   }
   async approveMethods(scope='scp_lab',reviewer='bob',owner='admin'){
-    if(this.autoHooks){const fixture=await hookModule(),existing=(await this.db.query("SELECT a.asset_id,v.lifecycle FROM assets a JOIN asset_versions v ON v.asset_id=a.asset_id AND v.version=a.current_version WHERE a.scope_id=$1 AND v.configuration->'metadata'->'module'->>'id'=$2",[scope,fixture.module.id])).rows[0];if(!existing){const response=await this.raw('/v1/modules/install',{token:await this.login(owner),body:fixture,headers:{'x-scope-id':scope}});assert.equal(response.status,201,JSON.stringify(response.body));const asset=await this.request(`/v1/assets/${response.body.data.assetId}`,undefined,owner);await this.request(`/v1/assets/${asset.assetId}/lifecycle`,{version:asset.version,sha256:asset.sha256,state:'approved'},reviewer);}}
-    for(const method of await this.request('/v1/packs',undefined,owner)){if(!method.implementationSha256)continue;const assetId=`ast_${canonicalHash([scope,method.capabilityPackId,method.implementationSha256]).slice(0,32)}`,old=(await this.db.query('SELECT lifecycle FROM asset_versions WHERE asset_id=$1 AND version=$2',[assetId,method.version])).rows[0];if(old?.lifecycle==='approved'||old?.lifecycle==='running')continue;
+    let hookAssetId:string|undefined;
+    if(this.autoHooks){const fixture=await hookModule(),existing=(await this.db.query("SELECT a.asset_id,v.lifecycle FROM assets a JOIN asset_versions v ON v.asset_id=a.asset_id AND v.version=a.current_version WHERE a.scope_id=$1 AND v.configuration->'metadata'->'module'->>'id'=$2",[scope,fixture.module.id])).rows[0];if(!existing){const response=await this.raw('/v1/modules/install',{token:await this.login(owner),body:fixture,headers:{'x-scope-id':scope}});assert.equal(response.status,201,JSON.stringify(response.body));const asset=await this.request(`/v1/assets/${response.body.data.assetId}`,undefined,owner);await this.request(`/v1/assets/${asset.assetId}/lifecycle`,{version:asset.version,sha256:asset.sha256,state:'approved'},reviewer);hookAssetId=asset.assetId;}else hookAssetId=existing.asset_id;}
+    for(const method of await this.request('/v1/packs',undefined,owner)){if(!method.implementationSha256)continue;const assetId=`ast_${canonicalHash([scope,method.capabilityPackId,method.implementationSha256]).slice(0,32)}`,old=(await this.db.query('SELECT lifecycle FROM asset_versions WHERE asset_id=$1 AND version=$2',[assetId,method.version])).rows[0];this.methodAssetIds.set(`${scope}/${method.capabilityPackId}`,method.capabilityPackId==='apv-case-execute'&&hookAssetId?hookAssetId:assetId);if(old?.lifecycle==='approved'||old?.lifecycle==='running')continue;
       const asset=await this.request('/v1/assets',{assetId,scopeId:scope,kind:'knowledge-source',name:'Synthetic installed Tool',version:method.version,declaration:{reads:['method-parameters'],writes:['artifacts-evidence'],credentials:[]},configuration:{schema:'hub-tool-implementation/1',capabilityPackId:method.capabilityPackId,flowVersion:method.flowVersion,implementationSha256:method.implementationSha256},readers:['*']},owner);await this.request(`/v1/assets/${asset.assetId}/lifecycle`,{version:asset.version,sha256:asset.sha256,state:'approved'},reviewer);
     }
+    return this.methodAssetIds.get(`${scope}/apv-case-execute`);
   }
   // Synthetic fixtures explicitly submit and independently decide their runtime
   // settings. The production server never approves runtime configuration.

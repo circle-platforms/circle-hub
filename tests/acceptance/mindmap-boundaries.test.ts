@@ -14,7 +14,16 @@ async function claim(h: Awaited<ReturnType<typeof setup>>): Promise<any> {
 }
 
 test('worker receipts require independently matching workbook bytes and a stable repeated report', async t => {
-  const h = await setup(t); await h.request('/v1/workers/register',{ workerId:'forged-worker' },'lab-east-01');
+  const h = await setup(t);
+  // Registration rejects unknown keys; worker identity comes only from the authenticated token.
+  const rejected = await h.reject('/v1/workers/register',{ workerId:'forged-worker' },'INVALID_PAYLOAD','lab-east-01');
+  assert.equal(rejected.details.issues[0].code,'unrecognized_keys');
+  assert.equal((await h.db.query('SELECT 1 FROM workers WHERE worker_id=ANY($1::text[])',[['forged-worker','lab-east-01']])).rowCount,0);
+  const registered = await h.request('/v1/workers/register',{},'lab-east-01');
+  assert.equal(registered.workerId,'lab-east-01');
+  assert.deepEqual((await h.db.query('SELECT worker_id,principal_id FROM workers WHERE worker_id=$1',['lab-east-01'])).rows,
+    [{ worker_id:'lab-east-01',principal_id:'prn_lab-east-01' }]);
+  assert.equal((await h.db.query('SELECT 1 FROM workers WHERE worker_id=$1',['forged-worker'])).rowCount,0);
   const source = await upload(h,'A');
   const task = await h.request('/v1/tasks/submit',{ scopeId:'scp_lab',capabilityPackId:'mindmap-compile',input:{ sourceRevisionId:source.sourceRevisionId },idempotencyKey:'receipt-binding' });
   const work = await claim(h); assert.equal(work.taskId,task.taskId);

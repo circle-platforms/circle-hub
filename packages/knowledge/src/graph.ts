@@ -2,7 +2,7 @@ import {ApiError,Base64Content,MAX_SOURCE_BYTES,canonicalHash,canonicalJson,newI
   KnowledgeSourceInput,KnowledgeEvidenceInput,KnowledgeEntityInput,KnowledgeClaimInput,KnowledgeReviewInput,KnowledgeSnapshotInput} from '../../contracts/src/index.ts';
 import type {Store,Transaction} from '../../storage/src/index.ts';
 import type {Auth} from '../../tasks/src/auth.ts';
-import type {Knowledge} from './index.ts';
+import type {Knowledge,SourceAccessPin} from './index.ts';
 import {z} from 'zod';
 
 type Row=Record<string,any>;
@@ -20,19 +20,33 @@ export class KnowledgeGraph {
     while(queue.length){const current=queue.shift()!;for(const id of current.reference_ids){if(seen.has(id))continue;const next=await this.row(id,tx);requireCondition(next,'SOURCE_HASH_MISMATCH','Knowledge reference is missing');seen.set(id,next);queue.push(next);}}
     return [...seen.values()];
   }
-  async visible(ctx:AuthContext,row:Row|undefined,tx?:Transaction):Promise<boolean>{
+  async pinnedSource(ctx:AuthContext,source:Row,pin:SourceAccessPin|undefined,tx?:Transaction):Promise<Row|undefined>{
+    if(!pin||source.payload.asset?.assetId!==pin.assetId)return;
+    const row=(await(tx??this.store.pool).query(`SELECT a.*,v.*,live.readers AS live_readers FROM assets a JOIN asset_versions v USING(asset_id)
+      LEFT JOIN LATERAL(SELECT readers FROM asset_versions WHERE asset_id=a.asset_id AND lifecycle IN ('approved','running') AND approved_digest=sha256 ORDER BY created_at DESC,version DESC LIMIT 1) live ON true
+      WHERE a.asset_id=$1 AND v.version=$2`,[pin.assetId,pin.version])).rows[0];
+    const file=row?.configuration?.files?.find((entry:any)=>entry.sourceRecordId===source.record_id);
+    // Only an original explicitly listed by this frozen artifact uses its pin.
+    // Independent bases and other records keep their ordinary live authority.
+    if(!file)return;
+    if(row.tenant_id!==ctx.tenantId||row.scope_id!==source.scope_id||row.kind!=='knowledge-source'||row.configuration.schema!=='external-source-artifact/1'||row.sha256!==pin.sha256||row.approved_digest!==row.sha256||!['approved','running'].includes(row.lifecycle)||!row.live_readers)this.denied();
+    if(source.kind!=='SourceRevision'||source.knowledge_category!=='product'||source.sha256!==file.sha256||source.payload.raw?.sourceRevisionId!==file.sourceRevisionId||source.payload.raw?.sha256!==file.sha256||source.payload.raw?.size!==file.size||source.payload.path!==`/${file.path}`)throw new ApiError('SOURCE_HASH_MISMATCH','Frozen original record differs from the approved artifact');
+    if(row.owner_principal_id!==ctx.principalId&&(!permit(row.readers,ctx.principalId)||!permit(row.live_readers,ctx.principalId)))this.denied();return row;
+  }
+  async visible(ctx:AuthContext,row:Row|undefined,tx?:Transaction,pin?:SourceAccessPin):Promise<boolean>{
     if(!row)return false;const p=await this.auth.check(ctx,'knowledge.read',undefined,tx);
     if(row.tenant_id!==p.tenantId||!p.scopes.includes(row.scope_id)||row.visibility==='personal'&&row.owner_id!==p.principalId)return false;
     for(const source of (await this.closure(row,tx)).filter(x=>x.kind==='SourceRevision')){
       if(source.tenant_id!==p.tenantId||!p.scopes.includes(source.scope_id)||source.visibility==='personal'&&source.owner_id!==p.principalId)return false;
-      const current=(await (tx??this.store.pool).query(`SELECT r.* FROM knowledge_source_heads h JOIN knowledge_records r USING(record_id)
+      const frozen=await this.pinnedSource(ctx,source,pin,tx);
+      const current=frozen?source:(await (tx??this.store.pool).query(`SELECT r.* FROM knowledge_source_heads h JOIN knowledge_records r USING(record_id)
         WHERE h.tenant_id=$1 AND h.scope_id=$2 AND h.identity_key=$3`,[source.tenant_id,source.scope_id,source.payload.sourceIdentity])).rows[0];
       if(!current)return false;
       for(const revision of [source,current])if(!permit(revision.payload.acl.sourceReaders,p.principalId)||!permit(revision.payload.acl.platformReaders,p.principalId))return false;
       let asset=source.payload.asset;
       // Older retained tool sources also obey the current asset's reader policy.
       if(!asset&&source.payload.parserVersion==='tool-return/1')try{const key=JSON.parse(source.payload.sourceId);if(Array.isArray(key)&&typeof key[0]==='string'&&key[0].startsWith('ast_'))asset={assetId:key[0]};}catch{/* A manually ingested source has no implicit asset binding. */}
-      if(asset){const authority=(await (tx??this.store.pool).query(`SELECT a.tenant_id,a.scope_id,a.owner_principal_id,v.readers,v.declaration FROM assets a JOIN asset_versions v ON v.asset_id=a.asset_id AND v.version=a.current_version WHERE a.asset_id=$1`,[asset.assetId])).rows[0];
+      if(asset){const authority=frozen??(await (tx??this.store.pool).query(`SELECT a.tenant_id,a.scope_id,a.owner_principal_id,v.readers,v.declaration FROM assets a JOIN asset_versions v ON v.asset_id=a.asset_id AND v.version=a.current_version WHERE a.asset_id=$1`,[asset.assetId])).rows[0];
         if(!authority||authority.tenant_id!==p.tenantId||!p.scopes.includes(authority.scope_id)||authority.owner_principal_id!==p.principalId&&!permit(authority.readers,p.principalId)||asset.permission&&!p.grants.includes(asset.permission))return false;
         for(const reference of authority.declaration.credentials){
           const credential=(await (tx??this.store.pool).query(`SELECT a.tenant_id,a.scope_id,a.owner_principal_id,v.lifecycle,v.configuration FROM assets a JOIN asset_versions v ON v.asset_id=a.asset_id AND v.version=a.current_version WHERE a.asset_id=$1 AND a.kind='credential-reference'`,[reference])).rows[0];
@@ -41,7 +55,7 @@ export class KnowledgeGraph {
       }
     }return true;
   }
-  async get(ctx:AuthContext,id:string,tx?:Transaction):Promise<any>{const row=await this.row(id,tx);if(!await this.visible(ctx,row,tx))this.denied();return this.view(row!);}
+  async get(ctx:AuthContext,id:string,tx?:Transaction,pin?:SourceAccessPin):Promise<any>{const row=await this.row(id,tx);if(!await this.visible(ctx,row,tx,pin))this.denied();return this.view(row!);}
   async content(ctx:AuthContext,id:string):Promise<any>{
     const row=await this.row(id);if(!await this.visible(ctx,row))this.denied();
     requireCondition(['SourceRevision','Evidence','KnowledgeSnapshot'].includes(row!.kind),'INVALID_PAYLOAD','This record has no original byte content');
@@ -256,8 +270,8 @@ export class KnowledgeGraph {
     const items=[];for(const row of visible.slice(0,query.limit))items.push({...this.view(row),snapshotId:row.state==='candidate'?null:row.snapshot_id,conflicts:await this.conflicts(ctx,row,tx)});
     return {items,total:visible.length,coverage:{authorizedScopes:p.scopes,retrieval:query.mode,missingEvidence:'No hit does not establish absence'}};
   });}
-  async checkSourceAccess(ctx:AuthContext,sourceId:string,tx?:Transaction):Promise<void>{
+  async checkSourceAccess(ctx:AuthContext,sourceId:string,tx?:Transaction,pin?:SourceAccessPin):Promise<void>{
     const rows=(await (tx??this.store.pool).query("SELECT * FROM knowledge_records WHERE kind='SourceRevision' AND payload->'raw'->>'sourceRevisionId'=$1",[sourceId])).rows;
-    if(!rows.length)return;for(const row of rows)if(await this.visible(ctx,row,tx))return;this.denied();
+    if(!rows.length)return;for(const row of rows)if(await this.visible(ctx,row,tx,pin))return;this.denied();
   }
 }

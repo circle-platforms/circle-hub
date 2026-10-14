@@ -109,7 +109,7 @@ D 的可证终态必须先独立持久化，再交给产品 Tool 解释。远端
 
 新受理解析最新可用的 approved / running 修订，存在多个可用实现时要求显式绑定，不能依赖 SQL 返回顺序。草稿登记不改变已批准实现；新批准版本可供新任务选择，但不修改旧任务的绑定。运行中按冻结 pin 读取该历史批准修订，旧修订仍可用就继续；旧修订停用或其批准摘要不再成立才停止新的派发，已派发后的不确定结果仍按 unknown 处理。
 
-这是现有实现的缺口：`ProductModules.load` 及 `SourceArtifacts.snapshot` 当前沿 `assets.current_version` 取原件，`ToolProviders.resolve` 也按当前版本查模块。迁移前必须提供内部的历史批准修订解析，不能仅保存 `methodAssetId` 后每次读 current。不得因新草稿或模块安装而让已派发任务改读新 parser。
+这是设计提出时的缺口：`ProductModules.load` 及 `SourceArtifacts.snapshot` 原先沿 `assets.current_version` 取原件，不能仅保存 `methodAssetId` 后每次读 current。A1 已补内部精确批准 pin 读取；指定资产版本与 SHA 可锁住历史批准修订，不指定 pin 则取该资产最新 approved / running 修订，同时重核当前权限与 readers。后续驱动器仍须把冻结 pin 持久绑定并传给装载入口，不能因新草稿或模块安装而让已派发任务改读新 parser；原生旧任务路径未迁移。
 
 ## 现网任务的迁移路径
 
@@ -141,7 +141,88 @@ D 的可证终态必须先独立持久化，再交给产品 Tool 解释。远端
 
 meridian 现有 `tools/project.ts`、五个 Hook、`flows/fixture.json` 与资源夹具只有装载验收，不足以证明执行流迁移。后续将其扩成完整合成执行流程，至少覆盖准备、派发、终态与未知核对，使用自己的命令与结果格式；同一套驱动器也完成 APV 流程。验收必须断言 APV 旧入口未参与 meridian 运行，不能只检查清单能加载。
 
-本轮到设计复核为止。内部 transition 契约及独立包的新版本由维护者确认，并获得实施授权后才进入代码迁移；本轮不提前实施。
+本文的主体迁移设计及 A2 契约已获维护者复核通过。A3 已授权，只用 Meridian 与另一份完全合成模块证明通用驱动，不实施 APV 新产品代码；B 产品执行流迁移由独立包负责，C/D 尚未授权。旧任务仍不改数据库重绑。
+
+## 附录 A2：有界 transition 内部契约
+
+`packages/contracts/src/execution-transition.ts` 提供 schema factory，由 F 的 index 在共享 ID、SHA、散列与错误定义初始化后实例化导出。文件仅依赖 zod，不反向 import B、D、E。`ExecutionTransitionAssetPin` 的字段与 A1 的 `AssetRevisionPin` 同形：`{assetId, version, sha256, digest?}`；资产身份不另定义。方法 pin 另带能力 id、流程版本和执行实现摘要。此处只定义和验证数据，不注册驱动器、HTTP 路由、Hook 或能力，不改变原生 `1.1.1` 的字节与摘要。
+
+输入为 `{schema, binding, currentInput, state, observations, controlledBytes}`，输出为 `{schema, state, actions}`，schema 固定为 `hub-execution-transition/1`。binding 带 taskId、inputRevisionId、inputSha256、method pin 及按键命名的 resource / source pin。currentInput 为 `{value, sha256}`：value 由 C 按本任务不可变 inputRevisionId 读取、核对归属和权限后注入，`canonicalHash(value)` 必须同时等于 currentInput.sha256 与 binding.inputSha256。自报值和摘要相等只证明内部一致性，不证明它属于该修订；后续驱动器必须向 C 重核，不能信任客户端自配的摘要。工作簿在输入中使用 B 原件引用，不把全文塞 JSON。state、当前输入 value、facts、args、subject 与结果候选只能是有限 JSON；不接受 NaN / Infinity、undefined、BigInt、函数、class / Date / Map 实例、循环、稀疏数组、符号、访问器、原型键或 JSON 序列化会丢掉的属性。产品不能借状态修改 hub phase。
+
+所有动作的顶层对象严格校验，都带 `stepId / occurrence`；同一输出内不能重复这个步骤身份：
+
+| kind | 专属字段 | 后续驱动器必须核验的边界 |
+|---|---|---|
+| `tool.call` | `path, export, args, byteSlots?` | 路径与相对依赖属于冻结模块的 `tools[]`，导出可用；受控槽存在且只读授权原件 |
+| `provider.call` | `resource, tool, args, byteArgs?` | resource 来自本次冻结绑定，Tool 在批准 provider 的 provides 中；实时权限、effect、minimumRole、输入 schema 和摘要均成立；byteArgs 参数由授权 B 原件填入，不能覆盖 args |
+| `operation.wait` | `operationId` | 原操作属于本任务 / 当前修订，读取原观察，不重新提交写动作 |
+| `hook.verify` | `event, subject` | event 仅五个现有挂点；继续用现有 `validateHookInput` 核对精确 subject，由 hub 注入批准 binding |
+| `outcome.error` | `code, facts` | code 已登记；事实可回到冻结原件；不能据产品自报决定 D unknown 或冻结资源 |
+| `delivery.propose` | `status, result, references` | status 只有 succeeded / partial；候选结果和 B 引用都经证据与交付项核验，不直接交付 |
+
+上述对象不提供 endpoint、凭据、密钥、CA、effect、fence、批准决定或冻结指令字段。`args` 仍可包含合法的产品数据和日志字符串，A2 不用危险禁词推测其语义；schema 合格不代表允许派发，A3 才根据已绑定 provider 的输入结构和执行链核验实际动作。Hook 的有界 JSON subject 同样不是允许任意形状派发。
+
+`provider.call.byteArgs` 是可选的 `{参数名: slot}`。例如 `{payload_b64:"payload"}` 只声明对应原件槽，不让模型或 transition 复制 base64。参数名非空，符合普通 JSON 键预算，排除控制字符与 `__proto__ / constructor / prototype` 这类原型注入键；合法的实际参数名称仍由 provider 的 inputSchema 决定。byteArgs 与 args 有同名字段即拒绝，驱动器不能覆盖原参数。普通 args 中超过 32 KiB 的 base64 与其它长字符串一样拒绝，不通过 byteArgs 扩大普通 JSON 预算。真正派发前由 hub 从 B 按当前权限、批准来源 pin 和 SHA 读取原件，填入对应参数，再核对 provider 输入结构及完整 wire；读到原件并不等于获得运行权限。
+
+observations 为 `{operationId, reference, facts}`。原件 reference 是四种严格形状之一：sourceRevisionId / artifactId / evidenceId / recordId，加 kind、sha256、size；没有客户端下载 URL。controlledBytes 的每个槽为 `{slot, role, encoding:"base64", reference, contentBase64}`，slot 唯一，base64 必须规范，解码长度与 reference.size 一致，原字节 SHA 与 reference.sha256 一致。role 对应模块需要的原件角色；A3 还必须核对这些引用属于已批准来源的原件清单、满足当前授权、且字节确实由 B 读取。客户端自己构造一份 SHA 正确的 JSON 不能获得原件权限。
+
+受控日志字节可以包含解析所需的地址文本；纯 Tool 没有网络能力，不能把它改成节点连接目标。若采用脱敏 facts，环境与日志的设备标识必须仍能一致匹配。observations.facts 中出现 `terminal`、`pass` 等字符串也只是一份待解释数据；D 终态须由 hub 对绑定 provider 的原始回报、原操作、工作簿与远端任务身份核实并持久化，不能由客户端或产品 Tool 自证。解析失败不改变这个已证终态。
+
+下表是授权输入清单，不是新的产品专用 schema。role 由模块声明，hub 将对应 B 引用及必要字节放到受控槽；只有 hub 重核后的 facts 才能作为执行链事实，合同字段合格不代替核验：
+
+| 消费者 | 可接收的授权 B 原件 | 必要事实与排除项 |
+|---|---|---|
+| 环境解析 Tool | env_prepare、bed_topology 的冻结返回 | 任务 / 输入修订、冻结方法 / 来源 / 资源 pin、绑定工作簿 SHA、远端任务身份（若已存在）；构建与设备映射所需的原始字段或一致脱敏标识。没有凭据、网络端点、CA 文件路径或可调用句柄 |
+| 结果解析 Tool | case_submit / case_status / case_results 原始返回、每案 log / sessions、工作簿；需要解释核对时可按角色读 command-check 原件 | 任务 / 修订、远端 id、工作簿 SHA、冻结 pin，以及 D 独立核实并持久化的终态、远端租约释放事实；缺失字段留下未映射。sessions 在本批未覆盖，不宣称其原始形状已验收 |
+| transition Tool | 上述 B 原件的引用与已核对事实；确需格式解释时显式选择受控字节槽，command-check 不内嵌进 state | 步骤身份、冻结绑定、原操作观察、D 终态 / 租约状态。只提出动作和解释候选，不取得密钥、租约 token、端点、CA 或 provider 对象 |
+
+步骤 key 由 hub 派生为 `canonicalHash({taskId, inputRevisionId, methodPinDigest, flowVersion, stepId, occurrence})`，其中 methodPinDigest 是冻结方法 pin 的 canonicalHash，flowVersion 必须与该方法一致。产品不能指定原始 key 或自行跳到另一 occurrence。请求摘要另覆盖 frozen binding（包括 inputSha256）与 action（含 args），参数变化不能通过把 argsDigest 放进 key 变成另一笔写操作；currentInput.value / sha256 也不掺进 key，修订身份由 C 维护不变性。重复 key 的异内容由后续持久驱动器以 `IDEMPOTENCY_MISMATCH` 拒绝；A2 只提供两种散列的合同函数，没有建立步骤存储或派发入口。
+
+`executionTransitionRequestHash(binding, action, byteBindings?)` 的第三参可提供仅引用的 `{slot, role, reference}`，也兼容完整 controlled entry；有正文时仍核对规范 base64、解码大小和 SHA。provider.byteArgs 与 tool.byteSlots 引用的每个槽都必须在其中；重复槽、缺槽、错 SHA 或总量超现有 8 MiB 上限拒绝。散列加入所用槽的 role 和 reference（kind、原件 id、sha256、size），不加入 base64 正文；同名槽换原件会改变 requestHash，未用且合法的槽不改变它。后续驱动器从授权 B 查询得到仅引用的绑定即可计算散列，不必把大原件送进 transition；客户端自己声明的 ref 不因此变成已授权原件。step key 的组成保持不变。
+
+### 数字来源与初版预算
+
+维护者对真实 21 案批次只提供数字统计；没有提供原件内容、真实地址或业务字段。gateway-results 原字节 149702，其中 results 147339、environment 670、status 958、submit 688；topology 9970，workbook 7209，解释产物 119582。逐案日志 UTF-8 最大 10234 / 合计 106734，JSON 转义后最大 10420 / 合计 109125，最多 167 行、最长行 127 字节。本批共 119 步、216 条设备命令、21 条主机命令、26 个检查点；每案最多 7 步、23 条设备命令、1 条主机命令、2 个检查点。最高 JSON 深度为 7，最大数组为 216。command-check 原件 4219626，其中两个 raw base64 段为 2577744、1527460；剩余部分 114422。
+
+`pow2ceil(n)=2^ceil(log2(n))`。JSON 字节与深度预算先留两倍余量，再进二次幂档位；数组按实测最大项数、受控字节按所列原件总量进档位。具体公式如下，这是一组可复核的容量选择，不把单个样本当成所有合法批次的最大规模：
+
+| 预算 | 派生公式 | 初版上限 |
+|---|---|---|
+| state JSON 总字节 | `pow2ceil(2 * 114422)` | 262144（256 KiB） |
+| input metadata 总字节 | `pow2ceil(2 * 208866)` | 524288（512 KiB） |
+| output protocol 总字节 | `pow2ceil(2 * 119582)` | 262144（256 KiB） |
+| 普通 JSON 字符串 / 键的 UTF-8 字节 | `pow2ceil(2 * 10420)` | 32768（32 KiB） |
+| 每个数组 / 单批动作条数 | `pow2ceil(216)` | 256 |
+| JSON 总深度 | `pow2ceil(2 * 7)` | 16 |
+| controlled 解码字节总量（单件也受此限） | `pow2ceil(149702 + 9970 + 7209 + 4219626)` | 8388608（8 MiB） |
+
+208866 是 **请求估算**：38846 冻结源码原字节加 170020 参数 JSON；未计源码 JSON 转义与实际信封。119582 是解释文件原字节，不是已经测得的 stdout 信封大小。预算不以这两个估算代替实际 wire 校验。样本含中文与转义字符，NUL / 其它控制字节为零，合同用例也覆盖 UTF-8 而不只用字符长度。
+
+metadata 预算包含完整输入中除 controlled contentBase64 之外的字段：绑定、currentInput 的 value / sha256、state、facts、身份和原件指针；state 是其子预算，不额外叠加。controlled 的 base64 不被普通字符串 32 KiB 上限误拒，但规范 base64、逐槽解码长度、SHA、8 MiB 解码合计仍逐项核对。command-check 的 XML/base64 留在 B，不能随 transition state 每轮复制增长。输出预算包含完整 output，不能把每个动作预算相乘成无界容量。
+
+所有新预算还须同时满足现有 Tool 宿主 **24 MiB 输入 / 16 MiB 输出**。准确序列化后的 wire 要包括冻结 files、imports、base64、参数和信封全部 UTF-8 字节；`checkExecutionTransitionWire` 只接收实际字符串或 Uint8Array，采用固有长度读取而不是任意对象自报 byteLength，单独核验真实字节数，不以源码字节加 args 的估算代替。各个分预算合格不保证同时装满也能通过总 wire，超出时拒绝，不截断、不改生产通道上限、不回退到无隔离进程。
+
+B 的 16 MiB 上传上限不意味着每个 Tool 或受控槽都能容纳这么大的原件；这里的 8 MiB 原件合计、32 KiB 普通字符串与其它七项预算不因 byteArgs 改变。provider 字节映射从 B 的已核对引用读取，而非让模型把上传内容复写到 args；解析 Tool 确需完整字节时仍通过有界 controlledBytes，不能借仅引用散列绕过内容读取与 wire 限制。
+
+该批 **没有 sessions 字段**，不代表 sessions 合法容量为零，也不证明已覆盖其真实形状。A2 不加入 session / 设备专用容量假设，使用受控字节与通用 JSON 预算；超过预算按解释失败披露，已证 D 终态不受影响。更大结果的分批或范围输入属于后续独立设计与验收。
+
+可导出的 JSON Schema 描述严格字段、动作联合、数组和字符结构；UTF-8 总字节、普通对象/循环检查、canonical base64、解码 SHA 和注册错误码还要由同一合同解析器核验。A2 的合成边界验证不是执行链验收；没有跑通驱动器、对接实际设备或取得部署成功的结论。
+
+## 附录 A3：通用驱动接入与证据边界
+
+驱动入口是既有任务提交路径的 `module-execute` 能力，不借产品名分派。C 保存 flow_runs / flow_steps，定义与状态、步骤 key / requestHash、操作 / fence、派发意图、原远端身份、原件引用和终态分别持久。真实 worker 经已冻结 tools[] 的 import 边界运行 transition / 纯 Tool / Hook；只有通用 provider 连接器可以取运行 profile 和注入凭据。operation.wait 只读取本任务同修订的原操作，不注册另一笔远端写。
+
+资源声明使用已有 connector-instance、runtime-profile 与凭据登记。`hub-provider/1` 的 receiptPolicy 是受批准的通用协议数据：有限 Tool 名单、入参 / 回报 schema、状态词表、身份与摘要字段路径、租约和派发前拒绝字段路径。hub 不解释设备名、工作簿函数或产品日志；它机械核对 worker 观察的 provider 回报与原请求身份。effect / minimumRole 来自资源已批准 provides，不能被产品动作或远端目录悄悄改写。实际接口形状见 [交接文档](../client-api-handoff.md#a3通用模块执行与受控原件)及 [驱动数据契约](../../packages/execution/src/flow-contracts.ts)。
+
+原件进入网络参数前由 C/D 按 B 清单与当前权限重新取字节、核 SHA / 大小，byteArgs / byteSlots 只引用受控槽。派发意图先持久；失联时不使用步骤重试去重放写动作。未知写及独立核对失败保留冻结，明确未派发的失败与读取超时不冻结。执行变更的申请内容含实际 Tool、字面参数摘要、原件引用和三类 pin，独立批准仅消费一次；默认资源仍不产生审批。
+
+写出口强制执行已附 beforeDispatch Hook，并在意图前绑定实际资源、输入、操作与通过证据；产品省略 Hook 动作不构成豁免。afterResult 的实际成功回执同时关联终态原操作与最终交付候选的 canonical SHA，每个已声明挂点对应的写都须核验整份候选，不能验证甲正文后交付乙正文。未附处理器时仍不添加缺省规则。独立核对的证据保留真实子操作身份，产品逻辑步骤继续指向原操作。租约过期的统一处理器按 Store 实例共享，避免同库其它运行器绕过通用终态 / 意图分类；带处理器的路径按 task → operation → flowrun 锁序推进。
+
+观察终态与取得结果正文是两个不同事实。status 回报已满足批准的终态与身份核验时先保存 D 终态，再取结果和解释；后续失败保留真实解释错误，不把 status 内容当成结果或生成默认成功行。provider 的解析后 JSON 以 canonicalJson 原字节留 B，worker 事件和回报用绑定操作 / stage 的指针；C 回读核 SHA / 大小。原件、大文本 / NUL 的小投影和产品解释各自保留身份，既不把正文写进 JSONB，也不以脱敏预览覆盖原件。这个 canonical 化是明确的转换，不宣称保留了原 HTTP wire 的空白与字段顺序。
+
+方法摘要的版本化算法覆盖冻结模块 digest、flow、驱动版本与支持的精确依赖版本；模块清单已覆盖 Tool / Hook / 相对依赖的完整文件集合。批准历史 pin 与最新批准 readers 的交集继续逐次核验，草稿不改运行绑定；新受理要显式选方法，旧任务不自动升级。运行资源和 runtime-profile 也冻结实际修订，不把配置文件存在当作批准。单 run 转换次数与总步骤数使用已有 256 项预算，超限解释失败，不无限产生空转换。
+
+A3 的验收前提仍是 macOS seatbelt、临时 PostgreSQL 和合成网关。两份合成模块分别冻结 / 批准 / 停用并交替执行，只证明此通用驱动与它们的协议；原生 1.1.1、APV 新模块、真实设备、真实模型及任意 MCP 服务兼容性不由这些验收推定。完整验收结论只记 [阶段进度](../server-s2-progress.md)，本附录不记录部署成功。
 
 ---
 

@@ -17,6 +17,8 @@
     "finding": "Literal line match; semantic feature support is not asserted"
   },
   "tools": [
+    {"manifest":"tools/transition.ts","imports":{}},
+    {"manifest":"tools/interpret.ts","imports":{}},
     {
       "manifest": "tools/project.ts",
       "imports": {
@@ -52,9 +54,11 @@
     }
   ],
   "resources": [
-    "resources/fixture.json"
+    "resources/fixture.json",
+    "resources/execution-bed.json"
   ],
   "flows": [
-    "flows/fixture.json"
+    "flows/fixture.json",
+    "flows/execution.json"
   ]
 }

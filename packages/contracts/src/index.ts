@@ -1,5 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
+import {createExecutionTransitionContracts} from './execution-transition.ts';
+export {EXECUTION_TRANSITION_LIMITS,EXECUTION_TRANSITION_SCHEMA} from './execution-transition.ts';
 
 export const API_VERSION = '1.0.0';
 export const FLOW_VERSION = 'task/1';
@@ -67,6 +69,7 @@ const OperationName=z.string().regex(/^[a-z][a-z0-9._-]{0,149}$/);
 export function registerOperation(name:string,effects:{reads:string[];writes:string[]}):void{OperationName.parse(name);const old=STANDARD_OPERATIONS[name];if(old&&canonicalHash(old)!==canonicalHash(effects))throw new Error('Operation effect registration conflicts');STANDARD_OPERATIONS[name]=effects;}
 export const StandardOperation=OperationName.refine(name=>Object.hasOwn(STANDARD_OPERATIONS,name),'Operation is not registered');
 export type StandardOperation = z.infer<typeof StandardOperation>;
+export const WorkerRegistration=z.object({capabilities:z.array(StandardOperation).max(256).default([])}).strict().refine(value=>new Set(value.capabilities).size===value.capabilities.length,'Worker capabilities must be unique');
 export const Effects = z.object({ reads: z.array(z.string()), writes: z.array(z.string()) });
 export const ConnectorManifest = z.object({
   id: z.string().regex(/^[a-z0-9-]+$/), version: z.literal('1.0.0'), synthetic: z.literal(true),
@@ -259,7 +262,9 @@ const registry:Record<string,[number,string]> = {
   IMPORT_NOT_DECLARED:[422,'validation'],HOOK_FAILED:[422,'execution'],
   SANDBOX_UNAVAILABLE:[503,'execution'],
   RECEIPT_PROCESSING_FAILED:[500,'execution'],
+  GATEWAY_REFUSED:[422,'execution'],
 };
+export function registeredErrorCode(value:unknown):value is ErrorCode{return typeof value==='string'&&Object.hasOwn(registry,value);}
 export function registerErrorCodes(errors:Record<string,[number,string]>):void{for(const [code,definition] of Object.entries(errors)){if(registry[code]&&canonicalHash(registry[code])!==canonicalHash(definition))throw new Error('Error registration conflicts');registry[code]=definition;}}
 export type ErrorCode = string;
 export class ApiError extends Error {
@@ -400,3 +405,11 @@ export const CLIENT_ROUTES = {
   artifacts:{method:'GET',path:'/v1/artifacts',query:RegistryPageQuery,response:RegistryPage},
   artifactContent:{ method:'GET',path:'/v1/artifacts/{artifactId}/content' },
 } as const;
+
+export const {
+  ExecutionTransitionAssetPin,ExecutionTransitionInput,ExecutionTransitionOutput,
+  parseExecutionTransitionInput,parseExecutionTransitionOutput,executionTransitionStepKey,
+  executionTransitionRequestHash,checkExecutionTransitionWire,executionTransitionJsonSchemas,
+}=createExecutionTransitionContracts({TaskId,InputRevisionId,OperationId,AssetId,SourceRevisionId,ArtifactId,
+  KnowledgeRecordId,EvidenceId:identity('evd'),Sha256,Base64Content,SafeRelativePath,ToolName,PackageName,PackageVersion,
+  sha256,canonicalJson,canonicalHash,registeredError:code=>Object.hasOwn(registry,code),error:(code,message)=>new ApiError(code,message)});

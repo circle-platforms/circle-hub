@@ -90,6 +90,7 @@ export class ServiceClients {
         await this.auth.audit(ctx, 'resource-token.issued', { clientId, operationId: operation.operation_id, fencingToken: Number(operation.fencing_token), expiresAt: token.injection!.expiresAt }, operation.scope_id, tx);
         return token.injection;
     }
+    operationResourceRevision?: (tx:Transaction,row:any)=>Promise<boolean|undefined>;
     async active(token: string, clientId?: string) {
         return this.store.transaction(async (tx) => {
             const row = (await tx.query(`SELECT r.*,c.resource_asset_id,c.principal_id AS client_principal_id,c.scopes AS client_scopes,c.resource_scopes,p.username,p.kind,p.grants,p.scopes AS platform_scopes FROM resource_access_tokens r JOIN service_clients c USING(client_id) JOIN policies cp ON cp.principal_id=c.principal_id JOIN policies p ON p.principal_id=r.subject_id
@@ -101,7 +102,8 @@ export class ServiceClients {
             if (row.operation_id) {
                 if (!policy.scopeGrants?.[row.scope_id]?.includes(row.permission) || !row.scopes.every((scope: string) => row.resource_scopes.includes(scope)) || !await this.operationLive(tx, row))
                     return null;
-                const asset = (await tx.query("SELECT v.lifecycle FROM assets a JOIN asset_versions v ON v.asset_id=a.asset_id AND v.version=a.current_version WHERE a.asset_id=$1 AND a.tenant_id=$2 AND a.scope_id=$3", [row.resource_asset_id, row.tenant_id, row.scope_id])).rows[0];
+                const frozen=this.operationResourceRevision?await this.operationResourceRevision(tx,row):undefined;
+                const asset = frozen===undefined?(await tx.query("SELECT v.lifecycle FROM assets a JOIN asset_versions v ON v.asset_id=a.asset_id AND v.version=a.current_version WHERE a.asset_id=$1 AND a.tenant_id=$2 AND a.scope_id=$3", [row.resource_asset_id, row.tenant_id, row.scope_id])).rows[0]:frozen?{lifecycle:'running'}:null;
                 if (!asset || !['approved', 'running'].includes(asset.lifecycle))
                     return null;
             }

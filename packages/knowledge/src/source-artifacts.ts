@@ -8,6 +8,7 @@ import type {KnowledgeGraph} from './graph.ts';
 
 const file=z.object({path:SafeRelativePath,role:z.string(),mediaType:z.string(),sourceRevisionId:SourceRevisionId,sha256:Sha256,size:z.number().int().nonnegative(),sourceRecordId:KnowledgeRecordId});
 const configuration=z.object({schema:z.literal('external-source-artifact/1'),sourceArtifactId:SourceArtifactId,metadata:z.record(z.string(),z.unknown()),files:z.array(file).min(1).max(100)}).strict();
+export interface AssetRevisionPin {assetId:string;version:string;sha256:string;digest?:string}
 export interface SourceArtifactSnapshot{sourceArtifactId:string;assetId:string;assetVersion:string;assetSha256:string;metadata:Record<string,any>;files:z.infer<typeof file>[]}
 // The platform binds opaque originals and declared metadata. Consumers interpret
 // formats; independent asset approval does not certify semantic correctness.
@@ -48,17 +49,32 @@ export class SourceArtifacts{
     requireCondition(definition.kind==='knowledge-source','INVALID_PAYLOAD','External artifact requires a knowledge-source asset');const source=configuration.parse(definition.configuration);
     for(const entry of source.files){const record=await this.graph.get(ctx,entry.sourceRecordId,tx);requireCondition(record.kind==='SourceRevision'&&record.knowledgeCategory==='product'&&record.payload.asset?.assetId===id&&record.sha256===entry.sha256&&record.payload.raw.sourceRevisionId===entry.sourceRevisionId,'INVALID_PAYLOAD','Registered asset must bind its authorized originals');requireCondition(record.scopeId===definition.scopeId,'FORBIDDEN_SCOPE','Original crosses the artifact scope');}
   }
-  async snapshot(ctx:AuthContext,id:string,scope?:string,tx?:Transaction):Promise<SourceArtifactSnapshot>{
-    const asset=await this.assets.row(ctx,id,tx);requireCondition(!scope||asset.scope_id===scope,'FORBIDDEN_SCOPE','Source artifact is outside the execution partition');requireCondition(asset.kind==='knowledge-source'&&asset.configuration.schema==='external-source-artifact/1','INVALID_PAYLOAD','Asset is not an external source artifact');requireCondition(['approved','running'].includes(asset.lifecycle)&&asset.approved_digest===asset.sha256,'APPROVAL_REQUIRED','Source artifact needs current independent approval');
-    const source=configuration.parse(asset.configuration);for(const entry of source.files){const record=await this.graph.get(ctx,entry.sourceRecordId,tx);requireCondition(record.kind==='SourceRevision'&&record.sha256===entry.sha256&&record.payload.asset?.assetId===id,'SOURCE_HASH_MISMATCH','Registered source binding differs');await this.originals.source(ctx,entry.sourceRevisionId,asset.scope_id,tx);}
-    return {sourceArtifactId:source.sourceArtifactId,assetId:id,assetVersion:asset.version,assetSha256:asset.sha256,metadata:source.metadata,files:source.files};
+  async approvedRevision(ctx:AuthContext,id:string,scope?:string,tx?:Transaction,pin?:AssetRevisionPin){
+    if(pin)requireCondition(pin.assetId===id,'SOURCE_NOT_APPROVED','The frozen source pin belongs to another asset');
+    const policy=await this.auth.check(ctx,'assets.read',undefined,tx),connection=tx??this.store.pool,base=(await connection.query('SELECT * FROM assets WHERE asset_id=$1 AND tenant_id=$2 AND scope_id=ANY($3::text[])',[id,policy.tenantId,policy.scopes])).rows[0];
+    requireCondition(base,'ASSET_NOT_VISIBLE','Asset is not visible to the authenticated principal');requireCondition(!scope||base.scope_id===scope,'FORBIDDEN_SCOPE','Source artifact is outside the execution partition');
+    const latest=(await connection.query("SELECT * FROM asset_versions WHERE asset_id=$1 AND lifecycle IN ('approved','running') AND approved_digest=sha256 ORDER BY created_at DESC,version DESC LIMIT 1",[id])).rows[0];
+    if(!latest){if(!pin)await this.assets.row(ctx,id,tx);throw new ApiError(pin?'SOURCE_NOT_APPROVED':'APPROVAL_REQUIRED','Source artifact needs independent approval');}
+    const selected=pin?(await connection.query('SELECT * FROM asset_versions WHERE asset_id=$1 AND version=$2',[id,pin.version])).rows[0]:latest;
+    const permits=(row:any)=>base.owner_principal_id===ctx.principalId||row.readers.includes(ctx.principalId)||row.readers.includes('*');requireCondition(permits(latest),'ASSET_NOT_VISIBLE','Asset is not visible to the authenticated principal');
+    requireCondition(selected&&['approved','running'].includes(selected.lifecycle)&&selected.approved_digest===selected.sha256&&(!pin||selected.sha256===pin.sha256),'SOURCE_NOT_APPROVED','The frozen source revision is no longer approved');requireCondition(permits(selected),'ASSET_NOT_VISIBLE','Asset revision is not visible to the authenticated principal');
+    requireCondition(base.kind==='knowledge-source'&&selected.configuration.schema==='external-source-artifact/1','INVALID_PAYLOAD','Asset is not an external source artifact');requireCondition(pin?.digest===undefined||selected.configuration.metadata.module?.digest===pin.digest,'SOURCE_HASH_MISMATCH','Frozen module digest differs');return {...base,...selected};
+  }
+  async snapshot(ctx:AuthContext,id:string,scope?:string,transaction?:Transaction,pin?:AssetRevisionPin):Promise<SourceArtifactSnapshot>{
+    const run=async(tx:Transaction)=>{const asset=await this.approvedRevision(ctx,id,scope,tx,pin),source=configuration.parse(asset.configuration),access={assetId:id,version:asset.version,sha256:asset.sha256};
+      await this.auth.check(ctx,'knowledge.read',asset.scope_id,tx);await this.auth.check(ctx,'sources.read',asset.scope_id,tx);
+      for(const entry of source.files){const record=await this.graph.get(ctx,entry.sourceRecordId,tx,access);requireCondition(record.kind==='SourceRevision'&&record.sha256===entry.sha256&&record.payload.asset?.assetId===id&&record.payload.raw.sourceRevisionId===entry.sourceRevisionId&&record.payload.raw.sha256===entry.sha256&&record.payload.raw.size===entry.size,'SOURCE_HASH_MISMATCH','Registered source binding differs');await this.originals.source(ctx,entry.sourceRevisionId,asset.scope_id,tx,access);}
+      return {sourceArtifactId:source.sourceArtifactId,assetId:id,assetVersion:asset.version,assetSha256:asset.sha256,metadata:source.metadata,files:source.files};};
+    return transaction?run(transaction):this.store.transaction(async tx=>{await tx.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');return run(tx);});
   }
   async resolve(ctx:AuthContext,id:string,scope:string,tx?:Transaction){
     const p=await this.auth.policy(ctx,tx),rows=(await (tx??this.store.pool).query(`SELECT a.asset_id,v.version FROM assets a JOIN asset_versions v USING(asset_id) WHERE a.tenant_id=$1 AND a.scope_id=ANY($2::text[]) AND a.kind='knowledge-source' AND v.configuration->>'sourceArtifactId'=$3 AND (a.owner_principal_id=$4 OR v.readers ? $4 OR v.readers ? '*')`,[p.tenantId,p.scopes,id,ctx.principalId])).rows;
     if(rows.length!==1)throw new ApiError('SOURCE_FORBIDDEN','Source artifact is not available to this identity');const asset=await this.assets.row(ctx,rows[0].asset_id,tx);requireCondition(asset.version===rows[0].version&&asset.configuration.sourceArtifactId===id,'APPROVAL_STALE','Requested source artifact version was replaced');return this.snapshot(ctx,asset.asset_id,scope,tx);
   }
-  async bytes(ctx:AuthContext,snapshot:SourceArtifactSnapshot,scope:string,tx?:Transaction){
-    const originals=[];for(const entry of snapshot.files){const original=await this.originals.sourceBytes(ctx,entry.sourceRevisionId,scope,tx);requireCondition(original.reference.sha256===entry.sha256&&sha256(original.bytes)===entry.sha256,'SOURCE_HASH_MISMATCH','Registered original bytes differ');originals.push({path:`/${entry.path}`,bytes:original.bytes,sha256:entry.sha256,mediaType:entry.mediaType,etag:null,sourceType:'external-artifact'});}return originals;
+  async bytes(ctx:AuthContext,snapshot:SourceArtifactSnapshot,scope:string,transaction?:Transaction){
+    const run=async(tx:Transaction)=>{const frozen=await this.snapshot(ctx,snapshot.assetId,scope,tx,{assetId:snapshot.assetId,version:snapshot.assetVersion,sha256:snapshot.assetSha256,...(snapshot.metadata.module?.digest?{digest:snapshot.metadata.module.digest}:{})}),access={assetId:frozen.assetId,version:frozen.assetVersion,sha256:frozen.assetSha256},originals=[];
+      for(const entry of frozen.files){const original=await this.originals.sourceBytes(ctx,entry.sourceRevisionId,scope,tx,access);requireCondition(original.reference.sha256===entry.sha256&&sha256(original.bytes)===entry.sha256,'SOURCE_HASH_MISMATCH','Registered original bytes differ');originals.push({path:`/${entry.path}`,bytes:original.bytes,sha256:entry.sha256,mediaType:entry.mediaType,etag:null,sourceType:'external-artifact'});}return originals;};
+    return transaction?run(transaction):this.store.transaction(async tx=>{await tx.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');return run(tx);});
   }
   async reference(ctx:AuthContext,namespace:string,selector:string){
     const p=await this.auth.check(ctx,'sources.read'),rows=(await this.store.pool.query(`SELECT a.asset_id FROM assets a JOIN asset_versions v ON v.asset_id=a.asset_id AND v.version=a.current_version
