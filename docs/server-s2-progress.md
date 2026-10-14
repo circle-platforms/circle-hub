@@ -1191,3 +1191,9 @@ FlowDefinition 可显式声明 historyMode=controlled；内联 observations / ex
 夹具改为原样读取冻结资源模板的完整 receiptPolicy，不再挑参数映射后自带 echo；独立身份批准后，核已批准 / running 修订的配置 canonical 摘要相同。toolArguments / argumentsByTool / 分阶段 receipts / identityProjection 都由真实登记配置生效，投影核实际 projectWorkbook、受控 byteSlots、B 原件 SHA 与导出的用例身份。合成 submit / status / results 只提供本阶段实际字段，无假通用散列；保留一次 submit、三类 verify Hook、真实大投影后不同 Tool 消费动态槽、逐步 / 检查点 / unmapped 断言。
 
 纯回归旧 **0/2**→新 **2/2**；固定维护者给的 **3c46f707** / APV1.3.0 实际合成入口 **4/4，无 skip**，默认关闭时 **4 skip** 不计通过。typecheck / diff 通过。仅夹具、验收及中英说明，证明 synthetic provider protocol 接法，不证明真实 cexg / 设备；未改核心驱动、原生 / 独立包，不跑全套、push 或部署。
+
+## 108：C 后续 5，通用执行校验码不依赖原生导入
+
+INVALID_EXECUTION_WORKBOOK 与 COMMAND_VALIDATION_FAILED 登记进核心 F 错误目录，定义仍为 HTTP 422 / validation。原生原有同定义登记不改，重复登记保持幂等，未登记产品规则码仍不能作为 outcome.error。平台登记的是通用错误分类，不在核心解析产品工作簿或命令规则。
+
+独立 Node 测试文件只导入核心 contracts，未装产品模块的旧实现新三叶 **1/3**→新 **3/3**；连同原通用网关拒绝码消费者 **4/4，无 skip**。typecheck / diff 通过。原生 / 独立包字节零改，只本地签署，不跑全套或部署。
