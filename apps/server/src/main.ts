@@ -218,7 +218,7 @@ const server = createListener(async (request, response) => {
     }
     const ctx = await auth.authenticate(request.headers.authorization);
     if(url.pathname==='/mcp'){requireCondition(!ctx.run,'FORBIDDEN_ACTION','Run tokens use their declared task and tool routes');await mcp.handle(ctx,request,response,request.method==='POST'?await body(request,MAX_WORKER_REPORT_BYTES):undefined,`${tls?'https':'http'}://127.0.0.1:${(server.address() as any).port}`);return;}
-    if(ctx.run){const allowed=request.method==='GET'&&['/v1/tools','/v1/tasks','/v1/status'].includes(url.pathname)||request.method==='POST'&&/^\/v1\/tools\/[^/]+\/call$/.test(url.pathname)||request.method==='GET'&&/^\/v1\/tasks\/[^/]+\/(?:status|result|events)$/.test(url.pathname)||request.method==='GET'&&/^\/v1\/(?:sources|artifacts|evidence)\/[^/]+\/content$/.test(url.pathname);requireCondition(allowed,'FORBIDDEN_ACTION','Run token authorizes only its declared tools and task reads');}
+    if(ctx.run){const allowed=request.method==='GET'&&['/v1/tools','/v1/tasks','/v1/status'].includes(url.pathname)||request.method==='POST'&&/^\/v1\/tools\/[^/]+\/call$/.test(url.pathname)||request.method==='GET'&&(/^\/v1\/tasks\/[^/]+\/(?:status|result|events)$/.test(url.pathname)||/^\/v1\/tasks\/[^/]+\/events\/\d+\/content$/.test(url.pathname))||request.method==='GET'&&/^\/v1\/(?:sources|artifacts|evidence)\/[^/]+\/content$/.test(url.pathname);requireCondition(allowed,'FORBIDDEN_ACTION','Run token authorizes only its declared tools and task reads');}
     if(url.pathname==='/v1/harness/import'&&request.method==='POST'){send(response,201,{data:await primitives.import(ctx,await body(request,MAX_WORKER_REPORT_BYTES))});return;}
     const harnessExport=/^\/v1\/assets\/(ast_[a-f0-9]{32})\/harness-export$/.exec(url.pathname);if(harnessExport&&request.method==='GET'){send(response,200,{data:await primitives.export(ctx,harnessExport[1],url.searchParams.get('target')??'circle')});return;}
     if(url.pathname===CLIENT_ROUTES.authLogout.path&&request.method==='POST'){AuthRefreshRequest.parse(await body(request));send(response,200,{data:await auth.logout(request.headers.authorization!)});return;}
@@ -368,6 +368,7 @@ const server = createListener(async (request, response) => {
       else if(action==='checklist')send(response,200,{data:professionalRoute[3]?await checklists.satisfy(ctx,id,professionalRoute[3],ChecklistResponse.parse(input)):await checklists.set(ctx,id,ChecklistRequest.parse(input))});
       else send(response,200,{data:await checklists.deliver(ctx,id,z.object({inputRevisionId:InputRevisionId}).parse(input).inputRevisionId)});return;
     }
+    const eventOriginal=/^\/v1\/tasks\/(task_[A-Za-z0-9_-]+)\/events\/(\d+)\/content$/.exec(url.pathname);if(eventOriginal&&request.method==='GET'){download(response,await tasks.eventContent(ctx,TaskId.parse(eventOriginal[1]),z.coerce.number().int().positive().max(Number.MAX_SAFE_INTEGER).parse(eventOriginal[2])));return;}
     const approvalRoute=/^\/v1\/tasks\/([^/]+)\/approvals(?:\/([^/]+))?$/.exec(url.pathname);
     if(approvalRoute&&request.method===CLIENT_ROUTES.approvals.method&&!approvalRoute[2]){
       send(response,200,{data:await approvals.list(ctx,TaskId.parse(approvalRoute[1]))});return;
@@ -463,7 +464,7 @@ const server = createListener(async (request, response) => {
           return (await tx.query("SELECT o.* FROM outbox o JOIN tasks t USING(task_id) WHERE t.tenant_id=$1 AND t.scope_id=ANY($2::text[]) AND o.seq>$3 AND (t.context->>'privateOwnerId' IS NULL OR t.context->>'privateOwnerId'=$4) ORDER BY o.seq LIMIT 500",[current.tenantId,current.scopes,after,current.principalId])).rows;});
           if(rows.length||Date.now()>=deadline||closing||response.destroyed)break;await waitForEvents();
         }while(true);
-        if(!response.destroyed)send(response,200,{data:{events:rows.map(row=>({seq:Number(row.seq),taskId:row.task_id,kind:row.kind,payload:row.payload,createdAt:row.created_at.toISOString()})),after:rows.length?Number(rows.at(-1).seq):after}});return;
+        if(!response.destroyed)send(response,200,{data:{events:rows.map(row=>tasks.eventView(row)),after:rows.length?Number(rows.at(-1).seq):after}});return;
       }
       if(url.pathname==='/v1/admin/restart'&&request.method==='POST'){
         await auth.check(ctx,'admin.restart');z.object({graceful:z.literal(true)}).parse(await body(request));requireCondition(process.connected,'INVALID_PAYLOAD','Start the server through its supervisor for graceful restart');

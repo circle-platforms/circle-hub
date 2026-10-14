@@ -526,6 +526,10 @@ task/admin events 的权限、窗口校验与取页也在同一只读快照内�
 
 updatedAt 页锚点限制上界，未保存旧行版本。普通服务端更新晚于锚点会进下一次查询；若显式回填时间或时钟回拨，使已交出的行改到仍在锚点内、又晚于升序游标的位置，该行可以再次交出。客户端按稳定记录 id 合并，跨页去重；需要严格不可重复扫描时使用不可变创建时间的年龄排序，并在扫描后发起新查询补更新。SSE 连接上限目前是每个 server 进程内按 tenant/主体计数，多进程各自计算；没有承诺集群总上限。
 
+事件正文接口收紧：GET /v1/tasks/{id}/events 与 /v1/admin/events 的 payload 也采用通知的显式投影，保留 id、状态/原因码，以及规则版本/结论、fence、工具名/状态、运行绑定、bot 渠道/跳过次数等事件元数据；不内联 result、工具输出、模型文本、调用参数或错误详情正文。每条事件顶层新增 content:{sha256,size,downloadPath}。按需 GET /v1/tasks/{taskId}/events/{seq}/content 回读原 payload 的 canonical JSON 字节，Content-Type=application/json、x-content-sha256 为同一 SHA；无 API 信封。它沿用任务 scope/private/run 委托权限，并与窗口校验共用快照；其它身份不能借路径读取，事件过窗为 CURSOR_EXPIRED。此引用只覆盖同一 outbox 保留窗口，不声称事件全文是永久 B 证据；长期原件/产物按 result 的 B 引用读取。运行中的原样 outbox、兼容观察与最终结果不改。客户端原先读取 runtime.tool_result.output 时，现在按该事件 content 引用回读，列表和尾流默认只显示元数据。
+
+worker 离线检测默认 90000 毫秒，可由部署运行配置 CIRCLE_SERVER_WORKER_OFFLINE_MS 设正整数；GET /v1/queues 返回 workerOfflineAfterMs。这个检测阈值决定是否进入 workerOffline，范围 slaMs.exceptions 决定是否超 SLA，两者独立。阈值不是硬编码查询常数，也不根据 worker 的业务结果猜离线。
+
 GET /v1/assets/{id}/harness-export?target=circle|<sourceHarness> 仅批准后的可读原语可用，返回 files 的相对目标路径/base64/sha256、warnings、provenance:{assetId,version,sha256,sourceHarness}。Circle Skill 原件移动到 .circle/skills/{name}/，字节不改；Instruction 投影为 AGENTS.md。Circle 尚无 Agent/Command 原生安装时明确 warning；MCP prompt 可读取批准的 Skill/Command。同来源 harness 由公开库导出；其不支持的跨 harness 映射继续 warning。这里只是冻结与装载投影，云运行仍用既有技能试跑/提交/批准接口；不自动批准或把原件搬运称作已执行。
 
 `POST /mcp` 是官方 @modelcontextprotocol/sdk 1.32.1 的 Streamable HTTP JSON transport，协议协商 2025-11-25；[传输规范](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports)。每请求带 hub 会话 Bearer；Origin 若存在须同 hub 原生地址。无会话 id 的 stateless 模式，GET/DELETE 405；Accept 同时支持 application/json、text/event-stream。官方纯 SDK 客户端、原始 JSON-RPC 客户端已验收，既有 Circle REST 扩展保持。
