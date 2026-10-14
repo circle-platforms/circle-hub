@@ -518,6 +518,14 @@ outbox 保留默认最近至少 **10000 条事件**的补读窗口、最多 **10
 
 task/admin events 的权限、窗口校验与取页也在同一只读快照内；裁剪并发时返回该次校验的完整可见页或明确 CURSOR_EXPIRED，长轮询逐次重核，不返回静默缺失的空页。bot.admission-failed 的通知原因读取 payload.reason.code；完整运行错误仍从 bot runs 的 error 或任务 result.error 获取。
 
+复核补充：床 conf.device_names 的自定义名称会让第三来源的 APV<index> 规则失效；日志 IP 只能定位到拓扑设备，任意名字不能推断工作簿索引。cexg 0.3.1 的计划接口是 env_prepare.conf.device_ips，实际出现后使用第一来源，因而不受改名影响；hub 不根据版本号假定字段已出现。共享地址日志不归属、不消费设备游标。
+
+客户端恢复契约：首次 cursor=0 也返回 replayWindow.minCursor；大于零表示窗口之前已有事件被裁剪，这次响应不代表完整历史。CURSOR_EXPIRED 的 details.minCursor 用来提示缺口，随后从 cursor=0 重拉保留窗口，按 seq 去重，并从 GET /v1/tasks?view=page（遍历当前状态页）及 /v1/tasks/{id}/approvals 补窗口外的任务/审批当前事实；历史正文仍需持久 B 原件/产物，不从当前状态反推过去发生顺序。SSE 的 cursor.expired 使用同一恢复过程。
+
+保留策略当前没有按主体已读水位保护未读事件；全局其它 scope 的事件产出也会缩短本人的时间窗口，离线七天并不保证能补全。推荐 SSE 在线跟随，轮询/重连及处理一页的总预算不超过 min(30 秒、replayEvents/(4×全局峰值事件速率)、maxAgeMs/4)。例如一万条窗口、全局峰值每秒 200 条，预算应小于约 12.5 秒；未掌握峰值时可从 5 秒轮询开始，并以 minCursor/游标缺口触发状态重建。它是降低缺口的运行建议，不是未读永久保留保证。
+
+updatedAt 页锚点限制上界，未保存旧行版本。普通服务端更新晚于锚点会进下一次查询；若显式回填时间或时钟回拨，使已交出的行改到仍在锚点内、又晚于升序游标的位置，该行可以再次交出。客户端按稳定记录 id 合并，跨页去重；需要严格不可重复扫描时使用不可变创建时间的年龄排序，并在扫描后发起新查询补更新。SSE 连接上限目前是每个 server 进程内按 tenant/主体计数，多进程各自计算；没有承诺集群总上限。
+
 GET /v1/assets/{id}/harness-export?target=circle|<sourceHarness> 仅批准后的可读原语可用，返回 files 的相对目标路径/base64/sha256、warnings、provenance:{assetId,version,sha256,sourceHarness}。Circle Skill 原件移动到 .circle/skills/{name}/，字节不改；Instruction 投影为 AGENTS.md。Circle 尚无 Agent/Command 原生安装时明确 warning；MCP prompt 可读取批准的 Skill/Command。同来源 harness 由公开库导出；其不支持的跨 harness 映射继续 warning。这里只是冻结与装载投影，云运行仍用既有技能试跑/提交/批准接口；不自动批准或把原件搬运称作已执行。
 
 `POST /mcp` 是官方 @modelcontextprotocol/sdk 1.32.1 的 Streamable HTTP JSON transport，协议协商 2025-11-25；[传输规范](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports)。每请求带 hub 会话 Bearer；Origin 若存在须同 hub 原生地址。无会话 id 的 stateless 模式，GET/DELETE 405；Accept 同时支持 application/json、text/event-stream。官方纯 SDK 客户端、原始 JSON-RPC 客户端已验收，既有 Circle REST 扩展保持。

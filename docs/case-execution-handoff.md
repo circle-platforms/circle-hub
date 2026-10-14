@@ -106,3 +106,5 @@ execution.environment.observed 只表示 worker 先前 env_prepare 的观察（o
 设备归属来源更正（1.1.1）：当前部署版 env_prepare 没有有序 IP，bed_topology 也不输出 applies_to；先前两种候选不能证明现网归属。解析仍保留它们作为高优先级可选协议，按 conf.device_ips → applies_to.device_ssh_ips → topology.devices 顺序选择，实际有字段才使用。第三来源必须有 env_prepare.device_count，全部 type=负载均衡 设备的 name 匹配 ^APV([0-9]+)$，数量与序号集合恰为 0..device_count-1。每条设备日志的 IP 去 CIDR 前缀长度后在这些设备 ipv4 集合中匹配，只有唯一归属才采用；共享虚拟 IP 不被猜成管理地址。名称任意、索引缺失/重复/越界或计数不足均 device_map_unavailable。deviceMap.source 为 gateway.bed_topology.devices，原拓扑仍按 SHA 留 B。未来网关明确回 conf.device_ips 后优先使用该有序来源，不要求站点生成器提供并不存在的字段。
 
 dev-stack 的排空是合作式、没有截止时间：消息抵达时若 claim 已在途，新领的那一笔仍可能完成后才退出；没有强杀设备操作来赶升级期限。其余 worker 持续服务子 Tool，单 worker 退出保留数据库。独立部署的 worker 仍由部署管理器 drain/替换，CLI 请求标志不代表外部进程已升级。
+
+conf.device_names 的边界：网关生成拓扑时采用床 conf 的 device_names；管理员把名字改为任意名称后，第三候选不再满足 APV<index> 的完整序号规则，整组设备步会是 device_map_unavailable。管理 IP 落在 ipv4 中只能证明拓扑设备，不能凭任意名称推断 APV_n。维护者计划从 cexg 0.3.1 起让 env_prepare 实际返回 conf.device_ips（conf 顺序）；收到该字段时使用第一候选，不依赖 device_names，改名不会破坏归属。没有实际返回有序字段时仍遵守第三候选限制。共享地址若也出现在日志中，不分给任何设备、也不推进两边的命令游标。
