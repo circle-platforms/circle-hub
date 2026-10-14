@@ -1,0 +1,63 @@
+# Handoff-to-design map
+
+The rules in the [client API handoff](../../client-api-handoff.md) and the [case-execution handoff](../../case-execution-handoff.md) have been merged into the matching documents under docs/design; this table records where each passage went, for the later trimming of the two handoffs into change records. Passages marked "not moved" in the right column are implementation records, acceptance figures, or product connector contracts, which the design documents do not take. The canonical map is the [Chinese version](../handoff-map.md); the handoff headings below stay in Chinese because the handoffs are Chinese.
+
+## client-api-handoff.md
+
+| Handoff passage | Merged into |
+|---|---|
+| Title and opening (protocol originals and versions) | Implementation pointers, not moved |
+| 启动和登录 | Identity and token rules → [roles.md#sessions-and-tokens](roles.md#sessions-and-tokens); the dev-stack and HTTPS startup details are an operations runbook, not moved |
+| 通用信封 | [circle-integration.md#the-common-shape-of-the-interface](circle-integration.md#the-common-shape-of-the-interface) |
+| 普通用户只读接口 | [circle-integration.md#the-read-projections-of-tasks-and-approvals](circle-integration.md#the-read-projections-of-tasks-and-approvals); the paging contract → [vocabulary.md#the-contract-of-a-list-being-a-query](vocabulary.md#the-contract-of-a-list-being-a-query) |
+| 编译调用顺序 | The call walkthrough is not moved; within it: idempotency and the admission transaction → [circle-integration.md#the-common-shape-of-the-interface](circle-integration.md#the-common-shape-of-the-interface); SHA re-check on download → [object-standard.md#4-bs-rules-for-originals-and-evidence](object-standard.md#4-bs-rules-for-originals-and-evidence) |
+| 状态、事件和交付 | Cursor discipline and cancel semantics → [circle-integration.md#event-catch-up](circle-integration.md#event-catch-up); reading result.status after delivered and never re-dispatching an unknown → [approvals-and-enforcement.md#the-discipline-of-the-unknown](approvals-and-enforcement.md#the-discipline-of-the-unknown) |
+| 补充或更换输入 | [approvals-and-enforcement.md#only-one-approval-concept-the-change-set](approvals-and-enforcement.md#only-one-approval-concept-the-change-set) (the input-revision entry) |
+| 当前验收与下一次组合验收 | Implementation record, not moved |
+| 第二阶段：工具目录 | [circle-integration.md#the-tool-catalog-and-calls](circle-integration.md#the-tool-catalog-and-calls); the failure-classification collapse → [approvals-and-enforcement.md#the-classification-of-source-failures](approvals-and-enforcement.md#the-classification-of-source-failures) |
+| 脑图知识工具 | The honesty rules of paging and coverage → [vocabulary.md#the-contract-of-a-list-being-a-query](vocabulary.md#the-contract-of-a-list-being-a-query); asynchronous knowledge indexing → [object-standard.md#4-bs-rules-for-originals-and-evidence](object-standard.md#4-bs-rules-for-originals-and-evidence); the per-tool field tables are product connector contracts, not moved |
+| 第二阶段：技能包约定与 RPC 边界 | The registration contract → [product-line-pack.md#the-registration-contract-of-skill-packages-and-modules](product-line-pack.md#the-registration-contract-of-skill-packages-and-modules); the run boundary → [harness-primitives.md#7-the-contract-of-each-primitive](harness-primitives.md#7-the-contract-of-each-primitive) (the Skill execution entry); the run token → [approvals-and-enforcement.md#credentials-and-resources](approvals-and-enforcement.md#credentials-and-resources) |
+| 通用外部来源制品 | [object-standard.md#4-bs-rules-for-originals-and-evidence](object-standard.md#4-bs-rules-for-originals-and-evidence); pending-draft visibility → [approvals-and-enforcement.md#only-one-approval-concept-the-change-set](approvals-and-enforcement.md#only-one-approval-concept-the-change-set) |
+| 通用 OAuth 凭据登记 | [approvals-and-enforcement.md#credentials-and-resources](approvals-and-enforcement.md#credentials-and-resources) |
+| 第二阶段：触发、整理与 Circle 渠道 | [circle-integration.md#triggers-and-bots](circle-integration.md#triggers-and-bots); atomic rollback of a refused report → [object-standard.md#4-bs-rules-for-originals-and-evidence](object-standard.md#4-bs-rules-for-originals-and-evidence); the knowledge-consolidation skill contract is product content, not moved |
+| 第二阶段：工作列表过滤与续页 | [vocabulary.md#the-contract-of-a-list-being-a-query](vocabulary.md#the-contract-of-a-list-being-a-query) |
+| 产品线安装与工具别名 | Alias resolution and hiding → [circle-integration.md#the-tool-catalog-and-calls](circle-integration.md#the-tool-catalog-and-calls); the install JSON's path convention is runtime configuration, not moved |
+| 修订 3：人的范围角色与审批资格 | [roles.md#role-registration-and-the-disclosure-of-eligibility](roles.md#role-registration-and-the-disclosure-of-eligibility) |
+| 修订 3：变更集与依赖核验 | [approvals-and-enforcement.md#only-one-approval-concept-the-change-set](approvals-and-enforcement.md#only-one-approval-concept-the-change-set); the digest formulas are implementation detail, not moved |
+| 修订 3：Skill、Tool、MCP server 与 Hook 的执行绑定 | Hook subjects and the host policy → [harness-primitives.md#7-the-contract-of-each-primitive](harness-primitives.md#7-the-contract-of-each-primitive); the single-consumption of an executionIsChange approval → [approvals-and-enforcement.md#what-if-production-equipment-needs-the-two-person-rule](approvals-and-enforcement.md#what-if-production-equipment-needs-the-two-person-rule); waiting-input and the build observation → [approvals-and-enforcement.md#the-enforcement-chains-fixed-rules-on-apv-workbook-execution](approvals-and-enforcement.md#the-enforcement-chains-fixed-rules-on-apv-workbook-execution) |
+| 修订 3：开发会话寿命与吊销 | [roles.md#sessions-and-tokens](roles.md#sessions-and-tokens) |
+| 修订 3：凭据模式、隔离与明确的明文例外 | [approvals-and-enforcement.md#credentials-and-resources](approvals-and-enforcement.md#credentials-and-resources) |
+| 读取超时与大原件回报 | [approvals-and-enforcement.md#read-timeouts](approvals-and-enforcement.md#read-timeouts); the report shape → [object-standard.md#4-bs-rules-for-originals-and-evidence](object-standard.md#4-bs-rules-for-originals-and-evidence) |
+| 审计补充：角色、Hook 形状与模型凭据 | The role floor of a credentialed provider → [roles.md#role-registration-and-the-disclosure-of-eligibility](roles.md#role-registration-and-the-disclosure-of-eligibility); the Hook shapes → [harness-primitives.md#7-the-contract-of-each-primitive](harness-primitives.md#7-the-contract-of-each-primitive); the model proxy and output masking → [approvals-and-enforcement.md#credentials-and-resources](approvals-and-enforcement.md#credentials-and-resources); the APV acceptance commit id is an implementation record, not moved |
+| 读结果与治理内容补充 | Redaction with verifiable originals → [object-standard.md#4-bs-rules-for-originals-and-evidence](object-standard.md#4-bs-rules-for-originals-and-evidence); the read-only view of a skill candidate → [approvals-and-enforcement.md#only-one-approval-concept-the-change-set](approvals-and-enforcement.md#only-one-approval-concept-the-change-set) (pending-draft visibility); gateway.health/topology and the supervisor log lines are product contract and operations detail, not moved |
+| 修订 3 第 6 节：通知流与工作队列 | [circle-integration.md#the-notification-stream-and-the-work-queues](circle-integration.md#the-notification-stream-and-the-work-queues) |
+| 修订 3 第 8 节：列表即查询 | [vocabulary.md#the-contract-of-a-list-being-a-query](vocabulary.md#the-contract-of-a-list-being-a-query) |
+| 修订 3 第 9 节：中立原语与 MCP | [harness-primitives.md#3-adapters-import-and-export](harness-primitives.md#3-adapters-import-and-export), [#4-generic-transport-hub-itself-is-an-mcp-server](harness-primitives.md#4-generic-transport-hub-itself-is-an-mcp-server); the migration-by-migration compensation history is an implementation record, not moved; worker draining → [approvals-and-enforcement.md#credentials-and-resources](approvals-and-enforcement.md#credentials-and-resources); the worker-offline threshold → [circle-integration.md#the-notification-stream-and-the-work-queues](circle-integration.md#the-notification-stream-and-the-work-queues) |
+| 派发前拒绝与两次环境观察 | [approvals-and-enforcement.md#pre-dispatch-refusals-and-the-remote-lease](approvals-and-enforcement.md#pre-dispatch-refusals-and-the-remote-lease), [#dispatch-and-the-two-environment-observations](approvals-and-enforcement.md#dispatch-and-the-two-environment-observations) |
+| 权限导出 (the permission-export passage) | The design document already exists: [permission-export.md](permission-export.md) |
+
+## case-execution-handoff.md
+
+That document has no section headings; the left column quotes each passage's first sentence (in Chinese).
+
+| Handoff passage's first sentence | Merged into |
+|---|---|
+| 「能力包 `apv-case-execute/1.1.1` 使用既有 sources、submit……」 | Version and deployment records not moved; execution needs no approval by default → [approvals-and-enforcement.md#what-if-production-equipment-needs-the-two-person-rule](approvals-and-enforcement.md#what-if-production-equipment-needs-the-two-person-rule); re-registering an upgraded implementation → [product-line-pack.md#the-registration-contract-of-skill-packages-and-modules](product-line-pack.md#the-registration-contract-of-skill-packages-and-modules) |
+| 「先上传 `case.xlsx`，或引用当前身份可读的编译 artifact……」 | The submission walkthrough is not moved; the literal gate and the nine-column contract → [approvals-and-enforcement.md#verification](approvals-and-enforcement.md#verification) |
+| 「命令核对也可绑定通用外部来源制品……」 | [object-standard.md#4-bs-rules-for-originals-and-evidence](object-standard.md#4-bs-rules-for-originals-and-evidence); declared data is never taken as fact, same section |
+| 「本版执行关口支持 APV_n/Segn_tmp 的字面……」(including the test_env, host-policy, and error-location passages) | [approvals-and-enforcement.md#verification](approvals-and-enforcement.md#verification) |
+| 「人的授权由范围角色及 Tool minimumRole 决定……」 | [roles.md#role-registration-and-the-disclosure-of-eligibility](roles.md#role-registration-and-the-disclosure-of-eligibility); the SHA re-check line → [object-standard.md#4-bs-rules-for-originals-and-evidence](object-standard.md#4-bs-rules-for-originals-and-evidence) |
+| 「任务先进入 cases.verify……」(including the approval-record and pre-dispatch re-check passages) | [approvals-and-enforcement.md#verification](approvals-and-enforcement.md#verification), [#dispatch-and-the-two-environment-observations](approvals-and-enforcement.md#dispatch-and-the-two-environment-observations), [#at-run-time-there-is-no-approval-only-the-enforcement-chain](approvals-and-enforcement.md#at-run-time-there-is-no-approval-only-the-enforcement-chain) (the pre-dispatch re-check paragraph) |
+| 「运行时配置都在仓库外……」(including the credential-rotation and re-login passages) | [approvals-and-enforcement.md#credentials-and-resources](approvals-and-enforcement.md#credentials-and-resources); the issuer history correction is an implementation record, not moved |
+| 「事件包含 execution.commands.rechecked……」(including the check-point judgment passage) | [approvals-and-enforcement.md#device-attribution-and-log-parsing](approvals-and-enforcement.md#device-attribution-and-log-parsing) |
+| 「超时、lost、worker 断开或投递后取消转 unknown……」(including the pre-dispatch refusal passage) | [approvals-and-enforcement.md#the-discipline-of-the-unknown](approvals-and-enforcement.md#the-discipline-of-the-unknown), [#pre-dispatch-refusals-and-the-remote-lease](approvals-and-enforcement.md#pre-dispatch-refusals-and-the-remote-lease) |
+| 「execution.environment.observed 只表示……」 | [approvals-and-enforcement.md#dispatch-and-the-two-environment-observations](approvals-and-enforcement.md#dispatch-and-the-two-environment-observations), [#device-attribution-and-log-parsing](approvals-and-enforcement.md#device-attribution-and-log-parsing) |
+| 「当前只完成合成网关验收……」 | Acceptance status record, not moved |
+| 「修订 3 的 static-secret 模式与明确的 HTTP 资料源例外……」 | [approvals-and-enforcement.md#credentials-and-resources](approvals-and-enforcement.md#credentials-and-resources) |
+| 「设备归属来源更正（1.1.1）……」 | [approvals-and-enforcement.md#device-attribution-and-log-parsing](approvals-and-enforcement.md#device-attribution-and-log-parsing) |
+| 「dev-stack 的排空是合作式……」 | [approvals-and-enforcement.md#credentials-and-resources](approvals-and-enforcement.md#credentials-and-resources) (the worker-draining entry) |
+| 「conf.device_names 的边界……」 | [approvals-and-enforcement.md#device-attribution-and-log-parsing](approvals-and-enforcement.md#device-attribution-and-log-parsing) |
+
+---
+
+This document is a circle-hub working note (the map for trimming the handoffs), not a design specification; it is licensed under the [Apache License 2.0](../../../LICENSE).

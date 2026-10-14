@@ -20,6 +20,8 @@ nav_order: 2
 | [权限策略导出](permission-export.md) | harness 中立的第 4 条：hub-permission/1 从范围上的角色预设和 Tool 标注算出；Claude Code、Codex CLI、OpenCode、Gemini CLI、Cursor 各一张映射表与示例配置；表达不了的部分如实列出 |
 | [harness 原语格式调查](harness-formats.md) | Claude Code、Codex CLI、OpenCode、Gemini CLI、Cursor 五家的 Skill / Command / Agent / Instruction / Hook / MCP server 磁盘格式：路径、字段、能映射到中立清单的部分与映射不了的部分，每条带来源；适配器与 knownCompatible 的依据 |
 
+两份交接文档（client-api-handoff、case-execution-handoff）的规则已并入上表各篇；段落级的对照见 [handoff-map.md](handoff-map.md)（供把 handoff 裁成变更记录，不是设计规范）。
+
 两条贯穿全部的原则来自更早的决定：确定内容交给脚本、其余交给模型判定并完整披露（ADR 0024）；本地取消、远端停止、任务交付分别记录（ADR 0025）。
 
 ## 许可
