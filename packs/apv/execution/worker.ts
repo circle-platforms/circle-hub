@@ -8,12 +8,14 @@ import {executeTool} from '../../../packages/connectors/src/tool-packages.ts';
 import {SourceCache} from '../../../packages/connectors/src/source-cache.ts';
 import {readExecutionWorkbook} from './workbook.ts';
 import {LocalObjects} from '../../../packages/knowledge/src/objects.ts';
+import {environmentBuild,environmentDevices} from './environment.ts';
 import {OAuthToken} from '../../../packages/assets/src/oauth-token.ts';
+import {refusalFacts} from './refusal.ts';
 
 export interface CaseWorkerContext {check:()=>Promise<any>;source:()=>Promise<Buffer>;signal:AbortSignal;directory:string;event:(event:any)=>Promise<any>}
 const rawOutput=(output:any)=>({result:output.result,raw:output.raw.map((raw:any)=>({path:raw.path,sha256:raw.sha256,sourceType:raw.sourceType??output.sourceType,contentBase64:raw.bytes.toString('base64')}))});
 export async function executeCases(claim:any,context:CaseWorkerContext){
-  const fence={fencingToken:claim.fencingToken,inputRevisionId:claim.inputRevisionId};let submitIntent=false,terminalObserved=false,submitted:any,gateway:McpGateway|undefined,lease:any,heartbeat:NodeJS.Timeout|undefined,pendingHeartbeat:Promise<void>|undefined,heartbeatError:any;
+  const fence={fencingToken:claim.fencingToken,inputRevisionId:claim.inputRevisionId};let stage='source',submissionAttempted=false,noDispatchVerified=false,terminalObserved=false,submitted:any,environment:any,topology:any,deviceMapError:any,report:any,gateway:McpGateway|undefined,lease:any,heartbeat:NodeJS.Timeout|undefined,pendingHeartbeat:Promise<void>|undefined,heartbeatError:any;
   try{
     const preflight=await context.check(),authorization=preflight.authorization,vault=new PrivateVault(join(context.directory,'private-credentials'));
     if(claim.name==='cases.verify'||claim.name==='cases.execute'){
@@ -29,30 +31,34 @@ export async function executeCases(claim:any,context:CaseWorkerContext){
     }
     const profile=authorization.profile;
     if(authorization.gatewayInjection.provider==='server')gateway=new McpGateway(profile,async()=>{const checked=await context.check(),injection=checked.authorization.gatewayInjection;requireCondition(injection.provider==='server','APPROVAL_STALE','Resource authorization provider changed');return vault.get(injection.key,injection.binding);});
+    else if(authorization.gatewayInjection.provider==='static-secret')gateway=new McpGateway(profile,async()=>{const checked=await context.check(),injection=checked.authorization.gatewayInjection;requireCondition(injection.provider==='static-secret','APPROVAL_STALE','Static credential binding changed');return vault.get(injection.key,injection.binding);});
     else{const oauth=authorization.gatewayInjection.oauth,client=oauth?.clientReference?JSON.parse(await vault.get(oauth.clientReference.key,oauth.clientReference.binding)):undefined,tokens=oauth?new OAuthToken(vault,authorization.gatewayInjection,oauth.profile,oauth.grantType,client?.client_secret):new RotatingToken(vault,authorization.gatewayInjection,{issuer:profile.issuer,caFile:profile.issuerCaFile??profile.caFile,caSha256:profile.issuerCaSha256??profile.caSha256});gateway=new McpGateway(profile,()=>tokens.access());}
     if(claim.name==='cases.observe'){
       requireCondition(authorization.remoteTaskId,'EVIDENCE_INSUFFICIENT','Unknown submission has no remote task identity');
       const status=await gateway.call('case_status',{task_id:authorization.remoteTaskId},context.signal),results=await gateway.call('case_results',{task_id:authorization.remoteTaskId},context.signal);requireCondition(status.state==='done','EVIDENCE_INSUFFICIENT','Independent gateway observation is not terminal');return {...fence,status:'succeeded',output:{status,results}};
     }
-    await context.check();lease=await gateway.call('lease_acquire',{},context.signal);requireCondition(typeof lease.lease_id==='string'&&Number.isSafeInteger(lease.token),'EVIDENCE_INSUFFICIENT','Gateway lease has no fence');
+    stage='lease';await context.check();lease=await gateway.call('lease_acquire',{},context.signal);requireCondition(typeof lease.lease_id==='string'&&Number.isSafeInteger(lease.token),'EVIDENCE_INSUFFICIENT','Gateway lease has no fence');
     const leaseArgs={lease_id:lease.lease_id,token:lease.token};heartbeat=setInterval(()=>{if(pendingHeartbeat)return;pendingHeartbeat=gateway!.call('lease_heartbeat',leaseArgs,context.signal).then(()=>{}).catch(error=>{heartbeatError=error;}).finally(()=>{pendingHeartbeat=undefined;});},Math.max(1000,Math.min(20000,(lease.expires_in_s??1800)*1000/3)));
-    await context.check();const environment=await gateway.call('env_prepare',{...leaseArgs,device_build:claim.args.buildName},context.signal);requireCondition(environment.ready===true&&environment.build_checked===true,'GATEWAY_REFUSED','Gateway environment or compiled build is not ready');
+    stage='environment';await context.check();environment=await gateway.call('env_prepare',{...leaseArgs,device_build:claim.args.buildName},context.signal);const observation=environmentBuild(environment,claim.args.buildName);
+    await context.event({stage:'environment',environment});if(!observation.passed)throw new ApiError('BUILD_MISMATCH','Gateway has not observed the bound device build',observation);
+    if(!environmentDevices({environment}))try{topology=await gateway.call('bed_topology',{...leaseArgs,refresh:false},context.signal);}catch(error){deviceMapError={code:error instanceof ApiError?error.code:'SOURCE_UNREACHABLE',message:'Gateway device mapping was not obtained'};}
     const bytes=await context.source(),book=await readExecutionWorkbook(bytes);requireCondition(book.commands.every(command=>command.deviceIndex<environment.device_count),'GATEWAY_REFUSED','Workbook targets a device absent from the gateway environment');
-    await context.check();await context.event({stage:'submit-intent'});submitIntent=true;
+    stage='submission';await context.check();await context.event({stage:'submit-intent'});
     await context.check();
+    submissionAttempted=true;
     submitted=await gateway.call('case_submit',{...leaseArgs,xlsx_b64:bytes.toString('base64'),...(claim.args.module?{module:claim.args.module}:{})},context.signal);
     const staged=await context.event({stage:'submitted',receipt:submitted});requireCondition(staged.bindingAccepted===true&&submitted.sha256===sha256(bytes)&&canonicalHash(submitted.case_ids)===canonicalHash(book.cases.map(item=>item.autoid)),'SOURCE_HASH_MISMATCH','Gateway staged workbook or case identities differ');
     while(true){
       await context.check();if(heartbeatError)throw heartbeatError;
       const status=await gateway.call('case_status',{task_id:submitted.task_id},context.signal);await context.event({stage:'status',remoteTaskId:submitted.task_id,state:status.state});
       if(status.state==='lost'||status.state==='unknown')throw new ApiError('EVIDENCE_INSUFFICIENT','Gateway runner has no observed terminal receipt');
-      if(status.state==='done'){terminalObserved=true;const results=await gateway.call('case_results',{task_id:submitted.task_id},context.signal);return {...fence,status:'succeeded',output:{submit:submitted,environment,status,results}};}
+      if(status.state==='done'){terminalObserved=true;const results=await gateway.call('case_results',{task_id:submitted.task_id},context.signal);return report={...fence,status:'succeeded',output:{submit:submitted,environment,topology,deviceMapError,status,results}};}
       requireCondition(status.state==='running','EVIDENCE_INSUFFICIENT','Gateway state is not recognized');await delay(profile.pollMs,undefined,{signal:context.signal});
     }
-  }catch(error){const failure=error instanceof ApiError?error:new ApiError('SOURCE_UNREACHABLE','Gateway execution channel was interrupted');return {...fence,status:submitIntent?'unknown':'failed',output:{remoteTaskId:submitted?.task_id,remoteStoppingVerified:false},error:{code:failure.code,message:failure.message,details:failure.details}};}
+  }catch(error){const failure=error instanceof ApiError?error:new ApiError('SOURCE_UNREACHABLE','Gateway execution channel was interrupted'),refusal=failure.details.gatewayRefusal,facts=refusal?refusalFacts(refusal):null;noDispatchVerified=!submissionAttempted||!submitted&&facts?.preDispatch===true;const code=failure.code==='GATEWAY_REFUSED'?(stage==='lease'?'LEASE_UNAVAILABLE':facts?.code??'GATEWAY_REFUSED'):failure.code;return report={...fence,status:submissionAttempted&&!noDispatchVerified?'unknown':'failed',output:{remoteTaskId:submitted?.task_id,environment,topology,deviceMapError,submissionAttempted,dispatchVerified:false,...(refusal?{gatewayRefusal:refusal}:{}),remoteStoppingVerified:false},error:{code,message:failure.message,details:{...failure.details,stage:facts?.stage??stage,localStage:stage,classification:facts?.classification??'worker-local-stage',submissionAttempted,dispatchUncertain:submissionAttempted&&!noDispatchVerified}}};}
   finally{
     clearInterval(heartbeat);await pendingHeartbeat;
     // Releasing the logical lease never claims that a remote runner stopped.
-    if(gateway&&lease&&(!submitIntent||terminalObserved))try{await gateway.call('lease_release',{lease_id:lease.lease_id,token:lease.token});}catch{/* Preserve the primary failure. */}
+    if(gateway&&lease&&(!submissionAttempted||noDispatchVerified||terminalObserved))try{await gateway.call('lease_release',{lease_id:lease.lease_id,token:lease.token});if(report){report.output.remoteLeaseReleased=true;if(report.error)report.error.details.remoteLeaseReleased=true;}}catch(error){if(report){const failure={code:error instanceof ApiError?error.code:'SOURCE_UNREACHABLE',message:error instanceof ApiError?error.message:'Gateway lease release was not observed'};report.output.remoteLeaseReleased=false;report.output.leaseReleaseError=failure;if(report.error){report.error.details.remoteLeaseReleased=false;report.error.details.leaseReleaseError=failure;}}}
   }
 }

@@ -22,7 +22,8 @@ async function prepare(t: any) {
     await h.db.query("UPDATE policies SET grants=grants || '[\"service-clients.manage\",\"assets.read\",\"assets.register\",\"assets.change\",\"knowledge.read\"]'::jsonb WHERE principal_id='prn_alice'");
     await h.db.query("UPDATE policies SET grants=grants || '[\"assets.read\",\"assets.approve\"]'::jsonb WHERE principal_id='prn_bob'");
     await h.db.query("UPDATE policies SET grants=grants || '[\"service-clients.manage\",\"assets.read\"]'::jsonb WHERE principal_id='prn_outsider'");
-    const resource = await h.request('/v1/assets', { scopeId: 'scp_lab', kind: 'environment-resource', name: 'Synthetic execution resource', version: '1.0.0', declaration: { reads: ['test-bed'], writes: ['device-config'], credentials: [] }, configuration: {}, readers: ['prn_alice', 'prn_bob'] });
+    await h.setRole('prn_outsider','admin');
+    const resource = await h.request('/v1/assets', { scopeId: 'scp_lab', kind: 'environment-resource', name: 'Synthetic execution resource', version: '1.0.0', declaration: { reads: ['test-bed'], writes: ['device-config'], executionIsChange: true, credentials: [] }, configuration: {}, readers: ['prn_alice', 'prn_bob'] });
     const body = { scopeId: 'scp_lab', resourceAssetId: resource.assetId, name: 'Synthetic resource client', secret, scopes: ['introspect', 'bundles:read'], resourceScopes: ['synthetic:run'] };
     return { h, resource, body };
 }
@@ -114,14 +115,14 @@ test('Source artifact bundles: authorized resource clients fetch opaque grammar 
     assert.equal((await fetch(`${h.url}/v1/blobs/${source.sha256}`, { headers })).status, 403);
 });
 test('Resource identity: approved execution uses server-issued user tokens renewed across a long run and stopped by lease or grant revocation', async (t) => {
-    const { h } = await prepare(t), gateway = await caseGateway(t);
+    const { h } = await prepare(t), gateway = await caseGateway(t);gateway.state.actualBuild='SYNTHETIC-BUILD-7';
     await h.db.query("UPDATE policies SET grants=grants || '[\"cases.execute\",\"builds.read\"]'::jsonb WHERE principal_id='prn_alice'");
     await writeFile(`${h.scratch}/gateways.json`, JSON.stringify({ profiles: { lab: { endpoint: `${gateway.origin}/mcp`, pollMs: 25 } } }));
     h.env.CIRCLE_SERVER_EXECUTION_GATEWAYS = `${h.scratch}/gateways.json`;
     h.env.CIRCLE_SERVER_RESOURCE_TOKEN_TTL_SECONDS = '2';
     await h.stop();
     await h.startServer();
-    const input = { scopeId: 'scp_lab', kind: 'connector-instance', name: 'Server-issued synthetic gateway', version: '1.0.0', declaration: { reads: ['test-bed'], writes: ['device-config'], credentials: [] }, configuration: { packageId: 'case-gateway', runtimeProfileRef: 'lab' }, readers: ['prn_alice', 'prn_bob'] }, resource = await h.request('/v1/assets', input), client = await h.request('/v1/service-clients', { scopeId: 'scp_lab', resourceAssetId: resource.assetId, name: 'Gateway verification client', secret, scopes: ['introspect', 'bundles:read'], resourceScopes: ['jumphost:run','synthetic:read'] });
+    const input = { scopeId: 'scp_lab', kind: 'connector-instance', name: 'Server-issued synthetic gateway', version: '1.0.0', declaration: { reads: ['test-bed'], writes: ['device-config'], executionIsChange: true, credentials: [] }, configuration: { packageId: 'case-gateway', runtimeProfileRef: 'lab' }, readers: ['prn_alice', 'prn_bob'] }, resource = await h.request('/v1/assets', input), client = await h.request('/v1/service-clients', { scopeId: 'scp_lab', resourceAssetId: resource.assetId, name: 'Gateway verification client', secret, scopes: ['introspect', 'bundles:read'], resourceScopes: ['jumphost:run','synthetic:read'] });
     const connected = await h.request('/v1/assets', { ...input, assetId: resource.assetId, version: '2.0.0', configuration: { ...input.configuration, serviceClientId: client.clientId } });
     await h.request(`/v1/assets/${connected.assetId}/lifecycle`, { version: connected.version, sha256: connected.sha256, state: 'approved' }, 'bob');
     await h.request(`/v1/assets/${connected.assetId}/lifecycle`, { version: connected.version, sha256: connected.sha256, state: 'running' });
@@ -154,7 +155,7 @@ test('Resource identity: approved execution uses server-issued user tokens renew
     const row = (await h.db.query("SELECT * FROM resource_access_tokens WHERE operation_id IS NOT NULL ORDER BY expires_at DESC LIMIT 1")).rows[0], { PrivateVault } = await import('../../packages/assets/src/vault.ts'), token = await new PrivateVault(`${h.env.CIRCLE_SERVER_DATA_DIR}/private-credentials`).get(row.secret_key, row.secret_binding);
     assert.equal((await form(h, '/v1/introspect', client.clientId, { token })).body.active, true);
     const store=Object.create(Store.prototype) as Store;store.pool=h.db;const auth=new Auth(store),issuer=new ServiceClients(store,auth,new Assets(store,auth,`${h.env.CIRCLE_SERVER_DATA_DIR}/private-credentials`),2),operation=(await h.db.query('SELECT * FROM operations WHERE operation_id=$1',[row.operation_id])).rows[0];
-    worker.kill('SIGSTOP');try{await store.transaction(async tx=>{await tx.query('SELECT 1 FROM operations WHERE operation_id=$1 FOR UPDATE',[operation.operation_id]);const prior=(await tx.query('SELECT * FROM resource_access_tokens WHERE operation_id=$1 ORDER BY expires_at DESC LIMIT 1',[operation.operation_id])).rows[0];await tx.query("UPDATE resource_access_tokens SET expires_at=clock_timestamp()+interval '150 milliseconds' WHERE digest=$1",[prior.digest]);const renewed=await issuer.issueForOperation(tx,{principalId:'prn_alice',tenantId:'tnt_lab',kind:'user'},operation,client.clientId,['jumphost:run'],'cases.execute');assert.notEqual(renewed!.key,prior.secret_key,'A nearly expired token must not be reused for a new resource request');});}finally{worker.kill('SIGCONT');}
+    worker.kill('SIGSTOP');try{await store.transaction(async tx=>{await tx.query('SELECT 1 FROM operations WHERE operation_id=$1 FOR UPDATE',[operation.operation_id]);const prior=(await tx.query('SELECT * FROM resource_access_tokens WHERE operation_id=$1 ORDER BY expires_at DESC LIMIT 1',[operation.operation_id])).rows[0];await tx.query("UPDATE resource_access_tokens SET expires_at=clock_timestamp()+interval '150 milliseconds' WHERE digest=$1",[prior.digest]);const renewed=await issuer.issueForOperation(tx,{principalId:'prn_alice',tenantId:'tnt_lab',kind:'user'},operation,client.clientId,['jumphost:run'],'methods.use');assert.notEqual(renewed!.key,prior.secret_key,'A nearly expired token must not be reused for a new resource request');});}finally{worker.kill('SIGCONT');}
     const narrowed=await store.transaction(tx=>issuer.issueForOperation(tx,{principalId:'prn_alice',tenantId:'tnt_lab',kind:'user'},operation,client.clientId,['synthetic:read'],'methods.use')),narrowToken=await new PrivateVault(`${h.env.CIRCLE_SERVER_DATA_DIR}/private-credentials`).get(narrowed!.key,narrowed!.binding);assert.equal((await form(h,'/v1/introspect',client.clientId,{token:narrowToken})).body.scope,'synthetic:read');
     gateway.state.hold = false;
     await h.phase(task.taskId, 'delivered');
@@ -170,10 +171,10 @@ test('Resource identity: approved execution uses server-issued user tokens renew
     await until(async () => gateway.state.calls.filter(name => name === 'case_submit').length === 2);
     await until(async () => (await h.db.query('SELECT 1 FROM case_gateway_receipts r JOIN operations o USING(operation_id) WHERE o.task_id=$1 AND r.gateway_task_id IS NOT NULL', [second.taskId])).rowCount);
     const secondToken = (await h.db.query('SELECT r.* FROM resource_access_tokens r JOIN operations o USING(operation_id) WHERE o.task_id=$1 ORDER BY r.expires_at DESC LIMIT 1', [second.taskId])).rows[0], access = await new PrivateVault(`${h.env.CIRCLE_SERVER_DATA_DIR}/private-credentials`).get(secondToken.secret_key, secondToken.secret_binding);
-    await h.db.query("UPDATE policies SET grants=grants-'cases.execute' WHERE principal_id='prn_alice'");
+    await h.setRole('prn_alice','viewer');
     assert.deepEqual((await form(h, '/v1/introspect', client.clientId, { token: access })).body, { active: false });
     await h.phase(second.taskId, 'unknown');
-    await h.db.query("UPDATE policies SET grants=grants || '[\"cases.execute\"]'::jsonb WHERE principal_id='prn_alice'");
+    await h.setRole('prn_alice','admin');
     const observer = await h.startWorker('lab-east-02');
     gateway.state.hold = false;
     await h.request(`/v1/tasks/${second.taskId}/reconcile`, { operationId: secondToken.operation_id });

@@ -53,9 +53,10 @@ test('execution preflight rechecks the live user permission and original bytes e
   const source = await upload(h,'A');
   const task = await h.request('/v1/tasks/submit',{ scopeId:'scp_lab',capabilityPackId:'mindmap-compile',input:{ sourceRevisionId:source.sourceRevisionId },idempotencyKey:'permission-flight' });
   const work = await claim(h);
-  await h.db.query("UPDATE policies SET grants=grants-'methods.use' WHERE principal_id='prn_alice'");
+  await h.setRole('prn_alice','viewer');
   await h.reject(`/v1/workers/operations/${work.operationId}/preflight`,{ fencingToken:work.fencingToken },'FORBIDDEN_ACTION','lab-east-01');
   const result = await h.request(`/v1/tasks/${task.taskId}/result`); assert.notEqual(result.phase,'delivered'); assert.deepEqual(result.artifacts,[]);
+  await h.setRole('prn_alice','admin');
   await h.reject('/v1/sources',{ scopeId:'scp_lab',fileName:'../../escape.json',contentBase64:sourceBytes('A').toString('base64') },'INVALID_PAYLOAD');
   await h.reject('/v1/sources',{ scopeId:'scp_lab',fileName:'invalid.json',contentBase64:'not-base64!' },'INVALID_PAYLOAD');
   const largeBytes = Buffer.alloc(2*1024*1024,0x41);

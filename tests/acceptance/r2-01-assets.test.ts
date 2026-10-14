@@ -10,7 +10,7 @@ async function grants(h:Harness){
   await h.db.query("UPDATE policies SET grants=grants||$1::jsonb WHERE principal_id=ANY($2::text[])",[JSON.stringify(['assets.read']),['prn_limited','prn_outsider']]);
 }
 const registration={scopeId:'scp_lab',kind:'connector-instance',name:'Synthetic read source',version:'1.0.0',
-  declaration:{reads:['source-records'],writes:[],credentials:[]},configuration:{packageId:'fixture-reader',runtimeProfileRef:'profile_synthetic'},readers:['prn_alice','prn_bob']};
+  declaration:{reads:['source-records'],writes:[],credentials:[]},configuration:{packageId:'fixture-reader'},readers:['prn_alice','prn_bob']};
 
 test('R2 Act 1: register assets and write-only personal credentials without exposing values in metadata audit or logs',async t=>{
   const h=await setup(t);await grants(h);let logs='';h.server!.stdout!.on('data',data=>{logs+=data.toString();});h.server!.stderr!.on('data',data=>{logs+=data.toString();});
@@ -59,9 +59,9 @@ test('R2 Act 1: asset queries filter before pagination and health reports missin
   await h.request(`/v1/assets/${pending.assetId}/lifecycle`,{version:pending.version,sha256:pending.sha256,state:'approved'},'bob');assert.equal((await h.request('/v1/assets',undefined,'bob')).total,1);
   const health=await h.request(`/v1/assets/${visible.assetId}/health`,{});assert.equal(health.health.result,'unknown');assert.equal(health.health.reason,'checker-not-registered');
   for(const limit of ['0','101','1.5',''])await h.reject(`/v1/assets?limit=${limit}`,undefined,'INVALID_PAYLOAD');
-  await h.db.query("UPDATE policies SET grants=grants-'assets.read' WHERE principal_id='prn_bob'");
+  await h.setRole('prn_bob','admin');
   assert.equal((await h.request('/v1/assets',undefined,'bob')).items[0].assetId,visible.assetId);
-  await h.db.query("UPDATE policies SET grants=grants-'assets.approve' WHERE principal_id='prn_bob'");
+  await h.setRole('prn_bob',null);
   await h.reject('/v1/assets',undefined,'FORBIDDEN_ACTION','bob');
   await h.reject('/v1/assets',undefined,'FORBIDDEN_ACTION','lab-east-01');
 });

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { writeFile } from 'node:fs/promises';
 import { setup, type Harness } from './harness.ts';
-import { sha256 } from '../../packages/contracts/src/index.ts';
+import { sha256,actionDigest,PACK_FLOWS } from '../../packages/contracts/src/index.ts';
 async function prepare(t: Parameters<typeof setup>[0]) {
     const h = await setup(t);
     await h.db.query("UPDATE policies SET grants=grants || '[\"assets.read\",\"assets.register\",\"skillpacks.read\",\"skillpacks.submit\",\"skillpacks.run\"]'::jsonb WHERE principal_id='prn_alice'");
@@ -16,7 +16,14 @@ async function prepare(t: Parameters<typeof setup>[0]) {
 async function submit(h: Harness, version: string, id = 'approval-fixture') {
     const bytes = Buffer.from(`---\nname: ${id}\ndescription: Synthetic historical decision\n---\nRevision ${version}.`), response = await fetch(`${h.url}/v1/skillpacks`, { method: 'POST', headers: { authorization: `Bearer ${await h.login()}`, 'content-type': 'application/json', 'x-scope-id': 'scp_lab' }, body: JSON.stringify({ manifest: { id, version, title: 'Synthetic historical decision', owner: 'synthetic', tools: [], triggers: ['manual'], inputs: {}, outputs: ['out.json'], model: 'scripted' }, files: [{ path: 'SKILL.md', base64: bytes.toString('base64'), sha256: sha256(bytes) }], trial: { toolCalls: [], outputs: [] } }) }), body = await response.json() as any;
     assert.equal(response.status, 201, JSON.stringify(body));
-    return body.data;
+    const pack=body.data;
+    if(version==='1.0.0'){
+      // Reconstruct the pre-change-set persisted request to exercise upgrade
+      // compatibility. New submissions are covered by the supersession suite.
+      const asset=await h.request(`/v1/assets/${pack.assetId}`),approval=(await h.request(`/v1/tasks/${pack.approvalTaskId}/approvals`))[0],input={skillPackId:pack.skillPackId,digest:pack.digest,assetId:pack.assetId,assetVersion:pack.assetVersion},action={inputRevisionId:approval.inputRevisionId,name:'assets.publish',target:pack.assetId,targetIdentity:asset.sha256,args:{skillPackId:pack.skillPackId,digest:pack.digest}},binding={targetIdentity:asset.sha256,actionDigest:actionDigest(action)};
+      await h.db.query('UPDATE skill_packages SET change_set_id=NULL WHERE skill_pack_id=$1',[pack.skillPackId]);await h.db.query('DELETE FROM change_sets WHERE change_set_id=$1',[pack.changeSetId]);await h.db.query("UPDATE tasks SET input=$2,capability_pack_id='asset-registration',flow_version=$3 WHERE task_id=$1",[pack.approvalTaskId,JSON.stringify(input),PACK_FLOWS['asset-registration']]);await h.db.query('UPDATE input_revisions SET input=$2 WHERE input_revision_id=$1',[approval.inputRevisionId,JSON.stringify(input)]);await h.db.query('UPDATE approvals SET action=$2,target_identity=$3,action_digest=$4 WHERE approval_id=$1',[approval.approvalId,JSON.stringify(action),asset.sha256,binding.actionDigest]);await h.db.query('UPDATE pending_inputs SET binding=$2 WHERE request_id=$1',[approval.approvalId,JSON.stringify(binding)]);pack.changeSetId=null;
+    }
+    return pack;
 }
 async function decision(h: Harness, pack: any) { const record = (await h.request(`/v1/tasks/${pack.approvalTaskId}/approvals`))[0]; return { path: `/v1/tasks/${pack.approvalTaskId}/approvals/${record.approvalId}`, record, body: { inputRevisionId: record.inputRevisionId, targetIdentity: record.targetIdentity, actionDigest: record.actionDigest, approve: true } }; }
 test('Skill rejection: an old pending version can be declined after a newer version is approved without touching the latest revision', async (t) => {
@@ -57,7 +64,7 @@ test('Skill rejection: retired applicant permissions do not prevent an independe
     const h = await prepare(t), old = await submit(h, '1.0.0'), latest = await submit(h, '1.0.1'), pending = await decision(h, old), current = await decision(h, latest);
     await h.request(current.path, current.body, 'bob');
     const before = (await h.db.query('SELECT lifecycle,sha256,approved_digest,approved_by FROM asset_versions WHERE asset_id=$1 AND version=$2', [latest.assetId, latest.assetVersion])).rows[0];
-    await h.db.query("UPDATE policies SET grants=grants-'skillpacks.submit'-'assets.read',scopes='[\"scp_hidden\"]'::jsonb WHERE principal_id='prn_alice'");
+    await h.setRole('prn_alice',null);
     const declined = await h.request(pending.path, { ...pending.body, approve: false }, 'bob');
     assert.equal(declined.status, 'declined');
     assert.equal((await h.request(`/v1/tasks/${old.approvalTaskId}/status`, undefined, 'bob')).phase, 'delivered');
@@ -69,12 +76,13 @@ test('Skill rejection: scope reviewer permission self decision and original resp
     const pending = await decision(h, old), reject = { ...pending.body, approve: false };
     await h.reject(pending.path, reject, 'SELF_APPROVAL');
     await h.db.query("UPDATE policies SET grants=grants || '[\"decisions.approve\",\"assets.approve\"]'::jsonb WHERE principal_id=ANY($1::text[])", [['prn_limited', 'prn_outsider']]);
+    await h.setRole('prn_limited','admin','scp_hidden');await h.setRole('prn_outsider','admin');
     await h.reject(pending.path, reject, 'FORBIDDEN_SCOPE', 'limited');
     await h.reject(pending.path, reject, 'FORBIDDEN_SCOPE', 'outsider');
     await h.reject(pending.path, { ...reject, actionDigest: '0'.repeat(64) }, 'APPROVAL_STALE', 'bob');
     await h.reject(pending.path, { ...reject, targetIdentity: 'different-target' }, 'APPROVAL_STALE', 'bob');
     await h.reject(pending.path, { ...reject, inputRevisionId: `inrev_${'0'.repeat(32)}` }, 'APPROVAL_STALE', 'bob');
-    await h.db.query("UPDATE policies SET grants=grants-'assets.approve' WHERE principal_id='prn_bob'");
+    await h.setRole('prn_bob','member');
     await h.reject(pending.path, reject, 'FORBIDDEN_ACTION', 'bob');
     assert.equal((await h.status(old.approvalTaskId)).phase, 'waiting-review');
     assert.equal((await h.request(`/v1/tasks/${old.approvalTaskId}/approvals`))[0].status, 'open');

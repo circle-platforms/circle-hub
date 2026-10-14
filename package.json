@@ -10,7 +10,9 @@
     "url": "https://github.com/circle-platforms/circle-hub.git"
   },
   "homepage": "https://circle-platforms.github.io/circle-hub/",
-  "bin": { "circle-server": "apps/server/src/cli.ts" },
+  "bin": {
+    "circle-server": "apps/server/src/cli.ts"
+  },
   "engines": {
     "node": ">=24"
   },
@@ -29,21 +31,24 @@
     "dev:stack": "node scripts/dev-stack.ts"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.1",
     "exceljs": "4.4.0",
     "fflate": "0.8.3",
     "parse5": "8.0.1",
     "pg": "8.23.1",
     "read-excel-file": "9.3.12",
     "saxes": "5.0.1",
+    "typescript": "5.9.3",
     "zod": "4.6.5"
   },
   "devDependencies": {
     "@types/node": "24.10.0",
     "@types/pg": "8.23.1",
-    "embedded-postgres": "18.4.0-beta.17",
-    "typescript": "5.9.3"
+    "embedded-postgres": "18.4.0-beta.17"
   },
   "overrides": {
-    "exceljs": { "uuid": "11.1.1" }
+    "exceljs": {
+      "uuid": "11.1.1"
+    }
   }
 }

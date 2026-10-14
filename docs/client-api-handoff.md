@@ -371,3 +371,201 @@ worker 的回报处理若因 ApiError 拒绝，知识/制品写入回滚，操�
 运行 token 仍默认短期 5 分钟（CIRCLE_SERVER_RUN_TOKEN_TTL_MS 1000–300000ms 可缩短用于验收），绑定操作/fence/任务和固定 scopes/grants/tools。只有持有效租约的 worker 在完整 preflight 校验后续期，截止不超过该操作 deadline；任务结束、取消、租约过期、旧 fence 或输入修订变化立即阻止新访问。客户端不能调用 auth/refresh 续这种 token，也不因本地会话断开就声称远端停止。
 
 权限、类别和能力包筛选先于 limit，按创建时间、taskId 倒序；游标取保存的完整 PostgreSQL 创建时间，不按 phase/更新时间排序，server 重启可续读。after 必须是当前身份可读的任务；越 scope/个人任务返回 FORBIDDEN_SCOPE，格式错误、未知类别和越界 limit 为 INVALID_PAYLOAD。省略新参数时行为与第一阶段相同。
+
+## 修订 3：人的范围角色与审批资格
+
+登录/续期保持 token、expiresAt 等原字段，追加 subjectType。人返回 roles:[{scopeId,role:"admin"|"member"|"viewer"}]，不暴露内部动作串；服务客户端只有授权 scope 串，没有角色。原有机器动作串、资源目标策略和来源 readers 继续约束访问。人的角色按每个 scope 独立计算，根范围 scp_root 管理员可管理范围，不能因此读取其他范围原件或私有任务。旧人类策略一次迁移为角色，重启不覆盖已决定的角色。developer、approver 是 scp_lab 的两个管理员。
+
+GET /v1/scopes 返回 {total,items}，每项含 scopeId/name/twoPersonRule/policyVersion/adminCount/singleAdminMode；GET /v1/scopes/{scopeId}/roles 返回 {total,items} 的当前人员角色登记簿，包含角色记录 revision、verification 和 changeSetId。内部预设数据位于 packages/tasks/role-presets.json；member 可以读、运行、提交草稿，viewer 可以读和调用获准的 read 工具，只有 admin 决定变更。动作与目标授权仍在每次访问实时检查。
+
+POST /v1/scopes/{scopeId}/roles 接收 {principalId,role,idempotencyKey}（role:null 移除）；POST /v1/scopes/{scopeId}/policy 接收 {twoPersonRule,idempotencyKey}。两者登记冻结的策略草稿并返回 {changeSetId,scopeId,owner,approvalTaskId,status,items,targetIdentity,identityDigest,verification}，角色/策略直到决定后才生效。审批沿用任务 approvals/input 接口，输入修订、目标摘要、动作摘要必须原样回应。只有同 tenant 的人可获得角色；最后一名根管理员不能移除。
+
+成员的申请须管理员决定。twoPersonRule 默认 true；两名管理员时申请人不能批自己，规则 false 或仅一名管理员时可本人明确决定。ApprovalView 和响应新增 decisionMode:"self"|"independent"|null、singleAdminMode、verification，审计保存同样字段和 policyVersion。自决会有决定记录，不静默批准。每次决定记录保持其当时策略，不随后续回应或策略修改重写。verification 只表示规则 id/版本的程序核验，不能当作人的批准。
+
+B 资料、C 任务、D 执行、E 方法各有记录、资产、审批策略、证据、扩展点：记录保持原 id/修订；资产版本有 SHA、声明、配置与生命周期；审批绑定三项；工具/外部交互原样证据与模型判断分开；扩展实现通过对象声明的接口安装。后续变更集与执行链继续使用这五样，保留原客户端接口。
+
+## 修订 3：变更集与依赖核验
+
+POST /v1/change-sets 接收 {scopeId,title?,items:[{assetId,version,sha256}],idempotencyKey}，1–100 项，各资产只能出现一次，必须是本人、同 scope 的当前 draft。items 的请求顺序固定：targetIdentity=canonicalHash(items.map(item=>item.sha256))，actionDigest=canonicalHash(items.map(({assetId,version})=>({assetId,version})))；输入修订仍单独绑定。返回 changeSetId/approvalTaskId/status/items/submission/targetIdentity/identityDigest/verification/blockedReasons/supersededBy，identityDigest 即该审批的 actionDigest。GET /v1/change-sets/{id} 和列表按任务读权限与 tenant/scope 过滤。审批请求 action.name=changesets.apply；原审批回应接口不变，客户端原样回传绑定三项。
+
+一次决定原子处理所有项：approved 或 declined，并交付治理任务。新变更集含同一资产时，旧的 open 请求和 pending input 关闭为 superseded，旧任务 delivered；旧资产版本不会因此批准，另一项也不会被部分批准。ApprovalView、技能 status 和 pending input 支持 superseded。同键同申请返回同一变更集，不同申请为 IDEMPOTENCY_MISMATCH；已决定的请求不能再应用。
+
+声明工具的实例须 running，runtimeProfileRef/sourceArtifactId/配置 dependsOn 的依赖须 approved 或 running。configuration.dependsOn 可以是资产 id 数组；sourceArtifactId 引用已批准的外部制品，其自身的 id 不视为自依赖。缺依赖时 status=blocked，原因列入 blockedReasons，审批保持 open；批准返回 DEPENDENCY_NOT_APPROVED 和 blockedReasons（工具缺失同时有 details.check）。依赖生命周期变化通过持久队列触发重核，重启也会重核；没有每 100ms 扫描整份登记簿。verification 仅包含规则 id/版本和 passed/blocked，不代表批准。
+
+GET /v1/runtime-profiles 需 admin，返回当前运行配置的 {profileType:"connector"|"runtime"|"execution",profileRef,profileSha256,verification} 数组。没有地址、文件路径或密钥值；这只是配置观察。管理员再 POST /v1/assets，kind=runtime-profile、configuration={profileType,profileRef,profileSha256}、version/作用 scope/声明/readers 仍按普通资产；另一名管理员决定后才满足依赖。配置 ref 在每 scope/type 唯一，改配置后登记新版本并重新决定。连接器配置仍用 runtimeProfileRef；同名 ref 跨类型时另带 runtimeProfileType 明确选择。Circle runtime 的 ref 为 circle-runtime。旧真实部署须管理员补登记，平台不会因仓库外配置存在而批准。
+
+既有 POST /v1/assets、/v1/source-artifacts、/v1/skillpacks 和 /v1/modules/install 自动产生单项变更集并追加 changeSetId/approvalTaskId。原 lifecycle state=approved 调用继续可用，内部回应该单项的请求；多项必须使用其任务审批接口，不能逐项批准。技能缺声明的工具继续 SKILLPACK_CHECK_FAILED；仅声明工具当前不可用时受理为 blocked，check.missingTools 保留具体名称，就绪后仍须人决定。技能决定与运行时继续查目录。旧数据库的 assets.publish 请求保留历史绑定批准/驳回规则，旧单仍可驳回；新请求用自动 superseded 关单。
+
+## 修订 3：Skill、Tool、MCP server 与 Hook 的执行绑定
+
+运行仍使用既有 submit/status/events/result/input 接口。默认资源不会产生审批请求或 execution-submission；成员以上按当前范围角色、来源 readers、资源策略、已批准的 Tool 实现/产品线模块、running 资源和 runtime-profile 依赖进入执行链。`apv-case-execute` 的 input 可带 `methodAssetId`，值为批准后的 product-line 模块资产 id；模块须声明对应 flow。来源保持 commandSourceAssetId/build/sourceArtifactId 的既有绑定。既有内置兼容实现也要有 scope 内明确批准的 knowledge-source 定义，configuration 为 `{schema:"hub-tool-implementation/1",capabilityPackId,flowVersion,implementationSha256}`；这不是新的资产 kind。
+
+资源声明 `executionIsChange:true` 时，程序冻结 inputRevisionId、输入摘要、Tool/模块摘要、资源和来源版本、原件 id 与工作簿 SHA，登记 execution-submission 草稿，并作为一个变更集项。回应仍走任务 approvals；action.name 为 changesets.apply。批准只能被对应操作消费一次，决定不能重派另一操作；旧客户端原样回应三项绑定即可。默认资源不需要这一决定。
+
+Tool 保持原有 name/title/description/inputSchema/effect/mode/permission/assetId/assetVersion，追加 MCP annotations、minimumRole、approval。人的权限以范围角色和 minimumRole 为准，旧 permission 仅为机器 scope/客户端兼容标识；professional_permissions 登记表撤下。provider declaration 可带 provides:{tools,resources,prompts}，tools 使用 MCP name/description/object inputSchema/annotations 与 effect/minimumRole/approval 标注。
+
+product-line/1 使用 tools:[{manifest,imports}]、hooks:[{manifest,event,order}]、resources 与 flows。tools 的直接、动态、转导入及局部引用在安装前检查：文件须在冻结集合内；外部依赖只允许明确声明的 exceljs 4.4.0、read-excel-file 9.3.12、fflate 0.8.3、zod 4.6.5、saxes 5.0.1、parse5 8.0.1。Node 内建模块也不允许，未声明或计算式 import 为 IMPORT_NOT_DECLARED；不执行安装脚本。Tool 读取原字节并返回结构，模块文件不改写；散列可用全局 WebCrypto。产品线原件经变更集批准后装载，每次执行仍核对当前权限、版本和 SHA。
+
+Hook 契约严格为 hub-hook/1：handle({event,binding:{method,resource,source,inputRevision},subject}) 返回 {decision:"pass"} 或 {decision:"block",code,facts}。五个 event 为 verify.deviceCommand / verify.hostCommand / verify.workbook / beforeDispatch / afterResult。对应三个核验 subject 分别是 {command,tree:{heads:[{command,present}]}}、{command,host,method,kwargs}、{client,contract:{testEnvEnabled:[]}}。处理器按 order 和稳定 id 顺序执行，block 即停；没有处理器时返回空判定列表，hub 不补产品规则。每项 hook.verification 事件及审计保留 ruleId/ruleVersion/event/result。block 的 code/facts 原样回传，补充授权行号、输入修订和原件 SHA。Hook 禁止 import、环境、网络、模型、动态代码和无限循环。
+
+运行结果保留失败原因和 script-conclusion evidence。命令不存在、主机自毁、权限拒绝等为 failed；可由申请人修复的来源未批准、网关不可用、租约不足、床构建不符停在 waiting-input，TaskView 追加 waitingReason，pendingInputs 中有对应请求。申请人使用原 input 接口提交新修订；修订保留 privateOwnerId/委托关系并清掉旧执行绑定和等待原因。床构建只从 env_prepare 的结构化观测或确定性解析的设备回显取得；配置标签不作为观测。unknown 保持冻结、不重发、独立 reconcile、旧 fence 拒绝，不因本地停止声称远端已停。
+
+## 修订 3：开发会话寿命与吊销
+
+POST /v1/auth/refresh 仍返回登录同形 token/expiresAt/roles，但 token 会轮换；旧 token 留五秒并发宽限，客户端须保存新 token。开发会话族的绝对寿命为 24 小时，续期不能突破；POST /v1/auth/logout 携带 Bearer 和空对象，立即吊销同族 token。短期 run token 不可 refresh/logout，仍由持当前租约的 worker 续期并受任务/fence/deadline 约束。开发身份从配置移除后重启失效；已治理的角色不被配置重写。开发密码失败锁定、请求桶和异步散列并发有上限，超额为 RATE_LIMITED，不回显凭据或用户名。
+
+## 修订 3：凭据模式、隔离与明确的明文例外
+
+执行 provider 可在 configuration 指定 credentialMode:"static-secret"；其 declaration.credentials 引用通过 POST /v1/assets/{providerId}/credentials 登记的凭据。body 为 {version,value,mode:"static-secret"}，value 至少 32 字符且无头部控制字符，响应只有引用和模式。以凭据资产 id 调同一 credentials 路由可轮换当前值，模式不能原地改变。密钥在 vault 中持久化，worker 每次已核授权的调用前取当前值，以 Authorization: Bearer 注入；此模式不访问签发 /token 或 introspect。批准且 running 的共享资源允许当前授权成员使用其绑定密钥，成员不因此获得别人的凭据元数据或明文。server-issued 与 external-oauth 模式继续兼容；停用凭据、资源修订、角色撤销、租约/fence 变化均重新核对。
+
+非回环带认证的资料源默认必须 HTTPS。需要接受纯内网 HTTP 时，管理员在对应 kind=runtime-profile 资产的 configuration 加 allowPlaintextAuthentication:true，其余 profileType/profileRef/profileSha256 不变；该版本经独立审批人决定后才生效，即使 scope 允许普通自决也不能自批这条例外。运行文件中直接塞该字段不会授予例外。当前 profile 版本不再 approved/running，或其配置摘要不匹配，工具调用返回 SOURCE_NOT_APPROVED；修改例外字段必须登记新版本并重新决定。未批准的 HTTP 认证为 SOURCE_FORBIDDEN，不带原地址或凭据。匿名 HTTP 和回环合成服务保留。
+
+每次获准的明文认证操作在派发意图、审计及取回的 SourceRevision/Evidence 里永久标 plaintextAuthentication:true，包含批准的 runtime-profile 资产/版本引用。缓存重读保留原标记；后续撤销不改写历史证据。目录页、命令原件或具体源内容仍遵循原读取权限。
+
+Skill、Tool 和 Hook 使用同一主机隔离边界。当前 Mac adapter 用 sandbox-exec 对未信任的进程及其后代限制文件内容读取、写入、网络出口及其他进程信息；只开放当前运行目录、固定 harness 的受信代码/依赖、明确的 CA 和 loopback server/model 端点。不能直接或经符号链接读取 vault 或运行配置。其它系统未配置受支持的隔离 adapter 时以 SANDBOX_UNAVAILABLE 失败，不退回同用户任意执行。Hook 与 Tool 在同一 tool-host 子进程执行，10 秒/16 MiB 返回上限；工作簿命令批量核验，避免每条命令启动一个进程。三种 subject 先按严格 schema 校验，主机客户端闭集属于批准的 Hook，解析器只读取字面行。
+
+Circle 的短期 run token 只在环境中，模型凭据临时写到单次 home，进程退出后清理 home/home-user；工作区产物仍按 SHA 留存。终态、过期租约和失效 fence 的短期令牌及工具注入副本由维护器清理，永久登记的静态凭据保留到轮换/吊销。来源证据与模型判断继续分开。开发身份中的角色只做初次种子，后续通过范围变更集管理；重启不以身份文件覆盖已治理角色。
+
+主机策略只能取 binding.resource.declaration 的已批准原声明：allowedTestHosts 为显式集合，hostCommandPolicies[host].allowPrefixes 为可选缩小策略；运行文件中的同名字段不作治理授权。三个 verify 挂点均带资源 assetId/version/sha256/declaration。APV 1.2.0 / 316760a 的 host-policy Hook 按新版四字段 subject 执行，闭集未声明、主机不在床、命令含模板、前缀不符分别给固定事实码。
+
+## 读取超时与大原件回报
+
+Tool effect=read 的操作按读取效果登记。上游 TimeoutError/AbortError、同步查询等待超时、worker 回报 unknown 或租约失联均为 failed + UPSTREAM_TIMEOUT，retryable=true，sideEffects="none"；不会冻结 provider，也不要求不存在的独立副作用核对。新键或修改查询可重试。写操作继续按原 unknown/fence/reconcile 规则冻结。迁移 29 会将历史只读 unknown 转为 failed 并重新计算资源冻结，仅解除没有写 unknown 的冻结。
+
+worker 先把原件按 SHA 放入 B，再在报告 raw[] 传 {path,sha256,objectKey:sha256,size,sourceType,...}；C 在当前租约/输入/资产授权下回读并验证实际字节和大小。旧 contentBase64 报告仍兼容；原件缺失、换 SHA 或错误 size 不被接纳。证据存指针、范围、SHA 与小片段，不把大文件或 NUL/不合法 UTF-8 的完整文本塞入 JSONB。GET /v1/knowledge/records/{evidenceId}/content 仍可在现有授权下读取原字节并复算 SHA。任何回报处理错误都原子落成 failed；数据库异常只给 RECEIPT_PROCESSING_FAILED 和安全 storageCode，不带 SQL、参数、内容或内部路径。
+
+docs.search 已完成文件后发生读取超时时，返回已观测 hits、nextCursor、coverage.complete=false 和 coverage.stopped:{code,file,fileIndex,lineIndex,completedFiles}；任务结果是 partial。游标指向未完成文件，不截掉也不猜测余下命中。该页没有完成文件，或目录遍历未完成时仍为 UPSTREAM_TIMEOUT，details.coverage 说明读取进度；没有伪造完整结果。正常分页形状保持。
+
+## 审计补充：角色、Hook 形状与模型凭据
+
+任何带 credentials 引用的 provider（不限模式）的 Tool 最低为 scope member，目录与调用都拒绝 viewer；访客仅可调用无凭据的只读 provider。静态资源共享不扩大人的角色。Hook 的 binding.resource 按 assetId/version/sha256/declaration 校验；主机策略形状为 allowedTestHosts:string[]、hostCommandPolicies[host].allowPrefixes:string[]，未声明交产品 Hook 判定。beforeDispatch 的 subject 为 {input,operationId}，afterResult 为 {result,operationId}，不接受多余字段。主机行只按 token 形状解析，函数启用状态只标注 functionStatus，规则由批准模块核验。
+
+Tool/Hook 子进程带 256MiB V8 堆上限，Hook 以最多 200 个 subject 的批次执行，每批十秒，保持顺序和首次 block 停止。APV 验收固定 224daa6 / 1.2.1，29 条包内测试。
+
+模型密钥不再写进 Circle home：可信 worker 为本次运行起 loopback 模型代理，在内存中注入真实上游密钥；Circle settings/credentials 只有本次代理端点与随机 nonce，退出关闭代理。代理拒绝非模型路径、无 nonce 的请求及远程开发端点。Skill 产物出口对 run token、代理 nonce、模型密钥按字节替换，保留其它二进制字节，记录 sanitized 并重新算 SHA；事件同样脱敏。harness 自带 --yolo 不作为平台权限边界。仅一位管理员且其为 runtime-profile owner 时，明文例外仍不能自批，需先有独立 reviewer；这是明确的资格限制。
+
+每次模型代理只绑一个回环临时端口，256 位 nonce 仅本次有效，seatbelt 只开放该端口和 hub 端口。目标由当前独立批准的 circle-runtime 配置钉住，Host、查询和路径不能换目标；入站凭据头全部剥离，可信代理再注入上游 key。请求和响应各限 16MiB，SSE 按流透传，不记录体或把模型流量存为证据。runtime.model.proxy 仅记 upstreamHost/statusCode/requestBytes/responseBytes/durationMs/requestNumber。起不来/断连为 MODEL_PROXY_UNAVAILABLE，上游拒绝或超限为 MODEL_UPSTREAM_REJECTED，没有写真实 key 到 home 的降级。取消、超时、unknown、本地结束都关闭代理；取消后的事件拒绝不会覆盖已观测的本地退出。开发验收仍限回环脚本模型。
+
+## 读结果与治理内容补充
+
+docs.section / docs.search 投影里的 NUL 统一剔除；有变换的 result 带 sanitized:true、nulBytes 总数，原件仍可按 evidenceId 下载、逐字节核 SHA。docs.get 原件超过 256KiB 时返回 {path,content:{sha256,size,evidenceId,downloadPath}}，不再把大件 contentBase64 塞入任务；小件保留既有字段。下载沿用 GET /v1/knowledge/records/{evidenceId}/content 和当前来源权限。
+
+Tool 必须显式声明 effect，缺失拒绝登记。迁移 30 保持第 29 版原校验值，逐个审计/发出 operation.read-unknown-released，租约删除只针对释放集合；同一任务还有 write unknown 时保持 unknown，不推成读失败，也不重派写操作。
+
+GET /v1/skillpacks/{id} 为候选内容的只读视图：原技能摘要、files:[{path,sha256,sizeBytes}]、declaredTools、trial:{toolCalls,outputs}。同 scope 的有资格审批人能查看待批候选，即使未列入 readers；只列冻结提交清单和试跑哈希，不返回文件字节或凭据。跨 tenant/scope、失去角色或不可见草稿仍拒绝。
+
+case-gateway 资产的 POST /v1/assets/{id}/health 现在经 worker 的只读 gateway.health 调 lease_status，无远端租约；available/gateway-read-confirmed 表示本次凭据和网关读链路获确认，不代表设备就绪。gateway.topology 是 effect=read/mode=sync/最低成员的 provider Tool，实例别名遵循目录规则。worker 在 C 的当前租约/fence 与批准 runtime-profile 下，lease_acquire → bed_topology(refresh:false) → lease_release，立即释放；result 仅含 hosts（名字、没有地址）、remoteLeaseReleased、observation。原始拓扑 JSON 按 SHA 入 B，evidence 可由当前授权身份回读。管理员据这些观察登记新资源声明 allowedTestHosts，再经变更集独立批准；平台不自动批准或把返回拓扑当设备构建观察。静态密钥和 server-issued 两种方式均沿用保险箱注入，失效/无租约给明确错误，无旁路占床。
+
+supervisor 为每次子进程 start/exit/error 打一行 JSON：at/supervisorId/processId、code/signal、reason、graceful。dev:stack 会转出这些元数据；意外退出和明确 graceful 重启可区分，没有请求/响应体或凭据日志。
+
+## 修订 3 第 6 节：通知流与工作队列
+
+GET /v1/notifications?cursor=0&limit=100 需 tasks.read，返回 {items:[{seq,taskId,scopeId,kind,payload,createdAt}],cursor,hasMore}；limit 为 1–200。过滤当前 tenant/scope/私有任务之后分页，游标来自持久 outbox；没有当前可见事件时也可越过已过滤的序号。bot 受理失败没有伪造任务，通知 taskId=null、payload 带 botAssetId/occurrenceKey/error，只对运行所有者可见。
+
+GET /v1/notifications/stream 用同样的 cursor/limit 或 Last-Event-ID 建 SSE；事件 notification 带 id=seq 和通知 JSON，cursor 事件带下一游标（即使本页无通知）。客户端保存已处理游标，断线按它补读，轮询是同一条持久流。服务器每轮重核身份/角色，过期发 session.expired、撤权发 permission.revoked、流内部错误发 stream.error 后关闭；使用客户端已刷新会话重连，不在流中索取密码。流有心跳/背压处理，graceful shutdown 会结束连接。
+
+GET /v1/queues 返回 awaitingMyApproval/awaitingMyInput/submittedByMe/assignedToMe/exceptions，各为 {count,oldestWaitMs,overSla,slaMs}。审批计数按当前管理员资格、twoPersonRule 与申请人过滤；输入和 bot 失败仅归当前所有者，私有任务不借队列暴露。异常包括 unknown/failed、expired/superseded 请求、失败 bot occurrence 与管理员范围内离线 worker。SLA 默认审批24小时、输入5分钟、其它1小时，响应明示阈值；assignedToMe 只读持久的真实 assignment context，没有分派记录就是零，不从模型文本或申请人身份推断指派。
+
+## 修订 3 第 8 节：列表即查询
+
+登记簿的 GET 加 `view=page` 返回 `{total,items,cursor}`。覆盖 tasks、assets、skillpacks、change-sets、scopes、scopes/{id}/roles、service-clients、object-types、objects、tools；不带 view 保留各接口原数组或原分页形状。F 导出 RegistryPageQuery/RegistryPage 与各路由的 pageQuery/pageResponse（tasks/assets/objects 的 query 与 response 同时接受兼容形状）。Circle 新列表统一用 view=page。
+
+通用参数：limit 默认20、范围1–100；cursor 是原样回传的 opaque token；scopeId/productLineId/flowVersion/status/lifecycle/owner 可选；minAgeMs/maxAgeMs 非负，最小不得大于最大；sort=updatedAt|age、order=desc|asc，默认最近更新时间倒序。age/desc 表示最老在先。tasks 另支持 kind=work|tool|index、capabilityPackId；assets 另支持 kind；objects 另支持 typeId/system。权限、私有边界与分面先过滤，再计算总数和分页，权限每页重核。跨身份或改变筛选/排序/limit 的游标为 INVALID_PAYLOAD，越权 scope 为 FORBIDDEN_SCOPE；不手工拼 token。
+
+时间游标保存数据库完整微秒和稳定 id，年龄条件钉住首个请求时间；总数是本页当前授权数据的总数，后续页仍可能因真实变更而改变，不承诺跨请求的永久快照。新增资产版本、技能和服务客户端更新时间用于排序，健康/轮换/状态的实际更新也会改变更新时间。tools 先用调用者目录做权限核对，再在该集合分页，ETag 跟随实际页与授权。
+
+分面只用记录里已声明的维度，不从产品名/平台名猜分类。任务 productLineId 取持久 context，资产/技能/工具取 configuration，企业对象取 attributes；flowVersion 使用任务 flow 或相应声明。owner 对任务/变更集/技能是申请人，资产/工具是资产所有者，对象是观测登记人，角色/服务客户端是其主体，词表是登记人。范围和租户级词表没有凭空补个人 owner/scope/productLine：不存在的维度不匹配该筛选。状态用各登记簿原状态（task phase、资产 lifecycle、skill status、change-set status、role、服务客户端 active/revoked、词表 registered）。
+
+模型上游规则修正：runtime-profile 的模型端点是批准 allowlist，回环脚本模型仅为验收配置；非回环 HTTPS 可用，非回环认证 HTTP 拒绝。运行配置 model.kind 支持 scripted/remote，可加 caFile/caSha256；有自定义 CA 时验证实际 DER SHA/主机名，仍可用正常系统 CA。每次 run 冻结 runtimeProfile:{assetId,version,sha256,profileSha256}，派发前重核，换版本不会悄悄替换旧运行的模型端点。worker 的私有通道把对应端点交可信代理，sandbox 只见回环代理。模型原件/流量仍不属于 evidence。gateway.health 使用独立 gateway-health 资源，不占或解冻用例执行资源；lease_status 正常仍只证明链路读确认。
+
+Circle runtime 的新受理从同一 scope 的 circle-runtime 资产修订中选最新已 approved/running 且 approved_digest 等于该修订 SHA 的版本；登记草稿不会改变这个选择。已受理/已派发任务每次 preflight 核对自己冻结的 assetId/version/sha256/profileSha256，旧修订仍获批准且摘要与进程配置一致时继续，批准同配置的新修订不会终止它。新受理改用新的批准版本。停用旧修订可 POST /v1/assets/{id}/lifecycle，带旧 version/sha256/state=disabled，仅该资产所有者且当前有 assets.change 可做；只对 runtime-profile 开放历史修订停用。被停用或摘要与进程配置不再匹配时，worker 终止本地 Circle，观察本地退出并保持 remoteStoppingVerified=false/unknown，按现有核对路径处理。未配自定义 CA 的 HTTPS 使用系统信任库和主机名校验；要固定 CA 时同时配置 caFile/caSha256。
+
+## 修订 3 第 9 节：中立原语与 MCP
+
+Circle 的 POST /v1/skillpacks 仍收原 body，响应增加 neutralManifest（hub-skill/1）。名称/描述/入口从 frontmatter 与清单推导，inputs 为声明输入名、outputs/triggers/tools 保留原清单；无法推导的为空，不把 harness 特有字段删出原件。knownCompatible 初始空；成功的固定 Circle 运行另存 harness/runtimeCommit/evidenceId/taskId 观察，GET skillpacks/{id} 与列表投影显示它，冻结提交原件与 digest 不改。
+
+POST /v1/harness/import：{scopeId,sourceHarness:"claude-code"|"codex"|"opencode"|"gemini"|"cursor",version,files:[{path,base64,sha256}],trial?:{toolCalls:[{name,argsSha256,ok}]}}。调用已合入的公开 importFrom/exportTo 纯库，创建 skill-package/instruction/agent/command 草稿，共用资产/变更集独立批准。整批事务，SHA/文件集/范围重核，重复同字节不重复登记；声明工具时拒绝试跑声明外调用，没有中立声明的只披露。各 harness 的 permission hint 由适配器保留，不擅自等同工具闭集。Hook/provider 需要产品模块/runtime-profile 的治理路径，返回 NO_HARNESS_PROJECTION，不自动装入或执行。
+
+四类导入原语在登记事务内即创建变更集，返回 changeSetId/approvalTaskId；重复导入返回同一资产与请求引用，批准前导出为 SOURCE_NOT_APPROVED。knownCompatible 只记实际 RPC 中匹配本包 manifest.id 的成功 Skill 装载：用 tool_result.id 关联之前 assistant.tool_calls 的 args.name，不依据返回文字或别的技能成功。
+
+MCP 的所有调用都校验 body.idempotencyKey（若有）与 _meta["hub/idempotencyKey"] 一致。平台控制 Tool 的读写共用持久幂等回执：同 tenant/主体/scope/工具/键重放返回同一 evidence，不再执行读取；要读最新状态使用新键，重放仍检查当前权限和任务可见性。改变参数为 IDEMPOTENCY_MISMATCH。平台控制回执当前无到期窗口；专业 Tool 沿用 C 的 24 小时受理去重窗口，窗口之外可以受理新任务。这两类窗口不同，客户端不得把专业工具旧键当作永久防重证明。
+
+迁移 36 是追加历史补偿，不重写 29/30。operation.read-release-compensated 审计的 correctsAudit 指向原 30 审计，originalState=unprovable 表示 29 前状态没有可证明日志；leasesRestored=false。task.read-release-phase-compensated 只记 36 前实际 phase 和原任务/read 审计引用，historicalPhase=unprovable。旧租约不恢复；新释放只针对当前 unknown/read，写 unknown 继续冻结与独立核对。33–35 仍分别保留中立清单、MCP 回执与兼容观察用途。
+
+dev:stack 的 admin restart --graceful 现在请求 server 换进程后逐个排空/替换受其监督的两个 worker。每次保留同伴处理运行中的子 Tool，旧 worker 停止领取新活、完成已有操作后退出，再用原身份起新代码；不强杀设备操作以赶升级期限。CLI 的 workersRestartRequested=true 表示后台已请求替换，完成看 dev-stack.worker.draining/exit/ready JSON 日志（pid、时间、码/信号、graceful）。worker 自身退出只替换该进程，不删除临时 PostgreSQL；退出仍走 C 的租约与 unknown 规则。停止整个栈才清理临时数据。单独部署的外部 worker 不由 dev-stack 管理，workersRestartRequested=false；管理员仍须先 drain，再由其进程管理器替换，server restart 不声称已升级这些 worker。
+
+已安装并为产品线声明的 provider Tool，缺别名时使用产品线默认 prefix、包 prefix，最后以 packageId（连字符改下划线）作 prefix；显式实例 alias 优先。没有安装/声明的产品线仍不获得 provider。名称冲突按现有 tenant 唯一规则拒绝，不让缺 alias 静默隐藏工具。
+
+apv-case-execute 现为 **1.1.1**，flowVersion 仍 apv-case-execute/1。实现摘要变化后须用 GET /v1/packs 当前 version/flow/implementationSha256 重新登记并独立批准 hub-tool-implementation/1；旧任务的 methodAssetId 不自动改写。产品线模块资产仍按自身冻结 SHA/flow 解析，本笔未改变其字节或批准状态。成功终态的 gateway-results 原件与 result.result 也带 remoteLeaseReleased，释放失败为 false，不覆盖整案原结论。拒绝带 task_id/dispatched:true、已提交后的 status 错误均保留 unknown 且不释放潜在活动租约。
+
+设备日志归属与派发前拒绝的完整说明同步在 [执行交接](case-execution-handoff.md)：有序设备 IP 来自 env_prepare.conf.device_ips，或已有租约内按需读的 bed_topology.topology.applies_to.device_ssh_ips；原样入 B。解析按设备推进游标，每条已匹配命令有自己的 logSpan；拿不到唯一映射，设备步 unknown/unmapped=device_map_unavailable，主机步和检查点各按自身证据处理。设备归属接口 {environment,topology} 留给产品包解析 Tool 后续接管，尚未把这段旧兼容解析迁入独立产品包。
+
+1.1.1 的来源口径更正：现网部署版没有前述两个有序字段，真实回退用 topology.devices。全部负载均衡设备名须为 APV<index>，索引集合与 env_prepare.device_count 精确一致；日志 IP 必须唯一落在对应设备 ipv4 的 CIDR 地址集合里。否则 device_map_unavailable，绝不据任意主机名或命令文本猜 APV_n。source 标 gateway.bed_topology.devices；三种候选优先级是 conf.device_ips、applies_to.device_ssh_ips、devices 名字规则，前两个只在实际返回时适用。排空无截止时间，claim 在途时仍可能完成一笔新领操作；不强杀的边界也已补入执行交接。
+
+工作查询与通知补项：GET /v1/tasks?view=page 增加 queue=awaitingMyApproval|awaitingMyInput|submittedByMe|assignedToMe|exceptions；exceptions 可加 exception=unknown|expired|superseded|failed。GET /v1/queues 接受同一分面及 kind/capabilityPackId，使用同一任务授权/私有范围/run 委托/分面与队列条件，计数发生在限制之前。过期但仍 open 的审批按 expired 分类，不再待批。exceptions.groups 分开给任务四类、workerOffline、botAdmissionFailed；后两类是各自记录查询，分面不适用时 omittedGroups 明示，不能当作全平台确为零。
+
+POST /v1/tasks/{taskId}/assignment：{inputRevisionId,assignee?:principalId|null,dueAt?:ISO时间|null}，须任务可读且拥有 tasks.input；所有者或该 scope 管理员可更新，成员不能改别人的任务。assignee 必须同 scope 活跃成员/管理员；分派不授予私有任务读取权限，私有任务当前只允许分给所有者。TaskView 返回 assignee/dueAt。dueAt 是队列 SLA 日期，独立于 D 的执行截止时间。Scope 的 slaMs 可随 POST /v1/scopes/{scopeId}/policy 的单项变更集独立决定：完整键为 awaitingMyApproval/awaitingMyInput/submittedByMe/assignedToMe/exceptions，值为正毫秒；未传时保留原策略。计数优先 task.dueAt，否则等待起点加该范围 slaMs；不同范围值不一致时 counter.slaMs=null，并在 slaByScope 给出依据。
+
+updatedAt 页游标冻结 PostgreSQL 微秒时间锚点，后续更新超过锚点的记录交由下一次新查询展示；total 是锚点下当前可见匹配数。年龄排序按创建时间与 id；同微秒两条记录仍有独立位置。没有该分面的登记簿返回 INVALID_PAYLOAD/details.facet，不把 NULL 比较当空页。service-clients 的集合查询只在调用者拥有 service-clients.manage 的范围计数；没有这种范围时，旧 items/nextCursor 与 view=page 均返回同形空集合，仍校验 limit/游标/分面。详情、登记、轮换和吊销继续要求管理资格，不因集合可查而授权。
+
+通知只含 id、状态/原因码与 evidence 引用；完整结果从任务 result 取。规范事件包括 approval.requested/decision/superseded、task.waiting-review/waiting-input/delivered/failed/cancelled、operation.unknown、bot.started/output/admission-failed，以及已实际发出的变更集状态。旧 task.approval-requested/approval.response 继续保留在任务事件兼容流，通知目录使用规范名字。输入改写与新变更集都会发 approval.superseded，并给 supersededBy。通知游标只推进到最后可见事件；权限后来增加时，客户端应从 cursor=0 重查先前被滤掉的区间。
+
+outbox 保留默认最近至少 **10000 条事件**的补读窗口、最多 **100000 行**，年龄目标 **7 天**（硬上限优先）；环境可配 CIRCLE_SERVER_OUTBOX_REPLAY_EVENTS、CIRCLE_SERVER_OUTBOX_MAX_ROWS、CIRCLE_SERVER_OUTBOX_MAX_AGE_MS。写入超限同事务批量裁剪，年龄每分钟维护，任务当前状态/结果、B 原件与审计不删除。通知返回 replayWindow；旧非零游标早于 minCursor 为 CURSOR_EXPIRED，明确从零重新查询当前窗口，不能宣称全历史仍在。task/admin events 同样拒绝过窗游标。SSE 每 tenant/主体默认四条连接，可配 CIRCLE_SERVER_NOTIFICATION_STREAMS；超限 NOTIFICATION_STREAM_LIMIT，断开释放名额，运行中游标过窗发 cursor.expired 并关闭。角色/会话失效仍关闭流。
+
+登记簿分页已按确认顺序接 tasks/assets/skillpacks/change-sets/scopes/roles/service-clients/object-types/objects/tools，以及 task/admin approvals、来源/证据/制品、审计/worker、bot runs、通知。各集合 view=page 复用同一查询编译器；已经存在的旧数组或补读形状保留，B 新集合 GET 按下文显式 view=page。相关权限/游标验收分别记录，不将未运行的维护者全套称作本轮已通过。
+
+审批登记簿已接：/v1/tasks/{taskId}/approvals 与 /v1/admin/approvals 加 view=page，旧数组保留。任务页沿用 tasks.read/私有任务/run 边界，admin 页限定当前 admin.manage 范围，旧 admin 数组同样遵守私有读取。owner 为 applicantId，产品线/流程取绑定任务已记录的 context/flowVersion；status/lifecycle 在页上把 open 且已到期投影为 expired，原审批行与旧数组状态不改。createdAt/updatedAt 用审批自己的时间，迁移 39 从 createdAt 初始化历史更新时间，仅后续实际审批行变更用触发器记录；不推断缺失历史决定时间。
+
+B 集合页：GET /v1/sources?view=page、/v1/evidence?view=page、/v1/artifacts?view=page 使用 RegistryPageQuery/RegistryPage，分别列 src_ 上传原件、evd_ 任务证据、art_ 产物，返回现有引用字段与 downloadPath，不返回字节。这些路径此前没有集合 GET，必须显式 view=page；上传与 content 不变。范围/来源 ACL/私有任务/run 归属先核对，再计算 total 与分页；来源同时服从历史与当前企业观察、知识来源 readers，产物存在多个绑定时只计一次。owner 对来源是上传者、证据是任务申请人、产物是任一可读绑定的申请人；隐藏绑定不参与 owner 筛选。不伪造状态、产品线或流程维度，未支持分面为 INVALID_PAYLOAD。年龄/更新时间均为不可变登记时间。
+
+MCP resources/list 是同一 B 权限与分面查询的投影，除上述三类还保留既有 knr_ 与个人 mcr_ 资源；新增可列表的 src_ 和已支持的 source URI 读取一致。请求 params._meta["hub/query"] 可传同一公共分面/limit/sort/order，cursor 用 params.cursor 原样续读；默认 limit=100、年龄倒序，返回 resources/nextCursor 与 _meta["hub/total"]。游标改为统一查询/身份绑定形状，旧资源游标不兼容，应重新列第一页；REST 与 MCP 集合不同，不能互换游标。列表全程不读取原件字节；复杂来源/knr 的递归 ACL 会遍历当前授权范围内候选元数据，耗时随候选量增长，不承诺只处理 limit 条元数据。knr_ 与 mcr_ 的现有读取/个人权限不变。
+
+已知规模限制：B 分页当前把整个授权范围的候选元数据取入内存逐行判定（来源和知识记录每条还核来源权限，MCP 对五类各做一次），以后数据量增大需改成 SQL 层可见性谓词；本轮不做这项改造。
+
+审计/worker/bot runs 已接 view=page：/v1/admin/audit、/v1/workers（含兼容 admin workers）、/v1/automations/bots/{assetId}/runs。审计沿现有管理范围，scope=null 的租户管理审计仍可见，owner=principalId，createdAt 也是更新时间，不从 detail 推断产品线/状态。worker 范围来自机器 policy 的 scope 交集，不展开成重复行；owner 为 worker principal，status=offline|draining|online（离线优先），阈值与现有列表一致；尚无不可变注册创建时间，age/minAgeMs/maxAgeMs 对 worker 明确定义为距 lastSeen 的观测年龄，updatedAt 也用 lastSeen。两类都保持 admin.manage，未支持的分面明确 INVALID_PAYLOAD，旧数组不变。
+
+bot runs 仍仅 bot 所有者可读；产品线与 lifecycle 取被运行资产版本，owner 为运行身份，status 是已有 admitted/failed，不改成任务 phase；flowVersion 为 skill-run/1。更新时间为 publishedAt（未发布时为 createdAt），完整键 bot/version/occurrence 的 SHA 作游标平局依据。页内新增 recordId/version 供跨版本记录去重；旧数组项不加字段，taskId=null/failed 不伪造任务，occurrenceKey/channel/published/trigger/error 全部保留。
+
+通知登记页 GET /v1/notifications?view=page 使用 RegistryPageQuery，返回 total/items/cursor；对象项与旧通知补读/SSE 使用同一冻结投影，额外不挑选任何正文。这里 cursor 是查询绑定的 opaque token；不带 view 的通知补读及 SSE 仍使用整数 seq，两个游标不能互换。登记页只查询当前保留窗口，不是完整历史或 seq 补读证明，裁剪后 count/后续页可减少；窗口恢复仍用旧通知补读协议。owner 为任务申请人（taskless 为原主体），产品线/流程取关联任务已记录维度，status 只用原 payload 的 status/phase/outcome，无值不猜当前任务状态；没有独立 lifecycle，筛选时明确拒绝。年龄与更新时间同为 outbox 的不可变 createdAt，seq 作同时间平局，私有任务与 taskless 原主体可见性先过滤再计数。
+
+迁移 38 追加修复 36 的归因细节：多条已释放读取统一为 UPSTREAM_TIMEOUT/sideEffects=none/sorted operationIds；不触动 unknown/write。task.read-release-audit-links-completed 的 correctsAudit 指原 36 任务补偿行，relatedAudits 列出该任务/输入全部 30 原释放审计；原行/原 min 引用保持历史原样，阅读完整链以追加行补足，不猜历史状态。29/30/36 的校验和均不改。
+
+task/admin events 的权限、窗口校验与取页也在同一只读快照内；裁剪并发时返回该次校验的完整可见页或明确 CURSOR_EXPIRED，长轮询逐次重核，不返回静默缺失的空页。bot.admission-failed 的通知原因读取 payload.reason.code；完整运行错误仍从 bot runs 的 error 或任务 result.error 获取。
+
+复核补充：床 conf.device_names 的自定义名称会让第三来源的 APV<index> 规则失效；日志 IP 只能定位到拓扑设备，任意名字不能推断工作簿索引。cexg 0.3.1 的计划接口是 env_prepare.conf.device_ips，实际出现后使用第一来源，因而不受改名影响；hub 不根据版本号假定字段已出现。共享地址日志不归属、不消费设备游标。
+
+客户端恢复契约：通知补读页首次 cursor=0 也返回 replayWindow.minCursor；大于零表示窗口之前已有事件被裁剪，这次响应不代表完整历史。task/admin events 仍只返回 events/after，不带 replayWindow；过窗依据 CURSOR_EXPIRED 的 details.minCursor。随后通知从 cursor=0、事件从 after=0 重拉保留窗口，按 seq 去重，并从 GET /v1/tasks?view=page（遍历当前状态页）及 /v1/tasks/{id}/approvals 补窗口外的任务/审批当前事实；历史正文仍需持久 B 原件/产物，不从当前状态反推过去发生顺序。SSE 的 cursor.expired 使用同一恢复过程。
+
+保留策略当前没有按主体已读水位保护未读事件；全局其它 scope 的事件产出也会缩短本人的时间窗口，离线七天并不保证能补全。推荐 SSE 在线跟随，轮询/重连及处理一页的总预算不超过 min(30 秒、replayEvents/(4×全局峰值事件速率)、maxAgeMs/4)。例如一万条窗口、全局峰值每秒 200 条，预算应小于约 12.5 秒；未掌握峰值时可从 5 秒轮询开始，并以 minCursor/游标缺口触发状态重建。它是降低缺口的运行建议，不是未读永久保留保证。
+
+updatedAt 页锚点限制上界，未保存旧行版本。普通服务端更新晚于锚点会进下一次查询；若显式回填时间或时钟回拨，使已交出的行改到仍在锚点内、又晚于升序游标的位置，该行可以再次交出。客户端按稳定记录 id 合并，跨页去重；需要严格不可重复扫描时使用不可变创建时间的年龄排序，并在扫描后发起新查询补更新。SSE 连接上限目前是每个 server 进程内按 tenant/主体计数，多进程各自计算；没有承诺集群总上限。
+
+事件正文接口：task events、admin events、GET /v1/notifications 与 notifications/stream 的同一事件采用同一显式字段投影，不以字节大小决定内联。保留字符串 phase/to/status/message/question/reason/workerId，以及 id、状态/原因码、规则版本/结论、fence、工具名/状态、运行绑定、bot 渠道/跳过次数等元数据。bot.output 保留 status、artifacts:[{artifactId,fileName,sha256}]、unknowns:string[]；清单不含文件字节。reason 原本是字符串时保留；由 error.code 生成时为 {code}。result、工具输出、模型文本、调用参数和错误详情正文不内联。Circle 的 eventLine 和 bot.output 两处读取继续可用，交付正文照旧从 /v1/tasks/{id}/result 读取；Circle 不需要改为读取事件全文，也不使用 admin events。
+
+有 taskId 的所有 kind 都带 content:{sha256,size,downloadPath,retained?}，即使该条原 payload 本来只有元数据。按需 GET /v1/tasks/{taskId}/events/{seq}/content 回读原 payload 的 canonicalJson UTF-8 字节，Content-Type=application/json、x-content-sha256 等于对这份实际响应字节算出的 content.sha256；无 API 信封，与 knr_/evd_/art_ 下载使用同一字节核对方式。内容路径沿用任务 scope/private/run 委托权限，并与窗口校验共用快照；其它身份不能借路径读取，事件过窗为 CURSOR_EXPIRED。taskless 的 bot.admission-failed 当前仅通知/SSE 对原主体可见，payload 只含 botAssetId、occurrenceKey、原因码等元数据，没有 content；admin events 当前只列 taskId 非空的事件，不生成 /tasks/null 路径。
+
+content.retained 是原 payload 已有的 B 引用列表，每项为 {evidenceId|artifactId,sha256?,fileName?,downloadPath}，引用自己的 SHA，不能与 content.sha256 混用。execution.environment.observed 附环境 JSON artifactId；task.delivered、bot.output 附已留存的 evidence/artifacts（含工具原件 knr_、运行/网关 evd_ 与交付 art_）。例如环境制品仍从 /v1/artifacts/{id}/content 下载，knr_ 原件从 /v1/knowledge/records/{id}/content 下载。它们在事件裁剪后仍按 B 的现行权限可读，但不声称单个原件包含整条事件或全部交付结论；交付完整状态仍从 result 获取。未有 retained 的事件全文只在同一 outbox 保留窗口可读，不新增永久保存承诺。运行中的原样 outbox、内部兼容观察与最终结果不改。
+
+worker 离线检测默认 90000 毫秒，可由部署运行配置 CIRCLE_SERVER_WORKER_OFFLINE_MS 设正整数；GET /v1/workers 及兼容 /v1/admin/workers 返回旧数组，每项 {workerId,draining,lastSeen,offline,workerOfflineAfterMs}，GET /v1/queues 同样披露 workerOfflineAfterMs。列表需 admin.manage，限定授权范围中的 worker；它仍属于管理类登记簿的权限例外；本轮已接入 view=page 统一分面页，不带 view 保留上述旧数组。这个检测阈值决定是否进入 workerOffline，范围 slaMs.exceptions 决定是否超 SLA，两者独立；不根据 worker 的业务结果猜离线。
+
+GET /v1/assets/{id}/harness-export?target=circle|<sourceHarness> 仅批准后的可读原语可用，返回 files 的相对目标路径/base64/sha256、warnings、provenance:{assetId,version,sha256,sourceHarness}。Circle Skill 原件移动到 .circle/skills/{name}/，字节不改；Instruction 投影为 AGENTS.md。Circle 尚无 Agent/Command 原生安装时明确 warning；MCP prompt 可读取批准的 Skill/Command。同来源 harness 由公开库导出；其不支持的跨 harness 映射继续 warning。这里只是冻结与装载投影，云运行仍用既有技能试跑/提交/批准接口；不自动批准或把原件搬运称作已执行。
+
+`POST /mcp` 是官方 @modelcontextprotocol/sdk 1.32.1 的 Streamable HTTP JSON transport，协议协商 2025-11-25；[传输规范](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports)。每请求带 hub 会话 Bearer；Origin 若存在须同 hub 原生地址。无会话 id 的 stateless 模式，GET/DELETE 405；Accept 同时支持 application/json、text/event-stream。官方纯 SDK 客户端、原始 JSON-RPC 客户端已验收，既有 Circle REST 扩展保持。
+
+MCP tools/list 为调用者专业目录与 hub 平台控制 Tool，inputSchema 保持各专业工具原形；effect/minimumRole/approval 留标注/_meta。专业 tools/call 复用 C 的受理/幂等/事件及 B 原返回证据。所有调用 `_meta["hub/idempotencyKey"]` 必填；body 另有 key 时须相同。approval:true 首次没确认返回 isError 与 CONFIRMATION_REQUIRED，details:{argsDigest:canonicalHash(args),summary}；复调 `_meta["hub/confirmation"]={argsDigest}` 与当前 args 一致才执行，否则 CONFIRMATION_STALE。它是同一操作者确认，不能成为变更集审批人或替代角色/绑定/Hook/租约。响应 _meta 回显 hub/idempotencyKey 和 evidenceId 数组。
+
+平台 Tool 名保留 hub. 命名空间：hub.tasks_submit、hub.sources_upload、hub.skillpacks_submit、hub.approvals_decide、hub.skillpacks_run、hub.tasks_status、hub.tasks_result。写回执与原动作在同一 C 事务落库，重放不再写，改参数为 IDEMPOTENCY_MISMATCH；审批失败尝试也保留。控制返回以 SHA 入 B，mcr_ 为传输回执证据，不称业务事实或模型质量验证。
+
+resources/list/read 支持 hub://evidence/{knr_|evd_|mcr_}、hub://source/{knr_|src_}、hub://artifact/{art_}；逐次沿用 B 的 scope/来源 readers/私有任务/个人凭据权限，mcr_ 仅原操作者可读。列表在授权集合分页，nextCursor 原样续读且绑定身份。prompts/list/get 为批准可读的 Skill/Command 原件投影，返回资产 SHA/版本出处，不替换未声明参数，不执行原语；列表同样分页。
+
+GET /v1/scopes/{scopeId}/permission-export 返回 [Grok 的规范](design/permission-export.md)定义的 hub-permission/1：范围 twoPersonRule/singleAdminMode 原样披露、roleOrder=[guest,member,administrator]、可见 provider 的 tools name/effect/minimumRole/approval，不存 disposition。读权限和当前调用目录仍由平台执行；机器 scope 串不冒充人的角色，根管理员没有子范围资料权时不能借导出读取。未实现各 harness 的本地许可文件改写。
+
+## 派发前拒绝与两次环境观察
+
+execution.gateway.submit-intent 仅证明 C 已准许一次提交，不证明网关 runner 或设备已派发。worker 开始 case_submit 后若连接中断、结果不可确定，仍 unknown/frozen 且禁止重派；网关明确的 lease/environment/validation 阶段拒绝（无任务身份、没有 dispatched:true）是已核对的 failed，不冻资源。契约旧网关只回文字时，产品方法仅识别既定的契约校验诊断为派发前拒绝；其他无阶段文字不猜派发情况。
+
+网关拒绝的完整 JSON 留在 error.details.gatewayRefusal，reason/error 作为原消息，stage/code 有明确值才采用；不能把 environment 一律映射 BUILD_MISMATCH，也不能凭 local stage 造 observedBuild:null。明确构建拒绝为 build-mismatch 等待，未知语义拒绝用 GATEWAY_REFUSED/gateway-refused，网关明确契约码可为 workbook-contract；waiting-input 的 result.error 与任务事件包含同一事实/证据，申请人可以修订。操作本身 status=failed；不是业务执行成功。
+
+execution.environment.observed 的 observationSource=gateway.env_prepare，保存提交前外部 env_prepare 的原件和构建核验；case_submit 可能随后在网关内再次检查环境/契约。两个时间点、调用和规则不同，第一次 passed 不覆盖第二次拒绝。失败原件保留第二次的原始 reason/details，不能以第一次观察推断第二次原因。
+
+未尝试提交或已证实派发前拒绝时，worker finally 调 lease_release；报告 remoteLeaseReleased:true 只代表网关确认逻辑租约释放。释放失败报告 false 与 leaseReleaseError，保留主错误，不声称远端停止；真正已派发而回执不确定时保留远端租约与 unknown 核对流程。

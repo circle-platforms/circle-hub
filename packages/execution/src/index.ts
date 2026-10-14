@@ -55,6 +55,9 @@ export class Execution {
       const row = (await tx.query(`SELECT o.* FROM operations o LEFT JOIN leases l USING(operation_id) WHERE o.operation_id=$1
         AND o.status='running' AND (l.expires_at<=clock_timestamp() OR l.operation_id IS NULL) FOR UPDATE OF o`, [item.operation_id])).rows[0];
       if (!row) return;
+      if(row.source_effect==='read'){
+        const failure={code:'UPSTREAM_TIMEOUT',message:'Read authority expired; retry the query',details:{sideEffects:'none',operationId:row.operation_id,reason:'lease-expired'}};await this.complete(tx,row,'failed',{error:failure});const task=await this.tasks.internal(tx,row.task_id);if(task.inputRevisionId===row.input_revision_id&&!['delivered','failed','cancelled'].includes(task.phase))await this.tasks.fail(tx,task,failure);return;
+      }
       await tx.query("UPDATE operations SET status='unknown',updated_at=clock_timestamp() WHERE operation_id=$1", [row.operation_id]);
       await tx.query('UPDATE resources SET frozen=true WHERE tenant_id=$1 AND resource_id=$2', [row.tenant_id,row.resource_id]);
       // Lost authority prevents new execution, but must not prevent expiry bookkeeping.

@@ -18,5 +18,5 @@ test('Act 1: authenticated identity, scope, tenant, expiration and bounded bodie
   assert.equal(expired.body.error.code, 'UNAUTHENTICATED');
   const large = await h.raw('/v1/tasks/submit', { token: await h.login(), body: { input: 'x'.repeat(70_000) } });
   assert.equal(large.body.error.code, 'BODY_TOO_LARGE');
-  await h.reject('/v1/admin/tasks', undefined, 'FORBIDDEN_ACTION');
+  await h.reject('/v1/admin/tasks', undefined, 'FORBIDDEN_ACTION','limited');
 });

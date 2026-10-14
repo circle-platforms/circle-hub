@@ -599,3 +599,293 @@ RPC 验收用独立合成模块和脚本模型：批准后改动外部源文件�
 专项 **4/4**，typecheck 通过：新版批准后旧版批准仍被拒，但驳回立即关单；最新资产完整元数据不变，最新运行可受理并通过 worker preflight；重启后旧决定保持。申请人失去原 scope/提交/读取权限也不阻止独立 reviewer 关单。自决、越 scope/tenant、错误修订/目标/动作摘要、缺 assets.approve 仍拒绝；两个 reviewer 并发仅一次成功，其余 DECISION_CONFLICT。原 admin 接口保留审批历史，但 open 队列无该旧记录。交接已补旧绑定原样 approve:false 的调用方式，升级后现有未过期待批旧申请即可处理，无迁移。
 
 完整最终 contracts **4/4**、methods **23/23**、acceptance **160/160**、references **7/7**，共 **194/194**，固定 Circle 8b2ceb6，**无 skip**。typecheck、diff 与 **714** 归档核验通过。第一阶段、模块、HTTPS、技能 RPC、bot、资源身份和上机关口均继续通过。本笔只在 server-s2 本地提交，交复核部署人；未 push、未读取或处理实际任务、未更改真实栈和独立产品包。
+
+## 36：独立复核、就地升级观察与修订 3 开始
+
+用户/Claude 报告 f45cdc8 的独立工作树 typecheck、contracts **4/4**、methods **23/23**、acceptance **160/160**、references **7/7**，共 **194/194**、无 skip，归档核验通过。维护者已就地升级其真实栈并保留数据库和资源服务客户端；旧版申请驳回得到 approval=declined、task=delivered、pending input=answered，两份已批准的技能版本仍 registered，客户端 /token 和 introspect 正常。本代理未操作该真实任务或部署，未把凭据回读、版本标签或业务数据放进仓库。
+
+用户授权修订 3（docs/server-s2-brief-r3.md），文件实际已在 server-s2 工作区；主工作树无副本。按 **3→4→5→6→7→8** 每节一笔本地提交、验收先行：角色/范围策略、变更集、执行链、通知流/工作队列、静态密钥、列表即查询。原客户端调用和固定 Circle 8b2ceb6 RPC 保持；Circle/网关 Python 由 Claude 维护，不改名、不 push/PR、不部署或连接真实系统/设备/付费模型。
+
+角色与范围策略先写角色预设/审批资格方法验收，缺实现时导入失败。通过 Otty 向简报维护者提出三项接口边界：executionIsChange 的提交用冻结的执行申请资产表示；列表用显式 view=page 与旧数组兼容；runtime profile 作为待批依赖资产登记而非平台自动批准运行配置。继续做不依赖这些答复的角色验收与授权基础，后续每笔都补客户端交接和实际验收结果。
+
+用户补充仓库已改名并公开为 circle-hub，main 已快进至 f45cdc8 加上维护者的公开门面提交；本代理只继续 server-s2，合并由维护者处理，不自行 rebase/merge，不改 README 或运行时环境变量/路由前缀。进度只记本文档。按用户要求清理本分支 docs 中的本机绝对路径，旧 demo 引用改为相对路径；不写回不可变 references，也不修改维护者的 main 门面。
+
+## 37：修订 3 第 3 节，角色、范围策略与明确自决
+
+先写角色预设/资格方法和 HTTP 验收，缺实现时方法导入失败、HTTP **0/6**。实现 principal × scope × role 登记簿，人的内部授权只由三个数据预设和安装扩展的最小角色生成，历史动作串仅作一次迁移；机器继续使用 scope/动作串。角色撤销留下版本记录，重启不重授角色。根管理员管理权与子范围资料读取权分开；资源目标、来源 readers、个人任务和凭据边界继续检查。
+
+角色与范围策略修改冻结为单项变更集、生成绑定审批请求，明确决定后原子更新登记簿。twoPersonRule 默认开，两名管理员仍须独立决定；单管理员或规则关时允许明确自决，决定、响应、审计保存 decisionMode、singleAdminMode、policyVersion 与规则 id/版本核验。程序核验不写人的批准。新增直接资产注册绕过/机器角色和决定历史回归均先失败；修正后角色 HTTP **8/8**、预设方法 **2/2**、对象边界联合 **11/11**。
+
+首次完整回归 contracts **4/4**、methods **25/25**、acceptance **165/168**、无 skip。其中两个旧授权验收仍使用人的动作串或把资产停用误当源读权限撤销，改为当前来源 readers 变更、技能资产停用，保留原来的隐藏/缺失统一错误及失败事件游标边界，专项 **2/2**。另一项揭示资源 introspection 仍从旧 policies.grants 判断人，角色降为 viewer 后令牌仍 active；已改为当前范围角色生成的权限，并用原资源运行回归核实 **1/1**。不把第一轮算作全套通过，当前固定 Circle 8b2ceb6 重跑该节完整验收。
+
+第 3 节最终回归实际通过：contracts **4/4**、methods **25/25**、acceptance **168/168**、references **7/7**，共 **204/204**，固定 Circle 8b2ceb6、无 skip；typecheck、diff 检查与 **714** 原件归档核验通过。后续第 4 节四条多资产/依赖验收已先写，当前 **0/4**，未计入或提交本节。只本地提交并通过 Otty 交独立复核，不 push、不部署，不修改维护者的 README、Circle、私有产品包、真实栈或网关。
+
+## 38：修订 3 第 4 节，多资产变更集与依赖重核
+
+先写四条 HTTP 验收，实际 **0/4**。扩展第 3 节骨架：有序资产版本摘要与身份摘要、单条绑定请求、多项原子批准/驳回、新申请自动取代旧请求。普通资产、外部来源、技能与模块登记都使用单项变更集；历史 assets.publish 请求仍能按旧绑定驳回，旧兼容验收明确构造升级前的持久形状，新的自动关单另验收。缺声明工具、runtime profile 或已批准来源时保存 blocked 及原因，保持请求 open，不让程序成为审批人。
+
+Claude 已在简报第 11 节确认冻结 execution-submission、view=page 与 runtime-profile 三项接口决定，记录合入本节。runtime-profile 只存 ref/type/版本/配置摘要，不保存地址或密钥；当前配置观察与人的批准分开，已有真实部署由管理员补登记与决定。合成旧验收由 fixture 明确提交和独立决定配置依赖，生产代码无自动批准。声明引用与原件自身身份分开，修复来源查询错误匹配依赖方/把外部制品自身当依赖的问题。生命周期变更通过持久重核队列更新 blocked/ready，重启补核，避免持续全表核验。
+
+第 4 节验收扩展到 **7/7**，技能/诊断及固定 RPC 联合 **17/17**；原待批可见性、历史技能驳回、模块封存兼容 **12/12**。依赖再核会实时拒绝不就绪的决定并保留完整工具名；同项不能重复、跨 tenant/scope 拒绝；并发决定只有一个生效。typecheck 与 diff 检查通过，当前固定 Circle 全套回归运行中。未动真实栈、Circle、网关 Python 或独立技能仓库。
+
+首次全套 acceptance **169/175**：开发栈与第二产品线缺少显式批准的运行依赖，已按新规则补合成身份登记/决定；重启验收从“空队列”改为“已受理任务集合前后相同”，仍证明未完成请求体不受理。最终完整 contracts **4/4**、methods **25/25**、acceptance **175/175**、references **7/7**，共 **211/211**，固定 Circle 8b2ceb6、无 skip；typecheck、diff 和原件归档核验通过。本节只本地提交并交复核，下一节的私有修订/终态 claim 两条复现已先写，**0/2**，未包含在本节验收或提交中。
+
+## 39：修订 3 第 5 节，执行链、Hook 与运行报错
+
+验收先覆盖普通执行不审批、未知命令、网关修复等待、床构建观测、一次性执行变更、终态任务领取和私有任务修订，再实现。默认资源直接走当前角色/来源 readers/资源策略、批准的 Tool/产品线模块、running 资源与依赖、Hook、租约/fence、执行和证据；executionIsChange 资源冻结执行-submission 资产并走唯一的变更集决定，只能由对应操作消费一次。旧审批三项回应和生产资源机制继续兼容，终态任务不会领取旧操作。等待原因持久化为 waitingReason，申请人修订保留私有所有者和父运行授权，丢弃旧绑定；unknown 仍冻结、不重派、独立核对并拒绝旧 fence。床配置标签不当成设备构建观测。
+
+Hook 运行器按 hub-hook/1 和既定三个 subject 原形实现，五个挂点均接入，按顺序运行批准模块中的纯 TS 处理器。零处理器无产品判定；block 原 code/facts、规则 id/版本、授权行与原件 SHA 进入事件、审计和失败证据。处理器不能读取环境/网络、动态生成代码或无限运行。Tool 装载前核对直接/动态/局部 imports 与冻结集合、明确声明及精确六种依赖，Node 内建与计算式 import 拒绝为 IMPORT_NOT_DECLARED。原件不改写；Tool 字节在独立进程中执行，OS 运行隔离和静态密钥留给下一笔第 7 节。professional_permissions 撤下，Tool 增加 MCP annotations/minimumRole/approval；人的授权跟随范围角色，兼容机器和旧客户端 permission 标识。
+
+独立 circle-packs ced41a6 的 products/apv 按原字节冻结与批准，**18/18** 包内测试在 hub 依赖集下通过，实际 Tool 读取工作簿通过。先以零 Hook 派发，再批准 APV Hook 后同一本工作簿报 COMMAND_NOT_IN_TREE 且没有第二次网关提交。Meridian 扩为 Tool+imports、五个 Hook、resources/flows 的完整夹具，并由同一装载器执行。包作者在回归期间继续推进 main 后，验收改为从 Git 固定读取约定提交，避免把移动样本计数当成平台失败；未修改独立包。
+
+审计中本节的修复有复现验收：执行批准单次消费、终态领取阻断、修订保留私有范围、开发会话族轮换/24 小时绝对寿命/退出吊销、移除开发身份失效、异步 scrypt 与请求/用户名/并发容量、实际解压字节上限及先核权限。文档 get/section 不能越过注册根，机器服务客户端不会继承创建者未持有的读取能力。脚本产品声明记录 verified 与规则核验，不冒充人的 approve。
+
+最终用冻结工作树复核，contracts **4/4**、methods **31/31**、acceptance **189/189**、references **7/7**，共 **231/231**，固定 Circle 8b2ceb6 和 APV ced41a6，**无 skip**。typecheck、diff 和 **714** 归档核验通过。独立包的 18 条另计；没有读取业务原件、连接真实系统/网关、付费模型、改 Circle 或部署。接口与条件执行说明已交接；下一笔按用户新顺序先做第 7 节，再第 6、8、9 节。harness-adapters 和权限导出规范分别由其他作者负责，本分支不修改。
+
+## 40：第 5 节独立复核与第 7 节边界补充
+
+维护者在独立工作树复核 8e212a6，固定 Circle 8b2ceb6、APV ced41a6，完整 **231/231** 与 **714** 归档核验通过；报告已就地升级演示栈、迁移 28 并轮换开发审批人口令。本代理未部署、未读取口令或业务文件。
+
+代码复核指出的第 5 节缺口并入第 7 节：所有归档入口改为实际字节 boundedUnzip；主机闭集移出工作簿 parser，由批准的资源声明与产品线 Hook 核验；Hook 和 Tool 同用隔离子进程及批量命令核验；三个 subject 形状校验；权限错误不冒充审批修订过期；变更集决定记录 singleAdminMode；访客去掉 credentials.use。增加三项绑定逐项篡改、非草稿所有者、blocked 决定、最后根管理员、权限/租约/来源错误、普通资源 unknown/独立 reconcile 的验收。开发身份 role_initialized 后不覆盖治理角色是既定行为；更改身份文件不会重新授予角色，范围角色须走变更集。
+
+简报 host subject 现为 {command,host,method,kwargs}，三个 verify 的 binding.resource 带批准版本的 {assetId,version,sha256,declaration}。allowedTestHosts/hostCommandPolicies 只从批准声明读取；运行文件里的同名策略不作授权。独立 APV 样本固定为 316760a / 1.2.0 / 28 条包内测试，原字节装入，未改独立包；Meridian 五挂点同形。
+
+用户决定纯内网明文认证可作显式例外：默认仍要求 HTTPS；只有管理员登记 runtime-profile 的 allowPlaintextAuthentication:true、经独立审批人才生效；修改需新版本重批。每次调用证据与审计永久留 plaintextAuthentication:true。执行网关及外部签发方的 HTTPS 要求保持。维护者确认当前某查询镜像为非回环 HTTP，认证来自注入的个人凭据而非 profile 文件；源地址、业务内容、令牌均不记录。
+
+另有两个现网问题排在第 7 节后、第 6 节前：只读工具超时/失联误入 unknown 并冻结资源；大文档 worker 回报失败、事务回滚后操作悬挂。只读失联的合成复现已失败，纯大文本回报尚未复现；加 NUL 的合成大文档能复现回报拒绝与悬挂，但不能据此认定真实文件含 NUL。本代理没有读取真实文件，继续以受控样本定位，修法包括 SHA 对象指针、异常干净失败、读取效果不冻结及搜索部分进度。
+
+## 41：修订 3 第 7 节，静态密钥、运行隔离与明文认证例外完成
+
+先写静态模式、隔离和明文例外验收，旧实现均能复现缺口后实现。static-secret 只写登记/轮换，模式不可原地改变；running 的批准资源按当前角色和 readers 绑定密钥，授权成员可以通过 worker 使用共享资源，不能读其他人的凭据。网关收到 Bearer、没有签发/introspect 调用，吊销和版本/权限/fence 再核有效；资源返回授权材料时拒绝保留，不将其写入日志或 API。
+
+Mac 内核隔离限制 Skill/Tool/Hook 及后代读取文件内容、写入、网络和其他进程信息，vault、运行配置直接/符号链接读取被拒；固定 Circle 实际执行合成脚本、工具与 HTTPS/CA 组合继续通过。模型凭据 home 在退出时清理，短期注入副本及无效令牌清理；未支持的平台以 SANDBOX_UNAVAILABLE 明确失败，没有无限权降级。Hook 在同一 tool-host 子进程按批次核验，10 秒/16 MiB 返回上限，subject 校验与批准声明保持原形。新版 APV 316760a 原字节装入，**28/28** 包内测试通过；独立包里 parser 的剩余闭集已提醒包作者，本代理不改包原件。
+
+非回环 HTTP 认证默认拒绝。管理员登记 runtime-profile 的 allowPlaintextAuthentication:true，经独立决定才注入 worker；即使 scope 普通允许自决，该例外仍不能自批。改字段变新 draft、立即阻止依赖运行。合成验收核对无例外拒绝、有例外批准后放行、修改重批，以及 SourceRevision/Evidence/派发审计的永久 plaintextAuthentication:true 标记。当前真实查询源的例外需部署管理员单独登记/批准；本代理未更改真实配置。
+
+第 40 节列出的第 5 节复核补项与盲区均加入本笔回归。最终冻结工作树 contracts **4/4**、methods **35/35**、acceptance **201/201**、references **7/7**，共 **247/247**，固定 Circle 8b2ceb6、APV 316760a，**无 skip**；typecheck、diff、**714** 归档核验通过。独立包 28 条另计。未 push、部署、改真实网关/Circle/独立包或读取业务原件；后续提交按用户新规则附 Signed-off-by。
+
+## 42：只读失联、原件指针与回报处理的修复验收
+
+用户给出文档统计：失败原件约 2.65MB、UTF-8 合法、有四个 NUL；成功对照约 1.52MB、无 NUL。未提供地址、内容或令牌，本代理未取真实件。纯 3MB/5MB 合成文本的原报告路径成功，加 NUL 可复现 JSONB 回报事务失败/操作仍 running；PostgreSQL 不允许 JSONB 字符串内的 NUL，实测合成存储拒绝及用户统计支持这一定位，真实数据库错误码仍未直接取得。
+
+worker 原件先以 SHA 存进 B，再回报 objectKey/sha256/size，C 在当前租约、fence、修订和来源授权下回读验证；伪造 SHA/size/缺对象拒绝。旧内联协议兼容，get 的客户端结果形状不改。Evidence 不再存大原件或任意字节的完整 text，保留引用/范围/SHA/编码统计；预览剔除 NUL 并标 sanitized。3MB、唯一词文本及 NUL 原件均经 worker/report/content 回读并逐字节 SHA 一致。人工触发存储拒绝以安全 storageCode 落为 RECEIPT_PROCESSING_FAILED，回报事务不再让操作悬挂；不回显 SQL、参数、原文。
+
+按 Tool effect 记录 source_effect；read 失联/unknown 回报/等待超时是 UPSTREAM_TIMEOUT + failed + retryable，不冻结、不要求副作用核对，重复回报保持幂等。迁移 29 清理历史只读 unknown 的任务/租约并重算冻结，写 unknown 规则不变。合成复现从失败到通过，旧数据库状态升级后自动恢复，随后同资源可重试读取。
+
+文档搜索文件读到一半超时，已读原件和命中保留，coverage.stopped 与 nextCursor 精确指向未完成文件，结果 partial；零进度/目录遍历超时给明确错误和覆盖统计。游标续页通过，没有截断或推断未读命中。工具消费者、异步知识投影及指针篡改验收通过；最终完整回归结果待冻结验证结束后补入。第 6 节通知/队列已先写验收；用户新审计要求排在本修复之后、第 6 节之前，独立包的新固定 224daa6 也在那笔核对。
+
+冻结验证完整 contracts **4/4**、methods **37/37**、acceptance **206/206**、references **7/7**，共 **254/254**，固定 Circle 8b2ceb6、APV 316760a，**无 skip**。最后按用户要求将预览替换改为剔除 NUL 并加 sanitized/编码统计，原件/存储拒绝回读专项重新 **2/2**；最终 typecheck、diff、**714** 归档核验通过。完整回归与最后的小元数据专项分别记录，未用真实设备或模型替代。仅本地签署提交，未 push、部署或改变演示栈。
+
+## 43：独立只读复核与模型边界补项
+
+维护者报告 0b5406a 独立全量 **254/254** 通过、演示栈迁移 29 已应用，历史只读冻结为零。本代理未部署或触碰演示栈。维护者新增 NUL 小节/搜索结果、get 大件指针、effect 显式声明、迁移释放审计和写 unknown 保留、supervisor 日志、候选技能内容、网关健康与正规拓扑读取的补项；各项已先写合成验收，不将维护者的真实环境观察当成本代理的实机测试。
+
+本笔先完成审计修正：带凭据的只读 Tool 最低成员，访客仅匿名读取；非申请人资格不足为 FORBIDDEN_ACTION；主机对象全部按形状解析，闭集与函数启用交批准 Hook；五挂点 subject 与批准 resource.declaration 定形。Tool/Hook 子进程加 256MiB 堆上限、命令按 200 个 subject 分批，每批十秒，APV 固定 224daa6 / 1.2.1 原字节验收 **29/29**。
+
+按用户决定实现每运行一个回环临时模型代理：256 位 nonce、固定批准上游、剥凭据头、双向 16MiB、SSE 流式、只记调用元数据；失败为 MODEL_PROXY_UNAVAILABLE / MODEL_UPSTREAM_REJECTED，关闭覆盖成功、取消、超时和 unknown，没有真实 key 文件降级。真实 key 留在可信进程/保险箱，沙箱 home 只有 nonce；固定 Circle 的合成技能读取自己的 credentials.json，产物只有经掩码的 nonce，直接/符号链接读取运行配置与 vault 均失败。产物按字节脱敏后重算 SHA，记录 sanitized；事件和回答同样脱敏。
+
+第一轮加入代理元数据后，取消验收发现事件权限撤销错误覆盖本地退出观察；已修正，专项 **1/1**，unknown 与远端停止未确认保持。重新完整冻结回归 contracts **4/4**、methods **40/40**、acceptance **207/207**、references **7/7**，共 **258/258**，固定 Circle 8b2ceb6 / APV 224daa6，**无 skip**。最后将旧脚本模型配置的 key 封入保险箱，授权记录只存占位引用，配置摘要不改；此小改动的固定 RPC/静态模式联合验证结果另记后续行。
+
+保险箱引用小改动最终固定 Circle 联合 **9/9**（含取消、慢运行续期、静态共享与隔离）、typecheck 通过；上述完整回归与最后的小改动专项分别记录。diff 检查通过。仅本地签署提交，后续只读/网关/通知代码和验收继续留工作区，未混入本笔。
+
+## 44：读结果、迁移审计、候选内容和网关元数据
+
+先写合成验收：含 NUL 的 section/search 复现任务 JSONB 失败；显式 effect 缺实现；候选 GET 返回 404；网关 health 没 checker；supervisor 重启没有日志。逐项实现后，NUL 投影剔除并计数/标记，原件 SHA 保持，大件 docs.get 只交付内容指针。Tool effect 必填。迁移 30 不改已部署的第 29 版，逐个记录释放审计与事件、限定租约集合、保留同任务的 unknown 写操作，并补偿第 29 版可能写错的任务 phase。
+
+候选技能的 GET 只展示冻结文件路径/SHA/大小、声明工具与试跑哈希，待批审批人可见，角色撤销和跨范围仍拒绝。supervisor 记录 start/exit/error 的时间、pid、退出码/信号、是否 graceful，dev-stack 也转出这些 JSON 行；合成意外退出与真实启动脚本的 graceful 重启分别通过，不据此推断先前现网 PID 变化的原因。
+
+网关 health 经 worker 调 lease_status，不占床租约。选择正规 gateway.topology Tool：C 的当前授权/资源租约/fence → 远端取得租约 → 读取缓存拓扑 → 立即释放，结果仅主机名字，原 JSON 按 SHA 保存并可由授权者回读；没有地址进入提示或元数据响应。管理员用观察登记 allowedTestHosts，再经变更集独立批准，程序不代批。静态密钥与 server-issued 合成路径 **2/2**；后者按操作租约签发，吊销客户端立刻阻止调用。未调用真实网关或设备。
+
+补充联合 **6/6**、完整原件两条与显式 effect 契约验证通过，完整冻结回归待下一行记录。第 6 节通知验收已扩为无任务的失败 bot 也有持久、私有通知，仍留在工作区，未混入这笔。
+
+最终冻结完整 contracts **5/5**、methods **40/40**、acceptance **213/213**、references **7/7**，共 **265/265**，固定 Circle 8b2ceb6 / APV 224daa6，**无 skip**。typecheck、diff 与 **714** 归档核验通过；补充联合为 **12/12**。仅本地签署提交，不 push、不部署、不改真实网关或 Circle。第 6/8 节的当前工作仍未混入本笔。
+
+## 45：修订 3 第 6 节，持久通知与工作队列
+
+先写过滤、游标、重启、队列 SLA 和 SSE 验收，缺接口时 **0/3**；加入权限撤销和无任务 bot 失败后 **5/5**。通知复用持久 outbox，迁移 31 为无 taskId 的失败 bot 记录明确 tenant/scope/owner；程序不造任务，事件受理失败实际路径也验证只通知本人。审批创建/决定/取代、waiting-input/review、交付/失败、unknown 和 bot 输出均由原持久事件投影，授权先于分页。
+
+SSE 与轮询共用游标，保存已处理序号后补读；连接每轮重新认证，过期/撤权/内部错误用明确控制事件结束，背压/断线/关停会释放等待。队列按当前资格与所有权算 count、最久等待与超 SLA；任务输入/原件不为计数全量载入。assignedToMe 不推断模型文本；没有持久分派即零。原件、决定、脚本事实与未知不混为通知中的平台批准。专项 **5/5**、第 6/8 节临时联合 **7/7**、typecheck 通过；完整冻结验证待下一行。
+
+第 6 节最终冻结 contracts **5/5**、methods **40/40**、acceptance **218/218**、references **7/7**，共 **270/270**，固定 Circle 8b2ceb6 / APV 224daa6，**无 skip**。typecheck、diff、**714** 原件归档核验通过。只本地签署提交，未 push 或部署；第 8 节查询代码和第 9 节的缺接口验收仍留工作区，未混入本节。
+
+## 46：修订 3 第 8 节，授权分面与稳定列表游标
+
+先写任务与资产分页验收，修正 fixture 的旧 submit 参数后确认 **0/2**；扩展到十种登记簿与 PostgreSQL 微秒回归，专项最终 **4/4**。view=page 显式启用 total/items/cursor，原数组/nextCursor 接口保持。授权、私有资料与分面先于 LIMIT/总数；查询/身份绑定游标、精准时间/id keyset，避免 Date 截掉微秒造成漏项。每页重新核角色与来源可见性，不能凭旧游标扩大权限。
+
+tasks/assets/skills/change-sets/scopes/roles/service-clients/object-types/objects 使用统一 SQL 分面，工具在完整调用者目录内筛选分页；未声明的维度不推断。范围、产品线、flow、状态/生命周期、owner、年龄区间、更新时间与年龄排序都交接；注册主体与观测者的 owner 含义逐项明确。迁移 32 补资产/技能/服务客户端更新时间及触发器，不更改既有版本内容摘要。原件/凭据不会进入额外计数或游标。typecheck、专项通过，冻结完整回归待下一行。
+
+第 8 节最终冻结 contracts **5/5**、methods **40/40**、acceptance **222/222**、references **7/7**，共 **274/274**，固定 Circle 8b2ceb6 / APV 224daa6，**无 skip**。typecheck、diff、**714** 原件归档核验通过。仅本地签署提交；维护者刚指出的模型上游批准 allowlist 修复及第 9 节 MCP 缺接口验收另留工作区，不混入本节。
+
+## 47：模型上游批准绑定与独立健康检查租约
+
+维护者独立审阅 4f49ac3 与 9b7485f，无高项；模型代理只允许回环是本代理将验收约束错当运行规则的缺口。本笔先写非回环 HTTPS + 合成 CA、未批准拒绝两条方法验收，正路径失败；C 上未批准 profile/运行版本绑定验收在旧实现因启动拒绝失败。现只允许该运行已批准 circle-runtime 版本配置的端点，非回环须 HTTPS，CA/指纹/主机名照常验证；入站 Host/路径仍不能改变上游，没有重定向和不校验证书的降级。
+
+每次技能运行冻结 runtime-profile 的 assetId/version/sha256/profileSha256，受理、派发及私有凭据通道再核；配置换版后旧运行为 APPROVAL_STALE，不拿新端点替代。沙箱还是只有单个临时回环代理和 nonce，真实 key 在保险箱/可信进程，模型流量不入证据。模型 kind 可 scripted/remote，元数据按实际配置记录；本代理验收只用合成 HTTPS/脚本模型，没有真实或付费模型调用。方法联合 **5/5**、C profile 正路径 **1/1**、固定 Circle RPC/隔离联合 **9/9** 通过。
+
+health 与执行共用 gateway resource 会在冻结或忙时挡住状态检查，合成冻结资源复现失败。改 gateway-health 独立资源，只做 lease_status；执行资源继续 frozen，健康调用不取远端 lease，不被当成设备就绪或独立 reconcile。专项 **1/1**。完整冻结回归待下一行。
+
+审阅的小项与盲区留补项：docs.get 小件统一指针/可选预览；拓扑 release 失败与读取超时；第二身份下载拒绝；supervisor spawn error；oauth/server-issued/写 Tool 的访客负路径；第 201 条 Hook 分批进程；unknown/内部超时/取消的代理端口关闭；含 nonce 的产物 sanitized 已有真实 RPC 落库验收。候选试跑当前契约严格只收 name/argsSha256/ok，不能提交参数值，后续加带秘密参数的拒绝验收。hostCommandPolicies 的未知键收紧需兼容检查。
+
+迁移 29/30 的校验不重写。维护者指出第 30 版把已 failed/UPSTREAM_TIMEOUT 也纳入历史释放审计；第 29 版缺状态日志，不能用现态证明历史一定 unknown。已向维护者请求补偿口径：新增迁移只选当前 unknown read；历史保留并补偿说明“原状态无法证明”，不恢复失效租约。此项不依赖上游模型修复，也没有在本机/现网直接改库。
+
+模型/健康修复最终冻结 contracts **5/5**、methods **42/42**、acceptance **224/224**、references **7/7**，共 **278/278**，固定 Circle 8b2ceb6 / APV 224daa6，**无 skip**。typecheck、diff、**714** 原件归档核验通过。只本地签署提交，未连真实模型、网关或部署；随后按维护者授权合入 main 的中立适配器/公开规范，保留其文件和作者，不改那两个分工目录。
+
+## 48：按授权合并公开规范与中立适配器
+
+维护者允许第 9 节前以签署 merge 提交合入 main。合并其公开门面、Apache-2.0/贡献规范、五种 harness 的纯导入导出库及权限导出规范；未自行编辑 README、harness-adapters 或 permission-export。冲突仅 AGENTS.md/package.json：采用 main 的统一指令和公开名称/许可/仓库元数据，保留 server 实际运行需要的 TypeScript 依赖；锁文件根元数据同步。业务代码、Circle/产品包、真实配置均未更改。合并验证结果另记下一行。
+
+merge 内容本身 typecheck、methods **127/127**（含五种适配器原测试）、references **7/7**、**714** 归档核验与 diff 通过。待实现的第 9 节测试先证明缺模块/缺接口，未把它们算作合并的通过项；未改适配器内部文件或权限规范。
+
+## 49：修订 3 第 9 节，中立原语与通用 MCP
+
+先写中立方法缺模块与 MCP 404 验收，再接已授权合入的 importFrom/exportTo 公开 API，未修改 packages/harness-adapters 或 permission-export.md。Circle 从冻结 manifest/frontmatter 推导 hub-skill/1，不丢特有原文；已验证兼容性另存执行观察，不能由提交者自报，原 byte/digest 不改。四种 E 原语从虚拟文件表按 SHA 冻结，整批事务、同内容去重、共用 C 变更集，批准后导出可读原件；未支持的 Hook/provider 或 Circle 原生 Agent/Command 不伪造成功，明确 warning。缺模型/输出的原件投影不自动进入云运行。
+
+外部 Claude Code Skill 原样导入/独立批准，导出回原来源字节一致，并导出 Circle；固定 Circle 实际加载同一 SKILL.md/脚本、交付产物 SHA 一致。原语中立清单不把 permission hint 误认工具闭集；有真实声明才拒绝声明外试跑。Meridian 既有完整布局、五个挂点与原语夹具继续走同一装载器，后续完整验收包括它。
+
+MCP 使用官方 SDK 固定 1.32.1（仅增加公开依赖，安装禁 lifecycle scripts），按官方 2025-11-25 传输做 stateless JSON/会话 Bearer/Origin/协议协商。专业目录不改 inputSchema，写确认按维护者决定走 _meta 摘要；平台控制调用与幂等回执共用事务，上传一次、拒绝重复变参，确认不能越过独立审批。返回原样按 SHA 留 B 回执，mcr_ 仅操作者可读；审批失败决定也持久化。resources/prompts 授权后分页，纯 MCP SDK 客户端和原始客户端能列工具、读证据、调用读取；许可导出按中立规范，不把本机 allow/ask 说成平台批准。
+
+专项联合 **14/14**、另资源分页 **1/1**，typecheck；适配器合入后方法 **129/129**（含本笔两个方法），均无 skip。完整冻结验收待下一行。没有真实系统/模型、设备、付费调用或部署，标识继续 CIRCLE_SERVER_* 等兼容前缀，不在本笔零散改名。
+
+第 9 节首轮完整冻结 contracts **5/5**、methods **129/129**、acceptance **237/237**、references **7/7**，共 **378/378**，固定 Circle 8b2ceb6 / APV 224daa6，**无 skip**。最后复核将兼容性收紧为成功 Skill 装载事件（仅文件齐全的运行不能宣称兼容），重放在已解析 scope 再核权限，并给 MCP schema 错误保持 INVALID_PAYLOAD 分类。增加装载负例和参数错误不回显值两条；最终冻结回归运行中，不用首轮代替最后版本。
+
+第 47 节的小项继续列为未完成/待决定，尤其迁移 30 历史释放分类补偿尚无维护者答复；不重写历史校验、不直接修现网库。MCP 与中立库的实现不依赖它。运行身份/前缀统一改名、适配器第四轮 warning 更新、各 harness 本地权限文件映射、Agent/Command 的 Circle 原生执行仍留各自后续范围，不将协议接入算成这些实机能力已交付。
+
+第 9 节最后版本完整冻结 contracts **5/5**、methods **129/129**、acceptance **239/239**、references **7/7**，共 **380/380**，固定 Circle 8b2ceb6 / APV 224daa6，**无 skip**。typecheck、diff、**714** 原件归档核验通过。新增两个负例包含在此完整回归；原件投影、独立批准、固定 Circle 实际装载、工具/资源/提示/MCP 写确认及全部旧机制均通过。仅本地签署提交，未 push、PR、部署、连接真实系统或付费模型；主工作树、Circle、网关 Python、独立产品包和两处分工文件没有改动。当前 r3 第 3/4/5/7/6/8/9 各节已分别交付，明确列出的补项与历史补偿决定仍保留，不冒充全部已修。
+
+## 50：独立复核与现网反馈排期
+
+维护者独立复核 c864144 **270/270**、3e51a23 **274/274**、3d5f214 **278/278**、合并 fc89a99 **363/363**、bcf9995 **380/380** 及归档核验通过，Grok 无高项。现网观察来自维护者而非本代理：网关健康读确认；拓扑返回十一节点并释放，资源声明按八个 shell 主机经批准；两条已交付执行与一条整批二十一例执行作为派发后正对照。没有复制任务 id、源内容、地址、凭据或日志。
+
+优先补两条上机拒绝样本：case_submit 以契约诊断明确拒绝且未派发，旧 worker 丢 reason/details、local stage 停在 environment，C 将 submit-intent 一律当已派发；因此错误变 BUILD_MISMATCH/unknown 并未释放租约。先写合成复现 **0/5** 后实现，原拒绝回执保留、明确派发前失败不冻结并释放；不把 environment 阶段猜成构建错误，env_prepare 与 case_submit 内部观察分开。无法证明派发状态仍 unknown，断连/迟回报机制保持。新增联合首轮 **25/26**，已把网关契约等待与本地主机策略失败分开；最后专项 **6/6**、执行链联合 **26/26**，typecheck 通过。完整回归运行中。
+
+其后依次补：runtime-profile 取批准修订，draft 不扰新旧运行、旧批准版本仅停用或摘要失配才失效；导入 Skill 事务内即有变更集、兼容观察核对本包 skill 名；worker 安全升级及 provider 别名缺省；历史释放补偿；通知保留/精简事件/连接上限、真实 assignee/dueAt 与共同查询队列；稳定分页和其它登记簿接入。每项先写验收、本地签署提交，交接相应调整，不 push、部署、改真实栈/设备/网关或其他作者的目录。
+
+维护者确认历史补偿口径：29/30 SQL 原字节不动，租约不恢复；只释放当前 unknown/read，资源按仍有 unknown/write 重算，同任务写 unknown 不改失败；逐条补偿 30 审计并引用原 audit id，明示原始状态无法证明及 failed/read 可重试不持租约，无重复。当前已提交 33–35 为中立/MCP/兼容性迁移，不能占用已用版本号；补偿将使用下一个新版本并按同一确认口径实现，不重写这些已审核的校验。
+
+main 的 ab12ed4 是适配器第四轮，用户允许后续再签署 merge；不自行改纯库或权限规范。私有产品包已有 1.2.2 别名/主机名大小写修正，合成验收仍固定 224daa6 / 29 条，不将现网新包代入旧冻结样本。
+
+派发前拒绝修复完整回归 contracts **5/5**、methods **129/129**、acceptance **245/245**、references **7/7**，共 **386/386**、无 skip，固定 Circle 8b2ceb6 / APV 224daa6；typecheck、diff 与 **714** 归档核验通过。只本地签署提交，未部署；worker 必须同时换到本笔代码才能保留网关拒绝事实，旧 worker 不会因只重启 server 自动升级。滚动升级机制仍是独立补项。两条 runtime 修订与中立治理的失败复现、历史补偿准备仍留工作区，未混入此笔提交。
+
+## 51：模型运行绑定批准修订
+
+先写两条草稿打断旧任务的验收，首轮 **0/2**。改为新任务选择最新已批准修订；派发后的 preflight 使用任务冻结的版本和该版 readers，不依赖 current_version 指针。C 的技能依赖也使用批准修订，私有模型通道不会被草稿误阻断。运行中的旧版本仍批准且摘要匹配就继续，新版本批准后只影响新受理；只允许所有者按精确版本/SHA 停用历史 runtime-profile，其他资产仍要求当前版本。系统 CA/自定义固定 CA 两条信任口径写入交接。
+
+专项与既有 RPC 联合 **10/10**、无 skip（固定 Circle 8b2ceb6）：草稿/新批准不停止实际运行的 Circle，停用其冻结版本后观察到本地进程退出、unknown 且不宣称远端已停；另一次真实固定 RPC 用新批准 2.0.0 成功交付，任务/代理事件/产物运行回执均绑定 2.0.0 和同一 profileSha。未调用真实模型。完整冻结回归随后在独立只读验证工作树运行，结果另记；不把专项当成完整回归。
+
+54f0ed7 的完整冻结回归 contracts **5/5**、methods **129/129**、acceptance **248/248**、references **7/7**，共 **389/389**、无 skip，固定 Circle 8b2ceb6 / APV 224daa6。该验证工作树没有后续补项文件，不混用正在编辑的版本。
+
+## 52：中立 Skill 的即时治理与 MCP 回执
+
+先写四条复现 **0/4**：外部 Skill 导入漏变更集、平台读重放每次新 evidence、专业 Tool 体内键未比对、另一个 Skill 的成功装载误记本包兼容。仅 Circle 原生 skillpacks.submit 保留插入 skill_packages 后的建单顺序，普通 hub-skill/1 导入与 instruction/agent/command 在同事务直接建单；重复返回原治理引用，批准前不得导出。
+
+平台读写共用持久、当前权限重核的幂等回执；同键不重读/不加回执，改参拒绝。专业 Tool 也核对体内键，24 小时受理窗口与平台持久窗口在交接明确区分。RPC 成功装载按 call id 关联先前 assistant.tool_calls，args.name 必须为本包 manifest.id；固定 Circle 真加载另一个技能的负例不记兼容，本包装载正例记入。最后联合含方法 **20/20**、无 skip，typecheck/diff 通过。未改 adapters、设计分工文件或外部仓库，未 push/部署；完整补项回归单独冻结，不用专项代替。
+
+## 53：迁移历史的追加补偿
+
+按维护者确认新增 **36**（33–35 已部署用途不变）。29/30 的 SQL 字节、原释放审计都未改。36 只释放当前 unknown/read、只删这些操作租约，对受影响资源按仍有 unknown/write 重算；同任务的写仍 unknown 时不落 failed。30 的释放集合把当时已是 failed+UPSTREAM_TIMEOUT 的 read 也计入；29 释放时没有状态日志，这些操作在 29 之前的原始状态无法证明。逐条以 system:migration 的 operation.read-release-compensated 引用 correctsAudit 原 id，写 originalState=unprovable/migration=36。租约已被 30 删除且不恢复，failed/read 可重试、不持租约，因而不重新授予旧权限。
+
+29/30 也没有留下任务 phase 的修前日志，补偿记录引用原 read 审计及任务，历史 phase 标 unprovable，仅记 36 前实际观察的 phase。仍存在 unknown/write 的现态错误 failed/UPSTREAM_TIMEOUT 可修回 unknown；已由 30 修回的任务保持现态并追加同一来源说明，不猜历史。重复执行不重复补偿。先写缺模块验收，再按 **29→30→36** 合成序列跑历史 failed 被计入、任务 phase 修复、新 unknown/read、并存 unknown/write、无关租约和资源；联合只读机制 **5/5**、无 skip，typecheck/diff 通过。没有真实库操作或恢复租约，部署由维护者决定。
+
+## 54：受监督的 worker 升级、provider 默认名与健康失败
+
+升级/缺省前缀先复现 **0/3**：server 换进程时 worker pid 未变，直接退出一个 worker 会触发整栈删除。dev-stack 现在独立监督 worker，server ready 后顺序排空并换进程，保留同伴服务运行中的子 Tool，不以强杀赶升级期限；任何单 worker 退出都保留数据库并单独重新启动，整体停止才清理。每次 worker ready/draining/exit/restart-error 记录 JSON，含时间、pid、码/信号及 graceful。独立部署的外部 worker 明确仍由部署进程管理器 drain/替换，CLI workersRestartRequested 标明是否请求了栈内替换，不假装全部 worker 已换。
+
+provider 已声明产品线但没有 alias 的，回落包 prefix/packageId；未安装的产品线仍拒绝，租户名字冲突不隐藏。原通用装载器已有 manifest 缺 alias 时用默认 prefix 的分支，本笔补目录的直接 provider 防御与缺 prefix 兜底。健康 503/超时两条补例证明 gateway-health 与 gateway 资源均不冻结、不取远端租约。
+
+最后联合 HTTP/HTTPS dev-stack、admin keep-alive/长轮询重启、两 worker 真实 pid 替换与在途操作不丢、健康失败、prefix 方法 **14/14**、无 skip，typecheck/diff 通过。只合成数据库/网关；没有改现网部署脚本、7420 或外部产品包。
+
+## 55：执行实现 1.1.0 与设备归属结果
+
+维护者独立复核 288faa5 全量 **386/386**，Grok 无高项；指出摘要变化但内置实现未升版。先写 1.1.0 负例与成功释放标记缺失、三条派发未知边界；升内置版本到 **1.1.0**，保留 flow/1 兼容，部署须管理员重新登记/独立批准当前 version/flow/implementationSha256。合成旧批准实现不能充当新版本；旧任务 methodAssetId 不自动迁移，新提交明确用新实现才执行。产品线模块 SHA 与治理状态未改，两份交接同步。
+
+成功终态也如实写 remoteLeaseReleased，失败释放写 false/leaseReleaseError；拒绝体有 task_id/dispatched:true、成功 submit 后 status 命中契约诊断都保持 unknown、不释放。维护者又提供跨设备相同命令被误判的统计（仅记数字：五例、十六步，不存真实日志/地址），先写设备归属方法复现 **0/3**。改为接收 {environment,topology} 原件，按 conf.device_ips 或 topology.applies_to.device_ssh_ips 顺序映射 APV_n；不唯一/缺失不猜。每设备独立推进日志游标，不再要求命令整例唯一。主机行维持主机归属，检查点/整案结论不替代设备步证据。
+
+合成方法与真实 worker 回报链：同命令跨两设备、同设备重复、仅缺 APV_1 命令、环境/拓扑两种映射、映射缺失/重复/冲突；专项 **21/21**、执行链联合 **41/41**，另空/null task_id 不许断言未派发方法 **1/1**，无 skip，typecheck/diff 通过。按需拓扑为已持租约内只读，原件随 gateway-results 入 B；取不到时仍可交付逐步 unknown/partial，不能标 observed。解析暂在 packs/apv，接口留给独立产品包 Tool 后续接管，未移动/修改私有产品包。完整冻结回归另跑；没有真实网关/设备投递。
+
+## 56：合入已确认的适配器第四轮
+
+按维护者授权签署 merge **ab12ed4**：SKILL_SHADOWED/HOOK_ENTRY_DROPPED_ON_EXPORT、OpenCode commands 配置、兼容 Skill 目录、导出时保留被略过 Hook。实际三方合并仅十二个适配器/其测试与该简报文件，没有冲突；不自行编辑分工库或权限规范。main 后续第五轮内容尚未在此笔吸入。方法/typecheck/归档核验结果另记；当前队列与分页负例保留工作区，不纳入 merge。
+
+合并后的方法 **145/145**、references **7/7**、typecheck 与 **714** 归档核验通过，无 skip。packages/harness-adapters 与 ab12ed4 字节相同，permission-export.md 未改。完整冻结验收从该 merge 单独运行，排除队列/分页未通过复现。
+
+774f65f 冻结全套 contracts **5/5**、methods **145/145**、acceptance **266/266**、references **7/7**，共 **423/423**、无 skip，固定 Circle 8b2ceb6 / APV 224daa6。队列/通知未完成补项不在该树中。
+
+## 57：按现网字段纠正设备映射
+
+维护者只读核对指出：部署版 env_prepare 没有 conf.device_ips，topology 也没有 applies_to（它仅是生成器输入，不能当返回证据）。b65478e 因而无法覆盖现网映射；本笔更正该假设，不把合成两候选通过当真实协议通过。新增当前真实形状的合成方法复现：正例失败、负例通过。补第三候选 topology.devices：type=负载均衡、全部名字符合 APV<index>、索引集合恰为 0..device_count-1；日志 IP 唯一落在对应设备 ipv4/CIDR 中才归属，共享虚拟 IP 不猜。任意名字、缺/重复/越界序号或计数不符仍 unknown/device_map_unavailable。优先级保留未来 conf.device_ips、有序 applies_to、最后名字规则，实际无字段则回退。
+
+紧接升 **1.1.1**，不让已发出的 1.1.0 同版本不同实现摘要；两份交接同步三来源边界和 worker 排空无截止/在途 claim 仍可能完成一笔的限制。专项 **22/22**、无 skip，typecheck/diff 通过，新增真实 worker 路径返回 source=gateway.bed_topology.devices，未使用真实数据或访问网关。维护者 Grok 对迁移/worker/1.1.0 无高中项；两个迁移归因低项随后用追加修复处理，不覆盖已发迁移字节。队列/分页与通知完整性仍在工作区继续，不混入本笔。
+
+## 58：共同工作查询、SLA 与有界通知
+
+先写队列/更新页复现与通知五条失败：缺 assignment API、过期仍待批、后页更新漏/重、未知分面空页、通知正文/全局游标/SSE 不限/不裁剪。任务登记与队列现在共用 taskQueryPlan + facetedWhere，权限/私有范围/run 委托/分面/队列条件同源，不再让通知类自己全表读取计数。负责者/dueAt 为记录元数据并有受控写 API；分派不扩大私有读取。SLA 从迁移 **37** 的范围策略数据来，经变更集独立决定，任务 dueAt 优先。expired/open 按实际时间分类，四类任务异常分组，worker/bot 例外也使用分面编译器，不适用分面明示 omittedGroups。
+
+更新时间页有 PostgreSQL 微秒锚点，锚点后的更新项下一次查询展示；同微秒 id 平局继续可翻，未知分面明确 INVALID_PAYLOAD，源于对象类型未声明的 productLineId/flowVersion 已去掉伪 NULL 查询。管理类 service-client 权限例外写清。按维护者允许，尚未接的登记簿在 handoff 明列后续顺序，不冒充全部已接入。
+
+通知投影仅引用/状态/原因码，完整任务事件原文仍可按权限在保留窗口内补读；规范审批创建/决定/取代、waiting-review 与 bot.started 均有发出点，无发出点的白名单项去掉。游标只记最后可见项，权限新增后从零重查被滤区间。SSE 同主体连接上限，关闭释放名额。outbox 保最近至少一万条/最多十万行、七天年龄目标；写后同事务批量裁剪与每分钟维护，持久 minCursor 让过窗显式 CURSOR_EXPIRED，不默默漏读。不删除当前任务结果/B 原件/审计。
+
+专项与角色/变更集/旧查询/通知联合 **36/36**、无 skip，typecheck/diff 通过；两条迁移归因补充仍独立留工作区，完整冻结回归另跑。没有部署、真实源访问或付费模型调用。新接口和数据形状在 CLIENT_ROUTES 与 handoff，旧数组形状保持。
+
+defbeb2 的完整冻结回归 contracts **5/5**、methods **147/147**、acceptance **267/267**、references **7/7**，共 **426/426**，无 skip；其树没有共同查询/通知工作区改动。
+
+## 59：多读结果与完整历史链接
+
+针对维护者 Grok 两条低项，保留已发 **36** 字节/原审计，追加 **38**。只对 36 释放审计可证且仍同输入、failed/UPSTREAM_TIMEOUT 的多读任务聚合为一个固定结果：排序的 operationIds 与 sideEffects=none，不再采用 UPDATE FROM 不确定的一条操作。并存 unknown/write 不触动。任务级补偿原 min(id) 引用保留，追加 task.read-release-audit-links-completed 指回原 36 审计并列 relatedAudits 的全部同任务/输入 30 审计 id；历史 phase 仍不可证明，不填猜测。
+
+先写缺模块复现，多读/全部链接/重跑不重复/已聚合不改更新时间/写 unknown 冻结不动，与旧只读机制联合 **6/6**、无 skip，typecheck/diff 通过。37 为工作查询/通知迁移，38 只追加归因修复，未覆盖任何已经签发的迁移校验。没有现场 SQL 操作或部署。
+
+## 60：裁剪与事件补读共用快照
+
+最终复查用 PostgreSQL 表锁稳定复现 task/admin 两条 **0/2**：游标先单独校验，随后 outbox 查询被锁住，裁剪提交后查询返回空页，形成静默缺页。改为每次权限重核/游标窗口校验/事件选择共用 REPEATABLE READ READ ONLY 事务；长轮询每次迭代重查窗口。并发裁剪期间返回校验时的完整可见快照，或显式 CURSOR_EXPIRED，不能把缺页伪装成空页。通知原本已有这一快照事务。
+
+abdb701 的完整验收 contracts **5/5**、methods **147/147**；acceptance **279/280**，唯一失败为旧 bot 断言读取通知 payload.error，按第 58 节精简契约应读取 reason.code。完整 bot 失败记录仍保留原 error，没有放宽治理规则。该断言已同步；新快照与通知/bot/admin 联合 **18/18**、无 skip，typecheck/diff 通过。最后版本重新全套回归，结果随后记录；不把上一轮或专项当作最后全绿。
+
+最后 **82b260d** 冻结全套 contracts **5/5**、methods **147/147**、acceptance **282/282**、references **7/7**，共 **441/441，无 skip**。typecheck、diff 与 **714** 原件归档核验通过，固定 Circle 8b2ceb6 / APV 224daa6。包含 task/admin 真实并发裁剪回归、规范通知断言及前面全部补项；工作区干净，仅随后追加这条验证记录。
+
+本轮提交全部签署、本地保留，未 push/PR/部署、未连真实网关/设备/资料源或付费模型，未改 Circle、网关 Python、独立产品包或分工规范。已通过 Otty 逐笔交接维护者。执行内置版为 **1.1.1**，部署者须重新登记/独立批准该实现，旧任务不自动迁移；独立产品线模块按自身冻结版本。明确未接统一分面的其它登记簿按第 58 节 handoff 的次序继续，服务标识统一改名、真实上机观察与部署归维护者后续范围，不用本机合成全绿替代这些事实。
+
+## 61：独立复核补充与确定性验收
+
+维护者指出 admin 补读测试 expected 取得过早：两个新任务的 waiting-input 是异步事件，锁表前还能追加一条；产品快照正确，旧断言时序不稳定。取 expected 前等两任务都进 waiting-input，随后锁表，task/admin **三次连续 2/2**，不把正确新增事件当缺页。共享地址新增实际日志行，证明不归属且两边游标都不消费；名字自定义及 cexg 0.3.1 的实际有序字段边界写入两份 handoff。方法/更新页联合 **7/7**，升序显式回填到锚点内的重复作为可证限制披露，客户端稳定 id 去重，不伪称保存了旧版本快照。
+
+明确当前 outbox 不保护主体未读水位；首次从零也有 minCursor，过窗从零补窗口并查任务/审批当前状态，不能凭当前态重建历史顺序。轮询预算按全局峰值速率与窗口估算，跨 scope 洪泛可缩短窗口，建议非永久未读保证。SSE 上限为进程内，集群没有全局总额保证。尚未接统一分面登记簿与管理权限例外仍按第 58 节已确认顺序，不改其余机制。事件正文投影与 worker 离线阈值补项随后独立实现；没有现场操作或部署。
+
+## 62：事件正文按引用回读与离线检测依据
+
+先写两条事件正文/回读权限与一条可配离线阈值复现 **0/3**。task/admin events 现在同样经 notificationPayload 显式投影：不内联结果、工具/模型输出、参数或错误详情，保留规范元数据与可观察的规则结论/fence/工具状态/运行版本/bot 跳过次数。每条给 content 的 SHA/字节数/下载路径，新增受同任务权限与委托限制的 events/{seq}/content 原 payload 回读，过窗明确拒绝。原 C outbox、已记录结果与兼容判断不修改；回读窗口不被说成永久原件保存。
+
+固定 Circle 实际装载技能的原输出改由 content 按 SHA 核对，工具元数据继续可跟随；其它范围、私有任务另一主体、过窗原引用都拒绝。workerOffline 以部署配置的正毫秒阈值判断，默认九十秒，响应披露 workerOfflineAfterMs，超 SLA 仍用范围策略。事件/回读/委托与 RPC/bot/钩子/补读/新阈值联合 **36/36**、无 skip，typecheck/diff 通过。现有接口的新引用和正文迁移已通过 Otty 告知维护者，Circle 客户端改动归维护者。
+
+只本地签署提交、不 push/部署，不改真实网关、Circle、产品包、历史迁移或分工目录；完整冻结回归随后跑最终版本，不将专项替代全套。
+
+最终 **f09fae9** 冻结全套 contracts **5/5**、methods **149/149**、acceptance **286/286**、references **7/7**，共 **447/447，无 skip**；typecheck、diff 与 **714** 原件归档核验通过。固定 Circle 8b2ceb6 / APV 224daa6，仅用本机脚本模型与合成资源。包含三轮稳定回放后的全套重验、共享地址不消费设备游标、锚点内升序回填的已披露限制、事件正文引用及权限/保留窗口、可配离线阈值。本轮执行实现字节未改，仍为 **1.1.1**；083cc44 与 f09fae9 已本地签署，随后仅提交这条最终验证记录，未 push 或部署。
+
+## 63：按客户端消费者统一事件元数据
+
+维护者给出 Circle 两个实际消费者：eventLine 的七个字符串与 bot.output 的状态/产物清单/未知项须保持内联，结果正文始终走 result。上一笔投影漏了 bot 清单/未知项，通知与任务事件又有两套字段；本笔先写合成 HTTP/SSE/原件保留验收，旧实现 **1/5**（taskless 元数据负例已通过），其余四条分别复现元数据缺失、B 引用缺失、普通 worker 列表缺失、投影分歧。纠正 handoff 中客户端读取工具 output 的假设，不要求 Circle 改动。
+
+现在 task/admin/通知轮询/SSE 共用 projectedEvent 与同一字段类别白名单，保留 Circle 消费字段，任何大小的结果/工具输出/模型正文/参数仍不内联。所有 taskId 非空事件带 canonicalJson 字节引用，SHA 与 x-content-sha256 覆盖实际响应；taskless bot.admission-failed 只给原主体元数据，admin 目前不列无任务通知，不生成虚假路径。content.retained 并列事件已有的 B 原件/证据/产物引用，各自 SHA 独立；环境 JSON 与交付引用过窗仍按 B 权限可读，未留存事件仅窗口可读，不推断永久历史。
+
+新增 /v1/workers，兼容 admin workers 旧数组，披露 offline/workerOfflineAfterMs，和队列使用同一配置阈值；范围过滤与管理权限继续核对。专项 **6/6**、字段类别/knr 引用与契约 **3/3**；实际 worker 执行、固定 Circle RPC、bot、通知、权限/窗口与新阈值联合 **41/41**，无 skip，typecheck/diff 与 **714** 归档核验通过。执行实现、历史迁移、Circle、独立产品包与分工目录均不改。完整冻结回归另跑，不将专项替代全套；只本地签署，不 push/部署。
+
+82ad8bc 首轮冻结全套 contracts **6/6**、methods **150/150**，acceptance **288/289**；失败为角色验收的 worker 就绪观察超时，单独重现 **7/8**。原因可证：该夹具 admin 只有根范围，新的 worker 列表遵守子范围读取权限，harness 用根身份读列表判断注册因而永远看不到；worker 实际已注册。改测试 helper 从合成库观察注册，补普通/兼容列表均不让根管理员自动读子范围 worker 的验收，保留生产授权过滤、不放宽权限。角色/worker/admin 联合 **14/14**，typecheck/diff 通过；最后全套重新运行。
+
+23407a3 第二轮 contracts **6/6**、methods **150/150**，acceptance **289/290**；角色夹具和根不可继承读取已过，唯一失败是主机策略在改版后等待 failed 超过十秒。单独重跑该项 **1/1**；不把偶发时限称作已确定的产品错误。进一步纠正就绪 helper：旧注册记录也不能证明新进程已就绪，改等新子进程自己的 worker-ready/username 回执，维持十秒启动限。主机策略用例包含多次批准、排空重启与多笔验证排队，失败等待设有界三十秒，断言与权限不放宽。新就绪逻辑下主机策略连续三次 **1/1**、角色/worker/admin **14/14**，无 skip，typecheck/diff 通过；最终重新冻结验收。
+
+最终 **9fa2420** 冻结全套 contracts **6/6**、methods **150/150**、acceptance **290/290**、references **7/7**，共 **453/453，无 skip**；typecheck、diff 与 **714** 归档核验通过。固定 Circle 8b2ceb6 / APV 224daa6，只用脚本模型和合成数据库/资料源/网关。生产实现提交 **82ad8bc**，测试边界修正 **23407a3、9fa2420**，均已签署、本地保留；随后只追加这条验证记录。五条元数据/内容约束与 worker 阈值交接已写明，未 push、部署或碰 7420/真实网关/独立产品包，执行实现仍 **1.1.1**。
+
+## 64：按合并简报继续登记簿查询
+
+维护者合并意见替代旧队列：事件冻结，不扩字段选择或增加接口；只把首次 minCursor 说明限定通知补读页，task/admin events 仍 events/after，过窗读错误 details.minCursor。维护者独立 23407a3 **453/453**、试验栈升级与 cexg 0.3.1 实际 conf.device_ips 均作为外部观察记录，不再改设备映射。全套从本轮只由维护者在独立树运行，Codex 只跑变更相关文件，避免两套临时 PostgreSQL 干扰。
+
+第一组先复现审批/服务客户端 **0/3**。task/admin approvals 复用 facetedPage 与任务授权/私有边界；原数组保留，admin 集合不借别的范围角色放宽读取。页的过期状态显式 expired，迁移 **39** 初始化 approvals.updated_at 到既存 created_at，后续行更新用既有 registry_touch，不猜缺失历史。service-client 列表先筛拥有管理权限的 scope，没有则同形空集合，limit/游标/分面仍校验；详情、登记、轮换、吊销权限不改。三新例与原列表/签发验收 **13/13**、无 skip，typecheck/diff 通过；未跑全套。
+
+来源/证据/制品原先没有 HTTP 集合 GET；按维护者 Otty 明确答复，在既有资源路径补集合页，并令 MCP resources/list 投影复用同一分页权限核心；不另起 MCP 查询规则。后续按 B 三类、审计/worker、bot runs、通知次序，分组本地签署，不 push/部署，不触碰 7420/网关/Circle/独立包。
+
+B 三类先写旧路由 **0/4**（与 operations 三例顺序复现合计 **0/7**），再接既有路径 GET view=page。来源复用企业/知识原件 ACL，证据保留任务私有与 run 边界，产物可读绑定去重及 owner 过滤不泄漏隐藏申请人。MCP resources/list 改共用授权元数据 + facetedPage，既有 knr/mcr 加上可读 src 原件，不为列目录下载 bytes；游标为统一绑定形状，旧资源游标需重列，不误称兼容。直调相同核心证明 run 分区、knr/个人 mcr 与禁止字节读取；B/MCP 相关 **11/11**，无 skip，typecheck/diff 通过。规模边界与引用形状已交接；审计/worker/bot 与通知仍在本轮后续，不纳入本组提交，未跑全套。
+
+读取维护者对 8c9896b 的认可与规模边界要求后，接审计/worker/bot runs。旧实现三例 **0/3**，页都复用 facetedPage，管理范围与 bot owner-only 保留，worker 多 scope 不重复。worker 首页计数先发现未用参数类型错误；把离线计算放进 FROM 派生表，让计数/投影同源且都确定阈值类型。bot 平局游标用完整主键 SHA，页项带 recordId/version，旧数组形状不变；status 仍 admitted/failed，不能拿任务结论替换。联合 **8/8**、最终计数专项 **4/4**、无 skip，typecheck/diff 通过。worker 观测年龄与 B 当前内存权限判定限制已明确交接；全套仍仅维护者跑，事件冻结、本机外部系统均不动。
+
+最后读取维护者消息后接通知登记页，先复现 **0/2**。仅 /v1/notifications 的 view=page 分流到共同分面页，旧整数游标补读/SSE 与冻结的 projectedEvent 均未改；按当前保留窗口查询，不把普通页游标当 seq 补读或完整历史。对象项、taskless owner-only、私有任务计数、状态/未支持维度、查询/身份绑定与过窗当前查询边界均验收。通知/SSE/冻结事件兼容相关 **16/16**，最终新增页专项 **2/2**，无 skip，typecheck/diff 通过。整轮只跑上述相关文件，全套交维护者；39 是唯一新迁移，未 push/部署，未改 7420/网关/Circle/独立包或事件挑选表。
+
+最终 **cb4d485** 定向收尾验收按文件串行运行：registry-approval-pages **3/3**、registry-content-pages **5/5**、registry-mcp-pages **1/1**、registry-operations-pages **3/3**、registry-notification-pages **2/2**、worker-liveness-query **1/1**，共 **15/15**，失败/取消/跳过均为零；typecheck 通过。验收时工作区与生产提交冻结，未出现 terminating connection，不需要文件重跑；随后仅追加本条验证记录。没有运行 npm test 或全套，完整独立验收由维护者负责。只用临时 PostgreSQL 与合成资料，未 push/部署或访问 7420/真实网关/Circle/独立包；B 当前范围内存 ACL 与分页成本保持 handoff 已披露口径，不以页大小推断查询成本上限。

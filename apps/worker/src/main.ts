@@ -8,15 +8,17 @@ import {runCircle} from '../../../packages/runtime/src/circle-rpc.ts';
 import {privateRequest} from '../../../packages/runtime/src/private-ipc.ts';
 import {join} from 'node:path';
 import {SourceCache} from '../../../packages/connectors/src/source-cache.ts';
+import {freezeReturns} from '../../../packages/connectors/src/return-pointers.ts';
 
 function env(name: string): string { const value = process.env[name]; if (!value) throw new Error(`Required environment variable: ${name}`); return value; }
 const base = new URL(env('CIRCLE_SERVER_URL'));
 if (!['http:','https:'].includes(base.protocol) || base.hostname !== '127.0.0.1' || base.username || base.password) throw new Error('Worker requires HTTP or HTTPS on the authorized 127.0.0.1 loopback server without embedded credentials');
 const username = env('CIRCLE_WORKER_USERNAME'); const password = env('CIRCLE_WORKER_PASSWORD');
-let token = ''; let expires = 0; let stopped = false;
+let token = ''; let expires = 0; let stopped = false;let draining=false;
 const stopController=new AbortController();
 const stop=()=>{stopped=true;stopController.abort();};
 process.on('SIGTERM',stop);process.on('SIGINT',stop);process.once('disconnect',stop);
+process.on('message',message=>{if((message as any)?.type==='worker-drain'){draining=true;console.log(JSON.stringify({type:'worker-draining',username,processId:process.pid}));}});
 async function authenticate(): Promise<void> {
   if (token && Date.now() < expires - 5000) return;
   const response = await fetch(new URL('/v1/auth/dev-login',base), { method: 'POST', redirect:'error', headers: { 'content-type':'application/json' }, body: JSON.stringify({ username,password }) });
@@ -52,7 +54,7 @@ async function executeRuntime(claim:any,preflight:any):Promise<void>{
   try{
     const secret=await privateRequest(authorization.privateSocketPath,channel),objects=new LocalObjects(env('CIRCLE_SERVER_DATA_DIR'));
     const files=await Promise.all(authorization.files.map(async(file:any)=>({...file,bytes:await objects.getObject({Bucket:'evidence',Key:file.sha256})})));
-    const output=await runCircle({runtime:secret.runtime,folder:join(env('CIRCLE_SERVER_DATA_DIR'),'runs',claim.operationId),manifest:authorization.manifest,files,inputs:claim.args.inputs,
+    const output=await runCircle({runtime:secret.runtime,approvedModel:secret.approvedModel,folder:join(env('CIRCLE_SERVER_DATA_DIR'),'runs',claim.operationId),manifest:authorization.manifest,files,inputs:claim.args.inputs,
       serverUrl:base.origin,serverToken:secret.serverToken,scopeId:authorization.scopeId,principalId:authorization.principalId,signal:abort.signal,
       event:async event=>{await request(`/v1/workers/operations/${claim.operationId}/events`,{...fence,inputRevisionId:claim.inputRevisionId,event});}});
     report={...fence,inputRevisionId:claim.inputRevisionId,status:'succeeded',output};
@@ -62,7 +64,7 @@ async function executeRuntime(claim:any,preflight:any):Promise<void>{
   finally{clearInterval(timer);clearInterval(cancelPoll);await pendingHeartbeat;await pendingCheck;stopController.signal.removeEventListener('abort',onStop);try{await privateRequest(authorization.privateSocketPath,{...channel,revoke:true});}catch{/* A cancelled/expired run token already authorizes no new work. */}}
   if(!stopped)await request(`/v1/workers/operations/${claim.operationId}/report`,report);
 }
-while (!stopped) {
+while (!stopped&&!draining) {
   try {
     const next = await request('/v1/workers/claim',{exclude:[...(runtimeJob?['assets.execute']:[]),...professionalJobs.keys()]});
     if (!next) { await delay(100); continue; }
@@ -89,7 +91,7 @@ while (!stopped) {
           await request(`/v1/workers/operations/${claim.operationId}/preflight`,fence);
           const objects=new LocalObjects(env('CIRCLE_SERVER_DATA_DIR')),originals=authorization.sourceArtifact?await Promise.all(authorization.sourceArtifact.files.map(async(file:any)=>({path:`/${file.path}`,sha256:file.sha256,bytes:await objects.getObject({Bucket:'evidence',Key:file.sha256}),mediaType:file.mediaType,etag:null,sourceType:'external-artifact'}))):undefined;
           const output=await executeTool(authorization.packageId,authorization.handler,claim.args.input,authorization.profile,credential,{cache:new SourceCache(join(env('CIRCLE_SERVER_DATA_DIR'),'connector-cache')),cacheNamespace:authorization.cacheNamespace,sourceArtifact:authorization.sourceArtifact,originals});
-          report={...fence,inputRevisionId:claim.inputRevisionId,status:'succeeded',output:{result:output.result,sourceType:output.sourceType,raw:output.raw.map(raw=>({path:raw.path,sha256:raw.sha256,sourceType:raw.sourceType??output.sourceType,...(raw.requestKey?{requestKey:raw.requestKey}:{}),...(raw.artifactFilePath?{artifactFilePath:raw.artifactFilePath}:{}),contentBase64:raw.bytes.toString('base64')}))}};
+          report={...fence,inputRevisionId:claim.inputRevisionId,status:'succeeded',output:{result:output.result,sourceType:output.sourceType,raw:await freezeReturns(objects,output.raw,output.sourceType)}};
         }catch(error){const failure=error instanceof ApiError?error:new ApiError('INTERNAL_ERROR','Registered tool failed');report={...fence,inputRevisionId:claim.inputRevisionId,status:'failed',output:{},error:{code:failure.code,message:failure.message,details:failure.details}};}
         if(heartbeatError)throw heartbeatError;await request(`/v1/workers/operations/${claim.operationId}/report`,report);continue;
       }
@@ -105,4 +107,5 @@ while (!stopped) {
 }
 await runtimeJob;
 await Promise.allSettled(professionalJobs.values());
+if(process.connected)process.send?.({type:'worker-stopped',graceful:draining});
 if (process.connected) process.disconnect();

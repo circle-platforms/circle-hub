@@ -101,11 +101,11 @@ test('S2 object writes validate declared schemas and sealed packages and reader 
   await h.reject('/v1/admin/objects/observe',{...input,type:{...input.type,version:'99.0.0'}},'TARGET_NOT_FOUND','admin');
   await h.reject('/v1/admin/objects/observe',{...input,source:{...input.source,sha256:'0'.repeat(64)}},'SOURCE_HASH_MISMATCH','admin');
   assert.equal((await sources()).rows[0].count,before);
-  await h.reject('/v1/admin/objects/observe',input,'FORBIDDEN_ACTION');
+  await h.setRole('prn_alice','viewer');await h.reject('/v1/admin/objects/observe',input,'FORBIDDEN_ACTION');await h.setRole('prn_alice','admin');
   const entity=await observe(h,input),token=await h.login();
   assert.equal((await h.raw(`/v1/objects/${entity.entity.entityId}`,{token})).status,200);
   for(const limit of ['0','101','1.5',''])assert.equal((await h.raw(`/v1/objects?limit=${limit}`,{token})).body.error.code,'INVALID_PAYLOAD');
-  await h.db.query("UPDATE policies SET grants=grants-'objects.read' WHERE principal_id='prn_alice'");
+  await h.setRole('prn_alice',null);await h.setRole('prn_alice',null,'scp_second');
   assert.equal((await h.raw('/v1/objects',{token})).body.error.code,'FORBIDDEN_ACTION');
   assert.equal((await h.raw(`/v1/objects/${entity.entity.entityId}`,{token})).body.error.code,'FORBIDDEN_ACTION');
 });

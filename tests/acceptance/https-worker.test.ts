@@ -19,7 +19,7 @@ async function worker(t: any, h: Harness, extra: NodeJS.ProcessEnv = {}) {
     return { child, output: () => ({ stdout, stderr }) };
 }
 async function tlsServer(t: any, san?: string) {
-    const h = await setup(t), tls = await loopbackTLS(t, san);
+    const h = await setup(t), tls = await loopbackTLS(t, san);h.clientCA=tls.ca;
     await h.stop();
     h.env.CIRCLE_SERVER_TLS_CONFIG = tls.configFile;
     await h.startServer();
@@ -76,7 +76,7 @@ test('HTTPS worker: pinned headless Circle inherits the CA and uses scoped serve
     h.env.CIRCLE_RUNTIME_CONFIG = `${h.scratch}/runtime.json`;
     await h.stop();
     await h.startServer();
-    const asset = await call('/v1/assets', { scopeId: 'scp_lab', kind: 'connector-instance', name: 'Synthetic TLS knowledge', version: '1.0.0', declaration: { reads: ['registered-source'], writes: ['knowledge-candidates'], credentials: [] }, configuration: { packageId: 'knowledge', runtimeProfileRef: 'synthetic' }, readers: ['prn_alice'] });
+    const asset = await call('/v1/assets', { scopeId: 'scp_lab', kind: 'connector-instance', name: 'Synthetic TLS knowledge', version: '1.0.0', declaration: { reads: ['registered-source'], writes: ['knowledge-candidates'], credentials: [] }, configuration: { packageId: 'knowledge' }, readers: ['prn_alice'] });
     await call(`/v1/assets/${asset.assetId}/lifecycle`, { version: asset.version, sha256: asset.sha256, state: 'approved' }, 'bob');
     await call(`/v1/assets/${asset.assetId}/lifecycle`, { version: asset.version, sha256: asset.sha256, state: 'running' });
     const fixture: any = moduleFixture();

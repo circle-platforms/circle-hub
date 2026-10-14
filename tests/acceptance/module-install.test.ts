@@ -40,7 +40,7 @@ test('Module install: corrupt bytes or manifest bindings and missing trials fail
     assert.equal(Number((await h.db.query('SELECT count(*) AS n FROM assets')).rows[0].n), before);
     assert.equal(Number((await h.db.query('SELECT count(*) AS n FROM skill_packages')).rows[0].n), 0);
     assert.equal((await post(fixture, 'scp_hidden')).body.error.code, 'FORBIDDEN_SCOPE');
-    const hidden = (await h.raw('/v1/modules/install', { token: await h.login('outsider'), body: { module: fixture.module, files: fixture.files, trial: fixture.trial } }));
+    await h.setRole('prn_outsider','viewer');const hidden = (await h.raw('/v1/modules/install', { token: await h.login('outsider'), body: { module: fixture.module, files: fixture.files, trial: fixture.trial } }));
     assert.equal(hidden.status, 403);
 });
 test('Module install: product-line bytes become an ordinary draft source asset and cannot auto-enable executable code', async (t) => {

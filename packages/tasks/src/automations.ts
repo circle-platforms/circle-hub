@@ -1,9 +1,11 @@
-import {ApiError,BotRegistration,TriggerRegistration,ConnectorEventInput,MIN_SCHEDULE_INTERVAL_MS,canonicalHash,newId,requireCondition,type AuthContext} from '../../contracts/src/index.ts';
+import {ApiError,BotRegistration,TriggerRegistration,ConnectorEventInput,MIN_SCHEDULE_INTERVAL_MS,canonicalHash,newId,requireCondition,type AuthContext,type RegistryPageQuery} from '../../contracts/src/index.ts';
 import type {Store,Transaction} from '../../storage/src/index.ts';
 import type {Auth} from './auth.ts';
 import type {Tasks} from './index.ts';
 import type {Assets} from '../../assets/src/index.ts';
 import type {SkillPacks} from '../../skillpacks/src/index.ts';
+import {publishBotFailure} from './notification-events.ts';
+import {facetedPage} from '../../storage/src/faceted-query.ts';
 
 export class Automations {
   store:Store;auth:Auth;tasks:Tasks;assets:Assets;skills:SkillPacks;
@@ -43,6 +45,13 @@ export class Automations {
     const source=(await tx.query('SELECT * FROM assets WHERE asset_id=$1 AND tenant_id=$2',[id,ctx.tenantId])).rows[0];requireCondition(source,'FORBIDDEN_SCOPE','Observed asset belongs to another tenant');await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[canonicalHash([id,raw.path,raw.sha256])]);await this.insert(tx,ctx,source,{externalId:canonicalHash([raw.path,raw.sha256]),name:'source.changed',payload:{path:raw.path,sha256:raw.sha256}});
   }
   async runs(ctx:AuthContext,id:string):Promise<any[]>{await this.auth.check(ctx,'automations.read');let row:any;try{row=await this.assets.row(ctx,id,undefined,'automations.read');}catch(error){if(!(error instanceof ApiError))throw error;throw new ApiError('SOURCE_FORBIDDEN','Bot runs are private to the owner');}requireCondition(row.kind==='bot'&&row.owner_principal_id===ctx.principalId,'SOURCE_FORBIDDEN','Bot runs are private to the owner');return (await this.store.pool.query('SELECT * FROM automation_runs WHERE bot_id=$1 ORDER BY created_at,occurrence_key',[id])).rows.map(run=>({taskId:run.task_id,occurrenceKey:run.occurrence_key,channel:run.channel,published:!!run.published_at,status:run.status,trigger:run.occurrence,error:run.error}));}
+  async runsPage(ctx:AuthContext,id:string,query:RegistryPageQuery){return this.store.transaction(async tx=>{
+    await tx.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');const p=await this.auth.check(ctx,'automations.read',query.scopeId,tx);let bot:any;
+    try{bot=await this.assets.row(ctx,id,tx,'automations.read');}catch(error){if(!(error instanceof ApiError))throw error;throw new ApiError('SOURCE_FORBIDDEN','Bot runs are private to the owner');}
+    requireCondition(bot.kind==='bot'&&bot.owner_principal_id===ctx.principalId,'SOURCE_FORBIDDEN','Bot runs are private to the owner');
+    const key="encode(sha256(convert_to(jsonb_build_array(r.bot_id,r.version,r.occurrence_key)::text,'UTF8')),'hex')";
+    return facetedPage(tx,ctx,'bot-runs/'+id,query,'automation_runs r JOIN assets a ON a.asset_id=r.bot_id JOIN asset_versions v ON v.asset_id=r.bot_id AND v.version=r.version',"r.bot_id=$4 AND a.tenant_id=$1 AND a.scope_id=ANY($2::text[]) AND a.owner_principal_id=$3 AND (a.owner_principal_id=$3 OR v.readers ? $3 OR v.readers ? '*')",[p.tenantId,p.scopes,p.principalId,id],{id:key,created:'r.created_at',updated:'COALESCE(r.published_at,r.created_at)',scopeId:'a.scope_id',owner:'r.identity_principal_id',productLineId:"v.configuration->>'productLineId'",flowVersion:"'skill-run/1'",status:'r.status',lifecycle:'v.lifecycle'},'r.*',run=>({recordId:`run_${run._cursor_id}`,version:run.version,taskId:run.task_id,occurrenceKey:run.occurrence_key,channel:run.channel,published:!!run.published_at,status:run.status,trigger:run.occurrence,error:run.error}));
+  });}
   async admit(tx:Transaction,bot:any,trigger:any,key:string,occurrence:any):Promise<void>{
     const old=(await tx.query('SELECT 1 FROM automation_runs WHERE bot_id=$1 AND version=$2 AND occurrence_key=$3',[bot.asset_id,bot.version,key])).rowCount;if(old)return;
     const ctx={principalId:bot.owner_principal_id,tenantId:bot.tenant_id,kind:'user'} as AuthContext;await this.auth.check(ctx,'automations.manage',bot.scope_id,tx);
@@ -60,7 +69,7 @@ export class Automations {
       const failure={code:error.code,message:'Bot occurrence was not admitted'};
       const inserted=await tx.query(`INSERT INTO automation_runs(bot_id,version,occurrence_key,task_id,channel,identity_principal_id,status,occurrence,error)
         VALUES($1,$2,$3,NULL,$4,$5,'failed',$6,$7) ON CONFLICT(bot_id,version,occurrence_key) DO NOTHING`,[bot.asset_id,bot.version,key,bot.configuration.channel,bot.owner_principal_id,JSON.stringify(occurrence),JSON.stringify(failure)]);
-      if(inserted.rowCount)await this.auth.audit({principalId:bot.owner_principal_id,tenantId:bot.tenant_id,kind:'user'},'bot.admission-failed',{botAssetId:bot.asset_id,occurrenceKey:key,error:failure},bot.scope_id,tx);
+      if(inserted.rowCount){const ctx={principalId:bot.owner_principal_id,tenantId:bot.tenant_id,kind:'user'} as AuthContext;await this.auth.audit(ctx,'bot.admission-failed',{botAssetId:bot.asset_id,occurrenceKey:key,error:failure},bot.scope_id,tx);await publishBotFailure(tx,{...ctx,scopeId:bot.scope_id},bot.asset_id,key,failure);}
     }
   }
   async tick():Promise<void>{

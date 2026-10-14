@@ -3,7 +3,58 @@
   "id": "meridian",
   "version": "1.0.0",
   "synthetic": true,
-  "connectorPackages": [{"packageId": "documents", "alias": "meridian_docs"}],
-  "skills": ["skills/meridian-source-review"],
-  "knowledgeMappings": {"authority": "Pinned original document bytes", "finding": "Literal line match; semantic feature support is not asserted"}
+  "connectorPackages": [
+    {
+      "packageId": "documents",
+      "alias": "meridian_docs"
+    }
+  ],
+  "skills": [
+    "skills/meridian-source-review"
+  ],
+  "knowledgeMappings": {
+    "authority": "Pinned original document bytes",
+    "finding": "Literal line match; semantic feature support is not asserted"
+  },
+  "tools": [
+    {
+      "manifest": "tools/project.ts",
+      "imports": {
+        "zod": "4.6.5"
+      }
+    }
+  ],
+  "hooks": [
+    {
+      "manifest": "hooks/check-1.ts",
+      "event": "verify.deviceCommand",
+      "order": 10
+    },
+    {
+      "manifest": "hooks/check-2.ts",
+      "event": "verify.hostCommand",
+      "order": 10
+    },
+    {
+      "manifest": "hooks/check-3.ts",
+      "event": "verify.workbook",
+      "order": 10
+    },
+    {
+      "manifest": "hooks/check-4.ts",
+      "event": "beforeDispatch",
+      "order": 10
+    },
+    {
+      "manifest": "hooks/check-5.ts",
+      "event": "afterResult",
+      "order": 10
+    }
+  ],
+  "resources": [
+    "resources/fixture.json"
+  ],
+  "flows": [
+    "flows/fixture.json"
+  ]
 }

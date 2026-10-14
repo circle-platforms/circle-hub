@@ -1,0 +1,5 @@
+import assert from 'node:assert/strict';import {test} from 'node:test';
+import {CLIENT_ROUTES,Event,NotificationView,newId} from '../../packages/contracts/src/index.ts';
+test('Event references use the same typed content contract in task and notification views and workers disclose their threshold',()=>{
+ const content={sha256:'a'.repeat(64),size:123,downloadPath:'/v1/tasks/task_fixture/events/1/content',retained:[{evidenceId:'evd_fixture',sha256:'b'.repeat(64),downloadPath:'/v1/evidence/evd_fixture/content'}]},event={seq:1,taskId:newId('task'),kind:'bot.output',payload:{status:'unknown',artifacts:[],unknowns:[]},createdAt:'2026-01-01T00:00:00.000Z',content};assert.deepEqual(Event.parse(event).content,content);assert.deepEqual(NotificationView.parse({...event,scopeId:'scp_lab'}).content,content);assert.equal(CLIENT_ROUTES.eventContent.sha256Header,'x-content-sha256');assert.equal(CLIENT_ROUTES.workers.path,'/v1/workers');assert.ok(CLIENT_ROUTES.workers.response.safeParse([{workerId:'fixture',draining:false,lastSeen:event.createdAt,offline:false,workerOfflineAfterMs:60000}]).success);
+});

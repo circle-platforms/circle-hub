@@ -1,9 +1,12 @@
-import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
+import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { ApiError, ServiceClientRegistration, ServiceClientRotation, newId, sha256, requireCondition, type AuthContext } from '../../contracts/src/index.ts';
 import type { Store, Transaction } from '../../storage/src/index.ts';
 import type { Assets } from '../../assets/src/index.ts';
+import {passwordDigest} from './password.ts';
 import type { Auth } from './auth.ts';
-const credential = (value: string) => { const salt = randomBytes(16); return { salt: salt.toString('hex'), digest: scryptSync(value, salt, 32).toString('hex') }; };
+import {facetedPage} from '../../storage/src/faceted-query.ts';
+import type {RegistryPageQuery} from '../../contracts/src/index.ts';
+const credential = async (value: string) => { const salt = randomBytes(16); return { salt: salt.toString('hex'), digest: (await passwordDigest(value, salt)).toString('hex') }; };
 export class ServiceClients {
     store: Store;
     auth: Auth;
@@ -11,22 +14,24 @@ export class ServiceClients {
     ttlSeconds: number;
     constructor(store: Store, auth: Auth, assets: Assets, ttlSeconds = 300) { this.store = store; this.auth = auth; this.assets = assets; this.ttlSeconds = ttlSeconds; requireCondition(Number.isInteger(ttlSeconds) && ttlSeconds >= 1 && ttlSeconds <= 300, 'INVALID_PAYLOAD', 'Resource token lifetime must be between one and 300 seconds'); }
     view(row: any) { return { clientId: row.client_id, principalId: row.principal_id, scopeId: row.scope_id, resourceAssetId: row.resource_asset_id, name: row.name, scopes: row.scopes, resourceScopes: row.resource_scopes, secretVersion: row.secret_version, revoked: row.revoked }; }
+    async readableScopes(ctx:AuthContext,scopeId?:string,tx?:Transaction){const p=await this.auth.policy(ctx,tx);requireCondition(!scopeId||p.scopes.includes(scopeId),'FORBIDDEN_SCOPE','Scope is outside the authenticated principal policy');return {...p,scopes:p.scopes.filter(scope=>p.scopeGrants?.[scope]?.includes('service-clients.manage'))};}
+    async page(ctx:AuthContext,query:RegistryPageQuery){return this.store.transaction(async tx=>{await tx.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');const p=await this.readableScopes(ctx,query.scopeId,tx);return facetedPage(tx,ctx,'service-clients',query,'service_clients c','c.tenant_id=$1 AND c.scope_id=ANY($2::text[])',[p.tenantId,p.scopes],{id:'c.client_id',created:'c.created_at',updated:'c.updated_at',scopeId:'c.scope_id',owner:'c.principal_id',status:"CASE WHEN c.revoked THEN 'revoked' ELSE 'active' END",lifecycle:"CASE WHEN c.revoked THEN 'revoked' ELSE 'active' END"},'c.*',row=>this.view(row));});}
     async row(ctx: AuthContext, id: string, tx?: Transaction) { const p = await this.auth.check(ctx, 'service-clients.manage', undefined, tx), row = (await (tx ?? this.store.pool).query('SELECT * FROM service_clients WHERE client_id=$1 AND tenant_id=$2 AND scope_id=ANY($3::text[])', [id, p.tenantId, p.scopes])).rows[0]; requireCondition(row, 'SOURCE_FORBIDDEN', 'Service client is not available to this identity'); return row; }
-    async list(ctx: AuthContext, limit: number, after?: string) { const p = await this.auth.check(ctx, 'service-clients.manage'), rows = (await this.store.pool.query('SELECT * FROM service_clients WHERE tenant_id=$1 AND scope_id=ANY($2::text[]) AND ($3::text IS NULL OR client_id>$3) ORDER BY client_id LIMIT $4', [p.tenantId, p.scopes, after ?? null, limit + 1])).rows; return { items: rows.slice(0, limit).map(row => this.view(row)), nextCursor: rows.length > limit ? rows[limit - 1].client_id : null }; }
+    async list(ctx: AuthContext, limit: number, after?: string) { const p = await this.readableScopes(ctx), rows = (await this.store.pool.query('SELECT * FROM service_clients WHERE tenant_id=$1 AND scope_id=ANY($2::text[]) AND ($3::text IS NULL OR client_id>$3) ORDER BY client_id LIMIT $4', [p.tenantId, p.scopes, after ?? null, limit + 1])).rows; return { items: rows.slice(0, limit).map(row => this.view(row)), nextCursor: rows.length > limit ? rows[limit - 1].client_id : null }; }
     async register(ctx: AuthContext, value: unknown) {
         const input = ServiceClientRegistration.parse(value);
         return this.store.transaction(async (tx) => {
             const p = await this.auth.check(ctx, 'service-clients.manage', input.scopeId, tx), asset = await this.assets.row(ctx, input.resourceAssetId, tx);
             requireCondition(asset.scope_id === input.scopeId, 'FORBIDDEN_SCOPE', 'Resource crosses the client scope');
             requireCondition(['connector-instance', 'environment-resource'].includes(asset.kind), 'INVALID_PAYLOAD', 'Register a client for an execution resource');
-            const id = newId('svc'), principalId = `prn_${id.slice(4)}`, key = credential(input.secret);
-            await tx.query("INSERT INTO policies(principal_id,tenant_id,kind,scopes,grants,targets,defects) VALUES($1,$2,'service',$3,$4,'[]','[]')", [principalId, p.tenantId, JSON.stringify([input.scopeId]), JSON.stringify(['assets.read', 'sources.read', 'knowledge.read'])]);
+            const id = newId('svc'), principalId = `prn_${id.slice(4)}`, key = await credential(input.secret);
+            await tx.query("INSERT INTO policies(principal_id,tenant_id,kind,scopes,grants,targets,defects) VALUES($1,$2,'service',$3,$4,'[]','[]')", [principalId, p.tenantId, JSON.stringify([input.scopeId]), JSON.stringify(['assets.read', 'sources.read', 'knowledge.read'].filter(grant=>p.scopeGrants?.[input.scopeId]?.includes(grant)))]);
             const row = (await tx.query('INSERT INTO service_clients(client_id,principal_id,tenant_id,scope_id,resource_asset_id,name,scopes,resource_scopes,secret_salt,secret_digest) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *', [id, principalId, p.tenantId, input.scopeId, input.resourceAssetId, input.name, JSON.stringify([...new Set(input.scopes)]), JSON.stringify([...new Set(input.resourceScopes)]), key.salt, key.digest])).rows[0];
             await this.auth.audit(ctx, 'service-clients.register', { clientId: id, resourceAssetId: input.resourceAssetId }, input.scopeId, tx);
             return this.view(row);
         });
     }
-    async rotate(ctx: AuthContext, id: string, value: unknown) { const input = ServiceClientRotation.parse(value); return this.store.transaction(async (tx) => { const row = await this.row(ctx, id, tx); requireCondition(!row.revoked, 'DECISION_CONFLICT', 'Revoked clients cannot rotate'); const key = credential(input.secret), updated = (await tx.query('UPDATE service_clients SET secret_salt=$2,secret_digest=$3,secret_version=secret_version+1 WHERE client_id=$1 AND NOT revoked RETURNING *', [id, key.salt, key.digest])).rows[0]; requireCondition(updated, 'DECISION_CONFLICT', 'Client was revoked'); await this.auth.audit(ctx, 'service-clients.rotate', { clientId: id, secretVersion: updated.secret_version }, row.scope_id, tx); return this.view(updated); }); }
+    async rotate(ctx: AuthContext, id: string, value: unknown) { const input = ServiceClientRotation.parse(value); return this.store.transaction(async (tx) => { const row = await this.row(ctx, id, tx); requireCondition(!row.revoked, 'DECISION_CONFLICT', 'Revoked clients cannot rotate'); const key = await credential(input.secret), updated = (await tx.query('UPDATE service_clients SET secret_salt=$2,secret_digest=$3,secret_version=secret_version+1 WHERE client_id=$1 AND NOT revoked RETURNING *', [id, key.salt, key.digest])).rows[0]; requireCondition(updated, 'DECISION_CONFLICT', 'Client was revoked'); await this.auth.audit(ctx, 'service-clients.rotate', { clientId: id, secretVersion: updated.secret_version }, row.scope_id, tx); return this.view(updated); }); }
     async revoke(ctx: AuthContext, id: string) { return this.store.transaction(async (tx) => { const row = await this.row(ctx, id, tx), updated = (await tx.query('UPDATE service_clients SET revoked=true WHERE client_id=$1 RETURNING *', [id])).rows[0]; await tx.query('UPDATE policies SET disabled=true WHERE principal_id=$1', [row.principal_id]); await this.auth.audit(ctx, 'service-clients.revoke', { clientId: id }, row.scope_id, tx); return this.view(updated); }); }
     async basic(header?: string) {
         let id = '', secret = '';
@@ -47,7 +52,7 @@ export class ServiceClients {
         catch {
             throw new ApiError('UNAUTHENTICATED', 'Invalid service client credentials');
         }
-        const row = (await this.store.pool.query('SELECT c.* FROM service_clients c JOIN policies p USING(principal_id) WHERE c.client_id=$1 AND NOT c.revoked AND NOT p.disabled', [id])).rows[0], digest = scryptSync(secret, Buffer.from(row?.secret_salt ?? '0'.repeat(32), 'hex'), 32);
+        const row = (await this.store.pool.query('SELECT c.* FROM service_clients c JOIN policies p USING(principal_id) WHERE c.client_id=$1 AND NOT c.revoked AND NOT p.disabled', [id])).rows[0], digest = await passwordDigest(secret, Buffer.from(row?.secret_salt ?? '0'.repeat(32), 'hex'));
         requireCondition(row && timingSafeEqual(digest, Buffer.from(row.secret_digest, 'hex')), 'UNAUTHENTICATED', 'Invalid service client credentials');
         return row;
     }
@@ -89,10 +94,12 @@ export class ServiceClients {
         return this.store.transaction(async (tx) => {
             const row = (await tx.query(`SELECT r.*,c.resource_asset_id,c.principal_id AS client_principal_id,c.scopes AS client_scopes,c.resource_scopes,p.username,p.kind,p.grants,p.scopes AS platform_scopes FROM resource_access_tokens r JOIN service_clients c USING(client_id) JOIN policies cp ON cp.principal_id=c.principal_id JOIN policies p ON p.principal_id=r.subject_id
       WHERE r.digest=$1 AND r.expires_at>clock_timestamp() AND NOT c.revoked AND NOT cp.disabled AND NOT p.disabled AND r.secret_version=c.secret_version AND ($2::text IS NULL OR r.client_id=$2)`, [sha256(token), clientId ?? null])).rows[0];
-            if (!row || !row.platform_scopes.includes(row.scope_id))
+            if (!row)
                 return null;
+            const policy=await this.auth.policy({principalId:row.subject_id,tenantId:row.tenant_id,kind:row.kind},tx);
+            if(!policy.scopes.includes(row.scope_id))return null;
             if (row.operation_id) {
-                if (!row.grants.includes(row.permission) || !row.scopes.every((scope: string) => row.resource_scopes.includes(scope)) || !await this.operationLive(tx, row))
+                if (!policy.scopeGrants?.[row.scope_id]?.includes(row.permission) || !row.scopes.every((scope: string) => row.resource_scopes.includes(scope)) || !await this.operationLive(tx, row))
                     return null;
                 const asset = (await tx.query("SELECT v.lifecycle FROM assets a JOIN asset_versions v ON v.asset_id=a.asset_id AND v.version=a.current_version WHERE a.asset_id=$1 AND a.tenant_id=$2 AND a.scope_id=$3", [row.resource_asset_id, row.tenant_id, row.scope_id])).rows[0];
                 if (!asset || !['approved', 'running'].includes(asset.lifecycle))
