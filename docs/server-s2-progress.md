@@ -1067,3 +1067,11 @@ H1 期限 **4e84ba0**、H2 拒绝来源 **8cf4998**、M3 终态后结果与补�
 默认严格文件 **1 pass / 1 skip**，与第一条合成入口同跑为 **1 pass / 2 skip / 0 fail**，skip 不计兼容通过。显式冻结 **5cdbc2b**，独立树与主树均 **1 pass / 1 fail / 0 skip**：真实临时 PostgreSQL 完成原件 / 资源 / 运行 profile / 模块登记和另一身份批准，主目标在 C.validateBatch:env_prepare 缺租约而 failed / INVALID_PAYLOAD，RPC 0、case_submit 0、write intent 0。主断言要求 delivered，不把准确拒绝改为 PASS；后续提交 / 观察 / 原始证明关系尚未到达。该红点与 A3 合成链漏 verify.workbook 分开披露。
 
 只参数化既有测试夹具的 provider/tools，未改变第一条默认样本，单文件命令和政策同步需求写入 handoff。未来 C 的批准 policy 与核验必须一起更新，不能补伪 hash 做绿，也不在此猜未来 schema。最终 typecheck / diff 与 **65** 个 handoff 本地链接通过；仅针对性测试，PG 串行且已清理，不跑全套 / 真实环境 / 模型，不改生产驱动、原生 1.1.1、网关或独立包，不 push / 部署。
+
+## 94：外部模块修复后的合成协议验收
+
+维护者通知只读 ref 更新为 5cdbc2b；实际核对时已进一步前进到 **6a8cb799125a749e69ba4b6f32de8ee1a92437ab**，静态确认 workbook Hook 改为始终追加并计入等待数量。不能拿旧 SHA 的红套到新原件，遂按完整新 SHA 冻结 APV **1.3.0** / digest **54c681c1e8380cad5509c7dbf18774052b432d0b903c59ebaeb6748239a2df48**，只运行第一条 synthetic-provider-protocol 验收。
+
+实际 **1/1 通过、无 skip / fail**，11.50 秒：原件上传、完整模块登记 / 独立批准、准备、派发、终态、纯 Tool 解析和交付全部到达；56,413 字节工作簿仅 byteArgs，原件 SHA 一致，case_submit 1 次，设备 / 主机 observed、检查点 2 passed、unmapped 0。三类 verify Hook 均为已批准的非空处理器决定，B 回读 SHA 全部原断言通过；无原生 APV 操作，未删断言或改包 / 夹具。记录更新只改 handoff 与进度，测试本身字节不变。
+
+此绿只证明 A3 合成协议的模块接法，不证明 cexg 现网兼容。严格 C 的驱动缺口未实施，本轮不重复其旧红，不跑全套 / 真实网关 / 设备 / 模型；PG 单 runner 且已清理，只读外部 ref 不 checkout / 改写。生产代码、原生 1.1.1 与部署不变，记录仅本地签署、不 push。
