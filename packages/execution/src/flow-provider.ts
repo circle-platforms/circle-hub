@@ -4,7 +4,7 @@ import type {Transaction} from '../../storage/src/index.ts';
 import type {AssetRevisionPin} from '../../knowledge/src/source-artifacts.ts';
 import {preparationPlan} from './flow-prepare.ts';
 import {ProviderConfiguration,field} from './flow-contracts.ts';
-import {providerMappedByteArguments} from './flow-arguments.ts';
+import {providerMappedArguments,providerMappedByteArguments} from './flow-arguments.ts';
 import {verifyStageReceipt,type ReceiptStage} from './flow-receipts.ts';
 import {GatewayProfile} from '../../connectors/src/case-gateway.ts';
 
@@ -24,18 +24,29 @@ export function validateProviderLeasePolicy(policy:any,tools:any[]){
   for(const target of fields){requireCondition(tool.inputSchema?.type==='object'&&Object.hasOwn(tool.inputSchema.properties??{},target),'SOURCE_NOT_APPROVED','Injected lease field must be declared by the approved Tool schema');requireCondition(!Object.hasOwn(policy.toolArguments?.[name]??{},target)&&!Object.hasOwn(policy.byteArguments?.[name]??{},target),'SOURCE_NOT_APPROVED','Lease field conflicts with another worker argument map');}
   if([policy.statusTool,policy.resultTool,policy.reconcileTool].includes(name))requireCondition(!fields.includes(policy.taskIdArgument),'SOURCE_NOT_APPROVED','Lease field conflicts with the remote task identity');
  }
+ for(const name of [policy.lease.heartbeatTool,policy.lease.releaseTool]){const tool=tools.find(tool=>tool.name===name),mapped=providerLeaseMapping(policy,name),provided=new Set([mapped.idArgument,mapped.fenceArgument,...Object.keys(policy.toolArguments?.[name]??{})]);requireCondition(tool&&(!Array.isArray(tool.inputSchema?.required)||tool.inputSchema.required.every((field:string)=>provided.has(field))),'SOURCE_NOT_APPROVED','Lease maintenance schema requires an undeclared worker argument');}
 }
-export function validateProviderActionSchema(tool:any,policy:any,args:any){
- const mapped=providerLeaseMapping(policy,tool.name,tool.effect==='write'),fields=[mapped.idArgument,mapped.fenceArgument].filter(Boolean) as string[],reserved=new Set([policy.lease.idArgument,policy.lease.fenceArgument,...fields]);
- for(const name of reserved)requireCondition(!Object.hasOwn(args,name),'INVALID_PAYLOAD','Product cannot supply lease authority');
+function validateProviderDeferredSchema(tool:any,args:any,fields:string[]){
  if(!fields.length){validateProviderSchema(tool.inputSchema,args);return;}
  const schema=structuredClone(tool.inputSchema),supported=new Set(['$schema','$id','$comment','$defs','definitions','title','description','default','examples','deprecated','readOnly','writeOnly','type','properties','required','additionalProperties','minProperties','maxProperties']);
  requireCondition(schema?.type==='object'&&Object.keys(schema).every(key=>supported.has(key)),'SOURCE_NOT_APPROVED','Injected lease admission requires a simple top-level object schema');
- for(const field of fields)requireCondition(policy.lease.argumentsByTool===undefined||Object.hasOwn(schema.properties??{},field),'SOURCE_NOT_APPROVED','Injected lease field must be declared by the approved Tool schema');
+ for(const field of fields)requireCondition(schema.additionalProperties!==false||Object.hasOwn(schema.properties??{},field),'SOURCE_NOT_APPROVED','Injected worker field must be admitted by the approved Tool schema');
  if(schema.required)schema.required=schema.required.filter((name:string)=>!fields.includes(name));
  if(schema.minProperties!==undefined)schema.minProperties=Math.max(0,schema.minProperties-fields.length);
  if(schema.maxProperties!==undefined){requireCondition(schema.maxProperties>=fields.length,'SOURCE_NOT_APPROVED','Approved schema cannot contain its lease fields');schema.maxProperties-=fields.length;}
  validateProviderSchema(schema,args);
+}
+export function validateProviderActionSchema(tool:any,policy:any,args:any,legacyInject=tool.effect==='write'){
+ const mapped=providerLeaseMapping(policy,tool.name,legacyInject),fields=[mapped.idArgument,mapped.fenceArgument].filter(Boolean) as string[],reserved=new Set([policy.lease.idArgument,policy.lease.fenceArgument,...fields]);
+ for(const name of reserved)requireCondition(!Object.hasOwn(args,name),'INVALID_PAYLOAD','Product cannot supply lease authority');validateProviderDeferredSchema(tool,args,fields);
+}
+export function validateProviderProtocolAdmission(policy:any,tools:any[],input:any){
+ validateProviderLeasePolicy(policy,tools);const observations=new Set([policy.statusTool,policy.resultTool,policy.reconcileTool]),calls=[{tool:policy.lease.acquireTool,args:{}},{tool:policy.lease.heartbeatTool,args:{}},{tool:policy.lease.releaseTool,args:{}},...[...observations].map(tool=>({tool,args:{}})),...(policy.prepare??[])];
+ for(const call of calls){const tool=tools.find(tool=>tool.name===call.tool);requireCondition(tool,'SOURCE_NOT_APPROVED','Protocol call references an undeclared Tool');requireCondition(!Object.keys(policy.byteArguments?.[call.tool]??{}).length,'SOURCE_NOT_APPROVED','Automatic protocol call has no product byte arguments');const args=providerMappedArguments(policy,call.tool,call.args??{},input),mapped=providerLeaseMapping(policy,call.tool,true),fields=[mapped.idArgument,mapped.fenceArgument].filter(Boolean) as string[];
+  requireCondition(![policy.lease.idArgument,policy.lease.fenceArgument,...fields].some(field=>Object.hasOwn(args,field)),'INVALID_PAYLOAD','Protocol parameters cannot shadow lease authority');
+  if(observations.has(call.tool)){requireCondition(!Object.hasOwn(args,policy.taskIdArgument),'SOURCE_NOT_APPROVED','Observation mapping cannot shadow the submitted remote identity');fields.push(policy.taskIdArgument);}
+  validateProviderDeferredSchema(tool,args,[...new Set(fields)]);
+ }
 }
 export function providerArgumentsWithLease(policy:any,name:string,args:any,lease:any,legacyInject=true){
  const mapping=providerLeaseMapping(policy,name,legacyInject),value={...args};for(const [target,source]of [[mapping.idArgument,policy.lease.idArgument],[mapping.fenceArgument,policy.lease.fenceArgument]] as [string|undefined,string][]){if(!target)continue;requireCondition(!Object.hasOwn(value,target),'INVALID_PAYLOAD','Lease injection would shadow an existing argument');requireCondition(lease&&Object.hasOwn(lease,source),'EVIDENCE_INSUFFICIENT','Mapped provider call has no bound lease');value[target]=lease[source];}return value;

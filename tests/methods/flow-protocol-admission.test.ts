@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict';
+import {test} from 'node:test';
+import * as provider from '../../packages/execution/src/flow-provider.ts';
+
+const schema=(properties:any,required:string[])=>({type:'object',properties,required,additionalProperties:false}),text={type:'string'},integer={type:'integer',minimum:9};
+const policy:any={submitTool:'submit',statusTool:'status',resultTool:'results',reconcileTool:'status',taskIdArgument:'task_id',lease:{acquireTool:'acquire',heartbeatTool:'heartbeat',releaseTool:'release',idArgument:'lease_id',fenceArgument:'token',argumentsByTool:{heartbeat:{idArgument:'ticket'},release:{idArgument:'ticket'},status:{},results:{}}},toolArguments:{status:{channel:{inputPath:['value','channel']}},results:{channel:{inputPath:['value','channel']}}}},tools:any[]=[{name:'acquire',effect:'write',inputSchema:schema({},[])},{name:'heartbeat',effect:'write',inputSchema:schema({ticket:text},['ticket'])},{name:'release',effect:'write',inputSchema:schema({ticket:text},['ticket'])},...['status','results'].map(name=>({name,effect:'read',inputSchema:schema({task_id:{type:'string',minLength:80},channel:{enum:['synthetic']}},['task_id','channel'])}))];
+test('Protocol admission rejects a missing required heartbeat or release lease map before any dispatch',()=>{
+ for(const name of ['heartbeat','release']){const invalid=structuredClone(policy);delete invalid.lease.argumentsByTool[name];assert.throws(()=>provider.validateProviderLeasePolicy(invalid,tools),(error:any)=>error.code==='SOURCE_NOT_APPROVED');}
+});
+test('Protocol admission validates real input-derived observation arguments without fabricated remote ids or fence values',()=>{
+ const validate=(provider as any).validateProviderProtocolAdmission;assert.equal(typeof validate,'function');assert.doesNotThrow(()=>validate(policy,tools,{value:{channel:'synthetic'}}));assert.throws(()=>validate(policy,tools,{value:{}}),(error:any)=>error.code==='INVALID_PAYLOAD');assert.throws(()=>validate(policy,tools,{value:{channel:'wrong'}}),(error:any)=>error.code==='INVALID_PAYLOAD');
+});
+test('Protocol admission uses the actual held-lease legacy behavior for preparation and observation calls',()=>{
+ const validate=(provider as any).validateProviderProtocolAdmission;assert.equal(typeof validate,'function');const legacy={...structuredClone(policy),prepare:[{tool:'prepare',args:{}}],lease:{acquireTool:'acquire',heartbeatTool:'heartbeat',releaseTool:'release',idArgument:'lease_id',fenceArgument:'token'}};const leased=[...tools.filter(tool=>tool.name==='acquire'),...['heartbeat','release'].map(name=>({name,effect:'write',inputSchema:schema({lease_id:text,token:integer},['lease_id','token'])})),...['status','results'].map(name=>({name,effect:'read',inputSchema:schema({task_id:text,channel:text,lease_id:text,token:integer},['task_id','channel','lease_id','token'])})),{name:'prepare',effect:'read',inputSchema:schema({lease_id:text,token:integer},['lease_id','token'])}];assert.doesNotThrow(()=>validate(legacy,leased,{value:{channel:'synthetic'}}));
+});

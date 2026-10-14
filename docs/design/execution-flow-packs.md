@@ -445,6 +445,8 @@ D 成功回报先按 SHA 冻结原件，再做阶段校验；不匹配原件仍�
 
 ### C4：同租约准备观察与派发出口
 
+受理 flow 时同时校验协议的 acquire / heartbeat / release、status / results / reconcile 及 prepare 参数；普通参数从冻结输入真实派生，缺路径、非法 literal、未知字段直接拒绝，不等写意图后暴露。租约映射按各工具 schema 所需字段核对，允许只需要 id 的协议，不强加两字段；远端任务 id、真实租约值仅延后其自身约束，调用前仍核完整 schema。旧全局映射在自动观察及同租约 prepare 中按实际已持 lease 注入，与 C 部分校验一致；不使用假 task_id 或 fence 证明可执行。
+
 批准的 receiptPolicy 可声明 `prepare:[{tool,args?}]`，均须在资源 provides 中唯一声明为 read；参数经过 toolArguments 和逐工具租约映射，工具链 minimumRole 也包括这些准备调用。worker 在该写操作同一 acquire / heartbeat 租约内，按批准顺序调用准备 Tool，再持久化每份 canonical JSON 原件的 SHA / 大小 / 指针；准备不会产生 submitted 身份。
 
 迁移 43 的 prepare_ref 保存操作、输入修订、fence、请求摘要、资源 pin、租约摘要、顺序、实际参数摘要和原件引用。C 独立回读 B、重算映射与摘要，完整准备后才调用 beforeDispatch；subject 为 `{input,operationId,preparations:[{index,tool,reference,result}]}`。准备 result 在 Hook 入口去除凭据 / 租约字段及 NUL，并标 sanitized；原件保存在 B，不把原文秘密或 NUL 放进 JSONB。超 Hook JSON 预算明确失败，不截断为通过。出口证明绑定本次 preparationDigest / fence，intent 还核同一 leaseDigest；旧出口证据不能豁免新观察。

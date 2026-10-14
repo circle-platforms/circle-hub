@@ -1225,3 +1225,9 @@ beforeDispatch 的 C 内部工作项通过私有 Symbol 保存，摘要绑定代
 非 delivery / outcome 批次在受理前预留下一条持久 transition 和下一代预算，空批次与同键重放同样需要继续问批准的 transition。已 claim 的 transition 已计入现有步骤，不重复计数；最后一代 / 恰满 1024 的终止提议仍可完成。不能先接受写动作再必然无容量解释 / 交付，也不因预算修改既有派发 / unknown 事实。中英 C5 明示边界。
 
 纯旧两边界 **0/2**→新 **4/4**；真实 PostgreSQL 恰 1023 现有步再提出写、generation=255 再提出写两叶 **2/2**，均受理前 RESULT_TOO_LARGE、零 provider RPC / 无 accepted 写；已有整批原子额度消费者 **1/1**。typecheck / diff 通过，PG 清理；只本地签署、不扩字节 / 数组预算，不跑全套或触现场。
+
+## 113：复核低项，自动协议参数在受理核齐
+
+租约维护显式映射按已批准 helper schema 的必填字段核齐，合法只需 id 的 provider 不被拍成必须两字段。Flow.prepare 对真实冻结输入派生 acquire / heartbeat / release / status / results / reconcile / prepare 普通参数；仅延后 D 实际产生的 lease / remote id 字段，保其它 required / type / enum / 属性数量约束，跨生成字段的不可安全分离组合 schema 拒绝，不用假 task_id / fence 充数。实际调用前仍核完整 schema。旧全局模式 prepare 的 C 与 D 均按持有租约注入，普通独立 read 的旧行为保留；submit byteArgs 映射不改。
+
+新纯旧 **0/3**→新 **3/3**，相关映射 / worker 消费者共 **8/8**。四项真实受理负例 **4/4**（缺 heartbeat / release 必填映射、status 输入路径缺失、results 未声明字段），均无 module task / RPC / 派发 / 冻结；旧正常 Meridian 流程 **1/1**。typecheck / diff 及独立只读参数边界复核通过，原生 / 保护目录零差异，PG 清理；仅本地签署，不跑全套、push 或部署。

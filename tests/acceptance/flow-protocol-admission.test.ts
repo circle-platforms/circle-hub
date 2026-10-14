@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';
+import {sandboxTest} from './harness.ts';
+import {meridianFlow,assetPin} from '../fixtures/meridian-flow.ts';
+
+for(const mode of ['missing-heartbeat-map','missing-release-map','missing-status-input','invalid-results-literal'] as const)sandboxTest(`Protocol admission: ${mode} is refused before a task or provider RPC is accepted`,async t=>{
+ const f=await meridianFlow(t),old=await f.h.request(`/v1/assets/${f.resource.assetId}`),configuration=structuredClone(old.configuration),policy=configuration.receiptPolicy;
+ if(mode.startsWith('missing-')&&mode.endsWith('-map')){const injection={idArgument:policy.lease.idArgument,fenceArgument:policy.lease.fenceArgument};policy.lease.argumentsByTool={meridian_submit:injection,lease_heartbeat:injection,lease_release:injection,meridian_status:{},meridian_results:{}};delete policy.lease.argumentsByTool[mode==='missing-heartbeat-map'?'lease_heartbeat':'lease_release'];}
+ else policy.toolArguments={[mode==='missing-status-input'?policy.statusTool:policy.resultTool]:{unavailable:mode==='missing-status-input'?{inputPath:['value','notSupplied']}:{literal:'not-in-schema'}}};
+ const resource=await f.h.request('/v1/assets',{assetId:f.resource.assetId,scopeId:'scp_lab',kind:old.kind,name:old.name,version:'3.0.0',configuration,declaration:old.declaration,readers:['prn_alice','prn_bob']});await f.h.request(`/v1/assets/${resource.assetId}/lifecycle`,{version:resource.version,sha256:resource.sha256,state:'approved'},'bob');await f.h.request(`/v1/assets/${resource.assetId}/lifecycle`,{version:resource.version,sha256:resource.sha256,state:'running'});
+ const input={...f.input(),resources:{gateway:assetPin(resource)}},response=await f.h.raw('/v1/tasks/submit',{token:await f.h.login(),body:{scopeId:'scp_lab',capabilityPackId:'module-execute',idempotencyKey:'protocol-'+mode,input}});assert.equal(response.status,mode.endsWith('-map')?409:400,JSON.stringify(response.body));assert.equal(response.body.error.code,mode.endsWith('-map')?'SOURCE_NOT_APPROVED':'INVALID_PAYLOAD');assert.equal(f.provider.state.calls.length,0);assert.equal(f.provider.state.submissions,0);assert.ok(!(await f.h.db.query("SELECT 1 FROM tasks WHERE capability_pack_id='module-execute'")).rowCount);assert.ok(!(await f.h.db.query('SELECT 1 FROM resources WHERE frozen')).rowCount);
+});
