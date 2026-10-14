@@ -3,7 +3,7 @@ import {test} from 'node:test';
 import type {TestContext} from 'node:test';
 import {createServer} from 'node:http';
 import {randomBytes} from 'node:crypto';
-import {sha256} from '../../packages/contracts/src/index.ts';
+import {canonicalHash,sha256} from '../../packages/contracts/src/index.ts';
 import {FlowDefinition} from '../../packages/execution/src/flow-contracts.ts';
 import {validateProviderSchema} from '../../packages/execution/src/flow-provider.ts';
 import {verifyStageReceipt} from '../../packages/execution/src/flow-receipts.ts';
@@ -137,6 +137,8 @@ test('C cexg strict protocol: the approved unchanged external APV flow must comp
  assert.equal(status.phase,'delivered',`Strict cexg compatibility is incomplete at ${phase}: ${result.error?.code??status.phase}`);assert.equal(result.status,'succeeded');assert.equal(provider.state.submissions,1);assert.deepEqual(provider.state.workbook,f.workbook);assert.ok(provider.state.releases>=1);
  assert.ok(requestedBuilds.length>=2);assert.ok(requestedBuilds.every(build=>build===f.input.value.build));
  const observedStates=provider.state.calls.filter(call=>call.name==='case_status');assert.equal(observedStates.length,3);assert.equal(provider.state.statusReads,3);const submitted=steps.find(step=>step.kind==='provider.call'&&step.action.tool==='case_submit');assert.ok(submitted?.intent&&submitted.terminal);assert.ok(submitted.prepare_ref?.complete);assert.equal(submitted.prepare_ref.records.length,2);assert.equal(submitted.before_dispatch_ref.preparationDigest,submitted.prepare_ref.digest);assert.equal(submitted.action.byteArgs.xlsx_b64,'workbook');assert.ok(!Object.hasOwn(submitted.action.args,'xlsx_b64'));
+ const preparedEnvironment=submitted.prepare_ref.records.find((record:any)=>record.tool==='env_prepare');assert.ok(preparedEnvironment);const actualPreparation=provider.state.calls.find(call=>call.name==='env_prepare'&&canonicalHash(call.args)===preparedEnvironment.argsDigest);assert.ok(actualPreparation,'The retained preparation must match the exact RPC argument digest');assert.equal(actualPreparation.args.device_build,f.input.value.build);const preparedContent=await fetch(`${h.url}/v1/artifacts/${preparedEnvironment.reference.artifactId}/content`,{headers:{authorization:`Bearer ${await h.login()}`}});assert.equal(preparedContent.status,200);const preparedBytes=Buffer.from(await preparedContent.arrayBuffer());assert.equal(sha256(preparedBytes),preparedEnvironment.reference.sha256);assert.equal(preparedBytes.length,preparedEnvironment.reference.size);const preparedRaw=JSON.parse(preparedBytes.toString());assert.equal(preparedRaw.build_checked,true);assert.equal(preparedRaw.ready,true);const actualBuild=preparedRaw.checks.find((entry:any)=>entry.check==='device_build');assert.equal(actualBuild.ok,true);assert.equal(actualBuild.detail,`device reports ${f.input.value.build}, gateway bundle is ${f.input.value.build}`);
+
  for(const point of ['verify.deviceCommand','verify.hostCommand','verify.workbook'])assert.ok(steps.some(step=>step.kind==='hook.verify'&&step.action.event===point&&step.status==='succeeded'&&step.evidence_ref),point);
  const operations=await h.request(`/v1/tasks/${task.taskId}/operations`);assert.ok(operations.every((operation:any)=>operation.name==='flow.invoke'));assert.equal(result.result.cases[0].autoid,'301');assert.equal(result.result.cases[0].checkPoints.length,2);assert.ok(result.result.cases[0].checkPoints.every((checkpoint:any)=>checkpoint.status==='passed'));assert.deepEqual(result.result.unmapped,[]);
 });

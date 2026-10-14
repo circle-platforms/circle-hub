@@ -1231,3 +1231,9 @@ beforeDispatch 的 C 内部工作项通过私有 Symbol 保存，摘要绑定代
 租约维护显式映射按已批准 helper schema 的必填字段核齐，合法只需 id 的 provider 不被拍成必须两字段。Flow.prepare 对真实冻结输入派生 acquire / heartbeat / release / status / results / reconcile / prepare 普通参数；仅延后 D 实际产生的 lease / remote id 字段，保其它 required / type / enum / 属性数量约束，跨生成字段的不可安全分离组合 schema 拒绝，不用假 task_id / fence 充数。实际调用前仍核完整 schema。旧全局模式 prepare 的 C 与 D 均按持有租约注入，普通独立 read 的旧行为保留；submit byteArgs 映射不改。
 
 新纯旧 **0/3**→新 **3/3**，相关映射 / worker 消费者共 **8/8**。四项真实受理负例 **4/4**（缺 heartbeat / release 必填映射、status 输入路径缺失、results 未声明字段），均无 module task / RPC / 派发 / 冻结；旧正常 Meridian 流程 **1/1**。typecheck / diff 及独立只读参数边界复核通过，原生 / 保护目录零差异，PG 清理；仅本地签署，不跑全套、push 或部署。
+
+## 114：复核低项，锁序文档与准备构建原件
+
+中英 A3 的过时锁序改为 task→flow_run→operation→flow_step→resources / leases→event_clock，与当前 C / 锁 helper 对齐。严格合成 cexg 正例新增从 prepare_ref 引用回读 B 原件，核 SHA / 大小，以 argsDigest 找到实际 env_prepare 请求，断 device_build 等于冻结输入构建、build_checked / ready / device_build 检查为真；不造顶层构建字段或仅凭 complete=true 推定核过环境。
+
+固定 **3c46f707** 严格正例实际 **1/1，无 skip**，原 submit 一次、queued / running / done、Hooks / 结果断言保留；默认文件 **4 pass / 4 skip** 不把 opt-in 跳过计为成功。typecheck / diff 通过。只改三份文档 / 验收文件，PG 清理、不改驱动 / 原生 / 独立包，不跑全套、不 push 或部署。
