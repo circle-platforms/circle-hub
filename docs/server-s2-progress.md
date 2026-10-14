@@ -1219,3 +1219,9 @@ INVALID_EXECUTION_WORKBOOK 与 COMMAND_VALIDATION_FAILED 登记进核心 F 错�
 beforeDispatch 的 C 内部工作项通过私有 Symbol 保存，摘要绑定代码、subject、方法 / 来源 / 资源 / 运行时、输入 / request / fence / 准备原件。首事务释放后真实 Tool-host 计算，第二事务重新核活权限、pin、原件及同摘要才存 proof。prepared 先提交原件、事务外真跑 Hook，再回实际允许；intent 强制完整检查且内事务再核当前 digest / 无 pending。普通 light / heartbeat 只查活授权与证明元数据，不读 B 或计算 Hook。Worker 无回报处理器结论的权限；公开接口与事件形状未扩。中英设计说明仅声明已测 flow 入口的锁边界，不声称穷尽全部数据库锁。
 
 真实 PostgreSQL 定向 **7/7，无 skip**：原死锁屏障、同租约准备、七表 NOWAIT 证明 Hook 门内无行锁 / clock 锁且真实角色变更独立批准撤权后拒 proof、Hook 阻断、单项执行批准消费、审批后期限刷新、同 provider 双任务合并变更集各消费 / 派发一次且重复决定拒绝。纯工作项 **2/2**、旧锁消费者精确 mock **5/5**，保身份 / fence / early-fail / 排序 / SKIP LOCKED 断言。typecheck / diff / 原生与保护目录零差异，PG 串行清理，只本地签署；全套仍由维护者跑，不 push / 部署或触现场。
+
+## 112：复核低项，非终止批次预留后续容量
+
+非 delivery / outcome 批次在受理前预留下一条持久 transition 和下一代预算，空批次与同键重放同样需要继续问批准的 transition。已 claim 的 transition 已计入现有步骤，不重复计数；最后一代 / 恰满 1024 的终止提议仍可完成。不能先接受写动作再必然无容量解释 / 交付，也不因预算修改既有派发 / unknown 事实。中英 C5 明示边界。
+
+纯旧两边界 **0/2**→新 **4/4**；真实 PostgreSQL 恰 1023 现有步再提出写、generation=255 再提出写两叶 **2/2**，均受理前 RESULT_TOO_LARGE、零 provider RPC / 无 accepted 写；已有整批原子额度消费者 **1/1**。typecheck / diff 通过，PG 清理；只本地签署、不扩字节 / 数组预算，不跑全套或触现场。
