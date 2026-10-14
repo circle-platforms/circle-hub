@@ -41,12 +41,12 @@ await request('/v1/workers/register',{capabilities:[FLOW_OPERATION]});
 console.log(JSON.stringify({ type:'worker-ready',username }));
 let runtimeJob:Promise<void>|undefined;
 const professionalJobs=new Map<string,Promise<void>>();
-async function executeProfessional(claim:any):Promise<void>{
+async function executeProfessional(claim:any,initialAuthorization?:any):Promise<void>{
   const fence={fencingToken:claim.fencingToken},abort=new AbortController(),onStop=()=>abort.abort();stopController.signal.addEventListener('abort',onStop,{once:true});
   let pendingHeartbeat:Promise<void>|undefined;const timer=setInterval(()=>{if(pendingHeartbeat)return;pendingHeartbeat=request(`/v1/workers/operations/${claim.operationId}/heartbeat`,fence).then(()=>{}).catch(()=>abort.abort()).finally(()=>{pendingHeartbeat=undefined;});},HEARTBEAT_MS);
-  let pendingCheck:Promise<void>|undefined;const cancelPoll=claim.name===FLOW_OPERATION?setInterval(()=>{if(pendingCheck)return;pendingCheck=request(`/v1/workers/operations/${claim.operationId}/preflight`,fence).then(()=>{}).catch(()=>abort.abort()).finally(()=>{pendingCheck=undefined;});},500):undefined;
+  let fullAuthorization:any=initialAuthorization;const checkFlow=async()=>{const checked=await request(`/v1/workers/operations/${claim.operationId}/preflight`,{...fence,...(fullAuthorization?{lightweight:true}:{})});if(!fullAuthorization)fullAuthorization=checked.authorization;return {...checked,authorization:{...fullAuthorization,...checked.authorization}};};let pendingCheck:Promise<void>|undefined;const cancelPoll=claim.name===FLOW_OPERATION?setInterval(()=>{if(pendingCheck)return;pendingCheck=request(`/v1/workers/operations/${claim.operationId}/preflight`,{...fence,lightweight:true}).then(()=>{}).catch(()=>abort.abort()).finally(()=>{pendingCheck=undefined;});},500):undefined;
   try{
-    const report=await (claim.name===FLOW_OPERATION?executeFlowStep:methods.execute)(claim,{check:()=>request(`/v1/workers/operations/${claim.operationId}/preflight`,fence),signal:abort.signal,directory:env('CIRCLE_HUB_DATA_DIR'),event:event=>request(`/v1/workers/operations/${claim.operationId}/events`,{...fence,inputRevisionId:claim.inputRevisionId,event}),source:async()=>{await authenticate();const response=await fetch(new URL(`/v1/workers/operations/${claim.operationId}/source?fence=${claim.fencingToken}`,base),{redirect:'error',headers:{authorization:`Bearer ${token}`}});if(!response.ok)throw new ApiError('EVIDENCE_INSUFFICIENT','Source download failed');return Buffer.from(await response.arrayBuffer());}});
+    const report=await (claim.name===FLOW_OPERATION?executeFlowStep:methods.execute)(claim,{check:claim.name===FLOW_OPERATION?checkFlow:()=>request(`/v1/workers/operations/${claim.operationId}/preflight`,fence),signal:abort.signal,directory:env('CIRCLE_HUB_DATA_DIR'),event:event=>request(`/v1/workers/operations/${claim.operationId}/events`,{...fence,inputRevisionId:claim.inputRevisionId,event}),source:async()=>{await authenticate();const response=await fetch(new URL(`/v1/workers/operations/${claim.operationId}/source?fence=${claim.fencingToken}`,base),{redirect:'error',headers:{authorization:`Bearer ${token}`}});if(!response.ok)throw new ApiError('EVIDENCE_INSUFFICIENT','Source download failed');return Buffer.from(await response.arrayBuffer());}});
     if(!stopped)await request(`/v1/workers/operations/${claim.operationId}/report`,report);
   }finally{clearInterval(timer);clearInterval(cancelPoll);await pendingHeartbeat;await pendingCheck;stopController.signal.removeEventListener('abort',onStop);}
 }
@@ -75,7 +75,7 @@ while (!stopped&&!draining) {
     const claim = AnyWorkerClaim.parse(next); const fence = { fencingToken:claim.fencingToken };
     const preflight=await request(`/v1/workers/operations/${claim.operationId}/preflight`,fence);
     if(claim.name===FLOW_OPERATION||methods.backgroundNames.has(claim.name)){
-      const job=executeProfessional(claim).catch(error=>{console.error(JSON.stringify({type:'worker-professional-error',code:error instanceof ApiError?error.code:'TRANSPORT_CLOSED'}));}).finally(()=>{professionalJobs.delete(claim.name);});professionalJobs.set(claim.name,job);continue;
+      const job=executeProfessional(claim,claim.name===FLOW_OPERATION?preflight.authorization:undefined).catch(error=>{console.error(JSON.stringify({type:'worker-professional-error',code:error instanceof ApiError?error.code:'TRANSPORT_CLOSED'}));}).finally(()=>{professionalJobs.delete(claim.name);});professionalJobs.set(claim.name,job);continue;
     }
     if(claim.name==='assets.execute'){
       // Keep one runtime slot and continue claiming its child tool calls. A single

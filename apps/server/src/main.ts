@@ -451,9 +451,9 @@ const server = createListener(async (request, response) => {
         }
         if(action==='events'){const event=z.object({fencingToken:z.number().int().positive(),inputRevisionId:InputRevisionId,event:z.record(z.string(),z.unknown())}).parse(input),name=(await store.pool.query('SELECT name FROM operations WHERE operation_id=$1',[id])).rows[0]?.name;send(response,200,{data:execution.customEvents.has(name)?await execution.event(ctx,id,event.fencingToken,event.inputRevisionId,event.event):await skills.event(ctx,id,event.fencingToken,event.inputRevisionId,event.event)});return;}
         if(action==='local-stopped'){const stopped=z.object({fencingToken:z.number().int().positive(),inputRevisionId:InputRevisionId,localExitObserved:z.literal(true)}).parse(input);send(response,200,{data:await skills.stopped(ctx,id,stopped)});return;}
-        const fence = z.object({ fencingToken:z.number().int().positive() }).parse(input).fencingToken;
+        const checkedInput=z.object({fencingToken:z.number().int().positive(),lightweight:z.boolean().optional()}).parse(input),fence=checkedInput.fencingToken;
         if (action === 'heartbeat') send(response,200,{ data:await execution.heartbeat(ctx,id,fence) });
-        else { const checked = await execution.preflight(ctx,id,fence); send(response,200,{ data:{ authorized:true,inputRevisionId:checked.task.inputRevisionId,source:checked.source,authorization:checked.authorization } }); }
+        else { const checked = await execution.preflight(ctx,id,fence,undefined,checkedInput.lightweight===true); send(response,200,{ data:{ authorized:true,inputRevisionId:checked.task.inputRevisionId,source:checked.source,authorization:checked.authorization } }); }
         return;
       }
     }

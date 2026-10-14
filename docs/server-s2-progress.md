@@ -967,3 +967,11 @@ A1 **b0c3172**、A2 **da3d679** 提交后工作区干净，按维护者授权将
 旧 C 两例 **0/2**：结果 ok:false 被当作终态结果校验而回滚；终态事件后报告中断的收尾会丢解释错误，后续合法报告还因缺 reportHash 无法补事实。D 始终独立回读已存终态原件核 identity / hash；结果失败原件另留 B，不拿它覆盖或校验已证终态。成功外形但错误身份 / SHA / schema 同样为解释失败，未证终态路径的核验没有放宽。
 
 中断收尾完成真实 D 终态、释放 unknown(null)，任务明确解释失败；仅 expiryAfterTerminal 且有真实终态 SHA / 尚无最终报告的同 worker / fence / 修订，可补记一次实际原件 / 释放及审计，精确重报幂等、异内容拒绝，不复活任务或重派。新临时 PostgreSQL两例 **2/2**，组合已含 H1/M4/M5/M6 的主树再 **2/2**，方法 **18/18**，无 skip；typecheck/diff 通过。报告原文、终态、结果失败与解释结论分别保留，本项单独本地签署；尚余低项与指定验收缺口继续收尾，未全套 / 部署。
+
+## 79：Hook 资源确定性与轻预检
+
+四个新实际验收先 **0/4**：零资源纯流程被迫构造 HookBinding、多资源按 JSONB 顺序误选、light flag 无效而重复返回全文。Hook 仅在需要时构造，before / after 根据真实本任务 / 修订 provider 操作选精确资源；其余 verify 只允许唯一可确定资源，不猜顺序。零资源纯 transition / Tool 可运行，现有 Hook subject / binding 形状不变。
+
+完整 frame 字节首次授权保留在 worker，领取 / 后续 preflight / 事件 / 心跳使用同路由引用模式；C 每次重新核全部权限、修订、批准 pin、凭据与 fence，不缓存授权。抽出的 B contentReference 与 content 同 ACL。实际 3 MiB 原件首次 full 有读取，连续三次 light 和 production heartbeat 对原件对象存储读取为零；撤回来源 / 模块 / 资源 readers、角色或停用 runtime / credential 都被下一次轻预检拒绝。冷 Hook 模块代码读取不算来源原件重读，也不冒称整个 B 冷启动零读取。
+
+独立新四例 **4/4**、撤权强化同叶 **1/1**、旧 happy / 核对 / 结果拒绝 **3/3**，主树合并及 worker 复用外层初次授权的窄修后四例再 **4/4**，均无 skip；typecheck/diff 通过。本项与来源字节性能是同一 preflight 权限链修复，合并单独签署，不扩 HTTP 资源或调整容量预算。迁移 / 原生执行字节保持，未全套 / push / 部署。

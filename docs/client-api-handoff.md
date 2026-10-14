@@ -621,6 +621,10 @@ occurrence 由 C 在本任务 / 修订 / stepId 的持久行中计算，transiti
 
 beforeDispatch 由 C 在真实写出口按实际 resource / operationId / currentInput 强制运行已附 Hook；产品省略 hook.verify 不能跳过，意图必须引用该通过证据。零处理器不引入缺省规则。声明了 afterResult 时，每个终态写的真实成功 Hook 必须核验同一最终交付候选（subject.result 的 canonical SHA 与候选相等）；多写流程要先合成候选，再对相关操作核验，不能拿局部结果或另一份正文的 Hook 回执交付。证据仍分别绑定逻辑原操作与真实核对操作，不把核对子操作替换成产品步骤身份。
 
+beforeDispatch / afterResult 的资源由 subject.operationId 对应的本任务 / 同修订 provider 步骤绑定，不按 JSONB 的键顺序选第一个。其它 verify 挂点只有唯一资源才可确定，多资源无明确关联时拒绝歧义；零资源的纯 transition / Tool 不构造不需要的 HookBinding。实际请求 Hook 时仍遵原资源入参契约。
+
+worker 内部的既有 preflight 路由支持可选 `lightweight:true`；首次完整授权取原件并核字节 SHA，之后 worker 保留不可变 frame，取消轮询、取凭据前检查、事件和心跳使用引用预检。每次仍重新核 scope / 角色 / readers、输入修订、方法 / 来源 / 资源 / runtime-profile、凭据、租约与 fence；只缓存字节，不缓存权限。B 的 contentReference 与 content 共用授权规则，轻预检不读原件字节，也不返回 base64 或源码 files；冷加载实际出口 Hook 的模块代码另行核验，不能把来源原件零重读说成所有冷启动 B 读取为零。
+
 只有已持久化写意图之后、且尚不能证明终态的失联才进入 unknown；不重派，同资源冻结，核对由独立 worker 读取原远端身份。明确的 `ok:false`、已批准派发前阶段、`dispatched:false` 且没有远端 id 字段的拒绝为 failed；成功回报或包含远端 id（包括 null / 空值）的回报不能用于证明未派发。只读超时为 failed / UPSTREAM_TIMEOUT，无写意图时不冻结；核对失败仍保留原写 unknown 和冻结。取消只证明本地停止，不证明远端已停。
 
 拒绝还必须来自绑定 submit 调用本身：worker 在 B 原件中附有限调用来源 `{schema:"hub-provider-refusal/1",tool,phase,refusal}`，内层保留 provider 原始拒绝。C 根据实际绑定工具及已持久化 remote_identity 再核，不能只信 worker 的 submitted:false 或 stage 字符串。提交成功或远端身份已记录后，status / heartbeat 等返回外观像派发前的拒绝仍是 unknown，不释放远端租约；不能用后续拒绝抹去已派发事实。

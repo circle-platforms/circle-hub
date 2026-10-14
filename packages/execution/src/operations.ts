@@ -99,9 +99,9 @@ export class Operations extends Execution {
       }return null;
     });if(generic?.denial)throw generic.denial;return generic??super.claim(ctx,exclude);
   }
-  async preflight(ctx:AuthContext,id:string,fence:number,tx?:Transaction):Promise<any> {
+  async preflight(ctx:AuthContext,id:string,fence:number,tx?:Transaction,lightweight=false):Promise<any> {
     const run=async(client:Transaction)=>{
-      const row=await this.lease(ctx,id,fence,client);if(this.customPreflights.has(row.name))return super.preflight(ctx,id,fence,client);
+      const row=await this.lease(ctx,id,fence,client);if(this.customPreflights.has(row.name))return super.preflight(ctx,id,fence,client,lightweight);
       const {task,authorization}=await this.authorize(client,row);
       const worker=await this.auth.policy(ctx,client);
       if(this.managedNames.has(row.name)){

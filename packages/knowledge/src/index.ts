@@ -72,15 +72,17 @@ export class Knowledge {
       [task.taskId,task.inputRevisionId,row.artifact_id,descriptor.role]);
     return this.artifactReference(row);
   }
-  async content(ctx: AuthContext, kind: 'artifact' | 'evidence', id: string): Promise<{ reference: any; bytes: Buffer }> {
+  async contentReference(ctx: AuthContext, kind: 'artifact' | 'evidence', id: string, tx?:Transaction): Promise<any> {
     const table = kind === 'artifact' ? 'artifacts' : 'evidence'; const column = kind === 'artifact' ? 'artifact_id' : 'evidence_id';
-    const row = (await this.store.pool.query(`SELECT * FROM ${table} WHERE ${column}=$1`, [id])).rows[0];
+    const row = (await (tx??this.store.pool).query(`SELECT * FROM ${table} WHERE ${column}=$1`, [id])).rows[0];
     requireCondition(row, 'TARGET_NOT_FOUND', 'Object reference not found');
-    const policy = await this.auth.check(ctx, 'evidence.read', row.scope_id);
+    const policy = await this.auth.check(ctx, 'evidence.read', row.scope_id,tx);
     requireCondition(policy.tenantId === row.tenant_id, 'FORBIDDEN_SCOPE', 'Object belongs to a different tenant');
-    const bindings=(await this.store.pool.query(kind==='artifact'?'SELECT t.* FROM artifact_bindings b JOIN tasks t USING(task_id) WHERE b.artifact_id=$1':'SELECT t.* FROM tasks t WHERE task_id=$1',[kind==='artifact'?id:row.task_id])).rows;
+    const bindings=(await (tx??this.store.pool).query(kind==='artifact'?'SELECT t.* FROM artifact_bindings b JOIN tasks t USING(task_id) WHERE b.artifact_id=$1':'SELECT t.* FROM tasks t WHERE task_id=$1',[kind==='artifact'?id:row.task_id])).rows;
     if(bindings.length)requireCondition(bindings.some(task=>(!task.context?.privateOwnerId||task.context.privateOwnerId===ctx.principalId)&&(!ctx.run||task.task_id===ctx.run.taskId||task.context?.parentRunTaskId===ctx.run.taskId)),'FORBIDDEN_SCOPE','Object is outside the readable task partition');
-    const bytes = await this.objects.getObject({ Bucket: 'evidence', Key: row.object_key });
-    return { reference: kind === 'artifact' ? this.artifactReference(row) : { sha256: row.sha256, size: Number(row.size), mediaType: 'application/json', fileName: `${id}.json` }, bytes };
+    return kind === 'artifact' ? this.artifactReference(row) : { sha256: row.sha256, size: Number(row.size), mediaType: 'application/json', fileName: `${id}.json` };
+  }
+  async content(ctx: AuthContext, kind: 'artifact' | 'evidence', id: string): Promise<{ reference: any; bytes: Buffer }> {
+    const reference=await this.contentReference(ctx,kind,id),bytes=await this.objects.getObject({Bucket:'evidence',Key:reference.sha256});return {reference,bytes};
   }
 }
