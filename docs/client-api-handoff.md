@@ -520,6 +520,12 @@ B 集合页：GET /v1/sources?view=page、/v1/evidence?view=page、/v1/artifacts
 
 MCP resources/list 是同一 B 权限与分面查询的投影，除上述三类还保留既有 knr_ 与个人 mcr_ 资源；新增可列表的 src_ 和已支持的 source URI 读取一致。请求 params._meta["hub/query"] 可传同一公共分面/limit/sort/order，cursor 用 params.cursor 原样续读；默认 limit=100、年龄倒序，返回 resources/nextCursor 与 _meta["hub/total"]。游标改为统一查询/身份绑定形状，旧资源游标不兼容，应重新列第一页；REST 与 MCP 集合不同，不能互换游标。列表全程不读取原件字节；复杂来源/knr 的递归 ACL 会遍历当前授权范围内候选元数据，耗时随候选量增长，不承诺只处理 limit 条元数据。knr_ 与 mcr_ 的现有读取/个人权限不变。
 
+已知规模限制：B 分页当前把整个授权范围的候选元数据取入内存逐行判定（来源和知识记录每条还核来源权限，MCP 对五类各做一次），以后数据量增大需改成 SQL 层可见性谓词；本轮不做这项改造。
+
+审计/worker/bot runs 已接 view=page：/v1/admin/audit、/v1/workers（含兼容 admin workers）、/v1/automations/bots/{assetId}/runs。审计沿现有管理范围，scope=null 的租户管理审计仍可见，owner=principalId，createdAt 也是更新时间，不从 detail 推断产品线/状态。worker 范围来自机器 policy 的 scope 交集，不展开成重复行；owner 为 worker principal，status=offline|draining|online（离线优先），阈值与现有列表一致；尚无不可变注册创建时间，age/minAgeMs/maxAgeMs 对 worker 明确定义为距 lastSeen 的观测年龄，updatedAt 也用 lastSeen。两类都保持 admin.manage，未支持的分面明确 INVALID_PAYLOAD，旧数组不变。
+
+bot runs 仍仅 bot 所有者可读；产品线与 lifecycle 取被运行资产版本，owner 为运行身份，status 是已有 admitted/failed，不改成任务 phase；flowVersion 为 skill-run/1。更新时间为 publishedAt（未发布时为 createdAt），完整键 bot/version/occurrence 的 SHA 作游标平局依据。页内新增 recordId/version 供跨版本记录去重；旧数组项不加字段，taskId=null/failed 不伪造任务，occurrenceKey/channel/published/trigger/error 全部保留。
+
 迁移 38 追加修复 36 的归因细节：多条已释放读取统一为 UPSTREAM_TIMEOUT/sideEffects=none/sorted operationIds；不触动 unknown/write。task.read-release-audit-links-completed 的 correctsAudit 指原 36 任务补偿行，relatedAudits 列出该任务/输入全部 30 原释放审计；原行/原 min 引用保持历史原样，阅读完整链以追加行补足，不猜历史状态。29/30/36 的校验和均不改。
 
 task/admin events 的权限、窗口校验与取页也在同一只读快照内；裁剪并发时返回该次校验的完整可见页或明确 CURSOR_EXPIRED，长轮询逐次重核，不返回静默缺失的空页。bot.admission-failed 的通知原因读取 payload.reason.code；完整运行错误仍从 bot runs 的 error 或任务 result.error 获取。

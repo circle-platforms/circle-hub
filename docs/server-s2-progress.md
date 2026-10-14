@@ -867,3 +867,5 @@ abdb701 的完整验收 contracts **5/5**、methods **147/147**；acceptance **2
 来源/证据/制品原先没有 HTTP 集合 GET；按维护者 Otty 明确答复，在既有资源路径补集合页，并令 MCP resources/list 投影复用同一分页权限核心；不另起 MCP 查询规则。后续按 B 三类、审计/worker、bot runs、通知次序，分组本地签署，不 push/部署，不触碰 7420/网关/Circle/独立包。
 
 B 三类先写旧路由 **0/4**（与 operations 三例顺序复现合计 **0/7**），再接既有路径 GET view=page。来源复用企业/知识原件 ACL，证据保留任务私有与 run 边界，产物可读绑定去重及 owner 过滤不泄漏隐藏申请人。MCP resources/list 改共用授权元数据 + facetedPage，既有 knr/mcr 加上可读 src 原件，不为列目录下载 bytes；游标为统一绑定形状，旧资源游标需重列，不误称兼容。直调相同核心证明 run 分区、knr/个人 mcr 与禁止字节读取；B/MCP 相关 **11/11**，无 skip，typecheck/diff 通过。规模边界与引用形状已交接；审计/worker/bot 与通知仍在本轮后续，不纳入本组提交，未跑全套。
+
+读取维护者对 8c9896b 的认可与规模边界要求后，接审计/worker/bot runs。旧实现三例 **0/3**，页都复用 facetedPage，管理范围与 bot owner-only 保留，worker 多 scope 不重复。worker 首页计数先发现未用参数类型错误；把离线计算放进 FROM 派生表，让计数/投影同源且都确定阈值类型。bot 平局游标用完整主键 SHA，页项带 recordId/version，旧数组形状不变；status 仍 admitted/failed，不能拿任务结论替换。联合 **8/8**、最终计数专项 **4/4**、无 skip，typecheck/diff 通过。worker 观测年龄与 B 当前内存权限判定限制已明确交接；全套仍仅维护者跑，事件冻结、本机外部系统均不动。

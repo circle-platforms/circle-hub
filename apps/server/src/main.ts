@@ -227,7 +227,7 @@ const server = createListener(async (request, response) => {
     if(url.pathname===CLIENT_ROUTES.authLogout.path&&request.method==='POST'){AuthRefreshRequest.parse(await body(request));send(response,200,{data:await auth.logout(request.headers.authorization!)});return;}
     if(url.pathname===CLIENT_ROUTES.notifications.path&&request.method==='GET'){send(response,200,{data:await notifications.page(ctx,NotificationQuery.parse(Object.fromEntries(url.searchParams)))});return;}
     if(url.pathname===CLIENT_ROUTES.queues.path&&request.method==='GET'){send(response,200,{data:await workQueries.queues(ctx,QueueQuery.parse(Object.fromEntries(url.searchParams)))});return;}
-    if(url.pathname===CLIENT_ROUTES.workers.path&&request.method==='GET'){send(response,200,{data:await workQueries.workers(ctx)});return;}
+    if(url.pathname===CLIENT_ROUTES.workers.path&&request.method==='GET'){send(response,200,{data:url.searchParams.has('view')?await workQueries.workersPage(ctx,RegistryPageQuery.parse(Object.fromEntries(url.searchParams))):await workQueries.workers(ctx)});return;}
     if(url.pathname===CLIENT_ROUTES.notificationStream.path&&request.method==='GET'){
       await auth.check(ctx,'tasks.read');const query=NotificationQuery.parse({...Object.fromEntries(url.searchParams),...(request.headers['last-event-id']&&!url.searchParams.has('cursor')?{cursor:request.headers['last-event-id']}:{})});await notifications.page(ctx,query);const release=notifications.reserve(ctx);let cursor=query.cursor,closed=false,lastHeartbeat=0;response.once('close',()=>{closed=true;release();});response.writeHead(200,{'content-type':'text/event-stream; charset=utf-8','cache-control':'no-cache','connection':'keep-alive'});response.flushHeaders();
       try{while(!closed&&!closing){let page;try{const current=await auth.authenticate(request.headers.authorization);page=await notifications.page(current,{...query,cursor});}catch(error){const event=error instanceof ApiError&&error.code==='UNAUTHENTICATED'?'session.expired':error instanceof ApiError&&error.code==='FORBIDDEN_ACTION'?'permission.revoked':error instanceof ApiError&&error.code==='CURSOR_EXPIRED'?'cursor.expired':'stream.error';response.write(`event: ${event}\ndata: ${JSON.stringify(error instanceof ApiError&&error.code==='CURSOR_EXPIRED'?error.details:{})}\n\n`);break;}
@@ -251,7 +251,7 @@ const server = createListener(async (request, response) => {
     const serviceClient=/^\/v1\/service-clients\/([^/]+)(?:\/(rotate|revoke))?$/.exec(url.pathname);if(serviceClient){const id=ServiceClientId.parse(serviceClient[1]);if(request.method==='GET'&&!serviceClient[2])send(response,200,{data:serviceClients.view(await serviceClients.row(ctx,id))});else if(request.method==='POST'&&serviceClient[2]==='rotate')send(response,200,{data:await serviceClients.rotate(ctx,id,await body(request))});else if(request.method==='POST'&&serviceClient[2]==='revoke'){z.object({}).strict().parse(await body(request));send(response,200,{data:await serviceClients.revoke(ctx,id)});}else throw new ApiError('INVALID_PAYLOAD','Unsupported service client method');return;}
     if(request.method==='POST'&&url.pathname==='/v1/automations/triggers'){send(response,201,{data:await automations.trigger(ctx,await body(request))});return;}
     if(request.method==='POST'&&url.pathname==='/v1/automations/bots'){send(response,201,{data:await automations.bot(ctx,await body(request))});return;}
-    const botRuns=/^\/v1\/automations\/bots\/([^/]+)\/runs$/.exec(url.pathname);if(botRuns&&request.method==='GET'){send(response,200,{data:await automations.runs(ctx,AssetId.parse(botRuns[1]))});return;}
+    const botRuns=/^\/v1\/automations\/bots\/([^/]+)\/runs$/.exec(url.pathname);if(botRuns&&request.method==='GET'){const id=AssetId.parse(botRuns[1]);send(response,200,{data:url.searchParams.has('view')?await automations.runsPage(ctx,id,RegistryPageQuery.parse(Object.fromEntries(url.searchParams))):await automations.runs(ctx,id)});return;}
     const connectorEvent=/^\/v1\/connectors\/([^/]+)\/events$/.exec(url.pathname);if(connectorEvent&&request.method==='POST'){send(response,201,{data:await automations.event(ctx,AssetId.parse(connectorEvent[1]),await body(request))});return;}
     if(url.pathname===CLIENT_ROUTES.sourceArtifactSubmit.path&&request.method==='POST'){send(response,201,{data:await sourceArtifacts.register(ctx,await body(request))});return;}
     const sourceArtifact=/^\/v1\/source-artifacts\/([^/]+)$/.exec(url.pathname);if(sourceArtifact&&request.method==='GET'){send(response,200,{data:await sourceArtifacts.get(ctx,AssetId.parse(sourceArtifact[1]))});return;}
@@ -461,6 +461,7 @@ const server = createListener(async (request, response) => {
         send(response,200,{data:rows.map(row=>approvals.view(row))});return;
       }
       if(url.pathname==='/v1/admin/audit'&&request.method==='GET'){
+        if(url.searchParams.has('view')){send(response,200,{data:await workQueries.auditPage(ctx,RegistryPageQuery.parse(Object.fromEntries(url.searchParams)))});return;}
         const rows=(await store.pool.query('SELECT id,principal_id,scope_id,action,detail,created_at FROM audit WHERE tenant_id=$1 AND (scope_id IS NULL OR scope_id=ANY($2::text[])) ORDER BY id DESC LIMIT 500',[policy.tenantId,policy.scopes])).rows;
         send(response,200,{data:rows.map(row=>({id:Number(row.id),principalId:row.principal_id,scopeId:row.scope_id,action:row.action,detail:row.detail,createdAt:row.created_at.toISOString()}))});return;
       }
@@ -478,7 +479,7 @@ const server = createListener(async (request, response) => {
         restartRequested=true;process.send!({type:'graceful-restart'});return;
       }
       if (url.pathname === '/v1/admin/workers' && request.method === 'GET') {
-        send(response,200,{ data:await workQueries.workers(ctx) }); return;
+        send(response,200,{ data:url.searchParams.has('view')?await workQueries.workersPage(ctx,RegistryPageQuery.parse(Object.fromEntries(url.searchParams))):await workQueries.workers(ctx) }); return;
       }
       if (url.pathname === '/v1/admin/tasks' && request.method === 'GET') {
         const rows = (await store.pool.query("SELECT task_id FROM tasks WHERE tenant_id=$1 AND scope_id=ANY($2::text[]) AND (context->>'privateOwnerId' IS NULL OR context->>'privateOwnerId'=$3)", [policy.tenantId, policy.scopes,policy.principalId])).rows;
