@@ -102,8 +102,9 @@ export function createExecutionTransitionContracts(shared:Shared){
     if(bytes(shared.canonicalJson(metadata))>limits.metadataBytes)issue(ctx,'Transition metadata exceeds its cumulative JSON byte budget',[],'BODY_TOO_LARGE');
   }
   const inputBase=z.object({schema:z.literal(EXECUTION_TRANSITION_SCHEMA),binding,currentInput:z.object({value:json,sha256:shared.Sha256}).strict(),state:json,
-    observations:z.array(observation).max(limits.arrayItems),controlledBytes:z.array(controlled).max(limits.arrayItems)}).strict().superRefine((value,ctx)=>{
+    observations:z.array(observation).max(limits.arrayItems),controlledBytes:z.array(controlled).max(limits.arrayItems),expectedOccurrences:z.array(z.object({stepId,nextOccurrence:safeSize}).strict()).max(limits.arrayItems).optional()}).strict().superRefine((value,ctx)=>{
     stateBudget(value.state,ctx,'input');
+    const expectedSteps=new Set<string>();for(const [index,row]of (value.expectedOccurrences??[]).entries()){if(expectedSteps.has(row.stepId))issue(ctx,'Expected occurrence identities must be unique',['expectedOccurrences',index,'stepId']);expectedSteps.add(row.stepId);}
     if(shared.canonicalHash(value.currentInput.value)!==value.currentInput.sha256||value.currentInput.sha256!==value.binding.inputSha256)issue(ctx,'Current input differs from its canonical SHA or frozen binding',['currentInput','sha256'],'SOURCE_HASH_MISMATCH');
     metadataBudget(value,ctx);byteBudget(value.controlledBytes,ctx);
   });
