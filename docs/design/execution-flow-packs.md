@@ -434,3 +434,11 @@ status/results/reconcile 仍由 taskIdArgument 注入持久远端身份，并只
 新模式要求批准的 `identityProjection:{stepId,path,export,byteArgument,sha256Path,caseIdsPath,idPath?}`。byteArgument 是映射后的实际 wire 参数。C 在意图前从本任务 / 输入修订的成功 tool.call 查询实际 action、方法 pin、请求摘要、受控槽引用及 B 投影原件，核对其确实接收同份工作簿，再按字段路径取 SHA 与身份列表。来源不是 caller value；投影原件、operationId、方法 pin、原件 SHA 和身份保存在 receipt_facts（迁移 42），此时不产生 remote_identity。submit 必须核原件 SHA / 身份，results 必须核原件 SHA，随后阶段均核持久远端身份；历史报告重新核冻结证据，撤权不抹已发生事实。
 
 D 成功回报先按 SHA 冻结原件，再做阶段校验；不匹配原件仍留存为未验证证据。已 submitted 后的查询 / 心跳拒绝不能当派发前拒绝，仍 unknown、不释放也不重派；已证 status 终态先持久化，随后 results 拒绝或 SHA 错误仅使解释失败，终态与释放事实保留。已证终态后的不完整结果渠道可由批准产品方法解释为 partial，不猜设备结果。原生 1.1.1 不参与本链。
+
+### C4：同租约准备观察与派发出口
+
+批准的 receiptPolicy 可声明 `prepare:[{tool,args?}]`，均须在资源 provides 中唯一声明为 read；参数经过 toolArguments 和逐工具租约映射，工具链 minimumRole 也包括这些准备调用。worker 在该写操作同一 acquire / heartbeat 租约内，按批准顺序调用准备 Tool，再持久化每份 canonical JSON 原件的 SHA / 大小 / 指针；准备不会产生 submitted 身份。
+
+迁移 43 的 prepare_ref 保存操作、输入修订、fence、请求摘要、资源 pin、租约摘要、顺序、实际参数摘要和原件引用。C 独立回读 B、重算映射与摘要，完整准备后才调用 beforeDispatch；subject 为 `{input,operationId,preparations:[{index,tool,reference,result}]}`。准备 result 在 Hook 入口去除凭据 / 租约字段及 NUL，并标 sanitized；原件保存在 B，不把原文秘密或 NUL 放进 JSONB。超 Hook JSON 预算明确失败，不截断为通过。出口证明绑定本次 preparationDigest / fence，intent 还核同一 leaseDigest；旧出口证据不能豁免新观察。
+
+准备失败、撤权或 Hook 拦截在意图前落 failed，无提交 / unknown 冻结；本地取消仍不证明远端停止。清理仅用本次已取得的凭据调用批准的 lease_release，不授新 dispatch；明文例外清理的有限 transport 元数据仍按冻结 runtime 修订核验并永久写审计 / 证据。释放失败照实记 false。已派发不确定写仍不清理、不重派；原生 1.1.1 不改。初始环境观察来自模块的独立 read，写租约里的 prepare 是更晚的一次观察，gateway submit 内部还可独立观察 / 拒绝，不能互相冒充。

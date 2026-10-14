@@ -1113,3 +1113,17 @@ C 拒绝产品实参 / byteArgs 遮蔽租约字段，只延后注入字段的 re
 新增 receiptPolicy.receipts 按 submit / status / results / reconcile 声明独立 schema、remote 身份及 state/channel/rc 判别；没有新声明时完整兼容旧 echo 校验与返回形状。新模式必须具有提交原件 SHA / 身份列表、结果原件 SHA 与 identityProjection，缺关联 fail closed。C 只从本修订成功的冻结 Tool path/export/byteSlots 与 B 原件读取身份投影，核原操作 requestHash、所用受控原件及投影字节 SHA；不采用客户端 value 的 caseIds 或 SHA。追加迁移 **42** 保存 receipt_facts 于 intent 前，submit 后复制至 remote_identity；physical wire 参数、历史证明与阶段回读共用已批准映射。成功 raw 先按 SHA 留 B 再核验，提交后 schema/身份拒绝仍 unknown / 不释放；已持久 status 终态后的坏结果或拒绝只影响解释，释放与完整原件继续留存。
 
 纯机制旧实现 **1/4**，新机制补缺关联声明负例后 **5/5**；独立合成模块实际 PostgreSQL+worker 七叶 **7/7，无 skip**，分别覆盖无虚构 state/echo 的提交、status state、results channel/rc、坏提交 SHA、提交后 status 拒绝、终态后坏结果 SHA / 拒绝、渠道不完整 partial，以及拒绝客户端冒充身份投影。初次整链因夹具缺 Tool.description 被契约拒绝；补齐后发现 C 对已去正文但仍含 encoding 的 review 引用重算严格 ref-only requestHash 而 failed / 零 RPC，规范化引用形状后七叶绿，未放宽断言或时限。相关方法联合 **25/25**（含新五叶与旧回执 / 映射 / 租约消费者），typecheck / diff 通过。此为定向合成证明，严格外部产品包还须后续准备阶段，不能称真实网关或设备可用；原生 1.1.1 / packs/apv 字节未改。只本地签署，不跑全套、不 push / 部署 / 接真实系统。
+
+## 100：C4 同租约准备原件与派发前核验
+
+批准的 receiptPolicy.prepare 为有限只读 Tool 列表，普通参数复用 toolArguments，租约字段复用逐工具映射。D 在同一次远端租约内按顺序读取准备观察，再提交；准备本身不产生远端任务身份。C 独立重算实际参数摘要，核 B 原件 SHA / 长度、操作 / 输入修订 / fence / 资源 pin，迁移 **43** 持久化 prepare_ref。原件以指针保留，beforeDispatch 只接有界、去 NUL 与凭据的观察投影；完成准备后才重新调用真实 Hook，意图必须核新 preparationDigest、同租约摘要及当前 fence，旧 Hook 决定不能复用。
+
+准备失败、Hook 阻断或准备期间撤权均不写派发意图、不提交、不冻结；失败报告按冻结历史声明记账，不重新授予执行权限。清理仅绑定的 lease_release 可使用本运行已取得的凭据（含匿名空串），不扩到 acquire / heartbeat / 观察 / submit，未知写仍不释放。已批准明文认证例外的释放通过受控 cleanupTransport 留永久审计 / 证据，历史资源与 runtime pin 仍独立核验；该 HTTP 清理分支由纯测试核边界，PG 只用回环合成源，不称真实源验证。
+
+先恢复旧实现运行新正例，实际 **0/1 红**（契约拒 prepare）；初版三叶 **3/3 绿**。合入 C3 后完整九叶首轮 **7 pass / 2 fail / 0 skip**，两失败来自测试观察代理在 server 收尾后 fetch 被拒导致夹具 teardown 未结束；仅对该代理补固定 502，未改产品断言 / 时限或生产错误处理，仅重跑两叶 **2/2 绿、无 skip**。收尾只终止已核实的测试自有 worker，未触保护进程。九叶覆盖同租约原件 / 新 Hook 证据、准备超时 / 失联、撤权后仅释放、坏参数零 RPC、伪 SHA / 参数摘要 / 旧 fence、Hook 阻断；B 回读保留原始 NUL 并重算 SHA。纯准备专项 **5/5**、typecheck / diff 通过，PG 串行已清理并释放。
+
+只在独立树本地签署；原生 APV1.1.1 / packs/apv 与独立包字节不变，不跑全套、不接真实模型 / 网关 / 设备，不 push 或部署。严格外部包的同租约准备验收由维护者随后串行运行，当前记录不把合成证明扩大为现网兼容。
+
+第四项收尾集成前，按只读 ref 更新固定 b02122af1533286de00ffc6342c19c3bad7cff39，APV 1.3.0 / digest f186993fe20407b893b29c69462e3858653cb0b01df64c85ec17189ba5ebd86e。正式模块内解析工作簿 / 契约、消耗真实 hub.result 投影原件、由真实命令核对原件导出 present。A3 正例和三类 Hook 负例、严格协议纯叶 / 整链共 **6/6、无 skip**；strict delivered、一次 submit / intent，status/results 仅 task_id，原始 submit/results 无自造三 hash/state，已获 lease 随终态释放。该阶段还未启同租约 prepare，不能扩成第四项已证，也不证明 cexg 现网兼容。全套仍由维护者跑。
+
+C4 同租约 prepare 目标已用相同 b02122af 原件再跑严格文件 **2/2、无 skip**：实际顺序为独立 env_prepare 读租约释放，再 acquire→env_prepare→bed_topology→case_submit→task-only status/results→release。case_submit / intent 各一次；两份 prepare_ref 完整、beforeDispatch 绑定本次 preparationDigest，终态交付逐步 / 检查点、unmapped 空。原始成功体仍无补造字段，此为严格合成协议，不是现网设备验收。新旧 worker 不能混版本消费新 policy 的部署先后已写入交接。

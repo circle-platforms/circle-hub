@@ -655,3 +655,5 @@ node --test --test-concurrency=1 tests/acceptance/c-cexg-protocol.test.ts
 严格输入不放宽：env_prepare / bed_topology / case_submit 必需 lease_id/token，提交原件字段为 xlsx_b64、module 可选，case_status / case_results 仅 task_id、拒绝额外字段。原始成功回报保持 submit 的 sha256/case_ids、status 的 state、results 的 ready/xlsx_sha256/cases；不填三种 A3 hash，不给 submit 或完成 results 填 state。当前批准策略仍沿未改驱动的旧 schema，正是待修兼容边界之一；后续必须同步批准的 policy 映射与机械核验，不能在夹具原件补字段做绿，也不在本轮定义未来 schema。
 
 冻结 `5cdbc2b` 的实际结果为 **1 pass / 1 fail / 0 skip**：原件与模块登记、另一身份批准完成，主目标在 `C.validateBatch:env_prepare` 缺租约而 failed / INVALID_PAYLOAD，provider RPC、case_submit 与 write intent 都是零。主断言仍要求成功完成执行，没有把拒绝标成通过。提交、status/results 与原始回执的后续缺口尚未到达；完整清单见[中英 C 待办](design/execution-flow-packs.md#c-阶段待办同形网关协议兼容)，本轮未改驱动或网关，也未证明真实设备兼容。
+
+C 驱动升级不声明新旧 flow.invoke worker 混跑安全。启用含逐工具注入 / 阶段回执 / prepare 的资源新修订前，必须先排空并退出全部旧 flow worker，确认在途任务已结束或已留下独立核对所需事实，再启动新 worker，最后激活新 policy；仅替换 server 不够。drain 不能把已派发 unknown 当作停止，也不得补发远端写。本轮没有新增 worker feature 协商接口，维护者的 C 后半滚动替换须遵守这个顺序。

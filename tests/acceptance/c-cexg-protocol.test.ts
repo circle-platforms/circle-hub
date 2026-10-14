@@ -30,7 +30,9 @@ function strictTools(){
 
 function strictReceiptPolicy(frozen:Awaited<ReturnType<typeof frozenApvModule>>){
  const object=(properties:any={},required:string[]=[])=>({type:'object',properties,required,additionalProperties:true}),text={type:'string'},id={task_id:text,ok:{const:true}},base={remoteIdPath:['task_id']},leased={idArgument:'lease_id',fenceArgument:'token'};
- return {schema:'hub-provider-observation/1',submitTool:'case_submit',statusTool:'case_status',resultTool:'case_results',reconcileTool:'case_status',taskIdArgument:'task_id',
+ const resource=frozen.files.find(file=>file.path==='resources/case-gateway.json'),toolArguments=resource?JSON.parse(Buffer.from(resource.base64,'base64').toString()).configuration?.receiptPolicy?.toolArguments:undefined;
+ return {schema:'hub-provider-observation/1',...(toolArguments?{toolArguments}:{}),submitTool:'case_submit',statusTool:'case_status',resultTool:'case_results',reconcileTool:'case_status',taskIdArgument:'task_id',
+  prepare:[{tool:'env_prepare'},{tool:'bed_topology',args:{refresh:false}}],
   identityProjection:{stepId:'workbook',path:'tools/workbook.ts',export:Buffer.from(frozen.files.find(file=>file.path==='tools/workbook.ts')!.base64,'base64').toString().includes('export async function projectWorkbook(')?'projectWorkbook':'readExecutionWorkbook',byteArgument:'xlsx_b64',sha256Path:['sha256'],caseIdsPath:['cases'],idPath:['autoid']},
   receipts:{
    submit:{...base,receiptSchema:object({...id,sha256:text,case_ids:{type:'array',items:text}},['ok','task_id','sha256','case_ids']),sha256Path:['sha256'],caseIdsPath:['case_ids']},
@@ -42,7 +44,7 @@ function strictReceiptPolicy(frozen:Awaited<ReturnType<typeof frozenApvModule>>)
  };
 }
 
-function strictState(){return {secret:randomBytes(32).toString('hex'),calls:[] as {name:string;args:any;meta:any}[],submissions:0,releases:0,workbook:Buffer.alloc(0),leaseId:'',fence:0,leaseActive:false,taskId:'synthetic_cexg_task_301'};}
+function strictState(){return {secret:randomBytes(32).toString('hex'),calls:[] as {name:string;args:any;meta:any}[],submissions:0,releases:0,workbook:Buffer.alloc(0),leaseId:'',fence:0,leaseActive:false,taskId:'synthetic_cexg_task_301',module:'synthetic'};}
 function strictReply(state:ReturnType<typeof strictState>,name:string,args:any):Record<string,any>{
  const tool=strictTools().find(tool=>tool.name===name);assert.ok(tool,'The strict fixture has no undeclared Tool');validateProviderSchema(tool.inputSchema,args);
  const publicLease=()=>({lease_id:state.leaseId,token:state.fence,holder:'synthetic',expires_at:Math.floor(Date.now()/1000)+120,expires_in_s:120});
@@ -53,10 +55,10 @@ function strictReply(state:ReturnType<typeof strictState>,name:string,args:any):
  if(name==='lease_release'){state.releases++;state.leaseActive=false;return {ok:true,released:true};}
  if(name==='env_prepare'){if(args.device_build)assert.equal(args.device_build,apvSyntheticBuild,'The requested build differs from the synthetic bed');const {observedBuild:_,...raw}=apvEnvironment;return {...raw,build_checked:typeof args.device_build==='string'&&args.device_build.length>0};}
  if(name==='bed_topology')return apvTopology;
- if(name==='case_submit'){state.submissions++;state.workbook=Buffer.from(args.xlsx_b64,'base64');return {ok:true,task_id:state.taskId,sha256:sha256(state.workbook),bytes:state.workbook.length,case_ids:['301'],deliver_epoch:0,submit_autoid:'301',module:args.module??'synthetic'};}
+ if(name==='case_submit'){state.submissions++;state.workbook=Buffer.from(args.xlsx_b64,'base64');state.module=args.module??'synthetic';return {ok:true,task_id:state.taskId,sha256:sha256(state.workbook),bytes:state.workbook.length,case_ids:['301'],deliver_epoch:0,submit_autoid:'301',module:state.module};}
  assert.ok(state.submissions>0);assert.equal(args.task_id,state.taskId);
  if(name==='case_status')return {ok:true,task_id:state.taskId,state:'done',rc:0,log_tail:''};
- if(name==='case_results')return {ok:true,task_id:state.taskId,...apvRawResults,xlsx_sha256:sha256(state.workbook),submit_autoid:'301',module:'synthetic',run_dir:null,report_dir:null,ignored_rows:0};
+ if(name==='case_results')return {ok:true,task_id:state.taskId,...apvRawResults,xlsx_sha256:sha256(state.workbook),submit_autoid:'301',module:state.module,run_dir:null,report_dir:null,ignored_rows:0};
  throw new Error('This side-effect-free protocol fixture does not execute probe or lifecycle Tools');
 }
 
@@ -90,12 +92,12 @@ test('C cexg strict protocol: the approved unchanged external APV flow must comp
  const file=frozen.files.find(file=>file.path==='flows/apv-case-execute-v2.json');assert.ok(file,'Package ABI: declare the v2 descriptor');const descriptor=JSON.parse(Buffer.from(file.base64,'base64').toString());assert.equal(descriptor.id,APV_MODULE_FLOW,'Package ABI: select the new flow id');FlowDefinition.parse(descriptor);
  const {sandboxHost,until}=await import('./harness.ts');if(!sandboxHost.available){t.skip(sandboxHost.reason);return;}
  const provider=await strictProvider(t),f=await apvModuleFlow(t,frozen,{provider,tools:strictTools(),receiptPolicy:strictReceiptPolicy(frozen)}),{h}=f;await h.startWorker();const task=await f.submit();
- const status=await until(async()=>{const row=await h.status(task.taskId);return ['delivered','failed','cancelled','unknown','waiting-input'].includes(row.phase)?row:false;},30_000),result=await h.request(`/v1/tasks/${task.taskId}/result`),steps=(await h.db.query('SELECT step_id,kind,action,status,intent,terminal,evidence_ref,observation FROM flow_steps WHERE task_id=$1 ORDER BY created_at,step_key',[task.taskId])).rows;
+ const status=await until(async()=>{const row=await h.status(task.taskId);return ['delivered','failed','cancelled','unknown','waiting-input'].includes(row.phase)?row:false;},30_000),result=await h.request(`/v1/tasks/${task.taskId}/result`),steps=(await h.db.query('SELECT step_id,kind,action,status,intent,terminal,evidence_ref,observation,prepare_ref,before_dispatch_ref FROM flow_steps WHERE task_id=$1 ORDER BY created_at,step_key',[task.taskId])).rows;
  const pendingBatch=[...steps].reverse().find(step=>step.kind==='transition')?.observation?.facts?.result?.actions,proposed=pendingBatch?.find((action:any)=>action.kind==='provider.call'),phase=steps.find(step=>step.status==='failed'||step.status==='unknown')?.step_id??(status.phase==='failed'&&proposed?`C.validateBatch:${proposed.tool}`:'delivery');t.diagnostic(`Strict protocol stage=${phase}, phase=${status.phase}, code=${result.error?.code??'none'}, RPC Tools=${provider.state.calls.map(call=>call.name).join(',')||'none'}, case_submit=${provider.state.submissions}, writeIntent=${steps.filter(step=>step.intent).length}`);
  // A correctly diagnosed refusal is still a red acceptance. Do not relabel
  // blocked execution as completion or add correlation fields to the raw data.
  assert.equal(status.phase,'delivered',`Strict cexg compatibility is incomplete at ${phase}: ${result.error?.code??status.phase}`);assert.equal(result.status,'succeeded');assert.equal(provider.state.submissions,1);assert.deepEqual(provider.state.workbook,f.workbook);assert.ok(provider.state.releases>=1);
- const submitted=steps.find(step=>step.kind==='provider.call'&&step.action.tool==='case_submit');assert.ok(submitted?.intent&&submitted.terminal);assert.equal(submitted.action.byteArgs.xlsx_b64,'workbook');assert.ok(!Object.hasOwn(submitted.action.args,'xlsx_b64'));
+ const submitted=steps.find(step=>step.kind==='provider.call'&&step.action.tool==='case_submit');assert.ok(submitted?.intent&&submitted.terminal);assert.ok(submitted.prepare_ref?.complete);assert.equal(submitted.prepare_ref.records.length,2);assert.equal(submitted.before_dispatch_ref.preparationDigest,submitted.prepare_ref.digest);assert.equal(submitted.action.byteArgs.xlsx_b64,'workbook');assert.ok(!Object.hasOwn(submitted.action.args,'xlsx_b64'));
  for(const point of ['verify.deviceCommand','verify.hostCommand','verify.workbook'])assert.ok(steps.some(step=>step.kind==='hook.verify'&&step.action.event===point&&step.status==='succeeded'&&step.evidence_ref),point);
  const operations=await h.request(`/v1/tasks/${task.taskId}/operations`);assert.ok(operations.every((operation:any)=>operation.name==='flow.invoke'));assert.equal(result.result.cases[0].autoid,'301');assert.equal(result.result.cases[0].checkPoints.length,2);assert.ok(result.result.cases[0].checkPoints.every((checkpoint:any)=>checkpoint.status==='passed'));assert.deepEqual(result.result.unmapped,[]);
 });
