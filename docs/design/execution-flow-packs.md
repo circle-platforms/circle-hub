@@ -462,3 +462,8 @@ D 成功回报先按 SHA 冻结原件，再做阶段校验；不匹配原件仍�
 C 入队只延后批准映射字段的必需性约束，保留其它字段验证；无法安全延后的顶层组合 / 跨字段 schema 失败封闭，不删除约束伪造许可。D 真正调用前按实际 lease、普通映射与原字节填入后完整验证批准 schema / wire。需要租约的普通 read 临时 acquire / read / release，并核 acquire / heartbeat / release 的角色；status/results 的空映射保证只传已声明远端身份。
 
 C5 的 ledger / B 绑定也要求一致的数据库锁序：通用 flow 的任务→run→operation / step，claim 在 task 被锁住时跳过候选，不先占 operation 等上级锁。同 Store 的 flow 前置锁回调供两个 executor wrapper、心跳与过期实例共用；无注册回调的原生路径不新增 flow 锁。锁是序列化边界，不能替代身份、范围、fence、期限或源授权检查；本实现不靠重试死锁推进任务。
+
+
+### 失败 Tool 观察与空成功结果
+
+C 记录的失败观察必须有 `facts.error`，保留有界的 `{code, registered:true, message, details}`。`registered` 只表示投影后的平台码属于 F 登记簿，不证明报错原因或设备效果；未登记的回报码投影为 `INTERNAL_ERROR`，并标 `reportedRegistered:false`，任意原码仅保留在 B 的完整 worker 报告。错误详情超过元数据预算时，仅 `details` 变为含 SHA、大小和省略原因的摘要，不再连同分类码整体省略；超长 message 使用有界说明，原错误仍可从 B 核对。失败回报没给 error 时，C 用 `INTERNAL_ERROR` 和 `details.missingError:true` 披露缺失，不猜真实原因。成功 Tool 返回 `{}` 仍是成功的空结果，不附失败 error。上述投影不改变回报原字节、fence、读写效果或独立已证的 D 终态。

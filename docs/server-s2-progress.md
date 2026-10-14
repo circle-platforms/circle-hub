@@ -1165,3 +1165,9 @@ FlowDefinition 可显式声明 historyMode=controlled；内联 observations / ex
 根因是 7b 的严格 receiptPolicy 未读取资源批准的 toolArguments，包 3c46 env_prepare args={} 依赖映射注入 device_build；不带时 build_checked=false 是正确协议事实。后续 C4 的 01d53b2 已复制冻结资源映射，当前代码无需再改生产或包解析，不加假顶层字段、不强置 build_checked=true。新增严格纯回归：故意去掉该映射的旧变体 **0/1 红**、恢复后 **1/1 绿**，实际请求的构建、ready / checks.detail / build_checked 与无顶层字段分别核对。诊断优先使用原失败事实的 stage，零 submit 不再误标 delivery，并输出有限的期望 / env 实参构建元数据。
 
 在当前 Hub 固定同一 **3c46f707** / APV1.3.0 / digest **992a57b93375e7824b803b431064a931a56b579fad76cc67936a0093b4ae4b90** 只跑严格单文件 **4/4，无 skip**：两次 env_prepare 实参同 expectedBuild，先独立读、再同租约准备 / topology→一次 submit→task-only status/results→release，最终 delivered/succeeded。默认开关未开时 **3 pass / 1 skip**，skip 不计通过。typecheck / diff 通过；只补验收与进度，未改生产 / 原生 / 独立包、未跑全套、未 push / 部署或接真实系统。包侧旧提取问题不作为当前仍未修的结论。
+
+## 104：C 后续 1，失败 Tool 的有界错误事实
+
+失败观察原先已有 facts.error，但大 details 会使整个错误元数据被省略。本项保留 error.code / registered / 有界 message，详情独立按 F 预算投影；未经登记的报告码固定为 INTERNAL_ERROR、reportedRegistered=false，原文与完整 canonical report 留 B，不把未登记产品判断码变成平台终态码。失败 Tool 未给错误时只披露固定 INTERNAL_ERROR / missingError，不推断真实原因；成功的空对象不添加失败事实。registered 仅表示注册表成员性，不表示故障因果已经验证。中英附录补清该形状。
+
+先验收：新纯旧 **0/4**→新 **4/4**，真实脚本 Tool / worker 旧 **0/1**→新 **1/1**，大错误仍保分类且 B 原报告 SHA 不变、空成功没有 error；旧报告消费者 **2/2**、record 投影 **3/3**，定向共 **10/10，无 skip**。typecheck / diff 通过，PG 串行已释放。不修改原生 / 独立包，不跑全套，不 push / 部署或触现场环境。
