@@ -546,7 +546,7 @@ updatedAt 页锚点限制上界，未保存旧行版本。普通服务端更新�
 
 content.retained 是原 payload 已有的 B 引用列表，每项为 {evidenceId|artifactId,sha256?,fileName?,downloadPath}，引用自己的 SHA，不能与 content.sha256 混用。execution.environment.observed 附环境 JSON artifactId；task.delivered、bot.output 附已留存的 evidence/artifacts（含工具原件 knr_、运行/网关 evd_ 与交付 art_）。例如环境制品仍从 /v1/artifacts/{id}/content 下载，knr_ 原件从 /v1/knowledge/records/{id}/content 下载。它们在事件裁剪后仍按 B 的现行权限可读，但不声称单个原件包含整条事件或全部交付结论；交付完整状态仍从 result 获取。未有 retained 的事件全文只在同一 outbox 保留窗口可读，不新增永久保存承诺。运行中的原样 outbox、内部兼容观察与最终结果不改。
 
-worker 离线检测默认 90000 毫秒，可由部署运行配置 CIRCLE_SERVER_WORKER_OFFLINE_MS 设正整数；GET /v1/workers 及兼容 /v1/admin/workers 返回旧数组，每项 {workerId,draining,lastSeen,offline,workerOfflineAfterMs}，GET /v1/queues 同样披露 workerOfflineAfterMs。列表需 admin.manage，限定授权范围中的 worker；它仍属于管理类登记簿的权限例外，统一分面页按前述顺序后续接入。这个检测阈值决定是否进入 workerOffline，范围 slaMs.exceptions 决定是否超 SLA，两者独立；不根据 worker 的业务结果猜离线。
+worker 离线检测默认 90000 毫秒，可由部署运行配置 CIRCLE_SERVER_WORKER_OFFLINE_MS 设正整数；GET /v1/workers 及兼容 /v1/admin/workers 返回旧数组，每项 {workerId,draining,lastSeen,offline,workerOfflineAfterMs}，GET /v1/queues 同样披露 workerOfflineAfterMs。列表需 admin.manage，限定授权范围中的 worker；它仍属于管理类登记簿的权限例外；本轮已接入 view=page 统一分面页，不带 view 保留上述旧数组。这个检测阈值决定是否进入 workerOffline，范围 slaMs.exceptions 决定是否超 SLA，两者独立；不根据 worker 的业务结果猜离线。
 
 GET /v1/assets/{id}/harness-export?target=circle|<sourceHarness> 仅批准后的可读原语可用，返回 files 的相对目标路径/base64/sha256、warnings、provenance:{assetId,version,sha256,sourceHarness}。Circle Skill 原件移动到 .circle/skills/{name}/，字节不改；Instruction 投影为 AGENTS.md。Circle 尚无 Agent/Command 原生安装时明确 warning；MCP prompt 可读取批准的 Skill/Command。同来源 harness 由公开库导出；其不支持的跨 harness 映射继续 warning。这里只是冻结与装载投影，云运行仍用既有技能试跑/提交/批准接口；不自动批准或把原件搬运称作已执行。
 
