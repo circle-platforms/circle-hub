@@ -1261,3 +1261,11 @@ worker-capability-negotiation 的旧 mock 只给 UPDATE workers 返回注册行�
 仅 Flow 首次检查移入 executeFlowStep 的失败回报边界，回原 fence / 输入修订的 failed；非 Flow 的原生 / runtime 预检路径保留。C 只在未 intent、无 remote identity、未 terminal 的 provider write 下，独立核当前分区 / worker / fence / 元数据绑定与 beforeDispatch B 证据 SHA / 大小、冻结方法 / 资源 / request / 准备摘要和真实 block 决策后终结任务。Worker 错误标签、普通失败、reconcile 和已证终态解释缺口均不能触发此闸。
 
 原首叶旧 **0/1**（30 秒超时）→新 **1/1**（约 3.7 秒），原另外两叶 **2/2**，新纯报告 / 假证据及异绑定负界 **2/2**，全部无 skip。typecheck / diff 和独立只读回报边界复核通过，原生 / 产品包 / 归档零差异，PG 串行清理；只本地签署，不跑全套 / push / 部署或触现场。
+
+## 118：单跑复核，准备参数受理拒绝的消费者预期
+
+abc5af6 提前核自动协议参数，夹具把 undeclared:true 放进 additionalProperties=false 的 prepare args，现于 POST tasks.submit 直接 INVALID_PAYLOAD。旧用例仍以 h.request 要求受理成功再等任务 failed，单跑真实 **0/1** 红；这是期望过时，不放宽受理校验。仅该叶改为断 HTTP 400 / INVALID_PAYLOAD、scope 内无新 module task / 操作、proxy / provider RPC / submit / intent / frozen 均为零，不启动 worker；其余八叶及期限断言字节保留。
+
+更新后该叶实际 **1/1，无 skip**，typecheck / diff 通过。只改一个测试叶与进度，原生 / 独立包 / 生产校验零改，PG 清理，不跑全套。维护者已确认 08-connectors 的超时单跑 **2/2**、按负载假红处理，本轮不改它的实现或断言。
+
+两项按顺序各一笔签署。最终合并针对两条原失败消费者 **2/2**、新纯边界 **2/2**，无 skip / fail，typecheck / diff 通过；原生 packs/apv / packs/meridian / foundation / references / harness-adapters 相对本轮基线零差异，树收尾干净。PG 串行清理，不跑全套、不 push / 部署、不触 7420 / 网关 / Circle / 独立包。最终 HEAD 交维护者独立全量。
