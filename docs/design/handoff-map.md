@@ -24,7 +24,7 @@
 | [产品线安装与工具别名](../client-api-handoff.md#产品线安装与工具别名) | 别名解析与隐藏规则 → [circle-integration.md#工具目录与调用](circle-integration.md#工具目录与调用)；安装 JSON 的路径约定是运行配置，不搬 |
 | [修订 3：人的范围角色与审批资格](../client-api-handoff.md#修订-3人的范围角色与审批资格) | [roles.md#角色登记与资格披露](roles.md#角色登记与资格披露) |
 | [修订 3：变更集与依赖核验](../client-api-handoff.md#修订-3变更集与依赖核验) | [approvals-and-enforcement.md#只有一个审批概念变更集](approvals-and-enforcement.md#只有一个审批概念变更集)；摘要公式是实现细节，不搬 |
-| [修订 3：Skill、Tool、MCP server 与 Hook 的执行绑定](../client-api-handoff.md#修订-3skilltoolmcp-server-与-hook-的执行绑定) | Hook subject 与主机策略 → [harness-primitives.md#七每种原语的契约](harness-primitives.md#七每种原语的契约)；executionIsChange 一次消费 → [approvals-and-enforcement.md#生产设备要两人规则怎么办](approvals-and-enforcement.md#生产设备要两人规则怎么办)；waiting-input 与床构建观测 → [approvals-and-enforcement.md#执行链在-apv-工作簿执行上的固定规则](approvals-and-enforcement.md#执行链在-apv-工作簿执行上的固定规则) |
+| [修订 3：Skill、Tool、MCP server 与 Hook 的执行绑定](../client-api-handoff.md#修订-3skilltoolmcp-server-与-hook-的执行绑定) | Hook subject 与主机策略 → [harness-primitives.md#七每种原语的契约](harness-primitives.md#七每种原语的契约)；executionIsChange 一次消费 → [approvals-and-enforcement.md#生产设备要两人规则怎么办](approvals-and-enforcement.md#生产设备要两人规则怎么办)；waiting-input 与床构建观测 → [approvals-and-enforcement.md#执行链在设备执行上的固定规则](approvals-and-enforcement.md#执行链在设备执行上的固定规则) |
 | [修订 3：开发会话寿命与吊销](../client-api-handoff.md#修订-3开发会话寿命与吊销) | [roles.md#会话与令牌](roles.md#会话与令牌) |
 | [修订 3：凭据模式、隔离与明确的明文例外](../client-api-handoff.md#修订-3凭据模式隔离与明确的明文例外) | [approvals-and-enforcement.md#凭据与资源](approvals-and-enforcement.md#凭据与资源) |
 | [读取超时与大原件回报](../client-api-handoff.md#读取超时与大原件回报) | [approvals-and-enforcement.md#读取的超时](approvals-and-enforcement.md#读取的超时)；回报形状 → [object-standard.md#四b-的原件与证据规则](object-standard.md#四b-的原件与证据规则) |
@@ -43,9 +43,9 @@
 | handoff 段落首句 | 并入 |
 |---|---|
 | 「能力包 `apv-case-execute/1.1.1` 使用既有 sources、submit……」 | 版本与部署记录不搬；执行默认不审批 → [approvals-and-enforcement.md#生产设备要两人规则怎么办](approvals-and-enforcement.md#生产设备要两人规则怎么办)；实现升版重新登记 → [product-line-pack.md#技能包与模块的登记契约](product-line-pack.md#技能包与模块的登记契约) |
-| 「先上传 `case.xlsx`，或引用当前身份可读的编译 artifact……」 | 提交体教程不搬；字面关口与九列契约 → [approvals-and-enforcement.md#核验](approvals-and-enforcement.md#核验) |
+| 「先上传 `case.xlsx`，或引用当前身份可读的编译 artifact……」 | 提交体教程不搬；字面关口的通用规则 → [approvals-and-enforcement.md#核验](approvals-and-enforcement.md#核验)；APV 字面闭集留在 handoff（产品契约），随执行流迁入 products/apv 时再搬 |
 | 「命令核对也可绑定通用外部来源制品……」 | [object-standard.md#四b-的原件与证据规则](object-standard.md#四b-的原件与证据规则)；声明数据不当作事实同节 |
-| 「本版执行关口支持 APV_n/Segn_tmp 的字面……」（含 test_env、主机策略、错误定位段） | [approvals-and-enforcement.md#核验](approvals-and-enforcement.md#核验) |
+| 「本版执行关口支持 APV_n/Segn_tmp 的字面……」（含 test_env、主机策略、错误定位段） | 通用规则 → [approvals-and-enforcement.md#核验](approvals-and-enforcement.md#核验)；APV 字面闭集与主机名闭集留在 handoff（产品契约），随执行流迁入 products/apv 时再搬 |
 | 「人的授权由范围角色及 Tool minimumRole 决定……」 | [roles.md#角色登记与资格披露](roles.md#角色登记与资格披露)；SHA 一路再核对 → [object-standard.md#四b-的原件与证据规则](object-standard.md#四b-的原件与证据规则) |
 | 「任务先进入 cases.verify……」（含审批记录与投递前复核两段） | [approvals-and-enforcement.md#核验](approvals-and-enforcement.md#核验)、[#派发与两次环境观察](approvals-and-enforcement.md#派发与两次环境观察)、[#运行时没有审批只有执行链](approvals-and-enforcement.md#运行时没有审批只有执行链)（派发前重核段） |
 | 「运行时配置都在仓库外……」（含凭据轮换与重新登录两段） | [approvals-and-enforcement.md#凭据与资源](approvals-and-enforcement.md#凭据与资源)；issuer 历史更正是实现记录，不搬 |
@@ -54,9 +54,9 @@
 | 「execution.environment.observed 只表示……」 | [approvals-and-enforcement.md#派发与两次环境观察](approvals-and-enforcement.md#派发与两次环境观察)、[#设备归属与日志解析](approvals-and-enforcement.md#设备归属与日志解析) |
 | 「当前只完成合成网关验收……」 | 验收状态记录，不搬 |
 | 「修订 3 的 static-secret 模式与明确的 HTTP 资料源例外……」 | [approvals-and-enforcement.md#凭据与资源](approvals-and-enforcement.md#凭据与资源) |
-| 「设备归属来源更正（1.1.1）……」 | [approvals-and-enforcement.md#设备归属与日志解析](approvals-and-enforcement.md#设备归属与日志解析) |
+| 「设备归属来源更正（1.1.1）……」 | 通用归属规则 → [approvals-and-enforcement.md#设备归属与日志解析](approvals-and-enforcement.md#设备归属与日志解析)；APV_n 命名规则留在 handoff（产品契约），随执行流迁入 products/apv 时再搬 |
 | 「dev-stack 的排空是合作式……」 | [approvals-and-enforcement.md#凭据与资源](approvals-and-enforcement.md#凭据与资源)（worker 排空条） |
-| 「conf.device_names 的边界……」 | [approvals-and-enforcement.md#设备归属与日志解析](approvals-and-enforcement.md#设备归属与日志解析) |
+| 「conf.device_names 的边界……」 | 通用归属规则 → [approvals-and-enforcement.md#设备归属与日志解析](approvals-and-enforcement.md#设备归属与日志解析)；APV_n 命名规则留在 handoff（产品契约），随执行流迁入 products/apv 时再搬 |
 
 ---
 
