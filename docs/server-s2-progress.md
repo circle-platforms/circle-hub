@@ -1037,3 +1037,11 @@ H1 期限 **4e84ba0**、H2 拒绝来源 **8cf4998**、M3 终态后结果与补�
 初次只读 **702d039** 在旧 flow id 报红，尚无数据库执行。维护者更新 ref 后冻结 **5cdbc2b**，真实临时 PostgreSQL 已完成来源与模块安装、Bob 独立变更集批准、准备 / 派发 / 终态 / 纯 Tool 解析 / 交付；主树定向 **1 fail / 0 skip**，明确缺 verify.workbook。此前的原件 SHA、byteArgs、单次 case_submit、设备 / 主机步骤与两个检查点、unmapped 空列表、device / host Hook 非空处理器决定及 B 字节 SHA 断言均成立，未把 delivered 或部分通过称完整验收绿。三类 verify 与全部结果断言保持，整改归独立包；工作簿投影由冻结模块 Tool 读取合成原字节产生，不借原生解析器。
 
 本轮只验 A3 合成协议扩展：只读准备可独立调用，status/results 接受当前 worker 的可选租约参数，合成回执含机械关联 hash/state，不宣称现网网关已有这些字段或时序。C 后续同租约 prepare 观察由维护者另行授权实现。本项只跑新文件，默认 skip 与坏 ref 已核，typecheck / diff 通过；原生 **1.1.1** 路径未调用，源码 / 摘要未改，未跑全套 / 真实系统 / 模型，未改外部包或 checkout，不 push / 部署。验收未整体通过，门禁用于 Circle 迭代，不作为 C 现网切换批准。
+
+## 90：A2 驱动注入形状与 C 准备观察方向
+
+中文 A2 新增驱动注入形状，英文新增对应 A2 伴随文档，保留原合同 / 实测预算与限制。明确 currentInput.value 是整份 FlowSubmission、产品值在其 value，resource 是绑定别名、观察保留 operationId 关联、occurrence 由 Hub 授予、byteSlots 只用注入槽及位置追加字节、错误动作只用 F 登记码。原件 / state / metadata / wire 各预算不扩大，未新增 driver 字段或 schema。
+
+维护者确认当前 Hook 实际接法：beforeDispatch 由 C preflight 自动执行；afterResult 由 transition 显式 hook.verify，交付闸核已证终态写 operationId、真实成功证据与完整 candidate SHA。真实 env_prepare / bed_topology 需要远端租约，当前 read provider.call 不取得租约，示例不能冒充现网可执行路径。后续 C 已定为可选 receiptPolicy.prepare：批准工具名与参数映射、worker 在同一租约 submit 前调用、观察持久供 beforeDispatch 核；当前 preflight / 准备 / 意图时序需要未来独立实施验收，本轮只记方向，不自行确定字段 schema 或实现。
+
+两份设计 **25** 个本地链接 / 锚点通过，两份完整 frame 与动作示例各由当前 F 合同解析通过，canonical 输入 SHA / 原件 SHA / 长度静态核验通过；handoff 连同检查 **64** 链接有效，diff 通过。只改设计与进度，不改驱动语义、生产代码、原生实现或独立包，不跑全套 / 真实系统 / 模型，也不 push / 部署；两件本地分笔签署后交维护者与 Circle 迭代。
