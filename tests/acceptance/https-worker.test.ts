@@ -1,3 +1,4 @@
+import {sandboxTest} from './harness.ts';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { spawn, execFile } from 'node:child_process';
@@ -68,7 +69,7 @@ test('Worker server boundary: remote URLs are rejected before login and redirect
     assert.notEqual(redirectCode, 0);
     assert.equal(captured, 0);
 });
-test('HTTPS worker: pinned headless Circle inherits the CA and uses scoped server tools over native TLS', { skip: (!process.env.CIRCLE_BIN || !process.env.CIRCLE_COMMIT) && 'Set CIRCLE_BIN and CIRCLE_COMMIT for HTTPS RPC acceptance' }, async (t) => {
+sandboxTest('HTTPS worker: pinned headless Circle inherits the CA and uses scoped server tools over native TLS', { skip: (!process.env.CIRCLE_BIN || !process.env.CIRCLE_COMMIT) && 'Set CIRCLE_BIN and CIRCLE_COMMIT for HTTPS RPC acceptance' }, async (t) => {
     const { h, tls, call } = await tlsServer(t), model = await scriptModel(t);
     await h.db.query("UPDATE policies SET grants=grants || '[\"assets.read\",\"assets.register\",\"assets.change\",\"knowledge.read\",\"skillpacks.submit\",\"skillpacks.read\",\"skillpacks.run\"]'::jsonb WHERE principal_id='prn_alice'");
     await h.db.query("UPDATE policies SET grants=grants || '[\"assets.approve\"]'::jsonb WHERE principal_id='prn_bob'");

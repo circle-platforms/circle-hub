@@ -18,6 +18,19 @@
 | hub 验收用的 circle-packs 原件 | **ba06eeda83d27031fc1a452e43b24300d654da9e**，APV **1.2.2** | 该提交的 `modules.json` 与原字节 SHA | 产品线包 31/31；四技能模块 57/57 + catalog 工具 4/4 = 61/61，均无 skip；TAP 闸门读实际总数，不写死数量；不表示部署或自动批准 |
 | 执行网关 cexg | 0.3.0（静态密钥） | compile-excel-server 仓库 | hub 的 worker 需要 §7 的 static-secret 凭据模式才能调用它 |
 
+## 进程隔离与验收平台
+
+执行产品包 Tool/Hook 的受保护设备执行链，以及无界面 Circle 技能运行，目前依赖 **macOS seatbelt**（`sandbox-exec`）。Linux 尚无进程隔离 adapter，走这些隔离路径时运行返回 `SANDBOX_UNAVAILABLE`；不回退到普通进程，也没有测试开关放宽生产隔离。零规则的内建合成派发不经过 Tool/Hook 子进程，不能据它通过推称具备 seatbelt 保护。
+
+| 验收路径 | 所需前提 | 前提缺失时的报告 |
+|---|---|---|
+| 产品包 Tool/Hook 子进程、依赖这些规则的设备执行 | 可用的 macOS seatbelt adapter | 每个实际执行用例通过统一 harness 标明隔离前提缺失并 skip，不计为通过 |
+| Circle 技能执行、取消、运行修订与脚本隔离 | seatbelt，加明确提供的固定 Circle 构建与 Git 提交 | 统一 harness 报告缺失前提；提供了前提后的真正执行失败仍失败 |
+| 上传、鉴权、来源/资产登记与批准、列表查询、静态模块校验、内建只读连接器 | 临时 PostgreSQL 和相应合成来源 | 继续运行；不因同文件中另一用例需要隔离而整文件跳过 |
+| 不支持宿主的隔离拒绝负例 | 不支持的 adapter 环境 | 继续断言 `SANDBOX_UNAVAILABLE`；单独记录，不能当作隔离阳性路径通过 |
+
+包自身纯单测与 hub 的 Tool/Hook 装载执行验收也分开：前者通过不证明后者能在当前宿主运行。`module-install` 的前四个登记/校验/CLI 用例无隔离依赖，最后一个实际 RPC 用例有；`r3-product-hooks` 的直接 Tool/Hook 调用同样有依赖。公开 Ubuntu CI 的隔离 skip 只声明该平台未验证这些路径；完整执行验收仍需在具备隔离前提的 macOS 上，使用临时数据库、合成网关与脚本模型完成。它不代表真实设备或付费模型验收。
+
 ## schema 与契约
 
 | schema | 定义方 | 使用方 |

@@ -1,3 +1,4 @@
+import {sandboxTest} from './harness.ts';
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {writeFile} from 'node:fs/promises';
@@ -24,14 +25,14 @@ async function environment(t:any){
   return {h,source,gateway,build,bed,credential,submit,approve};
 }
 
-test('Device execution: server rejects unknown workbook commands and forged client receipts before any gateway call',async t=>{
+sandboxTest('Device execution: server rejects unknown workbook commands and forged client receipts before any gateway call',async t=>{
   const {h,gateway,submit,bed,build}=await environment(t);await h.startWorker();const invalid=await submit('invented command 123');await h.phase(invalid.taskId,'failed');assert.equal((await h.request(`/v1/tasks/${invalid.taskId}/result`)).error.code,'COMMAND_NOT_IN_TREE');assert.equal(gateway.state.calls.length,0);
   const bytes=await executionWorkbook(),source=await h.request('/v1/sources',{scopeId:'scp_lab',fileName:'case.xlsx',contentBase64:bytes.toString('base64')});
   await h.reject('/v1/tasks/submit',{scopeId:'scp_lab',capabilityPackId:'apv-case-execute',idempotencyKey:'forged-client-receipt',input:{sourceRevisionId:source.sourceRevisionId,gatewayAssetId:bed.assetId,commandSourceAssetId:build.assetId,build:'Rel_PHOTON_10_5_0_101',commandReceipt:{status:'hit'}}},'INVALID_PAYLOAD');
   const absent=await h.request('/v1/tasks/submit',{scopeId:'scp_lab',capabilityPackId:'apv-case-execute',idempotencyKey:'absent-build-hidden',input:{sourceRevisionId:source.sourceRevisionId,gatewayAssetId:bed.assetId,commandSourceAssetId:build.assetId,build:'unlisted-build'}});await h.phase(absent.taskId,'failed');assert.equal((await h.request(`/v1/tasks/${absent.taskId}/result`)).error.code,'SOURCE_FORBIDDEN');
 });
 
-test('Device execution: approved fenced gateway run returns bound per-case step checkpoint evidence and same-key submission never runs twice',async t=>{
+sandboxTest('Device execution: approved fenced gateway run returns bound per-case step checkpoint evidence and same-key submission never runs twice',async t=>{
   const {h,gateway,submit,approve}=await environment(t);await h.startWorker();const task=await submit('service create port 443','stable-device-run');await approve(task);await h.phase(task.taskId,'delivered');
   const result=await h.request(`/v1/tasks/${task.taskId}/result`);assert.equal(result.result.cases[0].verdict,'pass');assert.equal(result.result.cases[0].steps[0].status,'observed');assert.ok(result.result.cases[0].checkPoints.every((point:any)=>point.status==='passed'));assert.equal(result.result.sourceSha256,gateway.state.sha);assert.ok(result.artifacts.length>=2);assert.ok(result.evidence.length);
   const events=(await h.request(`/v1/tasks/${task.taskId}/events?after=0`)).events,environmentEvent=events.find((event:any)=>event.kind==='execution.environment.observed'),deliveredEvent=events.find((event:any)=>event.kind==='task.delivered');assert.ok(environmentEvent.content.retained.some((ref:any)=>ref.artifactId&&ref.fileName==='environment-observation.json'));assert.ok(deliveredEvent.content.retained.some((ref:any)=>result.artifacts.some((artifact:any)=>artifact.artifactId===ref.artifactId)));
@@ -40,12 +41,12 @@ test('Device execution: approved fenced gateway run returns bound per-case step 
   await h.reject(`/v1/tasks/${task.taskId}/result`,undefined,'FORBIDDEN_SCOPE','outsider');assert.equal((await h.request(`/v1/tasks/${task.taskId}/events?after=0`)).events.filter((event:any)=>event.kind==='execution.gateway.submitted').length,1);
 });
 
-test('Device execution: tree change after approval is rejected by a second server check and an upstream introspection outage never masquerades as login expiry',async t=>{
+sandboxTest('Device execution: tree change after approval is rejected by a second server check and an upstream introspection outage never masquerades as login expiry',async t=>{
   const {h,source,gateway,submit,approve}=await environment(t);const worker=await h.startWorker(),task=await submit();await h.phase(task.taskId,'waiting-review');await h.stop(worker);await approve(task);source.state.expandedCommands=false;await h.startWorker();await h.phase(task.taskId,'failed');assert.ok(['COMMAND_NOT_IN_TREE','APPROVAL_STALE'].includes((await h.request(`/v1/tasks/${task.taskId}/result`)).error.code));assert.equal(gateway.state.calls.length,0);
   source.state.expandedCommands=true;const unavailable=await submit();gateway.state.unavailable=true;await approve(unavailable);await h.phase(unavailable.taskId,'waiting-input');assert.equal((await h.request(`/v1/tasks/${unavailable.taskId}/result`)).error.code,'GATEWAY_UNREACHABLE');assert.ok(!gateway.state.calls.includes('case_submit'));
 });
 
-test('Device execution: lost submission and local cancellation freeze the bed without automatic replay; independent read-back reconciles an observed terminal run',async t=>{
+sandboxTest('Device execution: lost submission and local cancellation freeze the bed without automatic replay; independent read-back reconciles an observed terminal run',async t=>{
   const {h,gateway,credential,submit,approve}=await environment(t);gateway.state.hold=true;await h.startWorker();const task=await submit();await approve(task);await until(async()=>gateway.state.calls.includes('case_status'));await h.request(`/v1/tasks/${task.taskId}/cancel`,{});await h.phase(task.taskId,'unknown');const operation=(await h.request(`/v1/tasks/${task.taskId}/operations`)).find((op:any)=>op.name==='cases.execute');assert.equal(operation.status,'unknown');assert.equal((await h.request(`/v1/tasks/${task.taskId}/result`)).runtime?.remoteStoppingVerified??false,false);
   await assert.rejects(submit(),/RESOURCE_BUSY/);assert.equal(gateway.state.calls.filter(name=>name==='case_submit').length,1);
   const replacement=await h.request(`/v1/assets/${credential.assetId}/credentials`,{version:credential.version,value:JSON.stringify({access_token:'replacement-access',refresh_token:'replacement-refresh',expires_at:Date.now()/1000+900,scope:'jumphost:run'})});assert.equal(replacement.assetId,credential.assetId);assert.ok(!JSON.stringify(replacement).includes('replacement-access'));await h.reject(`/v1/assets/${credential.assetId}/credentials`,{version:'9.0.0',value:'secret'},'APPROVAL_STALE');
@@ -53,7 +54,7 @@ test('Device execution: lost submission and local cancellation freeze the bed wi
   gateway.state.hold=false;await h.request(`/v1/tasks/${task.taskId}/reconcile`,{operationId:operation.operationId});await until(async()=>(await h.request(`/v1/tasks/${task.taskId}/operations`)).some((op:any)=>op.operationId===operation.operationId&&op.status==='reconciled'));assert.equal(gateway.state.calls.filter(name=>name==='case_submit').length,1);
 });
 
-test('Device execution: worker lease expiry refuses late fences and server restart never resubmits a received gateway task',async t=>{
+sandboxTest('Device execution: worker lease expiry refuses late fences and server restart never resubmits a received gateway task',async t=>{
   const {h,gateway,submit,approve}=await environment(t);gateway.state.hold=true;const worker=await h.startWorker(),task=await submit();await approve(task);await until(async()=>gateway.state.calls.includes('case_status'));
   const operation=(await h.request(`/v1/tasks/${task.taskId}/operations`)).find((op:any)=>op.name==='cases.execute');await h.stop(worker,'SIGKILL');await h.db.query("UPDATE leases SET expires_at=clock_timestamp()-interval '1 second' WHERE operation_id=$1",[operation.operationId]);await h.phase(task.taskId,'unknown');
   await h.reject(`/v1/workers/operations/${operation.operationId}/report`,{inputRevisionId:task.inputRevisionId,fencingToken:operation.fencingToken,status:'succeeded',output:{}},'FENCING_STALE','lab-east-01');
@@ -61,17 +62,17 @@ test('Device execution: worker lease expiry refuses late fences and server resta
   gateway.state.hold=false;await h.request(`/v1/tasks/${task.taskId}/reconcile`,{operationId:operation.operationId});await h.phase(task.taskId,'delivered');assert.equal(gateway.state.calls.filter(name=>name==='case_submit').length,1);
 });
 
-test('Device execution: an interrupted submit persists its intent without replay',async t=>{
+sandboxTest('Device execution: an interrupted submit persists its intent without replay',async t=>{
   const {h,gateway,submit,approve}=await environment(t);gateway.state.dropSubmit=true;await h.startWorker();const task=await submit('service create port 443','lost-submit-key');await approve(task);await h.phase(task.taskId,'unknown');
   const operation=(await h.request(`/v1/tasks/${task.taskId}/operations`)).find((op:any)=>op.name==='cases.execute'),receipt=(await h.db.query('SELECT * FROM case_gateway_receipts WHERE operation_id=$1',[operation.operationId])).rows[0];assert.equal(receipt.submit_intent,true);assert.equal(receipt.gateway_task_id,null);
   await h.reject(`/v1/tasks/${task.taskId}/reconcile`,{operationId:operation.operationId},'EVIDENCE_INSUFFICIENT');await h.stop();await h.startServer();const repeated=await submit('service create port 443','lost-submit-key');assert.equal(repeated.taskId,task.taskId);assert.equal(repeated.deduplicated,true);assert.equal(gateway.state.calls.filter(name=>name==='case_submit').length,1);
 });
 
-test('Device execution: cancellation before approval closes the pending input without starting a device run',async t=>{
+sandboxTest('Device execution: cancellation before approval closes the pending input without starting a device run',async t=>{
   const {h,gateway,submit}=await environment(t);await h.startWorker();const task=await submit();await h.phase(task.taskId,'waiting-review');await h.request(`/v1/tasks/${task.taskId}/cancel`,{});await h.phase(task.taskId,'cancelled');assert.equal(gateway.state.calls.length,0);assert.equal((await h.request(`/v1/tasks/${task.taskId}/result`)).status,'cancelled');assert.ok((await h.status(task.taskId)).pendingInputs.every((item:any)=>item.status!=='open'));
 });
 
-test('Device execution: server refuses submit intent without its own fresh command proof and approvals bind the runtime target identity',async t=>{
+sandboxTest('Device execution: server refuses submit intent without its own fresh command proof and approvals bind the runtime target identity',async t=>{
   const {h,gateway,submit,approve}=await environment(t);const worker=await h.startWorker(),task=await submit();await h.phase(task.taskId,'waiting-review');await h.stop(worker);await approve(task);
   const claim=await h.request('/v1/workers/claim',{},'lab-east-01');assert.equal(claim.name,'cases.execute');
   await h.reject(`/v1/workers/operations/${claim.operationId}/events`,{fencingToken:claim.fencingToken,inputRevisionId:task.inputRevisionId,event:{stage:'submit-intent'}},'DECISION_CONFLICT','lab-east-01');assert.equal(gateway.state.calls.length,0);
@@ -79,14 +80,14 @@ test('Device execution: server refuses submit intent without its own fresh comma
   await h.reject(`/v1/workers/operations/${claim.operationId}/preflight`,{fencingToken:claim.fencingToken},'APPROVAL_STALE','lab-east-01');assert.equal(gateway.state.calls.length,0);
 });
 
-test('Device execution: input replacement invalidates approval and failed checkpoints remain separate from successful delivery',async t=>{
+sandboxTest('Device execution: input replacement invalidates approval and failed checkpoints remain separate from successful delivery',async t=>{
   const {h,gateway,submit,approve}=await environment(t);await h.startWorker();const task=await submit();await h.phase(task.taskId,'waiting-review');const old=(await h.request(`/v1/tasks/${task.taskId}/approvals`)).at(-1);
   const revised=await h.request(`/v1/tasks/${task.taskId}/input`,{inputRevisionId:task.inputRevisionId,replacement:{...task.input,module:'revision_two'}});assert.notEqual(revised.inputRevisionId,task.inputRevisionId);
   await h.reject(`/v1/tasks/${task.taskId}/approvals/${old.approvalId}`,{inputRevisionId:old.inputRevisionId,targetIdentity:old.targetIdentity,actionDigest:old.actionDigest,approve:true},'APPROVAL_STALE','bob');assert.equal(gateway.state.calls.length,0);
   gateway.state.failCase=true;await approve(revised);await h.phase(task.taskId,'delivered');const result=await h.request(`/v1/tasks/${task.taskId}/result`);assert.equal(result.status,'succeeded');assert.equal(result.result.cases[0].verdict,'fail');assert.equal(result.result.cases[0].checkPoints[0].status,'failed');
 });
 
-test('Device execution: approved host traffic dispatch is not a device head and unregistered hosts cannot be submitted',async t=>{
+sandboxTest('Device execution: approved host traffic dispatch is not a device head and unregistered hosts cannot be submitted',async t=>{
   const {h,gateway,bed,build,approve}=await environment(t),hostCommand={host:'routera',command:'curl --http1.1 http://service.example.test/'};
   await writeFile(`${h.scratch}/gateways.json`,JSON.stringify({profiles:{lab:{endpoint:`${gateway.origin}/mcp`,issuer:gateway.origin,pollMs:25}}}));
   const bytes=await executionWorkbook({command:'service create port 443',hostCommand}),original=await h.request('/v1/sources',{scopeId:'scp_lab',fileName:'case.xlsx',contentBase64:bytes.toString('base64')});
@@ -96,7 +97,7 @@ test('Device execution: approved host traffic dispatch is not a device head and 
   const narrowed=await h.request('/v1/assets',{assetId:bed.assetId,scopeId:'scp_lab',kind:bed.kind,name:bed.name,version:'3.0.0',configuration:bed.configuration,declaration:{...bed.declaration,allowedTestHosts:['clientc']},readers:['*']});await h.request(`/v1/assets/${narrowed.assetId}/lifecycle`,{version:narrowed.version,sha256:narrowed.sha256,state:'approved'},'bob');await h.request(`/v1/assets/${narrowed.assetId}/lifecycle`,{version:narrowed.version,sha256:narrowed.sha256,state:'running'});await h.reject('/v1/tasks/submit',{...payload,idempotencyKey:'unregistered-host-rejected'},'COMMAND_VALIDATION_FAILED');assert.equal(gateway.state.calls.filter(name=>name==='case_submit').length,1);
 });
 
-test('Device execution: workbook errors expose authorized row locations through HTTP without command text',async t=>{
+sandboxTest('Device execution: workbook errors expose authorized row locations through HTTP without command text',async t=>{
   const {h,gateway,bed,build}=await environment(t);
   for(const method of ['reboot','routera']){
     const bytes=await executionWorkbook({hostCommand:{host:method,command:method==='reboot'?'private-command-text':'private-command-text,unsafe=1'}}),source=await h.request('/v1/sources',{scopeId:'scp_lab',fileName:'case.xlsx',contentBase64:bytes.toString('base64')});
@@ -106,7 +107,7 @@ test('Device execution: workbook errors expose authorized row locations through 
   assert.equal(gateway.state.calls.length,0);
 });
 
-test('Device execution: optional host command policies only narrow runtime dispatch and policy changes invalidate approval',async t=>{
+sandboxTest('Device execution: optional host command policies only narrow runtime dispatch and policy changes invalidate approval',async t=>{
   const {h,gateway,bed,build}=await environment(t);
   const payload=async(command:string,key:string)=>{const bytes=await executionWorkbook({command:'service create port 443',hostCommand:{host:'routera',command}}),source=await h.request('/v1/sources',{scopeId:'scp_lab',fileName:'case.xlsx',contentBase64:bytes.toString('base64')});return {scopeId:'scp_lab',capabilityPackId:'apv-case-execute',idempotencyKey:key,input:{sourceRevisionId:source.sourceRevisionId,gatewayAssetId:bed.assetId,commandSourceAssetId:build.assetId,build:'Rel_PHOTON_10_5_0_101'}};};
   const worker=await h.startWorker(),original=await h.request('/v1/tasks/submit',await payload('curl http://service.example.test/','policy-default'));

@@ -18,6 +18,19 @@ The three repositories are versioned separately: circle (harness), circle-hub (t
 | circle-packs originals used for hub acceptance | **ba06eeda83d27031fc1a452e43b24300d654da9e**, APV **1.2.2** | `modules.json` and original byte SHAs from that commit | product-line 31/31; four skill modules 57/57 + catalog tools 4/4 = 61/61, no skips; TAP gates use the reported total, not a fixed count; no deployment or automatic approval claim |
 | execution gateway cexg | 0.3.0 (static secret) | the compile-excel-server repository | hub's worker needs the §7 static-secret credential mode in order to call it |
 
+## Process isolation and acceptance platforms
+
+Protected device execution that runs product-pack Tools/Hooks, and headless Circle skill execution, currently require **macOS seatbelt** (`sandbox-exec`). Linux has no process-isolation adapter yet; these isolated runtime paths return `SANDBOX_UNAVAILABLE`. They do not fall back to an ordinary process, and no test switch weakens production isolation. Native synthetic dispatch with no rule handlers does not enter the Tool/Hook subprocess; its passing result does not establish seatbelt protection.
+
+| Acceptance path | Prerequisites | Report when missing |
+|---|---|---|
+| Product-pack Tool/Hook subprocesses and device execution relying on those rules | An available macOS seatbelt adapter | Each execution case reports the missing isolation prerequisite through the shared harness and skips; it is not a pass |
+| Circle skill execution, cancellation, runtime revisions and script isolation | seatbelt plus an explicitly supplied pinned Circle build and Git commit | The shared harness reports missing prerequisites; a genuine execution failure with prerequisites present still fails |
+| Uploads, authentication, source/asset registration and approval, registry queries, static module checks and native read-only connectors | Temporary PostgreSQL and the relevant synthetic sources | Continue running; an isolated case in the same file does not skip the whole file |
+| The unsupported-host isolation rejection test | An environment with no supported adapter | Continue asserting `SANDBOX_UNAVAILABLE`; report it separately, not as a passing isolation-positive path |
+
+Pack unit tests and hub Tool/Hook loading-and-execution acceptance are distinct: a pass in the former does not prove the latter can run on the current host. The first four `module-install` registration/validation/CLI cases do not require isolation; its final real RPC case does. Direct Tool/Hook calls in `r3-product-hooks` do require isolation. Isolation skips on public Ubuntu CI mean those paths remain unverified on that platform. Full execution acceptance still needs macOS with the isolation prerequisites, a temporary database, synthetic gateway and scripted model; it does not establish real-device or paid-model acceptance.
+
 ## Schemas and contracts
 
 | Schema | Defined by | Used by |

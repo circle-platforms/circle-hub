@@ -1,3 +1,4 @@
+import {sandboxTest} from './harness.ts';
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {readFile,writeFile} from 'node:fs/promises';
@@ -14,7 +15,7 @@ test('Act R2.7: installed packages keep the compilation API and retire the old p
   await h.reject('/v1/tasks/submit',{scopeId:'scp_lab',title:'Retired capability',capabilityPackId:'lbx-healthcheck',idempotencyKey:'retired-pack-input',input:{}},'UNSUPPORTED_VERSION');
 });
 
-test('Act R2.7: a second fictional product line runs through the same scoped tools approvals RPC and artifact storage',{
+sandboxTest('Act R2.7: a second fictional product line runs through the same scoped tools approvals RPC and artifact storage',{
   skip:(!process.env.CIRCLE_BIN||!process.env.CIRCLE_COMMIT)&&'Set CIRCLE_BIN and CIRCLE_COMMIT to verify the second product line with real Circle',
 },async t=>{
   const stub=await readonlySources(t),model=await scriptModel(t),h=await setup(t);stub.state.manualText='# Meridian synthetic source\nMeridian amber is a literal source label.\n';

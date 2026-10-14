@@ -1,3 +1,4 @@
+import {sandboxTest} from './harness.ts';
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {randomBytes} from 'node:crypto';
@@ -79,7 +80,7 @@ test('Act R2.6 regression: a rejected event admission records its failure and do
   await h.stop();await h.startServer();await delay(150);assert.equal((await h.request(`/v1/automations/bots/${active.assetId}/runs`)).length,2);
 });
 
-test('Act R2.6: scheduled real Circle consolidates opted-in fragments as deduplicated personal candidates with tool evidence',runtimeTest,async t=>{
+sandboxTest('Act R2.6: scheduled real Circle consolidates opted-in fragments as deduplicated personal candidates with tool evidence',runtimeTest,async t=>{
   const stub=await readonlySources(t),model=await scriptModel(t),h=await setup(t);await prepare(h,stub.origin,{circleBin:process.env.CIRCLE_BIN,circleCommit:process.env.CIRCLE_COMMIT,circleVersion:'1.1.1',model:{kind:'scripted',base_url:model.url,model:'scripted-fixture',protocol:'openai',api_key:model.key}});
   await activate(h,await h.request('/v1/assets',{scopeId:'scp_lab',kind:'connector-instance',name:'Synthetic shared knowledge',version:'1.0.0',declaration:{reads:['knowledge'],writes:['knowledge-candidates'],credentials:[]},configuration:{packageId:'knowledge'},readers:['prn_alice','prn_bob']}));
   const fragment={id:'fragment-1',kind:'correction',subject:'synthetic-feature',predicate:'command-choice',value:'preferred',quote:'Synthetic corrected procedure',toolReturn:{name:'synthetic.read',result:{observed:true}}},raw=Buffer.from(JSON.stringify({fragments:[fragment]}));
@@ -95,7 +96,7 @@ test('Act R2.6: scheduled real Circle consolidates opted-in fragments as dedupli
   const channel=await until(async()=>{const events=await h.request(`/v1/tasks/${runs[0].taskId}/events?after=0`);return events.events.some((event:any)=>event.kind==='bot.output')?events:false;});assert.equal(channel.events.find((event:any)=>event.kind==='bot.output').payload.channel,'circle-events');
 });
 
-test('Act R2.6 regression: bot reads of a changing source retain evidence without creating recursive observed events',runtimeTest,async t=>{
+sandboxTest('Act R2.6 regression: bot reads of a changing source retain evidence without creating recursive observed events',runtimeTest,async t=>{
   const stub=await readonlySources(t),model=await scriptModel(t),h=await setup(t);stub.state.dynamicDocuments=true;
   await prepare(h,stub.origin,{circleBin:process.env.CIRCLE_BIN,circleCommit:process.env.CIRCLE_COMMIT,circleVersion:'1.1.1',model:{kind:'scripted',base_url:model.url,model:'scripted-fixture',protocol:'openai',api_key:model.key}});
   const source=await activate(h,await h.request('/v1/assets',{scopeId:'scp_lab',kind:'connector-instance',name:'Synthetic dynamic document source',version:'1.0.0',declaration:{reads:['registered-source'],writes:[],credentials:[]},configuration:{packageId:'documents',runtimeProfileRef:'fixture'},readers:['prn_alice','prn_bob']}));

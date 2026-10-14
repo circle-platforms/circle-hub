@@ -1,3 +1,4 @@
+import {sandboxTest} from './harness.ts';
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {writeFile,readFile,readdir} from 'node:fs/promises';
@@ -57,7 +58,7 @@ test('Act R2.5: existing approvals bind the package digest prohibit self approva
   assert.equal((await h.request(`/v1/tasks/${pack.approvalTaskId}/approvals`))[0].status,'open');
 });
 
-test('Act R2.5: real pinned Circle RPC loads the skill discovers scoped tools and delivers SHA checked artifacts',runtimeTest,async t=>{
+sandboxTest('Act R2.5: real pinned Circle RPC loads the skill discovers scoped tools and delivers SHA checked artifacts',runtimeTest,async t=>{
   const stub=await readonlySources(t),model=await scriptModel(t),h=await setup(t);
   await prepare(h,stub.origin,{circleBin,circleCommit,circleVersion:'1.1.1',model:{kind:'scripted',base_url:model.url,model:'scripted-fixture',protocol:'openai',api_key:model.key}});
   const pack=await submit(h);await approve(h,pack);await h.startWorker();
@@ -78,7 +79,7 @@ test('Act R2.5: a mismatched Circle Git commit fails before any model request',r
   assert.equal((await h.request(`/v1/tasks/${run.taskId}/result`)).error.code,'RUNTIME_VERSION_MISMATCH');assert.equal(model.requests.length,0);
 });
 
-test('Act R2.5: run delegation stays off disk and cancellation observes local exit while freezing an unknown remote outcome',runtimeTest,async t=>{
+sandboxTest('Act R2.5: run delegation stays off disk and cancellation observes local exit while freezing an unknown remote outcome',runtimeTest,async t=>{
   const stub=await readonlySources(t),model=await scriptModel(t),h=await setup(t);model.state.hold=true;
   await prepare(h,stub.origin,{circleBin,circleCommit,circleVersion:'1.1.1',model:{kind:'scripted',base_url:model.url,model:'scripted-fixture',protocol:'openai',api_key:model.key}});
   const pack=await submit(h);await approve(h,pack);await h.startWorker();const run=await h.request(`/v1/skillpacks/${pack.skillPackId}/runs`,{inputs:{},idempotencyKey:'cancel-runtime'});
@@ -96,7 +97,7 @@ test('Act R2.5: run delegation stays off disk and cancellation observes local ex
   await h.reject(`/v1/skillpacks/${pack.skillPackId}/runs`,{inputs:{},idempotencyKey:'after-local-cancel'},'RESOURCE_BUSY');
 });
 
-test('Run sessions: slow pinned RPC keeps its short token alive through fenced preflight and never upgrades it to a login session',runtimeTest,async t=>{
+sandboxTest('Run sessions: slow pinned RPC keeps its short token alive through fenced preflight and never upgrades it to a login session',runtimeTest,async t=>{
   const stub=await readonlySources(t),model=await scriptModel(t),h=await setup(t,{CIRCLE_HUB_RUN_TOKEN_TTL_MS:'1000'});model.state.delayMs=1600;
   await prepare(h,stub.origin,{circleBin,circleCommit,circleVersion:'1.1.1',model:{kind:'scripted',base_url:model.url,model:'scripted-fixture',protocol:'openai',api_key:model.key}});
   const pack=await submit(h);await approve(h,pack);await h.startWorker();const run=await h.request(`/v1/skillpacks/${pack.skillPackId}/runs`,{inputs:{},idempotencyKey:'slow-renewing-runtime'});await until(async()=>model.requests.length>0);

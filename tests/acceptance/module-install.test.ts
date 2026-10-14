@@ -1,3 +1,4 @@
+import {sandboxTest} from './harness.ts';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { writeFile, mkdir } from 'node:fs/promises';
@@ -81,7 +82,7 @@ test('Module install: CLI freezes a local catalog and submits its complete modul
     assert.equal(receipt.status, 'candidate');
     assert.ok(!stdout.includes(h.scratch));
 });
-test('Module install: approved frozen bytes run through real pinned Circle even after the external source changes', { skip: (!process.env.CIRCLE_BIN || !process.env.CIRCLE_COMMIT) && 'Set CIRCLE_BIN and CIRCLE_COMMIT for module RPC acceptance' }, async (t) => {
+sandboxTest('Module install: approved frozen bytes run through real pinned Circle even after the external source changes', { skip: (!process.env.CIRCLE_BIN || !process.env.CIRCLE_COMMIT) && 'Set CIRCLE_BIN and CIRCLE_COMMIT for module RPC acceptance' }, async (t) => {
     const { h, post } = await environment(t), model = await scriptModel(t), fixture = moduleFixture();
     await writeFile(`${h.scratch}/runtime.json`, JSON.stringify({ circleBin: process.env.CIRCLE_BIN, circleCommit: process.env.CIRCLE_COMMIT, circleVersion: '1.1.1', model: { kind: 'scripted', base_url: model.url, model: 'scripted-fixture', protocol: 'openai', api_key: model.key } }));
     h.env.CIRCLE_RUNTIME_CONFIG = `${h.scratch}/runtime.json`;

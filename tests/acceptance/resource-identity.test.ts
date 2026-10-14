@@ -1,3 +1,4 @@
+import {sandboxTest} from './harness.ts';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { sha256 } from '../../packages/contracts/src/index.ts';
@@ -114,7 +115,7 @@ test('Source artifact bundles: authorized resource clients fetch opaque grammar 
     await h.request(`/v1/assets/${asset.assetId}/lifecycle`, { version: asset.version, sha256: asset.sha256, state: 'disabled' });
     assert.equal((await fetch(`${h.url}/v1/blobs/${source.sha256}`, { headers })).status, 403);
 });
-test('Resource identity: approved execution uses server-issued user tokens renewed across a long run and stopped by lease or grant revocation', async (t) => {
+sandboxTest('Resource identity: approved execution uses server-issued user tokens renewed across a long run and stopped by lease or grant revocation', async (t) => {
     const { h } = await prepare(t), gateway = await caseGateway(t);gateway.state.actualBuild='SYNTHETIC-BUILD-7';
     await h.db.query("UPDATE policies SET grants=grants || '[\"cases.execute\",\"builds.read\"]'::jsonb WHERE principal_id='prn_alice'");
     await writeFile(`${h.scratch}/gateways.json`, JSON.stringify({ profiles: { lab: { endpoint: `${gateway.origin}/mcp`, pollMs: 25 } } }));
