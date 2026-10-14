@@ -1,6 +1,10 @@
 # Circle 客户端接口交接：普通用户读取与脑图编译
 
-2026-10-12。第一阶段实现位于隔离工作树 `../circle-server-s1`，分支 `server-s1`；第二阶段增补在 `../circle-server-s2` 的 `server-s2` 分支。Circle 和连接插件由 Claude 负责；本分支只提供 server/worker。共享协议原件是 `packages/contracts/src/index.ts`：`CLIENT_ROUTES`、请求/回应 schema、`TaskListQuery`、`TaskView`、`ApprovalView`、`TaskResult`、`EventPage` 和标准操作。编译包的描述及专用协议在 `packs/apv/contracts.ts`，HTTP 形状保持兼容。API 版本 `1.0.0`，能力包与映射规则版本 `1.0.0`，Excel 契约为 `Excel 输出契约 V1`。
+本文件保留接口变更记录、运行教程和产品连接器契约；通用规则以[设计规范](design/README.md)为准，迁移对照见[handoff-map](design/handoff-map.md)。
+
+2026-10-14：维护者报告全量 **623/623**，A3 轮已在 `be9c6c0` 合并；这是维护者观察，不是 CI 结论。真实试验栈仍为 `e1ca68d`，未因本轮升级。
+
+2026-10-12 的首阶段记录：第一阶段实现位于隔离工作树 `../circle-server-s1`，分支 `server-s1`；第二阶段增补在 `../circle-server-s2` 的 `server-s2` 分支。Circle 和连接插件由 Claude 负责；本分支只提供 server/worker。共享协议原件是 `packages/contracts/src/index.ts`：`CLIENT_ROUTES`、请求/回应 schema、`TaskListQuery`、`TaskView`、`ApprovalView`、`TaskResult`、`EventPage` 和标准操作。编译包的描述及专用协议在 `packs/apv/contracts.ts`，HTTP 形状保持兼容。API 版本 `1.0.0`，能力包与映射规则版本 `1.0.0`，Excel 契约为 `Excel 输出契约 V1`。
 
 Hub 名称与配置已统一，下文运行示例使用新名。旧阶段记录、来源 schema、已存在工作树名保留历史原文，不表示需要改文件系统目录。
 
@@ -44,40 +48,22 @@ Node.js 24。启动命令使用锁定的 `embedded-postgres@18.4.0-beta.17` 在�
 
 开发身份源仅在 `CIRCLE_HUB_DEV_AUTH=1` 且显式指定临时身份配置时启用。它不是企业认证。token 默认有效 **8 小时**；`CIRCLE_HUB_DEV_TOKEN_TTL_MS` 可配置 1000–86400000ms（最多 24 小时），显式请求的短 expiresInMs 仍有效。客户端用秘密存储保存 token，到期前无交互续期。账号和授权来自服务端配置/策略表，请求体自报的 principal、role、actor 或 tenant 都不授予权限。
 
-`POST /v1/auth/refresh` 带当前 Bearer 和空 JSON `{}`，响应沿用 dev-login 的 `{token,tokenType,expiresAt,principalId,tenantId,scopes}`（CLIENT_ROUTES.authRefresh）。仅仍有效、未撤销且身份未禁用的开发会话可续期；不要求密码、不接受自报期限/身份/范围。当前实现延长同一 token，避免并发旧请求因换 token 被拒；scopes 重新取当前策略。已过期返回 401，不从过期凭据恢复会话；受约束 run token 返回 403，不能升级成普通登录。
+`POST /v1/auth/refresh` 带当前 Bearer 和空 JSON `{}`，响应沿用 dev-login 的 `{token,tokenType,expiresAt,principalId,tenantId,scopes}`（CLIENT_ROUTES.authRefresh）。仅仍有效、未撤销且身份未禁用的开发会话可续期；不要求密码、不接受自报期限/身份/范围。初版曾延长同一 token；修订 3 已改为轮换，当前会话口径见[会话与令牌](design/roles.md#会话与令牌)。已过期返回 401，不从过期凭据恢复会话；受约束 run token 返回 403，不能升级成普通登录。
 
 Circle 2035247 已由维护者报告支持：保存 expiresAt、到期前约 2 分钟或短期限的 1/5（至少 5 秒）及请求前续期；旧 server 的 404/405 只尝试一次。任何工具/任务轮询的 401 都只提示 sign-in expired 和显式 `/server login`，不自动弹密码框；run token 不由客户端续期。已过期的旧 5 分钟会话需要主动登录一次，随后使用新期限。正式企业身份/刷新 token 仍未接入。
 
 ## 通用信封
 
-除二进制下载，回应均为 JSON。成功有 `data`，失败有 `error`：
-
-```json
-{"apiVersion":"1.0.0","status":"accepted","data":{"taskId":"task_..."}}
-```
-
-```json
-{"apiVersion":"1.0.0","status":"failed","error":{"code":"FORBIDDEN_SCOPE","category":"permission","message":"...","details":{},"retryable":false}}
-```
-
-登录以外的每个接口都需要 `Authorization: Bearer <token>`。JSON POST 用 `Content-Type: application/json`。普通请求体上限 64 KiB；上传原件上限 16 MiB（JSON/base64 信封预留相应编码空间）。token 无效或过期为 HTTP 401 `UNAUTHENTICATED`，范围拒绝为 403 `FORBIDDEN_SCOPE`。不要把 token 或原件内容写到会话/Git。
+初版接口增加 JSON 成功 / 失败信封；当前共同形状、认证、容量与错误分类已并入[接口的共同形状](design/circle-integration.md#接口的共同形状)。协议 schema 仍由 CLIENT_ROUTES 与 F 提供，不在此重述规则。
 
 ## 普通用户只读接口
 
-桌面端与 circle-server 运行扩展使用同一个登录身份读取持久任务和审批记录。下面两个接口都只需要 `tasks.read`，返回普通成功信封，其中 `data` 是数组。权限按每次请求时的服务端策略核对。
+第一阶段新增两条普通读取路径，旧数组兼容保留。TaskView / ApprovalView、权限、排序与 limit 边界见[任务与审批的读取投影](design/circle-integration.md#任务与审批的读取投影)，后续 view=page 变更见本文件的列表记录。
 
 | CLIENT_ROUTES | 调用 | 成功 data |
 |---|---|---|
-| `tasks` | `GET /v1/tasks?limit=20` | `TaskView[]`；省略 limit 默认为 20，允许 1–100 的整数 |
+| `tasks` | `GET /v1/tasks?limit=20` | `TaskView[]` |
 | `approvals` | `GET /v1/tasks/{taskId}/approvals` | `ApprovalView[]`；没有记录时为 `[]` |
-
-任务列表先按当前身份的 tenant 和授权 scope 筛选，再按创建时间倒序截取 limit；相同创建时间按 taskId 倒序，输入修改或后台推进不会改变创建顺序。它包含授权范围内其他人创建的可读任务，不按当前 principal 的创建记录缩小范围。没有可读任务或没有授权 scope 时返回 `[]`；无 `tasks.read` 返回 403 `FORBIDDEN_ACTION`。limit 为 0、负数、非整数、超过 100、空值或无法解析时返回 400 `INVALID_PAYLOAD`，不会静默截断。
-
-列表元素与 `/status` 使用同一个 `TaskView`，含 `taskId`、tenant/scope/principal、`title`、`phase`、当前 `inputRevisionId`、`input`、`revision`、`flowVersion` 和 `pendingInputs`。已绑定能力包的任务含 `capabilityPackId` / `packVersion`，通用任务沿用这些字段可省略的既有契约。`pendingInputs` 为数组，包含历史回应项；客户端沿用下文的当前修订与 open 状态判断。`CLIENT_ROUTES.tasks.query` 是 `TaskListQuery`，`response` 是 `TaskView` 数组 schema。
-
-审批列表先按该任务执行 `tasks.read`、tenant 与 scope 检查；跨 scope 或跨 tenant 返回 403 `FORBIDDEN_SCOPE`，无读取权限返回 403 `FORBIDDEN_ACTION`。不存在的 taskId 返回 404 `TARGET_NOT_FOUND`，格式无效返回 400 `INVALID_PAYLOAD`。用户无需 `admin.manage` 或 `decisions.approve`；读取权限不会授予回应审批或设备操作权限。
-
-审批元素保持 `approvals.view` 的形状：`approvalId`、`taskId`、`inputRevisionId`、`applicantId`、`targetIdentity`、`actionDigest`、`action`、`status`、`approvedBy`、`expiresAt`。`action` 为 `ApprovalProposal` 的修订/标准操作/目标/身份/参数；status 为 `open`、`approved` 或 `declined`。未作决定时 approvedBy 为 `null`，批准或拒绝后为回应人的 principalId；expiresAt 为 ISO 时间。按创建时间、approvalId 升序返回全部记录，包括旧修订的记录。旧修订上保存的 approved 状态不能证明当前动作仍获授权，执行出口仍核对修订、目标身份、动作摘要与有效期。读取不改变审批状态、不生成决定或事件。`CLIENT_ROUTES.approvals.response` 是 `ApprovalView` 数组 schema。
 
 ## 编译调用顺序
 
@@ -109,11 +95,11 @@ Circle 2035247 已由维护者报告支持：保存 expiresAt、到期前约 2 �
 }
 ```
 
-`title` 可省略；`idempotencyKey` 为 8–200 字符。重试必须保留原键、title、能力包和输入内容。幂等分区包含 tenant/scope/principal/action，在线窗口 24 小时。同键同内容返回同 taskId 且 `deduplicated:true`；同键不同内容为 409 `IDEMPOTENCY_MISMATCH`。任务保存服务端核对过的 source SHA。即便用新键创建另一任务，同项目、同源字节、同能力包/映射/契约版本也复用一个 artifactId。
+提交示例中的 title 可省略。幂等分区、窗口、受理事务和制品复用规则已并入[接口的共同形状](design/circle-integration.md#接口的共同形状)；下载字节核对见[B 的原件与证据规则](design/object-standard.md#四b-的原件与证据规则)。
 
 ## 状态、事件和交付
 
-典型 phase 为 `admitted → running → waiting-resource → under-review → delivered`。`waiting-resource` 在当前能力中表示等待 worker/回报。`delivered` 后仍必须查看 result.status，完整映射为 `succeeded`，有未映射元素为 `partial`；解析失败的 phase 为 `failed` 且无产物。失去运行租约的操作为 `unknown`，不会自动重派。
+首阶段脑图任务使用 admitted → running → waiting-resource → under-review → delivered 的流程，waiting-resource 表示等待 worker / 回报。交付与 unknown 的解释见[未知的纪律](design/approvals-and-enforcement.md#未知的纪律)；下列编译结果示例保留。
 
 result 示例（省略摘要具体值）：
 
@@ -140,7 +126,7 @@ result 示例（省略摘要具体值）：
 
 原件下载与制品下载均执行 token、tenant/scope 权限和存储字节 SHA 检查。客户端下载后应再算 SHA-256 并与引用比较。`partial` 的 `unmapped` 是 `{path,reason}` 数组，并写入工作簿的 `说明` 表。这个脚本结论证明结构编译及逐格回读，不评价测试用例的业务质量，也不代表真实 XMind 应用或 Microsoft Excel 已打开验证。
 
-客户端给每个 taskId 单独保存已处理 seq。消费成功后把游标更新为最后一个 seq；空页保留原游标，再次请求直到没有积压。seq 可以有跨任务间隔，不要求连续。重连时使用原游标补读；客户端断开/终端关闭不会触发 cancel。用户主动取消才调用 `POST /v1/tasks/{taskId}/cancel`，JSON body `{}`；它是取消请求，不证明远端已停止。`POST /v1/tasks/{taskId}/reconcile`（body `{}`）在当前编译 unknown 场景只披露缺少独立观察，不把未知结果强制判成功。
+事件游标和取消纪律已并入[事件补读](design/circle-integration.md#事件补读)。调用仍为 POST /v1/tasks/{taskId}/cancel / reconcile，body `{}`；编译 unknown 的核对接口只披露缺少独立观察。
 
 ## 补充或更换输入
 
@@ -150,7 +136,7 @@ result 示例（省略摘要具体值）：
 {"inputRevisionId":"inrev_...","requestId":"pin_...","response":{"target":"LBX-LAB-01"}}
 ```
 
-旧修订为 409 `INPUT_REVISION_STALE`（outcome `stale-revision`）；超时为 409 `INPUT_EXPIRED`（outcome `expired`）。所有已授权的回应尝试均记入 decisions，包括这些拒绝。
+输入修订、回应尝试记录与超期处理见[变更集与输入修订](design/approvals-and-enforcement.md#只有一个审批概念变更集)。下列回应与 replacement 教程保留。
 
 脑图任务已获完整源引用后不需要人工问题。需要更换源时，在交付前上传新原件，再调用：
 
@@ -158,7 +144,7 @@ result 示例（省略摘要具体值）：
 {"inputRevisionId":"inrev_旧修订","replacement":{"sourceRevisionId":"src_新原件"}}
 ```
 
-服务端发新 inrev，使旧 worker 回报失效。已 delivered/failed/cancelled 或 unknown 的任务不接受输入替换；使用新提交表达新的工作。`response` 和 `replacement` 必须二选一，不通过自然语言消息隐式修改。
+输入修订换版沿上述设计规则实现，HTTP 回应与替换字段保持既有契约。
 
 ## 当前验收与下一次组合验收
 
@@ -181,9 +167,9 @@ Claude 的真实 Otty/Circle 观察已由用户提供并登记在进度第 4 节
   "effect":"read","mode":"sync","permission":"builds.read","assetId":"ast_...","assetVersion":"1.0.0"}]
 ```
 
-名称只用小写字母、数字、点和下划线，在 tenant 内唯一；多连接器实例使用 `docs_apv.search` 等别名。同名登记被 `TOOL_NAME_CONFLICT` 拒绝。目录按当前身份权限、范围、资产读权限、个人凭据权限及已批准运行中的当前资产修订过滤。停用、修订和撤销权限立即影响后续目录与执行出口；普通客户端基础角色需 `tasks.read` / `tasks.submit`，再授予条目里的业务 permission。
+目录命名、当前身份过滤和资产状态检查已并入[工具目录与调用](design/circle-integration.md#工具目录与调用)。
 
-响应带 `ETag` 与 `Vary: Authorization`。Circle 可发送 `If-None-Match`：同一身份的目录未变化返回 **304 无 body**，保留已有工具；200 时整体替换目录。不要对 304 调用 JSON 解析，也不要在不同身份之间共用目录缓存。schema 的 `type` 始终为 `object`；Circle 以实际返回的完整 schema 校验参数，不自行维护第二份。
+本轮增加 ETag / If-None-Match 支持；缓存与 schema 使用规则见[工具目录与调用](design/circle-integration.md#工具目录与调用)。
 
 `POST /v1/tools/{name}/call` body 为 `{"args":{...},"idempotencyKey":"<每次逻辑调用的稳定键，8–200 字符>"}`。读工具返回 200：
 
@@ -192,13 +178,13 @@ Claude 的真实 Otty/Circle 观察已由用户提供并登记在进度第 4 节
  "evidence":[{"evidenceId":"knr_...","sha256":"<64位 SHA-256>"}]}
 ```
 
-即使同步返回，读取也由已认证 worker 执行，C/D 保存任务、当前输入修订、操作、租约与 fence；B 收到原字节且核对 SHA 后才返回。相同身份/范围/工具/键及规范化输入复用原任务和结果；同键不同内容报 `IDEMPOTENCY_MISMATCH`。同步等待超时给 `UPSTREAM_TIMEOUT`，details 中保留 `taskId` 和 `remoteStoppingVerified:false`，可通过旧任务接口检查；这不是取消。需要更改工具参数时使用新调用，工具任务的 input 修订固定。
+同步调用已接入持久任务与 worker 回执；幂等、等待超时和新查询规则见[工具目录与调用](design/circle-integration.md#工具目录与调用)。
 
-工具调用任务和事件初始归调用者个人，其他 scope 内用户也不能通过 tasks/status/result/events 读到其查询返回或候选内容；列表在 limit 前过滤。来源 ACL 和普通任务 scope 权限不能互相代替。后续团队知识提升通过知识审核与发布表达，不直接公开个人任务。
+工具任务的个人范围规则已并入[角色登记与资格披露](design/roles.md#角色登记与资格披露)。
 
 task 工具返回 202 `{"taskId":"task_...","phase":"admitted"}`（phase 以实际值为准），随后按第一阶段 status/events/result 补读。结束后的 result 增加 `data.result` 保存工具结果，`data.evidence` 保存出处；原 artifacts/unmapped/status 等字段继续保留。证据原件可经 `GET /v1/knowledge/records/{evidenceId}/content` 取回，返回 `x-content-sha256`，客户端应重算 SHA；下载再次检查当前来源权限。
 
-失败分类包含 `SOURCE_ABSENT`、`SOURCE_FORBIDDEN`、`SOURCE_LOGIN_EXPIRED`、`SOURCE_UNREACHABLE`。用户已确认：普通调用将缺失/无权限统一隐藏为 `SOURCE_FORBIDDEN`；具备 `sources.diagnose` 的诊断者可见完整分类。只有确认不存在可进入来源不存在缓存，登录失效/权限拒绝/源不可达不能当作缺失。幂等键保存的失败收据仍可重读；一次新的查询使用新键。
+来源失败分类及普通身份的隐藏规则已并入[来源失败的分类](design/approvals-and-enforcement.md#来源失败的分类)。
 
 ### 脑图知识工具
 
@@ -252,19 +238,19 @@ search 对选定目录做有界递归（PROPFIND Depth:1），默认深度 3、6
 
 审批默认有效一天，由 CIRCLE_HUB_APPROVAL_TTL_MS 配置（1000–2592000000 毫秒）；审批 pending input 使用同一到期时间。普通澄清仍由 CIRCLE_HUB_INPUT_TTL_MS 控制，默认五分钟。延长审批时间不解除修订、目标身份、动作摘要、当前目录/权限以及 D 出口复核。
 
-`apv-case-execute` 用既有 submit/approvals/events/result 执行 APV 单表工作簿，输入可带 sourceRevisionId 或 artifactId、gatewayAssetId、commandSourceAssetId、build/buildId。服务端两次独立核对命令，投递需另一人批准；网关访问/刷新令牌为个人私有凭据引用，原件、逐步结果与检查点证据按 SHA 存 B。配置、输入边界、恢复与权限详见 [执行交接](case-execution-handoff.md)。Circle `circle_server_submit` 可附加 input，上传源的 id/SHA 由客户端填；同步返回落工作区是 Circle 的职责，server 不写客户端目录。
+早期上机接入记录：`apv-case-execute` 用既有 submit/approvals/events/result 执行 APV 单表工作簿，输入可带 sourceRevisionId 或 artifactId、gatewayAssetId、commandSourceAssetId、build/buildId。当时服务端两次核对命令、投递需另一人批准，网关访问 / 刷新令牌用个人引用；修订 3 的当前执行声明和凭据模式见[执行链](design/approvals-and-enforcement.md#生产设备要两人规则怎么办)与[凭据与资源](design/approvals-and-enforcement.md#凭据与资源)。本段保留当时接入字段，原件、逐步结果与检查点证据按 SHA 存 B。配置、输入边界、恢复与权限详见 [执行交接](case-execution-handoff.md)。Circle `circle_server_submit` 可附加 input，上传源的 id/SHA 由客户端填；同步返回落工作区是 Circle 的职责，server 不写客户端目录。
 
 版本列表与同步只取首页/版本页元数据，**不下载任何 XML/修复清单**。命令 XML 在对应构建首次被命令工具用到时获取，内容按 SHA 持久缓存，索引绑定调用身份/资产修订/来源与构建段落修订，不跨个人凭据复用；元数据变化重新取。修复清单只有 fixed_releases 查询才按指定候选取，结果声明 coverage.completeSite=false，不把候选中的最早发布冒充全站最早。运行时 profile 可配置 requestConcurrency（1–8，默认 2）与 requestIntervalMs（构建工具默认 200）；相同连接器调用的请求同时受并发与开始间隔限制。
 
 个别构建无 fixed 链接或页面失败时保留其他答案，coverage.read/missing[{build,code}] 分别列出已读/缺失，全部缺失时 unknown；普通身份缺失/无权限代码统一隐藏。`coverage.earliestFormalCertain` 仅针对指定候选：已读到正式命中、且没有日期更早或相同的正式构建清单缺失才为 true；否则保留观察到的 earliestFormal 并标为不确定。缓存目前无淘汰；若发布站原地替换 XML 而段落摘要不变，会沿用旧缓存，不能用该缓存证明源站字节仍未变化。
 
-来源地址只在运行时配置文件提供。`CIRCLE_HUB_CONNECTOR_PROFILES` 指向仓库外的 JSON 文件，形状为 `{"profiles":{"<配置引用>":{"origin":"<运行时来源>","root":"<文档根>","index":"<构建首页>","payloadField":"data"}}}`。连接器资产 configuration 使用 `packageId`（documents/build-site/query-mirror/environment-view/knowledge）、`runtimeProfileRef`、可选 productLineId 和 alias；个人凭据走 `/v1/assets/{id}/credentials`，之后在新资产修订的 declaration.credentials 中引用。PLM 的 JWT 只在 worker 内注入，无 Bearer；值不回到注册/目录/调用响应或审计。当前仅合成来源验收，真实源冒烟仍需授权。
+来源地址只在运行时配置文件提供。`CIRCLE_HUB_CONNECTOR_PROFILES` 指向仓库外的 JSON 文件，形状为 `{"profiles":{"<配置引用>":{"origin":"<运行时来源>","root":"<文档根>","index":"<构建首页>","payloadField":"data"}}}`。连接器资产 configuration 使用 `packageId`（documents/build-site/query-mirror/environment-view/knowledge）、`runtimeProfileRef`、可选 productLineId 和 alias；个人凭据走 `/v1/assets/{id}/credentials`，之后在新资产修订的 declaration.credentials 中引用。PLM 的 JWT 只在 worker 内注入，无 Bearer；值不回到注册/目录/调用响应或审计。此段配置教程写于合成来源验收阶段；后续获授权的真实只读观察另记[阶段进度](server-s2-progress.md)，不代表本轮重新访问来源。
 
-成功的只读回执自动进入产品知识，采用最终一致的异步入库。同步回报只验 SHA、保存原件/证据和持久 outbox，读取立即返回，响应 `{result,evidence}` 保持不变；无须等待声明或快照。server 的独立 runner 从原件抽取结构观察，按批写实体/声明/评估，整个索引任务成功后再更新产品 stable。声明 origin=script，评估 semantic=not-asserted，仅证明字面内容/结构，不能凭命令存在宣称整个功能支持。
+只读回执已接入持久异步索引，通用入库与快照规则见[B 的原件与证据规则](design/object-standard.md#四b-的原件与证据规则)。下段保留 asset-index 的接口观察方式。
 
 通过 `GET /v1/tasks` 可见本人 `capabilityPackId="asset-index"` 的索引任务，其 input.originTaskId 关联原读取任务。原任务 events 的 `knowledge.indexing.linked` 含 `{jobId,taskId,status}`；索引任务的 queued/started/progress/completed 事件带 jobId、processed/total 或 indexed，失败沿用 task.failed/result.error。须补读索引任务事件或 status 后再要求知识检索完整；读取 succeeded 不代表索引已完成。相同源修订/投影版本复用工作，server 中断后 outbox 可恢复；索引失败不把原读取改判失败。
 
-批量记录先暂存成员，成功后增量替换来源的声明闭包，不逐声明遍历整个 scope；旧快照的成员在升级时回填保留。当前快照排除被替换的来源，历史证据保留，空列表修订也更新。源 head 的 generation 区分再次观察到旧字节，避免误用旧的已完成工作。检索按实际读取者、当前资产与源权限、读 grant 和个人凭据状态过滤；每批和发布时重查，不因快照发布扩权。共享会话和 footprint 等模型来源必须 consolidated、显式许可，仍从个人候选开始。
+索引批量发布与当前权限过滤沿上述 B 设计实现；源 head 的 generation 用来区分再次观察到旧字节，旧快照成员在升级时回填保留。
 
 `npm run dev:stack` 一次启动临时 PostgreSQL、server、两个 worker 和合成来源，并登记/独立批准/启用上述五个工具资产。终端打印 server 地址、developer 与 approver 的临时登录方式；developer 登录后立即可取非空工具目录。默认合成版本线为 10.5，正式构建 `Rel_PHOTON_10_5_0_101` / `Rel_PHOTON_10_5_0_109`，前者有 `feature.enable`，后者缺失；两者都有几十条 service 命令。Ctrl+C 也关闭合成来源并删除 scratch。
 
@@ -278,11 +264,11 @@ search 对选定目录做有界递归（PROPFIND Depth:1），默认深度 3、6
 
 Circle 运行边界由用户确认改为正式 CLI RPC；当前固定 Git 提交 `8b2ceb6df620832bfd7925aede93bb35f4a605a2`，同时核对 `--version` 为 1.1.1，禁止 import Circle 源码或改 foundation。开发期 CIRCLE_BIN 在运行时指向独立固定提交的本机构建；不要指向仍在提交的客户端工作树。每次运行独立 CIRCLE_HOME 与 HOME，准备可信 workspace、技能目录和输入；启动 `node <CIRCLE_BIN> --mode rpc --extensions --yolo <workspace>`，发 prompt，读 JSON 事件直到 agent_settled；取消先 abort/关 stdin，超时 kill，记录本地停止与远端未知的区别。运行 token 短期且只经环境注入，不落盘；模型使用脚本桩，付费模型仍需授权。详见 Circle 仓库 `docs/rpc.md` 与 `docs/cli.md#json-events`。
 
-POST 成功是 201，status 初始 `candidate`，额外返回 manifest/ownerPrincipalId/scopeId/assetId/assetVersion 供展示；ownerPrincipalId 才是实际登记者。文件路径必须是安全相对路径，必有 SKILL.md，按原字节 SHA 核对，每份/总量均最多 16 MiB；整个清单、文件摘要、试跑记录参与 digest。相同人员/scope/内容复用 skillPackId 与 approvalTaskId；原版本不能改字节，变更需要新版本。试跑是客户端记录的证据声明，机械检查只能核对声明工具/可用目录，不能凭它宣称业务正确或确实试跑完成。
+提交已增加 201 / candidate 及 manifest / ownerPrincipalId / scopeId / assetId / assetVersion 展示字段；文件冻结、digest、试跑声明与重复提交规则见[技能包与模块的登记契约](design/product-line-pack.md#技能包与模块的登记契约)。
 
 未声明或不可用工具拒绝为 422 `SKILLPACK_CHECK_FAILED`，details.check 带两张清单。用 `GET /v1/tasks/{approvalTaskId}/approvals` 取得 approvalId、inputRevisionId、targetIdentity、actionDigest，再由独立人员按第一阶段 respond body 批准；申请人不能自批。审批者需 decisions.approve 和 assets.approve，不因此获得执行权限；批准时重新核对申请人目录，运行时核对实际运行者目录。批准后包状态 `registered`，绑定 sealed digest 和当前资产修订；停用或修订变化阻止新运行。
 
-同 id 提交新版本后，旧的待批申请可由独立审批人用原 respond body 的 `approve:false` 驳回。绑定字段从旧任务的 approvals 取得，不替换成最新资产的 SHA。驳回核对原任务修订/申请人/技能摘要/历史资产版本与 SHA，以及审批人当前 decisions.approve、assets.approve 和 scope；不要求原申请人仍有提交/读取权限或旧版本仍是当前资产。批准仍重查当前版本与目录，旧版不能借此获批。成功后 approval 和旧技能状态为 declined、pending input 为 answered，登记任务以 delivered 结束；这是治理流程完成，不代表技能获批。新版本的批准、资产状态和执行资格不受影响；重复决定为 DECISION_CONFLICT。此行为无需新契约或迁移，升级后适用于已有未过期、输入未换版的待批旧申请。
+旧待批申请新增独立驳回兼容路径：仍用旧 approvals 返回的绑定字段与 approve:false，成功后旧登记任务 delivered、技能 declined。取代与驳回规则见[变更集](design/approvals-and-enforcement.md#只有一个审批概念变更集)；新版本资格不因此改变。
 
 工具不匹配的 message 直接列具体名称与原因，例如 `Undeclared trial tools: docs.get; Tools unavailable in caller catalog: zentao.products`；示例不表示这些工具在某个实际身份下不可用。单条消息最多 1000 字符，长清单保留完整名称、显示剩余数量，并指向 details.check；details.check.undeclaredTools/missingTools 完整、去重且稳定排序。名称用 GET /v1/tools 的规范名称，不用 Circle 的 srv_* 名称。缺失与无权限仍统一表示“当前调用者目录不可用”，不泄露隐藏资产、地址、凭据或输入。提交、审批和运行共用该格式；受理后目录撤销导致后台失败时，task result/error 和任务事件保留完整 details.check。客户端应展示 message，并允许查看完整两张清单。
 
@@ -337,7 +323,7 @@ POST /v1/credentials/oauth/device 接收 `{connectorAssetId,connectorVersion,pro
 
 POST /v1/credentials/oauth/client-credentials 使用同形请求；clientCredentialId 是本人通过既有私有凭据端点登记的 `{client_id?,client_secret}` JSON 引用，绑定同一连接器。只支持配置好的保密客户端认证方式。两种授权成功均只返回 credentialAssetId 与到期元数据，值不在 API、事件、审计或 Git 中；把新引用放入连接器新修订并批准后使用。不同 scope/所有者不能借用凭据。
 
-令牌临期在私有单写者锁内续期；标准刷新未返回新 refresh_token 时保留旧的非轮换令牌，返回新值则原子替换；client_credentials 无 refresh_token 时重取该 grant。未知刷新回执停止重放，明确 5xx 保留原会话，撤销需重新授权。未返回 expires_in 且无配置默认 TTL 时到期未知（null），不虚构期限。连接器 runtime profile 的 authorizationScheme 可为 raw 或 bearer，旧 raw 默认保持兼容。授权流程与 token/credential 引用分开，流程完成并不自动批准连接器或设备动作。
+外部 OAuth 的续期 / 轮换 / 未知回执规则已并入[凭据与资源](design/approvals-and-enforcement.md#凭据与资源)。连接器 runtime profile 的 authorizationScheme 可为 raw 或 bearer，旧 raw 默认保持兼容。
 
 运行请求 202 `{taskId}`，inputs 原 JSON 作为 `inputs.json` 写进 workspace；可用 `inputs.files:[{path,base64,sha256?}]` 附输入文件。输入不能覆盖 .circle/控制文件/声明输出；改输入使用新幂等键，同键不同输入拒绝。结果返回实际 artifacts/evidence/runtime，产物只在 CLI agent_settled、进程退出和声明文件完整、独立字节 SHA 核对后交付。文件完整性/摘要属于 script-conclusion，最后回答另记 model-judgment，不用回答替代产物或专业事实。artifact/content 与个人任务权限一并检查。
 
@@ -349,7 +335,7 @@ POST /v1/credentials/oauth/client-credentials 使用同形请求；clientCredent
  "model":{"kind":"scripted","base_url":"<本机脚本模型 /v1>","model":"scripted-fixture","protocol":"openai","api_key":"<运行时值>"}}
 ```
 
-在设置这个运行时配置后启动 `npm run dev:stack`；developer 有提交/运行权限，approver 可审批。当前 runtime 只允许 loopback 脚本模型，未配置时运行返回 SOURCE_UNREACHABLE，登记/审批仍可用。CircleBin 与所有地址只在运行时提供；CLI/模型安装由对应构建提供，这里不运行安装/更新脚本。
+在设置这个运行时配置后启动 `npm run dev:stack`；developer 有提交/运行权限，approver 可审批。该早期验收配置使用 loopback 脚本模型；后续已批准模型端点支持见[凭据与资源](design/approvals-and-enforcement.md#凭据与资源)。未配置时运行返回 SOURCE_UNREACHABLE，登记 / 审批仍可用。CircleBin 与所有地址只在运行时提供；CLI/模型安装由对应构建提供，这里不运行安装/更新脚本。
 
 每次运行短期 token 仅授权声明的目录工具、其 scope 和该运行/子工具任务；不允许借它直接登记资产、提交其他能力任务或审批。token 通过认证 worker 的本机私有 IPC 交给进程，只存在内存/子进程环境，公开 worker preflight 不返回值，运行目录中不落盘；结束/取消失效。单 worker 留一个 RPC 运行槽，同时处理它的子工具调用，避免互相等待。
 
@@ -361,19 +347,19 @@ POST /v1/credentials/oauth/client-credentials 使用同形请求；clientCredent
 
 `POST /v1/automations/triggers` 登记草稿资产：共同字段 scopeId/version/name，定时追加 `{kind:"schedule",intervalMs,startsAt}`，事件追加 `{kind:"event",sourceAssetId,eventName}`。`POST /v1/automations/bots` 共同字段追加 skillPackId/triggerAssetId/identityPrincipalId/channel/inputs；第一版 identity 必须是登记者本人，channel 为 `circle-events`。组件须同 scope，技能 manifest 必须允许相应 trigger。需要 automations.manage，资产经独立人员批准并由主人激活才运行；不跳过资产生命周期。
 
-`intervalMs` 至少 60000。迟批或关机错过的定时 occurrence 合并成最近一次到期运行，不逐条补跑。任务 `inputs.trigger`、`bot.started.payload.trigger` 和 runs 的 trigger 均含 `{kind:"schedule",dueAt,firstDueAt,skippedOccurrences}`；firstDueAt 是原游标，dueAt 是本次实际受理的到期点，下一游标严格推进到未来。
+定时错过 occurrence 的合并已实现，具体规则见[触发与 bot](design/circle-integration.md#触发与-bot)。trigger / bot.started / runs 保留 dueAt / firstDueAt / skippedOccurrences 字段。
 
 `GET /v1/automations/bots/{assetId}/runs` 返回个人任务及 occurrenceKey/channel/published，需 automations.read。`POST /v1/connectors/{assetId}/events` 接收 `{externalId,name,payload}`，需 connectors.events、当前源主人及运行中的连接器；同源/范围/外部 id 去重，不同 payload 同 id 拒绝。正常连接器读收据也会按 path/SHA 生成 source.changed；不连接旧缺陷系统。
 
-runs 保留上述字段，追加 `status:"admitted"|"failed"`、`trigger`、`error`。status 描述受理结果：admitted 的 taskId 非空，最终执行结果仍从该任务读取；failed 的 taskId 为 null，error 含失败分类和不带来源细节的说明，客户端直接显示 error。每个 occurrence 的受理 ApiError 独立回滚并保存失败，事件游标继续前进，不重复尝试已拒绝的事件；后续新事件照常受理。失败受理没有任务，不伪造 bot.output。
+runs 新增 admitted / failed、trigger 与 error 投影；taskId=null 的受理失败、游标推进和事件真实性规则见[触发与 bot](design/circle-integration.md#触发与-bot)。
 
-定时 dueAt 和事件游标、任务/唯一 occurrence 同事务保存，重启重读不会丢/重派。C 最终新增 bot.output，含 channel/botAssetId/status/artifacts/evidence/unknowns；输出只在 Circle 事件流，渠道注册可扩展，没有企业微信桩。
+本轮新增 bot.output（channel / botAssetId / status / artifacts / evidence / unknowns），渠道暂为 Circle 事件流，未加企业微信桩；持久触发纪律见[触发与 bot](design/circle-integration.md#触发与-bot)。
 
-为避免动态页面的自触发和 bot 互相触发，C 根据持久的运行/子工具关系忽略任何 bot 运行产生的 observed source.changed；原件、证据、知识和 bot.output 仍保存。显式连接器事件和普通人工工具读取继续触发，用户输入的 trigger 字段不能伪造来源分类。
+动态来源的自触发保护已加入，判定依赖持久运行 / 子工具关系；规则见[触发与 bot](design/circle-integration.md#触发与-bot)。
 
 `knowledge.shared_fragments {limit?,after?}` 是 read/sync：只取 caller 明确允许共享、当前可见的 shared-session 修订，返回原片段、工具返回和 Evidence；未共享输入不进入整理。limit 默认 20、范围 1–100，每页片段和未映射条目的总数受限；SQL 按创建时间/recordId 限量读源，游标也记录同一源内的片段位置。`result.nextCursor` 是不透明字符串或 null，非空时传作下一次 after；游标绑定身份和 scope，重启可继续，同键回放原页，后续修订保持各自来源证据。目录正确导出输入 schema，默认值参数可省略。`packs/common/skills/knowledge-consolidation` 逐页处理，其 TypeScript 脚本只规范/去重有证据的结构化 facts/practices/corrections，真实文本的语义抽取没有验收；候选仍为 personal/consolidated，产品优先、冲突保留、不自动发布团队快照。普通 bot 读者不能看他人个人任务/候选。
 
-worker 的回报处理若因 ApiError 拒绝，知识/制品写入回滚，操作与任务保存为 failed、释放租约，保留原回报 hash 供同回报幂等重传；不会停留 running 阻塞下一次调用。租约、fence、当前输入校验仍在回报处理前执行，迟到或越权回报仍拒绝。
+回报 ApiError 已改为可终结的 failed 收据，不再长期占 running；原件写入的原子处理规则见[B 的原件与证据规则](design/object-standard.md#四b-的原件与证据规则)。
 
 ## 第二阶段：工作列表过滤与续页
 
@@ -381,7 +367,7 @@ worker 的回报处理若因 ApiError 拒绝，知识/制品写入回滚，操�
 
 ## 产品线安装与工具别名
 
-启动时 `CIRCLE_HUB_PRODUCT_LINES` 可指向仓库外的安装 JSON：`{"schemaVersion":"installed-product-lines/1","productLines":["apv/product-line.json","meridian/product-line.json"]}`。清单路径相对安装文件解析；未设置时使用 packs/installed-product-lines.json，默认客户端工具名保持兼容。每份 product-line/1 清单声明 connectorPackages、toolAliases、skills、methods 和 knowledgeMappings；包 id、版本、重复声明和安全相对路径在启动前校验。格式及边界见 [packs/README.md](../packs/README.md)。
+启动时 `CIRCLE_HUB_PRODUCT_LINES` 可指向仓库外的安装 JSON：`{"schemaVersion":"installed-product-lines/1","productLines":["apv/product-line.json","meridian/product-line.json"]}`。清单路径相对安装文件解析；未设置时使用 packs/installed-product-lines.json，默认客户端工具名保持兼容。早期 product-line/1 安装清单记录为 connectorPackages / toolAliases / skills / methods / knowledgeMappings，修订 3 的可执行模块已改为 tools / hooks / resources / flows；包 id、版本、重复声明和安全相对路径在启动前校验。格式及边界见 [packs/README.md](../packs/README.md)。
 
 新连接器资产可在 configuration 带 `productLineId`，由该产品线清单选择工具前缀。例如 `{"packageId":"documents","productLineId":"meridian","runtimeProfileRef":"<运行时引用>"}` 自动登记 meridian_docs 工具。可选 alias 仍覆盖实例前缀，同一 tenant 内工具名称冲突仍拒绝。省略 productLineId 时沿用第一个声明该连接器的清单前缀；公共 knowledge 工具独立保留。移除产品线并重启后，该产品线明确绑定的工具从目录隐藏；恢复安装后可继续使用原已批准绑定。ETag 和普通调用权限规则不变。
 
@@ -393,23 +379,23 @@ worker 的回报处理若因 ApiError 拒绝，知识/制品写入回滚，操�
 
 ## 修订 3：人的范围角色与审批资格
 
-登录/续期保持 token、expiresAt 等原字段，追加 subjectType。人返回 roles:[{scopeId,role:"admin"|"member"|"viewer"}]，不暴露内部动作串；服务客户端只有授权 scope 串，没有角色。原有机器动作串、资源目标策略和来源 readers 继续约束访问。人的角色按每个 scope 独立计算，根范围 scp_root 管理员可管理范围，不能因此读取其他范围原件或私有任务。旧人类策略一次迁移为角色，重启不覆盖已决定的角色。developer、approver 是 scp_lab 的两个管理员。
+登录 / 续期保持 token / expiresAt，新增 subjectType；人返回 roles:[{scopeId,role:"admin"|"member"|"viewer"}]，服务客户端保留授权 scope 串。developer / approver 的运维样例为 scp_lab 两个管理员；当前角色 / 范围 / 种子治理见[角色登记与资格披露](design/roles.md#角色登记与资格披露)。
 
 GET /v1/scopes 返回 {total,items}，每项含 scopeId/name/twoPersonRule/policyVersion/adminCount/singleAdminMode；GET /v1/scopes/{scopeId}/roles 返回 {total,items} 的当前人员角色登记簿，包含角色记录 revision、verification 和 changeSetId。内部预设数据位于 packages/tasks/role-presets.json；member 可以读、运行、提交草稿，viewer 可以读和调用获准的 read 工具，只有 admin 决定变更。动作与目标授权仍在每次访问实时检查。
 
 POST /v1/scopes/{scopeId}/roles 接收 {principalId,role,idempotencyKey}（role:null 移除）；POST /v1/scopes/{scopeId}/policy 接收 {twoPersonRule,idempotencyKey}。两者登记冻结的策略草稿并返回 {changeSetId,scopeId,owner,approvalTaskId,status,items,targetIdentity,identityDigest,verification}，角色/策略直到决定后才生效。审批沿用任务 approvals/input 接口，输入修订、目标摘要、动作摘要必须原样回应。只有同 tenant 的人可获得角色；最后一名根管理员不能移除。
 
-成员的申请须管理员决定。twoPersonRule 默认 true；两名管理员时申请人不能批自己，规则 false 或仅一名管理员时可本人明确决定。ApprovalView 和响应新增 decisionMode:"self"|"independent"|null、singleAdminMode、verification，审计保存同样字段和 policyVersion。自决会有决定记录，不静默批准。每次决定记录保持其当时策略，不随后续回应或策略修改重写。verification 只表示规则 id/版本的程序核验，不能当作人的批准。
+角色资格已按修订 3 接入；ApprovalView / 响应新增 decisionMode / singleAdminMode / verification，审计追加 policyVersion。决定、自决与记录规则见[角色登记与资格披露](design/roles.md#角色登记与资格披露)。
 
-B 资料、C 任务、D 执行、E 方法各有记录、资产、审批策略、证据、扩展点：记录保持原 id/修订；资产版本有 SHA、声明、配置与生命周期；审批绑定三项；工具/外部交互原样证据与模型判断分开；扩展实现通过对象声明的接口安装。后续变更集与执行链继续使用这五样，保留原客户端接口。
+四对象的登记形状已对齐[对象标准](design/object-standard.md)，本节不再重述通用分类。
 
 ## 修订 3：变更集与依赖核验
 
 POST /v1/change-sets 接收 {scopeId,title?,items:[{assetId,version,sha256}],idempotencyKey}，1–100 项，各资产只能出现一次，必须是本人、同 scope 的当前 draft。items 的请求顺序固定：targetIdentity=canonicalHash(items.map(item=>item.sha256))，actionDigest=canonicalHash(items.map(({assetId,version})=>({assetId,version})))；输入修订仍单独绑定。返回 changeSetId/approvalTaskId/status/items/submission/targetIdentity/identityDigest/verification/blockedReasons/supersededBy，identityDigest 即该审批的 actionDigest。GET /v1/change-sets/{id} 和列表按任务读权限与 tenant/scope 过滤。审批请求 action.name=changesets.apply；原审批回应接口不变，客户端原样回传绑定三项。
 
-一次决定原子处理所有项：approved 或 declined，并交付治理任务。新变更集含同一资产时，旧的 open 请求和 pending input 关闭为 superseded，旧任务 delivered；旧资产版本不会因此批准，另一项也不会被部分批准。ApprovalView、技能 status 和 pending input 支持 superseded。同键同申请返回同一变更集，不同申请为 IDEMPOTENCY_MISMATCH；已决定的请求不能再应用。
+变更集实现已新增 superseded：旧请求 / pending input 关闭，旧治理任务 delivered，ApprovalView 与技能状态保留取代信息。原子决定、幂等与取代规则见[变更集](design/approvals-and-enforcement.md#只有一个审批概念变更集)。
 
-声明工具的实例须 running，runtimeProfileRef/sourceArtifactId/配置 dependsOn 的依赖须 approved 或 running。configuration.dependsOn 可以是资产 id 数组；sourceArtifactId 引用已批准的外部制品，其自身的 id 不视为自依赖。缺依赖时 status=blocked，原因列入 blockedReasons，审批保持 open；批准返回 DEPENDENCY_NOT_APPROVED 和 blockedReasons（工具缺失同时有 details.check）。依赖生命周期变化通过持久队列触发重核，重启也会重核；没有每 100ms 扫描整份登记簿。verification 仅包含规则 id/版本和 passed/blocked，不代表批准。
+依赖字段已接 configuration.dependsOn / runtimeProfileRef / sourceArtifactId，blockedReasons 与 details.check 可定位未就绪项；生命周期重核及 blocked 决定规则见[变更集](design/approvals-and-enforcement.md#只有一个审批概念变更集)。
 
 GET /v1/runtime-profiles 需 admin，返回当前运行配置的 {profileType:"connector"|"runtime"|"execution",profileRef,profileSha256,verification} 数组。没有地址、文件路径或密钥值；这只是配置观察。管理员再 POST /v1/assets，kind=runtime-profile、configuration={profileType,profileRef,profileSha256}、version/作用 scope/声明/readers 仍按普通资产；另一名管理员决定后才满足依赖。配置 ref 在每 scope/type 唯一，改配置后登记新版本并重新决定。连接器配置仍用 runtimeProfileRef；同名 ref 跨类型时另带 runtimeProfileType 明确选择。Circle runtime 的 ref 为 circle-runtime。旧真实部署须管理员补登记，平台不会因仓库外配置存在而批准。
 
@@ -419,37 +405,37 @@ GET /v1/runtime-profiles 需 admin，返回当前运行配置的 {profileType:"c
 
 运行仍使用既有 submit/status/events/result/input 接口。默认资源不会产生审批请求或 execution-submission；成员以上按当前范围角色、来源 readers、资源策略、已批准的 Tool 实现/产品线模块、running 资源和 runtime-profile 依赖进入执行链。`apv-case-execute` 的 input 可带 `methodAssetId`，值为批准后的 product-line 模块资产 id；模块须声明对应 flow。来源保持 commandSourceAssetId/build/sourceArtifactId 的既有绑定。既有内置兼容实现也要有 scope 内明确批准的 knowledge-source 定义，configuration 为 `{schema:"hub-tool-implementation/1",capabilityPackId,flowVersion,implementationSha256}`；这不是新的资产 kind。
 
-资源声明 `executionIsChange:true` 时，程序冻结 inputRevisionId、输入摘要、Tool/模块摘要、资源和来源版本、原件 id 与工作簿 SHA，登记 execution-submission 草稿，并作为一个变更集项。回应仍走任务 approvals；action.name 为 changesets.apply。批准只能被对应操作消费一次，决定不能重派另一操作；旧客户端原样回应三项绑定即可。默认资源不需要这一决定。
+执行变更新增 execution-submission 草稿与 changesets.apply 请求，冻结 inputRevisionId / 输入摘要 / 方法、资源、来源版本 / 原件和工作簿 SHA；对应操作一次消费沿[生产设备两人规则](design/approvals-and-enforcement.md#生产设备要两人规则怎么办)。默认运行不新增审批概念。
 
 Tool 保持原有 name/title/description/inputSchema/effect/mode/permission/assetId/assetVersion，追加 MCP annotations、minimumRole、approval。人的权限以范围角色和 minimumRole 为准，旧 permission 仅为机器 scope/客户端兼容标识；professional_permissions 登记表撤下。provider declaration 可带 provides:{tools,resources,prompts}，tools 使用 MCP name/description/object inputSchema/annotations 与 effect/minimumRole/approval 标注。
 
 product-line/1 使用 tools:[{manifest,imports}]、hooks:[{manifest,event,order}]、resources 与 flows。tools 的直接、动态、转导入及局部引用在安装前检查：文件须在冻结集合内；外部依赖只允许明确声明的 exceljs 4.4.0、read-excel-file 9.3.12、fflate 0.8.3、zod 4.6.5、saxes 5.0.1、parse5 8.0.1。Node 内建模块也不允许，未声明或计算式 import 为 IMPORT_NOT_DECLARED；不执行安装脚本。Tool 读取原字节并返回结构，模块文件不改写；散列可用全局 WebCrypto。产品线原件经变更集批准后装载，每次执行仍核对当前权限、版本和 SHA。
 
-Hook 契约严格为 hub-hook/1：handle({event,binding:{method,resource,source,inputRevision},subject}) 返回 {decision:"pass"} 或 {decision:"block",code,facts}。五个 event 为 verify.deviceCommand / verify.hostCommand / verify.workbook / beforeDispatch / afterResult。对应三个核验 subject 分别是 {command,tree:{heads:[{command,present}]}}、{command,host,method,kwargs}、{client,contract:{testEnvEnabled:[]}}。处理器按 order 和稳定 id 顺序执行，block 即停；没有处理器时返回空判定列表，hub 不补产品规则。每项 hook.verification 事件及审计保留 ruleId/ruleVersion/event/result。block 的 code/facts 原样回传，补充授权行号、输入修订和原件 SHA。Hook 禁止 import、环境、网络、模型、动态代码和无限循环。
+产品线 Hook 已按 hub-hook/1 与五个挂点装载；subject、严格字段和返回 / 顺序规则见[Hook 契约](design/harness-primitives.md#hook)。hook.verification 保留 ruleId / ruleVersion / event / result。
 
-运行结果保留失败原因和 script-conclusion evidence。命令不存在、主机自毁、权限拒绝等为 failed；可由申请人修复的来源未批准、网关不可用、租约不足、床构建不符停在 waiting-input，TaskView 追加 waitingReason，pendingInputs 中有对应请求。申请人使用原 input 接口提交新修订；修订保留 privateOwnerId/委托关系并清掉旧执行绑定和等待原因。床构建只从 env_prepare 的结构化观测或确定性解析的设备回显取得；配置标签不作为观测。unknown 保持冻结、不重发、独立 reconcile、旧 fence 拒绝，不因本地停止声称远端已停。
+执行链新增 TaskView.waitingReason 与对应 pendingInputs 修订入口；可修失败、核验拒绝与 unknown 的处理已并入[报错与等待输入](design/approvals-and-enforcement.md#报错与等待输入)。
 
 ## 修订 3：开发会话寿命与吊销
 
-POST /v1/auth/refresh 仍返回登录同形 token/expiresAt/roles，但 token 会轮换；旧 token 留五秒并发宽限，客户端须保存新 token。开发会话族的绝对寿命为 24 小时，续期不能突破；POST /v1/auth/logout 携带 Bearer 和空对象，立即吊销同族 token。短期 run token 不可 refresh/logout，仍由持当前租约的 worker 续期并受任务/fence/deadline 约束。开发身份从配置移除后重启失效；已治理的角色不被配置重写。开发密码失败锁定、请求桶和异步散列并发有上限，超额为 RATE_LIMITED，不回显凭据或用户名。
+修订 3 已把开发会话改为轮换 token（旧 token 五秒并发宽限），并新增 POST /v1/auth/logout，携带会话 Bearer，body 为 `{}`。登录响应字段保持 token / expiresAt / roles，运维身份配置仍只作角色初次种子；绝对寿命 / 吊销 / 限流规则见[会话与令牌](design/roles.md#会话与令牌)。
 
 ## 修订 3：凭据模式、隔离与明确的明文例外
 
-执行 provider 可在 configuration 指定 credentialMode:"static-secret"；其 declaration.credentials 引用通过 POST /v1/assets/{providerId}/credentials 登记的凭据。body 为 {version,value,mode:"static-secret"}，value 至少 32 字符且无头部控制字符，响应只有引用和模式。以凭据资产 id 调同一 credentials 路由可轮换当前值，模式不能原地改变。密钥在 vault 中持久化，worker 每次已核授权的调用前取当前值，以 Authorization: Bearer 注入；此模式不访问签发 /token 或 introspect。批准且 running 的共享资源允许当前授权成员使用其绑定密钥，成员不因此获得别人的凭据元数据或明文。server-issued 与 external-oauth 模式继续兼容；停用凭据、资源修订、角色撤销、租约/fence 变化均重新核对。
+static-secret 登记操作：provider.configuration.credentialMode="static-secret"，declaration.credentials 引用 POST /v1/assets/{providerId}/credentials 返回的凭据 id。body `{version,value,mode:"static-secret"}`，value 至少 32 字符、无头部控制字符；响应只有引用 / 模式。以凭据资产 id 调同路由轮换当前值，模式不能原地改变。该模式用 Bearer 注入，不调用 /token / introspect；server-issued / external-oauth 的旧接入仍保留。共享、使用与撤销纪律见[凭据与资源](design/approvals-and-enforcement.md#凭据与资源)。
 
-非回环带认证的资料源默认必须 HTTPS。需要接受纯内网 HTTP 时，管理员在对应 kind=runtime-profile 资产的 configuration 加 allowPlaintextAuthentication:true，其余 profileType/profileRef/profileSha256 不变；该版本经独立审批人决定后才生效，即使 scope 允许普通自决也不能自批这条例外。运行文件中直接塞该字段不会授予例外。当前 profile 版本不再 approved/running，或其配置摘要不匹配，工具调用返回 SOURCE_NOT_APPROVED；修改例外字段必须登记新版本并重新决定。未批准的 HTTP 认证为 SOURCE_FORBIDDEN，不带原地址或凭据。匿名 HTTP 和回环合成服务保留。
+资料源 HTTP 例外的配置步骤：管理员登记 kind=runtime-profile 新版本，configuration 加 allowPlaintextAuthentication:true，保 profileType / profileRef / profileSha256，再交独立决定。修改例外也用新版本，运行文件自加字段不生效；资格与生命期、SOURCE_NOT_APPROVED / SOURCE_FORBIDDEN 的规则见[凭据与资源](design/approvals-and-enforcement.md#凭据与资源)。匿名 HTTP 与回环合成配置保留。
 
-每次获准的明文认证操作在派发意图、审计及取回的 SourceRevision/Evidence 里永久标 plaintextAuthentication:true，包含批准的 runtime-profile 资产/版本引用。缓存重读保留原标记；后续撤销不改写历史证据。目录页、命令原件或具体源内容仍遵循原读取权限。
+明文例外已在派发、审计与 SourceRevision / Evidence 加 plaintextAuthentication:true 及批准 profile 版本引用；标记的持久 / 缓存 / 撤销规则见[凭据与资源](design/approvals-and-enforcement.md#凭据与资源)。
 
 Skill、Tool 和 Hook 使用同一主机隔离边界。当前 Mac adapter 用 sandbox-exec 对未信任的进程及其后代限制文件内容读取、写入、网络出口及其他进程信息；只开放当前运行目录、固定 harness 的受信代码/依赖、明确的 CA 和 loopback server/model 端点。不能直接或经符号链接读取 vault 或运行配置。其它系统未配置受支持的隔离 adapter 时以 SANDBOX_UNAVAILABLE 失败，不退回同用户任意执行。Hook 与 Tool 在同一 tool-host 子进程执行，10 秒/16 MiB 返回上限；工作簿命令批量核验，避免每条命令启动一个进程。三种 subject 先按严格 schema 校验，主机客户端闭集属于批准的 Hook，解析器只读取字面行。
 
-Circle 的短期 run token 只在环境中，模型凭据临时写到单次 home，进程退出后清理 home/home-user；工作区产物仍按 SHA 留存。终态、过期租约和失效 fence 的短期令牌及工具注入副本由维护器清理，永久登记的静态凭据保留到轮换/吊销。来源证据与模型判断继续分开。开发身份中的角色只做初次种子，后续通过范围变更集管理；重启不以身份文件覆盖已治理角色。
+早期运行器曾把模型凭据放入单次 home；后续模型代理已替代该方式，当前密钥边界见[凭据与资源](design/approvals-and-enforcement.md#凭据与资源)。终态 / 失效注入副本由维护器清理，永久静态凭据留到轮换 / 吊销；开发角色仍只作初次种子。
 
 主机策略只能取 binding.resource.declaration 的已批准原声明：allowedTestHosts 为显式集合，hostCommandPolicies[host].allowPrefixes 为可选缩小策略；运行文件中的同名字段不作治理授权。三个 verify 挂点均带资源 assetId/version/sha256/declaration。当前固定的 APV 1.2.2 / ba06eed 的 host-policy Hook 按新版四字段 subject 执行，闭集未声明、主机不在床、命令含模板、前缀不符分别给固定事实码；主机名与策略键比较不区分大小写，事实仍保留输入拼写。
 
 ## 读取超时与大原件回报
 
-Tool effect=read 的操作按读取效果登记。上游 TimeoutError/AbortError、同步查询等待超时、worker 回报 unknown 或租约失联均为 failed + UPSTREAM_TIMEOUT，retryable=true，sideEffects="none"；不会冻结 provider，也不要求不存在的独立副作用核对。新键或修改查询可重试。写操作继续按原 unknown/fence/reconcile 规则冻结。迁移 29 会将历史只读 unknown 转为 failed 并重新计算资源冻结，仅解除没有写 unknown 的冻结。
+读操作的超时分类修复见[读取的超时](design/approvals-and-enforcement.md#读取的超时)。迁移 29 释放历史只读 unknown 并重算 frozen，只解除没有写 unknown 的资源；写记录与核对保留。
 
 worker 先把原件按 SHA 放入 B，再在报告 raw[] 传 {path,sha256,objectKey:sha256,size,sourceType,...}；C 在当前租约/输入/资产授权下回读并验证实际字节和大小。旧 contentBase64 报告仍兼容；原件缺失、换 SHA 或错误 size 不被接纳。证据存指针、范围、SHA 与小片段，不把大文件或 NUL/不合法 UTF-8 的完整文本塞入 JSONB。GET /v1/knowledge/records/{evidenceId}/content 仍可在现有授权下读取原字节并复算 SHA。任何回报处理错误都原子落成 failed；数据库异常只给 RECEIPT_PROCESSING_FAILED 和安全 storageCode，不带 SQL、参数、内容或内部路径。
 
@@ -457,13 +443,13 @@ docs.search 已完成文件后发生读取超时时，返回已观测 hits、nex
 
 ## 审计补充：角色、Hook 形状与模型凭据
 
-任何带 credentials 引用的 provider（不限模式）的 Tool 最低为 scope member，目录与调用都拒绝 viewer；访客仅可调用无凭据的只读 provider。静态资源共享不扩大人的角色。Hook 的 binding.resource 按 assetId/version/sha256/declaration 校验；主机策略形状为 allowedTestHosts:string[]、hostCommandPolicies[host].allowPrefixes:string[]，未声明交产品 Hook 判定。beforeDispatch 的 subject 为 {input,operationId}，afterResult 为 {result,operationId}，不接受多余字段。主机行只按 token 形状解析，函数启用状态只标注 functionStatus，规则由批准模块核验。
+凭据 provider 的角色下限已并入[角色登记与资格披露](design/roles.md#角色登记与资格披露)；Hook binding / subject 形状和主机策略依据已并入[Hook 契约](design/harness-primitives.md#hook)。主机解析只记录字面行及 functionStatus。
 
 Tool/Hook 子进程带 256MiB V8 堆上限，Hook 以最多 200 个 subject 的批次执行，每批十秒，保持顺序和首次 block 停止。APV 验收默认冻结 circle-packs 提交 ba06eeda83d27031fc1a452e43b24300d654da9e（APV 1.2.2，22 个文件，模块 digest faa9e79d03a97fa1e5142a2f169cecc2caef7f52f7d714f9aac53226164c347d）。清单与文件均用该提交的原字节核 SHA，不跟随独立仓库工作区变化；包内 Node TAP 收尾断言实际 pass=tests 且 fail/skip/cancel=0，不把数量写成闸门。本次产品线包 **31/31**、hub Hook 专项 **3/3**；同提交四个技能模块（case-review 0.1.3、defect-claims 0.1.0、mindmap-compile 0.3.0、product-qa 0.1.3）的全部五个测试文件冻结后纯合成单测实际 **57/57**，catalog 工具另 **4/4**，合计 **61/61**，均无跳过。这与该提交 README/CI 的 tools 与 skills 合并入口一致，61 并非技能本身的数量。数字只描述这份冻结原件的验证，不是自动安装/批准或真实设备与模型验收。
 
-模型密钥不再写进 Circle home：可信 worker 为本次运行起 loopback 模型代理，在内存中注入真实上游密钥；Circle settings/credentials 只有本次代理端点与随机 nonce，退出关闭代理。代理拒绝非模型路径、无 nonce 的请求及远程开发端点。Skill 产物出口对 run token、代理 nonce、模型密钥按字节替换，保留其它二进制字节，记录 sanitized 并重新算 SHA；事件同样脱敏。harness 自带 --yolo 不作为平台权限边界。仅一位管理员且其为 runtime-profile owner 时，明文例外仍不能自批，需先有独立 reviewer；这是明确的资格限制。
+后续运行器加入可信 loopback 模型代理，Circle settings / credentials 只存本次代理端点与 nonce；当前密钥 / 掩码 / 失败边界见[凭据与资源](design/approvals-and-enforcement.md#凭据与资源)。下段保留代理部署参数与观察字段；--yolo 不替代平台执行链。
 
-每次模型代理只绑一个回环临时端口，256 位 nonce 仅本次有效，seatbelt 只开放该端口和 hub 端口。目标由当前独立批准的 circle-runtime 配置钉住，Host、查询和路径不能换目标；入站凭据头全部剥离，可信代理再注入上游 key。请求和响应各限 16MiB，SSE 按流透传，不记录体或把模型流量存为证据。runtime.model.proxy 仅记 upstreamHost/statusCode/requestBytes/responseBytes/durationMs/requestNumber。起不来/断连为 MODEL_PROXY_UNAVAILABLE，上游拒绝或超限为 MODEL_UPSTREAM_REJECTED，没有写真实 key 到 home 的降级。取消、超时、unknown、本地结束都关闭代理；取消后的事件拒绝不会覆盖已观测的本地退出。开发验收仍限回环脚本模型。
+模型代理运维参数保留：每 run 一个回环临时端口、256 位 nonce；seatbelt 仅开放代理 / hub 端口，体上限各 16MiB，SSE 透传。runtime.model.proxy 观察字段为 upstreamHost / statusCode / requestBytes / responseBytes / durationMs / requestNumber；固定失败码 MODEL_PROXY_UNAVAILABLE / MODEL_UPSTREAM_REJECTED。目标、头部 / key 注入、失败降级和停止纪律见[凭据与资源](design/approvals-and-enforcement.md#凭据与资源)。本地验收仍用回环脚本模型。
 
 ## 读结果与治理内容补充
 
@@ -479,7 +465,7 @@ supervisor 为每次子进程 start/exit/error 打一行 JSON：at/supervisorId/
 
 ## 修订 3 第 6 节：通知流与工作队列
 
-GET /v1/notifications?cursor=0&limit=100 需 tasks.read，返回 {items:[{seq,taskId,scopeId,kind,payload,createdAt}],cursor,hasMore}；limit 为 1–200。过滤当前 tenant/scope/私有任务之后分页，游标来自持久 outbox；没有当前可见事件时也可越过已过滤的序号。bot 受理失败没有伪造任务，通知 taskId=null、payload 带 botAssetId/occurrenceKey/error，只对运行所有者可见。
+GET /v1/notifications?cursor=0&limit=100 需 tasks.read，返回 {items:[{seq,taskId,scopeId,kind,payload,createdAt}],cursor,hasMore}；limit 为 1–200。过滤当前 tenant/scope/私有任务之后分页，游标来自持久 outbox；游标修复的当前口径见下方补项与[通知流与工作队列](design/circle-integration.md#通知流与工作队列)。bot 受理失败没有伪造任务，通知 taskId=null、payload 带 botAssetId/occurrenceKey/error，只对运行所有者可见。
 
 GET /v1/notifications/stream 用同样的 cursor/limit 或 Last-Event-ID 建 SSE；事件 notification 带 id=seq 和通知 JSON，cursor 事件带下一游标（即使本页无通知）。客户端保存已处理游标，断线按它补读，轮询是同一条持久流。服务器每轮重核身份/角色，过期发 session.expired、撤权发 permission.revoked、流内部错误发 stream.error 后关闭；使用客户端已刷新会话重连，不在流中索取密码。流有心跳/背压处理，graceful shutdown 会结束连接。
 
@@ -581,68 +567,49 @@ GET /v1/scopes/{scopeId}/permission-export 返回 [Grok 的规范](design/permis
 
 ## 派发前拒绝与两次环境观察
 
-execution.gateway.submit-intent 仅证明 C 已准许一次提交，不证明网关 runner 或设备已派发。worker 开始 case_submit 后若连接中断、结果不可确定，仍 unknown/frozen 且禁止重派；网关明确的 lease/environment/validation 阶段拒绝（无任务身份、没有 dispatched:true）是已核对的 failed，不冻资源。契约旧网关只回文字时，产品方法仅识别既定的契约校验诊断为派发前拒绝；其他无阶段文字不猜派发情况。
+网关接入修复新增完整 gatewayRefusal 与两次环境观察的来源披露；分类与租约规则已并入[派发前拒绝与远端租约](design/approvals-and-enforcement.md#派发前拒绝与远端租约)及[派发与两次环境观察](design/approvals-and-enforcement.md#派发与两次环境观察)。
 
-网关拒绝的完整 JSON 留在 error.details.gatewayRefusal，reason/error 作为原消息，stage/code 有明确值才采用；不能把 environment 一律映射 BUILD_MISMATCH，也不能凭 local stage 造 observedBuild:null。明确构建拒绝为 build-mismatch 等待，未知语义拒绝用 GATEWAY_REFUSED/gateway-refused，网关明确契约码可为 workbook-contract；waiting-input 的 result.error 与任务事件包含同一事实/证据，申请人可以修订。操作本身 status=failed；不是业务执行成功。
-
-execution.environment.observed 的 observationSource=gateway.env_prepare，保存提交前外部 env_prepare 的原件和构建核验；case_submit 可能随后在网关内再次检查环境/契约。两个时间点、调用和规则不同，第一次 passed 不覆盖第二次拒绝。失败原件保留第二次的原始 reason/details，不能以第一次观察推断第二次原因。
-
-未尝试提交或已证实派发前拒绝时，worker finally 调 lease_release；报告 remoteLeaseReleased:true 只代表网关确认逻辑租约释放。释放失败报告 false 与 leaseReleaseError，保留主错误，不声称远端停止；真正已派发而回执不确定时保留远端租约与 unknown 核对流程。
+| 保留的接口字段 | 实现变更 |
+|---|---|
+| execution.gateway.submit-intent | C 的提交意图事件，设备事实仍来自外部回报 |
+| error.details.gatewayRefusal | 原始 reason / error / stage / code 保留；不再把所有 environment 拒绝猜成 BUILD_MISMATCH |
+| waitingReason / result.error | 增加 build-mismatch / gateway-refused / workbook-contract 的修复入口与事实 |
+| execution.environment.observed | observationSource=gateway.env_prepare，留提交前环境原件；case_submit 后续内部核验另留拒绝事实 |
+| remoteLeaseReleased / leaseReleaseError | finally 释放的真实成功 / 失败字段，不覆盖主错误或宣称远端停止 |
 
 ## 内部历史批准修订绑定（A1）
 
-`AssetRevisionPin` 为内部 TypeScript 形状 `{assetId,version,sha256,digest?}`：sha256 是资产修订 SHA，digest（若提供）是该批准版本的模块清单 digest，二者不混用。SourceArtifacts.snapshot 和 ProductModules.load 接收末尾可选 pin；Tool/Hook 调用与批次也可沿用该 pin。ToolProviders.resolve 的内部 selector 可为旧 assetId 字符串或精确 pin。这里不新增 HTTP 接口或请求字段；现有公开 methodAssetId 仍是资产 id。
+A1 补齐内部 `AssetRevisionPin={assetId,version,sha256,digest?}`。SourceArtifacts.snapshot / ProductModules.load 的末尾 pin 及 ToolProviders.resolve 的 selector 可选精确修订；digest 是模块清单摘要，不与资产 SHA 混用。没有新增 HTTP 路由，公开 methodAssetId 仍是资产 id。
 
-只有精确 pin 保证读取特定历史 version/SHA。旧调用只带 assetId 时按该资产最新 approved/running 且批准摘要成立的修订选择，草稿不扰动这一选择，不能把这种选择称为冻结。未指定方法且存在多个可用产品模块或原生实现时返回 SOURCE_NOT_APPROVED，申请人必须显式选择；不按 SQL 顺序、不可见候选或旧可读版本猜默认值。
+装载修复改为读取历史批准 pin；旧 assetId 字符串仍选该资产最新 approved/running，不能称冻结，多实现未指定则 SOURCE_NOT_APPROVED。缓存调用也重核选定批准版与最新批准版 readers 的交集，draft reader 修改不撤旧 pin；角色 / 已批准 reader 撤销、disabled/retired 或批准摘要失效继续生效。内部 pin 只覆盖该批准清单的自有 SourceRevision，basis / 企业 ACL / 其它来源未被旁路。
 
-每次装载、原件读取与缓存调用前均核当前身份/范围权限，并取选定批准修订与最新批准修订 readers 的交集。未批准的 reader 修改不撤销旧 pin；批准后的 reader 撤销或当前角色撤销即时生效。旧修订 disabled/retired 或批准摘要失效时拒绝使用，不自动换新 parser。内部 pin 只适用于该批准来源制品文件清单内的自有 SourceRevision，原始 basis 引用、企业对象 ACL 与其它来源仍沿原实时授权链核对；不绕保险箱、原件检查或对象存储直接放行。
-
-A1 不修改既有任务的 methodAssetId/回执，也不把旧任务自动转成精确 pin；原生执行 1.1.1 的实现字节和 SAR 稳定 id 的既有公开解析/失效语义保持。A2 已经维护者复核，内部 transition 契约及字节预算见 [执行流设计附录](design/execution-flow-packs.md#附录-a2有界-transition-内部契约)。通用驱动的合成验收范围见下段，不能据此把原生任务迁到新方法。
+旧 task / methodAssetId、SAR 稳定 id 的公开失效语义、原生 1.1.1 字节均未自动迁移。版本与批准 pin 的设计见[方法版本、摘要与批准修订](design/execution-flow-packs.md#方法版本摘要与批准修订)；后续 A2 / A3 的实现与验收分别见[有界 transition](design/execution-flow-packs.md#附录-a2有界-transition-内部契约)及[阶段进度](server-s2-progress.md)。
 
 ## A3：通用模块执行与受控原件
 
-`GET /v1/packs` 增加 `module-execute/1.0.0`，Hub 驱动版本为 `module-execute/1`。沿用 `POST /v1/tasks/submit`，`capabilityPackId="module-execute"`；input 的严格形状为 `{flowId,methodPin,resources,sources?,value?,controlledBytes?}`。methodPin 必须显式提供 `{assetId,version,sha256,digest?}`，resources / sources 是别名到精确 pin 的映射，value 是产品输入。controlledBytes 每项为 `{slot,role,source,path}`：source 指 sources 的别名，path 是该批准制品内的相对文件路径，role 必须与文件的已批准角色一致。不能直接给端点、令牌、任意 B 对象路径或客户端构造的字节回执。状态、事件、结果、下载、修订、取消与核对继续使用现有任务接口，没有新的执行专用 HTTP 路由。
+A3 已通过既有 POST /v1/tasks/submit 接入 `module-execute/1.0.0`（驱动 `module-execute/1`），未增加执行专用 HTTP 路由。通用机制见[执行流设计附录](design/execution-flow-packs.md#附录-a3通用驱动接入与证据边界)；本节保留客户端输入与后续修复记录，完整验收见[进度 72–86 节](server-s2-progress.md#72a3-复核修复与通用错误登记)。
 
-步骤期限按 input 可选 `deadlineMs`、批准 flow 可选 `deadlineMs`、默认 3600000 毫秒的顺序派生，沿现有操作契约要求正整数且最多一小时；受理时冻结，不因配置后续修改漂移。每步入队按该时长设期限，waiting-review 不作为执行期限过期清理，批准消费时从当前时刻刷新执行期限。未领取步骤真正过期明确 failed / UPSTREAM_TIMEOUT，披露 sideEffects:none；已有写意图的运行步骤超过真实期限仍 unknown，保留远端租约与核对，不提前按固定五分钟中断。
+提交 input 为 `{flowId,methodPin,resources,sources?,value?,controlledBytes?,deadlineMs?}`；methodPin 显式 `{assetId,version,sha256,digest?}`，resources / sources 是别名到精确 pin 的映射，controlledBytes 每项 `{slot,role,source,path}`。所选 flow 文件为 `circle-packs/flow/1`，含 `{id,version,driver:"hub-execution-transition/1",transition:{path,export},initialState,deadlineMs?}`；入口属于冻结 tools[]。来源 path / role 取批准清单，客户端不传端点、秘密或自制字节回执。
 
-worker 的 `POST /v1/workers/register` 支持 `{capabilities:[已安装操作名]}`，旧 `{}` 表示没有新增能力；登记替换整个集合，未知或重复声明拒绝且不污染既有登记。新版 worker 显式声明 flow.invoke，通用 flow 只派给已声明此能力的 worker，操作另冻结 required_worker_capability，preflight 同时核实际授予与当前登记。旧 worker 可继续处理原生操作，不会领到自己不能解析的 flow。启用需迁移 41；能力声明不是软件版本或设备结果证明，仍执行 worker 身份 / scope / 租约 / fence 校验。
+provider 沿既有 connector-instance 与批准 execution runtime-profile，configuration 使用 `hub-provider/1` / `transport:"streamable-http"` / `runtimeProfileType:"execution"` / runtimeProfileRef / receiptPolicy。精确形状在[ProviderPolicy](../packages/execution/src/flow-contracts.ts)：submitTool / statusTool / resultTool / reconcileTool、taskIdArgument、remoteIdPath / requestHashPath / inputSha256Path / byteHashesPath / statePath、runningValues / terminalValues、receiptSchema；lease 含 acquireTool / heartbeatTool / releaseTool、idPath / fencePath / ttlSecondsPath、idArgument / fenceArgument；refusal 含 stagePath / preDispatchStages / dispatchedPath / remoteIdPath / codePath / reasonPath，字段路径均为字符串数组。使用现有 JSON-RPC tools/list / tools/call，不宣称任意 MCP 初始化或会话协商已兼容。
 
-模块仍经 modules/install 冻结文件、既有变更集批准；所选 `circle-packs/flow/1` 文件需含 `{id,version,driver:"hub-execution-transition/1",transition:{path,export},initialState}`。transition 入口必须在模块已声明的 tools[] 中，按原 imports 边界装入隔离进程。Hub 保存任务 / 修订、方法与来源 / 资源 pin、实际 runtime-profile pin、产品状态、每步身份、请求摘要、派发意图、原始回报引用及终态。实现摘要的版本化算法覆盖冻结模块 digest、flow、驱动版本与精确依赖版本；新批准模块只供明确选择它的新任务，旧任务不自动换方法、parser 或原件。
+受控 `provider.call.byteArgs={参数名:slot}` / Tool byteSlots 已实现，不能覆盖普通 args。请求摘要包含所用 B 原件身份，step key 不含参数摘要；普通字符串 32 KiB、受控原件合计 8 MiB、完整 Tool 输入 / 输出 24 / 16 MiB、总步骤 / 转换 256 项。B 上传的 16 MiB 不等于单流程原件预算。实现摘要覆盖冻结模块 digest / flow / 驱动版本 / 精确依赖，旧 run 不换 parser。
 
-provider 资源为已批准并启用的 connector-instance，configuration 使用 `schema="hub-provider/1"`、`transport="streamable-http"`、`runtimeProfileType="execution"`、runtimeProfileRef 及 receiptPolicy。地址 / CA 只取仓库外运行文件，摘要必须匹配独立批准的 runtime-profile。凭据沿用现有凭据引用 / server-issued 机制；只有明确未声明凭据的资源才允许匿名，声明了凭据但缺值时为 SOURCE_LOGIN_EXPIRED。带凭据或 write Tool 的人调用者至少是 member；机器沿既有 scope 权限核验，不虚构人的角色。各 Tool 的 name、inputSchema、effect、minimumRole 只取已批准 declaration.provides.tools，再核对远端 tools/list；网络与凭据不进入产品 Tool。
+| 修复组 | 保留的实现变更与接口边界 |
+|---|---|
+| H1 `4e84ba0` | input.deadlineMs → 批准 flow.deadlineMs → 默认 3600000 毫秒，正整数且最多一小时，冻结进 run。waiting-review 不按执行期限清理，批准消费后刷新；accepted 真过期明确 failed / UPSTREAM_TIMEOUT / sideEffects:none，意图写超过真实期限仍 unknown。 |
+| M4 `f7a418b` | 任务 savepoint 与运行器独立捕错；步骤累计预算先整批拒绝、不留下半批写，pending 不因预算检查被中止。 |
+| H2 `8cf4998` | B 拒绝原件含 `{schema:"hub-provider-refusal/1",tool,phase,refusal}`，C 核绑定 submit 与持久 remote_identity；已提交后的 status / heartbeat 外观拒绝不撤派发事实、不释放潜在远端租约。 |
+| M5 `90e8bfd` | C 从本任务 / 修订 / stepId 已完成连续前缀授予 occurrence，输入新增可选 `expectedOccurrences:[{stepId,nextOccurrence}]`，pending 不推进；首次 0、跳号 999 或 hub. 身份拒绝。same requestHash 重用，改参数 / 原件同 key 仍 IDEMPOTENCY_MISMATCH；合法 next 是新步骤，facts.occurrence 来自 C 行。 |
+| M6 `37d845c`、注册用例 `49f8f98` | 迁移 41 增加 capabilities / required_worker_capability；新 worker 声明 flow.invoke，旧 `{}` 仍可执行原生工作。严格对象拒绝顶层未知键（如 workerId）为 INVALID_PAYLOAD，capabilities 内未知操作名 / 重复项也拒绝，身份由认证 policy 决定，拒绝不污染已有登记。 |
+| M3 `d57e96c` | status 终态先独立持久，再取 result / 解释；ok:false 或坏 identity / SHA / schema 留 B 并记解释失败，不把 D 已证终态降为 unknown。终态后中断收尾保 succeeded、释放 null；仅 expiryAfterTerminal / 有终态 SHA / 尚无最终 reportHash 的同 worker / fence / 修订可补记一次，精确重报去重、异 hash 拒绝，不复活失败任务或重派。 |
 
-receiptPolicy 的严格形状见 [ProviderPolicy](../packages/execution/src/flow-contracts.ts)：submitTool / statusTool / resultTool / reconcileTool、taskIdArgument、remoteIdPath / requestHashPath / inputSha256Path / byteHashesPath / statePath、runningValues / terminalValues、receiptSchema，以及 lease 与 refusal 映射。字段路径是字符串数组；lease 声明 acquireTool / heartbeatTool / releaseTool、idPath / fencePath / ttlSecondsPath 与 idArgument / fenceArgument，refusal 声明 stagePath / preDispatchStages / dispatchedPath / remoteIdPath / codePath / reasonPath。status / result / reconcile 必须 read，提交与租约工具必须 write，产品不能把 write 降成 read 或注入租约身份。当前复用网关的 JSON-RPC tools/list 与 tools/call 调用方式，不宣称任意 MCP 服务的初始化或会话协商均已兼容。
+后续复核补项（详见[进度 79–86 节](server-s2-progress.md#79hook-资源确定性与轻预检)）：
 
-`provider.call.byteArgs={参数名:slot}` 只提出原件绑定，驱动按 B 授权清单重新读取、核对 SHA / 大小后填入 base64；禁止覆盖普通 args。请求摘要包含实际所用槽的原件身份，步骤 key 不包含参数摘要；同 key 改参数或换原件为 IDEMPOTENCY_MISMATCH。普通字符串仍限 32 KiB，受控原件合计仍限 8 MiB，完整 Tool 输入 / 输出仍限 24 / 16 MiB；B 的 16 MiB 上传上限不代表每个执行流程都能使用这么大的原件。单 run 的步骤与转换次数还受现有 256 项预算限制，超限失败，不无限推进空转换。
+- beforeDispatch / afterResult 的资源改由本任务同修订 subject.operationId 关联，不按 JSONB 顺序；其它 verify 只接受唯一可确定资源。零资源纯 transition / Tool 不再构造无用 HookBinding。写出口强制 beforeDispatch，afterResult 绑定终态原操作和整份交付候选 canonical SHA；默认执行链与 executionIsChange 一次消费沿设计，run 委托的 privateOwnerId / parentRunTaskId 不变。
+- provider 授权扩至真实 submit / lease acquire-heartbeat-release / status / result 链，普通读只核自身，reconcile 核 reconcile / release；轻预检与短期令牌活性沿同一链。`lightweight:true` 首次 full 后复用不可变 frame 字节，每次仍重核角色 / readers / pin / profile / 凭据 / 租约 / fence；contentReference 沿 content ACL。冷 Hook 代码读取不冒称所有 B 零读取。
+- outcome.error 改为独占动作批次，混有后续动作在新入队前 INVALID_PAYLOAD；原报告仍保留。交付新增 `executionObservations` 小元数据（operationId / terminal / remoteLeaseReleased / 原件引用），不靠产品转录释放事实。
+- 历史事实只沿原 worker / fence / inputRevision 核冻结资源定义 SHA、已持久 request / input / byteHashes 和 B 终态原件，不读端点 / 秘密或新执行许可。停用 source / resource 不再阻止未知写及时冻结，也不丢终态释放 / 解释事实；新派发和独立 reconcile 仍走 live 授权。
+- worker 报告顶层 error / output.resultError 及其 details 规范为 F 错误码，未知 INTERNAL_ERROR；output.result 全树 opaque，嵌套业务 error / resultError 也保原值，inline / pointer 回读一致。完整 API JSON body 以 canonicalJson UTF-8 留 B（不含认证头）；其字节 SHA 与契约解析后、投影前 reportHash 是不同转换口径，同 hash 幂等 / 异 hash 拒绝。
 
-outcome.error 是解释终止屏障，C 要求它独占动作批次；混有 provider.call 或其它动作的 F 合格输出，在任何新动作入队前以 INVALID_PAYLOAD 拒绝。错误后不继续派发，已有在途写仍沿 unknown 与终态规则收尾。
-
-occurrence 由 C 在本任务 / 修订 / stepId 的持久行中计算，transition 输入另有可选 `expectedOccurrences:[{stepId,nextOccurrence}]`，不是产品 state 的字段。首次只能 0，已完成的连续前缀才推进下一值，pending 不授予新值；新动作的序号必须等于 Hub 期望，C 再赋值持久，不能跳到 999 或占用 hub. 身份。已存在同序号、同 requestHash 仍复用；同 key 改参数或原件仍 IDEMPOTENCY_MISMATCH。合法下一序号是一笔新的 Hub 授予步骤，不称同 key 重放；观察的 facts.occurrence 同样来自持久行。
-
-默认资源直接走执行链。声明 executionIsChange 的写步骤生成 execution-submission 草稿，审批内容冻结实际 Tool、字面参数摘要、B 原件引用及方法 / 资源 / 来源 pin；批准后只消费一次。module-execute 是范围内可读的 work 任务；来自 run 的委托仍保留原有 privateOwnerId / parentRunTaskId 边界，技能运行与工具任务的私有规则不变。批准不会免除派发前实时权限、生命周期、Hook、输入修订和 fence 核验。
-
-beforeDispatch 由 C 在真实写出口按实际 resource / operationId / currentInput 强制运行已附 Hook；产品省略 hook.verify 不能跳过，意图必须引用该通过证据。零处理器不引入缺省规则。声明了 afterResult 时，每个终态写的真实成功 Hook 必须核验同一最终交付候选（subject.result 的 canonical SHA 与候选相等）；多写流程要先合成候选，再对相关操作核验，不能拿局部结果或另一份正文的 Hook 回执交付。证据仍分别绑定逻辑原操作与真实核对操作，不把核对子操作替换成产品步骤身份。
-
-beforeDispatch / afterResult 的资源由 subject.operationId 对应的本任务 / 同修订 provider 步骤绑定，不按 JSONB 的键顺序选第一个。其它 verify 挂点只有唯一资源才可确定，多资源无明确关联时拒绝歧义；零资源的纯 transition / Tool 不构造不需要的 HookBinding。实际请求 Hook 时仍遵原资源入参契约。
-
-provider 写操作的授权覆盖实际协议工具链：当前提交、租约 acquire / heartbeat / release、status、result 都分别满足 minimumRole 与资源策略，不能由较低角色的提交 Tool 代授较高角色的内部调用；普通只读只核自身，独立核对核 reconcile / release。整批预检、入队、轻预检和短期资源令牌活性均使用同一链，角色撤回后不得继续调用。
-
-worker 内部的既有 preflight 路由支持可选 `lightweight:true`；首次完整授权取原件并核字节 SHA，之后 worker 保留不可变 frame，取消轮询、取凭据前检查、事件和心跳使用引用预检。每次仍重新核 scope / 角色 / readers、输入修订、方法 / 来源 / 资源 / runtime-profile、凭据、租约与 fence；只缓存字节，不缓存权限。B 的 contentReference 与 content 共用授权规则，轻预检不读原件字节，也不返回 base64 或源码 files；冷加载实际出口 Hook 的模块代码另行核验，不能把来源原件零重读说成所有冷启动 B 读取为零。
-
-只有已持久化写意图之后、且尚不能证明终态的失联才进入 unknown；不重派，同资源冻结，核对由独立 worker 读取原远端身份。明确的 `ok:false`、已批准派发前阶段、`dispatched:false` 且没有远端 id 字段的拒绝为 failed；成功回报或包含远端 id（包括 null / 空值）的回报不能用于证明未派发。只读超时为 failed / UPSTREAM_TIMEOUT，无写意图时不冻结；核对失败仍保留原写 unknown 和冻结。取消只证明本地停止，不证明远端已停。
-
-拒绝还必须来自绑定 submit 调用本身：worker 在 B 原件中附有限调用来源 `{schema:"hub-provider-refusal/1",tool,phase,refusal}`，内层保留 provider 原始拒绝。C 根据实际绑定工具及已持久化 remote_identity 再核，不能只信 worker 的 submitted:false 或 stage 字符串。提交成功或远端身份已记录后，status / heartbeat 等返回外观像派发前的拒绝仍是 unknown，不释放远端租约；不能用后续拒绝抹去已派发事实。
-
-status 原始回报达到已批准终态并与原操作、输入摘要、原件 SHA 和远端身份一致时，D 终态先独立持久化，再取结果和调用解释 Tool。结果获取、parser 抛错 / 超时 / 超限 / 无效协议 / 缺映射，或 afterResult 失败只影响解释与交付，不能将已证 D 终态改为派发 unknown 或重发写动作。租约释放成功 / 失败单独保留事实，不从本地退出推断远端停止，也不拿 status 原件冒充结果正文。
-
-交付另带 `executionObservations` 小元数据，包含真实操作身份、terminal、remoteLeaseReleased 与原件引用；释放事实取自 D 回报，不要求产品把它转录进自己的 result。产品结果和执行观察分别读取、核验，false 不改成 true，未知释放也不猜成功。
-
-历史报告只沿原 worker / fence / inputRevision 的记账路径核冻结资源声明、定义 SHA、已持久 request / input / byteHashes 与 B 终态原件；不获取端点、凭据或新的执行许可。来源 / 资源停用不阻止真实未知写及时冻结，也不丢已证终态的释放和解释事实。新受理、派发、独立 reconcile 仍完整核当前批准、角色与 readers；过去回执不能恢复这些许可。
-
-已证终态之后，result Tool 的 ok:false 或身份 / SHA / schema 不合格是解释失败；完整结果拒绝 / 坏结果另存 B，D 始终从已持久终态原件重验，真实释放事实先落，不以拒绝正文校验终态而回滚。若终态事件之后、最终报告之前 worker 中断，期限 / 租约收尾保留 D succeeded、释放 null 与明确解释失败。此特殊完成在尚无最终 reportHash 时可接收一次原 worker / fence / 修订的合法补报，追加原件 / 释放事实及审计；同 hash 再报去重、异 hash 拒绝，不复活已失败任务或再次派发。
-
-provider 返回先由 worker 按 canonicalJson UTF-8 字节以 SHA 入 B；事件与回报只带绑定 operation / stage 的原件指针，C 回读核验 SHA 与大小。该转换明确是解析后的 provider JSON，不冒充原始 HTTP wire 字节。原件与小投影 / 解释分别保留，NUL 或大文本不直接入 JSONB；解析 Tool 可通过受控槽读取授权原件。客户端按 result 中的 evidence / artifacts 下载并重算 SHA，普通事件不内联正文。非回环带认证 HTTP 默认拒绝；只有已独立批准的 runtime-profile 明文例外才能生效，实际使用时每次审计与证据记录 plaintextAuthentication:true，文件自报例外不生效。
-
-worker 回报的顶层 error 与 output.resultError 通道（及其错误 details）只接受 F 已登记错误码；未登记值投影为 INTERNAL_ERROR，output.result 整棵产品结果仍是数据，包含嵌套名为 error / resultError 的业务对象；内联与 B 指针回读使用同一原文边界。实际 API JSON body 的 canonicalJson 字节另存 B 的 worker-report 制品（不含 HTTP 认证头），可按 SHA 回读；这不是原 HTTP 空白字节。报告幂等继续使用契约解析后、投影前的原 reportHash，和制品字节 SHA 是两种明确的转换口径，同 hash 重报去重、异 hash 拒绝。
-
-A3 只用 Meridian 与另一份完全合成模块交替验证同一驱动，不执行 APV 新 flow。原生 apv-case-execute **1.1.1** 的实现文件、摘要及旧任务绑定保持原样；APV 新 Tool / flow 由独立 circle-packs 负责，部署切换与退役另由维护者协调。这里不代表真实设备、真实模型或任意远端 MCP 服务已通过验收。
+本轮只用 Meridian 与另一份合成模块，未执行 APV 新 flow。原生 apv-case-execute **1.1.1** 的文件 / 摘要 / 旧 task 绑定保持；APV 新 Tool / flow、部署切换和退役由独立 circle-packs 与维护者接续。历史合成验收及维护者外部观察见进度，不据此推定真实设备、模型或任意 MCP 服务兼容性。
