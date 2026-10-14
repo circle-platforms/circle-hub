@@ -162,7 +162,7 @@ export class SkillPacks {
   });}
   async report(tx:Transaction,task:any,operation:any,report:any):Promise<any>{
     const ctx={principalId:task.principalId,tenantId:task.tenantId,kind:'user'} as AuthContext,row=await this.row(ctx,task.input.skillPackId,'skillpacks.run',tx);
-    if(report.status!=='succeeded'){await this.execution.complete(tx,operation,'failed',{error:report.error,reportHash:canonicalHash(report)});await this.tasks.fail(tx,task,report.error);return {operationId:operation.operation_id,status:'failed',deduplicated:false};}
+    if(report.status!=='succeeded'){await this.execution.complete(tx,operation,'failed',{error:report.error,workerReport:report.workerReport,reportHash:report.originalReportHash??canonicalHash(report)});await this.tasks.fail(tx,task,report.error);return {operationId:operation.operation_id,status:'failed',deduplicated:false};}
     requireCondition(report.output.runtime?.agentSettled===true&&report.output.runtime.circleCommit===this.runtime.circleCommit&&report.output.runtime.circleVersion===this.runtime.circleVersion,'RUNTIME_VERSION_MISMATCH','Runtime receipt differs from the pinned executable');
     const outputs=report.output.outputs;requireCondition(Array.isArray(outputs)&&outputs.length===row.manifest.outputs.length&&new Set(outputs.map((output:any)=>output.path)).size===outputs.length&&row.manifest.outputs.every((path:string)=>outputs.some((output:any)=>output.path===path)),'EVIDENCE_INSUFFICIENT','Declared runtime outputs are incomplete');
     const inputBytes=Buffer.from(canonicalJson(task.input.inputs)),inputHash=sha256(inputBytes);await this.objects.objects.putObject({Bucket:'evidence',Key:inputHash,Body:inputBytes});
@@ -179,7 +179,7 @@ export class SkillPacks {
     const loaded=skillWasLoaded((await tx.query("SELECT payload->'event' AS event FROM outbox WHERE task_id=$1 AND kind IN ('runtime.assistant','runtime.tool_result') ORDER BY seq",[task.taskId])).rows.map(row=>row.event),row.manifest.id);
     if(loaded)await tx.query("INSERT INTO harness_compatibility(asset_id,version,harness,runtime_commit,evidence_id,task_id) VALUES($1,$2,'circle',$3,$4,$5) ON CONFLICT DO NOTHING",[row.asset_id,row.asset_version,report.output.runtime.circleCommit,facts.evidenceId,task.taskId]);
     const judgment=await this.objects.evidence(tx,task,operation.operation_id,'model-judgment',{model:report.output.runtime.model,answer:report.output.answer??'',semanticVerification:'not-asserted'});
-    const result={status:'succeeded',artifacts,evidence:[facts,judgment],unmapped:[],runtime:report.output.runtime};await this.execution.complete(tx,operation,'succeeded',{...result,reportHash:canonicalHash(report)});
+    const result={status:'succeeded',artifacts,evidence:[facts,judgment],unmapped:[],runtime:report.output.runtime};await this.execution.complete(tx,operation,'succeeded',{...result,workerReport:report.workerReport,reportHash:report.originalReportHash??canonicalHash(report)});
     await tx.query("UPDATE tasks SET result=$2,result_status='succeeded' WHERE task_id=$1",[task.taskId,JSON.stringify(result)]);await this.tasks.stage(tx,task,'delivered','done','task.delivered',result);
     return {operationId:operation.operation_id,status:'succeeded',deduplicated:false};
   }

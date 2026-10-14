@@ -975,3 +975,9 @@ A1 **b0c3172**、A2 **da3d679** 提交后工作区干净，按维护者授权将
 完整 frame 字节首次授权保留在 worker，领取 / 后续 preflight / 事件 / 心跳使用同路由引用模式；C 每次重新核全部权限、修订、批准 pin、凭据与 fence，不缓存授权。抽出的 B contentReference 与 content 同 ACL。实际 3 MiB 原件首次 full 有读取，连续三次 light 和 production heartbeat 对原件对象存储读取为零；撤回来源 / 模块 / 资源 readers、角色或停用 runtime / credential 都被下一次轻预检拒绝。冷 Hook 模块代码读取不算来源原件重读，也不冒称整个 B 冷启动零读取。
 
 独立新四例 **4/4**、撤权强化同叶 **1/1**、旧 happy / 核对 / 结果拒绝 **3/3**，主树合并及 worker 复用外层初次授权的窄修后四例再 **4/4**，均无 skip；typecheck/diff 通过。本项与来源字节性能是同一 preflight 权限链修复，合并单独签署，不扩 HTTP 资源或调整容量预算。迁移 / 原生执行字节保持，未全套 / push / 部署。
+
+## 80：worker 错误投影与完整回报原件
+
+新增错误投影方法先 **0/1**，两条实际 worker 回报先 **0/2**，分别复现未知错误码未规范化及原回报未完整保留。C 在 error / resultError 的类型通道规范为 F 已登记码，未知固定 INTERNAL_ERROR；不改产品结果中普通 code 数据。完整 API JSON body 的 canonicalJson 字节另存 B，原件保留未知值、SHA 可回读；幂等继续按契约解析后 / 投影前 reportHash，同键不同原回报不能通过规范化变为同一内容。通用操作、技能和工具消费者同步保留该口径。
+
+独立方法 **1/1**、真实临时 PostgreSQL **2/2，无 skip**；主树组合轻预检后方法再 **1/1**、typecheck/diff 通过。生产当前批准 / ACL 链不放宽，历史事实停用后回报的三条真实红例随后单独修；本项显式暂存并本地签署，不跑全套或部署。

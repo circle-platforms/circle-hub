@@ -1,3 +1,4 @@
+import {projectWorkerErrors,retainWorkerReport} from './worker-report.ts';
 import { ApiError,ExecutionReport,HEARTBEAT_MS,LEASE_TTL_MS,STANDARD_OPERATIONS,actionDigest,canonicalHash,newId,requireCondition,
   type AuthContext,type OperationRequest } from '../../contracts/src/index.ts';
 import type { Transaction } from '../../storage/src/index.ts';
@@ -128,12 +129,13 @@ export class Operations extends Execution {
   }
   async report(ctx:AuthContext,id:string,body:unknown):Promise<any> {
     const declared=(await this.store.pool.query('SELECT name FROM operations WHERE operation_id=$1',[id])).rows[0]?.name,custom=this.customReports.get(declared);if(custom)return custom(ctx,id,body);
-    const report=ExecutionReport.parse(body);
-    Object.defineProperty(report,'originalReportHash',{value:canonicalHash(report),enumerable:false});
+    const originalReport=ExecutionReport.parse(body),originalReportHash=canonicalHash(originalReport),report=projectWorkerErrors(originalReport);
+    Object.defineProperty(report,'originalReportHash',{value:originalReportHash,enumerable:false});
     return this.store.transaction(async tx=>{
       const prior=await this.lease(ctx,id,report.fencingToken,tx,true);
-      if(['succeeded','failed'].includes(prior.status)){requireCondition(prior.result.reportHash===canonicalHash(report),'IDEMPOTENCY_MISMATCH','Different completed receipt');return {deduplicated:true};}
+      if(['succeeded','failed'].includes(prior.status)){requireCondition(prior.result.reportHash===originalReportHash,'IDEMPOTENCY_MISMATCH','Different completed receipt');return {deduplicated:true};}
       const {row,task}=await this.preflight(ctx,id,report.fencingToken,tx);requireCondition(report.inputRevisionId===row.input_revision_id,'INPUT_REVISION_STALE','Report revision differs');
+      const workerReport=await retainWorkerReport(this.knowledge,tx,task,id,body);Object.defineProperty(report,'workerReport',{value:workerReport,enumerable:false});
       if(row.source_effect==='read'&&report.status==='unknown'){report.status='failed';report.error={code:'UPSTREAM_TIMEOUT',message:'Read outcome is unavailable; retry the query',details:{sideEffects:'none'}};}
       if(this.managedNames.has(row.name)&&report.status!=='unknown'){
         await tx.query('SAVEPOINT managed_receipt');
@@ -143,7 +145,7 @@ export class Operations extends Execution {
         }catch(error){
           await tx.query('ROLLBACK TO SAVEPOINT managed_receipt');await tx.query('RELEASE SAVEPOINT managed_receipt');
           const failure=error instanceof ApiError?{code:error.code,message:error.message,details:error.details}:{code:'RECEIPT_PROCESSING_FAILED',message:'Worker receipt could not be retained',details:{operationId:id,...(/^[0-9A-Z]{5}$/.test(String((error as any)?.code))?{storageCode:String((error as any).code)}:{})}};
-          await this.complete(tx,row,'failed',{output:{},error:failure,evidence:[],reportHash:(report as any).originalReportHash??canonicalHash(report),receiptRejected:true,workerStatus:report.status});
+          await this.complete(tx,row,'failed',{output:{},error:failure,evidence:[],workerReport,reportHash:originalReportHash,receiptRejected:true,workerStatus:report.status});
           await this.tasks.fail(tx,task,failure);
           return {operationId:id,status:'failed',receiptRejected:true,deduplicated:false};
         }
@@ -151,7 +153,7 @@ export class Operations extends Execution {
       const evidence=await this.knowledge.evidence(tx,task,id,row.kind==='reconcile'?'script-conclusion':'unknown',{
         source:'authenticated-worker-observation',workerId:ctx.workerId,inputRevisionId:row.input_revision_id,operationId:id,name:row.name,target:row.target,
         targetIdentity:row.target_identity,actionDigest:row.action_digest,args:row.args,output:report.output,error:report.error},{effects:row.effects});
-      const result={output:report.output,error:report.error,evidence:[evidence],reportHash:canonicalHash(report)};
+      const result={output:report.output,error:report.error,evidence:[evidence],workerReport,reportHash:originalReportHash};
       if(row.kind==='reconcile'){
         const parent=(await tx.query('SELECT * FROM operations WHERE operation_id=$1 FOR UPDATE',[row.parent_operation_id])).rows[0],observed=report.output.observation as any;
         requireCondition(parent.status==='unknown'&&parent.worker_id!==ctx.workerId,'DECISION_CONFLICT','Independent observation required');

@@ -145,7 +145,7 @@ export class ToolCatalog {
       }
     }
     result=sanitizeResult(result);
-    const receipt={output:{result},evidence,reportHash:report.originalReportHash??canonicalHash(report),error:report.error};
+    const receipt={output:{result},evidence,workerReport:report.workerReport,reportHash:report.originalReportHash??canonicalHash(report),error:report.error};
     await this.execution.complete(tx,operation,report.status,receipt);
     if(report.status==='succeeded'){
       const status=result?.coverage?.stopped?'partial':'succeeded';await tx.query("UPDATE tasks SET result=$2,result_status=$3 WHERE task_id=$1",[task.taskId,JSON.stringify({result,evidence,artifacts:[],unmapped:[]}),status]);
