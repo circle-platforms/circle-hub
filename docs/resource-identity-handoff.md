@@ -24,7 +24,7 @@ secret 由用户在仓库外产生，32–2048 字符，只保存盐化 scrypt �
 
 这两个端点不包 apiVersion/status/data。Content-Type=application/x-www-form-urlencoded；Basic 中 id/secret 各自 URL 编码后再 Base64，禁止重复表单字段。响应 no-store/no-cache。认证失败401且带 WWW-Authenticate=Basic，权限不足403，坏表单400；OAuth error 字符串包括 invalid_client/invalid_scope/unsupported_grant_type/invalid_request/server_error。协议依据 [RFC 7662](https://www.rfc-editor.org/rfc/rfc7662) 和 [RFC 6749](https://www.rfc-editor.org/rfc/rfc6749)。
 
-执行令牌没有公共“指定 sub”接口。C 在已授权操作的当前 D 租约下签发，绑定调用者、tenant/scope、客户端/资源、operationId/fence、输入修订与截止时间；worker 得私有 vault 引用，值不进任务输入/输出/事件/审计。每次请求资源前重查 C/D，临期重签，无设备授权或个人刷新令牌。CIRCLE_SERVER_RESOURCE_TOKEN_TTL_SECONDS 默认300，范围1–300。独立核对使用新的 reconcile 操作、另一 worker 和 fence，不重新投递。资源端既有内省缓存最多30秒，平台失效不表示已有远端缓存已清除；平台自己的调用仍先重查权限。
+执行令牌没有公共“指定 sub”接口。C 在已授权操作的当前 D 租约下签发，绑定调用者、tenant/scope、客户端/资源、operationId/fence、输入修订与截止时间；worker 得私有 vault 引用，值不进任务输入/输出/事件/审计。每次请求资源前重查 C/D，临期重签，无设备授权或个人刷新令牌。CIRCLE_HUB_RESOURCE_TOKEN_TTL_SECONDS 默认300，范围1–300。独立核对使用新的 reconcile 操作、另一 worker 和 fence，不重新投递。资源端既有内省缓存最多30秒，平台失效不表示已有远端缓存已清除；平台自己的调用仍先重查权限。
 
 ## 原件与规则
 
@@ -46,12 +46,12 @@ GET /v1/builds/{build}/bundle 带 bundles:read 客户端 Bearer，直接返回 `
 
 资源资产 configuration.serviceClientId 引用客户端 id，以新资产版本独立批准；该模式 declaration.credentials 为空、执行 profile 不配外部 issuer。现有受理、命令证明、任务审批和投递前核对保留。客户端密钥给资源端用于 Basic 内省/读原件；平台调用资源使用自己签发的短期用户令牌。
 
-CIRCLE_SERVER_TLS_CONFIG 可指向仓库外 `{certFile,keyFile}`，server 原生 HTTPS；证书、密钥和运行时路径不进 Git。仍仅监听 127.0.0.1。worker 和 admin CLI 接受 http://127.0.0.1 或 https://127.0.0.1，拒绝远端、URL 内嵌凭据和重定向。TLS 保留 Node 默认 CA 与主机名核验；自签 CA 通过启动进程时的 NODE_EXTRA_CA_CERTS 指向仓库外 CA 文件。仅设置 server 的证书/密钥不会自动让客户端信任它，也不在已运行进程中动态修改信任。
+CIRCLE_HUB_TLS_CONFIG 可指向仓库外 `{certFile,keyFile}`，server 原生 HTTPS；证书、密钥和运行时路径不进 Git。仍仅监听 127.0.0.1。worker 和 admin CLI 接受 http://127.0.0.1 或 https://127.0.0.1，拒绝远端、URL 内嵌凭据和重定向。TLS 保留 Node 默认 CA 与主机名核验；自签 CA 通过启动进程时的 NODE_EXTRA_CA_CERTS 指向仓库外 CA 文件。仅设置 server 的证书/密钥不会自动让客户端信任它，也不在已运行进程中动态修改信任。
 
 本机完整开发栈可以这样启动，示例路径须换成仓库外运行配置：
 
 ```sh
-CIRCLE_SERVER_TLS_CONFIG=../runtime-config/server-tls.json \
+CIRCLE_HUB_TLS_CONFIG=../runtime-config/server-tls.json \
 NODE_EXTRA_CA_CERTS=../runtime-config/ca.pem \
 npm run dev:stack
 ```
@@ -71,4 +71,4 @@ CIRCLE_LOCAL_PORT 取实际 server 端口，不取开发栈请求随机端口时
 
 用户/维护者后续报告隧道已通，从网关主机访问 /v1/status 返回未认证的 401。这是 API 可达观察，尚不代表有身份的内省、资源令牌或 env_prepare 已通过。本地 worker 的 HTTPS 修复已在 333f3ce 完成，完整组合验收见进度第 33 节，待维护者更新其真实栈。
 
-另一条环境更正：原网关签发服务实际为 HTTPS，与网关共用实验 CA；旧客户端 HTTP 配置不代表当前网关。实验 CA 已由维护者只读取回并在本机验证网关证书，DER SHA-256 指纹的最终信任确认仍等用户。该 CA 用于平台调用网关；circle-server HTTPS 的 CA 用于 worker/客户端及网关访问 C，两条连接各自核验，不能因一侧验证成功自动建立另一侧信任。签发迁入 C 的决定未变，CA 原件、指纹值、地址及实际构建标签不进仓库。网关配置 build 仍是声明，设备构建只以实际 env_prepare 为准。
+另一条环境更正：原网关签发服务实际为 HTTPS，与网关共用实验 CA；旧客户端 HTTP 配置不代表当前网关。实验 CA 已由维护者只读取回并在本机验证网关证书，DER SHA-256 指纹的最终信任确认仍等用户。该 CA 用于平台调用网关；circle-hub HTTPS 的 CA 用于 worker/客户端及网关访问 C，两条连接各自核验，不能因一侧验证成功自动建立另一侧信任。签发迁入 C 的决定未变，CA 原件、指纹值、地址及实际构建标签不进仓库。网关配置 build 仍是声明，设备构建只以实际 env_prepare 为准。

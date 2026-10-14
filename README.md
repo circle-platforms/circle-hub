@@ -60,7 +60,7 @@ The acceptance suite (contracts, methods, acceptance, references) runs entirely 
 
 ## In progress
 
-The active brief is [docs/server-s2-brief-r3.md](docs/server-s2-brief-r3.md): roles per scope (admin / member / viewer) with a two-person rule, change sets as the single approval concept, the enforcement chain with fixed error codes and `waitingReason`, a notification stream and work queues, a static-secret credential mode for execution resources, and paged registry queries. The code still uses the former name in identifiers (`circle-server`, `CIRCLE_SERVER_*`, `/server`); those are renamed in one step after this brief.
+The active brief is [docs/server-s2-brief-r3.md](docs/server-s2-brief-r3.md): roles per scope (admin / member / viewer) with a two-person rule, change sets as the single approval concept, the enforcement chain with fixed error codes and `waitingReason`, a notification stream and work queues, a static-secret credential mode for execution resources, and paged registry queries. Hub executables and configuration use `circle-hub` and `CIRCLE_HUB_*`; the former environment names remain deprecated fallbacks. Circle-owned extension identifiers and `/server` commands retain their current names.
 
 ## Quick start
 

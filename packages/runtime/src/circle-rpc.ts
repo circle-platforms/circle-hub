@@ -43,6 +43,8 @@ async function runIsolatedCircle(input:CircleRun,upstreamModelKey:string,onStopp
   let settled=false,failed=false,lastAnswer='',pending='',bytesSeen=0,eventChain=Promise.resolve(),eventError:unknown;const decoder=new StringDecoder('utf8');
   const temporary=join(input.folder,'tmp');await mkdir(temporary,{recursive:true,mode:0o700});
   const isolation=await isolatedProcess(process.execPath,[circleBin,'--mode','rpc','--extensions','--yolo',workspace],{read:[input.folder,dirname(circleBin),join(repo,'package.json'),...(await execute('git',['-C',repo,'ls-tree','-r','--name-only',runtime.circleCommit],{maxBuffer:1024*1024})).stdout.split('\n').filter(Boolean).map(path=>join(repo,path)),await realpath(join(repo,'node_modules')),...(process.env.NODE_EXTRA_CA_CERTS?[process.env.NODE_EXTRA_CA_CERTS]:[])],write:[input.folder],network:[input.serverUrl,runtime.model.base_url]});
+  // Circle's existing circle-server extension consumes these outgoing names.
+  // Hub process inputs use CIRCLE_HUB_*; this client protocol remains unchanged.
   const child=spawn(isolation.command,isolation.args,{cwd:workspace,detached:process.platform!=='win32',stdio:['pipe','pipe','pipe'],env:{PATH:process.env.PATH,TMPDIR:temporary,LANG:process.env.LANG,
     NODE_EXTRA_CA_CERTS:process.env.NODE_EXTRA_CA_CERTS,
     HOME:homeUser,CIRCLE_HOME:home,CIRCLE_NO_MODELS_REFRESH:'1',CIRCLE_JOB_WAIT:'120',CIRCLE_SERVER_URL:input.serverUrl,CIRCLE_SERVER_TOKEN:input.serverToken,CIRCLE_SERVER_USER:input.principalId,CIRCLE_SERVER_SCOPE:input.scopeId}});

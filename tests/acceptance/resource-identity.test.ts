@@ -82,7 +82,7 @@ test('Resource identity: a runtime TLS profile serves native HTTPS with a verifi
     const { h, body } = await prepare(t), client = await h.request('/v1/service-clients', body), keyFile = `${h.scratch}/tls.key`, certFile = `${h.scratch}/tls.pem`;
     execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1', '-subj', '/CN=localhost', '-addext', 'subjectAltName=IP:127.0.0.1', '-keyout', keyFile, '-out', certFile], { stdio: 'ignore' });
     await writeFile(`${h.scratch}/tls.json`, JSON.stringify({ keyFile, certFile }));
-    h.env.CIRCLE_SERVER_TLS_CONFIG = `${h.scratch}/tls.json`;
+    h.env.CIRCLE_HUB_TLS_CONFIG = `${h.scratch}/tls.json`;
     await h.stop();
     await h.startServer();
     assert.match(h.url, /^https:/);
@@ -118,8 +118,8 @@ test('Resource identity: approved execution uses server-issued user tokens renew
     const { h } = await prepare(t), gateway = await caseGateway(t);gateway.state.actualBuild='SYNTHETIC-BUILD-7';
     await h.db.query("UPDATE policies SET grants=grants || '[\"cases.execute\",\"builds.read\"]'::jsonb WHERE principal_id='prn_alice'");
     await writeFile(`${h.scratch}/gateways.json`, JSON.stringify({ profiles: { lab: { endpoint: `${gateway.origin}/mcp`, pollMs: 25 } } }));
-    h.env.CIRCLE_SERVER_EXECUTION_GATEWAYS = `${h.scratch}/gateways.json`;
-    h.env.CIRCLE_SERVER_RESOURCE_TOKEN_TTL_SECONDS = '2';
+    h.env.CIRCLE_HUB_EXECUTION_GATEWAYS = `${h.scratch}/gateways.json`;
+    h.env.CIRCLE_HUB_RESOURCE_TOKEN_TTL_SECONDS = '2';
     await h.stop();
     await h.startServer();
     const input = { scopeId: 'scp_lab', kind: 'connector-instance', name: 'Server-issued synthetic gateway', version: '1.0.0', declaration: { reads: ['test-bed'], writes: ['device-config'], executionIsChange: true, credentials: [] }, configuration: { packageId: 'case-gateway', runtimeProfileRef: 'lab' }, readers: ['prn_alice', 'prn_bob'] }, resource = await h.request('/v1/assets', input), client = await h.request('/v1/service-clients', { scopeId: 'scp_lab', resourceAssetId: resource.assetId, name: 'Gateway verification client', secret, scopes: ['introspect', 'bundles:read'], resourceScopes: ['jumphost:run','synthetic:read'] });
@@ -152,11 +152,11 @@ test('Resource identity: approved execution uses server-issued user tokens renew
     await until(async () => {const status=await h.status(task.taskId);assert.ok(!['failed','unknown'].includes(status.phase),JSON.stringify((await h.db.query('SELECT name,status,result FROM operations WHERE task_id=$1',[task.taskId])).rows));return new Set(gateway.state.verified.map(info => info.tokenDigest)).size >= 2;});
     assert.ok(gateway.state.verified.every(info => info.sub === 'prn_alice' && info.username === 'alice' && info.scope === 'jumphost:run'));
     assert.equal(gateway.state.ruleSha, sha256(rules));
-    const row = (await h.db.query("SELECT * FROM resource_access_tokens WHERE operation_id IS NOT NULL ORDER BY expires_at DESC LIMIT 1")).rows[0], { PrivateVault } = await import('../../packages/assets/src/vault.ts'), token = await new PrivateVault(`${h.env.CIRCLE_SERVER_DATA_DIR}/private-credentials`).get(row.secret_key, row.secret_binding);
+    const row = (await h.db.query("SELECT * FROM resource_access_tokens WHERE operation_id IS NOT NULL ORDER BY expires_at DESC LIMIT 1")).rows[0], { PrivateVault } = await import('../../packages/assets/src/vault.ts'), token = await new PrivateVault(`${h.env.CIRCLE_HUB_DATA_DIR}/private-credentials`).get(row.secret_key, row.secret_binding);
     assert.equal((await form(h, '/v1/introspect', client.clientId, { token })).body.active, true);
-    const store=Object.create(Store.prototype) as Store;store.pool=h.db;const auth=new Auth(store),issuer=new ServiceClients(store,auth,new Assets(store,auth,`${h.env.CIRCLE_SERVER_DATA_DIR}/private-credentials`),2),operation=(await h.db.query('SELECT * FROM operations WHERE operation_id=$1',[row.operation_id])).rows[0];
+    const store=Object.create(Store.prototype) as Store;store.pool=h.db;const auth=new Auth(store),issuer=new ServiceClients(store,auth,new Assets(store,auth,`${h.env.CIRCLE_HUB_DATA_DIR}/private-credentials`),2),operation=(await h.db.query('SELECT * FROM operations WHERE operation_id=$1',[row.operation_id])).rows[0];
     worker.kill('SIGSTOP');try{await store.transaction(async tx=>{await tx.query('SELECT 1 FROM operations WHERE operation_id=$1 FOR UPDATE',[operation.operation_id]);const prior=(await tx.query('SELECT * FROM resource_access_tokens WHERE operation_id=$1 ORDER BY expires_at DESC LIMIT 1',[operation.operation_id])).rows[0];await tx.query("UPDATE resource_access_tokens SET expires_at=clock_timestamp()+interval '150 milliseconds' WHERE digest=$1",[prior.digest]);const renewed=await issuer.issueForOperation(tx,{principalId:'prn_alice',tenantId:'tnt_lab',kind:'user'},operation,client.clientId,['jumphost:run'],'methods.use');assert.notEqual(renewed!.key,prior.secret_key,'A nearly expired token must not be reused for a new resource request');});}finally{worker.kill('SIGCONT');}
-    const narrowed=await store.transaction(tx=>issuer.issueForOperation(tx,{principalId:'prn_alice',tenantId:'tnt_lab',kind:'user'},operation,client.clientId,['synthetic:read'],'methods.use')),narrowToken=await new PrivateVault(`${h.env.CIRCLE_SERVER_DATA_DIR}/private-credentials`).get(narrowed!.key,narrowed!.binding);assert.equal((await form(h,'/v1/introspect',client.clientId,{token:narrowToken})).body.scope,'synthetic:read');
+    const narrowed=await store.transaction(tx=>issuer.issueForOperation(tx,{principalId:'prn_alice',tenantId:'tnt_lab',kind:'user'},operation,client.clientId,['synthetic:read'],'methods.use')),narrowToken=await new PrivateVault(`${h.env.CIRCLE_HUB_DATA_DIR}/private-credentials`).get(narrowed!.key,narrowed!.binding);assert.equal((await form(h,'/v1/introspect',client.clientId,{token:narrowToken})).body.scope,'synthetic:read');
     gateway.state.hold = false;
     await h.phase(task.taskId, 'delivered');
     assert.deepEqual((await form(h, '/v1/introspect', client.clientId, { token })).body, { active: false });
@@ -170,7 +170,7 @@ test('Resource identity: approved execution uses server-issued user tokens renew
     await h.request(`/v1/tasks/${second.taskId}/approvals/${proposal.approvalId}`, { inputRevisionId: proposal.inputRevisionId, targetIdentity: proposal.targetIdentity, actionDigest: proposal.actionDigest, approve: true }, 'bob');
     await until(async () => gateway.state.calls.filter(name => name === 'case_submit').length === 2);
     await until(async () => (await h.db.query('SELECT 1 FROM case_gateway_receipts r JOIN operations o USING(operation_id) WHERE o.task_id=$1 AND r.gateway_task_id IS NOT NULL', [second.taskId])).rowCount);
-    const secondToken = (await h.db.query('SELECT r.* FROM resource_access_tokens r JOIN operations o USING(operation_id) WHERE o.task_id=$1 ORDER BY r.expires_at DESC LIMIT 1', [second.taskId])).rows[0], access = await new PrivateVault(`${h.env.CIRCLE_SERVER_DATA_DIR}/private-credentials`).get(secondToken.secret_key, secondToken.secret_binding);
+    const secondToken = (await h.db.query('SELECT r.* FROM resource_access_tokens r JOIN operations o USING(operation_id) WHERE o.task_id=$1 ORDER BY r.expires_at DESC LIMIT 1', [second.taskId])).rows[0], access = await new PrivateVault(`${h.env.CIRCLE_HUB_DATA_DIR}/private-credentials`).get(secondToken.secret_key, secondToken.secret_binding);
     await h.setRole('prn_alice','viewer');
     assert.deepEqual((await form(h, '/v1/introspect', client.clientId, { token: access })).body, { active: false });
     await h.phase(second.taskId, 'unknown');
@@ -189,7 +189,7 @@ test('Resource identity: approved execution uses server-issued user tokens renew
     worker.kill('SIGSTOP');
     observer.kill('SIGSTOP');
     try {
-        const current = (await h.db.query('SELECT r.* FROM resource_access_tokens r JOIN operations o USING(operation_id) WHERE o.task_id=$1 ORDER BY r.expires_at DESC LIMIT 1', [third.taskId])).rows[0], bearer = await new PrivateVault(`${h.env.CIRCLE_SERVER_DATA_DIR}/private-credentials`).get(current.secret_key, current.secret_binding);
+        const current = (await h.db.query('SELECT r.* FROM resource_access_tokens r JOIN operations o USING(operation_id) WHERE o.task_id=$1 ORDER BY r.expires_at DESC LIMIT 1', [third.taskId])).rows[0], bearer = await new PrivateVault(`${h.env.CIRCLE_HUB_DATA_DIR}/private-credentials`).get(current.secret_key, current.secret_binding);
         assert.equal((await form(h, '/v1/introspect', client.clientId, { token: bearer })).body.active, true);
         await h.db.query('UPDATE leases SET fencing_token=fencing_token+1 WHERE operation_id=$1', [current.operation_id]);
         assert.deepEqual((await form(h, '/v1/introspect', client.clientId, { token: bearer })).body, { active: false });

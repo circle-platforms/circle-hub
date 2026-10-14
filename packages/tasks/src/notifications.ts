@@ -1,3 +1,4 @@
+import '../../contracts/src/hub-environment.ts';
 import {z} from 'zod';
 import type {Store,Transaction} from '../../storage/src/index.ts';
 import type {Auth} from './auth.ts';
@@ -7,7 +8,7 @@ import {replayWindow} from './outbox-retention.ts';import {notificationKinds,pro
 export {NotificationQuery};
 export class Notifications{
   store:Store;auth:Auth;
-  streams=new Map<string,number>();maxStreams=Number(process.env.CIRCLE_SERVER_NOTIFICATION_STREAMS??4);
+  streams=new Map<string,number>();maxStreams=Number(process.env.CIRCLE_HUB_NOTIFICATION_STREAMS??4);
   constructor(store:Store,auth:Auth){this.store=store;this.auth=auth;}
   reserve(ctx:AuthContext){if(!Number.isSafeInteger(this.maxStreams)||this.maxStreams<1)throw new ApiError('INVALID_PAYLOAD','Notification stream limit is invalid');const key=ctx.tenantId+'/'+ctx.principalId,prior=this.streams.get(key)??0;if(prior>=this.maxStreams)throw new ApiError('NOTIFICATION_STREAM_LIMIT','Close an existing notification stream before opening another');this.streams.set(key,prior+1);let done=false;return ()=>{if(done)return;done=true;const count=(this.streams.get(key)??1)-1;if(count)this.streams.set(key,count);else this.streams.delete(key);};}
   async registryPlan(ctx:AuthContext,query:RegistryPageQuery,tx:Transaction){const p=await this.auth.check(ctx,'tasks.read',query.scopeId,tx);return {params:[p.tenantId,p.scopes,p.principalId,notificationKinds],from:'outbox e LEFT JOIN tasks t USING(task_id)',visible:"((t.tenant_id=$1 AND t.scope_id=ANY($2::text[]) AND (t.context->>'privateOwnerId' IS NULL OR t.context->>'privateOwnerId'=$3)) OR (e.task_id IS NULL AND e.notification_context->>'tenantId'=$1 AND e.notification_context->>'scopeId'=ANY($2::text[]) AND e.notification_context->>'principalId'=$3)) AND e.kind=ANY($4::text[])"};}

@@ -11,7 +11,7 @@ async function prepare(h:Harness,origin:string){
   await h.db.query('UPDATE policies SET grants=grants || $2::jsonb WHERE principal_id=$1',['prn_alice',JSON.stringify(grants)]);
   await h.db.query("UPDATE policies SET grants=grants || '[\"assets.read\",\"assets.approve\",\"knowledge.read\"]'::jsonb WHERE principal_id='prn_bob'");
   const profiles=`${h.scratch}/connector-profiles.json`;await writeFile(profiles,JSON.stringify({profiles:{synthetic:{origin,root:'/dav/',index:'/builds/'}}}),{mode:0o600});
-  h.env.CIRCLE_SERVER_CONNECTOR_PROFILES=profiles;await h.stop();await h.startServer();
+  h.env.CIRCLE_HUB_CONNECTOR_PROFILES=profiles;await h.stop();await h.startServer();
 }
 async function asset(h:Harness,packageId:string,alias?:string){
   const item=await h.request('/v1/assets',{scopeId:'scp_lab',kind:'connector-instance',name:'Synthetic read source',version:'1.0.0',

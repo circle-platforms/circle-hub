@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import '../../../packages/contracts/src/hub-environment.ts';
 import {readFile} from 'node:fs/promises';
 import {setTimeout as delay} from 'node:timers/promises';
 import {ADMIN_ROUTES,ApiError,ScopeId} from '../../../packages/contracts/src/index.ts';
@@ -7,12 +8,12 @@ import {moduleCommand} from '../../../packages/modules/src/cli.ts';
 const args=process.argv.slice(2);
 async function main():Promise<void>{
   const mode=args.shift();if(mode==='modules'){await moduleCommand(args);return;}
-  if(mode!=='admin')throw new ApiError('INVALID_PAYLOAD','Usage: circle-server admin <command> | modules check|install');
-  const target=new URL(process.env.CIRCLE_SERVER_URL??'http://127.0.0.1:8080');
+  if(mode!=='admin')throw new ApiError('INVALID_PAYLOAD','Usage: circle-hub admin <command> | modules check|install');
+  const target=new URL(process.env.CIRCLE_HUB_URL??'http://127.0.0.1:8080');
   if(!['http:','https:'].includes(target.protocol)||target.hostname!=='127.0.0.1'||target.username||target.password)throw new ApiError('INVALID_PAYLOAD','Admin requires HTTP or HTTPS on the authorized 127.0.0.1 loopback server without embedded credentials');
-  let token=process.env.CIRCLE_SERVER_TOKEN;
-  if(!token&&process.env.CIRCLE_SERVER_TOKEN_FILE)token=(await readFile(process.env.CIRCLE_SERVER_TOKEN_FILE,'utf8')).trim();
-  if(!token)throw new ApiError('UNAUTHENTICATED','Set CIRCLE_SERVER_TOKEN or CIRCLE_SERVER_TOKEN_FILE');
+  let token=process.env.CIRCLE_HUB_TOKEN;
+  if(!token&&process.env.CIRCLE_HUB_TOKEN_FILE)token=(await readFile(process.env.CIRCLE_HUB_TOKEN_FILE,'utf8')).trim();
+  if(!token)throw new ApiError('UNAUTHENTICATED','Set CIRCLE_HUB_TOKEN or CIRCLE_HUB_TOKEN_FILE');
   const request=async(path:string,body?:unknown)=>{
     const response=await fetch(new URL(path,target),{method:body===undefined?'GET':'POST',redirect:'error',headers:{authorization:`Bearer ${token}`,...(body===undefined?{}:{'content-type':'application/json'})},...(body===undefined?{}:{body:JSON.stringify(body)})});
     const envelope=await response.json() as any;if(!response.ok)throw new ApiError(envelope.error.code,envelope.error.message);return envelope.data;
@@ -26,7 +27,7 @@ async function main():Promise<void>{
   }
   if(command==='connectors'){
     const action=args.shift(),id=args.shift();if(!['enable','disable'].includes(action??'')||!id||args.length)throw new ApiError('INVALID_PAYLOAD','Usage: connectors enable|disable <connectorId>');
-    const scopeId=ScopeId.parse(process.env.CIRCLE_SERVER_SCOPE??'scp_lab');output(await request(`${ADMIN_ROUTES.connectors}/${encodeURIComponent(id)}`,{scopeId,enabled:action==='enable'}));return;
+    const scopeId=ScopeId.parse(process.env.CIRCLE_HUB_SCOPE??'scp_lab');output(await request(`${ADMIN_ROUTES.connectors}/${encodeURIComponent(id)}`,{scopeId,enabled:action==='enable'}));return;
   }
   if(command==='events'){
     if(!args.includes('--tail')||args.some(arg=>!['--tail','--once'].includes(arg)))throw new ApiError('INVALID_PAYLOAD','Usage: events --tail [--once]');

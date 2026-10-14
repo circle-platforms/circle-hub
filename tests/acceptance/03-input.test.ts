@@ -4,7 +4,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { setup } from './harness.ts';
 
 test('Act 3: every response is recorded and bound to the current input revision and server time', async t => {
-  const h = await setup(t, { CIRCLE_SERVER_INPUT_TTL_MS: '300' });
+  const h = await setup(t, { CIRCLE_HUB_INPUT_TTL_MS: '300' });
   const task = await h.submit({ requiredFields: ['target'] });
   const waiting = await h.phase(task.taskId, 'waiting-input');
   const old = waiting.pendingInputs[0];

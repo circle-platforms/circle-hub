@@ -21,7 +21,7 @@ async function prepare(h:Harness,origin:string,runtime?:any){
   const grants=['assets.read','assets.register','assets.change','credentials.use','knowledge.read','knowledge.submit','skillpacks.read','skillpacks.submit','skillpacks.run'];
   await h.db.query('UPDATE policies SET grants=grants || $1::jsonb WHERE principal_id=ANY($2::text[])',[JSON.stringify(grants),['prn_alice','prn_bob']]);
   await h.db.query("UPDATE policies SET grants=grants || '[\"assets.approve\"]'::jsonb WHERE principal_id='prn_bob'");
-  await writeFile(`${h.scratch}/profiles.json`,JSON.stringify({profiles:{fixture:{origin,root:'/dav/'}}}),{mode:0o600});h.env.CIRCLE_SERVER_CONNECTOR_PROFILES=`${h.scratch}/profiles.json`;
+  await writeFile(`${h.scratch}/profiles.json`,JSON.stringify({profiles:{fixture:{origin,root:'/dav/'}}}),{mode:0o600});h.env.CIRCLE_HUB_CONNECTOR_PROFILES=`${h.scratch}/profiles.json`;
   if(runtime){await writeFile(`${h.scratch}/runtime.json`,JSON.stringify(runtime),{mode:0o600});h.env.CIRCLE_RUNTIME_CONFIG=`${h.scratch}/runtime.json`;}
   await h.stop();await h.startServer();
   const asset=await h.request('/v1/assets',{scopeId:'scp_lab',kind:'connector-instance',name:'Synthetic documents',version:'1.0.0',declaration:{reads:['registered-source'],writes:[],credentials:[]},configuration:{packageId:'documents',runtimeProfileRef:'fixture'},readers:['prn_alice','prn_bob']});
@@ -97,7 +97,7 @@ test('Act R2.5: run delegation stays off disk and cancellation observes local ex
 });
 
 test('Run sessions: slow pinned RPC keeps its short token alive through fenced preflight and never upgrades it to a login session',runtimeTest,async t=>{
-  const stub=await readonlySources(t),model=await scriptModel(t),h=await setup(t,{CIRCLE_SERVER_RUN_TOKEN_TTL_MS:'1000'});model.state.delayMs=1600;
+  const stub=await readonlySources(t),model=await scriptModel(t),h=await setup(t,{CIRCLE_HUB_RUN_TOKEN_TTL_MS:'1000'});model.state.delayMs=1600;
   await prepare(h,stub.origin,{circleBin,circleCommit,circleVersion:'1.1.1',model:{kind:'scripted',base_url:model.url,model:'scripted-fixture',protocol:'openai',api_key:model.key}});
   const pack=await submit(h);await approve(h,pack);await h.startWorker();const run=await h.request(`/v1/skillpacks/${pack.skillPackId}/runs`,{inputs:{},idempotencyKey:'slow-renewing-runtime'});await until(async()=>model.requests.length>0);
   const operation=(await h.db.query("SELECT * FROM operations WHERE task_id=$1 AND name='assets.execute'",[run.taskId])).rows[0],workerToken=await h.login('lab-east-01'),checked=await h.raw(`/v1/workers/operations/${operation.operation_id}/preflight`,{token:workerToken,body:{fencingToken:Number(operation.fencing_token)}}),secret=await privateRequest(checked.body.data.authorization.privateSocketPath,{authorization:`Bearer ${workerToken}`,operationId:operation.operation_id,fencingToken:Number(operation.fencing_token)});

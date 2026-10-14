@@ -1,3 +1,4 @@
+import '../packages/contracts/src/hub-environment.ts';
 import EmbeddedPostgres from 'embedded-postgres';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -5,7 +6,7 @@ import { createServer } from 'node:net';
 import { randomBytes } from 'node:crypto';
 import pg from 'pg';
 
-const scratch = await mkdtemp(`${tmpdir()}/circle-server-pg-smoke-`);
+const scratch = await mkdtemp(`${tmpdir()}/circle-hub-pg-smoke-`);
 const listener = createServer();
 await new Promise<void>(resolve => listener.listen(0, '127.0.0.1', resolve));
 const port = (listener.address() as { port: number }).port;

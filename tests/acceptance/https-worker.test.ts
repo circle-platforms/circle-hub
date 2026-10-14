@@ -11,7 +11,7 @@ import { moduleFixture } from '../fixtures/module.ts';
 import { scriptModel } from '../fixtures/script-model.ts';
 import { sha256, canonicalHash } from '../../packages/contracts/src/index.ts';
 async function worker(t: any, h: Harness, extra: NodeJS.ProcessEnv = {}) {
-    const child = spawn(process.execPath, ['apps/worker/src/main.ts'], { cwd: root, env: { ...h.env, CIRCLE_SERVER_URL: h.url, CIRCLE_WORKER_USERNAME: 'lab-east-01', CIRCLE_WORKER_PASSWORD: 'synthetic-only-password', NODE_EXTRA_CA_CERTS: undefined, NODE_TLS_REJECT_UNAUTHORIZED: undefined, ...extra }, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(process.execPath, ['apps/worker/src/main.ts'], { cwd: root, env: { ...h.env, CIRCLE_HUB_URL: h.url, CIRCLE_WORKER_USERNAME: 'lab-east-01', CIRCLE_WORKER_PASSWORD: 'synthetic-only-password', NODE_EXTRA_CA_CERTS: undefined, NODE_TLS_REJECT_UNAUTHORIZED: undefined, ...extra }, stdio: ['ignore', 'pipe', 'pipe'] });
     h.children.add(child);
     let stdout = '', stderr = '';
     child.stdout!.on('data', data => stdout += data);
@@ -21,7 +21,7 @@ async function worker(t: any, h: Harness, extra: NodeJS.ProcessEnv = {}) {
 async function tlsServer(t: any, san?: string) {
     const h = await setup(t), tls = await loopbackTLS(t, san);h.clientCA=tls.ca;
     await h.stop();
-    h.env.CIRCLE_SERVER_TLS_CONFIG = tls.configFile;
+    h.env.CIRCLE_HUB_TLS_CONFIG = tls.configFile;
     await h.startServer();
     const raw = async (path: string, body?: unknown, token?: string) => checkedRequest(`${h.url}${path}`, { ca: tls.ca, headers: { 'x-scope-id': 'scp_lab', ...(token ? { authorization: `Bearer ${token}` } : {}), ...(body === undefined ? {} : { 'content-type': 'application/json' }) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
     const login = async (username = 'alice') => { const response = await raw('/v1/auth/dev-login', { username, password: 'synthetic-only-password' }); assert.equal(response.status, 200); return (await response.json() as any).data.token; };
@@ -41,7 +41,7 @@ test('HTTPS worker: trusted loopback login claim preflight source report artifac
     const events = await call(`/v1/tasks/${task.taskId}/events?after=0`);
     assert.ok(events.events.some((event: any) => event.kind === 'task.delivered'));
     assert.ok((await call('/v1/admin/workers', undefined, 'admin')).some((entry: any) => entry.workerId === 'lab-east-01'));
-    const command = await promisify(execFile)(process.execPath, ['apps/server/src/cli.ts', 'admin', 'tasks'], { cwd: root, env: { ...h.env, CIRCLE_SERVER_URL: h.url, CIRCLE_SERVER_TOKEN: await login('admin'), NODE_EXTRA_CA_CERTS: tls.caFile } });
+    const command = await promisify(execFile)(process.execPath, ['apps/server/src/cli.ts', 'admin', 'tasks'], { cwd: root, env: { ...h.env, CIRCLE_HUB_URL: h.url, CIRCLE_HUB_TOKEN: await login('admin'), NODE_EXTRA_CA_CERTS: tls.caFile } });
     assert.ok(JSON.parse(command.stdout).some((item: any) => item.taskId === task.taskId));
 });
 test('HTTPS worker: absent CA and a trusted certificate with the wrong hostname never register a worker', async (t) => {
@@ -54,7 +54,7 @@ test('HTTPS worker: absent CA and a trusted certificate with the wrong hostname 
     }
 });
 test('Worker server boundary: remote URLs are rejected before login and redirects cannot forward development credentials', async (t) => {
-    const h = await setup(t), denied = await worker(t, h, { CIRCLE_SERVER_URL: 'https://synthetic.invalid:1' });
+    const h = await setup(t), denied = await worker(t, h, { CIRCLE_HUB_URL: 'https://synthetic.invalid:1' });
     const [deniedCode] = await once(denied.child, 'exit');
     assert.notEqual(deniedCode, 0);
     assert.match(denied.output().stderr, /loopback|127\.0\.0\.1/i);
@@ -63,7 +63,7 @@ test('Worker server boundary: remote URLs are rejected before login and redirect
     await new Promise<void>(resolve => receiver.listen(0, '127.0.0.1', resolve));
     await new Promise<void>(resolve => redirect.listen(0, '127.0.0.1', resolve));
     t.after(async () => { receiver.closeAllConnections(); redirect.closeAllConnections(); await Promise.all([new Promise<void>(resolve => receiver.close(() => resolve())), new Promise<void>(resolve => redirect.close(() => resolve()))]); });
-    const rejected = await worker(t, h, { CIRCLE_SERVER_URL: `http://127.0.0.1:${(redirect.address() as any).port}` });
+    const rejected = await worker(t, h, { CIRCLE_HUB_URL: `http://127.0.0.1:${(redirect.address() as any).port}` });
     const [redirectCode] = await once(rejected.child, 'exit');
     assert.notEqual(redirectCode, 0);
     assert.equal(captured, 0);

@@ -1,3 +1,4 @@
+import '../../../packages/contracts/src/hub-environment.ts';
 import { createServer, type IncomingMessage, type ServerResponse,type RequestListener } from 'node:http';
 import {createServer as createHttpsServer} from 'node:https';
 import {serverTLS} from './tls.ts';
@@ -88,34 +89,34 @@ import {neutralMigration,compatibilityMigration} from '../../../packages/skillpa
 import {HarnessPrimitives} from '../../../packages/skillpacks/src/primitives.ts';
 
 function environment(name: string): string { const value = process.env[name]; if (!value) throw new Error(`Required environment variable: ${name}`); return value; }
-const store = new Store(JSON.parse(environment('CIRCLE_SERVER_DATABASE_CONFIG')));
+const store = new Store(JSON.parse(environment('CIRCLE_HUB_DATABASE_CONFIG')));
 await store.migrate([taskMigration,deliveryMigration,knowledgeMigration,executionMigration,...packageMigrations,approvalMigration,conclusionMigration,checklistMigration,connectorMigration,entityMigration,assetMigration,graphMigration,toolMigration,skillMigration,automationMigration,automationOutcomeMigration,knowledgePageMigration,automationOriginMigration,ingestionMigration,oauthMigration,resourceIdentityMigration,roleMigration,changeSetMigration,changeSetDependenciesMigration,enforcementMigration,sessionMigration,toolRolesMigration,readEffectMigration,readReleaseAuditMigration,notificationMigration,queryMigration,neutralMigration,mcpMigration,compatibilityMigration,readCompensationMigration,workQueryMigration,readAttributionMigration,registryPageMigration]);
-const auth = new Auth(store,{developmentTtlMs:process.env.CIRCLE_SERVER_DEV_TOKEN_TTL_MS?Number(process.env.CIRCLE_SERVER_DEV_TOKEN_TTL_MS):undefined,runTokenTtlMs:process.env.CIRCLE_SERVER_RUN_TOKEN_TTL_MS?Number(process.env.CIRCLE_SERVER_RUN_TOKEN_TTL_MS):undefined});
-requireCondition(process.env.CIRCLE_SERVER_DEV_AUTH === '1', 'INVALID_PAYLOAD', 'Phase one requires explicitly enabled development authentication');
-await auth.initializeDevelopment(environment('CIRCLE_SERVER_DEV_IDENTITIES'));
-await mkdir(environment('CIRCLE_SERVER_DATA_DIR'), { recursive: true, mode: 0o700 });
-const tasks = new Tasks(store, auth, Number(process.env.CIRCLE_SERVER_INPUT_TTL_MS ?? 300_000));
-const knowledge = new Records(store,auth,new LocalObjects(environment('CIRCLE_SERVER_DATA_DIR')));
+const auth = new Auth(store,{developmentTtlMs:process.env.CIRCLE_HUB_DEV_TOKEN_TTL_MS?Number(process.env.CIRCLE_HUB_DEV_TOKEN_TTL_MS):undefined,runTokenTtlMs:process.env.CIRCLE_HUB_RUN_TOKEN_TTL_MS?Number(process.env.CIRCLE_HUB_RUN_TOKEN_TTL_MS):undefined});
+requireCondition(process.env.CIRCLE_HUB_DEV_AUTH === '1', 'INVALID_PAYLOAD', 'Phase one requires explicitly enabled development authentication');
+await auth.initializeDevelopment(environment('CIRCLE_HUB_DEV_IDENTITIES'));
+await mkdir(environment('CIRCLE_HUB_DATA_DIR'), { recursive: true, mode: 0o700 });
+const tasks = new Tasks(store, auth, Number(process.env.CIRCLE_HUB_INPUT_TTL_MS ?? 300_000));
+const knowledge = new Records(store,auth,new LocalObjects(environment('CIRCLE_HUB_DATA_DIR')));
 const objectTypes=new TypeCatalog(store,auth),entities=new Entities(store,auth,knowledge,objectTypes);
-const assets=new Assets(store,auth,`${environment('CIRCLE_SERVER_DATA_DIR')}/private-credentials`);
+const assets=new Assets(store,auth,`${environment('CIRCLE_HUB_DATA_DIR')}/private-credentials`);
 const methods=new ToolProviders(assets);
-const oauth=new OAuthCredentials(store,auth,assets,process.env.CIRCLE_SERVER_OAUTH_PROFILES);
+const oauth=new OAuthCredentials(store,auth,assets,process.env.CIRCLE_HUB_OAUTH_PROFILES);
 assets.materializeCredential=(ctx,row,link,value)=>oauth.materialize(ctx,row,link,value);
 const graph=new KnowledgeGraph(store,auth,knowledge);
 const sourceArtifacts=new SourceArtifacts(store,auth,assets,knowledge,graph);
 const productModules=new ProductModules(sourceArtifacts);methods.products=productModules;
-const serviceClients=new ServiceClients(store,auth,assets,Number(process.env.CIRCLE_SERVER_RESOURCE_TOKEN_TTL_SECONDS??300));
+const serviceClients=new ServiceClients(store,auth,assets,Number(process.env.CIRCLE_HUB_RESOURCE_TOKEN_TTL_SECONDS??300));
 knowledge.sourceAccess=async(ctx,id,tx)=>{await entities.checkSourceAccess(ctx,id,tx);await graph.checkSourceAccess(ctx,id,tx);};
 const knowledgePages=new KnowledgeRegistryPages(knowledge,graph);
 const execution = new Operations(store,auth,tasks,knowledge);
-const catalog=new ToolCatalog(store,auth,assets,tasks,execution,graph,installedToolPackages);await catalog.initialize(process.env.CIRCLE_SERVER_CONNECTOR_PROFILES);
+const catalog=new ToolCatalog(store,auth,assets,tasks,execution,graph,installedToolPackages);await catalog.initialize(process.env.CIRCLE_HUB_CONNECTOR_PROFILES);
 const ingestions=new Ingestions(store,tasks,graph,installedToolPackages);catalog.ingestions=ingestions;
 catalog.sourceArtifacts=sourceArtifacts;
 catalog.resourceClients=serviceClients;
 assets.prepareRegistration=(ctx,input,id,tx)=>sourceArtifacts.prepare(ctx,input,id,tx);
 assets.decorateView=row=>row.kind==='knowledge-source'&&row.configuration.schema==='external-source-artifact/1'?sourceArtifacts.view(row):{};
 assets.validateRegistration=async(ctx,input,id,tx)=>{await sourceArtifacts.validate(ctx,input,id,tx);await catalog.register(ctx,input,id,tx);};
-const approvals=new Approvals(store,auth,tasks,Number(process.env.CIRCLE_SERVER_APPROVAL_TTL_MS??86400000));execution.approvalCheck=(tx,task,spec)=>approvals.check(tx,task,spec);
+const approvals=new Approvals(store,auth,tasks,Number(process.env.CIRCLE_HUB_APPROVAL_TTL_MS??86400000));execution.approvalCheck=(tx,task,spec)=>approvals.check(tx,task,spec);
 const changeSets=new ChangeSets(store,auth,assets,tasks,approvals);
 const executionChanges=new ExecutionChanges(assets,changeSets,execution,tasks);
 const registrationValidation=assets.validateRegistration;assets.validateRegistration=async(ctx,input,id,tx)=>{await changeSets.validateDefinition(tx,ctx,{...input,assetId:id});await registrationValidation?.(ctx,input,id,tx);};
@@ -127,7 +128,7 @@ const primitives=new HarnessPrimitives({store,auth,assets,knowledge,changeSets})
 const mcp=new HubMcp({store,auth,catalog,graph,knowledge,primitives});
 const previousRegistration=assets.validateRegistration;assets.validateRegistration=async(ctx,input,id,tx)=>{if(input.configuration.harnessPrimitive||['instruction','agent','command'].includes(input.kind))await primitives.dependencies(tx,ctx,{...input,scope_id:input.scopeId});await previousRegistration?.(ctx,input,id,tx);};
 skills.changeSets=changeSets;
-let executionProfiles:Record<string,unknown>={};if(process.env.CIRCLE_SERVER_EXECUTION_GATEWAYS)try{executionProfiles=JSON.parse(await readFile(process.env.CIRCLE_SERVER_EXECUTION_GATEWAYS,'utf8')).profiles??{};}catch{/* Unavailable profiles remain blocked dependencies. */}
+let executionProfiles:Record<string,unknown>={};if(process.env.CIRCLE_HUB_EXECUTION_GATEWAYS)try{executionProfiles=JSON.parse(await readFile(process.env.CIRCLE_HUB_EXECUTION_GATEWAYS,'utf8')).profiles??{};}catch{/* Unavailable profiles remain blocked dependencies. */}
 catalog.gatewayProfiles=executionProfiles;
 assets.healthCheck=async(ctx,asset)=>{if(asset.configuration.packageId!=='case-gateway')return {result:'unknown',reason:'checker-not-registered'};const entry=(await catalog.available(ctx)).find(item=>item.row.asset_id===asset.assetId&&item.definition.handler==='gateway.health');if(!entry)return {result:'unavailable',reason:'gateway-binding-unavailable'};try{await catalog.call(ctx,entry.view.name,{args:{},idempotencyKey:randomUUID()});return {result:'available',reason:'gateway-read-confirmed'};}catch(error){return {result:'unavailable',reason:error instanceof ApiError?error.code:'gateway-check-failed'};}};
 changeSets.profileIdentity=(type,ref)=>{if(type==='runtime')return ref==='circle-runtime'?skills.runtimeDigest:null;const value=type==='connector'?(Object.hasOwn(catalog.profiles,ref)?catalog.profiles[ref]:null):type==='execution'?(Object.hasOwn(executionProfiles,ref)?executionProfiles[ref]:null):null;return value?canonicalHash(value):null;};
@@ -199,7 +200,7 @@ function base64(value: string): Buffer {
   Base64Content.parse(value);
   return Buffer.from(value,'base64');
 }
-const tls=await serverTLS(process.env.CIRCLE_SERVER_TLS_CONFIG),createListener=tls?(handler:RequestListener)=>createHttpsServer(tls,handler):createServer;
+const tls=await serverTLS(process.env.CIRCLE_HUB_TLS_CONFIG),createListener=tls?(handler:RequestListener)=>createHttpsServer(tls,handler):createServer;
 const server = createListener(async (request, response) => {
   const completed=Promise.withResolvers<void>();activeRequests.add(completed.promise);
   try {
@@ -475,7 +476,7 @@ const server = createListener(async (request, response) => {
       }
       if(url.pathname==='/v1/admin/restart'&&request.method==='POST'){
         await auth.check(ctx,'admin.restart');z.object({graceful:z.literal(true)}).parse(await body(request));requireCondition(process.connected,'INVALID_PAYLOAD','Start the server through its supervisor for graceful restart');
-        await auth.audit(ctx,'server.restart',{bootId,graceful:true,workersRestartRequested:process.env.CIRCLE_SERVER_MANAGED_WORKERS==='1'});send(response,202,{data:{restartAccepted:true,previousBootId:bootId,workersRestartRequested:process.env.CIRCLE_SERVER_MANAGED_WORKERS==='1'}});
+        await auth.audit(ctx,'server.restart',{bootId,graceful:true,workersRestartRequested:process.env.CIRCLE_HUB_MANAGED_WORKERS==='1'});send(response,202,{data:{restartAccepted:true,previousBootId:bootId,workersRestartRequested:process.env.CIRCLE_HUB_MANAGED_WORKERS==='1'}});
         restartRequested=true;process.send!({type:'graceful-restart'});return;
       }
       if (url.pathname === '/v1/admin/workers' && request.method === 'GET') {
@@ -501,10 +502,10 @@ let running: Promise<void> | undefined;let lastRetention=0;
 const timer = setInterval(() => {
   if (running || closing) return;
   running = tasks.runOnce().then(()=>packages.runOnce()).then(()=>automations.tick()).then(()=>changeSets.tick()).then(()=>executionSecrets.tick()).then(async()=>{if(Date.now()-lastRetention>=60000){await store.transaction(tx=>trimOutbox(tx));lastRetention=Date.now();}}).catch(error => { console.error(JSON.stringify({type:'runner-transaction-failed',code:error instanceof ApiError?error.code:(error as any).code??'INTERNAL_ERROR'})); }).finally(() => { running = undefined; });
-}, Number(process.env.CIRCLE_SERVER_POLL_MS ?? 100));
+}, Number(process.env.CIRCLE_HUB_POLL_MS ?? 100));
 let indexing:Promise<void>|undefined;
-const indexTimer=setInterval(()=>{if(indexing||closing)return;indexing=ingestions.runOnce().catch(error=>{console.error(JSON.stringify({type:'source-index-transaction-failed',code:error instanceof ApiError?error.code:'INTERNAL_ERROR'}));}).finally(()=>{indexing=undefined;});},Number(process.env.CIRCLE_SERVER_INDEX_POLL_MS??100));
-await new Promise<void>(resolve => server.listen(Number(process.env.CIRCLE_SERVER_PORT ?? 8080), '127.0.0.1', resolve));
+const indexTimer=setInterval(()=>{if(indexing||closing)return;indexing=ingestions.runOnce().catch(error=>{console.error(JSON.stringify({type:'source-index-transaction-failed',code:error instanceof ApiError?error.code:'INTERNAL_ERROR'}));}).finally(()=>{indexing=undefined;});},Number(process.env.CIRCLE_HUB_INDEX_POLL_MS??100));
+await new Promise<void>(resolve => server.listen(Number(process.env.CIRCLE_HUB_PORT ?? 8080), '127.0.0.1', resolve));
 const address = server.address() as { port: number };
 console.log(JSON.stringify({ type: 'ready', url: `${tls?'https':'http'}://127.0.0.1:${address.port}`, apiVersion: API_VERSION, syntheticOnly: true }));
 async function shutdown(): Promise<void> {

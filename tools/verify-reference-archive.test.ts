@@ -19,7 +19,7 @@ import {
 } from './verify-reference-archive.ts';
 
 function fixture(t: { after(fn: () => void): void }) {
-  const root = mkdtempSync(join(tmpdir(), 'circle-server-reference-check-'));
+  const root = mkdtempSync(join(tmpdir(), 'circle-hub-reference-check-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const source = join(root, 'source');
   mkdirSync(source);

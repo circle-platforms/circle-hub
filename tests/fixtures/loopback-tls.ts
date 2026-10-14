@@ -6,7 +6,7 @@ import { request as httpRequest } from 'node:http';
 import { request as httpsRequest } from 'node:https';
 import type { TestContext } from 'node:test';
 export async function loopbackTLS(t: TestContext, san = 'IP:127.0.0.1,DNS:localhost') {
-    const directory = await mkdtemp(join(tmpdir(), 'circle-server-tls-test-'));
+    const directory = await mkdtemp(join(tmpdir(), 'circle-hub-tls-test-'));
     t.after(() => rm(directory, { recursive: true, force: true }));
     const caFile = join(directory, 'ca.pem'), caKey = join(directory, 'ca.key'), keyFile = join(directory, 'server.key'), certFile = join(directory, 'server.pem'), csrFile = join(directory, 'server.csr'), extensions = join(directory, 'extensions.txt'), configFile = join(directory, 'tls.json');
     execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1', '-subj', '/CN=Circle synthetic test CA', '-addext', 'basicConstraints=critical,CA:TRUE', '-keyout', caKey, '-out', caFile], { stdio: 'ignore' });

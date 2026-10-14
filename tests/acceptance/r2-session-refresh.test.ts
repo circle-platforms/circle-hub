@@ -20,7 +20,7 @@ test('Development sessions: bearer refresh needs no password preserves concurren
 });
 
 test('Development sessions: a live session can renew through task reads and reconnect without another credential exchange',async t=>{
-  const h=await setup(t,{CIRCLE_SERVER_DEV_TOKEN_TTL_MS:'1500'}),login=await h.raw('/v1/auth/dev-login',{body:{username:'alice',password:'synthetic-only-password'}});let token=login.body.data.token;const task=await h.raw('/v1/tasks/submit',{token,body:{scopeId:'scp_lab',title:'Long-lived read follow',input:{},idempotencyKey:'long-read-session'}});
+  const h=await setup(t,{CIRCLE_HUB_DEV_TOKEN_TTL_MS:'1500'}),login=await h.raw('/v1/auth/dev-login',{body:{username:'alice',password:'synthetic-only-password'}});let token=login.body.data.token;const task=await h.raw('/v1/tasks/submit',{token,body:{scopeId:'scp_lab',title:'Long-lived read follow',input:{},idempotencyKey:'long-read-session'}});
   for(let count=0;count<4;count++){await delay(500);const renewed=await h.raw('/v1/auth/refresh',{token,body:{}});assert.equal(renewed.status,200);assert.notEqual(renewed.body.data.token,token);token=renewed.body.data.token;assert.equal((await h.raw(`/v1/tasks/${task.body.data.taskId}/events?after=0`,{token})).status,200);}
   assert.ok(Date.now()>Date.parse(login.body.data.expiresAt));await h.stop();await h.startServer();assert.equal((await h.raw(`/v1/tasks/${task.body.data.taskId}/status`,{token})).status,200);assert.equal((await h.raw('/v1/auth/refresh',{token,body:{}})).status,200);
 });

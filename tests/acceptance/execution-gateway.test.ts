@@ -22,7 +22,7 @@ test('Gateway fixture: non-MCP probes and malformed JSON are rejected without an
 });
 
 test('Gateway session: concurrent refresh has one writer, persists the new refresh token across instances and never replays an uncertain rotation',async t=>{
-  const directory=await mkdtemp(`${tmpdir()}/circle-server-token-`);t.after(()=>rm(directory,{recursive:true,force:true}));
+  const directory=await mkdtemp(`${tmpdir()}/circle-hub-token-`);t.after(()=>rm(directory,{recursive:true,force:true}));
   let refreshes=0,unavailable=false,drop=false;const server=createServer(async(req,res)=>{
     let body='';for await(const data of req)body+=data;assert.equal(new URLSearchParams(body).get('refresh_token'),refreshes===0?'refresh-one':'refresh-two');refreshes++;
     if(drop){req.socket.destroy();return;}if(unavailable){res.writeHead(503);res.end('{}');return;}
@@ -43,7 +43,7 @@ test('Gateway transport: 503 introspection outage is unavailable, 401 is login e
 });
 
 test('Gateway trust: pinned local CA is checked on every call and changed trust stops before sending a token',async t=>{
-  const directory=await mkdtemp(`${tmpdir()}/circle-server-ca-`);t.after(()=>rm(directory,{recursive:true,force:true}));
+  const directory=await mkdtemp(`${tmpdir()}/circle-hub-ca-`);t.after(()=>rm(directory,{recursive:true,force:true}));
   const run=promisify(execFile);await run('openssl',['req','-x509','-newkey','rsa:2048','-nodes','-keyout',`${directory}/key.pem`,'-out',`${directory}/ca.pem`,'-days','1','-subj','/CN=localhost','-addext','subjectAltName=DNS:localhost'],{timeout:10000});
   const cert=await readFile(`${directory}/ca.pem`),key=await readFile(`${directory}/key.pem`);let calls=0;
   const server=createTlsServer({cert,key},async(req,res)=>{calls++;let text='';for await(const chunk of req)text+=chunk;const rpc=JSON.parse(text);res.setHeader('content-type','application/json');res.end(JSON.stringify({jsonrpc:'2.0',id:rpc.id,result:{structuredContent:{ok:true,busy:false}}}));});await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));t.after(()=>{server.closeAllConnections();server.close();});

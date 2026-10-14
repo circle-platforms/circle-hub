@@ -14,7 +14,7 @@ async function prepare(h:Harness,origin:string,runtime?:any){
   await h.db.query('UPDATE policies SET grants=grants || $1::jsonb WHERE principal_id=ANY($2::text[])',[JSON.stringify(grants),['prn_alice','prn_bob']]);
   await h.db.query("UPDATE policies SET grants=grants || '[\"admin.manage\"]'::jsonb WHERE principal_id='prn_alice'");
   await h.db.query("UPDATE policies SET grants=grants || '[\"automations.read\"]'::jsonb WHERE principal_id='prn_outsider'");
-  await writeFile(`${h.scratch}/profiles.json`,JSON.stringify({profiles:{fixture:{origin,root:'/dav/'}}}),{mode:0o600});h.env.CIRCLE_SERVER_CONNECTOR_PROFILES=`${h.scratch}/profiles.json`;
+  await writeFile(`${h.scratch}/profiles.json`,JSON.stringify({profiles:{fixture:{origin,root:'/dav/'}}}),{mode:0o600});h.env.CIRCLE_HUB_CONNECTOR_PROFILES=`${h.scratch}/profiles.json`;
   await writeFile(`${h.scratch}/runtime.json`,JSON.stringify(runtime??{circleBin:'synthetic-runtime-not-executed',circleCommit:'0'.repeat(40),circleVersion:'1.1.1',model:{kind:'scripted',base_url:`${origin}/v1`,model:'synthetic',protocol:'openai',api_key:randomBytes(20).toString('hex')}}),{mode:0o600});h.env.CIRCLE_RUNTIME_CONFIG=`${h.scratch}/runtime.json`;await h.stop();await h.startServer();
 }
 async function activate(h:Harness,asset:any){await h.request(`/v1/assets/${asset.assetId}/lifecycle`,{version:asset.version,sha256:asset.sha256,state:'approved'},'bob');return h.request(`/v1/assets/${asset.assetId}/lifecycle`,{version:asset.version,sha256:asset.sha256,state:'running'});}

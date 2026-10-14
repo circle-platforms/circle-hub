@@ -60,7 +60,7 @@ circle-hub 用四个对象分别回答这五件事，并把 agent 的运行时�
 
 ## 正在做
 
-当前简报是 [docs/server-s2-brief-r3.md](docs/server-s2-brief-r3.md)：按范围的角色（管理员 / 成员 / 访客）与两人规则、作为唯一审批概念的变更集、带固定错误码和 `waitingReason` 的执行链、通知流与工作队列、执行资源的静态密钥凭据模式、分页的登记簿查询。代码里的标识还是旧名字（`circle-server`、`CIRCLE_SERVER_*`、`/server`），这份简报做完后一笔统一改名。
+当前简报是 [docs/server-s2-brief-r3.md](docs/server-s2-brief-r3.md)：按范围的角色（管理员 / 成员 / 访客）与两人规则、作为唯一审批概念的变更集、带固定错误码和 `waitingReason` 的执行链、通知流与工作队列、执行资源的静态密钥凭据模式、分页的登记簿查询。Hub 可执行入口与配置使用 `circle-hub`、`CIRCLE_HUB_*`；旧环境变量只作为弃用兼容。Circle 自己的扩展标识与 `/server` 命令保留现名。
 
 ## 快速开始
 

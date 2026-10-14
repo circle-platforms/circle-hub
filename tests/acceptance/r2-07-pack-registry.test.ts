@@ -20,7 +20,7 @@ test('Act R2.7: a second fictional product line runs through the same scoped too
   const stub=await readonlySources(t),model=await scriptModel(t),h=await setup(t);stub.state.manualText='# Meridian synthetic source\nMeridian amber is a literal source label.\n';
   await h.db.query("UPDATE policies SET grants=grants || '[\"assets.read\",\"assets.register\",\"assets.change\",\"knowledge.read\",\"knowledge.submit\",\"skillpacks.read\",\"skillpacks.submit\",\"skillpacks.run\"]'::jsonb WHERE principal_id='prn_alice'");
   await h.db.query("UPDATE policies SET grants=grants || '[\"assets.read\",\"assets.approve\"]'::jsonb WHERE principal_id='prn_admin'");
-  await writeFile(`${h.scratch}/profiles.json`,JSON.stringify({profiles:{meridian:{origin:stub.origin,root:'/dav/'}}}),{mode:0o600});h.env.CIRCLE_SERVER_CONNECTOR_PROFILES=`${h.scratch}/profiles.json`;
+  await writeFile(`${h.scratch}/profiles.json`,JSON.stringify({profiles:{meridian:{origin:stub.origin,root:'/dav/'}}}),{mode:0o600});h.env.CIRCLE_HUB_CONNECTOR_PROFILES=`${h.scratch}/profiles.json`;
   await writeFile(`${h.scratch}/runtime.json`,JSON.stringify({circleBin:process.env.CIRCLE_BIN,circleCommit:process.env.CIRCLE_COMMIT,circleVersion:'1.1.1',model:{kind:'scripted',base_url:model.url,model:'scripted-fixture',protocol:'openai',api_key:model.key}}),{mode:0o600});h.env.CIRCLE_RUNTIME_CONFIG=`${h.scratch}/runtime.json`;await h.stop();await h.startServer();
   await h.approveRuntimeProfiles('scp_second','admin','alice');
   const configuration=JSON.parse(await readFile(new URL('../../packs/meridian/product-line.json',import.meta.url),'utf8')),binding=configuration.connectorPackages[0];

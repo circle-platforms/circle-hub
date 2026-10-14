@@ -1,3 +1,4 @@
+import '../packages/contracts/src/hub-environment.ts';
 import {requireCondition,type AuthContext} from '../packages/contracts/src/index.ts';
 import {MindmapCompileInput,MindmapPack,MINDMAP_FLOW_VERSION} from './apv/contracts.ts';
 import {CompilerExecution} from './apv/runtime/operations.ts';
@@ -11,7 +12,7 @@ import {loadProductLines} from './product-lines.ts';
 import {CaseExecution} from './apv/execution/controller.ts';
 import {ExecutionPack} from './apv/execution/contracts.ts';
 import {caseExecutionMigration} from './apv/execution/migration.ts';
-const installed=await loadProductLines(process.env.CIRCLE_SERVER_PRODUCT_LINES);
+const installed=await loadProductLines(process.env.CIRCLE_HUB_PRODUCT_LINES);
 export const packageMigrations=[resourceMigration,caseExecutionMigration];
 export const packageConnectors=CONNECTOR_MANIFESTS;
 export const installedProductLines=installed.productLines;

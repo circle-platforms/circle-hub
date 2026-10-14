@@ -17,7 +17,7 @@ node apps/server/src/cli.ts modules install --catalog ../circle-packs/modules.js
 
 check 只读并打印 moduleId/kind/version/digest/fileCount。install 在本地一次冻结并校验文件，再发送封存内容；后续运行从 B 取已批准的原件，不重新读本地仓库。CLI 不修改模块仓库，输出不包含本机路径或令牌。
 
-运行时提供 `CIRCLE_SERVER_URL`、`CIRCLE_SERVER_TOKEN` 或 `CIRCLE_SERVER_TOKEN_FILE`；scope 可用 `--scope` 或 `CIRCLE_SERVER_SCOPE`。远端地址要求 HTTPS，回环开发地址可用 HTTP。自签证书信任可用仓库外 `CIRCLE_SERVER_CA_FILE` / `CIRCLE_SERVER_CA_SHA256`，不绕过证书核验、不跟随重定向。地址、凭据、试跑原件和业务文件不得提交进公开 server 仓库。
+运行时提供 `CIRCLE_HUB_URL`、`CIRCLE_HUB_TOKEN` 或 `CIRCLE_HUB_TOKEN_FILE`；scope 可用 `--scope` 或 `CIRCLE_HUB_SCOPE`。远端地址要求 HTTPS，回环开发地址可用 HTTP。自签证书信任可用仓库外 `CIRCLE_HUB_CA_FILE` / `CIRCLE_HUB_CA_SHA256`，不绕过证书核验、不跟随重定向。地址、凭据、试跑原件和业务文件不得提交进公开 server 仓库。
 
 ## HTTP 与批准
 
@@ -35,7 +35,7 @@ check 只读并打印 moduleId/kind/version/digest/fileCount。install 在本地
 
 skill-pack 必须带真实试跑记录，复用技能提交、工具目录检查、独立审批任务和后续 RPC 运行。响应含 moduleId/kind/version/digest、skillPackId、skillPackDigest、status、check、approvalTaskId、assetId/assetVersion/lifecycle。digest 是模块文件清单摘要，skillPackDigest 是既有技能提交摘要，后者同时绑定 manifest、文件、试跑和 module 定义；审批任务使用后者。status 是技能登记状态，lifecycle 来自当前资产，重复安装不会把已停用资产自动启用。试跑记录是客户端声明，机械核验不证明业务正确。新增可选 module 也可随原 `POST /v1/skillpacks` body 提交，服务端同样重新验证；不带 module 的原接口及摘要行为保持兼容。
 
-product-line 不要求技能试跑；全部文件作为普通 knowledge-source 的封存原件登记，metadata 保存 module 与 manifest。响应含 moduleId/kind/version/digest、assetId/assetVersion/lifecycle/assetSha256，初始 draft。同 scope 的 assets.approve 审批人可发现并独立批准。此入口不激活产品线、不 import 可执行代码、不修改运行配置；运行时选择产品线仍由已授权的部署操作配置 `CIRCLE_SERVER_PRODUCT_LINES`。资产批准只确认定义和字节绑定，不保证产品语义，也不批准其声明的技能运行。
+product-line 不要求技能试跑；全部文件作为普通 knowledge-source 的封存原件登记，metadata 保存 module 与 manifest。响应含 moduleId/kind/version/digest、assetId/assetVersion/lifecycle/assetSha256，初始 draft。同 scope 的 assets.approve 审批人可发现并独立批准。此入口不激活产品线、不 import 可执行代码、不修改运行配置；运行时选择产品线仍由已授权的部署操作配置 `CIRCLE_HUB_PRODUCT_LINES`。资产批准只确认定义和字节绑定，不保证产品语义，也不批准其声明的技能运行。
 
 批准后的技能继续通过 `POST /v1/skillpacks/{id}/runs` 受理。提交、批准和运行再次核对目录、修订及权限。安装不会自动批准、授权、启动 bot、花费模型费用或执行真实系统操作。
 

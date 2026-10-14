@@ -11,8 +11,8 @@ async function environment(t:any){
   const source=await readonlySources(t);source.state.expandedCommands=true;const gateway=await caseGateway(t),h=await setup(t);
   await h.db.query("UPDATE policies SET grants=grants || '[\"assets.read\",\"assets.register\",\"assets.change\",\"credentials.register\",\"credentials.use\",\"builds.read\",\"cases.execute\"]'::jsonb WHERE principal_id='prn_alice'");
   await h.db.query("UPDATE policies SET grants=grants || '[\"assets.read\",\"assets.approve\"]'::jsonb WHERE principal_id='prn_bob'");
-  await writeFile(`${h.scratch}/sources.json`,JSON.stringify({profiles:{source:{origin:source.origin,index:'/builds/'}}}));h.env.CIRCLE_SERVER_CONNECTOR_PROFILES=`${h.scratch}/sources.json`;
-  await writeFile(`${h.scratch}/gateways.json`,JSON.stringify({profiles:{lab:{endpoint:`${gateway.origin}/mcp`,issuer:gateway.origin,pollMs:25}}}));h.env.CIRCLE_SERVER_EXECUTION_GATEWAYS=`${h.scratch}/gateways.json`;await h.stop();await h.startServer();
+  await writeFile(`${h.scratch}/sources.json`,JSON.stringify({profiles:{source:{origin:source.origin,index:'/builds/'}}}));h.env.CIRCLE_HUB_CONNECTOR_PROFILES=`${h.scratch}/sources.json`;
+  await writeFile(`${h.scratch}/gateways.json`,JSON.stringify({profiles:{lab:{endpoint:`${gateway.origin}/mcp`,issuer:gateway.origin,pollMs:25}}}));h.env.CIRCLE_HUB_EXECUTION_GATEWAYS=`${h.scratch}/gateways.json`;await h.stop();await h.startServer();
   const register=(name:string,configuration:any,declaration:any,assetId?:string,version='1.0.0')=>h.request('/v1/assets',{assetId,scopeId:'scp_lab',kind:'connector-instance',name,version,configuration,declaration,readers:['prn_alice','prn_bob']});
   const activate=async(item:any)=>{await h.request(`/v1/assets/${item.assetId}/lifecycle`,{version:item.version,sha256:item.sha256,state:'approved'},'bob');return h.request(`/v1/assets/${item.assetId}/lifecycle`,{version:item.version,sha256:item.sha256,state:'running'});};
   const build=await activate(await register('Synthetic command source',{packageId:'build-site',runtimeProfileRef:'source'},{reads:['registered-source'],writes:[],credentials:[]}));

@@ -71,7 +71,7 @@ export class Harness {
       return false;
     });
     if(this.autoRuntimeProfiles)await this.approveRuntimeProfiles();
-    if(this.autoMethodProfiles&&this.env.CIRCLE_SERVER_EXECUTION_GATEWAYS)await this.approveMethods();
+    if(this.autoMethodProfiles&&this.env.CIRCLE_HUB_EXECUTION_GATEWAYS)await this.approveMethods();
   }
   async approveMethods(scope='scp_lab',reviewer='bob',owner='admin'){
     if(this.autoHooks){const fixture=await hookModule(),existing=(await this.db.query("SELECT a.asset_id,v.lifecycle FROM assets a JOIN asset_versions v ON v.asset_id=a.asset_id AND v.version=a.current_version WHERE a.scope_id=$1 AND v.configuration->'metadata'->'module'->>'id'=$2",[scope,fixture.module.id])).rows[0];if(!existing){const response=await this.raw('/v1/modules/install',{token:await this.login(owner),body:fixture,headers:{'x-scope-id':scope}});assert.equal(response.status,201,JSON.stringify(response.body));const asset=await this.request(`/v1/assets/${response.body.data.assetId}`,undefined,owner);await this.request(`/v1/assets/${asset.assetId}/lifecycle`,{version:asset.version,sha256:asset.sha256,state:'approved'},reviewer);}}
@@ -82,7 +82,7 @@ export class Harness {
   // Synthetic fixtures explicitly submit and independently decide their runtime
   // settings. The production server never approves runtime configuration.
   async approveRuntimeProfiles(scope='scp_lab',reviewer='bob',owner='admin'){
-    if(![this.env.CIRCLE_SERVER_CONNECTOR_PROFILES,this.env.CIRCLE_SERVER_EXECUTION_GATEWAYS,this.env.CIRCLE_RUNTIME_CONFIG].some(Boolean))return;
+    if(![this.env.CIRCLE_HUB_CONNECTOR_PROFILES,this.env.CIRCLE_HUB_EXECUTION_GATEWAYS,this.env.CIRCLE_RUNTIME_CONFIG].some(Boolean))return;
     const references=await this.request('/v1/runtime-profiles',undefined,owner);
     for(const ref of references){const existing=(await this.db.query("SELECT a.asset_id,v.* FROM assets a JOIN asset_versions v ON v.asset_id=a.asset_id AND v.version=a.current_version WHERE a.scope_id=$3 AND a.kind='runtime-profile' AND v.configuration->>'profileType'=$1 AND v.configuration->>'profileRef'=$2",[ref.profileType,ref.profileRef,scope])).rows[0];if(existing?.configuration.profileSha256===ref.profileSha256&&['approved','running'].includes(existing.lifecycle))continue;
       const ordinal=existing?Number((await this.db.query('SELECT count(*) AS n FROM asset_versions WHERE asset_id=$1',[existing.asset_id])).rows[0].n)+1:1;
@@ -128,7 +128,7 @@ export class Harness {
   }
   async startWorker(workerId = 'lab-east-01', extraEnv: Record<string, string> = {}): Promise<ChildProcess> {
     const child = spawn(process.execPath, ['apps/worker/src/main.ts'], { cwd: root, env: { ...this.env,
-      CIRCLE_SERVER_URL: this.url, CIRCLE_WORKER_USERNAME: workerId,
+      CIRCLE_HUB_URL: this.url, CIRCLE_WORKER_USERNAME: workerId,
       CIRCLE_WORKER_PASSWORD: 'synthetic-only-password', ...extraEnv }, stdio: ['ignore', 'pipe', 'pipe'] });
     this.children.add(child);
     let errors = '',output=''; child.stderr!.on('data', data => { errors += data.toString(); });child.stdout!.on('data',data=>{output+=data.toString();});
@@ -144,7 +144,7 @@ export class Harness {
 }
 
 export async function setup(t: TestContext, overrides: Record<string, string> = {}, identityInput:unknown[]=identities): Promise<Harness> {
-  const scratch = await mkdtemp(`${tmpdir()}/circle-server-acceptance-`);
+  const scratch = await mkdtemp(`${tmpdir()}/circle-hub-acceptance-`);
   const listener = createServer(); await new Promise<void>(resolve => listener.listen(0, '127.0.0.1', resolve));
   const port = (listener.address() as { port: number }).port;
   await new Promise<void>(resolve => listener.close(() => resolve()));
@@ -158,9 +158,9 @@ export async function setup(t: TestContext, overrides: Record<string, string> = 
     await postgres.initialise(); await postgres.start(); started = true;
     await mkdir(`${scratch}/objects`);
     await writeFile(`${scratch}/identities.json`, JSON.stringify({ identities:identityInput }), { mode: 0o600 });
-    const env = { ...process.env, CIRCLE_SERVER_DATABASE_CONFIG: JSON.stringify(databaseConfig),
-      CIRCLE_SERVER_DATA_DIR: `${scratch}/objects`, CIRCLE_SERVER_DEV_IDENTITIES: `${scratch}/identities.json`,
-      CIRCLE_SERVER_DEV_AUTH: '1', CIRCLE_SERVER_PORT: '0', CIRCLE_SERVER_POLL_MS: '30',
+    const env = { ...process.env, CIRCLE_HUB_DATABASE_CONFIG: JSON.stringify(databaseConfig),
+      CIRCLE_HUB_DATA_DIR: `${scratch}/objects`, CIRCLE_HUB_DEV_IDENTITIES: `${scratch}/identities.json`,
+      CIRCLE_HUB_DEV_AUTH: '1', CIRCLE_HUB_PORT: '0', CIRCLE_HUB_POLL_MS: '30',
       CIRCLE_SYNTHETIC_RESOURCE_DIR: `${scratch}/resources`, ...overrides };
     const harness = new Harness(scratch, postgres, new pg.Pool(databaseConfig), env);
     t.after(() => harness.close()); await harness.startServer(); return harness;

@@ -76,7 +76,7 @@ test('Module install: CLI freezes a local catalog and submits its complete modul
         await writeFile(`${folder}/${file.path}`, Buffer.from(file.base64, 'base64'));
     await writeFile(`${directory}/modules.json`, JSON.stringify({ schema: 'circle-packs/modules/1', modules: [fixture.module] }));
     await writeFile(`${h.scratch}/trial.json`, JSON.stringify(fixture.trial));
-    const { stdout } = await promisify(execFile)(process.execPath, ['apps/server/src/cli.ts', 'modules', 'install', '--catalog', `${directory}/modules.json`, '--module', fixture.module.id, '--trial', `${h.scratch}/trial.json`, '--scope', 'scp_lab'], { cwd: root, env: { ...h.env, CIRCLE_SERVER_URL: h.url, CIRCLE_SERVER_TOKEN: await h.login() } }), receipt = JSON.parse(stdout);
+    const { stdout } = await promisify(execFile)(process.execPath, ['apps/server/src/cli.ts', 'modules', 'install', '--catalog', `${directory}/modules.json`, '--module', fixture.module.id, '--trial', `${h.scratch}/trial.json`, '--scope', 'scp_lab'], { cwd: root, env: { ...h.env, CIRCLE_HUB_URL: h.url, CIRCLE_HUB_TOKEN: await h.login() } }), receipt = JSON.parse(stdout);
     assert.equal(receipt.digest, fixture.module.digest);
     assert.equal(receipt.status, 'candidate');
     assert.ok(!stdout.includes(h.scratch));

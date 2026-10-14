@@ -2,6 +2,25 @@
 
 2026-10-12。第一阶段实现位于隔离工作树 `../circle-server-s1`，分支 `server-s1`；第二阶段增补在 `../circle-server-s2` 的 `server-s2` 分支。Circle 和连接插件由 Claude 负责；本分支只提供 server/worker。共享协议原件是 `packages/contracts/src/index.ts`：`CLIENT_ROUTES`、请求/回应 schema、`TaskListQuery`、`TaskView`、`ApprovalView`、`TaskResult`、`EventPage` 和标准操作。编译包的描述及专用协议在 `packs/apv/contracts.ts`，HTTP 形状保持兼容。API 版本 `1.0.0`，能力包与映射规则版本 `1.0.0`，Excel 契约为 `Excel 输出契约 V1`。
 
+Hub 名称与配置已统一，下文运行示例使用新名。旧阶段记录、来源 schema、已存在工作树名保留历史原文，不表示需要改文件系统目录。
+
+| 范围 | 当前名称 | 兼容边界 |
+|---|---|---|
+| Hub 本地与 package bin CLI | `circle-hub`，本地 `./bin/circle-hub` | `circle-server` 可执行名不保留别名；`npm run admin` 不变 |
+| Hub 配置前缀 | `CIRCLE_HUB_<后缀>` | 同后缀 `CIRCLE_SERVER_<后缀>` 仅作弃用回退 |
+| 连接地址与管理身份 | `CIRCLE_HUB_URL`、`CIRCLE_HUB_TOKEN`、`CIRCLE_HUB_TOKEN_FILE`、`CIRCLE_HUB_SCOPE` | 值与秘密文件仍只在运行时提供 |
+| 数据库、存储与监听 | `CIRCLE_HUB_DATABASE_CONFIG`、`CIRCLE_HUB_DATA_DIR`、`CIRCLE_HUB_PG_DIR`、`CIRCLE_HUB_PORT`、`CIRCLE_HUB_TLS_CONFIG` | 原配置形状、TLS 核验与回环边界不变 |
+| 身份与任务时限 | `CIRCLE_HUB_DEV_AUTH`、`CIRCLE_HUB_DEV_IDENTITIES`、`CIRCLE_HUB_DEV_TOKEN_TTL_MS`、`CIRCLE_HUB_RUN_TOKEN_TTL_MS`、`CIRCLE_HUB_RESOURCE_TOKEN_TTL_SECONDS`、`CIRCLE_HUB_INPUT_TTL_MS`、`CIRCLE_HUB_APPROVAL_TTL_MS` | 时限、授权、刷新与审批规则不变 |
+| 来源、凭据与模块配置 | `CIRCLE_HUB_CONNECTOR_PROFILES`、`CIRCLE_HUB_EXECUTION_GATEWAYS`、`CIRCLE_HUB_OAUTH_PROFILES`、`CIRCLE_HUB_PRODUCT_LINES`、`CIRCLE_HUB_CA_FILE`、`CIRCLE_HUB_CA_SHA256` | 已批准 profile 的内容与摘要不因环境变量名变化改写 |
+| 进程、索引与通知 | `CIRCLE_HUB_POLL_MS`、`CIRCLE_HUB_INDEX_POLL_MS`、`CIRCLE_HUB_MANAGED_WORKERS`、`CIRCLE_HUB_WORKER_OFFLINE_MS`、`CIRCLE_HUB_NOTIFICATION_STREAMS`、`CIRCLE_HUB_OUTBOX_REPLAY_EVENTS`、`CIRCLE_HUB_OUTBOX_MAX_ROWS`、`CIRCLE_HUB_OUTBOX_MAX_AGE_MS` | 作用与取值范围沿原配置 |
+| 冻结执行实现的配置读取 | 对外使用 `CIRCLE_HUB_EXECUTION_GATEWAYS` | 集中配置层把选定的新值提供给冻结 controller 的 `CIRCLE_SERVER_EXECUTION_GATEWAYS` lookup；两键都有时仍以新值为准，空值不回退。保留旧 lookup 避免只为改名更换实现 SHA/版本并要求重批；以后实际执行实现升级时迁掉 |
+| 冻结编译产物的 creator | 原 `circle-server` creator 文本 | creator 参与产物字节与 SHA，本轮原样保留；待编译方法迁入产品包并正式升版时再改，不把改名当作重新编译授权 |
+| Circle 自己的扩展协议 | 扩展 `circle-server`、命令 `/server`、工具 `srv_*` / `circle_server_*` | Hub 启动无界面 Circle 时仍注入 `CIRCLE_SERVER_URL`、`CIRCLE_SERVER_TOKEN`、`CIRCLE_SERVER_USER`、`CIRCLE_SERVER_SCOPE`。它们由 Circle 维护，待 Circle 扩展发布一并迁移；本轮 Hub 改名不单独修改客户端协议 |
+| HTTP、schema 与版本绑定 | `/v1/*`、`/mcp`、既有请求/响应字段、持久 schema、数据库迁移字节与冻结实现 | 本轮不因平台改名更换路由、契约、数据库标识或历史迁移 |
+| 历史与实际路径 | 既有 `../circle-server-s1`、`../circle-server-s2` 工作树，旧简报/进度/validation schema 与 provenance | 未改名的目录仍使用真实旧名；foundation/references 与归档中的 circle-server 来源保留原字节 |
+
+配置选择以“新键是否存在”为准：有 `CIRCLE_HUB_<后缀>` 就选它，空字符串也不回退到旧键，随后照常校验该值；两键同时出现时新键优先。只有新键缺失且旧键存在才使用旧值；进程启动发现旧输入键时输出一行弃用提示，只记录变量键名，不记录地址、值或密钥，也不在每次请求重复告警。冻结 controller 的旧 lookup 与 Circle 子进程的旧协议注入按表保留，不能据此声称所有旧标识已消失。`CIRCLE_BIN` / `CIRCLE_COMMIT`、`CIRCLE_RUNTIME_CONFIG`、`CIRCLE_HOME`、`CIRCLE_WORKER_*` 与模块验收的 `CIRCLE_PACKS_*` 本轮不改。
+
 ## 启动和登录
 
 ```sh
@@ -19,11 +38,11 @@ Node.js 24。启动命令使用锁定的 `embedded-postgres@18.4.0-beta.17` 在�
 合成 XMind：<临时目录>/synthetic-mindmap.xmind
 ```
 
-同时输出一条 `type: "dev-stack-ready"` JSON，含 `url`、`login`、`scopeId`、`samplePath`、`pid` 和 PostgreSQL 实际版本。端口默认随机；需要固定时用 `CIRCLE_SERVER_PORT=8080 npm run dev:stack`。全部服务只监听 127.0.0.1。本次登录密码只保存在临时配置并打印到该终端，不固定在 Git。Ctrl+C 有序停止 worker、server 和 PostgreSQL 并删除临时数据库、原件及制品。再次启动是新环境；server 在同一个仍存活的 PostgreSQL 中重启才会恢复原任务。
+同时输出一条 `type: "dev-stack-ready"` JSON，含 `url`、`login`、`scopeId`、`samplePath`、`pid` 和 PostgreSQL 实际版本。端口默认随机；需要固定时用 `CIRCLE_HUB_PORT=8080 npm run dev:stack`。全部服务只监听 127.0.0.1。本次登录密码只保存在临时配置并打印到该终端，不固定在 Git。Ctrl+C 有序停止 worker、server 和 PostgreSQL 并删除临时数据库、原件及制品。再次启动是新环境；server 在同一个仍存活的 PostgreSQL 中重启才会恢复原任务。
 
-第二阶段完整栈支持原生 HTTPS：在启动 Node/npm 进程前设置仓库外 `CIRCLE_SERVER_TLS_CONFIG`（certFile/keyFile）及 `NODE_EXTRA_CA_CERTS`（自签 CA 文件），ready.url 会是 https://127.0.0.1。worker、admin 和无界面 Circle 均保留证书/主机名校验并使用该信任；不放宽为远端 worker 地址。启动示例及用户选定的 SSH 反向隧道交接见[资源身份与 HTTPS](resource-identity-handoff.md#执行接入与-https)。
+第二阶段完整栈支持原生 HTTPS：在启动 Node/npm 进程前设置仓库外 `CIRCLE_HUB_TLS_CONFIG`（certFile/keyFile）及 `NODE_EXTRA_CA_CERTS`（自签 CA 文件），ready.url 会是 https://127.0.0.1。worker、admin 和无界面 Circle 均保留证书/主机名校验并使用该信任；不放宽为远端 worker 地址。启动示例及用户选定的 SSH 反向隧道交接见[资源身份与 HTTPS](resource-identity-handoff.md#执行接入与-https)。
 
-开发身份源仅在 `CIRCLE_SERVER_DEV_AUTH=1` 且显式指定临时身份配置时启用。它不是企业认证。token 默认有效 **8 小时**；`CIRCLE_SERVER_DEV_TOKEN_TTL_MS` 可配置 1000–86400000ms（最多 24 小时），显式请求的短 expiresInMs 仍有效。客户端用秘密存储保存 token，到期前无交互续期。账号和授权来自服务端配置/策略表，请求体自报的 principal、role、actor 或 tenant 都不授予权限。
+开发身份源仅在 `CIRCLE_HUB_DEV_AUTH=1` 且显式指定临时身份配置时启用。它不是企业认证。token 默认有效 **8 小时**；`CIRCLE_HUB_DEV_TOKEN_TTL_MS` 可配置 1000–86400000ms（最多 24 小时），显式请求的短 expiresInMs 仍有效。客户端用秘密存储保存 token，到期前无交互续期。账号和授权来自服务端配置/策略表，请求体自报的 principal、role、actor 或 tenant 都不授予权限。
 
 `POST /v1/auth/refresh` 带当前 Bearer 和空 JSON `{}`，响应沿用 dev-login 的 `{token,tokenType,expiresAt,principalId,tenantId,scopes}`（CLIENT_ROUTES.authRefresh）。仅仍有效、未撤销且身份未禁用的开发会话可续期；不要求密码、不接受自报期限/身份/范围。当前实现延长同一 token，避免并发旧请求因换 token 被拒；scopes 重新取当前策略。已过期返回 401，不从过期凭据恢复会话；受约束 run token 返回 403，不能升级成普通登录。
 
@@ -231,7 +250,7 @@ search 对选定目录做有界递归（PROPFIND Depth:1），默认深度 3、6
 
 缺陷镜像列表本身不分页，不能把 keyword 发送到源后假定服务端已过滤。无 product/status/日期约束的查询、或 keyword 没有 product 时，在 HTTP 前返回 INVALID_PAYLOAD；severity/assignedTo 单独不算有界查询。product 必须为 products 返回的正数字 id（数字或数字串），不能传产品名或 0；status 为 active/resolved/closed。先发送允许的源筛选，再做标题字面过滤与本地分页，page/limit/keyword 不发给镜像。默认 20、最多 100，跨页 revision 变化应重新读取。过滤后依然超过 16 MiB 时明确 RESULT_TOO_LARGE，须收窄 product/status/日期；镜像请求允许 30 秒，登录失效与真正不可达保持独立分类。schema 错误的 details.issues 提供 path/code/message，可据此补过滤条件；不回显提交值或凭据。
 
-审批默认有效一天，由 CIRCLE_SERVER_APPROVAL_TTL_MS 配置（1000–2592000000 毫秒）；审批 pending input 使用同一到期时间。普通澄清仍由 CIRCLE_SERVER_INPUT_TTL_MS 控制，默认五分钟。延长审批时间不解除修订、目标身份、动作摘要、当前目录/权限以及 D 出口复核。
+审批默认有效一天，由 CIRCLE_HUB_APPROVAL_TTL_MS 配置（1000–2592000000 毫秒）；审批 pending input 使用同一到期时间。普通澄清仍由 CIRCLE_HUB_INPUT_TTL_MS 控制，默认五分钟。延长审批时间不解除修订、目标身份、动作摘要、当前目录/权限以及 D 出口复核。
 
 `apv-case-execute` 用既有 submit/approvals/events/result 执行 APV 单表工作簿，输入可带 sourceRevisionId 或 artifactId、gatewayAssetId、commandSourceAssetId、build/buildId。服务端两次独立核对命令，投递需另一人批准；网关访问/刷新令牌为个人私有凭据引用，原件、逐步结果与检查点证据按 SHA 存 B。配置、输入边界、恢复与权限详见 [执行交接](case-execution-handoff.md)。Circle `circle_server_submit` 可附加 input，上传源的 id/SHA 由客户端填；同步返回落工作区是 Circle 的职责，server 不写客户端目录。
 
@@ -239,7 +258,7 @@ search 对选定目录做有界递归（PROPFIND Depth:1），默认深度 3、6
 
 个别构建无 fixed 链接或页面失败时保留其他答案，coverage.read/missing[{build,code}] 分别列出已读/缺失，全部缺失时 unknown；普通身份缺失/无权限代码统一隐藏。`coverage.earliestFormalCertain` 仅针对指定候选：已读到正式命中、且没有日期更早或相同的正式构建清单缺失才为 true；否则保留观察到的 earliestFormal 并标为不确定。缓存目前无淘汰；若发布站原地替换 XML 而段落摘要不变，会沿用旧缓存，不能用该缓存证明源站字节仍未变化。
 
-来源地址只在运行时配置文件提供。`CIRCLE_SERVER_CONNECTOR_PROFILES` 指向仓库外的 JSON 文件，形状为 `{"profiles":{"<配置引用>":{"origin":"<运行时来源>","root":"<文档根>","index":"<构建首页>","payloadField":"data"}}}`。连接器资产 configuration 使用 `packageId`（documents/build-site/query-mirror/environment-view/knowledge）、`runtimeProfileRef`、可选 productLineId 和 alias；个人凭据走 `/v1/assets/{id}/credentials`，之后在新资产修订的 declaration.credentials 中引用。PLM 的 JWT 只在 worker 内注入，无 Bearer；值不回到注册/目录/调用响应或审计。当前仅合成来源验收，真实源冒烟仍需授权。
+来源地址只在运行时配置文件提供。`CIRCLE_HUB_CONNECTOR_PROFILES` 指向仓库外的 JSON 文件，形状为 `{"profiles":{"<配置引用>":{"origin":"<运行时来源>","root":"<文档根>","index":"<构建首页>","payloadField":"data"}}}`。连接器资产 configuration 使用 `packageId`（documents/build-site/query-mirror/environment-view/knowledge）、`runtimeProfileRef`、可选 productLineId 和 alias；个人凭据走 `/v1/assets/{id}/credentials`，之后在新资产修订的 declaration.credentials 中引用。PLM 的 JWT 只在 worker 内注入，无 Bearer；值不回到注册/目录/调用响应或审计。当前仅合成来源验收，真实源冒烟仍需授权。
 
 成功的只读回执自动进入产品知识，采用最终一致的异步入库。同步回报只验 SHA、保存原件/证据和持久 outbox，读取立即返回，响应 `{result,evidence}` 保持不变；无须等待声明或快照。server 的独立 runner 从原件抽取结构观察，按批写实体/声明/评估，整个索引任务成功后再更新产品 stable。声明 origin=script，评估 semantic=not-asserted，仅证明字面内容/结构，不能凭命令存在宣称整个功能支持。
 
@@ -312,7 +331,7 @@ knowledge.claim_submit 拒绝不可用证据时，失败任务的 GET /result �
 
 执行资源改用 C 签发的短期访问令牌，无旧外部签发服务、设备授权或个人刷新令牌。服务客户端、标准 /token 与 /v1/introspect、SHA bundle/blob 及原生 HTTPS 配置见 [资源身份交接](resource-identity-handoff.md)。以下外部 OAuth 仍供其他连接器的配置签发方使用，不构成执行资源身份或 HTTP 例外。
 
-签发方与端点从仓库外 CIRCLE_SERVER_OAUTH_PROFILES 读取 `{profiles:{<ref>:{issuer,tokenEndpoint,deviceAuthorizationEndpoint?,clientId,clientAuthentication:"none"|"client_secret_basic"|"client_secret_post",scope?,accessTtlSeconds?,caFile?,caSha256?}}}`。没有固定签发方或固定 token 路径。连接器 configuration.oauthProfileRef 必须绑定该 ref；请求不能传任意端点。远端端点必须 HTTPS；HTTP 只供回环合成测试，用户已决定不开放真实明文签发例外。CA 每次核验，不跟随重定向。
+签发方与端点从仓库外 CIRCLE_HUB_OAUTH_PROFILES 读取 `{profiles:{<ref>:{issuer,tokenEndpoint,deviceAuthorizationEndpoint?,clientId,clientAuthentication:"none"|"client_secret_basic"|"client_secret_post",scope?,accessTtlSeconds?,caFile?,caSha256?}}}`。没有固定签发方或固定 token 路径。连接器 configuration.oauthProfileRef 必须绑定该 ref；请求不能传任意端点。远端端点必须 HTTPS；HTTP 只供回环合成测试，用户已决定不开放真实明文签发例外。CA 每次核验，不跟随重定向。
 
 POST /v1/credentials/oauth/device 接收 `{connectorAssetId,connectorVersion,profileRef,clientCredentialId?,idempotencyKey}`，返回 flowId/status/userCode/verificationUri/intervalSeconds/expiresAt。用户去签发方确认，再 POST /v1/credentials/oauth/device/{flowId}/poll 空 JSON。轮询遵守 interval，slow_down 后增加五秒，拒绝/过期停止；流程按用户和连接器修订持久化，设备 code 在私有加密 vault 中，未返回。
 
@@ -362,13 +381,13 @@ worker 的回报处理若因 ApiError 拒绝，知识/制品写入回滚，操�
 
 ## 产品线安装与工具别名
 
-启动时 `CIRCLE_SERVER_PRODUCT_LINES` 可指向仓库外的安装 JSON：`{"schemaVersion":"installed-product-lines/1","productLines":["apv/product-line.json","meridian/product-line.json"]}`。清单路径相对安装文件解析；未设置时使用 packs/installed-product-lines.json，默认客户端工具名保持兼容。每份 product-line/1 清单声明 connectorPackages、toolAliases、skills、methods 和 knowledgeMappings；包 id、版本、重复声明和安全相对路径在启动前校验。格式及边界见 [packs/README.md](../packs/README.md)。
+启动时 `CIRCLE_HUB_PRODUCT_LINES` 可指向仓库外的安装 JSON：`{"schemaVersion":"installed-product-lines/1","productLines":["apv/product-line.json","meridian/product-line.json"]}`。清单路径相对安装文件解析；未设置时使用 packs/installed-product-lines.json，默认客户端工具名保持兼容。每份 product-line/1 清单声明 connectorPackages、toolAliases、skills、methods 和 knowledgeMappings；包 id、版本、重复声明和安全相对路径在启动前校验。格式及边界见 [packs/README.md](../packs/README.md)。
 
 新连接器资产可在 configuration 带 `productLineId`，由该产品线清单选择工具前缀。例如 `{"packageId":"documents","productLineId":"meridian","runtimeProfileRef":"<运行时引用>"}` 自动登记 meridian_docs 工具。可选 alias 仍覆盖实例前缀，同一 tenant 内工具名称冲突仍拒绝。省略 productLineId 时沿用第一个声明该连接器的清单前缀；公共 knowledge 工具独立保留。移除产品线并重启后，该产品线明确绑定的工具从目录隐藏；恢复安装后可继续使用原已批准绑定。ETag 和普通调用权限规则不变。
 
 清单安装只读取声明，不导入其中的可执行路径，也不等于技能包已经获批。技能提交/审批/运行仍查当前目录，沿用原接口；既有编译能力和历史迁移保留。
 
-运行 token 仍默认短期 5 分钟（CIRCLE_SERVER_RUN_TOKEN_TTL_MS 1000–300000ms 可缩短用于验收），绑定操作/fence/任务和固定 scopes/grants/tools。只有持有效租约的 worker 在完整 preflight 校验后续期，截止不超过该操作 deadline；任务结束、取消、租约过期、旧 fence 或输入修订变化立即阻止新访问。客户端不能调用 auth/refresh 续这种 token，也不因本地会话断开就声称远端停止。
+运行 token 仍默认短期 5 分钟（CIRCLE_HUB_RUN_TOKEN_TTL_MS 1000–300000ms 可缩短用于验收），绑定操作/fence/任务和固定 scopes/grants/tools。只有持有效租约的 worker 在完整 preflight 校验后续期，截止不超过该操作 deadline；任务结束、取消、租约过期、旧 fence 或输入修订变化立即阻止新访问。客户端不能调用 auth/refresh 续这种 token，也不因本地会话断开就声称远端停止。
 
 权限、类别和能力包筛选先于 limit，按创建时间、taskId 倒序；游标取保存的完整 PostgreSQL 创建时间，不按 phase/更新时间排序，server 重启可续读。after 必须是当前身份可读的任务；越 scope/个人任务返回 FORBIDDEN_SCOPE，格式错误、未知类别和越界 limit 为 INVALID_PAYLOAD。省略新参数时行为与第一阶段相同。
 
@@ -510,7 +529,7 @@ updatedAt 页游标冻结 PostgreSQL 微秒时间锚点，后续更新超过锚�
 
 通知只含 id、状态/原因码与 evidence 引用；完整结果从任务 result 取。规范事件包括 approval.requested/decision/superseded、task.waiting-review/waiting-input/delivered/failed/cancelled、operation.unknown、bot.started/output/admission-failed，以及已实际发出的变更集状态。旧 task.approval-requested/approval.response 继续保留在任务事件兼容流，通知目录使用规范名字。输入改写与新变更集都会发 approval.superseded，并给 supersededBy。通知游标只推进到最后可见事件；权限后来增加时，客户端应从 cursor=0 重查先前被滤掉的区间。
 
-outbox 保留默认最近至少 **10000 条事件**的补读窗口、最多 **100000 行**，年龄目标 **7 天**（硬上限优先）；环境可配 CIRCLE_SERVER_OUTBOX_REPLAY_EVENTS、CIRCLE_SERVER_OUTBOX_MAX_ROWS、CIRCLE_SERVER_OUTBOX_MAX_AGE_MS。写入超限同事务批量裁剪，年龄每分钟维护，任务当前状态/结果、B 原件与审计不删除。通知返回 replayWindow；旧非零游标早于 minCursor 为 CURSOR_EXPIRED，明确从零重新查询当前窗口，不能宣称全历史仍在。task/admin events 同样拒绝过窗游标。SSE 每 tenant/主体默认四条连接，可配 CIRCLE_SERVER_NOTIFICATION_STREAMS；超限 NOTIFICATION_STREAM_LIMIT，断开释放名额，运行中游标过窗发 cursor.expired 并关闭。角色/会话失效仍关闭流。
+outbox 保留默认最近至少 **10000 条事件**的补读窗口、最多 **100000 行**，年龄目标 **7 天**（硬上限优先）；环境可配 CIRCLE_HUB_OUTBOX_REPLAY_EVENTS、CIRCLE_HUB_OUTBOX_MAX_ROWS、CIRCLE_HUB_OUTBOX_MAX_AGE_MS。写入超限同事务批量裁剪，年龄每分钟维护，任务当前状态/结果、B 原件与审计不删除。通知返回 replayWindow；旧非零游标早于 minCursor 为 CURSOR_EXPIRED，明确从零重新查询当前窗口，不能宣称全历史仍在。task/admin events 同样拒绝过窗游标。SSE 每 tenant/主体默认四条连接，可配 CIRCLE_HUB_NOTIFICATION_STREAMS；超限 NOTIFICATION_STREAM_LIMIT，断开释放名额，运行中游标过窗发 cursor.expired 并关闭。角色/会话失效仍关闭流。
 
 登记簿分页已按确认顺序接 tasks/assets/skillpacks/change-sets/scopes/roles/service-clients/object-types/objects/tools，以及 task/admin approvals、来源/证据/制品、审计/worker、bot runs、通知。各集合 view=page 复用同一查询编译器；已经存在的旧数组或补读形状保留，B 新集合 GET 按下文显式 view=page。相关权限/游标验收分别记录，不将未运行的维护者全套称作本轮已通过。
 
@@ -546,7 +565,7 @@ updatedAt 页锚点限制上界，未保存旧行版本。普通服务端更新�
 
 content.retained 是原 payload 已有的 B 引用列表，每项为 {evidenceId|artifactId,sha256?,fileName?,downloadPath}，引用自己的 SHA，不能与 content.sha256 混用。execution.environment.observed 附环境 JSON artifactId；task.delivered、bot.output 附已留存的 evidence/artifacts（含工具原件 knr_、运行/网关 evd_ 与交付 art_）。例如环境制品仍从 /v1/artifacts/{id}/content 下载，knr_ 原件从 /v1/knowledge/records/{id}/content 下载。它们在事件裁剪后仍按 B 的现行权限可读，但不声称单个原件包含整条事件或全部交付结论；交付完整状态仍从 result 获取。未有 retained 的事件全文只在同一 outbox 保留窗口可读，不新增永久保存承诺。运行中的原样 outbox、内部兼容观察与最终结果不改。
 
-worker 离线检测默认 90000 毫秒，可由部署运行配置 CIRCLE_SERVER_WORKER_OFFLINE_MS 设正整数；GET /v1/workers 及兼容 /v1/admin/workers 返回旧数组，每项 {workerId,draining,lastSeen,offline,workerOfflineAfterMs}，GET /v1/queues 同样披露 workerOfflineAfterMs。列表需 admin.manage，限定授权范围中的 worker；它仍属于管理类登记簿的权限例外；本轮已接入 view=page 统一分面页，不带 view 保留上述旧数组。这个检测阈值决定是否进入 workerOffline，范围 slaMs.exceptions 决定是否超 SLA，两者独立；不根据 worker 的业务结果猜离线。
+worker 离线检测默认 90000 毫秒，可由部署运行配置 CIRCLE_HUB_WORKER_OFFLINE_MS 设正整数；GET /v1/workers 及兼容 /v1/admin/workers 返回旧数组，每项 {workerId,draining,lastSeen,offline,workerOfflineAfterMs}，GET /v1/queues 同样披露 workerOfflineAfterMs。列表需 admin.manage，限定授权范围中的 worker；它仍属于管理类登记簿的权限例外；本轮已接入 view=page 统一分面页，不带 view 保留上述旧数组。这个检测阈值决定是否进入 workerOffline，范围 slaMs.exceptions 决定是否超 SLA，两者独立；不根据 worker 的业务结果猜离线。
 
 GET /v1/assets/{id}/harness-export?target=circle|<sourceHarness> 仅批准后的可读原语可用，返回 files 的相对目标路径/base64/sha256、warnings、provenance:{assetId,version,sha256,sourceHarness}。Circle Skill 原件移动到 .circle/skills/{name}/，字节不改；Instruction 投影为 AGENTS.md。Circle 尚无 Agent/Command 原生安装时明确 warning；MCP prompt 可读取批准的 Skill/Command。同来源 harness 由公开库导出；其不支持的跨 harness 映射继续 warning。这里只是冻结与装载投影，云运行仍用既有技能试跑/提交/批准接口；不自动批准或把原件搬运称作已执行。
 

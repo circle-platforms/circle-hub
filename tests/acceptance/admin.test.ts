@@ -12,7 +12,7 @@ async function command(env:NodeJS.ProcessEnv,args:string[]):Promise<any>{
 }
 
 async function developmentStack(t:TestContext):Promise<any>{
-  const child=spawn('npm',['run','dev:stack'],{cwd:root,env:{...process.env,CIRCLE_SERVER_PORT:'0'},stdio:['ignore','pipe','pipe']});let output='',errors='',pid:number|undefined;
+  const child=spawn('npm',['run','dev:stack'],{cwd:root,env:{...process.env,CIRCLE_HUB_PORT:'0'},stdio:['ignore','pipe','pipe']});let output='',errors='',pid:number|undefined;
   child.stdout!.on('data',data=>{output+=data.toString();});child.stderr!.on('data',data=>{errors+=data.toString();});
   t.after(async()=>{if(child.exitCode===null&&child.signalCode===null){const exited=once(child,'exit');if(pid)process.kill(pid,'SIGTERM');else child.kill('SIGTERM');await exited;}});
   const ready=await until(async()=>{if(child.exitCode!==null)throw new Error(errors);for(const line of output.split('\n'))try{const data=JSON.parse(line);if(data.type==='dev-stack-ready')return data;}catch{}return false;},20_000);pid=ready.pid;
@@ -36,9 +36,9 @@ function keepAliveGet(url:string,headers:Record<string,string>,agent:Agent){
 }
 test('admin tasks drain approvals tail audit and connector control use the same authenticated API',async t=>{
   const h=await setup(t);await h.startWorker();const task=await h.submit({target:'RESOURCE-LAB-01'});
-  const env={...h.env,CIRCLE_SERVER_URL:h.url,CIRCLE_SERVER_TOKEN:await h.login('admin'),CIRCLE_SERVER_SCOPE:'scp_lab'};
+  const env={...h.env,CIRCLE_HUB_URL:h.url,CIRCLE_HUB_TOKEN:await h.login('admin'),CIRCLE_HUB_SCOPE:'scp_lab'};
   const tasks=await command(env,['tasks']);assert.equal(tasks.code,0,tasks.stderr);assert.ok(JSON.parse(tasks.stdout).some((item:any)=>item.taskId===task.taskId));
-  const denied=await command({...env,CIRCLE_SERVER_TOKEN:await h.login('limited')},['tasks']);assert.notEqual(denied.code,0);assert.match(denied.stderr,/FORBIDDEN_ACTION/);
+  const denied=await command({...env,CIRCLE_HUB_TOKEN:await h.login('limited')},['tasks']);assert.notEqual(denied.code,0);assert.match(denied.stderr,/FORBIDDEN_ACTION/);
   const approval=await h.request(`/v1/tasks/${task.taskId}/approvals`,{inputRevisionId:task.inputRevisionId,name:'product.config.write',target:'RESOURCE-LAB-01',targetIdentity:'synthetic-host-key:resource-01',args:{key:'backend.timeout',value:10}});
   const approvals=await command(env,['approvals']);assert.equal(approvals.code,0,approvals.stderr);assert.ok(JSON.parse(approvals.stdout).some((item:any)=>item.approvalId===approval.approvalId));
   const events=await command(env,['events','--tail','--once']);assert.equal(events.code,0,events.stderr);assert.ok(JSON.parse(events.stdout).events.some((event:any)=>event.taskId===task.taskId));
@@ -59,7 +59,7 @@ test('admin graceful restart actually changes the server process and keeps tasks
   const admitted=(await(await fetch(`${ready.url}/v1/tasks/submit`,{method:'POST',headers,body:JSON.stringify({scopeId:ready.scopeId,title:'Wait across graceful restart',input:{requiredFields:['target']},idempotencyKey:'admin-restart-admission'})})).json() as any).data;
   await until(async()=>((await(await fetch(`${ready.url}/v1/tasks/${admitted.taskId}/status`,{headers})).json() as any).data.phase==='waiting-input'));
   const first=(await(await fetch(`${ready.url}/v1/tasks/${admitted.taskId}/events?after=0`,{headers})).json() as any).data;
-  const restarted=await command({...process.env,CIRCLE_SERVER_URL:ready.url,CIRCLE_SERVER_TOKEN:token},['restart','--graceful']);assert.equal(restarted.code,0,restarted.stderr);
+  const restarted=await command({...process.env,CIRCLE_HUB_URL:ready.url,CIRCLE_HUB_TOKEN:token},['restart','--graceful']);assert.equal(restarted.code,0,restarted.stderr);
   const after=(await(await fetch(`${ready.url}/v1/status`,{headers})).json() as any).data;assert.notEqual(after.bootId,before.bootId);assert.notEqual(after.processId,before.processId);
   assert.ok(ready.records().some((item:any)=>item.type==='supervisor.child.exit'&&item.processId===before.processId&&item.graceful===true));
   assert.ok(ready.records().some((item:any)=>item.type==='supervisor.child.start'&&item.processId===after.processId&&item.reason==='graceful-restart'));
@@ -99,7 +99,7 @@ test('admin graceful restart drains sustained keep-alive polling and pending tas
   await until(async()=>successful>=10&&reused>=5);
   assert.deepEqual([taskReply,adminReply],[undefined,undefined],'Both event requests must still be pending when restart begins');
   const started=Date.now();
-  const restarted=await command({...process.env,CIRCLE_SERVER_URL:ready.url,CIRCLE_SERVER_TOKEN:token},['restart','--graceful']);
+  const restarted=await command({...process.env,CIRCLE_HUB_URL:ready.url,CIRCLE_HUB_TOKEN:token},['restart','--graceful']);
   assert.equal(restarted.code,0,restarted.stderr);
   assert.ok(Date.now()-started<8000,'Keep-alive clients must not hold the old process open');
   assert.ok(taskReply);assert.ok(adminReply);
@@ -126,7 +126,7 @@ test('admin graceful restart bounds a stalled request body and preserves only ad
   const accepted=once(stalled,'continue');stalled.flushHeaders();await accepted;
   stalled.write('{"scopeId":"scp_lab",'); // Deliberately leave the body incomplete.
   const started=Date.now();
-  const restarted=await command({...process.env,CIRCLE_SERVER_URL:ready.url,CIRCLE_SERVER_TOKEN:token},['restart','--graceful']);
+  const restarted=await command({...process.env,CIRCLE_HUB_URL:ready.url,CIRCLE_HUB_TOKEN:token},['restart','--graceful']);
   assert.equal(restarted.code,0,restarted.stderr);
   assert.ok(closedAt-started>=4500,'Allow the five second HTTP grace period before closing an active request');
   assert.ok(closedAt-started<8000,'Force-close a request that never completes its body');
