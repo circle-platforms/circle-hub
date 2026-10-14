@@ -1,12 +1,27 @@
 # APV 工作簿执行交接
 
-能力包 `apv-case-execute/1.1.1` 使用既有 sources、submit、approvals、status、events、result 和 artifacts/content，flowVersion 仍为 apv-case-execute/1。实现归 packs/apv/execution，不导入或运行旧客户端、InfoTest 或 Python。现有网关只作为 HTTP JSON-RPC 服务消费；不会调用 init_device。
+本页是 APV 原生执行路径的变更记录与操作说明。通用规则已并入设计文档，见下表；工作簿字面闭集、框架主机名、参数与设备命名约定仍暂留本页，待执行流迁入独立产品包时一并移交。裁剪对照见 [handoff 到设计文档的对照表](design/handoff-map.md#case-execution-handoffmd)。
 
-部署本版本后，内置实现的 implementationSha256 已改变。管理员须按 GET /v1/packs 的当前 version/flowVersion/implementationSha256 重新登记 hub-tool-implementation/1 来源资产并经独立审批人批准；旧的 1.0.0 实现资产不能满足新摘要。旧任务钉住的 methodAssetId 不自动迁移，需申请人明确改输入或新提交。已批准产品线模块按自身冻结字节/SHA 与 flow 解析，不受内置实现资产升版影响；产品包本身无需因本笔自动重新批准。
+| 通用规则 | 设计出处 |
+|---|---|
+| 变更集、默认运行不审批、executionIsChange | [审批与执行链](design/approvals-and-enforcement.md#生产设备要两人规则怎么办) |
+| 角色、Tool minimumRole、来源 readers 与资源策略 | [角色登记与资格披露](design/roles.md#角色登记与资格披露) |
+| 核验、派发前复核与两次环境观察 | [核验](design/approvals-and-enforcement.md#核验)、[派发与两次环境观察](design/approvals-and-enforcement.md#派发与两次环境观察) |
+| unknown、独立核对与远端租约 | [未知的纪律](design/approvals-and-enforcement.md#未知的纪律)、[派发前拒绝与远端租约](design/approvals-and-enforcement.md#派发前拒绝与远端租约) |
+| 原件、外部来源、SHA 与证据 | [B 的原件与证据规则](design/object-standard.md#四b-的原件与证据规则) |
+| 凭据、HTTPS、明文例外与 worker 排空 | [凭据与资源](design/approvals-and-enforcement.md#凭据与资源) |
+| 实现升版、登记与历史方法绑定 | [技能包与模块的登记契约](design/product-line-pack.md#技能包与模块的登记契约) |
+| 设备归属与结果解释 | [设备归属与日志解析](design/approvals-and-enforcement.md#设备归属与日志解析) |
 
-执行身份改用 [C 的资源客户端与短期令牌](resource-identity-handoff.md)：资源资产 configuration.serviceClientId，经独立批准后由平台在操作/fence 下私有注入，worker 每次请求前重核与临期重签。该模式不配置外部 issuer，不登记个人刷新令牌。规则原件由已批准 source-artifact 的 bundle/blob 提供，平台不解释；原网关的本地缓存仍由其管理。下面的旧手工会话说明仅保留既有已验接口兼容，用户当前部署不再接旧签发服务。
+## 版本与验收记录
 
-修订 3 的执行默认不审批。资源、runtime-profile、Tool/产品线模块和外部来源先由变更集批准；只有资源 declaration.executionIsChange=true 时本次冻结执行提交才再作为变更集项。Hook 按批准的模块装载，hub 自带零条；本页旧独立执行审批描述仅适用于这一资源声明。
+原生能力包为 `apv-case-execute/1.1.1`，flowVersion 仍为 `apv-case-execute/1`，实现目录为 `packs/apv/execution`。它消费既有网关的 HTTP JSON-RPC 服务，不调用 `init_device`，不在 hub 中导入或运行旧客户端、InfoTest 或 Python。`1.0.0` 升到 `1.1.1` 时 implementationSha256 已变化，部署者须据 GET `/v1/packs` 的实际 version/flowVersion/implementationSha256 登记并批准新的 `hub-tool-implementation/1` 方法资产；旧任务的 methodAssetId 不自动迁移。产品线模块按自身冻结字节与 flow 绑定，此次原生升版不要求其自动重批。
+
+A3 通用驱动轮的原生 `1.1.1` 字节保持不变；它不表示 APV 已切换到新的通用执行流，迁移边界见 [执行流迁入产品线包](design/execution-flow-packs.md)。本代理只做合成资源的本地核验，未部署或访问真实系统；用户决定验证栈 `7420` 仍保持 `e1ca68d`，不因本轮或本页更新自动升级。
+
+早期接入记录曾为「只完成合成网关验收，真实网关上游核验不可达，等待恢复与凭据登记」。后续维护者已报告真实网关冒烟与用例投递；早期阻塞不能当作当前可达性结论，合成验收也不能替代真实工作簿或设备结果。具体运行观察保留在 [阶段进度](server-s2-progress.md)，本页不为历史观察补判设备结论。
+
+## 原生提交操作
 
 先上传 `case.xlsx`，或引用当前身份可读的编译 artifact，再提交：
 
@@ -20,7 +35,7 @@
     "sourceRevisionId":"<上传返回的 src id>",
     "sourceSha256":"<上传返回的 SHA-256>",
     "gatewayAssetId":"<测试床网关资产 id>",
-    "methodAssetId":"<批准后的 product-line 模块资产 id>",
+    "methodAssetId":"<批准后的方法或 product-line 模块资产 id>",
     "commandSourceAssetId":"<构建来源资产 id>",
     "build":"<版本工具返回的 buildId>",
     "platform":null
@@ -28,39 +43,35 @@
 }
 ```
 
-sourceRevisionId 与 artifactId 二选一。sourceSha256 可省略，由 server 钉住；module 可选，只接受字母/数字/下划线/连字符；deadlineMs 默认一小时、范围 1000–3600000。build 优先用 buildId，构建名必须唯一，可用 platform 消歧。必须是单表「执行」、隐藏行一精确标记 `APV_EXCEL_CONTRACT | apv.excel.runtime | v1` 和九列执行契约；第一阶段两表七列结构工作簿不可执行。
+sourceRevisionId 与 artifactId 二选一。sourceSha256 可省略，由 server 钉住；module 可选，只接受字母/数字/下划线/连字符；deadlineMs 默认一小时、范围 1000–3600000。build 优先用 buildId，构建名必须唯一，可用 platform 消歧。工作簿必须是单表「执行」、隐藏行一精确标记 `APV_EXCEL_CONTRACT | apv.excel.runtime | v1` 和九列执行契约；第一阶段两表七列结构工作簿不可执行。
 
-命令核对也可绑定通用外部来源制品。先分别用 POST /v1/sources 上传命令 XML 和函数契约 JSON 原字节，再 POST /v1/assets 登记 kind=knowledge-source；确切的 configuration 示例见 [通用来源交接](client-api-handoff.md#通用外部来源制品)。configuration.schema=external-source-artifact/1，metadata={packageId:apv,buildName:<预期构建名>,platform:<可选平台>}，files 中一份 role=command-tree、一份 role=function-contract，分别带 path/sourceRevisionId/sha256。另一人批准后，生命周期响应及 GET /v1/assets/{assetId} 顶层直接给 sourceArtifactId（sar_ id）；绑定来源调用 versions 也返回同一 buildId。buildsite.command_heads/param/check 的 build 填此 id；执行 input.commandSourceAssetId 填该来源 assetId，build 填 sar_ id。同一制品 id 也能绑定其他连接器工具，通用平台只管理原件和治理。
+命令核对可绑定上传的外部来源：分别 POST `/v1/sources` 上传命令 XML 和函数契约 JSON，再 POST `/v1/assets` 登记 kind=knowledge-source。configuration.schema=`external-source-artifact/1`，metadata 为 `{packageId:"apv",buildName:"<预期构建名>",platform:"<可选平台>"}`；两份 files 的 role 分别为 command-tree、function-contract，各带 path/sourceRevisionId/sha256。完整配置示例见 [通用外部来源制品](client-api-handoff.md#通用外部来源制品)。批准后生命周期响应及 GET `/v1/assets/{assetId}` 顶层返回 sourceArtifactId（sar_ id），绑定来源的 versions 返回同一 buildId。buildsite.command_heads/param/check 的 build 填 sar_ id；执行 input.commandSourceAssetId 填该来源 assetId，build 填 sar_ id。绑定读取的 origin=uploaded-artifact、live=false 是来源标识；上传者的 buildName 仍是预期关联声明。
 
-APV 消费者独立解析两份文件。函数契约数据需完整、包含唯一 e/f/status 条目，只有 enabled 才满足该关口；disabled/internal/absent 立即拒绝并给工作簿行定位。它不能使未实现的不透明函数、禁用生命周期或未确认 console 角色绕过现有执行限制。树与函数契约 SHA 同时进入 command-check.json、审批动作和投递前复核；源资产未批准、停用、修订或权限变化时不自动换源、不读取旧绑定作为新版本。
+APV 消费者解析 XML 与函数契约 JSON。函数契约资料包含完整、唯一的 e/f/status 条目；APV 产品关口只有 enabled 才满足，disabled/internal/absent 均拒绝并定位工作簿行，此判定由已批准的产品线 Hook 执行；树与函数契约 SHA 记录在 command-check.json 及执行绑定中。主机、方法与设备树的治理规则随已批准模块与资源声明生效，hub 的解析器不在零 Hook 时补内置主机白名单；旧运行文件中的策略不能被当成新资源声明的授权。下面保留的是原生 `1.1.1` 的产品输入兼容资料，不另定通用平台默认规则。
 
-上传者声明的 buildName 是命令原件的预期关联，不代表测试床实际构建。当前床构建尚未确认，不采用历史客户端配置或 healthz 样例标签作为事实；运行时 env_prepare 必须确认构建，ready/build_checked 不满足则拒绝投递。绑定读取标 uploaded-artifact/live=false；XML 的命令存在性是脚本核对结果，真实设备行为仍以网关证据为准。
+## APV 字面契约与框架路由
 
-本版执行关口支持 APV_n/Segn_tmp 的字面 cmd/cmd_config/cmds_config/cmd_enable、check_point 的 found/not_found/abs_found/found_times、time.sleep。初始化行也受同一核对。输入变量、设备命令里的临时寄存器替换和模糊 execute/未验证的设备函数返回 INVALID_EXECUTION_WORKBOOK，需先展开成可核对的字面行。reboot 等禁用生命周期方法不放行。最多 5000 条显式设备/主机分派，按网关 device_count 再查设备索引。
+设备对象为 `APV_n` 或 `Segn_tmp`，字面方法为 cmd/cmd_config/cmds_config/cmd_enable；check_point 的产品方法为 found/not_found/abs_found/found_times，time 对象支持 sleep。初始化行也参与设备命令核对。输入变量、设备命令中的临时寄存器替换、模糊 execute 与未验证的设备函数需先展开；原生格式拒绝返回 `INVALID_EXECUTION_WORKBOOK`。禁用生命周期方法不因函数原件中出现同名条目而获得执行资格。最多 5000 条显式设备/主机分派，设备索引再按网关 device_count 核对。
 
-test_env 的 F 是框架主机方法，不是 APV 命令头。闭集允许 clientc/clientd/cliente/routera/routerb/server213/server231/server232，G 为字面 shell，I 输入寄存器替换禁止，H 输出寄存器保留。引用的是用户给出的只读 Excel 函数契约结构，无主机地址或框架代码。可由已批准的产品线 Hook 使用 runtime allowedTestHosts 缩小该闭集，省略或空数组沿用专业契约；此设置进入目标身份摘要。主机直接作 E 的同类字面 cmd 分派也支持，模糊 execute 须展开。console 的角色以床配置为准，本版尚无已验证角色映射，明确拒绝，不能按名称推断它是 DUT 或 SQL 主机。
+此前已核对的客户端主机方法名单为 clientc/clientd/cliente/routera/routerb/server213/server231/server232。E=test_env 时 F 是框架主机方法，G 是字面 shell，I 输入寄存器替换禁止，H 输出寄存器保留；主机直接作 E 时支持同类字面 cmd，模糊 execute 须展开。当前是否启用某主机，由函数契约、批准的 Hook 与资源 allowedTestHosts 声明核对，不从旧框架反射任意方法。console 虽可出现在函数契约中，其角色仍需床配置证据；该版历史关口因没有已验证角色映射而明确拒绝 console，不能按名称推断它是 DUT 或 SQL 主机。该资料只有只读契约结构，没有主机地址或框架代码。
 
-G 按框架实参契约解释：多行整体为一个参数；单行仅引号外逗号分隔，外层引号去掉，kwargs 只允许 prompt/timeout（timeout 为 1–3600 整数）。设备 cmd_config 的换行按运行时规则去除后再核对。设备实际命令与测试主机 shell 分开列入完整 command-check.json，审批 action.args.hostDispatch 带数量/主机/摘要；shell 不冒充 APV command_check hit，设备命令仍逐条由 server 核对。日志只在精确主机/命令派发行匹配时记 observed，不能据此推断协议内容或检查点已通过。
+G 的框架实参形式：多行整体为一个参数；单行仅引号外逗号分隔，外层引号去掉，kwargs 只允许 prompt/timeout，timeout 为 1–3600 整数。cmd_config 的换行按运行时规则去除后再核对。设备实际命令与测试主机 shell 分别列入完整 command-check.json；有执行变更集时，action.args.hostDispatch 披露数量、主机与摘要。shell 不作为 APV 命令树命中回执。
 
-INVALID_EXECUTION_WORKBOOK 的 details 带 row（Excel 从 1 起的行号）、autoid（沿用当前用例头的字符串）、object（E）、method（F）；非字面单元格另带 column。初始化的 autoid 为 null，无法定位到具体行的整本格式错误对应字段为 null。不回显 G 命令、H/I 寄存器内容。同步提交拒绝和后台核对失败保留同一定位形状，运行时策略拒绝另带 policy 字段名。
+原生错误定位字段保留为 INVALID_EXECUTION_WORKBOOK.details 的 row（Excel 从 1 起）、autoid（当前用例头字符串）、object（E）、method（F），非字面单元格另带 column。初始化 autoid 为 null，整本格式错误不能定位的字段为 null；不回显 G 或 H/I 内容。同步拒绝与后台失败使用同一定位形状，运行时策略拒绝另带 policy 字段名。
 
-默认不限定 shell 程序名，字面 dig、curl、循环和测试主机状态命令仍按启用的主机方法、工作簿原件及审批披露受理。运维可在网关 profile 的 hostCommandPolicies 中按主机显式收窄：allowedCommands 为解析实参后的完整命令精确名单（省略不限、空数组全拒绝）；maxCommandBytes 为字节上限（1–16384）；maxTimeoutSeconds 为 timeout 上限（1–3600，省略 timeout 的主机调用按框架默认 10 秒）；allowMultiline=false 拒绝多行。未配置策略时不增加命令/参数限制。策略不能启用未知或禁用方法；策略随 profile 钉入目标身份，改变后旧批准失效，投递前再次核对。所有策略和真实命令都在仓库外运行时配置，不由模型输入选择。
+历史 profile 支持按主机配置 hostCommandPolicies：allowedCommands 为解析实参后的完整命令精确名单（省略不限、空数组全拒）；maxCommandBytes 范围 1–16384；maxTimeoutSeconds 范围 1–3600，省略 timeout 的框架默认值为 10 秒；allowMultiline=false 拒绝多行。未配置策略时，不曾把 shell 程序名收窄到只有 dig：dig、curl、循环和测试主机状态命令都须按启用方法与字面原件核对。这些字段保留供旧运行配置维护；当前主机闭集与收窄策略的治理位置是已批准模块 Hook 与资源声明，不把仅存在于运行文件的值视为已批准。
 
-server 使用专业契约的主机方法闭集校验，不从客户端或旧框架反射出任意可调用方法。既有网关未因本次修复改动：case_submit 冻结并运行原工作簿，原 InfoTest 按 E/F 派发。E=test_env/F=routera 调用 Env.routera，再用框架床配置的 env.RouterA 找测试主机，通过 SSH 执行 G 的实际命令；routerb 同样映射 env.RouterB，其余启用方法对应其同名 env 配置项。F 使用小写方法名，不能替换成测试床的任意设备标签或地址。H 捕获的主机返回值可供后续检查点使用，返回值本身不证明检查点通过。
+既有网关 case_submit 冻结并运行原工作簿，框架按 E/F 派发。E=test_env/F=routera 调用 Env.routera，再按床配置 env.RouterA 找测试主机，通过 SSH 执行 G；routerb 对应 env.RouterB，其余启用方法对应其同名 env 配置项。F 是小写方法名，不能换成测试床任意标签或地址。H 捕获的返回可供后续检查点使用。APV_0/APV_1 分别取 comm.ssh_ips 顺序的第 0/1 台，设备标签不是排序依据；主机方法与 DUT 索引是两条独立路由。
 
-APV_0 与 APV_1 分别按床配置 comm.ssh_ips 的顺序取第 0/1 台，设备标签不是排序依据。绑定构建由 env_prepare 核对，device_count 再限制工作簿索引；真实标签与索引对应关系须从该床当前配置/拓扑核对，本代理未读取床配置或猜测映射。主机方法与 DUT 索引是两条独立路由。
+重启步骤的既有核对结论仍保留：Env 没有 reboot，APV.reboot 在函数契约中 disabled；不能把 test_env/reboot 改成 routera/reboot 去重启测试主机。已核对的网关工具没有普通重启能力，init_device 是清空并重建基线，不能代替重启。相关用例保留未实现或需要决定的结论，删去步骤不能证明原用例完整通过。普通 DUT 生命周期协议的接入不在本页交接范围。
 
-本版不执行重启后配置保留步骤：Env 没有 reboot，APV.reboot 契约 disabled；不能把该行改成 routera 的 reboot 去重启测试主机。已核对的网关工具没有普通重启能力，init_device 是清空并重建基线，不能代替重启。涉及重启的用例应保留未实现/需要决定的结论，不能删掉步骤后声称原用例完整通过；后续需先有明确受支持的 DUT 生命周期协议，再独立绑定设备身份、审批与停止/恢复证据。
+原生阶段与字段定位：核对操作名为 cases.verify；命令树 Hook 的拒绝码为 COMMAND_NOT_IN_TREE。执行变更集记录的 action.args 包含 build/buildId、treeSha256、commandReportSha256、commandCheckArtifactId/Sha256；commandReportSha256 是确定性证明摘要，commandCheckArtifactSha256 是完整 command-check.json 的字节 SHA。投递顺序为网关租约、env_prepare、case_submit；环境观察来源字段为 observationSource=gateway.env_prepare。通用执行链规则见页首设计链接。
 
-人的授权由范围角色及 Tool minimumRole 决定，保留来源 readers 和资源策略；机器兼容动作包括 tasks.submit/read、sources.read、methods.use、assets.read、credentials.use、builds.read。上传另需 sources.write，artifact 输入需 evidence.read。跨 tenant/scope 和不可见资产拒绝。原件 SHA 在受理、worker、server 读取、投递回执和结果再核对。同键/同输入重提返回同一任务；新键表示新的物理执行，仍走完整执行链；executionIsChange 资源另需变更集决定。
+## 仓库外配置与身份更正
 
-任务先进入 cases.verify。worker 从绑定来源读取构建列表和当前命令 XML，server 用保留的原字节重新定位构建、解析完整命令路径和重载，重读工作簿所有设备命令，包括初始化行，再执行确定性 command_check。missing、参数违规或不能证明的输入会失败，结果包含已装载 Hook 的原始 code/facts（APV 设备树 Hook 为 COMMAND_NOT_IN_TREE）；不会触碰网关。客户端或技能包的回执不是输入字段，伪造回执会被 schema 拒绝。
+CIRCLE_HUB_EXECUTION_GATEWAYS 指向仓库外配置。平台签发模式的网关资产 configuration.serviceClientId 配置与服务客户端登记、bundle/blob 操作见 [资源身份交接](resource-identity-handoff.md)。该模式不配外部 issuer、不登记个人刷新令牌。网关资产仍是 connector-instance，configuration 保留 `{packageId:"case-gateway",productLineId:"apv",runtimeProfileRef:"<配置引用>"}`，declaration.reads 包含 test-bed、writes 包含 device-config；底层写工具不直接暴露给模型。
 
-默认资源验证通过后直接领取执行租约；只有 executionIsChange=true 才进入 waiting-review。现有审批记录的 action.args 带构建名/buildId、treeSha256、commandReportSha256、commandCheckArtifactId/Sha256。commandReportSha256 是确定性命令证明摘要；commandCheckArtifactSha256 是完整 command-check.json 原件的字节 SHA。审批人可下载 artifact 核对，申请人不能自批。默认一天，可配置审批期限；改输入、资产修订、目标运行配置或 CA 身份使旧批准失效。
-
-满足当前执行链与资源声明要求后，worker 在投递前强制重新获取当前 XML，server 再核对一次，结果必须与批准的树和命令证明一致；普通查询的旧 XML 缓存不能放行。server 持久化与当前操作/fence 绑定的复核记录，一次性消费后才授权 submit intent。随后取网关租约，env_prepare 核对绑定构建、设备数和 ready，再 case_submit。不会自动换构建、换测试床或初始化设备。
-
-运行时配置都在仓库外：CIRCLE_HUB_EXECUTION_GATEWAYS 指向以下文件（所有占位均需由运维填写）：
+以下是既有手工令牌会话兼容配置，所有占位由运维填写；采用平台签发模式时省略 issuer：
 
 ```json
 {
@@ -77,34 +88,20 @@ APV_0 与 APV_1 分别按床配置 comm.ssh_ips 的顺序取第 0/1 台，设备
 }
 ```
 
-issuer 使用 POST /token 的 refresh_token grant；若签发服务使用另一 CA，配置 issuerCaFile/issuerCaSha256。远端私有请求要求 HTTPS，HTTP 只给回环合成验收。每次请求重读并核对配置指纹，拒绝重定向，不关闭全局 TLS 校验。需要由用户或运维先提供并核验 CA；server 不从未验证连接自动建立信任。
+兼容 issuer 使用 POST `/token` 的 refresh_token grant；另一 CA 用 issuerCaFile/issuerCaSha256。CA 文件和 DER 指纹由用户或运维在运行时提供并核验。执行网关使用受信 HTTPS；资料源的明文例外不放宽执行网关或外部签发方，信任与轮换规则见 [凭据与资源](design/approvals-and-enforcement.md#凭据与资源)。
 
-上述 issuer 字段仅保留既有手工会话兼容，通用 OAuth 登记可供其他来源使用（见 client-api-handoff）。当前执行部署已由用户选择 C 自身资源签发模式，不登记外部 issuer 或个人刷新令牌。用户更正环境事实：网关原实际签发方使用 HTTPS，与网关证书共享同一实验 CA，本机可达；先前“明文 HTTP”来自旧客户端配置，不能作为网关现状。环境更正后，circle-hub 接管签发、旧服务退役的决定保持不变，无需 HTTP 例外。原地址、配置构建名、CA 原件及指纹值只在运行时保留。
+历史手工会话登记教程仍适用已验兼容接口：POST `/v1/assets/{gatewayAssetId}/credentials`，value 为含 access_token、refresh_token、expires_at（Unix 秒）、scope 的 JSON 字符串，可含 server 供签发来源核对。返回 credential asset id 放入网关新修订 declaration.credentials，再批准并激活；应为 hub 单独授权会话，避免另一客户端消费同族刷新令牌。重新登录对 credential reference id POST `{version,value}`，引用与连接器修订不变。rotationPending、invalid_grant 及续期并发规则见设计；网关 503（含 introspect 上游不可达）对应 SOURCE_UNREACHABLE，401 对应 SOURCE_LOGIN_EXPIRED。
 
-网关资产是 connector-instance，configuration={packageId:"case-gateway",productLineId:"apv",runtimeProfileRef:"<配置引用>"}，declaration.reads 包含 test-bed、writes 包含 device-config。该连接器不把底层写工具直接暴露给模型，执行只走能力包。资产独立审批并激活。
+签发方更正记录：原网关实际信任的是 HTTPS 签发服务，与网关证书共享实验 CA，维护者确认本机可达；此前“明文 HTTP”来自旧客户端配置，不能描述网关现状。更正后，circle-hub 接管签发、旧服务退役的用户决定不变，无需为旧地址开放 HTTP 例外。地址、配置构建名、CA 原件与指纹值只保留在运行时；历史客户端配置或 healthz 样例标签都不是床实际构建的证据。
 
-网关凭据按个人、按实例登记：POST /v1/assets/{gatewayAssetId}/credentials，value 是包含 access_token、refresh_token、expires_at（Unix 秒）、scope 的 JSON 字符串；可含 server，用于检查签发来源。值只写入私有加密 vault，不回到响应、事件、审计或仓库。将返回的 credential asset id 放进网关新修订 declaration.credentials，批准后激活。为 server 单独授权一份会话，避免另一个客户端同时消费同族刷新令牌。
+## 原生结果字段与设备归属记录
 
-重新登录时可向同一路径的 credential reference id POST {version,value}，仅所有者、当前修订且未停用可替换，仍不返回值。替换与自动刷新共用同一单写者锁，引用/连接器修订不变，避免未知任务因换引用而丢失原目标绑定；审计只记 id/version。它不会重新投递任务，恢复后仍由另一 worker 做独立只读核对。独立核对未见终态或回报不完整时，仅核对操作 failed，原任务继续 unknown、资源仍冻结。
+原生事件名为 execution.commands.rechecked、execution.gateway.submit-intent/submitted/status；交付 result.result 含 executionStatus/channel/rc、cases[{autoid,verdict,steps,checkPoints}]、logSpan、unmapped、parserVersion。制品为 command-check.json、gateway-results.json、execution-results.json；case log/sessions 留在网关原件。设备解析器版本为 framework-checkpoints/2，接收独立归属输入 `{environment,topology}`；worker 在已有租约内按需读 bed_topology(refresh:false)，与 env_prepare 一起存 gateway-results.json。
 
-访问令牌临近到期由单写者刷新，并原子持久化新访问/刷新令牌。并发运行重读同一最新值，不重复消费旧刷新令牌；invalid_grant 标失效，明确 5xx 保留原凭据。请求中断或成功结果不完整时保留 rotationPending，停止重放并要求重新登记，避免旧令牌重放撤销整族。网关 503（含上游 introspect 不可达）是 SOURCE_UNREACHABLE；401 才是 SOURCE_LOGIN_EXPIRED，不弹密码框。
+APV 检查点日志的四种组合为 Success/Fail × successed/fail，分别对应 found/not_found 的通过或失败；支持跨行模式，收尾重列不重复计数。设备行取去时间戳后的管理 IP 匹配 sends command；主机行按 test_env 主机名匹配 executes command。逐设备命令游标、logSpan 与缺映射时的处理规则见 [设备归属与日志解析](design/approvals-and-enforcement.md#设备归属与日志解析)，不再在此重复通用判定。
 
-事件包含 execution.commands.rechecked、execution.gateway.submit-intent/submitted/status。submitted 持久保存 remoteTaskId、原件 SHA、用例身份及 fence；worker 保持 C 和网关两层租约。result.result 返回 executionStatus/channel/rc、逐 cases[{autoid,verdict,steps,checkPoints}]、logSpan、unmapped、parserVersion；artifacts 包含 command-check.json、gateway-results.json、execution-results.json，可按 SHA 下载。原始 case log/sessions 在网关原件中保留。
+1.1.1 的归属来源更正记录：旧部署的 env_prepare 没有有序 IP，bed_topology 也不输出 applies_to——后者曾只是生成器输入，不能因设计列了候选就当成实际回报。原生解析按实际存在的字段取 conf.device_ips → applies_to.device_ssh_ips → topology.devices。前两项是有序地址，对应 APV_0、APV_1 等；第三来源要求 env_prepare.device_count，全部 type=负载均衡 设备的 name 匹配 `^APV([0-9]+)$`，数量和序号集合恰为 0..device_count-1。日志 IP 去 CIDR 前缀长度后在对应设备 ipv4 中唯一匹配；共享虚拟地址不归属任何设备，也不推进两边游标。第三来源的 deviceMap.source 为 gateway.bed_topology.devices。
 
-每个检查点只由明确日志帧与工作簿行匹配：四种 Success/Fail × successed/fail 对应 found/not_found；支持跨行模式，收尾重列不重复计算。数量、模式、方法、日志时效或用例身份不匹配时 unknown/unmapped。命令步骤仅在明确且唯一的派发行出现时 observed；整案 PASS 不证明每一步 PASS，静态回放也不替代框架判定。用例 fail 可以是已成功交付的执行结果；任务 status=succeeded 不等于测试全部通过。缺失证据交付 partial。
+conf.device_names 的边界仍适用：拓扑名字来自床配置；改成任意名字会破坏第三来源的完整 APV<index> 规则，不能由地址落在某设备 ipv4 中进一步猜 APV_n。维护者后续已报告 cexg **0.3.1** 实际部署、env_prepare 返回 conf.device_ips（conf 顺序）；收到该字段时走第一来源，不受 device_names 改名影响。没有实际返回有序字段时，仍受第三来源约束，不能补造地址。
 
-超时、lost、worker 断开或投递后取消转 unknown，资源冻结，后续新投递 RESOURCE_BUSY，不自动重新 case_submit。旧 fence 的回报拒绝。取消前未派发的任务关闭审批并 cancelled；本地取消不证明远端停止。已有 remoteTaskId 时，由另一 worker 经原身份只读 case_status/results 独立核对，终态与工作簿 SHA 对上后 reconciled、交付并解冻；没有 remoteTaskId 的投递断线不能自动恢复，必须先在网关侧对账，不能盲重投。
-
-明确派发前拒绝是 failed，不冻结：网关 lease/environment/validation 阶段声明的拒绝，以及旧网关已知的工作簿契约诊断可证明未派发时，原 reason/details/完整回执保留在 result.error.details.gatewayRefusal；有明确码用该码，否则 GATEWAY_REFUSED，不能把 environment 一律猜成 BUILD_MISMATCH。可修输入进入 waiting-input（gateway-refused/build-mismatch）。拒绝带 task_id 或 dispatched:true、成功提交后 case_status 再报契约文字、投递断线及无可证阶段的错误均保持 unknown，不释放可能仍运行的远端租约。已证未派发或确认终态才尝试 lease_release；remoteLeaseReleased=true/false 如实写回成功或失败回执，释放失败保留 leaseReleaseError，不覆盖原拒绝。
-
-execution.environment.observed 只表示 worker 先前 env_prepare 的观察（observationSource=gateway.env_prepare）；case_submit 可以再做网关内部契约/环境核验，其拒绝不被这条先前 passed 覆盖。设备结果解析接收独立归属输入 {environment,topology}：env_prepare.conf.device_ips 或 bed_topology.topology.applies_to.device_ssh_ips 为有序设备地址，对应 APV_0、APV_1 等。worker 在已有租约内按需只读 bed_topology(refresh:false)，与 env_prepare 原件一起存 gateway-results.json；映射缺失/冲突/无效为 device_map_unavailable，不猜设备名。去时间戳后按管理 IP 归属 sends command 日志，逐设备前进命令游标，同命令跨设备或同设备重复均可有各自 logSpan；缺命令只使对应步骤 unknown。test_env 仍按主机名匹配，检查点、整案结论各自独立。parserVersion 为 framework-checkpoints/2，解析接口保留供未来产品包 Tool 接管；本笔先修正确性，不把 APV 规则加进 hub 核心。
-
-当前只完成合成网关验收。真实网关上游核验不可达是环境阻塞，待用户/运维恢复并登记个人凭据后再做真实投递；真实 case.xlsx 由用户上传，未以合成结果冒充上机通过。
-
-修订 3 的 static-secret 模式与明确的 HTTP 资料源例外见 [客户端交接](client-api-handoff.md#修订-3凭据模式隔离与明确的明文例外)。执行网关仍要求受信 HTTPS；资料源的明文例外不放宽网关或外部签发方。主机闭集、设备树与自毁核验由批准的产品线 Hook 决定，解析器不会在零 Hook 时补一份主机白名单。Scope 访客只能读取；没有 credentials.use 管理/直接使用权限，获准的只读 Tool 由 worker 代取自身绑定凭据。普通成员执行仍不审批，executionIsChange 资源继续用冻结变更集。
-
-设备归属来源更正（1.1.1）：当前部署版 env_prepare 没有有序 IP，bed_topology 也不输出 applies_to；先前两种候选不能证明现网归属。解析仍保留它们作为高优先级可选协议，按 conf.device_ips → applies_to.device_ssh_ips → topology.devices 顺序选择，实际有字段才使用。第三来源必须有 env_prepare.device_count，全部 type=负载均衡 设备的 name 匹配 ^APV([0-9]+)$，数量与序号集合恰为 0..device_count-1。每条设备日志的 IP 去 CIDR 前缀长度后在这些设备 ipv4 集合中匹配，只有唯一归属才采用；共享虚拟 IP 不被猜成管理地址。名称任意、索引缺失/重复/越界或计数不足均 device_map_unavailable。deviceMap.source 为 gateway.bed_topology.devices，原拓扑仍按 SHA 留 B。未来网关明确回 conf.device_ips 后优先使用该有序来源，不要求站点生成器提供并不存在的字段。
-
-dev-stack 的排空是合作式、没有截止时间：消息抵达时若 claim 已在途，新领的那一笔仍可能完成后才退出；没有强杀设备操作来赶升级期限。其余 worker 持续服务子 Tool，单 worker 退出保留数据库。独立部署的 worker 仍由部署管理器 drain/替换，CLI 请求标志不代表外部进程已升级。
-
-conf.device_names 的边界：网关生成拓扑时采用床 conf 的 device_names；管理员把名字改为任意名称后，第三候选不再满足 APV<index> 的完整序号规则，整组设备步会是 device_map_unavailable。管理 IP 落在 ipv4 中只能证明拓扑设备，不能凭任意名称推断 APV_n。维护者计划从 cexg 0.3.1 起让 env_prepare 实际返回 conf.device_ips（conf 顺序）；收到该字段时使用第一候选，不依赖 device_names，改名不会破坏归属。没有实际返回有序字段时仍遵守第三候选限制。共享地址若也出现在日志中，不分给任何设备、也不推进两边的命令游标。
+运维记录：dev-stack 排空没有截止时间，消息抵达时已在途的 claim 仍可能做完一笔才退出；不强杀设备操作赶升级，单 worker 退出保留数据库。独立 worker 的 drain/替换由其部署管理器完成，CLI 标志不等于进程已升级；通用排空规则见 [凭据与资源](design/approvals-and-enforcement.md#凭据与资源)。

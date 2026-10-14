@@ -1013,3 +1013,11 @@ H1 期限 **4e84ba0**、H2 拒绝来源 **8cf4998**、M3 终态后结果与补�
 合入全部修复后，仅本轮 11 个相关集成文件在主树串行使用临时 PostgreSQL，**38/38**；九个相关合同 / 方法文件 **25/25**，共 **63 个不同验收通过、无 skip / 取消**，最终 typecheck / diff 通过。上述是定向组合核验，不能称全套；维护者负责独立全量。停用、坏回报、迟到回报、解释失败与终态证据按各项边界分别断言，未放宽时限或断言；三 agent 并行实现 / 交叉复核，PostgreSQL 始终单 runner，避免相互清理造成假红。
 
 工作树仅本地签署，未 push / 部署 / 接触验证栈、真实网关 / 设备 / 模型、Circle 或独立产品包。原生 packs/apv/execution **1.1.1**、harness-adapters、permission-export、foundation / references 相对本轮 f4e294f 基线零差异。B 的 APV 新 Tool / flow、C/D 切换与退役继续留给维护者协调，不由本轮通用驱动修复自行授权。
+
+## 87：执行交接裁为变更记录
+
+维护者独立复核 **49f8f98** 全量 **623/623、无 skip**（contracts 17、methods 212、acceptance 387、references 7，tsc 通过），A3 合入 main 为 **be9c6c0** 并已推送，server-s2 快进至同一基线。完整结果是维护者外部复核，公开 CI 尚未纳入本轮结论；验证栈继续 **e1ca68d**，本轮不升级。APV 新 Tool / flow 的 B 阶段由 Circle 在独立 circle-packs 实施。
+
+按 handoff-map 裁剪 case-execution-handoff：通用授权、变更集、核验、unknown、凭据与设备结果判定改为设计章节指向；保留原生 **1.1.1** / flow 版本、方法升版运维、提交教程、完整旧运行配置、APV 表标记 / 方法 / 检查点 / 主机名闭集与参数策略、console / reboot 的原阶段限制及三种设备映射来源。旧网关不可达、无有序 IP 和签发方误判明确标成阶段史，后续 cexg 0.3.1 的实际字段只归维护者观察，不冒称部署了 A3。
+
+两 agent 只读交叉核对产品契约保留，**18** 个本地链接与锚点检查通过，diff / 敏感字面检查通过；仅文档与进度签署，不跑代码测试 / PostgreSQL，不改代码、设计规范或独立包，不 push / 部署。客户端 handoff 的裁剪和顶层未知键说明随后单独提交。
