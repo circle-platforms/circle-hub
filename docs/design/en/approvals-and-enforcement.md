@@ -79,7 +79,7 @@ An explicit refusal by the resource at its lease, environment, or contract-check
 
 ## What if production equipment needs the two-person rule
 
-Do not invent another concept. When a resource is registered it declares `executionIsChange: true`. An execution submission against it is first registered as an execution-submission draft Asset (freezing the input revision, the method digest, the resource version, the original id, and the workbook sha), as one item of a Change set, and only after approval does it enter the Enforcement chain. A test bed does not declare this by default, and goes straight through the Enforcement chain. One concept, two declarations.
+Do not invent another concept. When a resource is registered it declares `executionIsChange: true`. An execution submission against it is first registered as an execution-submission draft Asset (freezing the input revision, the method digest, the resource version, the original id, and the workbook sha), as one item of a Change set, and only after approval does it enter the Enforcement chain. A test bed does not declare this by default, and goes straight through the Enforcement chain. One concept, two declarations. Such an approval is consumed exactly once by the operation it belongs to, and a Decision is never reassigned to another operation.
 
 ## Credentials and resources
 
