@@ -1197,3 +1197,11 @@ FlowDefinition 可显式声明 historyMode=controlled；内联 observations / ex
 INVALID_EXECUTION_WORKBOOK 与 COMMAND_VALIDATION_FAILED 登记进核心 F 错误目录，定义仍为 HTTP 422 / validation。原生原有同定义登记不改，重复登记保持幂等，未登记产品规则码仍不能作为 outcome.error。平台登记的是通用错误分类，不在核心解析产品工作簿或命令规则。
 
 独立 Node 测试文件只导入核心 contracts，未装产品模块的旧实现新三叶 **1/3**→新 **3/3**；连同原通用网关拒绝码消费者 **4/4，无 skip**。typecheck / diff 通过。原生 / 独立包字节零改，只本地签署，不跑全套或部署。
+
+## 109：C 后续 6，严格状态词表与退出事实
+
+严格合成夹具 status schema 明列 queued / running / done / lost，实际轮询 queued(null rc)→running(null rc)→done(0)。只有 done 加有限整数 rc 可证明该协议的 runner 终态；lost 虽是合法原始形状仍不能证明停止，缺 / 空 rc 的 done 同样不证明终态。写操作保 unknown，不取 results、不重派、不释放远端租约，原 status 字节及 SHA 留 B、资源冻结。非零整数 rc 只说明 runner 退出，不推断用例通过。
+
+新纯词表用例旧 **0/1**→新 **1/1**；默认文件 **4 pass / 4 skip**，显式固定 **3c46f707** 严格文件 **8/8，无 skip**（四项纯、完整正常链与三项未知写），逐项核 submit 一次、未知写无 results / write lease_release、B 原回执 SHA。typecheck / diff 通过。仅验收、夹具及中英附录，通用驱动 / 原生 / 独立包零改动，不跑全套、不 push 或部署。
+
+六项按维护者顺序各一笔签署。最终集成针对交叉消费者再核：结果关联 / partial / 完整模板 / 核心码纯 **14/14**；四种普通结果读边界与终态坏 SHA 合跑 **4/4 + 1/1**，没有 skip / fail，证实新增 partial 交付闸与父缺口摘要配合，篡改关联的原报告可按 SHA 回读、仍走真实 afterResult。最终 typecheck / diff 通过；packs/apv / foundation / references / harness-adapters 相对本轮基线零差异，工作区收尾干净。只运行针对性用例，全部 PostgreSQL 串行清理，全套仍由维护者独立执行；本轮不 push、不部署、不触 7420 / 网关 / Circle / 独立包。

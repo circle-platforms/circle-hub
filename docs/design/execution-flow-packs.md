@@ -433,6 +433,8 @@ status/results/reconcile 仍由 taskIdArgument 注入持久远端身份，并只
 
 APV 合成模块验收把冻结包资源模板中的完整 receiptPolicy 原样登记并经另一身份批准，核批准摘要及配置的 canonical 摘要，不只复制参数或租约映射后回退 echo 协议。合成原始 submit / status / results 分别提供实际阶段的工作簿 SHA / 用例身份、状态与结果 SHA；这是合成协议接法验收，不证明真实网关或设备兼容。
 
+严格 cexg 合成状态夹具的 raw state 词表为 queued / running / done / lost；批准的 completion 将 queued / running 视为非终态，只将带有限整数 rc 的 done 视为已观察退出。lost 的形状合法，但不证明完成，核验以固定 EVIDENCE_INSUFFICIENT 停止轮询并保留未知写、原件与远端租约；done 缺 rc 或 rc=null 同样不可证。非零整数 rc 只表示 runner 退出事实，不自动生成整案或逐步通过结论。此词表属于该批准协议的测试数据，不是新增通用 uncertainValues 字段，也未改变原生路径。
+
 `receiptPolicy.receipts` 分 submit / status / results / 可选 reconcile，每项声明自己的 receiptSchema、remoteIdPath，以及可选 sha256Path / caseIdsPath / completion。completion 为 `{path,runningValues,terminalValues,rcPath?}`：path 可以指向 state、channel 或有限整数 rc，词表互斥；rc 只是 runner 退出事实，ready / rc=0 都不扩大为逐用例通过。未声明 receipts 时继续完整旧 echo 协议；新模式不要求网关不存在的 request_hash / input_sha256 / byte_hashes，也不把工作簿 SHA 当整份 FlowSubmission 的摘要。
 
 新模式要求批准的 `identityProjection:{stepId,path,export,byteArgument,sha256Path,caseIdsPath,idPath?}`。byteArgument 是映射后的实际 wire 参数。C 在意图前从本任务 / 输入修订的成功 tool.call 查询实际 action、方法 pin、请求摘要、受控槽引用及 B 投影原件，核对其确实接收同份工作簿，再按字段路径取 SHA 与身份列表。来源不是 caller value；投影原件、operationId、方法 pin、原件 SHA 和身份保存在 receipt_facts（迁移 42），此时不产生 remote_identity。submit 必须核原件 SHA / 身份，results 必须核原件 SHA，随后阶段均核持久远端身份；历史报告重新核冻结证据，撤权不抹已发生事实。
