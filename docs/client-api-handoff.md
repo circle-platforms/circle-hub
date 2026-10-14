@@ -625,6 +625,8 @@ beforeDispatch 由 C 在真实写出口按实际 resource / operationId / curren
 
 beforeDispatch / afterResult 的资源由 subject.operationId 对应的本任务 / 同修订 provider 步骤绑定，不按 JSONB 的键顺序选第一个。其它 verify 挂点只有唯一资源才可确定，多资源无明确关联时拒绝歧义；零资源的纯 transition / Tool 不构造不需要的 HookBinding。实际请求 Hook 时仍遵原资源入参契约。
 
+provider 写操作的授权覆盖实际协议工具链：当前提交、租约 acquire / heartbeat / release、status、result 都分别满足 minimumRole 与资源策略，不能由较低角色的提交 Tool 代授较高角色的内部调用；普通只读只核自身，独立核对核 reconcile / release。整批预检、入队、轻预检和短期资源令牌活性均使用同一链，角色撤回后不得继续调用。
+
 worker 内部的既有 preflight 路由支持可选 `lightweight:true`；首次完整授权取原件并核字节 SHA，之后 worker 保留不可变 frame，取消轮询、取凭据前检查、事件和心跳使用引用预检。每次仍重新核 scope / 角色 / readers、输入修订、方法 / 来源 / 资源 / runtime-profile、凭据、租约与 fence；只缓存字节，不缓存权限。B 的 contentReference 与 content 共用授权规则，轻预检不读原件字节，也不返回 base64 或源码 files；冷加载实际出口 Hook 的模块代码另行核验，不能把来源原件零重读说成所有冷启动 B 读取为零。
 
 只有已持久化写意图之后、且尚不能证明终态的失联才进入 unknown；不重派，同资源冻结，核对由独立 worker 读取原远端身份。明确的 `ok:false`、已批准派发前阶段、`dispatched:false` 且没有远端 id 字段的拒绝为 failed；成功回报或包含远端 id（包括 null / 空值）的回报不能用于证明未派发。只读超时为 failed / UPSTREAM_TIMEOUT，无写意图时不冻结；核对失败仍保留原写 unknown 和冻结。取消只证明本地停止，不证明远端已停。
