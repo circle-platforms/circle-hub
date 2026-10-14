@@ -991,3 +991,7 @@ A1 **b0c3172**、A2 **da3d679** 提交后工作区干净，按维护者授权将
 交叉复核确认只核 submit 的 minimumRole 会代授内部 lease / status / results 调用。纯机制旧实现 **0/3**，真实三叶旧实现 **0/3**：成员 submit 合格却误调管理员协议工具。C 按实际机械调用链逐项沿既有 providerTool 核用户角色、机器 scope 与资源策略，在整批预检 / 入队 / 轻预检 / 短期资源令牌活性使用同一规则；普通读与独立核对仅核各自实际调用集，不扩权限概念。
 
 纯 **3/3**、临时 PostgreSQL最终 **3/3，无 skip**。第一次修后验收的手工权限检查被真实 worker 的抢先 unknown 收尾打断，三叶 FENCING_STALE；只加暂停 / finally 恢复的合成进程屏障后，分别证实 FORBIDDEN_ACTION、恢复管理员同 pin 成功及实际 500ms 撤权停止 / unknown / 不释放，不放宽断言或时限。主树代码与前两项手合后方法 **4/4**、typecheck/diff 通过，本项单独本地签署；停用后的历史事实记账仍由另一 agent 按三条真实红例继续修，不跑全套或部署。
+
+## 83：错误通道与不透明产品结果
+
+只读复核发现规范化递归会误改产品 output.result 内名为 error / resultError 的业务码，且与先投影后指针回读不一致。纯三叶旧实现 **1/3**，将通道入口限定为报告顶层 error / output.resultError，已进入的 Hub 错误 details 继续规范；产品整棵结果保持原值，无按键名推断业务错误。新纯 **3/3，无 skip**、typecheck/diff 通过，主树再 **3/3**；B 原件及 reportHash 不改。本项由独立 agent 实现与交叉复核，窄修单独签署，不跑 PostgreSQL / 全套或部署。

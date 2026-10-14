@@ -641,6 +641,6 @@ status 原始回报达到已批准终态并与原操作、输入摘要、原件 
 
 provider 返回先由 worker 按 canonicalJson UTF-8 字节以 SHA 入 B；事件与回报只带绑定 operation / stage 的原件指针，C 回读核验 SHA 与大小。该转换明确是解析后的 provider JSON，不冒充原始 HTTP wire 字节。原件与小投影 / 解释分别保留，NUL 或大文本不直接入 JSONB；解析 Tool 可通过受控槽读取授权原件。客户端按 result 中的 evidence / artifacts 下载并重算 SHA，普通事件不内联正文。非回环带认证 HTTP 默认拒绝；只有已独立批准的 runtime-profile 明文例外才能生效，实际使用时每次审计与证据记录 plaintextAuthentication:true，文件自报例外不生效。
 
-worker 回报的 error / resultError 通道只接受 F 已登记错误码；未登记值投影为 INTERNAL_ERROR，产品结果中的普通 code 字段仍是数据。实际 API JSON body 的 canonicalJson 字节另存 B 的 worker-report 制品（不含 HTTP 认证头），可按 SHA 回读；这不是原 HTTP 空白字节。报告幂等继续使用契约解析后、投影前的原 reportHash，和制品字节 SHA 是两种明确的转换口径，同 hash 重报去重、异 hash 拒绝。
+worker 回报的顶层 error 与 output.resultError 通道（及其错误 details）只接受 F 已登记错误码；未登记值投影为 INTERNAL_ERROR，output.result 整棵产品结果仍是数据，包含嵌套名为 error / resultError 的业务对象；内联与 B 指针回读使用同一原文边界。实际 API JSON body 的 canonicalJson 字节另存 B 的 worker-report 制品（不含 HTTP 认证头），可按 SHA 回读；这不是原 HTTP 空白字节。报告幂等继续使用契约解析后、投影前的原 reportHash，和制品字节 SHA 是两种明确的转换口径，同 hash 重报去重、异 hash 拒绝。
 
 A3 只用 Meridian 与另一份完全合成模块交替验证同一驱动，不执行 APV 新 flow。原生 apv-case-execute **1.1.1** 的实现文件、摘要及旧任务绑定保持原样；APV 新 Tool / flow 由独立 circle-packs 负责，部署切换与退役另由维护者协调。这里不代表真实设备、真实模型或任意远端 MCP 服务已通过验收。
