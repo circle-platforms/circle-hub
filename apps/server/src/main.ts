@@ -33,6 +33,7 @@ import {readCompensationMigration} from '../../../packages/execution/src/read-co
 import {readAttributionMigration} from '../../../packages/execution/src/read-attribution-migration.ts';
 import {workQueryMigration} from '../../../packages/tasks/src/work-query-migration.ts';
 import {registryPageMigration} from '../../../packages/tasks/src/registry-page-migration.ts';
+import {KnowledgeRegistryPages} from '../../../packages/knowledge/src/registry-pages.ts';
 import {QueueQuery,TaskPageQuery} from '../../../packages/contracts/src/index.ts';
 import {Notifications,NotificationQuery} from '../../../packages/tasks/src/notifications.ts';
 import {WorkQueries} from '../../../packages/tasks/src/work-queries.ts';
@@ -105,6 +106,7 @@ const sourceArtifacts=new SourceArtifacts(store,auth,assets,knowledge,graph);
 const productModules=new ProductModules(sourceArtifacts);methods.products=productModules;
 const serviceClients=new ServiceClients(store,auth,assets,Number(process.env.CIRCLE_SERVER_RESOURCE_TOKEN_TTL_SECONDS??300));
 knowledge.sourceAccess=async(ctx,id,tx)=>{await entities.checkSourceAccess(ctx,id,tx);await graph.checkSourceAccess(ctx,id,tx);};
+const knowledgePages=new KnowledgeRegistryPages(knowledge,graph);
 const execution = new Operations(store,auth,tasks,knowledge);
 const catalog=new ToolCatalog(store,auth,assets,tasks,execution,graph,installedToolPackages);await catalog.initialize(process.env.CIRCLE_SERVER_CONNECTOR_PROFILES);
 const ingestions=new Ingestions(store,tasks,graph,installedToolPackages);catalog.ingestions=ingestions;
@@ -319,6 +321,7 @@ const server = createListener(async (request, response) => {
       }else send(response,200,{data:await entities.get(ctx,id)});return;
     }
     if (url.pathname === '/v1/status' && request.method === 'GET') { send(response,200,{data:{apiVersion:API_VERSION,syntheticOnly:true,bootId,processId:process.pid}});return; }
+    if(request.method==='GET'&&['/v1/sources','/v1/evidence','/v1/artifacts'].includes(url.pathname)){send(response,200,{data:await knowledgePages.page(ctx,url.pathname.slice('/v1/'.length) as 'sources'|'evidence'|'artifacts',RegistryPageQuery.parse(Object.fromEntries(url.searchParams)))});return;}
     if (url.pathname === CLIENT_ROUTES.tasks.path && request.method === CLIENT_ROUTES.tasks.method) {
       const query=TaskListQuery.parse({limit:url.searchParams.get('limit')??undefined,kind:url.searchParams.get('kind')??undefined,capabilityPackId:url.searchParams.get('capabilityPackId')??undefined,after:url.searchParams.get('after')??undefined});
       send(response,200,{data:url.searchParams.has('view')?await tasks.page(ctx,TaskPageQuery.parse(Object.fromEntries(url.searchParams))):await tasks.list(ctx,query.limit,query)});return;

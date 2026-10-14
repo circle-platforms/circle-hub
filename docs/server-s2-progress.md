@@ -865,3 +865,5 @@ abdb701 的完整验收 contracts **5/5**、methods **147/147**；acceptance **2
 第一组先复现审批/服务客户端 **0/3**。task/admin approvals 复用 facetedPage 与任务授权/私有边界；原数组保留，admin 集合不借别的范围角色放宽读取。页的过期状态显式 expired，迁移 **39** 初始化 approvals.updated_at 到既存 created_at，后续行更新用既有 registry_touch，不猜缺失历史。service-client 列表先筛拥有管理权限的 scope，没有则同形空集合，limit/游标/分面仍校验；详情、登记、轮换、吊销权限不改。三新例与原列表/签发验收 **13/13**、无 skip，typecheck/diff 通过；未跑全套。
 
 来源/证据/制品原先没有 HTTP 集合 GET；按维护者 Otty 明确答复，在既有资源路径补集合页，并令 MCP resources/list 投影复用同一分页权限核心；不另起 MCP 查询规则。后续按 B 三类、审计/worker、bot runs、通知次序，分组本地签署，不 push/部署，不触碰 7420/网关/Circle/独立包。
+
+B 三类先写旧路由 **0/4**（与 operations 三例顺序复现合计 **0/7**），再接既有路径 GET view=page。来源复用企业/知识原件 ACL，证据保留任务私有与 run 边界，产物可读绑定去重及 owner 过滤不泄漏隐藏申请人。MCP resources/list 改共用授权元数据 + facetedPage，既有 knr/mcr 加上可读 src 原件，不为列目录下载 bytes；游标为统一绑定形状，旧资源游标需重列，不误称兼容。直调相同核心证明 run 分区、knr/个人 mcr 与禁止字节读取；B/MCP 相关 **11/11**，无 skip，typecheck/diff 通过。规模边界与引用形状已交接；审计/worker/bot 与通知仍在本轮后续，不纳入本组提交，未跑全套。

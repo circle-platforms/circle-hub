@@ -516,6 +516,10 @@ outbox 保留默认最近至少 **10000 条事件**的补读窗口、最多 **10
 
 审批登记簿已接：/v1/tasks/{taskId}/approvals 与 /v1/admin/approvals 加 view=page，旧数组保留。任务页沿用 tasks.read/私有任务/run 边界，admin 页限定当前 admin.manage 范围，旧 admin 数组同样遵守私有读取。owner 为 applicantId，产品线/流程取绑定任务已记录的 context/flowVersion；status/lifecycle 在页上把 open 且已到期投影为 expired，原审批行与旧数组状态不改。createdAt/updatedAt 用审批自己的时间，迁移 39 从 createdAt 初始化历史更新时间，仅后续实际审批行变更用触发器记录；不推断缺失历史决定时间。
 
+B 集合页：GET /v1/sources?view=page、/v1/evidence?view=page、/v1/artifacts?view=page 使用 RegistryPageQuery/RegistryPage，分别列 src_ 上传原件、evd_ 任务证据、art_ 产物，返回现有引用字段与 downloadPath，不返回字节。这些路径此前没有集合 GET，必须显式 view=page；上传与 content 不变。范围/来源 ACL/私有任务/run 归属先核对，再计算 total 与分页；来源同时服从历史与当前企业观察、知识来源 readers，产物存在多个绑定时只计一次。owner 对来源是上传者、证据是任务申请人、产物是任一可读绑定的申请人；隐藏绑定不参与 owner 筛选。不伪造状态、产品线或流程维度，未支持分面为 INVALID_PAYLOAD。年龄/更新时间均为不可变登记时间。
+
+MCP resources/list 是同一 B 权限与分面查询的投影，除上述三类还保留既有 knr_ 与个人 mcr_ 资源；新增可列表的 src_ 和已支持的 source URI 读取一致。请求 params._meta["hub/query"] 可传同一公共分面/limit/sort/order，cursor 用 params.cursor 原样续读；默认 limit=100、年龄倒序，返回 resources/nextCursor 与 _meta["hub/total"]。游标改为统一查询/身份绑定形状，旧资源游标不兼容，应重新列第一页；REST 与 MCP 集合不同，不能互换游标。列表全程不读取原件字节；复杂来源/knr 的递归 ACL 会遍历当前授权范围内候选元数据，耗时随候选量增长，不承诺只处理 limit 条元数据。knr_ 与 mcr_ 的现有读取/个人权限不变。
+
 迁移 38 追加修复 36 的归因细节：多条已释放读取统一为 UPSTREAM_TIMEOUT/sideEffects=none/sorted operationIds；不触动 unknown/write。task.read-release-audit-links-completed 的 correctsAudit 指原 36 任务补偿行，relatedAudits 列出该任务/输入全部 30 原释放审计；原行/原 min 引用保持历史原样，阅读完整链以追加行补足，不猜历史状态。29/30/36 的校验和均不改。
 
 task/admin events 的权限、窗口校验与取页也在同一只读快照内；裁剪并发时返回该次校验的完整可见页或明确 CURSOR_EXPIRED，长轮询逐次重核，不返回静默缺失的空页。bot.admission-failed 的通知原因读取 payload.reason.code；完整运行错误仍从 bot runs 的 error 或任务 result.error 获取。

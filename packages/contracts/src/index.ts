@@ -393,5 +393,8 @@ export const CLIENT_ROUTES = {
   result:{ method:'GET',path:'/v1/tasks/{taskId}/result',response:TaskResult },
   input:{ method:'POST',path:'/v1/tasks/{taskId}/input',request:InputRequest,response:TaskView },
   sourceContent:{ method:'GET',path:'/v1/sources/{sourceRevisionId}/content' },
+  sourceList:{method:'GET',path:'/v1/sources',query:RegistryPageQuery,response:RegistryPage},
+  evidence:{method:'GET',path:'/v1/evidence',query:RegistryPageQuery,response:RegistryPage},
+  artifacts:{method:'GET',path:'/v1/artifacts',query:RegistryPageQuery,response:RegistryPage},
   artifactContent:{ method:'GET',path:'/v1/artifacts/{artifactId}/content' },
 } as const;
