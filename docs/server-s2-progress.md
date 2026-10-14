@@ -1269,3 +1269,29 @@ abc5af6 提前核自动协议参数，夹具把 undeclared:true 放进 additiona
 更新后该叶实际 **1/1，无 skip**，typecheck / diff 通过。只改一个测试叶与进度，原生 / 独立包 / 生产校验零改，PG 清理，不跑全套。维护者已确认 08-connectors 的超时单跑 **2/2**、按负载假红处理，本轮不改它的实现或断言。
 
 两项按顺序各一笔签署。最终合并针对两条原失败消费者 **2/2**、新纯边界 **2/2**，无 skip / fail，typecheck / diff 通过；原生 packs/apv / packs/meridian / foundation / references / harness-adapters 相对本轮基线零差异，树收尾干净。PG 串行清理，不跑全套、不 push / 部署、不触 7420 / 网关 / Circle / 独立包。最终 HEAD 交维护者独立全量。
+
+## 119：新版产品包验收的冻结版本门
+
+两侧验收去掉固定等于 1.3.0，改为用现有冻结目录与已 SHA 核过的文件集合读取产品线清单版本，要求与 catalog 版本相同且 SemVer 不低于稳定 1.3.0。核主 / 次 / 补丁数字、同基版本 prerelease 低于 release、build metadata 不影响优先级；不读运行中的工作区清单、不改 F 版本 schema / 默认 pin、不造新的 provider 或模块夹具。诊断仍打印冻结版本、ref / commit 与 digest，未改变其文本。
+
+新增版本规则纯 **3/3**，两个文件默认 opt-in gate 与相关纯测试合跑 **7 pass / 8 skip / 0 fail**，skip 不计通过。typecheck / diff 通过，没有 PG / 外包执行或网络访问。实际产品包 1.3.1 / CIRCLE_PACKS_REF=main 的两侧验收按维护者安排由维护者执行，本笔只证明版本门；仅测试与现有夹具 / 本记录，本地签署、不 push / 部署或触现场。
+
+## 120：被拒流程动作的 Hub 校验详情
+
+transition 的动作被 C 拒绝时，原 generic failure.code / message 保留，failure.details 增加有界 stepId / kind 和 cause（Hub ApiError 的登记码、message / details 沿原 projectWorkerErrors / errorMetadata 处理）。动作上下文由 F 已通过的实际动作产生，覆盖首个 requestHash / 缺槽检查、后续 provider 校验与最终 enqueue；整体 parse / 批次错误定位到持久 transition，不猜未经校验的产品动作。固定上下文与 cause.details 独立预算，巨大的详情可省略并给 SHA / 大小，不吞掉动作与原因字段。
+
+不复制 args、byteSlots 内容、原件字节、产品 result 或 transcript；普通 worker / 非 ApiError 不新增 Hub cause。既有投影是错误码与预算 / NUL 处理，不把它描述为任意文本凭据过滤。事件种类和投影不变，批准 / afterResult / 原子拒绝门不放宽。
+
+先写两动作合成验收：合法写前缀后接缺失槽 Tool。旧 **0/1** 精准失败只在 details.stepId 缺失，原 INVALID_PAYLOAD、零 RPC / accepted 写 / intent / frozen 已成立；修后 **1/1**（约 3.8 秒），详情为真正被拒 stepId / kind 与缺少冻结字节绑定的原因，参数 sentinel 不披露。新纯 **2/2**、既有错误预算消费者 **4/4**，无 skip；typecheck / diff 与独立只读复核通过。worker / 原生 / 包 / 归档零差异，PG 串行清理，仅本地签署、不跑全套、push 或部署。
+
+两项各一笔本地签署，最终合并的新版本门 / 错误详情纯 **5/5**，typecheck / diff 通过；工作区干净。相对 f5b8845，worker / 原生 / 产品包 / foundation / references / harness-adapters 零差异，事件种类 / 投影未变，没有新增 provider / 模块夹具。全套与产品包 1.3.1/main 的实际 opt-in 两侧验收留维护者，不 push、不触 7420 / 网关 / worker / Circle / 独立包。
+
+## 121：XML 原件必须经模块运行时消费的验收
+
+基 60220cf，现有 apvModuleFlow 增加可选 treeOriginal='xml'。此分支上传 / 登记 / 注入仅 workbook、command-tree XML 与 function-contract 三件原件，不含 command-check；原默认 JSON 四件原件与既有负例行为保留。合成 XML 采用 Hub commandsFrom 支持的 commands→scope(configuration)→menu(service)→item(inspect)→STRING target 参数，命令头 service inspect 加 alpha 对应 apvDeviceCommand。局部 checked 返回只为旧夹具类型兼容，不上传或作为新用例的核对依据。
+
+新增原 opt-in 下的完整流程用例，要求实际 delivered：已批准来源与输入均无 command-check，真实 tools/command-check.ts 的 checkCommands Tool 动作使用字面命令 / identity 参数及 command-tree byteSlots，字节由现 Hub 运行时追加。断言该步骤成功观察的 heads 对 apvDeviceCommand 为 present:true、result.sourceSha256 等于上传 XML 原件；若 C 返回投影指针则按真实 B 引用回读 / 核 SHA。后续设备 Hook 消费该投影，provider 只 submit 一次，所有操作为 flow.invoke，原生文件 SHA 不变。没有直接在测试里调用产品 Tool 或使用预编回执替代运行。
+
+本地 typecheck / diff 通过；相关版本门 / provider 纯 **5/5**，A3 默认 **5 skip / 0 fail / 0 todo**，不把 skip 称 XML 执行通过。合成 XML 按 Hub parser / commandCheck 的机械只读核对正 / 缺失命令两项通过，证明夹具结构，不证明产品签名兼容。静态读取 APV1.3.1 的冻结代码可见字面 args 与首位字节签名不符，此用例开启后应暴露缺陷；本轮未运行 opt-in / PG / 独立包，不报告实际红或绿。1.3.2 合并后的 CIRCLE_PACKS_REF=main 实际验收由维护者执行。
+
+仅测试、现有夹具与本记录，一笔本地签署；运行时 / worker / F / schema / 事件 / 原生 / 归档 / 独立包零改，未 push、不触 7420 / 网关 / worker 或真实环境，全套未跑。

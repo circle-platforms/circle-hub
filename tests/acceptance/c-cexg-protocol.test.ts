@@ -8,7 +8,7 @@ import {FlowDefinition} from '../../packages/execution/src/flow-contracts.ts';
 import {validateProviderSchema} from '../../packages/execution/src/flow-provider.ts';
 import {verifyStageReceipt} from '../../packages/execution/src/flow-receipts.ts';
 import {providerMappedArguments} from '../../packages/execution/src/flow-arguments.ts';
-import {APV_MODULE_FLOW,frozenApvModule,apvModuleFlow,apvEnvironment,apvTopology,apvRawResults,apvModuleWorkbook,apvSyntheticBuild} from '../fixtures/apv-module-flow-synthetic-provider-protocol.ts';
+import {APV_MODULE_FLOW,frozenApvModule,assertFrozenApvModuleVersion,apvModuleFlow,apvEnvironment,apvTopology,apvRawResults,apvModuleWorkbook,apvSyntheticBuild} from '../fixtures/apv-module-flow-synthetic-provider-protocol.ts';
 
 // Self-written synthetic protocol data from a read-only schema review of the
 // gateway Tool declarations. No Python code, descriptions or configuration is
@@ -126,7 +126,7 @@ test('C cexg strict status: the four raw state words do not invent terminal fact
 });
 
 test('C cexg strict protocol: the approved unchanged external APV flow must complete against lease-required Tools and legacy raw receipts',{skip:enabled?false:'Set CIRCLE_HUB_CEXG_PROTOCOL_ACCEPTANCE=1 with CIRCLE_PACKS_CATALOG and CIRCLE_PACKS_REF to run strict cexg protocol acceptance'},async t=>{
- const frozen=await externalStrictModule();t.diagnostic(`Frozen external APV ${frozen.module.version}, ${frozen.commit}, ${frozen.module.digest}`);assert.equal(frozen.module.version,'1.3.0');
+ const frozen=await externalStrictModule();t.diagnostic(`Frozen external APV ${frozen.module.version}, ${frozen.commit}, ${frozen.module.digest}`);assertFrozenApvModuleVersion(frozen);
  const file=frozen.files.find(file=>file.path==='flows/apv-case-execute-v2.json');assert.ok(file,'Package ABI: declare the v2 descriptor');const descriptor=JSON.parse(Buffer.from(file.base64,'base64').toString());assert.equal(descriptor.id,APV_MODULE_FLOW,'Package ABI: select the new flow id');FlowDefinition.parse(descriptor);
  const {sandboxHost,until}=await import('./harness.ts');if(!sandboxHost.available){t.skip(sandboxHost.reason);return;}
  const provider=await strictProvider(t),f=await apvModuleFlow(t,frozen,{provider,tools:strictTools(),receiptPolicy:strictReceiptPolicy(frozen)}),{h}=f;await h.startWorker();const task=await f.submit();
