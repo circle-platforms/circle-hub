@@ -26,6 +26,8 @@ function storageFaultScenario(){
    if(sql.startsWith('SELECT 1 FROM flow_steps'))return {rows:[],rowCount:0};
    if(sql.startsWith('UPDATE flow_runs SET status=')){if(runs.has(args[0]))runs.get(args[0]).status='failed';return {rows:[],rowCount:runs.has(args[0])?1:0};}
    if(sql.startsWith('SELECT evidence_ref,observation'))return {rows:[],rowCount:0};
+   if(sql==='SELECT a.* FROM artifact_bindings b JOIN artifacts a USING(artifact_id) WHERE b.task_id=$1 AND b.input_revision_id=$2')return {rows:[],rowCount:0};
+   if(sql==='SELECT * FROM evidence WHERE task_id=$1 AND input_revision_id=$2')return {rows:[],rowCount:0};
    if(sql.startsWith('UPDATE tasks SET result=')){JSON.parse(args[1]);return {rows:[],rowCount:1};}
    throw new Error('Unexpected synthetic SQL: '+sql);
   }};
