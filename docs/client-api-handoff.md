@@ -445,7 +445,7 @@ Skill、Tool 和 Hook 使用同一主机隔离边界。当前 Mac adapter 用 sa
 
 Circle 的短期 run token 只在环境中，模型凭据临时写到单次 home，进程退出后清理 home/home-user；工作区产物仍按 SHA 留存。终态、过期租约和失效 fence 的短期令牌及工具注入副本由维护器清理，永久登记的静态凭据保留到轮换/吊销。来源证据与模型判断继续分开。开发身份中的角色只做初次种子，后续通过范围变更集管理；重启不以身份文件覆盖已治理角色。
 
-主机策略只能取 binding.resource.declaration 的已批准原声明：allowedTestHosts 为显式集合，hostCommandPolicies[host].allowPrefixes 为可选缩小策略；运行文件中的同名字段不作治理授权。三个 verify 挂点均带资源 assetId/version/sha256/declaration。APV 1.2.0 / 316760a 的 host-policy Hook 按新版四字段 subject 执行，闭集未声明、主机不在床、命令含模板、前缀不符分别给固定事实码。
+主机策略只能取 binding.resource.declaration 的已批准原声明：allowedTestHosts 为显式集合，hostCommandPolicies[host].allowPrefixes 为可选缩小策略；运行文件中的同名字段不作治理授权。三个 verify 挂点均带资源 assetId/version/sha256/declaration。当前固定的 APV 1.2.2 / ba06eed 的 host-policy Hook 按新版四字段 subject 执行，闭集未声明、主机不在床、命令含模板、前缀不符分别给固定事实码；主机名与策略键比较不区分大小写，事实仍保留输入拼写。
 
 ## 读取超时与大原件回报
 
@@ -459,7 +459,7 @@ docs.search 已完成文件后发生读取超时时，返回已观测 hits、nex
 
 任何带 credentials 引用的 provider（不限模式）的 Tool 最低为 scope member，目录与调用都拒绝 viewer；访客仅可调用无凭据的只读 provider。静态资源共享不扩大人的角色。Hook 的 binding.resource 按 assetId/version/sha256/declaration 校验；主机策略形状为 allowedTestHosts:string[]、hostCommandPolicies[host].allowPrefixes:string[]，未声明交产品 Hook 判定。beforeDispatch 的 subject 为 {input,operationId}，afterResult 为 {result,operationId}，不接受多余字段。主机行只按 token 形状解析，函数启用状态只标注 functionStatus，规则由批准模块核验。
 
-Tool/Hook 子进程带 256MiB V8 堆上限，Hook 以最多 200 个 subject 的批次执行，每批十秒，保持顺序和首次 block 停止。APV 验收固定 224daa6 / 1.2.1，29 条包内测试。
+Tool/Hook 子进程带 256MiB V8 堆上限，Hook 以最多 200 个 subject 的批次执行，每批十秒，保持顺序和首次 block 停止。APV 验收默认冻结 circle-packs 提交 ba06eeda83d27031fc1a452e43b24300d654da9e（APV 1.2.2，22 个文件，模块 digest faa9e79d03a97fa1e5142a2f169cecc2caef7f52f7d714f9aac53226164c347d）。清单与文件均用该提交的原字节核 SHA，不跟随独立仓库工作区变化；包内 Node TAP 收尾断言实际 pass=tests 且 fail/skip/cancel=0，不把数量写成闸门。本次产品线包 **31/31**、hub Hook 专项 **3/3**；同提交四个技能模块（case-review 0.1.3、defect-claims 0.1.0、mindmap-compile 0.3.0、product-qa 0.1.3）的全部五个测试文件冻结后纯合成单测实际 **57/57**，catalog 工具另 **4/4**，合计 **61/61**，均无跳过。这与该提交 README/CI 的 tools 与 skills 合并入口一致，61 并非技能本身的数量。数字只描述这份冻结原件的验证，不是自动安装/批准或真实设备与模型验收。
 
 模型密钥不再写进 Circle home：可信 worker 为本次运行起 loopback 模型代理，在内存中注入真实上游密钥；Circle settings/credentials 只有本次代理端点与随机 nonce，退出关闭代理。代理拒绝非模型路径、无 nonce 的请求及远程开发端点。Skill 产物出口对 run token、代理 nonce、模型密钥按字节替换，保留其它二进制字节，记录 sanitized 并重新算 SHA；事件同样脱敏。harness 自带 --yolo 不作为平台权限边界。仅一位管理员且其为 runtime-profile owner 时，明文例外仍不能自批，需先有独立 reviewer；这是明确的资格限制。
 
