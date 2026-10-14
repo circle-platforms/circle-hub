@@ -899,3 +899,9 @@ B 三类先写旧路由 **0/4**（与 operations 三例顺序复现合计 **0/7*
 维护者核对 f03f91d 的 Hub checks：244 通过、42 失败、18 跳过，失败来自执行宿主不支持当前 macOS seatbelt 隔离。统一测试 harness 每进程探测一次当前 adapter 的实际启动与文件拒读；只有明确 SANDBOX_UNAVAILABLE 才跳过，Tool/Hook/依赖/版本/断言错误仍失败。59 个 acceptance 隔离 leaf 与方法阳性用例在资源/worker/模型调用前明确 skip，负例、普通连接器与治理登记不跳过；混合外部来源用例保留上传/批准/命令查询，把实际执行拆为有前提的子用例，跳过不计通过。
 
 实际 macOS 定向 45/45 加外部来源 12/12，共 **57/57，无 skip**；最终 unsupported 模拟定向 108 项为 **48 通过、60 跳过、0 失败/取消**，typecheck/diff 通过。模拟仅用测试 preload 将 server/worker 置于不支持平台，PostgreSQL 父进程保留真实宿主；这是失败闭合与报告边界验证，不是 Ubuntu 实机验收，不能启用假隔离。生产 isolation 与其它生产字节、原业务断言保持不变，只改测试和兼容说明；未跑全套、未 push/部署或访问 7420、真实网关、Circle 或独立包工作树。
+
+## 67：A1 历史批准修订解析
+
+先写历史产品/来源 pin 验收，旧实现 **1/5**（基础来源实时 ACL 负例原本成立），随后实现内部 `{assetId,version,sha256,digest?}` 精确绑定。来源制品与产品模块读取历史 approved/running 修订，未指定版本时选择本资产最新批准修订；跨产品/原生多实现必须显式选择，旧 assetId 字符串不被称作冻结。缓存与原件读取前重核批准摘要、历史与最新批准 readers 交集及当前角色；草稿收窄 readers 不撤旧批准 pin，批准 reader 撤销、旧修订 disabled/retired 和批准失效均拒绝。pin 只适用于批准清单中的自有原件记录，basis 引用、企业原件及其它来源继续原实时 ACL；补篡改记录摘要、空 digest 和缓存回执边界。合法合成 builders 明确选各自方法，通用请求/任务提交不偷注入 selector，无 selector 歧义负例仍有效。
+
+新历史绑定六例与既有 APV/执行链/外部来源/模块/服务客户端相关六文件 **47/47**，providers 方法 **8/8**，共 **55/55，无 skip**；typecheck/diff 通过，固定 Circle 8b2ceb6、冻结产品包 ba06eed，只用合成资源和脚本模型。原生 1.1.1 及摘要依赖、HTTP 路由、数据库迁移/归档字节不改；公开 SAR 语义与旧任务不自动重绑。A2 契约待复核、A3 未实施，本步单独本地签署，全套仍由维护者跑；未 push、部署或访问 7420/真实网关/Circle/独立包工作树。

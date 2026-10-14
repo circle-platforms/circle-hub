@@ -106,7 +106,7 @@ const graph=new KnowledgeGraph(store,auth,knowledge);
 const sourceArtifacts=new SourceArtifacts(store,auth,assets,knowledge,graph);
 const productModules=new ProductModules(sourceArtifacts);methods.products=productModules;
 const serviceClients=new ServiceClients(store,auth,assets,Number(process.env.CIRCLE_HUB_RESOURCE_TOKEN_TTL_SECONDS??300));
-knowledge.sourceAccess=async(ctx,id,tx)=>{await entities.checkSourceAccess(ctx,id,tx);await graph.checkSourceAccess(ctx,id,tx);};
+knowledge.sourceAccess=async(ctx,id,tx,pin)=>{await entities.checkSourceAccess(ctx,id,tx);await graph.checkSourceAccess(ctx,id,tx,pin);};
 const knowledgePages=new KnowledgeRegistryPages(knowledge,graph);
 const execution = new Operations(store,auth,tasks,knowledge);
 const catalog=new ToolCatalog(store,auth,assets,tasks,execution,graph,installedToolPackages);await catalog.initialize(process.env.CIRCLE_HUB_CONNECTOR_PROFILES);

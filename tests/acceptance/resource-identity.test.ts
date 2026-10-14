@@ -145,7 +145,7 @@ sandboxTest('Resource identity: approved execution uses server-issued user token
     gateway.state.hold = true;
     const workbook = await h.request('/v1/sources', { scopeId: 'scp_lab', fileName: 'case.xlsx', contentBase64: (await executionWorkbook({ command: 'service create port 443' })).toString('base64') });
     const worker = await h.startWorker();
-    const task = await h.request('/v1/tasks/submit', { scopeId: 'scp_lab', capabilityPackId: 'apv-case-execute', idempotencyKey: 'server-issued-resource-execution', input: { gatewayAssetId: connected.assetId, commandSourceAssetId: source.assetId, build: bound.sourceArtifactId, sourceRevisionId: workbook.sourceRevisionId } });
+    const task = await h.request('/v1/tasks/submit', { scopeId: 'scp_lab', capabilityPackId: 'apv-case-execute', idempotencyKey: 'server-issued-resource-execution', input: { methodAssetId: h.approvedMethodAssetId(), gatewayAssetId: connected.assetId, commandSourceAssetId: source.assetId, build: bound.sourceArtifactId, sourceRevisionId: workbook.sourceRevisionId } });
     await h.phase(task.taskId, 'waiting-review');
     assert.equal(gateway.state.calls.length, 0);
     const approval = (await h.request(`/v1/tasks/${task.taskId}/approvals`)).at(-1);
@@ -165,7 +165,7 @@ sandboxTest('Resource identity: approved execution uses server-issued user token
     assert.ok(!events.includes(token) && !result.includes(token) && !events.includes(secret) && !result.includes(secret));
     assert.equal(Number((await h.db.query('SELECT count(*) AS n FROM personal_credentials')).rows[0].n), 0);
     gateway.state.hold = true;
-    const second = await h.request('/v1/tasks/submit', { scopeId: 'scp_lab', capabilityPackId: 'apv-case-execute', idempotencyKey: 'server-issued-resource-revoked', input: { gatewayAssetId: connected.assetId, commandSourceAssetId: source.assetId, build: bound.sourceArtifactId, sourceRevisionId: workbook.sourceRevisionId } });
+    const second = await h.request('/v1/tasks/submit', { scopeId: 'scp_lab', capabilityPackId: 'apv-case-execute', idempotencyKey: 'server-issued-resource-revoked', input: { methodAssetId: h.approvedMethodAssetId(), gatewayAssetId: connected.assetId, commandSourceAssetId: source.assetId, build: bound.sourceArtifactId, sourceRevisionId: workbook.sourceRevisionId } });
     await h.phase(second.taskId, 'waiting-review');
     const proposal = (await h.request(`/v1/tasks/${second.taskId}/approvals`)).at(-1);
     await h.request(`/v1/tasks/${second.taskId}/approvals/${proposal.approvalId}`, { inputRevisionId: proposal.inputRevisionId, targetIdentity: proposal.targetIdentity, actionDigest: proposal.actionDigest, approve: true }, 'bob');
@@ -181,7 +181,7 @@ sandboxTest('Resource identity: approved execution uses server-issued user token
     await h.request(`/v1/tasks/${second.taskId}/reconcile`, { operationId: secondToken.operation_id });
     await until(async () => { const state = (await h.db.query('SELECT name,status,result FROM operations WHERE task_id=$1', [second.taskId])).rows; assert.ok(!state.some(row => row.name === 'cases.observe' && row.status === 'failed'), JSON.stringify(state)); return (await h.db.query('SELECT frozen FROM resources WHERE resource_id LIKE $1', ['gateway:%'])).rows.every(row => !row.frozen); });
     gateway.state.hold = true;
-    const third = await h.request('/v1/tasks/submit', { scopeId: 'scp_lab', capabilityPackId: 'apv-case-execute', idempotencyKey: 'server-issued-resource-cancelled', input: { gatewayAssetId: connected.assetId, commandSourceAssetId: source.assetId, build: bound.sourceArtifactId, sourceRevisionId: workbook.sourceRevisionId } });
+    const third = await h.request('/v1/tasks/submit', { scopeId: 'scp_lab', capabilityPackId: 'apv-case-execute', idempotencyKey: 'server-issued-resource-cancelled', input: { methodAssetId: h.approvedMethodAssetId(), gatewayAssetId: connected.assetId, commandSourceAssetId: source.assetId, build: bound.sourceArtifactId, sourceRevisionId: workbook.sourceRevisionId } });
     await h.phase(third.taskId, 'waiting-review');
     const thirdApproval = (await h.request(`/v1/tasks/${third.taskId}/approvals`)).at(-1);
     await h.request(`/v1/tasks/${third.taskId}/approvals/${thirdApproval.approvalId}`, { inputRevisionId: thirdApproval.inputRevisionId, targetIdentity: thirdApproval.targetIdentity, actionDigest: thirdApproval.actionDigest, approve: true }, 'bob');

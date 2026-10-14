@@ -588,3 +588,13 @@ execution.gateway.submit-intent 仅证明 C 已准许一次提交，不证明网
 execution.environment.observed 的 observationSource=gateway.env_prepare，保存提交前外部 env_prepare 的原件和构建核验；case_submit 可能随后在网关内再次检查环境/契约。两个时间点、调用和规则不同，第一次 passed 不覆盖第二次拒绝。失败原件保留第二次的原始 reason/details，不能以第一次观察推断第二次原因。
 
 未尝试提交或已证实派发前拒绝时，worker finally 调 lease_release；报告 remoteLeaseReleased:true 只代表网关确认逻辑租约释放。释放失败报告 false 与 leaseReleaseError，保留主错误，不声称远端停止；真正已派发而回执不确定时保留远端租约与 unknown 核对流程。
+
+## 内部历史批准修订绑定（A1）
+
+`AssetRevisionPin` 为内部 TypeScript 形状 `{assetId,version,sha256,digest?}`：sha256 是资产修订 SHA，digest（若提供）是该批准版本的模块清单 digest，二者不混用。SourceArtifacts.snapshot 和 ProductModules.load 接收末尾可选 pin；Tool/Hook 调用与批次也可沿用该 pin。ToolProviders.resolve 的内部 selector 可为旧 assetId 字符串或精确 pin。这里不新增 HTTP 接口或请求字段；现有公开 methodAssetId 仍是资产 id。
+
+只有精确 pin 保证读取特定历史 version/SHA。旧调用只带 assetId 时按该资产最新 approved/running 且批准摘要成立的修订选择，草稿不扰动这一选择，不能把这种选择称为冻结。未指定方法且存在多个可用产品模块或原生实现时返回 SOURCE_NOT_APPROVED，申请人必须显式选择；不按 SQL 顺序、不可见候选或旧可读版本猜默认值。
+
+每次装载、原件读取与缓存调用前均核当前身份/范围权限，并取选定批准修订与最新批准修订 readers 的交集。未批准的 reader 修改不撤销旧 pin；批准后的 reader 撤销或当前角色撤销即时生效。旧修订 disabled/retired 或批准摘要失效时拒绝使用，不自动换新 parser。内部 pin 只适用于该批准来源制品文件清单内的自有 SourceRevision，原始 basis 引用、企业对象 ACL 与其它来源仍沿原实时授权链核对；不绕保险箱、原件检查或对象存储直接放行。
+
+A1 不修改既有任务的 methodAssetId/回执，也不把旧任务自动转成精确 pin；原生执行 1.1.1 的实现字节和 SAR 稳定 id 的既有公开解析/失效语义保持。历史绑定解析不代表通用执行流已可运行；A2 驱动契约仍待复核，A3 实施未开始。
