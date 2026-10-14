@@ -512,7 +512,7 @@ updatedAt 页游标冻结 PostgreSQL 微秒时间锚点，后续更新超过锚�
 
 outbox 保留默认最近至少 **10000 条事件**的补读窗口、最多 **100000 行**，年龄目标 **7 天**（硬上限优先）；环境可配 CIRCLE_SERVER_OUTBOX_REPLAY_EVENTS、CIRCLE_SERVER_OUTBOX_MAX_ROWS、CIRCLE_SERVER_OUTBOX_MAX_AGE_MS。写入超限同事务批量裁剪，年龄每分钟维护，任务当前状态/结果、B 原件与审计不删除。通知返回 replayWindow；旧非零游标早于 minCursor 为 CURSOR_EXPIRED，明确从零重新查询当前窗口，不能宣称全历史仍在。task/admin events 同样拒绝过窗游标。SSE 每 tenant/主体默认四条连接，可配 CIRCLE_SERVER_NOTIFICATION_STREAMS；超限 NOTIFICATION_STREAM_LIMIT，断开释放名额，运行中游标过窗发 cursor.expired 并关闭。角色/会话失效仍关闭流。
 
-登记簿分页的接入顺序：已接 tasks/assets/skillpacks/change-sets/scopes/roles/service-clients/object-types/objects/tools，通知有独立持久序号游标。随后依次接普通审批与 admin approvals、来源/证据/制品、审计/worker、bot runs、通知的统一分面视图；这些接口的旧形状本笔保持，不把尚未接入的登记簿称作已完成统一分页。各步复用同一查询编译器，并分别补授权/游标验收。
+登记簿分页已按确认顺序接 tasks/assets/skillpacks/change-sets/scopes/roles/service-clients/object-types/objects/tools，以及 task/admin approvals、来源/证据/制品、审计/worker、bot runs、通知。各集合 view=page 复用同一查询编译器；已经存在的旧数组或补读形状保留，B 新集合 GET 按下文显式 view=page。相关权限/游标验收分别记录，不将未运行的维护者全套称作本轮已通过。
 
 审批登记簿已接：/v1/tasks/{taskId}/approvals 与 /v1/admin/approvals 加 view=page，旧数组保留。任务页沿用 tasks.read/私有任务/run 边界，admin 页限定当前 admin.manage 范围，旧 admin 数组同样遵守私有读取。owner 为 applicantId，产品线/流程取绑定任务已记录的 context/flowVersion；status/lifecycle 在页上把 open 且已到期投影为 expired，原审批行与旧数组状态不改。createdAt/updatedAt 用审批自己的时间，迁移 39 从 createdAt 初始化历史更新时间，仅后续实际审批行变更用触发器记录；不推断缺失历史决定时间。
 
@@ -525,6 +525,8 @@ MCP resources/list 是同一 B 权限与分面查询的投影，除上述三类�
 审计/worker/bot runs 已接 view=page：/v1/admin/audit、/v1/workers（含兼容 admin workers）、/v1/automations/bots/{assetId}/runs。审计沿现有管理范围，scope=null 的租户管理审计仍可见，owner=principalId，createdAt 也是更新时间，不从 detail 推断产品线/状态。worker 范围来自机器 policy 的 scope 交集，不展开成重复行；owner 为 worker principal，status=offline|draining|online（离线优先），阈值与现有列表一致；尚无不可变注册创建时间，age/minAgeMs/maxAgeMs 对 worker 明确定义为距 lastSeen 的观测年龄，updatedAt 也用 lastSeen。两类都保持 admin.manage，未支持的分面明确 INVALID_PAYLOAD，旧数组不变。
 
 bot runs 仍仅 bot 所有者可读；产品线与 lifecycle 取被运行资产版本，owner 为运行身份，status 是已有 admitted/failed，不改成任务 phase；flowVersion 为 skill-run/1。更新时间为 publishedAt（未发布时为 createdAt），完整键 bot/version/occurrence 的 SHA 作游标平局依据。页内新增 recordId/version 供跨版本记录去重；旧数组项不加字段，taskId=null/failed 不伪造任务，occurrenceKey/channel/published/trigger/error 全部保留。
+
+通知登记页 GET /v1/notifications?view=page 使用 RegistryPageQuery，返回 total/items/cursor；对象项与旧通知补读/SSE 使用同一冻结投影，额外不挑选任何正文。这里 cursor 是查询绑定的 opaque token；不带 view 的通知补读及 SSE 仍使用整数 seq，两个游标不能互换。登记页只查询当前保留窗口，不是完整历史或 seq 补读证明，裁剪后 count/后续页可减少；窗口恢复仍用旧通知补读协议。owner 为任务申请人（taskless 为原主体），产品线/流程取关联任务已记录维度，status 只用原 payload 的 status/phase/outcome，无值不猜当前任务状态；没有独立 lifecycle，筛选时明确拒绝。年龄与更新时间同为 outbox 的不可变 createdAt，seq 作同时间平局，私有任务与 taskless 原主体可见性先过滤再计数。
 
 迁移 38 追加修复 36 的归因细节：多条已释放读取统一为 UPSTREAM_TIMEOUT/sideEffects=none/sorted operationIds；不触动 unknown/write。task.read-release-audit-links-completed 的 correctsAudit 指原 36 任务补偿行，relatedAudits 列出该任务/输入全部 30 原释放审计；原行/原 min 引用保持历史原样，阅读完整链以追加行补足，不猜历史状态。29/30/36 的校验和均不改。
 

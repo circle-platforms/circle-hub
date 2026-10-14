@@ -330,7 +330,7 @@ export const CLIENT_ROUTES = {
   devLogin:{ method:'POST',path:'/v1/auth/dev-login',request:DevLoginRequest,response:DevLoginResult },
   authRefresh:{method:'POST',path:'/v1/auth/refresh',request:AuthRefreshRequest,response:DevLoginResult},
   authLogout:{method:'POST',path:'/v1/auth/logout',request:AuthRefreshRequest},
-  notifications:{method:'GET',path:'/v1/notifications',query:NotificationQuery,response:NotificationPage},
+  notifications:{method:'GET',path:'/v1/notifications',query:NotificationQuery,pageQuery:RegistryPageQuery,response:z.union([NotificationPage,RegistryPage])},
   notificationStream:{method:'GET',path:'/v1/notifications/stream',contentType:'text/event-stream'},
   queues:{method:'GET',path:'/v1/queues',query:QueueQuery,response:QueueView},
   workers:{method:'GET',path:'/v1/workers',pageQuery:RegistryPageQuery,response:z.union([z.array(WorkerView),RegistryPage])},
