@@ -1205,3 +1205,9 @@ INVALID_EXECUTION_WORKBOOK 与 COMMAND_VALIDATION_FAILED 登记进核心 F 错�
 新纯词表用例旧 **0/1**→新 **1/1**；默认文件 **4 pass / 4 skip**，显式固定 **3c46f707** 严格文件 **8/8，无 skip**（四项纯、完整正常链与三项未知写），逐项核 submit 一次、未知写无 results / write lease_release、B 原回执 SHA。typecheck / diff 通过。仅验收、夹具及中英附录，通用驱动 / 原生 / 独立包零改动，不跑全套、不 push 或部署。
 
 六项按维护者顺序各一笔签署。最终集成针对交叉消费者再核：结果关联 / partial / 完整模板 / 核心码纯 **14/14**；四种普通结果读边界与终态坏 SHA 合跑 **4/4 + 1/1**，没有 skip / fail，证实新增 partial 交付闸与父缺口摘要配合，篡改关联的原报告可按 SHA 回读、仍走真实 afterResult。最终 typecheck / diff 通过；packs/apv / foundation / references / harness-adapters 相对本轮基线零差异，工作区收尾干净。只运行针对性用例，全部 PostgreSQL 串行清理，全套仍由维护者独立执行；本轮不 push、不部署、不触 7420 / 网关 / Circle / 独立包。
+
+## 110：复核高项，明文例外下的独立核对清理
+
+原 reconcile 的释放调用只留下 cleanupTransport，C 却在核对结果前按父 intent / terminal 审计，合法回报也被 FORBIDDEN_ACTION 回滚。仅对成功 reconcile 候选延后这条清理审计：C 先回读并核原始 status 的操作身份 / 原件 SHA / 批准 policy，record 持久终态，再核同一原件引用后审计原已批准明文例外。不以 row.kind 或 worker 自报 terminal 放行；错误来源、fence、远端身份、非终态、自报终态及错误 release Tool 继续拒绝。该调整不扩大派发授权，也不改原生路径。
+
+先写验收，纯旧 **1/3**→新 **3/3**，相关准备消费者 **5/5**；合成 DNS 只映射回环、runtime-profile 例外由管理员登记 / Bob 独立批准。旧真实 worker 回报明确 FORBIDDEN_ACTION、父 unknown / 核对 running 且 release 已发生；修后 **1/1**，核 submit / release 各一次、父 reconciled、资源解冻、永久 plaintext 审计和证据。最初夹具 owner 错误不计目标红。定向共 **9/9，无 skip**，typecheck / diff / 保护目录零差异；PG 串行退出，不跑全套、不 push / 部署或触现场。
