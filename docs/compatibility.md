@@ -11,9 +11,9 @@
 | circle-hub | **0.2.0**（原生执行退役；首个仓库发行是 0.1.0） | 版本化发行、`docs/design` | 现场部署另见进度记录与实际提交核对；发行元数据不代表生产可用 |
 | `foundation/circle` | Circle **1.0.4** 源基线，冻结 | `references/README.md` 的来源记录 | 只是源码参考，不装、不跑它的安装器；不是 hub 的运行依赖 |
 | 验收用的 Circle 运行时 | Circle 主线提交 **fd8524a**（用户确认，Circle 1.7.0，hub 协议） | `CIRCLE_BIN` / `CIRCLE_COMMIT`，严格 Git 门禁 | **这是真实的测试依赖**：验收 RPC 用例只接受这个提交，换提交要用户确认并更新门禁 |
-| Circle 发行绑定 | **v1.7.2 → 1914c58** | circle 仓库的 tag 与 Release | 完整构建与正式发布状态以发行页为准；本次 RPC 实测仍固定 fd8524a，发行成功不替代 Hub 验收 |
-| hub 的 Circle 侧扩展目标基线 | 1.7.2（命名集成 96702fa、刷新修复 9afe812，另含冷启动与视图预算修复） | 维护者授权的 hub 扩展改名 | hub 与 /hub 不保留旧别名；与上面的固定 RPC 验收提交分列 |
-| circle 的 hub 扩展 | 发行提交 1914c58；可信冷启动初始化与 64 KiB 有界界面投影 | hub 的 `docs/client-api-handoff.md` | 当前 Circle 使用 hub、/hub、hub_* 与 hub_tool_*，无旧别名；运行时协议与历史验收 pin 须显式绑定 |
+| Circle 发行绑定 | **v1.7.3 → ae0b0d5** | circle 仓库的 tag 与 Release | 完整构建与正式发布状态以发行页为准；本次 RPC 实测仍固定 fd8524a，发行成功不替代 Hub 验收 |
+| hub 的 Circle 侧扩展目标基线 | 1.7.3（命名集成 96702fa、刷新修复 9afe812，另含冷启动、视图预算与初始化关闭保护） | 维护者授权的 hub 扩展改名 | hub 与 /hub 不保留旧别名；与上面的固定 RPC 验收提交分列 |
+| circle 的 hub 扩展 | 发行提交 ae0b0d5；可信启动、64 KiB 界面投影及关闭后写入保护 | hub 的 `docs/client-api-handoff.md` | 当前 Circle 使用 hub、/hub、hub_* 与 hub_tool_*，无旧别名；运行时协议与历史验收 pin 须显式绑定 |
 | circle-packs `main` | 见其 CHANGELOG | hub 的包装载器与 schema | 产品线包测试使用 hub 提交 `dc93c69826f73f16d2f20f7520ba4c6663d014ac` 的锁定依赖集；circle-packs 的 `.github/workflows/checks.yml` 固定此提交，不跟随 main 漂移；仅为测试依赖，不声明生产兼容 |
 | hub 验收用的 circle-packs 原件 | **1f8948c07a9756a3e5dec66f15c25a670fd1e4c2**，APV **1.4.1** | 该提交的 `modules.json` 与原字节 SHA | 包仓库完整合成套件 143/143，无 skip；Hub 的产品模块 / provider 协议选装验收另见进度记录，不以包内测试替代；发行不表示自动激活或批准 |
 | 执行网关 cexg | 0.3.1（静态密钥） | compile-excel-server 仓库 | hub 的 worker 需要 §7 的 static-secret 凭据模式才能调用它 |
@@ -66,3 +66,5 @@
 - 2026-10-15：Hub v0.1.0（8f3b839）、packs v0.1.0（1f8948c）及 Hub v0.2.0（2f9cd20）已发布。7420 滚动到 v0.2.0 的同一提交；19 条历史任务与 2450 份原件前后 SHA 不变，旧回执只读。模型配置不变的脚本 runtime 升到 fd8524a / 1.7.0，新 profile 由另一身份批准，旧 profile 字节不改；没有新模型或设备任务。Circle 打包发布和应用安装另按其正式发行页与本机回执核验，不以 tag 或排队冒称已交付。
 
 - 2026-10-15：Hub main a0a42bb 的完整全开电池实际退出 0，contracts 20/20、methods 282/282、acceptance 403/403、references 7/7，共 712 项，全部零 fail / skip；同提交三项 CI 成功。Circle 1.7.1 曾安装到本机，实际界面发现冷启动集成未加载及超限视图丢对象两个问题，其正式发行取消，没有 1.7.1 Release。客户端绑定改为 1.7.2 / 1914c58，修复可信启动初始化与完整视图字节投影，RPC pin 仍为 fd8524a；正式发布与本机应用验收按各自回执判断，不能由版本绑定代替。
+
+- 2026-10-15：1.7.2 / 1914c58 已在本机通过冷启动与大视图验收；随后隔离环境确定性证明关闭后后台读仍可能重建目录，正式 Release 取消，原 tag 保留。客户端绑定改为 1.7.3 / ae0b0d5：待安装宿主有界 drain、token 异步返回后 abort 检查及 closed dataDir 不创建目录三层保护；三条旧实现红例与九项修后定向检查分列。Windows 的一次 ENOTEMPTY 不据此唯一归因，临时目录清理重试不替代关闭后真实副作用断言。固定 RPC 提交与 Hub 的源码、包、迁移和既有业务结果均不变。
