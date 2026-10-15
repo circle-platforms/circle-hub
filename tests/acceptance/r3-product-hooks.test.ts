@@ -10,7 +10,6 @@ import {dirname} from 'node:path';
 import {freezeModule,verifyModule} from '../../packages/modules/src/verify.ts';
 import {ProductModules} from '../../packages/methods/src/product-modules.ts';
 import {sha256} from '../../packages/contracts/src/index.ts';
-import {enforcementEnvironment} from '../fixtures/enforcement-environment.ts';
 import {executionWorkbook} from '../fixtures/execution-workbook.ts';
 const catalog=process.env.CIRCLE_PACKS_CATALOG??resolve('../circle-packs/modules.json');
 async function sample(t:any){
@@ -34,12 +33,6 @@ sandboxTest('R3 hooks: the canonical APV module is loaded unchanged and every re
   const {modules,revoke}=loader(frozen),binding={method:'fixture',resource:{assetId:'ast_fixture',version:'1.0.0',sha256:'a'.repeat(64),declaration:{allowedTestHosts:['fixture']}},source:'sar_fixture',inputRevision:'inrev_fixture'};
   const workbook=await executionWorkbook({command:'service inspect alpha'}),parsed=await modules.call(actor,'ast_fixture','scp_fixture','tools/workbook.ts','readExecutionWorkbook',[workbook]);assert.equal(parsed.sha256,sha256(workbook));assert.equal(parsed.commands[0].command,'service inspect alpha');
   const blocked=await modules.run(actor,'ast_fixture','scp_fixture','verify.deviceCommand',binding,{command:'missing',tree:{heads:[]}});assert.equal(blocked[0].result.code,'COMMAND_NOT_IN_TREE');assert.equal(blocked[0].ruleVersion,frozen.module.version);revoke();await assert.rejects(modules.load(actor,'ast_fixture','scp_fixture'));
-});
-sandboxTest('R3 hooks: zero handlers dispatch then the approved canonical APV handlers block the same workbook',async t=>{
-  const frozen=await sample(t);if(!frozen)return;const {h,gateway,submit,payload}=await enforcementEnvironment(t,false,false);await h.startWorker();const unchecked=await submit('invented command 999','zero-handlers');await h.phase(unchecked.taskId,'delivered');assert.equal(gateway.state.calls.filter(name=>name==='case_submit').length,1);
-  const response=await h.raw('/v1/modules/install',{token:await h.login('admin'),body:{module:frozen.module,files:frozen.files},headers:{'x-scope-id':'scp_lab'}});assert.equal(response.status,201,JSON.stringify(response.body));const asset=await h.request(`/v1/assets/${response.body.data.assetId}`,undefined,'admin');await h.request(`/v1/assets/${asset.assetId}/lifecycle`,{version:asset.version,sha256:asset.sha256,state:'approved'},'bob');
-  const input:any=await payload('invented command 999','approved-handlers');input.input.methodAssetId=asset.assetId;const checked=await h.request('/v1/tasks/submit',input);await h.phase(checked.taskId,'failed');const result=await h.request(`/v1/tasks/${checked.taskId}/result`);assert.equal(result.error.code,'COMMAND_NOT_IN_TREE');assert.equal(result.error.details.ruleId,'apv.hooks.device-command-tree');assert.equal(result.error.details.ruleVersion,frozen.module.version);assert.equal(gateway.state.calls.filter(name=>name==='case_submit').length,1);
-  const events=await h.request(`/v1/tasks/${checked.taskId}/events?after=0`);assert.ok(events.events.some((event:any)=>event.kind==='hook.verification'&&event.payload.ruleVersion===frozen.module.version));
 });
 sandboxTest('R3 hooks: a second product line loads its Tool imports and all five hook points without core changes',async()=>{
   const root=resolve('packs/meridian'),files:any[]=[];

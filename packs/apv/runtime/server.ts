@@ -14,12 +14,14 @@ export class MindmapRunner {
   }
   async runOnce(): Promise<void> {
     await this.execution.expire();
-    const candidates = (await this.store.pool.query("SELECT task_id,principal_id,tenant_id FROM tasks WHERE capability_pack_id='mindmap-compile' AND phase='running' AND stage='inspect'")).rows;
+    const candidates = (await this.store.pool.query("SELECT task_id,principal_id,tenant_id FROM tasks WHERE capability_pack_id='mindmap-compile' AND ((phase='running' AND stage='inspect') OR (pack_version<>$1 AND phase IN ('running','waiting-resource')))",[MINDMAP_PACK_VERSION])).rows;
     for (const candidate of candidates) await this.store.transaction(async tx => {
-      const row = (await tx.query("SELECT * FROM tasks WHERE task_id=$1 AND stage='inspect' AND phase='running' FOR UPDATE SKIP LOCKED", [candidate.task_id])).rows[0];
+      const row = (await tx.query("SELECT * FROM tasks WHERE task_id=$1 AND phase IN ('running','waiting-resource') FOR UPDATE SKIP LOCKED", [candidate.task_id])).rows[0];
       if (!row) return;
       const task = await this.tasks.load({ principalId: row.principal_id,tenantId: row.tenant_id,kind: 'user' },row.task_id,'tasks.read',tx);
-      if (row.cancel_requested) { await this.tasks.stage(tx,task,'cancelled','done','task.cancelled',{ executionStarted: false }); return; }
+      if(row.cancel_requested&&row.stage==='inspect'){await this.tasks.stage(tx,task,'cancelled','done','task.cancelled',{executionStarted:false});return;}
+      if(task.packVersion!==MINDMAP_PACK_VERSION){const error={code:'UNSUPPORTED_VERSION',message:'No compiler for the pinned capability version; submit a new task explicitly'};await tx.query("UPDATE operations SET status='failed',result=$2,updated_at=clock_timestamp() WHERE task_id=$1 AND name='mindmaps.compile' AND status='accepted'",[task.taskId,JSON.stringify({error})]);await this.tasks.fail(tx,task,error);return;}
+      if(row.stage!=='inspect')return;
       const operationId = await this.execution.enqueue(tx,task);
       await this.tasks.stage(tx,task,'waiting-resource','wait-worker','task.waiting-worker',{ operationId });
     });

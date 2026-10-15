@@ -1359,3 +1359,19 @@ pg Pool.end 的完成不等于所有 client end；测试 harness 只等前者就
 首轮真实固定 Circle RPC 为 6/6，无 skip，包含技能加载、范围化工具、产物 SHA、错误提交零模型请求、取消与短 token 续期。新 assets.execute 冻结同名 worker 能力，认领过滤无能力 worker，preflight 与回报沿现有能力核验链再次检查；能力撤销与恢复的临时 PostgreSQL 回归通过，未发模型请求。旧手动 worker 夹具同步显式声明能力。完整首版候选验证尚待执行，以上不替代整套门禁。
 
 首版候选 8956b40 的 CI 验收失败两叶：手动技能 worker 夹具漏报 assets.execute，及 outcome barrier 用例在 runner 持锁时一次非阻塞 claim 返回空。显式声明实际能力，并轮询成功认领后再核验原有原子失败屏障；不更改运行时锁、派发规则或结果断言。本地另发现当前 worker 的能力集合已增加，混合旧/新 worker 用例改为核验它确实声明 flow.invoke 与 assets.execute，仍保留任务仅分配给新 worker 的全部断言。修正后的实际结果另列，前次失败不追记为通过。
+
+首版最终 main 8f3b839 的远端 Hub checks 38683558265、Reference integrity 38683558280、pages 38683558324 均成功。本地严格冻结同一提交与 packs 1f8948c、Circle fd8524a：类型检查 0，contracts 20/20，methods 295/295，acceptance 436 pass / 0 fail / 9 opt-in skip（445），references 7/7，归档 SHA 校验通过。首轮失败候选 a8d22a3 保留为 434 pass / 2 fail / 9 skip；修正候选 51e88fb 的四文件复跑为 15/15，无 skip。所有计数都来自留存原始日志，不把缺前提或未开启的用例计作通过。
+
+电池末尾包装进程退出 1：执行期间原地更新默认 pin 改动了正在被 shell 读取的脚本文件，导致所有检查已完成后出现语法读取错误。该退出码不记为成功；逐套原始日志验证 tests/pass/fail/cancelled/skipped，单独重新执行 SHA 校验返回 0，当前脚本语法检查通过。后续执行使用不可改写的脚本副本；此操作错误与真实测试结果分开记录。
+
+Hub 首个 v0.1.0 指向 8f3b839，packs 首个 v0.1.0 指向 1f8948c，均已创建公开 GitHub Release；packs 的 Checks 和 pages 成功，本地 143/143 与 catalog 校验通过。四技能使用新 hub 工具协议并分别升为 compile 0.4.0、review / defect claims / QA 0.2.0，APV 1.4.1；工具与 flow 业务字节未变，发行不自动激活或批准模块。cexg 原有三笔已推送到 76ba7d3，不重部署。Circle v1.7.0 已在已验证的 96702fa 打 tag；正式发行工作流 38688114283 构建完整矩阵，实际发布与演示应用安装待结果，不把排队计为交付。
+
+## 131：维护者授权 D 退役与无旧名扩展绑定
+
+维护者确认 D 可直接实施，首版 0.1.0 冻结两条路径并存状态，退役另设 0.2.0。只读过滤并核完分页，现有原生任务共 11 条（9 delivered / 2 failed），无在途 / unknown；部署前再次核对。额外下载原始网关完成回报并核 SHA，和解析产物同为 13 pass / 8 fail，交接中的 12 / 9 不作为实物结论；不核定失败作者意图。
+
+移除原生能力登记、controller / worker、专用解析器及其专用测试；worker 对遗留 cases.* 明确 UNSUPPORTED_VERSION，不回退合成派发。migration 20 按完整文件 SHA 原样迁到历史迁移文件，新增 migration 44 拒绝旧回执表 insert / update / delete / truncate。历史任务结果、输入修订和方法 pin 不改绑。保留治理、来源登记与权限、网关 health / topology、合成 meridian 与通用执行流消费者；原生专用测试的移除不算新增覆盖，产品纯 Tool 的回归由独立 packs 套件与真实装载的通用链验收承担。
+
+兼容编译器升为 1.1.0 并使用 circle-hub creator；旧版排队任务明确失败，认领过滤及回报前核验拒绝不同实现版本，防止按旧 pin 写入新版产物或阻塞当前工作。新增独立纯边界与真实临时 PostgreSQL 验收，分别覆盖入口拒绝、历史任务可读、先有旧回执再升级、全部写操作拒绝及编译器升级隔离。类型检查通过；首批三叶纯回归在首版候选实际 0/3、D 分支 3/3，覆盖退役拒绝、旧编译回报读源边界及工作簿真实字节 creator。后续补充畸形 metadata 的真实 OOXML 字节拒绝，当前完整 methods 为 282/282；references 7/7 与归档 SHA 校验通过。临时 PostgreSQL 的六叶 D 用例与三个既有编译边界已串行执行，实际 9/9，无 skip；包括旧版取消保持取消，以及缺失 / 撤销编译能力时拒绝认领、preflight 和回报且不存产物。其后补强历史 delivered / failed 两类任务重启前后实际制品下载和 SHA，不只看结果里的引用；该新增断言随完整 D 套件验收。首版最终 main 8f3b839 的完整电池与 CI 尚待结束，D 还未发布或部署。
+
+Circle 接口已按维护者决定改为 hub / /hub / hub_* / hub_tool_*，不保留旧扩展、命令或工具别名。四技能的旧工具名消费者在独立 packs 分支同步并提升模块版本；包的远端工具身份与业务规则未改。维护者随后已确认 RPC 升级到 fd8524a，只验收 hub 协议；实施与验收见第 130 节。

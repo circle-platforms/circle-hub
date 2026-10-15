@@ -1,5 +1,11 @@
 # Circle 客户端接口交接：普通用户读取与脑图编译
 
+## 0.2.0 当前边界：原生执行退役
+
+`GET /v1/packs` 不再登记 `apv-case-execute`，新提交明确返回 `UNSUPPORTED_VERSION`，不兼容转发到 `module-execute`。新的执行显式提交产品模块 flow 与已批准 pin；历史任务保留旧 capability、版本、输入修订、结果和制品引用，不改绑。migration 20 字节保留，新增 migration 44 令旧回执表只读。下文原生执行章节是早期版本交接记录，不再代表可新建入口。
+
+Circle 新扩展为 `hub`、`/hub`、`hub_*` 固定工具与 `hub_tool_*` 动态工具，不保留旧扩展/命令别名。RPC 验收固定为用户确认的 Circle 1.7.0 fd8524a，只验收 hub 协议；发行候选 96702fa 的两份测试格式化差异仍单列，不替换实际验收 pin。
+
 本文件保留接口变更记录、运行教程和产品连接器契约；通用规则以[设计规范](design/README.md)为准，迁移对照见[handoff-map](design/handoff-map.md)。
 
 2026-10-14：维护者报告全量 **623/623**，A3 轮已在 `be9c6c0` 合并；这是维护者观察，不是 CI 结论。真实试验栈仍为 `e1ca68d`，未因本轮升级。

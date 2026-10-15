@@ -54,6 +54,7 @@ The design is written up in [docs/design](docs/design/README.md) (Chinese, with 
 - Uploaded source artifacts (files with roles and declared metadata) that, once approved, bind every command tool to a stable source id.
 - Skill packs pushed from Circle with their trial record, checked against the declared tools, approved by another person and run by a headless Circle; scheduled and event-driven bots.
 - Service clients, `/token`, RFC 7662 `/v1/introspect`, short-lived operation tokens for workers; execution against an MCP gateway with the hub re-verifying every device command before dispatch.
+- Execution flows run through `module-execute` with independently approved product modules; the former built-in `apv-case-execute` capability is retired. Historical task results remain readable.
 - Module installation from a packs repository (`modules.json`): frozen bytes, submitted as ordinary assets, never auto-approved.
 
 The acceptance suite (contracts, methods, acceptance, references) runs entirely on synthetic sources and a temporary PostgreSQL; the real-source observations are recorded separately in [docs](docs/README.md).
@@ -86,7 +87,7 @@ circle-hub is under development and not a supported production release: sign-in 
 ## Documentation
 
 - [Design](docs/design/README.md) ([English](docs/design/en/README.md)) — object standard, vocabulary and states, levels and elements, approvals and the enforcement chain, roles, Circle integration, product-line packs.
-- [Client API handoff](docs/client-api-handoff.md) · [Case execution](docs/case-execution-handoff.md) · [Resource identity](docs/resource-identity-handoff.md) · [Module installation](docs/module-installation.md) · [Admin CLI](docs/admin-cli.md)
+- [Client API handoff](docs/client-api-handoff.md) · [Historical native execution](docs/case-execution-handoff.md) · [Resource identity](docs/resource-identity-handoff.md) · [Module installation](docs/module-installation.md) · [Admin CLI](docs/admin-cli.md)
 - [Phase records](docs/README.md) — briefs, progress and real-source observations.
 - [Compatibility matrix](docs/compatibility.md) — which Circle commit the acceptance runs against, the frozen source baseline, the extension branch, pack schemas and the release order across the three repositories.
 - [References](references/README.md) — the archived platform that preceded the hub; frozen, verified by SHA, never imported at runtime.

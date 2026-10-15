@@ -5,9 +5,7 @@ import { sha256 } from '../../packages/contracts/src/index.ts';
 import { setup, type Harness } from './harness.ts';
 import { writeFile } from 'node:fs/promises';
 import { until } from './harness.ts';
-import { caseGateway } from '../fixtures/case-gateway.ts';
 import { externalTree, functionContract } from '../fixtures/command-source.ts';
-import { executionWorkbook } from '../fixtures/execution-workbook.ts';
 import { execFileSync } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { request as httpsRequest } from 'node:https';
@@ -114,97 +112,4 @@ test('Source artifact bundles: authorized resource clients fetch opaque grammar 
     assert.equal((await fetch(`${h.url}/v1/builds/SYNTHETIC-BUILD-7/bundle`, { headers: { authorization: `Bearer ${unshared.body.access_token}` } })).status, 403);
     await h.request(`/v1/assets/${asset.assetId}/lifecycle`, { version: asset.version, sha256: asset.sha256, state: 'disabled' });
     assert.equal((await fetch(`${h.url}/v1/blobs/${source.sha256}`, { headers })).status, 403);
-});
-sandboxTest('Resource identity: approved execution uses server-issued user tokens renewed across a long run and stopped by lease or grant revocation', async (t) => {
-    const { h } = await prepare(t), gateway = await caseGateway(t);gateway.state.actualBuild='SYNTHETIC-BUILD-7';
-    await h.db.query("UPDATE policies SET grants=grants || '[\"cases.execute\",\"builds.read\"]'::jsonb WHERE principal_id='prn_alice'");
-    await writeFile(`${h.scratch}/gateways.json`, JSON.stringify({ profiles: { lab: { endpoint: `${gateway.origin}/mcp`, pollMs: 25 } } }));
-    h.env.CIRCLE_HUB_EXECUTION_GATEWAYS = `${h.scratch}/gateways.json`;
-    h.env.CIRCLE_HUB_RESOURCE_TOKEN_TTL_SECONDS = '2';
-    await h.stop();
-    await h.startServer();
-    const input = { scopeId: 'scp_lab', kind: 'connector-instance', name: 'Server-issued synthetic gateway', version: '1.0.0', declaration: { reads: ['test-bed'], writes: ['device-config'], executionIsChange: true, credentials: [] }, configuration: { packageId: 'case-gateway', runtimeProfileRef: 'lab' }, readers: ['prn_alice', 'prn_bob'] }, resource = await h.request('/v1/assets', input), client = await h.request('/v1/service-clients', { scopeId: 'scp_lab', resourceAssetId: resource.assetId, name: 'Gateway verification client', secret, scopes: ['introspect', 'bundles:read'], resourceScopes: ['jumphost:run','synthetic:read'] });
-    const connected = await h.request('/v1/assets', { ...input, assetId: resource.assetId, version: '2.0.0', configuration: { ...input.configuration, serviceClientId: client.clientId } });
-    await h.request(`/v1/assets/${connected.assetId}/lifecycle`, { version: connected.version, sha256: connected.sha256, state: 'approved' }, 'bob');
-    await h.request(`/v1/assets/${connected.assetId}/lifecycle`, { version: connected.version, sha256: connected.sha256, state: 'running' });
-    const rules = Buffer.from('{"synthetic":"opaque rules"}'), files = [];
-    for (const [path, role, bytes] of [['commands.xml', 'command-tree', externalTree], ['functions.json', 'function-contract', functionContract()], ['projections/domain_grammar.json', 'resource-rules', rules]] as [
-        string,
-        string,
-        Buffer
-    ][]) {
-        const original = await h.request('/v1/sources', { scopeId: 'scp_lab', fileName: path.split('/').at(-1), contentBase64: bytes.toString('base64') });
-        files.push({ path, role, sourceRevisionId: original.sourceRevisionId, sha256: original.sha256 });
-    }
-    const source = await h.request('/v1/assets', { scopeId: 'scp_lab', kind: 'knowledge-source', name: 'Synthetic external resource knowledge', version: '1.0.0', declaration: { reads: ['registered-source'], writes: [], credentials: [] }, configuration: { schema: 'external-source-artifact/1', metadata: { buildName: 'SYNTHETIC-BUILD-7', bindings: { build: 'SYNTHETIC-BUILD-7' } }, files }, readers: ['prn_alice', 'prn_bob', client.principalId] });
-    const bound = await h.request(`/v1/assets/${source.assetId}/lifecycle`, { version: source.version, sha256: source.sha256, state: 'approved' }, 'bob');
-    gateway.state.identityServer = h.url;
-    gateway.state.clientId = client.clientId;
-    gateway.state.clientSecret = secret;
-    gateway.state.ruleBuild = 'SYNTHETIC-BUILD-7';
-    gateway.state.hold = true;
-    const workbook = await h.request('/v1/sources', { scopeId: 'scp_lab', fileName: 'case.xlsx', contentBase64: (await executionWorkbook({ command: 'service create port 443' })).toString('base64') });
-    const worker = await h.startWorker();
-    const task = await h.request('/v1/tasks/submit', { scopeId: 'scp_lab', capabilityPackId: 'apv-case-execute', idempotencyKey: 'server-issued-resource-execution', input: { methodAssetId: h.approvedMethodAssetId(), gatewayAssetId: connected.assetId, commandSourceAssetId: source.assetId, build: bound.sourceArtifactId, sourceRevisionId: workbook.sourceRevisionId } });
-    await h.phase(task.taskId, 'waiting-review');
-    assert.equal(gateway.state.calls.length, 0);
-    const approval = (await h.request(`/v1/tasks/${task.taskId}/approvals`)).at(-1);
-    await h.request(`/v1/tasks/${task.taskId}/approvals/${approval.approvalId}`, { inputRevisionId: approval.inputRevisionId, targetIdentity: approval.targetIdentity, actionDigest: approval.actionDigest, approve: true }, 'bob');
-    await until(async () => {const status=await h.status(task.taskId);assert.ok(!['failed','unknown'].includes(status.phase),JSON.stringify((await h.db.query('SELECT name,status,result FROM operations WHERE task_id=$1',[task.taskId])).rows));return new Set(gateway.state.verified.map(info => info.tokenDigest)).size >= 2;});
-    assert.ok(gateway.state.verified.every(info => info.sub === 'prn_alice' && info.username === 'alice' && info.scope === 'jumphost:run'));
-    assert.equal(gateway.state.ruleSha, sha256(rules));
-    const row = (await h.db.query("SELECT * FROM resource_access_tokens WHERE operation_id IS NOT NULL ORDER BY expires_at DESC LIMIT 1")).rows[0], { PrivateVault } = await import('../../packages/assets/src/vault.ts'), token = await new PrivateVault(`${h.env.CIRCLE_HUB_DATA_DIR}/private-credentials`).get(row.secret_key, row.secret_binding);
-    assert.equal((await form(h, '/v1/introspect', client.clientId, { token })).body.active, true);
-    const store=Object.create(Store.prototype) as Store;store.pool=h.db;const auth=new Auth(store),issuer=new ServiceClients(store,auth,new Assets(store,auth,`${h.env.CIRCLE_HUB_DATA_DIR}/private-credentials`),2),operation=(await h.db.query('SELECT * FROM operations WHERE operation_id=$1',[row.operation_id])).rows[0];
-    worker.kill('SIGSTOP');try{await store.transaction(async tx=>{await tx.query('SELECT 1 FROM operations WHERE operation_id=$1 FOR UPDATE',[operation.operation_id]);const prior=(await tx.query('SELECT * FROM resource_access_tokens WHERE operation_id=$1 ORDER BY expires_at DESC LIMIT 1',[operation.operation_id])).rows[0];await tx.query("UPDATE resource_access_tokens SET expires_at=clock_timestamp()+interval '150 milliseconds' WHERE digest=$1",[prior.digest]);const renewed=await issuer.issueForOperation(tx,{principalId:'prn_alice',tenantId:'tnt_lab',kind:'user'},operation,client.clientId,['jumphost:run'],'methods.use');assert.notEqual(renewed!.key,prior.secret_key,'A nearly expired token must not be reused for a new resource request');});}finally{worker.kill('SIGCONT');}
-    const narrowed=await store.transaction(tx=>issuer.issueForOperation(tx,{principalId:'prn_alice',tenantId:'tnt_lab',kind:'user'},operation,client.clientId,['synthetic:read'],'methods.use')),narrowToken=await new PrivateVault(`${h.env.CIRCLE_HUB_DATA_DIR}/private-credentials`).get(narrowed!.key,narrowed!.binding);assert.equal((await form(h,'/v1/introspect',client.clientId,{token:narrowToken})).body.scope,'synthetic:read');
-    gateway.state.hold = false;
-    await h.phase(task.taskId, 'delivered');
-    assert.deepEqual((await form(h, '/v1/introspect', client.clientId, { token })).body, { active: false });
-    const events = JSON.stringify(await h.request(`/v1/tasks/${task.taskId}/events?after=0`)), result = JSON.stringify(await h.request(`/v1/tasks/${task.taskId}/result`));
-    assert.ok(!events.includes(token) && !result.includes(token) && !events.includes(secret) && !result.includes(secret));
-    assert.equal(Number((await h.db.query('SELECT count(*) AS n FROM personal_credentials')).rows[0].n), 0);
-    gateway.state.hold = true;
-    const second = await h.request('/v1/tasks/submit', { scopeId: 'scp_lab', capabilityPackId: 'apv-case-execute', idempotencyKey: 'server-issued-resource-revoked', input: { methodAssetId: h.approvedMethodAssetId(), gatewayAssetId: connected.assetId, commandSourceAssetId: source.assetId, build: bound.sourceArtifactId, sourceRevisionId: workbook.sourceRevisionId } });
-    await h.phase(second.taskId, 'waiting-review');
-    const proposal = (await h.request(`/v1/tasks/${second.taskId}/approvals`)).at(-1);
-    await h.request(`/v1/tasks/${second.taskId}/approvals/${proposal.approvalId}`, { inputRevisionId: proposal.inputRevisionId, targetIdentity: proposal.targetIdentity, actionDigest: proposal.actionDigest, approve: true }, 'bob');
-    await until(async () => gateway.state.calls.filter(name => name === 'case_submit').length === 2);
-    await until(async () => (await h.db.query('SELECT 1 FROM case_gateway_receipts r JOIN operations o USING(operation_id) WHERE o.task_id=$1 AND r.gateway_task_id IS NOT NULL', [second.taskId])).rowCount);
-    const secondToken = (await h.db.query('SELECT r.* FROM resource_access_tokens r JOIN operations o USING(operation_id) WHERE o.task_id=$1 ORDER BY r.expires_at DESC LIMIT 1', [second.taskId])).rows[0], access = await new PrivateVault(`${h.env.CIRCLE_HUB_DATA_DIR}/private-credentials`).get(secondToken.secret_key, secondToken.secret_binding);
-    await h.setRole('prn_alice','viewer');
-    assert.deepEqual((await form(h, '/v1/introspect', client.clientId, { token: access })).body, { active: false });
-    await h.phase(second.taskId, 'unknown');
-    await h.setRole('prn_alice','admin');
-    const observer = await h.startWorker('lab-east-02');
-    gateway.state.hold = false;
-    await h.request(`/v1/tasks/${second.taskId}/reconcile`, { operationId: secondToken.operation_id });
-    await until(async () => { const state = (await h.db.query('SELECT name,status,result FROM operations WHERE task_id=$1', [second.taskId])).rows; assert.ok(!state.some(row => row.name === 'cases.observe' && row.status === 'failed'), JSON.stringify(state)); return (await h.db.query('SELECT frozen FROM resources WHERE resource_id LIKE $1', ['gateway:%'])).rows.every(row => !row.frozen); });
-    gateway.state.hold = true;
-    const third = await h.request('/v1/tasks/submit', { scopeId: 'scp_lab', capabilityPackId: 'apv-case-execute', idempotencyKey: 'server-issued-resource-cancelled', input: { methodAssetId: h.approvedMethodAssetId(), gatewayAssetId: connected.assetId, commandSourceAssetId: source.assetId, build: bound.sourceArtifactId, sourceRevisionId: workbook.sourceRevisionId } });
-    await h.phase(third.taskId, 'waiting-review');
-    const thirdApproval = (await h.request(`/v1/tasks/${third.taskId}/approvals`)).at(-1);
-    await h.request(`/v1/tasks/${third.taskId}/approvals/${thirdApproval.approvalId}`, { inputRevisionId: thirdApproval.inputRevisionId, targetIdentity: thirdApproval.targetIdentity, actionDigest: thirdApproval.actionDigest, approve: true }, 'bob');
-    await until(async () => gateway.state.calls.filter(name => name === 'case_submit').length === 3);
-    await until(async () => (await h.db.query('SELECT 1 FROM case_gateway_receipts r JOIN operations o USING(operation_id) WHERE o.task_id=$1 AND r.gateway_task_id IS NOT NULL', [third.taskId])).rowCount);
-    worker.kill('SIGSTOP');
-    observer.kill('SIGSTOP');
-    try {
-        const current = (await h.db.query('SELECT r.* FROM resource_access_tokens r JOIN operations o USING(operation_id) WHERE o.task_id=$1 ORDER BY r.expires_at DESC LIMIT 1', [third.taskId])).rows[0], bearer = await new PrivateVault(`${h.env.CIRCLE_HUB_DATA_DIR}/private-credentials`).get(current.secret_key, current.secret_binding);
-        assert.equal((await form(h, '/v1/introspect', client.clientId, { token: bearer })).body.active, true);
-        await h.db.query('UPDATE leases SET fencing_token=fencing_token+1 WHERE operation_id=$1', [current.operation_id]);
-        assert.deepEqual((await form(h, '/v1/introspect', client.clientId, { token: bearer })).body, { active: false });
-        await h.db.query('UPDATE leases SET fencing_token=$2 WHERE operation_id=$1', [current.operation_id, current.fencing_token]);
-        await h.request(`/v1/tasks/${third.taskId}/cancel`, {});
-        assert.deepEqual((await form(h, '/v1/introspect', client.clientId, { token: bearer })).body, { active: false });
-    }
-    finally {
-        worker.kill('SIGCONT');
-        observer.kill('SIGCONT');
-    }
-    await h.phase(third.taskId, 'unknown');
-    const interrupted = (await h.db.query("SELECT operation_id FROM operations WHERE task_id=$1 AND name='cases.execute'", [third.taskId])).rows[0];
-    gateway.state.hold = false;
-    await h.request(`/v1/tasks/${third.taskId}/reconcile`, { operationId: interrupted.operation_id });
-    await until(async () => (await h.db.query('SELECT frozen FROM resources WHERE resource_id LIKE $1', ['gateway:%'])).rows.every(row => !row.frozen));
 });

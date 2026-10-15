@@ -1,21 +1,17 @@
+import {assertNativeRetired} from '../fixtures/native-retirement.ts';
 import assert from 'node:assert/strict';
-import {readFile,readdir} from 'node:fs/promises';
-import {join} from 'node:path';
 import {sandboxTest,until} from './harness.ts';
 import {sha256,canonicalHash} from '../../packages/contracts/src/index.ts';
 import {meridianFlow,installMeridian,assetPin,observedFlowWorker} from '../fixtures/meridian-flow.ts';
 import {providerTools} from '../fixtures/execution-provider.ts';
-
-const nativeImplementation='5df9fdc0eccc88834f59c9295b94879f752e1582c8a84b03292c8cd14cbc0ebc',nativeTree='f566a87eaa80c35833581cb263b164aac1ef0c94c5685905e4a8dafd54fa6f21';
-async function frozenNativeTree(){const entries:{path:string;sha256:string}[]=[];async function walk(folder:string,prefix=''){for(const entry of await readdir(folder,{withFileTypes:true})){const path=prefix+entry.name;if(entry.isDirectory())await walk(join(folder,entry.name),path+'/');else entries.push({path,sha256:sha256(await readFile(join(folder,entry.name)))});}}await walk(new URL('../../packs/apv/execution/',import.meta.url).pathname);entries.sort((a,b)=>a.path<b.path?-1:1);return sha256(entries.map(entry=>`${entry.sha256}  ${entry.path}\n`).join(''));}
 function namedValues(value:any,name:string):any[]{if(!value||typeof value!=='object')return [];return Object.entries(value).flatMap(([key,item])=>[...(key===name?[item]:[]),...namedValues(item,name)]);}
 
 sandboxTest('A3 generic flow: a declared Meridian transition dispatches SHA checked byte slots and delivers trusted receipts without native product execution',async t=>{
- const f=await meridianFlow(t),{h,provider}=f;assert.equal(await frozenNativeTree(),nativeTree);assert.equal((await h.request('/v1/packs')).find((pack:any)=>pack.capabilityPackId==='apv-case-execute').implementationSha256,nativeImplementation);await h.startWorker();const task=await f.submit('a3-happy');await h.phase(task.taskId,'delivered',30_000);
+ const f=await meridianFlow(t),{h,provider}=f;await assertNativeRetired();assert.equal((await h.request('/v1/packs')).find((pack:any)=>pack.capabilityPackId==='apv-case-execute'),undefined);await h.startWorker();const task=await f.submit('a3-happy');await h.phase(task.taskId,'delivered',30_000);
  assert.equal(provider.state.submissions,1);assert.equal(provider.state.payloadBytes,f.payload.length);assert.equal(provider.state.payloadSha256,sha256(f.payload));assert.ok(f.payload.toString('base64').length>32768);assert.ok(provider.state.releases>=1);
  const replay=await f.submit('a3-happy');assert.equal(replay.taskId,task.taskId);assert.equal(replay.deduplicated,true);assert.equal(provider.state.submissions,1);
  const result=await h.request(`/v1/tasks/${task.taskId}/result`);assert.equal(result.status,'succeeded');assert.ok(result.evidence.length+result.artifacts.length>0);assert.ok(!JSON.stringify(result).includes(provider.state.secret));assert.ok(!(await h.db.query('SELECT 1 FROM resources WHERE frozen')).rowCount);
- const operations=await h.request(`/v1/tasks/${task.taskId}/operations`);assert.ok(!operations.some((row:any)=>row.name.startsWith('cases.')));assert.equal(await frozenNativeTree(),nativeTree);
+ const operations=await h.request(`/v1/tasks/${task.taskId}/operations`);assert.ok(!operations.some((row:any)=>row.name.startsWith('cases.')));await assertNativeRetired();
  const events=(await h.request(`/v1/tasks/${task.taskId}/events?after=0`)).events;for(const point of ['verify.deviceCommand','verify.hostCommand','verify.workbook','beforeDispatch','afterResult'])assert.ok(events.some((event:any)=>event.kind==='hook.verification'&&(event.payload.point===point||event.payload.hookPoint===point)),point);
  const submit=provider.state.calls.find(row=>row.name==='meridian_submit')!;assert.match(submit.meta['hub/stepKey'],/^[a-f0-9]{64}$/);assert.match(submit.meta['hub/requestHash'],/^[a-f0-9]{64}$/);assert.ok(submit.meta['hub/byteBindings'].some((ref:any)=>ref.parameter==='payload_b64'&&ref.sha256===sha256(f.payload)));
  await h.reject('/v1/tasks/submit',{scopeId:'scp_lab',capabilityPackId:'module-execute',idempotencyKey:'a3-happy',input:f.input('missing-mapping')},'IDEMPOTENCY_MISMATCH');

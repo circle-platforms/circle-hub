@@ -123,7 +123,7 @@ export async function apvModuleFlow(t:TestContext,frozen:Awaited<ReturnType<type
  // Node omits undefined environment keys in children. Clear both names so an
  // operator's ambient real profile cannot become this synthetic test's input.
  const cleared:NodeJS.ProcessEnv={};for(const suffix of ['EXECUTION_GATEWAYS','CONNECTOR_PROFILES','OAUTH_PROFILES','PRODUCT_LINES']){cleared[`CIRCLE_HUB_${suffix}`]=undefined;cleared[`CIRCLE_SERVER_${suffix}`]=undefined;}cleared.CIRCLE_RUNTIME_CONFIG=undefined;
- const provider=options.provider??await apvModuleProvider(t),h=await setup(t,cleared as Record<string,string>);h.autoMethodProfiles=false;h.autoHooks=false;
+ const provider=options.provider??await apvModuleProvider(t),h=await setup(t,cleared as Record<string,string>);
  await writeFile(`${h.scratch}/execution.json`,JSON.stringify({profiles:{apvfixture:{endpoint:provider.endpoint,pollMs:25}}}),{mode:0o600});h.env.CIRCLE_HUB_EXECUTION_GATEWAYS=`${h.scratch}/execution.json`;await h.stop();await h.startServer();
  const receiptPolicy=frozenApvReceiptPolicy(frozen);
  const configuration={schema:'hub-provider/1',transport:'streamable-http',runtimeProfileType:'execution',runtimeProfileRef:'apvfixture',credentialMode:'static-secret',receiptPolicy:options.receiptPolicy??receiptPolicy},declaration={reads:['synthetic-bed'],writes:['synthetic-device-config'],credentials:[] as string[],allowedTestHosts:['routera'],provides:{tools:options.tools??apvProviderTools()}};

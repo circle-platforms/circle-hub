@@ -4,7 +4,8 @@ import {Base64Content,InputRevisionId,OperationId,SourceReference,SourceRevision
 export const MINDMAP_FLOW_VERSION='mindmap-compile/1';
 export const MINDMAP_CONTRACT_VERSION='Excel 输出契约 V1';
 export const MINDMAP_MAPPING_VERSION='1.0.0';
-export const MINDMAP_PACK_VERSION='1.0.0';
+export const MINDMAP_PACK_VERSION='1.1.0';
+export const MINDMAP_WORKBOOK_CREATOR='circle-hub mindmap-compile';
 export const MindmapCompileInput=z.object({sourceRevisionId:SourceRevisionId,sourceSha256:Sha256.optional()});
 export const MindmapPack={capabilityPackId:'mindmap-compile',version:MINDMAP_PACK_VERSION,title:'脑图用例结构编译',inputFormats:['xmind-2020-content-json','xmind-content-json','topic-tree-json'],contractVersion:MINDMAP_CONTRACT_VERSION,mappingRulesVersion:MINDMAP_MAPPING_VERSION,requiredOperations:['mindmaps.compile'],conclusionScope:'structural-compilation',inputSchema:{type:'object',required:['sourceRevisionId'],properties:{sourceRevisionId:{type:'string',pattern:'^src_'},sourceSha256:{type:'string',pattern:'^[a-f0-9]{64}$'}},additionalProperties:false}} as const;
 export const WorkerClaim=z.object({operationId:OperationId,taskId:TaskId,inputRevisionId:InputRevisionId,name:z.literal('mindmaps.compile'),fencingToken:z.number().int().positive(),source:SourceReference,leaseTtlMs:z.literal(60_000),heartbeatMs:z.literal(20_000)});
