@@ -1317,3 +1317,11 @@ selectFlowHistory 先保意图、unknown、已消费授权和活动记录，再�
 fail() 对帧构造、归档、预算等实际 Hub ApiError 在原已投影 details 上追加 cause，保留登记码、message 与有界 details；没有动作上下文就不编造 stepId / kind。60220cf 的动作拒绝形状保留；普通 worker 对象或普通异常不升级为 Hub cause。产品显式 outcome.error 在调用处明确排除，继续保留产品规则 facts 的原形，不按 message 文本猜来源。
 
 先写新纯五叶，旧 **3/5**，两叶精准红于缺失 cause；修后新 **5/5**，与旧动作拒绝 / 错误预算消费者合跑 **11/11，无 skip**。根树 typecheck、差异和独立只读复核通过。仅本地签署，不跑全套、push / 部署或触现场；两叶真实 Tool 历史归档验收将在下一项串行执行。
+
+## 125：少于 256 条的大观察历史端到端验收
+
+两个新验收均经既有模块安装、独立批准、临时 PostgreSQL 和真实合成 worker / Tool 宿主，规划 250 个独立 Tool 观察，每条含 2048 字节文本；单件合规，累计真实观察 canonical JSON 超过 512 KiB。没有旁路写入观察、直接调用产品函数或以假回执代替历史消费。
+
+声明 controlled 的模块最终 delivered，250 条观察全部成功；实际 Tool 动作以 flow-history byteSlot 读取完整 B 归档，核 schema、逐项序号 / 内容、原件 SHA 与长度、首尾及旧引用，最后交付。未声明模块在同类超额帧以 RESULT_TOO_LARGE 和既有明确消息失败，details.cause 保留该登记码与原因，无伪造 stepId / kind。两叶均断零 provider RPC / submit / 意图 / 资源冻结。
+
+旧实现两叶 **0/2**（同为 BODY_TOO_LARGE / 空 details）→修后实际 **2/2，无 skip**，分别约 136 秒 / 116 秒；合成成功叶 254 个持久步骤。typecheck 与差异检查通过。只跑这份针对性集成文件，PG 串行收尾，不跑全套、不 push / 部署，不访问 7420、真实网关 / 床或独立包；测试合成 worker 不属于既有运行栈。
