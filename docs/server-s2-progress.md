@@ -1351,3 +1351,9 @@ pg Pool.end 的完成不等于所有 client end；测试 harness 只等前者就
 ## 129：累计历史验收的等待预算
 
 完整 TAP 复跑中的累计历史叶在 180 秒等待结束时尚为 running，299 步成功、2 步 accepted、1 步 running。该用例验证超过 256 条的归档、旧引用授权和逐字节 SHA，不是延迟基准。将验收轮询等待设为有限 480 秒、整叶上限 510 秒；不改生产运行预算、帧上限、成功条件或原件断言。此前超时仍记失败，新等待下的实际重跑结果另行记录，不以调大等待本身当通过。
+
+## 130：维护者确认 Circle 1.7.0 的 hub RPC 协议
+
+维护者明确确认 fd8524a 为新 RPC 验收 pin，只验收 hub 协议。独立冻结并构建该提交，运行时设置启用 hub 扩展，仅注入 CIRCLE_HUB_URL / TOKEN / USER / SCOPE；脚本模型与断言使用 hub_tool_*，运行版本设为 1.7.0。Circle 发行候选 main 96702fa 只有另外两份测试格式化差异，仍与本次 RPC pin 分开记录。foundation 与 references 原字节未改。
+
+首轮真实固定 Circle RPC 为 6/6，无 skip，包含技能加载、范围化工具、产物 SHA、错误提交零模型请求、取消与短 token 续期。新 assets.execute 冻结同名 worker 能力，认领过滤无能力 worker，preflight 与回报沿现有能力核验链再次检查；能力撤销与恢复的临时 PostgreSQL 回归通过，未发模型请求。旧手动 worker 夹具同步显式声明能力。完整首版候选验证尚待执行，以上不替代整套门禁。

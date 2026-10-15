@@ -51,11 +51,11 @@ test('Skill diagnostics: approval and run rechecks report the same catalog misma
 
 test('Skill diagnostics: a post-admission catalog denial retains complete lists in the failed task result',async t=>{
   const {h,asset,source}=await prepare(t);
-  await writeFile(`${h.scratch}/unstarted-runtime.json`,JSON.stringify({circleBin:'unstarted-circle.ts',circleCommit:'0'.repeat(40),circleVersion:'1.1.1',model:{kind:'scripted',base_url:source.origin,model:'synthetic-unstarted',protocol:'openai',api_key:'synthetic-only-key'}}));
+  await writeFile(`${h.scratch}/unstarted-runtime.json`,JSON.stringify({circleBin:'unstarted-circle.ts',circleCommit:'0'.repeat(40),circleVersion:'1.7.0',model:{kind:'scripted',base_url:source.origin,model:'synthetic-unstarted',protocol:'openai',api_key:'synthetic-only-key'}}));
   h.env.CIRCLE_RUNTIME_CONFIG=`${h.scratch}/unstarted-runtime.json`;await h.stop();await h.startServer();
   const submitted=await post(h,submission(['docs.search'],['docs.search'],'diagnostic-claim'));assert.equal(submitted.status,201);const record=await approval(h,submitted.body.data);await h.request(record.path,record.body,'bob');
   const accepted=await h.request(`/v1/skillpacks/${submitted.body.data.skillPackId}/runs`,{inputs:{},idempotencyKey:'diagnostic-post-admission'});
-  await h.request(`/v1/assets/${asset.assetId}/lifecycle`,{version:asset.version,sha256:asset.sha256,state:'disabled'});await h.request('/v1/workers/register',{},'lab-east-01');
+  await h.request(`/v1/assets/${asset.assetId}/lifecycle`,{version:asset.version,sha256:asset.sha256,state:'disabled'});await h.request('/v1/workers/register',{capabilities:['assets.execute']},'lab-east-01');
   mismatch(await h.reject('/v1/workers/claim',{},'SKILLPACK_CHECK_FAILED','lab-east-01'),['docs.search']);await h.phase(accepted.taskId,'failed');
   mismatch((await h.request(`/v1/tasks/${accepted.taskId}/result`)).error,['docs.search']);
 });

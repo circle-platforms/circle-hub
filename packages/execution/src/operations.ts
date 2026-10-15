@@ -46,7 +46,7 @@ export class Operations extends Execution {
         VALUES($1,$2,$3,$4,$5,$6,$7,$8,'accepted',clock_timestamp()+($9::double precision*interval '1 millisecond'),$10,$11,$12,$13,$14,$15,$16) RETURNING *`,
         [id,task.tenantId,task.scopeId,taskId,task.inputRevisionId,ctx.principalId,spec.name,resource,spec.deadlineMs,spec.target,spec.targetIdentity,JSON.stringify(spec.args),actionDigest(spec),JSON.stringify(effects),spec.approvalId??null,delegatedOwnerId??null])).rows[0];
       await client.query('UPDATE operations SET authorization_asset_id=$2,approval_consumed=$3 WHERE operation_id=$1',[id,spec.authorizationAssetId??null,!!spec.approvalId]);
-      await client.query('UPDATE operations SET source_effect=$2 WHERE operation_id=$1',[id,authorization?.sourceEffect??'write']);
+      await client.query('UPDATE operations SET source_effect=$2,required_worker_capability=$3 WHERE operation_id=$1',[id,authorization?.sourceEffect??'write',this.requiredWorkerCapabilities.has(spec.name)?spec.name:null]);
       await client.query('INSERT INTO operation_keys(tenant_id,scope_id,principal_id,name,idem_key,request_hash,operation_id) VALUES($1,$2,$3,$4,$5,$6,$7)',[...keys,hash,id]);
       await this.tasks.emit(client,taskId,'operation.accepted',{operationId:id,name:spec.name,effects});await this.tasks.wake(client,taskId,'operation');
       await this.auth.audit(ctx,'operations.submit',{operationId:id,actionDigest:row.action_digest,effects:row.effects},task.scopeId,client);
@@ -77,7 +77,8 @@ export class Operations extends Execution {
       const worker=(await tx.query('UPDATE workers SET last_seen=clock_timestamp() WHERE worker_id=$1 AND principal_id=$2 RETURNING *',[policy.workerId,policy.principalId])).rows[0];requireCondition(worker,'FORBIDDEN_ACTION','Register first');if(worker.draining)return null;
       const rows=(await tx.query(`SELECT o.* FROM operations o LEFT JOIN operations parent ON parent.operation_id=o.parent_operation_id
         WHERE o.name<>ALL($5::text[]) AND o.status='accepted' AND o.tenant_id=$1 AND o.scope_id=ANY($2::text[]) AND o.deadline_at>clock_timestamp()
-        AND o.name<>ALL($4::text[]) AND (o.kind<>'reconcile' OR parent.worker_id<>$3) ORDER BY o.created_at FOR UPDATE OF o SKIP LOCKED LIMIT 10`,[policy.tenantId,policy.scopes,policy.workerId,exclude,[...this.customClaimers.keys()]])).rows;
+        AND ((o.required_worker_capability IS NULL AND o.name<>ALL($6::text[])) OR (o.required_worker_capability=o.name AND $7::jsonb ? o.required_worker_capability))
+        AND o.name<>ALL($4::text[]) AND (o.kind<>'reconcile' OR parent.worker_id<>$3) ORDER BY o.created_at FOR UPDATE OF o SKIP LOCKED LIMIT 10`,[policy.tenantId,policy.scopes,policy.workerId,exclude,[...this.customClaimers.keys()],[...this.requiredWorkerCapabilities],JSON.stringify(worker.capabilities??[])])).rows;
       for(const row of rows){
         const resource=(await tx.query('SELECT * FROM resources WHERE tenant_id=$1 AND resource_id=$2 FOR UPDATE',[row.tenant_id,row.resource_id])).rows[0];
         if(resource.frozen&&row.kind!=='reconcile')continue;
@@ -105,7 +106,7 @@ export class Operations extends Execution {
     if(this.customPreflights.has(declared))return super.preflight(ctx,id,fence,tx,lightweight);
     const run=async(client:Transaction)=>{
       await this.lockPreflight(ctx,id,fence,client);const row=await this.lease(ctx,id,fence,client);if(this.customPreflights.has(row.name))return super.preflight(ctx,id,fence,client,lightweight);
-      const {task,authorization}=await this.authorize(client,row);
+      await this.workerCapability(ctx,row,client);const {task,authorization}=await this.authorize(client,row);
       const worker=await this.auth.policy(ctx,client);
       if(this.managedNames.has(row.name)){
         requireCondition(worker.scopes.includes(row.scope_id),'FORBIDDEN_SCOPE','Worker cannot reach this asset scope');
