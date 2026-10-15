@@ -1331,3 +1331,13 @@ fail() 对帧构造、归档、预算等实际 Hub ApiError 在原已投影 deta
 中英 C5 同步整帧字节计量、关键行保留、普通观察最新优先、真实受控归档及有界 Hub cause，F 常量不变。记录维护者反馈的本轮真实床事实：21 例、216 条设备命令、21 条主机命令、239 个核验钩子；253 条观察中 submit 回执约 148 KB、parse-results 约 124 KB、workbook 约 72 KB、tree 约 36 KB，成功执行及解析后下一次 transition 累计帧超限。该轮失败不记为 delivered，也不覆盖第 122 节此前已确认的成功批次；本地两叶只证明合成流程修复，不宣称真实 21 例已重跑。
 
 多 agent 分工隔离实现与验收，并交叉只读复核；四项各一笔本地签署，针对性纯 **21/21**、集成 **2/2**，无 skip，typecheck / 差异 / 文档检查通过。原生 1.1.1、F、产品包、Circle、归档与 harness-adapters 均未改，不跑全套、不 push / 部署、不触 7420；真实批次与 packs 1.4.0 的合并复跑由维护者协调。
+
+## 127：批量重跑回执与首个发行准备
+
+按交接顺序只读回查既有批次，不重投真实床。Hub 1b4a6dc、packs d91b23d / products/apv 1.4.0 的 21 例批次已 delivered / succeeded，解析 executionStatus=completed、rc=0，设备用例结果 **13 pass / 8 fail**，unmapped=0。失败原因未在本轮核定，不把流程交付成功写成设备全绿。分页读取全部 1013 条事件：216 个设备命令核验、21 个主机命令核验、工作簿和 beforeDispatch 各 1，共下发前 **239** 个通过；afterResult 另 1 个通过。结果回执 terminal=true、remoteLeaseReleased=true，网关只读租约查询 leased=false / bed_busy=false；remoteStoppingVerified=false 原样保留，不推称远端停止保证。
+
+从结果清单下载并逐件核 SHA，确认实际 flow-history-parse 回读产物及五件受控历史归档，归档大小 535090–562727 字节；解析结果原件 124784 字节。原件、日志、凭据、试验栈路径与业务字节均留在仓库外，本记录只记汇总。7420 的 server-live 与滚动 worker 保持 1b4a6dc，原生入口未退役；supervisor 仍用兼容配置，未为消除弃用提示重启会清理临时库的 dev-stack。
+
+首个仓库发行按 CONTRIBUTING 设为 0.1.0：package 与 lockfile 同步，CHANGELOG 保留空 Unreleased 并落 2026-10-15 版本段，中英兼容矩阵分清发行、现场观察和既有固定验收输入。没有更改 schema、固定 Circle RPC 提交、foundation 或 references。发布门禁结果在执行后记录。
+
+1b4a6dc 的远端 Reference integrity、pages、Hub checks 均已成功；Hub checks run 38670996421。维护者随后确认 D 阶段可直接实施，但本次 0.1.0 仍先冻结两条路径并存状态，退役另作为下一版本。扩展标识 hub 与 /hub 的无旧名兼容改名也已另行授权，固定 RPC 验收提交不随发行变化。
