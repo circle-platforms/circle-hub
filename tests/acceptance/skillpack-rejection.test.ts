@@ -49,7 +49,7 @@ test('Skill rejection: an old pending version can be declined after a newer vers
     // Rejection closes only governance. The newest registration still admits and
     // passes a worker preflight without starting the scripted runtime.
     const run = await h.request(`/v1/skillpacks/${latest.skillPackId}/runs`, { inputs: {}, idempotencyKey: 'latest-after-old-decline' });
-    await h.request('/v1/workers/register', {}, 'lab-east-01');
+    await h.request('/v1/workers/register', {capabilities:['assets.execute']}, 'lab-east-01');
     const claim = await h.request('/v1/workers/claim', {}, 'lab-east-01');
     assert.equal(claim.taskId, run.taskId);
     const checked = await h.request(`/v1/workers/operations/${claim.operationId}/preflight`, { fencingToken: claim.fencingToken }, 'lab-east-01');
