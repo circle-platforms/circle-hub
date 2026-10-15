@@ -1,10 +1,12 @@
 import {canonicalHash,canonicalJson,sha256,EXECUTION_TRANSITION_LIMITS,requireCondition} from '../../contracts/src/index.ts';
 
-export function selectFlowHistory(rows:any[],capacity=EXECUTION_TRANSITION_LIMITS.arrayItems){
- const active=new Set(['accepted','running','waiting-review','unknown']);
- const critical=(row:any)=>Boolean(row.intent||row.authorization_asset_id||active.has(row.status));
+export function flowHistoryMetadataBytes(frame:{controlledBytes:any[]}){const metadata={...frame,controlledBytes:frame.controlledBytes.map(entry=>({slot:entry.slot,role:entry.role,reference:entry.reference,...('encoding' in entry?{encoding:entry.encoding}:{})}))};return Buffer.byteLength(canonicalJson(metadata));}
+export function selectFlowHistory(rows:any[],capacity=EXECUTION_TRANSITION_LIMITS.arrayItems,fits:(selected:any[],complete:boolean)=>boolean=()=>true){
+ const active=new Set(['accepted','running','waiting-review','unknown']),critical=(row:any)=>Boolean(row.intent||row.authorization_asset_id||active.has(row.status));
  const required=rows.filter(critical);requireCondition(required.length<=capacity,'RESULT_TOO_LARGE','Active dispatch and authorization history exceeds the inline window');
- const selected=new Set(required),remaining=rows.filter(row=>!critical(row)),available=capacity-required.length;if(available>0)for(const row of remaining.slice(-available))selected.add(row);
+ if(rows.length<=capacity&&fits(rows,true))return {selected:rows,complete:true,total:rows.length};
+ requireCondition(fits(required,required.length===rows.length),'RESULT_TOO_LARGE','Critical dispatch and authorization history exceeds the inline frame budget');
+ const selected=new Set(required),remaining=rows.filter(row=>!critical(row));for(const row of remaining.reverse()){if(selected.size>=capacity)break;const candidate=rows.filter(item=>selected.has(item)||item===row);if(!fits(candidate,candidate.length===rows.length))break;selected.add(row);}
  return {selected:rows.filter(row=>selected.has(row)),complete:selected.size===rows.length,total:rows.length};
 }
 export function requireSameHistorySlot(existing:any,requested:any){requireCondition(existing.role===requested.role&&canonicalHash(existing.reference)===canonicalHash(requested.reference),'SOURCE_HASH_MISMATCH','Controlled history slot cannot shadow a different role or original');}

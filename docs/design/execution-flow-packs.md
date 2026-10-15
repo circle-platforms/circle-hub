@@ -1,6 +1,6 @@
 # 执行流迁入产品线包
 
-本文是待维护者复核的迁移设计，不是已经可用的装载能力。本轮三个事项中的执行流迁移只授权设计，尚未授权代码实施；维护者复核通过并确认实施后才写验收和代码。本轮不移动执行代码、不改网关、不改独立产品包。
+本文记录已实施的执行流迁移边界。A3 通用驱动、B 的独立 products/apv 1.3.x 纯 Tool / flow，以及 C1–C5 通用协议与后续修复已经落地；原生 apv-case-execute 1.1.1 仍保留为兼容入口，尚未退役。维护者已另行确认真实床通过 generic provider 消费工作簿、XML 命令树和函数契约三份真实原件并 delivered，包含 21 案批量；这里只转述维护者确认，不把本地合成或默认 skip 推成现场验证。实现与验收记录见[阶段进度](../server-s2-progress.md)，D 的退役前置与待确认事项见下文迁移路径。
 
 目标是让 `packs/apv/execution` 的产品解释和流程选择由独立仓库的 `products/apv` 拥有，同时保留 hub 对权限、批准修订、派发、租约、未知结果与证据的控制。产品包提供纯函数 Tool 和 Hook；网络、凭据、数据库与任务推进仍由 hub 执行。装入第二条产品线时不添加产品专用 controller 或 worker 分支。
 
@@ -12,9 +12,9 @@
 
 `ProductModules.load` 从批准的来源制品取出冻结文件，核对 `product-line/1` 的 `tools[]`、`hooks[]`、`flows[]` 与 `resources[]`。`ProductModules.call` 经 `callFrozenTool` 在受限 Tool 子进程内调用声明文件的导出函数。相对 import 必须留在冻结文件集中；外部依赖必须在对应文件的 `tools[].imports` 中声明，并与 hub 支持的精确版本一致。`node:*`、hub 源码、任意依赖和计算出来的 import 均被拒绝，错误码为 `IMPORT_NOT_DECLARED`。
 
-当前装载器没有运行完整执行流的能力：`flows/*.json` 只是被解析的数据，`ToolProviders.resolve` 只按 `flow.id` 找到模块并返回绑定；`CaseExecution` 仍在 hub 进程中注册 `cases.*`、执行 SQL、生成凭据注入并推进任务；worker 仍直接调用 `executeCases`。现有 `products/apv` 已有工作簿读取 Tool 和 Hook，但这不代表 controller、worker、结果解释已由模块接管。
+当前装载器与 A3 通用驱动已能运行声明的完整执行流：`ToolProviders.resolve` 解析显式模块绑定，`module-execute` 读取冻结 flow，由 C 持久推进、通用 worker 执行 `flow.invoke`；products/apv 1.3.x 提供产品 transition、工作簿 / XML / 函数契约读取与结果解释纯 Tool。原生 `CaseExecution` 的 `cases.*` 与 `executeCases` 仍注册为另一条兼容路径，通用流程不依赖其产品专用 controller / worker；保留旧路径不表示原生入口与文件已完成退役。
 
-因此不能把现有 `controller.ts`、`worker.ts` 换一个目录后直接 import。它们使用的数据库、文件系统、保险箱与网络能力超出 Tool 边界。必须先拆分产品纯函数和通用驱动器，再经同一个模块装载路径运行。
+迁移采用了产品纯函数与通用驱动器的拆分，没有把原 `controller.ts`、`worker.ts` 换目录后直接 import。它们使用的数据库、文件系统、保险箱与网络能力仍留在 hub，产品逻辑经同一个受控模块装载路径运行。
 
 ## 代码与语义归属
 
@@ -65,9 +65,9 @@ Tool 文件均列在 `tools[]`，每个文件自己的外部依赖由该条目�
 
 ## 待实现的内部驱动契约
 
-这是复核后需要补齐的通用能力，不是当前 flow JSON 已有的字段。保持 `product-line/1` 和 `circle-packs/flow/1` 的原语身份，明确 flow 对已声明 Tool 导出函数的引用及输入输出结构；语义变化升级流程版本，不能靠清单的宽松字段静默生效。
+本节沿用最初设计阶段的标题；所述内部契约现已由 A2、A3 及 C1–C5 实施，实际字段见相应附录与驱动 schema。`product-line/1` 和 `circle-packs/flow/1` 的原语身份保持不变，flow 显式引用已声明 Tool 的导出函数及其输入输出结构；后续语义变化仍须升级流程版本，不能靠清单的宽松字段静默生效。
 
-产品的 transition Tool 是一个确定性状态转换：输入为冻结绑定、产品状态、当前输入以及已留存且可核对的观察；输出为下一份产品状态和一批待执行动作。它不能直接改任务 phase、执行 RPC、写入证据或批准资产。出入参使用 JSON 和冻结字节，状态不能藏进进程全局变量。字段形状、允许的动作类型和大小上限在实现前作为内部契约确定并用 schema 校验。
+产品的 transition Tool 是一个确定性状态转换：输入为冻结绑定、产品状态、当前输入以及已留存且可核对的观察；输出为下一份产品状态和一批待执行动作。它不能直接改任务 phase、执行 RPC、写入证据或批准资产。出入参使用 JSON 和冻结字节，状态不能藏进进程全局变量。字段形状、允许的动作类型和大小上限已由内部契约确定并用 schema 校验。
 
 通用驱动器只解释有限的动作类型：调用本模块声明的纯 Tool、向已绑定 provider 调用其 `provides` 中声明的 Tool、等待已登记操作的观察、请求既有 Hook 核验、提出带固定错误码的结果或交付候选。产品流程所需的操作登记、等待、提交意图及状态更新仍由 hub 完成。流程不能让 hub 执行任意 JavaScript、SQL、shell、URL 或新 Hook。
 
@@ -87,7 +87,7 @@ hub 继续维护操作租约、fencing token、资源冲突和 worker 的领取�
 
 D 的可证终态必须先独立持久化，再交给产品 Tool 解释。远端任务身份、绑定的工作簿 SHA、终态回报和释放事实一旦被核实，parser 抛错、超时、超限、返回无效协议、缺设备映射或 `afterResult` 解释失败只能影响解释结果：解释失败、partial 或具体步骤 unknown。它们不能把已证执行终态改为 D 的派发 unknown，不能冻结资源，不能触发另一次 `case_submit`；修复后的纯 Tool 可针对同一份冻结原件重新解释，不重新上机。若终态本身不能核实，才按上一段保留 unknown。
 
-当前原生 controller 的成功回报处理中，结果 parser 或 `afterResult` 抛出的 `ApiError` 仍会因已有 submit intent 被捕获成 unknown。这是迁移时必须修正的边界；本轮仅记设计，不修改现有实现。
+设计提出时，原生 controller 曾被识别出 parser 或 `afterResult` 错误落入派发 unknown 的风险。通用路径现已落实终态与解释隔离、真实缺口留存及 partial 交付闸，见 A3 与后续修复说明；这不表示冻结的原生 1.1.1 路径已迁移或退役。
 
 ## Hook 与结果解释
 
@@ -109,22 +109,22 @@ D 的可证终态必须先独立持久化，再交给产品 Tool 解释。远端
 
 新受理解析最新可用的 approved / running 修订，存在多个可用实现时要求显式绑定，不能依赖 SQL 返回顺序。草稿登记不改变已批准实现；新批准版本可供新任务选择，但不修改旧任务的绑定。运行中按冻结 pin 读取该历史批准修订，旧修订仍可用就继续；旧修订停用或其批准摘要不再成立才停止新的派发，已派发后的不确定结果仍按 unknown 处理。
 
-这是设计提出时的缺口：`ProductModules.load` 及 `SourceArtifacts.snapshot` 原先沿 `assets.current_version` 取原件，不能仅保存 `methodAssetId` 后每次读 current。A1 已补内部精确批准 pin 读取；指定资产版本与 SHA 可锁住历史批准修订，不指定 pin 则取该资产最新 approved / running 修订，同时重核当前权限与 readers。后续驱动器仍须把冻结 pin 持久绑定并传给装载入口，不能因新草稿或模块安装而让已派发任务改读新 parser；原生旧任务路径未迁移。
+这是设计提出时的缺口：`ProductModules.load` 及 `SourceArtifacts.snapshot` 原先沿 `assets.current_version` 取原件，不能仅保存 `methodAssetId` 后每次读 current。A1 已补内部精确批准 pin 读取；指定资产版本与 SHA 可锁住历史批准修订，不指定 pin 则取该资产最新 approved / running 修订，同时重核当前权限与 readers。通用驱动器已把冻结 pin 持久绑定并传给装载入口，不因新草稿或模块安装让已派发任务改读新 parser；原生旧任务路径未改数据库重绑。
 
 ## 现网任务的迁移路径
 
-1. 先实现通用驱动与冻结历史修订入口，以合成产品线证明可运行。保留原生 1.1.1 兼容驱动，新驱动不接管旧操作。
-2. 包作者在独立仓库登记执行 Tool 与新版 flow，更新 `modules.json`。管理员经既有模块安装入口冻结文件，独立审批人批准；配置文件存在不代表可运行。
-3. 对新提交显式选新版模块资产作为 `methodAssetId`。新方法摘要、流程版本或资源声明不同，就重新生成输入修订及操作绑定；不复用旧 command gate、派发意图或 execution-submission。
-4. 已受理、已派发、unknown 和待核对任务继续使用原 methodAssetId、原实现摘要及原回执表。历史任务和 evidence 保留原版本；不改数据库把它们“迁移成功”。需要改方法的未派发任务由申请人明确修订或重新提交。
-5. 原生兼容驱动在没有待执行、在途、unknown / reconcile 任务前不移除。若先停用旧实现，任务返回真实缺少实现或批准的错误，不回退到新版写设备。未知历史必须保留可读回执和独立核对能力。
-6. 最后由维护者确认退役原生入口与文件；旧 migration 20 及后续已部署迁移不改字节。旧回执表可只读保留，新通用持久状态通过新增迁移建立，不让产品包携带可执行 SQL。
+1. **已落地**：A1 历史批准修订与 A3 通用驱动已由合成产品线验收；原生 1.1.1 兼容驱动仍保留，新驱动不接管旧操作。
+2. **已落地**：包作者在独立仓库登记 products/apv 1.3.x 的执行纯 Tool / flow 并更新 `modules.json`，经既有模块安装与独立批准使用；C 通用协议负责运行绑定，配置文件存在不代表批准。
+3. **已落地**：新提交可显式选冻结模块方法 pin 走 generic provider；新方法摘要、流程版本或资源声明不同就重新生成输入修订及操作绑定，不复用旧 command gate、派发意图或 execution-submission。
+4. **已落地的兼容边界**：已受理、已派发、unknown 和待核对任务继续使用原 methodAssetId、原实现摘要及原回执表。历史任务和 evidence 保留原版本，不改数据库把它们“迁移成功”；需要改方法的未派发任务由申请人明确修订或重新提交。这不表示现场旧任务已清空。
+5. **退役前置，尚未确认清空**：移除原生兼容驱动前，维护者须确认没有待执行、在途、unknown 或待核对任务；不能由新流程 delivered 推断这些集合为空。若先停用旧实现，任务返回真实缺少实现或批准的错误，不回退到新版写设备；未知历史必须保留可读回执和独立核对能力。
+6. **待维护者确认的 D 阶段**：原生 apv-case-execute 1.1.1 入口与文件退役、实现版本及冻结兼容字符串升级尚未执行。旧 migration 20 及后续已部署迁移不改字节；旧回执表可只读保留，新通用持久状态通过新增迁移建立，不让产品包携带可执行 SQL。
 
-本轮标识改名已采用冻结兼容口径：`EXECUTION_GATEWAYS` 的旧 lookup 在 hub 内部集中适配，编译器 creator 的旧字符串暂时保留，原生 Execution `1.1.1` 与既有实现摘要不变。执行流正式迁入模块时再升级实现版本并修改这些冻结字节；设计复核前不执行迁移。旧任务不改数据库重绑。
+标识改名的冻结兼容口径仍暂时保留：`EXECUTION_GATEWAYS` 旧 lookup 的 hub 内部集中适配、编译器 creator 旧字符串，以及原生 Execution `1.1.1` 的既有实现摘要不因 A3 / B / C 完成而自动改变。具体改动时机与实现版本升级一并留到维护者确认 D 阶段及其退役前置之后；旧任务不改数据库重绑。
 
 ## 实现顺序与验收
 
-复核通过后先写验收，再实现每个边界；针对性用例由实现方跑，全套由维护者在独立工作树跑。所有网络资源、工作簿、日志和模型均为合成，不投递真实设备。
+开发过程已按先写验收、再实现边界推进，后续变更继续遵循；针对性用例由实现方跑，全套由维护者在独立工作树跑。本地开发使用合成网络资源、工作簿、日志和脚本模型，不投递真实设备；维护者另行确认的现场结果与这些本地验收分开记录。
 
 | 阶段 | 必须证明的结果 |
 |---|---|
@@ -139,9 +139,9 @@ D 的可证终态必须先独立持久化，再交给产品 Tool 解释。远端
 | 变更集 | executionIsChange 的冻结提交只消费一次；默认资源直接执行链；产品包不能自行批准或绕过 Hook |
 | 双产品交替运行 | APV 与 meridian 具有不同对象/回报形状；两份模块分别冻结、批准、停用，同一 hub 核心与合成 MCP 网关支撑两者 |
 
-meridian 现有 `tools/project.ts`、五个 Hook、`flows/fixture.json` 与资源夹具只有装载验收，不足以证明执行流迁移。后续将其扩成完整合成执行流程，至少覆盖准备、派发、终态与未知核对，使用自己的命令与结果格式；同一套驱动器也完成 APV 流程。验收必须断言 APV 旧入口未参与 meridian 运行，不能只检查清单能加载。
+meridian 已从装载夹具扩成完整合成执行流程，与另一份合成模块覆盖准备、派发、终态、未知核对及各自的输入 / 结果格式；验收断言未借 APV 原生入口运行。同一通用驱动也已承载 products/apv 1.3.x flow，不能再把装载与执行状态概括为只有清单可加载。
 
-本文的主体迁移设计及 A2 契约已获维护者复核通过。A3 已授权，只用 Meridian 与另一份完全合成模块证明通用驱动，不实施 APV 新产品代码；B 产品执行流迁移由独立包负责，C/D 尚未授权。旧任务仍不改数据库重绑。
+本文主体与 A2 / A3 已获复核并实施；B 的 products/apv 1.3.x 产品纯 Tool / flow 由独立包交付，C1–C5 通用协议及后续纠偏已经落地。维护者已另行确认 generic provider 的真实三原件流程和 21 案批量 delivered；本地合成验收不替代这份现场确认，详见[阶段进度](../server-s2-progress.md)。待确认的是 D 的原生入口 / 文件退役及相关版本与冻结字符串升级，不是 A3 或 C 是否授权实施；旧任务仍不改数据库重绑。
 
 ## 附录 A2：有界 transition 内部契约
 
@@ -297,7 +297,7 @@ env_prepare 与 bed_topology 并不是 Hub 硬编码的特殊 Tool：名字、re
 
 C4 已在 receiptPolicy 增加**可选 prepare 阶段**（当前字段见文末 C4）：由批准的工具名与参数映射决定调用，worker 在同一远端租约内、submit 之前执行，Hub 持久化准备观察，再以这份观察供 beforeDispatch 核验。ProviderPolicy 已定义 prepare 列表与相应 worker 事件；精确映射和证明边界见 C4，产品不能在 args 中自行补租约权限。
 
-时序也需要在 C 实施时调整并验收：当前强制 beforeDispatch 位于 C 预检、早于 worker acquire/准备；未来要让该出口在准备观察已经持久化后再次核验，且仍在提交意图与 submit 之前，不让旧的出口通过记录替代新观察。prepare 不证明已派发，也不把准备成功扩大为提交成功。原生 APV 路径的 execution.environment.observed 来自其提交前 env_prepare；网关 case_submit 内部仍可再次观察或拒绝，属于另一调用/时间点。未来通用 prepare 的观察也保留独立原件与操作身份，不拿这两种既有观察冒充新增阶段已经完成。当前真实 env_prepare/bed_topology 需要远端租约，因此前面的裸 read 示例仅说明参数形状，不能作为现有真实网关可执行路径。
+C4 已调整并验收同租约 prepare 的时序：准备观察独立持久化后，beforeDispatch 使用该观察重新核验，仍在提交意图与 submit 之前；旧的出口通过记录不能替代新观察。prepare 不证明已派发，也不把准备成功扩大为提交成功。原生 APV 路径的 execution.environment.observed 来自其提交前 env_prepare；网关 case_submit 内部仍可再次观察或拒绝，属于另一调用/时间点。通用 prepare 也保留独立原件与操作身份，不拿这两种既有观察冒充新增阶段的证据。真实 env_prepare/bed_topology 需要远端租约，因此前面的裸 read 示例仅说明参数形状，不能作为现有真实网关可执行路径。
 
 对于写 provider.call，worker 按绑定 receiptPolicy 自动 acquire / heartbeat / submit / status / results / release，C 持久化意图、身份、终态与释放事实。transition 不接管这套租约状态，也不把 acquired token 放进下一轮参数。取得受控结果字节后，可提出 `tool.call`，普通 args 放小型格式参数，byteSlots 引用 frame 中真实存在的槽；例如 `args:[{"format":"synthetic"}]`、`byteSlots:["payload"]` 会得到 `parse({format:"synthetic"}, bytes)` 这类位置参数调用。槽不存在、role/来源不符、SHA/大小不符，或实际 wire 超限均拒绝，不能让模型转抄 base64 绕过关口。
 
@@ -312,7 +312,7 @@ C4 已在 receiptPolicy 增加**可选 prepare 阶段**（当前字段见文末 
 
 ### C 阶段协议差异与实施清单
 
-以下保留实施前协议差异；当前落实情况以文末 C1–C5 及驱动 schema 为准，严格合成验收不等于现网部署。
+以下保留实施前协议差异与当时的实施清单，段内“当前”“后续”均指该历史阶段；现已落实的能力以文末 C1–C5 及驱动 schema 为准，严格合成验收不等于现网部署。
 
 下面是用户确认并经本机网关源码只读核对的协议形状；只记录键名、类型与行为，不引入地址、配置值或真实回报。它不是已经实现的新 ProviderPolicy schema，也不是任意 MCP 服务都应采用的统一回执。C 后续实现须用已批准的通用 policy 描述差异，不能把这些产品工具名写成 Hub 分支。
 
@@ -344,7 +344,7 @@ C 的目标验收采用完全合成、与上述协议同形的严格网关：req
 
 ### C 二轮待办：运行预算与受控来源门禁
 
-本节只补 C 的设计待办，不改变 F 常量、Hook 动作 schema、驱动器或独立产品包。旧前置投影路径的 `5cdbc2b` / `6a8cb799` 旁证只覆盖它们当时的 synthetic-provider-protocol 接法：输入还携带流外生成的工作簿/命令投影。`6a8cb799` 的旧正向路径通过，不表示正式 flow 已读取全部受控原件，或下面二轮来源、错误与规模门禁已经全绿。严格 cexg 同形验收也与该旁证分开，不据其推定现网兼容。
+本节保留 C 二轮实施前的设计待办及预算依据，段内“当前”“本轮”均指该历史阶段；后续已落实的运行预算与来源门禁见文末 C5。本节当时不改变 F 常量、Hook 动作 schema、驱动器或独立产品包。旧前置投影路径的 `5cdbc2b` / `6a8cb799` 旁证只覆盖它们当时的 synthetic-provider-protocol 接法：输入还携带流外生成的工作簿/命令投影。`6a8cb799` 的旧正向路径通过，不表示正式 flow 已读取全部受控原件，或下面二轮来源、错误与规模门禁已经全绿。严格 cexg 同形验收也与该旁证分开，不据其推定现网兼容。
 
 当前 `arrayItems=256` 同时限制单批 actions / 普通 JSON 数组、runOnce 的 generation / 总 flow_steps，以及 validateBatch 的累计步骤 key。每批大小、每次运行的转换次数和持久步骤总数是不同预算，不能用同一个常量代替它们。以已有 21 案数字为例，216 个设备命令 + 21 个主机命令 + 1 个工作簿核验 = **238 个核验 subject / Hook 动作**；主机 subject 各经过两个已附处理器时，实际处理器判定数为 216 + 42 + 1 = **259**，不是 259 个持久步骤。
 
@@ -415,7 +415,7 @@ B 的 16 MiB 上传上限不意味着每个 Tool 或受控槽都能容纳这么�
 
 方法摘要的版本化算法覆盖冻结模块 digest、flow、驱动版本与支持的精确依赖版本；模块清单已覆盖 Tool / Hook / 相对依赖的完整文件集合。批准历史 pin 与最新批准 readers 的交集继续逐次核验，草稿不改运行绑定；新受理要显式选方法，旧任务不自动升级。运行资源和 runtime-profile 也冻结实际修订，不把配置文件存在当作批准。C5 将总步骤预算独立为 1024，转换仍 256 代，单批数组仍 256；超限明确失败，不无限产生空转换。
 
-A3 的验收前提仍是 macOS seatbelt、临时 PostgreSQL 和合成网关。两份合成模块分别冻结 / 批准 / 停用并交替执行，只证明此通用驱动与它们的协议；原生 1.1.1、APV 新模块、真实设备、真实模型及任意 MCP 服务兼容性不由这些验收推定。完整验收结论只记 [阶段进度](../server-s2-progress.md)，本附录不记录部署成功。
+A3 的本地验收使用 macOS seatbelt、临时 PostgreSQL 和合成网关；两份合成模块交替执行以及 APV 模块的本地门禁各自只证明已测协议。维护者另行确认的真实床 generic provider、工作簿 / XML / 函数契约三原件及 21 案批量 delivered 与这些本地结论分开披露，不推为真实模型或任意 MCP 服务兼容。完整记录见[阶段进度](../server-s2-progress.md)；原生 1.1.1 的退役仍须按前述 D 前置独立确认。
 
 ---
 
@@ -459,7 +459,11 @@ D 成功回报先按 SHA 冻结原件，再做阶段校验；不匹配原件仍�
 
 非终止动作批次还须预留一个后续 transition 的持久步骤和一代转换容量，包括空批次及同 key 重放；它不能先派发写，再因没有容量取得最终解释而必然失败。当前已领取的 transition 已计入现有步骤，回报前 generation 为已完成转换计数：254 可继续，255 只能发单独的 delivery.propose / outcome.error 终止批次。终止批次不新增动作行，可以使用恰满 1024 步的末次转换；此受理闸不取消已经派发的写，也不改已证终态或 unknown。
 
-模块只有显式声明 `historyMode:"controlled"` 才能使用超窗历史。可选 observationWindow / expectedOccurrenceArchive 为 `{total,returned,complete,archive?:{slot,reference}}`；全集由 C 以 SHA 留作 B 制品，并经真实 `flow-history` / `flow-occurrences` 受控槽送给需要它的 Tool，计入原有 8 MiB 总量。内联最多 256，窗口保留意图、unknown、已消费授权与活动步骤；无 worker 回报的活动记录标明 hub-step-ledger，不伪称 provider 结果。关键记录自身超过 256 则明确失败，1024 不表示可内联任意数量的写历史。未声明窗口协议的旧模块超窗也明确拒绝。
+内联观察窗口同时按条数和整帧 canonical JSON 的 UTF-8 字节选取。先保留意图、unknown、已消费授权与活动步骤，再按最新优先加入普通观察，直到再加入一条会超过 256 条或原有 `metadataBytes=512 KiB`。预算包含 binding、currentInput、state、controlledBytes 引用、expectedOccurrences、窗口 / 归档元数据及已选观察；受控字节正文仍走单独预算，不计作内联元数据。关键记录与必需帧自身超预算即明确 `RESULT_TOO_LARGE`，不等到 F 解析才报 `BODY_TOO_LARGE`。无 worker 回报的活动记录标明 hub-step-ledger，不伪称 provider 结果；1024 步并不保证任意写历史都能内联。
+
+模块只有显式声明 `historyMode:"controlled"` 才能使用超窗历史。可选 observationWindow / expectedOccurrenceArchive 为 `{total,returned,complete,archive?:{slot,reference}}`；全集由 C 以 SHA 留作 B 制品，并经真实 `hub.history.observations.<sha>` / `flow-history` 与 `flow-occurrences` 受控槽送给需要它的 Tool，计入原有 8 MiB 总量。条数或字节任一导致窗口不完整，都走同一归档协议；未声明的模块以 `RESULT_TOO_LARGE` 和 `Approved flow does not declare controlled history support` 明确拒绝。帧构造、历史归档和预算等 Hub ApiError 的失败详情保留有界 `cause`（code / message / details）；无动作上下文不编造 stepId，既有动作拒绝详情形状保持不变。
+
+本次维护者反馈的真实批量有 21 例、216 条设备命令、21 条主机命令与 239 个核验钩子；beforeDispatch、case_submit、床上执行、case_results 和 parse-results 均成功后，下一次 transition 因累计帧过大失败。观察共 253 条，未到 256 条上限；其中 submit 回执约 148 KB、parse-results 约 124 KB、workbook 约 72 KB、tree 约 36 KB。单独条数门未保护 512 KiB 整帧预算，这些数字是复现与修复依据，不是放宽 F 常量的依据；该轮失败不记作通用流程已交付。
 
 全集原件仍逐项重核当前 B 可见性、SHA 与大小；受控槽同名只有相同 role / reference 才可复用。轻预检保留输入修订双摘要验证、冻结请求引用与来源授权。交付引用查询本任务 / 输入修订的全部观察和 C 生成的历史 B 绑定，再核 B 权限；不以退出内联窗口为由拒合法旧引用，也不接受跨修订 / 隐藏对象。
 
