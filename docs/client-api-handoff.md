@@ -50,7 +50,7 @@ Node.js 24。启动命令使用锁定的 `embedded-postgres@18.4.0-beta.17` 在�
 
 `POST /v1/auth/refresh` 带当前 Bearer 和空 JSON `{}`，响应沿用 dev-login 的 `{token,tokenType,expiresAt,principalId,tenantId,scopes}`（CLIENT_ROUTES.authRefresh）。仅仍有效、未撤销且身份未禁用的开发会话可续期；不要求密码、不接受自报期限/身份/范围。初版曾延长同一 token；修订 3 已改为轮换，当前会话口径见[会话与令牌](design/roles.md#会话与令牌)。已过期返回 401，不从过期凭据恢复会话；受约束 run token 返回 403，不能升级成普通登录。
 
-Circle 2035247 已由维护者报告支持：保存 expiresAt、到期前约 2 分钟或短期限的 1/5（至少 5 秒）及请求前续期；旧 server 的 404/405 只尝试一次。任何工具/任务轮询的 401 都只提示 sign-in expired 和显式 `/server login`，不自动弹密码框；run token 不由客户端续期。已过期的旧 5 分钟会话需要主动登录一次，随后使用新期限。正式企业身份/刷新 token 仍未接入。
+Circle 2035247 已由维护者报告支持：保存 expiresAt、到期前约 2 分钟或短期限的 1/5（至少 5 秒）及请求前续期；旧 server 的 404/405 只尝试一次。任何工具/任务轮询的 401 都只提示 sign-in expired 和显式 `/hub login`，不自动弹密码框；run token 不由客户端续期。已过期的旧 5 分钟会话需要主动登录一次，随后使用新期限。正式企业身份/刷新 token 仍未接入。
 
 ## 通用信封
 
@@ -270,7 +270,7 @@ Circle 运行边界由用户确认改为正式 CLI RPC；当前固定 Git 提交
 
 旧待批申请新增独立驳回兼容路径：仍用旧 approvals 返回的绑定字段与 approve:false，成功后旧登记任务 delivered、技能 declined。取代与驳回规则见[变更集](design/approvals-and-enforcement.md#只有一个审批概念变更集)；新版本资格不因此改变。
 
-工具不匹配的 message 直接列具体名称与原因，例如 `Undeclared trial tools: docs.get; Tools unavailable in caller catalog: zentao.products`；示例不表示这些工具在某个实际身份下不可用。单条消息最多 1000 字符，长清单保留完整名称、显示剩余数量，并指向 details.check；details.check.undeclaredTools/missingTools 完整、去重且稳定排序。名称用 GET /v1/tools 的规范名称，不用 Circle 的 srv_* 名称。缺失与无权限仍统一表示“当前调用者目录不可用”，不泄露隐藏资产、地址、凭据或输入。提交、审批和运行共用该格式；受理后目录撤销导致后台失败时，task result/error 和任务事件保留完整 details.check。客户端应展示 message，并允许查看完整两张清单。
+工具不匹配的 message 直接列具体名称与原因，例如 `Undeclared trial tools: docs.get; Tools unavailable in caller catalog: zentao.products`；示例不表示这些工具在某个实际身份下不可用。单条消息最多 1000 字符，长清单保留完整名称、显示剩余数量，并指向 details.check；details.check.undeclaredTools/missingTools 完整、去重且稳定排序。名称用 GET /v1/tools 的规范名称，不用 Circle 的 hub_tool_* 名称。缺失与无权限仍统一表示“当前调用者目录不可用”，不泄露隐藏资产、地址、凭据或输入。提交、审批和运行共用该格式；受理后目录撤销导致后台失败时，task result/error 和任务事件保留完整 details.check。客户端应展示 message，并允许查看完整两张清单。
 
 ## 通用外部来源制品
 
