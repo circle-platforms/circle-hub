@@ -1,6 +1,6 @@
 # 执行流迁入产品线包
 
-本文记录已实施的执行流迁移边界。A3 通用驱动、B 的独立 products/apv 1.3.x 纯 Tool / flow，以及 C1–C5 通用协议与后续修复已经落地；原生 apv-case-execute 1.1.1 仍保留为兼容入口，尚未退役。维护者已另行确认真实床通过 generic provider 消费工作簿、XML 命令树和函数契约三份真实原件并 delivered，包含 21 案批量；这里只转述维护者确认，不把本地合成或默认 skip 推成现场验证。实现与验收记录见[阶段进度](../server-s2-progress.md)，D 的退役前置与待确认事项见下文迁移路径。
+本文记录已实施的执行流迁移边界。A3、B、C1–C5 及后续修复保持；0.2.0 的 D 实现移除原生 apv-case-execute 1.1.1 入口、controller / worker 与专用解析器，新执行只经 module-execute 和独立产品模块。退役前已只读确认 11 条原生任务均为终态（9 delivered / 2 failed），没有在途或 unknown；部署前须再核。migration 20 原字节保留，migration 44 将旧回执表设为只读，不改历史任务方法或输入绑定。合成验收与既有现场观察分列于[阶段进度](../server-s2-progress.md)。下文关于原生实现的协议描述保留为历史依据，不再代表可新建入口。
 
 目标是让 `packs/apv/execution` 的产品解释和流程选择由独立仓库的 `products/apv` 拥有，同时保留 hub 对权限、批准修订、派发、租约、未知结果与证据的控制。产品包提供纯函数 Tool 和 Hook；网络、凭据、数据库与任务推进仍由 hub 执行。装入第二条产品线时不添加产品专用 controller 或 worker 分支。
 
@@ -12,7 +12,7 @@
 
 `ProductModules.load` 从批准的来源制品取出冻结文件，核对 `product-line/1` 的 `tools[]`、`hooks[]`、`flows[]` 与 `resources[]`。`ProductModules.call` 经 `callFrozenTool` 在受限 Tool 子进程内调用声明文件的导出函数。相对 import 必须留在冻结文件集中；外部依赖必须在对应文件的 `tools[].imports` 中声明，并与 hub 支持的精确版本一致。`node:*`、hub 源码、任意依赖和计算出来的 import 均被拒绝，错误码为 `IMPORT_NOT_DECLARED`。
 
-当前装载器与 A3 通用驱动已能运行声明的完整执行流：`ToolProviders.resolve` 解析显式模块绑定，`module-execute` 读取冻结 flow，由 C 持久推进、通用 worker 执行 `flow.invoke`；products/apv 1.3.x 提供产品 transition、工作簿 / XML / 函数契约读取与结果解释纯 Tool。原生 `CaseExecution` 的 `cases.*` 与 `executeCases` 仍注册为另一条兼容路径，通用流程不依赖其产品专用 controller / worker；保留旧路径不表示原生入口与文件已完成退役。
+当前装载器与 A3 通用驱动已能运行声明的完整执行流：`ToolProviders.resolve` 解析显式模块绑定，`module-execute` 读取冻结 flow，由 C 持久推进、通用 worker 执行 `flow.invoke`；products/apv 1.3.x 提供产品 transition、工作簿 / XML / 函数契约读取与结果解释纯 Tool。原生 `CaseExecution`、`cases.*` 与 `executeCases` 已退役，通用流程不依赖其产品专用 controller / worker。
 
 迁移采用了产品纯函数与通用驱动器的拆分，没有把原 `controller.ts`、`worker.ts` 换目录后直接 import。它们使用的数据库、文件系统、保险箱与网络能力仍留在 hub，产品逻辑经同一个受控模块装载路径运行。
 
@@ -117,10 +117,10 @@ D 的可证终态必须先独立持久化，再交给产品 Tool 解释。远端
 2. **已落地**：包作者在独立仓库登记 products/apv 1.3.x 的执行纯 Tool / flow 并更新 `modules.json`，经既有模块安装与独立批准使用；C 通用协议负责运行绑定，配置文件存在不代表批准。
 3. **已落地**：新提交可显式选冻结模块方法 pin 走 generic provider；新方法摘要、流程版本或资源声明不同就重新生成输入修订及操作绑定，不复用旧 command gate、派发意图或 execution-submission。
 4. **已落地的兼容边界**：已受理、已派发、unknown 和待核对任务继续使用原 methodAssetId、原实现摘要及原回执表。历史任务和 evidence 保留原版本，不改数据库把它们“迁移成功”；需要改方法的未派发任务由申请人明确修订或重新提交。这不表示现场旧任务已清空。
-5. **退役前置，尚未确认清空**：移除原生兼容驱动前，维护者须确认没有待执行、在途、unknown 或待核对任务；不能由新流程 delivered 推断这些集合为空。若先停用旧实现，任务返回真实缺少实现或批准的错误，不回退到新版写设备；未知历史必须保留可读回执和独立核对能力。
-6. **待维护者确认的 D 阶段**：原生 apv-case-execute 1.1.1 入口与文件退役、实现版本及冻结兼容字符串升级尚未执行。旧 migration 20 及后续已部署迁移不改字节；旧回执表可只读保留，新通用持久状态通过新增迁移建立，不让产品包携带可执行 SQL。
+5. **退役前置，已只读确认当前集合为空，部署前复核**：移除原生兼容驱动前，维护者须确认没有待执行、在途、unknown 或待核对任务；不能由新流程 delivered 推断这些集合为空。若先停用旧实现，任务返回真实缺少实现或批准的错误，不回退到新版写设备；未知历史必须保留可读回执和独立核对能力。
+6. **维护者已授权的 D 阶段**：0.2.0 移除原生 apv-case-execute 1.1.1 入口与执行文件，兼容编译器升级到 1.1.0 并使用 circle-hub creator；停止注入退役实现的旧 gateway lookup。旧 migration 20 及后续已部署迁移不改字节；旧回执表经新增 migration 44 只读保留，新通用持久状态通过新增迁移建立，不让产品包携带可执行 SQL。
 
-标识改名的冻结兼容口径仍暂时保留：`EXECUTION_GATEWAYS` 旧 lookup 的 hub 内部集中适配、编译器 creator 旧字符串，以及原生 Execution `1.1.1` 的既有实现摘要不因 A3 / B / C 完成而自动改变。具体改动时机与实现版本升级一并留到维护者确认 D 阶段及其退役前置之后；旧任务不改数据库重绑。
+0.1.0 保留的冻结字符串在 D 中按范围收尾：旧 gateway lookup 适配移除，编译器 creator 改为 circle-hub 并提升方法版本。旧原生实现摘要只作为历史任务记录保留，不注册新实现或改数据库重绑。Hub 旧配置输入的弃用回退及单独钉住的历史 Circle RPC 验收协议，与新扩展无旧名别名分别披露。
 
 ## 实现顺序与验收
 
@@ -141,7 +141,7 @@ D 的可证终态必须先独立持久化，再交给产品 Tool 解释。远端
 
 meridian 已从装载夹具扩成完整合成执行流程，与另一份合成模块覆盖准备、派发、终态、未知核对及各自的输入 / 结果格式；验收断言未借 APV 原生入口运行。同一通用驱动也已承载 products/apv 1.3.x flow，不能再把装载与执行状态概括为只有清单可加载。
 
-本文主体与 A2 / A3 已获复核并实施；B 的 products/apv 1.3.x 产品纯 Tool / flow 由独立包交付，C1–C5 通用协议及后续纠偏已经落地。维护者已另行确认 generic provider 的真实三原件流程和 21 案批量 delivered；本地合成验收不替代这份现场确认，详见[阶段进度](../server-s2-progress.md)。待确认的是 D 的原生入口 / 文件退役及相关版本与冻结字符串升级，不是 A3 或 C 是否授权实施；旧任务仍不改数据库重绑。
+本文主体与 A2 / A3 已获复核并实施；B 的 products/apv 1.3.x 产品纯 Tool / flow 由独立包交付，C1–C5 通用协议及后续纠偏已经落地。维护者已另行确认 generic provider 的真实三原件流程和 21 案批量 delivered；本地合成验收不替代这份现场确认，详见[阶段进度](../server-s2-progress.md)。D 已获维护者授权并在 0.2.0 实现原生入口 / 文件退役及相关版本与冻结字符串收尾；历史任务不改数据库重绑，验证结果以阶段进度为准。
 
 ## 附录 A2：有界 transition 内部契约
 

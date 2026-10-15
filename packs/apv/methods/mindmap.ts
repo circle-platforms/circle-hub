@@ -2,7 +2,7 @@ import ExcelJS from 'exceljs';
 import {boundedUnzip} from '../../../packages/knowledge/src/zip.ts';
 import { zipSync } from 'fflate';
 import { ApiError, MAX_SOURCE_BYTES,canonicalHash, sha256, type UnmappedElement } from '../../../packages/contracts/src/index.ts';
-import {MINDMAP_CONTRACT_VERSION,MINDMAP_MAPPING_VERSION} from '../contracts.ts';
+import {MINDMAP_CONTRACT_VERSION,MINDMAP_MAPPING_VERSION,MINDMAP_WORKBOOK_CREATOR} from '../contracts.ts';
 import { verifyMindmapWorkbook } from './mindmap-verify.ts';
 
 export interface Topic { title: string; note?: string; children: Topic[] }
@@ -90,7 +90,7 @@ export async function compileMindmap(source: Uint8Array, fileName: string): Prom
 }> {
   const parsed = parseMindmap(source, fileName);
   const workbook = new ExcelJS.Workbook();
-  workbook.creator = 'circle-server mindmap-compile';
+  workbook.creator = MINDMAP_WORKBOOK_CREATOR;
   workbook.created = new Date('2000-01-01T00:00:00Z'); workbook.modified = workbook.created;
   const cases = workbook.addWorksheet('用例清单', { views: [{ state: 'frozen', ySplit: 1 }] });
   const widths = [14,24,24,38,54,12,80];

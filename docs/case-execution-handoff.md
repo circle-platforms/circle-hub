@@ -1,5 +1,7 @@
 # APV 工作簿执行交接
 
+> 历史接口记录：0.2.0 已退役本文的内置 apv-case-execute 入口与 cases.* worker。新执行使用独立产品模块及 module-execute；旧任务、制品和回执只读保留，不自动改绑。当前边界见 [执行流设计](design/execution-flow-packs.md) 与 [客户端交接](client-api-handoff.md)。
+
 本页是 APV 原生执行路径的变更记录与操作说明。通用规则已并入设计文档，见下表；工作簿字面闭集、框架主机名、参数与设备命名约定仍暂留本页，待执行流迁入独立产品包时一并移交。裁剪对照见 [handoff 到设计文档的对照表](design/handoff-map.md#case-execution-handoffmd)。
 
 | 通用规则 | 设计出处 |

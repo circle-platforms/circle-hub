@@ -8,14 +8,14 @@
 
 | 部件 | 版本 / 提交 | 以什么为准 | 说明 |
 |---|---|---|---|
-| circle-hub | **0.1.0**（首个仓库发行） | `v0.1.0`、`docs/design` | 验证栈运行已复核的 main 提交 1b4a6dc；发行元数据不代表生产可用 |
+| circle-hub | **0.2.0**（原生执行退役；首个仓库发行是 0.1.0） | 版本化发行、`docs/design` | 现场部署另见进度记录与实际提交核对；发行元数据不代表生产可用 |
 | `foundation/circle` | Circle **1.0.4** 源基线，冻结 | `references/README.md` 的来源记录 | 只是源码参考，不装、不跑它的安装器；不是 hub 的运行依赖 |
 | 验收用的 Circle 运行时 | Circle 主线提交 **fd8524a**（用户确认，Circle 1.7.0，hub 协议） | `CIRCLE_BIN` / `CIRCLE_COMMIT`，严格 Git 门禁 | **这是真实的测试依赖**：验收 RPC 用例只接受这个提交，换提交要用户确认并更新门禁 |
-| Circle 最新公开发行（截至 2026-10-14） | 1.4.1（`v1.4.1`） | circle 仓库的 tag 与 Release | 仅记录发行状态，不表示 hub 已针对该版验收 |
-| hub 的 Circle 侧扩展目标基线 | 1.2.1（`v1.2.1`） | 原定扩展目标版本 | 保持原目标，不随 Circle 新发行自动升级；不等同于上面的固定 RPC 验收提交 |
-| circle 的 hub 扩展 | 分支 `server-tools`（fb764e8，已推送），建立在 Circle 1.1.1 检出上 | hub 的 `docs/client-api-handoff.md` | Circle 维护的扩展名 `circle-server`、`/server` 命令与子进程协议变量本轮不改；Hub CLI 与部署配置使用新名 |
+| Circle 发行绑定 | **v1.7.0 → 96702fa** | circle 仓库的 tag 与 Release | 完整构建与正式发布状态以发行页为准；本次 RPC 实测仍固定 fd8524a，发行成功不替代 Hub 验收 |
+| hub 的 Circle 侧扩展目标基线 | 1.7.0（集成提交 96702fa，发行 tag v1.7.0） | 维护者授权的 hub 扩展改名 | hub 与 /hub 不保留旧别名；与上面的固定 RPC 验收提交分列 |
+| circle 的 hub 扩展 | 集成提交 96702fa；发行绑定 v1.7.0 | hub 的 `docs/client-api-handoff.md` | 当前 Circle 使用 hub、/hub、hub_* 与 hub_tool_*，无旧别名；运行时协议与历史验收 pin 须显式绑定 |
 | circle-packs `main` | 见其 CHANGELOG | hub 的包装载器与 schema | 产品线包测试使用 hub 提交 `dc93c69826f73f16d2f20f7520ba4c6663d014ac` 的锁定依赖集；circle-packs 的 `.github/workflows/checks.yml` 固定此提交，不跟随 main 漂移；仅为测试依赖，不声明生产兼容 |
-| hub 验收用的 circle-packs 原件 | **ba06eeda83d27031fc1a452e43b24300d654da9e**，APV **1.2.2** | 该提交的 `modules.json` 与原字节 SHA | 产品线包 31/31；四技能模块 57/57 + catalog 工具 4/4 = 61/61，均无 skip；TAP 闸门读实际总数，不写死数量；不表示部署或自动批准 |
+| hub 验收用的 circle-packs 原件 | **1f8948c07a9756a3e5dec66f15c25a670fd1e4c2**，APV **1.4.1** | 该提交的 `modules.json` 与原字节 SHA | 包仓库完整合成套件 143/143，无 skip；Hub 的产品模块 / provider 协议选装验收另见进度记录，不以包内测试替代；发行不表示自动激活或批准 |
 | 执行网关 cexg | 0.3.1（静态密钥） | compile-excel-server 仓库 | hub 的 worker 需要 §7 的 static-secret 凭据模式才能调用它 |
 
 ## 进程隔离与验收平台
@@ -60,3 +60,5 @@
 - 2026-10-14：经维护者确认，包装载验收从 224daa6（APV 1.2.1）升级到 ba06eed（APV 1.2.2）；按冻结清单核原字节并运行，产品线 31/31、四技能 57/57、catalog 工具 4/4。该提交 README/CI 合并入口的 61 项是后两类之和，三类分别记录。
 
 - 2026-10-15：准备 Hub 首个仓库发行 0.1.0。验证栈 1b4a6dc 使用 packs d91b23d 的 products/apv 1.4.0，既有固定验收输入另列，不混用。批量流程交付成功，设备结果 13 pass / 8 fail，不表示设备验收全绿；原生路径退役仍待确认。
+
+- 2026-10-15：D 移除原生能力与 worker；migration 20 原字节保留，migration 44 令旧回执只读，兼容编译器升为 1.1.0。Circle 1.7.0 源码改用 hub 命名，历史 RPC 验收 pin 的替换仍待明确决定；packs 的工具名消费者独立升版，发行不自动激活新模块。

@@ -4,6 +4,17 @@ All notable changes to circle-hub are listed here, newest first. Repository rele
 
 ## Unreleased
 
+## 0.2.0 - 2026-10-15
+
+### Removed
+
+- Retired the built-in `apv-case-execute` capability and the `cases.verify`, `cases.execute` and `cases.observe` worker path. New execution uses independently approved modules through `module-execute`; old native tasks are never rebound to a new implementation.
+
+### Changed
+
+- Preserved migration 20 unchanged and added migration 44 to make legacy gateway receipts read-only, including insert, update, delete and truncate. Historical task inputs, results and artifact references remain readable.
+- The compatible mindmap compiler is version 1.1.0 and writes `circle-hub` as its workbook creator. Hub configuration no longer injects the retired native gateway lookup; deprecated input fallback remains documented.
+
 ## 0.1.0 - 2026-10-15
 
 ### Changed

@@ -1,6 +1,6 @@
 {
   "name": "circle-hub",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "circle-hub: the team hub for Circle - shared knowledge, durable tasks, governed execution and versioned methods",
   "type": "module",

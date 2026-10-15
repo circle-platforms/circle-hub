@@ -1,8 +1,9 @@
 import readWorkbook from 'read-excel-file/node';
+import {SaxesParser} from 'saxes';
 import {boundedUnzip} from '../../../packages/knowledge/src/zip.ts';
 import { zipSync, strFromU8 } from 'fflate';
 import { ApiError, sha256 } from '../../../packages/contracts/src/index.ts';
-import {MINDMAP_CONTRACT_VERSION,MINDMAP_MAPPING_VERSION} from '../contracts.ts';
+import {MINDMAP_CONTRACT_VERSION,MINDMAP_MAPPING_VERSION,MINDMAP_WORKBOOK_CREATOR} from '../contracts.ts';
 import type { ParsedMindmap, Topic } from './mindmap.ts';
 
 // This reader does not use ExcelJS, the writer's row list, or its worksheet models.
@@ -18,6 +19,16 @@ export async function verifyMindmapWorkbook(bytes: Buffer, source: ParsedMindmap
     if (/^xl\/worksheets\/.*\.xml$/.test(name) && /<(?:[\w-]+:)?f(?:\s|>)/.test(strFromU8(part))) fail('V1 cells must be literal values, not formulas');
     if (name.endsWith('.rels') && /TargetMode=["']External["']/.test(strFromU8(part))) fail('V1 workbook cannot contain active external targets');
   }
+  if(!archive!['docProps/core.xml'])fail('Workbook creator metadata is missing');
+  let creator:string|undefined,insideCreator=false;
+  const metadata=new SaxesParser({xmlns:true});
+  metadata.on('opentag',tag=>{if(tag.uri==='http://purl.org/dc/elements/1.1/'&&tag.local==='creator'){if(creator!==undefined)fail('Workbook creator metadata is duplicated');creator='';insideCreator=true;}else if(insideCreator)fail('Workbook creator metadata cannot contain elements');});
+  metadata.on('text',text=>{if(insideCreator)creator+=text;});
+  metadata.on('cdata',text=>{if(insideCreator)creator+=text;});
+  metadata.on('closetag',tag=>{if(tag.uri==='http://purl.org/dc/elements/1.1/'&&tag.local==='creator')insideCreator=false;});
+  metadata.on('doctype',()=>fail('Workbook creator metadata cannot contain a DTD'));
+  try{metadata.write(strFromU8(archive!['docProps/core.xml'])).close();}catch(error){if(error instanceof ApiError)throw error;fail('Workbook creator metadata is invalid');}
+  if(creator!==MINDMAP_WORKBOOK_CREATOR)fail('Workbook creator differs from the pinned compiler implementation');
   const sheets = await readWorkbook(Buffer.from(zipSync(archive!)), { trim: false });
   if (sheets.length !== 2 || sheets[0].sheet !== '用例清单' || sheets[1].sheet !== '说明') fail('Workbook sheet names or order differ from V1');
   const columns = ['编号','一级模块','二级模块','用例标题','备注','层级深度','路径'];

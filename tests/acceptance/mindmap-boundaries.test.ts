@@ -19,7 +19,7 @@ test('worker receipts require independently matching workbook bytes and a stable
   const rejected = await h.reject('/v1/workers/register',{ workerId:'forged-worker' },'INVALID_PAYLOAD','lab-east-01');
   assert.equal(rejected.details.issues[0].code,'unrecognized_keys');
   assert.equal((await h.db.query('SELECT 1 FROM workers WHERE worker_id=ANY($1::text[])',[['forged-worker','lab-east-01']])).rowCount,0);
-  const registered = await h.request('/v1/workers/register',{},'lab-east-01');
+  const registered = await h.request('/v1/workers/register',{capabilities:['mindmaps.compile']},'lab-east-01');
   assert.equal(registered.workerId,'lab-east-01');
   assert.deepEqual((await h.db.query('SELECT worker_id,principal_id FROM workers WHERE worker_id=$1',['lab-east-01'])).rows,
     [{ worker_id:'lab-east-01',principal_id:'prn_lab-east-01' }]);
@@ -40,7 +40,7 @@ test('worker receipts require independently matching workbook bytes and a stable
 });
 
 test('superseded operation expiry cannot overwrite the current delivered revision', async t => {
-  const h = await setup(t); await h.request('/v1/workers/register',{},'lab-east-01');
+  const h = await setup(t); await h.request('/v1/workers/register',{capabilities:['mindmaps.compile']},'lab-east-01');
   const a = await upload(h,'A'); const b = await upload(h,'B');
   const task = await h.request('/v1/tasks/submit',{ scopeId:'scp_lab',capabilityPackId:'mindmap-compile',input:{ sourceRevisionId:a.sourceRevisionId },idempotencyKey:'revision-flight' });
   const old = await claim(h);
@@ -58,7 +58,7 @@ test('superseded operation expiry cannot overwrite the current delivered revisio
 });
 
 test('execution preflight rechecks the live user permission and original bytes enforce their hash', async t => {
-  const h = await setup(t); await h.request('/v1/workers/register',{},'lab-east-01');
+  const h = await setup(t); await h.request('/v1/workers/register',{capabilities:['mindmaps.compile']},'lab-east-01');
   const source = await upload(h,'A');
   const task = await h.request('/v1/tasks/submit',{ scopeId:'scp_lab',capabilityPackId:'mindmap-compile',input:{ sourceRevisionId:source.sourceRevisionId },idempotencyKey:'permission-flight' });
   const work = await claim(h);

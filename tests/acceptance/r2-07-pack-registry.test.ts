@@ -9,7 +9,7 @@ import {scriptModel} from '../fixtures/script-model.ts';
 
 test('Act R2.7: installed packages keep the compilation API and retire the old product health capability',async t=>{
   const h=await setup(t),packs=await h.request('/v1/packs');
-  assert.ok(packs.some((pack:any)=>pack.capabilityPackId==='mindmap-compile'&&pack.version==='1.0.0'));
+  assert.ok(packs.some((pack:any)=>pack.capabilityPackId==='mindmap-compile'&&pack.version==='1.1.0'));
   assert.ok(!packs.some((pack:any)=>pack.capabilityPackId==='lbx-healthcheck'));
   assert.ok(packs.some((pack:any)=>pack.capabilityPackId==='synthetic-resource-check'));
   await h.reject('/v1/tasks/submit',{scopeId:'scp_lab',title:'Retired capability',capabilityPackId:'lbx-healthcheck',idempotencyKey:'retired-pack-input',input:{}},'UNSUPPORTED_VERSION');
