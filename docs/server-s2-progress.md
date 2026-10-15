@@ -1372,6 +1372,24 @@ Hub 首个 v0.1.0 指向 8f3b839，packs 首个 v0.1.0 指向 1f8948c，均已�
 
 移除原生能力登记、controller / worker、专用解析器及其专用测试；worker 对遗留 cases.* 明确 UNSUPPORTED_VERSION，不回退合成派发。migration 20 按完整文件 SHA 原样迁到历史迁移文件，新增 migration 44 拒绝旧回执表 insert / update / delete / truncate。历史任务结果、输入修订和方法 pin 不改绑。保留治理、来源登记与权限、网关 health / topology、合成 meridian 与通用执行流消费者；原生专用测试的移除不算新增覆盖，产品纯 Tool 的回归由独立 packs 套件与真实装载的通用链验收承担。
 
-兼容编译器升为 1.1.0 并使用 circle-hub creator；旧版排队任务明确失败，认领过滤及回报前核验拒绝不同实现版本，防止按旧 pin 写入新版产物或阻塞当前工作。新增独立纯边界与真实临时 PostgreSQL 验收，分别覆盖入口拒绝、历史任务可读、先有旧回执再升级、全部写操作拒绝及编译器升级隔离。类型检查通过；首批三叶纯回归在首版候选实际 0/3、D 分支 3/3，覆盖退役拒绝、旧编译回报读源边界及工作簿真实字节 creator。后续补充畸形 metadata 的真实 OOXML 字节拒绝，当前完整 methods 为 282/282；references 7/7 与归档 SHA 校验通过。临时 PostgreSQL 的六叶 D 用例与三个既有编译边界已串行执行，实际 9/9，无 skip；包括旧版取消保持取消，以及缺失 / 撤销编译能力时拒绝认领、preflight 和回报且不存产物。其后补强历史 delivered / failed 两类任务重启前后实际制品下载和 SHA，不只看结果里的引用；该新增断言随完整 D 套件验收。首版最终 main 8f3b839 的完整电池与 CI 尚待结束，D 还未发布或部署。
+兼容编译器升为 1.1.0 并使用 circle-hub creator；旧版排队任务明确失败，认领过滤及回报前核验拒绝不同实现版本，防止按旧 pin 写入新版产物或阻塞当前工作。新增独立纯边界与真实临时 PostgreSQL 验收，分别覆盖入口拒绝、历史任务可读、先有旧回执再升级、全部写操作拒绝及编译器升级隔离。类型检查通过；首批三叶纯回归在首版候选实际 0/3、D 分支 3/3，覆盖退役拒绝、旧编译回报读源边界及工作簿真实字节 creator。后续补充畸形 metadata 的真实 OOXML 字节拒绝，当前完整 methods 为 282/282；references 7/7 与归档 SHA 校验通过。临时 PostgreSQL 的六叶 D 用例与三个既有编译边界已串行执行，实际 9/9，无 skip；包括旧版取消保持取消，以及缺失 / 撤销编译能力时拒绝认领、preflight 和回报且不存产物。其后补强历史 delivered / failed 两类任务重启前后实际制品下载和 SHA，不只看结果里的引用；该新增断言随完整 D 套件验收。该段是 D 工作区的定向验证快照；首版完整门禁及发布见第 130 节，D 的最终全开验收与实际部署见第 132 节。
 
 Circle 接口已按维护者决定改为 hub / /hub / hub_* / hub_tool_*，不保留旧扩展、命令或工具别名。四技能的旧工具名消费者在独立 packs 分支同步并提升模块版本；包的远端工具身份与业务规则未改。维护者随后已确认 RPC 升级到 fd8524a，只验收 hub 协议；实施与验收见第 130 节。
+
+## 132：D 全开验收、0.2.0 发行与现场历史保全
+
+冻结 main 2f9cd20、Circle fd8524a 与 packs 1f8948c，开启 APV 模块及严格 cexg 协议选装场景，使用不可改写的电池副本串行完成：typecheck 0、contracts 20/20、methods 282/282、acceptance 403/403、references 7/7，全部零 fail / skip，归档 SHA 校验成功，包装进程真实退出 0。包含 APV 1.4.1 原件实际装载的包内 81/81、五个模块/provider 场景及严格协议场景；这些是合成资源验收，不推称新的真实设备执行。此前两条数据库关闭异常消费者和长历史归档均在完整电池通过，没有屏蔽 pool error 或放宽生产预算。远端同提交 Hub checks 38688263842、Reference integrity 38688263700、pages 38688263840 全成功；Ubuntu acceptance 403 例中 259 pass / 144 host skip，methods 281 pass / 1 skip，缺隔离前提的 skip 不计为实跑通过。
+
+v0.2.0 指向 2f9cd20 并已创建 GitHub Release。部署前确认原生 11 条、通用 8 条旧任务全终态，全站没有 accepted / running / unknown 操作或租约；先做一致性数据库备份，完整读取归档并核 SHA。7420 随后实际滚到同一提交：新 05/06 注册 flow.invoke、assets.execute、mindmaps.compile，旧 07/08 无在途后退出，原始 01/02、父 dev-stack、PG 与 supervisor 保持。旧迁移 1–43 的名字与 SHA 不改，migration 44 的旧回执只读触发器生效；能力目录移除原生入口，保留 module-execute 与编译器 1.1.0。
+
+前后守卫冻结原 19 条任务及其依赖，而非将新治理任务混入历史集合：19 个输入修订、645 个操作、657 个证据、2364 个制品及绑定、11 个旧回执、12 个来源，八类表使用 PostgreSQL canonical jsonb 原文本核 SHA，避免日期微秒或大整数经 JavaScript 丢精度。2450 份 B 原件合计 47,489,389 字节逐件重读 size / SHA，与部署前 manifest 全部一致。部署后再核原进程与数据库未重启，全站活动 / unknown 操作和租约均为零，网关 lease_status 明确 leased=false、bed_busy=false。现场滚动没有新增模型调用或设备任务；原 21 例的 13 pass / 8 fail 仍按既有原件披露，不重写成全绿。
+
+现场原先未承载 skill-run 的脚本 runtime 从 1.1.1 改为用户确认的 fd8524a / 1.7.0，仅替换 Circle 入口、版本、提交三个字段，model 整块 canonical SHA 不变。独立 approver 批准同一 runtime 资产的 2.0.0 修订，approved_digest 与 SHA 一致、绑定变更集 approved；旧 1.0.0 整行 PostgreSQL 原文本 SHA 不变。没有扩展 readers 或重绑历史运行。父 supervisor 仍使用弃用输入回退，不为清旧名重启会清理临时库的 dev-stack；运行中的依赖路径保留，本机秘密、备份、原件和操作回执均不进 Git。
+
+## 133：Circle 修复版与并行收尾
+
+Circle v1.7.0 tag 96702fa 的正式发行暴露刷新视图时序回归，未产生 Release；保留原 tag，不移动公开历史。Linux 桌面另有一次浏览器按钮点击超时，不归因于刷新修复。将主线既有独立修复 9afe812 加到隔离集成分支，延迟登录文件读取的旧候选真实失败、新实现回归通过，形成 v1.7.1 / 259364f；不纳入其他会话在 main 的后续开发。
+
+本地 Circle 1.7.1 完整 check 为 588 pass / 2 platform skip / 0 fail，构建、格式、发行 build / smoke、桌面 59/59、workbench 38/38 加 DOM 1/1、开发态与打包态扩展各六项通过；包内 hub 源码逐字节等于固定提交，没有旧扩展目录。正式 tag 的 Release 38690295114、Check 38690295063、Workbench 38690294934 构建并核验所有目标；取消仅本方相同提交的重复预演，正式全目标门禁及 23 件产物校验保留。发布与应用安装状态以该仓库的正式 Release 和本机交接回执为准，不把排队写成安装完成。Hub RPC pin 始终保持 fd8524a，只验收 hub 协议；打包客户端版本与该验收 pin 分开。
+
+首个 Hub / packs 发行、cexg 三笔推送、D 实现与 7420 滚动均已落地。最后这次收尾只整理文档与已发生的回执，应用、契约、产品包、测试、依赖与迁移字节相对已验证 2f9cd20 不变；按交接规则，最终 main 文档 HEAD 仍运行一遍完整全开电池与远端检查。

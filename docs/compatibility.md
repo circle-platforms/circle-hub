@@ -11,9 +11,9 @@
 | circle-hub | **0.2.0**（原生执行退役；首个仓库发行是 0.1.0） | 版本化发行、`docs/design` | 现场部署另见进度记录与实际提交核对；发行元数据不代表生产可用 |
 | `foundation/circle` | Circle **1.0.4** 源基线，冻结 | `references/README.md` 的来源记录 | 只是源码参考，不装、不跑它的安装器；不是 hub 的运行依赖 |
 | 验收用的 Circle 运行时 | Circle 主线提交 **fd8524a**（用户确认，Circle 1.7.0，hub 协议） | `CIRCLE_BIN` / `CIRCLE_COMMIT`，严格 Git 门禁 | **这是真实的测试依赖**：验收 RPC 用例只接受这个提交，换提交要用户确认并更新门禁 |
-| Circle 发行绑定 | **v1.7.0 → 96702fa** | circle 仓库的 tag 与 Release | 完整构建与正式发布状态以发行页为准；本次 RPC 实测仍固定 fd8524a，发行成功不替代 Hub 验收 |
-| hub 的 Circle 侧扩展目标基线 | 1.7.0（集成提交 96702fa，发行 tag v1.7.0） | 维护者授权的 hub 扩展改名 | hub 与 /hub 不保留旧别名；与上面的固定 RPC 验收提交分列 |
-| circle 的 hub 扩展 | 集成提交 96702fa；发行绑定 v1.7.0 | hub 的 `docs/client-api-handoff.md` | 当前 Circle 使用 hub、/hub、hub_* 与 hub_tool_*，无旧别名；运行时协议与历史验收 pin 须显式绑定 |
+| Circle 发行绑定 | **v1.7.1 → 259364f** | circle 仓库的 tag 与 Release | 完整构建与正式发布状态以发行页为准；本次 RPC 实测仍固定 fd8524a，发行成功不替代 Hub 验收 |
+| hub 的 Circle 侧扩展目标基线 | 1.7.1（命名集成 96702fa，刷新修复 9afe812，发行 tag v1.7.1） | 维护者授权的 hub 扩展改名 | hub 与 /hub 不保留旧别名；与上面的固定 RPC 验收提交分列 |
+| circle 的 hub 扩展 | 发行提交 259364f；命名集成 96702fa、刷新修复 9afe812 | hub 的 `docs/client-api-handoff.md` | 当前 Circle 使用 hub、/hub、hub_* 与 hub_tool_*，无旧别名；运行时协议与历史验收 pin 须显式绑定 |
 | circle-packs `main` | 见其 CHANGELOG | hub 的包装载器与 schema | 产品线包测试使用 hub 提交 `dc93c69826f73f16d2f20f7520ba4c6663d014ac` 的锁定依赖集；circle-packs 的 `.github/workflows/checks.yml` 固定此提交，不跟随 main 漂移；仅为测试依赖，不声明生产兼容 |
 | hub 验收用的 circle-packs 原件 | **1f8948c07a9756a3e5dec66f15c25a670fd1e4c2**，APV **1.4.1** | 该提交的 `modules.json` 与原字节 SHA | 包仓库完整合成套件 143/143，无 skip；Hub 的产品模块 / provider 协议选装验收另见进度记录，不以包内测试替代；发行不表示自动激活或批准 |
 | 执行网关 cexg | 0.3.1（静态密钥） | compile-excel-server 仓库 | hub 的 worker 需要 §7 的 static-secret 凭据模式才能调用它 |
@@ -59,6 +59,8 @@
 - 2026-10-14：Hub CLI 改为 `circle-hub`，部署变量改为 `CIRCLE_HUB_*`；旧 `CIRCLE_SERVER_*` 仅在新键不存在时作弃用回退，新键空值也不回退。Circle 的扩展标识、命令与注入协议保留，路由/schema、旧工作树路径与历史来源不改；Circle 与独立包的版本升级另行确认。
 - 2026-10-14：经维护者确认，包装载验收从 224daa6（APV 1.2.1）升级到 ba06eed（APV 1.2.2）；按冻结清单核原字节并运行，产品线 31/31、四技能 57/57、catalog 工具 4/4。该提交 README/CI 合并入口的 61 项是后两类之和，三类分别记录。
 
-- 2026-10-15：准备 Hub 首个仓库发行 0.1.0。验证栈 1b4a6dc 使用 packs d91b23d 的 products/apv 1.4.0，既有固定验收输入另列，不混用。批量流程交付成功，设备结果 13 pass / 8 fail，不表示设备验收全绿；原生路径退役仍待确认。
+- 2026-10-15：准备 Hub 首个仓库发行 0.1.0。验证栈 1b4a6dc 使用 packs d91b23d 的 products/apv 1.4.0，既有固定验收输入另列，不混用。批量流程交付成功，设备结果 13 pass / 8 fail，不表示设备验收全绿；这是当时首版准备快照；维护者随后确认 D 直接实施，最终状态见下条。
 
-- 2026-10-15：D 移除原生能力与 worker；migration 20 原字节保留，migration 44 令旧回执只读，兼容编译器升为 1.1.0。Circle 1.7.0 源码改用 hub 命名，历史 RPC 验收 pin 的替换仍待明确决定；packs 的工具名消费者独立升版，发行不自动激活新模块。
+- 2026-10-15：D 移除原生能力与 worker；migration 20 原字节保留，migration 44 令旧回执只读，兼容编译器升为 1.1.0。维护者确认 RPC 验收固定 fd8524a / Circle 1.7.0，只验收 hub 协议；Circle 打包客户端独立绑定 v1.7.1 / 259364f。v1.7.0 tag 的发行遇到刷新视图时序失败，保留该 tag 而未发布，1.7.1 仅在原集成上加入已合入主线的独立刷新修复。packs 的工具名消费者独立升版，发行不自动激活新模块。
+
+- 2026-10-15：Hub v0.1.0（8f3b839）、packs v0.1.0（1f8948c）及 Hub v0.2.0（2f9cd20）已发布。7420 滚动到 v0.2.0 的同一提交；19 条历史任务与 2450 份原件前后 SHA 不变，旧回执只读。模型配置不变的脚本 runtime 升到 fd8524a / 1.7.0，新 profile 由另一身份批准，旧 profile 字节不改；没有新模型或设备任务。Circle 打包发布和应用安装另按其正式发行页与本机回执核验，不以 tag 或排队冒称已交付。

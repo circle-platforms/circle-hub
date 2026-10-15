@@ -4,7 +4,7 @@
 
 `GET /v1/packs` 不再登记 `apv-case-execute`，新提交明确返回 `UNSUPPORTED_VERSION`，不兼容转发到 `module-execute`。新的执行显式提交产品模块 flow 与已批准 pin；历史任务保留旧 capability、版本、输入修订、结果和制品引用，不改绑。migration 20 字节保留，新增 migration 44 令旧回执表只读。下文原生执行章节是早期版本交接记录，不再代表可新建入口。
 
-Circle 新扩展为 `hub`、`/hub`、`hub_*` 固定工具与 `hub_tool_*` 动态工具，不保留旧扩展/命令别名。RPC 验收固定为用户确认的 Circle 1.7.0 fd8524a，只验收 hub 协议；发行候选 96702fa 的两份测试格式化差异仍单列，不替换实际验收 pin。
+Circle 新扩展为 `hub`、`/hub`、`hub_*` 固定工具与 `hub_tool_*` 动态工具，不保留旧扩展/命令别名。RPC 验收固定为用户确认的 Circle 1.7.0 fd8524a，只验收 hub 协议；打包客户端另绑定 Circle 1.7.1 / 259364f，包含独立刷新视图时序修复；不替换实际 RPC 验收 pin。
 
 本文件保留接口变更记录、运行教程和产品连接器契约；通用规则以[设计规范](design/README.md)为准，迁移对照见[handoff-map](design/handoff-map.md)。
 
@@ -667,3 +667,5 @@ C 驱动升级不声明新旧 flow.invoke worker 混跑安全。启用含逐工�
 C 实施接口仍沿用既有模块 / 资源 / 任务 / worker 路径；receiptPolicy 的逐工具参数、分阶段回执与 prepare，以及模块的 controlled-history 协议见 [执行流设计 C 实施附录](design/execution-flow-packs.md)。开启严格合成协议验收：`CIRCLE_PACKS_CATALOG=../circle-packs/modules.json CIRCLE_PACKS_REF=b02122a CIRCLE_HUB_CEXG_PROTOCOL_ACCEPTANCE=1 node --test tests/acceptance/c-cexg-protocol.test.ts`；该固定原件已覆盖同租约 prepare / 一次 submit / 独立终态 / 结果解析，不能替代现网冒烟。
 
 Circle RPC 升级边界（2026-10-15）：用户确认只验收 `fd8524a` 的 hub 协议；Circle 1.7.0 发行候选 main `96702fa` 仅另有两份测试格式化差异，不能把它冒称为本次固定 RPC 提交。新 `assets.execute` 操作冻结同名 worker capability，只有显式宣告该能力的 worker 可认领，preflight 和回报再次核验；旧 worker 不因仍在线而自动获得新协议执行权。
+
+Circle 客户端发行补充（2026-10-15）：v1.7.0 的正式构建触发了 /hub refresh 先返回、视图仍未更新的时序问题；旧候选在延迟读登录信息的回归中实际失败，主线独立修复 9afe812 在隔离分支通过。打包目标 v1.7.1 / 259364f 保留原集成，仅加入此修复与发行元数据；本地完整检查 588 pass / 2 platform skip / 0 fail，开发与打包扩展各六项通过。正式多目标构建、发布、实际应用安装以 Circle 的 Actions / Release 和本机回执为准；本页的无界面 RPC 实测仍是用户确认的 fd8524a / 1.7.0。
