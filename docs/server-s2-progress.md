@@ -1311,3 +1311,9 @@ transition 的动作被 C 拒绝时，原 generic failure.code / message 保留�
 selectFlowHistory 先保意图、unknown、已消费授权和活动记录，再按最新优先纳入普通观察。候选帧按 F 同样的 canonical JSON / UTF-8 算法计量完整元数据，包含原件与 frozen 引用、expectedOccurrences、真实归档引用及窗口信息，排除受控字节正文；真实 B 归档生成后重新选窗。关键帧超预算明确 RESULT_TOO_LARGE；未声明 controlled 的不完整窗口沿用明确拒绝。全部历史仍先核当前 B 权限，槽身份 / 数量与解码总量边界保留，不扩大 F 常量。
 
 修后该纯文件实际 **10/10，无 skip**，差异与独立只读复核通过；端到端归档消费及失败 cause 的合并验收留本轮后续项。仅本地签署，不跑全套、不 push / 部署，不触 7420、网关、worker 或独立包；原生 1.1.1 未改。
+
+## 124：非动作 Hub 失败保留有界 cause
+
+fail() 对帧构造、归档、预算等实际 Hub ApiError 在原已投影 details 上追加 cause，保留登记码、message 与有界 details；没有动作上下文就不编造 stepId / kind。60220cf 的动作拒绝形状保留；普通 worker 对象或普通异常不升级为 Hub cause。产品显式 outcome.error 在调用处明确排除，继续保留产品规则 facts 的原形，不按 message 文本猜来源。
+
+先写新纯五叶，旧 **3/5**，两叶精准红于缺失 cause；修后新 **5/5**，与旧动作拒绝 / 错误预算消费者合跑 **11/11，无 skip**。根树 typecheck、差异和独立只读复核通过。仅本地签署，不跑全套、push / 部署或触现场；两叶真实 Tool 历史归档验收将在下一项串行执行。
