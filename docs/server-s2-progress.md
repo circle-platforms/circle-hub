@@ -1341,3 +1341,9 @@ fail() 对帧构造、归档、预算等实际 Hub ApiError 在原已投影 deta
 首个仓库发行按 CONTRIBUTING 设为 0.1.0：package 与 lockfile 同步，CHANGELOG 保留空 Unreleased 并落 2026-10-15 版本段，中英兼容矩阵分清发行、现场观察和既有固定验收输入。没有更改 schema、固定 Circle RPC 提交、foundation 或 references。发布门禁结果在执行后记录。
 
 1b4a6dc 的远端 Reference integrity、pages、Hub checks 均已成功；Hub checks run 38670996421。维护者随后确认 D 阶段可直接实施，但本次 0.1.0 仍先冻结两条路径并存状态，退役另作为下一版本。扩展标识 hub 与 /hub 的无旧名兼容改名也已另行授权，固定 RPC 验收提交不随发行变化。
+
+## 128：首版验证日志与数据库关闭边界
+
+8667008 远端三项 CI 通过；首次本地完整电池为 contracts 20/20、methods 294/294、acceptance 434 pass / 1 fail / 9 skip、references 7/7。旧脚本只留汇总，未保留失败项名，不追认为已知原因。独立 R3 复跑 3/3，其中冻结 APV 1.4.0 的包内 81/81。随后保留完整 TAP 的同候选复跑为 432 pass / 3 fail / 9 skip：两叶报 PostgreSQL administrator termination，另一累计历史叶在 180 秒时仍 running，已成功 299 步。
+
+pg Pool.end 的完成不等于所有 client end；测试 harness 只等前者就停止其临时数据库。新增公开 connect/end 事件的 socket 关闭屏障、有限等待与幂等清理，保留正常 pool error 的可见性，不屏蔽数据库错误。确定性关闭次序回归在旧候选失败、新实现通过；两条实际失败用例与整套的复核另列后续结果。仓库外电池脚本同时严格透传流水线退出码并保存各套件原始日志，合成 exit 17 的负例确认不会继续执行或返回假绿。
