@@ -73,7 +73,7 @@ sandboxTest('HTTPS worker: pinned headless Circle inherits the CA and uses scope
     const { h, tls, call } = await tlsServer(t), model = await scriptModel(t);
     await h.db.query("UPDATE policies SET grants=grants || '[\"assets.read\",\"assets.register\",\"assets.change\",\"knowledge.read\",\"skillpacks.submit\",\"skillpacks.read\",\"skillpacks.run\"]'::jsonb WHERE principal_id='prn_alice'");
     await h.db.query("UPDATE policies SET grants=grants || '[\"assets.approve\"]'::jsonb WHERE principal_id='prn_bob'");
-    await writeFile(`${h.scratch}/runtime.json`, JSON.stringify({ circleBin: process.env.CIRCLE_BIN, circleCommit: process.env.CIRCLE_COMMIT, circleVersion: '1.1.1', model: { kind: 'scripted', base_url: model.url, model: 'scripted-fixture', protocol: 'openai', api_key: model.key } }));
+    await writeFile(`${h.scratch}/runtime.json`, JSON.stringify({ circleBin: process.env.CIRCLE_BIN, circleCommit: process.env.CIRCLE_COMMIT, circleVersion: '1.7.0', model: { kind: 'scripted', base_url: model.url, model: 'scripted-fixture', protocol: 'openai', api_key: model.key } }));
     h.env.CIRCLE_RUNTIME_CONFIG = `${h.scratch}/runtime.json`;
     await h.stop();
     await h.startServer();
@@ -90,7 +90,7 @@ sandboxTest('HTTPS worker: pinned headless Circle inherits the CA and uses scope
     fixture.trial.toolCalls = [{ name: 'knowledge.shared_fragments', argsSha256: canonicalHash({}), ok: true }];
     const pack = await call('/v1/modules/install', { module: fixture.module, files: fixture.files, trial: fixture.trial }), approval = (await call(`/v1/tasks/${pack.approvalTaskId}/approvals`))[0];
     await call(`/v1/tasks/${pack.approvalTaskId}/approvals/${approval.approvalId}`, { inputRevisionId: approval.inputRevisionId, targetIdentity: approval.targetIdentity, actionDigest: approval.actionDigest, approve: true }, 'bob');
-    model.state.sequence = [{ name: 'skill', args: { name: fixture.module.id } }, { name: 'srv_knowledge_shared_fragments', args: {} }, { name: 'execute', args: { command: `node .circle/skills/${fixture.module.id}/scripts/report.ts` } }];
+    model.state.sequence = [{ name: 'skill', args: { name: fixture.module.id } }, { name: 'hub_tool_knowledge_shared_fragments', args: {} }, { name: 'execute', args: { command: `node .circle/skills/${fixture.module.id}/scripts/report.ts` } }];
     const running = await worker(t, h, { NODE_EXTRA_CA_CERTS: tls.caFile });
     await until(async () => { assert.equal(running.child.exitCode, null, running.output().stderr); return running.output().stdout.includes('worker-ready'); });
     const run = await call(`/v1/skillpacks/${pack.skillPackId}/runs`, { inputs: {}, idempotencyKey: 'https-rpc-module' });

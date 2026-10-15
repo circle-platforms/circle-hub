@@ -10,7 +10,7 @@
 |---|---|---|---|
 | circle-hub | **0.1.0**（首个仓库发行） | `v0.1.0`、`docs/design` | 验证栈运行已复核的 main 提交 1b4a6dc；发行元数据不代表生产可用 |
 | `foundation/circle` | Circle **1.0.4** 源基线，冻结 | `references/README.md` 的来源记录 | 只是源码参考，不装、不跑它的安装器；不是 hub 的运行依赖 |
-| 验收用的 Circle 运行时 | Circle 主线提交 **8b2ceb6**（用户确认） | `CIRCLE_BIN` / `CIRCLE_COMMIT`，严格 Git 门禁 | **这是真实的测试依赖**：验收 RPC 用例只接受这个提交，换提交要用户确认并更新门禁 |
+| 验收用的 Circle 运行时 | Circle 主线提交 **fd8524a**（用户确认，Circle 1.7.0，hub 协议） | `CIRCLE_BIN` / `CIRCLE_COMMIT`，严格 Git 门禁 | **这是真实的测试依赖**：验收 RPC 用例只接受这个提交，换提交要用户确认并更新门禁 |
 | Circle 最新公开发行（截至 2026-10-14） | 1.4.1（`v1.4.1`） | circle 仓库的 tag 与 Release | 仅记录发行状态，不表示 hub 已针对该版验收 |
 | hub 的 Circle 侧扩展目标基线 | 1.2.1（`v1.2.1`） | 原定扩展目标版本 | 保持原目标，不随 Circle 新发行自动升级；不等同于上面的固定 RPC 验收提交 |
 | circle 的 hub 扩展 | 分支 `server-tools`（fb764e8，已推送），建立在 Circle 1.1.1 检出上 | hub 的 `docs/client-api-handoff.md` | Circle 维护的扩展名 `circle-server`、`/server` 命令与子进程协议变量本轮不改；Hub CLI 与部署配置使用新名 |

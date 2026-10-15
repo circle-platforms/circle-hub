@@ -34,7 +34,7 @@ async function runIsolatedCircle(input:CircleRun,upstreamModelKey:string,onStopp
   catch{throw new ApiError('RUNTIME_VERSION_MISMATCH','Circle executable or Git revision cannot be verified');}
   requireCondition(version===runtime.circleVersion&&commit===runtime.circleCommit,'RUNTIME_VERSION_MISMATCH','Circle version or Git revision differs from the pinned runtime');
   const modelUrl=new URL(runtime.model.base_url);requireCondition(modelUrl.hostname==='127.0.0.1'&&modelUrl.protocol==='http:','FORBIDDEN_ACTION','Sandbox model requests must use the per-run loopback proxy');
-  await writeFile(join(home,'settings.json'),JSON.stringify({version:1,initialized:true,auth:{base_url:runtime.model.base_url,model:runtime.model.model,protocol:runtime.model.protocol,api_key_ref:'api_key'},trusted_folders:[workspace],extensions:{'circle-server':{enabled:true}},mcp_servers:[],update_check:false}),{mode:0o600});
+  await writeFile(join(home,'settings.json'),JSON.stringify({version:1,initialized:true,auth:{base_url:runtime.model.base_url,model:runtime.model.model,protocol:runtime.model.protocol,api_key_ref:'api_key'},trusted_folders:[workspace],extensions:{hub:{enabled:true}},mcp_servers:[],update_check:false}),{mode:0o600});
   await writeFile(join(home,'credentials.json'),JSON.stringify({api_key:runtime.model.api_key}),{mode:0o600});
   const skillRoot=join(workspace,'.circle','skills',input.manifest.id);
   for(const file of input.files){SafeRelativePath.parse(file.path);requireCondition(sha256(file.bytes)===file.sha256,'SOURCE_HASH_MISMATCH','Skill blob SHA differs');const path=join(skillRoot,file.path);await mkdir(dirname(path),{recursive:true,mode:0o700});await writeFile(path,file.bytes,{mode:0o600});}
@@ -43,11 +43,10 @@ async function runIsolatedCircle(input:CircleRun,upstreamModelKey:string,onStopp
   let settled=false,failed=false,lastAnswer='',pending='',bytesSeen=0,eventChain=Promise.resolve(),eventError:unknown;const decoder=new StringDecoder('utf8');
   const temporary=join(input.folder,'tmp');await mkdir(temporary,{recursive:true,mode:0o700});
   const isolation=await isolatedProcess(process.execPath,[circleBin,'--mode','rpc','--extensions','--yolo',workspace],{read:[input.folder,dirname(circleBin),join(repo,'package.json'),...(await execute('git',['-C',repo,'ls-tree','-r','--name-only',runtime.circleCommit],{maxBuffer:1024*1024})).stdout.split('\n').filter(Boolean).map(path=>join(repo,path)),await realpath(join(repo,'node_modules')),...(process.env.NODE_EXTRA_CA_CERTS?[process.env.NODE_EXTRA_CA_CERTS]:[])],write:[input.folder],network:[input.serverUrl,runtime.model.base_url]});
-  // Circle's existing circle-server extension consumes these outgoing names.
-  // Hub process inputs use CIRCLE_HUB_*; this client protocol remains unchanged.
+  // Circle 1.7.0 consumes only the hub extension and its CIRCLE_HUB_* protocol.
   const child=spawn(isolation.command,isolation.args,{cwd:workspace,detached:process.platform!=='win32',stdio:['pipe','pipe','pipe'],env:{PATH:process.env.PATH,TMPDIR:temporary,LANG:process.env.LANG,
     NODE_EXTRA_CA_CERTS:process.env.NODE_EXTRA_CA_CERTS,
-    HOME:homeUser,CIRCLE_HOME:home,CIRCLE_NO_MODELS_REFRESH:'1',CIRCLE_JOB_WAIT:'120',CIRCLE_SERVER_URL:input.serverUrl,CIRCLE_SERVER_TOKEN:input.serverToken,CIRCLE_SERVER_USER:input.principalId,CIRCLE_SERVER_SCOPE:input.scopeId}});
+    HOME:homeUser,CIRCLE_HOME:home,CIRCLE_NO_MODELS_REFRESH:'1',CIRCLE_JOB_WAIT:'120',CIRCLE_HUB_URL:input.serverUrl,CIRCLE_HUB_TOKEN:input.serverToken,CIRCLE_HUB_USER:input.principalId,CIRCLE_HUB_SCOPE:input.scopeId}});
   const redact=(value:any):any=>typeof value==='string'?value.replaceAll(input.serverToken,'[redacted-run-token]').replaceAll(runtime.model.api_key,'[redacted-model-proxy]').replaceAll(upstreamModelKey,'[redacted-model-key]'):Array.isArray(value)?value.map(redact):value&&typeof value==='object'?Object.fromEntries(Object.entries(value).map(([key,item])=>[redact(key),redact(item)])):value;
   const stop=()=>{if(child.exitCode!==null||child.signalCode!==null)return;if(!child.stdin.destroyed){child.stdin.write('{"type":"abort"}\n');child.stdin.end();}};
   const kill=()=>{if(child.exitCode!==null||child.signalCode!==null)return;try{if(process.platform==='win32')child.kill('SIGKILL');else process.kill(-child.pid!,'SIGKILL');}catch{/* process already ended */}};
@@ -69,7 +68,7 @@ async function runIsolatedCircle(input:CircleRun,upstreamModelKey:string,onStopp
     child.once('exit',code=>{if(code!==0&&!input.signal?.aborted)failed=true;accept();});
   });
   child.stdin.on('error',()=>{/* exit is observed on the child */});
-  child.stdin.write(JSON.stringify({id:'run',type:'prompt',message:`Run skill ${input.manifest.id} in this workspace. Read inputs.json and its input files, use the declared server tools, and produce these outputs: ${input.manifest.outputs.join(', ')}. Do not claim delivery without files.`})+'\n');
+  child.stdin.write(JSON.stringify({id:'run',type:'prompt',message:`Run skill ${input.manifest.id} in this workspace. Read inputs.json and its input files, use the declared hub tools, and produce these outputs: ${input.manifest.outputs.join(', ')}. Do not claim delivery without files.`})+'\n');
   try{await completion;await eventChain;}finally{clearTimeout(timeout);if(stopTimer)clearTimeout(stopTimer);input.signal?.removeEventListener('abort',abort);}
   if(input.signal?.aborted)throw new ApiError('RUNTIME_FAILED','Local Circle exit observed after cancellation; remote stopping is unverified',{localExitObserved:true,remoteStoppingVerified:false});
   if(eventError)throw eventError;

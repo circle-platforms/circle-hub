@@ -7,7 +7,7 @@ async function prepare(t: Parameters<typeof setup>[0]) {
     const h = await setup(t);
     await h.db.query("UPDATE policies SET grants=grants || '[\"assets.read\",\"assets.register\",\"skillpacks.read\",\"skillpacks.submit\",\"skillpacks.run\"]'::jsonb WHERE principal_id='prn_alice'");
     await h.db.query("UPDATE policies SET grants=grants || '[\"assets.approve\"]'::jsonb WHERE principal_id='prn_bob'");
-    await writeFile(`${h.scratch}/runtime.json`, JSON.stringify({ circleBin: 'unstarted-circle.ts', circleCommit: '0'.repeat(40), circleVersion: '1.1.1', model: { kind: 'scripted', base_url: 'http://127.0.0.1:1/v1', model: 'unstarted-synthetic', protocol: 'openai', api_key: 'synthetic-only-key' } }));
+    await writeFile(`${h.scratch}/runtime.json`, JSON.stringify({ circleBin: 'unstarted-circle.ts', circleCommit: '0'.repeat(40), circleVersion: '1.7.0', model: { kind: 'scripted', base_url: 'http://127.0.0.1:1/v1', model: 'unstarted-synthetic', protocol: 'openai', api_key: 'synthetic-only-key' } }));
     h.env.CIRCLE_RUNTIME_CONFIG = `${h.scratch}/runtime.json`;
     await h.stop();
     await h.startServer();

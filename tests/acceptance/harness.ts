@@ -1,3 +1,4 @@
+import {closePoolSockets} from '../fixtures/pool-sockets.ts';
 import assert from 'node:assert/strict';
 import { spawn, execFile, type ChildProcess } from 'node:child_process';
 import {promisify} from 'node:util';
@@ -90,8 +91,10 @@ export class Harness {
   autoHooks=true;
   methodAssetIds=new Map<string,string>();
   approvedMethodAssetId(capabilityPackId='apv-case-execute',scope='scp_lab'){const id=this.methodAssetIds.get(`${scope}/${capabilityPackId}`);assert.ok(id,'The synthetic execution fixture must explicitly select its approved method');return id;}
+  private closing:Promise<void>|undefined;
+  private closeDatabase:()=>Promise<void>;
   constructor(scratch: string, postgres: EmbeddedPostgres, db: pg.Pool, env: NodeJS.ProcessEnv) {
-    this.scratch = scratch; this.postgres = postgres; this.db = db; this.env = env;
+    this.scratch = scratch; this.postgres = postgres; this.db = db; this.env = env;this.closeDatabase=closePoolSockets(db);
   }
   async startServer(): Promise<void> {
     const child = spawn(process.execPath, ['apps/server/src/main.ts'], { cwd: root, env: testChildEnvironment(this.env), stdio: ['ignore', 'pipe', 'pipe'] });
@@ -133,8 +136,14 @@ export class Harness {
     const exited = once(child, 'exit'); child.kill(signal); await exited; this.children.delete(child);
   }
   async close(): Promise<void> {
-    for (const child of this.children) await this.stop(child);
-    await this.db.end(); await this.postgres.stop(); await rm(this.scratch, { recursive: true, force: true });
+    return this.closing??=(async()=>{
+      const failures:unknown[]=[];
+      for(const child of this.children)try{await this.stop(child);}catch(error){failures.push(error);}
+      try{await this.closeDatabase();}catch(error){failures.push(error);}
+      try{await this.postgres.stop();}catch(error){failures.push(error);}
+      try{await rm(this.scratch,{recursive:true,force:true});}catch(error){failures.push(error);}
+      if(failures.length)throw new AggregateError(failures,'Synthetic harness cleanup failed');
+    })();
   }
   async raw(path: string, options: { method?: string; body?: unknown; token?: string; headers?:Record<string,string> } = {}): Promise<{ status: number; body: any }> {
     if(this.url.startsWith('https:')){const ca=this.clientCA??await readFile(this.env.NODE_EXTRA_CA_CERTS!),response=await checkedRequest(`${this.url}${path}`,{ca,headers:{...options.headers,...(options.body===undefined?{}:{'content-type':'application/json'}),...(options.token?{authorization:`Bearer ${options.token}`}:{})},...(options.body===undefined?{}:{body:JSON.stringify(options.body)})});return {status:response.status,body:await response.json()};}

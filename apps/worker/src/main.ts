@@ -37,7 +37,7 @@ async function request(path: string,body: unknown): Promise<any> {
   return envelope.data;
 }
 const methods=installedWorkerMethods(process.env.CIRCLE_SYNTHETIC_RESOURCE_DIR);await methods.initialize();
-await request('/v1/workers/register',{capabilities:[FLOW_OPERATION]});
+await request('/v1/workers/register',{capabilities:[FLOW_OPERATION,'assets.execute']});
 console.log(JSON.stringify({ type:'worker-ready',username }));
 let runtimeJob:Promise<void>|undefined;
 const professionalJobs=new Map<string,Promise<void>>();

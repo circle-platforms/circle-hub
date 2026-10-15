@@ -19,11 +19,11 @@ Hub 名称与配置已统一，下文运行示例使用新名。旧阶段记录�
 | 进程、索引与通知 | `CIRCLE_HUB_POLL_MS`、`CIRCLE_HUB_INDEX_POLL_MS`、`CIRCLE_HUB_MANAGED_WORKERS`、`CIRCLE_HUB_WORKER_OFFLINE_MS`、`CIRCLE_HUB_NOTIFICATION_STREAMS`、`CIRCLE_HUB_OUTBOX_REPLAY_EVENTS`、`CIRCLE_HUB_OUTBOX_MAX_ROWS`、`CIRCLE_HUB_OUTBOX_MAX_AGE_MS` | 作用与取值范围沿原配置 |
 | 冻结执行实现的配置读取 | 对外使用 `CIRCLE_HUB_EXECUTION_GATEWAYS` | 集中配置层把选定的新值提供给冻结 controller 的 `CIRCLE_SERVER_EXECUTION_GATEWAYS` lookup；两键都有时仍以新值为准，空值不回退。保留旧 lookup 避免只为改名更换实现 SHA/版本并要求重批；以后实际执行实现升级时迁掉 |
 | 冻结编译产物的 creator | 原 `circle-server` creator 文本 | creator 参与产物字节与 SHA，本轮原样保留；待编译方法迁入产品包并正式升版时再改，不把改名当作重新编译授权 |
-| Circle 自己的扩展协议 | 扩展 `circle-server`、命令 `/server`、工具 `srv_*` / `circle_server_*` | Hub 启动无界面 Circle 时仍注入 `CIRCLE_SERVER_URL`、`CIRCLE_SERVER_TOKEN`、`CIRCLE_SERVER_USER`、`CIRCLE_SERVER_SCOPE`。它们由 Circle 维护，待 Circle 扩展发布一并迁移；本轮 Hub 改名不单独修改客户端协议 |
+| Circle 自己的扩展协议 | 扩展 `hub`、命令 `/hub`、工具 `hub_*` / `hub_tool_*` | Circle 1.7.0（用户确认 RPC pin `fd8524a`）只接收 `CIRCLE_HUB_URL`、`CIRCLE_HUB_TOKEN`、`CIRCLE_HUB_USER`、`CIRCLE_HUB_SCOPE`；不注入旧名，不保留旧扩展与工具别名 |
 | HTTP、schema 与版本绑定 | `/v1/*`、`/mcp`、既有请求/响应字段、持久 schema、数据库迁移字节与冻结实现 | 本轮不因平台改名更换路由、契约、数据库标识或历史迁移 |
 | 历史与实际路径 | 既有 `../circle-server-s1`、`../circle-server-s2` 工作树，旧简报/进度/validation schema 与 provenance | 未改名的目录仍使用真实旧名；foundation/references 与归档中的 circle-server 来源保留原字节 |
 
-配置选择以“新键是否存在”为准：有 `CIRCLE_HUB_<后缀>` 就选它，空字符串也不回退到旧键，随后照常校验该值；两键同时出现时新键优先。只有新键缺失且旧键存在才使用旧值；进程启动发现旧输入键时输出一行弃用提示，只记录变量键名，不记录地址、值或密钥，也不在每次请求重复告警。冻结 controller 的旧 lookup 与 Circle 子进程的旧协议注入按表保留，不能据此声称所有旧标识已消失。`CIRCLE_BIN` / `CIRCLE_COMMIT`、`CIRCLE_RUNTIME_CONFIG`、`CIRCLE_HOME`、`CIRCLE_WORKER_*` 与模块验收的 `CIRCLE_PACKS_*` 本轮不改。
+配置选择以“新键是否存在”为准：有 `CIRCLE_HUB_<后缀>` 就选它，空字符串也不回退到旧键，随后照常校验该值；两键同时出现时新键优先。只有新键缺失且旧键存在才使用旧值；进程启动发现旧输入键时输出一行弃用提示，只记录变量键名，不记录地址、值或密钥，也不在每次请求重复告警。冻结 controller 的旧 lookup 按表保留；Circle 子进程改为独立的 hub 协议，不从 Hub 的弃用输入回退推导客户端兼容。`CIRCLE_BIN` / `CIRCLE_COMMIT`、`CIRCLE_RUNTIME_CONFIG`、`CIRCLE_HOME`、`CIRCLE_WORKER_*` 与模块验收的 `CIRCLE_PACKS_*` 本轮不改。
 
 ## 启动和登录
 
@@ -262,7 +262,7 @@ search 对选定目录做有界递归（PROPFIND Depth:1），默认深度 3、6
 
 `POST /v1/skillpacks` 接收 `{manifest,files:[{path,base64,sha256}],trial:{toolCalls:[{name,argsSha256,ok}],outputs:[{path,sha256}]}}`。manifest 含 id/version/title/owner/tools[]/triggers[]/inputs/outputs/model，trigger 为 manual/schedule/event；owner 仅为声明，认证身份来自 token。使用可选请求头 `X-Scope-Id`；只有一个授权 scope 时可省略，多 scope 必须明确。响应 `{skillPackId,digest,status,check:{undeclaredTools,missingTools},approvalTaskId}`；用户确认额外 approvalTaskId 复用第一阶段审批。missingTools 是声明但当前调用者目录不可用的工具，undeclaredTools 是试跑用到但未声明的工具；提交、批准、运行都重查目录。目录是 `GET /v1/skillpacks`，运行是 `POST /v1/skillpacks/{id}/runs` body `{inputs,idempotencyKey}`，返回 `{taskId}`。提交状态不能代替批准，批准绑定 digest，输入或目标修订变化需重新核对。
 
-Circle 运行边界由用户确认改为正式 CLI RPC；当前固定 Git 提交 `8b2ceb6df620832bfd7925aede93bb35f4a605a2`，同时核对 `--version` 为 1.1.1，禁止 import Circle 源码或改 foundation。开发期 CIRCLE_BIN 在运行时指向独立固定提交的本机构建；不要指向仍在提交的客户端工作树。每次运行独立 CIRCLE_HOME 与 HOME，准备可信 workspace、技能目录和输入；启动 `node <CIRCLE_BIN> --mode rpc --extensions --yolo <workspace>`，发 prompt，读 JSON 事件直到 agent_settled；取消先 abort/关 stdin，超时 kill，记录本地停止与远端未知的区别。运行 token 短期且只经环境注入，不落盘；模型使用脚本桩，付费模型仍需授权。详见 Circle 仓库 `docs/rpc.md` 与 `docs/cli.md#json-events`。
+Circle 运行边界由用户确认改为正式 CLI RPC；当前固定 Git 提交 `fd8524afdfa9f203ed67e69e720f97ee3a367ab2`，同时核对 `--version` 为 1.7.0，禁止 import Circle 源码或改 foundation。开发期 CIRCLE_BIN 在运行时指向独立固定提交的本机构建；不要指向仍在提交的客户端工作树。每次运行独立 CIRCLE_HOME 与 HOME，准备可信 workspace、技能目录和输入；启动 `node <CIRCLE_BIN> --mode rpc --extensions --yolo <workspace>`，发 prompt，读 JSON 事件直到 agent_settled；取消先 abort/关 stdin，超时 kill，记录本地停止与远端未知的区别。运行 token 短期且只经环境注入，不落盘；模型使用脚本桩，付费模型仍需授权。详见 Circle 仓库 `docs/rpc.md` 与 `docs/cli.md#json-events`。
 
 提交已增加 201 / candidate 及 manifest / ownerPrincipalId / scopeId / assetId / assetVersion 展示字段；文件冻结、digest、试跑声明与重复提交规则见[技能包与模块的登记契约](design/product-line-pack.md#技能包与模块的登记契约)。
 
@@ -331,7 +331,7 @@ POST /v1/credentials/oauth/client-credentials 使用同形请求；clientCredent
 
 ```json
 {"circleBin":"<本机构建的 dist/cli.js>",
- "circleCommit":"8b2ceb6df620832bfd7925aede93bb35f4a605a2","circleVersion":"1.1.1",
+ "circleCommit":"fd8524afdfa9f203ed67e69e720f97ee3a367ab2","circleVersion":"1.7.0",
  "model":{"kind":"scripted","base_url":"<本机脚本模型 /v1>","model":"scripted-fixture","protocol":"openai","api_key":"<运行时值>"}}
 ```
 
@@ -659,3 +659,5 @@ node --test --test-concurrency=1 tests/acceptance/c-cexg-protocol.test.ts
 C 驱动升级不声明新旧 flow.invoke worker 混跑安全。启用含逐工具注入 / 阶段回执 / prepare 的资源新修订前，必须先排空并退出全部旧 flow worker，确认在途任务已结束或已留下独立核对所需事实，再启动新 worker，最后激活新 policy；仅替换 server 不够。drain 不能把已派发 unknown 当作停止，也不得补发远端写。本轮没有新增 worker feature 协商接口，维护者的 C 后半滚动替换须遵守这个顺序。
 
 C 实施接口仍沿用既有模块 / 资源 / 任务 / worker 路径；receiptPolicy 的逐工具参数、分阶段回执与 prepare，以及模块的 controlled-history 协议见 [执行流设计 C 实施附录](design/execution-flow-packs.md)。开启严格合成协议验收：`CIRCLE_PACKS_CATALOG=../circle-packs/modules.json CIRCLE_PACKS_REF=b02122a CIRCLE_HUB_CEXG_PROTOCOL_ACCEPTANCE=1 node --test tests/acceptance/c-cexg-protocol.test.ts`；该固定原件已覆盖同租约 prepare / 一次 submit / 独立终态 / 结果解析，不能替代现网冒烟。
+
+Circle RPC 升级边界（2026-10-15）：用户确认只验收 `fd8524a` 的 hub 协议；Circle 1.7.0 发行候选 main `96702fa` 仅另有两份测试格式化差异，不能把它冒称为本次固定 RPC 提交。新 `assets.execute` 操作冻结同名 worker capability，只有显式宣告该能力的 worker 可认领，preflight 和回报再次核验；旧 worker 不因仍在线而自动获得新协议执行权。

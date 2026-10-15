@@ -8,7 +8,7 @@ import {sha256} from '../../packages/contracts/src/index.ts';
 
 async function prepare(t:any,real=false){
   const h=await setup(t),model=await scriptModel(t);model.state.hold=true;
-  const runtime={circleBin:real?process.env.CIRCLE_BIN!:'synthetic-not-run',circleCommit:real?process.env.CIRCLE_COMMIT!:'a'.repeat(40),circleVersion:'1.1.1',model:{kind:'scripted',base_url:model.url,model:'scripted-fixture',protocol:'openai',api_key:model.key}};
+  const runtime={circleBin:real?process.env.CIRCLE_BIN!:'synthetic-not-run',circleCommit:real?process.env.CIRCLE_COMMIT!:'a'.repeat(40),circleVersion:'1.7.0',model:{kind:'scripted',base_url:model.url,model:'scripted-fixture',protocol:'openai',api_key:model.key}};
   await writeFile(`${h.scratch}/runtime.json`,JSON.stringify(runtime));h.env.CIRCLE_RUNTIME_CONFIG=`${h.scratch}/runtime.json`;await h.stop();await h.startServer();
   const bytes=Buffer.from('---\nname: revision-fixture\ndescription: Synthetic revision binding\n---\nWait for the scripted model.'),response=await h.raw('/v1/skillpacks',{token:await h.login(),headers:{'x-scope-id':'scp_lab'},body:{manifest:{id:'revision-fixture',version:'1.0.0',title:'Revision binding',owner:'fixture',tools:[],triggers:['manual'],inputs:{},outputs:['out.txt'],model:'scripted'},files:[{path:'SKILL.md',base64:bytes.toString('base64'),sha256:sha256(bytes)}],trial:{toolCalls:[],outputs:[{path:'out.txt',sha256:sha256('fixture')}]}}});assert.equal(response.status,201,JSON.stringify(response.body));
   const pack=response.body.data;await h.request(`/v1/assets/${pack.assetId}/lifecycle`,{version:pack.assetVersion,sha256:(await h.request(`/v1/assets/${pack.assetId}`)).sha256,state:'approved'},'bob');
@@ -17,7 +17,7 @@ async function prepare(t:any,real=false){
   const draft=(version:string,configuration=profile.configuration)=>h.request('/v1/assets',{assetId:profile.asset_id,scopeId:'scp_lab',kind:'runtime-profile',name:profile.name,version,declaration:profile.declaration,configuration,readers:['*']},'admin');
   return {h,model,profile,run,draft};
 }
-async function claim(h:Harness){await h.request('/v1/workers/register',{},'lab-east-01');const operation=await h.request('/v1/workers/claim',{},'lab-east-01');return {operation,check:()=>h.request(`/v1/workers/operations/${operation.operationId}/preflight`,{fencingToken:operation.fencingToken},'lab-east-01')};}
+async function claim(h:Harness){await h.request('/v1/workers/register',{capabilities:['assets.execute']},'lab-east-01');const operation=await h.request('/v1/workers/claim',{},'lab-east-01');return {operation,check:()=>h.request(`/v1/workers/operations/${operation.operationId}/preflight`,{fencingToken:operation.fencingToken},'lab-east-01')};}
 
 test('Runtime revisions: draft registration leaves accepted and new runs on the latest approved revision and later approval binds only new runs',async t=>{
   const {h,profile,run,draft}=await prepare(t),first=await run('before-draft'),leased=await claim(h);await leased.check();

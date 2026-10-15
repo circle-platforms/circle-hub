@@ -60,28 +60,28 @@ test('Act R2.5: existing approvals bind the package digest prohibit self approva
 
 sandboxTest('Act R2.5: real pinned Circle RPC loads the skill discovers scoped tools and delivers SHA checked artifacts',runtimeTest,async t=>{
   const stub=await readonlySources(t),model=await scriptModel(t),h=await setup(t);
-  await prepare(h,stub.origin,{circleBin,circleCommit,circleVersion:'1.1.1',model:{kind:'scripted',base_url:model.url,model:'scripted-fixture',protocol:'openai',api_key:model.key}});
+  await prepare(h,stub.origin,{circleBin,circleCommit,circleVersion:'1.7.0',model:{kind:'scripted',base_url:model.url,model:'scripted-fixture',protocol:'openai',api_key:model.key}});
   const pack=await submit(h);await approve(h,pack);await h.startWorker();
   const inputs={text:'Synthetic source'},accepted=await h.request(`/v1/skillpacks/${pack.skillPackId}/runs`,{inputs,idempotencyKey:'rpc-run-key'}),same=await h.request(`/v1/skillpacks/${pack.skillPackId}/runs`,{inputs,idempotencyKey:'rpc-run-key'});assert.equal(same.taskId,accepted.taskId);
   const result=await until(async()=>{const result=await h.request(`/v1/tasks/${accepted.taskId}/result`);return ['delivered','failed','unknown'].includes(result.phase)?result:false;},15_000).catch(async error=>{t.diagnostic(JSON.stringify({phase:(await h.status(accepted.taskId)).phase,modelRequests:model.requests.length,operations:(await h.db.query('SELECT name,status FROM operations')).rows,events:(await h.request(`/v1/tasks/${accepted.taskId}/events?after=0`)).events.map((e:any)=>({kind:e.kind,event:e.payload.event?.type,tool:e.payload.event?.name,status:e.payload.event?.status,message:e.payload.event?.message}))}));throw error;});assert.equal(result.status,'succeeded',JSON.stringify(result));assert.equal(result.artifacts.length,1);
-  assert.equal(result.runtime.circleCommit,circleCommit);assert.equal(result.runtime.circleVersion,'1.1.1');assert.equal(result.runtime.agentSettled,true);
+  assert.equal(result.runtime.circleCommit,circleCommit);assert.equal(result.runtime.circleVersion,'1.7.0');assert.equal(result.runtime.agentSettled,true);
   const download=await fetch(`${h.url}${result.artifacts[0].downloadPath}`,{headers:{authorization:`Bearer ${await h.login()}`}});const artifact=Buffer.from(await download.arrayBuffer());assert.equal(sha256(artifact),result.artifacts[0].sha256);assert.deepEqual(JSON.parse(artifact.toString()),{synthetic:true,source:'scripted-rpc'});
   const hiddenArtifact=await fetch(`${h.url}${result.artifacts[0].downloadPath}`,{headers:{authorization:`Bearer ${await h.login('bob')}`}});assert.equal(hiddenArtifact.status,403);
   const events=await h.request(`/v1/tasks/${accepted.taskId}/events?after=0`);assert.ok(events.events.some((event:any)=>event.kind==='runtime.agent_settled'));const loaded=events.events.find((event:any)=>event.kind==='runtime.tool_result'&&event.payload.event.name==='skill');assert.ok(loaded);assert.equal(loaded.payload.event.output,undefined);const original=await fetch(h.url+loaded.content.downloadPath,{headers:{authorization:'Bearer '+await h.login()}}),originalBytes=Buffer.from(await original.arrayBuffer());assert.equal(sha256(originalBytes),loaded.content.sha256);assert.ok(JSON.stringify(JSON.parse(originalBytes.toString()).event.output).includes('SYNTHETIC_SKILL_LOADED'));
-  assert.ok(model.requests[0].tools.some((tool:any)=>tool.function.name==='srv_docs_search'));assert.ok(!model.requests[0].tools.some((tool:any)=>tool.function.name==='srv_docs_get'));
+  assert.ok(model.requests[0].tools.some((tool:any)=>tool.function.name==='hub_tool_docs_search'));assert.ok(!model.requests[0].tools.some((tool:any)=>tool.function.name==='hub_tool_docs_get'));
   await h.reject(`/v1/skillpacks/${pack.skillPackId}/runs`,{inputs:{changed:true},idempotencyKey:'rpc-run-key'},'IDEMPOTENCY_MISMATCH');
   await h.reject(`/v1/tasks/${accepted.taskId}/result`,undefined,'FORBIDDEN_SCOPE','bob');
 });
 
 test('Act R2.5: a mismatched Circle Git commit fails before any model request',runtimeTest,async t=>{
-  const stub=await readonlySources(t),model=await scriptModel(t),h=await setup(t);await prepare(h,stub.origin,{circleBin,circleCommit:'0'.repeat(40),circleVersion:'1.1.1',model:{kind:'scripted',base_url:model.url,model:'scripted-fixture',protocol:'openai',api_key:model.key}});
+  const stub=await readonlySources(t),model=await scriptModel(t),h=await setup(t);await prepare(h,stub.origin,{circleBin,circleCommit:'0'.repeat(40),circleVersion:'1.7.0',model:{kind:'scripted',base_url:model.url,model:'scripted-fixture',protocol:'openai',api_key:model.key}});
   const pack=await submit(h);await approve(h,pack);await h.startWorker();const run=await h.request(`/v1/skillpacks/${pack.skillPackId}/runs`,{inputs:{},idempotencyKey:'bad-runtime-commit'});await h.phase(run.taskId,'failed');
   assert.equal((await h.request(`/v1/tasks/${run.taskId}/result`)).error.code,'RUNTIME_VERSION_MISMATCH');assert.equal(model.requests.length,0);
 });
 
 sandboxTest('Act R2.5: run delegation stays off disk and cancellation observes local exit while freezing an unknown remote outcome',runtimeTest,async t=>{
   const stub=await readonlySources(t),model=await scriptModel(t),h=await setup(t);model.state.hold=true;
-  await prepare(h,stub.origin,{circleBin,circleCommit,circleVersion:'1.1.1',model:{kind:'scripted',base_url:model.url,model:'scripted-fixture',protocol:'openai',api_key:model.key}});
+  await prepare(h,stub.origin,{circleBin,circleCommit,circleVersion:'1.7.0',model:{kind:'scripted',base_url:model.url,model:'scripted-fixture',protocol:'openai',api_key:model.key}});
   const pack=await submit(h);await approve(h,pack);await h.startWorker();const run=await h.request(`/v1/skillpacks/${pack.skillPackId}/runs`,{inputs:{},idempotencyKey:'cancel-runtime'});
   await until(async()=>model.requests.length>0);const operation=(await h.db.query("SELECT * FROM operations WHERE task_id=$1 AND name='assets.execute'",[run.taskId])).rows[0],workerToken=await h.login('lab-east-01');
   const checked=await h.raw(`/v1/workers/operations/${operation.operation_id}/preflight`,{token:workerToken,body:{fencingToken:Number(operation.fencing_token)}});assert.equal(checked.status,200);
@@ -99,11 +99,26 @@ sandboxTest('Act R2.5: run delegation stays off disk and cancellation observes l
 
 sandboxTest('Run sessions: slow pinned RPC keeps its short token alive through fenced preflight and never upgrades it to a login session',runtimeTest,async t=>{
   const stub=await readonlySources(t),model=await scriptModel(t),h=await setup(t,{CIRCLE_HUB_RUN_TOKEN_TTL_MS:'1000'});model.state.delayMs=1600;
-  await prepare(h,stub.origin,{circleBin,circleCommit,circleVersion:'1.1.1',model:{kind:'scripted',base_url:model.url,model:'scripted-fixture',protocol:'openai',api_key:model.key}});
+  await prepare(h,stub.origin,{circleBin,circleCommit,circleVersion:'1.7.0',model:{kind:'scripted',base_url:model.url,model:'scripted-fixture',protocol:'openai',api_key:model.key}});
   const pack=await submit(h);await approve(h,pack);await h.startWorker();const run=await h.request(`/v1/skillpacks/${pack.skillPackId}/runs`,{inputs:{},idempotencyKey:'slow-renewing-runtime'});await until(async()=>model.requests.length>0);
   const operation=(await h.db.query("SELECT * FROM operations WHERE task_id=$1 AND name='assets.execute'",[run.taskId])).rows[0],workerToken=await h.login('lab-east-01'),checked=await h.raw(`/v1/workers/operations/${operation.operation_id}/preflight`,{token:workerToken,body:{fencingToken:Number(operation.fencing_token)}}),secret=await privateRequest(checked.body.data.authorization.privateSocketPath,{authorization:`Bearer ${workerToken}`,operationId:operation.operation_id,fencingToken:Number(operation.fencing_token)});
   const upgrade=await h.raw('/v1/auth/refresh',{token:secret.serverToken,body:{}});assert.equal(upgrade.status,403);assert.equal(upgrade.body.error.code,'FORBIDDEN_ACTION');
   await new Promise(resolve=>setTimeout(resolve,1300));assert.equal((await h.raw('/v1/tools',{token:secret.serverToken})).status,200,'The token survives past its initial one-second expiry while its fenced worker remains live');
   const row=(await h.db.query('SELECT expires_at,constraints FROM auth_tokens WHERE digest=$1',[sha256(secret.serverToken)])).rows[0];assert.equal(row.constraints.operationId,operation.operation_id);assert.equal(row.constraints.fencingToken,Number(operation.fencing_token));assert.ok(row.expires_at<=operation.deadline_at);
   const result=await until(async()=>{const result=await h.request(`/v1/tasks/${run.taskId}/result`);assert.notEqual(result.phase,'failed',JSON.stringify(result));return result.phase==='delivered'?result:false;},15_000);assert.equal(result.status,'succeeded');assert.equal((await h.raw('/v1/tools',{token:secret.serverToken})).status,401);
+});
+
+test('Hub RPC operations require an advertised worker capability at claim and again at preflight',async t=>{
+  const stub=await readonlySources(t),model=await scriptModel(t),h=await setup(t);await prepare(h,stub.origin,{circleBin:'synthetic-not-run',circleCommit:'a'.repeat(40),circleVersion:'1.7.0',model:{kind:'scripted',base_url:model.url,model:'scripted-fixture',protocol:'openai',api_key:model.key}});
+  const pack=await submit(h);await approve(h,pack);
+  const run=await h.request(`/v1/skillpacks/${pack.skillPackId}/runs`,{inputs:{},idempotencyKey:'hub-capability'});
+  await h.request('/v1/workers/register',{capabilities:['flow.invoke']},'lab-east-01');
+  assert.equal(await h.request('/v1/workers/claim',{},'lab-east-01'),null);
+  await h.request('/v1/workers/register',{capabilities:['assets.execute']},'lab-east-01');
+  const work=await h.request('/v1/workers/claim',{},'lab-east-01');assert.equal(work.taskId,run.taskId);
+  assert.equal((await h.db.query('SELECT required_worker_capability FROM operations WHERE operation_id=$1',[work.operationId])).rows[0].required_worker_capability,'assets.execute');
+  await h.request('/v1/workers/register',{capabilities:[]},'lab-east-01');
+  await h.reject(`/v1/workers/operations/${work.operationId}/preflight`,{fencingToken:work.fencingToken},'FORBIDDEN_ACTION','lab-east-01');
+  await h.request('/v1/workers/register',{capabilities:['assets.execute']},'lab-east-01');
+  const checked=await h.request(`/v1/workers/operations/${work.operationId}/preflight`,{fencingToken:work.fencingToken},'lab-east-01');assert.equal(checked.authorization.skillPackId,pack.skillPackId);assert.equal(model.requests.length,0);
 });

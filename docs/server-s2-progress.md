@@ -1341,3 +1341,19 @@ fail() 对帧构造、归档、预算等实际 Hub ApiError 在原已投影 deta
 首个仓库发行按 CONTRIBUTING 设为 0.1.0：package 与 lockfile 同步，CHANGELOG 保留空 Unreleased 并落 2026-10-15 版本段，中英兼容矩阵分清发行、现场观察和既有固定验收输入。没有更改 schema、固定 Circle RPC 提交、foundation 或 references。发布门禁结果在执行后记录。
 
 1b4a6dc 的远端 Reference integrity、pages、Hub checks 均已成功；Hub checks run 38670996421。维护者随后确认 D 阶段可直接实施，但本次 0.1.0 仍先冻结两条路径并存状态，退役另作为下一版本。扩展标识 hub 与 /hub 的无旧名兼容改名也已另行授权，固定 RPC 验收提交不随发行变化。
+
+## 128：首版验证日志与数据库关闭边界
+
+8667008 远端三项 CI 通过；首次本地完整电池为 contracts 20/20、methods 294/294、acceptance 434 pass / 1 fail / 9 skip、references 7/7。旧脚本只留汇总，未保留失败项名，不追认为已知原因。独立 R3 复跑 3/3，其中冻结 APV 1.4.0 的包内 81/81。随后保留完整 TAP 的同候选复跑为 432 pass / 3 fail / 9 skip：两叶报 PostgreSQL administrator termination，另一累计历史叶在 180 秒时仍 running，已成功 299 步。
+
+pg Pool.end 的完成不等于所有 client end；测试 harness 只等前者就停止其临时数据库。新增公开 connect/end 事件的 socket 关闭屏障、有限等待与幂等清理，保留正常 pool error 的可见性，不屏蔽数据库错误。确定性关闭次序回归在旧候选失败、新实现通过；两条实际失败用例与整套的复核另列后续结果。仓库外电池脚本同时严格透传流水线退出码并保存各套件原始日志，合成 exit 17 的负例确认不会继续执行或返回假绿。
+
+## 129：累计历史验收的等待预算
+
+完整 TAP 复跑中的累计历史叶在 180 秒等待结束时尚为 running，299 步成功、2 步 accepted、1 步 running。该用例验证超过 256 条的归档、旧引用授权和逐字节 SHA，不是延迟基准。将验收轮询等待设为有限 480 秒、整叶上限 510 秒；不改生产运行预算、帧上限、成功条件或原件断言。此前超时仍记失败，新等待下的实际重跑结果另行记录，不以调大等待本身当通过。
+
+## 130：维护者确认 Circle 1.7.0 的 hub RPC 协议
+
+维护者明确确认 fd8524a 为新 RPC 验收 pin，只验收 hub 协议。独立冻结并构建该提交，运行时设置启用 hub 扩展，仅注入 CIRCLE_HUB_URL / TOKEN / USER / SCOPE；脚本模型与断言使用 hub_tool_*，运行版本设为 1.7.0。Circle 发行候选 main 96702fa 只有另外两份测试格式化差异，仍与本次 RPC pin 分开记录。foundation 与 references 原字节未改。
+
+首轮真实固定 Circle RPC 为 6/6，无 skip，包含技能加载、范围化工具、产物 SHA、错误提交零模型请求、取消与短 token 续期。新 assets.execute 冻结同名 worker 能力，认领过滤无能力 worker，preflight 与回报沿现有能力核验链再次检查；能力撤销与恢复的临时 PostgreSQL 回归通过，未发模型请求。旧手动 worker 夹具同步显式声明能力。完整首版候选验证尚待执行，以上不替代整套门禁。

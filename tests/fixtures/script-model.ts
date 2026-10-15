@@ -7,7 +7,7 @@ export async function scriptModel(t:TestContext){
   const requests:any[]=[],key=randomBytes(20).toString('hex');
   const state:{hold:boolean;delayMs:number;sequence:{name:string;args:Record<string,unknown>}[]}={hold:false,delayMs:0,sequence:[
     {name:'skill',args:{name:'rpc-fixture'}},
-    {name:'srv_docs_search',args:{query:'service'}},
+    {name:'hub_tool_docs_search',args:{query:'service'}},
     {name:'write_file',args:{file_path:'result.json',content:'{"synthetic":true,"source":"scripted-rpc"}'}},
   ]};
   const server=createServer(async(req,res)=>{
