@@ -459,7 +459,11 @@ D 成功回报先按 SHA 冻结原件，再做阶段校验；不匹配原件仍�
 
 非终止动作批次还须预留一个后续 transition 的持久步骤和一代转换容量，包括空批次及同 key 重放；它不能先派发写，再因没有容量取得最终解释而必然失败。当前已领取的 transition 已计入现有步骤，回报前 generation 为已完成转换计数：254 可继续，255 只能发单独的 delivery.propose / outcome.error 终止批次。终止批次不新增动作行，可以使用恰满 1024 步的末次转换；此受理闸不取消已经派发的写，也不改已证终态或 unknown。
 
-模块只有显式声明 `historyMode:"controlled"` 才能使用超窗历史。可选 observationWindow / expectedOccurrenceArchive 为 `{total,returned,complete,archive?:{slot,reference}}`；全集由 C 以 SHA 留作 B 制品，并经真实 `flow-history` / `flow-occurrences` 受控槽送给需要它的 Tool，计入原有 8 MiB 总量。内联最多 256，窗口保留意图、unknown、已消费授权与活动步骤；无 worker 回报的活动记录标明 hub-step-ledger，不伪称 provider 结果。关键记录自身超过 256 则明确失败，1024 不表示可内联任意数量的写历史。未声明窗口协议的旧模块超窗也明确拒绝。
+内联观察窗口同时按条数和整帧 canonical JSON 的 UTF-8 字节选取。先保留意图、unknown、已消费授权与活动步骤，再按最新优先加入普通观察，直到再加入一条会超过 256 条或原有 `metadataBytes=512 KiB`。预算包含 binding、currentInput、state、controlledBytes 引用、expectedOccurrences、窗口 / 归档元数据及已选观察；受控字节正文仍走单独预算，不计作内联元数据。关键记录与必需帧自身超预算即明确 `RESULT_TOO_LARGE`，不等到 F 解析才报 `BODY_TOO_LARGE`。无 worker 回报的活动记录标明 hub-step-ledger，不伪称 provider 结果；1024 步并不保证任意写历史都能内联。
+
+模块只有显式声明 `historyMode:"controlled"` 才能使用超窗历史。可选 observationWindow / expectedOccurrenceArchive 为 `{total,returned,complete,archive?:{slot,reference}}`；全集由 C 以 SHA 留作 B 制品，并经真实 `hub.history.observations.<sha>` / `flow-history` 与 `flow-occurrences` 受控槽送给需要它的 Tool，计入原有 8 MiB 总量。条数或字节任一导致窗口不完整，都走同一归档协议；未声明的模块以 `RESULT_TOO_LARGE` 和 `Approved flow does not declare controlled history support` 明确拒绝。帧构造、历史归档和预算等 Hub ApiError 的失败详情保留有界 `cause`（code / message / details）；无动作上下文不编造 stepId，既有动作拒绝详情形状保持不变。
+
+本次维护者反馈的真实批量有 21 例、216 条设备命令、21 条主机命令与 239 个核验钩子；beforeDispatch、case_submit、床上执行、case_results 和 parse-results 均成功后，下一次 transition 因累计帧过大失败。观察共 253 条，未到 256 条上限；其中 submit 回执约 148 KB、parse-results 约 124 KB、workbook 约 72 KB、tree 约 36 KB。单独条数门未保护 512 KiB 整帧预算，这些数字是复现与修复依据，不是放宽 F 常量的依据；该轮失败不记作通用流程已交付。
 
 全集原件仍逐项重核当前 B 可见性、SHA 与大小；受控槽同名只有相同 role / reference 才可复用。轻预检保留输入修订双摘要验证、冻结请求引用与来源授权。交付引用查询本任务 / 输入修订的全部观察和 C 生成的历史 B 绑定，再核 B 权限；不以退出内联窗口为由拒合法旧引用，也不接受跨修订 / 隐藏对象。
 

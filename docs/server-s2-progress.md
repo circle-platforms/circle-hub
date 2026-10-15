@@ -1310,7 +1310,7 @@ transition 的动作被 C 拒绝时，原 generic failure.code / message 保留�
 
 selectFlowHistory 先保意图、unknown、已消费授权和活动记录，再按最新优先纳入普通观察。候选帧按 F 同样的 canonical JSON / UTF-8 算法计量完整元数据，包含原件与 frozen 引用、expectedOccurrences、真实归档引用及窗口信息，排除受控字节正文；真实 B 归档生成后重新选窗。关键帧超预算明确 RESULT_TOO_LARGE；未声明 controlled 的不完整窗口沿用明确拒绝。全部历史仍先核当前 B 权限，槽身份 / 数量与解码总量边界保留，不扩大 F 常量。
 
-修后该纯文件实际 **10/10，无 skip**，差异与独立只读复核通过；端到端归档消费及失败 cause 的合并验收留本轮后续项。仅本地签署，不跑全套、不 push / 部署，不触 7420、网关、worker 或独立包；原生 1.1.1 未改。
+修后该纯文件实际 **10/10，无 skip**，差异与独立只读复核通过；端到端归档消费及失败 cause 的合并验收留本轮后续项。仅本地签署，不跑全套、不 push / 部署，不触 7420、真实网关、既有 worker 或独立包；原生 1.1.1 未改。
 
 ## 124：非动作 Hub 失败保留有界 cause
 
@@ -1320,8 +1320,14 @@ fail() 对帧构造、归档、预算等实际 Hub ApiError 在原已投影 deta
 
 ## 125：少于 256 条的大观察历史端到端验收
 
-两个新验收均经既有模块安装、独立批准、临时 PostgreSQL 和真实合成 worker / Tool 宿主，规划 250 个独立 Tool 观察，每条含 2048 字节文本；单件合规，累计真实观察 canonical JSON 超过 512 KiB。没有旁路写入观察、直接调用产品函数或以假回执代替历史消费。
+两个新验收均经既有模块安装、独立批准、临时 PostgreSQL 和真实合成 worker / Tool 宿主，规划 250 个独立 Tool 观察，每条含 2048 字节文本；单件合规，成功叶累计真实观察 canonical JSON 超过 512 KiB。没有旁路写入观察、直接调用产品函数或以假回执代替历史消费。
 
 声明 controlled 的模块最终 delivered，250 条观察全部成功；实际 Tool 动作以 flow-history byteSlot 读取完整 B 归档，核 schema、逐项序号 / 内容、原件 SHA 与长度、首尾及旧引用，最后交付。未声明模块在同类超额帧以 RESULT_TOO_LARGE 和既有明确消息失败，details.cause 保留该登记码与原因，无伪造 stepId / kind。两叶均断零 provider RPC / submit / 意图 / 资源冻结。
 
 旧实现两叶 **0/2**（同为 BODY_TOO_LARGE / 空 details）→修后实际 **2/2，无 skip**，分别约 136 秒 / 116 秒；合成成功叶 254 个持久步骤。typecheck 与差异检查通过。只跑这份针对性集成文件，PG 串行收尾，不跑全套、不 push / 部署，不访问 7420、真实网关 / 床或独立包；测试合成 worker 不属于既有运行栈。
+
+## 126：C5 按字节选窗的中英设计与实测依据
+
+中英 C5 同步整帧字节计量、关键行保留、普通观察最新优先、真实受控归档及有界 Hub cause，F 常量不变。记录维护者反馈的本轮真实床事实：21 例、216 条设备命令、21 条主机命令、239 个核验钩子；253 条观察中 submit 回执约 148 KB、parse-results 约 124 KB、workbook 约 72 KB、tree 约 36 KB，成功执行及解析后下一次 transition 累计帧超限。该轮失败不记为 delivered，也不覆盖第 122 节此前已确认的成功批次；本地两叶只证明合成流程修复，不宣称真实 21 例已重跑。
+
+多 agent 分工隔离实现与验收，并交叉只读复核；四项各一笔本地签署，针对性纯 **21/21**、集成 **2/2**，无 skip，typecheck / 差异 / 文档检查通过。原生 1.1.1、F、产品包、Circle、归档与 harness-adapters 均未改，不跑全套、不 push / 部署、不触 7420；真实批次与 packs 1.4.0 的合并复跑由维护者协调。
