@@ -4,19 +4,19 @@
 
 三个仓库各自版本化：circle（harness）、circle-hub（平台）、circle-packs（包）。谁依赖谁、以什么为准，都写在这里；改动任何一行都是一次有意识的升级，不是顺手为之。
 
-## 现状（2026-10-14）
+## 现状（2026-10-15）
 
 | 部件 | 版本 / 提交 | 以什么为准 | 说明 |
 |---|---|---|---|
-| circle-hub `main` | 设计文档为准；代码从 `server-s2` 分支经复核后合入 | `docs/design` | 7420 验证栈运行的是 `server-s2` 的复核提交（当前 8e212a6，数据库迁移 28），不是 `main` 的代码 |
+| circle-hub | **0.1.0**（首个仓库发行） | `v0.1.0`、`docs/design` | 验证栈运行已复核的 main 提交 1b4a6dc；发行元数据不代表生产可用 |
 | `foundation/circle` | Circle **1.0.4** 源基线，冻结 | `references/README.md` 的来源记录 | 只是源码参考，不装、不跑它的安装器；不是 hub 的运行依赖 |
 | 验收用的 Circle 运行时 | Circle 主线提交 **8b2ceb6**（用户确认） | `CIRCLE_BIN` / `CIRCLE_COMMIT`，严格 Git 门禁 | **这是真实的测试依赖**：验收 RPC 用例只接受这个提交，换提交要用户确认并更新门禁 |
 | Circle 最新公开发行（截至 2026-10-14） | 1.4.1（`v1.4.1`） | circle 仓库的 tag 与 Release | 仅记录发行状态，不表示 hub 已针对该版验收 |
 | hub 的 Circle 侧扩展目标基线 | 1.2.1（`v1.2.1`） | 原定扩展目标版本 | 保持原目标，不随 Circle 新发行自动升级；不等同于上面的固定 RPC 验收提交 |
-| circle 的 hub 扩展 | 分支 `server-tools`（4076953，未推送），建立在 Circle 1.1.1 检出上 | hub 的 `docs/client-api-handoff.md` | Circle 维护的扩展名 `circle-server`、`/server` 命令与子进程协议变量本轮不改；Hub CLI 与部署配置使用新名 |
+| circle 的 hub 扩展 | 分支 `server-tools`（fb764e8，已推送），建立在 Circle 1.1.1 检出上 | hub 的 `docs/client-api-handoff.md` | Circle 维护的扩展名 `circle-server`、`/server` 命令与子进程协议变量本轮不改；Hub CLI 与部署配置使用新名 |
 | circle-packs `main` | 见其 CHANGELOG | hub 的包装载器与 schema | 产品线包测试使用 hub 提交 `dc93c69826f73f16d2f20f7520ba4c6663d014ac` 的锁定依赖集；circle-packs 的 `.github/workflows/checks.yml` 固定此提交，不跟随 main 漂移；仅为测试依赖，不声明生产兼容 |
 | hub 验收用的 circle-packs 原件 | **ba06eeda83d27031fc1a452e43b24300d654da9e**，APV **1.2.2** | 该提交的 `modules.json` 与原字节 SHA | 产品线包 31/31；四技能模块 57/57 + catalog 工具 4/4 = 61/61，均无 skip；TAP 闸门读实际总数，不写死数量；不表示部署或自动批准 |
-| 执行网关 cexg | 0.3.0（静态密钥） | compile-excel-server 仓库 | hub 的 worker 需要 §7 的 static-secret 凭据模式才能调用它 |
+| 执行网关 cexg | 0.3.1（静态密钥） | compile-excel-server 仓库 | hub 的 worker 需要 §7 的 static-secret 凭据模式才能调用它 |
 
 ## 进程隔离与验收平台
 
@@ -58,3 +58,5 @@
 - 2026-10-14：将 Circle 最新公开发行 1.4.1、扩展目标基线 1.2.1 与固定 RPC 验收提交分列；原验收提交与冻结参考均未升级。circle-packs CI 的 hub 依赖集固定为 dc93c69826f73f16d2f20f7520ba4c6663d014ac；本地合成测试结果另行记录，不作为真实产品或生产验收。
 - 2026-10-14：Hub CLI 改为 `circle-hub`，部署变量改为 `CIRCLE_HUB_*`；旧 `CIRCLE_SERVER_*` 仅在新键不存在时作弃用回退，新键空值也不回退。Circle 的扩展标识、命令与注入协议保留，路由/schema、旧工作树路径与历史来源不改；Circle 与独立包的版本升级另行确认。
 - 2026-10-14：经维护者确认，包装载验收从 224daa6（APV 1.2.1）升级到 ba06eed（APV 1.2.2）；按冻结清单核原字节并运行，产品线 31/31、四技能 57/57、catalog 工具 4/4。该提交 README/CI 合并入口的 61 项是后两类之和，三类分别记录。
+
+- 2026-10-15：准备 Hub 首个仓库发行 0.1.0。验证栈 1b4a6dc 使用 packs d91b23d 的 products/apv 1.4.0，既有固定验收输入另列，不混用。批量流程交付成功，设备结果 13 pass / 8 fail，不表示设备验收全绿；原生路径退役仍待确认。
