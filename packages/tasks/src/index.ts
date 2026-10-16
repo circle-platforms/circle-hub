@@ -8,10 +8,9 @@ import {taskQueryPlan} from './task-query.ts';
 import {outboxWritten,replayWindow} from './outbox-retention.ts';
 import {projectedEvent} from './notification-payload.ts';
 
-const RETIRED_CAPABILITY_PACKS=new Set(['apv-case-execute','lbx-healthcheck']);
-export function assertInstalledCapability(capabilities:{has(id:string):boolean},id?:string):void{
+export function assertInstalledCapability(capabilities:{has(id:string):boolean},id?:string,retired?:{has(id:string):boolean}):void{
  if(!id)return;
- if(RETIRED_CAPABILITY_PACKS.has(id))throw new ApiError('UNSUPPORTED_VERSION','Capability package is not installed');
+ if(retired?.has(id))throw new ApiError('UNSUPPORTED_VERSION','Capability package is not installed');
  if(!capabilities.has(id))throw new ApiError('TARGET_NOT_FOUND',`Capability package ${id} is not installed. Check GET /v1/packs before uploading a source for it.`,{capabilityPackId:id});
 }
 export function phaseLabel(phase:string):string{
@@ -31,7 +30,7 @@ export function phaseLabel(phase:string):string{
 }
 export function taskFromRow(row: Record<string, any>): Task {
   return { taskId: row.task_id, tenantId: row.tenant_id, scopeId: row.scope_id, principalId: row.principal_id,
-    title: row.title, phase: row.phase, inputRevisionId: row.input_revision_id, input: row.input,
+    title: row.title, phase: row.phase, phaseLabel: phaseLabel(row.phase), inputRevisionId: row.input_revision_id, input: row.input,
     revision: row.revision, flowVersion: row.flow_version,waitingReason:row.waiting_reason??null,assignee:row.assignee_principal_id??null,dueAt:row.due_at?.toISOString()??null,
     ...(row.capability_pack_id ? { capabilityPackId: row.capability_pack_id, packVersion: row.pack_version } : {}) };
 }
@@ -41,6 +40,7 @@ export class Tasks {
   store: Store; auth: Auth; inputTtlMs: number;
   eventLocks:Map<string,EventLock>;
   capabilities=new Map<string,{version:string;flowVersion:string;privateByDefault?:boolean}>(Object.entries(PACK_FLOWS).map(([id,flowVersion])=>[id,{version:'1.0.0',flowVersion,privateByDefault:!['asset-registration','change-set'].includes(id)}]));
+  retiredCapabilityPacks=new Set<string>();
   deliveryValidators=new Map<string,(tx:Transaction,task:Task,result:any)=>Promise<{itemId:string;conclusionId:string}[]>>();
   baseFlows=new Set<string>([FLOW_VERSION]);
   constructor(store: Store, auth: Auth, inputTtlMs = 300_000) { this.store = store; this.auth = auth; this.inputTtlMs = inputTtlMs;let locks=storeEventLocks.get(store);if(!locks){locks=new Map();storeEventLocks.set(store,locks);}this.eventLocks=locks; }
@@ -76,7 +76,7 @@ export class Tasks {
   async submit(ctx: AuthContext, request: SubmitRequest, tx?: Transaction,admissionGrant='tasks.submit'): Promise<Task & { deduplicated: boolean }> {
     const execute = async (client: Transaction) => {
       requireCondition(admissionGrant==='tasks.submit'||admissionGrant==='tools.read'&&request.capabilityPackId==='asset-tool','FORBIDDEN_ACTION','Internal read admission applies only to tool tasks');const policy = await this.auth.check(ctx, admissionGrant, request.scopeId, client);
-      assertInstalledCapability(this.capabilities,request.capabilityPackId);
+      assertInstalledCapability(this.capabilities,request.capabilityPackId,this.retiredCapabilityPacks);
       const capability=request.capabilityPackId?this.capabilities.get(request.capabilityPackId):undefined;
       requireCondition(policy.kind !== 'worker', 'FORBIDDEN_ACTION', 'Workers cannot submit tasks');
       const keys = [policy.tenantId, request.scopeId, policy.principalId, 'submit', request.idempotencyKey];

@@ -350,7 +350,7 @@ const server = createListener(async (request, response) => {
       if(declaredPack!==undefined){
         const raw=Array.isArray(declaredPack)?declaredPack.join(','):declaredPack;
         if(!/^[a-z][a-z0-9-]{0,99}$/.test(raw))throw new ApiError('INVALID_PAYLOAD','x-capability-pack-id must be a package name: a lowercase letter, then up to 99 letters, digits or hyphens. Check GET /v1/packs.');
-        assertInstalledCapability(tasks.capabilities,raw);
+        assertInstalledCapability(tasks.capabilities,raw,tasks.retiredCapabilityPacks);
       }
       let source;
       if (request.headers['content-type']?.split(';')[0] === 'application/octet-stream') {

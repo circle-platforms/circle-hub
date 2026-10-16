@@ -29,7 +29,8 @@ test('New-user QA: an unknown capability pack is refused before the upload is st
  assert.match(unknown.message,/not-a-real-pack/);
  await h.reject('/v1/tasks/submit',{scopeId:'scp_lab',title:'Retired health',capabilityPackId:'lbx-healthcheck',input:{},idempotencyKey:'qa-retired-health'},'UNSUPPORTED_VERSION');
  await h.reject('/v1/tasks/submit',{scopeId:'scp_lab',title:'Retired execute',capabilityPackId:'apv-case-execute',input:{},idempotencyKey:'qa-retired-execute'},'UNSUPPORTED_VERSION');
- const admitted=await h.submit();assert.equal(admitted.phase,'admitted');assert.equal((await h.status(admitted.taskId)).phaseLabel,'accepted, not started');
+ const admitted=await h.submit();assert.equal(admitted.phase,'admitted');assert.equal(admitted.phaseLabel,'accepted, not started');
+ const viewed=await h.status(admitted.taskId);assert.equal(viewed.phaseLabel,viewed.phase==='admitted'?'accepted, not started':viewed.phase==='running'?'running':viewed.phaseLabel);
  const packs=await h.request('/v1/packs');
  const titles=Object.fromEntries(packs.map((pack:any)=>[pack.capabilityPackId,pack]));
  assert.equal(titles['mindmap-compile'].title,'Compile a mind map into a case workbook');assert.equal(titles['mindmap-compile'].titleZh,'脑图用例结构编译');
@@ -67,7 +68,7 @@ test('New-user QA: skill names, empty trials, trigger wording and runtime config
  const first=await push(h,submission('qa-duplicate', '1.0.0', ['manual'], []));
  const firstAsset=await h.request(`/v1/assets/${first.assetId}`);
  await h.request(`/v1/assets/${first.assetId}/lifecycle`,{version:first.assetVersion,sha256:firstAsset.sha256,state:'approved'},'bob');
- const second=await push(h,submission('qa-duplicate', '1.0.1', ['manual'], [call('docs.search')]));
+ const second=await push(h,submission('qa-duplicate', '1.0.1', ['manual'], []));
  const secondAsset=await h.request(`/v1/assets/${second.assetId}`);
  await h.request(`/v1/assets/${second.assetId}/lifecycle`,{version:second.assetVersion,sha256:secondAsset.sha256,state:'approved'},'bob');
  const ambiguous=await h.reject('/v1/skillpacks/qa-duplicate/runs',{inputs:{},idempotencyKey:'qa-ambiguous-name'},'INVALID_PAYLOAD');

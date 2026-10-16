@@ -29,6 +29,7 @@ export function installPackages(services:any){
   const compiler=new CompilerExecution(store,auth,tasks,knowledge),compilation=new MindmapRunner(store,tasks,knowledge,compiler);
   const rules=new Rules(store,auth,tasks,execution,registry),synthetic=new ProfessionalRunner(store,tasks,execution,knowledge,checklists,approvals,assessments);
   for(const [descriptor,flowVersion] of [[MindmapPack,MINDMAP_FLOW_VERSION],[DefectReviewPack,PACK_FLOWS['defect-review']],[ResourceCheckPack,PACK_FLOWS['synthetic-resource-check']]] as const)tasks.capabilities.set(descriptor.capabilityPackId,{version:descriptor.version,flowVersion});
+  for(const id of ['apv-case-execute','lbx-healthcheck'])tasks.retiredCapabilityPacks.add(id);
   const operation=MindmapPack.requiredOperations[0];execution.capabilityOnlyOperations.add(operation);execution.customClaimers.set(operation,(ctx:AuthContext)=>compiler.claim(ctx));execution.customPreflights.set(operation,(ctx:AuthContext,id:string,fence:number,tx:any)=>compiler.preflight(ctx,id,fence,tx));execution.customReports.set(operation,(ctx:AuthContext,id:string,input:unknown)=>compilation.report(ctx,id,input));
   tasks.deliveryValidators.set(MindmapPack.capabilityPackId,async(_tx:any,task:any,result:any)=>{
     requireCondition(result.verification&&result.artifacts.length===1&&result.evidence.some((item:any)=>item.kind==='script-conclusion'),'EVIDENCE_INSUFFICIENT','Delivery requires independent fact verification');
@@ -39,7 +40,7 @@ export function installPackages(services:any){
   return {
     descriptors:[MindmapPack,DefectReviewPack,ResourceCheckPack],rules,
     prepare:async(ctx:AuthContext,submission:any,tx:any)=>{
-      assertInstalledCapability(tasks.capabilities,submission.capabilityPackId);
+      assertInstalledCapability(tasks.capabilities,submission.capabilityPackId,tasks.retiredCapabilityPacks);
       if(submission.capabilityPackId===MindmapPack.capabilityPackId)submission.input=await sourceInput(ctx,submission.scopeId,submission.input,tx);
       return submission.capabilityPackId===DefectReviewPack.capabilityPackId?rules.authorizeSubmission(ctx,submission.input,submission.scopeId,tx):undefined;
     },

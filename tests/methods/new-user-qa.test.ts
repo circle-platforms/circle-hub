@@ -33,7 +33,8 @@ test('Capability packs name a missing id before any upload and keep retired ids 
  assert.doesNotThrow(()=>assertInstalledCapability(installed,undefined));
  assert.doesNotThrow(()=>assertInstalledCapability(installed,'mindmap-compile'));
  assert.throws(()=>assertInstalledCapability(installed,'not-a-real-pack'),(error:any)=>error instanceof ApiError&&error.code==='TARGET_NOT_FOUND'&&error.message.includes('not-a-real-pack')&&error.message.includes('GET /v1/packs')&&error.details.capabilityPackId==='not-a-real-pack');
- for(const id of ['lbx-healthcheck','apv-case-execute'])assert.throws(()=>assertInstalledCapability(installed,id),(error:any)=>error.code==='UNSUPPORTED_VERSION'&&error.message==='Capability package is not installed');
+ const retired=new Set(['lbx-healthcheck','apv-case-execute']);
+ for(const id of retired)assert.throws(()=>assertInstalledCapability(installed,id,retired),(error:any)=>error.code==='UNSUPPORTED_VERSION'&&error.message==='Capability package is not installed');
 });
 test('Linux sandbox refusal names the platform and the quickstart and does not mention a Mac executable path',async()=>{
  await assert.rejects(isolatedProcess(process.execPath,[],{read:[],write:[],network:[]}),(error:any)=>error.code==='SANDBOX_UNAVAILABLE'&&error.message.includes(process.platform)&&error.message.includes('docs/quickstart.md')&&error.message.includes('seatbelt')&&!error.message.includes('/usr/bin/'));
