@@ -5,6 +5,7 @@
 <p align="center">
   <a href="https://circle-platforms.github.io/circle-hub/">Docs</a> ·
   <a href="docs/design/README.md">Design</a> ·
+  <a href="docs/roadmap.en.md">Roadmap</a> ·
   <a href="docs/compatibility.md">Compatibility</a> ·
   <a href="CHANGELOG.md">Changelog</a> ·
   <a href="README.zh-CN.md">中文</a>
