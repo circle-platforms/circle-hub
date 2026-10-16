@@ -5,6 +5,7 @@
 <p align="center">
   <a href="https://circle-platforms.github.io/circle-hub/">文档</a> ·
   <a href="docs/design/README.md">设计</a> ·
+  <a href="docs/roadmap.md">路线图</a> ·
   <a href="docs/compatibility.md">兼容矩阵</a> ·
   <a href="CHANGELOG.md">更新日志</a> ·
   <a href="README.md">English</a>
