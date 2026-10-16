@@ -16,18 +16,19 @@ async function command(env:NodeJS.ProcessEnv,args:string[]){const child=spawn(pr
 
 test('Enterprise governance: approved knowledge is searchable and a role quorum can accept or reject with a reason',async t=>{
   const h=await setup(t);
-  const bytes=Buffer.from('Feature alpha is available'),src=await h.request('/v1/knowledge/sources',{scopeId:'scp_lab',sourceId:'fixture/manual',revision:'1',path:'/synthetic/manual.txt',knowledgeCategory:'product',sourceType:'document',parserVersion:'fixture/1',contentBase64:bytes.toString('base64'),sha256:sha256(bytes),acl:{sourceReaders:['prn_bob'],platformReaders:['prn_bob']}});
+  const bytes=Buffer.from('Feature alpha is available'),src=await h.request('/v1/knowledge/sources',{scopeId:'scp_lab',sourceId:'fixture/manual',revision:'1',path:'/synthetic/manual.txt',knowledgeCategory:'product',sourceType:'document',parserVersion:'fixture/1',contentBase64:bytes.toString('base64'),sha256:sha256(bytes),acl:{sourceReaders:['prn_alice','prn_bob'],platformReaders:['prn_alice','prn_bob']}});
   const evidence=await h.request('/v1/knowledge/evidence',{sourceRecordId:src.recordId,start:0,end:bytes.length});
   const candidate=await h.request('/v1/knowledge/claims',{scopeId:'scp_lab',subject:'feature-alpha',predicate:'availability',value:'available',evidenceIds:[evidence.recordId],origin:'model'});
   await h.request(`/v1/knowledge/claims/${candidate.recordId}/request-review`,{reviewerId:'prn_bob'});
   const review=await h.request(`/v1/knowledge/claims/${candidate.recordId}/review`,{decision:'approve',promote:true,reason:'Synthetic independent review',ruleVersion:'human-review/1'},'bob');
   const found=await h.request('/v1/knowledge/search?mode=exact&q=feature-alpha');
   assert.equal(found.items.length,1);assert.equal(found.items[0].snapshotId,review.snapshot.recordId);
-  const owned=await fetch(`${h.url}/v1/knowledge/records/${src.recordId}/content`,{headers:{authorization:`Bearer ${await h.login()}`}});
-  assert.equal(owned.status,200);assert.equal(owned.headers.get('content-type'),'text/plain');assert.match(owned.headers.get('content-disposition')??'',/manual\.txt/);assert.equal((owned.headers.get('content-disposition')??'').includes('.bin'),false);
-  const sourceDownload=await fetch(`${h.url}/v1/sources/${src.payload.raw.sourceRevisionId}/content`,{headers:{authorization:`Bearer ${await h.login()}`}});
-  assert.equal(sourceDownload.status,200);assert.match(sourceDownload.headers.get('content-disposition')??'',/manual\.txt/);
-  await h.reject(`/v1/knowledge/records/${src.recordId}/content`,undefined,'SOURCE_FORBIDDEN','limited');
+  const note=Buffer.from('Owner can read this synthetic note'),hidden=await h.request('/v1/knowledge/sources',{scopeId:'scp_lab',sourceId:'fixture/owner',revision:'1',path:'/synthetic/owner-note.txt',knowledgeCategory:'product',sourceType:'document',parserVersion:'fixture/1',contentBase64:note.toString('base64'),sha256:sha256(note),acl:{sourceReaders:['prn_bob'],platformReaders:['prn_bob']}});
+  const owned=await fetch(`${h.url}/v1/knowledge/records/${hidden.recordId}/content`,{headers:{authorization:`Bearer ${await h.login()}`}});
+  assert.equal(owned.status,200);assert.equal(owned.headers.get('content-type'),'text/plain');assert.match(owned.headers.get('content-disposition')??'',/owner-note\.txt/);assert.equal((owned.headers.get('content-disposition')??'').includes('.bin'),false);
+  const sourceDownload=await fetch(`${h.url}/v1/sources/${hidden.payload.raw.sourceRevisionId}/content`,{headers:{authorization:`Bearer ${await h.login()}`}});
+  assert.equal(sourceDownload.status,200);
+  await h.reject(`/v1/knowledge/records/${hidden.recordId}/content`,undefined,'SOURCE_FORBIDDEN','limited');
   assert.ok((await h.db.query("SELECT 1 FROM audit WHERE action='knowledge.access-denied' AND detail->>'code'='SOURCE_FORBIDDEN'")).rowCount);
 
   await assignRole(h,'prn_bob','manager');await assignRole(h,'prn_bob','security');await assignRole(h,'prn_admin','security');

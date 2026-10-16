@@ -1460,6 +1460,6 @@ Node.js 24 在 `hub-environment` 导入时检查，`.npmrc` 使用 `engine-stric
 
 审计导出为 `GET /v1/admin/audit/export` 与 `circle-hub admin audit --format`。默认 `GET /v1/admin/audit` 仍是 JSON 数组。清单错误一次返回 `details.manifestErrors`。HTTP 错误带 `messageZh`；`Accept-Language` 含 `zh` 时 `message` 为中文并保留 `messageEn`。OIDC 只接受回环地址；SCIM 只写在 `docs/design/sso-scim.md`，没有端点。
 
-客户端需要采纳的路径、字段和工具名记在 `docs/client-api-handoff.md` 的「企业治理接口」一节。
+客户端需要采纳的路径、字段和工具名记在 `docs/client-api-handoff.md` 的「企业治理接口」一节。知识记录下载使用路径基名和对应媒体类型。来源表里的存储名仍是 `knowledge-*.bin`，`GET /v1/sources/{id}/content` 沿用该存储名；记录所有者对该路径返回 200。
 
-定向验证数字在本步验收跑完后补记。
+定向验证在 Node.js 24.11.1 与临时 PostgreSQL 上完成。企业治理 **3/3**，知识 R2.3 **6/6**，技能推送 R2.5 可执行项 **2/2**，技能诊断 **4/4**，新用户问答 **2/2**，Hub RPC 能力声明 **1/1**，模块清单 **6/6**（含一次返回全部清单错误），管理审计与资产 **7/7**，登记操作页 **3/3**。合计 **34** 通过、**0** 失败。另有 **4** 项跳过：本机 Linux 没有 seatbelt 的技能运行 **3** 项，以及未设置 `CIRCLE_BIN` 的固定 Circle 提交核对 **1** 项。`npm run typecheck` 已在同一 Node 上通过。未跑全量 `npm test`。
