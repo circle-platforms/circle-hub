@@ -20,16 +20,16 @@
 
 ## 进程隔离与验收平台
 
-执行产品包 Tool/Hook 的受保护设备执行链，以及无界面 Circle 技能运行，目前依赖 **macOS seatbelt**（`sandbox-exec`）。Linux 尚无进程隔离 adapter，走这些隔离路径时运行返回 `SANDBOX_UNAVAILABLE`；不回退到普通进程，也没有测试开关放宽生产隔离。零规则的内建合成派发不经过 Tool/Hook 子进程，不能据它通过推称具备 seatbelt 保护。
+执行产品包 Tool/Hook 的受保护设备执行链，以及无界面 Circle 技能运行，依赖主机进程隔离。macOS 使用 **seatbelt**（`sandbox-exec`）。Linux 使用 **bubblewrap**（`bwrap`）：只读系统树、仅运行工作区与沙箱内的私有临时目录可写、默认关闭网络、不挂载 home 与密钥路径。内核提供 landlock 且本机能编译随仓库附带的辅助程序时，再用 landlock 与 seccomp 收紧同一边界；批准了回环端点时，必须能用 landlock 网络规则（ABI 4 或更新）把 TCP 限制到那些端口，否则失败关闭，不共享宿主网络。没有 `bwrap`、用户命名空间被拒绝，或无法施加上述网络限制时，返回 `SANDBOX_UNAVAILABLE` 并给出安装或 `sysctl` 提示，不退回普通进程，也没有测试开关放宽生产隔离。零规则的内建合成派发不经过 Tool/Hook 子进程，不能据它通过推称具备隔离。
 
 | 验收路径 | 所需前提 | 前提缺失时的报告 |
 |---|---|---|
-| 产品包 Tool/Hook 子进程、依赖这些规则的设备执行 | 可用的 macOS seatbelt adapter | 每个实际执行用例通过统一 harness 标明隔离前提缺失并 skip，不计为通过 |
-| Circle 技能执行、取消、运行修订与脚本隔离 | seatbelt，加明确提供的固定 Circle 构建与 Git 提交 | 统一 harness 报告缺失前提；提供了前提后的真正执行失败仍失败 |
+| 产品包 Tool/Hook 子进程、依赖这些规则的设备执行 | 可用的 macOS seatbelt 或 Linux bubblewrap | 每个实际执行用例通过统一 harness 标明隔离前提缺失并 skip，不计为通过 |
+| Circle 技能执行、取消、运行修订与脚本隔离 | 上述隔离，加明确提供的固定 Circle 构建与 Git 提交；Linux 上若运行配置批准了回环端点，还需要 landlock ABI 4 与 C 编译器 | 统一 harness 报告缺失前提；提供了前提后的真正执行失败仍失败 |
 | 上传、鉴权、来源/资产登记与批准、列表查询、静态模块校验、内建只读连接器 | 临时 PostgreSQL 和相应合成来源 | 继续运行；不因同文件中另一用例需要隔离而整文件跳过 |
 | 不支持宿主的隔离拒绝负例 | 不支持的 adapter 环境 | 继续断言 `SANDBOX_UNAVAILABLE`；单独记录，不能当作隔离阳性路径通过 |
 
-包自身纯单测与 hub 的 Tool/Hook 装载执行验收也分开：前者通过不证明后者能在当前宿主运行。`module-install` 的前四个登记/校验/CLI 用例无隔离依赖，最后一个实际 RPC 用例有；`r3-product-hooks` 的直接 Tool/Hook 调用同样有依赖。公开 Ubuntu CI 的隔离 skip 只声明该平台未验证这些路径；完整执行验收仍需在具备隔离前提的 macOS 上，使用临时数据库、合成网关与脚本模型完成。它不代表真实设备或付费模型验收。
+包自身纯单测与 hub 的 Tool/Hook 装载执行验收也分开：前者通过不证明后者能在当前宿主运行。`module-install` 的前四个登记/校验/CLI 用例无隔离依赖，最后一个实际 RPC 用例有；`r3-product-hooks` 的直接 Tool/Hook 调用同样有依赖。公开 Ubuntu CI 安装 bubblewrap 与 gcc 后运行这些隔离路径；工具缺失时仍 skip，不计通过。完整 Circle RPC 仍需要固定的 Circle 构建、临时数据库、合成网关与脚本模型。它不代表真实设备或付费模型验收。开发运行配置的写法见 [runtime-profile.md](runtime-profile.md)。
 
 ## schema 与契约
 
@@ -71,3 +71,4 @@
 
 - 2026-10-16：维护者决定撤除改名前 Hub 环境变量的弃用回退，改名前的名字不再在任何地方受支持。Hub 进程只读取 `CIRCLE_HUB_*`；server、supervisor、worker、CLI 或开发与 PostgreSQL 脚本的环境中仍有旧前缀变量（值为空或已同时设置新名也算）时拒绝启动，错误逐个给出对应的 `CIRCLE_HUB_*` 名，不输出值。仍以旧名配置的既有部署，须先改用 `CIRCLE_HUB_*` 名重新部署，才能升级到这一变更之后的版本。Circle 扩展协议、固定 RPC 验收提交、路由、schema 与迁移不变。
 - 2026-10-16：打包客户端绑定改为 Circle 1.7.4 / 9123753467e56b40120a91ed79fc0694edeba516。该发行里的 hub 扩展清单版本是 0.1.0，与 hub 包 0.2.0、HTTP API 1.0.0 不是同一个数。RPC 验收 pin 仍为 fd8524a / Circle 1.7.0；本条不表示用 1.7.4 二进制重跑了验收套件。连接步骤写在 `docs/quickstart.md`。
+- 2026-10-16：Linux 技能、Tool 与 Hook 运行改用 bubblewrap，并在 landlock 与本机 C 编译器可用时加上 landlock 和 seccomp。缺 `bwrap` 或无法把已批准的回环 TCP 限制住时返回 `SANDBOX_UNAVAILABLE`，不静默去掉隔离。`npm run runtime:profile` 在仓库外写开发用 `CIRCLE_RUNTIME_CONFIG`；示例形状在 `config/runtime-profile.development.example.json`，不会自动加载。

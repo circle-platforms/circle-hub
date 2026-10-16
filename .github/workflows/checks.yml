@@ -26,6 +26,14 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
+      - name: Install Linux process isolation tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bubblewrap gcc
+          if ! bwrap --unshare-user --die-with-parent --ro-bind /usr /usr --ro-bind /lib /lib --ro-bind /lib64 /lib64 -- /usr/bin/true; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+            bwrap --unshare-user --die-with-parent --ro-bind /usr /usr --ro-bind /lib /lib --ro-bind /lib64 /lib64 -- /usr/bin/true
+          fi
       - run: npm run typecheck
       - run: npm run test:contracts
       - run: npm run test:methods
@@ -52,6 +60,14 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
+      - name: Install Linux process isolation tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bubblewrap gcc
+          if ! bwrap --unshare-user --die-with-parent --ro-bind /usr /usr --ro-bind /lib /lib --ro-bind /lib64 /lib64 -- /usr/bin/true; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+            bwrap --unshare-user --die-with-parent --ro-bind /usr /usr --ro-bind /lib /lib --ro-bind /lib64 /lib64 -- /usr/bin/true
+          fi
       - name: Verify temporary loopback PostgreSQL
         run: npm run verify:postgres
       - name: Test synthetic services (pinned Circle RPC cases report skips)

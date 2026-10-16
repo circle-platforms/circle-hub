@@ -1447,3 +1447,13 @@ Node.js 24 在 `hub-environment` 导入时检查，`.npmrc` 使用 `engine-stric
 兼容矩阵的打包客户端绑定改为 Circle 1.7.4 / 9123753467e56b40120a91ed79fc0694edeba516。扩展清单版本 0.1.0 与 hub 包 0.2.0、API 1.0.0 分列。RPC 验收 pin 仍是 fd8524a / Circle 1.7.0；本步没有用 1.7.4 二进制重跑该验收。
 
 验证在 Node.js 24.22.0 上、CIRCLE_BIN / CIRCLE_COMMIT / CIRCLE_RUNTIME_CONFIG 置空时进行。`npm ci` 不再提示 embedded-postgres 的 allowScripts。typecheck 通过。contracts **20/20**。methods **289 pass / 1 skip / 0 fail**（该 skip 是 Linux 上没有 seatbelt 的隔离用例）。acceptance 全量一次为 **261 pass / 144 skip / 1 fail**：失败是核心文件里出现了退役包名，已把这两个名字移到 `packs/`；修后 `s2-07-core`、`new-user-qa`、`native-retirement` 与 `r2-07` 通过。144 项 skip 是这台 Linux 上隔离与未提供 Circle 二进制的用例，不计通过。references **7/7**。没有真实系统、模型、设备或付费调用。
+
+## 139：Linux bubblewrap 隔离与开发运行配置
+
+2026-10-16。在 §138 的 `RUNTIME_NOT_CONFIGURED` 与快速开始之上，Linux 技能、Tool 和 Hook 改为 bubblewrap，不再因为只有 macOS seatbelt 而返回 `SANDBOX_UNAVAILABLE`。只读系统树，可写范围是运行工作区和沙箱内的私有临时目录，不挂载 home，默认 `--unshare-net`。内核 landlock ABI 至少为 1 且本机有 `cc` 或 `gcc` 时，编译随仓库提供的辅助程序，在 exec 前施加 landlock，并在 x64 / arm64 上再加 seccomp。运行配置列出回环端点时不隔离网络命名空间，必须能用 landlock 网络规则（ABI 4 或更新）只允许那些 TCP 端口；做不到就失败关闭，不共享宿主网络。没有 `bwrap` 时错误带 Debian/Ubuntu、Fedora/RHEL 和 Arch 的安装提示，并指向 `docs/quickstart.md`；用户命名空间被拒绝时提示 Ubuntu 24.04 的 `sysctl`。两条路径都不返回未隔离的原命令。macOS 上缺少 seatbelt 的文案保持 §138。不支持的平台在错误里写出平台名，并同时提到 seatbelt 与 bubblewrap。
+
+`npm run runtime:profile` 在仓库外写开发用 `CIRCLE_RUNTIME_CONFIG`（模式 0600），核对 Circle 可执行文件的 `--version`，检出是 Git 仓库时核对 `HEAD`。省略密钥时生成并只写入文件。缺失配置仍是 `RUNTIME_NOT_CONFIGURED`（409），消息同时包含 `CIRCLE_RUNTIME_CONFIG`、`npm run runtime:profile` 和 `docs/quickstart.md`。`config/runtime-profile.development.example.json` 只说明形状，不自动加载。`dev:stack` 保留 §138 的前台判断、`next` 命令和稳定密码；在 `CIRCLE_BIN`、`CIRCLE_COMMIT` 和 `CIRCLE_HUB_DEV_MODEL_URL` 都有值且尚未设置 `CIRCLE_RUNTIME_CONFIG` 时，把同一形状写进自己的临时目录。写失败只提示，不让整栈退出。空的 `CIRCLE_BIN` 仍视为未配置。就绪 JSON 增加 `runtimeProfile.configured`。
+
+快速开始中文和英文改为说明 bubblewrap，不再写 Linux 没有进程隔离。测试宿主探测承认 Linux。`freebsd` 等不支持的平台仍是 `SANDBOX_UNAVAILABLE`，覆盖不能把真实宿主说成已隔离。公开 Ubuntu CI 的 code 与 acceptance 作业安装 bubblewrap 和 gcc，并在首次用户命名空间探测失败时放开 AppArmor 限制再试一次。
+
+验证在 Node.js 24.22.0 上、CIRCLE_BIN / CIRCLE_COMMIT / CIRCLE_RUNTIME_CONFIG 置空时进行。`tsc --noEmit` 通过。contracts **20/20**。methods **297/297**，0 skip，0 fail。其中 Linux 沙箱用例实际执行：工作区外写入被拒、宿主密钥字节不变、默认无网络、landlock 只放行批准的回环端口、缺少 bwrap 时失败关闭并指向 `docs/quickstart.md`。acceptance 全量一次为 **373 pass / 26 skip / 7 fail**。7 项失败里，字节窗口历史的 250 次隔离 Tool 超过原来的 210 秒等待，期限断言里事务时钟和墙钟相差约 173 毫秒、超过原来的 100 毫秒容差；这两项放宽后单独复跑通过。另外 5 项是 `npm run dev:stack` 用了本机 PATH 上的 Node.js 22.14，被 §138 的引擎检查拒绝；把 Node.js 24 放在 PATH 前面后，admin 的三项优雅重启、dev:stack 的 http 与 https，以及 new-user-qa 通过。26 项 skip 是未开启的选装场景和未提供 Circle 二进制的 RPC 用例，不计通过。没有固定 Circle 构建，因此没有做端到端技能运行。没有真实系统、模型、设备或付费调用。

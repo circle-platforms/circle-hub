@@ -38,7 +38,8 @@
     "admin": "node apps/server/src/cli.ts admin",
     "worker": "node apps/worker/src/main.ts",
     "verify:postgres": "node scripts/verify-postgres.ts",
-    "dev:stack": "node scripts/dev-stack.ts"
+    "dev:stack": "node scripts/dev-stack.ts",
+    "runtime:profile": "node scripts/runtime-profile.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.1",

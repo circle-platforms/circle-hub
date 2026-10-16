@@ -1,0 +1,12 @@
+{
+  "circleBin": "dist/cli.js",
+  "circleCommit": "0000000000000000000000000000000000000000",
+  "circleVersion": "0.0.0-development",
+  "model": {
+    "kind": "scripted",
+    "base_url": "http://127.0.0.1:9/v1",
+    "model": "scripted-fixture",
+    "protocol": "openai",
+    "api_key": "replace-with-a-secret-that-is-not-committed"
+  }
+}

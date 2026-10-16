@@ -36,8 +36,36 @@ test('Capability packs name a missing id before any upload and keep retired ids 
  const retired=new Set(['lbx-healthcheck','apv-case-execute']);
  for(const id of retired)assert.throws(()=>assertInstalledCapability(installed,id,retired),(error:any)=>error.code==='UNSUPPORTED_VERSION'&&error.message==='Capability package is not installed');
 });
-test('Linux sandbox refusal names the platform and the quickstart and does not mention a Mac executable path',async()=>{
- await assert.rejects(isolatedProcess(process.execPath,[],{read:[],write:[],network:[]}),(error:any)=>error.code==='SANDBOX_UNAVAILABLE'&&error.message.includes(process.platform)&&error.message.includes('docs/quickstart.md')&&error.message.includes('seatbelt')&&!error.message.includes('/usr/bin/'));
+test('Process isolation names the quickstart and does not mention a Mac executable path',async()=>{
+ if(process.platform==='linux'){
+  try{
+   const spec=await isolatedProcess(process.execPath,[],{read:[],write:[],network:[]});
+   assert.ok(spec.command.endsWith('bwrap'));
+   assert.equal(JSON.stringify(spec).includes('/usr/bin/sandbox-exec'),false);
+  }catch(error){
+   assert.ok(error instanceof ApiError);
+   assert.equal(error.code,'SANDBOX_UNAVAILABLE');
+   assert.match(error.message,/bubblewrap|bwrap/i);
+   assert.match(error.message,/docs\/quickstart.md/);
+   assert.equal(error.message.includes('seatbelt'),false);
+   assert.equal(error.message.includes('/usr/bin/'),false);
+  }
+  return;
+ }
+ if(process.platform==='darwin'){
+  try{
+   const spec=await isolatedProcess(process.execPath,[],{read:[],write:[],network:[]});
+   assert.equal(spec.command,'/usr/bin/sandbox-exec');
+  }catch(error){
+   assert.ok(error instanceof ApiError);
+   assert.equal(error.code,'SANDBOX_UNAVAILABLE');
+   assert.match(error.message,/seatbelt/);
+   assert.match(error.message,/docs\/quickstart.md/);
+   assert.equal(error.message.includes('/usr/bin/'),false);
+  }
+  return;
+ }
+ await assert.rejects(isolatedProcess(process.execPath,[],{read:[],write:[],network:[]}),(error:any)=>error instanceof ApiError&&error.code==='SANDBOX_UNAVAILABLE'&&error.message.includes(process.platform)&&error.message.includes('docs/quickstart.md')&&error.message.includes('seatbelt')&&error.message.includes('bubblewrap')&&!error.message.includes('/usr/bin/'));
 });
 test('Development stack secrets stay random unless set, and the stop line follows the terminal',()=>{
  assert.equal(devStackSecret('CIRCLE_HUB_DEV_PASSWORD',undefined,'generated-secret'),'generated-secret');

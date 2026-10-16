@@ -11,6 +11,7 @@ import {SUPERVISOR_STOP_TIMEOUT_MS} from '../apps/server/src/shutdown.ts';
 import {createSyntheticSources} from '../packs/synthetic/readonly-sources.ts';
 import {setTimeout as delay} from 'node:timers/promises';
 import {devStackForeground,devStackNextLines,devStackSecret} from './dev-stack-options.ts';
+import {attachDevelopmentRuntime} from './runtime-profile.ts';
 
 const root = fileURLToPath(new URL('../',import.meta.url));
 const userPassword = devStackSecret('CIRCLE_HUB_DEV_PASSWORD',process.env.CIRCLE_HUB_DEV_PASSWORD,randomBytes(18).toString('base64url'));
@@ -99,6 +100,8 @@ try {
   // this process's trust, and the same runtime trust reaches server and workers.
   const env = { ...process.env,CIRCLE_HUB_MANAGED_WORKERS:'1',NODE_EXTRA_CA_CERTS:process.env.NODE_EXTRA_CA_CERTS,CIRCLE_HUB_DATABASE_CONFIG:JSON.stringify(config),CIRCLE_HUB_DATA_DIR:`${scratch}/objects`,
     CIRCLE_HUB_DEV_IDENTITIES:`${scratch}/identities.json`,CIRCLE_HUB_DEV_AUTH:'1',CIRCLE_HUB_PORT:process.env.CIRCLE_HUB_PORT ?? '0',CIRCLE_SYNTHETIC_RESOURCE_DIR:`${scratch}/resources`,CIRCLE_HUB_CONNECTOR_PROFILES:`${scratch}/connector-profiles.json` };
+  const runtimeProfile = await attachDevelopmentRuntime(scratch, env);
+  if (runtimeProfile.notice) console.log(runtimeProfile.notice);
   const server = await launch('apps/server/src/supervisor.ts',env,'ready');
   const login=async(username:string,password:string)=>{const response=await fetch(`${server.url}/v1/auth/dev-login`,{method:'POST',redirect:'error',headers:{'content-type':'application/json'},body:JSON.stringify({username,password})});if(!response.ok)throw new Error('Synthetic asset login failed');return (await response.json() as any).data.token;};
   const developerToken=await login('developer',userPassword),approverToken=await login('approver',approverPassword);
@@ -116,7 +119,7 @@ try {
   await launch('apps/worker/src/main.ts',{ ...env,CIRCLE_HUB_URL:server.url,CIRCLE_WORKER_USERNAME:'lab-east-02',CIRCLE_WORKER_PASSWORD:workerPassword },'worker-ready');
   const foreground=devStackForeground(process.stdin.isTTY,process.stdout.isTTY);
   console.log(JSON.stringify({ type:'dev-stack-ready',pid:process.pid,url:server.url,apiVersion:server.apiVersion,
-    login:{ username:'developer',password:userPassword },approverLogin:{username:'approver',password:approverPassword},scopeId:'scp_lab',samplePath,scratchDirectory:scratch,postgresVersion:database.version,syntheticOnly:true,foreground,
+    login:{ username:'developer',password:userPassword },approverLogin:{username:'approver',password:approverPassword},scopeId:'scp_lab',samplePath,scratchDirectory:scratch,postgresVersion:database.version,syntheticOnly:true,foreground,runtimeProfile:{configured:runtimeProfile.configured},
     next:{enable:'/extensions enable hub',login:`/hub login ${server.url} developer`} }));
   for(const line of devStackNextLines({url:server.url,userPassword,approverPassword,samplePath,pid:process.pid,foreground}))console.log(line);
 } catch (error) {

@@ -36,12 +36,12 @@ async function installByteHistoryModule(h:any,controlled:boolean){
 async function runByteHistory(t:any,controlled:boolean){
  const f=await meridianFlow(t),installed=await installByteHistoryModule(f.h,controlled),input={flowId:installed.flowId,methodPin:assetPin(installed.asset),resources:{},sources:{},controlledBytes:[],value:{synthetic:true}};
  await f.h.startWorker();const task=await f.h.request('/v1/tasks/submit',{scopeId:'scp_lab',capabilityPackId:'module-execute',idempotencyKey:'byte-history-'+controlled,input});
- const terminal=await until(async()=>{const status=await f.h.status(task.taskId);return ['delivered','failed','unknown','cancelled'].includes(status.phase)?status:false;},210_000),result=await f.h.request(`/v1/tasks/${task.taskId}/result`),rows=(await f.h.db.query('SELECT * FROM flow_steps WHERE task_id=$1 ORDER BY created_at,step_key',[task.taskId])).rows;
+ const terminal=await until(async()=>{const status=await f.h.status(task.taskId);return ['delivered','failed','unknown','cancelled'].includes(status.phase)?status:false;},420_000),result=await f.h.request(`/v1/tasks/${task.taskId}/result`),rows=(await f.h.db.query('SELECT * FROM flow_steps WHERE task_id=$1 ORDER BY created_at,step_key',[task.taskId])).rows;
  t.diagnostic(JSON.stringify({phase:terminal.phase,error:result.error,steps:rows.length,observations:rows.filter(row=>row.step_id.startsWith('observation-')&&row.status==='succeeded').length}));
  assert.equal(f.provider.state.calls.length,0);assert.equal(f.provider.state.submissions,0);assert.ok(!rows.some(row=>row.intent));assert.ok(!(await f.h.db.query('SELECT 1 FROM resources WHERE frozen')).rowCount);return {...f,task,result,terminal,rows};
 }
 
-sandboxTest('Byte history window: fewer than 256 inline observations exceeding 512 KiB are archived and a real Tool reads their complete B history',{timeout:240_000},async t=>{
+sandboxTest('Byte history window: fewer than 256 inline observations exceeding 512 KiB are archived and a real Tool reads their complete B history',{timeout:480_000},async t=>{
  const f=await runByteHistory(t,true);assert.equal(f.terminal.phase,'delivered',JSON.stringify(f.result.error));assert.equal(f.result.status,'succeeded');
  const observations=f.rows.filter(row=>row.step_id.startsWith('observation-'));assert.equal(observations.length,observationCount);assert.ok(observationCount<EXECUTION_TRANSITION_LIMITS.arrayItems);assert.ok(observations.every(row=>row.status==='succeeded'&&row.observation.facts.result.text.length===payloadBytes));
  const all=observations.map(row=>row.observation);assert.ok(Buffer.byteLength(canonicalJson(all))>EXECUTION_TRANSITION_LIMITS.metadataBytes,'The actual accumulated observation metadata must exceed 512 KiB while all results remain individually small');
@@ -51,6 +51,6 @@ sandboxTest('Byte history window: fewer than 256 inline observations exceeding 5
  const response=await fetch(`${f.h.url}/v1/artifacts/${reference.reference.artifactId}/content`,{headers:{authorization:`Bearer ${await f.h.login()}`}});assert.equal(response.status,200);const bytes=Buffer.from(await response.arrayBuffer());assert.equal(sha256(bytes),reference.reference.sha256);assert.equal(bytes.length,reference.reference.size);const archive=JSON.parse(bytes.toString());assert.equal(archive.schema,'hub-flow-history/1');assert.deepEqual(archive.observations,all);assert.ok(archive.observations.some((row:any)=>row.reference.artifactId===consumed.firstReference.artifactId));
 });
 
-sandboxTest('Byte history window: an approved module without controlled history fails explicitly before cumulative metadata exceeds its contract',{timeout:240_000},async t=>{
+sandboxTest('Byte history window: an approved module without controlled history fails explicitly before cumulative metadata exceeds its contract',{timeout:480_000},async t=>{
  const f=await runByteHistory(t,false);assert.equal(f.terminal.phase,'failed');assert.equal(f.result.error.code,'RESULT_TOO_LARGE');assert.equal(f.result.error.details.cause.code,'RESULT_TOO_LARGE');assert.equal(f.result.error.details.cause.message,'Approved flow does not declare controlled history support');assert.equal(f.result.error.details.stepId,undefined,'A frame budget failure must not invent a rejected product action');assert.equal(f.result.error.details.kind,undefined);assert.ok(f.rows.some(row=>row.step_id.startsWith('observation-')&&row.status==='succeeded'));assert.ok(!f.rows.some(row=>row.step_id==='read-history'));
 });
