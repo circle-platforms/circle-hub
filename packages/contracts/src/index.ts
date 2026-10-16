@@ -183,7 +183,7 @@ export const SkillPackSubmission=z.object({manifest:SkillManifest,files:ModuleBy
   trial:z.object({toolCalls:z.array(z.object({name:ToolName,argsSha256:Sha256,ok:z.boolean()}).strict()).max(1000),outputs:z.array(z.object({path:SafeRelativePath,sha256:Sha256}).strict()).max(100)}).strict(),module:ModuleEntry.optional()}).strict();
 export const ModuleInstallRequest=z.object({module:ModuleEntry,files:ModuleBytes,trial:SkillPackSubmission.shape.trial.optional()}).strict();
 export const SkillPackCheck=z.object({undeclaredTools:z.array(ToolName),missingTools:z.array(ToolName)});
-export const SkillPackView=z.object({skillPackId:SkillPackId,digest:Sha256,status:z.enum(['candidate','registered','declined','superseded']),check:SkillPackCheck,changeSetId:z.string().nullable().optional(),approvalTaskId:TaskId,
+export const SkillPackView=z.object({skillPackId:SkillPackId,digest:Sha256,status:z.enum(['candidate','registered','declined','superseded']),registration:z.enum(['candidate','registered','declined','superseded']).optional(),lifecycle:AssetLifecycle.optional(),statusLabel:z.string().optional(),warnings:z.array(z.string()).max(20).optional(),check:SkillPackCheck,changeSetId:z.string().nullable().optional(),approvalTaskId:TaskId,
   manifest:SkillManifest,ownerPrincipalId:z.string(),scopeId:ScopeId,assetId:AssetId,assetVersion:PackageVersion});
 export const SkillRunInput=z.object({inputs:z.record(z.string(),z.unknown()),idempotencyKey:z.string().min(8).max(200)}).strict();
 const TriggerBase=z.object({scopeId:ScopeId,version:PackageVersion,name:z.string().min(1).max(200)});
@@ -257,7 +257,7 @@ const registry:Record<string,[number,string]> = {
   TOOL_NAME_CONFLICT:[409,'conflict-stale'],RESULT_TOO_LARGE:[413,'validation'],
   SKILLPACK_CHECK_FAILED:[422,'validation'],RUNTIME_VERSION_MISMATCH:[409,'conflict-stale'],RUNTIME_FAILED:[502,'execution'],
   DEPENDENCY_NOT_APPROVED:[409,'dependency'],
-  COMMAND_NOT_IN_TREE:[422,'execution'],DESTRUCTIVE_COMMAND:[422,'execution'],BUILD_MISMATCH:[409,'execution'],GATEWAY_UNREACHABLE:[503,'execution'],PERMISSION_DENIED:[403,'permission'],LEASE_UNAVAILABLE:[409,'execution'],SOURCE_NOT_APPROVED:[409,'dependency'],
+  COMMAND_NOT_IN_TREE:[422,'execution'],DESTRUCTIVE_COMMAND:[422,'execution'],BUILD_MISMATCH:[409,'execution'],GATEWAY_UNREACHABLE:[503,'execution'],PERMISSION_DENIED:[403,'permission'],LEASE_UNAVAILABLE:[409,'execution'],SOURCE_NOT_APPROVED:[409,'dependency'],RUNTIME_NOT_CONFIGURED:[409,'dependency'],
   RATE_LIMITED:[429,'transient'],
   IMPORT_NOT_DECLARED:[422,'validation'],HOOK_FAILED:[422,'execution'],
   SANDBOX_UNAVAILABLE:[503,'execution'],
@@ -285,7 +285,7 @@ export interface RunConstraint {taskId:string;tools:string[];scopes:string[];gra
 export interface AuthContext { principalId: string; tenantId: string; kind: 'user' | 'service' | 'worker'; workerId?: string;run?:RunConstraint;tokenDigest?:string }
 export interface Policy extends AuthContext { scopes: string[]; grants: string[]; targets: string[]; defects: string[];scopeGrants?:Record<string,string[]>;roles?:{scopeId:string;role:'admin'|'member'|'viewer'}[] }
 export interface Task {
-  taskId: string; tenantId: string; scopeId: string; principalId: string; title: string; phase: TaskPhase;
+  taskId: string; tenantId: string; scopeId: string; principalId: string; title: string; phase: TaskPhase; phaseLabel?: string;
   inputRevisionId: string; input: Record<string, unknown>; revision: number; flowVersion: string;
   capabilityPackId?: string; packVersion?: string;waitingReason?:string|null;assignee?:string|null;dueAt?:string|null;
 }
@@ -308,7 +308,7 @@ export const TaskResult = z.object({ taskId: TaskId, inputRevisionId: InputRevis
   error: z.object({ code: z.string(), message: z.string() }).optional(),
 });
 export const TaskView = z.object({ taskId: TaskId,tenantId:z.string(),scopeId:ScopeId,principalId:z.string(),title:z.string(),
-  phase:TaskPhase,inputRevisionId:InputRevisionId,input:z.record(z.string(),z.unknown()),revision:z.number().int().positive(),
+  phase:TaskPhase,phaseLabel:z.string().optional(),inputRevisionId:InputRevisionId,input:z.record(z.string(),z.unknown()),revision:z.number().int().positive(),
   flowVersion:z.string(),capabilityPackId:z.string().optional(),packVersion:z.string().optional(),waitingReason:z.string().nullable().optional(),assignee:z.string().nullable().optional(),dueAt:z.string().datetime().nullable().optional(),
   pendingInputs:z.array(z.object({ requestId:z.string(),inputRevisionId:InputRevisionId,kind:z.string(),question:z.string(),
     binding:z.record(z.string(),z.unknown()),expiresAt:z.string(),status:z.string() })).optional(),

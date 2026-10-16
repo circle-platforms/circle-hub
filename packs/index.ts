@@ -1,5 +1,6 @@
 import '../packages/contracts/src/hub-environment.ts';
 import {requireCondition,type AuthContext} from '../packages/contracts/src/index.ts';
+import {assertInstalledCapability} from '../packages/tasks/src/index.ts';
 import {MindmapCompileInput,MindmapPack,MINDMAP_FLOW_VERSION} from './apv/contracts.ts';
 import {CompilerExecution} from './apv/runtime/operations.ts';
 import {MindmapRunner} from './apv/runtime/server.ts';
@@ -38,7 +39,7 @@ export function installPackages(services:any){
   return {
     descriptors:[MindmapPack,DefectReviewPack,ResourceCheckPack],rules,
     prepare:async(ctx:AuthContext,submission:any,tx:any)=>{
-      requireCondition(!submission.capabilityPackId||tasks.capabilities.has(submission.capabilityPackId),'UNSUPPORTED_VERSION','Capability package is not installed');
+      assertInstalledCapability(tasks.capabilities,submission.capabilityPackId);
       if(submission.capabilityPackId===MindmapPack.capabilityPackId)submission.input=await sourceInput(ctx,submission.scopeId,submission.input,tx);
       return submission.capabilityPackId===DefectReviewPack.capabilityPackId?rules.authorizeSubmission(ctx,submission.input,submission.scopeId,tx):undefined;
     },

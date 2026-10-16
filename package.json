@@ -16,6 +16,16 @@
   "engines": {
     "node": ">=24"
   },
+  "allowScripts": {
+    "@embedded-postgres/darwin-arm64@18.4.0-beta.17": true,
+    "@embedded-postgres/darwin-x64@18.4.0-beta.17": true,
+    "@embedded-postgres/linux-arm@18.4.0-beta.17": true,
+    "@embedded-postgres/linux-arm64@18.4.0-beta.17": true,
+    "@embedded-postgres/linux-ia32@18.4.0-beta.17": true,
+    "@embedded-postgres/linux-ppc64@18.4.0-beta.17": true,
+    "@embedded-postgres/linux-x64@18.4.0-beta.17": true,
+    "@embedded-postgres/windows-x64@18.4.0-beta.17": true
+  },
   "scripts": {
     "verify:references": "node tools/verify-reference-archive.ts",
     "test:references": "node --test tools/verify-reference-archive.test.ts",

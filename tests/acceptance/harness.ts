@@ -28,7 +28,7 @@ export function isSandboxUnavailable(error:unknown):boolean{
 // an adapter or lowers the execution policy. An override can disable a test
 // host, but cannot make an unsupported real host report isolation available.
 export async function probeSandboxHost(options:{platform?:string}={}):Promise<SandboxHost>{
- if(process.platform!=='darwin'||(options.platform??process.platform)!=='darwin')return {available:false,reason:'SANDBOX_UNAVAILABLE: this test host has no supported process isolation adapter'};
+ if(process.platform!=='darwin'||(options.platform??process.platform)!=='darwin')return {available:false,reason:`SANDBOX_UNAVAILABLE: this host is ${options.platform??process.platform}. Skill runs and product Tool/Hook subprocesses need macOS seatbelt. The hub does not run them without process isolation. See docs/quickstart.md.`};
  let directory:string|undefined;
  try{
   directory=await mkdtemp(join(tmpdir(),'circle-hub-isolation-probe-'));const readable=join(directory,'readable'),blocked=join(directory,'blocked.txt');await mkdir(readable);await writeFile(join(readable,'allowed.txt'),'synthetic-probe');await writeFile(blocked,'synthetic-denied');

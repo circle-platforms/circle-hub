@@ -4,16 +4,16 @@
 
 三个仓库各自版本化：circle（harness）、circle-hub（平台）、circle-packs（包）。谁依赖谁、以什么为准，都写在这里；改动任何一行都是一次有意识的升级，不是顺手为之。
 
-## 现状（2026-10-15）
+## 现状（2026-10-16）
 
 | 部件 | 版本 / 提交 | 以什么为准 | 说明 |
 |---|---|---|---|
 | circle-hub | **0.2.0**（原生执行退役；首个仓库发行是 0.1.0） | 版本化发行、`docs/design` | 现场部署另见进度记录与实际提交核对；发行元数据不代表生产可用 |
 | `foundation/circle` | Circle **1.0.4** 源基线，冻结 | `references/README.md` 的来源记录 | 只是源码参考，不装、不跑它的安装器；不是 hub 的运行依赖 |
 | 验收用的 Circle 运行时 | Circle 主线提交 **fd8524a**（用户确认，Circle 1.7.0，hub 协议） | `CIRCLE_BIN` / `CIRCLE_COMMIT`，严格 Git 门禁 | **这是真实的测试依赖**：验收 RPC 用例只接受这个提交，换提交要用户确认并更新门禁 |
-| Circle 发行绑定 | **v1.7.3 → ae0b0d5** | circle 仓库的 tag 与 Release | 完整构建与正式发布状态以发行页为准；本次 RPC 实测仍固定 fd8524a，发行成功不替代 Hub 验收 |
-| hub 的 Circle 侧扩展目标基线 | 1.7.3（命名集成 96702fa、刷新修复 9afe812，另含冷启动、视图预算与初始化关闭保护） | 维护者授权的 hub 扩展改名 | hub 与 /hub 不保留旧别名；与上面的固定 RPC 验收提交分列 |
-| circle 的 hub 扩展 | 发行提交 ae0b0d5；可信启动、64 KiB 界面投影及关闭后写入保护 | hub 的 `docs/client-api-handoff.md` | 当前 Circle 使用 hub、/hub、hub_* 与 hub_tool_*，无旧别名；运行时协议与历史验收 pin 须显式绑定 |
+| Circle 发行绑定 | **v1.7.4 → 9123753467e56b40120a91ed79fc0694edeba516**（前一绑定 v1.7.3 → ae0b0d5） | circle 仓库的 tag 与 Release | 2026-10-16 的公开发行。完整构建与正式发布状态以发行页为准。本次没有用 1.7.4 二进制重跑 Hub 的 RPC 验收；验收 pin 仍是 fd8524a |
+| hub 的 Circle 侧扩展目标基线 | Circle 1.7.4 自带的 hub 扩展，扩展清单版本 **0.1.0** | Circle tag v1.7.4 | 扩展自己的 0.1.0 不是 hub 包 0.2.0，也不是 HTTP API 1.0.0。hub 与 /hub 不保留旧别名；与固定 RPC 验收提交分列 |
+| circle 的 hub 扩展 | 发行提交 9123753；扩展版本 0.1.0 | hub 的 `docs/client-api-handoff.md` 与 [quickstart.md](quickstart.md) | 当前 Circle 使用 hub、/hub、hub_* 与 hub_tool_*，无旧别名。连接步骤是 `/extensions enable hub` 然后 `/hub login <url> developer` |
 | circle-packs `main` | 见其 CHANGELOG | hub 的包装载器与 schema | 产品线包测试使用 hub 提交 `dc93c69826f73f16d2f20f7520ba4c6663d014ac` 的锁定依赖集；circle-packs 的 `.github/workflows/checks.yml` 固定此提交，不跟随 main 漂移；仅为测试依赖，不声明生产兼容 |
 | hub 验收用的 circle-packs 原件 | **1f8948c07a9756a3e5dec66f15c25a670fd1e4c2**，APV **1.4.1** | 该提交的 `modules.json` 与原字节 SHA | 包仓库完整合成套件 143/143，无 skip；Hub 的产品模块 / provider 协议选装验收另见进度记录，不以包内测试替代；发行不表示自动激活或批准 |
 | 执行网关 cexg | 0.3.1（静态密钥） | compile-excel-server 仓库 | hub 的 worker 需要 §7 的 static-secret 凭据模式才能调用它 |
@@ -70,3 +70,4 @@
 - 2026-10-15：1.7.2 / 1914c58 已在本机通过冷启动与大视图验收；随后隔离环境确定性证明关闭后后台读仍可能重建目录，正式 Release 取消，原 tag 保留。客户端绑定改为 1.7.3 / ae0b0d5：待安装宿主有界 drain、token 异步返回后 abort 检查及 closed dataDir 不创建目录三层保护；三条旧实现红例与九项修后定向检查分列。Windows 的一次 ENOTEMPTY 不据此唯一归因，临时目录清理重试不替代关闭后真实副作用断言。固定 RPC 提交与 Hub 的源码、包、迁移和既有业务结果均不变。
 
 - 2026-10-16：维护者决定撤除改名前 Hub 环境变量的弃用回退，改名前的名字不再在任何地方受支持。Hub 进程只读取 `CIRCLE_HUB_*`；server、supervisor、worker、CLI 或开发与 PostgreSQL 脚本的环境中仍有旧前缀变量（值为空或已同时设置新名也算）时拒绝启动，错误逐个给出对应的 `CIRCLE_HUB_*` 名，不输出值。仍以旧名配置的既有部署，须先改用 `CIRCLE_HUB_*` 名重新部署，才能升级到这一变更之后的版本。Circle 扩展协议、固定 RPC 验收提交、路由、schema 与迁移不变。
+- 2026-10-16：打包客户端绑定改为 Circle 1.7.4 / 9123753467e56b40120a91ed79fc0694edeba516。该发行里的 hub 扩展清单版本是 0.1.0，与 hub 包 0.2.0、HTTP API 1.0.0 不是同一个数。RPC 验收 pin 仍为 fd8524a / Circle 1.7.0；本条不表示用 1.7.4 二进制重跑了验收套件。连接步骤写在 `docs/quickstart.md`。
