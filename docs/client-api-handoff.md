@@ -19,10 +19,21 @@ Circle 新扩展为 `hub`、`/hub`、`hub_*` 固定工具与 `hub_tool_*` 动态
 | `GET /v1/approval-requests/{requestId}/content` | 正文下载。`Content-Type` 与 `Content-Disposition` 的文件名来自提交时的声明 |
 | `POST /v1/approval-requests/{requestId}/decisions` | `{approve, reason?}`。拒绝写 `reason` 后状态是 `declined`。同一个人不能占第二个角色名额 |
 | `GET /v1/approvals/pending` | 当前人可处理的审批。`kind` 为 `governance` 或 `change-set`。变更集项只含资产 `name` 和 `kind` |
-| `POST /v1/scopes/{scopeId}/approval-roles` | 提交审批角色变更集。`role` 为 `manager`、`security`、`dpo`、`legal`、`finance`、`hr`、`it` |
-| `POST /v1/tasks/submit` | `capabilityPackId` 可用 `hub-task`。`GET /v1/packs` 含该包的 `title` 与 `titleZh` |
-| MCP `hub_task` | 与提交任务相同。省略 `capabilityPackId` 时用 `hub-task`。写操作仍要 `hub/idempotencyKey` 和 `hub/confirmation` |
-| MCP `hub_packs` | 只读。空对象参数。回应的 `packs` 是能力包描述。不出现在 `GET /v1/tools` |
+| `POST /v1/scopes/{scopeId}/approval-roles` | 提交审批角色变更集。`role` 为 `manager`、`security`、`dpo`、`legal`、`finance`、`hr`、`it`。正文恰好包含 `principalId` 或 `teamId` 之一 |
+| `POST /v1/scopes/{scopeId}/teams` | 提交团队变更集。`name`、`members`（`prn_` 列表）和 `idempotencyKey`。决定通过后成员才生效。回应的 `submission.teamId` 是 `team_` 加 32 位十六进制 |
+| `GET /v1/scopes/{scopeId}/teams` | `{items:[{teamId,scopeId,name,members}]}`。需要 `knowledge.read` |
+| `GET /v1/knowledge/snapshots/current?scopeId=&knowledgeCategory=` | 当前稳定快照。`{scopeId,knowledgeCategory,snapshotId}`。没有快照时 `snapshotId` 为 `null` |
+| `POST /v1/knowledge/snapshots` | `expectedSnapshotId` 是比较并交换。只有当前指针为 `null` 时才能传 `null`。已有快照后再传 `null` 返回 `INPUT_REVISION_STALE`。之后的发布传入 `GET` 返回的 `snapshotId` |
+| `POST /v1/skillpacks/{id}/install` | 所有者安装已批准的技能。正文是 `{}`。绑定版本变为 `running`。回应含 `capabilityPackId`（清单 `id`）和 `runPath` |
+| `GET /v1/packs` | 仍包含内建能力包。已安装且 `running` 的技能按清单 `id` 追加，带 `installed:true` 和 `skillPackId` |
+| `POST /v1/tasks/submit` | `capabilityPackId` 仍可用 `hub-task`。若它是已安装技能的清单名，则交给该技能运行，回应是 `{taskId}`。已批准但未安装时返回 `APPROVAL_REQUIRED`，消息指向 `POST /v1/skillpacks/{id}/install`，不是 `UNSUPPORTED_VERSION`。`POST /v1/skillpacks/{id}/runs` 在批准后即可运行，不必先安装 |
+| `POST /v1/skillpacks/{id}/runs` | 可选 `judgementPins`：最多 20 项 `{assetId,version,sha256}`。摘要必须是已批准判断结果的内容 SHA-256 |
+| `POST /v1/judgements` | 提交判断结果变更集。`judgementKind` 为 `policy-rule-table`、`metric-definition` 或 `incident-start`。正文是 `text` 或 `contentBase64` 之一，不超过 1 MiB |
+| `GET /v1/judgements?scopeId=` | 已批准且当前身份可见的判断结果。每项含 `assetId`、`version`、`sha256`、`judgementKind` |
+| `GET /v1/judgements/{assetId}/content` | 下载已批准的判断结果字节。`x-content-sha256` 是内容摘要 |
+| MCP `hub_task` | 与提交任务相同。省略 `capabilityPackId` 时用 `hub-task`。写操作仍要 `hub/idempotencyKey` 和 `hub/confirmation`。`hub_task` 与 `hub_packs` 不出现在 `GET /v1/tools`，`hub_tool_*` 仍是动态目录名 |
+| MCP `hub_packs` | 只读。空对象参数。回应的 `packs` 含内建能力包和已安装技能。不出现在 `GET /v1/tools` |
+| MCP `hub.skillpacks_run` | 可选 `judgementPins`，形状与 HTTP 运行相同 |
 | `GET /v1/admin/audit` | 不带导出参数时仍是 JSON 数组 |
 | `GET /v1/admin/audit/export` | `format` 为 `json` 或 `csv`，可选 `timezone`、`action`、`principalId`、`since`、`until`。JSON 为 `{format,timezone,items,truncated}`，时间为带偏移的本地时间。CSV 是 `text/csv` 附件 |
 | 变更集决定 | `ApprovalRequest` 增加可选 `reason`。开放请求上的拒绝返回 `declined` |

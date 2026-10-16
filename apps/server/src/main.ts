@@ -10,7 +10,7 @@ import { z } from 'zod';
 import { API_VERSION, MAX_BODY_BYTES, MAX_SOURCE_BYTES, MAX_WORKER_REPORT_BYTES, CLIENT_ROUTES, TaskListQuery, ApiError, SubmitRequest,canonicalHash,
   InputRequest, OperationRequest, ApprovalProposal, ApprovalRequest, ConclusionRequest, ChecklistRequest, ChecklistResponse, RuleRequest, InputRevisionId, TaskId, ScopeId, SourceUpload, Base64Content, DevLoginRequest, requireCondition,
   EntityId,RelationId,ObjectListQuery,ObjectTypePackage,ObjectObservation,RelationObservation,AuthRefreshRequest,
-  AssetId,AssetRegistration,AssetListQuery,AssetTransition,CredentialRegistration,KnowledgeRecordId,KnowledgeSearchQuery,KnowledgeReviewRequest,ToolName,ToolCallInput,StandardOperation,ServiceClientId,RegistryPageQuery } from '../../../packages/contracts/src/index.ts';
+  AssetId,AssetRegistration,AssetListQuery,AssetTransition,CredentialRegistration,KnowledgeRecordId,KnowledgeSearchQuery,KnowledgeReviewRequest,KnowledgeCategory,ToolName,ToolCallInput,StandardOperation,ServiceClientId,RegistryPageQuery } from '../../../packages/contracts/src/index.ts';
 import {queryMigration} from '../../../packages/storage/src/query-migration.ts';
 import { Store } from '../../../packages/storage/src/index.ts';
 import { taskMigration } from '../../../packages/tasks/src/migration.ts';
@@ -95,6 +95,9 @@ import {providerPrepareMigration} from '../../../packages/execution/src/prepare-
 import {workerCapabilityMigration} from '../../../packages/execution/src/worker-capability-migration.ts';
 import {MODULE_EXECUTE,FlowSubmission} from '../../../packages/execution/src/flow-contracts.ts';
 import {enterpriseGovernanceMigration} from '../../../packages/tasks/src/enterprise-governance-migration.ts';
+import {teamMigration} from '../../../packages/tasks/src/team-migration.ts';
+import {Teams} from '../../../packages/tasks/src/teams.ts';
+import {Judgements} from '../../../packages/tasks/src/judgements.ts';
 import {Governance} from '../../../packages/tasks/src/governance.ts';
 import {OidcLogin} from '../../../packages/tasks/src/oidc.ts';
 import {presentError} from '../../../packages/contracts/src/messages.ts';
@@ -103,7 +106,7 @@ import {auditCsv} from '../../../packages/tasks/src/work-queries.ts';
 
 function environment(name: string): string { const value = process.env[name]; if (!value) throw new Error(`Required environment variable: ${name}`); return value; }
 const store = new Store(JSON.parse(environment('CIRCLE_HUB_DATABASE_CONFIG')));
-await store.migrate([taskMigration,deliveryMigration,knowledgeMigration,executionMigration,...packageMigrations,approvalMigration,conclusionMigration,checklistMigration,connectorMigration,entityMigration,assetMigration,graphMigration,toolMigration,skillMigration,automationMigration,automationOutcomeMigration,knowledgePageMigration,automationOriginMigration,ingestionMigration,oauthMigration,resourceIdentityMigration,roleMigration,changeSetMigration,changeSetDependenciesMigration,enforcementMigration,sessionMigration,toolRolesMigration,readEffectMigration,readReleaseAuditMigration,notificationMigration,queryMigration,neutralMigration,mcpMigration,compatibilityMigration,readCompensationMigration,workQueryMigration,readAttributionMigration,registryPageMigration,executionFlowMigration,workerCapabilityMigration,flowReceiptMigration,providerPrepareMigration,enterpriseGovernanceMigration]);
+await store.migrate([taskMigration,deliveryMigration,knowledgeMigration,executionMigration,...packageMigrations,approvalMigration,conclusionMigration,checklistMigration,connectorMigration,entityMigration,assetMigration,graphMigration,toolMigration,skillMigration,automationMigration,automationOutcomeMigration,knowledgePageMigration,automationOriginMigration,ingestionMigration,oauthMigration,resourceIdentityMigration,roleMigration,changeSetMigration,changeSetDependenciesMigration,enforcementMigration,sessionMigration,toolRolesMigration,readEffectMigration,readReleaseAuditMigration,notificationMigration,queryMigration,neutralMigration,mcpMigration,compatibilityMigration,readCompensationMigration,workQueryMigration,readAttributionMigration,registryPageMigration,executionFlowMigration,workerCapabilityMigration,flowReceiptMigration,providerPrepareMigration,enterpriseGovernanceMigration,teamMigration]);
 const auth = new Auth(store,{developmentTtlMs:process.env.CIRCLE_HUB_DEV_TOKEN_TTL_MS?Number(process.env.CIRCLE_HUB_DEV_TOKEN_TTL_MS):undefined,runTokenTtlMs:process.env.CIRCLE_HUB_RUN_TOKEN_TTL_MS?Number(process.env.CIRCLE_HUB_RUN_TOKEN_TTL_MS):undefined});
 requireCondition(process.env.CIRCLE_HUB_DEV_AUTH === '1', 'INVALID_PAYLOAD', 'Phase one requires explicitly enabled development authentication');
 await auth.initializeDevelopment(environment('CIRCLE_HUB_DEV_IDENTITIES'));
@@ -132,10 +135,12 @@ assets.validateRegistration=async(ctx,input,id,tx)=>{await sourceArtifacts.valid
 const approvals=new Approvals(store,auth,tasks,Number(process.env.CIRCLE_HUB_APPROVAL_TTL_MS??86400000));execution.approvalCheck=(tx,task,spec)=>approvals.check(tx,task,spec);
 const changeSets=new ChangeSets(store,auth,assets,tasks,approvals);
 const governance=new Governance(store,auth,tasks,graph);governance.attach(changeSets);
+const teams=new Teams(store,auth);teams.attach(changeSets);
+const judgements=new Judgements(store,auth,assets,knowledge.objects);judgements.attach(changeSets);
 const oidc=new OidcLogin(store,auth,process.env.CIRCLE_HUB_OIDC_CONFIG);
 const executionChanges=new ExecutionChanges(assets,changeSets,execution,tasks);
 const registrationValidation=assets.validateRegistration;assets.validateRegistration=async(ctx,input,id,tx)=>{await changeSets.validateDefinition(tx,ctx,{...input,assetId:id});await registrationValidation?.(ctx,input,id,tx);};
-const skills=new SkillPacks(store,auth,tasks,approvals,assets,catalog,execution,knowledge);await skills.initialize(process.env.CIRCLE_RUNTIME_CONFIG);
+const skills=new SkillPacks(store,auth,tasks,approvals,assets,catalog,execution,knowledge);skills.judgements=judgements;await skills.initialize(process.env.CIRCLE_RUNTIME_CONFIG);
 const executionSecrets=new ExecutionSecrets(store,assets.vault,skills.secrets);
 const notifications=new Notifications(store,auth);
 const workQueries=new WorkQueries(store,auth);
@@ -268,6 +273,7 @@ const server = createListener(async (request, response) => {
     const scopeRoles=/^\/v1\/scopes\/([^/]+)\/roles$/.exec(url.pathname);if(scopeRoles&&request.method==='GET'){send(response,200,{data:url.searchParams.has('view')?await auth.roles.page(ctx,RegistryPageQuery.parse(Object.fromEntries(url.searchParams)),ScopeId.parse(scopeRoles[1])):await auth.roles.members(ctx,ScopeId.parse(scopeRoles[1]))});return;}
     if(scopeRoles&&request.method==='POST'){send(response,201,{data:await changeSets.roleSubmission(ctx,ScopeId.parse(scopeRoles[1]),await body(request))});return;}
     const approvalRoles=/^\/v1\/scopes\/([^/]+)\/approval-roles$/.exec(url.pathname);if(approvalRoles&&request.method==='POST'){send(response,201,{data:await governance.assign(ctx,ScopeId.parse(approvalRoles[1]),await body(request))});return;}
+    const teamRoute=/^\/v1\/scopes\/([^/]+)\/teams$/.exec(url.pathname);if(teamRoute){const scopeId=ScopeId.parse(teamRoute[1]);if(request.method==='POST'){send(response,201,{data:await teams.create(ctx,scopeId,await body(request))});return;}if(request.method==='GET'){send(response,200,{data:await teams.list(ctx,scopeId)});return;}}
     if(url.pathname==='/v1/approval-requests'&&request.method==='POST'){send(response,201,{data:await governance.submit(ctx,GovernanceSubmission.parse(await body(request)))});return;}
     if(url.pathname==='/v1/approvals/pending'&&request.method==='GET'){send(response,200,{data:await governance.pending(ctx)});return;}
     const governanceRequest=/^\/v1\/approval-requests\/(gov_[a-f0-9]{32})(\/content|\/decisions)?$/.exec(url.pathname);
@@ -294,6 +300,8 @@ const server = createListener(async (request, response) => {
     if(url.pathname===CLIENT_ROUTES.moduleInstall.path&&request.method==='POST'){send(response,201,{data:await modules.install(ctx,await body(request,MAX_WORKER_REPORT_BYTES),z.string().optional().parse(request.headers['x-scope-id']))});return;}
     const skillRun=/^\/v1\/skillpacks\/([^/]+)\/runs$/.exec(url.pathname);
     if(skillRun&&request.method==='POST'){const skillPackId=await skills.resolve(ctx,decodeURIComponent(skillRun[1]));send(response,202,{data:await skills.run(ctx,skillPackId,await body(request,MAX_WORKER_REPORT_BYTES))});return;}
+    const skillInstall=/^\/v1\/skillpacks\/([^/]+)\/install$/.exec(url.pathname);
+    if(skillInstall&&request.method==='POST'){z.object({}).strict().parse(await body(request));const skillPackId=await skills.resolve(ctx,decodeURIComponent(skillInstall[1]));send(response,200,{data:await skills.install(ctx,skillPackId)});return;}
     const skillCandidate=/^\/v1\/skillpacks\/(skp_[a-f0-9]{32})$/.exec(url.pathname);if(skillCandidate&&request.method==='GET'){send(response,200,{data:await skills.candidate(ctx,skillCandidate[1])});return;}
     if(url.pathname===CLIENT_ROUTES.tools.path&&request.method==='GET'){
       const listing=url.searchParams.has('view')?await catalog.page(ctx,RegistryPageQuery.parse(Object.fromEntries(url.searchParams))):await catalog.list(ctx);response.setHeader('etag',listing.etag);response.setHeader('vary','Authorization');
@@ -302,6 +310,10 @@ const server = createListener(async (request, response) => {
     }
     const toolCall=/^\/v1\/tools\/([^/]+)\/call$/.exec(url.pathname);
     if(toolCall&&request.method==='POST'){const name=ToolName.parse(decodeURIComponent(toolCall[1])),value=await catalog.call(ctx,name,ToolCallInput.parse(await body(request)),shutdownSignal.signal);send(response,'taskId' in value?202:200,{data:value});return;}
+    if(url.pathname==='/v1/knowledge/snapshots/current'&&request.method==='GET'){send(response,200,{data:await graph.currentSnapshot(ctx,ScopeId.parse(url.searchParams.get('scopeId')),KnowledgeCategory.parse(url.searchParams.get('knowledgeCategory')))});return;}
+    if(url.pathname==='/v1/judgements'&&request.method==='POST'){send(response,201,{data:await judgements.create(ctx,await body(request))});return;}
+    if(url.pathname==='/v1/judgements'&&request.method==='GET'){const scope=url.searchParams.get('scopeId');send(response,200,{data:await judgements.list(ctx,scope?ScopeId.parse(scope):undefined)});return;}
+    const judgementContent=/^\/v1\/judgements\/([^/]+)\/content$/.exec(url.pathname);if(judgementContent&&request.method==='GET'){download(response,await judgements.content(ctx,AssetId.parse(judgementContent[1])));return;}
     if(url.pathname==='/v1/knowledge/search'&&request.method==='GET'){
       const query=KnowledgeSearchQuery.parse({q:url.searchParams.get('q')??undefined,mode:url.searchParams.get('mode')??undefined,limit:url.searchParams.get('limit')??undefined,includeCandidates:url.searchParams.get('includeCandidates')??undefined});
       send(response,200,{data:await graph.search(ctx,query)});return;
@@ -358,7 +370,7 @@ const server = createListener(async (request, response) => {
     }
     const assignment=/^\/v1\/tasks\/(task_[A-Za-z0-9_-]+)\/assignment$/.exec(url.pathname);if(assignment&&request.method==='POST'){send(response,200,{data:await tasks.assign(ctx,assignment[1],await body(request))});return;}
     if (url.pathname === '/v1/packs' && request.method === 'GET') {
-      await auth.check(ctx,'methods.use'); send(response,200,{ data:packages.descriptors }); return;
+      await auth.check(ctx,'methods.use'); send(response,200,{ data:[...packages.descriptors,...await skills.installedDescriptors(ctx)] }); return;
     }
     if(url.pathname==='/v1/rules'&&request.method==='POST'){send(response,201,{data:await rules.create(ctx,RuleRequest.parse(await body(request)))});return;}
     const ruleRoute=/^\/v1\/rules\/([^/]+)$/.exec(url.pathname);if(ruleRoute&&request.method==='GET'){send(response,200,{data:await rules.get(ctx,ruleRoute[1])});return;}
@@ -367,7 +379,9 @@ const server = createListener(async (request, response) => {
       if(declaredPack!==undefined){
         const raw=Array.isArray(declaredPack)?declaredPack.join(','):declaredPack;
         if(!/^[a-z][a-z0-9-]{0,99}$/.test(raw))throw new ApiError('INVALID_PAYLOAD','x-capability-pack-id must be a package name: a lowercase letter, then up to 99 letters, digits or hyphens. Check GET /v1/packs.');
-        assertInstalledCapability(tasks.capabilities,raw,tasks.retiredCapabilityPacks);
+        const explained=await skills.explainCapability(ctx,raw);
+        if(explained.disposition==='install-first')throw new ApiError('APPROVAL_REQUIRED',explained.message??'Approved skill is not installed');
+        if(explained.disposition==='missing')assertInstalledCapability(tasks.capabilities,raw,tasks.retiredCapabilityPacks);
       }
       let source;
       if (request.headers['content-type']?.split(';')[0] === 'application/octet-stream') {
@@ -390,6 +404,7 @@ const server = createListener(async (request, response) => {
     if (url.pathname === '/v1/tasks/submit' && request.method === 'POST') {
       const submission = SubmitRequest.parse(await body(request));
       await auth.check(ctx,'tasks.submit',submission.scopeId);
+      const delegated=await skills.delegatedRun(ctx,submission);if(delegated){send(response,202,{data:delegated});return;}
       const accepted = await store.transaction(async tx => {
         const owner=await packages.prepare(ctx,submission,tx);
         const task=await tasks.submit(ctx,submission,tx);

@@ -18,6 +18,10 @@ All notable changes to circle-hub are listed here, newest first. Repository rele
 - [docs/quickstart.md](docs/quickstart.md) and [docs/quickstart.en.md](docs/quickstart.en.md) describe deploy, Circle connect (`/extensions enable hub`, `/hub login`), stop/restart, runtime profiles, Linux sandbox limits, and the environment variables.
 - `dev:stack` accepts stable `CIRCLE_HUB_PORT` and `CIRCLE_HUB_DEV_PASSWORD`, `CIRCLE_HUB_DEV_APPROVER_PASSWORD`, `CIRCLE_HUB_DEV_SERVICE_PASSWORD`, `CIRCLE_HUB_DEV_WORKER_PASSWORD`. Unset passwords stay random. A non-TTY start says to signal the pid instead of pressing Ctrl+C.
 - Skill run accepts a unique manifest name as well as a `skp_` id. `POST /v1/sources` checks optional `x-capability-pack-id` before storing bytes. Skill views add `lifecycle`, `registration` and `statusLabel`. Task views add `phaseLabel`. Empty or shortened trials return `warnings` and stay HTTP 201.
+- Teams are created by a change set and can be named in knowledge readers and approval roles. `dev:stack` seeds developer, approver, counsel and controller across Legal and Finance.
+- `GET /v1/knowledge/snapshots/current` returns the stable snapshot id. `expectedSnapshotId: null` matches only when that id is null.
+- The skill owner installs an approved package with `POST /v1/skillpacks/{id}/install`. The manifest id then appears in `GET /v1/packs` and can be submitted as a capability. `POST /v1/skillpacks/{id}/runs` still accepts an approved package before install.
+- Judgement assets (`policy-rule-table`, `metric-definition`, `incident-start`) are approved by a person. A skill run cites them with `judgementPins`.
 
 ### Changed
 

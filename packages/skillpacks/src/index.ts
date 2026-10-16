@@ -19,6 +19,7 @@ import {deriveCircleSkill} from './neutral.ts';
 import {skillWasLoaded} from './loader-observation.ts';
 import {approvedRuntimeRevision,boundRuntimeRevision,type RuntimeBinding} from '../../assets/src/runtime-revisions.ts';
 import {builtinToolNames,knownToolNames} from '../../tools/src/builtins.ts';
+import type {Judgements} from '../../tasks/src/judgements.ts';
 
 const RUNTIME_PROFILE_HINT='A Circle runtime profile is the JSON file CIRCLE_RUNTIME_CONFIG points at. It names circleBin, circleCommit (40 hexadecimal characters), circleVersion and model (kind scripted or remote, base_url, model, protocol set to openai, and api_key). Set CIRCLE_RUNTIME_CONFIG, restart the hub, call GET /v1/runtime-profiles, register a runtime-profile asset, and have a different person approve it. See docs/quickstart.md.';
 const SKILL_PACK_ID=/^skp_[A-Za-z0-9][A-Za-z0-9_-]*$/;
@@ -42,6 +43,7 @@ export class SkillPacks {
   runtimeDigest:string|null=null;
   modelSecret?:{key:string;binding:string};
   changeSets?:ChangeSets;
+  judgements?:Judgements;
   privateSocketPath='';
   secrets=new Map<string,{token:string;digest:string}>();
   constructor(store:Store,auth:Auth,tasks:Tasks,approvals:Approvals,assets:Assets,catalog:ToolCatalog,execution:Operations,objects:Knowledge){this.store=store;this.auth=auth;this.tasks=tasks;this.approvals=approvals;this.assets=assets;this.catalog=catalog;this.execution=execution;this.execution.requiredWorkerCapabilities.add('assets.execute');this.objects=objects;}
@@ -142,21 +144,61 @@ export class SkillPacks {
     requireCondition(profile&&profile.configuration.profileSha256===this.runtimeDigest,'SOURCE_NOT_APPROVED','Circle runtime requires an independently approved matching profile');await this.assets.versionRow(ctx,profile.asset_id,profile.version,tx);
     return {assetId:profile.asset_id,version:profile.version,sha256:profile.sha256,profileSha256:this.runtimeDigest};
   }
+  installMessage(id:string,skillPackId:string){return `Approved skill ${id} is not installed. POST /v1/skillpacks/${skillPackId}/install, then POST /v1/skillpacks/${skillPackId}/runs.`;}
+  async explainCapability(ctx:AuthContext,id?:string,tx?:Transaction):Promise<{disposition:'continue'|'installed'|'install-first'|'missing';skillPackId?:string;message?:string}>{
+    if(!id)return {disposition:'continue'};
+    if(this.tasks.retiredCapabilityPacks.has(id))throw new ApiError('UNSUPPORTED_VERSION','Capability package is not installed');
+    if(this.tasks.capabilities.has(id))return {disposition:'continue'};
+    const policy=await this.auth.policy(ctx,tx);
+    const rows=(await (tx??this.store.pool).query(`SELECT s.skill_pack_id,s.status,v.lifecycle FROM skill_packages s JOIN asset_versions v ON v.asset_id=s.asset_id AND v.version=s.asset_version WHERE s.tenant_id=$1 AND s.scope_id=ANY($2::text[]) AND s.manifest->>'id'=$3 ORDER BY s.created_at DESC`,[policy.tenantId,policy.scopes,id])).rows;
+    const running=rows.filter(row=>row.status==='registered'&&row.lifecycle==='running');
+    if(running.length===1)return {disposition:'installed',skillPackId:running[0].skill_pack_id};
+    if(running.length>1)throw new ApiError('INVALID_PAYLOAD',`More than one installed skill uses the name ${id}. Pass one of these ids: ${running.map(row=>row.skill_pack_id).join(', ')}.`,{skillPackIds:running.map(row=>row.skill_pack_id)});
+    const approved=rows.filter(row=>row.status==='registered');
+    if(approved.length===1)return {disposition:'install-first',skillPackId:approved[0].skill_pack_id,message:this.installMessage(id,approved[0].skill_pack_id)};
+    if(approved.length>1)throw new ApiError('APPROVAL_REQUIRED',`Approved skills named ${id} are not installed. Install one of these ids: ${approved.map(row=>row.skill_pack_id).join(', ')}.`,{skillPackIds:approved.map(row=>row.skill_pack_id)});
+    return {disposition:'missing'};
+  }
+  async installedDescriptors(ctx:AuthContext):Promise<any[]>{
+    try{await this.auth.check(ctx,'skillpacks.read');}catch(error){if(error instanceof ApiError)return [];throw error;}
+    const policy=await this.auth.policy(ctx);
+    const rows=(await this.store.pool.query(`SELECT s.skill_pack_id,s.manifest FROM skill_packages s JOIN asset_versions v ON v.asset_id=s.asset_id AND v.version=s.asset_version WHERE s.tenant_id=$1 AND s.scope_id=ANY($2::text[]) AND s.status='registered' AND v.lifecycle='running' AND v.approved_digest=v.sha256 ORDER BY s.manifest->>'id',s.created_at DESC`,[policy.tenantId,policy.scopes])).rows;
+    const seen=new Set<string>();const descriptors=[];
+    for(const row of rows){if(seen.has(row.manifest.id))continue;seen.add(row.manifest.id);descriptors.push({capabilityPackId:row.manifest.id,version:row.manifest.version,flowVersion:'skill-run/1',title:row.manifest.title,titleZh:row.manifest.title,skillPackId:row.skill_pack_id,installed:true,inputFormats:['skill-run/1'],requiredOperations:['assets.execute'],conclusionScope:'skill-run'});}
+    return descriptors;
+  }
+  async delegatedRun(ctx:AuthContext,submission:{capabilityPackId?:string;input?:Record<string,unknown>;idempotencyKey:string},tx?:Transaction):Promise<any>{
+    const explained=await this.explainCapability(ctx,submission.capabilityPackId,tx);
+    if(explained.disposition==='install-first')throw new ApiError('APPROVAL_REQUIRED',explained.message??'Approved skill is not installed');
+    if(explained.disposition!=='installed'||!explained.skillPackId)return;
+    const {judgementPins,...inputs}=submission.input??{};
+    return this.run(ctx,explained.skillPackId,{inputs,idempotencyKey:submission.idempotencyKey,...(judgementPins===undefined?{}:{judgementPins})},'manual',tx);
+  }
+  async install(ctx:AuthContext,id:string):Promise<any>{return this.store.transaction(async tx=>{
+    const row=await this.row(ctx,id,'skillpacks.run',tx);requireCondition(row.status==='registered','APPROVAL_REQUIRED','Approve the skill before installing it');
+    requireCondition(row.owner_id===ctx.principalId,'FORBIDDEN_ACTION','Only the skill owner installs the approved package');
+    const asset=(await tx.query('SELECT * FROM asset_versions WHERE asset_id=$1 AND version=$2',[row.asset_id,row.asset_version])).rows[0];
+    requireCondition(asset&&['approved','running'].includes(asset.lifecycle)&&asset.approved_digest===asset.sha256,'APPROVAL_REQUIRED','Approve the skill before installing it');
+    if(asset.lifecycle!=='running')await tx.query("UPDATE asset_versions SET lifecycle='running' WHERE asset_id=$1 AND version=$2",[row.asset_id,row.asset_version]);
+    await this.auth.audit(ctx,'skill.install',{skillPackId:id,capabilityPackId:row.manifest.id,digest:row.digest},row.scope_id,tx);
+    return {skillPackId:id,capabilityPackId:row.manifest.id,lifecycle:'running',digest:row.digest,runPath:`/v1/skillpacks/${id}/runs`};
+  });}
   async run(ctx:AuthContext,id:string,value:unknown,origin='manual',transaction?:Transaction):Promise<any>{
     const input=SkillRunInput.parse(value);const perform=async(tx:Transaction)=>{
       const row=await this.row(ctx,id,'skillpacks.run',tx);requireCondition(row.status==='registered','APPROVAL_REQUIRED','Package requires bound registration approval');
       requireCondition(row.manifest.triggers.includes(origin),'FORBIDDEN_ACTION',`Package ${row.skill_pack_id} (${row.manifest.id}) does not allow the ${origin} trigger. Declared triggers: ${(row.manifest.triggers??[]).join(', ')||'none'}.`);await this.checkWithDetails(ctx,row.manifest,row.trial,tx);
       const asset=await this.assets.row(ctx,row.asset_id,tx);requireCondition(asset.version===row.asset_version&&['approved','running'].includes(asset.lifecycle)&&asset.approved_digest===asset.sha256,'APPROVAL_STALE','Package asset revision is no longer approved');
-      const runtimeProfile=await this.runtimeBinding(tx,ctx,row.scope_id);const task=await this.tasks.submit(ctx,{scopeId:row.scope_id,title:`Run ${row.manifest.title}`,capabilityPackId:'skill-run',idempotencyKey:canonicalHash(['skill-run',id,input.idempotencyKey]),input:{skillPackId:id,digest:row.digest,assetId:row.asset_id,assetVersion:row.asset_version,assetSha256:asset.sha256,runtimeProfile,inputs:input.inputs}},tx);
+      const judgementPins=input.judgementPins?.length?await this.judgements!.resolve(tx,ctx,row.scope_id,input.judgementPins):[];
+      const runtimeProfile=await this.runtimeBinding(tx,ctx,row.scope_id);const task=await this.tasks.submit(ctx,{scopeId:row.scope_id,title:`Run ${row.manifest.title}`,capabilityPackId:'skill-run',idempotencyKey:canonicalHash(['skill-run',id,input.idempotencyKey]),input:{skillPackId:id,digest:row.digest,assetId:row.asset_id,assetVersion:row.asset_version,assetSha256:asset.sha256,runtimeProfile,inputs:input.inputs,judgementPins}},tx);
       if(!task.deduplicated){await tx.query('UPDATE tasks SET context=$2 WHERE task_id=$1',[task.taskId,JSON.stringify({privateOwnerId:ctx.principalId})]);await this.tasks.stage(tx,task,'running','runtime-pending','task.running');
-        await this.execution.submit(ctx,task.taskId,{name:'assets.execute',inputRevisionId:task.inputRevisionId,target:row.asset_id,targetIdentity:asset.sha256,args:{skillPackId:id,digest:row.digest,inputs:input.inputs},idempotencyKey:input.idempotencyKey,deadlineMs:300_000},tx);}
+        await this.execution.submit(ctx,task.taskId,{name:'assets.execute',inputRevisionId:task.inputRevisionId,target:row.asset_id,targetIdentity:asset.sha256,args:{skillPackId:id,digest:row.digest,inputs:input.inputs,judgementPins},idempotencyKey:input.idempotencyKey,deadlineMs:300_000},tx);}
       return {taskId:task.taskId};
     };return transaction?perform(transaction):this.store.transaction(perform);
   }
   async authorize(tx:Transaction,ctx:AuthContext,scope:string,spec:any,task:any):Promise<any>{
     const row=await this.row(ctx,spec.args.skillPackId,'skillpacks.run',tx),asset=await this.assets.row(ctx,row.asset_id,tx);
     requireCondition(row.status==='registered'&&['approved','running'].includes(asset.lifecycle)&&asset.approved_digest===asset.sha256,'APPROVAL_REQUIRED','Package registration is not active');
-    requireCondition(row.scope_id===scope&&task.principalId===ctx.principalId&&task.capabilityPackId==='skill-run'&&task.input.digest===row.digest&&spec.args.digest===row.digest&&asset.asset_id===spec.target&&asset.sha256===(spec.targetIdentity??spec.target_identity)&&canonicalHash(task.input.inputs)===canonicalHash(spec.args.inputs),'APPROVAL_STALE','Runtime input or package target differs');
+    requireCondition(row.scope_id===scope&&task.principalId===ctx.principalId&&task.capabilityPackId==='skill-run'&&task.input.digest===row.digest&&spec.args.digest===row.digest&&asset.asset_id===spec.target&&asset.sha256===(spec.targetIdentity??spec.target_identity)&&canonicalHash(task.input.inputs)===canonicalHash(spec.args.inputs)&&canonicalHash(task.input.judgementPins??[])===canonicalHash(spec.args.judgementPins??[]),'APPROVAL_STALE','Runtime input or package target differs');
     await this.checkWithDetails(ctx,row.manifest,row.trial,tx);requireCondition(task.input.runtimeProfile,'SOURCE_NOT_APPROVED','Run has no frozen runtime authority');const runtimeProfile=await this.runtimeBinding(tx,ctx,scope,task.input.runtimeProfile);
     return {effects:{reads:['registered-assets'],writes:['artifacts-evidence']},skillPackId:row.skill_pack_id,manifest:row.manifest,files:row.files,runtime:this.runtime,runtimeProfile,scopeId:row.scope_id};
   }

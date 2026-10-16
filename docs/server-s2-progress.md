@@ -1463,3 +1463,9 @@ Node.js 24 在 `hub-environment` 导入时检查，`.npmrc` 使用 `engine-stric
 客户端需要采纳的路径、字段和工具名记在 `docs/client-api-handoff.md` 的「企业治理接口」一节。知识记录下载使用路径基名和对应媒体类型。来源表里的存储名仍是 `knowledge-*.bin`，`GET /v1/sources/{id}/content` 沿用该存储名；记录所有者对该路径返回 200。
 
 定向验证在 Node.js 24.11.1 与临时 PostgreSQL 上完成。企业治理 **3/3**，知识 R2.3 **6/6**，技能推送 R2.5 可执行项 **2/2**，技能诊断 **4/4**，新用户问答 **2/2**，Hub RPC 能力声明 **1/1**，模块清单 **6/6**（含一次返回全部清单错误），管理审计与资产 **7/7**，登记操作页 **3/3**。合计 **34** 通过、**0** 失败。另有 **4** 项跳过：本机 Linux 没有 seatbelt 的技能运行 **3** 项，以及未设置 `CIRCLE_BIN` 的固定 Circle 提交核对 **1** 项。`npm run typecheck` 已在同一 Node 上通过。未跑全量 `npm test`。
+
+## 140：团队、当前快照、技能安装与判断结果
+
+团队经变更集生效，读者列表和审批角色都可以写团队。开发栈增加 `counsel` 与 `controller`，与 `developer`、`approver` 分属 Legal 与 Finance。`GET /v1/knowledge/snapshots/current` 返回当前稳定快照 id；`expectedSnapshotId: null` 只在该 id 为 null 时成立。已批准技能由所有者安装后，清单名进入 `GET /v1/packs`，提交任务会交给技能运行。`POST /v1/skillpacks/{id}/runs` 在安装前仍接受已批准的包。判断结果是人批准、按内容 SHA-256 固定的资产，技能运行用 `judgementPins` 引用，不再每次重新抽取。
+
+定向验证在 Node.js 24.11.1 与临时 PostgreSQL 上完成。协作验收 **3/3**，方法侧新用户问答 **7/7**。回归：企业治理 **3/3**，知识 R2.3 **6/6**，技能 R2.5 可执行项 **2/2**，技能诊断 **4/4**，技能拒绝 **4/4**，新用户问答验收 **2/2**，管理 **4/4**，包登记可执行项 **2/2**，模块清单 **6/6**。合计 **43** 通过、**0** 失败。另有 **5** 项跳过：本机 Linux 没有 seatbelt 的技能或产品运行 **4** 项，以及未设置 `CIRCLE_BIN` 的固定 Circle 提交核对 **1** 项。`npm run typecheck` 已在同一 Node 上通过。未跑全量 `npm test`。

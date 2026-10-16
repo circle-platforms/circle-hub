@@ -23,6 +23,11 @@ const exact:Record<string,string>={
   'OIDC login could not be verified':'OIDC 登录未能通过校验',
   'Provide text or contentBase64':'提供 text 或 contentBase64 其中之一',
   'A governance approver cannot decide their own request':'提交人不能决定自己的审批请求',
+  'Name one person or one team':'指定一个人或一个团队',
+  'Judgement pin does not match the approved bytes':'判断结果的摘要与已批准字节不一致',
+  'Only the skill owner installs the approved package':'只有技能所有者可以安装已批准的包',
+  'Approve the skill before installing it':'安装前先批准技能',
+  'Stable snapshot changed':'稳定快照已经变化',
 };
 
 const byCode:Record<string,string>={
@@ -42,7 +47,9 @@ const byCode:Record<string,string>={
 };
 
 export function chineseMessage(code:string,english:string):string{
-  return exact[english]??byCode[code]??'请求被拒绝';
+  if(exact[english])return exact[english];
+  if(english.startsWith('Approved skill ')&&english.includes('is not installed'))return '已批准的技能尚未安装。先安装，再运行。';
+  return byCode[code]??'请求被拒绝';
 }
 
 export function presentError(error:ApiError,acceptLanguage?:string|string[]):{message:string;messageZh:string;messageEn?:string}{

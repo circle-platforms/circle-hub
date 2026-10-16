@@ -100,12 +100,15 @@ Linux 上没有进程隔离。技能运行和产品包 Tool/Hook 子进程需要
 `GET /v1/packs` 列出已安装的能力包。上传原件时可以带请求头 `x-capability-pack-id`。hub 在读取和保存正文之前检查这个名字。
 
 - 已退役的 `lbx-healthcheck` 和 `apv-case-execute` 仍返回 `UNSUPPORTED_VERSION`。
+- 已批准但尚未安装的技能名返回 `APPROVAL_REQUIRED`，消息指向 `POST /v1/skillpacks/{id}/install`。安装后，这个清单名出现在 `GET /v1/packs`，`POST /v1/tasks/submit` 可以用它运行。
 - 其他未安装的名字返回 `TARGET_NOT_FOUND`，消息里有这个 id，并提示先看 `GET /v1/packs`。没有这个头时，上传行为与以前相同。
 - 提交任务时，未知能力包同样在创建任务前返回 `TARGET_NOT_FOUND`。
 
 Circle 1.7.4 会先上传再提交，并且不送这个头。要在上传前失败，客户端需要先查包列表，或在 `POST /v1/sources` 上带 `x-capability-pack-id`。
 
-用包名（`skillpack.json` 的 `id`）调用 `POST /v1/skillpacks/<名字>/runs` 时：唯一已批准的包会解析到它的 `skp_` id；多个已批准同名包会列出这些 id，不会猜；只有候选时返回 `APPROVAL_REQUIRED` 并列出提交。写成 `skp_` 但格式不对时，错误说明应有的形状，而不是原始 schema 正则。
+用包名（`skillpack.json` 的 `id`）调用 `POST /v1/skillpacks/<名字>/runs` 时：唯一已批准的包会解析到它的 `skp_` id；多个已批准同名包会列出这些 id，不会猜；只有候选时返回 `APPROVAL_REQUIRED` 并列出提交。写成 `skp_` 但格式不对时，错误说明应有的形状，而不是原始 schema 正则。批准之后就可以运行，不必先安装。要让这个名字成为 `GET /v1/packs` 里的能力包，由所有者 `POST /v1/skillpacks/{id}/install`，正文 `{}`。运行可以带 `judgementPins`，引用已批准判断结果的 `{assetId,version,sha256}`。
+
+发布知识快照前，先 `GET /v1/knowledge/snapshots/current?scopeId=&knowledgeCategory=`。`snapshotId` 为 `null` 时，第一次 `POST /v1/knowledge/snapshots` 可以传 `expectedSnapshotId: null`。已有快照后再传 `null` 会得到 `INPUT_REVISION_STALE`；下一次发布传入这次读到的 id。
 
 试跑记录可以是 0 次工具调用，提交仍会接受（201）。回应里的 `warnings` 会说明这次没有调用记录。同一 manifest id 的新提交如果比上一次调用更少，也会警告：更早的调用不会保留在这次提交上。内容完全相同的重复提交（同一摘要）不再重复警告。
 
@@ -116,6 +119,8 @@ Circle 1.7.4 会先上传再提交，并且不送这个头。要在上传前失�
 | `CIRCLE_HUB_PORT` | 0–65535 的整数。`0` 表示由系统分配。开发栈未设置时用 `0`；supervisor 未设置时用 `8080` |
 | `CIRCLE_HUB_DEV_PASSWORD` | 开发栈用户 `developer` 的稳定密码；留空则每次随机 |
 | `CIRCLE_HUB_DEV_APPROVER_PASSWORD` | 用户 `approver` |
+| `CIRCLE_HUB_DEV_COUNSEL_PASSWORD` | 用户 `counsel`，团队 Legal 的成员 |
+| `CIRCLE_HUB_DEV_CONTROLLER_PASSWORD` | 用户 `controller`，团队 Finance 的成员 |
 | `CIRCLE_HUB_DEV_SERVICE_PASSWORD` | 服务账号 `defect-bot` |
 | `CIRCLE_HUB_DEV_WORKER_PASSWORD` | 两个合成 worker |
 | `CIRCLE_HUB_DEV_AUTH` | 设为 `1` 才启用开发登录 |

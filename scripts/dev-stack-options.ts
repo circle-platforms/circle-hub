@@ -12,17 +12,34 @@ export function devStackStopLine(foreground:boolean,pid:number):string{
   ? 'Stop: press Ctrl+C in this terminal. That stops the processes and deletes this temporary database.'
   : `Stop: send SIGTERM to pid ${pid}. That stops the processes and deletes this temporary database.`;
 }
-export function devStackNextLines(facts:{url:string;userPassword:string;approverPassword:string;samplePath:string;pid:number;foreground:boolean}):string[]{
+export const devStackMemberGrants=['tasks.read','tasks.submit','tasks.input','sources.read','evidence.read','knowledge.read','skillpacks.read','assets.read','methods.use'] as const;
+export const devStackHumans=[
+ {username:'developer',principalId:'prn_developer',team:'Legal'},
+ {username:'approver',principalId:'prn_approver',team:'Finance'},
+ {username:'counsel',principalId:'prn_counsel',team:'Legal'},
+ {username:'controller',principalId:'prn_controller',team:'Finance'},
+] as const;
+export const devStackTeams=[
+ {name:'Legal',members:['prn_developer','prn_counsel']},
+ {name:'Finance',members:['prn_approver','prn_controller']},
+] as const;
+export function devStackNextLines(facts:{url:string;userPassword:string;approverPassword:string;samplePath:string;pid:number;foreground:boolean;counselPassword?:string;controllerPassword?:string}):string[]{
  const login=`/hub login ${facts.url} developer`;
+ const teams=facts.counselPassword&&facts.controllerPassword?[
+  `Counsel username: counsel. Counsel password: ${facts.counselPassword}`,
+  `Controller username: controller. Controller password: ${facts.controllerPassword}`,
+  'Teams: Legal (developer, counsel) and Finance (approver, controller).',
+ ]:[];
  return [
   `Hub is ready at ${facts.url}.`,
   'Next, in Circle: /extensions enable hub',
   `Then: ${login}`,
   `Developer password: ${facts.userPassword}`,
   `Approver username: approver. Approver password: ${facts.approverPassword}`,
+  ...teams,
   'Scope: scp_lab',
   `Synthetic XMind sample: ${facts.samplePath}`,
   devStackStopLine(facts.foreground,facts.pid),
-  `下一步：在 Circle 里执行 /extensions enable hub，然后 ${login}。开发者密码见上一行，审批人是 approver。范围 scp_lab。`,
+  `下一步：在 Circle 里执行 /extensions enable hub，然后 ${login}。开发者密码见上一行，审批人是 approver。范围 scp_lab。${teams.length?' 团队是 Legal 与 Finance。':''}`,
  ];
 }

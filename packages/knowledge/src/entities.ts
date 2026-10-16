@@ -6,7 +6,7 @@ import type {TypeCatalog} from './type-catalog.ts';
 import {facetedPage} from '../../storage/src/faceted-query.ts';
 import type {RegistryPageQuery} from '../../contracts/src/index.ts';
 
-const aclSql=(observation:string)=>`(${observation}.source_readers ? $3 OR ${observation}.source_readers ? '*') AND (${observation}.platform_readers ? $3 OR ${observation}.platform_readers ? '*')`;
+const aclSql=(observation:string)=>`reader_visible(${observation}.source_readers,$3,$1) AND reader_visible(${observation}.platform_readers,$3,$1)`;
 const visibleSql=(entity:string,observation:string)=>`${entity}.tenant_id=$1 AND ${entity}.scope_id=ANY($2::text[]) AND ${aclSql(observation)}`;
 const entityJoin='entities e JOIN entity_observations o ON o.entity_revision_id=e.current_revision_id JOIN sources s ON s.source_revision_id=o.source_revision_id';
 const entityColumns='e.*,o.*,s.sha256,s.size,s.file_name';

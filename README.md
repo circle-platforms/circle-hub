@@ -74,7 +74,7 @@ npm test              # contracts, methods, acceptance, references
 npm run typecheck
 ```
 
-`dev:stack` prints the local address, the next Circle commands (`/extensions enable hub`, then `/hub login <url> developer`) and a synthetic sample. A foreground terminal stops with Ctrl+C; a background process stops with SIGTERM to the printed pid. Either path removes the temporary environment. Set `CIRCLE_HUB_PORT` and `CIRCLE_HUB_DEV_PASSWORD` (plus the approver, service and worker passwords) when the address and passwords should stay the same across starts. The deploy and connect steps are in [docs/quickstart.md](docs/quickstart.md) ([English](docs/quickstart.en.md)). Nothing in the repository or the suite connects to a real system, and no runtime address, credential or business original belongs in Git.
+`dev:stack` prints the local address, the next Circle commands (`/extensions enable hub`, then `/hub login <url> developer`) and a synthetic sample. A foreground terminal stops with Ctrl+C; a background process stops with SIGTERM to the printed pid. Either path removes the temporary environment. Set `CIRCLE_HUB_PORT` and `CIRCLE_HUB_DEV_PASSWORD` (plus `CIRCLE_HUB_DEV_APPROVER_PASSWORD`, `CIRCLE_HUB_DEV_SERVICE_PASSWORD`, `CIRCLE_HUB_DEV_WORKER_PASSWORD`, `CIRCLE_HUB_DEV_COUNSEL_PASSWORD` and `CIRCLE_HUB_DEV_CONTROLLER_PASSWORD`) when the address and passwords should stay the same across starts. The deploy and connect steps are in [docs/quickstart.md](docs/quickstart.md) ([English](docs/quickstart.en.md)). Nothing in the repository or the suite connects to a real system, and no runtime address, credential or business original belongs in Git.
 
 ## Packs
 

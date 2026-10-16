@@ -73,7 +73,7 @@ npm test              # contracts、methods、acceptance、references
 npm run typecheck
 ```
 
-`dev:stack` 会打印本机地址、下一步 Circle 命令（`/extensions enable hub`，然后 `/hub login <url> developer`）和一个合成样本。前台终端用 Ctrl+C 停止；后台进程向打印出的 pid 发送 SIGTERM。两种方式都会清掉临时环境。希望地址和密码在多次启动之间保持不变时，设置 `CIRCLE_HUB_PORT` 和 `CIRCLE_HUB_DEV_PASSWORD`（以及审批人、服务账号、worker 密码）。部署和连接步骤见 [docs/quickstart.md](docs/quickstart.md)（[English](docs/quickstart.en.md)）。仓库和测试套件不连任何真实系统；运行时地址、凭据和业务原件都不进 Git。
+`dev:stack` 会打印本机地址、下一步 Circle 命令（`/extensions enable hub`，然后 `/hub login <url> developer`）和一个合成样本。前台终端用 Ctrl+C 停止；后台进程向打印出的 pid 发送 SIGTERM。两种方式都会清掉临时环境。希望地址和密码在多次启动之间保持不变时，设置 `CIRCLE_HUB_PORT` 和 `CIRCLE_HUB_DEV_PASSWORD`，以及 `CIRCLE_HUB_DEV_APPROVER_PASSWORD`、`CIRCLE_HUB_DEV_SERVICE_PASSWORD`、`CIRCLE_HUB_DEV_WORKER_PASSWORD`、`CIRCLE_HUB_DEV_COUNSEL_PASSWORD` 和 `CIRCLE_HUB_DEV_CONTROLLER_PASSWORD`。部署和连接步骤见 [docs/quickstart.md](docs/quickstart.md)（[English](docs/quickstart.en.md)）。仓库和测试套件不连任何真实系统；运行时地址、凭据和业务原件都不进 Git。
 
 ## 包
 
