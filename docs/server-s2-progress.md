@@ -1447,3 +1447,19 @@ Node.js 24 在 `hub-environment` 导入时检查，`.npmrc` 使用 `engine-stric
 兼容矩阵的打包客户端绑定改为 Circle 1.7.4 / 9123753467e56b40120a91ed79fc0694edeba516。扩展清单版本 0.1.0 与 hub 包 0.2.0、API 1.0.0 分列。RPC 验收 pin 仍是 fd8524a / Circle 1.7.0；本步没有用 1.7.4 二进制重跑该验收。
 
 验证在 Node.js 24.22.0 上、CIRCLE_BIN / CIRCLE_COMMIT / CIRCLE_RUNTIME_CONFIG 置空时进行。`npm ci` 不再提示 embedded-postgres 的 allowScripts。typecheck 通过。contracts **20/20**。methods **289 pass / 1 skip / 0 fail**（该 skip 是 Linux 上没有 seatbelt 的隔离用例）。acceptance 全量一次为 **261 pass / 144 skip / 1 fail**：失败是核心文件里出现了退役包名，已把这两个名字移到 `packs/`；修后 `s2-07-core`、`new-user-qa`、`native-retirement` 与 `r2-07` 通过。144 项 skip 是这台 Linux 上隔离与未提供 Circle 二进制的用例，不计通过。references **7/7**。没有真实系统、模型、设备或付费调用。
+
+## 139：通用企业治理
+
+本步只改 circle-hub。Circle 客户端仓库不改。不包含 Linux 沙箱。
+
+已批准且团队可见的知识主张在审核事务里写入稳定快照，检索能按 `snapshotId` 命中。记录所有者可以下载自己的原件；下载使用路径或声明中的文件名和媒体类型，不再把这类原件一律标成 `.bin`。来源不可见写入 `knowledge.access-denied`。
+
+`POST /v1/approval-requests` 提交任意正文，按 `manager`、`security`、`dpo`、`legal`、`finance`、`hr`、`it` 点数审批。这些角色在独立表里，不扩大管理员、成员、访客的检查。同一个人一次只占一个名额。拒绝保存 `reason`。凑满后正文进入可检索的团队知识。`hub-task` 可以建任务。MCP `hub_task` 省略能力包时使用 `hub-task`；`hub_packs` 只读返回 `packs`。两者不进入 `GET /v1/tools`。
+
+技能推送时，未知工具名返回 `SKILLPACK_CHECK_FAILED`。`hub_task` 与 `hub_packs` 算作正在提供。已知但未运行的连接器工具仍可提交，批准时再报 `DEPENDENCY_NOT_APPROVED`。自批、依赖未批准和来源禁止写入审计，并且写在请求事务之外，回滚后仍在。
+
+审计导出为 `GET /v1/admin/audit/export` 与 `circle-hub admin audit --format`。默认 `GET /v1/admin/audit` 仍是 JSON 数组。清单错误一次返回 `details.manifestErrors`。HTTP 错误带 `messageZh`；`Accept-Language` 含 `zh` 时 `message` 为中文并保留 `messageEn`。OIDC 只接受回环地址；SCIM 只写在 `docs/design/sso-scim.md`，没有端点。
+
+客户端需要采纳的路径、字段和工具名记在 `docs/client-api-handoff.md` 的「企业治理接口」一节。
+
+定向验证数字在本步验收跑完后补记。

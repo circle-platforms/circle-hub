@@ -29,8 +29,8 @@ async function approve(h:Harness,candidate:any){
 
 test('Act R2.3: six records pin product originals and an independently reviewed claim to a stable snapshot',async t=>{
   const h=await setup(t);await grant(h);const src=await source(h),{candidate,evidence,entity}=await claim(h,src);
-  assert.equal(candidate.state,'candidate');await approve(h,candidate);
-  const snapshot=await h.request('/v1/knowledge/snapshots',{scopeId:'scp_lab',knowledgeCategory:'product',expectedSnapshotId:null});
+  assert.equal(candidate.state,'candidate');
+  const snapshot=(await approve(h,candidate)).snapshot;
   assert.equal(snapshot.state,'published');assert.ok(snapshot.payload.records.some((r:any)=>r.recordId===candidate.recordId));
   assert.ok(snapshot.payload.records.some((r:any)=>r.recordId===evidence.recordId));assert.ok(snapshot.payload.records.some((r:any)=>r.recordId===entity.recordId));
   const kinds=new Set(snapshot.payload.records.map((r:any)=>r.kind));for(const kind of ['SourceRevision','Evidence','Entity','Claim','Assessment'])assert.ok(kinds.has(kind));
@@ -42,8 +42,7 @@ test('Act R2.3: six records pin product originals and an independently reviewed 
 });
 
 test('Act R2.3: source ACL changes hide historical evidence snapshots and raw bytes from another principal',async t=>{
-  const h=await setup(t);await grant(h);const src=await source(h),{candidate}=await claim(h,src);await approve(h,candidate);
-  await h.request('/v1/knowledge/snapshots',{scopeId:'scp_lab',knowledgeCategory:'product',expectedSnapshotId:null});
+  const h=await setup(t);await grant(h);const src=await source(h),{candidate}=await claim(h,src);const review=await approve(h,candidate);assert.equal(review.snapshot.recordId,(await h.request('/v1/knowledge/search?mode=prefix&q=feature')).items[0].snapshotId);
   assert.equal((await h.request('/v1/knowledge/search?mode=prefix&q=feature',undefined,'bob')).items.length,1);
   await source(h,'product','Feature alpha changed','2',['prn_alice']);
   assert.equal((await h.request('/v1/knowledge/search?mode=prefix&q=feature',undefined,'bob')).items.length,0);
@@ -53,8 +52,7 @@ test('Act R2.3: source ACL changes hide historical evidence snapshots and raw by
 });
 
 test('Act R2.3: opted-in personal consolidation candidates stay out of snapshots and flag product conflicts',async t=>{
-  const h=await setup(t);await grant(h);const product=await source(h),{candidate:official}=await claim(h,product);await approve(h,official);
-  await h.request('/v1/knowledge/snapshots',{scopeId:'scp_lab',knowledgeCategory:'product',expectedSnapshotId:null});
+  const h=await setup(t);await grant(h);const product=await source(h),{candidate:official}=await claim(h,product);assert.ok((await approve(h,official)).snapshot.recordId);
   const personal=await source(h,'consolidated','A synthetic shared correction says alpha is unavailable'),{candidate}=await claim(h,personal,'unavailable');
   assert.equal(candidate.visibility,'personal');assert.equal(candidate.knowledgeCategory,'consolidated');
   const found=await h.request('/v1/knowledge/search?mode=prefix&q=feature&includeCandidates=true');
@@ -62,7 +60,7 @@ test('Act R2.3: opted-in personal consolidation candidates stay out of snapshots
   assert.ok(!(await h.request('/v1/knowledge/search?mode=prefix&q=feature&includeCandidates=true',undefined,'bob')).items.some((r:any)=>r.recordId===candidate.recordId));
   await h.reject(`/v1/knowledge/records/${candidate.recordId}`,undefined,'SOURCE_FORBIDDEN','bob');
   const snapshot=await h.request('/v1/knowledge/snapshots',{scopeId:'scp_lab',knowledgeCategory:'consolidated',expectedSnapshotId:null});assert.ok(!snapshot.payload.records.some((r:any)=>r.recordId===candidate.recordId));
-  await approve(h,candidate);await h.request('/v1/knowledge/snapshots',{scopeId:'scp_lab',knowledgeCategory:'consolidated',expectedSnapshotId:snapshot.recordId});
+  const promotedReview=await approve(h,candidate);await h.request('/v1/knowledge/snapshots',{scopeId:'scp_lab',knowledgeCategory:'consolidated',expectedSnapshotId:promotedReview.snapshot.recordId});
   const promoted=await h.request('/v1/knowledge/search?mode=exact&q=feature-alpha',undefined,'bob');assert.equal(promoted.items.length,2);assert.equal(promoted.items[0].recordId,official.recordId);
   const current=await h.request(`/v1/knowledge/records/${official.recordId}`);assert.equal(current.payload.value,'available');
 });
@@ -81,8 +79,7 @@ test('Act R2.3: evidence bytes consent content keys and snapshot compare-and-swa
 });
 
 test('Act R2.3: exact prefix directory and PostgreSQL full text retrieval use authorized published records',async t=>{
-  const h=await setup(t);await grant(h);const src=await source(h,'product','Synthetic TLS feature alpha supports secure transport'),{candidate}=await claim(h,src);await approve(h,candidate);
-  await h.request('/v1/knowledge/snapshots',{scopeId:'scp_lab',knowledgeCategory:'product',expectedSnapshotId:null});
+  const h=await setup(t);await grant(h);const src=await source(h,'product','Synthetic TLS feature alpha supports secure transport'),{candidate}=await claim(h,src);assert.equal((await approve(h,candidate)).snapshot.knowledgeCategory,'product');
   for(const query of ['mode=exact&q=feature-alpha','mode=prefix&q=feature','mode=directory&q=/synthetic/','mode=fulltext&q=transport'])assert.equal((await h.request(`/v1/knowledge/search?${query}`)).items.length,1);
   for(const query of ['limit=0','limit=101','limit=1.5'])await h.reject(`/v1/knowledge/search?${query}`,undefined,'INVALID_PAYLOAD');
 });

@@ -18,6 +18,7 @@ import {resolveTrust} from '../../connectors/src/private-http.ts';
 import {deriveCircleSkill} from './neutral.ts';
 import {skillWasLoaded} from './loader-observation.ts';
 import {approvedRuntimeRevision,boundRuntimeRevision,type RuntimeBinding} from '../../assets/src/runtime-revisions.ts';
+import {builtinToolNames,knownToolNames} from '../../tools/src/builtins.ts';
 
 const RUNTIME_PROFILE_HINT='A Circle runtime profile is the JSON file CIRCLE_RUNTIME_CONFIG points at. It names circleBin, circleCommit (40 hexadecimal characters), circleVersion and model (kind scripted or remote, base_url, model, protocol set to openai, and api_key). Set CIRCLE_RUNTIME_CONFIG, restart the hub, call GET /v1/runtime-profiles, register a runtime-profile asset, and have a different person approve it. See docs/quickstart.md.';
 const SKILL_PACK_ID=/^skp_[A-Za-z0-9][A-Za-z0-9_-]*$/;
@@ -52,9 +53,11 @@ export class SkillPacks {
     const p=await this.auth.check(ctx,grant,undefined,tx),row=(await (tx??this.store.pool).query('SELECT * FROM skill_packages WHERE skill_pack_id=$1 AND tenant_id=$2 AND scope_id=ANY($3::text[])',[id,p.tenantId,p.scopes])).rows[0];
     requireCondition(row,'SOURCE_FORBIDDEN','Skill package is not available to this identity');await this.assets.row(ctx,row.asset_id,tx,'assets.read');return row;
   }
-  async checkWithDetails(ctx:AuthContext,manifest:any,trial:any,tx?:Transaction,allowMissing=false):Promise<any>{
-    const available=new Set((await this.catalog.available(ctx,tx)).map(entry=>entry.view.name)),declared=new Set<string>(manifest.tools),check={undeclaredTools:[...new Set<string>(trial.toolCalls.map((call:any)=>call.name).filter((name:string)=>!declared.has(name)))].sort(),missingTools:manifest.tools.filter((name:string)=>!available.has(name)).sort()};
-    if(check.undeclaredTools.length||check.missingTools.length&&!allowMissing){
+  async checkWithDetails(ctx:AuthContext,manifest:any,trial:any,tx?:Transaction,allowMissing=false,rejectUnknown=false):Promise<any>{
+    const running=new Set([...(await this.catalog.available(ctx,tx)).map(entry=>entry.view.name),...builtinToolNames]),known=knownToolNames(this.catalog.packages),declared=new Set<string>(manifest.tools);
+    const missingTools=manifest.tools.filter((name:string)=>!running.has(name)).sort(),unknown=missingTools.filter((name:string)=>!known.has(name));
+    const check={undeclaredTools:[...new Set<string>(trial.toolCalls.map((call:any)=>call.name).filter((name:string)=>!declared.has(name)))].sort(),missingTools};
+    if(check.undeclaredTools.length||check.missingTools.length&&!allowMissing||rejectUnknown&&unknown.length){
       const reasons=[];if(check.undeclaredTools.length)reasons.push(`Undeclared trial tools: ${summarizeTools(check.undeclaredTools)}`);if(check.missingTools.length)reasons.push(`Tools unavailable in caller catalog: ${summarizeTools(check.missingTools)}`);
       throw new ApiError('SKILLPACK_CHECK_FAILED',reasons.join('; '),{check});
     }return check;
@@ -66,11 +69,11 @@ export class SkillPacks {
     requireCondition(new Set(input.files.map(file=>file.path)).size===input.files.length&&input.files.some(file=>file.path==='SKILL.md'),'INVALID_PAYLOAD','Skill files require one SKILL.md and unique paths');
     const files=input.files.map(file=>{const bytes=Buffer.from(file.base64,'base64');requireCondition(bytes.length<=MAX_SOURCE_BYTES&&sha256(bytes)===file.sha256,'SOURCE_HASH_MISMATCH','Submitted file SHA differs');return {path:file.path,sha256:file.sha256,size:bytes.length};}).sort((a,b)=>input.module?(a.path<b.path?-1:a.path>b.path?1:0):a.path.localeCompare(b.path));
     requireCondition(files.reduce((sum,file)=>sum+file.size,0)<=MAX_SOURCE_BYTES,'BODY_TOO_LARGE','Skill files exceed sixteen MiB');
-    const check=await this.checkWithDetails(ctx,input.manifest,input.trial,undefined,true);
+    const check=await this.checkWithDetails(ctx,input.manifest,input.trial,undefined,true,true);
     const digest=canonicalHash({manifest:input.manifest,files,trial:input.trial,...(input.module?{module:input.module}:{})});
     for(const file of input.files)await this.objects.objects.putObject({Bucket:'evidence',Key:file.sha256,Body:Buffer.from(file.base64,'base64')});
     const perform=async(tx:Transaction)=>{
-      await this.checkWithDetails(ctx,input.manifest,input.trial,tx,true);await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[canonicalJson([ctx.tenantId,scope,ctx.principalId,digest])]);
+      await this.checkWithDetails(ctx,input.manifest,input.trial,tx,true,true);await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[canonicalJson([ctx.tenantId,scope,ctx.principalId,digest])]);
       const old=(await tx.query('SELECT * FROM skill_packages WHERE tenant_id=$1 AND scope_id=$2 AND owner_id=$3 AND digest=$4',[ctx.tenantId,scope,ctx.principalId,digest])).rows[0];if(old)return this.view(old);
       const prior=(await tx.query("SELECT s.* FROM skill_packages s WHERE tenant_id=$1 AND scope_id=$2 AND owner_id=$3 AND manifest->>'id'=$4 ORDER BY created_at DESC LIMIT 1",[ctx.tenantId,scope,ctx.principalId,input.manifest.id])).rows[0];
       const warnings:string[]=[];
@@ -86,7 +89,7 @@ export class SkillPacks {
       await tx.query('UPDATE skill_packages SET approval_id=$2,approval_task_id=$3,change_set_id=$4 WHERE skill_pack_id=$1',[id,approval.approval_id,change.approvalTaskId,change.changeSetId]);return {...this.view((await tx.query('SELECT * FROM skill_packages WHERE skill_pack_id=$1',[id])).rows[0],asset.lifecycle),...(warnings.length?{warnings}:{}),blockedReasons:change.blockedReasons};
     };return transaction?perform(transaction):this.store.transaction(perform);
   }
-  async changeDependencies(tx:Transaction,ctx:AuthContext,asset:any){const row=(await tx.query('SELECT * FROM skill_packages WHERE asset_id=$1 AND asset_version=$2',[asset.asset_id,asset.version])).rows[0];requireCondition(row,'APPROVAL_STALE','Skill submission is missing');const check=await this.checkWithDetails(ctx,row.manifest,row.trial,tx,true);await tx.query('UPDATE skill_packages SET check_result=$2 WHERE skill_pack_id=$1',[row.skill_pack_id,JSON.stringify(check)]);return check.missingTools.map((name:string)=>({tool:name,reason:'tool-instance-not-running'}));}
+  async changeDependencies(tx:Transaction,ctx:AuthContext,asset:any){const row=(await tx.query('SELECT * FROM skill_packages WHERE asset_id=$1 AND asset_version=$2',[asset.asset_id,asset.version])).rows[0];requireCondition(row,'APPROVAL_STALE','Skill submission is missing');const check=await this.checkWithDetails(ctx,row.manifest,row.trial,tx,true);await tx.query('UPDATE skill_packages SET check_result=$2 WHERE skill_pack_id=$1',[row.skill_pack_id,JSON.stringify(check)]);return check.missingTools.filter((name:string)=>!(builtinToolNames as readonly string[]).includes(name)).map((name:string)=>({tool:name,reason:'tool-instance-not-running'}));}
   async list(ctx:AuthContext):Promise<any[]>{
     const p=await this.auth.check(ctx,'skillpacks.read'),rows=(await this.store.pool.query('SELECT * FROM skill_packages WHERE tenant_id=$1 AND scope_id=ANY($2::text[]) ORDER BY created_at DESC,skill_pack_id',[p.tenantId,p.scopes])).rows,visible=[];
     for(const row of rows){try{const asset=await this.assets.row(ctx,row.asset_id);visible.push(await this.compatibility(row,this.view(row,asset.lifecycle)));}catch(error){if(!(error instanceof ApiError))throw error;}}return visible;

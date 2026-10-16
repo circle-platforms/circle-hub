@@ -1,6 +1,8 @@
 import '../../contracts/src/hub-environment.ts';
-import {ApiError,TaskPageQuery,ScopeSla,type AuthContext,type RegistryPageQuery} from '../../contracts/src/index.ts';import type {Store,Transaction} from '../../storage/src/index.ts';import type {Auth} from './auth.ts';import {taskQueryPlan} from './task-query.ts';import {facetedPage,facetedWhere,type FacetColumns} from '../../storage/src/faceted-query.ts';
+import {ApiError,AuditExportQuery,TaskPageQuery,ScopeSla,requireCondition,type AuthContext,type RegistryPageQuery} from '../../contracts/src/index.ts';import type {Store,Transaction} from '../../storage/src/index.ts';import type {Auth} from './auth.ts';import {taskQueryPlan} from './task-query.ts';import {facetedPage,facetedWhere,type FacetColumns} from '../../storage/src/faceted-query.ts';
 const names=['awaitingMyApproval','awaitingMyInput','submittedByMe','assignedToMe','exceptions'] as const;
+function csvCell(value:unknown):string{const text=value==null?'':typeof value==='object'?JSON.stringify(value):String(value),guarded=/^[=+\-@\t\r]/.test(text)?`'${text}`:text;return /[",\n\r]/.test(guarded)?`"${guarded.replaceAll('"','""')}"`:guarded;}
+export function auditCsv(items:{id:number;principalId:string;scopeId:string|null;action:string;createdAt:string;detail:unknown}[]):string{const lines=['id,principalId,scopeId,action,createdAt,detail'];for(const item of items)lines.push([item.id,item.principalId,item.scopeId??'',item.action,item.createdAt,item.detail].map(csvCell).join(','));return `${lines.join('\n')}\n`;}
 export class WorkQueries{
  store:Store;auth:Auth;workerOfflineAfterMs=Number(process.env.CIRCLE_HUB_WORKER_OFFLINE_MS??90000);constructor(store:Store,auth:Auth){this.store=store;this.auth=auth;if(!Number.isSafeInteger(this.workerOfflineAfterMs)||this.workerOfflineAfterMs<1)throw new ApiError('INVALID_PAYLOAD','Worker liveness threshold is invalid');}
  async workers(ctx:AuthContext){const policy=await this.auth.check(ctx,'admin.manage'),rows=(await this.store.pool.query("SELECT w.worker_id,w.draining,w.last_seen,w.last_seen<clock_timestamp()-($3::double precision*interval '1 millisecond') AS offline FROM workers w JOIN policies p USING(principal_id) WHERE w.tenant_id=$1 AND EXISTS(SELECT 1 FROM jsonb_array_elements_text(p.scopes) scope WHERE scope=ANY($2::text[])) ORDER BY w.worker_id",[policy.tenantId,policy.scopes,this.workerOfflineAfterMs])).rows;return rows.map(row=>({workerId:row.worker_id,draining:row.draining,lastSeen:row.last_seen.toISOString(),offline:row.offline,workerOfflineAfterMs:this.workerOfflineAfterMs}));}
@@ -9,6 +11,14 @@ export class WorkQueries{
   // Worker registration has no immutable creation timestamp. Age therefore
   // denotes elapsed time since the last recorded observation, not worker age.
   return facetedPage(tx,ctx,'workers',query,from,"w.tenant_id=$1 AND EXISTS(SELECT 1 FROM jsonb_array_elements_text(p.scopes) scope WHERE scope=ANY($2::text[])) AND ($4::text IS NULL OR p.scopes ? $4::text)",[p.tenantId,p.scopes,this.workerOfflineAfterMs,query.scopeId??null],{id:'w.worker_id',created:'w.last_seen',updated:'w.last_seen',scopeId:'$4::text',owner:'w.principal_id',status},'w.worker_id,w.draining,w.last_seen,w.offline',row=>({workerId:row.worker_id,draining:row.draining,lastSeen:row.last_seen.toISOString(),offline:row.offline,workerOfflineAfterMs:this.workerOfflineAfterMs}));
+ });}
+ async auditExport(ctx:AuthContext,value:unknown){const input=AuditExportQuery.parse(value);return this.store.transaction(async tx=>{
+  const p=await this.auth.check(ctx,'admin.manage',undefined,tx),timezone=input.timezone??'UTC';
+  requireCondition((await tx.query('SELECT 1 FROM pg_timezone_names WHERE name=$1',[timezone])).rowCount,'INVALID_PAYLOAD','Timezone is not a recognized IANA name');
+  await tx.query("SELECT set_config('TimeZone',$1,true)",[timezone]);
+  const rows=(await tx.query(`SELECT id,principal_id,scope_id,action,detail,to_char(created_at,'YYYY-MM-DD"T"HH24:MI:SS.MSOF') AS created_at FROM audit WHERE tenant_id=$1 AND (scope_id IS NULL OR scope_id=ANY($2::text[])) AND ($3::text IS NULL OR action=$3) AND ($4::text IS NULL OR principal_id=$4) AND ($5::timestamptz IS NULL OR created_at>=$5) AND ($6::timestamptz IS NULL OR created_at<=$6) ORDER BY id DESC LIMIT 5001`,[p.tenantId,p.scopes,input.action??null,input.principalId??null,input.since??null,input.until??null])).rows;
+  const truncated=rows.length>5000,items=rows.slice(0,5000).map(row=>({id:Number(row.id),principalId:row.principal_id,scopeId:row.scope_id,action:row.action,detail:row.detail,createdAt:row.created_at}));
+  return {format:input.format,timezone,items,truncated};
  });}
  async auditPage(ctx:AuthContext,query:RegistryPageQuery){return this.store.transaction(async tx=>{
   await tx.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');const p=await this.auth.check(ctx,'admin.manage',query.scopeId,tx);

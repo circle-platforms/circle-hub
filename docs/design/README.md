@@ -12,8 +12,9 @@ nav_order: 2
 | [对象标准与数据流](object-standard.md) | 四个对象由哪五样组成；一件工作怎么走过 A C E B D；新能力怎么填适配单 |
 | [术语与状态](vocabulary.md) | 固定的中英术语；状态枚举与颜色；规模下的处理与显示规则 |
 | [层级与元素](levels-and-elements.md) | 入口是会话；五层逐层深入；每层用什么图、表、描述、按钮；十二个动作词 |
-| [审批与执行链](approvals-and-enforcement.md) | 审批只在变更集；运行走执行链，结果只有通过 / 报错 / 未知；平台不是审批人 |
-| [角色与范围](roles.md) | 管理员 / 成员 / 访客按范围授予；两人规则；单管理员的自决；机器身份 |
+| [审批与执行链](approvals-and-enforcement.md) | 资产变更的审批只在变更集；通用审批请求另记；运行走执行链，结果只有通过 / 报错 / 未知；平台不是审批人 |
+| [角色与范围](roles.md) | 管理员 / 成员 / 访客按范围授予；两人规则；单管理员的自决；审批角色；机器身份 |
+| [企业登录与目录](sso-scim.md) | 回环 OIDC 登录已实现；SCIM 2.0 只记录映射，不提供目录服务 |
 | [与 Circle 的集成](circle-integration.md) | hub 扩展 Circle 的菜单而不是另开一节；同步模型；只装 Circle 看不到什么 |
 | [产品线包典范](product-line-pack.md) | 一条产品线接进来的交付物：目录布局、适配单、验收清单，以合成产品线为样例 |
 | [harness 原语规范](harness-primitives.md) | hub 治理任何 harness 的原语：治理 / 不治理清单、中立清单、每个 harness 的导入导出适配器、hub 自己作为 MCP server 的通用传输、原语在四对象五要素里的位置 |

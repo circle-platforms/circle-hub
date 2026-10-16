@@ -51,6 +51,14 @@ export class Auth {
       [sha256(token), policy.principalId, Math.min(ttlMs, MAX_DEV_TOKEN_TTL_MS)]);
     return { token, expiresAt: result.rows[0].expires_at.toISOString() };
   }
+  async issueForPrincipal(principalId:string,ttlMs=this.developmentTtlMs):Promise<{token:string;expiresAt:string}>{
+    const policy=await this.policy({principalId} as AuthContext);requireCondition(policy.kind==='user','UNAUTHENTICATED','OIDC subject is not provisioned');
+    const token=randomBytes(32).toString('base64url');
+    const result=await this.store.pool.query(`INSERT INTO auth_tokens(digest,principal_id,expires_at,family_id,absolute_expires_at)
+      VALUES($1,$2,clock_timestamp()+($3::double precision*interval '1 millisecond'),$1,clock_timestamp()+interval '24 hours') RETURNING expires_at`,
+      [sha256(token),policy.principalId,Math.min(ttlMs,MAX_DEV_TOKEN_TTL_MS)]);
+    return {token,expiresAt:result.rows[0].expires_at.toISOString()};
+  }
   async refresh(header:string):Promise<{token:string;expiresAt:string}>{
     const ctx=await this.authenticate(header);requireCondition(!ctx.run,'FORBIDDEN_ACTION','Run delegation cannot refresh a development session');
     const token=randomBytes(32).toString('base64url');return this.store.transaction(async tx=>{const prior=(await tx.query('SELECT * FROM auth_tokens WHERE digest=$1 AND expires_at>clock_timestamp() AND absolute_expires_at>clock_timestamp() FOR UPDATE',[sha256(header.slice(7))])).rows[0];requireCondition(prior,'UNAUTHENTICATED','Development session reached its absolute lifetime');const row=(await tx.query("INSERT INTO auth_tokens(digest,principal_id,expires_at,family_id,absolute_expires_at) VALUES($1,$2,LEAST(clock_timestamp()+($3::double precision*interval '1 millisecond'),$4),$5,$4) RETURNING expires_at",[sha256(token),prior.principal_id,this.developmentTtlMs,prior.absolute_expires_at,prior.family_id])).rows[0];await tx.query("UPDATE auth_tokens SET expires_at=LEAST(expires_at,clock_timestamp()+interval '5 seconds') WHERE digest=$1",[prior.digest]);return {token,expiresAt:row.expires_at.toISOString()};});

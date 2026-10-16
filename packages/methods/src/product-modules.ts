@@ -1,15 +1,17 @@
 import {z} from 'zod';
-import {SafeRelativePath,canonicalHash,requireCondition,type AuthContext} from '../../contracts/src/index.ts';
+import {ApiError,SafeRelativePath,canonicalHash,requireCondition,type AuthContext} from '../../contracts/src/index.ts';
 import type {Transaction} from '../../storage/src/index.ts';
 import type {SourceArtifacts,AssetRevisionPin} from '../../knowledge/src/source-artifacts.ts';
 import {HookRuntime,HOOK_EVENTS,verifyToolImports,type HookHandler} from './hooks.ts';
 import {callFrozenTool,callFrozenHooks} from './tool-runtime.ts';
 const definition=z.object({schemaVersion:z.literal('product-line/1'),id:z.string(),version:z.string(),tools:z.array(z.object({manifest:SafeRelativePath,imports:z.record(z.string(),z.string())}).strict()).default([]),hooks:z.array(z.object({manifest:SafeRelativePath,event:z.enum(HOOK_EVENTS),order:z.number().int()}).strict()).default([]),flows:z.array(SafeRelativePath).default([]),resources:z.array(SafeRelativePath).default([])}).passthrough();
 export function verifyProductLine(manifest:any,files:Map<string,string>){
-  const parsed=definition.parse(manifest);verifyToolImports(files,parsed.tools);
-  for(const path of [...parsed.hooks.map(hook=>hook.manifest),...parsed.flows,...parsed.resources])requireCondition(files.has(path),'SOURCE_HASH_MISMATCH','Declared file is absent from its frozen module');
+  const parsed=definition.parse(manifest),errors:{code:string;message:string}[]=[];
+  try{verifyToolImports(files,parsed.tools);}catch(error){if(!(error instanceof ApiError))throw error;errors.push({code:error.code,message:error.message});}
+  for(const path of [...parsed.hooks.map(hook=>hook.manifest),...parsed.flows,...parsed.resources])if(!files.has(path))errors.push({code:'SOURCE_HASH_MISMATCH',message:'Declared file is absent from its frozen module'});
   // Compile all handlers at admission, including events not used by this run.
-  for(const hook of parsed.hooks)new HookRuntime().validate(files.get(hook.manifest)!);
+  for(const hook of parsed.hooks){const code=files.get(hook.manifest);if(code===undefined)continue;try{new HookRuntime().validate(code);}catch(error){if(!(error instanceof ApiError))throw error;errors.push({code:error.code,message:error.message});}}
+  if(errors.length)throw new ApiError(errors[0].code,errors.map(item=>item.message).join('; '),{manifestErrors:errors});
   return parsed;
 }
 interface Loaded{manifest:z.infer<typeof definition>;handlers:HookHandler[];flows:any[];files:Map<string,string>}

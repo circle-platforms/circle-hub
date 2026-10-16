@@ -6,9 +6,22 @@ import {ADMIN_ROUTES,ApiError,ScopeId} from '../../../packages/contracts/src/ind
 import {moduleCommand} from '../../../packages/modules/src/cli.ts';
 
 const args=process.argv.slice(2);
+const USAGE=`Usage: circle-hub [help]
+  circle-hub admin help
+  circle-hub admin tasks
+  circle-hub admin approvals
+  circle-hub admin audit [--format json|csv] [--timezone <IANA>] [--action <name>] [--principal <prn_...>] [--since <iso>] [--until <iso>]
+  circle-hub admin workers drain <workerId>
+  circle-hub admin connectors enable|disable <connectorId>
+  circle-hub admin events --tail [--once]
+  circle-hub admin restart --graceful
+  circle-hub modules check|install
+`;
 async function main():Promise<void>{
+  const requested=args[0];
+  if(!requested||requested==='help'||requested==='--help'||requested==='-h'||requested==='admin'&&['help','--help','-h'].includes(args[1]??'')){console.log(USAGE);return;}
   const mode=args.shift();if(mode==='modules'){await moduleCommand(args);return;}
-  if(mode!=='admin')throw new ApiError('INVALID_PAYLOAD','Usage: circle-hub admin <command> | modules check|install');
+  if(mode!=='admin')throw new ApiError('INVALID_PAYLOAD',USAGE.trim());
   const target=new URL(process.env.CIRCLE_HUB_URL??'http://127.0.0.1:8080');
   if(!['http:','https:'].includes(target.protocol)||target.hostname!=='127.0.0.1'||target.username||target.password)throw new ApiError('INVALID_PAYLOAD','Admin requires HTTP or HTTPS on the authorized 127.0.0.1 loopback server without embedded credentials');
   let token=process.env.CIRCLE_HUB_TOKEN;
@@ -19,7 +32,23 @@ async function main():Promise<void>{
     const envelope=await response.json() as any;if(!response.ok)throw new ApiError(envelope.error.code,envelope.error.message);return envelope.data;
   };
   const output=(value:unknown)=>{console.log(JSON.stringify(value));},command=args.shift();
-  if(command==='tasks'||command==='approvals'||command==='audit'){if(args.length)throw new ApiError('INVALID_PAYLOAD','Unexpected arguments');output(await request(ADMIN_ROUTES[command]));return;}
+  if(command==='tasks'||command==='approvals'){if(args.length)throw new ApiError('INVALID_PAYLOAD','Unexpected arguments');output(await request(ADMIN_ROUTES[command]));return;}
+  if(command==='audit'){
+    if(!args.length){output(await request(ADMIN_ROUTES.audit));return;}
+    const params=new URLSearchParams();let format='json';
+    while(args.length){const flag=args.shift(),value=args.shift();if(!flag?.startsWith('--')||!value||value.startsWith('--'))throw new ApiError('INVALID_PAYLOAD','Unexpected arguments');
+      if(flag==='--format'&&(value==='json'||value==='csv')){format=value;params.set('format',value);}
+      else if(flag==='--timezone')params.set('timezone',value);
+      else if(flag==='--action')params.set('action',value);
+      else if(flag==='--principal')params.set('principalId',value);
+      else if(flag==='--since')params.set('since',value);
+      else if(flag==='--until')params.set('until',value);
+      else throw new ApiError('INVALID_PAYLOAD','Unexpected arguments');
+    }
+    const path=`/v1/admin/audit/export?${params.toString()}`;
+    if(format==='csv'){const response=await fetch(new URL(path,target),{redirect:'error',headers:{authorization:`Bearer ${token}`}});const text=await response.text();if(!response.ok){const envelope=JSON.parse(text);throw new ApiError(envelope.error.code,envelope.error.message);}process.stdout.write(text);return;}
+    output(await request(path));return;
+  }
   if(command==='workers'&&args.shift()==='drain'){
     const id=args.shift();if(!id||args.length)throw new ApiError('INVALID_PAYLOAD','Usage: workers drain <workerId>');
     let drained=await request(`${ADMIN_ROUTES.workers}/${encodeURIComponent(id)}/drain`,{});const until=Date.now()+120_000;

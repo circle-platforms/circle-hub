@@ -6,6 +6,13 @@ All notable changes to circle-hub are listed here, newest first. Repository rele
 
 ### Added
 
+- General approval requests (`POST /v1/approval-requests`) accept a text or file for a named quorum of approval roles (`manager`, `security`, `dpo`, `legal`, `finance`, `hr`, `it`). A full approval publishes the text into searchable team knowledge. `GET /v1/approvals/pending` lists what the caller can decide, and the content route returns the submitted filename and media type.
+- `hub-task` admits a task. MCP tools `hub_task` and `hub_packs` call that admission and list pack descriptors. `hub_task` and `hub_packs` count as running built-in tools when a skill is pushed.
+- Audit export is `GET /v1/admin/audit/export` and `circle-hub admin audit --format json|csv`, with IANA timezone, action, principal and time filters. `circle-hub help` prints usage before a token is required.
+- HTTP errors include `messageZh`. `Accept-Language` containing `zh` also returns the Chinese text in `message` and keeps `messageEn`.
+- Loopback OIDC login is `GET /v1/auth/oidc/start` and `POST /v1/auth/oidc/callback` when `CIRCLE_HUB_OIDC_CONFIG` is set. SCIM is described in `docs/design/sso-scim.md` and has no endpoint.
+- Team-visible approved knowledge is published into the stable snapshot during the review, so search can find it. The record owner can download their own source. Downloads use the stored filename and content type.
+- Blocked approval and knowledge-access attempts are written to the audit log. A decline may include `reason`. Module verification returns every manifest error it has already found in `details.manifestErrors`.
 - Node.js 24 is checked before a hub process reads configuration. `npm ci` uses `engine-strict`. An older Node exits with `HubEnvironmentError` and https://nodejs.org/en/download.
 - `package.json` `allowScripts` allows the eight pinned `@embedded-postgres/*@18.4.0-beta.17` platform packages. Their postinstall only recreates symlinks shipped in the tarball.
 - [docs/quickstart.md](docs/quickstart.md) and [docs/quickstart.en.md](docs/quickstart.en.md) describe deploy, Circle connect (`/extensions enable hub`, `/hub login`), stop/restart, runtime profiles, Linux sandbox limits, and the environment variables.
@@ -14,6 +21,8 @@ All notable changes to circle-hub are listed here, newest first. Repository rele
 
 ### Changed
 
+- A skill push rejects an unknown tool name immediately. A known connector tool that is not running can still be submitted and stays blocked until that connector is running.
+- `GET /v1/admin/audit` without export parameters is still a JSON array.
 - A missing Circle runtime profile returns `RUNTIME_NOT_CONFIGURED` and names `CIRCLE_RUNTIME_CONFIG`. Linux process isolation still returns `SANDBOX_UNAVAILABLE` and names the platform.
 - Unknown capability pack ids return `TARGET_NOT_FOUND`. Retired `lbx-healthcheck` and `apv-case-execute` stay `UNSUPPORTED_VERSION`.
 - Bot and skill-run trigger failures name the trigger kind and the triggers the skill declares. A rejected bot occurrence says it was not accepted. Protocol values `registered` and `admitted` are unchanged.

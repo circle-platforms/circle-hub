@@ -1,5 +1,5 @@
 import {z} from 'zod';
-import {ApiError,ChangeSetSubmission,ScopeRolePatch,ScopePolicyPatch,ScopeSla,Sha256,canonicalHash,newId,requireCondition,type AuthContext} from '../../contracts/src/index.ts';
+import {ApiError,ApprovalRoleName,ChangeSetSubmission,ScopeRolePatch,ScopePolicyPatch,ScopeSla,Sha256,canonicalHash,newId,requireCondition,type AuthContext} from '../../contracts/src/index.ts';
 import type {Store,Transaction} from '../../storage/src/index.ts';
 import type {Auth} from './auth.ts';
 import type {Assets} from '../../assets/src/index.ts';
@@ -11,6 +11,7 @@ import type {RegistryPageQuery} from '../../contracts/src/index.ts';
 import {approvedRuntimeRevision} from '../../assets/src/runtime-revisions.ts';
 
 const roleConfig=z.object({schema:z.literal('scope-role/1'),scopeId:z.string(),principalId:z.string(),role:ScopeRole.nullable(),expectedRevision:z.number().int().nonnegative()}).strict();
+const approvalRoleConfig=z.object({schema:z.literal('approval-role/1'),scopeId:z.string(),principalId:z.string(),role:ApprovalRoleName}).strict();
 const policyConfig=z.object({schema:z.literal('scope-policy/1'),scopeId:z.string(),twoPersonRule:z.boolean(),slaMs:ScopeSla.optional(),expectedRevision:z.number().int().positive()}).strict();
 export const RuntimeProfileConfiguration=z.object({profileType:z.enum(['connector','runtime','execution']),profileRef:z.string().min(1).max(200),profileSha256:Sha256,allowPlaintextAuthentication:z.boolean().optional()}).strict();
 type Item={assetId:string;version:string;sha256:string};
@@ -26,7 +27,7 @@ export class ChangeSets{
     Object.assign(this,{store,auth,assets,tasks,approvals});this.store=store;this.auth=auth;this.assets=assets;this.tasks=tasks;this.approvals=approvals;
     let locks=storeSubmissionLocks.get(store);if(!locks){locks=new Map();storeSubmissionLocks.set(store,locks);}this.submissionLocks=locks;
     approvals.policies.set('changesets.apply',{digest:action=>action.args.identityDigest,authorize:(tx,ctx,task,action)=>this.binding(tx,ctx,task,action,true),check:(tx,ctx,task,row,answer)=>this.check(tx,ctx,task,row,answer),accepted:(tx,ctx,task,row,answer)=>this.decided(tx,ctx,task,row,answer)});
-    assets.onDraft=(tx,ctx,row)=>['credential-reference','scope-role','scope-policy','execution-submission'].includes(row.kind)||row.kind==='skill-package'&&row.configuration.skillPackId?Promise.resolve({}):this.single(tx,ctx,row);
+    assets.onDraft=(tx,ctx,row)=>['credential-reference','scope-role','scope-policy','execution-submission','approval-role'].includes(row.kind)||row.kind==='skill-package'&&row.configuration.skillPackId?Promise.resolve({}):this.single(tx,ctx,row);
     assets.governedTransition=(ctx,id,input)=>this.legacyTransition(ctx,id,input);
     assets.dependencyChanged=(tx,tenant,scope)=>this.wake(tx,tenant,scope);
   }
@@ -36,6 +37,7 @@ export class ChangeSets{
   async page(ctx:AuthContext,query:RegistryPageQuery){const p=await this.auth.check(ctx,'tasks.read',query.scopeId);return this.store.transaction(async tx=>{await tx.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');return facetedPage(tx,ctx,'change-sets',query,'change_sets c JOIN tasks t USING(task_id)',"c.tenant_id=$1 AND c.scope_id=ANY($2::text[]) AND (t.context->>'privateOwnerId' IS NULL OR t.context->>'privateOwnerId'=$3)",[p.tenantId,p.scopes,p.principalId],{id:'c.change_set_id',created:'c.created_at',updated:'c.updated_at',scopeId:'c.scope_id',owner:'c.principal_id',productLineId:"c.submission->>'productLineId'",flowVersion:'t.flow_version',status:'c.status',lifecycle:'c.status'},'c.*',row=>this.view(row));});}
   async validateDefinition(tx:Transaction,ctx:AuthContext,input:any){
     if(input.kind==='runtime-profile'){await this.auth.check(ctx,'admin.manage',input.scopeId,tx);const config=RuntimeProfileConfiguration.parse(input.configuration),duplicate=(await tx.query("SELECT 1 FROM assets a JOIN asset_versions v ON v.asset_id=a.asset_id AND v.version=a.current_version WHERE a.tenant_id=$1 AND a.scope_id=$2 AND a.kind='runtime-profile' AND v.configuration->>'profileRef'=$3 AND v.configuration->>'profileType'=$4 AND a.asset_id<>$5",[ctx.tenantId,input.scopeId,config.profileRef,config.profileType,input.assetId??''])).rowCount;requireCondition(!duplicate,'INVALID_PAYLOAD','Runtime profile reference already has an asset');return;}
+    if(input.kind==='approval-role'){const config=approvalRoleConfig.parse(input.configuration),governanceScope=await this.auth.roles.manage(ctx,config.scopeId,tx);requireCondition(input.scopeId===governanceScope&&!input.declaration.credentials.length,'FORBIDDEN_ACTION','Scope governance definition is outside its authorized scope');requireCondition((await tx.query("SELECT 1 FROM policies WHERE principal_id=$1 AND tenant_id=$2 AND kind='user'",[config.principalId,ctx.tenantId])).rowCount,'TARGET_NOT_FOUND','Only a same-tenant human principal can have a role');return;}
     if(!['scope-role','scope-policy'].includes(input.kind))return;
     const config=input.kind==='scope-role'?roleConfig.parse(input.configuration):policyConfig.parse(input.configuration),governanceScope=await this.auth.roles.manage(ctx,config.scopeId,tx);requireCondition(input.scopeId===governanceScope&&!input.declaration.credentials.length,'FORBIDDEN_ACTION','Scope governance definition is outside its authorized scope');
     if(input.kind==='scope-role')requireCondition((await tx.query("SELECT 1 FROM policies WHERE principal_id=$1 AND tenant_id=$2 AND kind='user'",[(config as any).principalId,ctx.tenantId])).rowCount,'TARGET_NOT_FOUND','Only a same-tenant human principal can have a role');
