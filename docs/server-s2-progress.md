@@ -1445,3 +1445,5 @@ Node.js 24 在 `hub-environment` 导入时检查，`.npmrc` 使用 `engine-stric
 缺失的运行时配置返回 `RUNTIME_NOT_CONFIGURED`。未知能力包在保存上传正文之前（请求头 `x-capability-pack-id`）以及提交任务之前返回 `TARGET_NOT_FOUND`；退役包仍是 `UNSUPPORTED_VERSION`。0 次试跑调用仍接受，并在回应中警告；更短的再次提交也警告。技能运行接受唯一 manifest 名。获批后的协议 `status` 仍是 `registered`，另给 `lifecycle`、`registration` 和 `statusLabel`。任务 `phase` 仍含 `admitted`，另给 `phaseLabel`。触发器错误写明需要的种类和技能已声明的种类。能力包 `title` 改为英文，中文放在 `titleZh`。
 
 兼容矩阵的打包客户端绑定改为 Circle 1.7.4 / 9123753467e56b40120a91ed79fc0694edeba516。扩展清单版本 0.1.0 与 hub 包 0.2.0、API 1.0.0 分列。RPC 验收 pin 仍是 fd8524a / Circle 1.7.0；本步没有用 1.7.4 二进制重跑该验收。
+
+验证在 Node.js 24.22.0 上、CIRCLE_BIN / CIRCLE_COMMIT / CIRCLE_RUNTIME_CONFIG 置空时进行。`npm ci` 不再提示 embedded-postgres 的 allowScripts。typecheck 通过。contracts **20/20**。methods **289 pass / 1 skip / 0 fail**（该 skip 是 Linux 上没有 seatbelt 的隔离用例）。acceptance 全量一次为 **261 pass / 144 skip / 1 fail**：失败是核心文件里出现了退役包名，已把这两个名字移到 `packs/`；修后 `s2-07-core`、`new-user-qa`、`native-retirement` 与 `r2-07` 通过。144 项 skip 是这台 Linux 上隔离与未提供 Circle 二进制的用例，不计通过。references **7/7**。没有真实系统、模型、设备或付费调用。
