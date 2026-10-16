@@ -100,12 +100,15 @@ Linux has no process isolation. Skill runs and product-pack Tool/Hook subprocess
 `GET /v1/packs` lists installed capability packs. A source upload may send `x-capability-pack-id`. The hub checks that name before it reads or stores the body.
 
 - Retired ids `lbx-healthcheck` and `apv-case-execute` still return `UNSUPPORTED_VERSION`.
+- An approved skill name that is not installed returns `APPROVAL_REQUIRED`. The message names `POST /v1/skillpacks/{id}/install`. After install, that manifest id is listed by `GET /v1/packs` and `POST /v1/tasks/submit` can run it.
 - Any other missing id returns `TARGET_NOT_FOUND`. The message names the id and says to check `GET /v1/packs` first. Without the header, upload behaves as before.
 - Task submit rejects an unknown capability pack with `TARGET_NOT_FOUND` before it creates a task.
 
 Circle 1.7.4 uploads and then submits, and it does not send the header. Failing before the upload requires the client to check the pack list, or to send `x-capability-pack-id` on `POST /v1/sources`.
 
-`POST /v1/skillpacks/<name>/runs` accepts a manifest name (the `id` in `skillpack.json`) as well as a `skp_` id. One approved pack resolves to its id. Several approved packs with that name are listed and not guessed. If only candidates exist, the response is `APPROVAL_REQUIRED` and lists those submissions. A token that starts with `skp_` but does not match the id shape is explained; it is not a raw schema regular expression.
+`POST /v1/skillpacks/<name>/runs` accepts a manifest name (the `id` in `skillpack.json`) as well as a `skp_` id. One approved pack resolves to its id. Several approved packs with that name are listed and not guessed. If only candidates exist, the response is `APPROVAL_REQUIRED` and lists those submissions. A token that starts with `skp_` but does not match the id shape is explained; it is not a raw schema regular expression. An approved package can run before it is installed. The owner installs it with `POST /v1/skillpacks/{id}/install` and a body of `{}` so the manifest id becomes a capability pack. A run may send `judgementPins`, each `{assetId,version,sha256}` of an approved judgement.
+
+Before publishing a knowledge snapshot, call `GET /v1/knowledge/snapshots/current?scopeId=&knowledgeCategory=`. Pass `expectedSnapshotId: null` only when that `snapshotId` is `null`. A later `null` returns `INPUT_REVISION_STALE`. The next publish sends the id from this read.
 
 A trial with 0 tool calls is still accepted (201). `warnings` on the response says that this submission recorded no calls. A newer submission of the same manifest id with fewer calls warns that the earlier calls are not kept. An identical resubmit (same digest) does not warn again.
 
@@ -116,6 +119,8 @@ A trial with 0 tool calls is still accepted (201). `warnings` on the response sa
 | `CIRCLE_HUB_PORT` | Integer 0–65535. `0` lets the OS choose. Unset means `0` for `dev:stack` and `8080` for the supervisor |
 | `CIRCLE_HUB_DEV_PASSWORD` | Stable password for `developer`; empty means a new random password |
 | `CIRCLE_HUB_DEV_APPROVER_PASSWORD` | User `approver` |
+| `CIRCLE_HUB_DEV_COUNSEL_PASSWORD` | User `counsel`, a member of team Legal |
+| `CIRCLE_HUB_DEV_CONTROLLER_PASSWORD` | User `controller`, a member of team Finance |
 | `CIRCLE_HUB_DEV_SERVICE_PASSWORD` | Service account `defect-bot` |
 | `CIRCLE_HUB_DEV_WORKER_PASSWORD` | Both synthetic workers |
 | `CIRCLE_HUB_DEV_AUTH` | Set to `1` to enable development sign-in |

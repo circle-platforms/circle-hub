@@ -5,7 +5,7 @@ import {ApiError} from '../../packages/contracts/src/index.ts';
 import {NODE_INSTALL_URL,REQUIRED_NODE_MAJOR,assertHubPort,assertNodeEngine} from '../../packages/contracts/src/hub-environment.ts';
 import {isolatedProcess} from '../../packages/runtime/src/isolation.ts';
 import {assertInstalledCapability,phaseLabel} from '../../packages/tasks/src/index.ts';
-import {devStackNextLines,devStackSecret} from '../../scripts/dev-stack-options.ts';
+import {devStackHumans,devStackNextLines,devStackSecret,devStackTeams} from '../../scripts/dev-stack-options.ts';
 
 test('Node engine check names Node.js 24 and the install page without reading configuration',()=>{
  assert.equal(REQUIRED_NODE_MAJOR,24);
@@ -52,6 +52,9 @@ test('Development stack secrets stay random unless set, and the stop line follow
  assert.equal(background.some(line=>line.includes('POST /v1/auth/dev-login')),false);
  const foreground=devStackNextLines({url:'http://127.0.0.1:9',userPassword:'developer-secret',approverPassword:'approver-secret',samplePath:'sample',pid:7,foreground:true});
  assert.ok(foreground.some(line=>line.includes('Ctrl+C')));
+ assert.ok(devStackHumans.length>2);assert.equal(devStackTeams.length,2);
+ const seeded=devStackNextLines({url:'http://127.0.0.1:9',userPassword:'developer-secret',approverPassword:'approver-secret',counselPassword:'counsel-secret',controllerPassword:'controller-secret',samplePath:'sample',pid:7,foreground:false});
+ assert.ok(seeded.some(line=>line.includes('Legal')&&line.includes('Finance')&&line.includes('counsel')&&line.includes('controller')));
 });
 test('Admitted tasks keep the protocol phase and add a plain label',()=>{
  assert.equal(phaseLabel('admitted'),'accepted, not started');

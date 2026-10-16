@@ -27,7 +27,7 @@ export const AssetId=identity('ast');
 export const Sha256 = z.string().regex(/^[a-f0-9]{64}$/);
 export const Base64Content = z.string().regex(/^[A-Za-z0-9+/]*={0,2}$/).refine(value =>
   value.length % 4 === 0 && Buffer.from(value,'base64').toString('base64') === value,'Expected canonical standard base64');
-export function newId(prefix: 'task' | 'inrev' | 'op' | 'pin' | 'src' | 'snap' | 'evd' | 'art' | 'rule' | 'audit' | 'rec' | 'ent' | 'erev' | 'rel' | 'rrev' | 'ast' | 'knr' | 'skp' | 'ofl' | 'svc' | 'cst' | 'mcr'): string {
+export function newId(prefix: 'task' | 'inrev' | 'op' | 'pin' | 'src' | 'snap' | 'evd' | 'art' | 'rule' | 'audit' | 'rec' | 'ent' | 'erev' | 'rel' | 'rrev' | 'ast' | 'knr' | 'skp' | 'ofl' | 'svc' | 'cst' | 'mcr' | 'gov'): string {
   return `${prefix}_${randomUUID().replaceAll('-', '')}`;
 }
 export function sha256(bytes: string | Uint8Array): string {
@@ -105,7 +105,7 @@ export const SourceUpload = z.object({ scopeId: ScopeId, fileName: z.string().mi
 export const SourceReference = z.object({ sourceRevisionId: SourceRevisionId, sha256: Sha256, size: z.number().int().nonnegative(), fileName: z.string(), scopeId: ScopeId });
 const PackageName=z.string().regex(/^[a-z][a-z0-9-]{0,99}$/);
 const PackageVersion=z.string().regex(/^\d+\.\d+\.\d+$/);
-export const AssetKind=z.enum(['connector-instance','credential-reference','knowledge-source','knowledge-snapshot','environment-resource','skill-package','instruction','agent','command','trigger','bot','scope-role','scope-policy','runtime-profile','execution-submission']);
+export const AssetKind=z.enum(['connector-instance','credential-reference','knowledge-source','knowledge-snapshot','environment-resource','skill-package','instruction','agent','command','trigger','bot','scope-role','scope-policy','runtime-profile','execution-submission','approval-role','team','judgement']);
 export const AssetLifecycle=z.enum(['draft','approved','running','disabled','declined']);
 export const ToolDescriptor=z.object({name:z.string().min(1).max(160),description:z.string(),inputSchema:z.object({type:z.literal('object')}).catchall(z.unknown()),annotations:z.record(z.string(),z.unknown()).optional(),effect:z.enum(['read','write']),minimumRole:z.enum(['viewer','member','admin']),approval:z.boolean()}).strict();
 export const AssetDeclaration=z.object({reads:z.array(z.string()).max(100),writes:z.array(z.string()).max(100),credentials:z.array(AssetId).max(100),executionIsChange:z.boolean().optional(),allowedTestHosts:z.array(z.string().min(1).max(200)).max(100).optional(),hostCommandPolicies:z.record(z.string(),z.record(z.string(),z.unknown())).optional(),provides:z.object({tools:z.array(ToolDescriptor).max(100).optional(),resources:z.array(z.record(z.string(),z.unknown())).max(100).optional(),prompts:z.array(z.record(z.string(),z.unknown())).max(100).optional()}).strict().optional()}).strict();
@@ -185,7 +185,9 @@ export const ModuleInstallRequest=z.object({module:ModuleEntry,files:ModuleBytes
 export const SkillPackCheck=z.object({undeclaredTools:z.array(ToolName),missingTools:z.array(ToolName)});
 export const SkillPackView=z.object({skillPackId:SkillPackId,digest:Sha256,status:z.enum(['candidate','registered','declined','superseded']),registration:z.enum(['candidate','registered','declined','superseded']).optional(),lifecycle:AssetLifecycle.optional(),statusLabel:z.string().optional(),warnings:z.array(z.string()).max(20).optional(),check:SkillPackCheck,changeSetId:z.string().nullable().optional(),approvalTaskId:TaskId,
   manifest:SkillManifest,ownerPrincipalId:z.string(),scopeId:ScopeId,assetId:AssetId,assetVersion:PackageVersion});
-export const SkillRunInput=z.object({inputs:z.record(z.string(),z.unknown()),idempotencyKey:z.string().min(8).max(200)}).strict();
+export const JudgementKind=z.enum(['policy-rule-table','metric-definition','incident-start']);
+export const JudgementPin=z.object({assetId:AssetId,version:PackageVersion,sha256:Sha256}).strict();
+export const SkillRunInput=z.object({inputs:z.record(z.string(),z.unknown()),idempotencyKey:z.string().min(8).max(200),judgementPins:z.array(JudgementPin).max(20).optional()}).strict();
 const TriggerBase=z.object({scopeId:ScopeId,version:PackageVersion,name:z.string().min(1).max(200)});
 export const MIN_SCHEDULE_INTERVAL_MS=60_000;
 export const TriggerRegistration=z.discriminatedUnion('kind',[
@@ -207,7 +209,18 @@ export const InputRequest = z.object({ inputRevisionId: InputRevisionId, request
   replacement: z.record(z.string(), z.unknown()).optional() }).refine(value => !!value.response !== !!value.replacement,
     'Provide exactly one response or replacement');
 export const ApprovalRequest = z.object({ inputRevisionId: InputRevisionId, targetIdentity: z.string().min(1),
-  actionDigest: Sha256, approve: z.boolean() });
+  actionDigest: Sha256, approve: z.boolean(), reason: z.string().min(1).max(2000).optional() });
+export const ApprovalRoleName=z.enum(['manager','security','dpo','legal','finance','hr','it']);
+export const GovernanceContent=z.object({mediaType:z.string().min(1).max(200).default('text/plain'),fileName:z.string().min(1).max(240),text:z.string().max(200_000).optional(),contentBase64:Base64Content.optional()}).strict().refine(value=>Number(value.text!==undefined)!==Number(value.contentBase64!==undefined),'Provide text or contentBase64');
+export const GovernancePolicy=z.object({roles:z.array(z.object({role:ApprovalRoleName,count:z.number().int().min(1).max(20)}).strict()).min(1).max(7)}).strict().refine(value=>new Set(value.roles.map(role=>role.role)).size===value.roles.length&&value.roles.reduce((sum,role)=>sum+role.count,0)<=20,'Each approval role appears once');
+export const GovernanceSubmission=z.object({scopeId:ScopeId,title:z.string().min(1).max(500),summary:z.string().min(1).max(4000),content:GovernanceContent,policy:GovernancePolicy,idempotencyKey:z.string().min(8).max(200),recordId:KnowledgeRecordId.optional(),assetId:AssetId.optional()}).strict();
+export const GovernanceDecisionInput=z.object({approve:z.boolean(),reason:z.string().min(1).max(2000).optional()}).strict();
+export const ApprovalRoleAssignment=z.object({principalId:z.string().regex(/^prn_/).optional(),teamId:z.string().regex(/^team_[a-f0-9]{32}$/).optional(),role:ApprovalRoleName,idempotencyKey:z.string().min(8).max(200)}).strict().refine(value=>Number(value.principalId!==undefined)!==Number(value.teamId!==undefined),'Name one person or one team');
+export const ApprovalRoleConfiguration=z.object({schema:z.literal('approval-role/1'),scopeId:z.string(),principalId:z.string().regex(/^prn_/).optional(),teamId:z.string().regex(/^team_[a-f0-9]{32}$/).optional(),role:ApprovalRoleName}).strict().refine(value=>Number(value.principalId!==undefined)!==Number(value.teamId!==undefined),'Name one person or one team');
+export const TeamSubmission=z.object({name:z.string().min(1).max(80),members:z.array(z.string().regex(/^prn_/)).min(1).max(100),idempotencyKey:z.string().min(8).max(200)}).strict().refine(value=>new Set(value.members).size===value.members.length,'Name each team member once');
+export const JudgementSubmission=z.object({scopeId:ScopeId,name:z.string().min(1).max(200),judgementKind:JudgementKind,fileName:z.string().min(1).max(240),mediaType:z.string().min(1).max(200),text:z.string().max(1_000_000).optional(),contentBase64:Base64Content.optional(),readers:z.array(z.string().min(1).max(200)).max(1000).optional(),idempotencyKey:z.string().min(8).max(200)}).strict().refine(value=>Number(value.text!==undefined)!==Number(value.contentBase64!==undefined),'Provide text or contentBase64');
+export const OidcCallback=z.object({code:z.string().min(1).max(2048),state:z.string().min(16).max(512)}).strict();
+export const AuditExportQuery=z.object({format:z.enum(['json','csv']).default('json'),timezone:z.string().min(1).max(100).optional(),action:z.string().min(1).max(200).optional(),principalId:z.string().regex(/^prn_/).optional(),since:z.iso.datetime().optional(),until:z.iso.datetime().optional()}).refine(value=>value.since===undefined||value.until===undefined||value.since<=value.until,'since must not be after until');
 export const OperationRequest = z.object({ inputRevisionId: InputRevisionId, name: StandardOperation,
   target: z.string().min(1).max(200), targetIdentity: z.string().min(1).max(300),
   args: z.record(z.string(), z.unknown()).default({}),
@@ -342,6 +355,22 @@ export const CLIENT_ROUTES = {
   workers:{method:'GET',path:'/v1/workers',pageQuery:RegistryPageQuery,response:z.union([z.array(WorkerView),RegistryPage])},
   adminWorkers:{method:'GET',path:'/v1/admin/workers',pageQuery:RegistryPageQuery,pageResponse:RegistryPage},
   adminAudit:{method:'GET',path:'/v1/admin/audit',pageQuery:RegistryPageQuery,pageResponse:RegistryPage},
+  adminAuditExport:{method:'GET',path:'/v1/admin/audit/export',query:AuditExportQuery},
+  approvalRequests:{method:'POST',path:'/v1/approval-requests',request:GovernanceSubmission},
+  approvalRequest:{method:'GET',path:'/v1/approval-requests/{requestId}'},
+  approvalRequestContent:{method:'GET',path:'/v1/approval-requests/{requestId}/content'},
+  approvalRequestDecision:{method:'POST',path:'/v1/approval-requests/{requestId}/decisions',request:GovernanceDecisionInput},
+  pendingApprovals:{method:'GET',path:'/v1/approvals/pending'},
+  approvalRoles:{method:'POST',path:'/v1/scopes/{scopeId}/approval-roles',request:ApprovalRoleAssignment},
+  teams:{method:'POST',path:'/v1/scopes/{scopeId}/teams',request:TeamSubmission},
+  teamList:{method:'GET',path:'/v1/scopes/{scopeId}/teams'},
+  knowledgeSnapshotCurrent:{method:'GET',path:'/v1/knowledge/snapshots/current'},
+  skillpackInstall:{method:'POST',path:'/v1/skillpacks/{id}/install'},
+  judgements:{method:'POST',path:'/v1/judgements',request:JudgementSubmission},
+  judgementList:{method:'GET',path:'/v1/judgements'},
+  judgementContent:{method:'GET',path:'/v1/judgements/{assetId}/content'},
+  oidcStart:{method:'GET',path:'/v1/auth/oidc/start'},
+  oidcCallback:{method:'POST',path:'/v1/auth/oidc/callback',request:OidcCallback,response:DevLoginResult},
   taskAssignment:{method:'POST',path:'/v1/tasks/{taskId}/assignment',request:TaskAssignment,response:TaskView},
   mcp:{method:'POST',path:'/mcp',protocolVersion:'2025-11-25'},
   harnessImport:{method:'POST',path:'/v1/harness/import'},

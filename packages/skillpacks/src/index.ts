@@ -18,6 +18,8 @@ import {resolveTrust} from '../../connectors/src/private-http.ts';
 import {deriveCircleSkill} from './neutral.ts';
 import {skillWasLoaded} from './loader-observation.ts';
 import {approvedRuntimeRevision,boundRuntimeRevision,type RuntimeBinding} from '../../assets/src/runtime-revisions.ts';
+import {builtinToolNames,knownToolNames} from '../../tools/src/builtins.ts';
+import type {Judgements} from '../../tasks/src/judgements.ts';
 
 const RUNTIME_PROFILE_HINT='A Circle runtime profile is the JSON file CIRCLE_RUNTIME_CONFIG points at. It names circleBin, circleCommit (40 hexadecimal characters), circleVersion and model (kind scripted or remote, base_url, model, protocol set to openai, and api_key). Set CIRCLE_RUNTIME_CONFIG, restart the hub, call GET /v1/runtime-profiles, register a runtime-profile asset, and have a different person approve it. See docs/quickstart.md.';
 const SKILL_PACK_ID=/^skp_[A-Za-z0-9][A-Za-z0-9_-]*$/;
@@ -41,6 +43,7 @@ export class SkillPacks {
   runtimeDigest:string|null=null;
   modelSecret?:{key:string;binding:string};
   changeSets?:ChangeSets;
+  judgements?:Judgements;
   privateSocketPath='';
   secrets=new Map<string,{token:string;digest:string}>();
   constructor(store:Store,auth:Auth,tasks:Tasks,approvals:Approvals,assets:Assets,catalog:ToolCatalog,execution:Operations,objects:Knowledge){this.store=store;this.auth=auth;this.tasks=tasks;this.approvals=approvals;this.assets=assets;this.catalog=catalog;this.execution=execution;this.execution.requiredWorkerCapabilities.add('assets.execute');this.objects=objects;}
@@ -52,9 +55,11 @@ export class SkillPacks {
     const p=await this.auth.check(ctx,grant,undefined,tx),row=(await (tx??this.store.pool).query('SELECT * FROM skill_packages WHERE skill_pack_id=$1 AND tenant_id=$2 AND scope_id=ANY($3::text[])',[id,p.tenantId,p.scopes])).rows[0];
     requireCondition(row,'SOURCE_FORBIDDEN','Skill package is not available to this identity');await this.assets.row(ctx,row.asset_id,tx,'assets.read');return row;
   }
-  async checkWithDetails(ctx:AuthContext,manifest:any,trial:any,tx?:Transaction,allowMissing=false):Promise<any>{
-    const available=new Set((await this.catalog.available(ctx,tx)).map(entry=>entry.view.name)),declared=new Set<string>(manifest.tools),check={undeclaredTools:[...new Set<string>(trial.toolCalls.map((call:any)=>call.name).filter((name:string)=>!declared.has(name)))].sort(),missingTools:manifest.tools.filter((name:string)=>!available.has(name)).sort()};
-    if(check.undeclaredTools.length||check.missingTools.length&&!allowMissing){
+  async checkWithDetails(ctx:AuthContext,manifest:any,trial:any,tx?:Transaction,allowMissing=false,rejectUnknown=false):Promise<any>{
+    const running=new Set([...(await this.catalog.available(ctx,tx)).map(entry=>entry.view.name),...builtinToolNames]),known=knownToolNames(this.catalog.packages),declared=new Set<string>(manifest.tools);
+    const missingTools=manifest.tools.filter((name:string)=>!running.has(name)).sort(),unknown=missingTools.filter((name:string)=>!known.has(name));
+    const check={undeclaredTools:[...new Set<string>(trial.toolCalls.map((call:any)=>call.name).filter((name:string)=>!declared.has(name)))].sort(),missingTools};
+    if(check.undeclaredTools.length||check.missingTools.length&&!allowMissing||rejectUnknown&&unknown.length){
       const reasons=[];if(check.undeclaredTools.length)reasons.push(`Undeclared trial tools: ${summarizeTools(check.undeclaredTools)}`);if(check.missingTools.length)reasons.push(`Tools unavailable in caller catalog: ${summarizeTools(check.missingTools)}`);
       throw new ApiError('SKILLPACK_CHECK_FAILED',reasons.join('; '),{check});
     }return check;
@@ -66,11 +71,11 @@ export class SkillPacks {
     requireCondition(new Set(input.files.map(file=>file.path)).size===input.files.length&&input.files.some(file=>file.path==='SKILL.md'),'INVALID_PAYLOAD','Skill files require one SKILL.md and unique paths');
     const files=input.files.map(file=>{const bytes=Buffer.from(file.base64,'base64');requireCondition(bytes.length<=MAX_SOURCE_BYTES&&sha256(bytes)===file.sha256,'SOURCE_HASH_MISMATCH','Submitted file SHA differs');return {path:file.path,sha256:file.sha256,size:bytes.length};}).sort((a,b)=>input.module?(a.path<b.path?-1:a.path>b.path?1:0):a.path.localeCompare(b.path));
     requireCondition(files.reduce((sum,file)=>sum+file.size,0)<=MAX_SOURCE_BYTES,'BODY_TOO_LARGE','Skill files exceed sixteen MiB');
-    const check=await this.checkWithDetails(ctx,input.manifest,input.trial,undefined,true);
+    const check=await this.checkWithDetails(ctx,input.manifest,input.trial,undefined,true,true);
     const digest=canonicalHash({manifest:input.manifest,files,trial:input.trial,...(input.module?{module:input.module}:{})});
     for(const file of input.files)await this.objects.objects.putObject({Bucket:'evidence',Key:file.sha256,Body:Buffer.from(file.base64,'base64')});
     const perform=async(tx:Transaction)=>{
-      await this.checkWithDetails(ctx,input.manifest,input.trial,tx,true);await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[canonicalJson([ctx.tenantId,scope,ctx.principalId,digest])]);
+      await this.checkWithDetails(ctx,input.manifest,input.trial,tx,true,true);await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[canonicalJson([ctx.tenantId,scope,ctx.principalId,digest])]);
       const old=(await tx.query('SELECT * FROM skill_packages WHERE tenant_id=$1 AND scope_id=$2 AND owner_id=$3 AND digest=$4',[ctx.tenantId,scope,ctx.principalId,digest])).rows[0];if(old)return this.view(old);
       const prior=(await tx.query("SELECT s.* FROM skill_packages s WHERE tenant_id=$1 AND scope_id=$2 AND owner_id=$3 AND manifest->>'id'=$4 ORDER BY created_at DESC LIMIT 1",[ctx.tenantId,scope,ctx.principalId,input.manifest.id])).rows[0];
       const warnings:string[]=[];
@@ -86,7 +91,7 @@ export class SkillPacks {
       await tx.query('UPDATE skill_packages SET approval_id=$2,approval_task_id=$3,change_set_id=$4 WHERE skill_pack_id=$1',[id,approval.approval_id,change.approvalTaskId,change.changeSetId]);return {...this.view((await tx.query('SELECT * FROM skill_packages WHERE skill_pack_id=$1',[id])).rows[0],asset.lifecycle),...(warnings.length?{warnings}:{}),blockedReasons:change.blockedReasons};
     };return transaction?perform(transaction):this.store.transaction(perform);
   }
-  async changeDependencies(tx:Transaction,ctx:AuthContext,asset:any){const row=(await tx.query('SELECT * FROM skill_packages WHERE asset_id=$1 AND asset_version=$2',[asset.asset_id,asset.version])).rows[0];requireCondition(row,'APPROVAL_STALE','Skill submission is missing');const check=await this.checkWithDetails(ctx,row.manifest,row.trial,tx,true);await tx.query('UPDATE skill_packages SET check_result=$2 WHERE skill_pack_id=$1',[row.skill_pack_id,JSON.stringify(check)]);return check.missingTools.map((name:string)=>({tool:name,reason:'tool-instance-not-running'}));}
+  async changeDependencies(tx:Transaction,ctx:AuthContext,asset:any){const row=(await tx.query('SELECT * FROM skill_packages WHERE asset_id=$1 AND asset_version=$2',[asset.asset_id,asset.version])).rows[0];requireCondition(row,'APPROVAL_STALE','Skill submission is missing');const check=await this.checkWithDetails(ctx,row.manifest,row.trial,tx,true);await tx.query('UPDATE skill_packages SET check_result=$2 WHERE skill_pack_id=$1',[row.skill_pack_id,JSON.stringify(check)]);return check.missingTools.filter((name:string)=>!(builtinToolNames as readonly string[]).includes(name)).map((name:string)=>({tool:name,reason:'tool-instance-not-running'}));}
   async list(ctx:AuthContext):Promise<any[]>{
     const p=await this.auth.check(ctx,'skillpacks.read'),rows=(await this.store.pool.query('SELECT * FROM skill_packages WHERE tenant_id=$1 AND scope_id=ANY($2::text[]) ORDER BY created_at DESC,skill_pack_id',[p.tenantId,p.scopes])).rows,visible=[];
     for(const row of rows){try{const asset=await this.assets.row(ctx,row.asset_id);visible.push(await this.compatibility(row,this.view(row,asset.lifecycle)));}catch(error){if(!(error instanceof ApiError))throw error;}}return visible;
@@ -139,21 +144,61 @@ export class SkillPacks {
     requireCondition(profile&&profile.configuration.profileSha256===this.runtimeDigest,'SOURCE_NOT_APPROVED','Circle runtime requires an independently approved matching profile');await this.assets.versionRow(ctx,profile.asset_id,profile.version,tx);
     return {assetId:profile.asset_id,version:profile.version,sha256:profile.sha256,profileSha256:this.runtimeDigest};
   }
+  installMessage(id:string,skillPackId:string){return `Approved skill ${id} is not installed. POST /v1/skillpacks/${skillPackId}/install, then POST /v1/skillpacks/${skillPackId}/runs.`;}
+  async explainCapability(ctx:AuthContext,id?:string,tx?:Transaction):Promise<{disposition:'continue'|'installed'|'install-first'|'missing';skillPackId?:string;message?:string}>{
+    if(!id)return {disposition:'continue'};
+    if(this.tasks.retiredCapabilityPacks.has(id))throw new ApiError('UNSUPPORTED_VERSION','Capability package is not installed');
+    if(this.tasks.capabilities.has(id))return {disposition:'continue'};
+    const policy=await this.auth.policy(ctx,tx);
+    const rows=(await (tx??this.store.pool).query(`SELECT s.skill_pack_id,s.status,v.lifecycle FROM skill_packages s JOIN asset_versions v ON v.asset_id=s.asset_id AND v.version=s.asset_version WHERE s.tenant_id=$1 AND s.scope_id=ANY($2::text[]) AND s.manifest->>'id'=$3 ORDER BY s.created_at DESC`,[policy.tenantId,policy.scopes,id])).rows;
+    const running=rows.filter(row=>row.status==='registered'&&row.lifecycle==='running');
+    if(running.length===1)return {disposition:'installed',skillPackId:running[0].skill_pack_id};
+    if(running.length>1)throw new ApiError('INVALID_PAYLOAD',`More than one installed skill uses the name ${id}. Pass one of these ids: ${running.map(row=>row.skill_pack_id).join(', ')}.`,{skillPackIds:running.map(row=>row.skill_pack_id)});
+    const approved=rows.filter(row=>row.status==='registered');
+    if(approved.length===1)return {disposition:'install-first',skillPackId:approved[0].skill_pack_id,message:this.installMessage(id,approved[0].skill_pack_id)};
+    if(approved.length>1)throw new ApiError('APPROVAL_REQUIRED',`Approved skills named ${id} are not installed. Install one of these ids: ${approved.map(row=>row.skill_pack_id).join(', ')}.`,{skillPackIds:approved.map(row=>row.skill_pack_id)});
+    return {disposition:'missing'};
+  }
+  async installedDescriptors(ctx:AuthContext):Promise<any[]>{
+    try{await this.auth.check(ctx,'skillpacks.read');}catch(error){if(error instanceof ApiError)return [];throw error;}
+    const policy=await this.auth.policy(ctx);
+    const rows=(await this.store.pool.query(`SELECT s.skill_pack_id,s.manifest FROM skill_packages s JOIN asset_versions v ON v.asset_id=s.asset_id AND v.version=s.asset_version WHERE s.tenant_id=$1 AND s.scope_id=ANY($2::text[]) AND s.status='registered' AND v.lifecycle='running' AND v.approved_digest=v.sha256 ORDER BY s.manifest->>'id',s.created_at DESC`,[policy.tenantId,policy.scopes])).rows;
+    const seen=new Set<string>();const descriptors=[];
+    for(const row of rows){if(seen.has(row.manifest.id))continue;seen.add(row.manifest.id);descriptors.push({capabilityPackId:row.manifest.id,version:row.manifest.version,flowVersion:'skill-run/1',title:row.manifest.title,titleZh:row.manifest.title,skillPackId:row.skill_pack_id,installed:true,inputFormats:['skill-run/1'],requiredOperations:['assets.execute'],conclusionScope:'skill-run'});}
+    return descriptors;
+  }
+  async delegatedRun(ctx:AuthContext,submission:{capabilityPackId?:string;input?:Record<string,unknown>;idempotencyKey:string},tx?:Transaction):Promise<any>{
+    const explained=await this.explainCapability(ctx,submission.capabilityPackId,tx);
+    if(explained.disposition==='install-first')throw new ApiError('APPROVAL_REQUIRED',explained.message??'Approved skill is not installed');
+    if(explained.disposition!=='installed'||!explained.skillPackId)return;
+    const {judgementPins,...inputs}=submission.input??{};
+    return this.run(ctx,explained.skillPackId,{inputs,idempotencyKey:submission.idempotencyKey,...(judgementPins===undefined?{}:{judgementPins})},'manual',tx);
+  }
+  async install(ctx:AuthContext,id:string):Promise<any>{return this.store.transaction(async tx=>{
+    const row=await this.row(ctx,id,'skillpacks.run',tx);requireCondition(row.status==='registered','APPROVAL_REQUIRED','Approve the skill before installing it');
+    requireCondition(row.owner_id===ctx.principalId,'FORBIDDEN_ACTION','Only the skill owner installs the approved package');
+    const asset=(await tx.query('SELECT * FROM asset_versions WHERE asset_id=$1 AND version=$2',[row.asset_id,row.asset_version])).rows[0];
+    requireCondition(asset&&['approved','running'].includes(asset.lifecycle)&&asset.approved_digest===asset.sha256,'APPROVAL_REQUIRED','Approve the skill before installing it');
+    if(asset.lifecycle!=='running')await tx.query("UPDATE asset_versions SET lifecycle='running' WHERE asset_id=$1 AND version=$2",[row.asset_id,row.asset_version]);
+    await this.auth.audit(ctx,'skill.install',{skillPackId:id,capabilityPackId:row.manifest.id,digest:row.digest},row.scope_id,tx);
+    return {skillPackId:id,capabilityPackId:row.manifest.id,lifecycle:'running',digest:row.digest,runPath:`/v1/skillpacks/${id}/runs`};
+  });}
   async run(ctx:AuthContext,id:string,value:unknown,origin='manual',transaction?:Transaction):Promise<any>{
     const input=SkillRunInput.parse(value);const perform=async(tx:Transaction)=>{
       const row=await this.row(ctx,id,'skillpacks.run',tx);requireCondition(row.status==='registered','APPROVAL_REQUIRED','Package requires bound registration approval');
       requireCondition(row.manifest.triggers.includes(origin),'FORBIDDEN_ACTION',`Package ${row.skill_pack_id} (${row.manifest.id}) does not allow the ${origin} trigger. Declared triggers: ${(row.manifest.triggers??[]).join(', ')||'none'}.`);await this.checkWithDetails(ctx,row.manifest,row.trial,tx);
       const asset=await this.assets.row(ctx,row.asset_id,tx);requireCondition(asset.version===row.asset_version&&['approved','running'].includes(asset.lifecycle)&&asset.approved_digest===asset.sha256,'APPROVAL_STALE','Package asset revision is no longer approved');
-      const runtimeProfile=await this.runtimeBinding(tx,ctx,row.scope_id);const task=await this.tasks.submit(ctx,{scopeId:row.scope_id,title:`Run ${row.manifest.title}`,capabilityPackId:'skill-run',idempotencyKey:canonicalHash(['skill-run',id,input.idempotencyKey]),input:{skillPackId:id,digest:row.digest,assetId:row.asset_id,assetVersion:row.asset_version,assetSha256:asset.sha256,runtimeProfile,inputs:input.inputs}},tx);
+      const judgementPins=input.judgementPins?.length?await this.judgements!.resolve(tx,ctx,row.scope_id,input.judgementPins):[];
+      const runtimeProfile=await this.runtimeBinding(tx,ctx,row.scope_id);const task=await this.tasks.submit(ctx,{scopeId:row.scope_id,title:`Run ${row.manifest.title}`,capabilityPackId:'skill-run',idempotencyKey:canonicalHash(['skill-run',id,input.idempotencyKey]),input:{skillPackId:id,digest:row.digest,assetId:row.asset_id,assetVersion:row.asset_version,assetSha256:asset.sha256,runtimeProfile,inputs:input.inputs,judgementPins}},tx);
       if(!task.deduplicated){await tx.query('UPDATE tasks SET context=$2 WHERE task_id=$1',[task.taskId,JSON.stringify({privateOwnerId:ctx.principalId})]);await this.tasks.stage(tx,task,'running','runtime-pending','task.running');
-        await this.execution.submit(ctx,task.taskId,{name:'assets.execute',inputRevisionId:task.inputRevisionId,target:row.asset_id,targetIdentity:asset.sha256,args:{skillPackId:id,digest:row.digest,inputs:input.inputs},idempotencyKey:input.idempotencyKey,deadlineMs:300_000},tx);}
+        await this.execution.submit(ctx,task.taskId,{name:'assets.execute',inputRevisionId:task.inputRevisionId,target:row.asset_id,targetIdentity:asset.sha256,args:{skillPackId:id,digest:row.digest,inputs:input.inputs,judgementPins},idempotencyKey:input.idempotencyKey,deadlineMs:300_000},tx);}
       return {taskId:task.taskId};
     };return transaction?perform(transaction):this.store.transaction(perform);
   }
   async authorize(tx:Transaction,ctx:AuthContext,scope:string,spec:any,task:any):Promise<any>{
     const row=await this.row(ctx,spec.args.skillPackId,'skillpacks.run',tx),asset=await this.assets.row(ctx,row.asset_id,tx);
     requireCondition(row.status==='registered'&&['approved','running'].includes(asset.lifecycle)&&asset.approved_digest===asset.sha256,'APPROVAL_REQUIRED','Package registration is not active');
-    requireCondition(row.scope_id===scope&&task.principalId===ctx.principalId&&task.capabilityPackId==='skill-run'&&task.input.digest===row.digest&&spec.args.digest===row.digest&&asset.asset_id===spec.target&&asset.sha256===(spec.targetIdentity??spec.target_identity)&&canonicalHash(task.input.inputs)===canonicalHash(spec.args.inputs),'APPROVAL_STALE','Runtime input or package target differs');
+    requireCondition(row.scope_id===scope&&task.principalId===ctx.principalId&&task.capabilityPackId==='skill-run'&&task.input.digest===row.digest&&spec.args.digest===row.digest&&asset.asset_id===spec.target&&asset.sha256===(spec.targetIdentity??spec.target_identity)&&canonicalHash(task.input.inputs)===canonicalHash(spec.args.inputs)&&canonicalHash(task.input.judgementPins??[])===canonicalHash(spec.args.judgementPins??[]),'APPROVAL_STALE','Runtime input or package target differs');
     await this.checkWithDetails(ctx,row.manifest,row.trial,tx);requireCondition(task.input.runtimeProfile,'SOURCE_NOT_APPROVED','Run has no frozen runtime authority');const runtimeProfile=await this.runtimeBinding(tx,ctx,scope,task.input.runtimeProfile);
     return {effects:{reads:['registered-assets'],writes:['artifacts-evidence']},skillPackId:row.skill_pack_id,manifest:row.manifest,files:row.files,runtime:this.runtime,runtimeProfile,scopeId:row.scope_id};
   }

@@ -3,23 +3,27 @@ import { lstat, open, readdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { ApiError, ModuleCatalog, ModuleEntry, ModuleBytes, MAX_SOURCE_BYTES, requireCondition, sha256 } from '../../contracts/src/index.ts';
 import {verifyProductLine} from '../../methods/src/product-modules.ts';
+function reportManifest(errors:{code:string;message:string}[]):void{if(errors.length)throw new ApiError(errors[0].code,errors.map(item=>item.message).join('; '),{manifestErrors:errors});}
 export function verifyModule(entry: unknown, input: unknown) {
     const module = ModuleEntry.parse(entry), files = ModuleBytes.parse(input), directory = module.kind === 'skill-pack' ? 'skills' : 'products', manifestName = module.kind === 'skill-pack' ? 'skillpack.json' : 'product-line.json';
-    requireCondition(module.root === `${directory}/${module.id}` && module.manifestPath === `${module.root}/${manifestName}`, 'INVALID_PAYLOAD', 'Module id root and manifestPath differ');
-    requireCondition(new Set(module.files.map(file => file.path)).size === module.files.length && module.files.every((file, index) => index === 0 || module.files[index - 1].path < file.path), 'INVALID_PAYLOAD', 'Module file paths must be unique and sorted');
-    requireCondition(sha256(module.files.map(file => `${file.sha256}  ${file.path}\n`).join('')) === module.digest, 'SOURCE_HASH_MISMATCH', 'Module file manifest digest differs');
-    requireCondition(new Set(files.map(file => file.path)).size === files.length && files.length === module.files.length, 'SOURCE_HASH_MISMATCH', 'Frozen file set differs from the module');
-    const supplied = new Map(files.map(file => [file.path, file])), frozen = [];
+    const structural:{code:string;message:string}[]=[];
+    if(!(module.root === `${directory}/${module.id}` && module.manifestPath === `${module.root}/${manifestName}`))structural.push({code:'INVALID_PAYLOAD',message:'Module id root and manifestPath differ'});
+    if(!(new Set(module.files.map(file => file.path)).size === module.files.length && module.files.every((file, index) => index === 0 || module.files[index - 1].path < file.path)))structural.push({code:'INVALID_PAYLOAD',message:'Module file paths must be unique and sorted'});
+    if(sha256(module.files.map(file => `${file.sha256}  ${file.path}\n`).join('')) !== module.digest)structural.push({code:'SOURCE_HASH_MISMATCH',message:'Module file manifest digest differs'});
+    if(!(new Set(files.map(file => file.path)).size === files.length && files.length === module.files.length))structural.push({code:'SOURCE_HASH_MISMATCH',message:'Frozen file set differs from the module'});
+    reportManifest(structural);
+    const supplied = new Map(files.map(file => [file.path, file])), frozen = [], fileErrors:{code:string;message:string}[]=[];
     let total = 0;
     for (const file of module.files) {
         const original = supplied.get(file.path);
-        requireCondition(original, 'SOURCE_HASH_MISMATCH', 'Frozen module file is missing');
+        if(!original){fileErrors.push({code:'SOURCE_HASH_MISMATCH',message:'Frozen module file is missing'});continue;}
         const bytes = Buffer.from(original.base64, 'base64');
         total += bytes.length;
-        requireCondition(total <= MAX_SOURCE_BYTES, 'BODY_TOO_LARGE', 'Module originals exceed sixteen MiB');
-        requireCondition(original.sha256 === file.sha256 && sha256(bytes) === file.sha256, 'SOURCE_HASH_MISMATCH', 'Frozen module file differs from the declared SHA');
-        frozen.push({ ...original });
+        if(total > MAX_SOURCE_BYTES)fileErrors.push({code:'BODY_TOO_LARGE',message:'Module originals exceed sixteen MiB'});
+        if(!(original.sha256 === file.sha256 && sha256(bytes) === file.sha256))fileErrors.push({code:'SOURCE_HASH_MISMATCH',message:'Frozen module file differs from the declared SHA'});
+        else if(total<=MAX_SOURCE_BYTES)frozen.push({ ...original });
     }
+    reportManifest(fileErrors);
     const manifestFile = frozen.find(file => file.path === manifestName);
     requireCondition(manifestFile, 'INVALID_PAYLOAD', 'Module manifest is not in its file set');
     let manifest: any;

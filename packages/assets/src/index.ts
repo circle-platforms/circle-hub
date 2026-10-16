@@ -7,8 +7,8 @@ import {facetedPage} from '../../storage/src/faceted-query.ts';
 import type {RegistryPageQuery} from '../../contracts/src/index.ts';
 
 const join='assets a JOIN asset_versions v ON v.asset_id=a.asset_id AND v.version=a.current_version';
-const visibility="a.tenant_id=$1 AND a.scope_id=ANY($2::text[]) AND (a.owner_principal_id=$3 OR v.readers ? $3 OR v.readers ? '*')";
-export const metadataVisibility="a.tenant_id=$1 AND (($4::boolean AND a.scope_id=ANY($2::text[]) AND (a.owner_principal_id=$3 OR v.readers ? $3 OR v.readers ? '*')) OR (a.scope_id=ANY($5::text[]) AND v.lifecycle='draft' AND a.kind<>'credential-reference'))";
+const visibility="a.tenant_id=$1 AND a.scope_id=ANY($2::text[]) AND (a.owner_principal_id=$3 OR reader_visible(v.readers,$3,a.tenant_id))";
+export const metadataVisibility="a.tenant_id=$1 AND (($4::boolean AND a.scope_id=ANY($2::text[]) AND (a.owner_principal_id=$3 OR reader_visible(v.readers,$3,a.tenant_id))) OR (a.scope_id=ANY($5::text[]) AND v.lifecycle='draft' AND a.kind<>'credential-reference'))";
 const sensitive=/^(?:token|password|secret|authorization|cookie|jwt|privatekey|credentialvalue)$/i;
 function clean(value:unknown):void{
   if(!value||typeof value!=='object')return;

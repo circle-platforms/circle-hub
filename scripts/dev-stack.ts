@@ -10,12 +10,13 @@ import { zipSync, strToU8 } from 'fflate';
 import {SUPERVISOR_STOP_TIMEOUT_MS} from '../apps/server/src/shutdown.ts';
 import {createSyntheticSources} from '../packs/synthetic/readonly-sources.ts';
 import {setTimeout as delay} from 'node:timers/promises';
-import {devStackForeground,devStackNextLines,devStackSecret} from './dev-stack-options.ts';
+import {devStackForeground,devStackHumans,devStackMemberGrants,devStackNextLines,devStackSecret,devStackTeams} from './dev-stack-options.ts';
 
 const root = fileURLToPath(new URL('../',import.meta.url));
 const userPassword = devStackSecret('CIRCLE_HUB_DEV_PASSWORD',process.env.CIRCLE_HUB_DEV_PASSWORD,randomBytes(18).toString('base64url'));
 const workerPassword = devStackSecret('CIRCLE_HUB_DEV_WORKER_PASSWORD',process.env.CIRCLE_HUB_DEV_WORKER_PASSWORD,randomBytes(18).toString('base64url'));
 const approverPassword=devStackSecret('CIRCLE_HUB_DEV_APPROVER_PASSWORD',process.env.CIRCLE_HUB_DEV_APPROVER_PASSWORD,randomBytes(18).toString('base64url')),servicePassword=devStackSecret('CIRCLE_HUB_DEV_SERVICE_PASSWORD',process.env.CIRCLE_HUB_DEV_SERVICE_PASSWORD,randomBytes(18).toString('base64url'));
+const counselPassword=devStackSecret('CIRCLE_HUB_DEV_COUNSEL_PASSWORD',process.env.CIRCLE_HUB_DEV_COUNSEL_PASSWORD,randomBytes(18).toString('base64url')),controllerPassword=devStackSecret('CIRCLE_HUB_DEV_CONTROLLER_PASSWORD',process.env.CIRCLE_HUB_DEV_CONTROLLER_PASSWORD,randomBytes(18).toString('base64url'));
 const scratch = await mkdtemp(`${tmpdir()}/circle-hub-dev-`);
 const socket = createServer(); await new Promise<void>(resolve => socket.listen(0,'127.0.0.1',resolve));
 const port = (socket.address() as { port:number }).port; await new Promise<void>(resolve => socket.close(() => resolve()));
@@ -83,6 +84,8 @@ try {
     { username:'developer',password:userPassword,principalId:'prn_developer',tenantId:'tnt_synthetic',kind:'user',
       scopes:['scp_lab'],grants:['tasks.read','tasks.submit','tasks.input','tasks.cancel','sources.read','sources.write','evidence.read','methods.use','operations.reconcile','admin.manage','admin.restart','rules.manage','decisions.approve','product.version','product.config.read','product.config.write','defects.search','defects.comment','docs.fetch','docs.convert','assets.read','assets.register','assets.change','assets.check','credentials.register','credentials.use','service-clients.manage','builds.read','environment.read','knowledge.read','knowledge.submit','knowledge.ingest','knowledge.publish','skillpacks.read','skillpacks.submit','skillpacks.run','automations.manage','automations.read','connectors.events'],targets:syntheticTargets,defects:['LAB-42'] },
     {username:'approver',password:approverPassword,principalId:'prn_approver',tenantId:'tnt_synthetic',kind:'user',scopes:['scp_lab'],grants:['tasks.read','decisions.approve','assets.read','assets.approve','knowledge.read','knowledge.review','skillpacks.read'],targets:[],defects:[]},
+    {username:'counsel',password:counselPassword,principalId:'prn_counsel',tenantId:'tnt_synthetic',kind:'user',scopes:['scp_lab'],grants:[...devStackMemberGrants],targets:[],defects:[]},
+    {username:'controller',password:controllerPassword,principalId:'prn_controller',tenantId:'tnt_synthetic',kind:'user',scopes:['scp_lab'],grants:[...devStackMemberGrants],targets:[],defects:[]},
     {username:'defect-bot',password:servicePassword,principalId:'prn_defectbot',tenantId:'tnt_synthetic',kind:'service',scopes:['scp_lab'],grants:['tasks.read','tasks.submit','tasks.input','sources.read','sources.write','evidence.read','methods.use','product.version','defects.search','defects.comment','docs.fetch','docs.convert'],targets:syntheticTargets,defects:['LAB-42','SECRET-99']},
     { username:'lab-east-01',password:workerPassword,principalId:'prn_lab_east_01',tenantId:'tnt_synthetic',kind:'worker',workerId:'lab-east-01',
       scopes:['scp_lab'],grants:['workers.execute'],targets:syntheticTargets,defects:['LAB-42','SECRET-99'] },
@@ -103,6 +106,8 @@ try {
   const login=async(username:string,password:string)=>{const response=await fetch(`${server.url}/v1/auth/dev-login`,{method:'POST',redirect:'error',headers:{'content-type':'application/json'},body:JSON.stringify({username,password})});if(!response.ok)throw new Error('Synthetic asset login failed');return (await response.json() as any).data.token;};
   const developerToken=await login('developer',userPassword),approverToken=await login('approver',approverPassword);
   const post=async(path:string,value:unknown,token=developerToken)=>{const response=await fetch(`${server.url}${path}`,{method:'POST',redirect:'error',headers:{authorization:`Bearer ${token}`,'content-type':'application/json'},body:JSON.stringify(value)});const body=await response.json() as any;if(!response.ok)throw new Error(`Synthetic asset setup failed: ${body.error?.code}`);return body.data;};
+  const get=async(path:string,token:string)=>{const response=await fetch(`${server.url}${path}`,{redirect:'error',headers:{authorization:`Bearer ${token}`}});const body=await response.json() as any;if(!response.ok)throw new Error(`Synthetic team setup failed: ${body.error?.code}`);return body.data;};
+  for(const team of devStackTeams){const change=await post('/v1/scopes/scp_lab/teams',{name:team.name,members:team.members,idempotencyKey:`dev-stack-team-${team.name.toLowerCase()}`});const approval=(await get(`/v1/tasks/${change.approvalTaskId}/approvals`,approverToken))[0];await post(`/v1/tasks/${change.approvalTaskId}/approvals/${approval.approvalId}`,{inputRevisionId:approval.inputRevisionId,targetIdentity:approval.targetIdentity,actionDigest:approval.actionDigest,approve:true},approverToken);}
   const observed=await fetch(`${server.url}/v1/runtime-profiles`,{redirect:'error',headers:{authorization:`Bearer ${developerToken}`}});if(!observed.ok)throw new Error('Synthetic runtime observation failed');
   for(const profile of (await observed.json() as any).data){const asset=await post('/v1/assets',{scopeId:'scp_lab',kind:'runtime-profile',name:'Synthetic development runtime',version:'1.0.0',declaration:{reads:[],writes:[],credentials:[]},configuration:{profileType:profile.profileType,profileRef:profile.profileRef,profileSha256:profile.profileSha256},readers:['*']});await post(`/v1/assets/${asset.assetId}/lifecycle`,{version:asset.version,sha256:asset.sha256,state:'approved'},approverToken);}
   for(const packageId of ['documents','build-site','query-mirror','environment-view','knowledge']){
@@ -116,9 +121,9 @@ try {
   await launch('apps/worker/src/main.ts',{ ...env,CIRCLE_HUB_URL:server.url,CIRCLE_WORKER_USERNAME:'lab-east-02',CIRCLE_WORKER_PASSWORD:workerPassword },'worker-ready');
   const foreground=devStackForeground(process.stdin.isTTY,process.stdout.isTTY);
   console.log(JSON.stringify({ type:'dev-stack-ready',pid:process.pid,url:server.url,apiVersion:server.apiVersion,
-    login:{ username:'developer',password:userPassword },approverLogin:{username:'approver',password:approverPassword},scopeId:'scp_lab',samplePath,scratchDirectory:scratch,postgresVersion:database.version,syntheticOnly:true,foreground,
+    login:{ username:'developer',password:userPassword },approverLogin:{username:'approver',password:approverPassword},counselLogin:{username:'counsel',password:counselPassword},controllerLogin:{username:'controller',password:controllerPassword},humans:devStackHumans.map(person=>({username:person.username,principalId:person.principalId,team:person.team})),teams:devStackTeams.map(team=>({name:team.name,members:team.members})),scopeId:'scp_lab',samplePath,scratchDirectory:scratch,postgresVersion:database.version,syntheticOnly:true,foreground,
     next:{enable:'/extensions enable hub',login:`/hub login ${server.url} developer`} }));
-  for(const line of devStackNextLines({url:server.url,userPassword,approverPassword,samplePath,pid:process.pid,foreground}))console.log(line);
+  for(const line of devStackNextLines({url:server.url,userPassword,approverPassword,counselPassword,controllerPassword,samplePath,pid:process.pid,foreground}))console.log(line);
 } catch (error) {
   console.error(JSON.stringify({ type:'dev-stack-startup-failed',message:error instanceof Error ? error.message : 'Unknown startup failure' }));
   process.exitCode = 1; await cleanup();

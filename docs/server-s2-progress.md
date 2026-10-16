@@ -1447,3 +1447,25 @@ Node.js 24 在 `hub-environment` 导入时检查，`.npmrc` 使用 `engine-stric
 兼容矩阵的打包客户端绑定改为 Circle 1.7.4 / 9123753467e56b40120a91ed79fc0694edeba516。扩展清单版本 0.1.0 与 hub 包 0.2.0、API 1.0.0 分列。RPC 验收 pin 仍是 fd8524a / Circle 1.7.0；本步没有用 1.7.4 二进制重跑该验收。
 
 验证在 Node.js 24.22.0 上、CIRCLE_BIN / CIRCLE_COMMIT / CIRCLE_RUNTIME_CONFIG 置空时进行。`npm ci` 不再提示 embedded-postgres 的 allowScripts。typecheck 通过。contracts **20/20**。methods **289 pass / 1 skip / 0 fail**（该 skip 是 Linux 上没有 seatbelt 的隔离用例）。acceptance 全量一次为 **261 pass / 144 skip / 1 fail**：失败是核心文件里出现了退役包名，已把这两个名字移到 `packs/`；修后 `s2-07-core`、`new-user-qa`、`native-retirement` 与 `r2-07` 通过。144 项 skip 是这台 Linux 上隔离与未提供 Circle 二进制的用例，不计通过。references **7/7**。没有真实系统、模型、设备或付费调用。
+
+## 139：通用企业治理
+
+本步只改 circle-hub。Circle 客户端仓库不改。不包含 Linux 沙箱。
+
+已批准且团队可见的知识主张在审核事务里写入稳定快照，检索能按 `snapshotId` 命中。记录所有者可以下载自己的原件；下载使用路径或声明中的文件名和媒体类型，不再把这类原件一律标成 `.bin`。来源不可见写入 `knowledge.access-denied`。
+
+`POST /v1/approval-requests` 提交任意正文，按 `manager`、`security`、`dpo`、`legal`、`finance`、`hr`、`it` 点数审批。这些角色在独立表里，不扩大管理员、成员、访客的检查。同一个人一次只占一个名额。拒绝保存 `reason`。凑满后正文进入可检索的团队知识。`hub-task` 可以建任务。MCP `hub_task` 省略能力包时使用 `hub-task`；`hub_packs` 只读返回 `packs`。两者不进入 `GET /v1/tools`。
+
+技能推送时，未知工具名返回 `SKILLPACK_CHECK_FAILED`。`hub_task` 与 `hub_packs` 算作正在提供。已知但未运行的连接器工具仍可提交，批准时再报 `DEPENDENCY_NOT_APPROVED`。自批、依赖未批准和来源禁止写入审计，并且写在请求事务之外，回滚后仍在。
+
+审计导出为 `GET /v1/admin/audit/export` 与 `circle-hub admin audit --format`。默认 `GET /v1/admin/audit` 仍是 JSON 数组。清单错误一次返回 `details.manifestErrors`。HTTP 错误带 `messageZh`；`Accept-Language` 含 `zh` 时 `message` 为中文并保留 `messageEn`。OIDC 只接受回环地址；SCIM 只写在 `docs/design/sso-scim.md`，没有端点。
+
+客户端需要采纳的路径、字段和工具名记在 `docs/client-api-handoff.md` 的「企业治理接口」一节。知识记录下载使用路径基名和对应媒体类型。来源表里的存储名仍是 `knowledge-*.bin`，`GET /v1/sources/{id}/content` 沿用该存储名；记录所有者对该路径返回 200。
+
+定向验证在 Node.js 24.11.1 与临时 PostgreSQL 上完成。企业治理 **3/3**，知识 R2.3 **6/6**，技能推送 R2.5 可执行项 **2/2**，技能诊断 **4/4**，新用户问答 **2/2**，Hub RPC 能力声明 **1/1**，模块清单 **6/6**（含一次返回全部清单错误），管理审计与资产 **7/7**，登记操作页 **3/3**。合计 **34** 通过、**0** 失败。另有 **4** 项跳过：本机 Linux 没有 seatbelt 的技能运行 **3** 项，以及未设置 `CIRCLE_BIN` 的固定 Circle 提交核对 **1** 项。`npm run typecheck` 已在同一 Node 上通过。未跑全量 `npm test`。
+
+## 140：团队、当前快照、技能安装与判断结果
+
+团队经变更集生效，读者列表和审批角色都可以写团队。开发栈增加 `counsel` 与 `controller`，与 `developer`、`approver` 分属 Legal 与 Finance。`GET /v1/knowledge/snapshots/current` 返回当前稳定快照 id；`expectedSnapshotId: null` 只在该 id 为 null 时成立。已批准技能由所有者安装后，清单名进入 `GET /v1/packs`，提交任务会交给技能运行。`POST /v1/skillpacks/{id}/runs` 在安装前仍接受已批准的包。判断结果是人批准、按内容 SHA-256 固定的资产，技能运行用 `judgementPins` 引用，不再每次重新抽取。
+
+定向验证在 Node.js 24.11.1 与临时 PostgreSQL 上完成。协作验收 **3/3**，方法侧新用户问答 **7/7**。回归：企业治理 **3/3**，知识 R2.3 **6/6**，技能 R2.5 可执行项 **2/2**，技能诊断 **4/4**，技能拒绝 **4/4**，新用户问答验收 **2/2**，管理 **4/4**，包登记可执行项 **2/2**，模块清单 **6/6**。合计 **43** 通过、**0** 失败。另有 **5** 项跳过：本机 Linux 没有 seatbelt 的技能或产品运行 **4** 项，以及未设置 `CIRCLE_BIN` 的固定 Circle 提交核对 **1** 项。`npm run typecheck` 已在同一 Node 上通过。未跑全量 `npm test`。

@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { moduleFixture } from '../fixtures/module.ts';
 import { verifyModule, freezeModule } from '../../packages/modules/src/verify.ts';
+import { verifyProductLine } from '../../packages/methods/src/product-modules.ts';
 import { MAX_SOURCE_BYTES, sha256 } from '../../packages/contracts/src/index.ts';
 test('Module bytes: exact file set hashes manifest identity and sha256sum digest are verified without importing code', () => {
     for (const kind of ['skill-pack', 'product-line'] as const) {
@@ -32,6 +33,15 @@ test('Module bytes: mismatches omissions extras duplicates unsafe roots and hidd
     const fixture = moduleFixture();
     for (const input of [{ ...fixture, files: fixture.files.slice(1) }, { ...fixture, files: [...fixture.files, fixture.files[0]] }, { ...fixture, files: [...fixture.files, { path: 'extra.txt', base64: 'eA==', sha256: '0'.repeat(64) }] }, { ...fixture, files: fixture.files.map((file, index) => index === 0 ? { ...file, base64: 'eA==' } : file) }, { ...fixture, module: { ...fixture.module, digest: '0'.repeat(64) } }, { ...fixture, module: { ...fixture.module, id: 'different-id' } }, { ...fixture, module: { ...fixture.module, version: '9.0.0' } }, { ...fixture, module: { ...fixture.module, root: '../escape' } }, { ...fixture, module: { ...fixture.module, files: [...fixture.module.files].reverse() } }])
         assert.throws(() => verifyModule(input.module, input.files));
+});
+test('Module bytes: reversed paths and a bad digest are reported together', () => {
+    const fixture = moduleFixture();
+    const input = { ...fixture, module: { ...fixture.module, files: [...fixture.module.files].reverse(), digest: '0'.repeat(64) } };
+    assert.throws(() => verifyModule(input.module, input.files), (error: any) => error.details.manifestErrors.length >= 2 && error.message.includes(';'));
+});
+test('Product line: every missing declared file is reported in one error', () => {
+    const manifest = { schemaVersion: 'product-line/1', id: 'synthetic-line', version: '1.0.0', tools: [], hooks: [{ manifest: 'hooks/a.ts', event: 'beforeDispatch', order: 1 }, { manifest: 'hooks/b.ts', event: 'afterResult', order: 2 }], flows: ['flows/missing.json'], resources: [] };
+    assert.throws(() => verifyProductLine(manifest, new Map()), (error: any) => error.code === 'SOURCE_HASH_MISMATCH' && error.details.manifestErrors.length >= 3 && error.message.includes(';'));
 });
 test('Module filesystem: freeze includes every nonhidden file and refuses symlinks extra files and changed bytes', async (t) => {
     const directory = await mkdtemp(join(tmpdir(), 'circle-module-freeze-'));

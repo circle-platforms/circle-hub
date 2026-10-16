@@ -6,12 +6,36 @@ import type {Knowledge,SourceAccessPin} from './index.ts';
 import {z} from 'zod';
 
 type Row=Record<string,any>;
-const permit=(readers:string[],id:string)=>readers.includes(id)||readers.includes('*');
 
 export class KnowledgeGraph {
   store:Store;auth:Auth;objects:Knowledge;
   constructor(store:Store,auth:Auth,objects:Knowledge){this.store=store;this.auth=auth;this.objects=objects;}
   denied():never{throw new ApiError('SOURCE_FORBIDDEN','Knowledge record is not available to this identity');}
+  async allows(ctx:AuthContext,readers:string[]|undefined,tx?:Transaction):Promise<boolean>{
+    if(!Array.isArray(readers))return false;
+    if(readers.includes('*')||readers.includes(ctx.principalId))return true;
+    const teams=readers.filter(id=>id.startsWith('team_'));
+    if(!teams.length)return false;
+    const hit=await (tx??this.store.pool).query('SELECT 1 FROM team_members WHERE tenant_id=$1 AND principal_id=$2 AND team_id=ANY($3::text[]) LIMIT 1',[ctx.tenantId,ctx.principalId,teams]);
+    return (hit.rowCount??0)>0;
+  }
+  async ownerReadable(ctx:AuthContext,row:Row|undefined,tx?:Transaction):Promise<boolean>{
+    if(!row)return false;const policy=await this.auth.policy(ctx,tx);
+    return policy.tenantId===row.tenant_id&&policy.principalId===row.owner_id&&policy.scopes.includes(row.scope_id)&&(policy.scopeGrants?.[row.scope_id]??[]).includes('knowledge.read');
+  }
+  async noteDenied(ctx:AuthContext,row:Row|undefined):Promise<void>{
+    if(!row||row.tenant_id!==ctx.tenantId)return;
+    await this.auth.audit(ctx,'knowledge.access-denied',{code:'SOURCE_FORBIDDEN',recordId:row.record_id},row.scope_id);
+  }
+  contentDescriptor(row:Row):{mediaType:string;fileName:string}{
+    if(row.kind==='KnowledgeSnapshot')return {mediaType:'application/json',fileName:`${row.record_id}.json`};
+    const payload=row.payload??{},fromPath=typeof payload.path==='string'?payload.path.split('/').filter(Boolean).at(-1):undefined;
+    const stored=typeof payload.raw?.fileName==='string'&&!/\.bin$/i.test(payload.raw.fileName)?payload.raw.fileName:undefined;
+    const fileName=typeof payload.fileName==='string'&&payload.fileName?payload.fileName:fromPath||stored||`${row.record_id}.bin`;
+    const extension=fileName.toLowerCase().split('.').pop();
+    const mediaType=typeof payload.mediaType==='string'&&payload.mediaType?payload.mediaType:extension==='json'?'application/json':extension==='md'?'text/markdown':extension==='csv'?'text/csv':extension==='txt'||extension==='text'?'text/plain':'application/octet-stream';
+    return {mediaType,fileName};
+  }
   view(row:Row):any{return {recordId:row.record_id,kind:row.kind,scopeId:row.scope_id,ownerPrincipalId:row.owner_id,knowledgeCategory:row.knowledge_category,
     sourceType:row.source_type,visibility:row.visibility,state:row.state,sha256:row.sha256,payload:row.payload};}
   async row(id:string,tx?:Transaction):Promise<Row|undefined>{return (await (tx??this.store.pool).query('SELECT * FROM knowledge_records WHERE record_id=$1',[id])).rows[0];}
@@ -31,7 +55,7 @@ export class KnowledgeGraph {
     if(!file)return;
     if(row.tenant_id!==ctx.tenantId||row.scope_id!==source.scope_id||row.kind!=='knowledge-source'||row.configuration.schema!=='external-source-artifact/1'||row.sha256!==pin.sha256||row.approved_digest!==row.sha256||!['approved','running'].includes(row.lifecycle)||!row.live_readers)this.denied();
     if(source.kind!=='SourceRevision'||source.knowledge_category!=='product'||source.sha256!==file.sha256||source.payload.raw?.sourceRevisionId!==file.sourceRevisionId||source.payload.raw?.sha256!==file.sha256||source.payload.raw?.size!==file.size||source.payload.path!==`/${file.path}`)throw new ApiError('SOURCE_HASH_MISMATCH','Frozen original record differs from the approved artifact');
-    if(row.owner_principal_id!==ctx.principalId&&(!permit(row.readers,ctx.principalId)||!permit(row.live_readers,ctx.principalId)))this.denied();return row;
+    if(row.owner_principal_id!==ctx.principalId&&(!await this.allows(ctx,row.readers,tx)||!await this.allows(ctx,row.live_readers,tx)))this.denied();return row;
   }
   async visible(ctx:AuthContext,row:Row|undefined,tx?:Transaction,pin?:SourceAccessPin):Promise<boolean>{
     if(!row)return false;const p=await this.auth.check(ctx,'knowledge.read',undefined,tx);
@@ -42,12 +66,12 @@ export class KnowledgeGraph {
       const current=frozen?source:(await (tx??this.store.pool).query(`SELECT r.* FROM knowledge_source_heads h JOIN knowledge_records r USING(record_id)
         WHERE h.tenant_id=$1 AND h.scope_id=$2 AND h.identity_key=$3`,[source.tenant_id,source.scope_id,source.payload.sourceIdentity])).rows[0];
       if(!current)return false;
-      for(const revision of [source,current])if(!permit(revision.payload.acl.sourceReaders,p.principalId)||!permit(revision.payload.acl.platformReaders,p.principalId))return false;
+      for(const revision of [source,current])if(!await this.allows(ctx,revision.payload.acl.sourceReaders,tx)||!await this.allows(ctx,revision.payload.acl.platformReaders,tx))return false;
       let asset=source.payload.asset;
       // Older retained tool sources also obey the current asset's reader policy.
       if(!asset&&source.payload.parserVersion==='tool-return/1')try{const key=JSON.parse(source.payload.sourceId);if(Array.isArray(key)&&typeof key[0]==='string'&&key[0].startsWith('ast_'))asset={assetId:key[0]};}catch{/* A manually ingested source has no implicit asset binding. */}
       if(asset){const authority=frozen??(await (tx??this.store.pool).query(`SELECT a.tenant_id,a.scope_id,a.owner_principal_id,v.readers,v.declaration FROM assets a JOIN asset_versions v ON v.asset_id=a.asset_id AND v.version=a.current_version WHERE a.asset_id=$1`,[asset.assetId])).rows[0];
-        if(!authority||authority.tenant_id!==p.tenantId||!p.scopes.includes(authority.scope_id)||authority.owner_principal_id!==p.principalId&&!permit(authority.readers,p.principalId)||asset.permission&&!p.grants.includes(asset.permission))return false;
+        if(!authority||authority.tenant_id!==p.tenantId||!p.scopes.includes(authority.scope_id)||authority.owner_principal_id!==p.principalId&&!await this.allows(ctx,authority.readers,tx)||asset.permission&&!p.grants.includes(asset.permission))return false;
         for(const reference of authority.declaration.credentials){
           const credential=(await (tx??this.store.pool).query(`SELECT a.tenant_id,a.scope_id,a.owner_principal_id,v.lifecycle,v.configuration FROM assets a JOIN asset_versions v ON v.asset_id=a.asset_id AND v.version=a.current_version WHERE a.asset_id=$1 AND a.kind='credential-reference'`,[reference])).rows[0];
           if(!credential||credential.tenant_id!==p.tenantId||!p.scopes.includes(credential.scope_id)||credential.configuration.credentialMode!=='static-secret'&&credential.owner_principal_id!==p.principalId||credential.lifecycle==='disabled'||credential.configuration.connectorAssetId!==asset.assetId)return false;
@@ -57,11 +81,12 @@ export class KnowledgeGraph {
   }
   async get(ctx:AuthContext,id:string,tx?:Transaction,pin?:SourceAccessPin):Promise<any>{const row=await this.row(id,tx);if(!await this.visible(ctx,row,tx,pin))this.denied();return this.view(row!);}
   async content(ctx:AuthContext,id:string):Promise<any>{
-    const row=await this.row(id);if(!await this.visible(ctx,row))this.denied();
+    const row=await this.row(id);if(!await this.visible(ctx,row)&&!await this.ownerReadable(ctx,row)){await this.noteDenied(ctx,row);this.denied();}
     requireCondition(['SourceRevision','Evidence','KnowledgeSnapshot'].includes(row!.kind),'INVALID_PAYLOAD','This record has no original byte content');
     const bytes=row!.kind==='KnowledgeSnapshot'?Buffer.from(row!.payload.canonicalManifest):await this.objects.objects.getObject({Bucket:'evidence',Key:row!.sha256});
     requireCondition(sha256(bytes)===row!.sha256,'SOURCE_HASH_MISMATCH','Knowledge content SHA differs');
-    return {reference:{sha256:row!.sha256,size:bytes.length,mediaType:row!.kind==='KnowledgeSnapshot'?'application/json':'application/octet-stream',fileName:`${id}.bin`},bytes};
+    const descriptor=this.contentDescriptor(row!);
+    return {reference:{sha256:row!.sha256,size:bytes.length,mediaType:descriptor.mediaType,fileName:descriptor.fileName},bytes};
   }
   async need(ctx:AuthContext,id:string,kind:string,tx:Transaction):Promise<Row>{const row=await this.row(id,tx);if(!await this.visible(ctx,row,tx))this.denied();requireCondition(row!.kind===kind,'INVALID_PAYLOAD','Knowledge reference kind differs');return row!;}
   async save(tx:Transaction,ctx:AuthContext,kind:string,scope:string,key:string,payload:any,references:string[],settings:{category:string;sourceType:string;visibility:string;state:string;digest?:string;searchText?:string}):Promise<any>{
@@ -230,30 +255,52 @@ export class KnowledgeGraph {
     if(input.promote&&state==='reviewed')await tx.query("UPDATE knowledge_records SET visibility='team' WHERE record_id=ANY($1::text[]) AND knowledge_category='consolidated'",[closure.map(r=>r.record_id)]);
     const payload={claimId:id,assessor,assessorId:ctx.principalId,questionVersion,...(assessor==='script'?{verification:{ruleId:'exact-product-match',ruleVersion:questionVersion,result:'passed'}}:{decision:input.decision}),reason:input.reason,productClaimId:input.productClaimId??null,checks:{references:'passed',semantic:assessor==='human'?'human-reviewed':'exact-equality-only'}};
     const assessment=await this.save(tx,ctx,'Assessment',row.scope_id,canonicalHash([id,payload]),payload,[id,...(input.productClaimId?[input.productClaimId]:[])],{category:row.knowledge_category,sourceType:row.source_type,visibility:input.promote?'team':row.visibility,state:'recorded'});
-    await this.auth.audit(ctx,'knowledge.review',{recordId:id,assessmentId:assessment.recordId,state,promote:input.promote},row.scope_id,tx);return {claim:this.view((await this.row(id,tx))!),assessment};
+    const claim=this.view((await this.row(id,tx))!);
+    const publisher={principalId:row.owner_id,tenantId:row.tenant_id,kind:'user'} as AuthContext;
+    const snapshot=input.decision==='approve'&&claim.visibility==='team'&&['reviewed','verified'].includes(claim.state)?await this.publishStable(tx,publisher,row.scope_id,row.knowledge_category,null,false):undefined;
+    await this.auth.audit(ctx,'knowledge.review',{recordId:id,assessmentId:assessment.recordId,state,promote:input.promote,...(snapshot?{snapshotId:snapshot.recordId}:{})},row.scope_id,tx);return {claim,assessment,...(snapshot?{snapshot}:{})};
   });}
-  async snapshot(ctx:AuthContext,value:unknown):Promise<any>{const input=KnowledgeSnapshotInput.parse(value);return this.store.transaction(async tx=>{
-    await this.auth.check(ctx,'knowledge.publish',input.scopeId,tx);await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[canonicalJson(['stable',ctx.tenantId,input.scopeId,input.knowledgeCategory])]);
-    const prior=(await tx.query('SELECT record_id FROM knowledge_stable WHERE tenant_id=$1 AND scope_id=$2 AND knowledge_category=$3',[ctx.tenantId,input.scopeId,input.knowledgeCategory])).rows[0]?.record_id??null;
-    requireCondition(prior===input.expectedSnapshotId,'INPUT_REVISION_STALE','Stable snapshot changed');
-    const claims=(await tx.query("SELECT * FROM knowledge_records WHERE tenant_id=$1 AND scope_id=$2 AND knowledge_category=$3 AND kind='Claim' AND state IN ('reviewed','verified') AND visibility='team' ORDER BY record_id",[ctx.tenantId,input.scopeId,input.knowledgeCategory])).rows;
+  async publishStable(tx:Transaction,ctx:AuthContext,scopeId:string,knowledgeCategory:string,expectedSnapshotId:string|null,enforceExpected:boolean):Promise<any>{
+    await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[canonicalJson(['stable',ctx.tenantId,scopeId,knowledgeCategory])]);
+    const prior=(await tx.query('SELECT record_id FROM knowledge_stable WHERE tenant_id=$1 AND scope_id=$2 AND knowledge_category=$3',[ctx.tenantId,scopeId,knowledgeCategory])).rows[0]?.record_id??null;
+    if(enforceExpected)requireCondition(prior===expectedSnapshotId,'INPUT_REVISION_STALE','Stable snapshot changed');
+    const claims=(await tx.query("SELECT * FROM knowledge_records WHERE tenant_id=$1 AND scope_id=$2 AND knowledge_category=$3 AND kind='Claim' AND state IN ('reviewed','verified') AND visibility='team' ORDER BY record_id",[ctx.tenantId,scopeId,knowledgeCategory])).rows;
     const records=new Map<string,Row>();
     for(const claim of claims){if(!await this.visible(ctx,claim,tx))continue;for(const member of await this.closure(claim,tx))records.set(member.record_id,member);
       const assessments=(await tx.query("SELECT * FROM knowledge_records WHERE kind='Assessment' AND payload->>'claimId'=$1 ORDER BY record_id",[claim.record_id])).rows;
       for(const assessment of assessments)if(await this.visible(ctx,assessment,tx))for(const member of await this.closure(assessment,tx))records.set(member.record_id,member);
     }
-    if(input.knowledgeCategory==='product')for(const claim of claims.filter(claim=>records.has(claim.record_id))){
+    if(knowledgeCategory==='product')for(const claim of claims.filter(claim=>records.has(claim.record_id))){
       const closure=await this.closure(claim,tx),assessments=[...records.values()].filter(row=>row.kind==='Assessment'&&row.payload.claimId===claim.record_id);
       await tx.query(`INSERT INTO knowledge_active_statements(tenant_id,scope_id,statement_key,claim_id,source_ids,member_ids) VALUES($1,$2,$3,$4,$5,$6)
-        ON CONFLICT(tenant_id,scope_id,statement_key) DO UPDATE SET claim_id=EXCLUDED.claim_id,source_ids=EXCLUDED.source_ids,member_ids=EXCLUDED.member_ids`,[ctx.tenantId,input.scopeId,canonicalHash([claim.owner_id,claim.payload.subject,claim.payload.predicate,claim.payload.conditions]),claim.record_id,closure.filter(row=>row.kind==='SourceRevision').map(row=>row.record_id),[...closure,...assessments].map(row=>row.record_id)]);
+        ON CONFLICT(tenant_id,scope_id,statement_key) DO UPDATE SET claim_id=EXCLUDED.claim_id,source_ids=EXCLUDED.source_ids,member_ids=EXCLUDED.member_ids`,[ctx.tenantId,scopeId,canonicalHash([claim.owner_id,claim.payload.subject,claim.payload.predicate,claim.payload.conditions]),claim.record_id,closure.filter(row=>row.kind==='SourceRevision').map(row=>row.record_id),[...closure,...assessments].map(row=>row.record_id)]);
     }
     const members=[...records.values()].sort((a,b)=>a.record_id.localeCompare(b.record_id)).map(r=>({recordId:r.record_id,kind:r.kind,sha256:r.sha256,knowledgeCategory:r.knowledge_category,sourceType:r.source_type}));
-    const canonicalManifest=canonicalJson({schemaVersion:'knowledge/1',knowledgeCategory:input.knowledgeCategory,records:members}),digest=sha256(canonicalManifest);
-    const snapshot=await this.save(tx,ctx,'KnowledgeSnapshot',input.scopeId,digest,{records:members,canonicalManifest,checks:{referenceClosure:'passed',candidateExclusion:'passed',semanticCompleteness:'not-asserted'}},members.map(r=>r.recordId),{
-      category:input.knowledgeCategory,sourceType:'reviewed-records',visibility:'team',state:'published',digest});
+    const canonicalManifest=canonicalJson({schemaVersion:'knowledge/1',knowledgeCategory,records:members}),digest=sha256(canonicalManifest);
+    const snapshot=await this.save(tx,ctx,'KnowledgeSnapshot',scopeId,digest,{records:members,canonicalManifest,checks:{referenceClosure:'passed',candidateExclusion:'passed',semanticCompleteness:'not-asserted'}},members.map(r=>r.recordId),{
+      category:knowledgeCategory,sourceType:'reviewed-records',visibility:'team',state:'published',digest});
     await tx.query(`INSERT INTO knowledge_stable(tenant_id,scope_id,knowledge_category,record_id) VALUES($1,$2,$3,$4)
-      ON CONFLICT(tenant_id,scope_id,knowledge_category) DO UPDATE SET record_id=EXCLUDED.record_id`,[ctx.tenantId,input.scopeId,input.knowledgeCategory,snapshot.recordId]);return snapshot;
+      ON CONFLICT(tenant_id,scope_id,knowledge_category) DO UPDATE SET record_id=EXCLUDED.record_id`,[ctx.tenantId,scopeId,knowledgeCategory,snapshot.recordId]);return snapshot;
+  }
+  async currentSnapshot(ctx:AuthContext,scopeId:string,knowledgeCategory:string):Promise<any>{
+    const policy=await this.auth.check(ctx,'knowledge.read',scopeId);
+    const row=(await this.store.pool.query('SELECT record_id FROM knowledge_stable WHERE tenant_id=$1 AND scope_id=$2 AND knowledge_category=$3',[policy.tenantId,scopeId,knowledgeCategory])).rows[0];
+    return {scopeId,knowledgeCategory,snapshotId:row?.record_id??null};
+  }
+  async snapshot(ctx:AuthContext,value:unknown):Promise<any>{const input=KnowledgeSnapshotInput.parse(value);return this.store.transaction(async tx=>{
+    await this.auth.check(ctx,'knowledge.publish',input.scopeId,tx);return this.publishStable(tx,ctx,input.scopeId,input.knowledgeCategory,input.expectedSnapshotId,true);
   });}
+  async publishApprovedText(tx:Transaction,ctx:AuthContext,scopeId:string,body:{requestId:string;title:string;summary:string;text:string;fileName:string}):Promise<{recordId:string;snapshotId:string}>{
+    const bytes=Buffer.from(body.text,'utf8'),digest=sha256(bytes);await this.objects.objects.putObject({Bucket:'evidence',Key:digest,Body:bytes});
+    const stored=(await tx.query(`INSERT INTO sources(source_revision_id,tenant_id,scope_id,principal_id,sha256,size,object_key,file_name) VALUES($1,$2,$3,$4,$5,$6,$5,$7)
+      ON CONFLICT(tenant_id,scope_id,sha256) DO UPDATE SET sha256=EXCLUDED.sha256 RETURNING *`,[newId('src'),ctx.tenantId,scopeId,ctx.principalId,digest,bytes.length,body.fileName])).rows[0];
+    const sourceId=`governance:${body.requestId}`,sourceIdentity=canonicalHash([sourceId,'consolidated',ctx.principalId]),payload={sourceId,sourceIdentity,revision:digest,path:`/${body.fileName}`,parserVersion:'governance-approval/1',fileName:body.fileName,mediaType:'text/plain',acl:{sourceReaders:['*'],platformReaders:['*']},sharing:{allowed:true,teamPromotion:true},raw:{...this.objects.sourceReference(stored),fileName:body.fileName}};
+    const source=await this.save(tx,ctx,'SourceRevision',scopeId,canonicalHash([sourceIdentity,digest]),payload,[],{category:'consolidated',sourceType:'document',visibility:'team',state:'observed',digest});
+    await tx.query(`INSERT INTO knowledge_source_heads(tenant_id,scope_id,identity_key,record_id) VALUES($1,$2,$3,$4) ON CONFLICT(tenant_id,scope_id,identity_key) DO UPDATE SET record_id=EXCLUDED.record_id`,[ctx.tenantId,scopeId,sourceIdentity,source.recordId]);
+    const evidence=await this.save(tx,ctx,'Evidence',scopeId,canonicalHash([source.recordId,digest]),{sourceRecordId:source.recordId,start:0,end:bytes.length,sha256:digest,text:body.text,path:payload.path,fileName:body.fileName,mediaType:'text/plain'},[source.recordId],{category:'consolidated',sourceType:'document',visibility:'team',state:'observed',digest});
+    const claim=await this.save(tx,ctx,'Claim',scopeId,canonicalHash(['governance-claim',body.requestId]),{subject:body.title,predicate:'approved-text',value:body.text,conditions:{},evidenceIds:[evidence.recordId],sourcePaths:[payload.path],summary:body.summary},[source.recordId,evidence.recordId],{category:'consolidated',sourceType:'document',visibility:'team',state:'reviewed',searchText:[body.title,body.summary,body.text].join(' ')});
+    const snapshot=await this.publishStable(tx,ctx,scopeId,'consolidated',null,false);return {recordId:claim.recordId,snapshotId:snapshot.recordId};
+  }
   async search(ctx:AuthContext,query:{q:string;mode:string;limit:number;includeCandidates:string}):Promise<any>{return this.store.transaction(async tx=>{
     await tx.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');const p=await this.auth.check(ctx,'knowledge.read',undefined,tx);
     const rows=(await tx.query(`SELECT r.*,s.record_id AS snapshot_id FROM knowledge_records r
@@ -272,6 +319,9 @@ export class KnowledgeGraph {
   });}
   async checkSourceAccess(ctx:AuthContext,sourceId:string,tx?:Transaction,pin?:SourceAccessPin):Promise<void>{
     const rows=(await (tx??this.store.pool).query("SELECT * FROM knowledge_records WHERE kind='SourceRevision' AND payload->'raw'->>'sourceRevisionId'=$1",[sourceId])).rows;
-    if(!rows.length)return;for(const row of rows)if(await this.visible(ctx,row,tx,pin))return;this.denied();
+    if(!rows.length)return;
+    for(const row of rows)if(await this.visible(ctx,row,tx,pin)||await this.ownerReadable(ctx,row,tx))return;
+    await this.noteDenied(ctx,rows.find(row=>row.tenant_id===ctx.tenantId));
+    this.denied();
   }
 }

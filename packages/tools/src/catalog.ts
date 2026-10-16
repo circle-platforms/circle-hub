@@ -67,7 +67,7 @@ export class ToolCatalog {
     const rows=(await (tx??this.store.pool).query(`SELECT b.*,a.scope_id,a.owner_principal_id,a.created_at AS registered_at,v.updated_at AS modified_at,v.sha256,v.configuration,v.declaration,v.lifecycle,v.approved_digest FROM tool_bindings b
       JOIN assets a ON a.asset_id=b.asset_id AND a.current_version=b.version JOIN asset_versions v ON v.asset_id=b.asset_id AND v.version=b.version
       WHERE b.tenant_id=$1 AND a.scope_id=ANY($2::text[]) AND v.lifecycle='running' AND v.approved_digest=v.sha256
-      AND (a.owner_principal_id=$3 OR v.readers ? $3 OR v.readers ? '*') ORDER BY b.name`,[p.tenantId,p.scopes,p.principalId])).rows;
+      AND (a.owner_principal_id=$3 OR reader_visible(v.readers,$3,a.tenant_id)) ORDER BY b.name`,[p.tenantId,p.scopes,p.principalId])).rows;
     const results=[];
     for(const row of rows){const definition=this.definition(row.package_id,row.suffix,row.configuration);if(!definition||p.kind!=='user'&&!p.scopeGrants?.[row.scope_id]?.includes(definition.permission)||definition?.effect==='write'&&!p.scopeGrants?.[row.scope_id]?.includes('tasks.submit'))continue;
       if(ctx.run&&!ctx.run.tools.includes(row.name))continue;

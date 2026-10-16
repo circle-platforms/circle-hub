@@ -12,7 +12,9 @@
 | `circle-hub admin workers drain lab-east-01` | 不再接新操作，等待已有操作完成后返回 inFlight=0；不把排空当作取消或远端停止 |
 | `circle-hub admin approvals` | 作用范围内的审批绑定和状态；列表访问不授予批准或设备操作权限 |
 | `circle-hub admin events --tail` | 从 seq=0 按游标持续补读当前范围的事件；`--once` 输出一页，Ctrl+C 退出尾读 |
+| `circle-hub`、`circle-hub help`、`circle-hub admin help` | 打印用法并退出 0；不要求令牌 |
 | `circle-hub admin audit` | 当前范围的管理/受理审计记录，最多 500 条；没有密码或 token |
+| `circle-hub admin audit --format json\|csv` | 导出审计。可选 `--timezone`（IANA）、`--action`、`--principal`、`--since`、`--until`。CSV 为原始文本，JSON 为带时区时间的对象；默认不带参数的 `audit` 仍是 JSON 数组 |
 | `circle-hub admin connectors disable bugzilla-synthetic` | 在当前 scope 禁用连接器，后续准入与执行出口拒绝调用 |
 | `circle-hub admin connectors enable bugzilla-synthetic` | 在当前 scope 恢复连接器；仍按调用人的数据和动作权限检查 |
 | `circle-hub admin restart --graceful` | 需要独立 admin.restart 权限；停止接新请求、提交已有事务，由 supervisor 以相同端口启动新 server，CLI 确认新 bootId 后返回 |

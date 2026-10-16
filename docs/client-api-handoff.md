@@ -8,6 +8,43 @@ Circle 新扩展为 `hub`、`/hub`、`hub_*` 固定工具与 `hub_tool_*` 动态
 
 本文件保留接口变更记录、运行教程和产品连接器契约；通用规则以[设计规范](design/README.md)为准，迁移对照见[handoff-map](design/handoff-map.md)。
 
+## 企业治理接口（Circle 客户端需采纳）
+
+`message` 默认仍是英文。每条 HTTP 错误都带 `messageZh`。请求带 `Accept-Language` 且包含 `zh` 时，`message` 改为中文，并另给 `messageEn`。`hub_tool_*` 仍是动态目录名，不是下面这两个固定工具的名字。
+
+| 方法与路径 | 作用 |
+|---|---|
+| `POST /v1/approval-requests` | 提交通用审批。正文是 `text` 或 `contentBase64` 之一，带 `fileName`、`mediaType`、`policy.roles`（`role` 与 `count`）和 `idempotencyKey`。回应含 `requestId`、`taskId`、`status` |
+| `GET /v1/approval-requests/{requestId}` | 审批单。含 `decisions`、`recordId`、`snapshotId`、`declineReason`。不含正文 |
+| `GET /v1/approval-requests/{requestId}/content` | 正文下载。`Content-Type` 与 `Content-Disposition` 的文件名来自提交时的声明 |
+| `POST /v1/approval-requests/{requestId}/decisions` | `{approve, reason?}`。拒绝写 `reason` 后状态是 `declined`。同一个人不能占第二个角色名额 |
+| `GET /v1/approvals/pending` | 当前人可处理的审批。`kind` 为 `governance` 或 `change-set`。变更集项只含资产 `name` 和 `kind` |
+| `POST /v1/scopes/{scopeId}/approval-roles` | 提交审批角色变更集。`role` 为 `manager`、`security`、`dpo`、`legal`、`finance`、`hr`、`it`。正文恰好包含 `principalId` 或 `teamId` 之一 |
+| `POST /v1/scopes/{scopeId}/teams` | 提交团队变更集。`name`、`members`（`prn_` 列表）和 `idempotencyKey`。决定通过后成员才生效。回应的 `submission.teamId` 是 `team_` 加 32 位十六进制 |
+| `GET /v1/scopes/{scopeId}/teams` | `{items:[{teamId,scopeId,name,members}]}`。需要 `knowledge.read` |
+| `GET /v1/knowledge/snapshots/current?scopeId=&knowledgeCategory=` | 当前稳定快照。`{scopeId,knowledgeCategory,snapshotId}`。没有快照时 `snapshotId` 为 `null` |
+| `POST /v1/knowledge/snapshots` | `expectedSnapshotId` 是比较并交换。只有当前指针为 `null` 时才能传 `null`。已有快照后再传 `null` 返回 `INPUT_REVISION_STALE`。之后的发布传入 `GET` 返回的 `snapshotId` |
+| `POST /v1/skillpacks/{id}/install` | 所有者安装已批准的技能。正文是 `{}`。绑定版本变为 `running`。回应含 `capabilityPackId`（清单 `id`）和 `runPath` |
+| `GET /v1/packs` | 仍包含内建能力包。已安装且 `running` 的技能按清单 `id` 追加，带 `installed:true` 和 `skillPackId` |
+| `POST /v1/tasks/submit` | `capabilityPackId` 仍可用 `hub-task`。若它是已安装技能的清单名，则交给该技能运行，回应是 `{taskId}`。已批准但未安装时返回 `APPROVAL_REQUIRED`，消息指向 `POST /v1/skillpacks/{id}/install`，不是 `UNSUPPORTED_VERSION`。`POST /v1/skillpacks/{id}/runs` 在批准后即可运行，不必先安装 |
+| `POST /v1/skillpacks/{id}/runs` | 可选 `judgementPins`：最多 20 项 `{assetId,version,sha256}`。摘要必须是已批准判断结果的内容 SHA-256 |
+| `POST /v1/judgements` | 提交判断结果变更集。`judgementKind` 为 `policy-rule-table`、`metric-definition` 或 `incident-start`。正文是 `text` 或 `contentBase64` 之一，不超过 1 MiB |
+| `GET /v1/judgements?scopeId=` | 已批准且当前身份可见的判断结果。每项含 `assetId`、`version`、`sha256`、`judgementKind` |
+| `GET /v1/judgements/{assetId}/content` | 下载已批准的判断结果字节。`x-content-sha256` 是内容摘要 |
+| MCP `hub_task` | 与提交任务相同。省略 `capabilityPackId` 时用 `hub-task`。写操作仍要 `hub/idempotencyKey` 和 `hub/confirmation`。`hub_task` 与 `hub_packs` 不出现在 `GET /v1/tools`，`hub_tool_*` 仍是动态目录名 |
+| MCP `hub_packs` | 只读。空对象参数。回应的 `packs` 含内建能力包和已安装技能。不出现在 `GET /v1/tools` |
+| MCP `hub.skillpacks_run` | 可选 `judgementPins`，形状与 HTTP 运行相同 |
+| `GET /v1/admin/audit` | 不带导出参数时仍是 JSON 数组 |
+| `GET /v1/admin/audit/export` | `format` 为 `json` 或 `csv`，可选 `timezone`、`action`、`principalId`、`since`、`until`。JSON 为 `{format,timezone,items,truncated}`，时间为带偏移的本地时间。CSV 是 `text/csv` 附件 |
+| 变更集决定 | `ApprovalRequest` 增加可选 `reason`。开放请求上的拒绝返回 `declined` |
+| `GET /v1/auth/oidc/start` | 已配置时返回 `{authorizationUrl,state}` |
+| `POST /v1/auth/oidc/callback` | `{code,state}`，成功时的会话形状与开发登录相同 |
+| 知识与来源下载 | 使用记录上的文件名和媒体类型。团队可见的已批准主张在决定后进入稳定快照，检索能命中，并带回 `snapshotId` |
+| 技能推送 | 未知工具名在推送时返回 `422` `SKILLPACK_CHECK_FAILED`。`hub_task` 与 `hub_packs` 视为正在提供。已声明但未运行的已知连接器工具仍可提交，批准时再按依赖阻断 |
+| 清单错误 | 模块或产品线一次返回全部已发现的清单错误。`details.manifestErrors` 是 `{code,message}` 列表，`message` 用 `; ` 连接 |
+
+管理命令：`circle-hub help` 与 `circle-hub admin help` 在检查令牌之前打印用法。`circle-hub admin audit` 无参数时仍打印 JSON 数组；带 `--format csv|json` 及 `--timezone`、`--action`、`--principal`、`--since`、`--until` 时走导出接口。
+
 2026-10-14：维护者报告全量 **623/623**，A3 轮已在 `be9c6c0` 合并；这是维护者观察，不是 CI 结论。真实试验栈仍为 `e1ca68d`，未因本轮升级。
 
 2026-10-12 的首阶段记录：第一阶段实现位于隔离工作树 `../circle-server-s1`，分支 `server-s1`；第二阶段增补在 `../circle-server-s2` 的 `server-s2` 分支。Circle 和连接插件由 Claude 负责；本分支只提供 server/worker。共享协议原件是 `packages/contracts/src/index.ts`：`CLIENT_ROUTES`、请求/回应 schema、`TaskListQuery`、`TaskView`、`ApprovalView`、`TaskResult`、`EventPage` 和标准操作。编译包的描述及专用协议在 `packs/apv/contracts.ts`，HTTP 形状保持兼容。API 版本 `1.0.0`，能力包与映射规则版本 `1.0.0`，Excel 契约为 `Excel 输出契约 V1`。
