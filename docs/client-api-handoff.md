@@ -4,7 +4,7 @@
 
 `GET /v1/packs` 不再登记 `apv-case-execute`，新提交明确返回 `UNSUPPORTED_VERSION`，不兼容转发到 `module-execute`。新的执行显式提交产品模块 flow 与已批准 pin；历史任务保留旧 capability、版本、输入修订、结果和制品引用，不改绑。migration 20 字节保留，新增 migration 44 令旧回执表只读。下文原生执行章节是早期版本交接记录，不再代表可新建入口。
 
-Circle 新扩展为 `hub`、`/hub`、`hub_*` 固定工具与 `hub_tool_*` 动态工具，不保留旧扩展/命令别名。RPC 验收固定为用户确认的 Circle 1.7.0 fd8524a，只验收 hub 协议；打包客户端另绑定 Circle 1.7.3 / ae0b0d5，包含刷新视图时序、可信工作区冷启动初始化、有界视图投影与初始化关闭保护；不替换实际 RPC 验收 pin。正式发布与本机安装状态以 Circle 的 Release 和本机验收回执为准。
+Circle 新扩展为 `hub`、`/hub`、`hub_*` 固定工具与 `hub_tool_*` 动态工具，不保留旧扩展/命令别名。RPC 验收固定为用户确认的 Circle 1.7.0 fd8524a，只验收 hub 协议；打包客户端绑定见[兼容矩阵](compatibility.md)，当前为 Circle 1.7.4（扩展清单版本 0.1.0，不是 hub 包 0.2.0，也不是 API 1.0.0）。连接步骤见[快速开始](quickstart.md)。正式发布与本机安装状态以 Circle 的 Release 和本机验收回执为准。本条不表示用 1.7.4 二进制重跑了 RPC 验收。
 
 本文件保留接口变更记录、运行教程和产品连接器契约；通用规则以[设计规范](design/README.md)为准，迁移对照见[handoff-map](design/handoff-map.md)。
 
@@ -342,7 +342,7 @@ POST /v1/credentials/oauth/client-credentials 使用同形请求；clientCredent
  "model":{"kind":"scripted","base_url":"<本机脚本模型 /v1>","model":"scripted-fixture","protocol":"openai","api_key":"<运行时值>"}}
 ```
 
-在设置这个运行时配置后启动 `npm run dev:stack`；developer 有提交/运行权限，approver 可审批。该早期验收配置使用 loopback 脚本模型；后续已批准模型端点支持见[凭据与资源](design/approvals-and-enforcement.md#凭据与资源)。未配置时运行返回 SOURCE_UNREACHABLE，登记 / 审批仍可用。CircleBin 与所有地址只在运行时提供；CLI/模型安装由对应构建提供，这里不运行安装/更新脚本。
+在设置这个运行时配置后启动 `npm run dev:stack`；developer 有提交/运行权限，approver 可审批。该早期验收配置使用 loopback 脚本模型；后续已批准模型端点支持见[凭据与资源](design/approvals-and-enforcement.md#凭据与资源)。未配置时技能运行返回 `RUNTIME_NOT_CONFIGURED`，消息说明 `CIRCLE_RUNTIME_CONFIG` 的字段、重启、`GET /v1/runtime-profiles` 和由另一个人批准；登记 / 审批仍可用。字段说明见[快速开始](quickstart.md)。CircleBin 与所有地址只在运行时提供；CLI/模型安装由对应构建提供，这里不运行安装/更新脚本。
 
 每次运行短期 token 仅授权声明的目录工具、其 scope 和该运行/子工具任务；不允许借它直接登记资产、提交其他能力任务或审批。token 通过认证 worker 的本机私有 IPC 交给进程，只存在内存/子进程环境，公开 worker preflight 不返回值，运行目录中不落盘；结束/取消失效。单 worker 留一个 RPC 运行槽，同时处理它的子工具调用，避免互相等待。
 

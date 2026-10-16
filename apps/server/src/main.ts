@@ -10,12 +10,12 @@ import { z } from 'zod';
 import { API_VERSION, MAX_BODY_BYTES, MAX_SOURCE_BYTES, MAX_WORKER_REPORT_BYTES, CLIENT_ROUTES, TaskListQuery, ApiError, SubmitRequest,canonicalHash,
   InputRequest, OperationRequest, ApprovalProposal, ApprovalRequest, ConclusionRequest, ChecklistRequest, ChecklistResponse, RuleRequest, InputRevisionId, TaskId, ScopeId, SourceUpload, Base64Content, DevLoginRequest, requireCondition,
   EntityId,RelationId,ObjectListQuery,ObjectTypePackage,ObjectObservation,RelationObservation,AuthRefreshRequest,
-  AssetId,AssetRegistration,AssetListQuery,AssetTransition,CredentialRegistration,KnowledgeRecordId,KnowledgeSearchQuery,KnowledgeReviewRequest,ToolName,ToolCallInput,SkillPackId,StandardOperation,ServiceClientId,RegistryPageQuery } from '../../../packages/contracts/src/index.ts';
+  AssetId,AssetRegistration,AssetListQuery,AssetTransition,CredentialRegistration,KnowledgeRecordId,KnowledgeSearchQuery,KnowledgeReviewRequest,ToolName,ToolCallInput,StandardOperation,ServiceClientId,RegistryPageQuery } from '../../../packages/contracts/src/index.ts';
 import {queryMigration} from '../../../packages/storage/src/query-migration.ts';
 import { Store } from '../../../packages/storage/src/index.ts';
 import { taskMigration } from '../../../packages/tasks/src/migration.ts';
 import { Auth } from '../../../packages/tasks/src/auth.ts';
-import { Tasks } from '../../../packages/tasks/src/index.ts';
+import { Tasks,assertInstalledCapability } from '../../../packages/tasks/src/index.ts';
 import { deliveryMigration } from '../../../packages/tasks/src/delivery-migration.ts';
 import { knowledgeMigration } from '../../../packages/knowledge/src/migration.ts';
 import { Knowledge } from '../../../packages/knowledge/src/index.ts';
@@ -160,7 +160,7 @@ const packages=installPackages({store,auth,tasks,knowledge,execution,registry,ch
 mcp.services={...mcp.services,tasks,skills,approvals,packages};
 const flows=new ExecutionFlows({store,auth,tasks,knowledge,execution,assets,sourceArtifacts,productModules,methods,executionChanges,serviceClients},executionProfiles);
 const packagePrepare=packages.prepare;packages.prepare=async(ctx,submission,tx)=>{if(submission.capabilityPackId===MODULE_EXECUTE){submission.input=await flows.prepare(ctx,submission.scopeId,submission.input,tx);return;}return packagePrepare(ctx,submission,tx);};
-packages.descriptors.push({capabilityPackId:MODULE_EXECUTE,version:'1.0.0',flowVersion:'module-execute/1',title:'Approved product module execution',inputFormats:['product-module-flow/1'],contractVersion:'hub-execution-transition/1',requiredOperations:['flow.invoke'],conclusionScope:'bound-provider-observation',inputSchema:z.toJSONSchema(FlowSubmission,{io:'input'})} as any);
+packages.descriptors.push({capabilityPackId:MODULE_EXECUTE,version:'1.0.0',flowVersion:'module-execute/1',title:'Run an approved product module',titleZh:'已批准的产品模块执行',inputFormats:['product-module-flow/1'],contractVersion:'hub-execution-transition/1',requiredOperations:['flow.invoke'],conclusionScope:'bound-provider-observation',inputSchema:z.toJSONSchema(FlowSubmission,{io:'input'})} as any);
 const managedAuthorize=execution.managedAuthorization;execution.managedAuthorization=async(tx,actor,scope,spec,task)=>{if(spec.name==='flow.invoke'){const row=(await tx.query('SELECT * FROM operations WHERE task_id=$1 AND args->>\'stepKey\'=$2',[task.taskId,spec.args.stepKey])).rows[0];requireCondition(row,'SOURCE_NOT_APPROVED','Flow step is not registered');return {sourceEffect:row.source_effect,effects:row.effects};}return managedAuthorize?.(tx,actor,scope,spec,task);};
 
 
@@ -276,7 +276,7 @@ const server = createListener(async (request, response) => {
     }
     if(url.pathname===CLIENT_ROUTES.moduleInstall.path&&request.method==='POST'){send(response,201,{data:await modules.install(ctx,await body(request,MAX_WORKER_REPORT_BYTES),z.string().optional().parse(request.headers['x-scope-id']))});return;}
     const skillRun=/^\/v1\/skillpacks\/([^/]+)\/runs$/.exec(url.pathname);
-    if(skillRun&&request.method==='POST'){send(response,202,{data:await skills.run(ctx,SkillPackId.parse(skillRun[1]),await body(request,MAX_WORKER_REPORT_BYTES))});return;}
+    if(skillRun&&request.method==='POST'){const skillPackId=await skills.resolve(ctx,decodeURIComponent(skillRun[1]));send(response,202,{data:await skills.run(ctx,skillPackId,await body(request,MAX_WORKER_REPORT_BYTES))});return;}
     const skillCandidate=/^\/v1\/skillpacks\/(skp_[a-f0-9]{32})$/.exec(url.pathname);if(skillCandidate&&request.method==='GET'){send(response,200,{data:await skills.candidate(ctx,skillCandidate[1])});return;}
     if(url.pathname===CLIENT_ROUTES.tools.path&&request.method==='GET'){
       const listing=url.searchParams.has('view')?await catalog.page(ctx,RegistryPageQuery.parse(Object.fromEntries(url.searchParams))):await catalog.list(ctx);response.setHeader('etag',listing.etag);response.setHeader('vary','Authorization');
@@ -346,6 +346,12 @@ const server = createListener(async (request, response) => {
     if(url.pathname==='/v1/rules'&&request.method==='POST'){send(response,201,{data:await rules.create(ctx,RuleRequest.parse(await body(request)))});return;}
     const ruleRoute=/^\/v1\/rules\/([^/]+)$/.exec(url.pathname);if(ruleRoute&&request.method==='GET'){send(response,200,{data:await rules.get(ctx,ruleRoute[1])});return;}
     if (url.pathname === '/v1/sources' && request.method === 'POST') {
+      const declaredPack=request.headers['x-capability-pack-id'];
+      if(declaredPack!==undefined){
+        const raw=Array.isArray(declaredPack)?declaredPack.join(','):declaredPack;
+        if(!/^[a-z][a-z0-9-]{0,99}$/.test(raw))throw new ApiError('INVALID_PAYLOAD','x-capability-pack-id must be a package name: a lowercase letter, then up to 99 letters, digits or hyphens. Check GET /v1/packs.');
+        assertInstalledCapability(tasks.capabilities,raw,tasks.retiredCapabilityPacks);
+      }
       let source;
       if (request.headers['content-type']?.split(';')[0] === 'application/octet-stream') {
         const scopeId = ScopeId.parse(request.headers['x-scope-id']); await auth.check(ctx,'sources.write',scopeId);

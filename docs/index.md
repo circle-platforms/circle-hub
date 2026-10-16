@@ -11,6 +11,7 @@ circle-hub 是 [Circle](https://circle-platforms.github.io/circle/) 的团队 hu
 
 | 想做什么 | 读 |
 |---|---|
+| 在本机启动 hub 并用 Circle 登录 | [快速开始](quickstart.md)（[English](quickstart.en.md)） |
 | 理解设计：对象标准、术语与状态、层级与元素、审批与执行链、角色 | [设计](design/README.md)（[English](design/en/README.md)） |
 | 写 Circle 的 hub 扩展 | [客户端接口交接](client-api-handoff.md) |
 | 通过 MCP 网关执行工作簿 | [用例执行交接](case-execution-handoff.md) |

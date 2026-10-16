@@ -1435,3 +1435,15 @@ Circle v1.7.0 tag 96702fa 的正式发行暴露刷新视图时序回归，未产
 部署边界：仍以旧名配置的既有部署，须先改用 `CIRCLE_HUB_*` 名重新部署，才能升级到此提交之后的版本。本步没有操作任何部署、部署脚本、env 文件或进程。
 
 验证按 CI 方式运行（CIRCLE_BIN / CIRCLE_COMMIT / CIRCLE_RUNTIME_CONFIG 置空，独立临时 CIRCLE_HOME 与 CIRCLE_WORKBENCH_DATA_DIR）：typecheck 通过；contracts **20/20**、methods **283/283**、acceptance 404 项中 **379 pass / 25 skip / 0 fail**（16 项真实 Circle RPC 用例缺确认的运行时按 skip 报告，9 项 APV 模块与严格 cexg 选装场景默认 skip；skip 不计通过）、references **7/7**；verify:postgres 与 verify:references 通过。另以 packs 1f8948c 的冻结 Git 对象开启两个选装文件，实际 **13/13**，含上述 9 项及本步改动的 APV 模块夹具；16 项 Circle RPC 用例本步未运行。没有真实系统、模型、设备或付费调用。
+
+## 138：新用户自部署与 Circle 1.7.4 连接
+
+本步只改 circle-hub。Circle 客户端仓库不改。
+
+Node.js 24 在 `hub-environment` 导入时检查，`.npmrc` 使用 `engine-strict`。八个钉死版本的 `@embedded-postgres` 平台包装入 `allowScripts`，因为它们的安装脚本只重建包内符号链接。`docs/quickstart.md` 与英文译文说明启动、`/extensions enable hub`、`/hub login`、停止与再启动、运行时配置和 Linux 上的 `SANDBOX_UNAVAILABLE`。`dev:stack` 可用 `CIRCLE_HUB_PORT` 与四组开发密码保持稳定；非 TTY 时停止说明指向 pid 的 SIGTERM。就绪输出给出 Circle 的下一步命令。
+
+缺失的运行时配置返回 `RUNTIME_NOT_CONFIGURED`。未知能力包在保存上传正文之前（请求头 `x-capability-pack-id`）以及提交任务之前返回 `TARGET_NOT_FOUND`；退役包仍是 `UNSUPPORTED_VERSION`。0 次试跑调用仍接受，并在回应中警告；更短的再次提交也警告。技能运行接受唯一 manifest 名。获批后的协议 `status` 仍是 `registered`，另给 `lifecycle`、`registration` 和 `statusLabel`。任务 `phase` 仍含 `admitted`，另给 `phaseLabel`。触发器错误写明需要的种类和技能已声明的种类。能力包 `title` 改为英文，中文放在 `titleZh`。
+
+兼容矩阵的打包客户端绑定改为 Circle 1.7.4 / 9123753467e56b40120a91ed79fc0694edeba516。扩展清单版本 0.1.0 与 hub 包 0.2.0、API 1.0.0 分列。RPC 验收 pin 仍是 fd8524a / Circle 1.7.0；本步没有用 1.7.4 二进制重跑该验收。
+
+验证在 Node.js 24.22.0 上、CIRCLE_BIN / CIRCLE_COMMIT / CIRCLE_RUNTIME_CONFIG 置空时进行。`npm ci` 不再提示 embedded-postgres 的 allowScripts。typecheck 通过。contracts **20/20**。methods **289 pass / 1 skip / 0 fail**（该 skip 是 Linux 上没有 seatbelt 的隔离用例）。acceptance 全量一次为 **261 pass / 144 skip / 1 fail**：失败是核心文件里出现了退役包名，已把这两个名字移到 `packs/`；修后 `s2-07-core`、`new-user-qa`、`native-retirement` 与 `r2-07` 通过。144 项 skip 是这台 Linux 上隔离与未提供 Circle 二进制的用例，不计通过。references **7/7**。没有真实系统、模型、设备或付费调用。

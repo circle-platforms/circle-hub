@@ -10,13 +10,16 @@ import { zipSync, strToU8 } from 'fflate';
 import {SUPERVISOR_STOP_TIMEOUT_MS} from '../apps/server/src/shutdown.ts';
 import {createSyntheticSources} from '../packs/synthetic/readonly-sources.ts';
 import {setTimeout as delay} from 'node:timers/promises';
+import {devStackForeground,devStackNextLines,devStackSecret} from './dev-stack-options.ts';
 
 const root = fileURLToPath(new URL('../',import.meta.url));
+const userPassword = devStackSecret('CIRCLE_HUB_DEV_PASSWORD',process.env.CIRCLE_HUB_DEV_PASSWORD,randomBytes(18).toString('base64url'));
+const workerPassword = devStackSecret('CIRCLE_HUB_DEV_WORKER_PASSWORD',process.env.CIRCLE_HUB_DEV_WORKER_PASSWORD,randomBytes(18).toString('base64url'));
+const approverPassword=devStackSecret('CIRCLE_HUB_DEV_APPROVER_PASSWORD',process.env.CIRCLE_HUB_DEV_APPROVER_PASSWORD,randomBytes(18).toString('base64url')),servicePassword=devStackSecret('CIRCLE_HUB_DEV_SERVICE_PASSWORD',process.env.CIRCLE_HUB_DEV_SERVICE_PASSWORD,randomBytes(18).toString('base64url'));
 const scratch = await mkdtemp(`${tmpdir()}/circle-hub-dev-`);
 const socket = createServer(); await new Promise<void>(resolve => socket.listen(0,'127.0.0.1',resolve));
 const port = (socket.address() as { port:number }).port; await new Promise<void>(resolve => socket.close(() => resolve()));
-const dbPassword = randomBytes(24).toString('hex'); const userPassword = randomBytes(18).toString('base64url'); const workerPassword = randomBytes(18).toString('base64url');
-const approverPassword=randomBytes(18).toString('base64url'),servicePassword=randomBytes(18).toString('base64url');
+const dbPassword = randomBytes(24).toString('hex');
 const syntheticTargets=['RESOURCE-LAB-01','record-feed-a','record-feed-b','document-store'];
 const config = { host:'127.0.0.1',port,user:'circle_synthetic',password:dbPassword,database:'postgres' };
 const children = new Set<ChildProcess>(); let closing = false;
@@ -111,10 +114,11 @@ try {
   }
   await launch('apps/worker/src/main.ts',{ ...env,CIRCLE_HUB_URL:server.url,CIRCLE_WORKER_USERNAME:'lab-east-01',CIRCLE_WORKER_PASSWORD:workerPassword },'worker-ready');
   await launch('apps/worker/src/main.ts',{ ...env,CIRCLE_HUB_URL:server.url,CIRCLE_WORKER_USERNAME:'lab-east-02',CIRCLE_WORKER_PASSWORD:workerPassword },'worker-ready');
+  const foreground=devStackForeground(process.stdin.isTTY,process.stdout.isTTY);
   console.log(JSON.stringify({ type:'dev-stack-ready',pid:process.pid,url:server.url,apiVersion:server.apiVersion,
-    login:{ username:'developer',password:userPassword },approverLogin:{username:'approver',password:approverPassword},scopeId:'scp_lab',samplePath,scratchDirectory:scratch,postgresVersion:database.version,syntheticOnly:true }));
-  console.log(`地址：${server.url}\n开发登录：POST /v1/auth/dev-login，用户名 developer，密码 ${userPassword}\n项目：scp_lab\n合成 XMind：${samplePath}\nCtrl+C 停止进程并删除本次临时数据库与制品`);
-  console.log(`独立审批登录：approver，密码 ${approverPassword}`);
+    login:{ username:'developer',password:userPassword },approverLogin:{username:'approver',password:approverPassword},scopeId:'scp_lab',samplePath,scratchDirectory:scratch,postgresVersion:database.version,syntheticOnly:true,foreground,
+    next:{enable:'/extensions enable hub',login:`/hub login ${server.url} developer`} }));
+  for(const line of devStackNextLines({url:server.url,userPassword,approverPassword,samplePath,pid:process.pid,foreground}))console.log(line);
 } catch (error) {
   console.error(JSON.stringify({ type:'dev-stack-startup-failed',message:error instanceof Error ? error.message : 'Unknown startup failure' }));
   process.exitCode = 1; await cleanup();

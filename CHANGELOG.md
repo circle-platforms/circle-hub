@@ -4,6 +4,21 @@ All notable changes to circle-hub are listed here, newest first. Repository rele
 
 ## Unreleased
 
+### Added
+
+- Node.js 24 is checked before a hub process reads configuration. `npm ci` uses `engine-strict`. An older Node exits with `HubEnvironmentError` and https://nodejs.org/en/download.
+- `package.json` `allowScripts` allows the eight pinned `@embedded-postgres/*@18.4.0-beta.17` platform packages. Their postinstall only recreates symlinks shipped in the tarball.
+- [docs/quickstart.md](docs/quickstart.md) and [docs/quickstart.en.md](docs/quickstart.en.md) describe deploy, Circle connect (`/extensions enable hub`, `/hub login`), stop/restart, runtime profiles, Linux sandbox limits, and the environment variables.
+- `dev:stack` accepts stable `CIRCLE_HUB_PORT` and `CIRCLE_HUB_DEV_PASSWORD`, `CIRCLE_HUB_DEV_APPROVER_PASSWORD`, `CIRCLE_HUB_DEV_SERVICE_PASSWORD`, `CIRCLE_HUB_DEV_WORKER_PASSWORD`. Unset passwords stay random. A non-TTY start says to signal the pid instead of pressing Ctrl+C.
+- Skill run accepts a unique manifest name as well as a `skp_` id. `POST /v1/sources` checks optional `x-capability-pack-id` before storing bytes. Skill views add `lifecycle`, `registration` and `statusLabel`. Task views add `phaseLabel`. Empty or shortened trials return `warnings` and stay HTTP 201.
+
+### Changed
+
+- A missing Circle runtime profile returns `RUNTIME_NOT_CONFIGURED` and names `CIRCLE_RUNTIME_CONFIG`. Linux process isolation still returns `SANDBOX_UNAVAILABLE` and names the platform.
+- Unknown capability pack ids return `TARGET_NOT_FOUND`. Retired `lbx-healthcheck` and `apv-case-execute` stay `UNSUPPORTED_VERSION`.
+- Bot and skill-run trigger failures name the trigger kind and the triggers the skill declares. A rejected bot occurrence says it was not accepted. Protocol values `registered` and `admitted` are unchanged.
+- Pack `title` values are English. Chinese titles are `titleZh`. The packaged Circle client binding in the compatibility matrix is 1.7.4; the RPC acceptance pin remains fd8524a.
+
 ### Removed
 
 - **Breaking: the `CIRCLE_SERVER_*` configuration fallback is gone; circle-server is no longer supported anywhere.** circle-hub reads only `CIRCLE_HUB_*`. The server, supervisor, worker, `circle-hub` CLI and the development and PostgreSQL scripts now refuse to start while any `CIRCLE_SERVER_*` variable is set, even an empty one or one beside its `CIRCLE_HUB_*` replacement. They exit with status 1 and a `HubEnvironmentError` that names each variable and its replacement and never prints a value. The `hub.environment.deprecated` notice is gone with the fallback. A deployment still configured with `CIRCLE_SERVER_*` names will not start after upgrading. To migrate, rename each variable by replacing the `CIRCLE_SERVER_` prefix with `CIRCLE_HUB_` (for example `CIRCLE_SERVER_DATABASE_CONFIG` becomes `CIRCLE_HUB_DATABASE_CONFIG`), remove the old names from the environment, service definitions and env files, then start the new version. Values, configuration file formats, routes and the database are unchanged.

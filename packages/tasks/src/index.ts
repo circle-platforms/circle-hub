@@ -8,9 +8,29 @@ import {taskQueryPlan} from './task-query.ts';
 import {outboxWritten,replayWindow} from './outbox-retention.ts';
 import {projectedEvent} from './notification-payload.ts';
 
+export function assertInstalledCapability(capabilities:{has(id:string):boolean},id?:string,retired?:{has(id:string):boolean}):void{
+ if(!id)return;
+ if(retired?.has(id))throw new ApiError('UNSUPPORTED_VERSION','Capability package is not installed');
+ if(!capabilities.has(id))throw new ApiError('TARGET_NOT_FOUND',`Capability package ${id} is not installed. Check GET /v1/packs before uploading a source for it.`,{capabilityPackId:id});
+}
+export function phaseLabel(phase:string):string{
+ switch(phase){
+  case 'admitted':return 'accepted, not started';
+  case 'running':return 'running';
+  case 'waiting-input':return 'waiting for an answer';
+  case 'waiting-resource':return 'waiting for a worker';
+  case 'waiting-review':return 'waiting for review';
+  case 'under-review':return 'under review';
+  case 'delivered':return 'delivered';
+  case 'failed':return 'failed';
+  case 'cancelled':return 'cancelled';
+  case 'unknown':return 'unknown; the hub does not guess the outcome';
+  default:return phase;
+ }
+}
 export function taskFromRow(row: Record<string, any>): Task {
   return { taskId: row.task_id, tenantId: row.tenant_id, scopeId: row.scope_id, principalId: row.principal_id,
-    title: row.title, phase: row.phase, inputRevisionId: row.input_revision_id, input: row.input,
+    title: row.title, phase: row.phase, phaseLabel: phaseLabel(row.phase), inputRevisionId: row.input_revision_id, input: row.input,
     revision: row.revision, flowVersion: row.flow_version,waitingReason:row.waiting_reason??null,assignee:row.assignee_principal_id??null,dueAt:row.due_at?.toISOString()??null,
     ...(row.capability_pack_id ? { capabilityPackId: row.capability_pack_id, packVersion: row.pack_version } : {}) };
 }
@@ -20,6 +40,7 @@ export class Tasks {
   store: Store; auth: Auth; inputTtlMs: number;
   eventLocks:Map<string,EventLock>;
   capabilities=new Map<string,{version:string;flowVersion:string;privateByDefault?:boolean}>(Object.entries(PACK_FLOWS).map(([id,flowVersion])=>[id,{version:'1.0.0',flowVersion,privateByDefault:!['asset-registration','change-set'].includes(id)}]));
+  retiredCapabilityPacks=new Set<string>();
   deliveryValidators=new Map<string,(tx:Transaction,task:Task,result:any)=>Promise<{itemId:string;conclusionId:string}[]>>();
   baseFlows=new Set<string>([FLOW_VERSION]);
   constructor(store: Store, auth: Auth, inputTtlMs = 300_000) { this.store = store; this.auth = auth; this.inputTtlMs = inputTtlMs;let locks=storeEventLocks.get(store);if(!locks){locks=new Map();storeEventLocks.set(store,locks);}this.eventLocks=locks; }
@@ -55,8 +76,8 @@ export class Tasks {
   async submit(ctx: AuthContext, request: SubmitRequest, tx?: Transaction,admissionGrant='tasks.submit'): Promise<Task & { deduplicated: boolean }> {
     const execute = async (client: Transaction) => {
       requireCondition(admissionGrant==='tasks.submit'||admissionGrant==='tools.read'&&request.capabilityPackId==='asset-tool','FORBIDDEN_ACTION','Internal read admission applies only to tool tasks');const policy = await this.auth.check(ctx, admissionGrant, request.scopeId, client);
+      assertInstalledCapability(this.capabilities,request.capabilityPackId,this.retiredCapabilityPacks);
       const capability=request.capabilityPackId?this.capabilities.get(request.capabilityPackId):undefined;
-      requireCondition(!request.capabilityPackId||capability,'UNSUPPORTED_VERSION','Capability package is not installed');
       requireCondition(policy.kind !== 'worker', 'FORBIDDEN_ACTION', 'Workers cannot submit tasks');
       const keys = [policy.tenantId, request.scopeId, policy.principalId, 'submit', request.idempotencyKey];
       await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [JSON.stringify(keys)]);
@@ -101,12 +122,12 @@ export class Tasks {
   async status(ctx: AuthContext, taskId: string): Promise<TaskView> {
     const task = await this.load(ctx, taskId);
     const pending = (await this.store.pool.query('SELECT * FROM pending_inputs WHERE task_id=$1 ORDER BY created_at,request_id', [taskId])).rows;
-    return { ...task, pendingInputs: pending.map(row => ({ requestId: row.request_id, inputRevisionId: row.input_revision_id,
+    return { ...task, phaseLabel: phaseLabel(task.phase), pendingInputs: pending.map(row => ({ requestId: row.request_id, inputRevisionId: row.input_revision_id,
       kind: row.kind, question: row.question, binding: row.binding, expiresAt: row.expires_at.toISOString(), status: row.status })) };
   }
   async page(ctx:AuthContext,query:z.infer<typeof TaskPageQuery>){return this.store.transaction(async tx=>{await tx.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');const plan=await taskQueryPlan(this.auth,ctx,query,tx);
     const page=await facetedPage(tx,ctx,'tasks',query,plan.from,plan.visible,plan.params,plan.columns,'t.*',taskFromRow);
-    for(const task of page.items){const pending=(await tx.query('SELECT * FROM pending_inputs WHERE task_id=$1 ORDER BY created_at,request_id',[task.taskId])).rows;task.pendingInputs=pending.map(row=>({requestId:row.request_id,inputRevisionId:row.input_revision_id,kind:row.kind,question:row.question,binding:row.binding,expiresAt:row.expires_at.toISOString(),status:row.status}));}return page;});}
+    for(const task of page.items){task.phaseLabel=phaseLabel(task.phase);const pending=(await tx.query('SELECT * FROM pending_inputs WHERE task_id=$1 ORDER BY created_at,request_id',[task.taskId])).rows;task.pendingInputs=pending.map(row=>({requestId:row.request_id,inputRevisionId:row.input_revision_id,kind:row.kind,question:row.question,binding:row.binding,expiresAt:row.expires_at.toISOString(),status:row.status}));}return page;});}
   async assign(ctx:AuthContext,id:string,value:unknown){const input=TaskAssignment.parse(value);await this.store.transaction(async tx=>{
     const task=await this.load(ctx,id,'tasks.input',tx,true);requireCondition(task.inputRevisionId===input.inputRevisionId,'INPUT_REVISION_STALE','Task assignment revision differs');requireCondition(!ctx.run&&(task.principalId===ctx.principalId||await this.auth.roles.role(ctx,task.scopeId,tx)==='admin'),'FORBIDDEN_ACTION','Only the owner or a scope administrator assigns readable tasks');
     if(input.assignee){const target=(await tx.query("SELECT 1 FROM policies p JOIN principal_scope_roles r USING(principal_id) WHERE p.principal_id=$1 AND p.tenant_id=$2 AND NOT p.disabled AND p.kind='user' AND r.scope_id=$3 AND r.role IN ('member','admin')",[input.assignee,task.tenantId,task.scopeId])).rowCount;requireCondition(target,'FORBIDDEN_SCOPE','Assignee must be an active member of the task scope');const row=(await tx.query('SELECT context FROM tasks WHERE task_id=$1',[id])).rows[0];requireCondition(!row.context.privateOwnerId||row.context.privateOwnerId===input.assignee,'FORBIDDEN_SCOPE','Assignment does not grant access to a private task');}

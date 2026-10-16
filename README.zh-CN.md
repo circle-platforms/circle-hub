@@ -64,7 +64,7 @@ circle-hub 用四个对象分别回答这五件事，并把 agent 的运行时�
 
 ## 快速开始
 
-需要 Node.js 24。
+需要 Node.js 24。`.npmrc` 打开了 `engine-strict`，更旧的 Node 上 `npm ci` 会失败。每个 hub 进程在读配置前再检查一次；版本不够时以 `HubEnvironmentError` 退出，并指向 <https://nodejs.org/en/download>。
 
 ```sh
 npm ci
@@ -73,7 +73,7 @@ npm test              # contracts、methods、acceptance、references
 npm run typecheck
 ```
 
-`dev:stack` 会打印本机地址、开发登录方式和一个合成样本；Ctrl+C 清掉临时环境。仓库和测试套件不连任何真实系统；运行时地址、凭据和业务原件都不进 Git。
+`dev:stack` 会打印本机地址、下一步 Circle 命令（`/extensions enable hub`，然后 `/hub login <url> developer`）和一个合成样本。前台终端用 Ctrl+C 停止；后台进程向打印出的 pid 发送 SIGTERM。两种方式都会清掉临时环境。希望地址和密码在多次启动之间保持不变时，设置 `CIRCLE_HUB_PORT` 和 `CIRCLE_HUB_DEV_PASSWORD`（以及审批人、服务账号、worker 密码）。部署和连接步骤见 [docs/quickstart.md](docs/quickstart.md)（[English](docs/quickstart.en.md)）。仓库和测试套件不连任何真实系统；运行时地址、凭据和业务原件都不进 Git。
 
 ## 包
 
@@ -85,6 +85,7 @@ circle-hub 在开发中，不是受支持的生产发行：登录是开发登录
 
 ## 文档
 
+- [快速开始](docs/quickstart.md)（[English](docs/quickstart.en.md)）——启动开发栈并连接 Circle。
 - [设计](docs/design/README.md)——对象标准、术语与状态、层级与元素、审批与执行链、角色、与 Circle 的集成、产品线包。
 - [客户端接口交接](docs/client-api-handoff.md) · [用例执行](docs/case-execution-handoff.md) · [资源身份](docs/resource-identity-handoff.md) · [模块安装](docs/module-installation.md) · [管理命令](docs/admin-cli.md)
 - [阶段记录](docs/README.md)——简报、进度与真实来源观察。
