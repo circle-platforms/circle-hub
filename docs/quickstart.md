@@ -91,9 +91,9 @@ Circle 1.7.4 的 hub 扩展要先启用，再登录。扩展自己的版本号�
 | `model.protocol` | 固定 `openai` |
 | `model.api_key` | 运行时密钥，不进 Git |
 
-设置变量并重启 hub 之后，用有 `admin.manage` 的身份调用 `GET /v1/runtime-profiles`，把看到的 profile 登记为 `runtime-profile` 资产，再由另一个人批准。没有这份配置时，技能运行返回 `RUNTIME_NOT_CONFIGURED`（409），错误里写明变量名和上述步骤。登记和审批技能本身不需要它。
+也可以用 `npm run runtime:profile` 在仓库外生成这份文件，步骤见 [runtime-profile.md](runtime-profile.md)。设置变量并重启 hub 之后，用有 `admin.manage` 的身份调用 `GET /v1/runtime-profiles`，把看到的 profile 登记为 `runtime-profile` 资产，再由另一个人批准。没有这份配置时，技能运行返回 `RUNTIME_NOT_CONFIGURED`（409），错误里写明变量名、`npm run runtime:profile` 和上述步骤。登记和审批技能本身不需要它。
 
-Linux 上没有进程隔离。技能运行和产品包 Tool/Hook 子进程需要 macOS seatbelt。hub 不会在没有隔离时改跑普通进程，错误码是 `SANDBOX_UNAVAILABLE`，说明当前平台，并指向本文。内建的合成派发不经过这些子进程。
+Linux 上技能运行和产品包 Tool/Hook 子进程使用 bubblewrap。系统树只读，可写范围是运行工作区和沙箱内的私有临时目录，不挂载 home。默认关闭网络；运行配置列出回环端点时，必须能用 landlock 把 TCP 限制到那些端口（需要 landlock ABI 4 或更新，以及 `gcc` 或 `cc`）。安装：Debian/Ubuntu 用 `sudo apt-get install bubblewrap`，Fedora/RHEL 用 `sudo dnf install bubblewrap`，Arch Linux 用 `sudo pacman -S bubblewrap`。没有 `bwrap`、用户命名空间被拒绝，或无法限制已批准的回环端口时，错误码是 `SANDBOX_UNAVAILABLE`，消息给出安装或 `sysctl` 提示并指向本文。hub 不会去掉隔离直接运行。macOS 仍使用 seatbelt。内建的合成派发不经过这些子进程。
 
 ## 7. 能力包要先对上名字
 

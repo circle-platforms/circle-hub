@@ -8,13 +8,15 @@ All notable changes to circle-hub are listed here, newest first. Repository rele
 
 - Node.js 24 is checked before a hub process reads configuration. `npm ci` uses `engine-strict`. An older Node exits with `HubEnvironmentError` and https://nodejs.org/en/download.
 - `package.json` `allowScripts` allows the eight pinned `@embedded-postgres/*@18.4.0-beta.17` platform packages. Their postinstall only recreates symlinks shipped in the tarball.
-- [docs/quickstart.md](docs/quickstart.md) and [docs/quickstart.en.md](docs/quickstart.en.md) describe deploy, Circle connect (`/extensions enable hub`, `/hub login`), stop/restart, runtime profiles, Linux sandbox limits, and the environment variables.
+- [docs/quickstart.md](docs/quickstart.md) and [docs/quickstart.en.md](docs/quickstart.en.md) describe deploy, Circle connect (`/extensions enable hub`, `/hub login`), stop/restart, runtime profiles, Linux bubblewrap isolation, and the environment variables.
 - `dev:stack` accepts stable `CIRCLE_HUB_PORT` and `CIRCLE_HUB_DEV_PASSWORD`, `CIRCLE_HUB_DEV_APPROVER_PASSWORD`, `CIRCLE_HUB_DEV_SERVICE_PASSWORD`, `CIRCLE_HUB_DEV_WORKER_PASSWORD`. Unset passwords stay random. A non-TTY start says to signal the pid instead of pressing Ctrl+C.
 - Skill run accepts a unique manifest name as well as a `skp_` id. `POST /v1/sources` checks optional `x-capability-pack-id` before storing bytes. Skill views add `lifecycle`, `registration` and `statusLabel`. Task views add `phaseLabel`. Empty or shortened trials return `warnings` and stay HTTP 201.
+- Linux skill, Tool and Hook runs use bubblewrap. Landlock and seccomp tighten the same policy when the kernel and a local C compiler provide them: a read-only system tree, writes only in the workspace and a private temporary directory, the home directory unmounted, and the network off unless approved loopback endpoints can be limited to those TCP ports. A missing `bwrap` returns `SANDBOX_UNAVAILABLE` with an install hint and does not run the command unsandboxed.
+- `npm run runtime:profile` writes a development `CIRCLE_RUNTIME_CONFIG` outside the repository. `npm run dev:stack` can build that file from `CIRCLE_BIN`, `CIRCLE_COMMIT` and `CIRCLE_HUB_DEV_MODEL_URL`. The example shape is `config/runtime-profile.development.example.json` and is not loaded automatically.
 
 ### Changed
 
-- A missing Circle runtime profile returns `RUNTIME_NOT_CONFIGURED` and names `CIRCLE_RUNTIME_CONFIG`. Linux process isolation still returns `SANDBOX_UNAVAILABLE` and names the platform.
+- A missing Circle runtime profile returns `RUNTIME_NOT_CONFIGURED` and names `CIRCLE_RUNTIME_CONFIG` and `npm run runtime:profile`. Linux process isolation uses bubblewrap. A missing `bwrap` returns `SANDBOX_UNAVAILABLE` with an install hint and points at `docs/quickstart.md`.
 - Unknown capability pack ids return `TARGET_NOT_FOUND`. Retired `lbx-healthcheck` and `apv-case-execute` stay `UNSUPPORTED_VERSION`.
 - Bot and skill-run trigger failures name the trigger kind and the triggers the skill declares. A rejected bot occurrence says it was not accepted. Protocol values `registered` and `admitted` are unchanged.
 - Pack `title` values are English. Chinese titles are `titleZh`. The packaged Circle client binding in the compatibility matrix is 1.7.4; the RPC acceptance pin remains fd8524a.

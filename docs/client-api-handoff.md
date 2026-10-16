@@ -334,7 +334,7 @@ POST /v1/credentials/oauth/client-credentials 使用同形请求；clientCredent
 
 运行请求 202 `{taskId}`，inputs 原 JSON 作为 `inputs.json` 写进 workspace；可用 `inputs.files:[{path,base64,sha256?}]` 附输入文件。输入不能覆盖 .circle/控制文件/声明输出；改输入使用新幂等键，同键不同输入拒绝。结果返回实际 artifacts/evidence/runtime，产物只在 CLI agent_settled、进程退出和声明文件完整、独立字节 SHA 核对后交付。文件完整性/摘要属于 script-conclusion，最后回答另记 model-judgment，不用回答替代产物或专业事实。artifact/content 与个人任务权限一并检查。
 
-`CIRCLE_RUNTIME_CONFIG` 指向仓库外的运行时 JSON：
+`CIRCLE_RUNTIME_CONFIG` 指向仓库外的运行时 JSON。可用 `npm run runtime:profile` 生成，说明见 [runtime-profile.md](runtime-profile.md)。示例形状在 `config/runtime-profile.development.example.json`，不会自动加载：
 
 ```json
 {"circleBin":"<本机构建的 dist/cli.js>",
@@ -434,7 +434,7 @@ static-secret 登记操作：provider.configuration.credentialMode="static-secre
 
 明文例外已在派发、审计与 SourceRevision / Evidence 加 plaintextAuthentication:true 及批准 profile 版本引用；标记的持久 / 缓存 / 撤销规则见[凭据与资源](design/approvals-and-enforcement.md#凭据与资源)。
 
-Skill、Tool 和 Hook 使用同一主机隔离边界。当前 Mac adapter 用 sandbox-exec 对未信任的进程及其后代限制文件内容读取、写入、网络出口及其他进程信息；只开放当前运行目录、固定 harness 的受信代码/依赖、明确的 CA 和 loopback server/model 端点。不能直接或经符号链接读取 vault 或运行配置。其它系统未配置受支持的隔离 adapter 时以 SANDBOX_UNAVAILABLE 失败，不退回同用户任意执行。Hook 与 Tool 在同一 tool-host 子进程执行，10 秒/16 MiB 返回上限；工作簿命令批量核验，避免每条命令启动一个进程。三种 subject 先按严格 schema 校验，主机客户端闭集属于批准的 Hook，解析器只读取字面行。
+Skill、Tool 和 Hook 使用同一主机隔离边界。macOS 用 sandbox-exec，Linux 用 bubblewrap（landlock 与 seccomp 可用时再收紧）对未信任的进程及其后代限制文件内容读取、写入、网络出口及其他进程信息；只开放当前运行目录、固定 harness 的受信代码/依赖、明确的 CA 和 loopback server/model 端点。不能直接或经符号链接读取 vault 或运行配置。没有受支持的隔离 adapter，或 Linux 上缺少 bubblewrap / 无法限制已批准的回环 TCP 时，以 SANDBOX_UNAVAILABLE 失败，不退回同用户任意执行。安装提示见 [快速开始](quickstart.md)。Hook 与 Tool 在同一 tool-host 子进程执行，10 秒/16 MiB 返回上限；工作簿命令批量核验，避免每条命令启动一个进程。三种 subject 先按严格 schema 校验，主机客户端闭集属于批准的 Hook，解析器只读取字面行。
 
 早期运行器曾把模型凭据放入单次 home；后续模型代理已替代该方式，当前密钥边界见[凭据与资源](design/approvals-and-enforcement.md#凭据与资源)。终态 / 失效注入副本由维护器清理，永久静态凭据留到轮换 / 吊销；开发角色仍只作初次种子。
 
@@ -456,7 +456,7 @@ Tool/Hook 子进程带 256MiB V8 堆上限，Hook 以最多 200 个 subject 的�
 
 后续运行器加入可信 loopback 模型代理，Circle settings / credentials 只存本次代理端点与 nonce；当前密钥 / 掩码 / 失败边界见[凭据与资源](design/approvals-and-enforcement.md#凭据与资源)。下段保留代理部署参数与观察字段；--yolo 不替代平台执行链。
 
-模型代理运维参数保留：每 run 一个回环临时端口、256 位 nonce；seatbelt 仅开放代理 / hub 端口，体上限各 16MiB，SSE 透传。runtime.model.proxy 观察字段为 upstreamHost / statusCode / requestBytes / responseBytes / durationMs / requestNumber；固定失败码 MODEL_PROXY_UNAVAILABLE / MODEL_UPSTREAM_REJECTED。目标、头部 / key 注入、失败降级和停止纪律见[凭据与资源](design/approvals-and-enforcement.md#凭据与资源)。本地验收仍用回环脚本模型。
+模型代理运维参数保留：每 run 一个回环临时端口、256 位 nonce；seatbelt 与 Linux bubblewrap 仅开放代理 / hub 端口，体上限各 16MiB，SSE 透传。runtime.model.proxy 观察字段为 upstreamHost / statusCode / requestBytes / responseBytes / durationMs / requestNumber；固定失败码 MODEL_PROXY_UNAVAILABLE / MODEL_UPSTREAM_REJECTED。目标、头部 / key 注入、失败降级和停止纪律见[凭据与资源](design/approvals-and-enforcement.md#凭据与资源)。本地验收仍用回环脚本模型。
 
 ## 读结果与治理内容补充
 

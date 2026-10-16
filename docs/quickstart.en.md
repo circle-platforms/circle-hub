@@ -91,9 +91,9 @@ A skill run needs a Circle runtime profile. `CIRCLE_RUNTIME_CONFIG` points at a 
 | `model.protocol` | Always `openai` |
 | `model.api_key` | Runtime secret. Do not commit it |
 
-After setting the variable and restarting, an identity with `admin.manage` calls `GET /v1/runtime-profiles`, registers what it sees as a `runtime-profile` asset, and a different person approves it. With no profile, a skill run returns `RUNTIME_NOT_CONFIGURED` (409) and the message names the variable and these steps. Registering and approving a skill does not need the profile.
+`npm run runtime:profile` writes that file outside the repository. The steps are in [runtime-profile.md](runtime-profile.md). After setting the variable and restarting, an identity with `admin.manage` calls `GET /v1/runtime-profiles`, registers what it sees as a `runtime-profile` asset, and a different person approves it. With no profile, a skill run returns `RUNTIME_NOT_CONFIGURED` (409). The message names the variable, `npm run runtime:profile`, and these steps. Registering and approving a skill does not need the profile.
 
-Linux has no process isolation. Skill runs and product-pack Tool/Hook subprocesses need macOS seatbelt. The hub does not fall back to an ordinary process. The code is `SANDBOX_UNAVAILABLE`; the message names the platform and points here. Built-in synthetic dispatch does not enter those subprocesses.
+On Linux, skill runs and product-pack Tool/Hook subprocesses use bubblewrap. The system tree is read-only. Writes are limited to the run workspace and a private temporary directory inside the sandbox. The home directory is not mounted. The network is off by default. When the runtime profile lists loopback endpoints, landlock must limit TCP to those ports, which needs landlock ABI 4 or newer and `gcc` or `cc`. Install bubblewrap with `sudo apt-get install bubblewrap` on Debian/Ubuntu, `sudo dnf install bubblewrap` on Fedora/RHEL, or `sudo pacman -S bubblewrap` on Arch Linux. A missing `bwrap`, a refused user namespace, or an inability to limit the approved loopback ports returns `SANDBOX_UNAVAILABLE`. The message includes an install or `sysctl` hint and points here. The hub does not run the command without isolation. macOS still uses seatbelt. Built-in synthetic dispatch does not enter those subprocesses.
 
 ## 7. Name the capability pack before upload
 

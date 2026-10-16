@@ -28,14 +28,16 @@ export function isSandboxUnavailable(error:unknown):boolean{
 // an adapter or lowers the execution policy. An override can disable a test
 // host, but cannot make an unsupported real host report isolation available.
 export async function probeSandboxHost(options:{platform?:string}={}):Promise<SandboxHost>{
- if(process.platform!=='darwin'||(options.platform??process.platform)!=='darwin')return {available:false,reason:`SANDBOX_UNAVAILABLE: this host is ${options.platform??process.platform}. Skill runs and product Tool/Hook subprocesses need macOS seatbelt. The hub does not run them without process isolation. See docs/quickstart.md.`};
+ const requested=options.platform??process.platform;
+ if(requested!==process.platform||(requested!=='darwin'&&requested!=='linux'))return {available:false,reason:`SANDBOX_UNAVAILABLE: this host is ${requested}. Skill runs and product Tool/Hook subprocesses need macOS seatbelt or Linux bubblewrap. The hub does not run them without process isolation. See docs/quickstart.md.`};
  let directory:string|undefined;
  try{
   directory=await mkdtemp(join(tmpdir(),'circle-hub-isolation-probe-'));const readable=join(directory,'readable'),blocked=join(directory,'blocked.txt');await mkdir(readable);await writeFile(join(readable,'allowed.txt'),'synthetic-probe');await writeFile(blocked,'synthetic-denied');
-  const code=`const fs=require('node:fs');if(fs.readFileSync(process.argv[1],'utf8')!=='synthetic-probe')process.exit(2);try{fs.readFileSync(process.argv[2]);process.exit(3);}catch(error){if(!['EPERM','EACCES'].includes(error.code))process.exit(4);}process.stdout.write('sandbox-probe-ok');`,spec=await isolatedProcess(process.execPath,['-e',code,join(readable,'allowed.txt'),blocked],{read:[readable],write:[],network:[]}),result=await promisify(execFile)(spec.command,spec.args,{env:{PATH:process.env.PATH},timeout:5000,maxBuffer:1024});
+  const code=`const fs=require('node:fs');if(fs.readFileSync(process.argv[1],'utf8')!=='synthetic-probe')process.exit(2);try{fs.readFileSync(process.argv[2]);process.exit(3);}catch(error){if(!['EPERM','EACCES','ENOENT'].includes(error.code))process.exit(4);}process.stdout.write('sandbox-probe-ok');`,spec=await isolatedProcess(process.execPath,['-e',code,join(readable,'allowed.txt'),blocked],{read:[readable],write:[],network:[]}),result=await promisify(execFile)(spec.command,spec.args,{env:{PATH:process.env.PATH},timeout:15000,maxBuffer:1024});
   if(result.stdout!=='sandbox-probe-ok')throw new Error('The synthetic process isolation probe returned an invalid result');
   return {available:true};
  }catch(error){
+  if(error instanceof ApiError&&error.code==='SANDBOX_UNAVAILABLE')return {available:false,reason:`SANDBOX_UNAVAILABLE: ${error.message}`};
   if(isSandboxUnavailable(error))return {available:false,reason:'SANDBOX_UNAVAILABLE: the current process isolation adapter is not usable'};
   throw error;
  }
@@ -46,7 +48,7 @@ export function sandboxTest(name:string,fn:TestFn):Promise<void>;
 export function sandboxTest(name:string,options:TestOptions,fn:TestFn):Promise<void>;
 export function sandboxTest(name:string,options:TestOptions|TestFn,body?:TestFn):Promise<void>{const fn=typeof options==='function'?options:body!,settings=typeof options==='function'?{}:options;return registerTest(name,{...settings,skip:sandboxHost.available?settings.skip:sandboxHost.reason},fn);}
 export function sandboxSubtest(t:TestContext,name:string,fn:TestFn):Promise<void>{return t.test(name,{skip:sandboxHost.available?undefined:sandboxHost.reason},fn);}
-function testChildEnvironment(environment:NodeJS.ProcessEnv):NodeJS.ProcessEnv{if(!process.env.CIRCLE_HUB_TEST_SANDBOX_PLATFORM||process.env.CIRCLE_HUB_TEST_SANDBOX_PLATFORM==='darwin')return environment;return {...environment,NODE_OPTIONS:[environment.NODE_OPTIONS,'--import',JSON.stringify(fileURLToPath(new URL('../fixtures/unsupported-isolation-host.ts',import.meta.url)))].filter(Boolean).join(' ')};}
+function testChildEnvironment(environment:NodeJS.ProcessEnv):NodeJS.ProcessEnv{const override=process.env.CIRCLE_HUB_TEST_SANDBOX_PLATFORM;if(!override||override===process.platform)return environment;return {...environment,NODE_OPTIONS:[environment.NODE_OPTIONS,'--import',JSON.stringify(fileURLToPath(new URL('../fixtures/unsupported-isolation-host.ts',import.meta.url)))].filter(Boolean).join(' ')};}
 
 
 const taskGrants = ['tasks.read', 'tasks.submit', 'tasks.input', 'tasks.cancel', 'evidence.read', 'methods.use', 'sources.read', 'sources.write','operations.reconcile'];

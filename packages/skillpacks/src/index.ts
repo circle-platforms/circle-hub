@@ -18,8 +18,8 @@ import {resolveTrust} from '../../connectors/src/private-http.ts';
 import {deriveCircleSkill} from './neutral.ts';
 import {skillWasLoaded} from './loader-observation.ts';
 import {approvedRuntimeRevision,boundRuntimeRevision,type RuntimeBinding} from '../../assets/src/runtime-revisions.ts';
+import {runtimeProfileMissingMessage} from '../../runtime/src/profile-setup.ts';
 
-const RUNTIME_PROFILE_HINT='A Circle runtime profile is the JSON file CIRCLE_RUNTIME_CONFIG points at. It names circleBin, circleCommit (40 hexadecimal characters), circleVersion and model (kind scripted or remote, base_url, model, protocol set to openai, and api_key). Set CIRCLE_RUNTIME_CONFIG, restart the hub, call GET /v1/runtime-profiles, register a runtime-profile asset, and have a different person approve it. See docs/quickstart.md.';
 const SKILL_PACK_ID=/^skp_[A-Za-z0-9][A-Za-z0-9_-]*$/;
 function skillStatusLabel(status:string,lifecycle?:string):string{
  if(status==='candidate')return 'waiting for approval';
@@ -135,7 +135,7 @@ export class SkillPacks {
     throw new ApiError('TARGET_NOT_FOUND',`No skill pack is named ${token}. List skills with GET /v1/skillpacks and pass a skp_ id or a unique manifest name.`);
   }
   async runtimeBinding(tx:Transaction,ctx:AuthContext,scope:string,binding?:RuntimeBinding){
-    requireCondition(this.runtime&&this.runtimeDigest,'RUNTIME_NOT_CONFIGURED',RUNTIME_PROFILE_HINT);const profile=binding?await boundRuntimeRevision(this.store,ctx,scope,binding,this.runtimeDigest,tx):await approvedRuntimeRevision(this.store,ctx,scope,'runtime','circle-runtime',tx);
+    requireCondition(this.runtime&&this.runtimeDigest,'RUNTIME_NOT_CONFIGURED',runtimeProfileMissingMessage);const profile=binding?await boundRuntimeRevision(this.store,ctx,scope,binding,this.runtimeDigest,tx):await approvedRuntimeRevision(this.store,ctx,scope,'runtime','circle-runtime',tx);
     requireCondition(profile&&profile.configuration.profileSha256===this.runtimeDigest,'SOURCE_NOT_APPROVED','Circle runtime requires an independently approved matching profile');await this.assets.versionRow(ctx,profile.asset_id,profile.version,tx);
     return {assetId:profile.asset_id,version:profile.version,sha256:profile.sha256,profileSha256:this.runtimeDigest};
   }
