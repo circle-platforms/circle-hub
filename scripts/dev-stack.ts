@@ -1,4 +1,4 @@
-import {hubChildEnvironment} from '../packages/contracts/src/hub-environment.ts';
+import '../packages/contracts/src/hub-environment.ts';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
 import { randomBytes } from 'node:crypto';
@@ -50,7 +50,7 @@ process.on('SIGINT',() => { void cleanup(); }); process.on('SIGTERM',() => { voi
 async function launch(path: string,env: NodeJS.ProcessEnv,type: string): Promise<any> {
   // Separate groups keep terminal Ctrl+C under this supervisor's ordered shutdown.
   // IPC disconnect also lets children stop if this supervisor is killed.
-  const child = spawn(process.execPath,[path],{ cwd:root,env:hubChildEnvironment(env),detached:process.platform !== 'win32',stdio:['ignore','pipe','pipe','ipc'] }); children.add(child);
+  const child = spawn(process.execPath,[path],{ cwd:root,env,detached:process.platform !== 'win32',stdio:['ignore','pipe','pipe','ipc'] }); children.add(child);
   const worker=path==='apps/worker/src/main.ts',username=env.CIRCLE_WORKER_USERNAME!;if(worker){workerProcesses.set(username,child);workerEnvironments.set(username,env);}
   child.on('message',message=>{if((message as any)?.type==='workers-restart'&&!closing&&!workerRestart){workerRestart=replaceWorkers(serverGeneration).catch(()=>{workerRecord('dev-stack.worker.restart-error',{reason:'replacement-failed'});}).finally(()=>{workerRestart=undefined;});}});
   child.stderr!.on('data',data => { process.stderr.write(data); });

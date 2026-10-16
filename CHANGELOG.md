@@ -4,6 +4,10 @@ All notable changes to circle-hub are listed here, newest first. Repository rele
 
 ## Unreleased
 
+### Removed
+
+- **Breaking: the `CIRCLE_SERVER_*` configuration fallback is gone; circle-server is no longer supported anywhere.** circle-hub reads only `CIRCLE_HUB_*`. The server, supervisor, worker, `circle-hub` CLI and the development and PostgreSQL scripts now refuse to start while any `CIRCLE_SERVER_*` variable is set, even an empty one or one beside its `CIRCLE_HUB_*` replacement. They exit with status 1 and a `HubEnvironmentError` that names each variable and its replacement and never prints a value. The `hub.environment.deprecated` notice is gone with the fallback. A deployment still configured with `CIRCLE_SERVER_*` names will not start after upgrading. To migrate, rename each variable by replacing the `CIRCLE_SERVER_` prefix with `CIRCLE_HUB_` (for example `CIRCLE_SERVER_DATABASE_CONFIG` becomes `CIRCLE_HUB_DATABASE_CONFIG`), remove the old names from the environment, service definitions and env files, then start the new version. Values, configuration file formats, routes and the database are unchanged.
+
 ## 0.2.0 - 2026-10-15
 
 ### Removed

@@ -16,25 +16,26 @@ Hub 名称与配置已统一，下文运行示例使用新名。旧阶段记录�
 
 | 范围 | 当前名称 | 兼容边界 |
 |---|---|---|
-| Hub 本地与 package bin CLI | `circle-hub`，本地 `./bin/circle-hub` | `circle-server` 可执行名不保留别名；`npm run admin` 不变 |
-| Hub 配置前缀 | `CIRCLE_HUB_<后缀>` | 同后缀 `CIRCLE_SERVER_<后缀>` 仅作弃用回退 |
+| Hub 本地与 package bin CLI | `circle-hub`，本地 `./bin/circle-hub` | 旧可执行名不保留别名；`npm run admin` 不变 |
+| Hub 配置前缀 | `CIRCLE_HUB_<后缀>` | 2026-10-16 起不再读取改名前的旧前缀；环境中仍有旧前缀变量时进程拒绝启动，见下文 |
 | 连接地址与管理身份 | `CIRCLE_HUB_URL`、`CIRCLE_HUB_TOKEN`、`CIRCLE_HUB_TOKEN_FILE`、`CIRCLE_HUB_SCOPE` | 值与秘密文件仍只在运行时提供 |
 | 数据库、存储与监听 | `CIRCLE_HUB_DATABASE_CONFIG`、`CIRCLE_HUB_DATA_DIR`、`CIRCLE_HUB_PG_DIR`、`CIRCLE_HUB_PORT`、`CIRCLE_HUB_TLS_CONFIG` | 原配置形状、TLS 核验与回环边界不变 |
 | 身份与任务时限 | `CIRCLE_HUB_DEV_AUTH`、`CIRCLE_HUB_DEV_IDENTITIES`、`CIRCLE_HUB_DEV_TOKEN_TTL_MS`、`CIRCLE_HUB_RUN_TOKEN_TTL_MS`、`CIRCLE_HUB_RESOURCE_TOKEN_TTL_SECONDS`、`CIRCLE_HUB_INPUT_TTL_MS`、`CIRCLE_HUB_APPROVAL_TTL_MS` | 时限、授权、刷新与审批规则不变 |
 | 来源、凭据与模块配置 | `CIRCLE_HUB_CONNECTOR_PROFILES`、`CIRCLE_HUB_EXECUTION_GATEWAYS`、`CIRCLE_HUB_OAUTH_PROFILES`、`CIRCLE_HUB_PRODUCT_LINES`、`CIRCLE_HUB_CA_FILE`、`CIRCLE_HUB_CA_SHA256` | 已批准 profile 的内容与摘要不因环境变量名变化改写 |
 | 进程、索引与通知 | `CIRCLE_HUB_POLL_MS`、`CIRCLE_HUB_INDEX_POLL_MS`、`CIRCLE_HUB_MANAGED_WORKERS`、`CIRCLE_HUB_WORKER_OFFLINE_MS`、`CIRCLE_HUB_NOTIFICATION_STREAMS`、`CIRCLE_HUB_OUTBOX_REPLAY_EVENTS`、`CIRCLE_HUB_OUTBOX_MAX_ROWS`、`CIRCLE_HUB_OUTBOX_MAX_AGE_MS` | 作用与取值范围沿原配置 |
-| 冻结执行实现的配置读取 | 对外使用 `CIRCLE_HUB_EXECUTION_GATEWAYS` | 集中配置层把选定的新值提供给冻结 controller 的 `CIRCLE_SERVER_EXECUTION_GATEWAYS` lookup；两键都有时仍以新值为准，空值不回退。保留旧 lookup 避免只为改名更换实现 SHA/版本并要求重批；以后实际执行实现升级时迁掉 |
-| 冻结编译产物的 creator | 原 `circle-server` creator 文本 | creator 参与产物字节与 SHA，本轮原样保留；待编译方法迁入产品包并正式升版时再改，不把改名当作重新编译授权 |
+| 执行网关配置读取 | `CIRCLE_HUB_EXECUTION_GATEWAYS` | 0.2.0 随原生执行退役移除了冻结 controller 的旧名 lookup，现只读取新名 |
+| 编译产物的 creator | `circle-hub mindmap-compile`（兼容编译器 1.1.0 起） | creator 参与产物字节与 SHA；0.2.0 随方法升版改写，校验拒绝旧 creator 文本，既有历史产物不重写 |
 | Circle 自己的扩展协议 | 扩展 `hub`、命令 `/hub`、工具 `hub_*` / `hub_tool_*` | Circle 1.7.0（用户确认 RPC pin `fd8524a`）只接收 `CIRCLE_HUB_URL`、`CIRCLE_HUB_TOKEN`、`CIRCLE_HUB_USER`、`CIRCLE_HUB_SCOPE`；不注入旧名，不保留旧扩展与工具别名 |
 | HTTP、schema 与版本绑定 | `/v1/*`、`/mcp`、既有请求/响应字段、持久 schema、数据库迁移字节与冻结实现 | 本轮不因平台改名更换路由、契约、数据库标识或历史迁移 |
-| 历史与实际路径 | 既有 `../circle-server-s1`、`../circle-server-s2` 工作树，旧简报/进度/validation schema 与 provenance | 未改名的目录仍使用真实旧名；foundation/references 与归档中的 circle-server 来源保留原字节 |
+| 历史与实际路径 | 既有阶段工作树（目录仍用改名前的名字），旧简报/进度/validation schema 与 provenance | 未改名的目录仍使用真实旧名；foundation/references 与归档中的旧名来源保留原字节 |
 
-配置选择以“新键是否存在”为准：有 `CIRCLE_HUB_<后缀>` 就选它，空字符串也不回退到旧键，随后照常校验该值；两键同时出现时新键优先。只有新键缺失且旧键存在才使用旧值；进程启动发现旧输入键时输出一行弃用提示，只记录变量键名，不记录地址、值或密钥，也不在每次请求重复告警。冻结 controller 的旧 lookup 按表保留；Circle 子进程改为独立的 hub 协议，不从 Hub 的弃用输入回退推导客户端兼容。`CIRCLE_BIN` / `CIRCLE_COMMIT`、`CIRCLE_RUNTIME_CONFIG`、`CIRCLE_HOME`、`CIRCLE_WORKER_*` 与模块验收的 `CIRCLE_PACKS_*` 本轮不改。
+配置只读取 `CIRCLE_HUB_<后缀>`，空字符串照常按该值校验，没有其他来源。server、supervisor、worker、admin / modules CLI、dev-stack 与 PostgreSQL 脚本在读取任何配置前检查进程环境：只要存在改名前旧前缀的变量（值为空或已同时设置新名也算），就以 `HubEnvironmentError` 拒绝启动并以退出码 1 结束，错误逐个列出旧键及对应的 `CIRCLE_HUB_*` 名，不记录地址、值或密钥；不会把旧值复制到新名，也不会带着缺省值启动。迁移方法是把每个旧变量改为同后缀的 `CIRCLE_HUB_*` 名并从环境、服务单元和 env 文件中删除旧名，见 [CHANGELOG](../CHANGELOG.md)。Circle 子进程使用独立的 hub 协议。`CIRCLE_BIN` / `CIRCLE_COMMIT`、`CIRCLE_RUNTIME_CONFIG`、`CIRCLE_HOME`、`CIRCLE_WORKER_*` 与模块验收的 `CIRCLE_PACKS_*` 不属于 Hub 配置前缀，不受此检查影响。
 
 ## 启动和登录
 
+在仓库根目录运行：
+
 ```sh
-cd ../circle-server-s1
 npm ci
 npm run dev:stack
 ```

@@ -1421,3 +1421,17 @@ Circle v1.7.0 tag 96702fa 的正式发行暴露刷新视图时序回归，未产
 1.7.3 / ae0b0d5 纳入最小关闭保护：待安装宿主按既有两秒预算 drain，由初始化 catch 等待同一关闭 promise；token 异步返回后重核 abort；已关闭的 dataDir 仅返回可供清理定位的路径，不再 mkdir。三条旧实现回归实际为红，修后九项定向检查通过；真实 Hub 屏障分别覆盖预算内必须等待和预算耗尽后可返回，两种路径都核关闭后的文件系统、view 与 status 无后续副作用。标准临时目录清理的有界重试独立于核心断言，不能代替它们。
 
 该客户端提交的完整本地验证、正式目标矩阵、发布产物、安装来源与实际界面分别以对应发行和本机回执为准。Hub 固定 Circle RPC 仍为 fd8524a / 1.7.0，业务运行时源码、方法包、依赖、迁移与归档字节均不随客户端文档绑定改变；后续最终 main 继续采用同样冻结输入、全开选装场景和唯一临时 PostgreSQL 验收位。
+
+## 137：撤除改名前环境变量的弃用回退
+
+2026-10-16。维护者决定改名前的项目名不再在任何地方受支持，Hub 只使用 `circle-hub` 与 `CIRCLE_HUB_*`。本步先把 server-s2 快进到 main 的 2f57817（两者树相同），使 main 可继续按快进更新。
+
+`packages/contracts/src/hub-environment.ts` 不再把旧前缀变量复制到新名，也不再输出 `hub.environment.deprecated`；`hubChildEnvironment` 随之删除，supervisor 与 dev-stack 直接传递已检查的环境。对仍设置的旧变量，选择启动即失败而不是静默忽略：静默忽略会让忘记改名的数据库等配置带着缺省值启动。该模块仍作为导入副作用先于任何读取配置的模块执行；server、supervisor、worker、admin / modules CLI、dev-stack 与 PostgreSQL 脚本只要环境中有旧前缀键（值为空或与新名并存也算），就以 `HubEnvironmentError` 和退出码 1 结束，错误逐个列出旧键及对应新名，不含值。
+
+方法测试改为四项：拒绝启动且不回显值；检查不改写输入、只认实际存在的键；只有新名时无输出并先于捕获环境的模块初始化；八个入口在合法新配置旁遇到旧键，都在做任何工作前退出。验收 hub-naming 改为三项，其中新增一项在真实临时 PostgreSQL 栈旁验证 server、supervisor、worker 与 admin CLI 遇到旧键拒绝启动，错误不含数据库配置、令牌或地址，原栈继续服务。编译器拒绝旧 creator 文本的测试保留；APV 模块夹具不再清除旧名键。
+
+文档：AGENTS、双语 README、packs/README、双语兼容性页新增 2026-10-16 条目、客户端交接表与配置说明（同时更正 0.2.0 已移除的冻结 gateway lookup 与已改写的编译器 creator 两行，并删去指向旧工作树的启动示例）、设计文档 execution-flow-packs 一句，以及 CHANGELOG Unreleased 的破坏性变更与迁移方法。旧进度、简报与 validation 证据保留原文。
+
+部署边界：仍以旧名配置的既有部署，须先改用 `CIRCLE_HUB_*` 名重新部署，才能升级到此提交之后的版本。本步没有操作任何部署、部署脚本、env 文件或进程。
+
+验证按 CI 方式运行（CIRCLE_BIN / CIRCLE_COMMIT / CIRCLE_RUNTIME_CONFIG 置空，独立临时 CIRCLE_HOME 与 CIRCLE_WORKBENCH_DATA_DIR）：typecheck 通过；contracts **20/20**、methods **283/283**、acceptance 404 项中 **379 pass / 25 skip / 0 fail**（16 项真实 Circle RPC 用例缺确认的运行时按 skip 报告，9 项 APV 模块与严格 cexg 选装场景默认 skip；skip 不计通过）、references **7/7**；verify:postgres 与 verify:references 通过。另以 packs 1f8948c 的冻结 Git 对象开启两个选装文件，实际 **13/13**，含上述 9 项及本步改动的 APV 模块夹具；16 项 Circle RPC 用例本步未运行。没有真实系统、模型、设备或付费调用。

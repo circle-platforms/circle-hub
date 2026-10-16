@@ -1,11 +1,11 @@
-import {hubChildEnvironment} from '../../../packages/contracts/src/hub-environment.ts';
+import '../../../packages/contracts/src/hub-environment.ts';
 import {spawn,type ChildProcess} from 'node:child_process';
 import {once} from 'node:events';
 import {fileURLToPath} from 'node:url';
 import {SERVER_STOP_TIMEOUT_MS} from './shutdown.ts';
 
 const root=fileURLToPath(new URL('../../../',import.meta.url));
-let child:ChildProcess|undefined,closing=false,restarting=false;const env=hubChildEnvironment(process.env);
+let child:ChildProcess|undefined,closing=false,restarting=false;const env={...process.env};
 function record(type:string,facts:Record<string,unknown>){process.stdout.write(JSON.stringify({type,at:new Date().toISOString(),supervisorId:process.pid,...facts})+'\n');}
 async function stop():Promise<void>{
   if(closing)return;closing=true;

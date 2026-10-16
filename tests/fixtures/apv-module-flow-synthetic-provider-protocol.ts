@@ -120,9 +120,9 @@ export async function apvModuleProvider(t:TestContext){
 export interface ApvFlowProvider {endpoint:string;state:{secret:string;calls:{name:string;args:any;meta:any}[];submissions:number;releases:number;workbook:Buffer}}
 export async function apvModuleFlow(t:TestContext,frozen:Awaited<ReturnType<typeof frozenApvModule>>,options:{provider?:ApvFlowProvider;tools?:ReturnType<typeof apvProviderTools>;receiptPolicy?:any;treeOriginal?:'xml';commandMissing?:boolean;hostOutsideBed?:boolean;contractDisabled?:boolean}={}){
  const {setup}=await import('../acceptance/harness.ts');
- // Node omits undefined environment keys in children. Clear both names so an
+ // Node omits undefined environment keys in children. Clear these so an
  // operator's ambient real profile cannot become this synthetic test's input.
- const cleared:NodeJS.ProcessEnv={};for(const suffix of ['EXECUTION_GATEWAYS','CONNECTOR_PROFILES','OAUTH_PROFILES','PRODUCT_LINES']){cleared[`CIRCLE_HUB_${suffix}`]=undefined;cleared[`CIRCLE_SERVER_${suffix}`]=undefined;}cleared.CIRCLE_RUNTIME_CONFIG=undefined;
+ const cleared:NodeJS.ProcessEnv={};for(const suffix of ['EXECUTION_GATEWAYS','CONNECTOR_PROFILES','OAUTH_PROFILES','PRODUCT_LINES'])cleared[`CIRCLE_HUB_${suffix}`]=undefined;cleared.CIRCLE_RUNTIME_CONFIG=undefined;
  const provider=options.provider??await apvModuleProvider(t),h=await setup(t,cleared as Record<string,string>);
  await writeFile(`${h.scratch}/execution.json`,JSON.stringify({profiles:{apvfixture:{endpoint:provider.endpoint,pollMs:25}}}),{mode:0o600});h.env.CIRCLE_HUB_EXECUTION_GATEWAYS=`${h.scratch}/execution.json`;await h.stop();await h.startServer();
  const receiptPolicy=frozenApvReceiptPolicy(frozen);
