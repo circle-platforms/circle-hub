@@ -2,7 +2,7 @@
 
 ## 设计
 
-[docs/design](design/README.md)：[置真对接架构：对既有平台设计的批判与企业级 Agent 理论重构](design/truth-docked-architecture.md)（总纲）、对象标准与数据流、术语与状态、层级与元素、审批与执行链、角色与范围、与 Circle 的集成、产品线包典范。这是后续开发和架构演进的依据。英文译文在 [design/en](design/en/README.md)（[Truth-Docked Architecture](design/en/truth-docked-architecture.md)）。三个仓库之间谁依赖谁、以什么为准，见[兼容矩阵](compatibility.md)。
+[docs/design](design/README.md)：对象标准与数据流、术语与状态、层级与元素、审批与执行链、角色与范围、与 Circle 的集成、产品线包典范，以及[置真对接架构的理论基础与数学审计](design/truth-docked-architecture.md)。后者是研究提案，包含条件命题、反例和未证义务，不替代现行契约或宣称已有整体正确性证明。英文译文在 [design/en](design/en/README.md)（[Truth-Docked Architecture](design/en/truth-docked-architecture.md)）。三个仓库之间谁依赖谁、以什么为准，见[兼容矩阵](compatibility.md)。
 
 ## 接口交接
 
