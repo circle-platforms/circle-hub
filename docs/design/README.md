@@ -5,10 +5,11 @@ nav_order: 2
 
 # circle-hub 设计
 
-2026-10-13 定稿的设计，后续开发和旧能力适配都以它为准。每一篇都只写决定和理由，不写实现进度；实现进度在[阶段记录](../README.md#阶段记录)。英文译文在 [en/](en/README.md)，两者有出入以中文为准。
+2026-10-13 定稿的初版设计与 2026-10-19 确立的置真对接架构总纲。其中[置真对接架构：对既有平台设计的批判与企业级 Agent 理论重构](truth-docked-architecture.md)对初版设计中的结构性局限进行了系统性反驳与理论升维，后续架构演进以总纲的四大定理与五核架构为最高裁决准则。每一篇都只写决定、反驳与理由，不写实现进度；实现进度在[阶段记录](../README.md#阶段记录)。英文译文在 [en/](en/README.md)，两者有出入以中文为准。
 
 | 篇 | 回答什么 |
 |---|---|
+| **[置真对接架构：对既有平台设计的批判与企业级 Agent 理论重构](truth-docked-architecture.md)** | **为何「生成—中间转换与零转录对接—现有代码/系统可重复置真—分层知识存储」是高后果企业 Agent 的第一性原理；对既有四对象五要素、死状态机、弱置真知识库与变更集单一审批教条的六大反驳；四大形式化定理与五核重构架构** |
 | [对象标准与数据流](object-standard.md) | 四个对象由哪五样组成；一件工作怎么走过 A C E B D；新能力怎么填适配单 |
 | [术语与状态](vocabulary.md) | 固定的中英术语；状态枚举与颜色；规模下的处理与显示规则 |
 | [层级与元素](levels-and-elements.md) | 入口是会话；五层逐层深入；每层用什么图、表、描述、按钮；十二个动作词 |
@@ -16,6 +17,7 @@ nav_order: 2
 | [角色与范围](roles.md) | 管理员 / 成员 / 访客按范围授予；两人规则；单管理员的自决；机器身份 |
 | [与 Circle 的集成](circle-integration.md) | hub 扩展 Circle 的菜单而不是另开一节；同步模型；只装 Circle 看不到什么 |
 | [产品线包典范](product-line-pack.md) | 一条产品线接进来的交付物：目录布局、适配单、验收清单，以合成产品线为样例 |
+| [执行流迁入产品线包](execution-flow-packs.md) | 产品纯函数转换与通用执行驱动的边界；租约、拒绝、未知与终态解释隔离 |
 | [harness 原语规范](harness-primitives.md) | hub 治理任何 harness 的原语：治理 / 不治理清单、中立清单、每个 harness 的导入导出适配器、hub 自己作为 MCP server 的通用传输、原语在四对象五要素里的位置 |
 | [权限策略导出](permission-export.md) | harness 中立的第 4 条：hub-permission/1 从范围上的角色预设和 Tool 标注算出；Claude Code、Codex CLI、OpenCode、Gemini CLI、Cursor 各一张映射表与示例配置；表达不了的部分如实列出 |
 | [harness 原语格式调查](harness-formats.md) | Claude Code、Codex CLI、OpenCode、Gemini CLI、Cursor 五家的 Skill / Command / Agent / Instruction / Hook / MCP server 磁盘格式：路径、字段、能映射到中立清单的部分与映射不了的部分，每条带来源；适配器与 knownCompatible 的依据 |

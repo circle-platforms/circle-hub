@@ -11,7 +11,8 @@ circle-hub 是 [Circle](https://circle-platforms.github.io/circle/) 的团队 hu
 
 | 想做什么 | 读 |
 |---|---|
-| 理解设计：对象标准、术语与状态、层级与元素、审批与执行链、角色 | [设计](design/README.md)（[English](design/en/README.md)） |
+| 理解核心理论与架构重构：生成—转换—置真三元模型、对既有设计的六大反驳、四大形式化定理与五核架构 | [置真对接架构总纲](design/truth-docked-architecture.md)（[English](design/en/truth-docked-architecture.md)） |
+| 理解既有设计规范：对象标准、术语与状态、层级与元素、审批与执行链、角色 | [设计](design/README.md)（[English](design/en/README.md)） |
 | 写 Circle 的 hub 扩展 | [客户端接口交接](client-api-handoff.md) |
 | 通过 MCP 网关执行工作簿 | [用例执行交接](case-execution-handoff.md) |
 | 服务客户端、令牌与规则分发 | [资源身份交接](resource-identity-handoff.md) |
