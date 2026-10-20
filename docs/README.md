@@ -4,6 +4,10 @@
 
 [docs/design](design/README.md)：对象标准与数据流、术语与状态、层级与元素、审批与执行链、角色与范围、与 Circle 的集成、产品线包典范，以及[置真对接架构的理论基础与数学审计](design/truth-docked-architecture.md)。后者是研究提案，包含条件命题、反例和未证义务，不替代现行契约或宣称已有整体正确性证明。英文译文在 [design/en](design/en/README.md)（[Truth-Docked Architecture](design/en/truth-docked-architecture.md)）。三个仓库之间谁依赖谁、以什么为准，见[兼容矩阵](compatibility.md)。
 
+## 迁移方案
+
+[既有能力迁入 Hub 的完整方案](hub-migration-plan.md)（[English](hub-migration-plan.en.md)）：工作流、脑图编译、PLM 查询、用例评审及相关能力的目标架构、前端与协议、部署、分阶段迁移和验收；[75 项需求覆盖附录](hub-migration-coverage.md)。这是待实施提案，不替代现行契约或表示已部署。
+
 ## 接口交接
 
 - [客户端接口交接](client-api-handoff.md)：Circle 扩展调用的每个路由、请求与回应形状。

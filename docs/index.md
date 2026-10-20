@@ -11,6 +11,7 @@ circle-hub 是 [Circle](https://circle-platforms.github.io/circle/) 的团队 hu
 
 | 想做什么 | 读 |
 |---|---|
+| 规划工作流、脑图编译、PLM 查询、用例评审等能力迁入 Hub | [完整迁移方案](hub-migration-plan.md)（[English](hub-migration-plan.en.md)）· [需求覆盖与验收](hub-migration-coverage.md)；待实施提案 |
 | 研究理论基础、条件证明与反例、未证假设和候选产品框架 | [置真对接架构研究提案与数学审计](design/truth-docked-architecture.md)（[English](design/en/truth-docked-architecture.md)）；不替代现行契约 |
 | 理解现行设计规范：对象标准、术语与状态、层级与元素、审批与执行链、角色 | [设计](design/README.md)（[English](design/en/README.md)） |
 | 写 Circle 的 hub 扩展 | [客户端接口交接](client-api-handoff.md) |
