@@ -1,0 +1,209 @@
+// The run target (W03 R[0], R[5], W06 F[6], K01 R[6], R[10]): the product line (any of its names, one line), the version
+// line and the build, each with its basis as a claim. A build the caller names is a declaration; otherwise the product pack's
+// select_build rule chooses (projected), or, when the product has none, the newest released build of the line with a root
+// (the documented default), with alternatives the caller may name instead. The run locks the root of the chosen build.
+import type { ProvenanceType } from '../../../contracts/generated/vocabulary.ts';
+import { Claim, type Warrant } from '../../../contracts/src/claim.ts';
+import { SelectBuildInput, SelectBuildOutput, type KnownBuild } from '../../../contracts/src/product.ts';
+import type { StartRunInput } from '../../../contracts/src/tools.ts';
+import type { z } from 'zod';
+import type { Principal } from '../../records/api.ts';
+import type { LoadedWorkflow, ProductHandle, RootInfo } from '../../ports.ts';
+import { treeReference } from '../../refs/api.ts';
+import { callPackFunction } from '../../rules/api.ts';
+import type { EngineContext } from './deps.ts';
+import { Refusal, describe, protocolError } from './errors.ts';
+
+export interface Target {
+  product: ProductHandle | null;
+  build: KnownBuild | null;
+  /** The build name the run records: as the caller gave it, or the one the rule chose. */
+  buildName: string | null;
+  line: string | null;
+  root: RootInfo | null;
+  basis: Claim[];
+}
+
+type Input = z.infer<typeof StartRunInput>;
+
+const DEFAULT_RULE = 'runs.newest_released@1';
+const BINDING_RULE = 'runs.product_binding@1';
+const LINE_RULE = 'runs.line_of_build@1';
+const MAX_OPTIONS = 20;
+
+function unresolved(path: string, message: string, options: string[], fix?: string): Refusal {
+  return new Refusal([protocolError('REFERENCE_UNRESOLVED', message, { path, ...(options.length > 0 ? { options: options.slice(0, MAX_OPTIONS) } : {}), ...(fix ? { fix } : {}) })]);
+}
+
+function basisClaim(input: {
+  field: 'product' | 'version' | 'build';
+  text: string;
+  data: Record<string, unknown>;
+  provenance: ProvenanceType;
+  warrant: Warrant;
+  grounds: string[];
+  bound: string[];
+  at: string;
+}): Claim {
+  return Claim.parse({
+    statement: { text: input.text, data: { field: input.field, ...input.data } },
+    qualifier: {
+      nature: 'fact',
+      provenance: input.provenance,
+      ...(input.provenance === 'projected' ? { basis_rank: 'rule_over_claims' as const } : {}),
+      marks: [],
+      collected_at: input.at,
+    },
+    grounds: input.grounds,
+    warrant: input.warrant,
+    validity: { status: 'valid', bound: [...new Set(input.bound)].sort(), premises: [] },
+  });
+}
+
+const provides = (product: ProductHandle, catalogs: readonly string[]): boolean => catalogs.every((id) => product.product.catalogs.some((c) => c.id === id));
+const namesOf = (products: readonly ProductHandle[]): string[] => products.flatMap((p) => p.product.names);
+
+export async function resolveTarget(ctx: EngineContext, user: Principal, workflow: LoadedWorkflow, input: Input, at: string, traceId: string): Promise<Target> {
+  const { packs, knowledge } = ctx.deps;
+  const binding = workflow.workflow.product;
+  const readable = await packs.readableProducts(user);
+  const human: Warrant = { producer: 'human', id: user.id };
+  const eligible = async (): Promise<ProductHandle[]> => {
+    if (binding.id !== undefined) {
+      const fixed = await packs.productById(binding.id);
+      return fixed !== null && readable.has(fixed.product.id) ? [fixed] : [];
+    }
+    return (await packs.products()).filter((p) => provides(p, binding.catalogs) && readable.has(p.product.id));
+  };
+
+  // ---- product line
+  let product: ProductHandle | null = null;
+  let declaredProduct = false;
+  if (input.product !== undefined) {
+    const named = await packs.productByName(input.product);
+    const ok = named !== null && readable.has(named.product.id) && (binding.id !== undefined ? named.product.id === binding.id : provides(named, binding.catalogs));
+    if (!ok) {
+      const options = namesOf(await eligible());
+      throw unresolved('/product', `产品“${input.product}”不是这个任务包能用的产品线`, options, options.length > 0 ? '改用下面列出的产品名称之一（同一产品线的任何名称都可以）' : undefined);
+    }
+    product = named;
+    declaredProduct = true;
+  } else if (binding.id !== undefined || binding.catalogs.length > 0) {
+    const candidates = await eligible();
+    if (candidates.length === 0) throw unresolved('/product', '没有能提供这个任务包所需目录的产品线', [], '请管理员安装对应的产品包');
+    if (candidates.length > 1) throw unresolved('/product', `有 ${candidates.length} 条产品线都能用，请用 product 参数指定一条`, namesOf(candidates), '用 product 参数写明产品名称');
+    product = candidates[0];
+  }
+  if (product === null) {
+    if (input.version !== undefined || input.build !== undefined) {
+      throw new Refusal([protocolError('SUBMISSION_SCHEMA_VIOLATION', '这个任务包不绑定产品线，不能指定版本或构建', { path: input.build !== undefined ? '/build' : '/version', fix: '去掉 version 和 build 参数' })]);
+    }
+    return { product: null, build: null, buildName: null, line: null, root: null, basis: [] };
+  }
+  const pid = product.product.id;
+  const basis: Claim[] = [
+    basisClaim({
+      field: 'product',
+      text: `产品线 ${pid}（${product.product.names.join('、')}）`,
+      data: { value: pid, names: product.product.names, ...(input.product !== undefined ? { requested: input.product } : {}) },
+      provenance: declaredProduct ? 'declared' : 'projected',
+      warrant: declaredProduct ? human : { producer: 'function', id: BINDING_RULE },
+      grounds: [],
+      bound: [workflow.pack.digest, product.digest],
+      at,
+    }),
+  ];
+
+  // ---- build and root
+  const withRoot = async (): Promise<KnownBuild[]> => (await knowledge.builds(pid, input.version !== undefined ? { line: input.version } : undefined)).filter((b) => b.root !== null);
+  let build: KnownBuild;
+  let buildName: string;
+  let buildText: string;
+  let buildWarrant: Warrant;
+  let alternatives: string[] = [];
+  if (input.build !== undefined) {
+    const found = await knowledge.resolveBuild(pid, input.build);
+    if (found === null) throw unresolved('/build', `产品线 ${pid} 里没有构建“${input.build}”`, (await withRoot()).map((b) => b.name), '改用下面列出的构建之一');
+    if (input.version !== undefined && found.line !== input.version) {
+      throw unresolved('/build', `构建“${input.build}”属于版本线 ${found.line}，不在版本线 ${input.version} 里`, (await withRoot()).map((b) => b.name));
+    }
+    build = found;
+    buildName = input.build;
+    buildText = `运行者指定构建 ${input.build}${found.base !== input.build ? `（使用构建 ${found.base} 的知识树）` : ''}`;
+    buildWarrant = human;
+  } else {
+    const candidates = await withRoot();
+    const line = input.version !== undefined ? `版本线 ${input.version} ` : '';
+    if (candidates.length === 0) {
+      const all = (await knowledge.builds(pid, input.version !== undefined ? { line: input.version } : undefined)).map((b) => b.name);
+      throw unresolved(input.version !== undefined ? '/version' : '/build', `产品线 ${pid} ${line}下没有已产出知识根的构建`, all, '先同步这条产品线的知识，或换一个版本线');
+    }
+    const select = product.product.select_build;
+    if (select !== undefined) {
+      const request = SelectBuildInput.safeParse({ line: input.version ?? null, candidates, request: input.parameters ?? {} });
+      let chosen: z.infer<typeof SelectBuildOutput> | null = null;
+      try {
+        if (!request.success) throw new TypeError(`the build candidates are not select-build-input@1: ${request.error.message.slice(0, 500)}`);
+        const out = await callPackFunction({ packDir: product.directory, module: select.module, export: select.export }, request.data, ctx.deps.sandboxLimits, ctx.deps.sandbox);
+        const parsed = SelectBuildOutput.safeParse(out.output);
+        if (parsed.success) chosen = parsed.data;
+        else ctx.log({ traceId, run: null, what: 'select_build', detail: `output is not select-build-output@1: ${parsed.error.message.slice(0, 500)}` });
+      } catch (error) {
+        ctx.log({ traceId, run: null, what: 'select_build', detail: describe(error) });
+      }
+      const picked = chosen === null ? undefined : candidates.find((c) => c.name === chosen.build);
+      if (chosen === null || picked === undefined) {
+        throw unresolved('/build', '产品包的选构建规则没有给出可用的构建，请在 build 参数里写明构建', candidates.map((b) => b.name));
+      }
+      build = picked;
+      buildName = picked.name;
+      buildText = chosen.basis;
+      alternatives = (chosen.alternatives ?? []).filter((a) => a !== picked.name && candidates.some((c) => c.name === a));
+      buildWarrant = { producer: 'function', id: `${product.id}@${product.version}/${select.module}#${select.export ?? 'default'}` };
+    } else {
+      const released = candidates.filter((b) => b.released_at !== null).sort((a, b) => (b.released_at as string).localeCompare(a.released_at as string));
+      if (released.length === 0) {
+        throw unresolved('/build', `产品线 ${pid} ${line}下没有已发布、已产出知识根的构建，请在 build 参数里写明构建`, candidates.map((b) => b.name));
+      }
+      build = released[0];
+      buildName = build.name;
+      alternatives = released.slice(1, 6).map((b) => b.name);
+      buildText = `按默认规则选定${line ? `${line}中` : ''}最新的已发布构建 ${build.name}（发布于 ${build.released_at}）${alternatives.length > 0 ? `；可用 build 参数改选：${alternatives.join('、')}` : ''}`;
+      buildWarrant = { producer: 'function', id: DEFAULT_RULE };
+    }
+  }
+  const root = await knowledge.rootOfBuild(pid, buildName);
+  if (root === null) throw unresolved('/build', `构建 ${buildName} 还没有知识根`, (await withRoot()).map((b) => b.name), '换一个已产出知识根的构建');
+  const ground = treeReference(root.root, '/');
+  basis.push(
+    basisClaim({
+      field: 'version',
+      text: `版本线 ${build.line}`,
+      data: { value: build.line },
+      provenance: input.version !== undefined ? 'declared' : 'projected',
+      warrant: input.version !== undefined ? human : { producer: 'function', id: LINE_RULE },
+      grounds: [ground],
+      bound: [root.root, root.composition],
+      at,
+    }),
+    basisClaim({
+      field: 'build',
+      text: buildText,
+      data: {
+        value: buildName,
+        base: build.base,
+        family: build.family,
+        line: build.line,
+        root: root.root,
+        composition: root.composition,
+        ...(alternatives.length > 0 ? { alternatives } : {}),
+      },
+      provenance: input.build !== undefined ? 'declared' : 'projected',
+      warrant: buildWarrant,
+      grounds: [ground],
+      bound: [root.root, root.composition, product.digest],
+      at,
+    }),
+  );
+  return { product, build, buildName, line: build.line, root, basis };
+}
