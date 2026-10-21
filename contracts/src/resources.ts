@@ -1,13 +1,14 @@
 // Shapes owned by the connectors work package (D01, D02, D03 read part, D07 resources, B02 provenance, B05 read actions).
 // - system@1: the system pack profile (system.json): roles, authentication, the route allow-list and the reads with their
 //   planner and projection functions. Product dialect stays in the pack's functions and settings, never in the core.
-// - resource@1: a deployment instance of a system (admin-managed, never in Git): base URL per role, the origins allowed to
-//   carry credentials over plain HTTP, the vault entry names of its credentials and non-secret settings.
+// - resource@1: a deployment instance of a system (admin-managed, never in Git): the exact system pack version and digest,
+//   base URL per role, the origins allowed to carry credentials over plain HTTP, the vault entry names and digest rules of
+//   its credentials and non-secret settings.
 // - read-manifest@1: the action record of one read (B05): what was requested, through which routes, when, the digests of
 //   every response and derived artifact, and the coverage the Hub computed.
 // - read-plan-*@1, read-projection-*@1: inputs and outputs of the planner and projection functions of a system pack.
 // The closed sets below (HTTP methods, response kinds, authentication kinds, password digest rules, header schemes, expiry
-// units) are not vocabulary axes of the model; the connectors README lists them as a deviation awaiting axes.
+// units, envelope modes) are not vocabulary axes of the model; the connectors README lists them as a deviation awaiting axes.
 // Register every record or pack-file schema in `schemas`; contracts/src/index.ts merges them into SCHEMA_REGISTRY.
 import { z } from 'zod';
 import { ActionKindSchema, ActionResultSchema, EnvironmentSchema, REFERENCE_SCHEME } from '../generated/vocabulary.ts';
@@ -81,11 +82,17 @@ export const ArtifactName = z
   .refine((name) => name !== 'original', 'original names the response as received');
 /** A pack: `id` (latest published version) or `id@x.y.z`. */
 export const PackRef = z.string().regex(/^[a-z][a-z0-9-]{1,40}(?:@[0-9]+\.[0-9]+\.[0-9]+)?$/, 'pack id or id@x.y.z');
+/** One published version of a pack, `id@x.y.z`: what a resource configuration binds (B04 R[1]). */
+export const ExactPackRef = z.string().regex(/^[a-z][a-z0-9-]{1,40}@[0-9]+\.[0-9]+\.[0-9]+$/, 'id@x.y.z');
 const HeaderName = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9-]{0,63}$/, 'an HTTP header name');
 const HeaderValue = z.string().regex(/^[\x20-\x7e]{0,200}$/, 'printable ASCII, at most 200 characters');
 const Description = z.string().min(1).max(500);
 
-/** Headers a profile never sets itself: the transport owns them (credentials, framing, hop-by-hop, cross-site). */
+/**
+ * Headers a profile never sets itself: the transport owns them (credentials, framing, hop-by-hop, cross-site, content
+ * coding and ranges, which would make a stored answer partial), and headers by which frameworks or proxies change the
+ * method or the path of a request (method overrides, URL rewrites, forwarding) or which belong to WebDAV writes.
+ */
 export const RESERVED_HEADERS: readonly string[] = [
   'authorization',
   'proxy-authorization',
@@ -94,6 +101,8 @@ export const RESERVED_HEADERS: readonly string[] = [
   'host',
   'content-length',
   'content-type',
+  'content-encoding',
+  'accept-encoding',
   'transfer-encoding',
   'connection',
   'keep-alive',
@@ -103,7 +112,35 @@ export const RESERVED_HEADERS: readonly string[] = [
   'expect',
   'origin',
   'referer',
+  'range',
+  'if-range',
+  'x-http-method-override',
+  'x-http-method',
+  'x-method-override',
+  'x-original-method',
+  'x-original-url',
+  'x-rewrite-url',
+  'x-original-host',
+  'x-host',
+  'x-real-ip',
+  'forwarded',
+  'via',
+  'destination',
+  'overwrite',
+  'lock-token',
+  'if',
 ];
+/** Header name prefixes reserved in the same way (forwarding, proxies, browser-controlled headers). */
+export const RESERVED_HEADER_PREFIXES: readonly string[] = ['x-forwarded-', 'proxy-', 'sec-'];
+
+/** Whether a profile may not set this header (case-insensitive). */
+export function isReservedHeader(name: string): boolean {
+  const lower = name.toLowerCase();
+  return RESERVED_HEADERS.includes(lower) || RESERVED_HEADER_PREFIXES.some((prefix) => lower.startsWith(prefix));
+}
+
+/** Query or body members by which some frameworks turn a request into another method. */
+const METHOD_OVERRIDE_MEMBER = /^(?:_method|x-http-method-override|x-http-method|x-method-override)$/i;
 
 // ---------------------------------------------------------------- path templates
 
@@ -152,6 +189,37 @@ export function parsePathTemplate(template: string): PathTemplate {
 /** Parameter names of a template, in order. */
 export function templateParams(template: PathTemplate): string[] {
   return template.parts.flatMap((part) => ('param' in part ? [part.param] : []));
+}
+
+function segmentKey(segment: string): string {
+  try {
+    return decodeURIComponent(segment).toLowerCase();
+  } catch {
+    return segment.toLowerCase();
+  }
+}
+
+/**
+ * Whether some path the template allows names the same resource as a literal path, compared the way lenient servers do:
+ * decoded, case-insensitive and with or without the trailing slash. Used to keep the login exchange out of the route list.
+ */
+export function templateReaches(template: PathTemplate, literal: PathTemplate): boolean {
+  const segments: string[] = [];
+  for (const part of literal.parts) {
+    if (!('literal' in part)) return false;
+    segments.push(segmentKey(part.literal));
+  }
+  let index = 0;
+  for (const part of template.parts) {
+    if (index >= segments.length) return false;
+    if ('literal' in part) {
+      if (segments[index] !== segmentKey(part.literal)) return false;
+      index += 1;
+    } else {
+      index = part.rest ? segments.length : index + 1;
+    }
+  }
+  return index === segments.length;
 }
 
 const SMALL_INT = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
@@ -272,28 +340,64 @@ export const EnvelopeDeclaration = z.strictObject({
 });
 export type EnvelopeDeclaration = z.infer<typeof EnvelopeDeclaration>;
 
+/** Top-level members of an object shape (or of the objects of an anyOf). */
+function topMembers(shape: Shape): string[] {
+  if ('anyOf' in shape) return shape.anyOf.flatMap(topMembers);
+  return shape.type === 'object' ? Object.keys(shape.properties ?? {}) : [];
+}
+
+/**
+ * How a JSON route's answer is checked against the system envelope: `true` every answer is an envelope; `when_present` an
+ * answer whose code member exists is an envelope (ok, expired and error codes checked), any other answer is accepted bare
+ * (a list that the system answers plainly while its errors come in the envelope); `false` never. Without a declaration,
+ * an answer to a request that carried the credential is still read for the expired codes, and only for them.
+ */
+export const EnvelopeMode = z.union([z.boolean(), z.literal('when_present')]);
+export type EnvelopeMode = z.infer<typeof EnvelopeMode>;
+
 export const RouteDeclaration = z
   .strictObject({
     id: RouteId,
     role: RoleName,
     method: z.enum(HTTP_METHODS),
-    path: z.string().describe('path template relative to the base URL of the role: literal segments, {name}, a last {name*}, optional trailing /'),
+    path: z
+      .string()
+      .describe('path template relative to the base URL of the role: literal segments, {name}, a last {name*}, optional trailing /; a POST route has a literal path'),
+    params: z
+      .record(z.string(), Shape)
+      .optional()
+      .describe('a string shape per template parameter, checked on every (decoded) segment it fills; required for a {name*} of a role that carries the credential'),
     query: Shape.optional().describe('the query parameters (strings) as an object shape; without it no query is sent'),
     body: Shape.optional().describe('the JSON body; without it no body is sent'),
     headers: z.record(HeaderName, HeaderValue).optional().describe('fixed request headers, for example Depth: 1'),
     response: z.enum(RESPONSE_KINDS),
     max_bytes: z.number().int().min(1).max(MAX_ROUTE_BYTES).describe('a longer response is an error; it is never truncated'),
     timeout_ms: z.number().int().min(100).max(300_000).optional(),
-    envelope: z.boolean().optional().describe('check the system envelope of a JSON answer'),
+    envelope: EnvelopeMode.optional().describe('check the system envelope of a JSON answer: true, when_present or false'),
     parse: Versioned.optional().describe('a core parser whose model the read functions get besides the text'),
     read: z.literal(true).describe('every route is a read; a write route is never listed, so it is refused'),
     description: Description.optional(),
   })
   .superRefine((r, ctx) => {
+    let names: string[] = [];
     try {
-      parsePathTemplate(r.path);
+      names = templateParams(parsePathTemplate(r.path));
     } catch (error) {
       ctx.addIssue({ code: 'custom', path: ['path'], message: (error as Error).message });
+    }
+    // A read that uses POST is allow-listed by its exact path: a parameter would let it match a prefix, writes included.
+    if (r.method === 'POST' && names.length > 0) ctx.addIssue({ code: 'custom', path: ['path'], message: 'a POST route has a literal path (no {name} or {name*})' });
+    for (const [name, shape] of Object.entries(r.params ?? {})) {
+      if (!names.includes(name)) ctx.addIssue({ code: 'custom', path: ['params', name], message: `${name} is not a parameter of ${r.path}` });
+      if ('anyOf' in shape || shape.type !== 'string') ctx.addIssue({ code: 'custom', path: ['params', name], message: 'a segment shape is a string shape' });
+    }
+    for (const [where, shape] of [
+      ['query', r.query],
+      ['body', r.body],
+    ] as const) {
+      for (const member of shape === undefined ? [] : topMembers(shape)) {
+        if (METHOD_OVERRIDE_MEMBER.test(member)) ctx.addIssue({ code: 'custom', path: [where, member], message: `${member} is a method override member` });
+      }
     }
     if (r.method === 'GET' && r.body !== undefined) ctx.addIssue({ code: 'custom', path: ['body'], message: 'a GET route has no body' });
     if (r.query !== undefined) {
@@ -303,17 +407,17 @@ export const RouteDeclaration = z
     }
     if (r.query !== undefined && shapeDepth(r.query) > MAX_SHAPE_DEPTH) ctx.addIssue({ code: 'custom', path: ['query'], message: `nested deeper than ${MAX_SHAPE_DEPTH}` });
     if (r.body !== undefined && shapeDepth(r.body) > MAX_SHAPE_DEPTH) ctx.addIssue({ code: 'custom', path: ['body'], message: `nested deeper than ${MAX_SHAPE_DEPTH}` });
-    if (r.envelope === true && r.response !== 'json') ctx.addIssue({ code: 'custom', path: ['envelope'], message: 'only a JSON answer has an envelope' });
+    if ((r.envelope === true || r.envelope === 'when_present') && r.response !== 'json') ctx.addIssue({ code: 'custom', path: ['envelope'], message: 'only a JSON answer has an envelope' });
     if (r.parse !== undefined && (r.response === 'json' || r.response === 'bytes')) ctx.addIssue({ code: 'custom', path: ['parse'], message: 'parse is for text, xml and html answers' });
     for (const name of Object.keys(r.headers ?? {})) {
-      if (RESERVED_HEADERS.includes(name.toLowerCase())) ctx.addIssue({ code: 'custom', path: ['headers', name], message: `${name} is set by the transport, never by a profile` });
+      if (isReservedHeader(name)) ctx.addIssue({ code: 'custom', path: ['headers', name], message: `${name} is set by the transport, never by a profile` });
     }
   });
 export type RouteDeclaration = z.infer<typeof RouteDeclaration>;
 
 export const HeaderDeclaration = z.strictObject({ name: HeaderName, scheme: z.enum(HEADER_SCHEMES) }).superRefine((h, ctx) => {
   const lower = h.name.toLowerCase();
-  if (RESERVED_HEADERS.includes(lower) && lower !== 'authorization') ctx.addIssue({ code: 'custom', path: ['name'], message: `${h.name} cannot carry a credential` });
+  if (isReservedHeader(lower) && lower !== 'authorization') ctx.addIssue({ code: 'custom', path: ['name'], message: `${h.name} cannot carry a credential` });
 });
 
 export const CredentialDeclaration = z.strictObject({
@@ -405,11 +509,20 @@ export const SystemProfile = z
     });
     const routes = new Map<string, RouteDeclaration>();
     const signatures = new Set<string>();
+    const carrying = new Set(p.auth.kind === 'none' ? [] : p.auth.roles);
+    let login: PathTemplate | null = null;
+    if (p.auth.kind === 'login_token') {
+      try {
+        login = parsePathTemplate(p.auth.login.path);
+      } catch {
+        // reported by LoginDeclaration
+      }
+    }
     p.routes.forEach((route, i) => {
       if (routes.has(route.id)) ctx.addIssue({ code: 'custom', path: ['routes', i, 'id'], message: `route ${route.id} is declared twice` });
       routes.set(route.id, route);
       if (!roles.has(route.role)) ctx.addIssue({ code: 'custom', path: ['routes', i, 'role'], message: `role ${route.role} is not declared` });
-      if (route.envelope === true && p.envelope === undefined) ctx.addIssue({ code: 'custom', path: ['routes', i, 'envelope'], message: 'the profile declares no envelope' });
+      if ((route.envelope === true || route.envelope === 'when_present') && p.envelope === undefined) ctx.addIssue({ code: 'custom', path: ['routes', i, 'envelope'], message: 'the profile declares no envelope' });
       const signature = `${route.role} ${route.method} ${route.path}`;
       if (signatures.has(signature)) ctx.addIssue({ code: 'custom', path: ['routes', i, 'path'], message: `two routes of ${route.role} are ${route.method} ${route.path}` });
       signatures.add(signature);
@@ -417,6 +530,26 @@ export const SystemProfile = z
         for (const name of Object.keys(route.headers ?? {})) {
           if (name.toLowerCase() === p.auth.header.name.toLowerCase()) ctx.addIssue({ code: 'custom', path: ['routes', i, 'headers', name], message: 'the credential header is set by the transport' });
         }
+      }
+      let template: PathTemplate;
+      try {
+        template = parsePathTemplate(route.path);
+      } catch {
+        return;
+      }
+      // A rest parameter that carries the credential reaches every path below its prefix: each segment is held to a pattern.
+      for (const part of template.parts) {
+        if (!('param' in part) || !part.rest || !carrying.has(route.role)) continue;
+        const shape = route.params?.[part.param];
+        if (shape === undefined || 'anyOf' in shape || shape.type !== 'string' || shape.pattern === undefined) {
+          ctx.addIssue({ code: 'custom', path: ['routes', i, 'params'], message: `{${part.param}*} of role ${route.role}, which carries the credential, needs a segment pattern in params` });
+        }
+      }
+      // The login exchange is sent by the Hub's login handling only, never as a read (its answer would be stored and logged).
+      // A route of another role reaches it only when the deployment gives both roles one base URL; the transport refuses
+      // such a request by its URL.
+      if (login !== null && p.auth.kind === 'login_token' && route.role === p.auth.login.role && templateReaches(template, login)) {
+        ctx.addIssue({ code: 'custom', path: ['routes', i, 'path'], message: `route ${route.id} reaches the login path ${p.auth.login.path}` });
       }
     });
     if (p.auth.kind !== 'none') {
@@ -514,18 +647,22 @@ export const ResourceRecord = z
   .strictObject({
     schema: z.literal('resource@1'),
     id: ResourceId,
-    system_pack: PackRef,
+    system_pack: ExactPackRef.describe('the published system pack version this configuration binds; another version needs a new decision'),
+    system_pack_digest: Sha256.describe('the content digest of that version when it was bound; other content is not used'),
     name: z.string().min(1).max(200),
     environment: EnvironmentSchema,
     origins: z.record(RoleName, BaseUrl).describe('base URL of each role of the system pack'),
     allow_plaintext: z.array(z.string().max(300)).max(16).describe('origins (scheme://host[:port]) whose plain HTTP may carry credentials'),
     credentials: z.record(CredentialName, VaultEntryName).describe('vault entry of each credential the system pack declares'),
+    credential_digests: z.record(CredentialName, z.enum(DIGEST_RULES)).describe('the digest rule each credential is kept under in the vault'),
     settings: z.record(z.string(), z.unknown()).describe('non-secret deployment values handed to the read functions as input.settings'),
     limits: ResourceLimits.optional(),
     created_by: UserId,
     created_at: IsoTime,
   })
   .superRefine((r, ctx) => {
+    const named = Object.keys(r.credentials).sort().join('\n');
+    if (Object.keys(r.credential_digests).sort().join('\n') !== named) ctx.addIssue({ code: 'custom', path: ['credential_digests'], message: 'a digest rule for exactly the credentials' });
     const origins = new Set<string>();
     for (const url of Object.values(r.origins)) {
       try {
@@ -559,9 +696,12 @@ export const ReadSubject = z.strictObject({
 });
 export type ReadSubject = z.infer<typeof ReadSubject>;
 
-/** A response as the read functions see it (no URL, no header values, no credential). */
+/**
+ * A response as the read functions see it (no URL, no header values, no credential). An answer stored at read tier
+ * retain_only (a credential hit, or the echo of a credential the Hub sent) has no json, text or model and `ok: false`.
+ */
 export const ReadResponse = z.strictObject({
-  ok: z.boolean().describe('2xx, a valid body of the declared kind and, for an envelope route, an ok code'),
+  ok: z.boolean().describe('2xx, a valid body of the declared kind, for an envelope route an ok code, and readable by functions'),
   route: RouteId,
   path: z.string().describe('the requested path relative to the base URL of the route role, as sent'),
   query: z.record(z.string(), z.string()),
@@ -670,7 +810,7 @@ export const ReadRequestEntry = z.strictObject({
   round: z.number().int().min(1).max(MAX_READ_ROUNDS),
   route: RouteId,
   method: z.enum(HTTP_METHODS),
-  path: z.string().max(4096),
+  path: z.string().max(4096).describe('the path as sent; a refused longer one is cut and ends with …sha256:<digest of the whole path>'),
   query: z.record(z.string(), z.string()),
   body: z.unknown().optional(),
   started_at: IsoTime,

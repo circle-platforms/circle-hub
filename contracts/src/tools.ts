@@ -2,7 +2,7 @@
 // Every answer conforms to its output schema, a protocol error included: the envelope plus the tool's empty shape (D05 R[3]),
 // never invented run ids, locks or digests.
 import { z } from 'zod';
-import { AcceptanceSchema, PackKindSchema, ReadTierSchema, ResolutionSchema, SourceRoleSchema } from '../generated/vocabulary.ts';
+import { AcceptanceSchema, EntryKindSchema, NodeLevelSchema, PackKindSchema, ReadTierSchema, ResolutionSchema, SourceRoleSchema } from '../generated/vocabulary.ts';
 import { Coverage, Envelope, ItemId, PackId, RunId, Sha256 } from './common.ts';
 import { ExternalObjectId, Ground, ReferenceUri, TreePath, referenceUriOf } from './reference.ts';
 import { InputBinding, PackSummary, RunSummary } from './run.ts';
@@ -95,7 +95,13 @@ export const StartRunInput = z.strictObject({
   inputs: z.record(z.string(), z.union([InputBinding, z.array(InputBinding)])).describe('Input slot name to reference or external object'),
   parameters: z.record(z.string(), z.unknown()).optional(),
   predecessor: RunId.optional().describe('Earlier run this one continues'),
-  client_key: z.string().min(1).max(200).optional().describe('Client chosen key; repeating it within its time window returns the same run'),
+  client_key: z
+    .string()
+    .min(1)
+    .max(200)
+    .refine((key) => !key.includes('\u0000'), 'no NUL character in a client key')
+    .optional()
+    .describe('Client chosen key; repeating it within its time window returns the same run'),
 });
 export const StartRunOutput = Envelope.extend({ run: RunSummary.optional() }).superRefine((o, ctx) => {
   if ((o.call_result === 'ok') !== (o.run !== undefined)) issue(ctx, ['run'], 'an ok answer carries the run and an error answer carries none');
@@ -106,6 +112,7 @@ export const GetNodesInput = z.strictObject({
   root: Sha256.optional().describe('Knowledge root digest; defaults to the run root'),
   paths: z
     .array(TreePath)
+    .max(256)
     .optional()
     .describe('Subtrees to read: node paths copied verbatim from get_nodes or from a tree reference, for example / or /commands/show'),
   depth: z.number().int().min(0).max(6).optional().describe('Levels below each path; default 1'),
@@ -115,7 +122,7 @@ export const GetNodesInput = z.strictObject({
 
 const NodeEntry = z.strictObject({
   entry: Sha256,
-  kind: z.string(),
+  kind: EntryKindSchema,
   statement: z.string(),
   reference: referenceUriOf('tree').describe('Tree address of the node pinned to this entry, tree:<root><path>@<entry>; cite it verbatim as a ground'),
   applicability: z.string(),
@@ -126,7 +133,7 @@ const KnowledgeNode = z.strictObject({
   path: TreePath,
   reference: referenceUriOf('tree').describe('Tree address of the node, tree:<root><path>; cite it verbatim as a ground'),
   name: z.string(),
-  level: z.string().describe('Position label of the node, computed from the tree height'),
+  level: NodeLevelSchema.describe('Position label of the node, computed from the tree height'),
   digest: Sha256,
   children: z.array(z.strictObject({ name: z.string(), path: TreePath, digest: Sha256 })),
   entries: z.array(NodeEntry),

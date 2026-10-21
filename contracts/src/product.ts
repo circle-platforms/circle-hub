@@ -4,6 +4,7 @@
 // build choice; the shapes of the functions' inputs and outputs below are the contract between them and the pack authors.
 // Register every record or pack-file schema in `schemas`; contracts/src/index.ts merges them into SCHEMA_REGISTRY.
 import { z } from 'zod';
+import { EntryKindSchema } from '../generated/vocabulary.ts';
 import { IsoTime, Sha256, Versioned } from './common.ts';
 import { ExternalObjectId } from './reference.ts';
 
@@ -147,7 +148,12 @@ export type SelectBuildOutput = z.infer<typeof SelectBuildOutput>;
 
 export const CatalogDeclaration = z.strictObject({
   id: Versioned.describe('catalog@major, the name workflow packs require'),
-  entry_kind: z.string().min(1).describe('kind of the knowledge entries that are its members'),
+  entry_kind: EntryKindSchema.describe('kind of the knowledge entries that are its members'),
+  producer: z
+    .string()
+    .regex(/^[a-z][a-z0-9_-]*$/)
+    .optional()
+    .describe('only entries this producer of the pack produced are members; every producer of the kind when absent'),
   complete: z.boolean().describe('declared complete for the scope of the root (C07 R[0]); only then is absence a fact rather than unknown'),
   case_sensitive: z.boolean(),
 });
@@ -209,7 +215,7 @@ export const Applicability = z.strictObject({
 export type Applicability = z.infer<typeof Applicability>;
 
 export const ProducedEntry = z.strictObject({
-  kind: z.string().min(1).describe('declared by the producer (K02 R[1])'),
+  kind: z.string().describe('declared by the producer (K02 F[0], R[3]); the knowledge package checks it against the entry_kind axis one entry at a time, so one wrong entry is refused and reported without losing the rest'),
   path: z.string().regex(/^\/(?:[^/]+(?:\/[^/]+)*)?$/, 'a tree path starting with /').nullable().describe('where it hangs; null when code cannot place it (it goes to the typed-judgment model)'),
   statement: z.string().describe('deterministic canonical statement; it carries everything data says (K02 R[4])'),
   data: z.record(z.string(), z.unknown()),
@@ -253,6 +259,12 @@ export const ProductDeclaration = z
       });
     unique('catalogs', p.catalogs.map((c) => c.id));
     unique('producers', p.producers.map((x) => x.id));
+    const producers = new Set(p.producers.map((x) => x.id));
+    p.catalogs.forEach((c, i) => {
+      if (c.producer !== undefined && !producers.has(c.producer)) {
+        ctx.addIssue({ code: 'custom', path: ['catalogs', i, 'producer'], message: `catalog ${c.id} names the producer ${c.producer}, which the pack does not declare` });
+      }
+    });
   });
 export type ProductDeclaration = z.infer<typeof ProductDeclaration>;
 

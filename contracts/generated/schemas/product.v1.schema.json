@@ -109,8 +109,19 @@
           },
           "entry_kind": {
             "type": "string",
-            "minLength": 1,
+            "enum": [
+              "definition",
+              "behaviour",
+              "case",
+              "defect",
+              "observation"
+            ],
             "description": "kind of the knowledge entries that are its members"
+          },
+          "producer": {
+            "description": "only entries this producer of the pack produced are members; every producer of the kind when absent",
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]*$"
           },
           "complete": {
             "type": "boolean",

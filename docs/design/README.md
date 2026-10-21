@@ -21,7 +21,7 @@ nav_order: 4
 |---|---|---|
 | [审批与执行链](approvals-and-enforcement.md) | 变更集审批、执行链、错误码目录 | 许可 B04、发布校验 T02、边界校验 T03、两道强制边界 P11 |
 | [角色与范围](roles.md) | 管理员 / 成员 / 访客按范围授予、两人规则 | 权限角色 R01（用户、管理员）、可见性 R02 |
-| [术语与状态](vocabulary.md) | 旧术语表、状态枚举与颜色 | 模型的词表（50 个轴） |
+| [术语与状态](vocabulary.md) | 旧术语表、状态枚举与颜色 | 模型的词表（52 个轴） |
 | [层级与元素](levels-and-elements.md) | Circle 里的五层界面 | Circle 里不出现 Hub 专用界面；只读控制台（规划中） |
 | [与 Circle 的集成](circle-integration.md) | hub 扩展 Circle 的菜单 | Circle 作为普通 MCP 客户端连接（D06） |
 | [产品线包典范](product-line-pack.md) | `product-line/1` 产品线包 | 任务包 T01、发布记录与发布校验 T02 |

@@ -21,7 +21,7 @@ const declaration = {
   names: ['Widget', 'Gadget'],
   sync: { start: ['site:listing:index'], plan: { module: 'functions/sync.ts' }, options: { include_branches: false }, max_rounds: 4 },
   select_build: { module: 'functions/select.ts', export: 'choose' },
-  catalogs: [{ id: 'commands@1', entry_kind: 'command', complete: true, case_sensitive: false }],
+  catalogs: [{ id: 'commands@1', entry_kind: 'definition', complete: true, case_sensitive: false }],
   producers: [
     {
       id: 'command-tree',
@@ -41,6 +41,14 @@ test('a product declaration parses and a wrong one names its problem', () => {
   const dupProducer = ProductDeclaration.safeParse({ ...declaration, producers: [declaration.producers[0], declaration.producers[0]] });
   assert.ok(!dupProducer.success && dupProducer.error.issues.some((i) => /declared twice/.test(i.message)));
   assert.ok(!ProductDeclaration.safeParse({ ...declaration, extra: 1 }).success, 'unknown keys are refused');
+});
+
+test('a catalog may be limited to the entries of one declared producer', () => {
+  const limited = { ...declaration, catalogs: [{ ...declaration.catalogs[0], producer: 'command-tree' }] };
+  assert.ok(ProductDeclaration.safeParse(limited).success);
+  const unknown = ProductDeclaration.safeParse({ ...declaration, catalogs: [{ ...declaration.catalogs[0], producer: 'manual' }] });
+  assert.ok(!unknown.success && unknown.error.issues.some((i) => /does not declare/.test(i.message)), 'a producer the pack lacks is refused');
+  assert.ok(!ProductDeclaration.safeParse({ ...declaration, catalogs: [{ ...declaration.catalogs[0], producer: 'Not Valid' }] }).success);
 });
 
 test('pack function references stay inside functions/', () => {
@@ -94,7 +102,7 @@ test('build info, sync plan and build choice shapes', () => {
 
 test('a produced entry needs a source fragment and a well-formed path', () => {
   const entry = {
-    kind: 'command',
+    kind: 'definition',
     path: '/commands/show/version',
     statement: 'show version',
     data: { words: ['show', 'version'] },

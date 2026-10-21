@@ -12,7 +12,13 @@
     },
     "system_pack": {
       "type": "string",
-      "pattern": "^[a-z][a-z0-9-]{1,40}(?:@[0-9]+\\.[0-9]+\\.[0-9]+)?$"
+      "pattern": "^[a-z][a-z0-9-]{1,40}@[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "description": "the published system pack version this configuration binds; another version needs a new decision"
+    },
+    "system_pack_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "the content digest of that version when it was bound; other content is not used"
     },
     "name": {
       "type": "string",
@@ -60,6 +66,21 @@
       },
       "description": "vault entry of each credential the system pack declares"
     },
+    "credential_digests": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_]{0,31}$"
+      },
+      "additionalProperties": {
+        "type": "string",
+        "enum": [
+          "plain",
+          "sha512_base64"
+        ]
+      },
+      "description": "the digest rule each credential is kept under in the vault"
+    },
     "settings": {
       "type": "object",
       "propertyNames": {
@@ -106,11 +127,13 @@
     "schema",
     "id",
     "system_pack",
+    "system_pack_digest",
     "name",
     "environment",
     "origins",
     "allow_plaintext",
     "credentials",
+    "credential_digests",
     "settings",
     "created_by",
     "created_at"

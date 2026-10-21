@@ -297,7 +297,22 @@
           },
           "kind": {
             "type": "string",
-            "minLength": 1
+            "enum": [
+              "definition",
+              "behaviour",
+              "case",
+              "defect",
+              "observation"
+            ]
+          },
+          "producers": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_-]*$"
+            },
+            "description": "the producers of the product pack that gave the entry, sorted; a catalog limited to one producer takes only its entries"
           },
           "fragments": {
             "minItems": 1,
@@ -370,6 +385,7 @@
           "path",
           "entry",
           "kind",
+          "producers",
           "fragments",
           "basis",
           "decided_by"
@@ -389,7 +405,22 @@
           },
           "kind": {
             "type": "string",
-            "minLength": 1
+            "enum": [
+              "definition",
+              "behaviour",
+              "case",
+              "defect",
+              "observation"
+            ]
+          },
+          "producers": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_-]*$"
+            },
+            "description": "the producers of the product pack that gave the entry, sorted; a catalog limited to one producer takes only its entries"
           },
           "section": {
             "type": "string"
@@ -401,7 +432,8 @@
               "type": "string",
               "maxLength": 8192,
               "pattern": "^(?:src:[0-9a-f]{64}(?:\\/[a-z][a-z0-9_.-]{0,63}@(?:0|[1-9][0-9]{0,8})\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*(?::(?:0|[1-9][0-9]{0,15})-(?:0|[1-9][0-9]{0,15}))?)?)$"
-            }
+            },
+            "description": "every source piece with this content, in the order the producers gave them"
           },
           "basis": {
             "type": "string",
@@ -477,6 +509,7 @@
         "required": [
           "entry",
           "kind",
+          "producers",
           "section",
           "fragments",
           "basis",
@@ -508,6 +541,11 @@
             "type": "boolean",
             "description": "the refused item was an unplaced span rather than an entry"
           },
+          "kind": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "the kind the producer declared, as given (cut to 200 characters; may be empty or outside entry_kind)"
+          },
           "path": {
             "type": [
               "string",
@@ -522,6 +560,7 @@
           "producer",
           "index",
           "unplaced",
+          "kind",
           "path",
           "reason"
         ],
@@ -545,8 +584,19 @@
           },
           "entry_kind": {
             "type": "string",
-            "minLength": 1,
+            "enum": [
+              "definition",
+              "behaviour",
+              "case",
+              "defect",
+              "observation"
+            ],
             "description": "kind of the knowledge entries that are its members"
+          },
+          "producer": {
+            "description": "only entries this producer of the pack produced are members; every producer of the kind when absent",
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]*$"
           },
           "complete": {
             "type": "boolean",

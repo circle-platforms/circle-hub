@@ -8,9 +8,14 @@
     },
     "kind": {
       "type": "string",
-      "minLength": 1,
-      "maxLength": 200,
-      "description": "declared by the producer (K02 R[1])"
+      "enum": [
+        "definition",
+        "behaviour",
+        "case",
+        "defect",
+        "observation"
+      ],
+      "description": "declared by the producer (K02 F[0], R[3])"
     },
     "statement": {
       "type": "string",

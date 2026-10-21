@@ -67,7 +67,7 @@
         "properties": {
           "ok": {
             "type": "boolean",
-            "description": "2xx, a valid body of the declared kind and, for an envelope route, an ok code"
+            "description": "2xx, a valid body of the declared kind, for an envelope route an ok code, and readable by functions"
           },
           "route": {
             "type": "string",

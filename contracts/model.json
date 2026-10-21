@@ -4601,6 +4601,52 @@
    ]
   },
   {
+   "axis": "entry_kind",
+   "label": "知识条目种类",
+   "owner": "K02",
+   "values": [
+    {
+     "code": "definition",
+     "label": "定义"
+    },
+    {
+     "code": "behaviour",
+     "label": "行为"
+    },
+    {
+     "code": "case",
+     "label": "用例"
+    },
+    {
+     "code": "defect",
+     "label": "缺陷"
+    },
+    {
+     "code": "observation",
+     "label": "观察"
+    }
+   ]
+  },
+  {
+   "axis": "node_level",
+   "label": "节点位置",
+   "owner": "K01",
+   "values": [
+    {
+     "code": "trunk",
+     "label": "干"
+    },
+    {
+     "code": "branch",
+     "label": "枝"
+    },
+    {
+     "code": "leaf",
+     "label": "叶"
+    }
+   ]
+  },
+  {
    "axis": "read_tier",
    "label": "读取档位",
    "owner": "B02",

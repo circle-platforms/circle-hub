@@ -1358,6 +1358,7 @@
         },
         "paths": {
           "description": "Subtrees to read: node paths copied verbatim from get_nodes or from a tree reference, for example / or /commands/show",
+          "maxItems": 256,
           "type": "array",
           "items": {
             "type": "string",
@@ -1516,6 +1517,11 @@
               },
               "level": {
                 "type": "string",
+                "enum": [
+                  "trunk",
+                  "branch",
+                  "leaf"
+                ],
                 "description": "Position label of the node, computed from the tree height"
               },
               "digest": {
@@ -1559,7 +1565,14 @@
                       "pattern": "^[0-9a-f]{64}$"
                     },
                     "kind": {
-                      "type": "string"
+                      "type": "string",
+                      "enum": [
+                        "definition",
+                        "behaviour",
+                        "case",
+                        "defect",
+                        "observation"
+                      ]
                     },
                     "statement": {
                       "type": "string"

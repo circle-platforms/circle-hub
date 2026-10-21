@@ -381,7 +381,17 @@
           },
           "path": {
             "type": "string",
-            "description": "path template relative to the base URL of the role: literal segments, {name}, a last {name*}, optional trailing /"
+            "description": "path template relative to the base URL of the role: literal segments, {name}, a last {name*}, optional trailing /; a POST route has a literal path"
+          },
+          "params": {
+            "description": "a string shape per template parameter, checked on every (decoded) segment it fills; required for a {name*} of a role that carries the credential",
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            }
           },
           "query": {
             "description": "the query parameters (strings) as an object shape; without it no query is sent",
@@ -425,8 +435,16 @@
             "maximum": 300000
           },
           "envelope": {
-            "description": "check the system envelope of a JSON answer",
-            "type": "boolean"
+            "description": "check the system envelope of a JSON answer: true, when_present or false",
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "string",
+                "const": "when_present"
+              }
+            ]
           },
           "parse": {
             "description": "a core parser whose model the read functions get besides the text",

@@ -39,6 +39,8 @@ export const AXES = {
   request_kind: { label: '请求种类', owner: 'B07', values: [{ code: 'clarification', label: '澄清' }, { code: 'repair', label: '修复' }, { code: 'disposition', label: '处置' }, { code: 'judgment', label: '判断' }] },
   permission_kind: { label: '许可种类', owner: 'B04', values: [{ code: 'publish', label: '发布记录' }, { code: 'assign', label: '任务包分配' }, { code: 'publish_right', label: '发布权授予' }, { code: 'resource_config', label: '资源配置' }, { code: 'share', label: '分享' }] },
   knowledge_layer: { label: '知识层', owner: 'K03', values: [{ code: 'tree', label: '树本身' }, { code: 'observation', label: '观察层' }, { code: 'candidate', label: '候选层' }] },
+  entry_kind: { label: '知识条目种类', owner: 'K02', values: [{ code: 'definition', label: '定义' }, { code: 'behaviour', label: '行为' }, { code: 'case', label: '用例' }, { code: 'defect', label: '缺陷' }, { code: 'observation', label: '观察' }] },
+  node_level: { label: '节点位置', owner: 'K01', values: [{ code: 'trunk', label: '干' }, { code: 'branch', label: '枝' }, { code: 'leaf', label: '叶' }] },
   read_tier: { label: '读取档位', owner: 'B02', values: [{ code: 'model_readable', label: '模型可读' }, { code: 'function_bytes_only', label: '只许函数按引用读字节' }, { code: 'retain_only', label: '只保留' }] },
   home: { label: '家', owner: 'C01', values: [{ code: 'knowledge', label: '知识' }, { code: 'policy', label: '政策' }, { code: 'method', label: '方法' }, { code: 'resource', label: '资源' }] },
   ownership: { label: '归属', owner: 'C02', values: [{ code: 'generic', label: '通用' }, { code: 'product', label: '产品专用' }, { code: 'system_adapter', label: '系统适配器' }, { code: 'workflow', label: '工作流专用' }] },
@@ -381,6 +383,24 @@ export function isKnowledgeLayer(value: unknown): value is KnowledgeLayer {
   return (KNOWLEDGE_LAYER as readonly unknown[]).includes(value);
 }
 
+/** 知识条目种类 (K02) */
+export const ENTRY_KIND = ['definition', 'behaviour', 'case', 'defect', 'observation'] as const;
+export type EntryKind = (typeof ENTRY_KIND)[number];
+export const ENTRY_KIND_LABEL = { 'definition': '定义', 'behaviour': '行为', 'case': '用例', 'defect': '缺陷', 'observation': '观察' } as const satisfies { readonly [K in EntryKind]: string };
+export const EntryKindSchema = z.enum(ENTRY_KIND);
+export function isEntryKind(value: unknown): value is EntryKind {
+  return (ENTRY_KIND as readonly unknown[]).includes(value);
+}
+
+/** 节点位置 (K01) */
+export const NODE_LEVEL = ['trunk', 'branch', 'leaf'] as const;
+export type NodeLevel = (typeof NODE_LEVEL)[number];
+export const NODE_LEVEL_LABEL = { 'trunk': '干', 'branch': '枝', 'leaf': '叶' } as const satisfies { readonly [K in NodeLevel]: string };
+export const NodeLevelSchema = z.enum(NODE_LEVEL);
+export function isNodeLevel(value: unknown): value is NodeLevel {
+  return (NODE_LEVEL as readonly unknown[]).includes(value);
+}
+
 /** 读取档位 (B02) */
 export const READ_TIER = ['model_readable', 'function_bytes_only', 'retain_only'] as const;
 export type ReadTier = (typeof READ_TIER)[number];
@@ -544,6 +564,8 @@ export interface AxisValues {
   request_kind: RequestKind;
   permission_kind: PermissionKind;
   knowledge_layer: KnowledgeLayer;
+  entry_kind: EntryKind;
+  node_level: NodeLevel;
   read_tier: ReadTier;
   home: Home;
   ownership: Ownership;
@@ -597,6 +619,8 @@ const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
   request_kind: REQUEST_KIND_LABEL,
   permission_kind: PERMISSION_KIND_LABEL,
   knowledge_layer: KNOWLEDGE_LAYER_LABEL,
+  entry_kind: ENTRY_KIND_LABEL,
+  node_level: NODE_LEVEL_LABEL,
   read_tier: READ_TIER_LABEL,
   home: HOME_LABEL,
   ownership: OWNERSHIP_LABEL,

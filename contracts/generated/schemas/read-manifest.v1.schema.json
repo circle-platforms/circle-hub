@@ -146,7 +146,8 @@
           },
           "path": {
             "type": "string",
-            "maxLength": 4096
+            "maxLength": 4096,
+            "description": "the path as sent; a refused longer one is cut and ends with …sha256:<digest of the whole path>"
           },
           "query": {
             "type": "object",

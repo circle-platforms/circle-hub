@@ -8,24 +8,18 @@
 // sets, observations and candidates are `claim` records with the schemas below. Digests of nodes and entries cover the
 // normalised content only (K01 R[7], K02 R[4]); see nodeDigest and entryDigest in hub/knowledge.
 import { z } from 'zod';
-import { ProvenanceTypeSchema, ReadTierSchema } from '../generated/vocabulary.ts';
+import { EntryKindSchema, NodeLevelSchema, ProvenanceTypeSchema, ReadTierSchema, type NodeLevel } from '../generated/vocabulary.ts';
 import { IsoTime, PackId, PackVersion, Sha256, UserId, Versioned } from './common.ts';
 import { Applicability, BuildInfo, CatalogDeclaration, PackFunctionRef, ProductId } from './product.ts';
 import { ExternalObjectId, TreePath, referenceUriOf } from './reference.ts';
 
-// ---------------------------------------------------------------- labels the model names but has no axis for
+// ---------------------------------------------------------------- levels and bases
 
 /**
- * Position label of a node (K01 R[2]: 干、枝 by height counted from the bottom, 叶 from the source's own structure): height 0
- * is a leaf, height 1 a branch, anything higher a trunk. The model names the three but has no vocabulary axis for them yet
- * (hub/knowledge README, Needs from other packages); until it does they are listed here once.
+ * Level of a node of this height (K01 R[2], axis node_level: 干、枝 by height counted from the bottom, 叶 from the source's
+ * own structure): height 0 is a leaf, height 1 a branch, anything higher a trunk.
  */
-export const TREE_LEVELS = ['trunk', 'branch', 'leaf'] as const;
-export type TreeLevel = (typeof TREE_LEVELS)[number];
-export const TreeLevelSchema = z.enum(TREE_LEVELS);
-
-/** Level of a node of this height. */
-export function levelOfHeight(height: number): TreeLevel {
+export function levelOfHeight(height: number): NodeLevel {
   if (!Number.isSafeInteger(height) || height < 0) throw new RangeError('height is a non-negative integer');
   return height === 0 ? 'leaf' : height === 1 ? 'branch' : 'trunk';
 }
@@ -42,6 +36,13 @@ export const CompositionBasisSchema = z.enum(COMPOSITION_BASES);
 const SrcReferenceUri = referenceUriOf('src');
 const sortedUnique = (values: readonly string[]): boolean => values.every((v, i) => i === 0 || values[i - 1] < v);
 
+/** Ids of the producers of the product pack (product@1 Producer.id) that gave an entry, sorted and unique. */
+const ProducerIds = z
+  .array(z.string().regex(/^[a-z][a-z0-9_-]*$/))
+  .min(1)
+  .refine(sortedUnique, 'producer ids are sorted and unique')
+  .describe('the producers of the product pack that gave the entry, sorted; a catalog limited to one producer takes only its entries');
+
 // ---------------------------------------------------------------- tree content (kind tree_node)
 
 export const TreeNodeChild = z.strictObject({ name: z.string().min(1), digest: Sha256 });
@@ -56,7 +57,7 @@ export const TreeNodeBody = z
   .strictObject({
     name: z.string().describe('the decoded path segment of the node in its parent; empty for the root'),
     height: z.number().int().nonnegative().describe('0 for a node without children, else 1 + the largest height of its children'),
-    level: TreeLevelSchema,
+    level: NodeLevelSchema,
     children: z.array(TreeNodeChild).describe('sorted by name (UTF-16 code units), names unique'),
     entries: z.array(Sha256).describe('digests of the entries hung on this node, sorted, unique'),
   })
@@ -75,7 +76,7 @@ export type TreeNodeBody = z.infer<typeof TreeNodeBody>;
  */
 export const KnowledgeEntryBody = z.strictObject({
   product: ProductId,
-  kind: z.string().min(1).max(200).describe('declared by the producer (K02 R[1])'),
+  kind: EntryKindSchema.describe('declared by the producer (K02 F[0], R[3])'),
   statement: z.string().describe('normalised canonical statement'),
   data: z.record(z.string(), z.unknown()),
   applicability: Applicability.nullable().describe('null: 未声明 (K02 F[6])'),
@@ -98,7 +99,8 @@ export type ModelPlacement = z.infer<typeof ModelPlacement>;
 export const CompositionRow = z.strictObject({
   path: TreePath,
   entry: Sha256,
-  kind: z.string().min(1),
+  kind: EntryKindSchema,
+  producers: ProducerIds,
   fragments: z.array(SrcReferenceUri).min(1).describe('canonical src references in the order the producers gave them'),
   basis: CompositionBasisSchema,
   decided_by: z.string().min(1).describe('who decided the source belongs to the version: the product pack id@version'),
@@ -109,9 +111,10 @@ export type CompositionRow = z.infer<typeof CompositionRow>;
 /** A span no rule and no calibrated judgment could place: stored and citable, not hung on the tree (K01 R[4], K04 R[3]). */
 export const UnplacedRow = z.strictObject({
   entry: Sha256,
-  kind: z.string().min(1),
+  kind: EntryKindSchema,
+  producers: ProducerIds,
   section: z.string(),
-  fragments: z.array(SrcReferenceUri).min(1),
+  fragments: z.array(SrcReferenceUri).min(1).describe('every source piece with this content, in the order the producers gave them'),
   basis: CompositionBasisSchema,
   decided_by: z.string().min(1),
   stopped_at: TreePath.describe('the node where placement stopped (/ when it never descended)'),
@@ -151,6 +154,7 @@ export const RefusedEntry = z.strictObject({
   producer: z.string().min(1),
   index: z.number().int().nonnegative(),
   unplaced: z.boolean().describe('the refused item was an unplaced span rather than an entry'),
+  kind: z.string().max(200).describe('the kind the producer declared, as given (cut to 200 characters; may be empty or outside entry_kind)'),
   path: z.string().nullable(),
   reason: z.string(),
 });

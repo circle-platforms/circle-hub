@@ -116,6 +116,8 @@ export interface ExternalReaderPort {
 export interface CallContext {
   traceId: string;
   sessionId: string | null;
+  /** The real reason behind a neutral answer (absent, forbidden, failed): admins see it in the call log, the caller never does. */
+  adminNote?: (reason: string) => void;
 }
 
 /** A service answers with the tool output minus the trace id, which only the server knows. */
@@ -245,8 +247,11 @@ export interface KnowledgePort {
   rootInfo(root: string): Promise<RootInfo[]>;
   /** The closed catalog declared by the product pack, built from the entries of the root; null when the root has none of that id. */
   catalog(root: string, catalogId: string): Promise<CatalogView | null>;
-  /** Reads nodes and entries for reference resolution; permission is enforced inside. */
-  treeReader(): TreeReader;
+  /**
+   * Reads nodes and entries for reference resolution; permission is enforced inside. `lock.composition` binds the reader to the
+   * composition a run locked (RootInfo.composition): grounds and premises come from it alone.
+   */
+  treeReader(lock?: { composition?: string | null } | null): TreeReader;
   /** Absent and forbidden give the same null (D05 R[3]). */
   getNodes(query: NodesQuery, reader: Principal): Promise<NodesPage | null>;
   diffRoots(from: string, to: string): Promise<RootDiff | null>;

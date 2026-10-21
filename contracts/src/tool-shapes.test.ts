@@ -28,7 +28,7 @@ const node = {
   level: 'branch',
   digest: H2,
   children: [{ name: 'item', path: '/commands/show/item', digest: H3 }],
-  entries: [{ entry: H3, kind: 'command', statement: 'show item', reference: `tree:${H}/commands/show@${H3}`, applicability: '2.1', data: { signatures: [] } }],
+  entries: [{ entry: H3, kind: 'definition', statement: 'show item', reference: `tree:${H}/commands/show@${H3}`, applicability: '2.1', data: { signatures: [] } }],
 };
 
 const CASES: Record<string, { input: Sides; output: Sides }> = {
