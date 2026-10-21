@@ -43,7 +43,7 @@ export interface Otty {
   openTab(options: { title: string; cwd: string; command?: string; focus?: boolean }): OpenedTab;
   /** Types text without submitting. */
   type(pane: string, text: string): void;
-  /** Presses one key, for example Enter or ctrl+c (key names as `otty pane send-keys` takes them). */
+  /** Presses one key; names are those of `otty pane send-keys`: Enter, Tab, Esc, Backspace, Up/Down/Left/Right, Home/End, PageUp/PageDown, Ctrl+<letter>, F1-F12. */
   key(pane: string, key: string): void;
   /** Types the text and presses Enter in a separate call, as a TUI composer needs. */
   submit(pane: string, text: string): void;
@@ -121,7 +121,7 @@ export function createOtty(options: OttyOptions = {}): Otty {
     closeTab(tab) {
       const known = [...opened.values()].find((t) => t.tab === tab);
       if (!known) throw new OttyError(`标签页 ${tab} 不是这里打开的，拒绝关闭`);
-      ok(run(['tab', 'close', tab, '--yes']), 'tab close');
+      ok(run(['tab', 'close', tab, '--force', '--yes']), 'tab close');
       opened.delete(known.pane);
     },
     opened() {

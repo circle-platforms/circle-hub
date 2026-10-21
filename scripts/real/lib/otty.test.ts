@@ -38,8 +38,8 @@ test('typing and submitting go to our own panes only, submit is two calls', () =
     ['pane', 'send-text', '--pane', pane, 'hello'],
     ['pane', 'send-keys', '--pane', pane, 'key:Enter'],
   ]);
-  otty.key(pane, 'ctrl+c');
-  assert.deepEqual(calls.at(-1), ['pane', 'send-keys', '--pane', pane, 'key:ctrl+c']);
+  otty.key(pane, 'Esc');
+  assert.deepEqual(calls.at(-1), ['pane', 'send-keys', '--pane', pane, 'key:Esc']);
   assert.throws(() => otty.type('p_someone_else', 'rm -rf /'), OttyError);
   assert.throws(() => otty.submit('p_someone_else', 'x'), OttyError);
   assert.throws(() => otty.screen('p_someone_else'), OttyError);
@@ -81,6 +81,6 @@ test('closeTab closes only a tab we opened and forgets its pane', () => {
   const otty = createOtty({ run });
   const tab = otty.openTab({ title: 't', cwd: '/w' });
   otty.closeTab(tab.tab);
-  assert.deepEqual(calls.at(-1), ['tab', 'close', 't_1', '--yes']);
+  assert.deepEqual(calls.at(-1), ['tab', 'close', 't_1', '--force', '--yes']);
   assert.deepEqual(otty.opened(), []);
 });
