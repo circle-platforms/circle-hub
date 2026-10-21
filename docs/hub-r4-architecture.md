@@ -20,7 +20,7 @@ Out of scope for milestone 1 (kept in the contracts, not implemented; the later 
 ## 2. Hard rules
 
 - Use scripted models and synthetic fixtures in every test and in Git. Real systems are reached only by the scripts under `scripts/real/` and by the deployed Hub, never by tests. Fixtures mirror the structure of the real systems (section 8), never their content. Addresses in fixtures use 192.0.2.0/24.
-- Never commit credentials, internal host names or addresses, real business data, or local absolute paths. Never read the owner's environment file; secrets enter the Hub only through the vault commands.
+- Never commit credentials, internal host names or addresses, real business data, or local absolute paths. Never open the owner's environment file yourself: only the scripts under `scripts/real/` read it, at run time, and print key names, presence and lengths, never values; secrets enter the Hub only through the vault commands.
 - Product knowledge lives in packs, never in the core. The core code must not contain a product name, a command name or a customer name. APV and NSAE are one product with two names (section 8).
 - No coined terms. Labels come from `labelOf(axis, code)` in `contracts/generated/vocabulary.ts`; enumerations are never written by hand anywhere; use the generated types and zod enums. User-facing text is Chinese (labels, error messages, fixes); tool and schema descriptions for models are English; code comments are English and short.
 - Code is TypeScript run directly by Node 24 (type stripping): erasable syntax only (no `enum`, no parameter properties, no namespaces), imports end in `.ts`, ESM. Dependencies are exactly those in `package.json`; do not add any. If you need one, write the request in your package README and work around it.
