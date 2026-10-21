@@ -1,0 +1,172 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+<!-- Synthetic command tree for parser tests; all names are invented. -->
+<commands version="3.2">
+  <scope name="global">
+    <menu name="widget" help="Widget management">
+      <menu name="pool" help="Pool settings">
+        <item name="add" help="Create a widget pool">
+          <arguments>
+            <arg name="pool_name" type="STRING" length="32" optional="0" help="Name of the pool (café and naïve names are allowed)"/>
+            <arg name="weight" type="U16" limit="1-100" optional="1" default_value="10" help="Relative weight ± 5 %"/>
+          </arguments>
+        </item>
+        <item name="mode" help="Set the pool mode">
+          <arguments>
+            <arg name="pool_name" type="STRING" length="32" optional="0" help="Name of the pool (café and naïve names are allowed)"/>
+            <arg name="mode" type="STRING" length="8" optional="0" help="Use "fast" or "safe""/>
+          </arguments>
+        </item>
+        <item name="mode" help="Set the pool mode with a timeout">
+          <arguments>
+            <arg name="pool_name" type="STRING" length="32" optional="0" help="Name of the pool (café and naïve names are allowed)"/>
+            <arg name="mode" type="STRING" length="8" optional="0" help="fast or safe"/>
+            <arg name="timeout" type="U32" limit="1-3600" optional="1" default_value="300" help="Seconds before the mode reverts"/>
+          </arguments>
+        </item>
+        <item name="delete" help="Remove a widget pool">
+          <arguments>
+            <arg name="pool_name" type="STRING" length="32" optional="0" help="Name of the pool (café and naïve names are allowed)"/>
+          </arguments>
+        </item>
+        <item name="rename" help="Rename a widget pool">
+          <arguments>
+            <arg name="pool_name" type="STRING" length="32" optional="0" help="Name of the pool (café and naïve names are allowed)"/>
+            <arg name="new_name" type="STRING" length="32" optional="0" help="New name; spaces are not allowed"/>
+          </arguments>
+        </item>
+      </menu>
+      <menu name="session" help="Session persistence">
+        <item name="enable" help="Enable session persistence">
+          <arguments>
+            <arg name="pool_name" type="STRING" length="32" optional="0" help="Name of the pool (café and naïve names are allowed)"/>
+            <arg name="method" type="STRING" length="16" optional="1" default_value="source" help="source, cookie or header"/>
+          </arguments>
+        </item>
+        <item name="disable" help="Disable session persistence">
+          <arguments>
+            <arg name="pool_name" type="STRING" length="32" optional="0" help="Name of the pool (café and naïve names are allowed)"/>
+          </arguments>
+        </item>
+        <item name="timeout" help="Session idle timeout">
+          <arguments>
+            <arg name="pool_name" type="STRING" length="32" optional="0" help="Name of the pool (café and naïve names are allowed)"/>
+            <arg name="seconds" type="U32" limit="1-3600" optional="0" help="Idle time in seconds (1×60 = one minute)"/>
+          </arguments>
+        </item>
+        <item name="clear" help="Clear the session table">
+          <arguments>
+            <arg name="pool_name" type="STRING" length="32" optional="0" help="Name of the pool (café and naïve names are allowed)"/>
+            <arg name="client" type="IPADDR" optional="1" help="Only sessions of this client, e.g. 192.0.2.10"/>
+          </arguments>
+        </item>
+        <item name="export" help="Export the session table">
+          <arguments>
+            <arg name="pool_name" type="STRING" length="32" optional="0" help="Name of the pool (café and naïve names are allowed)"/>
+            <arg name="file" type="STRING" length="64" optional="0" help="Target file name"/>
+          </arguments>
+        </item>
+      </menu>
+      <menu name="health" help="Health checks">
+        <item name="interval" help="Health check interval">
+          <arguments>
+            <arg name="pool_name" type="STRING" length="32" optional="0" help="Name of the pool (café and naïve names are allowed)"/>
+            <arg name="seconds" type="U16" limit="1-60" optional="0" help="Check every N seconds"/>
+          </arguments>
+        </item>
+        <item name="retries" help="Health check retries">
+          <arguments>
+            <arg name="pool_name" type="STRING" length="32" optional="0" help="Name of the pool (café and naïve names are allowed)"/>
+            <arg name="count" type="U16" limit="1-10" optional="0" help="Failures before a backend is down"/>
+          </arguments>
+        </item>
+        <item name="probe" help="Health check probe">
+          <arguments>
+            <arg name="pool_name" type="STRING" length="32" optional="0" help="Name of the pool (café and naïve names are allowed)"/>
+            <arg name="kind" type="STRING" length="8" optional="1" optional="0" help="tcp or http"/>
+          </arguments>
+        </item>
+      </menu>
+    </menu>
+    <menu name="relay" help="Relay endpoints">
+      <menu name="endpoint" help="Endpoint settings">
+        <item name="add" help="Add an endpoint">
+          <arguments>
+            <arg name="address" type="IPADDR" optional="0" help="Endpoint address, e.g. 192.0.2.20"/>
+            <arg name="port" type="U16" optional="0" help="Port range <1-65535>"/>
+          </arguments>
+        </item>
+        <item name="remove" help="Remove an endpoint">
+          <arguments>
+            <arg name="address" type="IPADDR" optional="0" help="Endpoint address"/>
+          </arguments>
+        </item>
+        <item name="weight" help="Endpoint weight">
+          <arguments>
+            <arg name="address" type="IPADDR" optional="0" help="Endpoint address"/>
+            <arg name="weight" type="U16" limit="1-100" optional="0" help="Relative weight"/>
+          </arguments>
+        </item>
+        <item name="weight" help="Endpoint weight with a pool">
+          <arguments>
+            <arg name="address" type="IPADDR" optional="0" help="Endpoint address"/>
+            <arg name="weight" type="U16" limit="1-100" optional="0" help="Relative weight"/>
+            <arg name="pool_name" type="STRING" length="32" optional="0" help="Name of the pool (café and naïve names are allowed)"/>
+          </arguments>
+        </item>
+      </menu>
+      <menu name="log" help="Relay logging">
+        <item name="level" help="Log level">
+          <arguments>
+            <arg name="level" type="STRING" length="8" optional="0" help="debug, info or warn (µs timestamps)"/>
+          </arguments>
+        </item>
+        <item name="rotate" help="Rotate the relay log">
+          <arguments>
+
+          </arguments>
+        </item>
+        <item name="size" help="Maximum log size">
+          <arguments>
+            <arg name="megabytes" type="U32" limit="1-4096" optional="0" help="Size in MB, 1-4096"/>
+          </arguments>
+        </item>
+      </menu>
+    </menu>
+  </scope>
+  <scope name="config">
+    <menu name="system" help="System settings">
+      <item name="hostname" help="Set the host name">
+        <arguments>
+          <arg name="name" type="STRING" length="63" optional="0" help="Host name, at most 63 characters"/>
+        </arguments>
+      </item>
+      <item name="clock" help="Set the clock">
+        <arguments>
+          <arg name="time" type="STRING" length="19" optional="0" help="Time as YYYY-MM-DD hh:mm:ss (°C not accepted)"/>
+        </arguments>
+      </item>
+      <item name="banner" help="Login banner">
+        <arguments>
+          <arg name="text" type="STRING" length="256" optional="0" help="Banner text &amp; contact"/>
+        </arguments>
+      </item>
+    </menu>
+    <menu name="show" help="Show information">
+      <item name="version" help="Show the version">
+        <arguments/>
+      </item>
+      <item name="sessions" help="Show the session table">
+        <arguments/>
+      </item>
+      <item name="pools" help="Show all pools">
+        <arguments/>
+      </item>
+      <item name="endpoints" help="Show all endpoints">
+        <arguments/>
+      </item>
+      <item name="health" help="Show health status">
+        <arguments/>
+      </item>
+    </menu>
+  </scope>
+</commands>
