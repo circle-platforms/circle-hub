@@ -177,6 +177,7 @@ export type RequirementsFile = z.infer<typeof RequirementsFile>;
 /** Facts about the run that checks and pack functions may use. */
 export const RunContext = z.strictObject({
   product: z.string().nullable(),
+  names: z.array(z.string()).describe('every name of the bound product line (all of them name one line); empty when the run has no product'),
   line: z.string().nullable(),
   build: z.string().nullable(),
   root: Sha256.nullable(),

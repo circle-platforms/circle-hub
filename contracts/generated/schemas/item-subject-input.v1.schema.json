@@ -124,6 +124,13 @@
             "null"
           ]
         },
+        "names": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "every name of the bound product line (all of them name one line); empty when the run has no product"
+        },
         "line": {
           "type": [
             "string",
@@ -168,6 +175,7 @@
       },
       "required": [
         "product",
+        "names",
         "line",
         "build",
         "root",
