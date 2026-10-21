@@ -175,6 +175,10 @@ export function verifiedRecord<B>(row: Row): StoredRecord<B> {
   if (!kind.success || !isProvenanceType(meta.provenance)) {
     throw new IntegrityError('记录的种类或来源类型不在词表里', { detail: { record: row.id } });
   }
+  // The table only checks the shape (migration 1 lets a leading-zero major through); put() and every read apply SchemaId.
+  if (!SchemaId.safeParse(meta.schema).success) {
+    throw new IntegrityError('记录的模式名不是 name@major（contracts SchemaId）', { detail: { record: row.id } });
+  }
   let parsed: B;
   try {
     parsed = JSON.parse(body) as B;

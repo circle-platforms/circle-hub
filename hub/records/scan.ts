@@ -6,6 +6,7 @@
 // linear in the input. Bytes that are not text (compressed containers, images, other binary) are reported as not
 // inspected, never as clean.
 import type { CredentialFinding, CredentialScan } from './api.ts';
+import { digestOf } from './digest.ts';
 
 export const CREDENTIAL_SCANNER = 'credential-scan@2';
 export const CREDENTIAL_DETECTORS = ['private_key', 'bearer_credential', 'basic_credential', 'jwt', 'password_assignment', 'cloud_key'] as const;
@@ -23,10 +24,23 @@ const SAMPLE_BYTES = 64 * 1024;
 
 type Report = (index: number) => void;
 
+/** Where a hit was found: the decoded (and, inside a quoted string, unescaped) text and the index in it. */
+interface Located {
+  text: string;
+  index: number;
+}
+
 interface RawHit {
   detector: CredentialDetector;
   index: number;
+  /** Kept only when the caller asked for the text around the findings (scanWithContexts). */
+  at?: Located;
 }
+
+/** Characters a context takes before a hit, after it (its line and the next one at most), and after a key header. */
+const CONTEXT_BEFORE = 256;
+const CONTEXT_AFTER = 1024;
+const KEY_CONTEXT_AFTER = 8192;
 
 const PLACEHOLDER =
   /^(?:<[^>]*>|\[[^\]]*\]|\{\{.*\}\}|\$\{.*\}|%[A-Za-z_][A-Za-z0-9_]*%|\*+|•+|x{3,}|X{3,}|\.{3,}|…+|_+|-+|#+|null|nil|none|true|false|undefined|empty|changeme|change_me|change-me|example|sample|placeholder|redacted|hidden|masked|secret|password|passwd|pass|pwd|token|string|value|todo|tbd|n\/a|your[_-].*|my[_-].*)$/i;
@@ -366,9 +380,11 @@ function escapedLiterals(text: string, visit: (literal: Literal) => boolean): vo
 }
 
 /** Hits in `text`; a hit inside an escaped string is reported at the string's opening quote. */
-function scanText(text: string, depth: number): RawHit[] {
+function scanText(text: string, depth: number, located: boolean): RawHit[] {
   const hits: RawHit[] = [];
-  for (const detector of DETECTORS) detector.run(text, (index) => hits.push({ detector: detector.id, index }));
+  for (const detector of DETECTORS) {
+    detector.run(text, (index) => hits.push(located ? { detector: detector.id, index, at: { text, index } } : { detector: detector.id, index }));
+  }
   if (depth >= MAX_NESTING || !text.includes('\\')) return hits;
   const direct = [...hits].sort((a, b) => a.index - b.index);
   const coveredBy = (detector: CredentialDetector, start: number, end: number) => {
@@ -384,11 +400,11 @@ function scanText(text: string, depth: number): RawHit[] {
   };
   let literalsWithHits = 0;
   escapedLiterals(text, (literal) => {
-    const inner = scanText(literal.value, depth + 1);
+    const inner = scanText(literal.value, depth + 1, located);
     let added = false;
     for (const hit of inner) {
       if (coveredBy(hit.detector, literal.start, literal.end)) continue;
-      hits.push({ detector: hit.detector, index: literal.start });
+      hits.push(located ? { detector: hit.detector, index: literal.start, at: hit.at } : { detector: hit.detector, index: literal.start });
       added = true;
     }
     // A literal hit after MAX_FINDINGS + 1 earlier literal hits can never be among the first MAX_FINDINGS findings.
@@ -679,15 +695,24 @@ function lineOf(starts: readonly number[], index: number): number {
   return low;
 }
 
-/**
- * Scans bytes and reports where credentials appear. `inspected` is false when the bytes are not text (a compressed or
- * image container, or binary): nothing could be examined, so `clean` is false too, while `findings` still lists any hit.
- */
-export function scanForCredentials(bytes: Uint8Array): CredentialScan {
+/** The hit's line (from at most CONTEXT_BEFORE characters before it) and the next line; for a key, the material after it. */
+function contextOf(at: Located | undefined, detector: string): string {
+  if (at === undefined) return '';
+  const { text, index } = at;
+  const from = Math.max(0, index - CONTEXT_BEFORE);
+  const lineStart = from + text.slice(from, index).lastIndexOf('\n') + 1;
+  if (detector === 'private_key') return text.slice(lineStart, index + KEY_CONTEXT_AFTER);
+  const after = text.slice(index, index + CONTEXT_AFTER);
+  const lineEnd = after.indexOf('\n');
+  const nextEnd = lineEnd < 0 ? -1 : after.indexOf('\n', lineEnd + 1);
+  return text.slice(lineStart, index + (nextEnd < 0 ? after.length : nextEnd));
+}
+
+function scanBytes(bytes: Uint8Array, located: boolean): { scan: CredentialScan; contexts: string[] } {
   const { views, inspected } = decode(bytes);
-  const found = new Map<string, CredentialFinding>();
+  const found = new Map<string, { finding: CredentialFinding; at?: Located }>();
   for (const view of views) {
-    const hits = scanText(view.text, 0);
+    const hits = scanText(view.text, 0, located);
     if (hits.length === 0) continue;
     hits.sort((a, b) => a.index - b.index || CREDENTIAL_DETECTORS.indexOf(a.detector) - CREDENTIAL_DETECTORS.indexOf(b.detector));
     const indices = [...new Set(hits.map((hit) => hit.index))];
@@ -699,10 +724,59 @@ export function scanForCredentials(bytes: Uint8Array): CredentialScan {
       const key = `${hit.detector}:${offset}`;
       if (found.has(key)) continue;
       const line = lineOf(starts, hit.index);
-      found.set(key, { detector: hit.detector, offset, line: line + 1, column: hit.index - starts[line] + 1 });
+      found.set(key, { finding: { detector: hit.detector, offset, line: line + 1, column: hit.index - starts[line] + 1 }, at: hit.at });
     }
   }
-  const all = [...found.values()].sort((a, b) => a.offset - b.offset || CREDENTIAL_DETECTORS.indexOf(a.detector as CredentialDetector) - CREDENTIAL_DETECTORS.indexOf(b.detector as CredentialDetector));
-  const findings = all.slice(0, MAX_FINDINGS);
-  return { scanner: CREDENTIAL_SCANNER, inspected, clean: inspected && findings.length === 0, findings, truncated: all.length > findings.length };
+  const all = [...found.values()].sort(
+    (a, b) =>
+      a.finding.offset - b.finding.offset ||
+      CREDENTIAL_DETECTORS.indexOf(a.finding.detector as CredentialDetector) - CREDENTIAL_DETECTORS.indexOf(b.finding.detector as CredentialDetector),
+  );
+  const kept = all.slice(0, MAX_FINDINGS);
+  const findings = kept.map((entry) => entry.finding);
+  const scan = { scanner: CREDENTIAL_SCANNER, inspected, clean: inspected && findings.length === 0, findings, truncated: all.length > findings.length };
+  return { scan, contexts: located ? kept.map((entry) => contextOf(entry.at, entry.finding.detector)) : [] };
+}
+
+/**
+ * Scans bytes and reports where credentials appear. `inspected` is false when the bytes are not text (a compressed or
+ * image container, or binary): nothing could be examined, so `clean` is false too, while `findings` still lists any hit.
+ */
+export function scanForCredentials(bytes: Uint8Array): CredentialScan {
+  return scanBytes(bytes, false).scan;
+}
+
+/**
+ * The same scan, plus for each kept finding the text around it in the decoded (and unescaped) form it was found in: its
+ * line and the next one, or the key material after a key header. Package-internal: the contexts hold the matched text,
+ * so they serve only to check that an admin's note does not copy it, and are never stored, logged or returned.
+ */
+export function scanWithContexts(bytes: Uint8Array): { scan: CredentialScan; contexts: string[] } {
+  return scanBytes(bytes, true);
+}
+
+/** The scanner's order of findings (offset, then CREDENTIAL_DETECTORS order); an unknown id sorts after the known ones. */
+function byPosition(a: { detector: string; offset: number }, b: { detector: string; offset: number }): number {
+  const rank = (detector: string) => {
+    const index = CREDENTIAL_DETECTORS.indexOf(detector as CredentialDetector);
+    return index < 0 ? CREDENTIAL_DETECTORS.length : index;
+  };
+  return a.offset - b.offset || rank(a.detector) - rank(b.detector) || (a.detector < b.detector ? -1 : a.detector > b.detector ? 1 : 0);
+}
+
+/**
+ * The digest an acceptance of findings binds (README decision 18): SHA-256 of the RFC 8785 canonical JSON of
+ * `{ scanner, findings: [{ detector, offset }] }`, findings in scan order (offset, then detector). Positions and detector ids
+ * only, never matched text; line, column, `inspected`, `truncated` and an earlier acceptance take no part. Another scanner
+ * version or another finding set gives another digest.
+ */
+export function scanDigest(scan: CredentialScan): string {
+  if (typeof scan?.scanner !== 'string' || scan.scanner.length === 0 || !Array.isArray(scan.findings)) throw new TypeError('scanDigest needs a credential scan');
+  const findings = scan.findings.map((finding) => {
+    if (typeof finding?.detector !== 'string' || finding.detector.length === 0 || !Number.isSafeInteger(finding.offset) || finding.offset < 0) {
+      throw new TypeError('a credential finding has a detector id and a byte offset');
+    }
+    return { detector: finding.detector, offset: finding.offset };
+  });
+  return digestOf({ scanner: scan.scanner, findings: findings.sort(byPosition) });
 }

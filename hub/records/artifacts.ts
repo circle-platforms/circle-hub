@@ -1,13 +1,15 @@
 // Source artifacts (B02): content-addressed bytes plus a `source_artifact@1` record with provenance, author, capture time,
 // provenance type, read tier, visibility and the credential scan conclusion. An upload with a credential hit is refused
-// whole (B02 R[4]); a read or generated artifact with a hit is kept at read tier retain_only. Readers get bytes only through
-// source(), which applies the read tier (B02 F[5]): retain_only bytes are never handed out, function_bytes_only bytes only
-// to functions. Every read re-reads the account, and a share covers the one record it names (B04 R[3]).
-import { PackId, RunId, UserId } from '../../contracts/src/common.ts';
+// whole (B02 R[4]); a read or generated artifact with a hit is kept at read tier retain_only, unless an admin accepted
+// exactly these findings of exactly these bytes (a resource configuration, README decision 18), which lifts only bytes
+// the Hub read or made, never what a person supplied. Readers get bytes only through source(), which applies the read tier
+// (B02 F[5]): retain_only bytes are never handed out, function_bytes_only bytes only to functions. Every read re-reads the
+// account, and a share covers the one record it names (B04 R[3]).
+import { PackId, RunId, UserId, Versioned } from '../../contracts/src/common.ts';
 import { ExternalObjectId } from '../../contracts/src/reference.ts';
 import { PROTOCOL_CODES } from '../../contracts/generated/protocol.ts';
 import { isProducerKind, isProvenanceType, isReadTier, labelOf } from '../../contracts/generated/vocabulary.ts';
-import type { PermissionRole, ProducerKind, ReadTier } from '../../contracts/generated/vocabulary.ts';
+import type { PermissionKind, PermissionRole, ProducerKind, ReadTier } from '../../contracts/generated/vocabulary.ts';
 import type {
   ActionBody,
   ArtifactAuthor,
@@ -15,29 +17,32 @@ import type {
   ArtifactSource,
   ArtifactText,
   Artifacts,
+  AuthorizationRecord,
   Authorizations,
   CredentialScan,
+  FindingsAcceptance,
   IndexEntry,
   IngestInput,
   ObjectStore,
   Page,
   Principal,
   RecordStore,
+  ScanAcceptance,
   SourceArtifact,
   SourceArtifactBody,
   Visibility,
 } from './api.ts';
-import { RECORD_SCHEMAS, artifactShareKey } from './constants.ts';
+import { validNote } from './authorizations.ts';
+import { RECORD_SCHEMAS, WHOLE_HUB, artifactShareKey, scanAcceptanceKey } from './constants.ts';
 import { normalizeTime } from './db.ts';
 import type { Database } from './db.ts';
 import { digestOf, isSha256, sha256Hex } from './digest.ts';
-import { IntegrityError, LimitError, RecordsError } from './errors.ts';
+import { AccessError, ConflictError, IntegrityError, LimitError, RecordsError } from './errors.ts';
 import { isMediaType } from './objects.ts';
-import { scanForCredentials } from './scan.ts';
+import { scanDigest, scanForCredentials, scanWithContexts } from './scan.ts';
 import { MAX_INDEX_VALUE_BYTES, validateIndex } from './store.ts';
 import { textPreview } from './text.ts';
 
-const VERSIONED = /^[a-z][a-z0-9_.-]*@[0-9]+$/;
 const SHORT = /^[\x21-\x7e]{1,200}$/;
 const USER_ID = /^usr_[0-9a-z]{26}$/;
 /** Named readers and packs per artifact; with the other entries this stays inside the store's 200 index entries. */
@@ -50,6 +55,9 @@ const RETAIN_ONLY: ReadTier = 'retain_only';
 const ADMIN: PermissionRole = 'admin';
 const MODEL: ProducerKind = 'model';
 const FUNCTION: ProducerKind = 'function';
+const RESOURCE_CONFIG: PermissionKind = 'resource_config';
+/** A note may not share this many consecutive characters (without white space) with the text around a finding. */
+const COPIED_RUN = 6;
 
 function text(value: unknown, field: string, max: number): string | null {
   if (value === undefined || value === null) return null;
@@ -83,7 +91,7 @@ function validOrigin(origin: ArtifactOrigin): ArtifactOrigin {
   }
   if ('generated' in origin) {
     const generated = origin.generated;
-    if (typeof generated?.generator !== 'string' || !VERSIONED.test(generated.generator)) throw new TypeError('origin.generated.generator must be name@major');
+    if (!Versioned.safeParse(generated?.generator).success) throw new TypeError('origin.generated.generator must be name@major (contracts Versioned)');
     if (!Array.isArray(generated.inputs) || generated.inputs.length > 200 || generated.inputs.some((input) => typeof input !== 'string' || input.length === 0 || input.length > 600)) {
       throw new TypeError('origin.generated.inputs must be references');
     }
@@ -92,6 +100,50 @@ function validOrigin(origin: ArtifactOrigin): ArtifactOrigin {
     return { generated: { generator: generated.generator, inputs: [...generated.inputs], read_back: readBack } };
   }
   throw new TypeError('origin must have exactly one of read, upload or generated');
+}
+
+/** True when the note shares COPIED_RUN consecutive characters without white space with one of the contexts. */
+function copiesContext(note: string, contexts: readonly string[]): boolean {
+  const windows = new Set<string>();
+  for (const run of note.split(/\s+/u)) for (let start = 0; start + COPIED_RUN <= run.length; start++) windows.add(run.slice(start, start + COPIED_RUN));
+  if (windows.size === 0) return false;
+  for (const context of contexts) {
+    for (let start = 0; start + COPIED_RUN <= context.length; start++) if (windows.has(context.slice(start, start + COPIED_RUN))) return true;
+  }
+  return false;
+}
+
+/**
+ * A note on a findings decision must not carry what the findings are: one the credential scanner flags, or one that copies
+ * a run of COPIED_RUN characters from the text around a finding (`contexts`, from scanWithContexts), is refused.
+ */
+function findingsNote(note: string | null | undefined, contexts: readonly string[]): string | null {
+  const checked = validNote(note);
+  if (checked === null) return null;
+  if (scanForCredentials(Buffer.from(checked, 'utf8')).findings.length > 0) {
+    throw new RecordsError('说明里有像凭据的内容，这个决定没有记录；说明里不要抄写命中处的原文');
+  }
+  if (copiesContext(checked, contexts)) {
+    throw new RecordsError(`说明里抄写了命中处的原文（与命中所在的行有连续 ${COPIED_RUN} 个字符相同），这个决定没有记录；请用自己的话写说明`);
+  }
+  return checked;
+}
+
+/** Bytes the Hub read or made: not an upload, and no person as author (B02 F[2]). Everything else a person supplied. */
+function fromHub(origin: ArtifactOrigin, author: ArtifactAuthor | undefined): boolean {
+  return !('upload' in origin) && author?.user === null;
+}
+
+/** A source_artifact record of bytes a person supplied: an upload, or a record with a person as author. */
+function personSupplied(artifact: SourceArtifact): boolean {
+  return !fromHub(artifact.body.origin, artifact.body.author);
+}
+
+/** The record a read is pinned to (`options.record`), or null. */
+function pinned(record: unknown): string | null {
+  if (record === undefined || record === null) return null;
+  if (!isSha256(record)) throw new TypeError('record must be the digest of a source_artifact record');
+  return record;
 }
 
 function validAuthor(author: ArtifactAuthor): ArtifactAuthor {
@@ -116,32 +168,16 @@ function validVisibility(visibility: Visibility, origin: ArtifactOrigin): Visibi
   return { readers: [...new Set(readers)].sort(), admins: visibility.admins, packs: [...new Set(packs)].sort(), shareable: visibility.shareable };
 }
 
-/** How much a tier lets a reader have: model_readable, then function_bytes_only, then retain_only. */
-function openness(tier: ReadTier): number {
-  if (tier === MODEL_READABLE) return 2;
-  return tier === FUNCTION_BYTES_ONLY ? 1 : 0;
-}
-
 function scannerVersion(scan: CredentialScan): number {
   const match = /@([0-9]+)$/.exec(scan.scanner);
   return match === null ? 0 : Number(match[1]);
 }
 
-/** Credential hits belong to the bytes: the newest scanner version among the records of these bytes decides (B02 R[4]). */
-function credentialHit(records: readonly SourceArtifact[]): boolean {
+/** Credential hits belong to the bytes: the scans of the newest scanner version among their records decide (B02 R[4]). */
+function newestHits(records: readonly SourceArtifact[]): SourceArtifact[] {
   let newest = -1;
-  let hit = false;
-  for (const record of records) {
-    const version = scannerVersion(record.body.scan);
-    const found = record.body.scan.findings.length > 0;
-    if (version > newest) {
-      newest = version;
-      hit = found;
-    } else if (version === newest && found) {
-      hit = true;
-    }
-  }
-  return hit;
+  for (const record of records) newest = Math.max(newest, scannerVersion(record.body.scan));
+  return records.filter((record) => scannerVersion(record.body.scan) === newest && record.body.scan.findings.length > 0);
 }
 
 interface Viewer {
@@ -152,6 +188,7 @@ interface Viewer {
 interface Choice {
   artifact: SourceArtifact;
   tier: ReadTier;
+  /** The tier is retain_only because of a credential hit no acceptance in force lifts for this record. */
   credential: boolean;
 }
 
@@ -195,8 +232,11 @@ export class RecordArtifacts implements Artifacts {
     const sha256 = sha256Hex(input.bytes);
     const scan = scanForCredentials(input.bytes);
     const hit = scan.findings.length > 0;
+    // Acceptance is for what the Hub reads or makes, never for what a person supplies (B02 R[4]): an upload with a hit is
+    // refused whatever an admin accepted, and a record with a person as author keeps retain_only.
     if (hit && 'upload' in origin) await this.#refuseUpload({ sha256, size, mediaType: input.mediaType, origin, author, run, scan });
-    const readTier = hit ? RETAIN_ONLY : requestedTier;
+    const accepted = hit && fromHub(origin, author) ? await this.#acceptanceOf(sha256, scan) : null;
+    const readTier = hit && accepted === null ? RETAIN_ONLY : requestedTier;
     const body: SourceArtifactBody = {
       sha256,
       size,
@@ -208,9 +248,20 @@ export class RecordArtifacts implements Artifacts {
       provenance_type: input.provenanceType,
       read_tier: readTier,
       visibility,
-      scan,
+      scan: accepted === null ? scan : { ...scan, accepted },
     };
-    const dedupe = digestOf({ sha256, media_type: input.mediaType, name, origin, author, provenance_type: input.provenanceType, read_tier: readTier, visibility });
+    // The acceptance takes part only when there is one, so the dedupe key of every other ingest is what it always was.
+    const dedupe = digestOf({
+      sha256,
+      media_type: input.mediaType,
+      name,
+      origin,
+      author,
+      provenance_type: input.provenanceType,
+      read_tier: readTier,
+      visibility,
+      accepted: accepted?.authorization,
+    });
     // Every check that can refuse runs before the bytes are written: objects are never deleted.
     const index = validateIndex([
       { key: 'artifact.sha256', value: sha256 },
@@ -251,14 +302,15 @@ export class RecordArtifacts implements Artifacts {
 
   async readable(principal: Principal, sha256: string): Promise<SourceArtifact | null> {
     const viewer = await this.#viewer(principal);
-    return viewer === null ? null : ((await this.#choose(viewer, sha256))?.artifact ?? null);
+    return viewer === null ? null : ((await this.#choose(viewer, sha256, null))?.artifact ?? null);
   }
 
-  async source(principal: Principal, sha256: string, options: { consumer?: ProducerKind } = {}): Promise<ArtifactSource | null> {
+  async source(principal: Principal, sha256: string, options: { consumer?: ProducerKind; record?: string } = {}): Promise<ArtifactSource | null> {
     const consumer = options.consumer ?? MODEL;
     if (!isProducerKind(consumer)) throw new TypeError('consumer must be a producer kind');
+    const record = pinned(options.record);
     const viewer = await this.#viewer(principal);
-    const choice = viewer === null ? null : await this.#choose(viewer, sha256);
+    const choice = viewer === null ? null : await this.#choose(viewer, sha256, record);
     if (choice === null) return null;
     const body = choice.artifact.body;
     const given = choice.tier === MODEL_READABLE || (choice.tier === FUNCTION_BYTES_ONLY && consumer === FUNCTION);
@@ -273,15 +325,92 @@ export class RecordArtifacts implements Artifacts {
     return this.#objects.get(sha256);
   }
 
-  async text(principal: Principal, sha256: string, options: { maxBytes?: number } = {}): Promise<ArtifactText | null> {
+  async text(principal: Principal, sha256: string, options: { maxBytes?: number; record?: string } = {}): Promise<ArtifactText | null> {
+    const record = pinned(options.record);
     const viewer = await this.#viewer(principal);
-    const choice = viewer === null ? null : await this.#choose(viewer, sha256);
+    const choice = viewer === null ? null : await this.#choose(viewer, sha256, record);
     if (choice === null) return null;
     if (choice.tier !== MODEL_READABLE) return { artifact: choice.artifact, readable: false, truncated: false, note: this.#note(choice) };
     const bytes = await this.#objects.get(sha256);
     if (bytes === null) throw new IntegrityError('有源文件记录，但原件字节丢失', { detail: { sha256 } });
     const preview = textPreview(bytes, options.maxBytes);
     return { artifact: choice.artifact, readable: true, text: preview.text, truncated: preview.truncated };
+  }
+
+  async acceptFindings(by: Principal, sha256: string, note?: string | null): Promise<FindingsAcceptance> {
+    if (!isSha256(sha256)) throw new TypeError('sha256 must be a lowercase hex SHA-256');
+    await this.#requireAdmin(by, '只有管理员可以接受凭据扫描的命中');
+    validNote(note);
+    const bytes = await this.#objects.get(sha256);
+    if (bytes === null) {
+      const refused = await this.#store.find({ key: 'artifact.refused', value: sha256, kind: 'action', limit: 1 });
+      throw new ConflictError(
+        refused.items.length > 0
+          ? '这份字节是一次因含凭据被拒绝的上传，Hub 没有保存原文，没有可接受的扫描结果；含凭据的上传在任何情况下都不受理'
+          : 'Hub 没有保存这份字节，没有可接受的扫描结果',
+        { detail: { sha256 } },
+      );
+    }
+    // An acceptance lifts only bytes the Hub read or made (B02 R[4]); what a person supplied it never lifts.
+    const all = await this.records(sha256);
+    if (!all.some((artifact) => !personSupplied(artifact))) {
+      throw new ConflictError(
+        all.length === 0
+          ? 'Hub 没有这份字节的源文件记录，没有可接受的扫描结果'
+          : '这份字节只来自个人提供的内容（上传，或以个人为作者的记录）；接受只对 Hub 读取或生成的字节生效，个人提供的内容含凭据时不能接受',
+        { detail: { sha256 } },
+      );
+    }
+    // The decision covers the current scanner's findings of the stored bytes, never a finding list someone hands in.
+    const { scan, contexts } = scanWithContexts(bytes);
+    if (scan.findings.length === 0) throw new ConflictError('当前的凭据扫描在这份字节里没有命中，不需要接受', { detail: { sha256, scanner: scan.scanner } });
+    // A truncated scan binds only the positions it kept: the rest were never shown, and past a pattern's cap never looked for.
+    if (scan.truncated) {
+      throw new ConflictError(`命中超过可列出的上限（列出了 ${scan.findings.length} 处，还有更多），管理员无法逐处核对，不能接受`, {
+        detail: { sha256, scanner: scan.scanner, kept: scan.findings.length },
+      });
+    }
+    const reason = findingsNote(note, contexts);
+    const authorization = await this.#authorizations.configureResource(by, scanAcceptanceKey(sha256), scanDigest(scan), reason);
+    return { authorization, scan };
+  }
+
+  async revokeFindings(by: Principal, sha256: string, note?: string | null): Promise<AuthorizationRecord> {
+    if (!isSha256(sha256)) throw new TypeError('sha256 must be a lowercase hex SHA-256');
+    await this.#requireAdmin(by, '只有管理员可以撤回对凭据扫描命中的接受');
+    const contexts = validNote(note) === null ? [] : await this.#findingContexts(sha256);
+    return this.#authorizations.revoke(by, { permission: RESOURCE_CONFIG, subject: WHOLE_HUB, object: scanAcceptanceKey(sha256), note: findingsNote(note, contexts) });
+  }
+
+  /** The text around each finding of the stored bytes, for the note check only (never stored). */
+  async #findingContexts(sha256: string): Promise<string[]> {
+    const bytes = await this.#objects.get(sha256);
+    return bytes === null ? [] : scanWithContexts(bytes).contexts;
+  }
+
+  /** The acceptance in force that covers exactly this scan of these bytes, as recorded on an ingested artifact; else null. */
+  async #acceptanceOf(sha256: string, scan: CredentialScan): Promise<ScanAcceptance | null> {
+    // A truncated scan is never covered: its digest binds only the findings it kept.
+    if (scan.truncated) return null;
+    const configuration = await this.#authorizations.resourceConfig(scanAcceptanceKey(sha256));
+    if (configuration === null || configuration.body.bound !== scanDigest(scan)) return null;
+    return { by: configuration.body.decided_by, at: configuration.body.decided_at, authorization: configuration.digest };
+  }
+
+  /**
+   * Whether the credential hit of some bytes is lifted now: an acceptance in force covers every scan of the newest scanner
+   * version that found something, none of them truncated (B04 R[1]: checked again at every use, so a withdrawal takes
+   * effect at once).
+   */
+  async #hitAccepted(sha256: string, hits: readonly SourceArtifact[]): Promise<boolean> {
+    if (hits.some((record) => record.body.scan.truncated)) return false;
+    const configuration = await this.#authorizations.resourceConfig(scanAcceptanceKey(sha256));
+    return configuration !== null && hits.every((record) => scanDigest(record.body.scan) === configuration.body.bound);
+  }
+
+  async #requireAdmin(by: Principal, message: string): Promise<void> {
+    const viewer = await this.#viewer(by);
+    if (viewer === null || viewer.role !== ADMIN) throw new AccessError(message);
   }
 
   #note(choice: Choice): string {
@@ -307,19 +436,39 @@ export class RecordArtifacts implements Artifacts {
   }
 
   /**
-   * The record of these bytes that decides for this reader: of the records the reader may read, the one whose tier lets
-   * the most through, the oldest on a tie. A credential hit on the bytes makes the tier retain_only whatever that record says.
+   * The record of these bytes that decides for this reader: the pinned record when the read names one (and the reader may
+   * read it), else the newest record the reader may read, except that a record another person supplied never outranks one
+   * the Hub read or made or one of the reader's own; it decides only when the reader may read nothing else. A credential
+   * hit on the bytes makes the tier retain_only whatever that record says, unless an acceptance in force lifts it; it never
+   * lifts what a person supplied (B02 R[4]).
    */
-  async #choose(viewer: Viewer, sha256: string): Promise<Choice | null> {
+  async #choose(viewer: Viewer, sha256: string, record: string | null): Promise<Choice | null> {
     const all = await this.records(sha256);
-    let chosen: SourceArtifact | null = null;
-    for (const artifact of all) {
-      if (chosen !== null && openness(artifact.body.read_tier) <= openness(chosen.body.read_tier)) continue;
-      if (await this.#mayRead(viewer, artifact)) chosen = artifact;
-    }
+    const chosen = record === null ? await this.#deciding(viewer, all) : await this.#pinned(viewer, all, record);
     if (chosen === null) return null;
-    const credential = credentialHit(all);
+    const hits = newestHits(all);
+    const lifted = hits.length > 0 && !personSupplied(chosen) && (await this.#hitAccepted(sha256, hits));
+    const credential = hits.length > 0 && !lifted;
     return { artifact: chosen, tier: credential ? RETAIN_ONLY : chosen.body.read_tier, credential };
+  }
+
+  /** Newest first; another person's upload or record is only the fallback, so no user changes what governs someone else's reads. */
+  async #deciding(viewer: Viewer, all: readonly SourceArtifact[]): Promise<SourceArtifact | null> {
+    let fallback: SourceArtifact | null = null;
+    for (let index = all.length - 1; index >= 0; index--) {
+      const artifact = all[index];
+      const others = personSupplied(artifact) && artifact.body.author?.user !== viewer.id;
+      if (others && fallback !== null) continue;
+      if (!(await this.#mayRead(viewer, artifact))) continue;
+      if (!others) return artifact;
+      fallback = artifact;
+    }
+    return fallback;
+  }
+
+  async #pinned(viewer: Viewer, all: readonly SourceArtifact[], record: string): Promise<SourceArtifact | null> {
+    const named = all.find((artifact) => artifact.digest === record);
+    return named !== undefined && (await this.#mayRead(viewer, named)) ? named : null;
   }
 
   /** Keeps only the digest and the scan conclusion in a validate action, then refuses the upload (B02 R[4], B05 R[3]). */

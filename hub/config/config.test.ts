@@ -4,10 +4,14 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import {
+  DEFAULT_JEV_MODEL,
+  DEFAULT_KEYCHAIN_ACCOUNT,
+  DEFAULT_KEYCHAIN_SERVICE,
   DEFAULT_LIMITS,
   HUB_ENVIRONMENT,
   HubConfigError,
   HubEnvironmentError,
+  PLATFORM_ONLY_ENVIRONMENT,
   assertNoRetiredEnvironment,
   isLoopbackAddress,
   loadConfig,
@@ -34,10 +38,13 @@ test('defaults with the required variables only', () => {
     host: '127.0.0.1',
     port: 7999,
     database: { host: '/srv/hub-data/pg', port: 5432, database: 'circle_hub', user: 'circle_hub' },
-    keychain: { service: 'circle-hub', account: 'vault' },
+    keychain: { service: 'circle-hub', account: 'vault-master-key' },
     limits: { ...DEFAULT_LIMITS },
+    jev: { model: 'jev-1.13.0' },
   });
   assert.equal('password' in config.database, false);
+  assert.deepEqual(config.keychain, { service: DEFAULT_KEYCHAIN_SERVICE, account: DEFAULT_KEYCHAIN_ACCOUNT });
+  assert.equal(config.jev.model, DEFAULT_JEV_MODEL);
 });
 
 test('every variable is read and validated', () => {
@@ -55,8 +62,10 @@ test('every variable is read and validated', () => {
     CIRCLE_HUB_MAX_UPLOAD_BYTES: '1048576',
     CIRCLE_HUB_MAX_RECORD_BYTES: '65536',
     CIRCLE_HUB_MAX_REQUEST_BYTES: '2000000',
+    CIRCLE_HUB_JEV_MODEL: 'jev-2.0.11',
     UNRELATED: 'ignored',
   });
+  assert.equal(config.jev.model, 'jev-2.0.11');
   assert.equal(config.dataDir, '/srv/hub');
   assert.equal(config.logDir, '/var/log/hub');
   assert.equal(config.host, '::1');
@@ -139,6 +148,43 @@ test('unknown CIRCLE_HUB_* names refuse to start; secret-looking names are point
   const config = loadConfig({ ...BASE, CIRCLE_HUB_TOKEN: 'client-side' }, { allowUnknown: ['CIRCLE_HUB_TOKEN'] });
   assert.equal(JSON.stringify(config).includes('client-side'), false);
   assert.equal(Object.keys(HUB_ENVIRONMENT).every((name) => name.startsWith('CIRCLE_HUB_')), true);
+});
+
+test('CIRCLE_HUB_JEV_MODEL must name an exact model version, never a moving alias', () => {
+  for (const model of ['jev-1.13.0', 'jev-0.0.0', 'jev-10.20.30', 'typed-judge-2.1.0', 'j2-1.0.0']) {
+    assert.equal(loadConfig({ ...BASE, CIRCLE_HUB_JEV_MODEL: model }).jev.model, model, model);
+  }
+  // Empty means unset, as for every other variable: the default applies.
+  assert.equal(loadConfig({ ...BASE, CIRCLE_HUB_JEV_MODEL: '' }).jev.model, DEFAULT_JEV_MODEL);
+  const refused = ['jev-latest', 'jev-preview', 'jev', 'jev-1.13', 'jev-1.13.0.1', 'jev-01.13.0', 'jev-1.013.0', 'JEV-1.13.0', 'jev_1.13.0', 'jev-1.13.0-beta', ' jev-1.13.0', 'jev-1.13.0\n', '1.13.0', '-1.13.0', 'jev--1.13.0'];
+  for (const model of refused) {
+    const found = problems({ ...BASE, CIRCLE_HUB_JEV_MODEL: model });
+    assert.equal(found.length, 1, JSON.stringify(model));
+    assert.match(found[0], /CIRCLE_HUB_JEV_MODEL 必须是带确切版本号的模型名/);
+  }
+});
+
+test('CIRCLE_HUB_JEV_MODEL is at most 128 characters, the longest model name the typed-judgment client takes', () => {
+  const longest = `${'a'.repeat(122)}-1.0.0`;
+  assert.equal(longest.length, 128);
+  assert.equal(loadConfig({ ...BASE, CIRCLE_HUB_JEV_MODEL: longest }).jev.model, longest);
+  for (const model of [`${'a'.repeat(123)}-1.0.0`, `${'a'.repeat(130)}-1.0.0`, `jev-1.0.${'9'.repeat(130)}`]) {
+    const found = problems({ ...BASE, CIRCLE_HUB_JEV_MODEL: model });
+    assert.equal(found.length, 1, model);
+    assert.match(found[0], /CIRCLE_HUB_JEV_MODEL 最多 128 个字符/);
+  }
+});
+
+test('the names only platform commands read are tolerated and never read; other unknown names still refuse to start', () => {
+  assert.deepEqual(Object.keys(PLATFORM_ONLY_ENVIRONMENT), ['CIRCLE_HUB_LIBPQ_BIN']);
+  const config = loadConfig({ ...BASE, CIRCLE_HUB_LIBPQ_BIN: '/opt/synthetic/libpq/bin' });
+  assert.deepEqual(config, loadConfig(BASE));
+  assert.equal(JSON.stringify(config).includes('/opt/synthetic/libpq/bin'), false);
+  assert.equal(Object.keys(HUB_ENVIRONMENT).some((name) => name in PLATFORM_ONLY_ENVIRONMENT), false);
+  // CIRCLE_HUB_HOME is not a platform name (hub/platform reads the data root from CIRCLE_HUB_DATA_DIR and refuses it too).
+  const home = problems({ ...BASE, CIRCLE_HUB_HOME: '/srv/elsewhere' });
+  assert.equal(home.length, 1);
+  assert.match(home[0], /CIRCLE_HUB_HOME 不是 Hub 的配置项/);
 });
 
 test('retired CIRCLE_SERVER_* names refuse to start, even empty or beside the new name, and values never appear', () => {

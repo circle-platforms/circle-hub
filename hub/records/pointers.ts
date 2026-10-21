@@ -2,7 +2,7 @@
 // target with the expected one and, only when they agree, writes a move_root action record (B05 R[4]) and the new target in
 // the same transaction. A refused move writes nothing. Each action carries the new version and the previous move's action,
 // so every move is its own record, also when it repeats an earlier move in the same millisecond.
-import { RunId } from '../../contracts/src/common.ts';
+import { RunId, Versioned } from '../../contracts/src/common.ts';
 import type { ActionBody, MoveInput, MoveResult, Page, PageQuery, PointerState, Pointers, RecordStore, StoredRecord, Transaction } from './api.ts';
 import { RECORD_SCHEMAS } from './constants.ts';
 import { iso } from './db.ts';
@@ -11,7 +11,6 @@ import { isSha256 } from './digest.ts';
 import { AccessError, IntegrityError } from './errors.ts';
 
 const NAME = /^[a-z0-9][a-z0-9:._/-]{0,199}$/;
-const COMPONENT = /^[a-z][a-z0-9_.-]*@[0-9]+$/;
 /** Namespace of the per-name advisory locks (two-key form: namespace, hashtext(name)). */
 const POINTER_LOCK_SPACE = 730_156;
 
@@ -43,7 +42,7 @@ export class PgPointers implements Pointers {
     if (!isSha256(input.next)) throw new TypeError('next must be a lowercase hex SHA-256');
     if (input.next === input.expected) throw new TypeError('next must differ from expected');
     const component = input.component ?? 'records.pointers@1';
-    if (!COMPONENT.test(component)) throw new TypeError('component must be name@major');
+    if (!Versioned.safeParse(component).success) throw new TypeError('component must be name@major (contracts Versioned)');
     const run = input.run ?? null;
     if (run !== null && !RunId.safeParse(run).success) throw new TypeError('run must be a run id');
     const note = input.note ?? null;

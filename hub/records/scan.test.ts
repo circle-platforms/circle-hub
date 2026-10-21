@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { test } from 'node:test';
 import { gzipSync } from 'node:zlib';
-import { CREDENTIAL_DETECTORS, CREDENTIAL_SCANNER, scanForCredentials } from './scan.ts';
+import { CREDENTIAL_DETECTORS, CREDENTIAL_SCANNER, scanForCredentials, scanWithContexts } from './scan.ts';
 
 const BS = String.fromCharCode(0x5c);
 const dashes = '-'.repeat(5);
@@ -346,4 +346,35 @@ test('many hits are capped and marked truncated; large inputs scan in linear tim
   assert.equal(blobScan.clean, true);
   assert.ok(adversarialScan.findings.length <= 100);
   assert.ok(elapsed < 5000, `scan took ${elapsed} ms`);
+});
+
+test('scanWithContexts gives the same scan and, per kept finding, the text it was found in', () => {
+  const value = `Synth${hex(4)}9x`;
+  const cases: Array<[string, string | Uint8Array, string]> = [
+    ['one line', `first line\nsecond line password=${value}\nthird line\nfourth line\n`, value],
+    ['YAML value on the next line', `database:\n  password:\n    ${value}\n`, value],
+    ['double-encoded JSON', JSON.stringify({ code: 1000, data: JSON.stringify({ password: value }) }), value],
+    ['escaped Chinese (ensure_ascii), two levels down', asciiJson({ data: asciiJson({ note: `密码：${value}` }) }), `密码：${value}`],
+    ['UTF-16LE without a byte order mark', Buffer.from(`# notes\npassword=${value}\n`, 'utf16le'), `password=${value}`],
+    ['GBK Chinese', GBK_NOTE, '密码：Admin@2026'],
+    ['NUL bytes inside the key', `pass${NUL}word=${value}`, `password=${value}`],
+  ];
+  for (const [label, input, expected] of cases) {
+    const bytes = typeof input === 'string' ? Buffer.from(input, 'utf8') : input;
+    const { scan, contexts } = scanWithContexts(bytes);
+    assert.deepEqual(scan, scanForCredentials(bytes), label);
+    assert.equal(contexts.length, scan.findings.length, label);
+    assert.ok(scan.findings.length > 0 && contexts.every((context) => context.includes(expected)), `${label}: ${JSON.stringify(contexts)}`);
+  }
+  // The line of the hit and the next one, not the lines further on.
+  assert.deepEqual(scanWithContexts(Buffer.from(`first line\nsecond line password=${value}\nthird line\nfourth line\n`)).contexts, [`second line password=${value}\nthird line`]);
+  // A key header: the key material after it, over several lines.
+  const material = randomBytes(192).toString('base64').match(/.{1,64}/g) ?? [];
+  const key = scanWithContexts(Buffer.from(`${pemHeader('PRIVATE KEY')}\n${material.join('\n')}\n${pemFooter('PRIVATE KEY')}\n`));
+  assert.ok(key.contexts.length === 1 && material.every((line) => key.contexts[0].includes(line)));
+  // Many findings: one context per kept finding, and the same truncated scan.
+  const many = Buffer.from(Array.from({ length: 150 }, () => `t=${jwt()}`).join('\n'));
+  const capped = scanWithContexts(many);
+  assert.deepEqual(capped.scan, scanForCredentials(many));
+  assert.equal(capped.contexts.length, 100);
 });

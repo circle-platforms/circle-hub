@@ -1,4 +1,5 @@
-// The CIRCLE_HUB_* variables the Hub reads. This table is the single list; anything else under the prefix refuses to start.
+// The CIRCLE_HUB_* variables the Hub reads. This table is the single list; anything else under the prefix refuses to start,
+// except the names only platform commands read (PLATFORM_ONLY_ENVIRONMENT), which are tolerated and never read here.
 
 export const HUB_PREFIX = 'CIRCLE_HUB_';
 export const RETIRED_PREFIX = 'CIRCLE_SERVER_';
@@ -15,14 +16,31 @@ export const HUB_ENVIRONMENT = {
   CIRCLE_HUB_DATABASE_NAME: '数据库名，默认 circle_hub',
   CIRCLE_HUB_DATABASE_USER: '数据库用户，默认 circle_hub；口令不从环境变量读取',
   CIRCLE_HUB_KEYCHAIN_SERVICE: '钥匙串里密钥库主密钥的服务名，默认 circle-hub',
-  CIRCLE_HUB_KEYCHAIN_ACCOUNT: '钥匙串里密钥库主密钥的账户名，默认 vault',
+  CIRCLE_HUB_KEYCHAIN_ACCOUNT: '钥匙串里密钥库主密钥的账户名，默认 vault-master-key',
   CIRCLE_HUB_MAX_UPLOAD_BYTES: '单个上传或对象的字节上限，默认 33554432（32 MiB），最大 268435456（256 MiB）',
   CIRCLE_HUB_MAX_RECORD_BYTES: '单条记录正文（规范化 JSON）的字节上限，默认 16777216（16 MiB）',
   CIRCLE_HUB_MAX_REQUEST_BYTES: '单个 HTTP 请求体的字节上限，默认按上传上限的 base64 长度再加 1 MiB，至少 48 MiB，最大 512 MiB',
+  CIRCLE_HUB_JEV_MODEL:
+    'K04 类型化判断模型（Jev）带确切版本号的模型名，最多 128 个字符，默认 jev-1.13.0；不接受 jev-latest 这类会随新版本移动的别名（判断要记下确切版本）',
 } as const;
 
 export type HubEnvironmentName = keyof typeof HUB_ENVIRONMENT;
 
 export function isHubEnvironmentName(name: string): name is HubEnvironmentName {
   return Object.hasOwn(HUB_ENVIRONMENT, name);
+}
+
+/**
+ * CIRCLE_HUB_* names only platform commands read: the values of hub/platform/environment.ts PLATFORM_VARIABLES that are
+ * not in HUB_ENVIRONMENT (the platform's list is the source; a test keeps the two equal). loadConfig tolerates them and
+ * never reads them, so an operator shell that sets them can still run `circle-hub serve`.
+ */
+export const PLATFORM_ONLY_ENVIRONMENT = {
+  CIRCLE_HUB_LIBPQ_BIN: 'pg_dump 和 pg_restore 所在的目录（绝对路径），只有平台的备份、恢复和部署命令读取；circle-hub serve 不读',
+} as const;
+
+export type PlatformOnlyName = keyof typeof PLATFORM_ONLY_ENVIRONMENT;
+
+export function isPlatformOnlyName(name: string): name is PlatformOnlyName {
+  return Object.hasOwn(PLATFORM_ONLY_ENVIRONMENT, name);
 }

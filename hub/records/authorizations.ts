@@ -50,6 +50,9 @@ function note(value: unknown): string | null {
   return value;
 }
 
+/** The note rule of every decision, for checks that run before a decision is recorded (package-internal). */
+export { note as validNote };
+
 function userId(value: unknown): string {
   if (!UserId.safeParse(value).success) throw new TypeError('not a user id');
   return value as string;

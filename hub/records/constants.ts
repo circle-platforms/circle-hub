@@ -15,6 +15,15 @@ export function artifactShareKey(artifact: { kind: string; digest: string }): st
   return `rec:${artifact.digest}`;
 }
 
+/**
+ * Resource id of an admin's acceptance of the credential findings of some exact bytes: `scan:<sha256>`. The acceptance is a
+ * resource configuration (B04, subject WHOLE_HUB) bound to scanDigest of the scan it covers (README decision 18).
+ */
+export function scanAcceptanceKey(sha256: string): string {
+  if (typeof sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(sha256)) throw new TypeError('a scan acceptance names the SHA-256 of the bytes');
+  return `scan:${sha256}`;
+}
+
 /** Schemas of the record bodies this package writes. */
 export const RECORD_SCHEMAS = {
   source_artifact: 'source_artifact@1',

@@ -2,15 +2,17 @@ import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { after, before, test } from 'node:test';
 import pg from 'pg';
-import { SCHEMA_REGISTRY } from '../../contracts/src/index.ts';
+import { SCHEMA_REGISTRY, SchemaId } from '../../contracts/src/index.ts';
 import type { DatabaseConfig } from '../config/index.ts';
 import { startPostgres } from '../testing/postgres.ts';
 import type { TemporaryPostgres } from '../testing/postgres.ts';
 import { openTestRecords } from '../testing/records.ts';
 import { CanonicalizationError } from './canonical.ts';
+import { RECORD_SCHEMAS } from './constants.ts';
 import { Database, createPool, encodeCursor } from './db.ts';
 import { recordDigest } from './digest.ts';
 import { IntegrityError, LimitError, MigrationError, RecordsError } from './errors.ts';
+import { newId } from './ids.ts';
 import { MIGRATIONS, migrate, migrationChecksum } from './migrations.ts';
 import { openRecords } from './index.ts';
 
@@ -93,18 +95,48 @@ test('inputs that are not records are refused before anything is written', async
   assert.equal(Number((await sql(kit.database, 'SELECT count(*) AS n FROM records')).rows[0].n), 0);
 });
 
-test('every schema id registered in the contracts can be stored, under the same pattern in code and in the table', async (t) => {
+test('every schema id registered in the contracts can be stored; anything that is not a contracts SchemaId is refused', async (t) => {
   const kit = await openTestRecords({ postgres });
   t.after(() => kit.close());
   const ids = Object.keys(SCHEMA_REGISTRY);
-  assert.ok(ids.includes('check-outcome@1') && ids.includes('catalog-entry@1') && ids.includes('run-summary@1'));
-  for (const schema of [...ids, 'tree_node2@1']) {
+  for (const named of ['check-outcome@1', 'run-summary@1', 'pack-summary@1', 'submission-received@1', 'catalog-entry@1']) assert.ok(ids.includes(named), named);
+  for (const schema of [...ids, ...Object.values(RECORD_SCHEMAS), 'tree_node2@1', 'x@0', 'a-b_c9@10']) {
+    assert.equal(SchemaId.safeParse(schema).success, true, schema);
     const stored = await kit.store.put({ kind: 'validation_result', schema, provenance: 'projected', body: { schema } });
     assert.equal((await kit.store.get(stored.digest))?.schema, schema);
   }
-  for (const schema of ['Claim@1', 'claim', '-x@1', '1x@1', 'claim@v1', 'a b@1']) {
-    await assert.rejects(kit.store.put({ kind: 'claim', schema, provenance: 'observed', body: {} }), TypeError, schema);
+  // Leading-zero majors, upper case, empty names or majors, other characters and surrounding white space.
+  const refused = ['claim@01', 'claim@00', 'Claim@1', 'CLAIM@1', 'check-Outcome@1', '', '@1', 'claim@', 'claim', '-x@1', '1x@1', 'claim@v1', 'a b@1', 'a.b@1', ' claim@1', 'claim@1 ', 'claim@1\n', 'claim@1@2'];
+  for (const schema of refused) {
+    assert.equal(SchemaId.safeParse(schema).success, false, JSON.stringify(schema));
+    await assert.rejects(kit.store.put({ kind: 'claim', schema, provenance: 'observed', body: {} }), TypeError, JSON.stringify(schema));
   }
+  await assert.rejects(kit.store.put({ kind: 'claim', schema: 1 as never, provenance: 'observed', body: {} }), TypeError);
+  assert.equal(Number((await sql(kit.database, "SELECT count(*) AS n FROM records WHERE kind = 'claim'")).rows[0].n), 0);
+});
+
+test('a record whose schema is not a contracts SchemaId is refused on read, although the table lets its shape through', async (t) => {
+  const kit = await openTestRecords({ postgres });
+  t.after(() => kit.close());
+  // The table only checks the shape (migration 1 accepts a leading-zero major); a row written past put() is refused on read.
+  const envelope = { kind: 'claim', schema: 'claim@01', provenance: 'observed', created_at: NOW, body: { x: 1 } };
+  const digest = recordDigest(envelope);
+  await sql(kit.database, 'INSERT INTO records (id, digest, kind, schema, provenance, created_at, body, size) VALUES ($1, $2, $3, $4, $5, $6, $7, 7)', [
+    newId('rcd'),
+    digest,
+    envelope.kind,
+    envelope.schema,
+    envelope.provenance,
+    NOW,
+    '{"x":1}',
+  ]);
+  await assert.rejects(kit.store.get(digest), (error: unknown) => error instanceof IntegrityError && /模式名/.test(error.message));
+  await assert.rejects(kit.store.list({ kind: 'claim' }), IntegrityError);
+  // The table still refuses what is not name@major at all.
+  await assert.rejects(
+    sql(kit.database, 'INSERT INTO records (id, digest, kind, schema, provenance, created_at, body, size) VALUES ($1, $2, $3, $4, $5, $6, $7, 2)', [newId('rcd'), 'b'.repeat(64), 'claim', 'Claim@1', 'observed', NOW, '{}']),
+    /records_schema_check/,
+  );
 });
 
 test('index values are limited in UTF-8 bytes and checked before anything is written', async (t) => {

@@ -21,10 +21,10 @@ export { canonicalize, canonicalBytes, CanonicalizationError } from './canonical
 export { sha256Hex, digestOf, recordDigest, isSha256, SHA256_PATTERN } from './digest.ts';
 export { newId, ulid, idTime, isId } from './ids.ts';
 export { RecordsError, IntegrityError, LimitError, AccessError, ConflictError, MigrationError, VaultError } from './errors.ts';
-export { scanForCredentials, CREDENTIAL_SCANNER, CREDENTIAL_DETECTORS } from './scan.ts';
+export { scanForCredentials, scanDigest, CREDENTIAL_SCANNER, CREDENTIAL_DETECTORS } from './scan.ts';
 export { textPreview, stripNul } from './text.ts';
 export { maskedForDisplay, FileKeyProvider } from './vault.ts';
-export { WHOLE_HUB, RECORD_SCHEMAS, artifactShareKey } from './constants.ts';
+export { WHOLE_HUB, RECORD_SCHEMAS, artifactShareKey, scanAcceptanceKey } from './constants.ts';
 
 // ---------------------------------------------------------------- identity
 
@@ -105,7 +105,10 @@ export interface IndexEntry {
 
 export interface RecordInput<B = unknown> {
   kind: RecordKind;
-  /** `name@major` as contracts SchemaId (`^[a-z][a-z0-9_-]*@[0-9]+$`), for example `source_artifact@1` or `check-outcome@1`. */
+  /**
+   * `name@major` as contracts SchemaId (`^[a-z][a-z0-9_-]*@(0|[1-9][0-9]*)$`: lowercase letters, digits, `_` and `-`, no
+   * leading-zero major), for example `source_artifact@1`, `check-outcome@1` or `run-summary@1`. Checked on put and on every read.
+   */
   schema: string;
   provenance: ProvenanceType;
   body: B;
@@ -228,6 +231,19 @@ export interface CredentialFinding {
   column: number;
 }
 
+/**
+ * An admin's acceptance that the findings of a scan are no credentials (for example example URLs in a product manual):
+ * the resource configuration `scanAcceptanceKey(sha256)` bound to `scanDigest(scan)` (B04; README decision 18).
+ */
+export interface ScanAcceptance {
+  /** User id of the admin who decided. */
+  by: string;
+  /** When the decision was made (its `decided_at`). */
+  at: string;
+  /** Digest of the authorization record (the resource configuration) that covers this scan. */
+  authorization: string;
+}
+
 /** Scan conclusion: positions and detector ids only, never the matched text. */
 export interface CredentialScan {
   scanner: string;
@@ -236,8 +252,14 @@ export interface CredentialScan {
   /** True only when the bytes were inspected and nothing was found. A credential hit is `findings.length > 0`. */
   clean: boolean;
   findings: CredentialFinding[];
-  /** True when more findings existed than were kept. */
+  /** True when more findings existed than were kept. A truncated scan can never be accepted (README decision 18). */
   truncated: boolean;
+  /**
+   * Present only on a read or generated artifact the Hub read or made (no person as author), stored while an admin's
+   * acceptance covered exactly these bytes and this finding set; the findings stay as found. Reads check again that the
+   * acceptance is still in force (README decision 18).
+   */
+  accepted?: ScanAcceptance;
 }
 
 /** Body of a `source_artifact@1` record. */
@@ -264,7 +286,11 @@ export interface IngestInput {
   author: ArtifactAuthor;
   provenanceType: ProvenanceType;
   visibility: Visibility;
-  /** Default model_readable. A credential hit on a read or generated artifact forces retain_only. */
+  /**
+   * Default model_readable. A credential hit on a read or generated artifact forces retain_only, unless an admin accepted
+   * exactly these findings of exactly these bytes (acceptFindings) and the Hub read or made them (`author.user` null); an
+   * upload with a hit is refused whatever was accepted, and a record with a person as author keeps retain_only.
+   */
   readTier?: ReadTier;
   name?: string | null;
   capturedAt?: string;
@@ -288,19 +314,29 @@ export interface ArtifactSource {
   sha256: string;
   size: number;
   mediaType: string;
-  /** Effective tier: retain_only whenever the bytes have a credential hit. */
+  /** Effective tier: retain_only whenever the bytes have a credential hit that no acceptance in force covers for this record. */
   readTier: ReadTier;
   /** The verified original, or null when the tier withholds it from this consumer; `note` then says why. */
   bytes: Uint8Array | null;
   note?: string;
 }
 
+/** What acceptFindings decided: the configuration record and the fresh scan it covers (positions and detector ids only). */
+export interface FindingsAcceptance {
+  /** resource_config, subject WHOLE_HUB, object `scanAcceptanceKey(sha256)`, bound `scanDigest(scan)`. */
+  authorization: AuthorizationRecord;
+  scan: CredentialScan;
+}
+
 export interface Artifacts {
   /**
    * Stores the bytes and a source_artifact record. An upload with a credential hit is refused with a RecordsError coded
    * CREDENTIAL_IN_UPLOAD: no bytes are stored, only a validate action with the digest and the scan conclusion (B02 R[4]).
+   * A read or generated artifact with a hit is stored at retain_only, unless an acceptance in force covers these bytes and
+   * this finding set: then it keeps the requested tier and its scan names the acceptance (`scan.accepted`).
    * Bytes the scanner cannot read as text are stored with `scan.inspected: false`. Repeating the same ingest (same bytes,
-   * origin, author, visibility, tier, name) returns the existing record. Every check runs before any byte is written.
+   * origin, author, visibility, tier, name, acceptance) returns the existing record. Every check runs before any byte is
+   * written.
    */
   ingest(input: IngestInput): Promise<SourceArtifact>;
   /** Every source_artifact record of these bytes, oldest first. No access check: for trusted callers only. */
@@ -308,23 +344,46 @@ export interface Artifacts {
   /** B02 R[3] for one record. The account is re-read: a disabled or demoted account loses access at once. */
   canRead(principal: Principal, artifact: SourceArtifact): Promise<boolean>;
   /**
-   * The record of these bytes that decides for this reader: of those the reader may read, the one whose read tier lets the
-   * most through (model_readable, then function_bytes_only, then retain_only), the oldest on a tie. Absent and forbidden: null.
+   * The record of these bytes that decides for this reader (README decision 6): the newest record the reader may read,
+   * except that a record another person supplied (their upload, or a record with them as author) never outranks one the
+   * Hub read or made or one of the reader's own; it decides only when the reader may read nothing else of these bytes.
+   * Absent and forbidden: null. text() and source() use the same record unless they are pinned to one (`record`).
    */
   readable(principal: Principal, sha256: string): Promise<SourceArtifact | null>;
   /**
    * Tier-aware read by reference (B02 F[5], R[4]): null when absent or forbidden; the bytes only when the effective tier
    * allows them to this consumer (default model): model_readable to anyone, function_bytes_only to `function` only,
-   * retain_only (every credential hit) to no one. Throws IntegrityError when a recorded object's bytes are missing.
+   * retain_only (every credential hit no acceptance in force covers) to no one. Throws IntegrityError when a recorded
+   * object's bytes are missing. `record` (the digest of one source_artifact record of these bytes, for example the record a
+   * connector read returned) pins the read: that record decides instead of the rule of readable(), or null when it is not
+   * a record of these bytes or the reader may not read it; the credential rule applies to it all the same.
    */
-  source(principal: Principal, sha256: string, options?: { consumer?: ProducerKind }): Promise<ArtifactSource | null>;
+  source(principal: Principal, sha256: string, options?: { consumer?: ProducerKind; record?: string }): Promise<ArtifactSource | null>;
   /**
    * Verified bytes whatever the read tier, for trusted maintenance only: backup verification and re-scanning with a newer
    * scanner. Never for pack functions, parsers, projections or anything whose output can reach a model or a reader.
    */
   trustedBytes(sha256: string): Promise<Uint8Array | null>;
-  /** Text for a reader: null when absent or forbidden; NUL stripped; the stored bytes are untouched. */
-  text(principal: Principal, sha256: string, options?: { maxBytes?: number }): Promise<ArtifactText | null>;
+  /** Text for a reader: null when absent or forbidden; NUL stripped; the stored bytes are untouched. `record` pins it as for source(). */
+  text(principal: Principal, sha256: string, options?: { maxBytes?: number; record?: string }): Promise<ArtifactText | null>;
+  /**
+   * An admin decides that the credential findings of these exact bytes are no credentials (README decision 18): the stored
+   * bytes are scanned again with the current scanner and a resource configuration `scanAcceptanceKey(sha256)` bound to
+   * `scanDigest` of that scan is recorded (B04, append-only). AccessError for anyone but an enabled admin; ConflictError
+   * when the bytes are not stored (a refused upload keeps none), when no record of them was read or made by the Hub (only
+   * uploads or records with a person as author), when the scan finds nothing, or when it found more than it keeps
+   * (`truncated`). A note the credential scanner flags, or one that copies six or more consecutive characters from the
+   * lines carrying a finding, is refused (RecordsError) before anything is recorded. It takes effect for read and
+   * generated artifacts the Hub stores afterwards (a connector or generator ingests the bytes again), never for what a
+   * person supplied; other bytes or another finding set (another scanner version) are not covered.
+   */
+  acceptFindings(by: Principal, sha256: string, note?: string | null): Promise<FindingsAcceptance>;
+  /**
+   * Withdraws an acceptance: a new decision in the same chain (the earlier ones stay). Admin only (AccessError); the note
+   * rule of acceptFindings applies. From then on the bytes read as retain_only again and new ingests are stored at
+   * retain_only.
+   */
+  revokeFindings(by: Principal, sha256: string, note?: string | null): Promise<AuthorizationRecord>;
 }
 
 // ---------------------------------------------------------------- vault

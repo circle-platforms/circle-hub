@@ -351,6 +351,10 @@ test('ingest validates provenance, visibility rules and the size cap', async (t)
   await assert.rejects(kit.artifacts.ingest({ ...good, origin: {} as never }), TypeError);
   await assert.rejects(kit.artifacts.ingest({ ...good, origin: { upload: { session: null }, read: { object: 'a:b:c' } } as never }), TypeError);
   await assert.rejects(kit.artifacts.ingest({ ...good, origin: { read: { object: 'not an object id' } } }), TypeError);
+  // generator@major as contracts Versioned: no leading-zero major, no upper case.
+  for (const generator of ['renderer@01', 'Renderer@1', 'renderer', '@1']) {
+    await assert.rejects(kit.artifacts.ingest({ ...good, origin: { generated: { generator, inputs: [] } } }), TypeError, generator);
+  }
   await assert.rejects(
     kit.artifacts.ingest({ ...good, origin: { read: { object: 'plm:bug:1@1' } }, visibility: { readers: [], admins: true, packs: [], shareable: true } }),
     /never shareable/,

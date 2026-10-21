@@ -146,7 +146,10 @@ test('names, digests, runs and the acting account are validated', async (t) => {
   await assert.rejects(kit.pointers.move({ name: 'p', expected: null, next: 'not-a-digest' }), TypeError);
   await assert.rejects(kit.pointers.move({ name: 'p', expected: root('same'), next: root('same') }), TypeError);
   await assert.rejects(kit.pointers.move({ name: 'p', expected: null, next: root('n'), run: 'run_bad' }), TypeError);
-  await assert.rejects(kit.pointers.move({ name: 'p', expected: null, next: root('n'), component: 'NoVersion' }), TypeError);
+  // component@major as contracts Versioned: no leading-zero major either.
+  for (const component of ['NoVersion', 'records.pointers@01', 'Records@1', '@1', 'x@']) {
+    await assert.rejects(kit.pointers.move({ name: 'p', expected: null, next: root('n'), component }), TypeError, component);
+  }
   await assert.rejects(kit.pointers.move({ name: 'p', expected: null, next: root('n'), by: { id: member.id, name: member.name, role: 'user' } }), AccessError);
   await assert.rejects(kit.pointers.history('Bad Name'), TypeError);
   assert.equal(await kit.pointers.get('Bad Name'), null);
