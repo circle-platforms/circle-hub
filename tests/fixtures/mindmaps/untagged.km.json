@@ -1,0 +1,110 @@
+{
+  "root": {
+    "data": {
+      "id": "gi0gxs4hx0by",
+      "created": 1767576600000,
+      "text": "回归测试-31200-示例网关端点管理"
+    },
+    "children": [
+      {
+        "data": {
+          "id": "h45a4dpnl0up",
+          "created": 1767576661000,
+          "text": "配置",
+          "priority": 1
+        },
+        "children": [
+          {
+            "data": {
+              "id": "33kd1j7azkh0",
+              "created": 1767576722000,
+              "text": "relay endpoint add 192.0.2.51 80",
+              "priority": 2,
+              "degree": 1
+            },
+            "children": [
+              {
+                "data": {
+                  "id": "1pw8qzyqr3qm",
+                  "created": 1767576783000,
+                  "text": "show endpoints 显示 192.0.2.51 端口 80"
+                },
+                "children": []
+              }
+            ]
+          },
+          {
+            "data": {
+              "id": "8bgwwntc5re9",
+              "created": 1767576844000,
+              "text": "relay endpoint weight 192.0.2.51 0",
+              "priority": 2,
+              "degree": 2
+            },
+            "children": [
+              {
+                "data": {
+                  "id": "1ug0yv2edu4g",
+                  "created": 1767576905000,
+                  "text": "提示参数超出范围 1-100"
+                },
+                "children": []
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "data": {
+          "id": "81vhojyvmmtc",
+          "created": 1767576966000,
+          "text": "异常处理",
+          "priority": 1
+        },
+        "children": [
+          {
+            "data": {
+              "id": "jxjv62utov2o",
+              "created": 1767577027000,
+              "text": "端点不可达时自动摘除",
+              "priority": 2,
+              "degree": 2
+            },
+            "children": [
+              {
+                "data": {
+                  "id": "betg0j0qe4c9",
+                  "created": 1767577088000,
+                  "text": "无",
+                  "priority": 3
+                },
+                "children": []
+              },
+              {
+                "data": {
+                  "id": "drnrh4octwvo",
+                  "created": 1767577149000,
+                  "text": "1.relay endpoint add 192.0.2.52 81\n2.后端不监听 81 端口",
+                  "priority": 20
+                },
+                "children": [
+                  {
+                    "data": {
+                      "id": "cure62yj7ncx",
+                      "created": 1767577210000,
+                      "text": "端点状态为 down"
+                    },
+                    "children": []
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "template": "right",
+  "theme": "classic",
+  "version": "1.4.43"
+}

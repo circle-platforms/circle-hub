@@ -1,0 +1,11 @@
+{
+  "schema": "membership@1",
+  "origin": "决定：case-review 工作流包 findings 要求项的封闭发现码集合，就是 docs/hub-r4-architecture.md 第 6 节复核时查找遗漏的七类问题（说明见 tables/codes.json 的 findings）；被判对象是一个条目的提交（item、slots）",
+  "description": "每条审查发现的码只能是评审方法规定的七类问题之一：literal_issue、coverage_gap、differentiation_gap、edge_case_gap、negative_gap、block_structure_mismatch、self_contradiction",
+  "tier": "blocking",
+  "basis": "要求项 findings：发现码是评审方法的七类问题之一，严重程度是 critical、major、minor 之一（任务包声明的封闭集合）",
+  "item": "/item",
+  "values": ["$.slots.findings[*].code"],
+  "set": { "values": ["literal_issue", "coverage_gap", "differentiation_gap", "edge_case_gap", "negative_gap", "block_structure_mismatch", "self_contradiction"] },
+  "match": { "unicode": "nfc", "case": "sensitive", "whitespace": "trim" }
+}

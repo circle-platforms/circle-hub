@@ -1,0 +1,333 @@
+import assert from 'node:assert/strict';
+import { describe, it } from 'node:test';
+import { CatalogEntry } from '../../../../contracts/src/tables.ts';
+import { createCatalogView, getInterpreter } from '../../../../hub/rules/api.ts';
+import commandTree, { parseLimit, produceCommandEntries } from './command-tree.ts';
+import type { CommandEntryData, ProducedEntry, XmlModel } from './types.ts';
+import { assertTotal, fixtureBytes, hostileInputs, internalWarnings, latin1, seeded, xml, xmlDocument } from './test-support.ts';
+
+const document = xmlDocument(fixtureBytes('command-tree.xml'));
+const result = produceCommandEntries(document.model);
+const entry = (path: string): ProducedEntry => {
+  const found = result.entries.find((item) => item.path === path);
+  assert.ok(found, `missing ${path}`);
+  return found;
+};
+const data = (path: string): CommandEntryData => entry(path).data as CommandEntryData;
+const ROOT = 'a'.repeat(64);
+
+describe('command entries from the command tree', () => {
+  it('gives one entry per full command in document order', () => {
+    assert.deepEqual(
+      result.entries.map((item) => item.path),
+      [
+        '/commands/demo/pool/add',
+        '/commands/demo/pool/mode',
+        '/commands/demo/pool/description',
+        '/commands/demo/route/static',
+        '/commands/demo/acl/permit',
+        '/commands/demo/acl/mesh',
+        '/commands/demo/log',
+        '/commands/ping',
+        '/commands/show/demo/status',
+        '/commands/clear/counters/all',
+      ],
+    );
+    // K02 R[3]: a command of the build's tree is a definition.
+    assert.ok(result.entries.every((item) => item.kind === 'definition' && item.applicability === null));
+  });
+
+  it('merges argument lists of one path into overloads, each with its fragment', () => {
+    const add = entry('/commands/demo/pool/add');
+    assert.deepEqual(add.fragments, [
+      { parser: 'xml@1', selector: 'x/commands/scope/menu[1]/menu[1]/item[1]' },
+      { parser: 'xml@1', selector: 'x/commands/scope/menu[1]/menu[1]/item[2]' },
+    ]);
+    assert.deepEqual(
+      data('/commands/demo/pool/add').signatures.map((signature) => [signature.id, signature.params.map((param) => param.type)]),
+      [
+        ['1.1', ['string', 'ipv4', 'int', 'int']],
+        ['1.2', ['string', 'ipv6', 'int', 'int']],
+        ['2', ['string', 'string']],
+      ],
+    );
+    assert.equal(data('/commands/demo/pool/add').summary, 'Add a member to a pool\nAdd a member to a pool by host name');
+  });
+
+  it('maps argument types, ranges, enumerations, optional flags and defaults', () => {
+    const [first] = data('/commands/demo/pool/add').signatures;
+    assert.deepEqual(first.params, [
+      { name: 'arg1', type: 'string', minLength: 1, maxLength: 32, description: 'Pool name' },
+      { name: 'arg2', type: 'ipv4', description: 'Member address (either address family)' },
+      { name: 'arg3', type: 'int', minimum: 0, maximum: 65535, description: 'Member port' },
+      { name: 'arg4', type: 'int', minimum: 1, maximum: 100, optional: true, default: '10', description: 'Weight (1 to 100, default 10)' },
+    ]);
+    assert.deepEqual(data('/commands/demo/pool/mode').signatures[0].params[1], {
+      name: 'mode',
+      type: 'enum',
+      values: ['rr', 'lc', 'hash'],
+      optional: true,
+      default: 'rr',
+      description: 'Balancing mode',
+    });
+    assert.deepEqual(data('/commands/demo/pool/description').signatures[0].params[1], {
+      name: 'arg2',
+      type: 'string',
+      maxLength: 64,
+      optional: true,
+      default: '',
+      description: 'Description, ie cn=pool,dc=example,dc=invalid',
+    });
+    assert.deepEqual(
+      data('/commands/demo/route/static').signatures.map((signature) => signature.params[1]),
+      [
+        { name: 'arg2', type: 'mask', description: 'Mask, dotted or as a prefix length' },
+        { name: 'arg2', type: 'int', minimum: 0, maximum: 128, description: 'Mask, dotted or as a prefix length' },
+      ],
+    );
+    assert.deepEqual(data('/commands/ping').signatures[0].params[1], { name: 'arg2', type: 'int', minimum: 1, maximum: 5000, optional: true, default: '5', description: 'Count' });
+    assert.deepEqual(data('/commands/clear/counters/all').signatures, [{ id: '1', params: [] }]);
+  });
+
+  it('expands union types into at most 32 overloads and says when it stops', () => {
+    assert.equal(data('/commands/demo/acl/permit').signatures.length, 16);
+    const mesh = data('/commands/demo/acl/mesh').signatures;
+    assert.equal(mesh.length, 32);
+    assert.ok(mesh.every((signature) => signature.params[5].type === 'string'));
+    assert.ok(result.warnings.includes('demo acl mesh 的联合类型参数太多，有 1 个按字符串处理'));
+  });
+
+  it('writes a canonical statement that carries the data', () => {
+    assert.equal(
+      entry('/commands/demo/pool/add').statement,
+      [
+        'demo pool add <arg1:string 1..32> <arg2:ipv4/ipv6> <arg3:int 0..65535> [<arg4:int 1..100="10">]',
+        '  Add a member to a pool',
+        '  arg1: Pool name',
+        '  arg2: Member address (either address family)',
+        '  arg3: Member port',
+        '  arg4: Weight (1 to 100, default 10)',
+        'demo pool add <arg1:string 1..32> <arg2:string>',
+        '  Add a member to a pool by host name',
+        '  arg1: Pool name',
+        '  arg2: Member address or host name',
+      ].join('\n'),
+    );
+    assert.equal(entry('/commands/demo/pool/mode').statement.split('\n')[0], 'demo pool mode <arg1:string> [<mode:{rr|lc|hash}="rr">]');
+    assert.equal(entry('/commands/show/demo/status').statement, 'show demo status\n  Show the demo status\nshow demo status [<arg1:string="all">]\n  Show the demo status\n  arg1: Pool name (every pool when left out)');
+  });
+
+  it('tolerates stray quotes and attributes and reports what it could not read', () => {
+    assert.equal(data('/commands/demo/pool/description').summary, 'Type "text" to describe the pool');
+    assert.deepEqual(result.warnings, [
+      '有 1 个菜单或命令没有 name，已跳过（菜单连同其下的命令）',
+      'demo acl mesh 的联合类型参数太多，有 1 个按字符串处理',
+      'demo log 参数 arg1 的 limit=[10 - 1] 认不出，已忽略',
+      'demo log 参数 arg2 的 optional 取值 maybe 认不出，按必填处理',
+      '参数类型 MACADDR 不在类型表里（1 处），按字符串处理',
+    ]);
+    assert.deepEqual(data('/commands/demo/log').signatures[0].params.map((param) => [param.type, param.minimum, param.maximum, param.optional]), [
+      ['int', 0, 65535, undefined],
+      ['string', undefined, undefined, undefined],
+    ]);
+  });
+
+  it('gives selectors that locate the item in the xml@1 document', () => {
+    for (const item of result.entries) {
+      for (const fragment of item.fragments) {
+        const located = document.locate(fragment.selector);
+        assert.ok(located, fragment.selector);
+        const attributes = (located.data as { attributes: { name: string } }).attributes;
+        assert.equal(attributes.name, (item.data as CommandEntryData).words.at(-1), fragment.selector);
+      }
+    }
+  });
+
+  it('fits catalog-entry@1 and checks commands with the core catalog interpreter', () => {
+    const entries = result.entries.map((item) => ({ ...(item.data as CommandEntryData), reference: `tree:${ROOT}${item.path}` }));
+    for (const value of entries) assert.ok(CatalogEntry.safeParse(value).success, value.words.join(' '));
+    const view = createCatalogView(entries, { reference: `tree:${ROOT}/commands`, complete: true });
+    const interpreter = getInterpreter('catalog@1');
+    assert.ok(interpreter);
+    const run = (commands: string[]) =>
+      interpreter.run({
+        interpreter: 'catalog@1',
+        table: { schema: 'catalog@1', origin: 'synthetic test', catalog: 'commands', commands: ['$.commands'] },
+        subject: { commands },
+        catalog: view,
+        context: {},
+      });
+    const outcomes = run([
+      'demo pool add p1 192.0.2.5 80 10',
+      'demo pool add p1 2001:db8::5 80',
+      'demo pool add p1 192.0.2.5 80 150',
+      'demo pool add p1 host.example.invalid',
+      'demo route static 192.0.2.0 24 192.0.2.1',
+      'demo route static 192.0.2.0 255.255.0.255 192.0.2.1',
+      'demo pool mode p1 wrr',
+    ]);
+    assert.deepEqual(
+      outcomes.map((outcome) => [outcome.verdict, outcome.code ?? null]),
+      [
+        ['support', null],
+        ['support', null],
+        ['refute', 'core.catalog.param_out_of_range'],
+        ['support', null],
+        ['support', null],
+        ['refute', 'core.catalog.param_type_mismatch'],
+        ['refute', 'core.catalog.param_type_mismatch'],
+      ],
+    );
+  });
+});
+
+describe('address arguments that take other forms', () => {
+  const tree = (args: string) =>
+    xml(`<commands><scope type="global"><menu name="demo"><item name="fetch" help_string="Fetch a file"><arguments>${args}</arguments></item></menu></scope></commands>`);
+  const arg = (help: string, optional = 'NO') => `<arg name="" type="DOTTEDIP" help_string="${help}" length="" limit="" optional="${optional}" default_value=""></arg>`;
+
+  it('keeps a DOTTEDIP argument an IPv4 address unless its help text names another form', () => {
+    const produced = produceCommandEntries(
+      tree(
+        arg('IP of the demo server') +
+          arg('Host name or IP of the demo server') +
+          arg('Demo store address, or a URL of the archive') +
+          arg('Address/hostname of the peer') +
+          arg('Next hop, or a list of demo options', 'YES'),
+      ),
+    );
+    const [signature] = (produced.entries[0].data as CommandEntryData).signatures;
+    assert.deepEqual(signature.params.map((param) => param.type), ['ipv4', 'string', 'string', 'string', 'string']);
+    assert.ok(produced.warnings.includes('有 4 个 DOTTEDIP 参数的说明写了地址以外的写法（主机名、URL 等），按字符串处理'), produced.warnings.join('\n'));
+  });
+
+  it('takes declared argument types from the producer parameters, with their origin', () => {
+    const model = tree(arg('IP of the demo server') + arg('Peer of the demo server'));
+    const declared = {
+      argumentTypes: [
+        { command: 'demo fetch', position: 2, type: 'STRING', origin: 'synthetic: the help text of demo fetch names a peer host' },
+        { command: 'demo fetch', position: 9, type: 'STRING', origin: 'synthetic: no such argument' },
+        { command: 'demo fetch', position: 1, type: 'NO_SUCH_TYPE', origin: 'synthetic' },
+        { command: 'demo fetch', position: 1, type: 'STRING' },
+      ],
+    };
+    const produced = commandTree({ model, params: declared }) as { entries: ProducedEntry[]; warnings: string[] };
+    assert.deepEqual((produced.entries[0].data as CommandEntryData).signatures[0].params.map((param) => param.type), ['ipv4', 'string']);
+    assert.ok(produced.warnings.some((warning) => warning.includes('第 2 条') && warning.includes('没有这个参数')), produced.warnings.join('\n'));
+    assert.ok(produced.warnings.some((warning) => warning.includes('第 3 条') && warning.includes('NO_SUCH_TYPE')), produced.warnings.join('\n'));
+    assert.ok(produced.warnings.some((warning) => warning.includes('第 4 条') && warning.includes('来源')), produced.warnings.join('\n'));
+  });
+
+  it('lets the catalog check accept a host name where the help text allows one', () => {
+    const produced = produceCommandEntries(tree(arg('Host name or IP of the demo server')));
+    const entries = produced.entries.map((item) => ({ ...(item.data as CommandEntryData), reference: `tree:${ROOT}${item.path}` }));
+    const view = createCatalogView(entries, { reference: `tree:${ROOT}/commands`, complete: true });
+    const interpreter = getInterpreter('catalog@1');
+    assert.ok(interpreter);
+    const outcomes = interpreter.run({
+      interpreter: 'catalog@1',
+      table: { schema: 'catalog@1', origin: 'synthetic test', catalog: 'commands', commands: ['$.commands'] },
+      subject: { commands: ['demo fetch host.example.invalid', 'demo fetch 192.0.2.7'] },
+      catalog: view,
+      context: {},
+    });
+    assert.deepEqual(outcomes.map((outcome) => outcome.verdict), ['support', 'support']);
+  });
+});
+
+describe('limits and encodings', () => {
+  it('parses ranges, enumerations and single numbers', () => {
+    assert.deepEqual(parseLimit('[1 - 40]'), { kind: 'range', low: 1, high: 40 });
+    assert.deepEqual(parseLimit(' 0~8640 '), { kind: 'range', low: 0, high: 8640 });
+    assert.deepEqual(parseLimit('(-1 .. 10)'), { kind: 'range', low: -1, high: 10 });
+    assert.deepEqual(parseLimit('[10 - 1]'), { kind: 'unknown', text: '[10 - 1]' });
+    assert.deepEqual(parseLimit('{tcp|udp}'), { kind: 'values', values: ['tcp', 'udp'] });
+    assert.deepEqual(parseLimit('on, off'), { kind: 'values', values: ['on', 'off'] });
+    assert.deepEqual(parseLimit('64'), { kind: 'number', value: 64 });
+    assert.deepEqual(parseLimit('[1 - 99999999999999999999]'), { kind: 'unknown', text: '[1 - 99999999999999999999]' });
+    assert.equal(parseLimit(''), null);
+    assert.deepEqual(parseLimit('free text'), { kind: 'unknown', text: 'free text' });
+  });
+
+  it('reads an ISO-8859-1 tree and keeps its characters', () => {
+    const bytes = latin1(
+      '<?xml version="1.0" encoding="ISO-8859-1"?><commands><scope type="global"><item name="temp" help_string="Temperature in °C"><arguments><arg name="" type="U16" help_string="Seuil réglé" length="" limit="" optional="NO" default_value=""></arg></arguments></item></scope></commands>',
+    );
+    const produced = produceCommandEntries(xml(bytes));
+    assert.equal(produced.entries.length, 1);
+    assert.equal(produced.entries[0].statement, 'temp <arg1:int 0..65535>\n  Temperature in °C\n  arg1: Seuil réglé');
+  });
+
+  it('takes another base path and the { model, params } input', () => {
+    const produced = commandTree({ model: document.model, params: { path: '/cli/commands' } }) as { entries: ProducedEntry[] };
+    assert.equal(produced.entries[0].path, '/cli/commands/demo/pool/add');
+  });
+});
+
+describe('command tree on bad input', () => {
+  it('is total on hostile inputs, a cycle included', () => {
+    for (const [k, input] of hostileInputs().entries()) assertTotal(commandTree, input, `hostile ${k}`);
+  });
+
+  it('walks a very deep tree without recursion', () => {
+    let node: { name: string; attributes: { [name: string]: string }; children: unknown[]; range: [number, number]; irregular: null } = {
+      name: 'item',
+      attributes: { name: 'leaf' },
+      children: [],
+      range: [0, 0],
+      irregular: null,
+    };
+    for (let depth = 0; depth < 20000; depth++) node = { name: 'wrapper', attributes: {}, children: [node], range: [0, 0], irregular: null };
+    const model = { charset: 'utf-8', declaration: null, root: { name: 'commands', attributes: {}, children: [node], range: [0, 0], irregular: null }, comments: 0, processingInstructions: 0 };
+    const start = performance.now();
+    const produced = produceCommandEntries(model as unknown as XmlModel);
+    assert.equal(produced.entries.length, 0);
+    assert.ok(produced.warnings.some((warning) => warning.includes('超过 256 层')));
+    assert.ok(performance.now() - start < 1000);
+  });
+
+  it('produces a large tree quickly', () => {
+    const items: string[] = [];
+    for (let k = 0; k < 20000; k++) {
+      items.push(`<item name="c${k}" help_string="h"><arguments><arg name="" type="${['STRING', 'U16', 'IPADDR', 'IPMASK'][k % 4]}" help_string="x" length="" limit="${k % 3 === 0 ? '[1 - 9]' : ''}" optional="NO" default_value=""></arg></arguments></item>`);
+    }
+    const model = xml(`<commands><scope type="global"><menu name="m">${items.join('')}</menu></scope></commands>`);
+    const start = performance.now();
+    const produced = produceCommandEntries(model);
+    const ms = performance.now() - start;
+    assert.equal(produced.entries.length, 20000);
+    assert.ok(ms < 3000, `took ${ms} ms`);
+  });
+
+  it('is deterministic and keeps its invariants on random trees', () => {
+    const random = seeded(23);
+    const types = ['STRING', 'XSTRING', 'U16', 'U32', 'IPADDR', 'DOTTEDIP', 'IPMASK', 'BOGUS', ''];
+    const limits = ['', '[1 - 9]', '{a|b}', '[9 - 1]', 'x', '12'];
+    for (let i = 0; i < 150; i++) {
+      const parts: string[] = ['<commands><scope type="global">'];
+      for (let m = random.int(4); m >= 0; m--) {
+        parts.push(`<menu name="${random.pick(['m', 'n', ''])}">`);
+        for (let k = random.int(4); k >= 0; k--) {
+          parts.push(`<item name="${random.pick(['a', 'b', 'a b', ''])}"><arguments>`);
+          for (let a = random.int(4); a > 0; a--) {
+            parts.push(`<arg name="${random.pick(['', 'p'])}" type="${random.pick(types)}" limit="${random.pick(limits)}" length="${random.pick(limits)}" optional="${random.pick(['YES', 'NO', ''])}" default_value="${random.pick(['', '&amp;quot;x&amp;quot;', '5'])}"></arg>`);
+          }
+          parts.push('</arguments></item>');
+        }
+        parts.push('</menu>');
+      }
+      parts.push('</scope></commands>');
+      const model = xml(parts.join(''));
+      const produced = assertTotal(commandTree, model, parts.join('')) as { entries: ProducedEntry[] };
+      assert.deepEqual(internalWarnings(produced), []);
+      const paths = produced.entries.map((item) => item.path);
+      assert.equal(new Set(paths).size, paths.length);
+      for (const item of produced.entries) {
+        assert.ok(item.path?.startsWith('/commands/'));
+        const value = { ...(item.data as CommandEntryData), reference: `tree:${ROOT}${item.path}` };
+        assert.ok(CatalogEntry.safeParse(value).success);
+        for (const signature of (item.data as CommandEntryData).signatures) assert.ok(Number(signature.id?.split('.')[0]) <= item.fragments.length);
+      }
+    }
+  });
+});

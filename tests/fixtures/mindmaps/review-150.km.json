@@ -1,0 +1,1846 @@
+{
+  "root": {
+    "data": {
+      "id": "h671nk5z2006",
+      "created": 1767576600000,
+      "text": "31057-示例网关支持HTTP探活与权重联动"
+    },
+    "children": [
+      {
+        "data": {
+          "id": "6ref8lozsrql",
+          "created": 1767576661000,
+          "text": "拓扑：客户端-网关-两台后端（192.0.2.21、192.0.2.22）",
+          "priority": 3
+        },
+        "children": []
+      },
+      {
+        "data": {
+          "id": "bjmz8n47w2kw",
+          "created": 1767576722000,
+          "text": "配置",
+          "expandState": "expand"
+        },
+        "children": [
+          {
+            "data": {
+              "id": "k3qadj372x0x",
+              "created": 1767576783000,
+              "text": "CLI",
+              "layout": null,
+              "priority": 1
+            },
+            "children": [
+              {
+                "data": {
+                  "id": "73gmzr67j2pf",
+                  "created": 1767576844000,
+                  "text": "IPv4",
+                  "expandState": "expand"
+                },
+                "children": [
+                  {
+                    "data": {
+                      "id": "20cmfgnpr7i4",
+                      "created": 1767576905000,
+                      "text": "widget health interval pool1 5",
+                      "priority": 2,
+                      "degree": 1,
+                      "resource": [
+                        "Configuration"
+                      ]
+                    },
+                    "children": [
+                      {
+                        "data": {
+                          "id": "rt3wk784o67t",
+                          "created": 1767576966000,
+                          "text": "show health 显示 pool1 的探测间隔为 5 秒"
+                        },
+                        "children": []
+                      }
+                    ]
+                  },
+                  {
+                    "data": {
+                      "id": "5hcv0wslizln",
+                      "created": 1767577027000,
+                      "text": "widget health retries pool1 3",
+                      "priority": 2,
+                      "degree": 1,
+                      "resource": [
+                        "configuration"
+                      ]
+                    },
+                    "children": [
+                      {
+                        "data": {
+                          "id": "bsbqbrolxiu7",
+                          "created": 1767577088000,
+                          "text": "show health 显示 pool1 的重试次数为 3"
+                        },
+                        "children": []
+                      }
+                    ]
+                  },
+                  {
+                    "data": {
+                      "id": "rgcyhrwykznb",
+                      "created": 1767577149000,
+                      "text": "widget health probe pool1 http",
+                      "priority": 2,
+                      "degree": 1,
+                      "resource": [
+                        "[Configuration]"
+                      ]
+                    },
+                    "children": [
+                      {
+                        "data": {
+                          "id": "zqt0eu44s4af",
+                          "created": 1767577210000,
+                          "text": "show health 显示 pool1 的探测类型为 http"
+                        },
+                        "children": []
+                      }
+                    ]
+                  },
+                  {
+                    "data": {
+                      "id": "2lj97r6kjudq",
+                      "created": 1767577271000,
+                      "text": "widget health probe pool1 tcp",
+                      "priority": 2,
+                      "degree": 1,
+                      "resource": [
+                        "Configure"
+                      ]
+                    },
+                    "children": [
+                      {
+                        "data": {
+                          "id": "2i8ceuvg9vtd",
+                          "created": 1767577332000,
+                          "text": "show health 显示 pool1 的探测类型为 http"
+                        },
+                        "children": []
+                      }
+                    ]
+                  },
+                  {
+                    "data": {
+                      "id": "imyvp5mr10r6",
+                      "created": 1767577393000,
+                      "text": "widget health interval pool1 61",
+                      "priority": 2,
+                      "degree": 2,
+                      "resource": [
+                        "Negative"
+                      ]
+                    },
+                    "children": [
+                      {
+                        "data": {
+                          "id": "gdsoxuj9p7ht",
+                          "created": 1767577454000,
+                          "text": "提示参数超出范围 1-60，探测间隔保持不变"
+                        },
+                        "children": []
+                      }
+                    ]
+                  },
+                  {
+                    "data": {
+                      "id": "2074h410z4t2",
+                      "created": 1767577515000,
+                      "text": "widget health retries pool1 0",
+                      "priority": 2,
+                      "degree": 2,
+                      "resource": [
+                        "negative"
+                      ]
+                    },
+                    "children": [
+                      {
+                        "data": {
+                          "id": "33cz1nju5cge",
+                          "created": 1767577576000,
+                          "text": "提示参数超出范围 1-10"
+                        },
+                        "children": []
+                      }
+                    ]
+                  },
+                  {
+                    "data": {
+                      "id": "vi262v2ti8da",
+                      "created": 1767577637000,
+                      "text": "使用webui方式配置探测类型为 tcp",
+                      "priority": 2,
+                      "degree": 1,
+                      "resource": [
+                        "配置"
+                      ]
+                    },
+                    "children": [
+                      {
+                        "data": {
+                          "id": "jdsneghrny76",
+                          "created": 1767577698000,
+                          "text": "WebUI 健康检查页面显示探测类型为 tcp"
+                        },
+                        "children": []
+                      }
+                    ]
+                  },
+                  {
+                    "data": {
+                      "id": "ezo0nfcf3li9",
+                      "created": 1767577759000,
+                      "text": "修改探测间隔后立即生效",
+                      "priority": 2,
+                      "degree": 1,
+                      "resource": [
+                        "Function"
+                      ]
+                    },
+                    "children": [
+                      {
+                        "data": {
+                          "id": "ht6gq6f581hk",
+                          "created": 1767577820000,
+                          "text": "已配置 pool1，探测间隔为 10 秒",
+                          "priority": 3
+                        },
+                        "children": []
+                      },
+                      {
+                        "data": {
+                          "id": "ufgtxiik4p93",
+                          "created": 1767577881000,
+                          "text": "widget health interval pool1 2"
+                        },
+                        "children": [
+                          {
+                            "data": {
+                              "id": "1celybiiaps5",
+                              "created": 1767577942000,
+                              "text": "2 秒后按新间隔发出探测"
+                            },
+                            "children": []
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "data": {
+                  "id": "b8tfew7i013t",
+                  "created": 1767578003000,
+                  "text": "IPv6",
+                  "expandState": "expand"
+                },
+                "children": [
+                  {
+                    "data": {
+                      "id": "b9btdngbjyom",
+                      "created": 1767578064000,
+                      "text": "widget health interval pool1 5",
+                      "priority": 2,
+                      "degree": 1,
+                      "resource": [
+                        "Configuration"
+                      ]
+                    },
+                    "children": [
+                      {
+                        "data": {
+                          "id": "mk6zsdyrsf2b",
+                          "created": 1767578125000,
+                          "text": "show health 显示 pool1 的探测间隔为 5 秒"
+                        },
+                        "children": []
+                      }
+                    ]
+                  },
+                  {
+                    "data": {
+                      "id": "c04ob1jwfj2i",
+                      "created": 1767578186000,
+                      "text": "widget health retries pool1 3",
+                      "priority": 2,
+                      "degree": 1,
+                      "resource": [
+                        "Configuration"
+                      ]
+                    },
+                    "children": [
+                      {
+                        "data": {
+                          "id": "4p4y36y9803j",
+                          "created": 1767578247000,
+                          "text": "show health 显示 pool1 的重试次数为 3"
+                        },
+                        "children": []
+                      }
+                    ]
+                  },
+                  {
+                    "data": {
+                      "id": "d4rk62t0eih6",
+                      "created": 1767578308000,
+                      "text": "widget health probe pool1 http",
+                      "priority": 2,
+                      "degree": 1,
+                      "resource": [
+                        "Configuration"
+                      ]
+                    },
+                    "children": [
+                      {
+                        "data": {
+                          "id": "loctgolcfihm",
+                          "created": 1767578369000,
+                          "text": "show health 显示 pool1 的探测类型为 http"
+                        },
+                        "children": []
+                      }
+                    ]
+                  },
+                  {
+                    "data": {
+                      "id": "e49auolm3a5k",
+                      "created": 1767578430000,
+                      "text": "widget health interval pool1 61",
+                      "priority": 2,
+                      "degree": 2,
+                      "resource": [
+                        "Negative"
+                      ]
+                    },
+                    "children": [
+                      {
+                        "data": {
+                          "id": "9ujblq8nd2dx",
+                          "created": 1767578491000,
+                          "text": "提示参数超出范围 1-60，探测间隔保持不变"
+                        },
+                        "children": []
+                      }
+                    ]
+                  },
+                  {
+                    "data": {
+                      "id": "2ri3yo9dbs16",
+                      "created": 1767578552000,
+                      "text": "relay endpoint add 2001:db8::21 80",
+                      "priority": 2,
+                      "degree": 1,
+                      "resource": [
+                        "Configuration"
+                      ]
+                    },
+                    "children": [
+                      {
+                        "data": {
+                          "id": "aglagtqzoxnx",
+                          "created": 1767578613000,
+                          "text": "show endpoints 显示 2001:db8::21 端口 80"
+                        },
+                        "children": []
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "data": {
+              "id": "tp32afog3uqx",
+              "created": 1767578674000,
+              "text": "WebUI",
+              "priority": 1,
+              "note": null
+            },
+            "children": [
+              {
+                "data": {
+                  "id": "j1t0up9dwzf8",
+                  "created": 1767578735000,
+                  "text": "使用WebUI配置探测间隔为 5 秒",
+                  "priority": 2,
+                  "degree": 1,
+                  "resource": [
+                    "Configuration"
+                  ]
+                },
+                "children": [
+                  {
+                    "data": {
+                      "id": "cj2jqr72yyv2",
+                      "created": 1767578796000,
+                      "text": "WebUI 健康检查页面显示间隔 5 秒"
+                    },
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "data": {
+                  "id": "ayp7i8r93mj7",
+                  "created": 1767578857000,
+                  "text": "使用WebUI配置重试次数为 3",
+                  "priority": 2,
+                  "degree": 1,
+                  "resource": [
+                    "Configuration"
+                  ]
+                },
+                "children": [
+                  {
+                    "data": {
+                      "id": "e2mwwio1i8a9",
+                      "created": 1767578918000,
+                      "text": "WebUI 健康检查页面显示重试次数 3"
+                    },
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "data": {
+                  "id": "atpw9pl6b71t",
+                  "created": 1767578979000,
+                  "text": "使用WebUI配置探测类型为 tcp",
+                  "priority": 2,
+                  "degree": 1,
+                  "resource": [
+                    "Configuration"
+                  ]
+                },
+                "children": [
+                  {
+                    "data": {
+                      "id": "ugr0n6p2rv7c",
+                      "created": 1767579040000,
+                      "text": "WebUI 健康检查页面显示探测类型为 tcp"
+                    },
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "data": {
+                  "id": "rf0tkcjicgw6",
+                  "created": 1767579101000,
+                  "text": "WebUI 输入间隔 0 时提示错误",
+                  "priority": 2,
+                  "degree": 2,
+                  "resource": [
+                    "[Negative]"
+                  ]
+                },
+                "children": [
+                  {
+                    "data": {
+                      "id": "1c3yfergrgtf",
+                      "created": 1767579162000,
+                      "text": "页面提示取值范围 1-60，无法保存"
+                    },
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "data": {
+                  "id": "0l432rr2ye1c",
+                  "created": 1767579223000,
+                  "text": "使用WebUI删除健康检查配置",
+                  "priority": 2,
+                  "degree": 1,
+                  "resource": [
+                    "configuration"
+                  ]
+                },
+                "children": [
+                  {
+                    "data": {
+                      "id": "ppp5tc5lrwyf",
+                      "created": 1767579284000,
+                      "text": "show health 不再显示 pool1"
+                    },
+                    "children": []
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "data": {
+          "id": "oyihafyzi5y4",
+          "created": 1767579345000,
+          "text": "基本功能",
+          "priority": 1
+        },
+        "children": [
+          {
+            "data": {
+              "id": "ums8r36zv5ss",
+              "created": 1767579406000,
+              "text": "探测结果",
+              "priority": 1
+            },
+            "children": [
+              {
+                "data": {
+                  "id": "e0asdo11vp0z",
+                  "created": 1767579467000,
+                  "text": "后端 HTTP 返回 200 时判定为健康",
+                  "priority": 2,
+                  "degree": 1,
+                  "resource": [
+                    "Functional"
+                  ]
+                },
+                "children": [
+                  {
+                    "data": {
+                      "id": "xo2w77dx8e4s",
+                      "created": 1767579528000,
+                      "text": "show health 显示后端状态为 up"
+                    },
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "data": {
+                  "id": "5zb9lbb1athj",
+                  "created": 1767579589000,
+                  "text": "后端 HTTP 返回 500 时判定为不健康",
+                  "priority": 2,
+                  "degree": 1,
+                  "resource": [
+                    "[Functional]"
+                  ]
+                },
+                "children": [
+                  {
+                    "data": {
+                      "id": "mtf7t6y2ylyj",
+                      "created": 1767579650000,
+                      "text": "show health 显示后端状态为 down"
+                    },
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "data": {
+                  "id": "vq8x81pkej52",
+                  "created": 1767579711000,
+                  "text": "连续失败达到重试次数后摘除后端",
+                  "priority": 2,
+                  "degree": 1,
+                  "resource": [
+                    "Function"
+                  ]
+                },
+                "children": [
+                  {
+                    "data": {
+                      "id": "7zvbp8drata7",
+                      "created": 1767579772000,
+                      "text": "后端状态变为 down"
+                    },
+                    "children": []
+                  },
+                  {
+                    "data": {
+                      "id": "lqky1yshqsej",
+                      "created": 1767579833000,
+                      "text": "新连接不再转发到该后端"
+                    },
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "data": {
+                  "id": "g2s1nw25whfr",
+                  "created": 1767579894000,
+                  "text": "后端恢复后重新加入调度",
+                  "priority": 2,
+                  "degree": 1,
+                  "resource": [
+                    "function"
+                  ]
+                },
+                "children": []
+              },
+              {
+                "data": {
+                  "id": "167jkvbyf5qe",
+                  "created": 1767579955000,
+                  "text": "探测间隔为 1 秒时每秒探测一次",
+                  "priority": 2,
+                  "degree": 1,
+                  "resource": [
+                    "[Functional"
+                  ],
+                  "autoid": "730000000000000101",
+                  "auto": "YES"
+                },
+                "children": [
+                  {
+                    "data": {
+                      "id": "wvtt68m02j94",
+                      "created": 1767580016000,
+                      "text": "抓包看到每秒一次探测请求"
+                    },
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "data": {
+                  "id": "9vwszjonpmqy",
+                  "created": 1767580077000,
+                  "text": "探测超时时间内无响应判定失败",
+                  "priority": 1,
+                  "degree": 1,
+                  "resource": [
+                    "功能"
+                  ]
+                },
+                "children": [
+                  {
+                    "data": {
+                      "id": "tsby8i5tkikg",
+                      "created": 1767580138000,
+                      "text": "1.配置后端不响应\n2.等待一个探测周期"
+                    },
+                    "children": [
+                      {
+                        "data": {
+                          "id": "54yc6kaye20i",
+                          "created": 1767580199000,
+                          "text": "本次探测记为失败"
+                        },
+                        "children": []
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "data": {
+                  "id": "6jfl4ijctyhh",
+                  "created": 1767580260000,
+                  "text": "show health 显示所有池的状态",
+                  "priority": 2,
+                  "degree": 1,
+                  "resource": [
+                    "Functional"
+                  ]
+                },
+                "children": [
+                  {
+                    "data": {
+                      "id": "63x7reqt764a",
+                      "created": 1767580321000,
+                      "text": "每个池一行，含状态和最近一次探测时间"
+                    },
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "data": {
+                  "id": "2py9h9vwrcet",
+                  "created": 1767580382000,
+                  "text": "show health 显示所有池的状态",
+                  "priority": 2,
+                  "degree": 1,
+                  "resource": [
+                    "Functional"
+                  ]
+                },
+                "children": [
+                  {
+                    "data": {
+                      "id": "8tyjquictgmp",
+                      "created": 1767580443000,
+                      "text": "每个池一行，含状态和最近一次探测时间"
+                    },
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "data": {
+                  "id": "n5s7g5ozhthi",
+                  "created": 1767580504000,
+                  "text": "show health pool1 显示单个池的状态",
+                  "priority": 2,
+                  "degree": 1,
+                  "resource": [
+                    "Functional"
+                  ]
+                },
+                "children": [
+                  {
+                    "data": {
+                      "id": "4o2049quccv9",
+                      "created": 1767580565000,
+                      "text": "显示内容正确"
+                    },
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "data": {
+                  "id": "u3rwy2y09uho",
+                  "created": 1767580626000,
+                  "text": "探测请求携带配置的 Host 头",
+                  "priority": 2,
+                  "degree": 1,
+                  "resource": [
+                    "Functional"
+                  ],
+                  "note": "需要抓包确认 Host 头的取值"
+                },
+                "children": [
+                  {
+                    "data": {
+                      "id": "4mny8qlmekbo",
+                      "created": 1767580687000,
+                      "text": "抓包看到 Host 头为配置的取值"
+                    },
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "data": {
+                  "id": "k3d9q0xw7m2a",
+                  "created": 1767580748000,
+                  "text": "http 探测路径可配置",
+                  "priority": 2,
+                  "degree": 1,
+                  "resource": [
+                    "Functional"
+                  ],
+                  "autoid": "730000000000000102",
+                  "auto": "YES"
+                },
+                "children": [
+                  {
+                    "data": {
+                      "id": "zzz0l8n7d0q3",
+                      "created": 1767580809000,
+                      "text": "按配置的路径发出探测"
+                    },
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "data": {
+                  "id": "k3d9q0xw7m2a",
+                  "created": 1767580870000,
+                  "text": "http 探测路径可配置为根路径",
+                  "priority": 2,
+                  "degree": "null",
+                  "resource": [
+                    "Functional"
+                  ]
+                },
+                "children": [
+                  {
+                    "data": {
+                      "id": "zxk0zf55daz0",
+                      "created": 1767580931000,
+                      "text": "按根路径发出探测"
+                    },
+                    "children": []
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "data": {
+              "id": "fu9nsm9dulwc",
+              "created": 1767580992000,
+              "text": "权重联动",
+              "priority": 1
+            },
+            "children": [
+              {
+                "data": {
+                  "id": "2airwmazpj7x",
+                  "created": 1767581053000,
+                  "text": "relay endpoint weight 192.0.2.21 50 后按权重分配",
+                  "priority": 2,
+                  "degree": 1,
+                  "resource": [
+                    "Integration"
+                  ]
+                },
+                "children": [
+                  {
+                    "data": {
+                      "id": "7yd4lkmglr07",
+                      "created": 1767581114000,
+                      "text": "两台后端收到的请求数之比与权重一致"
+                    },
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "data": {
+                  "id": "awra68sk4gmh",
+                  "created": 1767581175000,
+                  "text": "relay endpoint weight 192.0.2.21 101",
+                  "priority": 2,
+                  "degree": 2,
+                  "resource": [
+                    "Negative"
+                  ]
+                },
+                "children": [
+                  {
+                    "data": {
+                      "id": "dqkqt27jyit8",
+                      "created": 1767581236000,
+                      "text": "提示参数超出范围 1-100"
+                    },
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "data": {
+                  "id": "7ec09u7o6kez",
+                  "created": 1767581297000,
+                  "text": "健康检查摘除后端后按剩余后端的权重分配",
+                  "priority": 2,
+                  "degree": 1,
+                  "resource": [
+                    "Integration",
+                    "20260301ADD"
+                  ]
+                },
+                "children": [
+                  {
+                    "data": {
+                      "id": "d5sta9p51ia6",
+                      "created": 1767581358000,
+                      "text": "流量只分配到健康的后端"
+                    },
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "data": {
+                  "id": "pawykpvvihct",
+                  "created": 1767581419000,
+                  "text": "后端全部不健康",
+                  "priority": 2,
+                  "degree": 1,
+                  "resource": [
+                    "Function"
+                  ]
+                },
+                "children": [
+                  {
+                    "data": {
+                      "id": "worj1wd2rk6l",
+                      "created": 1767581480000,
+                      "text": "新连接返回 503"
+                    },
+                    "children": []
+                  },
+                  {
+                    "data": {
+                      "id": "y3z6zvcjwlrg",
+                      "created": 1767581541000,
+                      "text": "恢复一台后端后",
+                      "priority": 2,
+                      "degree": 1,
+                      "resource": [
+                        "Function"
+                      ]
+                    },
+                    "children": [
+                      {
+                        "data": {
+                          "id": "xhj50omhmv98",
+                          "created": 1767581602000,
+                          "text": "流量全部转发到恢复的后端"
+                        },
+                        "children": []
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "data": {
+                  "id": "saj0rcpevych",
+                  "created": 1767581663000,
+                  "text": "relay endpoint weight 192.0.2.22 abc",
+                  "priority": 2,
+                  "degree": 2,
+                  "resource": [
+                    "negative"
+                  ]
+                },
+                "children": [
+                  {
+                    "data": {
+                      "id": "3k4ho0bjw2m6",
+                      "created": 1767581724000,
+                      "text": "提示参数类型错误"
+                    },
+                    "children": []
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "data": {
+              "id": "keu9f3bi34zj",
+              "created": 1767581785000,
+              "text": "日志",
+              "priority": 1
+            },
+            "children": [
+              {
+                "data": {
+                  "id": "28xnbwlipz3d",
+                  "created": 1767581846000,
+                  "text": "修改健康检查配置写入操作日志",
+                  "priority": 2,
+                  "degree": 1,
+                  "resource": [
+                    "Function"
+                  ]
+                },
+                "children": [
+                  {
+                    "data": {
+                      "id": "rhpontm4vngd",
+                      "created": 1767581907000,
+                      "text": "操作日志里有修改前后的取值"
+                    },
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "data": {
+                  "id": "88hiky8pdvc4",
+                  "created": 1767581968000,
+                  "text": "relay log level debug 后记录每次探测",
+                  "priority": 2,
+                  "degree": 1,
+                  "resource": [
+                    "Configuration",
+                    "R2ADD"
+                  ]
+                },
+                "children": [
+                  {
+                    "data": {
+                      "id": "sy3jfieghc3y",
+                      "created": 1767582029000,
+                      "text": "日志里每次探测一行，含后端地址和结果"
+                    },
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "data": {
+                  "id": "4le0mw7w5xoh",
+                  "created": 1767582090000,
+                  "text": "后端状态变化写入审计日志",
+                  "priority": 2,
+                  "degree": 1,
+                  "resource": [
+                    "Function"
+                  ]
+                },
+                "children": [
+                  {
+                    "data": {
+                      "id": "4wtl955t6bx1",
+                      "created": 1767582151000,
+                      "text": "审计日志记录状态变化和时间"
+                    },
+                    "children": []
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "data": {
+          "id": "96s9bmu2phpn",
+          "created": 1767582212000,
+          "text": "异常处理",
+          "priority": 1
+        },
+        "children": [
+          {
+            "data": {
+              "id": "vht3el8b4xgm",
+              "created": 1767582273000,
+              "text": "后端端口不可达时探测超时",
+              "priority": 2,
+              "degree": 2,
+              "resource": [
+                "Negative"
+              ]
+            },
+            "children": [
+              {
+                "data": {
+                  "id": "4qk1fjz8hh0f",
+                  "created": 1767582334000,
+                  "text": "无",
+                  "priority": 3
+                },
+                "children": []
+              },
+              {
+                "data": {
+                  "id": "e7vo5sk567vu",
+                  "created": 1767582395000,
+                  "text": "1.relay endpoint add 192.0.2.23 81\n2.后端不监听 81 端口"
+                },
+                "children": [
+                  {
+                    "data": {
+                      "id": "le0ecw0ck1jv",
+                      "created": 1767582456000,
+                      "text": "探测失败，后端状态为 down"
+                    },
+                    "children": []
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "data": {
+              "id": "lbpblljiv3wc",
+              "created": 1767582517000,
+              "text": "探测类型输入 udp 被拒绝",
+              "priority": 2,
+              "degree": 3,
+              "resource": [
+                "负向"
+              ]
+            },
+            "children": [
+              {
+                "data": {
+                  "id": "gubag8tf4820",
+                  "created": 1767582578000,
+                  "text": "提示探测类型只能是 tcp 或 http"
+                },
+                "children": []
+              }
+            ]
+          },
+          {
+            "data": {
+              "id": "pjopztiplz0e",
+              "created": 1767582639000,
+              "text": "删除不存在的池",
+              "priority": 3,
+              "degree": 2,
+              "resource": [
+                "negative"
+              ]
+            },
+            "children": [
+              {
+                "data": {
+                  "id": "xk6elpy7drlq",
+                  "created": 1767582700000,
+                  "text": "widget pool delete pool9 提示池不存在"
+                },
+                "children": []
+              }
+            ]
+          },
+          {
+            "data": {
+              "id": "veh2md19rbps",
+              "created": 1767582761000,
+              "text": "池名称超过 32 个字符",
+              "priority": 2,
+              "degree": 2,
+              "resource": [
+                "Negative"
+              ]
+            },
+            "children": [
+              {
+                "data": {
+                  "id": "mjnm1i4ud5zv",
+                  "created": 1767582822000,
+                  "text": "widget pool add 名称超过 32 个字符时提示名称过长"
+                },
+                "children": []
+              }
+            ]
+          },
+          {
+            "data": {
+              "id": "tbqh8g5lwkp2",
+              "created": 1767582883000,
+              "text": "删除池后健康检查配置一并删除",
+              "priority": 2,
+              "degree": 1,
+              "resource": [
+                "Function"
+              ]
+            },
+            "children": [
+              {
+                "data": {
+                  "id": "wr2wt6hej4ty",
+                  "created": 1767582944000,
+                  "text": "1.widget pool delete pool1\n2.show health",
+                  "priority": 20
+                },
+                "children": [
+                  {
+                    "data": {
+                      "id": "y0w1wnkuxjur",
+                      "created": 1767583005000,
+                      "text": "不再显示 pool1 的健康检查配置"
+                    },
+                    "children": []
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "data": {
+          "id": "zwdizt73pgle",
+          "created": 1767583066000,
+          "text": "端点操作",
+          "priority": 1
+        },
+        "children": [
+          {
+            "data": {
+              "id": "xhl2ycac8lvt",
+              "created": 1767583127000,
+              "text": "添加 - 端点",
+              "priority": 2,
+              "degree": 1,
+              "resource": [
+                "Function"
+              ]
+            },
+            "children": [
+              {
+                "data": {
+                  "id": "69wfm51n0peh",
+                  "created": 1767583188000,
+                  "text": "relay endpoint add 192.0.2.31 80"
+                },
+                "children": [
+                  {
+                    "data": {
+                      "id": "l70t8bfqfp8a",
+                      "created": 1767583249000,
+                      "text": "show endpoints 显示 192.0.2.31 端口 80"
+                    },
+                    "children": []
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "data": {
+              "id": "azi2of2do4oq",
+              "created": 1767583310000,
+              "text": "添加 - 端点",
+              "priority": 2,
+              "degree": 1,
+              "resource": [
+                "Function"
+              ]
+            },
+            "children": [
+              {
+                "data": {
+                  "id": "o2epx5a7bhhr",
+                  "created": 1767583371000,
+                  "text": "relay endpoint add 192.0.2.32 8080"
+                },
+                "children": [
+                  {
+                    "data": {
+                      "id": "b4x3p21t6j5r",
+                      "created": 1767583432000,
+                      "text": "show endpoints 显示 192.0.2.32 端口 8080"
+                    },
+                    "children": []
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "data": {
+          "id": "zhoxj22b6mi8",
+          "created": 1767583493000,
+          "text": "会话保持",
+          "priority": 1,
+          "resource": [
+            "Function"
+          ]
+        },
+        "children": [
+          {
+            "data": {
+              "id": "j1fstxzgkkqf",
+              "created": 1767583554000,
+              "text": "开启会话保持后同一客户端落到同一后端",
+              "priority": 2,
+              "degree": 1,
+              "resource": [
+                "Function"
+              ]
+            },
+            "children": [
+              {
+                "data": {
+                  "id": "m2smozkm6un5",
+                  "created": 1767583615000,
+                  "text": "同一客户端的连接都转发到同一台后端"
+                },
+                "children": []
+              }
+            ]
+          },
+          {
+            "data": {
+              "id": "a630qklxljt4",
+              "created": 1767583676000,
+              "text": "会话保持超时后重新调度",
+              "priority": 2,
+              "degree": 2,
+              "resource": [
+                "Function"
+              ]
+            },
+            "children": [
+              {
+                "data": {
+                  "id": "3j40mz3zvw5s",
+                  "created": 1767583737000,
+                  "text": "超时后的新连接按权重重新选择后端"
+                },
+                "children": []
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "data": {
+          "id": "5w3qern1nz8n",
+          "created": 1767583798000,
+          "text": "端点批量操作",
+          "priority": 1
+        },
+        "children": [
+          {
+            "data": {
+              "id": "wo8m0xmxm8lw",
+              "created": 1767583859000,
+              "text": "relay endpoint add 192.0.2.41 80 后 show endpoints",
+              "priority": 2,
+              "degree": 1
+            },
+            "children": [
+              {
+                "data": {
+                  "id": "g695y5m4w2bj",
+                  "created": 1767583920000,
+                  "text": "show endpoints 显示 192.0.2.41 端口 80"
+                },
+                "children": []
+              }
+            ]
+          },
+          {
+            "data": {
+              "id": "pngpkpd7gbt8",
+              "created": 1767583981000,
+              "text": "删除端点后会话迁移到其他端点",
+              "priority": 2,
+              "degree": 2
+            },
+            "children": [
+              {
+                "data": {
+                  "id": "7isrlefqkk19",
+                  "created": 1767584042000,
+                  "text": "已有两个端点并建立会话",
+                  "priority": 3
+                },
+                "children": []
+              },
+              {
+                "data": {
+                  "id": "hwzvs9wz87aj",
+                  "created": 1767584103000,
+                  "text": "relay endpoint delete 192.0.2.41"
+                },
+                "children": [
+                  {
+                    "data": {
+                      "id": "ivdrtxbu9idk",
+                      "created": 1767584164000,
+                      "text": "会话迁移到 192.0.2.42"
+                    },
+                    "children": []
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "data": {
+              "id": "4aypx2itpx81",
+              "created": 1767584225000,
+              "text": "批量添加 16 个端点",
+              "priority": 2,
+              "degree": 1,
+              "autoid": "730000000000000103",
+              "auto": "YES"
+            },
+            "children": [
+              {
+                "data": {
+                  "id": "fvfcqyk1si2f",
+                  "created": 1767584286000,
+                  "text": "show endpoints 显示 16 个端点"
+                },
+                "children": []
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "data": {
+          "id": "n3b2ue5uv9d7",
+          "created": 1767584347000,
+          "text": "兼容性",
+          "priority": 1
+        },
+        "children": [
+          {
+            "data": {
+              "id": "0nxxbwjelnjn",
+              "created": 1767584408000,
+              "text": "老版本->新版本 升级后健康检查配置保留",
+              "priority": 2,
+              "degree": 1,
+              "resource": [
+                "Compatibility"
+              ]
+            },
+            "children": [
+              {
+                "data": {
+                  "id": "02jjeu40dgke",
+                  "created": 1767584469000,
+                  "text": "老版本已配置探测间隔 10 秒、重试 3 次",
+                  "priority": 3
+                },
+                "children": []
+              },
+              {
+                "data": {
+                  "id": "2bekxbpt9gw9",
+                  "created": 1767584530000,
+                  "text": "升级到新版本后执行 show health"
+                },
+                "children": [
+                  {
+                    "data": {
+                      "id": "crj7pgocduyv",
+                      "created": 1767584591000,
+                      "text": "配置保留，取值不变"
+                    },
+                    "children": []
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "data": {
+              "id": "mm2x3jgiqipn",
+              "created": 1767584652000,
+              "text": "新版本->老版本 降级后 http 探测改为 tcp",
+              "priority": 2,
+              "degree": 3,
+              "resource": [
+                "compatibility"
+              ]
+            },
+            "children": [
+              {
+                "data": {
+                  "id": "o7jm1m94h8mm",
+                  "created": 1767584713000,
+                  "text": "新版本已配置 http 探测",
+                  "priority": 3
+                },
+                "children": []
+              },
+              {
+                "data": {
+                  "id": "3bzcgoi3hq2w",
+                  "created": 1767584774000,
+                  "text": "降级到老版本后执行 show health"
+                },
+                "children": [
+                  {
+                    "data": {
+                      "id": "06n03hj4lnnw",
+                      "created": 1767584835000,
+                      "text": "探测类型显示为 tcp，设备无异常"
+                    },
+                    "children": []
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "data": {
+              "id": "vm1hbudppwou",
+              "created": 1767584896000,
+              "text": "新版本 → 新版本 升级过程中探测不中断",
+              "priority": 2,
+              "degree": 2,
+              "resource": [
+                "Compatibility"
+              ]
+            },
+            "children": [
+              {
+                "data": {
+                  "id": "t7m0aqnewrqi",
+                  "created": 1767584957000,
+                  "text": "升级过程中探测记录连续"
+                },
+                "children": []
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "data": {
+          "id": "4nrvgl9ixiwk",
+          "created": 1767585018000,
+          "text": "压力",
+          "priority": 1
+        },
+        "children": [
+          {
+            "data": {
+              "id": "boh49rl0l7g4",
+              "created": 1767585079000,
+              "text": "200 个池同时开启 1 秒探测",
+              "priority": 2,
+              "degree": 1,
+              "resource": [
+                "Stress"
+              ]
+            },
+            "children": [
+              {
+                "data": {
+                  "id": "xmau4nijoz1l",
+                  "created": 1767585140000,
+                  "text": "CPU 占用低于 70%，设备正常"
+                },
+                "children": []
+              }
+            ]
+          },
+          {
+            "data": {
+              "id": "lp7tknv1a7bh",
+              "created": 1767585201000,
+              "text": "探测过程中反复执行 show health",
+              "priority": 2,
+              "degree": 1,
+              "resource": [
+                "stress"
+              ]
+            },
+            "children": [
+              {
+                "data": {
+                  "id": "dagifb5lkw1x",
+                  "created": 1767585262000,
+                  "text": "设备正常"
+                },
+                "children": []
+              }
+            ]
+          },
+          {
+            "data": {
+              "id": "14cmzg3st7wh",
+              "created": 1767585323000,
+              "text": "压力过程中反复增删池",
+              "priority": 2,
+              "degree": 1,
+              "resource": [
+                "压力"
+              ]
+            },
+            "children": [
+              {
+                "data": {
+                  "id": "jw8w7blqlkl7",
+                  "created": 1767585384000,
+                  "text": "无内存泄漏，设备正常"
+                },
+                "children": []
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "data": {
+          "id": "92j6vn3zwq8c",
+          "created": 1767585445000,
+          "text": "配置保存与恢复",
+          "priority": 1
+        },
+        "children": [
+          {
+            "data": {
+              "id": "w0n181ps1ycl",
+              "created": 1767585506000,
+              "text": "保存配置后重启，健康检查配置保留",
+              "priority": 2,
+              "degree": 1,
+              "resource": [
+                "Configuration"
+              ]
+            },
+            "children": [
+              {
+                "data": {
+                  "id": "yspox5maqplu",
+                  "created": 1767585567000,
+                  "text": "重启后 show health 取值不变"
+                },
+                "children": []
+              }
+            ]
+          },
+          {
+            "data": {
+              "id": "tf2vn3zi5pti",
+              "created": 1767585628000,
+              "text": "清除配置后健康检查恢复默认",
+              "priority": 2,
+              "degree": 1,
+              "resource": [
+                "Configuration"
+              ]
+            },
+            "children": [
+              {
+                "data": {
+                  "id": "tkh8wmyqivpk",
+                  "created": 1767585689000,
+                  "text": "show health 显示默认间隔 5 秒和重试 3 次"
+                },
+                "children": []
+              }
+            ]
+          },
+          {
+            "data": {
+              "id": "utn31mxp0m29",
+              "created": 1767585750000,
+              "text": "配置同步到对端设备后健康检查一致",
+              "priority": 2,
+              "degree": 1,
+              "resource": [
+                "Integration"
+              ]
+            },
+            "children": [
+              {
+                "data": {
+                  "id": "lg0zre6h6ymm",
+                  "created": 1767585811000,
+                  "text": "对端设备 show health 与本机一致"
+                },
+                "children": []
+              }
+            ]
+          },
+          {
+            "data": {
+              "id": "7zgnfic323nw",
+              "created": 1767585872000,
+              "text": "恢复配置文件后健康检查生效",
+              "priority": 2,
+              "degree": 1,
+              "resource": [
+                "Configuration"
+              ]
+            },
+            "children": [
+              {
+                "data": {
+                  "id": "lnjfpjmlao9v",
+                  "created": 1767585933000,
+                  "text": "探测按恢复的配置执行"
+                },
+                "children": []
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "data": {
+          "id": "cwu8y0xo8qlm",
+          "created": 1767585994000,
+          "text": "no 与 clear",
+          "priority": 1
+        },
+        "children": [
+          {
+            "data": {
+              "id": "ct0p2eqldf13",
+              "created": 1767586055000,
+              "text": "no widget health probe pool1",
+              "priority": 2,
+              "degree": 1,
+              "resource": [
+                "Configuration"
+              ]
+            },
+            "children": [
+              {
+                "data": {
+                  "id": "siacxpm3b2mk",
+                  "created": 1767586116000,
+                  "text": "探测类型恢复默认 tcp"
+                },
+                "children": []
+              }
+            ]
+          },
+          {
+            "data": {
+              "id": "vdicdvqd4yuj",
+              "created": 1767586177000,
+              "text": "widget session clear pool1 后探测不受影响",
+              "degree": 1,
+              "resource": [
+                "Function"
+              ]
+            },
+            "children": [
+              {
+                "data": {
+                  "id": "3r741myjpx8z",
+                  "created": 1767586238000,
+                  "text": "会话清空，探测照常进行"
+                },
+                "children": []
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "data": {
+          "id": "9htifc9mj9by",
+          "created": 1767586299000,
+          "text": "最大配置",
+          "priority": 1
+        },
+        "children": [
+          {
+            "data": {
+              "id": "pibmevcrfs5s",
+              "created": 1767586360000,
+              "text": "最大配置下执行 show health",
+              "priority": 2,
+              "degree": 2,
+              "resource": [
+                "Configuration"
+              ]
+            },
+            "children": [
+              {
+                "data": {
+                  "id": "nkz7lcguaqyg",
+                  "created": 1767586421000,
+                  "text": "4096 个池全部显示，无卡顿"
+                },
+                "children": []
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "data": {
+          "id": "8bflg2pvpth2",
+          "created": 1767586482000,
+          "text": "安全",
+          "priority": 1
+        },
+        "children": [
+          {
+            "data": {
+              "id": "t8ggauknz5ul",
+              "created": 1767586543000,
+              "text": "非管理员账号不能修改健康检查",
+              "priority": 20,
+              "degree": 1,
+              "resource": [
+                "Function"
+              ]
+            },
+            "children": [
+              {
+                "data": {
+                  "id": "7jry8fr92cwq",
+                  "created": 1767586604000,
+                  "text": "提示权限不足"
+                },
+                "children": []
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "data": {
+          "id": "gp9fu1x9xqg5",
+          "created": 1767586665000,
+          "text": "数据库",
+          "priority": 1
+        },
+        "children": [
+          {
+            "data": {
+              "id": "1wi9oihayjjw",
+              "created": 1767586726000,
+              "text": "健康检查状态写入数据表",
+              "priority": 2,
+              "degree": 1,
+              "resource": [
+                "Function"
+              ]
+            },
+            "children": [
+              {
+                "data": {
+                  "id": "7ri1qa4r3vvs",
+                  "created": 1767586787000,
+                  "text": "数据表里每个后端一条记录"
+                },
+                "children": []
+              }
+            ]
+          },
+          {
+            "data": {
+              "id": "po4z7qsk767z",
+              "created": 1767586848000,
+              "text": "数据表记录超过上限后滚动删除",
+              "priority": 2,
+              "degree": 2,
+              "resource": [
+                "Function"
+              ]
+            },
+            "children": [
+              {
+                "data": {
+                  "id": "61hj3krgjuhg",
+                  "created": 1767586909000,
+                  "text": "只保留最近的记录"
+                },
+                "children": []
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "data": {
+          "id": "ano355m60j8x",
+          "created": 1767586970000,
+          "text": "待补充",
+          "expandState": "collapse",
+          "priority": null
+        },
+        "children": [
+          {
+            "data": {
+              "id": "cl51h0v8blzt",
+              "created": 1767587031000,
+              "text": "探测报文格式（待评审）"
+            },
+            "children": []
+          }
+        ]
+      }
+    ]
+  },
+  "template": "right",
+  "theme": "classic",
+  "version": "1.4.43"
+}

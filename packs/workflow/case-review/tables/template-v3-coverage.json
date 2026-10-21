@@ -1,0 +1,10 @@
+{
+  "schema": "coverage@1",
+  "origin": "决定：团队“测试用例模板 v3”的类别（tables/template-v3.json）；被判对象是 functions/template-coverage.ts 的输出，跨条目",
+  "description": "运行的全部条目合起来要覆盖模板的每个必选类别（目前是六种测试类型），没有覆盖的类别要写明跳过的理由；这是跨条目的事实，不计入条目分区",
+  "tier": "advisory",
+  "required": { "select": "$.required[*]" },
+  "covered": ["$.covered[*]"],
+  "skipped": { "select": "$.skipped[*]", "member": "/category", "reason": "/reason" },
+  "match": { "unicode": "none", "case": "sensitive", "whitespace": "exact" }
+}

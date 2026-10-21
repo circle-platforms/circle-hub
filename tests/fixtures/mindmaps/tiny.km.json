@@ -1,0 +1,46 @@
+{
+  "root": {
+    "data": {
+      "id": "4zqqlnxp0he9",
+      "created": 1767576600000,
+      "text": "需求 4100-示例池管理"
+    },
+    "children": [
+      {
+        "data": {
+          "id": "bg1ypqjzxpv2",
+          "created": 1767576661000,
+          "text": "基本功能",
+          "priority": 1
+        },
+        "children": [
+          {
+            "data": {
+              "id": "e3e9ybvz0fm4",
+              "created": 1767576722000,
+              "text": "widget pool add pool1",
+              "priority": 2,
+              "degree": 1,
+              "resource": [
+                "Functional"
+              ]
+            },
+            "children": [
+              {
+                "data": {
+                  "id": "1nbpwew2aayk",
+                  "created": 1767576783000,
+                  "text": "show pools 显示 pool1"
+                },
+                "children": []
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "template": "right",
+  "theme": "classic",
+  "version": "1.4.43"
+}

@@ -1,0 +1,83 @@
+{
+  "root": {
+    "data": {
+      "id": "f1ph4tvs26wl",
+      "created": 1767576600000,
+      "text": "示例网关会话功能梳理"
+    },
+    "children": [
+      {
+        "data": {
+          "id": "hof142eiz2a8",
+          "created": 1767576661000,
+          "text": "会话建立"
+        },
+        "children": [
+          {
+            "data": {
+              "id": "4770tihla9l9",
+              "created": 1767576722000,
+              "text": "启用会话保持"
+            },
+            "children": [
+              {
+                "data": {
+                  "id": "pfmle4bk0x4w",
+                  "created": 1767576783000,
+                  "text": "同一客户端落到同一后端"
+                },
+                "children": []
+              }
+            ]
+          },
+          {
+            "data": {
+              "id": "htbd9nueekar",
+              "created": 1767576844000,
+              "text": "关闭会话保持"
+            },
+            "children": []
+          }
+        ]
+      },
+      {
+        "data": {
+          "id": "dechmjtiiicg",
+          "created": 1767576905000,
+          "text": "会话查询",
+          "priority": 1
+        },
+        "children": [
+          {
+            "data": {
+              "id": "llcg241ebf8b",
+              "created": 1767576966000,
+              "text": "show sessions 显示会话数"
+            },
+            "children": []
+          }
+        ]
+      },
+      {
+        "data": {
+          "id": "m2gtojlbtiza",
+          "created": 1767577027000,
+          "text": "待确认问题"
+        },
+        "children": [
+          {
+            "data": {
+              "id": "0s51e0th3nc3",
+              "created": 1767577088000,
+              "text": "超时取值上限"
+            },
+            "children": []
+          }
+        ]
+      }
+    ]
+  },
+  "template": "right",
+  "theme": "classic",
+  "version": "1.4.43"
+}
