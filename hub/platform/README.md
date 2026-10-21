@@ -1,0 +1,237 @@
+# hub/platform
+
+Persistent single-machine deployment of the Hub on macOS: the data root, a socket-only PostgreSQL from the pinned
+embedded-postgres binaries, the vault master key in the keychain, backups and restores with SHA-256 manifests, the user
+LaunchAgent for `circle-hub serve`, deploy with automatic recovery, rollback, and a backup rehearsal. The Hub runs as the
+invoking user and listens on loopback only. Model: the deployment decisions in `docs/hub-r4-architecture.md` (section 1
+item 4) and D01 R[6] (a deployment instance carries an environment class; endpoints and credential references live only
+in the deployment instance).
+
+Also owned here: `scripts/verify-postgres.ts` (CI check; its logic is `verify.ts`) and `bin/circle-hub` (the command entry).
+
+## Data root
+
+`~/Library/Application Support/circle-hub`, or `CIRCLE_HUB_DATA_DIR` (the name hub/config reads too; there is no second
+name). Every directory is 0700.
+
+| Path | Content |
+| --- | --- |
+| `db/` | PostgreSQL data directory |
+| `run/` | the unix socket (0700) and `platform.lock` |
+| `objects/`, `vault/` | written by the records package (objects 0400, vault entries 0600) |
+| `logs/` | `deploy.log` (JSON lines), `postgres/postgresql-<weekday>.log`, `postgres-start.log`, `hub.out.log`, `hub.err.log` |
+| `backups/<time>[-label]/` | `database.dump`, `objects/`, `vault/`, `config/`, `manifest.json` (`circle-hub-backup@2`) |
+| `releases/<id>/` | one deployed copy per commit with its own `node_modules` and `release.json`; `releases/deployments.jsonl` |
+| `releases/operation.json` | progress of a deploy or rollback that has not finished (`circle-hub-operation@1`) |
+| `current` | relative symlink to `releases/<id>` |
+| `config/platform.json` | the deployment instance (`circle-hub-platform@2`): environment class, HTTP port, database name, role and socket port, keychain service and account, backups kept, optional node path |
+| `set-aside/<time>-<reason>/` | data moved out of the way by a failed deploy, a rollback or a failed restore; never deleted automatically |
+
+## Commands
+
+`circle-hub init --environment <test|shared|production> [--port <p>]`, `db start|stop|status`, `key init|status`,
+`service install|uninstall|start|stop|status`, `backup [--keep N]`, `restore <dir>`,
+`deploy [--source <dir>] [--commit <rev>] [--copy]`, `rollback`, `rehearse [--keep]`, `status`. Exit codes: 0 ok,
+1 failure, 2 usage, 3 "not running / not present" for status commands. All output is Chinese; the environment classes
+and their labels come from `ENVIRONMENT` and `labelOf('environment', …)`. A `CIRCLE_HUB_*` name that neither hub/config
+nor the platform knows (a typo such as `CIRCLE_HUB_DATADIR`) stops every command before it runs, as hub/config does.
+`backup`, `restore`, `deploy` and `rollback` print the data root they act on first.
+
+The server CLI delegates with `isPlatformCommand(argv[0])` and `runPlatformCommand(argv, io)`; `io.allowVariables` names
+the `CIRCLE_HUB_*` variables the server CLI reads itself. `bin/circle-hub` runs `hub/config/guard.ts` first, then
+`hub/server/cli.ts` when present, otherwise `hub/platform/cli.ts`; both export `main(argv): Promise<number>`. A CLI module
+without `main`, or a `main` that returns no integer, ends with exit 1 and a message naming the module.
+
+## Decisions
+
+1. **PostgreSQL**: initdb, pg_ctl and postgres from `node_modules/@embedded-postgres/<platform>-<arch>` of the release that
+   runs (deploys switch binaries with the release). `initdb` only when `PG_VERSION` is missing, and never into a non-empty
+   directory. A managed `circle-hub.conf` (included from `postgresql.conf`) and `pg_hba.conf`/`pg_ident.conf` are
+   rewritten at every start: `listen_addresses = ''` (no TCP at all), one socket in `run/` with
+   `unix_socket_permissions = 0700`, logging collector with weekday rotation, UTC. `start` refuses a data directory whose
+   major version differs from the binaries and prints the export and import steps (backup with the old release, restore
+   into a new empty data root with the new one). The Hub database and its role are created only by `init` and `restore`
+   (`ensureDatabaseRunning(control, { create: true })`); every other caller, `serve` included, refuses a missing database,
+   so a mistyped name can never produce an empty database that looks healthy.
+2. **Authentication** (documented in `postgres.ts`): no password exists. The socket directory and socket are owner-only, and
+   `pg_hba.conf` has one line, `local all all peer map=owner`; the ident map lets only the owning operating-system account
+   in, as one of two roles: its own superuser role (initdb, pg_dump, pg_restore, creating the database) and the
+   application role `circle_hub`, which owns the Hub database and is not a superuser (so a server bug cannot run
+   superuser-only statements such as `COPY … TO PROGRAM`). Other local users, other roles and TCP are refused. The
+   platform's own sessions set every connection field explicitly (`sql.ts` `sessionConfig`): node-postgres would
+   otherwise take `PGOPTIONS`, `PGSSLNEGOTIATION`, `PGREPLICATION` and `PGCLIENTENCODING` from the operator's shell (checked:
+   a read-only `PGOPTIONS` broke `CREATE ROLE`, `PGSSLNEGOTIATION=direct` and `PGREPLICATION=database` broke every
+   connection). PostgreSQL tools get a minimal environment without `PG*`.
+3. **Deployment instance** (D01 R[6]): `config/platform.json` is written once by `init` and is the only source of the HTTP
+   port, the database name, role and socket port, and the keychain service and account. `init` takes them from its flags
+   and from the `CIRCLE_HUB_*` variables set at that moment, then pins them. Afterwards a variable may repeat a value but
+   never change it: one that disagrees is refused with its name and both values. An `@1` file (without database names) is
+   read with the names it implied (`circle_hub`, `circle_hub`, 5432) and never rewritten.
+4. **Keychain**: a generic password item (service `circle-hub`, account `vault-master-key`, both pinned per deployment)
+   holding 32 random bytes as hex. `key init` refuses when an item exists; the key goes only through stdin of
+   `security -i`, never a command line, and is read back to verify. Reading never creates a key; any error is fatal; tool
+   output is scrubbed of anything key-shaped. Every `security` call has a 60 s limit: a locked keychain waits for its
+   unlock dialog, and a server stuck there would never be restarted by launchd; a timeout says to unlock the keychain.
+   `keychainKeyProvider` (and `hubKeyProvider(env)`, which follows the deployment settings of `CIRCLE_HUB_DATA_DIR`)
+   implement the records package's `KeyProvider` and cache the key per process. The key is not in backups.
+   **Boundary**: `add-generic-password` without `-T` trusts the program that created the item, `/usr/bin/security`, so
+   any process running as the deployment user can read the key without a prompt
+   (`security find-generic-password -s circle-hub -a vault-master-key -w`; the keychain integration test reads it back
+   exactly so). The keychain keeps the key out of backups, out of files and away from other accounts; it does not keep it
+   away from code running as the same user, for example a dependency's install script during `deploy`. The security CLI
+   offers no narrower access list for an unattended service; a dedicated keychain with its own password and auto-lock
+   would need an unlock step after every login.
+5. **Backups** (`circle-hub-backup@2`): one `REPEATABLE READ` transaction exports a snapshot, computes per-table row
+   counts and digests, and `pg_dump -Fc --snapshot` dumps that exact snapshot; then `objects/`, `vault/` and `config/` are
+   copied (after the dump, so every object a dumped record names is present), keeping file modes. Table digest
+   (`TABLE_DIGEST` in `sql.ts`): h = SHA-256 of `ROW(t.*)::text` under pinned rendering settings (immune to a column
+   named like the alias); rows go into 4096 buckets by the first three hex digits of h; a bucket's digest is SHA-256 of
+   its sorted h; the table's digest is SHA-256 of the lines `<bucket> <rows> <bucket digest>` in bucket order. Each
+   aggregate holds one bucket only, so PostgreSQL's 1 GB string limit is reached only past about 68 billion rows (checked:
+   17,000,000 rows summarise in 39 s; the earlier single aggregate failed there). A backup may run while the Hub writes
+   (cron): dot-files and `*.tmp` are never copied (the object store's `.<sha>.<random>.tmp`, the vault's
+   `<entry>.sealed.<random>.tmp`, Finder's `.DS_Store`), and a file listed but gone before its copy is skipped and
+   reported. Objects unchanged since the previous complete backup are hard links to its copy after their SHA-256 is
+   checked again; a copy that no longer hashes to its name is replaced by a fresh copy from the data root. A database
+   without tables is not backed up when the previous backup had tables (a wrong database). `manifest.json` lists every
+   file with size and SHA-256 plus the table summaries; the directory is built as `.partial-*` and renamed when complete.
+   `pg_dump`/`pg_restore` come from Homebrew libpq by absolute path (`CIRCLE_HUB_LIBPQ_BIN`, default
+   `/opt/homebrew/opt/libpq/bin`) and must match the server's major. `backup` prunes to the newest N (settings, default
+   14) and never removes the backups the last two deployments or an unfinished operation name. Deployments record
+   backups by name, resolved in the data root at use, so the root can move.
+6. **Restore**: the manifest is verified first (same file set, sizes, SHA-256; safe paths only; Finder `.DS_Store` and
+   AppleDouble `._*` files the manifest does not list are ignored; an `@1` manifest is refused with the hint to restore it
+   with the release that made it). Only an empty data root is accepted (no `db/` content, no files in `objects/` or
+   `vault/`); nothing is overwritten (exclusive creates); a differing `config/platform.json` already in the root is kept
+   and reported. The database names are those of the settings that will apply: the root's own, else the backup's. The
+   command refuses while the LaunchAgent is loaded or the Hub port answers (a running server would race the restore for
+   the database) and while a deploy or rollback is unfinished. `pg_restore --single-transaction --exit-on-error --no-owner
+   --no-privileges --role=circle_hub`, so restored objects belong to the application role. The restored tables must
+   reproduce the manifest's counts and digests. A restore that fails half way stops the cluster and moves its partial
+   state to `set-aside/`, so the root is empty again for a retry.
+7. **launchd**: `~/Library/LaunchAgents/io.github.circle-platforms.circle-hub.plist`, domain `gui/<uid>` (the login
+   session, where the login keychain is unlocked), RunAtLoad, KeepAlive, ThrottleInterval 10, ExitTimeOut 30, Umask 077,
+   logs in `logs/`. `ProgramArguments` = node, `current/bin/circle-hub`, `serve`; the node path is the settings' `node`, or
+   Homebrew's stable symlink when it is this Node, or this Node; it must be Node 24+. The environment holds only names
+   hub/config reads, all explicit and taken from the deployment settings: `CIRCLE_HUB_DATA_DIR`, `_PORT`,
+   `_DATABASE_SOCKET_DIR`, `_DATABASE_PORT`, `_DATABASE_NAME`, `_DATABASE_USER`, `_KEYCHAIN_SERVICE`,
+   `_KEYCHAIN_ACCOUNT`, plus `PATH`, `HOME`, `USER`. `service stop` is `bootout` (it starts again at the next login or
+   `service start`). Failure paths that must keep the service stopped unload it and remove the plist, so the next login
+   does not start it; the message says so. The cluster is started by pg_ctl in its own session, so it survives server
+   restarts; deploy stops it explicitly.
+8. **Deploy** (`deploy.ts`): build `releases/<id>` (`git archive` of the commit without `foundation/` and `references/`,
+   or `--copy` of a directory that is not a git work tree; then `npm ci --include=dev`, because the PostgreSQL binaries
+   are a dev dependency) and check that the release's PostgreSQL major equals the data's, all while the Hub keeps
+   running → stop service → port free → database running → backup `pre-deploy` → stop database → switch `current`
+   (atomic rename) → start database on the release's binaries → migrate with
+   `node <release>/bin/circle-hub serve --migrate-only` and the service environment → install and start the service →
+   `GET /healthz` on loopback until 200 (a body naming another `release` does not count) → record in
+   `releases/deployments.jsonl`. Deploying the release that is already current is refused before anything stops. On
+   failure: stop the service; only when that succeeded, and if the migration had started, stop the database, set the data
+   aside and restore the pre-deploy backup on the previous binaries; point `current` back (or remove it on a first
+   deploy); start the previous release when the service was loaded before and `current` is back. If the service cannot
+   be stopped, nothing else moves (launchd could keep restarting the failed release against the data being restored).
+   If the restore fails the service is unloaded and the message names the backup. From the first change on,
+   `releases/operation.json` records the step, the backup and what has been touched; it is removed when the root is
+   consistent again. If it remains (the process was killed, or the recovery could not finish), the next `deploy` or
+   `rollback` first finishes that recovery and stops; `backup` and `restore` refuse meanwhile and `status` shows it.
+   SIGINT, SIGTERM and SIGHUP (Ctrl-C, a closed terminal) do not end a deploy or rollback: the running step finishes
+   (its children run in their own process group, so a terminal Ctrl-C does not kill them), then the operation stops and
+   recovers like a failure. Every step, failure and recovery action is a JSON line in `logs/deploy.log`. A release id is
+   the first 12 hex of the commit (or of the copied tree's digest); a complete release is reused. `--copy` leaves out, at
+   any depth, `.env`, `.env.*`, `.npmrc`, `.circle/`, `*.log`, `.git`, `.DS_Store` and `._*`, never reading them, and keeps
+   owner-only files owner-only.
+9. **Rollback**: allowed only when the last recorded deployment produced `current` and had a previous release that is
+   another release. Verifies that deployment's backup first, then: stop service → backup `pre-rollback` → stop database →
+   set aside → restore the pre-deploy backup on the previous binaries → switch `current` → start service → health → record
+   (`rollback: true`). A failure before the data moved restarts the current release; after it, the service is stopped and
+   unloaded (or the message says it may still run), the progress stays, and the next `rollback` continues: it sets the
+   partial state aside and restores again.
+10. **Rehearsal**: a throwaway root `chr-*` in the temporary directory with a marker file: init, synthetic records (two
+   tables written as the application role, with text, JSON, numeric, float, timestamp and bytea values), content-addressed
+   objects and vault files, backup, destroy, restore, compare table summaries and file digests; the root is removed
+   unless `--keep`.
+11. **One lock** (`run/platform.lock`) serialises deploy, rollback, backup and restore. It holds `<pid> <token>`, is
+   created complete (written beside it, then hard-linked), and a lock of a dead process is taken over only by the one
+   taker that holds `platform.lock.break`, and only while it still holds exactly the dead content. A lock that cannot be
+   read (for example empty) is refused with the hint to check and delete it. Release removes only our own lock. Checked
+   with eight processes taking over one dead lock at the same moment: the earlier lock let two hold it in 8 of 20 rounds,
+   this one in none. Child processes never use a shell.
+
+## Limits
+
+- PostgreSQL major upgrades are not automatic (refused with instructions). Releases are never pruned. Backups are not
+  scheduled (no second LaunchAgent); run `circle-hub backup` from cron/launchd if wanted. Stale `backups/.partial-*` and
+  `releases/.partial-*` from a killed backup or build stay until removed by hand.
+- A backup taken while the Hub runs copies `vault/` after the database snapshot: a vault entry removed in between is
+  not in the backup (reported as skipped), and one replaced in between is in its newer form.
+- Hard-linked objects share one copy between backups. If that copy is damaged on disk, every backup sharing it fails
+  verification; the next backup notices it (the SHA-256 no longer matches) and makes a fresh copy, but older backups keep
+  the damaged one.
+- Rollback discards data written after the deploy it undoes (it is in `set-aside/` and in the `pre-rollback` backup).
+- Table digests depend on row text; columns of OID-like types would differ after a restore (the Hub schema has none).
+- Signals are guarded only during deploy and rollback. A backup or restore ended with Ctrl-C leaves `.partial-*` or a
+  partial data root (move it aside before retrying). SIGKILL or a power loss during deploy or rollback is what
+  `releases/operation.json` covers. If its automatic recovery cannot succeed (for example the previous release was
+  removed by hand), handle the data root by hand and then delete that file; until then backup and restore refuse.
+- The data root path may not contain double quotes, dollar signs, backquotes, backslashes, commas, single quotes or
+  newlines (pg_ctl runs its command through `/bin/sh`), and the socket path must fit in 103 bytes.
+- Moving to another machine needs the keychain item there too; there is no key export command.
+- The service runs in `gui/<uid>`: it starts at login, not at boot.
+
+## How to test
+
+```
+node --test "hub/platform/**/*.test.ts"
+node scripts/verify-postgres.ts
+```
+
+Unit tests inject runners (fake `security`, `launchctl`, `npm`, `git`, PostgreSQL tools). Integration tests start real
+clusters from the pinned binaries in temporary roots (`lifecycle`, `sql`, `service`, `cli`, `verify`, `rehearse`,
+`backup-live`, `deploy-system`); the backup and restore cases skip with a message only when `pg_dump`/`pg_restore` are
+absent. `backup-live` runs backups while synthetic writers use the records stores' exact file patterns; `files` runs eight
+processes against one dead lock; `bin` runs a copy of `bin/circle-hub` against stub CLI modules. Keychain integration
+uses a temporary keychain file made with `security create-keychain` (not on the search list, deleted afterwards); a guard
+in `test-support.ts` fails any `security` call that does not name it and any real `launchctl` call. No test touches the
+login keychain, `~/Library`, the user's launchd domain or the network (only loopback servers the tests start).
+`environment.test.ts` reads hub/config's public `HUB_ENVIRONMENT` (test only) to keep the platform's copy of the names equal.
+
+## Deviations from the brief
+
+- **Deploy order**: the release is built and checked while the Hub runs; the service is stopped *before* the pre-deploy
+  backup (brief: backup, then stop). Otherwise records written between the dump and the stop (every MCP call writes a
+  call log) would be lost when a failed deploy restores.
+- **Restore on deploy failure** happens only when the migration had started; before that no data can have changed (the
+  service is stopped), so the release and `current` are put back without a restore.
+- **Database roles**: two roles instead of one (see decision 2), and `config/` is included in backups.
+- **Extra files and directories**: `set-aside/`, so nothing is ever deleted or overwritten by deploy, rollback or a failed
+  restore; `releases/operation.json`, so an interrupted deploy or rollback can be finished.
+
+## Needs from other packages
+
+- **server**: (1) `hub/server/cli.ts` exports `main(argv): Promise<number>` returning an integer exit code and does not run
+  itself on import; it delegates `isPlatformCommand(argv[0])` to `runPlatformCommand(argv, io)` and passes in
+  `io.allowVariables` any `CIRCLE_HUB_*` names it reads itself. (2) `serve --migrate-only` applies migrations and exits 0.
+  (3) Before connecting, `serve` calls `ensureHubDatabase(process.env)` (starts the cluster, never initialises one, never
+  creates the database, needs `CIRCLE_HUB_DATA_DIR`) and builds the vault with `hubKeyProvider(process.env)`; it does not
+  stop the cluster on exit. (4) `GET /healthz` on loopback answers 200 without a token, ideally
+  `{"status":"ok","release":"<id>"}` with the id from `release.json` in the server's own code root
+  (`releases/<id>/release.json`), so a deploy can tell an old process from the new one. (5) The server's own database
+  connections should set node-postgres's `options`, `sslnegotiation`, `replication` and `client_encoding` explicitly
+  (see `sessionConfig` in `sql.ts`); a hand-run `serve` otherwise inherits `PGOPTIONS` and similar from the shell.
+- **records (hub/config, objects, vault)**: (1) default `CIRCLE_HUB_KEYCHAIN_ACCOUNT` is `vault` there and
+  `vault-master-key` here; the service environment always sets it, but a hand-run server with no variable would look for
+  the wrong item: please align on one default. (2) Register the platform-only name `CIRCLE_HUB_LIBPQ_BIN`, so an operator
+  shell that sets it can still run `circle-hub serve` (`CIRCLE_HUB_HOME` is no longer used). (3) The retired-name guard and
+  the list of names exist twice (`hub/config/{retired,names}.ts` and `hub/platform/environment.ts`, which may import only
+  contracts); moving both into contracts would leave one of each. (4) Backups rely on the stores' temporary names:
+  every in-flight file is a dot-file or ends in `.tmp` (true today: `objects/<xx>/.<sha>.<random>.tmp`,
+  `vault/<entry>.sealed.<random>.tmp`); please keep that rule. (5) `vault/key-check` is created with an exclusive open and
+  then written, so a backup at the very moment of the first vault use could copy it empty and the restored vault would
+  refuse its key; writing it beside and then linking it, as objects are, would close that window. (6) The server's role
+  `circle_hub` owns the tables it migrates, so it could `ALTER TABLE … DISABLE TRIGGER` on the append-only tables; if
+  append-only must hold against the server process itself, migrations could run as a separate owner role with the server
+  granted only `SELECT, INSERT` (the platform can create that role).
+- **integrator**: add `"verify:postgres": "node scripts/verify-postgres.ts"` to `package.json` (CI's acceptance job calls
+  it).
+- **acceptance**: check that every key of `serviceEnvironment(...)` is accepted by hub/config's `loadConfig`.
