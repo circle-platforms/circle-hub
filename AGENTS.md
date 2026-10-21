@@ -40,7 +40,7 @@ Inspect status and diffs and preserve other people's work; use isolated worktree
 
 ## Verification
 
-A package agent runs `npx tsc --noEmit` and its own tests, `node --test "<own paths>/**/*.test.ts"`, and reports errors of other packages that are mid-edit instead of fixing them. The integrator runs the whole set: `npm run typecheck`, `npm run verify:contracts`, `npm run test:unit`, `npm run test:acceptance`, `npm run verify:references`, `npm run test:references` (`npm test` runs the contracts check and the unit, acceptance and reference tests) and the docs checks, `node --test ".github/checks/*.test.ts"`.
+A package agent runs `npx tsc --noEmit` and its own tests, `node --test "<own paths>/**/*.test.ts"`, and reports errors of other packages that are mid-edit instead of fixing them. The integrator runs the whole set: `npm run typecheck`, `npm run verify:contracts`, `npm run test:unit`, `npm run test:acceptance`, `npm run verify:references`, `npm run test:references` (`npm test` runs the contracts check and the unit, docs, acceptance and reference tests; the docs checks are `npm run test:docs`).
 
 `contracts/generated` is generated from `contracts/model.json`, `contracts/codes.json` and the shapes in `contracts/src`, and is never edited by hand. A model change goes through the integrator, and a new code is requested from the contracts owner. A package that changes the `contracts/src` file it owns (`pack.ts`, `knowledge.ts`, `resources.ts`, `tables.ts`) runs `npm run gen:contracts` and hands the regenerated files in with its change; the contracts owner reviews that generated diff (`contracts/README.md`). Run npm run verify:references and npm run test:references after changing provenance tooling or approved imports.
 
