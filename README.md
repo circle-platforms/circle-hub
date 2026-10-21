@@ -41,7 +41,7 @@ npm run verify:contracts   # contracts/generated matches contracts/model.json, c
 npm run test:unit
 npm run test:acceptance    # temporary PostgreSQL, synthetic fixtures, scripted models
 npm run verify:references  # frozen archives, checked by SHA
-npm test                   # contracts check, unit, acceptance and reference tests
+npm test                   # contracts check, unit, docs, acceptance and reference tests
 node --test ".github/checks/*.test.ts"   # docs checks
 ```
 
