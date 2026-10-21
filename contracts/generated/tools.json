@@ -1,0 +1,2362 @@
+[
+  {
+    "name": "list_task_packs",
+    "title": "List task packs",
+    "description": "List the task packs you may use, with the inputs, parameters and requirements of each.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "description": "Only packs of this kind",
+          "type": "string",
+          "enum": [
+            "product",
+            "workflow",
+            "system"
+          ]
+        }
+      }
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "call_result": {
+          "type": "string",
+          "enum": [
+            "ok",
+            "error"
+          ]
+        },
+        "acceptance": {
+          "type": "string",
+          "enum": [
+            "accepted",
+            "not_accepted"
+          ]
+        },
+        "coverage": {
+          "type": "object",
+          "properties": {
+            "complete": {
+              "type": "boolean"
+            },
+            "examined": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "total": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "note": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "complete",
+            "examined"
+          ],
+          "additionalProperties": false
+        },
+        "next": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "errors": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string",
+                "minLength": 1
+              },
+              "message": {
+                "type": "string"
+              },
+              "fix": {
+                "type": "string"
+              },
+              "path": {
+                "description": "JSON Pointer into the submission",
+                "type": "string"
+              },
+              "item": {
+                "type": "string"
+              },
+              "requirement": {
+                "type": "string"
+              },
+              "rounds_left": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "request_id": {
+                "type": "string"
+              },
+              "options": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "trace": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{32}$"
+        },
+        "packs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "pack": {
+                "type": "string",
+                "description": "id@version"
+              },
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]{1,40}$"
+              },
+              "version": {
+                "type": "string",
+                "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "product",
+                  "workflow",
+                  "system"
+                ]
+              },
+              "title": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              },
+              "products": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "every name of the product lines the pack is bound to, for example APV and NSAE"
+              },
+              "inputs": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "slot": {
+                      "type": "string"
+                    },
+                    "role": {
+                      "type": "string",
+                      "enum": [
+                        "expected",
+                        "subject",
+                        "artifact_under_verification",
+                        "reported_actual",
+                        "republished",
+                        "hint",
+                        "request_text"
+                      ]
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "accepts": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "media types, or external object types such as agile:mindmap"
+                    },
+                    "required": {
+                      "type": "boolean"
+                    },
+                    "many": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "slot",
+                    "role",
+                    "description",
+                    "accepts",
+                    "required",
+                    "many"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "parameters": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "required": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "description",
+                    "required"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "requirements": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "key": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "layers": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "static",
+                          "dynamic"
+                        ]
+                      },
+                      "description": "the judgment layers this requirement is judged on; other layers are not applicable"
+                    },
+                    "done_rule": {
+                      "type": "string",
+                      "enum": [
+                        "bookkeeping",
+                        "gating"
+                      ]
+                    },
+                    "accepted_producer": {
+                      "type": "string",
+                      "enum": [
+                        "fact",
+                        "judgment",
+                        "independent_judgment"
+                      ]
+                    },
+                    "repair_rounds": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "key",
+                    "name",
+                    "description",
+                    "layers",
+                    "done_rule",
+                    "accepted_producer",
+                    "repair_rounds"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "pack",
+              "id",
+              "version",
+              "kind",
+              "title",
+              "description",
+              "products",
+              "inputs",
+              "parameters",
+              "requirements"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "call_result",
+        "errors",
+        "trace",
+        "packs"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "upload_file",
+    "title": "Upload a file",
+    "description": "Upload a local file as a source artifact. Returns a reference to use as a run input. Identical bytes give the same reference.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "file_path": {
+          "type": "string",
+          "contentEncoding": "base64",
+          "contentMediaType": "application/octet-stream",
+          "description": "The file to upload. Give the local path; the client sends the file bytes."
+        },
+        "media_type": {
+          "description": "Media type if known, for example text/markdown",
+          "type": "string"
+        },
+        "name": {
+          "description": "Original file name, for display",
+          "type": "string"
+        }
+      },
+      "required": [
+        "file_path"
+      ]
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "call_result": {
+          "type": "string",
+          "enum": [
+            "ok",
+            "error"
+          ]
+        },
+        "acceptance": {
+          "type": "string",
+          "enum": [
+            "accepted",
+            "not_accepted"
+          ]
+        },
+        "coverage": {
+          "type": "object",
+          "properties": {
+            "complete": {
+              "type": "boolean"
+            },
+            "examined": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "total": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "note": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "complete",
+            "examined"
+          ],
+          "additionalProperties": false
+        },
+        "next": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "errors": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string",
+                "minLength": 1
+              },
+              "message": {
+                "type": "string"
+              },
+              "fix": {
+                "type": "string"
+              },
+              "path": {
+                "description": "JSON Pointer into the submission",
+                "type": "string"
+              },
+              "item": {
+                "type": "string"
+              },
+              "requirement": {
+                "type": "string"
+              },
+              "rounds_left": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "request_id": {
+                "type": "string"
+              },
+              "options": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "trace": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{32}$"
+        },
+        "reference": {
+          "type": "string",
+          "pattern": "^(src|tree|entry|rec):[0-9a-f]{64}"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "media_type": {
+          "type": "string"
+        },
+        "structure": {
+          "description": "Summary from the parser that recognised the file",
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {}
+        }
+      },
+      "required": [
+        "call_result",
+        "errors",
+        "trace"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "openWorldHint": false,
+      "idempotentHint": true
+    }
+  },
+  {
+    "name": "start_run",
+    "title": "Start a run",
+    "description": "Freeze the work for a task pack: requirements, items, locked knowledge version and the pack procedure. Inputs are references from upload_file or external object identities.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "pack": {
+          "type": "string",
+          "description": "Pack id, optionally with a version: case-review or case-review@1.0.0"
+        },
+        "product": {
+          "description": "Product name; every name of a product line is accepted, for example APV or NSAE",
+          "type": "string"
+        },
+        "version": {
+          "description": "Version line, for example 10.4.6",
+          "type": "string"
+        },
+        "build": {
+          "description": "Exact build name; chosen by the pack rule when omitted",
+          "type": "string"
+        },
+        "inputs": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "reference": {
+                        "type": "string",
+                        "pattern": "^(src|tree|entry|rec):[0-9a-f]{64}",
+                        "description": "reference returned by upload_file, or any reference the caller may read"
+                      }
+                    },
+                    "required": [
+                      "reference"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "external": {
+                        "type": "string",
+                        "pattern": "^[a-z][a-z0-9-]*:[a-z][a-z0-9_-]*:[^\\s@]+(@[^\\s]+)?$",
+                        "description": "external object identity, system:type:id, for example agile:mindmap:24863"
+                      }
+                    },
+                    "required": [
+                      "external"
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "array",
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "reference": {
+                          "type": "string",
+                          "pattern": "^(src|tree|entry|rec):[0-9a-f]{64}",
+                          "description": "reference returned by upload_file, or any reference the caller may read"
+                        }
+                      },
+                      "required": [
+                        "reference"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "external": {
+                          "type": "string",
+                          "pattern": "^[a-z][a-z0-9-]*:[a-z][a-z0-9_-]*:[^\\s@]+(@[^\\s]+)?$",
+                          "description": "external object identity, system:type:id, for example agile:mindmap:24863"
+                        }
+                      },
+                      "required": [
+                        "external"
+                      ]
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          "description": "Input slot name to reference or external object"
+        },
+        "parameters": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {}
+        },
+        "predecessor": {
+          "description": "Earlier run this one continues",
+          "type": "string",
+          "pattern": "^run_[0-9a-z]{26}$"
+        },
+        "client_key": {
+          "description": "Client chosen key; repeating it within its time window returns the same run",
+          "type": "string",
+          "maxLength": 200
+        }
+      },
+      "required": [
+        "pack",
+        "inputs"
+      ]
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "call_result": {
+          "type": "string",
+          "enum": [
+            "ok",
+            "error"
+          ]
+        },
+        "acceptance": {
+          "type": "string",
+          "enum": [
+            "accepted",
+            "not_accepted"
+          ]
+        },
+        "coverage": {
+          "type": "object",
+          "properties": {
+            "complete": {
+              "type": "boolean"
+            },
+            "examined": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "total": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "note": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "complete",
+            "examined"
+          ],
+          "additionalProperties": false
+        },
+        "next": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "errors": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string",
+                "minLength": 1
+              },
+              "message": {
+                "type": "string"
+              },
+              "fix": {
+                "type": "string"
+              },
+              "path": {
+                "description": "JSON Pointer into the submission",
+                "type": "string"
+              },
+              "item": {
+                "type": "string"
+              },
+              "requirement": {
+                "type": "string"
+              },
+              "rounds_left": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "request_id": {
+                "type": "string"
+              },
+              "options": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "trace": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{32}$"
+        },
+        "run": {
+          "type": "object",
+          "properties": {
+            "run": {
+              "type": "string",
+              "pattern": "^run_[0-9a-z]{26}$"
+            },
+            "pack": {
+              "type": "string"
+            },
+            "pack_digest": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "product": {
+              "type": "string"
+            },
+            "version": {
+              "type": "string"
+            },
+            "build": {
+              "type": "string"
+            },
+            "root": {
+              "description": "knowledge root locked for this run",
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "requirements": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "layers": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "static",
+                        "dynamic"
+                      ]
+                    },
+                    "description": "the judgment layers this requirement is judged on; other layers are not applicable"
+                  },
+                  "done_rule": {
+                    "type": "string",
+                    "enum": [
+                      "bookkeeping",
+                      "gating"
+                    ]
+                  },
+                  "accepted_producer": {
+                    "type": "string",
+                    "enum": [
+                      "fact",
+                      "judgment",
+                      "independent_judgment"
+                    ]
+                  },
+                  "repair_rounds": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "key",
+                  "name",
+                  "description",
+                  "layers",
+                  "done_rule",
+                  "accepted_producer",
+                  "repair_rounds"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "label": {
+                    "type": "string"
+                  },
+                  "location": {
+                    "type": "string",
+                    "pattern": "^(src|tree|entry|rec):[0-9a-f]{64}",
+                    "description": "where the item sits in the judged source"
+                  },
+                  "fields": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {}
+                  }
+                },
+                "required": [
+                  "id",
+                  "label",
+                  "location",
+                  "fields"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "instructions": {
+              "type": "string",
+              "description": "the pack procedure, plain text"
+            },
+            "instructions_digest": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "predecessor": {
+              "type": "string",
+              "pattern": "^run_[0-9a-z]{26}$"
+            },
+            "session": {
+              "description": "client session id observed from the request header",
+              "type": "string"
+            },
+            "started_at": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+            }
+          },
+          "required": [
+            "run",
+            "pack",
+            "pack_digest",
+            "requirements",
+            "items",
+            "instructions",
+            "instructions_digest",
+            "started_at"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "call_result",
+        "errors",
+        "trace"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "get_nodes",
+    "title": "Read knowledge nodes",
+    "description": "Read subtrees of the knowledge tree locked by a run, or the content a reference points at.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "run": {
+          "description": "Use the knowledge root locked by this run",
+          "type": "string",
+          "pattern": "^run_[0-9a-z]{26}$"
+        },
+        "root": {
+          "description": "Knowledge root digest; defaults to the run root",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "paths": {
+          "description": "Subtrees to read, for example /commands/service",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "starts_with",
+            "pattern": "^\\/.*"
+          }
+        },
+        "depth": {
+          "description": "Levels below each path; default 1",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 6
+        },
+        "reference": {
+          "description": "Read the content a reference points at instead of a subtree",
+          "type": "string",
+          "pattern": "^(src|tree|entry|rec):[0-9a-f]{64}"
+        },
+        "cursor": {
+          "type": "string"
+        }
+      }
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "call_result": {
+          "type": "string",
+          "enum": [
+            "ok",
+            "error"
+          ]
+        },
+        "acceptance": {
+          "type": "string",
+          "enum": [
+            "accepted",
+            "not_accepted"
+          ]
+        },
+        "coverage": {
+          "type": "object",
+          "properties": {
+            "complete": {
+              "type": "boolean"
+            },
+            "examined": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "total": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "note": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "complete",
+            "examined"
+          ],
+          "additionalProperties": false
+        },
+        "next": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "errors": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string",
+                "minLength": 1
+              },
+              "message": {
+                "type": "string"
+              },
+              "fix": {
+                "type": "string"
+              },
+              "path": {
+                "description": "JSON Pointer into the submission",
+                "type": "string"
+              },
+              "item": {
+                "type": "string"
+              },
+              "requirement": {
+                "type": "string"
+              },
+              "rounds_left": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "request_id": {
+                "type": "string"
+              },
+              "options": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "trace": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{32}$"
+        },
+        "nodes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "level": {
+                "type": "string",
+                "enum": [
+                  "trunk",
+                  "branch",
+                  "leaf"
+                ]
+              },
+              "digest": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "children": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "digest": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{64}$"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "digest"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "entries": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "entry": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{64}$"
+                    },
+                    "kind": {
+                      "type": "string"
+                    },
+                    "statement": {
+                      "type": "string"
+                    },
+                    "reference": {
+                      "type": "string",
+                      "pattern": "^(src|tree|entry|rec):[0-9a-f]{64}"
+                    },
+                    "applicability": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "entry",
+                    "kind",
+                    "statement",
+                    "reference",
+                    "applicability"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "path",
+              "name",
+              "level",
+              "digest",
+              "children",
+              "entries"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "content": {
+          "type": "object",
+          "properties": {
+            "reference": {
+              "type": "string",
+              "pattern": "^(src|tree|entry|rec):[0-9a-f]{64}"
+            },
+            "text": {
+              "type": "string"
+            },
+            "readable": {
+              "type": "boolean"
+            },
+            "note": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "reference",
+            "readable"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "call_result",
+        "errors",
+        "trace"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "resolve_reference",
+    "title": "Resolve a value to a reference",
+    "description": "Preview how an exact value or quotation resolves against the sources bound to a run. The result is a preview and not evidence.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "run": {
+          "type": "string",
+          "pattern": "^run_[0-9a-z]{26}$"
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The exact value or quotation to resolve, copied verbatim"
+        },
+        "expect": {
+          "description": "What it should resolve to, for example command or quotation",
+          "type": "string"
+        }
+      },
+      "required": [
+        "run",
+        "text"
+      ]
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "call_result": {
+          "type": "string",
+          "enum": [
+            "ok",
+            "error"
+          ]
+        },
+        "acceptance": {
+          "type": "string",
+          "enum": [
+            "accepted",
+            "not_accepted"
+          ]
+        },
+        "coverage": {
+          "type": "object",
+          "properties": {
+            "complete": {
+              "type": "boolean"
+            },
+            "examined": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "total": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "note": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "complete",
+            "examined"
+          ],
+          "additionalProperties": false
+        },
+        "next": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "errors": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string",
+                "minLength": 1
+              },
+              "message": {
+                "type": "string"
+              },
+              "fix": {
+                "type": "string"
+              },
+              "path": {
+                "description": "JSON Pointer into the submission",
+                "type": "string"
+              },
+              "item": {
+                "type": "string"
+              },
+              "requirement": {
+                "type": "string"
+              },
+              "rounds_left": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "request_id": {
+                "type": "string"
+              },
+              "options": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "trace": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{32}$"
+        },
+        "resolution": {
+          "type": "string",
+          "enum": [
+            "resolved",
+            "ambiguous",
+            "unresolved"
+          ]
+        },
+        "references": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "reference": {
+                "type": "string",
+                "pattern": "^(src|tree|entry|rec):[0-9a-f]{64}"
+              },
+              "text": {
+                "type": "string"
+              },
+              "role": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "reference",
+              "text"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "diagnostics": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "call_result",
+        "errors",
+        "trace",
+        "resolution",
+        "references",
+        "diagnostics"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "submit_result",
+    "title": "Submit results",
+    "description": "Submit your results item by item. The Hub validates them and returns the receipt, partitions and the terminal state of every requirement. Repeating a submission returns the current result.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "run": {
+          "type": "string",
+          "pattern": "^run_[0-9a-z]{26}$"
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "description": "model name and exact configuration as the client declares it"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "item": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "handling": {
+                "type": "string",
+                "enum": [
+                  "handled",
+                  "skipped"
+                ]
+              },
+              "reason": {
+                "description": "required when the item is skipped",
+                "type": "string"
+              },
+              "slots": {
+                "description": "slot record, validated against the pack slot schema",
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              },
+              "context": {
+                "description": "digest of the context the model used for this item, so unchanged items can be reused",
+                "type": "string"
+              }
+            },
+            "required": [
+              "item",
+              "handling"
+            ]
+          }
+        },
+        "cross_item": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "nature": {
+                "type": "string",
+                "enum": [
+                  "fact",
+                  "judgment"
+                ]
+              },
+              "statement": {
+                "type": "string"
+              },
+              "grounds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^(src|tree|entry|rec):[0-9a-f]{64}"
+                }
+              },
+              "code": {
+                "type": "string"
+              },
+              "rank": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "nature",
+              "statement",
+              "grounds"
+            ]
+          }
+        },
+        "notes": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "run",
+        "model",
+        "items",
+        "cross_item"
+      ]
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "schema": {
+          "type": "string",
+          "const": "validation@1"
+        },
+        "run": {
+          "type": "string",
+          "pattern": "^run_[0-9a-z]{26}$"
+        },
+        "submission": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "digest of the submission, the idempotency key together with the run"
+        },
+        "acceptance": {
+          "type": "string",
+          "enum": [
+            "accepted",
+            "not_accepted"
+          ]
+        },
+        "errors": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string",
+                "minLength": 1
+              },
+              "message": {
+                "type": "string"
+              },
+              "fix": {
+                "type": "string"
+              },
+              "path": {
+                "description": "JSON Pointer into the submission",
+                "type": "string"
+              },
+              "item": {
+                "type": "string"
+              },
+              "requirement": {
+                "type": "string"
+              },
+              "rounds_left": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "request_id": {
+                "type": "string"
+              },
+              "options": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "rounds": {
+          "type": "object",
+          "properties": {
+            "used": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "max": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "used",
+            "max"
+          ],
+          "additionalProperties": false
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "item": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "label": {
+                "type": "string"
+              },
+              "location": {
+                "type": "string",
+                "description": "reference URI of the item in the judged source"
+              },
+              "partition": {
+                "type": "string",
+                "enum": [
+                  "delivered",
+                  "rejected",
+                  "quarantined",
+                  "incomplete"
+                ]
+              },
+              "requirements": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "requirement": {
+                      "type": "string"
+                    },
+                    "layers": {
+                      "type": "array",
+                      "items": {
+                        "oneOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "layer": {
+                                "type": "string",
+                                "const": "static"
+                              },
+                              "terminal": {
+                                "type": "string",
+                                "enum": [
+                                  "pass",
+                                  "violation",
+                                  "judgment",
+                                  "unchecked",
+                                  "incomplete"
+                                ]
+                              },
+                              "code": {
+                                "description": "violation code when terminal is violation",
+                                "type": "string"
+                              },
+                              "tier": {
+                                "type": "string",
+                                "enum": [
+                                  "blocking",
+                                  "advisory"
+                                ]
+                              },
+                              "reason": {
+                                "description": "why the state is unchecked or incomplete",
+                                "type": "string",
+                                "enum": [
+                                  "no_check",
+                                  "check_error",
+                                  "timeout",
+                                  "missing_input",
+                                  "declared_skip",
+                                  "not_covered",
+                                  "awaiting_step",
+                                  "output_failed",
+                                  "repair_exhausted",
+                                  "budget_exhausted",
+                                  "integrity_unproven"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "layer",
+                              "terminal"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "layer": {
+                                "type": "string",
+                                "const": "dynamic"
+                              },
+                              "terminal": {
+                                "type": "string",
+                                "enum": [
+                                  "pass",
+                                  "fail",
+                                  "no_verdict",
+                                  "not_run",
+                                  "incomplete"
+                                ]
+                              },
+                              "code": {
+                                "type": "string"
+                              },
+                              "tier": {
+                                "type": "string",
+                                "enum": [
+                                  "blocking",
+                                  "advisory"
+                                ]
+                              },
+                              "reason": {
+                                "type": "string",
+                                "enum": [
+                                  "no_check",
+                                  "check_error",
+                                  "timeout",
+                                  "missing_input",
+                                  "declared_skip",
+                                  "not_covered",
+                                  "awaiting_step",
+                                  "output_failed",
+                                  "repair_exhausted",
+                                  "budget_exhausted",
+                                  "integrity_unproven"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "layer",
+                              "terminal"
+                            ],
+                            "additionalProperties": false
+                          }
+                        ]
+                      }
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "satisfied",
+                        "unsatisfied",
+                        "pending"
+                      ]
+                    },
+                    "unsatisfied_reason": {
+                      "type": "string",
+                      "enum": [
+                        "no_producer",
+                        "abandoned",
+                        "outcome_mismatch",
+                        "independence_unknown"
+                      ]
+                    },
+                    "attribution": {
+                      "description": "only for non-pass terminals that miss the contract's expected outcome",
+                      "type": "string",
+                      "enum": [
+                        "data_gap",
+                        "author_input",
+                        "producer_error",
+                        "transient",
+                        "target_side",
+                        "unattributed"
+                      ]
+                    },
+                    "claims": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "item": {
+                            "type": "string"
+                          },
+                          "requirement": {
+                            "type": "string"
+                          },
+                          "statement": {
+                            "type": "object",
+                            "properties": {
+                              "text": {
+                                "type": "string"
+                              },
+                              "verdict": {
+                                "type": "string",
+                                "enum": [
+                                  "support",
+                                  "refute",
+                                  "unknown",
+                                  "abstain"
+                                ]
+                              },
+                              "code": {
+                                "description": "violation code or finding code",
+                                "type": "string"
+                              },
+                              "data": {
+                                "description": "machine-readable parts of the statement",
+                                "type": "object",
+                                "propertyNames": {
+                                  "type": "string"
+                                },
+                                "additionalProperties": {}
+                              }
+                            },
+                            "required": [
+                              "text"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "qualifier": {
+                            "type": "object",
+                            "properties": {
+                              "nature": {
+                                "type": "string",
+                                "enum": [
+                                  "fact",
+                                  "judgment",
+                                  "unknown"
+                                ]
+                              },
+                              "provenance": {
+                                "type": "string",
+                                "enum": [
+                                  "observed",
+                                  "projected",
+                                  "declared",
+                                  "candidate"
+                                ]
+                              },
+                              "basis_rank": {
+                                "type": "string",
+                                "enum": [
+                                  "rule_over_observation",
+                                  "rule_over_claims",
+                                  "judgment",
+                                  "relay"
+                                ]
+                              },
+                              "source_role": {
+                                "type": "string",
+                                "enum": [
+                                  "expected",
+                                  "subject",
+                                  "artifact_under_verification",
+                                  "reported_actual",
+                                  "republished",
+                                  "hint",
+                                  "request_text"
+                                ]
+                              },
+                              "marks": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "enum": [
+                                    "target_reported",
+                                    "report_for_dispatch",
+                                    "local_ops_not_excluded",
+                                    "human_intervention",
+                                    "discrimination_not_established",
+                                    "semantics_unasserted",
+                                    "unverified_submission",
+                                    "client_preview",
+                                    "model_relay",
+                                    "no_reuse",
+                                    "author_samples_only",
+                                    "conditional_on_judgment",
+                                    "independence_declared",
+                                    "not_realtime",
+                                    "partial"
+                                  ]
+                                }
+                              },
+                              "coverage": {
+                                "type": "object",
+                                "properties": {
+                                  "complete": {
+                                    "type": "boolean"
+                                  },
+                                  "examined": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "total": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "note": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "complete",
+                                  "examined"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "control": {
+                                "type": "string",
+                                "enum": [
+                                  "automatic",
+                                  "human_takeover"
+                                ]
+                              },
+                              "discriminating_power": {
+                                "type": "string",
+                                "enum": [
+                                  "established",
+                                  "not_established"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "nature",
+                              "provenance",
+                              "marks"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "grounds": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "pattern": "^(src|tree|entry|rec):[0-9a-f]{64}"
+                            }
+                          },
+                          "warrant": {
+                            "type": "object",
+                            "properties": {
+                              "producer": {
+                                "type": "string",
+                                "enum": [
+                                  "function",
+                                  "model",
+                                  "human"
+                                ]
+                              },
+                              "id": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "independence": {
+                                "type": "string",
+                                "enum": [
+                                  "human_non_author",
+                                  "model_family_declared",
+                                  "judge_not_author",
+                                  "not_independent",
+                                  "unknown"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "producer",
+                              "id"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "resolution": {
+                            "type": "string",
+                            "enum": [
+                              "resolved",
+                              "ambiguous",
+                              "unresolved"
+                            ]
+                          },
+                          "validity": {
+                            "type": "object",
+                            "properties": {
+                              "status": {
+                                "type": "string",
+                                "enum": [
+                                  "valid",
+                                  "rule_withdrawn",
+                                  "grounds_withdrawn",
+                                  "cited_fragment_changed",
+                                  "credential_unreadable",
+                                  "premise_failed",
+                                  "expired",
+                                  "contradicted"
+                                ]
+                              },
+                              "bound": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "pattern": "^[0-9a-f]{64}$"
+                                },
+                                "description": "digests the claim depends on; a change in any of them voids it"
+                              },
+                              "expires_at": {
+                                "type": "string",
+                                "format": "date-time",
+                                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                              },
+                              "premises": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              }
+                            },
+                            "required": [
+                              "status",
+                              "bound",
+                              "premises"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "required": [
+                          "statement",
+                          "qualifier",
+                          "grounds",
+                          "warrant",
+                          "validity"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "description": "in display order: position, statement, nature and basis rank, qualifier, grounds, producer, resolution, validity"
+                    }
+                  },
+                  "required": [
+                    "requirement",
+                    "layers",
+                    "status",
+                    "claims"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "item",
+              "label",
+              "location",
+              "partition",
+              "requirements"
+            ],
+            "additionalProperties": false
+          },
+          "description": "empty when the submission was not accepted"
+        },
+        "cross_item": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "item": {
+                "type": "string"
+              },
+              "requirement": {
+                "type": "string"
+              },
+              "statement": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  },
+                  "verdict": {
+                    "type": "string",
+                    "enum": [
+                      "support",
+                      "refute",
+                      "unknown",
+                      "abstain"
+                    ]
+                  },
+                  "code": {
+                    "description": "violation code or finding code",
+                    "type": "string"
+                  },
+                  "data": {
+                    "description": "machine-readable parts of the statement",
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {}
+                  }
+                },
+                "required": [
+                  "text"
+                ],
+                "additionalProperties": false
+              },
+              "qualifier": {
+                "type": "object",
+                "properties": {
+                  "nature": {
+                    "type": "string",
+                    "enum": [
+                      "fact",
+                      "judgment",
+                      "unknown"
+                    ]
+                  },
+                  "provenance": {
+                    "type": "string",
+                    "enum": [
+                      "observed",
+                      "projected",
+                      "declared",
+                      "candidate"
+                    ]
+                  },
+                  "basis_rank": {
+                    "type": "string",
+                    "enum": [
+                      "rule_over_observation",
+                      "rule_over_claims",
+                      "judgment",
+                      "relay"
+                    ]
+                  },
+                  "source_role": {
+                    "type": "string",
+                    "enum": [
+                      "expected",
+                      "subject",
+                      "artifact_under_verification",
+                      "reported_actual",
+                      "republished",
+                      "hint",
+                      "request_text"
+                    ]
+                  },
+                  "marks": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "target_reported",
+                        "report_for_dispatch",
+                        "local_ops_not_excluded",
+                        "human_intervention",
+                        "discrimination_not_established",
+                        "semantics_unasserted",
+                        "unverified_submission",
+                        "client_preview",
+                        "model_relay",
+                        "no_reuse",
+                        "author_samples_only",
+                        "conditional_on_judgment",
+                        "independence_declared",
+                        "not_realtime",
+                        "partial"
+                      ]
+                    }
+                  },
+                  "coverage": {
+                    "type": "object",
+                    "properties": {
+                      "complete": {
+                        "type": "boolean"
+                      },
+                      "examined": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "total": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "note": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "complete",
+                      "examined"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "control": {
+                    "type": "string",
+                    "enum": [
+                      "automatic",
+                      "human_takeover"
+                    ]
+                  },
+                  "discriminating_power": {
+                    "type": "string",
+                    "enum": [
+                      "established",
+                      "not_established"
+                    ]
+                  }
+                },
+                "required": [
+                  "nature",
+                  "provenance",
+                  "marks"
+                ],
+                "additionalProperties": false
+              },
+              "grounds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^(src|tree|entry|rec):[0-9a-f]{64}"
+                }
+              },
+              "warrant": {
+                "type": "object",
+                "properties": {
+                  "producer": {
+                    "type": "string",
+                    "enum": [
+                      "function",
+                      "model",
+                      "human"
+                    ]
+                  },
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "independence": {
+                    "type": "string",
+                    "enum": [
+                      "human_non_author",
+                      "model_family_declared",
+                      "judge_not_author",
+                      "not_independent",
+                      "unknown"
+                    ]
+                  }
+                },
+                "required": [
+                  "producer",
+                  "id"
+                ],
+                "additionalProperties": false
+              },
+              "resolution": {
+                "type": "string",
+                "enum": [
+                  "resolved",
+                  "ambiguous",
+                  "unresolved"
+                ]
+              },
+              "validity": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "valid",
+                      "rule_withdrawn",
+                      "grounds_withdrawn",
+                      "cited_fragment_changed",
+                      "credential_unreadable",
+                      "premise_failed",
+                      "expired",
+                      "contradicted"
+                    ]
+                  },
+                  "bound": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{64}$"
+                    },
+                    "description": "digests the claim depends on; a change in any of them voids it"
+                  },
+                  "expires_at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                  },
+                  "premises": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "status",
+                  "bound",
+                  "premises"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "statement",
+              "qualifier",
+              "grounds",
+              "warrant",
+              "validity"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "counts": {
+          "type": "object",
+          "properties": {
+            "delivered": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "rejected": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "quarantined": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "incomplete": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "unknown": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "delivered",
+            "rejected",
+            "quarantined",
+            "incomplete",
+            "unknown"
+          ],
+          "additionalProperties": false
+        },
+        "coverage": {
+          "type": "object",
+          "properties": {
+            "complete": {
+              "type": "boolean"
+            },
+            "examined": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "total": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "note": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "complete",
+            "examined"
+          ],
+          "additionalProperties": false
+        },
+        "locks": {
+          "type": "object",
+          "properties": {
+            "pack": {
+              "type": "string",
+              "description": "pack id@version"
+            },
+            "pack_digest": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "root": {
+              "description": "knowledge root digest locked at start_run",
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "policy": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "pack",
+            "pack_digest"
+          ],
+          "additionalProperties": false
+        },
+        "trace": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{32}$"
+        },
+        "call_result": {
+          "type": "string",
+          "enum": [
+            "ok",
+            "error"
+          ]
+        },
+        "next": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "schema",
+        "run",
+        "submission",
+        "acceptance",
+        "errors",
+        "rounds",
+        "items",
+        "cross_item",
+        "counts",
+        "coverage",
+        "locks",
+        "trace",
+        "call_result"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "openWorldHint": false,
+      "idempotentHint": true
+    }
+  }
+]

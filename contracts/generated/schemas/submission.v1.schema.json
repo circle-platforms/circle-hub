@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "run": {
+      "type": "string",
+      "pattern": "^run_[0-9a-z]{26}$"
+    },
+    "model": {
+      "type": "string",
+      "minLength": 1,
+      "description": "model name and exact configuration as the client declares it"
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "item": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "handling": {
+            "type": "string",
+            "enum": [
+              "handled",
+              "skipped"
+            ]
+          },
+          "reason": {
+            "description": "required when the item is skipped",
+            "type": "string"
+          },
+          "slots": {
+            "description": "slot record, validated against the pack slot schema",
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          },
+          "context": {
+            "description": "digest of the context the model used for this item, so unchanged items can be reused",
+            "type": "string"
+          }
+        },
+        "required": [
+          "item",
+          "handling"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "cross_item": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "nature": {
+            "type": "string",
+            "enum": [
+              "fact",
+              "judgment"
+            ]
+          },
+          "statement": {
+            "type": "string"
+          },
+          "grounds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^(src|tree|entry|rec):[0-9a-f]{64}"
+            }
+          },
+          "code": {
+            "type": "string"
+          },
+          "rank": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "nature",
+          "statement",
+          "grounds"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "notes": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "run",
+    "model",
+    "items",
+    "cross_item"
+  ],
+  "additionalProperties": false
+}

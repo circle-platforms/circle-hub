@@ -1,0 +1,156 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "run": {
+      "type": "string",
+      "pattern": "^run_[0-9a-z]{26}$"
+    },
+    "pack": {
+      "type": "string"
+    },
+    "pack_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "product": {
+      "type": "string"
+    },
+    "version": {
+      "type": "string"
+    },
+    "build": {
+      "type": "string"
+    },
+    "root": {
+      "description": "knowledge root locked for this run",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "requirements": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "layers": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "static",
+                "dynamic"
+              ]
+            },
+            "description": "the judgment layers this requirement is judged on; other layers are not applicable"
+          },
+          "done_rule": {
+            "type": "string",
+            "enum": [
+              "bookkeeping",
+              "gating"
+            ]
+          },
+          "accepted_producer": {
+            "type": "string",
+            "enum": [
+              "fact",
+              "judgment",
+              "independent_judgment"
+            ]
+          },
+          "repair_rounds": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "key",
+          "name",
+          "description",
+          "layers",
+          "done_rule",
+          "accepted_producer",
+          "repair_rounds"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "label": {
+            "type": "string"
+          },
+          "location": {
+            "type": "string",
+            "pattern": "^(src|tree|entry|rec):[0-9a-f]{64}",
+            "description": "where the item sits in the judged source"
+          },
+          "fields": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "location",
+          "fields"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "instructions": {
+      "type": "string",
+      "description": "the pack procedure, plain text"
+    },
+    "instructions_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "predecessor": {
+      "type": "string",
+      "pattern": "^run_[0-9a-z]{26}$"
+    },
+    "session": {
+      "description": "client session id observed from the request header",
+      "type": "string"
+    },
+    "started_at": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+    }
+  },
+  "required": [
+    "run",
+    "pack",
+    "pack_digest",
+    "requirements",
+    "items",
+    "instructions",
+    "instructions_digest",
+    "started_at"
+  ],
+  "additionalProperties": false
+}
