@@ -153,6 +153,17 @@
             "type": "string"
           },
           "additionalProperties": {}
+        },
+        "groups": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          },
+          "description": "the groups the projection function returned, frozen with the run"
         }
       },
       "required": [
@@ -160,7 +171,8 @@
         "line",
         "build",
         "root",
-        "parameters"
+        "parameters",
+        "groups"
       ],
       "additionalProperties": false
     }

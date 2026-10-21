@@ -612,6 +612,17 @@
       "type": "string",
       "pattern": "^[0-9a-f]{64}$"
     },
+    "groups": {
+      "description": "the groups the projection function returned (structure of the judged source that is not an item), frozen with the run and handed to subject builders",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "propertyNames": {
+          "type": "string"
+        },
+        "additionalProperties": {}
+      }
+    },
     "client_key": {
       "type": "string",
       "minLength": 1,

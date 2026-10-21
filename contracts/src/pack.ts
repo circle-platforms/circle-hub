@@ -181,6 +181,7 @@ export const RunContext = z.strictObject({
   build: z.string().nullable(),
   root: Sha256.nullable(),
   parameters: z.record(z.string(), z.unknown()),
+  groups: z.array(z.record(z.string(), z.unknown())).describe('the groups the projection function returned, frozen with the run'),
 });
 export type RunContext = z.infer<typeof RunContext>;
 
