@@ -1,5 +1,0 @@
-{
-  "id": "meridian-source-review", "version": "1.0.0", "title": "Synthetic Meridian source review", "owner": "meridian-fixture",
-  "tools": ["meridian_docs.get"], "triggers": ["manual"], "inputs": {"file": "Source document path", "query": "Literal text to find"},
-  "outputs": ["out/findings.json"], "model": "scripted"
-}
