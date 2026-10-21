@@ -1323,6 +1323,61 @@
             "started_at"
           ],
           "additionalProperties": false
+        },
+        "result": {
+          "type": "object",
+          "properties": {
+            "reference": {
+              "type": "string",
+              "maxLength": 8192,
+              "pattern": "^(?:rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$",
+              "description": "the validation_result record of the run; read it with get_nodes and this reference"
+            },
+            "counts": {
+              "type": "object",
+              "properties": {
+                "delivered": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "rejected": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "quarantined": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "incomplete": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "unknown": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991,
+                  "description": "items with at least one layer terminal that is unknown: unchecked, no verdict or not run (V03 R[4])"
+                }
+              },
+              "required": [
+                "delivered",
+                "rejected",
+                "quarantined",
+                "incomplete",
+                "unknown"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "reference",
+            "counts"
+          ],
+          "additionalProperties": false
         }
       },
       "required": [

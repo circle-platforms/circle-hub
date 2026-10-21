@@ -86,13 +86,20 @@ const CASES: Record<string, { input: Sides; output: Sides }> = {
         { why: 'inputs missing', value: { pack: 'review' } },
         { why: 'empty pack', value: { pack: '', inputs: {} } },
         { why: 'empty client key', value: { pack: 'review', inputs: {}, client_key: '' } },
+        { why: 'NUL in a client key', value: { pack: 'review', inputs: {}, client_key: 'a\u0000b' }, refinement: true },
         { why: 'binding with two keys', value: { pack: 'review', inputs: { a: { reference: `src:${H}`, external: 'tracker:story:1' } } } },
       ],
     },
     output: {
-      valid: [{ why: 'the run', value: { ...ok, run: summary } }, { why: 'neutral answer', value: failed() }],
+      valid: [
+        { why: 'the run', value: { ...ok, run: summary } },
+        { why: 'the run with the result the Hub computed', value: { ...ok, run: summary, result: { reference: `rec:${H}`, counts: { delivered: 3, rejected: 0, quarantined: 0, incomplete: 1, unknown: 1 } } } },
+        { why: 'neutral answer', value: failed() },
+      ],
       invalid: [
         { why: 'ok without the run', value: ok, refinement: true },
+        { why: 'a result without a run', value: { ...failed(), result: { reference: `rec:${H}`, counts: { delivered: 0, rejected: 0, quarantined: 0, incomplete: 0, unknown: 0 } } }, refinement: true },
+        { why: 'a result that points at a source', value: { ...ok, run: summary, result: { reference: `src:${H}`, counts: { delivered: 0, rejected: 0, quarantined: 0, incomplete: 0, unknown: 0 } } } },
         { why: 'an error with a run', value: { ...failed(), run: summary }, refinement: true },
         { why: 'run with an unknown key', value: { ...ok, run: { ...summary, phase: 'running' } } },
       ],

@@ -103,8 +103,14 @@ export const StartRunInput = z.strictObject({
     .optional()
     .describe('Client chosen key; repeating it within its time window returns the same run'),
 });
-export const StartRunOutput = Envelope.extend({ run: RunSummary.optional() }).superRefine((o, ctx) => {
+/** The result the Hub computed itself at start_run, for a run whose requirements are all facts: stored, readable by reference. */
+export const ProductionResult = z.strictObject({
+  reference: referenceUriOf('rec').describe('the validation_result record of the run; read it with get_nodes and this reference'),
+  counts: PartitionCounts,
+});
+export const StartRunOutput = Envelope.extend({ run: RunSummary.optional(), result: ProductionResult.optional() }).superRefine((o, ctx) => {
   if ((o.call_result === 'ok') !== (o.run !== undefined)) issue(ctx, ['run'], 'an ok answer carries the run and an error answer carries none');
+  if (o.result !== undefined && o.run === undefined) issue(ctx, ['result'], 'a result belongs to a run');
 });
 
 export const GetNodesInput = z.strictObject({
