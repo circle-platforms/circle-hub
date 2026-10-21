@@ -1,12 +1,14 @@
 // CI check behind scripts/verify-postgres.ts: boot a temporary PostgreSQL through the platform lifecycle (pinned
-// binaries, socket only, peer authentication), run SELECT 1 as the application role, confirm there is no TCP listener,
-// stop and clean up. The cluster is always stopped before its directory is removed, whatever failed.
+// binaries, socket only, peer authentication), run SELECT 1 as the application role, confirm there is no TCP listener and
+// that the application role owns nothing (the database belongs to the superuser role), stop and clean up. The cluster is
+// always stopped before its directory is removed, whatever failed.
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { messageOf } from './errors.ts';
 import { ensureLayout, layoutAt, type Layout } from './layout.ts';
 import { createPostgres, ensureDatabaseRunning, type PostgresControl } from './postgres.ts';
+import { assertApplicationRole } from './roles.ts';
 import { withSession } from './sql.ts';
 
 export interface VerifyResult {
@@ -30,6 +32,7 @@ export async function verifyPostgres(options: { parent?: string; control?: (layo
     );
     if (row?.ok !== 1) throw new Error('SELECT 1 did not return 1');
     if (row.listen !== '') throw new Error(`listen_addresses should be empty, got ${String(row.listen)}`);
+    await assertApplicationRole(postgres);
     return { ok: true, version: String(row.version), listen_addresses: String(row.listen), role: String(row.role) };
   } catch (error) {
     return { ok: false, message: messageOf(error) };

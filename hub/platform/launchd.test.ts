@@ -85,6 +85,13 @@ test('the service environment carries only hub/config names under CIRCLE_HUB_ an
   assert.ok(!('CIRCLE_HUB_HOME' in env) && !('CIRCLE_HUB_LIBPQ_BIN' in env), 'platform-only names stay out of the server environment');
 });
 
+test('the service connects as the application role and never migrates; the owner is only the account that runs it', () => {
+  const definition = serviceDefinition(layout, settings, { node: '/opt/homebrew/bin/node', ...identity, user: 'owner-account' });
+  assert.deepEqual(definition.programArguments.slice(2), ['serve'], 'no --migrate and no --migrate-only');
+  assert.equal(definition.environment.CIRCLE_HUB_DATABASE_USER, 'circle_hub');
+  assert.equal(definition.environment.USER, 'owner-account');
+});
+
 test('plist text is escaped and control characters are refused', () => {
   const definition = serviceDefinition(layoutAt('/srv/a&b <c>'), settings, { node: '/usr/local/bin/node', ...identity });
   const text = renderPlist(definition);

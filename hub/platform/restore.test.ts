@@ -26,8 +26,9 @@ async function scratch(): Promise<string> {
 }
 
 const sha = (text: string) => createHash('sha256').update(text).digest('hex');
+const PRIVILEGES = ['database CONNECT', 'schema public USAGE'];
 
-async function backupWith(files: Record<string, string>): Promise<string> {
+async function backupWith(files: Record<string, string>, role = 'circle_hub'): Promise<string> {
   const dir = join(await scratch(), 'backup');
   await mkdir(dir, { recursive: true });
   for (const [path, text] of Object.entries(files)) {
@@ -39,7 +40,13 @@ async function backupWith(files: Record<string, string>): Promise<string> {
     JSON.stringify({
       schema: BACKUP_SCHEMA,
       created_at: '2026-10-21T12:00:00.000Z',
-      database: { name: 'circle_hub', server_version: '18.4', dump_tool: 'pg_dump (PostgreSQL) 18.6', tables: [] },
+      database: {
+        name: 'circle_hub',
+        server_version: '18.4',
+        dump_tool: 'pg_dump (PostgreSQL) 18.6',
+        tables: [],
+        application_role: { name: role, privileges: PRIVILEGES },
+      },
       files: Object.entries(files).map(([path, text]) => ({ path, size: Buffer.byteLength(text), sha256: sha(text) })),
     }),
   );
@@ -84,7 +91,18 @@ function tools(layout: Layout, fail: 'initdb' | 'pg_restore' | 'nothing') {
   );
 }
 
-const connector: SqlConnector = async () => ({ query: async () => [], close: async () => {} });
+/** No tables; the application role exists, holds PRIVILEGES and nothing else (the queries of roles.ts). */
+const connector: SqlConnector = async () => ({
+  query: async (text: string) => {
+    if (text.includes("current_setting('server_version_num')::int AS version")) return [{ oid: 16384, version: 180004 }];
+    if (text.includes("'database ' || p AS entry")) return PRIVILEGES.map((entry) => ({ entry }));
+    if (text.includes('AS temporary_database')) {
+      return [{ rolsuper: false, rolcreatedb: false, rolcreaterole: false, rolreplication: false, rolbypassrls: false, create_database: false, temporary_database: false, create_schemas: [], member_of: [], owned: 0, examples: [] }];
+    }
+    return [];
+  },
+  close: async () => {},
+});
 
 for (const fail of ['initdb', 'pg_restore'] as const) {
   test(`a restore failing at ${fail} moves its partial state aside so a retry finds an empty data root`, async () => {
@@ -113,14 +131,35 @@ test('a restore keeps a differing config file of the data root, reports it, and 
   await writeFile(join(layout.logs, 'keep.log'), 'not data');
   await assertRestorable(layout);
   const backupDir = await backupWith({ [DUMP_FILE]: 'PGDMP', 'objects/ab/cd': 'object', 'vault/v': 'sealed', 'config/platform.json': '{"backup":true}' });
-  const { runner } = tools(layout, 'nothing');
+  const { runner, calls } = tools(layout, 'nothing');
   const report = await restoreBackup({ layout, backupDir, postgres: createPostgres({ layout, binaries, runner, connector }), runner, libpqBin: await fakeLibpq() });
   assert.deepEqual(report.keptConfig, ['config/platform.json']);
   assert.equal(report.files, 2);
+  assert.equal(report.privileges, PRIVILEGES.length);
+  // As the superuser role, objects owned by it, the dump's grants kept: no --role, no --no-privileges.
+  const restore = calls.find((call) => call.command.endsWith('pg_restore') && call.args[0] !== '--version');
+  assert.ok(restore?.args.includes('--no-owner'));
+  assert.ok(restore?.args.some((arg) => arg.startsWith('--username=')));
+  assert.ok(!restore?.args.some((arg) => arg.startsWith('--role') || arg === '--no-privileges' || arg === '--no-acl'), restore?.args.join(' '));
   assert.equal(await readFile(join(layout.config, 'platform.json'), 'utf8'), '{"local":true}', 'never overwritten');
   assert.equal(await readFile(join(layout.objects, 'ab', 'cd'), 'utf8'), 'object');
   assert.equal(await readFile(join(layout.logs, 'keep.log'), 'utf8'), 'not data');
   await assert.rejects(assertRestorable(layout), /只能恢复到空的数据根/);
+});
+
+test('a backup whose application role has another name is refused before anything is created', async () => {
+  const layout = layoutAt(join(await scratch(), 'root'));
+  await ensureLayout(layout);
+  const backupDir = await backupWith({ [DUMP_FILE]: 'PGDMP', 'objects/ab/cd': 'object' }, 'other_app');
+  const { runner, calls } = tools(layout, 'nothing');
+  await assert.rejects(restoreBackup({ layout, backupDir, postgres: createPostgres({ layout, binaries, runner, connector }), runner, libpqBin: await fakeLibpq() }), (error: unknown) => {
+    assert.match((error as Error).message, /备份里的应用角色是 other_app，这个数据根的部署设置是 circle_hub：备份里的授权给的是 other_app，不恢复/);
+    assert.match(String((error as { hint?: string }).hint), /database\.role/);
+    return true;
+  });
+  assert.deepEqual(calls, [], 'no tool ran');
+  assert.ok(await isMissingOrEmpty(layout.db));
+  await assertRestorable(layout);
 });
 
 test('setAside moves data areas only and recreates them empty', async () => {

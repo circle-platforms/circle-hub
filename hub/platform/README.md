@@ -20,7 +20,7 @@ name). Every directory is 0700.
 | `run/` | the unix socket (0700) and `platform.lock` |
 | `objects/`, `vault/` | written by the records package (objects 0400, vault entries 0600) |
 | `logs/` | `deploy.log` (JSON lines), `postgres/postgresql-<weekday>.log`, `postgres-start.log`, `hub.out.log`, `hub.err.log` |
-| `backups/<time>[-label]/` | `database.dump`, `objects/`, `vault/`, `config/`, `manifest.json` (`circle-hub-backup@2`) |
+| `backups/<time>[-label]/` | `database.dump`, `objects/`, `vault/`, `config/`, `manifest.json` (`circle-hub-backup@3`) |
 | `releases/<id>/` | one deployed copy per commit with its own `node_modules` and `release.json`; `releases/deployments.jsonl` |
 | `releases/operation.json` | progress of a deploy or rollback that has not finished (`circle-hub-operation@1`) |
 | `current` | relative symlink to `releases/<id>` |
@@ -53,20 +53,32 @@ without `main`, or a `main` that returns no integer, ends with exit 1 and a mess
    into a new empty data root with the new one). The Hub database and its role are created only by `init` and `restore`
    (`ensureDatabaseRunning(control, { create: true })`); every other caller, `serve` included, refuses a missing database,
    so a mistyped name can never produce an empty database that looks healthy.
-2. **Authentication** (documented in `postgres.ts`): no password exists. The socket directory and socket are owner-only, and
-   `pg_hba.conf` has one line, `local all all peer map=owner`; the ident map lets only the owning operating-system account
-   in, as one of two roles: its own superuser role (initdb, pg_dump, pg_restore, creating the database) and the
-   application role `circle_hub`, which owns the Hub database and is not a superuser (so a server bug cannot run
-   superuser-only statements such as `COPY … TO PROGRAM`). Other local users, other roles and TCP are refused. The
-   platform's own sessions set every connection field explicitly (`sql.ts` `sessionConfig`): node-postgres would
-   otherwise take `PGOPTIONS`, `PGSSLNEGOTIATION`, `PGREPLICATION` and `PGCLIENTENCODING` from the operator's shell (checked:
-   a read-only `PGOPTIONS` broke `CREATE ROLE`, `PGSSLNEGOTIATION=direct` and `PGREPLICATION=database` broke every
-   connection). PostgreSQL tools get a minimal environment without `PG*`.
+2. **Authentication and roles** (documented in `postgres.ts` and `roles.ts`): no password exists. The socket directory and
+   socket are owner-only, and `pg_hba.conf` has two peer lines through the ident map `owner`: the superuser role may
+   connect to every database, the application role only to the Hub database (PUBLIC may connect to `postgres` and
+   `template1` and create temporary tables there). The ident map lets only the
+   owning operating-system account in, as one of two roles. Its own superuser role owns the Hub database and every object
+   in it and runs initdb, the migrations, pg_dump and pg_restore. The application role `circle_hub`, which the running
+   server uses, is not a superuser and owns nothing: the owner of a database owns its `public` schema
+   (`pg_database_owner`), and a schema owner may drop the tables in it whatever their grants say, so `ensureDatabase`
+   creates the database without `OWNER`, revokes everything from `PUBLIC` and grants the application role `CONNECT`
+   only; the migrations, run as the superuser role, grant it the rest (records decision 16: SELECT and INSERT on the
+   history tables, a few column UPDATEs). So the running server can neither `DELETE`, `TRUNCATE`, `DROP`, `ALTER` nor
+   `DISABLE TRIGGER` on the append-only tables (all 42501) nor run superuser-only statements such as
+   `COPY … TO PROGRAM`. An application role named like the superuser role is refused. Other local users, other roles and
+   TCP are refused. The platform's own sessions set every connection field explicitly (`sql.ts` `sessionConfig`):
+   node-postgres would otherwise take `PGOPTIONS`, `PGSSLNEGOTIATION`, `PGREPLICATION` and `PGCLIENTENCODING` from the
+   operator's shell (checked: a read-only `PGOPTIONS` broke `CREATE ROLE`, `PGSSLNEGOTIATION=direct` and
+   `PGREPLICATION=database` broke every connection). PostgreSQL tools get a minimal environment without `PG*`.
 3. **Deployment instance** (D01 R[6]): `config/platform.json` is written once by `init` and is the only source of the HTTP
    port, the database name, role and socket port, and the keychain service and account. `init` takes them from its flags
    and from the `CIRCLE_HUB_*` variables set at that moment, then pins them. Afterwards a variable may repeat a value but
    never change it: one that disagrees is refused with its name and both values. An `@1` file (without database names) is
-   read with the names it implied (`circle_hub`, `circle_hub`, 5432) and never rewritten.
+   read with the names it implied (`circle_hub`, `circle_hub`, 5432) and never rewritten. The application role of a new
+   deployment must match `^[a-z_][a-z0-9_]{0,62}$`, the only names the records migration grants (`grantRuntime`);
+   hub/config accepts more, so `init` refuses the rest before anything is written. A file pinned earlier with another name
+   is still read (status, backup, `db`), but `deploy` refuses it before anything runs and prints the `ALTER ROLE … RENAME`
+   that fixes it.
 4. **Keychain**: a generic password item (service `circle-hub`, account `vault-master-key`, both pinned per deployment)
    holding 32 random bytes as hex. `key init` refuses when an item exists; the key goes only through stdin of
    `security -i`, never a command line, and is read back to verify. Reading never creates a key; any error is fatal; tool
@@ -81,8 +93,13 @@ without `main`, or a `main` that returns no integer, ends with exit 1 and a mess
    away from code running as the same user, for example a dependency's install script during `deploy`. The security CLI
    offers no narrower access list for an unattended service; a dedicated keychain with its own password and auto-lock
    would need an unlock step after every login.
-5. **Backups** (`circle-hub-backup@2`): one `REPEATABLE READ` transaction exports a snapshot, computes per-table row
-   counts and digests, and `pg_dump -Fc --snapshot` dumps that exact snapshot; then `objects/`, `vault/` and `config/` are
+5. **Backups** (`circle-hub-backup@3`): one `REPEATABLE READ` transaction refuses an application role that owns anything,
+   large objects and default privileges included, or holds more than its grants (decision 12; objects it owned would
+   belong to the restoring superuser role after a restore, without the privileges their owner had, and its default
+   privileges would come back with the dump and fail the restore's own check, so such a backup could never be restored as
+   taken), exports a
+   snapshot, computes per-table row counts and digests and the application role's privileges (`rolePrivileges`), and
+   `pg_dump -Fc --snapshot` dumps that exact snapshot; then `objects/`, `vault/` and `config/` are
    copied (after the dump, so every object a dumped record names is present), keeping file modes. Table digest
    (`TABLE_DIGEST` in `sql.ts`): h = SHA-256 of `ROW(t.*)::text` under pinned rendering settings (immune to a column
    named like the alias); rows go into 4096 buckets by the first three hex digits of h; a bucket's digest is SHA-256 of
@@ -91,41 +108,60 @@ without `main`, or a `main` that returns no integer, ends with exit 1 and a mess
    17,000,000 rows summarise in 39 s; the earlier single aggregate failed there). A backup may run while the Hub writes
    (cron): dot-files and `*.tmp` are never copied (the object store's `.<sha>.<random>.tmp`, the vault's
    `<entry>.sealed.<random>.tmp`, Finder's `.DS_Store`), and a file listed but gone before its copy is skipped and
-   reported. Objects unchanged since the previous complete backup are hard links to its copy after their SHA-256 is
-   checked again; a copy that no longer hashes to its name is replaced by a fresh copy from the data root. A database
-   without tables is not backed up when the previous backup had tables (a wrong database). `manifest.json` lists every
-   file with size and SHA-256 plus the table summaries; the directory is built as `.partial-*` and renamed when complete.
+   reported. Objects unchanged since the previous complete backup (of any manifest version) are hard links to its copy
+   after their SHA-256 is checked again; a copy that no longer hashes to its name is replaced by a fresh copy from the
+   data root. A database without tables is not backed up when the previous backup had tables (a wrong database).
+   `manifest.json` lists every file with size and SHA-256, the table summaries and `database.application_role` (its name
+   and privilege entries); the directory is built as `.partial-*` and renamed when complete.
    `pg_dump`/`pg_restore` come from Homebrew libpq by absolute path (`CIRCLE_HUB_LIBPQ_BIN`, default
    `/opt/homebrew/opt/libpq/bin`) and must match the server's major. `backup` prunes to the newest N (settings, default
-   14) and never removes the backups the last two deployments or an unfinished operation name. Deployments record
+   14) and never removes the backups the last two deployments or an unfinished operation name. Backups are ordered by
+   their manifest's `created_at`, not by name (within one second `<time>` sorts before an earlier `<time>-<label>`); a
+   manifest that cannot be read is placed by the time its name starts with. Deployments record
    backups by name, resolved in the data root at use, so the root can move.
 6. **Restore**: the manifest is verified first (same file set, sizes, SHA-256; safe paths only; Finder `.DS_Store` and
-   AppleDouble `._*` files the manifest does not list are ignored; an `@1` manifest is refused with the hint to restore it
-   with the release that made it). Only an empty data root is accepted (no `db/` content, no files in `objects/` or
+   AppleDouble `._*` files the manifest does not list are ignored; `@1` and `@2` manifests are refused with the hint to
+   restore them with the release that made them: `@2` was written while the database belonged to the application role
+   and holds no privileges). Only an empty data root is accepted (no `db/` content, no files in `objects/` or
    `vault/`); nothing is overwritten (exclusive creates); a differing `config/platform.json` already in the root is kept
-   and reported. The database names are those of the settings that will apply: the root's own, else the backup's. The
-   command refuses while the LaunchAgent is loaded or the Hub port answers (a running server would race the restore for
-   the database) and while a deploy or rollback is unfinished. `pg_restore --single-transaction --exit-on-error --no-owner
-   --no-privileges --role=circle_hub`, so restored objects belong to the application role. The restored tables must
-   reproduce the manifest's counts and digests. A restore that fails half way stops the cluster and moves its partial
-   state to `set-aside/`, so the root is empty again for a retry.
+   and reported. The database names are those of the settings that will apply: the root's own, else the backup's; a
+   backup whose application role has another name is refused before anything is created (the dump grants to that
+   name). The command refuses while the LaunchAgent is loaded or the Hub port answers (a running server would race the
+   restore for the database) and while a deploy or rollback is unfinished. `ensureDatabase` creates the database
+   (belonging to the superuser role) and the application role, then `pg_restore --single-transaction --exit-on-error
+   --no-owner` runs as the superuser role, without `--role`: every restored object belongs to that role, whoever owned it
+   where the dump was taken. The dump's GRANTs are kept: they are what the migration of the release that wrote the data
+   gave the application role. The platform does not re-grant through the records package: it may not import it, so it
+   cannot know its table list, and the restoring release's `RUNTIME_GRANTS` could name tables the restored schema does
+   not have yet (the ownership test shows that a re-grant by `migrateRecords` afterwards changes nothing). The restored
+   tables must reproduce the manifest's counts and digests, and the application role must hold exactly the manifest's
+   privileges and own nothing. A restore that fails half way stops the cluster and moves its partial state to
+   `set-aside/`, so the root is empty again for a retry.
 7. **launchd**: `~/Library/LaunchAgents/io.github.circle-platforms.circle-hub.plist`, domain `gui/<uid>` (the login
    session, where the login keychain is unlocked), RunAtLoad, KeepAlive, ThrottleInterval 10, ExitTimeOut 30, Umask 077,
    logs in `logs/`. `ProgramArguments` = node, `current/bin/circle-hub`, `serve`; the node path is the settings' `node`, or
    Homebrew's stable symlink when it is this Node, or this Node; it must be Node 24+. The environment holds only names
    hub/config reads, all explicit and taken from the deployment settings: `CIRCLE_HUB_DATA_DIR`, `_PORT`,
    `_DATABASE_SOCKET_DIR`, `_DATABASE_PORT`, `_DATABASE_NAME`, `_DATABASE_USER`, `_KEYCHAIN_SERVICE`,
-   `_KEYCHAIN_ACCOUNT`, plus `PATH`, `HOME`, `USER`. `service stop` is `bootout` (it starts again at the next login or
+   `_KEYCHAIN_ACCOUNT`, plus `PATH`, `HOME`, `USER`. `_DATABASE_USER` is the application role: `serve` (no `--migrate`)
+   connects as it and only verifies the migrations. `service stop` is `bootout` (it starts again at the next login or
    `service start`). Failure paths that must keep the service stopped unload it and remove the plist, so the next login
    does not start it; the message says so. The cluster is started by pg_ctl in its own session, so it survives server
    restarts; deploy stops it explicitly.
-8. **Deploy** (`deploy.ts`): build `releases/<id>` (`git archive` of the commit without `foundation/` and `references/`,
+8. **Deploy** (`deploy.ts`): refuse an application role name the migration cannot grant (decision 3), then build
+   `releases/<id>` (`git archive` of the commit without `foundation/` and `references/`,
    or `--copy` of a directory that is not a git work tree; then `npm ci --include=dev`, because the PostgreSQL binaries
-   are a dev dependency) and check that the release's PostgreSQL major equals the data's, all while the Hub keeps
-   running → stop service → port free → database running → backup `pre-deploy` → stop database → switch `current`
-   (atomic rename) → start database on the release's binaries → migrate with
-   `node <release>/bin/circle-hub serve --migrate-only` and the service environment → install and start the service →
-   `GET /healthz` on loopback until 200 (a body naming another `release` does not count) → record in
+   are a dev dependency) and check that the release's PostgreSQL major equals the data's and, when the cluster runs, that
+   the application role owns nothing (decision 12), all while the Hub keeps running → stop service → port free →
+   database running → backup `pre-deploy` → stop database → switch `current` (atomic rename) → start database on the
+   release's binaries → migrate with `node <release>/bin/circle-hub serve --migrate-only` and the service environment
+   (`MIGRATE_ARGUMENTS`). The roles are
+   fixed: the child runs as this operating-system account; hub/server connects as that account's role, the superuser
+   that owns the Hub database (hub/config has no variable for it), applies the migrations as that owner and grants
+   `CIRCLE_HUB_DATABASE_USER`, the application role, through `migrateRecords(..., { runtimeRole })`; `logs/deploy.log`
+   names both roles, and afterwards the deploy checks that the application role still owns nothing (a migration that
+   hands it an object is undone like a failed one) → install and start the service (`serve` as the application role,
+   without migrating) → `GET /healthz` on loopback until 200 (a body naming another `release` does not count) → record in
    `releases/deployments.jsonl`. Deploying the release that is already current is refused before anything stops. On
    failure: stop the service; only when that succeeded, and if the migration had started, stop the database, set the data
    aside and restore the pre-deploy backup on the previous binaries; point `current` back (or remove it on a first
@@ -147,16 +183,44 @@ without `main`, or a `main` that returns no integer, ends with exit 1 and a mess
    (`rollback: true`). A failure before the data moved restarts the current release; after it, the service is stopped and
    unloaded (or the message says it may still run), the progress stays, and the next `rollback` continues: it sets the
    partial state aside and restores again.
-10. **Rehearsal**: a throwaway root `chr-*` in the temporary directory with a marker file: init, synthetic records (two
-   tables written as the application role, with text, JSON, numeric, float, timestamp and bytea values), content-addressed
-   objects and vault files, backup, destroy, restore, compare table summaries and file digests; the root is removed
-   unless `--keep`.
+10. **Rehearsal**: a throwaway root `chr-*` in the temporary directory with a marker file: init, synthetic records set up
+   as the Hub's are (two tables with an identity column and an append-only trigger, created by the superuser role, which
+   grants the application role SELECT and INSERT; the rows, with text, JSON, numeric, float, timestamp and bytea values,
+   written as the application role), content-addressed objects and vault files, backup, destroy, restore, compare table
+   summaries, file digests and the application role's privileges, and check that it owns nothing and is still refused
+   (42501) DELETE, TRUNCATE, DROP, ALTER and DISABLE TRIGGER on both tables and CREATE TABLE; the root is removed unless
+   `--keep`.
 11. **One lock** (`run/platform.lock`) serialises deploy, rollback, backup and restore. It holds `<pid> <token>`, is
    created complete (written beside it, then hard-linked), and a lock of a dead process is taken over only by the one
    taker that holds `platform.lock.break`, and only while it still holds exactly the dead content. A lock that cannot be
    read (for example empty) is refused with the hint to check and delete it. Release removes only our own lock. Checked
    with eight processes taking over one dead lock at the same moment: the earlier lock let two hold it in 8 of 20 rounds,
    this one in none. Child processes never use a shell.
+12. **Application role checks** (`roles.ts`). `inspectRole` (and `roleProblems`, its problem list) names everything that
+   lets the application role do more than connect and use its grants: a role attribute (superuser, create database,
+   create role, replication, bypass RLS), a role membership, CREATE or TEMPORARY on the Hub database (`ensureDatabase`
+   revokes both from `PUBLIC`; a restore recreates the database that way, so a backup that had them could not match),
+   CREATE on any schema, and every object it owns in any database of the cluster (`pg_shdepend`; an object in another
+   database is named with that database). With the problems it returns the statements that remove them, per database,
+   other databases first: `ALTER ROLE … NO…`, `REVOKE <role> FROM … GRANTED BY …`, `REASSIGN OWNED BY circle_hub TO
+   <account>` (objects in the Hub database and shared ones), one `ALTER DEFAULT PRIVILEGES FOR ROLE circle_hub …` set per
+   default-privilege entry that puts it back to PostgreSQL's built-in default (REASSIGN OWNED leaves these entries, and
+   DROP OWNED would also revoke CONNECT and every table grant), `REASSIGN OWNED` then `DROP OWNED` in another database
+   (followed by `GRANT CONNECT` on the Hub database, which DROP OWNED revokes), `REVOKE CREATE ON SCHEMA …` and the Hub
+   database's `REVOKE ALL … FROM PUBLIC; GRANT CONNECT …`. The hint prints exactly these statements, says when the
+   service must be stopped first, and, when the role owned tables (a data root an earlier platform version made),
+   that only the migration of the next deploy grants them again; the tests run the printed statements and find no
+   problem and unchanged privileges. The checks run, as the superuser role, when `serve` and `serve --migrate-only` start
+   (`ensureHubDatabase`), before a deploy changes anything (while the Hub runs) and after its migration, before every
+   backup and after every restore; `status` shows the result and `verify-postgres` checks a new cluster. One exception,
+   at `serve` only: large objects and default privileges are objects any role may create without a privilege
+   (`lo_create`, `ALTER DEFAULT PRIVILEGES` for its own future objects; nothing can be revoked to prevent them) and give
+   the application role no power over other objects, so when they are all there is, `serve` starts and writes a warning
+   with the fix to stderr (`hub.err.log`) instead of refusing. Backups and deploys still refuse them, because a restore
+   could not reproduce them as they were. `rolePrivileges` lists every privilege the application role holds in the Hub
+   database, directly, through `PUBLIC` or through a membership: `database CONNECT`, `schema public USAGE`, `table public.records INSERT`,
+   `column public.users.role UPDATE` (only where the table privilege is missing), sequences and functions; sorted, with
+   no database name, so backups record them and restores compare them.
 
 ## Limits
 
@@ -178,6 +242,26 @@ without `main`, or a `main` that returns no integer, ends with exit 1 and a mess
   newlines (pg_ctl runs its command through `/bin/sh`), and the socket path must fit in 103 bytes.
 - Moving to another machine needs the keychain item there too; there is no key export command.
 - The service runs in `gui/<uid>`: it starts at login, not at boot.
+- A data root whose database an earlier platform version created (`OWNER` the application role) is not converted
+  automatically: `serve`, `deploy` and `backup` refuse it with the statements that fix it (decision 12). Neither is any
+  other role problem fixed automatically: the platform prints the statements and an operator runs them (`psql` from
+  libpq). Backups in `circle-hub-backup@2` or older are not restored by this version; restore them with the release
+  that made them, fix the ownership, then back up again.
+- Code that runs SQL as the application role (a flaw in the server) can still make large objects and default privileges;
+  the Hub keeps serving, but backups and deploys refuse until the printed statements have been run. It can also set its
+  own session defaults (`ALTER ROLE circle_hub SET search_path = …`, checked), which the checks do not look at;
+  superuser-only parameters such as `session_replication_role` are refused to it (42501).
+- The privilege comparison covers database, schema, table, column, sequence and function privileges of the application
+  role in the Hub database. Type, large-object, language, foreign-data and parameter privileges and default privileges
+  (`ALTER DEFAULT PRIVILEGES`) are not compared; the Hub schema grants none, and default privileges or large objects
+  the application role owns are refused as owned objects (decision 12).
+- Backups are ordered by reading every manifest (`listBackups`), which grows with the number of files they list.
+- The role checks prove what the application role may do, not which role a release's `serve --migrate-only` connected
+  as. A release that migrates as the application role fails (it cannot create tables); one that hands it an object is
+  undone by the deploy. A restored database's `CONNECT` grant is the platform's (`ensureDatabase`), not the backup's:
+  pg_dump without `--create` carries no database-level privileges.
+- Restoring under another application role name is refused, because the dump's grants name the old one; there is no
+  renaming of the role.
 
 ## How to test
 
@@ -188,9 +272,19 @@ node scripts/verify-postgres.ts
 
 Unit tests inject runners (fake `security`, `launchctl`, `npm`, `git`, PostgreSQL tools). Integration tests start real
 clusters from the pinned binaries in temporary roots (`lifecycle`, `sql`, `service`, `cli`, `verify`, `rehearse`,
-`backup-live`, `deploy-system`); the backup and restore cases skip with a message only when `pg_dump`/`pg_restore` are
-absent. `backup-live` runs backups while synthetic writers use the records stores' exact file patterns; `files` runs eight
-processes against one dead lock; `bin` runs a copy of `bin/circle-hub` against stub CLI modules. Keychain integration
+`roles`, `ownership`, `backup-live`, `deploy-system`); the backup and restore cases skip with a message only when
+`pg_dump`/`pg_restore` are absent. Every synthetic table is created by the superuser role, which grants the application
+role SELECT and INSERT (`ownerTables` in `test-support.ts`), and its rows are written as the application role.
+`roles` creates each problem (attributes, a membership, CREATE grants, owned tables and databases, large objects and
+default privileges made by the application role itself, objects in another database, a database of the earlier model),
+runs the statements the hint prints and checks that no problem is left and the privileges are unchanged.
+`ownership` runs the real records schema: `migrateRecords` as the owner with the application role as `runtimeRole`, the
+kit as the application role with `migrate: false`, then every DELETE, UPDATE, TRUNCATE, DROP, ALTER and DISABLE TRIGGER
+on each table refused with 42501, before and after a backup, destroy and restore (it imports hub/records and hub/config,
+test only). `deploy-system` deploys a synthetic release whose `serve --migrate-only` migrates as hub/server does, and one
+that hands a table to the application role. `backup-live` runs backups while synthetic writers use the records stores'
+exact file patterns; `files` runs eight processes against one dead lock; `bin` runs a copy of `bin/circle-hub` against
+stub CLI modules. Keychain integration
 uses a temporary keychain file made with `security create-keychain` (not on the search list, deleted afterwards); a guard
 in `test-support.ts` fails any `security` call that does not name it and any real `launchctl` call. No test touches the
 login keychain, `~/Library`, the user's launchd domain or the network (only loopback servers the tests start).
@@ -211,9 +305,15 @@ login keychain, `~/Library`, the user's launchd domain or the network (only loop
 
 - **server**: (1) `hub/server/cli.ts` exports `main(argv): Promise<number>` returning an integer exit code and does not run
   itself on import; it delegates `isPlatformCommand(argv[0])` to `runPlatformCommand(argv, io)` and passes in
-  `io.allowVariables` any `CIRCLE_HUB_*` names it reads itself. (2) `serve --migrate-only` applies migrations and exits 0.
-  (3) Before connecting, `serve` calls `ensureHubDatabase(process.env)` (starts the cluster, never initialises one, never
-  creates the database, needs `CIRCLE_HUB_DATA_DIR`) and builds the vault with `hubKeyProvider(process.env)`; it does not
+  `io.allowVariables` any `CIRCLE_HUB_*` names it reads itself. (2) `serve --migrate-only` connects as the role of the
+  operating-system account that runs it (the cluster's superuser, which owns the Hub database; `CIRCLE_HUB_DATABASE_USER`
+  is the application role and no variable names the owner), applies the migrations through
+  `migrateRecords({ database: <owner> }, { runtimeRole: <CIRCLE_HUB_DATABASE_USER> })` and exits 0; `serve` opens
+  records as `CIRCLE_HUB_DATABASE_USER` with `migrate: false` (both done in hub/server `main.ts`, which takes the owner
+  from `userInfo().username`). (3) Before connecting, `serve` calls `ensureHubDatabase(process.env)` (starts the cluster,
+  never initialises one, never creates the database, refuses an application role that owns anything or holds more than
+  its grants, except that owning only large objects and default privileges is let through with one warning line on
+  stderr, needs `CIRCLE_HUB_DATA_DIR`) and builds the vault with `hubKeyProvider(process.env)`; it does not
   stop the cluster on exit. (4) `GET /healthz` on loopback answers 200 without a token, ideally
   `{"status":"ok","release":"<id>"}` with the id from `release.json` in the server's own code root
   (`releases/<id>/release.json`), so a deploy can tell an old process from the new one. (5) The server's own database
@@ -228,10 +328,17 @@ login keychain, `~/Library`, the user's launchd domain or the network (only loop
   every in-flight file is a dot-file or ends in `.tmp` (true today: `objects/<xx>/.<sha>.<random>.tmp`,
   `vault/<entry>.sealed.<random>.tmp`); please keep that rule. (5) `vault/key-check` is created with an exclusive open and
   then written, so a backup at the very moment of the first vault use could copy it empty and the restored vault would
-  refuse its key; writing it beside and then linking it, as objects are, would close that window. (6) The server's role
-  `circle_hub` owns the tables it migrates, so it could `ALTER TABLE … DISABLE TRIGGER` on the append-only tables; if
-  append-only must hold against the server process itself, migrations could run as a separate owner role with the server
-  granted only `SELECT, INSERT` (the platform can create that role).
+  refuse its key; writing it beside and then linking it, as objects are, would close that window. (6) Ownership (done
+  2026-10-22, decision 2): the Hub database and every table belong to the cluster's superuser role, which applies the
+  migrations through `migrateRecords(..., { runtimeRole })`; the server runs as the application role, which owns
+  nothing, so append-only holds against the server process itself (the `ownership` test proves it on the real schema).
+  Unlike the suggestion in the records README (restore with `--role=<owner>`, then `migrateRecords` again), a restore
+  keeps the dump's grants and proves them against the manifest (decision 6); a re-grant afterwards changes nothing. If
+  grants should ever come from the running release after a restore instead, the server would need a grant-only command
+  the platform can run (the platform may not import records). (7) `migrateRecords` checks the `runtimeRole` name only in
+  `grantRuntime`, after `migrate()` has committed, so a name it refuses leaves the schema migrated without grants;
+  checking the name first would leave nothing half done. The platform now refuses such names at `init` and `deploy`
+  (decision 3), and the `ownership` test keeps its rule equal to `grantRuntime`'s.
 - **integrator**: add `"verify:postgres": "node scripts/verify-postgres.ts"` to `package.json` (CI's acceptance job calls
   it).
 - **acceptance**: check that every key of `serviceEnvironment(...)` is accepted by hub/config's `loadConfig`.

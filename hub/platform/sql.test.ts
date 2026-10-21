@@ -5,7 +5,7 @@ import { after, before, describe, test } from 'node:test';
 import { ensureLayout, layoutAt } from './layout.ts';
 import { createPostgres, ensureDatabaseRunning, type PostgresControl } from './postgres.ts';
 import { DIGEST_BUCKET_DIGITS, summarizeTables, withSession, type SqlSession } from './sql.ts';
-import { removeDir, socketPort, tempDir } from './test-support.ts';
+import { ownerTables, removeDir, socketPort, tempDir } from './test-support.ts';
 
 const sha = (text: string) => createHash('sha256').update(text, 'utf8').digest('hex');
 
@@ -28,6 +28,8 @@ describe('table summaries and platform sessions on a real cluster', () => {
   let root: string;
   let control: PostgresControl;
   const summaries = () => withSession(control.connector, control.target.database, summarizeTables);
+  // The tables belong to the superuser role, as the Hub's do; the application role may only read and append.
+  const owner = <T>(fn: (session: SqlSession) => Promise<T>) => withSession(control.connector, control.target.database, fn);
   const app = <T>(fn: (session: SqlSession) => Promise<T>) => withSession(control.applicationConnector, control.target.database, fn);
   const digestOf = async (table: string) => (await summaries()).find((summary) => summary.table === table);
 
@@ -46,23 +48,25 @@ describe('table summaries and platform sessions on a real cluster', () => {
   });
 
   test('a column named like the row alias does not hide the other columns from the digest', async () => {
-    await app(async (s) => {
-      await s.query('CREATE TABLE shadowed (t int, payload text)');
-      await s.query("INSERT INTO shadowed SELECT n, 'p' || n FROM generate_series(1, 30) AS n");
-    });
+    await ownerTables(control, ['CREATE TABLE shadowed (t int, payload text)'], ['shadowed']);
+    await app((s) => s.query("INSERT INTO shadowed SELECT n, 'p' || n FROM generate_series(1, 30) AS n"));
     const before = await digestOf('shadowed');
-    await app((s) => s.query("UPDATE shadowed SET payload = payload || '-changed'"));
+    await owner((s) => s.query("UPDATE shadowed SET payload = payload || '-changed'"));
     const after = await digestOf('shadowed');
     assert.equal(after?.rows, 30);
     assert.notEqual(after?.digest, before?.digest);
   });
 
   test('the digest is the documented bucketed one: independent of row order, counts duplicates, many buckets', async () => {
-    await app(async (s) => {
-      await s.query('CREATE TABLE ascending AS SELECT n, md5(n::text) AS label, (n % 7)::float8 / 3 AS ratio FROM generate_series(1, 20000) AS n ORDER BY n');
-      await s.query('CREATE TABLE descending AS SELECT * FROM ascending ORDER BY n DESC');
-      await s.query('CREATE TABLE doubled AS SELECT * FROM ascending UNION ALL SELECT * FROM ascending');
-    });
+    await ownerTables(
+      control,
+      [
+        'CREATE TABLE ascending AS SELECT n, md5(n::text) AS label, (n % 7)::float8 / 3 AS ratio FROM generate_series(1, 20000) AS n ORDER BY n',
+        'CREATE TABLE descending AS SELECT * FROM ascending ORDER BY n DESC',
+        'CREATE TABLE doubled AS SELECT * FROM ascending UNION ALL SELECT * FROM ascending',
+      ],
+      ['ascending', 'descending', 'doubled'],
+    );
     const texts = await withSession(control.connector, control.target.database, async (s) => {
       for (const statement of ["SET TimeZone TO 'UTC'", "SET DateStyle TO 'ISO, YMD'", "SET IntervalStyle TO 'postgres'", 'SET extra_float_digits TO 1', "SET bytea_output TO 'hex'"]) {
         await s.query(statement);
@@ -78,9 +82,9 @@ describe('table summaries and platform sessions on a real cluster', () => {
     assert.equal(doubled?.rows, 40000);
     assert.equal(doubled?.digest, expectedDigest([...texts, ...texts]));
     assert.notEqual(doubled?.digest, ascending?.digest);
-    await app((s) => s.query("UPDATE descending SET label = 'x' WHERE n = 12345"));
+    await owner((s) => s.query("UPDATE descending SET label = 'x' WHERE n = 12345"));
     assert.notEqual((await digestOf('descending'))?.digest, ascending?.digest, 'one changed row changes the digest');
-    await app((s) => s.query('CREATE TABLE empty_table (n int)'));
+    await ownerTables(control, ['CREATE TABLE empty_table (n int)'], ['empty_table']);
     assert.deepEqual(await digestOf('empty_table'), { schema: 'public', table: 'empty_table', rows: 0, digest: sha('') });
   });
 
@@ -96,8 +100,10 @@ describe('table summaries and platform sessions on a real cluster', () => {
     const saved = Object.fromEntries(Object.keys(leaked).map((key) => [key, process.env[key]]));
     Object.assign(process.env, leaked);
     try {
+      // A read-only or 50 ms PGOPTIONS would break the owner's DDL and the application role's insert and sleep.
+      await ownerTables(control, ['CREATE TABLE env_probe (n int)', 'SELECT pg_sleep(0.2)'], ['env_probe']);
       const [row] = await app(async (s) => {
-        await s.query('CREATE TABLE env_probe (n int)');
+        await s.query('INSERT INTO env_probe VALUES (1)');
         await s.query('SELECT pg_sleep(0.2)');
         return s.query('SELECT $1::text AS echo, current_database() AS db, current_user AS role', ['合成']);
       });

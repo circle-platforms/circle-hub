@@ -19,7 +19,10 @@ export const DEFAULT_KEYCHAIN_SERVICE = 'circle-hub';
 export const DEFAULT_KEYCHAIN_ACCOUNT = 'vault-master-key';
 export const DEFAULT_BACKUPS_KEEP = 14;
 export const DATABASE_NAME = 'circle_hub';
-/** Role the Hub server connects as: owns the Hub database, not a superuser. */
+/**
+ * Role the Hub server connects as: not a superuser and owns nothing; it connects and holds the grants the migrations
+ * give it. The Hub database and every object in it belong to the cluster's superuser role (roles.ts).
+ */
 export const APPLICATION_ROLE = 'circle_hub';
 /** Names the socket file only: the cluster has no TCP listener. */
 export const DATABASE_PORT = 5432;
@@ -30,6 +33,29 @@ export const KeychainName = z.string().regex(/^[A-Za-z0-9._-]{1,64}$/);
 /** Same rule as hub/config for database and role names. */
 const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_$-]{0,62}$/;
 const Identifier = z.string().regex(IDENTIFIER);
+/**
+ * The application role of a new deployment: the records package grants only roles named so (grantRuntime in
+ * hub/records/migrations.ts), so a name hub/config would accept beyond it makes every migration, and every deploy, fail.
+ * Settings written before this rule keep their name (deploy refuses them, see assertApplicationRoleName).
+ */
+export const APPLICATION_ROLE_NAME = /^[a-z_][a-z0-9_]{0,62}$/;
+const APPLICATION_ROLE_RULE = '应用角色名只能用小写字母、数字和下划线，以小写字母或下划线开头，最长 63 个字符（记录包只给这样的角色授权，迁移会拒绝别的写法）';
+
+/** A name of that form close to `name`, for the hint. */
+function suggestedRoleName(name: string): string {
+  const base = name.toLowerCase().replace(/[^a-z0-9_]/g, '_');
+  return (/^[a-z_]/.test(base) ? base : `_${base}`).slice(0, 63);
+}
+
+/** Refuses to deploy with an application role the records package would not grant: such a deploy can only fail. */
+export function assertApplicationRoleName(role: string): void {
+  if (APPLICATION_ROLE_NAME.test(role)) return;
+  const suggested = suggestedRoleName(role);
+  throw new PlatformError(
+    `部署设置里的应用角色名 ${role} 不符合要求，不部署：${APPLICATION_ROLE_RULE}`,
+    `改名：先停掉服务，以本机账户的角色连上 PostgreSQL 执行 ALTER ROLE "${role}" RENAME TO ${suggested}，把部署设置里的 database.role 改成 ${suggested}，再部署；新的数据根在 init 之前用 CIRCLE_HUB_DATABASE_USER 选一个符合要求的名字`,
+  );
+}
 
 const DatabaseSettings = z
   .object({
@@ -111,7 +137,10 @@ export function newSettingsFile(input: {
     backups_keep: input.backupsKeep ?? DEFAULT_BACKUPS_KEEP,
   });
   if (!parsed.success) {
-    throw new PlatformError(`部署设置的取值不对（字段：${parsed.error.issues.map((issue) => issue.path.join('.') || '(根)').join('、')}）`, '钥匙串名只能含字母、数字、点、下划线和连字符；数据库名与角色名是字母或下划线开头的标识符');
+    throw new PlatformError(`部署设置的取值不对（字段：${parsed.error.issues.map((issue) => issue.path.join('.') || '(根)').join('、')}）`, `钥匙串名只能含字母、数字、点、下划线和连字符；数据库名是字母或下划线开头的标识符；${APPLICATION_ROLE_RULE}`);
+  }
+  if (!APPLICATION_ROLE_NAME.test(parsed.data.database.role)) {
+    throw new PlatformError(`部署设置的取值不对（字段：database.role）：${parsed.data.database.role}`, APPLICATION_ROLE_RULE);
   }
   return parsed.data;
 }
@@ -240,14 +269,15 @@ export function resolveDatabaseNames(layout: Layout, env: NodeJS.ProcessEnv = pr
   const portNumber = port === undefined ? DATABASE_PORT : /^[1-9][0-9]{0,4}$/.test(port) && Number(port) <= 65535 ? Number(port) : Number.NaN;
   if (Number.isNaN(portNumber)) throw new PlatformError(`${PLATFORM_VARIABLES.databasePort} 必须是 1 到 65535 之间的整数`);
   const names: DatabaseNames = { port: portNumber, name: DATABASE_NAME, role: APPLICATION_ROLE };
-  for (const [key, field] of [
-    [PLATFORM_VARIABLES.databaseName, 'name'],
-    [PLATFORM_VARIABLES.databaseUser, 'role'],
-  ] as const) {
-    const value = variable(env, key);
-    if (value === undefined) continue;
-    if (!IDENTIFIER.test(value)) throw new PlatformError(`${key} 的写法不对：只能是字母或下划线开头的标识符`);
-    names[field] = value;
+  const name = variable(env, PLATFORM_VARIABLES.databaseName);
+  if (name !== undefined) {
+    if (!IDENTIFIER.test(name)) throw new PlatformError(`${PLATFORM_VARIABLES.databaseName} 的写法不对：只能是字母或下划线开头的标识符`);
+    names.name = name;
+  }
+  const role = variable(env, PLATFORM_VARIABLES.databaseUser);
+  if (role !== undefined) {
+    if (!APPLICATION_ROLE_NAME.test(role)) throw new PlatformError(`${PLATFORM_VARIABLES.databaseUser} 的写法不对：${role}`, APPLICATION_ROLE_RULE);
+    names.role = role;
   }
   return names;
 }

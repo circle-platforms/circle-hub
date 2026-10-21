@@ -5,6 +5,7 @@ import { ENVIRONMENT } from '../../contracts/generated/vocabulary.ts';
 import { ensureLayout, layoutAt } from './layout.ts';
 import {
   APPLICATION_ROLE,
+  assertApplicationRoleName,
   DATABASE_NAME,
   DATABASE_PORT,
   DEFAULT_KEYCHAIN_ACCOUNT,
@@ -107,6 +108,37 @@ test('a CIRCLE_HUB_* variable may repeat a setting but never change it: a disagr
     );
   }
   assert.throws(() => resolveSettings(file, { CIRCLE_HUB_DATABASE_HOST: '127.0.0.1' }, layout), /只有 unix 套接字/);
+});
+
+test('a new deployment refuses an application role name the records package would not grant; one pinned earlier is read but not deployed', async () => {
+  const layout = layoutAt('/srv/hub');
+  for (const name of ['hub-app', 'Hub_App', 'hub$app', '9hub', 'a'.repeat(64)]) {
+    assert.throws(() => newSettingsFile({ environment: 'test', database: { role: name } }), (error: unknown) => {
+      assert.match((error as Error).message, /字段：database\.role/);
+      assert.match(String((error as { hint?: string }).hint), /应用角色名只能用小写字母、数字和下划线，以小写字母或下划线开头，最长 63 个字符/);
+      return true;
+    }, name);
+    assert.throws(() => resolveDatabaseNames(layout, { CIRCLE_HUB_DATABASE_USER: name }), (error: unknown) => {
+      assert.equal((error as Error).message, `CIRCLE_HUB_DATABASE_USER 的写法不对：${name}`);
+      assert.match(String((error as { hint?: string }).hint), /记录包只给这样的角色授权/);
+      return true;
+    }, name);
+  }
+  for (const name of ['hub_app', '_hub', 'a'.repeat(63)]) {
+    assert.equal(newSettingsFile({ environment: 'test', database: { role: name } }).database.role, name);
+    assert.equal(resolveDatabaseNames(layout, { CIRCLE_HUB_DATABASE_USER: name }).role, name);
+    assert.doesNotThrow(() => assertApplicationRoleName(name));
+  }
+  // Settings written before the rule: still read (status, backup and db keep working), but deploy refuses them.
+  const root = await freshLayout();
+  const old = newSettingsFile({ environment: 'test' });
+  await writeFile(settingsPath(root), JSON.stringify({ ...old, database: { ...old.database, role: 'Hub-App' } }));
+  assert.equal((await readSettings(root, {})).database.role, 'Hub-App');
+  assert.throws(() => assertApplicationRoleName('Hub-App'), (error: unknown) => {
+    assert.match((error as Error).message, /^部署设置里的应用角色名 Hub-App 不符合要求，不部署：/);
+    assert.match(String((error as { hint?: string }).hint), /ALTER ROLE "Hub-App" RENAME TO hub_app，把部署设置里的 database\.role 改成 hub_app/);
+    return true;
+  });
 });
 
 test('an @1 settings file is read with the database names it implied', async () => {

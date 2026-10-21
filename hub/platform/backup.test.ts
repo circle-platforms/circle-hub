@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { after, test } from 'node:test';
 import {
   BACKUP_SCHEMA,
@@ -45,7 +45,13 @@ async function syntheticBackup(dir: string, files: Record<string, string>, edit:
   const manifest: BackupManifest = {
     schema: BACKUP_SCHEMA,
     created_at: '2026-10-21T12:00:00.000Z',
-    database: { name: 'circle_hub', server_version: '18.4', dump_tool: 'pg_dump (PostgreSQL) 18.6', tables: [] },
+    database: {
+      name: 'circle_hub',
+      server_version: '18.4',
+      dump_tool: 'pg_dump (PostgreSQL) 18.6',
+      tables: [],
+      application_role: { name: 'circle_hub', privileges: ['database CONNECT', 'schema public USAGE'] },
+    },
     files: Object.entries(files)
       .map(([path, text]) => ({ path, size: Buffer.byteLength(text), sha256: sha(text) }))
       .sort((a, b) => (a.path < b.path ? -1 : 1)),
@@ -96,15 +102,31 @@ test('Finder and AppleDouble metadata do not make a good backup unusable; other 
   await assert.rejects(verifyBackup(dir), /多出文件 objects\/\.planted/);
 });
 
-test('a manifest of the earlier format is refused with a hint, not as damaged', async () => {
+test('a manifest of an earlier format is refused with a hint, not as damaged', async () => {
   const layout = await scratchLayout();
-  const dir = join(layout.backups, 'old-format');
-  await syntheticBackup(dir, goodFiles, (manifest) => ((manifest as { schema: string }).schema = 'circle-hub-backup@1'));
-  await assert.rejects(verifyBackup(dir), (error: unknown) => {
-    assert.match((error as Error).message, /旧格式 circle-hub-backup@1/);
-    assert.match(String((error as { hint?: string }).hint), /用生成它的那一版 circle-hub 恢复/);
-    return true;
-  });
+  for (const [schema, reason] of [
+    ['circle-hub-backup@1', /表摘要的算法不同/],
+    ['circle-hub-backup@2', /那时 Hub 数据库和表属于应用角色，清单里也没有应用角色的权限/],
+  ] as const) {
+    const dir = join(layout.backups, `old-format-${schema.at(-1)}`);
+    await syntheticBackup(dir, goodFiles, (manifest) => {
+      (manifest as { schema: string }).schema = schema;
+      delete (manifest.database as { application_role?: unknown }).application_role;
+    });
+    await assert.rejects(verifyBackup(dir), (error: unknown) => {
+      assert.match((error as Error).message, new RegExp(`旧格式 ${schema}`));
+      assert.match((error as Error).message, reason);
+      assert.match(String((error as { hint?: string }).hint), /用生成它的那一版 circle-hub 恢复/);
+      return true;
+    });
+  }
+});
+
+test('a manifest without the application role privileges is not a current backup', async () => {
+  const layout = await scratchLayout();
+  const dir = join(layout.backups, 'no-role');
+  await syntheticBackup(dir, goodFiles, (manifest) => delete (manifest.database as { application_role?: unknown }).application_role);
+  await assert.rejects(verifyBackup(dir), /不符合 circle-hub-backup@3/);
 });
 
 test('names of in-flight temporaries and metadata are never part of a backup', () => {
@@ -159,6 +181,27 @@ test('listBackups ignores partial directories; prune keeps the newest and the pr
     names.slice(1),
   );
   await assert.rejects(pruneBackups(layout, 0), /正整数/);
+});
+
+test('backups are ordered by when they were taken, not by name: within one second a labelled one may be older', async () => {
+  const layout = await scratchLayout();
+  const taken = (iso: string) => (manifest: BackupManifest) => {
+    manifest.created_at = iso;
+  };
+  await syntheticBackup(join(layout.backups, '20261021T203602Z-integration'), goodFiles, taken('2026-10-21T20:36:02.100Z'));
+  await syntheticBackup(join(layout.backups, '20261021T203602Z'), goodFiles, taken('2026-10-21T20:36:02.200Z'));
+  await syntheticBackup(join(layout.backups, '20261021T203602Z-again'), goodFiles, taken('2026-10-21T20:36:02.300Z'));
+  // A manifest that cannot be read is placed by the time its name starts with.
+  await mkdir(join(layout.backups, '20261021T203601Z-damaged'));
+  await writeFile(join(layout.backups, '20261021T203601Z-damaged', MANIFEST_FILE), '{not json');
+  const names = async () => (await listBackups(layout)).map((dir) => basename(dir));
+  assert.deepEqual(await names(), ['20261021T203601Z-damaged', '20261021T203602Z-integration', '20261021T203602Z', '20261021T203602Z-again']);
+  assert.deepEqual(
+    (await pruneBackups(layout, 2)).map((dir) => basename(dir)),
+    ['20261021T203601Z-damaged', '20261021T203602Z-integration'],
+    'the newest two are kept',
+  );
+  assert.deepEqual(await names(), ['20261021T203602Z', '20261021T203602Z-again']);
 });
 
 test('libpq tools are found by absolute path or refused with the install hint; majors must match', async () => {

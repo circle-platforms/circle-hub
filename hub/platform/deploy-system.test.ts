@@ -1,6 +1,7 @@
 // Integration: deploy, a failing deploy and rollback through the real system host, with a real PostgreSQL, real
-// backups and restores, and a synthetic release whose `serve --migrate-only` migrates over the socket. npm and launchctl
-// are fakes: npm links this checkout's node_modules into the release, launchctl starts a loopback health server.
+// backups and restores, and a synthetic release whose `serve --migrate-only` migrates over the socket the way hub/server
+// does: as the operating-system account's role, which owns the Hub database, granting the application role. npm and
+// launchctl are fakes: npm links this checkout's node_modules into the release, launchctl starts a loopback health server.
 import assert from 'node:assert/strict';
 import { readFileSync, readlinkSync } from 'node:fs';
 import { chmod, mkdir, readFile, readdir, symlink, writeFile } from 'node:fs/promises';
@@ -15,25 +16,36 @@ import { PlatformError } from './errors.ts';
 import { ensureLayout, layoutAt, type Layout } from './layout.ts';
 import { ensureDatabaseRunning } from './postgres.ts';
 import { readCurrentRelease } from './release.ts';
+import { roleProblems } from './roles.ts';
 import { newSettingsFile, writeSettingsFile } from './settings.ts';
 import { withSession } from './sql.ts';
-import { exit, freePort, libpqAvailable, LIBPQ_MISSING, ok, recordingRunner, removeDir, socketPort, tempDir, type Call } from './test-support.ts';
+import { exit, freePort, libpqAvailable, LIBPQ_MISSING, ok, ownerTables, recordingRunner, removeDir, socketPort, sqlState, tempDir, type Call } from './test-support.ts';
 
 const WORKTREE = fileURLToPath(new URL('../../', import.meta.url));
 const libpq = await libpqAvailable();
 
 const MIGRATING_BIN = `#!/usr/bin/env node
-// Synthetic release entry: records which release migrated, through the environment the deploy passes.
+// Synthetic release entry shaped like hub/server's serve --migrate-only: connects as this operating-system account's role
+// (the owner of the Hub database), records which release migrated and grants the application role named by
+// CIRCLE_HUB_DATABASE_USER. A VERSION containing gives-ownership hands the table to the application role, which the
+// deploy must refuse.
 import { readFileSync } from 'node:fs';
+import { userInfo } from 'node:os';
 import pg from 'pg';
 const args = process.argv.slice(2);
 if (args[0] !== 'serve' || args[1] !== '--migrate-only') { console.error('synthetic release: only serve --migrate-only'); process.exit(2); }
 const release = JSON.parse(readFileSync(new URL('../release.json', import.meta.url), 'utf8')).id;
+const version = readFileSync(new URL('../VERSION', import.meta.url), 'utf8').trim();
 const env = process.env;
-const client = new pg.Client({ host: env.CIRCLE_HUB_DATABASE_SOCKET_DIR, port: Number(env.CIRCLE_HUB_DATABASE_PORT), user: env.CIRCLE_HUB_DATABASE_USER, database: env.CIRCLE_HUB_DATABASE_NAME });
+const owner = userInfo().username;
+const runtime = env.CIRCLE_HUB_DATABASE_USER;
+if (!runtime || runtime === owner) { console.error('synthetic release: the application role must differ from the owner'); process.exit(1); }
+const client = new pg.Client({ host: env.CIRCLE_HUB_DATABASE_SOCKET_DIR, port: Number(env.CIRCLE_HUB_DATABASE_PORT), user: owner, database: env.CIRCLE_HUB_DATABASE_NAME });
 await client.connect();
 await client.query('CREATE TABLE IF NOT EXISTS migration_marks (release text NOT NULL)');
 await client.query('INSERT INTO migration_marks VALUES ($1)', [release]);
+await client.query('GRANT SELECT, INSERT ON migration_marks TO "' + runtime + '"');
+if (version.includes('gives-ownership')) await client.query('ALTER TABLE migration_marks OWNER TO "' + runtime + '"');
 await client.end();
 `;
 
@@ -127,10 +139,10 @@ describe('deploy through the system host', { skip: libpq ? false : LIBPQ_MISSING
     const control = postgresFor(context);
     await control.initialise();
     await ensureDatabaseRunning(control, { create: true });
-    await withSession(control.applicationConnector, control.target.database, async (s) => {
-      await s.query('CREATE TABLE synthetic_records (id serial PRIMARY KEY, text text NOT NULL)');
-      await s.query("INSERT INTO synthetic_records (text) SELECT '合成 ' || n FROM generate_series(1, 25) AS n");
-    });
+    await ownerTables(control, ['CREATE TABLE synthetic_records (id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, text text NOT NULL)'], ['synthetic_records']);
+    await withSession(control.applicationConnector, control.target.database, (s) =>
+      s.query("INSERT INTO synthetic_records (text) SELECT '合成 ' || n FROM generate_series(1, 25) AS n"),
+    );
   });
 
   after(async () => {
@@ -156,6 +168,21 @@ describe('deploy through the system host', { skip: libpq ? false : LIBPQ_MISSING
     const log = (await readFile(deployLogPath(context), 'utf8')).trim().split('\n').map((line) => JSON.parse(line) as Record<string, unknown>);
     assert.ok(log.every((event) => typeof event.at === 'string'));
     assert.deepEqual(log.at(-1), { at: log.at(-1)?.at, event: 'deploy', phase: 'done', release: report.release });
+    assert.ok(
+      log.some((event) => event.note === `迁移以本机账户的角色 ${context.user}（拥有 Hub 数据库）执行，并授权应用角色 circle_hub；之后服务以 circle_hub 连接，不迁移`),
+      'the deploy log names both roles of the migration',
+    );
+    // The migration ran as the owner: the application role owns nothing and may read and append, never delete.
+    const control = postgresFor(context, current?.dir);
+    const owners = await withSession(control.connector, control.target.database, (s) =>
+      s.query("SELECT tablename::text AS name, tableowner::text AS owner FROM pg_tables WHERE schemaname = 'public' ORDER BY 1"),
+    );
+    assert.deepEqual(owners, [
+      { name: 'migration_marks', owner: context.user },
+      { name: 'synthetic_records', owner: context.user },
+    ]);
+    assert.deepEqual(await withSession(control.connector, control.target.database, (s) => roleProblems(s, control.application.user)), []);
+    assert.equal(await withSession(control.applicationConnector, control.target.database, (s) => sqlState(s, 'DELETE FROM migration_marks')), '42501');
   });
 
   test('a deploy whose health check fails restores the pre-deploy backup and runs the previous release again', async () => {
@@ -181,6 +208,23 @@ describe('deploy through the system host', { skip: libpq ? false : LIBPQ_MISSING
     assert.equal((await readDeployments(context)).length, 1, 'the failed deploy is not recorded');
   });
 
+  test('a release whose migration leaves the application role owning a table is undone like a failed migration', async () => {
+    const before = await readCurrentRelease(layout);
+    await assert.rejects(deploy(context, { path: await source(parent, 'v3-gives-ownership'), copy: true }), (error: unknown) => {
+      assert.ok(error instanceof PlatformError);
+      assert.match(error.message, /“迁移”这一步失败：迁移之后，应用角色 circle_hub 应当只能连接并按授权读写，现在却拥有 1 个对象（table migration_marks）/);
+      assert.match(error.hint ?? '', /已恢复部署前备份/);
+      return true;
+    });
+    assert.equal((await readCurrentRelease(layout))?.id, before?.id, 'current points back');
+    assert.deepEqual(await marks(), [before!.id]);
+    assert.equal(await records(), 25);
+    assert.ok(server, 'the previous release serves again');
+    const control = postgresFor(context, before?.dir);
+    assert.deepEqual(await withSession(control.connector, control.target.database, (s) => roleProblems(s, control.application.user)), [], 'the restored data has the old owner');
+    assert.equal((await readDeployments(context)).length, 1);
+  });
+
   test('a good deploy followed by rollback returns to the previous release and its data', async () => {
     const v1 = await readCurrentRelease(layout);
     const report = await deploy(context, { path: await source(parent, 'v2'), copy: true });
@@ -204,5 +248,30 @@ describe('deploy through the system host', { skip: libpq ? false : LIBPQ_MISSING
     await assert.rejects(deploy(context, { path: await source(parent, 'v1'), copy: true }), new RegExp(`发布 ${current!.id} 就是当前发布，不重复部署`));
     assert.ok(!launchctl.slice(before).some((line) => line.startsWith('bootout')), 'the service was not stopped');
     assert.ok(server, 'and still serves');
+  });
+
+  test('a data root whose application role owns a table is refused before anything stops, with the fix', async () => {
+    const current = await readCurrentRelease(layout);
+    const control = postgresFor(context, current?.dir);
+    await withSession(control.connector, control.target.database, async (s) => {
+      await s.query('CREATE TABLE handed_over (n int)');
+      await s.query(`ALTER TABLE handed_over OWNER TO ${control.application.user}`);
+    });
+    const before = launchctl.length;
+    const backups = (await readdir(layout.backups)).length;
+    try {
+      await assert.rejects(deploy(context, { path: await source(parent, 'v4'), copy: true }), (error: unknown) => {
+        assert.ok(error instanceof PlatformError);
+        assert.match(error.message, /“检查发布”这一步失败：部署之前，应用角色 circle_hub 应当只能连接并按授权读写，现在却拥有 1 个对象（table handed_over）.*REASSIGN OWNED BY "circle_hub"/);
+        assert.match(error.hint ?? '', /还没有改动任何东西/);
+        return true;
+      });
+      assert.ok(!launchctl.slice(before).some((line) => line.startsWith('bootout')), 'the service was not stopped');
+      assert.ok(server, 'and still serves');
+      assert.equal((await readdir(layout.backups)).length, backups, 'no backup was taken');
+      assert.equal((await readCurrentRelease(layout))?.id, current?.id);
+    } finally {
+      await withSession(control.connector, control.target.database, (s) => s.query('DROP TABLE handed_over'));
+    }
   });
 });

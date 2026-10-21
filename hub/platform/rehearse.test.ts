@@ -16,6 +16,11 @@ test('rehearsal: init, write, back up, destroy, restore, compare in a throwaway 
     assert.equal(report.rows, 60 + 20, '60 records and an index row for every third');
     assert.equal(report.objects, 8);
     assert.equal(report.vaultFiles, 3);
+    assert.equal(report.role, 'circle_hub');
+    // CONNECT, USAGE on public, EXECUTE of the trigger function, SELECT and INSERT on both tables.
+    assert.equal(report.privileges, 7);
+    // Per table: DELETE, TRUNCATE, DROP, ADD COLUMN, DISABLE TRIGGER; and one CREATE TABLE.
+    assert.equal(report.refused, 11);
     assert.equal(report.kept, false);
     assert.ok(report.root.startsWith(parent));
     await assert.rejects(access(report.root), 'the throwaway root is gone');

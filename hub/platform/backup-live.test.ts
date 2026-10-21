@@ -11,8 +11,9 @@ import { isMissingOrEmpty, listFiles } from './files.ts';
 import { ensureLayout, layoutAt, type Layout } from './layout.ts';
 import { createPostgres, ensureDatabaseRunning, type PostgresControl } from './postgres.ts';
 import { assertRestorable, restoreBackup } from './restore.ts';
+import { inspectRole, roleFixHint, rolePrivileges, type RoleReport } from './roles.ts';
 import { withSession } from './sql.ts';
-import { libpqAvailable, LIBPQ_MISSING, removeDir, socketPort, tempDir } from './test-support.ts';
+import { libpqAvailable, LIBPQ_MISSING, ownerTables, removeDir, socketPort, tempDir } from './test-support.ts';
 
 const libpq = await libpqAvailable();
 const roots: string[] = [];
@@ -32,10 +33,11 @@ async function liveRoot(): Promise<{ layout: Layout; control: PostgresControl }>
   clusters.push(control);
   await control.initialise();
   await ensureDatabaseRunning(control, { create: true });
-  await withSession(control.applicationConnector, control.target.database, async (s) => {
-    await s.query('CREATE TABLE synthetic_records (id serial PRIMARY KEY, body text NOT NULL)');
-    await s.query("INSERT INTO synthetic_records (body) SELECT '合成 ' || n FROM generate_series(1, 50) AS n");
-  });
+  // Created by the owner with an identity column, like the records tables; appended to by the application role.
+  await ownerTables(control, ['CREATE TABLE synthetic_records (id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, body text NOT NULL)'], ['synthetic_records']);
+  await withSession(control.applicationConnector, control.target.database, (s) =>
+    s.query("INSERT INTO synthetic_records (body) SELECT '合成 ' || n FROM generate_series(1, 50) AS n"),
+  );
   await writeFile(join(layout.config, 'platform.json'), '{"synthetic":true}\n', { mode: 0o600 });
   return { layout, control };
 }
@@ -167,7 +169,7 @@ describe('backups of a live data root', { skip: libpq ? false : LIBPQ_MISSING },
   test('an empty database is not backed up when the previous backup had tables', async () => {
     const { layout, control } = await liveRoot();
     await createBackup({ layout, postgres: control, libpqBin: libpq! });
-    await withSession(control.applicationConnector, control.target.database, (s) => s.query('DROP TABLE synthetic_records'));
+    await withSession(control.connector, control.target.database, (s) => s.query('DROP TABLE synthetic_records'));
     await assert.rejects(createBackup({ layout, postgres: control, libpqBin: libpq! }), (error: unknown) => {
       assert.match((error as Error).message, /里没有表，上一份备份（.+）有 1 张表：可能连错了数据库，不备份/);
       return true;
@@ -200,5 +202,88 @@ describe('backups of a live data root', { skip: libpq ? false : LIBPQ_MISSING },
     assert.ok(await isMissingOrEmpty(target.db));
     await assertRestorable(target);
     assert.equal((await restored.status()).running, false);
+  });
+
+  test('a database in which the application role owns an object (an earlier platform version) is not backed up, with the fix', async () => {
+    const { layout, control } = await liveRoot();
+    await withSession(control.connector, control.target.database, (s) => s.query(`ALTER TABLE synthetic_records OWNER TO ${control.application.user}`));
+    await assert.rejects(createBackup({ layout, postgres: control, libpqBin: libpq! }), (error: unknown) => {
+      assert.match((error as Error).message, /^备份之前，应用角色 circle_hub 应当只能连接并按授权读写，现在却拥有 \d+ 个对象（.*table synthetic_records.*）：Hub 以它运行，只追加的约束就不成立$/);
+      const hint = String((error as { hint?: string }).hint);
+      assert.ok(hint.startsWith('先停掉服务（circle-hub service stop），'), hint);
+      assert.ok(hint.includes(`在数据库 circle_hub 执行「REASSIGN OWNED BY "circle_hub" TO "${control.target.user}";」`), hint);
+      assert.match(hint, /部署新发布时迁移会重新授权/);
+      return true;
+    });
+    assert.deepEqual(await listBackups(layout), []);
+    assert.ok(!(await listFiles(layout.backups)).some((file) => file.startsWith('.partial')));
+    // The fix the hint names makes the database backable again; the GRANT stands for the migration of the next deploy.
+    await withSession(control.connector, control.target.database, (s) => s.query(`REASSIGN OWNED BY ${control.application.user} TO "${control.target.user}"`));
+    await withSession(control.connector, control.target.database, (s) => s.query(`GRANT SELECT, INSERT ON synthetic_records TO ${control.application.user}`));
+    await verifyBackup((await createBackup({ layout, postgres: control, libpqBin: libpq! })).dir);
+  });
+
+  test('large objects and default privileges the application role made itself stop the backup until the printed fix, then it restores', async () => {
+    const { layout, control } = await liveRoot();
+    const privileges = () => withSession(control.connector, control.target.database, (s) => rolePrivileges(s, control.application.user));
+    const before = await privileges();
+    await withSession(control.applicationConnector, control.target.database, async (s) => {
+      await s.query("SELECT lo_from_bytea(0, '\\x00ff'::bytea)");
+      await s.query('ALTER DEFAULT PRIVILEGES GRANT SELECT ON TABLES TO PUBLIC');
+    });
+    await assert.rejects(createBackup({ layout, postgres: control, libpqBin: libpq! }), (error: unknown) => {
+      assert.match((error as Error).message, /^备份之前，.*现在却拥有 2 个对象（default privileges on new relations belonging to role circle_hub、large object \d+）：任何角色不需授权都能建这类对象/);
+      assert.doesNotMatch(String((error as { hint?: string }).hint), /先停掉服务/, 'the Hub may keep running meanwhile');
+      return true;
+    });
+    const report: RoleReport = await withSession(control.connector, control.target.database, (s) => inspectRole(s, control.application.user));
+    const hint = roleFixHint(control, report);
+    for (const step of report.fix) {
+      assert.ok(hint.includes(`执行「${step.statements.map((statement) => `${statement};`).join(' ')}」`));
+      await withSession(control.connector, step.database, async (s) => {
+        for (const statement of step.statements) await s.query(statement);
+      });
+    }
+    assert.deepEqual(await privileges(), before, 'the grants are untouched');
+    const { dir } = await createBackup({ layout, postgres: control, libpqBin: libpq! });
+    const target = layoutAt(join(await tempDir(), 'target'));
+    roots.push(join(target.root, '..'));
+    await ensureLayout(target);
+    const restored = createPostgres({ layout: target, port: socketPort() });
+    clusters.push(restored);
+    const result = await restoreBackup({ layout: target, backupDir: dir, postgres: restored, libpqBin: libpq! });
+    assert.equal(result.rows, 50);
+    const [object] = await withSession(restored.connector, restored.target.database, (s) =>
+      s.query("SELECT pg_get_userbyid(m.lomowner)::text AS owner, encode(lo_get(m.oid), 'hex') AS bytes FROM pg_largeobject_metadata m"),
+    );
+    assert.deepEqual(object, { owner: restored.target.user, bytes: '00ff' }, 'the large object came back, owned by the superuser role');
+  });
+
+  test('a restore whose application role privileges differ from the manifest is refused and its partial state set aside', async () => {
+    const { layout, control } = await liveRoot();
+    const { dir } = await createBackup({ layout, postgres: control, libpqBin: libpq! });
+    const copy = join(await tempDir(), 'edited');
+    roots.push(join(copy, '..'));
+    await cp(dir, copy, { recursive: true });
+    const manifest = await manifestOf(copy);
+    const privileges = manifest.database.application_role.privileges;
+    assert.ok(privileges.includes('table public.synthetic_records INSERT'));
+    manifest.database.application_role.privileges = [...privileges.filter((entry) => entry !== 'table public.synthetic_records INSERT'), 'table public.synthetic_records DELETE'];
+    await writeFile(join(copy, MANIFEST_FILE), JSON.stringify(manifest));
+    const target = layoutAt(join(await tempDir(), 'target'));
+    roots.push(join(target.root, '..'));
+    await ensureLayout(target);
+    const restored = createPostgres({ layout: target, port: socketPort() });
+    clusters.push(restored);
+    await assert.rejects(restoreBackup({ layout: target, backupDir: copy, postgres: restored, libpqBin: libpq! }), (error: unknown) => {
+      assert.match(
+        (error as Error).message,
+        /恢复后应用角色 circle_hub 的权限与备份时不同：缺少 table public\.synthetic_records DELETE；多出 table public\.synthetic_records INSERT/,
+      );
+      assert.match(String((error as { hint?: string }).hint), /半成品已移到 .*set-aside/);
+      return true;
+    });
+    assert.ok(await isMissingOrEmpty(target.db));
+    await assertRestorable(target);
   });
 });

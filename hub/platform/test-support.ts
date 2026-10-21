@@ -4,7 +4,10 @@ import { access, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { libpqDirectory } from './backup.ts';
+import type { PostgresControl } from './postgres.ts';
 import { runCommand, type CommandOptions, type CommandResult, type CommandRunner } from './process.ts';
+import { grantTables } from './roles.ts';
+import { withSession, type SqlSession } from './sql.ts';
 
 export interface Call {
   command: string;
@@ -101,4 +104,29 @@ export async function freePort(): Promise<number> {
 /** A random port number used only to name a socket file; below the ephemeral ranges (macOS 49152+, Linux 32768+). */
 export function socketPort(): number {
   return 20000 + Math.floor(Math.random() * 12000);
+}
+
+/**
+ * Runs `statements` in the Hub database as the superuser role that owns it, then grants the application role SELECT and
+ * INSERT on `tables`, as the records migration does for its history tables. The rows are then written as the
+ * application role, like the server writes its own.
+ */
+export async function ownerTables(control: PostgresControl, statements: readonly string[], tables: readonly string[]): Promise<void> {
+  await withSession(control.connector, control.target.database, async (session) => {
+    for (const statement of statements) await session.query(statement);
+    await grantTables(session, control.application.user, tables);
+  });
+}
+
+/** The SQLSTATE a statement fails with in its own transaction (always rolled back), or null when it ran. */
+export async function sqlState(session: SqlSession, statement: string): Promise<string | null> {
+  await session.query('BEGIN');
+  try {
+    await session.query(statement);
+    return null;
+  } catch (error) {
+    return String((error as { code?: unknown }).code ?? '?');
+  } finally {
+    await session.query('ROLLBACK');
+  }
 }

@@ -1,9 +1,16 @@
 import assert from 'node:assert/strict';
+import { existsSync } from 'node:fs';
+import { writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { describe, test } from 'node:test';
-import { guardSignals, OperationProgress, runDeploy, runRollback, type DeployHost, type DeploymentEntry } from './deploy.ts';
+import { createContext } from './context.ts';
+import { deploy, guardSignals, OperationProgress, runDeploy, runRollback, type DeployHost, type DeploymentEntry } from './deploy.ts';
 import { PlatformError } from './errors.ts';
+import { ensureLayout, layoutAt } from './layout.ts';
 import type { ReleaseRef } from './release.ts';
+import { newSettingsFile, settingsPath } from './settings.ts';
+import { recordingRunner, removeDir, tempDir } from './test-support.ts';
 
 const release = (id: string): ReleaseRef => ({ id: id.padEnd(12, id.at(-1)), dir: `/data/releases/${id.padEnd(12, id.at(-1))}` });
 const V1 = release('a');
@@ -347,6 +354,30 @@ describe('deploy flow', () => {
     });
     assert.ok(!host.calls.some((call) => call.startsWith('startService') || call.startsWith('backup')));
     assert.equal(host.progress, undefined);
+  });
+
+  test('a data root whose pinned application role the migration cannot grant is refused before anything runs', async () => {
+    const root = await tempDir();
+    try {
+      const layout = layoutAt(root);
+      await ensureLayout(layout);
+      // Written by an earlier platform version, before init refused such names.
+      const file = newSettingsFile({ environment: 'test' });
+      await writeFile(settingsPath(layout), JSON.stringify({ ...file, database: { ...file.database, role: 'hub-app' } }));
+      const { runner, calls } = recordingRunner(() => undefined, { real: false });
+      const context = createContext({}, { layout, home: root, runner, launchAgentsDir: join(root, 'agents') });
+      const host = new FakeHost(V1);
+      await assert.rejects(deploy(context, { path: root }, host), (error: unknown) => {
+        assert.match((error as Error).message, /^部署设置里的应用角色名 hub-app 不符合要求，不部署：/);
+        assert.match(hintOf(error), /ALTER ROLE "hub-app" RENAME TO hub_app/);
+        return true;
+      });
+      assert.deepEqual(host.calls, [], 'the host was never asked to do anything');
+      assert.deepEqual(calls, []);
+      assert.equal(existsSync(join(layout.run, 'platform.lock')), false, 'not even the lock was taken');
+    } finally {
+      await removeDir(root);
+    }
   });
 
   test('deploying the release that is already current is refused before anything stops', async () => {

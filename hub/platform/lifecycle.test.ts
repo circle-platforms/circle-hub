@@ -12,8 +12,9 @@ import { ensureLayout, layoutAt, socketFile, type Layout } from './layout.ts';
 import { createPostgres, ensureDatabaseRunning, type PostgresControl } from './postgres.ts';
 import { runCommand } from './process.ts';
 import { restoreBackup, setAside } from './restore.ts';
+import { rolePrivileges } from './roles.ts';
 import { socketConnector, summarizeTables, withSession } from './sql.ts';
-import { libpqAvailable, LIBPQ_MISSING, removeDir, socketPort, tempDir } from './test-support.ts';
+import { libpqAvailable, LIBPQ_MISSING, ownerTables, removeDir, socketPort, sqlState, tempDir } from './test-support.ts';
 
 const libpq = await libpqAvailable();
 const port = socketPort();
@@ -72,7 +73,7 @@ describe('a persistent cluster in a temporary data root', () => {
   });
 
   test('peer authentication admits only the owner, as its superuser role or the non-superuser application role', async () => {
-    const [admin] = await withSession(control.connector, 'postgres', (s) => s.query('SELECT rolsuper FROM pg_roles WHERE rolname = current_user'));
+    const [admin] = await withSession(control.connector, 'postgres', (s) => s.query('SELECT rolsuper, current_user AS name FROM pg_roles WHERE rolname = current_user'));
     assert.equal(admin?.rolsuper, true);
     const [app] = await withSession(control.applicationConnector, control.target.database, (s) =>
       s.query(
@@ -80,9 +81,29 @@ describe('a persistent cluster in a temporary data root', () => {
            FROM pg_roles r, pg_database d WHERE r.rolname = current_user AND d.datname = current_database()`,
       ),
     );
-    assert.deepEqual(app, { rolsuper: false, rolcreaterole: false, rolcreatedb: false, owner: 'circle_hub' });
+    // The database belongs to the superuser role: its owner would own the public schema and could drop the append-only tables.
+    assert.deepEqual(app, { rolsuper: false, rolcreaterole: false, rolcreatedb: false, owner: admin?.name });
     const stranger = socketConnector({ socketDir: layout.run, port, user: 'postgres' });
     await assert.rejects(stranger('postgres'), /连不上数据库/);
+    // PUBLIC may connect to postgres and template1 and create temporary tables there: the application role is kept out.
+    for (const other of ['postgres', 'template1']) {
+      await assert.rejects(control.applicationConnector(other), /连不上数据库.*no pg_hba\.conf entry/, other);
+      assert.deepEqual(await withSession(control.connector, other, (s) => s.query('SELECT current_database()::text AS name')), [{ name: other }]);
+    }
+  });
+
+  test('the application role connects but owns nothing: it cannot create, alter or drop in the database', async () => {
+    await withSession(control.connector, control.target.database, (s) => s.query('CREATE TABLE IF NOT EXISTS owner_probe (id integer)'));
+    try {
+      await withSession(control.applicationConnector, control.target.database, async (s) => {
+        await assert.rejects(s.query('DROP TABLE owner_probe'), /owner_probe|所有者|owner/i);
+        await assert.rejects(s.query('ALTER TABLE owner_probe ADD COLUMN x integer'), /owner|所有者/i);
+        await assert.rejects(s.query('CREATE TABLE app_made (id integer)'), /permission|权限|denied|拒绝/i);
+        await assert.rejects(s.query('CREATE SCHEMA app_schema'), /permission|权限|denied|拒绝/i);
+      });
+    } finally {
+      await withSession(control.connector, control.target.database, (s) => s.query('DROP TABLE IF EXISTS owner_probe'));
+    }
   });
 
   test('initialise again leaves the cluster alone; start again is a no-op', async () => {
@@ -125,6 +146,7 @@ describe('backup, destroy, restore and compare', { skip: libpq ? false : LIBPQ_M
   let control: PostgresControl;
   let backupDir: string;
   let tablesBefore: Awaited<ReturnType<typeof summarizeTables>>;
+  let privilegesBefore: string[];
   const objectBytes = Buffer.from('synthetic object \u0000 with NUL and 中文');
 
   before(async () => {
@@ -132,8 +154,13 @@ describe('backup, destroy, restore and compare', { skip: libpq ? false : LIBPQ_M
     control = cluster(layout);
     await control.initialise();
     await ensureDatabaseRunning(control, { create: true });
+    // The owner creates the tables and grants SELECT and INSERT; the rows are written as the application role.
+    await ownerTables(
+      control,
+      ['CREATE TABLE synthetic_records (id text PRIMARY KEY, body jsonb NOT NULL, at timestamptz NOT NULL, raw bytea)', 'CREATE TABLE synthetic_empty (id int)'],
+      ['synthetic_records', 'synthetic_empty'],
+    );
     await withSession(control.applicationConnector, control.target.database, async (s) => {
-      await s.query('CREATE TABLE synthetic_records (id text PRIMARY KEY, body jsonb NOT NULL, at timestamptz NOT NULL, raw bytea)');
       for (let n = 0; n < 40; n++) {
         await s.query('INSERT INTO synthetic_records VALUES ($1, $2, $3, $4)', [
           `rcd_${String(n).padStart(26, '0')}`,
@@ -142,7 +169,6 @@ describe('backup, destroy, restore and compare', { skip: libpq ? false : LIBPQ_M
           Buffer.from([n, 0, 255]),
         ]);
       }
-      await s.query('CREATE TABLE synthetic_empty (id int)');
     });
     const digest = (await import('node:crypto')).createHash('sha256').update(objectBytes).digest('hex');
     await mkdir(join(layout.objects, digest.slice(0, 2)), { recursive: true });
@@ -151,11 +177,13 @@ describe('backup, destroy, restore and compare', { skip: libpq ? false : LIBPQ_M
     await writeFile(join(layout.vault, 'entry.bin'), Buffer.from('sealed synthetic entry'));
     await writeFile(join(layout.config, 'platform.json'), '{"synthetic":true}\n');
     tablesBefore = await withSession(control.connector, control.target.database, summarizeTables);
-    const result = await createBackup({ layout, postgres: control, label: 'integration' });
+    privilegesBefore = await withSession(control.connector, control.target.database, (s) => rolePrivileges(s, control.application.user));
+    // A pinned clock: the prune test below takes two more backups within this same second.
+    const result = await createBackup({ layout, postgres: control, label: 'integration', now: () => new Date('2026-10-21T20:36:02.100Z') });
     backupDir = result.dir;
   });
 
-  test('the backup lists the dump, every file with SHA-256, and per-table rows and digests', async () => {
+  test('the backup lists the dump, every file with SHA-256, per-table rows and digests, and the application role privileges', async () => {
     assert.match(backupDir, /\/backups\/\d{8}T\d{6}Z-integration$/);
     const manifest = await verifyBackup(backupDir);
     assert.deepEqual(
@@ -163,6 +191,11 @@ describe('backup, destroy, restore and compare', { skip: libpq ? false : LIBPQ_M
       ['config', 'database.dump', 'objects', 'vault'],
     );
     assert.deepEqual(manifest.database.tables, tablesBefore);
+    assert.deepEqual(manifest.database.application_role, { name: 'circle_hub', privileges: privilegesBefore });
+    for (const entry of ['database CONNECT', 'schema public USAGE', 'table public.synthetic_records INSERT', 'table public.synthetic_records SELECT']) {
+      assert.ok(privilegesBefore.includes(entry), entry);
+    }
+    assert.ok(!privilegesBefore.some((entry) => /DELETE|TRUNCATE|UPDATE|TRIGGER|database (CREATE|TEMPORARY)|schema \S+ CREATE/.test(entry)), privilegesBefore.join('\n'));
     const records = manifest.database.tables.find((table) => table.table === 'synthetic_records');
     assert.equal(records?.rows, 40);
     assert.equal(manifest.database.tables.find((table) => table.table === 'synthetic_empty')?.rows, 0);
@@ -187,7 +220,7 @@ describe('backup, destroy, restore and compare', { skip: libpq ? false : LIBPQ_M
     await assert.rejects(restoreBackup({ layout, backupDir, postgres: control }), /只能恢复到空的数据根/);
   });
 
-  test('destroy and restore reproduce every row, table digest and file, owned by the application role', async () => {
+  test('destroy and restore reproduce every row, table digest and file, owned by the superuser role with the application role grants', async () => {
     const filesBefore = await listFiles(layout.objects);
     assert.equal(await control.stop(), true);
     for (const area of [layout.db, layout.objects, layout.vault]) await rm(area, { recursive: true, force: true });
@@ -196,6 +229,7 @@ describe('backup, destroy, restore and compare', { skip: libpq ? false : LIBPQ_M
     assert.equal(report.rows, 40);
     assert.equal(report.tables, tablesBefore.length);
     assert.equal(report.files, 2, 'one object and one vault file copied');
+    assert.equal(report.privileges, privilegesBefore.length);
     assert.deepEqual(report.keptConfig, [], 'the identical config file was left in place');
     assert.deepEqual(await withSession(restored.connector, restored.target.database, summarizeTables), tablesBefore);
     assert.deepEqual(await listFiles(layout.objects), filesBefore);
@@ -203,23 +237,32 @@ describe('backup, destroy, restore and compare', { skip: libpq ? false : LIBPQ_M
     assert.equal((await sha256File(join(layout.objects, object))).sha256, object.split('/')[1]);
     assert.equal((await stat(join(layout.objects, object))).mode & 0o777, 0o400, 'object mode kept');
     assert.equal((await stat(join(layout.vault, 'entry.bin'))).mode & 0o777, 0o600);
-    const [owner] = await withSession(restored.connector, restored.target.database, (s) =>
-      s.query("SELECT tableowner FROM pg_tables WHERE tablename = 'synthetic_records'"),
+    const owners = await withSession(restored.connector, restored.target.database, (s) =>
+      s.query(
+        `SELECT pg_get_userbyid(d.datdba) AS database, (SELECT array_agg(DISTINCT tableowner::text) FROM pg_tables WHERE schemaname = 'public') AS tables
+           FROM pg_database d WHERE d.datname = current_database()`,
+      ),
     );
-    assert.equal(owner?.tableowner, 'circle_hub');
-    const [row] = await withSession(restored.applicationConnector, restored.target.database, (s) =>
-      s.query("SELECT body->>'text' AS text, encode(raw, 'hex') AS raw FROM synthetic_records WHERE id = $1", [`rcd_${'7'.padStart(26, '0')}`]),
-    );
-    assert.deepEqual(row, { text: '合成 7', raw: '0700ff' });
+    assert.deepEqual(owners, [{ database: restored.target.user, tables: [restored.target.user] }], 'the database and every table belong to the superuser role');
+    assert.deepEqual(await withSession(restored.connector, restored.target.database, (s) => rolePrivileges(s, restored.application.user)), privilegesBefore);
+    await withSession(restored.applicationConnector, restored.target.database, async (s) => {
+      const [row] = await s.query("SELECT body->>'text' AS text, encode(raw, 'hex') AS raw FROM synthetic_records WHERE id = $1", [`rcd_${'7'.padStart(26, '0')}`]);
+      assert.deepEqual(row, { text: '合成 7', raw: '0700ff' });
+      for (const statement of ['DELETE FROM synthetic_records', 'TRUNCATE synthetic_records', 'DROP TABLE synthetic_records', 'ALTER TABLE synthetic_records DISABLE TRIGGER ALL', "UPDATE synthetic_records SET body = '{}'"]) {
+        assert.equal(await sqlState(s, statement), '42501', statement);
+      }
+    });
     control = restored;
   });
 
-  test('prune keeps the newest backups', async () => {
-    await createBackup({ layout, postgres: control });
-    await createBackup({ layout, postgres: control, label: 'again' });
-    assert.equal((await listBackups(layout)).length, 3);
+  test('prune keeps the newest backups, in the order they were taken even within one second', async () => {
+    // By name, `20261021T203602Z` would sort before the earlier `20261021T203602Z-integration`.
+    const second = await createBackup({ layout, postgres: control, now: () => new Date('2026-10-21T20:36:02.200Z') });
+    const third = await createBackup({ layout, postgres: control, label: 'again', now: () => new Date('2026-10-21T20:36:02.300Z') });
+    assert.match(second.dir, /\/20261021T203602Z$/);
+    assert.deepEqual(await listBackups(layout), [backupDir, second.dir, third.dir]);
     const removed = await pruneBackups(layout, 2);
     assert.deepEqual(removed, [backupDir]);
-    assert.equal((await listBackups(layout)).length, 2);
+    assert.deepEqual(await listBackups(layout), [second.dir, third.dir]);
   });
 });

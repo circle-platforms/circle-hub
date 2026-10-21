@@ -1,5 +1,7 @@
 // Backups: a pg_dump -Fc of the Hub database taken inside an exported snapshot, then copies of objects/, vault/ and
 // config/ made AFTER the dump (so every object a dumped record names is present), all listed with SHA-256 in a manifest.
+// The manifest also lists every privilege the application role holds, so a restore can prove it reproduced them; a
+// database the application role owns anything in is not backed up (a restore could not reproduce that, see roles.ts).
 // Each backup is a timestamped directory under backups/, written beside it and renamed into place only when complete.
 // A backup may run while the Hub writes (cron): in-flight temporaries are never copied and a file that vanished after
 // listing is skipped. Objects unchanged since the previous backup are hard links to its copy, re-hashed each time.
@@ -10,15 +12,20 @@ import { z } from 'zod';
 import { IsoTime, Sha256 } from '../../contracts/src/common.ts';
 import { PLATFORM_VARIABLES } from './environment.ts';
 import { PlatformError } from './errors.ts';
-import { copyFileIfPresent, exists, listFiles, removeWithin, sha256File, slug, timestampName, uniqueChild, writeFileExclusive, type FileDigest } from './files.ts';
+import { copyFileIfPresent, listFiles, removeWithin, sha256File, slug, timestampName, uniqueChild, writeFileExclusive, type FileDigest } from './files.ts';
 import type { Layout } from './layout.ts';
 import { toolVersion, type PostgresControl } from './postgres.ts';
 import { runCommand, tailLines, toolEnvironment, type CommandRunner } from './process.ts';
+import { applicationRoleError, inspectRole, rolePrivileges } from './roles.ts';
 import { summarizeTables, type TableSummary } from './sql.ts';
 
-/** @2: table digests per TABLE_DIGEST in sql.ts (bucketed); @1 used one aggregate per table and is not accepted. */
-export const BACKUP_SCHEMA = 'circle-hub-backup@2';
-const OLD_BACKUP_SCHEMAS = ['circle-hub-backup@1'];
+/** @3: table digests per TABLE_DIGEST in sql.ts (bucketed) and the application role's privileges. */
+export const BACKUP_SCHEMA = 'circle-hub-backup@3';
+/** Earlier formats, not restored by this version, and why. */
+const OLD_BACKUP_SCHEMAS: Readonly<Record<string, string>> = {
+  'circle-hub-backup@1': '表摘要的算法不同',
+  'circle-hub-backup@2': '那时 Hub 数据库和表属于应用角色，清单里也没有应用角色的权限',
+};
 export const DUMP_FILE = 'database.dump';
 export const MANIFEST_FILE = 'manifest.json';
 export const DEFAULT_LIBPQ_BIN = '/opt/homebrew/opt/libpq/bin';
@@ -27,6 +34,7 @@ export const FILE_AREAS = ['objects', 'vault', 'config'] as const;
 export type FileArea = (typeof FILE_AREAS)[number];
 
 const TableSummarySchema = z.object({ schema: z.string(), table: z.string(), rows: z.number().int().nonnegative(), digest: Sha256 }).strict();
+const FileEntry = z.object({ path: z.string(), size: z.number().int().nonnegative(), sha256: Sha256 }).strict();
 
 export const BackupManifest = z
   .object({
@@ -39,12 +47,22 @@ export const BackupManifest = z
         server_version: z.string(),
         dump_tool: z.string(),
         tables: z.array(TableSummarySchema),
+        application_role: z
+          .object({
+            name: z.string(),
+            /** rolePrivileges in roles.ts at the snapshot: the restore must reproduce exactly these. */
+            privileges: z.array(z.string()),
+          })
+          .strict(),
       })
       .strict(),
-    files: z.array(z.object({ path: z.string(), size: z.number().int().nonnegative(), sha256: Sha256 }).strict()),
+    files: z.array(FileEntry),
   })
   .strict();
 export type BackupManifest = z.infer<typeof BackupManifest>;
+
+/** The file list of the previous backup for object reuse; any manifest version will do, each reused copy is re-hashed. */
+const PreviousFiles = z.object({ files: z.array(FileEntry) });
 
 /**
  * Names in a file area that are never part of a backup: dot-files (the object store's `.<sha>.<random>.tmp`, Finder's
@@ -177,6 +195,7 @@ export async function createBackup(options: BackupOptions): Promise<BackupResult
   const now = options.now ?? (() => new Date());
   const tools = await libpqTools(libpqDirectory(options.libpqBin));
   const { target } = postgres;
+  const role = postgres.application.user;
   await mkdir(layout.backups, { recursive: true, mode: 0o700 });
   const started = now();
   const before = await previousManifest(layout);
@@ -185,16 +204,24 @@ export async function createBackup(options: BackupOptions): Promise<BackupResult
   try {
     const session = await postgres.connector(target.database);
     let tables: TableSummary[];
+    let privileges: string[];
     let serverVersion: string;
     let dumpTool: string;
     try {
       await session.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+      // Objects the application role owns would belong to the restoring superuser after a restore, with none of the
+      // privileges their owner had, and its default privileges would come back and fail the restore's own check: such a
+      // backup could never be restored as it was taken. This holds for large objects and default privileges too.
+      const report = await inspectRole(session, role);
+      if (report.problems.length > 0) throw applicationRoleError(postgres, report, '备份之前，');
       const [version] = await session.query("SELECT current_setting('server_version') AS text, current_setting('server_version_num')::int AS num");
       serverVersion = String(version?.text ?? '');
       const serverMajor = Math.floor(Number(version?.num ?? 0) / 10000);
       dumpTool = await checkToolMajor(tools.pg_dump, serverMajor, runner);
       const [snapshot] = await session.query('SELECT pg_catalog.pg_export_snapshot() AS id');
       tables = await summarizeTables(session);
+      // Grants change only when the owner migrates; deploy migrates under the platform lock, which circle-hub backup takes too.
+      privileges = await rolePrivileges(session, role);
       const earlier = (before?.value as { database?: { tables?: unknown } } | undefined)?.database?.tables;
       if (tables.length === 0 && Array.isArray(earlier) && earlier.length > 0) {
         throw new PlatformError(
@@ -227,7 +254,7 @@ export async function createBackup(options: BackupOptions): Promise<BackupResult
     await chmod(join(partial, DUMP_FILE), 0o600);
     const dump = await sha256File(join(partial, DUMP_FILE));
     files.push({ path: DUMP_FILE, ...dump });
-    const parsedBefore = before ? BackupManifest.safeParse(before.value) : undefined;
+    const parsedBefore = before ? PreviousFiles.safeParse(before.value) : undefined;
     const previous = parsedBefore?.success
       ? { dir: before!.dir, files: new Map(parsedBefore.data.files.filter((file) => file.path.startsWith('objects/')).map((file) => [file.path, file])) }
       : undefined;
@@ -253,7 +280,7 @@ export async function createBackup(options: BackupOptions): Promise<BackupResult
       schema: BACKUP_SCHEMA,
       created_at: started.toISOString(),
       ...(options.label ? { label: options.label } : {}),
-      database: { name: target.database, server_version: serverVersion, dump_tool: dumpTool, tables },
+      database: { name: target.database, server_version: serverVersion, dump_tool: dumpTool, tables, application_role: { name: role, privileges } },
       files,
     });
     await writeFileExclusive(join(partial, MANIFEST_FILE), `${JSON.stringify(manifest, null, 2)}\n`);
@@ -285,8 +312,8 @@ export async function verifyBackup(dir: string): Promise<BackupManifest> {
     throw new PlatformError(`读不了备份清单：${join(dir, MANIFEST_FILE)}`, '确认这是一个完整的 circle-hub 备份目录');
   }
   const schema = (raw as { schema?: unknown } | null)?.schema;
-  if (typeof schema === 'string' && OLD_BACKUP_SCHEMAS.includes(schema)) {
-    throw new PlatformError(`备份 ${dir} 是旧格式 ${schema}（表摘要的算法不同），这一版不恢复它`, '用生成它的那一版 circle-hub 恢复');
+  if (typeof schema === 'string' && Object.hasOwn(OLD_BACKUP_SCHEMAS, schema)) {
+    throw new PlatformError(`备份 ${dir} 是旧格式 ${schema}（${OLD_BACKUP_SCHEMAS[schema]}），这一版不恢复它`, '用生成它的那一版 circle-hub 恢复');
   }
   const parsed = BackupManifest.safeParse(raw);
   if (!parsed.success) throw new PlatformError(`备份清单不符合 ${BACKUP_SCHEMA}：${join(dir, MANIFEST_FILE)}`);
@@ -316,7 +343,36 @@ export async function verifyBackup(dir: string): Promise<BackupManifest> {
   return manifest;
 }
 
-/** Complete backups (with a manifest), oldest first. */
+/** The time a backup directory's name starts with (timestampName), in milliseconds; -Infinity when it has none. */
+function nameTime(name: string): number {
+  const match = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z/.exec(name);
+  if (!match) return Number.NEGATIVE_INFINITY;
+  const [year, month, day, hour, minute, second] = match.slice(1).map(Number) as [number, number, number, number, number, number];
+  return Date.UTC(year, month - 1, day, hour, minute, second);
+}
+
+/** created_at of the backup's manifest in milliseconds; undefined without a manifest; the name's time when it cannot be read. */
+async function createdAt(dir: string): Promise<number | undefined> {
+  let text: string;
+  try {
+    text = await readFile(join(dir, MANIFEST_FILE), 'utf8');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+    return nameTime(basename(dir));
+  }
+  try {
+    const at = Date.parse(String((JSON.parse(text) as { created_at?: unknown } | null)?.created_at));
+    return Number.isNaN(at) ? nameTime(basename(dir)) : at;
+  } catch {
+    return nameTime(basename(dir));
+  }
+}
+
+/**
+ * Complete backups (with a manifest), oldest first by the manifest's created_at, then by name. Names alone do not order
+ * them: within one second `<time>` sorts before an earlier `<time>-<label>`. A manifest that cannot be read is placed by
+ * the time its directory name starts with.
+ */
 export async function listBackups(layout: Layout): Promise<string[]> {
   let entries;
   try {
@@ -325,12 +381,14 @@ export async function listBackups(layout: Layout): Promise<string[]> {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
     throw error;
   }
-  const out: string[] = [];
+  const found: { dir: string; at: number }[] = [];
   for (const entry of entries) {
     if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
-    if (await exists(join(layout.backups, entry.name, MANIFEST_FILE))) out.push(join(layout.backups, entry.name));
+    const dir = join(layout.backups, entry.name);
+    const at = await createdAt(dir);
+    if (at !== undefined) found.push({ dir, at });
   }
-  return out.sort();
+  return found.sort((a, b) => (a.at !== b.at ? (a.at < b.at ? -1 : 1) : a.dir < b.dir ? -1 : a.dir > b.dir ? 1 : 0)).map((backup) => backup.dir);
 }
 
 /**

@@ -1,5 +1,9 @@
 // Rehearsal of backup and restore in a throwaway data root: init, write synthetic records and objects, back up, destroy,
-// restore, and compare row counts, table digests and file digests. It never touches the real data root.
+// restore, and compare row counts, table digests and file digests. The synthetic tables are set up as the Hub's are: the
+// superuser role creates them (identity column, append-only trigger) and grants the application role SELECT and INSERT,
+// and the rows are written as the application role. After the restore the application role must hold the same
+// privileges, own nothing and still be refused (42501) every statement that deletes or rewrites history or the tables.
+// It never touches the real data root.
 import { createHash, randomBytes, randomInt } from 'node:crypto';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -12,6 +16,7 @@ import { ensureLayout, layoutAt, SOCKET_PATH_LIMIT, type Layout } from './layout
 import { createPostgres, ensureDatabaseRunning, type PostgresControl } from './postgres.ts';
 import { runCommand, type CommandRunner } from './process.ts';
 import { restoreBackup } from './restore.ts';
+import { comparePrivileges, grantTables, rolePrivileges, roleProblems, tamperingStatements, unrefusedStatements, unrefusedText } from './roles.ts';
 import { newSettingsFile, writeSettingsFile } from './settings.ts';
 import { compareSummaries, summarizeTables, withSession, type SqlSession } from './sql.ts';
 
@@ -36,6 +41,11 @@ export interface RehearsalReport {
   rows: number;
   objects: number;
   vaultFiles: number;
+  /** The application role and how many privileges it held before and after. */
+  role: string;
+  privileges: number;
+  /** Statements that delete or rewrite history or the tables, refused to the application role after the restore. */
+  refused: number;
   ok: boolean;
   differences: string[];
   seconds: number;
@@ -43,6 +53,7 @@ export interface RehearsalReport {
 
 const MARKER = '.circle-hub-rehearsal';
 const BASE32 = '0123456789abcdefghjkmnpqrstvwxyz';
+const TABLES = ['rehearsal_records', 'rehearsal_index'];
 
 function syntheticId(): string {
   const bytes = randomBytes(26);
@@ -51,10 +62,17 @@ function syntheticId(): string {
   return out;
 }
 
-async function writeSyntheticRecords(session: SqlSession, count: number): Promise<void> {
+/** As the superuser role, which owns the Hub database: the tables, their append-only triggers and the grants. */
+async function createSyntheticTables(session: SqlSession, role: string): Promise<void> {
   await session.query('BEGIN');
+  await session.query(`CREATE FUNCTION rehearsal_append_only() RETURNS trigger LANGUAGE plpgsql AS $fn$
+    BEGIN
+      RAISE EXCEPTION 'append-only table %: % rejected', TG_TABLE_NAME, TG_OP;
+    END
+    $fn$`);
   await session.query(`CREATE TABLE rehearsal_records (
-      id text PRIMARY KEY,
+      seq bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+      id text NOT NULL UNIQUE,
       kind text NOT NULL,
       digest text NOT NULL,
       created_at timestamptz NOT NULL,
@@ -67,6 +85,16 @@ async function writeSyntheticRecords(session: SqlSession, count: number): Promis
       key text NOT NULL,
       value text NOT NULL,
       PRIMARY KEY (record_id, key))`);
+  for (const table of TABLES) {
+    await session.query(`CREATE TRIGGER ${table}_append_only BEFORE UPDATE OR DELETE ON ${table} FOR EACH ROW EXECUTE FUNCTION rehearsal_append_only()`);
+  }
+  await grantTables(session, role, TABLES);
+  await session.query('COMMIT');
+}
+
+/** As the application role, like the server: INSERT only. */
+async function writeSyntheticRecords(session: SqlSession, count: number): Promise<void> {
+  await session.query('BEGIN');
   const start = Date.parse('2026-01-01T00:00:00Z');
   for (let n = 0; n < count; n++) {
     const id = syntheticId();
@@ -145,10 +173,11 @@ export async function rehearse(options: RehearsalOptions = {}): Promise<Rehearsa
     await running.initialise();
     await ensureDatabaseRunning(running, { create: true });
     const database = running.target.database;
-    // Written as the application role, like the server's own tables.
+    const role = running.application.user;
+    await withSession(running.connector, database, (session) => createSyntheticTables(session, role));
     await withSession(running.applicationConnector, database, (session) => writeSyntheticRecords(session, options.records ?? 200));
     const written = await writeSyntheticFiles(layout, options.objects ?? 20);
-    const tablesBefore = await withSession(running.connector, database, summarizeTables);
+    const before = await withSession(running.connector, database, async (session) => ({ tables: await summarizeTables(session), privileges: await rolePrivileges(session, role) }));
     const filesBefore = await fileDigests(layout);
     const { dir: backup } = await createBackup({ layout, postgres: running, runner, now, label: 'rehearsal', ...(options.libpqBin ? { libpqBin: options.libpqBin } : {}) });
 
@@ -158,17 +187,32 @@ export async function rehearse(options: RehearsalOptions = {}): Promise<Rehearsa
 
     running = control();
     await restoreBackup({ layout, backupDir: backup, postgres: running, runner, now, ...(options.libpqBin ? { libpqBin: options.libpqBin } : {}) });
-    const tablesAfter = await withSession(running.connector, database, summarizeTables);
+    const after = await withSession(running.connector, database, async (session) => ({
+      tables: await summarizeTables(session),
+      privileges: await rolePrivileges(session, role),
+      problems: await roleProblems(session, role),
+    }));
     const filesAfter = await fileDigests(layout);
-    const differences = [...compareSummaries(tablesBefore, tablesAfter), ...compareFiles(filesBefore, filesAfter)];
+    const statements = [...new Set(TABLES.flatMap((table) => tamperingStatements(table)))];
+    const unrefused = await withSession(running.applicationConnector, database, (session) => unrefusedStatements(session, statements));
+    const differences = [
+      ...compareSummaries(before.tables, after.tables),
+      ...compareFiles(filesBefore, filesAfter),
+      ...comparePrivileges(before.privileges, after.privileges).map((line) => `应用角色 ${role} 的权限${line}`),
+      ...after.problems.map((problem) => `应用角色 ${role} ${problem}`),
+      ...unrefusedText(unrefused),
+    ];
     return {
       root,
       kept: options.keep === true,
       backup,
-      tables: tablesAfter.length,
-      rows: tablesAfter.reduce((sum, table) => sum + table.rows, 0),
+      tables: after.tables.length,
+      rows: after.tables.reduce((sum, table) => sum + table.rows, 0),
       objects: written.objects,
       vaultFiles: written.vault,
+      role,
+      privileges: after.privileges.length,
+      refused: statements.length - unrefused.length,
       ok: differences.length === 0,
       differences,
       seconds: (Date.now() - started) / 1000,

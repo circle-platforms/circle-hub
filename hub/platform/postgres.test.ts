@@ -63,7 +63,7 @@ test('initialise runs initdb with peer authentication and no password, only when
   ]);
   assert.ok(!initdb?.args.some((arg) => /pwfile|password/i.test(arg)));
   assert.match(await readFile(join(layout.db, 'postgresql.conf'), 'utf8'), /include 'circle-hub.conf'/);
-  assert.equal(await readFile(join(layout.db, 'pg_hba.conf'), 'utf8'), managedHba());
+  assert.equal(await readFile(join(layout.db, 'pg_hba.conf'), 'utf8'), managedHba('owner', 'circle_hub', 'circle_hub'));
   await writeFile(join(layout.db, 'PG_VERSION'), '18\n');
   const before = calls.length;
   assert.equal(await control.initialise(), false);
@@ -154,7 +154,7 @@ test('an uninitialised cluster is reported, and start refuses with the init hint
   await assert.rejects(control.start(), /还没初始化/);
 });
 
-test('managed files: configuration, single peer line and the owner-only ident map', () => {
+test('managed files: configuration, peer lines that keep the application role in the Hub database, and the owner-only ident map', () => {
   const layout = layoutAt('/srv/hub root');
   assert.equal(
     managedConf(layout, 5432),
@@ -175,15 +175,17 @@ test('managed files: configuration, single peer line and the owner-only ident ma
       '',
     ].join('\n'),
   );
-  const hba = managedHba().split('\n').filter((line) => line && !line.startsWith('#'));
-  assert.deepEqual(hba, ['local   all   all   peer   map=owner']);
+  const lines = (text: string) => text.split('\n').filter((line) => line && !line.startsWith('#'));
+  assert.deepEqual(lines(managedHba('owner', 'circle_hub', 'hub_db')), ['local   all   "owner"   peer   map=owner', 'local   "hub_db"   "circle_hub"   peer   map=owner']);
+  assert.deepEqual(lines(managedHba('same', 'same', 'hub_db')), ['local   all   "same"   peer   map=owner']);
   const ident = managedIdent('owner', 'circle_hub').split('\n').filter((line) => line && !line.startsWith('#'));
   assert.deepEqual(ident, ['owner   "owner"   "owner"', 'owner   "owner"   "circle_hub"']);
   assert.equal(managedIdent('same', 'same').split('\n').filter((line) => line && !line.startsWith('#')).length, 1);
 });
 
-test('role names that could break the configuration files are refused', () => {
+test('role and database names that could break the configuration files are refused', () => {
   const layout = layoutAt('/srv/hub');
   assert.throws(() => createPostgres({ layout, admin: 'bad"name' }), /角色名/);
   assert.throws(() => createPostgres({ layout, role: 'two words' }), /角色名/);
+  for (const database of ['bad"db', 'two words', 'new\nline', '']) assert.throws(() => createPostgres({ layout, database }), /数据库名/, JSON.stringify(database));
 });

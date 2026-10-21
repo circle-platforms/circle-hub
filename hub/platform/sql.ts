@@ -87,7 +87,7 @@ export interface TableSummary {
 }
 
 /**
- * Definition of a table digest (backup manifest circle-hub-backup@2). h = SHA-256 hex of the row's text ROW(t.*)::text
+ * Definition of a table digest (backup manifests from circle-hub-backup@2 on). h = SHA-256 hex of the row's text ROW(t.*)::text
  * (immune to a column named like the alias) under the pinned rendering settings; rows go into 4096 buckets by the first
  * three hex digits of h; a bucket's digest is SHA-256 of its sorted h concatenated; the table's digest is SHA-256 of
  * the lines `<bucket> <rows> <bucket digest>\n` in bucket order. Each aggregate holds at most one bucket's hashes, so

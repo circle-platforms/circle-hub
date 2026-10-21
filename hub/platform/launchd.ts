@@ -63,13 +63,18 @@ export function defaultLaunchAgentsDirectory(home: string = homedir()): string {
 
 export interface ServiceIdentity {
   home: string;
+  /** Operating-system account; its own role is the cluster's superuser, which owns the Hub database. */
   user: string;
+  /** `role` is the application role the service connects as. */
   database: DatabaseNames;
 }
 
 /**
  * The service's environment: the CIRCLE_HUB_* names hub/config reads (it refuses any other name under the prefix), all
  * given explicitly so the server never falls back to a default that differs from this data root, plus PATH, HOME, USER.
+ * CIRCLE_HUB_DATABASE_USER is the application role: `serve` connects as it and does not migrate. The deploy's migrate
+ * step runs `serve --migrate-only` with this same environment; that connects as the account's own role (the owner) and
+ * grants CIRCLE_HUB_DATABASE_USER (MIGRATE_ARGUMENTS in deploy.ts). hub/config has no name for the owner role.
  */
 export function serviceEnvironment(layout: Layout, settings: PlatformSettings, identity: ServiceIdentity): Record<string, string> {
   return {

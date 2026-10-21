@@ -1,18 +1,22 @@
 import assert from 'node:assert/strict';
 import { mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { userInfo } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { after, before, describe, test } from 'node:test';
 import { ENVIRONMENT, labelOf } from '../../contracts/generated/vocabulary.ts';
 import { isPlatformCommand, PLATFORM_COMMANDS, runPlatformCommand } from './cli.ts';
 import { createContext, postgresFor, type PlatformContext } from './context.ts';
+import { isMissingOrEmpty } from './files.ts';
 import { RELEASE_SCHEMA } from './release.ts';
 import { withSession } from './sql.ts';
-import { captureIo, exit, freePort, libpqAvailable, LIBPQ_MISSING, ok, recordingRunner, removeDir, socketPort, tempDir, type Call } from './test-support.ts';
+import { captureIo, exit, freePort, libpqAvailable, LIBPQ_MISSING, ok, ownerTables, recordingRunner, removeDir, socketPort, tempDir, type Call } from './test-support.ts';
 
 const KEY = /[0-9a-f]{64}/;
 const WORKTREE = fileURLToPath(new URL('../../', import.meta.url));
 const libpq = await libpqAvailable();
+/** The operating-system account, whose role owns the Hub database. */
+const OWNER = userInfo().username.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /** Fake security (an in-memory item) and fake launchctl; every other command runs for real behind the guard. */
 function fakeSystem() {
@@ -130,7 +134,15 @@ describe('platform CLI', () => {
     assert.equal((await run('init', '--environment', 'staging')).code, 2);
     assert.equal((await run('init', '--environment', 'test', '--port', '80')).code, 2);
     assert.equal((await runWith({ CIRCLE_HUB_PORT: '7999' }, 'init', '--environment', 'test', '--port', port)).code, 1, '--port and CIRCLE_HUB_PORT disagree');
+    // hub/config would accept these, but the migration could never grant such a role: every deploy would fail.
+    for (const name of ['hub-app', 'Hub_App', 'hub$app']) {
+      const refused = await runWith({ CIRCLE_HUB_DATABASE_USER: name }, 'init', '--environment', 'test', '--port', port);
+      assert.equal(refused.code, 1, name);
+      assert.ok(refused.err.includes(`错误：CIRCLE_HUB_DATABASE_USER 的写法不对：${name}`), refused.err);
+      assert.match(refused.err, /处理：应用角色名只能用小写字母、数字和下划线/);
+    }
     await assert.rejects(readFile(join(root, 'config', 'platform.json')), 'and nothing was written');
+    assert.ok(await isMissingOrEmpty(join(root, 'db')), 'and no cluster was made');
   });
 
   test('init writes and pins every value of the deployment, then runs a cluster; db start, stop and status', async () => {
@@ -139,7 +151,7 @@ describe('platform CLI', () => {
     assert.match(first.out, /已写入部署设置/);
     assert.match(first.out, /已初始化数据库目录/);
     assert.match(first.out, new RegExp(`环境类别：测试（test）；端口：127\\.0\\.0\\.1:${port}`));
-    assert.match(first.out, new RegExp(`数据库 circle_hub（角色 circle_hub，套接字 .*\\.s\\.PGSQL\\.${databasePort}）；钥匙串项：服务 circle-hub，账户 vault-master-key`));
+    assert.match(first.out, new RegExp(`数据库 circle_hub（属于角色 ${OWNER}，应用角色 circle_hub，套接字 .*\\.s\\.PGSQL\\.${databasePort}）；钥匙串项：服务 circle-hub，账户 vault-master-key`));
     const settings = JSON.parse(await readFile(join(root, 'config', 'platform.json'), 'utf8'));
     assert.equal(settings.environment, 'test');
     assert.equal(settings.port, Number(port));
@@ -217,9 +229,11 @@ describe('platform CLI', () => {
     for (const line of [
       /数据根：/,
       new RegExp(`环境类别：测试（test）；端口：127\\.0\\.0\\.1:${port}`),
-      /数据库 circle_hub（角色 circle_hub/,
+      /数据库 circle_hub（应用角色 circle_hub，套接字 /,
       /当前发布：abcdefabcdef/,
       /数据库：运行中/,
+      new RegExp(`^数据库 circle_hub 属于角色 ${OWNER}$`, 'm'),
+      /应用角色 circle_hub：只连接并按授权读写，不拥有任何对象/,
       /保险库主密钥：已在钥匙串/,
       /服务：未加载/,
       /备份：0 份/,
@@ -229,12 +243,49 @@ describe('platform CLI', () => {
     }
   });
 
+  test('status names an application role that owns an object, with the fix; the owner shown is the one the cluster reports', async () => {
+    const control = postgresFor(createContext({ CIRCLE_HUB_DATA_DIR: root }, { runner: system.runner }));
+    const owner = control.target.user;
+    // A large object the application role made itself: the Hub keeps running, backups and deploys refuse.
+    const [lo] = await withSession(control.applicationConnector, control.target.database, (s) => s.query('SELECT lo_create(0)::text AS oid'));
+    const objects = await run('status');
+    assert.match(objects.out, new RegExp(`应用角色 circle_hub：不正常，拥有 1 个对象（large object ${lo?.oid}）；Hub 照常运行，但备份和部署会拒绝；处理：以本机账户的角色 `));
+    await withSession(control.connector, control.target.database, (s) => s.query(`SELECT lo_unlink(${lo?.oid})`));
+    await ownerTables(control, ['CREATE TABLE handed_over (n int)'], ['handed_over']);
+    await withSession(control.connector, control.target.database, (s) => s.query('ALTER TABLE handed_over OWNER TO circle_hub'));
+    try {
+      const status = await run('status');
+      assert.equal(status.code, 0, status.err);
+      assert.match(status.out, /应用角色 circle_hub：不正常，拥有 1 个对象（table handed_over）；处理：.*执行「REASSIGN OWNED BY "circle_hub" TO "[^"]+";」/);
+      // A data root of an earlier platform version: the database itself belongs to the application role.
+      await withSession(control.connector, control.target.database, (s) => s.query('ALTER DATABASE circle_hub OWNER TO circle_hub'));
+      const old = await run('status');
+      assert.match(old.out, /^数据库 circle_hub 属于角色 circle_hub$/m);
+      assert.doesNotMatch(old.out, new RegExp(`属于角色 ${OWNER}`), 'never the account name in place of the real owner');
+      assert.match(old.out, /应用角色 circle_hub：不正常，.*拥有 2 个对象（database circle_hub、table handed_over）/);
+      const again = await run('init');
+      assert.equal(again.code, 0, again.err);
+      assert.match(again.out, /数据库 circle_hub（属于角色 circle_hub，应用角色 circle_hub，/);
+    } finally {
+      await withSession(control.connector, control.target.database, async (s) => {
+        await s.query(`ALTER DATABASE circle_hub OWNER TO "${owner}"`);
+        await s.query('GRANT CONNECT ON DATABASE circle_hub TO circle_hub');
+        await s.query('DROP TABLE handed_over');
+      });
+    }
+    assert.match((await run('status')).out, /应用角色 circle_hub：只连接并按授权读写，不拥有任何对象/);
+  });
+
   test('backup through the CLI names the data root first, and restore refuses a data root that has data', { skip: libpq ? false : LIBPQ_MISSING }, async () => {
+    const control = postgresFor(createContext({ CIRCLE_HUB_DATA_DIR: root }, { runner: system.runner }));
+    await ownerTables(control, ['CREATE TABLE synthetic_records (id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, body text NOT NULL)'], ['synthetic_records']);
+    await withSession(control.applicationConnector, control.target.database, (s) => s.query("INSERT INTO synthetic_records (body) VALUES ('合成')"));
     const backup = await run('backup', '--keep', '3');
     assert.equal(backup.code, 0, backup.err);
     assert.equal(backup.lines[0], `数据根：${root}`, 'the data root is printed before anything happens');
     const dir = /备份完成：(.+)$/m.exec(backup.out)?.[1];
     assert.ok(dir);
+    assert.match(backup.out, /数据库 1 张表 1 行/);
     assert.match(backup.out, /清单含每个文件的 SHA-256/);
     const refused = await run('restore', dir);
     assert.equal(refused.code, 1);

@@ -1,5 +1,12 @@
 // Restore of one backup into an empty data root. The manifest is verified first; nothing existing is ever overwritten.
 // A restore that fails half way moves its partial state to set-aside/ so the data root is empty again for a retry.
+//
+// Roles: pg_restore runs as the cluster's superuser role, which owns the Hub database (ensureDatabase creates it and the
+// application role first), with --no-owner, so every restored object belongs to that role whoever owned it where the dump
+// was taken. The GRANTs in the dump are kept: they are exactly what the migration of the release that wrote the data gave
+// the application role. Re-granting instead would need the records package's table list (RUNTIME_GRANTS), which the
+// platform may not import, and the restoring code's list could name tables the restored schema does not have yet. The
+// restore then proves that the application role holds exactly the privileges the manifest recorded and owns nothing.
 import { mkdir, rename } from 'node:fs/promises';
 import { join } from 'node:path';
 import { checkToolMajor, DUMP_FILE, libpqDirectory, libpqTools, permissions, verifyBackup } from './backup.ts';
@@ -8,6 +15,7 @@ import { copyFileHashed, exists, isMissingOrEmpty, listFiles, sha256File, slug, 
 import { DATA_ROOT_VARIABLE, ensureLayout, type Layout } from './layout.ts';
 import type { PostgresControl } from './postgres.ts';
 import { runCommand, tailLines, toolEnvironment, type CommandRunner } from './process.ts';
+import { comparePrivileges, rolePrivileges, roleProblems } from './roles.ts';
 import { compareSummaries, summarizeTables, withSession } from './sql.ts';
 
 /** Areas that hold Hub data. logs/, backups/, releases/ and config/ are not data. */
@@ -28,6 +36,8 @@ export interface RestoreReport {
   tables: number;
   rows: number;
   files: number;
+  /** Privileges of the application role, equal to those the manifest recorded. */
+  privileges: number;
   /** Config files left untouched because the data root already had a different version. */
   keptConfig: string[];
 }
@@ -67,6 +77,15 @@ export async function restoreBackup(options: RestoreOptions): Promise<RestoreRep
   const runner = options.runner ?? runCommand;
   const now = options.now ?? (() => new Date());
   const manifest = await verifyBackup(backupDir);
+  const role = postgres.application.user;
+  const recorded = manifest.database.application_role;
+  if (recorded.name !== role) {
+    // The dump grants to the recorded name; a cluster whose application role has another name has no such role.
+    throw new PlatformError(
+      `备份里的应用角色是 ${recorded.name}，这个数据根的部署设置是 ${role}：备份里的授权给的是 ${recorded.name}，不恢复`,
+      '让部署设置里的数据库角色（database.role）与备份一致，再恢复到空的数据根',
+    );
+  }
   await assertRestorable(layout);
   const tools = await libpqTools(libpqDirectory(options.libpqBin));
   // A dump from an older major restores into a newer one; pg_restore must match the server that receives it.
@@ -89,6 +108,7 @@ export async function restoreBackup(options: RestoreOptions): Promise<RestoreRep
   try {
     if (!(await postgres.initialise())) throw new PlatformError(`恢复前数据库目录应为空：${layout.db}`);
     await postgres.start();
+    // The database belongs to the superuser role; the application role exists before the dump's GRANTs name it.
     await postgres.ensureDatabase();
     const restored = await runner(
       tools.pg_restore,
@@ -96,12 +116,11 @@ export async function restoreBackup(options: RestoreOptions): Promise<RestoreRep
         `--dbname=${target.database}`,
         `--host=${target.socketDir}`,
         `--port=${target.port}`,
+        // As the superuser role, which owns the Hub database; no --role: nothing may belong to the application role.
         `--username=${target.user}`,
-        // Restored objects belong to the application role, whoever owned them where the dump was taken.
-        `--role=${postgres.application.user}`,
         '--no-password',
+        // Restored objects belong to the restoring role, whoever owned them where the dump was taken.
         '--no-owner',
-        '--no-privileges',
         '--exit-on-error',
         '--single-transaction',
         join(backupDir, DUMP_FILE),
@@ -114,14 +133,24 @@ export async function restoreBackup(options: RestoreOptions): Promise<RestoreRep
       const written = await copyFileHashed(source, join(layout.root, file.path), await permissions(source));
       if (written.sha256 !== file.sha256) throw new PlatformError(`复制 ${file.path} 时内容变了`);
     }
-    const tables = await withSession(postgres.connector, target.database, summarizeTables);
+    const { tables, privileges, problems } = await withSession(postgres.connector, target.database, async (session) => ({
+      tables: await summarizeTables(session),
+      privileges: await rolePrivileges(session, role),
+      problems: await roleProblems(session, role),
+    }));
     const differences = compareSummaries(manifest.database.tables, tables);
     if (differences.length > 0) throw new PlatformError(`恢复后的数据库与备份清单不一致：${differences.slice(0, 5).join('；')}`);
+    const changed = comparePrivileges(recorded.privileges, privileges);
+    if (changed.length > 0) {
+      throw new PlatformError(`恢复后应用角色 ${role} 的权限与备份时不同：${changed.slice(0, 5).join('；')}${changed.length > 5 ? ` 等 ${changed.length} 处` : ''}`);
+    }
+    if (problems.length > 0) throw new PlatformError(`恢复后应用角色 ${role} 不只是连接并按授权读写：${problems.join('、')}`);
     return {
       backup: backupDir,
       tables: tables.length,
       rows: tables.reduce((sum, table) => sum + table.rows, 0),
       files: copies.length,
+      privileges: privileges.length,
       keptConfig,
     };
   } catch (error) {

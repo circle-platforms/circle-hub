@@ -1,13 +1,16 @@
 // Persistent PostgreSQL from the embedded-postgres binaries pinned in node_modules (initdb, pg_ctl and postgres only).
 // The cluster has no TCP listener (listen_addresses = '') and one unix socket in <root>/run.
 //
-// Authentication, and why: the socket directory and the socket are private to the owner (0700), and pg_hba.conf has a
-// single `local all all peer map=owner` line. Peer authentication asks the kernel which operating-system user is on the
-// other end of the socket; the ident map lets only the account that owns the deployment in, as one of two roles: its own
-// superuser role (named after the account, used by the platform for initdb, pg_dump and pg_restore) and the application
-// role the server uses (circle_hub: owns the Hub database, not a superuser, so the server cannot run superuser-only
-// statements such as COPY ... TO PROGRAM). There is no password to store, leak or rotate; TCP, every other role mapping
-// and every other local user are refused.
+// Authentication, and why: the socket directory and the socket are private to the owner (0700), and pg_hba.conf has two
+// peer lines through the ident map `owner`: the superuser role may connect to every database, the application role only
+// to the Hub database. Peer authentication asks the kernel which operating-system user is on the other end of the
+// socket; the ident map lets only the account that owns the deployment in, as one of two roles: its own superuser role
+// (named after the account: initdb, the migrations, pg_dump and pg_restore; it owns the Hub database and every object in
+// it) and the application role the running server uses (circle_hub: not a superuser, owns nothing, only connects and
+// holds the grants the migration gives it, so it can neither run superuser-only statements such as COPY ... TO PROGRAM
+// nor drop, alter or disable the triggers of the append-only tables; see roles.ts). Kept out of postgres and template1,
+// where PUBLIC may connect and create temporary tables, it cannot leave objects there either. There is no password to
+// store, leak or rotate; TCP, every other role mapping and every other local user are refused.
 import { access, appendFile, chmod, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { userInfo } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -77,7 +80,10 @@ export interface PostgresControl {
   /** Fast shutdown; true when it stopped a running server. */
   stop(): Promise<boolean>;
   status(): Promise<PostgresStatus>;
-  /** Creates the application role and the Hub database it owns when missing; true when it created the database. */
+  /**
+   * Creates the application role and the Hub database when missing; true when it created the database. The database
+   * belongs to the superuser role; the application role gets CONNECT only (the migration grants the rest).
+   */
   ensureDatabase(): Promise<boolean>;
   /** True when the application role and the Hub database both exist (the server must be running). */
   databaseExists(): Promise<boolean>;
@@ -85,7 +91,9 @@ export interface PostgresControl {
 
 const CODE_ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const TOOLS = ['initdb', 'pg_ctl', 'postgres'] as const;
+/** Names written into pg_hba.conf and pg_ident.conf (quoted): nothing that could end the quotes or the field. */
 const ROLE_NAME = /^[A-Za-z0-9._$-]{1,63}$/;
+const DATABASE_NAME_RULE = /^[A-Za-z0-9_$-]{1,63}$/;
 const MANAGED_CONF = 'circle-hub.conf';
 const IDENT_MAP = 'owner';
 
@@ -163,13 +171,15 @@ export function managedConf(layout: Layout, port: number): string {
   ].join('\n');
 }
 
-export function managedHba(): string {
-  return [
+/** The superuser role may connect to every database, the application role only to the Hub database. */
+export function managedHba(admin: string, role: string, database: string): string {
+  const lines = [
     '# Managed by circle-hub and rewritten at every start; do not edit.',
     `# Unix socket only. Peer authentication through the "${IDENT_MAP}" map in pg_ident.conf: only the deployment owner, as listed roles.`,
-    `local   all   all   peer   map=${IDENT_MAP}`,
-    '',
-  ].join('\n');
+    `local   all   "${admin}"   peer   map=${IDENT_MAP}`,
+  ];
+  if (role !== admin) lines.push(`local   "${database}"   "${role}"   peer   map=${IDENT_MAP}`);
+  return `${lines.join('\n')}\n`;
 }
 
 export function managedIdent(admin: string, role: string): string {
@@ -197,6 +207,7 @@ export function createPostgres(options: PostgresOptions): PostgresControl {
   }
   const port = options.port ?? DATABASE_PORT;
   const database = options.database ?? DATABASE_NAME;
+  if (!DATABASE_NAME_RULE.test(database)) throw new PlatformError(`数据库名只能含字母、数字、下划线、$ 和连字符：${database}`);
   const target: DatabaseTarget = { socketDir: layout.run, port, user: admin, database };
   const application: DatabaseTarget = { ...target, user: role };
   const connector = options.connector ?? socketConnector(target);
@@ -224,7 +235,7 @@ export function createPostgres(options: PostgresOptions): PostgresControl {
 
   const writeManagedFiles = async (): Promise<void> => {
     await writeFile(join(layout.db, MANAGED_CONF), managedConf(layout, port), { mode: 0o600 });
-    await writeFile(join(layout.db, 'pg_hba.conf'), managedHba(), { mode: 0o600 });
+    await writeFile(join(layout.db, 'pg_hba.conf'), managedHba(admin, role, database), { mode: 0o600 });
     await writeFile(join(layout.db, 'pg_ident.conf'), managedIdent(admin, role), { mode: 0o600 });
   };
 
@@ -308,6 +319,9 @@ export function createPostgres(options: PostgresOptions): PostgresControl {
     },
 
     async ensureDatabase() {
+      if (role === admin) {
+        throw new PlatformError(`应用角色 ${role} 与超级用户角色同名：服务器会以超级用户运行，只追加的约束不成立`, '新数据根在 init 之前用 CIRCLE_HUB_DATABASE_USER 选另一个角色名');
+      }
       return withSession(connector, 'postgres', async (session) => {
         const roles = await session.query('SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = $1', [role]);
         if (roles.length === 0) {
@@ -315,7 +329,12 @@ export function createPostgres(options: PostgresOptions): PostgresControl {
         }
         const databases = await session.query('SELECT 1 FROM pg_catalog.pg_database WHERE datname = $1', [database]);
         if (databases.length > 0) return false;
-        await session.query(`CREATE DATABASE ${quoteIdentifier(database)} OWNER ${quoteIdentifier(role)}`);
+        // The database belongs to the cluster's superuser role, never to the application role: the owner of a database owns its
+        // public schema (pg_database_owner) and may drop the append-only tables, so the application role only connects and
+        // gets the grants the records package gives it (README decision 16).
+        await session.query(`CREATE DATABASE ${quoteIdentifier(database)}`);
+        await session.query(`REVOKE ALL ON DATABASE ${quoteIdentifier(database)} FROM PUBLIC`);
+        await session.query(`GRANT CONNECT ON DATABASE ${quoteIdentifier(database)} TO ${quoteIdentifier(role)}`);
         return true;
       });
     },
@@ -330,6 +349,14 @@ export function createPostgres(options: PostgresOptions): PostgresControl {
       });
     },
   };
+}
+
+/** Owner of the Hub database (pg_database.datdba), or undefined when there is no such database. The server must be running. */
+export async function databaseOwner(control: PostgresControl): Promise<string | undefined> {
+  const rows = await withSession(control.connector, 'postgres', (session) =>
+    session.query('SELECT pg_catalog.pg_get_userbyid(datdba)::text AS owner FROM pg_catalog.pg_database WHERE datname = $1', [control.target.database]),
+  );
+  return rows[0] === undefined ? undefined : String(rows[0].owner);
 }
 
 /**

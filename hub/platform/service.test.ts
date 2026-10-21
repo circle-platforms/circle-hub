@@ -6,6 +6,7 @@ import { ensureLayout, layoutAt } from './layout.ts';
 import { createPostgres } from './postgres.ts';
 import { ensureHubDatabase, hubKeyProvider } from './service.ts';
 import { newSettingsFile, writeSettingsFile } from './settings.ts';
+import { withSession } from './sql.ts';
 import { ok, recordingRunner, removeDir, socketPort, tempDir } from './test-support.ts';
 
 const roots: string[] = [];
@@ -38,6 +39,31 @@ test('ensureHubDatabase starts the cluster named by the service environment, nev
     await writeSettingsFile(layout, newSettingsFile({ environment: 'test', database: { port: Number(port) } }));
     assert.deepEqual(await ensureHubDatabase(env), { started: false, created: false }, 'agrees with the settings');
     await assert.rejects(ensureHubDatabase({ ...env, CIRCLE_HUB_DATABASE_NAME: 'circle_hub_dev' }), /CIRCLE_HUB_DATABASE_NAME 是 circle_hub_dev，部署设置里是 circle_hub/);
+    // A database in which the application role owns something (an earlier platform version) is not served.
+    await withSession(control.connector, control.target.database, async (s) => {
+      await s.query('CREATE TABLE handed_over (n int)');
+      await s.query('ALTER TABLE handed_over OWNER TO circle_hub');
+    });
+    const warnings: string[] = [];
+    const warn = (line: string) => warnings.push(line);
+    await assert.rejects(ensureHubDatabase(env, { warn }), (error: unknown) => {
+      assert.match((error as Error).message, /^启动之前，应用角色 circle_hub 应当只能连接并按授权读写，现在却拥有 1 个对象（table handed_over）/);
+      assert.match(String((error as { hint?: string }).hint), /REASSIGN OWNED BY "circle_hub"/);
+      return true;
+    });
+    // A large object the application role made itself (any role may) gives it no power over history: serve warns only.
+    const [lo] = await withSession(control.applicationConnector, control.target.database, (s) => s.query('SELECT lo_create(0)::text AS oid'));
+    await assert.rejects(ensureHubDatabase(env, { warn }), /现在却拥有 2 个对象（large object \d+、table handed_over）：Hub 以它运行/, 'not together with a table');
+    await withSession(control.connector, control.target.database, (s) => s.query('DROP TABLE handed_over'));
+    assert.deepEqual(warnings, []);
+    assert.deepEqual(await ensureHubDatabase(env, { warn }), { started: false, created: false });
+    assert.equal(warnings.length, 1);
+    assert.match(warnings[0]!, new RegExp(`^注意：应用角色 circle_hub 拥有 1 个对象（large object ${lo?.oid}），都是不需授权就能建的对象，Hub 照常启动，但备份和部署会拒绝；处理：`));
+    assert.match(warnings[0]!, /执行「REASSIGN OWNED BY "circle_hub" TO "[^"]+";」$/);
+    assert.doesNotMatch(warnings[0]!, /先停掉服务/);
+    await withSession(control.connector, control.target.database, (s) => s.query(`SELECT lo_unlink(${lo?.oid})`));
+    assert.deepEqual(await ensureHubDatabase(env, { warn }), { started: false, created: false });
+    assert.equal(warnings.length, 1, 'nothing to warn about any more');
   } finally {
     await control.stop();
   }

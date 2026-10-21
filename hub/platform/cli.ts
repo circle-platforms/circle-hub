@@ -13,10 +13,11 @@ import { isMissingOrEmpty, withLock } from './files.ts';
 import { checkHealth, HEALTH_PATH, portAnswers } from './health.ts';
 import { checkNode, serviceDefinition, stableNodePath } from './launchd.ts';
 import { DATA_ROOT_VARIABLE, ensureLayout, socketFile, type Layout } from './layout.ts';
-import { ensureDatabaseRunning } from './postgres.ts';
+import { databaseOwner, ensureDatabaseRunning } from './postgres.ts';
 import { rehearse } from './rehearse.ts';
 import { readCurrentRelease, type ReleaseRef } from './release.ts';
 import { restoreBackup } from './restore.ts';
+import { inspectRole, roleFixHint } from './roles.ts';
 import {
   environmentText,
   newSettingsFile,
@@ -29,6 +30,7 @@ import {
   type PlatformSettings,
   type PlatformSettingsFile,
 } from './settings.ts';
+import { withSession } from './sql.ts';
 
 export interface PlatformIo {
   stdout(line: string): void;
@@ -91,9 +93,10 @@ function parseCount(text: string, name: string): number {
   return Number(text);
 }
 
-function databaseText(layout: Layout, settings: PlatformSettings): string {
+/** `owner` is the database's owner as the running cluster reports it (pg_database.datdba); left out when not known. */
+function databaseText(layout: Layout, settings: PlatformSettings, owner?: string): string {
   const { name, role, port } = settings.database;
-  return `数据库 ${name}（角色 ${role}，套接字 ${socketFile(layout, port)}）；钥匙串项：服务 ${settings.keychainService}，账户 ${settings.keychainAccount}`;
+  return `数据库 ${name}（${owner === undefined ? '' : `属于角色 ${owner}，`}应用角色 ${role}，套接字 ${socketFile(layout, port)}）；钥匙串项：服务 ${settings.keychainService}，账户 ${settings.keychainAccount}`;
 }
 
 /** Refuses while a deploy or rollback is unfinished: its state must be finished first, and its backups kept. */
@@ -150,7 +153,7 @@ const init: Handler = async (args, context, io) => {
   if (created) io.stdout(`已建数据库 ${cluster.target.database}`);
   io.stdout(`数据根：${layout.root}`);
   io.stdout(`环境类别：${environmentText(settings.environment)}；端口：127.0.0.1:${settings.port}`);
-  io.stdout(databaseText(layout, settings));
+  io.stdout(databaseText(layout, settings, await databaseOwner(cluster)));
   io.stdout('下一步：circle-hub key init，然后 circle-hub deploy');
   return 0;
 };
@@ -294,6 +297,7 @@ const restore: Handler = async (args, context, io) => {
     const cluster = postgresFor(target, (await readCurrentRelease(context.layout))?.dir);
     const report = await restoreBackup({ layout: context.layout, backupDir: dir, postgres: cluster, runner: context.runner, libpqBin: context.libpqBin, now: context.now });
     io.stdout(`已从 ${dir} 恢复：${report.tables} 张表 ${report.rows} 行，与清单一致；文件 ${report.files} 个；数据库在运行`);
+    io.stdout(`数据库与表属于角色 ${cluster.target.user}；应用角色 ${cluster.application.user} 的 ${report.privileges} 项权限与备份时一致，不拥有任何对象`);
     if (report.keptConfig.length > 0) io.stdout(`这些设置文件与备份里的不同，保留了数据根里现有的：${report.keptConfig.join('、')}`);
     return 0;
   });
@@ -333,7 +337,8 @@ const rehearseCommand: Handler = async (args, context, io) => {
   const report = await rehearse({ runner: context.runner, libpqBin: context.libpqBin, binariesRoot: context.codeRoot, keep: values.keep === true, now: context.now });
   io.stdout(`演练数据根：${report.root}${report.kept ? '（保留）' : '（已删除）'}`);
   io.stdout(`写入：${report.tables} 张表 ${report.rows} 行，${report.objects} 个对象，${report.vaultFiles} 个保险库文件`);
-  if (report.ok) io.stdout('恢复后核对：行数、表摘要与文件摘要全部一致');
+  io.stdout(`应用角色 ${report.role}：恢复后 ${report.privileges} 项权限，删改历史或表结构的 ${report.refused} 条语句被拒绝`);
+  if (report.ok) io.stdout('恢复后核对：行数、表摘要、文件摘要与应用角色的权限全部一致，应用角色不拥有任何对象');
   else for (const line of report.differences) io.stderr(`不一致：${line}`);
   io.stdout(`用时 ${report.seconds.toFixed(1)} 秒`);
   return report.ok ? 0 : 1;
@@ -350,6 +355,7 @@ const status: Handler = async (args, context, io) => {
   }
   const settings = resolveSettings(file, context.env, layout);
   io.stdout(`环境类别：${environmentText(settings.environment)}；端口：127.0.0.1:${settings.port}`);
+  // The owner is printed only from the running cluster: a data root of an earlier platform version has another one.
   io.stdout(databaseText(layout, settings));
   const unsure = (subject: string, error: unknown) => io.stdout(`${subject}：无法确认（${messageOf(error)}）`);
   try {
@@ -367,8 +373,25 @@ const status: Handler = async (args, context, io) => {
     unsure('当前发布', error);
   }
   try {
-    const db = await postgresFor(context, current?.dir).status();
+    const cluster = postgresFor(context, current?.dir);
+    const db = await cluster.status();
     io.stdout(`数据库：${!db.initialised ? '未初始化' : db.running ? `运行中${db.pid ? `（PID ${db.pid}）` : ''}` : '已停止'}`);
+    if (db.running) {
+      try {
+        const owner = await databaseOwner(cluster);
+        io.stdout(owner === undefined ? `数据库 ${cluster.target.database}：不存在` : `数据库 ${cluster.target.database} 属于角色 ${owner}`);
+      } catch (error) {
+        unsure('数据库的属主', error);
+      }
+      try {
+        const role = cluster.application.user;
+        const report = await withSession(cluster.connector, cluster.target.database, (session) => inspectRole(session, role));
+        const effect = report.withoutPrivilegeOnly ? '；Hub 照常运行，但备份和部署会拒绝' : '';
+        io.stdout(report.problems.length === 0 ? `应用角色 ${role}：只连接并按授权读写，不拥有任何对象` : `应用角色 ${role}：不正常，${report.problems.join('、')}${effect}；处理：${roleFixHint(cluster, report)}`);
+      } catch (error) {
+        unsure('应用角色', error);
+      }
+    }
   } catch (error) {
     unsure('数据库', error);
   }

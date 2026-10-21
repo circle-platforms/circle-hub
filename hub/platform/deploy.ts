@@ -1,7 +1,8 @@
-// Deploy and rollback. deploy: build releases/<id> (git archive or copy, npm ci) and check its PostgreSQL major while the
-// Hub keeps running -> stop service -> backup -> stop database -> switch current -> start database on the new binaries
-// -> migrate (server entry with --migrate-only) -> start service -> GET /healthz -> record. On failure the service is
-// stopped, data touched by the migration is set aside and the pre-deploy backup restored, current points back and the
+// Deploy and rollback. deploy: build releases/<id> (git archive or copy, npm ci) and check its PostgreSQL major and the
+// application role while the Hub keeps running -> stop service -> backup -> stop database -> switch current -> start
+// database on the new binaries -> migrate (server entry with --migrate-only, as the owner role; see MIGRATE_ARGUMENTS)
+// -> start service -> GET /healthz -> record. On failure the service is stopped, data touched by the migration is set
+// aside and the pre-deploy backup restored, current points back and the
 // previous release is started again. While an operation changes things, releases/operation.json says how far it got:
 // an operation that died (killed, power loss) or whose recovery could not finish is finished by the next deploy or
 // rollback. A signal (Ctrl-C, closed terminal, SIGTERM) lets the running step finish, then stops and recovers.
@@ -22,9 +23,18 @@ import { dataMajorMismatch, ensureDatabaseRunning } from './postgres.ts';
 import { tailLines, type CommandRunner } from './process.ts';
 import { findRelease, prepareRelease, readCurrentRelease, switchCurrent, type ReleaseRef, type ReleaseSource } from './release.ts';
 import { restoreBackup, setAside } from './restore.ts';
-import type { PlatformSettings } from './settings.ts';
+import { assertApplicationRole } from './roles.ts';
+import { assertApplicationRoleName, type PlatformSettings } from './settings.ts';
 
-/** Arguments after bin/circle-hub that run the server's migrations and exit. */
+/**
+ * Arguments after bin/circle-hub that run the server's migrations and exit. Roles (records decision 16): the child runs
+ * as this operating-system account with the service environment, so CIRCLE_HUB_DATABASE_USER names the application role.
+ * `serve --migrate-only` connects as the account's own role, the cluster's superuser that owns the Hub database (hub/server
+ * takes it from the operating-system account), applies the migrations as that owner and grants the application role
+ * through migrateRecords(..., { runtimeRole }). The service later runs `serve` without --migrate: it connects as the
+ * application role and only verifies the migrations. After the child the deploy checks that the application role still
+ * owns nothing.
+ */
 export const MIGRATE_ARGUMENTS = ['serve', '--migrate-only'] as const;
 
 export const DeploymentEntry = z
@@ -725,17 +735,27 @@ export function systemDeployHost(context: PlatformContext, settings: PlatformSet
       return { id: prepared.id, dir: prepared.dir };
     },
     checkRelease: async (release) => {
-      const status = await cluster(release).status();
+      const control = cluster(release);
+      const status = await control.status();
       if (status.dataMajor !== undefined && status.dataMajor !== status.binaryMajor) throw dataMajorMismatch(status.dataMajor, status.binaryMajor);
+      // While the Hub runs its cluster runs: a database the application role owns things in (an earlier platform
+      // version) is refused before anything stops. A stopped cluster is checked by the pre-deploy backup.
+      if (status.running) await assertApplicationRole(control, '部署之前，');
     },
     switchCurrent: (release) => switchCurrent(layout, release?.id),
     migrate: async (release) => {
+      const owner = identity.user;
+      const runtime = identity.database.role;
+      const note = `迁移以本机账户的角色 ${owner}（拥有 Hub 数据库）执行，并授权应用角色 ${runtime}；之后服务以 ${runtime} 连接，不迁移`;
+      own.log(note);
+      await appendLine(deployLogPath(own), JSON.stringify({ at: own.now().toISOString(), note }));
       const result = await runner(await node(), [join(release.dir, 'bin', 'circle-hub'), ...MIGRATE_ARGUMENTS], {
         cwd: release.dir,
         env: serviceEnvironment(layout, settings, identity),
         timeoutMs: 30 * 60 * 1000,
       });
       if (result.code !== 0) throw new PlatformError(`迁移失败（退出码 ${result.code}）：${tailLines(result.stderr || result.stdout) || '没有输出'}`);
+      await assertApplicationRole(cluster(release), '迁移之后，');
     },
     waitHealthy: async (release) => {
       await waitForHealth(settings.port, { release: release.id, totalMs: own.healthTimeoutMs });
@@ -768,6 +788,8 @@ async function guarded<T>(context: PlatformContext, fn: (guard: SignalGuard) => 
 /** Deploys `source` to the data root of `context`, then prunes old backups (the ones a rollback may need are kept). */
 export async function deploy(context: PlatformContext, source: ReleaseSource, host?: DeployHost): Promise<DeployReport> {
   const settings = await settingsOf(context);
+  // Settings written before the rule existed: the migration would refuse to grant such a role after the service stopped.
+  assertApplicationRoleName(settings.database.role);
   return guarded(context, async (guard) => {
     const report = await runDeploy(host ?? systemDeployHost(context, settings, source, guard), context.now);
     try {

@@ -14,7 +14,10 @@ import { deploymentDatabase, readSettings, sameDatabase, SERVICE_LABEL, type Dat
 export interface PlatformContext {
   env: NodeJS.ProcessEnv;
   layout: Layout;
-  /** Operating-system account that owns the deployment; also the cluster's superuser role. */
+  /**
+   * Operating-system account that owns the deployment; also the cluster's superuser role, which owns the Hub database and
+   * every object in it and runs initdb, the migrations, pg_dump and pg_restore.
+   */
   user: string;
   uid: number;
   home: string;
