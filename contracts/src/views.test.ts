@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { ImpactView, ViewEntry } from './views.ts';
-import { schemas } from './views.ts';
+import { FacetView, ImpactView, IndexView, ViewEntry, schemas } from './views.ts';
 
 const H1 = 'a'.repeat(64);
 const H2 = 'b'.repeat(64);
@@ -48,5 +47,47 @@ test('a view entry carries a tree reference, never a source reference', () => {
 });
 
 test('the view is registered for the generated schemas', () => {
-  assert.deepEqual(Object.keys(schemas), ['impact-view@1']);
+  assert.deepEqual(Object.keys(schemas), ['impact-view@1', 'facet-view@1', 'index-view@1']);
+});
+
+test('a facet view counts entries by the values of data fields', () => {
+  const facet = {
+    schema: 'facet-view@1',
+    product: 'widget',
+    build: { build: 'Rel_W_1_0_2', root: ROOT_B },
+    kind: 'case',
+    by: ['line', 'has_expected'],
+    rows: [
+      { values: { line: '1.0', has_expected: true }, count: 12 },
+      { values: { line: '1.0', has_expected: false }, count: 2 },
+      { values: { line: null, has_expected: true }, count: 1 },
+    ],
+    total: 15,
+    truncated: false,
+    notes: [],
+  };
+  assert.ok(FacetView.safeParse(facet).success);
+  assert.ok(!FacetView.safeParse({ ...facet, by: [] }).success, 'at least one field');
+  assert.ok(!FacetView.safeParse({ ...facet, by: ['Line'] }).success, 'a field name is lower case');
+  assert.ok(!FacetView.safeParse({ ...facet, rows: [{ values: { line: { nested: 1 } }, count: 1 }] }).success, 'values are scalars');
+  assert.ok(!FacetView.safeParse({ ...facet, rows: [{ values: {}, count: 0 }] }).success, 'a row counts at least one entry');
+});
+
+test('an index view maps a data value to the entries that carry it', () => {
+  const index = {
+    schema: 'index-view@1',
+    product: 'widget',
+    build: { build: 'Rel_W_1_0_2', root: ROOT_B },
+    kind: 'case',
+    key: 'defects',
+    keys: { '61061': [H3] },
+    entries: { [H3]: entry(H3, 'case', 'a case') },
+    total_keys: 1,
+    total_entries: 1,
+    truncated: false,
+    notes: [],
+  };
+  assert.ok(IndexView.safeParse(index).success);
+  assert.ok(!IndexView.safeParse({ ...index, keys: { '61061': ['nothex'] } }).success, 'entries are named by digest');
+  assert.ok(!IndexView.safeParse({ ...index, key: 'Defects' }).success);
 });

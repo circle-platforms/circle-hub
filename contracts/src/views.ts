@@ -4,6 +4,9 @@
 // its tree reference. The impact view answers "what changed between two builds, and which entries of another kind sit on the
 // changed nodes" (K01 R[1]: the version difference is the regression scope).
 //   knowledge:impact:<product>:<from build>..<to build>[?changed=definition,behaviour&attached=case]
+//   knowledge:facets:<product>:<build>?kind=case&by=line,module,has_expected   (counts of entries by data fields)
+//   knowledge:index:<product>:<build>?kind=case&key=defects[&only=1,2,3]       (data value -> the entries that carry it)
+// `<build>` is a build name of any name family; the reader resolves aliases and answers for the root the build uses.
 import { z } from 'zod';
 import { ChangeKindSchema, EntryKindSchema } from '../generated/vocabulary.ts';
 import { Sha256 } from './common.ts';
@@ -62,6 +65,54 @@ export const ImpactView = z.strictObject({
 });
 export type ImpactView = z.infer<typeof ImpactView>;
 
+// ---------------------------------------------------------------- facets: counts of entries by the values of data fields
+
+/** Most rows one facet answer holds. */
+export const MAX_FACET_ROWS = 20000;
+/** A data field name an entry carries at the top level of its data. */
+export const DataFieldName = z.string().regex(/^[a-z][a-z0-9_]{0,40}$/);
+
+const FacetValue = z.union([z.string(), z.number(), z.boolean(), z.null()]);
+
+export const FacetView = z.strictObject({
+  schema: z.literal('facet-view@1'),
+  product: z.string().min(1),
+  build: z.strictObject({ build: z.string().min(1), root: Sha256 }),
+  kind: EntryKindSchema.describe('the kind of the entries counted'),
+  by: z.array(DataFieldName).min(1).max(6).describe('data fields of the entries; a field that holds a list counts the entry once per element, a missing field is null'),
+  rows: z
+    .array(z.strictObject({ values: z.record(DataFieldName, FacetValue), count: z.number().int().positive() }))
+    .max(MAX_FACET_ROWS)
+    .describe('one row per distinct combination, sorted by the values in code-unit order'),
+  total: z.number().int().nonnegative().describe('entries of the kind in the root, whatever the fields'),
+  truncated: z.boolean(),
+  notes: z.array(z.string()),
+});
+export type FacetView = z.infer<typeof FacetView>;
+
+// ---------------------------------------------------------------- index: the entries that carry a data value
+
+/** Most entries one index answer holds in total, and most per key. */
+export const MAX_INDEX_ENTRIES = 100000;
+export const MAX_INDEX_PER_KEY = 2000;
+
+export const IndexView = z.strictObject({
+  schema: z.literal('index-view@1'),
+  product: z.string().min(1),
+  build: z.strictObject({ build: z.string().min(1), root: Sha256 }),
+  kind: EntryKindSchema,
+  key: DataFieldName.describe('the data field indexed; a list field is indexed by each of its elements'),
+  keys: z.record(z.string(), z.array(Sha256).max(MAX_INDEX_PER_KEY)).describe('field value -> digests of the entries that carry it, sorted'),
+  entries: z.record(Sha256, ViewEntry).describe('those entries, once'),
+  total_keys: z.number().int().nonnegative(),
+  total_entries: z.number().int().nonnegative(),
+  truncated: z.boolean(),
+  notes: z.array(z.string()),
+});
+export type IndexView = z.infer<typeof IndexView>;
+
 export const schemas: Record<string, z.ZodType> = {
   'impact-view@1': ImpactView,
+  'facet-view@1': FacetView,
+  'index-view@1': IndexView,
 };
