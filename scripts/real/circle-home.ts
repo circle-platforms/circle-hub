@@ -22,6 +22,8 @@ export const SERVER_NAME = 'hub';
 export const TOKEN_SECRET = 'HUB_TOKEN';
 /** The Hub's tool names as Circle shows them: <server name>_<tool>. */
 export const HUB_TOOLS = ['list_task_packs', 'upload_file', 'start_run', 'get_nodes', 'resolve_reference', 'submit_result'] as const;
+/** Circle's own planning tool has no effect outside the conversation; every other built-in tool stays denied. */
+export const INTERNAL_TOOLS_ALLOWED = ['write_todos'] as const;
 
 const SECTION_OF = { glm: 'GLM', qwen: '千问' } as const;
 const MODEL_SECTION_OF = { glm: 'glm', qwen: 'qwen' } as const;
@@ -51,8 +53,8 @@ export function endpointFrom(entries: EnvEntry[], provider: Options['provider'],
   throw new Error(`环境文件的“${section}”一节里没有可用的地址和密钥对`);
 }
 
-const HOOK = `// Lets only the Hub's tools run in this Circle folder; every other tool call is denied.
-const allowed = new Set(${JSON.stringify(HUB_TOOLS.map((t) => `${SERVER_NAME}_${t}`))});
+const HOOK = `// Lets only the Hub's tools (and Circle's own todo list) run in this Circle folder; every other tool call is denied.
+const allowed = new Set(${JSON.stringify([...HUB_TOOLS.map((t) => `${SERVER_NAME}_${t}`), ...INTERNAL_TOOLS_ALLOWED])});
 let input = '';
 process.stdin.setEncoding('utf8');
 for await (const chunk of process.stdin) input += chunk;
@@ -152,7 +154,7 @@ export function main(argv: string[], env: NodeJS.ProcessEnv, out: (line: string)
     out(`已写入专用 Circle 目录（${written.files.length} 个文件，权限 0600）`);
     out(`模型：${endpoint.model}，协议 ${endpoint.protocol}，密钥长度 ${endpoint.apiKey.length}，来源 ${endpoint.sources.join('、')}`);
     out(`中枢令牌：已存为密钥 ${TOKEN_SECRET}，长度 ${token.length}`);
-    out(`受保护文件：${basename(options.envFile)}；钩子只放行 ${HUB_TOOLS.length} 个中枢工具；工作目录为空目录`);
+    out(`受保护文件：${basename(options.envFile)}；钩子只放行 ${HUB_TOOLS.length} 个中枢工具和待办清单；工作目录为空目录`);
     return 0;
   } catch (error) {
     out(`失败：${(error as Error).message}`);

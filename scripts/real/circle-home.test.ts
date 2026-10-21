@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { HUB_TOOLS, SERVER_NAME, TOKEN_SECRET, endpointFrom, main, parseArgs, writeHome } from './circle-home.ts';
+import { HUB_TOOLS, INTERNAL_TOOLS_ALLOWED, SERVER_NAME, TOKEN_SECRET, endpointFrom, main, parseArgs, writeHome } from './circle-home.ts';
 import { parseEnvText } from './lib/env-file.ts';
 
 // Invented content: section names follow the owner's file layout, every value is made up.
@@ -74,7 +74,7 @@ test('writeHome writes private files, keeps the token out of settings and refuse
   }
 });
 
-test('the hook allows exactly the six Hub tools and denies everything else, including unreadable input', () => {
+test('the hook allows exactly the six Hub tools and the todo list and denies everything else, including unreadable input', () => {
   const dir = scratch();
   try {
     const endpoint = endpointFrom(entries, 'qwen');
@@ -86,6 +86,7 @@ test('the hook allows exactly the six Hub tools and denies everything else, incl
       return JSON.parse(r.stdout).decision;
     };
     for (const t of HUB_TOOLS) assert.equal(decide(JSON.stringify({ event: 'before_tool', tool_name: `${SERVER_NAME}_${t}` })), 'allow', t);
+    for (const t of INTERNAL_TOOLS_ALLOWED) assert.equal(decide(JSON.stringify({ event: 'before_tool', tool_name: t })), 'allow', t);
     for (const t of ['bash', 'webfetch', 'websearch', 'write_file', 'read_file', `${SERVER_NAME}_other`, `hubx_start_run`]) {
       assert.equal(decide(JSON.stringify({ event: 'before_tool', tool_name: t })), 'deny', t);
     }
