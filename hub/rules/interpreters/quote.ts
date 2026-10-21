@@ -1,0 +1,51 @@
+// quote@1: every quotation appears verbatim in the fragment its reference resolves to. White space differences only are
+// ignored; the rule is quoteMatches in text.ts and must agree with hub/refs (shared vectors: quote-vectors.json).
+import { QuoteTable, type CheckOutcome } from '../../../contracts/src/tables.ts';
+import { getAt, joinPointer, selectAll } from '../json.ts';
+import { baseFor, isReferenceUri, quoted, refuteProtocol, support, unknown } from '../outcome.ts';
+import { collapseWhitespace, quoteInCollapsed } from '../text.ts';
+import { defineInterpreter, pathIssues } from './define.ts';
+
+export const quoteInterpreter = defineInterpreter({
+  id: 'quote@1',
+  codes: ['QUOTE_MISMATCH'],
+  schema: QuoteTable,
+  check: (table) => pathIssues(table.quotes.map((q, i): [string, string] => [`/quotes/${i}/select`, q.select])),
+  run(table, request) {
+    const base = baseFor(request.subject, table);
+    const outcomes: CheckOutcome[] = [];
+    // A fragment can be megabytes and quoted many times: collapse it once per run.
+    const collapsed = new Map<string, string>();
+    for (const rule of table.quotes) {
+      for (const selected of selectAll(request.subject, rule.select) ?? []) {
+        const text = getAt(selected.value, rule.text);
+        const reference = getAt(selected.value, rule.reference);
+        const pointer = joinPointer(selected.pointer, rule.text);
+        if (!text.found || typeof text.value !== 'string' || !reference.found || !isReferenceUri(reference.value)) {
+          outcomes.push(unknown(base, 'missing_input', `${selected.pointer} 的引文缺少原文或有效的引用`, { pointer: selected.pointer }));
+          continue;
+        }
+        const ref = reference.value;
+        const fragment = request.sources?.text(ref);
+        if (fragment === undefined) {
+          outcomes.push(unknown(base, 'missing_input', `引用 ${ref} 没有绑定到本次运行，无法核对引文`, { pointer, grounds: [ref] }));
+          continue;
+        }
+        const data = { quote: text.value, reference: ref };
+        let haystack = collapsed.get(ref);
+        if (haystack === undefined) {
+          haystack = collapseWhitespace(fragment);
+          collapsed.set(ref, haystack);
+        }
+        // Same rule as quoteMatches(fragment, quote), with the fragment side computed once.
+        if (quoteInCollapsed(haystack, text.value)) outcomes.push(support(base, `引文 ${quoted(text.value)} 与所引片段逐字一致`, { pointer, grounds: [ref], data }));
+        else {
+          const why = collapseWhitespace(text.value) === '' ? '引文为空' : `所引片段里没有 ${quoted(text.value)}`;
+          outcomes.push(refuteProtocol(base, 'QUOTE_MISMATCH', why, { pointer, grounds: [ref], data }));
+        }
+      }
+    }
+    if (outcomes.length === 0) outcomes.push(support(base, '没有需要核对的引文', { data: { checked: 0 } }));
+    return outcomes;
+  },
+});

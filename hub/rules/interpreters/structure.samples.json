@@ -1,0 +1,873 @@
+{
+  "interpreter": "structure@1",
+  "tables": {
+    "items": {
+      "schema": "structure@1",
+      "origin": "合成样例：用例条目的结构规则",
+      "nodes": "$[*]",
+      "item": "/id",
+      "location": "/location",
+      "rules": [
+        {
+          "fields": [
+            {
+              "path": "/fields/title",
+              "required": true,
+              "type": "string"
+            },
+            {
+              "path": "/fields/priority",
+              "required": true,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 3
+            },
+            {
+              "path": "/fields/tags",
+              "required": true,
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string",
+                "required": true
+              }
+            },
+            {
+              "path": "/fields/expected",
+              "required": true,
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 1,
+              "items": {
+                "type": "string",
+                "required": true
+              }
+            }
+          ],
+          "unique": [
+            {
+              "key": [
+                "/fields/title"
+              ],
+              "within": "group",
+              "group": [
+                "/fields/path"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "tree": {
+      "schema": "structure@1",
+      "origin": "合成样例：脑图树的结构规则",
+      "kind": "/kind",
+      "children": "/children",
+      "item": "/id",
+      "rules": [
+        {
+          "kinds": [
+            "case"
+          ],
+          "fields": [
+            {
+              "path": "/text",
+              "required": true,
+              "type": "string"
+            }
+          ],
+          "children": {
+            "min": 1,
+            "max": 1,
+            "kinds": [
+              "expected"
+            ]
+          }
+        },
+        {
+          "kinds": [
+            "case",
+            "group"
+          ],
+          "unique": [
+            {
+              "key": [
+                "/text"
+              ],
+              "within": "siblings",
+              "match": {
+                "whitespace": "collapse"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "values": {
+      "schema": "structure@1",
+      "origin": "合成样例：字段的类型、长度、数值范围和不区分大小写的唯一键",
+      "nodes": "$[*]",
+      "item": "/id",
+      "rules": [
+        {
+          "fields": [
+            {
+              "path": "/name",
+              "required": true,
+              "type": "string",
+              "minLength": 2,
+              "maxLength": 8
+            },
+            {
+              "path": "/active",
+              "type": "boolean"
+            },
+            {
+              "path": "/ratio",
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            {
+              "path": "/meta",
+              "type": "object"
+            },
+            {
+              "path": "/note",
+              "type": "null"
+            },
+            {
+              "path": "/steps",
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 20
+              }
+            },
+            {
+              "path": "/limits",
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9
+              }
+            }
+          ],
+          "unique": [
+            {
+              "key": [
+                "/name"
+              ],
+              "within": "all",
+              "match": {
+                "case": "insensitive"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "positive": [
+    {
+      "name": "两个合格的用例条目",
+      "table": "items",
+      "subject": [
+        {
+          "id": "doc1:n1",
+          "location": "src:1111111111111111111111111111111111111111111111111111111111111111/mindmap@1/n1",
+          "fields": {
+            "path": [
+              "登录模块",
+              "基本功能"
+            ],
+            "title": "用例 n1",
+            "priority": 1,
+            "tags": [
+              "功能"
+            ],
+            "expected": [
+              "显示首页"
+            ]
+          }
+        },
+        {
+          "id": "doc1:n2",
+          "location": "src:1111111111111111111111111111111111111111111111111111111111111111/mindmap@1/n2",
+          "fields": {
+            "path": [
+              "登录模块",
+              "基本功能"
+            ],
+            "title": "用例 n2",
+            "priority": 3,
+            "tags": [
+              "功能",
+              "冒烟"
+            ],
+            "expected": [
+              "显示首页"
+            ]
+          }
+        }
+      ],
+      "expect": [
+        {
+          "verdict": "support",
+          "item": "doc1:n1",
+          "pointer": "/0"
+        },
+        {
+          "verdict": "support",
+          "item": "doc1:n2",
+          "pointer": "/1"
+        }
+      ]
+    },
+    {
+      "name": "标题相同但不在同一组里",
+      "table": "items",
+      "subject": [
+        {
+          "id": "doc1:n1",
+          "location": "src:1111111111111111111111111111111111111111111111111111111111111111/mindmap@1/n1",
+          "fields": {
+            "path": [
+              "登录模块",
+              "基本功能"
+            ],
+            "title": "重复标题",
+            "priority": 1,
+            "tags": [
+              "功能"
+            ],
+            "expected": [
+              "显示首页"
+            ]
+          }
+        },
+        {
+          "id": "doc1:n2",
+          "location": "src:1111111111111111111111111111111111111111111111111111111111111111/mindmap@1/n2",
+          "fields": {
+            "path": [
+              "登录模块",
+              "异常"
+            ],
+            "title": "重复标题",
+            "priority": 1,
+            "tags": [
+              "功能"
+            ],
+            "expected": [
+              "显示首页"
+            ]
+          }
+        }
+      ],
+      "expect": [
+        {
+          "verdict": "support"
+        },
+        {
+          "verdict": "support"
+        }
+      ]
+    },
+    {
+      "name": "树：用例节点恰有一个期望结果",
+      "table": "tree",
+      "subject": {
+        "id": "root",
+        "kind": "group",
+        "text": "根",
+        "children": [
+          {
+            "id": "c1",
+            "kind": "case",
+            "text": "登录成功",
+            "children": [
+              {
+                "id": "e1",
+                "kind": "expected",
+                "text": "进入首页"
+              }
+            ]
+          },
+          {
+            "id": "g2",
+            "kind": "group",
+            "text": "其他"
+          }
+        ]
+      },
+      "expect": [
+        {
+          "verdict": "support",
+          "item": "root",
+          "pointer": ""
+        },
+        {
+          "verdict": "support",
+          "item": "c1",
+          "pointer": "/children/0"
+        },
+        {
+          "verdict": "support",
+          "item": "g2",
+          "pointer": "/children/1"
+        }
+      ]
+    },
+    {
+      "name": "类型、长度和范围都合格，名称各不相同",
+      "table": "values",
+      "subject": [
+        {
+          "id": "a",
+          "name": "alpha",
+          "active": true,
+          "ratio": 0.5,
+          "meta": {},
+          "note": null,
+          "steps": [
+            "s1"
+          ],
+          "limits": [
+            1,
+            9
+          ]
+        },
+        {
+          "id": "b",
+          "name": "beta",
+          "active": false,
+          "ratio": 1,
+          "meta": {
+            "x": 1
+          },
+          "note": null,
+          "steps": [],
+          "limits": []
+        }
+      ],
+      "expect": [
+        {
+          "verdict": "support",
+          "item": "a"
+        },
+        {
+          "verdict": "support",
+          "item": "b"
+        }
+      ]
+    }
+  ],
+  "negative": [
+    {
+      "name": "标题只有空白",
+      "table": "items",
+      "subject": [
+        {
+          "id": "doc1:n1",
+          "location": "src:1111111111111111111111111111111111111111111111111111111111111111/mindmap@1/n1",
+          "fields": {
+            "path": [
+              "登录模块",
+              "基本功能"
+            ],
+            "title": "   ",
+            "priority": 1,
+            "tags": [
+              "功能"
+            ],
+            "expected": [
+              "显示首页"
+            ]
+          }
+        }
+      ],
+      "expect": [
+        {
+          "verdict": "refute",
+          "code": "core.structure.required_empty",
+          "item": "doc1:n1",
+          "pointer": "/0/fields/title",
+          "data": {
+            "missing": false
+          }
+        }
+      ]
+    },
+    {
+      "name": "缺少优先级字段",
+      "table": "items",
+      "subject": [
+        {
+          "id": "doc1:n1",
+          "location": "src:1111111111111111111111111111111111111111111111111111111111111111/mindmap@1/n1",
+          "fields": {
+            "path": [],
+            "title": "x",
+            "tags": [
+              "t"
+            ],
+            "expected": [
+              "y"
+            ]
+          }
+        }
+      ],
+      "expect": [
+        {
+          "verdict": "refute",
+          "code": "core.structure.required_empty",
+          "pointer": "/0/fields/priority",
+          "data": {
+            "missing": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "优先级超出 1 到 3",
+      "table": "items",
+      "subject": [
+        {
+          "id": "doc1:n1",
+          "location": "src:1111111111111111111111111111111111111111111111111111111111111111/mindmap@1/n1",
+          "fields": {
+            "path": [
+              "登录模块",
+              "基本功能"
+            ],
+            "title": "用例 n1",
+            "priority": 5,
+            "tags": [
+              "功能"
+            ],
+            "expected": [
+              "显示首页"
+            ]
+          }
+        }
+      ],
+      "expect": [
+        {
+          "verdict": "refute",
+          "code": "core.structure.type_mismatch",
+          "pointer": "/0/fields/priority",
+          "data": {
+            "constraint": "range",
+            "value": 5
+          }
+        }
+      ]
+    },
+    {
+      "name": "优先级是字符串",
+      "table": "items",
+      "subject": [
+        {
+          "id": "doc1:n1",
+          "location": "src:1111111111111111111111111111111111111111111111111111111111111111/mindmap@1/n1",
+          "fields": {
+            "path": [
+              "登录模块",
+              "基本功能"
+            ],
+            "title": "用例 n1",
+            "priority": "2",
+            "tags": [
+              "功能"
+            ],
+            "expected": [
+              "显示首页"
+            ]
+          }
+        }
+      ],
+      "expect": [
+        {
+          "verdict": "refute",
+          "code": "core.structure.type_mismatch",
+          "pointer": "/0/fields/priority",
+          "data": {
+            "expected": "integer",
+            "actual": "string"
+          }
+        }
+      ]
+    },
+    {
+      "name": "没有标签",
+      "table": "items",
+      "subject": [
+        {
+          "id": "doc1:n1",
+          "location": "src:1111111111111111111111111111111111111111111111111111111111111111/mindmap@1/n1",
+          "fields": {
+            "path": [
+              "登录模块",
+              "基本功能"
+            ],
+            "title": "用例 n1",
+            "priority": 1,
+            "tags": [],
+            "expected": [
+              "显示首页"
+            ]
+          }
+        }
+      ],
+      "expect": [
+        {
+          "verdict": "refute",
+          "code": "core.structure.required_empty",
+          "pointer": "/0/fields/tags"
+        }
+      ]
+    },
+    {
+      "name": "两个期望结果",
+      "table": "items",
+      "subject": [
+        {
+          "id": "doc1:n1",
+          "location": "src:1111111111111111111111111111111111111111111111111111111111111111/mindmap@1/n1",
+          "fields": {
+            "path": [
+              "登录模块",
+              "基本功能"
+            ],
+            "title": "用例 n1",
+            "priority": 1,
+            "tags": [
+              "功能"
+            ],
+            "expected": [
+              "a",
+              "b"
+            ]
+          }
+        }
+      ],
+      "expect": [
+        {
+          "verdict": "refute",
+          "code": "core.structure.cardinality",
+          "pointer": "/0/fields/expected",
+          "data": {
+            "count": 2
+          }
+        }
+      ]
+    },
+    {
+      "name": "期望结果为空串",
+      "table": "items",
+      "subject": [
+        {
+          "id": "doc1:n1",
+          "location": "src:1111111111111111111111111111111111111111111111111111111111111111/mindmap@1/n1",
+          "fields": {
+            "path": [
+              "登录模块",
+              "基本功能"
+            ],
+            "title": "用例 n1",
+            "priority": 1,
+            "tags": [
+              "功能"
+            ],
+            "expected": [
+              " "
+            ]
+          }
+        }
+      ],
+      "expect": [
+        {
+          "verdict": "refute",
+          "code": "core.structure.required_empty",
+          "pointer": "/0/fields/expected/0"
+        }
+      ]
+    },
+    {
+      "name": "同组里标题重复",
+      "table": "items",
+      "subject": [
+        {
+          "id": "doc1:n1",
+          "location": "src:1111111111111111111111111111111111111111111111111111111111111111/mindmap@1/n1",
+          "fields": {
+            "path": [
+              "登录模块",
+              "基本功能"
+            ],
+            "title": "登录",
+            "priority": 1,
+            "tags": [
+              "功能"
+            ],
+            "expected": [
+              "显示首页"
+            ]
+          }
+        },
+        {
+          "id": "doc1:n2",
+          "location": "src:1111111111111111111111111111111111111111111111111111111111111111/mindmap@1/n2",
+          "fields": {
+            "path": [
+              "登录模块",
+              "基本功能"
+            ],
+            "title": "登录",
+            "priority": 1,
+            "tags": [
+              "功能"
+            ],
+            "expected": [
+              "显示首页"
+            ]
+          }
+        },
+        {
+          "id": "doc1:n3",
+          "location": "src:1111111111111111111111111111111111111111111111111111111111111111/mindmap@1/n3",
+          "fields": {
+            "path": [
+              "登录模块",
+              "基本功能"
+            ],
+            "title": "用例 n3",
+            "priority": 1,
+            "tags": [
+              "功能"
+            ],
+            "expected": [
+              "显示首页"
+            ]
+          }
+        }
+      ],
+      "expect": [
+        {
+          "verdict": "refute",
+          "code": "core.structure.duplicate_key",
+          "item": "doc1:n1",
+          "pointer": "/0/fields/title",
+          "data": {
+            "others": [
+              "doc1:n2"
+            ]
+          }
+        },
+        {
+          "verdict": "refute",
+          "code": "core.structure.duplicate_key",
+          "item": "doc1:n2",
+          "pointer": "/1/fields/title",
+          "data": {
+            "others": [
+              "doc1:n1"
+            ]
+          }
+        },
+        {
+          "verdict": "support",
+          "item": "doc1:n3"
+        }
+      ]
+    },
+    {
+      "name": "树：用例节点有两个期望结果",
+      "table": "tree",
+      "subject": {
+        "id": "root",
+        "kind": "group",
+        "text": "根",
+        "children": [
+          {
+            "id": "c1",
+            "kind": "case",
+            "text": "登录成功",
+            "children": [
+              {
+                "id": "e1",
+                "kind": "expected",
+                "text": "a"
+              },
+              {
+                "id": "e2",
+                "kind": "expected",
+                "text": "b"
+              }
+            ]
+          }
+        ]
+      },
+      "expect": [
+        {
+          "verdict": "support",
+          "item": "root"
+        },
+        {
+          "verdict": "refute",
+          "code": "core.structure.cardinality",
+          "item": "c1",
+          "pointer": "/children/0/children",
+          "data": {
+            "count": 2,
+            "min": 1,
+            "max": 1
+          }
+        }
+      ]
+    },
+    {
+      "name": "树：兄弟节点文字重复（空白差异不算不同）",
+      "table": "tree",
+      "subject": {
+        "id": "root",
+        "kind": "group",
+        "text": "根",
+        "children": [
+          {
+            "id": "c1",
+            "kind": "case",
+            "text": "登录成功",
+            "children": [
+              {
+                "id": "e1",
+                "kind": "expected",
+                "text": "a"
+              }
+            ]
+          },
+          {
+            "id": "g2",
+            "kind": "group",
+            "text": "  登录成功  "
+          }
+        ]
+      },
+      "expect": [
+        {
+          "verdict": "support",
+          "item": "root"
+        },
+        {
+          "verdict": "refute",
+          "code": "core.structure.duplicate_key",
+          "item": "c1",
+          "data": {
+            "others": [
+              "g2"
+            ]
+          }
+        },
+        {
+          "verdict": "refute",
+          "code": "core.structure.duplicate_key",
+          "item": "g2",
+          "data": {
+            "others": [
+              "c1"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "名称太短、类型不对、超出范围、元素太长，名称不区分大小写时重复",
+      "table": "values",
+      "subject": [
+        {
+          "id": "n1",
+          "name": "a",
+          "active": true,
+          "ratio": 0.5
+        },
+        {
+          "id": "n2",
+          "name": "Alpha",
+          "active": "yes",
+          "ratio": 1.5
+        },
+        {
+          "id": "n3",
+          "name": "alpha",
+          "steps": [
+            "ok",
+            "xxxxxxxxxxxxxxxxxxxxx"
+          ],
+          "limits": [
+            3,
+            10
+          ]
+        }
+      ],
+      "expect": [
+        {
+          "verdict": "refute",
+          "code": "core.structure.type_mismatch",
+          "item": "n1",
+          "pointer": "/0/name",
+          "data": {
+            "constraint": "length"
+          }
+        },
+        {
+          "verdict": "refute",
+          "code": "core.structure.type_mismatch",
+          "item": "n2",
+          "pointer": "/1/active"
+        },
+        {
+          "verdict": "refute",
+          "code": "core.structure.type_mismatch",
+          "item": "n2",
+          "pointer": "/1/ratio",
+          "data": {
+            "constraint": "range"
+          }
+        },
+        {
+          "verdict": "refute",
+          "code": "core.structure.duplicate_key",
+          "item": "n2",
+          "pointer": "/1/name"
+        },
+        {
+          "verdict": "refute",
+          "code": "core.structure.type_mismatch",
+          "item": "n3",
+          "pointer": "/2/steps/1",
+          "data": {
+            "constraint": "length"
+          }
+        },
+        {
+          "verdict": "refute",
+          "code": "core.structure.type_mismatch",
+          "item": "n3",
+          "pointer": "/2/limits/1",
+          "data": {
+            "constraint": "range"
+          }
+        },
+        {
+          "verdict": "refute",
+          "code": "core.structure.duplicate_key",
+          "item": "n3",
+          "pointer": "/2/name"
+        }
+      ]
+    }
+  ]
+}

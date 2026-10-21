@@ -1,0 +1,377 @@
+{
+  "interpreter": "coverage@1",
+  "tables": {
+    "modules": {
+      "schema": "coverage@1",
+      "origin": "合成样例：要覆盖的模块",
+      "required": {
+        "values": [
+          "登录",
+          "退出",
+          "超时"
+        ]
+      },
+      "covered": [
+        "$.items[*].module"
+      ],
+      "skipped": {
+        "select": "$.skips[*]",
+        "member": "/module",
+        "reason": "/reason"
+      }
+    },
+    "parameters": {
+      "schema": "coverage@1",
+      "origin": "合成样例：缺陷引入的参数都要有用例覆盖",
+      "required": {
+        "select": "$.defect.parameters[*]"
+      },
+      "covered": [
+        "$.cases[*].parameter"
+      ]
+    },
+    "referenced": {
+      "schema": "coverage@1",
+      "origin": "合成样例：按引用给出的必选模块",
+      "required": {
+        "reference": "src:3333333333333333333333333333333333333333333333333333333333333333/json@1/sets/modules"
+      },
+      "covered": [
+        "$.items[*].module"
+      ]
+    },
+    "named": {
+      "schema": "coverage@1",
+      "origin": "合成样例：任务包声明的必选模块",
+      "required": {
+        "name": "modules"
+      },
+      "covered": [
+        "$.items[*].module"
+      ]
+    },
+    "normalized": {
+      "schema": "coverage@1",
+      "origin": "合成样例：按表示规范化后比较",
+      "required": {
+        "values": [
+          "Login",
+          "Log Out"
+        ]
+      },
+      "covered": [
+        "$.items[*].module"
+      ],
+      "match": {
+        "case": "insensitive",
+        "whitespace": "collapse"
+      }
+    }
+  },
+  "positive": [
+    {
+      "name": "全部覆盖",
+      "table": "modules",
+      "subject": {
+        "items": [
+          {
+            "module": "登录"
+          },
+          {
+            "module": "退出"
+          },
+          {
+            "module": "超时"
+          }
+        ]
+      },
+      "expect": [
+        {
+          "verdict": "support",
+          "data": {
+            "required": 3,
+            "covered": 3
+          }
+        }
+      ]
+    },
+    {
+      "name": "缺的成员写明了跳过理由",
+      "table": "modules",
+      "subject": {
+        "items": [
+          {
+            "module": "登录"
+          },
+          {
+            "module": "退出"
+          }
+        ],
+        "skips": [
+          {
+            "module": "超时",
+            "reason": "本版本不涉及"
+          }
+        ]
+      },
+      "expect": [
+        {
+          "verdict": "support",
+          "data": {
+            "covered": 2,
+            "skipped": [
+              {
+                "member": "超时",
+                "reason": "本版本不涉及"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "从被判对象里取出的成员都已覆盖",
+      "table": "parameters",
+      "subject": {
+        "defect": {
+          "parameters": [
+            "timeout",
+            "retries"
+          ]
+        },
+        "cases": [
+          {
+            "parameter": "retries"
+          },
+          {
+            "parameter": "timeout"
+          },
+          {}
+        ]
+      },
+      "expect": [
+        {
+          "verdict": "support",
+          "data": {
+            "required": 2,
+            "covered": 2
+          }
+        }
+      ]
+    },
+    {
+      "name": "按引用给出的成员都已覆盖",
+      "table": "referenced",
+      "sources": {
+        "src:3333333333333333333333333333333333333333333333333333333333333333/json@1/sets/modules": "[\"登录\", \"退出\"]"
+      },
+      "subject": {
+        "items": [
+          {
+            "module": "退出"
+          },
+          {
+            "module": "登录"
+          }
+        ]
+      },
+      "expect": [
+        {
+          "verdict": "support",
+          "data": {
+            "required": 2
+          }
+        }
+      ]
+    },
+    {
+      "name": "按包集合名给出的成员都已覆盖",
+      "table": "named",
+      "context": {
+        "sets": {
+          "modules": [
+            "登录",
+            "退出"
+          ]
+        }
+      },
+      "subject": {
+        "items": [
+          {
+            "module": "登录"
+          },
+          {
+            "module": "退出"
+          }
+        ]
+      },
+      "expect": [
+        {
+          "verdict": "support",
+          "data": {
+            "required": 2
+          }
+        }
+      ]
+    },
+    {
+      "name": "大小写和空白按表的表示规范化",
+      "table": "normalized",
+      "subject": {
+        "items": [
+          {
+            "module": " login "
+          },
+          {
+            "module": "LOG   OUT"
+          }
+        ]
+      },
+      "expect": [
+        {
+          "verdict": "support",
+          "data": {
+            "required": 2,
+            "covered": 2
+          }
+        }
+      ]
+    }
+  ],
+  "negative": [
+    {
+      "name": "缺一个模块，跳过没有理由",
+      "table": "modules",
+      "subject": {
+        "items": [
+          {
+            "module": "登录"
+          },
+          {
+            "module": "退出"
+          }
+        ],
+        "skips": [
+          {
+            "module": "超时",
+            "reason": " "
+          }
+        ]
+      },
+      "expect": [
+        {
+          "verdict": "refute",
+          "code": "core.coverage.shortfall",
+          "data": {
+            "missing": [
+              "超时"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "缺陷引入的参数有一个没有用例",
+      "table": "parameters",
+      "subject": {
+        "defect": {
+          "parameters": [
+            "timeout",
+            "retries"
+          ]
+        },
+        "cases": [
+          {
+            "parameter": "retries"
+          }
+        ]
+      },
+      "expect": [
+        {
+          "verdict": "refute",
+          "code": "core.coverage.shortfall",
+          "data": {
+            "missing": [
+              "timeout"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "按引用给出的成员缺一个",
+      "table": "referenced",
+      "sources": {
+        "src:3333333333333333333333333333333333333333333333333333333333333333/json@1/sets/modules": "[\"登录\", \"退出\"]"
+      },
+      "subject": {
+        "items": [
+          {
+            "module": "登录"
+          }
+        ]
+      },
+      "expect": [
+        {
+          "verdict": "refute",
+          "code": "core.coverage.shortfall",
+          "data": {
+            "missing": [
+              "退出"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "按包集合名给出的成员缺一个",
+      "table": "named",
+      "context": {
+        "sets": {
+          "modules": [
+            "登录",
+            "退出"
+          ]
+        }
+      },
+      "subject": {
+        "items": []
+      },
+      "expect": [
+        {
+          "verdict": "refute",
+          "code": "core.coverage.shortfall",
+          "data": {
+            "required": 2,
+            "covered": 0
+          }
+        }
+      ]
+    },
+    {
+      "name": "规范化不改写词：log out 与 logout 不同",
+      "table": "normalized",
+      "subject": {
+        "items": [
+          {
+            "module": "login"
+          },
+          {
+            "module": "logout"
+          }
+        ]
+      },
+      "expect": [
+        {
+          "verdict": "refute",
+          "code": "core.coverage.shortfall",
+          "data": {
+            "missing": [
+              "log out"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

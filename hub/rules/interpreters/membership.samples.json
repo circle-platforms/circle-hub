@@ -1,0 +1,323 @@
+{
+  "interpreter": "membership@1",
+  "tables": {
+    "codes": {
+      "schema": "membership@1",
+      "origin": "合成样例：发现码的封闭集合",
+      "values": [
+        "$.slots.findings[*].code"
+      ],
+      "set": {
+        "values": [
+          "F-STEP",
+          "F-EXPECT",
+          "F-DATA"
+        ]
+      }
+    }
+  },
+  "positive": [
+    {
+      "name": "发现码都在集合里",
+      "table": "codes",
+      "subject": {
+        "slots": {
+          "findings": [
+            {
+              "code": "F-STEP"
+            },
+            {
+              "code": "F-DATA"
+            }
+          ]
+        }
+      },
+      "expect": [
+        {
+          "verdict": "support",
+          "pointer": "/slots/findings/0/code"
+        },
+        {
+          "verdict": "support",
+          "pointer": "/slots/findings/1/code"
+        }
+      ]
+    },
+    {
+      "name": "大小写不敏感的表示",
+      "table": {
+        "schema": "membership@1",
+        "origin": "合成样例：发现码的封闭集合",
+        "values": [
+          "$.slots.findings[*].code"
+        ],
+        "set": {
+          "values": [
+            "F-STEP",
+            "F-EXPECT",
+            "F-DATA"
+          ]
+        },
+        "match": {
+          "case": "insensitive"
+        }
+      },
+      "subject": {
+        "slots": {
+          "findings": [
+            {
+              "code": "f-step"
+            }
+          ]
+        }
+      },
+      "expect": [
+        {
+          "verdict": "support"
+        }
+      ]
+    },
+    {
+      "name": "按引用给出的集合，数值取值",
+      "table": {
+        "schema": "membership@1",
+        "origin": "合成样例：排序等级",
+        "values": [
+          "$.slots.findings[*].rank"
+        ],
+        "set": {
+          "reference": "src:3333333333333333333333333333333333333333333333333333333333333333/json@1/sets/rank"
+        }
+      },
+      "sources": {
+        "src:3333333333333333333333333333333333333333333333333333333333333333/json@1/sets/rank": "[1, 2, 3]"
+      },
+      "subject": {
+        "slots": {
+          "findings": [
+            {
+              "rank": 2
+            }
+          ]
+        }
+      },
+      "expect": [
+        {
+          "verdict": "support"
+        }
+      ]
+    },
+    {
+      "name": "没有取值也没有要求",
+      "table": "codes",
+      "subject": {
+        "slots": {
+          "findings": []
+        }
+      },
+      "expect": [
+        {
+          "verdict": "support",
+          "data": {
+            "checked": 0
+          }
+        }
+      ]
+    },
+    {
+      "name": "按名称给出的包集合，取值在里面",
+      "table": {
+        "schema": "membership@1",
+        "origin": "合成样例：槽位类别",
+        "values": [
+          "$.slots.kind"
+        ],
+        "set": {
+          "name": "slot_kind"
+        }
+      },
+      "context": {
+        "sets": {
+          "slot_kind": [
+            "bucket",
+            "block"
+          ]
+        }
+      },
+      "subject": {
+        "slots": {
+          "kind": "block"
+        }
+      },
+      "expect": [
+        {
+          "verdict": "support"
+        }
+      ]
+    },
+    {
+      "name": "表要求取值存在，取值在",
+      "table": {
+        "schema": "membership@1",
+        "origin": "合成样例：发现码的封闭集合",
+        "values": [
+          "$.slots.findings[*].code"
+        ],
+        "set": {
+          "values": [
+            "F-STEP",
+            "F-EXPECT",
+            "F-DATA"
+          ]
+        },
+        "required": true
+      },
+      "subject": {
+        "slots": {
+          "findings": [
+            {
+              "code": "F-DATA"
+            }
+          ]
+        }
+      },
+      "expect": [
+        {
+          "verdict": "support"
+        }
+      ]
+    },
+    {
+      "name": "全角取值按 NFKC 规范化后在集合里",
+      "table": {
+        "schema": "membership@1",
+        "origin": "合成样例：发现码的封闭集合",
+        "values": [
+          "$.slots.findings[*].code"
+        ],
+        "set": {
+          "values": [
+            "F-STEP",
+            "F-EXPECT",
+            "F-DATA"
+          ]
+        },
+        "match": {
+          "unicode": "nfkc"
+        }
+      },
+      "subject": {
+        "slots": {
+          "findings": [
+            {
+              "code": "Ｆ－ＳＴＥＰ"
+            }
+          ]
+        }
+      },
+      "expect": [
+        {
+          "verdict": "support",
+          "data": {
+            "value": "Ｆ－ＳＴＥＰ"
+          }
+        }
+      ]
+    }
+  ],
+  "negative": [
+    {
+      "name": "发现码不在集合里",
+      "table": "codes",
+      "subject": {
+        "slots": {
+          "findings": [
+            {
+              "code": "F-STEP"
+            },
+            {
+              "code": "F-OTHER"
+            }
+          ]
+        }
+      },
+      "expect": [
+        {
+          "verdict": "support"
+        },
+        {
+          "verdict": "refute",
+          "code": "core.membership.not_in_set",
+          "pointer": "/slots/findings/1/code"
+        }
+      ]
+    },
+    {
+      "name": "按名称给出的包集合",
+      "table": {
+        "schema": "membership@1",
+        "origin": "合成样例：槽位类别",
+        "values": [
+          "$.slots.kind"
+        ],
+        "set": {
+          "name": "slot_kind"
+        }
+      },
+      "context": {
+        "sets": {
+          "slot_kind": [
+            "bucket",
+            "block"
+          ]
+        }
+      },
+      "subject": {
+        "slots": {
+          "kind": "operator"
+        }
+      },
+      "expect": [
+        {
+          "verdict": "refute",
+          "code": "core.membership.not_in_set"
+        }
+      ]
+    },
+    {
+      "name": "表示为 exact 时，首尾空白也算不同",
+      "table": {
+        "schema": "membership@1",
+        "origin": "合成样例：发现码的封闭集合",
+        "values": [
+          "$.slots.findings[*].code"
+        ],
+        "set": {
+          "values": [
+            "F-STEP",
+            "F-EXPECT",
+            "F-DATA"
+          ]
+        },
+        "match": {
+          "whitespace": "exact"
+        }
+      },
+      "subject": {
+        "slots": {
+          "findings": [
+            {
+              "code": " F-STEP"
+            }
+          ]
+        }
+      },
+      "expect": [
+        {
+          "verdict": "refute",
+          "code": "core.membership.not_in_set"
+        }
+      ]
+    }
+  ]
+}
