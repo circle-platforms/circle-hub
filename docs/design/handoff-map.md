@@ -1,5 +1,7 @@
 # handoff 到设计文档的对照表
 
+> **历史文档**（2026-10-21 标注）：本表对照的两份交接文档和它指向的设计篇都已成为历史记录或已被取代；现行设计见[通用模型](generic-model.md)。
+
 [客户端接口交接](../client-api-handoff.md)与[执行交接](../case-execution-handoff.md)里的规则已并入 docs/design 的对应文档；本表给出每一段的去处，供把两份 handoff 裁剪为变更记录时对照。右列「不搬」的段落是实现记录、验收数字或产品连接器契约，设计文档不收。
 
 ## client-api-handoff.md

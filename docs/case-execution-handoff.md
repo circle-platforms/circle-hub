@@ -1,5 +1,7 @@
 # APV 工作簿执行交接
 
+> **历史文档**（2026-10-21 标注）：本文描述已退役服务器的原生用例执行路径，只作记录保留；第一个里程碑不做设备执行。现行范围见 [Hub r4 简报](hub-r4-brief.md)。
+
 > 历史接口记录：0.2.0 已退役本文的内置 apv-case-execute 入口与 cases.* worker。新执行使用独立产品模块及 module-execute；旧任务、制品和回执只读保留，不自动改绑。当前边界见 [执行流设计](design/execution-flow-packs.md) 与 [客户端交接](client-api-handoff.md)。
 
 本页是 APV 原生执行路径的变更记录与操作说明。通用规则已并入设计文档，见下表；工作簿字面闭集、框架主机名、参数与设备命名约定仍暂留本页，待执行流迁入独立产品包时一并移交。裁剪对照见 [handoff 到设计文档的对照表](design/handoff-map.md#case-execution-handoffmd)。

@@ -1,5 +1,7 @@
 # 执行流迁入产品线包
 
+> **已被取代**（2026-10-21）：本文的执行流、`module-execute` 和产品线模块已随旧服务器退役。效果写入、租约与执行器（B06、D04，D03 的写声明，D07 的执行器部分）仍在[通用模型](generic-model.md)里，第一个里程碑不实现；D03 的读部分与 D07 的资源部分由 connectors 包实现。本文只作记录保留。
+
 本文记录已实施的执行流迁移边界。A3、B、C1–C5 及后续修复保持；0.2.0 的 D 实现移除原生 apv-case-execute 1.1.1 入口、controller / worker 与专用解析器，新执行只经 module-execute 和独立产品模块。退役前已只读确认 11 条原生任务均为终态（9 delivered / 2 failed），没有在途或 unknown；部署前须再核。migration 20 原字节保留，migration 44 将旧回执表设为只读，不改历史任务方法或输入绑定。合成验收与既有现场观察分列于[阶段进度](../server-s2-progress.md)。下文关于原生实现的协议描述保留为历史依据，不再代表可新建入口。
 
 目标是让 `packs/apv/execution` 的产品解释和流程选择由独立仓库的 `products/apv` 拥有，同时保留 hub 对权限、批准修订、派发、租约、未知结果与证据的控制。产品包提供纯函数 Tool 和 Hook；网络、凭据、数据库与任务推进仍由 hub 执行。装入第二条产品线时不添加产品专用 controller 或 worker 分支。

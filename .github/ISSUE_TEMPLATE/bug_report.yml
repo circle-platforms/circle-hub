@@ -23,20 +23,20 @@ body:
     id: steps
     attributes:
       label: Steps to reproduce
-      description: The smallest sequence that shows it, on synthetic sources and the development sign-in.
+      description: The smallest sequence that shows it, on synthetic fixtures.
     validations:
       required: true
   - type: input
     id: commit
     attributes:
       label: Commit or version
-      description: The commit of circle-hub you ran, and the Circle version if the Circle extension is involved.
+      description: The commit of circle-hub you ran, and the MCP client and its version (for example Circle) if one is involved.
     validations:
       required: true
   - type: input
     id: path
     attributes:
       label: Where it runs
-      description: Which path is affected, for example server, worker, a connector, the admin CLI or the Circle extension.
+      description: Which part is affected, for example an MCP tool, the console, the circle-hub command, a connector or a pack.
     validations:
       required: true

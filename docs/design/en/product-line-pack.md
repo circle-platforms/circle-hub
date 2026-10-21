@@ -1,5 +1,7 @@
 # Product-line pack exemplar
 
+> **Superseded** (2026-10-21): the `product-line/1` product-line pack, `modules.json` installation and change-set approval were retired with the old server, and the meridian sample was removed. The unit of distribution is now the task pack (product, workflow or system pack), and an upload runs the pack's positive and negative samples automatically; see T01 and T02 in the [generic model](generic-model.md). Kept as a record only.
+
 When a product line is brought into circle-hub, there is only one deliverable: a **product-line pack** — a collection of the four kinds of harness primitives (Skill, an MCP server instance declaration and its Tools, Hook handlers) plus original roles, flow versions, and one manifest. The hub core changes no code for any product line; a product-line pack is written to the layout and the adaptation sheet in this document, and after it is loaded into hub it takes effect when an Independent reviewer approves it.
 
 The synthetic product line [meridian](../../../packs/meridian/) in this repository is the public sample; real product-line packs live in their own packs repositories (for example [circle-packs](https://github.com/circle-platforms/circle-packs)), and they do not go into hub.

@@ -1,5 +1,7 @@
 # On-disk formats of harness primitives
 
+> **Historical survey** (marked 2026-10-21): this is the 2026-10-13 format survey for the removed harness adapter library, and the harnesses' formats may have changed since; the Hub is now a standard MCP server and no longer imports or exports harness primitives. Kept as a record only.
+
 An adapter turns the Skill, Command, Agent, Instruction, Hook, and MCP server files of one harness into a hub Asset plus a neutral manifest, then writes that manifest back into that harness's directories. This survey records only the files, fields, and export commands stated in the official docs on 2026-10-13. It is the basis for import, export, and `knownCompatible`.
 
 Permission policy is already specified in [Permission policy export](permission-export.md). It is not repeated here.

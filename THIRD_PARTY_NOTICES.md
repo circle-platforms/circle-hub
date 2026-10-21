@@ -18,11 +18,11 @@ External products, project names, source links, trademarks and method descriptio
 
 ## Dependencies and the actual artifacts
 
-The root package's current direct runtime dependencies are `pg@8.23.1`, `zod@4.6.5`, `exceljs@4.4.0`, `fflate@0.8.3`, `read-excel-file@9.3.12`, `parse5@8.0.1` and `saxes@5.0.1`, each used under the MIT license of its published package. Development dependencies include `embedded-postgres@18.4.0-beta.17` (MIT), type declarations (MIT) and TypeScript 5.9.3 (Apache-2.0). The actual PostgreSQL binaries and their upstream components follow their own licenses, which the wrapper's MIT license does not replace.
+The root package's current direct dependencies are `@modelcontextprotocol/sdk@1.32.1`, `pg@8.23.1`, `zod@4.6.5`, `exceljs@4.4.0`, `fflate@0.8.3`, `read-excel-file@9.3.12` and `parse5@8.0.1`, each used under the MIT license of its published package, `saxes@5.0.1` under its ISC license, and `typescript@5.9.3` under the Apache License 2.0. Development dependencies are `embedded-postgres@18.4.0-beta.17` (MIT) and type declarations (MIT). The actual PostgreSQL binaries and their upstream components follow their own licenses, which the wrapper's MIT license does not replace.
 
 Exact versions, download integrity and transitive dependencies are in the root `package-lock.json`. ExcelJS's uuid dependency is pinned by an override to `11.1.1`, which supports the same CommonJS v4 API and fixes the out-of-bounds advisory that npm audit reported; the lockfile currently has no reported vulnerability. A composition check describes the dependencies of this moment and promises nothing about future advisories. No `node_modules` and no server artifact is included.
 
-The historical lockfiles of the shared baseline and of the reference packages still record their original dependencies; they are not used by the new server's build entry points.
+The historical lockfiles of the shared baseline and of the reference packages still record their original dependencies; they are not used by the Hub's entry points.
 
 When adopting a module, check the dependencies actually used, and ship the corresponding licenses and notices with the artifact. Special cases in the current lockfiles are jszip's license choice, pako's MIT/Zlib, lightningcss's MPL-2.0 and caniuse-lite's CC-BY-4.0. None of them can be turned into the project's license.
 

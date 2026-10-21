@@ -1,11 +1,13 @@
 ---
 permalink: /design/truth-docked-architecture/
-nav_order: 1
+nav_order: 8
 ---
 
 # 置真对接架构：理论基础、条件命题与产品研究框架
 
 **状态：研究提案与数学审计，2026-10-19 修订。本文不是已实现能力说明，也不替代现行对象、权限、审批、执行或客户端契约。**
+
+> **2026-10-21 注**：第 2 节所说的现行设计（对象标准的五要素、执行流、审批规范、五个固定 Hook）已随旧服务器退役，“B/C/D/E、现有执行链和已批准规则继续按其当前规范运行”一句不再成立。现行设计的权威是通用模型（[contracts/model.json](https://github.com/circle-platforms/circle-hub/blob/main/contracts/model.json)，摘要见[通用模型](generic-model.md)）；本文作为研究提案的地位不变。
 
 本文修订 [ea926d4 中的原稿](https://github.com/circle-platforms/circle-hub/blob/ea926d47b5eb641a4b79dc9207a190e61ac60fe0/docs/design/truth-docked-architecture.md)。原稿中的“四大定理”“最高裁决准则”“100% 真值”“有限轮完美收敛”等整体保证没有完成相应证明，本版撤回这些保证及其对既有设计的自动取代效力。历史原稿由 Git 保留。
 
@@ -36,13 +38,13 @@ nav_order: 1
 
 本研究不以误读现行设计为前提：
 
-- [对象标准](object-standard.md)与[运行对象参考](../../references/platform/snapshot/docs/object-boundaries-v1.md)划分权威状态和职责；专业算法与领域验证已有方法层归属。职责划分与计算闭环可以同时存在。
+- [对象标准](object-standard.md)与[运行对象参考](https://github.com/circle-platforms/circle-hub/blob/main/references/platform/snapshot/docs/object-boundaries-v1.md)划分权威状态和职责；专业算法与领域验证已有方法层归属。职责划分与计算闭环可以同时存在。
 - [执行流](execution-flow-packs.md)已有持久状态、观察、动作与步骤身份。纯状态转换函数不直接调用模型，不能据此推出整个系统不能调用模型或形成循环。
-- [知识 V1 参考](../../references/platform/snapshot/docs/knowledge-v1.md)把精确解析与语义判断分开。semantic=not-asserted 限制结论范围，不否定已完成的结构检查。
+- [知识 V1 参考](https://github.com/circle-platforms/circle-hub/blob/main/references/platform/snapshot/docs/knowledge-v1.md)把精确解析与语义判断分开。semantic=not-asserted 限制结论范围，不否定已完成的结构检查。
 - [审批规范](approvals-and-enforcement.md)已有绑定具体执行输入、只能由对应操作消费的 execution-submission。按操作影响细化策略是研究方向，不是从“旧设计完全无执行审批”推出的结论。
 - 五个固定 Hook 及其领域 subject 确实是现行契约。是否以及如何通用化，需要独立的契约设计、兼容方案与验收，本文不直接废除它们。
 
-B/C/D/E、现有执行链和已批准规则继续按其当前规范运行。任何替代设计须单独确认范围，再修改代码和契约。现行行为与实现进度仍见对应设计文档及[阶段记录](../README.md#阶段记录)。
+B/C/D/E、现有执行链和已批准规则继续按其当前规范运行。任何替代设计须单独确认范围，再修改代码和契约。现行行为与实现进度仍见对应设计文档及[阶段记录](../index.md#历史记录)。
 
 ## 3. 值得引入的理论及其边界
 
@@ -225,4 +227,4 @@ B/C/D/E、现有执行链和已批准规则继续按其当前规范运行。任�
 
 ## 许可
 
-Copyright (c) 2026 qingshanfeihu。本文的文字与图表按 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/deed.zh-hans) 授权，引用与改编按许可证署名 Circle Hub 与 qingshanfeihu、注明原始出处及修改。被引用研究保留其各自作者与许可。见[设计索引](README.md#许可)与 [NOTICE](../../NOTICE)。
+Copyright (c) 2026 qingshanfeihu。本文的文字与图表按 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/deed.zh-hans) 授权，引用与改编按许可证署名 Circle Hub 与 qingshanfeihu、注明原始出处及修改。被引用研究保留其各自作者与许可。见[设计索引](README.md#许可)与 [NOTICE](https://github.com/circle-platforms/circle-hub/blob/main/NOTICE)。

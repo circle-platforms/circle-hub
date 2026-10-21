@@ -1,5 +1,7 @@
 # Roles and scope
 
+> **Superseded** (2026-10-21): scoped administrator, member and guest roles, the two-person rule and service clients were retired with the old server. There are now two permission roles, user and administrator; runs and results are visible by default only to the runner and administrators, and anything absent or forbidden reads “对你不可用” (not available to you). See R01 and R02 in the [generic model](generic-model.md). Kept as a record only.
+
 Two kinds of principal: a person, and a service client. A service client is a machine identity. It has only a scope string (for example `jumphost:run`), and it has no role.
 
 ## Three roles, granted by scope

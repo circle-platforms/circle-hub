@@ -1,57 +1,59 @@
-# Object standard and data flow
+# Object standard: the five-element checklist
 
-## 1. Every object is these five parts
+> **Rewritten 2026-10-21**: the previous version treated the five elements (records, assets, approval policy, evidence, extension points) as storage partitions of each of the four objects. That is superseded. By the decision on the generic model's pending item 3, the five elements are a design checklist and a record-page layout, not storage partitions. The previous partition table, data flow and adaptation sheet are in [this page at ca66002](https://github.com/circle-platforms/circle-hub/blob/ca66002fb6bfc3220547d0fdd895bfae83345943/docs/design/en/object-standard.md). This page translates the [Chinese original](../object-standard.md); where they differ, the Chinese text is authoritative.
 
-hub's four objects — materials B, work C, execution D, and method E — are made of the same five parts. Rows are the standard, columns are the objects, and each cell writes only instances of that object.
+## 1. The four objects are the four homes
 
-| Standard | B materials | C work | D execution | E method |
-|---|---|---|---|---|
-| **1 Record**: record types the object itself owns, each with an id prefix and a version; byte records carry sha256 | source revision `src_` · Evidence `evd_` · claim `clm_`, assessment · snapshot `ks_` (immutable) · artifact `art_` (with sha) | identity `prn_` · scope `scp_` · task `task_` · input revision `inrev_` · Approval request `pin_` · Decision · bot · trigger · audit | resource (gateway, worker, SSH target) · operation `op_` · Binding pin · lease and fencing token · scene · Unknown outcome | skill package `skp_` + trial-run record · product-line manifest `product-line/1` · method module · rule · validation sample |
-| **2 Asset**: something pluggable, one shape: kind · version · sha256 · declaration · configuration · lifecycle | knowledge-source (uploaded original) · connector-instance (read-only MCP server: documents, build site, ticket mirror, environment) · runtime-profile | bot · trigger · service client (a resource's identity in C) | connector-instance (execution resource, that is, the MCP server that acts) · worker · runtime-profile | skill-package (Skill) · product-line module (Tool implementation and Hook handler) |
-| **3 Approval policy**: the unit is a Change set; which actions require an Independent reviewer; Binding is inputRevision + targetIdentity + actionDigest | source / original lifecycle → approved · claim candidate → into the snapshot | all approvals land here · enabling a bot, authorizing a person | enabling a resource to running · execution is not approved: a provably true failure is reported as an error, and what is not provably true is disclosed; a resource may declare "execution against me counts as a change" | skill version registration · module installation |
-| **4 Evidence**: the as-is record of each interaction with the outside; evidenceId is issued by the platform; script / model are marked separately | originals the connector read · the return of each Tool call | trial-run record (which Tools the Skill actually called) · Decision and audit | Hook judgment · scene report, lease events | trial-run output sha · Hook judgment (rule id, version, on whom) |
-| **5 Extension point**: where something is allowed to be inserted; product content does not enter the core | read-only MCP server (connector package, by system type) · original upload (file + role + metadata) · object vocabulary · knowledge mapping | identity provider · policy (data) · flow version · result channel | MCP server that acts (resource adapter; the MCP protocol is the generic adapter) · credential mode · profile file · worker protocol | Skill (modules.json in the packs repository) · product-line manifest · Tool implementation · Hook handler |
+The four objects are the four homes of element C01 of the generic model. Content is placed by its nature, and the task pack it ships in does not change its home:
 
-In Circle, every Registry page is a projection of these five parts: the left column is Records (facets + counts + search), and the right column's five cells are fixed as Asset · content (Verification / Submission) · approval · Evidence · Extension point.
+| Home | What it holds | How it changes |
+|---|---|---|
+| Knowledge | What describes the world at one version: the knowledge tree, knowledge entries, catalogs, fact tables | Re-checked against its sources |
+| Policy | What decides what may happen: decision tables, policy tables | Only by deciding again, with samples |
+| Method | How to do and how to judge: rules, checks, procedures, a pack's deterministic functions | Run in a sandbox, version-locked, effective with a new pack version |
+| Resource | How to connect to a system: integration specifications, system-type profiles, deployment instances, executors | Configured by an administrator; premises default to false |
 
-## 2. Data flow: every piece of work follows this line
+Ownership is a separate classification (C02), judged per subcomponent with the contract and the implementation classified apart: generic content goes into the Hub core; content with a product dialect goes into a product pack; content with a system dialect and no product semantics goes into a system pack, which an administrator instantiates as a resource; content that serves one workflow goes into a workflow pack. "Used by several workflows" does not make something generic.
 
-Each step passes only an id, and the agent does not type the content again.
+## 2. Storage has one shape
 
-1. **A submit**: hand over the work in a Circle session (files, trigger).
-2. **C accept**: a durable task + an input revision `task_ · inrev_ r1`; a resend does not become a second copy.
-3. **E choose a method**: the skill package decides which tools to call and which rules to pass through `skp_ · digest`.
-4. **B read materials**: connector / original; each return is stored as-is `src_ · sar_ · evd_`.
-5. **E Enforcement chain Verification**: permission · Binding · rule; a provably true failure is reported as an error straight back to Circle `rule · pin · Error code`.
-6. **D claim execution**: pin the resource version + credential + method; the worker against the resource `op_ · pin · lease`.
-7. **B report into Evidence**: the scene enters B as-is; unknown stays unknown `evd_ · unknown`.
-8. **C result and disclosure**: pass → deliver; an error carries the facts; unknown is disclosed as observed, and the applicant chooses the next step `succeeded · failed · unknown`.
-9. **A retrieve**: the artifact returns to the session with its sha; closing Circle does not stop it `delivered · art_`.
-10. **B settle**: candidate claim → independent review → snapshot `clm_ · ks_`.
+The five elements correspond to no table, directory or id prefix. Following the [Hub r4 architecture](../../hub-r4-architecture.md), the Hub stores:
 
-Change set approval happens before this line: methods, resources, and sources are approved once when registered; a run follows only the Enforcement chain, and the platform is not an approver.
+- append-only records: one record table (id, kind, schema, digest, provenance, created_at, body) plus a small index table; the record kinds are `RECORD_KINDS` in the contracts;
+- content-addressed object bytes;
+- a little mutable state: users, token hashes, the current-root pointers (compare-and-swap) and vault entries.
 
-## 3. Adaptation sheet: when a new capability or an old system is brought in, fill in this table
+Everything else is derived from the records. A record's digest is the SHA-256 of the RFC 8785 canonical JSON of `{kind, schema, provenance, created_at, body}`.
 
-The answer can only be "N Assets + M flows + K rules", and it cannot be a change to hub's code.
+## 3. The five elements: checklist and record-page layout
 
-| Object | Questions to answer |
-|---|---|
-| B | Which systems are read? One connector per system type. Are there originals to upload (file + role + metadata)? What Evidence is produced? What claims can be submitted, and is the source the script or the model? |
-| C | Which flows are there, and what is each one's version? Which actions require an Independent reviewer? Which identities are there — a person, a service client? |
-| D | Which resources are touched? An adapter for which protocol? How are credentials supplied (static key / issued by hub / external OAuth)? What counts as unknown, and how is it checked? |
-| E | In the skill package, what do the prompts do, and what does the script do? What does the product-line manifest declare? Which deterministic rules does hub run at the boundary, and which are model judgments? |
-| A | What does the user see and do in Circle? Use only the existing tool projection, commands, cards, and Registry, and add no new interface. |
+### As a design checklist
 
-The check once it is filled in: zero changes to the hub core; the product name appears only in the manifest, the modules, and the data; every Asset can be approved by an Independent reviewer, pinned by sha, and disabled. For a filled-in sample see the [product-line pack exemplar](product-line-pack.md); the only things inserted at an Extension point are four kinds of harness primitives, see the [harness primitive specification](harness-primitives.md).
+When you design a component, a task pack or a system integration, answer every row; a row you cannot answer is a gap.
+
+| Element | Question to answer | Model elements |
+|---|---|---|
+| Records | Which records does it leave? Is everything that "says something" written as a claim, with grounds, a producer and validity conditions? | B01–B08 |
+| Assets | Is every rule, catalog and pack file it uses content-addressed, versioned and locked when the run starts? | B02, T01, W03–W05, C04–C07, D01, D07, K01, K02 |
+| Approval policy (now only authorization records) | Who authorizes it, and when? Only two kinds of decision exist: a pack's owner publishes it (it must pass the publish check), and an administrator assigns and configures. There is no approval flow; an authorization is not evidence, and a passed check is not an authorization | B04, T02, R01 |
+| Evidence | Which references are the grounds of the result? Where are the Hub's own action and effect records? Where are the rule's own positive and negative samples? | B01, B03, B05, B06, T01, C05 |
+| Extension points | Where does it plug in: ownership class, capability declaration, pack function, system-type profile and product-dialect profile, executor registration? Does a new product or a new system type leave the Hub core untouched? | C02, C08, T01, D01, D07 |
+
+### As a record-page layout
+
+A record on the console (read-only, planned) is laid out in the same five parts:
+
+1. The record itself, in the contracts' display order `DISPLAY_ORDER`: position, statement, nature and basis rank, qualifier, grounds, producer, resolution, validity;
+2. Assets: the task pack version, rule@version, catalogs and knowledge root digest it rests on;
+3. Authorization: the related publish, assignment, configuration or share records, with who decided and when;
+4. Evidence: the source fragments and Hub records the grounds point at, the Hub's action records, and the rule's samples;
+5. Extension points: the task pack it comes from and its ownership class.
+
+Anything absent or forbidden shows only “对你不可用” (not available to you) and an empty result of the same shape.
 
 ## 4. B's rules for originals and Evidence
 
-- An uploaded original is pinned by the SHA of its bytes; an upload with the same SHA in the same scope reuses the same source revision. When the bytes of an original, an artifact, or an Evidence record are downloaded, the platform re-checks the stored bytes' SHA and gives the digest in a response header (x-content-sha256); a client recomputes the SHA-256 after downloading and compares it with the reference. Every download re-checks the current identity and the source permission.
-- An Evidence record keeps pointers, scopes, SHAs, and small excerpts, and never stuffs a large file or the full text of invalid UTF-8 into a structured record. A worker's report first places the originals in B by SHA, then carries {path, sha256, objectKey, size} in the report; the platform reads them back under the current lease, input, and asset authorization and verifies the actual bytes and sizes — a missing file, a changed SHA, or a wrong size is not accepted. Any error in processing a report atomically lands as failed; a storage exception yields only `RECEIPT_PROCESSING_FAILED` with a safe classification, and carries no SQL, parameters, content, or internal paths.
-- An original's SHA is re-checked along the whole line: at admission, at the worker's read, at the server's read, in the dispatch receipt, and in the result. An as-is return from an interaction with the outside passes through redaction before it reaches the caller; the original text stays readable in B under the current permissions.
-- A successful read-only receipt settles into knowledge through an eventually consistent asynchronous indexing: the synchronous reply only verifies the SHA, stores the original/Evidence, and persists the outbox, and the read returns at once; an independent runner extracts structural observations from the originals and writes claims and assessments in batches, and the product snapshot updates only after the whole indexing task has succeeded. A claim is marked origin=script and an assessment semantic=not-asserted: they prove only the literal content and structure, and the existence of a command never asserts that a whole feature is supported. A failed indexing does not re-judge the original read as failed. Retrieval filters by the actual reader, the current asset and source permissions, the read grants, and the personal credential state, and a snapshot's publication widens no permission; batch records stage their members first and then incrementally replace the source's claim closure, instead of walking the whole scope claim by claim.
-- An external source artifact follows the line "upload the originals → register a knowledge-source Asset → independent approval": the approval yields a source-artifact id with the sar_ prefix, bound to the asset version, the declared metadata, and the digests of all files; a repeated registration with the same asset id, version, originals, and declaration reuses the same asset, and changed content requires a new version. The visibility of a pending draft follows [Approvals and the enforcement chain](approvals-and-enforcement.md#only-one-approval-concept-the-change-set). A read bound to a source artifact uses only the artifact's originals and never falls back to the network, and the result is marked origin=uploaded-artifact, live=false — what it proves is the artifact's bytes, not the remote side's current state. The uploader-declared metadata (for example an expected build name) is declared data: the platform does not interpret it and never takes it as fact; a self-reported digest or certification inside a file replaces neither the SHA of the uploaded original bytes nor the independent approval.
+> **Superseded** (2026-10-21): this section's rules for originals, evidence and indexing belonged to the retired server. Now a source artifact is content-addressed and stored verbatim with its provenance, and a matching hash proves only that it is that very file (B02); a reference is the only form of a claim's grounds (B03); an upload is scanned for credentials and a submission goes through boundary validation (T03); every exact value a model writes is resolved to a reference at the boundary, and quotations are checked verbatim against the source (T04). See the [generic model](generic-model.md).
 
 ---
 

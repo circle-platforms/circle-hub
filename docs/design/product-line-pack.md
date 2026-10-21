@@ -1,5 +1,7 @@
 # 产品线包典范
 
+> **已被取代**（2026-10-21）：产品线包 `product-line/1`、`modules.json` 安装和变更集审批已随旧服务器退役，文中的 meridian 样例也已删除。现在的分发单位是任务包，分产品包、工作流包和系统包，上传时自动跑包内正例与反例；见[通用模型](generic-model.md)的 T01、T02。本文只作记录保留。
+
 一个产品线接进 circle-hub，交付物只有一样东西：**产品线包**——四种 harness 原语的集合（Skill、MCP server 实例声明及其 Tool、Hook 处理器）加原件 role、流程版本和一份清单。hub 核心不为任何产品线改代码；产品线包按本文的布局和适配单来写，装进 hub 后经独立审批人批准生效。
 
 本仓库里的合成产品线 [meridian](../../packs/meridian/) 是公开的样板；真实产品线包放在各自的 packs 仓库里（例如 [circle-packs](https://github.com/circle-platforms/circle-packs)），不进 hub。

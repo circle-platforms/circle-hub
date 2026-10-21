@@ -1,5 +1,7 @@
 # 与 Circle 的集成
 
+> **已被取代**（2026-10-21）：hub 扩展 Circle 菜单、`/v1` 客户端接口和同步模型已随旧服务器退役。现在 Circle 把 Hub 当作普通 MCP 服务器连接，Circle 里不出现 Hub 专用的界面或标签；运行记录、知识库、任务包和系统管理放在 Hub 的只读控制台（规划中）。见[通用模型](generic-model.md)的 D06；本文只作记录保留。
+
 ## hub 是 Circle 的增强，不是另一个首页
 
 Circle 是你自己跑的 agent；hub 是团队跑的那个进程。同一套产品，两种运行方式：`circle` 和 `circle hub`。管理员也用 Circle，只是角色不同，没有第二个管理程序；无图形主机用 hub 自带的命令行。

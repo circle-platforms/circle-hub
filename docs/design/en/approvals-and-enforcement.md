@@ -1,5 +1,7 @@
 # Approvals and the enforcement chain
 
+> **Superseded** (2026-10-21): change-set approvals, the Independent reviewer, the two-person rule and the Enforcement chain were retired with the old server. There is no approval flow now, only authorization records: a pack's owner publishes it and it must pass the publish check, and an administrator assigns and configures; results come from the Hub's boundary validation, and error codes come only from the contracts' registry. See B04, T02, T03 and P11 in the [generic model](generic-model.md). Kept as a record only.
+
 ## Only one approval concept: the Change set
 
 One submission = one Change set = one Decision. A Change set may contain Assets of several objects: the skill package in one module, the product-line manifest, one rule, one connector instance. The Independent reviewer looks once and decides once, and the Decision binds the combined digest of every Asset; after it passes, each Asset's lifecycle updates atomically, and if it is declined, all of them are declined.

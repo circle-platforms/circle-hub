@@ -1,5 +1,7 @@
 # Handoff-to-design map
 
+> **Historical** (marked 2026-10-21): the two handoffs this table maps, and the design pages it points to, are now historical or superseded; for the current design see the [generic model](generic-model.md).
+
 The rules in the [client API handoff](../../client-api-handoff.md) and the [case-execution handoff](../../case-execution-handoff.md) have been merged into the matching documents under docs/design; this table records where each passage went, for the later trimming of the two handoffs into change records. Passages marked "not moved" in the right column are implementation records, acceptance figures, or product connector contracts, which the design documents do not take. The canonical map is the [Chinese version](../handoff-map.md); the handoff headings below stay in Chinese because the handoffs are Chinese.
 
 ## client-api-handoff.md

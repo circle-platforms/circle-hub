@@ -1,5 +1,7 @@
 # Harness primitive specification
 
+> **Superseded** (2026-10-21): the neutral `hub-*/1` manifests, the harness adapters and per-primitive independent approval were retired with the old server. The Hub is now a standard MCP server with six tools, tool annotations follow from the effect class and from whether the call writes Hub records, and the unit of distribution is the task pack; see D03, D06 and T01 in the [generic model](generic-model.md). Kept as a record only.
+
 hub is the hub of harnesses, and it is a public general platform: what it governs are the primitives that **any harness** has, not only Circle's. Circle is the first harness, and the one integrated most deeply; skills, hooks, agents, and commands written by harnesses such as Claude Code, Codex, OpenCode, and Pi must likewise be registrable in hub, independently approved, and then installed into any harness. If that cannot be done, hub is only Circle's private backend.
 
 The specification therefore has three layers: the **neutral list** (what hub stores), the **adapter** (how each harness imports and exports), and the **generic transport** (MCP, so any harness can use hub without installing an adapter).

@@ -1,5 +1,7 @@
 # Execution flows in product-line packs
 
+> **Superseded** (2026-10-21): the execution flows, `module-execute` and product-line modules described here were retired with the old server. Effect writes, leases and executors (B06, D04, the write declarations of D03, the executor part of D07) remain in the [generic model](generic-model.md) and are not implemented in milestone 1; the read part of D03 and the resource part of D07 are implemented by the connectors package. Kept as a record only.
+
 This is the English companion to the [execution-flow migration design](../execution-flow-packs.md). A3, B and C1–C5 remain implemented. D in 0.2.0 removes the native apv-case-execute 1.1.1 entry, controller, worker and dedicated parsers. New executions use module-execute with independently approved product modules. A read-only pre-retirement snapshot found 11 terminal native tasks (9 delivered, 2 failed), with no in-flight or unknown task; deployment must recheck. Migration 20 keeps its original bytes; migration 44 makes legacy receipts read-only without rebinding old tasks. Synthetic checks and operational observations are recorded separately in [progress](../../server-s2-progress.md). Native protocol descriptions below are historical context, not available submission entry points.
 
 The design uses the existing [product-line pack contract](product-line-pack.md), [harness primitives](harness-primitives.md) and [approval and enforcement chain](approvals-and-enforcement.md). It adds no REST resource, permission concept, Hook point or event interface.

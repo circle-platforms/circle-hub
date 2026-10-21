@@ -1,0 +1,182 @@
+// Rules the docs keep, applied by docs.test.ts: links the docs site can serve, vocabulary tables equal to the generated
+// vocabulary, the model's decided and deferred counts, a source for every recorded decision, and no local paths.
+import { posix } from 'node:path';
+
+export const REPOSITORY = 'https://github.com/circle-platforms/circle-hub';
+
+export interface Site {
+  /** 'file', 'dir' or undefined for a repository-relative path. */
+  kind(path: string): 'file' | 'dir' | undefined;
+  /** Whether the docs site build (docs/ only) publishes this repository-relative path. */
+  published(path: string): boolean;
+}
+
+export interface Link {
+  target: string;
+  line: number;
+}
+
+const BANNER = /^> \*\*(历史文档|历史记录|历史调查|已被取代|Superseded|Historical(?: survey)?)\*\*/;
+
+/** A page that opens with a historical or superseded banner is a record; its body is kept as it was. */
+export function isHistorical(markdown: string): boolean {
+  const first = markdown.split('\n').slice(0, 15).find((line) => line.startsWith('> **'));
+  return first !== undefined && BANNER.test(first);
+}
+
+/** Link targets outside code blocks and code spans: inline links and images, reference definitions, href and src. */
+export function linksOf(markdown: string): Link[] {
+  const links: Link[] = [];
+  let fence: string | undefined;
+  markdown.split('\n').forEach((raw, index) => {
+    const opener = /^\s{0,3}(`{3,}|~{3,})/.exec(raw);
+    if (opener) {
+      if (fence === undefined) fence = opener[1][0];
+      else if (opener[1][0] === fence) fence = undefined;
+      return;
+    }
+    if (fence !== undefined) return;
+    const line = raw.replace(/(`+)[^`]*?\1/g, '');
+    const found = [
+      ...[...line.matchAll(/!?\[[^\]]*\]\(\s*<?([^)\s>]+)>?(?:\s+(?:"[^"]*"|'[^']*'))?\s*\)/g)].map((m) => m[1]),
+      ...[...line.matchAll(/\b(?:href|src)="([^"]+)"/g)].map((m) => m[1]),
+    ];
+    const definition = /^\s{0,3}\[[^\]]+\]:\s*<?([^\s>]+)>?/.exec(line);
+    if (definition) found.push(definition[1]);
+    for (const target of found) links.push({ target, line: index + 1 });
+  });
+  return links;
+}
+
+function decode(path: string): string {
+  try {
+    return decodeURIComponent(path);
+  } catch {
+    return path;
+  }
+}
+
+/**
+ * Problems with the links of one published page (`page` is repository-relative, under docs/). The site is built from docs/
+ * alone, so a relative link that leaves docs/ is a 404 there; such targets take an absolute link to the file on main, and
+ * that file must exist in this tree.
+ */
+export function linkProblems(page: string, markdown: string, site: Site): string[] {
+  const problems: string[] = [];
+  const mainPrefix = new RegExp(`^${REPOSITORY.replace(/[.]/g, '\\.')}/(?:blob|tree)/main/`);
+  for (const { target, line } of linksOf(markdown)) {
+    const at = `${page}:${line} ${target}`;
+    if (/^[a-z][a-z0-9+.-]*:/i.test(target)) {
+      if (!mainPrefix.test(target)) continue;
+      const path = decode(target.replace(mainPrefix, '').split(/[#?]/)[0]).replace(/\/$/, '');
+      if (site.kind(path) === undefined) problems.push(`${at}: links to ${path} on main, which is not in this tree`);
+      continue;
+    }
+    if (target.startsWith('#')) continue;
+    if (target.startsWith('/')) {
+      problems.push(`${at}: a site-absolute link misses the site's base URL; use a relative link`);
+      continue;
+    }
+    const path = posix.normalize(posix.join(posix.dirname(page), decode(target.split(/[#?]/)[0]))).replace(/\/$/, '');
+    if (path !== 'docs' && !path.startsWith('docs/')) {
+      problems.push(`${at}: leaves docs/, so the docs site cannot serve it; link ${REPOSITORY}/blob/main/${path} instead`);
+      continue;
+    }
+    const kind = site.kind(path);
+    if (kind === undefined) problems.push(`${at}: ${path} does not exist`);
+    else if (kind === 'dir') {
+      if (!site.published(`${path}/README.md`) && !site.published(`${path}/index.md`)) problems.push(`${at}: the site has no page for ${path}/`);
+    } else if (!site.published(path)) problems.push(`${at}: ${path} is excluded from the docs site`);
+  }
+  return problems;
+}
+
+export interface Axis {
+  label: string;
+  values: readonly { code: string; label: string }[];
+}
+
+/**
+ * Rows of a vocabulary table are hand-copied from the generated vocabulary, so they must stay equal to it. Chinese rows are
+ * `| \`axis\` | axis label | labels |`, English rows `| \`axis\` | codes |`; values are separated by 、 or , (or > for a ranking).
+ */
+export function vocabularyTableProblems(markdown: string, lang: 'zh' | 'en', axes: Readonly<Record<string, Axis>>): string[] {
+  const problems: string[] = [];
+  let rows = 0;
+  for (const raw of markdown.split('\n')) {
+    const cells = raw.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((c) => c.trim());
+    const name = /^`([a-z_]+)`$/.exec(cells[0] ?? '');
+    if (!raw.trim().startsWith('|') || name === null) continue;
+    rows += 1;
+    const axis = axes[name[1]];
+    if (axis === undefined) {
+      problems.push(`${name[1]}: not a vocabulary axis`);
+      continue;
+    }
+    if (lang === 'zh') {
+      if (cells[1] !== axis.label) problems.push(`${name[1]}: label ${JSON.stringify(cells[1])}, generated ${JSON.stringify(axis.label)}`);
+      const shown = (cells[2] ?? '').split(/\s*(?:、|>)\s*/);
+      const generated = axis.values.map((v) => v.label);
+      if (shown.join('|') !== generated.join('|')) problems.push(`${name[1]}: values ${shown.join('、')}, generated ${generated.join('、')}`);
+    } else {
+      const shown = (cells[1] ?? '').split(/\s*(?:,|>)\s*/).map((c) => c.replace(/`/g, ''));
+      const generated = axis.values.map((v) => v.code);
+      if (shown.join('|') !== generated.join('|')) problems.push(`${name[1]}: codes ${shown.join(', ')}, generated ${generated.join(', ')}`);
+    }
+  }
+  if (rows === 0) problems.push('no vocabulary table row found');
+  return problems;
+}
+
+export interface Pending {
+  item: string;
+  status?: string;
+}
+
+/**
+ * A page that summarises the model's pending items states how many there are, how many are decided and how many deferred,
+ * with the model's own words: "19 项待定 … 17 项已定，2 项暂缓" or "19 pending items … 17 are decided and 2 are deferred".
+ * Chinese pages also name every deferred item as the model does.
+ */
+export function pendingSummaryProblems(markdown: string, lang: 'zh' | 'en', pending: readonly Pending[]): string[] {
+  const problems: string[] = [];
+  const decided = pending.filter((p) => p.status === '已定');
+  const deferred = pending.filter((p) => p.status === '暂缓');
+  const other = pending.filter((p) => p.status !== '已定' && p.status !== '暂缓');
+  if (other.length > 0) problems.push(`the model has ${other.length} pending items that are neither decided nor deferred; say so`);
+  const stated =
+    lang === 'zh'
+      ? /(\d+) 项待定[^。]*?(\d+) 项已定[^。]*?(\d+) 项[^。]{0,12}暂缓/.exec(markdown)
+      : /(\d+) pending items[^.]*?(\d+) are decided[^.]*?(\d+) are deferred/.exec(markdown);
+  if (stated === null) return [...problems, 'the page does not state how many pending items are decided and how many deferred'];
+  const [total, yes, later] = stated.slice(1).map(Number);
+  if (total !== pending.length) problems.push(`states ${total} pending items, the model has ${pending.length}`);
+  if (yes !== decided.length) problems.push(`states ${yes} decided, the model has ${decided.length}`);
+  if (later !== deferred.length) problems.push(`states ${later} deferred, the model has ${deferred.length}`);
+  if (lang === 'zh') for (const p of deferred) if (!markdown.includes(p.item)) problems.push(`does not name the deferred item ${JSON.stringify(p.item)}`);
+  return problems;
+}
+
+/** Every numbered entry of the progress page's 决定 section names where it comes from (来源：…). */
+export function decisionSourceProblems(markdown: string): string[] {
+  const start = markdown.search(/^## 决定$/m);
+  if (start === -1) return ['no 决定 section'];
+  const rest = markdown.slice(start + 1);
+  const end = rest.search(/^## /m);
+  const section = end === -1 ? rest : rest.slice(0, end);
+  const entries = section.split(/^(?=\d+\. )/m).filter((e) => /^\d+\. /.test(e));
+  if (entries.length === 0) return ['the 决定 section has no numbered entry'];
+  return entries.filter((e) => !e.includes('来源：')).map((e) => `decision ${/^(\d+)/.exec(e)?.[1]} names no source (来源：…)`);
+}
+
+// Built from pieces so that this file does not match itself.
+const LOCAL_PATH = new RegExp(['/' + 'Users/[^/\\s`)]+', '/' + 'home/[^/\\s`)]+', '~' + '/(?=[A-Za-z0-9])', '[A-Z]:\\\\' + 'Users\\\\'].join('|'), 'g');
+
+/** Paths that show the layout of someone's machine: home directories and paths below them. */
+export function localPathProblems(file: string, text: string): string[] {
+  const problems: string[] = [];
+  text.split('\n').forEach((line, index) => {
+    for (const m of line.matchAll(LOCAL_PATH)) problems.push(`${file}:${index + 1}: local path ${JSON.stringify(m[0])}`);
+  });
+  return problems;
+}

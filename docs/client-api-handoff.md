@@ -1,5 +1,7 @@
 # Circle 客户端接口交接：普通用户读取与脑图编译
 
+> **历史文档**（2026-10-21 标注）：本文描述已退役服务器的 `/v1` 客户端接口和 Circle hub 扩展协议，这些路由在现行代码里已不存在，只作记录保留。现行工具面见 [Hub r4 架构](hub-r4-architecture.md)和[通用模型](design/generic-model.md)。
+
 ## 0.2.0 当前边界：原生执行退役
 
 `GET /v1/packs` 不再登记 `apv-case-execute`，新提交明确返回 `UNSUPPORTED_VERSION`，不兼容转发到 `module-execute`。新的执行显式提交产品模块 flow 与已批准 pin；历史任务保留旧 capability、版本、输入修订、结果和制品引用，不改绑。migration 20 字节保留，新增 migration 44 令旧回执表只读。下文原生执行章节是早期版本交接记录，不再代表可新建入口。

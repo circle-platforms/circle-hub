@@ -1,5 +1,7 @@
 # harness 原语的磁盘格式
 
+> **历史调查**（2026-10-21 标注）：本文是 2026-10-13 为已删除的 harness 适配器库所做的格式调查，各家格式此后可能已变；Hub 现在是标准 MCP 服务器，不再导入导出 harness 原语。本文只作记录保留。
+
 适配器把一个 harness 磁盘上的 Skill、Command、Agent、Instruction、Hook、MCP server 收成 hub 资产和中立清单，再按同一份清单写回该 harness 的目录。这份调查只记录 2026-10-13 当天官方文档里写明的文件、字段和导出命令，给导入导出和 `knownCompatible` 当依据。
 
 Permission policy 已在 [权限策略导出](permission-export.md)。这里不重复。
