@@ -8,13 +8,12 @@ nav_order: 3
 
 ## 阶段清单
 
-- [ ] 第 1 阶段：合约补全、records、refs、rules、platform、docs
+- [x] 第 1 阶段：合约补全、records、refs、rules、platform、docs、jev（2026-10-22 完成并提交）
   - [x] 退役旧的任务与审批服务器实现（00a5022）
-  - [x] 由通用模型第 5 版生成合约（37f4dee）
+  - [x] 由通用模型第 5 版生成合约（37f4dee）；任务包、产品、表的格式和跨包接口（hub/ports.ts）
   - [x] 架构简报与模型元素查看器（57f5c32）
-  - [ ] 合约补全，records、refs、rules、platform 四个包：进行中
-  - [ ] docs：公开文档按新设计改写，复核意见已修（2026-10-22），待集成者复核
-  - [ ] 独立复核与修复轮
+  - [x] records、refs、rules、platform、jev 各自经两位独立复核和一轮修复；docs 已改写并经复核
+  - [x] 本机 macOS 完整运行：`npx tsc --noEmit` 无错误；`node tools/gen-contracts.ts --check` 与模型一致；合约 196 项、records/config/testing/rules 267 项（1 项跳过）、refs 295 项、platform 155 项、jev 220 项、`scripts` 下的真实系统脚本 40 余项、文档检查 50 项，全部通过
 - [ ] 第 2 阶段：knowledge、runs、connectors
 - [ ] 第 3 阶段：server、packs
 - [ ] 第 4 阶段：验收与集成，对照模型独立复核整体
