@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "kind": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_.-]{0,63}$",
+      "description": "the chain, for example placement.choice"
+    },
+    "model": {
+      "type": "string",
+      "minLength": 1,
+      "description": "exact model version"
+    },
+    "origin": {
+      "type": "string",
+      "enum": [
+        "projected",
+        "declared"
+      ],
+      "description": "projected from code placement, or declared by the labeller"
+    },
+    "samples": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "input": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "digest of the piece the question was about"
+          },
+          "expected": {
+            "type": "string",
+            "minLength": 1,
+            "description": "the right option"
+          },
+          "chosen": {
+            "type": "string",
+            "minLength": 1,
+            "description": "the option the model gave the highest probability"
+          },
+          "probability": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "that highest probability"
+          }
+        },
+        "required": [
+          "input",
+          "expected",
+          "chosen",
+          "probability"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "decided_by": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^usr_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "the administrator who labelled the samples"
+    },
+    "root": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "the root the code-placed spans came from"
+    },
+    "note": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "kind",
+    "model",
+    "origin",
+    "samples",
+    "decided_by",
+    "root",
+    "note"
+  ],
+  "additionalProperties": false
+}

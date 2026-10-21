@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "product": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{1,40}$"
+    },
+    "kind": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "description": "declared by the producer (K02 R[1])"
+    },
+    "statement": {
+      "type": "string",
+      "description": "normalised canonical statement"
+    },
+    "data": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {}
+    },
+    "applicability": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "builds": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "platforms": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "models": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "null: 未声明 (K02 F[6])"
+    }
+  },
+  "required": [
+    "product",
+    "kind",
+    "statement",
+    "data",
+    "applicability"
+  ],
+  "additionalProperties": false
+}

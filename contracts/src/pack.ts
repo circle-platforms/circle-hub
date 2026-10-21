@@ -406,6 +406,7 @@ export type ProjectionInput = z.infer<typeof ProjectionInput>;
 export const ProjectedItem = z.strictObject({
   id: ItemId,
   label: z.string(),
+  summary: z.string().optional().describe('one short line the model reads about the item next to its id and label (a tool result is read as text and must stay small); the full fields remain in the structured answer'),
   location: FragmentRef,
   fields: z.record(z.string(), z.unknown()),
 });

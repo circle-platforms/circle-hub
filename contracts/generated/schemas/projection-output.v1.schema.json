@@ -17,6 +17,10 @@
               "label": {
                 "type": "string"
               },
+              "summary": {
+                "description": "one short line the model reads about the item next to its id and label (a tool result is read as text and must stay small); the full fields remain in the structured answer",
+                "type": "string"
+              },
               "location": {
                 "type": "object",
                 "properties": {

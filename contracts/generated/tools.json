@@ -1226,6 +1226,10 @@
                   "label": {
                     "type": "string"
                   },
+                  "summary": {
+                    "description": "one short line the model reads about the item (from the pack projection); the text of a tool result is limited, so a long list of items is shown as id, label and summary only",
+                    "type": "string"
+                  },
                   "location": {
                     "type": "string",
                     "maxLength": 8192,

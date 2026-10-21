@@ -35,6 +35,7 @@ export type SourceBinding = z.infer<typeof SourceBinding>;
 export const ItemProjection = z.strictObject({
   id: ItemId,
   label: z.string(),
+  summary: z.string().optional().describe('one short line the model reads about the item (from the pack projection); the text of a tool result is limited, so a long list of items is shown as id, label and summary only'),
   location: ReferenceUri.describe('where the item sits in the judged source'),
   fields: z.record(z.string(), z.unknown()),
   digest: Sha256.optional().describe('item fingerprint the Hub computes from the canonical fields; unchanged across runs means the item can be carried over'),
