@@ -1,0 +1,17 @@
+# One OpenKM subtree per file; copy the credentials and base URL from the existing export.properties of the document host,
+# then change davRoot and outDir. Keep the real file mode 600 and out of Git.
+okm.baseUrl=http://<openkm-host>/OpenKM
+okm.user=<account>
+okm.password=<password>
+okm.davRoot=/okm:root/APV_Release/Infosec_Release_Notes
+okm.outDir=/root/infotest_server/uploads/REL_INFOSEC
+okm.bootstrapDays=-1
+okm.sinceDays=-1
+okm.intervalMinutes=0
+okm.onStartup=true
+okm.maxDepth=40
+okm.throttleMs=100
+okm.davRetries=3
+okm.flatDir=false
+okm.trustAll=false
+okm.verbose=false
