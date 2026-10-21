@@ -21,7 +21,7 @@ The design authority is the generic model in [contracts/model.json](https://gith
 |---|---|---|
 | [Approvals and the enforcement chain](approvals-and-enforcement.md) | Change-set approvals, the enforcement chain, the error-code catalogue | Authorization records B04, publish check T02, boundary validation T03, the two mandatory boundaries P11 |
 | [Roles and scope](roles.md) | Administrator / member / guest by scope, the two-person rule | Permission role R01 (user, administrator), visibility R02 |
-| [Terms and states](vocabulary.md) | The old terms, state enumerations and colours | The model's vocabulary (52 axes) |
+| [Terms and states](vocabulary.md) | The old terms, state enumerations and colours | The model's vocabulary (53 axes) |
 | [Levels and elements](levels-and-elements.md) | Five levels of interface in Circle | No Hub-specific interface in Circle; a read-only console (planned) |
 | [Integration with Circle](circle-integration.md) | hub extending Circle's menus | Circle connects as an ordinary MCP client (D06) |
 | [Product-line pack exemplar](product-line-pack.md) | The `product-line/1` pack | Task pack T01, publish record and publish check T02 |

@@ -51,6 +51,31 @@ test('a catalog may be limited to the entries of one declared producer', () => {
   assert.ok(!ProductDeclaration.safeParse({ ...declaration, catalogs: [{ ...declaration.catalogs[0], producer: 'Not Valid' }] }).success);
 });
 
+test('a build may list many sources in one role and a producer may read them in batches', () => {
+  const build = {
+    name: 'Rel_Widget_1_2_3',
+    family: 'Widget',
+    line: '1.2',
+    base: 'Rel_Widget_1_2_3',
+    platform: null,
+    built_at: null,
+    released_at: null,
+    sources: { tree: 'site:command-tree:Rel_Widget_1_2_3', documents: ['tracker:doc:1', 'tracker:doc:2'] },
+  };
+  assert.ok(BuildInfo.safeParse(build).success);
+  assert.ok(!BuildInfo.safeParse({ ...build, sources: { documents: ['not an id'] } }).success, 'every listed object is an external id');
+  const listed = {
+    ...declaration,
+    producers: [
+      ...declaration.producers,
+      { id: 'cases', title: 'Cases', function: { module: 'functions/cases.ts' }, inputs: { documents: { source: 'documents', many: true, batch: 40 }, tree: { source: 'tree' } } },
+    ],
+  };
+  assert.ok(ProductDeclaration.safeParse(listed).success);
+  const tooBig = { ...listed, producers: [{ ...listed.producers[1], inputs: { documents: { source: 'documents', many: true, batch: 500 } } }] };
+  assert.ok(!ProductDeclaration.safeParse(tooBig).success, 'a batch is at most 200');
+});
+
 test('pack function references stay inside functions/', () => {
   for (const module of ['functions/a.ts', 'functions/sub/b.ts']) {
     assert.ok(ProductDeclaration.safeParse({ ...declaration, select_build: { module } }).success, module);

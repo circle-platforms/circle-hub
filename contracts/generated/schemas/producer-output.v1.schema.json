@@ -45,6 +45,11 @@
                   "type": "string",
                   "pattern": "^[a-z][a-z0-9_]*$"
                 },
+                "source": {
+                  "description": "digest of the source inside a list slot (ProducerSlot.sha256); required for a list slot",
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
                 "parser": {
                   "type": "string",
                   "pattern": "^[a-z][a-z0-9_.-]*@(?:0|[1-9][0-9]*)$"
@@ -135,6 +140,11 @@
                 "description": "which input slot; required when the producer has more than one",
                 "type": "string",
                 "pattern": "^[a-z][a-z0-9_]*$"
+              },
+              "source": {
+                "description": "digest of the source inside a list slot (ProducerSlot.sha256); required for a list slot",
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
               },
               "parser": {
                 "type": "string",

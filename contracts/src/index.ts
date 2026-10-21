@@ -5,6 +5,7 @@ import * as productSchemas from './product.ts';
 import * as knowledgeSchemas from './knowledge.ts';
 import * as resourceSchemas from './resources.ts';
 import * as tableSchemas from './tables.ts';
+import * as viewSchemas from './views.ts';
 import { Claim } from './claim.ts';
 import { SchemaId } from './common.ts';
 import { RecordEnvelope } from './records.ts';
@@ -55,4 +56,5 @@ export const SCHEMA_REGISTRY: Record<string, z.ZodType> = registry({
   'knowledge.ts': knowledgeSchemas.schemas,
   'resources.ts': resourceSchemas.schemas,
   'tables.ts': tableSchemas.schemas,
+  'views.ts': viewSchemas.schemas,
 });

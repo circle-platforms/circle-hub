@@ -4,7 +4,7 @@ title: Hub r4 architecture
 
 # Hub r4 architecture (milestone 1)
 
-This is the shared brief for everyone building the redesigned Hub. The design authority is the generic model in `contracts/model.json` (73 elements, 52 vocabulary axes, version 5). Read an element with `node tools/show-element.ts B01 A03` (prints definition, fields and rules). When this brief and the model disagree, the model wins; report the disagreement in your package README.
+This is the shared brief for everyone building the redesigned Hub. The design authority is the generic model in `contracts/model.json` (73 elements, 53 vocabulary axes, version 5). Read an element with `node tools/show-element.ts B01 A03` (prints definition, fields and rules). When this brief and the model disagree, the model wins; report the disagreement in your package README.
 
 ## 1. What milestone 1 delivers
 

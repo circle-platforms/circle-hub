@@ -4,7 +4,7 @@ nav_order: 5
 
 # 通用模型
 
-设计的权威是 [contracts/model.json](https://github.com/circle-platforms/circle-hub/blob/main/contracts/model.json)：第 5 版，11 组 73 个元素，52 个词表轴，另有分类规则、展示规则、格式提案和已定的待定项。本页是摘要。元素的定义、字段和规则以模型为准，用 `tools/show-element.ts` 读：
+设计的权威是 [contracts/model.json](https://github.com/circle-platforms/circle-hub/blob/main/contracts/model.json)：第 5 版，11 组 73 个元素，53 个词表轴，另有分类规则、展示规则、格式提案和已定的待定项。本页是摘要。元素的定义、字段和规则以模型为准，用 `tools/show-element.ts` 读：
 
 ```sh
 node tools/show-element.ts B01 W06          # 元素的定义、字段与规则
@@ -61,7 +61,7 @@ Hub 是标准 MCP 服务器（D06）：本地 Circle、bot 和其他客户端共
 
 ## 词表
 
-52 个轴，每轴是一个封闭集合，由 `npm run gen:contracts` 生成到 `contracts/generated/vocabulary.ts`：每轴有类型、zod 枚举和中文标签。代码只经 `labelOf(轴, 代码)` 取标签，不手写枚举，也不自造词。读一份校验结果最常用的几轴如下（取自模型第 5 版，取值以生成物为准；文档检查 `.github/checks` 核对这张表与生成物一致），完整的轴用 `node tools/show-element.ts --vocab <轴>` 查看：
+53 个轴，每轴是一个封闭集合，由 `npm run gen:contracts` 生成到 `contracts/generated/vocabulary.ts`：每轴有类型、zod 枚举和中文标签。代码只经 `labelOf(轴, 代码)` 取标签，不手写枚举，也不自造词。读一份校验结果最常用的几轴如下（取自模型第 5 版，取值以生成物为准；文档检查 `.github/checks` 核对这张表与生成物一致），完整的轴用 `node tools/show-element.ts --vocab <轴>` 查看：
 
 | 轴 | 标签 | 取值 |
 |---|---|---|

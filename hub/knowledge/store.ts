@@ -103,7 +103,7 @@ export function buildProblem(product: string, build: BuildInfo): string | null {
       return `${what} ${JSON.stringify(cutText(name, 60))} 记不下：要是规范的 Unicode、不含 NUL，加上产品名不超过 ${MAX_INDEX_VALUE_BYTES} 字节（现在 ${Buffer.byteLength(buildKey(product, name), 'utf8')} 字节）`;
     }
   }
-  const texts = [build.family, build.line, build.platform ?? '', ...Object.keys(build.sources), ...Object.values(build.sources)];
+  const texts = [build.family, build.line, build.platform ?? '', ...Object.keys(build.sources), ...Object.values(build.sources).flat()];
   if (!texts.every(storable)) return '构建信息里有不能保存的文字（不成对的代理字符或 NUL）';
   try {
     pointerName(product, build.line);

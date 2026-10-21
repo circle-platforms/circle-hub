@@ -85,14 +85,16 @@ export function plannedSources(product: ProductHandle, build: BuildInfo): Planne
     for (const [slot, source] of Object.entries(producer.inputs)) {
       const optional = source.optional === true;
       if ('source' in source) {
-        const external = Object.hasOwn(build.sources, source.source) ? build.sources[source.source] : null;
+        const held = Object.hasOwn(build.sources, source.source) ? build.sources[source.source] : null;
+        // A role that lists several objects is read in batches once the knowledge package supports list slots; until then it is a problem.
+        const external = typeof held === 'string' ? held : null;
         out.push({
           producer: producer.id,
           slot,
           external,
           optional,
           basis: build.released_at !== null ? 'release_record' : 'declared',
-          problem: external === null ? `构建 ${build.name} 没有 ${source.source} 来源` : null,
+          problem: external === null ? (held === null ? `构建 ${build.name} 没有 ${source.source} 来源` : `构建 ${build.name} 的 ${source.source} 来源是一个列表，列表来源还没有支持`) : null,
         });
       } else {
         try {

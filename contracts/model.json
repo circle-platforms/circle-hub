@@ -4647,6 +4647,25 @@
    ]
   },
   {
+   "axis": "change_kind",
+   "label": "版本差类型",
+   "owner": "K01",
+   "values": [
+    {
+     "code": "added",
+     "label": "新增"
+    },
+    {
+     "code": "removed",
+     "label": "删除"
+    },
+    {
+     "code": "modified",
+     "label": "修改"
+    }
+   ]
+  },
+  {
    "axis": "read_tier",
    "label": "读取档位",
    "owner": "B02",

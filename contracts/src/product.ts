@@ -72,6 +72,9 @@ export type ExternalTemplate = z.infer<typeof ExternalTemplate>;
 
 // ---------------------------------------------------------------- builds
 
+/** Most external objects one role of a build may list (a producer reads them in batches). */
+export const MAX_LIST_SOURCES = 20000;
+
 /**
  * One build of the product as the pack's sync function identifies it. APV and NSAE style name families are one product: `family`
  * says which name the build carries and `base` the build whose tree it uses (itself when it has its own tree, otherwise the
@@ -85,7 +88,9 @@ export const BuildInfo = z.strictObject({
   platform: z.string().min(1).nullable().describe('platform or customer branch; null for the main platform'),
   built_at: IsoTime.nullable(),
   released_at: IsoTime.nullable().describe('null while unreleased'),
-  sources: z.record(z.string(), ExternalObjectId).describe('external objects of this build by role the producers use, for example the command tree; empty for an alias without a tree of its own'),
+  sources: z
+    .record(z.string(), z.union([ExternalObjectId, z.array(ExternalObjectId).max(MAX_LIST_SOURCES)]))
+    .describe('external objects of this build by role the producers use, for example the command tree; a role may hold a list, for example every case document the build covers; empty for an alias without a tree of its own'),
 });
 export type BuildInfo = z.infer<typeof BuildInfo>;
 
@@ -161,7 +166,12 @@ export type CatalogDeclaration = z.infer<typeof CatalogDeclaration>;
 
 /** Where a producer's source comes from: a role of the build's own sources, or a templated external object. */
 export const ProducerSource = z.union([
-  z.strictObject({ source: z.string().min(1), optional: z.boolean().optional() }),
+  z.strictObject({
+    source: z.string().min(1),
+    optional: z.boolean().optional(),
+    many: z.boolean().optional().describe('the role holds a list of external objects; the function is called once per batch of them and its outputs are concatenated, so an entry must not depend on another batch'),
+    batch: z.number().int().min(1).max(200).optional().describe('objects per call for a list role, default 50'),
+  }),
   z.strictObject({ external: ExternalTemplate, optional: z.boolean().optional() }),
 ]);
 export type ProducerSource = z.infer<typeof ProducerSource>;
@@ -193,6 +203,8 @@ export const ProducerSlot = z.strictObject({
 export const ProducerInput = z.strictObject({
   build: KnownBuild,
   slots: z.record(SlotName, ProducerSlot.nullable()),
+  lists: z.record(SlotName, z.array(ProducerSlot)).optional().describe('the batch of each list slot (many: true); the other slots are the same in every call'),
+  batch: z.strictObject({ index: z.number().int().nonnegative(), of: z.number().int().min(1) }).optional().describe('which batch this call is, when the producer has a list slot'),
   params: z.record(z.string(), z.unknown()),
 });
 export type ProducerInput = z.infer<typeof ProducerInput>;
@@ -200,6 +212,7 @@ export type ProducerInput = z.infer<typeof ProducerInput>;
 /** A piece of a stored source: parser, selector and an optional UTF-8 byte range inside the fragment. */
 export const FragmentRef = z.strictObject({
   slot: SlotName.optional().describe('which input slot; required when the producer has more than one'),
+  source: Sha256.optional().describe('digest of the source inside a list slot (ProducerSlot.sha256); required for a list slot'),
   parser: Versioned,
   selector: z.string().min(1),
   range: z.tuple([z.number().int().nonnegative(), z.number().int().nonnegative()]).optional(),

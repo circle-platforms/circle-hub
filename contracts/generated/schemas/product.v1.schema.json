@@ -187,6 +187,16 @@
                     },
                     "optional": {
                       "type": "boolean"
+                    },
+                    "many": {
+                      "description": "the role holds a list of external objects; the function is called once per batch of them and its outputs are concatenated, so an entry must not depend on another batch",
+                      "type": "boolean"
+                    },
+                    "batch": {
+                      "description": "objects per call for a list role, default 50",
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 200
                     }
                   },
                   "required": [
