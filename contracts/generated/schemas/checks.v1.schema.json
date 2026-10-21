@@ -1,0 +1,121 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "checks@1"
+    },
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "interpreter": {
+            "description": "a core interpreter such as structure@1",
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_.-]*@(?:0|[1-9][0-9]*)$"
+          },
+          "function": {
+            "description": "a pack function with the PackCheckInput of hub/rules",
+            "type": "object",
+            "properties": {
+              "module": {
+                "type": "string",
+                "pattern": "^functions\\/[A-Za-z0-9_.\\/-]+\\.ts$"
+              },
+              "export": {
+                "type": "string",
+                "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$"
+              }
+            },
+            "required": [
+              "module"
+            ],
+            "additionalProperties": false
+          },
+          "table": {
+            "description": "the table the interpreter reads, under tables/ or policies/",
+            "type": "string"
+          },
+          "applies": {
+            "type": "string",
+            "enum": [
+              "run",
+              "item"
+            ],
+            "description": "run: one subject for all items, built once; item: one subject per item (with its submitted slots)"
+          },
+          "subject": {
+            "description": "builds the subject from RunSubjectInput or ItemSubjectInput; without it the default subject of that input is used",
+            "type": "object",
+            "properties": {
+              "module": {
+                "type": "string",
+                "pattern": "^functions\\/[A-Za-z0-9_.\\/-]+\\.ts$"
+              },
+              "export": {
+                "type": "string",
+                "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$"
+              }
+            },
+            "required": [
+              "module"
+            ],
+            "additionalProperties": false
+          },
+          "catalog": {
+            "description": "the catalog of the locked root the check consults",
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_.-]*@(?:0|[1-9][0-9]*)$"
+          },
+          "judges": {
+            "type": "string",
+            "enum": [
+              "expected",
+              "subject",
+              "artifact_under_verification",
+              "reported_actual",
+              "republished",
+              "hint",
+              "request_text"
+            ],
+            "description": "the role of what the check judges (A03): the target, an expected source or the artifact under verification"
+          },
+          "tier": {
+            "description": "replaces the tier of every outcome",
+            "type": "string",
+            "enum": [
+              "blocking",
+              "advisory"
+            ]
+          },
+          "basis": {
+            "description": "the acceptance contract clause a blocking check relies on (C05 R[1])",
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "id",
+          "applies",
+          "judges"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "schema",
+    "checks"
+  ],
+  "additionalProperties": false
+}

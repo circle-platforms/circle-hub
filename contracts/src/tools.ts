@@ -1,11 +1,13 @@
 // The six MCP tools of the Hub (D06). Schemas here are the single source for the server, the tests and contracts/generated/tools.json.
+// Every answer conforms to its output schema, a protocol error included: the envelope plus the tool's empty shape (D05 R[3]),
+// never invented run ids, locks or digests.
 import { z } from 'zod';
-import { PackKindSchema } from '../generated/vocabulary.ts';
+import { AcceptanceSchema, PackKindSchema, ReadTierSchema, ResolutionSchema, SourceRoleSchema } from '../generated/vocabulary.ts';
 import { Coverage, Envelope, ItemId, PackId, RunId, Sha256 } from './common.ts';
-import { ExternalObjectId, ReferenceUri } from './reference.ts';
+import { ExternalObjectId, Ground, ReferenceUri, TreePath, referenceUriOf } from './reference.ts';
 import { InputBinding, PackSummary, RunSummary } from './run.ts';
 import { Submission } from './submission.ts';
-import { ValidationResult } from './validation.ts';
+import { PartitionCounts, ValidationResult, partitionCountsOf } from './validation.ts';
 import type { EffectClass } from '../generated/vocabulary.ts';
 
 export interface ToolDefinition {
@@ -34,78 +36,171 @@ const Fields = {
   run: RunId.describe('Run id returned by start_run'),
 };
 
-export const ListTaskPacksInput = z.object({
+/** Largest file upload_file takes, in bytes (the source cap of the earlier implementation). */
+export const MAX_UPLOAD_BYTES = 16 * 1024 * 1024;
+/** Longest base64 text of an upload: four characters for every three bytes, padded. */
+export const MAX_UPLOAD_BASE64_LENGTH = 4 * Math.ceil(MAX_UPLOAD_BYTES / 3);
+/**
+ * The base64 alphabet with up to two trailing `=`. A single character class: a grouped pattern overflows the regular
+ * expression stack on a payload near the cap. The length rule of RFC 4648 is a refinement. zod's own base64 is not used
+ * because it publishes a format JSON Schema does not define.
+ */
+const BASE64 = /^[A-Za-z0-9+/]*={0,2}$/;
+
+type Path = (string | number)[];
+const issue = <T>(ctx: z.core.$RefinementCtx<T>, path: Path, message: string): void => ctx.addIssue({ code: 'custom', path, message });
+
+export const ListTaskPacksInput = z.strictObject({
   kind: PackKindSchema.optional().describe('Only packs of this kind'),
 });
-export const ListTaskPacksOutput = Envelope.extend({ packs: z.array(PackSummary) });
+export const ListTaskPacksOutput = Envelope.extend({ packs: z.array(PackSummary) }).superRefine((o, ctx) => {
+  if (o.call_result === 'error' && o.packs.length > 0) issue(ctx, ['packs'], 'an error answer lists no packs');
+});
 
-export const UploadFileInput = z.object({
+export const UploadFileInput = z.strictObject({
   file_path: z
     .string()
+    .min(1)
+    .max(MAX_UPLOAD_BASE64_LENGTH, { abort: true })
+    .regex(BASE64, 'the file content in base64 (RFC 4648, padded, no line breaks), not a path')
+    .refine((text) => text.length % 4 === 0, 'base64 text has a length divisible by four (RFC 4648 padding)')
     .meta({ contentEncoding: 'base64', contentMediaType: 'application/octet-stream' })
     .describe('The file to upload. Give the local path; the client sends the file bytes.'),
   media_type: z.string().optional().describe('Media type if known, for example text/markdown'),
   name: z.string().optional().describe('Original file name, for display'),
 });
-export const UploadFileOutput = Envelope.extend({
-  reference: ReferenceUri.optional(),
+// safeExtend: the receipt, optional in the envelope, is required here, and the envelope's refinements stay.
+export const UploadFileOutput = Envelope.safeExtend({
+  acceptance: AcceptanceSchema,
+  reference: referenceUriOf('src').optional().describe('src:<sha256> of the stored bytes, to use as a run input; only when accepted'),
   sha256: Sha256.optional(),
   size: z.number().int().nonnegative().optional(),
   media_type: z.string().optional(),
   structure: z.record(z.string(), z.unknown()).optional().describe('Summary from the parser that recognised the file'),
+}).superRefine((o, ctx) => {
+  if (o.acceptance !== 'accepted') {
+    if (o.reference !== undefined) issue(ctx, ['reference'], 'an upload that is not accepted has no reference');
+  } else if (o.reference === undefined || o.sha256 === undefined || o.size === undefined) {
+    issue(ctx, ['reference'], 'an accepted upload returns its reference, sha256 and size');
+  } else if (o.reference !== `src:${o.sha256}`) {
+    issue(ctx, ['reference'], 'the reference of an upload is src:<sha256> of its bytes');
+  }
 });
 
-export const StartRunInput = z.object({
-  pack: z.string().describe('Pack id, optionally with a version: case-review or case-review@1.0.0'),
-  product: z.string().optional().describe('Product name; every name of a product line is accepted, for example APV or NSAE'),
-  version: z.string().optional().describe('Version line, for example 10.4.6'),
+export const StartRunInput = z.strictObject({
+  pack: z.string().min(1).describe('Pack id from list_task_packs, optionally followed by @version'),
+  product: z.string().optional().describe('Product name; every name of a product line is accepted'),
+  version: z.string().optional().describe('Version line of the product'),
   build: z.string().optional().describe('Exact build name; chosen by the pack rule when omitted'),
   inputs: z.record(z.string(), z.union([InputBinding, z.array(InputBinding)])).describe('Input slot name to reference or external object'),
   parameters: z.record(z.string(), z.unknown()).optional(),
   predecessor: RunId.optional().describe('Earlier run this one continues'),
-  client_key: z.string().max(200).optional().describe('Client chosen key; repeating it within its time window returns the same run'),
+  client_key: z.string().min(1).max(200).optional().describe('Client chosen key; repeating it within its time window returns the same run'),
 });
-export const StartRunOutput = Envelope.extend({ run: RunSummary.optional() });
+export const StartRunOutput = Envelope.extend({ run: RunSummary.optional() }).superRefine((o, ctx) => {
+  if ((o.call_result === 'ok') !== (o.run !== undefined)) issue(ctx, ['run'], 'an ok answer carries the run and an error answer carries none');
+});
 
-export const GetNodesInput = z.object({
+export const GetNodesInput = z.strictObject({
   run: RunId.optional().describe('Use the knowledge root locked by this run'),
   root: Sha256.optional().describe('Knowledge root digest; defaults to the run root'),
-  paths: z.array(z.string().startsWith('/')).optional().describe('Subtrees to read, for example /commands/service'),
+  paths: z
+    .array(TreePath)
+    .optional()
+    .describe('Subtrees to read: node paths copied verbatim from get_nodes or from a tree reference, for example / or /commands/show'),
   depth: z.number().int().min(0).max(6).optional().describe('Levels below each path; default 1'),
   reference: ReferenceUri.optional().describe('Read the content a reference points at instead of a subtree'),
   cursor: z.string().optional(),
 });
-export const GetNodesOutput = Envelope.extend({
-  nodes: z
-    .array(
-      z.object({
-        path: z.string(),
-        name: z.string(),
-        level: z.enum(['trunk', 'branch', 'leaf']),
-        digest: Sha256,
-        children: z.array(z.object({ name: z.string(), digest: Sha256 })),
-        entries: z.array(z.object({ entry: Sha256, kind: z.string(), statement: z.string(), reference: ReferenceUri, applicability: z.string() })),
-      }),
-    )
-    .optional(),
-  content: z.object({ reference: ReferenceUri, text: z.string().optional(), readable: z.boolean(), note: z.string().optional() }).optional(),
+
+const NodeEntry = z.strictObject({
+  entry: Sha256,
+  kind: z.string(),
+  statement: z.string(),
+  reference: referenceUriOf('tree').describe('Tree address of the node pinned to this entry, tree:<root><path>@<entry>; cite it verbatim as a ground'),
+  applicability: z.string(),
+  data: z.record(z.string(), z.unknown()).optional().describe('Machine-readable content of the entry, for example the signatures and typed parameters of a catalog leaf'),
 });
 
-export const ResolveReferenceInput = z.object({
+const KnowledgeNode = z.strictObject({
+  path: TreePath,
+  reference: referenceUriOf('tree').describe('Tree address of the node, tree:<root><path>; cite it verbatim as a ground'),
+  name: z.string(),
+  level: z.string().describe('Position label of the node, computed from the tree height'),
+  digest: Sha256,
+  children: z.array(z.strictObject({ name: z.string(), path: TreePath, digest: Sha256 })),
+  entries: z.array(NodeEntry),
+});
+
+export const GetNodesOutput = Envelope.extend({
+  root: Sha256.optional().describe('Knowledge root the nodes belong to'),
+  nodes: z.array(KnowledgeNode).optional(),
+  content: z
+    .strictObject({
+      reference: ReferenceUri,
+      read_tier: ReadTierSchema.describe('model_readable: text is given; function_bytes_only: only sha256 and structure; retain_only: neither'),
+      text: z.string().optional(),
+      sha256: Sha256.optional(),
+      structure: z.record(z.string(), z.unknown()).optional().describe('Summary from the parser, when the bytes are for functions only'),
+      readable: z.boolean(),
+      note: z.string().optional(),
+    })
+    .refine((c) => c.text === undefined || c.read_tier === 'model_readable', { message: 'text is given only for a model readable source (D06 F[3])', path: ['text'] })
+    .optional(),
+}).superRefine((o, ctx) => {
+  if (o.call_result === 'error') {
+    if ((o.nodes ?? []).length > 0 || o.content !== undefined) issue(ctx, ['nodes'], 'an error answer carries no nodes and no content');
+    return;
+  }
+  const nodes = o.nodes ?? [];
+  if (nodes.length > 0 && o.root === undefined) issue(ctx, ['root'], 'nodes come with the root they belong to');
+  if (o.root === undefined) return;
+  nodes.forEach((node, i) => {
+    const address = `tree:${o.root}${node.path}`;
+    if (node.reference !== address) issue(ctx, ['nodes', i, 'reference'], `the reference of this node is ${address}`);
+    node.entries.forEach((entry, j) => {
+      if (entry.reference !== `${address}@${entry.entry}`) issue(ctx, ['nodes', i, 'entries', j, 'reference'], `the reference of this entry is ${address}@${entry.entry}`);
+    });
+  });
+});
+
+export const ResolveReferenceInput = z.strictObject({
   run: RunId,
   text: z.string().min(1).describe('The exact value or quotation to resolve, copied verbatim'),
   expect: z.string().optional().describe('What it should resolve to, for example command or quotation'),
 });
 export const ResolveReferenceOutput = Envelope.extend({
-  resolution: z.enum(['resolved', 'ambiguous', 'unresolved']),
-  references: z.array(z.object({ reference: ReferenceUri, text: z.string(), role: z.string().optional() })),
+  resolution: ResolutionSchema.optional().describe('How the value resolves; absent on a protocol error'),
+  references: z
+    .array(z.strictObject({ reference: Ground, text: z.string(), role: SourceRoleSchema.optional() }))
+    .describe('Possible referents, citable as grounds; empty on a protocol error'),
   diagnostics: z.array(z.string()),
+}).superRefine((o, ctx) => {
+  if (o.call_result === 'ok' && o.resolution === undefined) issue(ctx, ['resolution'], 'an ok answer states the resolution');
+  if (o.call_result === 'error' && (o.resolution !== undefined || o.references.length > 0)) {
+    issue(ctx, ['resolution'], 'an error answer has no resolution and no referents: absent and unavailable look the same (D05 R[3])');
+  }
 });
 
 export const SubmitResultInput = Submission;
-export const SubmitResultOutput = ValidationResult.extend({
-  call_result: Envelope.shape.call_result,
-  next: z.string().nullable().optional(),
+export const SubmitResultOutput = Envelope.safeExtend({
+  acceptance: AcceptanceSchema,
+  result: ValidationResult.optional().describe(
+    'The validation result (validation@1) when the submission was validated against a run you may use; absent on a protocol error such as an unknown or unavailable run. A repeated submission returns the stored result, whose trace is that of the call that produced it',
+  ),
+  counts: PartitionCounts.optional().describe('Counts derived from result.partitions, only when the submission was accepted'),
+}).superRefine((o, ctx) => {
+  if (o.result !== undefined && o.result.acceptance !== o.acceptance) issue(ctx, ['result', 'acceptance'], 'the receipt and the validation result agree');
+  if (o.acceptance !== 'accepted') {
+    if (o.counts !== undefined) issue(ctx, ['counts'], 'a submission that is not accepted has no partitions to count (V05 R[5])');
+    return;
+  }
+  if (o.result === undefined) issue(ctx, ['result'], 'an accepted submission comes with its validation result');
+  if (o.counts === undefined) issue(ctx, ['counts'], 'an accepted submission comes with its counts');
+  if (o.result === undefined || o.counts === undefined) return;
+  const derived = partitionCountsOf(o.result.partitions);
+  const counts: Record<string, number> = o.counts;
+  if (Object.entries(derived).some(([key, value]) => counts[key] !== value)) issue(ctx, ['counts'], 'counts are derived from result.partitions (W08 R[0])');
 });
 
 export const TOOLS: ToolDefinition[] = [

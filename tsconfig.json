@@ -17,7 +17,8 @@
     "hub/**/*.ts",
     "packs/**/*.ts",
     "tests/**/*.ts",
-    "tools/**/*.ts"
+    "tools/**/*.ts",
+    "scripts/**/*.ts"
   ],
   "exclude": [
     "foundation",

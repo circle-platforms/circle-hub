@@ -1,0 +1,168 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "workflow@1"
+    },
+    "inputs": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "slot": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "expected",
+              "subject",
+              "artifact_under_verification",
+              "reported_actual",
+              "republished",
+              "hint",
+              "request_text"
+            ]
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1
+          },
+          "accepts": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "media types, or external object types written system:type"
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "many": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "slot",
+          "role",
+          "description",
+          "accepts",
+          "required",
+          "many"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "parameters": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "schema": {
+            "description": "JSON Schema 2020-12 of the value",
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "required"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "product": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "the one product line this workflow serves; without it the line is chosen at start_run among those that declare the catalogs",
+          "type": "string"
+        },
+        "catalogs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_.-]*@(?:0|[1-9][0-9]*)$"
+          },
+          "description": "catalogs the product must provide"
+        }
+      },
+      "required": [
+        "catalogs"
+      ],
+      "additionalProperties": false,
+      "description": "the product binding (W03 R[5]): one line, whatever the names it is known by"
+    },
+    "subject": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "description": "the input slot that holds the judged source"
+    },
+    "projection": {
+      "type": "object",
+      "properties": {
+        "module": {
+          "type": "string",
+          "pattern": "^functions\\/[A-Za-z0-9_.\\/-]+\\.ts$"
+        },
+        "export": {
+          "type": "string",
+          "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$"
+        }
+      },
+      "required": [
+        "module"
+      ],
+      "additionalProperties": false,
+      "description": "ProjectionInput -> ProjectionOutput: the items of the run (W01)"
+    },
+    "expected_sources": {
+      "description": "ExpectedSourcesInput -> ExpectedSourcesOutput: external objects to bind as expected sources",
+      "type": "object",
+      "properties": {
+        "module": {
+          "type": "string",
+          "pattern": "^functions\\/[A-Za-z0-9_.\\/-]+\\.ts$"
+        },
+        "export": {
+          "type": "string",
+          "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$"
+        }
+      },
+      "required": [
+        "module"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "schema",
+    "inputs",
+    "parameters",
+    "product",
+    "subject",
+    "projection"
+  ],
+  "additionalProperties": false
+}

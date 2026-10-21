@@ -4,7 +4,7 @@
   "properties": {
     "run": {
       "type": "string",
-      "pattern": "^run_[0-9a-z]{26}$"
+      "pattern": "^run_[0-7][0-9a-hjkmnp-tv-z]{25}$"
     },
     "model": {
       "type": "string",
@@ -14,79 +14,160 @@
     "items": {
       "type": "array",
       "items": {
-        "type": "object",
-        "properties": {
-          "item": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 200
-          },
-          "handling": {
-            "type": "string",
-            "enum": [
-              "handled",
-              "skipped"
-            ]
-          },
-          "reason": {
-            "description": "required when the item is skipped",
-            "type": "string"
-          },
-          "slots": {
-            "description": "slot record, validated against the pack slot schema",
+        "oneOf": [
+          {
             "type": "object",
-            "propertyNames": {
-              "type": "string"
+            "properties": {
+              "item": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "handling": {
+                "type": "string",
+                "const": "handled"
+              },
+              "slots": {
+                "description": "slot record, validated against the pack slot schema (RunSummary.slots)",
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              },
+              "context": {
+                "description": "digest of the context the model used for this item, so unchanged items can be reused",
+                "type": "string"
+              },
+              "reuse": {
+                "description": "instead of slots: the Hub record reference start_run offered for this item, to carry the predecessor fragment over; the Hub checks that the item and the cited content are unchanged and reruns the checks",
+                "type": "string",
+                "maxLength": 8192,
+                "pattern": "^(?:rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$"
+              }
             },
-            "additionalProperties": {}
+            "required": [
+              "item",
+              "handling"
+            ],
+            "additionalProperties": false
           },
-          "context": {
-            "description": "digest of the context the model used for this item, so unchanged items can be reused",
-            "type": "string"
+          {
+            "type": "object",
+            "properties": {
+              "item": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "handling": {
+                "type": "string",
+                "const": "skipped"
+              },
+              "reason": {
+                "type": "string",
+                "pattern": "\\S",
+                "description": "why the item is skipped (W07 F[2])"
+              }
+            },
+            "required": [
+              "item",
+              "handling",
+              "reason"
+            ],
+            "additionalProperties": false
           }
-        },
-        "required": [
-          "item",
-          "handling"
-        ],
-        "additionalProperties": false
+        ]
       }
     },
     "cross_item": {
+      "description": "claims over several items; optional",
       "type": "array",
       "items": {
-        "type": "object",
-        "properties": {
-          "nature": {
-            "type": "string",
-            "enum": [
-              "fact",
-              "judgment"
-            ]
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "nature": {
+                "type": "string",
+                "const": "fact"
+              },
+              "statement": {
+                "type": "string",
+                "minLength": 1
+              },
+              "grounds": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "maxLength": 8192,
+                  "pattern": "^(?:src:[0-9a-f]{64}(?:\\/[a-z][a-z0-9_.-]{0,63}@(?:0|[1-9][0-9]{0,8})\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*(?::(?:0|[1-9][0-9]{0,15})-(?:0|[1-9][0-9]{0,15}))?)?|tree:[0-9a-f]{64}\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?(?:@[0-9a-f]{64})?|rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$",
+                  "description": "reference a claim rests on: src, tree or rec; a knowledge entry is cited by its tree address"
+                },
+                "description": "a fact needs at least one reference; a knowledge entry is cited by its tree address"
+              },
+              "code": {
+                "type": "string",
+                "minLength": 1
+              },
+              "rank": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "nature",
+              "statement",
+              "grounds"
+            ],
+            "additionalProperties": false
           },
-          "statement": {
-            "type": "string"
-          },
-          "grounds": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "pattern": "^(src|tree|entry|rec):[0-9a-f]{64}"
-            }
-          },
-          "code": {
-            "type": "string"
-          },
-          "rank": {
-            "type": "string"
+          {
+            "type": "object",
+            "properties": {
+              "nature": {
+                "type": "string",
+                "const": "judgment"
+              },
+              "statement": {
+                "type": "string",
+                "minLength": 1
+              },
+              "grounds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "maxLength": 8192,
+                  "pattern": "^(?:src:[0-9a-f]{64}(?:\\/[a-z][a-z0-9_.-]{0,63}@(?:0|[1-9][0-9]{0,8})\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*(?::(?:0|[1-9][0-9]{0,15})-(?:0|[1-9][0-9]{0,15}))?)?|tree:[0-9a-f]{64}\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?(?:@[0-9a-f]{64})?|rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$",
+                  "description": "reference a claim rests on: src, tree or rec; a knowledge entry is cited by its tree address"
+                }
+              },
+              "premises": {
+                "description": "earlier cross_item entries of this submission that this judgment rests on, for example /cross_item/0",
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^\\/cross_item\\/(?:0|[1-9][0-9]*)$"
+                }
+              },
+              "code": {
+                "type": "string",
+                "minLength": 1
+              },
+              "rank": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "nature",
+              "statement",
+              "grounds"
+            ],
+            "additionalProperties": false
           }
-        },
-        "required": [
-          "nature",
-          "statement",
-          "grounds"
-        ],
-        "additionalProperties": false
+        ]
       }
     },
     "notes": {
@@ -96,8 +177,7 @@
   "required": [
     "run",
     "model",
-    "items",
-    "cross_item"
+    "items"
   ],
   "additionalProperties": false
 }

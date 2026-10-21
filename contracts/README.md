@@ -1,0 +1,148 @@
+# contracts
+
+The shared vocabulary, codes and shapes of the Hub. Every other package depends on this one; it depends on nothing but `zod`.
+Import from `contracts/api.ts` (it re-exports `contracts/src/index.ts`).
+
+## The single-source rule
+
+Two files are the only sources:
+
+| Source | Holds | Owner |
+| --- | --- | --- |
+| `contracts/model.json` | the cause model: 73 elements, 50 vocabulary axes, protocol codes, reference forms, record kinds, pack file names, display order, `version` | the model author; changes go through the integrator |
+| `contracts/codes.json` | core violation codes `core.<interpreter>.<name>` with Chinese `when` and `fix` | contracts |
+
+`tools/gen-contracts.ts` turns them, together with the zod shapes in `contracts/src`, into `contracts/generated`:
+
+| Generated file | Content |
+| --- | --- |
+| `vocabulary.ts` | per axis: `NAME` (codes), type `Name`, `NAME_LABEL`, `NameSchema` (zod enum), `isName`; `AXES`, `labelOf(axis, code)`, `axisLabel(axis)` |
+| `protocol.ts` | `PROTOCOL_CODES`, `CORE_VIOLATION_CODES`, `REFERENCE_FORMS`, `RECORD_KINDS`, `PACK_FILE_PATHS`, `DISPLAY_ORDER`, `MODEL_VERSION` |
+| `tools.json` | the six MCP tools: name, title, description, input and output JSON Schema (2020-12), annotations from `annotationsFor` |
+| `schemas/<name>.v<major>.schema.json` | JSON Schema of every shape in `SCHEMA_REGISTRY` |
+
+Read the model with `node tools/show-element.ts B01 w08` (ids are case-insensitive), `--list`, `--vocab [axis ...]`, `--pending`.
+
+## What must never be hand-written
+
+- Anything under `contracts/generated/`. Edit a source and regenerate.
+- An enumeration of a vocabulary axis, or one of its labels, anywhere in the repository: use `NameSchema`, `NAME`, the type `Name`, `isName` and `labelOf`. A subset is written as `NameSchema.extract([...])`, which the compiler checks. Per-value behaviour is a table typed `satisfies Record<Name, ...>`, so a new value does not compile until it is placed (`URI_TAIL`, `PartitionItem`, the terminal rules, the effect reach of `annotationsFor`).
+- A protocol code, a core violation code or a record kind: use `PROTOCOL_CODES`, `CORE_VIOLATION_CODES`, `RECORD_KINDS`. A missing code is added to `model.json` (protocol) or `codes.json` (core) on request. Pack codes are not registered here; they live under the pack name (`<pack>.<code>`) and are registered when the pack is published.
+- MCP annotations: derive them with `annotationsFor`.
+- JSON Schemas of tools or records, and reference URI patterns: use `ReferenceUri`, `Ground`, `referenceUriOf(...)`, `TreePath`, `ExternalObjectId`.
+
+## Editing `contracts/model.json`
+
+Only on the model author's decision. The generator refuses (exit 2, every problem listed) unless:
+
+- each vocabulary axis has a snake_case `axis`, a `label`, an `owner` that is an element id of the model, and a non-empty `values` list of `{ code, label }` with snake_case codes and labels unique within the axis; no two axes render the same generated name, and no axis renders a name that `protocol.ts` or a module of the barrel (`contracts/src/index.ts`, `export *`) already exports;
+- labels, `when`, `fix`, forms and display order entries are text without C0 or C1 controls or line separators (U+2028, U+2029); an axis label never contains `*/` (it is written into a doc comment);
+- `formatProposals.references` lists exactly the schemes of the `reference_scheme` axis, in the same order, each with a `form`; every scheme needs a grammar in `contracts/src/reference.ts` (`URI_TAIL`), and every partition an item shape in `contracts/src/validation.ts` (`PartitionItem`), or loading fails;
+- protocol codes are unique UPPER_SNAKE_CASE with Chinese `when` and `fix`;
+- record kinds are unique snake_case; `packFiles` and `displayOrder` are non-empty arrays; pack file paths are unique; display order entries are non-empty.
+
+Bump `version` when the meaning of anything changes; it is generated as `MODEL_VERSION`.
+
+## Editing `contracts/codes.json`
+
+One entry per core interpreter result: `{ "code": "core.<interpreter>.<name>", "interpreter": "<interpreter>", "when": "…", "fix": "…" }`.
+Codes are unique and snake_case, `interpreter` equals the middle segment of the code, `when` and `fix` are Chinese (they are shown to the model and the user).
+
+## Regenerating
+
+```
+npm run gen:contracts       # node tools/gen-contracts.ts: writes changed files, removes stale ones
+npm run verify:contracts    # node tools/gen-contracts.ts --check: writes nothing
+```
+
+Exit status: 0 current; 1 drift found by `--check` (every missing, out-of-date with the first differing line, and stale file is listed); 2 invalid input (invalid sources, a `contracts/src` that fails to load, a name two barrel modules both export, a schema key registered twice or not `name@major`, a tool schema that is not a zod object, a shape JSON Schema cannot represent; every problem listed); 3 the files could not be written (one line: another run holds the lock, or the I/O error).
+
+`contracts/src` is loaded against the freshly rendered `vocabulary.ts` and `protocol.ts` (served from memory), so a single run converges after a vocabulary change. Every call of `generate()` loads `contracts/src` as a fresh module graph (each module URL carries a tag of the call), so a second call in the same process sees changed sources. The root is resolved to its real path first, so a root reached through a symbolic link works. Output is deterministic: same sources, same bytes (tested across two fresh processes).
+
+A write holds `contracts/generated/.gen-contracts.lock` (the writer's pid) and replaces each file by renaming a complete sibling copy over it: a reader never sees a partly written file, and two runs never interleave. A lock whose process has ended is taken over; a lock held by a running process stops the write with exit status 3. `--check` takes no lock.
+
+## Registering a shape from another package
+
+Four stub files belong to other packages. Each exports `schemas: Record<string, z.ZodType>`; `contracts/src/index.ts` merges them into `SCHEMA_REGISTRY`.
+
+| Stub | Owner |
+| --- | --- |
+| `contracts/src/pack.ts` | runs (pack files: requirements, slots, checks, knowledge declaration, ...) |
+| `contracts/src/knowledge.ts` | knowledge |
+| `contracts/src/resources.ts` | connectors |
+| `contracts/src/tables.ts` | rules |
+
+Rules for a stub:
+
+- Keys are `name@major`: lowercase letters, digits, `_` or `-`, then `@` and an integer without leading zeros (`SchemaId`). The file becomes `schemas/<name>.v<major>.schema.json`. A key used twice, in any two files, stops the generator with both files named.
+- Import only `zod`, `contracts/generated/*.ts` and other `contracts/src` modules, never `hub/**`.
+- Every vocabulary value comes from a generated `NameSchema`; every reference is `ReferenceUri`, `Ground` (a claim's or an outcome's grounds) or `referenceUriOf(...)`; ids use `idOf`.
+- Objects are `z.strictObject`; open bags (slots, fields, data, parameters, structure) are `z.record`. A free-text field that may be long gets `.max(n, { abort: true })` before any pattern: a grouped pattern overflows the regular expression stack on megabytes and throws instead of failing.
+- Shapes must be representable in JSON Schema (no transforms, dates, bigints or custom types). JSON Schema is generated with zod `io: 'output'`: objects are closed (`additionalProperties: false`) and fields with defaults are required. Rules a pattern cannot say are refinements; list them in your README (see Limits).
+- After a change run `npm run gen:contracts` and hand the regenerated files in with your change. Do not edit `index.ts` or `contracts/generated`; ask here instead.
+
+## Decisions
+
+1. **Partitioned manifest.** `ValidationResult.partitions` holds one array per partition (keys generated from the `partition` axis), as `formatProposals.response` proposes. A partition is cited as `rec:<digest>#/partitions/<partition>` and an item as `rec:<digest>#/partitions/<partition>/<n>` (B03 F[3], the example `rec:c3d9…#/partitions/delivered/2`; V05 R[6] binds a partition as a run input). Each partition has its own item shape (`PartitionItem`, V05 F[0]-F[3]): a rejected item needs `code`, a quarantined or incomplete one `reason`, a delivered one has neither. Disjointness (V05 R[0]) is not structural: it is a refinement of `Partitions` (an item listed twice, in one or two partitions, is refused); that the union equals the run's item set is checked by runs, which knows the items. Counts are derived from the partitions and never stored (W08 R[0]): `partitionCountsOf(partitions)` gives them, keys generated from the partition axis plus `unknown` (items with an unchecked, no-verdict or not-run terminal, V03 R[4]). This answers model question 5 in favour of the proposal.
+2. **Layer terminals.** Attribution hangs on each layer terminal (V04): `LayerResult.attribution`, never on pass or judgment (V04 R[1]). A violation or a fail needs `code`; an unchecked, no-verdict, not-run or incomplete terminal needs `reason` (V03 R[4], W07 R[2]-R[3], W02 R[5]); a pass has neither. A requirement lists each layer once and gives `unsatisfied_reason` exactly when it is unsatisfied (V03 F[2]).
+3. **Reference URIs** follow `REFERENCE_FORMS` exactly:
+   - `src:<sha256>` or `src:<sha256>/<parser>@<major>/<selector>`, the selector possibly ending in `:<from>-<to>` with from < to; parser names are at most 64 characters, majors and range bounds have no leading zeros;
+   - `tree:<root>/` (the root) or `tree:<root>/<seg>/<seg>...`, optionally ending in `@<entry>`; no empty segment, no trailing slash;
+   - `entry:<sha256>`; `rec:<sha256>` or `rec:<sha256>#<JSON Pointer>` (`~0`, `~1` escapes).
+   Raw characters never allowed: `%` unless it starts an escape `%XX` with upper-case hex; the structural character of each part (`/` and `:` in a selector, `/` and `@` in a path, `#` in a pointer); every control, format or space character (`\p{Cc}`, `\p{Cf}`, `\p{Z}`, which hub/refs percent-encodes) and unpaired surrogates. The published patterns name the BMP ones as explicit ranges (no `\p{}`, no lookaround); astral format characters, unpaired surrogates and the range order are refinements. At most `MAX_REFERENCE_LENGTH` (8192) characters, checked before any pattern. The object form (`Reference`) holds the same canonical text in `selector`, `path` and `pointer`; `TreePath` is the canonical path. These shapes accept everything the refs formatter emits; refs' parser is stricter (canonical spelling only: no escape where none is needed, valid UTF-8, at most 256 segments). An external object id never uses a reference scheme as its system and contains no control, format or space character.
+4. **Grounds.** A claim's grounds (`Claim.grounds`, `CrossItemSubmission.grounds`, the referents of `resolve_reference` and of `ValueResolution`) are `Ground` = `src`, `tree` or `rec`. A knowledge entry is never a ground on its own: it is cited by its tree address `tree:<root>/<path>@<entry>` (B01 R[5], B03 F[2]); `entry:` stays a valid `ReferenceUri` elsewhere.
+5. **Strict objects.** Every object of the contracts is `z.strictObject` (inputs, outputs, records, references): an unknown or misspelled key is an issue with a path, never dropped, and server-side validation matches the closed published schemas clients enforce.
+6. **Ids** are the prefix, `_`, and a lowercase Crockford ULID (no i, l, o, u; first character 0-7). `TraceId` refuses the all-zero id (W3C). `IsoTime` is UTC with `Z`. `SchemaId` and `Versioned` majors have no leading zeros (`claim@01` and `claim@1` cannot both exist). Published patterns use no lookaround and no `\p{}` (some MCP clients translate schemas for providers without them): such rules are zod refinements.
+7. **Runs.** `RunSummary` carries `sources` (`SourceBinding`: reference, role, slot, external identity with revision, media type, label; P02, A03, T04 R[4]), `target_basis` (W06 F[6]; model question 4) and `slots` (`SlotSchema`: the pack's `slots.schema.json` as JSON Schema 2020-12 with its SHA-256, so the model and the client can fill and check slots, T01 F[3], W05). Items may carry a Hub-computed `digest` (the item fingerprint) and `reuse`, the `rec:` reference to give back to carry an unchanged item over (C08 R[4], W07 F[6], acceptance scenario 10). `RunRecord` (`run@1`) adds: `runner` (absent only when the Hub itself executes a standing obligation: host `hub` requires trigger `standing_obligation`, W06 F[0]-F[1]), `host`, `trigger`, `configurer` (W09 F[1]; required for event, schedule and standing obligation triggers), frozen `parameters`, `policy`, `executors` (registry digest, W06 F[7]), and `client_key` with `request_digest` (SHA-256 of the RFC 8785 canonical JSON of the start_run arguments the key was bound to, so the same key with other arguments is IDEMPOTENCY_MISMATCH, D05 R[4]) and `client_key_expires_at`, the three together. Phase is never stored (W06 R[2]).
+8. **Submissions.** `items` are a discriminated union on `handling`: a handled item gives `slots` or `reuse` (not both), a skipped one only a non-blank `reason` (W07 F[2]). An item is declared once. `cross_item` is optional (W07 F[3]) and a union on `nature`: a fact needs at least one ground and has no premises; a judgment may rest on earlier entries through `premises`, `/cross_item/<n>` with n below its own index and without leading zeros (acceptance scenario 5). In-run checks (W07 F[4]) and criterion change declarations (F[5]) are not in the shape: milestone 1 uses neither. A submission is stored exactly as received: as `submission@1` when the arguments parse, as `submission-received@1` (any arguments object) when they do not (W07, B05 R[3]); with strict objects and no defaults a parsed submission equals the raw arguments.
+9. **Claims.** `Statement.reason` for an unknown verdict (V01 R[2]), `Statement.rank` (V02 F[4]), `Qualifier.collected_at` (B01 F[3], A05). `Claim.pointer` locates the claim in the submission or the checked subject; `Claim.resolutions` lists each exact value with the model's text, its resolution and its referents side by side (W08, T04 R[1], display rule 4): resolved has at least one referent, ambiguous at least two, unresolved none.
+10. **Validation result items.** `carried_over` (a `rec:` reference) records that the Hub carried an item over from the predecessor fragment after checking that the item and the cited content are unchanged (C08 R[4]); it tells "reused" from "re-judged" (acceptance scenario 10). A not-accepted result has no partitions, no cross-item claims and at least one error (V05 R[5], W08 R[1]); `rounds.used` never exceeds `rounds.max`; coverage that is complete examined everything, and examined never exceeds total (A05 R[1]).
+11. **Tools.** Every answer conforms to its output schema, a protocol error included: an error is the envelope plus the tool's empty shape, never an invented run id, lock or digest (D05 R[3], T03 R[3]). `Envelope`: an error names at least one code, and a receipt is `accepted` exactly when `call_result` is ok (D05 R[1]). `submit_result` answers `{ envelope, acceptance, result?, counts? }`: `result` is the stored `validation@1` body (absent when no run you may use was found, for example an unknown, unavailable or malformed run id), `counts` are given exactly when the submission was accepted and equal `partitionCountsOf(result.partitions)`; the envelope `trace` is this call's, `result.trace` that of the call that produced it (a repeated submission returns the stored result, D05 R[5]). `resolve_reference` gives `resolution` exactly when ok; an error has no referents. `start_run` carries `run` exactly when ok. `upload_file` returns `reference` = `src:<sha256>` with `sha256` and `size` exactly when accepted. `get_nodes` echoes `root`; every node carries `reference` = `tree:<root><path>` and every entry `tree:<root><path>@<entry>`, to cite verbatim; node, child and requested paths are `TreePath`; text is given only for a model-readable source (D06 F[3]); `level` is a plain string until model question 1 is answered. `upload_file.file_path` is base64 content (`contentEncoding: base64`, pattern `^[A-Za-z0-9+/]*={0,2}$`, length divisible by four, at most `MAX_UPLOAD_BASE64_LENGTH` for `MAX_UPLOAD_BYTES` = 16 MiB, the earlier implementation's source cap); zod's `base64` is not used because it publishes `format: base64`, which JSON Schema 2020-12 does not define. Descriptions name no product, system, command or customer.
+12. **Annotations** follow D03 R[6] completely: external writes are destructive unless `reversible`, an external read is read-only only with `readOnlyEnforced`, `idempotent` only where repetition is unconditionally deduplicated. The effect classes are placed by a table typed `satisfies Record<EffectClass, ...>`; a value it does not know (one the vocabulary gained before the table) gets the most conservative hints (`readOnlyHint: false, destructiveHint: true, openWorldHint: true`), so no client auto-approves it. `start_run` is declared `readsExternal`, so `tools.json` shows it open-world, which is what milestone-1 callers see; a server that knows a caller's packs passes the caller's own `readsExternal` (D06 F[2]). A call that makes the Hub dispatch passes the widest effect class it may dispatch (D06 R[4]).
+13. **Record envelope.** `id` is a `RecordId`; `schema` is a `SchemaId`, the registered body shape (`validation@1` for a `validation_result`, as W08 names it); `provenance` holds the provenance type (A01). Wherever contracts say `provenance` they mean the A01 type; the origin of a read (B02 F[1]) is the external object identity, `external` in `SourceBinding` and in the source artifact body.
+
+## Limits
+
+- Shapes for effects, requests, dispositions, leases, hypothesis sets, in-run checks, criterion change declarations, candidate-layer writes, control-interval details and executor registries are not written yet; their vocabulary is generated.
+- Bodies of `source_artifact`, `authorization`, `action` and `call_log` records are defined by the records package (`hub/records`) and have no generated JSON Schema.
+- Rules only zod checks (refinements; a validator that reads only the published JSON Schema, such as an MCP client's, accepts these): the order of a byte range; astral format characters and unpaired surrogates in references and external ids; an item, a requirement or a layer listed twice; premises that do not point to an earlier entry; slots beside reuse; the presence rules of decisions 2, 10 and 11 (codes, reasons, attribution, unsatisfied reasons, result, counts, run, resolution, references, receipt and call result agreeing, node and entry references equal to root and path); rounds and coverage consistency; the base64 length rule. `tool-shapes.test.ts` names each of them case by case. The SDK's default validator is draft-07 Ajv: it ignores `prefixItems` (the tuple of `SrcReference.range`).
+- A local path made only of base64 characters, with a length divisible by four, passes as base64; the server can only notice that the bytes do not parse.
+- Shapes with refinements cannot be `.pick`ed or `.omit`ted (zod 4 throws); build derived objects from `.shape`, and use `.safeExtend` to override a key.
+- `tools.json` is about 250 KB: the four partition item shapes each inline the requirement and claim shapes, and the reference patterns spell out the never-raw ranges. The input schemas models see are about 6 KB each.
+
+## Notes for other packages
+
+- **server**: an MCP SDK `McpServer` rejects arguments that fail the registered zod input schema before the handler runs (now also for any unknown key, since inputs are strict: answer -32602 is fine for the five other tools). A submission must still reach the Hub, be stored as received and get `SUBMISSION_SCHEMA_VIOLATION` with paths and rounds left (W07, T03 R[3], W08 R[1]): register `submit_result` with a permissive input schema, list the schema of `tools.json`, and validate with `SubmitResultInput` inside; map each zod issue path to a JSON Pointer (an unknown key comes as an `unrecognized_keys` issue at the parent path with `keys: ['slot']`; append the key to point at `/items/0/slot`). Store the raw arguments: as `submission@1` when they parse, as `submission-received@1` otherwise. Answer an unknown, unavailable or malformed run with `{ call_result: 'error', acceptance: 'not_accepted', errors: [...], trace }` and no `result`; fill `counts` with `partitionCountsOf`. Register the output schemas: their refinements catch a server answer that would mislead (for example counts that do not match). The streamable HTTP transport refuses bodies over `maxRequestBodySize` (SDK default 4 MiB): to take uploads up to `MAX_UPLOAD_BYTES`, set it to at least `MAX_UPLOAD_BASE64_LENGTH` plus the JSON-RPC envelope. Zod issue messages are English diagnostics for models (like the schema descriptions); the Chinese text users see comes from `PROTOCOL_CODES` and `CORE_VIOLATION_CODES` (`when`, `fix`), with the issue path as `path`.
+- **refs**: format URIs to the grammar in decision 3; `ReferenceUri` rejects anything else. `MAX_REFERENCE_LENGTH` is exported here (8192, the same as yours). Pointers into a validation result now go through `partitions`: `#/partitions/delivered/0/requirements/0/claims/0`, not `#/items/...` (your resolve tests use the old layout in synthetic bodies).
+- **records**: `RecordEnvelope.schema` accepts any `SchemaId` (hyphens and digits included); record ids must use the ULID alphabet (yours do). `submission-received@1` is registered for submissions that do not parse.
+- **runs**: `run@1` is `RunRecord` here; ask for changes rather than defining a second run body. Until model question 8 is answered, name an item the submission does not cover (W07 R[3]) with `core.coverage.shortfall` and the `item`: it is what the coverage@1 interpreter gives for the run's item set against the submission's declarations, its `when` and `fix` say exactly that ("补上缺的成员，或写明跳过的理由"), and it is not a whole-rejection code; the item goes to `incomplete` with reason `not_covered`. Until model question 9 is answered, refuse a `reuse` that is not the `reuse` start_run offered for that item with `SUBMISSION_SCHEMA_VIOLATION` at `/items/<n>/reuse` (the offer was computed from unchanged digests and frozen with the run), and set `carried_over` on the items you carried over.
+- **knowledge**: emit `level` as an English code, never a Chinese label, until model question 1 is answered. `get_nodes` needs the root, each node's and child's canonical path, and per node and entry the tree reference (`tree:<root><path>`, `…@<entry>`); never offer `entry:` as something to cite.
+- **packs**: `ItemProjection`, like every shape, is strict; `ExternalObjectId` refuses raw control, format and space characters (your selector encoder already escapes them; your external-id encoder does not escape format characters such as U+200B).
+
+## Needs from other packages
+
+- **records**: `hub/records/store.ts` accepts only `/^[a-z_]+@[0-9]+$/` as a schema name, so storing a body registered as `catalog-entry@1`, `check-outcome@1`, `run-summary@1`, `pack-summary@1` or `submission-received@1` throws `schema must be name@major`. Please validate schema names with contracts' `SchemaId` (which also refuses leading-zero majors).
+- **rules**: `CheckOutcome.grounds` in `contracts/src/tables.ts` should be `z.array(Ground)` (import it from `./reference.ts`), so an outcome never rests on a bare `entry:` (B01 R[5]); `JsonPointer` can be imported from `./common.ts` instead of declared twice; give `JsonPath` its `.max(512, { abort: true })` and `JsonPointer` a length cap the same way, since their patterns overflow on megabytes. Then run `npm run gen:contracts` or ask here.
+- **rules, refs, packs, records**: the reference grammar is tighter (decision 3) and every shape is strict (decision 5); please rerun your tests against this version. The contracts owner ran only `contracts/**` tests.
+
+## Model questions
+
+1. **K01 R[2]: node position labels have no axis.** K01 R[2] defines trunk, branch and leaf ("干与枝按树高自底向上算，只是位置标签；叶取自源自身结构") and `get_nodes` returns one per node, but none of the 50 axes holds them. The draft hand-wrote `z.enum(['trunk', 'branch', 'leaf'])`, which the hard rules forbid, and the console cannot label them through `labelOf`. Proposal: an axis `node_level` owned by K01 (`trunk` 干, `branch` 枝, `leaf` 叶); `level` then becomes `NodeLevelSchema`.
+2. **C04 R[1]: the eight table semantics have no axis.** "只用八种表语义：成员、映射、模式、前缀/范围/阈值、目录匹配、结构、覆盖、逐字引用" is a closed set that checks.json (T01 F[4]) and in-run checks (C05 R[5]) must name. Today `codes.json` names six interpreters in English by hand and the rules package keys its tables `structure@1`, `catalog@1`, `membership@1`, `pattern@1`, `range@1`, `coverage@1`, `quote@1` (mapping has none). Proposal: an axis owned by C04 with the eight codes and their labels; the generator then checks every `interpreter` against it.
+3. **B01 F[2] against C08: a target cannot be a producer.** B01 F[2] lists four warrant forms (规则@版本 / 模型@确切配置 / 人 / 目标@版本) and A01 R[0] writes 目标@版本 for what a target computed, but `producer_kind` has only function, model and human. A claim on a target's self-report cannot state its producer kind. Milestone 1 has no such claim.
+4. **W06 F[6]: the basis of the run target has no axis.** "各带依据（声明 / 按规则选定 / 设备回显）和确认它们的观察". Contracts record it as `target_basis: Claim[]` with 声明 → provenance `declared`, 按规则选定 → `projected` (A01 R[1]), 设备回显 → `observed`, the rule or the account in the warrant and the observations read as grounds. Please confirm the mapping or add an axis.
+5. **formatProposals.response: `partitions` as four arrays.** Answered by following the proposal (decision 1): a partition must be citable as a record reference target (B03 F[3], V05 R[6]), which per-item partition fields cannot give. Please confirm.
+6. **formatProposals.packFiles: two paths in one entry.** The path `samples/positive/、samples/negative/` is copied into `PACK_FILE_PATHS` as one string that is not a path. Proposal: two entries, `samples/positive/` and `samples/negative/` (T02). Contracts did not split it.
+7. **formatProposals.recordStructure says `schema = kind@版本`, W08 names the body `validation@1`.** The kind is `validation_result`. Contracts follow the element: `schema` is the registered body shape, not the kind. The proposal's sentence could say so.
+8. **W07 R[3]: no code names an item the submission does not cover.** The rule keeps the submission accepted, names the item in `errors` and counts it toward repair rounds, but every entry of `protocolCodes` is a whole-rejection or protocol code (`SUBMISSION_SCHEMA_VIOLATION` says "T03 整份不受理之一") and the reason `not_covered` is not a code. Proposal: a protocol code `ITEM_NOT_COVERED` (when "提交没有给出该条目的处理声明和槽位记录（W07 R[3]），该条目记未完成，整份仍受理", fix "给出该条目的处理声明：已处理并附槽位记录，或跳过并写明理由"). Interim: `core.coverage.shortfall` (notes for runs).
+9. **C08 R[4]: refusing a carry-over, and marking one.** No code or reason refuses a `reuse` whose item or cited content changed (within a run the Hub only offers `reuse` for unchanged items, so the case is a reuse that was not offered), and `qualifier_mark` has `no_reuse` but no mark for a carried-over judgment. Proposal: say whether a wrong `reuse` is a structure violation (`SUBMISSION_SCHEMA_VIOLATION`, the interim) or makes the item uncovered (W07 R[3]); and add a mark such as `carried_over` (沿用) for claims taken from the predecessor record, whose judge and model configuration come from that record.
+
+## How to test
+
+```
+node --test "contracts/**/*.test.ts"
+node tools/gen-contracts.ts --check
+npx tsc --noEmit
+```
+
+The first test of `generator.test.ts` fails whenever a source or a registered shape changed without `npm run gen:contracts`: that is the drift check, not a flaky test. The tests cover: every axis generated with labels (`vocabulary.test.ts`); the generated files current and deterministic across fresh processes, a second in-process generation seeing changed sources, a root reached through a symbolic link, `--check` naming every drifting file, bad input reported (labels, name clashes with the barrel, a scheme without grammar, malformed format proposals), the lock and write failures with exit status 3 (`generator.test.ts`, on a temporary copy, including a type check of axes named `record` and `readonly`); the D06 annotation table and the conservative default (`annotations.test.ts`); valid and invalid references, URIs, grounds, external ids, input bindings, claims and value resolutions, submissions, validation results, envelopes, ids, runs and records, with a negative case per rule (`shapes.test.ts`); every tool's input and output, success and error answers, against zod and against `tools.json` through the SDK's Ajv validator, refinement-only cases named (`tool-shapes.test.ts`); the record schemas against the same validator, formats limited to 2020-12, compilation without warnings (`published.test.ts`); `tools.json` structure and the literal D06 annotations (`tools.test.ts`); protocol and core codes (`codes.test.ts`); the element viewer (`show-element.test.ts`). Synthetic examples live in `contracts/src/fixtures.ts` (test support, not part of the API).

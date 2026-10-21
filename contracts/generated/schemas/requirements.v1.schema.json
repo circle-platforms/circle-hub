@@ -1,0 +1,202 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "requirements@1"
+    },
+    "requirements": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1
+          },
+          "target": {
+            "type": "string",
+            "enum": [
+              "item",
+              "run"
+            ],
+            "description": "item: judged for every item; run: one judgment over the whole target (a cross-item claim)"
+          },
+          "required": {
+            "type": "boolean",
+            "description": "a gating run needs every required requirement satisfied (V06 R[2])"
+          },
+          "done_rule": {
+            "type": "string",
+            "enum": [
+              "bookkeeping",
+              "gating"
+            ]
+          },
+          "layers": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "static",
+                "dynamic"
+              ]
+            }
+          },
+          "accepted_producer": {
+            "type": "string",
+            "enum": [
+              "fact",
+              "judgment",
+              "independent_judgment"
+            ]
+          },
+          "independent_of": {
+            "description": "an independent judgment is satisfied only by another session and model than the predecessor run (A04)",
+            "type": "string",
+            "const": "predecessor"
+          },
+          "accepts_declared_independence": {
+            "description": "accept the independence the client declares (A04 R[4]); not accepted when absent",
+            "type": "boolean"
+          },
+          "checks": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]*$"
+            },
+            "description": "ids from checks.json that judge this requirement; none means no check is installed (reason no_check)"
+          },
+          "expected": {
+            "type": "object",
+            "properties": {
+              "overrides": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "when": {
+                      "type": "object",
+                      "properties": {
+                        "pointer": {
+                          "type": "string",
+                          "maxLength": 8192,
+                          "pattern": "^(?:\\/(?:[^~/]|~[01])*)*$",
+                          "description": "into the item fields"
+                        },
+                        "equals": {
+                          "type": [
+                            "string",
+                            "number",
+                            "boolean"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "pointer",
+                        "equals"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "outcome": {
+                      "type": "string",
+                      "enum": [
+                        "refute"
+                      ]
+                    },
+                    "codes": {
+                      "minItems": 1,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "description": "the refutation codes that meet the expectation"
+                    }
+                  },
+                  "required": [
+                    "when",
+                    "outcome",
+                    "codes"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "overrides"
+            ],
+            "additionalProperties": false
+          },
+          "error_handling": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "code": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "a core violation code, a pack code, or * for any other"
+                },
+                "action": {
+                  "type": "string",
+                  "enum": [
+                    "repair",
+                    "reject",
+                    "request",
+                    "unknown"
+                  ]
+                },
+                "max_rounds": {
+                  "description": "repair rounds for the whole requirement; required when the action is repair",
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 10
+                }
+              },
+              "required": [
+                "code",
+                "action"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "requires_discrimination": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "key",
+          "name",
+          "description",
+          "target",
+          "required",
+          "done_rule",
+          "layers",
+          "accepted_producer",
+          "checks",
+          "error_handling"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "schema",
+    "requirements"
+  ],
+  "additionalProperties": false
+}

@@ -33,7 +33,7 @@
       "items": {
         "type": "string"
       },
-      "description": "every name of the product lines the pack is bound to, for example APV and NSAE"
+      "description": "every name of the product line the pack is bound to; all of them name one line"
     },
     "inputs": {
       "type": "array",
@@ -63,7 +63,7 @@
             "items": {
               "type": "string"
             },
-            "description": "media types, or external object types such as agile:mindmap"
+            "description": "media types, or external object types written system:type"
           },
           "required": {
             "type": "boolean"

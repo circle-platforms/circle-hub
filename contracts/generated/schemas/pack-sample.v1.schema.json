@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "source": {
+      "type": "string",
+      "enum": [
+        "author",
+        "returned_counterexample",
+        "retained_delivery"
+      ]
+    },
+    "check": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "description": "the check of checks.json this sample exercises"
+    },
+    "note": {
+      "type": "string"
+    },
+    "subject": {
+      "description": "the subject exactly as the check receives it after the subject builder"
+    },
+    "sources": {
+      "description": "fragment texts by reference for quotation checks",
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "catalog": {
+      "description": "catalog entries the check consults (catalog@1 spec of hub/rules)"
+    },
+    "expect": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "verdict": {
+            "type": "string",
+            "enum": [
+              "support",
+              "refute",
+              "unknown",
+              "abstain"
+            ]
+          },
+          "code": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "tier": {
+            "type": "string",
+            "enum": [
+              "blocking",
+              "advisory"
+            ]
+          },
+          "item": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "verdict"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "id",
+    "source",
+    "check",
+    "subject",
+    "expect"
+  ],
+  "additionalProperties": false
+}

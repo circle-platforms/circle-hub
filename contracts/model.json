@@ -3203,7 +3203,7 @@
   },
   {
    "conflict": "真实目标、真实批次、真实 Jev 超出当前授权。",
-   "resolution": "登记为未落实，报告写明只证明了合成夹具。",
+   "resolution": "2026-10-21 夜用户授权里程碑 1：只读连接真实业务系统、调用真实 Jev、用用户配置的真实模型评审（真实用例和手册片段会发给所选服务商）；仍不连真实设备、不写业务系统。报告必须分开写明合成夹具证明了什么、真实运行证明了什么。",
    "status": "已改"
   },
   {
@@ -3566,8 +3566,15 @@
     ]
    },
    {
-    "path": "samples/positive/、samples/negative/",
-    "content": "正例与反例，每条标来源",
+    "path": "samples/positive/",
+    "content": "正例：每条标来源（作者 / 回流反例 / 外部留存交付）",
+    "elements": [
+     "T02"
+    ]
+   },
+   {
+    "path": "samples/negative/",
+    "content": "反例：每条标来源",
     "elements": [
      "T02"
     ]
@@ -3584,6 +3591,40 @@
     "content": "本地工具，下发方式待定",
     "elements": [
      "T01"
+    ]
+   },
+   {
+    "path": "tables/",
+    "content": "检查用的表：每张表一个版本化 JSON，由检查清单引用",
+    "elements": [
+     "C04",
+     "C05"
+    ]
+   },
+   {
+    "path": "product.json",
+    "content": "产品包的产品档案：全部名称、构建同步、选构建函数、目录声明、生产器",
+    "elements": [
+     "K01",
+     "K02",
+     "W03"
+    ]
+   },
+   {
+    "path": "workflow.json",
+    "content": "工作流包的声明：输入槽、参数、产品绑定、投影函数、期望来源函数",
+    "elements": [
+     "W01",
+     "W03",
+     "A03"
+    ]
+   },
+   {
+    "path": "system.json",
+    "content": "系统包的系统类型档案：角色、认证、路由清单、读取",
+    "elements": [
+     "D01",
+     "D02"
     ]
    }
   ],

@@ -8,12 +8,12 @@
     },
     "run": {
       "type": "string",
-      "pattern": "^run_[0-9a-z]{26}$"
+      "pattern": "^run_[0-7][0-9a-hjkmnp-tv-z]{25}$"
     },
     "submission": {
       "type": "string",
       "pattern": "^[0-9a-f]{64}$",
-      "description": "digest of the submission, the idempotency key together with the run"
+      "description": "digest of the submission as received, the idempotency key together with the run"
     },
     "acceptance": {
       "type": "string",
@@ -38,11 +38,15 @@
             "type": "string"
           },
           "path": {
-            "description": "JSON Pointer into the submission",
-            "type": "string"
+            "description": "JSON Pointer into the call arguments; for submit_result, into the submission",
+            "type": "string",
+            "maxLength": 8192,
+            "pattern": "^(?:\\/(?:[^~/]|~[01])*)*$"
           },
           "item": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
           },
           "requirement": {
             "type": "string"
@@ -67,7 +71,8 @@
           "message"
         ],
         "additionalProperties": false
-      }
+      },
+      "description": "every code that kept the submission from being accepted, item-level refutations with their fixes and rounds left, and items the submission did not cover"
     },
     "rounds": {
       "type": "object",
@@ -89,7 +94,2265 @@
       ],
       "additionalProperties": false
     },
-    "items": {
+    "partitions": {
+      "type": "object",
+      "properties": {
+        "delivered": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "item": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "label": {
+                "type": "string"
+              },
+              "location": {
+                "type": "string",
+                "maxLength": 8192,
+                "pattern": "^(?:src:[0-9a-f]{64}(?:\\/[a-z][a-z0-9_.-]{0,63}@(?:0|[1-9][0-9]{0,8})\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*(?::(?:0|[1-9][0-9]{0,15})-(?:0|[1-9][0-9]{0,15}))?)?|tree:[0-9a-f]{64}\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?(?:@[0-9a-f]{64})?|entry:[0-9a-f]{64}|rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$",
+                "description": "reference URI of the item in the judged source"
+              },
+              "carried_over": {
+                "description": "the predecessor run fragment this item was carried over from; set only after the Hub checked that the item and the cited content are unchanged (C08 R[4])",
+                "type": "string",
+                "maxLength": 8192,
+                "pattern": "^(?:rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$"
+              },
+              "requirements": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "requirement": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "layers": {
+                      "type": "array",
+                      "items": {
+                        "oneOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "layer": {
+                                "type": "string",
+                                "const": "static"
+                              },
+                              "terminal": {
+                                "type": "string",
+                                "enum": [
+                                  "pass",
+                                  "violation",
+                                  "judgment",
+                                  "unchecked",
+                                  "incomplete"
+                                ]
+                              },
+                              "code": {
+                                "description": "violation code; required when the terminal is violation or fail",
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "tier": {
+                                "type": "string",
+                                "enum": [
+                                  "blocking",
+                                  "advisory"
+                                ]
+                              },
+                              "reason": {
+                                "description": "why; required when the terminal is unknown (unchecked, no verdict, not run) or incomplete",
+                                "type": "string",
+                                "enum": [
+                                  "no_check",
+                                  "check_error",
+                                  "timeout",
+                                  "missing_input",
+                                  "declared_skip",
+                                  "not_covered",
+                                  "awaiting_step",
+                                  "output_failed",
+                                  "repair_exhausted",
+                                  "budget_exhausted",
+                                  "integrity_unproven"
+                                ]
+                              },
+                              "attribution": {
+                                "description": "only on a non-pass terminal that misses the check contract's expected outcome, never on a judgment (V04)",
+                                "type": "string",
+                                "enum": [
+                                  "data_gap",
+                                  "author_input",
+                                  "producer_error",
+                                  "transient",
+                                  "target_side",
+                                  "unattributed"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "layer",
+                              "terminal"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "layer": {
+                                "type": "string",
+                                "const": "dynamic"
+                              },
+                              "terminal": {
+                                "type": "string",
+                                "enum": [
+                                  "pass",
+                                  "fail",
+                                  "no_verdict",
+                                  "not_run",
+                                  "incomplete"
+                                ]
+                              },
+                              "code": {
+                                "description": "violation code; required when the terminal is violation or fail",
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "tier": {
+                                "type": "string",
+                                "enum": [
+                                  "blocking",
+                                  "advisory"
+                                ]
+                              },
+                              "reason": {
+                                "description": "why; required when the terminal is unknown (unchecked, no verdict, not run) or incomplete",
+                                "type": "string",
+                                "enum": [
+                                  "no_check",
+                                  "check_error",
+                                  "timeout",
+                                  "missing_input",
+                                  "declared_skip",
+                                  "not_covered",
+                                  "awaiting_step",
+                                  "output_failed",
+                                  "repair_exhausted",
+                                  "budget_exhausted",
+                                  "integrity_unproven"
+                                ]
+                              },
+                              "attribution": {
+                                "description": "only on a non-pass terminal that misses the check contract's expected outcome, never on a judgment (V04)",
+                                "type": "string",
+                                "enum": [
+                                  "data_gap",
+                                  "author_input",
+                                  "producer_error",
+                                  "transient",
+                                  "target_side",
+                                  "unattributed"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "layer",
+                              "terminal"
+                            ],
+                            "additionalProperties": false
+                          }
+                        ]
+                      },
+                      "description": "one entry per declared layer"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "satisfied",
+                        "unsatisfied",
+                        "pending"
+                      ]
+                    },
+                    "unsatisfied_reason": {
+                      "description": "given exactly when the status is unsatisfied (V03 F[2])",
+                      "type": "string",
+                      "enum": [
+                        "no_producer",
+                        "abandoned",
+                        "outcome_mismatch",
+                        "independence_unknown"
+                      ]
+                    },
+                    "claims": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "item": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200
+                          },
+                          "requirement": {
+                            "type": "string"
+                          },
+                          "pointer": {
+                            "description": "where the claim comes from: a JSON Pointer into the submission, or into the checked subject",
+                            "type": "string",
+                            "maxLength": 8192,
+                            "pattern": "^(?:\\/(?:[^~/]|~[01])*)*$"
+                          },
+                          "statement": {
+                            "type": "object",
+                            "properties": {
+                              "text": {
+                                "type": "string"
+                              },
+                              "verdict": {
+                                "type": "string",
+                                "enum": [
+                                  "support",
+                                  "refute",
+                                  "unknown",
+                                  "abstain"
+                                ]
+                              },
+                              "code": {
+                                "description": "violation code or finding code",
+                                "type": "string"
+                              },
+                              "reason": {
+                                "description": "why the verdict is unknown: check error, timeout, missing input (V01 R[2])",
+                                "type": "string",
+                                "enum": [
+                                  "no_check",
+                                  "check_error",
+                                  "timeout",
+                                  "missing_input",
+                                  "declared_skip",
+                                  "not_covered",
+                                  "awaiting_step",
+                                  "output_failed",
+                                  "repair_exhausted",
+                                  "budget_exhausted",
+                                  "integrity_unproven"
+                                ]
+                              },
+                              "rank": {
+                                "description": "ranking level from the closed set the pack declares; for sorting and display only (V02)",
+                                "type": "string"
+                              },
+                              "data": {
+                                "description": "machine-readable parts of the statement",
+                                "type": "object",
+                                "propertyNames": {
+                                  "type": "string"
+                                },
+                                "additionalProperties": {}
+                              }
+                            },
+                            "required": [
+                              "text"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "qualifier": {
+                            "type": "object",
+                            "properties": {
+                              "nature": {
+                                "type": "string",
+                                "enum": [
+                                  "fact",
+                                  "judgment",
+                                  "unknown"
+                                ]
+                              },
+                              "provenance": {
+                                "type": "string",
+                                "enum": [
+                                  "observed",
+                                  "projected",
+                                  "declared",
+                                  "candidate"
+                                ]
+                              },
+                              "basis_rank": {
+                                "type": "string",
+                                "enum": [
+                                  "rule_over_observation",
+                                  "rule_over_claims",
+                                  "judgment",
+                                  "relay"
+                                ]
+                              },
+                              "source_role": {
+                                "type": "string",
+                                "enum": [
+                                  "expected",
+                                  "subject",
+                                  "artifact_under_verification",
+                                  "reported_actual",
+                                  "republished",
+                                  "hint",
+                                  "request_text"
+                                ]
+                              },
+                              "marks": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "enum": [
+                                    "target_reported",
+                                    "report_for_dispatch",
+                                    "local_ops_not_excluded",
+                                    "human_intervention",
+                                    "discrimination_not_established",
+                                    "semantics_unasserted",
+                                    "unverified_submission",
+                                    "client_preview",
+                                    "model_relay",
+                                    "no_reuse",
+                                    "author_samples_only",
+                                    "conditional_on_judgment",
+                                    "independence_declared",
+                                    "not_realtime",
+                                    "partial"
+                                  ]
+                                }
+                              },
+                              "coverage": {
+                                "type": "object",
+                                "properties": {
+                                  "complete": {
+                                    "type": "boolean"
+                                  },
+                                  "examined": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "total": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "note": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "complete",
+                                  "examined"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "collected_at": {
+                                "description": "time bound: when the observation the claim rests on was collected; it holds only for that moment (A05)",
+                                "type": "string",
+                                "format": "date-time",
+                                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                              },
+                              "control": {
+                                "type": "string",
+                                "enum": [
+                                  "automatic",
+                                  "human_takeover"
+                                ]
+                              },
+                              "discriminating_power": {
+                                "type": "string",
+                                "enum": [
+                                  "established",
+                                  "not_established"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "nature",
+                              "provenance",
+                              "marks"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "grounds": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "maxLength": 8192,
+                              "pattern": "^(?:src:[0-9a-f]{64}(?:\\/[a-z][a-z0-9_.-]{0,63}@(?:0|[1-9][0-9]{0,8})\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*(?::(?:0|[1-9][0-9]{0,15})-(?:0|[1-9][0-9]{0,15}))?)?|tree:[0-9a-f]{64}\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?(?:@[0-9a-f]{64})?|rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$",
+                              "description": "reference a claim rests on: src, tree or rec; a knowledge entry is cited by its tree address"
+                            },
+                            "description": "references the claim rests on; a knowledge entry is cited by its tree address (B01 R[5])"
+                          },
+                          "warrant": {
+                            "type": "object",
+                            "properties": {
+                              "producer": {
+                                "type": "string",
+                                "enum": [
+                                  "function",
+                                  "model",
+                                  "human"
+                                ]
+                              },
+                              "id": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "independence": {
+                                "type": "string",
+                                "enum": [
+                                  "human_non_author",
+                                  "model_family_declared",
+                                  "judge_not_author",
+                                  "not_independent",
+                                  "unknown"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "producer",
+                              "id"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "resolution": {
+                            "type": "string",
+                            "enum": [
+                              "resolved",
+                              "ambiguous",
+                              "unresolved"
+                            ]
+                          },
+                          "resolutions": {
+                            "description": "each exact value of the statement with what it resolved to (W08, T04 R[1])",
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "pointer": {
+                                  "type": "string",
+                                  "maxLength": 8192,
+                                  "pattern": "^(?:\\/(?:[^~/]|~[01])*)*$",
+                                  "description": "where the value stands, as a JSON Pointer into the submission"
+                                },
+                                "text": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "description": "the exact value or quotation as the model wrote it"
+                                },
+                                "resolution": {
+                                  "type": "string",
+                                  "enum": [
+                                    "resolved",
+                                    "ambiguous",
+                                    "unresolved"
+                                  ]
+                                },
+                                "references": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "maxLength": 8192,
+                                    "pattern": "^(?:src:[0-9a-f]{64}(?:\\/[a-z][a-z0-9_.-]{0,63}@(?:0|[1-9][0-9]{0,8})\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*(?::(?:0|[1-9][0-9]{0,15})-(?:0|[1-9][0-9]{0,15}))?)?|tree:[0-9a-f]{64}\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?(?:@[0-9a-f]{64})?|rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$",
+                                    "description": "reference a claim rests on: src, tree or rec; a knowledge entry is cited by its tree address"
+                                  },
+                                  "description": "what it resolved to: one or more when resolved, the candidates when ambiguous, none when unresolved"
+                                }
+                              },
+                              "required": [
+                                "pointer",
+                                "text",
+                                "resolution",
+                                "references"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "validity": {
+                            "type": "object",
+                            "properties": {
+                              "status": {
+                                "type": "string",
+                                "enum": [
+                                  "valid",
+                                  "rule_withdrawn",
+                                  "grounds_withdrawn",
+                                  "cited_fragment_changed",
+                                  "credential_unreadable",
+                                  "premise_failed",
+                                  "expired",
+                                  "contradicted"
+                                ]
+                              },
+                              "bound": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "pattern": "^[0-9a-f]{64}$"
+                                },
+                                "description": "digests the claim depends on; a change in any of them voids it"
+                              },
+                              "expires_at": {
+                                "type": "string",
+                                "format": "date-time",
+                                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                              },
+                              "premises": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              }
+                            },
+                            "required": [
+                              "status",
+                              "bound",
+                              "premises"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "required": [
+                          "statement",
+                          "qualifier",
+                          "grounds",
+                          "warrant",
+                          "validity"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "description": "in display order: position, statement, nature and basis rank, qualifier, grounds, producer, resolution, validity"
+                    }
+                  },
+                  "required": [
+                    "requirement",
+                    "layers",
+                    "status",
+                    "claims"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "item",
+              "label",
+              "location",
+              "requirements"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "rejected": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "item": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "label": {
+                "type": "string"
+              },
+              "location": {
+                "type": "string",
+                "maxLength": 8192,
+                "pattern": "^(?:src:[0-9a-f]{64}(?:\\/[a-z][a-z0-9_.-]{0,63}@(?:0|[1-9][0-9]{0,8})\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*(?::(?:0|[1-9][0-9]{0,15})-(?:0|[1-9][0-9]{0,15}))?)?|tree:[0-9a-f]{64}\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?(?:@[0-9a-f]{64})?|entry:[0-9a-f]{64}|rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$",
+                "description": "reference URI of the item in the judged source"
+              },
+              "code": {
+                "type": "string",
+                "minLength": 1,
+                "description": "the code that put the item here (V05 F[1], R[2])"
+              },
+              "carried_over": {
+                "description": "the predecessor run fragment this item was carried over from; set only after the Hub checked that the item and the cited content are unchanged (C08 R[4])",
+                "type": "string",
+                "maxLength": 8192,
+                "pattern": "^(?:rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$"
+              },
+              "requirements": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "requirement": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "layers": {
+                      "type": "array",
+                      "items": {
+                        "oneOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "layer": {
+                                "type": "string",
+                                "const": "static"
+                              },
+                              "terminal": {
+                                "type": "string",
+                                "enum": [
+                                  "pass",
+                                  "violation",
+                                  "judgment",
+                                  "unchecked",
+                                  "incomplete"
+                                ]
+                              },
+                              "code": {
+                                "description": "violation code; required when the terminal is violation or fail",
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "tier": {
+                                "type": "string",
+                                "enum": [
+                                  "blocking",
+                                  "advisory"
+                                ]
+                              },
+                              "reason": {
+                                "description": "why; required when the terminal is unknown (unchecked, no verdict, not run) or incomplete",
+                                "type": "string",
+                                "enum": [
+                                  "no_check",
+                                  "check_error",
+                                  "timeout",
+                                  "missing_input",
+                                  "declared_skip",
+                                  "not_covered",
+                                  "awaiting_step",
+                                  "output_failed",
+                                  "repair_exhausted",
+                                  "budget_exhausted",
+                                  "integrity_unproven"
+                                ]
+                              },
+                              "attribution": {
+                                "description": "only on a non-pass terminal that misses the check contract's expected outcome, never on a judgment (V04)",
+                                "type": "string",
+                                "enum": [
+                                  "data_gap",
+                                  "author_input",
+                                  "producer_error",
+                                  "transient",
+                                  "target_side",
+                                  "unattributed"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "layer",
+                              "terminal"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "layer": {
+                                "type": "string",
+                                "const": "dynamic"
+                              },
+                              "terminal": {
+                                "type": "string",
+                                "enum": [
+                                  "pass",
+                                  "fail",
+                                  "no_verdict",
+                                  "not_run",
+                                  "incomplete"
+                                ]
+                              },
+                              "code": {
+                                "description": "violation code; required when the terminal is violation or fail",
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "tier": {
+                                "type": "string",
+                                "enum": [
+                                  "blocking",
+                                  "advisory"
+                                ]
+                              },
+                              "reason": {
+                                "description": "why; required when the terminal is unknown (unchecked, no verdict, not run) or incomplete",
+                                "type": "string",
+                                "enum": [
+                                  "no_check",
+                                  "check_error",
+                                  "timeout",
+                                  "missing_input",
+                                  "declared_skip",
+                                  "not_covered",
+                                  "awaiting_step",
+                                  "output_failed",
+                                  "repair_exhausted",
+                                  "budget_exhausted",
+                                  "integrity_unproven"
+                                ]
+                              },
+                              "attribution": {
+                                "description": "only on a non-pass terminal that misses the check contract's expected outcome, never on a judgment (V04)",
+                                "type": "string",
+                                "enum": [
+                                  "data_gap",
+                                  "author_input",
+                                  "producer_error",
+                                  "transient",
+                                  "target_side",
+                                  "unattributed"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "layer",
+                              "terminal"
+                            ],
+                            "additionalProperties": false
+                          }
+                        ]
+                      },
+                      "description": "one entry per declared layer"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "satisfied",
+                        "unsatisfied",
+                        "pending"
+                      ]
+                    },
+                    "unsatisfied_reason": {
+                      "description": "given exactly when the status is unsatisfied (V03 F[2])",
+                      "type": "string",
+                      "enum": [
+                        "no_producer",
+                        "abandoned",
+                        "outcome_mismatch",
+                        "independence_unknown"
+                      ]
+                    },
+                    "claims": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "item": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200
+                          },
+                          "requirement": {
+                            "type": "string"
+                          },
+                          "pointer": {
+                            "description": "where the claim comes from: a JSON Pointer into the submission, or into the checked subject",
+                            "type": "string",
+                            "maxLength": 8192,
+                            "pattern": "^(?:\\/(?:[^~/]|~[01])*)*$"
+                          },
+                          "statement": {
+                            "type": "object",
+                            "properties": {
+                              "text": {
+                                "type": "string"
+                              },
+                              "verdict": {
+                                "type": "string",
+                                "enum": [
+                                  "support",
+                                  "refute",
+                                  "unknown",
+                                  "abstain"
+                                ]
+                              },
+                              "code": {
+                                "description": "violation code or finding code",
+                                "type": "string"
+                              },
+                              "reason": {
+                                "description": "why the verdict is unknown: check error, timeout, missing input (V01 R[2])",
+                                "type": "string",
+                                "enum": [
+                                  "no_check",
+                                  "check_error",
+                                  "timeout",
+                                  "missing_input",
+                                  "declared_skip",
+                                  "not_covered",
+                                  "awaiting_step",
+                                  "output_failed",
+                                  "repair_exhausted",
+                                  "budget_exhausted",
+                                  "integrity_unproven"
+                                ]
+                              },
+                              "rank": {
+                                "description": "ranking level from the closed set the pack declares; for sorting and display only (V02)",
+                                "type": "string"
+                              },
+                              "data": {
+                                "description": "machine-readable parts of the statement",
+                                "type": "object",
+                                "propertyNames": {
+                                  "type": "string"
+                                },
+                                "additionalProperties": {}
+                              }
+                            },
+                            "required": [
+                              "text"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "qualifier": {
+                            "type": "object",
+                            "properties": {
+                              "nature": {
+                                "type": "string",
+                                "enum": [
+                                  "fact",
+                                  "judgment",
+                                  "unknown"
+                                ]
+                              },
+                              "provenance": {
+                                "type": "string",
+                                "enum": [
+                                  "observed",
+                                  "projected",
+                                  "declared",
+                                  "candidate"
+                                ]
+                              },
+                              "basis_rank": {
+                                "type": "string",
+                                "enum": [
+                                  "rule_over_observation",
+                                  "rule_over_claims",
+                                  "judgment",
+                                  "relay"
+                                ]
+                              },
+                              "source_role": {
+                                "type": "string",
+                                "enum": [
+                                  "expected",
+                                  "subject",
+                                  "artifact_under_verification",
+                                  "reported_actual",
+                                  "republished",
+                                  "hint",
+                                  "request_text"
+                                ]
+                              },
+                              "marks": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "enum": [
+                                    "target_reported",
+                                    "report_for_dispatch",
+                                    "local_ops_not_excluded",
+                                    "human_intervention",
+                                    "discrimination_not_established",
+                                    "semantics_unasserted",
+                                    "unverified_submission",
+                                    "client_preview",
+                                    "model_relay",
+                                    "no_reuse",
+                                    "author_samples_only",
+                                    "conditional_on_judgment",
+                                    "independence_declared",
+                                    "not_realtime",
+                                    "partial"
+                                  ]
+                                }
+                              },
+                              "coverage": {
+                                "type": "object",
+                                "properties": {
+                                  "complete": {
+                                    "type": "boolean"
+                                  },
+                                  "examined": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "total": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "note": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "complete",
+                                  "examined"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "collected_at": {
+                                "description": "time bound: when the observation the claim rests on was collected; it holds only for that moment (A05)",
+                                "type": "string",
+                                "format": "date-time",
+                                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                              },
+                              "control": {
+                                "type": "string",
+                                "enum": [
+                                  "automatic",
+                                  "human_takeover"
+                                ]
+                              },
+                              "discriminating_power": {
+                                "type": "string",
+                                "enum": [
+                                  "established",
+                                  "not_established"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "nature",
+                              "provenance",
+                              "marks"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "grounds": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "maxLength": 8192,
+                              "pattern": "^(?:src:[0-9a-f]{64}(?:\\/[a-z][a-z0-9_.-]{0,63}@(?:0|[1-9][0-9]{0,8})\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*(?::(?:0|[1-9][0-9]{0,15})-(?:0|[1-9][0-9]{0,15}))?)?|tree:[0-9a-f]{64}\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?(?:@[0-9a-f]{64})?|rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$",
+                              "description": "reference a claim rests on: src, tree or rec; a knowledge entry is cited by its tree address"
+                            },
+                            "description": "references the claim rests on; a knowledge entry is cited by its tree address (B01 R[5])"
+                          },
+                          "warrant": {
+                            "type": "object",
+                            "properties": {
+                              "producer": {
+                                "type": "string",
+                                "enum": [
+                                  "function",
+                                  "model",
+                                  "human"
+                                ]
+                              },
+                              "id": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "independence": {
+                                "type": "string",
+                                "enum": [
+                                  "human_non_author",
+                                  "model_family_declared",
+                                  "judge_not_author",
+                                  "not_independent",
+                                  "unknown"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "producer",
+                              "id"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "resolution": {
+                            "type": "string",
+                            "enum": [
+                              "resolved",
+                              "ambiguous",
+                              "unresolved"
+                            ]
+                          },
+                          "resolutions": {
+                            "description": "each exact value of the statement with what it resolved to (W08, T04 R[1])",
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "pointer": {
+                                  "type": "string",
+                                  "maxLength": 8192,
+                                  "pattern": "^(?:\\/(?:[^~/]|~[01])*)*$",
+                                  "description": "where the value stands, as a JSON Pointer into the submission"
+                                },
+                                "text": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "description": "the exact value or quotation as the model wrote it"
+                                },
+                                "resolution": {
+                                  "type": "string",
+                                  "enum": [
+                                    "resolved",
+                                    "ambiguous",
+                                    "unresolved"
+                                  ]
+                                },
+                                "references": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "maxLength": 8192,
+                                    "pattern": "^(?:src:[0-9a-f]{64}(?:\\/[a-z][a-z0-9_.-]{0,63}@(?:0|[1-9][0-9]{0,8})\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*(?::(?:0|[1-9][0-9]{0,15})-(?:0|[1-9][0-9]{0,15}))?)?|tree:[0-9a-f]{64}\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?(?:@[0-9a-f]{64})?|rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$",
+                                    "description": "reference a claim rests on: src, tree or rec; a knowledge entry is cited by its tree address"
+                                  },
+                                  "description": "what it resolved to: one or more when resolved, the candidates when ambiguous, none when unresolved"
+                                }
+                              },
+                              "required": [
+                                "pointer",
+                                "text",
+                                "resolution",
+                                "references"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "validity": {
+                            "type": "object",
+                            "properties": {
+                              "status": {
+                                "type": "string",
+                                "enum": [
+                                  "valid",
+                                  "rule_withdrawn",
+                                  "grounds_withdrawn",
+                                  "cited_fragment_changed",
+                                  "credential_unreadable",
+                                  "premise_failed",
+                                  "expired",
+                                  "contradicted"
+                                ]
+                              },
+                              "bound": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "pattern": "^[0-9a-f]{64}$"
+                                },
+                                "description": "digests the claim depends on; a change in any of them voids it"
+                              },
+                              "expires_at": {
+                                "type": "string",
+                                "format": "date-time",
+                                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                              },
+                              "premises": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              }
+                            },
+                            "required": [
+                              "status",
+                              "bound",
+                              "premises"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "required": [
+                          "statement",
+                          "qualifier",
+                          "grounds",
+                          "warrant",
+                          "validity"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "description": "in display order: position, statement, nature and basis rank, qualifier, grounds, producer, resolution, validity"
+                    }
+                  },
+                  "required": [
+                    "requirement",
+                    "layers",
+                    "status",
+                    "claims"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "item",
+              "label",
+              "location",
+              "code",
+              "requirements"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "quarantined": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "item": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "label": {
+                "type": "string"
+              },
+              "location": {
+                "type": "string",
+                "maxLength": 8192,
+                "pattern": "^(?:src:[0-9a-f]{64}(?:\\/[a-z][a-z0-9_.-]{0,63}@(?:0|[1-9][0-9]{0,8})\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*(?::(?:0|[1-9][0-9]{0,15})-(?:0|[1-9][0-9]{0,15}))?)?|tree:[0-9a-f]{64}\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?(?:@[0-9a-f]{64})?|entry:[0-9a-f]{64}|rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$",
+                "description": "reference URI of the item in the judged source"
+              },
+              "reason": {
+                "type": "string",
+                "enum": [
+                  "no_check",
+                  "check_error",
+                  "timeout",
+                  "missing_input",
+                  "declared_skip",
+                  "not_covered",
+                  "awaiting_step",
+                  "output_failed",
+                  "repair_exhausted",
+                  "budget_exhausted",
+                  "integrity_unproven"
+                ],
+                "description": "why the item is held (V05 F[2])"
+              },
+              "carried_over": {
+                "description": "the predecessor run fragment this item was carried over from; set only after the Hub checked that the item and the cited content are unchanged (C08 R[4])",
+                "type": "string",
+                "maxLength": 8192,
+                "pattern": "^(?:rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$"
+              },
+              "requirements": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "requirement": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "layers": {
+                      "type": "array",
+                      "items": {
+                        "oneOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "layer": {
+                                "type": "string",
+                                "const": "static"
+                              },
+                              "terminal": {
+                                "type": "string",
+                                "enum": [
+                                  "pass",
+                                  "violation",
+                                  "judgment",
+                                  "unchecked",
+                                  "incomplete"
+                                ]
+                              },
+                              "code": {
+                                "description": "violation code; required when the terminal is violation or fail",
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "tier": {
+                                "type": "string",
+                                "enum": [
+                                  "blocking",
+                                  "advisory"
+                                ]
+                              },
+                              "reason": {
+                                "description": "why; required when the terminal is unknown (unchecked, no verdict, not run) or incomplete",
+                                "type": "string",
+                                "enum": [
+                                  "no_check",
+                                  "check_error",
+                                  "timeout",
+                                  "missing_input",
+                                  "declared_skip",
+                                  "not_covered",
+                                  "awaiting_step",
+                                  "output_failed",
+                                  "repair_exhausted",
+                                  "budget_exhausted",
+                                  "integrity_unproven"
+                                ]
+                              },
+                              "attribution": {
+                                "description": "only on a non-pass terminal that misses the check contract's expected outcome, never on a judgment (V04)",
+                                "type": "string",
+                                "enum": [
+                                  "data_gap",
+                                  "author_input",
+                                  "producer_error",
+                                  "transient",
+                                  "target_side",
+                                  "unattributed"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "layer",
+                              "terminal"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "layer": {
+                                "type": "string",
+                                "const": "dynamic"
+                              },
+                              "terminal": {
+                                "type": "string",
+                                "enum": [
+                                  "pass",
+                                  "fail",
+                                  "no_verdict",
+                                  "not_run",
+                                  "incomplete"
+                                ]
+                              },
+                              "code": {
+                                "description": "violation code; required when the terminal is violation or fail",
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "tier": {
+                                "type": "string",
+                                "enum": [
+                                  "blocking",
+                                  "advisory"
+                                ]
+                              },
+                              "reason": {
+                                "description": "why; required when the terminal is unknown (unchecked, no verdict, not run) or incomplete",
+                                "type": "string",
+                                "enum": [
+                                  "no_check",
+                                  "check_error",
+                                  "timeout",
+                                  "missing_input",
+                                  "declared_skip",
+                                  "not_covered",
+                                  "awaiting_step",
+                                  "output_failed",
+                                  "repair_exhausted",
+                                  "budget_exhausted",
+                                  "integrity_unproven"
+                                ]
+                              },
+                              "attribution": {
+                                "description": "only on a non-pass terminal that misses the check contract's expected outcome, never on a judgment (V04)",
+                                "type": "string",
+                                "enum": [
+                                  "data_gap",
+                                  "author_input",
+                                  "producer_error",
+                                  "transient",
+                                  "target_side",
+                                  "unattributed"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "layer",
+                              "terminal"
+                            ],
+                            "additionalProperties": false
+                          }
+                        ]
+                      },
+                      "description": "one entry per declared layer"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "satisfied",
+                        "unsatisfied",
+                        "pending"
+                      ]
+                    },
+                    "unsatisfied_reason": {
+                      "description": "given exactly when the status is unsatisfied (V03 F[2])",
+                      "type": "string",
+                      "enum": [
+                        "no_producer",
+                        "abandoned",
+                        "outcome_mismatch",
+                        "independence_unknown"
+                      ]
+                    },
+                    "claims": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "item": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200
+                          },
+                          "requirement": {
+                            "type": "string"
+                          },
+                          "pointer": {
+                            "description": "where the claim comes from: a JSON Pointer into the submission, or into the checked subject",
+                            "type": "string",
+                            "maxLength": 8192,
+                            "pattern": "^(?:\\/(?:[^~/]|~[01])*)*$"
+                          },
+                          "statement": {
+                            "type": "object",
+                            "properties": {
+                              "text": {
+                                "type": "string"
+                              },
+                              "verdict": {
+                                "type": "string",
+                                "enum": [
+                                  "support",
+                                  "refute",
+                                  "unknown",
+                                  "abstain"
+                                ]
+                              },
+                              "code": {
+                                "description": "violation code or finding code",
+                                "type": "string"
+                              },
+                              "reason": {
+                                "description": "why the verdict is unknown: check error, timeout, missing input (V01 R[2])",
+                                "type": "string",
+                                "enum": [
+                                  "no_check",
+                                  "check_error",
+                                  "timeout",
+                                  "missing_input",
+                                  "declared_skip",
+                                  "not_covered",
+                                  "awaiting_step",
+                                  "output_failed",
+                                  "repair_exhausted",
+                                  "budget_exhausted",
+                                  "integrity_unproven"
+                                ]
+                              },
+                              "rank": {
+                                "description": "ranking level from the closed set the pack declares; for sorting and display only (V02)",
+                                "type": "string"
+                              },
+                              "data": {
+                                "description": "machine-readable parts of the statement",
+                                "type": "object",
+                                "propertyNames": {
+                                  "type": "string"
+                                },
+                                "additionalProperties": {}
+                              }
+                            },
+                            "required": [
+                              "text"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "qualifier": {
+                            "type": "object",
+                            "properties": {
+                              "nature": {
+                                "type": "string",
+                                "enum": [
+                                  "fact",
+                                  "judgment",
+                                  "unknown"
+                                ]
+                              },
+                              "provenance": {
+                                "type": "string",
+                                "enum": [
+                                  "observed",
+                                  "projected",
+                                  "declared",
+                                  "candidate"
+                                ]
+                              },
+                              "basis_rank": {
+                                "type": "string",
+                                "enum": [
+                                  "rule_over_observation",
+                                  "rule_over_claims",
+                                  "judgment",
+                                  "relay"
+                                ]
+                              },
+                              "source_role": {
+                                "type": "string",
+                                "enum": [
+                                  "expected",
+                                  "subject",
+                                  "artifact_under_verification",
+                                  "reported_actual",
+                                  "republished",
+                                  "hint",
+                                  "request_text"
+                                ]
+                              },
+                              "marks": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "enum": [
+                                    "target_reported",
+                                    "report_for_dispatch",
+                                    "local_ops_not_excluded",
+                                    "human_intervention",
+                                    "discrimination_not_established",
+                                    "semantics_unasserted",
+                                    "unverified_submission",
+                                    "client_preview",
+                                    "model_relay",
+                                    "no_reuse",
+                                    "author_samples_only",
+                                    "conditional_on_judgment",
+                                    "independence_declared",
+                                    "not_realtime",
+                                    "partial"
+                                  ]
+                                }
+                              },
+                              "coverage": {
+                                "type": "object",
+                                "properties": {
+                                  "complete": {
+                                    "type": "boolean"
+                                  },
+                                  "examined": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "total": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "note": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "complete",
+                                  "examined"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "collected_at": {
+                                "description": "time bound: when the observation the claim rests on was collected; it holds only for that moment (A05)",
+                                "type": "string",
+                                "format": "date-time",
+                                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                              },
+                              "control": {
+                                "type": "string",
+                                "enum": [
+                                  "automatic",
+                                  "human_takeover"
+                                ]
+                              },
+                              "discriminating_power": {
+                                "type": "string",
+                                "enum": [
+                                  "established",
+                                  "not_established"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "nature",
+                              "provenance",
+                              "marks"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "grounds": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "maxLength": 8192,
+                              "pattern": "^(?:src:[0-9a-f]{64}(?:\\/[a-z][a-z0-9_.-]{0,63}@(?:0|[1-9][0-9]{0,8})\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*(?::(?:0|[1-9][0-9]{0,15})-(?:0|[1-9][0-9]{0,15}))?)?|tree:[0-9a-f]{64}\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?(?:@[0-9a-f]{64})?|rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$",
+                              "description": "reference a claim rests on: src, tree or rec; a knowledge entry is cited by its tree address"
+                            },
+                            "description": "references the claim rests on; a knowledge entry is cited by its tree address (B01 R[5])"
+                          },
+                          "warrant": {
+                            "type": "object",
+                            "properties": {
+                              "producer": {
+                                "type": "string",
+                                "enum": [
+                                  "function",
+                                  "model",
+                                  "human"
+                                ]
+                              },
+                              "id": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "independence": {
+                                "type": "string",
+                                "enum": [
+                                  "human_non_author",
+                                  "model_family_declared",
+                                  "judge_not_author",
+                                  "not_independent",
+                                  "unknown"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "producer",
+                              "id"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "resolution": {
+                            "type": "string",
+                            "enum": [
+                              "resolved",
+                              "ambiguous",
+                              "unresolved"
+                            ]
+                          },
+                          "resolutions": {
+                            "description": "each exact value of the statement with what it resolved to (W08, T04 R[1])",
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "pointer": {
+                                  "type": "string",
+                                  "maxLength": 8192,
+                                  "pattern": "^(?:\\/(?:[^~/]|~[01])*)*$",
+                                  "description": "where the value stands, as a JSON Pointer into the submission"
+                                },
+                                "text": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "description": "the exact value or quotation as the model wrote it"
+                                },
+                                "resolution": {
+                                  "type": "string",
+                                  "enum": [
+                                    "resolved",
+                                    "ambiguous",
+                                    "unresolved"
+                                  ]
+                                },
+                                "references": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "maxLength": 8192,
+                                    "pattern": "^(?:src:[0-9a-f]{64}(?:\\/[a-z][a-z0-9_.-]{0,63}@(?:0|[1-9][0-9]{0,8})\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*(?::(?:0|[1-9][0-9]{0,15})-(?:0|[1-9][0-9]{0,15}))?)?|tree:[0-9a-f]{64}\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?(?:@[0-9a-f]{64})?|rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$",
+                                    "description": "reference a claim rests on: src, tree or rec; a knowledge entry is cited by its tree address"
+                                  },
+                                  "description": "what it resolved to: one or more when resolved, the candidates when ambiguous, none when unresolved"
+                                }
+                              },
+                              "required": [
+                                "pointer",
+                                "text",
+                                "resolution",
+                                "references"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "validity": {
+                            "type": "object",
+                            "properties": {
+                              "status": {
+                                "type": "string",
+                                "enum": [
+                                  "valid",
+                                  "rule_withdrawn",
+                                  "grounds_withdrawn",
+                                  "cited_fragment_changed",
+                                  "credential_unreadable",
+                                  "premise_failed",
+                                  "expired",
+                                  "contradicted"
+                                ]
+                              },
+                              "bound": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "pattern": "^[0-9a-f]{64}$"
+                                },
+                                "description": "digests the claim depends on; a change in any of them voids it"
+                              },
+                              "expires_at": {
+                                "type": "string",
+                                "format": "date-time",
+                                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                              },
+                              "premises": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              }
+                            },
+                            "required": [
+                              "status",
+                              "bound",
+                              "premises"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "required": [
+                          "statement",
+                          "qualifier",
+                          "grounds",
+                          "warrant",
+                          "validity"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "description": "in display order: position, statement, nature and basis rank, qualifier, grounds, producer, resolution, validity"
+                    }
+                  },
+                  "required": [
+                    "requirement",
+                    "layers",
+                    "status",
+                    "claims"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "item",
+              "label",
+              "location",
+              "reason",
+              "requirements"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "incomplete": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "item": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "label": {
+                "type": "string"
+              },
+              "location": {
+                "type": "string",
+                "maxLength": 8192,
+                "pattern": "^(?:src:[0-9a-f]{64}(?:\\/[a-z][a-z0-9_.-]{0,63}@(?:0|[1-9][0-9]{0,8})\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*(?::(?:0|[1-9][0-9]{0,15})-(?:0|[1-9][0-9]{0,15}))?)?|tree:[0-9a-f]{64}\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?(?:@[0-9a-f]{64})?|entry:[0-9a-f]{64}|rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$",
+                "description": "reference URI of the item in the judged source"
+              },
+              "reason": {
+                "type": "string",
+                "enum": [
+                  "no_check",
+                  "check_error",
+                  "timeout",
+                  "missing_input",
+                  "declared_skip",
+                  "not_covered",
+                  "awaiting_step",
+                  "output_failed",
+                  "repair_exhausted",
+                  "budget_exhausted",
+                  "integrity_unproven"
+                ],
+                "description": "why the item is not complete, for example not_covered or declared_skip (V05 F[3])"
+              },
+              "carried_over": {
+                "description": "the predecessor run fragment this item was carried over from; set only after the Hub checked that the item and the cited content are unchanged (C08 R[4])",
+                "type": "string",
+                "maxLength": 8192,
+                "pattern": "^(?:rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$"
+              },
+              "requirements": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "requirement": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "layers": {
+                      "type": "array",
+                      "items": {
+                        "oneOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "layer": {
+                                "type": "string",
+                                "const": "static"
+                              },
+                              "terminal": {
+                                "type": "string",
+                                "enum": [
+                                  "pass",
+                                  "violation",
+                                  "judgment",
+                                  "unchecked",
+                                  "incomplete"
+                                ]
+                              },
+                              "code": {
+                                "description": "violation code; required when the terminal is violation or fail",
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "tier": {
+                                "type": "string",
+                                "enum": [
+                                  "blocking",
+                                  "advisory"
+                                ]
+                              },
+                              "reason": {
+                                "description": "why; required when the terminal is unknown (unchecked, no verdict, not run) or incomplete",
+                                "type": "string",
+                                "enum": [
+                                  "no_check",
+                                  "check_error",
+                                  "timeout",
+                                  "missing_input",
+                                  "declared_skip",
+                                  "not_covered",
+                                  "awaiting_step",
+                                  "output_failed",
+                                  "repair_exhausted",
+                                  "budget_exhausted",
+                                  "integrity_unproven"
+                                ]
+                              },
+                              "attribution": {
+                                "description": "only on a non-pass terminal that misses the check contract's expected outcome, never on a judgment (V04)",
+                                "type": "string",
+                                "enum": [
+                                  "data_gap",
+                                  "author_input",
+                                  "producer_error",
+                                  "transient",
+                                  "target_side",
+                                  "unattributed"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "layer",
+                              "terminal"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "layer": {
+                                "type": "string",
+                                "const": "dynamic"
+                              },
+                              "terminal": {
+                                "type": "string",
+                                "enum": [
+                                  "pass",
+                                  "fail",
+                                  "no_verdict",
+                                  "not_run",
+                                  "incomplete"
+                                ]
+                              },
+                              "code": {
+                                "description": "violation code; required when the terminal is violation or fail",
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "tier": {
+                                "type": "string",
+                                "enum": [
+                                  "blocking",
+                                  "advisory"
+                                ]
+                              },
+                              "reason": {
+                                "description": "why; required when the terminal is unknown (unchecked, no verdict, not run) or incomplete",
+                                "type": "string",
+                                "enum": [
+                                  "no_check",
+                                  "check_error",
+                                  "timeout",
+                                  "missing_input",
+                                  "declared_skip",
+                                  "not_covered",
+                                  "awaiting_step",
+                                  "output_failed",
+                                  "repair_exhausted",
+                                  "budget_exhausted",
+                                  "integrity_unproven"
+                                ]
+                              },
+                              "attribution": {
+                                "description": "only on a non-pass terminal that misses the check contract's expected outcome, never on a judgment (V04)",
+                                "type": "string",
+                                "enum": [
+                                  "data_gap",
+                                  "author_input",
+                                  "producer_error",
+                                  "transient",
+                                  "target_side",
+                                  "unattributed"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "layer",
+                              "terminal"
+                            ],
+                            "additionalProperties": false
+                          }
+                        ]
+                      },
+                      "description": "one entry per declared layer"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "satisfied",
+                        "unsatisfied",
+                        "pending"
+                      ]
+                    },
+                    "unsatisfied_reason": {
+                      "description": "given exactly when the status is unsatisfied (V03 F[2])",
+                      "type": "string",
+                      "enum": [
+                        "no_producer",
+                        "abandoned",
+                        "outcome_mismatch",
+                        "independence_unknown"
+                      ]
+                    },
+                    "claims": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "item": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200
+                          },
+                          "requirement": {
+                            "type": "string"
+                          },
+                          "pointer": {
+                            "description": "where the claim comes from: a JSON Pointer into the submission, or into the checked subject",
+                            "type": "string",
+                            "maxLength": 8192,
+                            "pattern": "^(?:\\/(?:[^~/]|~[01])*)*$"
+                          },
+                          "statement": {
+                            "type": "object",
+                            "properties": {
+                              "text": {
+                                "type": "string"
+                              },
+                              "verdict": {
+                                "type": "string",
+                                "enum": [
+                                  "support",
+                                  "refute",
+                                  "unknown",
+                                  "abstain"
+                                ]
+                              },
+                              "code": {
+                                "description": "violation code or finding code",
+                                "type": "string"
+                              },
+                              "reason": {
+                                "description": "why the verdict is unknown: check error, timeout, missing input (V01 R[2])",
+                                "type": "string",
+                                "enum": [
+                                  "no_check",
+                                  "check_error",
+                                  "timeout",
+                                  "missing_input",
+                                  "declared_skip",
+                                  "not_covered",
+                                  "awaiting_step",
+                                  "output_failed",
+                                  "repair_exhausted",
+                                  "budget_exhausted",
+                                  "integrity_unproven"
+                                ]
+                              },
+                              "rank": {
+                                "description": "ranking level from the closed set the pack declares; for sorting and display only (V02)",
+                                "type": "string"
+                              },
+                              "data": {
+                                "description": "machine-readable parts of the statement",
+                                "type": "object",
+                                "propertyNames": {
+                                  "type": "string"
+                                },
+                                "additionalProperties": {}
+                              }
+                            },
+                            "required": [
+                              "text"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "qualifier": {
+                            "type": "object",
+                            "properties": {
+                              "nature": {
+                                "type": "string",
+                                "enum": [
+                                  "fact",
+                                  "judgment",
+                                  "unknown"
+                                ]
+                              },
+                              "provenance": {
+                                "type": "string",
+                                "enum": [
+                                  "observed",
+                                  "projected",
+                                  "declared",
+                                  "candidate"
+                                ]
+                              },
+                              "basis_rank": {
+                                "type": "string",
+                                "enum": [
+                                  "rule_over_observation",
+                                  "rule_over_claims",
+                                  "judgment",
+                                  "relay"
+                                ]
+                              },
+                              "source_role": {
+                                "type": "string",
+                                "enum": [
+                                  "expected",
+                                  "subject",
+                                  "artifact_under_verification",
+                                  "reported_actual",
+                                  "republished",
+                                  "hint",
+                                  "request_text"
+                                ]
+                              },
+                              "marks": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "enum": [
+                                    "target_reported",
+                                    "report_for_dispatch",
+                                    "local_ops_not_excluded",
+                                    "human_intervention",
+                                    "discrimination_not_established",
+                                    "semantics_unasserted",
+                                    "unverified_submission",
+                                    "client_preview",
+                                    "model_relay",
+                                    "no_reuse",
+                                    "author_samples_only",
+                                    "conditional_on_judgment",
+                                    "independence_declared",
+                                    "not_realtime",
+                                    "partial"
+                                  ]
+                                }
+                              },
+                              "coverage": {
+                                "type": "object",
+                                "properties": {
+                                  "complete": {
+                                    "type": "boolean"
+                                  },
+                                  "examined": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "total": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "note": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "complete",
+                                  "examined"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "collected_at": {
+                                "description": "time bound: when the observation the claim rests on was collected; it holds only for that moment (A05)",
+                                "type": "string",
+                                "format": "date-time",
+                                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                              },
+                              "control": {
+                                "type": "string",
+                                "enum": [
+                                  "automatic",
+                                  "human_takeover"
+                                ]
+                              },
+                              "discriminating_power": {
+                                "type": "string",
+                                "enum": [
+                                  "established",
+                                  "not_established"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "nature",
+                              "provenance",
+                              "marks"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "grounds": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "maxLength": 8192,
+                              "pattern": "^(?:src:[0-9a-f]{64}(?:\\/[a-z][a-z0-9_.-]{0,63}@(?:0|[1-9][0-9]{0,8})\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*(?::(?:0|[1-9][0-9]{0,15})-(?:0|[1-9][0-9]{0,15}))?)?|tree:[0-9a-f]{64}\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?(?:@[0-9a-f]{64})?|rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$",
+                              "description": "reference a claim rests on: src, tree or rec; a knowledge entry is cited by its tree address"
+                            },
+                            "description": "references the claim rests on; a knowledge entry is cited by its tree address (B01 R[5])"
+                          },
+                          "warrant": {
+                            "type": "object",
+                            "properties": {
+                              "producer": {
+                                "type": "string",
+                                "enum": [
+                                  "function",
+                                  "model",
+                                  "human"
+                                ]
+                              },
+                              "id": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "independence": {
+                                "type": "string",
+                                "enum": [
+                                  "human_non_author",
+                                  "model_family_declared",
+                                  "judge_not_author",
+                                  "not_independent",
+                                  "unknown"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "producer",
+                              "id"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "resolution": {
+                            "type": "string",
+                            "enum": [
+                              "resolved",
+                              "ambiguous",
+                              "unresolved"
+                            ]
+                          },
+                          "resolutions": {
+                            "description": "each exact value of the statement with what it resolved to (W08, T04 R[1])",
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "pointer": {
+                                  "type": "string",
+                                  "maxLength": 8192,
+                                  "pattern": "^(?:\\/(?:[^~/]|~[01])*)*$",
+                                  "description": "where the value stands, as a JSON Pointer into the submission"
+                                },
+                                "text": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "description": "the exact value or quotation as the model wrote it"
+                                },
+                                "resolution": {
+                                  "type": "string",
+                                  "enum": [
+                                    "resolved",
+                                    "ambiguous",
+                                    "unresolved"
+                                  ]
+                                },
+                                "references": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "maxLength": 8192,
+                                    "pattern": "^(?:src:[0-9a-f]{64}(?:\\/[a-z][a-z0-9_.-]{0,63}@(?:0|[1-9][0-9]{0,8})\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*(?::(?:0|[1-9][0-9]{0,15})-(?:0|[1-9][0-9]{0,15}))?)?|tree:[0-9a-f]{64}\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?(?:@[0-9a-f]{64})?|rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$",
+                                    "description": "reference a claim rests on: src, tree or rec; a knowledge entry is cited by its tree address"
+                                  },
+                                  "description": "what it resolved to: one or more when resolved, the candidates when ambiguous, none when unresolved"
+                                }
+                              },
+                              "required": [
+                                "pointer",
+                                "text",
+                                "resolution",
+                                "references"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "validity": {
+                            "type": "object",
+                            "properties": {
+                              "status": {
+                                "type": "string",
+                                "enum": [
+                                  "valid",
+                                  "rule_withdrawn",
+                                  "grounds_withdrawn",
+                                  "cited_fragment_changed",
+                                  "credential_unreadable",
+                                  "premise_failed",
+                                  "expired",
+                                  "contradicted"
+                                ]
+                              },
+                              "bound": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "pattern": "^[0-9a-f]{64}$"
+                                },
+                                "description": "digests the claim depends on; a change in any of them voids it"
+                              },
+                              "expires_at": {
+                                "type": "string",
+                                "format": "date-time",
+                                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                              },
+                              "premises": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              }
+                            },
+                            "required": [
+                              "status",
+                              "bound",
+                              "premises"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "required": [
+                          "statement",
+                          "qualifier",
+                          "grounds",
+                          "warrant",
+                          "validity"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "description": "in display order: position, statement, nature and basis rank, qualifier, grounds, producer, resolution, validity"
+                    }
+                  },
+                  "required": [
+                    "requirement",
+                    "layers",
+                    "status",
+                    "claims"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "item",
+              "label",
+              "location",
+              "reason",
+              "requirements"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "delivered",
+        "rejected",
+        "quarantined",
+        "incomplete"
+      ],
+      "additionalProperties": false
+    },
+    "cross_item": {
       "type": "array",
       "items": {
         "type": "object",
@@ -99,458 +2362,14 @@
             "minLength": 1,
             "maxLength": 200
           },
-          "label": {
-            "type": "string"
-          },
-          "location": {
-            "type": "string",
-            "description": "reference URI of the item in the judged source"
-          },
-          "partition": {
-            "type": "string",
-            "enum": [
-              "delivered",
-              "rejected",
-              "quarantined",
-              "incomplete"
-            ]
-          },
-          "requirements": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "requirement": {
-                  "type": "string"
-                },
-                "layers": {
-                  "type": "array",
-                  "items": {
-                    "oneOf": [
-                      {
-                        "type": "object",
-                        "properties": {
-                          "layer": {
-                            "type": "string",
-                            "const": "static"
-                          },
-                          "terminal": {
-                            "type": "string",
-                            "enum": [
-                              "pass",
-                              "violation",
-                              "judgment",
-                              "unchecked",
-                              "incomplete"
-                            ]
-                          },
-                          "code": {
-                            "description": "violation code when terminal is violation",
-                            "type": "string"
-                          },
-                          "tier": {
-                            "type": "string",
-                            "enum": [
-                              "blocking",
-                              "advisory"
-                            ]
-                          },
-                          "reason": {
-                            "description": "why the state is unchecked or incomplete",
-                            "type": "string",
-                            "enum": [
-                              "no_check",
-                              "check_error",
-                              "timeout",
-                              "missing_input",
-                              "declared_skip",
-                              "not_covered",
-                              "awaiting_step",
-                              "output_failed",
-                              "repair_exhausted",
-                              "budget_exhausted",
-                              "integrity_unproven"
-                            ]
-                          }
-                        },
-                        "required": [
-                          "layer",
-                          "terminal"
-                        ],
-                        "additionalProperties": false
-                      },
-                      {
-                        "type": "object",
-                        "properties": {
-                          "layer": {
-                            "type": "string",
-                            "const": "dynamic"
-                          },
-                          "terminal": {
-                            "type": "string",
-                            "enum": [
-                              "pass",
-                              "fail",
-                              "no_verdict",
-                              "not_run",
-                              "incomplete"
-                            ]
-                          },
-                          "code": {
-                            "type": "string"
-                          },
-                          "tier": {
-                            "type": "string",
-                            "enum": [
-                              "blocking",
-                              "advisory"
-                            ]
-                          },
-                          "reason": {
-                            "type": "string",
-                            "enum": [
-                              "no_check",
-                              "check_error",
-                              "timeout",
-                              "missing_input",
-                              "declared_skip",
-                              "not_covered",
-                              "awaiting_step",
-                              "output_failed",
-                              "repair_exhausted",
-                              "budget_exhausted",
-                              "integrity_unproven"
-                            ]
-                          }
-                        },
-                        "required": [
-                          "layer",
-                          "terminal"
-                        ],
-                        "additionalProperties": false
-                      }
-                    ]
-                  }
-                },
-                "status": {
-                  "type": "string",
-                  "enum": [
-                    "satisfied",
-                    "unsatisfied",
-                    "pending"
-                  ]
-                },
-                "unsatisfied_reason": {
-                  "type": "string",
-                  "enum": [
-                    "no_producer",
-                    "abandoned",
-                    "outcome_mismatch",
-                    "independence_unknown"
-                  ]
-                },
-                "attribution": {
-                  "description": "only for non-pass terminals that miss the contract's expected outcome",
-                  "type": "string",
-                  "enum": [
-                    "data_gap",
-                    "author_input",
-                    "producer_error",
-                    "transient",
-                    "target_side",
-                    "unattributed"
-                  ]
-                },
-                "claims": {
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "properties": {
-                      "item": {
-                        "type": "string"
-                      },
-                      "requirement": {
-                        "type": "string"
-                      },
-                      "statement": {
-                        "type": "object",
-                        "properties": {
-                          "text": {
-                            "type": "string"
-                          },
-                          "verdict": {
-                            "type": "string",
-                            "enum": [
-                              "support",
-                              "refute",
-                              "unknown",
-                              "abstain"
-                            ]
-                          },
-                          "code": {
-                            "description": "violation code or finding code",
-                            "type": "string"
-                          },
-                          "data": {
-                            "description": "machine-readable parts of the statement",
-                            "type": "object",
-                            "propertyNames": {
-                              "type": "string"
-                            },
-                            "additionalProperties": {}
-                          }
-                        },
-                        "required": [
-                          "text"
-                        ],
-                        "additionalProperties": false
-                      },
-                      "qualifier": {
-                        "type": "object",
-                        "properties": {
-                          "nature": {
-                            "type": "string",
-                            "enum": [
-                              "fact",
-                              "judgment",
-                              "unknown"
-                            ]
-                          },
-                          "provenance": {
-                            "type": "string",
-                            "enum": [
-                              "observed",
-                              "projected",
-                              "declared",
-                              "candidate"
-                            ]
-                          },
-                          "basis_rank": {
-                            "type": "string",
-                            "enum": [
-                              "rule_over_observation",
-                              "rule_over_claims",
-                              "judgment",
-                              "relay"
-                            ]
-                          },
-                          "source_role": {
-                            "type": "string",
-                            "enum": [
-                              "expected",
-                              "subject",
-                              "artifact_under_verification",
-                              "reported_actual",
-                              "republished",
-                              "hint",
-                              "request_text"
-                            ]
-                          },
-                          "marks": {
-                            "type": "array",
-                            "items": {
-                              "type": "string",
-                              "enum": [
-                                "target_reported",
-                                "report_for_dispatch",
-                                "local_ops_not_excluded",
-                                "human_intervention",
-                                "discrimination_not_established",
-                                "semantics_unasserted",
-                                "unverified_submission",
-                                "client_preview",
-                                "model_relay",
-                                "no_reuse",
-                                "author_samples_only",
-                                "conditional_on_judgment",
-                                "independence_declared",
-                                "not_realtime",
-                                "partial"
-                              ]
-                            }
-                          },
-                          "coverage": {
-                            "type": "object",
-                            "properties": {
-                              "complete": {
-                                "type": "boolean"
-                              },
-                              "examined": {
-                                "type": "integer",
-                                "minimum": 0,
-                                "maximum": 9007199254740991
-                              },
-                              "total": {
-                                "type": "integer",
-                                "minimum": 0,
-                                "maximum": 9007199254740991
-                              },
-                              "note": {
-                                "type": "string"
-                              }
-                            },
-                            "required": [
-                              "complete",
-                              "examined"
-                            ],
-                            "additionalProperties": false
-                          },
-                          "control": {
-                            "type": "string",
-                            "enum": [
-                              "automatic",
-                              "human_takeover"
-                            ]
-                          },
-                          "discriminating_power": {
-                            "type": "string",
-                            "enum": [
-                              "established",
-                              "not_established"
-                            ]
-                          }
-                        },
-                        "required": [
-                          "nature",
-                          "provenance",
-                          "marks"
-                        ],
-                        "additionalProperties": false
-                      },
-                      "grounds": {
-                        "type": "array",
-                        "items": {
-                          "type": "string",
-                          "pattern": "^(src|tree|entry|rec):[0-9a-f]{64}"
-                        }
-                      },
-                      "warrant": {
-                        "type": "object",
-                        "properties": {
-                          "producer": {
-                            "type": "string",
-                            "enum": [
-                              "function",
-                              "model",
-                              "human"
-                            ]
-                          },
-                          "id": {
-                            "type": "string",
-                            "minLength": 1
-                          },
-                          "independence": {
-                            "type": "string",
-                            "enum": [
-                              "human_non_author",
-                              "model_family_declared",
-                              "judge_not_author",
-                              "not_independent",
-                              "unknown"
-                            ]
-                          }
-                        },
-                        "required": [
-                          "producer",
-                          "id"
-                        ],
-                        "additionalProperties": false
-                      },
-                      "resolution": {
-                        "type": "string",
-                        "enum": [
-                          "resolved",
-                          "ambiguous",
-                          "unresolved"
-                        ]
-                      },
-                      "validity": {
-                        "type": "object",
-                        "properties": {
-                          "status": {
-                            "type": "string",
-                            "enum": [
-                              "valid",
-                              "rule_withdrawn",
-                              "grounds_withdrawn",
-                              "cited_fragment_changed",
-                              "credential_unreadable",
-                              "premise_failed",
-                              "expired",
-                              "contradicted"
-                            ]
-                          },
-                          "bound": {
-                            "type": "array",
-                            "items": {
-                              "type": "string",
-                              "pattern": "^[0-9a-f]{64}$"
-                            },
-                            "description": "digests the claim depends on; a change in any of them voids it"
-                          },
-                          "expires_at": {
-                            "type": "string",
-                            "format": "date-time",
-                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
-                          },
-                          "premises": {
-                            "type": "array",
-                            "items": {
-                              "type": "string"
-                            }
-                          }
-                        },
-                        "required": [
-                          "status",
-                          "bound",
-                          "premises"
-                        ],
-                        "additionalProperties": false
-                      }
-                    },
-                    "required": [
-                      "statement",
-                      "qualifier",
-                      "grounds",
-                      "warrant",
-                      "validity"
-                    ],
-                    "additionalProperties": false
-                  },
-                  "description": "in display order: position, statement, nature and basis rank, qualifier, grounds, producer, resolution, validity"
-                }
-              },
-              "required": [
-                "requirement",
-                "layers",
-                "status",
-                "claims"
-              ],
-              "additionalProperties": false
-            }
-          }
-        },
-        "required": [
-          "item",
-          "label",
-          "location",
-          "partition",
-          "requirements"
-        ],
-        "additionalProperties": false
-      },
-      "description": "empty when the submission was not accepted"
-    },
-    "cross_item": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "properties": {
-          "item": {
-            "type": "string"
-          },
           "requirement": {
             "type": "string"
+          },
+          "pointer": {
+            "description": "where the claim comes from: a JSON Pointer into the submission, or into the checked subject",
+            "type": "string",
+            "maxLength": 8192,
+            "pattern": "^(?:\\/(?:[^~/]|~[01])*)*$"
           },
           "statement": {
             "type": "object",
@@ -569,6 +2388,27 @@
               },
               "code": {
                 "description": "violation code or finding code",
+                "type": "string"
+              },
+              "reason": {
+                "description": "why the verdict is unknown: check error, timeout, missing input (V01 R[2])",
+                "type": "string",
+                "enum": [
+                  "no_check",
+                  "check_error",
+                  "timeout",
+                  "missing_input",
+                  "declared_skip",
+                  "not_covered",
+                  "awaiting_step",
+                  "output_failed",
+                  "repair_exhausted",
+                  "budget_exhausted",
+                  "integrity_unproven"
+                ]
+              },
+              "rank": {
+                "description": "ranking level from the closed set the pack declares; for sorting and display only (V02)",
                 "type": "string"
               },
               "data": {
@@ -675,6 +2515,12 @@
                 ],
                 "additionalProperties": false
               },
+              "collected_at": {
+                "description": "time bound: when the observation the claim rests on was collected; it holds only for that moment (A05)",
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
               "control": {
                 "type": "string",
                 "enum": [
@@ -701,8 +2547,11 @@
             "type": "array",
             "items": {
               "type": "string",
-              "pattern": "^(src|tree|entry|rec):[0-9a-f]{64}"
-            }
+              "maxLength": 8192,
+              "pattern": "^(?:src:[0-9a-f]{64}(?:\\/[a-z][a-z0-9_.-]{0,63}@(?:0|[1-9][0-9]{0,8})\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*(?::(?:0|[1-9][0-9]{0,15})-(?:0|[1-9][0-9]{0,15}))?)?|tree:[0-9a-f]{64}\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?(?:@[0-9a-f]{64})?|rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$",
+              "description": "reference a claim rests on: src, tree or rec; a knowledge entry is cited by its tree address"
+            },
+            "description": "references the claim rests on; a knowledge entry is cited by its tree address (B01 R[5])"
           },
           "warrant": {
             "type": "object",
@@ -743,6 +2592,51 @@
               "ambiguous",
               "unresolved"
             ]
+          },
+          "resolutions": {
+            "description": "each exact value of the statement with what it resolved to (W08, T04 R[1])",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "pointer": {
+                  "type": "string",
+                  "maxLength": 8192,
+                  "pattern": "^(?:\\/(?:[^~/]|~[01])*)*$",
+                  "description": "where the value stands, as a JSON Pointer into the submission"
+                },
+                "text": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "the exact value or quotation as the model wrote it"
+                },
+                "resolution": {
+                  "type": "string",
+                  "enum": [
+                    "resolved",
+                    "ambiguous",
+                    "unresolved"
+                  ]
+                },
+                "references": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "maxLength": 8192,
+                    "pattern": "^(?:src:[0-9a-f]{64}(?:\\/[a-z][a-z0-9_.-]{0,63}@(?:0|[1-9][0-9]{0,8})\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*(?::(?:0|[1-9][0-9]{0,15})-(?:0|[1-9][0-9]{0,15}))?)?|tree:[0-9a-f]{64}\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?(?:@[0-9a-f]{64})?|rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$",
+                    "description": "reference a claim rests on: src, tree or rec; a knowledge entry is cited by its tree address"
+                  },
+                  "description": "what it resolved to: one or more when resolved, the candidates when ambiguous, none when unresolved"
+                }
+              },
+              "required": [
+                "pointer",
+                "text",
+                "resolution",
+                "references"
+              ],
+              "additionalProperties": false
+            }
           },
           "validity": {
             "type": "object",
@@ -796,45 +2690,8 @@
           "validity"
         ],
         "additionalProperties": false
-      }
-    },
-    "counts": {
-      "type": "object",
-      "properties": {
-        "delivered": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 9007199254740991
-        },
-        "rejected": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 9007199254740991
-        },
-        "quarantined": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 9007199254740991
-        },
-        "incomplete": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 9007199254740991
-        },
-        "unknown": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 9007199254740991
-        }
       },
-      "required": [
-        "delivered",
-        "rejected",
-        "quarantined",
-        "incomplete",
-        "unknown"
-      ],
-      "additionalProperties": false
+      "description": "claims over several items, listed apart and not counted in any partition"
     },
     "coverage": {
       "type": "object",
@@ -890,7 +2747,8 @@
     },
     "trace": {
       "type": "string",
-      "pattern": "^[0-9a-f]{32}$"
+      "pattern": "^[0-9a-f]{32}$",
+      "description": "trace id of the call that produced this result"
     }
   },
   "required": [
@@ -900,9 +2758,8 @@
     "acceptance",
     "errors",
     "rounds",
-    "items",
+    "partitions",
     "cross_item",
-    "counts",
     "coverage",
     "locks",
     "trace"

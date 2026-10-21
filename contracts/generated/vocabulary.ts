@@ -60,7 +60,7 @@ export type AxisName = keyof typeof AXES;
 /** 性质 (B01) */
 export const NATURE = ['fact', 'judgment', 'unknown'] as const;
 export type Nature = (typeof NATURE)[number];
-export const NATURE_LABEL = { 'fact': '事实', 'judgment': '判断', 'unknown': '未知' } as const satisfies Record<Nature, string>;
+export const NATURE_LABEL = { 'fact': '事实', 'judgment': '判断', 'unknown': '未知' } as const satisfies { readonly [K in Nature]: string };
 export const NatureSchema = z.enum(NATURE);
 export function isNature(value: unknown): value is Nature {
   return (NATURE as readonly unknown[]).includes(value);
@@ -69,7 +69,7 @@ export function isNature(value: unknown): value is Nature {
 /** 依据等级 (A02) */
 export const BASIS_RANK = ['rule_over_observation', 'rule_over_claims', 'judgment', 'relay'] as const;
 export type BasisRank = (typeof BASIS_RANK)[number];
-export const BASIS_RANK_LABEL = { 'rule_over_observation': '观察上的规则', 'rule_over_claims': '主张上的规则', 'judgment': '判断', 'relay': '转述' } as const satisfies Record<BasisRank, string>;
+export const BASIS_RANK_LABEL = { 'rule_over_observation': '观察上的规则', 'rule_over_claims': '主张上的规则', 'judgment': '判断', 'relay': '转述' } as const satisfies { readonly [K in BasisRank]: string };
 export const BasisRankSchema = z.enum(BASIS_RANK);
 export function isBasisRank(value: unknown): value is BasisRank {
   return (BASIS_RANK as readonly unknown[]).includes(value);
@@ -78,7 +78,7 @@ export function isBasisRank(value: unknown): value is BasisRank {
 /** 来源类型 (A01) */
 export const PROVENANCE_TYPE = ['observed', 'projected', 'declared', 'candidate'] as const;
 export type ProvenanceType = (typeof PROVENANCE_TYPE)[number];
-export const PROVENANCE_TYPE_LABEL = { 'observed': '观察', 'projected': '投影', 'declared': '声明', 'candidate': '候选' } as const satisfies Record<ProvenanceType, string>;
+export const PROVENANCE_TYPE_LABEL = { 'observed': '观察', 'projected': '投影', 'declared': '声明', 'candidate': '候选' } as const satisfies { readonly [K in ProvenanceType]: string };
 export const ProvenanceTypeSchema = z.enum(PROVENANCE_TYPE);
 export function isProvenanceType(value: unknown): value is ProvenanceType {
   return (PROVENANCE_TYPE as readonly unknown[]).includes(value);
@@ -87,7 +87,7 @@ export function isProvenanceType(value: unknown): value is ProvenanceType {
 /** 来源角色 (A03) */
 export const SOURCE_ROLE = ['expected', 'subject', 'artifact_under_verification', 'reported_actual', 'republished', 'hint', 'request_text'] as const;
 export type SourceRole = (typeof SOURCE_ROLE)[number];
-export const SOURCE_ROLE_LABEL = { 'expected': '期望来源', 'subject': '被判对象', 'artifact_under_verification': '待判定产物', 'reported_actual': '报告的实际结果', 'republished': '派生', 'hint': '线索', 'request_text': '请求原文' } as const satisfies Record<SourceRole, string>;
+export const SOURCE_ROLE_LABEL = { 'expected': '期望来源', 'subject': '被判对象', 'artifact_under_verification': '待判定产物', 'reported_actual': '报告的实际结果', 'republished': '派生', 'hint': '线索', 'request_text': '请求原文' } as const satisfies { readonly [K in SourceRole]: string };
 export const SourceRoleSchema = z.enum(SOURCE_ROLE);
 export function isSourceRole(value: unknown): value is SourceRole {
   return (SOURCE_ROLE as readonly unknown[]).includes(value);
@@ -96,7 +96,7 @@ export function isSourceRole(value: unknown): value is SourceRole {
 /** 独立性 (A04) */
 export const INDEPENDENCE = ['human_non_author', 'model_family_declared', 'judge_not_author', 'not_independent', 'unknown'] as const;
 export type Independence = (typeof INDEPENDENCE)[number];
-export const INDEPENDENCE_LABEL = { 'human_non_author': '人且非作者', 'model_family_declared': '不同模型族（客户端声明）', 'judge_not_author': '判断者不是作者', 'not_independent': '非独立', 'unknown': '未知' } as const satisfies Record<Independence, string>;
+export const INDEPENDENCE_LABEL = { 'human_non_author': '人且非作者', 'model_family_declared': '不同模型族（客户端声明）', 'judge_not_author': '判断者不是作者', 'not_independent': '非独立', 'unknown': '未知' } as const satisfies { readonly [K in Independence]: string };
 export const IndependenceSchema = z.enum(INDEPENDENCE);
 export function isIndependence(value: unknown): value is Independence {
   return (INDEPENDENCE as readonly unknown[]).includes(value);
@@ -105,7 +105,7 @@ export function isIndependence(value: unknown): value is Independence {
 /** 控制区间 (A05) */
 export const CONTROL = ['automatic', 'human_takeover'] as const;
 export type Control = (typeof CONTROL)[number];
-export const CONTROL_LABEL = { 'automatic': '自动', 'human_takeover': '人工接管' } as const satisfies Record<Control, string>;
+export const CONTROL_LABEL = { 'automatic': '自动', 'human_takeover': '人工接管' } as const satisfies { readonly [K in Control]: string };
 export const ControlSchema = z.enum(CONTROL);
 export function isControl(value: unknown): value is Control {
   return (CONTROL as readonly unknown[]).includes(value);
@@ -114,7 +114,7 @@ export function isControl(value: unknown): value is Control {
 /** 解析状态 (T04) */
 export const RESOLUTION = ['resolved', 'ambiguous', 'unresolved'] as const;
 export type Resolution = (typeof RESOLUTION)[number];
-export const RESOLUTION_LABEL = { 'resolved': '已解析', 'ambiguous': '有歧义', 'unresolved': '未解析' } as const satisfies Record<Resolution, string>;
+export const RESOLUTION_LABEL = { 'resolved': '已解析', 'ambiguous': '有歧义', 'unresolved': '未解析' } as const satisfies { readonly [K in Resolution]: string };
 export const ResolutionSchema = z.enum(RESOLUTION);
 export function isResolution(value: unknown): value is Resolution {
   return (RESOLUTION as readonly unknown[]).includes(value);
@@ -123,7 +123,7 @@ export function isResolution(value: unknown): value is Resolution {
 /** 判定 (V01) */
 export const VERDICT = ['support', 'refute', 'unknown', 'abstain'] as const;
 export type Verdict = (typeof VERDICT)[number];
-export const VERDICT_LABEL = { 'support': '支持', 'refute': '反驳', 'unknown': '未知', 'abstain': '弃权' } as const satisfies Record<Verdict, string>;
+export const VERDICT_LABEL = { 'support': '支持', 'refute': '反驳', 'unknown': '未知', 'abstain': '弃权' } as const satisfies { readonly [K in Verdict]: string };
 export const VerdictSchema = z.enum(VERDICT);
 export function isVerdict(value: unknown): value is Verdict {
   return (VERDICT as readonly unknown[]).includes(value);
@@ -132,7 +132,7 @@ export function isVerdict(value: unknown): value is Verdict {
 /** 判别力 (V01) */
 export const DISCRIMINATING_POWER = ['established', 'not_established'] as const;
 export type DiscriminatingPower = (typeof DISCRIMINATING_POWER)[number];
-export const DISCRIMINATING_POWER_LABEL = { 'established': '已建立', 'not_established': '未建立' } as const satisfies Record<DiscriminatingPower, string>;
+export const DISCRIMINATING_POWER_LABEL = { 'established': '已建立', 'not_established': '未建立' } as const satisfies { readonly [K in DiscriminatingPower]: string };
 export const DiscriminatingPowerSchema = z.enum(DISCRIMINATING_POWER);
 export function isDiscriminatingPower(value: unknown): value is DiscriminatingPower {
   return (DISCRIMINATING_POWER as readonly unknown[]).includes(value);
@@ -141,7 +141,7 @@ export function isDiscriminatingPower(value: unknown): value is DiscriminatingPo
 /** 判定层 (V03) */
 export const LAYER = ['static', 'dynamic'] as const;
 export type Layer = (typeof LAYER)[number];
-export const LAYER_LABEL = { 'static': '静态', 'dynamic': '动态' } as const satisfies Record<Layer, string>;
+export const LAYER_LABEL = { 'static': '静态', 'dynamic': '动态' } as const satisfies { readonly [K in Layer]: string };
 export const LayerSchema = z.enum(LAYER);
 export function isLayer(value: unknown): value is Layer {
   return (LAYER as readonly unknown[]).includes(value);
@@ -150,7 +150,7 @@ export function isLayer(value: unknown): value is Layer {
 /** 静态层终态 (V03) */
 export const STATIC_TERMINAL = ['pass', 'violation', 'judgment', 'unchecked', 'incomplete'] as const;
 export type StaticTerminal = (typeof STATIC_TERMINAL)[number];
-export const STATIC_TERMINAL_LABEL = { 'pass': '通过', 'violation': '不通过', 'judgment': '判断', 'unchecked': '未核对', 'incomplete': '未完成' } as const satisfies Record<StaticTerminal, string>;
+export const STATIC_TERMINAL_LABEL = { 'pass': '通过', 'violation': '不通过', 'judgment': '判断', 'unchecked': '未核对', 'incomplete': '未完成' } as const satisfies { readonly [K in StaticTerminal]: string };
 export const StaticTerminalSchema = z.enum(STATIC_TERMINAL);
 export function isStaticTerminal(value: unknown): value is StaticTerminal {
   return (STATIC_TERMINAL as readonly unknown[]).includes(value);
@@ -159,7 +159,7 @@ export function isStaticTerminal(value: unknown): value is StaticTerminal {
 /** 动态层终态 (V03) */
 export const DYNAMIC_TERMINAL = ['pass', 'fail', 'no_verdict', 'not_run', 'incomplete'] as const;
 export type DynamicTerminal = (typeof DYNAMIC_TERMINAL)[number];
-export const DYNAMIC_TERMINAL_LABEL = { 'pass': '通过', 'fail': '失败', 'no_verdict': '无判定', 'not_run': '未运行', 'incomplete': '未完成' } as const satisfies Record<DynamicTerminal, string>;
+export const DYNAMIC_TERMINAL_LABEL = { 'pass': '通过', 'fail': '失败', 'no_verdict': '无判定', 'not_run': '未运行', 'incomplete': '未完成' } as const satisfies { readonly [K in DynamicTerminal]: string };
 export const DynamicTerminalSchema = z.enum(DYNAMIC_TERMINAL);
 export function isDynamicTerminal(value: unknown): value is DynamicTerminal {
   return (DYNAMIC_TERMINAL as readonly unknown[]).includes(value);
@@ -168,7 +168,7 @@ export function isDynamicTerminal(value: unknown): value is DynamicTerminal {
 /** 要求满足状态 (V03) */
 export const REQUIREMENT_STATUS = ['satisfied', 'unsatisfied', 'pending'] as const;
 export type RequirementStatus = (typeof REQUIREMENT_STATUS)[number];
-export const REQUIREMENT_STATUS_LABEL = { 'satisfied': '满足', 'unsatisfied': '未满足', 'pending': '未决' } as const satisfies Record<RequirementStatus, string>;
+export const REQUIREMENT_STATUS_LABEL = { 'satisfied': '满足', 'unsatisfied': '未满足', 'pending': '未决' } as const satisfies { readonly [K in RequirementStatus]: string };
 export const RequirementStatusSchema = z.enum(REQUIREMENT_STATUS);
 export function isRequirementStatus(value: unknown): value is RequirementStatus {
   return (REQUIREMENT_STATUS as readonly unknown[]).includes(value);
@@ -177,7 +177,7 @@ export function isRequirementStatus(value: unknown): value is RequirementStatus 
 /** 未满足原因 (V03) */
 export const UNSATISFIED_REASON = ['no_producer', 'abandoned', 'outcome_mismatch', 'independence_unknown'] as const;
 export type UnsatisfiedReason = (typeof UNSATISFIED_REASON)[number];
-export const UNSATISFIED_REASON_LABEL = { 'no_producer': '无生产者', 'abandoned': '已放弃', 'outcome_mismatch': '终态不符合期望', 'independence_unknown': '独立性未知' } as const satisfies Record<UnsatisfiedReason, string>;
+export const UNSATISFIED_REASON_LABEL = { 'no_producer': '无生产者', 'abandoned': '已放弃', 'outcome_mismatch': '终态不符合期望', 'independence_unknown': '独立性未知' } as const satisfies { readonly [K in UnsatisfiedReason]: string };
 export const UnsatisfiedReasonSchema = z.enum(UNSATISFIED_REASON);
 export function isUnsatisfiedReason(value: unknown): value is UnsatisfiedReason {
   return (UNSATISFIED_REASON as readonly unknown[]).includes(value);
@@ -186,7 +186,7 @@ export function isUnsatisfiedReason(value: unknown): value is UnsatisfiedReason 
 /** 归责 (V04) */
 export const ATTRIBUTION = ['data_gap', 'author_input', 'producer_error', 'transient', 'target_side', 'unattributed'] as const;
 export type Attribution = (typeof ATTRIBUTION)[number];
-export const ATTRIBUTION_LABEL = { 'data_gap': '数据缺口', 'author_input': '作者输入', 'producer_error': '生产者错误', 'transient': '瞬态', 'target_side': '目标侧', 'unattributed': '待归因' } as const satisfies Record<Attribution, string>;
+export const ATTRIBUTION_LABEL = { 'data_gap': '数据缺口', 'author_input': '作者输入', 'producer_error': '生产者错误', 'transient': '瞬态', 'target_side': '目标侧', 'unattributed': '待归因' } as const satisfies { readonly [K in Attribution]: string };
 export const AttributionSchema = z.enum(ATTRIBUTION);
 export function isAttribution(value: unknown): value is Attribution {
   return (ATTRIBUTION as readonly unknown[]).includes(value);
@@ -195,7 +195,7 @@ export function isAttribution(value: unknown): value is Attribution {
 /** 分区 (V05) */
 export const PARTITION = ['delivered', 'rejected', 'quarantined', 'incomplete'] as const;
 export type Partition = (typeof PARTITION)[number];
-export const PARTITION_LABEL = { 'delivered': '已交付', 'rejected': '已拒收', 'quarantined': '已隔离', 'incomplete': '未完成' } as const satisfies Record<Partition, string>;
+export const PARTITION_LABEL = { 'delivered': '已交付', 'rejected': '已拒收', 'quarantined': '已隔离', 'incomplete': '未完成' } as const satisfies { readonly [K in Partition]: string };
 export const PartitionSchema = z.enum(PARTITION);
 export function isPartition(value: unknown): value is Partition {
   return (PARTITION as readonly unknown[]).includes(value);
@@ -204,7 +204,7 @@ export function isPartition(value: unknown): value is Partition {
 /** 交付规则 (V06) */
 export const DONE_RULE = ['bookkeeping', 'gating'] as const;
 export type DoneRule = (typeof DONE_RULE)[number];
-export const DONE_RULE_LABEL = { 'bookkeeping': '记账型', 'gating': '门禁型' } as const satisfies Record<DoneRule, string>;
+export const DONE_RULE_LABEL = { 'bookkeeping': '记账型', 'gating': '门禁型' } as const satisfies { readonly [K in DoneRule]: string };
 export const DoneRuleSchema = z.enum(DONE_RULE);
 export function isDoneRule(value: unknown): value is DoneRule {
   return (DONE_RULE as readonly unknown[]).includes(value);
@@ -213,7 +213,7 @@ export function isDoneRule(value: unknown): value is DoneRule {
 /** 聚合方式 (V07) */
 export const AGGREGATION = ['first_pass', 'k_of_n', 'all'] as const;
 export type Aggregation = (typeof AGGREGATION)[number];
-export const AGGREGATION_LABEL = { 'first_pass': '首次通过', 'k_of_n': 'k-of-n', 'all': '全部' } as const satisfies Record<Aggregation, string>;
+export const AGGREGATION_LABEL = { 'first_pass': '首次通过', 'k_of_n': 'k-of-n', 'all': '全部' } as const satisfies { readonly [K in Aggregation]: string };
 export const AggregationSchema = z.enum(AGGREGATION);
 export function isAggregation(value: unknown): value is Aggregation {
   return (AGGREGATION as readonly unknown[]).includes(value);
@@ -222,7 +222,7 @@ export function isAggregation(value: unknown): value is Aggregation {
 /** 假设状态 (V08) */
 export const HYPOTHESIS_STATUS = ['open', 'excluded'] as const;
 export type HypothesisStatus = (typeof HYPOTHESIS_STATUS)[number];
-export const HYPOTHESIS_STATUS_LABEL = { 'open': '开放', 'excluded': '已排除' } as const satisfies Record<HypothesisStatus, string>;
+export const HYPOTHESIS_STATUS_LABEL = { 'open': '开放', 'excluded': '已排除' } as const satisfies { readonly [K in HypothesisStatus]: string };
 export const HypothesisStatusSchema = z.enum(HYPOTHESIS_STATUS);
 export function isHypothesisStatus(value: unknown): value is HypothesisStatus {
   return (HYPOTHESIS_STATUS as readonly unknown[]).includes(value);
@@ -231,7 +231,7 @@ export function isHypothesisStatus(value: unknown): value is HypothesisStatus {
 /** 接受的生产者 (W02) */
 export const ACCEPTED_PRODUCER = ['fact', 'judgment', 'independent_judgment'] as const;
 export type AcceptedProducer = (typeof ACCEPTED_PRODUCER)[number];
-export const ACCEPTED_PRODUCER_LABEL = { 'fact': '事实', 'judgment': '判断', 'independent_judgment': '独立判断' } as const satisfies Record<AcceptedProducer, string>;
+export const ACCEPTED_PRODUCER_LABEL = { 'fact': '事实', 'judgment': '判断', 'independent_judgment': '独立判断' } as const satisfies { readonly [K in AcceptedProducer]: string };
 export const AcceptedProducerSchema = z.enum(ACCEPTED_PRODUCER);
 export function isAcceptedProducer(value: unknown): value is AcceptedProducer {
   return (ACCEPTED_PRODUCER as readonly unknown[]).includes(value);
@@ -240,7 +240,7 @@ export function isAcceptedProducer(value: unknown): value is AcceptedProducer {
 /** 触发 (W09) */
 export const TRIGGER = ['session', 'event_or_schedule', 'requirement', 'standing_obligation'] as const;
 export type Trigger = (typeof TRIGGER)[number];
-export const TRIGGER_LABEL = { 'session': '会话', 'event_or_schedule': '事件或定时', 'requirement': '要求项', 'standing_obligation': '常设义务' } as const satisfies Record<Trigger, string>;
+export const TRIGGER_LABEL = { 'session': '会话', 'event_or_schedule': '事件或定时', 'requirement': '要求项', 'standing_obligation': '常设义务' } as const satisfies { readonly [K in Trigger]: string };
 export const TriggerSchema = z.enum(TRIGGER);
 export function isTrigger(value: unknown): value is Trigger {
   return (TRIGGER as readonly unknown[]).includes(value);
@@ -249,7 +249,7 @@ export function isTrigger(value: unknown): value is Trigger {
 /** 执行宿主 (W06) */
 export const EXECUTION_HOST = ['local_circle', 'bot', 'hub'] as const;
 export type ExecutionHost = (typeof EXECUTION_HOST)[number];
-export const EXECUTION_HOST_LABEL = { 'local_circle': '本地 Circle', 'bot': 'bot', 'hub': 'Hub（仅确定性函数与类型化判断）' } as const satisfies Record<ExecutionHost, string>;
+export const EXECUTION_HOST_LABEL = { 'local_circle': '本地 Circle', 'bot': 'bot', 'hub': 'Hub（仅确定性函数与类型化判断）' } as const satisfies { readonly [K in ExecutionHost]: string };
 export const ExecutionHostSchema = z.enum(EXECUTION_HOST);
 export function isExecutionHost(value: unknown): value is ExecutionHost {
   return (EXECUTION_HOST as readonly unknown[]).includes(value);
@@ -258,7 +258,7 @@ export function isExecutionHost(value: unknown): value is ExecutionHost {
 /** 条目处理声明 (W07) */
 export const ITEM_HANDLING = ['handled', 'skipped'] as const;
 export type ItemHandling = (typeof ITEM_HANDLING)[number];
-export const ITEM_HANDLING_LABEL = { 'handled': '已处理', 'skipped': '跳过' } as const satisfies Record<ItemHandling, string>;
+export const ITEM_HANDLING_LABEL = { 'handled': '已处理', 'skipped': '跳过' } as const satisfies { readonly [K in ItemHandling]: string };
 export const ItemHandlingSchema = z.enum(ITEM_HANDLING);
 export function isItemHandling(value: unknown): value is ItemHandling {
   return (ITEM_HANDLING as readonly unknown[]).includes(value);
@@ -267,7 +267,7 @@ export function isItemHandling(value: unknown): value is ItemHandling {
 /** 动作种类 (B05) */
 export const ACTION_KIND = ['read', 'parse', 'generate', 'read_back', 'validate', 'dispatch', 'classify', 'move_root'] as const;
 export type ActionKind = (typeof ACTION_KIND)[number];
-export const ACTION_KIND_LABEL = { 'read': '读取', 'parse': '解析', 'generate': '生成', 'read_back': '回读', 'validate': '边界校验', 'dispatch': '派发', 'classify': '归类', 'move_root': '移动当前根' } as const satisfies Record<ActionKind, string>;
+export const ACTION_KIND_LABEL = { 'read': '读取', 'parse': '解析', 'generate': '生成', 'read_back': '回读', 'validate': '边界校验', 'dispatch': '派发', 'classify': '归类', 'move_root': '移动当前根' } as const satisfies { readonly [K in ActionKind]: string };
 export const ActionKindSchema = z.enum(ACTION_KIND);
 export function isActionKind(value: unknown): value is ActionKind {
   return (ACTION_KIND as readonly unknown[]).includes(value);
@@ -276,7 +276,7 @@ export function isActionKind(value: unknown): value is ActionKind {
 /** 动作结果 (B05) */
 export const ACTION_RESULT = ['completed', 'error', 'unknown'] as const;
 export type ActionResult = (typeof ACTION_RESULT)[number];
-export const ACTION_RESULT_LABEL = { 'completed': '完成', 'error': '报错', 'unknown': '未知' } as const satisfies Record<ActionResult, string>;
+export const ACTION_RESULT_LABEL = { 'completed': '完成', 'error': '报错', 'unknown': '未知' } as const satisfies { readonly [K in ActionResult]: string };
 export const ActionResultSchema = z.enum(ACTION_RESULT);
 export function isActionResult(value: unknown): value is ActionResult {
   return (ACTION_RESULT as readonly unknown[]).includes(value);
@@ -285,7 +285,7 @@ export function isActionResult(value: unknown): value is ActionResult {
 /** 回执 (B05) */
 export const ACCEPTANCE = ['accepted', 'not_accepted'] as const;
 export type Acceptance = (typeof ACCEPTANCE)[number];
-export const ACCEPTANCE_LABEL = { 'accepted': '已受理', 'not_accepted': '未受理' } as const satisfies Record<Acceptance, string>;
+export const ACCEPTANCE_LABEL = { 'accepted': '已受理', 'not_accepted': '未受理' } as const satisfies { readonly [K in Acceptance]: string };
 export const AcceptanceSchema = z.enum(ACCEPTANCE);
 export function isAcceptance(value: unknown): value is Acceptance {
   return (ACCEPTANCE as readonly unknown[]).includes(value);
@@ -294,7 +294,7 @@ export function isAcceptance(value: unknown): value is Acceptance {
 /** 调用结果 (B08) */
 export const CALL_RESULT = ['ok', 'error', 'transport_failure'] as const;
 export type CallResult = (typeof CALL_RESULT)[number];
-export const CALL_RESULT_LABEL = { 'ok': '正常', 'error': '出错', 'transport_failure': '传输失败' } as const satisfies Record<CallResult, string>;
+export const CALL_RESULT_LABEL = { 'ok': '正常', 'error': '出错', 'transport_failure': '传输失败' } as const satisfies { readonly [K in CallResult]: string };
 export const CallResultSchema = z.enum(CALL_RESULT);
 export function isCallResult(value: unknown): value is CallResult {
   return (CALL_RESULT as readonly unknown[]).includes(value);
@@ -303,7 +303,7 @@ export function isCallResult(value: unknown): value is CallResult {
 /** 效果结局 (B06) */
 export const EFFECT_OUTCOME = ['issued', 'effective', 'read_back_consistent', 'read_back_mismatch', 'target_rejected', 'not_dispatched', 'proven_not_executed', 'unknown'] as const;
 export type EffectOutcome = (typeof EFFECT_OUTCOME)[number];
-export const EFFECT_OUTCOME_LABEL = { 'issued': '已发出', 'effective': '已生效', 'read_back_consistent': '已回读一致', 'read_back_mismatch': '内容不符', 'target_rejected': '目标拒绝', 'not_dispatched': '未发出', 'proven_not_executed': '已证明未执行', 'unknown': '未知' } as const satisfies Record<EffectOutcome, string>;
+export const EFFECT_OUTCOME_LABEL = { 'issued': '已发出', 'effective': '已生效', 'read_back_consistent': '已回读一致', 'read_back_mismatch': '内容不符', 'target_rejected': '目标拒绝', 'not_dispatched': '未发出', 'proven_not_executed': '已证明未执行', 'unknown': '未知' } as const satisfies { readonly [K in EffectOutcome]: string };
 export const EffectOutcomeSchema = z.enum(EFFECT_OUTCOME);
 export function isEffectOutcome(value: unknown): value is EffectOutcome {
   return (EFFECT_OUTCOME as readonly unknown[]).includes(value);
@@ -312,7 +312,7 @@ export function isEffectOutcome(value: unknown): value is EffectOutcome {
 /** 效果追加标记 (B06) */
 export const EFFECT_MARK = ['disposed', 'compensated', 'possible_duplicate'] as const;
 export type EffectMark = (typeof EFFECT_MARK)[number];
-export const EFFECT_MARK_LABEL = { 'disposed': '已处置', 'compensated': '已补偿', 'possible_duplicate': '可能重复' } as const satisfies Record<EffectMark, string>;
+export const EFFECT_MARK_LABEL = { 'disposed': '已处置', 'compensated': '已补偿', 'possible_duplicate': '可能重复' } as const satisfies { readonly [K in EffectMark]: string };
 export const EffectMarkSchema = z.enum(EFFECT_MARK);
 export function isEffectMark(value: unknown): value is EffectMark {
   return (EFFECT_MARK as readonly unknown[]).includes(value);
@@ -321,7 +321,7 @@ export function isEffectMark(value: unknown): value is EffectMark {
 /** 效果类 (D03) */
 export const EFFECT_CLASS = ['none', 'read', 'sync_write', 'job', 'notification'] as const;
 export type EffectClass = (typeof EFFECT_CLASS)[number];
-export const EFFECT_CLASS_LABEL = { 'none': '无', 'read': '读', 'sync_write': '同步写', 'job': '作业', 'notification': '通知' } as const satisfies Record<EffectClass, string>;
+export const EFFECT_CLASS_LABEL = { 'none': '无', 'read': '读', 'sync_write': '同步写', 'job': '作业', 'notification': '通知' } as const satisfies { readonly [K in EffectClass]: string };
 export const EffectClassSchema = z.enum(EFFECT_CLASS);
 export function isEffectClass(value: unknown): value is EffectClass {
   return (EFFECT_CLASS as readonly unknown[]).includes(value);
@@ -330,7 +330,7 @@ export function isEffectClass(value: unknown): value is EffectClass {
 /** 重试安全类 (D03) */
 export const RETRY_SAFETY = ['same_key_safe', 'dedup_window', 'duplicate_tolerant', 'unsafe'] as const;
 export type RetrySafety = (typeof RETRY_SAFETY)[number];
-export const RETRY_SAFETY_LABEL = { 'same_key_safe': '同键安全', 'dedup_window': '时间窗内去重', 'duplicate_tolerant': '可容忍重复', 'unsafe': '不安全' } as const satisfies Record<RetrySafety, string>;
+export const RETRY_SAFETY_LABEL = { 'same_key_safe': '同键安全', 'dedup_window': '时间窗内去重', 'duplicate_tolerant': '可容忍重复', 'unsafe': '不安全' } as const satisfies { readonly [K in RetrySafety]: string };
 export const RetrySafetySchema = z.enum(RETRY_SAFETY);
 export function isRetrySafety(value: unknown): value is RetrySafety {
   return (RETRY_SAFETY as readonly unknown[]).includes(value);
@@ -339,7 +339,7 @@ export function isRetrySafety(value: unknown): value is RetrySafety {
 /** 署名方式 (D03) */
 export const SIGNING = ['own_credential', 'service_on_behalf'] as const;
 export type Signing = (typeof SIGNING)[number];
-export const SIGNING_LABEL = { 'own_credential': '本人凭据', 'service_on_behalf': '服务账号代表发起用户' } as const satisfies Record<Signing, string>;
+export const SIGNING_LABEL = { 'own_credential': '本人凭据', 'service_on_behalf': '服务账号代表发起用户' } as const satisfies { readonly [K in Signing]: string };
 export const SigningSchema = z.enum(SIGNING);
 export function isSigning(value: unknown): value is Signing {
   return (SIGNING as readonly unknown[]).includes(value);
@@ -348,7 +348,7 @@ export function isSigning(value: unknown): value is Signing {
 /** 处置 (B07) */
 export const DISPOSITION = ['reconcile', 'keep_unknown', 'abandon', 'mark_failed', 'compensate', 'complete'] as const;
 export type Disposition = (typeof DISPOSITION)[number];
-export const DISPOSITION_LABEL = { 'reconcile': '核对', 'keep_unknown': '保持未知', 'abandon': '放弃', 'mark_failed': '标记失败', 'compensate': '补偿', 'complete': '补齐' } as const satisfies Record<Disposition, string>;
+export const DISPOSITION_LABEL = { 'reconcile': '核对', 'keep_unknown': '保持未知', 'abandon': '放弃', 'mark_failed': '标记失败', 'compensate': '补偿', 'complete': '补齐' } as const satisfies { readonly [K in Disposition]: string };
 export const DispositionSchema = z.enum(DISPOSITION);
 export function isDisposition(value: unknown): value is Disposition {
   return (DISPOSITION as readonly unknown[]).includes(value);
@@ -357,7 +357,7 @@ export function isDisposition(value: unknown): value is Disposition {
 /** 请求种类 (B07) */
 export const REQUEST_KIND = ['clarification', 'repair', 'disposition', 'judgment'] as const;
 export type RequestKind = (typeof REQUEST_KIND)[number];
-export const REQUEST_KIND_LABEL = { 'clarification': '澄清', 'repair': '修复', 'disposition': '处置', 'judgment': '判断' } as const satisfies Record<RequestKind, string>;
+export const REQUEST_KIND_LABEL = { 'clarification': '澄清', 'repair': '修复', 'disposition': '处置', 'judgment': '判断' } as const satisfies { readonly [K in RequestKind]: string };
 export const RequestKindSchema = z.enum(REQUEST_KIND);
 export function isRequestKind(value: unknown): value is RequestKind {
   return (REQUEST_KIND as readonly unknown[]).includes(value);
@@ -366,7 +366,7 @@ export function isRequestKind(value: unknown): value is RequestKind {
 /** 许可种类 (B04) */
 export const PERMISSION_KIND = ['publish', 'assign', 'publish_right', 'resource_config', 'share'] as const;
 export type PermissionKind = (typeof PERMISSION_KIND)[number];
-export const PERMISSION_KIND_LABEL = { 'publish': '发布记录', 'assign': '任务包分配', 'publish_right': '发布权授予', 'resource_config': '资源配置', 'share': '分享' } as const satisfies Record<PermissionKind, string>;
+export const PERMISSION_KIND_LABEL = { 'publish': '发布记录', 'assign': '任务包分配', 'publish_right': '发布权授予', 'resource_config': '资源配置', 'share': '分享' } as const satisfies { readonly [K in PermissionKind]: string };
 export const PermissionKindSchema = z.enum(PERMISSION_KIND);
 export function isPermissionKind(value: unknown): value is PermissionKind {
   return (PERMISSION_KIND as readonly unknown[]).includes(value);
@@ -375,7 +375,7 @@ export function isPermissionKind(value: unknown): value is PermissionKind {
 /** 知识层 (K03) */
 export const KNOWLEDGE_LAYER = ['tree', 'observation', 'candidate'] as const;
 export type KnowledgeLayer = (typeof KNOWLEDGE_LAYER)[number];
-export const KNOWLEDGE_LAYER_LABEL = { 'tree': '树本身', 'observation': '观察层', 'candidate': '候选层' } as const satisfies Record<KnowledgeLayer, string>;
+export const KNOWLEDGE_LAYER_LABEL = { 'tree': '树本身', 'observation': '观察层', 'candidate': '候选层' } as const satisfies { readonly [K in KnowledgeLayer]: string };
 export const KnowledgeLayerSchema = z.enum(KNOWLEDGE_LAYER);
 export function isKnowledgeLayer(value: unknown): value is KnowledgeLayer {
   return (KNOWLEDGE_LAYER as readonly unknown[]).includes(value);
@@ -384,7 +384,7 @@ export function isKnowledgeLayer(value: unknown): value is KnowledgeLayer {
 /** 读取档位 (B02) */
 export const READ_TIER = ['model_readable', 'function_bytes_only', 'retain_only'] as const;
 export type ReadTier = (typeof READ_TIER)[number];
-export const READ_TIER_LABEL = { 'model_readable': '模型可读', 'function_bytes_only': '只许函数按引用读字节', 'retain_only': '只保留' } as const satisfies Record<ReadTier, string>;
+export const READ_TIER_LABEL = { 'model_readable': '模型可读', 'function_bytes_only': '只许函数按引用读字节', 'retain_only': '只保留' } as const satisfies { readonly [K in ReadTier]: string };
 export const ReadTierSchema = z.enum(READ_TIER);
 export function isReadTier(value: unknown): value is ReadTier {
   return (READ_TIER as readonly unknown[]).includes(value);
@@ -393,7 +393,7 @@ export function isReadTier(value: unknown): value is ReadTier {
 /** 家 (C01) */
 export const HOME = ['knowledge', 'policy', 'method', 'resource'] as const;
 export type Home = (typeof HOME)[number];
-export const HOME_LABEL = { 'knowledge': '知识', 'policy': '政策', 'method': '方法', 'resource': '资源' } as const satisfies Record<Home, string>;
+export const HOME_LABEL = { 'knowledge': '知识', 'policy': '政策', 'method': '方法', 'resource': '资源' } as const satisfies { readonly [K in Home]: string };
 export const HomeSchema = z.enum(HOME);
 export function isHome(value: unknown): value is Home {
   return (HOME as readonly unknown[]).includes(value);
@@ -402,7 +402,7 @@ export function isHome(value: unknown): value is Home {
 /** 归属 (C02) */
 export const OWNERSHIP = ['generic', 'product', 'system_adapter', 'workflow'] as const;
 export type Ownership = (typeof OWNERSHIP)[number];
-export const OWNERSHIP_LABEL = { 'generic': '通用', 'product': '产品专用', 'system_adapter': '系统适配器', 'workflow': '工作流专用' } as const satisfies Record<Ownership, string>;
+export const OWNERSHIP_LABEL = { 'generic': '通用', 'product': '产品专用', 'system_adapter': '系统适配器', 'workflow': '工作流专用' } as const satisfies { readonly [K in Ownership]: string };
 export const OwnershipSchema = z.enum(OWNERSHIP);
 export function isOwnership(value: unknown): value is Ownership {
   return (OWNERSHIP as readonly unknown[]).includes(value);
@@ -411,7 +411,7 @@ export function isOwnership(value: unknown): value is Ownership {
 /** 生产者种类 (C08) */
 export const PRODUCER_KIND = ['function', 'model', 'human'] as const;
 export type ProducerKind = (typeof PRODUCER_KIND)[number];
-export const PRODUCER_KIND_LABEL = { 'function': '函数', 'model': '模型', 'human': '人' } as const satisfies Record<ProducerKind, string>;
+export const PRODUCER_KIND_LABEL = { 'function': '函数', 'model': '模型', 'human': '人' } as const satisfies { readonly [K in ProducerKind]: string };
 export const ProducerKindSchema = z.enum(PRODUCER_KIND);
 export function isProducerKind(value: unknown): value is ProducerKind {
   return (PRODUCER_KIND as readonly unknown[]).includes(value);
@@ -420,7 +420,7 @@ export function isProducerKind(value: unknown): value is ProducerKind {
 /** 确定性类 (C08) */
 export const DETERMINISM = ['deterministic', 'nondeterministic'] as const;
 export type Determinism = (typeof DETERMINISM)[number];
-export const DETERMINISM_LABEL = { 'deterministic': '确定性', 'nondeterministic': '非确定性' } as const satisfies Record<Determinism, string>;
+export const DETERMINISM_LABEL = { 'deterministic': '确定性', 'nondeterministic': '非确定性' } as const satisfies { readonly [K in Determinism]: string };
 export const DeterminismSchema = z.enum(DETERMINISM);
 export function isDeterminism(value: unknown): value is Determinism {
   return (DETERMINISM as readonly unknown[]).includes(value);
@@ -429,7 +429,7 @@ export function isDeterminism(value: unknown): value is Determinism {
 /** 错误处理 (W02) */
 export const ERROR_HANDLING = ['repair', 'reject', 'request', 'unknown'] as const;
 export type ErrorHandling = (typeof ERROR_HANDLING)[number];
-export const ERROR_HANDLING_LABEL = { 'repair': '修复', 'reject': '进已拒收', 'request': '发请求', 'unknown': '记未知' } as const satisfies Record<ErrorHandling, string>;
+export const ERROR_HANDLING_LABEL = { 'repair': '修复', 'reject': '进已拒收', 'request': '发请求', 'unknown': '记未知' } as const satisfies { readonly [K in ErrorHandling]: string };
 export const ErrorHandlingSchema = z.enum(ERROR_HANDLING);
 export function isErrorHandling(value: unknown): value is ErrorHandling {
   return (ERROR_HANDLING as readonly unknown[]).includes(value);
@@ -438,7 +438,7 @@ export function isErrorHandling(value: unknown): value is ErrorHandling {
 /** 检查档位 (C05) */
 export const CHECK_TIER = ['blocking', 'advisory'] as const;
 export type CheckTier = (typeof CHECK_TIER)[number];
-export const CHECK_TIER_LABEL = { 'blocking': '阻断', 'advisory': '提示' } as const satisfies Record<CheckTier, string>;
+export const CHECK_TIER_LABEL = { 'blocking': '阻断', 'advisory': '提示' } as const satisfies { readonly [K in CheckTier]: string };
 export const CheckTierSchema = z.enum(CHECK_TIER);
 export function isCheckTier(value: unknown): value is CheckTier {
   return (CHECK_TIER as readonly unknown[]).includes(value);
@@ -447,7 +447,7 @@ export function isCheckTier(value: unknown): value is CheckTier {
 /** 任务包种类 (T01) */
 export const PACK_KIND = ['product', 'workflow', 'system'] as const;
 export type PackKind = (typeof PACK_KIND)[number];
-export const PACK_KIND_LABEL = { 'product': '产品包', 'workflow': '工作流包', 'system': '系统包' } as const satisfies Record<PackKind, string>;
+export const PACK_KIND_LABEL = { 'product': '产品包', 'workflow': '工作流包', 'system': '系统包' } as const satisfies { readonly [K in PackKind]: string };
 export const PackKindSchema = z.enum(PACK_KIND);
 export function isPackKind(value: unknown): value is PackKind {
   return (PACK_KIND as readonly unknown[]).includes(value);
@@ -456,7 +456,7 @@ export function isPackKind(value: unknown): value is PackKind {
 /** 环境类别 (D01) */
 export const ENVIRONMENT = ['test', 'shared', 'production'] as const;
 export type Environment = (typeof ENVIRONMENT)[number];
-export const ENVIRONMENT_LABEL = { 'test': '测试', 'shared': '共享', 'production': '生产' } as const satisfies Record<Environment, string>;
+export const ENVIRONMENT_LABEL = { 'test': '测试', 'shared': '共享', 'production': '生产' } as const satisfies { readonly [K in Environment]: string };
 export const EnvironmentSchema = z.enum(ENVIRONMENT);
 export function isEnvironment(value: unknown): value is Environment {
   return (ENVIRONMENT as readonly unknown[]).includes(value);
@@ -465,7 +465,7 @@ export function isEnvironment(value: unknown): value is Environment {
 /** 权限角色 (R01) */
 export const PERMISSION_ROLE = ['user', 'admin'] as const;
 export type PermissionRole = (typeof PERMISSION_ROLE)[number];
-export const PERMISSION_ROLE_LABEL = { 'user': '用户', 'admin': '管理员' } as const satisfies Record<PermissionRole, string>;
+export const PERMISSION_ROLE_LABEL = { 'user': '用户', 'admin': '管理员' } as const satisfies { readonly [K in PermissionRole]: string };
 export const PermissionRoleSchema = z.enum(PERMISSION_ROLE);
 export function isPermissionRole(value: unknown): value is PermissionRole {
   return (PERMISSION_ROLE as readonly unknown[]).includes(value);
@@ -474,7 +474,7 @@ export function isPermissionRole(value: unknown): value is PermissionRole {
 /** 引用形式 (B03) */
 export const REFERENCE_SCHEME = ['src', 'tree', 'entry', 'rec'] as const;
 export type ReferenceScheme = (typeof REFERENCE_SCHEME)[number];
-export const REFERENCE_SCHEME_LABEL = { 'src': '源文件或片段', 'tree': '知识树节点', 'entry': '知识条目', 'rec': 'Hub 记录' } as const satisfies Record<ReferenceScheme, string>;
+export const REFERENCE_SCHEME_LABEL = { 'src': '源文件或片段', 'tree': '知识树节点', 'entry': '知识条目', 'rec': 'Hub 记录' } as const satisfies { readonly [K in ReferenceScheme]: string };
 export const ReferenceSchemeSchema = z.enum(REFERENCE_SCHEME);
 export function isReferenceScheme(value: unknown): value is ReferenceScheme {
   return (REFERENCE_SCHEME as readonly unknown[]).includes(value);
@@ -483,7 +483,7 @@ export function isReferenceScheme(value: unknown): value is ReferenceScheme {
 /** 有效条件状态 (B01) */
 export const VALIDITY_STATUS = ['valid', 'rule_withdrawn', 'grounds_withdrawn', 'cited_fragment_changed', 'credential_unreadable', 'premise_failed', 'expired', 'contradicted'] as const;
 export type ValidityStatus = (typeof VALIDITY_STATUS)[number];
-export const VALIDITY_STATUS_LABEL = { 'valid': '有效', 'rule_withdrawn': '规则已撤回', 'grounds_withdrawn': '根据已撤回', 'cited_fragment_changed': '被引片段已变', 'credential_unreadable': '含凭据，原文不可读', 'premise_failed': '依赖的前提失效', 'expired': '已过期', 'contradicted': '出现矛盾主张' } as const satisfies Record<ValidityStatus, string>;
+export const VALIDITY_STATUS_LABEL = { 'valid': '有效', 'rule_withdrawn': '规则已撤回', 'grounds_withdrawn': '根据已撤回', 'cited_fragment_changed': '被引片段已变', 'credential_unreadable': '含凭据，原文不可读', 'premise_failed': '依赖的前提失效', 'expired': '已过期', 'contradicted': '出现矛盾主张' } as const satisfies { readonly [K in ValidityStatus]: string };
 export const ValidityStatusSchema = z.enum(VALIDITY_STATUS);
 export function isValidityStatus(value: unknown): value is ValidityStatus {
   return (VALIDITY_STATUS as readonly unknown[]).includes(value);
@@ -492,7 +492,7 @@ export function isValidityStatus(value: unknown): value is ValidityStatus {
 /** 限定标记 (B01) */
 export const QUALIFIER_MARK = ['target_reported', 'report_for_dispatch', 'local_ops_not_excluded', 'human_intervention', 'discrimination_not_established', 'semantics_unasserted', 'unverified_submission', 'client_preview', 'model_relay', 'no_reuse', 'author_samples_only', 'conditional_on_judgment', 'independence_declared', 'not_realtime', 'partial'] as const;
 export type QualifierMark = (typeof QUALIFIER_MARK)[number];
-export const QUALIFIER_MARK_LABEL = { 'target_reported': '目标自报', 'report_for_dispatch': '目标对本次派发的报告', 'local_ops_not_excluded': '未排除本地操作', 'human_intervention': '有人工干预', 'discrimination_not_established': '判别力未建立', 'semantics_unasserted': '语义未断言', 'unverified_submission': '未经平台验证', 'client_preview': '客户端预览', 'model_relay': '模型转述，未经校验', 'no_reuse': '无复用', 'author_samples_only': '仅作者样例', 'conditional_on_judgment': '以判断为前提', 'independence_declared': '独立性为客户端声明', 'not_realtime': '非实时', 'partial': '部分' } as const satisfies Record<QualifierMark, string>;
+export const QUALIFIER_MARK_LABEL = { 'target_reported': '目标自报', 'report_for_dispatch': '目标对本次派发的报告', 'local_ops_not_excluded': '未排除本地操作', 'human_intervention': '有人工干预', 'discrimination_not_established': '判别力未建立', 'semantics_unasserted': '语义未断言', 'unverified_submission': '未经平台验证', 'client_preview': '客户端预览', 'model_relay': '模型转述，未经校验', 'no_reuse': '无复用', 'author_samples_only': '仅作者样例', 'conditional_on_judgment': '以判断为前提', 'independence_declared': '独立性为客户端声明', 'not_realtime': '非实时', 'partial': '部分' } as const satisfies { readonly [K in QualifierMark]: string };
 export const QualifierMarkSchema = z.enum(QUALIFIER_MARK);
 export function isQualifierMark(value: unknown): value is QualifierMark {
   return (QUALIFIER_MARK as readonly unknown[]).includes(value);
@@ -501,7 +501,7 @@ export function isQualifierMark(value: unknown): value is QualifierMark {
 /** 未知与未完成的原因 (V03) */
 export const REASON = ['no_check', 'check_error', 'timeout', 'missing_input', 'declared_skip', 'not_covered', 'awaiting_step', 'output_failed', 'repair_exhausted', 'budget_exhausted', 'integrity_unproven'] as const;
 export type Reason = (typeof REASON)[number];
-export const REASON_LABEL = { 'no_check': '未装检查', 'check_error': '检查出错', 'timeout': '超时', 'missing_input': '缺输入', 'declared_skip': '模型声明跳过', 'not_covered': '提交未覆盖', 'awaiting_step': '在等某一步', 'output_failed': '出件失败', 'repair_exhausted': '修复轮数用完', 'budget_exhausted': '预算用完', 'integrity_unproven': '完整性未证明' } as const satisfies Record<Reason, string>;
+export const REASON_LABEL = { 'no_check': '未装检查', 'check_error': '检查出错', 'timeout': '超时', 'missing_input': '缺输入', 'declared_skip': '模型声明跳过', 'not_covered': '提交未覆盖', 'awaiting_step': '在等某一步', 'output_failed': '出件失败', 'repair_exhausted': '修复轮数用完', 'budget_exhausted': '预算用完', 'integrity_unproven': '完整性未证明' } as const satisfies { readonly [K in Reason]: string };
 export const ReasonSchema = z.enum(REASON);
 export function isReason(value: unknown): value is Reason {
   return (REASON as readonly unknown[]).includes(value);
@@ -560,7 +560,7 @@ export interface AxisValues {
   reason: Reason;
 }
 
-const LABELS: { [A in AxisName]: Readonly<Record<AxisValues[A], string>> } = {
+const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
   nature: NATURE_LABEL,
   basis_rank: BASIS_RANK_LABEL,
   provenance_type: PROVENANCE_TYPE_LABEL,

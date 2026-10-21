@@ -4,7 +4,7 @@
   "properties": {
     "id": {
       "type": "string",
-      "pattern": "^rcd_[0-9a-z]{26}$"
+      "pattern": "^rcd_[0-7][0-9a-hjkmnp-tv-z]{25}$"
     },
     "kind": {
       "type": "string",
@@ -27,7 +27,8 @@
     },
     "schema": {
       "type": "string",
-      "pattern": "^[a-z_]+@[0-9]+$"
+      "pattern": "^[a-z][a-z0-9_-]*@(?:0|[1-9][0-9]*)$",
+      "description": "name@major of the body shape, a key of SCHEMA_REGISTRY, for example validation@1"
     },
     "digest": {
       "type": "string",
@@ -41,7 +42,8 @@
         "projected",
         "declared",
         "candidate"
-      ]
+      ],
+      "description": "provenance type (A01) of the recorded content"
     },
     "created_at": {
       "type": "string",
