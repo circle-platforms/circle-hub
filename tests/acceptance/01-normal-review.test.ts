@@ -97,6 +97,14 @@ describe('scenario 1: a normal review', () => {
     receiptText = answer.text;
     assert.equal(result.partitions.delivered.length, run.items.length);
     for (const p of PARTITION) if (p !== 'delivered') assert.equal(result.partitions[p].length, 0, `${p} is empty`);
+    const seenPartitionItems = new Set<string>();
+    for (const p of PARTITION) {
+      for (const it of result.partitions[p]) {
+        assert.ok(!seenPartitionItems.has(it.item), `item ${it.item} must not appear in multiple partitions`);
+        seenPartitionItems.add(it.item);
+      }
+    }
+    assert.deepEqual(Array.from(seenPartitionItems).sort(), run.items.map((it) => it.id).sort(), 'partition union strictly equals run items');
     assert.deepEqual(result.coverage, { complete: true, examined: run.items.length, total: run.items.length, note: result.coverage.note });
     // Counts are derived from the partitions, never stored (W08 R[0]).
     const counts = answer.out.counts!;
