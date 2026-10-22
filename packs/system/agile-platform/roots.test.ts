@@ -57,8 +57,8 @@ describe('the plan of agile:tree:roots', () => {
     const { rounds } = runPlan(corpus, { roots: corpus.roots });
     assert.deepEqual(rounds[0].map((r) => r.key), ['page-1', 'subtree-1', 'subtree-2', 'subtree-3']);
     assert.deepEqual(rounds[0].slice(1).map((r) => r.body), corpus.roots.map((id) => ({ id: Number(id) })), 'numeric ids go as numbers');
-    // The configured roots are listed on page 2 of 3: both later pages are read, nothing past the total.
-    assert.deepEqual(rounds[1].map((r) => r.key), ['page-2', 'page-3']);
+    // The subtree answer starts with the root node, so each title is known and no later listing page is required.
+    assert.deepEqual(rounds[1], []);
     assert.equal(rounds.length, 2);
     assert.ok(rounds.every((r) => r.length <= ROOTS_IN_FLIGHT));
   });
@@ -79,6 +79,28 @@ describe('the plan of agile:tree:roots', () => {
     assert.equal(content.complete, false);
     assert.deepEqual(content.unread, configured.slice(MAX_ROOTS));
     assert.deepEqual(content.roots.map((r) => r.title), configured.slice(0, MAX_ROOTS).map((id) => `根 ${Number(id) - 9000}`), 'titles found on pages 9 and 10');
+  });
+
+  test('a configured root listed on page 12 still gets its title', () => {
+    const listing = Array.from({ length: 150 }, (_, i) => ({ id: String(8000 + i), label: `根 ${i}` }));
+    listing[119] = { id: '7811', label: '合成产品' };
+    const wide: Corpus = { ...corpus, listing, trees: { '7811': [] }, emptyFolders: [] };
+    const settings = { roots: ['7811'] };
+    const responses: Record<string, Answer> = {};
+    let rounds = 0;
+    for (let round = 1; round <= MAX_READ_ROUNDS; round++) {
+      const plan = rootsPlan({ round, settings, responses });
+      rounds = round;
+      for (const request of plan.requests) {
+        const body = (request.body ?? {}) as { page?: number; id?: number | string };
+        responses[request.key] = request.route === 'roots' ? { ok: true, json: listingAnswer(wide, Number(body.page)) } : { ok: true, json: subtreeAnswer(wide, '7811') };
+      }
+      if (plan.done) break;
+    }
+    const content = rootsContent(settings, responses).content;
+    assert.equal(content.roots[0]?.title, '合成产品');
+    assert.equal(content.complete, true);
+    assert.ok(rounds <= MAX_READ_ROUNDS);
   });
 
   test('total on hostile input: a valid plan and a valid projection whatever the settings and answers', () => {
@@ -133,7 +155,8 @@ describe('the content of agile:tree:roots', () => {
       assert.ok(doc, truth.id);
       assert.deepEqual([doc.title, doc.ancestors, doc.root], [truth.title, truth.ancestors, truth.root], truth.id);
     }
-    assert.equal(content.documents.length, corpus.truth.length + 1, 'the 300 documents and the leaf the platform cannot serve');
+    assert.equal(content.documents.length, corpus.truth.length + 1 + corpus.emptyFolders.length, 'the truth, the leaf the platform cannot serve, and the empty folders');
+    for (const id of corpus.emptyFolders) assert.equal(content.documents.find((doc) => doc.id === id)?.listed, false, id);
     assert.ok(byId.has(corpus.badId), 'ids are listed as the tree gives them; the product pack decides what it can read');
     assert.equal(content.documents.filter((d) => d.id === corpus.repeated).length, 1, 'a document filed twice is listed once, at its first place');
   });
@@ -155,7 +178,9 @@ describe('the content of agile:tree:roots', () => {
     assert.deepEqual(contentOf(out).unread, ['7812']);
     assert.ok(contentOf(out).documents.every((d) => d.root !== '7812'));
     assert.match(out.note ?? '', /7812/);
-    const unnamed = { ...corpus, listing: corpus.listing.filter((r) => r.id !== '7813') };
+    const unnamed = structuredClone(corpus);
+    unnamed.listing = unnamed.listing.filter((root) => root.id !== '7813');
+    unnamed.trees['7813'] = unnamed.trees['7813'][0].children;
     const plan = runPlan(unnamed, { roots: corpus.roots });
     const blind = rootsContent({ roots: corpus.roots }, plan.responses);
     assert.equal(blind.content.complete, false);
@@ -229,7 +254,8 @@ describe('agile:tree:roots through the connectors', () => {
     assert.deepEqual(result.artifacts.map((a) => a.name), ['original', 'content', 'meta']);
     const content = JSON.parse(new TextDecoder().decode(await artifactBytes(kit, result.artifacts[1].artifact.body.sha256))) as RootsContent;
     assert.equal(content.complete, true);
-    assert.equal(content.documents.length, corpus.truth.length + 1);
+    assert.equal(content.documents.length, corpus.truth.length + 1 + corpus.emptyFolders.length, 'the unreadable leaf and the empty folders, besides the truth');
+    for (const id of corpus.emptyFolders) assert.equal(content.documents.find((doc) => doc.id === id)?.listed, false, id);
     const truth = new Map(corpus.truth.map((t) => [t.id, t]));
     for (const doc of content.documents) if (truth.has(doc.id)) assert.deepEqual(doc.ancestors, truth.get(doc.id)?.ancestors);
     assert.match(result.revision ?? '', /^[0-9a-f]{64}$/);

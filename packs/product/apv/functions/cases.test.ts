@@ -27,7 +27,7 @@ import {
   type KmNode,
 } from '../../../../tests/fixtures/case-index/index.ts';
 import { rootsContent } from '../../../system/agile-platform/functions/agile.ts';
-import { cases, elementDocuments, listedIds, storable } from './cases.ts';
+import { caseStatement, cases, elementDocuments, listedIds, storable } from './cases.ts';
 import { CASE_TREE_ID } from './cases-rules.ts';
 import { assertTotal, hostileInputs, internalWarnings, xml } from '../testing/test-support.ts';
 
@@ -81,7 +81,7 @@ function produceBuild(c: Corpus, line: string, catalog: readonly Command[] = CAT
   const warnings: string[] = [];
   const batches = listBatches(ids, BATCH);
   for (const batch of batches) {
-    const lists = { documents: batch.externals.map((id) => element(c.documents[id.slice('agile:mindmap:'.length)])) };
+    const lists = { documents: batch.externals.map((external) => ({ ...element(c.documents[external.slice('agile:mindmap:'.length)]), external })) };
     const out = cases({ build, slots, lists, batch: { index: batch.index, of: batch.of }, params: declared?.params ?? {} });
     const checked = ProducerOutput.safeParse(out);
     assert.ok(checked.success, JSON.stringify(checked.error?.issues.slice(0, 2)));
@@ -101,6 +101,7 @@ function expectedEntries(c: Corpus, line: string, catalog: 'a' | 'b' = 'a'): unk
     const bytes = documentBytes(c.documents[id]);
     for (const k of doc.cases) {
       const paths = k.commands[catalog].map(commandPath).sort();
+      const filed = paths.length === 0 ? [null] : paths;
       const data = {
         document: id,
         node: k.node,
@@ -121,20 +122,20 @@ function expectedEntries(c: Corpus, line: string, catalog: 'a' | 'b' = 'a'): unk
         module: doc.module,
         autoid: k.autoid,
       };
-      for (const path of paths) out.push({ kind: 'case', path, statement: `${id}:${k.node} | ${k.title}`, data, fragments: [{ slot: 'documents', source: sha(bytes), parser: 'kityminder@1', selector: k.selector }], applicability: null });
+      for (const path of filed) out.push({ kind: 'case', path, statement: caseStatement(data), data, fragments: [{ slot: 'documents', source: sha(bytes), parser: 'kityminder@1', selector: k.selector }], applicability: null });
     }
   }
   return out;
 }
 
 describe('the declaration', () => {
-  it('the producer reads the case documents in batches of 40, the command tree and the agile tree; params.batch is the batch', () => {
+  it('the producer reads the case documents in batches of 40, the command tree and the agile tree', () => {
     assert.deepEqual(declared?.inputs, {
       documents: { source: 'case_documents', many: true, batch: 40, optional: true },
       tree: { source: 'tree' },
       folders: { source: 'case_tree', optional: true },
     });
-    assert.equal(declared?.params?.batch, BATCH);
+    assert.equal(declared?.params, undefined);
   });
 });
 
@@ -158,12 +159,12 @@ describe('the case entries of the corpus', () => {
     let none = 0;
     let unresolved = 0;
     for (const warning of run.warnings) {
-      const head = /(\d+) 份文档、(\d+) 个用例；(\d+) 个用例按命令进了索引/.exec(warning);
+      const head = /(\d+) 份文档、(\d+) 个用例；(\d+) 个用例按命令归档/.exec(warning);
       if (head === null) continue;
       counted += Number(head[2]);
       named += Number(head[3]);
-      none += Number(/(\d+) 个用例的标题和上级节点里没有能提取的命令短语/.exec(warning)?.[1] ?? 0);
-      unresolved += Number(/(\d+) 个用例提取到的命令短语在这个构建的命令目录里都解析不出/.exec(warning)?.[1] ?? 0);
+      none += Number(/(\d+) 个的标题和上级节点里没有能提取的命令短语/.exec(warning)?.[1] ?? 0);
+      unresolved += Number(/(\d+) 个提取到的命令短语在这个构建的命令目录里都解析不出/.exec(warning)?.[1] ?? 0);
     }
     assert.equal(counted, all.length);
     assert.equal(named, indexed);
@@ -222,14 +223,18 @@ describe('metamorphic checks', () => {
       const before = oneDocument(corpus, id);
       const after = oneDocument(moved, `9${id}`, corpus.documents[id]);
       assert.ok(before.length > 0 || after.length === 0);
-      const rekey = (e: ProducedEntry): ProducedEntry => ({ ...e, statement: e.statement.replace(`9${id}:`, `${id}:`), data: { ...e.data, document: id } });
+      const rekey = (entry: ProducedEntry): ProducedEntry => {
+        const data = { ...(entry.data as Record<string, unknown>), document: id };
+        return { ...entry, data, statement: caseStatement(data) };
+      };
       assert.deepEqual(after.map(rekey), before, id);
     }
   });
 
   it('another title in the agile tree without ids changes nothing', () => {
     const renamed = structuredClone(corpus);
-    const id = sample[0];
+    const id = corpus.truth.find((d) => d.product && d.cases.length > 0 && d.cases.every((k) => k.defects.length === 0 && k.stories.length === 0))?.id;
+    assert.ok(id, 'the corpus has a document whose cases carry no requirement or defect id');
     const rename = (nodes: Corpus['trees'][string]): void => {
       for (const node of nodes) {
         if (node.id === id) node.label = '改过名字的文档';
@@ -237,8 +242,7 @@ describe('metamorphic checks', () => {
       }
     };
     for (const root of renamed.roots) rename(renamed.trees[root]);
-    const truth = corpus.truth.find((d) => d.id === id)!;
-    if (truth.cases.every((k) => k.defects.length === 0 && k.stories.length === 0)) assert.deepEqual(oneDocument(renamed, id), oneDocument(corpus, id));
+    assert.deepEqual(oneDocument(renamed, id), oneDocument(corpus, id));
   });
 
   it('reordering the cases of a document changes no entry', () => {
@@ -263,10 +267,10 @@ describe('metamorphic checks', () => {
     const twice = cases({ build: buildOf('10.6.1', [external, external]), slots: { tree: treeSlot(CATALOG_A), folders: foldersSlot(corpus) }, lists: { documents: [doc, doc] }, batch: { index: 0, of: 1 }, params: { batch: BATCH } });
     assert.deepEqual(twice.entries, once);
     assert.ok(twice.warnings.some((w) => w.includes('出现了不止一次')));
-    // Listed twice, the Hub reads it once (uniqueList): the positional mapping counts it once too.
     assert.deepEqual(listedIds({ sources: { case_documents: [external, external] } }, 'case_documents'), [external]);
-    const positional = cases({ build: buildOf('10.6.1', [external, external]), slots: { tree: treeSlot(CATALOG_A), folders: foldersSlot(corpus) }, lists: { documents: [element(corpus.documents[id])] }, batch: { index: 0, of: 1 }, params: { batch: BATCH } });
-    assert.deepEqual(positional.entries, once);
+    const unnamed = cases({ build: buildOf('10.6.1', [external]), slots: { tree: treeSlot(CATALOG_A), folders: foldersSlot(corpus) }, lists: { documents: [element(corpus.documents[id])] }, batch: { index: 0, of: 1 }, params: {} });
+    assert.ok(unnamed.entries.length > 0 && unnamed.entries.every((entry) => entry.data.document === null));
+    assert.ok(unnamed.warnings.some((warning) => warning.includes('没有写明')));
   });
 
   it('an entry depends on its own document only: a document alone gives what it gives in its batch', () => {
@@ -279,33 +283,89 @@ describe('metamorphic checks', () => {
 });
 
 describe('which document an element is', () => {
-  const ids = Array.from({ length: 95 }, (_, k) => `agile:mindmap:${960000 + k}`);
+  const ids = Array.from({ length: 40 }, (_, k) => `agile:case:${960000 + k}`);
   const build = { sources: { case_documents: ids } };
-  const elements = (n: number) => Array.from({ length: n }, () => ({ sha256: 'a'.repeat(64) }));
 
-  it('by position within a whole batch, as the Hub cuts the list', () => {
-    for (const batch of listBatches(ids, 40)) {
-      const out = elementDocuments(elements(batch.externals.length), build, { index: batch.index, of: batch.of }, 40);
-      assert.deepEqual(out.documents, batch.externals.map((x) => x.slice('agile:mindmap:'.length)));
-      assert.equal(out.positional, true);
+  it('reads the external id and does not guess a position when the call holds part of the list', () => {
+    const partial = ids.slice(0, 39).map((external) => ({ external }));
+    const named = elementDocuments(partial, build);
+    assert.deepEqual(named.documents, ids.slice(0, 39).map((id) => id.slice('agile:case:'.length)));
+    assert.equal(named.anonymous, 0);
+    const bare = elementDocuments(Array.from({ length: 39 }, () => ({ sha256: 'ab'.repeat(32) })), build);
+    assert.deepEqual(bare.documents, Array(39).fill(null));
+    assert.equal(bare.anonymous, 39);
+    assert.deepEqual(elementDocuments([{ external: ids[0] }, { external: 'other:doc:1' }], build).documents, [ids[0].slice('agile:case:'.length), null]);
+    assert.deepEqual(elementDocuments([{ external: 'agile:mindmap:7' }], { sources: { case_documents: ['agile:mindmap:7'] } }).documents, ['7']);
+    assert.deepEqual(elementDocuments([{ external: 'agile:mindmap:7' }], build).documents, [null], 'an id the build does not list is unknown');
+  });
+
+  it('keeps every document of a short batch when each element carries its external id', () => {
+    const listed = listedFor(corpus, '10.6.1').map((id) => `agile:case:${id}`);
+    const part = listed.slice(0, 39).map((external) => ({ ...element(corpus.documents[external.slice('agile:case:'.length)]), external }));
+    const out = cases({ build: buildOf('10.6.1', listed), slots: { tree: treeSlot(CATALOG_A), folders: foldersSlot(corpus) }, lists: { documents: part }, batch: { index: 0, of: Math.ceil(listed.length / BATCH) }, params: {} });
+    assert.ok(ProducerOutput.safeParse(out).success);
+    assert.ok(out.entries.length > 0);
+    assert.ok(out.entries.every((entry) => entry.data.document !== null && entry.data.line !== null));
+    const withCases = listed.slice(0, 39).filter((external) => (corpus.truth.find((doc) => doc.id === external.slice('agile:case:'.length))?.cases.length ?? 0) > 0);
+    assert.equal(new Set(out.entries.map((entry) => entry.data.document)).size, withCases.length);
+    assert.ok(withCases.length > 30);
+  });
+});
+
+describe('cases the code cannot file under a command', () => {
+  it('still produces one entry, with an empty path and the case data in the statement', () => {
+    const doc = corpus.truth.find((d) => d.product && d.cases.some((k) => k.commands.a.length === 0));
+    assert.ok(doc);
+    const entries = oneDocument(corpus, doc.id);
+    for (const k of doc.cases.filter((item) => item.commands.a.length === 0)) {
+      const entry = entries.find((item) => item.data.node === k.node && item.path === null);
+      assert.ok(entry, `${doc.id}:${k.node}`);
+      assert.deepEqual(entry.data.commands, []);
+      assert.match(entry.statement, /版本线：/);
+      assert.ok(entry.statement.includes(k.title));
     }
   });
 
-  it('unknown, never guessed, when the call holds part of its batch or the batch does not fit the list', () => {
-    assert.deepEqual(elementDocuments(elements(39), build, { index: 0, of: 3 }, 40).documents, Array(39).fill(null), 'a document of the batch was skipped');
-    assert.equal(elementDocuments(elements(40), build, { index: 0, of: 2 }, 40).unknown, 40, 'another batching than 40 per call');
-    assert.equal(elementDocuments(elements(40), build, { index: 0, of: 3 }, 50).unknown, 40);
-    assert.equal(elementDocuments(elements(40), {}, { index: 0, of: 1 }, 40).unknown, 40);
-    assert.deepEqual(elementDocuments([{ external: 'agile:mindmap:7' }, { external: 'other:doc:1' }], build, null, 40).documents, ['7', null], 'an element that says which object it is is taken at its word');
-  });
-
-  it('a call on part of a batch files the cases with an unknown document and says so', () => {
-    const listed = listedFor(corpus, '10.6.1').map((id) => `agile:mindmap:${id}`);
-    const part = listed.slice(0, 39).map((id) => element(corpus.documents[id.slice('agile:mindmap:'.length)]));
-    const out = cases({ build: buildOf('10.6.1', listed), slots: { tree: treeSlot(CATALOG_A), folders: foldersSlot(corpus) }, lists: { documents: part }, batch: { index: 0, of: Math.ceil(listed.length / BATCH) }, params: { batch: BATCH } });
-    assert.ok(ProducerOutput.safeParse(out).success);
-    assert.ok(out.entries.length > 0 && out.entries.every((e) => e.data.document === null && e.data.line === null && e.statement.startsWith('未知文档:')));
-    assert.ok(out.warnings.some((w) => w.includes('39 份文档认不出是敏捷平台的哪份文档')));
+  it('keeps a case id that an expected-result leaf copies, and does not merge a positional case with an id that looks like a selector', () => {
+    const copied: KmDocument = {
+      root: {
+        data: { id: 'r', text: '根' },
+        children: [{ data: { id: 'k7', text: 'widget pool add p1', priority: 2, resource: ['Function'] }, children: [{ data: { id: 'k7', text: '设备正常' }, children: [] }] }],
+      },
+      template: '',
+      theme: '',
+      version: '',
+    };
+    const copiedOut = cases({
+      build: buildOf('10.6.1', ['agile:case:5']),
+      slots: { tree: treeSlot(CATALOG_A), folders: null },
+      lists: { documents: [{ ...element(copied), external: 'agile:case:5' }] },
+      batch: { index: 0, of: 1 },
+      params: {},
+    });
+    assert.equal(copiedOut.entries[0]?.data.node, 'k7');
+    const lookalike: KmDocument = {
+      root: {
+        data: { id: 'r', text: '根' },
+        children: [
+          { data: { id: 'i/1', text: 'widget pool add p1', priority: 2, resource: ['Function'] }, children: [] },
+          { data: { text: 'widget pool delete p1', priority: 2, resource: ['Function'] }, children: [] },
+        ],
+      },
+      template: '',
+      theme: '',
+      version: '',
+    };
+    const lookalikeOut = cases({
+      build: buildOf('10.6.1', ['agile:case:6']),
+      slots: { tree: treeSlot(CATALOG_A), folders: null },
+      lists: { documents: [{ ...element(lookalike), external: 'agile:case:6' }] },
+      batch: { index: 0, of: 1 },
+      params: {},
+    });
+    const nodes = lookalikeOut.entries.map((entry) => entry.data.node);
+    assert.equal(new Set(nodes).size, nodes.length);
+    assert.ok(nodes.includes('i/1'));
   });
 });
 
@@ -324,8 +384,8 @@ describe('the producer on bad input', () => {
   it('says what it could not use: no list, no tree, documents that are no mind maps or hold no case', () => {
     assert.deepEqual(cases({ build: buildOf('10.4.1', []), slots: { tree: treeSlot(CATALOG_A), folders: null }, lists: { documents: [] }, batch: { index: 0, of: 1 }, params: {} }), { entries: [], warnings: ['这个构建没有列出用例文档'] });
     const noTree = cases({ build: buildOf('10.6.1', []), slots: { tree: null, folders: null }, lists: { documents: [element(corpus.documents['950081'])] }, batch: { index: 0, of: 1 }, params: {} });
-    assert.deepEqual(noTree.entries, []);
-    assert.match(noTree.warnings[0], /没有命令树/);
+    assert.ok(noTree.entries.length > 0 && noTree.entries.every((entry) => entry.path === null));
+    assert.match(noTree.warnings[0] ?? '', /没有命令树/);
     const odd = cases({ build: buildOf('10.6.1', []), slots: { tree: treeSlot(CATALOG_A), folders: null }, lists: { documents: [{ ...element(corpus.documents['950081']), parser: 'json@1' }, element({ root: { data: { text: '提纲' }, children: [] }, template: '', theme: '', version: '' })] }, batch: { index: 0, of: 1 }, params: {} });
     assert.ok(odd.warnings.some((w) => w.includes('不是 KityMinder 脑图')) && odd.warnings.some((w) => w.includes('没有用例节点')) && odd.warnings.some((w) => w.includes('用例树')));
   });

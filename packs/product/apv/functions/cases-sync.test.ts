@@ -7,7 +7,7 @@ import { SyncPlanOutput, type SyncPlanInput } from '../../../../contracts/src/pr
 import { caseCorpus, listingAnswer, listedFor, subtreeAnswer, type Corpus } from '../../../../tests/fixtures/case-index/index.ts';
 import { rootsContent } from '../../../system/agile-platform/functions/agile.ts';
 import { CASE_TREE_ID, DEFAULT_MIN_LINE } from './cases-rules.ts';
-import { caseDocumentsFor, caseIndexOptions, caseNote, caseTree, isProductRoot } from './cases-sync.ts';
+import { caseDocumentsFor, caseIndexOptions, caseNote, caseTree, isProductRoot, uncoveredDocuments } from './cases-sync.ts';
 import { INDEX_ID } from './sources.ts';
 import syncPlan, { planBuilds } from './sync.ts';
 import { assertTotal, fixtureBytes, hostileInputs, html } from '../testing/test-support.ts';
@@ -55,28 +55,47 @@ describe('the documents of the agile tree', () => {
     assert.deepEqual(tree.counts.productRoots, ['APV', 'NSAE'], 'both name families');
     assert.equal(tree.counts.otherRoots, 1);
     assert.equal(tree.counts.otherDocuments, corpus.truth.filter((d) => !d.product).length);
-    assert.equal(tree.counts.noLine, corpus.truth.filter((d) => d.unlisted === 'no_line').length);
-    assert.equal(tree.counts.beforeMinLine, corpus.truth.filter((d) => d.unlisted === 'before_min_line').length);
-    assert.equal(tree.counts.badId, 1, 'the leaf whose id the platform cannot serve');
-    assert.ok(tree.counts.noLine > 0 && tree.counts.beforeMinLine > 0);
+    assert.equal(tree.counts.noLine.count, corpus.truth.filter((d) => d.unlisted === 'no_line').length);
+    assert.equal(tree.counts.beforeMinLine.count, corpus.truth.filter((d) => d.unlisted === 'before_min_line').length);
+    assert.equal(tree.counts.badId.count, 1, 'the leaf whose id the platform cannot serve');
+    assert.equal(tree.counts.emptyFolders.count, corpus.emptyFolders.length);
+    assert.deepEqual([...tree.counts.emptyFolders.examples].sort(), [...corpus.emptyFolders].sort());
+    assert.ok(tree.counts.noLine.examples.length > 0 && tree.counts.beforeMinLine.examples.length > 0);
+    for (const id of corpus.emptyFolders) assert.ok(!tree.documents.some((doc) => doc.id === id), id);
   });
 
   it('a build lists the documents of its line and the earlier ones from min_line on, new ones last', () => {
     if (tree.status !== 'ready') return;
-    for (const line of ['10.4.2', '10.4.6', '10.5', '10.6.1', '10.6.2', '10.7', '10.7.1', '10.4.1', '9.9']) {
-      assert.deepEqual(caseDocumentsFor(tree.documents, line).ids, listedFor(corpus, line).map((id) => `agile:mindmap:${id}`), line);
+    for (const line of ['10.4.2', '10.4.6', '10.5', '10.6.1', '10.6.2', '10.7', '10.4.1', '9.9']) {
+      assert.deepEqual(caseDocumentsFor(tree.documents, line).ids, listedFor(corpus, line).map((id) => `agile:case:${id}`), line);
     }
+    // A build line the tree never dates has no train month, so it lists only documents of that same line.
+    assert.deepEqual(caseDocumentsFor(tree.documents, '10.7.1').ids, []);
     const later = caseTree({ [CASE_TREE_ID]: treeRead(treeContent(corpus)) }, caseIndexOptions({ case_index: true, min_line: '10.5' }));
-    if (later.status === 'ready') assert.deepEqual(caseDocumentsFor(later.documents, '10.6.1').ids, listedFor(corpus, '10.6.1', '10.5').map((id) => `agile:mindmap:${id}`));
+    if (later.status === 'ready') assert.deepEqual(caseDocumentsFor(later.documents, '10.6.1').ids, listedFor(corpus, '10.6.1', '10.5').map((id) => `agile:case:${id}`));
     // A document added later has a larger id: the list it joins keeps every id before it where it was.
     const grown = structuredClone(corpus);
-    grown.trees['7812'][0].children[1].children[0].children[0].children.push({ label: '新文档', id: '951000', cases: [], children: [] });
+    const add = (nodes: Corpus['trees'][string]): boolean => {
+      for (const node of nodes) {
+        if (node.label.startsWith('006：10.6.1')) {
+          node.children.push({ label: '新文档', id: '951000', cases: [], children: [] });
+          node.cases.push('951000');
+          return true;
+        }
+        if (add(node.children)) {
+          node.cases.push('951000');
+          return true;
+        }
+      }
+      return false;
+    };
+    assert.equal(add(grown.trees['7812']), true);
     const again = caseTree({ [CASE_TREE_ID]: treeRead(treeContent(grown)) }, ON);
     if (again.status === 'ready') {
       const before = caseDocumentsFor(tree.documents, '10.6.1').ids;
       const after = caseDocumentsFor(again.documents, '10.6.1').ids;
       assert.deepEqual(after.slice(0, before.length), before);
-      assert.deepEqual(after.slice(before.length), ['agile:mindmap:951000']);
+      assert.deepEqual(after.slice(before.length), ['agile:case:951000']);
     }
   });
 
@@ -89,7 +108,7 @@ describe('the documents of the agile tree', () => {
     assert.equal(incomplete.status, 'failed');
     if (incomplete.status === 'failed') assert.match(incomplete.reason, /7812/);
     const note = caseNote(incomplete, ON, { listed: 0, cut: 0 });
-    assert.match(note, /不列构建/);
+    assert.match(note, /不列 \d+ 个会列出用例文档的构建/);
   });
 });
 
@@ -130,7 +149,8 @@ describe('the sync plan with the case index', () => {
 
   it('reads agile:tree:roots once, in the first round, and needs no more rounds than without it', () => {
     assert.equal(on.asked.filter((id) => id === CASE_TREE_ID).length, 1);
-    assert.equal(on.asked.indexOf(CASE_TREE_ID) < on.asked.length, true);
+    const firstRound = planBuilds({ round: 1, options: { case_index: true }, read: { [INDEX_ID]: page(INDEX_ID) }, known: [] });
+    assert.ok(firstRound.fetch.includes(CASE_TREE_ID));
     assert.equal(on.rounds, off.rounds);
   });
 
@@ -148,8 +168,11 @@ describe('the sync plan with the case index', () => {
         continue;
       }
       own++;
-      assert.deepEqual(list, listedFor(corpus, build.line).map((id) => `agile:mindmap:${id}`), build.name);
-      assert.equal(tree, CASE_TREE_ID);
+      // A build line the agile tree does not date (the site's 10.7.1; the corpus line is 10.7) lists no case document.
+      const expected = corpus.truth.some((doc) => doc.line === build.line) ? listedFor(corpus, build.line).map((id) => `agile:case:${id}`) : [];
+      assert.deepEqual(list ?? [], expected, build.name);
+      if (expected.length === 0) assert.equal(tree, undefined, build.name);
+      else assert.equal(tree, CASE_TREE_ID, build.name);
     }
     assert.ok(own >= 4);
     assert.ok(on.output.builds.some((b) => b.base !== b.name), 'aliases are still listed');
@@ -160,6 +183,20 @@ describe('the sync plan with the case index', () => {
     assert.match(on.output.note ?? '', /上级目录里没有版本线 5 份/);
     assert.match(on.output.note ?? '', /早于 10\.4\.2 的 20 份/);
     assert.match(on.output.note ?? '', /另有 1 个根不是产品的根/);
+    assert.match(on.output.note ?? '', /空目录 2 个/);
+  });
+
+  it('counts a located line no listed build covers, and names an example', () => {
+    const ready = caseTree({ [CASE_TREE_ID]: treeRead(treeContent(corpus)) }, ON);
+    assert.equal(ready.status, 'ready');
+    if (ready.status !== 'ready') return;
+    const uncovered = uncoveredDocuments(ready.documents, ['10.4.6', '10.6.1']);
+    const byLine = new Map(uncovered.map((row) => [row.line, row]));
+    assert.ok((byLine.get('10.6.2')?.count ?? 0) > 0 && (byLine.get('10.6.2')?.examples.length ?? 0) > 0);
+    assert.ok((byLine.get('10.7')?.count ?? 0) > 0);
+    const note = caseNote(ready, ON, { listed: 0, cut: 0, uncovered });
+    assert.match(note, /版本线 10\.6\.2 没有列出的构建/);
+    assert.match(note, /例如/);
   });
 
   it('lists no build at all while the agile tree cannot be read or is incomplete, and says why', () => {
@@ -168,7 +205,8 @@ describe('the sync plan with the case index', () => {
       (): Read => treeRead(treeContent(corpus, new Set(['7811']))),
     ]) {
       const out = runSync({ case_index: true }, tree).output;
-      assert.deepEqual(out.builds, []);
+      assert.ok(out.builds.every((build) => build.sources.tree === undefined), 'a build that would list case documents is withheld');
+      assert.ok(out.builds.length > 0, 'a build with no command tree is still listed');
       assert.equal(out.done, true);
       assert.match(out.note ?? '', /这次不列构建/);
       assert.match(out.note ?? '', /找到的 \d+ 个构建没有列出/);
@@ -180,6 +218,15 @@ describe('the sync plan with the case index', () => {
     assert.ok(first.fetch.includes(CASE_TREE_ID));
     assert.deepEqual(first.builds, []);
     assert.equal(first.done, false);
+  });
+
+  it('orders lines by the release-train date, not by the dotted number', () => {
+    const documents = [
+      { id: '1', line: '10.5', at: '2024-01-01' },
+      { id: '2', line: '10.4.6', at: '2026-06-01' },
+    ];
+    assert.deepEqual(caseDocumentsFor(documents, '10.4.6').ids, ['agile:case:1', 'agile:case:2']);
+    assert.deepEqual(caseDocumentsFor(documents, '10.5').ids, ['agile:case:1']);
   });
 
   it('is total on hostile input with the case index on', () => {

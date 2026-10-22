@@ -197,6 +197,7 @@ export const ProducerSlot = z.strictObject({
   media_type: z.string(),
   parser: Versioned,
   model: z.unknown(),
+  external: ExternalObjectId.optional().describe('the external object this list element was read from; a producer matches documents by it, never by position in the batch'),
 });
 
 /** Input of a producer function. A slot whose source could not be read and was declared optional is null. */

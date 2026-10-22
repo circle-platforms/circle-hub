@@ -2,8 +2,11 @@
 // product), a versioned tree in the platform's convention (`030：<names>测试项目` -> version line -> release train ->
 // module -> document), 300 KityMinder test mind maps, and the truth of every document and case, built while the documents
 // are built (never computed by the code under test). Case titles, group labels and document titles come from table.ts, so
-// the commands each case must resolve are the table's. Everything is invented; addresses are in 192.0.2.0/24 and
-// 2001:db8::/32. The product names are a parameter: product packs pass their own, this directory never names a product.
+// the commands each case must resolve are the table's. Names, commands and addresses (192.0.2.0/24, 2001:db8::/32) are
+// invented. The dotted lines (10.4.2 and the rest) are the synthetic scenario the product pack's default min_line exercises;
+// a document is on a build when the release-train month in its train label is not later than that build's, and in this
+// corpus those months happen to follow the dotted order. That is not a lineage claim. The product names are a parameter:
+// product packs pass their own, this directory never names a product.
 import { CATALOG_A, CATALOG_B, type Command } from './catalog.ts';
 import { tableRow } from './table.ts';
 
@@ -19,7 +22,7 @@ export type AgileNode = { label: string; id: string; cases: string[]; children: 
 
 export type CaseTruth = {
   document: string;
-  /** data.id when it is unique among the document's nodes, else the selector. */
+  /** data.id when it is unique among the document's case nodes, else the selector. An id copied onto a non-case leaf stays. */
   node: string;
   /** The kityminder@1 selector of the case node. */
   selector: string;
@@ -69,6 +72,8 @@ export type Corpus = {
   badId: string;
   /** A document listed in two folders of the tree (it counts once). */
   repeated: string;
+  /** Empty folders: a train and a module with no document. The tree marks them listed: false; the plan does not list them. */
+  emptyFolders: readonly string[];
 };
 
 // ---------------------------------------------------------------- small helpers
@@ -106,7 +111,10 @@ export function compareLine(a: string, b: string): number {
   return x.length - y.length;
 }
 
-/** The documents a build of this line lists, in the order the product pack lists them (ids by number). */
+/**
+ * The documents a build of this line lists, in id order, by dotted comparison. In this corpus that agrees with the
+ * release-train months on the trains. The product pack orders by those months (cases-sync.ts), not by this function.
+ */
 export function listedFor(corpus: Corpus, buildLine: string, minLine = MIN_LINE): string[] {
   return corpus.truth
     .filter((d) => d.product && d.line !== null && compareLine(minLine, d.line) <= 0 && compareLine(d.line, buildLine) <= 0)
@@ -318,19 +326,54 @@ function toDocument(spec: Spec, seed: number): KmDocument {
 /** The truth of every case of a built spec tree: positions, labels, identity, commands and ids. */
 function casesOf(document: string, root: Spec, extraIds: string[]): CaseTruth[] {
   const written = (s: Spec): string | null => (s as Spec & { written?: string | null }).written ?? null;
-  const counts = new Map<string, number>();
-  const count = (s: Spec): void => {
+  // Selector uniqueness is every node (the parser's rule). The case key counts cases only, and a case with no usable id
+  // is `@<flat index>` (case-review), the flat index being the parser's pre-order index. 200 is cases-nodes MAX_ITEM_ID.
+  const allCounts = new Map<string, number>();
+  const caseCounts = new Map<string, number>();
+  const tally = (s: Spec): void => {
     const id = written(s);
-    if (id !== null) counts.set(id, (counts.get(id) ?? 0) + 1);
-    s.children.forEach(count);
+    if (id !== null) allCounts.set(id, (allCounts.get(id) ?? 0) + 1);
+    if (s.truth !== undefined && id !== null) caseCounts.set(id, (caseCounts.get(id) ?? 0) + 1);
+    s.children.forEach(tally);
   };
-  count(root);
+  tally(root);
+  const real = new Set(allCounts.keys());
+  const assigned = new Set<string>();
+  const copies = new Map<string, number>();
+  const fits = (key: string): boolean => document.length + 1 + key.length <= 200;
+  const free = (key: string): boolean => !assigned.has(key) && !real.has(key);
+  const positional = (index: number): string => {
+    let key = `@${index}`;
+    for (let k = 2; !free(key); k++) key = `@${index}#${k}`;
+    assigned.add(key);
+    return key;
+  };
   const out: CaseTruth[] = [];
+  let flat = 0;
   const walk = (s: Spec, positions: number[], above: Spec[]): void => {
+    const index = flat++;
     if (s.truth !== undefined) {
       const id = written(s);
-      const unique = id !== null && counts.get(id) === 1;
-      const selector = unique ? `n/${id}` : ['i', ...positions].join('/');
+      const addressable = id !== null && allCounts.get(id) === 1;
+      const selector = addressable ? `n/${id}` : ['i', ...positions].join('/');
+      let node: string;
+      if (id === null || !fits(id)) node = positional(index);
+      else if (caseCounts.get(id) === 1) {
+        assigned.add(id);
+        node = id;
+      } else {
+        let k = copies.get(id) ?? 0;
+        let key: string;
+        do {
+          k += 1;
+          key = `${id}#${k}`;
+        } while (!free(key));
+        copies.set(id, k);
+        if (fits(key)) {
+          assigned.add(key);
+          node = key;
+        } else node = positional(index);
+      }
       const chain = [...above, s];
       const rows = chain.flatMap((x) => (x.row === undefined ? [] : [x.row]));
       const words = sortedUnique(rows.flatMap((key) => tableRow(key).commands));
@@ -339,7 +382,7 @@ function casesOf(document: string, root: Spec, extraIds: string[]): CaseTruth[] 
       const has = s.truth.expected.some((t) => t.trim() !== '');
       out.push({
         document,
-        node: unique ? (id as string) : selector,
+        node,
         selector,
         title: s.text,
         path_labels: above.map((x) => x.text),
@@ -421,11 +464,13 @@ export function caseCorpus(options: { names?: readonly [string, string] } = {}):
   const folders = new Set<AgileNode>();
   let folderId = 8800;
   let d = 0;
-  // Files a document leaf under a chain of folder labels of a root (folders created on first use, listing their documents
-  // in `cases` as the platform does).
+  const rootDocs: Record<string, string[]> = { [ROOT_IDS.first]: [], [ROOT_IDS.second]: [], [ROOT_IDS.other]: [] };
+  // Files a document leaf under a chain of folder labels. Every folder lists every document below it (the platform's
+  // lists are cumulative); the root node, wrapped on at the end, lists all of them.
   const file = (rootKey: keyof typeof ROOT_IDS, labels: readonly string[], leaf: AgileNode): void => {
-    let level = trees[ROOT_IDS[rootKey]];
-    let parent: AgileNode | null = null;
+    const rootId = ROOT_IDS[rootKey];
+    let level = trees[rootId];
+    const chain: AgileNode[] = [];
     for (const label of labels) {
       let found = level.find((x) => x.label === label && folders.has(x));
       if (found === undefined) {
@@ -433,11 +478,12 @@ export function caseCorpus(options: { names?: readonly [string, string] } = {}):
         folders.add(found);
         level.push(found);
       }
-      parent = found;
+      chain.push(found);
       level = found.children;
     }
     level.push(leaf);
-    parent?.cases.push(leaf.id);
+    for (const folder of chain) folder.cases.push(leaf.id);
+    rootDocs[rootId].push(leaf.id);
   };
   for (const slot of slots(names)) {
     for (let k = 0; k < slot.count; k++) {
@@ -473,7 +519,26 @@ export function caseCorpus(options: { names?: readonly [string, string] } = {}):
   file('second', [project, '061：10.4.6', '003：10.4.6-R1-2026/3', '健康检查'], { label: '无法读取的文档', id: badId, cases: [], children: [] });
   const repeated = truth.find((t) => t.line === '10.4.6')?.id as string;
   file('second', [project, '061：10.4.6', '004：10.4.6-R2-2026/7', '日志'], { label: '重复挂载的文档', id: repeated, cases: [], children: [] });
-  return { names, listing, roots: [ROOT_IDS.first, ROOT_IDS.second, ROOT_IDS.other], trees, documents, truth, badId, repeated };
+  const findLabel = (nodes: AgileNode[], label: string): AgileNode | null => {
+    for (const node of nodes) {
+      if (node.label === label) return node;
+      const below = findLabel(node.children, label);
+      if (below !== null) return below;
+    }
+    return null;
+  };
+  // A release train and a module created before any document. Nothing lists them, so they are empty folders, not documents.
+  const emptyFolders = ['8999', '8998'] as const;
+  const lineFolder = findLabel(trees[ROOT_IDS.second], '061：10.4.6');
+  const trainFolder = findLabel(trees[ROOT_IDS.second], '003：10.4.6-R1-2026/3');
+  if (lineFolder === null || trainFolder === null) throw new Error('the corpus is missing the 10.4.6 folders');
+  lineFolder.children.push({ label: '005：10.4.6-R3-2026/11', id: emptyFolders[0], cases: [], children: [] });
+  trainFolder.children.push({ label: 'SSL', id: emptyFolders[1], cases: [], children: [] });
+  for (const key of ['first', 'second', 'other'] as const) {
+    const id = ROOT_IDS[key];
+    trees[id] = [{ label: titleOf[key], id, cases: rootDocs[id], children: trees[id] }];
+  }
+  return { names, listing, roots: [ROOT_IDS.first, ROOT_IDS.second, ROOT_IDS.other], trees, documents, truth, badId, repeated, emptyFolders };
 }
 
 /** The UTF-8 bytes of a document as a KityMinder export. */

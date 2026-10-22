@@ -4,19 +4,21 @@
 // product), locates each one with locate.ts and lists, in the sources of every build that has its own command tree:
 // - `case_documents`: the agile:case ids of the documents whose version line is not later than the build's line and not
 //   earlier than the option `min_line` (default 10.4.2), ordered by document id (numbers by value). The order only has to be
-//   stable: an unchanged tree gives the same list, so the Hub keeps the build's root (its list digest is unchanged); it does
-//   not keep any batch of a list that changed (the Hub's stored producer calls are keyed by the whole build, list included).
-//   Over the role's limit the documents of the oldest lines are left out first;
+//   stable: an unchanged tree gives the same list, so the Hub keeps the build's root (its list digest is unchanged). A
+//   changed list re-runs every batch of that build: the Hub keys a stored producer call by the whole build, list included.
+//   Over the role's limit the documents of the oldest lines (earliest release-train date) are left out first;
 // - `case_tree`: agile:tree:roots, where the case producer finds each document's title and folders.
 // A build whose list is empty gets neither role. Documents without a located line, before min_line, with an id the agile
 // pack cannot read, and leaves no folder lists (empty folders) are not listed; the note counts them by reason with example
 // ids. While the tree is not read, cannot be read or is incomplete (a configured root not read, a root title unknown), the
 // builds that would list documents are not listed at all (sync.ts): a root produced now would lose every case it had.
-// Version lines are compared by number: a build of line L lists the documents of every line from min_line up to L. That
-// is a rule of this pack, not the product's lineage (README, open question).
+// Which line is not later than a build's line is the earliest release-train date of that line in the tree (YYYY/M in the
+// train label), not the numeric order of the dotted line. Brief section 8: 10.4.5 and 10.4.6 are newer lines than 10.5.
+// A line with no dated train is listed only for a build of that same line. min_line is the same date floor when the tree
+// dates that line; a line with no date is not dropped as earlier than min_line.
 import { AGILE_ID, CASE_DOCUMENTS_ROLE, CASE_PREFIX, CASE_TREE_ID, CASE_TREE_ROLE, DEFAULT_MIN_LINE } from './cases-rules.ts';
 import { locateFromAncestors } from './locate.ts';
-import { PRODUCT_LINE, compareLines, lineKey } from './naming.ts';
+import { PRODUCT_LINE, lineKey } from './naming.ts';
 import { compareDigits, compareText, isRecord } from './util.ts';
 
 /** Most external objects one role of a build may list (contracts MAX_LIST_SOURCES; a test keeps them equal). */
@@ -40,7 +42,38 @@ export function caseIndexOptions(options: unknown): CaseIndexOptions {
   return { on: record.case_index === true, minLine: lineKey(minLine), notes };
 }
 
-export type CaseDocument = { id: string; line: string };
+/** A located document. `at` is the release-train month (YYYY-MM-01) when the train label carries one. */
+export type CaseDocument = { id: string; line: string; at: string | null };
+
+/** The month a release-train label names (`2026/7`, `2025/12`), or null. */
+export function trainInstant(train: string | null): string | null {
+  if (train === null) return null;
+  const found = /([0-9]{4})\/([0-9]{1,2})(?!\d)/.exec(train);
+  if (found === null) return null;
+  const month = Number(found[2]);
+  if (month < 1 || month > 12) return null;
+  return `${found[1]}-${String(month).padStart(2, '0')}-01`;
+}
+
+/** Earliest train month of each line. Lines with no dated train are absent. */
+export function lineRanks(documents: readonly CaseDocument[]): Map<string, string> {
+  const ranks = new Map<string, string>();
+  for (const doc of documents) {
+    if (doc.at === null) continue;
+    const known = ranks.get(doc.line);
+    if (known === undefined || doc.at < known) ranks.set(doc.line, doc.at);
+  }
+  return ranks;
+}
+
+/** True when `line` is the build's line, or its earliest train is not after the build line's. */
+export function lineNotAfter(line: string, buildLine: string, ranks: ReadonlyMap<string, string>): boolean {
+  if (line === buildLine) return true;
+  const left = ranks.get(line);
+  const right = ranks.get(buildLine);
+  if (left === undefined || right === undefined) return false;
+  return left <= right;
+}
 
 /** A count with the first ids it counts. */
 export type Counted = { count: number; examples: string[] };
@@ -129,7 +162,7 @@ export function caseTree(read: Record<string, unknown>, options: CaseIndexOption
     emptyFolders: counted(),
     repeated,
   };
-  const documents: CaseDocument[] = [];
+  const found: CaseDocument[] = [];
   const seen = new Set<string>();
   for (const doc of model.documents as unknown[]) {
     if (!isRecord(doc) || typeof doc.root !== 'string') continue;
@@ -159,12 +192,19 @@ export function caseTree(read: Record<string, unknown>, options: CaseIndexOption
       continue;
     }
     const line = lineKey(located.line);
-    if (compareLines(line, options.minLine) < 0) {
+    found.push({ id: doc.id, line, at: trainInstant(located.train) });
+  }
+  const ranks = lineRanks(found);
+  const floor = ranks.get(options.minLine);
+  const documents: CaseDocument[] = [];
+  for (const doc of found) {
+    const at = ranks.get(doc.line);
+    if (floor !== undefined && at !== undefined && at < floor) {
       add(counts.beforeMinLine, doc.id);
       continue;
     }
     counts.located++;
-    documents.push({ id: doc.id, line });
+    documents.push(doc);
   }
   documents.sort(byId);
   return { status: 'ready', documents, counts };
@@ -174,19 +214,20 @@ export function caseTree(read: Record<string, unknown>, options: CaseIndexOption
  * The case documents of a build of this line (agile:case ids, in list order) and how many were left out over `cap`: the
  * documents of the oldest lines go first, so that the build's own line stays listed.
  */
-export function caseDocumentsFor(documents: readonly CaseDocument[], buildLine: string, cache = new Map<string, boolean>(), cap = MAX_CASE_DOCUMENTS): { ids: string[]; cut: number } {
-  const within: CaseDocument[] = [];
-  for (const doc of documents) {
-    const key = `${doc.line}\u0000${buildLine}`;
-    let inside = cache.get(key);
-    if (inside === undefined) {
-      inside = compareLines(doc.line, buildLine) <= 0;
-      cache.set(key, inside);
-    }
-    if (inside) within.push(doc);
-  }
+export function caseDocumentsFor(documents: readonly CaseDocument[], buildLine: string, _cache = new Map<string, boolean>(), cap = MAX_CASE_DOCUMENTS): { ids: string[]; cut: number } {
+  const ranks = lineRanks(documents);
+  const within = documents.filter((doc) => lineNotAfter(doc.line, buildLine, ranks));
   let kept = within;
-  if (within.length > cap) kept = [...within].sort((a, b) => compareLines(b.line, a.line) || byId(a, b)).slice(0, cap).sort(byId);
+  if (within.length > cap) {
+    kept = [...within]
+      .sort((a, b) => {
+        const left = ranks.get(a.line) ?? '';
+        const right = ranks.get(b.line) ?? '';
+        return left < right ? -1 : left > right ? 1 : byId(a, b);
+      })
+      .slice(within.length - cap)
+      .sort(byId);
+  }
   return { ids: kept.map((doc) => `${CASE_PREFIX}${doc.id}`), cut: within.length - kept.length };
 }
 
@@ -200,15 +241,21 @@ export function caseSources(ids: readonly string[]): Record<string, string | str
  * per line, with example ids.
  */
 export function uncoveredDocuments(documents: readonly CaseDocument[], buildLines: readonly string[]): Array<{ line: string } & Counted> {
-  const latest = buildLines.reduce<string | null>((best, line) => (best === null || compareLines(line, best) > 0 ? line : best), null);
+  const ranks = lineRanks(documents);
   const byLine = new Map<string, Counted>();
   for (const doc of documents) {
-    if (latest !== null && compareLines(doc.line, latest) <= 0) continue;
+    if (buildLines.some((line) => lineNotAfter(doc.line, line, ranks))) continue;
     let counter = byLine.get(doc.line);
     if (counter === undefined) byLine.set(doc.line, (counter = counted()));
     add(counter, doc.id);
   }
-  return [...byLine.entries()].sort(([a], [b]) => compareLines(a, b)).map(([line, counter]) => ({ line, ...counter }));
+  return [...byLine.entries()]
+    .sort(([a], [b]) => {
+      const left = ranks.get(a) ?? '';
+      const right = ranks.get(b) ?? '';
+      return left < right ? -1 : left > right ? 1 : compareText(a, b);
+    })
+    .map(([line, counter]) => ({ line, ...counter }));
 }
 
 const named = (counter: Counted): string => (counter.examples.length === 0 ? '' : `，例如 ${counter.examples.join('、')}`);

@@ -14,9 +14,9 @@ export type ProducerSlotValue = NonNullable<ProducerInput['slots'][string]>;
 
 export type ProducerRun = { ok: true; value: ProducerOutput } | { ok: false; reason: string; isolatable: boolean; timeout: boolean };
 
-/** The ProducerSlot handed to the function for a parsed source. */
+/** The ProducerSlot handed to the function for a parsed source. A list element carries its external id (product@1). */
 export function slotOf(source: ParsedSource): ProducerSlotValue {
-  return { sha256: source.sha256, media_type: source.mediaType, parser: source.parser, model: source.document.model };
+  return { sha256: source.sha256, media_type: source.mediaType, parser: source.parser, model: source.document.model, external: source.external };
 }
 
 export interface ProducerCall {

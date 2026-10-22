@@ -236,9 +236,12 @@ catalogs, grounds and provenance.
     fails on alone (decision 19; both `retry: false`) is skipped: listed with external id and reason in the composition
     (`skipped`, first 200, `skipped_count`), in the production result and the sync report; its producer's catalogs are
     no longer complete (decision 14) and every view of the root says so (decision 22). When more than `maxSkippedShare`
-    (0.5) of a list's ids are skipped, for whatever reason, the production fails with the counts by cause: a connector
-    outage or a broken pack never replaces a root (or the current root of a line) with one that lost most of its list,
-    and the sync exits with 1. The build is recorded with each list role by reference, `{list, count}` (`RecordedBuild`
+    (0.5) of a required list's ids are skipped, the production fails with the counts by cause. An optional list uses a
+    share of 1: skipped documents stay in `skipped` and do not drop the root (a case index must not take the command
+    tree with it). Each list element carries `external`, the object it was read from, and the memo of a list call includes
+    that id so two documents with equal bytes stay two calls.
+
+    The build is recorded with each list role by reference, `{list, count}` (`RecordedBuild`
     in the composition and the generate action), the listed ids kept once as an object named by `list`. The generate
     action summarises each list (count, digest of the listed ids, digest of the [id, digest] pairs used, digest of the
     pairs of every object read, the first 50 skipped ids with `retry`); its `sources` and `inputs` keep the single sources

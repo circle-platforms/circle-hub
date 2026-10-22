@@ -37,11 +37,14 @@ export function caseIndexAgileOptions(corpus: Corpus = caseCorpus()): {
   return { ...CASE_INDEX_ACCOUNT, roots: corpus.listing, trees: corpus.trees, documents: corpus.documents, expiredCode: 401 };
 }
 
-/** One page of the root listing as the platform answers it (10 roots, the total; pages past the end repeat page 1). */
-export function listingAnswer(corpus: Corpus, page: number): { code: number; msg: string; data: { total: number; list: { id: string; label: string }[] } } {
+/**
+ * One page of the root listing as the platform answers it: ten roots in `data`, the total a sibling of `data`
+ * (pages past the end repeat page 1).
+ */
+export function listingAnswer(corpus: Corpus, page: number): { code: number; msg: string; data: { id: string; label: string }[]; total: number } {
   const pages = Math.max(1, Math.ceil(corpus.listing.length / 10));
   const shown = Number.isInteger(page) && page >= 1 && page <= pages ? page : 1;
-  return { code: 1000, msg: '', data: { total: corpus.listing.length, list: corpus.listing.slice((shown - 1) * 10, shown * 10) } };
+  return { code: 1000, msg: '', data: corpus.listing.slice((shown - 1) * 10, shown * 10), total: corpus.listing.length };
 }
 
 /** The subtree answer of a root, or the platform's answer for a root it does not have. */

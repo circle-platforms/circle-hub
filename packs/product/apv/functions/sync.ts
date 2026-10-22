@@ -143,8 +143,9 @@ export function planBuilds(input: SyncPlanInput): SyncPlanOutput {
         if (tree !== null) sources[SOURCE_ROLES.tree] = tree;
         const bugs = build.files.bugsFixed === undefined ? null : fileId(build.files.bugsFixed.href);
         if (tree !== null && bugs !== null) sources[SOURCE_ROLES.fixedBugs] = bugs;
-        // The case documents of the build's line and earlier ones (an alias without a tree of its own lists nothing). Without
-        // the tree, a build of a line before min_line still lists nothing whatever the tree holds; the others wait for it.
+        // The case documents of the build's line and earlier ones, by release-train date once the tree is read (cases-sync.ts).
+        // An alias without a tree of its own lists nothing. While the tree is unread there is no train date, so "before
+        // min_line" is the dotted comparison: those builds list nothing whatever the tree holds, and the others wait.
         if (tree !== null && cases !== null) {
           const line = lineKey(build.line as string);
           if (cases.status === 'ready') {
@@ -173,6 +174,7 @@ export function planBuilds(input: SyncPlanInput): SyncPlanOutput {
     const uncovered = cases?.status === 'ready' ? uncoveredDocuments(cases.documents, caseLines) : [];
 
     const summary = [`读了 ${Object.keys(read).length} 个页面`, `${plan.pages.length} 个列表页`, `列出 ${kept.length} 个构建（${kept.filter((b) => b.released_at !== null).length} 个已发布）`];
+    if (withheld.size > 0) summary.push(`找到的 ${withheld.size} 个构建没有列出：用例树读不出来，这次不列构建，免得产出缺少用例的根`);
     if (cases !== null) summary.push(caseNote(cases, caseIndex, { ...listedCases, withheld: withheld.size, uncovered }));
     if (failed.length > 0) summary.push(`读不出的列表页：${failed.slice(0, 8).join('、')}${failed.length > 8 ? ' 等' : ''}`);
     if (partialDates > 0) summary.push(`${partialDates} 个发布日期只写到月份，记为当月 1 日`);

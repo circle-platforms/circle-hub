@@ -198,14 +198,15 @@ export function cases(input: unknown): ProducerOutput {
       return { entries: [], warnings };
     }
     const tree = isRecord(slots.tree) ? slots.tree : null;
+    let catalog: CommandCatalog;
     if (tree === null || tree.parser !== 'xml@1') {
-      warnings.push(`${where}没有命令树（或不是 XML），这一批 ${elements.length} 份文档的用例不能按命令归档，都没有进索引`);
-      return { entries: [], warnings };
-    }
-    const { catalog } = commandCatalog(tree.model as XmlModel);
-    if (catalog.size === 0) {
-      warnings.push(`${where}命令树里没有命令，这一批 ${elements.length} 份文档的用例都没有进索引`);
-      return { entries: [], warnings };
+      warnings.push(`${where}没有命令树（或不是 XML），这一批 ${elements.length} 份文档的用例都不能按命令归档，各记一条不带路径的条目`);
+      catalog = { root: { children: new Map(), path: null }, heads: [], size: 0 };
+    } else {
+      const built = commandCatalog(tree.model as XmlModel);
+      catalog = built.catalog;
+      for (const warning of built.warnings) warnings.push(`${where}${warning}`);
+      if (catalog.size === 0) warnings.push(`${where}命令树里没有命令，这一批 ${elements.length} 份文档的用例都记为不带路径的条目`);
     }
     const folders = treeFolders(slots.folders);
     if (folders === null) warnings.push(`${where}敏捷平台的用例树（${CASE_TREE_ID}）没有读到或格式不对：文档的标题和上级目录未知，版本线、发布火车、模块和目录里的编号记为未知`);

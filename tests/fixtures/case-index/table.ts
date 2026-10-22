@@ -115,6 +115,15 @@ export const CASE_COMMAND_TABLE: readonly TableRow[] = [
   row('not-path-words', 'path', 'no 与 clear', [], 'command words as topics'),
   row('not-path-plain', 'path', '基本功能', [], 'a plain label'),
   row('not-path-endpoint', 'path', 'relay endpoint', [], 'a prefix of commands'),
+  // Review probes: Unicode spaces and full-width letters, a line end, a second command among arguments, a two-letter
+  // capital acronym. Full NFKC is not applied (it would turn full-width punctuation into ASCII marks).
+  row('fold-nbsp', 'title', 'show health\u00a0detail pool1', ['show health detail'], 'a no-break space between command words'),
+  row('fold-ideographic-space', 'title', '执行\u3000show\u3000health\u3000pool1', ['show health'], 'ideographic spaces where a browser stores them'),
+  row('fold-fullwidth', 'title', 'ｓｈｏｗ\u3000ｐｏｏｌｓ', ['show pools'], 'full-width letters and an ideographic space'),
+  row('fold-zwsp', 'title', 'show\u200b health detail pool1', ['show health detail'], 'a zero-width space inside the command'),
+  row('fold-line-end', 'title', 'show health\ndetail pool1', ['show health'], 'a line end ends the phrase; the next line is not its continuation'),
+  row('second-command', 'title', 'widget pool add pool1 50 show pools', ['show pools', 'widget pool add'], 'a second command among the arguments, separated only by a space'),
+  row('not-two-capitals', 'title', 'SH health pool1', [], 'two capitals are an acronym, not an abbreviation of the first word'),
 ];
 
 /** The rows by key. */

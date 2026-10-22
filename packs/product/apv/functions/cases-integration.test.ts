@@ -18,6 +18,7 @@ import { createPackRegistry, createPacksPort, temporaryDirectory } from '../../.
 import { startPostgres, type TemporaryPostgres } from '../../../../hub/testing/postgres.ts';
 import { openTestRecords, type TestRecordsKit } from '../../../../hub/testing/records.ts';
 import { CASE_INDEX_ACCOUNT, CATALOG_A, CATALOG_B, CHANGED_COMMANDS, caseCorpus, caseIndexAgileOptions, commandPath, commandTreeXml, listedFor } from '../../../../tests/fixtures/case-index/index.ts';
+import { caseStatement } from './cases.ts';
 import { PACK_DIRECTORIES, stagePack } from '../../../workflow/case-review/packaging.ts';
 
 const corpus = caseCorpus({ names: ['APV', 'NSAE'] });
@@ -154,7 +155,8 @@ describe('the sync with the case index', () => {
       for (const { doc, k } of items) {
         const entry = byNode.get(k.node);
         assert.ok(entry, `${document}:${k.node}`);
-        assert.equal(entry.statement, `${document}:${k.node} | ${k.title}`);
+        assert.equal(entry.statement, caseStatement(entry.data));
+        assert.ok(entry.statement.startsWith(`${document}:${k.node} | ${k.title}`));
         assert.deepEqual(entry.data.commands, k.commands.b.map(commandPath).sort());
         assert.deepEqual([entry.data.line, entry.data.train, entry.data.module, entry.data.defects, entry.data.stories, entry.data.vague_expected], [doc.line, doc.train, doc.module, k.defects, k.stories, k.vague_expected]);
         assert.match(entry.reference, /^tree:[0-9a-f]{64}\/commands\//);
@@ -193,13 +195,19 @@ describe('the sync with the case index', () => {
     assert.match(again.builds[0].reason, /已有根/);
   });
 
-  test('while the agile platform cannot be read the sync lists no build and no current root moves', async () => {
+  test('while the agile platform cannot be read, builds that would list cases are withheld and no current root moves', async () => {
     const before = await knowledge.currentRoot('apv', '10.6.1');
     agile.setPassword('Another#Secret43');
     agile.expireTokens();
     const outage = await knowledge.syncProduct(apv, { by: admin });
-    assert.deepEqual(outage.builds, []);
+    assert.deepEqual(
+      outage.builds.map((build) => [build.name, build.outcome, build.root]),
+      [[ALIAS, 'skipped', null]],
+    );
+    assert.match(outage.builds[0]?.reason ?? '', /别名/);
+    assert.equal(outage.error, null);
     assert.match(outage.plan.note ?? '', /这次不列构建/);
+    assert.match(outage.plan.note ?? '', /找到的 \d+ 个构建没有列出/);
     assert.equal((await knowledge.currentRoot('apv', '10.6.1'))?.root, before?.root);
     assert.ok(before !== null);
   });

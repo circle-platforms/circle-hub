@@ -4,6 +4,7 @@ import {
   BuildInfo,
   ExternalTemplate,
   ProducedEntry,
+  ProducerInput,
   ProductDeclaration,
   SelectBuildOutput,
   SyncPlanInput,
@@ -74,6 +75,25 @@ test('a build may list many sources in one role and a producer may read them in 
   assert.ok(ProductDeclaration.safeParse(listed).success);
   const tooBig = { ...listed, producers: [{ ...listed.producers[1], inputs: { documents: { source: 'documents', many: true, batch: 500 } } }] };
   assert.ok(!ProductDeclaration.safeParse(tooBig).success, 'a batch is at most 200');
+});
+
+test('a list element may name the external object it was read from', () => {
+  const build = {
+    name: 'Rel_Widget_1_2_3',
+    family: 'Widget',
+    line: '1.2',
+    base: 'Rel_Widget_1_2_3',
+    platform: null,
+    built_at: null,
+    released_at: null,
+    sources: {},
+    root: null,
+  };
+  const element = { sha256: 'a'.repeat(64), media_type: 'application/json', parser: 'json@1', model: { nodes: [] }, external: 'agile:case:950001' };
+  assert.ok(ProducerInput.safeParse({ build, slots: {}, lists: { documents: [element] }, params: {} }).success);
+  const without = { sha256: element.sha256, media_type: element.media_type, parser: element.parser, model: element.model };
+  assert.ok(ProducerInput.safeParse({ build, slots: {}, lists: { documents: [without] }, params: {} }).success, 'a slot without an external id still parses');
+  assert.equal(ProducerInput.safeParse({ build, slots: {}, lists: { documents: [{ ...element, external: 'not an id' }] }, params: {} }).success, false);
 });
 
 test('pack function references stay inside functions/', () => {

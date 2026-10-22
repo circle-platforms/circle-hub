@@ -6,7 +6,7 @@
   "sync": {
     "start": ["buildsite:listing:index"],
     "plan": { "module": "functions/sync.ts" },
-    "options": { "include": [], "exclude": [], "case_index": false, "min_line": "10.4.2" },
+    "options": { "include": [], "exclude": [], "case_index": true, "min_line": "10.4.2" },
     "max_rounds": 6,
     "max_reads": 300
   },

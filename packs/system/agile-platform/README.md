@@ -1,12 +1,13 @@
 # packs/system/agile-platform
 
-The system pack of the agile test platform (brief section 8): reads only, through the Hub's connectors. Version 1.1.0 adds
-`agile:tree:roots` (the case index of brief section 6a, capability 4).
+The system pack of the agile test platform (brief section 8): reads only, through the Hub's connectors. Version 1.2.0 is
+the case-index finish of `agile:tree:roots` (brief section 6a, capability 4): cumulative folder lists, empty folders
+marked `listed: false`, and listing pages up to the round budget.
 
 | Read | Gives |
 | --- | --- |
 | `agile:tree:<root id>` | the whole subtree of a root (`{label, id, cases, children}`) and the root's title from the paged root listing (10 per page with a total; pages past the end repeat page 1, so only the announced pages are read); the revision is the SHA-256 of the subtree answer |
-| `agile:tree:roots` | every configured root at once (`settings.roots`, the first 10): content `{roots: [{id, title}], documents: [{id, title, ancestors, root}], complete, unread?}`, every document of the trees once with the labels of the folders above it from the root title down (the same ancestors the mind-map meta gives), `root` its root's id; the original is the first listing page; see below |
+| `agile:tree:roots` | every configured root at once (`settings.roots`, the first 10): content `{roots: [{id, title}], documents: [{id, title, ancestors, root, listed}], complete, repeated, unread?}`, every document of the trees once with the labels of the folders above it from the root title down (the same ancestors the mind-map meta gives), `root` its root's id, `listed: false` for an empty folder; the original is the first listing page; see below |
 | `agile:mindmap:<document id>` | three artifacts: `original` (the answer as received), `content` (the inner KityMinder JSON, decoded once more, `application/json`) and `meta` (`{id, title, ancestors, root: {id, title}}`: the labels of the folders above the document from the root down), found in the trees of the configured roots (`settings.roots`), read as nested reads the Hub caches; a document in none of them refreshes the cached trees once. A document no read tree places while a configured root was not read is marked incomplete (`complete: false`, a note naming the roots): its title and folders are unknown, not absent |
 | `agile:search:<terms joined by +>[+!<document id>]` | the documents of the configured roots whose titles contain the most terms (the best five) with an outline of the best three: a hint for similar test lists (the workflow binds it with role hint, never a ground for product behaviour). A part written with a raw `!` names a document to leave out (the workflows exclude the reviewed document, which matches its own title's terms); an encoded `%21` stays a term. Roots that were not read make the search incomplete and are listed in `content.unread` |
 
@@ -28,15 +29,19 @@ is configured (see Needs).
 
 - **Requests.** One subtree request per configured root (`subtree-<k>`, k the root's place in `settings.roots`) and the
   listing pages that name the roots (`page-<n>`). Round 1 asks for the first listing page and the first three subtrees;
-  later rounds for the subtrees left and, while a configured root has no title yet, the further pages the listing's total
-  announces (at most 10). **At most 4 requests per round** (`ROOTS_IN_FLIGHT`): the connectors send the requests of a
+  later rounds for the subtrees left and, while a configured root has no title yet (neither its own node in the subtree
+  nor a listing page names it), the further pages the listing's total announces, up to `ROOTS_PAGES` (50, the same cap as
+  one root's tree read). The five rounds stop earlier: about 17 pages when round 1 also sent subtrees, which still covers
+  a root listed at position 120. **At most 4 requests per round** (`ROOTS_IN_FLIGHT`): the connectors send the requests of a
   round together (within the resource's own `concurrency`) and the next round only after them, so never more than 4 are
   in flight, whatever the resource allows (tested against a slow stub with a resource limit of 16). Ten roots and ten
   pages fit the connectors' five rounds; the read declares no other limits than the profile format offers (route timeouts
   and byte caps, the read's `max_requests` of 51).
 - **Original and content.** The first listing page is the original (a read without the listing fails: no root title
   could be known). The content lists each document once (a document filed in two folders at its first place, in tree
-  order; at most 50,000 documents). Ids are listed as the tree gives them; a reader decides which it can read.
+  order; at most 50,000 documents). Folder `cases` lists are cumulative, so a document belongs to the deepest folder that
+  lists it. A leaf no folder lists is an empty folder (`listed: false`) and is not a document a consumer should read.
+  Ids are listed as the tree gives them; a reader decides which it can read.
 - **Complete** is false (and the read's coverage incomplete, with a note) when a configured root was not read (its
   subtree failed, or it is beyond the first 10: `unread`), a root's title is not on the listing pages read, no root is
   configured, or the document limit cut the list. A consumer that needs every root (the product pack's sync) refuses an
