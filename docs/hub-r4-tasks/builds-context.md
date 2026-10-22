@@ -10,6 +10,16 @@
 - 验证：`npx tsc --noEmit`；`node tools/gen-contracts.ts --check`；`node --test --test-concurrency=2 "hub/runs/**/*.test.ts" "packs/workflow/case-location/**/*.test.ts" "contracts/**/*.test.ts"`。
 - 复核重点（自己做完再对照一遍）：Is the builds list in the context exactly the knowledge base builds of the bound product (both name families, an alias carries its base, sorted deterministically), frozen with the run record so that an evaluation after a restart sees the same list, absent (not empty-looking) for workflows that did not ask for it? Is the case-location check correct on hand-built cases: the located version line gives exactly the builds of that line of both name families, an alias is shown with the build it is based on, a written build name that the knowledge base does not know or that belongs to another line is said so, an unknown line or a line without builds is an unknown outcome and never a failure or a pass, and the outcome does not depend on the order of the builds? Do existing tests and the real registry publish check still pass, and is the pack version bumped and re-signed?
 
+## 第二件事：空的条目集是合法的答案（同一个分支，先做这一件）
+
+回归范围、维护巡检这类只产生事实的生产运行，“没有任何条目”是正确的结果（两个构建之间没有变更、没有要维护的用例），不是拒收。模型元素 W01 R[3]：整批不受理只用于源结构本身投影不出条目（找不到声明的工作表或表头），以及作为生产输入的源编号不唯一；投影函数成功返回、条目集恰好为空，不在其中。现在引擎在 `start_run` 时把空条目集当拒绝（在 `hub/runs/engine` 里找“投影没有给出任何条目”一类的检查），回归范围和维护巡检两个包因此只能在 README 里写明“空范围会被引擎拒绝”。
+
+要做的：
+1. 投影函数成功返回、条目集为空时，运行照样创建。生产运行存下的验证结果所有分区为空，`coverage` 为 `complete: true, examined: 0, total: 0`，运行级的要求项照常评估；`start_run` 的回答文字说“没有条目”，并带上投影函数留下的说明（warnings、note）。非生产运行（要模型提交的）条目集为空时 `start_run` 同样成功，回答里写明没有可评审的条目。
+2. 投影函数自己返回的失败（例如用例评审的“没有用例”）仍然拒绝，不受影响；源结构投影不出条目、生产输入编号不唯一的拒收照旧。
+3. 读 W01、V05 和 `hub/runs/engine` 里现有的测试：凡断言“空条目被拒”的，改成新规则并在提交说明里列出；补测试：成功返回空列表的投影、空的生产运行（存下的结果、分区、覆盖、回答文字、`get_nodes` 按引用读）、投影失败仍拒绝。
+4. 做完后，把 `hub-6b-grok` 分支合并进这个分支做一次检查（`git merge`，不改它们的包）：回归范围和维护巡检在空范围、没有维护项时给出存下的结果。它们 README 与测试里“引擎拒绝空条目”的几处，在回报里列出，由包的作者改。
+
 ## 规格
 
 PACKAGE builds-context - capability 3 (case location) needs the build candidates of the located version line, "both name families, aliases resolved" (brief section 6a item 3, model element K01 R[10]); today packs/workflow/case-location records build_candidates as unchecked because checks cannot see the builds the knowledge base knows. Read packs/workflow/case-location/README.md (decisions and "Needs from other packages"), requirements.json, workflow.json, checks.json and its functions first, then hub/ports.ts (KnowledgePort.builds, resolveBuild), contracts/src/product.ts (BuildInfo, KnownBuild: family, line, base, platform, built_at, released_at), contracts/src/pack.ts (RunContext, the workflow declaration), contracts/src/run.ts (RunRecord, groups is the model to follow), hub/runs/engine/start.ts (where the context is built and frozen) and evaluate.ts (runContextOf).
