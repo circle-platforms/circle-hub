@@ -42,6 +42,25 @@ interface ParsedCandidate {
   raw: string;
 }
 
+/** How many candidates Hub lists in full; mirrors MAX_LISTED in packs/workflow/case-location/functions/candidates.ts. */
+export const MAX_LISTED = 12;
+
+const compareText = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+
+/** Sorts gold candidates identically to Hub: built time descending, then by name; null/missing built time last. */
+export function orderGoldCandidates(candidates: BuildCandidateGold[]): BuildCandidateGold[] {
+  return [...candidates].sort((a, b) => {
+    const aHas = typeof a.built === 'string' && a.built.length > 0;
+    const bHas = typeof b.built === 'string' && b.built.length > 0;
+    if (aHas !== bHas) return aHas ? -1 : 1;
+    if (aHas && bHas) {
+      const byTime = (b.built ?? '').localeCompare(a.built ?? '');
+      if (byTime !== 0) return byTime;
+    }
+    return compareText(a.name, b.name);
+  });
+}
+
 /** Parses candidate builds and alias indications from the candidate section of the text. */
 function parseReportedCandidates(text: string): ParsedCandidate[] {
   const at = text.search(/构建候选|候选构建/);
@@ -51,7 +70,7 @@ function parseReportedCandidates(text: string): ParsedCandidate[] {
   const section = endMatch ? after.slice(0, endMatch.index) : after;
 
   // One candidate per sentence: 名（族，基于 基础构建）制作于 …，已发布 …；分隔符是候选之间的“；”。
-  const parts = section.split(/[、,\n]|(?<=\d)[；;](?=(?:Rel|Beta)_)/u);
+  const parts = section.split(/[、,\n]|[；;](?=(?:Rel|Beta)_|另有)/u);
   const candidates: ParsedCandidate[] = [];
   for (const part of parts) {
     const nameMatch = /(?:Rel|Beta)_[A-Za-z0-9_.\-]+/.exec(part);
@@ -96,24 +115,42 @@ export default function scenario(gold: LocationGold): Scenario {
           : (gold.buildCandidates.written ?? gold.writtenBuilds ?? []);
 
         const reported = parseReportedCandidates(text);
-        const goldNames = new Set(goldCandidates.map((c) => c.name));
+        const orderedGold = orderGoldCandidates(goldCandidates);
+        const expectedListed = orderedGold.slice(0, MAX_LISTED);
+        const expectedNames = new Set(expectedListed.map((c) => c.name));
         const reportedNames = new Set(reported.map((c) => c.name));
 
-        const missing = [...goldNames].filter((n) => !reportedNames.has(n));
-        const extra = [...reportedNames].filter((n) => !goldNames.has(n));
+        const missing = [...expectedNames].filter((n) => !reportedNames.has(n));
+        const extra = [...reportedNames].filter((n) => !expectedNames.has(n));
 
         checks.push({
           area,
           name: '构建候选：Hub 报出的候选构建名集合与独立依据一致',
-          expected: `共 ${goldNames.size} 个（${[...goldNames].sort().join('、')}）`,
+          expected: `共 ${expectedNames.size} 个（${[...expectedNames].sort().join('、')}）`,
           actual: missing.length === 0 && extra.length === 0
             ? `共 ${reportedNames.size} 个，集合一致`
             : `${missing.length > 0 ? `缺 ${missing.length} 个（${missing.join('、')}）` : ''}${missing.length > 0 && extra.length > 0 ? '，' : ''}${extra.length > 0 ? `多 ${extra.length} 个（${extra.join('、')}）` : ''}`,
           ok: missing.length === 0 && extra.length === 0,
         });
 
-        // Aliases must indicate their base build
-        for (const alias of goldCandidates.filter((c) => c.name !== c.base)) {
+        // Assertion on "另有 N 个": N must equal goldCandidates.length - MAX_LISTED when > 0, otherwise no "另有"
+        const expectedMore = Math.max(0, goldCandidates.length - MAX_LISTED);
+        const moreMatch = /另有\s*(\d+)\s*个/.exec(text);
+        const reportedMore = moreMatch ? Number(moreMatch[1]) : null;
+        const moreOk = expectedMore > 0 ? reportedMore === expectedMore : reportedMore === null;
+
+        checks.push({
+          area,
+          name: '构建候选：超出上限的候选构建计数与独立依据一致',
+          expected: expectedMore > 0 ? `另有 ${expectedMore} 个` : '没有“另有”计数',
+          actual: reportedMore !== null
+            ? `另有 ${reportedMore} 个`
+            : (expectedMore > 0 ? '未报告“另有”计数' : '没有“另有”计数'),
+          ok: moreOk,
+        });
+
+        // Aliases must indicate their base build (checked only for listed candidates)
+        for (const alias of expectedListed.filter((c) => c.name !== c.base)) {
           const item = reported.find((r) => r.name === alias.name);
           const aliasOk = item !== undefined && (item.base === alias.base || item.raw.includes(alias.base));
           checks.push({
@@ -125,20 +162,23 @@ export default function scenario(gold: LocationGold): Scenario {
           });
         }
 
-        // The built time and the based-on base of every candidate the gold carries them for
-        for (const gold of goldCandidates) {
+        // The built time and the based-on base of every listed candidate the gold carries them for
+        for (const gold of expectedListed) {
           if (gold.built === undefined && gold.base === undefined) continue;
           const item = reported.find((r) => r.name === gold.name);
           const expected: string[] = [];
           const actual: string[] = [];
           let ok = item !== undefined;
           if (gold.built !== undefined) {
-            const want = gold.built === null ? '制作时间未知' : gold.built.replace('T', ' ').slice(0, 16);
             expected.push(`制作于 ${gold.built ?? '未知'}`);
             const got = item === undefined ? '' : item.built === null ? '制作时间未知' : item.built.replace('T', ' ').slice(0, 16);
             actual.push(got);
-            ok = ok && (item !== undefined && item.built === gold.built);
-            void want;
+            const timeMatch = item !== undefined && (
+              gold.built === null
+                ? item.built === null
+                : (item.built !== null && item.built.slice(0, 16) === gold.built.slice(0, 16))
+            );
+            ok = ok && timeMatch;
           }
           if (gold.base !== undefined && gold.base !== gold.name) {
             expected.push(`基于 ${gold.base}`);
