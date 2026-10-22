@@ -117,4 +117,29 @@ describe('the duplicate sets: exact identity against the Hub’s flagged set', (
     const comparison = computeComparison(docGold, submission, resultWith([supportClaim], [dupClaim('形式不同')]));
     assert.equal(comparison.duplicates.equal, true);
   });
+
+  test('catalog-matched gold with group labels: head overlap ignores group labels and reports unrecognized command lines', () => {
+    const catalogDocGold = {
+      document: '24112',
+      defects: ['160003'],
+      cases: [
+        {
+          id: 'case-1',
+          title: 'widget health interval pool1 5',
+          commands: [{ head: 'widget health interval', parameters: ['pool1', '5'] }],
+          unrecognizedCommands: ['function', 'stress'],
+        },
+      ],
+      unrecognizedCommands: ['function', 'stress'],
+    };
+    const submission = submissionOf(draft('配置健康检查间隔', 'widget health interval pool1 5'));
+    const comparison = computeComparison(catalogDocGold, submission, resultWith([supportClaim]));
+    const h = comparison.headOverlap;
+    assert.deepEqual([h.draftHeads, h.docHeads, h.shared], [1, 1, 1]);
+    assert.equal(h.draftRatio, 1);
+    assert.equal(h.docRatio, 1);
+    assert.deepEqual(h.unrecognizedInDoc, ['function', 'stress']);
+    const text = renderComparison(comparison);
+    assert.match(text, /已有文档未识别的命令行：function、stress/);
+  });
 });

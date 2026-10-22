@@ -130,4 +130,86 @@ describe('regressionDocGold', () => {
       /没有带资源标签的用例节点/,
     );
   });
+
+  const syntheticXml = `<?xml version="1.0" encoding="ISO-8859-1"?>
+<commands>
+  <scope type="global">
+    <menu name="slb">
+      <menu name="proxyip">
+        <item name="global">
+          <arguments>
+            <arg name="" type="IPADDR"></arg>
+            <arg name="" type="U16"></arg>
+          </arguments>
+        </item>
+      </menu>
+      <menu name="pool">
+        <item name="add">
+          <arguments>
+            <arg name="" type="STRING"></arg>
+            <arg name="" type="U16"></arg>
+          </arguments>
+        </item>
+      </menu>
+    </menu>
+    <menu name="widget">
+      <menu name="health">
+        <item name="interval">
+          <arguments>
+            <arg name="" type="STRING"></arg>
+            <arg name="" type="U16"></arg>
+          </arguments>
+        </item>
+      </menu>
+    </menu>
+  </scope>
+</commands>`;
+
+  test('Chinese text glued directly to command: longest match finds full command head', () => {
+    const gluedMap = {
+      root: {
+        data: { text: '缺陷160002 回归', id: 'root' },
+        children: [
+          node('061：10.6.4', {
+            children: [
+              node('配置slb proxyip global 192.0.2.1 80', { id: 'case-glued-1', resource: ['功能'] }),
+            ],
+          }),
+        ],
+      },
+    };
+    const gold = regressionDocGold('24111', gluedMap, { commandTreeXml: syntheticXml });
+    assert.deepEqual(gold.defects, ['160002']);
+    assert.equal(gold.cases.length, 1);
+    assert.deepEqual(gold.cases[0].commands, [
+      { head: 'slb proxyip global', parameters: ['192.0.2.1', '80'] },
+    ]);
+  });
+
+  test('group labels like function and stress are not mistaken for command heads and listed as unrecognized', () => {
+    const groupedMap = {
+      root: {
+        data: { text: '缺陷160003 回归', id: 'root' },
+        children: [
+          node('function', {
+            children: [
+              node('stress', {
+                children: [
+                  node('widget health interval pool1 5', { id: 'case-grouped-1', resource: ['功能'] }),
+                ],
+              }),
+            ],
+          }),
+        ],
+      },
+    };
+    const gold = regressionDocGold('24112', groupedMap, { commandTreeXml: syntheticXml });
+    assert.deepEqual(gold.defects, ['160003']);
+    assert.equal(gold.cases.length, 1);
+    assert.deepEqual(gold.cases[0].commands, [
+      { head: 'widget health interval', parameters: ['pool1', '5'] },
+    ]);
+    assert.deepEqual(gold.cases[0].unrecognizedCommands, ['function', 'stress']);
+    assert.deepEqual(gold.unrecognizedCommands, ['function', 'stress']);
+  });
 });

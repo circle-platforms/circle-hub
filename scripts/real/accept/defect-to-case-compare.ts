@@ -32,6 +32,8 @@ export interface HeadOverlap {
   docRatio: number | null;
   missingInDoc: string[];
   missingInDrafts: string[];
+  /** Unrecognized command lines from the regression document gold. */
+  unrecognizedInDoc?: string[];
 }
 
 export interface QuotesReport {
@@ -101,6 +103,12 @@ function overlapOf(drafts: readonly DraftCase[], gold: unknown): HeadOverlap {
   const draftHeads = headSetOf(draftCommands);
   const docHeads = headSetOf(docCommands);
   const shared = [...draftHeads].filter((h) => docHeads.has(h));
+  const unrec = isRecord(gold) && Array.isArray(gold.unrecognizedCommands)
+    ? (gold.unrecognizedCommands as string[])
+    : isRecord(gold) && Array.isArray(gold.documents)
+      ? (gold.documents as RegressionDocGold[]).flatMap((d) => d.unrecognizedCommands ?? [])
+      : [];
+  const unrecognizedInDoc = [...new Set(unrec)].sort();
   return {
     draftHeads: draftHeads.size,
     docHeads: docHeads.size,
@@ -109,6 +117,7 @@ function overlapOf(drafts: readonly DraftCase[], gold: unknown): HeadOverlap {
     docRatio: docHeads.size === 0 ? null : shared.length / docHeads.size,
     missingInDoc: [...draftHeads].filter((h) => !docHeads.has(h)).sort(),
     missingInDrafts: [...docHeads].filter((h) => !draftHeads.has(h)).sort(),
+    ...(unrecognizedInDoc.length > 0 ? { unrecognizedInDoc } : {}),
   };
 }
 
@@ -181,6 +190,9 @@ export function renderComparison(comparison: Comparison): string {
   lines.push(`   草稿的命令头里已有文档也用到的比例：${percent(h.draftRatio)}；已有文档的命令头里草稿也用到的比例：${percent(h.docRatio)}`);
   if (h.missingInDoc.length > 0) lines.push(`   草稿有、已有文档没有：${h.missingInDoc.join('、')}`);
   if (h.missingInDrafts.length > 0) lines.push(`   已有文档有、草稿没有：${h.missingInDrafts.join('、')}`);
+  if (h.unrecognizedInDoc && h.unrecognizedInDoc.length > 0) {
+    lines.push(`   已有文档未识别的命令行：${h.unrecognizedInDoc.join('、')}`);
+  }
   lines.push('');
   lines.push(`2. 期望结果的引文（读 Hub 的判定，不重做）：grounded 主张 ${q.claims} 条，支持 ${q.support} 条`);
   lines.push(q.allVerbatim ? '   每条期望结果的引用都已被 Hub 判为逐字' : '   不是每条引用都被判为逐字：');
