@@ -3,7 +3,7 @@
 // case in the later build is uncovered: unknown, never a failure. The priority filter does not create uncovered paths.
 // Output order follows ids and paths, never the order of the view.
 
-import { CHANGE_LABEL, PACK, clip, isRecord, uniqueSorted } from './text.ts';
+import { CHANGE_LABEL, DEFINITION_CHANGE_LABEL, PACK, clip, isRecord, uniqueSorted } from './text.ts';
 import type { Cited, NormView } from './view.ts';
 
 export interface Parameters {
@@ -15,6 +15,10 @@ export interface Parameters {
 export interface Reason {
   path: string;
   change: 'added' | 'modified';
+  /** What happened to the command definition on the path, read from the definition entries of both sides. */
+  definition_change: 'added' | 'removed' | 'modified' | 'none';
+  /** One line for a person: 新增命令 / 删除命令 / 命令定义有变更 / 仅说明文字有变更. */
+  conclusion: string;
   before: Cited[];
   after: Cited[];
   case: { entry: string; reference: string };
@@ -129,6 +133,27 @@ function comparePath(a: PathNote, b: PathNote): number {
   return a.path < b.path ? -1 : a.path > b.path ? 1 : 0;
 }
 
+/**
+ * What happened to the command definition of a path, from the definition-kind entries of its two sides: none before
+ * and some after is added; some before and none after is removed; both with different digests is modified; equal
+ * definitions (only behaviour texts moved) or no definition on either side is none.
+ */
+function definitionChangeOf(before: Cited[], after: Cited[]): Reason['definition_change'] {
+  const beforeDefinitions = uniqueSorted(before.filter((row) => row.kind === 'definition').map((row) => row.entry));
+  const afterDefinitions = uniqueSorted(after.filter((row) => row.kind === 'definition').map((row) => row.entry));
+  if (beforeDefinitions.length === 0 && afterDefinitions.length > 0) return 'added';
+  if (beforeDefinitions.length > 0 && afterDefinitions.length === 0) return 'removed';
+  if (beforeDefinitions.length > 0 && afterDefinitions.length > 0) {
+    return beforeDefinitions.join('\u0000') === afterDefinitions.join('\u0000') ? 'none' : 'modified';
+  }
+  return 'none';
+}
+
+/** The person-readable line of one reason: what happened to the command, not to the path's entries. */
+function conclusionOf(change: Reason['definition_change']): string {
+  return DEFINITION_CHANGE_LABEL[change];
+}
+
 /** The cases in scope, the uncovered paths and the run-level note. */
 export function scopeOf(view: NormView, parameters: Parameters): ScopeResult {
   const warnings: Warning[] = [];
@@ -211,11 +236,16 @@ export function scopeOf(view: NormView, parameters: Parameters): ScopeResult {
       }
       const previous = acc.reasons.get(row.path);
       if (previous === undefined || digest < previous.case.entry) {
+        const before = cited(view, side.before, warnings, missing, row.path);
+        const after = cited(view, side.after, warnings, missing, row.path);
+        const definitionChange = definitionChangeOf(before, after);
         acc.reasons.set(row.path, {
           path: row.path,
           change: row.change,
-          before: cited(view, side.before, warnings, missing, row.path),
-          after: cited(view, side.after, warnings, missing, row.path),
+          definition_change: definitionChange,
+          conclusion: conclusionOf(definitionChange),
+          before,
+          after,
           case: { entry: digest, reference: entry.reference },
         });
       }
@@ -237,7 +267,7 @@ export function scopeOf(view: NormView, parameters: Parameters): ScopeResult {
     const reasons = [...acc.reasons.values()].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
     const first = reasons[0];
     const priority = acc.priority === null ? '未给出' : String(acc.priority);
-    const summary = clip(`优先级 ${priority}；文档 ${acc.document}；${reasons.length} 条命令有变更；${first.path} ${CHANGE_LABEL[first.change]}`, MAX_SUMMARY);
+    const summary = clip(`优先级 ${priority}；文档 ${acc.document}；${reasons.length} 条命令有变更；${first.path} ${conclusionOf(first.definition_change)}`, MAX_SUMMARY);
     return {
       id,
       label: clip(acc.title, MAX_LABEL),

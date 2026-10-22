@@ -66,7 +66,7 @@ describe('a production run of regression-scope', { skip }, () => {
     assert.ok(!run.items.some((item) => item.id === 'doc-3:n9' || item.id === 'doc-4:n1' || item.id === 'doc-8:n1' || item.id === 'doc-9:old'));
     const first = run.items[0];
     assert.equal(first.label, '查看部件状态');
-    assert.equal(first.summary, '优先级 1；文档 doc-1；2 条命令有变更；/commands/add 新增');
+    assert.equal(first.summary, '优先级 1；文档 doc-1；2 条命令有变更；/commands/add 新增命令');
     const reasons = first.fields.reasons as Array<{ path: string; change: string }>;
     assert.deepEqual(
       reasons.map((reason) => [reason.path, reason.change]),
