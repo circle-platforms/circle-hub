@@ -87,6 +87,7 @@ async function runSample(input: PublishCheckInput, check: CheckEntry, table: unk
       tier: check.tier,
       basis: check.basis,
       catalogEntries: check.function !== undefined && check.catalog !== undefined,
+      ...(check.reads !== undefined ? { reads: check.reads } : {}),
     },
     {
       table,
@@ -94,6 +95,7 @@ async function runSample(input: PublishCheckInput, check: CheckEntry, table: unk
       catalog,
       sources: sourcesFrom(sample.sources ?? {}),
       sourceTexts: sample.sources ?? {},
+      unreadSources: sample.unread_sources ?? [],
       context,
       packDir: input.packDir ?? undefined,
       sandbox: input.sandbox,
