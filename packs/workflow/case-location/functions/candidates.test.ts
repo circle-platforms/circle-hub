@@ -127,4 +127,36 @@ describe('candidatesOutcomes', () => {
     assert.equal(candidates.verdict, 'support');
     assert.equal((candidates.data as { candidates: unknown[] }).candidates.length, 51);
   });
+
+  it('the statement names every candidate: build, family, released with its date, an alias with the build it is based on', () => {
+    const outcomes = candidatesOutcomes(subjectOf([item('24011', '需求20931 证书链校验')]));
+    const [candidates] = outcomes;
+    assert.match(candidates.statement, /Rel_APV_10_6_1_60（APV，2026-09-20 已发布）/);
+    assert.match(candidates.statement, /Rel_NSAE_10_6_1_57（NSAE，依据 Rel_APV_10_6_1_57，2026-09-05 已发布）/);
+    assert.match(candidates.statement, /Rel_APV_10_6_1_57（APV，2026-09-02 已发布）/);
+    assert.match(candidates.statement, /Rel_APV_10_6_1_63（APV，未发布）/);
+    assert.match(candidates.statement, /按发布从新到旧/);
+  });
+
+  it('the statement writes at most the first 12 candidates and counts the rest', () => {
+    const many: ContextBuild[] = [];
+    for (let i = 0; i < 20; i++) many.push(build(`Rel_APV_10_6_1_${String(i).padStart(2, '0')}`, 'APV', '10.6.1', { released_at: `2026-09-${String(1 + i).padStart(2, '0')}T00:00:00.000Z` }));
+    const outcomes = candidatesOutcomes(subjectOf([item('24012', 'x')], many));
+    const [candidates] = outcomes;
+    assert.equal((candidates.data as { candidates: unknown[] }).candidates.length, 20);
+    assert.match(candidates.statement, /构建候选 20 个/);
+    assert.match(candidates.statement, /Rel_APV_10_6_1_08（APV，2026-09-09 已发布）/, 'the 12th candidate (newest first) is written out');
+    assert.ok(!candidates.statement.includes('Rel_APV_10_6_1_07（'), 'the 13th candidate is not written out');
+    assert.match(candidates.statement, /另有 8 个/);
+  });
+
+  it('every classification of a written build name carries the name in its statement', () => {
+    // Rel_APV_10_6_1_58 is not a build of the line; only the alias Rel_NSAE_10_6_1_58 is based on it.
+    const withBaseOnly = [...BUILDS, build('Rel_NSAE_10_6_1_58', 'NSAE', '10.6.1', { base: 'Rel_APV_10_6_1_58', released_at: '2026-09-06T00:00:00.000Z' })];
+    const outcomes = candidatesOutcomes(subjectOf([item('24013', '回归 Rel_APV_10_6_1_58、Rel_APV_10_5_1_101 与 Rel_APV_10_9_9_9')], withBaseOnly));
+    const written = outcomes.filter((o) => (o.data as { kind?: string } | undefined)?.kind === 'written_build');
+    assert.equal(written.length, 3);
+    for (const outcome of written) assert.match(outcome.statement, /Rel_APV_10_(6_1_58|5_1_101|9_9_9)/);
+    assert.match(written[0].statement, /写出的构建名 Rel_APV_10_6_1_58 是候选 Rel_NSAE_10_6_1_58 所依据的构建/);
+  });
 });

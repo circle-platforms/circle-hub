@@ -60,9 +60,11 @@ contradicts itself), with what is known in `data` and the reason leading the sta
 requirement `build_candidates` is a real check (`candidates`, advisory): the candidates are the builds the run's frozen
 context lists for the located version line (both name families, an alias shown with its base, released first by date
 descending, then name); no located line, or a line without any known build, is an unknown (missing input), never a pass.
-Each written build name is classified against the knowledge base's builds: known (a candidate, or the base an alias is based
-on) is a support; known but of another line is an advisory violation (`build_other_line`, naming the line); not known is an
-unknown (the knowledge base lists only the builds of the build site), never a violation.
+The support statement writes the candidates out, one by one — build name, name family, released or not with its date, an
+alias with the build it is based on — at most the first 12, the rest counted as `另有 N 个`. Each written build name is
+classified against the knowledge base's builds and its statement carries the name: known (a candidate, or the base an
+alias is based on) is a support; known but of another line is an advisory violation (`build_other_line`, naming the line);
+not known is an unknown (the knowledge base lists only the builds of the build site), never a violation.
 
 ## The scheme (decisions)
 

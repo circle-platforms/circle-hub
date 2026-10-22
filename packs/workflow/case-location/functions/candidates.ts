@@ -42,6 +42,19 @@ function orderCandidates(candidates: Candidate[]): Candidate[] {
   });
 }
 
+/** The date part of an ISO time stamp, or the raw string when it is not one. */
+const dateOf = (releasedAt: string): string => (/^\d{4}-\d{2}-\d{2}/.test(releasedAt) ? releasedAt.slice(0, 10) : releasedAt);
+
+/** One candidate as a person reads it: build, family, alias base, released state with its date. */
+function candidateText(candidate: Candidate): string {
+  const base = candidate.alias ? `依据 ${candidate.base}，` : '';
+  const released = candidate.released ? `${dateOf(candidate.released_at ?? '')} 已发布` : '未发布';
+  return `${candidate.name}（${candidate.family}，${base}${released}）`;
+}
+
+/** How many candidates the statement writes out; the rest are counted, not listed. */
+const MAX_LISTED = 12;
+
 /** The candidates outcome of one item: support with the list, or unknown with the reason (never a pass without a list). */
 function candidatesOutcome(item: string, grounds: string[], pointer: string, line: string | null, builds: ContextBuild[]): CheckOutcome {
   if (line === null) {
@@ -70,9 +83,12 @@ function candidatesOutcome(item: string, grounds: string[], pointer: string, lin
     };
   }
   const aliases = ofLine.filter((c) => c.alias).length;
+  const listed = ofLine.slice(0, MAX_LISTED).map(candidateText);
+  const more = ofLine.length - listed.length;
+  const statement = `版本线 ${line} 的构建候选 ${ofLine.length} 个${aliases > 0 ? `，其中别名 ${aliases} 个（别名解析到它所依据的构建）` : ''}，按发布从新到旧：${listed.join('；')}${more > 0 ? `；另有 ${more} 个` : ''}`;
   return {
     verdict: 'support',
-    statement: `版本线 ${line} 的构建候选 ${ofLine.length} 个${aliases > 0 ? `，其中别名 ${aliases} 个（别名解析到它所依据的构建）` : ''}，按发布从新到旧`,
+    statement,
     grounds,
     tier: TIER,
     item,
