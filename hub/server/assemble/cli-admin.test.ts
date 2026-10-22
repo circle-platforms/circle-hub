@@ -9,7 +9,7 @@
 // temporary directory. Every line printed, the assemblies' log lines included, is scanned for secrets.
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, test } from 'node:test';
@@ -185,6 +185,10 @@ async function countRecords(kit: RecordsKit, kind: RecordKind): Promise<number> 
     cursor = page.next;
   } while (cursor !== null);
   return count;
+}
+
+async function countFiles(dir: string): Promise<number> {
+  return (await readdir(dir)).length;
 }
 
 describe('init-admin and the operator token', () => {
@@ -653,6 +657,101 @@ describe('source', () => {
     const copied = await admin.run(['source', 'accept', sha, '--note', `口令是 ${secret}`]);
     assert.equal(copied.code, 1);
     assert.ok(!copied.text.includes(secret), copied.text);
+  });
+});
+
+describe('original', () => {
+  const one = Buffer.from('# 发布说明（合成）\n\n修复了 ALM-1。\n', 'utf8');
+  const two = Buffer.from('<cli><tree/></cli>\n', 'utf8');
+  const shaOne = createHash('sha256').update(one).digest('hex');
+  const shaTwo = createHash('sha256').update(two).digest('hex');
+  const readOrigin = (object: string) => ({ read: { object, resource: 'agile', action: null } });
+
+  async function withOriginals(fn: (admin: Admin) => Promise<void>): Promise<void> {
+    const admin = await setup();
+    await withKit(admin, async (kit) => {
+      await kit.artifacts.ingest({ bytes: one, mediaType: 'text/markdown', origin: readOrigin('agile:page:release-100@1'), author: { user: null }, provenanceType: 'observed', visibility: { readers: [], admins: true, packs: [], shareable: false }, name: 'release-100.md' });
+      await kit.artifacts.ingest({ bytes: two, mediaType: 'text/xml', origin: readOrigin('build:file:tree-100.xml@1'), author: { user: null }, provenanceType: 'observed', visibility: { readers: [], admins: true, packs: [], shareable: false }, name: 'tree-100.xml' });
+    });
+    await fn(admin);
+  }
+
+  test('lists read originals with external id, digest, size and read time, filtered by prefix, without content', async () => {
+    await withOriginals(async (admin) => {
+      const all = await expectOk(admin, ['original', 'list']);
+      assert.ok(all.out.some((line) => line.startsWith(`agile:page:release-100@1\t${shaOne}\t`) && line.includes(`${one.length} 字节`)), all.text);
+      assert.ok(all.out.some((line) => line.startsWith(`build:file:tree-100.xml@1\t${shaTwo}\t`) && line.includes(`${two.length} 字节`)), all.text);
+      const filtered = await expectOk(admin, ['original', 'list', '--external', 'agile:']);
+      assert.equal(filtered.out.length, 1);
+      assert.ok(filtered.out[0].startsWith(`agile:page:release-100@1\t${shaOne}`), filtered.text);
+      const limited = await expectOk(admin, ['original', 'list', '--limit', '1']);
+      assert.equal(limited.out.length, 1);
+      for (const line of [...all.out, ...filtered.out]) {
+        assert.ok(!line.includes('修复了'), 'the content never reaches the screen');
+        assert.ok(!line.includes('<tree'), 'the content never reaches the screen');
+      }
+    });
+  });
+
+  test('exports a stored original to a new file with mode 0600, printing only size and digest', async () => {
+    await withOriginals(async (admin) => {
+      const dir = await mkdtemp(join(tmpdir(), 'circle-hub-original-'));
+      try {
+        const target = join(dir, 'release-100.md');
+        const exported = await expectOk(admin, ['original', 'export', shaOne, '--out', target]);
+        assert.ok(exported.out.some((line) => line.includes(`${one.length} 字节`) && line.includes(shaOne)), exported.text);
+        const written = await readFile(target);
+        assert.deepEqual(written, one, 'the file holds the exact bytes');
+        const mode = (await stat(target)).mode & 0o777;
+        assert.equal(mode, 0o600, 'the file is private to its owner');
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    });
+  });
+
+  test('refuses an unknown digest, an existing file, a path that cannot be written and a bad digest shape', async () => {
+    await withOriginals(async (admin) => {
+      const dir = await mkdtemp(join(tmpdir(), 'circle-hub-original-'));
+      try {
+        const absent = await admin.run(['original', 'export', 'a'.repeat(64), '--out', join(dir, 'a')]);
+        assert.equal(absent.code, 1);
+        assert.match(absent.text, /Hub 没有保存这份原件/);
+        assert.ok(!absent.text.includes('发布说明'), absent.text);
+        const exists = join(dir, 'release-100.md');
+        await writeFile(exists, '旧内容', { mode: 0o600 });
+        const refused = await admin.run(['original', 'export', shaOne, '--out', exists]);
+        assert.equal(refused.code, 1);
+        assert.match(refused.text, /已存在/);
+        assert.equal(await readFile(exists, 'utf8'), '旧内容', 'an existing file is never overwritten');
+        const unwritable = await admin.run(['original', 'export', shaOne, '--out', join(dir, 'no-such-dir', 'x')]);
+        assert.equal(unwritable.code, 1);
+        assert.match(unwritable.text, /写不了|无法写|不能写/);
+        assert.equal((await admin.run(['original', 'export', 'xyz', '--out', join(dir, 'b')])).code, 2);
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    });
+  });
+
+  test('a user who is not an administrator gets the same answer as for a nonexistent original', async () => {
+    await withOriginals(async (admin) => {
+      const userToken = await userWithToken(admin, '乙');
+      const listed = await admin.run(['original', 'list'], { [OPERATOR_TOKEN_VARIABLE]: userToken });
+      assert.equal(listed.code, 1);
+      assert.match(listed.text, /只有管理员/);
+      const dir = await mkdtemp(join(tmpdir(), 'circle-hub-original-'));
+      try {
+        const exported = await admin.run(['original', 'export', shaOne, '--out', join(dir, 'x')], { [OPERATOR_TOKEN_VARIABLE]: userToken });
+        assert.equal(exported.code, 1);
+        assert.ok(!exported.text.includes(shaOne), exported.text);
+        assert.ok(!exported.text.includes('agile:page:release-100'), exported.text);
+        assert.match(exported.text, /Hub 没有保存这份原件|只有管理员/, 'the refusal does not reveal that the original exists');
+        assert.equal(await countFiles(dir), 0, 'nothing is written');
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    });
   });
 });
 
