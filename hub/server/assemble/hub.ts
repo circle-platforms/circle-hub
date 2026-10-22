@@ -17,7 +17,8 @@ import {
 import { createKnowledge, createKnowledgeReader, routeKnowledgeViews, type Knowledge } from '../../knowledge/api.ts';
 import type { ExternalReaderPort, PackCatalogPort, PacksPort, ResourceCatalogPort, WorkflowStore } from '../../ports.ts';
 import type { Principal, RecordsKit } from '../../records/api.ts';
-import type { LeaseService } from '../../leases/service.ts';
+import { LeaseService } from '../../leases/service.ts';
+import { createPool, Database } from '../../records/db.ts';
 import { createDefaultRegistry, type ParserRegistry } from '../../refs/api.ts';
 import { osIsolationAvailable, type SandboxOptions } from '../../rules/api.ts';
 import {
@@ -63,9 +64,9 @@ export interface AssemblyOptions {
   knowledgeAdmin?: Principal | null;
   /** Window of start_run's client keys (default the engine's, 24 hours). */
   clientKeyWindowMs?: number;
-  /** The lease service for workflows that declare leases (D04 R[0]); without it those workflows refuse to start. The
-   * caller builds it over the same database as the records kit (its clock defaults to the database clock). */
-  leases?: LeaseService;
+  /** The lease service for workflows that declare leases (D04 R[0]). Default: one built over the same database as the
+   * records kit (its clock follows this assembly's `now`); null for a read-only assembly that wants no pool of its own. */
+  leases?: LeaseService | null;
 }
 
 /** Everything the assembly built: the server's dependencies and the services the administrator commands use. */
@@ -87,6 +88,8 @@ export interface AssembledHub {
   knowledge: Knowledge;
   /** The run engine; the connectors' and the registry's failures while it serves a call reach that call's note. */
   runs: RunsEngine;
+  /** The lease service the engine uses (built over the same database unless the caller brought one). */
+  leases: LeaseService;
   notes: CallNotes;
   /** What the operator should know about this assembly, in Chinese (no sandbox-exec, ...). */
   notices: string[];
@@ -154,6 +157,10 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
   // from the knowledge service, every other id through the connectors. It writes each call's reasons to the call's admin
   // note itself (CallContext.adminNote); the connectors and the registry report through the call notes.
   const runsExternal = routeKnowledgeViews(createKnowledgeReader(knowledge), external);
+  // The lease service: the caller's own (tests may inject a clock), or one built over the same database — so `serve`
+  // and the test hub alike give lease-declaring workflows a service (C3); a CLI command's assembly may pass null to
+  // keep a read-only command from opening a pool it does not need.
+  const leases = options.leases === null ? undefined : options.leases ?? new LeaseService(new Database(createPool(config.database, 2)), now === undefined ? {} : { now: async () => now() });
   const engine = createRunsService({
     records,
     workflows,
@@ -164,7 +171,7 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
     sandbox,
     ...(now === undefined ? {} : { now }),
     ...(options.clientKeyWindowMs === undefined ? {} : { clientKeyWindowMs: options.clientKeyWindowMs }),
-    ...(options.leases === undefined ? {} : { leases: options.leases }),
+    ...(leases !== undefined ? { leases } : {}),
     adminLog: notes.engine,
   });
   const runs = withCallNotes(engine, notes);
@@ -182,7 +189,7 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
     ...(now === undefined ? {} : { now }),
     products: packs,
   };
-  return { deps, config, records, parsers, registry, packs, workflows, catalog, connectors, external, runsExternal, resources, knowledge, runs, notes, notices };
+  return { deps, config, records, parsers, registry, packs, workflows, catalog, connectors, external, runsExternal, resources, knowledge, runs, leases: leases as LeaseService, notes, notices };
 }
 
 /**

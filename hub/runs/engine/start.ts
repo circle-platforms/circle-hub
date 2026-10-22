@@ -94,11 +94,6 @@ export async function contextBuilds(ctx: EngineContext, workflow: LoadedWorkflow
     .sort((a, b) => compareText(a.line, b.line) || compareText(a.built_at ?? '', b.built_at ?? '') || compareText(a.name, b.name));
 }
 
-/** Whether the workflow asked for the leases context (its prefix decides what the frozen view holds). */
-async function askedLeases(ctx: EngineContext, workflow: LoadedWorkflow): Promise<boolean> {
-  return (workflow.workflow.context ?? []).includes('leases') && ctx.deps.leases !== undefined;
-}
-
 /** The frozen lease rows of the workflow's declared prefix (W06, D04 R[0]), for the run context; null when it did not ask. */
 export async function contextLeases(ctx: EngineContext, workflow: LoadedWorkflow): Promise<Array<{ key: string; until: string }> | null> {
   if (!(workflow.workflow.context ?? []).includes('leases')) return null;
@@ -129,8 +124,16 @@ export async function grantLeases(
         protocolError('SUBMISSION_SCHEMA_VIOLATION', `任务包 ${workflow.pack.id} 的投影要取得租约，但这个工作流没有声明 leases`, { path: `/inputs/${workflow.workflow.subject}`, fix: '联系任务包作者：要租约的工作流在 workflow.json 里声明 leases' }),
       ]);
     }
-    const outcome = await ctx.deps.leases.acquire({ keys: request.keys, ttlSeconds: request.ttl_seconds, holder: { user: user.id, run: runId }, prefix, maxTtlSeconds: cap });
+    let outcome: Awaited<ReturnType<typeof ctx.deps.leases.acquire>>;
+    try {
+      outcome = await ctx.deps.leases.acquire({ keys: request.keys, ttlSeconds: request.ttl_seconds, holder: { user: user.id, run: runId }, prefix, maxTtlSeconds: cap });
+    } catch (error) {
+      // A partial grant never leaks: the keys granted before the failing request are released again before the refusal.
+      await releaseGranted().catch(() => undefined);
+      throw error;
+    }
     if (!outcome.ok) {
+      await releaseGranted().catch(() => undefined);
       const when = 'earliestFree' in outcome && outcome.earliestFree !== undefined ? `，最早空闲时刻 ${outcome.earliestFree}` : '';
       const fix = outcome.code === 'LEASE_UNAVAILABLE' ? `等最早空闲时刻后再开始，或改用别的键${when}` : '缩短租约期限，或请任务包作者调高上限';
       throw new Refusal([{ code: outcome.code, message: `要取得的租约（${request.keys.join('、')}）没有拿到${outcome.code === 'LEASE_UNAVAILABLE' ? when : ''}`, fix }]);
@@ -138,6 +141,10 @@ export async function grantLeases(
     granted.push({ lease: outcome.lease, keys: outcome.keys, until: outcome.until });
   }
   return granted;
+  async function releaseGranted(): Promise<void> {
+    if (granted.length === 0) return;
+    await ctx.deps!.leases!.release({ keys: granted.flatMap((entry) => entry.keys), holder: { user: user.id, run: runId } });
+  }
 }
 
 const SPLIT_FIX = '把被判对象分块（每块分别开运行），按分块评审的做法逐块提交';
@@ -368,6 +375,10 @@ async function startFresh(
   // The projection runs before any group exists; the expected sources and the checks see the frozen groups. The builds of
   // the bound product are known from the target and frozen with the run, so they are the same at projection and evaluation.
   const builds = await contextBuilds(ctx, workflow, target.product?.product.id ?? null);
+  // The lease view is taken BEFORE the projection runs, so the projection sees other holders' rows (a projection that
+  // picks a free key reads real rows, none of them its own: `mine` is false for every row). The same view is frozen in
+  // the run record, so replaying the projection from the record's context asks for the same keys again.
+  const leaseRows = await contextLeases(ctx, workflow);
   const context: RunContext = {
     product: target.product?.product.id ?? null,
     names: target.product?.product.names ?? [],
@@ -377,18 +388,15 @@ async function startFresh(
     parameters,
     groups: [],
     ...(builds !== null ? { builds } : {}),
-    ...(await askedLeases(ctx, workflow) ? { leases: { now: startedAt, entries: [] } } : {}),
+    ...(leaseRows !== null ? { leases: { now: startedAt, entries: leaseRows.map((row) => ({ key: row.key, until: row.until, mine: false })) } } : {}),
   };
   const projection = await projectItems(ctx, user, workflow, bound, parameters, context, call.traceId);
   const expected = await bindExpected(ctx, user, workflow, bound, projection.projected, parameters, { ...context, groups: projection.groups }, runId, call.traceId);
   // The leases are granted after the projection asked for them and before anything is stored; every failure from here
   // on compensates by releasing what was granted (D04 R[0]: no lease outlives the run it was taken for).
   let grantedLeases: Array<{ lease: string; keys: string[]; until: string }> = [];
-  let leaseRows: Array<{ key: string; until: string }> | null = null;
   try {
     grantedLeases = await grantLeases(ctx, user, workflow, projection.leaseRequests, runId);
-    // The frozen view is taken after granting, so the run's own rows are in it (with `mine` rebuilt at evaluation).
-    leaseRows = await contextLeases(ctx, workflow);
 
   let items = projection.items;
   const packId = workflow.pack.id;

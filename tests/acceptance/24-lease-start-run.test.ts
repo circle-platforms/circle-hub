@@ -119,7 +119,8 @@ export default function project(_input: unknown): unknown {
     assert.equal(found.items.length, 1, 'the run record is stored');
     const body = found.items[0]!.body as { leases?: Array<{ keys: string[]; until: string }>; lease_context?: Array<{ key: string }> };
     assert.deepEqual(body.leases?.map((l) => l.keys), [['meadow/zone-1/target-acceptance']], 'the granted lease is in the record');
-    assert.ok(body.lease_context?.some((row) => row.key === 'meadow/zone-1/target-acceptance'), 'the frozen context holds the row');
+    // The frozen context is the pre-projection view (other holders only; the run's own row never sits in it).
+    assert.equal((body.lease_context ?? []).length, 0, 'the frozen context holds the pre-projection view, no row of its own');
     // The lease table holds the row for this run.
     const view = await leases.view('meadow/');
     assert.ok(view.entries.some((e) => e.key === 'meadow/zone-1/target-acceptance'));

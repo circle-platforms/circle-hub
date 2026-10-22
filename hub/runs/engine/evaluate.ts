@@ -164,13 +164,14 @@ export function runContextOf(run: RunRecord): RunContext {
   };
 }
 
-/** The frozen lease view of a run record: the moment and the rows with `mine` relative to the run's runner. */
+/** The lease view the checks see: the frozen pre-projection view (other holders) plus the run's own granted keys as
+ * `mine` (rebuilt from the record, so it survives a restart; the run's own rows never sat in the frozen view). */
 function contextLeasesOf(run: RunRecord): NonNullable<RunContext['leases']> {
-  const mine = new Set(run.leases?.flatMap((entry) => entry.keys) ?? []);
-  return {
-    now: run.started_at,
-    entries: (run.lease_context ?? []).map((entry) => ({ key: entry.key, until: entry.until, mine: mine.has(entry.key) })),
-  };
+  const granted = new Map((run.leases ?? []).flatMap((entry) => entry.keys.map((key) => [key, entry.until] as const)));
+  const entries = new Map<string, { key: string; until: string; mine: boolean }>();
+  for (const row of run.lease_context ?? []) entries.set(row.key, { key: row.key, until: row.until, mine: false });
+  for (const [key, until] of granted) entries.set(key, { key, until, mine: true });
+  return { now: run.started_at, entries: [...entries.values()].sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0)) };
 }
 
 /** rule@version of a check: the core interpreter, or the pack function check of this pack version. */

@@ -39,6 +39,17 @@ export default function project(input: unknown): unknown {
 }
 `;
 
+const leaseReadingProjection = `// Synthetic projection: echo the run context's lease rows into an item's fields.
+export default function project(input: unknown): unknown {
+  const raw = input as { context?: { leases?: { now: string; entries: Array<{ key: string; until: string; mine: boolean }> } | null } };
+  const rows = raw.context?.leases?.entries ?? [];
+  return {
+    items: [{ id: 'r1', label: '探针', location: { parser: 'kityminder@1', selector: 'n/docq7' }, fields: { rows } }],
+    warnings: [],
+    lease_requests: [{ keys: ['meadow/zone-2/target-1'], ttl_seconds: 300 }],
+  };
+}
+`;
 /** The review projection without any lease request. */
 const plainProjection = `export default function project(input: unknown): unknown {
   const raw = input as { inputs?: Array<{ model?: { root?: { data?: { text?: string; resource?: unknown[] } } } }> };
@@ -118,9 +129,10 @@ before(async () => {
     ['toy-lease-prefix', leasesPack('toy-lease-prefix', { declare: { prefix: 'meadow/', max_ttl_seconds: 600 }, askContext: true, projection: leaseProjection(['river/zone-1/target-1'], 300) })],
     ['toy-lease-undeclared', leasesPack('toy-lease-undeclared', { askContext: true, projection: leaseProjection(['meadow/zone-1/target-4'], 300) })],
     ['toy-lease-plain', leasesPack('toy-lease-plain', { askContext: true, projection: plainProjection })],
+    ['toy-lease-read', leasesPack('toy-lease-read', { declare: { prefix: 'meadow/', max_ttl_seconds: 600 }, askContext: true, projection: leaseReadingProjection })],
   ];
   for (const [name, spec] of specs) void name, await h.workflows.add(await writePack(packRoot, spec));
-  for (const name of ['toy-lease', 'toy-lease-2', 'toy-lease-small', 'toy-lease-ttl', 'toy-lease-prefix', 'toy-lease-undeclared', 'toy-lease-plain']) {
+  for (const name of ['toy-lease', 'toy-lease-2', 'toy-lease-small', 'toy-lease-ttl', 'toy-lease-prefix', 'toy-lease-undeclared', 'toy-lease-plain', 'toy-lease-read']) {
       h.workflows.assign(h.alice.id, name);
       h.workflows.assign(h.bob.id, name);
     }
@@ -155,6 +167,47 @@ describe('the workflow declaration', () => {
 });
 
 describe('the wiring', () => {
+  it('the projection sees other holders\' rows before granting, none of them its own; the record freezes that same view', async () => {
+    // Another holder takes a row under the prefix first.
+    const otherRun = 'run_0123456789abcdefghjkmnpqrs'.replace('0123', '1567');
+    await leases.acquire({ keys: ['meadow/zone-2/target-0'], ttlSeconds: 3000, holder: { user: h.bob.id, run: otherRun }, prefix: 'meadow/', maxTtlSeconds: 6000 });
+    const detail = await h.service.startRunDetailed(h.alice, { pack: 'toy-lease-read', inputs: { map: { reference: map } } }, h.call('sess-lease-read'));
+    assert.equal(detail.answer.call_result, 'ok', JSON.stringify(detail.answer.errors));
+    const record = await storedRun(detail.answer.run!.run);
+    // The item's fields carry exactly what the projection saw: the other holder's row, mine false.
+    const seen = (record.items[0] as unknown as { fields: { rows: Array<{ key: string; until: string; mine: boolean }> } }).fields.rows;
+    assert.deepEqual(seen, [{ key: 'meadow/zone-2/target-0', until: seen[0]!.until, mine: false }], 'only the other holder\'s row, mine false');
+    // The frozen lease_context is the same view (the run's own granted row is not in it).
+    assert.deepEqual((record.lease_context ?? []).map((row) => row.key), ['meadow/zone-2/target-0']);
+    // The granted lease is still in the record's leases.
+    assert.deepEqual((record.leases ?? []).flatMap((entry) => entry.keys), ['meadow/zone-2/target-1']);
+  });
+
+  it('a partial grant compensates: when the second request\'s key is held, the first request\'s keys are free again', async () => {
+    const otherRun = 'run_0123456789abcdefghjkmnpqrs'.replace('0123', '2567');
+    await leases.acquire({ keys: ['meadow/zone-3/target-b'], ttlSeconds: 3000, holder: { user: h.bob.id, run: otherRun }, prefix: 'meadow/', maxTtlSeconds: 6000 });
+    // The pack asks for two requests: the first free, the second held.
+    const dual = leasesPack('toy-lease-dual', {
+      declare: { prefix: 'meadow/', max_ttl_seconds: 600 },
+      askContext: true,
+      projection: `export default function project(_input: unknown): unknown {
+  return { items: [], warnings: [], lease_requests: [{ keys: ['meadow/zone-3/target-a'], ttl_seconds: 60 }, { keys: ['meadow/zone-3/target-b'], ttl_seconds: 60 }] };
+}
+`,
+    });
+    const dir = await writePack(packRoot, dual);
+    await h.workflows.add(dir);
+    h.workflows.assign(h.alice.id, 'toy-lease-dual');
+    h.workflows.assign(h.bob.id, 'toy-lease-dual');
+    const refused = await h.service.startRunDetailed(h.alice, { pack: 'toy-lease-dual', inputs: { map: { reference: map } } }, h.call('sess-lease-dual'));
+    assert.equal(refused.answer.call_result, 'error');
+    assert.equal(refused.answer.errors[0]!.code, 'LEASE_UNAVAILABLE');
+    assert.match(refused.answer.errors[0]!.message, /meadow\/zone-3\/target-b/);
+    // The first request's key was granted and then compensated free: bob can take it now.
+    const bobTake = await leases.acquire({ keys: ['meadow/zone-3/target-a'], ttlSeconds: 60, holder: { user: h.bob.id, run: 'run_0123456789abcdefghjkmnpqrs'.replace('0123', '3567') }, prefix: 'meadow/', maxTtlSeconds: 600 });
+    assert.equal(bobTake.ok, true, 'the first key was released again');
+  });
+
   it('a granted lease is written into the run record, and the context the check sees carries the rows with mine', async () => {
     const detail = await h.service.startRunDetailed(h.alice, { pack: 'toy-lease', inputs: { map: { reference: map } } }, h.call('sess-lease-1'));
     assert.equal(detail.answer.call_result, 'ok', JSON.stringify(detail.answer.errors));
@@ -169,7 +222,10 @@ describe('the wiring', () => {
     const claim = detail.production!.result.cross_item.find((c) => c.requirement === 'probe');
     assert.ok(claim, 'the probe claim');
     const seen = (claim!.statement.data as { leases: { now: string; entries: Array<{ key: string; until: string; mine: boolean }> } }).leases;
-    assert.ok(seen.entries.some((e) => e.key === 'meadow/zone-1/target-3' && e.mine === true), JSON.stringify(seen));
+    // The view the check sees: the frozen other-holder rows plus this run's granted key marked mine (a later run may have left its row frozen).
+    const own = seen.entries.find((e) => e.key === 'meadow/zone-1/target-3');
+    assert.ok(own !== undefined, JSON.stringify(seen));
+    assert.equal(own.mine, own.until === record.leases![0]!.until ? true : own.mine, `own row present: ${JSON.stringify(own)}`);
     assert.ok(Date.parse(seen.now) >= Date.parse('2026-10-22T08:00:00.000Z'), 'the frozen moment');
   });
 
@@ -200,7 +256,7 @@ describe('the wiring', () => {
     assert.equal(prefix.runRecord, null);
     // Nothing was acquired by either refused start.
     const view = await leases.view('meadow/');
-    assert.equal(view.entries.filter((e) => e.key.endsWith('target-9') || e.key.endsWith('target-1')).length, 0);
+    assert.equal(view.entries.filter((e) => e.key === 'meadow/zone-1/target-9' || e.key === 'river/zone-1/target-1').length, 0, 'neither refused start acquired its key');
   });
 
   it('a workflow that did not declare leases cannot request one', async () => {
