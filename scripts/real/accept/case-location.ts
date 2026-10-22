@@ -48,19 +48,39 @@ export const MAX_LISTED = 12;
 /** Maximum number of result pages to read with hub_get_nodes. */
 export const MAX_PAGES = 6;
 
-/** Extracts the next page cursor from Hub's get_nodes tool result text, or null if there is no next page. */
-export function parseNextCursor(text: string): string | null {
-  const jsonMatch = /下一页[^\n]*?get_nodes\s*(\{[^}]+\})/.exec(text);
-  if (jsonMatch) {
-    try {
-      const parsed = JSON.parse(jsonMatch[1]) as Record<string, unknown>;
-      if (typeof parsed.cursor === 'string' && parsed.cursor.length > 0) return parsed.cursor;
-    } catch {
-      // ignore
+/**
+ * Finds the first complete JSON object after "下一页：get_nodes " by counting curly braces,
+ * parses it with JSON.parse, and extracts { reference, cursor }.
+ * Returns null if the marker is not found or JSON has no reference/cursor.
+ */
+export function parseNextCall(text: string): { reference: string; cursor: string } | null {
+  const marker = '下一页：get_nodes ';
+  const at = text.indexOf(marker);
+  if (at < 0) return null;
+  const start = text.indexOf('{', at + marker.length);
+  if (start < 0) return null;
+  if (!/^\s*$/.test(text.slice(at + marker.length, start))) return null;
+
+  let depth = 0;
+  for (let i = start; i < text.length; i++) {
+    if (text[i] === '{') depth++;
+    else if (text[i] === '}') {
+      depth--;
+      if (depth === 0) {
+        const jsonStr = text.slice(start, i + 1);
+        try {
+          const parsed = JSON.parse(jsonStr) as Record<string, unknown>;
+          if (typeof parsed.reference === 'string' && typeof parsed.cursor === 'string') {
+            return { reference: parsed.reference, cursor: parsed.cursor };
+          }
+        } catch {
+          return null;
+        }
+        return null;
+      }
     }
   }
-  const match = /下一页[^\n]*?["']?cursor["']?\s*[:=\s]\s*["']?([0-9a-zA-Z._-]+)/.exec(text);
-  return match ? match[1] : null;
+  return null;
 }
 
 /** Extracts the 64-hex rec: reference from the start_run result text. */
@@ -131,17 +151,16 @@ export default function scenario(gold: LocationGold): Scenario {
         reference = parseRecReference(lastText);
       }
 
-      if (reference !== null) {
-        if (pagesRead === 0) {
-          pagesRead = 1;
-          return [{ tool: 'hub_get_nodes', input: { reference } }];
-        }
-        if (pagesRead < MAX_PAGES) {
-          const cursor = parseNextCursor(lastText);
-          if (cursor !== null) {
-            pagesRead++;
-            return [{ tool: 'hub_get_nodes', input: { reference, cursor } }];
-          }
+      if (reference !== null && pagesRead === 0) {
+        pagesRead = 1;
+        return [{ tool: 'hub_get_nodes', input: { reference } }];
+      }
+
+      if (pagesRead > 0 && pagesRead < MAX_PAGES) {
+        const next = parseNextCall(lastText);
+        if (next !== null) {
+          pagesRead++;
+          return [{ tool: 'hub_get_nodes', input: { reference: next.reference, cursor: next.cursor } }];
         }
       }
 
