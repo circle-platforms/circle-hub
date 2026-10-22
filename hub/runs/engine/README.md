@@ -124,8 +124,9 @@ well-formed text). The same reasons go to the admin note of the call they belong
     missing input or an unproven closed world is unchecked (unknown, counted in `unknown`), whether the check is an interpreter
     or a pack function and whether it failed in the sandbox or returned an unknown itself; a used-up budget (an interpreter's
     work limit or the sandbox queue) is incomplete. `data.sandbox` is a display hint (`isSandboxFailure`) and steers nothing.
-    A declared skip is incomplete (`declared_skip`) at every requirement, fact or judgment (W07 R[2]). Judgments: missing
-    `not_covered`, handled `judgment` unless a check refutes, is unknown or ran
+    A declared skip is incomplete (`declared_skip`) and an item the submission does not mention is incomplete
+    (`not_covered`) at every requirement, fact or judgment (W07 R[2]-R[3]). Judgments that are handled stay `judgment`
+    unless a check refutes, is unknown or ran
     out of budget; no slot: unchecked `no_check`, unsatisfied `no_producer`. A requirement that is incomplete for a skipped or
     uncovered item, used-up repair rounds or budget is incomplete at every layer it declares (W07 R[2]-R[3], W02 R[5], P11
     R[3]); otherwise a declared dynamic layer is not run (no check installed, V03 R[1]). A violation is satisfied only when

@@ -634,8 +634,10 @@ test('the engine and the reference agree on random submissions and the fixed bra
     missingEngine.errors.some((error) => error.code === 'core.coverage.shortfall' && error.item === 'i3' && error.rounds_left === 0),
     JSON.stringify(missingEngine.errors),
   );
-  assert.equal(shownLayer(missingEngine, 'i3', 'fact').layer?.reason, 'missing_input');
+  assert.equal(shownLayer(missingEngine, 'i3', 'fact').layer?.terminal, 'incomplete');
+  assert.equal(shownLayer(missingEngine, 'i3', 'fact').layer?.reason, 'not_covered');
   assert.equal(shownLayer(missingEngine, 'i3', 'judged').layer?.reason, 'not_covered');
+  assert.ok(missingEngine.items.find((item) => item.item === 'i3')?.requirements.every((requirement) => requirement.layers.every((layer) => layer.reason === 'not_covered')));
   const missingOracle = missingWant.items.find((item) => item.item === 'i3');
   assert.equal(missingOracle?.reason, 'not_covered');
   assert.ok(missingOracle?.requirements.every((requirement) => requirement.layers.every((layer) => layer.reason === 'not_covered' && layer.attribution === 'unattributed')));

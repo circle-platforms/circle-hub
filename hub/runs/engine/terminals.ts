@@ -113,13 +113,13 @@ const firstReason = (outcomes: readonly JudgedOutcome[]): Reason => outcomes.fin
 /** V01 R[6], V03 R[1], W07 R[2]-R[3]: the static terminal of one (item, requirement) from its check outcomes. */
 export function staticTerminal(input: StaticInput): RawStatic {
   const none = { unexpected: [], expectedRefutation: false };
-  // W07 R[2]: a declared skip is a declaration. It covers every requirement, including one with no producer, before any check.
+  // W07 R[2]-R[3]: skip and not covered are declarations about the item. They cover every requirement, including one
+  // with no producer, before any check.
   if (input.handling === 'skipped') return { terminal: 'incomplete', reason: 'declared_skip', ...none };
+  if (input.handling === 'not_covered') return { terminal: 'incomplete', reason: 'not_covered', ...none };
   if (!input.hasProducer) return { terminal: 'unchecked', reason: 'no_check', ...none };
   const judgment = input.producer !== 'fact';
-  if (judgment) {
-    if (input.handling !== 'handled') return { terminal: 'incomplete', reason: 'not_covered', ...none };
-  } else if (input.checks === 0 || input.outcomes.length === 0) {
+  if (!judgment && (input.checks === 0 || input.outcomes.length === 0)) {
     return { terminal: 'unchecked', reason: 'no_check', ...none };
   }
   const refutes = input.outcomes.filter((o) => o.outcome.verdict === 'refute');

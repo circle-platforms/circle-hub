@@ -308,8 +308,8 @@ test('items not covered and items skipped are incomplete; not covered is named i
   const missing = itemOf(answer.result!, ITEM.c2);
   assert.deepEqual([missing.partition, (missing.item as { reason?: string }).reason], ['incomplete', 'not_covered']);
   assert.deepEqual(requirementOf(missing.item, 'findings').layers, [{ layer: 'static', terminal: 'incomplete', reason: 'not_covered', attribution: 'producer_error' }]);
-  // the facts of an item are the Hub's and do not depend on the model covering it
-  assert.deepEqual(requirementOf(missing.item, 'structure').layers, [{ layer: 'static', terminal: 'pass' }]);
+  // W07 R[3]: the item the submission does not mention is incomplete at every requirement, facts included.
+  assert.deepEqual(requirementOf(missing.item, 'structure').layers, [{ layer: 'static', terminal: 'incomplete', reason: 'not_covered', attribution: 'producer_error' }]);
   const skipped = itemOf(answer.result!, ITEM.c3);
   assert.deepEqual([skipped.partition, (skipped.item as { reason?: string }).reason], ['incomplete', 'declared_skip']);
   assert.deepEqual(answer.errors.map((e) => [e.code, e.item, e.rounds_left]), [['core.coverage.shortfall', ITEM.c2, 2]]);
