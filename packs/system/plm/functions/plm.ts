@@ -130,13 +130,13 @@ export function bugsProject(input: unknown): unknown {
   const data = isRecord(responses[original]?.json) ? (responses[original].json as Record<string, unknown>).data : undefined;
   if (!Array.isArray(data)) return { error: { code: 'plm.no_records', message: '详情应答的 data 不是数组' } };
 
-  const bugs: Array<{ id: string; status: string; title: string | null }> = [];
+  const bugs: Array<{ id: string; status: string | null; title: string | null }> = [];
   const unread: string[] = [];
   for (const id of ids) {
     const record = data.find((item) => isRecord(item) && idText(item.id) === id);
     if (isRecord(record)) {
-      const status = typeof record.status === 'string' ? record.status : typeof record.stage === 'string' ? record.stage : '';
-      const title = typeof record.title === 'string' ? record.title : typeof record.name === 'string' ? record.name : null;
+      const status = typeof record.status === 'string' ? record.status : null;
+      const title = typeof record.title === 'string' ? record.title : null;
       bugs.push({ id, status, title });
     } else {
       unread.push(id);
@@ -148,7 +148,7 @@ export function bugsProject(input: unknown): unknown {
       {
         name: 'content',
         media_type: 'application/json',
-        json: { bugs, unread, missing: unread },
+        json: { bugs, unread },
       },
       {
         name: 'meta',

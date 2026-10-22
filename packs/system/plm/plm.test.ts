@@ -75,18 +75,23 @@ describe('the read functions', () => {
           data: [
             { id: 31057, status: 'resolved', title: '示例网关探活' },
             { id: '70412', status: 'closed', title: '信标权重' },
+            { id: '70413', stage: 'testing', name: '有stage无status' },
+            { id: '70414' },
           ],
         },
       },
     };
-    const projected = bugsProject({ external: { type: 'bugs', key: '31057+70412+99999' }, responses, original: 'detail' }) as {
-      artifacts: { name: string; json: { bugs: Array<{ id: string; status: string; title: string | null }>; unread: string[] } }[];
+    const projected = bugsProject({ external: { type: 'bugs', key: '31057+70412+70413+70414+99999' }, responses, original: 'detail' }) as {
+      artifacts: { name: string; json: { bugs: Array<{ id: string; status: string | null; title: string | null }>; unread: string[] } }[];
     };
     assert.deepEqual(projected.artifacts[0].json.bugs, [
       { id: '31057', status: 'resolved', title: '示例网关探活' },
       { id: '70412', status: 'closed', title: '信标权重' },
+      { id: '70413', status: null, title: null },
+      { id: '70414', status: null, title: null },
     ]);
     assert.deepEqual(projected.artifacts[0].json.unread, ['99999']);
+    assert.equal('missing' in projected.artifacts[0].json, false);
   });
 });
 
