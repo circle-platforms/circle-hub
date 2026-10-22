@@ -1,0 +1,137 @@
+// Tests of the gold build-candidate script: reads build site listing pages independently of the Hub.
+// Strictly imports nothing from hub/ or packs/. Synthetic listing page exercises:
+// - Two name families: APV and NSAE
+// - One alias: an NSAE build with based on resolving to its base APV build
+// - One unreleased build: no release date (released is null)
+// - One build of another version line: excluded when filtering by version line
+import assert from 'node:assert/strict';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { after, describe, test } from 'node:test';
+import { type BuildCandidate, main, parseBuildCandidates } from './builds.ts';
+
+// Synthetic HTML listing page with:
+// 1. Rel_APV_10_6_1_57 (APV, released 2026-05-14, command tree)
+// 2. Rel_APV_10_6_1_56 (APV, unreleased, command tree)
+// 3. Rel_NSAE_10_6_1_41 (NSAE alias, based on Rel_APV_10_6_1_57, released 2026-05-22, no command tree)
+// 4. Rel_APV_10_5_1_101 (APV of another version line 10.5.1, released 2026-01-01)
+const SYNTHETIC_LISTING_HTML = `<!DOCTYPE html>
+<html>
+<head><title>Synthetic Build Listing</title></head>
+<body>
+<h2>Demo builds</h2>
+<hr />
+<strong>Packages</strong><br /><br />
+<font color=red>Rel_APV_10_6_1_57 (build on  2026-05-12 10:20:30 ): Released on 2026-05-14 </font> </br>
+<BLOCKQUOTE>
+  <A href=/builds/DemoOS-Rel_APV_10_6_1_57.array>DemoOS-Rel_APV_10_6_1_57.array ( 901M, SHA256: 0f1e... )</A><BR>
+  <A href=/builds/command_tree-Rel_APV_10_6_1_57.xml>command_tree-Rel_APV_10_6_1_57.xml</A><BR>
+</BLOCKQUOTE>
+
+Rel_APV_10_6_1_56 (build on  2026-05-10 09:00:00 ):  </br>
+<BLOCKQUOTE>
+  <A href=/builds/DemoOS-Rel_APV_10_6_1_56.array>DemoOS-Rel_APV_10_6_1_56.array ( 899M, MD5: 0011... )</A><BR>
+  <A href=/builds/command_tree-Rel_APV_10_6_1_56.xml>command_tree-Rel_APV_10_6_1_56.xml</A><BR>
+</BLOCKQUOTE>
+
+<font color=red>Rel_NSAE_10_6_1_41 (build on  2026-05-20 11:00:00 ): based on Rel_APV_10_6_1_57 Released on 2026-05-22 </font> </br>
+<BLOCKQUOTE>
+  <A href=/builds/DemoOS-Rel_NSAE_10_6_1_41.array>DemoOS-Rel_NSAE_10_6_1_41.array ( 902M, SHA256: 5555... )</A><BR>
+  <A href=/builds/DEMO-MIB-Rel_NSAE_10_6_1_41.txt>DEMO-MIB-Rel_NSAE_10_6_1_41.txt</A><BR>
+</BLOCKQUOTE>
+
+<font color=red>Rel_APV_10_5_1_101 (build on  2026-01-01 08:00:00 ): Released on 2026-01-02 </font> </br>
+<BLOCKQUOTE>
+  <A href=/builds/DemoOS-Rel_APV_10_5_1_101.array>DemoOS-Rel_APV_10_5_1_101.array ( 850M, SHA256: aaaa... )</A><BR>
+  <A href=/builds/command_tree-Rel_APV_10_5_1_101.xml>command_tree-Rel_APV_10_5_1_101.xml</A><BR>
+</BLOCKQUOTE>
+</body>
+</html>`;
+
+let tmpDir: string | undefined;
+const writeTemp = (name: string, content: string): string => {
+  tmpDir ??= mkdtempSync(join(tmpdir(), 'gold-builds-test-'));
+  const filePath = join(tmpDir, name);
+  writeFileSync(filePath, content, 'utf8');
+  return filePath;
+};
+
+after(() => {
+  if (tmpDir !== undefined) rmSync(tmpDir, { recursive: true, force: true });
+});
+
+describe('parseBuildCandidates', () => {
+  test('extracts builds of the version line with two families, resolves aliases, handles unreleased, and excludes other lines', () => {
+    const candidates = parseBuildCandidates(SYNTHETIC_LISTING_HTML, '10.6.1');
+
+    // Expected 3 candidates under line 10.6.1; Rel_APV_10_5_1_101 must be excluded.
+    assert.equal(candidates.length, 3);
+
+    const byName = new Map<string, BuildCandidate>(candidates.map((c) => [c.name, c]));
+
+    // 1. APV released build
+    const apv57 = byName.get('Rel_APV_10_6_1_57');
+    assert.ok(apv57, 'Rel_APV_10_6_1_57 should be present');
+    assert.equal(apv57.family, 'APV');
+    assert.equal(apv57.base, 'Rel_APV_10_6_1_57');
+    assert.equal(apv57.released, '2026-05-14');
+
+    // 2. APV unreleased build
+    const apv56 = byName.get('Rel_APV_10_6_1_56');
+    assert.ok(apv56, 'Rel_APV_10_6_1_56 should be present');
+    assert.equal(apv56.family, 'APV');
+    assert.equal(apv56.base, 'Rel_APV_10_6_1_56');
+    assert.equal(apv56.released, null);
+
+    // 3. NSAE alias build: based on Rel_APV_10_6_1_57, no command tree
+    const nsae41 = byName.get('Rel_NSAE_10_6_1_41');
+    assert.ok(nsae41, 'Rel_NSAE_10_6_1_41 should be present');
+    assert.equal(nsae41.family, 'NSAE');
+    assert.equal(nsae41.base, 'Rel_APV_10_6_1_57');
+    assert.equal(nsae41.released, '2026-05-22');
+
+    // 4. Other version line excluded
+    assert.ok(!byName.has('Rel_APV_10_5_1_101'), 'build from another version line must be excluded');
+  });
+
+  test('resolves alias chains when base build points to another alias or base', () => {
+    const htmlWithChain = `
+      Rel_APV_10_6_1_57 (build on 2026-05-12 10:20:30 ): Released on 2026-05-14
+      <BLOCKQUOTE><A href=/builds/command_tree-Rel_APV_10_6_1_57.xml>tree</A></BLOCKQUOTE>
+      Rel_NSAE_10_6_1_41 (build on 2026-05-20 11:00:00 ): based on Rel_APV_10_6_1_57 Released on 2026-05-22
+      Rel_NSAE_10_6_1_42 (build on 2026-05-21 11:00:00 ): based on Rel_NSAE_10_6_1_41 Released on 2026-05-23
+    `;
+    const candidates = parseBuildCandidates(htmlWithChain, '10.6.1');
+    const c42 = candidates.find((c) => c.name === 'Rel_NSAE_10_6_1_42');
+    assert.ok(c42);
+    assert.equal(c42.base, 'Rel_APV_10_6_1_57');
+  });
+});
+
+describe('main CLI', () => {
+  test('reads --page and writes --out JSON with exit code 0', async () => {
+    const pagePath = writeTemp('test-listing.html', SYNTHETIC_LISTING_HTML);
+    const outPath = writeTemp('out.json', '');
+
+    const code = await main(['--page', pagePath, '--line', '10.6.1', '--out', outPath]);
+    assert.equal(code, 0);
+
+    const written = JSON.parse(readFileSync(outPath, 'utf8')) as BuildCandidate[];
+    assert.equal(written.length, 3);
+    assert.deepEqual(
+      written.map((c) => c.name),
+      ['Rel_APV_10_6_1_57', 'Rel_APV_10_6_1_56', 'Rel_NSAE_10_6_1_41'],
+    );
+  });
+
+  test('returns 2 when required CLI arguments are missing', async () => {
+    const code = await main(['--page', 'page.html']);
+    assert.equal(code, 2);
+  });
+
+  test('returns 1 when page file does not exist', async () => {
+    const code = await main(['--page', 'nonexistent-page.html', '--line', '10.6.1', '--out', 'out.json']);
+    assert.equal(code, 1);
+  });
+});
