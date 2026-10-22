@@ -1,15 +1,15 @@
 {
   "schema": "pack@1",
   "id": "regression-scope",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "kind": "workflow",
   "title": "回归范围",
   "description": "按两个构建的影响视图列出后一构建里放在新增或修改路径上的用例；没有用例的变更路径记为未知而不是失败。只含事实要求项，开始运行时由 Hub 直接算出结果",
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "4435f6f63b1007d16b65e13409d4fa7647c3be446aa08cd22be236f5805fbaf7",
-      "size": 1415
+      "sha256": "07ba237523024aa8c94e0362f6acbbe77b5eb1451f9b157ca9a913c40c0d47d6",
+      "size": 1577
     },
     {
       "path": "checks.json",
@@ -33,8 +33,8 @@
     },
     {
       "path": "functions/scope.ts",
-      "sha256": "0a117f9973aa0ded77c38e37e7c58bbc799dd46ef4371d0600518f8b818f7edc",
-      "size": 11574
+      "sha256": "0da12c258f8c4d84d7b054e6e5d32b45849a836ccb56f7b1aa7b76aa2e990bfb",
+      "size": 13366
     },
     {
       "path": "functions/subject.ts",
@@ -43,8 +43,8 @@
     },
     {
       "path": "functions/text.ts",
-      "sha256": "53a5be4668be261a635a2f1589fcd7e52de27047b7e6af7b127c3369d2ba5844",
-      "size": 1250
+      "sha256": "26498be1f20a40b735f86c23e8203a16ed25f9d4181528327ce79a5119374903",
+      "size": 1535
     },
     {
       "path": "functions/view.ts",

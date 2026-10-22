@@ -65,7 +65,7 @@ describe('regression scope on a hand-built pair of trees', () => {
     assert.ok(both.reasons[1].before.some((entry) => entry.kind === 'definition'));
     assert.ok(both.reasons[1].before.some((entry) => entry.kind === 'behaviour'));
     assert.match(both.reasons[1].case.reference, /^tree:[0-9a-f]{64}\/commands\/show@[0-9a-f]{64}$/);
-    assert.match(both.summary, /^优先级 1；文档 doc-1；2 条命令有变更；\/commands\/add 新增$/);
+    assert.match(both.summary, /^优先级 1；文档 doc-1；2 条命令有变更；\/commands\/add 新增命令$/);
     assert.ok([...both.summary].length <= 200);
     // The earlier build's case on the same modified path is not the later build's case.
     assert.ok(!scope.items.some((item) => item.id === 'doc-9:old'));
