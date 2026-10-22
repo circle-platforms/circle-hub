@@ -20,6 +20,10 @@
 3. 读 W01、V05 和 `hub/runs/engine` 里现有的测试：凡断言“空条目被拒”的，改成新规则并在提交说明里列出；补测试：成功返回空列表的投影、空的生产运行（存下的结果、分区、覆盖、回答文字、`get_nodes` 按引用读）、投影失败仍拒绝。
 4. 做完后，把 `hub-6b-grok` 分支合并进这个分支做一次检查（`git merge`，不改它们的包）：回归范围和维护巡检在空范围、没有维护项时给出存下的结果。它们 README 与测试里“引擎拒绝空条目”的几处，在回报里列出，由包的作者改。
 
+## 第三件事：条目位置按 `FragmentRef.source` 选源（同一个分支，最后做）
+
+两个包（用例定位、缺陷转用例）都碰到同一处：一个输入槽里绑了多份源（`many: true`）时，引擎解析条目位置会在槽内所有源上都试一遍，并硬性要求恰好一份解析得出（`hub/runs/engine/projection.ts`，`FragmentRef.source` 没有被用来选源）；文档里节点编号重复时就被拒为 `ambiguous_location`，包只能绕着走（例如缺陷转用例把选择器写成 `p/<编号>`）。要做的：投影函数给出的 `FragmentRef` 带 `source`（源的 SHA-256）时，只在这份源上解析；没带时行为不变。补测试（两份源节点编号相同、带 source 时各自定位成功、不带时仍然拒为歧义、source 不在槽里时报错），并在 `packs/workflow/case-location` 与 `packs/workflow/case-review` 的 README 里已有的“需要引擎配合”处划掉这一条（只改 case-location 的，它在你的范围内；case-review 不动，写进回报）。
+
 ## 规格
 
 PACKAGE builds-context - capability 3 (case location) needs the build candidates of the located version line, "both name families, aliases resolved" (brief section 6a item 3, model element K01 R[10]); today packs/workflow/case-location records build_candidates as unchecked because checks cannot see the builds the knowledge base knows. Read packs/workflow/case-location/README.md (decisions and "Needs from other packages"), requirements.json, workflow.json, checks.json and its functions first, then hub/ports.ts (KnowledgePort.builds, resolveBuild), contracts/src/product.ts (BuildInfo, KnownBuild: family, line, base, platform, built_at, released_at), contracts/src/pack.ts (RunContext, the workflow declaration), contracts/src/run.ts (RunRecord, groups is the model to follow), hub/runs/engine/start.ts (where the context is built and frozen) and evaluate.ts (runContextOf).
