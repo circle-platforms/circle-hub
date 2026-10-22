@@ -87,6 +87,46 @@ describe('parseTree', () => {
     assert.equal(defs.length, 1);
     assert.equal(defs[0].content, 'x|arg1=a:string|arg1=b:int{0..65535}');
   });
+  test('reads top-level commands directly under scope or wrapper elements as /commands/<name>, tolerating whitespace', () => {
+    const xml = `<commands>
+      <scope type="global">
+        <item name="  ping  ">
+          <arguments><arg name="host" type="STRING"/></arguments>
+        </item>
+        <wrapper>
+          <item name="  reboot   quick  "/>
+        </wrapper>
+      </scope>
+    </commands>`;
+    const defs = parseTree(xml);
+    const paths = defs.map((d: CommandDef) => d.path);
+    assert.deepEqual(paths.sort(), ['/commands/ping', '/commands/reboot/quick']);
+    const ping = defs.find((d: CommandDef) => d.path === '/commands/ping')!;
+    assert.equal(ping.content, 'ping|arg1=host:string');
+    const reboot = defs.find((d: CommandDef) => d.path === '/commands/reboot/quick')!;
+    assert.equal(reboot.content, 'reboot quick');
+  });
+  test('keeps top-level commands and same-named menu commands distinct without mixing paths', () => {
+    const xml = `<commands>
+      <scope type="global">
+        <item name="ping">
+          <arguments><arg name="host" type="STRING"/></arguments>
+        </item>
+        <menu name="ping">
+          <item name="status"/>
+          <item name="ping">
+            <arguments><arg name="count" type="U16"/></arguments>
+          </item>
+        </menu>
+      </scope>
+    </commands>`;
+    const defs = parseTree(xml);
+    const paths = defs.map((d: CommandDef) => d.path);
+    assert.deepEqual(paths.sort(), ['/commands/ping', '/commands/ping/ping', '/commands/ping/status']);
+    assert.equal(defs.find((d) => d.path === '/commands/ping')!.content, 'ping|arg1=host:string');
+    assert.equal(defs.find((d) => d.path === '/commands/ping/ping')!.content, 'ping|arg1=count:int{0..65535}');
+    assert.equal(defs.find((d) => d.path === '/commands/ping/status')!.content, 'status');
+  });
 });
 
 describe('commandDiff', () => {
@@ -96,6 +136,87 @@ describe('commandDiff', () => {
     assert.deepEqual(diff.removed, ['/commands/demo/pool/delete']);
     assert.deepEqual(diff.modified.sort(), ['/commands/demo/legacy', '/commands/demo/pool/add']);
     assert.ok(!diff.modified.includes('/commands/demo/show'), 'a help-text change alone is not a modification');
+  });
+  test('detects top-level command addition, deletion, parameter change, and preserves coexistence', () => {
+    const topEarlier = `<commands>
+      <scope type="global">
+        <item name="ping">
+          <arguments><arg name="host" type="STRING"/></arguments>
+        </item>
+        <item name="top_delete">
+          <arguments><arg name="id" type="U32"/></arguments>
+        </item>
+        <item name="top_param">
+          <arguments><arg name="name" type="STRING"/></arguments>
+        </item>
+        <menu name="ping">
+          <item name="status"/>
+          <item name="ping">
+            <arguments><arg name="count" type="U16"/></arguments>
+          </item>
+        </menu>
+      </scope>
+    </commands>`;
+    const topLater = `<commands>
+      <scope type="global">
+        <item name="ping">
+          <arguments><arg name="host" type="STRING"/></arguments>
+        </item>
+        <item name="top_add">
+          <arguments><arg name="opt" type="STRING"/></arguments>
+        </item>
+        <item name="top_param">
+          <arguments>
+            <arg name="name" type="STRING"/>
+            <arg name="timeout" type="U16" optional="yes" default_value="30"/>
+          </arguments>
+        </item>
+        <menu name="ping">
+          <item name="status"/>
+          <item name="ping">
+            <arguments><arg name="count" type="U16"/></arguments>
+          </item>
+        </menu>
+      </scope>
+    </commands>`;
+    const diff = commandDiff(topEarlier, topLater);
+    assert.deepEqual(diff.added, ['/commands/top_add']);
+    assert.deepEqual(diff.removed, ['/commands/top_delete']);
+    assert.deepEqual(diff.modified, ['/commands/top_param']);
+    assert.ok(!diff.modified.includes('/commands/ping'));
+    assert.ok(!diff.modified.includes('/commands/ping/ping'));
+    assert.ok(!diff.modified.includes('/commands/ping/status'));
+  });
+  test('重载只换顺序不算修改', () => {
+    const reorderEarlier = `<commands>
+      <menu name="m">
+        <item name="x">
+          <arguments><arg name="a" type="STRING"/></arguments>
+          <arguments><arg name="b" type="U16"/></arguments>
+        </item>
+      </menu>
+    </commands>`;
+    const reorderLater = `<commands>
+      <menu name="m">
+        <item name="x">
+          <arguments><arg name="b" type="U16"/></arguments>
+          <arguments><arg name="a" type="STRING"/></arguments>
+        </item>
+      </menu>
+    </commands>`;
+    const diff = commandDiff(reorderEarlier, reorderLater);
+    assert.deepEqual(diff, { added: [], removed: [], modified: [] });
+
+    const separateEarlier = `<commands>
+      <item name="ping"><arguments><arg name="host" type="STRING"/></arguments></item>
+      <item name="ping"><arguments><arg name="count" type="U16"/></arguments></item>
+    </commands>`;
+    const separateLater = `<commands>
+      <item name="ping"><arguments><arg name="count" type="U16"/></arguments></item>
+      <item name="ping"><arguments><arg name="host" type="STRING"/></arguments></item>
+    </commands>`;
+    const diffSeparate = commandDiff(separateEarlier, separateLater);
+    assert.deepEqual(diffSeparate, { added: [], removed: [], modified: [] });
   });
   test('equal trees give empty lists', () => {
     const diff = commandDiff(earlier, earlier);
