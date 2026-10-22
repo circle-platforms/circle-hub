@@ -277,8 +277,10 @@ export function scopeOf(view: NormView, parameters: Parameters): ScopeResult {
         acc.priority = priority;
         acc.negative = negative;
       }
-      // The path detail is computed once per path (detailsOf); every item only points at its path.
-      if (!acc.reasons.has(row.path)) {
+      // The path detail is computed once per path (detailsOf); every item only points at its path. The case ground is
+      // the smallest digest on the path, by comparison — never the order the view happened to give.
+      const previous = acc.reasons.get(row.path);
+      if (previous === undefined) {
         const detail = detailsOf(row.path, side, view, warnings, missing);
         acc.reasons.set(row.path, {
           path: row.path,
@@ -287,8 +289,9 @@ export function scopeOf(view: NormView, parameters: Parameters): ScopeResult {
           references: detail.references,
           case: { entry: digest, reference: entry.reference },
         });
+      } else if (digest < previous.case.entry) {
+        acc.reasons.set(row.path, { ...previous, case: { entry: digest, reference: entry.reference } });
       }
-      void digest;
     }
     if (!sawCase) uncovered.push(row);
   }

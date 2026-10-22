@@ -109,6 +109,35 @@ describe('regression scope on a hand-built pair of trees', () => {
     assert.deepEqual(backward.uncovered, forward.uncovered);
   });
 
+  it('one case listed twice on one path grounds the smallest digest, whatever the order', () => {
+    // The same document:node attached to one path by two entries: the reason's case ground is the smaller digest
+    // either way around (never the order the view happened to give).
+    const changes: ChangeSpec[] = [
+      {
+        path: '/commands/dup',
+        change: 'modified',
+        before: [{ name: 'dup' }],
+        after: [{ name: 'dup', help: '新' }],
+        to: [
+          { document: 'doc-1', node: 'n1', title: '挂两次的用例（先）', priority: 1 },
+          { document: 'doc-1', node: 'n1', title: '挂两次的用例（后）', priority: 1 },
+        ],
+      },
+    ];
+    const built = buildImpact(changes);
+    const forward = projected(built);
+    const backward = projected(reversedView(built));
+    assert.deepEqual(backward.output.items, forward.output.items, 'the whole item is identical in both orders');
+    const entryOf = (run: typeof forward): string => {
+      const reasons = run.output.items[0].fields.reasons as Array<{ path: string; case: { entry: string; reference: string } }>;
+      assert.equal(reasons.length, 1);
+      return reasons[0].case.entry;
+    };
+    assert.equal(entryOf(backward), entryOf(forward), 'the same digest grounds the reason in both orders');
+    const digests = (built.placements as Array<{ to: string[] }>)[0].to;
+    assert.equal(entryOf(forward), digests[0], 'the smaller of the path’s two case digests');
+  });
+
   it('filters by priority without reporting a path as uncovered when its only case was filtered out', () => {
     const run = projected(view, { priorities: [1] });
     assert.deepEqual(

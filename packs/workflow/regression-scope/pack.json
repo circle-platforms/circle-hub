@@ -33,8 +33,8 @@
     },
     {
       "path": "functions/scope.ts",
-      "sha256": "bf16a178415d64d7bfd62ecea8d5ecb6487d8b213173d01be7d5e702afd85e35",
-      "size": 16272
+      "sha256": "4a6641cdd68e479f8f9eb66b238626c8592279af03c853350d5d5b7c27445331",
+      "size": 16575
     },
     {
       "path": "functions/subject.ts",
