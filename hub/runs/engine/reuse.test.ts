@@ -36,7 +36,9 @@ function revised(): ToyDocument {
 }
 
 async function start(map: string, predecessor?: string, pack = 'toy-review'): Promise<RunSummary> {
-  const answer = await h.service.startRun(h.alice, { pack, product: 'Meadow', version: '3.2', inputs: { map: { reference: map } }, ...(predecessor ? { predecessor } : {}) }, h.call('sess-draft'));
+  // A pack that requires no catalog is bound to no product line (toy-locate), so it is started without a product.
+  const bound = pack.startsWith('toy-review') ? { product: 'Meadow', version: '3.2' } : {};
+  const answer = await h.service.startRun(h.alice, { pack, ...bound, inputs: { map: { reference: map } }, ...(predecessor ? { predecessor } : {}) }, h.call('sess-draft'));
   assert.equal(answer.call_result, 'ok', JSON.stringify(answer.errors));
   return answer.run!;
 }

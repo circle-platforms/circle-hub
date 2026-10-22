@@ -211,12 +211,8 @@ Tests that run pack functions skip where macOS `sandbox-exec` is missing (that i
 - **contracts**: (1) a run record reference in `StartRunOutput` (today only `result.reference`, the validation result, which
   has no `/items`), so that reading item fields does not depend on how the server writes text; (2) an optional `path` in
   `PackError`: a projection refusal is always reported at `/inputs/<subject>`, also `skip_invalid`, whose cause is in
-  `/parameters/skipped`; (3) a way for a workflow to say that it binds no product line (next item).
-- **runs-packs**: `boundProducts` binds a workflow whose product binding is `{catalogs: []}` without id to every active
-  product line (`[].every` is vacuously true). With any product pack active, list_task_packs shows this pack with that line's
-  names, `readableProducts` grants a user who has only this pack that product line, and start_run accepts the name, binds the
-  line and is refused at `/build` when the line has no root. `engine.test.ts` shows it (a `todo` test with a synthetic
-  product pack); `resolveTarget` already treats `catalogs: []` as no product when none is named.
+  `/parameters/skipped`; (3) a way for a workflow to say that it binds no product line (done: a workflow with no product id and no catalog binds none).
+- **runs-packs** (done by the integrator): a workflow that names no product and requires no catalog is bound to no product line. `boundProducts` returns none for it, so `list_task_packs` shows no products, `readableProducts` grants nothing and `start_run` refuses a `product` argument at `/product`; `engine.test.ts` guards it with a synthetic product pack active.
 - **runs-engine**: (1) T02 R[1]: apply `publishCheckMarks(workflow)` to the claims of each check (`author_samples_only` here);
   `engine.test.ts` asserts it as a `todo`. (2) Mark a support that rests on declared skips (`data.skipped` not empty) with
   `conditional_on_judgment` (以判断为前提), so that a gap the user declared away does not read as a plain fact. (3) Refuse an

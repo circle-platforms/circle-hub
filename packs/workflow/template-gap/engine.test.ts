@@ -249,7 +249,7 @@ describe('refusals at start_run', { skip }, () => {
     assert.deepEqual(stranger.answer.errors.map((e) => [e.code, e.path]), [['SOURCE_UNAVAILABLE', '/pack']]);
   });
 
-  it('binds no product line while one is active on the Hub', { todo: 'runs-packs boundProducts binds a workflow with catalogs [] to every active product (README, Needs from other packages)' }, async () => {
+  it('binds no product line while one is active on the Hub', async () => {
     const withProduct = await openBed(postgres);
     const dir = await temporaryDirectory('circle-hub-template-gap-product-');
     try {

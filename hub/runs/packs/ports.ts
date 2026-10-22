@@ -10,12 +10,16 @@ import { parsePackRef } from './versions.ts';
 
 /**
  * Product lines a workflow binds (W03 R[5]): the one its product.id names, else every active product pack whose catalogs
- * include every catalog the workflow requires (workflow.product.catalogs and knowledge.json).
+ * include every catalog the workflow requires (workflow.product.catalogs and knowledge.json); none when it names no product
+ * and requires no catalog.
  */
 export function boundProducts(declarations: WorkflowDeclarations, active: readonly ActiveProduct[]): ActiveProduct[] {
   const id = declarations.workflow.product.id;
   if (id !== undefined) return active.filter((a) => a.product.id === id);
   const required = new Set([...declarations.workflow.product.catalogs, ...(declarations.knowledge?.requires ?? []).map((r) => r.catalog)]);
+  // A workflow that names no product and requires no catalog serves no product line: it is not bound to every active one,
+  // which would also let anyone assigned it read the knowledge of every product (readableProducts).
+  if (required.size === 0) return [];
   return active.filter((a) => {
     const offered = new Set(a.product.catalogs.map((c) => c.id));
     return [...required].every((catalog) => offered.has(catalog));

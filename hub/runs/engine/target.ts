@@ -77,7 +77,10 @@ export async function resolveTarget(ctx: EngineContext, user: Principal, workflo
   const binding = workflow.workflow.product;
   const readable = await packs.readableProducts(user);
   const human: Warrant = { producer: 'human', id: user.id };
+  // A workflow that names no product and requires no catalog is bound to no product line (see boundProducts in runs/packs).
+  const unbound = binding.id === undefined && binding.catalogs.length === 0;
   const eligible = async (): Promise<ProductHandle[]> => {
+    if (unbound) return [];
     if (binding.id !== undefined) {
       const fixed = await packs.productById(binding.id);
       return fixed !== null && readable.has(fixed.product.id) ? [fixed] : [];
@@ -90,9 +93,10 @@ export async function resolveTarget(ctx: EngineContext, user: Principal, workflo
   let declaredProduct = false;
   if (input.product !== undefined) {
     const named = await packs.productByName(input.product);
-    const ok = named !== null && readable.has(named.product.id) && (binding.id !== undefined ? named.product.id === binding.id : provides(named, binding.catalogs));
+    const ok = !unbound && named !== null && readable.has(named.product.id) && (binding.id !== undefined ? named.product.id === binding.id : provides(named, binding.catalogs));
     if (!ok) {
       const options = namesOf(await eligible());
+      if (unbound) throw unresolved('/product', '这个任务包不绑定产品线，不能指定产品', [], '去掉 product 参数');
       throw unresolved('/product', `产品“${input.product}”不是这个任务包能用的产品线`, options, options.length > 0 ? '改用下面列出的产品名称之一（同一产品线的任何名称都可以）' : undefined);
     }
     product = named;
