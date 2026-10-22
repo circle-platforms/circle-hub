@@ -27,7 +27,7 @@ export interface TraceGold {
 
 export default function scenario(gold: TraceGold): Scenario {
   const area = '追溯矩阵';
-  const pack = 'traceability@1.0.0';
+  const pack = 'traceability';
   return {
     name: 'traceability',
     area,
@@ -39,10 +39,9 @@ export default function scenario(gold: TraceGold): Scenario {
               tool: 'hub_start_run',
               input: {
                 pack,
-                product: gold.product,
                 inputs: {
                   defects: { external: `knowledge:index:${gold.product}:${gold.build}?kind=defect&key=bug` },
-                  cases: { external: `knowledge:index:${gold.product}:${gold.build}?kind=case&key=defects` },
+                  cases: { external: `knowledge:index:${gold.product}:${gold.build}?kind=case&key=defects&fields=document,node,title` },
                 },
               },
             },
