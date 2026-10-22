@@ -324,5 +324,77 @@ describe('traceOutcomes', () => {
       assert.equal(data.defect_system_unknown_reason, '缺陷系统没有读到（来源不可用）');
       assert.equal(data.closed, false);
     });
+
+    it('marks unknown with reason source unavailable when unread_sources reports missing PLM source', () => {
+      const defect = defectEntry({ bug: '7048', system: 'plm' });
+      const unreadSources = [{ reference: 'src:1111111111111111111111111111111111111111111111111111111111111111', reason: '来源不可用' }];
+      const outcome = byItem(traceOutcomes(subjectOf([defect], []), {}, undefined, unreadSources), '7048');
+      assert.equal(outcome.verdict, 'unknown');
+      assert.match(outcome.statement, /缺陷 7048（发布说明：已修复；缺陷系统：未知（缺陷系统没有读到（来源不可用）））：没有已索引的用例标出缺陷 7048/);
+      const data = outcome.data as { defect_system_status: string | null; defect_system_unknown_reason: string; closed: boolean };
+      assert.equal(data.defect_system_status, null);
+      assert.equal(data.defect_system_unknown_reason, '缺陷系统没有读到（来源不可用）');
+      assert.equal(data.closed, false);
+    });
+
+    it('marks unknown with reason defect system did not return ID when all sources read successfully but ID is absent', () => {
+      const defect = defectEntry({ bug: '7049', system: 'plm' });
+      const sources = {
+        'plm:bugs:7049': JSON.stringify({
+          bugs: [{ id: '9999', status: 'closed' }],
+          unread: [],
+        }),
+      };
+      const outcome = byItem(traceOutcomes(subjectOf([defect], []), sources, undefined, []), '7049');
+      assert.equal(outcome.verdict, 'unknown');
+      assert.match(outcome.statement, /缺陷 7049（发布说明：已修复；缺陷系统：未知（缺陷系统没有返回这个编号））：没有已索引的用例标出缺陷 7049/);
+      const data = outcome.data as { defect_system_status: string | null; defect_system_unknown_reason: string; closed: boolean };
+      assert.equal(data.defect_system_status, null);
+      assert.equal(data.defect_system_unknown_reason, '缺陷系统没有返回这个编号');
+      assert.equal(data.closed, false);
+    });
+
+    it('unrelated unread source (e.g. cases view) does not cause defect not returned by PLM to report source unavailable', () => {
+      const defect = defectEntry({ bug: '7050', system: 'plm' });
+      const sources = {
+        'plm:bugs:7050': JSON.stringify({
+          bugs: [{ id: '9999', status: 'closed' }],
+          unread: [],
+        }),
+      };
+      // An unrelated source (e.g. huge cases view) failed to read
+      const unreadSources = [{
+        reference: 'rec:0000000000000000000000000000000000000000000000000000000000000099',
+        reason: '超过大小上限（15000000 字节，上限 1048576 字节）',
+        external: 'knowledge:index:apv:Rel_1',
+        slot: 'cases',
+      }];
+      const outcome = byItem(traceOutcomes(subjectOf([defect], []), sources, undefined, unreadSources), '7050');
+      assert.equal(outcome.verdict, 'unknown');
+      assert.match(outcome.statement, /缺陷 7050（发布说明：已修复；缺陷系统：未知（缺陷系统没有返回这个编号））：没有已索引的用例标出缺陷 7050/);
+      const data = outcome.data as { defect_system_status: string | null; defect_system_unknown_reason: string; closed: boolean };
+      assert.equal(data.defect_system_unknown_reason, '缺陷系统没有返回这个编号');
+    });
+
+    it('plm:bugs unread source causes defect not in returned bugs to report source unavailable', () => {
+      const defect = defectEntry({ bug: '7051', system: 'plm' });
+      const sources = {
+        'plm:bugs:7051': JSON.stringify({
+          bugs: [{ id: '9999', status: 'closed' }],
+          unread: [],
+        }),
+      };
+      const unreadSources = [{
+        reference: 'plm:bugs:7051',
+        reason: '超过大小上限',
+        external: 'plm:bugs:7051',
+        slot: 'expected',
+      }];
+      const outcome = byItem(traceOutcomes(subjectOf([defect], []), sources, undefined, unreadSources), '7051');
+      assert.equal(outcome.verdict, 'unknown');
+      assert.match(outcome.statement, /缺陷 7051（发布说明：已修复；缺陷系统：未知（缺陷系统没有读到（来源不可用）））：没有已索引的用例标出缺陷 7051/);
+      const data = outcome.data as { defect_system_status: string | null; defect_system_unknown_reason: string; closed: boolean };
+      assert.equal(data.defect_system_unknown_reason, '缺陷系统没有读到（来源不可用）');
+    });
   });
 });

@@ -89,7 +89,7 @@ export class FakeKnowledgeViews implements ExternalReaderPort {
     this.views.set(id, view);
   }
   async accepts(id: string): Promise<boolean> {
-    return id.startsWith('knowledge:index:');
+    return id.startsWith('knowledge:index:') || id.startsWith('plm:bugs:');
   }
   async read(id: string, context: ExternalReadContext): Promise<ExternalRead> {
     this.reads.push(id);
@@ -97,11 +97,13 @@ export class FakeKnowledgeViews implements ExternalReaderPort {
     if (view === undefined) return { ok: false, id, reason: `synthetic knowledge reader answered “not found” for ${id}` };
     const visibility = { readers: [context.principal.id], admins: true, packs: [], shareable: false };
     const ingest = (bytes: Uint8Array, name: string) =>
-      this.#artifacts.ingest({ bytes, mediaType: 'application/json', origin: { generated: { generator: 'knowledge.views@1', inputs: [] } }, author: { user: null }, provenanceType: 'projected', visibility, name });
-    const bytes = new TextEncoder().encode(JSON.stringify(view));
+      this.#artifacts.ingest({ bytes, mediaType: 'application/json', origin: { generated: { generator: id.startsWith('plm:') ? 'plm@1' : 'knowledge.views@1', inputs: [] } }, author: { user: null }, provenanceType: 'projected', visibility, name });
+    const bytes = (view as { __rawBytes?: Uint8Array }).__rawBytes ?? new TextEncoder().encode(JSON.stringify(view));
     const artifacts = [
-      { name: 'original', artifact: await ingest(bytes, 'index-view.json') },
-      { name: 'meta', artifact: await ingest(new TextEncoder().encode(JSON.stringify({ title: '合成视图', view: 'index', product: 'apv', roots: [ROOT], revision: ROOT })), 'index-view-meta.json') },
+      { name: 'original', artifact: await ingest(bytes, id.startsWith('plm:') ? 'plm-bugs.json' : 'index-view.json') },
+      ...(id.startsWith('plm:')
+        ? []
+        : [{ name: 'meta', artifact: await ingest(new TextEncoder().encode(JSON.stringify({ title: '合成视图', view: 'index', product: 'apv', roots: [ROOT], revision: ROOT })), 'index-view-meta.json') }]),
     ];
     return { ok: true, id, revision: ROOT, artifacts, manifest: 'synthetic' };
   }

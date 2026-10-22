@@ -23,7 +23,7 @@ const bytes = (value: unknown): Uint8Array => new TextEncoder().encode(JSON.stri
 before(async () => {
   postgres = await startPostgres();
   if (skip) return;
-  hub = await openHub(postgres);
+  hub = await openHub(postgres, {});
   hub.external.put(REVIEW, bytes(buildImpact(reviewChanges(), reviewOptions())));
   hub.external.put(SKIPPED, bytes(buildImpact(reviewChanges(), { ...reviewOptions(), skipped: { from: 0, to: 4 } })));
   hub.external.put(EMPTY, bytes(buildImpact([])));
@@ -218,5 +218,74 @@ describe('a production run of regression-scope', { skip }, () => {
 });
 
 describe('the real knowledge reader', () => {
-  it.todo('runs regression-scope against the real knowledge reader once the product pack cases index is committed');
+  it('runs regression-scope against the real knowledge reader: a synthetic product pack, two builds, real impact view', async () => {
+    const { makeWorld, mindMap, BASE_CATALOG, catalogXml, DEFAULT_PRODUCERS } = await import('../../../hub/knowledge/test-support.ts');
+    const { createKnowledgeReader } = await import('../../../hub/knowledge/api.ts');
+    const XML = 'application/xml';
+    const JSON_TYPE = 'application/json';
+    // The default product pack runs the commands producer; the world's shape adds the cases producer beside it.
+    const CASES_WITH_NODE = `export default function produce(input: any): unknown {
+  const entries: any[] = [];
+  for (const doc of input.lists?.cases ?? []) {
+    const model = doc.model;
+    const root = model.nodes[0].data;
+    model.nodes.forEach((node: any) => {
+      const data = node.data;
+      if (!Array.isArray(data.resource) || data.resource.length === 0 || data.priority === undefined) return;
+      const m = /\\[cmd: ([a-z][a-z0-9]*) ([a-z][a-z0-9]*)\\]/.exec(node.text);
+      const expected = node.children.map((c: number) => model.nodes[c].text);
+      entries.push({
+        kind: 'case',
+        path: m === null ? null : '/commands/' + m[1] + '/' + m[2],
+        statement: node.text,
+        data: { document: String(root.id), node: String(data.id), title: node.text, priority: data.priority },
+        fragments: [{ slot: 'cases', source: doc.sha256, parser: 'kityminder@1', selector: node.selector }],
+        applicability: null,
+      });
+    });
+  }
+  return { entries, warnings: [] };
+}
+`;
+    const w = await makeWorld(postgres, {
+      pack: {
+        functions: { 'cases-node.ts': CASES_WITH_NODE },
+        declaration: {
+          producers: [...DEFAULT_PRODUCERS, { id: 'cases', title: '用例', function: { module: 'functions/cases-node.ts' }, inputs: { cases: { source: 'cases', many: true } } }],
+        },
+      },
+    });
+    // Build A's command tree: reboot and show. Build B adds a parameter to show (a definition change) and a net arp
+    // command (a new definition), keeping the manual text untouched on the unchanged paths.
+    const treeOf = (arp: boolean): Uint8Array =>
+      new TextEncoder().encode(catalogXml(arp ? { ...BASE_CATALOG, net: [...BASE_CATALOG.net, { name: 'arp', params: [] }] } : BASE_CATALOG));
+    w.external.set('site:tree:Rel_WDG_7_7_7', { bytes: treeOf(false), mediaType: XML });
+
+    w.external.set('site:tree:Rel_WDG_7_7_8', { bytes: treeOf(true), mediaType: XML });
+    // The case rides the command the later build adds (/commands/net/arp), so it lands in the scope.
+    const cases = (id: string): string => {
+      w.external.set(`store:mindmap:${id}`, { bytes: mindMap({ id, module: 'M1' }, [{ id: `${id}-c1`, text: '[cmd: net arp] 解析地址', expected: ['解析成功'], priority: 2 }]), mediaType: JSON_TYPE });
+      return `store:mindmap:${id}`;
+    };
+    const build = (name: string, source: string) => ({ name, family: 'WDG', line: '7.7', base: name, platform: null, built_at: '2026-01-02T10:00:00.000Z', released_at: '2026-01-05T00:00:00.000Z', sources: { tree: `site:tree:${name}`, cases: source }, root: null });
+    const first = await w.knowledge.produceTree({ product: w.product, build: build('Rel_WDG_7_7_7', cases('d1')) });
+    assert.equal(first.ok, true, first.reason ?? '');
+    const second = await w.knowledge.produceTree({ product: w.product, build: build('Rel_WDG_7_7_8', cases('d2')) });
+    assert.equal(second.ok, true, second.reason ?? '');
+
+    // The run hub reads knowledge views through the real reader routed beside the fake external.
+    const runHub = await openHub(postgres, { knowledge: createKnowledgeReader(w.knowledge), kit: { kit: w.kit, admin: { id: w.admin.id, name: w.admin.name, role: 'admin' }, alice: { id: w.user.id, name: w.user.name, role: 'user' }, bob: { id: w.outsider.id, name: w.outsider.name, role: 'user' } } });
+    // The world's reader user runs the pack (the admin of the same database assigns it).
+
+    const reference = 'knowledge:impact:acme:Rel_WDG_7_7_7..Rel_WDG_7_7_8?changed=definition&attached=case&attached_fields=document,node,title,priority,negative';
+    // The knowledge reader names the reader of the product's pack: the world's reader user (same database).
+    const detail = await runHub.service.startRunDetailed(runHub.alice, { pack: 'regression-scope', inputs: { impact: { external: reference } } }, call());
+    assert.equal(detail.answer.call_result, 'ok', JSON.stringify(detail.answer.errors));
+    const run = detail.answer.run!;
+    // The later build's arp case lands in the scope through the real reader's definition-only view.
+    assert.ok(run.items.length > 0, 'the real reader answers an impact view the projection accepts');
+    void makeWorld; void DEFAULT_PRODUCERS;
+    await runHub.close();
+    await w.close();
+  });
 });

@@ -194,6 +194,22 @@ describe('countsOutcome', () => {
     assert.match(outcome.statement, /4 份列出的来源没有读取/);
   });
 
+  it('counts unknown defects when unread_sources reports an unavailable source', () => {
+    const defects = [
+      defectEntry({ bug: '7021', system: 'plm' }),
+      defectEntry({ bug: '7022', system: 'plm' }),
+    ];
+    const { subject } = subjectOf(defects, []);
+    const unreadSources = [{ reference: 'src:2222222222222222222222222222222222222222222222222222222222222222', reason: '来源不可用' }];
+    const outcome = countsOutcome(subject, {}, undefined, unreadSources);
+    assert.equal(outcome.verdict, 'support');
+    const data = outcome.data as { defects: number; closed_defects: number; status_unknown: number };
+    assert.equal(data.defects, 2);
+    assert.equal(data.closed_defects, 0);
+    assert.equal(data.status_unknown, 2);
+    assert.match(outcome.statement, /缺陷系统状态未知 2 个（不算已关闭也不算未关闭）/);
+  });
+
   it('an empty subject is an unknown, not a silent pass', () => {
     const outcome = countsOutcome(buildSubject({ applies: 'run', items: [], context: CONTEXT }));
     assert.deepEqual([outcome.verdict, outcome.reason], ['unknown', 'check_error']);

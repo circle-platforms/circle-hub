@@ -1,0 +1,15 @@
+{
+  "pack": "case-review-report@1.2.0",
+  "inputs": {
+    "verifications": [
+      {
+        "reference": "rec:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+      },
+      {
+        "reference": "rec:fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
+      }
+    ]
+  },
+  "parameters": {},
+  "notes": "各块复核运行 submit_result 回执里的 rec: 引用，每块一条（合成示例）"
+}

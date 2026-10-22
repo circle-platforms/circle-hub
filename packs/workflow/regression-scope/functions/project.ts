@@ -8,6 +8,7 @@ import { PACK, guarded, isRecord } from './text.ts';
 import { parseView } from './view.ts';
 
 export const SLOT = 'impact';
+const BEHAVIOUR_SLOT = 'behaviour';
 const PARSER = 'json@1';
 
 /** Budgets under the sandbox's defaults (8 MiB out): an item costs about 1.4 KB of output with its citations, so 4,000
@@ -58,14 +59,26 @@ export function projectItems(input: unknown, limits: Partial<ProjectLimits> = {}
   if (typeof sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(sha256)) return refusal('invalid_input', '影响视图没有源文件摘要', '按 projection-input@1 传入绑定的源文件');
   const parsed = parseView(source.model);
   if (!parsed.ok) return refusal('not_a_view', parsed.message, '绑定知识库的影响视图（impact-view@1），附着种类为用例');
+  // The scope counts only command-definition changes (decision 11): the bound view must have been asked for
+  // changed=definition, so behaviour rows never widen it. A view that also counts behaviour refuses the run.
+  if (parsed.view.changedKinds.length !== 1 || parsed.view.changedKinds[0] !== 'definition') {
+    return refusal(
+      'changed_kinds',
+      `影响视图按 ${parsed.view.changedKinds.join('、')} 算变更，回归范围只按命令定义（definition）的变化算`,
+      `视图引用写成 knowledge:impact:<产品>:<起始构建>..<目标构建>?changed=definition&attached=case&attached_fields=document,node,title,priority,negative（带上 changed=definition）`,
+    );
+  }
+  // The behaviour view of the same pair of builds (optional): never in the scope, only a clue paragraph.
+  const clue = behaviourClue(input, parsed.view);
+  if (typeof clue === 'string') return refusal('behaviour_view', clue, 'behaviour 槽绑定同一对构建的 changed=behaviour 视图，或不绑定');
   const scope = scopeOf(parsed.view, parameters);
   const budget = { ...LIMITS, ...limits };
   if (scope.items.length > budget.maxItems) {
-    return refusal('too_large', `范围内有 ${scope.items.length} 条用例，一次运行最多 ${budget.maxItems} 条`, '用 priorities 参数收窄范围（例如先只看优先级 1 的），再按优先级分几次运行', scope.warnings.slice(0, 20));
+    return refusal('too_large', `范围内有 ${scope.items.length} 条用例，一次运行最多 ${budget.maxItems} 条`, '范围只按命令定义的变化算：先看定义变化是否已经把范围缩小，再用 priorities 参数收窄（例如先只看优先级 1 的），按优先级分几次运行', scope.warnings.slice(0, 20));
   }
   const out = {
     items: scope.items.map((item) => itemOf(item, sha256)),
-    groups: [scope.note],
+    groups: [scope.note, ...(clue !== null ? [clue] : [])],
     warnings: scope.warnings.slice(0, 100),
   };
   const bytes = Buffer.byteLength(JSON.stringify(out), 'utf8');
@@ -80,4 +93,26 @@ export default function project(input: unknown): unknown {
     () => projectItems(input),
     (message) => refusal('internal_error', `投影函数内部出错：${message}`, '这是任务包的缺陷，请把输入交给任务包维护人'),
   );
+}
+
+
+const MAX_CLUE_PATHS = 5;
+
+/** The clue paragraph from the optional behaviour view: 手册说明有变化的命令 N 条（只作线索，不算进范围）, at most
+ * 5 paths named, then 另有 M 条. A string return is a refusal (the slot held something unusable). */
+function behaviourClue(input: { inputs?: unknown[] }, scope: { fromBuild: string; toBuild: string }): { kind: string; message: string } | null | string {
+  const raws = ((input.inputs ?? []) as unknown[]).filter((raw) => isRecord(raw) && raw.slot === BEHAVIOUR_SLOT);
+  if (raws.length === 0) return null;
+  if (raws.length > 1) return `behaviour 槽只接受一个影响视图，给了 ${raws.length} 个`;
+  const parsed = parseView((raws[0] as { model?: unknown }).model);
+  if (!parsed.ok) return `behaviour 槽绑定的不是影响视图：${parsed.message}`;
+  const view = parsed.view;
+  if (view.changedKinds.length !== 1 || view.changedKinds[0] !== 'behaviour') return `behaviour 槽要绑 changed=behaviour 的视图（按 ${view.changedKinds.join('、')} 算变更不对）`;
+  if (view.fromBuild !== scope.fromBuild || view.toBuild !== scope.toBuild) return 'behaviour 槽要绑同一对构建（起始和目标与 impact 相同）';
+  const paths = view.changes.filter((change) => change.change !== 'removed').map((change) => change.path);
+  const shown = paths.slice(0, MAX_CLUE_PATHS);
+  const rest = paths.length - shown.length;
+  const listed = shown.join('、');
+  const message = `手册说明有变化的命令 ${paths.length} 条（只作线索，不算进范围）${shown.length > 0 ? `：${listed}` : ''}${rest > 0 ? `；另有 ${rest} 条` : ''}`;
+  return { kind: 'behaviour-clue', message };
 }

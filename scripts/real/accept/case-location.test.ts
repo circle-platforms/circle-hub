@@ -11,7 +11,12 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import type { LoggedTurn, Scenario } from '../lib/accept.ts';
 import type { Turn } from '../scripted-model.ts';
-import caseLocation, { parseNextCall, parseReportedCandidates, type LocationGold } from './case-location.ts';
+import caseLocation, {
+  parseNextCall,
+  parseReportedCandidates,
+  type LocationGold,
+  type LocationListGold,
+} from './case-location.ts';
 
 const turnsOf = (text: string): LoggedTurn[] => [
   { index: 0, toolResults: [], tools: ['hub_start_run'] },
@@ -416,5 +421,101 @@ describe('case-location scenario respond flow (two-step start_run -> get_nodes a
     const page6Text = `第 6 页\n下一页：get_nodes {"reference":"${rec}","cursor":"6.0-abcdef123456"}`;
     const reply7 = await s.respond(makeTurn(7, page6Text));
     assert.deepEqual(reply7, [{ text: '定位完成。' }]);
+  });
+});
+
+describe('case-location scenario with document list (at least 5 documents)', () => {
+  const listGold: LocationListGold = {
+    product: 'apv',
+    documents: [
+      {
+        document: '900101',
+        line: '7.1',
+        train: '7.1-R2-2026/5',
+        module: '信标',
+        stories: ['17206'],
+        plmFound: { '17206': true },
+      },
+      {
+        document: '900102',
+        line: '7.1',
+        train: '7.1-R2-2026/5',
+        module: '信标',
+        bugs: ['70412'],
+        plmFound: { '70412': true },
+      },
+      {
+        document: '900103',
+        line: '7.1',
+        train: '7.1-R2-2026/5',
+        module: '健康检查',
+        associatedIds: ['31057'],
+        plmFound: { '31057': true },
+      },
+      {
+        document: '900104',
+        line: '7.2',
+        train: '7.2-R1-2026/7',
+        module: '健康检查',
+        stories: ['19003'],
+        plmFound: { '19003': true },
+      },
+      {
+        document: '900105',
+        line: '7.2',
+        train: '7.2-R1-2026/7',
+        module: 'SSL',
+        bugs: ['70499'],
+        plmFound: { '70499': false },
+      },
+    ],
+  };
+
+  test('holds on a Hub-shaped multi-document answer with 5 items across 2 lines and 3 modules', () => {
+    const s = caseLocation(listGold);
+    const text = [
+      '运行 run_1 完成：任务包 case-location@1.0.0',
+      'location 用例定位：满足 5',
+      '条目（5 个；编号 | 名称 | 摘要）：',
+      '- 900101 | 文档 900101 | 产品线 apv（COMET）；版本 7.1（目录，置信度高）；发布火车 7.1-R2-2026/5；模块 信标；需求 17206',
+      '- 900102 | 文档 900102 | 产品线 apv（COMET）；版本 7.1（目录，置信度高）；发布火车 7.1-R2-2026/5；模块 信标；缺陷 70412',
+      '- 900103 | 文档 900103 | 产品线 apv（COMET）；版本 7.1（目录，置信度高）；发布火车 7.1-R2-2026/5；模块 健康检查；未分类编号 31057',
+      '- 900104 | 文档 900104 | 产品线 apv（COMET）；版本 7.2（目录，置信度高）；发布火车 7.2-R1-2026/7；模块 健康检查；需求 19003',
+      '- 900105 | 文档 900105 | 产品线 apv（COMET）；版本 7.2（目录，置信度高）；发布火车 7.2-R1-2026/7；模块 SSL；缺陷 70499',
+    ].join('\n');
+
+    const turns = turnsOf(text);
+    const checks = s.check(turns);
+    assert.ok(checks.every((c) => c.ok), JSON.stringify(checks.filter((c) => !c.ok)));
+  });
+
+  test('fails when list has fewer than 5 documents or lacks line/module diversity', () => {
+    const shortListGold: LocationListGold = {
+      product: 'apv',
+      documents: listGold.documents.slice(0, 4),
+    };
+    const sShort = caseLocation(shortListGold);
+    const text = '运行 run_1 完成：任务包 case-location\nlocation 用例定位：满足 4';
+    const checks = sShort.check(turnsOf(text));
+    const listCheck = checks.find((c) => c.name.includes('文档清单至少 5 份'));
+    assert.ok(listCheck && !listCheck.ok);
+  });
+
+  test('fails when a document in the list has line mismatch', () => {
+    const s = caseLocation(listGold);
+    const text = [
+      '运行 run_1 完成：任务包 case-location@1.0.0',
+      'location 用例定位：满足 5',
+      '条目（5 个；编号 | 名称 | 摘要）：',
+      '- 900101 | 文档 900101 | 产品线 apv（COMET）；版本 7.9（目录，置信度高）；发布火车 7.1-R2-2026/5；模块 信标',
+      '- 900102 | 文档 900102 | 产品线 apv（COMET）；版本 7.1（目录，置信度高）；发布火车 7.1-R2-2026/5；模块 信标',
+      '- 900103 | 文档 900103 | 产品线 apv（COMET）；版本 7.1（目录，置信度高）；发布火车 7.1-R2-2026/5；模块 健康检查',
+      '- 900104 | 文档 900104 | 产品线 apv（COMET）；版本 7.2（目录，置信度高）；发布火车 7.2-R1-2026/7；模块 健康检查',
+      '- 900105 | 文档 900105 | 产品线 apv（COMET）；版本 7.2（目录，置信度高）；发布火车 7.2-R1-2026/7；模块 SSL',
+    ].join('\n');
+
+    const checks = s.check(turnsOf(text));
+    const doc1Check = checks.find((c) => c.name.includes('文档 900101') && c.name.includes('版本线'));
+    assert.ok(doc1Check && !doc1Check.ok);
   });
 });

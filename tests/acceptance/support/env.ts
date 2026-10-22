@@ -122,5 +122,5 @@ export async function productManual(): Promise<string> {
   return readFile(join(product.dir, 'testing', 'fixtures', 'manual.md'), 'utf8');
 }
 
-export const WORKFLOW = { review: 'case-review', verify: 'case-review-verify', gap: 'template-gap', locate: 'case-location' } as const;
+export const WORKFLOW = { review: 'case-review', verify: 'case-review-verify', report: 'case-review-report', gap: 'template-gap', locate: 'case-location' } as const;
 export const SYSTEM = { agile: 'agile-platform', plm: 'plm', site: 'build-site', store: 'manual-store' } as const;

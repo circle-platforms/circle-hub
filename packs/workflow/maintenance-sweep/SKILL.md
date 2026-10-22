@@ -2,7 +2,7 @@
 
 Hub 按两个构建的影响视图直接算出较早构建里需要维护的用例。不需要你提交结果。
 
-1. 开始运行：pack 写 maintenance-sweep；inputs.impact 绑定一个影响视图，例如 `{"external":"knowledge:impact:<产品>:<起始构建>..<目标构建>"}`。这个任务包不绑定产品线，不要写 product、version、build。
+1. 开始运行：pack 写 maintenance-sweep；inputs.impact 绑定一个影响视图，例如 `{"external":"knowledge:impact:<产品>:<起始构建>..<目标构建>?changed=definition&attached=case&attached_fields=document,node,title"}`。这个任务包不绑定产品线，不要写 product、version、build。
 2. 结果在开始运行时就算好了。每个条目是一条需要维护的用例。完整结论在 result.reference 指向的校验结果里，用 get_nodes 按这个 rec: 引用读取。条目多时照回答末尾的说明翻页。
 3. 原样转述每条结论，不补全、不猜测。两条不通过要分开读：
    - `maintenance-sweep.case.command_removed` 是阻断：用例所在的命令已删除。处理是“按替代命令改写这条用例，或者停用它”。

@@ -165,7 +165,7 @@ describe('a production run', { skip }, () => {
     assert.deepEqual(run.items.find((it) => it.id === '900302')?.fields.skipped, [{ category: 'stress', reason }]);
   });
 
-  it('claims that rest on the coverage check carry and show author_samples_only (T02 R[1])', { todo: 'runs-engine does not apply publishCheckMarks to claims yet (README, Needs from other packages)' }, async () => {
+  it('claims that rest on the coverage check carry and show author_samples_only (T02 R[1])', async () => {
     const detail = await start({ inputs: { documents: [{ external: onAgile('900351', renamed(withoutCategory(baseDocument(), 'stress'), 'r0e2emark001')) }] } });
     const [claim] = requirementOf(detail.production!.result, '900351').result.claims;
     assert.ok(claim.qualifier.marks.includes('author_samples_only'), JSON.stringify(claim.qualifier.marks));

@@ -16,6 +16,8 @@ export interface DefectGold {
   bug: string;
   /** fixed or known, as the release note says. */
   status: string;
+  /** Defect system: plm, bugzilla, or unknown. */
+  system?: string;
   /** Defect system status from PLM, or null when unknown. */
   defect_system_status?: string | null;
   /** Reason when defect system status is unknown. */

@@ -20,6 +20,7 @@ import { PACK_FILE_PATHS } from '../generated/protocol.ts';
 import { ItemId, IsoTime, JsonPointer, PackId, PackVersion, Sha256, Versioned } from './common.ts';
 import { FragmentRef, PackFunctionRef } from './product.ts';
 import { ExternalObjectId, Ground, ReferenceUri } from './reference.ts';
+import { ExternalType } from './resources.ts';
 
 // ---------------------------------------------------------------- paths
 
@@ -254,6 +255,19 @@ export const ItemSubjectInput = z.strictObject({
 export type RunSubjectInput = z.infer<typeof RunSubjectInput>;
 export type ItemSubjectInput = z.infer<typeof ItemSubjectInput>;
 
+export const MAX_CHECK_READ_BYTES = 1024 * 1024; // 1 MiB
+
+export const CheckReads = z.strictObject({
+  roles: z.array(SourceRoleSchema).min(1).describe('source roles whose bound sources are read into sources for this check'),
+  types: z
+    .array(ExternalType)
+    .min(1)
+    .optional()
+    .describe('external object types system:type whose bound sources are read; when set, sources without external identity are not read'),
+  max_bytes: z.number().int().positive().optional().describe('most bytes read per bound source; at most 1 MiB (default 1 MiB)'),
+});
+export type CheckReads = z.infer<typeof CheckReads>;
+
 export const CheckEntry = z
   .strictObject({
     id: Key,
@@ -267,6 +281,7 @@ export const CheckEntry = z
     judges: SourceRoleSchema.describe('the role of what the check judges (A03): the target, an expected source or the artifact under verification'),
     tier: CheckTierSchema.optional().describe('replaces the tier of every outcome; required on publication, legacy published packs fall back to basis'),
     basis: z.string().min(1).optional().describe('the acceptance contract clause a blocking check relies on (C05 R[1])'),
+    reads: CheckReads.optional().describe('bound sources of these roles are read into sources for this check'),
   })
   .superRefine((c, ctx) => {
     if ((c.interpreter === undefined) === (c.function === undefined)) ctx.addIssue({ code: 'custom', path: ['interpreter'], message: 'a check names a core interpreter or a pack function, not both and not neither' });
@@ -523,6 +538,14 @@ export const SampleExpectation = z.strictObject({
   item: z.string().optional(),
 });
 
+export const SampleUnreadSource = z.strictObject({
+  reference: ReferenceUri,
+  reason: z.string().min(1),
+  external: ExternalObjectId.optional().describe('external object identity when the bound source had one'),
+  slot: z.string().optional().describe('input slot when the bound source had one'),
+});
+export type SampleUnreadSource = z.infer<typeof SampleUnreadSource>;
+
 export const PackSample = z.strictObject({
   id: Key,
   source: z.enum(SAMPLE_SOURCES),
@@ -530,6 +553,7 @@ export const PackSample = z.strictObject({
   note: z.string().optional(),
   subject: z.unknown().describe('the subject exactly as the check receives it after the subject builder'),
   sources: z.record(z.string(), z.string()).optional().describe('fragment texts by reference for quotation checks'),
+  unread_sources: z.array(SampleUnreadSource).optional().describe('sources that could not be read or exceeded max bytes'),
   catalog: z.unknown().optional().describe('catalog entries the check consults (catalog@1 spec of hub/rules)'),
   expect: z.array(SampleExpectation),
 });

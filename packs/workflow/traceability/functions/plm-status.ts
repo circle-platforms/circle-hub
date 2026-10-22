@@ -25,16 +25,27 @@ export function readClosedStatuses(table: unknown): string[] {
   return Array.isArray(CLOSED_DEFAULT.statuses) ? CLOSED_DEFAULT.statuses : ['closed'];
 }
 
+function isPlmBugSource(u: { reference: string; reason?: string; external?: string; slot?: string }): boolean {
+  if (typeof u.external === 'string' && (u.external.startsWith('plm:bugs:') || u.external.startsWith('plm:bugs'))) return true;
+  if (typeof u.reference === 'string' && u.reference.startsWith('plm:bugs:')) return true;
+  return false;
+}
+
 /** Parses PLM batch responses from sources record (Record<string, string> of reference -> JSON string). */
-export function parsePlmResponses(sources: Readonly<Record<string, string>> | undefined): {
+export function parsePlmResponses(
+  sources: Readonly<Record<string, string>> | undefined,
+  unreadSources?: ReadonlyArray<{ reference: string; reason: string; external?: string; slot?: string }>,
+): {
   hasPlmSource: boolean;
+  hasUnreadSources: boolean;
   statuses: Map<string, string | null>;
   unread: Set<string>;
 } {
   const statuses = new Map<string, string | null>();
   const unread = new Set<string>();
   let hasPlmSource = false;
-  if (!sources) return { hasPlmSource, statuses, unread };
+  const hasUnreadSources = Boolean(unreadSources && unreadSources.some(isPlmBugSource));
+  if (!sources) return { hasPlmSource, hasUnreadSources, statuses, unread };
 
   for (const text of Object.values(sources)) {
     if (typeof text !== 'string') continue;
@@ -68,7 +79,7 @@ export function parsePlmResponses(sources: Readonly<Record<string, string>> | un
       // Ignore non-JSON source texts.
     }
   }
-  return { hasPlmSource, statuses, unread };
+  return { hasPlmSource, hasUnreadSources, statuses, unread };
 }
 
 /** Determines defect system status and closed status for one defect. */
@@ -79,6 +90,7 @@ export function defectSystemInfoOf(
   plmUnread: Set<string>,
   closedSet: Set<string>,
   hasPlmSource = true,
+  hasUnreadSources = false,
 ): DefectSystemInfo {
   if (!systems.includes('plm')) {
     if (systems.includes('bugzilla')) {
@@ -124,6 +136,14 @@ export function defectSystemInfoOf(
     return {
       status: null,
       unknownReason: '缺陷系统没有返回这个编号',
+      isClosed: false,
+    };
+  }
+
+  if (hasUnreadSources) {
+    return {
+      status: null,
+      unknownReason: '缺陷系统没有读到（来源不可用）',
       isClosed: false,
     };
   }

@@ -1,0 +1,30 @@
+{
+  "run": "run_01m5h9zm2nhzbz2hrfjfb6azta",
+  "model": "omega-reporter 1.0 (scripted, temperature 0)",
+  "items": [
+    {
+      "item": "report",
+      "handling": "handled",
+      "slots": {}
+    }
+  ],
+  "cross_item": [
+    {
+      "nature": "judgment",
+      "statement": "评审终稿（中文全文，合成示例）：整体 PARTIAL。A 块全部证实；B 块有一条发现被部分修正、一条新增发现……",
+      "grounds": [
+        "rec:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef#/partitions/delivered/0/requirements/0/claims/0",
+        "rec:fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210#/partitions/delivered/0/requirements/0/claims/0",
+        "rec:fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210#/partitions/delivered/0/requirements/0/claims/1"
+      ],
+      "code": "PARTIAL",
+      "rank": "P5"
+    },
+    {
+      "nature": "judgment",
+      "statement": "补：合法值域外的反向用例；因为：B 块新增发现指出边界未覆盖；期望：非法输入被拒绝并提示原因",
+      "grounds": [],
+      "code": "suggestion"
+    }
+  ]
+}

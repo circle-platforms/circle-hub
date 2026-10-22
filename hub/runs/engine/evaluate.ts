@@ -3,21 +3,25 @@
 // requirement status, the claims and the partitions. A run-level check gets one subject built from all items, an item check
 // one subject per item; outcomes are assigned to items by their item id and an outcome without an item is a run-level fact.
 import { CORE_VIOLATION_CODES } from '../../../contracts/generated/protocol.ts';
-import type { Reason, SourceRole } from '../../../contracts/generated/vocabulary.ts';
+import type { PermissionRole, Reason, SourceRole } from '../../../contracts/generated/vocabulary.ts';
 import type { Claim } from '../../../contracts/src/claim.ts';
 import type { ProtocolError } from '../../../contracts/src/common.ts';
-import type { CheckEntry, RequirementTemplate, RunContext, SlotClaim, SubjectItem } from '../../../contracts/src/pack.ts';
+import { MAX_CHECK_READ_BYTES, type CheckEntry, type RequirementTemplate, type RunContext, type SlotClaim, type SubjectItem } from '../../../contracts/src/pack.ts';
 import type { ItemProjection, RunRecord } from '../../../contracts/src/run.ts';
 import type { Submission } from '../../../contracts/src/submission.ts';
 import type { RequirementResult, ValidationResult } from '../../../contracts/src/validation.ts';
 import type { LoadedWorkflow } from '../../ports.ts';
-import { SandboxError, callPackFunction, runCheck, sourcesFrom, type CatalogView, type CheckOutcome } from '../../rules/api.ts';
+import { publishCheckMarks } from '../packs/marks.ts';
+import type { Principal } from '../../records/api.ts';
+import { parseReference, resolveReference, type RecordReader, type ResolveContext, type SourceReader } from '../../refs/api.ts';
+import { SandboxError, callPackFunction, runCheck, sourcesFrom, type CatalogView, type CheckOutcome, type UnreadSource } from '../../rules/api.ts';
 import { factClaim, judgmentClaim, rootDigest, statementOf, strongestRole } from './claims.ts';
 import { CHECK_PARALLELISM, type EngineContext } from './deps.ts';
 import { describe, fixOf } from './errors.ts';
 import { emptyEvidence, type ExactResult, type ItemEvidence } from './exact.ts';
 import { independenceOf, warrantIndependence, type AuthorOrigin, type ProducerOrigin } from './independence.ts';
 import { partitionItems, type PartitionInput } from './partitions.ts';
+import { identityOf, recordReader, sourceReader } from './readers.ts';
 import { runRequirementOf } from './slots.ts';
 import {
   applyRouting,
@@ -181,6 +185,9 @@ function ruleOf(workflow: LoadedWorkflow, check: CheckEntry): string {
 
 export async function evaluate(ctx: EngineContext, input: EvaluationInput): Promise<Evaluation> {
   const { run, workflow, submission } = input;
+  // The sample marks of the locked version's checks (T02 R[1]), computed once: fact claims of a check with only author
+  // samples carry author_samples_only. A model judgment never takes them — they speak about a rule's samples.
+  const sampleMarks = publishCheckMarks(workflow);
   const exclude = input.exclude ?? new Set<string>();
   const templates = workflow.requirements;
   const itemTemplates = templates.filter((t) => t.target === 'item');
@@ -228,6 +235,130 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
   for (const t of templates) for (const id of t.checks) requirementsOf.set(id, [...(requirementsOf.get(id) ?? []), t]);
 
   const onError = (error: unknown, check: string): void => ctx.log({ traceId: input.traceId, run: run.run, what: `check ${check}`, detail: describe(error) });
+
+  let resolveCtx: ResolveContext;
+  if (run.runner !== undefined) {
+    const user = ctx.deps.records.principals !== undefined ? await ctx.deps.records.principals.get(run.runner) : null;
+    const role: PermissionRole = user?.role ?? 'user';
+    const runnerPrincipal: Principal = { id: run.runner, name: user?.name ?? run.runner, role };
+    resolveCtx = {
+      reader: identityOf(runnerPrincipal, run.run),
+      parsers: ctx.parsers,
+      sources: sourceReader(ctx.deps.records.artifacts, 'function'),
+      trees: ctx.deps.knowledge.treeReader(),
+      records: recordReader(ctx.deps.records.store),
+      consumer: 'function',
+      documents: ctx.documents,
+    };
+  } else {
+    // Hub standing obligation: Hub's own system read path
+    const systemSources: SourceReader = {
+      async read(sha256) {
+        const records = await ctx.deps.records.artifacts.records(sha256);
+        const first = records[0];
+        if (first !== undefined && first.body.read_tier === 'retain_only') {
+          return { bytes: null, mediaType: first.body.media_type, size: first.body.size, readTier: first.body.read_tier };
+        }
+        const bytes = await ctx.deps.records.artifacts.trustedBytes(sha256);
+        if (bytes === null) return null;
+        return {
+          bytes,
+          mediaType: first?.body.media_type ?? 'application/octet-stream',
+          size: bytes.byteLength,
+          readTier: first?.body.read_tier ?? 'function_bytes_only',
+        };
+      },
+    };
+    const systemRecords: RecordReader = {
+      async read(digest) {
+        const record = await ctx.deps.records.store.get(digest);
+        if (record === null) return null;
+        return { kind: record.kind, schema: record.schema, provenance: record.provenance, created_at: record.created_at, body: record.body };
+      },
+    };
+    resolveCtx = {
+      reader: { user: 'hub', role: 'admin', run: run.run },
+      parsers: ctx.parsers,
+      sources: systemSources,
+      trees: ctx.deps.knowledge.treeReader(),
+      records: systemRecords,
+      consumer: 'function',
+      documents: ctx.documents,
+    };
+  }
+
+  const boundSourceCache = new Map<string, Promise<{ resolved: boolean; text: string | null; byteLength?: number; reason?: string }>>();
+
+  const resolveBoundSource = (reference: string) => {
+    let pending = boundSourceCache.get(reference);
+    if (!pending) {
+      pending = (async () => {
+        try {
+          const parsed = parseReference(reference);
+          const result = await resolveReference(parsed, resolveCtx);
+          if (!result.resolved) {
+            return { resolved: false, text: null, reason: result.message };
+          }
+          if (result.text === null) {
+            return { resolved: true, text: null, reason: result.note ?? '内容没有文本' };
+          }
+          const byteLength = Buffer.byteLength(result.text, 'utf8');
+          return { resolved: true, text: result.text, byteLength };
+        } catch (error) {
+          return { resolved: false, text: null, reason: describe(error) };
+        }
+      })();
+      boundSourceCache.set(reference, pending);
+    }
+    return pending;
+  };
+
+  const externalTypeOf = (external: string): string | null => {
+    const match = /^([a-z][a-z0-9-]*:[a-z][a-z0-9_-]*):/.exec(external);
+    return match ? match[1] : null;
+  };
+
+  const readBoundSources = async (check: CheckEntry): Promise<{ boundSources: Record<string, string>; unreadSources: UnreadSource[] }> => {
+    if (check.reads === undefined) {
+      return { boundSources: {}, unreadSources: [] };
+    }
+    const maxBytes = check.reads.max_bytes ?? MAX_CHECK_READ_BYTES;
+    const roles = new Set(check.reads.roles);
+    const types = check.reads.types !== undefined ? new Set(check.reads.types) : undefined;
+    const matchingSources = (run.sources ?? []).filter((s) => {
+      if (!roles.has(s.role)) return false;
+      if (types !== undefined) {
+        if (s.external === undefined) return false;
+        const extType = externalTypeOf(s.external);
+        if (extType === null || !types.has(extType)) return false;
+      }
+      return true;
+    });
+    const boundSources: Record<string, string> = {};
+    const unreadSources: UnreadSource[] = [];
+    for (const s of matchingSources) {
+      const result = await resolveBoundSource(s.reference);
+      const extra = {
+        ...(s.external !== undefined ? { external: s.external } : {}),
+        ...(s.slot !== undefined ? { slot: s.slot } : {}),
+      };
+      if (!result.resolved) {
+        unreadSources.push({ reference: s.reference, reason: result.reason ?? '来源不可用', ...extra });
+      } else if (result.text === null) {
+        unreadSources.push({ reference: s.reference, reason: result.reason ?? '内容没有文本', ...extra });
+      } else if (result.byteLength !== undefined && result.byteLength > maxBytes) {
+        unreadSources.push({
+          reference: s.reference,
+          reason: `超过大小上限（${result.byteLength} 字节，上限 ${maxBytes} 字节）`,
+          ...extra,
+        });
+      } else {
+        boundSources[s.reference] = result.text;
+      }
+    }
+    return { boundSources, unreadSources };
+  };
+
   const callCheck = async (check: CheckEntry, subject: unknown, texts: ReadonlyMap<string, string>): Promise<CheckOutcome[]> => {
     let table: unknown;
     if (check.table !== undefined) {
@@ -239,7 +370,8 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
       }
     }
     const view = check.catalog !== undefined ? (views.get(check.catalog) ?? undefined) : undefined;
-    const record = Object.fromEntries(texts);
+    const { boundSources, unreadSources } = await readBoundSources(check);
+    const record = { ...Object.fromEntries(texts), ...boundSources };
     const outcomes = await runCheck(
       {
         id: check.id,
@@ -248,6 +380,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
         ...(check.tier !== undefined ? { tier: check.tier } : {}),
         ...(check.basis !== undefined ? { basis: check.basis } : {}),
         catalogEntries: check.function !== undefined && check.catalog !== undefined,
+        ...(check.reads !== undefined ? { reads: check.reads } : {}),
         ...(ctx.deps.sandboxLimits !== undefined ? { limits: ctx.deps.sandboxLimits } : {}),
       },
       {
@@ -258,6 +391,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
         context: { run: run.run, requirement: requirementsOf.get(check.id)?.[0]?.key, pack: workflow.pack.id, sets },
         packDir: workflow.pack.directory,
         sourceTexts: record,
+        unreadSources,
         ...(ctx.deps.sandbox !== undefined ? { sandbox: ctx.deps.sandbox } : {}),
         onError,
       },
@@ -448,6 +582,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
             outcome: o.outcome,
             rule: ruleOf(workflow, check),
             judges: o.judges,
+            sampleMarks: sampleMarks[o.check] ?? [],
             overClaims,
             discrimination: t.requires_discrimination === true,
             bound: [...baseBound, ...(it.digest !== undefined ? [it.digest] : []), ...(sourceSha !== null ? [sourceSha] : []), ...(overClaims && submission !== null ? [input.submissionDigest] : [])],
@@ -510,6 +645,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
       outcome: o,
       rule: ruleOf(workflow, check),
       judges: check.judges,
+      sampleMarks: sampleMarks[check.id] ?? [],
       overClaims: check.judges === 'artifact_under_verification',
       discrimination: (requirementsOf.get(check.id) ?? []).some((t) => t.requires_discrimination === true),
       bound: [...crossBound, ...(check.judges === 'artifact_under_verification' && submission !== null ? [input.submissionDigest] : [])],

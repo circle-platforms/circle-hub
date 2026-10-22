@@ -102,6 +102,48 @@
             "description": "the acceptance contract clause a blocking check relies on (C05 R[1])",
             "type": "string",
             "minLength": 1
+          },
+          "reads": {
+            "description": "bound sources of these roles are read into sources for this check",
+            "type": "object",
+            "properties": {
+              "roles": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "expected",
+                    "subject",
+                    "artifact_under_verification",
+                    "reported_actual",
+                    "republished",
+                    "hint",
+                    "request_text"
+                  ]
+                },
+                "description": "source roles whose bound sources are read into sources for this check"
+              },
+              "types": {
+                "description": "external object types system:type whose bound sources are read; when set, sources without external identity are not read",
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9-]*:[a-z][a-z0-9_-]*$"
+                }
+              },
+              "max_bytes": {
+                "description": "most bytes read per bound source; at most 1 MiB (default 1 MiB)",
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "roles"
+            ],
+            "additionalProperties": false
           }
         },
         "required": [
