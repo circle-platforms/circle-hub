@@ -757,6 +757,28 @@ describe('case-location associated ID classification and complete result reading
     assert.ok(!setCheck.actual.includes('另有'), `the cap marker is not an id: ${setCheck.actual}`);
   });
 
+  test('the src hex digest of a 位置 segment after the ids is not read as ids', () => {
+    // The real doc line keeps going after the ids with "位置 src:<hex>"（含 949、06、893744 这样的数字段）—
+    // the ids come only from the marked segment, up to the next ；or |.
+    const gold: LocationGold = {
+      document: '900301',
+      product: 'apv',
+      line: '10.6.1',
+      unclassified: ['900001', '900002'],
+    };
+    const s = caseLocation(gold);
+    const text = [
+      '运行 run_1 完成：任务包 case-location@1.3.0',
+      'location 用例定位：满足 1',
+      '产品线 apv；版本 10.6.1（目录，置信度高）',
+      '- 900301 | 文档 900301 | 产品线 apv；版本 10.6.1（目录，置信度高）；未分类编号 900001、900002 | 位置 src:94906f893744abcdef0123456789/json@1/p/beds/0',
+    ].join('\n');
+    const checks = s.check(turnsOf(text));
+    assert.ok(checks.every((c) => c.ok), JSON.stringify(checks.filter((c) => !c.ok)));
+    const setCheck = checks.find((c) => c.name === '关联编号集合与独立依据一致');
+    assert.ok(setCheck && setCheck.ok && setCheck.actual.includes('集合一致'));
+  });
+
   test('fails when an associated ID is misclassified (gold expects defect but reported as unclassified)', () => {
     const gold: LocationGold = {
       document: '90001',

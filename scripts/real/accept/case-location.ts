@@ -237,7 +237,7 @@ function scanJsonObjects(text: string): unknown[] {
 }
 
 function extractIdsFromSnippet(snippet: string, marker: string): string[] {
-  const match = new RegExp(`${marker}\\s+([^；;\\n]+)`).exec(snippet);
+  const match = new RegExp(`${marker}\\s+([^；;|\\n]+)`).exec(snippet);
   if (!match) return [];
   const part = match[1].replace(/\s*(?:等|另有)\s*\d+\s*个.*$/, '');
   const ids: string[] = [];
