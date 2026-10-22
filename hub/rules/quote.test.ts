@@ -25,6 +25,18 @@ describe('shared quotation vectors', () => {
     });
   }
 
+  it('case differences and the empty quote are not matches (the mutation-check survivors M12 and M17)', () => {
+    // Written out besides the vectors so a mutation that drops the vectors' meaning fails here too.
+    assert.equal(quoteMatches('设置 3 区浇灌 15 分钟', '设置 3 区浇灌 15 分钟'), true);
+    assert.equal(quoteMatches('Show Version', 'show version'), false, 'case stays significant (M12)');
+    assert.equal(quoteMatches('Show Version', 'SHOW VERSION'), false, 'case stays significant in the fragment too (M12)');
+    assert.equal(quoteInCollapsed(collapseWhitespace('Show Version'), 'show version'), false, 'M12 through the collapsed path the interpreter takes');
+    assert.equal(quoteMatches('abc', ''), false, 'an empty quote never matches (M17)');
+    assert.equal(quoteMatches('', ''), false, 'an empty quote never matches an empty fragment (M17)');
+    assert.equal(quoteInCollapsed(collapseWhitespace('abc'), ''), false, 'M17 through the collapsed path the interpreter takes');
+    assert.equal(quoteInCollapsed(collapseWhitespace('abc'), ' \n\t'), false, 'a quote of white space only never matches (M17)');
+  });
+
   it('quote@1 decides every vector the same way', () => {
     const reference = `src:${'c'.repeat(64)}/markdown@1/p/1`;
     const table = { schema: 'quote@1', origin: '测试', quotes: [{ select: '$.quotes[*]', text: '/text', reference: '/reference' }] };

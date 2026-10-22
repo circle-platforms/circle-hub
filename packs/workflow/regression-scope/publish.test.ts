@@ -58,7 +58,7 @@ describe('publishing the regression-scope pack', { skip }, () => {
       report.warnings.map((w) => w.rule),
       ['publish.author_samples_only', 'publish.author_samples_only'],
     );
-    assert.deepEqual([outcome.version.id, outcome.version.version, outcome.version.kind], ['regression-scope', '1.0.1', 'workflow']);
+    assert.deepEqual([outcome.version.id, outcome.version.version, outcome.version.kind], ['regression-scope', '1.0.2', 'workflow']);
     const again = await registry.publish(owner, await staged());
     assert.ok(again.ok && again.created === false);
   });
@@ -78,7 +78,7 @@ describe('publishing the regression-scope pack', { skip }, () => {
   it('refuses a version without a negative sample', async () => {
     const dir = await staged();
     await rm(join(dir, 'samples/negative'), { recursive: true });
-    await signPack(dir, { version: '1.0.3' });
+    await signPack(dir, { version: '1.0.4' });
     const outcome = await registry.publish(owner, dir);
     assert.ok(!outcome.ok);
     assert.ok(outcome.problems.some((p) => p.rule === 'publish.unsampled'), JSON.stringify(outcome.problems, null, 1));

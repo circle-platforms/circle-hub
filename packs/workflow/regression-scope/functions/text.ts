@@ -4,6 +4,9 @@ export const PACK = 'regression-scope';
 
 export const CHANGE_LABEL = { added: '新增', removed: '删除', modified: '修改' } as const;
 
+/** What a reason's conclusion says, by the command definition's change (a new command is not called modified). */
+export const DEFINITION_CHANGE_LABEL = { added: '新增命令', removed: '删除命令', modified: '命令定义有变更', none: '仅说明文字有变更' } as const;
+
 export function isRecord(value: unknown): value is { [key: string]: unknown } {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

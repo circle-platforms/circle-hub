@@ -294,8 +294,17 @@ export const ProduceDetail = z.object({
   lists: z.array(ListDetail).default([]),
   /** Producer calls made and calls answered from stored outputs. */
   calls: z.object({ made: z.number(), reused: z.number() }).nullable().default(null),
-  /** The typed-judgment placement the root depends on: model, threshold, spans placed or not, judge failures. */
-  placement: z.object({ model: z.string().nullable(), threshold: z.number().nullable(), spans: z.number(), failed: z.number() }).nullable().default(null),
+  /** The typed-judgment placement the root depends on: model, threshold, spans placed or not, judge failures, skipped entries per producer. */
+  placement: z
+    .object({
+      model: z.string().nullable(),
+      threshold: z.number().nullable(),
+      spans: z.number(),
+      failed: z.number(),
+      skipped: z.record(z.string(), z.number()).optional(),
+    })
+    .nullable()
+    .default(null),
   reason: z.string().nullable(),
 });
 export type ProduceDetail = z.infer<typeof ProduceDetail>;

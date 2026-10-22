@@ -28,7 +28,12 @@ The product name in the view (`widget`) and the build names (`Rel_W_1_0_1`, `Rel
 
 Each item is one case, id `<document>:<node>`, sorted by id. A case on several added or modified paths is one item; its
 `reasons` are sorted by path and carry the change (`added` or `modified`) and the digests and tree references of the
-entries. The summary is at most 200 characters: priority, document, how many commands changed, and the first change.
+entries. Each reason also carries `definition_change` — what happened to the command definition on the path, read from
+the definition-kind entries of the two sides: none before and some after is `added` (a new command), some before and
+none after is `removed`, both with different digests is `modified`, and equal definitions (only behaviour texts
+changed) or no definition on either side is `none`. Its `conclusion` says it in one line (新增命令 / 删除命令 /
+命令定义有变更 / 仅说明文字有变更), so a command the manual already described is never called "modified". The
+summary is at most 200 characters: priority, document, how many commands changed, and the first reason's conclusion.
 Removed paths are neither in scope nor uncovered. A case on an unchanged path is not an item.
 
 `in_scope` supports each item. Grounds are the tree references of the case entry and of the definition entries on its

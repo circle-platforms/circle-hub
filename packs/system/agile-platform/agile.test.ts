@@ -8,7 +8,27 @@ import type { ExternalRead } from '../../../hub/ports.ts';
 import { startPostgres, type TemporaryPostgres } from '../../../hub/testing/postgres.ts';
 import { AGILE_ACCOUNT, DOCUMENTS, REVIEW_ANCESTORS, REVIEW_TITLE, ROOTS, agileOptions, agileTrees } from '../../../tests/fixtures/agile/index.ts';
 import { artifactBytes, openSystemKit, type SystemKit } from '../testing/kit.ts';
-import { MAX_ROOTS, bodyId, containsTerm, documentsOf, mindmapPlan, mindmapProject, outlineOf, rankDocuments, rootsOf, rootsPlan, searchKeyOf, searchPlan, searchProject, termsOf, treePlan } from './functions/agile.ts';
+import {
+  CASE_MEMBER,
+  MAX_ROOTS,
+  bodyId,
+  caseContent,
+  casePlan,
+  caseProject,
+  containsTerm,
+  documentsOf,
+  mindmapPlan,
+  mindmapProject,
+  outlineOf,
+  rankDocuments,
+  rootsOf,
+  rootsPlan,
+  searchKeyOf,
+  searchPlan,
+  searchProject,
+  termsOf,
+  treePlan,
+} from './functions/agile.ts';
 
 const profile = SystemProfile.parse(JSON.parse(readFileSync(new URL('./system.json', import.meta.url), 'utf8')));
 
@@ -164,6 +184,49 @@ describe('the read functions', () => {
     assert.deepEqual(outlineOf(JSON.parse(doc)), ['根', '  子']);
     assert.deepEqual(outlineOf('not json'), []);
   });
+
+  test('case document functions: plan requests case data alone, project wraps document with agile id', () => {
+    const plan = casePlan({ external: { key: '950001' } });
+    assert.ok(ReadPlanOutput.safeParse(plan).success);
+    assert.deepEqual(plan, { requests: [{ key: 'case', route: 'case-data', body: { id: 950001 } }], done: true, original: 'case' });
+    assert.deepEqual(casePlan({ external: { key: 'bad/id' } }), { requests: [], done: true });
+
+    // Object data
+    const objData = { root: { data: { text: 'title' }, children: [] } };
+    const wrappedObj = caseContent('950001', objData);
+    assert.equal(wrappedObj.ok, true);
+    if (wrappedObj.ok) {
+      assert.equal(wrappedObj.artifact.name, 'content');
+      assert.deepEqual((wrappedObj.artifact.json as Record<string, unknown>)[CASE_MEMBER], { id: '950001' });
+    }
+
+    // String data
+    const strData = JSON.stringify({ root: { data: { text: 'title' }, children: [] } });
+    const wrappedStr = caseContent('950001', strData);
+    assert.equal(wrappedStr.ok, true);
+    if (wrappedStr.ok) {
+      assert.ok(typeof wrappedStr.artifact.text === 'string');
+      const parsed = JSON.parse(wrappedStr.artifact.text!);
+      assert.deepEqual(parsed[CASE_MEMBER], { id: '950001' });
+      assert.equal(parsed.root.data.text, 'title');
+    }
+
+    // Refusals
+    assert.equal(caseContent('950001', { not_root: true }).ok, false);
+    assert.equal(caseContent('950001', 'not json').ok, false);
+    assert.equal(caseContent('950001', { [CASE_MEMBER]: { id: 'other' }, root: {} }).ok, false);
+
+    // Project
+    const projected = caseProject({
+      external: { key: '950001' },
+      responses: { case: { ok: true, json: { code: 1000, data: objData }, sha256: 'f'.repeat(64) } },
+      original: 'case',
+    });
+    assert.ok(ReadProjectionOutput.safeParse(projected).success);
+    const proj = projected as { revision?: string; artifacts: Array<{ name: string; json?: unknown }> };
+    assert.equal(proj.revision, 'f'.repeat(64));
+    assert.deepEqual(proj.artifacts.find((a) => a.name === 'meta')?.json, { id: '950001' });
+  });
 });
 
 describe('reads through the connectors', () => {
@@ -253,6 +316,18 @@ describe('reads through the connectors', () => {
     const excluded = ok(await read(`agile:search:${encodeURIComponent('健康检查')}+HTTP+${encodeURIComponent('探活')}+!${DOCUMENTS.review}`));
     const others = (await json(excluded, 'content')) as { documents: { id: string }[] };
     assert.ok(!others.documents.some((d) => d.id === DOCUMENTS.review), 'the reviewed document is not its own similar test list');
+  });
+
+  test('a case document (agile:case:<id>): requests case data directly without reading trees, wraps content with agile id', async () => {
+    const treesBefore = agile.count('/agile/get_child_node_task/');
+    const c = ok(await read(`agile:case:${DOCUMENTS.review}`));
+    assert.equal(agile.count('/agile/get_child_node_task/'), treesBefore, 'no tree walk for an agile:case read');
+    assert.deepEqual(c.artifacts.map((a) => a.name), ['original', 'content', 'meta']);
+    assert.match(c.revision ?? '', /^[0-9a-f]{64}$/);
+    const content = (await json(c, 'content')) as { agile?: { id: string }; root: { data: { text: string } } };
+    assert.deepEqual(content.agile, { id: DOCUMENTS.review });
+    assert.equal(content.root.data.text, REVIEW_TITLE);
+    assert.deepEqual(await json(c, 'meta'), { id: DOCUMENTS.review });
   });
 
   test('a wrong password is tried once and never again until an admin acts', async () => {

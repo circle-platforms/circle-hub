@@ -436,6 +436,7 @@ catalogs, grounds and provenance.
 - Builds whose line the caller did not ask for are not filtered by the driver: the plan function receives the line and
   is the authority.
 - Spans that stop at the root are not hung on the root (K01 R[4], K04 R[3]); deeper stops hang on that node.
+- Typed-judgment placement opt-in: path-less entries only enter placement (`toPlace`) when their producer declares `placement: "judgment_allowed"`. By default (`code_only`), path-less entries stay unplaced at the root without calling the typed-judgment service, preventing text egress outside the Hub; skipped entries are counted per producer in the production record (`placement.skipped`) and sync report.
 - The memo key identifies every element and slot by `{sha256, media_type, parser}` and adds the production component
   (`knowledge.producer@1`), not by the digest alone: the function receives all three, and a Hub with another parser
   version gives other models. It also covers the build and the batch position, which the function receives too.

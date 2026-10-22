@@ -1,5 +1,7 @@
-// submit_result (W07, W08, T03): the arguments are stored exactly as received before anything else; a repeat of the same
-// (run, submission digest) returns the stored result without re-running anything; a run superseded by a newer revision of
+// submit_result (W07, W08, T03, A04): the arguments are stored exactly as received before anything else; a repeat of the same
+// (run, submission digest) observed at the same session and declared model returns the stored result without re-running
+// anything. A different session or model is a different judge of that body and is validated again, so a drafter cannot
+// receive the verifier's receipt by resubmitting it. A run superseded by a newer revision of
 // its own runner answers RUN_SUPERSEDED. Arguments the records cannot hold as checked JSON (a lone surrogate, nesting past the
 // bound, a body over the record limit) are kept verbatim as an object and answered not accepted before anything reads them.
 // Otherwise the structure, the item projection and the exact values are checked: any violation keeps the whole submission
@@ -32,7 +34,6 @@ import {
   putAction,
   putResult,
   putSubmission,
-  resultFor,
   runById,
   submissionByDigest,
   successorsOf,
@@ -56,6 +57,27 @@ export function answerOf(result: ValidationResult): SubmitAnswer {
 
 function emptyPartitions(): Partitions {
   return Object.fromEntries(PARTITION.map((p) => [p, []])) as unknown as Partitions;
+}
+
+/**
+ * The result already stored for this submission digest when this call's session and declared model are the ones that
+ * produced it (A04: the judge is the session the Hub observed and the model the client declared). A result produced by
+ * someone else is not this call's receipt.
+ */
+async function resultForObserver(ctx: EngineContext, run: string, submission: string, session: string | null, model: string | null): Promise<ValidationResult | null> {
+  const store = ctx.deps.records.store;
+  for (const action of await actionsOf(store, run)) {
+    if (action.body.action !== 'validate' || !isObject(action.body.detail) || action.body.detail.production === true) continue;
+    const detail = action.body.detail;
+    if (detail.submission !== submission || typeof detail.result !== 'string') continue;
+    const priorSession = detail.session === null || typeof detail.session === 'string' ? detail.session : undefined;
+    const priorModel = detail.model === null || typeof detail.model === 'string' ? detail.model : undefined;
+    if (priorSession === undefined || priorModel === undefined || priorSession !== session || priorModel !== model) continue;
+    const record = await store.get<ValidationResult>(detail.result);
+    if (record === null || record.kind !== 'validation_result') continue;
+    return record.body;
+  }
+  return null;
 }
 
 /** Repair rounds each requirement used in the run's earlier submissions (one per distinct submission with a problem for it). */
@@ -132,8 +154,10 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
   const store = ctx.deps.records.store;
   const run = stored.body;
   const received = receivedDigest(args);
-  const repeat = await resultFor(store, run.run, received.digest);
-  if (repeat !== null) return answerOf(repeat.body);
+  const sessionNow = sessionOf(call);
+  const modelNow = typeof args.model === 'string' ? wellFormed(args.model) : null;
+  const repeat = await resultForObserver(ctx, run.run, received.digest, sessionNow, modelNow);
+  if (repeat !== null) return answerOf(repeat);
 
   const startedAt = ctx.now().toISOString();
   // Arguments canonical JSON cannot carry are never parsed: nothing built from them could be stored.
