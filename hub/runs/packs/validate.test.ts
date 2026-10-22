@@ -395,3 +395,22 @@ test('every check must declare an explicit tier upon publication: missing tier i
   const withTier = checks((f) => (f.checks[0].tier = 'blocking'));
   await accepted(withTier);
 });
+
+test('check reads max_bytes is validated against core limit of 1 MiB', async () => {
+  const exceeded = checks((f) => {
+    f.checks[0].reads = { roles: ['expected'], max_bytes: 2 * 1024 * 1024 };
+  });
+  const p = await refused(exceeded, 'checks.max_bytes_exceeded', { file: 'checks.json', field: '/checks/0/reads/max_bytes' });
+  assert.match(p.message, /超过了核心上限/);
+  assert.match(p.fix, /不超过 1048576 字节/);
+
+  const withinLimit = checks((f) => {
+    f.checks[0].reads = { roles: ['expected'], max_bytes: 512 * 1024 };
+  });
+  await accepted(withinLimit);
+
+  const defaultLimit = checks((f) => {
+    f.checks[0].reads = { roles: ['expected'] };
+  });
+  await accepted(defaultLimit);
+});
