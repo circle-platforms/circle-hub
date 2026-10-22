@@ -1,0 +1,58 @@
+{
+  "id": "shape_clean",
+  "source": "author",
+  "check": "draft_shape",
+  "note": "起草用例结构完整、字段合法",
+  "subject": {
+    "item": "71009",
+    "label": "SLB健康检查间隔无法保存",
+    "location": "src:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/plm:bug/71009",
+    "fields": {
+      "status": "closed",
+      "resolution": "fixed",
+      "severity": "major",
+      "assignedTo": "tester1"
+    },
+    "slots": {
+      "cases": [
+        {
+          "text": "健康检查间隔设置回归测试",
+          "data": {
+            "title": "配置健康检查间隔为 60 秒",
+            "priority": 2,
+            "negative": false,
+            "expects_refutation": false,
+            "preconditions": [
+              "SLB服务正常运行"
+            ],
+            "steps": [
+              {
+                "text": "执行配置命令",
+                "command": "widget health interval 60"
+              }
+            ],
+            "expected": [
+              {
+                "text": "健康检查间隔设置成功",
+                "quote": {
+                  "reference": "src:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/markdown@1/s/fix",
+                  "text": "健康检查间隔设置成功"
+                }
+              }
+            ],
+            "tags": [
+              "Functional"
+            ]
+          }
+        }
+      ]
+    },
+    "evidence": []
+  },
+  "expect": [
+    {
+      "verdict": "support",
+      "item": "71009"
+    }
+  ]
+}

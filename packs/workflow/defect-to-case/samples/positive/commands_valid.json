@@ -1,0 +1,61 @@
+{
+  "id": "commands_valid",
+  "source": "author",
+  "check": "commands_catalog",
+  "note": "用例步骤中的命令在目录中存在且参数类型和范围合法",
+  "subject": {
+    "item": "71009",
+    "location": "src:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/plm:bug/71009",
+    "phrases": [
+      "widget health interval 60"
+    ],
+    "negative": false
+  },
+  "catalog": {
+    "root": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "complete": true,
+    "entries": [
+      {
+        "head": "widget health interval",
+        "signatures": [
+          [
+            {
+              "name": "seconds",
+              "type": "int",
+              "minimum": 1,
+              "maximum": 300
+            }
+          ]
+        ],
+        "summary": "设置健康检查间隔"
+      },
+      {
+        "head": "show health",
+        "signatures": [
+          []
+        ],
+        "summary": "查看健康检查状态"
+      },
+      {
+        "head": "service http port",
+        "signatures": [
+          [
+            {
+              "name": "port",
+              "type": "port",
+              "minimum": 1,
+              "maximum": 65535
+            }
+          ]
+        ],
+        "summary": "设置HTTP服务端口"
+      }
+    ]
+  },
+  "expect": [
+    {
+      "verdict": "support",
+      "item": "71009"
+    }
+  ]
+}

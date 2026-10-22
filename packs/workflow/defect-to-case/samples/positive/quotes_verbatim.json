@@ -1,0 +1,24 @@
+{
+  "id": "quotes_verbatim",
+  "source": "author",
+  "check": "grounded_quotes",
+  "note": "期望结果逐字引文完全存在于所引来源中",
+  "subject": {
+    "item": "71009",
+    "quotes": [
+      {
+        "reference": "src:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/markdown@1/s/fix",
+        "text": "健康检查间隔设置成功"
+      }
+    ]
+  },
+  "sources": {
+    "src:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/markdown@1/s/fix": "健康检查间隔设置成功，默认值为 5 秒。"
+  },
+  "expect": [
+    {
+      "verdict": "support",
+      "item": "71009"
+    }
+  ]
+}

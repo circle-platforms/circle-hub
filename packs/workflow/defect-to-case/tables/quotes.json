@@ -1,0 +1,15 @@
+{
+  "schema": "quote@1",
+  "origin": "决定：defect-to-case 工作流包 grounded 要求项的期望结果逐字引文核对（docs/hub-r4-architecture.md 第 6a 节；docs/hub-r4-tasks/defect-to-case.md）；被判对象由 functions/subjects.ts 的 quoteSubject 产出：起草用例每个期望结果的逐字引文（quotes）",
+  "description": "起草用例期望结果中的每段引文必须逐字出现在所引来源（缺陷修复说明或手册）中（只忽略空白差异）",
+  "tier": "blocking",
+  "basis": "要求项 grounded：期望结果带有逐字引文，引文必须逐字出现在所引来源中",
+  "item": "/item",
+  "quotes": [
+    {
+      "select": "$.quotes[*]",
+      "text": "/text",
+      "reference": "/reference"
+    }
+  ]
+}

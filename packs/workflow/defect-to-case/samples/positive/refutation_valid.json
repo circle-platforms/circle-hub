@@ -1,0 +1,90 @@
+{
+  "id": "refutation_valid",
+  "source": "author",
+  "check": "commands_refutation",
+  "note": "反向用例声明预期被反驳且命令确实被目录反驳",
+  "subject": {
+    "item": "71009",
+    "slots": {
+      "cases": [
+        {
+          "text": "反向测试：健康检查间隔超出范围反驳",
+          "data": {
+            "title": "健康检查间隔超出范围反驳",
+            "priority": 2,
+            "negative": true,
+            "expects_refutation": true,
+            "preconditions": [
+              "SLB服务正常运行"
+            ],
+            "steps": [
+              {
+                "text": "设置超出范围的间隔",
+                "command": "widget health interval 999"
+              }
+            ],
+            "expected": [
+              {
+                "text": "提示取值超出范围",
+                "quote": {
+                  "reference": "src:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/markdown@1/s/fix",
+                  "text": "健康检查间隔设置成功"
+                }
+              }
+            ],
+            "tags": [
+              "Functional"
+            ]
+          }
+        }
+      ]
+    }
+  },
+  "catalog": {
+    "root": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "complete": true,
+    "entries": [
+      {
+        "head": "widget health interval",
+        "signatures": [
+          [
+            {
+              "name": "seconds",
+              "type": "int",
+              "minimum": 1,
+              "maximum": 300
+            }
+          ]
+        ],
+        "summary": "设置健康检查间隔"
+      },
+      {
+        "head": "show health",
+        "signatures": [
+          []
+        ],
+        "summary": "查看健康检查状态"
+      },
+      {
+        "head": "service http port",
+        "signatures": [
+          [
+            {
+              "name": "port",
+              "type": "port",
+              "minimum": 1,
+              "maximum": 65535
+            }
+          ]
+        ],
+        "summary": "设置HTTP服务端口"
+      }
+    ]
+  },
+  "expect": [
+    {
+      "verdict": "support",
+      "item": "71009"
+    }
+  ]
+}

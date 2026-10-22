@@ -1,0 +1,80 @@
+{
+  "schema": "requirements@1",
+  "requirements": [
+    {
+      "key": "cases",
+      "name": "用例起草",
+      "description": "模型从每个缺陷起草回归用例（标题、优先级、正反向、预期反驳、前置条件、步骤与命令行、期望结果与原文引文、标签）；无法起草的缺陷声明跳过并写明理由；每个缺陷至少起草 1 个用例，至多 max_cases 个（默认 6）",
+      "target": "item",
+      "required": true,
+      "done_rule": "bookkeeping",
+      "layers": ["static"],
+      "accepted_producer": "judgment",
+      "checks": [],
+      "error_handling": []
+    },
+    {
+      "key": "shape",
+      "name": "用例结构",
+      "description": "起草用例符合团队用例结构：标题非空且不超过 200 字符；至少一个带命令行的步骤；至少一个期望结果；优先级属于 1 到 3；标签属于团队模板类别；同一次提交无重复用例（规范化标题和步骤）；反向用例标记 negative 为 true",
+      "target": "item",
+      "required": true,
+      "done_rule": "bookkeeping",
+      "layers": ["static"],
+      "accepted_producer": "fact",
+      "checks": ["draft_shape"],
+      "error_handling": [
+        { "code": "defect-to-case.shape_invalid", "action": "repair", "max_rounds": 2 },
+        { "code": "defect-to-case.duplicate_draft", "action": "repair", "max_rounds": 2 }
+      ]
+    },
+    {
+      "key": "commands",
+      "name": "命令与参数",
+      "description": "起草用例步骤中的每条命令在锁定构建的目录中解析，参数类型、取值范围和枚举合法；expects_refutation 与 negative 均为 true 的用例预期被目录反驳（参数越界为用例设计点），若目录接受则违规；expects_refutation 为 false 的用例若被目录反驳则违规",
+      "target": "item",
+      "required": true,
+      "done_rule": "bookkeeping",
+      "layers": ["static"],
+      "accepted_producer": "fact",
+      "checks": ["commands_catalog", "commands_refutation"],
+      "error_handling": [
+        { "code": "core.catalog.not_member", "action": "repair", "max_rounds": 2 },
+        { "code": "core.catalog.param_out_of_range", "action": "repair", "max_rounds": 2 },
+        { "code": "core.catalog.param_type_mismatch", "action": "repair", "max_rounds": 2 },
+        { "code": "core.catalog.arity_mismatch", "action": "repair", "max_rounds": 2 },
+        { "code": "defect-to-case.negative_accepted", "action": "repair", "max_rounds": 2 },
+        { "code": "defect-to-case.unexpected_refutation", "action": "repair", "max_rounds": 2 }
+      ]
+    },
+    {
+      "key": "grounded",
+      "name": "期望结果依据",
+      "description": "每个期望结果带有逐字引文，引自缺陷修复说明（plm:bug 记录的 src: 或 rec: 引用）或锁定构建的手册段落（tree: 或 src: 引用）；引用未解析、缺少引文或引文不符为违规；期望结果文字可为引文的精简阅读，但不得包含引文未载的数字、命令或开关状态",
+      "target": "item",
+      "required": true,
+      "done_rule": "bookkeeping",
+      "layers": ["static"],
+      "accepted_producer": "fact",
+      "checks": ["grounded_quotes", "grounded_reading"],
+      "error_handling": [
+        { "code": "QUOTE_MISMATCH", "action": "repair", "max_rounds": 2 },
+        { "code": "REFERENCE_UNRESOLVED", "action": "repair", "max_rounds": 2 },
+        { "code": "defect-to-case.quote_missing", "action": "repair", "max_rounds": 2 },
+        { "code": "defect-to-case.unsupported_entity", "action": "repair", "max_rounds": 2 }
+      ]
+    },
+    {
+      "key": "not_duplicate",
+      "name": "用例去重",
+      "description": "对比已索引的用例清单（knowledge:index:<product>:<build>?kind=case&key=commands），若起草用例与已索引用例执行相同的一组规范化命令、具有相同的正反向标记，且规范化标题相同或规范化期望结果相同，则判定为重复；重复为提示档违规，标明已有用例（文档、节点、标题）及树引用；未发现重复时若索引未跳过文档则通过，若索引存在跳过文档则为未知（完整性未证明）",
+      "target": "item",
+      "required": true,
+      "done_rule": "bookkeeping",
+      "layers": ["static"],
+      "accepted_producer": "fact",
+      "checks": ["duplicate_check"],
+      "error_handling": []
+    }
+  ]
+}

@@ -1,0 +1,140 @@
+{
+  "schema": "pack@1",
+  "id": "defect-to-case",
+  "version": "1.0.0",
+  "kind": "workflow",
+  "title": "缺陷转用例",
+  "description": "从缺陷（现象、修复说明）起草回归测试用例，Hub 核对命令和参数合法性、期望结果引文依据、用例结构及重复用例",
+  "files": [
+    {
+      "path": "SKILL.md",
+      "sha256": "45bc2c64d7ec71763eff3a08b00e8a85831fdf3d5891c9e5e2f9d2318c7f0775",
+      "size": 4361
+    },
+    {
+      "path": "checks.json",
+      "sha256": "6bda8fbb9bbdd8cdba180b21391939f06585e7be872bc2ba8018f1975fe5cac0",
+      "size": 3076
+    },
+    {
+      "path": "examples/start-run.json",
+      "sha256": "877ca0ff4fd00942dc5c156296d82c1beae106c0982912cc97ffd5684251255f",
+      "size": 656
+    },
+    {
+      "path": "examples/submission.json",
+      "sha256": "3a9bd339fcdfdb04054307e43628afdd52573712abb40cc6b7130f35d5c3e242",
+      "size": 1866
+    },
+    {
+      "path": "functions/checks.ts",
+      "sha256": "d02a3c7f5c28d79f147f1e0208743fbfdc887d01ce68821c5ed1cdff7ab8a520",
+      "size": 19693
+    },
+    {
+      "path": "functions/expected.ts",
+      "sha256": "8e06d776cf2b2b4f2f7325ae2f93e2df8d5a0e17daf99d8181ff15f22697d523",
+      "size": 1426
+    },
+    {
+      "path": "functions/projection.ts",
+      "sha256": "42ce645c0edd543f4b85584222ae63dfb2fc7050b141cfbe8becbe37a9f76a9d",
+      "size": 4762
+    },
+    {
+      "path": "functions/subjects.ts",
+      "sha256": "c1343580f63efb2628ee4256bff90d196c53e2b8ee71f177e890f19393d4271d",
+      "size": 4539
+    },
+    {
+      "path": "functions/types.ts",
+      "sha256": "4d87ac3c0f2ac4f339fb571facc2c50998b871d197de28099df10ec90589b7e3",
+      "size": 1392
+    },
+    {
+      "path": "requirements.json",
+      "sha256": "ed10a89b23a34fb09adeeb36ae1e9d0d24b4ddb5ad163ba18cf1a2b8be1e33db",
+      "size": 4415
+    },
+    {
+      "path": "samples/negative/commands_out_of_range.json",
+      "sha256": "4025a885f37f5284fdaad079251d363adc3470b6dac3c2dc5af5e394abc0e6fb",
+      "size": 1378
+    },
+    {
+      "path": "samples/negative/duplicate_found.json",
+      "sha256": "a35575cf562af8965c589edced8fd1ef0a41605d651ec7f374e8ab80fd6f93d2",
+      "size": 2225
+    },
+    {
+      "path": "samples/negative/negative_accepted.json",
+      "sha256": "b9032a79e0c33344930515b08cfbf5fe6d96f35e2a83821d669a7bfba94e8196",
+      "size": 2250
+    },
+    {
+      "path": "samples/negative/quotes_mismatch.json",
+      "sha256": "50b213c90515e12a5f4a198c5247e547560933a1e922e3383680f59fa45339d8",
+      "size": 681
+    },
+    {
+      "path": "samples/negative/reading_unsupported_entity.json",
+      "sha256": "131f832d67977a41198826ed5d39c6eb9946e335c9c301bfc1ba088526ad6372",
+      "size": 1353
+    },
+    {
+      "path": "samples/negative/shape_invalid.json",
+      "sha256": "f9d0d87b04e99674e9d4917652764bb482ebee1a6fe63e3b76080ae52eae51fd",
+      "size": 1194
+    },
+    {
+      "path": "samples/positive/commands_valid.json",
+      "sha256": "f55cfc55e337407b13bdb5d6824771ebdb52eab0ba58857bf0778064134b5318",
+      "size": 1373
+    },
+    {
+      "path": "samples/positive/duplicate_none.json",
+      "sha256": "2e90b957ca97e2d81d9a7292e44e247e65eaf4a90588e41208578f8d8568bbd8",
+      "size": 2109
+    },
+    {
+      "path": "samples/positive/quotes_verbatim.json",
+      "sha256": "82e07cbd97130f48f0cf19b3bd05bf6227bd4f4a398d9366a0bb000d22a82711",
+      "size": 639
+    },
+    {
+      "path": "samples/positive/reading_grounded.json",
+      "sha256": "f4d9139e7982bf29e61008c3150bd8b25e59dc9d519006837ca762a0c6f83ca0",
+      "size": 1583
+    },
+    {
+      "path": "samples/positive/refutation_valid.json",
+      "sha256": "e45407fff07ff8c686950fd96868ceee31d0a05f380a372f1db38d6d375340e3",
+      "size": 2193
+    },
+    {
+      "path": "samples/positive/shape_clean.json",
+      "sha256": "80f7bc31d9bca5978730fdbdb7edc5b2246b64c3ab829df5bdac4fa71b41ad3c",
+      "size": 1543
+    },
+    {
+      "path": "slots.schema.json",
+      "sha256": "d3161309ec18191fcd1ae0f627778fdb7e9f23ce937d957f6bcabfa65bb91eb5",
+      "size": 549
+    },
+    {
+      "path": "tables/commands.json",
+      "sha256": "5b2b2c0dda2d89fdcbae2dbd9651ec2ee524528906fde66c9ad295b312566439",
+      "size": 867
+    },
+    {
+      "path": "tables/quotes.json",
+      "sha256": "4fe1adbaf6f8130add45c2146a6bb152736cc1163ba8e6c092e86f4f388b6d0d",
+      "size": 764
+    },
+    {
+      "path": "workflow.json",
+      "sha256": "f3047440cfc3252dbbc64f7d62a72dba6e3f56a24f4022e58a8b0fe939ce8051",
+      "size": 1290
+    }
+  ]
+}
