@@ -5,24 +5,23 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { checkOutcomes } from './check.ts';
 
-function makeSubject(reasons: Array<{
-  path: string;
-  change?: 'modified' | 'removed';
-  fields: Array<{ path: string; before: unknown; after: unknown; absent?: 'before' | 'after' }>;
-}>, id = 'doc-1:n1', title = '查看') {
+function makeSubject(rows: Array<{ path: string; change?: 'removed' | 'modified'; fields: Array<{ path: string; before: unknown; after: unknown; absent?: 'before' | 'after' }> }>): Record<string, unknown> {
   return {
+    note: {
+      details: rows.map((r) => ({ path: r.path, change: r.change ?? 'modified', fields: r.fields })),
+    },
     items: [
       {
-        id,
+        id: 'doc-1:n1',
         fields: {
-          title,
-          reasons: reasons.map((r) => ({
+          document: 'doc-1',
+          node: 'n1',
+          title: '查看',
+          reasons: rows.map((r) => ({
             code: 'maintenance-sweep.case.command_changed',
             path: r.path,
             change: r.change ?? 'modified',
-            fields: r.fields,
-            before: [{ entry: 'b1', kind: 'definition', reference: 'ref1' }],
-            after: [{ entry: 'a1', kind: 'definition', reference: 'ref2' }],
+            references: ['ref1', 'ref2'],
             case: { entry: 'c1', reference: 'refc' },
           })),
         },

@@ -15,10 +15,17 @@ export interface Reason {
   code: string;
   path: string;
   change: 'removed' | 'modified';
-  fields: FieldDiff[];
-  before: Cited[];
-  after: Cited[];
+  /** Tree references to the changed definition entries of the path — the detail lives on the run-level note, once. */
+  references: string[];
   case: { entry: string; reference: string };
+}
+
+/** One row per changed path at the run level: the change kind and the field differences (the check reads 字段差异 N 处
+ * from here; the items never repeat the diffs). */
+export interface PathDetail {
+  path: string;
+  change: 'removed' | 'modified';
+  fields: FieldDiff[];
 }
 
 export interface SweepItem {
@@ -48,6 +55,8 @@ export interface SweepNote {
   changed_paths: number;
   ignore_fields: string[];
   message: string;
+  /** One row per changed path (at most 400): the change kind and the field differences of that path. */
+  details: PathDetail[];
 }
 
 export interface SweepResult {
@@ -146,6 +155,7 @@ export function sweepOf(view: NormView, parameters: Parameters): SweepResult {
   const warnings: Warning[] = [];
   const missing = new Set<string>();
   const byPath = new Map<string, Side>();
+  const detailRows = new Map<string, PathDetail>();
   for (const change of view.changes) {
     const prior = byPath.get(change.path);
     const before = uniqueSorted([...(prior?.before ?? []), ...change.before]);
@@ -221,13 +231,15 @@ export function sweepOf(view: NormView, parameters: Parameters): SweepResult {
       }
       const previous = acc.reasons.get(path);
       if (previous === undefined || digest < previous.case.entry) {
+        // The field differences stay on the per-path detail (once); the item cites the path and the tree references.
+        const beforeCited = cited(view, side.before, warnings, missing, path);
+        const afterCited = cited(view, side.after, warnings, missing, path);
+        detailRows.set(path, { path, change: side.change, fields });
         acc.reasons.set(path, {
           code: side.change === 'removed' ? REMOVED : CHANGED,
           path,
           change: side.change,
-          fields,
-          before: cited(view, side.before, warnings, missing, path),
-          after: cited(view, side.after, warnings, missing, path),
+          references: uniqueSorted([...beforeCited, ...afterCited].map((c) => c.reference).filter((r) => r !== '')),
           case: { entry: digest, reference: entry.reference },
         });
       }
@@ -275,6 +287,7 @@ export function sweepOf(view: NormView, parameters: Parameters): SweepResult {
       changed_paths: view.changedPaths,
       ignore_fields: parameters.ignoreFields,
       message,
+      details: [...detailRows.values()].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0)).slice(0, 400),
     },
   };
 }
@@ -282,12 +295,12 @@ export function sweepOf(view: NormView, parameters: Parameters): SweepResult {
 const TREE = /^tree:[0-9a-f]{64}\/(?:[^/@]+(?:\/[^/@]+)*)?@[0-9a-f]{64}$/;
 
 /** Tree references of the case entry and of the definition entries named on the reasons. */
-export function groundsOf(reasons: readonly { case: { reference: string }; before: Cited[]; after: Cited[] }[]): string[] {
+export function groundsOf(reasons: readonly { case: { reference: string }; references: string[] }[]): string[] {
   const refs: string[] = [];
   for (const reason of reasons) {
     if (TREE.test(reason.case.reference)) refs.push(reason.case.reference);
-    for (const side of [...reason.before, ...reason.after]) {
-      if (side.kind === 'definition' && TREE.test(side.reference)) refs.push(side.reference);
+    for (const reference of reason.references) {
+      if (TREE.test(reference)) refs.push(reference);
     }
   }
   return uniqueSorted(refs);

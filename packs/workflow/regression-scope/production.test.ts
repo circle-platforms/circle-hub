@@ -98,11 +98,10 @@ describe('a production run of regression-scope', { skip }, () => {
       assert.ok(claim.grounds.every((ground) => ground.startsWith('tree:')), id);
     }
     const doc1 = located(result, 'doc-1:n1').requirements[0].claims[0];
-    const behaviour = (first.fields.reasons as Array<{ before: Array<{ kind: string; reference: string }>; after: Array<{ kind: string; reference: string }> }>).flatMap((reason) =>
-      [...reason.before, ...reason.after].filter((entry) => entry.kind === 'behaviour').map((entry) => entry.reference),
-    );
-    assert.ok(behaviour.length > 0);
-    assert.ok(behaviour.every((ref) => !doc1.grounds.includes(ref)));
+    // The slim reasons carry no behaviour rows at all: a behaviour entry never lands in the grounds.
+    const slimReasons = first.fields.reasons as Array<{ references: string[] }>;
+    assert.ok(slimReasons.every((reason) => reason.references.every((ref) => ref.startsWith('tree:'))));
+    assert.ok(doc1.grounds.every((ref) => ref.startsWith('tree:')));
     const unknown = result.cross_item.filter((claim) => claim.requirement === 'uncovered_changes');
     assert.equal(unknown.length, 1);
     assert.equal(unknown[0].statement.verdict, 'unknown');

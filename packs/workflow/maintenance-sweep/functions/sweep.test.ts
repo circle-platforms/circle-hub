@@ -153,8 +153,11 @@ describe('maintenance sweep on a hand-built pair of trees', () => {
       run.output.items.map((item) => item.id),
       ['doc-1:n1', 'doc-2:n2', 'doc-3:n1'],
     );
-    const show = (run.output.items.find((item) => item.id === 'doc-3:n1')!.fields.reasons as Array<{ fields: Array<{ path: string }> }>)[0];
-    assert.equal(show.fields[0].path, '/args/0/type');
+    // The field differences are read from the run-level details (once per path), not from the items' reasons.
+    const details = run.output.groups[0].details as Array<{ path: string; fields: Array<{ path: string }> }>;
+    const show = details.find((d) => d.path === '/commands/show');
+    assert.equal(show?.fields[0].path, '/args/0/type');
+    assert.ok(!details.some((d) => d.path === '/commands/help'), 'a path whose only difference is an ignored field gets no detail row');
     assert.ok(!run.output.items.some((item) => item.id === 'doc-4:n1'));
   });
 

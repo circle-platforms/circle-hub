@@ -17,11 +17,20 @@ export interface Reason {
   change: 'added' | 'modified';
   /** What happened to the command definition on the path, read from the definition entries of both sides. */
   definition_change: 'added' | 'removed' | 'modified' | 'none';
-  /** One line for a person: 新增命令 / 删除命令 / 命令定义有变更 / 仅说明文字有变更. */
-  conclusion: string;
-  before: Cited[];
-  after: Cited[];
+  /** Tree references to the changed definition entries of the path (tree:<root>/<path>@<entry>) — the detail lives on
+   * the run-level note, written once per path, never repeated per item. */
+  references: string[];
+  /** One tree reference to the case entry this reason is about (the item's own ground; no body). */
   case: { entry: string; reference: string };
+}
+
+/** One row per changed path at the run level: the kind, a short line for a person, and (when the definitions differ in
+ * fields) the first 3 field diffs with 另有 M 处. Written once in the note; the items cite their path only. */
+export interface PathDetail {
+  path: string;
+  change: 'added' | 'removed' | 'modified';
+  conclusion: string;
+  differences: string[];
 }
 
 export interface ScopeItem {
@@ -59,6 +68,8 @@ export interface ScopeNote {
   changed_paths: number;
   include_added: boolean;
   message: string;
+  /** One row per changed path (at most 400): the kind, a short line, the first 3 field differences. */
+  details: PathDetail[];
 }
 
 export interface ScopeResult {
@@ -150,6 +161,38 @@ function definitionChangeOf(before: Cited[], after: Cited[]): Reason['definition
 }
 
 /** The person-readable line of one reason: what happened to the command, not to the path's entries. */
+/** The per-path change detail, computed once: the definition change kind, the person line, the tree references to the
+ * changed entries, and the first 3 field differences (signatures and data fields of both sides' definitions). */
+function detailsOf(path: string, side: Side, view: NormView, warnings: Warning[], missing: Set<string>): { definitionChange: 'added' | 'removed' | 'modified' | 'none'; references: string[]; differences: string[]; conclusion: string; change: Side['change'] } {
+  const before = cited(view, side.before, warnings, missing, path);
+  const after = cited(view, side.after, warnings, missing, path);
+  const definitionChange = definitionChangeOf(before, after);
+  const references = uniqueSorted([...before, ...after].map((c) => c.reference).filter((r) => r !== ''));
+  const differences = fieldDifferences(before, after);
+  return { definitionChange, references, differences, conclusion: conclusionOf(definitionChange), change: side.change };
+}
+
+/** The first 3 top-level field differences of the definitions on both sides (旧 x → 新 y), then 另有 M 处. */
+function fieldDifferences(before: Cited[], after: Cited[]): string[] {
+  const dataOfSide = (rows: readonly Cited[]): Record<string, unknown> => {
+    for (const row of rows) {
+      if ('data' in row && isRecord((row as unknown as { data: unknown }).data)) return (row as unknown as { data: Record<string, unknown> }).data;
+    }
+    return {};
+  };
+  const beforeData = dataOfSide(before);
+  const afterData = dataOfSide(after);
+  const keys = uniqueSorted([...Object.keys(beforeData), ...Object.keys(afterData)]);
+  const rows: string[] = [];
+  for (const key of keys) {
+    const left = beforeData[key];
+    const right = afterData[key];
+    const same = JSON.stringify(left) === JSON.stringify(right);
+    if (!same) rows.push(`${key} 旧 ${clip(JSON.stringify(left), 40)} → 新 ${clip(JSON.stringify(right), 40)}`);
+  }
+  return rows;
+}
+
 function conclusionOf(change: Reason['definition_change']): string {
   return DEFINITION_CHANGE_LABEL[change];
 }
@@ -234,20 +277,20 @@ export function scopeOf(view: NormView, parameters: Parameters): ScopeResult {
         acc.priority = priority;
         acc.negative = negative;
       }
+      // The path detail is computed once per path (detailsOf); every item only points at its path. The case ground is
+      // the smallest digest on the path, by comparison — never the order the view happened to give.
       const previous = acc.reasons.get(row.path);
-      if (previous === undefined || digest < previous.case.entry) {
-        const before = cited(view, side.before, warnings, missing, row.path);
-        const after = cited(view, side.after, warnings, missing, row.path);
-        const definitionChange = definitionChangeOf(before, after);
+      if (previous === undefined) {
+        const detail = detailsOf(row.path, side, view, warnings, missing);
         acc.reasons.set(row.path, {
           path: row.path,
           change: row.change,
-          definition_change: definitionChange,
-          conclusion: conclusionOf(definitionChange),
-          before,
-          after,
+          definition_change: detail.definitionChange,
+          references: detail.references,
           case: { entry: digest, reference: entry.reference },
         });
+      } else if (digest < previous.case.entry) {
+        acc.reasons.set(row.path, { ...previous, case: { entry: digest, reference: entry.reference } });
       }
     }
     if (!sawCase) uncovered.push(row);
@@ -262,6 +305,14 @@ export function scopeOf(view: NormView, parameters: Parameters): ScopeResult {
   kept.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
   uncovered.sort(comparePath);
   considered.sort(comparePath);
+
+  // The per-path details (once per path): from every side the items' reasons point at.
+  const detailRows = new Map<string, PathDetail>();
+  for (const [path, side] of byPath) {
+    const detail = detailsOf(path, side, view, warnings, missing);
+    detailRows.set(path, { path, change: detail.change, conclusion: detail.conclusion, differences: detail.differences.slice(0, 3) });
+  }
+  const details = [...detailRows.values()].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0)).slice(0, 400);
 
   const items: ScopeItem[] = kept.map(([id, acc]) => {
     const reasons = [...acc.reasons.values()].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
@@ -308,6 +359,7 @@ export function scopeOf(view: NormView, parameters: Parameters): ScopeResult {
       changed_paths: view.changedPaths,
       include_added: parameters.includeAdded,
       message,
+      details,
     },
   };
 }
@@ -315,12 +367,12 @@ export function scopeOf(view: NormView, parameters: Parameters): ScopeResult {
 const TREE = /^tree:[0-9a-f]{64}\/(?:[^/@]+(?:\/[^/@]+)*)?@[0-9a-f]{64}$/;
 
 /** Tree references of the case entry and of the definition entries named on the reasons. */
-export function groundsOf(reasons: readonly { case: { reference: string }; before: Cited[]; after: Cited[] }[]): string[] {
+export function groundsOf(reasons: readonly { references: string[]; case: { reference: string } }[]): string[] {
   const refs: string[] = [];
   for (const reason of reasons) {
     if (TREE.test(reason.case.reference)) refs.push(reason.case.reference);
-    for (const side of [...reason.before, ...reason.after]) {
-      if (side.kind === 'definition' && TREE.test(side.reference)) refs.push(side.reference);
+    for (const reference of reason.references) {
+      if (TREE.test(reference)) refs.push(reference);
     }
   }
   return uniqueSorted(refs);

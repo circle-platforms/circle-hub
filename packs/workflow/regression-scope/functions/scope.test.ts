@@ -62,9 +62,9 @@ describe('regression scope on a hand-built pair of trees', () => {
         ['/commands/show', 'modified'],
       ],
     );
-    assert.ok(both.reasons[1].before.some((entry) => entry.kind === 'definition'));
-    assert.ok(both.reasons[1].before.some((entry) => entry.kind === 'behaviour'));
-    assert.match(both.reasons[1].case.reference, /^tree:[0-9a-f]{64}\/commands\/show@[0-9a-f]{64}$/);
+    // The slim reason points at the path's tree references (definitions of both sides); the case rides the location.
+    assert.ok(both.reasons[1].references.length > 0, JSON.stringify(both.reasons[1]));
+    for (const reference of both.reasons[1].references) assert.match(reference, /^tree:[0-9a-f]{64}\/commands\/show(@[0-9a-f]{64})?$/);
     assert.match(both.summary, /^优先级 1；文档 doc-1；2 条命令有变更；\/commands\/add 新增命令$/);
     assert.ok([...both.summary].length <= 200);
     // The earlier build's case on the same modified path is not the later build's case.
@@ -92,11 +92,12 @@ describe('regression scope on a hand-built pair of trees', () => {
     assert.match(run.uncovered[0].statement, /\/commands\/bare（新增）/);
     assert.match(run.uncovered[0].statement, /不是失败/);
     assert.ok(run.inScope.every((outcome) => outcome.verdict === 'support'));
+    // The slim grounds: each reason's case reference plus the path's tree references (no bodies).
     const grounds = run.inScope.find((outcome) => outcome.item === 'doc-1:n1')!.grounds;
-    const show = run.output.items[0].fields.reasons as Array<{ before: Array<{ kind: string; reference: string }>; after: Array<{ kind: string; reference: string }>; case: { reference: string } }>;
-    const definitions = show.flatMap((reason) => [...reason.before, ...reason.after].filter((entry) => entry.kind === 'definition').map((entry) => entry.reference));
-    assert.deepEqual(grounds, [...new Set([show[0].case.reference, show[1].case.reference, ...definitions])].sort());
-    assert.ok(grounds.every((ref) => !show.some((reason) => [...reason.before, ...reason.after].some((entry) => entry.kind === 'behaviour' && entry.reference === ref))));
+    const show = run.output.items[0].fields.reasons as Array<{ path: string; references: string[]; case: { reference: string } }>;
+    const wanted = show.flatMap((reason) => [reason.case.reference, ...reason.references]);
+    assert.deepEqual(grounds, [...new Set(wanted)].sort());
+    assert.ok(grounds.every((ref) => ref.startsWith('tree:')), 'every ground is a tree reference');
   });
 
   it('does not depend on the order of placements or entries', () => {
@@ -106,6 +107,35 @@ describe('regression scope on a hand-built pair of trees', () => {
     assert.deepEqual(backward.output.groups, forward.output.groups);
     assert.deepEqual(backward.inScope, forward.inScope);
     assert.deepEqual(backward.uncovered, forward.uncovered);
+  });
+
+  it('one case listed twice on one path grounds the smallest digest, whatever the order', () => {
+    // The same document:node attached to one path by two entries: the reason's case ground is the smaller digest
+    // either way around (never the order the view happened to give).
+    const changes: ChangeSpec[] = [
+      {
+        path: '/commands/dup',
+        change: 'modified',
+        before: [{ name: 'dup' }],
+        after: [{ name: 'dup', help: '新' }],
+        to: [
+          { document: 'doc-1', node: 'n1', title: '挂两次的用例（先）', priority: 1 },
+          { document: 'doc-1', node: 'n1', title: '挂两次的用例（后）', priority: 1 },
+        ],
+      },
+    ];
+    const built = buildImpact(changes);
+    const forward = projected(built);
+    const backward = projected(reversedView(built));
+    assert.deepEqual(backward.output.items, forward.output.items, 'the whole item is identical in both orders');
+    const entryOf = (run: typeof forward): string => {
+      const reasons = run.output.items[0].fields.reasons as Array<{ path: string; case: { entry: string; reference: string } }>;
+      assert.equal(reasons.length, 1);
+      return reasons[0].case.entry;
+    };
+    assert.equal(entryOf(backward), entryOf(forward), 'the same digest grounds the reason in both orders');
+    const digests = (built.placements as Array<{ to: string[] }>)[0].to;
+    assert.equal(entryOf(forward), digests[0], 'the smaller of the path’s two case digests');
   });
 
   it('filters by priority without reporting a path as uncovered when its only case was filtered out', () => {

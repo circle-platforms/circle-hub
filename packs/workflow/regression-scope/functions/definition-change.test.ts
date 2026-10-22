@@ -25,9 +25,9 @@ describe('definition_change of a reason', () => {
     ]);
     assert.equal(scope.items.length, 1);
     assert.equal(scope.items[0].reasons[0].definition_change, 'added');
-    assert.match(scope.items[0].reasons[0].conclusion, /新增命令/);
-    assert.ok(!scope.items[0].reasons[0].conclusion.includes('修改'), `结论不把新增命令写成修改：${scope.items[0].reasons[0].conclusion}`);
     assert.equal(scope.items[0].reasons[0].change, 'modified', 'the path change stays as the view said');
+    const detail = scope.note.details.find((d) => d.path === '/commands/new');
+    assert.ok(detail !== undefined && /新增命令/.test(detail.conclusion), JSON.stringify(scope.note.details));
   });
 
   it('a command only the earlier build had is removed', () => {
@@ -35,7 +35,7 @@ describe('definition_change of a reason', () => {
       { path: '/commands/gone', change: 'modified', behaviourBefore: ['旧说明'], behaviourAfter: ['新说明'], before: [{ name: 'gone' }], to: [CASE] },
     ]);
     assert.equal(scope.items[0].reasons[0].definition_change, 'removed');
-    assert.match(scope.items[0].reasons[0].conclusion, /删除命令|命令已删除/);
+    assert.match(scope.note.details.find((d) => d.path === '/commands/gone')!.conclusion, /删除命令|命令已删除/);
   });
 
   it('definitions on both sides with different digests is modified', () => {
@@ -43,7 +43,7 @@ describe('definition_change of a reason', () => {
       { path: '/commands/changed', change: 'modified', before: [{ name: 'changed', args: [{ name: 'n', type: 'string' }] }], after: [{ name: 'changed', args: [{ name: 'n', type: 'integer' }] }], to: [CASE] },
     ]);
     assert.equal(scope.items[0].reasons[0].definition_change, 'modified');
-    assert.match(scope.items[0].reasons[0].conclusion, /命令定义有变更/);
+    assert.match(scope.note.details.find((d) => d.path === '/commands/changed')!.conclusion, /命令定义有变更/);
   });
 
   it('equal definitions (only behaviour texts changed) is none', () => {
@@ -60,7 +60,6 @@ describe('definition_change of a reason', () => {
     assert.ok(parsed.ok);
     const scope = scopeOf(parsed.view, PARAMETERS);
     assert.equal(scope.items[0].reasons[0].definition_change, 'none');
-    assert.match(scope.items[0].reasons[0].conclusion, /仅说明文字有变更/);
   });
 
   it('a path with no definition entry on either side is none (no command definition to compare)', () => {

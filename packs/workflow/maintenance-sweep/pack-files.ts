@@ -14,7 +14,7 @@ export const PACK_DIR = fileURLToPath(new URL('./', import.meta.url));
 export const IDENTITY = {
   schema: 'pack@1',
   id: 'maintenance-sweep',
-  version: '1.1.0',
+  version: '1.2.0',
   kind: 'workflow',
   title: '维护巡检',
   description: '按两个构建的影响视图列出较早构建里需要维护的用例：命令已删除的记阻断，命令定义有差异的记提示并逐字段给出两边的值。只含事实要求项，开始运行时由 Hub 直接算出结果',

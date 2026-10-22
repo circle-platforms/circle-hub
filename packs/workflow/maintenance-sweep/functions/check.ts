@@ -21,9 +21,7 @@ interface ParsedReason {
   code: string;
   path: string;
   change: 'added' | 'removed' | 'modified';
-  fields: ParsedField[];
-  before: { entry: string; kind: string; reference: string }[];
-  after: { entry: string; kind: string; reference: string }[];
+  references: string[];
   case: { entry: string; reference: string };
 }
 
@@ -78,20 +76,8 @@ function reasonsOf(item: Item): ParsedReason[] | null {
     if (!isRecord(raw) || typeof raw.path !== 'string' || (raw.change !== 'added' && raw.change !== 'modified' && raw.change !== 'removed')) return null;
     const caseRef = isRecord(raw.case) && typeof raw.case.reference === 'string' && typeof raw.case.entry === 'string' ? { entry: raw.case.entry, reference: raw.case.reference } : null;
     if (caseRef === null) return null;
-    const cited = (list: unknown): ParsedReason['before'] | null => {
-      if (!Array.isArray(list)) return null;
-      const rows: ParsedReason['before'] = [];
-      for (const row of list) {
-        if (!isRecord(row) || typeof row.entry !== 'string' || typeof row.kind !== 'string' || typeof row.reference !== 'string') return null;
-        rows.push({ entry: row.entry, kind: row.kind, reference: row.reference });
-      }
-      return rows;
-    };
-    const before = cited(raw.before);
-    const after = cited(raw.after);
-    const fields = fieldsOf(raw.fields);
-    if (before === null || after === null || fields === null) return null;
-    out.push({ code: typeof raw.code === 'string' ? raw.code : '', path: raw.path, change: raw.change, fields, before, after, case: caseRef });
+    if (!Array.isArray(raw.references) || raw.references.some((r) => typeof r !== 'string')) return null;
+    out.push({ code: typeof raw.code === 'string' ? raw.code : '', path: raw.path, change: raw.change, references: raw.references as string[], case: caseRef });
   }
   return out;
 }
@@ -100,14 +86,27 @@ function removed(reason: ParsedReason): boolean {
   return reason.change === 'removed' || reason.code === REMOVED;
 }
 
-function changed(reason: ParsedReason): boolean {
-  return reason.code === CHANGED || (reason.change === 'modified' && reason.fields.length > 0);
+/** The per-path field differences from the note's details, by path (written once per path; items never repeat them). */
+function detailFieldsOf(note: unknown): Map<string, ParsedField[]> {
+  const raw = isRecord(note) ? note : {};
+  const out = new Map<string, ParsedField[]>();
+  if (!Array.isArray(raw.details)) return out;
+  for (const row of raw.details) {
+    if (!isRecord(row) || typeof row.path !== 'string') continue;
+    const fields = fieldsOf(row.fields);
+    if (fields !== null) out.set(row.path, fields);
+  }
+  return out;
 }
 
-function flatFields(reasons: readonly ParsedReason[]): Array<{ command: string; path: string; before: unknown; after: unknown; absent?: 'before' | 'after' }> {
+function changed(reason: ParsedReason, fieldsOfPath: Map<string, ParsedField[]>): boolean {
+  return reason.code === CHANGED || (reason.change === 'modified' && (fieldsOfPath.get(reason.path)?.length ?? 0) > 0);
+}
+
+function flatFields(reasons: readonly ParsedReason[], fieldsOfPath: Map<string, ParsedField[]>): Array<{ command: string; path: string; before: unknown; after: unknown; absent?: 'before' | 'after' }> {
   const out: Array<{ command: string; path: string; before: unknown; after: unknown; absent?: 'before' | 'after' }> = [];
   for (const reason of reasons) {
-    for (const field of reason.fields) {
+    for (const field of fieldsOfPath.get(reason.path) ?? []) {
       const row: { command: string; path: string; before: unknown; after: unknown; absent?: 'before' | 'after' } = { command: reason.path, path: field.path, before: field.before, after: field.after };
       if (field.absent !== undefined) row.absent = field.absent;
       out.push(row);
@@ -183,14 +182,15 @@ function formatField(field: ParsedField): string {
 
 const MAX_DIFF_SECTION_LEN = 400;
 
-function formatDiffsText(diffs: readonly ParsedReason[]): string {
+function formatDiffsText(diffs: readonly ParsedReason[], fieldsOfPath: Map<string, ParsedField[]>): string {
   if (diffs.length === 0) return '';
 
   const render = (kList: number[]): string => {
     const parts: string[] = [];
     for (let i = 0; i < diffs.length; i++) {
       const diff = diffs[i];
-      const total = diff.fields.length;
+      const fields = fieldsOfPath.get(diff.path) ?? [];
+      const total = fields.length;
       const k = kList[i];
       const header = diffs.length === 1 ? `字段差异 ${total} 处：` : `${diff.path} 字段差异 ${total} 处：`;
       if (total === 0) {
@@ -198,10 +198,10 @@ function formatDiffsText(diffs: readonly ParsedReason[]): string {
         continue;
       }
       if (k >= total) {
-        const itemsText = diff.fields.map(formatField).join('；');
+        const itemsText = fields.map(formatField).join('；');
         parts.push(`${header}${itemsText}`);
       } else {
-        const items = diff.fields.slice(0, k);
+        const items = fields.slice(0, k);
         const itemsText = items.map(formatField).join('；');
         const remaining = total - k;
         const extra = itemsText ? `；另有 ${remaining} 处` : `另有 ${remaining} 处`;
@@ -211,7 +211,7 @@ function formatDiffsText(diffs: readonly ParsedReason[]): string {
     return parts.join('；');
   };
 
-  const kList = diffs.map((d) => Math.min(3, d.fields.length));
+  const kList = diffs.map((d) => Math.min(3, (fieldsOfPath.get(d.path) ?? []).length));
   let text = render(kList);
 
   while (text.length > MAX_DIFF_SECTION_LEN) {
@@ -236,6 +236,7 @@ function formatDiffsText(diffs: readonly ParsedReason[]): string {
 
 function commandUnchanged(subject: unknown): Outcome[] {
   const out: Outcome[] = [];
+  const fieldsOfPath = detailFieldsOf(noteOf(subject));
   for (const item of itemsOf(subject)) {
     const reasons = reasonsOf(item);
     const title = typeof item.fields.title === 'string' ? item.fields.title : item.id;
@@ -243,10 +244,10 @@ function commandUnchanged(subject: unknown): Outcome[] {
       out.push({ verdict: 'unknown', reason: 'check_error', statement: `用例 ${item.id} 没有可读的维护原因`, grounds: [], tier: 'advisory', item: item.id });
       continue;
     }
-    const diffs = reasons.filter(changed);
+    const diffs = reasons.filter((reason) => changed(reason, fieldsOfPath));
     if (diffs.length > 0) {
       const paths = diffs.map((reason) => reason.path).join('、');
-      const diffText = formatDiffsText(diffs);
+      const diffText = formatDiffsText(diffs, fieldsOfPath);
       out.push({
         verdict: 'refute',
         code: CHANGED,
@@ -254,7 +255,7 @@ function commandUnchanged(subject: unknown): Outcome[] {
         grounds: groundsOf(reasons),
         tier: 'advisory',
         item: item.id,
-        data: { fields: flatFields(diffs), reasons },
+        data: { fields: flatFields(diffs, fieldsOfPath), reasons },
       });
       continue;
     }

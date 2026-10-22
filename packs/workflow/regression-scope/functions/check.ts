@@ -4,6 +4,7 @@
 // check requires a negative sample (C05 R[0]).
 
 import { groundsOf } from './scope.ts';
+import { uniqueSorted } from './text.ts';
 import { CHANGE_LABEL, PACK, guarded, isRecord } from './text.ts';
 
 const TIER = 'advisory' as const;
@@ -11,8 +12,8 @@ const TIER = 'advisory' as const;
 interface ParsedReason {
   path: string;
   change: 'added' | 'modified' | 'removed';
-  before: { entry: string; kind: string; reference: string }[];
-  after: { entry: string; kind: string; reference: string }[];
+  definition_change: 'added' | 'removed' | 'modified' | 'none';
+  references: string[];
   case: { entry: string; reference: string };
 }
 
@@ -30,6 +31,7 @@ interface Outcome {
 interface Item {
   id: string;
   fields: { [key: string]: unknown };
+  location?: unknown;
 }
 
 function itemsOf(subject: unknown): Item[] {
@@ -52,21 +54,11 @@ function reasonsOf(item: Item): ParsedReason[] | null {
   const out: ParsedReason[] = [];
   for (const raw of value) {
     if (!isRecord(raw) || typeof raw.path !== 'string' || (raw.change !== 'added' && raw.change !== 'modified' && raw.change !== 'removed')) return null;
+    if (raw.definition_change !== 'added' && raw.definition_change !== 'removed' && raw.definition_change !== 'modified' && raw.definition_change !== 'none') return null;
+    if (!Array.isArray(raw.references) || raw.references.some((r) => typeof r !== 'string')) return null;
     const caseRef = isRecord(raw.case) && typeof raw.case.reference === 'string' && typeof raw.case.entry === 'string' ? { entry: raw.case.entry, reference: raw.case.reference } : null;
     if (caseRef === null) return null;
-    const cited = (list: unknown): ParsedReason['before'] | null => {
-      if (!Array.isArray(list)) return null;
-      const rows: ParsedReason['before'] = [];
-      for (const row of list) {
-        if (!isRecord(row) || typeof row.entry !== 'string' || typeof row.kind !== 'string' || typeof row.reference !== 'string') return null;
-        rows.push({ entry: row.entry, kind: row.kind, reference: row.reference });
-      }
-      return rows;
-    };
-    const before = cited(raw.before);
-    const after = cited(raw.after);
-    if (before === null || after === null) return null;
-    out.push({ path: raw.path, change: raw.change, before, after, case: caseRef });
+    out.push({ path: raw.path, change: raw.change, definition_change: raw.definition_change, references: raw.references as string[], case: caseRef });
   }
   return out;
 }
@@ -103,13 +95,14 @@ function inScope(subject: unknown): Outcome[] {
       out.push({ verdict: 'unknown', reason: 'check_error', statement: `用例 ${item.id} 没有可读的范围原因`, grounds: [], tier: TIER, item: item.id });
       continue;
     }
+    const grounds = groundsOf(reasons);
     const bad = reasons.filter((reason) => reason.change === 'removed' || (reason.change !== 'added' && reason.change !== 'modified') || (!includeAdded && reason.change === 'added'));
     if (bad.length > 0) {
       out.push({
         verdict: 'refute',
         code: `${PACK}.not_in_scope`,
         statement: `用例 ${item.id} 的原因里有不是后一构建新增或修改的路径（${bad.map((reason) => reason.path).join('、')}），不能算进回归范围`,
-        grounds: groundsOf(reasons),
+        grounds,
         tier: TIER,
         item: item.id,
         data: { reasons },
@@ -120,7 +113,7 @@ function inScope(subject: unknown): Outcome[] {
     out.push({
       verdict: 'support',
       statement: `用例 ${item.id}（${title}）在回归范围内，涉及 ${names}`,
-      grounds: groundsOf(reasons),
+      grounds,
       tier: TIER,
       item: item.id,
       data: { reasons },
