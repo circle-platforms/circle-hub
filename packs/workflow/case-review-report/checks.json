@@ -1,0 +1,29 @@
+{
+  "schema": "checks@1",
+  "checks": [
+    {
+      "id": "overall",
+      "title": "整体结论取各块最差",
+      "function": {
+        "module": "functions/checks.ts",
+        "export": "overallCheck"
+      },
+      "applies": "run",
+      "judges": "expected",
+      "tier": "blocking",
+      "basis": "评审方法第 7 步（docs/hub-r4-architecture.md 第 6 节）：大文档分块时整体结论取各块最差（FAIL 重于 PARTIAL 重于 PASS）"
+    },
+    {
+      "id": "report",
+      "title": "报告与各块材料一致",
+      "function": {
+        "module": "functions/checks.ts",
+        "export": "reportCheck"
+      },
+      "applies": "run",
+      "judges": "expected",
+      "tier": "blocking",
+      "basis": "评审方法第 6 步：报告由初评方用中文写，材料取自复核方；结论和等级照算出的，发现一条不漏，不引推翻的发现"
+    }
+  ]
+}

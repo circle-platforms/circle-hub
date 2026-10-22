@@ -1,0 +1,85 @@
+{
+  "schema": "pack@1",
+  "id": "case-review-report",
+  "version": "1.1.0",
+  "kind": "workflow",
+  "title": "评审终稿（合成示例）",
+  "description": "各块复核都受理后按各块取最差算整体结论与等级，核对初评方写的中文报告",
+  "files": [
+    {
+      "path": "SKILL.md",
+      "sha256": "afaff172342b1c370b48efb40d7d2529f43699066142e0701a08749a36176650",
+      "size": 2060
+    },
+    {
+      "path": "checks.json",
+      "sha256": "ee4fc22b213b633dbf8f890fdd6a72e95df173e01e1c452016628a62c24b1f51",
+      "size": 907
+    },
+    {
+      "path": "examples/start-run.json",
+      "sha256": "c4241390e2ae8d3df9e0ecc1caf0d649b9763c33b079f0162d0f44fd71f96beb",
+      "size": 447
+    },
+    {
+      "path": "examples/submit-result.json",
+      "sha256": "ffccf6367aeec1d1e8988b3ac40054a53ee02129337e9733efd17e68b242601d",
+      "size": 1188
+    },
+    {
+      "path": "functions/checks.ts",
+      "sha256": "b7e0b323e155365c980526906a4a19980181bb53b3545978407ada94e2e82468",
+      "size": 7462
+    },
+    {
+      "path": "functions/common.ts",
+      "sha256": "d3606f01e59b8a2e43e96bb235cde7bc681d9567bb82cb898783e88f1e4abb8f",
+      "size": 1158
+    },
+    {
+      "path": "functions/projection.ts",
+      "sha256": "752f1a0ca38e3042ec6aee7e88dcef16b5433ea64057e034eec9877dcd46699c",
+      "size": 13164
+    },
+    {
+      "path": "requirements.json",
+      "sha256": "5ae127f92a0873f886aa344989a40a100f1fabaebdad52b721bd872161009e1c",
+      "size": 2474
+    },
+    {
+      "path": "samples/negative/overall_not_worst.json",
+      "sha256": "b027d0c62d0ee09078199c07c34c8ffe2bd5991d76d53ca91a621aea30837c77",
+      "size": 2610
+    },
+    {
+      "path": "samples/negative/report_cites_refuted.json",
+      "sha256": "b8d95229b3733c426fcf5ce1a5975bea7ca304ed7285aeb8c8bc9bbee6082bc7",
+      "size": 2760
+    },
+    {
+      "path": "samples/negative/report_missing_finding.json",
+      "sha256": "e3461a4a5e50c8c820b9be9968e013ec72ea156d9d31b49fd9111a1ea7999aad",
+      "size": 2470
+    },
+    {
+      "path": "samples/positive/overall_worst.json",
+      "sha256": "ca2e9ea0e9704a7ac0326ccdc89f0873ff2482781833ef6436447138126a6a6b",
+      "size": 2557
+    },
+    {
+      "path": "samples/positive/report_agrees.json",
+      "sha256": "59b0aa54dc1968737fa1557d43a35a0e1fb37304a63590bcf28fc5f45ba2a2ee",
+      "size": 2814
+    },
+    {
+      "path": "slots.schema.json",
+      "sha256": "5fa64c52082689a0ae8b3ef1140f19d276045bd4813b0f992b1a0a8d64de3882",
+      "size": 1308
+    },
+    {
+      "path": "workflow.json",
+      "sha256": "2d3283f2266e6acb8ed4acd3b6c74f30ebf3c4e51484d2f4bf78e9f5156cbe16",
+      "size": 869
+    }
+  ]
+}

@@ -247,10 +247,12 @@ export class LeaseService {
       let until = rows[0]!.expires_at.toISOString();
       let token = rows.reduce((max, row) => Math.max(max, Number(row.token)), 0);
       if (op === 'extend') {
+        // Never shorten: the end moves to the later of the current end and now + ttl (a shorter ttl is a no-op on the
+        // moment; the token still grows and the action is still written). The cumulative cap is unchanged.
         const next = new Date(now.getTime() + ttlSeconds * 1000);
         const capMs = acquired + (maxTtlSeconds ?? 2_592_000) * 1000;
         if (next.getTime() > capMs) return { ok: false, code: 'LEASE_TTL', message: '续期超过累计上限' };
-        until = next.toISOString();
+        until = next.getTime() > Date.parse(until) ? next.toISOString() : until;
       }
       for (const key of ordered) {
         const changed = await this.#db.query(
