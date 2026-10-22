@@ -129,14 +129,50 @@ export function planBuilds(input: SyncPlanInput): SyncPlanOutput {
       bases.set(build.name, base?.name ?? build.basedOn ?? build.name);
       if (base === null && build.basedOn !== null) notes.push(...local);
     }
+    // Every other mainline build of the read pages is known by name only (name, family, line, dates; base itself, no
+    // sources): the real lines hold dozens of builds without a tree of their own (unreleased, Beta, superseded), and
+    // the case-location candidates read the names. Opted-in platform, customer and patch pages keep their own rules
+    // (their builds are not added here).
+    const mainlineMain = new Set<string>();
+    for (const build of ofProduct) {
+      if (!onLines(build)) continue;
+      if (pageOf.get(build.name)?.kind !== 'mainline') continue;
+      if (build.platform !== null) continue;
+      mainlineMain.add(build.name);
+    }
+    const namesOnly: Build[] = [];
+    for (const build of ofProduct) {
+      if (!mainlineMain.has(build.name) || chosen.has(build.name)) continue;
+      // An NSAE name whose base resolves keeps that base (still a known alias, read by name only).
+      const local: string[] = [];
+      const resolved = resolveBase(build, byName, local);
+      if (resolved !== null && resolved !== build && build.released !== null) {
+        chosen.set(build.name, build);
+        bases.set(build.name, resolved.name);
+        continue;
+      }
+      namesOnly.push(build);
+    }
 
     const builds: BuildInfo[] = [];
     let partialDates = 0;
-    for (const build of chosen.values()) {
-      const base = bases.get(build.name) ?? resolveBase(build, byName, [])?.name ?? build.name;
+    const pushBuild = (build: Build, base: string, sources: Record<string, string | string[]>): void => {
       const built = isoTime(build.built);
       const released = isoTime(build.released);
       if (released.partial) partialDates++;
+      builds.push({
+        name: build.name,
+        family: build.family,
+        line: lineKey(build.line as string),
+        base,
+        platform: build.platform,
+        built_at: built.iso,
+        released_at: released.iso,
+        sources,
+      });
+    };
+    for (const build of chosen.values()) {
+      const base = bases.get(build.name) ?? resolveBase(build, byName, [])?.name ?? build.name;
       const sources: Record<string, string | string[]> = {};
       if (base === build.name && hasCommandTree(build)) {
         const tree = fileId(build.files.commandTree?.href ?? '');
@@ -157,23 +193,19 @@ export function planBuilds(input: SyncPlanInput): SyncPlanOutput {
           } else if (compareLines(line, caseIndex.minLine) >= 0) withheld.add(build.name);
         }
       }
-      builds.push({
-        name: build.name,
-        family: build.family,
-        line: lineKey(build.line as string),
-        base,
-        platform: build.platform,
-        built_at: built.iso,
-        released_at: released.iso,
-        sources,
-      });
+      pushBuild(build, base, sources);
     }
+    for (const build of namesOnly) pushBuild(build, build.name, {});
     builds.sort((a, b) => compareLines(a.line, b.line) || compareText(a.name, b.name));
     // A build that would list case documents is not listed without them: a root produced now would lose the cases it has.
     const kept = withheld.size === 0 ? builds : builds.filter((build) => !withheld.has(build.name));
     const uncovered = cases?.status === 'ready' ? uncoveredDocuments(cases.documents, caseLines) : [];
 
-    const summary = [`读了 ${Object.keys(read).length} 个页面`, `${plan.pages.length} 个列表页`, `列出 ${kept.length} 个构建（${kept.filter((b) => b.released_at !== null).length} 个已发布）`];
+    const summary = [
+      `读了 ${Object.keys(read).length} 个页面`,
+      `${plan.pages.length} 个列表页`,
+      `列出 ${kept.length} 个构建（${kept.filter((b) => b.released_at !== null).length} 个已发布，${kept.filter((b) => Object.keys(b.sources).length === 0 && b.base === b.name).length} 个只有名字）`,
+    ];
     if (withheld.size > 0) summary.push(`找到的 ${withheld.size} 个构建没有列出：用例树读不出来，这次不列构建，免得产出缺少用例的根`);
     if (cases !== null) summary.push(caseNote(cases, caseIndex, { ...listedCases, withheld: withheld.size, uncovered }));
     if (failed.length > 0) summary.push(`读不出的列表页：${failed.slice(0, 8).join('、')}${failed.length > 8 ? ' 等' : ''}`);

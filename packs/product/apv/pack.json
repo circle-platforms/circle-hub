@@ -113,8 +113,8 @@
     },
     {
       "path": "functions/sync.ts",
-      "sha256": "0d7fbb6384ed6ec36d6861ea72b9b2ebad4a6580452ad85e18bbad450c70c272",
-      "size": 11887
+      "sha256": "5ef078df4921ee56918e82ca5dbec5fe8b7184685506f331852ed42c773cfd88",
+      "size": 13470
     },
     {
       "path": "functions/types.ts",
