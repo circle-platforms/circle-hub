@@ -10,6 +10,7 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import type { LoggedTurn, Scenario } from '../lib/accept.ts';
+import type { Turn } from '../scripted-model.ts';
 import caseLocation, { type LocationGold } from './case-location.ts';
 
 const turnsOf = (text: string): LoggedTurn[] => [
@@ -239,5 +240,113 @@ describe('case-location scenario with 15 buildCandidates (top 12 truncation and 
     assert.ok(!checks.every((c) => c.ok), 'should fail when more count mismatches');
     const moreCheck = checks.find((c) => c.name.includes('剩余构建') || c.name.includes('另有') || c.name.includes('超出上限'));
     assert.ok(moreCheck && !moreCheck.ok, 'more count check must fail');
+  });
+});
+
+describe('case-location scenario respond flow (two-step start_run -> get_nodes and paging)', () => {
+  const gold: LocationGold = {
+    document: '90001',
+    product: 'apv',
+    line: '10.6.1',
+  };
+  const makeTurn = (index: number, text = ''): Turn => ({
+    index,
+    system: null,
+    messages: [],
+    tools: [],
+    toolResults: text ? [{ id: 'r', text, isError: false }] : [],
+  });
+
+  test('calls hub_get_nodes with reference in turn 1 when start_run returns rec reference', async () => {
+    const s = caseLocation(gold);
+    const startReply = await s.respond(makeTurn(0));
+    assert.deepEqual(startReply, [
+      { tool: 'hub_start_run', input: { pack: 'case-location', product: 'apv', inputs: { documents: { external: 'agile:mindmap:90001' } } } },
+    ]);
+
+    const rec = 'rec:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+    const startRunText = `运行 run_1 完成：任务包 case-location\n完整结果 ${rec}：用 get_nodes 读第一页，再按每页末尾给出的 cursor 接着读`;
+    const turn1Reply = await s.respond(makeTurn(1, startRunText));
+    assert.deepEqual(turn1Reply, [
+      { tool: 'hub_get_nodes', input: { reference: rec } },
+    ]);
+  });
+
+  test('follows page cursors across multiple pages and terminates with 定位完成', async () => {
+    const s = caseLocation(gold);
+    await s.respond(makeTurn(0));
+    const rec = 'rec:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+    const startRunText = `运行 run_1 完成\n完整结果 ${rec}（用 get_nodes 按引用读）`;
+    await s.respond(makeTurn(1, startRunText));
+
+    const page1Text = `内容 ${rec}：\n第一页构建候选\n下一页：get_nodes {"reference":"${rec}","cursor":"1.0-abcdef123456"}`;
+    const turn2Reply = await s.respond(makeTurn(2, page1Text));
+    assert.deepEqual(turn2Reply, [
+      { tool: 'hub_get_nodes', input: { reference: rec, cursor: '1.0-abcdef123456' } },
+    ]);
+
+    const page2Text = `内容 ${rec}：\n第二页构建候选（最后一页，无下一页）`;
+    const turn3Reply = await s.respond(makeTurn(3, page2Text));
+    assert.deepEqual(turn3Reply, [{ text: '定位完成。' }]);
+  });
+
+  test('caps get_nodes paging at maximum 6 pages', async () => {
+    const s = caseLocation(gold);
+    await s.respond(makeTurn(0));
+    const rec = 'rec:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+    await s.respond(makeTurn(1, `完整结果 ${rec}`));
+
+    // Pages 1 to 5 each return a next cursor
+    for (let page = 1; page <= 5; page++) {
+      const pageText = `第 ${page} 页\n下一页：get_nodes {"reference":"${rec}","cursor":"${page}.0-abcdef123456"}`;
+      const reply = await s.respond(makeTurn(page + 1, pageText));
+      assert.deepEqual(reply, [
+        { tool: 'hub_get_nodes', input: { reference: rec, cursor: `${page}.0-abcdef123456` } },
+      ]);
+    }
+
+    // Page 6 returns next cursor, but scenario should cap at 6 pages and finish
+    const page6Text = `第 6 页\n下一页：get_nodes {"reference":"${rec}","cursor":"6.0-abcdef123456"}`;
+    const reply7 = await s.respond(makeTurn(7, page6Text));
+    assert.deepEqual(reply7, [{ text: '定位完成。' }]);
+  });
+
+  test('checks work across all tool results from both start_run and get_nodes', () => {
+    const s = caseLocation({
+      document: '90001',
+      product: 'apv',
+      line: '10.6.1',
+      buildCandidates: {
+        candidates: [
+          { name: 'Rel_APV_10_6_1_57', family: 'APV', base: 'Rel_APV_10_6_1_57' },
+        ],
+        written: [],
+      },
+    });
+
+    const turns: LoggedTurn[] = [
+      { index: 0, tools: ['hub_start_run'], toolResults: [] },
+      {
+        index: 1,
+        tools: ['hub_get_nodes'],
+        toolResults: [{
+          id: 't0',
+          text: '运行 run_1 完成：任务包 case-location\nlocation 用例定位：满足 1\n产品线 apv；版本 10.6.1（目录，置信度高）\n完整结果 rec:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+          isError: false,
+        }],
+      },
+      {
+        index: 2,
+        tools: [],
+        toolResults: [{
+          id: 't1',
+          text: '构建候选：Rel_APV_10_6_1_57',
+          isError: false,
+        }],
+      },
+    ];
+
+    const checks = s.check(turns);
+    assert.ok(checks.every((c) => c.ok), JSON.stringify(checks));
   });
 });
