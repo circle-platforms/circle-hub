@@ -37,10 +37,21 @@
           ],
           "references": []
         }
+      ],
+      "diff": [
+        {
+          "path": "/commands/show",
+          "change": "modified",
+          "cases": 1
+        }
       ]
     }
   },
   "expect": [
+    {
+      "verdict": "support",
+      "tier": "advisory"
+    },
     {
       "verdict": "refute",
       "code": "maintenance-sweep.case.command_changed",

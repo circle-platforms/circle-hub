@@ -1,5 +1,7 @@
-// Pack checks. command_exists: a case on a removed path is a blocking refutation. command_unchanged: a case on a
-// modified path whose definition data differ is an advisory refutation. A well-formed item can carry both. Nothing is
+// Pack checks. command_exists: a case on a removed path is a blocking refutation. command_unchanged: first the whole
+// command diff as one cross-item fact (one line per changed path with its earlier-build case count, grounded on the
+// impact view), then a case on a modified path whose definition data differ is an advisory refutation. A well-formed
+// item can carry both. Nothing is
 // claimed about cases the index does not hold: when the subject carries the projection note, command_exists adds that
 // unknown (and, when the view was truncated, an integrity unknown). Samples omit the note, so their polarity stays
 // the verdict of the item.
@@ -8,7 +10,7 @@
 // scale. One ground per outcome (the item's location).
 
 import { groundsOf } from './sweep.ts';
-import { FIX, PACK, clip, guarded, isRecord } from './text.ts';
+import { CHANGE_LABEL, FIX, PACK, clip, guarded, isRecord } from './text.ts';
 
 const REMOVED = `${PACK}.case.command_removed`;
 const CHANGED = `${PACK}.case.command_changed`;
@@ -239,6 +241,55 @@ function commandExists(subject: unknown): Outcome[] {
   return out;
 }
 
+interface DiffRow {
+  path: string;
+  change: string;
+  /** Earlier-build cases on the path, counted by the projection (missing or unreadable counts as 0). */
+  cases: number;
+}
+
+/** The note's diff rows (the whole command diff, written by the projection), or none when the subject has no usable table. */
+function diffRowsOf(subject: unknown): DiffRow[] {
+  const note = noteOf(subject);
+  if (note === null || !Array.isArray(note.diff)) return [];
+  const out: DiffRow[] = [];
+  for (const raw of note.diff) {
+    if (isRecord(raw) && typeof raw.path === 'string' && typeof raw.change === 'string') {
+      out.push({ path: raw.path, change: raw.change, cases: typeof raw.cases === 'number' && Number.isInteger(raw.cases) && raw.cases >= 0 ? raw.cases : 0 });
+    }
+  }
+  return out;
+}
+
+/** Most paths the command-diff summary lists; past it the rest is counted and the run-level note.diff holds the full table. */
+const MAX_DIFF_ROWS = 200;
+
+/**
+ * The whole command diff as one cross-item fact, computed from the run-level note.diff: one line per changed path with
+ * the change kind and the earlier-build case count (added paths, never maintenance items, are listed and say so),
+ * grounded on the impact view. It leads this check's outcomes so the diff is visible however many items the answer
+ * pages away.
+ */
+function diffSummary(subject: unknown): Outcome {
+  const note = noteOf(subject);
+  const rows = diffRowsOf(subject);
+  const view = typeof note?.view === 'string' && note.view.startsWith('src:') ? note.view : null;
+  const grounds = view === null ? [] : [view];
+  const total = rows.length;
+  if (total === 0) {
+    return { verdict: 'support', statement: '命令差共 0 条：两个构建的命令定义没有差异。', grounds, tier: 'advisory', data: { changed_paths: 0, listed: 0 } };
+  }
+  // A truncated view: the head says the whole count and that only the listed part follows; completeness stays unknown.
+  const cut = note?.truncated === true && typeof note?.changed_paths === 'number' && note.changed_paths > total ? note.changed_paths : null;
+  const lines = [cut === null ? `命令差共 ${total} 条（路径、变更种类、前一构建用例数）：` : `命令差共 ${cut} 条（影响视图被截断，这 ${total} 条是列出的部分；路径、变更种类、前一构建用例数）：`];
+  for (const row of rows.slice(0, MAX_DIFF_ROWS)) {
+    const label = row.change === 'added' || row.change === 'removed' || row.change === 'modified' ? CHANGE_LABEL[row.change] : row.change;
+    lines.push(`- ${row.path} ${label}，前一构建 ${row.cases} 条用例${row.change === 'added' ? '（不进范围）' : ''}`);
+  }
+  if (total > MAX_DIFF_ROWS) lines.push(`- 另有 ${total - MAX_DIFF_ROWS} 条，完整的表在运行级详情里`);
+  return { verdict: 'support', statement: lines.join('\n'), grounds, tier: 'advisory', data: { changed_paths: cut ?? total, listed: Math.min(total, MAX_DIFF_ROWS) } };
+}
+
 function commandUnchanged(subject: unknown): Outcome[] {
   const details = detailRowsOf(subject);
   const out: Outcome[] = [];
@@ -285,7 +336,7 @@ function commandUnchanged(subject: unknown): Outcome[] {
 
 export function checkOutcomes(check: string | null, subject: unknown): Outcome[] {
   if (check === 'command_exists') return commandExists(subject);
-  if (check === 'command_unchanged') return commandUnchanged(subject);
+  if (check === 'command_unchanged') return [diffSummary(subject), ...commandUnchanged(subject)];
   return [{ verdict: 'unknown', reason: 'check_error', statement: '这个函数没有对应的检查', grounds: [], tier: 'advisory' }];
 }
 

@@ -47,12 +47,17 @@
           "definition_change": "modified",
           "conclusion": "命令定义有变更",
           "differences": [],
-          "references": []
+          "references": [],
+          "cases": 1
         }
       ]
     }
   },
   "expect": [
+    {
+      "verdict": "support",
+      "tier": "advisory"
+    },
     {
       "verdict": "refute",
       "code": "regression-scope.not_uncovered",
