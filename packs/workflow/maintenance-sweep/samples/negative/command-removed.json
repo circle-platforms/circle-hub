@@ -1,0 +1,56 @@
+{
+  "id": "command_removed",
+  "source": "author",
+  "check": "command_exists",
+  "note": "合成样例：用例放在已删除的路径上，阻断",
+  "subject": {
+    "items": [
+      {
+        "id": "doc-1:n1",
+        "location": "tree:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee/commands/show@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "fields": {
+          "document": "doc-1",
+          "node": "n1",
+          "title": "查看部件状态",
+          "priority": 1,
+          "negative": false,
+          "reasons": [
+            {
+              "path": "/commands/show",
+              "change": "removed",
+              "code": "maintenance-sweep.case.command_removed",
+              "fields": [],
+              "before": [
+                {
+                  "entry": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                  "kind": "definition",
+                  "reference": "tree:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc/commands/show@bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+                }
+              ],
+              "after": [
+                {
+                  "entry": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+                  "kind": "definition",
+                  "reference": "tree:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee/commands/show@dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+                }
+              ],
+              "case": {
+                "entry": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "reference": "tree:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee/commands/show@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "note": null
+  },
+  "expect": [
+    {
+      "verdict": "refute",
+      "code": "maintenance-sweep.case.command_removed",
+      "item": "doc-1:n1",
+      "tier": "blocking"
+    }
+  ]
+}

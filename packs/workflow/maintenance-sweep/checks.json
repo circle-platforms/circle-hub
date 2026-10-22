@@ -1,0 +1,24 @@
+{
+  "schema": "checks@1",
+  "checks": [
+    {
+      "id": "command_exists",
+      "title": "命令仍在",
+      "function": { "module": "functions/check.ts" },
+      "applies": "run",
+      "subject": { "module": "functions/subject.ts" },
+      "judges": "subject",
+      "tier": "blocking",
+      "basis": "要求项 command_exists：较早构建里放在已删除命令上的用例要改写或停用（架构简报 6a 第 4 项，C05 R[1]）"
+    },
+    {
+      "id": "command_unchanged",
+      "title": "命令定义未变",
+      "function": { "module": "functions/check.ts" },
+      "applies": "run",
+      "subject": { "module": "functions/subject.ts" },
+      "judges": "subject",
+      "tier": "advisory"
+    }
+  ]
+}

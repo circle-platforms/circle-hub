@@ -1,0 +1,29 @@
+{
+  "schema": "requirements@1",
+  "requirements": [
+    {
+      "key": "command_exists",
+      "name": "命令仍在",
+      "description": "较早构建里放在已删除路径上的用例记不通过（阻断）：按替代命令改写这条用例，或者停用它。命令还在的记支持",
+      "target": "item",
+      "required": true,
+      "done_rule": "bookkeeping",
+      "layers": ["static"],
+      "accepted_producer": "fact",
+      "checks": ["command_exists"],
+      "error_handling": []
+    },
+    {
+      "key": "command_unchanged",
+      "name": "命令定义未变",
+      "description": "较早构建里放在修改路径上、且命令定义有差异的用例记不通过（提示）。差异按字段列出两边的值。只改了行为说明、或路径是新增的，不构成维护项",
+      "target": "item",
+      "required": true,
+      "done_rule": "bookkeeping",
+      "layers": ["static"],
+      "accepted_producer": "fact",
+      "checks": ["command_unchanged"],
+      "error_handling": []
+    }
+  ]
+}
