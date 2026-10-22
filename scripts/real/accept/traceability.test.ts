@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import type { LoggedTurn, Scenario } from '../lib/accept.ts';
 import type { Turn } from '../scripted-model.ts';
-import traceability, { type TraceGold } from './traceability.ts';
+import traceability, { extractStatementCaseIds, type TraceGold } from './traceability.ts';
 
 const turnsOf = (texts: string[]): LoggedTurn[] => {
   return [
@@ -236,6 +236,61 @@ describe('traceability scenario checks', () => {
     assert.ok(statusCheck && !statusCheck.ok);
     const countsCheck = checks.find((c) => c.name.includes('已关闭缺陷统计'));
     assert.ok(countsCheck && !countsCheck.ok);
+  });
+
+  test('handles real client format with "另有" and "根据：tree:" in full result without mistaking tree reference as case ID', () => {
+    const goldReal: TraceGold = {
+      product: 'apv',
+      build: 'Rel_APV_10_6_1_57',
+      defects: [
+        {
+          bug: '160578',
+          status: 'fixed',
+          defect_system_status: 'closed',
+          closed: true,
+          cases: [
+            { id: '17256:1a7fd348c3a6', title: '标题1' },
+            { id: '17256:1b2c3d4e5f60', title: '标题2' },
+            { id: '17256:2a3b4c5d6e7f', title: '标题3' },
+            { id: '17256:3a4b5c6d7e8f', title: '标题4' },
+            { id: '17256:d4w55z1j5aw0', title: '标题5' },
+            { id: '17256:6e7f8a9b0c1d', title: '标题6' },
+            { id: '17256:7f8a9b0c1d2e', title: '标题7' },
+            { id: '17256:8a9b0c1d2e3f', title: '标题8' },
+            { id: '17256:9b0c1d2e3f4a', title: '标题9' },
+            { id: '17256:0c1d2e3f4a5b', title: '标题10' },
+            { id: '17256:1d2e3f4a5b6c', title: '标题11' },
+            { id: '17256:2e3f4a5b6c7d', title: '标题12' },
+          ],
+        },
+      ],
+      closed_defects: 1,
+      closed_traced: 1,
+      closed_untraced: 0,
+    };
+
+    const scenario = traceability(goldReal);
+    const startRunText = [
+      '运行 run_1 完成：任务包 traceability',
+      '- 160578 | 缺陷 160578 | 发布说明：已修复；缺陷系统：closed；12 个用例',
+    ].join('\n');
+    const fullResultText = [
+      '陈述：缺陷 160578（发布说明：已修复；缺陷系统：closed）：12 个已索引用例追溯：17256:1a7fd348c3a6 标题1；17256:1b2c3d4e5f60 标题2；17256:2a3b4c5d6e7f 标题3；17256:3a4b5c6d7e8f 标题4；17256:d4w55z1j5aw0 标题5；另有 7 个，支持；性质与依据等级：事实结论，事实等级 1；根据：tree:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef/@条目',
+      '跨条目：缺陷 1 个：已追溯 1 个，未追溯 0 个；其中已关闭缺陷 1 个：已追溯 1 个，未追溯 0 个，支持，traceability.counts',
+    ].join('\n');
+
+    const turns = turnsOf([startRunText, fullResultText]);
+    const checks = scenario.check(turns);
+    assert.ok(allOk(scenario, turns), JSON.stringify(checks));
+
+    const extracted = extractStatementCaseIds(fullResultText, '160578');
+    assert.deepEqual(extracted, [
+      '17256:1a7fd348c3a6',
+      '17256:1b2c3d4e5f60',
+      '17256:2a3b4c5d6e7f',
+      '17256:3a4b5c6d7e8f',
+      '17256:d4w55z1j5aw0',
+    ]);
   });
 });
 

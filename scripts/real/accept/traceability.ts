@@ -38,19 +38,24 @@ export interface TraceGold {
 /**
  * Extracts the case ids listed in the claim statement for a given bug.
  * Format: 缺陷 <bug>（...）：N 个已索引用例追溯：<doc>:<node> <title>；...
+ * Takes only the section after "已索引用例追溯：" and before "另有" or "，支持",
+ * splits by "；", and requires each part to start with <doc>:<node>.
  */
 export function extractStatementCaseIds(text: string, bug: string): string[] {
   const match = new RegExp(`缺陷\\s+${bug}[^\\n]*?\\d+\\s*个已索引用例追溯[：:]([^\\n]+)`).exec(text);
   if (!match) return [];
-  const parts = match[1].split(/[；;]/);
+  let casesPart = match[1];
+  const cutIdx = casesPart.search(/(?:[；;]?\s*另有|[，,]\s*支持)/);
+  if (cutIdx !== -1) {
+    casesPart = casesPart.slice(0, cutIdx);
+  }
+  const parts = casesPart.split(/[；;]/);
   const caseIds: string[] = [];
   for (const part of parts) {
     const trimmed = part.trim();
-    if (trimmed.startsWith('另有') || trimmed.startsWith('系统')) continue;
-    const firstToken = trimmed.split(/\s+/)[0];
-    if (firstToken && firstToken.includes(':')) {
-      caseIds.push(firstToken);
-    }
+    const m = trimmed.match(/^(\d+[：:](?:[a-z0-9]{6,}|[a-z0-9_-]+))(?:\s|$)/);
+    if (!m) continue;
+    caseIds.push(m[1]);
   }
   return caseIds;
 }
