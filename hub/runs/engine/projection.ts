@@ -33,6 +33,8 @@ export interface Projection {
   /** Structure of the judged source that is not an item, frozen with the run (RunRecord.groups, RunContext.groups). */
   groups: Record<string, unknown>[];
   warnings: PackWarning[];
+  /** The leases the run asks the Hub to acquire before it is stored (absent when the function asked for none). */
+  leaseRequests: Array<{ keys: string[]; ttl_seconds: number }>;
 }
 
 function refusal(path: string, message: string, fix: string, note: string | null = null): Refusal {
@@ -73,6 +75,7 @@ export async function projectItems(
     ]);
   }
   const { items: projected, warnings } = parsed.data;
+  const leaseRequests = parsed.data.lease_requests ?? [];
   const groups = parsed.data.groups ?? [];
   const seen = new Set<string>();
   for (const item of projected) {
@@ -125,7 +128,7 @@ export async function projectItems(
     items.push({ id: item.id, label: item.label, ...(item.summary !== undefined ? { summary: item.summary } : {}), location: located[0], fields: item.fields, digest });
   }
   if (warnings.length > 0) ctx.log({ traceId, run: null, what: 'projection warnings', detail: JSON.stringify(warnings).slice(0, 2000) });
-  return { items, projected, groups, warnings };
+  return { items, projected, groups, warnings, leaseRequests };
 }
 
 /** An expected source that could not be bound; the real reason goes to the admin log only. */

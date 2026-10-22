@@ -139,13 +139,17 @@ export class LeaseService {
     return this.#db.transaction(async (tx) => {
       // Rows are read FOR UPDATE so a concurrent extend of the same key waits, and every row is present.
       const rows = await this.#rowsLocked(input.keys, tx);
-      if (rows.length === 0) return { ok: false, code: 'LEASE_NO_ROW', message: `这些键上没有租约行` };
-      const lease = rows[0]!.lease_id;
-      const holder: Holder = { user: rows[0]!.user_id, run: rows[0]!.run_id };
-      const token = rows.reduce((max, row) => Math.max(max, Number(row.token)), 0) + 1;
-      const until = rows[0]!.expires_at.toISOString();
+      // Only a row that still holds (unreleased, unexpired) may be force-released; a released or expired one answers
+      // LEASE_NO_ROW, so a repeated release cannot succeed and cannot mint an action record.
+      const now = await this.#nowIn(tx);
+      const holding = rows.filter((row) => row.released_at === null && row.expires_at.getTime() > now.getTime());
+      if (holding.length === 0) return { ok: false, code: 'LEASE_NO_ROW', message: '这些键上没有租约行' };
+      const lease = holding[0]!.lease_id;
+      const holder: Holder = { user: holding[0]!.user_id, run: holding[0]!.run_id };
+      const token = holding.reduce((max, row) => Math.max(max, Number(row.token)), 0) + 1;
+      const until = holding[0]!.expires_at.toISOString();
       for (const key of input.keys) {
-        await this.#db.query(`UPDATE leases SET released_at = $2, token = token + 1 WHERE key = $1`, [key, await this.#nowIn(tx)], tx);
+        await this.#db.query(`UPDATE leases SET released_at = $2, token = token + 1 WHERE key = $1 AND released_at IS NULL`, [key, now], tx);
       }
       await this.#appendAction(tx, 'force_release', lease, input.keys, holder, until, token, { by: input.by, reason: input.reason });
       return { ok: true, lease, until, token };
@@ -153,13 +157,22 @@ export class LeaseService {
   }
 
   /** The unexpired, unreleased rows under a prefix, for the run context (no tokens, no holders). */
-  async view(prefix: string): Promise<{ entries: Array<{ key: string; until: string }> }> {
+  async view(prefix: string): Promise<{ entries: Array<{ key: string; until: string }> }>;
+  /** The same rows with the holder's run (an administrator's view; the run context never asks for it). */
+  async view(prefix: string, withHolder: true): Promise<{ entries: Array<{ key: string; until: string; run: string }> }>;
+  async view(prefix: string, withHolder?: boolean): Promise<{ entries: Array<{ key: string; until: string; run?: string }> }> {
     // starts_with, not LIKE: a key may hold '_' and '_' is a wildcard in LIKE.
-    const rows = await this.#db.query<{ key: string; expires_at: Date }>(
-      `SELECT key, expires_at FROM leases WHERE starts_with(key, $1) AND released_at IS NULL AND expires_at > $2 ORDER BY key`,
+    const rows = await this.#db.query<{ key: string; expires_at: Date; run_id: string }>(
+      `SELECT key, expires_at, run_id FROM leases WHERE starts_with(key, $1) AND released_at IS NULL AND expires_at > $2 ORDER BY key`,
       [prefix, await this.#now()],
     );
-    return { entries: rows.rows.map((row) => ({ key: row.key, until: row.expires_at.toISOString() })) };
+    return {
+      entries: rows.rows.map((row) => ({
+        key: row.key,
+        until: row.expires_at.toISOString(),
+        ...(withHolder === true ? { run: row.run_id } : {}),
+      })),
+    };
   }
 
   /** Frees rows whose run record no longer exists and that were acquired over 60 seconds ago; returns how many. */

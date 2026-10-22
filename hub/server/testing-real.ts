@@ -37,6 +37,7 @@ import { openTestRecords, type TestRecordsKit } from '../testing/records.ts';
 import type { HubApp, ServerDeps } from './api.ts';
 import { createApp } from './app.ts';
 import { removeTree } from './assemble/files.ts';
+import type { LeaseService } from '../leases/service.ts';
 import { assembleHub, type AssembledHub } from './assemble/hub.ts';
 import type { ClientOptions, TestMcpClient, TestUser, ToolCallResult } from './testing.ts';
 
@@ -102,6 +103,8 @@ export interface TestHub {
   published: PackVersionInfo[];
   /** Lines of the operator's log (the app's and the assembly's). */
   logs: string[];
+  /** The lease service the engine uses (over this hub's database). */
+  leases: LeaseService;
   createUser(name: string, role?: PermissionRole): Promise<TestUser>;
   issueToken(user: Principal): Promise<string>;
   assignPack(user: Principal, packId: string): Promise<void>;
@@ -231,6 +234,8 @@ export async function createTestHub(options: TestHubOptions = {}): Promise<TestH
       limits: { ...records.config.limits },
     };
     if (options.stubs !== false) stubs = await startStubs(options);
+    // The assembly builds the lease service over the same database by default (the production path); the test hub
+    // proves it by exposing the assembled one.
     const hub = await assembleHub(config, records, {
       requireOsIsolation: options.requireOsIsolation ?? (await osIsolationAvailable()),
       requireVaultKey: true,
@@ -281,6 +286,7 @@ export async function createTestHub(options: TestHubOptions = {}): Promise<TestH
       stubs,
       published,
       logs,
+      leases: hub.leases,
       async createUser(name, role = 'user') {
         const user = await records.principals.createUser(admin.principal, name, role);
         const token = await records.principals.issueToken(admin.principal, user.id, 'test');

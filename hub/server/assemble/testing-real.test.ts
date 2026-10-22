@@ -168,6 +168,20 @@ describe('createTestHub', () => {
     await client.close();
   });
 
+  test('the production assembly wires the lease service: the assembled hub exposes it and it answers over the same database', async (t) => {
+    const { createTestHub } = await import('../testing-real.ts');
+    const postgres = await startPostgres();
+    t.after(() => postgres.stop());
+    const hub = await createTestHub({ postgres, stubs: false });
+    t.after(() => hub.close());
+    assert.ok(hub.leases !== null && hub.leases !== undefined, 'the assembled hub carries the lease service');
+    const holder = { user: hub.admin.user.id, run: 'run_0123456789abcdefghjkmnpqrs' };
+    const granted = await hub.leases.acquire({ keys: ['meadow/probe/1'], ttlSeconds: 60, holder, prefix: 'meadow/', maxTtlSeconds: 120 });
+    assert.equal(granted.ok, true, 'the service answers over the hub database');
+    const view = await hub.leases.view('meadow/probe/');
+    assert.equal(view.entries.length, 1);
+  });
+
   test('a user without the pack gets the neutral answer; the reason is in the admin note only', async (t) => {
     const hub = await createTestHub({ postgres, repositoryPacks: false, packs: [packs.review], stubs: false });
     t.after(() => hub.close());

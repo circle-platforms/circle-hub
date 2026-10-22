@@ -140,6 +140,10 @@ export const RunRecord = RunSummary.extend({
     .array(z.strictObject({ lease: LeaseId, keys: z.array(z.string().min(1)).min(1), until: IsoTime }))
     .optional()
     .describe('the leases the Hub acquired for this run before storing it (the projection\'s lease_requests, granted); the fencing token stays in the lease table, never in the record'),
+  lease_context: z
+    .array(z.strictObject({ key: z.string().min(1), until: IsoTime }))
+    .optional()
+    .describe('the frozen lease rows of the workflow\'s declared prefix at start_run (every holder\'s rows, no tokens); the run context rebuilds `mine` from the granted leases'),
 }).superRefine((r, ctx) => {
   if (r.host === 'hub') {
     if (r.runner !== undefined) ctx.addIssue({ code: 'custom', path: ['runner'], message: 'a run the Hub executes has no runner' });
