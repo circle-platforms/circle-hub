@@ -9,7 +9,7 @@ of the whole view and the thresholds as advisory signals.
 
 | Path | What it is |
 | --- | --- |
-| `workflow.json` | `workflow@1`: one required input `facets` (subject), the external id `knowledge:facets:<product>:<build>?kind=case&by=line,module,has_expected,vague_expected,negative` (the caller may add `priority`); the threshold parameters; the pack binds the product line `apv` |
+| `workflow.json` | `workflow@1`: one required input `facets` (subject), the external id `knowledge:facets:<product>:<build>?kind=case&by=line,module,has_expected,vague_expected,negative` (the caller may add `priority`); the threshold parameters; the pack binds no product line (the id names product and build, so no unrelated build is locked) |
 | `requirements.json` | `board` (item, fact, bookkeeping), `thresholds` (item, fact, advisory), `totals` (run, fact), all static layer only |
 | `checks.json` | `board`, `thresholds`, `totals`: pack functions with `applies: run`, all advisory — the board never blocks, these are management signals, not defects |
 | `functions/` | `views.ts` (reading the facet view), `board.ts` (the grouping, the metrics, the board check), `thresholds.ts`, `totals.ts`, `project.ts`, `subject.ts`, `text.ts`, `types.ts`; tests beside them |
@@ -28,9 +28,10 @@ of the whole view and the thresholds as advisory signals.
 - **thresholds** (per item, advisory): a refutation with `quality-board.missing_expected`, `quality-board.vague_expected` or
   `quality-board.negative_share` when the group's share exceeds its maximum or falls below its minimum; equal to the
   threshold is not a violation. Defaults 0.05, 0.05, 0.02; the parameters move them.
-- **totals** (run level): the totals over the whole view as a fact, and the note that the board describes the indexed cases,
-  not the whole suite — the case index only holds cases that name a resolvable command. When the view states skipped
-  sources, the note names the count; when the view is truncated, the totals cover the listed part and say so.
+- **totals** (run level): the totals over the whole view as a fact, and the note that the board describes the indexed
+  cases, not the whole suite — every case of an indexed document has an entry (a case whose commands resolve nowhere is an
+  unplaced entry, counted), and only sources not read stay outside. When the view states skipped sources, the note names
+  the count; when the view is truncated, the totals cover the listed part and say so.
 
 ## Decisions
 
@@ -38,7 +39,10 @@ of the whole view and the thresholds as advisory signals.
   expected result has `has_expected` false; a case with only vague expected results has `has_expected` true and
   `vague_expected` true; the negative share is `negative` true over all cases. No others are invented.
 - **The "resolvable command" share is not stated**: `facet-view@1` carries no such field today, so the totals note states the
-  limitation without a number ("state its share when the view carries it" — it never carries it yet).
+  limitation without a number ("state its share when the view carries it" — it never carries it yet). Since 1.0.1 the note
+  matches the case index as it is: every case of an indexed document has an entry (a case whose commands resolve nowhere is
+  an unplaced entry, counted), and only sources not read are outside the board; the earlier wording ("only cases that name a
+  resolvable command are indexed") was outdated.
 - **The violation codes live in the pack namespace.** The task page names `quality.missing_expected` etc.; the Hub requires a
   pack function's codes under `<pack>.` (hub/rules/check.ts), so they are `quality-board.missing_expected`,
   `quality-board.vague_expected`, `quality-board.negative_share`.
@@ -49,6 +53,9 @@ of the whole view and the thresholds as advisory signals.
   never produces them; a view built by something else is checked the same way.
 - **Null groups**: a null module is the group `unplaced`; a null line is too (`unplaced/SSL`, `unplaced/unplaced`). Two pairs
   whose ids collide (a `/` inside a value) refuse the run (`ambiguous_group`), never silently merge.
+- **No product binding** (since 1.0.1): the input's external id already names product and build; binding a line made the
+  engine lock an unrelated build (the newest released one of the line) into the run record. Like regression-scope, the
+  workflow binds nothing (`product: { "catalogs": [] }`).
 - The thresholds compare the exact fraction against the parameter as numbers; the boundary tests pin that equal is not a
   violation.
 - **No `api.ts`**: a pack is loaded by the engine from the registry and offers nothing to other packages (same as
@@ -85,10 +92,8 @@ node --test --test-concurrency=2 "packs/workflow/quality-board/**/*.test.ts"
 
 ## Needs from other packages
 
-- **packs/product/apv**: the `cases` producer (in flight in another package) must write the case entry data fields the task
-  pages quote — `document`, `line`, `module`, `priority`, `negative`, `has_expected`, `vague_expected` — with `line`,
-  `module` and the three flags single-valued (a list value makes the reader count the case once per value and trips
-  `multi_valued`).
+- ~~packs/product/apv~~ **resolved**: the `cases` producer writes `document`, `line`, `module`, `priority`, `negative`,
+  `has_expected`, `vague_expected` as quoted (single-valued), which the board reads.
 - **hub/knowledge**: nothing new — `facet-view@1` as served. If a later view version carries the share of cases that name a
   resolvable command, the totals note can state it.
 

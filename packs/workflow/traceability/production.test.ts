@@ -16,7 +16,7 @@ let postgres: TemporaryPostgres;
 let hub: Hub;
 
 const DEFECTS_ID = `knowledge:index:apv:${BUILD.name}?kind=defect&key=bug`;
-const CASES_ID = `knowledge:index:apv:${BUILD.name}?kind=case&key=defects`;
+const CASES_ID = `knowledge:index:apv:${BUILD.name}?kind=case&key=defects&fields=document,node,title`;
 
 // The corpus: a traced fixed defect, a traced known one, an untraced one, and one in a status conflict.
 const DEFECTS = [
@@ -46,7 +46,8 @@ before(async () => {
   if (skip) return;
   hub = await openHub(postgres);
   hub.views.put(DEFECTS_ID, indexViewOf('defect', 'bug', DEFECTS));
-  hub.views.put(CASES_ID, indexViewOf('case', 'defects', CASES));
+  // The cases view is served slim, as the reader answers the pack's fields=document,node,title request.
+  hub.views.put(CASES_ID, indexViewOf('case', 'defects', CASES, {}, ['document', 'node', 'title']));
 });
 after(async () => {
   await hub?.close();
@@ -55,11 +56,12 @@ after(async () => {
 
 describe('a production run of traceability', { skip }, () => {
   it('computes and stores the matrix at start_run: every answer a fact claim or an unknown, never a failure for absence', async () => {
-    const detail = await hub.service.startRunDetailed(hub.alice, { pack: 'traceability', product: 'NSAE', inputs: { defects: { external: DEFECTS_ID }, cases: { external: CASES_ID } } }, call());
+    const detail = await hub.service.startRunDetailed(hub.alice, { pack: 'traceability', inputs: { defects: { external: DEFECTS_ID }, cases: { external: CASES_ID } } }, call());
     assert.equal(detail.answer.call_result, 'ok', JSON.stringify(detail.answer.errors));
     assert.ok(StartRunOutput.safeParse({ ...detail.answer, trace: '4bf92f3577b34da6a3ce929d0e0e4736' }).success);
     const run = detail.answer.run!;
-    assert.deepEqual([run.product, run.version, run.build, run.root], ['apv', BUILD.line, BUILD.name, ROOT]);
+    // The pack binds no product line: the views' external ids name the product and the build, and no build is locked.
+    assert.deepEqual([run.product, run.version, run.build, run.root], [undefined, undefined, undefined, undefined]);
     assert.deepEqual(
       run.requirements.map((r) => [r.key, r.accepted_producer]),
       [
@@ -120,7 +122,7 @@ describe('a production run of traceability', { skip }, () => {
       assert.equal(requirement.claims.length, 1, id);
       const [claim] = requirement.claims;
       assert.equal(claim.statement.verdict, expected.verdict, id);
-      assert.deepEqual(claim.warrant, { producer: 'function', id: 'traceability.traced@1.0.0', independence: 'judge_not_author' }, id);
+      assert.deepEqual(claim.warrant, { producer: 'function', id: 'traceability.traced@1.0.1', independence: 'judge_not_author' }, id);
       assert.equal(claim.qualifier.nature, expected.verdict === 'unknown' ? 'unknown' : 'fact', id);
       const data = claim.statement.data as unknown as MatrixRow & { case_count: number; status: string | null };
       assert.deepEqual(
@@ -133,7 +135,7 @@ describe('a production run of traceability', { skip }, () => {
       assert.equal(claim.pointer, `/items/${run.items.findIndex((i) => i.id === id)}/fields`, id);
       // Grounds are the tree references of the defect entries and of the case entries (in the sorted case order).
       const defectRefs = DEFECTS.filter((d) => d.data.bug === id).map((d) => d.reference).sort();
-      const caseRefs = expected.cases.map((caseId) => CASES.find((c) => c.data.case === caseId)!.reference);
+      const caseRefs = expected.cases.map((caseId) => CASES.find((c) => c.data.node === caseId)!.reference);
       assert.deepEqual(claim.grounds, [...defectRefs, ...caseRefs], id);
     }
 

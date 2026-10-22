@@ -11,6 +11,7 @@ import type { Principal } from '../records/api.ts';
 import { createDefaultRegistry, parserKey, recognize } from '../refs/api.ts';
 import type { TemporaryPostgres } from '../testing/postgres.ts';
 import { createKnowledgeReader, routeKnowledgeViews } from './api.ts';
+import { parseViewId } from './views.ts';
 import { BASE_CATALOG, DEFAULT_PRODUCERS, casesProducer, catalogXml, extraProducer, makeWorld, mindMap, startPostgres, type World } from './test-support.ts';
 
 let postgres: TemporaryPostgres;
@@ -365,7 +366,7 @@ describe('the facet and index views (facet-view@1, index-view@1)', () => {
       { values: { status: null }, count: 1 },
     ]);
     assert.equal(byStatus.total, 3);
-    assert.ok(byStatus.notes.includes('未归位 2 个，标在根下，计入合计'));
+    assert.ok(byStatus.notes.includes('未归位条目 2 个，标在根下，计入合计'));
 
     const byDefects = FacetView.parse(await readJson(w, `knowledge:facets:acme:${A}?kind=case&by=defects`));
     assert.deepEqual(byDefects.rows, [
@@ -384,7 +385,7 @@ describe('the facet and index views (facet-view@1, index-view@1)', () => {
     assert.deepEqual(byList.keys['7'], sorted(hung.entry, loose.entry));
     assert.deepEqual(byList.keys['8'], [loose.entry]);
     assert.deepEqual([byList.total_keys, byList.total_entries], [2, 2]);
-    assert.ok(byList.notes.includes('未归位 2 个，标在根下'));
+    assert.ok(byList.notes.includes('未归位条目 2 个，标在根下'));
 
     const byCaseStatus = IndexView.parse(await readJson(w, `knowledge:index:acme:${A}?kind=case&key=status`));
     assert.deepEqual(Object.keys(byCaseStatus.keys), ['fixed', 'known']);
@@ -402,14 +403,14 @@ describe('the facet and index views (facet-view@1, index-view@1)', () => {
     assert.equal(fixed.data.bug, '61001');
     assert.equal(known.data.status, 'known');
     assert.deepEqual([defectStatus.total_keys, defectStatus.total_entries], [2, 2]);
-    assert.ok(defectStatus.notes.includes('未归位 2 个，标在根下'));
+    assert.ok(defectStatus.notes.includes('未归位条目 2 个，标在根下'));
 
     const byBug = IndexView.parse(await readJson(w, `knowledge:index:acme:${A}?kind=defect&key=bug&only=61001,999`));
     assert.deepEqual(byBug.keys, { '61001': [fixed.entry] });
     assert.equal(byBug.entries['61001'] === undefined, true);
     assert.equal(byBug.entries[fixed.entry].reference, `tree:${root}/@${fixed.entry}`);
     assert.ok(byBug.notes.some((note) => note === '这些取值没有条目：999'));
-    assert.ok(byBug.notes.includes('未归位 2 个，标在根下'));
+    assert.ok(byBug.notes.includes('未归位条目 2 个，标在根下'));
 
     const impact = ImpactView.parse(await readJson(w, `knowledge:impact:acme:${A}..${B}`));
     assert.ok(impact.changes.length > 0);
@@ -453,7 +454,7 @@ export default function many(input: any): unknown {
       { values: { status: 'known' }, count: 30_000 },
     ]);
     assert.equal(facets.total, 60_000);
-    assert.ok(facets.notes.includes('未归位 60000 个，标在根下，计入合计'));
+    assert.ok(facets.notes.includes('未归位条目 60000 个，标在根下，计入合计'));
     assert.ok(facetMs < 8_000, `facets took ${facetMs.toFixed(0)} ms`);
     const indexStarted = performance.now();
     const index = IndexView.parse(await readJson(w, `knowledge:index:acme:${A}?kind=defect&key=status`));
@@ -465,7 +466,7 @@ export default function many(input: any): unknown {
     assert.equal(index.truncated, true);
     const cited = index.entries[index.keys.fixed[0]];
     assert.equal(cited.reference, `tree:${root}/@${cited.entry}`);
-    assert.ok(index.notes.includes('未归位 60000 个，标在根下'));
+    assert.ok(index.notes.includes('未归位条目 60000 个，标在根下'));
     assert.ok(indexMs < 8_000, `index took ${indexMs.toFixed(0)} ms`);
   });
 
@@ -477,6 +478,64 @@ export default function many(input: any): unknown {
     assert.equal(view.total_keys, 2);
     assert.ok(Object.keys(view.keys).length < 2);
     assert.ok(view.notes.some((note) => /之前为止/.test(note)));
+  });
+});
+
+describe('the attached_fields parameter of the impact view', () => {
+  test('attached entries carry only the named fields with an empty statement; changed entries are untouched', async (t) => {
+    const f = await fixture(t);
+    const { b } = f.digests;
+    const plain = ImpactView.parse((await f.json(await f.read(`knowledge:impact:acme:${A}..${B}`))).value);
+    const slim = ImpactView.parse((await f.json(await f.read(`knowledge:impact:acme:${A}..${B}?attached_fields=document,case,priority`))).value);
+    assert.deepEqual(slim.attached_fields, ['case', 'document', 'priority'], 'the view records the fields it carries');
+    // The changes, placements and totals are the same; only the attached entries are slimmed.
+    assert.deepEqual([slim.changes, slim.placements, slim.totals], [plain.changes, plain.placements, plain.totals]);
+    const c6 = b.get('[cmd: system reboot] 重启后再检查') as string;
+    const slimCase = slim.entries[c6];
+    assert.equal(slimCase.kind, 'case');
+    assert.equal(slimCase.statement, '');
+    assert.deepEqual(Object.keys(slimCase.data).sort(), ['case', 'document', 'priority']);
+    assert.deepEqual([slimCase.data.document, slimCase.data.case, slimCase.data.priority], [plain.entries[c6].data.document, plain.entries[c6].data.case, plain.entries[c6].data.priority]);
+    assert.equal(slimCase.reference, plain.entries[c6].reference);
+    // The changed definition entry keeps its full statement and data.
+    const reboot = b.get('system reboot <delay:int>') as string;
+    assert.equal(slim.entries[reboot].statement, plain.entries[reboot].statement);
+    assert.deepEqual(slim.entries[reboot].data, plain.entries[reboot].data);
+    assert.ok(slim.notes.some((note) => /attached_fields/.test(note) && /用例/.test(note)), slim.notes.join('\n'));
+    assert.ok(plain.notes.every((note) => !/attached_fields/.test(note)), 'the plain view does not mention attached_fields');
+  });
+
+  test('the byte accounting uses the slimmed size: a budget between the two cuts the plain view and not the slim one', async (t) => {
+    const measured = await fixture(t);
+    const plainBytes = (await measured.json(await measured.read(`knowledge:impact:acme:${A}..${B}`))).bytes.byteLength;
+    const slimBytes = (await measured.json(await measured.read(`knowledge:impact:acme:${A}..${B}?attached_fields=document,case,priority`))).bytes.byteLength;
+    assert.ok(slimBytes < plainBytes, `${slimBytes} < ${plainBytes}`);
+    // The lists get maxViewBytes less 64 KiB. Measured on this fixture: the plain view is 6,437 bytes, the slim one 6,055;
+    // at the budget 64 KiB + 5,500 the plain view keeps 3 of the 4 changed paths (truncated), the slim one all 4.
+    const f = await fixture(t, { knowledge: { limits: { maxViewBytes: 64 * 1024 + 5500 } } });
+    const plain = ImpactView.parse((await f.json(await f.read(`knowledge:impact:acme:${A}..${B}`))).value);
+    const slim = ImpactView.parse((await f.json(await f.read(`knowledge:impact:acme:${A}..${B}?attached_fields=document,case,priority`))).value);
+    assert.equal(plain.truncated, true, 'the plain view is cut at this budget');
+    assert.equal(slim.truncated, false, 'the slim view fits');
+    assert.ok(slim.changes.length > plain.changes.length, `slim keeps ${slim.changes.length} paths, plain ${plain.changes.length}`);
+    assert.deepEqual(slim.totals, plain.totals);
+    assert.deepEqual(
+      plain.changes.map((c) => c.path),
+      slim.changes.slice(0, plain.changes.length).map((c) => c.path),
+      'the kept paths are the same prefix in path order',
+    );
+  });
+
+  test('parseViewId accepts attached_fields on the impact view only, deduped and sorted; rejects bad names', () => {
+    const parsed = parseViewId(`knowledge:impact:acme:${A}..${B}?attached_fields=title,document,document`);
+    assert.ok(parsed.ok);
+    assert.deepEqual(parsed.ok && parsed.value.type === 'impact' ? parsed.value.attached_fields : null, ['document', 'title']);
+    const withoutIt = parseViewId(`knowledge:impact:acme:${A}..${B}`);
+    assert.ok(withoutIt.ok && withoutIt.value.type === 'impact' && withoutIt.value.attached_fields === null);
+    assert.equal(parseViewId(`knowledge:impact:acme:${A}..${B}?attached_fields=Document`).ok, false);
+    assert.equal(parseViewId(`knowledge:impact:acme:${A}..${B}?attached_fields=`).ok, false);
+    assert.equal(parseViewId(`knowledge:facets:acme:${A}?kind=case&by=line&attached_fields=document`).ok, false);
+    assert.equal(parseViewId(`knowledge:index:acme:${A}?kind=case&key=defects&attached_fields=document`).ok, false);
   });
 });
 

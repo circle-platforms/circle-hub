@@ -25,7 +25,7 @@ describe('the pack files', () => {
   it('pack.json lists exactly the pack files with their digests (run pack-files.ts --write after a change)', async () => {
     assert.equal(text('pack.json'), manifestText(await computeManifest()));
     const manifest = PackManifest.parse(json('pack.json'));
-    assert.deepEqual([manifest.id, manifest.version, manifest.kind], ['traceability', '1.0.0', 'workflow']);
+    assert.deepEqual([manifest.id, manifest.version, manifest.kind], ['traceability', '1.0.1', 'workflow']);
     const files = await packFiles();
     assert.ok(files.includes('functions/matrix.ts') && files.includes('samples/negative/status-conflict.json'));
     assert.ok(!files.some((f) => f.endsWith('.test.ts') || f === 'functions/test-support.ts' || f === 'README.md' || f === 'pack-files.ts'));
@@ -33,7 +33,7 @@ describe('the pack files', () => {
     assert.ok(!files.some((f) => f.startsWith('examples/') || f.startsWith('testing/')), files.join(', '));
   });
 
-  it('binds the product line, reads the two index views and declares the two fact requirements', () => {
+  it('binds no product line (the views name product and build), reads the two index views and declares the two fact requirements', () => {
     const workflow = WorkflowFile.parse(json('workflow.json'));
     assert.deepEqual(
       workflow.inputs.map((i) => ({ ...i, description: undefined })),
@@ -42,7 +42,7 @@ describe('the pack files', () => {
         { slot: 'cases', role: 'expected', description: undefined, accepts: ['knowledge:index'], required: true, many: false },
       ],
     );
-    assert.deepEqual(workflow.product, { id: 'apv', catalogs: [] });
+    assert.deepEqual(workflow.product, { catalogs: [] });
     assert.deepEqual(
       workflow.parameters.map((p) => [p.name, p.required]),
       [['statuses', false]],

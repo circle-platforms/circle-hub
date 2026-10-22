@@ -33,7 +33,8 @@ export function defectEntry(spec: { bug: string; status?: string; statement?: st
   };
 }
 
-/** A case entry as the product pack's cases producer writes it: data.defects holds the bug ids its document carries. */
+/** A case entry as the product pack's cases producer writes it: data.node is the case's node id in its document, and
+ * data.defects holds the bug ids its document carries. */
 export function caseEntry(spec: { defects: string[]; case?: string; title?: string; document?: string; stories?: string[]; digest?: string }): ViewEntrySpec {
   const id = spec.case ?? `C${seq}`;
   const title = spec.title ?? `用例 ${id}`;
@@ -43,7 +44,7 @@ export function caseEntry(spec: { defects: string[]; case?: string; title?: stri
     kind: 'case',
     statement: title,
     data: {
-      case: id,
+      node: id,
       title,
       document: spec.document ?? '24001',
       defects: [...spec.defects],
@@ -56,6 +57,13 @@ export function caseEntry(spec: { defects: string[]; case?: string; title?: stri
     },
     reference: `tree:${ROOT}/cases/${digest.slice(0, 12)}@${digest}`,
   };
+}
+
+/** The entry as an index view answers it with `fields=document,node,title`: only those data fields, an empty statement. */
+export function slimCaseEntry(spec: ViewEntrySpec): ViewEntrySpec {
+  const data: Record<string, unknown> = {};
+  for (const field of ['document', 'node', 'title']) if (Object.hasOwn(spec.data, field)) data[field] = spec.data[field];
+  return { ...spec, statement: '', data };
 }
 
 /** The values of the key field an entry is indexed under (the reader's rule: a list field by each element). */
@@ -83,8 +91,10 @@ export interface ViewOverrides {
   notes?: string[];
 }
 
-/** A hand-built index-view@1 model. By default the keys and the totals are derived from the entries. */
-export function indexViewOf(kind: string, key: string, entries: ViewEntrySpec[], overrides: ViewOverrides = {}): Record<string, unknown> {
+/** A hand-built index-view@1 model. By default the keys and the totals are derived from the entries. With `slim`, the
+ * entries carry only those data fields and an empty statement and the view records them — as the reader answers with
+ * `fields=` (the keys are still derived from the full data, as the reader indexes before slimming). */
+export function indexViewOf(kind: string, key: string, entries: ViewEntrySpec[], overrides: ViewOverrides = {}, slim: string[] | null = null): Record<string, unknown> {
   const keys: Record<string, string[]> = {};
   for (const spec of entries) {
     for (const value of keyValues(spec.data, key)) {
@@ -93,7 +103,10 @@ export function indexViewOf(kind: string, key: string, entries: ViewEntrySpec[],
   }
   for (const list of Object.values(keys)) list.sort();
   const record: Record<string, unknown> = {};
-  for (const spec of entries) record[spec.digest] = { entry: spec.digest, kind: spec.kind, statement: spec.statement, data: spec.data, reference: spec.reference };
+  for (const spec of entries) {
+    const entry = slim === null ? spec : slimCaseEntry(spec);
+    record[spec.digest] = { entry: spec.digest, kind: spec.kind, statement: entry.statement, data: entry.data, reference: spec.reference };
+  }
   return {
     schema: 'index-view@1',
     product: overrides.product ?? PRODUCT,
@@ -102,6 +115,7 @@ export function indexViewOf(kind: string, key: string, entries: ViewEntrySpec[],
     key,
     keys: overrides.keys ?? keys,
     entries: record,
+    ...(slim !== null ? { fields: [...slim].sort() } : {}),
     total_keys: overrides.total_keys ?? Object.keys(overrides.keys ?? keys).length,
     total_entries: overrides.total_entries ?? entries.length,
     truncated: overrides.truncated ?? false,
@@ -128,11 +142,14 @@ export function boundView(slot: string, view: Record<string, unknown>, external?
   };
 }
 
-/** The defects view and the cases view of a corpus, bound as the run binds them. */
-export function boundPair(defects: ViewEntrySpec[], cases: ViewEntrySpec[], options: { defectsView?: ViewOverrides; casesView?: ViewOverrides } = {}): { defects: Record<string, unknown>; cases: Record<string, unknown>; inputs: BoundInput[] } {
+/** The defects view and the cases view of a corpus, bound as the run binds them. The cases view is the slim one
+ * (fields=document,node,title), as the pack's workflow.json asks for it; `slimCases: false` keeps the full entries (the
+ * join re-verification reads the raw defect ids, which only full entries carry). */
+export function boundPair(defects: ViewEntrySpec[], cases: ViewEntrySpec[], options: { defectsView?: ViewOverrides; casesView?: ViewOverrides; slimCases?: boolean } = {}): { defects: Record<string, unknown>; cases: Record<string, unknown>; inputs: BoundInput[] } {
+  const slim = options.slimCases !== false;
   const dv = indexViewOf('defect', 'bug', defects, options.defectsView);
-  const cv = indexViewOf('case', 'defects', cases, options.casesView);
-  return { defects: dv, cases: cv, inputs: [boundView('defects', dv, indexId('defect', 'bug')), boundView('cases', cv, indexId('case', 'defects'))] };
+  const cv = indexViewOf('case', 'defects', cases, options.casesView, slim ? ['document', 'node', 'title'] : null);
+  return { defects: dv, cases: cv, inputs: [boundView('defects', dv, indexId('defect', 'bug')), boundView('cases', cv, indexId('case', 'defects') + (slim ? '&fields=document,node,title' : ''))] };
 }
 
 /** A copy of a JSON value with every record's members in reverse order (the matrix must not depend on member order). */

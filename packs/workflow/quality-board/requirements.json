@@ -8,9 +8,13 @@
       "target": "item",
       "required": true,
       "done_rule": "bookkeeping",
-      "layers": ["static"],
+      "layers": [
+        "static"
+      ],
       "accepted_producer": "fact",
-      "checks": ["board"],
+      "checks": [
+        "board"
+      ],
       "error_handling": []
     },
     {
@@ -20,21 +24,29 @@
       "target": "item",
       "required": true,
       "done_rule": "bookkeeping",
-      "layers": ["static"],
+      "layers": [
+        "static"
+      ],
       "accepted_producer": "fact",
-      "checks": ["thresholds"],
+      "checks": [
+        "thresholds"
+      ],
       "error_handling": []
     },
     {
       "key": "totals",
       "name": "合计",
-      "description": "整个视图的合计（用例数、无期望结果数、含糊期望数、负面用例数）作为事实结论，并写明看板只覆盖用例索引收录的用例（索引只收指到可解析命令的用例），描述的是已索引的用例，不是整套测试；视图有来源没读或截断时照写。视图声明未截断却与行合计对不上时，视图自相矛盾，合计记不通过（提示档）而不是照写",
+      "description": "整个视图的合计（用例数、无期望结果数、含糊期望数、负面用例数）作为事实结论，并写明看板覆盖已索引文档的每一个用例（没有解析出命令的用例是未归位条目，也计入合计），描述的是已索引的用例，不是整套测试；视图有来源没读或截断时照写。视图声明未截断却与行合计对不上时，视图自相矛盾，合计记不通过（提示档）而不是照写",
       "target": "run",
       "required": true,
       "done_rule": "bookkeeping",
-      "layers": ["static"],
+      "layers": [
+        "static"
+      ],
       "accepted_producer": "fact",
-      "checks": ["totals"],
+      "checks": [
+        "totals"
+      ],
       "error_handling": []
     }
   ]

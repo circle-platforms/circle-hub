@@ -11,7 +11,7 @@ The product name in the view (`widget`) and the build names (`Rel_W_1_0_1`, `Rel
 | Path | Content |
 | --- | --- |
 | `pack.json` | manifest of the pack files (`pack-files.ts --write`) |
-| `workflow.json` | input `impact` (`knowledge:impact`, one, required); parameters `priorities`, `include_added`; `product: { catalogs: [] }` |
+| `workflow.json` | input `impact` (`knowledge:impact`, one, required; the id asks for the slim view: `?attached_fields=document,node,title,priority,negative`); parameters `priorities`, `include_added`; `product: { catalogs: [] }` |
 | `requirements.json` | `in_scope` (item) and `uncovered_changes` (run); both fact, static, bookkeeping |
 | `checks.json` | both checks are `functions/check.ts`, apply `run`, subject `functions/subject.ts`, advisory |
 | `slots.schema.json` | empty |
@@ -78,6 +78,11 @@ is committed.
 
 - At most 10,000 check outcomes in one call (the engine's cap). A larger run becomes one `check_error`. The 5,000-case
   test calls the function directly.
+- A run admits at most 4,000 in-scope cases and about 6 MiB of projection output (`regression-scope.too_large`, with the
+  fix: narrow by `priorities`). The limit exists because a bigger scope died in the sandbox on memory (a cross-line pair
+  with full entries took about 790 MB); the slim view (`attached_fields`) is what the id asks for, and with it the view
+  itself fits the byte budget. Measured on synthetic corpora: 25,000 slim cases complete in the sandbox (256 MB); the same
+  run with full entries also fits (the pack reads only the five fields) but its input is far bigger.
 - `ignore` is not a parameter. `priorities` holds at most 64 numbers.
 - `ignore_fields` belongs to maintenance-sweep, not to this pack.
 - Tree references in the view are copied onto the claims. This pack does not resolve them against a knowledge root.
