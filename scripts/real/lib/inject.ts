@@ -17,7 +17,9 @@ export type Operation =
   | { kind: 'delete_expected'; node: string }
   | { kind: 'replace_expected'; node: string; text: string }
   | { kind: 'duplicate'; node: string }
-  | { kind: 'move'; node: string; to: string };
+  | { kind: 'move'; node: string; to: string }
+  | { kind: 'replace_command_word'; node: string; from: string; to: string }
+  | { kind: 'delete_negative_group'; node: string };
 
 /** One planned defect: a label for the report and which requirement should be able to see it. */
 export interface Planned {
@@ -35,9 +37,17 @@ export interface GoldEntry {
   /** The copy a duplicate made; both are the defect. */
   copy?: string;
   note: string;
+  /** For replace_command_word: the word replaced and what it was replaced with. */
+  from?: string;
+  to?: string;
+  /** For delete_negative_group: the cases deleted with the group. */
+  deletedCases?: string[];
 }
 
 const isCase = (node: MindNode): boolean => Array.isArray(node.data.resource) && node.data.resource.length > 0;
+const isNegative = (node: MindNode): boolean =>
+  Array.isArray(node.data.resource) &&
+  node.data.resource.some((t) => /^(?:negative|negativ|负向|反向)$/i.test(String(t).trim()));
 
 /** The case nodes in document order: tagged nodes, outermost first (a tagged node below a case belongs to that case). */
 export function caseNodes(tree: MindTree): MindNode[] {
@@ -113,6 +123,28 @@ export function inject(tree: MindTree, plan: readonly Planned[]): { tree: MindTr
   const gold: GoldEntry[] = [];
   for (const { label, seen_by, op } of plan) {
     const { node, parent } = locate(copy, op.node);
+
+    if (op.kind === 'delete_negative_group') {
+      if (parent === null) throw new Error('the root cannot be deleted');
+      if (isCase(node)) throw new Error(`node ${op.node} is a case, not a group`);
+      const casesInGroup = caseNodes({ root: node });
+      if (casesInGroup.length === 0) throw new Error(`group ${op.node} contains no cases`);
+      const nonNegative = casesInGroup.filter((c) => !isNegative(c));
+      if (nonNegative.length > 0) {
+        throw new Error(`group ${op.node} contains non-negative cases: ${nonNegative.map(idOf).join(', ')}`);
+      }
+      const deletedCases = casesInGroup.map(idOf);
+      parent.children = (parent.children ?? []).filter((c) => c !== node);
+      gold.push({
+        label,
+        seen_by,
+        node: op.node,
+        deletedCases,
+        note: `删掉了只含反向用例的分组 ${op.node}，内含用例：${deletedCases.join('、')}`,
+      });
+      continue;
+    }
+
     if (!isCase(node)) throw new Error(`node ${op.node} is not a case (it carries no tag)`);
     if (op.kind === 'delete_expected') {
       node.children = [];
@@ -129,6 +161,29 @@ export function inject(tree: MindTree, plan: readonly Planned[]): { tree: MindTr
       siblings.splice(siblings.indexOf(node) + 1, 0, twin);
       parent.children = siblings;
       gold.push({ label, seen_by, node: op.node, copy: idOf(twin), note: '同一分组里多了一份完全相同的用例' });
+    } else if (op.kind === 'replace_command_word') {
+      let replaced = false;
+      const tryReplace = (n: MindNode) => {
+        if (typeof n.data.text === 'string' && n.data.text.includes(op.from)) {
+          n.data.text = n.data.text.replace(op.from, op.to);
+          replaced = true;
+        }
+        for (const child of n.children ?? []) {
+          tryReplace(child);
+        }
+      };
+      tryReplace(node);
+      if (!replaced) {
+        throw new Error(`command word "${op.from}" not found in case ${op.node}`);
+      }
+      gold.push({
+        label,
+        seen_by,
+        node: op.node,
+        from: op.from,
+        to: op.to,
+        note: `用例命令行中的“${op.from}”换成了目录中不存在的“${op.to}”`,
+      });
     } else {
       if (parent === null) throw new Error('the root cannot be moved');
       const target = locate(copy, op.to).node;

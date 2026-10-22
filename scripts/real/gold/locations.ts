@@ -4,7 +4,8 @@
 //   NNN：<line> -> NNN：<line>-<suffix> -> <module> -> <document>
 // Tolerates full-width/half-width colons and extra whitespace.
 // Extracts associated story and bug IDs from document titles and parent folder labels.
-// Documents that do not strictly conform to the convention are placed in `nonconforming` without guessing.
+// Outputs partial locations for every document (layers recognized by convention are provided,
+// unrecognized layers are set to null) along with a conforming flag.
 // Imports nothing from hub/ or packs/.
 //
 // Usage:
@@ -15,12 +16,14 @@ import { resolve } from 'node:path';
 export interface DocumentLocationGold {
   document: string;
   title: string;
-  line: string;
-  train: string;
-  module: string;
+  line: string | null;
+  train: string | null;
+  module: string | null;
   stories: string[];
   bugs: string[];
   associatedIds: string[];
+  conforming: boolean;
+  reason?: string | null;
 }
 
 export interface NonconformingDocument {
@@ -28,12 +31,20 @@ export interface NonconformingDocument {
   title: string;
   ancestors: string[];
   reason: string;
+  line: string | null;
+  train: string | null;
+  module: string | null;
+  stories: string[];
+  bugs: string[];
+  associatedIds: string[];
+  conforming: false;
 }
 
 export interface LocationsGold {
   root: string;
   documents: DocumentLocationGold[];
   nonconforming: NonconformingDocument[];
+  all?: DocumentLocationGold[];
 }
 
 interface RawTreeNode {
@@ -89,7 +100,6 @@ function extractIdList(text: string, at: number): { ids: string[]; end: number }
     const candidate = digitMatch[0];
     const end = pos + candidate.length;
     const nextChar = text[end] ?? '';
-    // Version dot (10.6.1) or date/time delimiter
     if (nextChar === '.' && /[0-9]/.test(text[end + 1] ?? '')) break;
     if (candidate.length <= 4 && (nextChar === '/' || nextChar === ':') && /[0-9]/.test(text[end + 1] ?? '')) break;
     ids.push(candidate);
@@ -110,7 +120,6 @@ export function extractAssociatedIds(title: string, ancestors: string[]): { stor
   const scanText = (text: string, isTitle: boolean) => {
     const norm = text.normalize('NFKC');
 
-    // 1. Stories
     for (const match of norm.matchAll(STORY_MARKER)) {
       const start = (match.index ?? 0) + match[0].length;
       const glue = GLUE_REGEX.exec(norm.slice(start));
@@ -122,7 +131,6 @@ export function extractAssociatedIds(title: string, ancestors: string[]): { stor
       }
     }
 
-    // 2. Bugs
     for (const match of norm.matchAll(BUG_MARKER)) {
       const start = (match.index ?? 0) + match[0].length;
       const glue = GLUE_REGEX.exec(norm.slice(start));
@@ -134,7 +142,6 @@ export function extractAssociatedIds(title: string, ancestors: string[]): { stor
       }
     }
 
-    // 3. Leading bare ID (only on title or folder if not year)
     if (isTitle) {
       const leadMatch = /^[\s\-–—_:.、]*([0-9]{4,7})(?=[^0-9]|$)/.exec(norm);
       if (leadMatch) {
@@ -193,7 +200,7 @@ function normalizeTreeNodes(raw: unknown): RawTreeNode[] {
   return nodes;
 }
 
-interface ScannedDocumentItem {
+export interface ScannedDocumentItem {
   document: string;
   title: string;
   ancestors: string[];
@@ -205,7 +212,6 @@ function scanDocuments(nodes: RawTreeNode[], above: string[] = [], rootCases: st
   const ownIds = new Set<string>();
   const listed = new Map<string, { ancestors: string[]; depth: number }>();
 
-  // If root lists cases, record them at root depth
   if (rootCases.length > 0) {
     const depth = above.length;
     for (const caseId of rootCases) {
@@ -233,7 +239,6 @@ function scanDocuments(nodes: RawTreeNode[], above: string[] = [], rootCases: st
         for (const caseId of node.cases) {
           if (!caseId) continue;
           const known = listed.get(caseId);
-          // Deeper folder wins; if same depth, keep the first one ("同一层列了两次取第一次")
           if (known === undefined || depth > known.depth) {
             listed.set(caseId, { ancestors: nextAncestors, depth });
           }
@@ -259,11 +264,16 @@ function scanDocuments(nodes: RawTreeNode[], above: string[] = [], rootCases: st
   return out;
 }
 
+export type EvaluatedLocation =
+  | { location: DocumentLocationGold }
+  | { location: DocumentLocationGold; reason: string };
+
 /**
  * Calculates location for one document based on architecture section 8 convention.
- * Returns either DocumentLocationGold or reason for nonconforming.
+ * Outputs partial location for every document (layers recognized by convention are provided,
+ * unrecognized layers are set to null) along with a conforming flag.
  */
-export function evaluateLocation(doc: ScannedDocumentItem): { location: DocumentLocationGold } | { reason: string } {
+export function evaluateLocation(doc: ScannedDocumentItem): EvaluatedLocation {
   const strippedAncestors = doc.ancestors.map((a) => stripPrefix(a));
 
   // 1. Locate version line node
@@ -292,47 +302,53 @@ export function evaluateLocation(doc: ScannedDocumentItem): { location: Document
   }
 
   if (lineIdx < 0 && trainLine !== null) {
-    // If no line node above, but train is present, line taken from train
     lineVal = trainLine;
   }
 
-  if (lineVal === null) {
-    return { reason: '缺少版本线节点' };
-  }
-  if (trainVal === null || trainIdx < 0) {
-    return { reason: '缺少发布火车节点' };
-  }
-  if (trainLine !== null && lineKey(trainLine) !== lineKey(lineVal)) {
-    return { reason: `发布火车版本 ${trainLine} 与版本线 ${lineVal} 不一致` };
-  }
-
   // 3. Locate module node (must be directly below release train)
-  const moduleIdx = trainIdx + 1;
-  if (moduleIdx >= strippedAncestors.length) {
-    return { reason: '发布火车下面没有模块层' };
+  let moduleVal: string | null = null;
+  let nonconReason: string | null = null;
+
+  if (lineVal === null) {
+    nonconReason = '缺少版本线节点';
+  } else if (trainVal === null || trainIdx < 0) {
+    nonconReason = '缺少发布火车节点';
+  } else if (trainLine !== null && lineKey(trainLine) !== lineKey(lineVal)) {
+    nonconReason = `发布火车版本 ${trainLine} 与版本线 ${lineVal} 不一致`;
+  } else {
+    const moduleIdx = trainIdx + 1;
+    if (moduleIdx >= strippedAncestors.length) {
+      nonconReason = '发布火车下面没有模块层';
+    } else {
+      const moduleRaw = doc.ancestors[moduleIdx];
+      if (!isModuleName(moduleRaw)) {
+        nonconReason = `发布火车下一层“${strippedAncestors[moduleIdx].text.slice(0, 40)}”不是有效模块名`;
+      } else {
+        moduleVal = strippedAncestors[moduleIdx].text;
+      }
+    }
   }
 
-  const moduleRaw = doc.ancestors[moduleIdx];
-  if (!isModuleName(moduleRaw)) {
-    return { reason: `发布火车下一层“${strippedAncestors[moduleIdx].text.slice(0, 40)}”不是有效模块名` };
-  }
-  const moduleVal = strippedAncestors[moduleIdx].text;
-
-  // 4. Extract associated IDs
   const { stories, bugs, associatedIds } = extractAssociatedIds(doc.title, doc.ancestors);
+  const conforming = nonconReason === null;
 
-  return {
-    location: {
-      document: doc.document,
-      title: doc.title,
-      line: lineVal,
-      train: trainVal,
-      module: moduleVal,
-      stories,
-      bugs,
-      associatedIds,
-    },
+  const location: DocumentLocationGold = {
+    document: doc.document,
+    title: doc.title,
+    line: lineVal,
+    train: trainVal,
+    module: moduleVal,
+    stories,
+    bugs,
+    associatedIds,
+    conforming,
+    reason: nonconReason,
   };
+
+  if (conforming) {
+    return { location };
+  }
+  return { location, reason: nonconReason ?? '不符合路径约定' };
 }
 
 /**
@@ -365,18 +381,27 @@ export function locationsGold(treeInput: unknown, options?: { root?: string }): 
 
   const documents: DocumentLocationGold[] = [];
   const nonconforming: NonconformingDocument[] = [];
+  const all: DocumentLocationGold[] = [];
 
   for (const item of scanned) {
     const evaluated = evaluateLocation(item);
-    if ('location' in evaluated) {
-      documents.push(evaluated.location);
-    } else {
+    all.push(evaluated.location);
+    if ('reason' in evaluated) {
       nonconforming.push({
         document: item.document,
         title: item.title,
         ancestors: item.ancestors,
         reason: evaluated.reason,
+        line: evaluated.location.line,
+        train: evaluated.location.train,
+        module: evaluated.location.module,
+        stories: evaluated.location.stories,
+        bugs: evaluated.location.bugs,
+        associatedIds: evaluated.location.associatedIds,
+        conforming: false,
       });
+    } else {
+      documents.push(evaluated.location);
     }
   }
 
@@ -384,6 +409,7 @@ export function locationsGold(treeInput: unknown, options?: { root?: string }): 
     root: rootId,
     documents,
     nonconforming,
+    all,
   };
 }
 

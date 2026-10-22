@@ -121,7 +121,9 @@ export function parseFacetView(raw: unknown): FacetDocumentMap {
         continue;
       }
       const rawVal = v[f];
-      const val = typeof rawVal === 'string' ? rawVal.trim() : (rawVal === null ? null : (rawVal !== undefined ? String(rawVal).trim() : null));
+      const val = typeof rawVal === 'string'
+        ? (rawVal.trim() === '' ? null : rawVal.trim())
+        : (rawVal === null ? null : (rawVal !== undefined ? String(rawVal).trim() || null : null));
       docFields[f].add(val);
     }
   }
@@ -157,26 +159,57 @@ export function parseFacetView(raw: unknown): FacetDocumentMap {
 }
 
 /**
- * Extracts conforming document records from gold input (either LocationsGold or DocumentLocationGold array).
+ * Extracts document records from gold input (LocationsGold, DocumentLocationGold array, or mixed).
+ * Reads both fully conforming and nonconforming partial documents so that all documents participate.
  */
-export function parseGoldLocations(raw: unknown): Map<string, { line: string; train: string; module: string }> {
-  const result = new Map<string, { line: string; train: string; module: string }>();
+export function parseGoldLocations(raw: unknown): Map<string, { line: string | null; train: string | null; module: string | null; conforming?: boolean }> {
+  const result = new Map<string, { line: string | null; train: string | null; module: string | null; conforming?: boolean }>();
   if (!raw || typeof raw !== 'object') return result;
 
+  const top = raw as Record<string, unknown>;
   const list: DocumentLocationGold[] = Array.isArray(raw)
     ? (raw as DocumentLocationGold[])
-    : Array.isArray((raw as LocationsGold).documents)
-      ? (raw as LocationsGold).documents
-      : [];
+    : Array.isArray(top.all)
+      ? (top.all as DocumentLocationGold[])
+      : Array.isArray(top.documents)
+        ? (top.documents as DocumentLocationGold[])
+        : [];
 
   for (const doc of list) {
     if (!doc || typeof doc !== 'object') continue;
     if (typeof doc.document === 'string' && doc.document.trim()) {
-      result.set(doc.document.trim(), {
-        line: doc.line ?? '',
-        train: doc.train ?? '',
-        module: doc.module ?? '',
-      });
+      const entry: { line: string | null; train: string | null; module: string | null; conforming?: boolean } = {
+        line: doc.line ?? null,
+        train: doc.train ?? null,
+        module: doc.module ?? null,
+      };
+      if (doc.conforming !== undefined) {
+        entry.conforming = doc.conforming;
+      }
+      result.set(doc.document.trim(), entry);
+    }
+  }
+
+  if (Array.isArray(top.nonconforming)) {
+    for (const item of top.nonconforming) {
+      if (!item || typeof item !== 'object') continue;
+      const doc = item as Record<string, unknown>;
+      if (typeof doc.document === 'string' && doc.document.trim()) {
+        const docId = doc.document.trim();
+        if (!result.has(docId)) {
+          const entry: { line: string | null; train: string | null; module: string | null; conforming?: boolean } = {
+            line: typeof doc.line === 'string' && doc.line ? doc.line : null,
+            train: typeof doc.train === 'string' && doc.train ? doc.train : null,
+            module: typeof doc.module === 'string' && doc.module ? doc.module : null,
+          };
+          if (doc.conforming !== undefined) {
+            entry.conforming = Boolean(doc.conforming);
+          } else {
+            entry.conforming = false;
+          }
+          result.set(docId, entry);
+        }
+      }
     }
   }
 
@@ -184,8 +217,22 @@ export function parseGoldLocations(raw: unknown): Map<string, { line: string; tr
 }
 
 /**
+ * Compares two field values where null participates in comparison.
+ */
+export function matchFieldValue(field: LocationField, goldVal: string | null, facetVal: string | null): boolean {
+  const normGold = goldVal === null || goldVal === '' ? null : goldVal;
+  const normFacet = facetVal === null || facetVal === '' ? null : facetVal;
+  if (normGold === null && normFacet === null) return true;
+  if (normGold === null || normFacet === null) return false;
+  if (field === 'line') {
+    return lineKey(normGold) === lineKey(normFacet);
+  }
+  return normGold === normFacet;
+}
+
+/**
  * Compares facet view entries against independent gold locations.
- * Only compares fields present in the facet view (by).
+ * Only compares fields present in the facet view (by), with null values participating in comparison.
  */
 export function compareLocationIndex(facetsInput: unknown, goldInput: unknown): LocationIndexComparison {
   const facetDocs = parseFacetView(facetsInput);
@@ -236,7 +283,7 @@ export function compareLocationIndex(facetsInput: unknown, goldInput: unknown): 
           docDiscrepancies.push({
             document: docId,
             field: inc.field,
-            gold: gold[inc.field],
+            gold: gold[inc.field] ?? null,
             facet: inc.values.join(', '),
             reason: '分面视图多行间取值不一致',
           });
@@ -248,18 +295,15 @@ export function compareLocationIndex(facetsInput: unknown, goldInput: unknown): 
       for (const f of comparedFields) {
         if (inconsistentFields.has(f)) continue;
 
-        if (f === 'line') {
-          if (lineKey(gold.line) !== lineKey(facet.line ?? '')) {
-            docDiscrepancies.push({ document: docId, field: 'line', gold: gold.line, facet: facet.line });
-          }
-        } else if (f === 'train') {
-          if (gold.train !== (facet.train ?? '')) {
-            docDiscrepancies.push({ document: docId, field: 'train', gold: gold.train, facet: facet.train });
-          }
-        } else if (f === 'module') {
-          if (gold.module !== (facet.module ?? '')) {
-            docDiscrepancies.push({ document: docId, field: 'module', gold: gold.module, facet: facet.module });
-          }
+        const gVal = gold[f] ?? null;
+        const fVal = facet[f] ?? null;
+        if (!matchFieldValue(f, gVal, fVal)) {
+          docDiscrepancies.push({
+            document: docId,
+            field: f,
+            gold: gVal,
+            facet: fVal,
+          });
         }
       }
 
