@@ -1,26 +1,33 @@
-// The lease service (D04 R[0], C2): acquire is atomic per key set (unique constraint, all or nothing), an expired or
-// released row is taken over in place with the fencing token incremented, the database clock decides expiry, every
-// change writes its lease action record in the same transaction, orphaned rows are reclaimed, and a new service
-// object over the same database sees the same state. Synthetic keys of a neutral namespace (core code names no
-// device, bench or product).
+// The lease service (D04 R[0], C2): acquire is atomic per key set (unique constraint, all or nothing, one order so
+// opposite orders cannot deadlock), an expired or released row is taken over in place with the fencing token
+// incremented, one clock (the service's own, the database clock by default, injectable in tests) decides expiry —
+// extend takes no caller moment — every change writes its lease action record in the same transaction, orphaned
+// rows are reclaimed only when their run record is gone and they were acquired over 60 seconds ago, and a new
+// service object over the same database sees the same state. Synthetic keys of a neutral namespace.
 import assert from 'node:assert/strict';
 import { after, before, describe, test } from 'node:test';
 import { createPool, Database } from '../records/db.ts';
 import { migrate } from '../records/migrations.ts';
+import { openRecords, type RecordsKit } from '../records/index.ts';
 import { startPostgres, type TemporaryPostgres } from '../testing/postgres.ts';
+import { putRun } from '../runs/engine/store.ts';
+import type { RunRecord } from '../../contracts/src/run.ts';
 import { LeaseService } from './service.ts';
 
 let postgres: TemporaryPostgres;
 let db: Database;
+let kit: RecordsKit;
 
 before(async () => {
   postgres = await startPostgres();
   const config = await postgres.createDatabase('leases');
-  db = new Database(createPool(config, 4));
+  db = new Database(createPool(config, 8));
   await migrate(db);
+  kit = await openRecords({ dataDir: `${postgres.root}/kit`, logDir: `${postgres.root}/kit/logs`, database: config, limits: { maxUploadBytes: 1 << 20, maxRecordBytes: 1 << 20, maxRequestBytes: 2 << 20 } });
 });
 
 after(async () => {
+  await kit?.close();
   await db?.end();
   await postgres?.stop();
 });
@@ -37,13 +44,13 @@ describe('acquire', () => {
     const granted = await service.acquire({ keys: ['zone/a/1', 'zone/a/2'], ttlSeconds: 3600, holder, prefix: 'zone/', maxTtlSeconds: 7200 });
     assert.equal(granted.ok, true);
     if (!granted.ok) return;
-    assert.match(granted.lease, /^lse_[0-9a-z]{26}$/);
+    assert.match(granted.lease, /^lse_[0-9a-hjkmnp-tv-z]{26}$/);
     assert.deepEqual(granted.keys, ['zone/a/1', 'zone/a/2']);
     assert.equal(granted.token, 1);
     assert.equal(granted.until, '2026-10-22T09:00:00.000Z');
   });
 
-  test('two connections acquiring the same key: exactly one succeeds, 50 rounds', async () => {
+  test('two connections acquiring the same key: exactly one succeeds, 50 rounds, no exception', async () => {
     for (let round = 0; round < 50; round++) {
       const service = new LeaseService(db, { now: clock('2026-10-22T08:00:00Z') });
       const [first, second] = await Promise.all([
@@ -54,6 +61,19 @@ describe('acquire', () => {
       assert.equal(wins, 1, `round ${round}: exactly one winner, got ${JSON.stringify([first, second].map((r) => (r.ok ? 'ok' : r.code)))}`);
       const loser = first.ok ? second : first;
       assert.ok(!loser.ok && loser.code === 'LEASE_UNAVAILABLE');
+    }
+  });
+
+  test('the same key set in opposite orders cannot deadlock: 50 rounds, no exception, exactly one winner', async () => {
+    for (let round = 0; round < 50; round++) {
+      const a = new LeaseService(db, { now: clock('2026-10-22T08:00:00Z') });
+      const b = new LeaseService(db, { now: clock('2026-10-22T08:00:00Z') });
+      const [first, second] = await Promise.all([
+        a.acquire({ keys: [`order/o${round}/1`, `order/o${round}/2`, `order/o${round}/3`], ttlSeconds: 60, holder, prefix: 'order/', maxTtlSeconds: 600 }),
+        b.acquire({ keys: [`order/o${round}/3`, `order/o${round}/2`, `order/o${round}/1`], ttlSeconds: 60, holder: other, prefix: 'order/', maxTtlSeconds: 600 }),
+      ]);
+      const wins = [first, second].filter((r) => r.ok).length;
+      assert.equal(wins, 1, `round ${round}: exactly one winner, got ${JSON.stringify([first, second].map((r) => (r.ok ? 'ok' : r.code)))}`);
     }
   });
 
@@ -79,11 +99,16 @@ describe('acquire', () => {
     assert.ok(!view.entries.some((e) => e.key === 'zone/b/9'), 'nothing was written');
   });
 
+  test('a holder that is not a real user id and run id is refused', async () => {
+    const service = new LeaseService(db, { now: clock('2026-10-22T08:00:00Z') });
+    const fake = await service.acquire({ keys: ['zone/c/1'], ttlSeconds: 60, holder: { user: 'user-1', run: 'run_0123456789abcdefghjkmnpqrs' }, prefix: 'zone/', maxTtlSeconds: 600 });
+    assert.ok(!fake.ok && fake.code === 'LEASE_UNAVAILABLE');
+  });
+
   test('an expired row is taken over in place, with the token incremented', async () => {
     const first = new LeaseService(db, { now: clock('2026-10-22T08:00:00Z') });
     const held = await first.acquire({ keys: ['take/over/1'], ttlSeconds: 100, holder, prefix: 'take/', maxTtlSeconds: 600 });
     assert.equal(held.ok, true);
-    // after the expiry (the database clock is later; the service only reads now() through its provider)
     const later = new LeaseService(db, { now: clock('2026-10-22T08:03:00Z') });
     const takeover = await later.acquire({ keys: ['take/over/1'], ttlSeconds: 100, holder: other, prefix: 'take/', maxTtlSeconds: 600 });
     assert.equal(takeover.ok, true);
@@ -105,56 +130,81 @@ describe('acquire', () => {
   });
 });
 
-describe('extend', () => {
-  test('the holder extends within the cap; a stranger and an expired lease cannot', async () => {
+describe('extend and release', () => {
+  test('the holder extends within the cap; the token grows; the until moment moves', async () => {
     const service = new LeaseService(db, { now: clock('2026-10-22T08:00:00Z') });
     const held = await service.acquire({ keys: ['ext/1'], ttlSeconds: 600, holder, prefix: 'ext/', maxTtlSeconds: 1200 });
     assert.ok(held.ok);
-    const extended = await service.extend({ keys: ['ext/1'], holder, ttlSeconds: 300, at: '2026-10-22T08:05:00Z' });
+    // The service's own clock is five minutes later; extend takes no caller moment.
+    const later = new LeaseService(db, { now: clock('2026-10-22T08:05:00Z') });
+    const extended = await later.extend({ keys: ['ext/1'], holder, ttlSeconds: 300, maxTtlSeconds: 1200 });
     assert.equal(extended.ok, true);
-    if (extended.ok) {
-      assert.equal(extended.until, '2026-10-22T08:10:00.000Z');
-      assert.equal(extended.token, (held.ok ? held.token : 0) + 1);
-    }
-    const stranger = await service.extend({ keys: ['ext/1'], holder: other, ttlSeconds: 300, at: '2026-10-22T08:05:00Z' });
-    assert.ok(!stranger.ok && stranger.code === 'LEASE_UNAVAILABLE');
-    const past = new LeaseService(db, { now: clock('2026-10-22T09:00:00Z') });
-    const expired = await past.extend({ keys: ['ext/1'], holder, ttlSeconds: 300, at: '2026-10-22T09:00:00Z' });
-    assert.ok(!expired.ok && expired.code === 'LEASE_EXPIRED');
+    if (!extended.ok || !held.ok) return;
+    assert.equal(extended.until, '2026-10-22T08:10:00.000Z');
+    assert.ok(extended.token > held.token, 'the token grows on extend');
   });
 
-  test('the cumulative extension cannot pass the cap', async () => {
+  test('a stranger cannot extend, and cannot release either', async () => {
     const service = new LeaseService(db, { now: clock('2026-10-22T08:00:00Z') });
-    const held = await service.acquire({ keys: ['cap/1'], ttlSeconds: 600, holder, prefix: 'cap/', maxTtlSeconds: 1200 });
-    assert.ok(held.ok);
-    const beyond = await service.extend({ keys: ['cap/1'], holder, ttlSeconds: 1160, at: '2026-10-22T08:05:00Z', maxTtlSeconds: 1200 });
+    await service.acquire({ keys: ['str/1'], ttlSeconds: 600, holder, prefix: 'str/', maxTtlSeconds: 600 });
+    const strangerExtend = await service.extend({ keys: ['str/1'], holder: other, ttlSeconds: 60, maxTtlSeconds: 600 });
+    assert.ok(!strangerExtend.ok && strangerExtend.code === 'LEASE_UNAVAILABLE');
+    const strangerRelease = await service.release({ keys: ['str/1'], holder: other });
+    assert.ok(!strangerRelease.ok && strangerRelease.code === 'LEASE_UNAVAILABLE');
+  });
+
+  test('a released lease cannot be extended', async () => {
+    const service = new LeaseService(db, { now: clock('2026-10-22T08:00:00Z') });
+    await service.acquire({ keys: ['relx/1'], ttlSeconds: 600, holder, prefix: 'relx/', maxTtlSeconds: 1200 });
+    const released = await service.release({ keys: ['relx/1'], holder });
+    assert.equal(released.ok, true);
+    const extended = await service.extend({ keys: ['relx/1'], holder, ttlSeconds: 60, maxTtlSeconds: 1200 });
+    assert.ok(!extended.ok && extended.code === 'LEASE_EXPIRED');
+  });
+
+  test('an expired lease cannot be extended by lying about the clock: the service clock alone decides', async () => {
+    const early = new LeaseService(db, { now: clock('2026-10-22T08:00:00Z') });
+    await early.acquire({ keys: ['expx/1'], ttlSeconds: 300, holder, prefix: 'expx/', maxTtlSeconds: 600 });
+    // The service clock is past the expiry; there is no `at` to bring an earlier moment.
+    const late = new LeaseService(db, { now: clock('2026-10-22T08:10:00Z') });
+    const extended = await late.extend({ keys: ['expx/1'], holder, ttlSeconds: 60, maxTtlSeconds: 600 });
+    assert.ok(!extended.ok && extended.code === 'LEASE_EXPIRED');
+  });
+
+  test('the cumulative cap counts from the first acquisition', async () => {
+    const service = new LeaseService(db, { now: clock('2026-10-22T08:00:00Z') });
+    await service.acquire({ keys: ['cap/1'], ttlSeconds: 600, holder, prefix: 'cap/', maxTtlSeconds: 1200 });
+    const later = new LeaseService(db, { now: clock('2026-10-22T08:05:00Z') });
+    // 08:05 + 1160s = 08:24:20, past the cap 08:00 + 1200s = 08:20.
+    const beyond = await later.extend({ keys: ['cap/1'], holder, ttlSeconds: 1160, maxTtlSeconds: 1200 });
     assert.ok(!beyond.ok && beyond.code === 'LEASE_TTL');
-    const within = await service.extend({ keys: ['cap/1'], holder, ttlSeconds: 600, at: '2026-10-22T08:05:00Z', maxTtlSeconds: 1200 });
-    // 08:05 + 600s = 08:15, inside the cap 08:00 + 1200s = 08:20
-    assert.equal(within.ok, true, '08:05 + 600s is inside the 1200s cap counted from acquisition');
+    const within = await later.extend({ keys: ['cap/1'], holder, ttlSeconds: 600, maxTtlSeconds: 1200 });
+    assert.equal(within.ok, true, '08:05 + 600s is inside the cap counted from acquisition');
+  });
+
+  test('keys without a row are answered, not thrown: extend and release', async () => {
+    const service = new LeaseService(db, { now: clock('2026-10-22T08:00:00Z') });
+    const extended = await service.extend({ keys: ['ghost/1'], holder, ttlSeconds: 60, maxTtlSeconds: 600 });
+    assert.ok(!extended.ok && extended.code === 'LEASE_NO_ROW');
+    const released = await service.release({ keys: ['ghost/1'], holder });
+    assert.ok(!released.ok && released.code === 'LEASE_NO_ROW');
+    const forced = await service.forceRelease({ keys: ['ghost/1'], by: 'adm', reason: '无' });
+    assert.ok(!forced.ok && forced.code === 'LEASE_NO_ROW');
+    // No action record was written for keys without a row.
+    const log = await service.actionLog('ghost/');
+    assert.equal(log.length, 0);
   });
 });
 
 describe('view, force release and orphans', () => {
-  test('view lists the unexpired rows of a prefix with their until moments', async () => {
+  test('view lists the unexpired rows of a prefix; the prefix matches literally, so a_b/ never matches aXb/', async () => {
     const service = new LeaseService(db, { now: clock('2026-10-22T08:00:00Z') });
-    await service.acquire({ keys: ['view/1', 'view/2'], ttlSeconds: 600, holder, prefix: 'view/', maxTtlSeconds: 600 });
-    const later = new LeaseService(db, { now: clock('2026-10-22T08:11:00Z') });
-    const view = await later.view('view/');
-    assert.equal(view.entries.length, 0, 'both expired eleven minutes later');
-    const fresh = await new LeaseService(db, { now: clock('2026-10-22T08:00:00Z') }).acquire({ keys: ['view/3'], ttlSeconds: 600, holder, prefix: 'view/', maxTtlSeconds: 600 });
-    assert.ok(fresh.ok);
-    const now = new LeaseService(db, { now: clock('2026-10-22T08:01:00Z') });
-    const current = await now.view('view/');
-    // At 08:01 all three are held: view/1 and view/2 until 08:10, view/3 until 08:10.
-    assert.deepEqual(
-      current.entries.map((e) => [e.key, e.until]),
-      [
-        ['view/1', '2026-10-22T08:10:00.000Z'],
-        ['view/2', '2026-10-22T08:10:00.000Z'],
-        ['view/3', '2026-10-22T08:10:00.000Z'],
-      ],
-    );
+    const under = await service.acquire({ keys: ['a_b/1'], ttlSeconds: 600, holder, prefix: 'a_b/', maxTtlSeconds: 600 });
+    assert.equal(under.ok, true);
+    const beside = await service.acquire({ keys: ['axb/1'], ttlSeconds: 600, holder, prefix: 'axb/', maxTtlSeconds: 600 });
+    assert.equal(beside.ok, true);
+    const view = await new LeaseService(db, { now: clock('2026-10-22T08:01:00Z') }).view('a_b/');
+    assert.deepEqual(view.entries.map((e) => e.key), ['a_b/1'], 'the underscore of the prefix is literal, not a wildcard');
   });
 
   test('force release (an admin, with a reason) frees the key and leaves an action record with the reason', async () => {
@@ -166,15 +216,50 @@ describe('view, force release and orphans', () => {
     assert.equal(after.ok, true);
   });
 
-  test('a row whose run no longer exists is reclaimed once it was acquired more than 60 seconds ago', async () => {
-    const gone = new LeaseService(db, { now: clock('2026-10-22T08:00:00Z') });
-    await gone.acquire({ keys: ['orphan/1'], ttlSeconds: 60_000, holder, prefix: 'orphan/', maxTtlSeconds: 120_000 });
+  test('an orphan whose run record exists is never reclaimed, even long after', async () => {
+    const runId = newRunId('01hx2v2pcanc9gtr0000abcdef');
+    const service = new LeaseService(db, { now: clock('2026-10-22T08:00:00Z') });
+    await service.acquire({ keys: ['orphan/live/1'], ttlSeconds: 3_600_000, holder: { user: holder.user, run: runId }, prefix: 'orphan/', maxTtlSeconds: 7_200_000 });
+    await putRun(kit.store, runRecord(runId) as unknown as RunRecord, '2026-10-22T08:00:00.000Z');
+    const muchLater = new LeaseService(db, { now: clock('2026-10-23T08:00:00Z') });
+    const reclaimed = await muchLater.reclaimOrphans();
+    assert.equal(reclaimed, 0, 'the run exists: nothing is reclaimed');
+    const view = await muchLater.view('orphan/live/');
+    assert.equal(view.entries.length, 1, 'the lease still holds');
+  });
+
+  test('an orphan whose run record is missing, acquired over 60 seconds ago, is reclaimed with a take_over action and the token grown', async () => {
+    const runId = newRunId('01hx2v2pcanc9gtr0001abcdef');
+    const service = new LeaseService(db, { now: clock('2026-10-22T08:00:00Z') });
+    const held = await service.acquire({ keys: ['orphan/gone/1'], ttlSeconds: 3_600_000, holder: { user: holder.user, run: runId }, prefix: 'orphan/', maxTtlSeconds: 7_200_000 });
+    assert.ok(held.ok);
+    // No run record for runId; two minutes later the row is an orphan.
     const later = new LeaseService(db, { now: clock('2026-10-22T08:02:00Z') });
     const reclaimed = await later.reclaimOrphans();
-    assert.ok(reclaimed >= 0, 'the count is reported (0 here: the run record exists or not, the table row stays)');
-    // The holder view: whatever reclaim decided, the table stays consistent (view answers from the rows).
-    const view = await later.view('orphan/');
-    assert.ok(Array.isArray(view.entries));
+    assert.ok(reclaimed >= 1, 'the missing-run row was reclaimed');
+    const view = await later.view('orphan/gone/');
+    assert.equal(view.entries.length, 0, 'the row is free again');
+    const log = await later.actionLog('orphan/gone/');
+    const takeOver = log.find((entry) => entry.op === 'take_over');
+    assert.ok(takeOver, 'a take_over action was written');
+    assert.match(JSON.stringify(takeOver), /孤儿回收/);
+    const token = Number(takeOver?.token ?? 0);
+    assert.ok(token > (held.ok ? held.token : 0), 'the token grew on the take-over');
+    // And the next acquire wins the row with a token one higher still.
+    const next = await later.acquire({ keys: ['orphan/gone/1'], ttlSeconds: 60, holder: other, prefix: 'orphan/', maxTtlSeconds: 600 });
+    assert.ok(next.ok && next.token === token + 1);
+  });
+
+  test('an orphan younger than 60 seconds is not reclaimed', async () => {
+    const runId = newRunId('01hx2v2pcanc9gtr0002abcdef');
+    const service = new LeaseService(db, { now: clock('2026-10-22T08:00:00Z') });
+    await service.acquire({ keys: ['orphan/young/1'], ttlSeconds: 3_600_000, holder: { user: holder.user, run: runId }, prefix: 'orphan/', maxTtlSeconds: 7_200_000 });
+    // No run record; only thirty seconds later the 60-second rule keeps the row.
+    const soon = new LeaseService(db, { now: clock('2026-10-22T08:00:30Z') });
+    const reclaimed = await soon.reclaimOrphans();
+    assert.equal(reclaimed, 0, 'younger than 60 seconds: nothing reclaimed');
+    const view = await soon.view('orphan/young/');
+    assert.equal(view.entries.length, 1);
   });
 
   test('a new service object over the same database sees the same state (no in-memory state)', async () => {
@@ -191,20 +276,20 @@ describe('action records', () => {
     const service = new LeaseService(db, { now: clock('2026-10-22T08:00:00Z') });
     const held = await service.acquire({ keys: ['replay/1', 'replay/2'], ttlSeconds: 600, holder, prefix: 'replay/', maxTtlSeconds: 600 });
     assert.ok(held.ok);
-    await service.extend({ keys: ['replay/1'], holder, ttlSeconds: 100, at: '2026-10-22T08:02:00Z' });
-    await service.release({ keys: ['replay/2'], holder });
-    const records = await service.actionLog('replay/');
+    const later = new LeaseService(db, { now: clock('2026-10-22T08:02:00Z') });
+    await later.extend({ keys: ['replay/1'], holder, ttlSeconds: 100, maxTtlSeconds: 600 });
+    await later.release({ keys: ['replay/2'], holder });
+    const records = await later.actionLog('replay/');
     assert.ok(records.length >= 3, 'acquire, extend and release each left a record');
-    // Replay: apply the ops in order onto an empty map; the final state equals the table.
     const state = new Map<string, { lease: string; until: string; token: number; released: boolean }>();
     for (const record of records) {
       const detail = record as { op: string; keys: string[]; lease: string; until: string; token: number };
       for (const key of detail.keys) {
-        if (detail.op === 'release' || detail.op === 'force_release') state.set(key, { lease: detail.lease, until: detail.until, token: detail.token, released: true });
-        else state.set(key, { lease: detail.lease, until: detail.until, token: detail.token, released: false });
+        const released = detail.op === 'release' || detail.op === 'force_release';
+        state.set(key, { lease: detail.lease, until: detail.until, token: detail.token, released });
       }
     }
-    const view = await service.view('replay/');
+    const view = await later.view('replay/');
     assert.deepEqual(
       view.entries.map((e) => e.key).sort(),
       [...state.entries()].filter(([, s]) => !s.released).map(([key]) => key).sort(),
@@ -212,3 +297,30 @@ describe('action records', () => {
     );
   });
 });
+
+// ---------------------------------------------------------------- helpers
+
+/** A run id on the ULID pattern with a fixed 26-character tail (each test uses its own). */
+function newRunId(tail: string): string {
+  return `run_${tail.padStart(26, '0')}`;
+}
+
+/** A minimal well-formed run record for putRun. */
+function runRecord(run: string): Record<string, unknown> {
+  return {
+    run,
+    pack: 'demo@1.0.0',
+    pack_digest: 'a'.repeat(64),
+    target_basis: [],
+    sources: [],
+    requirements: [],
+    items: [],
+    instructions: '规程',
+    instructions_digest: 'b'.repeat(64),
+    started_at: '2026-10-22T08:00:00.000Z',
+    host: 'local_circle',
+    trigger: 'session',
+    parameters: {},
+    runner: holder.user,
+  };
+}
