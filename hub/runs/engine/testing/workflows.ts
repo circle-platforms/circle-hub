@@ -84,7 +84,7 @@ export class FakeWorkflowStore implements WorkflowStore {
         description: latest.manifest.description,
         products: [],
         inputs: latest.workflow.inputs,
-        parameters: latest.workflow.parameters.map((p) => ({ name: p.name, description: p.description, required: p.required })),
+        parameters: latest.workflow.parameters.map((p) => ({ name: p.name, description: p.description, required: p.required, ...(p.schema !== undefined ? { schema: p.schema } : {}) })),
         requirements: latest.requirements.map(requirementSummary),
       });
     }

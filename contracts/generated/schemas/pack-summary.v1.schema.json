@@ -96,6 +96,14 @@
           },
           "required": {
             "type": "boolean"
+          },
+          "schema": {
+            "description": "JSON Schema 2020-12 of the value, as the pack declares it; absent when the pack declares none",
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
           }
         },
         "required": [

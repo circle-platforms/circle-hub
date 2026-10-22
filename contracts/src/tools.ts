@@ -93,7 +93,7 @@ export const StartRunInput = z.strictObject({
   version: z.string().optional().describe('Version line of the product'),
   build: z.string().optional().describe('Exact build name; chosen by the pack rule when omitted'),
   inputs: z.record(z.string(), z.union([InputBinding, z.array(InputBinding)])).describe('Input slot name to reference or external object'),
-  parameters: z.record(z.string(), z.unknown()).optional(),
+  parameters: z.record(z.string(), z.unknown()).optional().describe('The parameters the pack declares, as one object by name, for example {"<name>": <value>}; list_task_packs lists every pack parameter with its name, description and schema'),
   predecessor: RunId.optional().describe('Earlier run this one continues'),
   client_key: z
     .string()

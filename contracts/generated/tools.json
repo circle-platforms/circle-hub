@@ -223,6 +223,14 @@
                     },
                     "required": {
                       "type": "boolean"
+                    },
+                    "schema": {
+                      "description": "JSON Schema 2020-12 of the value, as the pack declares it; absent when the pack declares none",
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {}
                     }
                   },
                   "required": [
@@ -607,6 +615,7 @@
           "description": "Input slot name to reference or external object"
         },
         "parameters": {
+          "description": "The parameters the pack declares, as one object by name, for example {\"<name>\": <value>}; list_task_packs lists every pack parameter with its name, description and schema",
           "type": "object",
           "propertyNames": {
             "type": "string"
