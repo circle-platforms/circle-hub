@@ -10,6 +10,7 @@ import {
   DoneRuleSchema,
   ErrorHandlingSchema,
   LayerSchema,
+  LeaseOpSchema,
   PackKindSchema,
   SourceRoleSchema,
   VerdictSchema,
@@ -470,9 +471,9 @@ export const ProjectionOutput = z.union([
     lease_requests: z
       .array(
         z.union([
-          z.strictObject({ op: z.literal('acquire').optional(), keys: z.array(z.string().min(1)).min(1), ttl_seconds: z.number().int().positive() }).describe('acquire (the default): every key free (or taken over from expired/released rows), all or nothing'),
-          z.strictObject({ op: z.literal('extend'), keys: z.array(z.string().min(1)).min(1), ttl_seconds: z.number().int().positive() }).describe('extend: the lineage-held leases of these keys grow by ttl_seconds from now, inside the cumulative cap'),
-          z.strictObject({ op: z.literal('release'), keys: z.array(z.string().min(1)).min(1) }).describe('release: the lineage-held leases of these keys end now (not undone when the run later fails)'),
+          z.strictObject({ op: LeaseOpSchema.extract(['acquire']).optional(), keys: z.array(z.string().min(1)).min(1), ttl_seconds: z.number().int().positive() }).describe('acquire (the default): every key free (or taken over from expired/released rows), all or nothing'),
+          z.strictObject({ op: LeaseOpSchema.extract(['extend']), keys: z.array(z.string().min(1)).min(1), ttl_seconds: z.number().int().positive() }).describe('extend: the lineage-held leases of these keys grow by ttl_seconds from now, inside the cumulative cap'),
+          z.strictObject({ op: LeaseOpSchema.extract(['release']), keys: z.array(z.string().min(1)).min(1) }).describe('release: the lineage-held leases of these keys end now (not undone when the run later fails)'),
         ]),
       )
       .optional()

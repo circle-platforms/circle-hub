@@ -1,5 +1,5 @@
 {
- "version": 5,
+ "version": 6,
  "elements": [
   {
    "id": "B01",
@@ -2548,6 +2548,9 @@
    "fields": [],
    "changes5": [
     "预订类租约按血缘（W06）持有（设备管理包设计第 4 节，独立复核第 4.1 条）"
+   ],
+   "changes6": [
+    "租约操作进词表 lease_op（取得、续租、释放、强制释放、接管；2026-10-23 规矩核对）"
    ]
   },
   {
@@ -4344,6 +4347,33 @@
     {
      "code": "lease",
      "label": "租约"
+    }
+   ]
+  },
+  {
+   "axis": "lease_op",
+   "label": "租约操作",
+   "owner": "D04",
+   "values": [
+    {
+     "code": "acquire",
+     "label": "取得"
+    },
+    {
+     "code": "extend",
+     "label": "续租"
+    },
+    {
+     "code": "release",
+     "label": "释放"
+    },
+    {
+     "code": "force_release",
+     "label": "强制释放"
+    },
+    {
+     "code": "take_over",
+     "label": "接管"
     }
    ]
   },
