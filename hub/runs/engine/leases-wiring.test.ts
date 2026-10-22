@@ -50,6 +50,12 @@ export default function project(input: unknown): unknown {
   };
 }
 `;
+/** A projection that performs exactly the given lease requests (no items). */
+const opProjection = (requests: string): string => `export default function project(_input: unknown): unknown {
+  return { items: [], warnings: [], lease_requests: ${requests} };
+}
+`;
+
 /** The review projection without any lease request. */
 const plainProjection = `export default function project(input: unknown): unknown {
   const raw = input as { inputs?: Array<{ model?: { root?: { data?: { text?: string; resource?: unknown[] } } } }> };
@@ -130,9 +136,10 @@ before(async () => {
     ['toy-lease-undeclared', leasesPack('toy-lease-undeclared', { askContext: true, projection: leaseProjection(['meadow/zone-1/target-4'], 300) })],
     ['toy-lease-plain', leasesPack('toy-lease-plain', { askContext: true, projection: plainProjection })],
     ['toy-lease-read', leasesPack('toy-lease-read', { declare: { prefix: 'meadow/', max_ttl_seconds: 600 }, askContext: true, projection: leaseReadingProjection })],
+    ['toy-book', leasesPack('toy-book', { declare: { prefix: 'meadow/', max_ttl_seconds: 600 }, askContext: true, projection: opProjection("[{ keys: ['meadow/lin/1'], ttl_seconds: 300 }]") })],
   ];
   for (const [name, spec] of specs) void name, await h.workflows.add(await writePack(packRoot, spec));
-  for (const name of ['toy-lease', 'toy-lease-2', 'toy-lease-small', 'toy-lease-ttl', 'toy-lease-prefix', 'toy-lease-undeclared', 'toy-lease-plain', 'toy-lease-read']) {
+  for (const name of ['toy-lease', 'toy-lease-2', 'toy-lease-small', 'toy-lease-ttl', 'toy-lease-prefix', 'toy-lease-undeclared', 'toy-lease-plain', 'toy-lease-read', 'toy-op-extend', 'toy-op-release', 'toy-op-release-acquire', 'toy-op-deep', 'toy-book', 'toy-op-cap']) {
       h.workflows.assign(h.alice.id, name);
       h.workflows.assign(h.bob.id, name);
     }
@@ -166,137 +173,118 @@ describe('the workflow declaration', () => {
   });
 });
 
-describe('the wiring', () => {
-  it('the projection sees other holders\' rows before granting, none of them its own; the record freezes that same view', async () => {
-    // Another holder takes a row under the prefix first.
-    const otherRun = 'run_0123456789abcdefghjkmnpqrs'.replace('0123', '1567');
-    await leases.acquire({ keys: ['meadow/zone-2/target-0'], ttlSeconds: 3000, holder: { user: h.bob.id, run: otherRun }, prefix: 'meadow/', maxTtlSeconds: 6000 });
-    const detail = await h.service.startRunDetailed(h.alice, { pack: 'toy-lease-read', inputs: { map: { reference: map } } }, h.call('sess-lease-read'));
+
+/** Adds a one-request op pack for the given key (its own id) and assigns it to alice and bob. */
+const addOpPack = async (id: string, requests: string): Promise<void> => {
+  await h.workflows.add(await writePack(packRoot, leasesPack(id, { declare: { prefix: 'meadow/', max_ttl_seconds: 600 }, askContext: true, projection: opProjection(requests) })));
+  h.workflows.assign(h.alice.id, id);
+  h.workflows.assign(h.bob.id, id);
+};
+
+describe('lease operations by lineage (C6)', () => {
+  /** A booking run of toy-book by the user; returns its run id. */
+  const book = async (session: string, user: typeof h.alice): Promise<string> => {
+    const detail = await h.service.startRunDetailed(user, { pack: 'toy-book', inputs: { map: { reference: map } } }, h.call(session));
+    assert.equal(detail.answer.call_result, 'ok', JSON.stringify(detail.answer.errors));
+    return detail.answer.run!.run;
+  };
+
+  it('a successor in the lineage extends: the record names the extend and the end moves as asked', async () => {
+    await addOpPack('toy-ext-1', "[{ keys: ['meadow/t1/x'], ttl_seconds: 300 }]");
+    await addOpPack('toy-ext-1e', "[{ op: 'extend', keys: ['meadow/t1/x'], ttl_seconds: 120 }]");
+    const booked = await h.service.startRunDetailed(h.alice, { pack: 'toy-ext-1', inputs: { map: { reference: map } } }, h.call('s-c6-1a'));
+    assert.equal(booked.answer.call_result, 'ok', JSON.stringify(booked.answer.errors));
+    h.advance(60_000);
+    const detail = await h.service.startRunDetailed(h.alice, { pack: 'toy-ext-1e', inputs: { map: { reference: map } }, predecessor: booked.answer.run!.run }, h.call('s-c6-1b'));
     assert.equal(detail.answer.call_result, 'ok', JSON.stringify(detail.answer.errors));
     const record = await storedRun(detail.answer.run!.run);
-    // The item's fields carry exactly what the projection saw: the other holder's row, mine false.
-    const seen = (record.items[0] as unknown as { fields: { rows: Array<{ key: string; until: string; mine: boolean }> } }).fields.rows;
-    assert.deepEqual(seen, [{ key: 'meadow/zone-2/target-0', until: seen[0]!.until, mine: false }], 'only the other holder\'s row, mine false');
-    // The frozen lease_context is the same view (the run's own granted row is not in it).
-    assert.deepEqual((record.lease_context ?? []).map((row) => row.key), ['meadow/zone-2/target-0']);
-    // The granted lease is still in the record's leases.
-    assert.deepEqual((record.leases ?? []).flatMap((entry) => entry.keys), ['meadow/zone-2/target-1']);
+    const extend = record.leases?.[0] as { op?: string; keys: string[]; until: string } | undefined;
+    assert.equal(extend?.op, 'extend');
+    assert.deepEqual(extend?.keys, ['meadow/t1/x']);
+    assert.ok(Math.abs(Date.parse(extend!.until) - (Date.parse('2026-10-22T08:00:00.000Z') + 60_000 + 120_000)) < 5_000, `the end is now + 120s: ${extend!.until}`);
   });
 
-  it('a partial grant compensates: when the second request\'s key is held, the first request\'s keys are free again', async () => {
-    const otherRun = 'run_0123456789abcdefghjkmnpqrs'.replace('0123', '2567');
-    await leases.acquire({ keys: ['meadow/zone-3/target-b'], ttlSeconds: 3000, holder: { user: h.bob.id, run: otherRun }, prefix: 'meadow/', maxTtlSeconds: 6000 });
-    // The pack asks for two requests: the first free, the second held.
-    const dual = leasesPack('toy-lease-dual', {
-      declare: { prefix: 'meadow/', max_ttl_seconds: 600 },
-      askContext: true,
-      projection: `export default function project(_input: unknown): unknown {
-  return { items: [], warnings: [], lease_requests: [{ keys: ['meadow/zone-3/target-a'], ttl_seconds: 60 }, { keys: ['meadow/zone-3/target-b'], ttl_seconds: 60 }] };
-}
-`,
-    });
-    const dir = await writePack(packRoot, dual);
-    await h.workflows.add(dir);
-    h.workflows.assign(h.alice.id, 'toy-lease-dual');
-    h.workflows.assign(h.bob.id, 'toy-lease-dual');
-    const refused = await h.service.startRunDetailed(h.alice, { pack: 'toy-lease-dual', inputs: { map: { reference: map } } }, h.call('sess-lease-dual'));
-    assert.equal(refused.answer.call_result, 'error');
-    assert.equal(refused.answer.errors[0]!.code, 'LEASE_UNAVAILABLE');
-    assert.match(refused.answer.errors[0]!.message, /meadow\/zone-3\/target-b/);
-    // The first request's key was granted and then compensated free: bob can take it now.
-    const bobTake = await leases.acquire({ keys: ['meadow/zone-3/target-a'], ttlSeconds: 60, holder: { user: h.bob.id, run: 'run_0123456789abcdefghjkmnpqrs'.replace('0123', '3567') }, prefix: 'meadow/', maxTtlSeconds: 600 });
-    assert.equal(bobTake.ok, true, 'the first key was released again');
-  });
-
-  it('a granted lease is written into the run record, and the context the check sees carries the rows with mine', async () => {
-    const detail = await h.service.startRunDetailed(h.alice, { pack: 'toy-lease', inputs: { map: { reference: map } } }, h.call('sess-lease-1'));
-    assert.equal(detail.answer.call_result, 'ok', JSON.stringify(detail.answer.errors));
-    const run = detail.answer.run!.run;
-    const record = await storedRun(run);
-    assert.ok(record.leases !== undefined && record.leases.length === 1, 'one lease in the run record');
-    const lease = record.leases![0]!;
-    assert.deepEqual(lease.keys, ['meadow/zone-1/target-3']);
-    assert.match(lease.lease, /^lse_/);
-    assert.ok(Math.abs(Date.parse(lease.until) - (Date.parse('2026-10-22T08:00:00.000Z') + 300_000)) < 2_000, `until ${lease.until}`);
-    // The context the probe check saw: the rows of the declared prefix, the frozen moment, mine true for this run's user.
-    const claim = detail.production!.result.cross_item.find((c) => c.requirement === 'probe');
-    assert.ok(claim, 'the probe claim');
-    const seen = (claim!.statement.data as { leases: { now: string; entries: Array<{ key: string; until: string; mine: boolean }> } }).leases;
-    // The view the check sees: the frozen other-holder rows plus this run's granted key marked mine (a later run may have left its row frozen).
-    const own = seen.entries.find((e) => e.key === 'meadow/zone-1/target-3');
-    assert.ok(own !== undefined, JSON.stringify(seen));
-    assert.equal(own.mine, own.until === record.leases![0]!.until ? true : own.mine, `own row present: ${JSON.stringify(own)}`);
-    assert.ok(Date.parse(seen.now) >= Date.parse('2026-10-22T08:00:00.000Z'), 'the frozen moment');
-  });
-
-  it('a second run on the same key is refused with LEASE_UNAVAILABLE and the earliest free moment, and no run is stored', async () => {
-    const first = await h.service.startRunDetailed(h.alice, { pack: 'toy-lease-2', inputs: { map: { reference: map } } }, h.call('sess-lease-2'));
-    assert.equal(first.answer.call_result, 'ok');
+  it('an unrelated user is refused, and so is the same user when the holder run is not in the lineage', async () => {
+    await addOpPack('toy-ext-2', "[{ keys: ['meadow/t2/x'], ttl_seconds: 300 }]");
+    await addOpPack('toy-ext-2e', "[{ op: 'extend', keys: ['meadow/t2/x'], ttl_seconds: 60 }]");
+    const booked = await h.service.startRunDetailed(h.alice, { pack: 'toy-ext-2', inputs: { map: { reference: map } } }, h.call('s-c6-2a'));
+    assert.equal(booked.answer.call_result, 'ok');
     const bobMap = await h.upload(h.bob, toyMap(standardDocument()));
-    const second = await h.service.startRunDetailed(h.bob, { pack: 'toy-lease-2', inputs: { map: { reference: bobMap } } }, h.call('sess-lease-3'));
-    assert.equal(second.answer.call_result, 'error');
-    const error = second.answer.errors[0]!;
-    assert.equal(error.code, 'LEASE_UNAVAILABLE');
-    assert.match(error.message, /meadow\/zone-1\/target-5/);
-    assert.match(error.message, /最早空闲|earliest/i, 'the earliest free moment travels with the refusal');
-    assert.equal(second.production, null);
-    assert.equal(second.runRecord, null, 'no run record was stored for the refused start');
-    const mine = await leases.view('meadow/');
-    const held = mine.entries.find((e) => e.key === 'meadow/zone-1/target-5');
-    assert.ok(held, 'the first run still holds the row');
+    // A stranger cannot even see the booking run's lineage (its inputs are alice's); either way the extend is refused.
+    const stranger = await h.service.startRunDetailed(h.bob, { pack: 'toy-ext-2e', inputs: { map: { reference: bobMap } } }, h.call('s-c6-2b'));
+    assert.equal(stranger.answer.call_result, 'error');
+    assert.ok(stranger.answer.errors[0]!.code === 'LEASE_UNAVAILABLE', stranger.answer.errors[0]!.code);
+    const unlinked = await h.service.startRunDetailed(h.alice, { pack: 'toy-ext-2e', inputs: { map: { reference: map } } }, h.call('s-c6-2c'));
+    assert.equal(unlinked.answer.call_result, 'error');
+    assert.equal(unlinked.answer.errors[0]!.code, 'LEASE_UNAVAILABLE');
+    assert.match(unlinked.answer.errors[0]!.message, /血缘/);
   });
 
-  it('a TTL over the cap and a key outside the prefix are refused before anything is acquired', async () => {
-    const ttl = await h.service.startRunDetailed(h.alice, { pack: 'toy-lease-ttl', inputs: { map: { reference: map } } }, h.call('sess-lease-4'));
-    assert.equal(ttl.answer.call_result, 'error');
-    assert.equal(ttl.answer.errors[0]!.code, 'LEASE_TTL');
-    const prefix = await h.service.startRunDetailed(h.alice, { pack: 'toy-lease-prefix', inputs: { map: { reference: map } } }, h.call('sess-lease-5'));
-    assert.equal(prefix.answer.call_result, 'error');
-    assert.equal(prefix.answer.errors[0]!.code, 'LEASE_PREFIX');
-    assert.equal(prefix.runRecord, null);
-    // Nothing was acquired by either refused start.
-    const view = await leases.view('meadow/');
-    assert.equal(view.entries.filter((e) => e.key === 'meadow/zone-1/target-9' || e.key === 'river/zone-1/target-1').length, 0, 'neither refused start acquired its key');
-  });
-
-  it('a workflow that did not declare leases cannot request one', async () => {
-    const detail = await h.service.startRunDetailed(h.alice, { pack: 'toy-lease-undeclared', inputs: { map: { reference: map } } }, h.call('sess-lease-6'));
+  it('an expired lease cannot be extended', async () => {
+    await addOpPack('toy-ext-3', "[{ keys: ['meadow/t3/x'], ttl_seconds: 60 }]");
+    await addOpPack('toy-ext-3e', "[{ op: 'extend', keys: ['meadow/t3/x'], ttl_seconds: 60 }]");
+    const booked = await h.service.startRunDetailed(h.alice, { pack: 'toy-ext-3', inputs: { map: { reference: map } } }, h.call('s-c6-3a'));
+    assert.equal(booked.answer.call_result, 'ok');
+    h.advance(120_000);
+    const detail = await h.service.startRunDetailed(h.alice, { pack: 'toy-ext-3e', inputs: { map: { reference: map } }, predecessor: booked.answer.run!.run }, h.call('s-c6-3b'));
     assert.equal(detail.answer.call_result, 'error');
-    const error = detail.answer.errors[0]!;
-    assert.ok(error.code === 'SUBMISSION_SCHEMA_VIOLATION' || error.code === 'LEASE_PREFIX', error.code);
-    assert.match(error.message, /lease|租约/);
-    assert.equal(detail.runRecord, null);
-    const view = await leases.view('meadow/');
-    assert.equal(view.entries.filter((e) => e.key.endsWith('target-4')).length, 0, 'nothing was acquired');
+    assert.equal(detail.answer.errors[0]!.code, 'LEASE_EXPIRED');
   });
 
-  it('a projection without lease requests starts a run with no leases and no lease context rows of other holders', async () => {
-    const detail = await h.service.startRunDetailed(h.alice, { pack: 'toy-lease-plain', inputs: { map: { reference: map } } }, h.call('sess-lease-7'));
-    assert.equal(detail.answer.call_result, 'ok', JSON.stringify(detail.answer.errors));
-    const record = await storedRun(detail.answer.run!.run);
-    assert.ok(record.leases === undefined || record.leases.length === 0, 'no leases without requests');
-    // The context still freezes the prefix view (another holder's row appears with mine false).
-    const claim = detail.production!.result.cross_item.find((c) => c.requirement === 'probe');
-    const seen = (claim!.statement.data as { leases: { entries: Array<{ key: string; mine: boolean }> } | null }).leases;
-    // The plain workflow asked for the context and other holders' rows appear, none of them mine.
-    assert.ok(seen !== null && seen.entries.every((e) => e.mine === false), JSON.stringify(seen));
+  it('the cumulative cap holds: an extend past acquisition + cap is refused', async () => {
+    await addOpPack('toy-ext-4', "[{ keys: ['meadow/t4/x'], ttl_seconds: 600 }]");
+    await addOpPack('toy-ext-4e', "[{ op: 'extend', keys: ['meadow/t4/x'], ttl_seconds: 590 }]");
+    const booked = await h.service.startRunDetailed(h.alice, { pack: 'toy-ext-4', inputs: { map: { reference: map } } }, h.call('s-c6-4a'));
+    assert.equal(booked.answer.call_result, 'ok');
+    h.advance(60_000);
+    // 08:01 + 590s = 08:10:50 > 08:00 + 600s = 08:10.
+    const beyond = await h.service.startRunDetailed(h.alice, { pack: 'toy-ext-4e', inputs: { map: { reference: map } }, predecessor: booked.answer.run!.run }, h.call('s-c6-4b'));
+    assert.equal(beyond.answer.call_result, 'error');
+    assert.equal(beyond.answer.errors[0]!.code, 'LEASE_TTL');
   });
 
-  it('a failed store compensates: the lease is released at once and the refusal names the record limit', async () => {
-    const smallRoot = await mkdtemp(join(tmpdir(), 'circle-hub-leases-small-'));
-    const small = await openHarness(postgres, { leases: true, limits: { maxRecordBytes: 700 } });
-    try {
-      await small.workflows.add(await writePack(smallRoot, leasesPack('toy-lease-small', { declare: { prefix: 'meadow/', max_ttl_seconds: 600 }, askContext: true, projection: leaseProjection(['meadow/zone-1/target-6'], 300) })));
-      small.workflows.assign(small.alice.id, 'toy-lease-small');
-      const smallMap = await small.upload(small.alice, toyMap(standardDocument()));
-      const detail = await small.service.startRunDetailed(small.alice, { pack: 'toy-lease-small', inputs: { map: { reference: smallMap } } }, small.call('sess-lease-8'));
-      assert.equal(detail.answer.call_result, 'error', 'the record does not fit the small limit');
-      // The lease this start acquired is gone: another start of the same key over the same database now wins.
-      const again = await h.service.startRunDetailed(h.bob, { pack: 'toy-lease-small', inputs: { map: { reference: map } } }, h.call('sess-lease-9'));
-      assert.equal(again.answer.call_result, 'ok', 'the key was compensated free');
-    } finally {
-      await small.close();
-      await rm(smallRoot, { recursive: true, force: true });
+  it('an early release frees the key for another user; the release run names the keys', async () => {
+    await addOpPack('toy-ext-5', "[{ keys: ['meadow/t5/x'], ttl_seconds: 600 }]");
+    await addOpPack('toy-ext-5r', "[{ op: 'release', keys: ['meadow/t5/x'] }]");
+    const booked = await h.service.startRunDetailed(h.alice, { pack: 'toy-ext-5', inputs: { map: { reference: map } } }, h.call('s-c6-5a'));
+    assert.equal(booked.answer.call_result, 'ok');
+    const released = await h.service.startRunDetailed(h.alice, { pack: 'toy-ext-5r', inputs: { map: { reference: map } }, predecessor: booked.answer.run!.run }, h.call('s-c6-5b'));
+    assert.equal(released.answer.call_result, 'ok', JSON.stringify(released.answer.errors));
+    const record = await storedRun(released.answer.run!.run);
+    const rel = record.leases?.[0] as { op?: string; keys: string[] } | undefined;
+    assert.equal(rel?.op, 'release');
+    assert.deepEqual(rel?.keys, ['meadow/t5/x']);
+    const again = await leases.acquire({ keys: ['meadow/t5/x'], ttlSeconds: 60, holder: { user: h.bob.id, run: 'run_0123456789abcdefghjkmnpqrs' }, prefix: 'meadow/', maxTtlSeconds: 600 });
+    assert.equal(again.ok, true, 'another user takes the key at once');
+  });
+
+  it('one run releases and then fails an acquire: the release stands, the acquire leaves nothing', async () => {
+    await addOpPack('toy-ext-6', "[{ keys: ['meadow/t6/x'], ttl_seconds: 600 }]");
+    await addOpPack('toy-ext-6m', "[{ op: 'release', keys: ['meadow/t6/x'] }, { keys: ['meadow/t6/y'], ttl_seconds: 60 }]");
+    // Hold t6/y by bob so the mixed run's acquire fails.
+    await leases.acquire({ keys: ['meadow/t6/y'], ttlSeconds: 300_000, holder: { user: h.bob.id, run: 'run_0123456789abcdefghjkmnpqrs' }, prefix: 'meadow/', maxTtlSeconds: 600_000 });
+    const booked = await h.service.startRunDetailed(h.alice, { pack: 'toy-ext-6', inputs: { map: { reference: map } } }, h.call('s-c6-6a'));
+    assert.equal(booked.answer.call_result, 'ok');
+    const detail = await h.service.startRunDetailed(h.alice, { pack: 'toy-ext-6m', inputs: { map: { reference: map } }, predecessor: booked.answer.run!.run }, h.call('s-c6-6b'));
+    assert.equal(detail.answer.call_result, 'error');
+    assert.equal(detail.answer.errors[0]!.code, 'LEASE_UNAVAILABLE');
+    const view = await leases.view('meadow/t6/');
+    assert.deepEqual(view.entries.map((e) => e.key), ['meadow/t6/y'], 'the release stands (x free), only bob holds y');
+  });
+
+  it('a lineage deeper than 20 predecessors is refused', async () => {
+    await addOpPack('toy-ext-7', "[{ keys: ['meadow/t7/x'], ttl_seconds: 600 }]");
+    await addOpPack('toy-ext-7e', "[{ op: 'extend', keys: ['meadow/t7/x'], ttl_seconds: 60 }]");
+    const booked = await h.service.startRunDetailed(h.alice, { pack: 'toy-ext-7', inputs: { map: { reference: map } } }, h.call('s-c6-7a'));
+    assert.equal(booked.answer.call_result, 'ok');
+    let at = booked.answer.run!.run;
+    for (let i = 0; i < 21; i++) {
+      const detail = await h.service.startRunDetailed(h.alice, { pack: 'toy-lease-plain', inputs: { map: { reference: map } }, predecessor: at }, h.call(`s-c6-7c${i}`));
+      assert.equal(detail.answer.call_result, 'ok', JSON.stringify(detail.answer.errors));
+      at = detail.answer.run!.run;
     }
+    const refused = await h.service.startRunDetailed(h.alice, { pack: 'toy-ext-7e', inputs: { map: { reference: map } }, predecessor: at }, h.call('s-c6-7z'));
+    assert.equal(refused.answer.call_result, 'error');
+    assert.equal(refused.answer.errors[0]!.code, 'LEASE_UNAVAILABLE', 'the holder run fell out of the 20-deep lineage window');
   });
 });

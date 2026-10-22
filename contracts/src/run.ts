@@ -137,13 +137,17 @@ export const RunRecord = RunSummary.extend({
   request_digest: Sha256.optional().describe('SHA-256 of the RFC 8785 canonical JSON of the start_run arguments the client key was bound to; the same key with other arguments is IDEMPOTENCY_MISMATCH (D05 R[4])'),
   client_key_expires_at: IsoTime.optional().describe('end of the window in which repeating the client key returns this run'),
   leases: z
-    .array(z.strictObject({ lease: LeaseId, keys: z.array(z.string().min(1)).min(1), until: IsoTime }))
+    .array(z.union([
+      z.strictObject({ op: z.literal('acquire').optional(), lease: LeaseId, keys: z.array(z.string().min(1)).min(1), until: IsoTime }),
+      z.strictObject({ op: z.literal('extend'), lease: LeaseId, keys: z.array(z.string().min(1)).min(1), until: IsoTime }),
+      z.strictObject({ op: z.literal('release'), keys: z.array(z.string().min(1)).min(1), until: IsoTime.nullable() }),
+    ]))
     .optional()
-    .describe('the leases the Hub acquired for this run before storing it (the projection\'s lease_requests, granted); the fencing token stays in the lease table, never in the record'),
+    .describe('the lease operations this run performed before it was stored (acquire\'s grant, extend\'s new end, release\'s keys with their former end); the fencing token stays in the lease table, never in the record'),
   lease_context: z
-    .array(z.strictObject({ key: z.string().min(1), until: IsoTime }))
+    .array(z.strictObject({ key: z.string().min(1), until: IsoTime, mine: z.boolean() }))
     .optional()
-    .describe('the frozen lease rows of the workflow\'s declared prefix at start_run (every holder\'s rows, no tokens); the run context rebuilds `mine` from the granted leases'),
+    .describe('the frozen lease rows of the workflow\'s declared prefix at start_run (every holder\'s rows, no tokens), `mine` marking the rows held by this run\'s lineage (D04 R[0])'),
 }).superRefine((r, ctx) => {
   if (r.host === 'hub') {
     if (r.runner !== undefined) ctx.addIssue({ code: 'custom', path: ['runner'], message: 'a run the Hub executes has no runner' });

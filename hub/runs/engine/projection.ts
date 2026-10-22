@@ -33,8 +33,8 @@ export interface Projection {
   /** Structure of the judged source that is not an item, frozen with the run (RunRecord.groups, RunContext.groups). */
   groups: Record<string, unknown>[];
   warnings: PackWarning[];
-  /** The leases the run asks the Hub to acquire before it is stored (absent when the function asked for none). */
-  leaseRequests: Array<{ keys: string[]; ttl_seconds: number }>;
+  /** The lease operations the run asks the Hub to perform before it is stored (absent when the function asked for none). */
+  leaseRequests: Array<{ op?: 'acquire'; keys: string[]; ttl_seconds: number } | { op: 'extend'; keys: string[]; ttl_seconds: number } | { op: 'release'; keys: string[] }>;
 }
 
 function refusal(path: string, message: string, fix: string, note: string | null = null): Refusal {

@@ -156,6 +156,16 @@ export class LeaseService {
     });
   }
 
+  /** The rows of the given keys as they stand (holder user and run, released, expiry), for the lineage check of
+   * extend and release (the caller decides whether this run's user and lineage hold them). */
+  async holders(keys: string[]): Promise<Array<{ key: string; user: string; run: string; released: boolean; expires_at: string }>> {
+    const rows = await this.#db.query<Row & { released_at: Date | null }>(
+      `SELECT key, user_id, run_id, expires_at, released_at FROM leases WHERE key = ANY($1)`,
+      [[...keys].sort()],
+    );
+    return rows.rows.map((row) => ({ key: row.key, user: row.user_id, run: row.run_id, released: row.released_at !== null, expires_at: row.expires_at.toISOString() }));
+  }
+
   /** The unexpired, unreleased rows under a prefix, for the run context (no tokens, no holders). */
   async view(prefix: string): Promise<{ entries: Array<{ key: string; until: string }> }>;
   /** The same rows with the holder's run (an administrator's view; the run context never asks for it). */
