@@ -26,6 +26,26 @@ export interface TraceGold {
   defects: DefectGold[];
 }
 
+/**
+ * Extracts the case ids listed in the claim statement for a given bug.
+ * Format: 缺陷 <bug>（...）：N 个已索引用例追溯：<doc>:<node> <title>；...
+ */
+export function extractStatementCaseIds(text: string, bug: string): string[] {
+  const match = new RegExp(`缺陷\\s+${bug}[^：:\n]*[：:]\\s*\\d+\\s*个已索引用例追溯[：:]([^\\n]+)`).exec(text);
+  if (!match) return [];
+  const parts = match[1].split(/[；;]/);
+  const caseIds: string[] = [];
+  for (const part of parts) {
+    const trimmed = part.trim();
+    if (trimmed.startsWith('另有') || trimmed.startsWith('系统')) continue;
+    const firstToken = trimmed.split(/\s+/)[0];
+    if (firstToken && firstToken.includes(':')) {
+      caseIds.push(firstToken);
+    }
+  }
+  return caseIds;
+}
+
 export default function scenario(gold: TraceGold): Scenario {
   const area = '追溯矩阵';
   const pack = 'traceability';
@@ -60,9 +80,9 @@ export default function scenario(gold: TraceGold): Scenario {
 
       for (const defect of gold.defects) {
         const linePrefix = `- ${defect.bug} | 缺陷 ${defect.bug} |`;
-        const entryLine = lines.find((line) => line.trim().startsWith(linePrefix));
+        const matchingLines = lines.filter((line) => line.trim().startsWith(linePrefix));
 
-        if (!entryLine) {
+        if (matchingLines.length === 0) {
           checks.push({
             area,
             name: defect.cases.length === 0 ? `没有用例的缺陷 ${defect.bug} 是未知` : `缺陷 ${defect.bug} 列出的用例与独立连接一致`,
@@ -74,36 +94,43 @@ export default function scenario(gold: TraceGold): Scenario {
         }
 
         if (defect.cases.length === 0) {
-          const isUnknown = entryLine.includes('无已索引用例（未知）');
+          const isUnknown = matchingLines.some((l) => l.includes('无已索引用例（未知）'));
           checks.push({
             area,
             name: `没有用例的缺陷 ${defect.bug} 是未知`,
             expected: '无已索引用例（未知）',
-            actual: isUnknown ? '无已索引用例（未知）' : entryLine.trim(),
+            actual: isUnknown ? '无已索引用例（未知）' : matchingLines.map((l) => l.trim()).join('；'),
             ok: isUnknown,
           });
         } else {
-          const countMatch = /(\d+)\s*个用例/.exec(entryLine);
+          const countMatch = matchingLines.map((l) => /(\d+)\s*个用例/.exec(l)).find(Boolean);
           const reportedCount = countMatch ? Number.parseInt(countMatch[1], 10) : null;
           const countOk = reportedCount === defect.cases.length;
 
-          // Check up to the first 30 cases in the text (the full result)
-          const checkCases = defect.cases.slice(0, 30);
-          const missingCases = checkCases.filter((c) => !text.includes(c.id));
-          const casesOk = missingCases.length === 0;
+          const reportedCaseIds = extractStatementCaseIds(text, defect.bug);
+          const expectedListedCount = Math.min(5, defect.cases.length);
+          const hasExpectedCount = reportedCaseIds.length === expectedListedCount;
+          const goldCaseIds = new Set(defect.cases.map((c) => c.id));
+          const allBelong = reportedCaseIds.every((id) => goldCaseIds.has(id));
+          const casesOk = hasExpectedCount && allBelong;
 
           const ok = countOk && casesOk;
           let actual = '一致';
           if (!countOk) {
             actual = `用例数不一致（报告 ${reportedCount ?? '无'} 个，独立依据 ${defect.cases.length} 个）`;
           } else if (!casesOk) {
-            actual = `缺 ${missingCases.map((c) => c.id).join('、')}`;
+            const notInGold = reportedCaseIds.filter((id) => !goldCaseIds.has(id));
+            if (notInGold.length > 0) {
+              actual = `用例号不属于独立依据（${notInGold.join('、')}）`;
+            } else {
+              actual = `列出用例数不足（报告 ${reportedCaseIds.length} 个，期望 ${expectedListedCount} 个）`;
+            }
           }
 
           checks.push({
             area,
             name: `缺陷 ${defect.bug} 列出的用例与独立连接一致`,
-            expected: `${defect.cases.length} 个用例（${checkCases.map((c) => c.id).join('、')}）`,
+            expected: `${defect.cases.length} 个用例（前 ${expectedListedCount} 个属于独立依据）`,
             actual,
             ok,
           });
