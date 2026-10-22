@@ -299,8 +299,8 @@ describe('a subject builder that fails', { skip }, () => {
   });
 });
 
-describe("the brief's `* -> unknown` row (the deviation in the README)", { skip }, () => {
-  it('would record a known gap as unknown (unchecked, integrity unproven): why requirements.json has no row', async () => {
+describe("the brief's `* -> unknown` row (记未知保留反驳，归责待定)", { skip }, () => {
+  it('keeps the refutation as violation and leaves attribution unattributed under `* -> unknown` (记未知保留反驳，归责待定)', async () => {
     const literal = await openBed(postgres, {
       edit: async (dir) => {
         const path = join(dir, 'requirements.json');
@@ -315,9 +315,10 @@ describe("the brief's `* -> unknown` row (the deviation in the README)", { skip 
       const detail = await literal.service.startRunDetailed(literal.runner, { pack: 'template-gap', inputs: { documents: [{ reference: ref }] } }, literal.call());
       const production = detail.production!;
       const [item] = production.result.partitions.delivered;
-      assert.deepEqual(item.requirements[0].layers, [{ layer: 'static', terminal: 'unchecked', code: 'core.coverage.shortfall', tier: 'advisory', reason: 'integrity_unproven', attribution: 'data_gap' }]);
-      assert.equal(item.requirements[0].status, 'pending');
-      assert.equal(production.counts.unknown, 1, 'a document whose gap is known would be counted unknown');
+      // 记未知保留反驳，归责待定：终态为 violation、码 core.coverage.shortfall、档 advisory，归责为 unattributed，状态为 unsatisfied，未知计数为 0
+      assert.deepEqual(item.requirements[0].layers, [{ layer: 'static', terminal: 'violation', code: 'core.coverage.shortfall', tier: 'advisory', attribution: 'unattributed' }]);
+      assert.equal(item.requirements[0].status, 'unsatisfied');
+      assert.equal(production.counts.unknown, 0, '记未知不改终态，未知计数为 0');
       assert.equal(item.requirements[0].claims[0].qualifier.nature, 'fact', 'while its claim still says it is a fact');
     } finally {
       await literal.close();
