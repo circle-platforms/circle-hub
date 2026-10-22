@@ -8,6 +8,7 @@ import { DISPLAY_ORDER } from '../../contracts/generated/protocol.ts';
 import { DYNAMIC_TERMINAL, PARTITION, STATIC_TERMINAL } from '../../contracts/generated/vocabulary.ts';
 import { ListTaskPacksInput, StartRunInput } from '../../contracts/src/tools.ts';
 import { LayerResult, isUnknownTerminal, type Partitions } from '../../contracts/src/validation.ts';
+import { VIEW_SYSTEM } from '../knowledge/api.ts';
 import { createDefaultRegistry } from '../refs/api.ts';
 import { parseTarget } from './app.ts';
 import { SYMBOL, cellText, claimFields, terminalSymbol, terminalText } from './claims.ts';
@@ -17,7 +18,7 @@ import { BodyBudget, REFERRER_POLICY, allowedHosts, isLoopbackOrigin } from './h
 import { MAX_ADMIN_NOTE, clipNote, describeError } from './notes.ts';
 import { CANDIDATE_SCHEMA, runOfRecord } from './readers.ts';
 import { countsLine } from './text.ts';
-import { isExternalType, pointerOfPath, schemaErrors } from './tools.ts';
+import { KNOWLEDGE_VIEW_SYSTEM, isExternalType, pointerOfPath, readsOutside, schemaErrors } from './tools.ts';
 import { newTraceId, sessionIdOf, traceIdFrom } from './trace.ts';
 import { base64Size, decodeBase64Strict, mediaTypeFor, structureOf } from './upload.ts';
 
@@ -252,4 +253,15 @@ test('an input slot reads an external system when it accepts system:type, never 
   assert.ok(isExternalType('tracker:document'));
   assert.ok(isExternalType('mind-map:document'));
   for (const accepts of ['application/json', 'text/markdown', 'tracker', 'tracker:document:1', 'Tracker:doc']) assert.ok(!isExternalType(accepts), accepts);
+});
+
+test('the Hub\'s own knowledge views are external object types to bind but no external system: start_run reads them inside the Hub', () => {
+  for (const view of ['knowledge:impact', 'knowledge:facets', 'knowledge:index']) {
+    assert.ok(isExternalType(view), `${view} is bound as {external: …}`);
+    assert.ok(!readsOutside(view), `${view} is read inside the Hub`);
+  }
+  assert.ok(readsOutside('tracker:document'));
+  assert.ok(readsOutside('knowledge-base:document'), 'only the system named knowledge is the Hub\'s');
+  assert.ok(!readsOutside('application/json'));
+  assert.equal(KNOWLEDGE_VIEW_SYSTEM, VIEW_SYSTEM, 'the server names the views\' system as hub/knowledge does');
 });

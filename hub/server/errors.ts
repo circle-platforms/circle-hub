@@ -1,8 +1,11 @@
 // Typed errors of the server package. Messages are Chinese; they never carry arguments, tokens or credential values.
 
-/** hub/server/assemble.ts is still the placeholder: the packages that serve runs, knowledge and resources are not wired yet. */
+/**
+ * The assembly module in use does not wire what a command needs: a placeholder module (tests), or one without the part this
+ * command uses (assembleCommand for `run show`). The default module, hub/server/assemble.ts, wires everything.
+ */
 export class AssemblyMissingError extends Error {
-  constructor(message = '服务器还没有装配：hub/server/assemble.ts 仍是占位，运行、知识、任务包和资源这几个包要由下一阶段的装配步骤接上。在那之前能用的只有 serve --migrate-only、用户与令牌管理、调用日志导出和平台命令') {
+  constructor(message = '这个装配模块是占位，没有接上运行、知识、任务包和资源这几个包（默认的 hub/server/assemble.ts 会接上）：这时能用的只有 serve --migrate-only、用户与令牌管理、调用日志导出和平台命令') {
     super(message);
     this.name = 'AssemblyMissingError';
   }

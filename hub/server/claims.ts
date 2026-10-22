@@ -2,10 +2,10 @@
 // DISPLAY_ORDER; every enumeration value is shown through labelOf. Unknown terminals have their own symbol and are never
 // shown as success or failure.
 import { DISPLAY_ORDER } from '../../contracts/generated/protocol.ts';
-import { DYNAMIC_TERMINAL, STATIC_TERMINAL, axisLabel, labelOf, type DynamicTerminal, type Layer, type StaticTerminal } from '../../contracts/generated/vocabulary.ts';
+import { DYNAMIC_TERMINAL, LAYER, STATIC_TERMINAL, axisLabel, labelOf, type DynamicTerminal, type Layer, type StaticTerminal } from '../../contracts/generated/vocabulary.ts';
 import type { Claim } from '../../contracts/src/claim.ts';
 import type { Coverage } from '../../contracts/src/common.ts';
-import { isUnknownTerminal, type LayerResult } from '../../contracts/src/validation.ts';
+import { isUnknownTerminal, type LayerResult, type RequirementResult } from '../../contracts/src/validation.ts';
 
 type DisplayLabel = (typeof DISPLAY_ORDER)[number];
 
@@ -128,3 +128,15 @@ export function terminalText(layer: LayerResult): string {
 
 /** Shown for a layer a requirement does not declare (V03 R[0], display rule 4): this layer is not applicable. */
 export const NOT_APPLICABLE = '本层不适用';
+
+/** The satisfaction status of a requirement, with the reason when it is unsatisfied. */
+export function statusText(r: Pick<RequirementResult, 'status' | 'unsatisfied_reason'>): string {
+  return `${labelOf('requirement_status', r.status)}${r.unsatisfied_reason ? `（${labelOf('unsatisfied_reason', r.unsatisfied_reason)}）` : ''}`;
+}
+
+/** One requirement of an item: every declared layer's terminal, 本层不适用 for the others (display rule 4), then the status. */
+export function requirementText(r: RequirementResult): string {
+  const declared = r.layers.map(terminalText);
+  const others = LAYER.filter((layer) => !r.layers.some((l) => l.layer === layer)).map((layer) => `${labelOf('layer', layer)}：${NOT_APPLICABLE}`);
+  return `${r.requirement}：${[...declared, ...others].join('；')}；${statusText(r)}`;
+}

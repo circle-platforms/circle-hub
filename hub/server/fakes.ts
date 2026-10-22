@@ -27,6 +27,7 @@ import type {
   ProductHandle,
   ResourceCatalogPort,
   ResourceListing,
+  EntryDiff,
   RootDiff,
   RootInfo,
   RunDetail,
@@ -37,6 +38,7 @@ import type {
 } from '../ports.ts';
 import { canonicalize, sha256Hex, type Page, type Principal, type RecordsKit } from '../records/api.ts';
 import type { ReaderIdentity, TreeRead, TreeReader } from '../refs/api.ts';
+import type { ProductionResult, StartRunDetail, StoredResult } from '../runs/api.ts';
 import { pointerOfPath, unavailable } from './tools.ts';
 import type { z } from 'zod';
 import type { ResolveReferenceOutput, StartRunOutput, SubmitResultOutput } from '../../contracts/src/tools.ts';
@@ -65,8 +67,11 @@ const REQUIREMENTS: PackSummary['requirements'] = [
   { key: 'findings', name: '发现', description: '评审发现', layers: ['static'], done_rule: 'bookkeeping', accepted_producer: 'judgment', repair_rounds: 2 },
 ];
 
-/** A synthetic workflow pack with one subject input slot that accepts `accepts`. */
-export function fakeWorkflowPack(id: string, title: string, accepts: string[], options: { expectedSources?: boolean } = {}): FakePack {
+/**
+ * A synthetic workflow pack with one subject input slot that accepts `accepts`. `factsOnly`: its requirements are facts
+ * only, so the fake run service computes its result at start_run (a production run).
+ */
+export function fakeWorkflowPack(id: string, title: string, accepts: string[], options: { expectedSources?: boolean; factsOnly?: boolean } = {}): FakePack {
   const version = '1.0.0';
   return {
     id,
@@ -87,7 +92,7 @@ export function fakeWorkflowPack(id: string, title: string, accepts: string[], o
       products: [...PRODUCT.names],
       inputs: [{ slot: 'subject', role: 'subject', description: '被评审的文档', accepts, required: true, many: false }],
       parameters: [{ name: 'strict', description: '严格模式', required: false }],
-      requirements: REQUIREMENTS,
+      requirements: options.factsOnly ? REQUIREMENTS.filter((r) => r.accepted_producer === 'fact') : REQUIREMENTS,
     },
   };
 }
@@ -190,7 +195,7 @@ function loaded(pack: FakePack): LoadedWorkflow {
     projection: { module: 'functions/project.ts' },
     ...(pack.expectedSources ? { expected_sources: { module: 'functions/expected.ts' } } : {}),
   };
-  const requirements: RequirementTemplate[] = REQUIREMENTS.map((r) => ({
+  const requirements: RequirementTemplate[] = (pack.summary?.requirements ?? REQUIREMENTS).map((r) => ({
     key: r.key,
     name: r.name,
     description: r.description,
@@ -425,6 +430,10 @@ export class FakeKnowledge implements KnowledgePort {
     };
   }
 
+  async diffEntries(): Promise<EntryDiff | null> {
+    return null;
+  }
+
   async diffRoots(from: string, to: string): Promise<RootDiff | null> {
     const a = this.#trees.get(from);
     const b = this.#trees.get(to);
@@ -454,7 +463,23 @@ interface StoredRun {
   submissions: RunSubmissionView[];
   results: Map<string, { record: string; result: ValidationResult }>;
   latest: { record: string; result: ValidationResult } | null;
+  /** The result a fact-only pack computed at start_run. */
+  production: ProductionResult | null;
 }
+
+/** The slot schema a fake run hands out: one list of statements per item (a compact text names `findings`). */
+const FAKE_SLOT_SCHEMA = {
+  $schema: 'https://json-schema.org/draft/2020-12/schema',
+  type: 'object',
+  properties: {
+    findings: {
+      type: 'array',
+      description: '评审发现（合成）',
+      items: { type: 'object', properties: { text: { type: 'string', description: '发现的说明' }, code: { type: 'string' } }, required: ['text'] },
+    },
+  },
+  required: ['findings'],
+} as const;
 
 const UNAVAILABLE: ProtocolError = unavailable();
 const RUN_ID = /^run_[0-7][0-9a-hjkmnp-tv-z]{25}$/;
@@ -478,6 +503,8 @@ export class FakeRuns implements RunsService {
   readonly contexts: CallContext[] = [];
   /** Items of the next runs; default three invented cases located in the subject input. */
   items: ((subject: string) => ItemProjection[]) | null = null;
+  /** Evidence gaps startRunDetailed reports for the next runs (expected sources that could not be bound, function warnings). */
+  gaps: Pick<StartRunDetail, 'unavailable' | 'gaps'> = { unavailable: [], gaps: [] };
   #counter = 0;
 
   constructor(records: RecordsKit, workflows: FakeWorkflows, now: () => Date) {
@@ -546,7 +573,7 @@ export class FakeRuns implements RunsService {
       sources,
       requirements: summary.requirements,
       items: (this.items ?? defaultItems)(subject),
-      slots: { schema: { $schema: 'https://json-schema.org/draft/2020-12/schema', type: 'object' }, sha256: sha('slots') },
+      slots: { schema: JSON.parse(JSON.stringify(FAKE_SLOT_SCHEMA)) as Record<string, unknown>, sha256: sha('slots') },
       instructions,
       instructions_digest: sha(instructions),
       ...(input.predecessor === undefined ? {} : { predecessor: input.predecessor }),
@@ -558,9 +585,69 @@ export class FakeRuns implements RunsService {
       parameters: input.parameters ?? {},
     };
     const stored = await this.#records.store.put({ kind: 'run', schema: 'run@1', provenance: 'declared', body: record, index: [{ key: 'run.id', value: run }] });
-    this.runs.set(run, { record, recordDigest: stored.digest, submissions: [], results: new Map(), latest: null });
+    const kept: StoredRun = { record, recordDigest: stored.digest, submissions: [], results: new Map(), latest: null, production: null };
+    this.runs.set(run, kept);
+    if (summary.requirements.every((r) => r.accepted_producer === 'fact')) kept.production = await this.#produce(kept, context);
     const { runner: _runner, host: _host, trigger: _trigger, parameters: _parameters, ...shown } = record;
-    return { call_result: 'ok', errors: [], run: shown };
+    const production = kept.production;
+    return { call_result: 'ok', errors: [], run: shown, ...(production !== null ? { result: { reference: production.reference, counts: production.counts } } : {}) };
+  }
+
+  /**
+   * The result of a fact-only pack, computed at start_run as the engine does (its submission is the run record digest): the
+   * second item has a blocking structure violation, every other item passes.
+   */
+  async #produce(stored: StoredRun, context: CallContext): Promise<ProductionResult> {
+    const items = stored.record.items;
+    const delivered = items.map((item, i) => ({
+      item: item.id,
+      label: item.label,
+      location: item.location,
+      requirements: stored.record.requirements.map((r): RequirementResult =>
+        i === 1
+          ? { requirement: r.key, layers: [{ layer: 'static', terminal: 'violation', code: 'core.structure.required_empty', tier: 'blocking', attribution: 'author_input' }], status: 'unsatisfied', unsatisfied_reason: 'outcome_mismatch', claims: [] }
+          : { requirement: r.key, layers: [{ layer: 'static', terminal: 'pass' }], status: 'satisfied', claims: [] },
+      ),
+    }));
+    const partitions = { ...(Object.fromEntries(PARTITION.map((p) => [p, []])) as unknown as Partitions), delivered } as Partitions;
+    const result: ValidationResult = {
+      schema: 'validation@1',
+      run: stored.record.run,
+      submission: stored.recordDigest,
+      acceptance: 'accepted',
+      errors: [],
+      rounds: { used: 0, max: 0 },
+      partitions,
+      cross_item: [],
+      coverage: { complete: true, examined: items.length, total: items.length },
+      locks: { pack: stored.record.pack, pack_digest: stored.record.pack_digest, root: ROOT_1 },
+      trace: context.traceId,
+    };
+    const record = await this.#records.store.put({ kind: 'validation_result', schema: 'validation@1', provenance: 'projected', body: result });
+    stored.results.set(stored.recordDigest, { record: record.digest, result });
+    stored.latest = { record: record.digest, result };
+    return { reference: `rec:${record.digest}`, record: record.digest, result, counts: partitionCountsOf(partitions) };
+  }
+
+  /**
+   * RunsEngine.startRunDetailed over the fake: the answer (a scripted startRun answer included), the digest of the run record,
+   * the production result of a fact-only pack and the evidence gaps of `gaps`.
+   */
+  async startRunDetailed(user: Principal, input: z.infer<typeof StartRunInput>, context: CallContext): Promise<StartRunDetail> {
+    const answer = await this.startRun(user, input, context);
+    const run = answer.call_result === 'ok' ? answer.run?.run : undefined;
+    const stored = run === undefined ? undefined : this.runs.get(run);
+    if (stored === undefined) return { answer, production: null, runRecord: null, unavailable: [], gaps: [] };
+    return { answer, production: stored.production, runRecord: stored.recordDigest, unavailable: [...(this.gaps.unavailable ?? [])], gaps: [...(this.gaps.gaps ?? [])] };
+  }
+
+  /** RunsEngine.getResult over the fake: the result of a submission by its digest, or the latest accepted one. */
+  async getResult(user: Principal, run: string, submission?: string): Promise<StoredResult | null> {
+    const scripted = this.script.take('getResult');
+    if (scripted !== undefined) return scripted.value as StoredResult | null;
+    const stored = await this.#visible(user, run);
+    if (stored === null) return null;
+    return submission === undefined ? stored.latest : (stored.results.get(submission) ?? null);
   }
 
   async #visible(user: Principal, run: string): Promise<StoredRun | null> {

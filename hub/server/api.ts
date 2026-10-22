@@ -6,6 +6,7 @@ import type { HubConfig } from '../config/index.ts';
 import type { PacksPort, KnowledgePort, PackCatalogPort, ResourceCatalogPort, RunsService, WorkflowStore } from '../ports.ts';
 import type { Principal, RecordsKit } from '../records/api.ts';
 import type { ParserRegistry } from '../refs/api.ts';
+import type { RunsEngine } from '../runs/api.ts';
 
 export { createApp } from './app.ts';
 export { main, registerCommand, registeredCommands, RESERVED_COMMANDS } from './cli.ts';
@@ -13,12 +14,19 @@ export { serve } from './main.ts';
 export { AssemblyMissingError, isAssemblyMissing } from './errors.ts';
 export { readReleaseId } from './release.ts';
 export type { ServerCallContext } from './tools.ts';
+export type { TextContext } from './text.ts';
 
 /** Everything the server needs; the assembly builds it from the real packages, tests from fakes (hub/server/testing.ts). */
 export interface ServerDeps {
   config: HubConfig;
   records: RecordsKit;
   runs: RunsService;
+  /**
+   * The run engine's extras the text of the answers uses (filled by the assembly): start_run through startRunDetailed (the
+   * run record, the whole production result, the evidence gaps) and the stored result of a submission by its digest.
+   * Without it start_run uses `runs.startRun` and the texts name the console instead of record references.
+   */
+  runsDetail?: Pick<RunsEngine, 'startRunDetailed' | 'getResult'>;
   knowledge: KnowledgePort;
   workflows: WorkflowStore;
   packs: PackCatalogPort;
@@ -71,8 +79,19 @@ export interface HubApp {
   readonly release: string | null;
 }
 
-/** Builds the server's dependencies from the opened configuration and records (written by the assembly step). */
+/** Builds the server's dependencies from the opened configuration and records, for `serve` (the vault key required). */
 export type AssembleFunction = (config: HubConfig, records: RecordsKit) => Promise<ServerDeps> | ServerDeps;
+
+/** Where a command-time assembly writes its operator's log lines: the invoking CLI's standard error. */
+export interface CommandIo {
+  stderr(line: string): void;
+}
+
+/**
+ * Builds the server's dependencies for one CLI command (`run show` through CliContext.deps()): no vault master key, no
+ * sandbox probe, no start-up notices; its log lines go to the CLI's standard error.
+ */
+export type CommandAssembleFunction = (config: HubConfig, records: RecordsKit, io: CommandIo) => Promise<ServerDeps> | ServerDeps;
 
 export interface CliIo {
   stdout(line: string): void;
@@ -86,7 +105,10 @@ export interface CliContext {
   io: CliIo;
   config(): HubConfig;
   records(): Promise<RecordsKit>;
-  /** The full dependencies, built by the assembly; throws AssemblyMissingError until the assembly exists. */
+  /**
+   * The full dependencies, built by the assembly module's `assembleCommand` (never `serve`'s `assemble`); throws
+   * AssemblyMissingError when the module has none.
+   */
   deps(): Promise<ServerDeps>;
   /** The admin a command acts as: `--as <name or id>`, or the only enabled admin. */
   actingAdmin(as?: string): Promise<Principal>;
@@ -104,7 +126,10 @@ export type RegisterCommand = (command: CliCommand) => void;
 
 /** The shape of hub/server/assemble.ts. */
 export interface AssemblyModule {
+  /** `serve`'s assembly only. */
   assemble: AssembleFunction;
-  /** Registers the commands that need the other packages (pack, resource, secret, knowledge, ...). */
+  /** The assembly of one CLI command (CliContext.deps()); without it such a command refuses with AssemblyMissingError. */
+  assembleCommand?: CommandAssembleFunction;
+  /** Registers the commands that need the other packages (pack, resource, secret, knowledge, init-admin, operator-token). */
   registerCommands?: (register: RegisterCommand) => void;
 }

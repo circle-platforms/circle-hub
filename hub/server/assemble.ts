@@ -1,13 +1,24 @@
-// Placeholder for the assembly step of the next phase: it will build ServerDeps from the real runs, knowledge and connectors
-// packages and register the CLI commands that need them (pack, resource, secret, knowledge). Until then serve refuses to
-// start with a clear message; serve --migrate-only and the records-only commands work without it.
-import type { AssembleFunction, RegisterCommand } from './api.ts';
-import { AssemblyMissingError } from './errors.ts';
+// The assembly of the Hub (the AssemblyModule main.ts and cli.ts load): assemble(config, records) builds the server's
+// dependencies from the real packages (hub/server/assemble/hub.ts) for `serve`, with the vault master key required (a
+// missing key stops the process, the key is never created) and pack functions under sandbox-exec; assembleCommand does the
+// same for one CLI command (`run show`, through CliContext.deps()) without the key, the probe or start-up notices;
+// registerCommands adds the administrator commands (pack, resource, secret, knowledge, init-admin, operator-token) of
+// hub/server/cli-admin.ts.
+import type { AssembleFunction, CommandAssembleFunction, RegisterCommand } from './api.ts';
+import { createAssembly, createCommandAssembly } from './assemble/hub.ts';
+import { adminCommands } from './cli-admin.ts';
 
-export const assemble: AssembleFunction = () => {
-  throw new AssemblyMissingError();
-};
+export { assembleHub, createAssembly, createCommandAssembly } from './assemble/hub.ts';
+export type { AssembledHub, AssemblyOptions, CommandAssembleFunction, CommandIo } from './assemble/hub.ts';
+export { adminCommands, operatorAdmin } from './cli-admin.ts';
+export type { AdminCommandOptions } from './cli-admin.ts';
 
-export function registerCommands(_register: RegisterCommand): void {
-  // Nothing to register before the real assembly exists.
+/** `serve`'s assembly. */
+export const assemble: AssembleFunction = createAssembly();
+
+/** A CLI command's assembly (AssemblyModule.assembleCommand, the server core's ctx.deps(), for `run show`). */
+export const assembleCommand: CommandAssembleFunction = createCommandAssembly();
+
+export function registerCommands(register: RegisterCommand): void {
+  for (const command of adminCommands()) register(command);
 }

@@ -3,7 +3,9 @@
 // one that does not conform is an internal error and never reaches the caller (D05). isError is true only when the answer is
 // a protocol error or a receipt that is not accepted: call_result 'error' (the envelope ties the two together); unknown
 // stays inside an accepted answer and is never an error. The content is one block of plain Chinese text (D05 R[0]); the
-// JSON is the structuredContent only.
+// JSON is the structuredContent only. Each handler also says what the text may use besides the answer (TextContext): the
+// server pages content read by reference (get_nodes {reference, cursor}), so every text may offer page cursors; start_run
+// adds the run record, the whole production result and the evidence gaps, submit_result the stored result.
 import { readFileSync } from 'node:fs';
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import type { z } from 'zod';
@@ -23,12 +25,12 @@ import {
   type ToolDefinition,
 } from '../../contracts/src/tools.ts';
 import type { CallContext } from '../ports.ts';
-import { RecordsError, type Principal } from '../records/api.ts';
+import { RecordsError, isSha256, type Principal } from '../records/api.ts';
 import { ReferenceSyntaxError, UNAVAILABLE_MESSAGE, parseReference, resolveReference, type ReaderIdentity, type Reference } from '../refs/api.ts';
 import type { ServerDeps } from './api.ts';
 import { clipNote, describeError } from './notes.ts';
 import { recordReaderFor, sourceReaderFor } from './readers.ts';
-import { toolText } from './text.ts';
+import { fallbackText, pageCursorProblem, toolText, type TextContext } from './text.ts';
 import { base64Size, decodeBase64Strict, isMediaType, mediaTypeFor, structureOf } from './upload.ts';
 
 export { describeError } from './notes.ts';
@@ -70,7 +72,15 @@ export interface PublishedTool {
 
 type ToolName = 'list_task_packs' | 'upload_file' | 'start_run' | 'get_nodes' | 'resolve_reference' | 'submit_result';
 type Answer = Record<string, unknown>;
-type Handler = (deps: ServerDeps, call: ToolCall, args: Record<string, unknown>) => Promise<Answer>;
+/** A handler's answer and what its text may use besides it; `paging` is set for every tool by callTool. */
+interface Reply {
+  answer: Answer;
+  text?: TextContext;
+}
+type Handler = (deps: ServerDeps, call: ToolCall, args: Record<string, unknown>) => Promise<Reply>;
+
+/** The server takes get_nodes {reference, cursor}: every text may offer page cursors (TextContext.paging). */
+const PAGING = true;
 
 /** The published schemas (contracts/generated/tools.json), the same ones clients validate against. */
 function loadPublished(): Map<string, PublishedTool> {
@@ -170,15 +180,27 @@ export function isExternalType(accepts: string): boolean {
   return /^[a-z][a-z0-9-]*:[a-z][a-z0-9_-]*$/.test(accepts);
 }
 
+/**
+ * The system of the Hub's own knowledge views (`knowledge:impact|facets|index:…`, hub/knowledge VIEW_SYSTEM; named here so
+ * that loading the server does not load the knowledge package, and pinned to it by a test). They are bound like external
+ * objects, but start_run reads them from the Hub's own records, not from an external system.
+ */
+export const KNOWLEDGE_VIEW_SYSTEM = 'knowledge';
+
+/** An accepted type that start_run reads from an external system: system:type, except the Hub's own knowledge views. */
+export function readsOutside(accepts: string): boolean {
+  return isExternalType(accepts) && accepts.slice(0, accepts.indexOf(':')) !== KNOWLEDGE_VIEW_SYSTEM;
+}
+
 export function readsExternalFor(summaries: readonly PackSummary[]): boolean {
-  return summaries.some((pack) => pack.inputs.some((input) => input.accepts.some(isExternalType)));
+  return summaries.some((pack) => pack.inputs.some((input) => input.accepts.some(readsOutside)));
 }
 
 /**
  * Whether start_run reads an external system for this caller (D06 F[2], D03 R[6]): an assigned pack has an input slot that
- * takes an external object, or binds expected sources at start_run (workflow `expected_sources`), whatever its inputs
- * accept. The summaries do not say the latter, so each pack is loaded; a pack that cannot be loaded counts as reading
- * outside (the cautious annotation), with the reason in the admin note.
+ * takes an external object (the Hub's knowledge views are not one), or binds expected sources at start_run (workflow
+ * `expected_sources`), whatever its inputs accept. The summaries do not say the latter, so each pack is loaded; a pack that
+ * cannot be loaded counts as reading outside (the cautious annotation), with the reason in the admin note.
  */
 export async function startRunReadsExternal(deps: ServerDeps, principal: Principal, note: (reason: string) => void = () => {}): Promise<boolean> {
   const summaries = await deps.workflows.summaries(principal);
@@ -192,7 +214,7 @@ export async function startRunReadsExternal(deps: ServerDeps, principal: Princip
       return true;
     }
     if (loaded === null) continue;
-    if (loaded.workflow.expected_sources !== undefined || loaded.workflow.inputs.some((input) => input.accepts.some(isExternalType))) return true;
+    if (loaded.workflow.expected_sources !== undefined || loaded.workflow.inputs.some((input) => input.accepts.some(readsOutside))) return true;
   }
   return false;
 }
@@ -217,15 +239,17 @@ export async function listTools(deps: ServerDeps, principal: Principal, note: (r
 
 const listTaskPacks: Handler = async (deps, call, args) => {
   const parsed = ListTaskPacksInput.safeParse(args);
-  if (!parsed.success) return errorAnswer('list_task_packs', schemaErrors('list_task_packs', parsed.error));
+  if (!parsed.success) return { answer: errorAnswer('list_task_packs', schemaErrors('list_task_packs', parsed.error)) };
   const packs = await deps.workflows.summaries(call.principal);
   const kind = parsed.data.kind;
-  return { call_result: 'ok', errors: [], packs: kind === undefined ? packs : packs.filter((pack) => pack.kind === kind) };
+  return { answer: { call_result: 'ok', errors: [], packs: kind === undefined ? packs : packs.filter((pack) => pack.kind === kind) } };
 };
 
 const NAME = /^[^\p{Cc}]{1,300}$/u;
 
-const uploadFile: Handler = async (deps, call, args) => {
+const uploadFile: Handler = async (deps, call, args) => ({ answer: await upload(deps, call, args) });
+
+async function upload(deps: ServerDeps, call: ToolCall, args: Record<string, unknown>): Promise<Answer> {
   const parsed = UploadFileInput.safeParse(args);
   if (!parsed.success) return errorAnswer('upload_file', schemaErrors('upload_file', parsed.error));
   const { file_path: text, media_type: given, name } = parsed.data;
@@ -283,36 +307,81 @@ const uploadFile: Handler = async (deps, call, args) => {
     media_type: artifact.body.media_type,
     ...(structure === null ? {} : { structure }),
   };
-};
+}
 
+/** A record digest as a rec: reference, or null for anything that is not a digest. */
+const recordReference = (digest: unknown): string | null => (typeof digest === 'string' && isSha256(digest) ? `rec:${digest}` : null);
+
+/**
+ * start_run through the engine's startRunDetailed when the assembly gives it (ServerDeps.runsDetail), so the text can name the
+ * run record, list the problems of a production result and the evidence gaps; else RunsService.startRun.
+ */
 const startRun: Handler = async (deps, call, args) => {
   const parsed = StartRunInput.safeParse(args);
-  if (!parsed.success) return errorAnswer('start_run', schemaErrors('start_run', parsed.error));
-  const answer = (await deps.runs.startRun(call.principal, parsed.data, call.context)) as Answer;
+  if (!parsed.success) return { answer: errorAnswer('start_run', schemaErrors('start_run', parsed.error)) };
+  let answer: Answer;
+  let text: TextContext = {};
+  if (deps.runsDetail !== undefined) {
+    const detail = await deps.runsDetail.startRunDetailed(call.principal, parsed.data, call.context);
+    answer = detail.answer as Answer;
+    const named = (answer.result as { reference?: unknown } | undefined)?.reference;
+    text = {
+      record: recordReference(detail.runRecord),
+      // Only the result the answer names: its counts and its problems must be of one result.
+      production: detail.production !== null && detail.production.reference === named ? detail.production.result : null,
+      unavailable: detail.unavailable ?? [],
+      gaps: detail.gaps ?? [],
+    };
+  } else {
+    answer = (await deps.runs.startRun(call.principal, parsed.data, call.context)) as Answer;
+  }
   const run = (answer.run as { run?: unknown } | undefined)?.run;
   if (typeof run === 'string' && RunId.safeParse(run).success) call.state.runId = run;
-  return answer;
+  return { answer, text };
 };
 
 const resolveTool: Handler = async (deps, call, args) => {
   const parsed = ResolveReferenceInput.safeParse(args);
-  if (!parsed.success) return errorAnswer('resolve_reference', schemaErrors('resolve_reference', parsed.error));
+  if (!parsed.success) return { answer: errorAnswer('resolve_reference', schemaErrors('resolve_reference', parsed.error)) };
   call.state.runId = parsed.data.run;
-  return (await deps.runs.resolveReference(call.principal, parsed.data, call.context)) as Answer;
+  return { answer: (await deps.runs.resolveReference(call.principal, parsed.data, call.context)) as Answer };
 };
 
-/** submit_result passes the raw arguments: the runs package stores them as received before anything checks them (W07). */
+/**
+ * submit_result passes the raw arguments: the runs package stores them as received before anything checks them (W07). An
+ * answer that carries a result (accepted or not) names its stored record, looked up by the submission digest.
+ */
 const submitResult: Handler = async (deps, call, args) => {
   const run = args.run;
   if (typeof run === 'string' && RunId.safeParse(run).success) call.state.runId = run;
-  return (await deps.runs.submitResult(call.principal, args, call.context)) as Answer;
+  const answer = (await deps.runs.submitResult(call.principal, args, call.context)) as Answer;
+  return { answer, text: { record: await storedResult(deps, call, answer) } };
 };
+
+/** rec:<digest> of the validation result record an answer carries, or null (no result, or no record of it). */
+async function storedResult(deps: ServerDeps, call: ToolCall, answer: Answer): Promise<string | null> {
+  const result = answer.result as { run?: unknown; submission?: unknown } | undefined;
+  if (deps.runsDetail === undefined || typeof result?.run !== 'string' || typeof result.submission !== 'string') return null;
+  try {
+    const stored = await deps.runsDetail.getResult(call.principal, result.run, result.submission);
+    return stored === null ? null : recordReference(stored.record);
+  } catch (error) {
+    // The answer stands; only the way to its record is missing (the text then names the console).
+    call.context.adminNote(`the stored result of submission ${result.submission} was not found: ${describeError(error)}`);
+    return null;
+  }
+}
+
+const READ_FIX = '读引用和读子树分两次调用；翻下一页只给 reference 和 cursor';
+const CURSOR_FIX = '照抄上一页末尾给出的 cursor，和它的引用一起给；从头读就不给 cursor';
 
 const getNodes: Handler = async (deps, call, args) => {
   const parsed = GetNodesInput.safeParse(args);
-  if (!parsed.success) return errorAnswer('get_nodes', schemaErrors('get_nodes', parsed.error));
+  if (!parsed.success) return { answer: errorAnswer('get_nodes', schemaErrors('get_nodes', parsed.error)) };
   const input = parsed.data;
   const note = call.context.adminNote;
+  // An empty cursor is no cursor (a model may fill an optional string with ''), for a reference as for a subtree.
+  const cursor = input.cursor === undefined || input.cursor === '' ? null : input.cursor;
   if (input.run !== undefined) call.state.runId = input.run;
   const runDetail = async (run: string) => {
     const detail = await deps.runs.getRun(call.principal, run);
@@ -320,43 +389,46 @@ const getNodes: Handler = async (deps, call, args) => {
     return detail;
   };
   if (input.reference !== undefined) {
-    const mixed = (['root', 'paths', 'depth', 'cursor'] as const).filter((key) => input[key] !== undefined);
-    if (mixed.length > 0) {
-      return errorAnswer('get_nodes', [violation('get_nodes', `/${mixed[0]}`, '按引用读取时不再给 root、paths、depth 或 cursor', '读引用和读子树分两次调用')]);
-    }
-    if (input.run !== undefined && (await runDetail(input.run)) === null) return errorAnswer('get_nodes', [unavailable()]);
-    return readReference(deps, call, input.reference, input.run);
+    // A cursor goes with the reference it pages (TextContext.cursor); a subtree read never mixes in.
+    const mixed = (['root', 'paths', 'depth'] as const).filter((key) => input[key] !== undefined);
+    if (mixed.length > 0) return { answer: errorAnswer('get_nodes', [violation('get_nodes', `/${mixed[0]}`, '按引用读取时不再给 root、paths 或 depth', READ_FIX)]) };
+    if (input.run !== undefined && (await runDetail(input.run)) === null) return { answer: errorAnswer('get_nodes', [unavailable()]) };
+    return readReference(deps, call, input.reference, input.run, cursor);
   }
   let root = input.root;
   if (input.run !== undefined) {
     const detail = await runDetail(input.run);
-    if (detail === null) return errorAnswer('get_nodes', [unavailable()]);
+    if (detail === null) return { answer: errorAnswer('get_nodes', [unavailable()]) };
     root ??= detail.run.root;
     if (root === undefined) {
       note(`run ${input.run} locked no knowledge root`);
-      return errorAnswer('get_nodes', [unavailable()]);
+      return { answer: errorAnswer('get_nodes', [unavailable()]) };
     }
   }
   if (root === undefined) {
-    return errorAnswer('get_nodes', [violation('get_nodes', '', '要给出 run、root 或 reference 之一', '给出 start_run 返回的 run，或一个知识根，或一个引用')]);
+    return { answer: errorAnswer('get_nodes', [violation('get_nodes', '', '要给出 run、root 或 reference 之一', '给出 start_run 返回的 run，或一个知识根，或一个引用')]) };
   }
-  const page = await deps.knowledge.getNodes({ root, paths: input.paths ?? ['/'], depth: input.depth ?? 1, cursor: input.cursor ?? null }, call.principal);
+  const page = await deps.knowledge.getNodes({ root, paths: input.paths ?? ['/'], depth: input.depth ?? 1, cursor }, call.principal);
   if (page === null) {
     note(`knowledge root ${root} (paths ${clipNote(JSON.stringify(input.paths ?? ['/']), 300)}) is absent or not readable by ${call.principal.id}`);
-    return errorAnswer('get_nodes', [unavailable()]);
+    return { answer: errorAnswer('get_nodes', [unavailable()]) };
   }
-  return { call_result: 'ok', errors: [], root, nodes: page.nodes, coverage: page.coverage, next: page.next };
+  return { answer: { call_result: 'ok', errors: [], root, nodes: page.nodes, coverage: page.coverage, next: page.next } };
 };
 
-/** get_nodes with a reference: the content by read tier (D06 F[3]); the reader's permission is checked again on every read. */
-async function readReference(deps: ServerDeps, call: ToolCall, reference: string, run: string | undefined): Promise<Answer> {
+/**
+ * get_nodes with a reference: the content by read tier (D06 F[3]); the reader's permission is checked again on every read.
+ * The text shows one page of it, from the cursor when one is given: a cursor is bound to the reference it was made for
+ * (the canonical form the content names), so one of another reference is refused at /cursor once the reference resolves.
+ */
+async function readReference(deps: ServerDeps, call: ToolCall, reference: string, run: string | undefined, cursor: string | null): Promise<Reply> {
   const note = call.context.adminNote;
   let parsed: Reference;
   try {
     parsed = parseReference(reference);
   } catch (error) {
     if (!(error instanceof ReferenceSyntaxError)) throw error;
-    return errorAnswer('get_nodes', [{ code: 'REFERENCE_UNRESOLVED', message: `引用格式不对：${error.message}`, fix: PROTOCOL_CODES.REFERENCE_UNRESOLVED.fix }]);
+    return { answer: errorAnswer('get_nodes', [{ code: 'REFERENCE_UNRESOLVED', message: `引用格式不对：${error.message}`, fix: PROTOCOL_CODES.REFERENCE_UNRESOLVED.fix }]) };
   }
   // A withheld source (retain_only) comes back from the reader with null bytes; refs answers it with the note and without
   // evaluating the selector, so absent and withheld follow refs' one rule.
@@ -372,8 +444,12 @@ async function readReference(deps: ServerDeps, call: ToolCall, reference: string
     onDiagnostic: (d) => note(`${d.scheme} ${clipNote(d.reference, 300)}: ${d.message}`),
   });
   if (!result.resolved) {
-    if (result.code === 'SOURCE_UNAVAILABLE') return errorAnswer('get_nodes', [unavailable()]);
-    return errorAnswer('get_nodes', [{ code: result.code, message: result.message, fix: result.fix }]);
+    if (result.code === 'SOURCE_UNAVAILABLE') return { answer: errorAnswer('get_nodes', [unavailable()]) };
+    return { answer: errorAnswer('get_nodes', [{ code: result.code, message: result.message, fix: result.fix }]) };
+  }
+  if (cursor !== null) {
+    const problem = pageCursorProblem(result.reference, cursor);
+    if (problem !== null) return { answer: errorAnswer('get_nodes', [violation('get_nodes', '/cursor', problem, CURSOR_FIX)]) };
   }
   const content = {
     reference: result.reference,
@@ -384,7 +460,7 @@ async function readReference(deps: ServerDeps, call: ToolCall, reference: string
     ...(result.summary !== null ? { structure: result.summary } : {}),
     ...(result.note !== null ? { note: result.note } : {}),
   };
-  return { call_result: 'ok', errors: [], content };
+  return { answer: { call_result: 'ok', errors: [], content }, text: { cursor } };
 }
 
 const HANDLERS: Record<ToolName, Handler> = {
@@ -414,15 +490,15 @@ export async function callTool(deps: ServerDeps, call: ToolCall, name: string, a
     call.state.callResult = 'error';
     throw new McpError(ErrorCode.InvalidParams, `没有这个工具：${name.slice(0, 100)}`);
   }
-  let answer: Answer;
+  let reply: Reply;
   try {
-    answer = await HANDLERS[name](deps, call, args ?? {});
+    reply = await HANDLERS[name](deps, call, args ?? {});
   } catch (error) {
     call.state.callResult = 'error';
     if (error instanceof McpError) throw error;
-    answer = fromThrown(name, error, call);
+    reply = { answer: fromThrown(name, error, call) };
   }
-  const checked = definition.output.safeParse({ ...answer, trace: call.context.traceId });
+  const checked = definition.output.safeParse({ ...reply.answer, trace: call.context.traceId });
   if (!checked.success) {
     call.state.callResult = 'error';
     const issues = checked.error.issues.slice(0, 10).map((issue) => `${pointerOfPath(issue.path) || '/'} ${issue.message}`);
@@ -433,9 +509,18 @@ export async function callTool(deps: ServerDeps, call: ToolCall, name: string, a
   call.state.callResult = value.call_result;
   call.state.acceptance = value.acceptance ?? null;
   call.state.errorCode = value.call_result === 'error' ? (value.errors[0]?.code ?? null) : null;
+  const context: TextContext = { ...reply.text, paging: PAGING };
+  let text: string;
+  try {
+    text = toolText(name, value, context);
+  } catch (error) {
+    // A valid answer (a run or a result may already be stored) is never lost to its text: a minimal one, the reason noted.
+    call.context.adminNote(`the text of the ${name} answer could not be laid out: ${describeError(error)}`);
+    text = fallbackText(name, value, context);
+  }
   // D05 R[0], display rule 11: content is plain text, the JSON is structuredContent; no second block repeats it.
   return {
-    content: [{ type: 'text', text: toolText(name, value) }],
+    content: [{ type: 'text', text }],
     structuredContent: value,
     isError: value.call_result === 'error',
   };

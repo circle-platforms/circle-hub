@@ -25,6 +25,8 @@ export interface TestServerOptions {
   packs?: FakePack[];
   /** Leave out the product port of the console (ServerDeps.products). */
   withoutProducts?: boolean;
+  /** Leave out the engine's extras (ServerDeps.runsDetail): start_run through RunsService.startRun, no record references. */
+  withoutRunsDetail?: boolean;
 }
 
 export interface TestUser {
@@ -82,11 +84,14 @@ export interface TestServer {
 
 const principalOf = (user: User): Principal => ({ id: user.id, name: user.name, role: user.role });
 
-/** ServerDeps over an opened records kit with the fakes of the five ports (and the product port): an assembly for tests. */
+/**
+ * ServerDeps over an opened records kit with the fakes of the five ports, the product port and the engine's extras
+ * (runsDetail, which the fake run service implements): an assembly for tests.
+ */
 export function fakeDeps(
   config: HubConfig,
   records: RecordsKit,
-  options: { now?: () => Date; packs?: FakePack[]; withoutProducts?: boolean } = {},
+  options: { now?: () => Date; packs?: FakePack[]; withoutProducts?: boolean; withoutRunsDetail?: boolean } = {},
 ): { deps: ServerDeps; fakes: TestFakes } {
   const now = options.now ?? (() => new Date());
   const workflows = new FakeWorkflows(records, options.packs ?? defaultPacks());
@@ -110,6 +115,7 @@ export function fakeDeps(
     parsers: createDefaultRegistry(),
     now,
     ...(options.withoutProducts ? {} : { products }),
+    ...(options.withoutRunsDetail ? {} : { runsDetail: fakes.runs }),
   };
   return { deps, fakes };
 }

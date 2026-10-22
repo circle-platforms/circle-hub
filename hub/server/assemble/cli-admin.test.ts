@@ -1,0 +1,968 @@
+// The administrator commands through the server CLI's main, in-process, on a temporary socket-only PostgreSQL: init-admin
+// (the token stored, never printed; a token it cannot store is revoked or said to be live), the operator token from
+// CIRCLE_HUB_TOKEN or the store and every state-changing command refused without it or for a non-admin, read-only commands
+// as the token's account (a keychain item that cannot be read costs a notice), the pack lifecycle, resources and
+// credentials (the portal password kept as the digest its system profile names, values from stdin only; what a running Hub
+// keeps in memory), the typed-judgment key, commands without the vault key, knowledge sync with produced, skipped and
+// failed builds, its exit code and a second sync that produces nothing, roots and diffs, and text that could steer a
+// terminal. The external systems are the connectors' loopback stubs; the packs are tiny synthetic ones written to a
+// temporary directory. Every line printed, the assemblies' log lines included, is scanned for secrets.
+import assert from 'node:assert/strict';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { after, before, describe, test } from 'node:test';
+import { DEFAULT_JEV_MODEL, DEFAULT_LIMITS, type HubConfig } from '../../config/index.ts';
+import { agileFixture, passwordDigest, startAgileStub, startBuildSiteStub, type AgileStub, type StubServer } from '../../connectors/testing/api.ts';
+import { OPERATOR_TOKEN_ITEM, VAULT_KEY_ITEM, type CommandRunner } from '../../platform/api.ts';
+import { openRecords, type RecordKind, type RecordsKit, type User } from '../../records/index.ts';
+import { osIsolationAvailable } from '../../rules/api.ts';
+import { withFiles, writePack } from '../../runs/api.ts';
+import type { AssemblyModule, CliContext } from '../api.ts';
+import { adminCommands, type AdminCommandOptions } from '../cli-admin.ts';
+import { CliError } from '../errors.ts';
+import { loadServerConfig } from '../main.ts';
+import { assembleHub, createAssembly } from './hub.ts';
+import { OPERATOR_TOKEN_VARIABLE, keychainOperatorTokens, memoryOperatorTokens, type OperatorTokenStore } from './operator-token.ts';
+import { openCliHarness, type CliHarness, type Deployment, type RunResult } from './test-cli.ts';
+import { AGILE_PACK, PRODUCT_PACK, REVIEW_PACK, SITE_PACK, reviewPack, syncSiteFiles, writeTestPacks } from './test-packs.ts';
+import { JEV_KEY_ENTRY } from './vault.ts';
+
+const DOCUMENT = 'd7f3k9';
+const PASSWORD = 'Synthetic#Pass42';
+const WRONG_PASSWORD = 'Wrong#Pass00';
+const JEV_KEY = 'test-only-key-77aa0c3e';
+
+let harness: CliHarness;
+let requireOsIsolation: boolean;
+let packRoot: string;
+let packs: Awaited<ReturnType<typeof writeTestPacks>>;
+let agile: AgileStub;
+let site: StubServer;
+/** Every secret value a test handled: none may appear in any printed line. */
+const secrets = new Set<string>([PASSWORD, passwordDigest(PASSWORD), WRONG_PASSWORD, passwordDigest(WRONG_PASSWORD), JEV_KEY]);
+const deployments: Deployment[] = [];
+
+before(async () => {
+  harness = await openCliHarness();
+  requireOsIsolation = await osIsolationAvailable();
+  packRoot = await mkdtemp(join(tmpdir(), 'circle-hub-assemble-packs-'));
+  packs = await writeTestPacks(packRoot);
+  agile = await startAgileStub(agileFixture(DOCUMENT, { password: PASSWORD }));
+  site = await startBuildSiteStub(syncSiteFiles());
+});
+
+after(async () => {
+  try {
+    for (const deployment of deployments) {
+      for (const line of deployment.printed) for (const secret of secrets) assert.ok(!line.includes(secret), `a printed line holds a secret: ${line.slice(0, 80)}`);
+    }
+  } finally {
+    await agile?.close();
+    await site?.close();
+    await harness?.close();
+    if (packRoot) await rm(packRoot, { recursive: true, force: true });
+  }
+});
+
+interface Admin {
+  deployment: Deployment;
+  tokens: (OperatorTokenStore & { value: string | null }) | null;
+  /** The output of init-admin, when setup ran it. */
+  init: RunResult | null;
+  /** Values the next `secret set` reads from "stdin", in order. */
+  stdin: string[];
+  run(argv: string[], env?: Record<string, string>): Promise<RunResult>;
+  /** The records of the deployment, opened as the runtime role (closed by the caller). */
+  kit(): Promise<RecordsKit>;
+}
+
+interface SetupOptions {
+  tokens?: OperatorTokenStore & { value: string | null };
+  /** Replaces the token store altogether (a keychain store over a fake security tool); `tokens` is then null. */
+  store?: (config: HubConfig, service: string) => OperatorTokenStore;
+  initAdmin?: boolean;
+  deployment?: { key?: boolean; extra?: Record<string, string> };
+}
+
+async function setup(options: SetupOptions = {}): Promise<Admin> {
+  const deployment = await harness.deployment(options.deployment);
+  deployments.push(deployment);
+  const tokens = options.store === undefined ? (options.tokens ?? memoryOperatorTokens(null, '测试钥匙串')) : null;
+  const stdin: string[] = [];
+  const commandOptions: AdminCommandOptions = {
+    tokens: options.store ?? (() => tokens as OperatorTokenStore),
+    readSecret: async () => {
+      const value = stdin.shift();
+      if (value === undefined) throw new Error('测试没有准备标准输入');
+      return value;
+    },
+    // No `log`: the commands' assemblies write their log lines to the CLI's stderr, which the secret scan covers.
+    assembly: { requireOsIsolation, resourceCacheMs: 0 },
+  };
+  const module: AssemblyModule = {
+    assemble: createAssembly(commandOptions.assembly),
+    registerCommands: (register) => {
+      for (const command of adminCommands(commandOptions)) register(command);
+    },
+  };
+  const admin: Admin = {
+    deployment,
+    tokens,
+    init: null,
+    stdin,
+    // The server CLI's built-in state-changing commands read the same operator token store as the assembly's commands.
+    run: (argv, env = {}) => deployment.run(argv, { assembly: async () => module, operatorTokens: commandOptions.tokens }, env),
+    kit: () => openRecords(loadServerConfig(deployment.env), { migrate: false, keyProvider: deployment.key }),
+  };
+  if (options.initAdmin !== false) {
+    const init = await admin.run(['init-admin', '根管理员']);
+    assert.equal(init.code, 0, init.text);
+    admin.init = init;
+    if (tokens?.value) secrets.add(tokens.value);
+  }
+  return admin;
+}
+
+async function withKit<T>(admin: Admin, fn: (kit: RecordsKit) => Promise<T>): Promise<T> {
+  const kit = await admin.kit();
+  try {
+    return await fn(kit);
+  } finally {
+    await kit.close();
+  }
+}
+
+/** A user with a token (built-in commands of the server CLI), the token kept secret. */
+async function userWithToken(admin: Admin, name: string): Promise<string> {
+  assert.equal((await admin.run(['user', 'create', name])).code, 0);
+  const issued = await admin.run(['token', 'issue', name]);
+  assert.equal(issued.code, 0, issued.text);
+  const token = issued.out.find((line) => /^[A-Za-z0-9_-]{43}$/.test(line));
+  assert.ok(token);
+  secrets.add(token);
+  // Built-in issue prints the token once, by design; that line is not one of the assembly's outputs.
+  admin.deployment.printed.splice(admin.deployment.printed.indexOf(token), 1);
+  return token;
+}
+
+async function expectOk(admin: Admin, argv: string[], env?: Record<string, string>): Promise<RunResult> {
+  const result = await admin.run(argv, env);
+  assert.equal(result.code, 0, `${argv.join(' ')}\n${result.text}`);
+  return result;
+}
+
+/** A fake security tool holding generic-password items in memory; `locked` makes every read of a secret fail (exit 36). */
+function fakeKeychain() {
+  const items = new Map<string, string>();
+  const state = { locked: false };
+  const keyOf = (args: readonly string[]) => `${args[args.indexOf('-s') + 1]}/${args[args.indexOf('-a') + 1]}`;
+  const runner: CommandRunner = async (_command, args, options = {}) => {
+    if (args[0] === '-i') {
+      const m = /^add-generic-password -s (\S+) -a (\S+) -w ([0-9a-f]{64})\n$/.exec(options.input ?? '');
+      if (m === null) return { code: 1, stdout: '', stderr: 'bad command' };
+      items.set(`${m[1]}/${m[2]}`, m[3]);
+      return { code: 0, stdout: '', stderr: '' };
+    }
+    if (args[0] === 'find-generic-password') {
+      const value = items.get(keyOf(args));
+      if (value === undefined) return { code: 44, stdout: '', stderr: 'The specified item could not be found in the keychain.' };
+      if (!args.includes('-w')) return { code: 0, stdout: 'keychain: "synthetic"\n', stderr: '' };
+      return state.locked ? { code: 36, stdout: '', stderr: 'User interaction is not allowed.' } : { code: 0, stdout: `${value}\n`, stderr: '' };
+    }
+    return { code: 1, stdout: '', stderr: 'unexpected' };
+  };
+  return { runner, items, state };
+}
+
+async function countRecords(kit: RecordsKit, kind: RecordKind): Promise<number> {
+  let count = 0;
+  let cursor: string | null = null;
+  do {
+    const page: { items: unknown[]; next: string | null } = await kit.store.list({ kind, limit: 500, cursor });
+    count += page.items.length;
+    cursor = page.next;
+  } while (cursor !== null);
+  return count;
+}
+
+describe('init-admin and the operator token', () => {
+  test('init-admin creates the first admin and stores its token without printing it; it is refused once an admin exists', async () => {
+    const admin = await setup();
+    const token = admin.tokens?.value;
+    assert.ok(token, 'the token is in the store');
+    const principal = await withKit(admin, (kit) => kit.principals.authenticate(`Bearer ${token}`));
+    assert.equal(principal?.role, 'admin');
+    assert.equal(principal?.name, '根管理员');
+    // The keychain item is the normal path; an exported CIRCLE_HUB_TOKEN would make serve refuse to start.
+    assert.match(admin.init?.text ?? '', /它的令牌 tok_[0-9a-z]{26} 已存进测试钥匙串，没有显示/);
+    assert.match(admin.init?.text ?? '', /之后改变状态的命令（user、token 和 pack、resource、secret、knowledge 里的这类命令）都从这个钥匙串项读管理员令牌/);
+    assert.doesNotMatch(admin.init?.text ?? '', /CIRCLE_HUB_TOKEN/);
+    const again = await admin.run(['init-admin', '第二位']);
+    assert.equal(again.code, 1);
+    assert.match(again.text, /已经有管理员/);
+    assert.match(again.text, /token issue/);
+    assert.match(again.text, /操作令牌丢了（钥匙串项丢失，或它的令牌已撤销）就用 circle-hub operator-token reissue/, 'a way that works without the token');
+    assert.equal((await admin.run(['init-admin'])).code, 2);
+  });
+
+  test('init-admin refuses when the store already holds a token, and creates nobody', async () => {
+    const admin = await setup({ tokens: memoryOperatorTokens('A'.repeat(43), '测试钥匙串'), initAdmin: false });
+    const result = await admin.run(['init-admin', '根管理员']);
+    assert.equal(result.code, 1);
+    assert.match(result.text, /测试钥匙串里已经有操作令牌/);
+    assert.equal((await withKit(admin, (kit) => kit.principals.list())).length, 0);
+  });
+
+  test('when the token cannot be stored, the admin exists, its token is revoked and the fix is operator-token reissue, which needs no token', async () => {
+    const failing = Object.assign(memoryOperatorTokens(null, '测试钥匙串'), {
+      async write() {
+        throw new Error('钥匙串已锁定（合成）');
+      },
+    });
+    const admin = await setup({ tokens: failing, initAdmin: false });
+    const result = await admin.run(['init-admin', '根管理员']);
+    assert.equal(result.code, 1);
+    assert.match(result.text, /没能存进测试钥匙串：钥匙串已锁定（合成）。这个令牌已撤销，没有显示/);
+    assert.match(result.text, /处理：钥匙串能用后（例如解锁了钥匙串）用 circle-hub operator-token reissue --as 根管理员 签发新令牌存进钥匙串（不显示）$/);
+    assert.doesNotMatch(result.text, /token issue/, 'never a command that needs the token that could not be stored');
+    await withKit(admin, async (kit) => {
+      const user = (await kit.principals.findByName('根管理员'))!;
+      const tokens = await kit.principals.tokens(user.id);
+      assert.equal(tokens.length, 1);
+      assert.notEqual(tokens[0].revoked_at, null, 'the unseen token was revoked');
+    });
+    assert.ok(!result.out.some((line) => /^[A-Za-z0-9_-]{43}$/.test(line)), 'no token printed');
+  });
+
+  test('when the token cannot be stored and its revocation is not confirmed, init-admin says the token may be live and names token revoke', async () => {
+    let open: () => Promise<RecordsKit> = () => Promise.reject(new Error('not set up'));
+    const failing = Object.assign(memoryOperatorTokens(null, '测试钥匙串'), {
+      async write() {
+        // The token is taken away before the command's own revocation, which then finds nothing to revoke (false).
+        const kit = await open();
+        try {
+          const user = (await kit.principals.findByName('根管理员'))!;
+          const [issued] = await kit.principals.tokens(user.id);
+          await kit.principals.revokeToken({ id: user.id, name: user.name, role: user.role }, issued.id);
+        } finally {
+          await kit.close();
+        }
+        throw new Error('读回超时（合成）');
+      },
+    });
+    const admin = await setup({ tokens: failing, initAdmin: false });
+    open = admin.kit;
+    const result = await admin.run(['init-admin', '根管理员']);
+    assert.equal(result.code, 1);
+    assert.match(result.text, /这个没有显示过的令牌 (tok_[0-9a-z]{26}) 没能确认已经撤销/);
+    const id = /令牌 (tok_[0-9a-z]{26}) 没能确认/.exec(result.text)![1];
+    // First a working operator token (the reissue needs none), then the revocation (which needs one).
+    assert.match(result.text, new RegExp(`处理：钥匙串能用后（例如解锁了钥匙串）用 circle-hub operator-token reissue --as 根管理员 签发新令牌存进钥匙串（不显示）；再用 circle-hub token revoke ${id} 撤销这个没有显示过的令牌$`));
+    assert.doesNotMatch(result.text, /这个令牌已撤销/);
+  });
+
+  test('when the revocation itself fails, init-admin says so with the reason (a fake context, no database)', async () => {
+    const at = '2026-10-22T00:00:00.000Z';
+    const user = { id: 'usr_00000000000000000000000001', name: '根管理员', role: 'admin', disabled: false, created_at: at } as unknown as User;
+    const kit = {
+      principals: {
+        list: async () => [],
+        bootstrapAdmin: async () => ({ user, token: { id: 'tok_00000000000000000000000001', token: 'A'.repeat(43), label: '', created_at: at } }),
+        revokeToken: async () => {
+          throw new Error('数据库连接断开（合成）');
+        },
+      },
+    } as unknown as RecordsKit;
+    const config: HubConfig = {
+      dataDir: join(harness.scratch, 'fake-data'),
+      logDir: join(harness.scratch, 'fake-data', 'logs'),
+      host: '127.0.0.1',
+      port: 0,
+      database: { host: harness.postgres.socketDir, port: harness.postgres.config.port, database: 'unused', user: 'unused' },
+      keychain: { service: 'circle-hub-test', account: 'vault' },
+      limits: { ...DEFAULT_LIMITS },
+      jev: { model: DEFAULT_JEV_MODEL },
+    };
+    const store = Object.assign(memoryOperatorTokens(null, '测试钥匙串'), {
+      async write() {
+        throw new Error('钥匙串已锁定（合成）');
+      },
+    });
+    const ctx: CliContext = {
+      io: { stdout: () => {}, stderr: () => {}, env: {}, cwd: harness.scratch },
+      config: () => config,
+      records: async () => kit,
+      deps: async () => Promise.reject(new Error('not used')),
+      actingAdmin: async () => Promise.reject(new Error('not used')),
+    };
+    const initAdmin = adminCommands({ tokens: () => store }).find((command) => command.name === 'init-admin')!;
+    await assert.rejects(initAdmin.run(['根管理员'], ctx), (error: unknown) => {
+      assert.ok(error instanceof CliError);
+      assert.match(error.message, /没能存进测试钥匙串：钥匙串已锁定（合成）。这个没有显示过的令牌 tok_00000000000000000000000001 没能确认已经撤销（数据库连接断开（合成））/);
+      assert.equal(
+        error.hint,
+        '钥匙串能用后（例如解锁了钥匙串）用 circle-hub operator-token reissue --as 根管理员 签发新令牌存进钥匙串（不显示）；再用 circle-hub token revoke tok_00000000000000000000000001 撤销这个没有显示过的令牌',
+      );
+      return true;
+    });
+  });
+
+  test('a lost keychain item is recovered without any token: operator-token reissue stores a new admin token, never shown, and every refusal on the way names it', async () => {
+    const admin = await setup();
+    const original = admin.tokens!.value!;
+    await userWithToken(admin, '甲');
+    // The item is lost (a reset login keychain, another Mac); init-admin never showed its token.
+    admin.tokens!.value = null;
+    for (const argv of [['token', 'issue', '根管理员', '--raw'], ['user', 'create', '新管理员', '--role', 'admin'], ['pack', 'grant-publish', '根管理员']]) {
+      const refused = await admin.run(argv);
+      assert.equal(refused.code, 1, argv.join(' '));
+      assert.match(refused.text, /要管理员令牌，没有找到/);
+      assert.match(refused.text, /用 circle-hub operator-token reissue 给一位启用中的管理员签发新令牌存进测试钥匙串（不显示）/, argv.join(' '));
+    }
+    const init = await admin.run(['init-admin', '另一位']);
+    assert.match(init.text, /operator-token reissue/);
+    // operator-token set wants a token; without one its refusal names the reissue, never `token issue`.
+    admin.stdin.push('B'.repeat(43));
+    const set = await admin.run(['operator-token', 'set']);
+    assert.equal(set.code, 1);
+    assert.match(set.text, /手里没有的话，用 circle-hub operator-token reissue 给一位启用中的管理员签发新令牌，直接存进钥匙串（不显示）/);
+    assert.doesNotMatch(set.text, /token issue/);
+
+    const reissued = await admin.run(['operator-token', 'reissue']);
+    assert.equal(reissued.code, 0, reissued.text);
+    const token = admin.tokens!.value;
+    assert.ok(token !== null && token !== original, 'a new token is in the item');
+    secrets.add(token);
+    assert.ok(!reissued.text.includes(token), 'never shown');
+    const id = /签发新的操作令牌 (tok_[0-9a-z]{26})/.exec(reissued.text)?.[1];
+    assert.ok(id, reissued.text);
+    assert.match(reissued.text, /^已为管理员 根管理员（usr_[0-9a-z]{26}）签发新的操作令牌 tok_[0-9a-z]{26}，存进了测试钥匙串，没有显示/);
+    assert.match(reissued.text, /原来的操作令牌如果还有效（例如还留在另一台 Mac 的钥匙串里），用 circle-hub token list 根管理员 查看/);
+    await withKit(admin, async (kit) => {
+      assert.equal((await kit.principals.authenticate(`Bearer ${token}`))?.name, '根管理员');
+      const root = (await kit.principals.findByName('根管理员'))!;
+      const issued = (await kit.principals.tokens(root.id)).find((t) => t.id === id)!;
+      assert.equal(issued.label, '操作令牌（重新签发）', 'the token list says where it came from');
+      assert.equal(issued.created_by, root.id);
+    });
+    // The changing commands, built-in and the assembly's, act with it again.
+    await expectOk(admin, ['user', 'create', '乙']);
+    await expectOk(admin, ['pack', 'grant-publish', '根管理员']);
+    // A reissue never replaces an item, working or not.
+    const twice = await admin.run(['operator-token', 'reissue']);
+    assert.equal(twice.code, 1);
+    assert.match(twice.text, /测试钥匙串里已经有操作令牌，不覆盖/);
+    assert.match(twice.text, /钥匙串访问/);
+    assert.equal(admin.tokens!.value, token, 'unchanged');
+  });
+
+  test('revoking the operator token itself is done and said, with the way back; a dead item is replaced by a reissue once it is removed', async () => {
+    const admin = await setup();
+    const original = admin.tokens!.value!;
+    const bootstrap = await withKit(admin, async (kit) => (await kit.principals.tokens((await kit.principals.findByName('根管理员'))!.id))[0].id);
+    // Revocation is how a leaked token is stopped: it is never refused, and here it cuts off the item's own token.
+    const revoked = await admin.run(['token', 'revoke', bootstrap]);
+    assert.equal(revoked.code, 0, revoked.text);
+    assert.ok(revoked.out.includes(`令牌 ${bootstrap} 已撤销，立即失效`));
+    assert.ok(
+      revoked.err.includes('注意：测试钥匙串里的操作令牌现在已不能用（令牌已撤销或账号已停用）：之后改变状态的命令会被拒绝；恢复：在“钥匙串访问”里删掉这个项，再运行 circle-hub operator-token reissue（给一位启用中的管理员签发新令牌存进钥匙串，不显示；有几位管理员时加 --as <管理员>）'),
+      revoked.text,
+    );
+    const dead = await admin.run(['token', 'issue', '根管理员', '--raw']);
+    assert.equal(dead.code, 1);
+    assert.match(dead.text, /令牌无效，或者不属于启用中的管理员/);
+    assert.match(dead.text, /处理：测试钥匙串里的操作令牌已不能用（已撤销、账号已停用或不再是管理员）：在“钥匙串访问”里删掉这个项，再运行 circle-hub operator-token reissue/);
+    assert.equal((await admin.run(['operator-token', 'reissue'])).code, 1, 'the dead item is still there');
+    admin.tokens!.value = null; // removed in Keychain Access
+    await expectOk(admin, ['operator-token', 'reissue']);
+    secrets.add(admin.tokens!.value!);
+    assert.notEqual(admin.tokens!.value, original);
+    // Revoking another token says nothing more.
+    const other = await userWithToken(admin, '甲');
+    const otherId = await withKit(admin, async (kit) => (await kit.principals.tokens((await kit.principals.findByName('甲'))!.id))[0].id);
+    const quiet = await admin.run(['token', 'revoke', otherId]);
+    assert.equal(quiet.code, 0);
+    assert.deepEqual(quiet.err, [], 'the operator token still works');
+    assert.ok(!quiet.text.includes(other));
+    // CIRCLE_HUB_TOKEN for one command: revoking that very token is said for it alone.
+    await expectOk(admin, ['user', 'create', '第二管理员', '--role', 'admin']);
+    const extra = await expectOk(admin, ['token', 'issue', '第二管理员', '--raw']);
+    const extraToken = extra.out[0];
+    secrets.add(extraToken);
+    admin.deployment.printed.splice(admin.deployment.printed.indexOf(extraToken), 1);
+    const extraId = /签发令牌 (tok_[0-9a-z]{26})/.exec(extra.err[0])![1];
+    const self = await admin.run(['token', 'revoke', extraId], { [OPERATOR_TOKEN_VARIABLE]: extraToken });
+    assert.equal(self.code, 0, self.text);
+    assert.deepEqual(self.err, ['注意：CIRCLE_HUB_TOKEN 给这条命令的管理员令牌现在已不能用（令牌已撤销或账号已停用）']);
+    assert.ok(!self.text.includes(extraToken));
+  });
+
+  test('disabling the operator token\'s own account is said, with the way back through another admin', async () => {
+    const admin = await setup();
+    await expectOk(admin, ['user', 'create', '第二管理员', '--role', 'admin']);
+    const disabled = await admin.run(['user', 'disable', '根管理员']);
+    assert.equal(disabled.code, 0, disabled.text);
+    assert.match(disabled.err.join('\n'), /注意：测试钥匙串里的操作令牌现在已不能用（令牌已撤销或账号已停用）：之后改变状态的命令会被拒绝；恢复：/);
+    admin.tokens!.value = null;
+    // Two admins existed; one is enabled now, so --as may be left out.
+    const reissued = await expectOk(admin, ['operator-token', 'reissue']);
+    assert.match(reissued.text, /^已为管理员 第二管理员（/);
+    secrets.add(admin.tokens!.value!);
+    await expectOk(admin, ['user', 'enable', '根管理员']);
+  });
+
+  test('operator-token reissue names its admin among several, refuses a user and revokes a token it cannot store', async () => {
+    const admin = await setup();
+    await expectOk(admin, ['user', 'create', '第二管理员', '--role', 'admin']);
+    await userWithToken(admin, '甲');
+    admin.tokens!.value = null;
+    const ambiguous = await admin.run(['operator-token', 'reissue']);
+    assert.equal(ambiguous.code, 1);
+    assert.match(ambiguous.text, /有多位管理员，要用 --as <名字> 指明以谁的身份操作/);
+    const user = await admin.run(['operator-token', 'reissue', '--as', '甲']);
+    assert.equal(user.code, 1);
+    assert.match(user.text, /甲 不是启用中的管理员/);
+    assert.equal((await admin.run(['operator-token', 'reissue', 'extra'])).code, 2);
+    assert.equal(admin.tokens!.value, null, 'nothing was stored');
+    const named = await expectOk(admin, ['operator-token', 'reissue', '--as', '第二管理员']);
+    assert.match(named.text, /^已为管理员 第二管理员（/);
+    const stored = admin.tokens!.value!;
+    secrets.add(stored);
+    assert.equal((await withKit(admin, (kit) => kit.principals.authenticate(`Bearer ${stored}`)))?.name, '第二管理员');
+    // A keychain that refuses the write: the issued token is revoked, never shown, and the message says so.
+    admin.tokens!.value = null;
+    const write = admin.tokens!.write;
+    admin.tokens!.write = async () => {
+      throw new Error('钥匙串已锁定（合成）');
+    };
+    try {
+      const failed = await admin.run(['operator-token', 'reissue', '--as', '根管理员']);
+      assert.equal(failed.code, 1);
+      assert.match(failed.text, /^错误：已为管理员 根管理员（usr_[0-9a-z]{26}）签发新的操作令牌 tok_[0-9a-z]{26}，但令牌没能存进测试钥匙串：钥匙串已锁定（合成）。这个令牌已撤销，没有显示/);
+      const id = /操作令牌 (tok_[0-9a-z]{26})，但/.exec(failed.text)![1];
+      await withKit(admin, async (kit) => {
+        const root = (await kit.principals.findByName('根管理员'))!;
+        assert.notEqual((await kit.principals.tokens(root.id)).find((t) => t.id === id)?.revoked_at, null, 'the unseen token was revoked');
+      });
+    } finally {
+      admin.tokens!.write = write;
+    }
+  });
+
+  test('operator-token set stores an enabled admin\'s token read from stdin; it refuses an existing item, a user\'s token and anything invalid', async () => {
+    const admin = await setup();
+    const original = admin.tokens!.value!;
+    admin.stdin.push(original);
+    const exists = await admin.run(['operator-token', 'set']);
+    assert.equal(exists.code, 1);
+    assert.match(exists.text, /测试钥匙串里已经有操作令牌，不覆盖/);
+    assert.match(exists.text, /钥匙串访问/);
+    assert.deepEqual(admin.stdin, [original], 'no token was read for an item that exists');
+    admin.stdin.length = 0;
+    const userToken = await userWithToken(admin, '甲');
+    // The item is lost (another Mac, a reset keychain).
+    admin.tokens!.value = null;
+    for (const [given, why] of [
+      [userToken, /不属于启用中的管理员/],
+      ['B'.repeat(43), /令牌无效/],
+      ['不是令牌', /令牌无效/],
+    ] as const) {
+      admin.stdin.push(given);
+      const refused = await admin.run(['operator-token', 'set']);
+      assert.equal(refused.code, 1, refused.text);
+      assert.match(refused.text, why);
+      assert.equal(admin.tokens!.value, null, 'nothing was stored');
+    }
+    admin.stdin.push(`${original}\n`);
+    const set = await admin.run(['operator-token', 'set']);
+    assert.equal(set.code, 0, set.text);
+    assert.equal(admin.tokens!.value, original, 'the admin\'s token is in the item again');
+    assert.match(set.text, /已把管理员 根管理员（usr_[0-9a-z]{26}）的操作令牌存进测试钥匙串，没有显示/);
+    // The changing commands, built-in and the assembly's, act with it again.
+    assert.equal((await admin.run(['pack', 'grant-publish', '根管理员'])).code, 0);
+    assert.equal((await admin.run(['user', 'create', '乙'])).code, 0);
+    assert.equal((await admin.run(['operator-token', 'show'])).code, 2);
+    assert.equal((await admin.run(['operator-token', 'set', 'extra'])).code, 2);
+    for (const line of [...exists.out, ...exists.err, ...set.out, ...set.err]) assert.ok(!line.includes(original) && !line.includes(userToken), 'no token printed');
+  });
+
+  test('every state-changing command is refused without a token, with a non-admin token and with an invalid one', async () => {
+    const admin = await setup();
+    const userToken = await userWithToken(admin, '甲');
+    const changing: string[][] = [
+      ['pack', 'publish', packs.review],
+      ['pack', 'grant-publish', '甲'],
+      ['pack', 'revoke-publish', '甲'],
+      ['pack', 'assign', '甲', REVIEW_PACK],
+      ['pack', 'unassign', '甲', REVIEW_PACK],
+      ['pack', 'retire', `${REVIEW_PACK}@1.0.0`],
+      ['pack', 'activate', PRODUCT_PACK],
+      ['pack', 'deactivate', PRODUCT_PACK],
+      ['resource', 'add', AGILE_PACK, '--name', '合成敏捷', '--environment', 'test', '--origin', `agile-oauth=${agile.origin}`],
+      ['resource', 'disable', 'res_00000000000000000000000000'],
+      ['resource', 'enable', 'res_00000000000000000000000000'],
+      ['resource', 'reset-login', 'res_00000000000000000000000000'],
+      ['secret', 'set', 'jev', 'api-key'],
+      ['knowledge', 'sync', '--product', 'DEMO'],
+    ];
+    admin.stdin.push(JEV_KEY);
+    for (const argv of changing) {
+      const asUser = await admin.run(argv, { [OPERATOR_TOKEN_VARIABLE]: userToken });
+      assert.equal(asUser.code, 1, `${argv.join(' ')}: ${asUser.text}`);
+      assert.match(asUser.text, /不属于启用中的管理员/, argv.join(' '));
+      const invalid = await admin.run(argv, { [OPERATOR_TOKEN_VARIABLE]: 'B'.repeat(43) });
+      assert.equal(invalid.code, 1, argv.join(' '));
+      assert.match(invalid.text, /令牌无效/);
+    }
+    const stored = admin.tokens!.value;
+    admin.tokens!.value = null;
+    for (const argv of changing) {
+      const without = await admin.run(argv);
+      assert.equal(without.code, 1, argv.join(' '));
+      assert.match(without.text, /要管理员令牌，没有找到/);
+      // CIRCLE_HUB_TOKEN is offered for this one command only, never as an exported shell variable.
+      assert.match(without.text, /CIRCLE_HUB_TOKEN="\$T" circle-hub <命令>/);
+      assert.match(without.text, /不要 export CIRCLE_HUB_TOKEN/);
+    }
+    admin.tokens!.value = stored;
+    assert.deepEqual(admin.stdin, [JEV_KEY], 'no secret was read for a refused command');
+    await withKit(admin, async (kit) => {
+      assert.equal((await kit.store.list({ kind: 'pack_version' })).items.length, 0, 'nothing was published');
+      assert.equal(await kit.authorizations.canPublish((await kit.principals.findByName('甲'))!.id), false);
+      assert.deepEqual(await kit.vault.list(), [], 'nothing reached the vault');
+    });
+  });
+
+  test('CIRCLE_HUB_TOKEN acts for the command and is taken out of the environment before the configuration is read', async () => {
+    const admin = await setup();
+    const token = admin.tokens!.value!;
+    admin.tokens!.value = null;
+    const env: NodeJS.ProcessEnv = { ...admin.deployment.env, [OPERATOR_TOKEN_VARIABLE]: token };
+    const out: string[] = [];
+    const { main } = await import('../cli.ts');
+    const module: AssemblyModule = { assemble: createAssembly({ requireOsIsolation }), registerCommands: (register) => adminCommands({ tokens: () => admin.tokens!, assembly: { requireOsIsolation } }).forEach(register) };
+    const code = await main(['pack', 'grant-publish', '根管理员'], {
+      io: { stdout: (line) => out.push(line), stderr: (line) => out.push(line), env, cwd: harness.scratch },
+      keyProvider: () => admin.deployment.key,
+      assembly: async () => module,
+    });
+    assert.equal(code, 0, out.join('\n'));
+    assert.equal(Object.hasOwn(env, OPERATOR_TOKEN_VARIABLE), false);
+    assert.ok(!out.some((line) => line.includes(token)));
+  });
+
+  test('read-only commands act as the token\'s account: --as must name that account; without a token --as or the only admin', async () => {
+    const admin = await setup();
+    const userToken = await userWithToken(admin, '甲');
+    const asUser = { [OPERATOR_TOKEN_VARIABLE]: userToken };
+    for (const argv of [
+      ['resource', 'list', '--as', '根管理员'],
+      ['secret', 'list', '--as', '根管理员'],
+      ['pack', 'list', '--as', '根管理员'],
+      ['knowledge', 'roots', 'DEMO', '--as', '根管理员'],
+    ]) {
+      const result = await admin.run(argv, asUser);
+      assert.equal(result.code, 1, `${argv.join(' ')}: ${result.text}`);
+      assert.match(result.text, /--as 根管理员 与令牌的账号 甲 不一致：有令牌时只读命令以令牌的账号读取/);
+      assert.doesNotMatch(result.text, /还没有资源|密钥库里还没有条目|还没有发布任何任务包/, 'nothing of the admin view was printed');
+    }
+    assert.deepEqual((await expectOk(admin, ['pack', 'list', '--as', '甲'], asUser)).out, ['没有分配给你的任务包'], '--as naming the token\'s own account');
+    const invalid = await admin.run(['pack', 'list'], { [OPERATOR_TOKEN_VARIABLE]: 'C'.repeat(43) });
+    assert.equal(invalid.code, 1);
+    assert.match(invalid.text, /错误：CIRCLE_HUB_TOKEN 的令牌无效（不存在、已撤销，或者账号已停用）/);
+    // The keychain item holds the admin's token: --as must name that admin too.
+    assert.equal((await admin.run(['pack', 'list', '--as', '甲'])).code, 1);
+    assert.deepEqual((await expectOk(admin, ['pack', 'list', '--as', '根管理员'])).out, ['还没有发布任何任务包']);
+    // No token at all: --as, or the only enabled admin (reads are not an access boundary).
+    admin.tokens!.value = null;
+    assert.deepEqual((await expectOk(admin, ['pack', 'list'])).out, ['还没有发布任何任务包']);
+    const notAdmin = await admin.run(['pack', 'list', '--as', '甲']);
+    assert.equal(notAdmin.code, 1);
+    assert.match(notAdmin.text, /甲 不是启用中的管理员/);
+  });
+
+  test('a keychain item that cannot be read costs a read-only command a notice, not the listing; a changing command is refused naming the operator token', async () => {
+    const keychain = fakeKeychain();
+    const services: string[] = [];
+    const admin = await setup({
+      store: (config, service) => {
+        services.push(service);
+        return keychainOperatorTokens({ service: service ?? config.keychain.service, runner: keychain.runner });
+      },
+      deployment: { extra: { CIRCLE_HUB_KEYCHAIN_SERVICE: 'circle-hub-rehearsal' } },
+    });
+    assert.deepEqual([...keychain.items.keys()], ['circle-hub-rehearsal/operator-token'], 'the item sits under the deployment\'s keychain service');
+    for (const hex of keychain.items.values()) {
+      secrets.add(hex);
+      secrets.add(Buffer.from(hex, 'hex').toString('base64url'));
+    }
+    await expectOk(admin, ['pack', 'grant-publish', '根管理员']);
+    keychain.state.locked = true;
+    for (const argv of [['pack', 'list'], ['secret', 'list'], ['resource', 'list']]) {
+      const result = await expectOk(admin, argv);
+      assert.ok(
+        result.err.some((line) => line === `注意：读不出钥匙串（服务 circle-hub-rehearsal，账户 operator-token）里的操作令牌（读取${OPERATOR_TOKEN_ITEM.label}失败（security 退出码 36）：User interaction is not allowed.）；这个只读命令按唯一启用的管理员读取`),
+        result.text,
+      );
+      assert.ok(!result.text.includes(VAULT_KEY_ITEM.label), 'the item is the operator token, not the vault master key');
+    }
+    const refused = await admin.run(['pack', 'revoke-publish', '根管理员']);
+    assert.equal(refused.code, 1);
+    assert.match(refused.text, new RegExp(`错误：读不出钥匙串（服务 circle-hub-rehearsal，账户 operator-token）里的操作令牌：读取${OPERATOR_TOKEN_ITEM.label}失败（security 退出码 36）`));
+    assert.match(refused.text, /处理：在这台 Mac 的登录会话里解锁钥匙串后重试；或者只给这一条命令一个令牌/);
+    assert.ok(!refused.text.includes(VAULT_KEY_ITEM.label), 'the platform\'s vault key wording, whatever it is, never names this item');
+    await withKit(admin, async (kit) => assert.equal(await kit.authorizations.canPublish((await kit.principals.findByName('根管理员'))!.id), true, 'nothing changed'));
+    assert.ok(services.length > 0 && services.every((service) => service === 'circle-hub-rehearsal'), services.join(' '));
+  });
+});
+
+describe('pack', () => {
+  test('publish needs the publish right; then publish, list, assign, activate, unassign and retire', async () => {
+    const admin = await setup();
+    const userToken = await userWithToken(admin, '甲');
+    const refused = await admin.run(['pack', 'publish', packs.review]);
+    assert.equal(refused.code, 1);
+    assert.match(refused.text, /publish\.no_right/);
+    assert.match(refused.text, /pack grant-publish 根管理员/);
+    await expectOk(admin, ['pack', 'grant-publish', '根管理员']);
+    const published = await expectOk(admin, ['pack', 'publish', packs.review]);
+    assert.match(published.text, /已发布 demo-check@1\.0\.0（工作流包，摘要 [0-9a-f]{64}）：样例 4\/4 通过/);
+    assert.match(published.text, /pack assign <用户> demo-check/);
+    assert.match((await expectOk(admin, ['pack', 'publish', packs.review])).text, /已经以同样的内容发布过/);
+    const brokenDir = (await writePack(join(packRoot, 'broken'), withFiles(reviewPack('1.0.1'), { 'samples/negative/codes-bad.json': null }))).dir;
+    const broken = await admin.run(['pack', 'publish', brokenDir]);
+    assert.equal(broken.code, 1);
+    assert.match(broken.text, /\[publish\.unsampled\]/);
+    assert.match(broken.text, /任务包没有发布：1 个问题/);
+    await expectOk(admin, ['pack', 'publish', packs.agile]);
+    assert.match((await expectOk(admin, ['pack', 'publish', packs.product])).text, /pack activate demo/);
+
+    const listed = await expectOk(admin, ['pack', 'list']);
+    assert.ok(listed.out.some((line) => line.startsWith('demo-check@1.0.0\t工作流包\t合成用例检查\t已发布\t所有者 根管理员')), listed.text);
+    assert.ok(listed.out.some((line) => line.startsWith('demo@1.0.0\t产品包\t合成产品线\t未启用')));
+    assert.ok(listed.out.some((line) => line.startsWith('demo-agile@1.0.0\t系统包')));
+
+    await expectOk(admin, ['pack', 'assign', '甲', REVIEW_PACK]);
+    const product = await admin.run(['pack', 'assign', '甲', PRODUCT_PACK]);
+    assert.equal(product.code, 1);
+    assert.match(product.text, /处理：用 activate 启用这个产品包/);
+    assert.equal((await admin.run(['pack', 'assign', '甲', AGILE_PACK])).code, 1);
+    assert.equal((await admin.run(['pack', 'assign', '甲', `${REVIEW_PACK}@1.0.0`])).code, 2, 'assignments name a pack id');
+    const mine = await expectOk(admin, ['pack', 'list'], { [OPERATOR_TOKEN_VARIABLE]: userToken });
+    assert.deepEqual(mine.out, ['demo-check@1.0.0\t工作流包\t合成用例检查\t已发布'], 'a user sees the packs assigned to them');
+    assert.match((await expectOk(admin, ['pack', 'list'])).text, /分配给 甲/);
+
+    await expectOk(admin, ['pack', 'activate', PRODUCT_PACK]);
+    assert.ok((await expectOk(admin, ['pack', 'list'])).out.some((line) => line.startsWith('demo@1.0.0\t产品包\t合成产品线\t已启用')));
+    await expectOk(admin, ['pack', 'deactivate', PRODUCT_PACK]);
+    assert.ok((await expectOk(admin, ['pack', 'list'])).out.some((line) => line.startsWith('demo@1.0.0\t产品包\t合成产品线\t未启用')));
+
+    await expectOk(admin, ['pack', 'unassign', '甲', REVIEW_PACK]);
+    assert.deepEqual((await expectOk(admin, ['pack', 'list'], { [OPERATOR_TOKEN_VARIABLE]: userToken })).out, ['没有分配给你的任务包']);
+    await expectOk(admin, ['pack', 'retire', `${REVIEW_PACK}@1.0.0`]);
+    assert.ok((await expectOk(admin, ['pack', 'list'])).out.some((line) => line.startsWith('demo-check@1.0.0\t工作流包\t合成用例检查\t已下架')));
+    assert.equal((await admin.run(['pack', 'retire', REVIEW_PACK])).code, 2, 'retire names a version');
+    assert.equal((await admin.run(['pack'])).code, 2);
+    assert.equal((await admin.run(['pack', 'revoke-publish', '根管理员'])).code, 0);
+    assert.equal((await admin.run(['pack', 'publish', packs.site])).code, 1, 'without the right again');
+  });
+
+  test('text from a pack, a resource or an argument reaches the terminal with every control character shown as an escape', async () => {
+    const admin = await setup();
+    await expectOk(admin, ['pack', 'grant-publish', '根管理员']);
+    const ESC = String.fromCodePoint(0x1b);
+    const BEL = String.fromCodePoint(0x07);
+    const CSI = String.fromCodePoint(0x9b);
+    const RLO = String.fromCodePoint(0x202e);
+    // A title that would clear the line, move up, fake a second line, colour the rest and reverse it.
+    const title = `${ESC}[2K${ESC}[1A伪造的行\n第二行${CSI}31m${RLO}反向${BEL}`;
+    const dir = (await writePack(join(packRoot, 'hostile-title'), { ...reviewPack('1.0.0'), title })).dir;
+    await expectOk(admin, ['pack', 'publish', dir]);
+    const listed = await expectOk(admin, ['pack', 'list']);
+    const line = listed.out.find((l) => l.startsWith('demo-check@1.0.0\t'));
+    assert.ok(line, listed.text);
+    const shown = ['\\x1b[2K\\x1b[1A伪造的行\\x0a第二行\\x9b31m', '\\', 'u202e反向\\x07'].join('');
+    assert.equal(line.split('\t')[2], shown);
+    await expectOk(admin, ['pack', 'publish', packs.agile]);
+    const renamed = await expectOk(admin, [
+      'resource', 'add', AGILE_PACK, '--name', `合成${ESC}]0;改了标题${BEL}`, '--environment', 'test',
+      '--origin', `agile-oauth=${agile.origin}`, '--origin', `agile-api=${agile.origin}`, '--allow-plaintext', 'agile-oauth', '--allow-plaintext', 'agile-api',
+    ]);
+    const usage = await admin.run(['pack', 'retire', `${ESC}[31m坏${BEL}`]);
+    assert.equal(usage.code, 2);
+    const printed = [...listed.out, ...listed.err, ...usage.out, ...usage.err, ...renamed.out, ...renamed.err];
+    for (const text of printed) {
+      assert.ok(![ESC, BEL, CSI, RLO].some((char) => text.includes(char)), `a raw control character reached the terminal: ${JSON.stringify(text.slice(0, 120))}`);
+    }
+    // The line breaks in the title cannot fake a line (the server core's own usage block is one multi-line text by design).
+    assert.ok(!line.includes('\n'));
+    assert.ok(usage.err.some((l) => l === '错误：下架要写 <包号>@<版本>：\\x1b[31m坏\\x07'), usage.text);
+    assert.ok(renamed.out.some((l) => l.includes('合成\\x1b]0;改了标题\\x07')), renamed.text);
+  });
+});
+
+describe('resource and secret', () => {
+  test('add and list a resource, set its credentials from stdin (the password kept as its digest), read through it, disable and enable', async () => {
+    const admin = await setup();
+    await expectOk(admin, ['pack', 'grant-publish', '根管理员']);
+    await expectOk(admin, ['pack', 'publish', packs.agile]);
+    const usage = [
+      ['resource', 'add', AGILE_PACK, '--name', 'x', '--environment', 'staging', '--origin', `agile-oauth=${agile.origin}`],
+      ['resource', 'add', AGILE_PACK, '--environment', 'test', '--origin', `agile-oauth=${agile.origin}`],
+      ['resource', 'add', AGILE_PACK, '--name', 'x', '--environment', 'test', '--origin', `agile-oauth=${agile.origin}`, '--allow-plaintext', 'agile-api'],
+      ['resource', 'add', AGILE_PACK, '--name', 'x', '--environment', 'test', '--origin', 'no-equals-sign'],
+      ['resource', 'add', '--name', 'x', '--environment', 'test'],
+    ];
+    for (const argv of usage) assert.equal((await admin.run(argv)).code, 2, argv.join(' '));
+    assert.match((await admin.run(usage[0])).text, /test（测试）、shared（共享）、production（生产）/);
+    const added = await expectOk(admin, [
+      'resource',
+      'add',
+      AGILE_PACK,
+      '--name',
+      '合成敏捷平台',
+      '--environment',
+      'test',
+      '--origin',
+      `agile-oauth=${agile.origin}`,
+      '--origin',
+      `agile-api=${agile.origin}`,
+      '--allow-plaintext',
+      'agile-oauth',
+      '--allow-plaintext',
+      'agile-api',
+      '--setting',
+      'roots=["7714"]',
+    ]);
+    const id = /已添加资源 (res_[0-9a-z]{26})：合成敏捷平台（系统包 demo-agile@1\.0\.0，环境 测试）/.exec(added.text)?.[1];
+    assert.ok(id, added.text);
+    assert.match(added.text, new RegExp(`凭据项 username、password：用 circle-hub secret set ${id} <凭据项> 设置`));
+    const listed = await expectOk(admin, ['resource', 'list']);
+    assert.equal(listed.out.length, 1);
+    const fields = listed.out[0].split('\t');
+    assert.deepEqual(fields.slice(0, 5), [id, '合成敏捷平台', 'demo-agile@1.0.0', '测试', '启用']);
+    assert.deepEqual(fields[5].split(' ').sort(), [`agile-api=${agile.origin}`, `agile-oauth=${agile.origin}`]);
+    assert.deepEqual(fields.slice(6), [`允许明文 ${agile.origin}`, '密钥库里的登录状态：还没有登录']);
+
+    admin.stdin.push('reader', PASSWORD);
+    assert.match((await expectOk(admin, ['secret', 'set', id, 'username'])).text, /按系统包的规则原样存进密钥库/);
+    const set = await expectOk(admin, ['secret', 'set', id, 'password']);
+    assert.match(set.text, /只存它的 Base64\(SHA-512\) 摘要，不存原值/);
+    assert.ok(set.err.some((line) => line.startsWith(`连接器：credential_set ${id} `)), 'the assembly\'s log lines reach the command\'s stderr, which the secret scan covers');
+    const missing = await admin.run(['secret', 'set', id, 'token']);
+    assert.equal(missing.code, 1, 'a credential the resource does not have');
+    assert.match(missing.text, /没有凭据项 token/);
+    assert.match(missing.text, /它的凭据项是 (username、password|password、username)/);
+    assert.equal((await admin.run(['secret', 'set', 'res_00000000000000000000000000', 'password'])).code, 1);
+    assert.equal((await admin.run(['secret', 'set', id])).code, 2);
+    assert.equal(admin.stdin.length, 0, 'nothing was read for a refused credential');
+    await withKit(admin, async (kit) => {
+      assert.equal(await kit.vault.getText(`connector.${id}.password`), passwordDigest(PASSWORD), 'Base64(SHA-512) as the profile says, never the value');
+      assert.equal(await kit.vault.getText(`connector.${id}.username`), 'reader');
+      // The stored digest logs in: a read through the resource works.
+      const hub = await assembleHub(loadServerConfig(admin.deployment.env), kit, { requireOsIsolation, resourceCacheMs: 0, log: (line) => admin.deployment.printed.push(line) });
+      const by = (await kit.principals.findByName('根管理员'))!;
+      const read = await hub.external.read(`agile:mindmap:${DOCUMENT}`, { principal: { id: by.id, name: by.name, role: by.role }, purpose: '测试' });
+      assert.equal(read.ok, true, read.ok ? '' : read.reason);
+    });
+    assert.equal(agile.logins, 1);
+
+    admin.stdin.push(JEV_KEY);
+    const jev = await expectOk(admin, ['secret', 'set', 'jev', 'api-key']);
+    assert.match(jev.text, /已设置类型化判断服务的密钥（密钥库条目 jev\.api-key/);
+    assert.match(jev.err.join('\n'), /启动之后才第一次设置的，要重启 Hub 才用上：circle-hub service stop，再 circle-hub service start/);
+    admin.stdin.push('not a key with spaces');
+    assert.equal((await admin.run(['secret', 'set', 'jev', 'api-key'])).code, 1);
+    assert.equal((await admin.run(['secret', 'set', 'jev', 'password'])).code, 2);
+    await withKit(admin, async (kit) => assert.equal(await kit.vault.getText(JEV_KEY_ENTRY), JEV_KEY, 'the refused value changed nothing'));
+
+    const names = await expectOk(admin, ['secret', 'list']);
+    assert.deepEqual(names.out.sort(), [
+      `connector.${id}.password\t资源 ${id} 的凭据 password`,
+      `connector.${id}.session\t资源 ${id} 的登录会话`,
+      `connector.${id}.username\t资源 ${id} 的凭据 username`,
+      `${JEV_KEY_ENTRY}\t类型化判断服务的密钥`,
+    ]);
+    const userToken = await userWithToken(admin, '甲');
+    assert.equal((await admin.run(['secret', 'list'], { [OPERATOR_TOKEN_VARIABLE]: userToken })).code, 1, 'names are for admins');
+    const forUser = await admin.run(['resource', 'list'], { [OPERATOR_TOKEN_VARIABLE]: userToken });
+    assert.equal(forUser.code, 1, 'resources are for admins');
+    assert.match(forUser.text, /只有管理员能列出资源/);
+
+    assert.match((await expectOk(admin, ['resource', 'list'])).out[0], /\t密钥库里的登录状态：已登录（到期 /);
+    await expectOk(admin, ['resource', 'disable', id]);
+    assert.match((await expectOk(admin, ['resource', 'list'])).out[0], /\t停用/);
+    await expectOk(admin, ['resource', 'enable', id]);
+    await expectOk(admin, ['resource', 'reset-login', id]);
+    assert.match((await expectOk(admin, ['resource', 'list'])).out[0], /\t启用\t.*\t密钥库里的登录状态：还没有登录$/);
+    assert.equal((await admin.run(['resource', 'disable', 'res_00000000000000000000000000'])).code, 1);
+  });
+
+  test('a credential set or a login reset clears the vault\'s login state; a running Hub ends its stop at its next read, without a restart, and both commands say so', async () => {
+    const admin = await setup();
+    const stub = await startAgileStub(agileFixture(DOCUMENT, { password: PASSWORD }));
+    try {
+      await expectOk(admin, ['pack', 'grant-publish', '根管理员']);
+      await expectOk(admin, ['pack', 'publish', packs.agile]);
+      const added = await expectOk(admin, [
+        'resource', 'add', AGILE_PACK, '--name', '合成敏捷平台', '--environment', 'test',
+        '--origin', `agile-oauth=${stub.origin}`, '--origin', `agile-api=${stub.origin}`,
+        '--allow-plaintext', 'agile-oauth', '--allow-plaintext', 'agile-api', '--setting', 'roots=["7714"]',
+      ]);
+      const id = /已添加资源 (res_[0-9a-z]{26})/.exec(added.text)![1];
+      admin.stdin.push('reader', WRONG_PASSWORD);
+      await expectOk(admin, ['secret', 'set', id, 'username']);
+      await expectOk(admin, ['secret', 'set', id, 'password']);
+
+      // The running Hub: an assembly of its own over the same records and vault, as `serve` has in its own process.
+      const kit = await admin.kit();
+      try {
+        const options = { requireOsIsolation, resourceCacheMs: 0, log: (line: string) => admin.deployment.printed.push(line) };
+        const server = await assembleHub(loadServerConfig(admin.deployment.env), kit, options);
+        const root = (await kit.principals.findByName('根管理员'))!;
+        const principal = { id: root.id, name: root.name, role: root.role };
+        const read = (hub = server) => hub.external.read(`agile:mindmap:${DOCUMENT}`, { principal, purpose: '测试' });
+        const refused = await read();
+        assert.equal(refused.ok, false);
+        assert.match(refused.ok ? '' : refused.reason, /LOGIN_FAILED/);
+        assert.equal(stub.logins, 1);
+        assert.equal((await server.connectors.admin.loginStatus(principal, id))?.stopped, true);
+        assert.match(
+          (await expectOk(admin, ['resource', 'list'])).out[0],
+          /\t密钥库里的登录状态：登录已停止（LOGIN_FAILED:1005）：用 secret set 重设凭据或 resource reset-login 解除（正在运行的 Hub 不用重启）$/,
+        );
+
+        admin.stdin.push(PASSWORD);
+        const set = await expectOk(admin, ['secret', 'set', id, 'password']);
+        assert.match(set.out.join('\n'), /密钥库里这个资源的登录状态已清除，Hub 下一次登录就用新的值/);
+        assert.match(set.err.join('\n'), /注意：正在运行的 Hub 下一次要用这个资源的凭据时会重读密钥库里的登录状态：它停下的登录或冷却随之解除，并用已存的凭据登录一次/);
+        assert.match(set.err.join('\n'), /不用重启 Hub/);
+        assert.doesNotMatch(set.text, /要重启 Hub 才解除/);
+        assert.match((await expectOk(admin, ['resource', 'list'])).out[0], /\t密钥库里的登录状态：还没有登录$/, 'the column is the vault\'s state, read fresh');
+        // What the messages describe (hub/connectors, "Between processes"): the running Hub reads the session entry again at
+        // its next read that needs the credential, ends the stop it held and logs in once with the new value.
+        const after = await read();
+        assert.equal(after.ok, true, after.ok ? '' : after.reason);
+        assert.equal(stub.logins, 2, 'one login with the new value, no restart');
+        const reset = await expectOk(admin, ['resource', 'reset-login', id]);
+        assert.match(reset.out.join('\n'), new RegExp(`资源 ${id} 在密钥库里的登录状态已清除：Hub 下一次要用这个资源的凭据时用已存的凭据登录一次`));
+        assert.match(reset.err.join('\n'), /它手里还有可用的令牌时照常用，到下一次登录才用新的值；不用重启 Hub/);
+        // The running Hub holds a usable token: it keeps using it, no new login.
+        assert.equal((await read()).ok, true);
+        assert.equal(stub.logins, 2);
+        // A restart finds no session entry and logs in once more.
+        const restarted = await assembleHub(loadServerConfig(admin.deployment.env), kit, options);
+        const again = await read(restarted);
+        assert.equal(again.ok, true, again.ok ? '' : again.reason);
+        assert.equal(stub.logins, 3);
+      } finally {
+        await kit.close();
+      }
+    } finally {
+      await stub.close();
+    }
+  });
+
+  test('without the vault master key the listings work, the login column says why, a reset works and secret set is refused before a value is read', async () => {
+    const admin = await setup({ deployment: { key: false } });
+    await expectOk(admin, ['pack', 'grant-publish', '根管理员']);
+    await expectOk(admin, ['pack', 'publish', packs.agile]);
+    const added = await expectOk(admin, [
+      'resource', 'add', AGILE_PACK, '--name', '合成敏捷平台', '--environment', 'test',
+      '--origin', `agile-oauth=${agile.origin}`, '--origin', `agile-api=${agile.origin}`, '--allow-plaintext', 'agile-oauth', '--allow-plaintext', 'agile-api',
+    ]);
+    const id = /已添加资源 (res_[0-9a-z]{26})/.exec(added.text)![1];
+    assert.match((await expectOk(admin, ['pack', 'list'])).out[0], /^demo-agile@1\.0\.0\t系统包/);
+    assert.deepEqual((await expectOk(admin, ['secret', 'list'])).out, ['密钥库里还没有条目']);
+    const listed = await expectOk(admin, ['resource', 'list']);
+    assert.match(listed.out[0], /\t登录状态读不出：密钥库主密钥不存在；密钥只在显式初始化时创建$/);
+    await expectOk(admin, ['resource', 'reset-login', id]);
+    admin.stdin.push(PASSWORD);
+    for (const argv of [['secret', 'set', id, 'password'], ['secret', 'set', 'jev', 'api-key'], ['knowledge', 'sync', '--product', 'DEMO']]) {
+      const refused = await admin.run(argv);
+      assert.equal(refused.code, 1, argv.join(' '));
+      assert.match(refused.text, /错误：密钥库主密钥不可用，这个命令要用密钥库，没有执行：密钥库主密钥不存在/, argv.join(' '));
+      assert.doesNotMatch(refused.text, /Hub 不启动/);
+    }
+    assert.deepEqual(admin.stdin, [PASSWORD], 'no value was read');
+  });
+});
+
+describe('knowledge', () => {
+  test('sync reports produced, skipped and failed builds and exits non-zero on a failure; a second sync produces nothing; roots and diff read the result', async () => {
+    const admin = await setup();
+    await expectOk(admin, ['pack', 'grant-publish', '根管理员']);
+    await expectOk(admin, ['pack', 'publish', packs.site]);
+    await expectOk(admin, ['pack', 'publish', packs.product]);
+    await expectOk(admin, ['pack', 'activate', PRODUCT_PACK]);
+    await expectOk(admin, ['resource', 'add', SITE_PACK, '--name', '合成构建站', '--environment', 'shared', '--origin', `build-site=${site.origin}`]);
+
+    const first = await admin.run(['knowledge', 'sync', '--product', 'DEMO']);
+    assert.equal(first.code, 1, first.text);
+    assert.match(first.text, /构建：产出 1，跳过 2，失败 1/);
+    assert.match(first.text, /\[产出\] Rel_DEMO_2_1_0_5（DEMO，2\.1\.0）/);
+    assert.match(first.text, /\[失败\] Rel_DEMO_2_0_0_9（DEMO，2\.0\.0）/);
+    assert.match(first.text, /\[跳过\] Rel_ALT_2_1_0_5（ALT，2\.1\.0，基于 Rel_DEMO_2_1_0_5）/);
+    assert.match(first.text, /\[跳过\] Rel_DEMO_2_1_0_6/);
+    assert.ok(first.err.some((line) => line.includes('没有类型化判断服务的密钥')), 'the sync says it runs without placement');
+
+    // Idempotence: the same sources and producer give no new root and no new node.
+    const trees = () => withKit(admin, async (kit) => ({ roots: await countRecords(kit, 'tree_root'), nodes: await countRecords(kit, 'tree_node') }));
+    const before = await trees();
+    assert.ok(before.roots > 0 && before.nodes > 0, JSON.stringify(before));
+    const again = await admin.run(['knowledge', 'sync', '--product', 'DEMO']);
+    assert.equal(again.code, 1, 'the build without a tree still fails');
+    assert.match(again.text, /构建：产出 0，/);
+    assert.match(again.text, /\[跳过\] Rel_DEMO_2_1_0_5（DEMO，2\.1\.0）：已有根，来源和生产器都没有变/);
+    assert.deepEqual(await trees(), before, 'no tree_root or tree_node record was written');
+
+    const line = await admin.run(['knowledge', 'sync', '--product', 'ALT', '--line', '2.1.0']);
+    assert.equal(line.code, 0, line.text);
+    assert.match(line.text, /失败 0/);
+    const dry = await admin.run(['knowledge', 'sync', '--product', 'demo', '--line', '2.1.0', '--include-unreleased', '--dry-run']);
+    assert.equal(dry.code, 0, dry.text);
+    assert.match(dry.text, /试运行/);
+    const newer = await admin.run(['knowledge', 'sync', '--product', 'demo', '--line', '2.1.0', '--include-unreleased']);
+    assert.equal(newer.code, 0, newer.text);
+    assert.match(newer.text, /\[产出\] Rel_DEMO_2_1_0_6/);
+    assert.equal((await admin.run(['knowledge', 'sync', '--product', 'nothing'])).code, 1);
+    assert.equal((await admin.run(['knowledge', 'sync'])).code, 2);
+    assert.equal((await admin.run(['knowledge', 'sync', '--product', 'DEMO', '--bogus'])).code, 2);
+
+    const roots = await expectOk(admin, ['knowledge', 'roots', 'ALT']);
+    assert.match(roots.out[0], /^产品线 demo（DEMO、ALT）：4 个构建，2 条版本线$/);
+    assert.ok(roots.out.some((l) => /^版本线 2\.1\.0：当前根 [0-9a-f]{64}（构建 Rel_(DEMO|ALT)_2_1_0_5，产出于 /.test(l)), roots.text);
+    assert.ok(roots.out.some((l) => /^版本线 2\.0\.0：还没有当前根$/.test(l)), 'the failed build has no root');
+    const rootOf = (build: string) => new RegExp(`^  ${build}\\t.*\\t根 ([0-9a-f]{64})$`).exec(roots.out.find((l) => l.startsWith(`  ${build}\t`)) ?? '')?.[1];
+    const older = rootOf('Rel_DEMO_2_1_0_5');
+    const newest = rootOf('Rel_DEMO_2_1_0_6');
+    assert.ok(older && newest && older !== newest, roots.text);
+    assert.match(roots.out.find((l) => l.startsWith('  Rel_ALT_2_1_0_5\t')) ?? '', /基于 Rel_DEMO_2_1_0_5\t发布于 /);
+    assert.match(roots.out.find((l) => l.startsWith('  Rel_DEMO_2_1_0_5\t')) ?? '', /\tDEMO\t自身为基础构建\t发布于 /);
+
+    const diff = await expectOk(admin, ['knowledge', 'diff', older, newest]);
+    assert.match(diff.out[0], new RegExp(`^从 ${older} 到 ${newest}：增加 [1-9]\\d*，删除 0，改动 \\d+$`));
+    assert.ok(diff.out.includes('+ /commands/widget/reset'), diff.text);
+    assert.equal((await admin.run(['knowledge', 'diff', older, 'not-a-root'])).code, 2);
+    const unknown = await admin.run(['knowledge', 'diff', 'a'.repeat(64), 'b'.repeat(64)]);
+    assert.equal(unknown.code, 1);
+    assert.match(unknown.text, /没有这两个知识根/);
+
+    const userToken = await userWithToken(admin, '甲');
+    const neutral = await admin.run(['knowledge', 'roots', 'DEMO'], { [OPERATOR_TOKEN_VARIABLE]: userToken });
+    assert.equal(neutral.code, 1, 'a user without a pack that binds the line reads nothing');
+    assert.equal((await admin.run(['knowledge', 'diff', older, newest], { [OPERATOR_TOKEN_VARIABLE]: userToken })).code, 1);
+    assert.equal((await admin.run(['knowledge'])).code, 2);
+  });
+});
+
+describe('help', () => {
+  test('the help text lists the administrator commands', async () => {
+    const admin = await setup({ initAdmin: false });
+    const help = await expectOk(admin, ['help']);
+    for (const name of ['pack', 'resource', 'secret', 'knowledge', 'init-admin', 'operator-token']) assert.match(help.text, new RegExp(`\\n  ${name} `), name);
+    assert.doesNotMatch(help.text, /这个装配模块没有注册它/, 'every reserved command is registered');
+    assert.match(help.text, /operator-token\s+set   从标准输入读一个启用中的管理员的令牌/);
+  });
+});

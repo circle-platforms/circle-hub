@@ -160,6 +160,28 @@ describe('initialize and tools/list', () => {
     }
   });
 
+  test('start_run stays closed-world for a pack whose inputs take only the Hub\'s own knowledge views: reading them is Hub-internal', async () => {
+    const packs = [
+      ...defaultPacks(),
+      fakeWorkflowPack('scope', '合成回归范围', ['knowledge:impact', 'knowledge:facets', 'knowledge:index', 'application/json'], { factsOnly: true }),
+      fakeWorkflowPack('scope-outside', '合成外部范围', ['knowledge:impact', 'tracker:document'], { factsOnly: true }),
+    ];
+    const other = await createTestServer({ postgres, packs });
+    try {
+      for (const [pack, open] of [['scope', false], ['scope-outside', true]] as const) {
+        const user = await other.createUser(`范围 ${pack}`);
+        await other.assign(user.principal, pack);
+        const client = await other.client(user.token);
+        const start = (await client.listTools()).tools.find((t) => t.name === 'start_run')!;
+        assert.equal(start.annotations?.openWorldHint, open, `${pack}: a knowledge view is not an external system, an external type is`);
+        if (!open) assert.deepEqual(start.annotations, { readOnlyHint: false, destructiveHint: false, openWorldHint: false });
+        await client.close();
+      }
+    } finally {
+      await other.close();
+    }
+  });
+
   test('an unknown tool is a JSON-RPC error, not a tool result', async () => {
     const client = await connect(await person());
     await assert.rejects(client.client.callTool({ name: 'delete_everything', arguments: {} }), (error: unknown) => error instanceof McpError && /没有这个工具/.test(error.message));
@@ -427,6 +449,37 @@ describe('start_run, get_nodes, resolve_reference, submit_result', () => {
     await client.close();
   });
 
+  test('submit_result: when the stored result cannot be looked up or is not found the receipt stands, no record is named and the admin note says why', async () => {
+    const user = await person();
+    const client = await connect(user);
+    const reference = String((await upload(client, MINDMAP)).structuredContent.reference);
+    const run = ((await startRun(client, reference)).structuredContent.run as { run: string }).run;
+    const submission = (n: number) => ({
+      run,
+      model: 'scripted-model@test',
+      items: [
+        { item: 'doc-1:n1', handling: 'handled', slots: { findings: [{ text: `第 ${n} 次提交的发现` }] } },
+        { item: 'doc-1:n2', handling: 'handled', slots: { findings: [] } },
+        { item: 'doc-1:n3', handling: 'handled', slots: { findings: [] } },
+      ],
+    });
+    const lastNote = async () => (await server.records.callLog.query(server.admin.principal, { userId: user.user.id, tool: 'submit_result', limit: 1 })).items[0].admin_note;
+    server.fakes.runs.script.failNext('getResult', new Error('合成的查找失败'));
+    const failed = await client.call('submit_result', submission(1));
+    assert.equal(failed.isError, false, failed.content[0].text);
+    assert.equal(failed.structuredContent.acceptance, 'accepted', 'the answer stands');
+    assert.ok(failed.structuredContent.result, 'with its result');
+    assert.doesNotMatch(failed.content[0].text ?? '', /存下的结果|rec:[0-9a-f]{64}/, 'no record is named when it could not be looked up');
+    assert.match(await lastNote() ?? '', /^the stored result of submission [0-9a-f]{64} was not found: Error: 合成的查找失败$/);
+    server.fakes.runs.script.answerNext('getResult', null);
+    const missing = await client.call('submit_result', submission(2));
+    assert.equal(missing.structuredContent.acceptance, 'accepted');
+    assert.doesNotMatch(missing.content[0].text ?? '', /存下的结果|rec:[0-9a-f]{64}/);
+    const found = await client.call('submit_result', submission(3));
+    assert.match(found.content[0].text ?? '', /存下的结果 rec:[0-9a-f]{64}（/, 'with the lookup working the record is named');
+    await client.close();
+  });
+
   test('submit_result passes the raw arguments: a misspelled key reaches the service and is stored as received', async () => {
     const user = await person();
     const client = await connect(user);
@@ -467,7 +520,7 @@ describe('start_run, get_nodes, resolve_reference, submit_result', () => {
     assert.equal(structured.structuredContent.errors[0].path, '/__proto__');
   });
 
-  test('the content alone carries what a model needs: the source text, every item with its summary, the slot schema, the claims', async () => {
+  test('the content alone carries what a model needs: the source text, items as id | label | summary, the compact slot schema, the claims', async () => {
     const user = await person(['review']);
     const client = await connect(user);
     const reference = String((await upload(client, MINDMAP)).structuredContent.reference);
@@ -478,15 +531,22 @@ describe('start_run, get_nodes, resolve_reference, submit_result', () => {
     assert.match(tree.content[0].text ?? '', /数据 \{"params":\[\{"name":"name","type":"string"\}\]\}/, 'the entry data of a catalog leaf');
     server.fakes.runs.items = (subject) => Array.from({ length: 60 }, (_, i) => ({ id: `doc-9:n${i}`, label: `合成用例 ${i}`, summary: `摘要 ${i}`, location: subject, fields: {} }));
     try {
-      const text = (await startRun(client, reference)).content[0].text ?? '';
-      for (const i of [0, 49, 50, 59]) assert.ok(text.includes(`\n- doc-9:n${i} 合成用例 ${i}：摘要 ${i}\n`), `item ${i} as id, label and summary`);
-      assert.ok(!text.includes('（位置 '), 'a long list is id, label and summary only');
-      assert.match(text, /槽位模式（JSON Schema，sha256 [0-9a-f]{64}）：\n\{"\$schema":/);
+      const started = await startRun(client, reference);
+      const text = started.content[0].text ?? '';
+      const record = server.fakes.runs.runs.get((started.structuredContent.run as { run: string }).run)!.recordDigest;
+      for (const i of [0, 49, 50, 59]) assert.ok(text.includes(`\n- doc-9:n${i} | 合成用例 ${i} | 摘要 ${i}\n`), `item ${i} as id | label | summary`);
+      // ItemProjection.summary: a long list is id, label and summary; where the items are is said once, by a rule.
+      assert.ok(text.includes(`\n位置：每个条目的位置都是 ${reference}\n`), 'the location rule, once');
+      assert.ok(!/\n- doc-9:n\d+ \| [^\n]* \| 位置 /.test(text), 'no location column');
+      assert.match(text, /\n槽位模式（sha256 [0-9a-f]{64}）：每个已处理的条目给一条 slots/);
+      assert.ok(text.includes('\n- findings：评审发现（合成）；陈述的列表；每条：text（必填）: string（发现的说明）；code: string\n'), 'the compact slot schema');
+      assert.ok(!text.includes('"$schema"'), 'not the JSON Schema itself');
+      assert.ok(text.includes(`完整的槽位模式（JSON Schema，带说明和写法）：get_nodes {"reference":"rec:${record}#/slots/schema"}`), 'where the whole schema is');
     } finally {
       server.fakes.runs.items = null;
     }
     const short = await startRun(client, reference);
-    assert.match(short.content[0].text ?? '', /\n- doc-1:n1 合成用例一（位置 src:[0-9a-f]{64}）\n/);
+    assert.match(short.content[0].text ?? '', /\n- doc-1:n1 \| 合成用例一\n/);
     const runId = (short.structuredContent.run as { run: string }).run;
     const submitted = await client.call('submit_result', { run: runId, model: 'scripted-model@test', items: [{ item: 'doc-1:n1', handling: 'handled', slots: { findings: [{ text: '期望结果缺失' }] } }] });
     const lines = (submitted.content[0].text ?? '').split('\n');
@@ -494,7 +554,276 @@ describe('start_run, get_nodes, resolve_reference, submit_result', () => {
     assert.ok(finding > 0, 'the finding claim is in the content');
     assert.match(lines[finding], /^ {4}- 位置：条目 doc-1:n1，要求项 findings；陈述：期望结果缺失；性质与依据等级：.*；生产者：模型，scripted-model@test；有效条件：/);
     assert.match(lines[finding - 1], /^ {2}· findings：/, 'under its requirement');
+    const stored = server.fakes.runs.runs.get(runId)!.latest!.record;
+    assert.ok(lines.includes(`存下的结果 rec:${stored}（用 get_nodes 按引用读；也可在控制台运行页 /console/runs/${runId} 查看）`), 'the stored result is named');
     await client.close();
+  });
+});
+
+/** The JSON object that starts at `at` in `text`. */
+function jsonAt(text: string, at: number): Record<string, unknown> {
+  for (let end = text.indexOf('}', at); end >= 0; end = text.indexOf('}', end + 1)) {
+    try {
+      return JSON.parse(text.slice(at, end + 1)) as Record<string, unknown>;
+    } catch {
+      // not the end of the object yet
+    }
+  }
+  throw new Error(`no JSON object at ${at}: ${text.slice(at, at + 80)}`);
+}
+
+/** The get_nodes call a text gives after `marker` (in its note, the line before the trace), or null. */
+function callAfter(text: string, marker: string): Record<string, unknown> | null {
+  const lines = text.split('\n');
+  const note = lines.at(-2) ?? '';
+  if (!note.startsWith('部分：')) return null;
+  const at = note.indexOf(`${marker}get_nodes `);
+  return at < 0 ? null : jsonAt(note, at + `${marker}get_nodes `.length);
+}
+
+/** The ids of the item lines of a text (`- <id> | ...`). */
+const itemIds = (text: string, prefix: string): string[] => text.split('\n').flatMap((line) => (line.startsWith(`- ${prefix}`) ? [line.slice(2, line.indexOf(' | '))] : []));
+
+describe('paging through the server', () => {
+  test('a source read by reference is read on with the 下一页 cursor the note gives, every line once; a foreign cursor is refused at /cursor', async () => {
+    const client = await connect(await person());
+    const markdown = Array.from({ length: 4000 }, (_, i) => `- 第 ${i + 1} 条：合成说明 ${'长'.repeat(i % 23)}`).join('\n');
+    const reference = String((await upload(client, markdown, { media_type: 'text/markdown' })).structuredContent.reference);
+    const other = String((await upload(client, '另一份合成文本\n')).structuredContent.reference);
+    let args: Record<string, unknown> = { reference };
+    const seen: string[] = [];
+    let pages = 0;
+    for (; pages < 100; pages++) {
+      const page = await client.call('get_nodes', args);
+      assert.equal(page.isError, false, `${JSON.stringify(args)}: ${page.content[0].text?.slice(0, 200)}`);
+      const text = page.content[0].text ?? '';
+      assert.ok(text.length <= 30_000, `a page is ${text.length} characters`);
+      const lines = text.split('\n');
+      const from = lines.findIndex((line) => line.startsWith('原文（')) + 1;
+      seen.push(...lines.slice(from, lines.length - (lines.at(-2)?.startsWith('部分：') ? 2 : 1)));
+      const next = callAfter(text, '下一页：');
+      if (next === null) break;
+      assert.deepEqual(Object.keys(next).sort(), ['cursor', 'reference'], 'the next page is the same reference with a cursor');
+      assert.equal(next.reference, reference);
+      args = next;
+    }
+    assert.ok(pages > 1, 'the text needed more than one page');
+    assert.deepEqual(seen, markdown.split('\n'), 'every line once, in order');
+    const cursor = String(args.cursor);
+    const foreign = await client.call('get_nodes', { reference: other, cursor });
+    assert.equal(foreign.isError, true);
+    assert.deepEqual([firstError(foreign).code, firstError(foreign).path], ['SUBMISSION_SCHEMA_VIOLATION', '/cursor']);
+    assert.match(firstError(foreign).message, /cursor 不是这个引用的翻页位置/);
+    assert.equal(foreign.structuredContent.content, undefined);
+    const garbage = await client.call('get_nodes', { reference, cursor: 'next-please' });
+    assert.equal(firstError(garbage).path, '/cursor');
+    for (const [key, value] of [['root', ROOT_1], ['paths', ['/']], ['depth', 1]] as const) {
+      const mixed = await client.call('get_nodes', { reference, cursor, [key]: value });
+      assert.deepEqual([firstError(mixed).code, firstError(mixed).path], ['SUBMISSION_SCHEMA_VIOLATION', `/${key}`], key);
+    }
+    // A cursor never reveals whether a reference it does not belong to exists: absent and forbidden stay alike.
+    const absent = await client.call('get_nodes', { reference: `src:${'f'.repeat(64)}`, cursor });
+    assert.equal(firstError(absent).code, 'SOURCE_UNAVAILABLE');
+    await client.close();
+  });
+
+  test('start_run items left out are read from the run record with the cursor the note gives, every item once and in order', async () => {
+    const user = await person(['review']);
+    const client = await connect(user);
+    const reference = String((await upload(client, MINDMAP)).structuredContent.reference);
+    server.fakes.runs.items = (subject) =>
+      Array.from({ length: 3000 }, (_, i) => ({ id: `doc-8:n${i}`, label: `合成用例 ${i}${i % 97 === 0 ? ' 很长的标题'.repeat(40) : ''}`, summary: `摘要 ${i}`, location: `${subject}/kityminder@1/n/n${i}`, fields: {} }));
+    try {
+      const started = await startRun(client, reference);
+      assert.equal(started.isError, false);
+      const run = (started.structuredContent.run as { run: string }).run;
+      const record = server.fakes.runs.runs.get(run)!.recordDigest;
+      const text = started.content[0].text ?? '';
+      assert.ok(text.length <= 30_000);
+      const shown = itemIds(text, 'doc-8:');
+      assert.ok(shown.length > 0 && shown.length < 3000, `the first page shows ${shown.length} items`);
+      const first = callAfter(text, '条目：');
+      assert.ok(first !== null, 'the note names the cursor call of the items left out');
+      assert.equal(first.reference, `rec:${record}#/items`);
+      const ids = [...shown];
+      let args: Record<string, unknown> = first;
+      for (let i = 0; i < 200; i++) {
+        const page = await client.call('get_nodes', args);
+        assert.equal(page.isError, false, page.content[0].text?.slice(0, 200));
+        const pageText = page.content[0].text ?? '';
+        assert.ok(pageText.length <= 30_000);
+        ids.push(...itemIds(pageText, 'doc-8:'));
+        const next = callAfter(pageText, '下一页：');
+        if (next === null) break;
+        assert.equal(next.reference, `rec:${record}#/items`);
+        args = next;
+      }
+      assert.deepEqual(ids, Array.from({ length: 3000 }, (_, i) => `doc-8:n${i}`), 'start_run and the pages show every item once, in order');
+    } finally {
+      server.fakes.runs.items = null;
+    }
+    await client.close();
+  });
+
+  test('an empty partition of a stored result reads as empty (every item delivered is the common case); an empty cursor reads the first page', async () => {
+    const user = await person(['review']);
+    const client = await connect(user);
+    const reference = String((await upload(client, MINDMAP)).structuredContent.reference);
+    const run = ((await startRun(client, reference)).structuredContent.run as { run: string }).run;
+    const items = ['doc-1:n1', 'doc-1:n2', 'doc-1:n3'].map((item) => ({ item, handling: 'handled', slots: { findings: [] } }));
+    const accepted = await client.call('submit_result', { run, model: 'scripted-model@test', items });
+    assert.equal(accepted.structuredContent.acceptance, 'accepted', accepted.content[0].text);
+    assert.equal((accepted.structuredContent.counts as { delivered: number }).delivered, 3, 'every item delivered');
+    const stored = server.fakes.runs.runs.get(run)!.latest!.record;
+    for (const partition of ['rejected', 'quarantined', 'incomplete']) {
+      const read = await client.call('get_nodes', { reference: `rec:${stored}#/partitions/${partition}` });
+      assert.equal(read.isError, false, `${partition}: ${read.content[0].text}`);
+      assert.match(read.content[0].text ?? '', new RegExp(`部分 rec:${stored}#/partitions/${partition}：条目 0 个\n追踪 `));
+    }
+    const delivered = await client.call('get_nodes', { reference: `rec:${stored}#/partitions/delivered`, cursor: '' });
+    assert.equal(delivered.isError, false, 'an empty cursor is no cursor, as for a subtree');
+    assert.match(delivered.content[0].text ?? '', /：条目 3 个/);
+    const source = await client.call('get_nodes', { reference });
+    const fromEmpty = await client.call('get_nodes', { reference, cursor: '' });
+    assert.deepEqual(comparable(fromEmpty), comparable(source), 'the first page, exactly as without a cursor');
+    const subtree = await client.call('get_nodes', { run, cursor: '' });
+    assert.equal(subtree.isError, false, 'the subtree read takes an empty cursor too');
+    await client.close();
+  });
+
+  test('submit_result names its stored result, accepted or not; the item details left out are read from it by cursor', async () => {
+    const user = await person(['review']);
+    const client = await connect(user);
+    const reference = String((await upload(client, MINDMAP)).structuredContent.reference);
+    server.fakes.runs.items = (subject) => Array.from({ length: 1200 }, (_, i) => ({ id: `doc-7:n${i}`, label: `合成用例 ${i}`, location: `${subject}/kityminder@1/n/n${i}`, fields: {} }));
+    try {
+      const run = ((await startRun(client, reference)).structuredContent.run as { run: string }).run;
+      const items = Array.from({ length: 1200 }, (_, i) => ({ item: `doc-7:n${i}`, handling: 'handled', slots: { findings: [{ text: `第 ${i} 个用例的期望结果缺少判定条件` }] } }));
+      const accepted = await client.call('submit_result', { run, model: 'scripted-model@test', items });
+      assert.equal(accepted.isError, false);
+      const stored = server.fakes.runs.runs.get(run)!.latest!.record;
+      const text = accepted.content[0].text ?? '';
+      assert.ok(text.includes(`存下的结果 rec:${stored}（`));
+      const call = callAfter(text, '条目明细：');
+      assert.ok(call !== null && call.reference === `rec:${stored}` && typeof call.cursor === 'string', 'the details left out are read from the stored result by cursor');
+      const seen = new Set(itemIds(text, 'doc-7:'));
+      let args: Record<string, unknown> = call;
+      for (let i = 0; i < 300; i++) {
+        const page = await client.call('get_nodes', args);
+        assert.equal(page.isError, false, page.content[0].text?.slice(0, 200));
+        for (const id of itemIds(page.content[0].text ?? '', 'doc-7:')) seen.add(id);
+        const next = callAfter(page.content[0].text ?? '', '下一页：');
+        if (next === null) break;
+        args = next;
+      }
+      assert.equal(seen.size, 1200, 'every item of the result is read');
+      const refused = await client.call('submit_result', { run, model: 'scripted-model@test', items: [], notes: 'quote-mismatch' });
+      assert.equal(refused.isError, true);
+      const refusedResult = refused.structuredContent.result as { submission: string };
+      const kept = server.fakes.runs.runs.get(run)!.results.get(refusedResult.submission)!.record;
+      assert.ok((refused.content[0].text ?? '').includes(`存下的结果 rec:${kept}（`), 'a result that is not accepted is named too');
+    } finally {
+      server.fakes.runs.items = null;
+    }
+    await client.close();
+  });
+});
+
+describe('start_run with the engine\'s detail', () => {
+  test('a production run answers its result; the text gives its counts, every requirement, the problems and where the whole result is', async () => {
+    const packs = [...defaultPacks(), fakeWorkflowPack('locate', '合成定位', ['application/json'], { factsOnly: true })];
+    const other = await createTestServer({ postgres, packs });
+    try {
+      const user = await other.createUser('定位者');
+      await other.assign(user.principal, 'locate');
+      const client = await other.client(user.token);
+      const reference = String((await client.call('upload_file', { file_path: b64(MINDMAP) })).structuredContent.reference);
+      const started = await client.call('start_run', { pack: 'locate', inputs: { subject: { reference } } });
+      assert.equal(started.isError, false, started.content[0].text);
+      const run = (started.structuredContent.run as { run: string }).run;
+      const production = other.fakes.runs.runs.get(run)!.production!;
+      assert.deepEqual(started.structuredContent.result, { reference: production.reference, counts: production.counts });
+      const lines = (started.content[0].text ?? '').split('\n');
+      assert.equal(lines[1], '结果（start_run 时由 Hub 算出）：分区：已交付 3，已拒收 0，已隔离 0，未完成 0；未知 0');
+      assert.ok(lines.includes('要求项（满足状态与各层终态的条目数）：'));
+      assert.ok(lines.some((line) => /^- structure 结构：满足 2，未满足 1（终态不符合期望 1），未决 0；静态：✓ 通过 2，✗ 不通过 1（阻断 1）；动态：本层不适用$/.test(line)), 'the counts of the requirement');
+      const problems = lines.findIndex((line) => line.startsWith('问题与未知（1 条；'));
+      assert.ok(problems > 0, 'the problems are listed');
+      assert.match(lines[problems + 1], /^- doc-1:n2 \| 合成用例二 \| 已交付 \| structure \| /);
+      const whole = lines.findIndex((line) => line.startsWith(`完整结果 ${production.reference}：`));
+      assert.ok(whole > 0 && whole < problems && problems < lines.findIndex((line) => line.startsWith('条目（')), 'the result before the items');
+      assert.match(lines[whole], /get_nodes \{"reference":"rec:[0-9a-f]{64}"\} 读第一页，再按每页末尾给出的 cursor 接着读/);
+      const read = await client.call('get_nodes', { reference: production.reference });
+      assert.equal(read.isError, false, 'the whole result is readable by its reference');
+      assert.match(read.content[0].text ?? '', new RegExp(`结果 ${production.reference}（运行 ${run}）：回执：已受理`));
+      await client.close();
+    } finally {
+      await other.close();
+    }
+  });
+
+  test('a text that cannot be laid out from what the engine handed over still answers the stored run: a minimal text, the reason in the admin note', async () => {
+    const packs = [...defaultPacks(), fakeWorkflowPack('locate', '合成定位', ['application/json'], { factsOnly: true })];
+    const other = await createTestServer({ postgres, packs });
+    try {
+      const user = await other.createUser('定位者');
+      await other.assign(user.principal, 'locate');
+      const client = await other.client(user.token);
+      const reference = String((await client.call('upload_file', { file_path: b64(MINDMAP) })).structuredContent.reference);
+      const runs = other.fakes.runs;
+      const original = runs.startRunDetailed.bind(runs);
+      // The engine hands over a production result without its partitions: the answer is valid, the text's source is not.
+      runs.startRunDetailed = async (...args) => {
+        const detail = await original(...args);
+        return detail.production === null ? detail : { ...detail, production: { ...detail.production, result: { ...detail.production.result, partitions: undefined as never } } };
+      };
+      const started = await client.call('start_run', { pack: 'locate', inputs: { subject: { reference } } });
+      assert.equal(started.isError, false);
+      const run = (started.structuredContent.run as { run: string }).run;
+      const result = started.structuredContent.result as { reference: string };
+      const lines = (started.content[0].text ?? '').split('\n');
+      assert.equal(lines[0], '调用结果：正常');
+      assert.ok(lines.includes(`运行 ${run}：任务包 locate@1.0.0`), lines.join('\n'));
+      assert.ok(lines.includes(`完整结果 ${result.reference}（用 get_nodes 按引用读）`));
+      assert.equal(lines.at(-1), `追踪 ${started.structuredContent.trace}`);
+      const [line] = (await other.records.callLog.query(other.admin.principal, { userId: user.user.id, tool: 'start_run', limit: 1 })).items;
+      assert.match(line.admin_note ?? '', /the text of the start_run answer could not be laid out: TypeError: /);
+      assert.equal(line.call_result, 'ok', 'the call is logged as answered');
+      await client.close();
+    } finally {
+      await other.close();
+    }
+  });
+
+  test('the evidence gaps of the detail are in the text; without the engine\'s detail start_run still answers and no record is named', async () => {
+    const user = await person(['review']);
+    const client = await connect(user);
+    const reference = String((await upload(client, MINDMAP)).structuredContent.reference);
+    server.fakes.runs.gaps = { unavailable: [{ external: 'tracker:document:404', role: 'expected' }], gaps: [{ code: 'review.expected_failed', message: '期望来源函数没有给出结果（合成）' }] };
+    try {
+      const text = (await startRun(client, reference)).content[0].text ?? '';
+      assert.ok(text.includes('\n- 数据缺口：期望来源 tracker:document:404：对你不可用\n'));
+      assert.ok(text.includes('\n- 数据缺口：review.expected_failed：期望来源函数没有给出结果（合成）\n'));
+    } finally {
+      server.fakes.runs.gaps = { unavailable: [], gaps: [] };
+    }
+    await client.close();
+    const plain = await createTestServer({ postgres, withoutRunsDetail: true });
+    try {
+      const owner = await plain.createUser('无详情');
+      await plain.assign(owner.principal, 'review');
+      const plainClient = await plain.client(owner.token);
+      const source = String((await plainClient.call('upload_file', { file_path: b64(MINDMAP) })).structuredContent.reference);
+      const started = await plainClient.call('start_run', { pack: 'review', inputs: { subject: { reference: source } } });
+      assert.equal(started.isError, false);
+      const run = (started.structuredContent.run as { run: string }).run;
+      assert.doesNotMatch(started.content[0].text ?? '', /rec:[0-9a-f]{64}/, 'no record reference without the engine\'s detail');
+      const submitted = await plainClient.call('submit_result', { run, model: 'm', items: [] });
+      assert.ok(!(submitted.content[0].text ?? '').includes('存下的结果'), 'no stored result is named');
+      await plainClient.close();
+    } finally {
+      await plain.close();
+    }
   });
 });
 
