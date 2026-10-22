@@ -1,0 +1,47 @@
+{
+  "run": "run_01m5h9zm2nhzbz2hrfjfb6azta",
+  "model": "omega-reporter 1.0 (scripted, temperature 0)",
+  "items": [
+    {
+      "item": "report",
+      "handling": "handled",
+      "slots": {
+        "overall": [
+          {
+            "text": "两块取最差：A 块 PASS（P3），B 块 PARTIAL（P5），整体 PARTIAL、P5",
+            "code": "overall",
+            "rank": "P5",
+            "data": {
+              "verdict": "PARTIAL",
+              "level": "P5"
+            }
+          }
+        ],
+        "report": [
+          {
+            "text": "评审终稿（中文全文，合成示例）：整体 PARTIAL、P5。A 块全部证实；B 块有一条发现被部分修正、一条新增发现……",
+            "code": "report",
+            "rank": null,
+            "data": {
+              "verdict": "PARTIAL",
+              "level": "P5",
+              "findings": [
+                "rec:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef#/partitions/delivered/0/requirements/0/claims/0",
+                "rec:fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210#/partitions/delivered/0/requirements/0/claims/0",
+                "rec:fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210#/partitions/delivered/0/requirements/0/claims/1"
+              ],
+              "suggestions": [
+                {
+                  "what": "补反向用例：合法值域外的输入",
+                  "why": "B 块新增发现指出边界未覆盖",
+                  "expected": "非法输入被拒绝并提示原因"
+                }
+              ],
+              "gaps": []
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

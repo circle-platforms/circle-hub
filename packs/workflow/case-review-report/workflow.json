@@ -1,0 +1,34 @@
+{
+  "schema": "workflow@1",
+  "inputs": [
+    {
+      "slot": "verifications",
+      "role": "expected",
+      "description": "各块复核运行的验证结果：每块一次复核 submit_result 回执里的 rec:<摘要>（Hub 记录，不带 # 指针）；每块一条，至少一条",
+      "accepts": [
+        "application/json"
+      ],
+      "required": true,
+      "many": true
+    },
+    {
+      "slot": "target",
+      "role": "subject",
+      "description": "被评审的同一份测试脑图（可选）：只用来核对各块是同一份源文件，终稿不重新评审",
+      "accepts": [
+        "agile:mindmap",
+        "application/json"
+      ],
+      "required": false,
+      "many": false
+    }
+  ],
+  "parameters": [],
+  "product": {
+    "catalogs": []
+  },
+  "subject": "target",
+  "projection": {
+    "module": "functions/projection.ts"
+  }
+}

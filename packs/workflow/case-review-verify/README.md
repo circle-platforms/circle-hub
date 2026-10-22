@@ -141,8 +141,8 @@ location only, with a copied quotation, FAIL without a refuted major point, PART
 
 - Only drafts of `case-review` are understood (requirement keys `findings` and `level`, kityminder locations); a result of
   another pack is refused (`draft_invalid`).
-- A block of a large document is verified as its own pair of runs; the overall verdict across blocks (the worst one) is the
-  report's, not a Hub computation.
+- A block of a large document is verified as its own pair of runs; the overall verdict across blocks (the worst one) and
+  the Chinese report are computed and checked by `case-review-report` (the third step after every block is verified).
 - The verifier reads the full draft findings through `get_nodes` on the run record's item fields or `resolve_reference` on
   their references; the item lines show only codes and ranks.
 
