@@ -2,7 +2,7 @@
 // producer, A01 R[2], V02 R[1]) and the Hub's own facts from the checks it re-ran (every outcome, support included; a new
 // independent ground, A04 R[2]). Each carries its validity bindings: the pack digest, the locked root and the digests of
 // what it cites.
-import type { BasisRank, Independence, QualifierMark, SourceRole } from '../../../contracts/generated/vocabulary.ts';
+import { QUALIFIER_MARK, type BasisRank, type Independence, type QualifierMark, type SourceRole } from '../../../contracts/generated/vocabulary.ts';
 import { Claim, type ValueResolution } from '../../../contracts/src/claim.ts';
 import type { SlotClaim } from '../../../contracts/src/pack.ts';
 import { Ground } from '../../../contracts/src/reference.ts';
@@ -109,6 +109,8 @@ export interface FactClaimInput {
   overClaims: boolean;
   /** The requirement asks for discriminating power, which runs cannot establish (V06 R[3]). */
   discrimination: boolean;
+  /** The check's sample marks (T02 R[1]: a rule with only author samples supports its facts marked 仅作者样例). */
+  sampleMarks?: readonly QualifierMark[];
   bound: string[];
   /** The judgments a rule over claims rests on: pointers into the submission, or the carried record (V03 R[6], A02 R[3]). */
   premises?: string[];
@@ -123,10 +125,11 @@ export function factClaim(input: FactClaimInput): Claim {
   const o = input.outcome;
   const known = o.verdict !== 'unknown';
   const basis: BasisRank = input.overClaims ? 'rule_over_claims' : 'rule_over_observation';
-  const marks: QualifierMark[] = [];
   const conditional = known && input.overClaims;
-  if (conditional) marks.push('conditional_on_judgment');
-  if (input.discrimination) marks.push('discrimination_not_established');
+  // Vocabulary order (QUALIFIER_MARK), deduplicated: the marks the run adds and the check's own sample marks.
+  const marks = unique<QualifierMark>([...(conditional ? ['conditional_on_judgment' as const] : []), ...(input.discrimination ? ['discrimination_not_established' as const] : []), ...(input.sampleMarks ?? [])]).sort(
+    (a, b) => QUALIFIER_MARK.indexOf(a) - QUALIFIER_MARK.indexOf(b),
+  );
   const claim: Claim = {
     ...(input.item !== undefined ? { item: input.item } : {}),
     ...(input.requirement !== undefined ? { requirement: input.requirement } : {}),

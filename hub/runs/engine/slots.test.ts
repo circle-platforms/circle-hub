@@ -41,6 +41,22 @@ function problems(value: Record<string, unknown>): { path?: string; message: str
   return slotProblems(review, items, submission(value)).map((p) => ({ path: p.path, message: p.message, code: p.code }));
 }
 
+test('an item id the run does not have gets a fix that teaches the form (count, exact id example, suffix hint)', () => {
+  // A plain wrong id (no item id ends with it): the message names the count, where the exact ids sit, the first id.
+  const wrong = problems({ items: [{ item: 'zz', handling: 'handled', slots: { findings: [finding()] } }] });
+  assert.equal(wrong.length, 1);
+  assert.match(wrong[0]!.message, /本运行有 2 个条目/);
+  assert.match(wrong[0]!.message, /编号照 start_run 回执里条目清单第一列原样写/);
+  assert.match(wrong[0]!.message, /例如 d:1/);
+  assert.doesNotMatch(wrong[0]!.message, /是不是指/);
+  // An id that is exactly the tail of a real one (only the part after the colon): the hint names that id.
+  const tail = problems({ items: [{ item: '2', handling: 'handled', slots: { findings: [finding()] } }] });
+  assert.match(tail[0]!.message, /是不是指 d:2/);
+  // An id that is no item id's tail: no hint.
+  const other = problems({ items: [{ item: 'x9', handling: 'handled', slots: { findings: [finding()] } }] });
+  assert.doesNotMatch(other[0]!.message, /是不是指/);
+});
+
 test('the slot schema is JSON Schema 2020-12 of one item slot record with the closed sets, counts and data schema', () => {
   const slots = slotSchemaOf(review);
   assert.ok(slots);

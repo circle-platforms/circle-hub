@@ -11,6 +11,7 @@ import type { ItemProjection, RunRecord } from '../../../contracts/src/run.ts';
 import type { Submission } from '../../../contracts/src/submission.ts';
 import type { RequirementResult, ValidationResult } from '../../../contracts/src/validation.ts';
 import type { LoadedWorkflow } from '../../ports.ts';
+import { publishCheckMarks } from '../packs/marks.ts';
 import type { Principal } from '../../records/api.ts';
 import { parseReference, resolveReference, type RecordReader, type ResolveContext, type SourceReader } from '../../refs/api.ts';
 import { SandboxError, callPackFunction, runCheck, sourcesFrom, type CatalogView, type CheckOutcome, type UnreadSource } from '../../rules/api.ts';
@@ -184,6 +185,9 @@ function ruleOf(workflow: LoadedWorkflow, check: CheckEntry): string {
 
 export async function evaluate(ctx: EngineContext, input: EvaluationInput): Promise<Evaluation> {
   const { run, workflow, submission } = input;
+  // The sample marks of the locked version's checks (T02 R[1]), computed once: fact claims of a check with only author
+  // samples carry author_samples_only. A model judgment never takes them — they speak about a rule's samples.
+  const sampleMarks = publishCheckMarks(workflow);
   const exclude = input.exclude ?? new Set<string>();
   const templates = workflow.requirements;
   const itemTemplates = templates.filter((t) => t.target === 'item');
@@ -578,6 +582,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
             outcome: o.outcome,
             rule: ruleOf(workflow, check),
             judges: o.judges,
+            sampleMarks: sampleMarks[o.check] ?? [],
             overClaims,
             discrimination: t.requires_discrimination === true,
             bound: [...baseBound, ...(it.digest !== undefined ? [it.digest] : []), ...(sourceSha !== null ? [sourceSha] : []), ...(overClaims && submission !== null ? [input.submissionDigest] : [])],
@@ -640,6 +645,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
       outcome: o,
       rule: ruleOf(workflow, check),
       judges: check.judges,
+      sampleMarks: sampleMarks[check.id] ?? [],
       overClaims: check.judges === 'artifact_under_verification',
       discrimination: (requirementsOf.get(check.id) ?? []).some((t) => t.requires_discrimination === true),
       bound: [...crossBound, ...(check.judges === 'artifact_under_verification' && submission !== null ? [input.submissionDigest] : [])],
