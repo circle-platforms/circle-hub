@@ -73,8 +73,8 @@ describe('命令差总结（跨条目结论）', () => {
       const found = lines.filter((line) => line.includes(path));
       assert.equal(found.length, 1, `路径 ${path} 恰好一行`);
       const change = i % 3 === 0 ? '新增' : i % 3 === 1 ? '修改' : '删除';
-      if (change === '新增') assert.equal(found[0], `- ${path} 新增，前一构建 0 条用例（不进范围）`);
-      else assert.equal(found[0], `- ${path} ${change}，前一构建 67 条用例`);
+      if (change === '新增') assert.equal(found[0], `- ${path} 新增 0 条（不进范围）`);
+      else assert.equal(found[0], `- ${path} ${change} 67 条`);
     }
     assert.ok(summary.statement.length <= 6000, `单条 ${summary.statement.length} 个字符，超过 6,000`);
     assert.deepEqual(summary.grounds, [VIEW_SRC], '依据是影响视图');
@@ -84,16 +84,49 @@ describe('命令差总结（跨条目结论）', () => {
   it('没有字段差异的修改路径也在命令差里（不是维护项，但不隐去）', () => {
     const view = buildImpact([{ path: '/commands/same', change: 'modified', before: [{ name: 'same', help: '相同' }], after: [{ name: 'same', help: '相同' }] }]);
     const { summary } = summarize(view);
-    assert.ok(summary.statement.includes('- /commands/same 修改，前一构建 0 条用例'), summary.statement);
+    assert.ok(summary.statement.includes('- /commands/same 修改 0 条'), summary.statement);
   });
 
   it('超过 200 条路径：写前 200 行和“另有 M 条”，合计照写', () => {
-    const { summary } = summarize(diffView(210, 1));
-    assert.ok(summary.statement.startsWith('命令差共 210 条'), summary.statement.slice(0, 60));
-    const lines = summary.statement.split('\n').slice(1);
+    const { outcomes } = summarize(diffView(210, 1));
+    const summaries = outcomes.filter((o) => o.statement.startsWith('命令差共'));
+    assert.ok(summaries[0].statement.startsWith('命令差共 210 条（第 1 部分，共 '), summaries[0].statement.slice(0, 80));
+    assert.ok(summaries.every((o) => o.statement.length <= 1400), '每一部分都在 1,400 个字符以内');
+    const lines = summaries.flatMap((o) => o.statement.split('\n').slice(1));
     assert.equal(lines.length, 201);
     assert.equal(lines[200], '- 另有 10 条，完整的表在运行级详情里');
-    assert.deepEqual(summary.data, { changed_paths: 210, listed: 200 });
+    assert.deepEqual(summaries[0].data, { changed_paths: 210, listed: 200, part: 1, parts: summaries.length });
+  });
+
+  it('31 条真实形状的路径：每条陈述不超过 1,400 个字符，所有路径按序都在', () => {
+    // 照真实形状：31 条变更路径，路径长 30 到 50 个字符（新增 14、删除 11、修改 6）。
+    const shapes = [...Array(14).fill('added' as const), ...Array(11).fill('removed' as const), ...Array(6).fill('modified' as const)];
+    const changes = shapes.map((change, i) => {
+      const tag = `c${String(i).padStart(2, '0')}`;
+      const inner = 30 + (i % 21) - 14;
+      const path = `/commands/${'g'.repeat(Math.ceil(inner / 2))}${tag}/${'n'.repeat(Math.floor(inner / 2))}`;
+      assert.ok(path.length >= 30 && path.length <= 50, `${path} 长 ${path.length}`);
+      return {
+        path,
+        change,
+        before: change === 'added' ? [] : [{ name: tag, ...(change === 'modified' ? { help: '旧' } : {}) }],
+        after: change === 'removed' ? [] : [{ name: tag, ...(change === 'modified' ? { help: '新' } : {}) }],
+        from: change === 'added' ? [] : [{ document: `doc-${i}`, node: 'n1', title: `用例 ${i}`, priority: 1 }],
+      };
+    });
+    const { outcomes } = summarize(buildImpact(changes));
+    const summaries = outcomes.filter((o) => o.statement.startsWith('命令差共'));
+    assert.ok(summaries.length >= 2, `31 条路径应分成几条，实际 ${summaries.length} 条`);
+    assert.ok(summaries[0].statement.startsWith(`命令差共 31 条（第 1 部分，共 ${summaries.length} 部分`), summaries[0].statement.slice(0, 90));
+    const seen: string[] = [];
+    for (const [k, part] of summaries.entries()) {
+      assert.ok(part.statement.length <= 1400, `第 ${k + 1} 部分 ${part.statement.length} 个字符，超过 1,400`);
+      assert.match(part.statement, new RegExp(`^命令差共 31 条（第 ${k + 1} 部分，共 ${summaries.length} 部分`));
+      for (const line of part.statement.split('\n').slice(1)) seen.push(line.replace(/^- (\S+) .*/, '$1'));
+    }
+    const wanted = changes.map((c) => c.path).sort();
+    assert.deepEqual(seen, wanted, '所有路径按路径顺序接着排，一条不少');
+    assert.deepEqual(summaries[0].data, { changed_paths: 31, listed: 31, part: 1, parts: summaries.length });
   });
 
   it('没有变更路径：命令差为 0 条', () => {

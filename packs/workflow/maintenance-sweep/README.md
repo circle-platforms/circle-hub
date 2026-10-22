@@ -49,10 +49,12 @@ stale. The same sentence is an unknown cross-item claim (`missing_input`) from `
 note is present. A truncated view adds `integrity_unproven`. A bound view that names no catalog adds one conclusion
 line (`catalog-hint`): the changes were then counted by entry kind alone, and another producer's entries on the same
 path may be mixed in. Before those, `command_unchanged` leads with one cross-item fact: the whole command diff, one
-line per changed path with the change kind and the earlier-build case count (`note.diff`, every changed path — added
+line per changed path (path, change kind, earlier-build case count from `note.diff`, every changed path — added
 paths listed and marked 不进范围； `note.details` still holds only the maintenance paths' field rows) — sorted, at most
-200 lines, then 另有 M 条 and `note.diff` holds the full table; a truncated view says the whole count and that only
-the listed part follows. Its one ground is the impact view (`note.view`, the bound `src:`). Since the answer shows
+200 lines, then 另有 M 条 and `note.diff` holds the full table; a statement longer than 1,400 characters continues in
+a next claim (第 k 部分，共 m 部分), paths in order, so the answer's per-field clip never cuts a line off; a truncated
+view says the whole count and that only the listed part follows. Its one ground is the impact view (`note.view`, the
+bound `src:`). Since the answer shows
 cross-item claims before items, the diff is visible however many items are paged away.
 
 ## Decisions

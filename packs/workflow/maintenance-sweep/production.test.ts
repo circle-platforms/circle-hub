@@ -111,11 +111,11 @@ describe('a production run of maintenance-sweep', { skip }, () => {
     assert.ok(summary.grounds[0].startsWith('src:'), '依据是影响视图');
     assert.ok(summary.statement.text.startsWith('命令差共 5 条（路径、变更种类、前一构建用例数）：'), summary.statement.text);
     for (const line of [
-      '- /commands/add 新增，前一构建 1 条用例（不进范围）',
-      '- /commands/drop 删除，前一构建 2 条用例',
-      '- /commands/help 修改，前一构建 1 条用例',
-      '- /commands/show 修改，前一构建 1 条用例',
-      '- /commands/text 修改，前一构建 1 条用例',
+      '- /commands/add 新增 1 条（不进范围）',
+      '- /commands/drop 删除 2 条',
+      '- /commands/help 修改 1 条',
+      '- /commands/show 修改 1 条',
+      '- /commands/text 修改 1 条',
     ]) {
       assert.ok(summary.statement.text.includes(line), line);
     }

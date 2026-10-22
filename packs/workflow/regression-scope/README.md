@@ -41,9 +41,11 @@ conclusion. Removed paths are neither in scope nor uncovered. A case on an uncha
 `in_scope` supports each item. One ground per claim: the item's own location (the case entry fragment); the definition
 references stay once per path in `note.details`. The case data (document, node, priority, negative) is written once in
 `fields`; the title lives once in `label`. Before those, `uncovered_changes` leads with one cross-item fact: the whole
-command diff, one line per changed path with the change kind and the later-build case count (`details[].cases`), removed
-paths listed and marked 不进范围 — sorted, at most 200 lines, then 另有 M 条 and the run-level details hold the full
-table; a truncated view says the whole count and that only the listed part follows. Its one ground is the impact view
+command diff, one compact line per changed path (path, change kind, later-build case count from `details[].cases`),
+removed paths listed and marked 不进范围 — sorted, at most 200 lines, then 另有 M 条 and the run-level details hold the full
+table; a statement longer than 1,400 characters continues in a next claim (第 k 部分，共 m 部分), paths in order, so the
+answer's per-field clip never cuts a line off; a truncated view says the whole count and that only the listed part
+follows. Its one ground is the impact view
 (`note.view`, the bound `src:`). Since the answer shows cross-item claims before items, the diff is visible however many
 items are paged away. `uncovered_changes` is one unknown (`missing_input`) per considered path
 that has no case in the later build, with no item, so it is a cross-item claim. The statement says this is not a

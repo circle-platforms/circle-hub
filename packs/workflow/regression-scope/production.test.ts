@@ -115,12 +115,12 @@ describe('a production run of regression-scope', { skip }, () => {
     assert.ok(summary.grounds[0].startsWith('src:'), '依据是影响视图');
     assert.ok(summary.statement.text.startsWith('命令差共 6 条（路径、变更种类、后一构建用例数）：'), summary.statement.text);
     for (const line of [
-      '- /commands/add 新增，后一构建 2 条用例',
-      '- /commands/bare 新增，后一构建 0 条用例',
-      '- /commands/drop 删除，后一构建 0 条用例（不进范围）',
-      '- /commands/extra 修改，后一构建 1 条用例',
-      '- /commands/show 修改，后一构建 1 条用例',
-      '- /commands/text 修改，后一构建 1 条用例',
+      '- /commands/add 新增 2 条',
+      '- /commands/bare 新增 0 条',
+      '- /commands/drop 删除 0 条（不进范围）',
+      '- /commands/extra 修改 1 条',
+      '- /commands/show 修改 1 条',
+      '- /commands/text 修改 1 条',
     ]) {
       assert.ok(summary.statement.text.includes(line), line);
     }
@@ -157,8 +157,8 @@ describe('a production run of regression-scope', { skip }, () => {
     const [summary, covered] = cross;
     assert.equal(summary.statement.verdict, 'support');
     assert.ok(summary.statement.text.startsWith('命令差共 6 条'), summary.statement.text);
-    assert.ok(summary.statement.text.includes('- /commands/add 新增，后一构建 2 条用例（不进范围）'), 'include_added 为 false 时新增路径注明不进范围');
-    assert.ok(summary.statement.text.includes('- /commands/bare 新增，后一构建 0 条用例（不进范围）'), summary.statement.text);
+    assert.ok(summary.statement.text.includes('- /commands/add 新增 2 条（不进范围）'), 'include_added 为 false 时新增路径注明不进范围');
+    assert.ok(summary.statement.text.includes('- /commands/bare 新增 0 条（不进范围）'), summary.statement.text);
     assert.equal(covered.statement.verdict, 'support');
     assert.match(covered.statement.text, /都有用例/);
   });
