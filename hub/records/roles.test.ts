@@ -47,7 +47,7 @@ test('the runtime role does what the Hub needs, and nothing that could rewrite o
   const config = { dataDir, logDir: join(dataDir, 'logs'), database: runtime, limits: { ...DEFAULT_LIMITS } };
   // Before the owner migrated, the runtime role refuses to start instead of trying to create tables.
   await assert.rejects(openRecords(config, { migrate: false }), (error: unknown) => error instanceof MigrationError && /还没有应用/.test((error as Error).message));
-  assert.deepEqual(await migrateRecords({ database: owner }, { runtimeRole: 'hub_runtime' }), [1]);
+  assert.deepEqual(await migrateRecords({ database: owner }, { runtimeRole: 'hub_runtime' }), [1, 2]);
   assert.deepEqual(await migrateRecords({ database: owner }, { runtimeRole: 'hub_runtime' }), []);
   // The role that owns the tables could disable the triggers, so it is refused as the runtime role.
   await assert.rejects(migrateRecords({ database: owner }, { runtimeRole: 'hub_owner' }), MigrationError);

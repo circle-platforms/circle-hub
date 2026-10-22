@@ -132,7 +132,27 @@ CREATE TABLE call_notes (
 ${APPEND_ONLY('call_notes')}
 `;
 
-export const MIGRATIONS: readonly Migration[] = Object.freeze([{ version: 1, name: 'records', sql: V1_RECORDS }]);
+const V2_LEASES = `
+-- The lease table (D04 R[0]): one row per key, the fencing token monotonic per row. Expiry is decided by the
+-- database clock; an expired or released row is taken over in place (UPDATE ... WHERE expires_at <= now() OR
+-- released_at IS NOT NULL), never deleted, so the token never repeats for a key.
+CREATE TABLE leases (
+  key text PRIMARY KEY CHECK (key ~ '^[a-z0-9][a-z0-9:._/-]{0,199}$'),
+  lease_id text NOT NULL CHECK (lease_id ~ '^lse_[0-9a-z]{26}$'),
+  run_id text NOT NULL CHECK (run_id ~ '^run_[0-9a-z]{26}$'),
+  user_id text NOT NULL CHECK (user_id ~ '^usr_[0-9a-z]{26}$'),
+  token bigint NOT NULL CHECK (token >= 1),
+  acquired_at timestamptz NOT NULL,
+  expires_at timestamptz NOT NULL,
+  released_at timestamptz
+);
+CREATE INDEX leases_prefix ON leases (key);
+`;
+
+export const MIGRATIONS: readonly Migration[] = Object.freeze([
+  { version: 1, name: 'records', sql: V1_RECORDS },
+  { version: 2, name: 'leases', sql: V2_LEASES },
+]);
 
 /** Tables and what the runtime role may do with them; nothing else (no DELETE, no TRUNCATE, no DDL, not the owner). */
 export const RUNTIME_GRANTS: Readonly<Record<string, string>> = Object.freeze({
@@ -146,6 +166,7 @@ export const RUNTIME_GRANTS: Readonly<Record<string, string>> = Object.freeze({
   users: 'SELECT, INSERT, UPDATE (role, disabled, updated_at)',
   tokens: 'SELECT, INSERT, UPDATE (last_used_at, revoked_at, revoked_by)',
   pointers: 'SELECT, INSERT, UPDATE (target, version, moved_at, action_digest)',
+  leases: 'SELECT, INSERT, UPDATE (lease_id, run_id, user_id, token, acquired_at, expires_at, released_at)',
 });
 
 const ROLE = /^[a-z_][a-z0-9_]{0,62}$/;
