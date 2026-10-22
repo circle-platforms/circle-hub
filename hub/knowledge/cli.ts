@@ -141,8 +141,9 @@ export function knowledgeCliCommand(open: () => Promise<{ knowledge: Knowledge; 
   };
 }
 
-// Labels of the brief's three outcome words: no vocabulary axis holds them yet (README, Needs from contracts); keep them here only.
-const OUTCOME_TEXT = { produced: '产出', skipped: '跳过', failed: '失败' } as const satisfies Record<BuildOutcome, string>;
+// Labels of the brief's three outcome words plus the name-only registration; no vocabulary axis holds them yet
+// (README, Needs from contracts); keep them here only.
+const OUTCOME_TEXT = { produced: '产出', registered: '登记', skipped: '跳过', failed: '失败' } as const satisfies Record<BuildOutcome, string>;
 
 /** The report as Chinese text for the terminal. */
 export function formatSyncReport(report: SyncReport): string {
@@ -158,7 +159,7 @@ export function formatSyncReport(report: SyncReport): string {
   if (plan.limits.rounds) lines.push(`  达到轮数上限 ${plan.limits.max_rounds}`);
   if (plan.limits.reads) lines.push(`  达到读页上限 ${plan.limits.max_reads}`);
   for (const failed of plan.failed_reads) lines.push(`  读取失败 ${failed.id}：${failed.reason}`);
-  lines.push(`构建：产出 ${report.counts.produced}，跳过 ${report.counts.skipped}，失败 ${report.counts.failed}`);
+  lines.push(`构建：产出 ${report.counts.produced}，只登记名字 ${report.counts.registered}，跳过 ${report.counts.skipped}，失败 ${report.counts.failed}`);
   for (const build of report.builds) {
     lines.push(`  [${OUTCOME_TEXT[build.outcome]}] ${build.name}（${build.family}，${build.line}${build.base === build.name ? '' : `，基于 ${build.base}`}）：${build.reason}${build.root ? ` 根 ${build.root}` : ''}`);
   }

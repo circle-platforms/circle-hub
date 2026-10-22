@@ -298,15 +298,18 @@ describe('knowledge sync arguments', () => {
       builds: [
         { name: 'b1', family: 'ACME', line: '1.2', base: 'b1', outcome: 'produced', reason: '产出根', root: H('a'), composition: H('b') },
         { name: 'b2', family: 'ZETA', line: '1.2', base: 'b1', outcome: 'skipped', reason: '别名', root: null, composition: null },
+        { name: 'b3', family: 'ACME', line: '1.2', base: 'b3', outcome: 'registered', reason: '没有可读的来源，只登记名字', root: null, composition: null },
       ],
       pointers: [{ line: '1.2', from: null, to: H('a'), build: 'b1', moved: true, reason: '移到 b1 的根' }],
-      counts: { produced: 1, skipped: 1, failed: 0 },
+      counts: { produced: 1, registered: 1, skipped: 1, failed: 0 },
       warnings: [],
       error: null,
     };
     const text = formatSyncReport(report);
     assert.match(text, /\[产出\] b1/);
     assert.match(text, /\[跳过\] b2（ZETA，1\.2，基于 b1）：别名/);
+    assert.match(text, /\[登记\] b3（ACME，1\.2）：没有可读的来源，只登记名字/);
+    assert.match(text, /构建：产出 1，只登记名字 1，跳过 1，失败 0/);
     assert.match(text, /读取失败 site:page:x：读取失败：HTTP 404/);
     assert.match(text, /当前根 1\.2：（无） → a{64}（b1）/);
   });

@@ -164,7 +164,7 @@ describe('the sync reports every build and notices what changed', () => {
       assert.match(row?.reason ?? '', /构建名/);
     }
     assert.equal(report.pointers.find((p) => p.line === '1.2')?.moved, true);
-    assert.deepEqual(report.counts, { produced: 1, skipped: 0, failed: 2 });
+    assert.deepEqual(report.counts, { produced: 1, registered: 0, skipped: 0, failed: 2 });
   });
 
   test('a plan note the store cannot keep is made storable instead of failing the sync', async (t) => {

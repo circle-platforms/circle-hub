@@ -375,6 +375,16 @@ export function syncSiteFiles(): Record<string, StaticFile> {
   const newer = 'Rel_DEMO_2_1_0_6';
   const tree = commandTree(newer).replace('    </menu>', '      <item name="reset" help="reset every widget"/>\n    </menu>');
   files[`/builds/${newer}/command_tree-${newer}.xml`] = { body: Buffer.from(tree, 'utf8'), type: 'application/xml' };
+  // A released build of the 2.1.0 line with no tree of its own and no base text: known by name only.
+  const bare = 'Rel_DEMO_2_1_0_7';
+  const listing = files['/rel_demo_2_1.html'];
+  listing.body = Buffer.concat([
+    listing.body,
+    Buffer.from(
+      `<html><body>${bare} (build on  2025-08-01 09:00:00 ): <font color=red>Released on 2025-08-03</font><br></body></html>`,
+      'latin1',
+    ),
+  ]);
   const missing = 'Rel_DEMO_2_0_0_9';
   files['/rel_demo_2_0.html'] = {
     body: Buffer.from(

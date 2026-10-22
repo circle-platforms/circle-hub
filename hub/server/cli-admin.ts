@@ -719,7 +719,12 @@ async function knowledgeCommand(session: Session, args: readonly string[]): Prom
     for (const line of lines) {
       const current = await hub.knowledge.currentRoot(id, line);
       session.out(`版本线 ${line}：${current === null ? '还没有当前根' : `当前根 ${current.root}（构建 ${current.build.name}，产出于 ${current.produced_at}）`}`);
-      for (const build of builds.filter((b) => b.line === line)) {
+      // Builds that have a root first, one line each; a line with many name-only builds stays readable: they
+      // close the line as one count instead of one row per build.
+      const ofLine = builds.filter((b) => b.line === line);
+      const rooted = ofLine.filter((b) => b.root !== null || b.base !== b.name);
+      const nameOnly = ofLine.filter((b) => b.root === null && b.base === b.name);
+      for (const build of rooted) {
         session.out(
           [
             `  ${build.name}`,
@@ -730,6 +735,7 @@ async function knowledgeCommand(session: Session, args: readonly string[]): Prom
           ].join('\t'),
         );
       }
+      if (nameOnly.length > 0) session.out(`  另有 ${nameOnly.length} 个构建只有名字，还没有根`);
     }
     return 0;
   }
