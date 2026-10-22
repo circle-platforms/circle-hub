@@ -67,4 +67,93 @@ test('a plan that names a missing node, a group as a case, the root or a case as
   bad({ kind: 'delete_expected', node: 'g1' });
   bad({ kind: 'duplicate', node: 'r' });
   bad({ kind: 'move', node: 'c1', to: 'c2' });
+  bad({ kind: 'replace_command_word', node: 'c1', from: 'nonexistent_word_xyz', to: 'bad' });
+  bad({ kind: 'delete_negative_group', node: 'r' });
+  bad({ kind: 'delete_negative_group', node: 'g1' }); // g1 contains stress cases, not negative
+  bad({ kind: 'delete_negative_group', node: 'c1' }); // c1 is a case, not a group
+});
+
+test('replace_command_word replaces command word only on target case and records from/to in gold', () => {
+  const doc: MindTree = {
+    root: group(
+      'r',
+      '测试文档',
+      group('g1', '配置', kase('c1', 'widget pool add pool1', '成功', 'configuration'), kase('c2', 'widget pool delete pool1', '成功', 'configuration')),
+    ),
+  };
+
+  const plan: Planned[] = [
+    {
+      label: '构建里不存在的命令',
+      seen_by: 'mechanical',
+      op: { kind: 'replace_command_word', node: 'c1', from: 'add', to: 'insert_bogus' },
+    },
+  ];
+
+  const { tree, gold } = inject(doc, plan);
+
+  // c1 has the command word replaced
+  const c1 = tree.root.children?.[0]?.children?.[0];
+  assert.equal(c1?.data.text, 'widget pool insert_bogus pool1');
+
+  // c2 is untouched
+  const c2 = tree.root.children?.[0]?.children?.[1];
+  assert.equal(c2?.data.text, 'widget pool delete pool1');
+
+  // gold records details
+  assert.equal(gold.length, 1);
+  assert.equal(gold[0].label, '构建里不存在的命令');
+  assert.equal(gold[0].seen_by, 'mechanical');
+  assert.equal(gold[0].node, 'c1');
+  assert.equal(gold[0].from, 'add');
+  assert.equal(gold[0].to, 'insert_bogus');
+  assert.match(gold[0].note, /换成了目录中不存在的“insert_bogus”/);
+
+  // original doc untouched
+  assert.equal(doc.root.children?.[0]?.children?.[0]?.data.text, 'widget pool add pool1');
+});
+
+test('delete_negative_group deletes a group containing only negative cases and records deletedCases in gold', () => {
+  const doc: MindTree = {
+    root: group(
+      'r',
+      '测试文档',
+      group('g_pos', '正向功能', kase('c1', '正常创建', '成功', 'configuration')),
+      group(
+        'g_neg',
+        '反向异常',
+        kase('c_neg1', '非法端口创建', '提示非法端口', 'negative'),
+        kase('c_neg2', '超长名称创建', '提示名称超长', '负向'),
+      ),
+    ),
+  };
+
+  const plan: Planned[] = [
+    {
+      label: '删掉一组反向用例',
+      seen_by: 'judgment',
+      op: { kind: 'delete_negative_group', node: 'g_neg' },
+    },
+  ];
+
+  const { tree, gold } = inject(doc, plan);
+
+  // g_neg is deleted from root
+  assert.equal(tree.root.children?.length, 1);
+  assert.equal(tree.root.children?.[0]?.data.id, 'g_pos');
+
+  // g_pos and c1 untouched
+  assert.equal(tree.root.children?.[0]?.children?.length, 1);
+  assert.equal(tree.root.children?.[0]?.children?.[0]?.data.id, 'c1');
+
+  // gold records deleted group and case IDs
+  assert.equal(gold.length, 1);
+  assert.equal(gold[0].label, '删掉一组反向用例');
+  assert.equal(gold[0].seen_by, 'judgment');
+  assert.equal(gold[0].node, 'g_neg');
+  assert.deepEqual(gold[0].deletedCases, ['c_neg1', 'c_neg2']);
+  assert.match(gold[0].note, /删掉了只含反向用例的分组 g_neg/);
+
+  // original doc untouched
+  assert.equal(doc.root.children?.length, 2);
 });
