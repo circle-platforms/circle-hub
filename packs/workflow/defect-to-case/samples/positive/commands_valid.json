@@ -4,8 +4,8 @@
   "check": "commands_catalog",
   "note": "用例步骤中的命令在目录中存在且参数类型和范围合法",
   "subject": {
-    "item": "71009",
-    "location": "src:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/plm:bug/71009",
+    "item": "74001",
+    "location": "src:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/plm:bug/74001",
     "phrases": [
       "widget health interval 60"
     ],
@@ -55,7 +55,7 @@
   "expect": [
     {
       "verdict": "support",
-      "item": "71009"
+      "item": "74001"
     }
   ]
 }

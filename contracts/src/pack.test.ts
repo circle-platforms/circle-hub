@@ -159,7 +159,7 @@ test('projection and expected-source functions exchange parsed models and extern
   assert.ok(ProjectionOutput.safeParse({ items: [item], warnings: [] }).success);
   assert.ok(ProjectionOutput.safeParse({ error: { code: 'pack.no_case', message: 'm', fix: 'f' }, warnings: [] }).success);
   assert.ok(!ProjectionOutput.safeParse({ items: [{ ...item, location: 'src:abc' }], warnings: [] }).success, 'the pack gives parser and selector, the Hub forms the reference');
-  assert.ok(ExpectedSourcesOutput.safeParse({ sources: [{ external: 'plm:story:31006', role: 'expected', reason: '标题里的需求号' }], warnings: [] }).success);
+  assert.ok(ExpectedSourcesOutput.safeParse({ sources: [{ external: 'plm:story:33001', role: 'expected', reason: '标题里的需求号' }], warnings: [] }).success);
   assert.ok(!ExpectedSourcesOutput.safeParse({ sources: [{ external: 'plm:story:1', role: 'subject', reason: 'x' }], warnings: [] }).success, 'only expected or hint sources are bound this way');
 });
 

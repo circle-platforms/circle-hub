@@ -4,7 +4,7 @@
   "check": "draft_shape",
   "note": "起草用例缺少标题、步骤和期望结果且优先级越界",
   "subject": {
-    "item": "71009",
+    "item": "74001",
     "slots": {
       "cases": [
         {
@@ -44,7 +44,7 @@
     {
       "verdict": "refute",
       "code": "defect-to-case.shape_invalid",
-      "item": "71009",
+      "item": "74001",
       "tier": "blocking"
     }
   ]

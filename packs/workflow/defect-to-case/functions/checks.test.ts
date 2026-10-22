@@ -38,7 +38,7 @@ describe('pack checks', () => {
     it('supports a good draft', () => {
       const good = makeGoodDraft();
       const input = makeCheckInput({
-        item: '71009',
+        item: '74001',
         slots: { cases: [{ text: good.title, data: good }] },
       });
       const outcomes = checkDraftShape(input);
@@ -50,7 +50,7 @@ describe('pack checks', () => {
       const emptyTitle = { ...makeGoodDraft(), title: '   ' };
       const longTitle = { ...makeGoodDraft(), title: 'x'.repeat(201) };
       const input1 = makeCheckInput({
-        item: '71009',
+        item: '74001',
         slots: { cases: [{ text: emptyTitle.title, data: emptyTitle }] },
       });
       const outcomes1 = checkDraftShape(input1);
@@ -58,7 +58,7 @@ describe('pack checks', () => {
       assert.equal(outcomes1[0].code, CODES.SHAPE_INVALID);
 
       const input2 = makeCheckInput({
-        item: '71009',
+        item: '74001',
         slots: { cases: [{ text: longTitle.title, data: longTitle }] },
       });
       const outcomes2 = checkDraftShape(input2);
@@ -69,39 +69,39 @@ describe('pack checks', () => {
     it('refutes a draft with no steps or step with empty command line', () => {
       const noSteps = { ...makeGoodDraft(), steps: [] };
       const emptyCmd = { ...makeGoodDraft(), steps: [{ command: '   ' }] };
-      const outcomes1 = checkDraftShape(makeCheckInput({ item: '71009', slots: { cases: [{ text: 'a', data: noSteps }] } }));
+      const outcomes1 = checkDraftShape(makeCheckInput({ item: '74001', slots: { cases: [{ text: 'a', data: noSteps }] } }));
       assert.equal(outcomes1[0].verdict, 'refute');
       assert.equal(outcomes1[0].code, CODES.SHAPE_INVALID);
 
-      const outcomes2 = checkDraftShape(makeCheckInput({ item: '71009', slots: { cases: [{ text: 'b', data: emptyCmd }] } }));
+      const outcomes2 = checkDraftShape(makeCheckInput({ item: '74001', slots: { cases: [{ text: 'b', data: emptyCmd }] } }));
       assert.equal(outcomes2[0].verdict, 'refute');
       assert.equal(outcomes2[0].code, CODES.SHAPE_INVALID);
     });
 
     it('refutes a draft with no expected result', () => {
       const noExpected = { ...makeGoodDraft(), expected: [] };
-      const outcomes = checkDraftShape(makeCheckInput({ item: '71009', slots: { cases: [{ text: 'c', data: noExpected }] } }));
+      const outcomes = checkDraftShape(makeCheckInput({ item: '74001', slots: { cases: [{ text: 'c', data: noExpected }] } }));
       assert.equal(outcomes[0].verdict, 'refute');
       assert.equal(outcomes[0].code, CODES.SHAPE_INVALID);
     });
 
     it('refutes priority out of range (not in 1..3)', () => {
       const badPriority = { ...makeGoodDraft(), priority: 5 };
-      const outcomes = checkDraftShape(makeCheckInput({ item: '71009', slots: { cases: [{ text: 'd', data: badPriority }] } }));
+      const outcomes = checkDraftShape(makeCheckInput({ item: '74001', slots: { cases: [{ text: 'd', data: badPriority }] } }));
       assert.equal(outcomes[0].verdict, 'refute');
       assert.equal(outcomes[0].code, CODES.SHAPE_INVALID);
     });
 
     it('refutes tags outside team template categories', () => {
       const badTag = { ...makeGoodDraft(), tags: ['UnknownTagCategory'] };
-      const outcomes = checkDraftShape(makeCheckInput({ item: '71009', slots: { cases: [{ text: 'e', data: badTag }] } }));
+      const outcomes = checkDraftShape(makeCheckInput({ item: '74001', slots: { cases: [{ text: 'e', data: badTag }] } }));
       assert.equal(outcomes[0].verdict, 'refute');
       assert.equal(outcomes[0].code, CODES.SHAPE_INVALID);
     });
 
     it('refutes negative draft with negative false', () => {
       const negWithFalse = { ...makeGoodDraft(), tags: ['Negative'], negative: false };
-      const outcomes = checkDraftShape(makeCheckInput({ item: '71009', slots: { cases: [{ text: 'f', data: negWithFalse }] } }));
+      const outcomes = checkDraftShape(makeCheckInput({ item: '74001', slots: { cases: [{ text: 'f', data: negWithFalse }] } }));
       assert.equal(outcomes[0].verdict, 'refute');
       assert.equal(outcomes[0].code, CODES.SHAPE_INVALID);
     });
@@ -111,7 +111,7 @@ describe('pack checks', () => {
       const d2 = makeGoodDraft();
       const outcomes = checkDraftShape(
         makeCheckInput({
-          item: '71009',
+          item: '74001',
           slots: {
             cases: [
               { text: d1.title, data: d1 },
@@ -129,7 +129,7 @@ describe('pack checks', () => {
     it('accepts a negative draft that is refuted by catalog when expects_refutation is true', () => {
       const neg = makeNegativeExpectedRefutationDraft();
       const input = makeCheckInput({
-        item: '71009',
+        item: '74001',
         slots: { cases: [{ text: neg.title, data: neg }] },
       });
       const outcomes = checkCommandsRefutation(input);
@@ -140,7 +140,7 @@ describe('pack checks', () => {
     it('refutes a negative draft with expects_refutation true when catalog accepts the command', () => {
       const bad = makeNegativeUnexpectedAcceptDraft();
       const input = makeCheckInput({
-        item: '71009',
+        item: '74001',
         slots: { cases: [{ text: bad.title, data: bad }] },
       });
       const outcomes = checkCommandsRefutation(input);
@@ -156,7 +156,7 @@ describe('pack checks', () => {
         steps: [{ command: 'widget health interval 99999' }],
       };
       const input = makeCheckInput({
-        item: '71009',
+        item: '74001',
         slots: { cases: [{ text: refutedDraft.title, data: refutedDraft }] },
       });
       const outcomes = checkCommandsRefutation(input);
@@ -170,7 +170,7 @@ describe('pack checks', () => {
     it('supports an expected result whose text is a faithful reading of quotation', () => {
       const good = makeGoodDraft();
       const input = makeCheckInput({
-        item: '71009',
+        item: '74001',
         slots: { cases: [{ text: good.title, data: good }] },
       });
       const outcomes = checkGroundedReading(input);
@@ -183,7 +183,7 @@ describe('pack checks', () => {
         expected: [{ text: '健康检查正常', quote: null as never }],
       };
       const input = makeCheckInput({
-        item: '71009',
+        item: '74001',
         slots: { cases: [{ text: noQuote.title, data: noQuote }] },
       });
       const outcomes = checkGroundedReading(input);
@@ -205,7 +205,7 @@ describe('pack checks', () => {
         ],
       };
       const input = makeCheckInput({
-        item: '71009',
+        item: '74001',
         slots: { cases: [{ text: extraEntity.title, data: extraEntity }] },
       });
       const outcomes = checkGroundedReading(input);
@@ -218,7 +218,7 @@ describe('pack checks', () => {
     it('supports a draft that is not a duplicate of an indexed case', () => {
       const good = makeGoodDraft();
       const input = makeCheckInput({
-        item: '71009',
+        item: '74001',
         drafts: [good],
         indexed_cases: SYNTHETIC_INDEX_VIEW,
       });
@@ -230,7 +230,7 @@ describe('pack checks', () => {
     it('refutes a draft that duplicates an indexed case with an advisory violation', () => {
       const dup = makeDuplicateDraft();
       const input = makeCheckInput({
-        item: '71009',
+        item: '74001',
         drafts: [dup],
         indexed_cases: SYNTHETIC_INDEX_VIEW,
       });
@@ -248,7 +248,7 @@ describe('pack checks', () => {
     it('gives an unknown outcome when no duplicate found but index has skipped sources', () => {
       const good = makeGoodDraft();
       const input = makeCheckInput({
-        item: '71009',
+        item: '74001',
         drafts: [good],
         indexed_cases: INCOMPLETE_INDEX_VIEW,
       });

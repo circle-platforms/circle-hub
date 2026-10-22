@@ -4,7 +4,7 @@
   "check": "grounded_quotes",
   "note": "期望结果逐字引文完全存在于所引来源中",
   "subject": {
-    "item": "71009",
+    "item": "74001",
     "quotes": [
       {
         "reference": "src:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/markdown@1/s/fix",
@@ -18,7 +18,7 @@
   "expect": [
     {
       "verdict": "support",
-      "item": "71009"
+      "item": "74001"
     }
   ]
 }

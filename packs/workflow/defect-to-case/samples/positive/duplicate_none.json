@@ -4,7 +4,7 @@
   "check": "duplicate_check",
   "note": "起草用例在已有索引中无重复项",
   "subject": {
-    "item": "71009",
+    "item": "74001",
     "drafts": [
       {
         "title": "查看健康检查状态",
@@ -73,7 +73,7 @@
   "expect": [
     {
       "verdict": "support",
-      "item": "71009"
+      "item": "74001"
     }
   ]
 }

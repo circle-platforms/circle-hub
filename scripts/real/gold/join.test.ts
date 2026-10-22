@@ -9,8 +9,8 @@ import { joinGold, main, normalizeId } from './join.ts';
 
 describe('normalizeId', () => {
   test('a pure digit run loses its leading zeros; anything else stays as written', () => {
-    assert.equal(normalizeId('0071009'), '71009');
-    assert.equal(normalizeId('71009'), '71009');
+    assert.equal(normalizeId('0074001'), '74001');
+    assert.equal(normalizeId('74001'), '74001');
     assert.equal(normalizeId('0'), '0');
     assert.equal(normalizeId('ALM-1'), 'ALM-1');
   });

@@ -42,7 +42,7 @@ describe('case-location scenario without buildCandidates', () => {
     const mismatch = [
       '运行 run_1 完成：任务包 case-location@1.0.0',
       'location 用例定位：满足 1',
-      '产品线 apv；版本 10.5.1（目录，置信度高）；发布火车 10.6.1-R2',
+      '产品线 apv；版本 10.7.4（目录，置信度高）；发布火车 10.6.1-R2',
     ].join('\n');
     assert.ok(!allOk(scenario, turnsOf(mismatch)));
   });
@@ -60,7 +60,7 @@ describe('case-location scenario with buildCandidates', () => {
       ],
       written: [
         { name: 'Rel_APV_10_6_1_57', classification: 'known' },
-        { name: 'Rel_APV_10_5_1_101', classification: 'other_line', line: '10.5.1' },
+        { name: 'Rel_APV_10_7_4_101', classification: 'other_line', line: '10.7.4' },
         { name: 'Rel_UNKNOWN', classification: 'unknown' },
       ],
     },
@@ -73,7 +73,7 @@ describe('case-location scenario with buildCandidates', () => {
     '产品线 apv；版本 10.6.1（目录，置信度高）',
     '构建候选：版本线 10.6.1 的构建候选 2 个，按制作时间从新到旧：Rel_APV_10_6_1_57、Rel_NSAE_10_6_1_57（依据 Rel_APV_10_6_1_57）',
     '写出的构建名 Rel_APV_10_6_1_57 是定位到的版本线的构建',
-    '写出的构建名 Rel_APV_10_5_1_101 属于版本线 10.5.1，不是定位到的版本线 10.6.1 的构建',
+    '写出的构建名 Rel_APV_10_7_4_101 属于版本线 10.7.4，不是定位到的版本线 10.6.1 的构建',
     '知识库不认识写出的构建名 Rel_UNKNOWN（知识库只收录构建站列出的构建；不认识不等于写错）',
   ].join('\n');
 
@@ -138,12 +138,12 @@ describe('case-location scenario with buildCandidates', () => {
 
   test('fails when written build classification does not match gold', () => {
     const wrongClass = baseGood.replace(
-      '写出的构建名 Rel_APV_10_5_1_101 属于版本线 10.5.1，不是定位到的版本线 10.6.1 的构建',
-      '知识库不认识写出的构建名 Rel_APV_10_5_1_101（知识库只收录构建站列出的构建；不认识不等于写错）',
+      '写出的构建名 Rel_APV_10_7_4_101 属于版本线 10.7.4，不是定位到的版本线 10.6.1 的构建',
+      '知识库不认识写出的构建名 Rel_APV_10_7_4_101（知识库只收录构建站列出的构建；不认识不等于写错）',
     );
     const checks = scenario.check(turnsOf(wrongClass));
     assert.ok(!checks.every((c) => c.ok));
-    const writtenCheck = checks.find((c) => c.name.includes('写出的构建名') && c.name.includes('Rel_APV_10_5_1_101'));
+    const writtenCheck = checks.find((c) => c.name.includes('写出的构建名') && c.name.includes('Rel_APV_10_7_4_101'));
     assert.ok(writtenCheck && !writtenCheck.ok);
   });
 });
@@ -239,41 +239,41 @@ describe('case-location scenario with 15 buildCandidates (top 12 truncation and 
 
 describe('parseReportedCandidates and guideline section avoidance', () => {
   const twelveList = [
-    'Beta_NSAE_10_4_6_232（NSAE，基于 Beta_APV_10_4_6_232）制作于 2026-10-20 04:02，未发布',
-    'Beta_NSAE_10_4_6_231（NSAE）制作于 2026-10-17 04:14，未发布',
-    'Beta_APV_10_4_6_230（APV）制作于 2026-10-16 10:00，未发布',
-    'Beta_APV_10_4_6_229（APV）制作于 2026-10-15 10:00，未发布',
-    'Beta_APV_10_4_6_228（APV）制作于 2026-10-14 10:00，未发布',
-    'Beta_APV_10_4_6_227（APV）制作于 2026-10-13 10:00，未发布',
-    'Beta_APV_10_4_6_226（APV）制作于 2026-10-12 10:00，未发布',
-    'Beta_APV_10_4_6_225（APV）制作于 2026-10-11 10:00，未发布',
-    'Beta_APV_10_4_6_224（APV）制作于 2026-10-10 10:00，未发布',
-    'Beta_APV_10_4_6_223（APV）制作于 2026-10-09 10:00，未发布',
-    'Beta_APV_10_4_6_222（APV）制作于 2026-10-08 10:00，未发布',
-    'Beta_APV_10_4_6_221（APV）制作于 2026-10-07 10:00，未发布',
+    'Beta_NSAE_10_6_5_232（NSAE，基于 Beta_APV_10_6_5_232）制作于 2026-10-20 04:02，未发布',
+    'Beta_NSAE_10_6_5_231（NSAE）制作于 2026-10-17 04:14，未发布',
+    'Beta_APV_10_6_5_230（APV）制作于 2026-10-16 10:00，未发布',
+    'Beta_APV_10_6_5_229（APV）制作于 2026-10-15 10:00，未发布',
+    'Beta_APV_10_6_5_228（APV）制作于 2026-10-14 10:00，未发布',
+    'Beta_APV_10_6_5_227（APV）制作于 2026-10-13 10:00，未发布',
+    'Beta_APV_10_6_5_226（APV）制作于 2026-10-12 10:00，未发布',
+    'Beta_APV_10_6_5_225（APV）制作于 2026-10-11 10:00，未发布',
+    'Beta_APV_10_6_5_224（APV）制作于 2026-10-10 10:00，未发布',
+    'Beta_APV_10_6_5_223（APV）制作于 2026-10-09 10:00，未发布',
+    'Beta_APV_10_6_5_222（APV）制作于 2026-10-08 10:00，未发布',
+    'Beta_APV_10_6_5_221（APV）制作于 2026-10-07 10:00，未发布',
   ];
 
   const guidelineText = [
     '4. 构建候选（要求项 build_candidates）：按定位到的版本线在两个名称族的候选构建列表，别名解析到它所依据的构建；如 Rel_OLD_RULE_NOT_A_CANDIDATE。',
     '',
-    `版本线 10.4.6 的构建候选 81 个，按制作时间从新到旧：${twelveList.join('；')}；另有 69 个，支持；性质……`,
+    `版本线 10.6.5 的构建候选 81 个，按制作时间从新到旧：${twelveList.join('；')}；另有 69 个，支持；性质……`,
   ].join('\n');
 
   test('accurately matches conclusion prefix and parses top 12 candidates without being disturbed by section 4 guideline', () => {
     const candidates = parseReportedCandidates(guidelineText);
     assert.equal(candidates.length, 12);
-    assert.equal(candidates[0].name, 'Beta_NSAE_10_4_6_232');
-    assert.equal(candidates[0].base, 'Beta_APV_10_4_6_232');
+    assert.equal(candidates[0].name, 'Beta_NSAE_10_6_5_232');
+    assert.equal(candidates[0].base, 'Beta_APV_10_6_5_232');
     assert.equal(candidates[0].built, '2026-10-20T04:02:00');
 
-    assert.equal(candidates[1].name, 'Beta_NSAE_10_4_6_231');
-    assert.equal(candidates[1].base, 'Beta_NSAE_10_4_6_231');
+    assert.equal(candidates[1].name, 'Beta_NSAE_10_6_5_231');
+    assert.equal(candidates[1].base, 'Beta_NSAE_10_6_5_231');
     assert.equal(candidates[1].built, '2026-10-17T04:14:00');
 
     for (let i = 2; i < 12; i++) {
       const num = 232 - i;
-      assert.equal(candidates[i].name, `Beta_APV_10_4_6_${num}`);
-      assert.equal(candidates[i].base, `Beta_APV_10_4_6_${num}`);
+      assert.equal(candidates[i].name, `Beta_APV_10_6_5_${num}`);
+      assert.equal(candidates[i].base, `Beta_APV_10_6_5_${num}`);
       const built = candidates[i].built;
       assert.ok(built !== null && built.startsWith('2026-10-'));
     }

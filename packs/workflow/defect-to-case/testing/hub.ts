@@ -30,7 +30,7 @@ import { openTestRecords, type TestRecordsKit } from '../../../../hub/testing/re
 import { stage } from '../pack-files.ts';
 import {
   MANUAL_PASSAGE,
-  SYNTHETIC_BUG_71009,
+  SYNTHETIC_BUG_74001,
   SYNTHETIC_BUG_71010_UNCHECKABLE,
   SYNTHETIC_CATALOG_SPEC,
   SYNTHETIC_INDEX_VIEW,
@@ -196,11 +196,11 @@ export async function openHub(postgres: TemporaryPostgres): Promise<Hub> {
     await registry.assign(admin, alice.id, 'defect-to-case');
 
     const external = new FakeExternal(kit.artifacts);
-    // Put synthetic bug 71009
-    external.put('plm:bug:71009', {
-      bytes: new TextEncoder().encode(JSON.stringify(SYNTHETIC_BUG_71009)),
+    // Put synthetic bug 74001
+    external.put('plm:bug:74001', {
+      bytes: new TextEncoder().encode(JSON.stringify(SYNTHETIC_BUG_74001)),
       mediaType: 'application/json',
-      meta: { title: `缺陷 71009 ${SYNTHETIC_BUG_71009.title}`, status: 'closed' },
+      meta: { title: `缺陷 74001 ${SYNTHETIC_BUG_74001.title}`, status: 'closed' },
     });
     // Put synthetic bug 71010
     external.put('plm:bug:71010', {

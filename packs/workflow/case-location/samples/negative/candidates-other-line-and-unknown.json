@@ -2,7 +2,7 @@
   "id": "candidates_other_line_and_unknown",
   "source": "author",
   "check": "candidates",
-  "note": "合成样例：写出的构建名属于另一条版本线（Rel_APV_10_5_1_101 属于 10.5.1）记不通过（提示档）；知识库不认识的构建名记未知（缺输入），从不记为不通过",
+  "note": "合成样例：写出的构建名属于另一条版本线（Rel_APV_10_7_4_101 属于 10.7.4）记不通过（提示档）；知识库不认识的构建名记未知（缺输入），从不记为不通过",
   "subject": {
     "items": [
       {
@@ -20,7 +20,7 @@
             "004：10.6.1-R2-2026/7",
             "SSL"
           ],
-          "title": "回归 Rel_APV_10_5_1_101 告警",
+          "title": "回归 Rel_APV_10_7_4_101 告警",
           "path": [],
           "case_title": null
         }
@@ -85,10 +85,10 @@
           "has_root": true
         },
         {
-          "name": "Rel_APV_10_5_1_101",
+          "name": "Rel_APV_10_7_4_101",
           "family": "APV",
-          "line": "10.5.1",
-          "base": "Rel_APV_10_5_1_101",
+          "line": "10.7.4",
+          "base": "Rel_APV_10_7_4_101",
           "platform": null,
           "built_at": "2026-05-01T00:00:00.000Z",
           "released_at": "2026-05-02T00:00:00.000Z",

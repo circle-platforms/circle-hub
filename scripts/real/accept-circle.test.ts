@@ -31,7 +31,7 @@ test('the case-location scenario starts the run in the first turn and checks the
 });
 
 test('the template-gap scenario compares the case count with the independent count', () => {
-  const turns = parseLog(JSON.stringify({ index: 1, tools: [], toolResults: [{ id: 't', text: '运行 run_y\n- 24863 | 标题 | 用例 62 个；缺 18 个模板类别：集成测试（integration）', isError: false }] }));
+  const turns = parseLog(JSON.stringify({ index: 1, tools: [], toolResults: [{ id: 't', text: '运行 run_y\n- 24001 | 标题 | 用例 62 个；缺 18 个模板类别：集成测试（integration）', isError: false }] }));
   assert.ok(templateGap({ document: '90001', cases: 62 }).check(turns).every((c) => c.ok));
   assert.ok(templateGap({ document: '90001', cases: 61 }).check(turns).some((c) => !c.ok));
 });

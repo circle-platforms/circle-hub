@@ -8,10 +8,10 @@ function makeItemInput(drafts: unknown[], groups: Record<string, unknown>[] = []
   return {
     applies: 'item',
     item: {
-      id: '71009',
+      id: '74001',
       label: 'SLB健康检查间隔无法保存',
       location: 'src:sha_bug/json@1/#',
-      fields: { id: '71009', title: 'SLB健康检查间隔无法保存' },
+      fields: { id: '74001', title: 'SLB健康检查间隔无法保存' },
     },
     slots: {
       cases: drafts.map((d) => ({
@@ -39,7 +39,7 @@ describe('subjects', () => {
     const input = makeItemInput([good, neg]);
 
     const subject = commandSubject(input) as { item: string; phrases: string[] };
-    assert.equal(subject.item, '71009');
+    assert.equal(subject.item, '74001');
     // neg has expects_refutation: true, so its out-of-range command should not be checked by normal catalog support
     assert.deepEqual(subject.phrases, ['widget health interval 60']);
   });
@@ -49,7 +49,7 @@ describe('subjects', () => {
     const input = makeItemInput([good]);
 
     const subject = quoteSubject(input) as { item: string; quotes: Array<{ reference: string; text: string }> };
-    assert.equal(subject.item, '71009');
+    assert.equal(subject.item, '74001');
     assert.equal(subject.quotes.length, 1);
     assert.equal(subject.quotes[0].reference, 'src:sha123/json@1/#/html_fields/fix');
     assert.equal(subject.quotes[0].text, '健康检查间隔设置成功');
@@ -60,7 +60,7 @@ describe('subjects', () => {
     const input = makeItemInput([dup], [{ indexed_cases: SYNTHETIC_INDEX_VIEW }]);
 
     const subject = duplicateSubject(input) as { item: string; drafts: unknown[]; indexed_cases: typeof SYNTHETIC_INDEX_VIEW };
-    assert.equal(subject.item, '71009');
+    assert.equal(subject.item, '74001');
     assert.equal(subject.drafts.length, 1);
     assert.ok(subject.indexed_cases);
     assert.equal(subject.indexed_cases.total_entries, 1);

@@ -37,7 +37,7 @@ describe('folder labels', () => {
     assert.equal(lineOfLabel(parseLabel('060：192.0.2.10')), null);
     assert.deepEqual(trainOfLabel(parseLabel('004：10.6.1-R2-2026/7')), { train: '10.6.1-R2-2026/7', version: '10.6.1' });
     assert.deepEqual(trainOfLabel(parseLabel('301：10.6.2 主线HG UOS-2026/08/02')), { train: '10.6.2 主线HG UOS-2026/08/02', version: '10.6.2' });
-    assert.equal(trainOfLabel(parseLabel('10.5.3 迁移回归')), null);
+    assert.equal(trainOfLabel(parseLabel('10.7.3 迁移回归')), null);
     assert.equal(trainOfLabel(parseLabel('004：10.6.1-')), null);
     assert.equal(trainOfLabel(parseLabel('004：10.6.1')), null);
     assert.equal(trainOfLabel(parseLabel('101：192.0.2.10-网段')), null);
@@ -63,7 +63,7 @@ describe('folder labels', () => {
     for (const [label, version] of [
       ['10.6.1', '10.6.1'],
       ['V10.7.0', '10.7.0'],
-      ['NSAE_10.5.3', '10.5.3'],
+      ['NSAE_10.7.3', '10.7.3'],
       ['APV-10.4.6', '10.4.6'],
       ['060：10.6.1', '10.6.1'],
       ['060：NSAE_10.6.1', '10.6.1'],
@@ -83,7 +83,7 @@ describe('the version scheme', () => {
     assert.deepEqual(scan('Build_20260315'), [['build', '20260315']]);
     assert.deepEqual(scan('patch2'), [['patch', '2']]);
     assert.deepEqual(scan('Patch 1.2 专项'), [['patch', '1.2']]);
-    assert.deepEqual(scan('NSAE_10.5.3_patch3'), [['version', '10.5.3'], ['patch', '3']]);
+    assert.deepEqual(scan('NSAE_10.7.3_patch3'), [['version', '10.7.3'], ['patch', '3']]);
     assert.deepEqual(scan('APV 10.7.0 build20260110'), [['version', '10.7.0'], ['build', '20260110']]);
     assert.deepEqual(scan('10.7.0-build20260402-2026/4'), [['version', '10.7.0'], ['build', '20260402']]);
     assert.deepEqual(scan('hotpatch2'), [['patch', '2']]);
@@ -139,7 +139,7 @@ describe('version lines and build names', () => {
     assert.ok(versionsAgree('10.6.1.57', '10.6.1'));
     assert.ok(versionsAgree('010.6', '10.6'));
     assert.ok(!versionsAgree('10.6.0', '10.6.1'));
-    assert.ok(!versionsAgree('10.5.3', '10.6.1'));
+    assert.ok(!versionsAgree('10.7.3', '10.6.1'));
     assert.equal(lineOfVersion('10.6.1.57'), '10.6.1');
     assert.equal(lineOfVersion('10.6'), '10.6');
     // The same version line: the first three numbers compared as lines.
@@ -162,12 +162,12 @@ describe('version lines and build names', () => {
   it('lists only the written names of the line families, verbatim, and never makes one up', () => {
     const names = ['APV', 'NSAE'];
     // No twin in the other family (an older NSAE build is based on an APV build with another number).
-    assert.deepEqual(writtenBuilds(['Rel_NSAE_10_3_1_37 回归'], names, 24), { names: ['Rel_NSAE_10_3_1_37'], foreign: [] });
+    assert.deepEqual(writtenBuilds(['Rel_NSAE_10_9_1_37 回归'], names, 24), { names: ['Rel_NSAE_10_9_1_37'], foreign: [] });
     assert.deepEqual(writtenBuilds(['Rel_APV-HG-K_10_6_1_8_4_129'], names, 24), { names: ['Rel_APV-HG-K_10_6_1_8_4_129'], foreign: [] });
     // Another product's build is left out and reported; a version alone gives no name; the same name is listed once.
     assert.deepEqual(writtenBuilds(['Rel_OTHERPROD_9_1_0_3 对比', 'NSAE_10.6.1.57', 'Rel_nsae_10_6_1_57', 'Rel_NSAE_10_6_1_57'], names, 24), { names: ['Rel_nsae_10_6_1_57', 'Rel_NSAE_10_6_1_57'], foreign: ['Rel_OTHERPROD_9_1_0_3'] });
     // Without the names of a line (an unbound run) nothing is listed.
-    assert.deepEqual(writtenBuilds(['Rel_NSAE_10_3_1_37'], [], 24), { names: [], foreign: ['Rel_NSAE_10_3_1_37'] });
+    assert.deepEqual(writtenBuilds(['Rel_NSAE_10_9_1_37'], [], 24), { names: [], foreign: ['Rel_NSAE_10_9_1_37'] });
     assert.equal(writtenBuilds([Array.from({ length: 40 }, (_, k) => `Rel_APV_10_6_1_${k}`).join(' ')], names, 5).names.length, 5);
   });
 });

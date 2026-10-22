@@ -4,9 +4,9 @@
   "check": "grounded_reading",
   "note": "期望结果阅读精炼且未引入来源未包含的数字或命令",
   "subject": {
-    "item": "71009",
+    "item": "74001",
     "label": "SLB健康检查间隔无法保存",
-    "location": "src:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/plm:bug/71009",
+    "location": "src:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/plm:bug/74001",
     "fields": {
       "status": "closed",
       "resolution": "fixed",
@@ -52,7 +52,7 @@
   "expect": [
     {
       "verdict": "support",
-      "item": "71009"
+      "item": "74001"
     }
   ]
 }

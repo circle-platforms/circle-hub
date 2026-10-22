@@ -112,7 +112,7 @@ not known is an unknown (the knowledge base lists only the builds of the build s
    map are read after a marker word only. A number marked anywhere takes that kind wherever it stands unmarked. Where each
    id was read is in `id_sources`; the summary marks ids not from the title (`需求 20931（目录）`).
 8. **Id ranges** (`id_ranges`) are a declaration (A01 R[2]): the kinds they give are reported apart (`ranged`, summary
-   `31006（声明的范围：需求）`), never as tree facts, and the answer's verdict does not rest on them. A declared range
+   `33001（声明的范围：需求）`), never as tree facts, and the answer's verdict does not rest on them. A declared range
    classifies the ids it contains unless the other declared range contains them too; an id in no declared range stays
    unclassified, so a range given alone classifies its own ids.
 9. **Declarations** (`product`, `line`). A declared product fills the product only when there is no root (marked in

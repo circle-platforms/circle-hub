@@ -15,7 +15,7 @@ import { type BuildCandidate, main, parseBuildCandidates } from './builds.ts';
 // 1. Rel_APV_10_6_1_57 (APV, released 2026-05-14, command tree)
 // 2. Rel_APV_10_6_1_56 (APV, unreleased, command tree)
 // 3. Rel_NSAE_10_6_1_41 (NSAE alias, based on Rel_APV_10_6_1_57, released 2026-05-22, no command tree)
-// 4. Rel_APV_10_5_1_101 (APV of another version line 10.5.1, released 2026-01-01)
+// 4. Rel_APV_10_7_4_101 (APV of another version line 10.7.4, released 2026-01-01)
 const SYNTHETIC_LISTING_HTML = `<!DOCTYPE html>
 <html>
 <head><title>Synthetic Build Listing</title></head>
@@ -41,10 +41,10 @@ Rel_APV_10_6_1_56 (build on  2026-05-10 09:00:00 ):  </br>
   <A href=/builds/DEMO-MIB-Rel_NSAE_10_6_1_41.txt>DEMO-MIB-Rel_NSAE_10_6_1_41.txt</A><BR>
 </BLOCKQUOTE>
 
-<font color=red>Rel_APV_10_5_1_101 (build on  2026-01-01 08:00:00 ): Released on 2026-01-02 </font> </br>
+<font color=red>Rel_APV_10_7_4_101 (build on  2026-01-01 08:00:00 ): Released on 2026-01-02 </font> </br>
 <BLOCKQUOTE>
-  <A href=/builds/DemoOS-Rel_APV_10_5_1_101.array>DemoOS-Rel_APV_10_5_1_101.array ( 850M, SHA256: aaaa... )</A><BR>
-  <A href=/builds/command_tree-Rel_APV_10_5_1_101.xml>command_tree-Rel_APV_10_5_1_101.xml</A><BR>
+  <A href=/builds/DemoOS-Rel_APV_10_7_4_101.array>DemoOS-Rel_APV_10_7_4_101.array ( 850M, SHA256: aaaa... )</A><BR>
+  <A href=/builds/command_tree-Rel_APV_10_7_4_101.xml>command_tree-Rel_APV_10_7_4_101.xml</A><BR>
 </BLOCKQUOTE>
 </body>
 </html>`;
@@ -65,7 +65,7 @@ describe('parseBuildCandidates', () => {
   test('extracts builds of the version line with two families, resolves aliases, handles unreleased, and excludes other lines', () => {
     const candidates = parseBuildCandidates(SYNTHETIC_LISTING_HTML, '10.6.1');
 
-    // Expected 3 candidates under line 10.6.1; Rel_APV_10_5_1_101 must be excluded.
+    // Expected 3 candidates under line 10.6.1; Rel_APV_10_7_4_101 must be excluded.
     assert.equal(candidates.length, 3);
 
     const byName = new Map<string, BuildCandidate>(candidates.map((c) => [c.name, c]));
@@ -92,7 +92,7 @@ describe('parseBuildCandidates', () => {
     assert.equal(nsae41.released, '2026-05-22');
 
     // 4. Other version line excluded
-    assert.ok(!byName.has('Rel_APV_10_5_1_101'), 'build from another version line must be excluded');
+    assert.ok(!byName.has('Rel_APV_10_7_4_101'), 'build from another version line must be excluded');
   });
 
   test('every candidate carries the built time of the page and the based-on base', () => {

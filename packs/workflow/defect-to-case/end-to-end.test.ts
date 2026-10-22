@@ -36,7 +36,7 @@ describe('defect-to-case end to end run', { skip }, () => {
         build: 'Rel_APV_10_6_1_57',
         inputs: {
           defects: [
-            { external: 'plm:bug:71009' },
+            { external: 'plm:bug:74001' },
             { external: 'plm:bug:71010' },
           ],
           indexed_cases: {
@@ -52,12 +52,12 @@ describe('defect-to-case end to end run', { skip }, () => {
     const runId = started.run.run;
     assert.equal(started.run.items.length, 2);
 
-    // Locate the fix reference for 71009 from the bound defect source
-    const defectSource = started.run.sources.find((s) => (s.external ?? '').includes('71009'));
+    // Locate the fix reference for 74001 from the bound defect source
+    const defectSource = started.run.sources.find((s) => (s.external ?? '').includes('74001'));
     assert.ok(defectSource, 'defect source should be bound');
     const fixRef = `${defectSource.reference}/json@1/p/html_fields/fix`;
 
-    // 2. Round 1 submission: with a quotation mismatch error for 71009
+    // 2. Round 1 submission: with a quotation mismatch error for 74001
     const sub1 = await hub.service.submitResult(
       hub.alice,
       {
@@ -65,7 +65,7 @@ describe('defect-to-case end to end run', { skip }, () => {
         model: 'synthetic-model',
         items: [
           {
-            item: '71009',
+            item: '74001',
             handling: 'handled',
             slots: {
               cases: [
@@ -114,7 +114,7 @@ describe('defect-to-case end to end run', { skip }, () => {
         model: 'synthetic-model',
         items: [
           {
-            item: '71009',
+            item: '74001',
             handling: 'handled',
             slots: {
               cases: [
@@ -156,10 +156,10 @@ describe('defect-to-case end to end run', { skip }, () => {
     const result = sub2.result as ValidationResult;
 
     // Check partitions
-    // 71009 was handled and delivered
+    // 74001 was handled and delivered
     assert.ok(
-      result.partitions.delivered.some((p) => p.item === '71009'),
-      '71009 should be in delivered partition',
+      result.partitions.delivered.some((p) => p.item === '74001'),
+      '74001 should be in delivered partition',
     );
     // 71010 was skipped -> in incomplete partition with declared_skip
     const skippedItem = result.partitions.incomplete.find((p) => p.item === '71010');
@@ -175,7 +175,7 @@ describe('defect-to-case end to end run', { skip }, () => {
         product: 'apv',
         build: 'Rel_APV_10_6_1_57',
         inputs: {
-          defects: [{ external: 'plm:bug:71009' }],
+          defects: [{ external: 'plm:bug:74001' }],
           indexed_cases: {
             external: 'knowledge:index:apv:Rel_APV_10_6_1_57?kind=case&key=commands',
           },

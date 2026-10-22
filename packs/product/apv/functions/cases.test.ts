@@ -140,10 +140,10 @@ describe('the declaration', () => {
 });
 
 describe('the case entries of the corpus', () => {
-  const run = produceBuild(corpus, '10.6.1');
+  const run = produceBuild(corpus, '10.6.4');
 
   it('are exactly the truth: one entry per case and resolved command, every field as the corpus built it', () => {
-    const expected = expectedEntries(corpus, '10.6.1');
+    const expected = expectedEntries(corpus, '10.6.4');
     assert.equal(run.entries.length, expected.length);
     for (let k = 0; k < expected.length; k++) assert.deepEqual(run.entries[k], expected[k], `entry ${k}`);
     assert.ok(run.calls >= 5);
@@ -151,7 +151,7 @@ describe('the case entries of the corpus', () => {
   });
 
   it('every case of a listed document is counted: indexed, without a command phrase, or not resolving', () => {
-    const listed = new Set(listedFor(corpus, '10.6.1'));
+    const listed = new Set(listedFor(corpus, '10.6.4'));
     const all = corpus.truth.filter((d) => listed.has(d.id)).flatMap((d) => d.cases);
     const indexed = all.filter((k) => k.commands.a.length > 0).length;
     let counted = 0;
@@ -176,14 +176,14 @@ describe('the case entries of the corpus', () => {
   });
 
   it('against the later catalog the removed command files nothing and the rest is the same', () => {
-    const later = produceBuild(corpus, '10.6.1', CATALOG_B);
-    assert.deepEqual(later.entries, expectedEntries(corpus, '10.6.1', 'b'));
+    const later = produceBuild(corpus, '10.6.4', CATALOG_B);
+    assert.deepEqual(later.entries, expectedEntries(corpus, '10.6.4', 'b'));
     assert.ok(!later.entries.some((e) => e.path === '/commands/relay/encrypt/mode'));
     assert.ok(run.entries.some((e) => e.path === '/commands/relay/encrypt/mode'));
   });
 
   it('a build of an earlier line has the entries of its own list only', () => {
-    assert.deepEqual(produceBuild(corpus, '10.4.6').entries, expectedEntries(corpus, '10.4.6'));
+    assert.deepEqual(produceBuild(corpus, '10.6.1').entries, expectedEntries(corpus, '10.6.1'));
   });
 });
 

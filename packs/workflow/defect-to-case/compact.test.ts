@@ -4,7 +4,7 @@ import type { BoundInput, RunContext } from '../../../contracts/src/pack.ts';
 import type { IndexView, ViewEntry } from '../../../contracts/src/views.ts';
 import { checkDuplicate } from './functions/checks.ts';
 import { projectDefects } from './functions/projection.ts';
-import { SYNTHETIC_BUG_71009, makeGoodDraft } from './testing/fixtures.ts';
+import { SYNTHETIC_BUG_74001, makeGoodDraft } from './testing/fixtures.ts';
 
 const DUMMY_CONTEXT: RunContext = {
   product: 'apv',
@@ -16,11 +16,11 @@ const DUMMY_CONTEXT: RunContext = {
   groups: [],
 };
 
-function makeBoundDefect(bug = SYNTHETIC_BUG_71009): BoundInput {
+function makeBoundDefect(bug = SYNTHETIC_BUG_74001): BoundInput {
   return {
     slot: 'defects',
     external: `plm:bug:${bug.id}`,
-    sha256: 'sha_bug_71009',
+    sha256: 'sha_bug_74001',
     media_type: 'application/json',
     parser: 'json@1',
     model: bug,
@@ -146,7 +146,7 @@ describe('compact case index and deduplication at real scale', () => {
     nonMatchingDraft.title = '全然不同的用例';
 
     const unknownOutcome = checkDuplicate({
-      item: '71009',
+      item: '74001',
       drafts: [nonMatchingDraft],
       indexed_cases: truncatedIndex,
     });
@@ -165,7 +165,7 @@ describe('compact case index and deduplication at real scale', () => {
     duplicateDraft.negative = false;
 
     const refuteOutcome = checkDuplicate({
-      item: '71009',
+      item: '74001',
       drafts: [duplicateDraft],
       indexed_cases: truncatedIndex,
     });
@@ -261,7 +261,7 @@ describe('compact case index and deduplication at real scale', () => {
     draftMatchingUnplaced.title = '无命令的未归位用例';
 
     const outcome = checkDuplicate({
-      item: '71009',
+      item: '74001',
       drafts: [draftMatchingUnplaced],
       indexed_cases: compact,
     });

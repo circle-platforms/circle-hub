@@ -28,7 +28,7 @@ const BUILDS: ContextBuild[] = [
   build('Rel_NSAE_10_6_1_57', 'NSAE', '10.6.1', { base: 'Rel_APV_10_6_1_57', built_at: '2026-09-01T00:00:00.000Z', released_at: '2026-09-05T00:00:00.000Z' }),
   build('Rel_APV_10_6_1_60', 'APV', '10.6.1', { built_at: '2026-09-18T00:00:00.000Z', released_at: '2026-09-20T00:00:00.000Z' }),
   build('Rel_APV_10_6_1_63', 'APV', '10.6.1', { built_at: '2026-09-25T00:00:00.000Z', released_at: null }),
-  build('Rel_APV_10_5_1_101', 'APV', '10.5.1', { built_at: '2026-05-01T00:00:00.000Z', released_at: '2026-05-02T00:00:00.000Z' }),
+  build('Rel_APV_10_7_4_101', 'APV', '10.7.4', { built_at: '2026-05-01T00:00:00.000Z', released_at: '2026-05-02T00:00:00.000Z' }),
 ];
 
 function subjectOf(items: Array<{ id: string; location: string; fields: ItemFields }>, builds: ContextBuild[] = BUILDS): LocateSubject {
@@ -98,12 +98,12 @@ describe('candidatesOutcomes', () => {
   });
 
   it('a written name of another line is an advisory violation naming that line', () => {
-    const outcomes = candidatesOutcomes(subjectOf([item('24004', '回归 Rel_APV_10_5_1_101')]));
+    const outcomes = candidatesOutcomes(subjectOf([item('24004', '回归 Rel_APV_10_7_4_101')]));
     const violation = byVerdict(outcomes, 'refute')[0];
     assert.deepEqual([violation.code, violation.tier, violation.item], ['case-location.build_other_line', 'advisory', '24004']);
-    assert.match(violation.statement, /10\.5\.1/);
+    assert.match(violation.statement, /10\.7\.4/);
     const data = violation.data as { name: string; line: string };
-    assert.deepEqual([data.name, data.line], ['Rel_APV_10_5_1_101', '10.5.1']);
+    assert.deepEqual([data.name, data.line], ['Rel_APV_10_7_4_101', '10.7.4']);
   });
 
   it('a written name the knowledge base does not know is an unknown with the reason, never a violation', () => {
@@ -130,8 +130,8 @@ describe('candidatesOutcomes', () => {
   });
 
   it('the outcome does not depend on the order of the context builds', () => {
-    const one = candidatesOutcomes(subjectOf([item('24008', '回归 Rel_APV_10_5_1_101 和 Rel_NSAE_10_6_1_57')]));
-    const two = candidatesOutcomes(subjectOf([item('24008', '回归 Rel_APV_10_5_1_101 和 Rel_NSAE_10_6_1_57')], [...BUILDS].reverse()));
+    const one = candidatesOutcomes(subjectOf([item('24008', '回归 Rel_APV_10_7_4_101 和 Rel_NSAE_10_6_1_57')]));
+    const two = candidatesOutcomes(subjectOf([item('24008', '回归 Rel_APV_10_7_4_101 和 Rel_NSAE_10_6_1_57')], [...BUILDS].reverse()));
     assert.deepEqual(two, one);
   });
 
@@ -184,10 +184,10 @@ describe('candidatesOutcomes', () => {
   it('every classification of a written build name carries the name in its statement', () => {
     // Rel_APV_10_6_1_58 is not a build of the line; only the alias Rel_NSAE_10_6_1_58 is based on it.
     const withBaseOnly = [...BUILDS, build('Rel_NSAE_10_6_1_58', 'NSAE', '10.6.1', { base: 'Rel_APV_10_6_1_58', released_at: '2026-09-06T00:00:00.000Z' })];
-    const outcomes = candidatesOutcomes(subjectOf([item('24013', '回归 Rel_APV_10_6_1_58、Rel_APV_10_5_1_101 与 Rel_APV_10_9_9_9')], withBaseOnly));
+    const outcomes = candidatesOutcomes(subjectOf([item('24013', '回归 Rel_APV_10_6_1_58、Rel_APV_10_7_4_101 与 Rel_APV_10_9_9_9')], withBaseOnly));
     const written = outcomes.filter((o) => (o.data as { kind?: string } | undefined)?.kind === 'written_build');
     assert.equal(written.length, 3);
-    for (const outcome of written) assert.match(outcome.statement, /Rel_APV_10_(6_1_58|5_1_101|9_9_9)/);
+    for (const outcome of written) assert.match(outcome.statement, /Rel_APV_10_(6_1_58|7_4_101|9_9_9)/);
     assert.match(written[0].statement, /写出的构建名 Rel_APV_10_6_1_58 是候选 Rel_NSAE_10_6_1_58 所依据的构建/);
   });
 });

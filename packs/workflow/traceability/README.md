@@ -44,7 +44,7 @@ by construction (absence is not proof).
 
 ## Decisions
 
-- **Id normalisation** (`ids.ts`): a pure run of ASCII digits loses its leading zeros (`0071009` = `71009`, `000` = `0`);
+- **Id normalisation** (`ids.ts`): a pure run of ASCII digits loses its leading zeros (`0074001` = `74001`, `000` = `0`);
   anything else compares exactly as written. Bug and story numberings never meet: the case view is keyed by the `defects`
   field, which holds bug ids only.
 - **Two defect systems share one numbering join** (since 1.0.2): the product pack writes `data.system` on fixed-bug entries

@@ -296,23 +296,23 @@ describe('traceability scenario checks', () => {
       build: 'Rel_APV_10_6_1_57',
       defects: [
         {
-          bug: '160578',
+          bug: '160001',
           status: 'fixed',
           defect_system_status: 'closed',
           closed: true,
           cases: [
-            { id: '17256:1a7fd348c3a6', title: '标题1' },
-            { id: '17256:1b2c3d4e5f60', title: '标题2' },
-            { id: '17256:2a3b4c5d6e7f', title: '标题3' },
-            { id: '17256:3a4b5c6d7e8f', title: '标题4' },
-            { id: '17256:d4w55z1j5aw0', title: '标题5' },
-            { id: '17256:6e7f8a9b0c1d', title: '标题6' },
-            { id: '17256:7f8a9b0c1d2e', title: '标题7' },
-            { id: '17256:8a9b0c1d2e3f', title: '标题8' },
-            { id: '17256:9b0c1d2e3f4a', title: '标题9' },
-            { id: '17256:0c1d2e3f4a5b', title: '标题10' },
-            { id: '17256:1d2e3f4a5b6c', title: '标题11' },
-            { id: '17256:2e3f4a5b6c7d', title: '标题12' },
+            { id: '24110:n00000000001', title: '标题1' },
+            { id: '24110:n00000000002', title: '标题2' },
+            { id: '24110:n00000000003', title: '标题3' },
+            { id: '24110:n00000000004', title: '标题4' },
+            { id: '24110:n00000000005', title: '标题5' },
+            { id: '24110:n00000000006', title: '标题6' },
+            { id: '24110:n00000000007', title: '标题7' },
+            { id: '24110:n00000000008', title: '标题8' },
+            { id: '24110:n00000000009', title: '标题9' },
+            { id: '24110:n00000000010', title: '标题10' },
+            { id: '24110:n00000000011', title: '标题11' },
+            { id: '24110:n00000000012', title: '标题12' },
           ],
         },
       ],
@@ -324,10 +324,10 @@ describe('traceability scenario checks', () => {
     const scenario = traceability(goldReal);
     const startRunText = [
       '运行 run_1 完成：任务包 traceability',
-      '- 160578 | 缺陷 160578 | 发布说明：已修复；缺陷系统：closed；12 个用例',
+      '- 160001 | 缺陷 160001 | 发布说明：已修复；缺陷系统：closed；12 个用例',
     ].join('\n');
     const fullResultText = [
-      '陈述：缺陷 160578（发布说明：已修复；缺陷系统：closed）：12 个已索引用例追溯：17256:1a7fd348c3a6 标题1；17256:1b2c3d4e5f60 标题2；17256:2a3b4c5d6e7f 标题3；17256:3a4b5c6d7e8f 标题4；17256:d4w55z1j5aw0 标题5；另有 7 个，支持；性质与依据等级：事实结论，事实等级 1；根据：tree:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef/@条目',
+      '陈述：缺陷 160001（发布说明：已修复；缺陷系统：closed）：12 个已索引用例追溯：24110:n00000000001 标题1；24110:n00000000002 标题2；24110:n00000000003 标题3；24110:n00000000004 标题4；24110:n00000000005 标题5；另有 7 个，支持；性质与依据等级：事实结论，事实等级 1；根据：tree:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef/@条目',
       '跨条目：缺陷 1 个：已追溯 1 个，未追溯 0 个；其中已关闭缺陷 1 个：已追溯 1 个，未追溯 0 个，支持，traceability.counts',
     ].join('\n');
 
@@ -335,13 +335,13 @@ describe('traceability scenario checks', () => {
     const checks = scenario.check(turns);
     assert.ok(allOk(scenario, turns), JSON.stringify(checks));
 
-    const extracted = extractStatementCaseIds(fullResultText, '160578');
+    const extracted = extractStatementCaseIds(fullResultText, '160001');
     assert.deepEqual(extracted, [
-      '17256:1a7fd348c3a6',
-      '17256:1b2c3d4e5f60',
-      '17256:2a3b4c5d6e7f',
-      '17256:3a4b5c6d7e8f',
-      '17256:d4w55z1j5aw0',
+      '24110:n00000000001',
+      '24110:n00000000002',
+      '24110:n00000000003',
+      '24110:n00000000004',
+      '24110:n00000000005',
     ]);
   });
 });

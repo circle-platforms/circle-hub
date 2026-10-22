@@ -4,7 +4,7 @@
   "check": "grounded_reading",
   "note": "期望结果阅读引入了来源引文未提及的数字实体",
   "subject": {
-    "item": "71009",
+    "item": "74001",
     "slots": {
       "cases": [
         {
@@ -44,7 +44,7 @@
     {
       "verdict": "refute",
       "code": "defect-to-case.unsupported_entity",
-      "item": "71009",
+      "item": "74001",
       "tier": "advisory"
     }
   ]

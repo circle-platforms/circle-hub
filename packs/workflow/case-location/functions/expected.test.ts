@@ -39,20 +39,20 @@ describe('expected sources', () => {
   });
 
   it('binds the kind the declared id ranges give an unmarked id, and says it is a declaration', () => {
-    const out = sourcesFor(['bug to case 90101', '31006-证书', 'bug 90101 再次'], { id_ranges: { story: { max: 49999 }, bug: { min: 50000 } } });
+    const out = sourcesFor(['bug to case 90101', '33001-证书', 'bug 90101 再次'], { id_ranges: { story: { max: 49999 }, bug: { min: 50000 } } });
     assert.deepEqual(
       out.sources.map((s) => s.external),
-      ['plm:bug:90101', 'plm:story:31006'],
+      ['plm:bug:90101', 'plm:story:33001'],
     );
-    assert.match(out.sources.find((s) => s.external === 'plm:story:31006')!.reason, /按调用方声明的编号范围（参数 id_ranges）读作需求/);
+    assert.match(out.sources.find((s) => s.external === 'plm:story:33001')!.reason, /按调用方声明的编号范围（参数 id_ranges）读作需求/);
     assert.deepEqual(out.warnings, []);
     // A range given alone classifies only its own ids.
-    const alone = sourcesFor(['31006-证书', 'bug to case 71009'], { id_ranges: { story: { min: 10000, max: 49999 } } });
+    const alone = sourcesFor(['33001-证书', 'bug to case 74001'], { id_ranges: { story: { min: 10000, max: 49999 } } });
     assert.deepEqual(
       alone.sources.map((s) => s.external),
-      ['plm:story:31006'],
+      ['plm:story:33001'],
     );
-    assert.deepEqual(alone.warnings.map((w) => w.data?.ids), [['71009']]);
+    assert.deepEqual(alone.warnings.map((w) => w.data?.ids), [['74001']]);
   });
 
   it('binds the ids folders below the version level name', () => {

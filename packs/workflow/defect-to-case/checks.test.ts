@@ -37,27 +37,27 @@ function makeInput(subject: unknown, sources: Record<string, string> = {}): Pack
 describe('hand-built drafts and checks coverage', () => {
   it('1. accepts a good draft across all checks', () => {
     const good = makeGoodDraft({ ref: 'src:fix_ref' });
-    const shapeOutcomes = checkDraftShape(makeInput({ item: '71009', slots: { cases: [{ text: good.title, data: good }] } }));
+    const shapeOutcomes = checkDraftShape(makeInput({ item: '74001', slots: { cases: [{ text: good.title, data: good }] } }));
     assert.equal(shapeOutcomes[0].verdict, 'support');
 
-    const cmdOutcomes = checkCommandsRefutation(makeInput({ item: '71009', slots: { cases: [{ text: good.title, data: good }] } }));
+    const cmdOutcomes = checkCommandsRefutation(makeInput({ item: '74001', slots: { cases: [{ text: good.title, data: good }] } }));
     assert.equal(cmdOutcomes[0].verdict, 'support');
 
-    const groundOutcomes = checkGroundedReading(makeInput({ item: '71009', slots: { cases: [{ text: good.title, data: good }] } }));
+    const groundOutcomes = checkGroundedReading(makeInput({ item: '74001', slots: { cases: [{ text: good.title, data: good }] } }));
     assert.equal(groundOutcomes[0].verdict, 'support');
 
-    const dupOutcomes = checkDuplicate(makeInput({ item: '71009', drafts: [good], indexed_cases: SYNTHETIC_INDEX_VIEW }));
+    const dupOutcomes = checkDuplicate(makeInput({ item: '74001', drafts: [good], indexed_cases: SYNTHETIC_INDEX_VIEW }));
     assert.equal(dupOutcomes[0].verdict, 'support');
   });
 
   it('2. refuses an unknown command or parameter out of range in refutation checks', () => {
     const unknownCmd = { ...makeGoodDraft(), steps: [{ command: 'invalid_head_cmd 123' }] };
-    const out1 = checkCommandsRefutation(makeInput({ item: '71009', slots: { cases: [{ text: unknownCmd.title, data: unknownCmd }] } }));
+    const out1 = checkCommandsRefutation(makeInput({ item: '74001', slots: { cases: [{ text: unknownCmd.title, data: unknownCmd }] } }));
     assert.equal(out1[0].verdict, 'refute');
     assert.equal(out1[0].code, CODES.UNEXPECTED_REFUTATION);
 
     const outOfRange = { ...makeGoodDraft(), steps: [{ command: 'widget health interval 99999' }] };
-    const out2 = checkCommandsRefutation(makeInput({ item: '71009', slots: { cases: [{ text: outOfRange.title, data: outOfRange }] } }));
+    const out2 = checkCommandsRefutation(makeInput({ item: '74001', slots: { cases: [{ text: outOfRange.title, data: outOfRange }] } }));
     assert.equal(out2[0].verdict, 'refute');
     assert.equal(out2[0].code, CODES.UNEXPECTED_REFUTATION);
   });
@@ -67,7 +67,7 @@ describe('hand-built drafts and checks coverage', () => {
       ...makeGoodDraft(),
       expected: [{ text: '无引文的结果', quote: undefined as never }],
     };
-    const out = checkGroundedReading(makeInput({ item: '71009', slots: { cases: [{ text: noQuote.title, data: noQuote }] } }));
+    const out = checkGroundedReading(makeInput({ item: '74001', slots: { cases: [{ text: noQuote.title, data: noQuote }] } }));
     assert.equal(out[0].verdict, 'refute');
     assert.equal(out[0].code, CODES.QUOTE_MISSING);
   });
@@ -82,14 +82,14 @@ describe('hand-built drafts and checks coverage', () => {
         },
       ],
     };
-    const out = checkGroundedReading(makeInput({ item: '71009', slots: { cases: [{ text: badEntity.title, data: badEntity }] } }));
+    const out = checkGroundedReading(makeInput({ item: '74001', slots: { cases: [{ text: badEntity.title, data: badEntity }] } }));
     assert.equal(out[0].verdict, 'refute');
     assert.equal(out[0].code, CODES.UNSUPPORTED_ENTITY);
   });
 
   it('5. refuses wrong shape drafts', () => {
     const badPrio = { ...makeGoodDraft(), priority: 0 };
-    const out = checkDraftShape(makeInput({ item: '71009', slots: { cases: [{ text: badPrio.title, data: badPrio }] } }));
+    const out = checkDraftShape(makeInput({ item: '74001', slots: { cases: [{ text: badPrio.title, data: badPrio }] } }));
     assert.equal(out[0].verdict, 'refute');
     assert.equal(out[0].code, CODES.SHAPE_INVALID);
   });
@@ -97,12 +97,12 @@ describe('hand-built drafts and checks coverage', () => {
   it('6. negative draft with and without expects_refutation', () => {
     // With expects_refutation: true on out-of-range command -> accepted
     const negWithExpect = makeNegativeExpectedRefutationDraft();
-    const out1 = checkCommandsRefutation(makeInput({ item: '71009', slots: { cases: [{ text: negWithExpect.title, data: negWithExpect }] } }));
+    const out1 = checkCommandsRefutation(makeInput({ item: '74001', slots: { cases: [{ text: negWithExpect.title, data: negWithExpect }] } }));
     assert.equal(out1[0].verdict, 'support');
 
     // With expects_refutation: true on valid command -> refuted (negative_accepted)
     const negUnexpectedAccept = makeNegativeUnexpectedAcceptDraft();
-    const out2 = checkCommandsRefutation(makeInput({ item: '71009', slots: { cases: [{ text: negUnexpectedAccept.title, data: negUnexpectedAccept }] } }));
+    const out2 = checkCommandsRefutation(makeInput({ item: '74001', slots: { cases: [{ text: negUnexpectedAccept.title, data: negUnexpectedAccept }] } }));
     assert.equal(out2[0].verdict, 'refute');
     assert.equal(out2[0].code, CODES.NEGATIVE_ACCEPTED);
 
@@ -114,25 +114,25 @@ describe('hand-built drafts and checks coverage', () => {
       tags: ['Negative'],
       steps: [{ command: 'widget health interval 99999' }],
     };
-    const out3 = checkCommandsRefutation(makeInput({ item: '71009', slots: { cases: [{ text: negWithoutExpect.title, data: negWithoutExpect }] } }));
+    const out3 = checkCommandsRefutation(makeInput({ item: '74001', slots: { cases: [{ text: negWithoutExpect.title, data: negWithoutExpect }] } }));
     assert.equal(out3[0].verdict, 'refute');
     assert.equal(out3[0].code, CODES.UNEXPECTED_REFUTATION);
   });
 
   it('7. duplicate of an indexed case and incomplete index behavior', () => {
     const dup = makeDuplicateDraft();
-    const outDup = checkDuplicate(makeInput({ item: '71009', drafts: [dup], indexed_cases: SYNTHETIC_INDEX_VIEW }));
+    const outDup = checkDuplicate(makeInput({ item: '74001', drafts: [dup], indexed_cases: SYNTHETIC_INDEX_VIEW }));
     assert.equal(outDup[0].verdict, 'refute');
     assert.equal(outDup[0].code, CODES.DUPLICATE_CASE);
 
     const good = makeGoodDraft();
-    const outIncomplete = checkDuplicate(makeInput({ item: '71009', drafts: [good], indexed_cases: INCOMPLETE_INDEX_VIEW }));
+    const outIncomplete = checkDuplicate(makeInput({ item: '74001', drafts: [good], indexed_cases: INCOMPLETE_INDEX_VIEW }));
     assert.equal(outIncomplete[0].verdict, 'unknown');
     assert.equal(outIncomplete[0].reason, 'integrity_unproven');
   });
 
   it('8. empty submission for a defect', () => {
-    const out = checkDraftShape(makeInput({ item: '71009', slots: { cases: [] } }));
+    const out = checkDraftShape(makeInput({ item: '74001', slots: { cases: [] } }));
     assert.equal(out[0].verdict, 'refute');
     assert.equal(out[0].code, CODES.SHAPE_INVALID);
   });

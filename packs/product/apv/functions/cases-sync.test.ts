@@ -66,7 +66,7 @@ describe('the documents of the agile tree', () => {
 
   it('a build lists the documents of its line and the earlier ones from min_line on, new ones last', () => {
     if (tree.status !== 'ready') return;
-    for (const line of ['10.4.2', '10.4.6', '10.5', '10.6.1', '10.6.2', '10.7', '10.4.1', '9.9']) {
+    for (const line of ['10.4.2', '10.6.4', '10.5', '10.6.1', '10.6.2', '10.7', '10.4.1', '9.9']) {
       assert.deepEqual(caseDocumentsFor(tree.documents, line).ids, listedFor(corpus, line).map((id) => `agile:case:${id}`), line);
     }
     // A build line the tree never dates has no train month, so it lists only documents of that same line.
@@ -190,7 +190,7 @@ describe('the sync plan with the case index', () => {
     const ready = caseTree({ [CASE_TREE_ID]: treeRead(treeContent(corpus)) }, ON);
     assert.equal(ready.status, 'ready');
     if (ready.status !== 'ready') return;
-    const uncovered = uncoveredDocuments(ready.documents, ['10.4.6', '10.6.1']);
+    const uncovered = uncoveredDocuments(ready.documents, ['10.6.1']);
     const byLine = new Map(uncovered.map((row) => [row.line, row]));
     assert.ok((byLine.get('10.6.2')?.count ?? 0) > 0 && (byLine.get('10.6.2')?.examples.length ?? 0) > 0);
     assert.ok((byLine.get('10.7')?.count ?? 0) > 0);
@@ -223,9 +223,9 @@ describe('the sync plan with the case index', () => {
   it('orders lines by the release-train date, not by the dotted number', () => {
     const documents = [
       { id: '1', line: '10.5', at: '2024-01-01' },
-      { id: '2', line: '10.4.6', at: '2026-06-01' },
+      { id: '2', line: '10.6.4', at: '2026-06-01' },
     ];
-    assert.deepEqual(caseDocumentsFor(documents, '10.4.6').ids, ['agile:case:1', 'agile:case:2']);
+    assert.deepEqual(caseDocumentsFor(documents, '10.6.4').ids, ['agile:case:1', 'agile:case:2']);
     assert.deepEqual(caseDocumentsFor(documents, '10.5').ids, ['agile:case:1']);
   });
 
