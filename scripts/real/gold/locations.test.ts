@@ -66,8 +66,28 @@ describe('locations gold generator', () => {
     const title2 = 'bug to case 70412 & 70413 信标权重为0时的调度';
     const res2 = extractAssociatedIds(title2, ['004：7.1-R2-2026/5', '信标']);
     assert.deepEqual(res2.stories, []);
-    assert.deepEqual(res2.bugs, ['70412', '70413']);
+    assert.deepEqual(res2.bugs, []);
+    assert.deepEqual(res2.unclassified, ['70412', '70413']);
     assert.deepEqual(res2.associatedIds, ['70412', '70413']);
+
+    // Three convention cases: bug to case 900001 900002 (unclassified), bug to case 需求900003 (stories), 缺陷900004 (bugs)
+    const resB2C = extractAssociatedIds('bug to case 900001 900002', []);
+    assert.deepEqual(resB2C.unclassified, ['900001', '900002']);
+    assert.deepEqual(resB2C.stories, []);
+    assert.deepEqual(resB2C.bugs, []);
+    assert.deepEqual(resB2C.associatedIds, ['900001', '900002']);
+
+    const resB2CStory = extractAssociatedIds('bug to case 需求900003', []);
+    assert.deepEqual(resB2CStory.stories, ['900003']);
+    assert.deepEqual(resB2CStory.bugs, []);
+    assert.deepEqual(resB2CStory.unclassified, []);
+    assert.deepEqual(resB2CStory.associatedIds, ['900003']);
+
+    const resBug = extractAssociatedIds('缺陷900004', []);
+    assert.deepEqual(resBug.bugs, ['900004']);
+    assert.deepEqual(resBug.stories, []);
+    assert.deepEqual(resBug.unclassified, []);
+    assert.deepEqual(resBug.associatedIds, ['900004']);
 
     const title3 = '31057-示例网关支持HTTP探活与权重联动';
     const res3 = extractAssociatedIds(title3, ['需求20931']);

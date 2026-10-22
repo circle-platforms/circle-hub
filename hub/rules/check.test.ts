@@ -267,7 +267,7 @@ describe('runCheck with a pack function', () => {
         '}',
       ].join('\n'),
     });
-    const declaration = { id: 'unread-check', function: { module: 'checks/unread.ts' } };
+    const declaration = { id: 'unread-check', tier: 'advisory' as const, function: { module: 'checks/unread.ts' } };
     const unread = [{ reference: `src:${'a'.repeat(64)}`, reason: '超过大小上限', external: 'plm:bugs:123', slot: 'expected' }];
     const bindings = { subject: {}, context: { pack: 'synthetic-review' }, packDir: dir, unreadSources: unread, sandbox: sandbox() };
     const [o] = await runCheck(declaration, bindings);
