@@ -87,6 +87,13 @@ test('the violation shows a blocking refutation first, and an unexpected one bef
   assert.equal(expected.unexpected.length, 0);
 });
 
+test('a skipped fact requirement is incomplete at every declared layer (W07 R[2])', () => {
+  const skipped = staticTerminal({ producer: 'fact', hasProducer: true, checks: 1, outcomes: [judged(support())], handling: 'skipped', expectation: SUPPORT });
+  assert.deepEqual([skipped.terminal, skipped.reason], ['incomplete', 'declared_skip']);
+  const unproduced = staticTerminal({ producer: 'independent_judgment', hasProducer: false, checks: 0, outcomes: [], handling: 'skipped', expectation: SUPPORT });
+  assert.deepEqual([unproduced.terminal, unproduced.reason], ['incomplete', 'declared_skip']);
+});
+
 test('judgment terminals: handled judgment, skipped declared_skip, missing not_covered, no slot no_producer', () => {
   const base = { producer: 'independent_judgment' as const, hasProducer: true, checks: 2, expectation: SUPPORT };
   assert.equal(staticTerminal({ ...base, outcomes: [judged(support(), 'artifact_under_verification')], handling: 'handled' }).terminal, 'judgment');

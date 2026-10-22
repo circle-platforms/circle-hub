@@ -608,13 +608,15 @@ test('the engine and the reference agree on random submissions and the fixed bra
   const skipWant = referenceOf(skipPlan);
   const skipFact = shownLayer(skipEngine, 'i1', 'fact');
   const skipJudged = shownLayer(skipEngine, 'i1', 'judged');
-  assert.equal(skipFact.layer?.terminal, 'unchecked');
-  assert.equal(skipFact.layer?.reason, 'missing_input');
+  assert.equal(skipFact.layer?.terminal, 'incomplete');
+  assert.equal(skipFact.layer?.reason, 'declared_skip');
+  assert.equal(skipFact.layer?.attribution, 'unattributed');
   assert.equal(skipJudged.layer?.terminal, 'incomplete');
   assert.equal(skipJudged.layer?.reason, 'declared_skip');
   assert.equal(skipJudged.layer?.attribution, 'unattributed');
   const skipOracle = skipWant.items.find((item) => item.item === 'i1');
   assert.ok(skipOracle?.requirements.every((requirement) => requirement.layers.every((layer) => layer.terminal === 'incomplete' && layer.reason === 'declared_skip' && layer.attribution === 'unattributed')));
+  assert.ok(skipEngine.items.find((item) => item.item === 'i1')?.requirements.every((requirement) => requirement.layers.every((layer) => layer.terminal === 'incomplete' && layer.reason === 'declared_skip' && layer.attribution === 'unattributed')));
 
   // W07 R[3]: a missing item is incomplete at every requirement and named in errors, and the submission stays accepted.
   const missingSeed = SEED + 8;

@@ -386,7 +386,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
         hasProducer,
         checks: t.checks.filter((id) => checks.has(id)).length,
         outcomes,
-        handling: isJudgment(t) ? (exclude.has(it.id) ? 'handled' : handling) : null,
+        handling: isJudgment(t) ? (exclude.has(it.id) ? 'handled' : handling) : handling === 'skipped' ? 'skipped' : null,
         expectation,
       });
       const routed = applyRouting(raw, t, input.roundsUsed.get(t.key) ?? 0);
