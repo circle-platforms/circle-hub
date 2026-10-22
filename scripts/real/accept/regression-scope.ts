@@ -1,0 +1,61 @@
+// Capability 4a, the regression scope, through the real client: the Hub's scope of a build pair is compared with the
+// independent command diff in the gold file (added+modified paths are the changed paths; removed paths are not in the
+// scope), and every case of the scope sits on a changed path while a case off them is out.
+import { resultTexts, type LoggedTurn, type Scenario } from '../lib/accept.ts';
+import type { Check } from '../lib/report.ts';
+import { lengthBounded, pathSetMatches, runStarted } from './checks.ts';
+
+export interface ScopeCaseGold {
+  /** The item id as the Hub writes it (document:node). */
+  id: string;
+  path: string;
+}
+
+export interface ScopeGold {
+  product: string;
+  earlier: string;
+  later: string;
+  /** added+modified of gold/command-diff.ts: the paths a case on them is in scope for. */
+  changed: string[];
+  /** removed paths of gold/command-diff.ts (not part of the scope). */
+  removed: string[];
+  /** The cases the gold expects in the scope, each on a changed path. */
+  inScope: ScopeCaseGold[];
+  /** Item ids the gold expects outside the scope (cases off every changed path). */
+  outOfScope: string[];
+}
+
+export default function scenario(gold: ScopeGold): Scenario {
+  const area = '回归范围';
+  const pack = 'regression-scope@1.0.0';
+  return {
+    name: 'regression-scope',
+    area,
+    prompt: `请对比 ${gold.earlier} 和 ${gold.later} 两个构建，给出回归范围。`,
+    respond: (turn) =>
+      turn.index === 0
+        ? [{ tool: 'hub_start_run', input: { pack, product: gold.product, inputs: { impact: { external: `knowledge:impact:${gold.product}:${gold.earlier}..${gold.later}` } } } }]
+        : [{ text: '对比完成。' }],
+    check(turns: LoggedTurn[]): Check[] {
+      const text = resultTexts(turns).join('\n');
+      const hubPaths = [...text.matchAll(/\/commands\/[a-z0-9_.\-/]+/gi)].map((m) => m[0]);
+      const unique = [...new Set(hubPaths)];
+      const changedChecks = pathSetMatches(area, '变更路径（范围里的原因路径加未覆盖的路径）', gold.changed, unique.filter((p) => !gold.removed.includes(p)));
+      const caseChecks = gold.inScope.map((c) => ({
+        area,
+        name: `范围里的用例 ${c.id} 放在变更路径上`,
+        expected: `条目 ${c.id} 的路径 ${c.path}`,
+        actual: text.includes(c.id) && text.includes(c.path) ? '在' : '不在',
+        ok: text.includes(c.id) && text.includes(c.path),
+      }));
+      const outChecks = gold.outOfScope.map((id) => ({
+        area,
+        name: `不在变更路径上的用例 ${id} 不在范围里`,
+        expected: `回答里没有条目 ${id}`,
+        actual: text.includes(id) ? '出现了' : '没有出现',
+        ok: !text.includes(id),
+      }));
+      return [runStarted(area, turns), ...changedChecks, ...caseChecks, ...outChecks, lengthBounded(area, turns)];
+    },
+  };
+}

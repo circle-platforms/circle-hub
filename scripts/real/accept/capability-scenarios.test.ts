@@ -1,0 +1,137 @@
+// The four capability scenarios against scripted turn logs (synthetic tool results; no real client, no real review):
+// each scenario starts its run with the right pack and inputs on turn 0, ends on turn 1, and its checks hold on a
+// Hub-shaped answer and fail on a wrong one.
+import assert from 'node:assert/strict';
+import { describe, test } from 'node:test';
+import type { LoggedTurn, Scenario } from '../lib/accept.ts';
+import maintenanceSweep, { type SweepGold } from './maintenance-sweep.ts';
+import qualityBoard, { type BoardGold } from './quality-board.ts';
+import regressionScope, { type ScopeGold } from './regression-scope.ts';
+import traceability, { type TraceGold } from './traceability.ts';
+
+const turnsOf = (result: string): LoggedTurn[] => [
+  { index: 0, toolResults: [], tools: ['hub_start_run'] },
+  { index: 1, toolResults: [{ id: 'r1', text: result, isError: false }], tools: [] },
+];
+
+const allOk = (scenario: Scenario, turns: LoggedTurn[]): boolean => scenario.check(turns).every((c) => c.ok);
+
+/** The bare turn shape the scripted model hands to respond(). */
+const turn = (index: number) => ({ index, system: null, messages: [], tools: [], toolResults: [] });
+
+describe('regression-scope scenario', () => {
+  const gold: ScopeGold = {
+    product: 'apv',
+    earlier: 'Rel_APV_10_6_1_56',
+    later: 'Rel_APV_10_6_1_57',
+    changed: ['/commands/demo/pool/add', '/commands/demo/show'],
+    removed: ['/commands/demo/pool/delete'],
+    inScope: [{ id: '9001:c-1', path: '/commands/demo/pool/add' }],
+    outOfScope: ['9001:c-9'],
+  };
+  const scenario = regressionScope(gold);
+  test('starts the run with the impact view of the build pair on turn 0', () => {
+    assert.deepEqual(scenario.respond(turn(0)), [
+      { tool: 'hub_start_run', input: { pack: 'regression-scope@1.0.0', product: 'apv', inputs: { impact: { external: 'knowledge:impact:apv:Rel_APV_10_6_1_56..Rel_APV_10_6_1_57' } } } },
+    ]);
+    assert.deepEqual(scenario.respond(turn(1)), [{ text: '对比完成。' }]);
+  });
+  test('holds on a Hub-shaped answer and fails on a wrong path set or a stray case', () => {
+    const good = '运行 run_1 完成：变更路径 /commands/demo/pool/add、/commands/demo/show；未覆盖 /commands/demo/show。条目 9001:c-1 放在 /commands/demo/pool/add 上。';
+    assert.ok(allOk(scenario, turnsOf(good)), JSON.stringify(scenario.check(turnsOf(good))));
+    const stray = good.replace('/commands/demo/show。', '/commands/demo/other。');
+    assert.ok(!allOk(scenario, turnsOf(stray)));
+    const wrongCase = good.replace('9001:c-1 放在 /commands/demo/pool/add', '9001:c-1 放在 /commands/demo/other');
+    assert.ok(!allOk(scenario, turnsOf(wrongCase)));
+    const outIncluded = `${good}条目 9001:c-9`;
+    assert.ok(!allOk(scenario, turnsOf(outIncluded)), 'an out-of-scope case must not appear');
+    assert.ok(!allOk(scenario, turnsOf('出错：读不到视图')), 'an error answer fails');
+  });
+});
+
+describe('maintenance-sweep scenario', () => {
+  const gold: SweepGold = {
+    product: 'apv',
+    earlier: 'Rel_APV_10_6_1_56',
+    later: 'Rel_APV_10_6_1_57',
+    cases: [
+      { id: '9001:c-2', path: '/commands/demo/pool/delete', removed: true },
+      { id: '9001:c-1', path: '/commands/demo/pool/add', removed: false },
+    ],
+  };
+  const scenario = maintenanceSweep(gold);
+  test('starts the run on turn 0', () => {
+    assert.deepEqual(scenario.respond(turn(0)), [
+      { tool: 'hub_start_run', input: { pack: 'maintenance-sweep@1.0.0', product: 'apv', inputs: { impact: { external: 'knowledge:impact:apv:Rel_APV_10_6_1_56..Rel_APV_10_6_1_57' } } } },
+    ]);
+  });
+  test('holds when removed and changed cases sit on their paths with their marks', () => {
+    const good = [
+      '运行 run_2 完成。',
+      '条目 9001:c-2：命令已删除（/commands/demo/pool/delete 已删除）。',
+      '条目 9001:c-1：命令已改（/commands/demo/pool/add 有字段差异：/help 旧→新）。',
+    ].join('\n');
+    assert.ok(allOk(scenario, turnsOf(good)), JSON.stringify(scenario.check(turnsOf(good))));
+    const swapped = good.replace('9001:c-2：命令已删除（/commands/demo/pool/delete 已删除）', '9001:c-2：命令已删除（/commands/demo/show 已删除）');
+    assert.ok(!allOk(scenario, turnsOf(swapped)), 'a removed case on the wrong path fails');
+    const noDiff = good.replace('有字段差异：/help 旧→新', '说明改了');
+    assert.ok(!allOk(scenario, turnsOf(noDiff)), 'a changed case without a field difference fails');
+  });
+});
+
+describe('traceability scenario', () => {
+  const gold: TraceGold = {
+    product: 'apv',
+    build: 'Rel_APV_10_6_1_57',
+    defects: [
+      { bug: '7300', status: 'fixed', cases: [{ id: '9001:c-1', title: '会话检查' }, { id: '9001:c-2', title: '证书查看' }] },
+      { bug: '7402', status: 'known', cases: [] },
+    ],
+  };
+  const scenario = traceability(gold);
+  test('starts the run with both index views on turn 0', () => {
+    assert.deepEqual(scenario.respond(turn(0)), [
+      {
+        tool: 'hub_start_run',
+        input: {
+          pack: 'traceability@1.0.0',
+          product: 'apv',
+          inputs: {
+            defects: { external: 'knowledge:index:apv:Rel_APV_10_6_1_57?kind=defect&key=bug' },
+            cases: { external: 'knowledge:index:apv:Rel_APV_10_6_1_57?kind=case&key=defects' },
+          },
+        },
+      },
+    ]);
+  });
+  test('holds when every defect lists the joined cases and the untraced one is unknown', () => {
+    const good = ['运行 run_3 完成。', '缺陷 7300（已修复）：用例 9001:c-1、9001:c-2。', '缺陷 7402（已知）：未知（没有用例）。'].join('\n');
+    assert.ok(allOk(scenario, turnsOf(good)), JSON.stringify(scenario.check(turnsOf(good))));
+    const missing = good.replace('用例 9001:c-1、9001:c-2', '用例 9001:c-1');
+    assert.ok(!allOk(scenario, turnsOf(missing)), 'a defect missing one joined case fails');
+    const traced = good.replace('未知（没有用例）', '用例 9001:c-1');
+    assert.ok(!allOk(scenario, turnsOf(traced)), 'an untraced defect shown with cases fails');
+  });
+});
+
+describe('quality-board scenario', () => {
+  const gold: BoardGold = {
+    product: 'apv',
+    build: 'Rel_APV_10_6_1_57',
+    groups: [{ label: '10.6/SSL', cases: 20, missing: 1, vague: 1, negative: 1 }],
+  };
+  const scenario = qualityBoard(gold);
+  test('starts the run with the facet view on turn 0', () => {
+    assert.deepEqual(scenario.respond(turn(0)), [
+      { tool: 'hub_start_run', input: { pack: 'quality-board@1.0.0', product: 'apv', inputs: { facets: { external: 'knowledge:facets:apv:Rel_APV_10_6_1_57?kind=case&by=line,module,has_expected,vague_expected,negative' } } } },
+    ]);
+  });
+  test('holds on a matching group line with the limitation shown, fails on wrong counts', () => {
+    const good = '运行 run_4 完成。分组 10.6/SSL：用例 20 个；无期望结果 1 个（5.0%）；含糊期望 1 个（5.0%）；负面用例 1 个（5.0%）。看板描述的是已索引的用例，不是整套测试。';
+    assert.ok(allOk(scenario, turnsOf(good)), JSON.stringify(scenario.check(turnsOf(good))));
+    const wrong = good.replace('用例 20 个', '用例 21 个');
+    assert.ok(!allOk(scenario, turnsOf(wrong)));
+    const noLimit = good.replace('看板描述的是已索引的用例，不是整套测试。', '');
+    assert.ok(!allOk(scenario, turnsOf(noLimit)), 'the limitation must be shown');
+  });
+});
