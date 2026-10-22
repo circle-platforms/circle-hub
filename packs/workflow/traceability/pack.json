@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "traceability",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "kind": "workflow",
   "title": "追溯矩阵",
   "description": "构建的缺陷到用例的追溯矩阵：release notes 列出的缺陷条目和瘦身（fields=document,node,title）的用例索引，每个缺陷有没有已索引的用例携带它的编号；没有已索引用例的记未知（用例索引按构造不完整，不等于没有），从不记为不通过；不绑定产品线（输入的外部标识写明产品和构建）；只含事实要求项，开始运行时由 Hub 直接算出结果",
@@ -13,18 +13,18 @@
     },
     {
       "path": "checks.json",
-      "sha256": "b69f90ef670e9f00ee59265f44f92c2069045035cf1b744b7aa0033721216c78",
-      "size": 646
+      "sha256": "118a1e70ace6ee6b37d5f21996b8293f8568f111c183d726e6a508a590e1524c",
+      "size": 730
     },
     {
       "path": "functions/check.ts",
-      "sha256": "544d5e4dfd37dddb8631d9cd0ea70e4d349067cb6937d31502b4cf28813910a1",
-      "size": 10436
+      "sha256": "cdc880b9af398411467da445dd9d388b2e760655809dafc9a981ac1d80b68f5f",
+      "size": 10662
     },
     {
       "path": "functions/counts.ts",
-      "sha256": "7238e6d2a71052a77b67a937d7cfd9ba2e0b5e826b3323879470e4ddd8ef14eb",
-      "size": 6057
+      "sha256": "060d6e7393f2567d9c9fa9f81df1d7bc741e57737f9684adcff368739b5e4579",
+      "size": 6283
     },
     {
       "path": "functions/expected.ts",
@@ -48,8 +48,8 @@
     },
     {
       "path": "functions/plm-status.ts",
-      "sha256": "941d3ae98674816fb5fbd5fef11b30f1f8d252d05466b23ac945ef6fd2f7d15c",
-      "size": 4396
+      "sha256": "9b2c7821a38b7395fe9b13625656cd356c668600c35c5bfb50e66fe19e3315dc",
+      "size": 4809
     },
     {
       "path": "functions/project.ts",
