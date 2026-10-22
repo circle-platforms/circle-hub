@@ -5,6 +5,7 @@ import type {
   ProjectionInput,
   ProjectionOutput,
 } from '../../../../contracts/src/pack.ts';
+import { buildCompactIndex } from './compact-index.ts';
 import { PACK } from './types.ts';
 
 export const DEFECTS_SLOT = 'defects';
@@ -66,7 +67,8 @@ export function projectDefects(input: unknown): ProjectionOutput {
   const indexInput = inputs.find((i) => i.slot === INDEXED_CASES_SLOT);
   const groups: Record<string, unknown>[] = [];
   if (indexInput && isRecord(indexInput.model)) {
-    groups.push({ indexed_cases: indexInput.model });
+    const compact = buildCompactIndex(indexInput.model);
+    groups.push({ indexed_cases: compact });
   }
 
   const items: ProjectedItem[] = [];

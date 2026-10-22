@@ -5,7 +5,7 @@
 ## 1. 任务目标与输入
 
 - **输入 defects**：一个或多个缺陷外部标识（例如 `plm:bug:<编号>`）。为每个缺陷起草回归测试用例；若缺陷无法起草用例（如底层代码重构、无外部可测命令行或行为变化），必须在条目中声明跳过（`handling: "skipped"`）并写明诚实理由。
-- **输入 indexed_cases**：当前锁定构建的已索引用例清单（`knowledge:index:<product>:<build>?kind=case&key=commands`），供 Hub 进行去重比对。
+- **输入 indexed_cases**：当前锁定构建的已索引用例清单（`knowledge:index:<product>:<build>?kind=case&key=commands&fields=document,node,title`），供 Hub 进行去重比对。
 - **参数**：
   - `max_cases`：每个缺陷最多起草用例数（整数，1 到 20，默认 6）。
   - `priority`：默认用例优先级（整数，1 到 3，默认 2）。

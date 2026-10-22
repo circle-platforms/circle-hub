@@ -1,19 +1,18 @@
 // Pack check functions for defect-to-case.
 import type { CatalogEntry, CheckOutcome } from '../../../../contracts/src/tables.ts';
 import type { IndexView } from '../../../../contracts/src/views.ts';
+import {
+  buildCompactIndex,
+  commandSetKey,
+  isCompactIndex,
+  normalizeCommand,
+  normalizeText,
+} from './compact-index.ts';
 import { extractDrafts } from './subjects.ts';
 import { CANONICAL_CATEGORIES, CODES, type CanonicalCategory, type DraftCase } from './types.ts';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function normalizeText(text: string): string {
-  return text.normalize('NFKC').toLowerCase().replace(/\s+/g, ' ').trim();
-}
-
-function normalizeCommand(cmd: string): string {
-  return normalizeText(cmd.replace(/^\/commands\//, '').replace(/\//g, ' '));
 }
 
 const CATEGORY_MAP: Record<string, CanonicalCategory> = {
@@ -468,9 +467,8 @@ export function checkDuplicate(input: unknown): CheckOutcome[] {
 
   // Drafts can come from subject.drafts or extractDrafts(subject.slots)
   const drafts: DraftCase[] = Array.isArray(subject.drafts) ? (subject.drafts as DraftCase[]) : extractDrafts(subject.slots);
-  const indexView = (isRecord(subject.indexed_cases) ? subject.indexed_cases : null) as IndexView | null;
 
-  if (!indexView) {
+  if (!subject.indexed_cases) {
     return [
       {
         verdict: 'unknown',
@@ -495,60 +493,52 @@ export function checkDuplicate(input: unknown): CheckOutcome[] {
     ];
   }
 
+  const compactIndex = isCompactIndex(subject.indexed_cases)
+    ? subject.indexed_cases
+    : buildCompactIndex(subject.indexed_cases);
+
   const outcomes: CheckOutcome[] = [];
-  const entries = Object.values(indexView.entries ?? {});
+  const buckets = compactIndex.by_commands ?? {};
 
   for (let i = 0; i < drafts.length; i++) {
     const draft = drafts[i];
-    const draftCmds = new Set(draft.steps.map((s) => normalizeCommand(s.command)));
+    const draftCmds = draft.steps.map((s) => s.command).filter(Boolean);
+    const draftKey = commandSetKey(draftCmds);
+    if (!draftKey) continue;
+
+    const candidates = buckets[draftKey];
+    if (!candidates || candidates.length === 0) continue;
+
     const draftTitle = normalizeText(draft.title);
     const draftExpected = draft.expected.map((e) => normalizeText(e.text));
 
-    for (const entry of entries) {
-      const entryData = isRecord(entry.data) ? entry.data : {};
-      const entryCmds = new Set((Array.isArray(entryData.commands) ? (entryData.commands as string[]) : []).map(normalizeCommand));
+    for (const cand of candidates) {
+      // 1. Same negative flag
+      const candNegative = cand.negative === true;
+      if (draft.negative !== candNegative) continue;
 
-      // 1. Same set of normalised command names
-      if (draftCmds.size === 0 || draftCmds.size !== entryCmds.size) continue;
-      let cmdsEqual = true;
-      for (const cmd of draftCmds) {
-        if (!entryCmds.has(cmd)) {
-          cmdsEqual = false;
-          break;
-        }
-      }
-      if (!cmdsEqual) continue;
-
-      // 2. Same negative flag
-      const entryNegative = entryData.negative === true;
-      if (draft.negative !== entryNegative) continue;
-
-      // 3. Normalised titles equal OR normalised expected texts equal
-      const entryTitle = typeof entryData.title === 'string' ? normalizeText(entryData.title) : '';
-      const titlesEqual = draftTitle === entryTitle && draftTitle !== '';
+      // 2. Normalised titles equal OR normalised expected texts equal
+      const candTitle = normalizeText(cand.title);
+      const titlesEqual = draftTitle === candTitle && draftTitle !== '';
 
       let expectedEqual = false;
-      const entryExpList = Array.isArray(entryData.expected_texts)
-        ? (entryData.expected_texts as string[])
-        : Array.isArray(entryData.expected)
-          ? (entryData.expected as string[])
-          : [];
-      const entryNormExp = entryExpList.map(normalizeText);
-      if (draftExpected.length > 0 && entryNormExp.length > 0) {
-        if (draftExpected.some((de) => entryNormExp.includes(de))) {
+      const candExpList = cand.expected ?? [];
+      const candNormExp = candExpList.map(normalizeText);
+      if (draftExpected.length > 0 && candNormExp.length > 0) {
+        if (draftExpected.some((de) => candNormExp.includes(de))) {
           expectedEqual = true;
         }
       }
 
       if (titlesEqual || expectedEqual) {
-        const doc = entryData.document ?? '未知文档';
-        const node = entryData.node ?? '未知节点';
-        const title = entryData.title ?? '未知标题';
+        const doc = cand.document || '未知文档';
+        const node = cand.node || '未知节点';
+        const title = cand.title || '未知标题';
         outcomes.push({
           verdict: 'refute',
           code: CODES.DUPLICATE_CASE,
-          statement: `起草用例“${draft.title}”与已索引用例重复：文档 ${doc} 节点 ${node}“${title}”（${entry.reference}）`,
-          grounds: [entry.reference],
+          statement: `起草用例“${draft.title}”与已索引用例重复：文档 ${doc} 节点 ${node}“${title}”（${cand.reference}）`,
+          grounds: [cand.reference],
           tier: 'advisory',
           ...own,
           data: {
@@ -556,7 +546,7 @@ export function checkDuplicate(input: unknown): CheckOutcome[] {
               document: doc,
               node,
               title,
-              reference: entry.reference,
+              reference: cand.reference,
             },
           },
         });
@@ -566,13 +556,43 @@ export function checkDuplicate(input: unknown): CheckOutcome[] {
 
   if (outcomes.length > 0) return outcomes;
 
-  // No duplicate found: check if index has skipped sources
-  if (indexView.skipped && indexView.skipped > 0) {
+  // No duplicate found: check if index has dropped cases or is incomplete
+  if (!compactIndex.complete || compactIndex.dropped > 0) {
+    let reasonText = '';
+    if (compactIndex.dropped > 0) {
+      reasonText = `用例索引超出大小上限截断丢弃了 ${compactIndex.dropped} 个用例`;
+    } else {
+      const skippedSources = isRecord(subject.indexed_cases) && typeof subject.indexed_cases.skipped === 'number'
+        ? subject.indexed_cases.skipped
+        : 0;
+      if (skippedSources > 0) {
+        reasonText = `用例索引缺少 ${skippedSources} 份列出的文档`;
+      } else {
+        reasonText = '用例索引不完整';
+      }
+    }
     return [
       {
         verdict: 'unknown',
         reason: 'integrity_unproven',
-        statement: `未发现重复用例，但用例索引缺少 ${indexView.skipped} 份列出的文档，无法断定未重复`,
+        statement: `未发现重复用例，但${reasonText}，无法断定未重复`,
+        grounds: [],
+        tier: 'advisory',
+        ...own,
+      },
+    ];
+  }
+
+  // Also check if raw index had skipped sources
+  const rawSkipped = isRecord(subject.indexed_cases) && typeof subject.indexed_cases.skipped === 'number'
+    ? subject.indexed_cases.skipped
+    : 0;
+  if (rawSkipped > 0) {
+    return [
+      {
+        verdict: 'unknown',
+        reason: 'integrity_unproven',
+        statement: `未发现重复用例，但用例索引缺少 ${rawSkipped} 份列出的文档，无法断定未重复`,
         grounds: [],
         tier: 'advisory',
         ...own,

@@ -12,7 +12,7 @@
     {
       "slot": "indexed_cases",
       "role": "expected",
-      "description": "已索引的用例清单（knowledge:index:<产品>:<构建>?kind=case&key=commands），由 Hub 知识读取器提供，必填",
+      "description": "已索引的用例清单（knowledge:index:<产品>:<构建>?kind=case&key=commands&fields=document,node,title），由 Hub 知识读取器提供，必填",
       "accepts": ["knowledge:index"],
       "required": true,
       "many": false

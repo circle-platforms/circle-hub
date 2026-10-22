@@ -25,6 +25,7 @@ const here = (relative: string): string => fileURLToPath(new URL(relative, impor
 export const PACK_DIRECTORIES: Readonly<Record<string, string>> = {
   'case-review': here('./'),
   'case-review-verify': here('../case-review-verify/'),
+  'defect-to-case': here('../defect-to-case/'),
   apv: here('../../product/apv/'),
   'lumen-api': here('../../product/lumen-api/'),
   'agile-platform': here('../../system/agile-platform/'),

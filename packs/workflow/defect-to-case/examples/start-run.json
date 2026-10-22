@@ -10,7 +10,7 @@
         { "external": "plm:bug:<缺陷编号2>" }
       ],
       "indexed_cases": {
-        "external": "knowledge:index:<产品名称>:<构建标识>?kind=case&key=commands"
+        "external": "knowledge:index:<产品名称>:<构建标识>?kind=case&key=commands&fields=document,node,title"
       }
     },
     "parameters": {
