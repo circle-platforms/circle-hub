@@ -6,6 +6,7 @@
 import assert from 'node:assert/strict';
 import { after, before, describe, test } from 'node:test';
 import type { RunSummary } from '../../contracts/src/run.ts';
+import { actionsOf } from '../../hub/runs/engine/store.ts';
 import type { ValidationResult } from '../../contracts/src/validation.ts';
 import { PARTITION } from '../../contracts/generated/vocabulary.ts';
 import { startPostgres, type TemporaryPostgres } from '../../hub/testing/postgres.ts';
@@ -86,6 +87,15 @@ describe('scenario 1: a normal review', () => {
     assert.deepEqual(roles.filter(([k]) => k === 'manual:spec-search'), [['manual:spec-search', 'expected']]);
     assert.deepEqual(roles.filter(([k]) => k === 'manual:qa-search' || k === 'agile:search').map(([, r]) => r), ['hint', 'hint']);
     assert.ok(run.instructions.length > 0 && /^[0-9a-f]{64}$/.test(run.instructions_digest));
+    // The default rule is 标签或标记 (marked): the frozen document group (in the stored run record; the start_run
+    // answer itself carries no groups) says so, with how many cases the marker alone found — the independent oracle
+    // counts the same untagged marked cases in this fixture.
+    const frozenGroups = (await bed.hub.records.store.find({ key: 'runs.id', value: run.run })).items[0]?.body as { groups?: Array<Record<string, unknown>> } | undefined;
+    const documentGroup = (frozenGroups?.groups ?? []).find((g) => g.kind === 'document') as { rule_summary?: string; marked_only?: number } | undefined;
+    assert.ok(documentGroup, 'the run freezes the document group with the rule summary');
+    const markedOnly = cases.filter((c) => c.markedOnly).length;
+    assert.equal(documentGroup.marked_only, markedOnly, 'marked_only is the oracle\'s count of marker-only cases');
+    assert.match(documentGroup.rule_summary ?? '', new RegExp(`^用例规则：标签或标记；其中 ${markedOnly} 个只靠标记识别（没有标签）$`));
     assert.equal(run.session, 'sess-s01-draft', 'the session id observed from the Circle-Session-Id header');
   });
 
@@ -203,5 +213,42 @@ describe('scenario 1: a normal review', () => {
     assert.ok(page.body.includes(run.run), 'console page mentions the run id');
     assert.ok(page.body.includes('已交付'), 'console page contains delivered partition group');
     assert.ok(page.body.includes(String(run.items.length)), 'console page shows delivered count');
+  });
+});
+
+
+describe('scenario 1b: the same mind map under case_rule "tagged"', () => {
+  test('the restriction returns to tagged-only items with the rule named in the receipt and a warning for the lookalikes', async () => {
+    const taggedCases = oracleCases(document, { rule: 'tagged' });
+    const lookalikes = cases.filter((c) => c.markedOnly).length;
+    const run = await startReview(client, {
+      product: bed.product.names[1],
+      version: bed.site.LINE,
+      inputs: { subject: { external: `agile:mindmap:${DOCUMENTS.review}` } },
+      parameters: { case_rule: 'tagged' },
+    });
+    assert.equal(run.items.length, taggedCases.length, 'the restriction projects exactly the tagged cases');
+    // Shared node ids get a pack identity per copy (#1/#2), the same suffixing as the default rule's items.
+    const sharedTagged = sharedIds(taggedCases);
+    run.items.forEach((item, i) => {
+      const nodeId = taggedCases[i].nodeId;
+      if (sharedTagged.has(nodeId)) assert.match(item.id, new RegExp(`^${DOCUMENTS.review}:${nodeId}#[12]$`));
+      else assert.equal(item.id, `${DOCUMENTS.review}:${nodeId}`);
+    });
+    const frozen = (await bed.hub.records.store.find({ key: 'runs.id', value: run.run })).items[0]?.body as { groups?: Array<Record<string, unknown>>; gaps?: unknown[] } | undefined;
+    const documentGroup = (frozen?.groups ?? []).find((g) => g.kind === 'document') as { rule_summary?: string; marked_only?: number } | undefined;
+    assert.ok(documentGroup, 'the run freezes the document group');
+    assert.equal(documentGroup.marked_only, 0, 'marked_only is 0 under the restriction');
+    assert.match(documentGroup.rule_summary ?? '', /^用例规则：只认标签；其中 0 个只靠标记识别（没有标签）$/);
+    // The lookalike warning: the count of nodes that look like a case but have no tags, with their locations. A run
+    // with items keeps the projection's warnings in the detail of its parse action (the start_run answer carries gaps
+    // only when the projection returned no items), so the warning is read from the parse action.
+    const parse = (await actionsOf(bed.hub.records.store, run.run)).find((a: { body: { action: string } }) => a.body.action === 'parse');
+    assert.ok(parse, 'the run has its parse action');
+    const warnings = ((parse.body.detail.warnings as unknown[]) ?? []).map((w) => JSON.stringify(w)).join('\n');
+    const lookalike = /case-review\.untagged_cases/.exec(warnings);
+    assert.ok(lookalike, `the parse action carries the untagged lookalike warning: ${warnings.slice(0, 300)}`);
+    assert.match(warnings.slice(lookalike.index), new RegExp(`[^0-9]${lookalikes}[^0-9]`), 'the warning counts the lookalikes');
+    assert.match(warnings.slice(lookalike.index, lookalike.index + 400), /case_rule=tagged/);
   });
 });

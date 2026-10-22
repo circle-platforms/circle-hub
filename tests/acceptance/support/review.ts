@@ -1,7 +1,9 @@
 // Helpers for runs of the review packs: scripted models (plain functions that build submissions), lookups into validation
-// results, and an oracle over a KityMinder document written from the brief's case rule (section 6: a case is a node with a
-// non-empty `resource` tag array; its children are the expected results; a tagged node with the group priority that holds
-// cases is a group), computed from the fixture bytes, never from a Hub answer.
+// results, and an oracle over a KityMinder document written from the pack README's case rule (section "Case rule":
+// `marked` (default) recognizes tagged nodes as well as untagged nodes outside every case that carry the case priority,
+// have children and hold no tagged node and no node with the case priority — the team template's case marker;
+// `tagged` restricts cases to nodes whose `resource` is a non-empty array), computed from the fixture bytes, never
+// from a Hub answer. Still an independent implementation: only the README's words, nothing imported from hub/ or packs/.
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import type { ItemProjection, RunSummary } from '../../../contracts/src/run.ts';
@@ -136,33 +138,60 @@ export interface OracleCase {
   path: string[];
   /** Expected results below steps (children with children), in order. */
   stepExpected: string[];
+  /** True when the case is recognized by the marker only (no tags) — the `marked` rule's addition. */
+  markedOnly: boolean;
 }
+
+export type CaseRule = 'tagged' | 'marked';
 
 const tagged = (n: Node): boolean => Array.isArray(n.data.resource) && (n.data.resource as unknown[]).length > 0;
 
-/** The cases of a document under the brief's tagged rule, in document order. */
-export function oracleCases(document: { root: Node }, groupPriority = 1, casePriority = 2): OracleCase[] {
-  const holdsCase = (n: Node): boolean => (n.children ?? []).some((c) => tagged(c) || c.data.priority === casePriority || holdsCase(c));
+/**
+ * A marked case (the team template's case marker, from the README's words): an untagged node outside every case that
+ * carries the case priority, has children, and holds no tagged node and no node with the case priority.
+ */
+const markedCase = (n: Node, casePriority: number): boolean => {
+  if (tagged(n)) return false;
+  if (n.data.priority !== casePriority) return false;
+  if ((n.children ?? []).length === 0) return false;
+  const holds = (node: Node): boolean => (node.children ?? []).some((c) => tagged(c) || c.data.priority === casePriority || holds(c));
+  return !holds(n);
+};
+
+/** The cases of a document under a rule, in document order; `marked` (the default) also recognizes marked cases. */
+export function oracleCases(document: { root: Node }, options: { rule?: CaseRule; groupPriority?: number; casePriority?: number } = {}): OracleCase[] {
+  const rule = options.rule ?? 'marked';
+  const groupPriority = options.groupPriority ?? 1;
+  const casePriority = options.casePriority ?? 2;
+  const holdsCase = (n: Node): boolean => (n.children ?? []).some((c) => tagged(c) || (rule === 'marked' && markedCase(c, casePriority)) || c.data.priority === casePriority || holdsCase(c));
+  const isCase = (n: Node): boolean => (tagged(n) || (rule === 'marked' && markedCase(n, casePriority)));
   const out: OracleCase[] = [];
   const walk = (n: Node, path: string[]): void => {
     const isGroup = tagged(n) && n.data.priority === groupPriority && holdsCase(n);
-    if (tagged(n) && !isGroup) {
+    if (isCase(n) && !isGroup) {
       const leaves = (n.children ?? []).filter((c) => (c.children ?? []).length === 0);
       const steps = (n.children ?? []).filter((c) => (c.children ?? []).length > 0);
       out.push({
         nodeId: String(n.data.id ?? ''),
         text: String(n.data.text ?? ''),
         priority: n.data.priority ?? null,
-        tags: n.data.resource as unknown[],
+        tags: (n.data.resource as unknown[]) ?? [],
         expected: leaves.filter((c) => c.data.priority !== 3).map((c) => String(c.data.text ?? '')),
         path,
         stepExpected: steps.flatMap((s) => (s.children ?? []).filter((c) => (c.children ?? []).length === 0).map((c) => String(c.data.text ?? ''))),
+        markedOnly: !tagged(n),
       });
     }
     for (const child of n.children ?? []) walk(child, [...path, String(n.data.text ?? '')]);
   };
   walk(document.root, []);
   return out;
+}
+
+/** Nodes that look like a case but have no tags: the `untagged_cases` warning's count under the `tagged` rule. */
+export function untaggedCandidates(document: { root: Node }, casePriority = 2): number {
+  const cases = oracleCases(document, { rule: 'marked', casePriority });
+  return cases.filter((c) => c.markedOnly).length;
 }
 
 /** Ids shared by several cases (the projection gives each copy its own pack identity). */

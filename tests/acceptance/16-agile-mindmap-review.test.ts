@@ -6,10 +6,11 @@ import { after, before, describe, test } from 'node:test';
 import type { RunSummary } from '../../contracts/src/run.ts';
 import { startPostgres, type TemporaryPostgres } from '../../hub/testing/postgres.ts';
 import { DOCUMENTS } from '../fixtures/agile/index.ts';
+import { fixtureText } from '../fixtures/mindmaps/index.ts';
 import { openConsole, type ConsoleClient } from './support/console.ts';
 import { openBed, type Bed } from './support/hub.ts';
 import type { McpClient } from './support/mcp.ts';
-import { draft, resultOf, startReview } from './support/review.ts';
+import { draft, oracleCases, resultOf, startReview } from './support/review.ts';
 
 let postgres: TemporaryPostgres;
 let bed: Bed;
@@ -27,6 +28,8 @@ after(async () => {
   await postgres?.stop();
 });
 
+const document = JSON.parse(fixtureText('review-150.km.json'));
+
 describe('scenario 16: whole review of ~150-node agile mind map with linked expected sources', () => {
   let run: RunSummary;
 
@@ -37,8 +40,10 @@ describe('scenario 16: whole review of ~150-node agile mind map with linked expe
       inputs: { subject: { external: `agile:mindmap:${DOCUMENTS.review}` } },
     });
 
-    // 1. The ~150-node mindmap yields 64 case items under the tagged rule
-    assert.equal(run.items.length, 64, 'the ~150-node mind map yields 64 case items');
+    // 1. The ~150-node mindmap yields the cases of the default (marked) rule, computed by the independent oracle:
+    // tagged cases plus the team template's marked cases (3 of them in this fixture have no tags).
+    assert.equal(run.items.length, oracleCases(document).length, 'the ~150-node mind map yields the oracle\'s case count under the marked rule');
+    assert.equal(oracleCases(document).length - oracleCases(document, { rule: 'tagged' }).length, 3, '3 cases are recognized by the marker only');
 
     // 2. Bound sources: subject plus expected sources (linked story and bug from PLM, spec from manual)
     const subject = run.sources.find((s) => s.role === 'subject');

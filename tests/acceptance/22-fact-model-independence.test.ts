@@ -6,6 +6,8 @@ import { after, before, describe, test } from 'node:test';
 import type { RunSummary } from '../../contracts/src/run.ts';
 import { startPostgres, type TemporaryPostgres } from '../../hub/testing/postgres.ts';
 import { DOCUMENTS } from '../fixtures/agile/index.ts';
+import { fixtureText } from '../fixtures/mindmaps/index.ts';
+import { oracleCases } from './support/review.ts';
 import { openConsole, type ConsoleClient } from './support/console.ts';
 import { openBed, type Bed } from './support/hub.ts';
 import { type McpClient } from './support/mcp.ts';
@@ -28,6 +30,8 @@ after(async () => {
   await postgres?.stop().catch(() => {});
 });
 
+const document = JSON.parse(fixtureText('review-150.km.json'));
+
 describe('scenario 22: fact-requirement model independence', () => {
   let runA: RunSummary;
   let runB: RunSummary;
@@ -49,8 +53,9 @@ describe('scenario 22: fact-requirement model independence', () => {
     assert.ok(runA.run);
     assert.ok(runB.run);
     assert.notEqual(runA.run, runB.run);
-    assert.equal(runA.items.length, 64);
-    assert.equal(runB.items.length, 64);
+    // The item count comes from the independent oracle under the default (marked) rule, not a written-down number.
+    assert.equal(runA.items.length, oracleCases(document).length);
+    assert.equal(runB.items.length, oracleCases(document).length);
     assert.deepEqual(
       runA.items.map((i) => i.id),
       runB.items.map((i) => i.id),
