@@ -11,13 +11,14 @@ export interface GapGold {
 
 export default function scenario(gold: GapGold): Scenario {
   const area = '模板缺口检查';
+  const pack = 'template-gap';
   return {
     name: 'template-gap',
     area,
     prompt: `请按团队模板检查敏捷平台上的测试脑图 ${gold.document} 缺哪些类别。`,
     respond: (turn) =>
       turn.index === 0
-        ? [{ tool: 'hub_start_run', input: { pack: 'template-gap@1.0.0', inputs: { documents: { external: `agile:mindmap:${gold.document}` } } } }]
+        ? [{ tool: 'hub_start_run', input: { pack, inputs: { documents: { external: `agile:mindmap:${gold.document}` } } } }]
         : [{ text: '检查完成。' }],
     check(turns: LoggedTurn[]): Check[] {
       const text = resultTexts(turns).join('\n');

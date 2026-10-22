@@ -2,11 +2,15 @@
 // each scenario starts its run with the right pack and inputs on turn 0, ends on turn 1, and its checks hold on a
 // Hub-shaped answer and fail on a wrong one.
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
 import { describe, test } from 'node:test';
 import type { LoggedTurn, Scenario } from '../lib/accept.ts';
+import caseLocation from './case-location.ts';
 import maintenanceSweep, { type SweepGold } from './maintenance-sweep.ts';
 import qualityBoard, { type BoardGold } from './quality-board.ts';
 import regressionScope, { type ScopeGold } from './regression-scope.ts';
+import templateGap from './template-gap.ts';
 import traceability, { type TraceGold } from './traceability.ts';
 
 const turnsOf = (result: string): LoggedTurn[] => [
@@ -153,6 +157,49 @@ describe('product line unbinding in start_run inputs', () => {
         false,
         `${s.name} 的 hub_start_run 输入不应包含 product`,
       );
+    }
+  });
+});
+
+describe('unversioned pack names in start_run inputs', () => {
+  test('所有 scripts/real/accept 下场景里 hub_start_run 的 pack 都不带 @ 版本', async () => {
+    // 1. Static scan: scan all scenario source files in scripts/real/accept
+    const dir = import.meta.dirname;
+    const scenarioFiles = fs
+      .readdirSync(dir)
+      .filter((name) => name.endsWith('.ts') && !name.endsWith('.test.ts') && name !== 'checks.ts');
+    assert.ok(scenarioFiles.length >= 6, `expected at least 6 scenario files, found ${scenarioFiles.length}`);
+
+    for (const file of scenarioFiles) {
+      const content = fs.readFileSync(path.join(dir, file), 'utf8');
+      const versionedPackMatch = /pack(?:[:=]|\s*:)\s*['"`]([^'"`]+@[0-9][^'"`]*)['"`]/.exec(content);
+      assert.equal(
+        versionedPackMatch,
+        null,
+        `${file} 中的 pack 不能带 @ 版本，实际写了: ${versionedPackMatch?.[1]}`,
+      );
+    }
+
+    // 2. Runtime invocation: verify turn 0 start_run input of all scenarios
+    const allScenarios = [
+      caseLocation({ document: '90001', product: 'apv', line: '10.6.1' }),
+      templateGap({ document: '90001', cases: 10 }),
+      regressionScope({ product: 'apv', earlier: 'b1', later: 'b2', changed: [], removed: [], inScope: [], outOfScope: [] }),
+      maintenanceSweep({ product: 'apv', earlier: 'b1', later: 'b2', cases: [] }),
+      traceability({ product: 'apv', build: 'b1', defects: [] }),
+      qualityBoard({ product: 'apv', build: 'b1', groups: [] }),
+    ];
+
+    for (const s of allScenarios) {
+      const calls = (await s.respond(turn(0))) as Array<{ tool?: string; input?: Record<string, unknown> }>;
+      assert.equal(calls.length, 1);
+      assert.equal(calls[0].tool, 'hub_start_run');
+      assert.ok(calls[0].input !== null && typeof calls[0].input === 'object');
+      const pack = calls[0].input.pack;
+      if (typeof pack !== 'string') {
+        assert.fail(`${s.name} 的 pack 应该是字符串，实际为 ${typeof pack}`);
+      }
+      assert.ok(!pack.includes('@'), `${s.name} 的 pack 不应包含 @ 版本号，实际为 ${pack}`);
     }
   });
 });
