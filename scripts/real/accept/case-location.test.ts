@@ -572,3 +572,185 @@ describe('case-location scenario with document list (at least 5 documents)', () 
     assert.ok(doc1Check && !doc1Check.ok);
   });
 });
+
+describe('case-location associated ID classification and complete result reading', () => {
+  test('checks associated ID set and respective categories: bug to case (unclassified), bug to case 需求 (story), 缺陷 (bug)', () => {
+    const gold: LocationListGold = {
+      product: 'apv',
+      documents: [
+        {
+          document: '900201',
+          line: '7.1',
+          train: '7.1-R2',
+          module: '信标',
+          unclassified: ['900001', '900002'],
+        },
+        {
+          document: '900202',
+          line: '7.1',
+          train: '7.1-R2',
+          module: '信标',
+          stories: ['900003'],
+        },
+        {
+          document: '900203',
+          line: '7.1',
+          train: '7.1-R2',
+          module: '健康检查',
+          bugs: ['900004'],
+        },
+        {
+          document: '900204',
+          line: '7.2',
+          train: '7.2-R1',
+          module: '健康检查',
+          stories: ['900005'],
+        },
+        {
+          document: '900205',
+          line: '7.2',
+          train: '7.2-R1',
+          module: 'SSL',
+          bugs: ['900006'],
+        },
+      ],
+    };
+
+    const s = caseLocation(gold);
+    const text = [
+      '运行 run_1 完成：任务包 case-location@1.0.0',
+      'location 用例定位：满足 5',
+      '条目（5 个；编号 | 名称 | 摘要）：',
+      '- 900201 | 文档 900201 | 产品线 apv；版本 7.1（目录，置信度高）；发布火车 7.1-R2；模块 信标；未分类编号 900001、900002',
+      '- 900202 | 文档 900202 | 产品线 apv；版本 7.1（目录，置信度高）；发布火车 7.1-R2；模块 信标；需求 900003',
+      '- 900203 | 文档 900203 | 产品线 apv；版本 7.1（目录，置信度高）；发布火车 7.1-R2；模块 健康检查；缺陷 900004',
+      '- 900204 | 文档 900204 | 产品线 apv；版本 7.2（目录，置信度高）；发布火车 7.2-R1；模块 健康检查；需求 900005',
+      '- 900205 | 文档 900205 | 产品线 apv；版本 7.2（目录，置信度高）；发布火车 7.2-R1；模块 SSL；缺陷 900006',
+    ].join('\n');
+
+    const checks = s.check(turnsOf(text));
+    assert.ok(checks.every((c) => c.ok), JSON.stringify(checks.filter((c) => !c.ok)));
+
+    // Verify exact check names exist and pass
+    const setCheck1 = checks.find((c) => c.name.includes('文档 900201：关联编号集合与独立依据一致'));
+    assert.ok(setCheck1 && setCheck1.ok);
+    const unclass1 = checks.find((c) => c.name.includes('文档 900201：未分类编号 900001 与独立依据一致'));
+    assert.ok(unclass1 && unclass1.ok);
+    const unclass2 = checks.find((c) => c.name.includes('文档 900201：未分类编号 900002 与独立依据一致'));
+    assert.ok(unclass2 && unclass2.ok);
+
+    const storyCheck = checks.find((c) => c.name.includes('文档 900202：关联需求 900003 与独立依据一致'));
+    assert.ok(storyCheck && storyCheck.ok);
+
+    const bugCheck = checks.find((c) => c.name.includes('文档 900203：关联缺陷 900004 与独立依据一致'));
+    assert.ok(bugCheck && bugCheck.ok);
+  });
+
+  test('reads complete result from hub_get_nodes claim.statement.data when start_run summary is truncated with 等 N 个', () => {
+    const gold: LocationGold = {
+      document: '900301',
+      product: 'apv',
+      line: '10.6.1',
+      unclassified: ['900001', '900002', '900003', '900004', '900005', '900006'],
+    };
+
+    const s = caseLocation(gold);
+    const rec = 'rec:1122334455667788990011223344556677889900112233445566778899001122';
+
+    // start_run text has truncated summary: only 3 IDs listed, then "等 6 个"
+    const startRunText = [
+      '运行 run_1 完成：任务包 case-location@1.0.0',
+      'location 用例定位：满足 1',
+      '产品线 apv；版本 10.6.1（目录，置信度高）',
+      '- 900301 | 文档 900301 | 产品线 apv；版本 10.6.1（目录，置信度高）；未分类编号 900001、900002、900003 等 6 个',
+      `完整结果 ${rec}：用 get_nodes 读第一页`,
+    ].join('\n');
+
+    // get_nodes page returns the validation result JSON carrying complete claim.statement.data
+    const getNodesJson = JSON.stringify({
+      partitions: {
+        delivered: [
+          {
+            item: '900301',
+            requirements: [
+              {
+                requirement: 'location',
+                claims: [
+                  {
+                    statement: {
+                      verdict: 'support',
+                      text: '按目录树定位',
+                      data: {
+                        case_id: '900301',
+                        requirements: [],
+                        defects: [],
+                        unclassified: ['900001', '900002', '900003', '900004', '900005', '900006'],
+                      },
+                    },
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    const turns: LoggedTurn[] = [
+      { index: 0, tools: ['hub_start_run'], toolResults: [] },
+      { index: 1, tools: ['hub_get_nodes'], toolResults: [{ id: 't0', text: startRunText, isError: false }] },
+      { index: 2, tools: [], toolResults: [{ id: 't1', text: getNodesJson, isError: false }] },
+    ];
+
+    const checks = s.check(turns);
+    assert.ok(checks.every((c) => c.ok), JSON.stringify(checks.filter((c) => !c.ok)));
+
+    const setCheck = checks.find((c) => c.name === '关联编号集合与独立依据一致');
+    assert.ok(setCheck && setCheck.ok);
+    assert.equal(setCheck.actual, '共 6 个，集合一致');
+
+    for (const id of ['900001', '900002', '900003', '900004', '900005', '900006']) {
+      const idCheck = checks.find((c) => c.name === `未分类编号 ${id} 与独立依据一致`);
+      assert.ok(idCheck && idCheck.ok, `Check for unclassified id ${id} must pass`);
+    }
+  });
+
+  test('fails when an associated ID is misclassified (gold expects defect but reported as unclassified)', () => {
+    const gold: LocationGold = {
+      document: '90001',
+      line: '10.6.1',
+      bugs: ['900001'],
+    };
+    const s = caseLocation(gold);
+    const text = [
+      '运行 run_1 完成：任务包 case-location@1.0.0',
+      'location 用例定位：满足 1',
+      '产品线 apv；版本 10.6.1（目录，置信度高）',
+      '- 90001 | 文档 90001 | 版本 10.6.1（目录，置信度高）；未分类编号 900001',
+    ].join('\n');
+
+    const checks = s.check(turnsOf(text));
+    const bugCheck = checks.find((c) => c.name.includes('关联缺陷 900001 与独立依据一致'));
+    assert.ok(bugCheck && !bugCheck.ok, 'must fail because 900001 was reported as unclassified, not defect');
+  });
+
+  test('fails when associated ID set has missing or extra items', () => {
+    const gold: LocationGold = {
+      document: '90001',
+      line: '10.6.1',
+      unclassified: ['900001', '900002'],
+    };
+    const s = caseLocation(gold);
+    const text = [
+      '运行 run_1 完成：任务包 case-location@1.0.0',
+      'location 用例定位：满足 1',
+      '产品线 apv；版本 10.6.1（目录，置信度高）',
+      '- 90001 | 文档 90001 | 版本 10.6.1（目录，置信度高）；未分类编号 900001、900099',
+    ].join('\n');
+
+    const checks = s.check(turnsOf(text));
+    const setCheck = checks.find((c) => c.name.includes('关联编号集合与独立依据一致'));
+    assert.ok(setCheck && !setCheck.ok, 'must fail because 900002 is missing and 900099 is extra');
+    assert.match(setCheck.actual, /缺 1 个.*多 1 个/);
+  });
+});

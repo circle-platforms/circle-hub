@@ -21,6 +21,7 @@ export interface DocumentLocationGold {
   module: string | null;
   stories: string[];
   bugs: string[];
+  unclassified: string[];
   associatedIds: string[];
   conforming: boolean;
   reason?: string | null;
@@ -36,6 +37,7 @@ export interface NonconformingDocument {
   module: string | null;
   stories: string[];
   bugs: string[];
+  unclassified: string[];
   associatedIds: string[];
   conforming: false;
 }
@@ -59,10 +61,22 @@ const LINE_REGEX = /^v?([0-9]{1,3}(?:\.[0-9]{1,3}){1,3})$/i;
 const TRAIN_REGEX = /^v?([0-9]{1,3}(?:\.[0-9]{1,3}){1,3})(?=[-_\s])\S*?[-_\s]+\S/i;
 const NOT_MODULE = /测试|回归|用例|需求|缺陷|bug|case|patch|build|story|plm|提测/i;
 
-const STORY_MARKER = /(?<![A-Za-z0-9])(?:stor(?:y|ies)|需求单?)/gi;
-const BUG_MARKER = /(?<![A-Za-z0-9])(?:bu(?:gt?|t)[\s_-]*(?:t?o|ro|2)[\s_-]*c[a-z]{0,5}|bugs?|缺陷)/gi;
-const GLUE_REGEX = /^[\s#:\-_~.—–]*/;
-const SEPARATOR_REGEX = /^(?:\s*(?:[&、,，+;；]|and\b|和|及|与)\s*#?|\s+)(?=[0-9]{2})/i;
+const MARKER_REGEX = /(?<![a-z0-9])(?:(bu(?:gt?|t)[\s_-]*(?:t?o|ro|2)[\s_-]*c[a-z]{0,5})|(bugs?)|(stor(?:y|ies))|(plm))|(缺陷)|(需求单?)/gu;
+const INNER_REGEX = /(?:(需求单?)|(缺陷)|(stor(?:y|ies))|(bugs?))(?![a-z])/uy;
+const GLUE_REGEX = /[\s#:\-_~.—–]*/uy;
+const LIST_REGEX = /(?:\s*(?:[&、,，+;；]|and\b|和|及|与)\s*#?|\s+)(?=[0-9]{2})/iuy;
+const LEAD_SKIP = /[\s\-–—_:.、]+/uy;
+const LEAD_BRACKET = /(?:\[[^\]0-9]{0,20}\]|【[^】0-9]{0,20}】|\([^)0-9]{0,20}\)|（[^）0-9]{0,20}）)/uy;
+const LEAD_WORD = /(?:regression|二轮回归测试|三轮回归测试|二轮回归|三轮回归|回归测试|回归|test|测试)(?![a-z])/iuy;
+const LEAD_OPEN = /[[【(（]\s*(?=[0-9])/uy;
+const GLUED_HAN = /^\p{Script=Han}/u;
+const UNIT = /^\s*(?:%|‰|(?:ms|us|s|kb|mb|gb|tb|bps|kbps|mbps|gbps|qps|tps|cps|rps|pps|bits?|bytes?)(?![a-z]))/u;
+
+function sticky(pattern: RegExp, text: string, at: number): string | null {
+  pattern.lastIndex = at;
+  const match = pattern.exec(text);
+  return match === null ? null : match[0];
+}
 
 /** Strips folder prefix code (e.g. "060：10.6.1" -> "10.6.1", "004: 10.6.1-R2" -> "10.6.1-R2"). */
 export function stripPrefix(label: string): { prefix: string | null; text: string } {
@@ -90,80 +104,129 @@ export function isModuleName(raw: string): boolean {
   return true;
 }
 
-/** Extracts an ID list starting at position `at`. */
-function extractIdList(text: string, at: number): { ids: string[]; end: number } {
-  const ids: string[] = [];
-  let pos = at;
-  for (let guard = 0; guard < 64; guard++) {
-    const digitMatch = /^[0-9]{2,9}/.exec(text.slice(pos));
-    if (!digitMatch) break;
-    const candidate = digitMatch[0];
-    const end = pos + candidate.length;
-    const nextChar = text[end] ?? '';
-    if (nextChar === '.' && /[0-9]/.test(text[end + 1] ?? '')) break;
-    if (candidate.length <= 4 && (nextChar === '/' || nextChar === ':') && /[0-9]/.test(text[end + 1] ?? '')) break;
-    ids.push(candidate);
-    pos = end;
-    const sepMatch = SEPARATOR_REGEX.exec(text.slice(pos));
-    if (!sepMatch) break;
-    pos += sepMatch[0].length;
+function idAt(text: string, at: number, min: number, max: number, bare: boolean): { id: string; end: number } | null {
+  let end = at;
+  while (end < text.length && text[end] >= '0' && text[end] <= '9') end += 1;
+  const id = text.slice(at, end);
+  if (id.length < min || id.length > max || id.startsWith('0')) return null;
+  const before = text[at - 1] ?? '';
+  const next = text[end] ?? '';
+  const after = text[end + 1] ?? '';
+  const short = id.length <= 4;
+  if (/[0-9]/.test(before) || (before === '.' && /[0-9]/.test(text[at - 2] ?? ''))) return null;
+  if (next === '.' && /[0-9]/.test(after)) return null;
+  if (short && (next === '/' || next === ':') && /[0-9]/.test(after)) return null;
+  if (id.length === 4 && next === '-' && /^[0-9]{1,2}(?:[^0-9]|$)/.test(text.slice(end + 1, end + 4))) return null;
+  if (short && /[a-z]/.test(next)) return null;
+  if (id.length === 8) {
+    const y = Number(id.slice(0, 4));
+    const m = Number(id.slice(4, 6));
+    const d = Number(id.slice(6, 8));
+    if (y >= 1970 && y <= 2099 && m >= 1 && m <= 12 && d >= 1 && d <= 31) return null;
   }
-  return { ids, end: pos };
+  if (/^\s*[年月日号]/u.test(text.slice(end, end + 3))) return null;
+  if (bare && /^\s*:/.test(text.slice(end, end + 3))) return null;
+  return { id, end };
 }
 
-/** Extracts story, bug, and leading bare numbers from title and ancestors. */
-export function extractAssociatedIds(title: string, ancestors: string[]): { stories: string[]; bugs: string[]; associatedIds: string[] } {
-  const storiesSet = new Set<string>();
-  const bugsSet = new Set<string>();
-  const allIdsSet = new Set<string>();
+/** Extracts an ID list starting at position `at`. */
+function idList(text: string, at: number, min: number, max: number, bare = false): { ids: string[]; end: number; ends: number[] } {
+  const ids: string[] = [];
+  const ends: number[] = [];
+  let position = at;
+  let end = at;
+  for (let guard = 0; guard < 64; guard++) {
+    const found = idAt(text, position, min, max, bare);
+    if (found === null) break;
+    ids.push(found.id);
+    ends.push(found.end);
+    position = found.end;
+    end = found.end;
+    const separator = sticky(LIST_REGEX, text, position);
+    if (separator === null) break;
+    position += separator.length;
+  }
+  return { ids, end, ends };
+}
 
-  const scanText = (text: string, isTitle: boolean) => {
-    const norm = text.normalize('NFKC');
-
-    for (const match of norm.matchAll(STORY_MARKER)) {
-      const start = (match.index ?? 0) + match[0].length;
-      const glue = GLUE_REGEX.exec(norm.slice(start));
-      const afterGlue = start + (glue ? glue[0].length : 0);
-      const { ids } = extractIdList(norm, afterGlue);
-      for (const id of ids) {
-        storiesSet.add(id);
-        allIdsSet.add(id);
-      }
+function scanMarked(text: string): Array<{ id: string; kind: 'story' | 'bug' | null }> {
+  const out: Array<{ id: string; kind: 'story' | 'bug' | null }> = [];
+  MARKER_REGEX.lastIndex = 0;
+  for (let match = MARKER_REGEX.exec(text); match !== null; match = MARKER_REGEX.exec(text)) {
+    let kind: 'story' | 'bug' | null = null;
+    if (match[1] !== undefined || match[4] !== undefined) {
+      kind = null;
+    } else if (match[2] !== undefined || match[5] !== undefined) {
+      kind = 'bug';
+    } else {
+      kind = 'story';
     }
-
-    for (const match of norm.matchAll(BUG_MARKER)) {
-      const start = (match.index ?? 0) + match[0].length;
-      const glue = GLUE_REGEX.exec(norm.slice(start));
-      const afterGlue = start + (glue ? glue[0].length : 0);
-      const { ids } = extractIdList(norm, afterGlue);
-      for (const id of ids) {
-        bugsSet.add(id);
-        allIdsSet.add(id);
-      }
+    let position = match.index + match[0].length;
+    position += (sticky(GLUE_REGEX, text, position) ?? '').length;
+    INNER_REGEX.lastIndex = position;
+    const inner = INNER_REGEX.exec(text);
+    if (inner !== null) {
+      kind = (inner[1] !== undefined || inner[3] !== undefined) ? 'story' : 'bug';
+      position += inner[0].length;
+      position += (sticky(GLUE_REGEX, text, position) ?? '').length;
     }
+    const { ids, end } = idList(text, position, 2, 9);
+    for (const id of ids) out.push({ kind, id });
+    if (ids.length > 0) MARKER_REGEX.lastIndex = Math.max(MARKER_REGEX.lastIndex, end);
+  }
+  return out;
+}
 
-    if (isTitle) {
-      const leadMatch = /^[\s\-–—_:.、]*([0-9]{4,7})(?=[^0-9]|$)/.exec(norm);
-      if (leadMatch) {
-        const num = leadMatch[1];
-        const val = Number(num);
-        if (!(num.length === 4 && val >= 1900 && val <= 2099)) {
-          allIdsSet.add(num);
-        }
-      }
-    }
-  };
+function scanLeading(text: string): string[] {
+  let at = 0;
+  for (let guard = 0; guard < 32; guard++) {
+    const skip = sticky(LEAD_SKIP, text, at) ?? sticky(LEAD_BRACKET, text, at) ?? sticky(LEAD_WORD, text, at);
+    if (skip === null || skip === '') break;
+    at += skip.length;
+  }
+  at += (sticky(LEAD_OPEN, text, at) ?? '').length;
+  const { ids, ends } = idList(text, at, 5, 7, true);
+  if (ends.some((end) => GLUED_HAN.test(text.slice(end, end + 1)) || UNIT.test(text.slice(end, end + 12)))) return [];
+  return ids;
+}
 
-  scanText(title, true);
-  for (const ancestor of ancestors) {
-    scanText(ancestor, false);
+/** Extracts story, bug, and unclassified numbers from title and ancestors following convention. */
+export function extractAssociatedIds(title: string, ancestors: string[]): {
+  stories: string[];
+  bugs: string[];
+  unclassified: string[];
+  associatedIds: string[];
+} {
+  const normTitle = (title ?? '').normalize('NFKC').toLowerCase();
+  const titleMarked = scanMarked(normTitle);
+  const titleLeading = scanLeading(normTitle);
+
+  const ancestorMarked: Array<{ id: string; kind: 'story' | 'bug' | null }> = [];
+  for (const ancestor of ancestors ?? []) {
+    ancestorMarked.push(...scanMarked((ancestor ?? '').normalize('NFKC').toLowerCase()));
   }
 
-  return {
-    stories: [...storiesSet].sort(),
-    bugs: [...bugsSet].sort(),
-    associatedIds: [...allIdsSet].sort(),
-  };
+  const allFound = [...titleMarked, ...ancestorMarked, ...titleLeading.map((id) => ({ id, kind: null as 'story' | 'bug' | null }))];
+  const storiesSet = new Set<string>();
+  const bugsSet = new Set<string>();
+  const unclassifiedSet = new Set<string>();
+
+  for (const item of allFound) {
+    if (item.kind === 'story') storiesSet.add(item.id);
+    else if (item.kind === 'bug') bugsSet.add(item.id);
+  }
+  for (const item of allFound) {
+    if (item.kind === null && !storiesSet.has(item.id) && !bugsSet.has(item.id)) {
+      unclassifiedSet.add(item.id);
+    }
+  }
+
+  const stories = [...storiesSet].sort();
+  const bugs = [...bugsSet].sort();
+  const unclassified = [...unclassifiedSet].sort();
+  const associatedIds = [...new Set([...stories, ...bugs, ...unclassified])].sort();
+
+  return { stories, bugs, unclassified, associatedIds };
 }
 
 /**
@@ -329,7 +392,7 @@ export function evaluateLocation(doc: ScannedDocumentItem): EvaluatedLocation {
     }
   }
 
-  const { stories, bugs, associatedIds } = extractAssociatedIds(doc.title, doc.ancestors);
+  const { stories, bugs, unclassified, associatedIds } = extractAssociatedIds(doc.title, doc.ancestors);
   const conforming = nonconReason === null;
 
   const location: DocumentLocationGold = {
@@ -340,6 +403,7 @@ export function evaluateLocation(doc: ScannedDocumentItem): EvaluatedLocation {
     module: moduleVal,
     stories,
     bugs,
+    unclassified,
     associatedIds,
     conforming,
     reason: nonconReason,
@@ -397,6 +461,7 @@ export function locationsGold(treeInput: unknown, options?: { root?: string }): 
         module: evaluated.location.module,
         stories: evaluated.location.stories,
         bugs: evaluated.location.bugs,
+        unclassified: evaluated.location.unclassified,
         associatedIds: evaluated.location.associatedIds,
         conforming: false,
       });

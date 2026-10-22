@@ -44,6 +44,7 @@ export interface DocumentLocationGold {
   module?: string;
   stories?: string[];
   bugs?: string[];
+  unclassified?: string[];
   associatedIds?: string[];
   /** Record of whether associated IDs were verified in PLM (plm:bug / plm:story). */
   plmFound?: Record<string, boolean>;
@@ -126,6 +127,172 @@ export function buildManualPlmSections(docs: DocumentLocationGold[], isList: boo
       lines: manualLines,
     },
   ];
+}
+
+export interface ReportedDocData {
+  stories: Set<string>;
+  bugs: Set<string>;
+  unclassified: Set<string>;
+  all: Set<string>;
+  fromData: boolean;
+}
+
+function extractDataFromJsonObject(docId: string, obj: unknown): { requirements: string[]; defects: string[]; unclassified: string[] } | null {
+  if (!obj || typeof obj !== 'object') return null;
+  const o = obj as Record<string, unknown>;
+
+  // Direct match on case_id / document
+  const caseId = String(o.case_id ?? o.document ?? o.item ?? o.id ?? '');
+  if (caseId === docId || caseId === `doc:${docId}` || caseId.endsWith(`:${docId}`)) {
+    if (Array.isArray(o.requirements) || Array.isArray(o.defects) || Array.isArray(o.unclassified)) {
+      return {
+        requirements: Array.isArray(o.requirements) ? o.requirements.map(String) : [],
+        defects: Array.isArray(o.defects) ? o.defects.map(String) : [],
+        unclassified: Array.isArray(o.unclassified) ? o.unclassified.map(String) : [],
+      };
+    }
+  }
+
+  // Partitions in ValidationResult
+  if (o.partitions && typeof o.partitions === 'object') {
+    const partitions = o.partitions as Record<string, unknown>;
+    for (const partList of Object.values(partitions)) {
+      if (!Array.isArray(partList)) continue;
+      for (const item of partList) {
+        if (!item || typeof item !== 'object') continue;
+        const it = item as Record<string, unknown>;
+        const itemId = String(it.item ?? it.id ?? '');
+        if (itemId === docId || itemId === `doc:${docId}` || itemId.endsWith(`:${docId}`)) {
+          if (Array.isArray(it.requirements)) {
+            for (const req of it.requirements) {
+              if (!req || typeof req !== 'object') continue;
+              const r = req as Record<string, unknown>;
+              if (Array.isArray(r.claims)) {
+                for (const claim of r.claims) {
+                  if (!claim || typeof claim !== 'object') continue;
+                  const c = claim as Record<string, unknown>;
+                  const data = c.statement && typeof c.statement === 'object' && 'data' in (c.statement as Record<string, unknown>)
+                    ? (c.statement as { data?: Record<string, unknown> }).data
+                    : undefined;
+                  if (data && typeof data === 'object') {
+                    if (Array.isArray(data.requirements) || Array.isArray(data.defects) || Array.isArray(data.unclassified)) {
+                      return {
+                        requirements: Array.isArray(data.requirements) ? data.requirements.map(String) : [],
+                        defects: Array.isArray(data.defects) ? data.defects.map(String) : [],
+                        unclassified: Array.isArray(data.unclassified) ? data.unclassified.map(String) : [],
+                      };
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Items list
+  if (Array.isArray(o.items)) {
+    for (const item of o.items) {
+      const res = extractDataFromJsonObject(docId, item);
+      if (res) return res;
+    }
+  }
+
+  return null;
+}
+
+function scanJsonObjects(text: string): unknown[] {
+  const out: unknown[] = [];
+  let at = 0;
+  while (at < text.length) {
+    const start = text.indexOf('{', at);
+    if (start < 0) break;
+    let depth = 0;
+    let end = -1;
+    for (let i = start; i < text.length; i++) {
+      if (text[i] === '{') depth++;
+      else if (text[i] === '}') {
+        depth--;
+        if (depth === 0) {
+          end = i;
+          break;
+        }
+      }
+    }
+    if (end > start) {
+      try {
+        const parsed = JSON.parse(text.slice(start, end + 1));
+        if (parsed && typeof parsed === 'object') out.push(parsed);
+      } catch {
+        // ignore
+      }
+      at = end + 1;
+    } else {
+      break;
+    }
+  }
+  return out;
+}
+
+function extractIdsFromSnippet(snippet: string, marker: string): string[] {
+  const match = new RegExp(`${marker}\\s+([^；;\\n]+)`).exec(snippet);
+  if (!match) return [];
+  const part = match[1].replace(/\s*等\s*\d+\s*个.*$/, '');
+  const ids: string[] = [];
+  for (const m of part.matchAll(/(?<![0-9])([0-9]{2,9})(?![0-9])/g)) {
+    ids.push(m[1]);
+  }
+  return ids;
+}
+
+export function extractReportedDocumentData(docId: string, turns: LoggedTurn[]): ReportedDocData {
+  for (const turn of turns) {
+    for (const res of turn.toolResults) {
+      if (!res.text) continue;
+      try {
+        const parsed = JSON.parse(res.text);
+        const data = extractDataFromJsonObject(docId, parsed);
+        if (data) {
+          return {
+            stories: new Set(data.requirements),
+            bugs: new Set(data.defects),
+            unclassified: new Set(data.unclassified),
+            all: new Set([...data.requirements, ...data.defects, ...data.unclassified]),
+            fromData: true,
+          };
+        }
+      } catch {
+        // Not JSON
+      }
+      for (const obj of scanJsonObjects(res.text)) {
+        const data = extractDataFromJsonObject(docId, obj);
+        if (data) {
+          return {
+            stories: new Set(data.requirements),
+            bugs: new Set(data.defects),
+            unclassified: new Set(data.unclassified),
+            all: new Set([...data.requirements, ...data.defects, ...data.unclassified]),
+            fromData: true,
+          };
+        }
+      }
+    }
+  }
+
+  // Fallback to text
+  const text = resultTexts(turns).join('\n');
+  const docRegex = new RegExp(`(?:^|\\n)[\\s\\-]*(?:doc:)?${docId}\\s*\\|[^\n]*`, 'u');
+  const docMatch = docRegex.exec(text);
+  const docSnippet = docMatch ? docMatch[0] : text;
+
+  const stories = new Set(extractIdsFromSnippet(docSnippet, '需求'));
+  const bugs = new Set(extractIdsFromSnippet(docSnippet, '缺陷'));
+  const unclassified = new Set(extractIdsFromSnippet(docSnippet, '未分类编号'));
+  const all = new Set([...stories, ...bugs, ...unclassified]);
+
+  return { stories, bugs, unclassified, all, fromData: false };
 }
 
 function checkCandidateBuilds(
@@ -376,32 +543,64 @@ export default function scenario(gold: LocationGold): Scenario {
             });
           }
 
-          // Stories
-          if (doc.stories !== undefined && doc.stories.length > 0) {
-            for (const storyId of doc.stories) {
-              const storyExpected = `需求 ${storyId}`;
-              const storyOk = docText.includes(storyExpected) || has(storyExpected);
+          // Associated IDs & Categories
+          const reported = extractReportedDocumentData(doc.document, turns);
+          const goldStories = new Set(doc.stories ?? []);
+          const goldBugs = new Set(doc.bugs ?? []);
+          const goldUnclassified = doc.unclassified !== undefined
+            ? new Set(doc.unclassified)
+            : new Set((doc.associatedIds ?? []).filter((id) => !goldStories.has(id) && !goldBugs.has(id)));
+          const goldAssociated = new Set(doc.associatedIds ?? [...goldStories, ...goldBugs, ...goldUnclassified]);
+
+          const hasAnyGoldIds = doc.associatedIds !== undefined || doc.stories !== undefined || doc.bugs !== undefined || doc.unclassified !== undefined;
+
+          if (hasAnyGoldIds) {
+            const missing = [...goldAssociated].filter((id) => !reported.all.has(id));
+            const extra = [...reported.all].filter((id) => !goldAssociated.has(id));
+            const setOk = missing.length === 0 && extra.length === 0;
+            checks.push({
+              area,
+              name: `${docPrefix}关联编号集合与独立依据一致`,
+              expected: `共 ${goldAssociated.size} 个（${[...goldAssociated].sort().join('、')}）`,
+              actual: setOk
+                ? `共 ${reported.all.size} 个，集合一致`
+                : `${missing.length > 0 ? `缺 ${missing.length} 个（${missing.join('、')}）` : ''}${missing.length > 0 && extra.length > 0 ? '，' : ''}${extra.length > 0 ? `多 ${extra.length} 个（${extra.join('、')}）` : ''}`,
+              ok: setOk,
+            });
+
+            // Stories
+            for (const storyId of [...goldStories].sort()) {
+              const storyOk = reported.stories.has(storyId);
               checks.push({
                 area,
                 name: `${docPrefix}关联需求 ${storyId} 与独立依据一致`,
-                expected: storyExpected,
+                expected: `需求 ${storyId}`,
                 actual: storyOk ? '一致' : '不一致',
                 ok: storyOk,
               });
             }
-          }
 
-          // Bugs
-          if (doc.bugs !== undefined && doc.bugs.length > 0) {
-            for (const bugId of doc.bugs) {
-              const bugExpected = `缺陷 ${bugId}`;
-              const bugOk = docText.includes(bugExpected) || has(bugExpected);
+            // Bugs
+            for (const bugId of [...goldBugs].sort()) {
+              const bugOk = reported.bugs.has(bugId);
               checks.push({
                 area,
                 name: `${docPrefix}关联缺陷 ${bugId} 与独立依据一致`,
-                expected: bugExpected,
+                expected: `缺陷 ${bugId}`,
                 actual: bugOk ? '一致' : '不一致',
                 ok: bugOk,
+              });
+            }
+
+            // Unclassified
+            for (const id of [...goldUnclassified].sort()) {
+              const unclassOk = reported.unclassified.has(id);
+              checks.push({
+                area,
+                name: `${docPrefix}未分类编号 ${id} 与独立依据一致`,
+                expected: `未分类编号 ${id}`,
+                actual: unclassOk ? '一致' : '不一致',
+                ok: unclassOk,
               });
             }
           }
@@ -422,6 +621,47 @@ export default function scenario(gold: LocationGold): Scenario {
         if (singleDoc.train !== undefined) {
           checks.splice(3, 0, { area, name: '发布火车与独立依据一致', expected: `发布火车 ${singleDoc.train}`, actual: has(`发布火车 ${singleDoc.train}`) ? '一致' : '不一致', ok: has(`发布火车 ${singleDoc.train}`) });
         }
+        if (singleDoc.module !== undefined) {
+          checks.push({ area, name: '模块与独立依据一致', expected: `模块 ${singleDoc.module}`, actual: has(`模块 ${singleDoc.module}`) ? '一致' : '不一致', ok: has(`模块 ${singleDoc.module}`) });
+        }
+
+        const hasAnyGoldIds = singleDoc.associatedIds !== undefined || singleDoc.stories !== undefined || singleDoc.bugs !== undefined || singleDoc.unclassified !== undefined;
+        if (hasAnyGoldIds) {
+          const reported = extractReportedDocumentData(singleDoc.document, turns);
+          const goldStories = new Set(singleDoc.stories ?? []);
+          const goldBugs = new Set(singleDoc.bugs ?? []);
+          const goldUnclassified = singleDoc.unclassified !== undefined
+            ? new Set(singleDoc.unclassified)
+            : new Set((singleDoc.associatedIds ?? []).filter((id) => !goldStories.has(id) && !goldBugs.has(id)));
+          const goldAssociated = new Set(singleDoc.associatedIds ?? [...goldStories, ...goldBugs, ...goldUnclassified]);
+
+          const missing = [...goldAssociated].filter((id) => !reported.all.has(id));
+          const extra = [...reported.all].filter((id) => !goldAssociated.has(id));
+          const setOk = missing.length === 0 && extra.length === 0;
+          checks.push({
+            area,
+            name: '关联编号集合与独立依据一致',
+            expected: `共 ${goldAssociated.size} 个（${[...goldAssociated].sort().join('、')}）`,
+            actual: setOk
+              ? `共 ${reported.all.size} 个，集合一致`
+              : `${missing.length > 0 ? `缺 ${missing.length} 个（${missing.join('、')}）` : ''}${missing.length > 0 && extra.length > 0 ? '，' : ''}${extra.length > 0 ? `多 ${extra.length} 个（${extra.join('、')}）` : ''}`,
+            ok: setOk,
+          });
+
+          for (const storyId of [...goldStories].sort()) {
+            const storyOk = reported.stories.has(storyId);
+            checks.push({ area, name: `关联需求 ${storyId} 与独立依据一致`, expected: `需求 ${storyId}`, actual: storyOk ? '一致' : '不一致', ok: storyOk });
+          }
+          for (const bugId of [...goldBugs].sort()) {
+            const bugOk = reported.bugs.has(bugId);
+            checks.push({ area, name: `关联缺陷 ${bugId} 与独立依据一致`, expected: `缺陷 ${bugId}`, actual: bugOk ? '一致' : '不一致', ok: bugOk });
+          }
+          for (const id of [...goldUnclassified].sort()) {
+            const unclassOk = reported.unclassified.has(id);
+            checks.push({ area, name: `未分类编号 ${id} 与独立依据一致`, expected: `未分类编号 ${id}`, actual: unclassOk ? '一致' : '不一致', ok: unclassOk });
+          }
+        }
+
         if (singleDoc.buildCandidates !== undefined) {
           checks.push(...checkCandidateBuilds(area, text, singleDoc.buildCandidates, singleDoc.writtenBuilds));
         }
