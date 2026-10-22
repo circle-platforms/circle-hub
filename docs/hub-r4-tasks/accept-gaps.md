@@ -27,7 +27,7 @@
 
 6b：“the drafted cases of defects that already have a regression document are compared with that document (commands and parameters), and every expected result of a draft must be a verbatim quotation of the fix description or the manual”。
 
-1. `scripts/real/gold/regression-doc.ts`：读导出的一份已有回归文档（标题写着它回归的缺陷编号）的原件，按带资源标签的节点取用例（和 `scripts/real/gold/cases.ts` 同一条规则，不实现按标记识别），独立取出每个用例里的命令行，拆成命令头和参数。
+1. `scripts/real/gold/regression-doc.ts`：读导出的一份已有回归文档（标题写着它回归的缺陷编号）的原件，用例按 `scripts/real/gold/cases.ts` 的规则取（默认“带标签或带标记”，和 Hub 的默认规则一致；`--case-rule tagged` 只认带标签的节点；真实的回归文档里有整份只按团队模板标记、没有一个资源标签的），独立取出每个用例里的命令行，拆成命令头和参数。
 2. `scripts/real/accept/defect-to-case-compare.ts`：输入这份 gold 和集成者跑出的那次缺陷转用例运行的验证结果（导出的 JSON）。报告三件事：草稿用到的命令头里，已有文档也用到的比例，以及反过来的比例（只报告，不判通过）；每条期望结果的引用都已被 Hub 判为逐字（读验证结果里的状态，不重做）；草稿与已有用例完全相同（命令头和参数值都相同）的，gold 算出来的集合和 Hub 查重标出的集合是否相等。
 3. 合成测试：命令行拆分（引号、多空格、`no` 前缀）、比例计算、查重集合比较的正反例。
 
