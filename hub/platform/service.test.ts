@@ -71,15 +71,24 @@ test('ensureHubDatabase starts the cluster named by the service environment, nev
   await assert.rejects(ensureHubDatabase({ CIRCLE_HUB_DATABASE_PORT: port }), /没有设置 CIRCLE_HUB_DATA_DIR/, 'never the default data root');
 });
 
-test('hubKeyProvider reads the keychain item of the deployment settings; without settings, the one the environment names', async () => {
+test('hubKeyProvider reads the keychain item of the deployment settings; a data root without settings, the one the environment names; no data root, none', async () => {
   const key = randomBytes(32).toString('hex');
+  // A development data root without settings (as hub/testing makes them).
+  const plain = await tempDir();
+  roots.push(plain);
   const { runner, calls } = recordingRunner(() => ok(`${key}\n`), { real: false });
-  const provider = hubKeyProvider({ CIRCLE_HUB_KEYCHAIN_SERVICE: 'hub-x', CIRCLE_HUB_KEYCHAIN_ACCOUNT: 'key-x' }, { runner });
+  const provider = hubKeyProvider({ CIRCLE_HUB_DATA_DIR: plain, CIRCLE_HUB_KEYCHAIN_SERVICE: 'hub-x', CIRCLE_HUB_KEYCHAIN_ACCOUNT: 'key-x' }, { runner });
   assert.equal(Buffer.from(await provider.getKey()).toString('hex'), key);
   assert.deepEqual(calls[0]?.args, ['find-generic-password', '-s', 'hub-x', '-a', 'key-x', '-w']);
   const defaults = recordingRunner(() => ok(`${key}\n`), { real: false });
-  await hubKeyProvider({}, { runner: defaults.runner }).getKey();
+  await hubKeyProvider({ CIRCLE_HUB_DATA_DIR: plain }, { runner: defaults.runner }).getKey();
   assert.deepEqual(defaults.calls[0]?.args, ['find-generic-password', '-s', 'circle-hub', '-a', 'vault-master-key', '-w']);
+  // Without a data root nothing is guessed, as ensureHubDatabase refuses: the default root's settings may name other items.
+  const unset = recordingRunner(() => ok(`${key}\n`), { real: false });
+  for (const env of [{}, { CIRCLE_HUB_DATA_DIR: '' }, { CIRCLE_HUB_KEYCHAIN_SERVICE: 'hub-x', CIRCLE_HUB_KEYCHAIN_ACCOUNT: 'key-x' }]) {
+    await assert.rejects(hubKeyProvider(env, { runner: unset.runner }).getKey(), /^PlatformError: 没有设置 CIRCLE_HUB_DATA_DIR：钥匙串项由部署的数据根里的部署设置决定，不猜默认数据根$/, JSON.stringify(env));
+  }
+  assert.deepEqual(unset.calls, [], 'the keychain was not asked');
 
   const root = await tempDir();
   roots.push(root);

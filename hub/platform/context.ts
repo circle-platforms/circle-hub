@@ -4,12 +4,12 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { libpqDirectory } from './backup.ts';
 import { PlatformError } from './errors.ts';
-import { keychainStore, type KeychainStore } from './keychain.ts';
+import { keychainStore, settingsKeychainNames, type DeploymentKeychainNames, type KeychainStore } from './keychain.ts';
 import { defaultLaunchAgentsDirectory, launchAgent, type LaunchAgent, type ServiceIdentity } from './launchd.ts';
 import { resolveLayout, type Layout } from './layout.ts';
 import { createPostgres, type PostgresControl } from './postgres.ts';
 import { runCommand, type CommandRunner } from './process.ts';
-import { deploymentDatabase, readSettings, sameDatabase, SERVICE_LABEL, type DatabaseNames, type PlatformSettings } from './settings.ts';
+import { deploymentDatabase, readSettings, sameDatabase, SERVICE_LABEL, settingsPath, type DatabaseNames, type PlatformSettings } from './settings.ts';
 
 export interface PlatformContext {
   env: NodeJS.ProcessEnv;
@@ -104,10 +104,18 @@ export function agentFor(context: PlatformContext, settings: Pick<PlatformSettin
   return launchAgent({ label: settings.label, directory: context.launchAgentsDir, uid: context.uid, runner: context.runner });
 }
 
+/**
+ * The deployment's keychain items, from its settings. A vault master key account that is the operator token's is refused:
+ * `serve` would refuse it too, so deploy, rollback and service install|start check it before anything changes.
+ */
+export function keychainNamesFor(context: PlatformContext, settings: PlatformSettings): DeploymentKeychainNames {
+  return settingsKeychainNames(settings, settingsPath(context.layout));
+}
+
+/** The vault master key's item of the deployment; a reserved account (the operator token's) is refused. */
 export function keychainFor(context: PlatformContext, settings: PlatformSettings): KeychainStore {
   return keychainStore({
-    service: settings.keychainService,
-    account: settings.keychainAccount,
+    ...keychainNamesFor(context, settings).vaultKey,
     runner: context.runner,
     ...(context.keychain ? { keychain: context.keychain } : {}),
   });

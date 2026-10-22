@@ -17,6 +17,7 @@ export {
   DEFAULT_KEYCHAIN_ACCOUNT,
   DEFAULT_KEYCHAIN_SERVICE,
   DEFAULT_PORT,
+  OPERATOR_TOKEN_ACCOUNT,
   readSettings,
   readSettingsFile,
   resolveDatabaseNames,
@@ -35,7 +36,20 @@ export {
   type PostgresControl,
   type PostgresStatus,
 } from './postgres.ts';
-export { keychainKeyProvider, keychainStore, KEY_BYTES, type KeychainOptions, type KeychainStore, type KeyProvider } from './keychain.ts';
+export {
+  deploymentKeychainNames,
+  keychainKeyProvider,
+  keychainStore,
+  KEY_BYTES,
+  OPERATOR_TOKEN_ITEM,
+  VAULT_KEY_ITEM,
+  type DeploymentKeychainNames,
+  type KeychainItem,
+  type KeychainItemName,
+  type KeychainOptions,
+  type KeychainStore,
+  type KeyProvider,
+} from './keychain.ts';
 export { BACKUP_SCHEMA, backupPath, createBackup, listBackups, pruneBackups, verifyBackup, type BackupManifest } from './backup.ts';
 export { TABLE_DIGEST } from './sql.ts';
 export { restoreBackup, setAside, type RestoreReport } from './restore.ts';
@@ -57,4 +71,4 @@ export { rehearse, type RehearsalReport } from './rehearse.ts';
 export { verifyPostgres, type VerifyResult } from './verify.ts';
 export { isPlatformCommand, main, PLATFORM_COMMANDS, runPlatformCommand, type PlatformIo } from './cli.ts';
 export { ensureHubDatabase, hubKeyProvider } from './service.ts';
-export type { CommandResult, CommandRunner } from './process.ts';
+export { runCommand, type CommandResult, type CommandRunner } from './process.ts';

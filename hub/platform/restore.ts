@@ -18,7 +18,11 @@ import { runCommand, tailLines, toolEnvironment, type CommandRunner } from './pr
 import { comparePrivileges, rolePrivileges, roleProblems } from './roles.ts';
 import { compareSummaries, summarizeTables, withSession } from './sql.ts';
 
-/** Areas that hold Hub data. logs/, backups/, releases/ and config/ are not data. */
+/**
+ * Areas that hold Hub data. logs/, backups/, releases/ and config/ are not data, and neither is packs/: extracted pack
+ * trees derived from the objects, which a restore leaves as they are (the registry checks a tree at every use and builds
+ * it again from the objects when it does not match).
+ */
 const DATA_AREAS = ['db', 'objects', 'vault'] as const;
 
 export interface RestoreOptions {

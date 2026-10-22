@@ -13,7 +13,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { z } from 'zod';
 import { IsoTime } from '../../contracts/src/common.ts';
 import { backupPath, createBackup, pruneBackups, verifyBackup } from './backup.ts';
-import { agentFor, identityOf, platformLockPath, postgresFor, settingsOf, type PlatformContext } from './context.ts';
+import { agentFor, identityOf, keychainNamesFor, platformLockPath, postgresFor, settingsOf, type PlatformContext } from './context.ts';
 import { messageOf, PlatformError } from './errors.ts';
 import { withLock, writeFileAtomic } from './files.ts';
 import { portAnswers, waitForHealth } from './health.ts';
@@ -788,8 +788,10 @@ async function guarded<T>(context: PlatformContext, fn: (guard: SignalGuard) => 
 /** Deploys `source` to the data root of `context`, then prunes old backups (the ones a rollback may need are kept). */
 export async function deploy(context: PlatformContext, source: ReleaseSource, host?: DeployHost): Promise<DeployReport> {
   const settings = await settingsOf(context);
-  // Settings written before the rule existed: the migration would refuse to grant such a role after the service stopped.
+  // Settings written before these rules existed would fail only after the service stopped: the migration would refuse
+  // to grant such a role, and serve would refuse a vault master key on the operator token's account.
   assertApplicationRoleName(settings.database.role);
+  keychainNamesFor(context, settings);
   return guarded(context, async (guard) => {
     const report = await runDeploy(host ?? systemDeployHost(context, settings, source, guard), context.now);
     try {
@@ -803,5 +805,7 @@ export async function deploy(context: PlatformContext, source: ReleaseSource, ho
 
 export async function rollback(context: PlatformContext, host?: DeployHost): Promise<DeployReport> {
   const settings = await settingsOf(context);
+  // The release rolled back to reads the vault master key when it starts, after the data has moved.
+  keychainNamesFor(context, settings);
   return guarded(context, (guard) => runRollback(host ?? systemDeployHost(context, settings, undefined, guard), context.now));
 }

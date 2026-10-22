@@ -8,6 +8,7 @@ import {
   backupPath,
   checkToolMajor,
   DUMP_FILE,
+  FILE_AREAS,
   isTransientName,
   libpqDirectory,
   libpqTools,
@@ -127,6 +128,15 @@ test('a manifest without the application role privileges is not a current backup
   const dir = join(layout.backups, 'no-role');
   await syntheticBackup(dir, goodFiles, (manifest) => delete (manifest.database as { application_role?: unknown }).application_role);
   await assert.rejects(verifyBackup(dir), /不符合 circle-hub-backup@3/);
+});
+
+test('extracted pack trees are derived data: no backup area holds them, and a manifest that lists them is refused', async () => {
+  assert.ok(!(FILE_AREAS as readonly string[]).includes('packs'));
+  const layout = await scratchLayout();
+  assert.equal(layout.packs, join(layout.root, 'packs'));
+  const dir = join(layout.backups, 'with-packs');
+  await syntheticBackup(dir, { ...goodFiles, 'packs/0123/pack.json': '{}' });
+  await assert.rejects(verifyBackup(dir), /备份清单里有不允许的路径：packs\/0123\/pack\.json/);
 });
 
 test('names of in-flight temporaries and metadata are never part of a backup', () => {

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdir, readdir, readFile, readlink, stat, symlink, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readdir, readFile, readlink, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 import {
@@ -10,11 +10,13 @@ import {
   isMissingOrEmpty,
   listFiles,
   readSymlink,
+  removeTree,
   removeWithin,
   sha256File,
   switchSymlink,
   timestampName,
   uniqueChild,
+  unlockTree,
   withLock,
   writeFileAtomic,
   writeFileExclusive,
@@ -120,6 +122,31 @@ test('removeWithin refuses anything outside its parent', async () => {
   await mkdir(join(dir, 'inner', 'gone'));
   await removeWithin(join(dir, 'inner'), join(dir, 'inner', 'gone'));
   assert.ok(await isMissingOrEmpty(join(dir, 'inner')));
+});
+
+test('removeTree removes read-only trees (extracted packs) without following links; files keep their modes until then', async () => {
+  const dir = await scratch();
+  // A directory outside the tree, read-only, reached through a link from inside: it must stay as it is.
+  const outside = join(dir, 'outside');
+  await mkdir(outside);
+  await writeFile(join(outside, 'kept'), 'kept', { mode: 0o400 });
+  await chmod(outside, 0o500);
+  const tree = join(dir, 'packs');
+  await mkdir(join(tree, 'digest', 'functions'), { recursive: true });
+  await writeFile(join(tree, 'digest', 'pack.json'), '{}', { mode: 0o400 });
+  await writeFile(join(tree, 'digest', 'functions', 'f.ts'), 'export default 1;\n', { mode: 0o400 });
+  await symlink(outside, join(tree, 'digest', 'link'));
+  for (const path of [join(tree, 'digest', 'functions'), join(tree, 'digest')]) await chmod(path, 0o500);
+  // A plain rm cannot remove it: the 0500 directories keep their entries.
+  await assert.rejects(rm(tree, { recursive: true, force: true }), (error: unknown) => ['EACCES', 'EPERM'].includes(String((error as NodeJS.ErrnoException).code)));
+  await unlockTree(join(tree, 'digest', 'pack.json'));
+  assert.equal((await stat(join(tree, 'digest', 'pack.json'))).mode & 0o777, 0o400, 'a file is left as it is');
+  await removeTree(tree);
+  await assert.rejects(stat(tree), /ENOENT/);
+  assert.equal((await stat(outside)).mode & 0o777, 0o500, 'the linked directory was not unlocked');
+  assert.equal(await readFile(join(outside, 'kept'), 'utf8'), 'kept');
+  await removeTree(join(dir, 'missing'));
+  await chmod(outside, 0o700);
 });
 
 test('withLock is exclusive while held and takes over a lock left by a dead process', async () => {

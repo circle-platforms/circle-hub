@@ -1,16 +1,18 @@
 // `circle-hub` platform commands. The server CLI delegates these to runPlatformCommand; bin/circle-hub falls back to
 // main() here when the server package is absent. All output is Chinese; the vault master key is never printed.
+// The vault is 密钥库 (the design standard's term); its key is named by VAULT_KEY_ITEM.label.
 import { readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { ENVIRONMENT, isEnvironment, labelOf } from '../../contracts/generated/vocabulary.ts';
 import { backupPath, createBackup, listBackups, pruneBackups } from './backup.ts';
-import { agentFor, createContext, identityOf, keychainFor, platformLockPath, postgresFor, settingsOf, type PlatformContext } from './context.ts';
+import { agentFor, createContext, identityOf, keychainFor, keychainNamesFor, platformLockPath, postgresFor, settingsOf, type PlatformContext } from './context.ts';
 import { deploy, deployLogPath, progressPath, progressText, protectedBackups, readDeployments, readProgress, rollback } from './deploy.ts';
 import { assertHubEnvironment, assertKnownHubVariables, PLATFORM_VARIABLES, variable } from './environment.ts';
 import { messageOf, PlatformError } from './errors.ts';
 import { isMissingOrEmpty, withLock } from './files.ts';
 import { checkHealth, HEALTH_PATH, portAnswers } from './health.ts';
+import { VAULT_KEY_ITEM } from './keychain-items.ts';
 import { checkNode, serviceDefinition, stableNodePath } from './launchd.ts';
 import { DATA_ROOT_VARIABLE, ensureLayout, socketFile, type Layout } from './layout.ts';
 import { databaseOwner, ensureDatabaseRunning } from './postgres.ts';
@@ -63,9 +65,9 @@ export function usage(): string {
     '',
     `  init --environment <环境类别> [--port <端口>]   建数据根和部署设置，初始化并启动数据库；环境类别：${environmentChoices()}`,
     '  db start|stop|status                           本机 PostgreSQL（只有 unix 套接字，没有 TCP 端口）',
-    '  key init|status                                在钥匙串里建立或查看保险库主密钥（从不显示密钥）',
+    `  key init|status                                在钥匙串里建立或查看${VAULT_KEY_ITEM.label}（从不显示密钥）`,
     '  service install|uninstall|start|stop|status    launchd 用户服务 circle-hub serve',
-    '  backup [--keep <份数>]                         备份数据库、对象、保险库与设置文件，并清理旧备份',
+    '  backup [--keep <份数>]                         备份数据库、对象、密钥库与设置文件，并清理旧备份',
     '  restore <备份目录>                             校验后恢复到空的数据根',
     '  deploy [--source <目录>] [--commit <提交>] [--copy]   部署一个提交；失败时恢复部署前备份并切回上一版',
     '  rollback                                       回到上一版并恢复它部署前的备份',
@@ -192,11 +194,11 @@ const key: Handler = async (args, context, io) => {
   const item = `服务 ${store.service}，账户 ${store.account}`;
   if (action === 'init') {
     await store.init();
-    io.stdout(`已在钥匙串建立保险库主密钥（${item}）；密钥不会显示，也不进备份`);
+    io.stdout(`已在钥匙串建立${VAULT_KEY_ITEM.label}（${item}）；密钥不会显示，也不进备份`);
     return 0;
   }
   const { present } = await store.status();
-  io.stdout(present ? `保险库主密钥：已在钥匙串（${item}）` : `保险库主密钥：没有（${item}）；运行 circle-hub key init`);
+  io.stdout(present ? `${VAULT_KEY_ITEM.label}：已在钥匙串（${item}）` : `${VAULT_KEY_ITEM.label}：没有（${item}）；运行 circle-hub key init`);
   return present ? 0 : NOT_RUNNING;
 };
 
@@ -207,6 +209,9 @@ const service: Handler = async (args, context, io) => {
   noArguments(rest);
   if (!['install', 'uninstall', 'start', 'stop', 'status'].includes(action ?? '')) throw new UsageError(SERVICE_USAGE);
   const settings = await settingsOf(context);
+  // serve would refuse a vault master key on the operator token's account, and launchd would restart it every 10 s;
+  // stop, uninstall and status stay available to clean up.
+  if (action === 'install' || action === 'start') keychainNamesFor(context, settings);
   const agent = agentFor(context, settings);
   switch (action) {
     case 'install': {
@@ -333,12 +338,12 @@ const rollbackCommand: Handler = async (args, context, io) => {
 const rehearseCommand: Handler = async (args, context, io) => {
   const { values, positionals } = parse(args, { keep: { type: 'boolean' } });
   noArguments(positionals);
-  io.stdout('在临时数据根里演练：初始化、写入合成记录与对象、备份、销毁、恢复、核对');
+  io.stdout('在临时数据根里演练：初始化、写入合成记录、对象与解包目录、备份、销毁、恢复、核对');
   const report = await rehearse({ runner: context.runner, libpqBin: context.libpqBin, binariesRoot: context.codeRoot, keep: values.keep === true, now: context.now });
-  io.stdout(`演练数据根：${report.root}${report.kept ? '（保留）' : '（已删除）'}`);
-  io.stdout(`写入：${report.tables} 张表 ${report.rows} 行，${report.objects} 个对象，${report.vaultFiles} 个保险库文件`);
+  io.stdout(`演练数据根：${report.root}${report.kept ? '（保留；解包目录是只读的，删除前先 chmod -R u+w）' : '（已删除）'}`);
+  io.stdout(`写入：${report.tables} 张表 ${report.rows} 行，${report.objects} 个对象，${report.vaultFiles} 个密钥库文件，${report.packFiles} 个解包文件（派生数据，不进备份）`);
   io.stdout(`应用角色 ${report.role}：恢复后 ${report.privileges} 项权限，删改历史或表结构的 ${report.refused} 条语句被拒绝`);
-  if (report.ok) io.stdout('恢复后核对：行数、表摘要、文件摘要与应用角色的权限全部一致，应用角色不拥有任何对象');
+  if (report.ok) io.stdout('恢复后核对：行数、表摘要、文件摘要与应用角色的权限全部一致，应用角色不拥有任何对象；解包目录不在备份里，恢复后原样保留');
   else for (const line of report.differences) io.stderr(`不一致：${line}`);
   io.stdout(`用时 ${report.seconds.toFixed(1)} 秒`);
   return report.ok ? 0 : 1;
@@ -396,9 +401,9 @@ const status: Handler = async (args, context, io) => {
     unsure('数据库', error);
   }
   try {
-    io.stdout(`保险库主密钥：${(await keychainFor(context, settings).status()).present ? '已在钥匙串' : '没有'}`);
+    io.stdout(`${VAULT_KEY_ITEM.label}：${(await keychainFor(context, settings).status()).present ? '已在钥匙串' : '没有'}`);
   } catch (error) {
-    unsure('保险库主密钥', error);
+    unsure(VAULT_KEY_ITEM.label, error);
   }
   try {
     const agent = await agentFor(context, settings).status();

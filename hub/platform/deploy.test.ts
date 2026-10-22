@@ -5,11 +5,11 @@ import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { describe, test } from 'node:test';
 import { createContext } from './context.ts';
-import { deploy, guardSignals, OperationProgress, runDeploy, runRollback, type DeployHost, type DeploymentEntry } from './deploy.ts';
+import { deploy, guardSignals, OperationProgress, rollback, runDeploy, runRollback, type DeployHost, type DeploymentEntry } from './deploy.ts';
 import { PlatformError } from './errors.ts';
 import { ensureLayout, layoutAt } from './layout.ts';
 import type { ReleaseRef } from './release.ts';
-import { newSettingsFile, settingsPath } from './settings.ts';
+import { newSettingsFile, OPERATOR_TOKEN_ACCOUNT, settingsPath } from './settings.ts';
 import { recordingRunner, removeDir, tempDir } from './test-support.ts';
 
 const release = (id: string): ReleaseRef => ({ id: id.padEnd(12, id.at(-1)), dir: `/data/releases/${id.padEnd(12, id.at(-1))}` });
@@ -373,6 +373,40 @@ describe('deploy flow', () => {
         return true;
       });
       assert.deepEqual(host.calls, [], 'the host was never asked to do anything');
+      assert.deepEqual(calls, []);
+      assert.equal(existsSync(join(layout.run, 'platform.lock')), false, 'not even the lock was taken');
+    } finally {
+      await removeDir(root);
+    }
+  });
+
+  test('settings that give the vault master key the operator token\'s account are refused before anything runs, by deploy and by rollback', async () => {
+    const root = await tempDir();
+    try {
+      const layout = layoutAt(root);
+      await ensureLayout(layout);
+      // Edited by hand, or written by an earlier platform version's init with CIRCLE_HUB_KEYCHAIN_ACCOUNT=operator-token:
+      // serve refuses it, so a deploy could only fail after the service stopped, and a rollback after the data moved.
+      await writeFile(settingsPath(layout), JSON.stringify({ ...newSettingsFile({ environment: 'test' }), keychain_account: OPERATOR_TOKEN_ACCOUNT }));
+      const { runner, calls } = recordingRunner(() => undefined, { real: false });
+      const context = createContext({}, { layout, home: root, runner, launchAgentsDir: join(root, 'agents') });
+      const deploying = new FakeHost(V1);
+      // A recorded deploy with its backup: the rollback would otherwise go ahead.
+      const rollingBack = new FakeHost(V2);
+      rollingBack.backups.set('1-pre-deploy', 'data@v1');
+      rollingBack.history.push({ at: now().toISOString(), release: V2.id, previous: V1.id, backup: '1-pre-deploy' });
+      for (const [host, operation] of [
+        [deploying, () => deploy(context, { path: root }, deploying)],
+        [rollingBack, () => rollback(context, rollingBack)],
+      ] as const) {
+        await assert.rejects(operation(), (error: unknown) => {
+          assert.equal((error as Error).message, `部署设置（${settingsPath(layout)}）里密钥库主密钥的钥匙串账户是 operator-token：这个账户留给操作令牌，两者会成为同一个钥匙串项，不执行`);
+          assert.match(hintOf(error), /^把部署设置里的 keychain_account 改成另一个名字（例如 vault-master-key）/);
+          return true;
+        });
+        assert.deepEqual(host.calls, [], 'the host was never asked to do anything');
+        assert.deepEqual(host.saved, [], 'no progress was recorded');
+      }
       assert.deepEqual(calls, []);
       assert.equal(existsSync(join(layout.run, 'platform.lock')), false, 'not even the lock was taken');
     } finally {

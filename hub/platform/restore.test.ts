@@ -9,6 +9,7 @@ import { BACKUP_SCHEMA, DUMP_FILE, MANIFEST_FILE } from './backup.ts';
 import { isMissingOrEmpty } from './files.ts';
 import { ensureLayout, layoutAt, type Layout } from './layout.ts';
 import { createPostgres } from './postgres.ts';
+import { treeEntries, writeSyntheticPacks } from './rehearse.ts';
 import { assertRestorable, restoreBackup, setAside } from './restore.ts';
 import type { SqlConnector } from './sql.ts';
 import { exit, ok, recordingRunner, removeDir, tempDir, type Call } from './test-support.ts';
@@ -159,6 +160,27 @@ test('a backup whose application role has another name is refused before anythin
   });
   assert.deepEqual(calls, [], 'no tool ran');
   assert.ok(await isMissingOrEmpty(layout.db));
+  await assertRestorable(layout);
+});
+
+test('extracted pack trees are not data: a root that holds them is still empty for a restore, which leaves them as they are, and so does setAside', async () => {
+  const layout = layoutAt(join(await scratch(), 'root'));
+  await ensureLayout(layout);
+  assert.ok((await writeSyntheticPacks(layout)) > 0);
+  const packs = await treeEntries(layout.packs);
+  assert.ok([...packs.values()].some((entry) => entry === '目录 0500'), 'read-only directories, as the registry leaves them');
+  await assertRestorable(layout);
+  const backupDir = await backupWith({ [DUMP_FILE]: 'PGDMP', 'objects/ab/cd': 'object', 'vault/v': 'sealed' });
+  const { runner } = tools(layout, 'nothing');
+  const postgres = createPostgres({ layout, binaries, runner, connector });
+  const report = await restoreBackup({ layout, backupDir, postgres, runner, libpqBin: await fakeLibpq() });
+  assert.equal(report.files, 2);
+  assert.deepEqual(await treeEntries(layout.packs), packs, 'the restore did not touch them');
+  // A failed deploy or a rollback stops the cluster and moves the data aside; the pack trees stay.
+  assert.equal(await postgres.stop(), true);
+  const aside = await setAside(layout, 'failed-deploy');
+  assert.deepEqual((await readdir(aside!)).sort(), ['db', 'objects', 'vault']);
+  assert.deepEqual(await treeEntries(layout.packs), packs);
   await assertRestorable(layout);
 });
 

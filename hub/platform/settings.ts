@@ -9,6 +9,7 @@ import { EnvironmentSchema, labelOf, type Environment } from '../../contracts/ge
 import { PLATFORM_VARIABLES, variable } from './environment.ts';
 import { PlatformError } from './errors.ts';
 import { writeFileExclusive } from './files.ts';
+import { OPERATOR_TOKEN_ITEM, VAULT_KEY_ITEM } from './keychain-items.ts';
 import type { Layout } from './layout.ts';
 
 export const SETTINGS_SCHEMA = 'circle-hub-platform@2';
@@ -17,6 +18,11 @@ const SETTINGS_SCHEMA_V1 = 'circle-hub-platform@1';
 export const DEFAULT_PORT = 7420;
 export const DEFAULT_KEYCHAIN_SERVICE = 'circle-hub';
 export const DEFAULT_KEYCHAIN_ACCOUNT = 'vault-master-key';
+/**
+ * Keychain account of the operator token item, beside the vault master key under the deployment's keychain service.
+ * Reserved: the vault master key may not use it, or the two would be one keychain item.
+ */
+export const OPERATOR_TOKEN_ACCOUNT = 'operator-token';
 export const DEFAULT_BACKUPS_KEEP = 14;
 export const DATABASE_NAME = 'circle_hub';
 /**
@@ -141,6 +147,12 @@ export function newSettingsFile(input: {
   }
   if (!APPLICATION_ROLE_NAME.test(parsed.data.database.role)) {
     throw new PlatformError(`部署设置的取值不对（字段：database.role）：${parsed.data.database.role}`, APPLICATION_ROLE_RULE);
+  }
+  if (parsed.data.keychain_account === OPERATOR_TOKEN_ACCOUNT) {
+    throw new PlatformError(
+      `部署设置的取值不对（字段：keychain_account）：账户 ${OPERATOR_TOKEN_ACCOUNT} 留给${OPERATOR_TOKEN_ITEM.label}，${VAULT_KEY_ITEM.label}不能用它`,
+      `给 ${PLATFORM_VARIABLES.keychainAccount} 另选一个名字，或不设它（默认 ${DEFAULT_KEYCHAIN_ACCOUNT}）`,
+    );
   }
   return parsed.data;
 }

@@ -1,7 +1,7 @@
 // File helpers: hashing copies, exclusive and atomic writes, symlink switching, guarded removal and a pid lock.
 import { createHash, randomBytes } from 'node:crypto';
 import { constants, createReadStream, createWriteStream } from 'node:fs';
-import { link, lstat, mkdir, open, readdir, readFile, readlink, rename, rm, symlink, writeFile } from 'node:fs/promises';
+import { chmod, link, lstat, mkdir, open, readdir, readFile, readlink, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path';
 import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -190,6 +190,29 @@ export async function uniqueChild(parent: string, base: string): Promise<string>
     if (!(await exists(candidate))) return candidate;
   }
   throw new PlatformError(`${parent} 下同名目录太多：${base}`);
+}
+
+/**
+ * Gives every directory at and under `path` owner rwx again, so that its entries can be removed: a 0500 directory (an
+ * extracted pack tree) keeps its entries even from its owner. Links are never followed; files keep their modes.
+ */
+export async function unlockTree(path: string): Promise<void> {
+  let info;
+  try {
+    info = await lstat(path);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
+    throw error;
+  }
+  if (!info.isDirectory()) return;
+  if ((info.mode & 0o700) !== 0o700) await chmod(path, (info.mode & 0o777) | 0o700);
+  for (const name of await readdir(path)) await unlockTree(join(path, name));
+}
+
+/** Removes `path` and everything under it, read-only directories included (unlockTree first). */
+export async function removeTree(path: string): Promise<void> {
+  await unlockTree(path);
+  await rm(path, { recursive: true, force: true });
 }
 
 /** Removes `path` only when it lies strictly inside `parent`. */

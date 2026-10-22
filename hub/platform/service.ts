@@ -3,11 +3,9 @@
 import { createContext, postgresFor } from './context.ts';
 import { PLATFORM_VARIABLES, variable } from './environment.ts';
 import { PlatformError } from './errors.ts';
-import { keychainKeyProvider, type KeychainOptions, type KeyProvider } from './keychain.ts';
-import { resolveLayout } from './layout.ts';
+import { deploymentKeychainNames, keychainKeyProvider, type KeychainOptions, type KeyProvider } from './keychain.ts';
 import { ensureDatabaseRunning } from './postgres.ts';
 import { assertApplicationRole, roleFixHint } from './roles.ts';
-import { DEFAULT_KEYCHAIN_ACCOUNT, DEFAULT_KEYCHAIN_SERVICE, readSettingsFile, resolveSettings } from './settings.ts';
 
 /**
  * Starts the cluster of the data root CIRCLE_HUB_DATA_DIR names, on the binaries of the running release, when it is
@@ -34,32 +32,20 @@ export async function ensureHubDatabase(
 }
 
 /**
- * The vault master key from the keychain item of the deployment settings of CIRCLE_HUB_DATA_DIR
- * (CIRCLE_HUB_KEYCHAIN_SERVICE and _ACCOUNT may only repeat them). Without a data root or settings, as for a server
- * outside a platform data root: the variables, else the defaults. The item is looked up at the first use.
+ * The vault master key from its keychain item as deploymentKeychainNames resolves it: the deployment settings of
+ * CIRCLE_HUB_DATA_DIR (CIRCLE_HUB_KEYCHAIN_SERVICE and _ACCOUNT may only repeat them); a data root without settings (a
+ * development root) takes the variables, else the defaults; without CIRCLE_HUB_DATA_DIR the first use is refused, as
+ * ensureHubDatabase refuses. The item is looked up at the first use.
  */
 export function hubKeyProvider(env: NodeJS.ProcessEnv = process.env, options: Pick<KeychainOptions, 'runner' | 'keychain'> = {}): Required<KeyProvider> {
-  const fallback = {
-    service: variable(env, PLATFORM_VARIABLES.keychainService) ?? DEFAULT_KEYCHAIN_SERVICE,
-    account: variable(env, PLATFORM_VARIABLES.keychainAccount) ?? DEFAULT_KEYCHAIN_ACCOUNT,
-  };
   let resolved: Promise<Required<KeyProvider>> | undefined;
   const provider = () =>
-    (resolved ??= (async () => {
-      let names = fallback;
-      if (variable(env, PLATFORM_VARIABLES.dataDir) !== undefined) {
-        const layout = resolveLayout(env);
-        const file = await readSettingsFile(layout);
-        if (file) {
-          const settings = resolveSettings(file, env, layout);
-          names = { service: settings.keychainService, account: settings.keychainAccount };
-        }
-      }
-      return keychainKeyProvider({ ...options, ...names });
-    })().catch((error: unknown) => {
-      resolved = undefined;
-      throw error;
-    }));
+    (resolved ??= deploymentKeychainNames(env)
+      .then(({ vaultKey }) => keychainKeyProvider({ ...options, ...vaultKey }))
+      .catch((error: unknown) => {
+        resolved = undefined;
+        throw error;
+      }));
   return {
     getKey: async () => (await provider()).getKey(),
     initKey: async () => (await provider()).initKey(),

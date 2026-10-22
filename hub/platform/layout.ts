@@ -22,6 +22,11 @@ export interface Layout {
   config: string;
   /** Data moved out of the way by a failed deploy, a rollback or a failed restore; never deleted automatically. */
   setAside: string;
+  /**
+   * Read-only pack trees the server's pack registry extracts from the objects (directories 0500, files 0400) and checks
+   * at every use: derived data, never backed up, restored, set aside or counted as data. The registry creates it.
+   */
+  packs: string;
 }
 
 /** The one variable that names the data root, shared with hub/config. */
@@ -58,6 +63,7 @@ export function layoutAt(root: string): Layout {
     current: join(base, 'current'),
     config: join(base, 'config'),
     setAside: join(base, 'set-aside'),
+    packs: join(base, 'packs'),
   };
 }
 

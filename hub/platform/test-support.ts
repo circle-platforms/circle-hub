@@ -1,9 +1,10 @@
 // Helpers for the platform tests. Nothing here may reach the login keychain, ~/Library, the user's launchd domain or the
 // network: launchctl is always faked, security only runs against a temporary keychain file, data roots are temporary.
-import { access, mkdtemp, rm } from 'node:fs/promises';
+import { access, mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { libpqDirectory } from './backup.ts';
+import { removeTree } from './files.ts';
 import type { PostgresControl } from './postgres.ts';
 import { runCommand, type CommandOptions, type CommandResult, type CommandRunner } from './process.ts';
 import { grantTables } from './roles.ts';
@@ -23,8 +24,9 @@ export function tempDir(prefix = 'chp-'): Promise<string> {
   return mkdtemp(join(tmpdir(), prefix));
 }
 
+/** Removes a temporary directory, read-only extracted pack trees included. */
 export async function removeDir(path: string): Promise<void> {
-  await rm(path, { recursive: true, force: true });
+  await removeTree(path);
 }
 
 /** Refuses commands that could reach the user's real environment. */

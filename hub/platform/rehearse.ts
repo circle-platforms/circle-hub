@@ -3,15 +3,16 @@
 // superuser role creates them (identity column, append-only trigger) and grants the application role SELECT and INSERT,
 // and the rows are written as the application role. After the restore the application role must hold the same
 // privileges, own nothing and still be refused (42501) every statement that deletes or rewrites history or the tables.
-// It never touches the real data root.
+// The root also holds read-only extracted pack trees, as the server's registry leaves them: they must stay out of the
+// backup and come through the destroy and the restore untouched. It never touches the real data root.
 import { createHash, randomBytes, randomInt } from 'node:crypto';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { chmod, lstat, mkdir, mkdtemp, readdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { RECORD_KINDS } from '../../contracts/generated/protocol.ts';
 import { createBackup } from './backup.ts';
 import { PlatformError } from './errors.ts';
-import { exists, listFiles, removeWithin, sha256File, sha256Text } from './files.ts';
+import { exists, listFiles, removeTree, removeWithin, sha256File, sha256Text } from './files.ts';
 import { ensureLayout, layoutAt, SOCKET_PATH_LIMIT, type Layout } from './layout.ts';
 import { createPostgres, ensureDatabaseRunning, type PostgresControl } from './postgres.ts';
 import { runCommand, type CommandRunner } from './process.ts';
@@ -41,6 +42,8 @@ export interface RehearsalReport {
   rows: number;
   objects: number;
   vaultFiles: number;
+  /** Files of the synthetic extracted pack trees: never in the backup, untouched by the destroy and the restore. */
+  packFiles: number;
   /** The application role and how many privileges it held before and after. */
   role: string;
   privileges: number;
@@ -135,6 +138,66 @@ async function writeSyntheticFiles(layout: Layout, objects: number): Promise<{ o
   return { objects: written, vault };
 }
 
+/** Writes a read-only tree as the registry does: files 0400, then every directory 0500, deepest first. */
+async function readOnlyTree(dir: string, files: Record<string, string>, topMode: number): Promise<number> {
+  await mkdir(dir, { mode: 0o700 });
+  const directories = new Set<string>();
+  for (const [path, text] of Object.entries(files)) {
+    const parts = path.split('/');
+    for (let n = 1; n < parts.length; n++) directories.add(parts.slice(0, n).join('/'));
+    await mkdir(join(dir, ...parts.slice(0, -1)), { recursive: true, mode: 0o700 });
+    await writeFile(join(dir, ...parts), text, { flag: 'wx', mode: 0o400 });
+  }
+  for (const path of [...directories].sort((a, b) => b.split('/').length - a.split('/').length)) await chmod(join(dir, ...path.split('/')), 0o500);
+  await chmod(dir, topMode);
+  return Object.keys(files).length;
+}
+
+/**
+ * Synthetic extracted packs in `packs/`, shaped as the server's pack registry leaves them: a verified tree per pack
+ * digest (directories 0500, files 0400), a tree it moved to `.quarantine` (top directory made writable to move it) and a
+ * tree still being built under `.tmp-`. Returns the number of files.
+ */
+export async function writeSyntheticPacks(layout: Layout): Promise<number> {
+  const manifest = `${JSON.stringify({ name: 'rehearsal-pack', version: '1.0.0', note: '合成的解包目录，只用于演练' })}\n`;
+  const digest = sha256Text(manifest);
+  const files = { 'pack.json': manifest, 'functions/identity.ts': 'export default function (input: unknown): unknown {\n  return input;\n}\n' };
+  await mkdir(layout.packs, { recursive: true, mode: 0o700 });
+  let written = await readOnlyTree(join(layout.packs, digest), files, 0o500);
+  await mkdir(join(layout.packs, '.quarantine'), { mode: 0o700 });
+  written += await readOnlyTree(join(layout.packs, '.quarantine', `${digest}-1767225600000-${randomBytes(4).toString('hex')}`), files, 0o700);
+  written += await readOnlyTree(join(layout.packs, `.tmp-${digest}-${randomBytes(6).toString('hex')}`), { 'pack.json': manifest }, 0o700);
+  return written;
+}
+
+/** Every entry under `dir` with its kind, mode and, for files, SHA-256; links are not followed. */
+export async function treeEntries(dir: string): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  const walk = async (current: string, prefix: string): Promise<void> => {
+    let names: string[];
+    try {
+      names = await readdir(current);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT' && current === dir) return;
+      throw error;
+    }
+    for (const name of names.sort()) {
+      const path = join(current, name);
+      const relative = prefix ? `${prefix}/${name}` : name;
+      const info = await lstat(path);
+      const mode = (info.mode & 0o777).toString(8).padStart(4, '0');
+      if (info.isDirectory()) {
+        out.set(relative, `目录 ${mode}`);
+        await walk(path, relative);
+      } else {
+        out.set(relative, info.isFile() ? `文件 ${mode} ${(await sha256File(path)).sha256}` : `其他 ${mode}`);
+      }
+    }
+  };
+  await walk(dir, '');
+  return out;
+}
+
 async function fileDigests(layout: Layout): Promise<Map<string, string>> {
   const out = new Map<string, string>();
   for (const area of ['objects', 'vault'] as const) {
@@ -151,6 +214,18 @@ function compareFiles(before: Map<string, string>, after: Map<string, string>): 
     else if (got !== digest) out.push(`文件 ${path} 内容不同`);
   }
   for (const path of after.keys()) if (!before.has(path)) out.push(`多出文件 ${path}`);
+  return out;
+}
+
+/** Differences of the extracted pack trees (treeEntries) before the backup and after the restore. */
+function compareEntries(before: Map<string, string>, after: Map<string, string>): string[] {
+  const out: string[] = [];
+  for (const [path, entry] of before) {
+    const got = after.get(path);
+    if (got === undefined) out.push(`解包目录少了 ${path}`);
+    else if (got !== entry) out.push(`解包目录的 ${path} 变了（原来是${entry}，现在是${got}）`);
+  }
+  for (const path of after.keys()) if (!before.has(path)) out.push(`解包目录多了 ${path}`);
   return out;
 }
 
@@ -177,12 +252,16 @@ export async function rehearse(options: RehearsalOptions = {}): Promise<Rehearsa
     await withSession(running.connector, database, (session) => createSyntheticTables(session, role));
     await withSession(running.applicationConnector, database, (session) => writeSyntheticRecords(session, options.records ?? 200));
     const written = await writeSyntheticFiles(layout, options.objects ?? 20);
+    const packFiles = await writeSyntheticPacks(layout);
     const before = await withSession(running.connector, database, async (session) => ({ tables: await summarizeTables(session), privileges: await rolePrivileges(session, role) }));
     const filesBefore = await fileDigests(layout);
-    const { dir: backup } = await createBackup({ layout, postgres: running, runner, now, label: 'rehearsal', ...(options.libpqBin ? { libpqBin: options.libpqBin } : {}) });
+    const packsBefore = await treeEntries(layout.packs);
+    const { dir: backup, manifest } = await createBackup({ layout, postgres: running, runner, now, label: 'rehearsal', ...(options.libpqBin ? { libpqBin: options.libpqBin } : {}) });
+    const packsInBackup = manifest.files.filter((file) => file.path.startsWith('packs/')).map((file) => `备份里不该有解包目录的文件 ${file.path}`);
 
     await running.stop();
     running = undefined;
+    // packs/ stays, as after a failed deploy sets the data aside: derived data that a restore leaves as it is.
     for (const area of ['db', 'objects', 'vault'] as const) await removeWithin(root, layout[area]);
 
     running = control();
@@ -193,11 +272,14 @@ export async function rehearse(options: RehearsalOptions = {}): Promise<Rehearsa
       problems: await roleProblems(session, role),
     }));
     const filesAfter = await fileDigests(layout);
+    const packsAfter = await treeEntries(layout.packs);
     const statements = [...new Set(TABLES.flatMap((table) => tamperingStatements(table)))];
     const unrefused = await withSession(running.applicationConnector, database, (session) => unrefusedStatements(session, statements));
     const differences = [
       ...compareSummaries(before.tables, after.tables),
       ...compareFiles(filesBefore, filesAfter),
+      ...packsInBackup,
+      ...compareEntries(packsBefore, packsAfter),
       ...comparePrivileges(before.privileges, after.privileges).map((line) => `应用角色 ${role} 的权限${line}`),
       ...after.problems.map((problem) => `应用角色 ${role} ${problem}`),
       ...unrefusedText(unrefused),
@@ -210,6 +292,7 @@ export async function rehearse(options: RehearsalOptions = {}): Promise<Rehearsa
       rows: after.tables.reduce((sum, table) => sum + table.rows, 0),
       objects: written.objects,
       vaultFiles: written.vault,
+      packFiles,
       role,
       privileges: after.privileges.length,
       refused: statements.length - unrefused.length,
@@ -221,7 +304,8 @@ export async function rehearse(options: RehearsalOptions = {}): Promise<Rehearsa
     if (running) await running.stop().catch(() => {});
     if (!options.keep) {
       if (!(await exists(join(root, MARKER)))) throw new PlatformError(`演练数据根缺少标记文件，不删除：${root}`);
-      await rm(root, { recursive: true, force: true });
+      // The extracted pack trees are read-only: their directories are made writable first.
+      await removeTree(root);
     }
   }
 }

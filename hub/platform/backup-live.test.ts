@@ -10,7 +10,8 @@ import { createBackup, listBackups, MANIFEST_FILE, verifyBackup, type BackupMani
 import { isMissingOrEmpty, listFiles } from './files.ts';
 import { ensureLayout, layoutAt, type Layout } from './layout.ts';
 import { createPostgres, ensureDatabaseRunning, type PostgresControl } from './postgres.ts';
-import { assertRestorable, restoreBackup } from './restore.ts';
+import { treeEntries, writeSyntheticPacks } from './rehearse.ts';
+import { assertRestorable, restoreBackup, setAside } from './restore.ts';
 import { inspectRole, roleFixHint, rolePrivileges, type RoleReport } from './roles.ts';
 import { withSession } from './sql.ts';
 import { libpqAvailable, LIBPQ_MISSING, ownerTables, removeDir, socketPort, tempDir } from './test-support.ts';
@@ -101,6 +102,42 @@ describe('backups of a live data root', { skip: libpq ? false : LIBPQ_MISSING },
     );
     assert.deepEqual(skipped, []);
     await verifyBackup(dir);
+  });
+
+  test('extracted pack trees stay out of the backup; it restores into an empty root without them and into a root that still holds them', async () => {
+    const { layout, control } = await liveRoot();
+    const object = await storeObject(layout, Buffer.from('synthetic pack file'));
+    assert.ok((await writeSyntheticPacks(layout)) > 0);
+    const packs = await treeEntries(layout.packs);
+    const { dir, manifest } = await createBackup({ layout, postgres: control, label: 'with-packs', libpqBin: libpq! });
+    assert.deepEqual(
+      manifest.files.map((file) => file.path),
+      ['config/platform.json', 'database.dump', `objects/${object.slice(0, 2)}/${object}`],
+      'nothing under packs/',
+    );
+    await verifyBackup(dir);
+    assert.deepEqual(await treeEntries(layout.packs), packs, 'the backup left them as they were');
+
+    // Disaster: a new, empty data root. The restore brings the data and no pack trees (the registry rebuilds them).
+    const empty = layoutAt(join(await tempDir(), 'target'));
+    roots.push(join(empty.root, '..'));
+    await ensureLayout(empty);
+    const fresh = createPostgres({ layout: empty, port: socketPort() });
+    clusters.push(fresh);
+    assert.equal((await restoreBackup({ layout: empty, backupDir: dir, postgres: fresh, libpqBin: libpq! })).rows, 50);
+    assert.equal((await treeEntries(empty.packs)).size, 0);
+    assert.equal(await isMissingOrEmpty(empty.packs), true);
+    await fresh.stop();
+
+    // A failed deploy or a rollback: the data is moved aside, the derived pack trees stay, and the restore accepts the root.
+    await control.stop();
+    await setAside(layout, 'rehearsed-failure');
+    await assertRestorable(layout);
+    const again = createPostgres({ layout, port: control.target.port });
+    clusters.push(again);
+    assert.equal((await restoreBackup({ layout, backupDir: dir, postgres: again, libpqBin: libpq! })).rows, 50);
+    assert.deepEqual(await treeEntries(layout.packs), packs, 'untouched by the set-aside and the restore');
+    assert.equal(await readFile(join(layout.objects, object.slice(0, 2), object), 'utf8'), 'synthetic pack file');
   });
 
   test('backups taken while writers add objects and replace vault entries all succeed and verify', async () => {

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { access, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { userInfo } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -8,7 +8,9 @@ import { ENVIRONMENT, labelOf } from '../../contracts/generated/vocabulary.ts';
 import { isPlatformCommand, PLATFORM_COMMANDS, runPlatformCommand } from './cli.ts';
 import { createContext, postgresFor, type PlatformContext } from './context.ts';
 import { isMissingOrEmpty } from './files.ts';
+import { ensureLayout, layoutAt } from './layout.ts';
 import { RELEASE_SCHEMA } from './release.ts';
+import { newSettingsFile, OPERATOR_TOKEN_ACCOUNT, settingsPath } from './settings.ts';
 import { withSession } from './sql.ts';
 import { captureIo, exit, freePort, libpqAvailable, LIBPQ_MISSING, ok, ownerTables, recordingRunner, removeDir, socketPort, tempDir, type Call } from './test-support.ts';
 
@@ -189,7 +191,7 @@ describe('platform CLI', () => {
   test('key init and status never print the key and refuse to replace it', async () => {
     const absent = await run('key', 'status');
     assert.equal(absent.code, 3);
-    assert.match(absent.out, /保险库主密钥：没有（服务 circle-hub，账户 vault-master-key）/);
+    assert.match(absent.out, /密钥库主密钥：没有（服务 circle-hub，账户 vault-master-key）/);
     const created = await run('key', 'init');
     assert.equal(created.code, 0);
     assert.match(created.out, /密钥不会显示/);
@@ -234,7 +236,7 @@ describe('platform CLI', () => {
       /数据库：运行中/,
       new RegExp(`^数据库 circle_hub 属于角色 ${OWNER}$`, 'm'),
       /应用角色 circle_hub：只连接并按授权读写，不拥有任何对象/,
-      /保险库主密钥：已在钥匙串/,
+      /密钥库主密钥：已在钥匙串/,
       /服务：未加载/,
       /备份：0 份/,
       new RegExp(`健康检查（http://127\\.0\\.0\\.1:${port}/healthz）：不正常`),
@@ -335,6 +337,50 @@ describe('platform CLI', () => {
       }
     } finally {
       await rm(progress, { force: true });
+    }
+  });
+});
+
+describe('service commands on settings that give the vault master key the operator token\'s account', () => {
+  test('install and start are refused before launchctl or anything else runs; stop, uninstall and status still work', async () => {
+    const parent = await tempDir();
+    try {
+      const root = join(parent, 'root');
+      const layout = layoutAt(root);
+      await ensureLayout(layout);
+      // Edited by hand, or written by an earlier platform version's init with CIRCLE_HUB_KEYCHAIN_ACCOUNT=operator-token.
+      await writeFile(settingsPath(layout), JSON.stringify({ ...newSettingsFile({ environment: 'test' }), keychain_account: OPERATOR_TOKEN_ACCOUNT }));
+      // A deployed release, so that nothing else stops the install.
+      const id = 'abcdefabcdef';
+      await mkdir(join(layout.releases, id), { recursive: true });
+      await writeFile(join(layout.releases, id, 'release.json'), JSON.stringify({ schema: RELEASE_SCHEMA, id, created_at: '2026-10-21T12:00:00.000Z' }));
+      await symlink(join('releases', id), layout.current);
+      const system = fakeSystem();
+      const agents = join(parent, 'home', 'Library', 'LaunchAgents');
+      const overrides = { home: join(parent, 'home'), runner: system.runner, launchAgentsDir: agents, uid: 501, nodePath: process.execPath };
+      const run = async (...argv: string[]) => {
+        const captured = captureIo({ CIRCLE_HUB_DATA_DIR: root }, parent);
+        return { code: await runPlatformCommand(argv, captured.io, overrides), err: captured.err.join('\n') };
+      };
+      for (const action of ['install', 'start']) {
+        const refused = await run('service', action);
+        assert.equal(refused.code, 1, action);
+        assert.equal(
+          refused.err,
+          `错误：部署设置（${settingsPath(layout)}）里密钥库主密钥的钥匙串账户是 operator-token：这个账户留给操作令牌，两者会成为同一个钥匙串项，不执行\n` +
+            '处理：把部署设置里的 keychain_account 改成另一个名字（例如 vault-master-key）；钥匙串里已有这个账户的密钥库主密钥时，先在“钥匙串访问”里把那一项的账户改成同一个名字',
+          action,
+        );
+      }
+      assert.deepEqual(system.calls.map((call) => `${call.command} ${call.args.join(' ')}`), [], 'neither launchctl nor node --version ran');
+      await assert.rejects(access(join(agents, 'io.github.circle-platforms.circle-hub.plist')), 'no service definition was written');
+      // A service that keeps failing can still be stopped and removed.
+      assert.equal((await run('service', 'stop')).code, 0);
+      assert.equal((await run('service', 'uninstall')).code, 0);
+      assert.equal((await run('service', 'status')).code, 3);
+      assert.ok(system.calls.every((call) => call.command === '/bin/launchctl' && call.args[0] === 'print'), 'only status queries');
+    } finally {
+      await removeDir(parent);
     }
   });
 });
