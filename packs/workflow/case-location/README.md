@@ -249,9 +249,9 @@ staged copy: `node packs/workflow/case-location/pack-files.ts --stage <empty dir
   a build and locks its root, although the workflow requires no catalog; with no synced build of the line the start is
   refused, and the run summary shows a version line and build that are not the located ones. Request: for a workflow
   without catalogs, bind the line (its names in `RunContext`) without choosing a build or locking a root.
-- **runs engine** (`hub/runs/engine/projection.ts`): `FragmentRef.source` is not used to pick the bound source of an item
-  location; every source of the slot is tried and exactly one must resolve. Honoring `source` would remove
-  `ambiguous_location` refusals for documents whose node ids repeat across the bound documents.
+- ~~runs engine (`hub/runs/engine/projection.ts`): `FragmentRef.source` picks the bound source of an item location~~
+  **resolved** (hub-builds): a fragment naming its source is resolved in that source only, so node ids repeating across
+  the bound documents no longer force `ambiguous_location`; without `source` the old rule stands.
 - ~~runs engine / contracts (build candidates, K01 R[10])~~ **resolved since 1.1.0** (hub-builds): workflow.json declares
   `context: ["builds"]`, the engine hands the knowledge base's builds of the bound product to the run context and freezes
   them in the run record; the `candidates` check answers from it (all lines, so the written-name cross-check can name the

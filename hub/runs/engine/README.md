@@ -69,7 +69,10 @@ well-formed text). The same reasons go to the admin note of the call they belong
    SHA-256 is the record digest), or of the value its pointer names, stored as a generated artifact readable by the caller;
    `BoundInput.meta` names the record. The receiver gets the record as a source; no carry-over is offered across a handover.
 5. **Items.** The location is `srcFragment(sha, parser, selector, range)` of the bound source of the fragment's slot (the
-   subject slot by default) and must resolve; the digest is SHA-256 of the canonical `{id, label, fields}` (summary excluded).
+   subject slot by default) and must resolve — when the fragment names its source (`FragmentRef.source`, the digest of the
+   bound bytes), only that source is tried (naming one that is not bound in the slot refuses the start); without it every
+   source of the slot is tried and exactly one must resolve. The digest is SHA-256 of the canonical `{id, label, fields}`
+   (summary excluded).
    Duplicate ids refuse the call; a pack refusal keeps its code when it is under the pack name. A projection that succeeds
    with zero items is a legal answer, not a refusal (W01 R[3]): the run starts with an empty item list — a production run
    stores its result (every partition empty, coverage `complete: true, examined: 0, total: 0`, run-level requirements

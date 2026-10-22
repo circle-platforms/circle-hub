@@ -91,8 +91,14 @@ export async function projectItems(
     const slot = item.location.slot ?? subject;
     const candidates = bound.filter((b) => b.slot === slot);
     if (candidates.length === 0) throw refusal(path, `条目 ${item.id} 的位置所在的输入槽 ${slot} 没有绑定源文件`, '请联系任务包作者');
+    // A fragment that names its source (FragmentRef.source, the digest of the bound bytes) is resolved in that source only.
+    let tried = candidates;
+    if (item.location.source !== undefined) {
+      tried = candidates.filter((b) => b.sha256 === item.location.source);
+      if (tried.length === 0) throw refusal(path, `条目 ${item.id} 的位置指向的源没有绑定在输入槽 ${slot} 里（${item.location.source.slice(0, 16)}…）`, '请联系任务包作者');
+    }
     const located: string[] = [];
-    for (const candidate of candidates) {
+    for (const candidate of tried) {
       let reference: string;
       try {
         reference = srcFragment(candidate.sha256, item.location.parser, item.location.selector, item.location.range);
