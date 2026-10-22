@@ -574,9 +574,9 @@ test('the engine and the reference agree on random submissions and the fixed bra
   const wantShort = roundWant.items.find((item) => item.item === 'i1')?.requirements.find((requirement) => requirement.requirement === 'short');
   assert.equal(roundEngine.rounds.used, 0);
   assert.equal(engineShort.layer?.terminal, 'violation');
-  assert.equal(roundWant.rounds.used, 1);
-  assert.equal(wantShort?.layers[0]?.terminal, 'incomplete');
-  assert.equal(wantShort?.layers[0]?.reason, 'repair_exhausted');
+  assert.equal(roundWant.rounds.used, 0);
+  assert.equal(wantShort?.layers[0]?.terminal, 'violation');
+  assert.equal(wantShort?.layers[0]?.attribution, 'author_input');
   const engineRecorded = shownLayer(roundEngine, 'i1', 'recorded');
   const wantRecorded = roundWant.items.find((item) => item.item === 'i1')?.requirements.find((requirement) => requirement.requirement === 'recorded');
   assert.equal(engineRecorded.layer?.terminal, 'violation');
