@@ -144,6 +144,21 @@ describe('extend and release', () => {
     assert.ok(extended.token > held.token, 'the token grows on extend');
   });
 
+  test('extend never shortens: a ttl shorter than the remaining time leaves the end where it was', async () => {
+    const service = new LeaseService(db, { now: clock('2026-10-22T08:00:00Z') });
+    const held = await service.acquire({ keys: ['nos/1'], ttlSeconds: 600, holder, prefix: 'nos/', maxTtlSeconds: 1200 });
+    assert.ok(held.ok);
+    const later = new LeaseService(db, { now: clock('2026-10-22T08:01:00Z') });
+    // 600s remain; extending by 60s would end at 08:02 — the end stays at 08:10 (the later of the two).
+    const extended = await later.extend({ keys: ['nos/1'], holder, ttlSeconds: 60, maxTtlSeconds: 1200 });
+    assert.equal(extended.ok, true);
+    if (!extended.ok || !held.ok) return;
+    assert.equal(extended.until, held.until, 'a shorter ttl does not pull the end earlier');
+    // And a longer ttl still moves it: now + 900s = 08:16 > 08:10.
+    const longer = await later.extend({ keys: ['nos/1'], holder, ttlSeconds: 900, maxTtlSeconds: 1200 });
+    assert.ok(longer.ok && longer.until === '2026-10-22T08:16:00.000Z');
+  });
+
   test('a stranger cannot extend, and cannot release either', async () => {
     const service = new LeaseService(db, { now: clock('2026-10-22T08:00:00Z') });
     await service.acquire({ keys: ['str/1'], ttlSeconds: 600, holder, prefix: 'str/', maxTtlSeconds: 600 });
