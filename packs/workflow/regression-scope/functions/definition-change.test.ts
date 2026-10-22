@@ -18,32 +18,35 @@ const scopeOfChanges = (changes: readonly ChangeSpec[]) => {
 };
 
 describe('definition_change of a reason', () => {
+  // The definition change rides the run-level detail row the reason indexes; the reason itself only carries the
+  // index and the path's change kind.
+  const reasonDetail = (scope: ReturnType<typeof scopeOfChanges>, at = 0) => scope.note.details[scope.items[0].reasons[at].detail];
+
   it('a command the earlier build lacked is added, even when the path already carried behaviour entries (modified)', () => {
     // The view says modified (behaviour texts came and went); the definitions say the command itself is new.
     const scope = scopeOfChanges([
       { path: '/commands/new', change: 'modified', behaviourBefore: ['旧手册说明'], behaviourAfter: ['新手册说明'], after: [{ name: 'new' }], to: [CASE] },
     ]);
     assert.equal(scope.items.length, 1);
-    assert.equal(scope.items[0].reasons[0].definition_change, 'added');
+    assert.equal(reasonDetail(scope).definition_change, 'added');
     assert.equal(scope.items[0].reasons[0].change, 'modified', 'the path change stays as the view said');
-    const detail = scope.note.details.find((d) => d.path === '/commands/new');
-    assert.ok(detail !== undefined && /新增命令/.test(detail.conclusion), JSON.stringify(scope.note.details));
+    assert.ok(/新增命令/.test(reasonDetail(scope).conclusion), JSON.stringify(scope.note.details));
   });
 
   it('a command only the earlier build had is removed', () => {
     const scope = scopeOfChanges([
       { path: '/commands/gone', change: 'modified', behaviourBefore: ['旧说明'], behaviourAfter: ['新说明'], before: [{ name: 'gone' }], to: [CASE] },
     ]);
-    assert.equal(scope.items[0].reasons[0].definition_change, 'removed');
-    assert.match(scope.note.details.find((d) => d.path === '/commands/gone')!.conclusion, /删除命令|命令已删除/);
+    assert.equal(reasonDetail(scope).definition_change, 'removed');
+    assert.match(reasonDetail(scope).conclusion, /删除命令|命令已删除/);
   });
 
   it('definitions on both sides with different digests is modified', () => {
     const scope = scopeOfChanges([
       { path: '/commands/changed', change: 'modified', before: [{ name: 'changed', args: [{ name: 'n', type: 'string' }] }], after: [{ name: 'changed', args: [{ name: 'n', type: 'integer' }] }], to: [CASE] },
     ]);
-    assert.equal(scope.items[0].reasons[0].definition_change, 'modified');
-    assert.match(scope.note.details.find((d) => d.path === '/commands/changed')!.conclusion, /命令定义有变更/);
+    assert.equal(reasonDetail(scope).definition_change, 'modified');
+    assert.match(reasonDetail(scope).conclusion, /命令定义有变更/);
   });
 
   it('equal definitions (only behaviour texts changed) is none', () => {
@@ -59,14 +62,14 @@ describe('definition_change of a reason', () => {
     const parsed = parseView(view);
     assert.ok(parsed.ok);
     const scope = scopeOf(parsed.view, PARAMETERS);
-    assert.equal(scope.items[0].reasons[0].definition_change, 'none');
+    assert.equal(reasonDetail(scope).definition_change, 'none');
   });
 
   it('a path with no definition entry on either side is none (no command definition to compare)', () => {
     const scope = scopeOfChanges([
       { path: '/commands/bare', change: 'added', behaviourAfter: ['只有行为说明'], to: [CASE] },
     ]);
-    assert.equal(scope.items[0].reasons[0].definition_change, 'none');
+    assert.equal(reasonDetail(scope).definition_change, 'none');
   });
 
   it('the item summary names the definition change of its first reason', () => {

@@ -67,9 +67,11 @@ describe('a production run of regression-scope', { skip }, () => {
     const first = run.items[0];
     assert.equal(first.label, '查看部件状态');
     assert.equal(first.summary, '优先级 1；文档 doc-1；2 条命令有变更；/commands/add 新增命令');
-    const reasons = first.fields.reasons as Array<{ path: string; change: string }>;
+    const reasons = first.fields.reasons as Array<{ detail: number; change: string }>;
+    const record = (await hub.service.getRun(hub.alice, run.run))!;
+    const details = (record.run.groups?.[0] as { details?: Array<{ path: string }> }).details ?? [];
     assert.deepEqual(
-      reasons.map((reason) => [reason.path, reason.change]),
+      reasons.map((reason) => [details[reason.detail].path, reason.change]),
       [
         ['/commands/add', 'added'],
         ['/commands/show', 'modified'],
@@ -95,13 +97,13 @@ describe('a production run of regression-scope', { skip }, () => {
       assert.equal(claim.statement.verdict, 'support');
       assert.equal(claim.qualifier.nature, 'fact');
       assert.ok(claim.grounds.length > 0, id);
-      assert.ok(claim.grounds.every((ground) => ground.startsWith('tree:')), id);
+      assert.ok(claim.grounds.every((ground) => ground.startsWith('src:')), id);
     }
     const doc1 = located(result, 'doc-1:n1').requirements[0].claims[0];
-    // The slim reasons carry no behaviour rows at all: a behaviour entry never lands in the grounds.
-    const slimReasons = first.fields.reasons as Array<{ references: string[] }>;
-    assert.ok(slimReasons.every((reason) => reason.references.every((ref) => ref.startsWith('tree:'))));
-    assert.ok(doc1.grounds.every((ref) => ref.startsWith('tree:')));
+    // The slim reason is only the detail index and the change kind; the definition references live once per detail row.
+    const slimReasons = first.fields.reasons as Array<Record<string, unknown>>;
+    assert.ok(slimReasons.every((reason) => JSON.stringify(Object.keys(reason).sort()) === '["change","detail"]'));
+    assert.ok(doc1.grounds.every((ref) => ref.startsWith('src:')));
     const unknown = result.cross_item.filter((claim) => claim.requirement === 'uncovered_changes');
     assert.equal(unknown.length, 1);
     assert.equal(unknown[0].statement.verdict, 'unknown');
@@ -124,9 +126,11 @@ describe('a production run of regression-scope', { skip }, () => {
       detail.answer.run!.items.map((item) => item.id),
       ['doc-1:n1', 'doc-2:n2', 'doc-5:n1'],
     );
-    const reasons = detail.answer.run!.items[0].fields.reasons as Array<{ path: string }>;
-    assert.deepEqual(reasons.map((reason) => reason.path), ['/commands/show']);
+    const reasons = detail.answer.run!.items[0].fields.reasons as Array<{ detail: number }>;
     const stored = (await hub.service.getRun(hub.alice, detail.answer.run!.run))!;
+    const details = (stored.run.groups?.[0] as { details?: Array<{ path: string }> }).details ?? [];
+    assert.deepEqual(reasons.map((reason) => details[reason.detail].path), ['/commands/show']);
+    assert.deepEqual(stored.run.parameters, { include_added: false });
     assert.deepEqual(stored.run.parameters, { include_added: false });
     assert.deepEqual((stored.run.groups?.[0] as { uncovered: unknown }).uncovered, []);
     const cross = detail.production!.result.cross_item;

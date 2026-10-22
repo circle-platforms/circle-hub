@@ -1,7 +1,9 @@
-// Pack checks. in_scope: one support per case, data holding the reasons; a scope is not a defect, so a well-formed item
-// never refutes. uncovered_changes: each changed path with no later-build case is unknown (missing input), a cross-item
-// claim, never a failure. The only refutations are contradictions a well-formed projection does not produce; the publish
-// check requires a negative sample (C05 R[0]).
+// Pack checks. in_scope: one support per case, data holding the reasons (each only the detail index and the change
+// kind); a scope is not a defect, so a well-formed item never refutes. uncovered_changes: each changed path with no
+// later-build case is unknown (missing input), a cross-item claim, never a failure. The only refutations are
+// contradictions a well-formed projection does not produce; the publish check requires a negative sample (C05 R[0]).
+// One ground per outcome (the item's case reference); path strings and definition references are joined from the
+// run-level note.details, so an outcome stays small at any scale.
 
 import { groundsOf } from './scope.ts';
 import { uniqueSorted } from './text.ts';
@@ -10,11 +12,13 @@ import { CHANGE_LABEL, PACK, guarded, isRecord } from './text.ts';
 const TIER = 'advisory' as const;
 
 interface ParsedReason {
-  path: string;
+  detail: number;
   change: 'added' | 'modified' | 'removed';
-  definition_change: 'added' | 'removed' | 'modified' | 'none';
-  references: string[];
-  case: { entry: string; reference: string };
+}
+
+interface DetailRow {
+  path: string;
+  change: string;
 }
 
 interface Outcome {
@@ -30,6 +34,7 @@ interface Outcome {
 
 interface Item {
   id: string;
+  label: string;
   fields: { [key: string]: unknown };
   location?: unknown;
 }
@@ -38,7 +43,7 @@ function itemsOf(subject: unknown): Item[] {
   const raw = isRecord(subject) ? subject : {};
   return (Array.isArray(raw.items) ? raw.items : [])
     .filter(isRecord)
-    .map((item) => ({ id: typeof item.id === 'string' ? item.id : '', fields: isRecord(item.fields) ? item.fields : {} }))
+    .map((item) => ({ id: typeof item.id === 'string' ? item.id : '', label: typeof item.label === 'string' ? item.label : '', fields: isRecord(item.fields) ? item.fields : {}, location: item.location }))
     .filter((item) => item.id !== '')
     .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 }
@@ -48,27 +53,35 @@ function noteOf(subject: unknown): { [key: string]: unknown } | null {
   return isRecord(raw.note) ? raw.note : null;
 }
 
-function reasonsOf(item: Item): ParsedReason[] | null {
+function reasonsOf(item: Item, details: DetailRow[]): ParsedReason[] | null {
   const value = item.fields.reasons;
   if (!Array.isArray(value)) return null;
   const out: ParsedReason[] = [];
   for (const raw of value) {
-    if (!isRecord(raw) || typeof raw.path !== 'string' || (raw.change !== 'added' && raw.change !== 'modified' && raw.change !== 'removed')) return null;
-    if (raw.definition_change !== 'added' && raw.definition_change !== 'removed' && raw.definition_change !== 'modified' && raw.definition_change !== 'none') return null;
-    if (!Array.isArray(raw.references) || raw.references.some((r) => typeof r !== 'string')) return null;
-    const caseRef = isRecord(raw.case) && typeof raw.case.reference === 'string' && typeof raw.case.entry === 'string' ? { entry: raw.case.entry, reference: raw.case.reference } : null;
-    if (caseRef === null) return null;
-    out.push({ path: raw.path, change: raw.change, definition_change: raw.definition_change, references: raw.references as string[], case: caseRef });
+    if (!isRecord(raw) || typeof raw.detail !== 'number' || !Number.isInteger(raw.detail) || raw.detail < 0 || raw.detail >= details.length) return null;
+    if (raw.change !== 'added' && raw.change !== 'modified' && raw.change !== 'removed') return null;
+    out.push({ detail: raw.detail, change: raw.change });
   }
   return out;
 }
 
-function pathsOf(items: readonly Item[]): Set<string> {
+/** The note's detail rows (the paths the reasons index), or none when the subject carries no usable table. */
+function detailRowsOf(subject: unknown): DetailRow[] {
+  const note = noteOf(subject);
+  if (note === null || !Array.isArray(note.details)) return [];
+  const out: DetailRow[] = [];
+  for (const raw of note.details) {
+    if (isRecord(raw) && typeof raw.path === 'string' && typeof raw.change === 'string') out.push({ path: raw.path, change: raw.change });
+  }
+  return out;
+}
+
+function pathsOf(items: readonly Item[], details: DetailRow[]): Set<string> {
   const covered = new Set<string>();
   for (const item of items) {
-    const reasons = reasonsOf(item);
+    const reasons = reasonsOf(item, details);
     if (reasons === null) continue;
-    for (const reason of reasons) if (reason.change === 'added' || reason.change === 'modified') covered.add(reason.path);
+    for (const reason of reasons) if (reason.change === 'added' || reason.change === 'modified') covered.add(details[reason.detail].path);
   }
   return covered;
 }
@@ -87,21 +100,22 @@ function pathNotes(value: unknown): Array<{ path: string; change: 'added' | 'mod
 function inScope(subject: unknown): Outcome[] {
   const note = noteOf(subject);
   const includeAdded = note?.include_added !== false;
+  const details = detailRowsOf(subject);
   const out: Outcome[] = [];
   for (const item of itemsOf(subject)) {
-    const reasons = reasonsOf(item);
-    const title = typeof item.fields.title === 'string' ? item.fields.title : item.id;
+    const reasons = reasonsOf(item, details);
+    const title = typeof item.label === 'string' && item.label !== '' ? item.label : item.id;
     if (reasons === null || reasons.length === 0) {
       out.push({ verdict: 'unknown', reason: 'check_error', statement: `用例 ${item.id} 没有可读的范围原因`, grounds: [], tier: TIER, item: item.id });
       continue;
     }
-    const grounds = groundsOf(reasons);
+    const grounds = groundsOf(item);
     const bad = reasons.filter((reason) => reason.change === 'removed' || (reason.change !== 'added' && reason.change !== 'modified') || (!includeAdded && reason.change === 'added'));
     if (bad.length > 0) {
       out.push({
         verdict: 'refute',
         code: `${PACK}.not_in_scope`,
-        statement: `用例 ${item.id} 的原因里有不是后一构建新增或修改的路径（${bad.map((reason) => reason.path).join('、')}），不能算进回归范围`,
+        statement: `用例 ${item.id} 的原因里有不是后一构建新增或修改的路径（${bad.map((reason) => details[reason.detail].path).join('、')}），不能算进回归范围`,
         grounds,
         tier: TIER,
         item: item.id,
@@ -109,7 +123,7 @@ function inScope(subject: unknown): Outcome[] {
       });
       continue;
     }
-    const names = reasons.map((reason) => `${reason.path} ${reason.change === 'added' ? CHANGE_LABEL.added : CHANGE_LABEL.modified}`).join('、');
+    const names = reasons.map((reason) => `${details[reason.detail].path} ${reason.change === 'added' ? CHANGE_LABEL.added : CHANGE_LABEL.modified}`).join('、');
     out.push({
       verdict: 'support',
       statement: `用例 ${item.id}（${title}）在回归范围内，涉及 ${names}`,
@@ -131,7 +145,7 @@ function uncoveredStatement(path: string, change: 'added' | 'modified', skippedT
 function uncovered(subject: unknown): Outcome[] {
   const note = noteOf(subject);
   const items = itemsOf(subject);
-  const covered = pathsOf(items);
+  const covered = pathsOf(items, detailRowsOf(subject));
   const explicit = note !== null && Object.hasOwn(note, 'uncovered') ? pathNotes(note.uncovered) : null;
   const derived = explicit ?? pathNotes(note?.considered)?.filter((row) => !covered.has(row.path)) ?? [];
   const overlap = derived.filter((row) => covered.has(row.path));

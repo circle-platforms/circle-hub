@@ -37,7 +37,6 @@ function itemOf(item: ScopeItem, sha256: string) {
     fields: {
       document: item.document,
       node: item.node,
-      title: item.title,
       priority: item.priority,
       negative: item.negative,
       reasons: item.reasons,

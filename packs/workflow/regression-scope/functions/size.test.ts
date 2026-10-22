@@ -1,19 +1,19 @@
-// The projection stays small when many cases ride few paths: the per-path change detail (definitions of both sides,
-// field diffs) is written once at the run level, and every item carries only its path, the change kind and tree:
-// references to the changed entries — never the detail itself. The real cross-line pair (30 changed paths, 2,096
-// cases) ballooned to 20 MB because each item repeated its path's detail; here 30 paths with 2,000 cases must stay
-// under 2 MB with the conclusions and counts intact.
+// The projection and the check outputs stay bounded in the real shape: 2,096 cases with 60-character Chinese titles,
+// each attached to 5 changed paths with two tree references per path. The per-item case data is written once, a reason
+// is only the index of its path in the run-level details and the change kind, and the tree references live once per
+// path in note.details. The checks repeat none of that: one short statement, one ground, the detail indexes.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { buildImpact, type BuildOptions, type CaseSpec, type ChangeSpec } from './test-support.ts';
+import { buildImpact, type CaseSpec, type ChangeSpec } from './test-support.ts';
+import { checkOutcomes } from './check.ts';
 import { projectItems } from './project.ts';
 
 const SOURCE = 'a'.repeat(64);
-
 const PATHS = 30;
-const CASES_PER_PATH = Math.ceil(2000 / PATHS);
+const CASES = 2096;
+const TITLE = '健康检查间隔较长时页面应当正确显示告警信息并自动摘除故障后端的用例标题';
 
-/** 30 changed paths (10 added, 10 removed, 10 modified), each with a fat definition (many parameters, long help). */
+/** 30 changed paths (10 added, 10 removed, 10 modified) with fat definitions; each of the 2,096 cases on 5 paths. */
 function manyChanges(): ChangeSpec[] {
   const fat = (name: string, seed: number): { [key: string]: unknown } => ({
     name,
@@ -22,59 +22,68 @@ function manyChanges(): ChangeSpec[] {
     words: [name],
   });
   const changes: ChangeSpec[] = [];
-  for (let i = 0; i < 10; i++) {
-    const to: CaseSpec[] = Array.from({ length: CASES_PER_PATH }, (_, c) => ({ document: `doc-${i}`, node: `n-${i}-${c}`, title: `新增命令用例 ${i}-${c}`, priority: (c % 3) + 1 }));
-    changes.push({ path: `/commands/gen/add-${i}`, change: 'added', after: [fat(`add-${i}`, i)], to });
-  }
-  for (let i = 0; i < 10; i++) {
-    const from: CaseSpec[] = Array.from({ length: CASES_PER_PATH }, (_, c) => ({ document: `doc-r${i}`, node: `n-r-${i}-${c}`, title: `删除命令用例 ${i}-${c}`, priority: 1 }));
-    changes.push({ path: `/commands/gen/del-${i}`, change: 'removed', before: [fat(`del-${i}`, i)], from });
-  }
-  for (let i = 0; i < 10; i++) {
-    const to: CaseSpec[] = Array.from({ length: CASES_PER_PATH }, (_, c) => ({ document: `doc-m${i}`, node: `n-m-${i}-${c}`, title: `修改命令用例 ${i}-${c}`, priority: 2 }));
-    changes.push({ path: `/commands/gen/mod-${i}`, change: 'modified', before: [fat(`mod-${i}`, i)], after: [{ ...fat(`mod-${i}`, i), summary: `命令 mod-${i} 的新说明（种子 ${i}，改了）` }], to });
+  for (let i = 0; i < 10; i++) changes.push({ path: `/commands/gen/add-${i}`, change: 'added', after: [fat(`add-${i}`, i)] });
+  for (let i = 0; i < 10; i++) changes.push({ path: `/commands/gen/del-${i}`, change: 'removed', before: [fat(`del-${i}`, i)] });
+  for (let i = 0; i < 10; i++) changes.push({ path: `/commands/gen/mod-${i}`, change: 'modified', before: [fat(`mod-${i}`, i)], after: [{ ...fat(`mod-${i}`, i), summary: `命令 mod-${i} 的新说明（种子 ${i}，改了）` }] });
+  for (let c = 0; c < CASES; c++) {
+    const spec: CaseSpec = { document: `doc-${c % 40}`, node: `n-${c}`, title: `${TITLE}（第 ${c} 号）`, priority: (c % 3) + 1 };
+    for (let k = 0; k < 5; k++) {
+      const change = changes[(c + k * 6) % PATHS];
+      if (change.change === 'removed') (change.from ??= []).push(spec);
+      else (change.to ??= []).push(spec);
+    }
   }
   return changes;
 }
 
-const view = (): { [key: string]: unknown } => ({ ...buildImpact(manyChanges(), { changedKinds: ['definition'] } as Partial<BuildOptions>) });
+const view = (): { [key: string]: unknown } => ({ ...buildImpact(manyChanges(), { changedKinds: ['definition'] } as Parameters<typeof buildImpact>[1]) });
 
-test('30 changed paths with 2000 cases project under 2 MB with counts and conclusions intact', () => {
-  const out = projectItems({ inputs: [{ slot: 'impact', sha256: SOURCE, model: view() }], parameters: {}, context: {} }) as { items?: unknown[]; groups?: Array<Record<string, unknown>>; error?: { code: string; message: string } };
+function projected() {
+  const out = projectItems({ inputs: [{ slot: 'impact', sha256: SOURCE, model: view() }], parameters: {}, context: {} }) as { items?: Array<{ id: string; label: string; location: unknown; fields: Record<string, unknown> }>; groups?: Array<Record<string, unknown>>; error?: { code: string; message: string } };
   assert.equal(out.error, undefined, JSON.stringify(out.error));
-  // 20 added-path cases + 10 modified-path cases per path group: added and modified carry later-build cases.
-  const expected = CASES_PER_PATH * 20;
-  assert.equal(out.items?.length, expected, 'one item per case on an added or modified path');
+  const items = out.items ?? [];
+  const subject = { items: items.map((item) => ({ id: item.id, label: item.label, location: item.location, fields: item.fields })), note: out.groups?.[0] };
+  return { out, items, subject };
+}
+
+test('the projection of 2,096 real-shaped cases stays under 2 MB with counts and conclusions intact', () => {
+  const { out, items } = projected();
+  // Cases land on added or modified paths only (a removed path is out of scope): 20 of 30 paths carry them.
+  assert.equal(items.length, CASES, 'every case lands at least one in-scope path');
   const bytes = Buffer.byteLength(JSON.stringify(out), 'utf8');
   assert.ok(bytes < 2 * 1024 * 1024, `the projection stays small: ${(bytes / 1024 / 1024).toFixed(2)} MB`);
-  const note = out.groups?.[0] as { message?: string; considered?: Array<{ path: string; change: string }> } | undefined;
+  const note = out.groups?.[0] as { message?: string; details?: Array<Record<string, unknown>> } | undefined;
   assert.match(note?.message ?? '', /比较 Rel_W_1_0_1 与 Rel_W_1_0_2/, 'the conclusion wording is unchanged');
+  assert.equal(note?.details?.length, PATHS, 'one detail row per changed path');
 });
 
-test('an item carries only its path, the change kind and tree: references, never the detail body', () => {
-  const out = projectItems({ inputs: [{ slot: 'impact', sha256: SOURCE, model: view() }], parameters: {}, context: {} }) as { items?: Array<{ id: string; fields: Record<string, unknown> }> };
-  const item = out.items?.[0];
+test('a reason is only the detail index and the change kind; case data and the ground are once per item', () => {
+  const { items } = projected();
+  const item = items[0];
   assert.ok(item !== undefined);
+  assert.deepEqual(Object.keys(item.fields).sort(), ['document', 'negative', 'node', 'priority', 'reasons'], JSON.stringify(Object.keys(item.fields)));
   const reasons = item.fields.reasons as Array<Record<string, unknown>>;
-  assert.ok(Array.isArray(reasons) && reasons.length > 0);
+  assert.ok(reasons.length >= 3, 'at least three in-scope changed paths under one case');
   for (const reason of reasons) {
-    assert.deepEqual(Object.keys(reason).sort(), ['case', 'change', 'definition_change', 'path', 'references'], JSON.stringify(Object.keys(reason)));
-    assert.match(String(reason.path), /^\/commands\//);
-    const references = reason.references as string[];
-    for (const reference of references) assert.match(reference, /^tree:[0-9a-f]{64}/);
+    assert.deepEqual(Object.keys(reason).sort(), ['change', 'detail'], JSON.stringify(reason));
+    assert.ok(Number.isInteger(reason.detail), 'the reason names its path by the details index');
   }
+  assert.ok(String((item as unknown as { location: { selector: string } }).location.selector).startsWith('p/entries/'), 'the item’s ground is its location, not a repeated reference');
   const reasonsJson = JSON.stringify(reasons);
-  assert.ok(!reasonsJson.includes('signatures'), 'no definition body on the reason');
-  assert.ok(!reasonsJson.includes('命令 '), 'no manual text on the reason');
+  assert.ok(!reasonsJson.includes('tree:'), 'no tree reference on a reason');
+  assert.ok(!reasonsJson.includes('/commands/'), 'no path string on a reason');
 });
 
-test('each path detail is written once at the run level: path, kind, a short line, the first 3 field diffs', () => {
-  const out = projectItems({ inputs: [{ slot: 'impact', sha256: SOURCE, model: view() }], parameters: {}, context: {} }) as { groups?: Array<Record<string, unknown>> };
-  const note = (out.groups ?? []).find((g) => Array.isArray(g.details));
-  assert.ok(note !== undefined, 'the run-level note carries the per-path details');
-  const details = note.details as Array<Record<string, unknown>>;
-  assert.equal(details.length, PATHS, 'one detail row per changed path');
-  const serialized = JSON.stringify(details);
-  assert.ok(serialized.includes('/commands/gen/mod-0'), 'a modified path is detailed');
-  assert.ok(!serialized.includes('/commands/gen/add-0/arbitrary'), 'no nested repeats');
+test('each check output of the 2,096 items stays under 2 MB with verdicts and counts intact', () => {
+  const { subject } = projected();
+  const inScope = checkOutcomes('in_scope', subject);
+  const uncovered = checkOutcomes('uncovered_changes', subject);
+  assert.equal(inScope.filter((o) => o.verdict === 'support').length, CASES);
+  for (const [name, outcomes] of [['in_scope', inScope], ['uncovered_changes', uncovered]] as const) {
+    const bytes = Buffer.byteLength(JSON.stringify(outcomes), 'utf8');
+    assert.ok(bytes < 2 * 1024 * 1024, `${name} stays small: ${(bytes / 1024 / 1024).toFixed(2)} MB`);
+  }
+  const outcome = inScope[0];
+  assert.ok(outcome.grounds.length <= 1, 'one ground reference per outcome');
+  assert.ok(!JSON.stringify(outcome).includes('signatures'), 'no definition body in the outcome');
 });

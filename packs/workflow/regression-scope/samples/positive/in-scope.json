@@ -11,29 +11,30 @@
         "fields": {
           "document": "doc-1",
           "node": "n1",
-          "title": "查看部件状态",
           "priority": 1,
           "negative": false,
           "reasons": [
             {
-              "path": "/commands/show",
               "change": "modified",
-              "definition_change": "modified",
-              "references": [
-                "tree:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc/commands/show@bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-                "tree:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee/commands/show@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                "tree:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee/commands/show@dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
-              ],
-              "case": {
-                "entry": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                "reference": "tree:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee/commands/show@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-              }
+              "detail": 0
             }
           ]
-        }
+        },
+        "label": "查看部件状态"
       }
     ],
-    "note": null
+    "note": {
+      "details": [
+        {
+          "path": "/commands/show",
+          "change": "modified",
+          "definition_change": "modified",
+          "conclusion": "命令定义有变更",
+          "differences": [],
+          "references": []
+        }
+      ]
+    }
   },
   "expect": [
     {

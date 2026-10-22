@@ -27,20 +27,24 @@ The product name in the view (`widget`) and the build names (`Rel_W_1_0_1`, `Rel
 ## The answer
 
 Each item is one case, id `<document>:<node>`, sorted by id. A case on several added or modified paths is one item; its
-`reasons` are sorted by path and carry the change (`added` or `modified`) and the digests and tree references of the
-entries. Each reason also carries `definition_change` — what happened to the command definition on the path, read from
-the definition-kind entries of the two sides: none before and some after is `added` (a new command), some before and
-none after is `removed`, both with different digests is `modified`, and equal definitions (only behaviour texts
-changed) or no definition on either side is `none`. Its `conclusion` says it in one line (新增命令 / 删除命令 /
-命令定义有变更 / 仅说明文字有变更), so a command the manual already described is never called "modified". The
-summary is at most 200 characters: priority, document, how many commands changed, and the first reason's conclusion.
-Removed paths are neither in scope nor uncovered. A case on an unchanged path is not an item.
+`reasons` are sorted by path and carry only the index of the path in the run-level details table and the change
+(`added` or `modified`) — since 1.3.0 the path string, the digests and the tree references live once per path in
+`note.details` (a cross-line pair of 2,096 cases was 7.9 MB before this round; 1.2.0 had repeated them per item).
+Each detail row carries the path, the change, `definition_change` — what happened to the command definition on the
+path, read from the definition-kind entries of the two sides: none before and some after is `added` (a new command),
+some before and none after is `removed`, both with different digests is `modified`, and equal definitions (only
+behaviour texts changed) or no definition on either side is `none`. Its `conclusion` says it in one line (新增命令 /
+删除命令 / 命令定义有变更 / 仅说明文字有变更), so a command the manual already described is never called "modified".
+The summary is at most 200 characters: priority, document, how many commands changed, and the first reason's
+conclusion. Removed paths are neither in scope nor uncovered. A case on an unchanged path is not an item.
 
-`in_scope` supports each item. Grounds are the tree references of the case entry and of the definition entries on its
-reasons. `uncovered_changes` is one unknown (`missing_input`) per considered path that has no case in the later build,
-with no item, so it is a cross-item claim. The statement says this is not a failure. When `skipped.to` is above zero,
-the statement and the run note say the later build's index lacks that many listed documents. A truncated view adds an
-unknown of `integrity_unproven` and does not claim that the list is complete.
+`in_scope` supports each item. One ground per claim: the item's own location (the case entry fragment); the definition
+references stay once per path in `note.details`. The case data (document, node, priority, negative) is written once in
+`fields`; the title lives once in `label`. `uncovered_changes` is one unknown (`missing_input`) per considered path
+that has no case in the later build, with no item, so it is a cross-item claim. The statement says this is not a
+failure. When `skipped.to` is above zero, the statement and the run note say the later build's index lacks that many
+listed documents. A truncated view adds an unknown of `integrity_unproven` and does not claim that the list is
+complete.
 
 The uncovered list is computed before the priority filter and stored on the projection note. Filtering a case out does
 not make its path uncovered. `include_added: false` drops added paths from the scope and from the uncovered list. An

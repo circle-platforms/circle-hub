@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "regression-scope",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "kind": "workflow",
   "title": "回归范围",
   "description": "按两个构建的影响视图（瘦身：attached_fields=document,node,title,priority,negative）列出后一构建里放在新增或修改路径上的用例；没有用例的变更路径记为未知而不是失败。一次最多 4,000 条。只含事实要求项，开始运行时由 Hub 直接算出结果",
@@ -23,18 +23,18 @@
     },
     {
       "path": "functions/check.ts",
-      "sha256": "cd91f368367e4bdbd604dfe3329069006c1b7200266b918c6ee5247acbe08078",
-      "size": 8803
+      "sha256": "b4b462f46053bd51733449ec3d1ba4d4099e1f3ae49d4025d4ec1a6d2d5aec74",
+      "size": 9233
     },
     {
       "path": "functions/project.ts",
-      "sha256": "76625860c165282d0df299f7b366e0f1a961fdca5e15ce1d8362878ef3a29fbd",
-      "size": 7220
+      "sha256": "54e140e1e5dd5389299bc76c8dc10bdd08bd7b1557d91cdd0f323b3206d04c4c",
+      "size": 7195
     },
     {
       "path": "functions/scope.ts",
-      "sha256": "4a6641cdd68e479f8f9eb66b238626c8592279af03c853350d5d5b7c27445331",
-      "size": 16575
+      "sha256": "f9401e007274181fa06490b3c6fddd1039636fd8c0a4d5f4cbec4e7316be28f6",
+      "size": 16038
     },
     {
       "path": "functions/subject.ts",
@@ -58,13 +58,13 @@
     },
     {
       "path": "samples/negative/not-in-scope.json",
-      "sha256": "f873616ed28390f922f0582b4b29a30c22385065665e8285e6365f768c7c1b6b",
-      "size": 1686
+      "sha256": "0ad5e188b1687bb91b94515d0d1c4b08a9f78d81a391fcd8e1857c4117b0fc1d",
+      "size": 1194
     },
     {
       "path": "samples/negative/uncovered-overlap.json",
-      "sha256": "c92c46bad4b8bbc51ee256a86a601d4dde466dab465852be0f54d78a928cf671",
-      "size": 2014
+      "sha256": "a629ff63f2185b6fe6133648c1e50017e56c5f2efd18b5b2079361e2122e5991",
+      "size": 1520
     },
     {
       "path": "samples/positive/covered-paths.json",
@@ -73,8 +73,8 @@
     },
     {
       "path": "samples/positive/in-scope.json",
-      "sha256": "0761fd8b84501c44ea38e70772db8759bfaa85c2b39d1c5f1f37d0b7de8851cc",
-      "size": 1771
+      "sha256": "18f212456e6b9ec945094d2267f2258561a9eaa51bb2d3fab425cdcffaaed13a",
+      "size": 1111
     },
     {
       "path": "slots.schema.json",
