@@ -4,11 +4,21 @@
     {
       "slot": "impact",
       "role": "subject",
-      "description": "两个构建之间的影响视图（knowledge:impact:<产品>:<起始构建>..<目标构建>?attached_fields=document,node,title,priority,negative）。Hub 的读取器回答 impact-view@1，附着种类为用例，附着的用例条目只带这五个字段（瘦身，大版本差也放得下）",
+      "description": "两个构建之间的影响视图（knowledge:impact:<产品>:<起始构建>..<目标构建>?changed=definition&attached=case&attached_fields=document,node,title,priority,negative）。必须带 changed=definition：回归范围只按命令定义的变化算（决定 11）。Hub 的读取器回答 impact-view@1，附着种类为用例，附着的用例条目只带这五个字段（瘦身，大版本差也放得下）",
       "accepts": [
         "knowledge:impact"
       ],
       "required": true,
+      "many": false
+    },
+    {
+      "slot": "behaviour",
+      "role": "hint",
+      "description": "同一对构建的 changed=behaviour 视图（可选）：手册说明有变化的命令只在结论里另列一段作线索（最多 5 条，其余写“另有”），不进范围、不影响任何计数",
+      "accepts": [
+        "knowledge:impact"
+      ],
+      "required": false,
       "many": false
     }
   ],

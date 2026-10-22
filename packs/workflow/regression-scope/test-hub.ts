@@ -7,6 +7,7 @@ import type { Artifacts, Principal } from '../../../hub/records/api.ts';
 import type { TreeReader } from '../../../hub/refs/api.ts';
 import type { CatalogView } from '../../../hub/rules/api.ts';
 import { createPackRegistry, createPacksPort, createRunsService, createWorkflowStore, temporaryDirectory, type AdminLogEntry, type PackRegistry, type RunsEngine } from '../../../hub/runs/api.ts';
+import { routeKnowledgeViews } from '../../../hub/knowledge/api.ts';
 import type { TemporaryPostgres } from '../../../hub/testing/postgres.ts';
 import { openTestRecords, type TestRecordsKit } from '../../../hub/testing/records.ts';
 import { stage } from './pack-files.ts';
@@ -94,19 +95,41 @@ let traces = 1;
 export const call = (session = 'sess-regression') => ({ traceId: `4bf92f3577b34da6a3ce929d0e1e${(traces++).toString(16).padStart(4, '0')}`, sessionId: session });
 
 /** Opens the Hub parts, publishes the staged regression-scope pack, activates and assigns it. */
-export async function openHub(postgres: TemporaryPostgres): Promise<Hub> {
+export interface OpenHubOptions {
+  /** A knowledge reader routed beside the fake external (the real one, from the world). */
+  knowledge?: ExternalReaderPort | null;
+  /** An existing records kit (the world's), with the users that go with it: reused, none re-created. */
+  kit?: { kit: Awaited<ReturnType<typeof openTestRecords>>; admin: { id: string; name: string; role: 'admin' }; alice: { id: string; name: string; role: 'user' }; bob: { id: string; name: string; role: 'user' } } | null;
+}
+
+export async function openHub(postgres: TemporaryPostgres, options: OpenHubOptions = {}): Promise<Hub> {
+  const knowledge = options.knowledge ?? null;
+  const kitOf = options.kit ?? null;
   let clock = Date.parse('2026-10-22T08:00:00.000Z');
   const now = (): Date => new Date(clock++);
-  const kit = await openTestRecords({ postgres, now });
+  const kit = (kitOf?.kit) ?? (await openTestRecords({ postgres, now }));
   const temp = await temporaryDirectory('regression-scope-hub-');
   const root = temp.path;
   try {
-    const admin = (await kit.principals.bootstrapAdmin('管理员')).user;
-    const alice = await kit.principals.createUser(admin, '甲');
-    const bob = await kit.principals.createUser(admin, '乙');
-    await kit.authorizations.grantPublishRight(admin, alice.id);
+    // With an injected kit the users already exist (the world's); otherwise bootstrap the usual three.
+    let admin: Principal;
+    let alice: { id: string; name: string; role: 'user' };
+    let bob: { id: string; name: string; role: 'user' };
+    if (kitOf !== null) {
+      admin = kitOf.admin;
+      alice = kitOf.alice;
+      bob = kitOf.bob;
+    } else {
+      const boot = (await kit.principals.bootstrapAdmin('管理员')).user;
+      admin = boot;
+      alice = (await kit.principals.createUser(admin, '甲')) as { id: string; name: string; role: 'user' };
+      bob = (await kit.principals.createUser(admin, '乙')) as { id: string; name: string; role: 'user' };
+      await kit.authorizations.grantPublishRight(admin, alice.id);
+    }
     const registry = createPackRegistry({ records: kit, extractDir: join(root, 'extracted'), now });
-    const published = await registry.publish(alice, await stage(join(root, 'regression-scope')));
+    if (kitOf !== null) await kit.authorizations.grantPublishRight(admin, admin.id);
+    const publisher = kitOf !== null ? admin : alice;
+    const published = await registry.publish(publisher, await stage(join(root, 'regression-scope')));
     if (!published.ok) throw new Error(`regression-scope was not published: ${JSON.stringify(published.problems, null, 1)}`);
     await registry.assign(admin, alice.id, 'regression-scope');
     const external = new FakeExternal(kit.artifacts);
@@ -116,7 +139,7 @@ export async function openHub(postgres: TemporaryPostgres): Promise<Hub> {
       workflows: createWorkflowStore(registry),
       packs: createPacksPort(registry),
       knowledge: new EmptyKnowledge(),
-      external,
+      external: knowledge === null ? external : routeKnowledgeViews(knowledge, external),
       now,
       adminLog: (entry) => logs.push(entry),
     });
@@ -131,7 +154,7 @@ export async function openHub(postgres: TemporaryPostgres): Promise<Hub> {
       bob: principal(bob),
       logs,
       async close() {
-        await kit.close();
+        if (kitOf === null) await kit.close();
         await temp.remove();
       },
     };

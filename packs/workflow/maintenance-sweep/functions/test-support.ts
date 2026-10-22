@@ -27,6 +27,8 @@ export interface ChangeSpec {
 }
 
 export interface BuildOptions {
+  /** The changed kinds the view was asked for; default definition-only (decision 11). */
+  changedKinds?: string[];
   skipped?: { from: number; to: number };
   truncated?: boolean;
   changedPaths?: number;
@@ -142,7 +144,7 @@ export function buildImpact(changes: readonly ChangeSpec[], options: BuildOption
     product: 'widget',
     from: { build: 'Rel_W_1_0_1', root: FROM_ROOT },
     to: { build: 'Rel_W_1_0_2', root: TO_ROOT },
-    changed_kinds: ['behaviour', 'definition'],
+    changed_kinds: options.changedKinds ?? ['definition'],
     attached_kinds: options.attached ?? ['case'],
     changes: changeRows,
     placements,

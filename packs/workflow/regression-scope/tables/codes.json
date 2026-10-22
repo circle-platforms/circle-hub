@@ -44,6 +44,16 @@
       "code": "regression-scope.internal_error",
       "when": "函数内部出错（任务包缺陷）",
       "fix": "把输入交给任务包维护人"
+    },
+    {
+      "code": "regression-scope.changed_kinds",
+      "when": "影响视图不是按 changed=definition 要的（变更种类里不止定义）。回归范围只按命令定义的变化算（决定 11），手册行为的变化不算",
+      "fix": "视图引用写成 knowledge:impact:<产品>:<起始构建>..<目标构建>?changed=definition&attached=case&attached_fields=document,node,title,priority,negative"
+    },
+    {
+      "code": "regression-scope.behaviour_view",
+      "when": "behaviour 槽绑了不可用的影响视图：不是影响视图、changed_kinds 不是 behaviour、或不是同一对构建",
+      "fix": "behaviour 槽绑定同一对构建的 changed=behaviour 视图，或不绑定"
     }
   ],
   "warnings": [

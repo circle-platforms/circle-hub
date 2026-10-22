@@ -30,18 +30,23 @@ describe('regression-scope scenario', () => {
     later: 'Rel_APV_10_6_1_57',
     changed: ['/commands/demo/pool/add', '/commands/demo/show'],
     removed: ['/commands/demo/pool/delete'],
+    kinds: [
+      { path: '/commands/demo/pool/add', kind: 'modified' },
+      { path: '/commands/demo/show', kind: 'modified' },
+      { path: '/commands/demo/pool/delete', kind: 'removed' },
+    ],
     inScope: [{ id: '9001:c-1', path: '/commands/demo/pool/add' }],
     outOfScope: ['9001:c-9'],
   };
   const scenario = regressionScope(gold);
   test('starts the run with the impact view of the build pair on turn 0', () => {
     assert.deepEqual(scenario.respond(turn(0)), [
-      { tool: 'hub_start_run', input: { pack: 'regression-scope', inputs: { impact: { external: 'knowledge:impact:apv:Rel_APV_10_6_1_56..Rel_APV_10_6_1_57' } } } },
+      { tool: 'hub_start_run', input: { pack: 'regression-scope', inputs: { impact: { external: 'knowledge:impact:apv:Rel_APV_10_6_1_56..Rel_APV_10_6_1_57?changed=definition&attached=case&attached_fields=document,node,title,priority,negative' } } } },
     ]);
     assert.deepEqual(scenario.respond(turn(1)), [{ text: '对比完成。' }]);
   });
   test('holds on a Hub-shaped answer and fails on a wrong path set or a stray case', () => {
-    const good = '运行 run_1 完成：变更路径 /commands/demo/pool/add、/commands/demo/show；未覆盖 /commands/demo/show。条目 9001:c-1 放在 /commands/demo/pool/add 上。';
+    const good = '运行 run_1 完成：变更路径 /commands/demo/pool/add（modified）、/commands/demo/show（modified）；未覆盖 /commands/demo/show。条目 9001:c-1 放在 /commands/demo/pool/add 上。';
     assert.ok(allOk(scenario, turnsOf(good)), JSON.stringify(scenario.check(turnsOf(good))));
     const stray = good.replace('/commands/demo/show。', '/commands/demo/other。');
     assert.ok(!allOk(scenario, turnsOf(stray)));
@@ -66,7 +71,7 @@ describe('maintenance-sweep scenario', () => {
   const scenario = maintenanceSweep(gold);
   test('starts the run on turn 0', () => {
     assert.deepEqual(scenario.respond(turn(0)), [
-      { tool: 'hub_start_run', input: { pack: 'maintenance-sweep', inputs: { impact: { external: 'knowledge:impact:apv:Rel_APV_10_6_1_56..Rel_APV_10_6_1_57' } } } },
+      { tool: 'hub_start_run', input: { pack: 'maintenance-sweep', inputs: { impact: { external: 'knowledge:impact:apv:Rel_APV_10_6_1_56..Rel_APV_10_6_1_57?changed=definition&attached=case&attached_fields=document,node,title' } } } },
     ]);
   });
   test('holds when removed and changed cases sit on their paths with their marks', () => {
