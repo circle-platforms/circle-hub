@@ -47,5 +47,8 @@
   "subject": "defects",
   "projection": {
     "module": "functions/project.ts"
+  },
+  "expected_sources": {
+    "module": "functions/expected.ts"
   }
 }

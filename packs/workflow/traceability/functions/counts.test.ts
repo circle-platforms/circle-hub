@@ -35,8 +35,76 @@ describe('countsOutcome', () => {
     assert.match(outcome.statement, /缺陷 3 个/);
     assert.match(outcome.statement, /已追溯 2 个/);
     assert.match(outcome.statement, /未追溯 1 个/);
+    assert.match(outcome.statement, /其中已关闭缺陷 0 个/);
     const groups = projected.groups as Array<{ views: { defects: { source: string }; cases: { source: string } } }>;
     assert.deepEqual(outcome.grounds, [groups[0].views.defects.source, groups[0].views.cases.source]);
+  });
+
+  it('counts closed defects and partitions traced vs untraced when PLM sources are provided', () => {
+    const defects = [
+      defectEntry({ bug: '7011' }),
+      defectEntry({ bug: '7012' }),
+      defectEntry({ bug: '7013' }),
+      defectEntry({ bug: '7014', system: 'bugzilla' }),
+    ];
+    const cases = [
+      caseEntry({ defects: ['7011'], case: 'C-1' }),
+    ];
+    const { subject } = subjectOf(defects, cases);
+    const sources = {
+      'plm:bugs:7011+7012+7013': JSON.stringify({
+        bugs: [
+          { id: '7011', status: 'closed' },
+          { id: '7012', status: 'closed' },
+          { id: '7013', status: 'active' },
+        ],
+        unread: [],
+      }),
+    };
+    const outcome = countsOutcome(subject, sources);
+    assert.equal(outcome.verdict, 'support');
+    const data = outcome.data as {
+      defects: number;
+      traced: number;
+      untraced: number;
+      closed_defects: number;
+      closed_traced: number;
+      closed_untraced: number;
+    };
+    assert.equal(data.defects, 4);
+    assert.equal(data.traced, 1);
+    assert.equal(data.untraced, 3);
+    assert.equal(data.closed_defects, 2);
+    assert.equal(data.closed_traced, 1);
+    assert.equal(data.closed_untraced, 1);
+    assert.match(outcome.statement, /已关闭缺陷 2 个：已追溯 1 个，未追溯 1 个/);
+  });
+
+  it('custom closed table changes the set of statuses counted as closed', () => {
+    const defects = [
+      defectEntry({ bug: '7015' }),
+      defectEntry({ bug: '7016' }),
+    ];
+    const { subject } = subjectOf(defects, []);
+    const sources = {
+      'plm:bugs:7015+7016': JSON.stringify({
+        bugs: [
+          { id: '7015', status: 'closed' },
+          { id: '7016', status: 'resolved' },
+        ],
+      }),
+    };
+    // Default table: only closed is counted
+    const outcomeDefault = countsOutcome(subject, sources);
+    const dataDefault = outcomeDefault.data as { closed_defects: number };
+    assert.equal(dataDefault.closed_defects, 1);
+
+    // Custom table including resolved
+    const outcomeCustom = countsOutcome(subject, sources, { statuses: ['closed', 'resolved'] });
+    const dataCustom = outcomeCustom.data as { closed_defects: number; closed_untraced: number };
+    assert.equal(dataCustom.closed_defects, 2);
+    assert.equal(dataCustom.closed_untraced, 2);
+    assert.match(outcomeCustom.statement, /已关闭缺陷 2 个：已追溯 0 个，未追溯 2 个/);
   });
 
   it('counts a conflicted defect by its cases and reports the conflicts apart', () => {
