@@ -45,6 +45,59 @@ Hub 对提交进行两层核对：
    - `grounded`（依据）：引文缺失或精简阅读引入未载实体（退回修复，最多 2 轮）。
    - `not_duplicate`（去重）：若与已索引用例存在相同规范化命令、相同正反向且标题或期望结果相同，判定为重复用例违规（提示档）。若索引存在跳过文档且未见重复，诚实判定为未知（完整性未证明）。
 
-## 5. 提交格式
+## 5. 提交样例
 
-使用 `submit_result` 一次性提交所有条目，格式参见 `examples/submission.json`。
+使用 `submit_result` 一次性提交所有条目。照这个结构写，字段名一个都不要改，只换内容（完整样例见 examples/submit-result.json）：
+
+```json
+{
+  "run": "run_01m5h9zm2nhzbz2hrfjfb6azta",
+  "model": "synthetic-model",
+  "items": [
+    {
+      "item": "71009",
+      "handling": "handled",
+      "slots": {
+        "cases": [
+          {
+            "text": "SLB健康检查间隔配置测试",
+            "quotes": [
+              {
+                "reference": "src:3ddd7ead4f133d137fd205261456c06ded9ffe14c27cedb10657f2e03c6ee5cb/json@1/p/html_fields/fix",
+                "text": "健康检查间隔设置成功"
+              }
+            ],
+            "data": {
+              "title": "SLB健康检查间隔配置测试",
+              "priority": 2,
+              "negative": false,
+              "expects_refutation": false,
+              "preconditions": [
+                "SLB正常运行"
+              ],
+              "steps": [
+                {
+                  "text": "执行配置健康检查间隔命令",
+                  "command": "widget health interval 60"
+                }
+              ],
+              "expected": [
+                {
+                  "text": "健康检查间隔设置成功",
+                  "quote": {
+                    "reference": "src:3ddd7ead4f133d137fd205261456c06ded9ffe14c27cedb10657f2e03c6ee5cb/json@1/p/html_fields/fix",
+                    "text": "健康检查间隔设置成功"
+                  }
+                }
+              ],
+              "tags": [
+                "Functional"
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
+```

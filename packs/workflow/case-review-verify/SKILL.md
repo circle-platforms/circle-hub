@@ -58,3 +58,72 @@ Hub 按这些规则核对结论和处置是否一致，不一致会退回修复�
 ## 4. 分块与报告
 
 大文档按子树（block）或用例顺序（slice）分块初评时，每块单独复核（draft 写那一块的初评验证结果）；整体结论取各块中最差的（FAIL 重于 PARTIAL 重于 PASS），整体等级取最差的一块。报告由初评方用中文写：每条已证实和新增的发现、改进建议、你的结论和最终等级照原样采用。
+
+## 5. 提交样例
+
+照这个结构写，字段名一个都不要改，只换内容（完整样例见 examples/submit-result.json）：
+
+```json
+{
+  "run": "run_01m5h9zm2nhzbz2hrfjfb6azta",
+  "model": "omega-checker 2.0 (scripted, temperature 0)",
+  "items": [
+    {
+      "item": "900103:imyvp5mr10r6",
+      "handling": "handled",
+      "slots": {
+        "verification": [
+          {
+            "text": "对照被复核脑图和需求核实，初评发现属实，严重程度合理",
+            "code": "verified",
+            "rank": "minor",
+            "location": "src:48728fe18b2e89689f4aa1b00063fc3a3ef0c41744a32de6b12a449e01374d5f/kityminder@1/n/imyvp5mr10r6",
+            "quotes": [
+              {
+                "reference": "src:48728fe18b2e89689f4aa1b00063fc3a3ef0c41744a32de6b12a449e01374d5f/kityminder@1/n/imyvp5mr10r6",
+                "text": "widget health interval pool1 61"
+              }
+            ],
+            "data": {
+              "finding": "rec:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef#/partitions/delivered/0/requirements/0/claims/0"
+            }
+          },
+          {
+            "text": "缺少探测间隔为 0 的反向用例",
+            "code": "new_finding",
+            "rank": "minor",
+            "location": "src:48728fe18b2e89689f4aa1b00063fc3a3ef0c41744a32de6b12a449e01374d5f/kityminder@1/n/imyvp5mr10r6",
+            "quotes": [
+              {
+                "reference": "src:48728fe18b2e89689f4aa1b00063fc3a3ef0c41744a32de6b12a449e01374d5f/kityminder@1/n/imyvp5mr10r6",
+                "text": "widget health interval pool1 61"
+              }
+            ],
+            "data": {
+              "probe": "negative_gap"
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "cross_item": [
+    {
+      "nature": "judgment",
+      "statement": "结论理由：初评基本正确，但遗漏了反向用例，补充了一条新发现；对初评等级的质疑：初评 P4 合适",
+      "grounds": [
+        "src:48728fe18b2e89689f4aa1b00063fc3a3ef0c41744a32de6b12a449e01374d5f/kityminder@1/n/imyvp5mr10r6"
+      ],
+      "code": "PARTIAL",
+      "rank": "P4"
+    },
+    {
+      "nature": "judgment",
+      "statement": "补一个探测间隔为 0 的反向用例；期望结果：提示参数超出范围 1-60",
+      "grounds": [],
+      "code": "suggestion",
+      "rank": "minor"
+    }
+  ]
+}
+```
