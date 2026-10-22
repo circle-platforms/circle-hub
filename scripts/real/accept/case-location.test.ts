@@ -152,3 +152,92 @@ describe('case-location scenario with buildCandidates', () => {
     assert.ok(writtenCheck && !writtenCheck.ok);
   });
 });
+
+describe('case-location scenario with 15 buildCandidates (top 12 truncation and more count)', () => {
+  const goldCandidates = [
+    // Rel_APV_10_6_1_01 has built: null and sits at the front of the raw list,
+    // testing that ordering places built: null at the end (into the unlisted slice).
+    { name: 'Rel_APV_10_6_1_01', family: 'APV', base: 'Rel_APV_10_6_1_01', built: null, released: '2026-10-10' },
+    { name: 'Rel_APV_10_6_1_90', family: 'APV', base: 'Rel_APV_10_6_1_90', built: '2026-10-22T06:26:12', released: '2026-10-22' },
+    { name: 'Rel_APV_10_6_1_80', family: 'APV', base: 'Rel_APV_10_6_1_80', built: '2026-10-21T15:30:45', released: '2026-10-21' },
+    // Two with identical built time: APV_72 listed before APV_71 in raw array to test tie-break by name
+    { name: 'Rel_APV_10_6_1_72', family: 'APV', base: 'Rel_APV_10_6_1_72', built: '2026-10-20T10:00:00', released: '2026-10-20' },
+    { name: 'Rel_APV_10_6_1_71', family: 'APV', base: 'Rel_APV_10_6_1_71', built: '2026-10-20T10:00:00', released: '2026-10-20' },
+    // NSAE alias 1 and its base
+    { name: 'Rel_NSAE_10_6_1_60', family: 'NSAE', base: 'Rel_APV_10_6_1_60', built: '2026-10-19T09:15:30', released: '2026-10-19' },
+    { name: 'Rel_APV_10_6_1_60', family: 'APV', base: 'Rel_APV_10_6_1_60', built: '2026-10-19T09:15:00', released: '2026-10-19' },
+    // NSAE alias 2 and its base
+    { name: 'Rel_NSAE_10_6_1_50', family: 'NSAE', base: 'Rel_APV_10_6_1_50', built: '2026-10-18T14:20:10', released: '2026-10-18' },
+    { name: 'Rel_APV_10_6_1_50', family: 'APV', base: 'Rel_APV_10_6_1_50', built: '2026-10-18T14:20:00', released: '2026-10-18' },
+    { name: 'Rel_APV_10_6_1_40', family: 'APV', base: 'Rel_APV_10_6_1_40', built: '2026-10-17T11:00:00', released: '2026-10-17' },
+    { name: 'Rel_APV_10_6_1_30', family: 'APV', base: 'Rel_APV_10_6_1_30', built: '2026-10-16T11:00:00', released: '2026-10-16' },
+    { name: 'Rel_APV_10_6_1_20', family: 'APV', base: 'Rel_APV_10_6_1_20', built: '2026-10-15T11:00:00', released: '2026-10-15' },
+    { name: 'Rel_APV_10_6_1_10', family: 'APV', base: 'Rel_APV_10_6_1_10', built: '2026-10-14T11:00:00', released: '2026-10-14' },
+    { name: 'Rel_APV_10_6_1_05', family: 'APV', base: 'Rel_APV_10_6_1_05', built: '2026-10-13T11:00:00', released: '2026-10-13' },
+    { name: 'Rel_APV_10_6_1_02', family: 'APV', base: 'Rel_APV_10_6_1_02', built: '2026-10-12T11:00:00', released: '2026-10-12' },
+  ];
+
+  const gold: LocationGold = {
+    document: '90003',
+    product: 'apv',
+    line: '10.6.1',
+    buildCandidates: {
+      candidates: goldCandidates,
+      written: [],
+    },
+  };
+  const scenario = caseLocation(gold);
+
+  const good15 = [
+    '运行 run_1 完成：任务包 case-location@1.0.0',
+    'location 用例定位：满足 1',
+    '产品线 apv；版本 10.6.1（目录，置信度高）',
+    '构建候选：版本线 10.6.1 的构建候选 15 个，其中别名 2 个（别名基于它所基于的构建），按制作时间从新到旧：' +
+      'Rel_APV_10_6_1_90（APV）制作于 2026-10-22 06:26，已发布 2026-10-22；' +
+      'Rel_APV_10_6_1_80（APV）制作于 2026-10-21 15:30，已发布 2026-10-21；' +
+      'Rel_APV_10_6_1_71（APV）制作于 2026-10-20 10:00，已发布 2026-10-20；' +
+      'Rel_APV_10_6_1_72（APV）制作于 2026-10-20 10:00，已发布 2026-10-20；' +
+      'Rel_NSAE_10_6_1_60（NSAE，基于 Rel_APV_10_6_1_60）制作于 2026-10-19 09:15，已发布 2026-10-19；' +
+      'Rel_APV_10_6_1_60（APV）制作于 2026-10-19 09:15，已发布 2026-10-19；' +
+      'Rel_NSAE_10_6_1_50（NSAE，基于 Rel_APV_10_6_1_50）制作于 2026-10-18 14:20，已发布 2026-10-18；' +
+      'Rel_APV_10_6_1_50（APV）制作于 2026-10-18 14:20，已发布 2026-10-18；' +
+      'Rel_APV_10_6_1_40（APV）制作于 2026-10-17 11:00，已发布 2026-10-17；' +
+      'Rel_APV_10_6_1_30（APV）制作于 2026-10-16 11:00，已发布 2026-10-16；' +
+      'Rel_APV_10_6_1_20（APV）制作于 2026-10-15 11:00，已发布 2026-10-15；' +
+      'Rel_APV_10_6_1_10（APV）制作于 2026-10-14 11:00，已发布 2026-10-14；另有 3 个',
+  ].join('\n');
+
+  test('holds when candidate set equals top 12, more count matches 3, aliases and built times match', () => {
+    assert.ok(allOk(scenario, turnsOf(good15)), JSON.stringify(scenario.check(turnsOf(good15))));
+  });
+
+  test('fails when candidate set is missing one candidate', () => {
+    const missingOne = good15.replace(
+      'Rel_APV_10_6_1_90（APV）制作于 2026-10-22 06:26，已发布 2026-10-22；',
+      '',
+    );
+    const checks = scenario.check(turnsOf(missingOne));
+    assert.ok(!checks.every((c) => c.ok), 'should fail when missing a candidate');
+    const candCheck = checks.find((c) => c.name.includes('候选构建名集合'));
+    assert.ok(candCheck && !candCheck.ok && candCheck.actual.includes('缺 1 个'));
+  });
+
+  test('fails when candidate set has an extra candidate', () => {
+    const extraOne = good15.replace(
+      'Rel_APV_10_6_1_90',
+      'Rel_EXTRA_10_6_1_99（APV）制作于 2026-10-23 00:00，已发布 2026-10-23；Rel_APV_10_6_1_90',
+    );
+    const checks = scenario.check(turnsOf(extraOne));
+    assert.ok(!checks.every((c) => c.ok), 'should fail when having an extra candidate');
+    const candCheck = checks.find((c) => c.name.includes('候选构建名集合'));
+    assert.ok(candCheck && !candCheck.ok && candCheck.actual.includes('多 1 个'));
+  });
+
+  test('fails when more count mismatches', () => {
+    const wrongMore = good15.replace('另有 3 个', '另有 2 个');
+    const checks = scenario.check(turnsOf(wrongMore));
+    assert.ok(!checks.every((c) => c.ok), 'should fail when more count mismatches');
+    const moreCheck = checks.find((c) => c.name.includes('剩余构建') || c.name.includes('另有') || c.name.includes('超出上限'));
+    assert.ok(moreCheck && !moreCheck.ok, 'more count check must fail');
+  });
+});
