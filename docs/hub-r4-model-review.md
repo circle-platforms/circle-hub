@@ -22,7 +22,7 @@
 
 ## 2. 需要所有者知道的偏离（单列重要偏离）
 
-在复核过程中，识别出以下 6 条关键架构与模型偏离，特此单列供所有者知晓：
+在复核过程中，识别出以下 7 条关键架构与模型偏离，特此单列供所有者知晓：
 
 1. **架构第 1 节范围描述未同步更新（偏离）**
    - **偏离事实**：架构第 1 节将租约（leases）与常设义务（standing obligations）列为“不在这个里程碑（Out of scope for milestone 1）”；然而进度页决定 9（知识同步常设义务，每已发布构建产出一个根）与决定 16（设备管理包的租约机制，由所有者确认设计）已正式将常设义务与租约带入实现。代码中已完整落地常设义务知识同步（`hub/knowledge/sync.ts`）与租约服务（`hub/leases/service.ts`、`hub/runs/engine/leases-wiring.test.ts`、`contracts/src/leases.test.ts`），架构第 1 节的排除描述未同步修订。
@@ -40,7 +40,13 @@
    - **实现现状**：受 2026-10-22 所有者决定（决定 15：“Hub 不调用判断模型”）约束，严格落实了确定性规则归类与未归位存根，但个人候选层写入（架构第 1 节明确排除）和智能归位提议通道未开放。
 6. **D03/P11 效果前强制边界（租约、围栏、参数范围）未激活（部分落实）**
    - **模型要求**：统一管道包含效果前边界（校验动作允许表、参数范围、租约与围栏、全局政策表）与交付前边界。
-   - **实现现状**：因里程碑 1 排除外部写效果，交付前边界（终态与清单计算）完全激活，效果前边界及全局政策表在当前代码中处于闲置未装配状态。
+   - **实现现状**：因里程碑 1 排除外部写效果，交付前边界（终态与分区计算）完全激活，效果前边界及全局政策表在当前代码中处于闲置未装配状态。
+7. **模型概念未完全纳入词表轴而存在手写枚举（偏离）**
+   - **偏离事实**：架构第 2 节明确规定“No coined terms. Labels come from labelOf(axis, code) in contracts/generated/vocabulary.ts; enumerations are never written by hand anywhere; use the generated types and zod enums.”然而在 `contracts/src/` 核心契约中，仍有核心模型明确规定的概念未纳入 54 个词表轴，而以手写字面量枚举存在：
+     - `contracts/src/pack.ts:139` 与 `contracts/src/pack.ts:278`：手写 `z.enum(['item', 'run'])`（`target` 与 `applies`）。条目级与运行级划分是模型 W02 R[1]、T03 R[4]、W07 F[4] 的核心概念，词表缺失对应轴。
+     - `contracts/src/tables.ts:334`：手写 `z.enum(['count', 'sum', 'min', 'max'])`（`measure`）。度量聚合计算是模型 C04 R[3] / C04 F[0] 明确规定的方式，词表中未建度量聚合轴。
+     - `contracts/src/pack.ts:530`：手写 `['author', 'returned_counterexample', 'retained_delivery'] as const`（`CounterexampleSource`）。模型 P09 规划的反例来源，契约中未建轴而手写。
+     - `contracts/src/product.ts:188`：手写 `z.enum(['code_only', 'judgment_allowed'])`（`placement`）。决定 15 与 `jev-optin.md` 引入的生产器归位授权策略，未建立词表轴。
 
 ---
 
@@ -51,16 +57,82 @@
 - **复核结论**：**完全合规（0 处违规）**。
 - **证据**：在 `hub/**` 生产代码中全局检索产品名（`APV`、`NSAE`）、产品命令名（`slb`、`proxyip`、`vlan` 等）、客户专名，匹配结果均为 0；早先在 `slots.ts` 中手写的特定字段名已重构成基于 JSON Schema 指针的通用推导机制（`hub/runs/engine/slots.ts`），核心代码无业务专用词素。
 
-### 3.2 枚举只来自生成的词表
-- **核对标准**：词表轴目前共有 54 个轴（10-23 在提交 `26d7245` 中新增 `lease_op` 轴，消除原先手写的 5 个租约操作枚举）。所有枚举由 `contracts/generated/vocabulary.ts` 导出，绝不手写字面量枚举数组或 `z.enum`。
-- **复核结论**：**完全合规**。
-- **证据**：
-  1. `grep -rn -F "z.enum(" hub/` 结果为 0。
-  2. `grep -rn "as const" hub/` 查出的所有字面量均为：
-     - 单个字面量类型标注（如 `role: 'user' as const`，满足生成的词表类型约束）；
-     - 满足词表类型的字典映射（如 `satisfies Record<Reason, Attribution>`、`satisfies Record<StaticTerminal, number>`）；
-     - 内部 AST 遍历只读键元组（如 `['allOf', 'anyOf', 'oneOf'] as const`、`['objects', 'vault'] as const`）。
-  3. 生产代码中不存在任何未登记在词表中的手写业务枚举数组。
+### 3.2 枚举只来自生成的词表（全代码库字面量枚举核对）
+- **核对标准**：所有模型业务概念枚举必须来自生成的 54 个词表轴（10-23 在提交 `26d7245` 中新增 `lease_op` 轴）。全库检索所有 `z.enum([...` 与 `[...] as const` 字面量数组，逐个核实是否为词表轴、是否与 54 个轴重合、是否为模型概念或格式层。
+- **复核结论**：
+  1. **`hub/` 生产核心代码完全合规**：0 处 `z.enum`，所有业务类型均导入词表；所有 `as const` 数组仅用于测试遍历、内部 AST 键遍历或底层系统目录名。
+  2. **`contracts/src/` 发现 4 处模型概念手写枚举**（已列入第 2 节偏离 7），其余手写枚举均严格属于数据格式层与网络协议层。
+  3. **`packs/` 与 `scripts/` 均严格隔离**：包内部枚举仅为该产品专有的业务标签（如 APV 6 大测试用例分类）或脚本参数，无泄漏至核心。
+
+#### 全库字面量数组逐项核对明细表
+
+##### 1. `contracts/src/` 契约定义层（10 处 `z.enum` + 14 处 `as const`）
+| 文件:行号 | 类型 | 取值 | 是否与 54 轴重合 | 是否模型概念 | 属性分类与理由 |
+| :--- | :---: | :--- | :---: | :---: | :--- |
+| `contracts/src/tables.ts:42` | `z.enum` | none, nfc, nfkc | 否 | 否 | **格式层**：Unicode 字符规范化标准形式（RFC/Unicode 规范） |
+| `contracts/src/tables.ts:43` | `z.enum` | sensitive, insensitive | 否 | 否 | **格式层**：通用字符串比对大小写敏感性配置 |
+| `contracts/src/tables.ts:44` | `z.enum` | exact, trim, collapse | 否 | 否 | **格式层**：空白字符归一化模式（前后裁剪或折叠空格） |
+| `contracts/src/tables.ts:67` | `z.enum` | string, integer, number, boolean, array, object, null | 否 | 否 | **格式层**：JSON Schema 基础数据类型规范（RFC 8259） |
+| `contracts/src/tables.ts:101` | `z.enum` | all, siblings, group | 否 | 否 | **格式层**：集合表唯一性校验作用域 |
+| `contracts/src/tables.ts:153` | `z.enum` | resolved, first_word, all | 否 | 否 | **格式层**：目录命令分词查找范围模式 |
+| `contracts/src/tables.ts:192` | `z.enum` | string, int, enum, ipv4, ipv6, mask, port, keyword | 否 | 否 | **格式层**：命令参数类型定义（CLI 签名解析器专用语法类型） |
+| `contracts/src/tables.ts:268` | `z.enum` | '', i | 否 | 否 | **格式层**：正则表达式修饰符（ECMAScript RegExp flags） |
+| `contracts/src/tables.ts:269` | `z.enum` | full, search | 否 | 否 | **格式层**：正则匹配模式（全字匹配 vs 局部搜索） |
+| `contracts/src/tables.ts:334` | `z.enum` | count, sum, min, max | 否 | **是** | **模型概念手写（偏离）**：C04 R[3] 度量聚合方式，词表中未建轴 |
+| `contracts/src/pack.ts:139` | `z.enum` | item, run | 否 | **是** | **模型概念手写（偏离）**：W02 R[1] 目标级别，词表中未建轴 |
+| `contracts/src/pack.ts:278` | `z.enum` | run, item | 否 | **是** | **模型概念手写（偏离）**：T03 R[4] 检查作用域，词表中未建轴 |
+| `contracts/src/product.ts:188` | `z.enum` | code_only, judgment_allowed | 否 | **是** | **模型概念手写（偏离）**：决定 15/jev-optin 生产器归位授权策略，未建词表轴 |
+| `contracts/src/pack.ts:193` | `as const` | builds, leases | 否 | 否 | **协议层**：工作流可声明请求的上下文键名 |
+| `contracts/src/pack.ts:530` | `as const` | author, returned_counterexample, retained_delivery | 否 | **是** | **模型概念手写（偏离）**：P09 R[0] 反例来源（P09 暂不在范围） |
+| `contracts/src/product.ts:31` | `as const` | product, line, build, base, family, platform | 否 | 否 | **格式层**：URL 模板变量名白名单 |
+| `contracts/src/resources.ts:21` | `as const` | GET, POST, PROPFIND | 否 | 否 | **协议层**：网络请求方法白名单（RFC 7231/4918） |
+| `contracts/src/resources.ts:23` | `as const` | json, text, xml, html, bytes | 否 | 否 | **协议层**：外部响应 MIME 数据类型归一化 |
+| `contracts/src/resources.ts:25` | `as const` | none, static_header, login_token | 否 | 否 | **协议层**：外部连接器认证机制分类 |
+| `contracts/src/resources.ts:28` | `as const` | plain, sha512_base64 | 否 | 否 | **协议层**：连接器密码散列算法 |
+| `contracts/src/resources.ts:31` | `as const` | raw, bearer | 否 | 否 | **协议层**：HTTP 凭据传输方案 |
+| `contracts/src/resources.ts:33` | `as const` | epoch_seconds, epoch_millis, iso8601 | 否 | 否 | **格式层**：时间编码格式分类 |
+| `contracts/src/knowledge.ts:33` | `as const` | release_record, device_echo, declared | 否 | 否 | **协议层**：已知构建来源元数据类别 |
+| `contracts/src/validation.ts:56` | `as const` | code, reason | 否 | 否 | **协议层**：反驳判定内部字段种类 |
+| `contracts/src/annotations.test.ts:21` | `as const` | 6 个 MCP 工具名 | 否 | 否 | **测试遍历**：对 6 个工具元数据进行循环断言 |
+| `contracts/src/annotations.test.ts:44` | `as const` | sync_write, job, notification | **重合** (子集) | 是 | **测试遍历**：词表轴 `EFFECT_CLASS` 的子集遍历 |
+| `contracts/src/leases.test.ts:189` | `as const` | extend, release, force_release, take_over | **重合** (子集) | 是 | **测试遍历**：词表轴 `LEASE_OP` 的子集遍历 |
+| `contracts/src/tool-shapes.test.ts:212` | `as const` | input, output | 否 | 否 | **测试遍历**：工具模式方向遍历 |
+
+##### 2. `hub/` 核心实现层（0 处 `z.enum` + 35 处 `as const`）
+- **`z.enum` 统计**：**0 处**。核心生产代码中所有类型均直接引用词表导出的 Zod 模式。
+- **`as const` 数组分类**：
+  1. **测试用例遍历词表轴**（6 处）：
+     - `hub/records/artifacts.test.ts:145`：`['model', 'function', 'human'] as const`（与词表轴 `PRODUCER_KIND` 完全一致）。
+     - `hub/runs/engine/terminals.test.ts:217`：`['expected', 'hint', 'reported_actual'] as const`（词表轴 `SOURCE_ROLE` 测试子集）。
+     - `hub/server/text.test.ts:795, 835`：`['delivered', 'rejected', 'quarantined', 'incomplete'] as const`（词表轴 `PARTITION` 遍历）。
+     - `hub/records/authorizations.test.ts:146, 153`：动作序列测试。
+  2. **内部 AST / JSON Schema 遍历关键字**（4 处）：
+     - `hub/runs/engine/slots.ts:198, 222` 与 `hub/server/text.ts:472`：`['allOf', 'anyOf', 'oneOf'] as const`（JSON Schema 规范组合关键字）。
+     - `hub/rules/interpreters/range.ts:49`：`['minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum'] as const`（JSON Schema 数值限制关键字）。
+  3. **底层平台、文件系统与工具配置**（14 处）：
+     - `hub/platform/layout.ts:36`：`['db', 'run', 'objects', 'vault', 'logs', 'backups', 'releases', 'config'] as const`（服务主目录子目录结构）。
+     - `hub/platform/postgres.ts:93`：`['initdb', 'pg_ctl', 'postgres'] as const`（PostgreSQL 命令行工具名）。
+     - `hub/platform/backup.ts:36`、`hub/platform/rehearse.ts`、`hub/platform/restore.ts`：备份区域与目录清单。
+     - `hub/records/scan.ts:12`：`CREDENTIAL_DETECTORS`（合规敏感词检测器类型名）。
+     - `hub/rules/check.ts:112`：`PUBLIC_DETAIL`（错误公开字段过滤白名单）。
+     - `hub/testing/postgres.ts:65`：`['SIGTERM', 'SIGINT', 'SIGHUP'] as const`（OS 信号）。
+  4. **代码同步手写**（1 处）：
+     - `hub/runs/packs/validate.ts:421`：`['item', 'run'] as const`（与 pack.ts 对应的作用域遍历，归入偏离 7）。
+
+##### 3. `packs/` 任务包层（0 处 `z.enum` + 33 处 `as const`）
+- **`z.enum` 统计**：**0 处**。
+- **`as const` 分析**：全部属于**产品知识与工作流包内部私有业务逻辑**（架构第 2 节“产品知识活在包内，绝不进核心”）：
+  - `packs/product/apv/functions/cases-rules.ts:32`：`['Functional', 'Configuration', 'Integration', 'Compatibility', 'Negative', 'Stress'] as const`（APV 产品特定的 6 大测试用例分类标签，属于 APV 产品领域知识）。
+  - `packs/workflow/case-review/functions/project.ts:47`：`['tagged', 'marked'] as const`（决定 18 用例提取规则包内部参数）。
+  - `packs/workflow/case-review-report/functions/checks.ts:13`：`['PASS', 'PARTIAL', 'FAIL'] as const`（报告层状态分类）。
+  - `packs/workflow/test-bed/functions/manifest.ts:7, 24`：设备管理包内部设备拓扑类型与 TCP/UDP 协议。
+
+##### 4. `scripts/` 外部脚本层（0 处 `z.enum` + 5 处 `as const`）
+- **`z.enum` 统计**：**0 处**。
+- **`as const` 分析**：
+  - `scripts/real/gold/command-diff.test.ts:128`：`['added', 'removed', 'modified'] as const`（**与词表轴 `CHANGE_KIND` 取值完全重合**）。
+  - `scripts/real/circle-home.ts:25`：`['list_task_packs', 'upload_file', 'start_run', 'get_nodes', 'resolve_reference', 'submit_result'] as const`（6 个 MCP 工具名）。
+  - `scripts/real/benchmark/inject.ts:12`：缺陷注入工具专用测试缺陷类型列表。
 
 ### 3.3 未知从不映射成错误
 - **核对标准**：未知（unknown）是诚实的不确定状态，绝不能被包装为错误（`isError: true`）。
