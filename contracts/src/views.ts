@@ -3,15 +3,20 @@
 // projection and check functions of a pack. A view is derived data, never a second source of truth: every entry in it carries
 // its tree reference. The impact view answers "what changed between two builds, and which entries of another kind sit on the
 // changed nodes" (K01 R[1]: the version difference is the regression scope).
-//   knowledge:impact:<product>:<from build>..<to build>[?changed=definition,behaviour&attached=case][&attached_fields=document,node,title]
-//     (with attached_fields the attached entries carry only those data fields and an empty statement; the changed entries are untouched)
+//   knowledge:impact:<product>:<from build>..<to build>[?changed=definition,behaviour&attached=case][&attached_fields=document,node,title][&catalog=commands@1]
+//     (with attached_fields the attached entries carry only those data fields and an empty statement; the changed entries are untouched.
+//     With catalog, only the members of that catalog count as changes, read per root like the catalog reader (the kind and producer
+//     from the product's declaration for that root) and compared by syntax — the descriptive fields of catalog-entry@1 (parameter
+//     descriptions, the entry summary), the per-root references and the signature ids are out, overloads compare as a set; changed may
+//     then be omitted (the catalog's kind) or must equal it. A root that does not declare the catalog is a refusal, not an empty answer.
+//     The catalog name holds a literal @ in the id; the percent-escaped commands%401 reads the same)
 //   knowledge:facets:<product>:<build>?kind=case&by=line,module,has_expected   (counts of entries by data fields)
 //   knowledge:index:<product>:<build>?kind=case&key=defects[&only=1,2,3][&fields=document,node,title]   (data value -> the entries that carry it;
 //     with fields the entries carry only those data fields and an empty statement, so a big index fits the byte budget)
 // `<build>` is a build name of any name family; the reader resolves aliases and answers for the root the build uses.
 import { z } from 'zod';
 import { ChangeKindSchema, EntryKindSchema } from '../generated/vocabulary.ts';
-import { Sha256 } from './common.ts';
+import { Sha256, Versioned } from './common.ts';
 import { TreePath, referenceUriOf } from './reference.ts';
 
 /** Most changed paths and most attached entries one answer holds; beyond it the answer says it is cut and how. */
@@ -53,12 +58,15 @@ export const ImpactView = z.strictObject({
   product: z.string().min(1),
   from: z.strictObject({ build: z.string().min(1), root: Sha256 }),
   to: z.strictObject({ build: z.string().min(1), root: Sha256 }),
-  changed_kinds: z.array(EntryKindSchema).min(1).describe('the entry kinds whose difference counts as a change; default definition and behaviour'),
+  changed_kinds: z.array(EntryKindSchema).min(1).describe('the entry kinds whose difference counts as a change; default definition and behaviour; with catalog, the single kind of the catalog members'),
   attached_kinds: z.array(EntryKindSchema).describe('the entry kinds listed on the changed nodes; default case'),
   attached_fields: z
     .array(DataFieldName)
     .optional()
     .describe('the request asked for only these data fields per attached entry: they carry them with an empty statement; absent means full entries (the changed entries are never slimmed)'),
+  catalog: Versioned.optional().describe(
+    'the request filtered the changes to the members of this catalog, read per root from the declaration of the product and compared by syntax (catalog-entry@1 without the descriptive fields, references and signature ids); absent: no catalog, every entry of the changed kinds counts',
+  ),
   changes: z.array(PathChange).max(MAX_IMPACT_PATHS),
   placements: z.array(Placement).max(MAX_IMPACT_PATHS).describe('only nodes that hold at least one attached entry'),
   entries: z

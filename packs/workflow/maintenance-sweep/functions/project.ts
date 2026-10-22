@@ -19,6 +19,12 @@ export interface ProjectLimits {
 }
 export const LIMITS: ProjectLimits = { maxItems: 4000, outputBytes: 6 * 1024 * 1024 };
 
+/** The conclusion sentence when the bound view names no catalog: the changes were counted by entry kind alone. */
+const CATALOG_HINT = {
+  kind: 'catalog-hint',
+  message: '影响视图没有限定目录：只按条目种类比，可能混进其他生产器在同一路径上的同类条目（标识加 catalog=commands@1 限定到命令目录）',
+};
+
 interface Warning {
   code: string;
   message: string;
@@ -63,7 +69,7 @@ export function projectItems(input: unknown, limits: Partial<ProjectLimits> = {}
     return refusal(
       'changed_kinds',
       `影响视图按 ${parsed.view.changedKinds.join('、')} 算变更，巡检范围只按命令定义（definition）的变化算`,
-      `视图引用写成 knowledge:impact:<产品>:<起始构建>..<目标构建>?changed=definition&attached=case&attached_fields=document,node,title（带上 changed=definition）`,
+      `视图引用写成 knowledge:impact:<产品>:<起始构建>..<目标构建>?changed=definition&attached=case&attached_fields=document,node,title&catalog=commands@1（带上 changed=definition 和目录）`,
     );
   }
   // The behaviour view of the same pair of builds (optional): never in the sweep, only a clue paragraph.
@@ -76,7 +82,7 @@ export function projectItems(input: unknown, limits: Partial<ProjectLimits> = {}
   }
   const out = {
     items: sweep.items.map((item) => itemOf(item, sha256)),
-    groups: [sweep.note, ...(clue !== null ? [clue] : [])],
+    groups: [sweep.note, ...(clue !== null ? [clue] : []), ...(parsed.view.catalog === null ? [CATALOG_HINT] : [])],
     warnings: sweep.warnings.slice(0, 100),
   };
   const bytes = Buffer.byteLength(JSON.stringify(out), 'utf8');

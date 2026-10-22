@@ -207,16 +207,16 @@ export const CatalogParam = z
     maxLength: z.number().int().nonnegative().optional().describe('string: maximum length in code points'),
     values: z.array(z.string().min(1)).optional().describe('enum: the allowed values'),
     keyword: z.string().min(1).optional().describe('keyword: the literal word; defaults to the parameter name'),
-    description: z.string().optional(),
+    description: z.string().optional().describe('Descriptive text; descriptive content is excluded when an impact view compares catalog members by syntax'),
   })
   .describe('One typed parameter of a signature');
 export type CatalogParam = z.infer<typeof CatalogParam>;
 
 export const CatalogSignature = z
   .strictObject({
-    id: z.string().min(1).optional().describe('Stable identity of the overload; derived from the position when absent'),
+    id: z.string().min(1).optional().describe('Stable identity of the overload; derived from the position when absent. Per root: excluded when an impact view compares catalog members by syntax (overloads compare as a set)'),
     params: z.array(CatalogParam).describe('Positional parameters in order'),
-    reference: ReferenceUri.optional().describe('Where this argument list is defined'),
+    reference: ReferenceUri.optional().describe('Where this argument list is defined; references differ per root and are excluded when an impact view compares catalog members by syntax'),
   })
   .describe('One overload of a catalog entry');
 export type CatalogSignature = z.infer<typeof CatalogSignature>;
@@ -225,12 +225,13 @@ export const CatalogEntry = z
   .strictObject({
     words: z.array(z.string().min(1)).min(1).describe('The command head, word by word'),
     signatures: z.array(CatalogSignature).describe('Overloads; an entry without signatures takes no arguments'),
-    reference: ReferenceUri.describe('Tree reference of the node that holds the entry'),
-    summary: z.string().optional(),
+    reference: ReferenceUri.describe('Tree reference of the node that holds the entry; references differ per root and are excluded when an impact view compares catalog members by syntax'),
+    summary: z.string().optional().describe('Descriptive text; descriptive content is excluded when an impact view compares catalog members by syntax'),
   })
   .meta({
     title: 'catalog-entry@1',
-    description: 'One member of a closed catalog (C07): the command head, its overloads with typed parameters and the tree reference of its node',
+    description:
+      'One member of a closed catalog (C07): the command head, its overloads with typed parameters and the tree reference of its node. An impact view asked for catalog=<id> compares members by syntax: the words and the signatures as a set, each signature without its id and reference and each parameter without its description, the entry summary left out',
   });
 export type CatalogEntry = z.infer<typeof CatalogEntry>;
 

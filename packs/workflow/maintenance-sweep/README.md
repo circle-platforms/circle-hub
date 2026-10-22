@@ -11,7 +11,7 @@ The product name in the tests (`widget`) and the build names (`Rel_W_1_0_1`, `Re
 
 | Path | Content |
 | --- | --- |
-| `workflow.json` | input `impact` (`knowledge:impact`, one, required); parameter `ignore_fields`; `product: { catalogs: [] }` |
+| `workflow.json` | input `impact` (`knowledge:impact`, one, required; the id asks for the slim cataloged view: `?catalog=commands@1&attached_fields=document,node,title` — changes counted among the command catalog's members, compared by syntax); parameter `ignore_fields`; `product: { catalogs: [] }` |
 | `requirements.json` | `command_exists` and `command_unchanged`; both fact, item, static, bookkeeping |
 | `checks.json` | `command_exists` is blocking and names its basis; `command_unchanged` is advisory. Both are `functions/check.ts` |
 | `functions/sweep.ts` | which cases are items |
@@ -46,7 +46,9 @@ they are compared as an array (`/0/...`). One definition on each side is compare
 The run note always says that nothing is claimed about cases the index does not hold. When `skipped.from` is above zero
 it also says the earlier build's index lacks that many listed documents, so a clean result is not proof that no case is
 stale. The same sentence is an unknown cross-item claim (`missing_input`) from `command_exists` whenever the projection
-note is present. A truncated view adds `integrity_unproven`.
+note is present. A truncated view adds `integrity_unproven`. A bound view that names no catalog adds one conclusion
+line (`catalog-hint`): the changes were then counted by entry kind alone, and another producer's entries on the same
+path may be mixed in.
 
 ## Decisions
 

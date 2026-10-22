@@ -59,7 +59,7 @@
           "observation"
         ]
       },
-      "description": "the entry kinds whose difference counts as a change; default definition and behaviour"
+      "description": "the entry kinds whose difference counts as a change; default definition and behaviour; with catalog, the single kind of the catalog members"
     },
     "attached_kinds": {
       "type": "array",
@@ -82,6 +82,11 @@
         "type": "string",
         "pattern": "^[a-z][a-z0-9_]{0,40}$"
       }
+    },
+    "catalog": {
+      "description": "the request filtered the changes to the members of this catalog, read per root from the declaration of the product and compared by syntax (catalog-entry@1 without the descriptive fields, references and signature ids); absent: no catalog, every entry of the changed kinds counts",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_.-]*@(?:0|[1-9][0-9]*)$"
     },
     "changes": {
       "maxItems": 20000,

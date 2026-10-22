@@ -11,7 +11,7 @@ The product name in the view (`widget`) and the build names (`Rel_W_1_0_1`, `Rel
 | Path | Content |
 | --- | --- |
 | `pack.json` | manifest of the pack files (`pack-files.ts --write`) |
-| `workflow.json` | input `impact` (`knowledge:impact`, one, required; the id asks for the slim view: `?attached_fields=document,node,title,priority,negative`); parameters `priorities`, `include_added`; `product: { catalogs: [] }` |
+| `workflow.json` | input `impact` (`knowledge:impact`, one, required; the id asks for the slim cataloged view: `?catalog=commands@1&attached_fields=document,node,title,priority,negative` — changes counted among the command catalog's members, compared by syntax); parameters `priorities`, `include_added`; `product: { catalogs: [] }` |
 | `requirements.json` | `in_scope` (item) and `uncovered_changes` (run); both fact, static, bookkeeping |
 | `checks.json` | both checks are `functions/check.ts`, apply `run`, subject `functions/subject.ts`, advisory |
 | `slots.schema.json` | empty |
@@ -44,7 +44,8 @@ references stay once per path in `note.details`. The case data (document, node, 
 that has no case in the later build, with no item, so it is a cross-item claim. The statement says this is not a
 failure. When `skipped.to` is above zero, the statement and the run note say the later build's index lacks that many
 listed documents. A truncated view adds an unknown of `integrity_unproven` and does not claim that the list is
-complete.
+complete. A bound view that names no catalog adds one conclusion line (`catalog-hint`): the changes were then counted
+by entry kind alone, and another producer's entries on the same path may be mixed in.
 
 The uncovered list is computed before the priority filter and stored on the projection note. Filtering a case out does
 not make its path uncovered. `include_added: false` drops added paths from the scope and from the uncovered list. An

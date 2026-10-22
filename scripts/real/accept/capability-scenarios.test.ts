@@ -41,7 +41,7 @@ describe('regression-scope scenario', () => {
   const scenario = regressionScope(gold);
   test('starts the run with the impact view of the build pair on turn 0', () => {
     assert.deepEqual(scenario.respond(turn(0)), [
-      { tool: 'hub_start_run', input: { pack: 'regression-scope', inputs: { impact: { external: 'knowledge:impact:apv:Rel_APV_10_6_1_56..Rel_APV_10_6_1_57?changed=definition&attached=case&attached_fields=document,node,title,priority,negative' } } } },
+      { tool: 'hub_start_run', input: { pack: 'regression-scope', inputs: { impact: { external: 'knowledge:impact:apv:Rel_APV_10_6_1_56..Rel_APV_10_6_1_57?changed=definition&attached=case&attached_fields=document,node,title,priority,negative&catalog=commands@1' } } } },
     ]);
     assert.deepEqual(scenario.respond(turn(1)), [{ text: '对比完成。' }]);
   });
@@ -71,7 +71,7 @@ describe('maintenance-sweep scenario', () => {
   const scenario = maintenanceSweep(gold);
   test('starts the run on turn 0', () => {
     assert.deepEqual(scenario.respond(turn(0)), [
-      { tool: 'hub_start_run', input: { pack: 'maintenance-sweep', inputs: { impact: { external: 'knowledge:impact:apv:Rel_APV_10_6_1_56..Rel_APV_10_6_1_57?changed=definition&attached=case&attached_fields=document,node,title' } } } },
+      { tool: 'hub_start_run', input: { pack: 'maintenance-sweep', inputs: { impact: { external: 'knowledge:impact:apv:Rel_APV_10_6_1_56..Rel_APV_10_6_1_57?changed=definition&attached=case&attached_fields=document,node,title&catalog=commands@1' } } } },
     ]);
   });
   test('holds when removed and changed cases sit on their paths with their marks', () => {

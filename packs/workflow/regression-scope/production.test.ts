@@ -15,18 +15,18 @@ const skip = (await osIsolationAvailable()) ? false : 'no OS network isolation o
 let postgres: TemporaryPostgres;
 let hub: Hub;
 
-const REVIEW = 'knowledge:impact:widget:Rel_W_1_0_1..Rel_W_1_0_2?attached_fields=document,node,title,priority,negative';
-const SKIPPED = 'knowledge:impact:widget:Rel_W_1_0_1..Rel_W_1_0_3?attached_fields=document,node,title,priority,negative';
-const EMPTY = 'knowledge:impact:widget:Rel_W_1_0_0..Rel_W_1_0_2?attached_fields=document,node,title,priority,negative';
+const REVIEW = 'knowledge:impact:widget:Rel_W_1_0_1..Rel_W_1_0_2?attached_fields=document,node,title,priority,negative&catalog=commands@1';
+const SKIPPED = 'knowledge:impact:widget:Rel_W_1_0_1..Rel_W_1_0_3?attached_fields=document,node,title,priority,negative&catalog=commands@1';
+const EMPTY = 'knowledge:impact:widget:Rel_W_1_0_0..Rel_W_1_0_2?attached_fields=document,node,title,priority,negative&catalog=commands@1';
 const bytes = (value: unknown): Uint8Array => new TextEncoder().encode(JSON.stringify(value));
 
 before(async () => {
   postgres = await startPostgres();
   if (skip) return;
   hub = await openHub(postgres, {});
-  hub.external.put(REVIEW, bytes(buildImpact(reviewChanges(), reviewOptions())));
-  hub.external.put(SKIPPED, bytes(buildImpact(reviewChanges(), { ...reviewOptions(), skipped: { from: 0, to: 4 } })));
-  hub.external.put(EMPTY, bytes(buildImpact([])));
+  hub.external.put(REVIEW, bytes(buildImpact(reviewChanges(), { ...reviewOptions(), catalog: 'commands@1' })));
+  hub.external.put(SKIPPED, bytes(buildImpact(reviewChanges(), { ...reviewOptions(), catalog: 'commands@1', skipped: { from: 0, to: 4 } })));
+  hub.external.put(EMPTY, bytes(buildImpact([], { catalog: 'commands@1' })));
 });
 after(async () => {
   await hub?.close();
@@ -79,8 +79,9 @@ describe('a production run of regression-scope', { skip }, () => {
     );
     assert.deepEqual([first.fields.priority, first.fields.negative], [1, true]);
     assert.deepEqual(
+      // 假读取器回的修订是 "1"，标识末尾已是 @1（catalog=commands@1）：withRevision 视为已钉定，不再重复拼。
       run.sources.map((s) => s.external),
-      [`${REVIEW}@1`],
+      [REVIEW],
     );
 
     const production = detail.production!;
@@ -280,7 +281,7 @@ describe('the real knowledge reader', () => {
     const runHub = await openHub(postgres, { knowledge: createKnowledgeReader(w.knowledge), kit: { kit: w.kit, admin: { id: w.admin.id, name: w.admin.name, role: 'admin' }, alice: { id: w.user.id, name: w.user.name, role: 'user' }, bob: { id: w.outsider.id, name: w.outsider.name, role: 'user' } } });
     // The world's reader user runs the pack (the admin of the same database assigns it).
 
-    const reference = 'knowledge:impact:acme:Rel_WDG_7_7_7..Rel_WDG_7_7_8?changed=definition&attached=case&attached_fields=document,node,title,priority,negative';
+    const reference = 'knowledge:impact:acme:Rel_WDG_7_7_7..Rel_WDG_7_7_8?changed=definition&attached=case&attached_fields=document,node,title,priority,negative&catalog=catalog@1';
     // The knowledge reader names the reader of the product's pack: the world's reader user (same database).
     const detail = await runHub.service.startRunDetailed(runHub.alice, { pack: 'regression-scope', inputs: { impact: { external: reference } } }, call());
     assert.equal(detail.answer.call_result, 'ok', JSON.stringify(detail.answer.errors));

@@ -28,7 +28,7 @@ export default function scenario(gold: SweepGold): Scenario {
     prompt: `请对比 ${gold.earlier} 和 ${gold.later} 两个构建，找出需要维护的用例。`,
     respond: (turn) =>
       turn.index === 0
-        ? [{ tool: 'hub_start_run', input: { pack, inputs: { impact: { external: `knowledge:impact:${gold.product}:${gold.earlier}..${gold.later}?changed=definition&attached=case&attached_fields=document,node,title` } } } }]
+        ? [{ tool: 'hub_start_run', input: { pack, inputs: { impact: { external: `knowledge:impact:${gold.product}:${gold.earlier}..${gold.later}?changed=definition&attached=case&attached_fields=document,node,title&catalog=commands@1` } } } }]
         : [{ text: '巡检完成。' }],
     check(turns: LoggedTurn[]): Check[] {
       const text = resultTexts(turns).join('\n');

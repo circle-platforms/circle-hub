@@ -48,7 +48,7 @@
     {
       "code": "regression-scope.changed_kinds",
       "when": "影响视图不是按 changed=definition 要的（变更种类里不止定义）。回归范围只按命令定义的变化算（决定 11），手册行为的变化不算",
-      "fix": "视图引用写成 knowledge:impact:<产品>:<起始构建>..<目标构建>?changed=definition&attached=case&attached_fields=document,node,title,priority,negative"
+      "fix": "视图引用写成 knowledge:impact:<产品>:<起始构建>..<目标构建>?changed=definition&attached=case&attached_fields=document,node,title,priority,negative&catalog=commands@1"
     },
     {
       "code": "regression-scope.behaviour_view",

@@ -5,7 +5,7 @@
 // through CompositionView, whether they are one record or parts.
 import { createHash } from 'node:crypto';
 import { EntryKindSchema, type ChangeKind, type EntryKind } from '../../contracts/generated/vocabulary.ts';
-import type { CompositionRow, TreeNodeBody } from '../../contracts/src/knowledge.ts';
+import type { CompositionRow, RootCatalog, TreeNodeBody } from '../../contracts/src/knowledge.ts';
 import type { Applicability } from '../../contracts/src/product.ts';
 import { TreePath } from '../../contracts/src/reference.ts';
 import { MAX_IMPACT_PATHS } from '../../contracts/src/views.ts';
@@ -18,7 +18,7 @@ import { CompositionView, type ReadRow } from './composition.ts';
 import { mapLimited } from './concurrency.ts';
 import type { KnowledgeContext } from './context.ts';
 import { canonicalSize, compareText, cutText, entryDigest, type EntryContent } from './digest.ts';
-import { catalogData } from './produce.ts';
+import { catalogCanon, catalogData } from './produce.ts';
 import { Lru, type ProduceAction } from './store.ts';
 
 /** K02 F[6]: applicability the producer could not read from the source structure. */
@@ -487,6 +487,31 @@ export class TreeReading {
             );
       this.#catalogs.set(key, catalog);
       return catalog;
+    }
+    return null;
+  }
+
+  /**
+   * The declaration of a catalog in the newest production of a root that declares it, and its members by entry digest:
+   * the path and the syntax canon (catalogCanon). Same reading as catalog(): the kind and the producer from the
+   * declaration, catalog-parseable rows only. Null when no production of the root declares the catalog.
+   */
+  async catalogMembers(root: string, catalogId: string): Promise<{ declaration: RootCatalog; members: Map<string, { path: string; canon: string }> } | null> {
+    if (!SHA256.test(root)) return null;
+    const productions = await this.#context.store.productionsOfRoot(root);
+    for (let i = productions.length - 1; i >= 0; i--) {
+      const view = await this.#view(productions[i]);
+      const declaration = view?.body.catalogs.find((c) => c.id === catalogId);
+      if (view === null || declaration === undefined) continue;
+      const producer = declaration.producer;
+      const rows = await view.rowsWithContent(new Set([declaration.entry_kind]), (row) => producer === undefined || row.producers.includes(producer));
+      const members = new Map<string, { path: string; canon: string }>();
+      for (const row of rows) {
+        const canon = catalogCanon(row.content.data);
+        if (canon === null) continue;
+        members.set(row.entry, { path: row.path, canon });
+      }
+      return { declaration, members };
     }
     return null;
   }
