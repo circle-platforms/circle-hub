@@ -95,6 +95,26 @@ describe('parseBuildCandidates', () => {
     assert.ok(!byName.has('Rel_APV_10_5_1_101'), 'build from another version line must be excluded');
   });
 
+  test('every candidate carries the built time of the page and the based-on base', () => {
+    const candidates = parseBuildCandidates(SYNTHETIC_LISTING_HTML, '10.6.1');
+    const byName = new Map(candidates.map((c) => [c.name, c]));
+    assert.equal(byName.get('Rel_APV_10_6_1_57')?.built, '2026-05-12T10:20:30');
+    assert.equal(byName.get('Rel_APV_10_6_1_56')?.built, '2026-05-10T09:00:00');
+    assert.equal(byName.get('Rel_NSAE_10_6_1_41')?.built, '2026-05-20T11:00:00');
+  });
+
+  test('a build whose header carries no readable build time gets built null and still lists', () => {
+    const html = `
+      Rel_APV_10_6_1_57 (build on 2026-05-12 10:20:30 ): Released on 2026-05-14
+      <BLOCKQUOTE><A href=/builds/command_tree-Rel_APV_10_6_1_57.xml>tree</A></BLOCKQUOTE>
+      Rel_APV_10_6_1_55 (build on 2026-13-40 10:00:00 ):
+      <BLOCKQUOTE><A href=/builds/command_tree-Rel_APV_10_6_1_55.xml>tree</A></BLOCKQUOTE>
+    `;
+    const candidates = parseBuildCandidates(html, '10.6.1');
+    const byName = new Map(candidates.map((c) => [c.name, c]));
+    assert.equal(byName.get('Rel_APV_10_6_1_55')?.built, null);
+  });
+
   test('resolves alias chains when base build points to another alias or base', () => {
     const htmlWithChain = `
       Rel_APV_10_6_1_57 (build on 2026-05-12 10:20:30 ): Released on 2026-05-14

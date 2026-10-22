@@ -10,6 +10,8 @@ export interface BuildCandidate {
   name: string;
   family: string;
   base: string;
+  /** The page's “build on” time, ISO YYYY-MM-DDTHH:mm:ss; null when the page carries none or an unreadable one. */
+  built: string | null;
   released: string | null;
 }
 
@@ -71,8 +73,16 @@ function parseRawEntries(html: string): RawEntry[] {
   const matches: Array<{ name: string; built: string | null; index: number; matchEnd: number }> = [];
   for (const m of html.matchAll(entryPattern)) {
     const cleanName = m[1].replace(/<[^>]+>/g, '').trim();
-    const timeMatch = /([0-9]{4}[-/.][0-9]{2}[-/.][0-9]{2}\s+[0-9]{2}:[0-9]{2}:[0-9]{2})/.exec(m[2]);
-    const built = timeMatch ? timeMatch[1].replace(/[/.]/g, '-').replace(/\s+/, 'T') : null;
+    const timeMatch = /([0-9]{4}[-/.][0-9]{2}[-/.][0-9]{2})\s+([0-9]{2}:[0-9]{2}:[0-9]{2})/.exec(m[2]);
+    let built: string | null = null;
+    if (timeMatch !== null) {
+      const date = timeMatch[1].replace(/[/.]/g, '-');
+      const [year, month, day] = date.split('-').map((p) => parseInt(p, 10));
+      const [hour, minute, second] = timeMatch[2].split(':').map((p) => parseInt(p, 10));
+      // A real calendar time only: month 01-12, day 01-31, hour 00-23, minute/second 00-59.
+      const plausible = month >= 1 && month <= 12 && day >= 1 && day <= 31 && hour <= 23 && minute <= 59 && second <= 59;
+      if (plausible) built = `${date}T${timeMatch[2]}`;
+    }
     matches.push({ name: cleanName, built, index: m.index ?? 0, matchEnd: (m.index ?? 0) + m[0].length });
   }
 
@@ -167,6 +177,7 @@ export function parseBuildCandidates(html: string, targetLine: string): BuildCan
       name: entry.name,
       family: entry.family,
       base,
+      built: entry.built,
       released: entry.released,
     });
   }

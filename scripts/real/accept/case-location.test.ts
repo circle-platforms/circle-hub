@@ -80,6 +80,34 @@ describe('case-location scenario with buildCandidates', () => {
     assert.ok(allOk(scenario, turnsOf(baseGood)), JSON.stringify(scenario.check(turnsOf(baseGood))));
   });
 
+  test('compares the built time and the based-on base of each candidate when gold carries them', () => {
+    const withTimes = caseLocation({
+      document: '90002',
+      product: 'apv',
+      line: '10.6.1',
+      buildCandidates: {
+        candidates: [
+          { name: 'Rel_APV_10_6_1_60', family: 'APV', base: 'Rel_APV_10_6_1_60', built: '2026-09-18T00:00:00', released: '2026-09-20' },
+          { name: 'Rel_NSAE_10_6_1_57', family: 'NSAE', base: 'Rel_APV_10_6_1_57', built: '2026-09-01T00:00:00', released: '2026-09-05' },
+        ],
+        written: [],
+      },
+    });
+    const good = [
+      '运行 run_1 完成：任务包 case-location@1.0.0',
+      'location 用例定位：满足 1',
+      '产品线 apv；版本 10.6.1（目录，置信度高）',
+      '构建候选：Rel_APV_10_6_1_60（APV）制作于 2026-09-18 00:00，已发布 2026-09-20；Rel_NSAE_10_6_1_57（NSAE，基于 Rel_APV_10_6_1_57）制作于 2026-09-01 00:00，已发布 2026-09-05',
+    ].join('\n');
+    assert.ok(allOk(withTimes, turnsOf(good)), JSON.stringify(withTimes.check(turnsOf(good))));
+    const wrongTime = good.replace('制作于 2026-09-18 00:00', '制作于 2026-09-19 00:00');
+    assert.ok(!allOk(withTimes, turnsOf(wrongTime)), 'a wrong built time fails');
+    const noTime = good.replace('）制作于 2026-09-18 00:00，已发布', '），已发布');
+    assert.ok(!allOk(withTimes, turnsOf(noTime)), 'a missing built time fails');
+    const wrongBase = good.replace('（NSAE，基于 Rel_APV_10_6_1_57）', '（NSAE，基于 Rel_APV_10_6_1_60）');
+    assert.ok(!allOk(withTimes, turnsOf(wrongBase)), 'a wrong based-on build fails');
+  });
+
   test('fails when candidate set is missing one candidate', () => {
     const missingOne = baseGood.replace(
       '构建候选：Rel_APV_10_6_1_57、Rel_NSAE_10_6_1_57（依据 Rel_APV_10_6_1_57）',

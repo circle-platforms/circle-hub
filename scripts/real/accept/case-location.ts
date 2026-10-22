@@ -8,6 +8,8 @@ export interface BuildCandidateGold {
   name: string;
   family: string;
   base: string;
+  /** The page's “build on” time, ISO YYYY-MM-DDTHH:mm:ss; compared when present. */
+  built?: string | null;
   released?: string | null;
 }
 
@@ -36,6 +38,7 @@ export interface LocationGold {
 interface ParsedCandidate {
   name: string;
   base: string;
+  built: string | null;
   raw: string;
 }
 
@@ -47,7 +50,8 @@ function parseReportedCandidates(text: string): ParsedCandidate[] {
   const endMatch = /(?:\n\s*(?:写出的构建名|问题与未知|条目|要求项|规则|结果)|\n\n)/.exec(after);
   const section = endMatch ? after.slice(0, endMatch.index) : after;
 
-  const parts = section.split(/[、,;\n]/);
+  // One candidate per sentence: 名（族，基于 基础构建）制作于 …，已发布 …；分隔符是候选之间的“；”。
+  const parts = section.split(/[、,\n]|(?<=\d)[；;](?=(?:Rel|Beta)_)/u);
   const candidates: ParsedCandidate[] = [];
   for (const part of parts) {
     const nameMatch = /(?:Rel|Beta)_[A-Za-z0-9_.\-]+/.exec(part);
@@ -55,7 +59,9 @@ function parseReportedCandidates(text: string): ParsedCandidate[] {
     const name = nameMatch[0];
     const baseMatch = /(?:依据|基于|based\s+on)\s*((?:Rel|Beta)_[A-Za-z0-9_.\-]+)/i.exec(part);
     const base = baseMatch ? baseMatch[1] : name;
-    candidates.push({ name, base, raw: part.trim() });
+    const builtMatch = /制作于\s*([0-9]{4}-[0-9]{2}-[0-9]{2})(?:\s+([0-9]{2}:[0-9]{2}))?/.exec(part);
+    const built = builtMatch ? `${builtMatch[1]}T${builtMatch[2] ?? '00:00'}:00` : null;
+    candidates.push({ name, base, built, raw: part.trim() });
   }
   return candidates;
 }
@@ -116,6 +122,36 @@ export default function scenario(gold: LocationGold): Scenario {
             expected: `注明依据构建 ${alias.base}`,
             actual: aliasOk ? `已带出依据构建 ${alias.base}` : (item ? `未注明依据构建（实际：${item.raw}）` : '未列出该候选'),
             ok: aliasOk,
+          });
+        }
+
+        // The built time and the based-on base of every candidate the gold carries them for
+        for (const gold of goldCandidates) {
+          if (gold.built === undefined && gold.base === undefined) continue;
+          const item = reported.find((r) => r.name === gold.name);
+          const expected: string[] = [];
+          const actual: string[] = [];
+          let ok = item !== undefined;
+          if (gold.built !== undefined) {
+            const want = gold.built === null ? '制作时间未知' : gold.built.replace('T', ' ').slice(0, 16);
+            expected.push(`制作于 ${gold.built ?? '未知'}`);
+            const got = item === undefined ? '' : item.built === null ? '制作时间未知' : item.built.replace('T', ' ').slice(0, 16);
+            actual.push(got);
+            ok = ok && (item !== undefined && item.built === gold.built);
+            void want;
+          }
+          if (gold.base !== undefined && gold.base !== gold.name) {
+            expected.push(`基于 ${gold.base}`);
+            const got = item === undefined ? '' : item.base;
+            actual.push(got === gold.base ? `基于 ${gold.base}` : `基于 ${got || '（未注明）'}`);
+            ok = ok && item !== undefined && item.base === gold.base;
+          }
+          checks.push({
+            area,
+            name: `候选 ${gold.name} 的制作时间与基础构建与独立依据一致`,
+            expected: expected.join('；'),
+            actual: ok ? actual.join('；') : item === undefined ? '未列出该候选' : `不一致（${actual.join('；')}）`,
+            ok,
           });
         }
 
