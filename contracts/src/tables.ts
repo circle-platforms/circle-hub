@@ -6,8 +6,9 @@
 // limited pattern language of pattern@1 with mandatory, size-limited samples, and names the source or decision that produced it
 // (`origin`). A blocking table names the contract clause it relies on (`basis`, C05 R[1]); without one its tier is advisory.
 // Missing is not empty (C04 R[4]): a location is missing when the member it names, up to its first wildcard, does not exist.
-// The option names of the table language (unicode, case, whitespace, value and parameter types, within, scope, flags, mode,
-// measure) are written here, not in the model vocabulary: see hub/rules/README.md, "Needs from other packages".
+// The option names of the table language (unicode, case, whitespace, value and parameter types, within, scope, flags,
+// mode) are written here, not in the model vocabulary (measure comes from the model vocabulary): see hub/rules/README.md,
+// "Needs from other packages".
 import { z } from 'zod';
 import { CheckTierSchema, MeasureSchema, ReasonSchema, VerdictSchema } from '../generated/vocabulary.ts';
 import { ReferenceUri } from './reference.ts';
