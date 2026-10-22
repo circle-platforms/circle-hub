@@ -1,9 +1,9 @@
 // Tests of the traceability scenario (synthetic tool results):
 // Verifies traceability checks and paging against scripted turns:
-// - 个数对: count matches gold and all case IDs appear in full result -> passes
+// - 个数对、未知行正确: count matches gold and top cases in statement belong to gold -> passes
+// - 未知缺陷两行（只有一行含标记）仍相符: two lines for unknown defect, only one has marker -> passes
+// - 个数对但用例号不属于 gold 的不符: count matches but statement case id not in gold -> fails
 // - 个数差一: reported case count differs by one -> fails
-// - 用例号缺一个: one case ID missing in full result -> fails
-// - 未知行正确: defect with no cases has "无已索引用例（未知）" in entry line -> passes
 // - 未知行被写成有用例: defect with no cases is reported as having cases -> fails
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
@@ -45,7 +45,7 @@ describe('traceability scenario checks', () => {
     ],
   };
 
-  test('holds when count matches, case IDs appear in full result, and unknown defect is honest (个数对、未知行正确)', () => {
+  test('holds when count matches, statement lists top cases belonging to gold, and unknown defect is honest (个数对、未知行正确)', () => {
     const scenario = traceability(gold);
     const startRunText = [
       '运行 run_1 完成：任务包 traceability',
@@ -55,9 +55,7 @@ describe('traceability scenario checks', () => {
       '- 7402 | 缺陷 7402 | 已知；无已索引用例（未知）',
     ].join('\n');
     const fullResultText = [
-      '缺陷 7300 的用例列表：',
-      '用例 9001:c-1（会话检查）',
-      '用例 9001:c-2（证书查看）',
+      '陈述：缺陷 7300（已修复）：2 个已索引用例追溯：9001:c-1 会话检查；9001:c-2 证书查看，支持，traceability.traced',
     ].join('\n');
 
     const turns = turnsOf([startRunText, fullResultText]);
@@ -67,6 +65,47 @@ describe('traceability scenario checks', () => {
     assert.ok(knownCheck && knownCheck.ok);
     const unknownCheck = checks.find((c) => c.name.includes('7402'));
     assert.ok(unknownCheck && unknownCheck.ok && unknownCheck.actual === '无已索引用例（未知）');
+  });
+
+  test('holds when unknown defect has two lines and only one contains honest marker (未知缺陷两行（只有一行含标记）仍相符)', () => {
+    const scenario = traceability(gold);
+    const startRunText = [
+      '运行 run_1 完成：任务包 traceability',
+      '问题与未知：',
+      '- 7402 | 缺陷 7402 | 待判定',
+      '条目（2 个；编号 | 名称 | 摘要）：',
+      '- 7300 | 缺陷 7300 | 已修复；2 个用例',
+      '- 7402 | 缺陷 7402 | 已知；无已索引用例（未知）',
+    ].join('\n');
+    const fullResultText = [
+      '陈述：缺陷 7300（已修复）：2 个已索引用例追溯：9001:c-1 会话检查；9001:c-2 证书查看，支持，traceability.traced',
+    ].join('\n');
+
+    const turns = turnsOf([startRunText, fullResultText]);
+    const checks = scenario.check(turns);
+    assert.ok(allOk(scenario, turns), JSON.stringify(checks));
+    const unknownCheck = checks.find((c) => c.name.includes('7402'));
+    assert.ok(unknownCheck && unknownCheck.ok && unknownCheck.actual === '无已索引用例（未知）');
+  });
+
+  test('fails when count matches but statement case ID does not belong to gold (个数对但用例号不属于 gold 的不符)', () => {
+    const scenario = traceability(gold);
+    const startRunText = [
+      '运行 run_1 完成：任务包 traceability',
+      '完整结果 rec:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+      '条目（2 个；编号 | 名称 | 摘要）：',
+      '- 7300 | 缺陷 7300 | 已修复；2 个用例',
+      '- 7402 | 缺陷 7402 | 已知；无已索引用例（未知）',
+    ].join('\n');
+    const fullResultText = [
+      '陈述：缺陷 7300（已修复）：2 个已索引用例追溯：9001:wrong-case 会话检查；9001:c-2 证书查看，支持，traceability.traced',
+    ].join('\n');
+
+    const turns = turnsOf([startRunText, fullResultText]);
+    const checks = scenario.check(turns);
+    const knownCheck = checks.find((c) => c.name.includes('7300'));
+    assert.ok(knownCheck && !knownCheck.ok);
+    assert.match(knownCheck.actual, /用例号不属于独立依据/);
   });
 
   test('fails when case count is off by one (个数差一)', () => {
@@ -79,7 +118,7 @@ describe('traceability scenario checks', () => {
       '- 7402 | 缺陷 7402 | 已知；无已索引用例（未知）',
     ].join('\n');
     const fullResultText = [
-      '用例 9001:c-1 9001:c-2',
+      '陈述：缺陷 7300（已修复）：2 个已索引用例追溯：9001:c-1 会话检查；9001:c-2 证书查看，支持，traceability.traced',
     ].join('\n');
 
     const turns = turnsOf([startRunText, fullResultText]);
@@ -87,26 +126,6 @@ describe('traceability scenario checks', () => {
     const knownCheck = checks.find((c) => c.name.includes('7300'));
     assert.ok(knownCheck && !knownCheck.ok);
     assert.match(knownCheck.actual, /用例数不一致/);
-  });
-
-  test('fails when one case ID is missing from full result (用例号缺一个)', () => {
-    const scenario = traceability(gold);
-    const startRunText = [
-      '运行 run_1 完成：任务包 traceability',
-      '完整结果 rec:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
-      '条目（2 个；编号 | 名称 | 摘要）：',
-      '- 7300 | 缺陷 7300 | 已修复；2 个用例',
-      '- 7402 | 缺陷 7402 | 已知；无已索引用例（未知）',
-    ].join('\n');
-    const fullResultText = [
-      '用例 9001:c-1（缺少第二条）',
-    ].join('\n');
-
-    const turns = turnsOf([startRunText, fullResultText]);
-    const checks = scenario.check(turns);
-    const knownCheck = checks.find((c) => c.name.includes('7300'));
-    assert.ok(knownCheck && !knownCheck.ok);
-    assert.match(knownCheck.actual, /缺 9001:c-2/);
   });
 
   test('fails when unknown defect line is written as having cases (未知行被写成有用例)', () => {
@@ -119,7 +138,7 @@ describe('traceability scenario checks', () => {
       '- 7402 | 缺陷 7402 | 已知；1 个用例',
     ].join('\n');
     const fullResultText = [
-      '用例 9001:c-1 9001:c-2',
+      '陈述：缺陷 7300（已修复）：2 个已索引用例追溯：9001:c-1 会话检查；9001:c-2 证书查看，支持，traceability.traced',
     ].join('\n');
 
     const turns = turnsOf([startRunText, fullResultText]);

@@ -112,10 +112,10 @@ describe('traceability scenario', () => {
       '运行 run_3 完成。',
       '- 7300 | 缺陷 7300 | 已修复；2 个用例',
       '- 7402 | 缺陷 7402 | 已知；无已索引用例（未知）',
-      '用例 9001:c-1、9001:c-2',
+      '陈述：缺陷 7300（已修复）：2 个已索引用例追溯：9001:c-1 会话检查；9001:c-2 证书查看',
     ].join('\n');
     assert.ok(allOk(scenario, turnsOf(good)), JSON.stringify(scenario.check(turnsOf(good))));
-    const missing = good.replace('用例 9001:c-1、9001:c-2', '用例 9001:c-1');
+    const missing = good.replace('9001:c-1', '9001:wrong-case');
     assert.ok(!allOk(scenario, turnsOf(missing)), 'a defect missing one joined case fails');
     const traced = good.replace('无已索引用例（未知）', '1 个用例');
     assert.ok(!allOk(scenario, turnsOf(traced)), 'an untraced defect shown with cases fails');

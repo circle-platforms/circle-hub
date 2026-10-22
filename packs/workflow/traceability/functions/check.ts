@@ -5,7 +5,7 @@
 // raw defect ids do not carry the bug (the check re-verifies the join instead of trusting the fields).
 import { normalizeId } from './ids.ts';
 import { STATUS_SHORT, statusText, systemNote } from './matrix.ts';
-import { guarded, internalError, isRecord } from './text.ts';
+import { clip, compareText, guarded, internalError, isRecord, shown } from './text.ts';
 import type { CaseRef, CheckOutcome, MatrixRow } from './types.ts';
 
 const TIER = 'advisory' as const;
@@ -67,6 +67,39 @@ function untracedStatement(bug: string, facts: { skipped: number; truncated: boo
   return statement;
 }
 
+const MAX_STATEMENT_CASES = 5;
+const MAX_STATEMENT_LENGTH = 500;
+
+/** Sorts cases: document numerically ascending, then case id string ascending. */
+export function compareCaseOrder(a: CaseRef, b: CaseRef): number {
+  const docA = a.document ?? '';
+  const docB = b.document ?? '';
+  const numA = Number.parseInt(docA, 10);
+  const numB = Number.parseInt(docB, 10);
+  if (!Number.isNaN(numA) && !Number.isNaN(numB) && numA !== numB) {
+    return numA - numB;
+  }
+  if (docA !== docB) {
+    return compareText(docA, docB);
+  }
+  return compareText(a.case, b.case);
+}
+
+function tracedStatement(fields: MatrixRow): string {
+  const ordered = [...fields.cases].sort(compareCaseOrder);
+  const listed = ordered.slice(0, MAX_STATEMENT_CASES);
+  const caseParts = listed.map((c) => {
+    const doc = c.document ?? '';
+    const title = shown(c.title, 30);
+    return title ? `${doc}:${c.case} ${title}` : `${doc}:${c.case}`;
+  });
+  const more = fields.cases.length - MAX_STATEMENT_CASES;
+  const moreText = more > 0 ? `；另有 ${more} 个` : '';
+  const note = systemNote(fields.systems);
+  const full = `缺陷 ${fields.bug}（${statusText(fields.statuses)}）：${fields.cases.length} 个已索引用例追溯：${caseParts.join('；')}${moreText}${note}`;
+  return clip(full, MAX_STATEMENT_LENGTH);
+}
+
 function outcomeOf(item: Item, at: number, fields: MatrixRow, facts: { skipped: number; truncated: boolean }): CheckOutcome {
   const pointer = `/items/${at}/fields`;
   const caseGrounds = fields.cases.map((c) => c.reference);
@@ -105,7 +138,7 @@ function outcomeOf(item: Item, at: number, fields: MatrixRow, facts: { skipped: 
   if (fields.cases.length > 0) {
     return {
       verdict: 'support',
-      statement: `缺陷 ${fields.bug}（${statusText(fields.statuses)}）：${fields.cases.length} 个已索引用例追溯${systemNote(fields.systems)}`,
+      statement: tracedStatement(fields),
       grounds,
       tier: TIER,
       item: item.id,

@@ -25,8 +25,10 @@ by construction (absence is not proof).
   from the entry statement, summary = status and case count (`已修复；2 个用例`, `已知（未修复）；无已索引用例（未知）`);
   the defect entries naming more than one system append the systems and the collision note
   (`系统 bugzilla、plm（两个系统的缺陷号可能撞号）`).
-- **traced** (per item): support when at least one case entry carries the id — the claim data lists the cases (ids, titles,
-  documents, sorted by case id) and the grounds are the tree references of the defect entry and the case entries. Otherwise
+- **traced** (per item): support when at least one case entry carries the id — the claim statement lists up to the first 5
+  cases (`<document>:<node> <title>`, sorted by numeric document then string case id, with `另有 M 个` when > 5), all cases
+  are in the claim data and in the complete result references via `get_nodes`, and the grounds are the tree references of the defect entry
+  and the case entries. Otherwise
   unknown (missing input): the reason says no indexed case names the defect, that the index is incomplete by construction,
   and how many listed sources were not read / whether the index view was cut. Two advisory refutations guard integrity:
   `status_conflict` (the same bug is listed as fixed in one entry and known in another — this happens in real release notes;
