@@ -71,11 +71,11 @@ export function orderGoldCandidates(candidates: BuildCandidateGold[]): BuildCand
 }
 
 /** Parses candidate builds and alias indications from the candidate section of the text. */
-function parseReportedCandidates(text: string): ParsedCandidate[] {
-  const at = text.search(/构建候选|候选构建/);
-  if (at < 0) return [];
-  const after = text.slice(at);
-  const endMatch = /(?:\n\s*(?:写出的构建名|问题与未知|条目|要求项|规则|结果)|\n\n)/.exec(after);
+export function parseReportedCandidates(text: string): ParsedCandidate[] {
+  const match = /版本线\s+\S+\s+的构建候选\s+\d+\s+个/.exec(text);
+  if (!match) return [];
+  const after = text.slice(match.index);
+  const endMatch = /(?:另有\s*\d+\s*个|(?:\n\s*(?:写出的构建名|问题与未知|条目|要求项|规则|结果)|\n\n)|[。])/u.exec(after);
   const section = endMatch ? after.slice(0, endMatch.index) : after;
 
   // One candidate per sentence: 名（族，基于 基础构建）制作于 …，已发布 …；分隔符是候选之间的“；”。
