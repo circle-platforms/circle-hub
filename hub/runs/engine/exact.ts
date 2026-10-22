@@ -203,22 +203,6 @@ export function createResolver(ctx: EngineContext, scope: RunScope, consumer: 'f
           return { ok: false, message: `成环的引用：${innerCanonical}` };
         }
       }
-      if (ref.scheme === 'rec' && result.text !== null && /^(?:src|rec|tree|entry):/.test(result.text.trim())) {
-        let innerCanonical: string;
-        try {
-          innerCanonical = formatReference(parseReference(result.text.trim()));
-        } catch {
-          innerCanonical = '';
-        }
-        if (innerCanonical) {
-          if (resolving.has(innerCanonical)) {
-            return { ok: false, message: `成环的引用：${innerCanonical}` };
-          }
-          const inner = await run(innerCanonical, scoped);
-          if (!inner.ok) return inner;
-          return { ok: true, value: { ...inner.value, reference: canonical } };
-        }
-      }
       return { ok: true, value: valueOf(result, ref, scope) };
     } finally {
       resolving.delete(canonical);

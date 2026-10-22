@@ -26,7 +26,7 @@ import type { AuthorOrigin, ProducerOrigin } from './independence.ts';
 import { authorOriginOf, packIdOf } from './lineage.ts';
 import { canSeeRun } from './readers.ts';
 import { carriedItems } from './reuse.ts';
-import { issuesOf, requirementAt, slotProblems } from './slots.ts';
+import { issuesOf, requirementAt, slotProblems, slotSchemaOf } from './slots.ts';
 import {
   actionsOf,
   isVerbatimObject,
@@ -342,7 +342,8 @@ function remap(path: string | undefined, positions: Positions | null): string | 
  * the not-accepted receipt also names their causes and item-level refutations.
  */
 async function validatePartial(base: Basis, args: Record<string, unknown>, error: z.ZodError | null): Promise<Validated> {
-  const issues = error === null ? [] : withRounds(base.workflow, args, issuesOf(error, ''), base.roundsUsed);
+  const slotSchema = slotSchemaOf(base.workflow)?.schema as Record<string, unknown> | undefined;
+  const issues = error === null ? [] : withRounds(base.workflow, args, issuesOf(error, '', slotSchema), base.roundsUsed);
   const pointed = (field: string): Set<number> =>
     new Set((error?.issues ?? []).flatMap((i) => (i.path[0] === field && typeof i.path[1] === 'number' ? [i.path[1]] : [])));
   const badItems = pointed('items');

@@ -120,94 +120,210 @@ function receivedTypeName(issue: z.ZodIssue): string {
   return typeName(raw);
 }
 
-export function specificFix(path: string, issue: z.ZodIssue): { message: string; fix: string } | null {
-  const received = receivedTypeName(issue);
+function pointerTokens(path: string): string[] {
+  let p = path;
+  const match = /^\/items\/[^/]+\/slots(?:\/(.*))?$/.exec(p);
+  if (match) {
+    p = match[1] ? `/${match[1]}` : '';
+  }
+  if (!p || p === '/') return [];
+  return p.split('/').slice(1).map((token) => token.replaceAll('~1', '/').replaceAll('~0', '~'));
+}
 
-  // /commands/0 (element of commands array)
-  if (/\/commands\/\d+$/.test(path)) {
-    if (issue.code === 'invalid_type') {
-      const text = `${path} 要的是对象 {"command": "<命令行>", "present"?: 布尔}，收到的是${received}`;
-      return { message: text, fix: text };
+function resolveRef(root: Record<string, unknown>, ref: string): Record<string, unknown> | null {
+  if (ref.startsWith('#/$defs/') && isObject(root.$defs)) {
+    const target = (root.$defs as Record<string, unknown>)[ref.slice('#/$defs/'.length)];
+    return isObject(target) ? (target as Record<string, unknown>) : null;
+  }
+  if (ref.startsWith('#/definitions/') && isObject(root.definitions)) {
+    const target = (root.definitions as Record<string, unknown>)[ref.slice('#/definitions/'.length)];
+    return isObject(target) ? (target as Record<string, unknown>) : null;
+  }
+  return null;
+}
+
+export function findSubschema(rootSchema: Record<string, unknown> | undefined, path: string): Record<string, unknown> | null {
+  if (!rootSchema || !isObject(rootSchema)) return null;
+  const tokens = pointerTokens(path);
+  if (tokens.length === 0) return rootSchema;
+
+  if (tokens[0] === 'cross_item' && isObject(rootSchema.$defs)) {
+    for (const def of Object.values(rootSchema.$defs as Record<string, unknown>)) {
+      if (isObject(def)) {
+        const sub = findSubschema(def as Record<string, unknown>, '/' + tokens.slice(2).join('/'));
+        if (sub !== null) return sub;
+      }
     }
   }
-  // /commands (the commands array itself)
-  if (/\/commands$/.test(path)) {
-    if (issue.code === 'invalid_type') {
-      const text = `${path} 要的是对象列表 [{"command": "<命令行>", "present"?: 布尔}]，收到的是${received}`;
-      return { message: text, fix: text };
+
+  let curr: unknown = rootSchema;
+
+  if (isObject(curr) && isObject((curr as Record<string, unknown>).properties)) {
+    const props = (curr as Record<string, unknown>).properties as Record<string, unknown>;
+    if (!(tokens[0] in props)) {
+      const idx = tokens.findIndex((t) => t in props);
+      if (idx > 0) tokens.splice(0, idx);
     }
   }
-  // /commands/0/command
-  if (/\/commands\/\d+\/command$/.test(path)) {
-    const text = `${path} 要的是非空字符串 "<命令行>"，收到的是${issue.code === 'invalid_type' ? received : '空字符串'}`;
-    return { message: text, fix: text };
-  }
-  // /commands/0/present
-  if (/\/commands\/\d+\/present$/.test(path)) {
-    const text = `${path} 要的是布尔值，收到的是${received}`;
-    return { message: text, fix: text };
-  }
-  // /quotes/0 (element of quotes array)
-  if (/\/quotes\/\d+$/.test(path)) {
-    if (issue.code === 'invalid_type') {
-      const text = `${path} 要的是对象 {"reference": "<引用>", "text": "<原文>"}，收到的是${received}`;
-      return { message: text, fix: text };
+
+  for (let i = 0; i < tokens.length; i++) {
+    if (!isObject(curr)) return null;
+    let node = curr as Record<string, unknown>;
+    if (typeof node.$ref === 'string') {
+      const resolved = resolveRef(rootSchema, node.$ref);
+      if (resolved) node = resolved;
     }
-  }
-  // /quotes (the quotes array itself)
-  if (/\/quotes$/.test(path)) {
-    if (issue.code === 'invalid_type') {
-      const text = `${path} 要的是对象列表 [{"reference": "<引用>", "text": "<原文>"}]，收到的是${received}`;
-      return { message: text, fix: text };
+    const token = tokens[i];
+
+    if (/^\d+$/.test(token)) {
+      if (Array.isArray(node.prefixItems)) {
+        const idx = Number(token);
+        if (idx < node.prefixItems.length && isObject(node.prefixItems[idx])) {
+          curr = node.prefixItems[idx];
+          continue;
+        }
+      }
+      if (isObject(node.items)) {
+        curr = node.items;
+        continue;
+      }
+      if (Array.isArray(node.items)) {
+        const idx = Number(token);
+        if (idx < node.items.length && isObject(node.items[idx])) {
+          curr = node.items[idx];
+          continue;
+        }
+      }
+      let found: unknown = null;
+      for (const branchKey of ['allOf', 'anyOf', 'oneOf'] as const) {
+        if (Array.isArray(node[branchKey])) {
+          for (const branch of node[branchKey] as unknown[]) {
+            if (isObject(branch) && isObject((branch as Record<string, unknown>).items)) {
+              found = (branch as Record<string, unknown>).items;
+              break;
+            }
+          }
+        }
+        if (found) break;
+      }
+      if (found) {
+        curr = found;
+        continue;
+      }
+      return null;
     }
-  }
-  // /quotes/0/reference
-  if (/\/quotes\/\d+\/reference$/.test(path)) {
-    const text = `${path} 要的是引用字符串，收到的是${received || '非法引用'}`;
-    return { message: text, fix: text };
-  }
-  // /quotes/0/text
-  if (/\/quotes\/\d+\/text$/.test(path)) {
-    const text = `${path} 要的是非空字符串 "<原文>"，收到的是${issue.code === 'invalid_type' ? received : '空字符串'}`;
-    return { message: text, fix: text };
-  }
-  // /grounds/0
-  if (/\/grounds\/\d+$/.test(path)) {
-    const text = `${path} 要的是引用字符串，收到的是${received || '非法引用'}`;
-    return { message: text, fix: text };
-  }
-  // /grounds
-  if (/\/grounds$/.test(path)) {
-    if (issue.code === 'invalid_type') {
-      const text = `${path} 要的是引用字符串列表，收到的是${received}`;
-      return { message: text, fix: text };
+
+    if (isObject(node.properties) && token in (node.properties as Record<string, unknown>)) {
+      curr = (node.properties as Record<string, unknown>)[token];
+      continue;
     }
+
+    let foundProp: unknown = null;
+    for (const branchKey of ['allOf', 'anyOf', 'oneOf'] as const) {
+      if (Array.isArray(node[branchKey])) {
+        for (const branch of node[branchKey] as unknown[]) {
+          if (isObject(branch) && isObject((branch as Record<string, unknown>).properties)) {
+            const bp = (branch as Record<string, unknown>).properties as Record<string, unknown>;
+            if (token in bp) {
+              foundProp = bp[token];
+              break;
+            }
+          }
+        }
+      }
+      if (foundProp) break;
+    }
+    if (foundProp) {
+      curr = foundProp;
+      continue;
+    }
+
+    if (isObject(node.additionalProperties)) {
+      curr = node.additionalProperties;
+      continue;
+    }
+
+    return null;
   }
-  // /location
-  if (/\/location$/.test(path)) {
-    const text = `${path} 要的是引用字符串，收到的是${received || '非法引用'}`;
+
+  if (isObject(curr) && typeof (curr as Record<string, unknown>).$ref === 'string') {
+    const resolved = resolveRef(rootSchema, (curr as Record<string, unknown>).$ref as string);
+    if (resolved) curr = resolved;
+  }
+
+  return isObject(curr) ? (curr as Record<string, unknown>) : null;
+}
+
+export function renderShape(schema: Record<string, unknown>): string {
+  if (Array.isArray(schema.enum)) {
+    return schema.enum.map((v) => JSON.stringify(v)).join(' | ');
+  }
+  if (Array.isArray(schema.anyOf)) {
+    return schema.anyOf.filter(isObject).map((s) => renderShape(s as Record<string, unknown>)).join(' | ');
+  }
+  if (Array.isArray(schema.oneOf)) {
+    return schema.oneOf.filter(isObject).map((s) => renderShape(s as Record<string, unknown>)).join(' | ');
+  }
+  const type = schema.type;
+  if (type === 'string') return '"<string>"';
+  if (type === 'boolean') return '<boolean>';
+  if (type === 'number' || type === 'integer') return '<number>';
+  if (type === 'array' || isObject(schema.items)) {
+    if (isObject(schema.items)) {
+      return `[${renderShape(schema.items as Record<string, unknown>)}]`;
+    }
+    return '[<any>]';
+  }
+  if (type === 'object' || isObject(schema.properties)) {
+    if (isObject(schema.properties)) {
+      const required = new Set(Array.isArray(schema.required) ? schema.required : []);
+      const entries = Object.entries(schema.properties).map(([key, prop]) => {
+        const propShape = isObject(prop) ? renderShape(prop as Record<string, unknown>) : '<any>';
+        const opt = required.has(key) ? '' : '?';
+        return `"${key}"${opt}: ${propShape}`;
+      });
+      return `{${entries.join(', ')}}`;
+    }
+    return '{}';
+  }
+  return '<any>';
+}
+
+export function renderExpected(schema: Record<string, unknown>): string {
+  if (schema.type === 'object' || (isObject(schema.properties) && schema.type !== 'array')) {
+    return `对象 ${renderShape(schema)}`;
+  }
+  if (schema.type === 'array' || (isObject(schema.items) && schema.type !== 'object')) {
+    return `数组 ${renderShape(schema)}`;
+  }
+  return renderShape(schema);
+}
+
+export function specificFix(path: string, issue: z.ZodIssue, schema?: Record<string, unknown>): { message: string; fix: string } | null {
+  const received = receivedTypeName(issue);
+  const targetSchema = findSubschema(schema, path);
+
+  if (targetSchema !== null) {
+    const expected = renderExpected(targetSchema);
+    const text = `${path} 要的是${expected}，收到的是${received}`;
     return { message: text, fix: text };
   }
-  // /text
-  if (/\/text$/.test(path)) {
-    const text = `${path} 要的是非空字符串，收到的是${issue.code === 'invalid_type' ? received : '空字符串'}`;
-    return { message: text, fix: text };
-  }
-  // Fallback for any invalid_type in slots
+
   if (issue.code === 'invalid_type') {
     const expected = typeName(issue.expected);
     const text = `${path} 要的是${expected}，收到的是${received}`;
     return { message: text, fix: text };
   }
+
   return null;
 }
 
 /** zod issues as structure violations with JSON Pointers into the submission (cut to a readable length). */
-export function issuesOf(error: z.ZodError, base: string): Problem[] {
+export function issuesOf(error: z.ZodError, base: string, schema?: Record<string, unknown>): Problem[] {
   return error.issues.map((issue) => {
     const keys = issue.code === 'unrecognized_keys' ? (issue as { keys?: string[] }).keys ?? [] : [];
     const path = clipPointer(wellFormed(`${base}${pointerOfPath(issue.path)}${keys.length === 1 ? pointerOf(keys[0]) : ''}`));
-    const specific = specificFix(path, issue);
+    const specific = specificFix(path, issue, schema);
     if (specific !== null) {
       return protocolError('SUBMISSION_SCHEMA_VIOLATION', `提交的结构不对：${specific.message}`, { path, fix: specific.fix });
     }
@@ -295,10 +411,10 @@ export function schemaProblems(workflow: LoadedWorkflow): string[] {
   return out;
 }
 
-function claimProblems(claim: unknown, path: string, key: string, declaration: SlotDeclaration, item?: string): Problem[] {
+function claimProblems(claim: unknown, path: string, key: string, declaration: SlotDeclaration, item?: string, rootSchema?: Record<string, unknown>): Problem[] {
   const extra = { ...(item !== undefined ? { item } : {}), requirement: key };
   const parsed = SlotClaim.safeParse(claim);
-  if (!parsed.success) return issuesOf(parsed.error, path).map((p) => ({ ...p, ...extra }));
+  if (!parsed.success) return issuesOf(parsed.error, path, rootSchema).map((p) => ({ ...p, ...extra }));
   const c = parsed.data;
   const out: Problem[] = [];
   if (declaration.codes) {
@@ -318,7 +434,7 @@ function claimProblems(claim: unknown, path: string, key: string, declaration: S
       out.push({ ...violation(`${path}/data`, `任务包为要求项 ${key} 的 data 声明的模式不能在 Hub 里执行，这条陈述无法核对`, extra), fix: '请联系任务包作者' });
     } else {
       const checked = compiled.schema.safeParse(c.data ?? {});
-      if (!checked.success) out.push(...issuesOf(checked.error, `${path}/data`).map((p) => ({ ...p, ...extra, message: `data 不符合要求项 ${key} 声明的模式：${p.message}` })));
+      if (!checked.success) out.push(...issuesOf(checked.error, `${path}/data`, declaration.data).map((p) => ({ ...p, ...extra, message: `data 不符合要求项 ${key} 声明的模式：${p.message}` })));
     }
   }
   if (declaration.evidence === true && (c.grounds ?? []).length === 0 && (c.quotes ?? []).length === 0) {
@@ -361,6 +477,7 @@ function unknownItemMessage(submitted: string, items: readonly ItemProjection[])
  * README, runs note), and every cross_item entry against the run-level requirement its code names.
  */
 export function slotProblems(workflow: LoadedWorkflow, items: readonly ItemProjection[], submission: Submission): Problem[] {
+  const rootSchema = slotSchemaOf(workflow)?.schema as Record<string, unknown> | undefined;
   const out: Problem[] = [];
   const byId = new Map(items.map((it) => [it.id, it]));
   const templates = new Map(workflow.requirements.map((r) => [r.key, r]));
@@ -408,7 +525,7 @@ export function slotProblems(workflow: LoadedWorkflow, items: readonly ItemProje
         continue;
       }
       out.push(...countProblems(value.length, keyAt, key, itemSlots[key], { item: entry.item, requirement: key }));
-      value.forEach((claim, j) => out.push(...claimProblems(claim, pointerOf('items', i, 'slots', key, j), key, itemSlots[key], entry.item)));
+      value.forEach((claim, j) => out.push(...claimProblems(claim, pointerOf('items', i, 'slots', key, j), key, itemSlots[key], entry.item, rootSchema)));
     }
   });
   const counts = new Map<string, number>();

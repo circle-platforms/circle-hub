@@ -302,7 +302,7 @@ describe('scenario 21: model violations handling and error routing', () => {
     assert.equal(cmdErr.path, '/items/0/slots/findings/0/commands/0');
     assert.equal(
       cmdErr.fix,
-      '/items/0/slots/findings/0/commands/0 要的是对象 {"command": "<命令行>", "present"?: 布尔}，收到的是字符串',
+      '/items/0/slots/findings/0/commands/0 要的是对象 {"command": "<string>", "present"?: <boolean>}，收到的是字符串',
     );
 
     // Case C: reference cycle in grounds is refused with REFERENCE_UNRESOLVED and a fix naming the cyclic reference
