@@ -1,15 +1,15 @@
 {
   "schema": "pack@1",
   "id": "manual-store",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "kind": "system",
   "title": "手册库（系统包）",
   "description": "手册库的只读系统包（WebDAV）：按版本线读 CLI 与应用手册、按路径读文件、按功能词检索规格书",
   "files": [
     {
       "path": "functions/webdav.ts",
-      "sha256": "21dce07f04df6e9dc6b53e65d1df5a7d54c907d07f144a4b7f590e7721d0b0dd",
-      "size": 22007
+      "sha256": "5992f222895b642cd85920d5ac173f5a2f6ce5bee96281e18b13a45f9cd3cd2b",
+      "size": 22467
     },
     {
       "path": "system.json",

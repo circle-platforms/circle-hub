@@ -103,6 +103,10 @@ describe('the read functions', () => {
     assert.ok(ReadPlanOutput.safeParse(second).success);
     const third = manualPlan({ round: 3, external: { type: 'cli', key: '7.2' }, responses: { list: { ok: true, model }, 'file-1': { ok: false }, 'file-2': { ok: true } } });
     assert.deepEqual(third, { requests: [], done: true, original: 'file-2' });
+    // A manual the Hub holds back (credential scan hit) is the original when no other candidate answers, so the read fails with its digest.
+    const held = manualPlan({ round: 3, external: { type: 'cli', key: '7.2' }, responses: { list: { ok: true, model }, 'file-1': { ok: false, error: { code: 'SOURCE_CREDENTIAL' } }, 'file-2': { ok: false, error: { code: 'SOURCE_UNREACHABLE' } } } });
+    assert.deepEqual(held, { requests: [], done: true, original: 'file-1' });
+    assert.deepEqual(manualPlan({ round: 3, external: { type: 'cli', key: '7.2' }, responses: { list: { ok: true, model }, 'file-1': { ok: false }, 'file-2': { ok: false } } }), { requests: [], done: true }, 'nothing readable and nothing held back is still not found');
     assert.deepEqual(manualPlan({ round: 1, external: { type: 'spec', key: '7.2' } }), { requests: [], done: true });
     const projected = manualProject({ external: { type: 'cli', key: '7.2' }, settings: {}, responses: { list: { ok: true, model }, 'file-2': { ok: true, text: '# CLI' } }, original: 'file-2' }) as { artifacts: Array<{ name: string; json?: { folder: string } }>; warnings?: string[] };
     assert.ok(ReadProjectionOutput.safeParse(projected).success);

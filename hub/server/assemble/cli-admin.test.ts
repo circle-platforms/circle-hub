@@ -8,6 +8,7 @@
 // terminal. The external systems are the connectors' loopback stubs; the packs are tiny synthetic ones written to a
 // temporary directory. Every line printed, the assemblies' log lines included, is scanned for secrets.
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -614,6 +615,44 @@ describe('init-admin and the operator token', () => {
     assert.ok(!refused.text.includes(VAULT_KEY_ITEM.label), 'the platform\'s vault key wording, whatever it is, never names this item');
     await withKit(admin, async (kit) => assert.equal(await kit.authorizations.canPublish((await kit.principals.findByName('根管理员'))!.id), true, 'nothing changed'));
     assert.ok(services.length > 0 && services.every((service) => service === 'circle-hub-rehearsal'), services.join(' '));
+  });
+});
+
+describe('source', () => {
+  const secret = 'Ftp1a2b3c4d5e9';
+  const bytes = Buffer.from(['# 手册（合成）', '', '示例：', '', `    copy ftp://user:${secret}@192.0.2.10/images/system.bin flash:`, ''].join('\n'));
+  const sha = createHash('sha256').update(bytes).digest('hex');
+
+  test('a held-back source is listed, its findings shown as positions and shapes, accepted with a note and withdrawn again; no output carries the value', async () => {
+    const admin = await setup();
+    const read = { bytes, mediaType: 'text/markdown', origin: { read: { object: 'manuals:file:cli/manual.md@1', resource: 'manual-store', action: null } }, author: { user: null }, provenanceType: 'observed' as const, visibility: { readers: [], admins: true, packs: [], shareable: false }, name: 'manual.md' };
+    await withKit(admin, async (kit) => void (await kit.artifacts.ingest(read)));
+    const held = await expectOk(admin, ['source', 'held']);
+    assert.ok(held.out.some((line) => line.startsWith(`${sha}\t`) && line.includes('basic_credential') && line.includes('manuals:file:cli/manual.md@1')), held.text);
+    const findings = await expectOk(admin, ['source', 'findings', sha]);
+    assert.match(findings.text, /第 5 行第 \d+ 列\tbasic_credential\t/);
+    const accepted = await admin.run(['source', 'accept', sha]);
+    assert.equal(accepted.code, 2, 'accepting needs a note');
+    const noted = await expectOk(admin, ['source', 'accept', sha, '--note', '手册里的示例地址，口令是占位符']);
+    assert.match(noted.text, /已接受 [0-9a-f]{64} 的 1 处命中/);
+    await withKit(admin, async (kit) => {
+      const again = await kit.artifacts.ingest(read);
+      assert.equal(again.body.read_tier, 'model_readable', 'a read after the acceptance is kept as normal content');
+    });
+    assert.match((await expectOk(admin, ['source', 'withdraw', sha])).text, /已撤回对 [0-9a-f]{64} 的接受/);
+    for (const output of [held.text, findings.text, noted.text]) {
+      assert.ok(!output.includes(secret), 'the matched value never reaches the screen');
+      assert.ok(!output.includes('192.0.2.10'), 'neither does the text around it');
+    }
+  });
+
+  test('a user who is not an administrator, a bad digest and a note that copies the value are refused', async () => {
+    const admin = await setup();
+    await withKit(admin, async (kit) => void (await kit.artifacts.ingest({ bytes, mediaType: 'text/markdown', origin: { read: { object: 'manuals:file:cli/manual.md@1', resource: 'manual-store', action: null } }, author: { user: null }, provenanceType: 'observed', visibility: { readers: [], admins: true, packs: [], shareable: false }, name: 'manual.md' })));
+    assert.equal((await admin.run(['source', 'findings', 'xyz'])).code, 2);
+    const copied = await admin.run(['source', 'accept', sha, '--note', `口令是 ${secret}`]);
+    assert.equal(copied.code, 1);
+    assert.ok(!copied.text.includes(secret), copied.text);
   });
 });
 

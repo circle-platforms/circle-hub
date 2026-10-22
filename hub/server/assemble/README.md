@@ -15,7 +15,7 @@ model elements D01 R[6] (resources), B04 (decisions), R01 (roles), K04 (typed-ju
 | `secret-input.ts` | `readSecret`: a value from stdin only (a terminal reads without echo, special keys dropped; one trailing line break removed from a pipe) |
 | `terminal.ts` | `terminalSafe`: every C0 and C1 control character but tab, the line separators and the bidirectional controls as visible escapes; `jsonSafe`: the same characters that JSON.stringify leaves raw as `\u` escapes inside JSON text |
 | `errors.ts`, `files.ts` | `AssemblyError` (message plus the operator's next step); `removeTree` for directories holding read-only extracted packs |
-| `../cli-admin.ts` | `adminCommands(options)`: `pack`, `resource`, `secret`, `knowledge`, `init-admin`, `operator-token`; for the server core's built-ins too: `operatorAdmin(ctx, options)` and `operatorAct` (state-changing; `operatorAct` also says when the command cut off its own token) and `operatorViewer` (read-only) |
+| `../cli-admin.ts` | `adminCommands(options)`: `pack`, `resource`, `secret`, `source`, `knowledge`, `init-admin`, `operator-token`; for the server core's built-ins too: `operatorAdmin(ctx, options)` and `operatorAct` (state-changing; `operatorAct` also says when the command cut off its own token) and `operatorViewer` (read-only) |
 | `../testing-real.ts` | `createTestHub(options)`, `findPackDirectories`, `stagePack`, `scriptedJudge` |
 | `test-packs.ts`, `test-cli.ts` | test support: tiny synthetic packs written to temporary directories; a socket-only PostgreSQL and in-process CLI runs |
 
@@ -129,6 +129,7 @@ circle-hub knowledge roots <product> [--as] | diff <rootA> <rootB> [--as]
   value. No restart; both commands say so. `resource list`'s login column is labelled as the vault's state
   (`密钥库里的登录状态：…`), read fresh by the command; it needs the vault key, which the listing reads once (without it the
   column says why for every resource and the listing still exits 0).
+- **Held-back sources** (B02 R[4]): a read whose bytes the credential scan flags is stored `retain_only`: no function gets its text. `source held` lists such sources (sha256, size, the external object, detectors), `source findings <sha256>` shows each finding as a position and the shape of the line around it (letters as x, digits as 9), never the value, `source accept <sha256> --note <why>` records an administrator's acceptance bound to that exact scan (the note may not copy the matched text), and `source withdraw <sha256>` takes it back. An acceptance lifts only bytes the Hub read or made, never an upload, and never a truncated scan; a read that was already held back is not lifted retroactively: run the reading command again (for example `knowledge sync`).
 - **Publication** needs a publish right (B04): `pack grant-publish <user>` is an admin decision; `pack publish` without it
   `pack publish <dir> --stage` publishes a copy of exactly the files `pack.json` lists (a listed path must be a plain file inside `<dir>`; the publish check still verifies every digest), so a pack's source directory may keep its tests and README beside it. Without `--stage` an extra file is a publish problem (`manifest.unlisted_file`).
   is refused with that fix. A refusal lists every problem (rule, file, field or line, message, fix) on stderr.

@@ -17,7 +17,7 @@ import { HubConfigError, HubEnvironmentError, type HubConfig } from '../config/i
 import { ConnectorError, type AddResourceInput, type LoginStatus } from '../connectors/api.ts';
 import { KnowledgeError, formatSyncReport, knowledgeSync, parseKnowledgeSyncArgs, type KnowledgeSyncArgs } from '../knowledge/api.ts';
 import type { ProductHandle } from '../ports.ts';
-import { RecordsError, isSha256, type IssuedToken, type Principal, type RecordsKit, type User } from '../records/api.ts';
+import { RecordsError, isSha256, scanForCredentials, type IssuedToken, type Page, type Principal, type RecordsKit, type SourceArtifactBody, type StoredRecord, type User } from '../records/api.ts';
 import { parsePackRef, type PackProblem } from '../runs/api.ts';
 import type { CliCommand, CliContext } from './api.ts';
 import { hintOf, messageOf } from './assemble/errors.ts';
@@ -45,6 +45,7 @@ export const PACK_USAGE =
 export const RESOURCE_USAGE =
   'resource add <系统包> --name <名字> --environment <环境> --origin <角色>=<地址> [--allow-plaintext <角色>] [--setting <键>=<值>] | list | disable <资源> | enable <资源> | reset-login <资源>';
 export const SECRET_USAGE = 'secret set <资源> <凭据项>（值从标准输入读，不放在命令行上） | list（只列名字）';
+export const SOURCE_USAGE = 'source held [--limit <条数>] | findings <sha256> | accept <sha256> --note <说明> | withdraw <sha256> [--note <说明>]';
 export const KNOWLEDGE_USAGE = 'knowledge sync --product <产品> [--line <版本线>] [--dry-run] [--recheck] [--include-unreleased] | roots <产品> | diff <根A> <根B>';
 export const INIT_ADMIN_USAGE = 'init-admin <名字>   建第一位管理员，令牌存进钥匙串（账户 operator-token），不显示';
 export const OPERATOR_TOKEN_USAGE =
@@ -798,6 +799,94 @@ async function reissueCommand(session: Session, args: readonly string[]): Promis
   return 0;
 }
 
+// ---------------------------------------------------------------- source: held-back content and the credential scan
+
+/** The shape of a line near a finding, never its text: letters and digits become x, so an admin sees what kind of text it is. */
+function shapeAround(line: string, column: number): string {
+  const start = Math.max(0, column - 1 - 12);
+  return line
+    .slice(start, start + 48)
+    .replace(/[A-Za-z]/g, 'x')
+    .replace(/[0-9]/g, '9')
+    .replace(/[\u0080-\uffff]/g, '字');
+}
+
+async function sourceCommand(session: Session, args: readonly string[]): Promise<number> {
+  const [sub, ...rest] = args;
+  switch (sub) {
+    case 'held': {
+      const { values } = parse(rest, { limit: { type: 'string' }, as: { type: 'string' } }, 0);
+      const viewer = await session.viewer(values.as);
+      if (viewer.role !== 'admin') throw new CliError('只有管理员能看被只保留的内容');
+      const limit = values.limit === undefined ? 50 : Number(values.limit);
+      if (!Number.isInteger(limit) || limit < 1 || limit > 500) throw new UsageError('--limit 是 1 到 500 的整数');
+      const kit = await session.records();
+      const seen = new Set<string>();
+      const lines: string[] = [];
+      let cursor: string | null = null;
+      do {
+        const page: Page<StoredRecord<SourceArtifactBody>> = await kit.store.list<SourceArtifactBody>({ kind: 'source_artifact', newestFirst: true, limit: 200, ...(cursor === null ? {} : { cursor }) });
+        for (const record of page.items) {
+          const body = record.body;
+          if (body.read_tier !== 'retain_only' || body.scan.findings.length === 0 || seen.has(body.sha256)) continue;
+          seen.add(body.sha256);
+          const origin = 'read' in body.origin ? body.origin.read.object : 'upload' in body.origin ? '上传' : '生成';
+          const detectors = [...new Set(body.scan.findings.map((f) => f.detector))].join('、');
+          const note = body.scan.truncated ? '，命中太多，不能接受' : '';
+          lines.push([body.sha256, `${body.size} 字节`, origin, `${body.scan.findings.length} 处命中（${detectors}）${note}`, body.captured_at].join('\t'));
+          if (lines.length >= limit) break;
+        }
+        cursor = lines.length >= limit ? null : page.next;
+      } while (cursor !== null);
+      if (lines.length === 0) session.out('没有被只保留的内容');
+      for (const line of lines) session.out(line);
+      return 0;
+    }
+    case 'findings': {
+      const { positionals, values } = parse(rest, { as: { type: 'string' } }, 1);
+      const viewer = await session.viewer(values.as);
+      if (viewer.role !== 'admin') throw new CliError('只有管理员能看凭据扫描的命中');
+      const sha = positionals[0];
+      if (!isSha256(sha)) throw new UsageError('sha256 要写成 64 位小写十六进制');
+      const kit = await session.records();
+      const bytes = await kit.artifacts.trustedBytes(sha);
+      if (bytes === null) throw new CliError('Hub 没有保存这份字节');
+      const scan = scanForCredentials(bytes);
+      session.out(`扫描器 ${scan.scanner}：${scan.findings.length} 处命中${scan.truncated ? '（超过可列出的上限，不能接受）' : ''}；下面只写探测器和位置，行的内容只给形状（字母写成 x，数字写成 9）`);
+      const lines = new TextDecoder('utf-8', { fatal: false }).decode(bytes).split(/\r?\n/);
+      for (const finding of scan.findings.slice(0, 100)) {
+        session.out(`第 ${finding.line} 行第 ${finding.column} 列\t${finding.detector}\t${shapeAround(lines[finding.line - 1] ?? '', finding.column)}`);
+      }
+      if (scan.findings.length > 100) session.out(`… 还有 ${scan.findings.length - 100} 处`);
+      return 0;
+    }
+    case 'accept': {
+      const { positionals, values } = parse(rest, { note: { type: 'string' } }, 1);
+      const admin = await session.admin();
+      const sha = positionals[0];
+      if (!isSha256(sha)) throw new UsageError('sha256 要写成 64 位小写十六进制');
+      if (values.note === undefined || values.note.trim() === '') throw new UsageError('接受要写说明（--note），例如“手册里的 ftp 示例，口令是占位符”；说明里不要抄命中的内容');
+      const kit = await session.records();
+      const accepted = await decided(() => kit.artifacts.acceptFindings(admin, sha, values.note));
+      session.out(`已接受 ${sha} 的 ${accepted.scan.findings.length} 处命中（扫描器 ${accepted.scan.scanner}）；之后重新读到同样字节时按正常内容保存。决定记录 ${accepted.authorization.digest}`);
+      session.out('已经被只保留的那次读取不会自己放开：重新运行读它的命令（例如 knowledge sync）');
+      return 0;
+    }
+    case 'withdraw': {
+      const { positionals, values } = parse(rest, { note: { type: 'string' } }, 1);
+      const admin = await session.admin();
+      const sha = positionals[0];
+      if (!isSha256(sha)) throw new UsageError('sha256 要写成 64 位小写十六进制');
+      const kit = await session.records();
+      const withdrawn = await decided(() => kit.artifacts.revokeFindings(admin, sha, values.note ?? null));
+      session.out(`已撤回对 ${sha} 的接受；以后读到它按只保留处理。决定记录 ${withdrawn.digest}`);
+      return 0;
+    }
+    default:
+      throw new UsageError(`source 的子命令：${SOURCE_USAGE}`);
+  }
+}
+
 // ---------------------------------------------------------------- registration
 
 type Handler = (session: Session, args: readonly string[]) => Promise<number>;
@@ -806,6 +895,7 @@ const COMMANDS: { name: string; summary: string; handler: Handler }[] = [
   { name: 'pack', summary: PACK_USAGE.slice('pack '.length), handler: packCommand },
   { name: 'resource', summary: RESOURCE_USAGE.slice('resource '.length), handler: resourceCommand },
   { name: 'secret', summary: SECRET_USAGE.slice('secret '.length), handler: secretCommand },
+  { name: 'source', summary: SOURCE_USAGE.slice('source '.length), handler: sourceCommand },
   { name: 'knowledge', summary: KNOWLEDGE_USAGE.slice('knowledge '.length), handler: knowledgeCommand },
   { name: 'init-admin', summary: INIT_ADMIN_USAGE.slice('init-admin '.length), handler: initAdminCommand },
   { name: 'operator-token', summary: OPERATOR_TOKEN_USAGE.slice('operator-token '.length), handler: operatorTokenCommand },

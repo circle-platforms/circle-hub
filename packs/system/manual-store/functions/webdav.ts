@@ -16,7 +16,7 @@
 type Planned = { key: string; route: string; params?: Record<string, string> };
 type PlanOutput = { requests: Planned[]; done: boolean; original?: string };
 type XmlElement = { name: string; children: Array<XmlElement | string> };
-type Response = { ok?: boolean; status?: number | null; text?: unknown; model?: unknown; media_type?: string | null; sha256?: string | null };
+type Response = { ok?: boolean; status?: number | null; text?: unknown; model?: unknown; media_type?: string | null; sha256?: string | null; error?: { code?: string } };
 type Input = { round?: unknown; external?: { type?: unknown; key?: unknown }; settings?: unknown; responses?: unknown; original?: unknown };
 
 const DEFAULTS = { cli_folder: 'cli', cli_file: 'cli_cn/cli_cn.md', app_folder: 'app', app_file: 'app_cn/app_cn.md', spec_folder: 'spec', qa_folder: 'qa' } as const;
@@ -254,7 +254,11 @@ export function manualPlan(input: unknown): PlanOutput {
     return { requests: candidates.map((entry, k) => ({ key: `file-${k + 1}`, route: 'file', params: { path: `${folder}/${entry.name}/${file}` } })), done: false };
   }
   const first = candidates.findIndex((_, k) => responses[`file-${k + 1}`]?.ok === true);
-  return first < 0 ? { requests: [], done: true } : { requests: [], done: true, original: `file-${first + 1}` };
+  if (first >= 0) return { requests: [], done: true, original: `file-${first + 1}` };
+  // A manual the Hub holds back (a credential scan hit no administrator accepted) is still the answer: naming it as the
+  // original makes the read fail with its digest, so the administrator can review it, instead of "no such manual".
+  const held = candidates.findIndex((_, k) => responses[`file-${k + 1}`]?.error?.code === 'SOURCE_CREDENTIAL');
+  return held < 0 ? { requests: [], done: true } : { requests: [], done: true, original: `file-${held + 1}` };
 }
 
 function stripNul(text: string): { text: string; removed: number } {
