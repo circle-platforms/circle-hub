@@ -41,7 +41,7 @@ test('corrupting one byte breaks the manifest unless the pack is signed again, w
 test('descriptions are edited by copy', () => {
   const pack = workflowPack();
   const edited = editJson<Record<string, any>>(pack, 'checks.json', (c) => void (c.checks[0].tier = 'advisory'));
-  assert.equal((pack.files['checks.json'] as Record<string, any>).checks[0].tier, undefined);
+  assert.equal((pack.files['checks.json'] as Record<string, any>).checks[0].tier, 'blocking');
   assert.equal((edited.files['checks.json'] as Record<string, any>).checks[0].tier, 'advisory');
   const removed = withFiles(pack, { 'knowledge.json': null });
   assert.ok('knowledge.json' in pack.files && !('knowledge.json' in removed.files));

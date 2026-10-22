@@ -1205,11 +1205,69 @@ describe('knowledge', () => {
   });
 });
 
+describe('doc', () => {
+  test('doc put/list/show publish and replace a named document; only name, digest and size are printed; non-admins get the same answer as for a missing doc', async () => {
+    const admin = await setup();
+    const file = join(packRoot, 'demo-doc.json');
+    const first = JSON.stringify({ items: [{ title: '甲', expected: ['乙'] }] });
+    await writeFile(file, first);
+    const size1 = Buffer.byteLength(first);
+    const put = await expectOk(admin, ['doc', 'put', 'topo-demo', file]);
+    assert.match(put.out.join('\n'), /^已发布命名文档 topo-demo（摘要 [0-9a-f]{64}，\d+ 字节）$/m);
+    const sha1 = /摘要 ([0-9a-f]{64})/.exec(put.out.join('\n'))![1];
+    const listed = await expectOk(admin, ['doc', 'list']);
+    assert.ok(listed.out.some((line) => line === `topo-demo\t${sha1}\t${size1} 字节`), listed.out.join('\n'));
+    const shown = await expectOk(admin, ['doc', 'show', 'topo-demo']);
+    assert.deepEqual(shown.out, [`topo-demo\t${sha1}\t${size1} 字节`]);
+
+    const second = JSON.stringify({ items: [{ title: '甲', expected: ['乙'] }, { title: '丙', expected: ['丁'] }] });
+    await writeFile(file, second);
+    const size2 = Buffer.byteLength(second);
+    const again = await expectOk(admin, ['doc', 'put', 'topo-demo', file]);
+    const sha2 = /摘要 ([0-9a-f]{64})/.exec(again.out.join('\n'))![1];
+    assert.notEqual(sha2, sha1, 'a replacement moves the pointer');
+    const same = await expectOk(admin, ['doc', 'put', 'topo-demo', file]);
+    assert.match(same.out.join('\n'), /已经是这份/);
+    assert.deepEqual((await expectOk(admin, ['doc', 'show', 'topo-demo'])).out, [`topo-demo\t${sha2}\t${size2} 字节`]);
+
+    const missing = await admin.run(['doc', 'show', 'no-such-doc']);
+    assert.equal(missing.code, 1);
+    assert.match(missing.text, /没有叫 no-such-doc 的命名文档/);
+
+    const userToken = await userWithToken(admin, '甲');
+    const env = { [OPERATOR_TOKEN_VARIABLE]: userToken };
+    assert.deepEqual((await expectOk(admin, ['doc', 'list'], env)).out, ['还没有命名文档'], 'a non-admin lists as if none existed');
+    const shownByUser = await admin.run(['doc', 'show', 'topo-demo'], env);
+    assert.equal(shownByUser.code, 1);
+    assert.match(shownByUser.text, /没有叫 topo-demo 的命名文档/, 'same answer as for a missing doc');
+    const putByUser = await admin.run(['doc', 'put', 'other-doc', file], env);
+    assert.equal(putByUser.code, 1);
+    assert.match(putByUser.text, /没有叫 other-doc 的命名文档/);
+    await withKit(admin, async (kit) => {
+      const current = await kit.pointers.get('doc:other-doc');
+      assert.equal(current, null, 'a non-admin put stored nothing');
+    });
+
+    const big = join(packRoot, 'big-doc.json');
+    await writeFile(big, Buffer.alloc(2 * 1024 * 1024 + 1, 120));
+    const over = await admin.run(['doc', 'put', 'topo-big', big]);
+    assert.equal(over.code, 1);
+    assert.match(over.text, /超过.*上限/);
+    assert.equal((await admin.run(['doc', 'show', 'topo-big'])).code, 1, 'the oversize file was not stored');
+    for (const bad of ['9bad', 'BAD']) {
+      const refused = await admin.run(['doc', 'put', bad, file]);
+      assert.equal(refused.code, 1, bad);
+      assert.match(refused.text, /命名文档的名字/);
+    }
+    assert.equal((await admin.run(['doc'])).code, 2);
+  });
+});
+
 describe('help', () => {
   test('the help text lists the administrator commands', async () => {
     const admin = await setup({ initAdmin: false });
     const help = await expectOk(admin, ['help']);
-    for (const name of ['pack', 'resource', 'secret', 'knowledge', 'init-admin', 'operator-token']) assert.match(help.text, new RegExp(`\\n  ${name} `), name);
+    for (const name of ['pack', 'resource', 'secret', 'knowledge', 'init-admin', 'operator-token', 'doc']) assert.match(help.text, new RegExp(`\\n  ${name} `), name);
     assert.doesNotMatch(help.text, /这个装配模块没有注册它/, 'every reserved command is registered');
     assert.match(help.text, /operator-token\s+set   从标准输入读一个启用中的管理员的令牌/);
   });

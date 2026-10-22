@@ -21,7 +21,7 @@ test('the model log is read as turns and the tool results as the client forwarde
 test('the case-location scenario starts the run in the first turn and checks the answer against the gold', () => {
   const s = caseLocation({ document: '90001', product: 'APV', line: '10.4.6', train: '10.4.6-R1' });
   assert.deepEqual(s.respond({ index: 0, system: null, messages: [], tools: [], toolResults: [] }), [
-    { tool: 'hub_start_run', input: { pack: 'case-location@1.0.0', product: 'APV', inputs: { documents: { external: 'agile:mindmap:90001' } } } },
+    { tool: 'hub_start_run', input: { pack: 'case-location', product: 'APV', inputs: { documents: { external: 'agile:mindmap:90001' } } } },
   ]);
   assert.deepEqual(s.respond({ index: 1, system: null, messages: [], tools: [], toolResults: [] }), [{ text: '定位完成。' }]);
   const checks = s.check(parseLog(log));

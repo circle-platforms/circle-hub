@@ -282,6 +282,10 @@ async function validateWorkflow(c: Collector, directory: PackDirectory, policy: 
   if (checks) {
     for (const [k, check] of checks.checks.entries()) {
       const at = (field: string) => ({ field: `/checks/${k}/${field}` });
+      // Every check must declare an explicit tier upon publication.
+      if (check.tier === undefined) {
+        c.add(problem('checks.tier_missing', 'checks.json', `任务包 ${manifest.id} 的检查 ${check.id} 没有声明 tier`, '声明 blocking、advisory 或模型里的其他档名', at('tier')));
+      }
       const interpreter = check.interpreter === undefined ? undefined : getInterpreter(check.interpreter);
       if (check.interpreter !== undefined && interpreter === undefined) {
         c.add(problem('checks.interpreter_missing', 'checks.json', `检查 ${check.id} 用的解释器 ${check.interpreter} 没有安装（已安装：${[...INTERPRETERS.keys()].join('、')}）`, '改用已安装的解释器，或者写成包内函数', at('interpreter')));

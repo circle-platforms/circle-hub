@@ -548,6 +548,8 @@ export type MoveResult =
 export interface Pointers {
   get(name: string, tx?: Transaction): Promise<PointerState | null>;
   move(input: MoveInput, tx?: Transaction): Promise<MoveResult>;
+  /** Every pointer whose name starts with `prefix`, ordered by name. Read-only. */
+  list(prefix: string): Promise<PointerState[]>;
   /** The move_root actions of one pointer, newest first by default. */
   history(name: string, query?: PageQuery): Promise<Page<StoredRecord<ActionBody>>>;
 }

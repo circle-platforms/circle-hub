@@ -100,6 +100,20 @@ describe('caseGold', () => {
     assert.equal(byId.get('x-1')!.negative, false);
   });
 
+  test('recognizes "负面测试" as a negative tag', () => {
+    const docWithNegative = {
+      root: node('测试文档', { id: 'root-n' }, [
+        node('负向用例', { id: 'c-neg', resource: ['负面测试'], priority: 2 }, [
+          node('期望结果', { id: 'e-1' }),
+        ]),
+      ]),
+    };
+    const gold = caseGold([{ document: '9002', map: docWithNegative }]);
+    const doc = gold.documents[0];
+    assert.deepEqual(doc.negativeCases, ['c-neg']);
+    assert.equal(doc.items[0].negative, true);
+  });
+
   test('restricts to tagged cases when caseRule is tagged', () => {
     const gold = caseGold([{ document: '9001', map: document }], { caseRule: 'tagged' });
     // Hand-computed under tagged: 5 cases (x-1 is excluded).

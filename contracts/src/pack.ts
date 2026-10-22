@@ -264,7 +264,7 @@ export const CheckEntry = z
     subject: PackFunctionRef.optional().describe('builds the subject from RunSubjectInput or ItemSubjectInput; without it the default subject of that input is used'),
     catalog: Versioned.optional().describe('the catalog of the locked root the check consults'),
     judges: SourceRoleSchema.describe('the role of what the check judges (A03): the target, an expected source or the artifact under verification'),
-    tier: CheckTierSchema.optional().describe('replaces the tier of every outcome'),
+    tier: CheckTierSchema.optional().describe('replaces the tier of every outcome; required on publication, legacy published packs fall back to basis'),
     basis: z.string().min(1).optional().describe('the acceptance contract clause a blocking check relies on (C05 R[1])'),
   })
   .superRefine((c, ctx) => {

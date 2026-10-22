@@ -331,8 +331,11 @@ function evaluate(run: RunDescription, submission: SubmissionDescription, r: Req
       // and routed (T03 R[4]: that code's error-table row gives the attribution and the destination).
       const u = unexpected[0];
       const row = rowFor(r, u.outcome.code);
-      const budget = rowRounds(row);
-      if (row?.action === 'repair' && run.roundsUsed >= budget) {
+      // T03 R[4], W02 F[7]: repair rows apply only to checks that judge the artifact under verification.
+      // Refutations of the subject remain violations attributed to author_input and consume no repair rounds.
+      const isRepair = row?.action === 'repair' && u.check.judges === 'artifact_under_verification';
+      const budget = isRepair ? rowRounds(row) : 0;
+      if (isRepair && run.roundsUsed >= budget) {
         // W02 R[5]: the rounds of this code are used up. Every declared layer is incomplete; errors still name it.
         return {
           result: incomplete(r, 'repair_exhausted'),
@@ -353,7 +356,7 @@ function evaluate(run: RunDescription, submission: SubmissionDescription, r: Req
       }
       staticLayer = { layer: 'static', terminal: 'violation', code: u.outcome.code, tier: u.outcome.tier, attribution: attributionOf(row, u.check.judges) };
       met = false;
-      if (row?.action === 'repair') {
+      if (isRepair) {
         // Recorded either way. An accepted submission lists it only once the rounds are used up (W02 R[5]); a submission
         // that is not accepted lists it with the rounds left (W08 R[1]).
         repair = { kind: 'refutation', code: u.outcome.code, item: item.id, requirement: r.key, rounds_left: Math.max(0, budget - run.roundsUsed) };
@@ -419,8 +422,11 @@ function validate(run: RunDescription): void {
 
 export function expected(run: RunDescription, submission: SubmissionDescription, outcomes: CheckOutcomes): Expected {
   validate(run);
+  const checks = new Map(run.checks.map((c) => [c.id, c]));
   const max = runMaxRounds(run);
-  const rounds = { used: Math.min(run.roundsUsed, max), max };
+  const repairable = run.requirements.filter((r) => r.checks.some((id) => checks.get(id)?.judges === 'artifact_under_verification'));
+  const used = Math.min(max, Math.max(0, ...repairable.map((r) => Math.min(run.roundsUsed, repairRounds(r)))));
+  const rounds = { used, max };
   const zero = { ...(Object.fromEntries(PARTITION.map((p) => [p, 0])) as Record<Partition, number>), unknown: 0 };
 
   if (submission.defects.length > 0) {

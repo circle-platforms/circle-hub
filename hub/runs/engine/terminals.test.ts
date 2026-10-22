@@ -188,7 +188,8 @@ test('error routing: repair with rounds left and exhaustion, request waits, unkn
   const request = applyRouting(raw, rows('request'), 0);
   assert.deepEqual([request.terminal, request.reason], ['incomplete', 'awaiting_step']);
   const unknownRow = applyRouting(raw, rows('unknown'), 0);
-  assert.deepEqual([unknownRow.terminal, unknownRow.reason, unknownRow.code], ['unchecked', 'integrity_unproven', 'core.catalog.membership_contradicted']);
+  assert.deepEqual([unknownRow.terminal, unknownRow.reason, unknownRow.code, unknownRow.action], ['violation', undefined, 'core.catalog.membership_contradicted', 'unknown']);
+  assert.equal(staticLayer(unknownRow, SUPPORT).attribution, 'unattributed');
   const reject = applyRouting(raw, rows('reject'), 0);
   assert.deepEqual([reject.terminal, reject.action], ['violation', 'reject']);
   // '*' matches any other code; no row leaves the violation as it is
@@ -223,7 +224,9 @@ test('a row applies by the role the refuting check judges: repair and reject onl
   assert.deepEqual([rejected.action, rejected.lead?.outcome.code], ['reject', 'p.code']);
   // request and unknown apply to any role
   assert.deepEqual([applyRouting(onSubject, star('request'), 0).terminal, applyRouting(onSubject, star('request'), 0).reason], ['incomplete', 'awaiting_step']);
-  assert.equal(applyRouting(onSubject, star('unknown'), 0).terminal, 'unchecked');
+  const unknownOnSubject = applyRouting(onSubject, star('unknown'), 0);
+  assert.equal(unknownOnSubject.terminal, 'violation');
+  assert.equal(staticLayer(unknownOnSubject, SUPPORT).attribution, 'unattributed');
   // the primary refutation leads when its row applies, else the first routed one decides the terminal and shows its code
   const mixed = fact([judged(refute('core.structure.required_empty'), 'subject', 's'), judged(refute('p.statement'), 'artifact_under_verification', 'a')]);
   const early = applyRouting(mixed, star('repair'), 0);

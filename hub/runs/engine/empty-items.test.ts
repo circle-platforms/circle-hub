@@ -57,7 +57,7 @@ function sweepPack(): PackSpec {
           ],
         },
       },
-      'checks.json': { json: { schema: 'checks@1', checks: [{ id: 'overview', function: { module: 'functions/overview.ts' }, applies: 'run', judges: 'subject' }] } },
+      'checks.json': { json: { schema: 'checks@1', checks: [{ id: 'overview', function: { module: 'functions/overview.ts' }, applies: 'run', judges: 'subject', tier: 'advisory' }] } },
       'slots.schema.json': { json: { schema: 'slots@1', item: {}, run: {} } },
       'SKILL.md': '# 合成维护巡检\n\n没有要维护的用例时，Hub 算出的结果是空的。\n',
       'functions/project.ts': EMPTY_PROJECT,

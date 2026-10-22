@@ -10,7 +10,8 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import type { LoggedTurn, Scenario } from '../lib/accept.ts';
-import caseLocation, { type LocationGold } from './case-location.ts';
+import type { Turn } from '../scripted-model.ts';
+import caseLocation, { parseNextCall, type LocationGold } from './case-location.ts';
 
 const turnsOf = (text: string): LoggedTurn[] => [
   { index: 0, toolResults: [], tools: ['hub_start_run'] },
@@ -150,5 +151,228 @@ describe('case-location scenario with buildCandidates', () => {
     assert.ok(!checks.every((c) => c.ok));
     const writtenCheck = checks.find((c) => c.name.includes('写出的构建名') && c.name.includes('Rel_APV_10_5_1_101'));
     assert.ok(writtenCheck && !writtenCheck.ok);
+  });
+});
+
+describe('case-location scenario with 15 buildCandidates (top 12 truncation and more count)', () => {
+  const goldCandidates = [
+    // Rel_APV_10_6_1_01 has built: null and sits at the front of the raw list,
+    // testing that ordering places built: null at the end (into the unlisted slice).
+    { name: 'Rel_APV_10_6_1_01', family: 'APV', base: 'Rel_APV_10_6_1_01', built: null, released: '2026-10-10' },
+    { name: 'Rel_APV_10_6_1_90', family: 'APV', base: 'Rel_APV_10_6_1_90', built: '2026-10-22T06:26:12', released: '2026-10-22' },
+    { name: 'Rel_APV_10_6_1_80', family: 'APV', base: 'Rel_APV_10_6_1_80', built: '2026-10-21T15:30:45', released: '2026-10-21' },
+    // Two with identical built time: APV_72 listed before APV_71 in raw array to test tie-break by name
+    { name: 'Rel_APV_10_6_1_72', family: 'APV', base: 'Rel_APV_10_6_1_72', built: '2026-10-20T10:00:00', released: '2026-10-20' },
+    { name: 'Rel_APV_10_6_1_71', family: 'APV', base: 'Rel_APV_10_6_1_71', built: '2026-10-20T10:00:00', released: '2026-10-20' },
+    // NSAE alias 1 and its base
+    { name: 'Rel_NSAE_10_6_1_60', family: 'NSAE', base: 'Rel_APV_10_6_1_60', built: '2026-10-19T09:15:30', released: '2026-10-19' },
+    { name: 'Rel_APV_10_6_1_60', family: 'APV', base: 'Rel_APV_10_6_1_60', built: '2026-10-19T09:15:00', released: '2026-10-19' },
+    // NSAE alias 2 and its base
+    { name: 'Rel_NSAE_10_6_1_50', family: 'NSAE', base: 'Rel_APV_10_6_1_50', built: '2026-10-18T14:20:10', released: '2026-10-18' },
+    { name: 'Rel_APV_10_6_1_50', family: 'APV', base: 'Rel_APV_10_6_1_50', built: '2026-10-18T14:20:00', released: '2026-10-18' },
+    { name: 'Rel_APV_10_6_1_40', family: 'APV', base: 'Rel_APV_10_6_1_40', built: '2026-10-17T11:00:00', released: '2026-10-17' },
+    { name: 'Rel_APV_10_6_1_30', family: 'APV', base: 'Rel_APV_10_6_1_30', built: '2026-10-16T11:00:00', released: '2026-10-16' },
+    { name: 'Rel_APV_10_6_1_20', family: 'APV', base: 'Rel_APV_10_6_1_20', built: '2026-10-15T11:00:00', released: '2026-10-15' },
+    { name: 'Rel_APV_10_6_1_10', family: 'APV', base: 'Rel_APV_10_6_1_10', built: '2026-10-14T11:00:00', released: '2026-10-14' },
+    { name: 'Rel_APV_10_6_1_05', family: 'APV', base: 'Rel_APV_10_6_1_05', built: '2026-10-13T11:00:00', released: '2026-10-13' },
+    { name: 'Rel_APV_10_6_1_02', family: 'APV', base: 'Rel_APV_10_6_1_02', built: '2026-10-12T11:00:00', released: '2026-10-12' },
+  ];
+
+  const gold: LocationGold = {
+    document: '90003',
+    product: 'apv',
+    line: '10.6.1',
+    buildCandidates: {
+      candidates: goldCandidates,
+      written: [],
+    },
+  };
+  const scenario = caseLocation(gold);
+
+  const good15 = [
+    '运行 run_1 完成：任务包 case-location@1.0.0',
+    'location 用例定位：满足 1',
+    '产品线 apv；版本 10.6.1（目录，置信度高）',
+    '构建候选：版本线 10.6.1 的构建候选 15 个，其中别名 2 个（别名基于它所基于的构建），按制作时间从新到旧：' +
+      'Rel_APV_10_6_1_90（APV）制作于 2026-10-22 06:26，已发布 2026-10-22；' +
+      'Rel_APV_10_6_1_80（APV）制作于 2026-10-21 15:30，已发布 2026-10-21；' +
+      'Rel_APV_10_6_1_71（APV）制作于 2026-10-20 10:00，已发布 2026-10-20；' +
+      'Rel_APV_10_6_1_72（APV）制作于 2026-10-20 10:00，已发布 2026-10-20；' +
+      'Rel_NSAE_10_6_1_60（NSAE，基于 Rel_APV_10_6_1_60）制作于 2026-10-19 09:15，已发布 2026-10-19；' +
+      'Rel_APV_10_6_1_60（APV）制作于 2026-10-19 09:15，已发布 2026-10-19；' +
+      'Rel_NSAE_10_6_1_50（NSAE，基于 Rel_APV_10_6_1_50）制作于 2026-10-18 14:20，已发布 2026-10-18；' +
+      'Rel_APV_10_6_1_50（APV）制作于 2026-10-18 14:20，已发布 2026-10-18；' +
+      'Rel_APV_10_6_1_40（APV）制作于 2026-10-17 11:00，已发布 2026-10-17；' +
+      'Rel_APV_10_6_1_30（APV）制作于 2026-10-16 11:00，已发布 2026-10-16；' +
+      'Rel_APV_10_6_1_20（APV）制作于 2026-10-15 11:00，已发布 2026-10-15；' +
+      'Rel_APV_10_6_1_10（APV）制作于 2026-10-14 11:00，已发布 2026-10-14；另有 3 个',
+  ].join('\n');
+
+  test('holds when candidate set equals top 12, more count matches 3, aliases and built times match', () => {
+    assert.ok(allOk(scenario, turnsOf(good15)), JSON.stringify(scenario.check(turnsOf(good15))));
+  });
+
+  test('fails when candidate set is missing one candidate', () => {
+    const missingOne = good15.replace(
+      'Rel_APV_10_6_1_90（APV）制作于 2026-10-22 06:26，已发布 2026-10-22；',
+      '',
+    );
+    const checks = scenario.check(turnsOf(missingOne));
+    assert.ok(!checks.every((c) => c.ok), 'should fail when missing a candidate');
+    const candCheck = checks.find((c) => c.name.includes('候选构建名集合'));
+    assert.ok(candCheck && !candCheck.ok && candCheck.actual.includes('缺 1 个'));
+  });
+
+  test('fails when candidate set has an extra candidate', () => {
+    const extraOne = good15.replace(
+      'Rel_APV_10_6_1_90',
+      'Rel_EXTRA_10_6_1_99（APV）制作于 2026-10-23 00:00，已发布 2026-10-23；Rel_APV_10_6_1_90',
+    );
+    const checks = scenario.check(turnsOf(extraOne));
+    assert.ok(!checks.every((c) => c.ok), 'should fail when having an extra candidate');
+    const candCheck = checks.find((c) => c.name.includes('候选构建名集合'));
+    assert.ok(candCheck && !candCheck.ok && candCheck.actual.includes('多 1 个'));
+  });
+
+  test('fails when more count mismatches', () => {
+    const wrongMore = good15.replace('另有 3 个', '另有 2 个');
+    const checks = scenario.check(turnsOf(wrongMore));
+    assert.ok(!checks.every((c) => c.ok), 'should fail when more count mismatches');
+    const moreCheck = checks.find((c) => c.name.includes('剩余构建') || c.name.includes('另有') || c.name.includes('超出上限'));
+    assert.ok(moreCheck && !moreCheck.ok, 'more count check must fail');
+  });
+});
+
+describe('parseNextCall', () => {
+  test('extracts reference and cursor from balanced JSON after 下一页：get_nodes ', () => {
+    const text = '第一页内容\n下一页：get_nodes {"reference":"rec:abcdef","cursor":"1.0-token123"}；也可看控制台';
+    assert.deepEqual(parseNextCall(text), {
+      reference: 'rec:abcdef',
+      cursor: '1.0-token123',
+    });
+  });
+
+  test('handles nested braces and extracts first complete JSON object', () => {
+    const text = '下一页：get_nodes {"reference":"rec:123","cursor":"c-1","meta":{"p":2}}；也可……';
+    assert.deepEqual(parseNextCall(text), {
+      reference: 'rec:123',
+      cursor: 'c-1',
+    });
+  });
+
+  test('returns null when there is no next page line or invalid format', () => {
+    assert.equal(parseNextCall('没有下一页的内容'), null);
+    assert.equal(parseNextCall('下一页：get_nodes 没有花括号'), null);
+    assert.equal(parseNextCall('下一页：get_nodes other text {"reference": "rec:1", "cursor": "c-1"}'), null);
+    assert.equal(parseNextCall('下一页：get_nodes {"reference": 123}'), null);
+  });
+});
+
+describe('case-location scenario respond flow (two-step start_run -> get_nodes and paging)', () => {
+  const gold: LocationGold = {
+    document: '90001',
+    product: 'apv',
+    line: '10.6.1',
+  };
+  const makeTurn = (index: number, text = ''): Turn => ({
+    index,
+    system: null,
+    messages: [],
+    tools: [],
+    toolResults: text ? [{ id: 'r', text, isError: false }] : [],
+  });
+
+  test('calls hub_get_nodes with reference in turn 1 when start_run returns rec reference', async () => {
+    const s = caseLocation(gold);
+    const startReply = await s.respond(makeTurn(0));
+    assert.deepEqual(startReply, [
+      { tool: 'hub_start_run', input: { pack: 'case-location', product: 'apv', inputs: { documents: { external: 'agile:mindmap:90001' } } } },
+    ]);
+
+    const rec = 'rec:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+    const startRunText = `运行 run_1 完成：任务包 case-location\n完整结果 ${rec}：用 get_nodes 读第一页，再按每页末尾给出的 cursor 接着读`;
+    const turn1Reply = await s.respond(makeTurn(1, startRunText));
+    assert.deepEqual(turn1Reply, [
+      { tool: 'hub_get_nodes', input: { reference: rec } },
+    ]);
+  });
+
+  test('two-page answer flow: reads page 1, gets cursor, reads page 2, finishes and passes all candidate checks', async () => {
+    const s = caseLocation({
+      document: '90001',
+      product: 'apv',
+      line: '10.6.1',
+      buildCandidates: {
+        candidates: [
+          { name: 'Rel_APV_10_6_1_60', family: 'APV', base: 'Rel_APV_10_6_1_60', built: '2026-10-22T06:26:00' },
+          { name: 'Rel_APV_10_6_1_50', family: 'APV', base: 'Rel_APV_10_6_1_50', built: '2026-10-21T06:26:00' },
+        ],
+        written: [],
+      },
+    });
+
+    const startReply = await s.respond(makeTurn(0));
+    assert.ok('tool' in startReply[0] && startReply[0].tool === 'hub_start_run');
+
+    const rec = 'rec:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+    const startRunText = [
+      '运行 run_1 完成：任务包 case-location',
+      'location 用例定位：满足 1',
+      '产品线 apv；版本 10.6.1（目录，置信度高）',
+      `完整结果 ${rec}：用 get_nodes 读第一页，再按每页末尾给出的 cursor 接着读`,
+    ].join('\n');
+
+    const turn1Reply = await s.respond(makeTurn(1, startRunText));
+    assert.deepEqual(turn1Reply, [{ tool: 'hub_get_nodes', input: { reference: rec } }]);
+
+    // Page 1 contains first candidate and ends with next page marker
+    const page1Text = [
+      `内容 ${rec}：`,
+      '构建候选：Rel_APV_10_6_1_60（APV）制作于 2026-10-22 06:26，已发布 2026-10-22；',
+      `下一页：get_nodes {"reference":"${rec}","cursor":"cursor-token-page2"}；也可看控制台`,
+    ].join('\n');
+
+    const turn2Reply = await s.respond(makeTurn(2, page1Text));
+    assert.deepEqual(turn2Reply, [{ tool: 'hub_get_nodes', input: { reference: rec, cursor: 'cursor-token-page2' } }]);
+
+    // Page 2 contains second candidate and has NO next page marker
+    const page2Text = [
+      `内容 ${rec}：`,
+      'Rel_APV_10_6_1_50（APV）制作于 2026-10-21 06:26，已发布 2026-10-21',
+    ].join('\n');
+
+    const turn3Reply = await s.respond(makeTurn(3, page2Text));
+    assert.deepEqual(turn3Reply, [{ text: '定位完成。' }]);
+
+    // Verify checks across all logged turns
+    const loggedTurns: LoggedTurn[] = [
+      { index: 0, tools: ['hub_start_run'], toolResults: [] },
+      { index: 1, tools: ['hub_get_nodes'], toolResults: [{ id: 't0', text: startRunText, isError: false }] },
+      { index: 2, tools: ['hub_get_nodes'], toolResults: [{ id: 't1', text: page1Text, isError: false }] },
+      { index: 3, tools: [], toolResults: [{ id: 't2', text: page2Text, isError: false }] },
+    ];
+    const checks = s.check(loggedTurns);
+    assert.ok(checks.every((c) => c.ok), JSON.stringify(checks.filter((c) => !c.ok)));
+  });
+
+  test('caps get_nodes paging at maximum 6 pages', async () => {
+    const s = caseLocation(gold);
+    await s.respond(makeTurn(0));
+    const rec = 'rec:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+    await s.respond(makeTurn(1, `完整结果 ${rec}`));
+
+    // Pages 1 to 5 each return a next cursor
+    for (let page = 1; page <= 5; page++) {
+      const pageText = `第 ${page} 页\n下一页：get_nodes {"reference":"${rec}","cursor":"${page}.0-abcdef123456"}`;
+      const reply = await s.respond(makeTurn(page + 1, pageText));
+      assert.deepEqual(reply, [
+        { tool: 'hub_get_nodes', input: { reference: rec, cursor: `${page}.0-abcdef123456` } },
+      ]);
+    }
+
+    // Page 6 returns next cursor, but scenario should cap at 6 pages and finish
+    const page6Text = `第 6 页\n下一页：get_nodes {"reference":"${rec}","cursor":"6.0-abcdef123456"}`;
+    const reply7 = await s.respond(makeTurn(7, page6Text));
+    assert.deepEqual(reply7, [{ text: '定位完成。' }]);
   });
 });

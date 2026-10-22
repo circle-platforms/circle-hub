@@ -33,6 +33,13 @@ describe('runCheck with a core interpreter', () => {
     assert.equal(outcomes[0].tier, 'advisory');
   });
 
+  it('legacy compatibility: an omitted declaration tier falls back to blocking with basis and advisory without basis', async () => {
+    const withBasis = await runCheck({ id: 'c1', interpreter: 'membership@1' }, { table: { ...membership, tier: undefined, basis: '测试条款' }, subject: { code: 'A' }, context: {} });
+    assert.equal(withBasis[0].tier, 'blocking');
+    const withoutBasis = await runCheck({ id: 'c2', interpreter: 'membership@1' }, { table: { ...membership, tier: undefined, origin: '测试' }, subject: { code: 'A' }, context: {} });
+    assert.equal(withoutBasis[0].tier, 'advisory');
+  });
+
   it('the declaration tier replaces the table tier', async () => {
     const [o] = await runCheck({ interpreter: 'membership@1', tier: 'blocking', basis: '测试条款 1' }, { table: membership, subject: { code: 'A' }, context: {} });
     assert.equal(o.verdict, 'support');

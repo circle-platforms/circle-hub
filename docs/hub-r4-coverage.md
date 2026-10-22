@@ -79,7 +79,7 @@
 | **D01** | 对接与协议 | 对接规范 | integration specification | `implemented` | `hub/connectors/read.ts`, `hub/connectors/routes.ts`, `hub/connectors/http.ts`, `packs/system/agile-platform/functions/agile.ts`, `packs/system/plm/functions/plm.ts` | 场景 01, 场景 09, 场景 16 |
 | **D02** | 对接与协议 | 前提表 | target premises | `implemented` | `contracts/generated/schemas/resource.v1.schema.json`, `hub/connectors/resources.ts`, `hub/records/store.ts` | 场景 09, 场景 16 |
 | **D03** | 对接与协议 | 效果类与写声明 | effect class / write decl | `contract only` | `contracts/model.json` | M1 仅读无写，没能验证 |
-| **D04** | 对接与协议 | 效果安全机制 | lease / fencing / freeze | `contract only` | `contracts/model.json` | M1 仅读无写，没能验证 |
+| **D04** | 对接与协议 | 效果安全机制 | lease / fencing / freeze | `implemented`（租约服务与围栏令牌；效果派发未做） | `hub/leases/service.ts`, `hub/leases/api.ts`, `contracts/src/run.ts` | 单元测试（`hub/leases/service.test.ts`：并发取得、过期抢占、续期、释放、强制释放、孤儿、重放一致）；start_run 接线（C3）未合并，运行尚不会取得租约；向外部系统的效果派发没能验证 |
 | **D05** | 对接与协议 | 调用合约统一响应 | uniform call response | `implemented` | `hub/server/mcp.ts`, `contracts/codes.json`, `contracts/generated/protocol.ts` | 场景 01 至 场景 22 全场景 |
 | **D06** | 对接与协议 | MCP 工具面 | MCP tool surface | `implemented` | `hub/server/mcp.ts`, `hub/server/tools.ts`, `contracts/generated/tools.json` | 场景 01 至 场景 22 全场景 |
 | **D07** | 对接与协议 | 执行器资源 | executor resource | `out of scope` | `contracts/model.json` | 设备执行器 M1 范围外，没能验证 |
@@ -128,7 +128,7 @@
 - **R6 (不经独立审批人、无两人规则)**：符合 10-21 决定。
 
 ### B05 动作记录 (Hub action record)
-- **R0-R4 (每个操作记录动作、不可变追加、操作员审计)**：通过 `hub/records/store.ts` 与 `hub/records/pointers.ts` 记录 move_root、validate 等动作。已验证（场景 01、场景 07、场景 13、场景 14、场景 17）。
+- **R0-R4 (每个操作记录动作、不可变追加、操作员审计)**：通过 `hub/records/store.ts` 与 `hub/records/pointers.ts` 记录 move_root、validate 等动作；租约的取得、续期、释放、强制释放等每次变更也在同一事务里追加一条 `lease` 动作记录（`hub/leases/service.ts`）。已验证（场景 01、场景 07、场景 13、场景 14、场景 17，及 `hub/leases/service.test.ts`）。
 
 ### B08 调用日志 (call log)
 - **R0-R4 (W3C Trace Context, trace_id, session_id, 每调用一行, 仅摘要与大小, 控制台可查)**：每行 JSON Lines 格式记录在 `hub/records/calllog.ts`。已验证（场景 01、场景 07、场景 12、场景 17、场景 20、场景 22）。
@@ -139,7 +139,7 @@
 - **A03 (来源角色)**：`source`, `target`, `rule`, `model`。已验证（场景 01、场景 08、场景 16、场景 22）。
 - **A04 (独立性)**：初评与独立复核元数据记录声明。已验证（场景 01、场景 22）。
 - **A05 (覆盖、边界与控制区间)**：数值区间校验。已验证（场景 01、场景 04、场景 20）。
-- **A06 (未知保持未知)**：动态层未执行保持 `not_applicable`，未校准片段留在父节点标 `uncalibrated`。已验证（场景 01、场景 11、场景 20、场景 21）。
+- **A06 (未知保持未知)**：动态层未执行保持 `not_applicable`；没有路径的条目留在根下标为未归位。已验证（场景 01、场景 11、场景 20、场景 21）。
 
 ### V01-V07 判定、终态与分区
 - **V01 (判定 verdict)**：pass / violation / inconclusive / not_applicable。已验证（场景 01、场景 04、场景 16、场景 20、场景 21、场景 22）。
@@ -151,12 +151,12 @@
 - **V07 (重复策略 repair rounds)**：修复轮数计数从 2 递减，支持逐字留存与修复建议。已验证（场景 02、场景 03、场景 21）。
 
 ### W01-W08 工作结构
-- **W01 (条目与投影)**：脑图节点展开为条目并合取投影。已验证（场景 01、场景 10、场景 16、场景 20）。
+- **W01 (条目与投影)**：脑图节点展开为条目并合取投影；用例节点规则默认“带标签或带标记”（`marked`），`case_rule: tagged` 限制为只认标签，摘要带规则说明行与 `marked_only` 计数。已验证（场景 01、场景 10、场景 16、场景 20，均按新规则更新）。
 - **W02 (要求项)**：包内 requirements 声明。已验证（场景 01、场景 08、场景 16、场景 20）。
 - **W03 (工作流包与产品绑定)**：同一个用例评审工作流包绑定两个不同产品包。已验证（场景 01、场景 08、场景 15、场景 16）。
 - **W04 (判定形状与台账)**：台账校验，未分配报 SOURCE_UNAVAILABLE。已验证（场景 01、场景 06、场景 21）。
 - **W05 (中间表示与槽位)**：沙箱内规则提取槽位。已验证（场景 01、场景 16、场景 20）。
-- **W06 (运行 run)**：冻结输入、版本、条目集合。已验证（场景 01、场景 13、场景 17、场景 19）。
+- **W06 (运行 run)**：冻结输入、版本、条目集合；运行上下文 builds 冻结带 `built_at`、`base`、`has_root`；构建候选每个写制作时间和“基于”的构建，按制作时间从新到旧，发布状态另写。已验证（场景 01、场景 13、场景 17、场景 19，及构建候选的金标准场景）。
 - **W07 (提交 submission)**：支持批量条目交付与多次修订。已验证（场景 01、场景 02、场景 13、场景 19、场景 21、场景 22）。
 - **W08 (校验结果 validation@1)**：符合 JSON Schema 规范，携带 structuredContent。已验证（场景 01、场景 02、场景 18、场景 20、场景 21）。
 
@@ -198,8 +198,8 @@
    - 审计结论：符合 M1 范围，但不能证明真实系统上的动态执行能力。
 
 2. **外部写入与效果租约（B06 / D03 / D04）**：
-   - 现状：连接器全部采用只读 GET 路由。效果记录（B06）、写声明（D03）、租约与隔离围栏（D04）仅在合约（`contracts/`）与数据层预留类型。
-   - 审计结论：在未授权向外部业务系统写入的原则下保持只读，外部写入效果安全机制**没能验证**。
+   - 现状：连接器全部采用只读 GET 路由。效果记录（B06）、写声明（D03）仅在合约（`contracts/`）与数据层预留类型；租约服务（D04）已实现并经单元测试（`hub/leases`：唯一约束取得、过期原子抢占、围栏令牌、强制释放、孤儿、动作记录一致），但 start_run 接线（C3）未合并，运行尚不会取得租约，向外部系统的效果派发与目标侧围栏仍未做。
+   - 审计结论：在未授权向外部业务系统写入的原则下保持只读；外部写入的效果与围栏派发**没能验证**。
 
 3. **人类接管与处置请求（B07 / W10）**：
    - 现状：未实现会话接管与人工处置审批流（根据 10-21 所有者决定简化架构）。

@@ -1,9 +1,10 @@
 // assembleHub: the Hub built from the real packages over an opened configuration and records kit. Order: the vault master
 // key (when required: a missing or wrong key stops here, before anything listens), the core parsers, the pack registry and
 // its three ports, the connectors (resources, logins, read plugins) with the ExternalReaderPort and the resource catalog,
-// the knowledge service (reading through the connectors alone), the run engine (reading the knowledge views and, for
-// every other id, the connectors), and the ServerDeps the server takes. The Hub calls no model (owner decision
-// 2026-10-22): knowledge is assembled without a placer, and a judgment-service key left in the vault is never read.
+// the knowledge service (reading through the connectors alone), the named documents (C4), the run engine (reading the
+// knowledge views and the named documents and, for every other id, the connectors), and the ServerDeps the server takes.
+// The Hub calls no model (owner decision 2026-10-22): knowledge is assembled without a placer, and a judgment-service key
+// left in the vault is never read.
 // Nothing here reads the environment, a file outside the data directory, or a credential value.
 import { join } from 'node:path';
 import type { HubConfig } from '../../config/index.ts';
@@ -31,6 +32,7 @@ import {
   type RunsEngine,
 } from '../../runs/api.ts';
 import type { AssembleFunction, CommandIo, ServerDeps } from '../api.ts';
+import { createDocs, routeDocs, type Docs } from '../docs.ts';
 import { CallNotes, withCallNotes } from './notes.ts';
 import { terminalSafe } from './terminal.ts';
 import { requireVaultKey } from './vault.ts';
@@ -85,6 +87,8 @@ export interface AssembledHub {
   /** The run engine's reader: `knowledge:` ids through the knowledge views, every other id through the connectors. */
   runsExternal: ExternalReaderPort;
   resources: ResourceCatalogPort;
+  /** The named documents (C4): doc put/list/show and the `doc:doc:` reader for runs of packs that declare it. */
+  docs: Docs;
   knowledge: Knowledge;
   /** The run engine; the connectors' and the registry's failures while it serves a call reach that call's note. */
   runs: RunsEngine;
@@ -153,10 +157,14 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
     admin: options.knowledgeAdmin ?? null,
   });
 
-  // 6. The run engine: inputs and expected sources of the knowledge views (`knowledge:impact|facets|index:...`) are read
-  // from the knowledge service, every other id through the connectors. It writes each call's reasons to the call's admin
-  // note itself (CallContext.adminNote); the connectors and the registry report through the call notes.
-  const runsExternal = routeKnowledgeViews(createKnowledgeReader(knowledge), external);
+  // 6. The named documents (C4): doc put/list/show and the reader of the `doc:doc:` external ids.
+  const docs = createDocs({ records, workflows, ...(now === undefined ? {} : { now }) });
+
+  // 7. The run engine: inputs and expected sources of the knowledge views (`knowledge:impact|facets|index:...`) are read
+  // from the knowledge service, the named documents (`doc:doc:...`) from the documents service, every other id through
+  // the connectors. It writes each call's reasons to the call's admin note itself (CallContext.adminNote); the connectors
+  // and the registry report through the call notes.
+  const runsExternal = routeDocs(docs.reader, routeKnowledgeViews(createKnowledgeReader(knowledge), external));
   // The lease service: the caller's own (tests may inject a clock), or one built over the same database — so `serve`
   // and the test hub alike give lease-declaring workflows a service (C3); a CLI command's assembly may pass null to
   // keep a read-only command from opening a pool it does not need.
@@ -189,7 +197,7 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
     ...(now === undefined ? {} : { now }),
     products: packs,
   };
-  return { deps, config, records, parsers, registry, packs, workflows, catalog, connectors, external, runsExternal, resources, knowledge, runs, leases: leases as LeaseService, notes, notices };
+  return { deps, config, records, parsers, registry, packs, workflows, catalog, connectors, external, runsExternal, resources, docs, knowledge, runs, leases: leases as LeaseService, notes, notices };
 }
 
 /**

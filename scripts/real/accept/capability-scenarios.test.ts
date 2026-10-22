@@ -2,11 +2,15 @@
 // each scenario starts its run with the right pack and inputs on turn 0, ends on turn 1, and its checks hold on a
 // Hub-shaped answer and fail on a wrong one.
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
 import { describe, test } from 'node:test';
 import type { LoggedTurn, Scenario } from '../lib/accept.ts';
+import caseLocation from './case-location.ts';
 import maintenanceSweep, { type SweepGold } from './maintenance-sweep.ts';
 import qualityBoard, { type BoardGold } from './quality-board.ts';
 import regressionScope, { type ScopeGold } from './regression-scope.ts';
+import templateGap from './template-gap.ts';
 import traceability, { type TraceGold } from './traceability.ts';
 
 const turnsOf = (result: string): LoggedTurn[] => [
@@ -117,20 +121,44 @@ describe('quality-board scenario', () => {
   const gold: BoardGold = {
     product: 'apv',
     build: 'Rel_APV_10_6_1_57',
+    totals: { cases: 20, missing: 1, vague: 1, negative: 1 },
     groups: [{ label: '10.6/SSL', cases: 20, missing: 1, vague: 1, negative: 1 }],
   };
   const scenario = qualityBoard(gold);
+
   test('starts the run with the facet view on turn 0', () => {
     assert.deepEqual(scenario.respond(turn(0)), [
       { tool: 'hub_start_run', input: { pack: 'quality-board', inputs: { facets: { external: 'knowledge:facets:apv:Rel_APV_10_6_1_57?kind=case&by=line,module,has_expected,vague_expected,negative' } } } },
     ]);
   });
-  test('holds on a matching group line with the limitation shown, fails on wrong counts', () => {
-    const good = '运行 run_4 完成。分组 10.6/SSL：用例 20 个；无期望结果 1 个（5.0%）；含糊期望 1 个（5.0%）；负面用例 1 个（5.0%）。看板描述的是已索引的用例，不是整套测试。';
-    assert.ok(allOk(scenario, turnsOf(good)), JSON.stringify(scenario.check(turnsOf(good))));
-    const wrong = good.replace('用例 20 个', '用例 21 个');
-    assert.ok(!allOk(scenario, turnsOf(wrong)));
-    const noLimit = good.replace('看板描述的是已索引的用例，不是整套测试。', '');
+
+  const baseGood = [
+    '运行 run_4 完成。',
+    '- 10.6/SSL | 用例 20 个；无期望结果 5.0%；含糊期望 5.0%；负面用例 5.0%',
+    '合计：用例 20 个；无期望结果 1 个（5.0%）；含糊期望 1 个（5.0%）；负面用例 1 个（5.0%）。看板描述的是已索引的用例，不是整套测试。',
+  ].join('\n');
+
+  test('holds on a matching total line, percentages and group sum', () => {
+    assert.ok(allOk(scenario, turnsOf(baseGood)), JSON.stringify(scenario.check(turnsOf(baseGood))));
+  });
+
+  test('fails when one total count is off by one', () => {
+    const wrongMissing = baseGood.replace('无期望结果 1 个', '无期望结果 2 个');
+    assert.ok(!allOk(scenario, turnsOf(wrongMissing)), 'one count off by one must fail');
+  });
+
+  test('fails when a percentage is incorrect', () => {
+    const wrongPercent = baseGood.replace('含糊期望 1 个（5.0%）', '含糊期望 1 个（6.0%）');
+    assert.ok(!allOk(scenario, turnsOf(wrongPercent)), 'wrong percentage must fail');
+  });
+
+  test('fails when the sum of group cases does not equal total cases', () => {
+    const wrongGroupSum = baseGood.replace('用例 20 个；无期望结果 5.0%', '用例 19 个；无期望结果 5.0%');
+    assert.ok(!allOk(scenario, turnsOf(wrongGroupSum)), 'group sum mismatch must fail');
+  });
+
+  test('fails when the limitation is missing', () => {
+    const noLimit = baseGood.replace('看板描述的是已索引的用例，不是整套测试。', '');
     assert.ok(!allOk(scenario, turnsOf(noLimit)), 'the limitation must be shown');
   });
 });
@@ -153,6 +181,49 @@ describe('product line unbinding in start_run inputs', () => {
         false,
         `${s.name} 的 hub_start_run 输入不应包含 product`,
       );
+    }
+  });
+});
+
+describe('unversioned pack names in start_run inputs', () => {
+  test('所有 scripts/real/accept 下场景里 hub_start_run 的 pack 都不带 @ 版本', async () => {
+    // 1. Static scan: scan all scenario source files in scripts/real/accept
+    const dir = import.meta.dirname;
+    const scenarioFiles = fs
+      .readdirSync(dir)
+      .filter((name) => name.endsWith('.ts') && !name.endsWith('.test.ts') && name !== 'checks.ts');
+    assert.ok(scenarioFiles.length >= 6, `expected at least 6 scenario files, found ${scenarioFiles.length}`);
+
+    for (const file of scenarioFiles) {
+      const content = fs.readFileSync(path.join(dir, file), 'utf8');
+      const versionedPackMatch = /pack(?:[:=]|\s*:)\s*['"`]([^'"`]+@[0-9][^'"`]*)['"`]/.exec(content);
+      assert.equal(
+        versionedPackMatch,
+        null,
+        `${file} 中的 pack 不能带 @ 版本，实际写了: ${versionedPackMatch?.[1]}`,
+      );
+    }
+
+    // 2. Runtime invocation: verify turn 0 start_run input of all scenarios
+    const allScenarios = [
+      caseLocation({ document: '90001', product: 'apv', line: '10.6.1' }),
+      templateGap({ document: '90001', cases: 10 }),
+      regressionScope({ product: 'apv', earlier: 'b1', later: 'b2', changed: [], removed: [], inScope: [], outOfScope: [] }),
+      maintenanceSweep({ product: 'apv', earlier: 'b1', later: 'b2', cases: [] }),
+      traceability({ product: 'apv', build: 'b1', defects: [] }),
+      qualityBoard({ product: 'apv', build: 'b1', groups: [] }),
+    ];
+
+    for (const s of allScenarios) {
+      const calls = (await s.respond(turn(0))) as Array<{ tool?: string; input?: Record<string, unknown> }>;
+      assert.equal(calls.length, 1);
+      assert.equal(calls[0].tool, 'hub_start_run');
+      assert.ok(calls[0].input !== null && typeof calls[0].input === 'object');
+      const pack = calls[0].input.pack;
+      if (typeof pack !== 'string') {
+        assert.fail(`${s.name} 的 pack 应该是字符串，实际为 ${typeof pack}`);
+      }
+      assert.ok(!pack.includes('@'), `${s.name} 的 pack 不应包含 @ 版本号，实际为 ${pack}`);
     }
   });
 });
