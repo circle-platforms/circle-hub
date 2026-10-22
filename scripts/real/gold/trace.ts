@@ -167,20 +167,41 @@ export function parsePlmResponses(contents: string[]): Array<{ id: string | numb
 }
 
 /**
+ * Normalizes a document identifier by removing agile:case:, agile:document: prefixes,
+ * revisions, and file extensions.
+ */
+export function cleanDocId(raw: string): string {
+  let s = raw.trim();
+  s = s.replace(/^(?:agile:case:|agile:case_document:|agile:document:)/i, '');
+  const atIdx = s.indexOf('@');
+  if (atIdx >= 0) {
+    s = s.slice(0, atIdx);
+  }
+  s = s.split('/').pop()?.replace(/\.(?:km\.)?json$/i, '') ?? s;
+  return s.trim();
+}
+
+/**
  * Parses document list (either JSON array/object with sources/documents or plain text lines).
+ * Document entries with agile:case: or agile:document: prefix are stripped to match directory filenames.
  */
 export function parseDocumentList(raw: string): Set<string> {
   const docs = new Set<string>();
   const trimmed = raw.trim();
   if (!trimmed) return docs;
 
+  const addDoc = (val: unknown): void => {
+    if (val === undefined || val === null) return;
+    const cleaned = cleanDocId(String(val));
+    if (cleaned) docs.add(cleaned);
+  };
+
   try {
     const parsed: unknown = JSON.parse(trimmed);
     const inspect = (val: unknown): void => {
       if (!val) return;
       if (typeof val === 'string' || typeof val === 'number') {
-        const s = String(val).trim();
-        if (s) docs.add(s);
+        addDoc(val);
         return;
       }
       if (Array.isArray(val)) {
@@ -194,8 +215,7 @@ export function parseDocumentList(raw: string): Set<string> {
             if (s && typeof s === 'object') {
               const src = s as Record<string, unknown>;
               if (typeof src.external === 'string') {
-                const match = /(?:agile:document:|agile:case_document:|^)([0-9a-zA-Z_-]+)$/.exec(src.external);
-                if (match) docs.add(match[1]);
+                addDoc(src.external);
               }
             }
           }
@@ -203,11 +223,14 @@ export function parseDocumentList(raw: string): Set<string> {
         if (Array.isArray(obj.documents)) {
           for (const d of obj.documents) inspect(d);
         }
+        if (Array.isArray(obj.case_documents)) {
+          for (const d of obj.case_documents) inspect(d);
+        }
         if (typeof obj.document === 'string' || typeof obj.document === 'number') {
-          docs.add(String(obj.document).trim());
+          addDoc(obj.document);
         }
         if (typeof obj.id === 'string' || typeof obj.id === 'number') {
-          docs.add(String(obj.id).trim());
+          addDoc(obj.id);
         }
       }
     };
@@ -216,8 +239,7 @@ export function parseDocumentList(raw: string): Set<string> {
     for (const line of trimmed.split(/\r?\n/)) {
       const lineTrim = line.trim();
       if (!lineTrim || lineTrim.startsWith('#')) continue;
-      const base = lineTrim.split('/').pop()?.replace(/\.(?:km\.)?json$/i, '') ?? lineTrim;
-      docs.add(base);
+      addDoc(lineTrim);
     }
   }
 
@@ -233,7 +255,13 @@ export function loadCaseMaps(casesDir: string, allowedDocs?: Set<string>): Array
   for (const entry of entries) {
     if (!entry.endsWith('.json') || entry.startsWith('.')) continue;
     const docId = entry.replace(/\.(?:km\.)?json$/i, '');
-    if (allowedDocs !== undefined && allowedDocs.size > 0 && !allowedDocs.has(docId) && !allowedDocs.has(entry)) {
+    if (
+      allowedDocs !== undefined &&
+      allowedDocs.size > 0 &&
+      !allowedDocs.has(docId) &&
+      !allowedDocs.has(entry) &&
+      !allowedDocs.has(`agile:case:${docId}`)
+    ) {
       continue;
     }
     const fullPath = resolve(casesDir, entry);

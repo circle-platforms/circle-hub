@@ -15,6 +15,7 @@ import { describe, it } from 'node:test';
 import type { LoggedTurn } from '../lib/accept.ts';
 import traceabilityScenario from '../accept/traceability.ts';
 import {
+  cleanDocId,
   compareCases,
   loadCaseMaps,
   main,
@@ -110,20 +111,62 @@ describe('trace gold generator', () => {
     assert.equal(parsed[3].status, 'active');
   });
 
+  it('cleanDocId strips agile prefixes, revisions, and file paths', () => {
+    assert.equal(cleanDocId('agile:case:900001'), '900001');
+    assert.equal(cleanDocId('agile:case:900001@rev2'), '900001');
+    assert.equal(cleanDocId('agile:document:17256'), '17256');
+    assert.equal(cleanDocId('agile:case_document:17258'), '17258');
+    assert.equal(cleanDocId('path/to/900001.json'), '900001');
+    assert.equal(cleanDocId('17259.km.json'), '17259');
+  });
+
   it('parseDocumentList parses JSON arrays, objects with sources, and text lines', () => {
     const jsonArray = JSON.stringify(['17256', '17257']);
     assert.deepEqual([...parseDocumentList(jsonArray)], ['17256', '17257']);
+
+    const jsonCaseArray = JSON.stringify(['agile:case:900001', 'agile:case:900002']);
+    assert.deepEqual([...parseDocumentList(jsonCaseArray)], ['900001', '900002']);
 
     const jsonSources = JSON.stringify({
       sources: [
         { slot: 'documents', external: 'agile:document:17256' },
         { slot: 'documents', external: 'agile:case_document:17258' },
+        { slot: 'documents', external: 'agile:case:900001' },
       ],
     });
-    assert.deepEqual([...parseDocumentList(jsonSources)], ['17256', '17258']);
+    assert.deepEqual([...parseDocumentList(jsonSources)], ['17256', '17258', '900001']);
 
-    const textLines = '# Comments\n17256\n17259.km.json\nsubdir/17260.json';
-    assert.deepEqual([...parseDocumentList(textLines)], ['17256', '17259', '17260']);
+    const textLines = '# Comments\n17256\n17259.km.json\nsubdir/17260.json\nagile:case:900001';
+    assert.deepEqual([...parseDocumentList(textLines)], ['17256', '17259', '17260', '900001']);
+  });
+
+  it('parseDocumentList strips agile:case: prefix and matches 900001.json in case directory', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'trace-agile-case-doc-'));
+    try {
+      const casesDir = join(dir, 'cases');
+      mkdirSync(casesDir, { recursive: true });
+      writeFileSync(
+        join(casesDir, '900001.json'),
+        JSON.stringify(makeMindmap('900001', [{ id: 'c1', title: '缺陷 bug 900001' }])),
+      );
+      writeFileSync(
+        join(casesDir, '900002.json'),
+        JSON.stringify(makeMindmap('900002', [{ id: 'c2', title: '缺陷 bug 900002' }])),
+      );
+
+      // Real integrator exported document list format: agile:case:900001
+      const docsJson = JSON.stringify(['agile:case:900001']);
+      const allowedDocs = parseDocumentList(docsJson);
+      assert.ok(allowedDocs.has('900001'));
+      assert.ok(!allowedDocs.has('900002'));
+
+      // loadCaseMaps filters by allowedDocs matching 900001.json
+      const loaded = loadCaseMaps(casesDir, allowedDocs);
+      assert.equal(loaded.length, 1);
+      assert.equal(loaded[0].document, '900001');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('compareCases sorts by numeric document id ascending, then case id ascending', () => {
