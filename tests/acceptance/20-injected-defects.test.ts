@@ -10,7 +10,7 @@ import { fixtureText } from '../fixtures/mindmaps/index.ts';
 import { openConsole, type ConsoleClient } from './support/console.ts';
 import { openBed, type Bed } from './support/hub.ts';
 import { type McpClient } from './support/mcp.ts';
-import { draft, requirementOf, resultOf, startReview } from './support/review.ts';
+import { draft, oracleCases, requirementOf, resultOf, startReview } from './support/review.ts';
 
 let postgres: TemporaryPostgres;
 let bed: Bed;
@@ -44,7 +44,8 @@ describe('scenario 20: injected defects benchmark verification', () => {
       version: bed.site.LINE,
       inputs: { subject: { reference: untouchedRef } },
     });
-    assert.equal(untouchedRun.items.length, 64);
+    // The baseline count comes from the independent oracle under the default (marked) rule, not a written-down number.
+    assert.equal(untouchedRun.items.length, oracleCases(untouchedMap).length);
 
     const submission = draft(untouchedRun);
     const answer = await client.call('submit_result', submission);
@@ -91,8 +92,10 @@ describe('scenario 20: injected defects benchmark verification', () => {
       version: bed.site.LINE,
       inputs: { subject: { reference: mutatedRef } },
     });
-    // duplicate_title adds 1 case: 64 + 1 = 65
-    assert.equal(mutatedRun.items.length, 65);
+    // duplicate_title duplicates one case, so the mutated document holds one case more than the untouched one
+    // (both counted by the same oracle under the marked rule; the mutation only adds a copy, it moves no node).
+    assert.equal(mutatedRun.items.length, oracleCases(injectResult.map).length);
+    assert.equal(mutatedRun.items.length, untouchedRun.items.length + 1);
 
     const submission = draft(mutatedRun);
     const answer = await client.call('submit_result', submission);
@@ -163,8 +166,9 @@ describe('scenario 20: injected defects benchmark verification', () => {
       inputs: { subject: { reference: mutatedRef } },
     });
 
-    // 9 negative cases were removed (out of 10): 64 - 9 = 55, with 1 remaining bracketed [Negative] case
-    assert.equal(mutatedRun.items.length, 55);
+    // 9 negative cases were removed (out of 10): the mutated document holds 9 cases fewer than the untouched one
+    // (counted by the same oracle under the marked rule), with 1 remaining bracketed [Negative] case.
+    assert.equal(mutatedRun.items.length, oracleCases(injectResult.map).length);
     assert.equal(mutatedRun.items.length, untouchedRun.items.length - 9);
 
     const remainingNegatives = mutatedRun.items.filter((item) => item.fields.negative === true);
