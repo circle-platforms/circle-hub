@@ -181,6 +181,47 @@ export function reviewPack(version = '1.0.0'): PackDescription {
 }
 
 export const LOCATE_PACK = 'demo-locate';
+export const DOCS_PACK = 'demo-docs';
+
+const DOCS_PROJECT = `// Synthetic projection for the named-documents tests: the bound named document is a JSON object
+// { items: [{ title, expected }] }; each item becomes a case.
+interface DocItem { title?: unknown; expected?: unknown }
+export default function project(input: unknown): unknown {
+  const inputs = ((input as { inputs?: Array<{ slot: string; model: { items?: DocItem[] } | null }> }).inputs ?? []);
+  const spec = inputs.find((i) => i.slot === 'spec');
+  const items = Array.isArray(spec?.model?.items) ? (spec?.model?.items as DocItem[]) : [];
+  if (items.length === 0) return { error: { code: 'demo-docs.no_items', message: '文档里没有条目', fix: '给一份带 items 数组的 JSON 文档' }, warnings: [] };
+  return {
+    items: items.map((item, index) => ({
+      id: 'doc-item-' + (index + 1),
+      label: String(item.title ?? ''),
+      summary: (Array.isArray(item.expected) ? item.expected.length : 0) + ' 个期望结果',
+      location: { parser: 'json@1', selector: 'p/items/' + index + '/title' },
+      fields: { title: typeof item.title === 'string' ? item.title : '', expected: Array.isArray(item.expected) ? item.expected : [] },
+    })),
+    warnings: [],
+  };
+}
+`;
+
+/**
+ * A workflow pack over named documents (the C4 tests): like locatePack but its subject is a `doc:doc` external
+ * object, parsed with the core JSON parser; the same fact requirement, check, table and samples.
+ */
+export function docsPack(version = '1.0.0'): PackDescription {
+  const base = locatePack(version);
+  const files = { ...(base.files as PackDescription['files']) };
+  files['workflow.json'] = {
+    schema: 'workflow@1',
+    inputs: [{ slot: 'spec', role: 'subject', description: '被检查的命名文档', accepts: ['doc:doc'], required: true, many: false }],
+    parameters: [],
+    product: { catalogs: [] },
+    subject: 'spec',
+    projection: { module: 'functions/project.ts' },
+  };
+  files['functions/project.ts'] = DOCS_PROJECT;
+  return { ...base, id: DOCS_PACK, title: '合成命名文档检查', description: '命名文档测试用的合成工作流包，输入是命名文档', files };
+}
 
 /**
  * The review pack with its fact requirement only (titles), so that start_run computes the result itself (a production run):

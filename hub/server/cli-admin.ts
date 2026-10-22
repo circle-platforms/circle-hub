@@ -10,12 +10,13 @@
 // or a secret value: secrets and tokens come from standard input only, never from argv.
 import { copyFile, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, isAbsolute, join, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { ENVIRONMENT, isEnvironment, labelOf, type Environment } from '../../contracts/generated/vocabulary.ts';
 import { HubConfigError, HubEnvironmentError, type HubConfig } from '../config/index.ts';
 import { ConnectorError, type AddResourceInput, type LoginStatus, type UpdateResourceInput } from '../connectors/api.ts';
 import { KnowledgeError, formatSyncReport, knowledgeSync, parseKnowledgeSyncArgs, type KnowledgeSyncArgs } from '../knowledge/api.ts';
+import { DocsError } from './docs.ts';
 import type { ProductHandle } from '../ports.ts';
 import { RecordsError, isSha256, scanForCredentials, type IssuedToken, type Page, type Principal, type RecordsKit, type SourceArtifactBody, type StoredRecord, type User } from '../records/api.ts';
 import { parsePackRef, type PackProblem } from '../runs/api.ts';
@@ -47,6 +48,7 @@ export const RESOURCE_USAGE =
 export const SECRET_USAGE = 'secret set <资源> <凭据项>（值从标准输入读，不放在命令行上） | list（只列名字）';
 export const SOURCE_USAGE = 'source held [--limit <条数>] | findings <sha256> | accept <sha256> --note <说明> | withdraw <sha256> [--note <说明>]';
 export const ORIGINAL_USAGE = 'original list [--external <外部标识的前缀>] [--limit <条数>] | export <sha256> --out <文件>';
+export const DOC_USAGE = 'doc put <名字> <文件> | list | show <名字>';
 export const KNOWLEDGE_USAGE = 'knowledge sync --product <产品> [--line <版本线>] [--dry-run] [--recheck] [--include-unreleased] | roots <产品> | diff <根A> <根B>';
 export const INIT_ADMIN_USAGE = 'init-admin <名字>   建第一位管理员，令牌存进钥匙串（账户 operator-token），不显示';
 export const OPERATOR_TOKEN_USAGE =
@@ -94,6 +96,7 @@ async function decided<T>(fn: () => Promise<T>): Promise<T> {
     return await fn();
   } catch (error) {
     if (error instanceof RecordsError) throw new CliError(error.message, error.fix ?? null);
+    if (error instanceof DocsError) throw new CliError(error.message, error.hint);
     if (error instanceof ConnectorError || error instanceof KnowledgeError || error instanceof SecretInputError) throw new CliError(error.message);
     throw error;
   }
@@ -1004,6 +1007,60 @@ async function originalCommand(session: Session, args: readonly string[]): Promi
   throw new UsageError(`original 的子命令：${ORIGINAL_USAGE}`);
 }
 
+// ---------------------------------------------------------------- doc: named documents
+
+/**
+ * The `doc` command (C4, hub/server/docs.ts): an admin publishes a named document with `doc put` (the file through the
+ * source pipeline, the pointer moved by compare-and-set); `doc list` and `doc show` print name, digest and size only.
+ * Everyone who is not an admin gets the same answer as for a doc that does not exist.
+ */
+async function docCommand(session: Session, args: readonly string[]): Promise<number> {
+  const [sub, ...rest] = args;
+  if (sub === 'put') {
+    const { positionals } = parse(rest, {}, 2);
+    const [name, file] = positionals;
+    // The neutral rule: a non-admin is told what they would hear for a doc that does not exist.
+    const viewer = await session.viewer(undefined);
+    if (viewer.role !== 'admin') throw new CliError(`没有叫 ${name.slice(0, 80)} 的命名文档`);
+    const admin = await session.admin();
+    const source = isAbsolute(file) ? file : resolve(session.ctx.io.cwd, file);
+    const bytes = await readFile(source).catch(() => null);
+    if (bytes === null) throw new CliError(`读不出文件 ${file.slice(0, 120)}`, '给一个有读取权限的现有文件');
+    const hub = await session.hub();
+    const put = await decided(() => hub.docs.put(admin, name, new Uint8Array(bytes), { fileName: basename(source) }));
+    session.out(put.created ? `已发布命名文档 ${put.name}（摘要 ${put.sha256}，${put.size} 字节）` : `命名文档 ${put.name} 已经是这份（摘要 ${put.sha256}，${put.size} 字节）`);
+    if (put.findings > 0) session.err(`注意：凭据扫描有 ${put.findings} 处命中，已按只保留存；经运行读取这份文档之前，先用 circle-hub source accept ${put.sha256} --note <说明> 接受`);
+    return 0;
+  }
+  if (sub === 'list') {
+    const { values } = parse(rest, { as: { type: 'string' } }, 0);
+    const viewer = await session.viewer(values.as);
+    if (viewer.role !== 'admin') {
+      session.out('还没有命名文档');
+      return 0;
+    }
+    const hub = await session.hub();
+    const list = await hub.docs.list();
+    if (list.length === 0) {
+      session.out('还没有命名文档');
+      return 0;
+    }
+    for (const info of list) session.out(`${info.name}\t${info.sha256}\t${info.size} 字节`);
+    return 0;
+  }
+  if (sub === 'show') {
+    const { values, positionals } = parse(rest, { as: { type: 'string' } }, 1);
+    const viewer = await session.viewer(values.as);
+    if (viewer.role !== 'admin') throw new CliError(`没有叫 ${positionals[0].slice(0, 80)} 的命名文档`);
+    const hub = await session.hub();
+    const info = await hub.docs.show(positionals[0]);
+    if (info === null) throw new CliError(`没有叫 ${positionals[0].slice(0, 80)} 的命名文档`);
+    session.out(`${info.name}\t${info.sha256}\t${info.size} 字节`);
+    return 0;
+  }
+  throw new UsageError(`doc 的子命令：${DOC_USAGE}`);
+}
+
 // ---------------------------------------------------------------- registration
 
 type Handler = (session: Session, args: readonly string[]) => Promise<number>;
@@ -1015,6 +1072,7 @@ const COMMANDS: { name: string; summary: string; handler: Handler }[] = [
   { name: 'source', summary: SOURCE_USAGE.slice('source '.length), handler: sourceCommand },
   { name: 'original', summary: ORIGINAL_USAGE.slice('original '.length), handler: originalCommand },
   { name: 'knowledge', summary: KNOWLEDGE_USAGE.slice('knowledge '.length), handler: knowledgeCommand },
+  { name: 'doc', summary: DOC_USAGE.slice('doc '.length), handler: docCommand },
   { name: 'init-admin', summary: INIT_ADMIN_USAGE.slice('init-admin '.length), handler: initAdminCommand },
   { name: 'operator-token', summary: OPERATOR_TOKEN_USAGE.slice('operator-token '.length), handler: operatorTokenCommand },
 ];

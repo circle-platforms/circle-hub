@@ -41,9 +41,10 @@ orphan sweep, then `assemble(config, records)`, then `listen()`. `assemble` = `c
 4. Connectors (`createConnectors`: resources, logins, read plugins) with `createExternalReader` and `createResourceCatalog`.
 5. Knowledge (`createKnowledge` with the PacksPort, the connectors' ExternalReaderPort alone, since the views are not a
    source of the tree, and no placer: the Hub calls no model, so spans the code cannot place stay unplaced at the root),
-   the run engine (`createRunsService`, whose ExternalReaderPort is
-   `routeKnowledgeViews(createKnowledgeReader(knowledge), connectors' reader)`: `knowledge:impact|facets|index:…` inputs and
-   expected sources are the knowledge views, every other id the connectors), and `ServerDeps` (`products` = the PacksPort,
+   the named documents (`createDocs`, C4), the run engine (`createRunsService`, whose ExternalReaderPort is
+   `routeDocs(docs.reader, routeKnowledgeViews(createKnowledgeReader(knowledge), connectors' reader))`:
+   `knowledge:impact|facets|index:…` inputs and expected sources are the knowledge views, `doc:doc:…` the named
+   documents, every other id the connectors), and `ServerDeps` (`products` = the PacksPort,
    for the console's knowledge page; `runsDetail` = the engine, for the texts of start_run and submit_result).
 
 A CLI command that needs the server's dependencies (`run show`) gets them from `assembleCommand(config, records, io)`
@@ -64,6 +65,7 @@ circle-hub resource add <system pack> --name <n> --environment test|shared|produ
 circle-hub resource list [--as] | disable <res> | enable <res> | reset-login <res>
 circle-hub secret set <resource> <credential>         # value from stdin only
 circle-hub secret list [--as]                         # names only
+circle-hub doc put <name> <file> | list | show <name> # named documents (C4): put is admin-only; non-admins get the missing answer
 circle-hub knowledge sync --product <name or id> [--line <line>] [--dry-run] [--recheck] [--include-unreleased]
 circle-hub knowledge roots <product> [--as] | diff <rootA> <rootB> [--as]
 ```
@@ -201,6 +203,12 @@ service, `hub.logs` the operator's log lines.
    client and knowledge runs without a placer (spans the code cannot place stay unplaced at the root, marked 未归位).
    `secret set jev api-key` is gone; a `jev.api-key` entry left in the vault from before the removal is never read
    (the insurance test in `no-judgment.test.ts` proves it, with zero outbound calls to the judgment service in a sync).
+5. **Named documents** (C4 of the device-pack core): `hub/server/docs.ts` serves `doc put/list/show` and the
+   `doc:doc:<name>` / `doc:doc:<name>@<sha256>` external ids through the Hub's own reader (never an external system);
+   the assembly wires it beside the knowledge views (`routeDocs(routeKnowledgeViews(reader, connectors))`), and a run
+   of a pack declaring `accepts: ["doc:doc"]` on an input slot freezes the current digest into its sources at start
+   (withRevision). The pointer is the records package's compare-and-set one (`doc:<name>`), `Pointers.list` was added
+   for `doc list`; a non-admin, on the CLI and through a run, gets the same answer as for a doc that does not exist.
 5. **Operator token item.** The keychain item holds the token's 32 random bytes as 64 hexadecimal characters, the one form
    hub/platform `keychainStore().read()` reads; the token is base64url of those bytes (records' token form, checked before
    storing). It is read through `keychainStore` made with the platform's `OPERATOR_TOKEN_ITEM`, so the platform's own
@@ -242,7 +250,9 @@ node --test "hub/server/assemble/**/*.test.ts"
 npx tsc --noEmit
 ```
 
-Five files, 50 tests, about 10 s on the development Mac. `assemble.test.ts` (15): start-up order (a retired variable
+Five files, 60 tests, about 15 s on the development Mac (the named documents add `hub/server/docs.test.ts` (7) beside
+them: put/replace/idempotent, name and size rules, concurrent puts on the compare-and-set, current and pinned reads,
+held-back credentials, a run freezing the digest with only the declaring pack's user reading). `assemble.test.ts` (15): start-up order (a retired variable
 refuses serve and the admin commands before the assembly loads or the key provider is asked; an unmigrated database
 refuses serve and the commands before the assembly runs); no key file stops serve before listening and creates none; the
 platform's keychain provider with a fake `security` tool and no item stops serve and only reads, advising `key init` for
@@ -263,7 +273,7 @@ answer's reason on the call once. `no-judgment.test.ts` (1): the assembly insura
 2026-10-22: a `jev.api-key` entry left in the vault is never read, the assembled Hub has no placer, a knowledge sync of
 a product whose producer declared its path-less entries placeable makes no outbound call to the judgment service (every
 recorded call goes to a loopback stub), the entries stay at the root marked 未归位 and the production records
-`placement.spans` 0. `cli-admin.test.ts` (20): every command through the server CLI's `main` on a
+`placement.spans` 0. `cli-admin.test.ts` (30): every command through the server CLI's `main` on a
 socket-only PostgreSQL (the built-in commands with the same in-memory token store): init-admin, its output (the keychain
 item as the normal path) and refusals (naming the reissue), a token it could not store revoked with the reissue as the
 fix, or said to be possibly live when the revocation was not confirmed or failed (a fake context), the fix never a
@@ -288,7 +298,9 @@ saying no restart is needed, the running assembly logging in once with the new v
 token after a reset, a new assembly logging in again; listings, a reset and the refusals of `secret set` and `knowledge
 sync` on a deployment without a vault key; knowledge sync over the synthetic build site with produced, skipped and
 failed builds and exit codes, a second sync that skips the produced build and writes no `tree_root` or `tree_node`,
-`--line`, `--dry-run`, `--include-unreleased`, roots of both name families and a diff that shows the added command; and
+`--line`, `--dry-run`, `--include-unreleased`, roots of both name families and a diff that shows the added command;
+named documents put, listed, shown, replaced, idempotent, oversize and bad names refused, non-admins answered as for a
+missing doc, nothing stored then; and
 a scan of every printed line, the assemblies' log lines included, for every secret.
 `operator-token.test.ts` (9): the keychain item written only through stdin of `security -i` and read back through
 keychainStore, never overwritten, scrubbed errors, a locked keychain, errors naming the operator token on any account
