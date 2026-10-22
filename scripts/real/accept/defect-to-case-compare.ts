@@ -14,7 +14,15 @@
 //   node scripts/real/accept/defect-to-case-compare.ts --gold <gold.json> --drafts <submission.json> --result <validation.json>
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { normalizeHead, normalizeParameters, splitCommand, type RegressionDocGold, type SplitCommand } from '../gold/regression-doc.ts';
+import {
+  buildCatalog,
+  normalizeHead,
+  normalizeParameters,
+  parseCommandsFromText,
+  splitCommand,
+  type RegressionDocGold,
+  type SplitCommand,
+} from '../gold/regression-doc.ts';
 
 export interface DraftCase {
   title: string;
@@ -34,6 +42,8 @@ export interface HeadOverlap {
   missingInDrafts: string[];
   /** Unrecognized command lines from the regression document gold. */
   unrecognizedInDoc?: string[];
+  /** Command lines in drafts not found in the catalog. */
+  unrecognizedInDrafts?: string[];
 }
 
 export interface QuotesReport {
@@ -97,18 +107,40 @@ const docCasesOf = (gold: unknown): Array<{ commands: SplitCommand[] }> => {
   return [];
 };
 
-function overlapOf(drafts: readonly DraftCase[], gold: unknown): HeadOverlap {
+/** The parsed commands and unrecognized lines of draft steps. */
+export function parseDraftSteps(
+  steps: ReadonlyArray<{ command?: string }>,
+  catalog?: Set<string>,
+): { commands: SplitCommand[]; unrecognized: string[] } {
+  const commands: SplitCommand[] = [];
+  const unrecognized: string[] = [];
+  for (const step of steps) {
+    if (typeof step.command !== 'string') continue;
+    for (const rawLine of step.command.split('\n')) {
+      const line = rawLine.trim();
+      if (line === '') continue;
+      const res = parseCommandsFromText(line, catalog);
+      commands.push(...res.commands);
+      unrecognized.push(...res.unrecognized);
+    }
+  }
+  return { commands, unrecognized };
+}
+
+function overlapOf(drafts: readonly DraftCase[], gold: unknown, catalog?: Set<string>): HeadOverlap {
   const docCommands = docCasesOf(gold).flatMap((c) => c.commands);
-  const draftCommands = drafts.flatMap((d) => d.steps.flatMap((s) => (typeof s.command === 'string' ? splitCommand(s.command) : [])));
+  const parsedDrafts = drafts.map((d) => parseDraftSteps(d.steps, catalog));
+  const draftCommands = parsedDrafts.flatMap((p) => p.commands);
   const draftHeads = headSetOf(draftCommands);
   const docHeads = headSetOf(docCommands);
   const shared = [...draftHeads].filter((h) => docHeads.has(h));
-  const unrec = isRecord(gold) && Array.isArray(gold.unrecognizedCommands)
+  const unrecDoc = isRecord(gold) && Array.isArray(gold.unrecognizedCommands)
     ? (gold.unrecognizedCommands as string[])
     : isRecord(gold) && Array.isArray(gold.documents)
       ? (gold.documents as RegressionDocGold[]).flatMap((d) => d.unrecognizedCommands ?? [])
       : [];
-  const unrecognizedInDoc = [...new Set(unrec)].sort();
+  const unrecognizedInDoc = [...new Set(unrecDoc)].sort();
+  const unrecDrafts = [...new Set(parsedDrafts.flatMap((p) => p.unrecognized))].sort();
   return {
     draftHeads: draftHeads.size,
     docHeads: docHeads.size,
@@ -118,6 +150,7 @@ function overlapOf(drafts: readonly DraftCase[], gold: unknown): HeadOverlap {
     missingInDoc: [...draftHeads].filter((h) => !docHeads.has(h)).sort(),
     missingInDrafts: [...docHeads].filter((h) => !draftHeads.has(h)).sort(),
     ...(unrecognizedInDoc.length > 0 ? { unrecognizedInDoc } : {}),
+    ...(unrecDrafts.length > 0 ? { unrecognizedInDrafts: unrecDrafts } : {}),
   };
 }
 
@@ -155,11 +188,18 @@ function quotesReportOf(result: unknown): QuotesReport {
 
 const HUB_DUPLICATE = /起草用例“([^”]+)”与已索引用例重复/;
 
-function duplicatesReportOf(drafts: readonly DraftCase[], gold: unknown, result: unknown): DuplicatesReport {
+function duplicatesReportOf(
+  drafts: readonly DraftCase[],
+  gold: unknown,
+  result: unknown,
+  catalog?: Set<string>,
+): DuplicatesReport {
   const docKeys = new Set(docCasesOf(gold).flatMap((c) => commandKeysOf(c.commands)));
   const goldIdentical = drafts
     .filter((draft) => {
-      const keys = commandKeysOf(draft.steps.flatMap((s) => (typeof s.command === 'string' ? splitCommand(s.command) : [])));
+      const { commands, unrecognized } = parseDraftSteps(draft.steps, catalog);
+      if (unrecognized.length > 0) return false;
+      const keys = commandKeysOf(commands);
       return keys.length > 0 && keys.every((key) => docKeys.has(key));
     })
     .map((draft) => draft.title);
@@ -172,12 +212,23 @@ function duplicatesReportOf(drafts: readonly DraftCase[], gold: unknown, result:
   return { goldIdentical: [...goldIdentical].sort(), hubFlagged: [...hubFlagged].sort(), equal: onlyGold.length === 0 && onlyHub.length === 0, onlyGold, onlyHub };
 }
 
-export function computeComparison(gold: unknown, submission: unknown, result: unknown): Comparison {
+export interface CompareOptions {
+  commandTreeXml?: string;
+  catalog?: Set<string>;
+}
+
+export function computeComparison(
+  gold: unknown,
+  submission: unknown,
+  result: unknown,
+  options: CompareOptions = {},
+): Comparison {
+  const catalog = options.catalog ?? (options.commandTreeXml ? buildCatalog(options.commandTreeXml) : undefined);
   const drafts = draftsOf(submission);
   return {
-    headOverlap: overlapOf(drafts, gold),
+    headOverlap: overlapOf(drafts, gold, catalog),
     quotes: quotesReportOf(result),
-    duplicates: duplicatesReportOf(drafts, gold, result),
+    duplicates: duplicatesReportOf(drafts, gold, result, catalog),
   };
 }
 
@@ -192,6 +243,9 @@ export function renderComparison(comparison: Comparison): string {
   if (h.missingInDrafts.length > 0) lines.push(`   已有文档有、草稿没有：${h.missingInDrafts.join('、')}`);
   if (h.unrecognizedInDoc && h.unrecognizedInDoc.length > 0) {
     lines.push(`   已有文档未识别的命令行：${h.unrecognizedInDoc.join('、')}`);
+  }
+  if (h.unrecognizedInDrafts && h.unrecognizedInDrafts.length > 0) {
+    lines.push(`   草稿里目录找不到的命令行：${h.unrecognizedInDrafts.join('、')}`);
   }
   lines.push('');
   lines.push(`2. 期望结果的引文（读 Hub 的判定，不重做）：grounded 主张 ${q.claims} 条，支持 ${q.support} 条`);
@@ -214,14 +268,24 @@ export function main(argv: string[]): number {
   };
   const [goldPath, draftsPath, resultPath] = [value('gold'), value('drafts'), value('result')];
   if (goldPath === undefined || draftsPath === undefined || resultPath === undefined) {
-    process.stderr.write('用法：node scripts/real/accept/defect-to-case-compare.ts --gold <gold.json> --drafts <submission.json> --result <validation.json>\n');
+    process.stderr.write('用法：node scripts/real/accept/defect-to-case-compare.ts --gold <gold.json> --drafts <submission.json> --result <validation.json> [--commands <xmlFile>]\n');
     return 2;
+  }
+  const commandsPath = value('commands') ?? value('catalog') ?? value('command-tree');
+  let commandTreeXml: string | undefined;
+  if (commandsPath) {
+    try {
+      commandTreeXml = readFileSync(resolve(commandsPath), 'utf8');
+    } catch (error) {
+      process.stderr.write(`读不了命令树文件 ${commandsPath}：${(error as Error).message.split('\n')[0]}\n`);
+      return 1;
+    }
   }
   try {
     const gold = JSON.parse(readFileSync(resolve(goldPath), 'utf8')) as unknown;
     const submission = JSON.parse(readFileSync(resolve(draftsPath), 'utf8')) as unknown;
     const result = JSON.parse(readFileSync(resolve(resultPath), 'utf8')) as unknown;
-    process.stdout.write(`${renderComparison(computeComparison(gold, submission, result))}\n`);
+    process.stdout.write(`${renderComparison(computeComparison(gold, submission, result, { commandTreeXml }))}\n`);
     return 0;
   } catch (error) {
     process.stderr.write(`读不了输入：${(error as Error).message.split('\n')[0]}\n`);

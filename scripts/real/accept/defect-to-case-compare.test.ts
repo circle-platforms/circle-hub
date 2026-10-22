@@ -1,8 +1,11 @@
 // Synthetic tests of accept/defect-to-case-compare.ts: the head-overlap ratios, the verbatim report read from the
 // Hub's claims (never recomputed), and the duplicate-set comparison in both directions and the equal case.
 import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, test } from 'node:test';
-import { computeComparison, draftsOf, renderComparison } from './defect-to-case-compare.ts';
+import { computeComparison, draftsOf, main, renderComparison } from './defect-to-case-compare.ts';
 
 const docGold = {
   document: '24110',
@@ -141,5 +144,111 @@ describe('the duplicate sets: exact identity against the Hub’s flagged set', (
     assert.deepEqual(h.unrecognizedInDoc, ['function', 'stress']);
     const text = renderComparison(comparison);
     assert.match(text, /已有文档未识别的命令行：function、stress/);
+  });
+
+  const syntheticXml = `<?xml version="1.0" encoding="ISO-8859-1"?>
+<commands>
+  <scope type="global">
+    <menu name="demo">
+      <item name="pool">
+        <arguments>
+          <string name="name"/>
+        </arguments>
+      </item>
+    </menu>
+    <menu name="widget">
+      <menu name="health">
+        <item name="interval"/>
+      </menu>
+    </menu>
+  </scope>
+</commands>`;
+
+  test('draft with lower-case non-numeric parameter (demo pool cfg): split by catalog gives head demo pool and parameter cfg', () => {
+    const docWithDemo = {
+      document: '24115',
+      defects: ['160005'],
+      cases: [
+        {
+          id: 'case-demo',
+          title: 'demo pool cfg',
+          commands: [{ head: 'demo pool', parameters: ['cfg'] }],
+        },
+      ],
+    };
+    const submission = submissionOf(draft('配置演示池', 'demo pool cfg'));
+
+    // Without catalog (heuristic): "demo pool cfg" is treated as head, parameter is empty -> head mismatch and not identical
+    const withoutCatalog = computeComparison(docWithDemo, submission, resultWith([supportClaim]));
+    assert.deepEqual(withoutCatalog.headOverlap.missingInDoc, ['demo pool cfg']);
+    assert.deepEqual(withoutCatalog.headOverlap.missingInDrafts, ['demo pool']);
+    assert.equal(withoutCatalog.headOverlap.shared, 0);
+    assert.deepEqual(withoutCatalog.duplicates.goldIdentical, []);
+
+    // With catalog: longest match gives head "demo pool" and parameter "cfg" -> heads match and case is duplicate
+    const withCatalog = computeComparison(
+      docWithDemo,
+      submission,
+      resultWith([supportClaim], [dupClaim('配置演示池')]),
+      { commandTreeXml: syntheticXml },
+    );
+    const h = withCatalog.headOverlap;
+    assert.deepEqual([h.draftHeads, h.docHeads, h.shared], [1, 1, 1]);
+    assert.equal(h.draftRatio, 1);
+    assert.equal(h.docRatio, 1);
+    assert.deepEqual(h.missingInDoc, []);
+    assert.deepEqual(h.missingInDrafts, []);
+    assert.deepEqual(withCatalog.duplicates.goldIdentical, ['配置演示池']);
+    assert.equal(withCatalog.duplicates.equal, true);
+  });
+
+  test('draft with command not in catalog: isolated as unrecognizedInDrafts and excluded from draftHeads', () => {
+    const docWithWidget = {
+      document: '24116',
+      defects: ['160006'],
+      cases: [
+        {
+          id: 'case-widget',
+          title: 'widget health interval pool1 5',
+          commands: [{ head: 'widget health interval', parameters: ['pool1', '5'] }],
+        },
+      ],
+    };
+    const submission = submissionOf(
+      draft('健康检查', 'widget health interval pool1 5'),
+      draft('未知指令草稿', 'custom_tool action 123'),
+    );
+    const comparison = computeComparison(
+      docWithWidget,
+      submission,
+      resultWith([supportClaim]),
+      { commandTreeXml: syntheticXml },
+    );
+    const h = comparison.headOverlap;
+    // Only "widget health interval" is counted as a draft head; "custom_tool action 123" is isolated
+    assert.equal(h.draftHeads, 1);
+    assert.deepEqual(h.unrecognizedInDrafts, ['custom_tool action 123']);
+    const text = renderComparison(comparison);
+    assert.match(text, /草稿里目录找不到的命令行：custom_tool action 123/);
+  });
+
+  test('main CLI accepts --commands and outputs comparison with catalog split', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'd2c-compare-test-'));
+    try {
+      const goldFile = join(dir, 'gold.json');
+      const draftsFile = join(dir, 'drafts.json');
+      const resultFile = join(dir, 'result.json');
+      const commandsFile = join(dir, 'commands.xml');
+
+      writeFileSync(goldFile, JSON.stringify(docGold), 'utf8');
+      writeFileSync(draftsFile, JSON.stringify(submissionOf(draft('配置健康检查间隔', 'widget health interval pool1 5'))), 'utf8');
+      writeFileSync(resultFile, JSON.stringify(resultWith([supportClaim])), 'utf8');
+      writeFileSync(commandsFile, syntheticXml, 'utf8');
+
+      const code = main(['--gold', goldFile, '--drafts', draftsFile, '--result', resultFile, '--commands', commandsFile]);
+      assert.equal(code, 0);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
