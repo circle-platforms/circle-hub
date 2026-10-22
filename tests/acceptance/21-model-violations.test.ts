@@ -259,4 +259,88 @@ describe('scenario 21: model violations handling and error routing', () => {
       await limitedBed.close();
     }
   });
+
+  test('6. deep nesting, reference cycle, and command string violations are refused with specific fixes without internal error', async () => {
+    const run = await startReview(client, {
+      product: bed.product.names[0],
+      version: bed.site.LINE,
+      inputs: { subject: { external: `agile:mindmap:${DOCUMENTS.review}` } },
+    });
+    assert.ok(run.run);
+
+    const item0 = run.items[0];
+
+    // Case A: deep nesting (> 64 layers) is refused with SUBMISSION_SCHEMA_VIOLATION and fix "嵌套超过 64 层"
+    const nest = (levels: number): Record<string, unknown> => {
+      let value: Record<string, unknown> = { leaf: true };
+      for (let i = 0; i < levels; i++) value = { d: value };
+      return value;
+    };
+    const deepFinding = finding(item0, {
+      data: nest(70),
+    });
+    const deepSub = draft(run, new Map([[item0.id, [deepFinding]]]));
+    const deepAnswer = await client.call('submit_result', deepSub);
+    assert.equal(deepAnswer.isError, true);
+    assert.equal(deepAnswer.out.call_result, 'error');
+    assert.equal(deepAnswer.out.acceptance, 'not_accepted');
+    const deepErr = deepAnswer.out.errors.find((e) => e.code === 'SUBMISSION_SCHEMA_VIOLATION');
+    assert.ok(deepErr, `expected SUBMISSION_SCHEMA_VIOLATION, got: ${JSON.stringify(deepAnswer.out.errors)}`);
+    assert.match(deepErr.fix ?? '', /嵌套超过 64 层/);
+
+    // Case B: commands written as strings gets specific fix naming expected shape
+    const cmdFinding = finding(item0, {
+      commands: ['zone show' as unknown as { command: string }],
+    });
+    const cmdSub = draft(run, new Map([[item0.id, [cmdFinding]]]));
+    const cmdAnswer = await client.call('submit_result', cmdSub);
+    assert.equal(cmdAnswer.isError, true);
+    assert.equal(cmdAnswer.out.call_result, 'error');
+    assert.equal(cmdAnswer.out.acceptance, 'not_accepted');
+    const cmdErr = cmdAnswer.out.errors.find((e) => e.code === 'SUBMISSION_SCHEMA_VIOLATION');
+    assert.ok(cmdErr, `expected SUBMISSION_SCHEMA_VIOLATION, got: ${JSON.stringify(cmdAnswer.out.errors)}`);
+    assert.equal(cmdErr.path, '/items/0/slots/findings/0/commands/0');
+    assert.equal(
+      cmdErr.fix,
+      '/items/0/slots/findings/0/commands/0 要的是对象 {"command": "<命令行>", "present"?: 布尔}，收到的是字符串',
+    );
+
+    // Case C: reference cycle in grounds is refused with REFERENCE_UNRESOLVED and a fix naming the cyclic reference
+    const originalTreeReader = bed.hub.deps.knowledge.treeReader.bind(bed.hub.deps.knowledge);
+    const cyclicRef = `tree:${run.root}/cyclic`;
+    bed.hub.deps.knowledge.treeReader = (lock) => {
+      const real = originalTreeReader(lock);
+      return {
+        ...real,
+        read: async (root, path, entry, reader) => {
+          if (path === '/cyclic') {
+            return {
+              readTier: 'model_readable',
+              mediaType: 'text/plain',
+              text: 'cyclic node',
+              grounds: [`tree:${root}/cyclic`],
+              validity: null,
+            };
+          }
+          return real.read(root, path, entry, reader);
+        },
+      };
+    };
+    try {
+      const cycleFinding = finding(item0, {
+        grounds: [cyclicRef],
+      });
+      const cycleSub = draft(run, new Map([[item0.id, [cycleFinding]]]));
+      const cycleAnswer = await client.call('submit_result', cycleSub);
+      assert.equal(cycleAnswer.isError, true);
+      assert.equal(cycleAnswer.out.call_result, 'error');
+      assert.equal(cycleAnswer.out.acceptance, 'not_accepted');
+      const cycleErr = cycleAnswer.out.errors.find((e) => e.code === 'REFERENCE_UNRESOLVED');
+      assert.ok(cycleErr, `expected REFERENCE_UNRESOLVED, got: ${JSON.stringify(cycleAnswer.out.errors)}`);
+      assert.equal(cycleErr.path, '/items/0/slots/findings/0/grounds/0');
+      assert.equal(cycleErr.fix, `成环的引用：${cyclicRef}`);
+    } finally {
+      bed.hub.deps.knowledge.treeReader = originalTreeReader;
+    }
+  });
 });

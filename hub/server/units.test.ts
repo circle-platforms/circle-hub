@@ -16,7 +16,7 @@ import { SYMBOL, cellText, claimFields, terminalSymbol, terminalText } from './c
 import { CONTENT_SECURITY_POLICY, escapeHtml, href, html, page } from './console/html.ts';
 import { SessionStore, cookie } from './console/session.ts';
 import { BodyBudget, REFERRER_POLICY, allowedHosts, isLoopbackOrigin } from './http.ts';
-import { MAX_ADMIN_NOTE, clipNote, describeError } from './notes.ts';
+import { MAX_ADMIN_NOTE, clipNote, describeError, describeInternalError, cleanStack, sanitizeStackLine } from './notes.ts';
 import { CANDIDATE_SCHEMA, runOfRecord } from './readers.ts';
 import { countsLine } from './text.ts';
 import { KNOWLEDGE_VIEW_SYSTEM, isExternalType, pointerOfPath, readsOutside, schemaErrors } from './tools.ts';
@@ -223,6 +223,19 @@ test('admin notes are what records accept: no NUL, no lone surrogate, cut betwee
   assert.ok(long.endsWith('…'));
   assert.equal(describeError(Object.assign(new Error('坏\u0000了'), { name: 'TypeError' })), 'TypeError: 坏了');
   assert.equal(describeError('plain'), 'plain');
+
+  const mockError = new Error('simulated failure');
+  mockError.stack = [
+    'Error: simulated failure',
+    '    at callTool (/Users/jiangyongze/Public/circle-hub/hub/server/tools.ts:163:10)',
+    '    at async guarded (file:///Users/jiangyongze/Public/circle-hub/hub/server/mcp.ts:244:14)',
+    '    at runScriptInThisContext (node:internal/vm:219:10)',
+  ].join('\n');
+  const cleaned = cleanStack(mockError);
+  assert.match(cleaned, /^Error: simulated failure\nat callTool \(hub\/server\/tools\.ts:163:10\)\nat async guarded \(hub\/server\/mcp\.ts:244:14\)/);
+  assert.doesNotMatch(cleaned, /\/Users\//);
+  assert.doesNotMatch(cleaned, /file:\/\//);
+  assert.equal(describeInternalError('string error'), 'string error');
 });
 
 test('the body budget takes what fits and gives everything back on release', () => {

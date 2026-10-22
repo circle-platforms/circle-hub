@@ -16,6 +16,7 @@ import {
   UNAVAILABLE_MESSAGE,
   candidatesFrom,
   findQuote,
+  formatReference,
   locateQuote,
   parseReference,
   quoteMatches,
@@ -118,7 +119,8 @@ export async function buildScope(ctx: EngineContext, run: RunRecord, workflow: L
           if (source === null || source.bytes === null) continue;
           const found = recognize(ctx.parsers, source.bytes, source.mediaType);
           if (found === null) continue;
-          out.push(...candidatesFrom(found.document, sha, { role }));
+          const list = candidatesFrom(found.document, sha, { role });
+          for (let i = 0; i < list.length; i++) out.push(list[i]);
         }
         return out;
       })()),
@@ -159,6 +161,7 @@ function scopeProblem(ref: Reference, scope: RunScope): string | null {
 export function createResolver(ctx: EngineContext, scope: RunScope, consumer: 'function' | 'model'): Resolver {
   const { store, artifacts } = ctx.deps.records;
   const cache = new Map<string, Promise<ValueOutcome>>();
+  const resolving = new Set<string>();
   const context = {
     reader: scope.reader,
     parsers: ctx.parsers,
@@ -170,19 +173,56 @@ export function createResolver(ctx: EngineContext, scope: RunScope, consumer: 'f
   } as const;
   const run = async (reference: string, scoped: boolean): Promise<ValueOutcome> => {
     let ref: Reference;
+    let canonical: string;
     try {
       ref = parseReference(reference);
+      canonical = formatReference(ref);
     } catch (error) {
       if (error instanceof ReferenceSyntaxError) return { ok: false, message: `引用格式不对：${error.message}` };
       throw error;
     }
-    if (scoped) {
-      const problem = scopeProblem(ref, scope);
-      if (problem !== null) return { ok: false, message: problem };
-    } else if (ref.scheme === 'entry') return { ok: false, message: scopeProblem(ref, scope) ?? '' };
-    const result = await resolveReference(ref, context);
-    if (!result.resolved) return { ok: false, message: result.code === 'SOURCE_UNAVAILABLE' ? `引用解析不出（${UNAVAILABLE_MESSAGE}）` : result.message };
-    return { ok: true, value: valueOf(result, ref, scope) };
+    if (resolving.has(canonical)) {
+      return { ok: false, message: `成环的引用：${canonical}` };
+    }
+    resolving.add(canonical);
+    try {
+      if (scoped) {
+        const problem = scopeProblem(ref, scope);
+        if (problem !== null) return { ok: false, message: problem };
+      } else if (ref.scheme === 'entry') return { ok: false, message: scopeProblem(ref, scope) ?? '' };
+      const result = await resolveReference(ref, context);
+      if (!result.resolved) return { ok: false, message: result.code === 'SOURCE_UNAVAILABLE' ? `引用解析不出（${UNAVAILABLE_MESSAGE}）` : result.message };
+      for (const ground of result.grounds ?? []) {
+        let innerCanonical: string;
+        try {
+          innerCanonical = formatReference(parseReference(ground));
+        } catch {
+          continue;
+        }
+        if (resolving.has(innerCanonical)) {
+          return { ok: false, message: `成环的引用：${innerCanonical}` };
+        }
+      }
+      if (ref.scheme === 'rec' && result.text !== null && /^(?:src|rec|tree|entry):/.test(result.text.trim())) {
+        let innerCanonical: string;
+        try {
+          innerCanonical = formatReference(parseReference(result.text.trim()));
+        } catch {
+          innerCanonical = '';
+        }
+        if (innerCanonical) {
+          if (resolving.has(innerCanonical)) {
+            return { ok: false, message: `成环的引用：${innerCanonical}` };
+          }
+          const inner = await run(innerCanonical, scoped);
+          if (!inner.ok) return inner;
+          return { ok: true, value: { ...inner.value, reference: canonical } };
+        }
+      }
+      return { ok: true, value: valueOf(result, ref, scope) };
+    } finally {
+      resolving.delete(canonical);
+    }
   };
   return {
     resolve(reference, options = {}) {
@@ -378,7 +418,10 @@ export async function resolveStatement(
       if (r.ok) {
         take(`${at}/location`, claim.location, r.value, false);
         canonical.location = r.value.reference;
-      } else fail('REFERENCE_UNRESOLVED', `${at}/location`, `位置解析不出：${r.message}`);
+      } else {
+        const isCycle = r.message.startsWith('成环的引用：');
+        fail('REFERENCE_UNRESOLVED', `${at}/location`, `位置解析不出：${r.message}`, undefined, isCycle ? r.message : LOCATION_FIX);
+      }
     }
   }
   for (const [k, ground] of (claim.grounds ?? []).entries()) {
@@ -388,7 +431,8 @@ export async function resolveStatement(
       out.grounds.push(r.value.reference);
       canonical.grounds![k] = r.value.reference;
     } else {
-      fail('REFERENCE_UNRESOLVED', `${at}/grounds/${k}`, `根据解析不出：${r.message}`);
+      const isCycle = r.message.startsWith('成环的引用：');
+      fail('REFERENCE_UNRESOLVED', `${at}/grounds/${k}`, `根据解析不出：${r.message}`, undefined, isCycle ? r.message : undefined);
       out.grounds.push(ground);
     }
   }
@@ -396,7 +440,8 @@ export async function resolveStatement(
   for (const [k, quote] of (claim.quotes ?? []).entries()) {
     const r = await resolver.resolve(quote.reference, { scoped });
     if (!r.ok) {
-      fail('REFERENCE_UNRESOLVED', `${at}/quotes/${k}/reference`, `引文的引用解析不出：${r.message}`);
+      const isCycle = r.message.startsWith('成环的引用：');
+      fail('REFERENCE_UNRESOLVED', `${at}/quotes/${k}/reference`, `引文的引用解析不出：${r.message}`, undefined, isCycle ? r.message : undefined);
       continue;
     }
     if (r.value.text === null) {
@@ -505,7 +550,8 @@ export async function resolveSubmission(
         out.grounds.push(r.value.reference);
         copy.grounds[k] = r.value.reference;
       } else {
-        result.errors.push(protocolError('REFERENCE_UNRESOLVED', `根据解析不出：${r.message}`, { path: `${at}/grounds/${k}` }));
+        const isCycle = r.message.startsWith('成环的引用：');
+        result.errors.push(protocolError('REFERENCE_UNRESOLVED', `根据解析不出：${r.message}`, { path: `${at}/grounds/${k}`, ...(isCycle ? { fix: r.message } : {}) }));
         out.grounds.push(ground);
       }
     }

@@ -1097,6 +1097,12 @@ describe('the isError matrix and output schemas', () => {
       assert.doesNotMatch(error.message, /192\.0\.2\.1/);
       return true;
     });
+    const logEntries = await server.records.callLog.query(server.admin.principal, { userId: user.user.id });
+    const internalLine = logEntries.items.find((line) => line.call_result === 'error' && line.admin_note?.includes('connection to 192.0.2.1 refused'));
+    assert.ok(internalLine, 'an internal failure writes the admin note');
+    assert.match(internalLine.admin_note ?? '', /\bat /);
+    assert.doesNotMatch(internalLine.admin_note ?? '', /\/Users\//);
+    assert.doesNotMatch(internalLine.admin_note ?? '', /file:\/\//);
     await client.close();
   });
 });

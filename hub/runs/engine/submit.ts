@@ -124,7 +124,13 @@ async function storeReceived(
       ctx.log({ traceId, run, what: 'submit_result', detail: `arguments kept as an object: ${describe(error)}` });
     }
   }
-  const bytes = new TextEncoder().encode(JSON.stringify(args));
+  let jsonText: string;
+  try {
+    jsonText = JSON.stringify(args);
+  } catch {
+    jsonText = '{"non_canonical":true}';
+  }
+  const bytes = new TextEncoder().encode(jsonText);
   let object: string | null = null;
   try {
     object = (await objects.put(bytes, 'application/json')).sha256;
@@ -252,7 +258,10 @@ function earlyProblem(kept: Kept, received: ReturnType<typeof receivedDigest>, a
   }
   const deep = tooDeep(args, MAX_SUBMISSION_DEPTH);
   if (deep !== null) {
-    return protocolError('SUBMISSION_SCHEMA_VIOLATION', `提交嵌套超过 ${MAX_SUBMISSION_DEPTH} 层：已原样保存，没有核对`, { path: clipPointer(deep), fix: '减少 data 等字段的嵌套后重交' });
+    return protocolError('SUBMISSION_SCHEMA_VIOLATION', `提交嵌套超过 ${MAX_SUBMISSION_DEPTH} 层：已原样保存，没有核对`, {
+      path: clipPointer(deep),
+      fix: `嵌套超过 ${MAX_SUBMISSION_DEPTH} 层`,
+    });
   }
   return null;
 }

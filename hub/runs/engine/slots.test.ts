@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 import { z } from 'zod';
+import type { ProtocolError } from '../../../contracts/src/common.ts';
 import type { ItemProjection } from '../../../contracts/src/run.ts';
 import { Submission } from '../../../contracts/src/submission.ts';
 import type { LoadedWorkflow } from '../../ports.ts';
@@ -37,8 +38,8 @@ function submission(value: Record<string, unknown>): Submission {
   return Submission.parse({ run: 'run_01m5h9zh07x7amhg4bwmye5yhw', model: 'm', cross_item: [level], ...value });
 }
 
-function problems(value: Record<string, unknown>): { path?: string; message: string }[] {
-  return slotProblems(review, items, submission(value)).map((p) => ({ path: p.path, message: p.message, code: p.code }));
+function problems(value: Record<string, unknown>): ProtocolError[] {
+  return slotProblems(review, items, submission(value));
 }
 
 test('an item id the run does not have gets a fix that teaches the form (count, exact id example, suffix hint)', () => {
@@ -115,6 +116,15 @@ test('statements: closed codes and ranks, required when declared, counts, data s
   assert.deepEqual(at([finding({ quotes: undefined })]), ['/items/0/slots/findings/0']);
   assert.deepEqual(at([finding({ unknown_field: 1 })]), ['/items/0/slots/findings/0/unknown_field']);
   assert.deepEqual(at([finding({ text: '' })]), ['/items/0/slots/findings/0/text']);
+  const cmdIssue = problems({
+    items: [{ item: 'd:1', handling: 'handled', slots: { findings: [{ ...finding(), commands: ['zone set'] }] } }],
+  });
+  assert.equal(cmdIssue[0].code, 'SUBMISSION_SCHEMA_VIOLATION');
+  assert.equal(cmdIssue[0].path, '/items/0/slots/findings/0/commands/0');
+  assert.equal(
+    cmdIssue[0].fix,
+    '/items/0/slots/findings/0/commands/0 要的是对象 {"command": "<命令行>", "present"?: 布尔}，收到的是字符串',
+  );
   const all = problems({ items: [{ item: 'd:1', handling: 'handled', slots: { findings: [finding({ code: 'made_up' })] } }] });
   assert.ok(all.every((p) => (p as { code?: string }).code === 'SUBMISSION_SCHEMA_VIOLATION'));
 });

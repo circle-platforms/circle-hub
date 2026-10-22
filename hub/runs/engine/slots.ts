@@ -104,11 +104,113 @@ type Problem = ProtocolError;
 const violation = (path: string, message: string, extra: { item?: string; requirement?: string } = {}): Problem =>
   protocolError('SUBMISSION_SCHEMA_VIOLATION', message, { path, ...extra });
 
+function typeName(type: unknown): string {
+  if (type === 'string') return '字符串';
+  if (type === 'number') return '数字';
+  if (type === 'boolean') return '布尔值';
+  if (type === 'object') return '对象';
+  if (type === 'array') return '数组';
+  if (type === 'null') return 'null';
+  if (type === 'undefined') return 'undefined';
+  return String(type ?? '未知类型');
+}
+
+function receivedTypeName(issue: z.ZodIssue): string {
+  const raw = (issue as { received?: unknown }).received ?? /received (\w+)/.exec(issue.message)?.[1];
+  return typeName(raw);
+}
+
+export function specificFix(path: string, issue: z.ZodIssue): { message: string; fix: string } | null {
+  const received = receivedTypeName(issue);
+
+  // /commands/0 (element of commands array)
+  if (/\/commands\/\d+$/.test(path)) {
+    if (issue.code === 'invalid_type') {
+      const text = `${path} 要的是对象 {"command": "<命令行>", "present"?: 布尔}，收到的是${received}`;
+      return { message: text, fix: text };
+    }
+  }
+  // /commands (the commands array itself)
+  if (/\/commands$/.test(path)) {
+    if (issue.code === 'invalid_type') {
+      const text = `${path} 要的是对象列表 [{"command": "<命令行>", "present"?: 布尔}]，收到的是${received}`;
+      return { message: text, fix: text };
+    }
+  }
+  // /commands/0/command
+  if (/\/commands\/\d+\/command$/.test(path)) {
+    const text = `${path} 要的是非空字符串 "<命令行>"，收到的是${issue.code === 'invalid_type' ? received : '空字符串'}`;
+    return { message: text, fix: text };
+  }
+  // /commands/0/present
+  if (/\/commands\/\d+\/present$/.test(path)) {
+    const text = `${path} 要的是布尔值，收到的是${received}`;
+    return { message: text, fix: text };
+  }
+  // /quotes/0 (element of quotes array)
+  if (/\/quotes\/\d+$/.test(path)) {
+    if (issue.code === 'invalid_type') {
+      const text = `${path} 要的是对象 {"reference": "<引用>", "text": "<原文>"}，收到的是${received}`;
+      return { message: text, fix: text };
+    }
+  }
+  // /quotes (the quotes array itself)
+  if (/\/quotes$/.test(path)) {
+    if (issue.code === 'invalid_type') {
+      const text = `${path} 要的是对象列表 [{"reference": "<引用>", "text": "<原文>"}]，收到的是${received}`;
+      return { message: text, fix: text };
+    }
+  }
+  // /quotes/0/reference
+  if (/\/quotes\/\d+\/reference$/.test(path)) {
+    const text = `${path} 要的是引用字符串，收到的是${received || '非法引用'}`;
+    return { message: text, fix: text };
+  }
+  // /quotes/0/text
+  if (/\/quotes\/\d+\/text$/.test(path)) {
+    const text = `${path} 要的是非空字符串 "<原文>"，收到的是${issue.code === 'invalid_type' ? received : '空字符串'}`;
+    return { message: text, fix: text };
+  }
+  // /grounds/0
+  if (/\/grounds\/\d+$/.test(path)) {
+    const text = `${path} 要的是引用字符串，收到的是${received || '非法引用'}`;
+    return { message: text, fix: text };
+  }
+  // /grounds
+  if (/\/grounds$/.test(path)) {
+    if (issue.code === 'invalid_type') {
+      const text = `${path} 要的是引用字符串列表，收到的是${received}`;
+      return { message: text, fix: text };
+    }
+  }
+  // /location
+  if (/\/location$/.test(path)) {
+    const text = `${path} 要的是引用字符串，收到的是${received || '非法引用'}`;
+    return { message: text, fix: text };
+  }
+  // /text
+  if (/\/text$/.test(path)) {
+    const text = `${path} 要的是非空字符串，收到的是${issue.code === 'invalid_type' ? received : '空字符串'}`;
+    return { message: text, fix: text };
+  }
+  // Fallback for any invalid_type in slots
+  if (issue.code === 'invalid_type') {
+    const expected = typeName(issue.expected);
+    const text = `${path} 要的是${expected}，收到的是${received}`;
+    return { message: text, fix: text };
+  }
+  return null;
+}
+
 /** zod issues as structure violations with JSON Pointers into the submission (cut to a readable length). */
 export function issuesOf(error: z.ZodError, base: string): Problem[] {
   return error.issues.map((issue) => {
     const keys = issue.code === 'unrecognized_keys' ? (issue as { keys?: string[] }).keys ?? [] : [];
     const path = clipPointer(wellFormed(`${base}${pointerOfPath(issue.path)}${keys.length === 1 ? pointerOf(keys[0]) : ''}`));
+    const specific = specificFix(path, issue);
+    if (specific !== null) {
+      return protocolError('SUBMISSION_SCHEMA_VIOLATION', `提交的结构不对：${specific.message}`, { path, fix: specific.fix });
+    }
     const detail = keys.length > 0 ? `不认识的字段 ${keys.map((k) => wellFormed([...k].slice(0, 80).join(''))).join('、')}` : wellFormed(issue.message);
     return violation(path, `提交的结构不对：${detail}`);
   });

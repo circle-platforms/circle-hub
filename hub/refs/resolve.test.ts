@@ -225,6 +225,11 @@ describe('verifyQuote on unreadable or missing text', () => {
     const unresolved = await resolveReference(`src:${'0'.repeat(64)}`, ctx);
     assert.ok(!unresolved.resolved);
     assert.equal(verifyQuote(unresolved, '任何文字'), null);
+
+    const visited = new Set<string>([reference]);
+    const cyclic = await resolveReference(reference, { ...ctx, visited });
+    assert.equal(cyclic.resolved, false);
+    assert.equal(cyclic.message, `成环的引用：${reference}`);
   });
 });
 

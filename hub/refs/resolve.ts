@@ -92,6 +92,8 @@ export interface ResolveContext {
   documents?: DocumentCache;
   /** Receives the real reason behind an unavailable result; never shown to the reader. */
   onDiagnostic?: (diagnostic: ResolveDiagnostic) => void;
+  /** Active reference resolution set to detect and halt circular references. */
+  visited?: Set<string>;
 }
 
 export type Resolved = {
@@ -242,6 +244,10 @@ export async function resolveReference(input: string | Reference, ctx: ResolveCo
     const shown = (typeof input === 'string' ? input : (JSON.stringify(input) ?? '')).slice(0, 512);
     return unresolved(shown, `引用格式不对：${error.message}`);
   }
+  if (ctx.visited?.has(canonical)) {
+    return unresolved(canonical, `成环的引用：${canonical}`);
+  }
+  ctx.visited?.add(canonical);
   const consumer = ctx.consumer ?? 'model';
   const diagnose = (message: string): void => ctx.onDiagnostic?.({ reference: canonical, scheme: ref.scheme, message });
   switch (ref.scheme) {
