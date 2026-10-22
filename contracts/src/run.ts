@@ -10,7 +10,7 @@ import {
   TriggerSchema,
 } from '../generated/vocabulary.ts';
 import { Claim } from './claim.ts';
-import { IsoTime, ItemId, PackId, PackVersion, RunId, Sha256, UserId } from './common.ts';
+import { IsoTime, ItemId, LeaseId, PackId, PackVersion, RunId, Sha256, UserId } from './common.ts';
 import { ContextBuild } from './pack.ts';
 import { ExternalObjectId, ReferenceUri, referenceUriOf } from './reference.ts';
 
@@ -136,6 +136,10 @@ export const RunRecord = RunSummary.extend({
   client_key: z.string().min(1).max(200).optional(),
   request_digest: Sha256.optional().describe('SHA-256 of the RFC 8785 canonical JSON of the start_run arguments the client key was bound to; the same key with other arguments is IDEMPOTENCY_MISMATCH (D05 R[4])'),
   client_key_expires_at: IsoTime.optional().describe('end of the window in which repeating the client key returns this run'),
+  leases: z
+    .array(z.strictObject({ lease: LeaseId, keys: z.array(z.string().min(1)).min(1), until: IsoTime }))
+    .optional()
+    .describe('the leases the Hub acquired for this run before storing it (the projection\'s lease_requests, granted); the fencing token stays in the lease table, never in the record'),
 }).superRefine((r, ctx) => {
   if (r.host === 'hub') {
     if (r.runner !== undefined) ctx.addIssue({ code: 'custom', path: ['runner'], message: 'a run the Hub executes has no runner' });

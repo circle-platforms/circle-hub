@@ -22,10 +22,13 @@ export const RunId = idOf('run');
 export const UserId = idOf('usr');
 export const TokenId = idOf('tok');
 export const RecordId = idOf('rcd');
+/** A lease identity: `lse_` plus a 26 character lowercase ULID (the identity the keys of one grant are held under). */
+export const LeaseId = idOf('lse');
 export type RunId = z.infer<typeof RunId>;
 export type UserId = z.infer<typeof UserId>;
 export type TokenId = z.infer<typeof TokenId>;
 export type RecordId = z.infer<typeof RecordId>;
+export type LeaseId = z.infer<typeof LeaseId>;
 
 /** Identity of an item inside one run. Chosen by the pack's projection function, opaque to the Hub core. */
 export const ItemId = z.string().min(1).max(200);

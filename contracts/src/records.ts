@@ -1,10 +1,23 @@
 // Record envelope: the append-only record table's row shape (formatProposals.recordStructure). The body schema depends on `schema`.
 import { z } from 'zod';
 import { ProvenanceTypeSchema } from '../generated/vocabulary.ts';
+import { RunId } from './common.ts';
 import { RECORD_KINDS } from '../generated/protocol.ts';
 import { IsoTime, RecordId, SchemaId, Sha256 } from './common.ts';
 
 export const RecordKindSchema = z.enum(RECORD_KINDS);
+
+/** The detail a `lease` action carries (B05 F[0] milestone: the lease action kind): what happened to which keys, held
+ * by whom, until when, with the fencing token. The token lives only in the Hub's own action records (D04 R[0] last
+ * sentence), never in what a client sees. */
+export const LeaseDetail = z.strictObject({
+  op: z.enum(['acquire', 'extend', 'release', 'force_release', 'take_over']),
+  lease: z.string().min(1).describe('the lease identity (lse_…) the keys are held under'),
+  keys: z.array(z.string().min(1)).min(1),
+  holder: z.strictObject({ user: z.string().min(1), run: RunId }).describe('the user and the run that hold the lease'),
+  until: z.string().min(1).describe('the end moment of the lease after this operation (ISO time)'),
+  token: z.number().int().nonnegative().describe('the fencing token after this operation: monotonic per key row'),
+});
 
 export const RecordEnvelope = z.strictObject({
   id: RecordId,

@@ -26,7 +26,7 @@ export const AXES = {
   trigger: { label: '触发', owner: 'W09', values: [{ code: 'session', label: '会话' }, { code: 'event_or_schedule', label: '事件或定时' }, { code: 'requirement', label: '要求项' }, { code: 'standing_obligation', label: '常设义务' }] },
   execution_host: { label: '执行宿主', owner: 'W06', values: [{ code: 'local_circle', label: '本地 Circle' }, { code: 'bot', label: 'bot' }, { code: 'hub', label: 'Hub（仅确定性函数与类型化判断）' }] },
   item_handling: { label: '条目处理声明', owner: 'W07', values: [{ code: 'handled', label: '已处理' }, { code: 'skipped', label: '跳过' }] },
-  action_kind: { label: '动作种类', owner: 'B05', values: [{ code: 'read', label: '读取' }, { code: 'parse', label: '解析' }, { code: 'generate', label: '生成' }, { code: 'read_back', label: '回读' }, { code: 'validate', label: '边界校验' }, { code: 'dispatch', label: '派发' }, { code: 'classify', label: '归类' }, { code: 'move_root', label: '移动当前根' }] },
+  action_kind: { label: '动作种类', owner: 'B05', values: [{ code: 'read', label: '读取' }, { code: 'parse', label: '解析' }, { code: 'generate', label: '生成' }, { code: 'read_back', label: '回读' }, { code: 'validate', label: '边界校验' }, { code: 'dispatch', label: '派发' }, { code: 'classify', label: '归类' }, { code: 'move_root', label: '移动当前根' }, { code: 'lease', label: '租约' }] },
   action_result: { label: '动作结果', owner: 'B05', values: [{ code: 'completed', label: '完成' }, { code: 'error', label: '报错' }, { code: 'unknown', label: '未知' }] },
   acceptance: { label: '回执', owner: 'B05', values: [{ code: 'accepted', label: '已受理' }, { code: 'not_accepted', label: '未受理' }] },
   call_result: { label: '调用结果', owner: 'B08', values: [{ code: 'ok', label: '正常' }, { code: 'error', label: '出错' }, { code: 'transport_failure', label: '传输失败' }] },
@@ -268,9 +268,9 @@ export function isItemHandling(value: unknown): value is ItemHandling {
 }
 
 /** 动作种类 (B05) */
-export const ACTION_KIND = ['read', 'parse', 'generate', 'read_back', 'validate', 'dispatch', 'classify', 'move_root'] as const;
+export const ACTION_KIND = ['read', 'parse', 'generate', 'read_back', 'validate', 'dispatch', 'classify', 'move_root', 'lease'] as const;
 export type ActionKind = (typeof ACTION_KIND)[number];
-export const ACTION_KIND_LABEL = { 'read': '读取', 'parse': '解析', 'generate': '生成', 'read_back': '回读', 'validate': '边界校验', 'dispatch': '派发', 'classify': '归类', 'move_root': '移动当前根' } as const satisfies { readonly [K in ActionKind]: string };
+export const ACTION_KIND_LABEL = { 'read': '读取', 'parse': '解析', 'generate': '生成', 'read_back': '回读', 'validate': '边界校验', 'dispatch': '派发', 'classify': '归类', 'move_root': '移动当前根', 'lease': '租约' } as const satisfies { readonly [K in ActionKind]: string };
 export const ActionKindSchema = z.enum(ACTION_KIND);
 export function isActionKind(value: unknown): value is ActionKind {
   return (ACTION_KIND as readonly unknown[]).includes(value);

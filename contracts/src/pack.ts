@@ -187,8 +187,8 @@ export const ContextBuild = z.strictObject({
 });
 export type ContextBuild = z.infer<typeof ContextBuild>;
 
-/** The run-context parts a workflow may ask for beyond the defaults (W06): today only the builds of the bound product. */
-export const CONTEXT_KEY = ['builds'] as const;
+/** The run-context parts a workflow may ask for beyond the defaults (W06): the builds of the bound product, and the leases of the declared prefixes. */
+export const CONTEXT_KEY = ['builds', 'leases'] as const;
 export type ContextKey = (typeof CONTEXT_KEY)[number];
 export const ContextKeySchema = z.enum(CONTEXT_KEY);
 
@@ -207,6 +207,15 @@ export const RunContext = z.strictObject({
     .describe(
       'every build the knowledge base knows for the bound product, sorted by (line, built_at, name); present only when the workflow asked for it (workflow.context) and the run is bound to a product — absent then means "not asked", not "none known"',
     ),
+  leases: z
+    .strictObject({
+      now: IsoTime.describe('the moment the lease table was frozen for this run'),
+      entries: z
+        .array(z.strictObject({ key: z.string().min(1), until: IsoTime, mine: z.boolean() }))
+        .describe('the unexpired, unreleased rows of the declared prefixes at the frozen moment; no tokens, no other holders\' names — visibility is undecided (D04 changes5)'),
+    })
+    .optional()
+    .describe('present only when the workflow asked for the leases context (workflow.context)'),
 });
 export type RunContext = z.infer<typeof RunContext>;
 
@@ -381,8 +390,18 @@ export const WorkflowFile = z
     subject: Key.describe('the input slot that holds the judged source'),
     projection: PackFunctionRef.describe('ProjectionInput -> ProjectionOutput: the items of the run (W01)'),
     expected_sources: PackFunctionRef.optional().describe('ExpectedSourcesInput -> ExpectedSourcesOutput: external objects to bind as expected sources'),
+    leases: z
+      .strictObject({
+        prefix: z.string().min(1).regex(/\/$/, 'the lease prefix ends with / (keys of this workflow live under it)'),
+        max_ttl_seconds: z.number().int().positive().max(2_592_000).describe('the ceiling of one lease request\'s TTL and of the cumulative extension (D04 R[0])'),
+      })
+      .optional()
+      .describe('the lease namespace this workflow may acquire under (the keys of its lease_requests start with the prefix)'),
   })
   .superRefine((w, ctx) => {
+    if (w.leases !== undefined && !(w.context ?? []).includes('leases')) {
+      ctx.addIssue({ code: 'custom', path: ['leases'], message: 'a workflow that declares leases asks for the leases context (context: ["leases"])' });
+    }
     if (!w.inputs.some((i) => i.slot === w.subject)) ctx.addIssue({ code: 'custom', path: ['subject'], message: 'the subject names an input slot' });
     w.inputs.forEach((i, k) => {
       if (w.inputs.findIndex((x) => x.slot === i.slot) !== k) ctx.addIssue({ code: 'custom', path: ['inputs', k, 'slot'], message: `slot ${i.slot} is declared twice` });
@@ -444,7 +463,15 @@ export const ProjectedItem = z.strictObject({
 export type ProjectedItem = z.infer<typeof ProjectedItem>;
 
 export const ProjectionOutput = z.union([
-  z.strictObject({ items: z.array(ProjectedItem), groups: z.array(z.record(z.string(), z.unknown())).optional(), warnings: z.array(PackWarning) }),
+  z.strictObject({
+    items: z.array(ProjectedItem),
+    groups: z.array(z.record(z.string(), z.unknown())).optional(),
+    warnings: z.array(PackWarning),
+    lease_requests: z
+      .array(z.strictObject({ keys: z.array(z.string().min(1)).min(1), ttl_seconds: z.number().int().positive() }))
+      .optional()
+      .describe('leases the run asks the Hub to acquire before it is stored (one request: several keys, all or nothing); keys must sit under the workflow\'s declared prefix and the TTL under its cap'),
+  }),
   PackFailure,
 ]);
 export type ProjectionOutput = z.infer<typeof ProjectionOutput>;
