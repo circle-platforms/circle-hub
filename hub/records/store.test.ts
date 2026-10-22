@@ -305,7 +305,7 @@ test('migrations apply once, concurrently safe, and later opens apply nothing', 
   const pools = [new Database(createPool(database, 2)), new Database(createPool(database, 2)), new Database(createPool(database, 2))];
   t.after(() => Promise.all(pools.map((db) => db.end())));
   const applied = await Promise.all(pools.map((db) => migrate(db)));
-  assert.deepEqual(applied.flat(), [1]);
+  assert.deepEqual(applied.flat(), [1, 2]);
   assert.deepEqual(await migrate(pools[0]), []);
   const journal = (await sql(database, 'SELECT version, name, sha256 FROM schema_migrations')).rows;
   assert.equal(journal.length, MIGRATIONS.length);
@@ -322,7 +322,7 @@ test('an altered applied migration, an unknown applied version or a gap refuses 
   await assert.rejects(migrate(db, changed), (error: unknown) => error instanceof MigrationError && /校验和/.test((error as Error).message));
   const renamed = MIGRATIONS.map((migration) => ({ ...migration, name: 'renamed' }));
   await assert.rejects(migrate(db, renamed), MigrationError);
-  await assert.rejects(migrate(db, [...MIGRATIONS, { version: 3, name: 'skips_two', sql: 'SELECT 1' }]), TypeError);
+  await assert.rejects(migrate(db, [...MIGRATIONS, { version: 4, name: 'skips_three', sql: 'SELECT 1' }]), TypeError);
   // The journal itself was tampered with: the program refuses to open the database.
   await sql(database, "UPDATE schema_migrations SET sha256 = repeat('0', 64) WHERE version = 1");
   const dataDir = postgres.root;
@@ -332,13 +332,13 @@ test('an altered applied migration, an unknown applied version or a gap refuses 
   await sql(database, "INSERT INTO schema_migrations (version, name, sha256) VALUES (99, 'from_the_future', repeat('a', 64))");
   await assert.rejects(openRecords(config), (error: unknown) => error instanceof MigrationError && /不认识的迁移/.test((error as Error).message));
   await sql(database, 'DELETE FROM schema_migrations WHERE version = 99');
-  // Version 3 is applied but version 2 is not: migrations only move forward.
-  const second = { version: 2, name: 'second', sql: 'CREATE TABLE gap_two (x int)' };
+  // Version 4 is applied but version 3 is not: migrations only move forward (versions past this program's list).
   const third = { version: 3, name: 'third', sql: 'CREATE TABLE gap_three (x int)' };
-  await sql(database, 'INSERT INTO schema_migrations (version, name, sha256) VALUES (3, $1, $2)', [third.name, migrationChecksum(third)]);
-  await assert.rejects(migrate(db, [...MIGRATIONS, second, third]), (error: unknown) => error instanceof MigrationError && /只能向前迁移/.test((error as Error).message));
-  assert.equal((await sql(database, "SELECT to_regclass('gap_two') AS t")).rows[0].t, null);
-  await sql(database, 'DELETE FROM schema_migrations WHERE version = 3');
+  const fourth = { version: 4, name: 'fourth', sql: 'CREATE TABLE gap_four (x int)' };
+  await sql(database, 'INSERT INTO schema_migrations (version, name, sha256) VALUES (4, $1, $2)', [fourth.name, migrationChecksum(fourth)]);
+  await assert.rejects(migrate(db, [...MIGRATIONS, third, fourth]), (error: unknown) => error instanceof MigrationError && /只能向前迁移/.test((error as Error).message));
+  assert.equal((await sql(database, "SELECT to_regclass('gap_three') AS t")).rows[0].t, null);
+  await sql(database, 'DELETE FROM schema_migrations WHERE version = 4');
   const kit = await openRecords(config);
   await kit.close();
 });
