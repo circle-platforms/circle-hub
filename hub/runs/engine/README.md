@@ -26,7 +26,7 @@ well-formed text). The same reasons go to the admin note of the call they belong
 | `target.ts` | product line by any name, version line, build (declared, the pack's select_build, or the newest released build with a root), the locked root, one basis claim each |
 | `inputs.ts` | binding inputs to slots: uploads, Hub records (B03 R[4]), external objects read as the caller; parsing with the core parser |
 | `projection.ts` | the projection function in the sandbox, item locations and fingerprints; expected sources read best effort |
-| `submit.ts` | submit_result: store as received, idempotency, supersession, arguments the records cannot hold, structure, exact values, evaluation, a receipt for every call |
+| `submit.ts` | submit_result: store as received, idempotency for the same session and declared model, supersession, arguments the records cannot hold, structure, exact values, evaluation, a receipt for every call |
 | `slots.ts` | the slot schema of RunSummary.slots, the structural check of slot records and cross-item entries, pack JSON Schemas (fail closed) |
 | `exact.ts` | the run scope and exact-value resolution: references, verbatim quotations, commands (T04), locations in the judged source, canonical slot records |
 | `evaluate.ts` | re-running every check, terminals per (item, requirement, layer), status, attribution, claims, errors, partitions |

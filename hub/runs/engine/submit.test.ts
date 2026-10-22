@@ -331,10 +331,10 @@ test('a blocking violation of a check on the artifact under verification routed 
 test('repeating a submission returns the stored result without writing or re-running anything', { skip }, async () => {
   const run = await draft();
   const args = submission(run, { [ITEM.c1]: handled(ITEM.c1, [finding(run, ITEM.c1)]) });
-  const first = await h.service.submitResult(h.alice, args, h.call('first-call'));
+  const first = await h.service.submitResult(h.alice, args, h.call('sess-retry'));
   const count = async () => (await h.kit.store.find({ key: INDEX.actionRun, value: run.run, kind: 'action' })).items.length + (await h.kit.store.find({ key: INDEX.submissionRun, value: run.run, kind: 'submission' })).items.length;
   const before = await count();
-  const second = await h.service.submitResult(h.alice, JSON.parse(JSON.stringify(args)), h.call('second-call'));
+  const second = await h.service.submitResult(h.alice, JSON.parse(JSON.stringify(args)), h.call('sess-retry'));
   assert.deepEqual(second, first);
   assert.equal(second.result!.trace, first.result!.trace);
   assert.equal(await count(), before);

@@ -550,14 +550,14 @@ test('the engine and the reference agree on random submissions and the fixed bra
   assert.equal(shownLayer(sameEngine, 'i1', 'indep').layer?.terminal, 'judgment');
   assert.equal(sameWant.items.find((item) => item.item === 'i1')?.requirements.find((requirement) => requirement.requirement === 'indep')?.status, 'satisfied');
 
-  // A later submission on a run already accepted as independent. The reference judges this submission's own session, which is
-  // the author's, so independence is unknown (A04). The engine keeps the requirement satisfied. Seed 20261127.
+  // A later submission of the same body from the author's session. Both sides leave the independent judgment unsatisfied
+  // (A04). Seed 20261127.
   const laterSeed = SEED + 105;
   const laterJudge = { session: author.session, model: 'beta@2' };
   const laterPlan: Plan = { seed: laterSeed, roundsUsed: 0, items: sameItems, judge: laterJudge, author, defects: [] };
   const laterEngine = await acceptedView(laterPlan, continued);
   const laterWant = referenceOf(laterPlan);
-  assert.equal(shownLayer(laterEngine, 'i1', 'indep').status, 'satisfied');
+  assert.equal(shownLayer(laterEngine, 'i1', 'indep').status, 'unsatisfied');
   assert.equal(laterWant.items.find((item) => item.item === 'i1')?.requirements.find((requirement) => requirement.requirement === 'indep')?.status, 'unsatisfied');
 
   // W02 R[5]: a second refutation of a repair code with one round is used up. The engine leaves the counter at 0 and

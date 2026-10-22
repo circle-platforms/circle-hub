@@ -256,6 +256,23 @@ async function verified(run: RunSummary, model: string, session: string): Promis
   };
 }
 
+test('replaying an accepted verification from the drafter session is not independent (A04)', { skip }, async () => {
+  const lineage = await draftBy('sess-replay-draft', 'sess-replay-draft', DRAFT_MODEL);
+  const run = await verification('sess-replay-verify', h, lineage.handover, lineage.run);
+  const body = verdicts(run, VERIFIER);
+  const accepted = await h.service.submitResult(h.alice, body, h.call('sess-replay-verify'));
+  assert.equal(accepted.acceptance, 'accepted', JSON.stringify(accepted.errors));
+  assert.equal(verificationOf(accepted.result!, ITEM.c1).status, 'satisfied');
+  // The body is unchanged. The session is the drafter's, so this call is not the verifier's receipt.
+  const replayed = await h.service.submitResult(h.alice, body, h.call('sess-replay-draft'));
+  assert.equal(replayed.acceptance, 'accepted', JSON.stringify(replayed.errors));
+  const again = verificationOf(replayed.result!, ITEM.c1);
+  assert.equal(again.status, 'unsatisfied');
+  assert.equal(again.unsatisfied_reason, 'independence_unknown');
+  const retry = await h.service.submitResult(h.alice, body, h.call('sess-replay-verify'));
+  assert.equal(retry.result!.trace, accepted.result!.trace);
+});
+
 test('a verification revised by its own verifier stays independent of the draft; revised by the drafter it is not', { skip }, async () => {
   const lineage = await draftBy('sess-r-draft', 'sess-r-draft', DRAFT_MODEL);
   const v1 = await verification('sess-r-verify', h, lineage.handover, lineage.run);
