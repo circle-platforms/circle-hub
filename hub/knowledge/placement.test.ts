@@ -181,7 +181,7 @@ describe('placement by the typed-judgment model', () => {
     failing = false;
     const second = await w.knowledge.syncProduct(w.product, { by: w.admin, lines: ['1.2'] });
     assert.equal(reasonOf(second)?.outcome, 'produced');
-    assert.match(reasonOf(second)?.reason ?? '', /重新产出：上次有 4 个片段的归类判断失败/);
+    assert.match(reasonOf(second)?.reason ?? '', /重新产出：上次有 4 个片段的归位判断失败/);
     assert.equal(reasonOf(second)?.root, failedRoot, 'uncalibrated answers do not change the tree');
 
     const third = await w.knowledge.syncProduct(w.product, { by: w.admin, lines: ['1.2'] });
@@ -191,7 +191,7 @@ describe('placement by the typed-judgment model', () => {
     await w.knowledge.calibration.addLabelled(w.admin, { kind: PLACEMENT_CHAIN, model: SCRIPTED_MODEL, samples });
     const fourth = await w.knowledge.syncProduct(w.product, { by: w.admin, lines: ['1.2'] });
     assert.equal(reasonOf(fourth)?.outcome, 'produced');
-    assert.match(reasonOf(fourth)?.reason ?? '', /重新产出：归类判断的模型或本链的校准变了/);
+    assert.match(reasonOf(fourth)?.reason ?? '', /重新产出：归位的模型或本链的校准变了/);
     assert.notEqual(reasonOf(fourth)?.root, failedRoot);
     assert.equal(reasonOf(fourth)?.unplaced, 1);
     assert.equal(fourth.pointers.find((p) => p.line === '1.2')?.moved, true, 'the line moves to the newly placed tree');
@@ -357,7 +357,7 @@ describe('producer opt-in for typed judgment placement (data exfiltration safegu
 
     const result = await w.knowledge.produceTree({ product: w.product, build });
     assert.equal(result.ok, true, result.reason ?? '');
-    assert.equal(receivedPieces.length, 0, 'no span sent to the judgment service');
+    assert.equal(receivedPieces.length, 0, 'no span sent to the judge');
     assert.equal(result.placedByModel, 0);
     assert.equal(result.unplaced, 1);
     assert.deepEqual(result.placementSkipped, { defects: 1 });
@@ -373,11 +373,11 @@ describe('producer opt-in for typed judgment placement (data exfiltration safegu
     assert.equal(row.stopped_at, '/');
     assert.equal(row.candidate, null);
     assert.deepEqual(row.judgments, []);
-    assert.equal(row.note, '生产器未声明交给判断服务');
+    assert.equal(row.note, '生产器未声明交给 bot 归位，留在根下标为未归位');
     assert.deepEqual(row.producers, ['defects']);
   });
 
-  test('an opted-in producer (placement: judgment_allowed) sends its path-less spans to the judgment service', async (t) => {
+  test('an opted-in producer (placement: judgment_allowed) hands its path-less spans to the injected judge', async (t) => {
     const receivedPieces: string[] = [];
     const jev = new ScriptedJev((question, state, id) => {
       const piece = (state as Record<string, { text: string }>)[id];
@@ -474,11 +474,11 @@ describe('producer opt-in for typed judgment placement (data exfiltration safegu
       assert.equal(row.stopped_at, '/');
       assert.equal(row.candidate, null);
       assert.deepEqual(row.judgments, []);
-      assert.equal(row.note, '生产器未声明交给判断服务');
+      assert.equal(row.note, '生产器未声明交给 bot 归位，留在根下标为未归位');
     }
   });
 
-  test('without a judgment service, behavior is unchanged and no error occurs', async (t) => {
+  test('without a placer, the declared and the undeclared path-less entries both stay unplaced at the root', async (t) => {
     const unplacedDefect = {
       kind: 'defect',
       path: null,
@@ -508,12 +508,12 @@ describe('producer opt-in for typed judgment placement (data exfiltration safegu
 
     const body = await compositionOf(w, result.composition as string);
     const defectRow = body.unplaced.find((r) => r.producers.includes('defects'));
-    assert.equal(defectRow?.note, '生产器未声明交给判断服务');
+    assert.equal(defectRow?.note, '生产器未声明交给 bot 归位，留在根下标为未归位');
     const manualRow = body.unplaced.find((r) => r.producers.includes('manual'));
-    assert.equal(manualRow?.note, '没有配置归类判断模型（Jev），片段不挂树');
+    assert.equal(manualRow?.note, '未归位，留在根下');
   });
 
-  test('sync report output shows the count of skipped placement entries per producer', async (t) => {
+  test('the sync report says how many entries stay unplaced at the root, and keeps the per-producer counts as data', async (t) => {
     const defect = {
       kind: 'defect',
       path: null,
@@ -530,9 +530,11 @@ describe('producer opt-in for typed judgment placement (data exfiltration safegu
     const report = await w.knowledge.syncProduct(w.product, { by: w.admin, lines: ['1.2'] });
     assert.equal(report.counts.produced, 1);
     const buildReport = report.builds[0];
-    assert.match(buildReport.reason, /defects 生产器的 1 个条目未发给判断服务/);
+    assert.match(buildReport.reason, /1 个条目未归位，留在根下/);
+    assert.doesNotMatch(buildReport.reason, /判断服务|模型归类/);
     assert.deepEqual(buildReport.placement_skipped, { defects: 1 });
     const formatted = formatSyncReport(report);
-    assert.match(formatted, /defects 生产器的 1 个条目未发给判断服务/);
+    assert.match(formatted, /1 个条目未归位，留在根下/);
+    assert.doesNotMatch(formatted, /判断服务|模型归类/);
   });
 });

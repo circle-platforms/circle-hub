@@ -1,10 +1,10 @@
 // createTestHub(): the Hub assembled from the REAL packages in-process (hub/server/assemble/hub.ts: pack registry, run
 // engine, knowledge, connectors) on a temporary PostgreSQL, listening on a loopback port. The external systems are the
-// connectors' synthetic stub servers (hub/connectors/testing, loopback only), the typed-judgment model is scripted, and the
-// packs under packs/ that have a pack.json are published through the real registry (product packs activated). Helpers
-// create users and tokens, assign packs, publish more packs, add resources, set credentials and run a knowledge sync;
-// client() wraps the official SDK client over streamable HTTP. This is what the acceptance tests use. Nothing here reaches
-// a real system, the owner's keychain or any file outside temporary directories.
+// connectors' synthetic stub servers (hub/connectors/testing, loopback only), and the packs under packs/ that have a
+// pack.json are published through the real registry (product packs activated). Helpers create users and tokens, assign
+// packs, publish more packs, add resources, set credentials and run a knowledge sync; client() wraps the official SDK
+// client over streamable HTTP. This is what the acceptance tests use. Nothing here reaches a real system, the owner's
+// keychain or any file outside temporary directories.
 import { copyFile, lstat, mkdir, mkdtemp, readdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -14,7 +14,7 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import { PACK_KIND, type PermissionRole } from '../../contracts/generated/vocabulary.ts';
 import { packPathProblem } from '../../contracts/src/pack.ts';
 import type { ResourceRecord } from '../../contracts/src/resources.ts';
-import { DEFAULT_JEV_MODEL, type HubConfig, type Limits } from '../config/index.ts';
+import type { HubConfig, Limits } from '../config/index.ts';
 import type { AddResourceInput } from '../connectors/api.ts';
 import {
   agileFixture,
@@ -28,7 +28,6 @@ import {
   type StaticFile,
   type StubServer,
 } from '../connectors/testing/api.ts';
-import { NONE_OPTION, ScriptedJev, type JevClient } from '../jev/api.ts';
 import type { SyncOptions, SyncReport } from '../knowledge/api.ts';
 import type { Principal, User } from '../records/api.ts';
 import { osIsolationAvailable } from '../rules/api.ts';
@@ -66,8 +65,6 @@ export interface TestHubOptions {
   packs?: string[];
   /** Activate every product pack published at start (default true). */
   activateProducts?: boolean;
-  /** The typed-judgment client; default a scripted judge that answers `none` to every choice (nothing placed). null: none. */
-  jev?: JevClient | null;
   /** Start the connectors' stub servers (default true). */
   stubs?: boolean;
   /** The agile stub's fixture; default agileFixture(AGILE_DOCUMENT). */
@@ -181,18 +178,6 @@ export async function stagePack(directory: string, scratch: string): Promise<str
   return target;
 }
 
-/** The default scripted judge: `none` to every choice (nothing is placed by the model), 0.5 to yes/no, the lowest score. */
-export function scriptedJudge(): ScriptedJev {
-  return new ScriptedJev((question) => {
-    if (question.type === 'choice') {
-      const options = Object.keys(question.criteria);
-      return { choice: options.includes(NONE_OPTION) ? NONE_OPTION : options[options.length - 1] };
-    }
-    if (question.type === 'noul') return { noul: 0.5 };
-    return { level: 0 };
-  });
-}
-
 async function startStubs(options: TestHubOptions): Promise<TestStubs> {
   const fixture = options.agile ?? agileFixture(AGILE_DOCUMENT);
   const started: StubServer[] = [];
@@ -244,13 +229,11 @@ export async function createTestHub(options: TestHubOptions = {}): Promise<TestH
       database: records.database,
       keychain: { service: 'circle-hub-test', account: 'vault' },
       limits: { ...records.config.limits },
-      jev: { model: DEFAULT_JEV_MODEL },
     };
     if (options.stubs !== false) stubs = await startStubs(options);
     const hub = await assembleHub(config, records, {
       requireOsIsolation: options.requireOsIsolation ?? (await osIsolationAvailable()),
       requireVaultKey: true,
-      jev: options.jev === undefined ? scriptedJudge() : options.jev,
       ...(options.now === undefined ? {} : { now: options.now }),
       log: (line) => logs.push(line),
       resourceCacheMs: 0,

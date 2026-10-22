@@ -24,7 +24,7 @@ export const AXES = {
   hypothesis_status: { label: '假设状态', owner: 'V08', values: [{ code: 'open', label: '开放' }, { code: 'excluded', label: '已排除' }] },
   accepted_producer: { label: '接受的生产者', owner: 'W02', values: [{ code: 'fact', label: '事实' }, { code: 'judgment', label: '判断' }, { code: 'independent_judgment', label: '独立判断' }] },
   trigger: { label: '触发', owner: 'W09', values: [{ code: 'session', label: '会话' }, { code: 'event_or_schedule', label: '事件或定时' }, { code: 'requirement', label: '要求项' }, { code: 'standing_obligation', label: '常设义务' }] },
-  execution_host: { label: '执行宿主', owner: 'W06', values: [{ code: 'local_circle', label: '本地 Circle' }, { code: 'bot', label: 'bot' }, { code: 'hub', label: 'Hub（仅确定性函数与类型化判断）' }] },
+  execution_host: { label: '执行宿主', owner: 'W06', values: [{ code: 'local_circle', label: '本地 Circle' }, { code: 'bot', label: 'bot' }, { code: 'hub', label: 'Hub（仅确定性函数）' }] },
   item_handling: { label: '条目处理声明', owner: 'W07', values: [{ code: 'handled', label: '已处理' }, { code: 'skipped', label: '跳过' }] },
   action_kind: { label: '动作种类', owner: 'B05', values: [{ code: 'read', label: '读取' }, { code: 'parse', label: '解析' }, { code: 'generate', label: '生成' }, { code: 'read_back', label: '回读' }, { code: 'validate', label: '边界校验' }, { code: 'dispatch', label: '派发' }, { code: 'classify', label: '归类' }, { code: 'move_root', label: '移动当前根' }] },
   action_result: { label: '动作结果', owner: 'B05', values: [{ code: 'completed', label: '完成' }, { code: 'error', label: '报错' }, { code: 'unknown', label: '未知' }] },
@@ -252,7 +252,7 @@ export function isTrigger(value: unknown): value is Trigger {
 /** 执行宿主 (W06) */
 export const EXECUTION_HOST = ['local_circle', 'bot', 'hub'] as const;
 export type ExecutionHost = (typeof EXECUTION_HOST)[number];
-export const EXECUTION_HOST_LABEL = { 'local_circle': '本地 Circle', 'bot': 'bot', 'hub': 'Hub（仅确定性函数与类型化判断）' } as const satisfies { readonly [K in ExecutionHost]: string };
+export const EXECUTION_HOST_LABEL = { 'local_circle': '本地 Circle', 'bot': 'bot', 'hub': 'Hub（仅确定性函数）' } as const satisfies { readonly [K in ExecutionHost]: string };
 export const ExecutionHostSchema = z.enum(EXECUTION_HOST);
 export function isExecutionHost(value: unknown): value is ExecutionHost {
   return (EXECUTION_HOST as readonly unknown[]).includes(value);

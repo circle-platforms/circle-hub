@@ -19,19 +19,11 @@ Secrets never come from the environment; they enter through the vault. `CIRCLE_H
 | --- | --- | --- |
 | `CIRCLE_HUB_KEYCHAIN_SERVICE` | `circle-hub` | `keychain.service` |
 | `CIRCLE_HUB_KEYCHAIN_ACCOUNT` | `vault-master-key` (the platform's and the brief's name) | `keychain.account` |
-| `CIRCLE_HUB_JEV_MODEL` | `jev-1.13.0` | `jev.model` |
-
-`CIRCLE_HUB_JEV_MODEL` names the K04 typed-judgment model the assembly step builds its client with (the API key comes
-from the vault, never from the environment). It must be a versioned model id, `name-X.Y.Z` without leading zeros (the
-rule of `isVersionedModel` in hub/jev), of at most 128 characters (the longest model name the hub/jev client constructor
-takes): a moving alias such as `jev-latest` or `jev-preview` is refused, because every judgment must record the exact
-model that made it, and a longer id is refused here instead of failing later when the client is built.
 
 Platform-only names: `CIRCLE_HUB_LIBPQ_BIN` (directory of `pg_dump` and `pg_restore`, read by the platform's backup,
 restore and deploy commands). The source of this list is hub/platform `PLATFORM_VARIABLES`: its values that hub/config does
 not read. `CIRCLE_HUB_HOME` is not among them (the platform reads the data root from `CIRCLE_HUB_DATA_DIR` and refuses
 `CIRCLE_HUB_HOME`), so it still refuses to start.
 
-`drift.test.ts` reads exports of hub/platform and hub/jev (tests only; the production code imports neither) and fails when
-the retired-name guard, the platform-only names, the keychain defaults or the model ids stop agreeing: `loadConfig` must
-accept exactly the ids the hub/jev `HttpJev` constructor is built with when aliases are not allowed.
+`drift.test.ts` reads exports of hub/platform (tests only; the production code imports it not) and fails when
+the retired-name guard, the platform-only names or the keychain defaults stop agreeing.

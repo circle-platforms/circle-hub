@@ -25,7 +25,7 @@ import { assembleHub, type AssembledHub, type AssemblyOptions } from './assemble
 import { OPERATOR_TOKEN_VARIABLE, deploymentKeychainService, keychainOperatorTokens, takeEnvironmentToken, tokenBytes, type OperatorTokenStore } from './assemble/operator-token.ts';
 import { SecretInputError, readSecret as readSecretFromStdin } from './assemble/secret-input.ts';
 import { terminalSafe } from './assemble/terminal.ts';
-import { JEV_KEY_ENTRY, JEV_SECRET, NO_JEV_NOTICE, isJevKey, vaultKeyProblem } from './assemble/vault.ts';
+import { vaultKeyProblem } from './assemble/vault.ts';
 import { CliError, UsageError } from './errors.ts';
 
 export interface AdminCommandOptions {
@@ -65,8 +65,6 @@ const DEAD_ITEM = `在“钥匙串访问”里删掉这个项，再运行 ${REIS
  * is set, and a token kept in a shell's environment reaches everything that shell starts.
  */
 const ONE_COMMAND_TOKEN = `只给这一条命令一个令牌：${OPERATOR_TOKEN_VARIABLE}="$T" circle-hub <命令>（先用 read -rs T 读入，令牌不进命令历史）；不要 export ${OPERATOR_TOKEN_VARIABLE}：serve 见到它会拒绝启动，留在 shell 里的令牌也会传给这个 shell 启动的每个程序`;
-/** How the running Hub is restarted (hub/platform service commands). */
-const RESTART = 'circle-hub service stop，再 circle-hub service start';
 /**
  * What a running Hub does after `secret set` or `resource reset-login` removed the vault's session entry (hub/connectors,
  * "Between processes"): it reads the entry again before a read that needs the credential (and when its login status is
@@ -631,17 +629,6 @@ async function secretCommand(session: Session, args: readonly string[]): Promise
     const admin = await session.admin();
     const hub = await session.hub(true);
     const read = session.options.readSecret ?? ((label: string) => readSecretFromStdin(label));
-    if (resource === JEV_SECRET.resource) {
-      if (entry !== JEV_SECRET.entry) throw new UsageError(`类型化判断服务只有一个凭据项：${JEV_SECRET.entry}`);
-      const value = await decided(() => read(`${resource} ${entry}`));
-      if (!isJevKey(value)) throw new CliError('这个值不像类型化判断服务的密钥（只能是字母、数字和 - . _ ~ + /，可带结尾的 =，最多 4096 个字符），没有设置');
-      await hub.records.vault.put(JEV_KEY_ENTRY, value);
-      // The running Hub decided at its start whether it has the client (vault.ts jevFromVault); the client reads the key
-      // on every attempt.
-      session.out(`已设置类型化判断服务的密钥（密钥库条目 ${JEV_KEY_ENTRY}，由 ${admin.name} 设置）`);
-      session.err(`注意：正在运行的 Hub 启动时已有这个条目的话，下一次调用这个服务就用新的密钥；启动之后才第一次设置的，要重启 Hub 才用上：${RESTART}`);
-      return 0;
-    }
     // The resource and its credential are checked before a value is asked for (names and digest rules, never a value).
     const described = await decided(() => hub.connectors.admin.describe(admin, resource));
     if (described === null) throw new CliError(`没有资源 ${resource.slice(0, 80)}`, '用 circle-hub resource list 查看资源号');
@@ -670,8 +657,7 @@ async function secretCommand(session: Session, args: readonly string[]): Promise
     // Names only: never a value, a length or a digest.
     for (const name of names) {
       const connector = /^connector\.(res_[0-9a-z]{26})\.([a-z0-9][a-z0-9._-]*)$/.exec(name);
-      if (name === JEV_KEY_ENTRY) session.out(`${name}\t类型化判断服务的密钥`);
-      else if (connector !== null && connector[2] === 'session') session.out(`${name}\t资源 ${connector[1]} 的登录会话`);
+      if (connector !== null && connector[2] === 'session') session.out(`${name}\t资源 ${connector[1]} 的登录会话`);
       else if (connector !== null) session.out(`${name}\t资源 ${connector[1]} 的凭据 ${connector[2]}`);
       else session.out(name);
     }
@@ -701,7 +687,6 @@ async function knowledgeCommand(session: Session, args: readonly string[]): Prom
     }
     const admin = await session.admin();
     const hub = await session.hub(true);
-    if (hub.jev === null) session.err(`注意：${NO_JEV_NOTICE}`);
     const report = await decided(() => knowledgeSync(hub.knowledge, hub.packs, admin, parsed));
     for (const line of formatSyncReport(report).trimEnd().split('\n')) session.out(line);
     return report.error === null && report.counts.failed === 0 ? 0 : 1;

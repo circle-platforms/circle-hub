@@ -7,7 +7,7 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import type { RunSummary } from '../../contracts/src/run.ts';
 import { createApp } from '../../hub/server/app.ts';
 import { assembleHub } from '../../hub/server/assemble/hub.ts';
-import { scriptedJudge, type ToolCallResult } from '../../hub/server/testing-real.ts';
+import { type ToolCallResult } from '../../hub/server/testing-real.ts';
 import { startPostgres, type TemporaryPostgres } from '../../hub/testing/postgres.ts';
 import { DOCUMENTS } from '../fixtures/agile/index.ts';
 import { openConsole, type ConsoleClient } from './support/console.ts';
@@ -71,13 +71,11 @@ describe('scenario 17: hub process restart preserves runs and results', () => {
       database: bed.hub.records.database,
       keychain: { service: 'circle-hub-test', account: 'vault' },
       limits: { ...bed.hub.records.config.limits },
-      jev: { model: 'scripted' },
     };
 
     const reassembledHub = await assembleHub(config, bed.hub.records, {
       requireOsIsolation: false,
       requireVaultKey: false,
-      jev: scriptedJudge(),
       resourceCacheMs: 0,
       extractDir: `${bed.hub.records.dataDir}/extracted`,
     });

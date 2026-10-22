@@ -1,5 +1,5 @@
 // Local validation shared by every Jev client: a request is checked before it is sent and a response before it is used,
-// so HttpJev and ScriptedJev accept and refuse exactly the same things. Messages name question ids, positions and counts,
+// so every client accepts and refuses exactly the same things. Messages name question ids, positions and counts,
 // never state content, option names or anything the service sent back.
 import type { JevAnswer, JevJson, JevNoulQuestion, JevQuestion, JevRequest, JevResponse, JevState } from './api.ts';
 import { JevError } from './errors.ts';

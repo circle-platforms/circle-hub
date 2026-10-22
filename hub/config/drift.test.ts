@@ -2,7 +2,6 @@
 // of hub/config imports neither package). Each test fails when the two sides stop agreeing.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { HttpJev, isVersionedModel } from '../jev/api.ts';
 import * as platform from '../platform/environment.ts';
 import { DEFAULT_KEYCHAIN_ACCOUNT as PLATFORM_KEYCHAIN_ACCOUNT, DEFAULT_KEYCHAIN_SERVICE as PLATFORM_KEYCHAIN_SERVICE } from '../platform/settings.ts';
 import {
@@ -73,43 +72,4 @@ test('hub/config tolerates exactly the platform-only names of PLATFORM_VARIABLES
 
 test('the keychain defaults are the platform defaults', () => {
   assert.deepEqual(loadConfig(BASE).keychain, { service: PLATFORM_KEYCHAIN_SERVICE, account: PLATFORM_KEYCHAIN_ACCOUNT });
-});
-
-test('CIRCLE_HUB_JEV_MODEL accepts exactly the model ids the typed-judgment client can be built with as exact versions', () => {
-  const samples = [
-    `${'a'.repeat(122)}-1.0.0`,
-    `${'a'.repeat(123)}-1.0.0`,
-    `${'a'.repeat(130)}-1.0.0`,
-    `jev-1.0.${'9'.repeat(130)}`,
-    'jev-1.13.0',
-    'jev-0.0.0',
-    'jev-10.20.30',
-    'typed-judge-2.1.0',
-    'j2-1.0.0',
-    'jev-latest',
-    'jev-preview',
-    'jev',
-    'jev-1.13',
-    'jev-1.13.0.1',
-    'jev-01.13.0',
-    'jev-1.013.0',
-    'JEV-1.13.0',
-    'jev_1.13.0',
-    'jev-1.13.0-beta',
-    ' jev-1.13.0',
-    'jev-1.13.0\n',
-    '1.13.0',
-    '-1.13.0',
-    'jev--1.13.0',
-    '2jev-1.0.0',
-  ];
-  for (const model of samples) {
-    const accepted = !refuses(() => loadConfig({ ...BASE, CIRCLE_HUB_JEV_MODEL: model }));
-    // What the assembly does with config.jev.model: build the client, aliases not allowed (the constructor sends nothing).
-    const built = !refuses(() => new HttpJev({ model, apiKey: () => 'unused' }));
-    assert.equal(accepted, built, JSON.stringify(model));
-    if (accepted) assert.equal(isVersionedModel(model), true, JSON.stringify(model));
-  }
-  assert.equal(isVersionedModel(loadConfig(BASE).jev.model), true);
-  assert.doesNotThrow(() => new HttpJev({ model: loadConfig(BASE).jev.model, apiKey: () => 'unused' }));
 });

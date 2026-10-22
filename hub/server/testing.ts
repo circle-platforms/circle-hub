@@ -5,7 +5,7 @@
 import { join } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-import { DEFAULT_JEV_MODEL, type HubConfig, type Limits } from '../config/index.ts';
+import type { HubConfig, Limits } from '../config/index.ts';
 import type { PermissionRole } from '../../contracts/generated/vocabulary.ts';
 import type { Principal, RecordsKit, User } from '../records/api.ts';
 import { createDefaultRegistry } from '../refs/api.ts';
@@ -132,7 +132,6 @@ export async function createTestServer(options: TestServerOptions = {}): Promise
       database: records.database,
       keychain: { service: 'circle-hub-test', account: 'vault' },
       limits: { ...records.config.limits },
-      jev: { model: DEFAULT_JEV_MODEL },
     };
     const { deps, fakes } = fakeDeps(config, records, options);
     const app = createApp(deps, { codeRoot: options.codeRoot ?? records.dataDir, log: (line) => logs.push(line), closeTimeoutMs: 5000 });

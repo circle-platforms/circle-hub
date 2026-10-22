@@ -20,8 +20,6 @@ export const HUB_ENVIRONMENT = {
   CIRCLE_HUB_MAX_UPLOAD_BYTES: '单个上传或对象的字节上限，默认 33554432（32 MiB），最大 268435456（256 MiB）',
   CIRCLE_HUB_MAX_RECORD_BYTES: '单条记录正文（规范化 JSON）的字节上限，默认 16777216（16 MiB）',
   CIRCLE_HUB_MAX_REQUEST_BYTES: '单个 HTTP 请求体的字节上限，默认按上传上限的 base64 长度再加 1 MiB，至少 48 MiB，最大 512 MiB',
-  CIRCLE_HUB_JEV_MODEL:
-    'K04 类型化判断模型（Jev）带确切版本号的模型名，最多 128 个字符，默认 jev-1.13.0；不接受 jev-latest 这类会随新版本移动的别名（判断要记下确切版本）',
 } as const;
 
 export type HubEnvironmentName = keyof typeof HUB_ENVIRONMENT;

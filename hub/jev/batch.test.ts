@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { after, before, beforeEach, describe, it } from 'node:test';
+import { describe, it } from 'node:test';
 import {
   JevError,
   SCRIPTED_MODEL,
@@ -11,8 +11,6 @@ import {
   planBatches,
 } from './api.ts';
 import type { JevAskAllResult, JevBatchItem, JevClient, JevErrorCode, JevPlan, JevQuestion, JevRequest, JevResponse, ScriptedSpec } from './api.ts';
-import { startStub, stubClient, syntheticKey, vendorReply } from './test-support.ts';
-import type { Stub } from './test-support.ts';
 
 // Invented text only: a small pool of common characters cycled into passages of any length.
 const POOL = '示例手册段落配置说明接口地址设置命令参数范围默认取值显示状态查询删除添加修改保存重启服务进程网络系统认证日志';
@@ -284,25 +282,9 @@ describe('askAll', () => {
   });
 });
 
-// HttpJev against the loopback stub, counting HTTP requests: the client already retries 429, 529, 5xx, network errors
-// and timeouts with backoff (3 attempts by default), so askAll must not multiply those failures.
-describe('askAll with HttpJev against the loopback stub', () => {
-  const KEY = syntheticKey();
-  let stub: Stub;
-
-  before(async () => {
-    stub = await startStub((call, index) => vendorReply(call, KEY, index));
-  });
-
-  after(async () => {
-    await stub.close();
-  });
-
-  beforeEach(() => {
-    stub.calls.length = 0;
-    stub.handler = (call, index) => vendorReply(call, KEY, index);
-  });
-
+// A scripted judge failing whole requests (as the service failed whole requests), counting the requests it saw. With
+// no HTTP client of its own left, askAll alone decides between splitting a batch and stopping the plan.
+describe('askAll stop rules with a failing scripted judge', () => {
   // The pilot shape: 90 passages, 9 requests of 10.
   const pilot = (): JevPlan => planBatches(items(90, 50));
 
@@ -315,98 +297,67 @@ describe('askAll with HttpJev against the loopback stub', () => {
   }
 
   it('answers the pilot shape with 9 requests', async () => {
-    const result = await askAll(stubClient(stub, KEY), pilot());
+    const client = new ScriptedJev(firstChapter);
+    const result = await askAll(client, pilot());
     assert.equal(result.answered.size, 90);
-    assert.equal(stub.calls.length, 9);
+    assert.equal(client.requests.length, 9);
   });
 
-  for (const status of [429, 529]) {
-    it(`stops the plan at a persistent ${status}: no split, no new batch`, async () => {
-      stub.handler = () => ({ status, body: { detail: 'busy' } });
-      const result = await askAll(stubClient(stub, KEY), pilot());
-      assert.equal(result.requestsSent, 2, 'one batch per worker');
-      assert.equal(stub.calls.length, 6, 'three attempts per batch, all by the client');
-      assert.equal(result.failed.size, 90);
-      assert.deepEqual(codes(result), new Set(['JEV_RATE_LIMITED']));
-      assert.equal(unsent(result), 70);
-    });
-  }
+  it('stops the plan at a persistent rate limit: no split, no new batch', async () => {
+    const client = new ScriptedJev(() => ({ fail: 'JEV_RATE_LIMITED' }));
+    const result = await askAll(client, pilot());
+    assert.equal(result.requestsSent, 2, 'one batch per worker');
+    assert.equal(client.requests.length, 2, 'the scripted judge retries nothing');
+    assert.equal(result.failed.size, 90);
+    assert.deepEqual(codes(result), new Set(['JEV_RATE_LIMITED']));
+    assert.equal(unsent(result), 70);
+  });
 
-  it('stops the plan when the service answers with another model: one billed answer per worker', async () => {
-    stub.handler = (call, index) => {
-      const reply = vendorReply(call, KEY, index);
-      return { ...reply, body: { ...(reply.body as object), model: 'jev-1.14.0' } };
-    };
-    const result = await askAll(stubClient(stub, KEY), pilot());
-    assert.equal(stub.calls.length, 2);
+  it('stops the plan when the judge answers with another model: one answer per worker, the rest unsent', async () => {
+    const client = new ScriptedJev(firstChapter, { returnedModel: 'jev-scripted-1.14.0' });
+    const result = await askAll(client, pilot());
+    assert.equal(client.requests.length, 2);
     assert.equal(result.failed.size, 90);
     assert.deepEqual(codes(result), new Set(['JEV_BAD_RESPONSE']));
     assert.equal(unsent(result), 70);
   });
 
-  it('stops the plan at a wrong endpoint (404) without splitting', async () => {
-    stub.handler = () => ({ status: 404, body: { detail: 'Not Found' } });
-    const result = await askAll(stubClient(stub, KEY), pilot(), { concurrency: 1 });
-    assert.equal(stub.calls.length, 1);
-    assert.deepEqual(codes(result), new Set(['JEV_BAD_REQUEST']));
-  });
-
-  it('stops the plan at a redirect, which is never followed, without splitting', async () => {
-    stub.handler = () => ({ status: 302, headers: { location: `${stub.baseUrl}/elsewhere` } });
-    const result = await askAll(stubClient(stub, KEY), pilot(), { concurrency: 1 });
-    assert.equal(stub.calls.length, 1);
-    assert.deepEqual(codes(result), new Set(['JEV_UNAVAILABLE']));
-    assert.equal(unsent(result), 80);
+  it('splits a batch the judge refuses (JEV_BAD_REQUEST) once, so the other half is answered', async () => {
+    const client = new ScriptedJev((question, state) => (Object.hasOwn(state as object, 'p3') ? { fail: 'JEV_BAD_REQUEST' } : firstChapter(question)));
+    const result = await askAll(client, planBatches(items(10, 50)), { concurrency: 1 });
+    assert.deepEqual([...result.failed.keys()], ['p0', 'p1', 'p2', 'p3', 'p4']);
+    assert.equal(result.answered.size, 5);
+    assert.equal(client.requests.length, 3);
   });
 
   it('splits an unavailable batch once and stops the plan when both halves fail too', async () => {
-    stub.handler = () => ({ status: 503, body: { detail: 'down' } });
-    const result = await askAll(stubClient(stub, KEY), pilot(), { concurrency: 1 });
+    const client = new ScriptedJev(() => ({ fail: 'JEV_UNAVAILABLE' }));
+    const result = await askAll(client, pilot(), { concurrency: 1 });
     assert.equal(result.requestsSent, 3, 'the batch and its two halves');
-    assert.equal(stub.calls.length, 9);
     assert.equal(result.failed.size, 90);
     assert.deepEqual(codes(result), new Set(['JEV_UNAVAILABLE']));
     assert.equal(unsent(result), 80);
   });
 
   it('keeps an outage bounded with two workers', async () => {
-    stub.handler = () => ({ status: 503, body: { detail: 'down' } });
-    const result = await askAll(stubClient(stub, KEY), pilot());
+    const client = new ScriptedJev(() => ({ fail: 'JEV_UNAVAILABLE' }));
+    const result = await askAll(client, pilot());
     assert.ok(result.requestsSent <= 4, `requestsSent ${result.requestsSent}`);
-    assert.ok(stub.calls.length <= 12, `HTTP requests ${stub.calls.length}`);
     assert.equal(result.failed.size, 90);
   });
 
-  it('stops the plan when a hanging service times out a batch and both its halves', async () => {
-    stub.handler = () => ({ hang: true });
-    const result = await askAll(stubClient(stub, KEY, { timeoutMs: 40 }), planBatches(items(30, 50)), { concurrency: 1 });
-    assert.equal(result.requestsSent, 3);
-    assert.equal(stub.calls.length, 9);
-    assert.equal(result.failed.size, 30);
-  });
-
   it('stops after three unavailable requests in a row, also when every batch holds one question', async () => {
-    stub.handler = () => ({ status: 503, body: { detail: 'down' } });
-    const result = await askAll(stubClient(stub, KEY), planBatches(items(20, 50), { maxQuestionsPerRequest: 1 }), { concurrency: 1 });
+    const client = new ScriptedJev(() => ({ fail: 'JEV_UNAVAILABLE' }));
+    const result = await askAll(client, planBatches(items(20, 50), { maxQuestionsPerRequest: 1 }), { concurrency: 1 });
     assert.equal(result.requestsSent, 3);
-    assert.equal(stub.calls.length, 9);
     assert.equal(result.failed.size, 20);
   });
 
-  it('isolates a piece the service cannot finish: the other half and the later batches are answered', async () => {
-    stub.handler = (call, index) => (call.body.includes('"p3"') ? { status: 503, body: { detail: 'crash' } } : vendorReply(call, KEY, index));
-    const result = await askAll(stubClient(stub, KEY), planBatches(items(20, 50)), { concurrency: 1 });
+  it('isolates a piece the judge cannot finish: the other half and the later batches are answered', async () => {
+    const client = new ScriptedJev((question, state) => (Object.hasOwn(state as object, 'p3') ? { fail: 'JEV_UNAVAILABLE' } : firstChapter(question)));
+    const result = await askAll(client, planBatches(items(20, 50)), { concurrency: 1 });
     assert.deepEqual([...result.failed.keys()], ['p0', 'p1', 'p2', 'p3', 'p4']);
     assert.equal(result.answered.size, 15);
-    assert.equal(stub.calls.length, 3 + 3 + 1 + 1);
-  });
-
-  it('splits a batch the service refuses (422) once, so the other half is answered', async () => {
-    stub.handler = (call, index) =>
-      call.body.includes('"p3"') ? { status: 422, body: { detail: [{ loc: ['body', 'questions', 'p3'], msg: 'bad', type: 'value_error' }] } } : vendorReply(call, KEY, index);
-    const result = await askAll(stubClient(stub, KEY), planBatches(items(10, 50)), { concurrency: 1 });
-    assert.deepEqual([...result.failed.keys()], ['p0', 'p1', 'p2', 'p3', 'p4']);
-    assert.equal(result.answered.size, 5);
-    assert.equal(stub.calls.length, 3);
+    assert.equal(client.requests.length, 4, 'the batch, its two halves and the next batch');
   });
 });

@@ -180,14 +180,15 @@ const SlotName = z.string().regex(/^[a-z][a-z0-9_]*$/);
 
 /**
  * How path-less entries produced by this producer may be placed:
- * - `code_only`: keep path-less entries unplaced at root without calling the typed-judgment service, preventing text egress outside the Hub.
- * - `judgment_allowed`: allow path-less entries to be handed to the typed-judgment service.
- * Defaults to `code_only` because sending fragments to an external judgment service egresses data outside the Hub.
+ * - `code_only`: keep path-less entries unplaced at root; nothing leaves the Hub.
+ * - `judgment_allowed`: the Hub offers this producer's path-less entries to the bot for placement proposals and
+ *   verifies each proposal with deterministic rules; the Hub never places them itself.
+ * Defaults to `code_only` because the Hub calls no model and placement is the bot's job.
  */
 export const ProducerPlacement = z
   .enum(['code_only', 'judgment_allowed'])
   .describe(
-    'whether path-less entries may be handed to the typed-judgment service: code_only (default) keeps them unplaced at the root without calling the judgment service, preventing text egress outside the Hub; judgment_allowed permits handing them to the judgment service. Defaults to code_only because fragments leave the Hub',
+    'whether this producer\'s path-less entries may be handed to the bot for placement: code_only (default) keeps them unplaced at the root; judgment_allowed means the Hub offers them to the bot for placement proposals and verifies each proposal with deterministic rules (the path exists, quotes are verbatim from the original, nothing beyond what the producer declared). The Hub calls no model and never places entries itself; the bot flow is not implemented yet',
   );
 export type ProducerPlacement = z.infer<typeof ProducerPlacement>;
 
@@ -203,7 +204,7 @@ export const Producer = z.strictObject({
   inputs: z.record(SlotName, ProducerSource).describe('slot name -> where it is read from, for every build whose root is produced'),
   params: z.record(z.string(), z.unknown()).optional().describe('fixed parameters handed to the function'),
   placement: ProducerPlacement.optional().describe(
-    'whether path-less entries may be handed to the typed-judgment service: code_only (default) keeps them unplaced at the root without calling the judgment service, preventing text egress outside the Hub; judgment_allowed permits handing them to the judgment service. Defaults to code_only because fragments leave the Hub',
+    'whether this producer\'s path-less entries may be handed to the bot for placement: code_only (default) keeps them unplaced at the root; judgment_allowed means the Hub offers them to the bot for placement proposals and verifies each proposal with deterministic rules (the path exists, quotes are verbatim from the original, nothing beyond what the producer declared). The Hub calls no model and never places entries itself; the bot flow is not implemented yet',
   ),
 });
 export type Producer = z.infer<typeof Producer>;
@@ -246,7 +247,7 @@ export type Applicability = z.infer<typeof Applicability>;
 
 export const ProducedEntry = z.strictObject({
   kind: z.string().describe('declared by the producer (K02 F[0], R[3]); the knowledge package checks it against the entry_kind axis one entry at a time, so one wrong entry is refused and reported without losing the rest'),
-  path: z.string().regex(/^\/(?:[^/]+(?:\/[^/]+)*)?$/, 'a tree path starting with /').nullable().describe('where it hangs; null when code cannot place it (it goes to the typed-judgment model)'),
+  path: z.string().regex(/^\/(?:[^/]+(?:\/[^/]+)*)?$/, 'a tree path starting with /').nullable().describe('where it hangs; null when code cannot place it (a producer may declare it for the bot\'s placement proposals)'),
   statement: z.string().describe('deterministic canonical statement; it carries everything data says (K02 R[4])'),
   data: z.record(z.string(), z.unknown()),
   fragments: z.array(FragmentRef).min(1).describe('the source pieces that warrant the entry, in order'),
@@ -254,7 +255,7 @@ export const ProducedEntry = z.strictObject({
 });
 export type ProducedEntry = z.infer<typeof ProducedEntry>;
 
-/** A span the code could not place: it stays citable by its fragment and goes to the typed-judgment model. */
+/** A span the code could not place: it stays citable by its fragment and may be offered to the bot for placement proposals. */
 export const Unplaced = z.strictObject({ fragment: FragmentRef, section: z.string(), kind: z.string(), text: z.string() });
 export type Unplaced = z.infer<typeof Unplaced>;
 

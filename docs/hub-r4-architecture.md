@@ -38,7 +38,7 @@ Circle (MCP client) ──streamable HTTP, Bearer token──▶ hub/server
      hub/runs      hub/knowledge   hub/connectors      hub/records    hub/platform
   packs, runs,     tree, roots,    resources, route   records, objects,  keychain, launchd,
   validation,      producers,      allow-list, login,  vault, users,      pg lifecycle,
-  partitions       Jev adapter     read plugins        tokens, call log   backup/restore
+  partitions       placement       read plugins        tokens, call log   backup/restore
         │               │               │                    ▲
         └──── hub/rules (interpreters, sandbox) ─── hub/refs (references, parsers)
                                    contracts/ (model, vocabulary, zod shapes)
@@ -119,7 +119,7 @@ The same three foundations (cases as items, the version knowledge tree, the vali
 1. *Review* (milestone 1): section 6.
 2. *Template gap check*: a coverage fact per document against the team's case template (per CLI command: add/delete/modify/query, `show` at maximum configuration, `no`/`clear`, operation log, audit log, configuration sync, save/restore/clear configuration, upgrade compatibility, security, database; types Configuration, Integration, Compatibility, Functional, Negative, Stress). A requirement of the draft pack (coverage@1 over a table authored from the template).
 3. *Case location*: case or document id -> product line, version line, release train, module, build candidates (both name families, aliases resolved) and the linked requirements and defects. A fact-only workflow pack.
-4. *Regression scope and maintenance sweep*: the knowledge tree gets entries of kind case (K02: the kinds are declared by the producer: definition, behaviour, case, defect, observation) filed under the commands they exercise, produced from the mind-map documents by the product pack (commands resolved by code; the rest placed by the typed-judgment model). Regression scope = the diff of two builds' trees intersected with the case entries; maintenance sweep = for a new build, the cases whose commands were removed or whose signatures or ranges changed, with the evidence. Fact-only workflow packs.
+4. *Regression scope and maintenance sweep*: the knowledge tree gets entries of kind case (K02: the kinds are declared by the producer: definition, behaviour, case, defect, observation) filed under the commands they exercise, produced from the mind-map documents by the product pack (commands resolved by code; the rest stay unplaced at the root — the Hub calls no model; placement proposed by the bot and verified by deterministic rules is not implemented yet). Regression scope = the diff of two builds' trees intersected with the case entries; maintenance sweep = for a new build, the cases whose commands were removed or whose signatures or ranges changed, with the evidence. Fact-only workflow packs.
 5. *Defect to case*: a draft workflow: from a defect (symptom, fix description) the model drafts regression cases in the team's format; the Hub checks that commands and parameters exist and are in range for the target build, that every expected result is grounded verbatim in the fix description or the manual, that the shape matches the case structure, and that it is not a duplicate of an indexed case.
 6. *Traceability and quality*: defect or requirement <-> case documents (ids in titles, PLM status), cases without expected results, vague expected results, negative-case share, template coverage by version and module; read-only console pages computed from records.
 7. *Automation* (last, needs the device test bed): compile reviewed cases into the execution workbook and run them through the lab gateway; the dynamic layer. Not started before the owner confirms the bed, the account and the command classes allowed (real devices are shared lab hardware).
@@ -175,7 +175,7 @@ Each phase ends with independent review (against the model and this brief) and a
 8. A second, non-APV synthetic product pack reviews with the same workflow pack and the core code does not change.
 9. Connectors: a route outside the allow-list is refused; an expired token logs in once and a second failure stops; originals are stored by SHA-256.
 10. Changing one case re-judges one case (items unchanged by content digest are reused).
-11. A scripted Jev: no calibrated threshold or a low probability leaves the fragment at the parent node, marked uncalibrated.
+11. No judgment in the Hub: the production assembly has no placer; entries the code cannot place stay at the root marked unplaced with no judgment and no candidate, the production records placement.spans 0, and no outbound call reaches the judgment service.
 12. Console and API: a wrong Host or Origin is refused; a request without a token is refused.
 13. Idempotence: repeating `submit_result` for the same (run, submission digest) returns the stored result without re-running anything; repeating `start_run` with the same client key inside its window returns the same run; an expired key starts a new run.
 14. Independent verification: a second run with `predecessor` = the draft run and the draft's result handed over by a `rec:` reference; its submission from the SAME session or the same declared model is not accepted as independent (the requirement stays unsatisfied: independence unknown); from a different session and model it is accepted.

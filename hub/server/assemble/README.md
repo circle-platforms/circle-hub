@@ -3,20 +3,21 @@
 The assembly plugs the real packages into the server core: `hub/server/assemble.ts` (the `AssemblyModule` that `serve`
 and the CLI load), the administrator commands `hub/server/cli-admin.ts`, the in-process real Hub for acceptance tests
 `hub/server/testing-real.ts`, and the modules and tests under `hub/server/assemble/`. Brief sections 3, 4, 5, 6 and 9;
-model elements D01 R[6] (resources), B04 (decisions), R01 (roles), K04 (typed-judgment key), T01/T02 (publication).
+model elements D01 R[6] (resources), B04 (decisions), R01 (roles), T01/T02 (publication). The Hub calls no model
+(owner decision 2026-10-22): the assembly builds no judgment client and `secret set jev api-key` no longer exists.
 
 | File | Content |
 | --- | --- |
 | `../assemble.ts` | the AssemblyModule: `assemble` (= `createAssembly()`, for `serve`), `assembleCommand` (= `createCommandAssembly()`, what the server core's `ctx.deps()` uses for one CLI command such as `run show`), `registerCommands` (the six administrator commands); re-exports `assembleHub`, `createAssembly`, `createCommandAssembly`, `adminCommands`, `operatorAdmin` |
 | `hub.ts` | `assembleHub(config, records, options)` → `AssembledHub` (ServerDeps plus every service, `runsExternal` the engine's reader); `createAssembly(options)` → the `AssembleFunction` of `serve`; `createCommandAssembly(options)` → the `CommandAssembleFunction` (api.ts): no vault key, no sandbox probe, no notices, log lines to the CLI's stderr |
-| `vault.ts` | `requireVaultKey` (reads the master key through records' `checkVaultKey`, never creates it; the advice depends on whether the vault holds entries), `vaultKeyProblem`, `jevFromVault` (HttpJev with the key of vault entry `jev.api-key`), `isJevKey` (hub/jev's `isJevApiKey`), `NO_JEV_NOTICE` |
+| `vault.ts` | `requireVaultKey` (reads the master key through records' `checkVaultKey`, never creates it; the advice depends on whether the vault holds entries), `vaultKeyProblem` |
 | `notes.ts` | `CallNotes`: the connectors' and the registry's messages to the current call's admin note (AsyncLocalStorage around every engine call) and the operator's log; the engine's to the operator's log only (it notes the call itself); `withCallNotes`, `MAX_CONNECTOR_NOTES` |
 | `operator-token.ts` | the operator token: `CIRCLE_HUB_TOKEN` (`takeEnvironmentToken`), the keychain item (`keychainOperatorTokens`, `OperatorTokenError`; named by the platform's `OPERATOR_TOKEN_ITEM`), its keychain service (`deploymentKeychainService`), `memoryOperatorTokens` |
 | `secret-input.ts` | `readSecret`: a value from stdin only (a terminal reads without echo, special keys dropped; one trailing line break removed from a pipe) |
 | `terminal.ts` | `terminalSafe`: every C0 and C1 control character but tab, the line separators and the bidirectional controls as visible escapes; `jsonSafe`: the same characters that JSON.stringify leaves raw as `\u` escapes inside JSON text |
 | `errors.ts`, `files.ts` | `AssemblyError` (message plus the operator's next step); `removeTree` for directories holding read-only extracted packs |
 | `../cli-admin.ts` | `adminCommands(options)`: `pack`, `resource`, `secret`, `source`, `knowledge`, `init-admin`, `operator-token`; for the server core's built-ins too: `operatorAdmin(ctx, options)` and `operatorAct` (state-changing; `operatorAct` also says when the command cut off its own token) and `operatorViewer` (read-only) |
-| `../testing-real.ts` | `createTestHub(options)`, `findPackDirectories`, `stagePack`, `scriptedJudge` |
+| `../testing-real.ts` | `createTestHub(options)`, `findPackDirectories`, `stagePack` |
 | `test-packs.ts`, `test-cli.ts` | test support: tiny synthetic packs written to temporary directories; a socket-only PostgreSQL and in-process CLI runs |
 
 ## Start-up (`circle-hub serve`)
@@ -38,11 +39,9 @@ orphan sweep, then `assemble(config, records)`, then `listen()`. `assemble` = `c
    `onError` and `onTamper` to the operator's log) and its ports (`createPacksPort`, `createWorkflowStore`,
    `createPackCatalog`).
 4. Connectors (`createConnectors`: resources, logins, read plugins) with `createExternalReader` and `createResourceCatalog`.
-5. The typed-judgment client: `HttpJev` pinned to `CIRCLE_HUB_JEV_MODEL` with its key read from vault entry `jev.api-key` on
-   every attempt, when that entry exists at start; otherwise none, and the operator's log says that knowledge runs without
-   model placement (spans the code cannot place stay unplaced at the root).
-6. Knowledge (`createKnowledge` with the PacksPort, the connectors' ExternalReaderPort alone, since the views are not a
-   source of the tree, and the Jev client), the run engine (`createRunsService`, whose ExternalReaderPort is
+5. Knowledge (`createKnowledge` with the PacksPort, the connectors' ExternalReaderPort alone, since the views are not a
+   source of the tree, and no placer: the Hub calls no model, so spans the code cannot place stay unplaced at the root),
+   the run engine (`createRunsService`, whose ExternalReaderPort is
    `routeKnowledgeViews(createKnowledgeReader(knowledge), connectors' reader)`: `knowledge:impact|facets|index:…` inputs and
    expected sources are the knowledge views, every other id the connectors), and `ServerDeps` (`products` = the PacksPort,
    for the console's knowledge page; `runsDetail` = the engine, for the texts of start_run and submit_result).
@@ -63,7 +62,7 @@ circle-hub pack retire <pack@version> | activate <product pack> | deactivate <pr
 circle-hub resource add <system pack> --name <n> --environment test|shared|production --origin <role>=<url> ...
                     [--allow-plaintext <role>] ... [--setting <key>=<JSON or text>] ...
 circle-hub resource list [--as] | disable <res> | enable <res> | reset-login <res>
-circle-hub secret set <resource> <credential>         # value from stdin only; `secret set jev api-key` for the Jev key
+circle-hub secret set <resource> <credential>         # value from stdin only
 circle-hub secret list [--as]                         # names only
 circle-hub knowledge sync --product <name or id> [--line <line>] [--dry-run] [--recheck] [--include-unreleased]
 circle-hub knowledge roots <product> [--as] | diff <rootA> <rootB> [--as]
@@ -118,10 +117,8 @@ circle-hub knowledge roots <product> [--as] | diff <rootA> <rootB> [--as]
   file is read whole, one trailing line break removed). The resource and the credential are checked before a value is
   asked for (`ResourceAdmin.describe`: the credential names and digest rules, never a value). A credential is stored by
   `ResourceAdmin.setCredential`, which keeps a `sha512_base64` credential (the agile portal's password) as
-  Base64(SHA-512(value)) only; the output names the rule, never the value. `secret set jev api-key` stores the
-  typed-judgment key (checked with hub/jev's `isJevApiKey`, the form HttpJev sends) in vault entry `jev.api-key`; a Hub
-  that had the entry at its start uses a new value at its next call, one that started without it needs a restart (the
-  command says both). `secret list` prints entry names and what they are, never a value, a length or a digest.
+  Base64(SHA-512(value)) only; the output names the rule, never the value.
+  `secret list` prints entry names and what they are, never a value, a length or a digest.
 - **Login state.** `secret set <res> <credential>` and `resource reset-login <res>` remove the resource's session entry in
   the vault (`connector.<res>.session`). A running Hub reads that entry again before a read that needs the credential (and
   when its login status is shown; hub/connectors, "Between processes"): a stop or a cool-down it holds ends then and it
@@ -134,8 +131,8 @@ circle-hub knowledge roots <product> [--as] | diff <rootA> <rootB> [--as]
 - **Publication** needs a publish right (B04): `pack grant-publish <user>` is an admin decision; `pack publish` without it
   `pack publish <dir> --stage` publishes a copy of exactly the files `pack.json` lists (a listed path must be a plain file inside `<dir>`; the publish check still verifies every digest), so a pack's source directory may keep its tests and README beside it. Without `--stage` an extra file is a publish problem (`manifest.unlisted_file`).
   is refused with that fix. A refusal lists every problem (rule, file, field or line, message, fix) on stderr.
-- **knowledge sync** uses hub/knowledge's parser, sync and report text and exits 1 when the sync or any build failed; it
-  says on stderr when no Jev key is set. `roots` lists the builds of a line (both name families, aliases with their base,
+- **knowledge sync** uses hub/knowledge's parser, sync and report text and exits 1 when the sync or any build failed.
+  `roots` lists the builds of a line (both name families, aliases with their base,
   a build that is its own base as `自身为基础构建`) with their roots and each line's current root; `diff` prints the added,
   removed and modified paths of two roots. A non-admin reads only lines a pack assigned to them binds (absent and forbidden
   alike).
@@ -168,8 +165,7 @@ await hub.close();
 
 The real assembly in-process on a temporary PostgreSQL (`hub/testing`), listening on a loopback port: the pack registry,
 run engine, knowledge and connectors are the real ones. External systems are the connectors' stubs (agile with its
-fixture, PLM sharing its tokens, build site, WebDAV), started unless `stubs: false`. The typed-judgment model is a scripted
-judge that answers `none` (nothing model-placed) unless `jev` is given. Packs: the ones under `packs/` that have a
+fixture, PLM sharing its tokens, build site, WebDAV), started unless `stubs: false`. Packs: the ones under `packs/` that have a
 `pack.json` (`repositoryPacks`: true by default, false, or a list of pack ids; `repositoryRoot` points the search at
 another tree, as this package's own test does), then `packs` (directories), each staged (copied with exactly the files its
 manifest lists, so test files beside the functions do not count) and published by the admin through the real registry,
@@ -201,8 +197,10 @@ service, `hub.logs` the operator's log lines.
 3. **start_run's text gets the engine's detail.** `ServerDeps.runsDetail` is the engine: the server calls
    `startRunDetailed` (the answer carries `result: {reference, counts}` for a production run, the engine's own; the
    former merge in this package is gone) and `getResult`, so the texts name the run record and the stored result.
-4. **Typed-judgment key** in vault entry `jev.api-key`, set with `secret set jev api-key` (`jev` is not a resource id: those
-   are `res_<ULID>`). HttpJev reads it on every attempt; the key never stays in memory between calls.
+4. **No judgment client** (owner decision 2026-10-22): the Hub calls no model, so the assembly builds no typed-judgment
+   client and knowledge runs without a placer (spans the code cannot place stay unplaced at the root, marked 未归位).
+   `secret set jev api-key` is gone; a `jev.api-key` entry left in the vault from before the removal is never read
+   (the insurance test in `no-judgment.test.ts` proves it, with zero outbound calls to the judgment service in a sync).
 5. **Operator token item.** The keychain item holds the token's 32 random bytes as 64 hexadecimal characters, the one form
    hub/platform `keychainStore().read()` reads; the token is base64url of those bytes (records' token form, checked before
    storing). It is read through `keychainStore` made with the platform's `OPERATOR_TOKEN_ITEM`, so the platform's own
@@ -244,17 +242,16 @@ node --test "hub/server/assemble/**/*.test.ts"
 npx tsc --noEmit
 ```
 
-Four files, 53 tests, about 10 s on the development Mac. `assemble.test.ts` (18): start-up order (a retired variable
+Five files, 50 tests, about 10 s on the development Mac. `assemble.test.ts` (15): start-up order (a retired variable
 refuses serve and the admin commands before the assembly loads or the key provider is asked; an unmigrated database
 refuses serve and the commands before the assembly runs); no key file stops serve before listening and creates none; the
 platform's keychain provider with a fake `security` tool and no item stops serve and only reads, advising `key init` for
 an empty vault and the original item, never `key init`, for a vault that holds an entry (the item matched by the
 platform's exported `VAULT_KEY_ITEM.label`, not a spelling of it); a key that does not open the
 vault stops the assembly; a real start serves the six tools to a token, `list_task_packs` over the real registry, a
-neutral `start_run` whose engine reason is the call's admin note, and says at start-up that there is no Jev key; HttpJev
-from the vault entry or none, and against a loopback service the key sent on each request and read anew after the entry
-changed; records' `checkVaultKey` with the right, another and a missing key, adding no entry; the Jev key rule pinned to
-HttpJev's (a key it refuses is never sent, at the rule's bounds); the command-time assembly without a key (a run read,
+neutral `start_run` whose engine reason is the call's admin note, and no judgment-service notice at start-up (the Hub
+calls no model); records' `checkVaultKey` with the right, another and a missing key, adding no entry; the command-time
+assembly without a key (a run read,
 nothing printed) beside serve's refusal and a command's own wording, and `run show` through the CLI with the real module
 (no key needed, serve's `assemble` never called; a module without `assembleCommand` refused); call notes for two
 concurrent calls of one trace (connector and registry messages to their own call, the engine's to the operator's log
@@ -262,7 +259,11 @@ only), success events kept out of a note and failures capped so that the engine'
 clipping, said once; the operator's log one escaped line for an engine reason quoting a start_run `pack` with line
 breaks and control sequences, and for connector, registry and tamper events; the wiring: `runsDetail` is the engine, the
 engine's reader takes knowledge views and the knowledge service's does not, and an assembled engine notes a neutral
-answer's reason on the call once. `cli-admin.test.ts` (21): every command through the server CLI's `main` on a
+answer's reason on the call once. `no-judgment.test.ts` (1): the assembly insurance of the owner decision of
+2026-10-22: a `jev.api-key` entry left in the vault is never read, the assembled Hub has no placer, a knowledge sync of
+a product whose producer declared its path-less entries placeable makes no outbound call to the judgment service (every
+recorded call goes to a loopback stub), the entries stay at the root marked 未归位 and the production records
+`placement.spans` 0. `cli-admin.test.ts` (20): every command through the server CLI's `main` on a
 socket-only PostgreSQL (the built-in commands with the same in-memory token store): init-admin, its output (the keychain
 item as the normal path) and refusals (naming the reissue), a token it could not store revoked with the reissue as the
 fix, or said to be possibly live when the revocation was not confirmed or failed (a fake context), the fix never a
@@ -281,7 +282,7 @@ messages that name the operator token by the platform's `OPERATOR_TOKEN_ITEM.lab
 the pack lifecycle with the publish right, a refused publication, assignments, activation, withdrawal and
 the user's view; control sequences in a pack title, a resource name and an argument shown as escapes; resources with
 usage errors, origins, plaintext and settings, credentials from stdin with the password stored as Base64(SHA-512) and a
-real login and read through the stub with it, the Jev key, names-only listings, disable, enable and reset; a wrong
+real login and read through the stub with it, names-only listings, disable, enable and reset; a wrong
 password stopping a separately assembled "running Hub", `secret set` and `reset-login` clearing the vault's state and
 saying no restart is needed, the running assembly logging in once with the new value at its next read and keeping its
 token after a reset, a new assembly logging in again; listings, a reset and the refusals of `secret set` and `knowledge
@@ -328,7 +329,7 @@ discovery and staging. Pack functions run in the real sandbox (sandbox-exec wher
 
 The server core's requests of the last round (placeholder tests, the command-time assembly, `CIRCLE_HUB_TOKEN`, `token
 issue --raw`, the operator token for built-ins), the engine's (`CallContext.adminNote`), the connectors' (re-reading the
-session entry, `ResourceAdmin.describe`, now used by `secret set`), hub/jev's (`isJevApiKey`) and records' (`checkVaultKey`)
+session entry, `ResourceAdmin.describe`, now used by `secret set`) and records' (`checkVaultKey`)
 are done. Open:
 
 - **platform (`hub/platform`)**, still uncommitted in the shared worktree: the item labels are adopted (the store is made
@@ -340,8 +341,6 @@ are done. Open:
   place of the `security -i` write of `keychainOperatorTokens`, with the platform's `runCommand` for the throwaway keychain
   test; (3) its `OPERATOR_TOKEN_ACCOUNT` in place of this package's copy. Still open: `<data dir>/packs` (extracted packs,
   read-only trees) is derived data: leave it out of backups and restores and do not treat it as unknown.
-- **jev**: `http.ts` keeps its own copy of the key pattern beside the exported `isJevApiKey` (this package may edit only
-  `api.ts`); `assemble.test.ts` pins the two. One rule in `http.ts` would retire the pin.
 - **knowledge**: `knowledgeCliCommand` should take the acting admin from the caller (the operator token) rather than
   `actingAdmin(--as)`, or be left to the assembly as now.
 - **connectors**: `listResources` and the catalog port disagree for non-admins (Deviations).

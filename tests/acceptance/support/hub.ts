@@ -6,7 +6,6 @@
 import assert from 'node:assert/strict';
 import type { ResourceRecord } from '../../../contracts/src/resources.ts';
 import type { Limits } from '../../../hub/config/index.ts';
-import type { JevClient } from '../../../hub/jev/api.ts';
 import type { SyncReport } from '../../../hub/knowledge/api.ts';
 import { startStub, type AgileOptions, type StubServer } from '../../../hub/connectors/testing/api.ts';
 import { createTestHub, type TestHub, type TestUser } from '../../../hub/server/testing-real.ts';
@@ -24,7 +23,6 @@ export interface BedOptions {
   /** Extra files of the document store (beside the shared manual-store fixture and the single-name product's store). */
   webdav?: Record<string, string>;
   agile?: AgileOptions;
-  jev?: JevClient | null;
   now?: () => Date;
   /** Sync the two-name product at start (default true). Options go to the sync. */
   syncTwoName?: boolean | { options?: Record<string, unknown>; includeUnreleased?: boolean };
@@ -70,7 +68,6 @@ export async function openBed(options: BedOptions): Promise<Bed> {
     agile: options.agile ?? agileOptions(),
     buildSite,
     webdav,
-    ...(options.jev === undefined ? {} : { jev: options.jev }),
     ...(options.now === undefined ? {} : { now: options.now }),
     ...(options.packs === undefined ? {} : { packs: options.packs }),
     ...(options.limits === undefined ? {} : { limits: options.limits }),

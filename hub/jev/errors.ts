@@ -14,7 +14,7 @@ export type JevErrorCode = (typeof JEV_ERROR_CODES)[number];
 export interface JevErrorOptions {
   /** HTTP status of the last request sent, when it got a response. */
   status?: number | null;
-  /** x-typesafe-request-id of the last response, when the service sent one. */
+  /** The request id of the last response, when the service sent one. */
   requestId?: string | null;
   /** Requests sent: 0 when nothing was sent (a refused request, a failing key source, a batch never started). */
   attempts?: number;

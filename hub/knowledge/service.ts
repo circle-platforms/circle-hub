@@ -24,7 +24,8 @@ export interface KnowledgeOptions {
   parsers: ParserRegistry;
   packs: PacksPort;
   external: ExternalReaderPort;
-  /** The typed-judgment client for placement; null or absent: spans the code cannot place stay unplaced. */
+  /** Test injection point of the placement judge (a scripted judge in this package's tests). The production assembly never
+   * passes one: the Hub calls no model, and spans the code cannot place stay unplaced at the root. */
   jev?: JevClient | null;
   sandbox?: { plan?: Partial<SandboxLimits>; producer?: Partial<SandboxLimits>; requireOsIsolation?: boolean };
   clock?: () => Date;
