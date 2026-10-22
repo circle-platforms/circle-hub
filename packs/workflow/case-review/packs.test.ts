@@ -112,8 +112,48 @@ describe('the vocabulary', () => {
     assert.deepEqual(handWrittenAxes("type F = 'APV' | 'NSAE' | 'other'; const f = ['positive', 'negative'];"), []);
   });
 
+  interface VocabularyScanException {
+    file: string;
+    values: string[];
+    reason: string;
+  }
+
+  const EXCEPTIONS: VocabularyScanException[] = [
+    {
+      file: 'packs/workflow/case-review/functions/expected-sources.ts',
+      values: ['min', 'max'],
+      reason: '编号范围对象的键，不是度量',
+    },
+    {
+      file: 'packs/workflow/case-review-verify/functions/expected-sources.ts',
+      values: ['min', 'max'],
+      reason: '编号范围对象的键，不是度量',
+    },
+  ];
+
   it('is never written by hand in the code of this package: the generated types and schemas are used', () => {
-    const found = owned.flatMap(sources).flatMap((path) => handWrittenAxes(readFileSync(join(root, path), 'utf8')).map((h) => `${path}:${h.line} ${h.axis} ${h.values.join(' | ')}`));
+    const hits = new Map<VocabularyScanException, number>(EXCEPTIONS.map((e) => [e, 0]));
+    const found: string[] = [];
+    for (const path of owned.flatMap(sources)) {
+      const text = readFileSync(join(root, path), 'utf8');
+      for (const h of handWrittenAxes(text)) {
+        const match = EXCEPTIONS.find(
+          (e) => e.file === path && e.values.length === h.values.length && e.values.every((v, i) => v === h.values[i]),
+        );
+        if (match) {
+          hits.set(match, (hits.get(match) ?? 0) + 1);
+        } else {
+          found.push(`${path}:${h.line} ${h.axis} ${h.values.join(' | ')}`);
+        }
+      }
+    }
+    for (const exc of EXCEPTIONS) {
+      assert.equal(
+        hits.get(exc),
+        1,
+        `例外表条目 ${exc.file} [${exc.values.join(', ')}] 命中次数为 ${hits.get(exc)}，必须正好命中 1 次（理由：${exc.reason}）`,
+      );
+    }
     assert.deepEqual(found, []);
   });
 });
