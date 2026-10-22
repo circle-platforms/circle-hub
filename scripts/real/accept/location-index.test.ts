@@ -12,6 +12,7 @@ import {
   compareLocationIndex,
   extractFacetBy,
   main,
+  matchFieldValue,
   parseFacetView,
   parseGoldLocations,
 } from './location-index.ts';
@@ -187,6 +188,116 @@ describe('location index comparison', () => {
     assert.equal(d950002.gold, '7.1');
     assert.equal(d950002.facet, '7.1, 7.2');
     assert.equal(d950002.reason, '分面视图多行间取值不一致');
+  });
+
+  it('handles partial locations where document is directly under release train (no module layer)', () => {
+    // Synthetic case 1: "火车下面直接放文档"
+    // Document 950021 is placed directly under train folder, so module is null and conforming is false.
+    // Facet view has by=['document', 'line', 'module'], line='10.6.1', module=null.
+    // They must compare equal on both line and module (null === null).
+    const facets = {
+      schema: 'facet-view@1',
+      by: ['document', 'line', 'module'],
+      rows: [
+        {
+          values: { document: '950021', line: '10.6.1', module: null },
+          count: 8,
+        },
+      ],
+    };
+
+    const gold = {
+      root: '7716',
+      documents: [],
+      nonconforming: [
+        {
+          document: '950021',
+          title: '需求 950021 探活配置',
+          ancestors: ['030：项目', '060：10.6.1', '004：10.6.1-R2-2026/7'],
+          reason: '发布火车下面没有模块层',
+          line: '10.6.1',
+          train: '10.6.1-R2-2026/7',
+          module: null,
+          conforming: false,
+        },
+      ],
+    };
+
+    const result = compareLocationIndex(facets, gold);
+
+    assert.equal(result.equal, 1);
+    assert.equal(result.unequal, 0);
+    assert.equal(result.discrepancies.length, 0);
+  });
+
+  it('handles partial locations with missing version line (缺版本线) and compares nulls', () => {
+    // Synthetic case 2: "缺版本线"
+    // Document 950022 has no version line in ancestors -> line=null, train=null, module=null, conforming=false.
+    // Facet view 1: line=null, module=null -> equal.
+    // Document 950023: gold has line=null, but facet view has line='10.6.1' -> unequal discrepancy.
+    const facets = {
+      schema: 'facet-view@1',
+      by: ['document', 'line', 'module'],
+      rows: [
+        {
+          values: { document: '950022', line: null, module: null },
+          count: 3,
+        },
+        {
+          values: { document: '950023', line: '10.6.1', module: null },
+          count: 2,
+        },
+      ],
+    };
+
+    const gold = {
+      root: '7716',
+      documents: [],
+      nonconforming: [
+        {
+          document: '950022',
+          title: '未归档文档一',
+          ancestors: ['030：未归档项目'],
+          reason: '缺少版本线节点',
+          line: null,
+          train: null,
+          module: null,
+          conforming: false,
+        },
+        {
+          document: '950023',
+          title: '未归档文档二',
+          ancestors: ['030：未归档项目'],
+          reason: '缺少版本线节点',
+          line: null,
+          train: null,
+          module: null,
+          conforming: false,
+        },
+      ],
+    };
+
+    const result = compareLocationIndex(facets, gold);
+
+    assert.equal(result.equal, 1); // 950022 matches (both line and module are null)
+    assert.equal(result.unequal, 1); // 950023 mismatches (gold.line is null, facet.line is '10.6.1')
+    assert.equal(result.discrepancies.length, 1);
+
+    const d23 = result.discrepancies[0];
+    assert.equal(d23.document, '950023');
+    assert.equal(d23.field, 'line');
+    assert.equal(d23.gold, null);
+    assert.equal(d23.facet, '10.6.1');
+  });
+
+  it('matchFieldValue compares null and non-null values correctly', () => {
+    assert.equal(matchFieldValue('line', null, null), true);
+    assert.equal(matchFieldValue('line', '', null), true);
+    assert.equal(matchFieldValue('line', '10.6.0', '10.6'), true);
+    assert.equal(matchFieldValue('line', '10.6.1', null), false);
+    assert.equal(matchFieldValue('module', null, null), true);
+    assert.equal(matchFieldValue('module', '信标', '信标'), true);
+    assert.equal(matchFieldValue('module', '信标', null), false);
   });
 
   it('main CLI exits 0 on match and exits 1 on discrepancy', async () => {
