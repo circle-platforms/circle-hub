@@ -110,7 +110,10 @@ not known is an unknown (the knowledge base lists only the builds of the build s
    that is not a module), with five to seven digits and no Han text or unit glued to it (case-review measured 947 of 949
    unmarked ids at 10,000 or more; `8080 端口`, `4094 VLAN`, `10000并发`, `1000条` are quantities). Deeper folders and the
    map are read after a marker word only. A number marked anywhere takes that kind wherever it stands unmarked. Where each
-   id was read is in `id_sources`; the summary marks ids not from the title (`需求 20931（目录）`).
+   id was read is in `id_sources`; the summary marks ids not from the title (`需求 20931（目录）`). The conclusion lists
+   **every** associated id, grouped by kind (`需求`, `缺陷`, `未分类编号`); above 20 in total it lists the first 20 in
+   that order and writes `另有 N 个` (before 1.3.0 the list was a top 3 with `等 N 个`, so the client and the model
+   could not see the rest).
 8. **Id ranges** (`id_ranges`) are a declaration (A01 R[2]): the kinds they give are reported apart (`ranged`, summary
    `33001（声明的范围：需求）`), never as tree facts, and the answer's verdict does not rest on them. A declared range
    classifies the ids it contains unless the other declared range contains them too; an id in no declared range stays

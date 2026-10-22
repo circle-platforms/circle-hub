@@ -715,6 +715,48 @@ describe('case-location associated ID classification and complete result reading
     }
   });
 
+  test('a start_run summary that lists every id (the new full listing) passes without get_nodes data', () => {
+    const gold: LocationGold = {
+      document: '900301',
+      product: 'apv',
+      line: '10.6.1',
+      unclassified: ['900001', '900002', '900003', '900004', '900005', '900006'],
+    };
+    const s = caseLocation(gold);
+    const text = [
+      '运行 run_1 完成：任务包 case-location@1.3.0',
+      'location 用例定位：满足 1',
+      '产品线 apv；版本 10.6.1（目录，置信度高）',
+      '- 900301 | 文档 900301 | 产品线 apv；版本 10.6.1（目录，置信度高）；未分类编号 900001、900002、900003、900004、900005、900006',
+    ].join('\n');
+    const checks = s.check(turnsOf(text));
+    assert.ok(checks.every((c) => c.ok), JSON.stringify(checks.filter((c) => !c.ok)));
+    const setCheck = checks.find((c) => c.name === '关联编号集合与独立依据一致');
+    assert.ok(setCheck && setCheck.ok && setCheck.actual.includes('共 6 个，集合一致'));
+  });
+
+  test('a summary capped at 20 with 另有 N 个 does not read the count as an id', () => {
+    const gold: LocationGold = {
+      document: '900301',
+      product: 'apv',
+      line: '10.6.1',
+      unclassified: Array.from({ length: 22 }, (_, i) => String(900001 + i)),
+    };
+    const s = caseLocation(gold);
+    const listed = Array.from({ length: 20 }, (_, i) => String(900001 + i)).join('、');
+    const text = [
+      '运行 run_1 完成：任务包 case-location@1.3.0',
+      'location 用例定位：满足 1',
+      '产品线 apv；版本 10.6.1（目录，置信度高）',
+      `- 900301 | 文档 900301 | 产品线 apv；版本 10.6.1（目录，置信度高）；未分类编号 ${listed}；另有 2 个`,
+    ].join('\n');
+    const checks = s.check(turnsOf(text));
+    const setCheck = checks.find((c) => c.name === '关联编号集合与独立依据一致');
+    assert.ok(setCheck && !setCheck.ok, 'the two unlisted ids are honestly missing, not silently complete');
+    assert.match(setCheck.actual, /缺 2 个（900021、900022）/, setCheck.actual);
+    assert.ok(!setCheck.actual.includes('另有'), `the cap marker is not an id: ${setCheck.actual}`);
+  });
+
   test('fails when an associated ID is misclassified (gold expects defect but reported as unclassified)', () => {
     const gold: LocationGold = {
       document: '90001',

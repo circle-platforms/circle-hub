@@ -3,7 +3,7 @@
 // rows of the second review round from the reviewers' scenarios before the fixes.
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import locateFunction, { locate, locateInputOf, locateItem, summaryOf } from './locate.ts';
+import locateFunction, { described, locate, locateInputOf, locateItem, summaryOf } from './locate.ts';
 import { assertTotal, hostileInputs, seeded } from './test-support.ts';
 import type { Confidence, Conflict, IdRanges, LocateAnswer, LocateInput, VersionSource } from './types.ts';
 
@@ -647,6 +647,73 @@ describe('the attribution scheme on invented ancestor paths', () => {
     assert.equal(summary('older-line-build-name'), '产品线 apv（NSAE）；版本 10.9.1（目录，置信度高）；写出的构建名 Rel_NSAE_10_9_1_37');
     assert.equal(summary('requirement-in-a-deeper-folder'), '产品线 apv（NSAE）；版本 10.6.1（目录，置信度高）；发布火车 10.6.1-R2-2026/7；模块 SSL；需求 20931（目录）');
     assert.equal(summary('story-range-alone'), '产品线 apv（NSAE）；版本 10.6.1（目录，置信度高）；发布火车 10.6.1-R2-2026/7；模块 SSL；未分类编号 74001、33001（声明的范围：需求）');
+  });
+});
+
+describe('the associated ids in the conclusion', () => {
+  const answer = (ids: { requirements?: string[]; defects?: string[]; unclassified?: string[] }): LocateAnswer => ({
+    case_id: 'doc-1:n1',
+    product_line: 'apv',
+    product_name: 'NSAE',
+    version: '10.6.1',
+    build: null,
+    patch: null,
+    line: '10.6.1',
+    train: null,
+    module: null,
+    ancestor_path: [],
+    version_source: 'folders',
+    confidence: 'high',
+    build_source: 'title',
+    patch_source: 'title',
+    source: null,
+    build_names: [],
+    requirements: ids.requirements ?? [],
+    defects: ids.defects ?? [],
+    unclassified: ids.unclassified ?? [],
+    id_sources: [],
+    ranged: { requirements: [], defects: [] },
+    declared: [],
+    conflicts: [],
+    notes: [],
+  });
+  const ids = (prefix: string, count: number, from = 1): string[] => Array.from({ length: count }, (_, i) => `${prefix}${String(from + i).padStart(3, '0')}`);
+
+  it('lists every id grouped by kind when there are 6 across the three kinds', () => {
+    const text = described(answer({ requirements: ids('31', 2), defects: ids('61', 2), unclassified: ids('71', 2) }));
+    assert.match(text, /需求 31001、31002(；|$)/);
+    assert.match(text, /缺陷 61001、61002(；|$)/);
+    assert.match(text, /未分类编号 71001、71002(；|$)/);
+    assert.ok(!text.includes('另有'), text);
+    assert.ok(!text.includes('等 6 个'), text);
+    // every id of every kind is present, in kind order
+    assert.ok(text.indexOf('需求') < text.indexOf('缺陷') && text.indexOf('缺陷') < text.indexOf('未分类编号'), text);
+  });
+
+  it('lists every id when there are exactly 20', () => {
+    const text = described(answer({ requirements: ids('31', 8), defects: ids('61', 7), unclassified: ids('71', 5) }));
+    for (const id of [...ids('31', 8), ...ids('61', 7), ...ids('71', 5)]) assert.ok(text.includes(id), `${id} in ${text}`);
+    assert.ok(!text.includes('另有'), text);
+  });
+
+  it('lists the first 20 and writes 另有 N 个 when there are 21', () => {
+    const text = described(answer({ requirements: ids('31', 8), defects: ids('61', 7), unclassified: ids('71', 6) }));
+    for (const id of [...ids('31', 8), ...ids('61', 7), ...ids('71', 5)]) assert.ok(text.includes(id), `${id} in ${text}`);
+    assert.ok(!text.includes('71006'), `the 21st id is not listed: ${text}`);
+    assert.match(text, /另有 1 个$/, text);
+    assert.match(text, /未分类编号 71001、71002、71003、71004、71005；另有 1 个$/, 'the cap cuts inside the last shown group');
+  });
+
+  it('keeps the source marks of an id in the full listing', () => {
+    const withSources = answer({ unclassified: ['71001', '71002', '71003'] });
+    withSources.id_sources = [
+      { id: '71001', kind: null, from: ['title'] },
+      { id: '71002', kind: null, from: ['folders'] },
+      { id: '71003', kind: null, from: ['map'] },
+    ];
+    withSources.ranged = { requirements: ['71003'], defects: [] };
+    const text = described(withSources);
+    assert.match(text, /未分类编号 71001、71002（目录）、71003（脑图；声明的范围：需求）/);
   });
 });
 
