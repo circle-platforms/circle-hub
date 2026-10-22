@@ -1,0 +1,85 @@
+# packs/workflow/regression-scope
+
+Capability 4a of the architecture brief (section 6a): a fact-only workflow pack bound to no product line. Given an impact
+view of two builds, it lists the cases of the later build that sit on an added or modified path. A path with no case is
+unknown, never a failure. `start_run` stores the validation result; `submit_result` only adds model commentary.
+
+The product name in the view (`widget`) and the build names (`Rel_W_1_0_1`, `Rel_W_1_0_2`) in the tests are synthetic.
+
+## Files
+
+| Path | Content |
+| --- | --- |
+| `pack.json` | manifest of the pack files (`pack-files.ts --write`) |
+| `workflow.json` | input `impact` (`knowledge:impact`, one, required); parameters `priorities`, `include_added`; `product: { catalogs: [] }` |
+| `requirements.json` | `in_scope` (item) and `uncovered_changes` (run); both fact, static, bookkeeping |
+| `checks.json` | both checks are `functions/check.ts`, apply `run`, subject `functions/subject.ts`, advisory |
+| `slots.schema.json` | empty |
+| `SKILL.md` | relay the result unchanged; page it with `get_nodes` on the `rec:` reference |
+| `functions/scope.ts` | the scope rules |
+| `functions/project.ts`, `functions/subject.ts`, `functions/check.ts` | projection, subject, outcomes |
+| `functions/view.ts` | `impact-view@1` read locally, so the function stays inside the pack |
+| `tables/codes.json` | refusals, warnings, and the two invariant refutations |
+| `samples/positive/*`, `samples/negative/*` | one positive and one negative sample of each check (author samples) |
+| `examples/scope.json` | a synthetic illustration. No verified run exists yet (T01 F[11]); the task page asks for examples, so this file says it is synthetic |
+| `pack-files.ts`, `functions/test-support.ts`, `test-hub.ts`, `*.test.ts`, `README.md` | not pack files |
+
+## The answer
+
+Each item is one case, id `<document>:<node>`, sorted by id. A case on several added or modified paths is one item; its
+`reasons` are sorted by path and carry the change (`added` or `modified`) and the digests and tree references of the
+entries. The summary is at most 200 characters: priority, document, how many commands changed, and the first change.
+Removed paths are neither in scope nor uncovered. A case on an unchanged path is not an item.
+
+`in_scope` supports each item. Grounds are the tree references of the case entry and of the definition entries on its
+reasons. `uncovered_changes` is one unknown (`missing_input`) per considered path that has no case in the later build,
+with no item, so it is a cross-item claim. The statement says this is not a failure. When `skipped.to` is above zero,
+the statement and the run note say the later build's index lacks that many listed documents. A truncated view adds an
+unknown of `integrity_unproven` and does not claim that the list is complete.
+
+The uncovered list is computed before the priority filter and stored on the projection note. Filtering a case out does
+not make its path uncovered. `include_added: false` drops added paths from the scope and from the uncovered list. An
+empty `priorities` array keeps nothing. Input order does not change the output.
+
+## Decisions
+
+1. The pack names no product and no catalog, so a run must not pass `product`, `version` or `build`.
+2. Case data is read as `document`, `node`, `title` (else the statement, else `（无标题）`), `priority` (a finite number
+   or absent) and `negative` (`true` only when the field is `true`). The cases index is owned by another pack and is not
+   in this tree; this shape is an assumption (see Needs).
+3. A well-formed view never refutes: a scope is not a defect, and a missing case is unknown. The publish check still
+   requires a negative sample of every check (C05 R[0], T02). The only refutations are two projection invariants
+   (`not_in_scope`, `not_uncovered`) that this pack's projection does not produce. They are declared as such.
+4. An empty scope is an empty projection plus a warning that says so. The run engine refuses a projection with no items
+   (W01 R[3]). This pack does not invent an item to get past that refusal.
+
+## How to test
+
+```
+node --test --test-concurrency=2 "packs/workflow/regression-scope/**/*.test.ts"
+npx tsc --noEmit
+node packs/workflow/regression-scope/pack-files.ts --check
+```
+
+The function tests build impact views by hand: every change kind, one case on two paths, a case on an unchanged path, a
+changed path with no case, the priority filter, `include_added` false, an empty view, 5,000 cases, and order
+independence. `publish.test.ts` publishes through the real registry. `production.test.ts` runs `start_run` against a
+fake reader. Both use a temporary PostgreSQL and are skipped where `sandbox-exec` is absent. A skip is not a pass.
+`production.test.ts` has one `it.todo` for the real knowledge reader, which waits until the product pack's cases index
+is committed.
+
+## Limits
+
+- At most 10,000 check outcomes in one call (the engine's cap). A larger run becomes one `check_error`. The 5,000-case
+  test calls the function directly.
+- `ignore` is not a parameter. `priorities` holds at most 64 numbers.
+- `ignore_fields` belongs to maintenance-sweep, not to this pack.
+- Tree references in the view are copied onto the claims. This pack does not resolve them against a knowledge root.
+- Warnings kept on a run are the first 100. An empty projection's warnings are dropped by the engine with the refusal.
+
+## Needs from other packages
+
+- **runs engine** (`hub/runs/engine/projection.ts`, W01 R[3]): a projection with zero items refuses `start_run` (“投影没有给出任何条目”). An empty scope and a clean maintenance pair cannot be stored. Request: accept an empty item list when the projection says why.
+- **runs engine** (C05 R[0], T02): every check needs a refuting sample. This pack's refutations are invariants, not defects of a scope. Request: allow a check whose only honest outcomes are support and unknown to publish without a refutation.
+- **product pack** (`packs/product/apv` cases producer, not in this tree): confirm the case entry fields (`document`, `node`, `title`, `priority`, `negative`). Until that producer is committed, the real-reader end-to-end test stays a todo. Tests here use hand-built views.
+- **knowledge pack**: the impact view is served by the Hub's reader. This pack only parses `impact-view@1`.

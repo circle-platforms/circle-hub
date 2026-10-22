@@ -1,0 +1,95 @@
+{
+  "schema": "pack@1",
+  "id": "regression-scope",
+  "version": "1.0.0",
+  "kind": "workflow",
+  "title": "回归范围",
+  "description": "按两个构建的影响视图列出后一构建里放在新增或修改路径上的用例；没有用例的变更路径记为未知而不是失败。只含事实要求项，开始运行时由 Hub 直接算出结果",
+  "files": [
+    {
+      "path": "SKILL.md",
+      "sha256": "4435f6f63b1007d16b65e13409d4fa7647c3be446aa08cd22be236f5805fbaf7",
+      "size": 1415
+    },
+    {
+      "path": "checks.json",
+      "sha256": "7d14901385564d974bb7d0cef9cb4bd680abaa8642672101f2b5f41068473460",
+      "size": 587
+    },
+    {
+      "path": "examples/scope.json",
+      "sha256": "42317ef215d04820333b17f79f541d790221ce840b3b58b18f4bbafc07c23f96",
+      "size": 663
+    },
+    {
+      "path": "functions/check.ts",
+      "sha256": "26a54f0c6a343f6bf586e0687700084991b52ffdd8e43b5137bcf3a9cdcd4506",
+      "size": 9018
+    },
+    {
+      "path": "functions/project.ts",
+      "sha256": "9aca79e33dfabf69ad292240bed18f5a307a4f5f05665257f2c24b18192af944",
+      "size": 3140
+    },
+    {
+      "path": "functions/scope.ts",
+      "sha256": "0a117f9973aa0ded77c38e37e7c58bbc799dd46ef4371d0600518f8b818f7edc",
+      "size": 11574
+    },
+    {
+      "path": "functions/subject.ts",
+      "sha256": "51c3da9e858bbd1f5453dd52704b6254f24289b78b1ba2dff75dbce638a042bb",
+      "size": 1068
+    },
+    {
+      "path": "functions/text.ts",
+      "sha256": "53a5be4668be261a635a2f1589fcd7e52de27047b7e6af7b127c3369d2ba5844",
+      "size": 1250
+    },
+    {
+      "path": "functions/view.ts",
+      "sha256": "d4fec24a676de1f4eb813e533d49750cd4ce29a6af3647feb34f537b0d36bddc",
+      "size": 6969
+    },
+    {
+      "path": "requirements.json",
+      "sha256": "a89abfc28ca5a3f5b0846e66cd4eb967bce1ab20a20f738038122f2f04abb6c2",
+      "size": 1144
+    },
+    {
+      "path": "samples/negative/not-in-scope.json",
+      "sha256": "c249b9eb31d4001eeb73d8f5d84df9a50b742b80fedf1cb0a0553c57ae26e7f4",
+      "size": 2048
+    },
+    {
+      "path": "samples/negative/uncovered-overlap.json",
+      "sha256": "96a469c8defc05f30c12cd7587351d538ff33c8aaf84d88e3ff6b327155cbe2e",
+      "size": 2376
+    },
+    {
+      "path": "samples/positive/covered-paths.json",
+      "sha256": "8a2c99f0160ca2c1742c9134a0ccceafceb46ec83e92eb31929a51dafa1426d4",
+      "size": 2207
+    },
+    {
+      "path": "samples/positive/in-scope.json",
+      "sha256": "37e39cd2179f5fd9f8dd46e86d41edaad4bdd42a24ede141de16e1d2fa62d1c4",
+      "size": 1965
+    },
+    {
+      "path": "slots.schema.json",
+      "sha256": "851202e03d46a4b40941830a276007f860f657166b31d30da18d0d2268567516",
+      "size": 53
+    },
+    {
+      "path": "tables/codes.json",
+      "sha256": "0e8a9b8f5f0e29cab1c653085ea61d0c4c8dcdcfcb15ae5650a750e42576d6e9",
+      "size": 3224
+    },
+    {
+      "path": "workflow.json",
+      "sha256": "e7463a4206df92766f7295b4ce43ac5467258121f9d1ccaa48c6852bddbd5c1d",
+      "size": 1076
+    }
+  ]
+}

@@ -1,0 +1,54 @@
+{
+  "id": "not_in_scope",
+  "source": "author",
+  "check": "in_scope",
+  "note": "合成样例：原因是删除路径。合式投影不会给出这样的条目；反例只为发布检查存在",
+  "subject": {
+    "items": [
+      {
+        "id": "doc-1:n1",
+        "location": "tree:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee/commands/show@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "fields": {
+          "document": "doc-1",
+          "node": "n1",
+          "title": "查看部件状态",
+          "priority": 1,
+          "negative": false,
+          "reasons": [
+            {
+              "path": "/commands/show",
+              "change": "removed",
+              "before": [
+                {
+                  "entry": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                  "kind": "definition",
+                  "reference": "tree:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc/commands/show@bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+                }
+              ],
+              "after": [
+                {
+                  "entry": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+                  "kind": "definition",
+                  "reference": "tree:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee/commands/show@dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+                }
+              ],
+              "case": {
+                "entry": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "reference": "tree:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee/commands/show@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "note": null
+  },
+  "expect": [
+    {
+      "verdict": "refute",
+      "code": "regression-scope.not_in_scope",
+      "item": "doc-1:n1",
+      "tier": "advisory"
+    }
+  ]
+}
