@@ -97,8 +97,8 @@ export function reviewPack(version = '1.0.0'): PackDescription {
       'checks.json': {
         schema: 'checks@1',
         checks: [
-          { id: 'titles', interpreter: 'structure@1', table: 'tables/titles.json', applies: 'run', judges: 'subject' },
-          { id: 'codes', interpreter: 'membership@1', table: 'tables/codes.json', applies: 'item', judges: 'artifact_under_verification' },
+          { id: 'titles', interpreter: 'structure@1', table: 'tables/titles.json', applies: 'run', judges: 'subject', tier: 'blocking' },
+          { id: 'codes', interpreter: 'membership@1', table: 'tables/codes.json', applies: 'item', judges: 'artifact_under_verification', tier: 'advisory' },
         ],
       },
       'slots.schema.json': {

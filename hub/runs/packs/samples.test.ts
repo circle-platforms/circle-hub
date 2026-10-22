@@ -103,7 +103,7 @@ test("a sample's catalog is bound only for a check that declares one, as a run b
   const catalogTable = { schema: 'catalog@1', origin: '决定：合成的命令目录检查', item: '/id', catalog: 'commands', commands: ['$.commands'], scope: 'all', required: true };
   const pack = withFiles(
     editJson<Json>(
-      editJson<Json>(base, 'checks.json', (c) => void c.checks.push({ id: 'commands', interpreter: 'catalog@1', table: 'tables/commands.json', applies: 'item', judges: 'subject', catalog: 'commands@1' })),
+      editJson<Json>(base, 'checks.json', (c) => void c.checks.push({ id: 'commands', interpreter: 'catalog@1', table: 'tables/commands.json', applies: 'item', judges: 'subject', catalog: 'commands@1', tier: 'advisory' })),
       'requirements.json',
       (r) => void r.requirements[0].checks.push('commands'),
     ),
@@ -129,7 +129,7 @@ test('a sample with a catalog consults it; a malformed catalog is a failure of t
   const catalogTable = { schema: 'catalog@1', origin: '决定：合成的命令目录检查', tier: 'blocking', basis: '要求项 commands：命令在目录里', item: '/id', catalog: 'commands', commands: ['$.commands'], scope: 'all', required: true };
   const pack = withFiles(
     editJson<Json>(
-      editJson<Json>(base, 'checks.json', (c) => void c.checks.push({ id: 'commands', interpreter: 'catalog@1', table: 'tables/commands.json', applies: 'item', judges: 'subject', catalog: 'commands@1' })),
+      editJson<Json>(base, 'checks.json', (c) => void c.checks.push({ id: 'commands', interpreter: 'catalog@1', table: 'tables/commands.json', applies: 'item', judges: 'subject', catalog: 'commands@1', tier: 'blocking' })),
       'requirements.json',
       (r) => void r.requirements[0].checks.push('commands'),
     ),
@@ -157,7 +157,7 @@ test('named closed sets reach membership tables as <requirement>.codes', async (
 test('samples of a pack function run in the sandbox against the pack directory', async () => {
   const functionCheck = withFiles(
     editJson<Json>(
-      editJson<Json>(base, 'checks.json', (c) => void c.checks.push({ id: 'balance', function: { module: 'functions/balance.ts' }, applies: 'item', judges: 'subject', basis: '要求项 titles 的合同条款' })),
+      editJson<Json>(base, 'checks.json', (c) => void c.checks.push({ id: 'balance', function: { module: 'functions/balance.ts' }, applies: 'item', judges: 'subject', basis: '要求项 titles 的合同条款', tier: 'blocking' })),
       'requirements.json',
       (r) => void r.requirements[0].checks.push('balance'),
     ),
@@ -186,7 +186,7 @@ test('samples of a pack function run in the sandbox against the pack directory',
 test('a pack check function sees the context a run gives it: the pack, the first requirement listing the check, the closed sets', async () => {
   const echo = withFiles(
     editJson<Json>(
-      editJson<Json>(base, 'checks.json', (c) => void c.checks.push({ id: 'echo', function: { module: 'functions/echo.ts' }, applies: 'run', judges: 'subject' })),
+      editJson<Json>(base, 'checks.json', (c) => void c.checks.push({ id: 'echo', function: { module: 'functions/echo.ts' }, applies: 'run', judges: 'subject', tier: 'advisory' })),
       'requirements.json',
       (r) => void r.requirements[1].checks.push('echo'),
     ),
@@ -208,7 +208,7 @@ test('a pack check function sees the context a run gives it: the pack, the first
 });
 
 test('a sample of a pack function needs the pack directory', async () => {
-  const functionCheck = withFiles(editJson<Json>(base, 'checks.json', (c) => void c.checks.push({ id: 'noop', function: { module: 'functions/util.ts', export: 'itemsOf' }, applies: 'item', judges: 'subject' })), {
+  const functionCheck = withFiles(editJson<Json>(base, 'checks.json', (c) => void c.checks.push({ id: 'noop', function: { module: 'functions/util.ts', export: 'itemsOf' }, applies: 'item', judges: 'subject', tier: 'advisory' })), {
     'samples/positive/noop.json': { ...titlesGood, id: 'noop_good', check: 'noop' },
   });
   const written = await writePack(join(temp.path, `s${++n}`), functionCheck);

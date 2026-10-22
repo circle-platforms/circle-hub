@@ -99,7 +99,7 @@ test('every function reference names an existing module inside functions/', asyn
   const variants: [PackDescription, string, string][] = [
     [workflow((w) => (w.projection = { module: missing })), 'workflow.json', '/projection/module'],
     [workflow((w) => (w.expected_sources = { module: missing })), 'workflow.json', '/expected_sources/module'],
-    [checks((f) => f.checks.push({ id: 'fn', function: { module: missing }, applies: 'item', judges: 'subject' })), 'checks.json', '/checks/2/function/module'],
+    [checks((f) => f.checks.push({ id: 'fn', function: { module: missing }, applies: 'item', judges: 'subject', tier: 'advisory' })), 'checks.json', '/checks/2/function/module'],
     [checks((f) => (f.checks[0].subject = { module: missing, export: 'build' })), 'checks.json', '/checks/0/subject/module'],
   ];
   const product = productPack();
@@ -265,7 +265,7 @@ test('a reject row belongs to a requirement with a blocking check on the artifac
   // A core code no check of the requirement can give is accepted with a warning.
   const unused = await accepted(requirements((f) => f.requirements[0].error_handling.unshift({ code: 'core.catalog.not_member', action: 'unknown' })));
   assert.ok(unused.pack.warnings.some((w) => w.rule === 'requirements.code_unused'));
-  const unlisted = await accepted(checks((f) => f.checks.push({ id: 'spare', interpreter: 'structure@1', table: 'tables/titles.json', applies: 'run', judges: 'subject' })));
+  const unlisted = await accepted(checks((f) => f.checks.push({ id: 'spare', interpreter: 'structure@1', table: 'tables/titles.json', applies: 'run', judges: 'subject', tier: 'blocking' })));
   assert.ok(unlisted.pack.warnings.some((w) => w.rule === 'checks.unused'));
 });
 
@@ -309,10 +309,10 @@ test('a catalog@1 check names the catalog a run binds, and a sample carries a ca
       editJson<Json>(editJson<Json>(base, 'checks.json', (c) => void c.checks.push(check)), 'requirements.json', (r) => void r.requirements[0].checks.push(check.id)),
       { 'tables/commands.json': catalogTable },
     );
-  const unbound = withCatalogCheck({ id: 'commands', interpreter: 'catalog@1', table: 'tables/commands.json', applies: 'item', judges: 'artifact_under_verification' });
+  const unbound = withCatalogCheck({ id: 'commands', interpreter: 'catalog@1', table: 'tables/commands.json', applies: 'item', judges: 'artifact_under_verification', tier: 'advisory' });
   const p = await refused(unbound, 'checks.catalog_missing', { file: 'checks.json', field: '/checks/2/catalog' });
   assert.match(p.message, /commands/);
-  await accepted(withCatalogCheck({ id: 'commands', interpreter: 'catalog@1', table: 'tables/commands.json', applies: 'item', judges: 'artifact_under_verification', catalog: 'commands@1' }));
+  await accepted(withCatalogCheck({ id: 'commands', interpreter: 'catalog@1', table: 'tables/commands.json', applies: 'item', judges: 'artifact_under_verification', catalog: 'commands@1', tier: 'advisory' }));
   // A sample that brings a catalog to a check that consults none would judge differently from a run.
   const sample = { ...(base.files['samples/positive/titles-good.json'] as Json), id: 'with_catalog', catalog: { root: 'c'.repeat(64), entries: [{ head: 'show widget' }] } };
   await refused(withFiles(base, { 'samples/positive/with-catalog.json': sample }), 'samples.catalog_unused', { file: 'samples/positive/with-catalog.json', field: '/catalog' });
@@ -385,4 +385,13 @@ test('getBuiltinModule reached any way but a direct call with a literal name is 
   await refused(projection("const fs = process['getBuiltinModule']('node:fs');\n" + body), 'functions.import_builtin', { file: 'functions/project.ts' });
   await accepted(projection("const crypto = process.getBuiltinModule('node:crypto');\n" + body));
   await accepted(projection("const [getBuiltinModule] = [1];\n" + body));
+});
+
+test('every check must declare an explicit tier upon publication: missing tier is refused, declaring tier is accepted', async () => {
+  const missingTier = checks((f) => delete f.checks[0].tier);
+  const p = await refused(missingTier, 'checks.tier_missing', { file: 'checks.json', field: '/checks/0/tier' });
+  assert.match(p.message, /任务包 demo-review 的检查 titles 没有声明 tier/);
+  assert.match(p.fix, /声明 blocking、advisory 或模型里的其他档名/);
+  const withTier = checks((f) => (f.checks[0].tier = 'blocking'));
+  await accepted(withTier);
 });

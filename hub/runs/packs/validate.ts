@@ -282,9 +282,8 @@ async function validateWorkflow(c: Collector, directory: PackDirectory, policy: 
   if (checks) {
     for (const [k, check] of checks.checks.entries()) {
       const at = (field: string) => ({ field: `/checks/${k}/${field}` });
-      // Every check must declare an explicit tier upon publication. Legacy synthetic fixtures (demo-review, demo-check, crash-review) are exempted for internal test harnesses.
-      const isSyntheticFixture = manifest.id === 'demo-review' || manifest.id === 'demo-check' || manifest.id === 'crash-review';
-      if (check.tier === undefined && !isSyntheticFixture) {
+      // Every check must declare an explicit tier upon publication.
+      if (check.tier === undefined) {
         c.add(problem('checks.tier_missing', 'checks.json', `任务包 ${manifest.id} 的检查 ${check.id} 没有声明 tier`, '声明 blocking、advisory 或模型里的其他档名', at('tier')));
       }
       const interpreter = check.interpreter === undefined ? undefined : getInterpreter(check.interpreter);
