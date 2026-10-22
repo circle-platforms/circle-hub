@@ -33,7 +33,7 @@ const MANIFEST = {
   ],
 };
 
-function input(parameters: Record<string, unknown>, options: { manifest?: unknown; leases?: Array<{ key: string; until: string }> } = {}): unknown {
+function input(parameters: Record<string, unknown>, options: { manifest?: unknown; leases?: Array<{ key: string; until: string; mine?: boolean }> } = {}): unknown {
   return {
     inputs: [{ slot: 'inventory', external: 'doc:doc:bed-topology', sha256: 'a'.repeat(64), media_type: 'application/json', parser: 'json@1', model: options.manifest ?? MANIFEST, meta: null }],
     parameters,
@@ -145,6 +145,51 @@ describe('project action acquire', () => {
     assert.equal(nothing.error?.code, 'test-bed.nothing_to_lease');
     const short = project(input({ action: 'acquire', need: { devices: [{ type: 'client', count: 1 }], hours: 1 }, addresses: { segment: '192.0.2.64/26', count: 60 } })) as { error?: { code: string } };
     assert.equal(short.error?.code, 'test-bed.not_enough_addresses');
+  });
+});
+
+describe('project action extend and release', () => {
+  const HELD = [
+    { key: 'bed/bed-a/apv0', until: LATER, mine: true },
+    { key: 'bed/bed-a/client0', until: LATER, mine: true },
+    { key: 'bed/bed-a/ip/192.0.2.70', until: LATER, mine: true },
+    { key: 'bed/bed-b/client1', until: LATER, mine: false },
+  ];
+
+  it('extend: the lineage-held keys with the extension TTL, devices and addresses named', () => {
+    const out = project(input({ action: 'extend', booking: 'run_book1', hours: 3 }, { leases: HELD })) as { lease_requests?: unknown[]; groups?: Array<Record<string, unknown>>; items?: Array<{ fields: Record<string, unknown> }> };
+    assert.deepEqual(out.lease_requests, [{ op: 'extend', keys: ['bed/bed-a/apv0', 'bed/bed-a/client0', 'bed/bed-a/ip/192.0.2.70'], ttl_seconds: 10800 }]);
+    assert.equal(out.items?.length, 1);
+    assert.equal(out.items?.[0]?.fields.conclusion, '续期 bed-a 的预订 run_book1，设备 apv0、client0，地址 192.0.2.70，延长 3 小时');
+    const group = out.groups?.[0] as { booking?: string; lease_requests?: unknown[] };
+    assert.equal(group.booking, 'run_book1');
+    assert.deepEqual(group.lease_requests, out.lease_requests, 'the frozen groups carry the same request');
+  });
+
+  it('extend: hours falls back to need.hours', () => {
+    const out = project(input({ action: 'extend', booking: 'run_book1', need: { hours: 5 } }, { leases: HELD })) as { lease_requests?: Array<{ ttl_seconds?: number }> };
+    assert.equal(out.lease_requests?.[0]?.ttl_seconds, 5 * 3600);
+  });
+
+  it('release: the lineage-held keys without a TTL', () => {
+    const out = project(input({ action: 'release', booking: 'run_book1' }, { leases: HELD })) as { lease_requests?: unknown[]; items?: Array<{ fields: Record<string, unknown> }> };
+    assert.deepEqual(out.lease_requests, [{ op: 'release', keys: ['bed/bed-a/apv0', 'bed/bed-a/client0', 'bed/bed-a/ip/192.0.2.70'] }]);
+    assert.match(String(out.items?.[0]?.fields.conclusion), /^释放 bed-a 的预订 run_book1，设备 apv0、client0，地址 192.0.2.70$/);
+  });
+
+  it('refuses honestly when the lineage holds nothing (rows without mine are someone else’s)', () => {
+    const out = project(input({ action: 'extend', booking: 'run_book1', hours: 2 }, { leases: HELD.map((row) => ({ key: row.key, until: row.until })) })) as { error?: { code: string; message: string } };
+    assert.equal(out.error?.code, 'test-bed.not_holder');
+    assert.match(String(out.error?.message), /^你没有持有这个预订/);
+    const released = project(input({ action: 'release', booking: 'run_book1' })) as { error?: { code: string } };
+    assert.equal(released.error?.code, 'test-bed.not_holder');
+  });
+
+  it('requires the booking run id for extend and release', () => {
+    const out = project(input({ action: 'extend', hours: 2 }, { leases: HELD })) as { error?: { code: string } };
+    assert.equal(out.error?.code, 'test-bed.bad_booking');
+    const rel = project(input({ action: 'release' }, { leases: HELD })) as { error?: { code: string } };
+    assert.equal(rel.error?.code, 'test-bed.bad_booking');
   });
 });
 

@@ -459,10 +459,18 @@ async function startFresh(
   // The projection runs before any group exists; the expected sources and the checks see the frozen groups. The builds of
   // the bound product are known from the target and frozen with the run, so they are the same at projection and evaluation.
   const builds = await contextBuilds(ctx, workflow, target.product?.product.id ?? null);
-  // The lease view is taken BEFORE the projection runs, so the projection sees other holders' rows (a projection that
-  // picks a free key reads real rows, none of them its own: `mine` is false for every row). The same view is frozen in
-  // the run record, so replaying the projection from the record's context asks for the same keys again.
+  // The lease view is taken BEFORE the projection runs, so the projection sees real rows, none of them this run's own
+  // acquisitions. Rows this run's lineage already holds (the holder run sits in the predecessor chain, same user; D04
+  // R[0]) are marked `mine`, so an extend or release projection discovers the keys it may operate on (C6 item 5); a run
+  // without a predecessor holds nothing yet and skips the lookup. The same view is frozen in the run record, so
+  // replaying the projection from the record's context asks for the same keys again.
   const leaseRows = await contextLeases(ctx, workflow);
+  let leaseLineageHolders = new Set<string>();
+  if (leaseRows !== null && leaseRows.length > 0 && predecessor !== null && ctx.deps.leases !== undefined) {
+    const lineage = await lineageOf(ctx, runId, predecessor.body.run);
+    const holders = await ctx.deps.leases.holders(leaseRows.map((row) => row.key));
+    leaseLineageHolders = new Set(holders.filter((row) => row.user === user.id && lineage.has(row.run)).map((row) => row.key));
+  }
   const context: RunContext = {
     product: target.product?.product.id ?? null,
     names: target.product?.product.names ?? [],
@@ -472,22 +480,15 @@ async function startFresh(
     parameters,
     groups: [],
     ...(builds !== null ? { builds } : {}),
-    ...(leaseRows !== null ? { leases: { now: startedAt, entries: leaseRows.map((row) => ({ key: row.key, until: row.until, mine: false })) } } : {}),
+    ...(leaseRows !== null ? { leases: { now: startedAt, entries: leaseRows.map((row) => ({ key: row.key, until: row.until, mine: leaseLineageHolders.has(row.key) })) } } : {}),
   };
   const projection = await projectItems(ctx, user, workflow, bound, parameters, context, call.traceId);
   const expected = await bindExpected(ctx, user, workflow, bound, projection.projected, parameters, { ...context, groups: projection.groups }, runId, call.traceId);
   // The leases are granted after the projection asked for them and before anything is stored; every failure from here
   // on compensates by releasing what was granted (D04 R[0]: no lease outlives the run it was taken for).
   let grantedLeases: Array<LeaseDone> = [];
-  let leaseLineageHolders = new Set<string>();
   try {
     grantedLeases = await grantLeases(ctx, user, workflow, projection.leaseRequests, runId, predecessor?.body.run);
-    if (leaseRows !== null && leaseRows.length > 0 && ctx.deps.leases !== undefined) {
-      const lineage = await lineageOf(ctx, runId, predecessor?.body.run);
-      const holders = await ctx.deps.leases.holders(leaseRows.map((row) => row.key));
-      leaseLineageHolders = new Set(holders.filter((row) => row.user === user.id && lineage.has(row.run)).map((row) => row.key));
-    }
-
   let items = projection.items;
   const packId = workflow.pack.id;
   const previous = predecessor;

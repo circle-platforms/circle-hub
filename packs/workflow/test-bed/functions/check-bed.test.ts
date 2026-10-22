@@ -26,7 +26,7 @@ const MANIFEST = {
   ],
 };
 
-function inputOf(parameters: Record<string, unknown>, options: { leases?: Array<{ key: string; until: string }> } = {}): unknown {
+function inputOf(parameters: Record<string, unknown>, options: { leases?: Array<{ key: string; until: string; mine?: boolean }> } = {}): unknown {
   return {
     inputs: [{ slot: 'inventory', external: 'doc:doc:bed-topology', sha256: 'a'.repeat(64), media_type: 'application/json', parser: 'json@1', model: MANIFEST, meta: null }],
     parameters,
@@ -35,7 +35,7 @@ function inputOf(parameters: Record<string, unknown>, options: { leases?: Array<
 }
 
 /** The subject the check sees, from a real projection output, optionally edited before freezing. */
-function subjectOf(parameters: Record<string, unknown>, options: { leases?: Array<{ key: string; until: string }>; edit?: (fields: Record<string, unknown>) => void } = {}): unknown {
+function subjectOf(parameters: Record<string, unknown>, options: { leases?: Array<{ key: string; until: string; mine?: boolean }>; edit?: (fields: Record<string, unknown>) => void } = {}): unknown {
   const out = project(inputOf(parameters, options)) as { items: Array<{ id: string; label: string; location: { parser: string; selector: string }; fields: Record<string, unknown> }>; groups: Array<Record<string, unknown>> };
   assert.ok(Array.isArray(out.items), JSON.stringify(out).slice(0, 300));
   const items = out.items.map((item, at) => {
@@ -72,6 +72,28 @@ describe('bedOutcomes support', () => {
     assert.deepEqual(data.keys, ['bed/bed-a/apv0', 'bed/bed-a/client0']);
     assert.equal(data.ttl_seconds, 7200);
   });
+
+  const HELD = [
+    { key: 'bed/bed-a/apv0', until: LATER, mine: true },
+    { key: 'bed/bed-a/client0', until: LATER, mine: true },
+    { key: 'bed/bed-a/ip/192.0.2.70', until: LATER, mine: true },
+  ];
+
+  it('extend: support with the held keys and the extension length', () => {
+    const outcomes = bedOutcomes(subjectOf({ action: 'extend', booking: 'run_book1', hours: 3 }, { leases: HELD }));
+    assert.equal(outcomes.length, 1);
+    assert.equal(outcomes[0].verdict, 'support');
+    assert.equal(outcomes[0].statement, '续期 bed-a 的预订 run_book1，设备 apv0、client0，地址 192.0.2.70，延长 3 小时');
+    const data = outcomes[0].data as { keys: string[]; ttl_seconds: number };
+    assert.deepEqual(data.keys, ['bed/bed-a/apv0', 'bed/bed-a/client0', 'bed/bed-a/ip/192.0.2.70']);
+    assert.equal(data.ttl_seconds, 10800);
+  });
+
+  it('release: support naming the booking and the keys', () => {
+    const outcomes = bedOutcomes(subjectOf({ action: 'release', booking: 'run_book1' }, { leases: HELD }));
+    assert.equal(outcomes[0].verdict, 'support');
+    assert.equal(outcomes[0].statement, '释放 bed-a 的预订 run_book1，设备 apv0、client0，地址 192.0.2.70');
+  });
 });
 
 describe('bedOutcomes refute and unknown', () => {
@@ -102,5 +124,35 @@ describe('bedOutcomes refute and unknown', () => {
     const outcomes = bedOutcomes({ items: [{ id: 'bed-a', fields: { action: 'search' } }], context: { groups: [] } });
     assert.equal(outcomes[0].verdict, 'unknown');
     assert.equal(outcomes[0].reason, 'check_error');
+  });
+
+  const HELD = [
+    { key: 'bed/bed-a/apv0', until: LATER, mine: true },
+    { key: 'bed/bed-a/client0', until: LATER, mine: true },
+  ];
+
+  it('refutes an extend item with tampered keys', () => {
+    const outcomes = bedOutcomes(subjectOf({ action: 'extend', booking: 'run_book1', hours: 2 }, { leases: HELD, edit: (fields) => void (fields.keys = ['bed/bed-a/apv0']) }));
+    assert.equal(outcomes[0].verdict, 'refute');
+    assert.equal(outcomes[0].code, 'test-bed.extend_mismatch');
+    assert.match(outcomes[0].statement, /keys/);
+  });
+
+  it('refutes a release item with a tampered booking', () => {
+    const outcomes = bedOutcomes(subjectOf({ action: 'release', booking: 'run_book1' }, { leases: HELD, edit: (fields) => void (fields.booking = 'run_other') }));
+    assert.equal(outcomes[0].verdict, 'refute');
+    assert.equal(outcomes[0].code, 'test-bed.release_mismatch');
+    assert.match(outcomes[0].statement, /booking/);
+  });
+
+  it('refutes an extend item when the frozen view holds nothing any more', () => {
+    const outcomes = bedOutcomes(subjectOf({ action: 'extend', booking: 'run_book1', hours: 2 }, { leases: HELD, edit: (fields) => void (fields.conclusion = fields.conclusion) }));
+    assert.equal(outcomes[0].verdict, 'support', 'the unchanged item supports');
+    const tampered = subjectOf({ action: 'extend', booking: 'run_book1', hours: 2 }, { leases: HELD }) as { items: unknown[]; context: { groups: Array<{ leases: { entries: unknown[] } }> } };
+    tampered.context.groups[0].leases.entries = [];
+    const after = bedOutcomes(tampered);
+    assert.equal(after[0].verdict, 'refute');
+    assert.equal(after[0].code, 'test-bed.extend_mismatch');
+    assert.match(after[0].statement, /没有持有/);
   });
 });

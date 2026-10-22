@@ -39,14 +39,14 @@ export default function project(input: unknown): unknown {
 }
 `;
 
-const leaseReadingProjection = `// Synthetic projection: echo the run context's lease rows into an item's fields.
+const leaseReadingProjection = (key: string): string => `// Synthetic projection: echo the run context's lease rows into an item's fields.
 export default function project(input: unknown): unknown {
   const raw = input as { context?: { leases?: { now: string; entries: Array<{ key: string; until: string; mine: boolean }> } | null } };
   const rows = raw.context?.leases?.entries ?? [];
   return {
     items: [{ id: 'r1', label: '探针', location: { parser: 'kityminder@1', selector: 'n/docq7' }, fields: { rows } }],
     warnings: [],
-    lease_requests: [{ keys: ['meadow/zone-2/target-1'], ttl_seconds: 300 }],
+    lease_requests: [{ keys: ['${key}'], ttl_seconds: 300 }],
   };
 }
 `;
@@ -135,7 +135,7 @@ before(async () => {
     ['toy-lease-prefix', leasesPack('toy-lease-prefix', { declare: { prefix: 'meadow/', max_ttl_seconds: 600 }, askContext: true, projection: leaseProjection(['river/zone-1/target-1'], 300) })],
     ['toy-lease-undeclared', leasesPack('toy-lease-undeclared', { askContext: true, projection: leaseProjection(['meadow/zone-1/target-4'], 300) })],
     ['toy-lease-plain', leasesPack('toy-lease-plain', { askContext: true, projection: plainProjection })],
-    ['toy-lease-read', leasesPack('toy-lease-read', { declare: { prefix: 'meadow/', max_ttl_seconds: 600 }, askContext: true, projection: leaseReadingProjection })],
+    ['toy-lease-read', leasesPack('toy-lease-read', { declare: { prefix: 'meadow/', max_ttl_seconds: 600 }, askContext: true, projection: leaseReadingProjection('meadow/zone-2/target-1') })],
     ['toy-book', leasesPack('toy-book', { declare: { prefix: 'meadow/', max_ttl_seconds: 600 }, askContext: true, projection: opProjection("[{ keys: ['meadow/lin/1'], ttl_seconds: 300 }]") })],
   ];
   for (const [name, spec] of specs) void name, await h.workflows.add(await writePack(packRoot, spec));
@@ -286,5 +286,23 @@ describe('lease operations by lineage (C6)', () => {
     const refused = await h.service.startRunDetailed(h.alice, { pack: 'toy-ext-7e', inputs: { map: { reference: map } }, predecessor: at }, h.call('s-c6-7z'));
     assert.equal(refused.answer.call_result, 'error');
     assert.equal(refused.answer.errors[0]!.code, 'LEASE_UNAVAILABLE', 'the holder run fell out of the 20-deep lineage window');
+  });
+
+  it('the projection of a successor sees the lineage-held rows marked mine (C6 item 5)', async () => {
+    await h.workflows.add(await writePack(packRoot, leasesPack('toy-lease-read-2', { declare: { prefix: 'meadow/', max_ttl_seconds: 600 }, askContext: true, projection: leaseReadingProjection('meadow/zone-2/target-2') })));
+    h.workflows.assign(h.alice.id, 'toy-lease-read-2');
+    const booked = await book('s-c6-8a', h.alice);
+    const rowsOf = async (session: string, pack: string, predecessor?: string): Promise<Array<{ key: string; mine: boolean }>> => {
+      const detail = await h.service.startRunDetailed(h.alice, { pack, inputs: { map: { reference: map } }, ...(predecessor !== undefined ? { predecessor } : {}) }, h.call(session));
+      assert.equal(detail.answer.call_result, 'ok', JSON.stringify(detail.answer.errors));
+      const record = await storedRun(detail.answer.run!.run);
+      const item = record.items.find((candidate) => candidate.id === 'r1');
+      return ((item?.fields as { rows?: Array<{ key: string; mine: boolean }> }).rows ?? []);
+    };
+    const successor = await rowsOf('s-c6-8b', 'toy-lease-read', booked);
+    assert.equal(successor.find((row) => row.key === 'meadow/lin/1')?.mine, true, 'the booking’s row is mine for the successor’s projection');
+    assert.equal(successor.find((row) => row.key === 'meadow/zone-2/target-1'), undefined, 'the view was taken before this run’s own acquire');
+    const fresh = await rowsOf('s-c6-8c', 'toy-lease-read-2');
+    assert.equal(fresh.find((row) => row.key === 'meadow/lin/1')?.mine, false, 'without the lineage the same row is not mine');
   });
 });

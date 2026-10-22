@@ -1,6 +1,6 @@
 // matchNeed: which bed fits the need — device counts and types, the build (exact name or two names of one base
 // build), leases and the earliest-free time, ordering and the wording "Hub 记录里空闲（未排除本地操作）".
-// Synthetic data only (bed-*, Rel_APV_10_4_6_* names, leases on bed/<bed>/<device> keys).
+// Synthetic data only (bed-*, Rel_APV_10_6_1_* names, leases on bed/<bed>/<device> keys).
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { matchNeed, type Installed, type LeaseEntry } from './match.ts';
@@ -80,22 +80,22 @@ describe('matchNeed without a build requirement', () => {
 });
 
 describe('matchNeed with a build requirement', () => {
-  const buildNeed = { devices: [{ type: 'load-balancer', count: 1 }], build: 'Rel_APV_10_4_6_8', hours: 2 };
+  const buildNeed = { devices: [{ type: 'load-balancer', count: 1 }], build: 'Rel_APV_10_6_1_8', hours: 2 };
   it('the exact build on the picked device: match, with the source', () => {
-    const installed: Record<string, Installed> = { 'bed/bed-a/apv0': { build: 'Rel_APV_10_4_6_8', source: 'observed', at: '2026-10-20T00:00:00.000Z' } };
+    const installed: Record<string, Installed> = { 'bed/bed-a/apv0': { build: 'Rel_APV_10_6_1_8', source: 'observed', at: '2026-10-20T00:00:00.000Z' } };
     const answer = matchNeed(beds, buildNeed, installed, {}, noLeases, NOW);
     assert.equal(answer.find((b) => b.bed === 'bed-a')!.buildOk, 'match');
     assert.equal(answer.find((b) => b.bed === 'bed-a')!.buildSource, 'observed');
   });
   it('two names of one base build are the same build (NSAE name based on the APV build)', () => {
-    const installed: Record<string, Installed> = { 'bed/bed-a/apv0': { build: 'Rel_NSAE_10_4_6_8', source: 'declared', at: '2026-10-20T00:00:00.000Z' } };
-    const builds = { 'Rel_NSAE_10_4_6_8': 'Rel_APV_10_4_6_8' };
+    const installed: Record<string, Installed> = { 'bed/bed-a/apv0': { build: 'Rel_NSAE_10_6_1_8', source: 'declared', at: '2026-10-20T00:00:00.000Z' } };
+    const builds = { 'Rel_NSAE_10_6_1_8': 'Rel_APV_10_6_1_8' };
     const answer = matchNeed(beds, buildNeed, installed, builds, noLeases, NOW);
     assert.equal(answer.find((b) => b.bed === 'bed-a')!.buildOk, 'match');
     assert.equal(answer.find((b) => b.bed === 'bed-a')!.buildSource, 'declared');
   });
   it('a different base build: mismatch, the conclusion says 需要升级', () => {
-    const installed: Record<string, Installed> = { 'bed/bed-a/apv0': { build: 'Rel_APV_10_4_6_9', source: 'declared', at: '2026-10-20T00:00:00.000Z' } };
+    const installed: Record<string, Installed> = { 'bed/bed-a/apv0': { build: 'Rel_APV_10_6_1_9', source: 'declared', at: '2026-10-20T00:00:00.000Z' } };
     const answer = matchNeed(beds, buildNeed, installed, {}, noLeases, NOW);
     assert.equal(answer.find((b) => b.bed === 'bed-a')!.buildOk, 'mismatch');
     assert.match(answer.find((b) => b.bed === 'bed-a')!.conclusion, /需要升级/);
@@ -108,7 +108,7 @@ describe('matchNeed with a build requirement', () => {
     assert.doesNotMatch(a.conclusion, /需要升级/);
   });
   it('the install record of a leased spare does not decide: the pick is the free device', () => {
-    const installed: Record<string, Installed> = { 'bed/bed-a/apv1': { build: 'Rel_APV_10_4_6_9', source: 'declared', at: '2026-10-20T00:00:00.000Z' } };
+    const installed: Record<string, Installed> = { 'bed/bed-a/apv1': { build: 'Rel_APV_10_6_1_9', source: 'declared', at: '2026-10-20T00:00:00.000Z' } };
     const leases = { 'bed/bed-a/apv1': { until: '2026-10-22T09:00:00.000Z' } };
     const answer = matchNeed(beds, buildNeed, installed, {}, leases, NOW);
     assert.equal(answer.find((b) => b.bed === 'bed-a')!.buildOk, 'unknown', 'apv0 (free) has no record; apv1 is leased');

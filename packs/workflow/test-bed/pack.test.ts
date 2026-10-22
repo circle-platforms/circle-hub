@@ -37,10 +37,10 @@ describe('the pack files', () => {
     ]);
     assert.deepEqual(workflow.product, { catalogs: [] }, 'unbound: the inventory names everything');
     assert.deepEqual(workflow.context, ['leases'], 'the workflow asks for the frozen lease view (D04)');
-    assert.deepEqual(workflow.leases, { prefix: 'bed/', max_ttl_seconds: 28800 }, 'bed/ namespace, at most 8 hours once');
+    assert.deepEqual(workflow.leases, { prefix: 'bed/', max_ttl_seconds: 86400 }, 'bed/ namespace; the declared number is the cumulative 24-hour cap the Hub judges (single requests stay at 8 hours, enforced by the pack)');
     assert.deepEqual(
       workflow.parameters.map((p) => p.name),
-      ['action', 'need', 'bed', 'hours', 'addresses'],
+      ['action', 'need', 'bed', 'hours', 'booking', 'addresses'],
     );
     assert.deepEqual([workflow.subject, workflow.projection], ['inventory', { module: 'functions/project.ts' }]);
     const requirements = RequirementsFile.parse(json('requirements.json')).requirements;
@@ -58,7 +58,7 @@ describe('the pack files', () => {
   it('has positive and negative samples of the bed check, all in the publish-check shapes and passing the check', async () => {
     const { bedOutcomes } = await import('./functions/check-bed.ts');
     const samples = (PackManifest.parse(json('pack.json')).files.map((f) => f.path).filter((p) => p.startsWith('samples/'))).map((path) => ({ path, sample: PackSample.parse(json(path)) }));
-    assert.ok(samples.length >= 6);
+    assert.ok(samples.length >= 10);
     for (const { path, sample } of samples) {
       assert.equal(sample.check, 'bed', path);
       const outcomes = bedOutcomes(sample.subject);
@@ -91,10 +91,10 @@ describe('the staged pack', { skip: (await osIsolationAvailable()) ? false : 'no
     const report = await runPublishCheck({ pack: validation.pack, packDir: dir });
     assert.deepEqual(report.failures, [], JSON.stringify(report.failures, null, 1));
     assert.deepEqual(report.unsampled, []);
-    assert.deepEqual([report.samples.total, report.samples.passed, report.samples.failed], [6, 6, 0]);
+    assert.deepEqual([report.samples.total, report.samples.passed, report.samples.failed], [10, 10, 0]);
     assert.deepEqual(
       report.checks.map((c) => [c.check, c.tier, c.positive, c.negative, c.marks]),
-      [['bed', 'advisory', 3, 3, ['author_samples_only']]],
+      [['bed', 'advisory', 5, 5, ['author_samples_only']]],
     );
   });
 });

@@ -3,7 +3,7 @@
 // frozen fields equal the recomputation; refute (test-bed.<action>_mismatch) with the fields that differ. Grounds are
 // the item's location (its bed in the inventory document) and the fields it was checked against.
 import { isRecord } from './common.ts';
-import { acquirePlan, factsFields, leaseRecord, manifestBeds, readParameters, searchFields, type Action, type BedNeed, type FrozenLeases } from './conclude.ts';
+import { acquirePlan, extendPlan, factsFields, leaseRecord, manifestBeds, readParameters, releasePlan, searchFields, type Action, type BedNeed, type ExtendPlan, type FrozenLeases } from './conclude.ts';
 
 const TIER = 'advisory' as const;
 
@@ -53,13 +53,13 @@ function support(item: string, at: number, statement: string, location: unknown,
 }
 
 /** The frozen run context: the groups' first record carries the manifest, the parameters and the lease view. */
-function frozenOf(subject: unknown): { action: Action; need: BedNeed; bed: string | null; addresses: { segment: string; count: number } | null; manifest: unknown; leases: FrozenLeases } | null {
+function frozenOf(subject: unknown): { action: Action; need: BedNeed; bed: string | null; addresses: { segment: string; count: number } | null; booking: string | null; manifest: unknown; leases: FrozenLeases } | null {
   const raw = isRecord(subject) && isRecord(subject.context) && Array.isArray(subject.context.groups) ? subject.context.groups[0] : undefined;
   if (!isRecord(raw) || raw.manifest === undefined) return null;
-  const read = readParameters({ action: raw.action, need: raw.need, hours: (isRecord(raw.need) ? raw.need.hours : undefined), bed: raw.bed, addresses: raw.addresses });
+  const read = readParameters({ action: raw.action, need: raw.need, hours: (isRecord(raw.need) ? raw.need.hours : undefined), bed: raw.bed, addresses: raw.addresses, booking: raw.booking });
   if ('code' in read) return null;
   const leases = isRecord(raw.leases) && typeof raw.leases.now === 'string' && Array.isArray(raw.leases.entries) ? (raw.leases as unknown as FrozenLeases) : { now: new Date(0).toISOString(), entries: [] };
-  return { action: read.action, need: read.need, bed: read.bed, addresses: read.addresses, manifest: raw.manifest, leases };
+  return { action: read.action, need: read.need, bed: read.bed, addresses: read.addresses, booking: read.booking, manifest: raw.manifest, leases };
 }
 
 /** Outcomes of the bed check for a subject: one per item whose fields carry an action. */
@@ -128,6 +128,26 @@ export function bedOutcomes(subject: unknown): CheckOutcome[] {
           continue;
         }
         out.push(support(id, at, plan.conclusion, item.location, { bed: plan.bed, devices: plan.devices, addresses: plan.addresses, keys: plan.keys, ttl_seconds: plan.ttl_seconds, conclusion: plan.conclusion }));
+        continue;
+      }
+      if (action === 'extend' || action === 'release') {
+        const held = action === 'extend' ? extendPlan(frozen.leases, frozen.booking ?? '', frozen.need.hours) : releasePlan(frozen.leases, frozen.booking ?? '');
+        const code = action === 'extend' ? 'test-bed.extend_mismatch' : 'test-bed.release_mismatch';
+        if (!held.ok) {
+          out.push(refute(id, at, code, `按冻结内容重算${action === 'extend' ? '续期' : '释放'}失败：${held.failure.message}`, item.location, { failure: held.failure.code }));
+          continue;
+        }
+        const plan = held.plan;
+        const diffs: string[] = [];
+        if (fields.booking !== plan.booking) diffs.push('booking');
+        if (!sameJson(fields.keys, plan.keys)) diffs.push('keys');
+        if (action === 'extend' && fields.ttl_seconds !== (plan as ExtendPlan).ttl_seconds) diffs.push('ttl_seconds');
+        if (fields.conclusion !== plan.conclusion) diffs.push('conclusion');
+        if (diffs.length > 0) {
+          out.push(refute(id, at, code, `${action === 'extend' ? '续期' : '释放'}预订 ${plan.booking} 的结论与冻结的租约视图不符（${diffs.join('、')}）`, item.location, { differing: diffs, expected_keys: fields.keys, actual_keys: plan.keys }));
+          continue;
+        }
+        out.push(support(id, at, plan.conclusion, item.location, { booking: plan.booking, keys: plan.keys, ...(action === 'extend' ? { ttl_seconds: (plan as ExtendPlan).ttl_seconds } : {}), conclusion: plan.conclusion }));
         continue;
       }
       out.push({ verdict: 'unknown', reason: 'check_error', statement: `条目 ${id} 的动作 ${JSON.stringify(action)} 不认识（任务包缺陷）`, grounds: typeof item.location === 'string' ? [item.location] : [], tier: TIER, item: id, pointer: `/items/${at}/fields` });

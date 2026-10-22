@@ -5,20 +5,25 @@
 // - facts: one item per bed, the environment facts of bedFacts;
 // - acquire: the chosen bed (the `bed` parameter, else the best match), one item with the lease plan, and
 //   `lease_requests` for the Hub to grant (keys bed/<bed>/<device> and bed/<bed>/ip/<address>, TTL in seconds, the
-//   workflow's cap; a grant failure is the Hub's LEASE_UNAVAILABLE with the earliest free moment).
+//   workflow's cap; a grant failure is the Hub's LEASE_UNAVAILABLE with the earliest free moment);
+// - extend / release: one item for the booking (the `booking` parameter names the booking run; the run starts with it
+//   as predecessor), the lease operation on every key the frozen view marks mine, or the honest refusal
+//   "你没有持有这个预订" when the lineage holds nothing.
 // The frozen groups carry the raw manifest, the normalized parameters and the frozen lease view, so the check
 // recomputes everything from them (functions/conclude.ts is the one computation both sides use).
 import { isRecord } from './common.ts';
 import {
   acquirePlan,
+  extendPlan,
   factsFields,
   leaseRecord,
   manifestBeds,
   readParameters,
+  releasePlan,
   searchFields,
   type AcquirePlan,
   type Action,
-  type BedNeed,
+  type ExtendPlan,
   type FrozenLeases,
   type Normalized,
 } from './conclude.ts';
@@ -28,11 +33,13 @@ interface Slot {
   model: unknown;
 }
 
+type LeaseRequest = { op?: 'acquire'; keys: string[]; ttl_seconds: number } | { op: 'extend'; keys: string[]; ttl_seconds: number } | { op: 'release'; keys: string[] };
+
 interface Out {
   items: Array<{ id: string; label: string; summary: string; location: { parser: string; selector: string }; fields: Record<string, unknown> }>;
   groups?: Array<Record<string, unknown>>;
   warnings: Array<{ code: string; message: string }>;
-  lease_requests?: Array<{ keys: string[]; ttl_seconds: number }>;
+  lease_requests?: LeaseRequest[];
 }
 
 interface Failure {
@@ -85,6 +92,7 @@ export default function project(input: unknown): Out | Failure {
       need: normalized.need,
       bed: normalized.bed,
       addresses: normalized.addresses,
+      booking: normalized.booking,
       manifest: slot.model,
       leases: { now, entries: frozenLeases?.entries ?? [] },
     },
@@ -117,6 +125,27 @@ export default function project(input: unknown): Out | Failure {
       })),
       groups,
       warnings,
+    };
+  }
+  if (action === 'extend' || action === 'release') {
+    const booking = normalized.booking as string;
+    const held = action === 'extend' ? extendPlan(frozenLeases, booking, normalized.need.hours) : releasePlan(frozenLeases, booking);
+    if (!held.ok) return failure(held.failure.code, held.failure.message, held.failure.fix);
+    const plan = held.plan;
+    const request: LeaseRequest = action === 'extend' ? { op: 'extend', keys: plan.keys, ttl_seconds: (plan as ExtendPlan).ttl_seconds } : { op: 'release', keys: plan.keys };
+    return {
+      items: [
+        {
+          id: plan.bed ?? 'booking',
+          label: `${action === 'extend' ? '续期' : '释放'}预订 ${booking}`,
+          summary: plan.conclusion,
+          location: plan.bed !== null ? locationOf(slot.model, plan.bed) : { parser: 'json@1', selector: 'p/' },
+          fields: { action, booking, bed: plan.bed, devices: plan.devices, addresses: plan.addresses, keys: plan.keys, ...(action === 'extend' ? { ttl_seconds: (plan as ExtendPlan).ttl_seconds, hours: normalized.need.hours } : {}), conclusion: plan.conclusion },
+        },
+      ],
+      groups: [{ ...groups[0], lease_requests: [request] }],
+      warnings,
+      lease_requests: [request],
     };
   }
   // acquire

@@ -1,8 +1,10 @@
 // Scenario 25 (acceptance): the test-bed pack end to end through the real Hub and the MCP client. An admin publishes a
 // synthetic inventory with `doc put` (the named document doc:doc:bed-topology); a user searches and acquires; the
-// second user on the same device is refused with LEASE_UNAVAILABLE and the earliest free moment; facts gives the
-// listener and the blind address; a manifest with a duplicate address refuses the whole call with its pointer; a user
-// the pack is not assigned to gets the neutral SOURCE_UNAVAILABLE. Synthetic addresses only (192.0.2.0/24).
+// second user on the same device is refused with LEASE_UNAVAILABLE and the earliest free moment; the booking's lineage
+// extends and releases it (the honest "你没有持有这个预订" without the predecessor), and another user books the freed
+// device; facts gives the listener and the blind address; a manifest with a duplicate address refuses the whole call
+// with its pointer; a user the pack is not assigned to gets the neutral SOURCE_UNAVAILABLE. Synthetic addresses only
+// (192.0.2.0/24).
 import assert from 'node:assert/strict';
 import { after, before, describe, test } from 'node:test';
 import { startPostgres, type TemporaryPostgres } from '../../hub/testing/postgres.ts';
@@ -168,6 +170,82 @@ describe('scenario 25: test-bed search, facts and acquire through the real Hub',
     assert.equal(error.code, 'LEASE_UNAVAILABLE');
     assert.match(error.message, /bed\/bed-a\/apv0/);
     assert.ok(error.message.includes(until) || /最早空闲/.test(error.message), `the earliest free moment travels with the refusal: ${error.message}`);
+  });
+
+  test('extend and release through the lineage: the honest refusal without the booking, the growth, and a free device for the next user', async () => {
+    const booked = await client.call('start_run', {
+      pack: 'test-bed',
+      inputs: { inventory: { external: 'doc:doc:bed-topology' } },
+      parameters: { action: 'acquire', bed: 'bed-b', need: { devices: [{ type: 'load-balancer', count: 1 }, { type: 'client', count: 1 }], hours: 2 } },
+    });
+    assert.equal(booked.isError, false, booked.text.slice(0, 800));
+    const booking = (booked.out as { run?: { run?: string } }).run?.run;
+    assert.ok(booking);
+    const bookedRecord = await bed.hub.records.store.find({ key: INDEX.runId, value: booking, kind: 'run', limit: 1 });
+    const bookedUntil = (bookedRecord.items[0]!.body as RunRecordBody).leases?.[0]?.until;
+    assert.ok(bookedUntil, 'the booking lease end');
+
+    // extend without the predecessor link: the projection sees nothing held by this run's lineage and refuses honestly.
+    const unlinked = await client.call('start_run', {
+      pack: 'test-bed',
+      inputs: { inventory: { external: 'doc:doc:bed-topology' } },
+      parameters: { action: 'extend', booking, hours: 3 },
+    });
+    assert.equal(unlinked.isError, true, 'without the predecessor the lineage holds nothing');
+    assert.match(JSON.stringify(unlinked.out), /test-bed.not_holder/);
+    assert.match(JSON.stringify(unlinked.out), /你没有持有这个预订/);
+
+    // extend with the booking as predecessor: the lease grows by three hours from now and the record names the op.
+    const extended = await client.call('start_run', {
+      pack: 'test-bed',
+      inputs: { inventory: { external: 'doc:doc:bed-topology' } },
+      predecessor: booking,
+      parameters: { action: 'extend', booking, hours: 3 },
+    });
+    assert.equal(extended.isError, false, extended.text.slice(0, 800));
+    const extendRun = (extended.out as { run?: { run?: string } }).run?.run;
+    assert.ok(extendRun);
+    const extendRecord = await bed.hub.records.store.find({ key: INDEX.runId, value: extendRun, kind: 'run', limit: 1 });
+    const extendOp = (extendRecord.items[0]!.body as RunRecordBody).leases?.[0] as { op?: string; keys?: string[]; until?: string } | undefined;
+    assert.equal(extendOp?.op, 'extend');
+    assert.deepEqual([...(extendOp?.keys ?? [])].sort(), ['bed/bed-b/apv1', 'bed/bed-b/client1']);
+    assert.ok(Date.parse(extendOp?.until ?? '') > Date.parse(bookedUntil), `the end moves past the booking's end (${bookedUntil} -> ${extendOp?.until})`);
+    const extendClaims = await claimsOf(bed, extendRun);
+    assert.ok(extendClaims.some((c) => c.statement.text === '续期 bed-b 的预订 ' + booking + '，设备 apv1、client1，延长 3 小时'), JSON.stringify(extendClaims.map((c) => c.statement.text)).slice(0, 400));
+
+    // a second user without the lineage gets the same honest refusal.
+    const other = await bed.user('台架用户丙', ['test-bed']);
+    const otherClient = await bed.connect(other, 'sess-s25-d');
+    const stranger = await otherClient.call('start_run', {
+      pack: 'test-bed',
+      inputs: { inventory: { external: 'doc:doc:bed-topology' } },
+      parameters: { action: 'extend', booking, hours: 1 },
+    });
+    assert.equal(stranger.isError, true);
+    assert.match(JSON.stringify(stranger.out), /你没有持有这个预订/);
+
+    // release through the chain (predecessor is the extend run): the keys end and another user books the device at once.
+    const released = await client.call('start_run', {
+      pack: 'test-bed',
+      inputs: { inventory: { external: 'doc:doc:bed-topology' } },
+      predecessor: extendRun,
+      parameters: { action: 'release', booking },
+    });
+    assert.equal(released.isError, false, released.text.slice(0, 800));
+    const releaseRun = (released.out as { run?: { run?: string } }).run?.run;
+    assert.ok(releaseRun);
+    const releaseRecord = await bed.hub.records.store.find({ key: INDEX.runId, value: releaseRun, kind: 'run', limit: 1 });
+    const releaseOp = (releaseRecord.items[0]!.body as RunRecordBody).leases?.[0] as { op?: string; keys?: string[]; until?: string | null } | undefined;
+    assert.equal(releaseOp?.op, 'release');
+    assert.deepEqual([...(releaseOp?.keys ?? [])].sort(), ['bed/bed-b/apv1', 'bed/bed-b/client1']);
+    const view = await bed.hub.leases.view('bed/');
+    assert.ok(!view.entries.some((e) => e.key === 'bed/bed-b/apv1'), 'the release frees the device at once');
+    const rebooked = await otherClient.call('start_run', {
+      pack: 'test-bed',
+      inputs: { inventory: { external: 'doc:doc:bed-topology' } },
+      parameters: { action: 'acquire', bed: 'bed-b', need: { devices: [{ type: 'load-balancer', count: 1 }], hours: 1 } },
+    });
+    assert.equal(rebooked.isError, false, `after the release another user books the device: ${rebooked.text.slice(0, 300)}`);
   });
 
   test('facts: the listener of bed-a and the blind address of bed-b, computed from the frozen manifest', async () => {

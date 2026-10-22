@@ -13,9 +13,9 @@
   "parameters": [
     {
       "name": "action",
-      "description": "search（默认）：每个满足设备数量和类型的台架一个条目，写空闲状态、构建是否一致和缺什么；facts：每个台架一个条目，写监听候选、盲地址、后端候选、空闲地址数；acquire：预订台架（extend 和 release 在租约续期与释放的核心改动合并后再加）",
+      "description": "search（默认）：每个满足设备数量和类型的台架一个条目，写空闲状态、构建是否一致和缺什么；facts：每个台架一个条目，写监听候选、盲地址、后端候选、空闲地址数；acquire：预订台架；extend：续期自己的预订（booking 写预订运行的编号，并以它为前驱开始运行；要操作的键从冻结的租约视图里取 mine 为真的，延长 hours 小时，累计上限 24 小时由 Hub 判）；release：提前释放自己的预订（同样要 booking 和前驱；释放不可逆，运行随后失败也不会放回）",
       "required": false,
-      "schema": { "type": "string", "enum": ["search", "facts", "acquire"] }
+      "schema": { "type": "string", "enum": ["search", "facts", "acquire", "extend", "release"] }
     },
     {
       "name": "need",
@@ -31,9 +31,15 @@
     },
     {
       "name": "hours",
-      "description": "acquire 的时长（小时）：1 到 8（单次上限 8 小时，包声明的上限；不写时按 need.hours，再没有按 2 小时）",
+      "description": "acquire 的时长、extend 要延长的小时数：1 到 8（单次上限 8 小时，包里判；不写时按 need.hours，再没有按 2 小时）",
       "required": false,
       "schema": { "type": "integer", "minimum": 1, "maximum": 8 }
+    },
+    {
+      "name": "booking",
+      "description": "extend 和 release 必填：预订那次运行的编号（run_…）。开始这次运行时 predecessor 要写同一个编号：预订类租约按血缘持有，Hub 核对持有运行在前驱链里且是同一用户；血缘里没有未过期的租约行时如实拒绝“你没有持有这个预订”",
+      "required": false,
+      "schema": { "type": "string", "minLength": 1, "maxLength": 128 }
     },
     {
       "name": "addresses",
@@ -44,7 +50,7 @@
   ],
   "product": { "catalogs": [] },
   "context": ["leases"],
-  "leases": { "prefix": "bed/", "max_ttl_seconds": 28800 },
+  "leases": { "prefix": "bed/", "max_ttl_seconds": 86400 },
   "subject": "inventory",
   "projection": { "module": "functions/project.ts" }
 }

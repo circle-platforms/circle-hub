@@ -8,7 +8,7 @@ import { bedFacts } from './facts.ts';
 import { parseManifest, DEVICE_TYPE_LABEL, DEVICE_TYPES, type ManifestBed } from './manifest.ts';
 import { matchNeed, pickDevices, type BedMatch, type LeaseEntry, type Need, type NeedDevice } from './match.ts';
 
-export type Action = 'search' | 'facts' | 'acquire';
+export type Action = 'search' | 'facts' | 'acquire' | 'extend' | 'release';
 
 /** A need as the projection and the check see it (parameters normalized). */
 export interface BedNeed {
@@ -20,7 +20,7 @@ export interface BedNeed {
 /** The frozen lease view (RunContext.leases), or its rows as matchNeed reads them. */
 export interface FrozenLeases {
   now: string;
-  entries: Array<{ key: string; until: string }>;
+  entries: Array<{ key: string; until: string; mine?: boolean }>;
 }
 
 export interface Normalized {
@@ -28,6 +28,8 @@ export interface Normalized {
   need: BedNeed;
   bed: string | null;
   addresses: { segment: string; count: number } | null;
+  /** The booking run's id (extend and release; required there, ignored elsewhere). */
+  booking: string | null;
 }
 
 export interface PlanFailure {
@@ -39,7 +41,7 @@ export interface PlanFailure {
 export const MAX_HOURS = 8;
 export const DEFAULT_HOURS = 2;
 
-export const ACTION_LABEL: Record<Action, string> = { search: '搜索台架', facts: '环境事实', acquire: '预订台架' };
+export const ACTION_LABEL: Record<Action, string> = { search: '搜索台架', facts: '环境事实', acquire: '预订台架', extend: '续期预订', release: '释放预订' };
 
 /** The rows of the frozen lease view as matchNeed reads them. */
 export function leaseRecord(frozen: FrozenLeases | undefined): Record<string, LeaseEntry> {
@@ -50,9 +52,9 @@ export function leaseRecord(frozen: FrozenLeases | undefined): Record<string, Le
   return out;
 }
 
-/** Parameters of a run call: action (default search), need, bed and addresses, every problem named with its fix. */
+/** Parameters of a run call: action (default search), need, bed, addresses and booking, every problem named with its fix. */
 export function readParameters(params: Record<string, unknown>): Normalized | PlanFailure {
-  const action: Action = params.action === 'facts' || params.action === 'acquire' ? params.action : 'search';
+  const action: Action = params.action === 'facts' || params.action === 'acquire' || params.action === 'extend' || params.action === 'release' ? params.action : 'search';
   const needRaw = isRecord(params.need) ? params.need : {};
   const devices: NeedDevice[] = [];
   const rawDevices = Array.isArray(needRaw.devices) ? needRaw.devices : [];
@@ -82,7 +84,11 @@ export function readParameters(params: Record<string, unknown>): Normalized | Pl
     }
     addresses = { segment: params.addresses.segment, count };
   }
-  return { action, need: { devices, build, hours: hoursRaw }, bed, addresses };
+  const booking = typeof params.booking === 'string' && params.booking !== '' ? params.booking : null;
+  if ((action === 'extend' || action === 'release') && booking === null) {
+    return { code: 'test-bed.bad_booking', message: `${ACTION_LABEL[action]}要 booking 参数（预订那次运行的编号）`, fix: 'booking 写预订运行的编号（run_…），开始这次运行时 predecessor 写同一个编号' };
+  }
+  return { action, need: { devices, build, hours: hoursRaw }, bed, addresses, booking };
 }
 
 const matchNeedOf = (need: BedNeed): Need => ({ devices: need.devices, hours: need.hours, ...(need.build === undefined ? {} : { build: need.build }) });
@@ -201,4 +207,80 @@ export function acquirePlan(beds: ManifestBed[], need: BedNeed, bedParam: string
   if (addresses.length > 0) parts.push(`地址 ${addresses.join('、')}`);
   parts.push(`${need.hours} 小时`);
   return { ok: true, plan: { bed: bed.name, devices: picked, addresses, keys, ttl_seconds: need.hours * 3600, conclusion: parts.join('，') } };
+}
+
+/** The keys this run's lineage holds: the frozen view's rows marked mine (D04 R[0], the Hub marks them before the projection). */
+export function heldKeys(frozen: FrozenLeases | undefined): string[] {
+  return (frozen?.entries ?? []).filter((entry) => entry?.mine === true && typeof entry.key === 'string').map((entry) => entry.key);
+}
+
+export interface HeldPlan {
+  booking: string;
+  /** The one bed the held keys belong to; null when they span several (a hand-written lease table can do that). */
+  bed: string | null;
+  devices: string[];
+  addresses: string[];
+  keys: string[];
+  conclusion: string;
+}
+
+export type ExtendPlan = HeldPlan & { ttl_seconds: number };
+
+/** The device keys, the address keys and the leftover keys of a held set, each sorted. */
+function splitKeys(keys: string[]): { bed: string | null; devices: string[]; addresses: string[]; keys: string[] } {
+  const deviceKeys: string[] = [];
+  const addressKeys: string[] = [];
+  const other: string[] = [];
+  const beds = new Set<string>();
+  for (const key of keys) {
+    const parts = key.split('/');
+    if (parts.length === 3 && parts[0] === 'bed') {
+      beds.add(parts[1] as string);
+      deviceKeys.push(key);
+    } else if (parts.length === 4 && parts[0] === 'bed' && parts[2] === 'ip') {
+      beds.add(parts[1] as string);
+      addressKeys.push(key);
+    } else {
+      other.push(key);
+    }
+  }
+  const compare = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+  deviceKeys.sort(compare);
+  addressKeys.sort(compare);
+  other.sort(compare);
+  const devices = deviceKeys.map((key) => key.split('/')[2] as string);
+  const addresses = addressKeys.map((key) => key.split('/')[3] as string);
+  return { bed: beds.size === 1 ? ([...beds][0] as string) : null, devices, addresses, keys: [...deviceKeys, ...addressKeys, ...other] };
+}
+
+/** The conclusion parts both held actions share: what is held, as devices and addresses. */
+function heldParts(verb: string, split: { bed: string | null; devices: string[]; addresses: string[] }, booking: string): string[] {
+  const parts = [`${verb} ${split.bed ?? '台架'} 的预订 ${booking}`];
+  if (split.devices.length > 0) parts.push(`设备 ${split.devices.join('、')}`);
+  if (split.addresses.length > 0) parts.push(`地址 ${split.addresses.join('、')}`);
+  return parts;
+}
+
+const NOT_HELD: (booking: string) => PlanFailure = (booking) => ({
+  code: 'test-bed.not_holder',
+  message: `你没有持有这个预订（${booking}）：这次运行的血缘里没有未过期的租约行`,
+  fix: 'booking 写你自己的预订运行的编号，开始这次运行时 predecessor 写同一个编号；别人的预订不能续期或释放',
+});
+
+/** The extend plan: every lineage-held key grows by hours from now (the Hub judges the cumulative cap). */
+export function extendPlan(frozen: FrozenLeases | undefined, booking: string, hours: number): { ok: true; plan: ExtendPlan } | { ok: false; failure: PlanFailure } {
+  const held = heldKeys(frozen);
+  if (held.length === 0) return { ok: false, failure: NOT_HELD(booking) };
+  const split = splitKeys(held);
+  const parts = heldParts('续期', split, booking);
+  parts.push(`延长 ${hours} 小时`);
+  return { ok: true, plan: { booking, bed: split.bed, devices: split.devices, addresses: split.addresses, keys: split.keys, ttl_seconds: hours * 3600, conclusion: parts.join('，') } };
+}
+
+/** The release plan: every lineage-held key ends now (irreversible, even when the run later fails). */
+export function releasePlan(frozen: FrozenLeases | undefined, booking: string): { ok: true; plan: HeldPlan } | { ok: false; failure: PlanFailure } {
+  const held = heldKeys(frozen);
+  if (held.length === 0) return { ok: false, failure: NOT_HELD(booking) };
+  const split = splitKeys(held);
+  return { ok: true, plan: { booking, bed: split.bed, devices: split.devices, addresses: split.addresses, keys: split.keys, conclusion: heldParts('释放', split, booking).join('，') } };
 }

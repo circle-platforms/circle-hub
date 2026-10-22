@@ -101,7 +101,7 @@ describe('test-bed scenario checks', () => {
     const bad = fullTurns();
     bad[3].toolResults[0].text = '出错：LEASE_UNAVAILABLE：bed/bed-a/apv0 被占';
     const checks = scenario.check(bad);
-    const runs = checks.find((c) => c.name.includes('两次运行'));
+    const runs = checks.find((c) => c.name.includes('次运行'));
     assert.ok(runs && !runs.ok);
   });
 });
@@ -163,5 +163,84 @@ describe('test-bed scenario respond flow', () => {
     await s.respond(makeTurn(0));
     const reply = await s.respond(makeTurn(1, '出错：SOURCE_UNAVAILABLE'));
     assert.deepEqual(reply, [{ text: '搜索没有给出完整结果的引用。' }]);
+  });
+});
+
+describe('test-bed scenario with extend and release', () => {
+  const fullGold: TestBedGold = { ...gold, extend: { hours: 3 }, release: true };
+  const BOOKING = `run_${'a'.repeat(26)}`;
+  const EXTEND_RUN = `run_${'b'.repeat(26)}`;
+  const RELEASE_RUN = `run_${'c'.repeat(26)}`;
+  const acquireRunText2 = acquireRunText.replace('运行 run_2', `运行 ${BOOKING}`);
+  const extendRunText = ['运行 ' + EXTEND_RUN + ' 完成：任务包 test-bed@1.0.0', `完整结果 ${rec}：用 get_nodes 读第一页`].join('\n');
+  const extendPage = [`内容 ${rec}：`, `位置：条目 bed-a；陈述：续期 bed-a 的预订 ${BOOKING}，设备 apv0、client0，延长 3 小时`].join('\n');
+  const releaseRunText = ['运行 ' + RELEASE_RUN + ' 完成：任务包 test-bed@1.0.0', `完整结果 ${rec}：用 get_nodes 读第一页`].join('\n');
+  const releasePage = [`内容 ${rec}：`, `位置：条目 bed-a；陈述：释放 bed-a 的预订 ${BOOKING}，设备 apv0、client0`].join('\n');
+
+  const makeTurn = (index: number, text = ''): Turn => ({
+    index,
+    system: null,
+    messages: [],
+    tools: [],
+    toolResults: text ? [{ id: 'r', text, isError: false }] : [],
+  });
+
+  test('the flow chains search, acquire, extend (predecessor is the booking) and release (predecessor is the extend run)', async () => {
+    const s = testBed(fullGold);
+    const search = await s.respond(makeTurn(0));
+    assert.deepEqual((search[0] as { input: { parameters: unknown } }).input.parameters, { action: 'search', need: { devices: gold.need.devices, hours: 2 } });
+    await s.respond(makeTurn(1, searchRunText));
+    const acquire = await s.respond(makeTurn(2, searchPage));
+    assert.deepEqual((acquire[0] as { input: { parameters: unknown } }).input.parameters, { action: 'acquire', bed: 'bed-a', need: { devices: gold.need.devices, hours: 2 } });
+    await s.respond(makeTurn(3, acquireRunText2));
+    const extend = await s.respond(makeTurn(4, acquirePage));
+    assert.deepEqual(extend, [{
+      tool: 'hub_start_run',
+      input: {
+        pack: 'test-bed',
+        inputs: { inventory: { external: 'doc:doc:bed-topology' } },
+        parameters: { action: 'extend', booking: BOOKING, hours: 3 },
+        predecessor: BOOKING,
+      },
+    }]);
+    await s.respond(makeTurn(5, extendRunText));
+    const release = await s.respond(makeTurn(6, extendPage));
+    assert.deepEqual(release, [{
+      tool: 'hub_start_run',
+      input: {
+        pack: 'test-bed',
+        inputs: { inventory: { external: 'doc:doc:bed-topology' } },
+        parameters: { action: 'release', booking: BOOKING },
+        predecessor: EXTEND_RUN,
+      },
+    }]);
+    await s.respond(makeTurn(7, releaseRunText));
+    const done = await s.respond(makeTurn(8, releasePage));
+    assert.deepEqual(done, [{ text: '释放完成。' }]);
+  });
+
+  const fullTurns2 = (): LoggedTurn[] => turnsOf(searchRunText, searchPage, acquireRunText2, acquirePage, extendRunText, extendPage, releaseRunText, releasePage);
+
+  test('checks hold on the full Hub-shaped answer', () => {
+    const s = testBed(fullGold);
+    assert.ok(allOk(s, fullTurns2()), JSON.stringify(s.check(fullTurns2()).filter((c) => !c.ok), null, 2));
+  });
+
+  test('checks fail when the extend conclusion names the wrong extension', () => {
+    const bad = fullTurns2();
+    bad[6].toolResults[0].text = extendPage.replace('延长 3 小时', '延长 5 小时');
+    const s = testBed(fullGold);
+    const checks = s.check(bad);
+    const extend = checks.find((c) => c.name.includes('续期结论'));
+    assert.ok(extend && !extend.ok);
+  });
+
+  test('checks fail when the release conclusion is missing', () => {
+    const bad = fullTurns2();
+    bad[8].toolResults[0].text = '内容：没有释放';
+    const s = testBed(fullGold);
+    const checks = s.check(bad);
+    const release = checks.find((c) => c.name.includes('释放结论'));
+    assert.ok(release && !release.ok);
   });
 });
