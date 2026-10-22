@@ -149,13 +149,17 @@ function uncoveredStatement(path: string, change: 'added' | 'modified', skippedT
 
 /** Most paths the command-diff summary lists; past it the rest is counted and the run-level details hold the full table. */
 const MAX_DIFF_ROWS = 200;
+/** One statement stays under the answer's per-field clip (1,500 characters): a longer diff continues in a next claim. */
+const MAX_DIFF_STATEMENT = 1400;
 
 /**
- * The whole command diff as one cross-item fact, computed from the run-level details: one line per changed path with
- * the change kind and the later-build case count (removed paths, never in scope, are listed and say so), grounded on
- * the impact view. It leads this check's outcomes so the diff is visible however many items the answer pages away.
+ * The whole command diff as cross-item facts, computed from the run-level details: one compact line per changed path
+ * (path, change kind, later-build case count; removed paths, never in scope, are marked), grounded on the impact view.
+ * A statement longer than MAX_DIFF_STATEMENT continues in a next claim (第 k 部分，共 m 部分), paths in order, so the
+ * answer's per-field clip never cuts a line off. They lead this check's outcomes so the diff is visible however many
+ * items the answer pages away.
  */
-function diffSummary(subject: unknown): Outcome {
+function diffSummaries(subject: unknown): Outcome[] {
   const note = noteOf(subject);
   const details = detailRowsOf(subject);
   const includeAdded = note?.include_added !== false;
@@ -163,18 +167,45 @@ function diffSummary(subject: unknown): Outcome {
   const grounds = view === null ? [] : [view];
   const total = details.length;
   if (total === 0) {
-    return { verdict: 'support', statement: '命令差共 0 条：两个构建的命令定义没有差异。', grounds, tier: TIER, data: { changed_paths: 0, listed: 0 } };
+    return [{ verdict: 'support', statement: '命令差共 0 条：两个构建的命令定义没有差异。', grounds, tier: TIER, data: { changed_paths: 0, listed: 0 } }];
   }
   // A truncated view: the head says the whole count and that only the listed part follows; completeness stays unknown.
   const cut = note?.truncated === true && typeof note?.changed_paths === 'number' && note.changed_paths > total ? note.changed_paths : null;
-  const lines = [cut === null ? `命令差共 ${total} 条（路径、变更种类、后一构建用例数）：` : `命令差共 ${cut} 条（影响视图被截断，这 ${total} 条是列出的部分；路径、变更种类、后一构建用例数）：`];
-  for (const row of details.slice(0, MAX_DIFF_ROWS)) {
+  const headOf = (part: number, parts: number): string => {
+    const which = parts > 1 ? `第 ${part} 部分，共 ${parts} 部分；` : '';
+    if (cut === null) return `命令差共 ${total} 条（${which}路径、变更种类、后一构建用例数）：`;
+    return `命令差共 ${cut} 条（影响视图被截断，这 ${total} 条是列出的部分；${which}路径、变更种类、后一构建用例数）：`;
+  };
+  const rows = details.slice(0, MAX_DIFF_ROWS).map((row) => {
     const label = row.change === 'added' || row.change === 'removed' || row.change === 'modified' ? CHANGE_LABEL[row.change] : row.change;
     const out = row.change === 'removed' || (!includeAdded && row.change === 'added') ? '（不进范围）' : '';
-    lines.push(`- ${row.path} ${label}，后一构建 ${row.cases} 条用例${out}`);
+    return `- ${row.path} ${label} ${row.cases} 条${out}`;
+  });
+  const listed = rows.length;
+  if (total > MAX_DIFF_ROWS) rows.push(`- 另有 ${total - MAX_DIFF_ROWS} 条，完整的表在运行级详情里`);
+  // Greedy packing against the longest head (two-digit part numbers); the real heads are never longer.
+  const parts: string[][] = [];
+  let current: string[] = [];
+  let size = 0;
+  for (const row of rows) {
+    if (current.length > 0 && size + row.length + 1 > MAX_DIFF_STATEMENT) {
+      parts.push(current);
+      current = [];
+      size = 0;
+    }
+    if (current.length === 0) size = headOf(parts.length + 1, 99).length + 1;
+    current.push(row);
+    size += row.length + 1;
   }
-  if (total > MAX_DIFF_ROWS) lines.push(`- 另有 ${total - MAX_DIFF_ROWS} 条，完整的表在运行级详情里`);
-  return { verdict: 'support', statement: lines.join('\n'), grounds, tier: TIER, data: { changed_paths: cut ?? total, listed: Math.min(total, MAX_DIFF_ROWS) } };
+  parts.push(current);
+  const m = parts.length;
+  return parts.map((partRows, i) => ({
+    verdict: 'support' as const,
+    statement: [headOf(i + 1, m), ...partRows].join('\n'),
+    grounds,
+    tier: TIER,
+    data: m === 1 ? { changed_paths: cut ?? total, listed } : { changed_paths: cut ?? total, listed, part: i + 1, parts: m },
+  }));
 }
 
 function uncovered(subject: unknown): Outcome[] {
@@ -236,7 +267,7 @@ function uncovered(subject: unknown): Outcome[] {
 }
 
 export function checkOutcomes(check: string | null, subject: unknown): Outcome[] {
-  if (check === 'uncovered_changes') return [diffSummary(subject), ...uncovered(subject)];
+  if (check === 'uncovered_changes') return [...diffSummaries(subject), ...uncovered(subject)];
   if (check === 'in_scope') return inScope(subject);
   return [{ verdict: 'unknown', reason: 'check_error', statement: '这个函数没有对应的检查', grounds: [], tier: TIER }];
 }
