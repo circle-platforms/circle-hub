@@ -151,4 +151,68 @@ describe('traceOutcomes', () => {
       ],
     );
   });
+
+  describe('top five cases statement in support outcome', () => {
+    it('1 个用例：列出该用例，不写另有', () => {
+      const defect = defectEntry({ bug: '7021' });
+      const kase = caseEntry({ defects: ['7021'], document: '24001', case: 'C-1', title: '单用例测试' });
+      const outcome = byItem(traceOutcomes(subjectOf([defect], [kase])), '7021');
+      assert.equal(outcome.verdict, 'support');
+      assert.equal(outcome.statement, '缺陷 7021（已修复）：1 个已索引用例追溯：24001:C-1 单用例测试');
+    });
+
+    it('恰好 5 个用例：列出全部 5 个，不写另有', () => {
+      const defect = defectEntry({ bug: '7022' });
+      const cases = [1, 2, 3, 4, 5].map((i) =>
+        caseEntry({ defects: ['7022'], document: '24001', case: `C-${i}`, title: `用例 ${i}` }),
+      );
+      const outcome = byItem(traceOutcomes(subjectOf([defect], cases)), '7022');
+      assert.equal(outcome.verdict, 'support');
+      assert.equal(
+        outcome.statement,
+        '缺陷 7022（已修复）：5 个已索引用例追溯：24001:C-1 用例 1；24001:C-2 用例 2；24001:C-3 用例 3；24001:C-4 用例 4；24001:C-5 用例 5',
+      );
+    });
+
+    it('6 个用例：列出前 5 个，末尾写另有 1 个', () => {
+      const defect = defectEntry({ bug: '7023' });
+      const cases = [1, 2, 3, 4, 5, 6].map((i) =>
+        caseEntry({ defects: ['7023'], document: '24001', case: `C-${i}`, title: `用例 ${i}` }),
+      );
+      const outcome = byItem(traceOutcomes(subjectOf([defect], cases)), '7023');
+      assert.equal(outcome.verdict, 'support');
+      assert.equal(
+        outcome.statement,
+        '缺陷 7023（已修复）：6 个已索引用例追溯：24001:C-1 用例 1；24001:C-2 用例 2；24001:C-3 用例 3；24001:C-4 用例 4；24001:C-5 用例 5；另有 1 个',
+      );
+    });
+
+    it('标题很长被截短：超过 30 个字符的标题截短到 30 个字符（含省略号）', () => {
+      const defect = defectEntry({ bug: '7024' });
+      const longTitle = '一二三四五六七八九十一二三四五六七八九十一二三四五六七八九十超出部分';
+      const kase = caseEntry({ defects: ['7024'], document: '24001', case: 'C-long', title: longTitle });
+      const outcome = byItem(traceOutcomes(subjectOf([defect], [kase])), '7024');
+      assert.equal(outcome.verdict, 'support');
+      assert.equal(
+        outcome.statement,
+        '缺陷 7024（已修复）：1 个已索引用例追溯：24001:C-long 一二三四五六七八九十一二三四五六七八九十一二三四五六七八九…',
+      );
+    });
+
+    it('顺序：文档号按数值从小到大，同一文档里按用例号字符串升序', () => {
+      const defect = defectEntry({ bug: '7025' });
+      const cases = [
+        caseEntry({ defects: ['7025'], document: '24002', case: 'B', title: '文档24002的B' }),
+        caseEntry({ defects: ['7025'], document: '24001', case: 'b', title: '文档24001的b' }),
+        caseEntry({ defects: ['7025'], document: '24001', case: 'a', title: '文档24001的a' }),
+        caseEntry({ defects: ['7025'], document: '9001', case: 'Z', title: '文档9001的Z' }),
+      ];
+      const outcome = byItem(traceOutcomes(subjectOf([defect], cases)), '7025');
+      assert.equal(outcome.verdict, 'support');
+      assert.equal(
+        outcome.statement,
+        '缺陷 7025（已修复）：4 个已索引用例追溯：9001:Z 文档9001的Z；24001:a 文档24001的a；24001:b 文档24001的b；24002:B 文档24002的B',
+      );
+    });
+  });
 });
