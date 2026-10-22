@@ -2,6 +2,7 @@
 // parser registry, the sandbox options and the clock. createEngineContext adds the shared caches.
 import type { RecordsKit } from '../../records/api.ts';
 import type { ExternalReaderPort, KnowledgePort, PacksPort, WorkflowStore } from '../../ports.ts';
+import type { LeaseService } from '../../leases/service.ts';
 import { createDefaultRegistry, createDocumentCache, type DocumentCache, type ParserRegistry } from '../../refs/api.ts';
 import type { SandboxLimits, SandboxOptions } from '../../rules/api.ts';
 import { createKeyedLock, wellFormed } from './util.ts';
@@ -33,6 +34,8 @@ export interface RunsEngineDeps {
   clientKeyWindowMs?: number;
   /** Receives the real reasons behind neutral answers and pack function failures (the server writes them as admin notes). */
   adminLog?: (entry: AdminLogEntry) => void;
+  /** The lease service (D04 R[0]); without it a workflow that declares leases cannot start. */
+  leases?: LeaseService;
 }
 
 export const ENGINE_COMPONENT = 'runs.engine@1';

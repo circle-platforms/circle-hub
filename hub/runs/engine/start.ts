@@ -75,7 +75,7 @@ export function requirementSummary(t: RequirementTemplate): RequirementSummary {
 
 /** The summary part of a run record, as start_run returns it (the frozen context extras — groups, builds — stay out). */
 export function summaryOf(record: RunRecord): RunSummary {
-  const { runner: _r, host: _h, trigger: _t, configurer: _c, parameters: _p, policy: _po, executors: _e, groups: _g, builds: _b, client_key: _k, request_digest: _d, client_key_expires_at: _x, ...summary } = record;
+  const { runner: _r, host: _h, trigger: _t, configurer: _c, parameters: _p, policy: _po, executors: _e, groups: _g, builds: _b, client_key: _k, request_digest: _d, client_key_expires_at: _x, leases: _l, lease_context: _lc, ...summary } = record;
   return RunSummary.parse(summary);
 }
 
@@ -92,6 +92,52 @@ export async function contextBuilds(ctx: EngineContext, workflow: LoadedWorkflow
   return known
     .map((b) => ({ name: b.name, family: b.family, line: b.line, base: b.base, platform: b.platform, built_at: b.built_at, released_at: b.released_at, has_root: b.root !== null }))
     .sort((a, b) => compareText(a.line, b.line) || compareText(a.built_at ?? '', b.built_at ?? '') || compareText(a.name, b.name));
+}
+
+/** Whether the workflow asked for the leases context (its prefix decides what the frozen view holds). */
+async function askedLeases(ctx: EngineContext, workflow: LoadedWorkflow): Promise<boolean> {
+  return (workflow.workflow.context ?? []).includes('leases') && ctx.deps.leases !== undefined;
+}
+
+/** The frozen lease rows of the workflow's declared prefix (W06, D04 R[0]), for the run context; null when it did not ask. */
+export async function contextLeases(ctx: EngineContext, workflow: LoadedWorkflow): Promise<Array<{ key: string; until: string }> | null> {
+  if (!(workflow.workflow.context ?? []).includes('leases')) return null;
+  if (ctx.deps.leases === undefined) throw new Refusal([protocolError('SUBMISSION_SCHEMA_VIOLATION', `任务包 ${workflow.pack.id} 声明了租约，但这个 Hub 没有配置租约服务`, { path: '/pack', fix: '请管理员配置租约服务' })]);
+  const prefix = workflow.workflow.leases?.prefix ?? `${workflow.pack.id}/`;
+  const view = await ctx.deps.leases.view(prefix);
+  return view.entries;
+}
+
+/** Grants the projection's lease requests for the workflow's declared prefix and cap (C3); a refusal answers LEASE_*
+ * with the earliest free moment. Returns the granted leases for the run record. */
+export async function grantLeases(
+  ctx: EngineContext,
+  user: Principal,
+  workflow: LoadedWorkflow,
+  requests: ReadonlyArray<{ keys: string[]; ttl_seconds: number }>,
+  runId: string,
+): Promise<Array<{ lease: string; keys: string[]; until: string }>> {
+  if (requests.length === 0) return [];
+  if (ctx.deps.leases === undefined) throw new Refusal([protocolError('SUBMISSION_SCHEMA_VIOLATION', `任务包 ${workflow.pack.id} 的投影要租约，但这个 Hub 没有配置租约服务`, { path: '/pack', fix: '请管理员配置租约服务' })]);
+  const declared = workflow.workflow.leases;
+  const prefix = declared?.prefix ?? `${workflow.pack.id}/`;
+  const cap = declared?.max_ttl_seconds ?? 3600;
+  const granted: Array<{ lease: string; keys: string[]; until: string }> = [];
+  for (const request of requests) {
+    if (declared === undefined) {
+      throw new Refusal([
+        protocolError('SUBMISSION_SCHEMA_VIOLATION', `任务包 ${workflow.pack.id} 的投影要取得租约，但这个工作流没有声明 leases`, { path: `/inputs/${workflow.workflow.subject}`, fix: '联系任务包作者：要租约的工作流在 workflow.json 里声明 leases' }),
+      ]);
+    }
+    const outcome = await ctx.deps.leases.acquire({ keys: request.keys, ttlSeconds: request.ttl_seconds, holder: { user: user.id, run: runId }, prefix, maxTtlSeconds: cap });
+    if (!outcome.ok) {
+      const when = 'earliestFree' in outcome && outcome.earliestFree !== undefined ? `，最早空闲时刻 ${outcome.earliestFree}` : '';
+      const fix = outcome.code === 'LEASE_UNAVAILABLE' ? `等最早空闲时刻后再开始，或改用别的键${when}` : '缩短租约期限，或请任务包作者调高上限';
+      throw new Refusal([{ code: outcome.code, message: `要取得的租约（${request.keys.join('、')}）没有拿到${outcome.code === 'LEASE_UNAVAILABLE' ? when : ''}`, fix }]);
+    }
+    granted.push({ lease: outcome.lease, keys: outcome.keys, until: outcome.until });
+  }
+  return granted;
 }
 
 const SPLIT_FIX = '把被判对象分块（每块分别开运行），按分块评审的做法逐块提交';
@@ -331,9 +377,18 @@ async function startFresh(
     parameters,
     groups: [],
     ...(builds !== null ? { builds } : {}),
+    ...(await askedLeases(ctx, workflow) ? { leases: { now: startedAt, entries: [] } } : {}),
   };
   const projection = await projectItems(ctx, user, workflow, bound, parameters, context, call.traceId);
   const expected = await bindExpected(ctx, user, workflow, bound, projection.projected, parameters, { ...context, groups: projection.groups }, runId, call.traceId);
+  // The leases are granted after the projection asked for them and before anything is stored; every failure from here
+  // on compensates by releasing what was granted (D04 R[0]: no lease outlives the run it was taken for).
+  let grantedLeases: Array<{ lease: string; keys: string[]; until: string }> = [];
+  let leaseRows: Array<{ key: string; until: string }> | null = null;
+  try {
+    grantedLeases = await grantLeases(ctx, user, workflow, projection.leaseRequests, runId);
+    // The frozen view is taken after granting, so the run's own rows are in it (with `mine` rebuilt at evaluation).
+    leaseRows = await contextLeases(ctx, workflow);
 
   let items = projection.items;
   const packId = workflow.pack.id;
@@ -396,6 +451,8 @@ async function startFresh(
     ...(input.client_key !== undefined
       ? { client_key: input.client_key, request_digest: requestDigest, client_key_expires_at: new Date(at.getTime() + ctx.clientKeyWindowMs).toISOString() }
       : {}),
+    ...(grantedLeases.length > 0 ? { leases: grantedLeases } : {}),
+    ...(leaseRows !== null ? { lease_context: leaseRows } : {}),
   } satisfies RunRecord);
   const subjectPath = `/inputs/${workflow.workflow.subject}`;
   const runTooLarge = tooLarge(ctx, record, `这个被判对象投影出 ${items.length} 个条目，运行记录`, subjectPath);
@@ -444,6 +501,14 @@ async function startFresh(
     // A run without items says so in the answer and carries the projection's notes; with items the projection warnings stay in the parse action.
     gaps: gapsFrom([...(items.length === 0 ? [EMPTY_ITEMS_NOTE, ...projection.warnings] : []), ...expected.warnings]),
   };
+  } catch (error) {
+    // The granted leases of a start that did not store its run are released at once (compensation): an acquire that
+    // refused throws before anything was granted, so only a real failure reaches here with rows held.
+    if (grantedLeases.length > 0 && ctx.deps.leases !== undefined) {
+      await ctx.deps.leases.release({ keys: grantedLeases.flatMap((entry) => entry.keys), holder: { user: user.id, run: runId } }).catch(() => undefined);
+    }
+    throw error;
+  }
 }
 
 /** The evaluation of a production run, made before its run record is stored (the result names the record's digest). */

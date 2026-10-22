@@ -17,6 +17,7 @@ import {
 import { createKnowledge, createKnowledgeReader, routeKnowledgeViews, type Knowledge } from '../../knowledge/api.ts';
 import type { ExternalReaderPort, PackCatalogPort, PacksPort, ResourceCatalogPort, WorkflowStore } from '../../ports.ts';
 import type { Principal, RecordsKit } from '../../records/api.ts';
+import type { LeaseService } from '../../leases/service.ts';
 import { createDefaultRegistry, type ParserRegistry } from '../../refs/api.ts';
 import { osIsolationAvailable, type SandboxOptions } from '../../rules/api.ts';
 import {
@@ -62,6 +63,9 @@ export interface AssemblyOptions {
   knowledgeAdmin?: Principal | null;
   /** Window of start_run's client keys (default the engine's, 24 hours). */
   clientKeyWindowMs?: number;
+  /** The lease service for workflows that declare leases (D04 R[0]); without it those workflows refuse to start. The
+   * caller builds it over the same database as the records kit (its clock defaults to the database clock). */
+  leases?: LeaseService;
 }
 
 /** Everything the assembly built: the server's dependencies and the services the administrator commands use. */
@@ -160,6 +164,7 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
     sandbox,
     ...(now === undefined ? {} : { now }),
     ...(options.clientKeyWindowMs === undefined ? {} : { clientKeyWindowMs: options.clientKeyWindowMs }),
+    ...(options.leases === undefined ? {} : { leases: options.leases }),
     adminLog: notes.engine,
   });
   const runs = withCallNotes(engine, notes);

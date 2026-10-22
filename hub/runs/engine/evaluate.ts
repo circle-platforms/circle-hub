@@ -160,6 +160,16 @@ export function runContextOf(run: RunRecord): RunContext {
     parameters: run.parameters,
     groups: run.groups ?? [],
     ...(run.builds !== undefined ? { builds: run.builds } : {}),
+    ...(run.lease_context !== undefined ? { leases: contextLeasesOf(run) } : {}),
+  };
+}
+
+/** The frozen lease view of a run record: the moment and the rows with `mine` relative to the run's runner. */
+function contextLeasesOf(run: RunRecord): NonNullable<RunContext['leases']> {
+  const mine = new Set(run.leases?.flatMap((entry) => entry.keys) ?? []);
+  return {
+    now: run.started_at,
+    entries: (run.lease_context ?? []).map((entry) => ({ key: entry.key, until: entry.until, mine: mine.has(entry.key) })),
   };
 }
 

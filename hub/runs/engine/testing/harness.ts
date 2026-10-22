@@ -9,6 +9,8 @@ import { osIsolationAvailable, type SandboxLimits } from '../../../rules/api.ts'
 import type { TemporaryPostgres } from '../../../testing/postgres.ts';
 import { openTestRecords, type TestRecordsKit } from '../../../testing/records.ts';
 import { createRunsService, type AdminLogEntry, type RunsEngine } from '../api.ts';
+import { LeaseService } from '../../../leases/service.ts';
+import { createPool, Database } from '../../../records/db.ts';
 import { FakeExternal } from './external.ts';
 import { FakeKnowledge, FakePacks } from './knowledge.ts';
 import { locatePack, reviewPack, verifyPack, writePack, type ReviewOptions } from './packs.ts';
@@ -22,6 +24,8 @@ export interface HarnessOptions {
   clientKeyWindowMs?: number;
   /** Limits of the records kit (a small maxRecordBytes shows what does not fit in one record). */
   limits?: Partial<Limits>;
+  /** Wire the lease service into the engine (a workflow that declares leases needs it). */
+  leases?: boolean;
 }
 
 export interface Harness {
@@ -31,6 +35,8 @@ export interface Harness {
   knowledge: FakeKnowledge;
   packs: FakePacks;
   external: FakeExternal;
+  /** The lease service the engine uses (null when the harness was opened without leases). */
+  leases: LeaseService | null;
   review: LoadedWorkflow;
   verify: LoadedWorkflow;
   locate: LoadedWorkflow;
@@ -87,6 +93,7 @@ export async function openHarness(postgres: TemporaryPostgres, options: HarnessO
     });
     external.put('toy:history:zone-list', { bytes: new TextEncoder().encode('历史用例：设置 1 区浇灌 10 分钟。\n'), mediaType: 'text/plain' });
     const logs: AdminLogEntry[] = [];
+    const leases = options.leases === true ? new LeaseService(new Database(createPool(kit.database, 2)), { now: async () => now() }) : null;
     const service = createRunsService({
       records: kit,
       workflows,
@@ -94,6 +101,7 @@ export async function openHarness(postgres: TemporaryPostgres, options: HarnessO
       knowledge,
       external,
       now,
+      ...(leases !== null ? { leases } : {}),
       ...(options.sandboxLimits !== undefined ? { sandboxLimits: options.sandboxLimits } : {}),
       ...(options.clientKeyWindowMs !== undefined ? { clientKeyWindowMs: options.clientKeyWindowMs } : {}),
       adminLog: (entry) => logs.push(entry),
@@ -105,6 +113,7 @@ export async function openHarness(postgres: TemporaryPostgres, options: HarnessO
       knowledge,
       packs,
       external,
+      leases,
       review,
       verify,
       locate,
@@ -141,3 +150,4 @@ export async function openHarness(postgres: TemporaryPostgres, options: HarnessO
     throw error;
   }
 }
+

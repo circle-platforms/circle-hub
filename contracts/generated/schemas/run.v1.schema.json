@@ -755,6 +755,29 @@
         ],
         "additionalProperties": false
       }
+    },
+    "lease_context": {
+      "description": "the frozen lease rows of the workflow's declared prefix at start_run (every holder's rows, no tokens); the run context rebuilds `mine` from the granted leases",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "minLength": 1
+          },
+          "until": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          }
+        },
+        "required": [
+          "key",
+          "until"
+        ],
+        "additionalProperties": false
+      }
     }
   },
   "required": [
