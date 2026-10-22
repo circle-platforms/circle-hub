@@ -54,6 +54,50 @@ describe('joinGold', () => {
     const gold = joinGold(defects, cases);
     assert.deepEqual(gold.rows.map((r) => [r.bug, r.cases.length]), [['8001', 2], ['8002', 1]]);
   });
+
+  test('PLM status integration: parses data[].status, calculates closed counts, respects bugzilla exemption and unread', () => {
+    const defects = [
+      { bug: '71001', status: 'fixed', module: 'SSL' }, // PLM closed, traced
+      { bug: '71002', status: 'known', module: 'WebUI' }, // PLM resolved, traced (not closed with default)
+      { bug: '71003', status: 'fixed', module: 'CLI' }, // PLM closed, untraced
+      { bug: '71004', status: 'fixed', module: 'BZ', system: 'bugzilla' }, // Bugzilla, unqueried -> unknown
+      { bug: '71005', status: 'fixed', module: 'SYS' }, // PLM missing -> unread unknown
+    ];
+    const cases = [
+      { document: '9001', id: 'c-1', title: '用例1', defects: ['71001'] },
+      { document: '9001', id: 'c-2', title: '用例2', defects: ['71002'] },
+    ];
+    const plm = [
+      { id: 71001, status: 'closed', title: '缺陷1' },
+      { id: '71002', status: 'resolved', title: '缺陷2' },
+      { id: 71003, status: 'closed', title: '缺陷3' },
+      { id: 71004, status: 'closed', title: '同号Bugzilla缺陷' }, // should NOT be matched for bugzilla defect
+    ];
+
+    // Default closed-statuses: ['closed']
+    const goldDefault = joinGold(defects, cases, { plm });
+    assert.equal(goldDefault.closed_defects, 2); // 71001 and 71003
+    assert.equal(goldDefault.closed_traced, 1); // 71001
+    assert.equal(goldDefault.closed_untraced, 1); // 71003
+    assert.equal(goldDefault.rows[0].defect_system_status, 'closed');
+    assert.equal(goldDefault.rows[0].closed, true);
+    assert.equal(goldDefault.rows[1].defect_system_status, 'resolved');
+    assert.equal(goldDefault.rows[1].closed, false);
+    assert.equal(goldDefault.rows[2].defect_system_status, 'closed');
+    assert.equal(goldDefault.rows[2].closed, true);
+    assert.equal(goldDefault.rows[3].defect_system_status, null);
+    assert.match(goldDefault.rows[3].defect_system_unknown_reason ?? '', /bugzilla/);
+    assert.equal(goldDefault.rows[3].closed, false);
+    assert.equal(goldDefault.rows[4].defect_system_status, null);
+    assert.match(goldDefault.rows[4].defect_system_unknown_reason ?? '', /未读到/);
+    assert.equal(goldDefault.rows[4].closed, false);
+
+    // Custom closed-statuses: ['closed', 'resolved']
+    const goldResolved = joinGold(defects, cases, { plm, closedStatuses: ['closed', 'resolved'] });
+    assert.equal(goldResolved.closed_defects, 3); // 71001, 71002, 71003
+    assert.equal(goldResolved.closed_traced, 2); // 71001, 71002
+    assert.equal(goldResolved.closed_untraced, 1); // 71003
+  });
 });
 
 describe('main', () => {
@@ -75,5 +119,36 @@ describe('main', () => {
     assert.deepEqual(written.rows.map((r: { bug: string; cases: unknown[] }) => [r.bug, r.cases.length]), [['7300', 1]]);
     assert.equal((await main(['--defects', join(dir, 'nope.json'), '--cases', fileOf('cases.json', { documents: [] }), '--out', out])), 1);
     assert.equal((await main(['--defects', fileOf('bad.json', '不是对象'), '--cases', fileOf('cases.json', { documents: [] }), '--out', out])), 1);
+  });
+
+  test('main accepts --plm and --closed-statuses and outputs closed counts', async () => {
+    const out = join(dir ??= mkdtempSync(join(tmpdir(), 'gold-join-')), 'join-plm.json');
+    const defects = [
+      { bug: '7300', status: 'fixed', module: 'SSL' },
+      { bug: '7400', status: 'fixed', module: 'CLI' },
+    ];
+    const cases = [{ document: '9001', id: 'c-1', title: '会话检查', defects: ['7300'] }];
+    const plmEnvelope = {
+      code: 1000,
+      msg: '',
+      data: [
+        { id: 7300, status: 'resolved', title: '会话' },
+        { id: 7400, status: 'closed', title: '命令行' },
+      ],
+    };
+    const closedStatuses = ['closed', 'resolved'];
+
+    const code = await main([
+      '--defects', fileOf('defects-plm.json', defects),
+      '--cases', fileOf('cases-plm.json', { documents: [{ document: '9001', cases }] }),
+      '--plm', fileOf('plm.json', plmEnvelope),
+      '--closed-statuses', fileOf('closed.json', closedStatuses),
+      '--out', out,
+    ]);
+    assert.equal(code, 0);
+    const written = JSON.parse(await import('node:fs').then((fs) => fs.readFileSync(out, 'utf8')));
+    assert.equal(written.closed_defects, 2);
+    assert.equal(written.closed_traced, 1);
+    assert.equal(written.closed_untraced, 1);
   });
 });

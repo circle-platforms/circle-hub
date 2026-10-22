@@ -13,13 +13,14 @@ export function normalizeId(id: string): string {
   return /^[0-9]+$/.test(id) ? id.replace(/^0+/, '') || '0' : id;
 }
 
-interface DefectInput {
+export interface DefectInput {
   bug: string;
   status: string;
   module: string;
+  system?: string;
 }
 
-interface CaseInput {
+export interface CaseInput {
   document: string;
   id: string;
   title: string;
@@ -31,20 +32,55 @@ export interface JoinRow {
   bug: string;
   status: string;
   module: string;
+  system?: string;
+  /** Defect system status (from PLM), or null when unknown/unread/bugzilla. */
+  defect_system_status?: string | null;
+  /** Reason when defect system status is unknown, or null. */
+  defect_system_unknown_reason?: string | null;
+  /** Whether the defect is considered closed according to closed-statuses table. */
+  closed?: boolean;
   /** Every case naming this defect, in (document, id) order; empty when untraced. */
   cases: Array<{ document: string; id: string; title: string }>;
+}
+
+export interface JoinGoldOptions {
+  plm?: Array<{ id: string | number; status?: string; [key: string]: unknown }>;
+  closedStatuses?: string[];
 }
 
 export interface JoinGold {
   rows: JoinRow[];
   traced: number;
   untraced: number;
+  closed_defects: number;
+  closed_traced: number;
+  closed_untraced: number;
 }
 
-export function joinGold(defects: ReadonlyArray<DefectInput>, cases: ReadonlyArray<CaseInput>): JoinGold {
+export function joinGold(
+  defects: ReadonlyArray<DefectInput>,
+  cases: ReadonlyArray<CaseInput>,
+  options?: JoinGoldOptions,
+): JoinGold {
   const rows: JoinRow[] = [];
   let traced = 0;
   let untraced = 0;
+  let closedDefects = 0;
+  let closedTraced = 0;
+  let closedUntraced = 0;
+
+  const closedStatuses = options?.closedStatuses ?? ['closed'];
+  const closedSet = new Set(closedStatuses);
+  let plmMap: Map<string, string> | null = null;
+  if (options?.plm !== undefined) {
+    plmMap = new Map();
+    for (const item of options.plm) {
+      if (item && item.id !== undefined && typeof item.status === 'string') {
+        plmMap.set(normalizeId(String(item.id)), item.status.trim());
+      }
+    }
+  }
+
   for (const defect of defects) {
     const joined: Array<{ document: string; id: string; title: string }> = [];
     const key = normalizeId(defect.bug);
@@ -60,9 +96,56 @@ export function joinGold(defects: ReadonlyArray<DefectInput>, cases: ReadonlyArr
     }
     if (joined.length === 0) untraced += 1;
     else traced += 1;
-    rows.push({ bug: defect.bug, status: defect.status, module: defect.module, cases: joined });
+
+    let defectSystemStatus: string | null = null;
+    let defectSystemUnknownReason: string | null = null;
+    let closed = false;
+
+    if (options?.plm !== undefined) {
+      if (defect.system?.toLowerCase() === 'bugzilla') {
+        defectSystemStatus = null;
+        defectSystemUnknownReason = '系统是 bugzilla，不从 PLM 查询';
+      } else if (plmMap !== null) {
+        const plmStatus = plmMap.get(key);
+        if (plmStatus !== undefined) {
+          defectSystemStatus = plmStatus;
+          closed = closedSet.has(plmStatus);
+        } else {
+          defectSystemStatus = null;
+          defectSystemUnknownReason = 'PLM 未读到';
+        }
+      }
+    }
+
+    if (closed) {
+      closedDefects += 1;
+      if (joined.length > 0) closedTraced += 1;
+      else closedUntraced += 1;
+    }
+
+    rows.push({
+      bug: defect.bug,
+      status: defect.status,
+      module: defect.module,
+      ...(defect.system !== undefined ? { system: defect.system } : {}),
+      ...(options?.plm !== undefined
+        ? {
+            defect_system_status: defectSystemStatus,
+            defect_system_unknown_reason: defectSystemUnknownReason,
+            closed,
+          }
+        : {}),
+      cases: joined,
+    });
   }
-  return { rows, traced, untraced };
+  return {
+    rows,
+    traced,
+    untraced,
+    closed_defects: closedDefects,
+    closed_traced: closedTraced,
+    closed_untraced: closedUntraced,
+  };
 }
 
 export async function main(argv: string[]): Promise<number> {
@@ -72,13 +155,17 @@ export async function main(argv: string[]): Promise<number> {
   };
   const defectsPath = value('defects');
   const casesPath = value('cases');
+  const plmPath = value('plm');
+  const closedPath = value('closed-statuses');
   const outPath = value('out');
   if (!defectsPath || !casesPath || !outPath) {
-    process.stderr.write('用法：node scripts/real/gold/join.ts --defects <defects.json> --cases <cases.json> --out <join.json>\n');
+    process.stderr.write('用法：node scripts/real/gold/join.ts --defects <defects.json> --cases <cases.json> [--plm <plm.json>] [--closed-statuses <statuses.json>] --out <join.json>\n');
     return 2;
   }
   let defects: DefectInput[];
   let cases: CaseInput[];
+  let plm: Array<{ id: string | number; status?: string; [key: string]: unknown }> | undefined;
+  let closedStatuses: string[] | undefined;
   try {
     const rawDefects: unknown = JSON.parse(readFileSync(resolve(defectsPath), 'utf8'));
     if (!Array.isArray(rawDefects)) throw new Error('缺陷不是列表');
@@ -86,7 +173,12 @@ export async function main(argv: string[]): Promise<number> {
       if (row === null || typeof row !== 'object') throw new Error('缺陷行不是对象');
       const record = row as Record<string, unknown>;
       if (typeof record.bug !== 'string' || record.bug === '') throw new Error('缺陷行没有 bug 编号');
-      return { bug: record.bug, status: typeof record.status === 'string' ? record.status : '', module: typeof record.module === 'string' ? record.module : '' };
+      return {
+        bug: record.bug,
+        status: typeof record.status === 'string' ? record.status : '',
+        module: typeof record.module === 'string' ? record.module : '',
+        system: typeof record.system === 'string' ? record.system : undefined,
+      };
     });
     const rawCases: unknown = JSON.parse(readFileSync(resolve(casesPath), 'utf8'));
     if (rawCases === null || typeof rawCases !== 'object' || !Array.isArray((rawCases as { documents?: unknown }).documents)) throw new Error('用例输入没有 documents');
@@ -106,11 +198,33 @@ export async function main(argv: string[]): Promise<number> {
         });
       }
     }
+    if (plmPath) {
+      const rawPlm: unknown = JSON.parse(readFileSync(resolve(plmPath), 'utf8'));
+      if (rawPlm && typeof rawPlm === 'object' && Array.isArray((rawPlm as { data?: unknown }).data)) {
+        plm = (rawPlm as { data: Array<{ id: string | number; status?: string }> }).data;
+      } else if (Array.isArray(rawPlm)) {
+        plm = rawPlm.flatMap((entry: unknown) => {
+          if (entry && typeof entry === 'object' && Array.isArray((entry as { data?: unknown }).data)) {
+            return (entry as { data: Array<{ id: string | number; status?: string }> }).data;
+          }
+          if (entry && typeof entry === 'object' && 'id' in entry) {
+            return [entry as { id: string | number; status?: string }];
+          }
+          return [];
+        });
+      }
+    }
+    if (closedPath) {
+      const rawClosed: unknown = JSON.parse(readFileSync(resolve(closedPath), 'utf8'));
+      if (Array.isArray(rawClosed)) {
+        closedStatuses = rawClosed.filter((s): s is string => typeof s === 'string');
+      }
+    }
   } catch (error) {
     process.stderr.write(`读不了输入：${(error as Error).message.split('\n')[0]}\n`);
     return 1;
   }
-  writeFileSync(outPath, `${JSON.stringify(joinGold(defects, cases), null, 2)}\n`);
+  writeFileSync(outPath, `${JSON.stringify(joinGold(defects, cases, { plm, closedStatuses }), null, 2)}\n`);
   return 0;
 }
 
