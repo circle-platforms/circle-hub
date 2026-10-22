@@ -141,7 +141,7 @@ well-formed text). The same reasons go to the admin note of the call they belong
     round. The primary refutation leads when its row applies, else the first routed one: repair keeps the violation and reports
     `rounds_left`; when the requirement's rounds (the largest `max_rounds` of its repair rows) are used up the terminal is
     incomplete `repair_exhausted`, the leading code and statement kept. Request is incomplete `awaiting_step` (no request record
-    in milestone 1); unknown is unchecked `integrity_unproven` with the code; reject keeps the violation and puts the item in
+    in milestone 1); unknown keeps the violation unattributed with the code; reject keeps the violation and puts the item in
     `rejected`. `errors` lists the repair, reject and request refutations (path into the submission for default subjects) and
     the items not covered (`core.coverage.shortfall`, the contracts' interim code); unrouted violations are only in the partitions.
 15. **Rounds.** A round of a requirement is a distinct earlier submission of the run in which it had a repair-routed

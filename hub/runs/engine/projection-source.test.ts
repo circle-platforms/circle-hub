@@ -68,7 +68,7 @@ function multiPack(): PackSpec {
           requirements: [{ key: 'overview', name: '整份概况', description: '整个运行的概况（合成）', target: 'run', required: true, done_rule: 'bookkeeping', layers: ['static'], accepted_producer: 'fact', checks: ['overview'], error_handling: [] }],
         },
       },
-      'checks.json': { json: { schema: 'checks@1', checks: [{ id: 'overview', function: { module: 'functions/overview.ts' }, applies: 'run', judges: 'subject' }] } },
+      'checks.json': { json: { schema: 'checks@1', checks: [{ id: 'overview', function: { module: 'functions/overview.ts' }, applies: 'run', judges: 'subject', tier: 'advisory' }] } },
       'slots.schema.json': { json: { schema: 'slots@1', item: {}, run: {} } },
       'SKILL.md': '# 合成多源定位\n\n测试用。\n',
       'functions/project.ts': MULTI_PROJECT,

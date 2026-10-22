@@ -41,11 +41,11 @@ describe('oracle', () => {
     assert.deepEqual(e.errors, []);
   });
 
-  it('a refuted fact routed to repair is a delivered violation with the rounds left (T03 R[4])', () => {
-    const e = expected(run(), handled, refuteX);
+  it('a refuted fact on the artifact routed to repair is a delivered violation with the rounds left (T03 R[4])', () => {
+    const e = expected(run({ checks: [{ id: 'c1', judges: 'artifact_under_verification', tier: null }] }), handled, refuteX);
     assert.deepEqual(e.items[0].requirements[0], {
       requirement: 'r1',
-      layers: [{ layer: 'static', terminal: 'violation', code: 'p.x', tier: 'blocking', attribution: 'author_input' }],
+      layers: [{ layer: 'static', terminal: 'violation', code: 'p.x', tier: 'blocking', attribution: 'producer_error' }],
       status: 'unsatisfied',
       unsatisfied_reason: 'outcome_mismatch',
     });
@@ -55,8 +55,21 @@ describe('oracle', () => {
     assert.deepEqual(e.rounds, { used: 0, max: 2 });
   });
 
+  it('a refutation of the subject does not enter repair even when the error table has a repair row (T03 R[4], W02 F[7])', () => {
+    const onSubject = run({ checks: [{ id: 'c1', judges: 'subject', tier: null }] });
+    const first = expected(onSubject, handled, refuteX);
+    assert.deepEqual(first.items[0].requirements[0].layers[0], { layer: 'static', terminal: 'violation', code: 'p.x', tier: 'blocking', attribution: 'author_input' });
+    assert.deepEqual(first.errors, []);
+    assert.deepEqual(first.rounds, { used: 0, max: 2 });
+    const second = expected(run({ ...onSubject, roundsUsed: 2 }), handled, refuteX);
+    assert.deepEqual(second.items[0].requirements[0].layers[0], { layer: 'static', terminal: 'violation', code: 'p.x', tier: 'blocking', attribution: 'author_input' });
+    assert.equal(second.items[0].partition, 'delivered');
+    assert.deepEqual(second.errors, []);
+    assert.deepEqual(second.rounds, { used: 0, max: 2 });
+  });
+
   it('used-up repair rounds make every declared layer incomplete (W02 R[5])', () => {
-    const e = expected(run({ roundsUsed: 2, requirements: [req({ layers: ['static', 'dynamic'] })] }), handled, refuteX);
+    const e = expected(run({ roundsUsed: 2, requirements: [req({ layers: ['static', 'dynamic'] })], checks: [{ id: 'c1', judges: 'artifact_under_verification', tier: null }] }), handled, refuteX);
     assert.deepEqual(e.items[0].requirements[0], {
       requirement: 'r1',
       layers: [
@@ -153,7 +166,7 @@ describe('oracle', () => {
       requirements: [rejecting, req({ key: 'r2', checks: ['c2'] })],
       checks: [
         { id: 'c1', judges: 'artifact_under_verification', tier: null },
-        { id: 'c2', judges: 'subject', tier: null },
+        { id: 'c2', judges: 'artifact_under_verification', tier: null },
       ],
       roundsUsed: 2,
     });
@@ -193,12 +206,12 @@ describe('oracle', () => {
         { code: 'p.y', action: 'repair', maxRounds: 3 },
       ],
     });
-    const usedUp = expected(run({ roundsUsed: 1, requirements: [table] }), handled, refuteX);
+    const usedUp = expected(run({ roundsUsed: 1, requirements: [table], checks: [{ id: 'c1', judges: 'artifact_under_verification', tier: null }] }), handled, refuteX);
     assert.equal(usedUp.items[0].partition, 'incomplete');
     assert.equal(usedUp.items[0].reason, 'repair_exhausted');
     assert.deepEqual(usedUp.rounds, { used: 1, max: 3 });
     assert.equal(usedUp.errors[0].rounds_left, 0);
-    const open = expected(run({ roundsUsed: 1, requirements: [table] }), handled, { c1: { i1: [{ verdict: 'refute', code: 'p.y', tier: 'blocking' }] } });
+    const open = expected(run({ roundsUsed: 1, requirements: [table], checks: [{ id: 'c1', judges: 'artifact_under_verification', tier: null }] }), handled, { c1: { i1: [{ verdict: 'refute', code: 'p.y', tier: 'blocking' }] } });
     assert.equal(open.items[0].partition, 'delivered');
     assert.equal(open.items[0].requirements[0].layers[0].code, 'p.y');
     assert.deepEqual(open.errors, []);
@@ -234,7 +247,7 @@ describe('oracle', () => {
   });
 
   it('a submission that is not accepted has no partitions and lists its codes and the item-level refutations (W08 R[1])', () => {
-    const e = expected(run(), { ...handled, defects: ['SUBMISSION_SCHEMA_VIOLATION'] }, refuteX);
+    const e = expected(run({ checks: [{ id: 'c1', judges: 'artifact_under_verification', tier: null }] }), { ...handled, defects: ['SUBMISSION_SCHEMA_VIOLATION'] }, refuteX);
     assert.equal(e.acceptance, 'not_accepted');
     assert.deepEqual(e.items, []);
     assert.deepEqual(e.counts, { delivered: 0, rejected: 0, quarantined: 0, incomplete: 0, unknown: 0 });
@@ -258,6 +271,7 @@ describe('oracle', () => {
               items: [{ id: 'i1', negative }],
               roundsUsed: outcome === 'incomplete' ? 2 : 0,
               author,
+              checks: [{ id: 'c1', judges: outcome === 'incomplete' ? 'artifact_under_verification' : 'subject', tier: null }],
               requirements: [req({ producer, acceptsDeclaredIndependence: producer === 'independent_judgment', negativeCodes: negative ? ['p.x'] : null })],
             });
             const submission: SubmissionDescription = {

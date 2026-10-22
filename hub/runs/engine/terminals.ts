@@ -186,7 +186,7 @@ export function rowApplies(row: ErrorHandlingRow, o: JudgedOutcome): boolean {
  * T03 R[4], W02 F[7], W02 R[5]: unexpected refutations are routed by the error table where the row applies (rowApplies).
  * The primary refutation leads when it is routed, else the first routed one: repair keeps the violation until the rounds are
  * used up (then incomplete, repair_exhausted, the statement kept), request waits (incomplete, awaiting_step), unknown records
- * unknown (unchecked, integrity_unproven), reject keeps the violation and lets the partition decide. A refutation the
+ * unknown (keeps the violation, unattributed), reject keeps the violation and lets the partition decide. A refutation the
  * expectation names is the expected outcome and is never routed.
  */
 export function applyRouting(raw: RawStatic, template: RequirementTemplate, roundsUsed: number): RoutedStatic {
@@ -218,7 +218,6 @@ export function applyRouting(raw: RawStatic, template: RequirementTemplate, roun
   const shown = { code: lead.outcome.outcome.code ?? raw.code, tier: lead.outcome.outcome.tier, primary: lead.outcome };
   if (lead.action === 'repair' && exhausted) return { ...base, ...shown, terminal: 'incomplete', reason: 'repair_exhausted' };
   if (lead.action === 'request') return { ...base, ...shown, terminal: 'incomplete', reason: 'awaiting_step' };
-  if (lead.action === 'unknown') return { ...base, ...shown, terminal: 'unchecked', reason: 'integrity_unproven' };
   return base;
 }
 
@@ -289,6 +288,10 @@ export function staticLayer(routed: RoutedStatic, expectation: Expectation): Lay
   if (routed.terminal === 'pass' || routed.terminal === 'judgment') return layer;
   if (routed.terminal === 'violation') {
     if (meets(layer, expectation, routed.expectedRefutation)) return layer;
+    if (routed.action === 'unknown') {
+      layer.attribution = 'unattributed';
+      return layer;
+    }
     layer.attribution = attributionByRole(routed.primary?.judges ?? 'subject');
     return layer;
   }

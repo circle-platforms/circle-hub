@@ -91,7 +91,7 @@
             "description": "the role of what the check judges (A03): the target, an expected source or the artifact under verification"
           },
           "tier": {
-            "description": "replaces the tier of every outcome",
+            "description": "replaces the tier of every outcome; required on publication, legacy published packs fall back to basis",
             "type": "string",
             "enum": [
               "blocking",

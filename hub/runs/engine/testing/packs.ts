@@ -119,10 +119,10 @@ export function reviewPack(options: ReviewOptions = {}): PackSpec {
   const checks: ChecksFile = {
     schema: 'checks@1',
     checks: [
-      { id: 'structure', interpreter: 'structure@1', table: 'tables/structure.json', applies: 'run', judges: 'subject' },
-      { id: 'catalog', interpreter: 'catalog@1', table: 'tables/catalog.json', applies: 'item', catalog: 'commands@1', judges: 'subject' },
-      { id: 'findings_quotes', interpreter: 'quote@1', table: 'tables/findings-quotes.json', applies: 'item', judges: 'artifact_under_verification' },
-      { id: 'findings_catalog', interpreter: 'catalog@1', table: 'tables/findings-catalog.json', applies: 'item', catalog: 'commands@1', judges: 'artifact_under_verification' },
+      { id: 'structure', interpreter: 'structure@1', table: 'tables/structure.json', applies: 'run', judges: 'subject', tier: 'blocking' },
+      { id: 'catalog', interpreter: 'catalog@1', table: 'tables/catalog.json', applies: 'item', catalog: 'commands@1', judges: 'subject', tier: 'blocking' },
+      { id: 'findings_quotes', interpreter: 'quote@1', table: 'tables/findings-quotes.json', applies: 'item', judges: 'artifact_under_verification', tier: 'blocking' },
+      { id: 'findings_catalog', interpreter: 'catalog@1', table: 'tables/findings-catalog.json', applies: 'item', catalog: 'commands@1', judges: 'artifact_under_verification', tier: 'blocking' },
       {
         id: 'findings_rank',
         function: { module: 'functions/rank.ts' },
@@ -139,7 +139,7 @@ export function reviewPack(options: ReviewOptions = {}): PackSpec {
         tier: 'blocking',
         basis: '要求项 findings：关于产品行为的发现要有线索以外的根据',
       },
-      ...(options.fragile ? [{ id: 'fragile', function: { module: `functions/${options.fragile}.ts` }, applies: 'item' as const, judges: 'subject' as const }] : []),
+      ...(options.fragile ? [{ id: 'fragile', function: { module: `functions/${options.fragile}.ts` }, applies: 'item' as const, judges: 'subject' as const, tier: 'advisory' as const }] : []),
     ],
   };
   const workflow: WorkflowFile = {
@@ -357,9 +357,9 @@ export function locatePack(): PackSpec {
         json: {
           schema: 'checks@1',
           checks: [
-            { id: 'located', function: { module: 'functions/located.ts' }, applies: 'item', judges: 'subject' },
-            { id: 'tidy', interpreter: 'structure@1', table: 'tables/structure.json', applies: 'run', judges: 'subject' },
-            { id: 'overview', function: { module: 'functions/overview.ts' }, applies: 'run', judges: 'subject' },
+            { id: 'located', function: { module: 'functions/located.ts' }, applies: 'item', judges: 'subject', tier: 'advisory' },
+            { id: 'tidy', interpreter: 'structure@1', table: 'tables/structure.json', applies: 'run', judges: 'subject', tier: 'advisory' },
+            { id: 'overview', function: { module: 'functions/overview.ts' }, applies: 'run', judges: 'subject', tier: 'advisory' },
           ],
         } satisfies ChecksFile,
       },
