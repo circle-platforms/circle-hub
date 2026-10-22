@@ -1,4 +1,4 @@
-// Scenario 25 (acceptance): checks read bound sources by declared role (reads: { roles: [...] }).
+// Scenario 27 (acceptance): checks read bound sources by declared role (reads: { roles: [...] }).
 // A check declaring reads receives bound sources matching that role in its sources input.
 // A check without reads does not receive bound sources.
 // An oversized source exceeding max_bytes appears in unread_sources instead of sources.
@@ -14,7 +14,7 @@ import { startPostgres, type TemporaryPostgres } from '../../hub/testing/postgre
 import { openBed, type Bed } from './support/hub.ts';
 import { type McpClient } from './support/mcp.ts';
 
-describe('scenario 25: checks read bound sources by declaration', () => {
+describe('scenario 27: checks read bound sources by declaration', () => {
   let postgres: TemporaryPostgres;
   let bed: Bed;
   let client: McpClient;
@@ -178,7 +178,7 @@ describe('scenario 25: checks read bound sources by declaration', () => {
 
     await bed.hub.publishPack(dir);
     await bed.hub.assignPack(bed.reviewer.principal, 'toy-check-reads');
-    client = await bed.connect(bed.reviewer, 'sess-s25-check-reads');
+    client = await bed.connect(bed.reviewer, 'sess-s27-check-reads');
   });
 
   after(async () => {
@@ -275,10 +275,11 @@ describe('scenario 25: checks read bound sources by declaration', () => {
 
     const claimReads = validation.cross_item.find((c) => c.requirement === 'req_reads');
     assert.ok(claimReads);
-    const dataReads = claimReads.statement.data as { source_keys: string[]; unread_sources: Array<{ reference: string; reason: string }> };
+    const dataReads = claimReads.statement.data as { source_keys: string[]; unread_sources: Array<{ reference: string; reason: string; slot?: string }> };
     assert.ok(!dataReads.source_keys.includes(bigRef), 'oversized source must NOT be in sources');
     assert.equal(dataReads.unread_sources.length, 1);
     assert.equal(dataReads.unread_sources[0].reference, bigRef);
+    assert.equal(dataReads.unread_sources[0].slot, 'guide');
     assert.match(dataReads.unread_sources[0].reason, /超过大小上限/);
   });
 });
