@@ -33,7 +33,8 @@ describe('totalsOutcome', () => {
     assert.deepEqual(data.ratios.missing, { num: 2, den: 20 });
     assert.match(outcome.statement, /合计：用例 20 个/);
     assert.match(outcome.statement, /无期望结果 2 个（10\.0%）/);
-    assert.match(outcome.statement, /只覆盖用例索引收录的用例/);
+    assert.match(outcome.statement, /没有解析出命令的用例是未归位条目/);
+    assert.match(outcome.statement, /计入合计/);
     assert.match(outcome.statement, /不是整套测试/);
     const groups = projected.groups as Array<{ view: { source: string } }>;
     assert.deepEqual(outcome.grounds, [groups[0].view.source]);

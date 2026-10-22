@@ -50,11 +50,12 @@ after(async () => {
 
 describe('a production run of quality-board', { skip }, () => {
   it('computes and stores the board at start_run: metrics as fact claims, threshold violations advisory, never blocking', async () => {
-    const detail = await hub.service.startRunDetailed(hub.alice, { pack: 'quality-board', product: 'NSAE', inputs: { facets: { external: FACETS_ID } } }, call());
+    const detail = await hub.service.startRunDetailed(hub.alice, { pack: 'quality-board', inputs: { facets: { external: FACETS_ID } } }, call());
     assert.equal(detail.answer.call_result, 'ok', JSON.stringify(detail.answer.errors));
     assert.ok(StartRunOutput.safeParse({ ...detail.answer, trace: '4bf92f3577b34da6a3ce929d0e0e4736' }).success);
     const run = detail.answer.run!;
-    assert.deepEqual([run.product, run.version, run.build, run.root], ['apv', BUILD.line, BUILD.name, ROOT]);
+    // The pack binds no product line: the view's external id names the product and the build, and no build is locked.
+    assert.deepEqual([run.product, run.version, run.build, run.root], [undefined, undefined, undefined, undefined]);
     assert.deepEqual(
       run.requirements.map((r) => [r.key, r.accepted_producer]),
       [
@@ -100,7 +101,7 @@ describe('a production run of quality-board', { skip }, () => {
     assert.deepEqual(metrics.ratios.missing, { num: 1, den: 20 });
     assert.deepEqual([metrics.display.missing, metrics.display.negative], [0.05, 0.05]);
     assert.equal(board.claims[0].statement.verdict, 'support');
-    assert.deepEqual(board.claims[0].warrant, { producer: 'function', id: 'quality-board.board@1.0.0', independence: 'judge_not_author' });
+    assert.deepEqual(board.claims[0].warrant, { producer: 'function', id: 'quality-board.board@1.0.1', independence: 'judge_not_author' });
     assert.deepEqual(ssl.requirements[1].claims.map((c) => c.statement.verdict), ['support']);
 
     const webui = located(result, '10.6.1/WebUI');
@@ -125,7 +126,7 @@ describe('a production run of quality-board', { skip }, () => {
     assert.deepEqual([data.view.total, data.view.listed_rows], [32, 8]);
     assert.match(totals.statement.text, /合计：用例 32 个/);
     assert.match(totals.statement.text, /不是整套测试/);
-    assert.match(totals.statement.text, /只覆盖用例索引收录的用例/);
+    assert.match(totals.statement.text, /没有解析出命令的用例是未归位条目，也计入合计/);
 
     // The result is the run's latest and readable by reference.
     const view = (await hub.service.getRun(hub.alice, run.run))!;

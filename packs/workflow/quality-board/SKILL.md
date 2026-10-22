@@ -2,11 +2,11 @@
 
 Hub 直接算出一个构建的用例质量看板：每个（版本线、模块）分组的用例数、无期望结果占比、只有含糊期望结果占比、负面用例占比，以及整个构建的合计。不需要你提交结果。
 
-1. 开始运行：pack 写 quality-board；inputs.facets 写 `{"external": "knowledge:facets:<产品>:<构建>?kind=case&by=line,module,has_expected,vague_expected,negative"}`（可以在 by 里加 priority 等字段，不影响分组）。运行自动绑定这个任务包的产品线，不用写 product。
+1. 开始运行：pack 写 quality-board；inputs.facets 写 `{"external": "knowledge:facets:<产品>:<构建>?kind=case&by=line,module,has_expected,vague_expected,negative"}`（可以在 by 里加 priority 等字段，不影响分组）。这个任务包不绑定产品线：不要写 product、version、build——输入里的外部标识已经写明产品和构建，运行不会去锁定别的构建。
 2. 结果在开始运行时就算好了：每个条目是一个分组（条目编号是 `<版本线>/<模块>`，没有归组的版本线或模块是 unplaced），摘要是“用例数和三项占比”，完整结论在 result.reference 指向的校验结果里。逐条结论用 get_nodes 读取；条目多时照回答末尾的说明接着读。
 3. 原样转述每个分组的指标和阈值结论，不补全、不猜测：
    - 占比是精确分数（结论数据里是 num/den），转述用展示值（四位小数或一位百分数）；“超过上限”“低于下限”是提示档的不通过，等于阈值不算越界。
    - 三个阈值可以用参数调整：max_missing_ratio、max_vague_ratio（默认 0.05）、min_negative_ratio（默认 0.02）。
-4. 合计（要求项 totals）在结果的 cross_item 里：整个视图的用例数和三项总数，并写明看板只覆盖用例索引收录的用例（索引只收指到可解析命令的用例）——看板描述的是已索引的用例，不是整套测试。视图有列出的来源没读或被截断时，合计的说明里照写，转述时不要略去。
+4. 合计（要求项 totals）在结果的 cross_item 里：整个视图的用例数和三项总数，并写明看板覆盖已索引文档的每一个用例（没有解析出命令的用例是未归位条目，也计入合计）——没读到的来源不在其中，所以它描述的是已索引的用例，不是整套测试。视图有列出的来源没读或被截断时，合计的说明里照写，转述时不要略去。
 5. 阈值结论是管理信号，不是缺陷：不要写成“不通过的测试”或“质量不合格”，照“超过/低于阈值”转述。
 6. submit_result 不是必需的；要补充看法时可以提交，看法记为模型转述的判断，不改变 Hub 算出的看板。

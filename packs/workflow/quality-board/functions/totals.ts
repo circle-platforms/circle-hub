@@ -71,7 +71,7 @@ export function totalsOutcome(subject: unknown): CheckOutcome {
       data,
     };
   }
-  let statement = `合计：用例 ${counts.cases} 个；无期望结果 ${counts.missing} 个（${percentOf(counts.missing, counts.cases)}）；含糊期望 ${counts.vague} 个（${percentOf(counts.vague, counts.cases)}）；负面用例 ${counts.negative} 个（${percentOf(counts.negative, counts.cases)}）。看板只覆盖用例索引收录的用例（索引只收指到可解析命令的用例），描述的是已索引的用例，不是整套测试`;
+  let statement = `合计：用例 ${counts.cases} 个；无期望结果 ${counts.missing} 个（${percentOf(counts.missing, counts.cases)}）；含糊期望 ${counts.vague} 个（${percentOf(counts.vague, counts.cases)}）；负面用例 ${counts.negative} 个（${percentOf(counts.negative, counts.cases)}）。看板覆盖已索引文档的每一个用例（没有解析出命令的用例是未归位条目，也计入合计）；没有读到的来源不在其中，所以它描述的是已索引的用例，不是整套测试`;
   if (view.skipped > 0) statement += `；有 ${view.skipped} 份列出的来源没有读取，其中的用例不在计数里`;
   if (view.truncated) statement += '；视图被截断，合计只覆盖列出的部分';
   return { verdict: 'support', statement, grounds, tier: TIER, data };

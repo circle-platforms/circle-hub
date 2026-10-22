@@ -5,7 +5,9 @@
       "slot": "facets",
       "role": "subject",
       "description": "构建的用例计数视图：knowledge:facets:<产品>:<构建>?kind=case&by=line,module,has_expected,vague_expected,negative（可以加 priority 等字段；构建名写任一名称族的写法都可以）",
-      "accepts": ["knowledge:facets"],
+      "accepts": [
+        "knowledge:facets"
+      ],
       "required": true,
       "many": false
     }
@@ -15,22 +17,38 @@
       "name": "max_missing_ratio",
       "description": "无期望结果的用例占比上限（默认 0.05）：分组超过它记提示档的不通过；等于不算超过",
       "required": false,
-      "schema": { "type": "number", "minimum": 0, "maximum": 1 }
+      "schema": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1
+      }
     },
     {
       "name": "max_vague_ratio",
       "description": "只有含糊期望结果的用例占比上限（默认 0.05）：分组超过它记提示档的不通过；等于不算超过",
       "required": false,
-      "schema": { "type": "number", "minimum": 0, "maximum": 1 }
+      "schema": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1
+      }
     },
     {
       "name": "min_negative_ratio",
       "description": "负面用例占比下限（默认 0.02）：分组低于它记提示档的不通过；等于不算低于",
       "required": false,
-      "schema": { "type": "number", "minimum": 0, "maximum": 1 }
+      "schema": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1
+      }
     }
   ],
-  "product": { "id": "apv", "catalogs": [] },
+  "product": {
+    "catalogs": []
+  },
   "subject": "facets",
-  "projection": { "module": "functions/project.ts" }
+  "projection": {
+    "module": "functions/project.ts"
+  }
 }
