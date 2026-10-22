@@ -88,4 +88,63 @@ describe('scenario 16: whole review of ~150-node agile mind map with linked expe
     assert.ok(page.body.includes(String(run.items.length)));
     assert.ok(page.body.includes(run.run));
   });
+
+  test('answer exceeding budget is soft-capped and truncated with explanation note', async () => {
+    // Construct a synthetic mindmap with 95 case nodes (under the 100-case single-run limit)
+    // but generating > 10,000 chars of problem lines, exceeding SOFT_CAP (9,000) and budget (30,000)
+    const bigMindmap = {
+      root: {
+        data: { id: 'root_big', text: '合成超大测试脑图' },
+        children: Array.from({ length: 95 }, (_, i) => ({
+          data: {
+            id: `case_node_${i}`,
+            text: `用例 ${i} - 验证超长列表在预算截断路径下的展示与分页能力测试说明文字内容详情`,
+            resource: ['Functional'],
+            priority: 2,
+          },
+          children: [
+            { data: { id: `step_${i}`, text: `步骤 ${i}：执行基本操作与校验输出` } },
+          ],
+        })),
+      },
+    };
+
+    const uploadRef = await client.upload(Buffer.from(JSON.stringify(bigMindmap)), 'big-review.km.json');
+    assert.match(uploadRef, /^src:[0-9a-f]{64}$/);
+
+    const startAnswer = await client.call('start_run', {
+      pack: 'case-review',
+      product: bed.product.names[0],
+      version: bed.site.LINE,
+      inputs: { subject: { reference: uploadRef } },
+    });
+    assert.equal(startAnswer.isError, false, startAnswer.text);
+    const bigRun = startAnswer.out.run as RunSummary;
+    assert.equal(bigRun.items.length, 95, 'mindmap yields 95 items');
+
+    // Submit a result that skips items, generating > 9000 chars of problems to exercise softCap break and budget truncation
+    const skipSubmission = {
+      run: bigRun.run,
+      model: 'test-model',
+      items: bigRun.items.map((it) => ({
+        item: it.id,
+        handling: 'skipped' as const,
+        reason: '跳过以验证超长问题列表软上限截断路径与预算说明详情文字内容',
+      })),
+      cross_item: [{ nature: 'judgment' as const, statement: '结论等级 P3', grounds: [], code: 'level', rank: 'P3' }],
+    };
+
+    const submitAnswer = await client.call('submit_result', skipSubmission);
+    assert.equal(submitAnswer.isError, false);
+    // Answer text must be within TEXT_BUDGET (30000 characters)
+    assert.ok(submitAnswer.text.length <= 30000, `answer text length ${submitAnswer.text.length} must be <= 30000`);
+    // Note of truncation must be present
+    assert.ok(submitAnswer.text.includes('部分：这段回答以 30000 个字符为限，略去了'));
+    assert.ok(submitAnswer.text.includes('读其余部分：'));
+    // Soft-cap splits the problem list at ~9000 chars so that later items and problems are partially omitted
+    assert.ok(
+      submitAnswer.text.includes('略去了条目明细') || submitAnswer.text.includes('略去了问题与未知'),
+      'softCap and fit must omit parts beyond budget',
+    );
+  });
 });
