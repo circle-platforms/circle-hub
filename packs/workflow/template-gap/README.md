@@ -134,7 +134,7 @@ npx tsc --noEmit
   the registry's ports with a temporary PostgreSQL: a production run over 27 documents (an upload and agile reads) with
   every one of the 24 categories removed in turn, a witness added back and a per-document skip written as the external id;
   the same document reordered gives the identical item and digest; commentary; every refusal at start_run, the skip refusals
-  included; a failing subject builder (unknown, `check_error`); the `* → unknown` variant (deviation 2). Two tests are marked
+  included; a failing subject builder (unknown, `check_error`); the `* → unknown` variant (verified in `engine.test.ts`). Two tests are marked
   `todo` because they wait for other packages (Needs): the `author_samples_only` mark on claims, and no product binding while
   a product pack is active. They run and report their current failure without failing the suite.
 
@@ -148,11 +148,13 @@ Tests that run pack functions skip where macOS `sandbox-exec` is missing (that i
    whether a per-command or per-feature category applies needs the commands of the feature. So expect most real documents to
    be unsatisfied; the check stays advisory, the summary names every gap, and a category that does not apply is declared
    skipped by the user. Open question 1.
-2. **No error handling row, not `* → unknown`.** coverage@1 gives exactly one refutation code, `core.coverage.shortfall`, and
-   the engine routes every unexpected refutation through the table (hub/runs/engine decision 14). A `*` → unknown row would
-   turn every document with a gap into `unchecked` (`integrity_unproven`, attribution `data_gap`, status pending, counted in
-   `unknown`) while its claim still says fact: a known gap reported as unknown. Without a row the gap is a violation and the
-   requirement unsatisfied; check failures stay unknown by their reason either way. `engine.test.ts` runs both.
+2. **No error handling row vs `* → unknown`.** coverage@1 gives exactly one refutation code, `core.coverage.shortfall`.
+   Earlier engine behavior turned a `* → unknown` row into `unchecked` (`integrity_unproven`, attribution `data_gap`, status
+   pending, counted in `unknown`). On 2026-10-22, the owner unified the engine behavior with the reference (Decision 6):
+   action `unknown` keeps the terminal as `violation`, records code and tier, leaves attribution empty (`unattributed`,
+   待归因), and requirement status `unsatisfied`, with unknown count 0 (记未知保留反驳，归责待定). With `error_handling: []`,
+   the violation is attributed to `author_input`. Both leave the gap a violation and the requirement unsatisfied (no longer
+   a behavioral deviation); `engine.test.ts` verifies both.
 3. **Additions to the brief's fields and parameter:** `fields.untagged` (untagged nodes written like cases: not counted, so a
    missing test type may be a missing tag) and the optional `document` of a skip (several documents in one run).
 4. **The case rule is case-review's, not quite the brief's.** The brief defines a case as a node with a non-empty `resource`
@@ -221,8 +223,7 @@ Tests that run pack functions skip where macOS `sandbox-exec` is missing (that i
   `engine.test.ts` asserts it as a `todo`. (2) Mark a support that rests on declared skips (`data.skipped` not empty) with
   `conditional_on_judgment` (以判断为前提), so that a gap the user declared away does not read as a plain fact. (3) Refuse an
   oversized projection input with the split fix: `serializeInput` (hub/rules) throws a RangeError above 32 MiB and the
-  projection call answers `任务包的投影函数没有给出条目…请联系任务包作者`. (4) Observation, kept: a refutation routed to `unknown`
-  keeps its claim as nature `fact` while the layer is `unchecked`; a location that resolves in several sources of a `many`
+  projection call answers `任务包的投影函数没有给出条目…请联系任务包作者`. (4) Observation: on 2026-10-22, action `unknown` was aligned with the reference to keep terminal `violation`, record code and tier, leave attribution empty (`unattributed`), and leave requirement status `unsatisfied` (记未知保留反驳，归责待定); a location that resolves in several sources of a `many`
   slot refuses the run (FragmentRef names no source; engine Needs 6).
 - **rules**: coverage@1's support statement `N 个必须覆盖的成员都已覆盖（其中 K 个写明了跳过理由）` calls the skipped members
   covered while `data.covered` leaves them out; a wording such as `N 个必须覆盖的成员：M 个已覆盖，K 个写明了跳过理由` would
@@ -242,7 +243,7 @@ Tests that run pack functions skip where macOS `sandbox-exec` is missing (that i
 2. A tagged priority-1 node: a group while it holds cases (now, case-review), always a group, or always a case (the brief)?
 3. Number copies of a shared id and id-less cases by their content instead of document order, in both packs?
 4. Name an upload by something its order does not change (its root id, or a digest of an order-free form)?
-5. `* → unknown` (the brief) or no row (this pack, deviation 2)?
+5. `* → unknown` (the brief) or no row (this pack)? Decided on 2026-10-22 (Decision 6): the engine unifies `unknown` routing to keep refutations as `violation` with attribution `unattributed` (记未知保留反驳，归责待定). With or without the row, a gap is a violation and status is unsatisfied.
 6. **Count untagged cases by default**: decided by the owner on 2026-10-22 (docs/hub-r4-tasks/union-case-rule.md). The default
    case_rule is unified to marked across all packs (template-gap, case-review, case-review-verify), counting untagged candidate
    nodes as cases with `tags: []`; `tagged` remains available as a restrictive parameter.

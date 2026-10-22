@@ -97,8 +97,8 @@ describe('the declaration files', () => {
     assert.equal(requirements.length, 1);
     const [r] = requirements;
     assert.deepEqual([r.key, r.target, r.accepted_producer, r.layers, r.done_rule, r.required, r.checks], ['coverage', 'item', 'fact', ['static'], 'bookkeeping', true, ['coverage']]);
-    // Deviation from the brief's `* -> unknown`, see README: coverage@1's only refutation is the shortfall, and a `*` row would
-    // record every known gap as unknown. engine.test.ts runs that variant.
+    // With or without `* -> unknown`, a gap stays a violation (engine decision 6 aligns action unknown
+    // to keep terminal violation with attribution unattributed). engine.test.ts tests the `* -> unknown` variant.
     assert.deepEqual(r.error_handling, []);
   });
 
