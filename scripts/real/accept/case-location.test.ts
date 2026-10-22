@@ -11,7 +11,7 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import type { LoggedTurn, Scenario } from '../lib/accept.ts';
 import type { Turn } from '../scripted-model.ts';
-import caseLocation, { parseNextCall, type LocationGold } from './case-location.ts';
+import caseLocation, { parseNextCall, parseReportedCandidates, type LocationGold } from './case-location.ts';
 
 const turnsOf = (text: string): LoggedTurn[] => [
   { index: 0, toolResults: [], tools: ['hub_start_run'] },
@@ -71,7 +71,7 @@ describe('case-location scenario with buildCandidates', () => {
     '运行 run_1 完成：任务包 case-location@1.0.0',
     'location 用例定位：满足 1',
     '产品线 apv；版本 10.6.1（目录，置信度高）',
-    '构建候选：Rel_APV_10_6_1_57、Rel_NSAE_10_6_1_57（依据 Rel_APV_10_6_1_57）',
+    '构建候选：版本线 10.6.1 的构建候选 2 个，按制作时间从新到旧：Rel_APV_10_6_1_57、Rel_NSAE_10_6_1_57（依据 Rel_APV_10_6_1_57）',
     '写出的构建名 Rel_APV_10_6_1_57 是定位到的版本线的构建',
     '写出的构建名 Rel_APV_10_5_1_101 属于版本线 10.5.1，不是定位到的版本线 10.6.1 的构建',
     '知识库不认识写出的构建名 Rel_UNKNOWN（知识库只收录构建站列出的构建；不认识不等于写错）',
@@ -98,7 +98,7 @@ describe('case-location scenario with buildCandidates', () => {
       '运行 run_1 完成：任务包 case-location@1.0.0',
       'location 用例定位：满足 1',
       '产品线 apv；版本 10.6.1（目录，置信度高）',
-      '构建候选：Rel_APV_10_6_1_60（APV）制作于 2026-09-18 00:00，已发布 2026-09-20；Rel_NSAE_10_6_1_57（NSAE，基于 Rel_APV_10_6_1_57）制作于 2026-09-01 00:00，已发布 2026-09-05',
+      '构建候选：版本线 10.6.1 的构建候选 2 个，按制作时间从新到旧：Rel_APV_10_6_1_60（APV）制作于 2026-09-18 00:00，已发布 2026-09-20；Rel_NSAE_10_6_1_57（NSAE，基于 Rel_APV_10_6_1_57）制作于 2026-09-01 00:00，已发布 2026-09-05',
     ].join('\n');
     assert.ok(allOk(withTimes, turnsOf(good)), JSON.stringify(withTimes.check(turnsOf(good))));
     const wrongTime = good.replace('制作于 2026-09-18 00:00', '制作于 2026-09-19 00:00');
@@ -110,10 +110,7 @@ describe('case-location scenario with buildCandidates', () => {
   });
 
   test('fails when candidate set is missing one candidate', () => {
-    const missingOne = baseGood.replace(
-      '构建候选：Rel_APV_10_6_1_57、Rel_NSAE_10_6_1_57（依据 Rel_APV_10_6_1_57）',
-      '构建候选：Rel_APV_10_6_1_57',
-    );
+    const missingOne = baseGood.replace('Rel_APV_10_6_1_57、', '');
     const checks = scenario.check(turnsOf(missingOne));
     assert.ok(!checks.every((c) => c.ok), 'should fail when missing a candidate');
     const candCheck = checks.find((c) => c.name.includes('候选构建名集合'));
@@ -122,8 +119,8 @@ describe('case-location scenario with buildCandidates', () => {
 
   test('fails when candidate set has an extra candidate', () => {
     const extraOne = baseGood.replace(
-      '构建候选：Rel_APV_10_6_1_57、Rel_NSAE_10_6_1_57（依据 Rel_APV_10_6_1_57）',
-      '构建候选：Rel_APV_10_6_1_57、Rel_NSAE_10_6_1_57（依据 Rel_APV_10_6_1_57）、Rel_APV_10_6_1_60',
+      'Rel_NSAE_10_6_1_57（依据 Rel_APV_10_6_1_57）',
+      'Rel_NSAE_10_6_1_57（依据 Rel_APV_10_6_1_57）、Rel_APV_10_6_1_60',
     );
     const checks = scenario.check(turnsOf(extraOne));
     assert.ok(!checks.every((c) => c.ok), 'should fail when having an extra candidate');
@@ -132,10 +129,7 @@ describe('case-location scenario with buildCandidates', () => {
   });
 
   test('fails when alias does not bring out its base build', () => {
-    const noBase = baseGood.replace(
-      '构建候选：Rel_APV_10_6_1_57、Rel_NSAE_10_6_1_57（依据 Rel_APV_10_6_1_57）',
-      '构建候选：Rel_APV_10_6_1_57、Rel_NSAE_10_6_1_57',
-    );
+    const noBase = baseGood.replace('（依据 Rel_APV_10_6_1_57）', '');
     const checks = scenario.check(turnsOf(noBase));
     assert.ok(!checks.every((c) => c.ok), 'should fail when alias has no base');
     const aliasCheck = checks.find((c) => c.name.includes('候选别名') && c.name.includes('Rel_NSAE_10_6_1_57'));
@@ -243,6 +237,54 @@ describe('case-location scenario with 15 buildCandidates (top 12 truncation and 
   });
 });
 
+describe('parseReportedCandidates and guideline section avoidance', () => {
+  const twelveList = [
+    'Beta_NSAE_10_4_6_232（NSAE，基于 Beta_APV_10_4_6_232）制作于 2026-10-20 04:02，未发布',
+    'Beta_NSAE_10_4_6_231（NSAE）制作于 2026-10-17 04:14，未发布',
+    'Beta_APV_10_4_6_230（APV）制作于 2026-10-16 10:00，未发布',
+    'Beta_APV_10_4_6_229（APV）制作于 2026-10-15 10:00，未发布',
+    'Beta_APV_10_4_6_228（APV）制作于 2026-10-14 10:00，未发布',
+    'Beta_APV_10_4_6_227（APV）制作于 2026-10-13 10:00，未发布',
+    'Beta_APV_10_4_6_226（APV）制作于 2026-10-12 10:00，未发布',
+    'Beta_APV_10_4_6_225（APV）制作于 2026-10-11 10:00，未发布',
+    'Beta_APV_10_4_6_224（APV）制作于 2026-10-10 10:00，未发布',
+    'Beta_APV_10_4_6_223（APV）制作于 2026-10-09 10:00，未发布',
+    'Beta_APV_10_4_6_222（APV）制作于 2026-10-08 10:00，未发布',
+    'Beta_APV_10_4_6_221（APV）制作于 2026-10-07 10:00，未发布',
+  ];
+
+  const guidelineText = [
+    '4. 构建候选（要求项 build_candidates）：按定位到的版本线在两个名称族的候选构建列表，别名解析到它所依据的构建；如 Rel_OLD_RULE_NOT_A_CANDIDATE。',
+    '',
+    `版本线 10.4.6 的构建候选 81 个，按制作时间从新到旧：${twelveList.join('；')}；另有 69 个，支持；性质……`,
+  ].join('\n');
+
+  test('accurately matches conclusion prefix and parses top 12 candidates without being disturbed by section 4 guideline', () => {
+    const candidates = parseReportedCandidates(guidelineText);
+    assert.equal(candidates.length, 12);
+    assert.equal(candidates[0].name, 'Beta_NSAE_10_4_6_232');
+    assert.equal(candidates[0].base, 'Beta_APV_10_4_6_232');
+    assert.equal(candidates[0].built, '2026-10-20T04:02:00');
+
+    assert.equal(candidates[1].name, 'Beta_NSAE_10_4_6_231');
+    assert.equal(candidates[1].base, 'Beta_NSAE_10_4_6_231');
+    assert.equal(candidates[1].built, '2026-10-17T04:14:00');
+
+    for (let i = 2; i < 12; i++) {
+      const num = 232 - i;
+      assert.equal(candidates[i].name, `Beta_APV_10_4_6_${num}`);
+      assert.equal(candidates[i].base, `Beta_APV_10_4_6_${num}`);
+      const built = candidates[i].built;
+      assert.ok(built !== null && built.startsWith('2026-10-'));
+    }
+  });
+
+  test('returns empty array when conclusion prefix is missing', () => {
+    const textWithoutConclusion = '4. 构建候选（要求项 build_candidates）：例如 Rel_APV_10_6_1_57 仅为规程示例，没有结论前缀。';
+    assert.deepEqual(parseReportedCandidates(textWithoutConclusion), []);
+  });
+});
+
 describe('parseNextCall', () => {
   test('extracts reference and cursor from balanced JSON after 下一页：get_nodes ', () => {
     const text = '第一页内容\n下一页：get_nodes {"reference":"rec:abcdef","cursor":"1.0-token123"}；也可看控制台';
@@ -328,7 +370,7 @@ describe('case-location scenario respond flow (two-step start_run -> get_nodes a
     // Page 1 contains first candidate and ends with next page marker
     const page1Text = [
       `内容 ${rec}：`,
-      '构建候选：Rel_APV_10_6_1_60（APV）制作于 2026-10-22 06:26，已发布 2026-10-22；',
+      '版本线 10.6.1 的构建候选 2 个，按制作时间从新到旧：Rel_APV_10_6_1_60（APV）制作于 2026-10-22 06:26，已发布 2026-10-22；',
       `下一页：get_nodes {"reference":"${rec}","cursor":"cursor-token-page2"}；也可看控制台`,
     ].join('\n');
 
