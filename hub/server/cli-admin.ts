@@ -8,7 +8,7 @@
 // the only admin. A lost or dead item is replaced without a token by `operator-token reissue`: a new token of an enabled
 // admin goes straight into the item and is never shown. Output is Chinese, made safe for a terminal, and never shows a token
 // or a secret value: secrets and tokens come from standard input only, never from argv.
-import { copyFile, lstat, mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
+import { copyFile, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
@@ -46,6 +46,7 @@ export const RESOURCE_USAGE =
   'resource add <系统包> --name <名字> --environment <环境> --origin <角色>=<地址> [--allow-plaintext <角色>] [--setting <键>=<值>] | update <资源> [--system-pack <系统包>（改绑它最新发布的版本）] [--name <名字>] [--environment <环境>] [--origin <角色>=<地址>…] [--allow-plaintext <角色>…] [--setting <键>=<值>…]（给了的项整项替换） | list | disable <资源> | enable <资源> | reset-login <资源>';
 export const SECRET_USAGE = 'secret set <资源> <凭据项>（值从标准输入读，不放在命令行上） | list（只列名字）';
 export const SOURCE_USAGE = 'source held [--limit <条数>] | findings <sha256> | accept <sha256> --note <说明> | withdraw <sha256> [--note <说明>]';
+export const ORIGINAL_USAGE = 'original list [--external <外部标识的前缀>] [--limit <条数>] | export <sha256> --out <文件>';
 export const KNOWLEDGE_USAGE = 'knowledge sync --product <产品> [--line <版本线>] [--dry-run] [--recheck] [--include-unreleased] | roots <产品> | diff <根A> <根B>';
 export const INIT_ADMIN_USAGE = 'init-admin <名字>   建第一位管理员，令牌存进钥匙串（账户 operator-token），不显示';
 export const OPERATOR_TOKEN_USAGE =
@@ -947,6 +948,71 @@ async function sourceCommand(session: Session, args: readonly string[]): Promise
   }
 }
 
+// ---------------------------------------------------------------- original: the stored originals, listed and exported
+
+/**
+ * The read originals a gold script needs as input: every stored `source_artifact` whose origin is a read, by external id.
+ * Only the external id, the digest, the size and the read time reach the screen — never the content.
+ */
+async function originalCommand(session: Session, args: readonly string[]): Promise<number> {
+  const [sub, ...rest] = args;
+  if (sub === 'list') {
+    const { values } = parse(rest, { external: { type: 'string' }, limit: { type: 'string' }, as: { type: 'string' } }, 0);
+    const viewer = await session.viewer(values.as);
+    if (viewer.role !== 'admin') throw new CliError('只有管理员能列出原件');
+    const limit = values.limit === undefined ? 100 : Number(values.limit);
+    if (!Number.isInteger(limit) || limit < 1 || limit > 500) throw new UsageError('--limit 是 1 到 500 的整数');
+    const kit = await session.records();
+    const lines: string[] = [];
+    const seen = new Set<string>();
+    let cursor: string | null = null;
+    do {
+      const page: Page<StoredRecord<SourceArtifactBody>> = await kit.store.list<SourceArtifactBody>({ kind: 'source_artifact', newestFirst: true, limit: 200, ...(cursor === null ? {} : { cursor }) });
+      for (const record of page.items) {
+        const body = record.body;
+        if (!('read' in body.origin)) continue;
+        const object = body.origin.read.object;
+        if (values.external !== undefined && !object.startsWith(values.external)) continue;
+        // One line per external id: the newest read of the same object decides the digest shown.
+        if (seen.has(object)) continue;
+        seen.add(object);
+        lines.push([object, body.sha256, `${body.size} 字节`, body.captured_at].join('\t'));
+        if (lines.length >= limit) break;
+      }
+      cursor = lines.length >= limit ? null : page.next;
+    } while (cursor !== null);
+    if (lines.length === 0) session.out(values.external === undefined ? '还没有读过的原件' : '没有外部标识以这个前缀开头的原件');
+    for (const line of lines) session.out(line);
+    return 0;
+  }
+  if (sub === 'export') {
+    const { positionals, values } = parse(rest, { out: { type: 'string' } }, 1);
+    if (values.out === undefined || values.out === '') throw new UsageError('要用 --out 给出写到哪个文件');
+    const sha = positionals[0];
+    if (!isSha256(sha)) throw new UsageError('sha256 要写成 64 位小写十六进制');
+    const viewer = await session.viewer(undefined);
+    if (viewer.role !== 'admin') {
+      // A non-admin gets the same answer as for a nonexistent original: no existence signal.
+      throw new CliError('Hub 没有保存这份原件');
+    }
+    const kit = await session.records();
+    const bytes = await kit.artifacts.trustedBytes(sha);
+    if (bytes === null) throw new CliError('Hub 没有保存这份原件');
+    const target = resolve(values.out);
+    const existing = await lstat(target).then(() => true, () => false);
+    if (existing) throw new CliError(`文件已存在，不覆盖：${target}`, '换一个不存在的文件名');
+    try {
+      await writeFile(target, bytes, { mode: 0o600, flag: 'wx' });
+    } catch (error) {
+      const why = error !== null && typeof error === 'object' && 'code' in error && typeof (error as { code: unknown }).code === 'string' ? (error as { code: string }).code : error instanceof Error ? error.message : '写入失败';
+      throw new CliError(`写不了这个文件：${target}`, `检查路径和权限（${why}）`);
+    }
+    session.out(`已导出 ${sha}：${bytes.length} 字节，权限 0600`);
+    return 0;
+  }
+  throw new UsageError(`original 的子命令：${ORIGINAL_USAGE}`);
+}
+
 // ---------------------------------------------------------------- registration
 
 type Handler = (session: Session, args: readonly string[]) => Promise<number>;
@@ -956,6 +1022,7 @@ const COMMANDS: { name: string; summary: string; handler: Handler }[] = [
   { name: 'resource', summary: RESOURCE_USAGE.slice('resource '.length), handler: resourceCommand },
   { name: 'secret', summary: SECRET_USAGE.slice('secret '.length), handler: secretCommand },
   { name: 'source', summary: SOURCE_USAGE.slice('source '.length), handler: sourceCommand },
+  { name: 'original', summary: ORIGINAL_USAGE.slice('original '.length), handler: originalCommand },
   { name: 'knowledge', summary: KNOWLEDGE_USAGE.slice('knowledge '.length), handler: knowledgeCommand },
   { name: 'init-admin', summary: INIT_ADMIN_USAGE.slice('init-admin '.length), handler: initAdminCommand },
   { name: 'operator-token', summary: OPERATOR_TOKEN_USAGE.slice('operator-token '.length), handler: operatorTokenCommand },
