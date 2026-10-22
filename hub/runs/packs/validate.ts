@@ -7,6 +7,7 @@ import { ERROR_HANDLING, isCheckTier, labelOf, VERDICT, type CheckTier, type Pac
 import {
   ChecksFile,
   KnowledgeFile,
+  MAX_CHECK_READ_BYTES,
   PackSample,
   REQUIRED_FILES,
   RequirementsFile,
@@ -329,6 +330,17 @@ async function validateWorkflow(c: Collector, directory: PackDirectory, policy: 
       const tier = effectiveTier(check, table);
       if (tier === 'blocking' && !hasBasis(check, table)) {
         c.add(problem('checks.blocking_without_basis', 'checks.json', `检查 ${check.id} 是${tierText('blocking')}，却没有写明所依据的验收合同条款`, `在 checks.json（或解释器的表）里写 basis，或者改成${tierText('advisory')}（C05 R[1]）`, at('tier')));
+      }
+      if (check.reads?.max_bytes !== undefined && check.reads.max_bytes > MAX_CHECK_READ_BYTES) {
+        c.add(
+          problem(
+            'checks.max_bytes_exceeded',
+            'checks.json',
+            `检查 ${check.id} 的 reads.max_bytes 为 ${check.reads.max_bytes} 字节，超过了核心上限 ${MAX_CHECK_READ_BYTES} 字节（1 MiB）`,
+            `把 reads.max_bytes 改为不超过 ${MAX_CHECK_READ_BYTES} 字节，或者不写（默认 1 MiB）`,
+            at('reads/max_bytes'),
+          ),
+        );
       }
       if (tier === 'blocking' && check.judges === 'artifact_under_verification') blockingOnArtifact.add(check.id);
     }

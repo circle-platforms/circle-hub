@@ -4,7 +4,7 @@
 import { isAbsolute } from 'node:path';
 import { z } from 'zod';
 import { PROTOCOL_CODES } from '../../contracts/generated/protocol.ts';
-import type { CheckTier, Reason } from '../../contracts/generated/vocabulary.ts';
+import type { CheckTier, Reason, SourceRole } from '../../contracts/generated/vocabulary.ts';
 import { CheckOutcome as CheckOutcomeShape, type CatalogEntry, type CheckOutcome } from '../../contracts/src/tables.ts';
 import type { CatalogView } from './catalog/view.ts';
 import { getInterpreter } from './interpreters/registry.ts';
@@ -30,6 +30,15 @@ export interface CheckDeclaration {
   /** Give a pack function the catalog entries (they can be large). */
   catalogEntries?: boolean;
   limits?: Partial<SandboxLimits>;
+  /** Bound sources the check declares to read (checks.json reads). */
+  reads?: { roles: SourceRole[]; types?: string[]; max_bytes?: number };
+}
+
+export interface UnreadSource {
+  reference: string;
+  reason: string;
+  external?: string;
+  slot?: string;
 }
 
 export interface CheckBindings {
@@ -44,6 +53,8 @@ export interface CheckBindings {
   packDir?: string;
   /** Fragment texts by reference for a pack function, which cannot call back into a SourceView. */
   sourceTexts?: Readonly<Record<string, string>>;
+  /** Sources that could not be read or exceeded max bytes. */
+  unreadSources?: ReadonlyArray<UnreadSource>;
   sandbox?: SandboxOptions;
   /**
    * Receives the error behind an unknown outcome with what outcomes leave out (stack, timings, host paths, captured output),
@@ -59,6 +70,7 @@ export interface PackCheckInput {
   subject: unknown;
   context: CheckContext;
   sources: Readonly<Record<string, string>>;
+  unread_sources?: ReadonlyArray<UnreadSource>;
   catalog?: CatalogEntry[];
 }
 
@@ -170,6 +182,7 @@ export async function runCheck(declaration: CheckDeclaration, bindings: CheckBin
     subject: bindings.subject,
     context: bindings.context,
     sources: bindings.sourceTexts ?? {},
+    unread_sources: bindings.unreadSources ?? [],
     ...(declaration.catalogEntries && bindings.catalog ? { catalog: entriesOf(bindings.catalog) } : {}),
   };
   try {

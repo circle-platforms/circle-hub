@@ -122,7 +122,7 @@ describe('a production run of traceability', { skip }, () => {
       assert.equal(requirement.claims.length, 1, id);
       const [claim] = requirement.claims;
       assert.equal(claim.statement.verdict, expected.verdict, id);
-      assert.deepEqual(claim.warrant, { producer: 'function', id: 'traceability.traced@1.0.4', independence: 'judge_not_author' }, id);
+      assert.deepEqual(claim.warrant, { producer: 'function', id: 'traceability.traced@1.0.5', independence: 'judge_not_author' }, id);
       assert.equal(claim.qualifier.nature, expected.verdict === 'unknown' ? 'unknown' : 'fact', id);
       const data = claim.statement.data as unknown as MatrixRow & { case_count: number; status: string | null };
       assert.deepEqual(
@@ -189,5 +189,136 @@ describe('a production run of traceability', { skip }, () => {
     const comment = answer.result!.cross_item.find((c) => c.warrant.producer === 'model')!;
     assert.deepEqual([comment.qualifier.nature, comment.statement.text], ['judgment', '矩阵与预期一致']);
     assert.deepEqual(answer.counts, detail.production!.counts);
+  });
+
+  it('binds plm:bugs expected sources and reads defect statuses into checks: closed counts correct', async () => {
+    const DEFECTS_WITH_PLM = `knowledge:index:apv:${BUILD.name}?kind=defect&key=bug&variant=plm-bind`;
+    const defects = [
+      defectEntry({ bug: '81001', statement: '81001已修复', system: 'plm' }),
+      defectEntry({ bug: '81002', statement: '81002已知', system: 'plm' }),
+    ];
+    const cases = [caseEntry({ defects: ['81001'], case: 'C-8101', title: '81001的用例' })];
+    hub.views.put(DEFECTS_WITH_PLM, indexViewOf('defect', 'bug', defects));
+    hub.views.put(CASES_ID, indexViewOf('case', 'defects', cases, {}, ['document', 'node', 'title']));
+    hub.views.put('plm:bugs:81001+81002', {
+      bugs: [
+        { id: '81001', status: 'closed' },
+        { id: '81002', status: 'active' },
+      ],
+      unread: [],
+    });
+
+    const detail = await hub.service.startRunDetailed(hub.alice, { pack: 'traceability', inputs: { defects: { external: DEFECTS_WITH_PLM }, cases: { external: CASES_ID } } }, call());
+    assert.equal(detail.answer.call_result, 'ok', JSON.stringify(detail.answer.errors));
+    const result = detail.production!.result;
+
+    const c81001 = located(result, '81001').item.requirements[0].claims[0];
+    const data1 = c81001.statement.data as Record<string, unknown>;
+    assert.equal(data1.closed, true);
+    assert.equal(data1.defect_system_status, 'closed');
+    assert.equal(data1.defect_system_unknown_reason, null);
+
+    const c81002 = located(result, '81002').item.requirements[0].claims[0];
+    const data2 = c81002.statement.data as Record<string, unknown>;
+    assert.equal(data2.closed, false);
+    assert.equal(data2.defect_system_status, 'active');
+    assert.equal(data2.defect_system_unknown_reason, null);
+
+    const counts = result.cross_item.find((c) => c.requirement === 'counts')!;
+    const countData = counts.statement.data as Record<string, unknown>;
+    assert.equal(countData.closed_defects, 1);
+    assert.equal(countData.closed_traced, 1);
+    assert.equal(countData.closed_untraced, 0);
+    assert.equal(countData.status_unknown, 0);
+  });
+
+  it('marks defect system unknown with reason source unavailable when PLM source cannot be read', async () => {
+    const DEFECTS_UNREAD = `knowledge:index:apv:${BUILD.name}?kind=defect&key=bug&variant=plm-unread`;
+    const defects = [
+      defectEntry({ bug: '82001', statement: '82001未读', system: 'plm' }),
+    ];
+    hub.views.put(DEFECTS_UNREAD, indexViewOf('defect', 'bug', defects));
+    // plm:bugs:82001 is NOT put into hub.views -> read fails/unavailable
+
+    const detail = await hub.service.startRunDetailed(hub.alice, { pack: 'traceability', inputs: { defects: { external: DEFECTS_UNREAD }, cases: { external: CASES_ID } } }, call());
+    assert.equal(detail.answer.call_result, 'ok', JSON.stringify(detail.answer.errors));
+    const result = detail.production!.result;
+
+    const c82001 = located(result, '82001').item.requirements[0].claims[0];
+    const data = c82001.statement.data as Record<string, unknown>;
+    assert.equal(data.defect_system_status, null);
+    assert.equal(data.defect_system_unknown_reason, '缺陷系统没有读到（来源不可用）');
+    assert.equal(data.closed, false);
+
+    const counts = result.cross_item.find((c) => c.requirement === 'counts')!;
+    const countData = counts.statement.data as Record<string, unknown>;
+    assert.equal(countData.closed_defects, 0);
+    assert.equal(countData.status_unknown, 1);
+  });
+
+  it('reports oversized PLM source in unread_sources and marks status unknown', async () => {
+    const DEFECTS_OVERSIZED = `knowledge:index:apv:${BUILD.name}?kind=defect&key=bug&variant=plm-oversized`;
+    const defects = [
+      defectEntry({ bug: '83001', statement: '83001超大', system: 'plm' }),
+    ];
+    hub.views.put(DEFECTS_OVERSIZED, indexViewOf('defect', 'bug', defects));
+    const hugePayload = {
+      bugs: [{ id: '83001', status: 'closed' }],
+      unread: [],
+      padding: 'x'.repeat(1024 * 1024 + 100),
+    };
+    hub.views.put('plm:bugs:83001', hugePayload);
+
+    const detail = await hub.service.startRunDetailed(hub.alice, { pack: 'traceability', inputs: { defects: { external: DEFECTS_OVERSIZED }, cases: { external: CASES_ID } } }, call());
+    assert.equal(detail.answer.call_result, 'ok', JSON.stringify(detail.answer.errors));
+    const result = detail.production!.result;
+
+    const c83001 = located(result, '83001').item.requirements[0].claims[0];
+    const data = c83001.statement.data as Record<string, unknown>;
+    assert.equal(data.defect_system_status, null);
+    assert.equal(data.defect_system_unknown_reason, '缺陷系统没有读到（来源不可用）');
+    assert.equal(data.closed, false);
+
+    const counts = result.cross_item.find((c) => c.requirement === 'counts')!;
+    const countData = counts.statement.data as Record<string, unknown>;
+    assert.equal(countData.closed_defects, 0);
+    assert.equal(countData.status_unknown, 1);
+  });
+
+  it('filters bound sources by types so oversized cases view is not read and unreturned bug reports ID not returned', async () => {
+    const DEFECTS_WITH_OMISSION = `knowledge:index:apv:${BUILD.name}?kind=defect&key=bug&variant=plm-omission`;
+    const defects = [
+      defectEntry({ bug: '84001', statement: '84001在PLM', system: 'plm' }),
+      defectEntry({ bug: '84002', statement: '84002未返回', system: 'plm' }),
+    ];
+    hub.views.put(DEFECTS_WITH_OMISSION, indexViewOf('defect', 'bug', defects));
+    // Cases view is huge (over 1 MiB limit)
+    const HUGE_CASES_ID = `knowledge:index:apv:${BUILD.name}?kind=case&key=defects&variant=huge-cases`;
+    const hugeCases = [caseEntry({ defects: ['84001'], case: 'C-8401', title: '84001用例' })];
+    const hugeCasesObj = indexViewOf('case', 'defects', hugeCases, {}, ['document', 'node', 'title']);
+    (hugeCasesObj as any).padding = 'y'.repeat(1024 * 1024 + 100);
+    hub.views.put(HUGE_CASES_ID, hugeCasesObj);
+
+    hub.views.put('plm:bugs:84001+84002', {
+      bugs: [{ id: '84001', status: 'closed' }],
+      unread: [], // 84002 is not in bugs and not in unread
+    });
+
+    const detail = await hub.service.startRunDetailed(hub.alice, { pack: 'traceability', inputs: { defects: { external: DEFECTS_WITH_OMISSION }, cases: { external: HUGE_CASES_ID } } }, call());
+    assert.equal(detail.answer.call_result, 'ok', JSON.stringify(detail.answer.errors));
+    const result = detail.production!.result;
+
+    // 84001 has status closed
+    const c84001 = located(result, '84001').item.requirements[0].claims[0];
+    const data1 = c84001.statement.data as Record<string, unknown>;
+    assert.equal(data1.closed, true);
+    assert.equal(data1.defect_system_status, 'closed');
+
+    // 84002 must be "缺陷系统没有返回这个编号", NOT "来源不可用" (because huge cases view was not read!)
+    const c84002 = located(result, '84002').item.requirements[0].claims[0];
+    const data2 = c84002.statement.data as Record<string, unknown>;
+    assert.equal(data2.defect_system_status, null);
+    assert.equal(data2.defect_system_unknown_reason, '缺陷系统没有返回这个编号');
+    assert.equal(data2.closed, false);
   });
 });

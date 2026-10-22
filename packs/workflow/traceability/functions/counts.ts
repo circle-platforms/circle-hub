@@ -38,6 +38,7 @@ export function countsOutcome(
   subject: unknown,
   sources?: Readonly<Record<string, string>>,
   table?: unknown,
+  unreadSources?: ReadonlyArray<{ reference: string; reason: string; external?: string; slot?: string }>,
 ): CheckOutcome {
   const read = factsOf(subject);
   if (read === null || read.items.length === 0) {
@@ -52,7 +53,7 @@ export function countsOutcome(
 
   const closedStatuses = readClosedStatuses(table);
   const closedSet = new Set(closedStatuses);
-  const { hasPlmSource, statuses: plmStatuses, unread: plmUnread } = parsePlmResponses(sources);
+  const { hasPlmSource, hasUnreadSources, statuses: plmStatuses, unread: plmUnread } = parsePlmResponses(sources, unreadSources);
 
   let closedDefects = 0;
   let closedTraced = 0;
@@ -62,7 +63,7 @@ export function countsOutcome(
   for (const item of items) {
     const bug = typeof item.fields.bug === 'string' && item.fields.bug !== '' ? item.fields.bug : item.id;
     const systems = Array.isArray(item.fields.systems) ? (item.fields.systems as string[]) : [];
-    const info = defectSystemInfoOf(bug, systems, plmStatuses, plmUnread, closedSet, hasPlmSource);
+    const info = defectSystemInfoOf(bug, systems, plmStatuses, plmUnread, closedSet, hasPlmSource, hasUnreadSources);
     if (info.status === null) {
       statusUnknown += 1;
     } else if (info.isClosed) {
@@ -110,6 +111,7 @@ export default function countsCheck(input: unknown): unknown {
         checkInput.subject,
         checkInput.sources as Readonly<Record<string, string>> | undefined,
         checkInput.table,
+        checkInput.unread_sources as ReadonlyArray<{ reference: string; reason: string }> | undefined,
       ),
     ],
     (message) => [{ verdict: 'unknown', reason: 'check_error', statement: `追溯统计出错（任务包缺陷）：${message}`, grounds: [], tier: TIER }],

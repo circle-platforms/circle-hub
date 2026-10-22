@@ -11,7 +11,7 @@ export { INTERPRETERS, getInterpreter } from './interpreters/registry.ts';
 export type { CatalogLookupOptions, CatalogMatch, CatalogSpec, CatalogView, CatalogViewOptions } from './catalog/view.ts';
 export { buildCatalog, createCatalogView } from './catalog/view.ts';
 
-export type { CheckBindings, CheckDeclaration, PackCheckInput } from './check.ts';
+export type { CheckBindings, CheckDeclaration, PackCheckInput, UnreadSource } from './check.ts';
 export { runCheck } from './check.ts';
 
 export type { PackFunctionTarget, SandboxLimits, SandboxOptions, SandboxResult } from './sandbox/sandbox.ts';
