@@ -410,6 +410,15 @@ export interface Vault {
   remove(name: string): Promise<boolean>;
 }
 
+/**
+ * Checks that the vault's master key is available and opens this vault, and returns nothing a vault holds: every read takes
+ * the key from the provider and checks it (the key-check file, or an existing entry) before it looks for a file, and no entry
+ * has the name read here. Throws what the provider throws for a missing key, or VaultError for a key of another vault.
+ */
+export async function checkVaultKey(vault: Pick<Vault, 'get'>): Promise<void> {
+  await vault.get('hub.vault-key-check-probe');
+}
+
 // ---------------------------------------------------------------- authorizations (B04)
 
 /** Body of an `authorization@1` record. The latest record per (permission, subject, object) wins. */

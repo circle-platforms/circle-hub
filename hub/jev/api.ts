@@ -116,6 +116,15 @@ export type { CheckedRequest, RequestLimits, ResponseContext } from './validate.
 export { DEFAULT_BASE_URL, DEFAULT_MAX_RESPONSE_BYTES, DEFAULT_RETRIES, DEFAULT_TIMEOUT_MS, HttpJev, MAX_RETRY_AFTER_MS, retryAfterMs } from './http.ts';
 export type { HttpJevOptions } from './http.ts';
 
+/**
+ * Whether a value has the form of an API key HttpJev sends (its decision 2): an RFC 6750 b64token of 1 to 4096 characters
+ * with up to 8 trailing '=', never escaped in JSON and never able to break a header. HttpJev refuses any other key before a
+ * request leaves (http.ts keeps the same rule); a key can be checked here when it is stored.
+ */
+export function isJevApiKey(value: unknown): value is string {
+  return typeof value === 'string' && /^[A-Za-z0-9._~+/-]{1,4096}={0,8}$/.test(value);
+}
+
 export { SCRIPTED_MODEL, ScriptedJev } from './scripted.ts';
 export type { ScriptedAnswer, ScriptedJevOptions, ScriptedSpec } from './scripted.ts';
 

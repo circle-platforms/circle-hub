@@ -63,6 +63,15 @@ function basisClaim(input: {
 const provides = (product: ProductHandle, catalogs: readonly string[]): boolean => catalogs.every((id) => product.product.catalogs.some((c) => c.id === id));
 const namesOf = (products: readonly ProductHandle[]): string[] => products.flatMap((p) => p.product.names);
 
+/**
+ * A build as select_build sees it (SelectBuildInput.candidates): its single sources only. A role that lists external objects
+ * (BuildInfo.sources, for example every case document a build covers) can hold thousands of ids per build, which would make
+ * the sandbox input of the choice grow with the knowledge base; a choice of build never needs them.
+ */
+export function selectCandidate(build: KnownBuild): KnownBuild {
+  return { ...build, sources: Object.fromEntries(Object.entries(build.sources).filter(([, value]) => typeof value === 'string')) };
+}
+
 export async function resolveTarget(ctx: EngineContext, user: Principal, workflow: LoadedWorkflow, input: Input, at: string, traceId: string): Promise<Target> {
   const { packs, knowledge } = ctx.deps;
   const binding = workflow.workflow.product;
@@ -140,7 +149,7 @@ export async function resolveTarget(ctx: EngineContext, user: Principal, workflo
     }
     const select = product.product.select_build;
     if (select !== undefined) {
-      const request = SelectBuildInput.safeParse({ line: input.version ?? null, candidates, request: input.parameters ?? {} });
+      const request = SelectBuildInput.safeParse({ line: input.version ?? null, candidates: candidates.map(selectCandidate), request: input.parameters ?? {} });
       let chosen: z.infer<typeof SelectBuildOutput> | null = null;
       try {
         if (!request.success) throw new TypeError(`the build candidates are not select-build-input@1: ${request.error.message.slice(0, 500)}`);

@@ -1,10 +1,12 @@
 // start_run (W06): check the arguments, answer a repeated client key, authorize the pack, fix the target, bind the inputs,
 // project the items, bind the expected sources, offer carry-overs, freeze everything in a run record and, for a pack whose
 // requirements are all facts, compute the validation result at once (a production run; the same path serves runs the Hub
-// executes for a standing obligation). A client key repeated inside its window returns the same run, even after the pack was
-// unassigned (the run stays its runner's); other content under the same key is IDEMPOTENCY_MISMATCH. Arguments the records
-// cannot hold are refused before anything is read, and nothing is stored that a record could not hold.
+// executes for a standing obligation) and answer it as StartRunOutput.result. A client key repeated inside its window returns
+// the same run and the same production result, even after the pack was unassigned (the run stays its runner's); other content
+// under the same key is IDEMPOTENCY_MISMATCH. Arguments the records cannot hold are refused before anything is read, and
+// nothing is stored that a record could not hold.
 import { z } from 'zod';
+import { isSourceRole, type SourceRole } from '../../../contracts/generated/vocabulary.ts';
 import type { ProtocolError } from '../../../contracts/src/common.ts';
 import type { RequirementTemplate, RunContext } from '../../../contracts/src/pack.ts';
 import { RunRecord, RunSummary, type RequirementSummary } from '../../../contracts/src/run.ts';
@@ -22,10 +24,10 @@ import { bindExpected, projectItems } from './projection.ts';
 import { canSeeRun, identityOf, recordReader, runOfRecord, sourceReader } from './readers.ts';
 import { reuseOffers } from './reuse.ts';
 import { issuesOf, packSchema, schemaProblems, slotSchemaOf } from './slots.ts';
-import { keyOwner, latestAccepted, putAction, putResult, putRun, runByClientKey, runById, runRecordDigest } from './store.ts';
+import { actionsOf, keyOwner, putAction, putResult, putRun, resultFor, runByClientKey, runById, runRecordDigest } from './store.ts';
 import { resolveTarget } from './target.ts';
 import { repairRounds } from './terminals.ts';
-import { clipPointer, pointerOf, receivedDigest, sessionOf } from './util.ts';
+import { clipPointer, isObject, pointerOf, receivedDigest, sessionOf } from './util.ts';
 
 export type StartRunAnswer = Untraced<z.infer<typeof StartRunOutput>>;
 
@@ -39,9 +41,22 @@ export interface ProductionResult {
 }
 
 export interface StartRunDetail {
+  /** The tool answer; for a production run it carries `result` ({reference, counts}, StartRunOutput.result). */
   answer: StartRunAnswer;
   /** Present for a run whose requirements are all facts: the result the Hub computed at once. */
   production: ProductionResult | null;
+  /**
+   * Digest of the run record (its items, procedure and slot schema are readable by rec: reference); null when refused. Always
+   * set by the engine; optional so that callers holding an older detail keep compiling.
+   */
+  runRecord?: string | null;
+  /** Expected sources the pack named that could not be bound: the run's evidence gaps (the reason only in the admin log). */
+  unavailable?: { external: string; role: SourceRole }[];
+  /**
+   * What the pack's expected-sources function reported, its failure included (runs.expected_sources_failed: no expected
+   * source was bound): further evidence gaps, as code and Chinese message. At most 100, like the parse action keeps them.
+   */
+  gaps?: { code: string; message: string }[];
 }
 
 export interface StartMode {
@@ -66,8 +81,16 @@ export function summaryOf(record: RunRecord): RunSummary {
 
 const SPLIT_FIX = '把被判对象分块（每块分别开运行），按分块评审的做法逐块提交';
 
-function refused(errors: ProtocolError[]): StartRunDetail {
-  return { answer: { call_result: 'error', errors }, production: null };
+export function refused(errors: ProtocolError[]): StartRunDetail {
+  return { answer: { call_result: 'error', errors }, production: null, runRecord: null, unavailable: [], gaps: [] };
+}
+
+/** At most this many expected-sources warnings are kept in the parse action and answered as gaps. */
+const MAX_WARNINGS = 100;
+
+/** The ok answer of a run: its summary and, for a production run, the result the Hub computed (StartRunOutput.result). */
+function okAnswer(record: RunRecord, production: ProductionResult | null): StartRunAnswer {
+  return { call_result: 'ok', errors: [], run: summaryOf(record), ...(production !== null ? { result: { reference: production.reference, counts: production.counts } } : {}) };
 }
 
 /** Why a client key cannot be an index value of the records (no NUL, at most 1000 UTF-8 bytes with its owner), or null. */
@@ -124,11 +147,28 @@ function tooLarge(ctx: EngineContext, body: unknown, what: string, path: string)
   return new Refusal([protocolError('SUBMISSION_SCHEMA_VIOLATION', message, { path, fix: SPLIT_FIX })]);
 }
 
-async function productionOf(ctx: EngineContext, run: RunRecord): Promise<ProductionResult | null> {
-  const workflow = await ctx.deps.workflows.byDigest(run.pack_digest);
-  if (workflow === null || !isProduction(workflow)) return null;
-  const latest = await latestAccepted(ctx.deps.records.store, run.run);
-  return latest === null ? null : { reference: recReference(latest.digest), record: latest.digest, result: latest.body, counts: partitionCountsOf(latest.body.partitions) };
+/**
+ * The result a production run computed at start_run: the one whose submission digest is the run record's (later commentary
+ * submissions have results of their own), so that a repeated start answers what the first one did.
+ */
+async function productionOf(ctx: EngineContext, run: StoredRecord<RunRecord>): Promise<ProductionResult | null> {
+  const stored = await resultFor(ctx.deps.records.store, run.body.run, run.digest);
+  return stored === null ? null : { reference: recReference(stored.digest), record: stored.digest, result: stored.body, counts: partitionCountsOf(stored.body.partitions) };
+}
+
+/** The warnings of the expected-sources function as gaps: code and message only. */
+const gapsFrom = (warnings: readonly unknown[]): NonNullable<StartRunDetail['gaps']> =>
+  warnings.flatMap((w) => (isObject(w) && typeof w.code === 'string' && typeof w.message === 'string' ? [{ code: w.code, message: w.message }] : [])).slice(0, MAX_WARNINGS);
+
+/** The evidence gaps of a stored run, from the parse action start_run wrote: unbound expected sources and the function's warnings. */
+async function gapsOf(ctx: EngineContext, run: string): Promise<Pick<StartRunDetail, 'unavailable' | 'gaps'>> {
+  const parse = (await actionsOf(ctx.deps.records.store, run)).find((a) => a.body.action === 'parse');
+  const listed = parse?.body.detail.unavailable;
+  const warnings = parse?.body.detail.expected_warnings;
+  return {
+    unavailable: Array.isArray(listed) ? listed.flatMap((u) => (isObject(u) && typeof u.external === 'string' && isSourceRole(u.role) ? [{ external: u.external, role: u.role }] : [])) : [],
+    gaps: Array.isArray(warnings) ? gapsFrom(warnings) : [],
+  };
 }
 
 export async function startRun(ctx: EngineContext, user: Principal, raw: unknown, call: CallContext, mode: StartMode): Promise<StartRunDetail> {
@@ -162,7 +202,8 @@ export async function startRun(ctx: EngineContext, user: Principal, raw: unknown
         if (existing.body.request_digest !== requestDigest) {
           throw new Refusal([protocolError('IDEMPOTENCY_MISMATCH', `客户端键 ${key} 已经用于内容不同的 start_run（运行 ${existing.body.run}）`, { path: '/client_key' })]);
         }
-        return { answer: { call_result: 'ok', errors: [], run: summaryOf(existing.body) }, production: await productionOf(ctx, existing.body) };
+        const production = await productionOf(ctx, existing);
+        return { answer: okAnswer(existing.body, production), production, runRecord: existing.digest, ...(await gapsOf(ctx, existing.body.run)) };
       }
       return fresh();
     });
@@ -368,12 +409,18 @@ async function startFresh(
       warnings: projection.warnings.slice(0, 100),
       expected: expected.sources.map((s) => ({ external: s.external ?? null, reference: s.reference, role: s.role })),
       unavailable: expected.unavailable,
-      expected_warnings: expected.warnings.slice(0, 100),
+      expected_warnings: expected.warnings.slice(0, MAX_WARNINGS),
       handover,
     },
   });
   const result = production === null ? null : await keepProduction(ctx, stored, production, call);
-  return { answer: { call_result: 'ok', errors: [], run: summaryOf(record) }, production: result };
+  return {
+    answer: okAnswer(record, result),
+    production: result,
+    runRecord: stored.digest,
+    unavailable: expected.unavailable.map(({ external, role }) => ({ external, role })),
+    gaps: gapsFrom(expected.warnings),
+  };
 }
 
 /** The evaluation of a production run, made before its run record is stored (the result names the record's digest). */

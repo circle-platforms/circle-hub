@@ -10,13 +10,15 @@ await runs.startRun(user, input, { traceId, sessionId });   // RunsService of hu
 ```
 
 `createRunsService(deps)` returns a `RunsEngine`: the `RunsService` of `hub/ports.ts` (startRun, submitResult,
-resolveReference, getRun, listRuns; answers are the tool outputs without `trace`) plus `startRunDetailed` (the production
-result of a fact-only pack), `startHubRun` (a run the Hub executes for a standing obligation), `getResult` and `runsFor`.
+resolveReference, getRun, listRuns; answers are the tool outputs without `trace`) plus `startRunDetailed` (the answer, the
+whole production result of a fact-only pack, the run record digest and the evidence gaps), `startHubRun` (a run the Hub
+executes for a standing obligation), `getResult` (a result by its submission digest, accepted or not) and `runsFor`.
 Deps: `records` (store, objects, artifacts of the records kit, and optionally its `config`, whose `limits.maxRecordBytes` lets
 start_run size a run before storing anything; pass the whole kit), the ports `WorkflowStore`, `PacksPort`, `KnowledgePort`,
-`ExternalReaderPort`; optional `parsers` (default the core parsers), `sandbox` and `sandboxLimits` for every pack function
-call, `now`, `clientKeyWindowMs` (default 24 h) and `adminLog`, which receives the real reason behind every neutral answer and
-every pack function failure (the server writes it as the call's admin note; details are well-formed text).
+`ExternalReaderPort` (the assembly gives it the knowledge views beside the connectors); optional `parsers` (default the core
+parsers), `sandbox` and `sandboxLimits` for every pack function call, `now`, `clientKeyWindowMs` (default 24 h) and
+`adminLog`, which receives the real reason behind every neutral answer and every pack function failure (details are
+well-formed text). The same reasons go to the admin note of the call they belong to (`CallContext.adminNote`, decision 25).
 
 | File | What it does |
 | --- | --- |
@@ -51,12 +53,15 @@ every pack function failure (the server writes it as the call's admin note; deta
    session and model observed, as well-formed text, and the requirements that used a repair round). Counts are never stored.
 2. **Absent equals forbidden.** An unknown, unassigned or withdrawn pack, an invisible predecessor, run or input, and an
    external object no resource reads all give `SOURCE_UNAVAILABLE` (`对你不可用`) with the tool's empty shape; the reason goes
-   to `adminLog` only. Users see their own runs, admins every run, Hub-side runs admins only (W06 R[3]).
+   to the call's admin note and `adminLog` only. Users see their own runs, admins every run, Hub-side runs admins only
+   (W06 R[3]).
 3. **Target.** A product name resolves through `productByName` (any name, case-insensitive) and must be a line the caller may
    read that provides the workflow's catalogs; with a fixed `product.id` that line is used, and a caller naming another line is
    refused rather than silently overridden. Without a product and with several eligible lines the call is refused with their
    names as options (K01 R[10]: the runner chooses). A build the caller names wins (declared); otherwise the product pack's
-   `select_build` (sandboxed, candidates = the builds with a root) or the documented default `runs.newest_released@1` (newest
+   `select_build` (sandboxed, candidates = the builds with a root, each with its single sources only: a role that lists
+   external objects, thousands of case documents a build covers, is left out so that the sandbox input stays small;
+   `selectCandidate` in `target.ts`) or the documented default `runs.newest_released@1` (newest
    released build of the requested line with a root) chooses (projected), with its basis text and alternatives. Unknown builds,
    builds of another line and lines without a root are `REFERENCE_UNRESOLVED` with the existing builds as options. The run
    records the root; the composition digest is in the build basis claim.
@@ -193,8 +198,15 @@ every pack function failure (the server writes it as the call's admin note; deta
     no cross-process lock.
 24. **Production runs**: a pack whose requirements are all facts is evaluated at start_run with no submission; the result's
     `submission` is the run record digest and its acceptance `accepted` (the contract has no "not applicable", see Needs);
-    `startRunDetailed` returns it with counts and its `rec:` reference; later submissions only add model commentary. The same
-    path serves `startHubRun` (host hub, trigger standing_obligation, the admin as configurer, fact-only packs only).
+    the answer carries `result: {reference, counts}` (StartRunOutput.result) and `startRunDetailed` the whole result, the
+    run record digest and the evidence gaps (unbound expected sources, the expected-sources function's warnings or
+    failure, read back from the parse action on a repeated client key); later submissions only add model commentary. The
+    same path serves `startHubRun` (host hub, trigger standing_obligation, the admin as configurer, fact-only packs only).
+25. **Admin notes per call.** Every call that carries a CallContext gets an engine context of its own whose log also writes
+    `<what>: <detail>` (well-formed, at most 1000 code points) to `CallContext.adminNote`, besides `adminLog`: a reason
+    reaches the call it belongs to even when two calls share a trace id, without the caller bridging `adminLog` to calls.
+    A note that throws changes nothing. Messages the connectors or the pack registry raise inside their own callbacks do not
+    pass through the engine (the assembly's call notes take those).
 
 ## Deviations and disagreements
 
@@ -213,8 +225,6 @@ every pack function failure (the server writes it as the call's admin note; deta
   (its predecessor is its own earlier revision, not an author); the case-review draft pack declares `findings` as an
   independent judgment, so its draft results show `unsatisfied (independence_unknown)` for every handled item. The owner may
   prefer `judgment` for the draft and `independent_judgment` for the verification.
-- **Production run answer**: the RunSummary is strict, so the production result is not in the `start_run` answer itself; it is
-  stored, is `getRun().latest` and comes with `startRunDetailed` (see Needs).
 - **Finding locations**: section 6 of the brief says "finding locations are references into the target ... and into sources
   (tree:, src:)". The engine reads the second half as the evidence (grounds, quotations): SlotClaim.location is "where in the
   judged source the statement applies" and scenario 16 refuses a location that is not in the target.
@@ -245,7 +255,13 @@ npx tsc --noEmit
 ```
 
 Pure tests (terminals, partitions with a 400-run property test and hand-written V05 R[3] cases, slots and pack schemas,
-independence and model families, the keyed lock) run anywhere. The others use a temporary PostgreSQL (`hub/testing/postgres.ts`,
+independence and model families, the keyed lock) run anywhere.
+`start-result.test.ts` (moved here from the server's text tests): the production result in the answer and in the detail,
+the run record digest, a repeated client key after a commentary submission, Hub-side runs, the evidence gaps of a judgment
+run and of a failing expected-sources function, the example shapes the server's texts offer taken. `admin-note.test.ts`:
+the reasons of neutral start, submit and resolve answers in the call's note and in `adminLog`, two calls of one trace, a
+note that throws, an unreadable expected source named in its start's note. `select-build.test.ts`: list roles stripped
+from the candidates the function sees. The others use a temporary PostgreSQL (`hub/testing/postgres.ts`,
 one cluster per file) and the real sandbox (macOS `sandbox-exec`); where it is missing (Linux CI) they are skipped, which is not
 a pass. They cover: target choice (alias names, declared builds of the second family, select_build, the default rule, every
 refusal with options), inputs (required, unknown, accepted types, unreadable, fragments, many, unparseable, external objects
@@ -267,8 +283,7 @@ read; results, run records and production results over the record limit; queries
 
 ## Needs from other packages
 
-- **contracts**: (1) `RunSummary` (or `StartRunOutput`) needs a place for a production result: `result: { reference: rec,
-  counts: PartitionCounts }`; until then the server can call `startRunDetailed`. (2) `ValidationResult` of a production run:
+- **contracts**: (1) done: `StartRunOutput.result` carries the production result. (2) `ValidationResult` of a production run:
   `submission` and `acceptance` have no "not applicable"; the engine writes the run record digest and `accepted`. (3) Results of
   run-level requirements (target `run`: layers, status) have no field; they are visible only as cross-item claims; proposal:
   `run_requirements: RequirementResult[]` beside `cross_item`. (4) Document the default run subject with `items[].slots` and
@@ -282,9 +297,9 @@ read; results, run records and production results over the record limit; queries
   refuses it with `SUBMISSION_SCHEMA_VIOLATION` at `/client_key` meanwhile). (10) Say in `HandledItem.context` that a slot
   record without it is not reusable (W07 F[1], decision row 18 (b)), and that a SHA-256 is bound to the claims.
 - **server**: pass `CallContext.sessionId` from `Circle-Session-Id` on every call (independence depends on it); hand
-  `submit_result` the raw arguments; write `adminLog` entries as admin notes (by `traceId`); pass the whole records kit as
-  `records` (its `config.limits` sizes runs before they are stored); use `startRunDetailed` to show a production result once
-  the contract allows; call `startHubRun` for scheduled fact-only sweeps.
+  `submit_result` the raw arguments; pass `CallContext.adminNote` (the engine notes each call itself, decision 25: no
+  bridge of `adminLog` to calls is needed); pass the whole records kit as `records` (its `config.limits` sizes runs before
+  they are stored); call `startHubRun` for scheduled fact-only sweeps (not wired yet: there is no scheduler).
 - **runs/packs**: refuse at publish (so that no run is refused at start for the pack's own fault): (1) slot `data` and parameter
   schemas with `pattern` or `patternProperties`, or that `z.fromJSONSchema` cannot compile (decision 8); (2) `reject` rows on
   codes of checks that do not judge the artifact under verification or are not blocking (W02 F[7]), and `repair` rows on codes
