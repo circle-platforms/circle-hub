@@ -127,8 +127,7 @@ function argumentListContent(args: readonly XmlElementChild[]): string {
 /** Every definition of one command tree: path `/commands/<menu words>/<item words>`, overloads joined by `|`. */
 export function parseTree(xml: string): CommandDef[] {
   const roots = XmlReader.read(xml);
-  const out: CommandDef[] = [];
-  const seen = new Set<string>();
+  const byPath = new Map<string, { itemWords: string[]; overloads: string[] }>();
   const walk = (node: XmlNode, words: string[]): void => {
     const children = node.children;
     if (node.name === 'item') {
@@ -136,15 +135,11 @@ export function parseTree(xml: string): CommandDef[] {
       if (itemWords.length === 0) return;
       const path = `/commands/${[...words, ...itemWords].join('/')}`;
       const lists = elements(children, 'arguments');
-      const overloads = lists.length === 0 ? [] : lists.map((list) => argumentListContent(list.children));
-      const content = [itemWords.join(' '), ...overloads].join('|');
-      if (seen.has(path)) {
-        const existing = out.find((d) => d.path === path);
-        if (existing) existing.content = `${existing.content}||${content}`;
-        return;
+      const entry = byPath.get(path) ?? { itemWords, overloads: [] };
+      for (const list of lists) {
+        entry.overloads.push(argumentListContent(list.children));
       }
-      seen.add(path);
-      out.push({ path, content });
+      byPath.set(path, entry);
       return;
     }
     // A scope groups menus without adding words; any other wrapper element is walked through the same way.
@@ -162,6 +157,12 @@ export function parseTree(xml: string): CommandDef[] {
     }
   };
   for (const root of roots) walk(root, []);
+  const out: CommandDef[] = [];
+  for (const [path, entry] of byPath) {
+    const sortedOverloads = [...entry.overloads].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+    const content = [entry.itemWords.join(' '), ...sortedOverloads].join('|');
+    out.push({ path, content });
+  }
   return out.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
 }
 

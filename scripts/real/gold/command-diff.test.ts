@@ -187,6 +187,37 @@ describe('commandDiff', () => {
     assert.ok(!diff.modified.includes('/commands/ping/ping'));
     assert.ok(!diff.modified.includes('/commands/ping/status'));
   });
+  test('重载只换顺序不算修改', () => {
+    const reorderEarlier = `<commands>
+      <menu name="m">
+        <item name="x">
+          <arguments><arg name="a" type="STRING"/></arguments>
+          <arguments><arg name="b" type="U16"/></arguments>
+        </item>
+      </menu>
+    </commands>`;
+    const reorderLater = `<commands>
+      <menu name="m">
+        <item name="x">
+          <arguments><arg name="b" type="U16"/></arguments>
+          <arguments><arg name="a" type="STRING"/></arguments>
+        </item>
+      </menu>
+    </commands>`;
+    const diff = commandDiff(reorderEarlier, reorderLater);
+    assert.deepEqual(diff, { added: [], removed: [], modified: [] });
+
+    const separateEarlier = `<commands>
+      <item name="ping"><arguments><arg name="host" type="STRING"/></arguments></item>
+      <item name="ping"><arguments><arg name="count" type="U16"/></arguments></item>
+    </commands>`;
+    const separateLater = `<commands>
+      <item name="ping"><arguments><arg name="count" type="U16"/></arguments></item>
+      <item name="ping"><arguments><arg name="host" type="STRING"/></arguments></item>
+    </commands>`;
+    const diffSeparate = commandDiff(separateEarlier, separateLater);
+    assert.deepEqual(diffSeparate, { added: [], removed: [], modified: [] });
+  });
   test('equal trees give empty lists', () => {
     const diff = commandDiff(earlier, earlier);
     assert.deepEqual(diff, { added: [], removed: [], modified: [] });
