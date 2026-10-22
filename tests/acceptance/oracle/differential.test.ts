@@ -538,15 +538,15 @@ test('the engine and the reference agree on random submissions and the fixed bra
     return JSON.parse(sorted(engineView(got.result))) as { rounds: { used: number; max: number }; errors: { code?: string; item?: string; requirement?: string; rounds_left?: number }[]; items: { item: string; requirements: { requirement: string; status?: string; layers: ShownLayer[] }[] }[] };
   }
 
-  // A04 and the requirement contract name the predecessor run. The engine does not take a predecessor of the same pack as the
-  // author, so the judgment stays independence unknown. Seed 20261126.
+  // A04: a predecessor of the same pack is still the author. A different session and model satisfy the independent judgment.
+  // Seed 20261126.
   const samePackSeed = SEED + 104;
   const sameItems = handledItems(supportOutcomes);
   const sameAuthorRun = await start(ITEMS, undefined, author.session);
   await submit(sameAuthorRun, { seed: samePackSeed, roundsUsed: 0, items: sameItems, judge: author, author: null, defects: [] });
   const sameEngine = await acceptedView({ seed: samePackSeed, roundsUsed: 0, items: sameItems, judge, author, defects: [] }, await start(ITEMS, sameAuthorRun.run, judge.session));
   const sameWant = referenceOf({ seed: samePackSeed, roundsUsed: 0, items: sameItems, judge, author, defects: [] });
-  assert.equal(shownLayer(sameEngine, 'i1', 'indep').status, 'unsatisfied');
+  assert.equal(shownLayer(sameEngine, 'i1', 'indep').status, 'satisfied');
   assert.equal(shownLayer(sameEngine, 'i1', 'indep').layer?.terminal, 'judgment');
   assert.equal(sameWant.items.find((item) => item.item === 'i1')?.requirements.find((requirement) => requirement.requirement === 'indep')?.status, 'satisfied');
 

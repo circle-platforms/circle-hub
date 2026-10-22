@@ -256,6 +256,29 @@ async function verified(run: RunSummary, model: string, session: string): Promis
   };
 }
 
+test('a predecessor of the same pack is the author of an independent judgment (A04)', { skip }, async () => {
+  const lineage = await draftBy('sess-same-author', 'sess-same-author', DRAFT_MODEL);
+  const started = await h.service.startRun(
+    h.alice,
+    { pack: 'toy-review', product: 'Meadow', version: '3.2', inputs: { map: { reference: map } }, predecessor: lineage.run.run },
+    h.call('sess-same-judge'),
+  );
+  assert.equal(started.call_result, 'ok', JSON.stringify(started.errors));
+  const answer = await h.service.submitResult(
+    h.alice,
+    {
+      run: started.run!.run,
+      model: VERIFIER,
+      items: IDS.map((id) => ({ item: id, handling: 'handled', slots: { findings: [] } })),
+      cross_item: [{ nature: 'judgment', statement: '一般', grounds: [], code: 'draft_level', rank: 'P4' }],
+    },
+    h.call('sess-same-judge'),
+  );
+  assert.equal(answer.acceptance, 'accepted', JSON.stringify(answer.errors));
+  const findings = Object.values(answer.result!.partitions).flat().find((item) => item.item === ITEM.c1)!.requirements.find((requirement) => requirement.requirement === 'findings')!;
+  assert.equal(findings.status, 'satisfied');
+});
+
 test('replaying an accepted verification from the drafter session is not independent (A04)', { skip }, async () => {
   const lineage = await draftBy('sess-replay-draft', 'sess-replay-draft', DRAFT_MODEL);
   const run = await verification('sess-replay-verify', h, lineage.handover, lineage.run);

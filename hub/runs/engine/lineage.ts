@@ -1,9 +1,10 @@
 // The author of the work a run judges (A04; case-review method step 5: the drafter can never sign the conclusion). A run that is
-// independent of its predecessor judges the work of its lineage, not its own earlier revisions: the predecessor chain is read
-// past the runs of the run's own pack (a verification revised) to the first run of another pack (the draft), which is taken
-// with its own revisions; every run a Hub record bound as artifact under verification belongs to is taken with its revisions
-// too. The author origin is the start session of each of those runs, the session and declared model of every submission they
-// validated, and the model warrants inside the bound records (carried judgments keep their original producer there).
+// independent of its predecessor judges the work of its lineage, not its own earlier revisions. When the predecessor chain
+// reaches another pack, that draft and its revisions are the author and this pack's earlier revisions are not. When the chain
+// never leaves this pack, those runs are the author (A04: the predecessor run counts). Every run a Hub record bound as
+// artifact under verification belongs to is taken with its revisions too. The author origin is the start session of each of
+// those runs, the session and declared model of every submission they validated, and the model warrants inside the bound
+// records (carried judgments keep their original producer there).
 import type { RunRecord } from '../../../contracts/src/run.ts';
 import type { RecordStore } from '../../records/api.ts';
 import { parseReference, type Reference } from '../../refs/api.ts';
@@ -44,13 +45,18 @@ function withRevisions(chain: readonly RunRecord[], from: number): RunRecord[] {
   return out;
 }
 
-/** The run of another pack the predecessor chain leads to, with its revisions; none when the chain holds only this pack. */
+/**
+ * Who an independent judgment is held against (A04). A predecessor of another pack is the draft, with its revisions.
+ * A chain that never leaves this pack is still a predecessor, so those runs are the author. A revised verification
+ * that does lead to another pack keeps judging that draft, not its own earlier revision.
+ */
 export async function judgedRunsOf(store: RecordStore, run: Pick<RunRecord, 'pack' | 'predecessor'>): Promise<RunRecord[]> {
   if (run.predecessor === undefined) return [];
   const chain = await lineageOf(store, run.predecessor);
+  if (chain.length === 0) return [];
   const own = packIdOf(run.pack);
   const first = chain.findIndex((r) => packIdOf(r.pack) !== own);
-  return first < 0 ? [] : withRevisions(chain, first);
+  return withRevisions(chain, first < 0 ? 0 : first);
 }
 
 /** Declared models of the model-produced claims inside a record body (warrant producer model). */
