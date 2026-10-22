@@ -4,7 +4,7 @@ nav_order: 4
 
 # Hub r4 交接：做到哪了，还剩什么，怎么接着做
 
-给接手的代理（和所有者）。先读 `AGENTS.md`，再读这一页。进度和已定的决定仍记在 [Hub r4 进度](hub-r4-progress.md)，设计和做法在 [Hub r4 架构](hub-r4-architecture.md)。
+给接手的代理（和所有者）。先读 `AGENTS.md`，再读这一页。使用者指南（给在 Circle 里用 Hub 的人）见 [Hub r4 使用指南](hub-r4-guide.md)。进度和已定的决定仍记在 [Hub r4 进度](hub-r4-progress.md)，设计和做法在 [Hub r4 架构](hub-r4-architecture.md)。
 
 ## 现状（2026-10-22）
 
