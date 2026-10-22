@@ -14,7 +14,7 @@ import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { ENVIRONMENT, isEnvironment, labelOf, type Environment } from '../../contracts/generated/vocabulary.ts';
 import { HubConfigError, HubEnvironmentError, type HubConfig } from '../config/index.ts';
-import { ConnectorError, type AddResourceInput, type LoginStatus } from '../connectors/api.ts';
+import { ConnectorError, type AddResourceInput, type LoginStatus, type UpdateResourceInput } from '../connectors/api.ts';
 import { KnowledgeError, formatSyncReport, knowledgeSync, parseKnowledgeSyncArgs, type KnowledgeSyncArgs } from '../knowledge/api.ts';
 import type { ProductHandle } from '../ports.ts';
 import { RecordsError, isSha256, scanForCredentials, type IssuedToken, type Page, type Principal, type RecordsKit, type SourceArtifactBody, type StoredRecord, type User } from '../records/api.ts';
@@ -43,7 +43,7 @@ export interface AdminCommandOptions {
 export const PACK_USAGE =
   'pack publish <目录> [--stage] | grant-publish <用户> | revoke-publish <用户> | assign <用户> <任务包> | unassign <用户> <任务包> | retire <任务包@版本> | activate <产品包> | deactivate <产品包> | list';
 export const RESOURCE_USAGE =
-  'resource add <系统包> --name <名字> --environment <环境> --origin <角色>=<地址> [--allow-plaintext <角色>] [--setting <键>=<值>] | list | disable <资源> | enable <资源> | reset-login <资源>';
+  'resource add <系统包> --name <名字> --environment <环境> --origin <角色>=<地址> [--allow-plaintext <角色>] [--setting <键>=<值>] | update <资源> [--system-pack <系统包>（改绑它最新发布的版本）] [--name <名字>] [--environment <环境>] [--origin <角色>=<地址>…] [--allow-plaintext <角色>…] [--setting <键>=<值>…]（给了的项整项替换） | list | disable <资源> | enable <资源> | reset-login <资源>';
 export const SECRET_USAGE = 'secret set <资源> <凭据项>（值从标准输入读，不放在命令行上） | list（只列名字）';
 export const SOURCE_USAGE = 'source held [--limit <条数>] | findings <sha256> | accept <sha256> --note <说明> | withdraw <sha256> [--note <说明>]';
 export const KNOWLEDGE_USAGE = 'knowledge sync --product <产品> [--line <版本线>] [--dry-run] [--recheck] [--include-unreleased] | roots <产品> | diff <根A> <根B>';
@@ -502,6 +502,66 @@ async function resourceCommand(session: Session, args: readonly string[]): Promi
       if (credentials.length > 0) {
         session.out(`凭据项 ${credentials.join('、')}：用 circle-hub secret set ${record.id} <凭据项> 设置（值从标准输入读）`);
       }
+      return 0;
+    }
+    case 'update': {
+      const { values, positionals } = parse(
+        rest,
+        {
+          'system-pack': { type: 'string' },
+          name: { type: 'string' },
+          environment: { type: 'string' },
+          origin: { type: 'string', multiple: true },
+          'allow-plaintext': { type: 'string', multiple: true },
+          setting: { type: 'string', multiple: true },
+        },
+        1,
+      );
+      const changes: UpdateResourceInput = {};
+      if (values['system-pack'] !== undefined) changes.system_pack = values['system-pack'];
+      if (values.name !== undefined) {
+        if (values.name.trim() === '') throw new UsageError('--name 不能是空的');
+        changes.name = values.name;
+      }
+      if (values.environment !== undefined) {
+        if (!isEnvironment(values.environment)) throw new UsageError(`--environment 是 ${ENVIRONMENT.map((code) => `${code}（${labelOf('environment', code)}）`).join('、')} 之一`);
+        changes.environment = values.environment as Environment;
+      }
+      if (values.origin !== undefined) {
+        const origins: Record<string, string> = {};
+        for (const [role, url] of pairs(values.origin, '--origin')) {
+          if (Object.hasOwn(origins, role)) throw new UsageError(`角色 ${role} 的地址给了两次`);
+          origins[role] = url;
+        }
+        changes.origins = origins;
+      }
+      if (values['allow-plaintext'] !== undefined) {
+        const plaintext = new Set<string>();
+        for (const role of values['allow-plaintext']) {
+          const url = changes.origins?.[role];
+          if (url === undefined) throw new UsageError(`--allow-plaintext ${role}：同一条命令里要用 --origin 给出这个角色的地址（地址整项替换）`);
+          let origin: URL;
+          try {
+            origin = new URL(url);
+          } catch {
+            throw new UsageError(`角色 ${role} 的地址不是 URL`);
+          }
+          if (origin.protocol !== 'http:') throw new UsageError(`--allow-plaintext ${role}：只有 http 地址才需要允许明文`);
+          plaintext.add(origin.origin);
+        }
+        changes.allow_plaintext = [...plaintext];
+      }
+      if (values.setting !== undefined) {
+        const settings: Record<string, unknown> = {};
+        for (const [key, value] of pairs(values.setting, '--setting')) settings[key] = settingValue(value);
+        changes.settings = settings;
+      }
+      if (Object.keys(changes).length === 0) throw new UsageError('没有要改的项：给 --system-pack、--name、--environment、--origin、--allow-plaintext 或 --setting');
+      const admin = await session.admin();
+      const hub = await session.hub();
+      const record = await decided(() => hub.connectors.admin.updateResource(admin, positionals[0], changes));
+      session.out(`已更新资源 ${record.id}：${record.name}（系统包 ${record.system_pack}，环境 ${labelOf('environment', record.environment)}）`);
+      if (changes.system_pack !== undefined) session.out('凭据项如果有改动，用 circle-hub secret set 重新设置；正在运行的 Hub 在几秒内（资源列表缓存）读到新的定义');
       return 0;
     }
     case 'list': {

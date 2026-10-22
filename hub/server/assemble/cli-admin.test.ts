@@ -865,6 +865,28 @@ describe('resource and secret', () => {
     assert.equal((await admin.run(['resource', 'disable', 'res_00000000000000000000000000'])).code, 1);
   });
 
+  test('update changes the name, the environment, the addresses and the settings as whole items, and refuses what makes no sense', async () => {
+    const admin = await setup();
+    await expectOk(admin, ['pack', 'grant-publish', '根管理员']);
+    await expectOk(admin, ['pack', 'publish', packs.agile]);
+    const added = await expectOk(admin, ['resource', 'add', AGILE_PACK, '--name', '甲', '--environment', 'test', '--origin', `agile-oauth=${agile.origin}`, '--origin', `agile-api=${agile.origin}`, '--allow-plaintext', 'agile-oauth', '--allow-plaintext', 'agile-api', '--setting', 'roots=["7714"]']);
+    const id = /已添加资源 (res_[0-9a-z]{26})/.exec(added.text)?.[1];
+    assert.ok(id, added.text);
+    const renamed = await expectOk(admin, ['resource', 'update', id, '--name', '乙', '--environment', 'shared', '--setting', 'roots=["7714","7001"]']);
+    assert.match(renamed.text, new RegExp(`已更新资源 ${id}：乙（系统包 demo-agile@1\\.0\\.0，环境 共享）`));
+    const listed = await expectOk(admin, ['resource', 'list']);
+    const fields = listed.out[0].split('\t');
+    assert.deepEqual(fields.slice(0, 5), [id, '乙', 'demo-agile@1.0.0', '共享', '启用']);
+    assert.deepEqual(fields[5].split(' ').sort(), [`agile-api=${agile.origin}`, `agile-oauth=${agile.origin}`], 'what was not given is kept');
+    for (const argv of [
+      ['resource', 'update', id],
+      ['resource', 'update', id, '--environment', 'staging'],
+      ['resource', 'update', id, '--allow-plaintext', 'agile-api'],
+      ['resource', 'update', id, '--name', ' '],
+    ]) assert.equal((await admin.run(argv)).code, 2, argv.join(' '));
+    assert.equal((await admin.run(['resource', 'update', 'res_00000000000000000000000000', '--name', '丙'])).code, 1, 'an unknown resource');
+  });
+
   test('a credential set or a login reset clears the vault\'s login state; a running Hub ends its stop at its next read, without a restart, and both commands say so', async () => {
     const admin = await setup();
     const stub = await startAgileStub(agileFixture(DOCUMENT, { password: PASSWORD }));
