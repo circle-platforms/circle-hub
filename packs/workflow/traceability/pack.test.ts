@@ -25,7 +25,7 @@ describe('the pack files', () => {
   it('pack.json lists exactly the pack files with their digests (run pack-files.ts --write after a change)', async () => {
     assert.equal(text('pack.json'), manifestText(await computeManifest()));
     const manifest = PackManifest.parse(json('pack.json'));
-    assert.deepEqual([manifest.id, manifest.version, manifest.kind], ['traceability', '1.0.3', 'workflow']);
+    assert.deepEqual([manifest.id, manifest.version, manifest.kind], ['traceability', '1.0.4', 'workflow']);
     const files = await packFiles();
     assert.ok(files.includes('functions/matrix.ts') && files.includes('samples/negative/status-conflict.json'));
     assert.ok(!files.some((f) => f.endsWith('.test.ts') || f === 'functions/test-support.ts' || f === 'README.md' || f === 'pack-files.ts'));
@@ -47,7 +47,7 @@ describe('the pack files', () => {
       workflow.parameters.map((p) => [p.name, p.required]),
       [['statuses', false]],
     );
-    assert.deepEqual([workflow.subject, workflow.projection, workflow.expected_sources], ['defects', { module: 'functions/project.ts' }, undefined]);
+    assert.deepEqual([workflow.subject, workflow.projection, workflow.expected_sources], ['defects', { module: 'functions/project.ts' }, { module: 'functions/expected.ts' }]);
     const requirements = RequirementsFile.parse(json('requirements.json')).requirements;
     assert.deepEqual(
       requirements.map((r) => ({ ...r, name: undefined, description: undefined })),
@@ -60,8 +60,8 @@ describe('the pack files', () => {
     assert.deepEqual(
       checks.map((c) => ({ ...c, title: undefined })),
       [
-        { id: 'traced', title: undefined, function: { module: 'functions/check.ts' }, applies: 'run', subject: { module: 'functions/subject.ts' }, judges: 'subject', tier: 'advisory' },
-        { id: 'counts', title: undefined, function: { module: 'functions/counts.ts' }, applies: 'run', subject: { module: 'functions/subject.ts' }, judges: 'subject', tier: 'advisory' },
+        { id: 'traced', title: undefined, function: { module: 'functions/check.ts' }, table: 'tables/closed-statuses.json', applies: 'run', subject: { module: 'functions/subject.ts' }, judges: 'subject', tier: 'advisory' },
+        { id: 'counts', title: undefined, function: { module: 'functions/counts.ts' }, table: 'tables/closed-statuses.json', applies: 'run', subject: { module: 'functions/subject.ts' }, judges: 'subject', tier: 'advisory' },
       ],
     );
     assert.deepEqual(SlotsFile.parse(json('slots.schema.json')), { schema: 'slots@1', item: {}, run: {} });

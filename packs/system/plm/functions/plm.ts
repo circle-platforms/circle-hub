@@ -9,6 +9,21 @@ type PlanOutput = { requests: Planned[]; done: boolean };
 type Response = { ok?: boolean; json?: unknown };
 
 const ID = /^[1-9][0-9]{0,14}$/;
+export const MAX_BUGS_BATCH = 50;
+
+/** Parses and normalises a bugs key (ids separated by '+'): sorted numerically and deduplicated, at most 50. */
+export function parseBugsKey(key: string): string[] | null {
+  if (typeof key !== 'string' || key.trim() === '') return null;
+  const parts = key.split('+');
+  if (parts.length === 0 || parts.length > MAX_BUGS_BATCH) return null;
+  for (const part of parts) {
+    if (!ID.test(part)) return null;
+  }
+  const unique = [...new Set(parts)].sort((a, b) => Number(a) - Number(b));
+  if (unique.length === 0 || unique.length > MAX_BUGS_BATCH) return null;
+  return unique;
+}
+
 const KINDS = { bug: { route: 'bug-detail', member: 'bug_ids', label: '缺陷' }, story: { route: 'story-detail', member: 'story_ids', label: '需求' } } as const;
 type Kind = keyof typeof KINDS;
 
@@ -35,6 +50,15 @@ export function detailPlan(input: unknown): PlanOutput {
   const kind = kindOf(type);
   if (kind === null || !ID.test(key)) return { requests: [], done: true };
   return { requests: [{ key: 'detail', route: KINDS[kind].route, body: { [KINDS[kind].member]: [Number(key)] } }], done: true };
+}
+
+/** Plan of plm:bugs:<id>+<id>+...: one detail request for all ids (at most 50, sorted numerically, deduplicated). */
+export function bugsPlan(input: unknown): PlanOutput {
+  const { type, key } = partsOf(input);
+  if (type !== 'bugs') return { requests: [], done: true };
+  const ids = parseBugsKey(key);
+  if (ids === null) return { requests: [], done: true };
+  return { requests: [{ key: 'detail', route: 'bug-detail', body: { bug_ids: ids.map(Number) } }], done: true };
 }
 
 const ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
@@ -93,6 +117,44 @@ export function detailProject(input: unknown): unknown {
     artifacts: [
       { name: 'content', media_type: 'application/json', json: { id: key, kind, title, fields, html_fields: html } },
       { name: 'meta', media_type: 'application/json', json: { id: key, kind, title: title === null ? `${KINDS[kind].label} ${key}` : `${KINDS[kind].label} ${key} ${title}`, status } },
+    ],
+  };
+}
+
+/** Projection of batch bugs: each id's {id, status, title}, unreturned ids listed as unread. */
+export function bugsProject(input: unknown): unknown {
+  const { type, key, responses, original } = partsOf(input);
+  if (type !== 'bugs') return { error: { code: 'plm.invalid_type', message: '类型不是 bugs' } };
+  const ids = parseBugsKey(key);
+  if (ids === null) return { error: { code: 'plm.invalid_key', message: '缺陷编号标识无效（最多 50 个正整数编号用 + 连接）' } };
+  const data = isRecord(responses[original]?.json) ? (responses[original].json as Record<string, unknown>).data : undefined;
+  if (!Array.isArray(data)) return { error: { code: 'plm.no_records', message: '详情应答的 data 不是数组' } };
+
+  const bugs: Array<{ id: string; status: string | null; title: string | null }> = [];
+  const unread: string[] = [];
+  for (const id of ids) {
+    const record = data.find((item) => isRecord(item) && idText(item.id) === id);
+    if (isRecord(record)) {
+      const status = typeof record.status === 'string' ? record.status : null;
+      const title = typeof record.title === 'string' ? record.title : null;
+      bugs.push({ id, status, title });
+    } else {
+      unread.push(id);
+    }
+  }
+
+  return {
+    artifacts: [
+      {
+        name: 'content',
+        media_type: 'application/json',
+        json: { bugs, unread },
+      },
+      {
+        name: 'meta',
+        media_type: 'application/json',
+        json: { count: bugs.length, unread: unread.length },
+      },
     ],
   };
 }

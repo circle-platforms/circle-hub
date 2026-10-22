@@ -5,6 +5,7 @@
 // raw defect ids do not carry the bug (the check re-verifies the join instead of trusting the fields).
 import { normalizeId } from './ids.ts';
 import { STATUS_SHORT, statusText, systemNote } from './matrix.ts';
+import { defectSystemInfoOf, defectSystemText, parsePlmResponses, readClosedStatuses, type DefectSystemInfo } from './plm-status.ts';
 import { clip, compareText, guarded, internalError, isRecord, shown } from './text.ts';
 import type { CaseRef, CheckOutcome, MatrixRow } from './types.ts';
 
@@ -45,7 +46,7 @@ function caseViewFacts(subject: unknown): { skipped: number; truncated: boolean 
   return { skipped: typeof raw.skipped === 'number' ? raw.skipped : 0, truncated: raw.truncated === true };
 }
 
-function dataOf(fields: MatrixRow): Record<string, unknown> {
+function dataOf(fields: MatrixRow, info: DefectSystemInfo): Record<string, unknown> {
   return {
     bug: fields.bug,
     ids: fields.ids,
@@ -54,17 +55,21 @@ function dataOf(fields: MatrixRow): Record<string, unknown> {
     conflict: fields.conflict,
     statement: fields.statement,
     systems: fields.systems,
+    defect_system_status: info.status,
+    defect_system_unknown_reason: info.unknownReason,
+    closed: info.isClosed,
     case_count: fields.cases.length,
     cases: fields.cases.map((c) => ({ case: c.case, title: c.title, document: c.document, reference: c.reference })),
   };
 }
 
 /** The unknown reason of an untraced defect: the index is incomplete by construction; absence is not proof. */
-function untracedStatement(bug: string, facts: { skipped: number; truncated: boolean }): string {
-  let statement = `没有已索引的用例标出缺陷 ${bug}。用例索引按构造不完整：没有列出不等于没有`;
+function untracedStatement(bug: string, statuses: readonly string[], info: DefectSystemInfo, facts: { skipped: number; truncated: boolean }): string {
+  const sysText = defectSystemText(info);
+  let statement = `缺陷 ${bug}（发布说明：${statusText(statuses)}；${sysText}）：没有已索引的用例标出缺陷 ${bug}。用例索引按构造不完整：没有列出不等于没有`;
   if (facts.skipped > 0) statement += `；索引有 ${facts.skipped} 份列出的来源没有读取`;
   if (facts.truncated) statement += '；用例索引视图被截断，只列出前一部分';
-  return statement;
+  return clip(statement, MAX_STATEMENT_LENGTH);
 }
 
 const MAX_STATEMENT_CASES = 5;
@@ -85,7 +90,7 @@ export function compareCaseOrder(a: CaseRef, b: CaseRef): number {
   return compareText(a.case, b.case);
 }
 
-function tracedStatement(fields: MatrixRow): string {
+function tracedStatement(fields: MatrixRow, info: DefectSystemInfo): string {
   const ordered = [...fields.cases].sort(compareCaseOrder);
   const listed = ordered.slice(0, MAX_STATEMENT_CASES);
   const caseParts = listed.map((c) => {
@@ -96,11 +101,12 @@ function tracedStatement(fields: MatrixRow): string {
   const more = fields.cases.length - MAX_STATEMENT_CASES;
   const moreText = more > 0 ? `；另有 ${more} 个` : '';
   const note = systemNote(fields.systems);
-  const full = `缺陷 ${fields.bug}（${statusText(fields.statuses)}）：${fields.cases.length} 个已索引用例追溯：${caseParts.join('；')}${moreText}${note}`;
+  const sysText = defectSystemText(info);
+  const full = `缺陷 ${fields.bug}（发布说明：${statusText(fields.statuses)}；${sysText}）：${fields.cases.length} 个已索引用例追溯：${caseParts.join('；')}${moreText}${note}`;
   return clip(full, MAX_STATEMENT_LENGTH);
 }
 
-function outcomeOf(item: Item, at: number, fields: MatrixRow, facts: { skipped: number; truncated: boolean }): CheckOutcome {
+function outcomeOf(item: Item, at: number, fields: MatrixRow, facts: { skipped: number; truncated: boolean }, info: DefectSystemInfo): CheckOutcome {
   const pointer = `/items/${at}/fields`;
   const caseGrounds = fields.cases.map((c) => c.reference);
   const grounds = [...fields.references, ...caseGrounds];
@@ -123,46 +129,54 @@ function outcomeOf(item: Item, at: number, fields: MatrixRow, facts: { skipped: 
       data: { bug: fields.bug, offending: offending.map((c) => c.case) },
     };
   }
+  const sysText = defectSystemText(info);
   if (fields.conflict) {
     return {
       verdict: 'refute',
       code: 'traceability.status_conflict',
-      statement: `缺陷 ${fields.bug} 的状态矛盾（${fields.statuses.map((s) => STATUS_SHORT[s] ?? s).join('、')}）：来源既把它列为已修复又列为已知；追溯到的用例照列（${fields.cases.length} 个），状态以缺陷系统为准${systemNote(fields.systems)}`,
+      statement: `缺陷 ${fields.bug}（发布说明：${statusText(fields.statuses)}；${sysText}）：状态矛盾（${fields.statuses.map((s) => STATUS_SHORT[s] ?? s).join('、')}）：来源既把它列为已修复又列为已知；追溯到的用例照列（${fields.cases.length} 个），状态以缺陷系统为准${systemNote(fields.systems)}`,
       grounds,
       tier: TIER,
       item: item.id,
       pointer,
-      data: dataOf(fields),
+      data: dataOf(fields, info),
     };
   }
   if (fields.cases.length > 0) {
     return {
       verdict: 'support',
-      statement: tracedStatement(fields),
+      statement: tracedStatement(fields, info),
       grounds,
       tier: TIER,
       item: item.id,
       pointer,
-      data: dataOf(fields),
+      data: dataOf(fields, info),
     };
   }
   return {
     verdict: 'unknown',
     reason: 'missing_input',
-    statement: untracedStatement(fields.bug, facts),
+    statement: untracedStatement(fields.bug, fields.statuses, info, facts),
     grounds: [...fields.references],
     tier: TIER,
     item: item.id,
     pointer,
-    data: dataOf(fields),
+    data: dataOf(fields, info),
   };
 }
 
 /** Outcomes of the check for a subject of the subject builder (functions/subject.ts). */
-export function traceOutcomes(subject: unknown): CheckOutcome[] {
+export function traceOutcomes(
+  subject: unknown,
+  sources?: Readonly<Record<string, string>>,
+  table?: unknown,
+): CheckOutcome[] {
   const raw = isRecord(subject) ? subject : {};
   const items = (Array.isArray(raw.items) ? raw.items : []).filter(isRecord);
   const facts = caseViewFacts(subject);
+  const closedStatuses = readClosedStatuses(table);
+  const closedSet = new Set(closedStatuses);
+  const { hasPlmSource, statuses: plmStatuses, unread: plmUnread } = parsePlmResponses(sources);
   const out: CheckOutcome[] = [];
   for (const [at, value] of items.entries()) {
     const item: Item = {
@@ -177,7 +191,8 @@ export function traceOutcomes(subject: unknown): CheckOutcome[] {
         out.push({ verdict: 'unknown', reason: 'check_error', statement: `条目 ${item.id} 的字段不是追溯矩阵的形状（任务包缺陷）`, grounds: [], tier: TIER, item: item.id, pointer: `/items/${at}/fields` });
         continue;
       }
-      out.push(outcomeOf(item, at, fields, facts));
+      const info = defectSystemInfoOf(fields.bug, fields.systems, plmStatuses, plmUnread, closedSet, hasPlmSource);
+      out.push(outcomeOf(item, at, fields, facts, info));
     } catch (error) {
       out.push({ verdict: 'unknown', reason: 'check_error', statement: `追溯检查出错（任务包缺陷）：${internalError(error)}`, grounds: [], tier: TIER, item: item.id });
     }
@@ -188,8 +203,14 @@ export function traceOutcomes(subject: unknown): CheckOutcome[] {
 
 /** Pack check function: PackCheckInput of hub/rules -> check-outcome@1 array. */
 export default function traceCheck(input: unknown): unknown {
+  const checkInput = isRecord(input) ? input : {};
   return guarded<unknown>(
-    () => traceOutcomes(isRecord(input) ? input.subject : undefined),
+    () =>
+      traceOutcomes(
+        checkInput.subject,
+        checkInput.sources as Readonly<Record<string, string>> | undefined,
+        checkInput.table,
+      ),
     (message) => [{ verdict: 'unknown', reason: 'check_error', statement: `追溯检查出错（任务包缺陷）：${message}`, grounds: [], tier: TIER }],
   );
 }

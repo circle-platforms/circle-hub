@@ -158,7 +158,7 @@ describe('traceOutcomes', () => {
       const kase = caseEntry({ defects: ['7021'], document: '24001', case: 'C-1', title: '单用例测试' });
       const outcome = byItem(traceOutcomes(subjectOf([defect], [kase])), '7021');
       assert.equal(outcome.verdict, 'support');
-      assert.equal(outcome.statement, '缺陷 7021（已修复）：1 个已索引用例追溯：24001:C-1 单用例测试');
+      assert.equal(outcome.statement, '缺陷 7021（发布说明：已修复；缺陷系统：未知（缺陷系统不明，不按编号查 PLM））：1 个已索引用例追溯：24001:C-1 单用例测试');
     });
 
     it('恰好 5 个用例：列出全部 5 个，不写另有', () => {
@@ -170,7 +170,7 @@ describe('traceOutcomes', () => {
       assert.equal(outcome.verdict, 'support');
       assert.equal(
         outcome.statement,
-        '缺陷 7022（已修复）：5 个已索引用例追溯：24001:C-1 用例 1；24001:C-2 用例 2；24001:C-3 用例 3；24001:C-4 用例 4；24001:C-5 用例 5',
+        '缺陷 7022（发布说明：已修复；缺陷系统：未知（缺陷系统不明，不按编号查 PLM））：5 个已索引用例追溯：24001:C-1 用例 1；24001:C-2 用例 2；24001:C-3 用例 3；24001:C-4 用例 4；24001:C-5 用例 5',
       );
     });
 
@@ -183,7 +183,7 @@ describe('traceOutcomes', () => {
       assert.equal(outcome.verdict, 'support');
       assert.equal(
         outcome.statement,
-        '缺陷 7023（已修复）：6 个已索引用例追溯：24001:C-1 用例 1；24001:C-2 用例 2；24001:C-3 用例 3；24001:C-4 用例 4；24001:C-5 用例 5；另有 1 个',
+        '缺陷 7023（发布说明：已修复；缺陷系统：未知（缺陷系统不明，不按编号查 PLM））：6 个已索引用例追溯：24001:C-1 用例 1；24001:C-2 用例 2；24001:C-3 用例 3；24001:C-4 用例 4；24001:C-5 用例 5；另有 1 个',
       );
     });
 
@@ -195,7 +195,7 @@ describe('traceOutcomes', () => {
       assert.equal(outcome.verdict, 'support');
       assert.equal(
         outcome.statement,
-        '缺陷 7024（已修复）：1 个已索引用例追溯：24001:C-long 一二三四五六七八九十一二三四五六七八九十一二三四五六七八九…',
+        '缺陷 7024（发布说明：已修复；缺陷系统：未知（缺陷系统不明，不按编号查 PLM））：1 个已索引用例追溯：24001:C-long 一二三四五六七八九十一二三四五六七八九十一二三四五六七八九…',
       );
     });
 
@@ -211,8 +211,118 @@ describe('traceOutcomes', () => {
       assert.equal(outcome.verdict, 'support');
       assert.equal(
         outcome.statement,
-        '缺陷 7025（已修复）：4 个已索引用例追溯：9001:Z 文档9001的Z；24001:a 文档24001的a；24001:b 文档24001的b；24002:B 文档24002的B',
+        '缺陷 7025（发布说明：已修复；缺陷系统：未知（缺陷系统不明，不按编号查 PLM））：4 个已索引用例追溯：9001:Z 文档9001的Z；24001:a 文档24001的a；24001:b 文档24001的b；24002:B 文档24002的B',
       );
+    });
+  });
+
+  describe('defect system status from PLM expected sources', () => {
+    it('carries closed status when PLM returns closed', () => {
+      const defect = defectEntry({ bug: '7041', system: 'plm' });
+      const kase = caseEntry({ defects: ['7041'], document: '24001', case: 'C-1', title: '闭环测试' });
+      const sources = {
+        'plm:bugs:7041': JSON.stringify({
+          bugs: [{ id: '7041', status: 'closed', title: '严重问题' }],
+          unread: [],
+        }),
+      };
+      const outcome = byItem(traceOutcomes(subjectOf([defect], [kase]), sources), '7041');
+      assert.equal(outcome.verdict, 'support');
+      assert.equal(outcome.statement, '缺陷 7041（发布说明：已修复；缺陷系统：closed）：1 个已索引用例追溯：24001:C-1 闭环测试');
+      const data = outcome.data as { defect_system_status: string; defect_system_unknown_reason: string | null; closed: boolean };
+      assert.equal(data.defect_system_status, 'closed');
+      assert.equal(data.defect_system_unknown_reason, null);
+      assert.equal(data.closed, true);
+    });
+
+    it('carries active status and closed is false when status not in closed table', () => {
+      const defect = defectEntry({ bug: '7042', system: 'plm' });
+      const kase = caseEntry({ defects: ['7042'], document: '24001', case: 'C-2', title: '活动测试' });
+      const sources = {
+        'plm:bugs:7042': JSON.stringify({
+          bugs: [{ id: '7042', status: 'active', title: '未关闭' }],
+          unread: [],
+        }),
+      };
+      const outcome = byItem(traceOutcomes(subjectOf([defect], [kase]), sources), '7042');
+      assert.equal(outcome.verdict, 'support');
+      assert.equal(outcome.statement, '缺陷 7042（发布说明：已修复；缺陷系统：active）：1 个已索引用例追溯：24001:C-2 活动测试');
+      const data = outcome.data as { defect_system_status: string; closed: boolean };
+      assert.equal(data.defect_system_status, 'active');
+      assert.equal(data.closed, false);
+    });
+
+    it('marks unknown with reason when unread in PLM', () => {
+      const defect = defectEntry({ bug: '7043', system: 'plm' });
+      const sources = {
+        'plm:bugs:7043': JSON.stringify({
+          bugs: [],
+          unread: ['7043'],
+        }),
+      };
+      const outcome = byItem(traceOutcomes(subjectOf([defect], []), sources), '7043');
+      assert.equal(outcome.verdict, 'unknown');
+      assert.match(outcome.statement, /缺陷 7043（发布说明：已修复；缺陷系统：未知（缺陷系统没有返回这个编号））：没有已索引的用例标出缺陷 7043/);
+      const data = outcome.data as { defect_system_status: string | null; defect_system_unknown_reason: string; closed: boolean };
+      assert.equal(data.defect_system_status, null);
+      assert.equal(data.defect_system_unknown_reason, '缺陷系统没有返回这个编号');
+      assert.equal(data.closed, false);
+    });
+
+    it('marks unknown with bugzilla reason when system is bugzilla', () => {
+      const defect = defectEntry({ bug: '7044', system: 'bugzilla' });
+      const outcome = byItem(traceOutcomes(subjectOf([defect], [])), '7044');
+      assert.equal(outcome.verdict, 'unknown');
+      assert.match(outcome.statement, /缺陷 7044（发布说明：已修复；缺陷系统：未知（系统为 bugzilla，不从 PLM 查询））：没有已索引的用例标出缺陷 7044/);
+      const data = outcome.data as { defect_system_status: string | null; defect_system_unknown_reason: string; closed: boolean };
+      assert.equal(data.defect_system_status, null);
+      assert.equal(data.defect_system_unknown_reason, '系统为 bugzilla，不从 PLM 查询');
+      assert.equal(data.closed, false);
+    });
+
+    it('marks unknown when system is unspecified', () => {
+      const defect = defectEntry({ bug: '7045' });
+      const sources = {
+        'plm:bugs:7045': JSON.stringify({
+          bugs: [{ id: '7045', status: 'closed' }],
+          unread: [],
+        }),
+      };
+      const outcome = byItem(traceOutcomes(subjectOf([defect], []), sources), '7045');
+      assert.equal(outcome.verdict, 'unknown');
+      assert.match(outcome.statement, /缺陷 7045（发布说明：已修复；缺陷系统：未知（缺陷系统不明，不按编号查 PLM））：没有已索引的用例标出缺陷 7045/);
+      const data = outcome.data as { defect_system_status: string | null; defect_system_unknown_reason: string; closed: boolean };
+      assert.equal(data.defect_system_status, null);
+      assert.equal(data.defect_system_unknown_reason, '缺陷系统不明，不按编号查 PLM');
+      assert.equal(data.closed, false);
+    });
+
+    it('marks unknown when PLM record has no status', () => {
+      const defect = defectEntry({ bug: '7046', system: 'plm' });
+      const sources = {
+        'plm:bugs:7046': JSON.stringify({
+          bugs: [{ id: '7046' }],
+          unread: [],
+        }),
+      };
+      const outcome = byItem(traceOutcomes(subjectOf([defect], []), sources), '7046');
+      assert.equal(outcome.verdict, 'unknown');
+      assert.match(outcome.statement, /缺陷 7046（发布说明：已修复；缺陷系统：未知（缺陷系统的记录里没有状态））：没有已索引的用例标出缺陷 7046/);
+      const data = outcome.data as { defect_system_status: string | null; defect_system_unknown_reason: string; closed: boolean };
+      assert.equal(data.defect_system_status, null);
+      assert.equal(data.defect_system_unknown_reason, '缺陷系统的记录里没有状态');
+      assert.equal(data.closed, false);
+    });
+
+    it('marks unknown when PLM source is unavailable', () => {
+      const defect = defectEntry({ bug: '7047', system: 'plm' });
+      const outcome = byItem(traceOutcomes(subjectOf([defect], []), {}), '7047');
+      assert.equal(outcome.verdict, 'unknown');
+      assert.match(outcome.statement, /缺陷 7047（发布说明：已修复；缺陷系统：未知（缺陷系统没有读到（来源不可用）））：没有已索引的用例标出缺陷 7047/);
+      const data = outcome.data as { defect_system_status: string | null; defect_system_unknown_reason: string; closed: boolean };
+      assert.equal(data.defect_system_status, null);
+      assert.equal(data.defect_system_unknown_reason, '缺陷系统没有读到（来源不可用）');
+      assert.equal(data.closed, false);
     });
   });
 });

@@ -16,6 +16,12 @@ export interface DefectGold {
   bug: string;
   /** fixed or known, as the release note says. */
   status: string;
+  /** Defect system status from PLM, or null when unknown. */
+  defect_system_status?: string | null;
+  /** Reason when defect system status is unknown. */
+  defect_system_unknown_reason?: string | null;
+  /** Whether the defect is closed according to closed-statuses table. */
+  closed?: boolean;
   /** The cases the independent join found; empty when untraced. */
   cases: JoinCaseGold[];
 }
@@ -24,24 +30,33 @@ export interface TraceGold {
   product: string;
   build: string;
   defects: DefectGold[];
+  closed_defects?: number;
+  closed_traced?: number;
+  closed_untraced?: number;
+  status_unknown?: number;
 }
 
 /**
  * Extracts the case ids listed in the claim statement for a given bug.
  * Format: 缺陷 <bug>（...）：N 个已索引用例追溯：<doc>:<node> <title>；...
+ * Takes only the section after "已索引用例追溯：" and before "另有" or "，支持",
+ * splits by "；", and requires each part to start with <doc>:<node>.
  */
 export function extractStatementCaseIds(text: string, bug: string): string[] {
-  const match = new RegExp(`缺陷\\s+${bug}[^：:\n]*[：:]\\s*\\d+\\s*个已索引用例追溯[：:]([^\\n]+)`).exec(text);
+  const match = new RegExp(`缺陷\\s+${bug}[^\\n]*?\\d+\\s*个已索引用例追溯[：:]([^\\n]+)`).exec(text);
   if (!match) return [];
-  const parts = match[1].split(/[；;]/);
+  let casesPart = match[1];
+  const cutIdx = casesPart.search(/(?:[；;]?\s*另有|[，,]\s*支持)/);
+  if (cutIdx !== -1) {
+    casesPart = casesPart.slice(0, cutIdx);
+  }
+  const parts = casesPart.split(/[；;]/);
   const caseIds: string[] = [];
   for (const part of parts) {
     const trimmed = part.trim();
-    if (trimmed.startsWith('另有') || trimmed.startsWith('系统')) continue;
-    const firstToken = trimmed.split(/\s+/)[0];
-    if (firstToken && firstToken.includes(':')) {
-      caseIds.push(firstToken);
-    }
+    const m = trimmed.match(/^(\d+[：:](?:[a-z0-9]{6,}|[a-z0-9_-]+))(?:\s|$)/);
+    if (!m) continue;
+    caseIds.push(m[1]);
   }
   return caseIds;
 }
@@ -135,7 +150,48 @@ export default function scenario(gold: TraceGold): Scenario {
             ok,
           });
         }
+
+        if (defect.defect_system_status !== undefined) {
+          const expectedStatus = defect.defect_system_status === null
+            ? (defect.defect_system_unknown_reason ? `未知（${defect.defect_system_unknown_reason}）` : '未知')
+            : defect.defect_system_status;
+          const escaped = expectedStatus.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          const statusPattern = new RegExp(`缺陷\\s+${defect.bug}[^\\n]*缺陷系统[：:]\\s*${escaped}`);
+          const hasStatus = statusPattern.test(text);
+          checks.push({
+            area,
+            name: `缺陷 ${defect.bug} 的缺陷系统状态与独立依据一致`,
+            expected: `缺陷系统：${expectedStatus}`,
+            actual: hasStatus ? `缺陷系统：${expectedStatus}` : '状态不一致或未出现',
+            ok: hasStatus,
+          });
+        }
       }
+
+      if (gold.closed_defects !== undefined) {
+        const expectedCounts = `已关闭缺陷 ${gold.closed_defects} 个：已追溯 ${gold.closed_traced ?? 0} 个，未追溯 ${gold.closed_untraced ?? 0} 个`;
+        const hasClosedCounts = text.includes(expectedCounts);
+        checks.push({
+          area,
+          name: '已关闭缺陷统计与独立依据一致',
+          expected: expectedCounts,
+          actual: hasClosedCounts ? expectedCounts : '统计不一致或未出现',
+          ok: hasClosedCounts,
+        });
+      }
+
+      if (gold.status_unknown !== undefined) {
+        const expectedUnknown = `缺陷系统状态未知 ${gold.status_unknown} 个（不算已关闭也不算未关闭）`;
+        const hasUnknownCounts = text.includes(expectedUnknown);
+        checks.push({
+          area,
+          name: '缺陷系统状态未知统计与独立依据一致',
+          expected: expectedUnknown,
+          actual: hasUnknownCounts ? expectedUnknown : '统计不一致或未出现',
+          ok: hasUnknownCounts,
+        });
+      }
+
       checks.push(lengthBounded(area, turns));
       return checks;
     },

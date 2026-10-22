@@ -2,6 +2,7 @@
 // many traced, how many untraced — with the view facts that bound what the counts can say. The counts are recomputed from
 // the frozen items; a view that declares itself complete (not truncated) must list exactly its stated totals, otherwise the
 // view contradicts itself and the counts are refuted (advisory) instead of stated.
+import { defectSystemInfoOf, parsePlmResponses, readClosedStatuses } from './plm-status.ts';
 import { guarded, isRecord } from './text.ts';
 import type { CheckOutcome, RunFacts, ViewFacts } from './types.ts';
 
@@ -9,7 +10,7 @@ const TIER = 'advisory' as const;
 
 interface CountsItem {
   id: string;
-  fields: { conflict?: unknown; cases?: unknown };
+  fields: { bug?: unknown; systems?: unknown; conflict?: unknown; cases?: unknown };
 }
 
 function factsOf(raw: unknown): { items: CountsItem[]; facts: RunFacts } | null {
@@ -33,7 +34,11 @@ function mismatchOf(name: string, view: ViewFacts): string | null {
   return null;
 }
 
-export function countsOutcome(subject: unknown): CheckOutcome {
+export function countsOutcome(
+  subject: unknown,
+  sources?: Readonly<Record<string, string>>,
+  table?: unknown,
+): CheckOutcome {
   const read = factsOf(subject);
   if (read === null || read.items.length === 0) {
     return { verdict: 'unknown', reason: 'check_error', statement: '追溯统计的被判对象里没有条目或没有视图事实（任务包缺陷）', grounds: [], tier: TIER };
@@ -44,11 +49,40 @@ export function countsOutcome(subject: unknown): CheckOutcome {
   const traced = items.filter((item) => (item.fields.cases as unknown[]).length > 0).length;
   const untraced = defects - traced;
   const conflicts = items.filter((item) => item.fields.conflict === true).length;
+
+  const closedStatuses = readClosedStatuses(table);
+  const closedSet = new Set(closedStatuses);
+  const { hasPlmSource, statuses: plmStatuses, unread: plmUnread } = parsePlmResponses(sources);
+
+  let closedDefects = 0;
+  let closedTraced = 0;
+  let closedUntraced = 0;
+  let statusUnknown = 0;
+
+  for (const item of items) {
+    const bug = typeof item.fields.bug === 'string' && item.fields.bug !== '' ? item.fields.bug : item.id;
+    const systems = Array.isArray(item.fields.systems) ? (item.fields.systems as string[]) : [];
+    const info = defectSystemInfoOf(bug, systems, plmStatuses, plmUnread, closedSet, hasPlmSource);
+    if (info.status === null) {
+      statusUnknown += 1;
+    } else if (info.isClosed) {
+      closedDefects += 1;
+      const caseCount = Array.isArray(item.fields.cases) ? item.fields.cases.length : 0;
+      if (caseCount > 0) closedTraced += 1;
+      else closedUntraced += 1;
+    }
+  }
+
   const data: Record<string, unknown> = {
     defects,
     traced,
     untraced,
     conflicts,
+    closed_defects: closedDefects,
+    closed_traced: closedTraced,
+    closed_untraced: closedUntraced,
+    status_unknown: statusUnknown,
+    closed_statuses: closedStatuses,
     statuses: facts.statuses,
     product: facts.product,
     build: facts.build,
@@ -59,7 +93,7 @@ export function countsOutcome(subject: unknown): CheckOutcome {
   if (mismatches.length > 0) {
     return { verdict: 'refute', code: 'traceability.count_mismatch', statement: `视图的计数自相矛盾，矩阵计数不可信：${mismatches.join('；')}`, grounds, tier: TIER, data };
   }
-  let statement = `缺陷 ${defects} 个：已追溯 ${traced} 个，未追溯 ${untraced} 个`;
+  let statement = `缺陷 ${defects} 个：已追溯 ${traced} 个，未追溯 ${untraced} 个；其中已关闭缺陷 ${closedDefects} 个：已追溯 ${closedTraced} 个，未追溯 ${closedUntraced} 个；缺陷系统状态未知 ${statusUnknown} 个（不算已关闭也不算未关闭）`;
   if (conflicts > 0) statement += `；其中状态矛盾的缺陷 ${conflicts} 个`;
   if (facts.views.defects.skipped > 0) statement += `；缺陷索引有 ${facts.views.defects.skipped} 份列出的来源没有读取`;
   if (facts.views.cases.skipped > 0) statement += `；用例索引有 ${facts.views.cases.skipped} 份列出的来源没有读取，其中的用例不在计数里`;
@@ -69,8 +103,15 @@ export function countsOutcome(subject: unknown): CheckOutcome {
 
 /** Pack check function: PackCheckInput of hub/rules -> a one-element check-outcome@1 array. */
 export default function countsCheck(input: unknown): unknown {
+  const checkInput = isRecord(input) ? input : {};
   return guarded<unknown>(
-    () => [countsOutcome(isRecord(input) ? input.subject : undefined)],
+    () => [
+      countsOutcome(
+        checkInput.subject,
+        checkInput.sources as Readonly<Record<string, string>> | undefined,
+        checkInput.table,
+      ),
+    ],
     (message) => [{ verdict: 'unknown', reason: 'check_error', statement: `追溯统计出错（任务包缺陷）：${message}`, grounds: [], tier: TIER }],
   );
 }
