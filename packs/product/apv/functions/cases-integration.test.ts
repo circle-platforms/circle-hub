@@ -2,8 +2,9 @@
 // apv packs (publish checks included), the connectors read a synthetic agile platform (the case-index corpus with the
 // product's two roots) and a synthetic build site (two released builds whose command trees differ, an NSAE alias), the
 // knowledge service syncs the product (the plan lists each build's case documents, the cases producer files them in
-// batches) and the Hub's own views answer: facets by line and module, the index by document, the impact of the version
-// difference on the cases (regression scope), each against the corpus truth computed while the corpus was built.
+// batches) and the Hub's own views answer: facets by line and module and the index by document over every case, placed
+// or left unplaced, and the impact of the version difference on the cases filed under commands (regression scope), each
+// against the corpus truth computed while the corpus was built.
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
 import { after, before, describe, test } from 'node:test';
@@ -43,10 +44,15 @@ function site(): Record<string, StaticFile> {
   };
 }
 
-/** The truth: the indexed cases of a build (cases of its listed documents with a command of its catalog). */
-function indexedCases(line: string, catalog: 'a' | 'b') {
+/** Every case of the documents a build lists. `placed` means the code filed it under a command of that catalog. */
+function listedCases(line: string, catalog: 'a' | 'b') {
   const listed = new Set(listedFor(corpus, line));
-  return corpus.truth.filter((d) => listed.has(d.id)).flatMap((d) => d.cases.filter((k) => k.commands[catalog].length > 0).map((k) => ({ doc: d, k })));
+  return corpus.truth.filter((d) => listed.has(d.id)).flatMap((d) => d.cases.map((k) => ({ doc: d, k, placed: k.commands[catalog].length > 0 })));
+}
+
+/** Cases the code files under a command. Impact counts these; facet and index also count the unplaced rest. */
+function indexedCases(line: string, catalog: 'a' | 'b') {
+  return listedCases(line, catalog).filter((item) => item.placed);
 }
 
 let postgres: TemporaryPostgres;
@@ -131,37 +137,44 @@ describe('the sync with the case index', () => {
     assert.ok(agile.requests.some((r) => r.path === '/agile/get_case_data/'));
   });
 
-  test('facets of the later build: the indexed cases by line and module, as the corpus has them', async () => {
+  test('facets of the later build: every case by line and module, placed and unplaced, as the corpus has them', async () => {
     const facets = await view<FacetView>(`knowledge:facets:apv:${LATE}?kind=case&by=line,module`);
+    const cases = listedCases('10.6.1', 'b');
     const expected = new Map<string, number>();
-    for (const { doc } of indexedCases('10.6.1', 'b')) {
+    for (const { doc } of cases) {
       const key = JSON.stringify({ line: doc.line, module: doc.module });
       expected.set(key, (expected.get(key) ?? 0) + 1);
     }
     assert.deepEqual(new Map(facets.rows.map((r) => [JSON.stringify({ line: r.values.line, module: r.values.module }), r.count])), expected);
-    assert.equal(facets.total, indexedCases('10.6.1', 'b').length);
+    assert.equal(facets.total, cases.length);
+    const unplaced = cases.filter((item) => !item.placed).length;
+    assert.ok(unplaced > 0);
+    assert.ok(facets.notes.includes(`未归位 ${unplaced} 个，标在根下，计入合计`));
     assert.equal(facets.skipped, 0);
   });
 
-  test('the index of the later build by document: every indexed case of every document, with its data', async () => {
+  test('the index of the later build by document: every case of every document, placed and unplaced, with its data', async () => {
     const index = await view<IndexView>(`knowledge:index:apv:${LATE}?kind=case&key=document`);
-    const byDocument = new Map<string, Array<ReturnType<typeof indexedCases>[number]>>();
-    for (const item of indexedCases('10.6.1', 'b')) byDocument.set(item.doc.id, [...(byDocument.get(item.doc.id) ?? []), item]);
+    const cases = listedCases('10.6.1', 'b');
+    const byDocument = new Map<string, typeof cases>();
+    for (const item of cases) byDocument.set(item.doc.id, [...(byDocument.get(item.doc.id) ?? []), item]);
     assert.deepEqual(Object.keys(index.keys).sort(), [...byDocument.keys()].sort());
     for (const [document, items] of byDocument) {
       const entries = index.keys[document].map((digest) => index.entries[digest]);
       assert.equal(entries.length, items.length, document);
       const byNode = new Map(entries.map((e) => [e.data.node as string, e]));
-      for (const { doc, k } of items) {
+      for (const { doc, k, placed } of items) {
         const entry = byNode.get(k.node);
         assert.ok(entry, `${document}:${k.node}`);
         assert.equal(entry.statement, caseStatement(entry.data));
         assert.ok(entry.statement.startsWith(`${document}:${k.node} | ${k.title}`));
         assert.deepEqual(entry.data.commands, k.commands.b.map(commandPath).sort());
         assert.deepEqual([entry.data.line, entry.data.train, entry.data.module, entry.data.defects, entry.data.stories, entry.data.vague_expected], [doc.line, doc.train, doc.module, k.defects, k.stories, k.vague_expected]);
-        assert.match(entry.reference, /^tree:[0-9a-f]{64}\/commands\//);
+        assert.match(entry.reference, placed ? /^tree:[0-9a-f]{64}\/commands\// : /^tree:[0-9a-f]{64}\/@[0-9a-f]{64}$/);
       }
     }
+    const unplaced = cases.filter((item) => !item.placed).length;
+    assert.ok(index.notes.includes(`未归位 ${unplaced} 个，标在根下`));
   });
 
   test('the impact of the version difference: the changed commands and exactly the cases filed on them in each build', async () => {
@@ -182,10 +195,11 @@ describe('the sync with the case index', () => {
     assert.equal(impact.truncated, false);
   });
 
-  test('the index returns each placed case under every defect id it lists', async () => {
+  test('the index returns each case, placed or unplaced, under every defect id it lists', async () => {
     const index = await view<IndexView>(`knowledge:index:apv:${LATE}?kind=case&key=defects`);
+    const cases = listedCases('10.6.1', 'b');
     const expected = new Map<string, number>();
-    for (const { k } of indexedCases('10.6.1', 'b')) for (const id of k.defects) expected.set(id, (expected.get(id) ?? 0) + 1);
+    for (const { k } of cases) for (const id of k.defects) expected.set(id, (expected.get(id) ?? 0) + 1);
     assert.ok(expected.size > 0);
     assert.ok(expected.has('61001'));
     for (const [id, count] of expected) {

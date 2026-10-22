@@ -1,8 +1,10 @@
 // The Hub's own views of the knowledge tree, served as external objects of the system `knowledge` (contracts/src/views.ts):
 //   knowledge:impact:<product>:<from build>..<to build>[?changed=<kinds>&attached=<kinds>]   the entry-level version
 //     difference with the entries filed on the changed nodes (K01 R[1]: the version difference is the regression scope)
-//   knowledge:facets:<product>:<build>?kind=<kind>&by=<fields>   counts of entries by the values of data fields
-//   knowledge:index:<product>:<build>?kind=<kind>&key=<field>[&only=<values>]   data value -> the entries that carry it
+//   knowledge:facets:<product>:<build>?kind=<kind>&by=<fields>   counts of entries by the values of data fields,
+//     placed rows and the unplaced rows of the root (K01 R[4]), an entry once, an unplaced entry cited at the root
+//   knowledge:index:<product>:<build>?kind=<kind>&key=<field>[&only=<values>]   data value -> the entries that carry it,
+//     the same entries; impact stays the entries on changed paths
 // Products resolve by id or any name, builds of any name family through their aliases to the root they use. The answer is
 // canonical JSON with deterministic list order, sized exactly against the byte budget, checked against its schema and stored
 // as the original of the read (equal content, equal bytes); the revision is built from the root digests. A reader who may
@@ -197,6 +199,27 @@ function facetValues(data: Record<string, unknown>, field: string, odd: { count:
     seen.set(canonicalize(v), v);
   }
   return [...seen.values()];
+}
+
+/** One entry of a kind, once: a placed row keeps its path; an unplaced row is cited at the root (K01 R[4]). */
+type KindEntry = { entry: string; path: string; content: EntryContent; unplaced: boolean };
+
+/**
+ * Distinct entries of one kind. Placed rows come first, so an entry that is also unplaced keeps the path it hangs on and
+ * is counted once. Unplaced entries are cited at `/`, the root.
+ */
+async function* entriesOfKind(composition: CompositionView, kind: string): AsyncGenerator<KindEntry> {
+  const seen = new Set<string>();
+  for await (const row of composition.contentRows(new Set([kind]))) {
+    if (seen.has(row.entry)) continue;
+    seen.add(row.entry);
+    yield { entry: row.entry, path: row.path, content: row.content, unplaced: false };
+  }
+  for await (const row of composition.unplacedContent(kind)) {
+    if (seen.has(row.entry)) continue;
+    seen.add(row.entry);
+    yield { entry: row.entry, path: '/', content: row.content, unplaced: true };
+  }
 }
 
 /** The keys an index files an entry under: the text of each distinct element of a list or of the value; null and missing give none. */
@@ -437,10 +460,12 @@ export class KnowledgeViews {
   }
 
   /**
-   * Counts of the entries of one kind by the values of data fields (a list field counts the entry once per element). At most
-   * `facetCombinations` distinct combinations are collected (later new ones are left out, flagged); rows are kept in value
-   * order while they fit MAX_FACET_ROWS and the byte budget, counted exactly. `exclude` names rows left out (by the
-   * canonical JSON of their values) because their values have credential scan hits.
+   * Counts of the entries of one kind by the values of data fields (a list field counts the entry once per element),
+   * placed rows and the unplaced rows of the root. An entry counts once; one that is also placed keeps the path it hangs
+   * on, and `total` includes the unplaced ones. At most `facetCombinations` distinct combinations are collected (later new
+   * ones are left out, flagged); rows are kept in value order while they fit MAX_FACET_ROWS and the byte budget, counted
+   * exactly. `exclude` names rows left out (by the canonical JSON of their values) because their values have credential
+   * scan hits.
    */
   async facets(product: string, at: At, kind: EntryKind, by: readonly string[], exclude: ReadonlySet<string> = new Set()): Promise<FacetView> {
     const composition = await this.#reading.compositionOf(at.root);
@@ -450,10 +475,11 @@ export class KnowledgeViews {
     const limit = Math.max(1, this.#context.limits.facetCombinations);
     let cut = 0;
     let unlisted = 0;
+    let unplacedCount = 0;
     if (composition !== null) {
-      for await (const row of composition.contentRows(new Set([kind]))) {
-        if (seen.has(row.entry)) continue;
+      for await (const row of entriesOfKind(composition, kind)) {
         seen.add(row.entry);
+        if (row.unplaced) unplacedCount++;
         const lists = by.map((field) => facetValues(row.content.data, field, odd));
         if (lists.reduce((n, list) => n * list.length, 1) > MAX_FACET_COMBINATIONS) {
           cut++;
@@ -493,6 +519,7 @@ export class KnowledgeViews {
     }
     const notes: string[] = [];
     if (seen.size === 0) notes.push(`构建 ${at.build} 的根里没有${labelOf('entry_kind', kind)}种类的条目`);
+    if (unplacedCount > 0) notes.push(`未归位 ${unplacedCount} 个，标在根下，计入合计`);
     if (rows.length < all.length) notes.push(`取值组合有 ${all.length} 种，只列出按取值排序的前 ${rows.length} 种（上限 ${MAX_FACET_ROWS} 行、约 ${this.#context.limits.maxViewBytes} 字节）`);
     if (unlisted > 0) notes.push(`取值组合超过 ${limit} 种以后出现的新组合没有收集：${unlisted} 个条目有组合没有计入任何一行（total 里计入），列出的行是先遇到的组合`);
     if (cut > 0) notes.push(`${cut} 个条目的列表字段组合超过 ${MAX_FACET_COMBINATIONS} 种，没有计入任何一行（total 里计入）`);
@@ -516,10 +543,11 @@ export class KnowledgeViews {
   }
 
   /**
-   * The entries of one kind by the values of a data field (a list field by each element); only the listed values when given.
-   * Keys are kept in code-unit order while they fit the limits, counted exactly. The content of an entry is held during the
-   * scan only while the held entries fit the byte budget; a listed entry not held is read in a second scan. `exclude` names
-   * entries left out because their text has credential scan hits.
+   * The entries of one kind by the values of a data field (a list field by each element), placed rows and the unplaced rows
+   * of the root; only the listed values when given. An entry is filed once, an unplaced one at the root. Keys are kept in
+   * code-unit order while they fit the limits, counted exactly. The content of an entry is held during the scan only while
+   * the held entries fit the byte budget; a listed entry not held is read in a second scan. `exclude` names entries left
+   * out because their text has credential scan hits.
    */
   async index(product: string, at: At, kind: EntryKind, key: string, only: readonly string[] | null, exclude: ReadonlySet<string> = new Set()): Promise<IndexView> {
     const composition = await this.#reading.compositionOf(at.root);
@@ -532,12 +560,13 @@ export class KnowledgeViews {
     const held = new Map<string, EntryContent>();
     let heldBytes = 0;
     let ofKind = 0;
+    let unplacedCount = 0;
     const excluded = new Map<string, string>();
     if (composition !== null) {
-      for await (const row of composition.contentRows(new Set([kind]))) {
-        if (seen.has(row.entry)) continue;
+      for await (const row of entriesOfKind(composition, kind)) {
         seen.add(row.entry);
         ofKind++;
+        if (row.unplaced) unplacedCount++;
         const values = indexKeys(row.content.data, key).filter((value) => onlySet === null || onlySet.has(value));
         if (values.length === 0) continue;
         const entryBytes = memberBytes(row.entry, viewEntry(row.entry, row.content, at.root, row.path));
@@ -588,7 +617,7 @@ export class KnowledgeViews {
     // Listed entries whose content was not held during the scan are read in a second one.
     const wanted = new Set([...listedAll].filter((d) => !held.has(d)));
     if (wanted.size > 0 && composition !== null) {
-      for await (const row of composition.contentRows(new Set([kind]))) {
+      for await (const row of entriesOfKind(composition, kind)) {
         if (!wanted.has(row.entry)) continue;
         held.set(row.entry, row.content);
         wanted.delete(row.entry);
@@ -606,6 +635,7 @@ export class KnowledgeViews {
       if (perKeyCut > 0) out.push(`${perKeyCut} 个取值的条目超过 ${MAX_INDEX_PER_KEY} 个，只列出按摘要排序的前 ${MAX_INDEX_PER_KEY} 个`);
       const stop = count < kept.length ? kept[count].value : stoppedAt;
       if (stop !== null) out.push(`取值按顺序列到 ${cutText(stop, 80)} 之前为止（上限 ${MAX_INDEX_ENTRIES} 个条目、约 ${this.#context.limits.maxViewBytes} 字节）`);
+      if (unplacedCount > 0) out.push(`未归位 ${unplacedCount} 个，标在根下`);
       if (proto > 0) out.push(`取值 ${PROTO_KEY} 不能作为这个视图的键（读成 JSON 对象时会被当作原型），带它的 ${proto} 个条目没有按它列出`);
       if (excluded.size > 0) out.push(credentialNote([...excluded.values()]));
       const skipped = skippedNote(at, composition);

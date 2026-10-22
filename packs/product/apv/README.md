@@ -155,8 +155,11 @@ Producers (K02, K04, C07)
   paragraphs; the bug id comes from an id column, a bug marker or a leading number and is stored as `data.bug` (the same
   id a case lists in `data.defects`). `data.status` is `fixed` or `known`. The names `bug`, `status` and `defects` are
   legal index keys; `bugId` is not, because a data field name is a lower-case word. `path` is null (the module is the hint
-  for placement), so these defect entries stay unplaced and `knowledge:index` does not list them: that view reads placed
-  rows. A placed case is listed under `key=defects`, once per id. `applicability` is `{ builds: [build] }`; a part of a
+  for placement), so these defect entries stay unplaced under the root (K01 R[4]). `knowledge:facets` and
+  `knowledge:index` count them with the entries hung on the tree, once each, and cite an unplaced entry at the root
+  (`tree:<root>/@<digest>`). The facet total includes them and says how many are unplaced; the index says the same in its
+  notes. Impact keeps the entries on a changed path. A case is listed under `key=defects`, once per id, hung on a command
+  or left unplaced. `applicability` is `{ builds: [build] }`; a part of a
   block is cited with a byte range. Table scanning
   is linear (grid cells joined once per row, tags stripped without backtracking, ASCII-only lower-casing so offsets hold).
 
@@ -292,10 +295,12 @@ Producer `cases` (`cases.ts`, entry kind `case`; the product pack declares no ca
   results. A case with no resolvable command is still an entry, with an empty path. Abbreviations are unique prefixes of
   command words (two letters, three when written in capitals); a CLI that accepts other short forms is not covered. A
   phrase whose first word is no catalog word (`health interval ...` without its context word) is not found.
-- Case index: facet, index and impact views count entries placed on the tree. An entry with an empty path is stored and
-  citable, and the composition warning counts it, but those views do not have an unplaced row (hub/knowledge/views.ts was
-  not in this change). A quality board built on the facet view therefore still sees the cases the code could file.
-  Regression scope looks at entries under command nodes, which is the placed set.
+- Case index: facet and index views count entries hung on the tree and the unplaced rows of the root. An entry with an
+  empty path stays under the root, marked unplaced, and is cited there (`tree:<root>/@<digest>`). An entry counts once;
+  one that also hangs on a command keeps that path. The facet total includes the unplaced entries and says how many; the
+  index notes say the same. A quality board and a traceability matrix built on those views see every case and every
+  defect entry. Impact is unchanged: regression scope looks at entries under command nodes, and an unplaced entry is on
+  no change path.
 - Case index: the case-document list is optional. An optional list's skipped share is 1, so unreadable case documents are
   reported in `skipped` and do not drop the command tree. The required-list share stays 0.5. The gate lives in
   hub/knowledge/produce.ts; hub/knowledge/lists.ts does not decide it.
@@ -371,8 +376,8 @@ pack and reviews a mind map against the root it produced.
 - **integrator**: a review that targets an unreleased build (the newest build of a line still in development, under either
   name) needs the sync with `includeUnreleased` for that line, or a released build named at start_run.
 - **knowledge (case index)**: `external` is on the list element and the producer matches documents by it. The slot still
-  has no parsed `meta`, so `folders` stays. Facet, index and impact views do not count entries with an empty path; a
-  per-kind unplaced total in those views would let the quality board see every case. List-call memos are still keyed by
+  has no parsed `meta`, so `folders` stays. Facet and index views count entries with an empty path (unplaced, cited at
+  the root, once) and say how many; impact still counts the entries on a path. List-call memos are still keyed by
   the whole build, so a changed case list re-runs every batch; keying them without the list roles would restore reuse
   now that the producer does not need the list to name a document. The composition still keeps the first 200 warnings.
 - **case-review** (case index): a table of vague expected phrases (the task's "vague phrases of the case-review tables"

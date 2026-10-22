@@ -286,7 +286,8 @@ catalogs, grounds and provenance.
     When the composition rows, the unplaced rows or the list sources exceed `inlineRows` (1000), they go to part records
     beside the `tree_root@1` record: composition rows grouped by kind (code-unit order) with the content of their entry
     (`tree_root-rows@1`; a scan by kind reads its own parts and views read a root in bulk), unplaced rows by entry
-    (`tree_root-unplaced@1`), list sources by digest then external id (`tree_root-sources@1`). Each group is split at
+    (`tree_root-unplaced@1`; the part does not repeat the entry content, so a facet or index scan reads the entry records
+    in batches), list sources by digest then external id (`tree_root-sources@1`). Each group is split at
     content-defined boundaries (after a row whose entry or source digest's leading 32 bits are 0 modulo 512, once a part
     has 64 rows; at most 2048 rows or about 2 MiB), so that a change moves only the boundaries around it. A part is
     content-addressed (index `knowledge.part` = SHA-256 of its canonical schema and body), written in its own
@@ -321,22 +322,28 @@ catalogs, grounds and provenance.
     (trailing items dropped until it fits), so a cut answer is always served; the totals count everything. A root whose
     composition skipped listed sources (decision 16) gets a note naming the build, the count and the producers: what those
     sources would give is unknown, not absent. *Impact*: the changes of decision 21 for the changed kinds; placements are
-    the attached entries filed exactly at a changed path in each root (only paths that have some); every named entry once,
-    cited in the later root where it is on the later side of a kept path, else at its first path in the later root when
+    the attached entries filed exactly at a changed path in each root (only paths that have some). Unplaced entries are on
+    no path and stay out of this view. Every named entry is cited once,
+    in the later root where it is on the later side of a kept path, else at its first path in the later root when
     it is there (found by reading the rows of its kind), else in the earlier root; paths kept in path order at
     MAX_IMPACT_PATHS, MAX_IMPACT_ENTRIES or the byte budget, the content of an entry read only for kept paths; notes for a
-    cut, equal roots and roots without the attached or changed kinds. *Facets*: distinct entries of the kind; a list field
-    counts once per distinct element, a missing field, null and an empty list count as null, a value that is not a scalar
-    as its canonical JSON text (noted); an entry whose field combinations exceed 4096 is counted in `total` only
-    (flagged); at most `facetCombinations` (100000) distinct combinations are collected, later new ones are left out
+    cut, equal roots and roots without the attached or changed kinds. *Facets*: distinct entries of the kind, the rows hung
+    on the tree and the unplaced rows of the root (K01 R[4]: they stay under the root, marked unplaced). An entry counts
+    once; one that is also hung keeps that path. An unplaced entry is cited at `/`, the existing tree reference
+    `tree:<root>/@<digest>`. `total` includes them, and when there are any a note says how many (`未归位 N 个，标在根下，计入合计`).
+    A list field counts once per distinct element, a missing field, null and an empty list count as null, a value that is
+    not a scalar as its canonical JSON text (noted); an entry whose field combinations exceed 4096 is counted in `total`
+    only (flagged); at most `facetCombinations` (100000) distinct combinations are collected, later new ones are left out
     (flagged, the listed rows then being those met first); rows sorted by the canonical JSON text of their values, field by
-    field, in code-unit order (facet-view@1), at most MAX_FACET_ROWS or the byte budget. *Index*: the text of each value
-    (strings as they are, other values as canonical JSON, null and missing never), only the `only` values when given
-    (those without entries are noted), keys in code-unit order, built from pairs (a key is always an own member), at most
-    MAX_INDEX_PER_KEY digests per key and MAX_INDEX_ENTRIES entries or the byte budget, cut before a key; the value
-    `__proto__` is not listed as a key (a JSON reader that builds plain objects would take it for the prototype; noted,
-    counted in `total_keys`); the content of an entry is held during the scan only while the held entries fit the budget,
-    and a listed entry not held is read in a second scan. The answer is built, checked against its schema (the built object
+    field, in code-unit order (facet-view@1), at most MAX_FACET_ROWS or the byte budget. *Index*: the same entries. The
+    text of each value (strings as they are, other values as canonical JSON, null and missing never), only the `only`
+    values when given (those without entries are noted), keys in code-unit order, built from pairs (a key is always an own
+    member), at most MAX_INDEX_PER_KEY digests per key and MAX_INDEX_ENTRIES entries or the byte budget, cut before a key.
+    An unplaced entry is cited at the root. When any entries of the kind are unplaced, a note says how many
+    (`未归位 N 个，标在根下`), including entries that carry no value of the key; `total_entries` stays the entries that carry a
+    value. The value `__proto__` is not listed as a key (a JSON reader that builds plain objects would take it for the
+    prototype; noted, counted in `total_keys`); the content of an entry is held during the scan only while the held
+    entries fit the budget, and a listed entry not held is read in a second scan of the same entries. The answer is built, checked against its schema (the built object
     is stored, never a parsed copy) and stored as the original (`application/json`, generated by `knowledge.views@1` from
     `tree:<root>/`, projected, readable by the caller and admins, not shareable) with a `meta` artifact (a Chinese title).
     When the records' scan of the derived bytes has a hit (text that entered the tree because an administrator accepted a
@@ -498,7 +505,8 @@ compositions in parts (the same answers as one record for get_nodes, references,
 provenance and catalogs; parts by kind; parts found instead of written again); the views against hand-computed answers
 (every change kind, attached entries on both sides, case-only changes, the reverse direction, equal roots, kinds no root
 holds, truncation by the byte budget with full totals, diffEntries with limits and unknown roots, facets over scalar,
-list and missing fields, the combination cap, index with `only`, the index byte budget, aliases and product names,
+list and missing fields, the combination cap, placed and unplaced entries counted once with the unplaced ones cited at
+the root, a root of 60,000 unplaced entries, index with `only`, the index byte budget, aliases and product names,
 determinism, the stored answer's readers, the revision pin, the manifest, the permission refusal, a disabled reader,
 unknown products and builds, 17 malformed ids, the router); the sync of a build whose plan lists 500 documents (first
 sync, an idempotent rerun that reads only the failed document again, its appearance re-running one batch, recheck with

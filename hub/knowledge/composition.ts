@@ -1,7 +1,8 @@
 // The composition of a root (K01 R[7]) in one record or, when large, in part records beside it: content-defined splitting
 // for writes (a boundary falls after a row whose digest has a fixed residue, so an insertion moves only the boundaries
 // around it and unchanged parts are shared between roots), and one reader over both forms: the rows at a path (binary
-// search over the parts' path ranges), a scan of every row with its entry content, the unplaced rows and the sources.
+// search over the parts' path ranges), a scan of every row with its entry content, the unplaced rows with the content of
+// their entry records (read in batches; a part row does not carry it) and the sources.
 import type {
   CompositionContentRow,
   CompositionPartRef,
@@ -179,15 +180,44 @@ export class CompositionView {
   }
 
   async unplaced(): Promise<UnplacedRow[]> {
-    const parts = this.body.parts?.unplaced;
-    if (parts === undefined) return this.body.unplaced;
     const out: UnplacedRow[] = [];
+    for await (const row of this.unplacedRows()) out.push(row);
+    return out;
+  }
+
+  /** Unplaced rows, one part at a time. `kind` keeps that entry kind only. */
+  async *unplacedRows(kind?: string): AsyncGenerator<UnplacedRow> {
+    const wanted = (row: UnplacedRow): boolean => kind === undefined || row.kind === kind;
+    const parts = this.body.parts?.unplaced;
+    if (parts === undefined) {
+      for (const row of this.body.unplaced) if (wanted(row)) yield row;
+      return;
+    }
     for (const ref of parts) {
       const part = await this.#store.part(SCHEMAS.unplacedPart, ref.record, { cache: false });
       if (part === null) throw new Error(`composition part ${ref.record} is missing`);
-      out.push(...part.rows);
+      for (const row of part.rows) if (wanted(row)) yield row;
     }
-    return out;
+  }
+
+  /**
+   * Unplaced rows of one kind with the stored entry content (the part rows do not carry it). Missing entry records are
+   * left out. Reads are batched, like contentRows.
+   */
+  async *unplacedContent(kind: string): AsyncGenerator<{ entry: string; content: EntryContent }> {
+    const batch: UnplacedRow[] = [];
+    const flush = async (): Promise<Array<{ entry: string; content: EntryContent } | null>> => {
+      const group = batch.splice(0, batch.length);
+      return mapLimited(group, 32, async (row) => {
+        const content = await this.#store.entry(row.entry);
+        return content === null ? null : { entry: row.entry, content };
+      });
+    };
+    for await (const row of this.unplacedRows(kind)) {
+      batch.push(row);
+      if (batch.length >= 128) for (const item of await flush()) if (item !== null) yield item;
+    }
+    if (batch.length > 0) for (const item of await flush()) if (item !== null) yield item;
   }
 
   /** Every source: single slots from the record, list slots from the parts when there are parts. */
