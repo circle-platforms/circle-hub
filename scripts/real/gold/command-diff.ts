@@ -88,6 +88,9 @@ class XmlReader {
 const elements = (nodes: readonly XmlElementChild[], name: string): XmlNode[] =>
   nodes.filter((n): n is { element: XmlNode } => 'element' in n && n.element.name === name).map((n) => n.element);
 
+const elementChildren = (nodes: readonly XmlElementChild[]): XmlNode[] =>
+  nodes.filter((n): n is { element: XmlNode } => 'element' in n).map((n) => n.element);
+
 const TYPE_TEXT: Readonly<Record<string, string>> = {
   STRING: 'string',
   XSTRING: 'string',
@@ -128,7 +131,7 @@ export function parseTree(xml: string): CommandDef[] {
   const seen = new Set<string>();
   const walk = (node: XmlNode, words: string[]): void => {
     const children = node.children;
-    if (node.name === 'item' && words.length > 0) {
+    if (node.name === 'item') {
       const itemWords = (node.attributes.name ?? '').trim().split(/\s+/).filter((w) => w !== '');
       if (itemWords.length === 0) return;
       const path = `/commands/${[...words, ...itemWords].join('/')}`;
@@ -145,15 +148,17 @@ export function parseTree(xml: string): CommandDef[] {
       return;
     }
     // A scope groups menus without adding words; any other wrapper element is walked through the same way.
-    for (const child of elements(children, 'scope')) walk(child, words);
-    for (const menu of [...elements(children, 'menu'), ...elements(children, 'item')]) {
-      const name = (menu.attributes.name ?? '').trim();
-      if (menu.name === 'menu' && name === '') continue;
-      if (menu.name === 'item') {
-        walk(menu, words);
-        continue;
+    for (const child of elementChildren(children)) {
+      if (child.name === 'item') {
+        walk(child, words);
+      } else if (child.name === 'menu') {
+        const name = (child.attributes.name ?? '').trim();
+        const menuWords = name.split(/\s+/).filter((w) => w !== '');
+        if (menuWords.length === 0) continue;
+        walk(child, [...words, ...menuWords]);
+      } else if (child.name !== 'arguments' && child.name !== 'arg' && child.name !== 'results') {
+        walk(child, words);
       }
-      walk(menu, [...words, ...name.split(/\s+/).filter((w) => w !== '')]);
     }
   };
   for (const root of roots) walk(root, []);
