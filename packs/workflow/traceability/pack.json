@@ -13,18 +13,18 @@
     },
     {
       "path": "checks.json",
-      "sha256": "118a1e70ace6ee6b37d5f21996b8293f8568f111c183d726e6a508a590e1524c",
-      "size": 730
+      "sha256": "be6bab5f772832af9b34eb615ff3e22b53a5c50909a790f96535059594c1f246",
+      "size": 776
     },
     {
       "path": "functions/check.ts",
-      "sha256": "cdc880b9af398411467da445dd9d388b2e760655809dafc9a981ac1d80b68f5f",
-      "size": 10662
+      "sha256": "6096e65cb7a1b9ad38590cf2a58a7989daf3ffba5615bdf9e8d42956c24c3c77",
+      "size": 10696
     },
     {
       "path": "functions/counts.ts",
-      "sha256": "060d6e7393f2567d9c9fa9f81df1d7bc741e57737f9684adcff368739b5e4579",
-      "size": 6283
+      "sha256": "584c9677379399ff85042a8a8e42efd218d1e47b8ea66087c69000320101690e",
+      "size": 6317
     },
     {
       "path": "functions/expected.ts",
@@ -48,8 +48,8 @@
     },
     {
       "path": "functions/plm-status.ts",
-      "sha256": "9b2c7821a38b7395fe9b13625656cd356c668600c35c5bfb50e66fe19e3315dc",
-      "size": 4809
+      "sha256": "17b26797cfb8b49b79858428e0bc5d07b1509414ab764b1ba3e0812b1f79a552",
+      "size": 5203
     },
     {
       "path": "functions/project.ts",

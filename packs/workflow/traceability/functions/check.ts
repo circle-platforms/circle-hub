@@ -170,7 +170,7 @@ export function traceOutcomes(
   subject: unknown,
   sources?: Readonly<Record<string, string>>,
   table?: unknown,
-  unreadSources?: ReadonlyArray<{ reference: string; reason: string }>,
+  unreadSources?: ReadonlyArray<{ reference: string; reason: string; external?: string; slot?: string }>,
 ): CheckOutcome[] {
   const raw = isRecord(subject) ? subject : {};
   const items = (Array.isArray(raw.items) ? raw.items : []).filter(isRecord);

@@ -284,4 +284,41 @@ describe('a production run of traceability', { skip }, () => {
     assert.equal(countData.closed_defects, 0);
     assert.equal(countData.status_unknown, 1);
   });
+
+  it('filters bound sources by types so oversized cases view is not read and unreturned bug reports ID not returned', async () => {
+    const DEFECTS_WITH_OMISSION = `knowledge:index:apv:${BUILD.name}?kind=defect&key=bug&variant=plm-omission`;
+    const defects = [
+      defectEntry({ bug: '84001', statement: '84001在PLM', system: 'plm' }),
+      defectEntry({ bug: '84002', statement: '84002未返回', system: 'plm' }),
+    ];
+    hub.views.put(DEFECTS_WITH_OMISSION, indexViewOf('defect', 'bug', defects));
+    // Cases view is huge (over 1 MiB limit)
+    const HUGE_CASES_ID = `knowledge:index:apv:${BUILD.name}?kind=case&key=defects&variant=huge-cases`;
+    const hugeCases = [caseEntry({ defects: ['84001'], case: 'C-8401', title: '84001用例' })];
+    const hugeCasesObj = indexViewOf('case', 'defects', hugeCases, {}, ['document', 'node', 'title']);
+    (hugeCasesObj as any).padding = 'y'.repeat(1024 * 1024 + 100);
+    hub.views.put(HUGE_CASES_ID, hugeCasesObj);
+
+    hub.views.put('plm:bugs:84001+84002', {
+      bugs: [{ id: '84001', status: 'closed' }],
+      unread: [], // 84002 is not in bugs and not in unread
+    });
+
+    const detail = await hub.service.startRunDetailed(hub.alice, { pack: 'traceability', inputs: { defects: { external: DEFECTS_WITH_OMISSION }, cases: { external: HUGE_CASES_ID } } }, call());
+    assert.equal(detail.answer.call_result, 'ok', JSON.stringify(detail.answer.errors));
+    const result = detail.production!.result;
+
+    // 84001 has status closed
+    const c84001 = located(result, '84001').item.requirements[0].claims[0];
+    const data1 = c84001.statement.data as Record<string, unknown>;
+    assert.equal(data1.closed, true);
+    assert.equal(data1.defect_system_status, 'closed');
+
+    // 84002 must be "缺陷系统没有返回这个编号", NOT "来源不可用" (because huge cases view was not read!)
+    const c84002 = located(result, '84002').item.requirements[0].claims[0];
+    const data2 = c84002.statement.data as Record<string, unknown>;
+    assert.equal(data2.defect_system_status, null);
+    assert.equal(data2.defect_system_unknown_reason, '缺陷系统没有返回这个编号');
+    assert.equal(data2.closed, false);
+  });
 });

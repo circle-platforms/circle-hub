@@ -60,8 +60,8 @@ describe('the pack files', () => {
     assert.deepEqual(
       checks.map((c) => ({ ...c, title: undefined })),
       [
-        { id: 'traced', title: undefined, function: { module: 'functions/check.ts' }, table: 'tables/closed-statuses.json', reads: { roles: ['expected'] }, applies: 'run', subject: { module: 'functions/subject.ts' }, judges: 'subject', tier: 'advisory' },
-        { id: 'counts', title: undefined, function: { module: 'functions/counts.ts' }, table: 'tables/closed-statuses.json', reads: { roles: ['expected'] }, applies: 'run', subject: { module: 'functions/subject.ts' }, judges: 'subject', tier: 'advisory' },
+        { id: 'traced', title: undefined, function: { module: 'functions/check.ts' }, table: 'tables/closed-statuses.json', reads: { roles: ['expected'], types: ['plm:bugs'] }, applies: 'run', subject: { module: 'functions/subject.ts' }, judges: 'subject', tier: 'advisory' },
+        { id: 'counts', title: undefined, function: { module: 'functions/counts.ts' }, table: 'tables/closed-statuses.json', reads: { roles: ['expected'], types: ['plm:bugs'] }, applies: 'run', subject: { module: 'functions/subject.ts' }, judges: 'subject', tier: 'advisory' },
       ],
     );
     assert.deepEqual(SlotsFile.parse(json('slots.schema.json')), { schema: 'slots@1', item: {}, run: {} });

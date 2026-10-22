@@ -25,10 +25,16 @@ export function readClosedStatuses(table: unknown): string[] {
   return Array.isArray(CLOSED_DEFAULT.statuses) ? CLOSED_DEFAULT.statuses : ['closed'];
 }
 
+function isPlmBugSource(u: { reference: string; reason?: string; external?: string; slot?: string }): boolean {
+  if (typeof u.external === 'string' && (u.external.startsWith('plm:bugs:') || u.external.startsWith('plm:bugs'))) return true;
+  if (typeof u.reference === 'string' && u.reference.startsWith('plm:bugs:')) return true;
+  return false;
+}
+
 /** Parses PLM batch responses from sources record (Record<string, string> of reference -> JSON string). */
 export function parsePlmResponses(
   sources: Readonly<Record<string, string>> | undefined,
-  unreadSources?: ReadonlyArray<{ reference: string; reason: string }>,
+  unreadSources?: ReadonlyArray<{ reference: string; reason: string; external?: string; slot?: string }>,
 ): {
   hasPlmSource: boolean;
   hasUnreadSources: boolean;
@@ -38,7 +44,7 @@ export function parsePlmResponses(
   const statuses = new Map<string, string | null>();
   const unread = new Set<string>();
   let hasPlmSource = false;
-  const hasUnreadSources = Boolean(unreadSources && unreadSources.length > 0);
+  const hasUnreadSources = Boolean(unreadSources && unreadSources.some(isPlmBugSource));
   if (!sources) return { hasPlmSource, hasUnreadSources, statuses, unread };
 
   for (const text of Object.values(sources)) {

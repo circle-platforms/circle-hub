@@ -38,7 +38,7 @@ export function countsOutcome(
   subject: unknown,
   sources?: Readonly<Record<string, string>>,
   table?: unknown,
-  unreadSources?: ReadonlyArray<{ reference: string; reason: string }>,
+  unreadSources?: ReadonlyArray<{ reference: string; reason: string; external?: string; slot?: string }>,
 ): CheckOutcome {
   const read = factsOf(subject);
   if (read === null || read.items.length === 0) {
