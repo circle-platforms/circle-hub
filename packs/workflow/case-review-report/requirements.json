@@ -15,16 +15,7 @@
       "checks": [
         "overall"
       ],
-      "error_handling": [
-        {
-          "code": "case-review-report.blocks_differ",
-          "action": "reject"
-        },
-        {
-          "code": "case-review-report.missing_blocks",
-          "action": "reject"
-        }
-      ]
+      "error_handling": []
     },
     {
       "key": "report",

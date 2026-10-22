@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "case-review-report",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "kind": "workflow",
   "title": "评审终稿（合成示例）",
   "description": "各块复核都受理后按各块取最差算整体结论与等级，核对初评方写的中文报告",
@@ -18,7 +18,7 @@
     },
     {
       "path": "examples/start-run.json",
-      "sha256": "c4241390e2ae8d3df9e0ecc1caf0d649b9763c33b079f0162d0f44fd71f96beb",
+      "sha256": "701c509cefdb8b7e7d8b7d03d8c69b7e92bb351c0f23f4a175e4c07c5d66d33b",
       "size": 447
     },
     {
@@ -43,8 +43,8 @@
     },
     {
       "path": "requirements.json",
-      "sha256": "5ae127f92a0873f886aa344989a40a100f1fabaebdad52b721bd872161009e1c",
-      "size": 2474
+      "sha256": "25464c68af80c7fe5e757cb9ec8b4c8de71eaf1ee106d511c5ec3051513c5661",
+      "size": 2259
     },
     {
       "path": "samples/negative/overall_not_worst.json",
