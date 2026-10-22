@@ -579,9 +579,9 @@ test('the engine and the reference agree on random submissions and the fixed bra
   assert.equal(wantShort?.layers[0]?.reason, 'repair_exhausted');
   const engineRecorded = shownLayer(roundEngine, 'i1', 'recorded');
   const wantRecorded = roundWant.items.find((item) => item.item === 'i1')?.requirements.find((requirement) => requirement.requirement === 'recorded');
-  assert.equal(engineRecorded.layer?.terminal, 'unchecked');
-  assert.equal(engineRecorded.layer?.reason, 'integrity_unproven');
-  assert.equal(engineRecorded.layer?.attribution, 'data_gap');
+  assert.equal(engineRecorded.layer?.terminal, 'violation');
+  assert.equal(engineRecorded.layer?.attribution, 'unattributed');
+  assert.equal(engineRecorded.status, 'unsatisfied');
   assert.equal(wantRecorded?.layers[0]?.terminal, 'violation');
   assert.equal(wantRecorded?.layers[0]?.attribution, 'unattributed');
   assert.equal(wantRecorded?.status, 'unsatisfied');
