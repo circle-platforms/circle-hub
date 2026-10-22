@@ -19,7 +19,7 @@ nav_order: 4
 | 持久部署（这台 Mac，只监听本机，LaunchAgent，钥匙串里的钥匙和操作令牌） | 在运行 |
 | 知识库 | 6 条版本线、84 个构建已产出根；CLI 手册已入树 |
 | Circle 一侧（本地分支 `hub-mcp-client`，不推送） | 完成，`npm run check` 通过 |
-| 用例索引（产品包的 `cases` 生产器、敏捷平台包读目录树） | 实现完成，复核和修复在进行（工作流代理，结束后要集成：跑测试、提交） |
+| 用例索引（产品包的 `cases` 生产器、敏捷平台包读目录树） | 第一版和复核已完成，复核发现在 `hub-6c` 分支上由终端修复 |
 | 回归范围、维护巡检、追溯矩阵、质量看板 | 没开始，规格在 `docs/hub-r4-tasks/` |
 | 缺陷转用例、转自动化 | 没开始（后者的设备部分要所有者先确认台架、账号和允许的命令类） |
 | 验收（合成数据上的 22 个场景、判定规则的独立对照测试、覆盖审计） | 没开始，见架构第 9 节 |
@@ -45,15 +45,23 @@ node bin/circle-hub status          # 持久部署的状态；其他命令见 no
 - 任务包目录里有测试和说明，发布时用 `pack publish <目录> --stage`；改了包里的文件要重新签：`node packs/workflow/case-review/packaging.ts sign <包名>`；已发布的版本不能改内容，再发布要先升版本号。
 - 资源绑定的是系统包的某个版本：发布新版本后用 `resource update <资源> --system-pack <包名>` 改绑。
 
-## 待做（按价值排序，每项一个目录，互不重叠）
+## 分工（2026-10-22 起）
 
-1. **集成用例索引**：等工作流 `hub-phase6c` 结束（`wf_7ee2f928-844`；也可以直接看 `git status` 里 `packs/product/apv`、`packs/system/agile-platform` 是否还在变），然后跑 packs 的测试、提交，发布新版本，重新同步知识（`knowledge sync --product apv --line <线>`），确认用例条目在树里（`knowledge roots apv`、`get_nodes`）。
-2. **四个事实型包**：`docs/hub-r4-tasks/regression-scope.md`、`maintenance-sweep.md`、`traceability.md`、`quality-board.md`。每个一个目录，可以分给不同代理同时做。真实读取器可用后，各补一条端到端测试（`knowledge:impact|facets|index` 的外部标识写法见 `contracts/src/views.ts` 开头）。
-3. **用例定位的构建候选**：`case-location` 的 `build_candidates` 现在记“未核对”。要加第四种知识视图 `knowledge:builds:<产品>:<版本线>`（两族名字的构建、别名指向、发布日期）和对应检查，范围是 `contracts/src/views.ts`、`hub/knowledge/views.ts`、`packs/workflow/case-location`。
-4. **验收**：架构第 9 节的 22 个场景写成 `tests/acceptance` 下的测试，再写一个只从模型元素推出的判定规则对照实现（`tests/acceptance/oracle`），随机场景上和引擎比，分歧逐条查。
-5. **缺陷转用例**：模型从缺陷（现象、修复说明）起草回归用例，Hub 核对命令和参数存在且在目标构建范围内、期望结果逐字取自修复说明或手册、结构符合用例形状、不与已索引的用例重复。需要先设计（架构第 6a 节第 5 项）。
-6. **逐项能力的真实客户端验收**：沿用 `scripts/real/accept-circle.ts` 和 `scripts/real/accept/*.ts` 的写法，每项能力一个场景和一份仓库外的金标准文件；真实模型的评审用 `scripts/real/review-circle.ts`。
-7. **收尾**：进度文件、设计文档标签页、最终报告写明证明了什么、没证明什么。
+所有者的决定：代码全部由 Otty 里的其他终端（circle、agy、kimi、grok）写，监督者（Claude）只监控结果、安排工作、复核合并、发布部署、跑真实 Circle 验收。每项任务一个工作树和分支（都从 `hub-redesign` 开出，目录 `~/Public/circle-hub-<名字>`），任务页在 `docs/hub-r4-tasks/`，改完在终端里回报，监督者独立跑测试、安排另一个终端复核，再合并进 `hub-redesign`。
+
+| 任务 | 任务页 | 工作树（分支） | 终端 | 状态 |
+| --- | --- | --- | --- | --- |
+| 回归范围、维护巡检 | `regression-scope.md`、`maintenance-sweep.md` | `circle-hub-grok`（`hub-6b-grok`） | grok | 进行中 |
+| 追溯矩阵、质量看板 | `traceability.md`、`quality-board.md` | `circle-hub-kimi`（`hub-6b-kimi`） | kimi | 进行中 |
+| 用例索引收尾（复核发现逐条修） | `agile-case-index.md` | `circle-hub-6c`（`hub-6c`） | circle | 进行中 |
+| 缺陷转用例 | `defect-to-case.md` | `circle-hub-d2c`（`hub-d2c`） | agy | 进行中 |
+| 运行上下文带构建，用例定位的构建候选 | `builds-context.md` | `circle-hub-builds`（`hub-builds`） | 先空出来的强模型终端 | 排队 |
+| 端到端验收与覆盖审计 | `acceptance.md` | `circle-hub-accept`（`hub-accept`，里面有一份没写完的草稿） | 排队 | 排队 |
+| 判定规则参照实现与差分测试 | `oracle.md` | `circle-hub-oracle`（`hub-oracle`，里面有一份没写完的草稿） | 排队 | 排队 |
+
+后续（等上面合并以后再开任务页）：每项新能力的真实客户端验收场景（沿用 `scripts/real/accept/*.ts`，金标准文件放在仓库外，脚本由监督者运行）；转自动化（设备部分要所有者先确认台架、账号和允许的命令类）；收尾（进度文件、设计文档标签页、最终报告写明证明了什么、没证明什么）。
+
+监督者独有的事（需要真实凭据或持久部署）：发布新版本的任务包、`resource update` 改绑、`knowledge sync`、重新部署、用真实系统和真实模型的验收。
 
 ## 已知问题和待所有者决定的事
 
