@@ -23,6 +23,7 @@ administrator commands of `cli-admin.ts`.
 | `main.ts` | `serve [--migrate-only] [--migrate]`, `loadServerConfig` (serve refuses the operator token, commands accept it) |
 | `cli.ts` | `main(argv)`: user, token, logs, run, platform delegation, `registerCommand` |
 | `assemble.ts`, `assemble/`, `cli-admin.ts`, `testing-real.ts` | the assembly module (`assemble` for serve, `assembleCommand` for one command, `registerCommands`), the administrator commands and `operatorAdmin`, the real Hub for acceptance tests: see `assemble/README.md` |
+| `docs.ts` | named documents (C4 of the device-pack core): `doc put/list/show` and the `doc:doc:` external ids answered by the Hub's own reader for runs of packs that declare them; see the module's header |
 | `errors.ts` | `AssemblyMissingError` (a placeholder module, or one without the part a command needs), `UsageError`, `CliError` |
 | `fakes.ts`, `testing.ts` | in-memory fakes of the ports and of the engine's extras, `createTestServer()` / `fakeDeps()` for tests |
 

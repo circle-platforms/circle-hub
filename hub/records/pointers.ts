@@ -35,6 +35,12 @@ export class PgPointers implements Pointers {
     return row === undefined ? null : stateOf(row);
   }
 
+  async list(prefix: string): Promise<PointerState[]> {
+    if (typeof prefix !== 'string' || prefix.length === 0 || prefix.length > 200) throw new TypeError('a pointer prefix is 1 to 200 characters');
+    const rows = (await this.#db.query('SELECT name, target, version, moved_at, action_digest FROM pointers WHERE name LIKE $1 ORDER BY name', [`${prefix.replace(/[%_\\]/g, (c) => `\\${c}`)}%`])).rows;
+    return rows.map(stateOf);
+  }
+
   async move(input: MoveInput, tx?: Transaction): Promise<MoveResult> {
     const name = input.name;
     if (typeof name !== 'string' || !NAME.test(name)) throw new TypeError(`pointer names must match ${NAME}`);

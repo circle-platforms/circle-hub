@@ -150,7 +150,8 @@ Record kinds and schemas this package writes: `source_artifact@1`, `action@1` (v
 10. **Pointers**: a per-name advisory lock, then compare; a refused move writes nothing and returns the current state;
     `next` must differ from `expected`. The `move_root` action records expected, next, the new version, the previous
     move's action digest (`previous_action`, chaining the moves), the triggering run, the component and the person, if any
-    (B05 R[4]); so every move is its own action record.
+    (B05 R[4]); so every move is its own action record. `list(prefix)` is a read-only listing by name prefix, added for
+    the named documents (`doc:`) of hub/server.
 11. **Call log**: arguments are reduced to the SHA-256 and byte size of their canonical JSON before anything is written
     (`JSON.stringify` text when they are not canonical JSON). Each call has a W3C span id (`spanId`, generated when the
     server gives none), so two calls with equal fields are two lines; retrying an append with the same span id is
