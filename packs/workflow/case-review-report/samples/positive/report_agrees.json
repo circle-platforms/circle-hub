@@ -53,13 +53,13 @@
     "cross_item": [
       {
         "nature": "judgment",
-        "statement": "评审终稿（全文略）：整体 PARTIAL、P5，两块取最差；B 块一条部分正确、一条新增",
+        "statement": "终稿（中文全文略）：两块合成，发现逐条核对，B 块一条部分正确、一条新增",
         "grounds": [
           "rec:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef#/partitions/delivered/0/requirements/0/claims/0",
           "rec:fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210#/partitions/delivered/0/requirements/0/claims/0",
           "rec:fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210#/partitions/delivered/0/requirements/0/claims/1"
         ],
-        "code": "report",
+        "code": "PARTIAL",
         "rank": "P5"
       },
       {

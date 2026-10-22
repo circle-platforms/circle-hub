@@ -137,7 +137,7 @@ describe('scenario 26: the review report over blocks (steps 6 and 7 of the metho
       run: reportRun.run,
       model: REPORTER,
       items: reportRun.items.map((it) => ({ item: it.id, handling: 'handled', slots: {} })),
-      cross_item: [{ nature: 'judgment', statement: '终稿（错误示例）：整体 PASS、P3，没有重要问题', grounds: [], code: 'report', rank: 'P3' }],
+      cross_item: [{ nature: 'judgment', statement: '终稿（错误示例）：没有重要问题（合成示例）', grounds: [], code: 'PASS', rank: 'P3' }],
     });
     assert.equal(answer.isError, false, answer.text.slice(0, 400));
     const refutes = await refutesOf(reportRun.run);
@@ -206,7 +206,7 @@ describe('scenario 26: the review report over blocks (steps 6 and 7 of the metho
         run: run.run,
         model: REPORTER,
         items: run.items.map((it) => ({ item: it.id, handling: 'handled', slots: {} })),
-        cross_item: [{ nature: 'judgment', statement: '终稿：整体 PARTIAL、P4（A 块发现被推翻）', grounds: findings, code: 'report', rank: 'P4' }],
+        cross_item: [{ nature: 'judgment', statement: '终稿：A 块发现被推翻（合成示例）', grounds: findings, code: 'PARTIAL', rank: 'P4' }],
       });
       assert.equal(answer.isError, false, answer.text.slice(0, 600));
     };

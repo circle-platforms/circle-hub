@@ -125,45 +125,44 @@ describe('the checks of case-review-report', () => {
     context: {},
     cross_item: crossItem,
   });
-  const reportClaim = (statement: string, rank: string | undefined, grounds: string[]): Record<string, unknown> => ({ nature: 'judgment', statement, grounds, code: 'report', ...(rank === undefined ? {} : { rank }) });
+  // The verdict claim: its code IS the verdict, its rank the level (the verification pack's own final shape).
+  const verdictClaim = (verdict: string, rank: string | undefined, grounds: string[]): Record<string, unknown> => ({ nature: 'judgment', statement: '终稿（中文全文略）：两块合成，各块发现逐条核对', grounds, code: verdict, ...(rank === undefined ? {} : { rank }) });
 
-  it('the overall check supports the computed worst verdict and refutes a wrong one', () => {
-    const good = subjectWith([reportClaim('终稿：整体 PARTIAL，两块取最差', 'P5', refs)]);
+  it('the overall check compares the claim code and rank with the computed worst, no text matching', () => {
+    const good = subjectWith([verdictClaim('PARTIAL', 'P5', refs)]);
     assert.equal(overallCheck({ subject: good })[0]!.verdict, 'support');
-    const wrongVerdict = subjectWith([reportClaim('终稿：整体 PASS', 'P3', refs)]);
+    const wrongVerdict = subjectWith([verdictClaim('PASS', 'P3', refs)]);
     const wrongOut = overallCheck({ subject: wrongVerdict });
     assert.equal(wrongOut[0]!.verdict, 'refute');
     assert.equal(wrongOut[0]!.code, 'case-review-report.verdict_mismatch');
-    const wrongLevel = subjectWith([reportClaim('终稿：整体 PARTIAL', 'P3', refs)]);
+    const wrongLevel = subjectWith([verdictClaim('PARTIAL', 'P3', refs)]);
     const levelOut = overallCheck({ subject: wrongLevel });
     assert.equal(levelOut[0]!.code, 'case-review-report.level_mismatch');
-    assert.equal(overallCheck({ subject: subjectWith([]) })[0]!.code, 'case-review-report.report_missing', 'no report claim at all');
+    assert.equal(overallCheck({ subject: subjectWith([{ nature: 'judgment', statement: '只有建议', grounds: [], code: 'suggestion' }]) })[0]!.code, 'case-review-report.report_missing', 'no verdict claim at all');
   });
 
-  it('the overall check demands unknown when a final was unreadable', () => {
+  it('the overall check refuses every verdict when a final was unreadable (the whole is unknown)', () => {
     const items = [{ id: 'report', label: '评审终稿', location: `src:${DIGEST}/kityminder@1/n/c1`, fields: { overall: null, findings } }];
-    const saysUnknown = { applies: 'run', items, context: {}, cross_item: [reportClaim('终稿：整体未知，缺一块的结论', undefined, refs)] };
-    assert.equal(overallCheck({ subject: saysUnknown })[0]!.verdict, 'support');
-    const saysPass = { applies: 'run', items, context: {}, cross_item: [reportClaim('终稿：整体 PARTIAL', 'P4', refs)] };
-    assert.equal(overallCheck({ subject: saysPass })[0]!.code, 'case-review-report.verdict_mismatch');
+    const claimsAny = { applies: 'run', items, context: {}, cross_item: [verdictClaim('PARTIAL', 'P4', refs)] };
+    assert.equal(overallCheck({ subject: claimsAny })[0]!.code, 'case-review-report.verdict_mismatch');
   });
 
   it('the report check wants every non-refuted finding cited, none refuted, none invented', () => {
-    const agree = subjectWith([reportClaim('终稿：整体 PARTIAL，两块取最差', 'P5', refs)]);
+    const agree = subjectWith([verdictClaim('PARTIAL', 'P5', refs)]);
     assert.equal(reportCheck({ subject: agree })[0]!.verdict, 'support');
-    const missing = subjectWith([reportClaim('终稿：整体 PARTIAL，两块取最差', 'P5', refs.slice(0, 2))]);
+    const missing = subjectWith([verdictClaim('PARTIAL', 'P5', refs.slice(0, 2))]);
     const missingOut = reportCheck({ subject: missing });
     assert.ok(missingOut.some((o) => o.code === 'case-review-report.finding_missing'));
-    const refuted = subjectWith([reportClaim('终稿：整体 PARTIAL，两块取最差', 'P5', [...refs, refutedRef])]);
+    const refuted = subjectWith([verdictClaim('PARTIAL', 'P5', [...refs, refutedRef])]);
     assert.ok(reportCheck({ subject: refuted }).some((o) => o.code === 'case-review-report.finding_refuted'));
-    const invented = subjectWith([reportClaim('终稿：整体 PARTIAL，两块取最差', 'P5', [...refs, 'rec:' + '9'.repeat(64) + '#/x'])]);
+    const invented = subjectWith([verdictClaim('PARTIAL', 'P5', [...refs, 'rec:' + '9'.repeat(64) + '#/x'])]);
     assert.ok(reportCheck({ subject: invented }).some((o) => o.code === 'case-review-report.finding_unknown'));
   });
 
   it('a suggestion without all three labeled parts is refused', () => {
-    const partial = subjectWith([reportClaim('终稿：整体 PARTIAL，两块取最差', 'P5', refs), { nature: 'judgment', statement: '补反向用例', grounds: [], code: 'suggestion' }]);
+    const partial = subjectWith([verdictClaim('PARTIAL', 'P5', refs), { nature: 'judgment', statement: '补反向用例', grounds: [], code: 'suggestion' }]);
     assert.ok(reportCheck({ subject: partial }).some((o) => o.code === 'case-review-report.suggestion_incomplete'));
-    const whole = subjectWith([reportClaim('终稿：整体 PARTIAL，两块取最差', 'P5', refs), { nature: 'judgment', statement: '补：反向用例；因为：边界未覆盖；期望：非法输入被拒绝', grounds: [], code: 'suggestion' }]);
+    const whole = subjectWith([verdictClaim('PARTIAL', 'P5', refs), { nature: 'judgment', statement: '补：反向用例；因为：边界未覆盖；期望：非法输入被拒绝', grounds: [], code: 'suggestion' }]);
     assert.equal(reportCheck({ subject: whole })[0]!.verdict, 'support');
   });
 });

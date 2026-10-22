@@ -29,7 +29,7 @@
     {
       "key": "report",
       "name": "中文报告",
-      "description": "评审终稿，跨条目判断：一条 code=report 的主张（陈述写中文报告全文并写明整体结论，rank 写等级——都等于 Hub 算出的值），每条证实、部分正确和新增的发现以 grounds 里的 rec: 引用引到（一条不漏，推翻的不能引）；每条建议一条 code=suggestion 的主张，陈述按“补：<用例>；因为：<原因>；期望：<结果>”三段写；证据缺口各一条 code=gap 的主张。报告只总结复核方的材料，不重新评审",
+      "description": "评审终稿，跨条目判断：一条结论主张——code 写整体结论（PASS、PARTIAL 或 FAIL，封闭集合，等于 Hub 算出的各块最差），rank 写整体等级（P0-P7，等于最差那块的等级），statement 写中文报告全文，grounds 引各块复核结果里每条证实、部分正确和新增的发现（rec: 引用，一条不漏，推翻的不能引）；每条建议一条 code=suggestion 的主张，陈述按“补：<用例>；因为：<原因>；期望：<结果>”三段写；证据缺口各一条 code=gap 的主张。报告只总结复核方的材料，不重新评审",
       "target": "run",
       "required": true,
       "done_rule": "bookkeeping",

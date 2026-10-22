@@ -1,15 +1,15 @@
 {
   "schema": "pack@1",
   "id": "case-review-report",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "kind": "workflow",
   "title": "评审终稿（合成示例）",
   "description": "各块复核都受理后按各块取最差算整体结论与等级，核对初评方写的中文报告",
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "24153cadfc16d3ac21e2fe9a7c76f782ebbc78c2e995712b40872c1501d9d908",
-      "size": 1967
+      "sha256": "afaff172342b1c370b48efb40d7d2529f43699066142e0701a08749a36176650",
+      "size": 2060
     },
     {
       "path": "checks.json",
@@ -18,18 +18,18 @@
     },
     {
       "path": "examples/start-run.json",
-      "sha256": "b49f8facbac878cc431c12e2a359938e5d5a625ec623e965ba54b20bf99f3d14",
+      "sha256": "c4241390e2ae8d3df9e0ecc1caf0d649b9763c33b079f0162d0f44fd71f96beb",
       "size": 447
     },
     {
       "path": "examples/submit-result.json",
-      "sha256": "4037debde6a8fa29d84bb1fd05da40092ded45dd3824aa919201b240f5335463",
-      "size": 1720
+      "sha256": "ffccf6367aeec1d1e8988b3ac40054a53ee02129337e9733efd17e68b242601d",
+      "size": 1188
     },
     {
       "path": "functions/checks.ts",
-      "sha256": "48b43169bea04ff34851bfeb00d2d61494295154b59046f76d19ba066298eeb8",
-      "size": 7142
+      "sha256": "b7e0b323e155365c980526906a4a19980181bb53b3545978407ada94e2e82468",
+      "size": 7462
     },
     {
       "path": "functions/common.ts",
@@ -43,38 +43,38 @@
     },
     {
       "path": "requirements.json",
-      "sha256": "fdbe13a4c2923e7534ad8950a8a7377730f29fee4ab262a842833eac70060cb7",
-      "size": 2374
+      "sha256": "5ae127f92a0873f886aa344989a40a100f1fabaebdad52b721bd872161009e1c",
+      "size": 2474
     },
     {
       "path": "samples/negative/overall_not_worst.json",
-      "sha256": "ea5d188952b79dcbf39ccaf5c611c176906234142152586cb53d365b4e1caf9d",
-      "size": 2560
+      "sha256": "b027d0c62d0ee09078199c07c34c8ffe2bd5991d76d53ca91a621aea30837c77",
+      "size": 2610
     },
     {
       "path": "samples/negative/report_cites_refuted.json",
-      "sha256": "848f5812214cdbefe7f28c730dfaf3bdd8ff00ef34da8e71f0cc088b273bbf31",
-      "size": 2689
+      "sha256": "b8d95229b3733c426fcf5ce1a5975bea7ca304ed7285aeb8c8bc9bbee6082bc7",
+      "size": 2760
     },
     {
       "path": "samples/negative/report_missing_finding.json",
-      "sha256": "9560077ada5a1b5ca6ea4b8d9feb07c5fd40cabfe3c34eca5b763383e84978a8",
-      "size": 2399
+      "sha256": "e3461a4a5e50c8c820b9be9968e013ec72ea156d9d31b49fd9111a1ea7999aad",
+      "size": 2470
     },
     {
       "path": "samples/positive/overall_worst.json",
-      "sha256": "c521581de555bd347f7e6f8befa6107971283d3d7de36c88f959f7b9ebfc564c",
-      "size": 2504
+      "sha256": "ca2e9ea0e9704a7ac0326ccdc89f0873ff2482781833ef6436447138126a6a6b",
+      "size": 2557
     },
     {
       "path": "samples/positive/report_agrees.json",
-      "sha256": "75017bf34ee9005981f239ffeccd1583f8bfd886128be8be0516fd455bc2df01",
-      "size": 2817
+      "sha256": "59b0aa54dc1968737fa1557d43a35a0e1fb37304a63590bcf28fc5f45ba2a2ee",
+      "size": 2814
     },
     {
       "path": "slots.schema.json",
-      "sha256": "4bb5610e6c4a6fc4d4927254bb1f50ba1606efb14979117e29a0f1745dff1022",
-      "size": 1200
+      "sha256": "5fa64c52082689a0ae8b3ef1140f19d276045bd4813b0f992b1a0a8d64de3882",
+      "size": 1308
     },
     {
       "path": "workflow.json",

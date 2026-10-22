@@ -5,8 +5,16 @@
     "report": {
       "codes": [
         {
-          "code": "report",
-          "label": "评审终稿：中文全文，结论照 Hub 算出的（陈述里写明），等级写 rank，每条发现以 grounds 里的 rec: 引用引到"
+          "code": "PASS",
+          "label": "整体 PASS：各块里最差的也是 PASS"
+        },
+        {
+          "code": "PARTIAL",
+          "label": "整体 PARTIAL：至少一块 PARTIAL"
+        },
+        {
+          "code": "FAIL",
+          "label": "整体 FAIL：至少一块 FAIL"
         },
         {
           "code": "suggestion",

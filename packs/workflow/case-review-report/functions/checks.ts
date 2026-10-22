@@ -1,14 +1,17 @@
 // The checks of the review report (checks.json), pure functions over the default subjects the Hub builds. The report
 // requirement is a run-level judgment: its claims sit in the subject's cross_item (flattened: code, rank, statement,
-// grounds — a run-level claim carries no data, so the findings are its grounds and the level its rank).
-// - overall (run, fact): the report claim states the computed verdict (in its statement) and level (as its rank); when a
-//   block's final was unreadable the computed overall is unknown and the statement must say so.
-// - report (run): every verified, partial and new finding of the blocks is cited among the report claim's grounds (none
+// grounds — a run-level claim carries no data, so the findings are its grounds). The verdict claim is the one whose code
+// is PASS, PARTIAL or FAIL (the closed set the slot declares, the same shape as the verification pack's own final):
+// - overall (run, fact): the verdict claim's code equals the computed worst verdict and its rank the computed level — a
+//   direct comparison, never text matching; with no readable final in some block the computed overall is unknown and no
+//   verdict can be honestly stated, so the claim is refused with the fix naming the missing block.
+// - report (run): every verified, partial and new finding of the blocks is cited among the verdict claim's grounds (none
 //   missing, none refuted, none invented), and every suggestion claim carries the three labeled parts.
 import type { CheckOutcome } from '../../../../contracts/src/tables.ts';
 import { PACK, isRecord } from './common.ts';
 
-const VERDICT_ORDER = { PASS: 0, PARTIAL: 1, FAIL: 2 } as const;
+const VERDICTS = ['PASS', 'PARTIAL', 'FAIL'] as const;
+type Verdict = (typeof VERDICTS)[number];
 const TIER = 'blocking';
 const CODES = {
   verdictMismatch: `${PACK}.verdict_mismatch`,
@@ -22,40 +25,39 @@ const CODES = {
 
 const cross = (value: unknown): Record<string, unknown>[] => (Array.isArray(value) ? value.filter(isRecord) : []);
 
-/** The run items of the subject (the report item carries the projection's fields). */
 function itemsOf(subject: Record<string, unknown>): Record<string, unknown>[] {
   return Array.isArray(subject.items) ? subject.items.filter(isRecord) : [];
 }
 
-/** The flattened cross-item claims the submission produced. */
 function claimsOf(subject: Record<string, unknown>): Record<string, unknown>[] {
   return cross(subject.cross_item);
+}
+
+/** The verdict claim: the cross-item claim whose code is one of PASS, PARTIAL, FAIL. */
+function verdictClaimOf(subject: Record<string, unknown>): Record<string, unknown> | null {
+  return claimsOf(subject).find((c) => typeof c.code === 'string' && (VERDICTS as readonly string[]).includes(c.code)) ?? null;
 }
 
 export function overallCheck(input: unknown): CheckOutcome[] {
   const subject = isRecord(input) && isRecord(input.subject) ? input.subject : {};
   const reportItem = itemsOf(subject).find((i) => i.id === 'report');
   const fields = isRecord(reportItem?.fields) ? reportItem?.fields : {};
-  const computed = isRecord(fields.overall) ? (fields.overall as { verdict: string; level: string | null }) : null;
-  const claim = claimsOf(subject).find((c) => c.code === 'report');
-  if (claim === undefined) {
-    return [{ verdict: 'refute', code: CODES.reportMissing, statement: '提交里没有终稿主张（cross_item 里 code 为 report 的一条）', grounds: [], tier: TIER, data: { fix: '按 SKILL 写终稿：一条 code=report 的跨条目主张' } }];
+  const computed = isRecord(fields.overall) ? (fields.overall as { verdict: Verdict; level: string | null }) : null;
+  const claim = verdictClaimOf(subject);
+  if (claim === null) {
+    return [{ verdict: 'refute', code: CODES.reportMissing, statement: `提交里没有结论主张（cross_item 里码为 ${VERDICTS.join('、')} 的一条）`, grounds: [], tier: TIER, data: { fix: '按 SKILL 写终稿：一条结论主张（code 写整体结论、rank 写整体等级、statement 写报告全文）' } }];
   }
-  const statement = typeof claim.statement === 'string' ? claim.statement : '';
   if (computed === null) {
-    if (!statement.includes('未知')) {
-      return [{ verdict: 'refute', code: CODES.verdictMismatch, statement: '有块没有可读的结论，整体是未知，终稿要写明', grounds: [], tier: TIER, data: { fix: '终稿写明整体未知并补齐缺的块' } }];
-    }
-    return [{ verdict: 'support', statement: '有块没有可读的结论，整体记未知（缺输入）', grounds: [], tier: TIER }];
+    return [{ verdict: 'refute', code: CODES.verdictMismatch, statement: '有块没有可读的结论，整体是未知：先补齐缺的块再出终稿', grounds: [], tier: TIER, data: { fix: '把缺的块复核完成并重新开始终稿运行' } }];
   }
-  if (!statement.includes(computed.verdict)) {
-    return [{ verdict: 'refute', code: CODES.verdictMismatch, statement: `整体结论应是 ${computed.verdict}（各块取最差），终稿陈述里没有写明`, grounds: [], tier: TIER, data: { fix: `终稿陈述写明整体结论 ${computed.verdict}` } }];
+  if (claim.code !== computed.verdict) {
+    return [{ verdict: 'refute', code: CODES.verdictMismatch, statement: `整体结论应是 ${computed.verdict}（各块取最差），主张写的是 ${String(claim.code)}`, grounds: [], tier: TIER, data: { fix: `把结论主张的码改成 ${computed.verdict}` } }];
   }
   const rank = typeof claim.rank === 'string' ? claim.rank : null;
   if (computed.level !== null && rank !== computed.level) {
-    return [{ verdict: 'refute', code: CODES.levelMismatch, statement: `整体等级应是 ${computed.level}（最差那块的等级），主张的等级是 ${rank ?? '（未写）'}`, grounds: [], tier: TIER, data: { fix: `把终稿主张的等级改成 ${computed.level}` } }];
+    return [{ verdict: 'refute', code: CODES.levelMismatch, statement: `整体等级应是 ${computed.level}（最差那块的等级），主张的等级是 ${rank ?? '（未写）'}`, grounds: [], tier: TIER, data: { fix: `把结论主张的等级改成 ${computed.level}` } }];
   }
-  return [{ verdict: 'support', statement: `整体结论 ${computed.verdict}、等级 ${computed.level ?? '未给'}：各块取最差，终稿照写`, grounds: [], tier: TIER }];
+  return [{ verdict: 'support', statement: `整体结论 ${computed.verdict}、等级 ${computed.level ?? '未给'}：各块取最差，终稿主张照写`, grounds: [], tier: TIER }];
 }
 
 export function reportCheck(input: unknown): CheckOutcome[] {
@@ -66,11 +68,11 @@ export function reportCheck(input: unknown): CheckOutcome[] {
   const known = new Set(findings.map((f) => String(f.reference ?? '')).filter((r) => r !== ''));
   const refuted = new Set(findings.filter((f) => f.kind === 'refuted').map((f) => String(f.reference ?? '')));
   const claims = claimsOf(subject);
-  const report = claims.find((c) => c.code === 'report');
-  if (report === undefined) {
-    return [{ verdict: 'refute', code: CODES.reportMissing, statement: '提交里没有终稿主张（cross_item 里 code 为 report 的一条）', grounds: [], tier: TIER, data: { fix: '按 SKILL 写终稿：一条 code=report 的跨条目主张' } }];
+  const verdict = verdictClaimOf(subject);
+  if (verdict === null) {
+    return [{ verdict: 'refute', code: CODES.reportMissing, statement: `提交里没有结论主张（cross_item 里码为 ${VERDICTS.join('、')} 的一条）`, grounds: [], tier: TIER, data: { fix: '按 SKILL 写终稿：一条结论主张（code 写整体结论、rank 写整体等级、statement 写报告全文）' } }];
   }
-  const cited = new Set((Array.isArray(report.grounds) ? report.grounds : []).filter((g): g is string => typeof g === 'string'));
+  const cited = new Set((Array.isArray(verdict.grounds) ? verdict.grounds : []).filter((g): g is string => typeof g === 'string'));
   const out: CheckOutcome[] = [];
   for (const f of findings) {
     const reference = String(f.reference ?? '');
@@ -80,7 +82,7 @@ export function reportCheck(input: unknown): CheckOutcome[] {
       continue;
     }
     if (!cited.has(reference)) {
-      out.push({ verdict: 'refute', code: CODES.findingMissing, statement: `发现 ${reference}（${f.kind === 'new_finding' ? '新增' : f.kind === 'partial' ? '部分正确' : '证实'}）没有在终稿的 grounds 里引用`, grounds: [], tier: TIER, data: { fix: '把这条发现的 rec: 引用补进终稿主张的 grounds' } });
+      out.push({ verdict: 'refute', code: CODES.findingMissing, statement: `发现 ${reference}（${f.kind === 'new_finding' ? '新增' : f.kind === 'partial' ? '部分正确' : '证实'}）没有在结论主张的 grounds 里引用`, grounds: [], tier: TIER, data: { fix: '把这条发现的 rec: 引用补进结论主张的 grounds' } });
     }
   }
   for (const reference of cited) {
