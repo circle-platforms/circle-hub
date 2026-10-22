@@ -29,6 +29,8 @@ export interface ChangeSpec {
 export interface BuildOptions {
   /** The changed kinds the view was asked for; default definition-only (decision 11). */
   changedKinds?: string[];
+  /** The catalog the view was filtered to (catalog-entry@1 members compared by syntax); absent: no catalog filter. */
+  catalog?: string;
   skipped?: { from: number; to: number };
   truncated?: boolean;
   changedPaths?: number;
@@ -142,6 +144,7 @@ export function buildImpact(changes: readonly ChangeSpec[], options: BuildOption
   return {
     schema: 'impact-view@1',
     product: 'widget',
+    ...(options.catalog !== undefined ? { catalog: options.catalog } : {}),
     from: { build: 'Rel_W_1_0_1', root: FROM_ROOT },
     to: { build: 'Rel_W_1_0_2', root: TO_ROOT },
     changed_kinds: options.changedKinds ?? ['definition'],

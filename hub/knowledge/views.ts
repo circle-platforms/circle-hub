@@ -1,6 +1,9 @@
 // The Hub's own views of the knowledge tree, served as external objects of the system `knowledge` (contracts/src/views.ts):
-//   knowledge:impact:<product>:<from build>..<to build>[?changed=<kinds>&attached=<kinds>]   the entry-level version
-//     difference with the entries filed on the changed nodes (K01 R[1]: the version difference is the regression scope)
+//   knowledge:impact:<product>:<from build>..<to build>[?changed=<kinds>&attached=<kinds>][&catalog=<catalog>]   the entry-level
+//     version difference with the entries filed on the changed nodes (K01 R[1]: the version difference is the regression scope);
+//     with catalog (e.g. catalog=commands@1, a literal @ reads the same as %40) only the members of that catalog count as
+//     changes, read per root like read.ts catalog() and compared by syntax (catalog-entry@1 without the descriptive fields,
+//     references and signature ids, overloads as a set); changed may then be omitted (the catalog's kind) or must equal it
 //   knowledge:facets:<product>:<build>?kind=<kind>&by=<fields>   counts of entries by the values of data fields,
 //     placed rows and the unplaced rows of the root (K01 R[4]), an entry once, an unplaced entry cited at the root
 //   knowledge:index:<product>:<build>?kind=<kind>&key=<field>[&only=<values>]   data value -> the entries that carry it,
@@ -12,7 +15,7 @@
 // (callers show the neutral SOURCE_UNAVAILABLE, D05 R[3]); a root without entries of the asked kind is a valid answer with a
 // note, and so is a root whose listed sources were not all used: what they would give is unknown, never absent.
 import { ENTRY_KIND, EntryKindSchema, labelOf, type EntryKind } from '../../contracts/generated/vocabulary.ts';
-import { RunId } from '../../contracts/src/common.ts';
+import { RunId, Versioned } from '../../contracts/src/common.ts';
 import {
   DataFieldName,
   FacetView,
@@ -55,7 +58,7 @@ const NOTE_REFERENCES = 10;
 const PROTO_KEY = '__proto__';
 
 export type ViewRequest =
-  | { type: 'impact'; product: string; from: string; to: string; changed: EntryKind[]; attached: EntryKind[]; attached_fields: string[] | null; revision: string | null }
+  | { type: 'impact'; product: string; from: string; to: string; changed: EntryKind[]; attached: EntryKind[]; attached_fields: string[] | null; catalog: string | null; revision: string | null }
   | { type: 'facets'; product: string; build: string; kind: EntryKind; by: string[]; revision: string | null }
   | { type: 'index'; product: string; build: string; kind: EntryKind; key: string; only: string[] | null; fields: string[] | null; revision: string | null };
 
@@ -63,12 +66,23 @@ type Parsed<T> = { ok: true; value: T } | { ok: false; reason: string };
 
 /** The query keys each view takes, and which of them it needs. */
 const QUERY = {
-  impact: { keys: ['changed', 'attached', 'attached_fields'], required: [] },
+  impact: { keys: ['changed', 'attached', 'attached_fields', 'catalog'], required: [] },
   facets: { keys: ['kind', 'by'], required: ['kind', 'by'] },
   index: { keys: ['kind', 'key', 'only', 'fields'], required: ['kind', 'key'] },
 } as const satisfies Record<ViewRequest['type'], { keys: readonly string[]; required: readonly string[] }>;
 
-const ID = /^([a-z][a-z0-9-]*):([a-z][a-z0-9_-]*):([^:?@]+):([^?@]+)(?:\?([^@]*))?(?:@([^@]+))?$/;
+const ID = /^([a-z][a-z0-9-]*):([a-z][a-z0-9_-]*):([^:?@]+):([^?@]+)(?:\?([\s\S]*))?$/;
+/** A revision is a root pair (impact) or one root (facets, index): it is cut off first, so a query value may hold a literal @. */
+const REVISION = /@([0-9a-f]{64}(?:\.\.[0-9a-f]{64})?)$/;
+
+/** Splits the trailing revision off a view id; the rest may hold literal @ characters (a catalog name does). */
+export function splitRevision(id: string): { body: string; revision: string | null } {
+  const match = REVISION.exec(id);
+  return match === null ? { body: id, revision: null } : { body: id.slice(0, match.index), revision: match[1] };
+}
+
+/** A refusal of an impact-view request the caller may read as-is (a root without the catalog, a changed kind outside it). */
+export class ImpactRefusal extends Error {}
 
 function decode(text: string): string | null {
   try {
@@ -91,7 +105,8 @@ function kindsOf(values: string[], what: string): Parsed<EntryKind[]> {
 /** Parses a knowledge view id; the reason says what is wrong (for the admin log). */
 export function parseViewId(id: string): Parsed<ViewRequest> {
   if (typeof id !== 'string' || id.length > 8192) return { ok: false, reason: '不是外部对象标识' };
-  const match = ID.exec(id);
+  const { body, revision } = splitRevision(id);
+  const match = ID.exec(body);
   if (match === null || match[1] !== VIEW_SYSTEM) return { ok: false, reason: `${cutText(id, 120)} 不是知识视图的标识（knowledge:<视图>:<产品>:<构建>[?参数]）` };
   const type = match[2];
   if (!Object.hasOwn(QUERY, type)) return { ok: false, reason: `没有叫 ${cutText(type, 40)} 的知识视图（有 ${Object.keys(QUERY).join('、')}）` };
@@ -130,17 +145,23 @@ export function parseViewId(id: string): Parsed<ViewRequest> {
     }
   }
   for (const name of QUERY[view].required as readonly string[]) if (!query.has(name)) return { ok: false, reason: `视图 ${view} 要有参数 ${name}` };
-  const revision = match[6] === undefined ? null : decode(match[6]);
-  if (match[6] !== undefined && revision === null) return { ok: false, reason: '修订的写法不对' };
   const one = (name: string): Parsed<string> => {
     const values = query.get(name) ?? [];
     return values.length === 1 ? { ok: true, value: values[0] } : { ok: false, reason: `参数 ${name} 只能有一个取值` };
   };
   if (view === 'impact') {
     if (from === '' || to === '') return { ok: false, reason: '版本差要写成 <起始构建>..<目标构建>' };
-    const changed = kindsOf(query.get('changed') ?? [...DEFAULT_CHANGED_KINDS], 'changed');
+    let catalog: string | null = null;
+    if (query.has('catalog')) {
+      const value = one('catalog');
+      if (!value.ok) return value;
+      if (!Versioned.safeParse(value.value).success) return { ok: false, reason: `目录 ${cutText(value.value, 60)} 的写法不对（名字@主版本号，如 commands@1）` };
+      catalog = value.value;
+    }
+    // With a catalog, changed may be omitted (the catalog's kind, decided when the declarations are read) or must equal it.
+    const changed = kindsOf(query.get('changed') ?? (catalog === null ? [...DEFAULT_CHANGED_KINDS] : []), 'changed');
     if (!changed.ok) return changed;
-    if (changed.value.length === 0) return { ok: false, reason: 'changed 至少要有一个条目种类' };
+    if (changed.value.length === 0 && catalog === null) return { ok: false, reason: 'changed 至少要有一个条目种类' };
     const attached = kindsOf(query.get('attached') ?? [...DEFAULT_ATTACHED_KINDS], 'attached');
     if (!attached.ok) return attached;
     let attached_fields: string[] | null = null;
@@ -150,7 +171,7 @@ export function parseViewId(id: string): Parsed<ViewRequest> {
       for (const field of raw) if (!DataFieldName.safeParse(field).success) return { ok: false, reason: `字段名 ${cutText(field, 40)} 不对（小写字母开头，只有小写字母、数字和下划线）` };
       attached_fields = [...new Set(raw)].sort(compareText);
     }
-    return { ok: true, value: { type: 'impact', product, from, to, changed: changed.value, attached: attached.value, attached_fields, revision } };
+    return { ok: true, value: { type: 'impact', product, from, to, changed: changed.value, attached: attached.value, attached_fields, catalog, revision } };
   }
   const kindText = one('kind');
   if (!kindText.ok) return kindText;
@@ -322,10 +343,28 @@ export class KnowledgeViews {
    * The impact view of two roots (K01 R[1]): changed paths of the changed kinds, the attached entries filed there. Paths are
    * kept in path order while they fit the limits, counted exactly; the content of an entry is read only for kept paths.
    * `exclude` names entries left out (their text has credential scan hits): a changed one takes its path out, an attached
-   * one only itself.
+   * one only itself. With `catalog` only the catalog's members count as changes, read per root and compared by syntax:
+   * a path whose members differ only in the descriptive fields or the overload order is not a change, counted in the notes.
    */
-  async impact(product: string, from: At, to: At, changed: readonly EntryKind[], attached: readonly EntryKind[], attachedFields: readonly string[] | null = null, exclude: ReadonlySet<string> = new Set()): Promise<ImpactView> {
-    const changedSet = new Set<string>(changed);
+  async impact(product: string, from: At, to: At, changed: readonly EntryKind[], attached: readonly EntryKind[], attachedFields: readonly string[] | null = null, catalog: string | null = null, exclude: ReadonlySet<string> = new Set()): Promise<ImpactView> {
+    let membersFrom: ReadonlyMap<string, string> | null = null;
+    let membersTo: ReadonlyMap<string, string> | null = null;
+    let catalogKind: EntryKind | null = null;
+    if (catalog !== null) {
+      const [cf, ct] = await Promise.all([this.#reading.catalogMembers(from.root, catalog), this.#reading.catalogMembers(to.root, catalog)]);
+      if (cf === null) throw new ImpactRefusal(`构建 ${from.build} 的根没有目录 ${catalog}，算不出目录成员的变化`);
+      if (ct === null) throw new ImpactRefusal(`构建 ${to.build} 的根没有目录 ${catalog}，算不出目录成员的变化`);
+      const kind = cf.declaration.entry_kind as EntryKind;
+      if (ct.declaration.entry_kind !== kind) throw new ImpactRefusal(`两个根里目录 ${catalog} 的成员种类不同（${cf.declaration.entry_kind}、${ct.declaration.entry_kind}），算不出目录成员的变化`);
+      if (changed.length > 0 && (changed.length !== 1 || changed[0] !== kind)) {
+        throw new ImpactRefusal(`带了目录 ${catalog} 时 changed 只能不写或写 ${kind}（目录的成员种类），写了 ${changed.join('、')}`);
+      }
+      catalogKind = kind;
+      membersFrom = new Map([...cf.members].map(([digest, member]) => [digest, member.canon]));
+      membersTo = new Map([...ct.members].map(([digest, member]) => [digest, member.canon]));
+    }
+    const effectiveChanged: readonly EntryKind[] = catalogKind !== null ? [catalogKind] : changed;
+    const changedSet = new Set<string>(effectiveChanged);
     const attachedSet = new Set<string>(attached);
     // With attached_fields, entries of the attached kinds carry only those data fields and an empty statement; the changed
     // entries keep their full data (a diff needs it). The byte accounting uses the slimmed size.
@@ -362,14 +401,27 @@ export class KnowledgeViews {
     let changedPaths = 0;
     let attachedFrom = 0;
     let attachedTo = 0;
+    let syntaxOnly = 0;
     const excludedPaths: string[] = [];
     const excludedEntries = new Map<string, string>();
     for (const node of nodes) {
       const [a, b] = await Promise.all([this.#reading.kindsAt(fromComposition, node.path, node.before), this.#reading.kindsAt(toComposition, node.path, node.after)]);
       const pick = (list: readonly string[], kinds: Map<string, { kind: string }>, set: ReadonlySet<string>): string[] => list.filter((e) => set.has(kinds.get(e)?.kind ?? '')).sort(compareText);
-      const before = pick(node.before, a, changedSet);
-      const after = pick(node.after, b, changedSet);
+      let before = pick(node.before, a, changedSet);
+      let after = pick(node.after, b, changedSet);
       if (before.length === after.length && before.every((e, i) => after[i] === e)) continue;
+      if (membersFrom !== null && membersTo !== null) {
+        before = before.filter((e) => membersFrom.has(e));
+        after = after.filter((e) => membersTo.has(e));
+        if (before.length === after.length && before.every((e, i) => after[i] === e)) continue;
+        // Members that differ only in the descriptive fields or the overload order are not a change, counted in the notes.
+        const canonBefore = before.map((e) => membersFrom.get(e) as string).sort(compareText);
+        const canonAfter = after.map((e) => membersTo.get(e) as string).sort(compareText);
+        if (canonBefore.length === canonAfter.length && canonBefore.every((canon, i) => canon === canonAfter[i])) {
+          syntaxOnly++;
+          continue;
+        }
+      }
       const fromAll = pick(node.before, a, attachedSet);
       const toAll = pick(node.after, b, attachedSet);
       changedPaths++;
@@ -436,6 +488,7 @@ export class KnowledgeViews {
         notes.push(credentialNote([...excludedEntries.values()]));
         if (excludedPaths.length > 0) notes.push(`变化路径 ${referencesNote(excludedPaths)} 上变化的条目有凭据扫描命中，这些路径没有列出`);
       }
+      if (syntaxOnly > 0) notes.push(`${syntaxOnly} 个路径的目录成员只有说明性内容（参数说明、条目摘要）或签名顺序的差异，不算变更`);
       if (attachedFields !== null) notes.push(`附着的${attached.map((k) => labelOf('entry_kind', k)).join('、')}条目只带字段 ${attachedFields.join('、')}（attached_fields 参数），陈述为空；变更的条目不受影响`);
       if (from.root === to.root) notes.push(`两个构建用的是同一个根 ${to.root}，没有版本差`);
       for (const [side, composition] of [
@@ -445,7 +498,7 @@ export class KnowledgeViews {
         const counts = composition === null ? new Map<string, number>() : await composition.kindCounts();
         const missingAttached = attached.filter((kind) => (counts.get(kind) ?? 0) === 0);
         if (missingAttached.length > 0) notes.push(`构建 ${side.build} 的根里没有${missingAttached.map((k) => labelOf('entry_kind', k)).join('、')}种类的条目`);
-        if (changed.every((kind) => (counts.get(kind) ?? 0) === 0)) notes.push(`构建 ${side.build} 的根里没有${changed.map((k) => labelOf('entry_kind', k)).join('、')}种类的条目，算不出变化`);
+        if (effectiveChanged.every((kind) => (counts.get(kind) ?? 0) === 0)) notes.push(`构建 ${side.build} 的根里没有${effectiveChanged.map((k) => labelOf('entry_kind', k)).join('、')}种类的条目，算不出变化`);
         const skipped = skippedNote(side, composition);
         if (skipped !== null) notes.push(skipped);
       }
@@ -464,9 +517,10 @@ export class KnowledgeViews {
         product,
         from,
         to,
-        changed_kinds: [...changed],
+        changed_kinds: [...effectiveChanged],
         attached_kinds: [...attached],
         ...(attachedFields !== null ? { attached_fields: [...attachedFields] } : {}),
+        ...(catalog !== null ? { catalog } : {}),
         changes: items.map((item) => item.change),
         placements: items.flatMap((item) => (item.placement === null ? [] : [item.placement])),
         entries,
@@ -716,13 +770,14 @@ export class KnowledgeViews {
     try {
       return await this.#read(id, context, startedAt);
     } catch (error) {
+      if (error instanceof ImpactRefusal) return { ok: false, id: splitRevision(id).body, reason: error.message };
       return { ok: false, id, reason: `知识视图出错：${describeError(error)}` };
     }
   }
 
   async #read(id: string, context: ExternalReadContext, startedAt: string): Promise<ExternalRead> {
     const parsed = parseViewId(id);
-    const bare = id.includes('@') ? id.slice(0, id.indexOf('@')) : id;
+    const bare = splitRevision(id).body;
     if (!parsed.ok) return { ok: false, id: bare, reason: parsed.reason };
     const request = parsed.value;
     const handle = (await this.#packs.productById(request.product)) ?? (await this.#packs.productByName(request.product));
@@ -747,8 +802,8 @@ export class KnowledgeViews {
       const to = await resolve(request.to);
       if (typeof to === 'string') return { ok: false, id: bare, reason: to };
       roots = [from.root, to.root];
-      key = canonicalize({ type: request.type, product, from, to, changed: request.changed, attached: request.attached, attached_fields: request.attached_fields });
-      compute = (exclude) => this.impact(product, from, to, request.changed, request.attached, request.attached_fields, exclude);
+      key = canonicalize({ type: request.type, product, from, to, changed: request.changed, attached: request.attached, attached_fields: request.attached_fields, catalog: request.catalog });
+      compute = (exclude) => this.impact(product, from, to, request.changed, request.attached, request.attached_fields, request.catalog, exclude);
       title = `版本差 ${from.build} → ${to.build}（${product}）`;
     } else {
       const at = await resolve(request.build);

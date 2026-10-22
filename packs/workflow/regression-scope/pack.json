@@ -1,15 +1,15 @@
 {
   "schema": "pack@1",
   "id": "regression-scope",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "kind": "workflow",
   "title": "回归范围",
-  "description": "按两个构建的影响视图（瘦身：attached_fields=document,node,title,priority,negative）列出后一构建里放在新增或修改路径上的用例；没有用例的变更路径记为未知而不是失败。一次最多 4,000 条。只含事实要求项，开始运行时由 Hub 直接算出结果",
+  "description": "按两个构建的影响视图（限定命令目录：catalog=commands@1；瘦身：attached_fields=document,node,title,priority,negative）列出后一构建里放在新增或修改路径上的用例；没有用例的变更路径记为未知而不是失败。一次最多 4,000 条。只含事实要求项，开始运行时由 Hub 直接算出结果",
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "eba21a5669e9732931616a92ebf5537063d3cc5972b13acfb29650813a561777",
-      "size": 2103
+      "sha256": "9edcdfdd20a38af46da09e556e6aa500bbcc91e2c06a30c3fa11c34478e3a0e4",
+      "size": 2333
     },
     {
       "path": "checks.json",
@@ -28,8 +28,8 @@
     },
     {
       "path": "functions/project.ts",
-      "sha256": "54e140e1e5dd5389299bc76c8dc10bdd08bd7b1557d91cdd0f323b3206d04c4c",
-      "size": 7195
+      "sha256": "86ac12ad6e9693c34bb95a0cde87d7d6a5763973b6fec21227b2a1f349f786e1",
+      "size": 7635
     },
     {
       "path": "functions/scope.ts",
@@ -48,8 +48,8 @@
     },
     {
       "path": "functions/view.ts",
-      "sha256": "d4fec24a676de1f4eb813e533d49750cd4ce29a6af3647feb34f537b0d36bddc",
-      "size": 6969
+      "sha256": "0700243b8daffd196f0c3e16fbc5d33d895a570072039552d5a91941e314e643",
+      "size": 7379
     },
     {
       "path": "requirements.json",
@@ -83,13 +83,13 @@
     },
     {
       "path": "tables/codes.json",
-      "sha256": "76b777b5dd355f187d12ecd5f7a01698f6d495e32a07b4ed9d2a987c8598e9ca",
-      "size": 4513
+      "sha256": "84b0ec0ec4b4a350595282e547b2a04a34c6630605b61cd863a75cc1d0c7c523",
+      "size": 4532
     },
     {
       "path": "workflow.json",
-      "sha256": "7fc7af1ce155732ee0877439688e10b9f2514b38de5f5d530f780c1986b73b2a",
-      "size": 1820
+      "sha256": "17beba987090757a624a35901eceef52803886d0d565715afce7b91f3cc9e7b0",
+      "size": 1912
     }
   ]
 }

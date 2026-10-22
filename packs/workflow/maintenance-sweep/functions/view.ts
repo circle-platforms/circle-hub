@@ -6,6 +6,7 @@ import { isRecord } from './text.ts';
 const SHA = /^[0-9a-f]{64}$/;
 const PATH = /^\/(?:[^/@]+(?:\/[^/@]+)*)?$/;
 const TREE = /^tree:[0-9a-f]{64}\/(?:[^/@]+(?:\/[^/@]+)*)?@[0-9a-f]{64}$/;
+const CATALOG = /^[a-z][a-z0-9_.-]*@(?:0|[1-9][0-9]*)$/;
 const KINDS = new Set(['definition', 'behaviour', 'case', 'defect', 'observation']);
 const CHANGES = new Set(['added', 'removed', 'modified']);
 
@@ -39,6 +40,8 @@ export interface NormView {
   toBuild: string;
   changedKinds: string[];
   attachedKinds: string[];
+  /** The catalog the view was filtered to (members compared by syntax); null: no catalog filter. */
+  catalog: string | null;
   changes: NormChange[];
   placements: NormPlacement[];
   entries: Map<string, NormEntry>;
@@ -93,6 +96,7 @@ export function parseView(value: unknown): ParseResult {
   if (changedKinds.length === 0) return fail('影响视图没有变更种类');
   const attachedKinds = kindList(value.attached_kinds, '附着种类');
   if (typeof attachedKinds === 'string') return fail(attachedKinds);
+  if (value.catalog !== undefined && (typeof value.catalog !== 'string' || !CATALOG.test(value.catalog))) return fail('影响视图的目录名不对');
   if (!Array.isArray(value.changes)) return fail('影响视图没有变更列表');
   if (!Array.isArray(value.placements)) return fail('影响视图没有放置列表');
   if (!isRecord(value.entries)) return fail('影响视图没有条目表');
@@ -144,6 +148,7 @@ export function parseView(value: unknown): ParseResult {
       toBuild: value.to.build,
       changedKinds,
       attachedKinds,
+      catalog: typeof value.catalog === 'string' ? value.catalog : null,
       changes,
       placements,
       entries,

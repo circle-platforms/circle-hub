@@ -15,10 +15,10 @@ const skip = (await osIsolationAvailable()) ? false : 'no OS network isolation o
 let postgres: TemporaryPostgres;
 let hub: Hub;
 
-const REVIEW = 'knowledge:impact:widget:Rel_W_1_0_1..Rel_W_1_0_2';
-const BOTH = 'knowledge:impact:widget:Rel_W_1_0_1..Rel_W_1_0_3';
-const SKIPPED = 'knowledge:impact:widget:Rel_W_1_0_1..Rel_W_1_0_4';
-const EMPTY = 'knowledge:impact:widget:Rel_W_1_0_0..Rel_W_1_0_2';
+const REVIEW = 'knowledge:impact:widget:Rel_W_1_0_1..Rel_W_1_0_2?catalog=commands@1';
+const BOTH = 'knowledge:impact:widget:Rel_W_1_0_1..Rel_W_1_0_3?catalog=commands@1';
+const SKIPPED = 'knowledge:impact:widget:Rel_W_1_0_1..Rel_W_1_0_4?catalog=commands@1';
+const EMPTY = 'knowledge:impact:widget:Rel_W_1_0_0..Rel_W_1_0_2?catalog=commands@1';
 const bytes = (value: unknown): Uint8Array => new TextEncoder().encode(JSON.stringify(value));
 
 const both = [
@@ -41,10 +41,10 @@ before(async () => {
   postgres = await startPostgres();
   if (skip) return;
   hub = await openHub(postgres, {});
-  hub.external.put(REVIEW, bytes(buildImpact(reviewSweep())));
-  hub.external.put(BOTH, bytes(buildImpact(both)));
-  hub.external.put(SKIPPED, bytes(buildImpact(reviewSweep(), { skipped: { from: 3, to: 0 } })));
-  hub.external.put(EMPTY, bytes(buildImpact([])));
+  hub.external.put(REVIEW, bytes(buildImpact(reviewSweep(), { catalog: 'commands@1' })));
+  hub.external.put(BOTH, bytes(buildImpact(both, { catalog: 'commands@1' })));
+  hub.external.put(SKIPPED, bytes(buildImpact(reviewSweep(), { catalog: 'commands@1', skipped: { from: 3, to: 0 } })));
+  hub.external.put(EMPTY, bytes(buildImpact([], { catalog: 'commands@1' })));
 });
 after(async () => {
   await hub?.close();
@@ -267,7 +267,7 @@ describe('the real knowledge reader', () => {
     assert.equal(second.ok, true, second.reason ?? '');
 
     const runHub = await openHub(postgres, { knowledge: createKnowledgeReader(w.knowledge), kit: { kit: w.kit, admin: { id: w.admin.id, name: w.admin.name, role: 'admin' }, alice: { id: w.user.id, name: w.user.name, role: 'user' }, bob: { id: w.outsider.id, name: w.outsider.name, role: 'user' } } });
-    const reference = 'knowledge:impact:acme:Rel_WDG_7_7_7..Rel_WDG_7_7_8?changed=definition&attached=case&attached_fields=document,node,title';
+    const reference = 'knowledge:impact:acme:Rel_WDG_7_7_7..Rel_WDG_7_7_8?changed=definition&attached=case&attached_fields=document,node,title&catalog=catalog@1';
     const detail = await runHub.service.startRunDetailed(runHub.alice, { pack: 'maintenance-sweep', inputs: { impact: { external: reference } } }, call());
     assert.equal(detail.answer.call_result, 'ok', JSON.stringify(detail.answer.errors));
     assert.ok(detail.answer.run!.items.length > 0, 'the real reader answers an impact view the sweep projects');

@@ -4,7 +4,7 @@
     {
       "slot": "impact",
       "role": "subject",
-      "description": "两个构建之间的影响视图（knowledge:impact:<产品>:<起始构建>..<目标构建>?changed=definition&attached=case&attached_fields=document,node,title）。必须带 changed=definition：巡检范围只按命令定义的变化算（决定 11）。Hub 的读取器回答 impact-view@1，附着种类为用例",
+      "description": "两个构建之间的影响视图（knowledge:impact:<产品>:<起始构建>..<目标构建>?changed=definition&attached=case&attached_fields=document,node,title&catalog=commands@1）。必须带 changed=definition：巡检范围只按命令定义的变化算（决定 11）；catalog=commands@1 把变更限定到命令目录的成员按语法比。Hub 的读取器回答 impact-view@1，附着种类为用例",
       "accepts": [
         "knowledge:impact"
       ],

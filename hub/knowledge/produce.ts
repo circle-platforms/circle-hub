@@ -1239,6 +1239,24 @@ export function catalogData(data: Record<string, unknown>): { words: string[]; s
   return { words: parsed.data.words, signatures: parsed.data.signatures, ...(parsed.data.summary === undefined ? {} : { summary: parsed.data.summary }) };
 }
 
+/**
+ * The syntax of an entry's catalog data as an impact view asked for a catalog compares it (catalog-entry@1): the words,
+ * and the signatures as a set, each signature without its id and reference and each parameter without its description;
+ * the summary is left out. Null when the data is not catalog data.
+ */
+export function catalogCanon(data: Record<string, unknown>): string | null {
+  const parsed = catalogData(data);
+  if (parsed === null) return null;
+  const signatures = parsed.signatures.map((signature) => ({
+    params: signature.params.map((param) => {
+      const { description: _dropped, ...rest } = param;
+      return rest;
+    }),
+  }));
+  signatures.sort((a, b) => compareText(canonicalize(a), canonicalize(b)));
+  return canonicalize({ words: parsed.words, signatures });
+}
+
 interface ProduceActionInput {
   startedAt: string;
   sync: string | null;

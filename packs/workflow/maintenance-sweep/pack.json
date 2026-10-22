@@ -1,15 +1,15 @@
 {
   "schema": "pack@1",
   "id": "maintenance-sweep",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "kind": "workflow",
   "title": "维护巡检",
-  "description": "按两个构建的影响视图列出较早构建里需要维护的用例：命令已删除的记阻断，命令定义有差异的记提示并逐字段给出两边的值。只含事实要求项，开始运行时由 Hub 直接算出结果",
+  "description": "按两个构建的影响视图（限定命令目录：catalog=commands@1）列出较早构建里需要维护的用例：命令已删除的记阻断，命令定义有差异的记提示并逐字段给出两边的值。只含事实要求项，开始运行时由 Hub 直接算出结果",
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "f5f1b326c666f0720708c038fb38229a08a58aa9a1c4e0947d9d47be3ae8eea1",
-      "size": 1637
+      "sha256": "d1d37dd6a399bf99e4b321e7694441a035fefc9811658fcb2abf22c9abaa0355",
+      "size": 1870
     },
     {
       "path": "checks.json",
@@ -33,8 +33,8 @@
     },
     {
       "path": "functions/project.ts",
-      "sha256": "8f00c7a80e3f6225671abacf19c5efaa1c9fd0db1d64ae73671e52e55c298b8d",
-      "size": 7026
+      "sha256": "bf18a7c156f385efcfa0ca4e101722b34696d68431c499d4bd737d6c9056a09c",
+      "size": 7466
     },
     {
       "path": "functions/subject.ts",
@@ -53,8 +53,8 @@
     },
     {
       "path": "functions/view.ts",
-      "sha256": "d4fec24a676de1f4eb813e533d49750cd4ce29a6af3647feb34f537b0d36bddc",
-      "size": 6969
+      "sha256": "0700243b8daffd196f0c3e16fbc5d33d895a570072039552d5a91941e314e643",
+      "size": 7379
     },
     {
       "path": "requirements.json",
@@ -88,13 +88,13 @@
     },
     {
       "path": "tables/codes.json",
-      "sha256": "0068c898161c9b0d4c7c70edd988b0854836369371180ef4a81fafed0bdd2e58",
-      "size": 4108
+      "sha256": "b6eff6222f52c33d41fdfbeb624912038a5a3287765cdba6dfa06228e812c2ac",
+      "size": 4127
     },
     {
       "path": "workflow.json",
-      "sha256": "364044e3048e1a12326ae005ad357c7952ad2dd5c49778259035ff0980db0a27",
-      "size": 1488
+      "sha256": "214dd73fbb27a829e329af10cbf362a34130aa7a38543a97998f0789659ef4fa",
+      "size": 1580
     }
   ]
 }
