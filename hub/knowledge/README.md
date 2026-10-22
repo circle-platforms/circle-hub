@@ -310,7 +310,7 @@ catalogs, grounds and provenance.
     `limit` (default 20000) with `total` and `truncated`. `diffRoots` is unchanged.
 22. **The knowledge views** (`createKnowledgeReader`, `contracts/src/views.ts`). Ids `knowledge:impact:<product>:<from>..<to>`
     (`changed`, `attached`; default definition, behaviour and case), `knowledge:facets:<product>:<build>?kind=&by=` (one
-    to six distinct field names), `knowledge:index:<product>:<build>?kind=&key=[&only=]` (at most 1000 values); query
+    to six distinct field names), `knowledge:index:<product>:<build>?kind=&key=[&only=][&fields=]` (at most 1000 values); query
     values comma-separated and percent-decoded; the two builds of an impact id are split at the first literal `..`
     before decoding (an escaped `.` stays in a name); an unknown or repeated parameter, a kind outside `entry_kind`, a
     field name outside `DataFieldName`, an empty value or a pinned `@revision` other than the current one is malformed.
@@ -330,7 +330,7 @@ catalogs, grounds and provenance.
     cut, equal roots and roots without the attached or changed kinds. *Facets*: distinct entries of the kind, the rows hung
     on the tree and the unplaced rows of the root (K01 R[4]: they stay under the root, marked unplaced). An entry counts
     once; one that is also hung keeps that path. An unplaced entry is cited at `/`, the existing tree reference
-    `tree:<root>/@<digest>`. `total` includes them, and when there are any a note says how many (`未归位 N 个，标在根下，计入合计`).
+    `tree:<root>/@<digest>`. `total` includes them, and when there are any a note says how many (`未归位条目 N 个，标在根下，计入合计`); the note counts entries (each once, even when a document produced several), never documents or rows.
     A list field counts once per distinct element, a missing field, null and an empty list count as null, a value that is
     not a scalar as its canonical JSON text (noted); an entry whose field combinations exceed 4096 is counted in `total`
     only (flagged); at most `facetCombinations` (100000) distinct combinations are collected, later new ones are left out
@@ -339,8 +339,12 @@ catalogs, grounds and provenance.
     text of each value (strings as they are, other values as canonical JSON, null and missing never), only the `only`
     values when given (those without entries are noted), keys in code-unit order, built from pairs (a key is always an own
     member), at most MAX_INDEX_PER_KEY digests per key and MAX_INDEX_ENTRIES entries or the byte budget, cut before a key.
+    With `fields=<name,…>` (only this view) the entries carry only those data fields and an empty statement, the byte
+    accounting uses the slimmed size, and the answer records the fields it carries (`fields`) and says so in a note, so a
+    big index fits the byte budget. MAX_INDEX_ENTRIES is 200,000 since `fields` exists: the byte budget is the effective
+    bound and the entry cap only guards an injected bigger one.
     An unplaced entry is cited at the root. When any entries of the kind are unplaced, a note says how many
-    (`未归位 N 个，标在根下`), including entries that carry no value of the key; `total_entries` stays the entries that carry a
+    (`未归位条目 N 个，标在根下`), including entries that carry no value of the key; `total_entries` stays the entries that carry a
     value. The value `__proto__` is not listed as a key (a JSON reader that builds plain objects would take it for the
     prototype; noted, counted in `total_keys`); the content of an entry is held during the scan only while the held
     entries fit the budget, and a listed entry not held is read in a second scan of the same entries. The answer is built, checked against its schema (the built object

@@ -109,6 +109,14 @@
       },
       "description": "those entries, once"
     },
+    "fields": {
+      "description": "the request asked for only these data fields per entry: each entry carries them and an empty statement; absent means full entries",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_]{0,40}$"
+      }
+    },
     "total_keys": {
       "type": "integer",
       "minimum": 0,

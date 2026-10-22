@@ -365,7 +365,7 @@ describe('the facet and index views (facet-view@1, index-view@1)', () => {
       { values: { status: null }, count: 1 },
     ]);
     assert.equal(byStatus.total, 3);
-    assert.ok(byStatus.notes.includes('未归位 2 个，标在根下，计入合计'));
+    assert.ok(byStatus.notes.includes('未归位条目 2 个，标在根下，计入合计'));
 
     const byDefects = FacetView.parse(await readJson(w, `knowledge:facets:acme:${A}?kind=case&by=defects`));
     assert.deepEqual(byDefects.rows, [
@@ -384,7 +384,7 @@ describe('the facet and index views (facet-view@1, index-view@1)', () => {
     assert.deepEqual(byList.keys['7'], sorted(hung.entry, loose.entry));
     assert.deepEqual(byList.keys['8'], [loose.entry]);
     assert.deepEqual([byList.total_keys, byList.total_entries], [2, 2]);
-    assert.ok(byList.notes.includes('未归位 2 个，标在根下'));
+    assert.ok(byList.notes.includes('未归位条目 2 个，标在根下'));
 
     const byCaseStatus = IndexView.parse(await readJson(w, `knowledge:index:acme:${A}?kind=case&key=status`));
     assert.deepEqual(Object.keys(byCaseStatus.keys), ['fixed', 'known']);
@@ -402,14 +402,14 @@ describe('the facet and index views (facet-view@1, index-view@1)', () => {
     assert.equal(fixed.data.bug, '61001');
     assert.equal(known.data.status, 'known');
     assert.deepEqual([defectStatus.total_keys, defectStatus.total_entries], [2, 2]);
-    assert.ok(defectStatus.notes.includes('未归位 2 个，标在根下'));
+    assert.ok(defectStatus.notes.includes('未归位条目 2 个，标在根下'));
 
     const byBug = IndexView.parse(await readJson(w, `knowledge:index:acme:${A}?kind=defect&key=bug&only=61001,999`));
     assert.deepEqual(byBug.keys, { '61001': [fixed.entry] });
     assert.equal(byBug.entries['61001'] === undefined, true);
     assert.equal(byBug.entries[fixed.entry].reference, `tree:${root}/@${fixed.entry}`);
     assert.ok(byBug.notes.some((note) => note === '这些取值没有条目：999'));
-    assert.ok(byBug.notes.includes('未归位 2 个，标在根下'));
+    assert.ok(byBug.notes.includes('未归位条目 2 个，标在根下'));
 
     const impact = ImpactView.parse(await readJson(w, `knowledge:impact:acme:${A}..${B}`));
     assert.ok(impact.changes.length > 0);
@@ -453,7 +453,7 @@ export default function many(input: any): unknown {
       { values: { status: 'known' }, count: 30_000 },
     ]);
     assert.equal(facets.total, 60_000);
-    assert.ok(facets.notes.includes('未归位 60000 个，标在根下，计入合计'));
+    assert.ok(facets.notes.includes('未归位条目 60000 个，标在根下，计入合计'));
     assert.ok(facetMs < 8_000, `facets took ${facetMs.toFixed(0)} ms`);
     const indexStarted = performance.now();
     const index = IndexView.parse(await readJson(w, `knowledge:index:acme:${A}?kind=defect&key=status`));
@@ -465,7 +465,7 @@ export default function many(input: any): unknown {
     assert.equal(index.truncated, true);
     const cited = index.entries[index.keys.fixed[0]];
     assert.equal(cited.reference, `tree:${root}/@${cited.entry}`);
-    assert.ok(index.notes.includes('未归位 60000 个，标在根下'));
+    assert.ok(index.notes.includes('未归位条目 60000 个，标在根下'));
     assert.ok(indexMs < 8_000, `index took ${indexMs.toFixed(0)} ms`);
   });
 

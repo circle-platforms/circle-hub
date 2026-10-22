@@ -5,7 +5,8 @@
 // changed nodes" (K01 R[1]: the version difference is the regression scope).
 //   knowledge:impact:<product>:<from build>..<to build>[?changed=definition,behaviour&attached=case]
 //   knowledge:facets:<product>:<build>?kind=case&by=line,module,has_expected   (counts of entries by data fields)
-//   knowledge:index:<product>:<build>?kind=case&key=defects[&only=1,2,3]       (data value -> the entries that carry it)
+//   knowledge:index:<product>:<build>?kind=case&key=defects[&only=1,2,3][&fields=document,node,title]   (data value -> the entries that carry it;
+//     with fields the entries carry only those data fields and an empty statement, so a big index fits the byte budget)
 // `<build>` is a build name of any name family; the reader resolves aliases and answers for the root the build uses.
 import { z } from 'zod';
 import { ChangeKindSchema, EntryKindSchema } from '../generated/vocabulary.ts';
@@ -96,8 +97,12 @@ export type FacetView = z.infer<typeof FacetView>;
 
 // ---------------------------------------------------------------- index: the entries that carry a data value
 
-/** Most entries one index answer holds in total, and most per key. */
-export const MAX_INDEX_ENTRIES = 100000;
+/**
+ * Most entries one index answer holds in total, and most per key. The byte budget (limits.maxViewBytes) is the effective
+ * bound — an entry costs hundreds of bytes, so a full view never gets near this cap; it stays only as a sanity bound when a
+ * deployment raises the byte budget (a slim fields view of a big build lists well over 100,000).
+ */
+export const MAX_INDEX_ENTRIES = 200000;
 export const MAX_INDEX_PER_KEY = 2000;
 
 export const IndexView = z.strictObject({
@@ -108,6 +113,7 @@ export const IndexView = z.strictObject({
   key: DataFieldName.describe('the data field indexed; a list field is indexed by each of its elements'),
   keys: z.record(z.string(), z.array(Sha256).max(MAX_INDEX_PER_KEY)).describe('field value -> digests of the entries that carry it, sorted'),
   entries: z.record(Sha256, ViewEntry).describe('those entries, once'),
+  fields: z.array(DataFieldName).optional().describe('the request asked for only these data fields per entry: each entry carries them and an empty statement; absent means full entries'),
   total_keys: z.number().int().nonnegative(),
   total_entries: z.number().int().nonnegative(),
   truncated: z.boolean(),
