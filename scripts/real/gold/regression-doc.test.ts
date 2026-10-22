@@ -46,8 +46,8 @@ describe('splitCommand', () => {
   });
 });
 
-const node = (text: string, options: { id?: string; resource?: string[]; children?: unknown[] } = {}): unknown => ({
-  data: { text, id: options.id ?? '', resource: options.resource ?? [] },
+const node = (text: string, options: { id?: string; resource?: string[]; priority?: number; children?: unknown[] } = {}): unknown => ({
+  data: { text, id: options.id ?? '', resource: options.resource ?? [], priority: options.priority ?? null },
   children: options.children ?? [],
 });
 
@@ -94,7 +94,40 @@ describe('regressionDocGold', () => {
     assert.deepEqual(gold.cases[0].commands, [{ head: 'widget pool add', parameters: ['pool2', '50'] }]);
   });
 
-  test('a document without a tagged case is refused', () => {
-    assert.throws(() => regressionDocGold('24110', { root: { data: { text: '缺陷160001 回归' }, children: [] } }), /没有带资源标签的用例节点/);
+  test('a document without any case is refused under default and tagged rules', () => {
+    assert.throws(() => regressionDocGold('24110', { root: { data: { text: '缺陷160001 回归' }, children: [] } }), /没有用例节点/);
+    assert.throws(() => regressionDocGold('24110', { root: { data: { text: '缺陷160001 回归' }, children: [] } }, { caseRule: 'tagged' }), /没有带资源标签的用例节点/);
+  });
+
+  test('marked-only document: recognized under default rule, refused under tagged rule', () => {
+    const markedMap = {
+      root: {
+        data: { text: '缺陷160001 回归', id: 'root' },
+        children: [
+          node('061：10.6.4', {
+            children: [
+              node('003：10.6.4-R1-2026/11', {
+                children: [
+                  node('widget health interval pool1 5', {
+                    id: 'case-marked-1',
+                    priority: 2,
+                    children: [node('预期：显示正常')],
+                  }),
+                  node('查看健康检查状态', { id: 'other-node' }),
+                ],
+              }),
+            ],
+          }),
+        ],
+      },
+    };
+    const defaultGold = regressionDocGold('24110', markedMap);
+    assert.deepEqual(defaultGold.cases.map((c) => c.id), ['case-marked-1']);
+    assert.deepEqual(defaultGold.cases[0].commands, [{ head: 'widget health interval', parameters: ['pool1', '5'] }]);
+
+    assert.throws(
+      () => regressionDocGold('24110', markedMap, { caseRule: 'tagged' }),
+      /没有带资源标签的用例节点/,
+    );
   });
 });

@@ -15,7 +15,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-interface GoldNode {
+export interface GoldNode {
   index: number;
   id: string;
   text: string;
@@ -152,6 +152,52 @@ const CASE = 1;
 const GROUP = 2;
 const CANDIDATE = 3;
 const INNER = 4;
+
+/** Identifies the case nodes of a parsed mind map following caseRule ('marked' or 'tagged'). */
+export function caseNodesOf(
+  map: GoldMap,
+  options: { caseRule?: 'tagged' | 'marked' } = {},
+): GoldNode[] {
+  const caseRule = options.caseRule ?? 'marked';
+  const nodes = map.nodes;
+  const n = nodes.length;
+
+  const holds = new Uint8Array(n);
+  for (let v = n - 1; v > 0; v--) {
+    const node = nodes[v];
+    const isTagged = node.resource.length > 0;
+    if (holds[v] === 1 || isTagged || node.priority === CASE_PRIORITY) {
+      if (node.parent !== null) holds[node.parent] = 1;
+    }
+  }
+
+  const role = new Uint8Array(n);
+  const within = new Int32Array(n).fill(-1);
+  for (let v = 0; v < n; v++) {
+    const node = nodes[v];
+    const parent = node.parent;
+    const inside = parent === null ? -1 : role[parent] === CASE || role[parent] === CANDIDATE ? parent : within[parent];
+    within[v] = inside;
+    if (node.resource.length > 0) {
+      const isGroup = inside === -1 && node.priority === GROUP_PRIORITY && holds[v] === 1;
+      role[v] = isGroup ? GROUP : CASE;
+    } else if (inside !== -1) {
+      role[v] = INNER;
+    } else if (node.priority === CASE_PRIORITY && node.children.length > 0 && holds[v] === 0) {
+      role[v] = caseRule === 'marked' ? CASE : CANDIDATE;
+    } else if (node.priority !== null) {
+      role[v] = GROUP;
+    } else {
+      role[v] = OTHER;
+    }
+  }
+
+  const out: GoldNode[] = [];
+  for (let v = 0; v < n; v++) {
+    if (role[v] === CASE) out.push(nodes[v]);
+  }
+  return out;
+}
 
 export function caseGold(
   maps: ReadonlyArray<{ document: string; map: unknown }>,
