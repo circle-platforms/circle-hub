@@ -285,7 +285,7 @@ describe('producing a root', () => {
   test('without a typed-judgment model, spans the code cannot place are stored and citable but not hung (K01 R[4])', async (t) => {
     const producers = [
       DEFAULT_PRODUCERS[0],
-      { id: 'manual', title: '手册', function: { module: 'functions/manual.ts' }, inputs: { manual: { external: 'store:manual:{product}-{line}' } } },
+      { id: 'manual', title: '手册', function: { module: 'functions/manual.ts' }, inputs: { manual: { external: 'store:manual:{product}-{line}' } }, placement: 'judgment_allowed' as const },
     ];
     const w = await world(t, { pack: { declaration: { producers } } });
     w.external.set('site:tree:Rel_ACME_1_2_15', { bytes: catalogXml(BASE_CATALOG), mediaType: XML });

@@ -122,6 +122,8 @@ export interface ProduceResult {
   /** Part records of the composition (0 when it is one record). */
   parts: number;
   warnings: string[];
+  /** Entries without path not sent to the judgment service because their producer did not opt in. */
+  placementSkipped?: Record<string, number>;
 }
 
 /** A source a producer reads, with the basis that decides it belongs to the version. */
@@ -556,8 +558,14 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
   for (const source of planned) if (source.external !== null || source.many) basisOf.set(`${source.producer}\u0000${source.slot}`, source.basis);
 
   // Producers: a single call, or one call per batch of the list slot.
+  const producerPlacement = new Map<string, string>();
+  for (const producer of product.product.producers) {
+    producerPlacement.set(producer.id, producer.placement ?? 'code_only');
+  }
   const placedEntries: Array<Collected & { segments: string[]; path: string }> = [];
   const toPlace: Array<Collected & { section: string }> = [];
+  const directUnplaced: Array<Collected & { section: string }> = [];
+  const skippedPlacement = new Map<string, number>();
   const contents = new Map<string, EntryContent>();
   const pathCache: PathCache = new Map();
   // The verified items themselves are kept (their indices moved to the concatenated output), never copied.
@@ -570,10 +578,16 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
       entry.index += offsets.entries;
       placedEntries.push(entry);
     }
+    const allows = producerPlacement.get(producer) === 'judgment_allowed';
     for (const entry of verified.toPlace) {
       contents.set(entry.digest, entry.content);
       entry.index += entry.unplaced ? offsets.spans : offsets.entries;
-      toPlace.push(entry);
+      if (allows) {
+        toPlace.push(entry);
+      } else {
+        directUnplaced.push(entry);
+        skippedPlacement.set(producer, (skippedPlacement.get(producer) ?? 0) + 1);
+      }
     }
     offsets.entries += verified.entries;
     offsets.spans += verified.spans;
@@ -612,7 +626,7 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
     lists.push(outcome.detail);
   }
   for (const warning of totals.warnings) problems.warn(warning);
-  if (placedEntries.length === 0 && toPlace.length === 0) {
+  if (placedEntries.length === 0 && toPlace.length === 0 && directUnplaced.length === 0) {
     return fail(problems.refusedCount > 0 ? `生产器的 ${problems.refusedCount} 个条目都没有通过核对，没有可以挂树的内容` : '生产器没有产出任何条目');
   }
 
@@ -631,12 +645,27 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
   const spans: PlacementSpan[] = toPlace.map((entry) => ({ key: entry.digest, text: entry.content.statement, section: entry.section, fragment: entry.fragments[0] }));
   let outcomes = new Map<string, PlacementOutcome>();
   let placement: ProduceDetail['placement'] = null;
+  const skippedRecord = skippedPlacement.size > 0 ? Object.fromEntries(skippedPlacement) : undefined;
   if (spans.length > 0) {
     const model = context.placer.model;
     const threshold = model === null ? null : await context.calibration.threshold(PLACEMENT_CHAIN, model);
     outcomes = await context.placer.place(spans, placementTree(builder, contents), { threshold, context: { product: lineProduct, build: build.name }, onProblem: (text) => problems.warn(`归类：${text}`) });
     // Recorded so that a later sync places again when the judge failed or the chain's calibration changed.
-    placement = { model, threshold, spans: outcomes.size, failed: [...outcomes.values()].filter((o) => o.failed).length };
+    placement = {
+      model,
+      threshold,
+      spans: outcomes.size,
+      failed: [...outcomes.values()].filter((o) => o.failed).length,
+      ...(skippedRecord !== undefined ? { skipped: skippedRecord } : {}),
+    };
+  } else if (skippedRecord !== undefined) {
+    placement = {
+      model: null,
+      threshold: null,
+      spans: 0,
+      failed: 0,
+      skipped: skippedRecord,
+    };
   }
   const modelHung = new Set<Collected>();
   for (const entry of toPlace) {
@@ -714,6 +743,32 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
               : { path: pathOf(outcome.candidate.segments), model: outcome.model, p: outcome.candidate.p, calibrated: outcome.calibrated },
           judgments: outcome?.judgments ?? [],
           note: cutText(outcome?.note ?? '没有归类', MAX_PROBLEM_TEXT),
+        },
+        producers: new Set(),
+        slots: new Set(),
+      };
+      lost.set(entry.digest, held);
+    }
+    held.producers.add(entry.producer);
+    for (const slot of entry.slots) held.slots.add(`${entry.producer}\u0000${slot}`);
+    for (const fragment of entry.fragments) if (!held.row.fragments.includes(fragment)) held.row.fragments.push(fragment);
+  }
+  for (const entry of directUnplaced) {
+    let held = lost.get(entry.digest);
+    if (held === undefined) {
+      held = {
+        row: {
+          entry: entry.digest,
+          kind: entry.content.kind,
+          producers: [],
+          section: cutText(entry.section, MAX_PROBLEM_TEXT),
+          fragments: [],
+          basis: 'declared',
+          decided_by: decidedBy,
+          stopped_at: '/',
+          candidate: null,
+          judgments: [],
+          note: '生产器未声明交给判断服务',
         },
         producers: new Set(),
         slots: new Set(),
@@ -803,6 +858,7 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
     placedByModel: written.body.counts.placed_by_model,
     unplaced: unplacedRows.length,
     parts: written.parts,
+    ...(skippedRecord !== undefined ? { placementSkipped: skippedRecord } : {}),
   });
 }
 

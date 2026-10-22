@@ -28,7 +28,8 @@
       "inputs": {
         "cli": { "external": "manual:cli:{line}", "optional": true },
         "app": { "external": "manual:app:{line}", "optional": true }
-      }
+      },
+      "placement": "judgment_allowed"
     },
     {
       "id": "release-notes",

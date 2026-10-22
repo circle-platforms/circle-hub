@@ -179,6 +179,19 @@ export type ProducerSource = z.infer<typeof ProducerSource>;
 const SlotName = z.string().regex(/^[a-z][a-z0-9_]*$/);
 
 /**
+ * How path-less entries produced by this producer may be placed:
+ * - `code_only`: keep path-less entries unplaced at root without calling the typed-judgment service, preventing text egress outside the Hub.
+ * - `judgment_allowed`: allow path-less entries to be handed to the typed-judgment service.
+ * Defaults to `code_only` because sending fragments to an external judgment service egresses data outside the Hub.
+ */
+export const ProducerPlacement = z
+  .enum(['code_only', 'judgment_allowed'])
+  .describe(
+    'whether path-less entries may be handed to the typed-judgment service: code_only (default) keeps them unplaced at the root without calling the judgment service, preventing text egress outside the Hub; judgment_allowed permits handing them to the judgment service. Defaults to code_only because fragments leave the Hub',
+  );
+export type ProducerPlacement = z.infer<typeof ProducerPlacement>;
+
+/**
  * A producer turns stored sources into knowledge entries with their placement in the tree (K02, K04). The Hub parses every
  * source with the core parser for its media type and gives the function the parsed model; the entries it returns point back
  * into the source by parser and selector, and the Hub verifies that each one exists before it is hung on the tree (K02 R[0]).
@@ -189,6 +202,9 @@ export const Producer = z.strictObject({
   function: PackFunctionRef,
   inputs: z.record(SlotName, ProducerSource).describe('slot name -> where it is read from, for every build whose root is produced'),
   params: z.record(z.string(), z.unknown()).optional().describe('fixed parameters handed to the function'),
+  placement: ProducerPlacement.optional().describe(
+    'whether path-less entries may be handed to the typed-judgment service: code_only (default) keeps them unplaced at the root without calling the judgment service, preventing text egress outside the Hub; judgment_allowed permits handing them to the judgment service. Defaults to code_only because fragments leave the Hub',
+  ),
 });
 export type Producer = z.infer<typeof Producer>;
 

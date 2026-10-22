@@ -172,8 +172,13 @@ export default function bulk(input: any): unknown {
 `;
 
 /** A producer over the tree source that only returns what its params say. */
-export function extraProducer(id: string, params: { entries?: unknown[]; unplaced?: unknown[]; warnings?: string[] }, inputs: Record<string, unknown> = { tree: { source: 'tree' } }) {
-  return { id, title: '附加生产器', function: { module: 'functions/extra.ts' }, inputs, params };
+export function extraProducer(
+  id: string,
+  params: { entries?: unknown[]; unplaced?: unknown[]; warnings?: string[] },
+  inputs: Record<string, unknown> = { tree: { source: 'tree' } },
+  placement?: 'code_only' | 'judgment_allowed',
+) {
+  return { id, title: '附加生产器', function: { module: 'functions/extra.ts' }, inputs, params, ...(placement !== undefined ? { placement } : {}) };
 }
 
 /**

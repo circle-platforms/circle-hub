@@ -4,7 +4,9 @@ import {
   BuildInfo,
   ExternalTemplate,
   ProducedEntry,
+  Producer,
   ProducerInput,
+  ProducerPlacement,
   ProductDeclaration,
   SelectBuildOutput,
   SyncPlanInput,
@@ -50,6 +52,21 @@ test('a catalog may be limited to the entries of one declared producer', () => {
   const unknown = ProductDeclaration.safeParse({ ...declaration, catalogs: [{ ...declaration.catalogs[0], producer: 'manual' }] });
   assert.ok(!unknown.success && unknown.error.issues.some((i) => /does not declare/.test(i.message)), 'a producer the pack lacks is refused');
   assert.ok(!ProductDeclaration.safeParse({ ...declaration, catalogs: [{ ...declaration.catalogs[0], producer: 'Not Valid' }] }).success);
+});
+
+test('producer placement policy for path-less entries: defaults to code_only, allows judgment_allowed, refuses others', () => {
+  assert.equal(ProducerPlacement.parse('code_only'), 'code_only');
+  assert.equal(ProducerPlacement.parse('judgment_allowed'), 'judgment_allowed');
+  assert.ok(!ProducerPlacement.safeParse('anything_else').success);
+  assert.ok(!ProducerPlacement.safeParse(null).success);
+
+  const baseProducer = declaration.producers[0];
+  assert.equal(Producer.parse(baseProducer).placement, undefined);
+  const optedIn = Producer.parse({ ...baseProducer, placement: 'judgment_allowed' });
+  assert.equal(optedIn.placement, 'judgment_allowed');
+  const codeOnly = Producer.parse({ ...baseProducer, placement: 'code_only' });
+  assert.equal(codeOnly.placement, 'code_only');
+  assert.ok(!Producer.safeParse({ ...baseProducer, placement: 'invalid' }).success);
 });
 
 test('a build may list many sources in one role and a producer may read them in batches', () => {

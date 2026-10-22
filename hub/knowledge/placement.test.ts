@@ -10,8 +10,10 @@ import { NONE_OPTION, SCRIPTED_MODEL, ScriptedJev, type JevJudgmentRecord, type 
 import type { ActionBody } from '../records/api.ts';
 import type { TemporaryPostgres } from '../testing/postgres.ts';
 import { PLACEMENT_CHAIN } from './calibration.ts';
-import { INDEX } from './store.ts';
-import { BASE_CATALOG, DEFAULT_PRODUCERS, catalogXml, makeWorld, standardSite, startPostgres, type World } from './test-support.ts';
+import { formatSyncReport } from './cli.ts';
+import { syncProduct } from './sync.ts';
+import { INDEX, ProduceDetail } from './store.ts';
+import { BASE_CATALOG, DEFAULT_PRODUCERS, DEFAULT_SYNC, catalogXml, extraProducer, makeWorld, standardSite, startPostgres, type World } from './test-support.ts';
 
 let postgres: TemporaryPostgres;
 before(async () => {
@@ -21,7 +23,7 @@ after(() => postgres?.stop());
 
 const PRODUCERS = [
   DEFAULT_PRODUCERS[0],
-  { id: 'manual', title: '手册', function: { module: 'functions/manual.ts' }, inputs: { manual: { external: 'store:manual:{product}-{line}' } } },
+  { id: 'manual', title: '手册', function: { module: 'functions/manual.ts' }, inputs: { manual: { external: 'store:manual:{product}-{line}' } }, placement: 'judgment_allowed' as const },
 ];
 
 const MANUAL = [
@@ -329,5 +331,208 @@ describe('placement by the typed-judgment model', () => {
     const outcomes = await w.knowledge.placement.place([{ key: 'c'.repeat(64), text: 'about alpha', section: '', fragment: `src:${'3'.repeat(64)}` }], tree, { threshold: 0.965, context: { product: 'acme' } });
     const note = outcomes.get('c'.repeat(64))?.note ?? '';
     assert.match(note, /p=0\.960 低于本链的校准阈值 0\.965/);
+  });
+});
+
+describe('producer opt-in for typed judgment placement (data exfiltration safeguard)', () => {
+  test('an undeclared producer producing path-less entries never sends any spans to the judgment service', async (t) => {
+    const receivedPieces: string[] = [];
+    const jev = new ScriptedJev((question, state, id) => {
+      const piece = (state as Record<string, { text: string }>)[id];
+      receivedPieces.push(piece?.text ?? id);
+      return { choice: NONE_OPTION, p: 0.9 };
+    });
+    const unplacedDefect = {
+      kind: 'defect',
+      path: null,
+      statement: 'Bug #1234: internal crash in worker thread',
+      data: { bug: 1234 },
+      fragments: [{ parser: 'xml@1', selector: 'x/catalog/group[1]' }],
+      applicability: null,
+    };
+    const unopted = extraProducer('defects', { entries: [unplacedDefect] });
+    const w = await makeWorld(postgres, { jev, pack: { declaration: { producers: [DEFAULT_PRODUCERS[0], unopted] } } });
+    t.after(() => w.close());
+    w.external.set('site:tree:Rel_ACME_1_2_15', { bytes: catalogXml(BASE_CATALOG), mediaType: 'application/xml' });
+
+    const result = await w.knowledge.produceTree({ product: w.product, build });
+    assert.equal(result.ok, true, result.reason ?? '');
+    assert.equal(receivedPieces.length, 0, 'no span sent to the judgment service');
+    assert.equal(result.placedByModel, 0);
+    assert.equal(result.unplaced, 1);
+    assert.deepEqual(result.placementSkipped, { defects: 1 });
+
+    const action = await w.kit.store.get<ActionBody>(result.action as string);
+    const detail = ProduceDetail.parse(action?.body.detail);
+    assert.equal(detail.placement?.spans, 0);
+    assert.deepEqual(detail.placement?.skipped, { defects: 1 });
+
+    const body = await compositionOf(w, result.composition as string);
+    assert.equal(body.unplaced.length, 1);
+    const [row] = body.unplaced;
+    assert.equal(row.stopped_at, '/');
+    assert.equal(row.candidate, null);
+    assert.deepEqual(row.judgments, []);
+    assert.equal(row.note, '生产器未声明交给判断服务');
+    assert.deepEqual(row.producers, ['defects']);
+  });
+
+  test('an opted-in producer (placement: judgment_allowed) sends its path-less spans to the judgment service', async (t) => {
+    const receivedPieces: string[] = [];
+    const jev = new ScriptedJev((question, state, id) => {
+      const piece = (state as Record<string, { text: string }>)[id];
+      receivedPieces.push(piece?.text ?? id);
+      return { choice: NONE_OPTION, p: 0.9 };
+    });
+    const manualSpan = {
+      kind: 'definition',
+      path: null,
+      statement: 'Manual passage describing net ping command',
+      data: {},
+      fragments: [{ parser: 'xml@1', selector: 'x/catalog/group[1]' }],
+      applicability: null,
+    };
+    const opted = extraProducer('manual', { entries: [manualSpan] }, { tree: { source: 'tree' } }, 'judgment_allowed');
+    const w = await makeWorld(postgres, { jev, pack: { declaration: { producers: [DEFAULT_PRODUCERS[0], opted] } } });
+    t.after(() => w.close());
+    w.external.set('site:tree:Rel_ACME_1_2_15', { bytes: catalogXml(BASE_CATALOG), mediaType: 'application/xml' });
+
+    const result = await w.knowledge.produceTree({ product: w.product, build });
+    assert.equal(result.ok, true, result.reason ?? '');
+    assert.equal(receivedPieces.length, 1);
+    assert.equal(receivedPieces[0], 'Manual passage describing net ping command');
+    assert.equal(result.placementSkipped, undefined);
+
+    const action = await w.kit.store.get<ActionBody>(result.action as string);
+    const detail = ProduceDetail.parse(action?.body.detail);
+    assert.equal(detail.placement?.spans, 1);
+    assert.equal(detail.placement?.skipped, undefined);
+  });
+
+  test('mixed producers: only opted-in producers spans are sent, un-opted stay unplaced and are counted skipped', async (t) => {
+    const receivedPieces: string[] = [];
+    const jev = new ScriptedJev((question, state, id) => {
+      const piece = (state as Record<string, { text: string }>)[id];
+      receivedPieces.push(piece?.text ?? id);
+      return { choice: NONE_OPTION, p: 0.9 };
+    });
+    const defect1 = {
+      kind: 'defect',
+      path: null,
+      statement: 'Bug #101: worker timeout on large files',
+      data: { bug: 101 },
+      fragments: [{ parser: 'xml@1', selector: 'x/catalog/group[1]' }],
+      applicability: null,
+    };
+    const defect2 = {
+      kind: 'defect',
+      path: null,
+      statement: 'Bug #102: memory leak in parser cache',
+      data: { bug: 102 },
+      fragments: [{ parser: 'xml@1', selector: 'x/catalog/group[1]' }],
+      applicability: null,
+    };
+    const manual1 = {
+      kind: 'definition',
+      path: null,
+      statement: 'Manual section for system show info',
+      data: {},
+      fragments: [{ parser: 'xml@1', selector: 'x/catalog/group[1]' }],
+      applicability: null,
+    };
+    const manual2 = {
+      kind: 'definition',
+      path: null,
+      statement: 'Manual section for network status ping',
+      data: {},
+      fragments: [{ parser: 'xml@1', selector: 'x/catalog/group[1]' }],
+      applicability: null,
+    };
+    const unopted = extraProducer('defects', { entries: [defect1, defect2] });
+    const opted = extraProducer('manual', { entries: [manual1, manual2] }, { tree: { source: 'tree' } }, 'judgment_allowed');
+    const w = await makeWorld(postgres, { jev, pack: { declaration: { producers: [DEFAULT_PRODUCERS[0], unopted, opted] } } });
+    t.after(() => w.close());
+    w.external.set('site:tree:Rel_ACME_1_2_15', { bytes: catalogXml(BASE_CATALOG), mediaType: 'application/xml' });
+
+    const result = await w.knowledge.produceTree({ product: w.product, build });
+    assert.equal(result.ok, true, result.reason ?? '');
+    assert.equal(receivedPieces.length, 2);
+    assert.ok(receivedPieces.includes('Manual section for system show info'));
+    assert.ok(receivedPieces.includes('Manual section for network status ping'));
+    assert.ok(!receivedPieces.some((text) => text.includes('Bug #101') || text.includes('Bug #102')), 'defects are never sent to judgment');
+    assert.deepEqual(result.placementSkipped, { defects: 2 });
+
+    const action = await w.kit.store.get<ActionBody>(result.action as string);
+    const detail = ProduceDetail.parse(action?.body.detail);
+    assert.equal(detail.placement?.spans, 2);
+    assert.deepEqual(detail.placement?.skipped, { defects: 2 });
+
+    const body = await compositionOf(w, result.composition as string);
+    const defectRows = body.unplaced.filter((r) => r.producers.includes('defects'));
+    assert.equal(defectRows.length, 2);
+    for (const row of defectRows) {
+      assert.equal(row.stopped_at, '/');
+      assert.equal(row.candidate, null);
+      assert.deepEqual(row.judgments, []);
+      assert.equal(row.note, '生产器未声明交给判断服务');
+    }
+  });
+
+  test('without a judgment service, behavior is unchanged and no error occurs', async (t) => {
+    const unplacedDefect = {
+      kind: 'defect',
+      path: null,
+      statement: 'Bug #201: crash on null pointer',
+      data: { bug: 201 },
+      fragments: [{ parser: 'xml@1', selector: 'x/catalog/group[1]' }],
+      applicability: null,
+    };
+    const manualSpan = {
+      kind: 'definition',
+      path: null,
+      statement: 'Manual note on reboot',
+      data: {},
+      fragments: [{ parser: 'xml@1', selector: 'x/catalog/group[1]' }],
+      applicability: null,
+    };
+    const unopted = extraProducer('defects', { entries: [unplacedDefect] });
+    const opted = extraProducer('manual', { entries: [manualSpan] }, { tree: { source: 'tree' } }, 'judgment_allowed');
+    const w = await makeWorld(postgres, { pack: { declaration: { producers: [DEFAULT_PRODUCERS[0], unopted, opted] } } });
+    t.after(() => w.close());
+    w.external.set('site:tree:Rel_ACME_1_2_15', { bytes: catalogXml(BASE_CATALOG), mediaType: 'application/xml' });
+
+    const result = await w.knowledge.produceTree({ product: w.product, build });
+    assert.equal(result.ok, true, result.reason ?? '');
+    assert.equal(result.unplaced, 2);
+    assert.deepEqual(result.placementSkipped, { defects: 1 });
+
+    const body = await compositionOf(w, result.composition as string);
+    const defectRow = body.unplaced.find((r) => r.producers.includes('defects'));
+    assert.equal(defectRow?.note, '生产器未声明交给判断服务');
+    const manualRow = body.unplaced.find((r) => r.producers.includes('manual'));
+    assert.equal(manualRow?.note, '没有配置归类判断模型（Jev），片段不挂树');
+  });
+
+  test('sync report output shows the count of skipped placement entries per producer', async (t) => {
+    const defect = {
+      kind: 'defect',
+      path: null,
+      statement: 'Bug #501: defect description',
+      data: { bug: 501 },
+      fragments: [{ parser: 'xml@1', selector: 'x/catalog/group[1]' }],
+      applicability: null,
+    };
+    const unopted = extraProducer('defects', { entries: [defect] });
+    const w = await makeWorld(postgres, { pack: { declaration: { sync: DEFAULT_SYNC, producers: [DEFAULT_PRODUCERS[0], unopted] } } });
+    t.after(() => w.close());
+    standardSite(w.external);
+
+    const report = await w.knowledge.syncProduct(w.product, { by: w.admin, lines: ['1.2'] });
+    assert.equal(report.counts.produced, 1);
+    const buildReport = report.builds[0];
+    assert.match(buildReport.reason, /defects 生产器的 1 个条目未发给判断服务/);
+    assert.deepEqual(buildReport.placement_skipped, { defects: 1 });
+    const formatted = formatSyncReport(report);
+    assert.match(formatted, /defects 生产器的 1 个条目未发给判断服务/);
   });
 });
