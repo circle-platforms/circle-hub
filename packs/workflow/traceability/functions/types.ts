@@ -71,6 +71,9 @@ export type MatrixRow = {
   digests: string[];
   /** The cases carrying the bug, sorted by (case, document, reference). */
   cases: CaseRef[];
+  /** The distinct systems the defect entries name (data.system of the producer, sorted); the join is by number alone,
+   * so a number two systems share is one row and the summary says the collision is possible. Empty when unknown. */
+  systems: string[];
 };
 
 /** What the counts check needs of one bound view. */

@@ -21,14 +21,14 @@ export interface ViewEntrySpec {
 
 let seq = 0;
 /** A defect entry as the product pack's release-notes producer writes it: data.bug the id, data.status fixed or known. */
-export function defectEntry(spec: { bug: string; status?: string; statement?: string; module?: string; digest?: string }): ViewEntrySpec {
+export function defectEntry(spec: { bug: string; status?: string; statement?: string; module?: string; system?: string; digest?: string }): ViewEntrySpec {
   const statement = spec.statement ?? `缺陷 ${spec.bug} 的合成摘要`;
   const digest = spec.digest ?? sha256(`defect|${spec.bug}|${spec.status ?? 'fixed'}|${statement}|${seq++}`);
   return {
     digest,
     kind: 'defect',
     statement,
-    data: { bug: spec.bug, status: spec.status ?? 'fixed', text: statement, build: BUILD, module: spec.module ?? 'SSL' },
+    data: { bug: spec.bug, status: spec.status ?? 'fixed', text: statement, build: BUILD, module: spec.module ?? 'SSL', ...(spec.system === undefined ? {} : { system: spec.system }) },
     reference: `tree:${ROOT}/release-notes/${digest.slice(0, 12)}@${digest}`,
   };
 }

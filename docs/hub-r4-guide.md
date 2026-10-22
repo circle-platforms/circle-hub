@@ -75,7 +75,7 @@ nav_order: 5
 
 构建的缺陷到用例的追溯：release notes 列出的每个缺陷，有没有已索引的用例携带它的编号。全是事实，不用模型提交。
 
-- **输入与参数**：任务包 `traceability@1.0.1`（不绑定产品线，不锁定无关构建）；输入槽 `defects`（必填，单项，绑定 `knowledge:index:<产品>:<构建>?kind=defect&key=bug`）与 `cases`（必填，单项，绑定瘦身视图 `knowledge:index:<产品>:<构建>?kind=case&key=defects&fields=document,node,title`，避免全量视图超限截断）；可选参数 `statuses`（`["fixed"]`、`["known"]` 或两者都看，默认均计入）。
+- **输入与参数**：任务包 `traceability@1.0.2`（不绑定产品线，不锁定无关构建）；输入槽 `defects`（必填，单项，绑定 `knowledge:index:<产品>:<构建>?kind=defect&key=bug`）与 `cases`（必填，单项，绑定瘦身视图 `knowledge:index:<产品>:<构建>?kind=case&key=defects&fields=document,node,title`，避免全量视图超限截断）；可选参数 `statuses`（`["fixed"]`、`["known"]` 或两者都看，默认均计入）。
 - **提示这样写**：「用 Hub 算 `<构建>` 的缺陷追溯矩阵。」（两个输入视图指向同一个构建，构建名写任一名称族均可。）
 - **Hub 自己核对**：矩阵按两个索引视图自然连接算出，已索引关联为事实支持；同一缺陷既修复又已知记提示档冲突；跨条目输出缺陷总数、已追溯数与未追溯数；**模型判断**：无。
 - **已知限制与未知**：没有已索引用例的缺陷记未知（缺输入）——用例索引按构造不完整，绝不显示为失败；**若构建无缺陷或过滤后无缺陷，结果为空条目集，是合法答案**。
