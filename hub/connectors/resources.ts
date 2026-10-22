@@ -5,10 +5,12 @@
 // The definition binds one published system pack version and its content digest (B04 R[1]): `id` is resolved to the version
 // current when the admin decides, and a newer version takes effect only through an update. Credentials go into the vault
 // entries the definition names, each under the digest rule the definition records; a password is kept only as the digest
-// its system requires. An update drops the stored values of credentials that are no longer declared or whose rule changed.
+// its system requires; several credentials are set in one call, then the session is forgotten once. An update drops the
+// stored values of credentials that are no longer declared or whose rule changed. `describe` gives admins one resource with
+// its credential names and rules (never a value).
 import { createHash } from 'node:crypto';
 import { EnvironmentSchema, type Environment, type PermissionKind } from '../../contracts/generated/vocabulary.ts';
-import { ResourceId, ResourceRecord, type ResourceLimits, type SystemProfile } from '../../contracts/src/resources.ts';
+import { ResourceId, ResourceRecord, type DigestRule, type ResourceLimits, type SystemProfile } from '../../contracts/src/resources.ts';
 import type { ResourceListing } from '../ports.ts';
 import {
   WHOLE_HUB,
@@ -45,6 +47,19 @@ export interface AddResourceInput {
 
 export type UpdateResourceInput = Partial<Omit<AddResourceInput, 'note'>> & { note?: string | null };
 
+/** One credential a resource declares: its vault entry, the digest rule it is kept under, and whether a value is set (never the value). */
+export interface CredentialDescription {
+  name: string;
+  entry: string;
+  digest: DigestRule;
+  set: boolean;
+}
+
+/** One resource as admins see it: the admins' listing row (addresses included) and every credential its definition declares, by name. */
+export interface ResourceDescription extends ResourceListing {
+  credentials: CredentialDescription[];
+}
+
 export interface ResourceState {
   resource: ResourceRecord;
   enabled: boolean;
@@ -63,7 +78,10 @@ export interface ResourceRegistryOptions {
   redactor: Redactor;
   now: () => Date;
   log?: ConnectorLog;
-  /** Called after a credential of a resource changed (the login manager forgets its token and cool-down). */
+  /**
+   * Called after a credential of a resource changed or its login was reset: the session is forgotten and its vault entry
+   * removed, which another process (the running Hub) reads as the end of its stop. A removal that fails reaches the admin.
+   */
   onCredentialChange?: (resource: string) => Promise<void>;
   /** How long the list of resources is reused before the records are read again, default 5 s. */
   cacheMs?: number;
@@ -92,6 +110,12 @@ export function declaredCredentials(profile: SystemProfile): { name: string; dig
 /** What the vault keeps for a credential under its digest rule: the value, or Base64(SHA-512(UTF-8 of the value)). */
 export function storedCredential(value: string, digest: 'plain' | 'sha512_base64'): string {
   return digest === 'sha512_base64' ? createHash('sha512').update(value, 'utf8').digest('base64') : value;
+}
+
+/** The system error code of a vault failure (EACCES, say), never its message, which may name a path. */
+function systemCode(error: unknown): string {
+  const code = (error as { code?: unknown } | null)?.code;
+  return typeof code === 'string' && /^[A-Z][A-Z0-9_]{1,31}$/.test(code) ? code : '密钥库错误';
 }
 
 function issues(error: { issues: readonly { path: PropertyKey[]; message: string }[] }): string {
@@ -208,12 +232,29 @@ export class ResourceRegistry {
     return record;
   }
 
-  /** Ends a stop or cool-down of the resource's login or static credential (admins only); the credential stays as it is. */
+  /**
+   * Ends a stop or cool-down of the resource's login or static credential (admins only); the credential stays as it is.
+   * From any process: the session entry is removed, and a running Hub that holds the stop ends it at its next decision.
+   */
   async resetLogin(by: Principal, id: string, note?: string | null): Promise<void> {
     const admin = await this.#admin(by);
     await this.#state(id);
-    await this.#o.onCredentialChange?.(id);
+    await this.#forgetSession(id, `资源 ${id} 的登录状态没能从密钥库清除`);
     this.#event('login_reset', { resource: id, by: admin.id, ...(typeof note === 'string' && note !== '' ? { note: note.slice(0, 200) } : {}) });
+  }
+
+  /**
+   * Forgets the session of a resource (onCredentialChange). A vault that cannot remove the entry is the admin's error: other
+   * processes (the running Hub) would not see the change. The message names the system error code, never a path.
+   */
+  async #forgetSession(id: string, what: string): Promise<void> {
+    try {
+      await this.#o.onCredentialChange?.(id);
+    } catch (error) {
+      const why = systemCode(error);
+      this.#event('session_reset_failed', { resource: id, why });
+      throw new ConnectorError('STORE_FAILED', `${what}（${why}）：别的进程（正在运行的 Hub）看不到这次变化；请再重置一次登录`, { detail: { resource: id }, cause: error });
+    }
   }
 
   async disable(by: Principal, id: string, note?: string | null): Promise<void> {
@@ -235,25 +276,76 @@ export class ResourceRegistry {
   }
 
   /**
-   * Sets one credential of a resource in its vault entry. A credential the profile digests (sha512_base64) is kept only as
-   * that digest. The value is never logged, returned or stored anywhere else.
+   * Sets one credential of a resource in its vault entry (setCredentials with one value). A credential the profile digests
+   * (sha512_base64) is kept only as that digest. The value is never logged, returned or stored anywhere else.
    */
   async setCredential(by: Principal, id: string, name: string, value: string): Promise<void> {
+    await this.setCredentials(by, id, { [String(name)]: value });
+  }
+
+  /**
+   * Sets several credentials of one resource: every name and value is checked before any is stored, the values are stored
+   * in the order the definition declares them, and the session is forgotten once, after the last. A login that takes two
+   * credentials (a user name and a password) thus changes both before a running Hub ends its stop: set one at a time, a
+   * read in between would log in with the new user name and the old password. When a value cannot be stored after others
+   * were, the session is kept (no login with half of the new values) and the error names what was stored.
+   */
+  async setCredentials(by: Principal, id: string, values: Readonly<Record<string, string>>): Promise<void> {
     await this.#admin(by);
     const state = await this.#state(id);
-    // The definition says which credentials exist and under which rule each is kept.
-    const entry = Object.hasOwn(state.resource.credentials, String(name)) ? state.resource.credentials[name] : undefined;
-    const digest = Object.hasOwn(state.resource.credential_digests, String(name)) ? state.resource.credential_digests[name] : undefined;
-    if (entry === undefined || digest === undefined) throw new ConnectorError('RESOURCE_INVALID', `资源 ${id} 没有凭据项 ${String(name)}`, { detail: { resource: id } });
-    if (typeof value !== 'string' || value.length === 0 || value.length > MAX_SECRET_CHARS || /[\u0000-\u001f\u007f]/.test(value)) {
-      throw new ConnectorError('RESOURCE_INVALID', `凭据 ${name} 必须是 1 到 ${MAX_SECRET_CHARS} 个字符、不含控制字符的文本`, { detail: { resource: id } });
+    const { credentials, credential_digests: digests } = state.resource;
+    if (typeof values !== 'object' || values === null || Array.isArray(values) || Object.keys(values).length === 0) {
+      throw new ConnectorError('RESOURCE_INVALID', `没有给出资源 ${id} 的凭据`, { detail: { resource: id } });
     }
-    this.#o.redactor.add(value);
-    const stored = storedCredential(value, digest);
-    this.#o.redactor.add(stored);
-    await this.#o.vault.put(entry, stored);
-    await this.#o.onCredentialChange?.(id);
-    this.#event('credential_set', { resource: id, credential: name, digest });
+    // The definition says which credentials exist and under which rule each is kept.
+    for (const name of Object.keys(values)) {
+      if (!Object.hasOwn(credentials, name) || !Object.hasOwn(digests, name)) throw new ConnectorError('RESOURCE_INVALID', `资源 ${id} 没有凭据项 ${name}`, { detail: { resource: id } });
+      const value = values[name];
+      if (typeof value !== 'string' || value.length === 0 || value.length > MAX_SECRET_CHARS || /[\u0000-\u001f\u007f]/.test(value)) {
+        throw new ConnectorError('RESOURCE_INVALID', `凭据 ${name} 必须是 1 到 ${MAX_SECRET_CHARS} 个字符、不含控制字符的文本`, { detail: { resource: id } });
+      }
+    }
+    const names = Object.keys(credentials).filter((name) => Object.hasOwn(values, name));
+    const stored: string[] = [];
+    for (const name of names) {
+      const value = values[name];
+      const digest = digests[name];
+      this.#o.redactor.add(value);
+      const kept = storedCredential(value, digest);
+      this.#o.redactor.add(kept);
+      try {
+        await this.#o.vault.put(credentials[name], kept);
+      } catch (error) {
+        if (stored.length === 0) throw error;
+        throw new ConnectorError('STORE_FAILED', `凭据 ${stored.join('、')} 已存进密钥库，${name} 没能存进去（${systemCode(error)}）；登录状态没有清除，请把这些凭据再设置一次`, {
+          detail: { resource: id },
+          cause: error,
+        });
+      }
+      // Logged once stored: the session reset that follows can fail on its own (and then says so to the admin).
+      this.#event('credential_set', { resource: id, credential: name, digest });
+      stored.push(name);
+    }
+    await this.#forgetSession(id, `凭据 ${names.join('、')} 已存进密钥库，但资源 ${id} 的登录状态没能清除`);
+  }
+
+  /**
+   * One resource for admins, enabled or not, read anew: the listing row and the credentials its definition declares (names,
+   * vault entries, digest rules, whether a value is set). It needs neither the system pack nor the vault key and never
+   * reads a value. Null when the id is not a resource.
+   */
+  async describe(by: Principal, id: string): Promise<ResourceDescription | null> {
+    await this.#admin(by);
+    this.invalidate();
+    const state = await this.get(String(id));
+    if (state === null) return null;
+    const { resource } = state;
+    const credentials: CredentialDescription[] = [];
+    for (const name of Object.keys(resource.credentials).sort()) {
+      const entry = resource.credentials[name];
+      credentials.push({ name, entry, digest: resource.credential_digests[name], set: await this.#o.vault.has(entry) });
+    }
+    return { ...listing(state, true), credentials };
   }
 
   /** Admins: every resource with addresses; any other valid account: the same rows without addresses. */

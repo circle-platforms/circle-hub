@@ -15,7 +15,7 @@ import { LoginManager, StaticCredential, type LoginStatus } from './login.ts';
 import { ProfileCache, type LoadedProfile } from './profiles.ts';
 import { ReadEngine, parseExternal, type PackFunctionRunner, type ReadArgs, type ReadOutcome, type ResourceRuntime } from './read.ts';
 import { Redactor } from './redact.ts';
-import { ResourceRegistry, sessionEntry, type AddResourceInput, type ResourceState, type UpdateResourceInput } from './resources.ts';
+import { ResourceRegistry, sessionEntry, type AddResourceInput, type ResourceDescription, type ResourceState, type UpdateResourceInput } from './resources.ts';
 import { compileRoutes } from './routes.ts';
 import type { ResourceRecord } from '../../contracts/src/resources.ts';
 
@@ -56,14 +56,30 @@ export interface ResourceAdmin {
   updateResource(by: Principal, id: string, changes: UpdateResourceInput): Promise<ResourceRecord>;
   /** Admins get addresses and plaintext declarations; any other valid account the rows without them. */
   listResources(by: Principal): Promise<ResourceListing[]>;
+  /**
+   * Admins only: one resource, enabled or not, with the name, vault entry and digest rule of every credential it declares
+   * and whether a value is set (never a value). Needs neither the system pack nor the vault key. Null for an id that is not
+   * a resource.
+   */
+  describe(by: Principal, id: string): Promise<ResourceDescription | null>;
   setCredential(by: Principal, id: string, name: string, value: string): Promise<void>;
+  /**
+   * Admins only: several credentials of one resource in one call. Every value is checked before any is stored, and the
+   * session is forgotten once, after the last (as setCredential does for one): a login that takes a user name and a
+   * password needs both changed before a running Hub ends its stop, or a read in between logs in with half of them.
+   */
+  setCredentials(by: Principal, id: string, values: Readonly<Record<string, string>>): Promise<void>;
   disable(by: Principal, id: string, note?: string | null): Promise<void>;
   enable(by: Principal, id: string, note?: string | null): Promise<void>;
-  /** Admins only: whether a token is cached, its expiry, a cool-down and whether logins are stopped (never the token). */
+  /**
+   * Admins only: whether a token is cached, its expiry, a cool-down and whether logins are stopped (never the token), after
+   * reading the session entry again (a reset another process made shows at once).
+   */
   loginStatus(by: Principal, id: string): Promise<LoginStatus | null>;
   /**
    * Admins only: ends a stop (or cool-down) of the login or the static credential of a resource without changing the
-   * credential, so the next read that needs it makes one attempt. Setting a credential does the same.
+   * credential, so the next read that needs it makes one attempt. Setting a credential does the same. Either removes the
+   * session entry, so a running Hub in another process ends the stop it holds at its next read that needs the credential.
    */
   resetLogin(by: Principal, id: string, note?: string | null): Promise<void>;
 }
@@ -101,6 +117,8 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
     now,
     log: options.log,
     cacheMs: options.resourceCacheMs,
+    // The session is forgotten here and its entry removed; another process holding a stop (the running Hub, when this is
+    // the CLI) reads the removal as the end of it.
     onCredentialChange: async (resource) => {
       const guard = guards.get(resource);
       if (guard?.login) await guard.login.reset();
@@ -310,7 +328,9 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
       return record;
     },
     listResources: (by) => registry.list(by),
+    describe: (by, id) => registry.describe(by, id),
     setCredential: (by, id, name, value) => registry.setCredential(by, id, name, value),
+    setCredentials: (by, id, values) => registry.setCredentials(by, id, values),
     disable: async (by, id, note) => {
       await registry.disable(by, id, note);
       engine.clearCache();

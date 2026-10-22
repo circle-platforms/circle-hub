@@ -326,3 +326,32 @@ test('a failed login says whether the request reached the source: not delivered,
   const silent = await stub(() => ({ ...json({}), delayMs: 1000 }));
   assert.equal((await refusal(source(silent).login({ ...login, timeout_ms: 200 }, { username: 'u', password: 'p' }), 'LOGIN_FAILED')).detail.delivered, null);
 });
+
+test('the sending hook of a login runs once it has its slot and before anything is sent; what it throws is not a login failure', async () => {
+  const login = profile.auth.kind === 'login_token' ? profile.auth.login : assert.fail('login profile');
+  const server = await stub(() => json({ code: 1000, msg: 'ok', data: { token: SECRET, expire: 1_900_000_000 } }));
+  const http = source(server, { limits: { concurrency: 1 } });
+  assert.equal(http.loginTimeoutMs(login), 30_000, 'the resource default when the login declares none');
+  assert.equal(http.loginTimeoutMs({ ...login, timeout_ms: 1500 }), 1500);
+  // A read holds the only slot: the hook waits for it, and nothing is sent until the hook returns.
+  const slow = await stub(() => ({ ...json({ code: 1000, msg: '', data: [] }), delayMs: 300 }));
+  const shared = new HttpSource({ resource: 'res_01jacd5z8q3w7v9h2k4m6n8p0t', origins: { 'plm-api': slow.origin, 'plm-oauth': server.origin }, allowPlaintext: [slow.origin, server.origin], routes: profile.routes, envelope: profile.envelope, limits: { concurrency: 1 } });
+  const reading = shared.request({ method: 'POST', path: '/plmquery/bug/detail/', body: { bug_ids: [4242] }, credential });
+  const seen: number[] = [];
+  const login1 = shared.login(login, { username: 'u', password: 'p' }, {
+    sending: async () => {
+      seen.push(slow.inFlight, server.requests.length);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      seen.push(server.requests.length);
+    },
+  });
+  await reading;
+  assert.equal((await login1).token, SECRET);
+  assert.deepEqual(seen, [0, 0, 0], 'after the read freed the slot; the login not sent until the hook returned');
+  assert.equal(server.requests.length, 1);
+  // A hook that throws: its error as it is, nothing sent, the slot released.
+  const before = server.requests.length;
+  await assert.rejects(http.login(login, { username: 'u', password: 'p' }, { sending: () => Promise.reject(new Error('synthetic hook failure')) }), /synthetic hook failure/);
+  assert.equal(server.requests.length, before);
+  assert.equal((await http.login(login, { username: 'u', password: 'p' })).token, SECRET, 'the slot was released');
+});

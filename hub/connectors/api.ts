@@ -7,13 +7,13 @@ export type { Connectors, ConnectorsOptions, ResourceAdmin } from './connectors.
 export type { PackFunctionRunner, ReadArgs, ReadOutcome } from './read.ts';
 export { COMPONENT, parseExternal } from './read.ts';
 
-export type { AddResourceInput, UpdateResourceInput } from './resources.ts';
+export type { AddResourceInput, CredentialDescription, ResourceDescription, UpdateResourceInput } from './resources.ts';
 export { credentialEntry, sessionEntry, storedCredential } from './resources.ts';
 
 export type { LoginStatus } from './login.ts';
 
 export { HttpSource, atPointer, decodeText } from './http.ts';
-export type { ConnectorLog, ConnectorLogEvent, FetchLike, HttpExchange, HttpReply, HttpRequest, HttpSourceOptions } from './http.ts';
+export type { ConnectorLog, ConnectorLogEvent, FetchLike, HttpExchange, HttpReply, HttpRequest, HttpSourceOptions, LoginHooks } from './http.ts';
 
 export { CONNECTOR_ERRORS, ConnectorError, isConnectorErrorCode } from './errors.ts';
 export type { ConnectorErrorCode, ErrorLayer } from './errors.ts';

@@ -99,6 +99,14 @@ export interface LoginAnswer {
   expiresAt: number | null;
 }
 
+export interface LoginHooks {
+  /**
+   * Called once the login has its turn (a slot within the resource's limits) and just before it is sent; nothing is sent
+   * until it returns. What it throws reaches the caller unchanged: the login was not sent.
+   */
+  sending?: () => Promise<void>;
+}
+
 const DEFAULT_CONCURRENCY = 2;
 const DEFAULT_TIMEOUT_MS = 30_000;
 const LOGIN_MAX_BYTES = 64 * 1024;
@@ -354,25 +362,28 @@ export class HttpSource {
    * source (no connection, no TLS session), true when the source answered (and so judged the credential), null when that is
    * unknown (a timeout or a connection lost after the request left).
    */
-  async login(declaration: LoginDeclaration, body: unknown): Promise<LoginAnswer> {
+  async login(declaration: LoginDeclaration, body: unknown, hooks: LoginHooks = {}): Promise<LoginAnswer> {
     const url = this.#url(declaration.role, declaration.path, {});
     this.#plaintext(url, declaration.role);
     const release = await this.#limiter.acquire();
     let raw: RawAnswer;
     try {
-      raw = await this.#send(
-        url,
-        'POST',
-        { accept: 'application/json', 'content-type': 'application/json', 'user-agent': 'circle-hub' },
-        JSON.stringify(body),
-        declaration.max_bytes ?? LOGIN_MAX_BYTES,
-        declaration.timeout_ms ?? this.#timeoutMs,
-        'login',
-      );
-    } catch (error) {
-      const code = error instanceof ConnectorError ? error.code : 'SOURCE_UNREACHABLE';
-      const delivered = error instanceof ConnectorError && error.detail.connect === true ? false : code === 'RESPONSE_TOO_LARGE' ? true : null;
-      throw new ConnectorError('LOGIN_FAILED', `登录请求没有得到可用的应答（${code}）`, { layer: 'transport', detail: { cause: code, delivered } });
+      if (hooks.sending !== undefined) await hooks.sending();
+      try {
+        raw = await this.#send(
+          url,
+          'POST',
+          { accept: 'application/json', 'content-type': 'application/json', 'user-agent': 'circle-hub' },
+          JSON.stringify(body),
+          declaration.max_bytes ?? LOGIN_MAX_BYTES,
+          this.loginTimeoutMs(declaration),
+          'login',
+        );
+      } catch (error) {
+        const code = error instanceof ConnectorError ? error.code : 'SOURCE_UNREACHABLE';
+        const delivered = error instanceof ConnectorError && error.detail.connect === true ? false : code === 'RESPONSE_TOO_LARGE' ? true : null;
+        throw new ConnectorError('LOGIN_FAILED', `登录请求没有得到可用的应答（${code}）`, { layer: 'transport', detail: { cause: code, delivered } });
+      }
     } finally {
       release();
     }
@@ -398,6 +409,11 @@ export class HttpSource {
       expiresAt = expiryOf(value, declaration.expiry.unit);
     }
     return { token, expiresAt };
+  }
+
+  /** The longest a login exchange may take once sent: its declared timeout, else the resource's. */
+  loginTimeoutMs(declaration: LoginDeclaration): number {
+    return declaration.timeout_ms ?? this.#timeoutMs;
   }
 
   #url(role: string, path: string, query: Record<string, string>): URL {

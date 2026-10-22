@@ -1,10 +1,11 @@
 // Resource administration and ResourceCatalogPort: admins decide and see addresses; users see rows without them through the
 // admin API and nothing through the catalog port; definitions are content-addressed and bound by resource_config decisions;
-// credentials go to the vault, passwords only as the digest their system requires.
+// credentials go to the vault, passwords only as the digest their system requires; `describe` gives admins one resource's
+// credential names, vault entries and digest rules, never a value.
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { after, before, test } from 'node:test';
-import { canonicalBytes, sha256Hex } from '../records/api.ts';
+import { canonicalBytes, sha256Hex, type Vault } from '../records/api.ts';
 import { startPostgres, type TemporaryPostgres } from '../testing/postgres.ts';
 import { ConnectorError } from './errors.ts';
 import { openConnectorKit, type ConnectorKit } from './testing/kit.ts';
@@ -148,6 +149,51 @@ test('credentials: admins only, declared names only, passwords kept as Base64(SH
   assert.deepEqual(await k.connectors.admin.loginStatus(k.admin, record.id), { token: false, expiresAt: null, obtainedAt: null, cooldownUntil: null, failure: null, stopped: false });
 });
 
+test('several credentials in one call: every value is checked before any is stored, then the session is forgotten once', async (t) => {
+  const k = await kit(t);
+  const record = await k.connectors.admin.addResource(k.admin, agileInput());
+  const set = (by: typeof k.admin, values: Record<string, string>) => k.connectors.admin.setCredentials(by, record.id, values);
+  assert.equal(await code(set(k.user, { username: 'reader', password: 'Synthetic#Pass42' })), 'ACCESS_DENIED');
+  assert.equal(await code(set(k.admin, {})), 'RESOURCE_INVALID');
+  assert.equal(await code(set(k.admin, { username: 'reader', token: 'x1234567' })), 'RESOURCE_INVALID', 'an undeclared name');
+  assert.equal(await code(set(k.admin, { username: 'reader', password: 'bad\nvalue' })), 'RESOURCE_INVALID', 'a value with a control character');
+  assert.equal(await k.records.vault.getText(record.credentials.username), null, 'nothing stored when any value is refused');
+  // A stop in the vault: one call ends it after both values are stored.
+  await k.records.vault.put(`connector.${record.id}.session`, JSON.stringify({ v: 1, binding: 'x', token: null, stopped: true }));
+  await set(k.admin, { username: 'reader', password: 'Synthetic#Pass42' });
+  assert.equal(await k.records.vault.getText(record.credentials.username), 'reader');
+  assert.equal(await k.records.vault.getText(record.credentials.password), createHash('sha512').update('Synthetic#Pass42').digest('base64'));
+  assert.equal(await k.records.vault.has(`connector.${record.id}.session`), false);
+  assert.deepEqual(
+    k.log.filter((event) => event.event === 'credential_set').map((event) => [event.credential, event.digest]),
+    [
+      ['password', 'sha512_base64'],
+      ['username', 'plain'],
+    ],
+    'in the order of the definition, whatever the order given',
+  );
+  // The removal fails: the message names every credential stored.
+  const vault = k.records.vault;
+  const refused = () => Promise.reject(Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' }));
+  const cli = k.make({ records: { ...k.records, vault: { initKey: () => vault.initKey(), put: (n, v) => vault.put(n, v), get: (n) => vault.get(n), getText: (n) => vault.getText(n), has: (n) => vault.has(n), list: () => vault.list(), remove: refused } } });
+  await assert.rejects(cli.admin.setCredentials(k.admin, record.id, { username: 'reader', password: 'Synthetic#Pass43' }), (error: unknown) => error instanceof ConnectorError && error.code === 'STORE_FAILED' && /凭据 password、username 已存进密钥库.*（EACCES）/.test(error.message));
+  // A value that cannot be stored after another was: the error names what was stored, and the session is kept.
+  await vault.put(`connector.${record.id}.session`, JSON.stringify({ v: 1, binding: 'x', token: null, stopped: true }));
+  const putRefused = (name: string) => Promise.reject(Object.assign(new Error(`ENOSPC: no space left, write ${name}`), { code: 'ENOSPC' }));
+  const full = k.make({
+    records: {
+      ...k.records,
+      vault: { initKey: () => vault.initKey(), put: (n, v) => (n === record.credentials.username ? putRefused(n) : vault.put(n, v)), get: (n) => vault.get(n), getText: (n) => vault.getText(n), has: (n) => vault.has(n), list: () => vault.list(), remove: (n) => vault.remove(n) },
+    },
+  });
+  await assert.rejects(
+    full.admin.setCredentials(k.admin, record.id, { username: 'reader3', password: 'Synthetic#Pass44' }),
+    (error: unknown) => error instanceof ConnectorError && error.code === 'STORE_FAILED' && /凭据 password 已存进密钥库，username 没能存进去（ENOSPC）/.test(error.message) && !error.message.includes('write'),
+  );
+  assert.equal(await vault.has(`connector.${record.id}.session`), true, 'no login with half of the new values: the session stays');
+  assert.equal(await vault.getText(record.credentials.username), 'reader');
+});
+
 test('an update that changes the credential set drops the vault entries it no longer declares', async (t) => {
   const k = await kit(t);
   const record = await k.connectors.admin.addResource(k.admin, agileInput());
@@ -160,7 +206,79 @@ test('an update that changes the credential set drops the vault entries it no lo
   assert.deepEqual(Object.keys(updated.credentials), ['password']);
   assert.equal(await k.records.vault.getText(record.credentials.username), null, 'a credential no longer declared leaves the vault');
   assert.ok(await k.records.vault.getText(record.credentials.password), 'an unchanged one stays');
+  assert.deepEqual((await k.connectors.admin.describe(k.admin, record.id))?.credentials, [{ name: 'password', entry: record.credentials.password, digest: 'sha512_base64', set: true }], 'described from the definition in force');
   assert.equal(await code(k.connectors.admin.resetLogin(k.user, record.id)), 'ACCESS_DENIED');
+});
+
+test('describe: one resource for admins, enabled or not, with its credential names, vault entries, digest rules and whether each is set; never a value', async (t) => {
+  const k = await kit(t);
+  const record = await k.connectors.admin.addResource(k.admin, agileInput());
+  assert.deepEqual(await k.connectors.admin.describe(k.admin, record.id), {
+    id: record.id,
+    system_pack: 'agile-test@1.0.0',
+    name: record.name,
+    environment: 'test',
+    enabled: true,
+    origins: record.origins,
+    allow_plaintext: record.allow_plaintext,
+    credentials: [
+      { name: 'password', entry: `connector.${record.id}.password`, digest: 'sha512_base64', set: false },
+      { name: 'username', entry: `connector.${record.id}.username`, digest: 'plain', set: false },
+    ],
+  });
+  await k.connectors.admin.setCredential(k.admin, record.id, 'password', 'Synthetic#Pass42');
+  const described = await k.connectors.admin.describe(k.admin, record.id);
+  assert.deepEqual(described?.credentials.map((c) => [c.name, c.set]), [['password', true], ['username', false]]);
+  const shown = JSON.stringify(described);
+  assert.ok(!shown.includes('Synthetic#Pass42') && !shown.includes(createHash('sha512').update('Synthetic#Pass42').digest('base64')), 'never a value or its digest');
+  // Admins only; absent and not a resource id are null.
+  assert.equal(await code(k.connectors.admin.describe(k.user, record.id)), 'ACCESS_DENIED');
+  assert.equal(await code(k.connectors.admin.describe({ id: 'usr_01jacd5z8q3w7v9h2k4m6n8p0t', name: 'ghost', role: 'admin' }, record.id)), 'ACCESS_DENIED');
+  assert.equal(await k.connectors.admin.describe(k.admin, 'res_01jacd5z8q3w7v9h2k4m6n8p0t'), null);
+  assert.equal(await k.connectors.admin.describe(k.admin, 'jev'), null);
+  // A disabled resource is described too: its credential can be set before it is enabled again.
+  await k.connectors.admin.disable(k.admin, record.id);
+  assert.equal((await k.connectors.admin.describe(k.admin, record.id))?.enabled, false);
+  // An anonymous system declares none; describing needs neither the system pack nor the vault key.
+  const site = await k.connectors.admin.addResource(k.admin, { system_pack: 'buildsite-test', name: '合成构建站', environment: 'test', origins: { 'build-site': 'http://192.0.2.20' } });
+  k.packs.remove('buildsite-test');
+  k.connectors.refresh();
+  assert.deepEqual((await k.connectors.admin.describe(k.admin, site.id))?.credentials, []);
+  const vault = k.records.vault;
+  const noKey = () => Promise.reject(new Error('密钥库主密钥不存在'));
+  const keyless: Vault = { initKey: noKey, put: noKey, get: noKey, getText: noKey, has: (name) => vault.has(name), list: () => vault.list(), remove: (name) => vault.remove(name) };
+  const cli = k.make({ records: { ...k.records, vault: keyless } });
+  assert.equal((await cli.admin.describe(k.admin, record.id))?.credentials[0].set, true, 'presence only, without the key');
+});
+
+test('a reset or a new credential whose session entry cannot be removed is an error for the admin, naming the system code and no path', async (t) => {
+  const k = await kit(t);
+  const record = await k.connectors.admin.addResource(k.admin, agileInput());
+  await k.connectors.admin.setCredential(k.admin, record.id, 'username', 'reader');
+  const vault = k.records.vault;
+  const refused = () => Promise.reject(Object.assign(new Error('EACCES: permission denied, unlink synthetic-vault/connector.x.session.sealed'), { code: 'EACCES' }));
+  const stuck: Vault = { initKey: () => vault.initKey(), put: (name, value) => vault.put(name, value), get: (name) => vault.get(name), getText: (name) => vault.getText(name), has: (name) => vault.has(name), list: () => vault.list(), remove: refused };
+  const failed = async (promise: Promise<unknown>): Promise<string> => {
+    try {
+      await promise;
+      return 'resolved';
+    } catch (error) {
+      assert.ok(error instanceof ConnectorError);
+      assert.equal(error.code, 'STORE_FAILED');
+      assert.ok(!error.message.includes('synthetic-vault'), 'no path in the message');
+      return error.message;
+    }
+  };
+  // A process without the resource's runtime (the CLI), and one whose runtime holds the session (it showed the status).
+  const cli = k.make({ records: { ...k.records, vault: stuck } });
+  assert.match(await failed(cli.admin.resetLogin(k.admin, record.id)), /登录状态没能从密钥库清除（EACCES）/);
+  const viewer = k.make({ records: { ...k.records, vault: stuck } });
+  await viewer.admin.loginStatus(k.admin, record.id);
+  assert.match(await failed(viewer.admin.resetLogin(k.admin, record.id)), /EACCES/);
+  assert.ok(!k.log.some((event) => event.event === 'login_reset'), 'no reset is reported that did not happen');
+  assert.ok(k.log.some((event) => event.event === 'session_reset_failed'));
+  assert.match(await failed(cli.admin.setCredential(k.admin, record.id, 'password', 'Synthetic#Pass42')), /凭据 password 已存进密钥库，但资源 .* 的登录状态没能清除（EACCES）/);
+  assert.equal(await vault.getText(record.credentials.password), createHash('sha512').update('Synthetic#Pass42').digest('base64'), 'the value itself was stored');
 });
 
 test('other resource configurations of the Hub (not resource ids) are not resources', async (t) => {
