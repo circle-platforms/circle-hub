@@ -1,0 +1,73 @@
+{
+  "id": "board_with_metrics",
+  "source": "author",
+  "check": "board",
+  "note": "合成样例：一个分组的指标按定义算出（20 个用例：无期望 1、含糊期望 1、负面 1），总是记支持，指标写在结论数据里",
+  "subject": {
+    "items": [
+      {
+        "id": "10.6.1/SSL",
+        "location": "src:65e8c215a1d2e8f60a983f8e616f32b38393da604dd6a19bdccc6f19ffc7b0dd/json@1/p/rows",
+        "fields": {
+          "line": "10.6.1",
+          "module": "SSL",
+          "id": "10.6.1/SSL",
+          "counts": {
+            "cases": 20,
+            "missing": 1,
+            "vague": 1,
+            "negative": 1
+          },
+          "ratios": {
+            "missing": {
+              "num": 1,
+              "den": 20
+            },
+            "vague": {
+              "num": 1,
+              "den": 20
+            },
+            "negative": {
+              "num": 1,
+              "den": 20
+            }
+          },
+          "display": {
+            "missing": 0.05,
+            "vague": 0.05,
+            "negative": 0.05
+          }
+        }
+      }
+    ],
+    "context": {
+      "product": "apv",
+      "names": [
+        "APV",
+        "NSAE"
+      ],
+      "parameters": {},
+      "groups": [
+        {
+          "product": "apv",
+          "build": "Rel_APV_10_6_1_57",
+          "root": "88896053e8847222fbfccf724b2b53ef1d7ef1c71c02f6ed9db214579482ecf7",
+          "view": {
+            "source": "src:65e8c215a1d2e8f60a983f8e616f32b38393da604dd6a19bdccc6f19ffc7b0dd",
+            "total": 20,
+            "truncated": false,
+            "skipped": 0,
+            "listed_rows": 4
+          }
+        }
+      ]
+    }
+  },
+  "expect": [
+    {
+      "verdict": "support",
+      "item": "10.6.1/SSL",
+      "tier": "advisory"
+    }
+  ]
+}

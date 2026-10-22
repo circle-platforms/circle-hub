@@ -1,0 +1,74 @@
+{
+  "id": "counts_inconsistent",
+  "source": "author",
+  "check": "board",
+  "note": "合成样例：分组的无期望结果数（5）多于用例总数（3），被判对象自相矛盾，指标不可信，记不通过（提示档）",
+  "subject": {
+    "items": [
+      {
+        "id": "10.6.1/HA",
+        "location": "src:96d8ab41d0b971ca0a4f6f53b489ab52edb999c53edd78a5ae2ad57a68880b73/json@1/p/rows",
+        "fields": {
+          "line": "10.6.1",
+          "module": "HA",
+          "id": "10.6.1/HA",
+          "counts": {
+            "cases": 3,
+            "missing": 5,
+            "vague": 0,
+            "negative": 0
+          },
+          "ratios": {
+            "missing": {
+              "num": 3,
+              "den": 3
+            },
+            "vague": {
+              "num": 0,
+              "den": 3
+            },
+            "negative": {
+              "num": 0,
+              "den": 3
+            }
+          },
+          "display": {
+            "missing": 1,
+            "vague": 0,
+            "negative": 0
+          }
+        }
+      }
+    ],
+    "context": {
+      "product": "apv",
+      "names": [
+        "APV",
+        "NSAE"
+      ],
+      "parameters": {},
+      "groups": [
+        {
+          "product": "apv",
+          "build": "Rel_APV_10_6_1_57",
+          "root": "88896053e8847222fbfccf724b2b53ef1d7ef1c71c02f6ed9db214579482ecf7",
+          "view": {
+            "source": "src:96d8ab41d0b971ca0a4f6f53b489ab52edb999c53edd78a5ae2ad57a68880b73",
+            "total": 3,
+            "truncated": false,
+            "skipped": 0,
+            "listed_rows": 1
+          }
+        }
+      ]
+    }
+  },
+  "expect": [
+    {
+      "verdict": "refute",
+      "code": "quality-board.counts_inconsistent",
+      "item": "10.6.1/HA",
+      "tier": "advisory"
+    }
+  ]
+}

@@ -1,0 +1,115 @@
+{
+  "schema": "pack@1",
+  "id": "traceability",
+  "version": "1.0.0",
+  "kind": "workflow",
+  "title": "追溯矩阵",
+  "description": "构建的缺陷到用例的追溯矩阵：release notes 列出的每个缺陷，有没有已索引的用例携带它的编号；没有已索引用例的记未知（用例索引按构造不完整，不等于没有），从不记为不通过；只含事实要求项，开始运行时由 Hub 直接算出结果",
+  "files": [
+    {
+      "path": "SKILL.md",
+      "sha256": "15ffb2d727cda54a3be83ecf3b227a9b471ab5c963911a7b1f5ce48728b06406",
+      "size": 2175
+    },
+    {
+      "path": "checks.json",
+      "sha256": "d6ac23664587eb4809a6dad03742f4b359271654c4830df5ff33e4f7a1402c5b",
+      "size": 554
+    },
+    {
+      "path": "functions/check.ts",
+      "sha256": "d5d900561fbc54899f9066fac65ba60c8a5e72080fb6123a17ba6aac4df20f40",
+      "size": 7346
+    },
+    {
+      "path": "functions/counts.ts",
+      "sha256": "1210f72fdb29070e4997730f6ffa0def7c1c50afc1cbb631df845277af35a900",
+      "size": 4404
+    },
+    {
+      "path": "functions/ids.ts",
+      "sha256": "96cb268a913e742c872bf4049ed2d8aef12a9cdce7547b5154ab44ad9104275d",
+      "size": 466
+    },
+    {
+      "path": "functions/matrix.ts",
+      "sha256": "f9e734afcd2956d4371c1660cc916b1106f842696f609b4fe477edc9cf7f8949",
+      "size": 5099
+    },
+    {
+      "path": "functions/params.ts",
+      "sha256": "92b032cf3da31ef42e29bed580088f0d6fb13a41aa5ffa9fc95a936f230156a0",
+      "size": 1074
+    },
+    {
+      "path": "functions/project.ts",
+      "sha256": "71de634eda92bef78836e272e4e9200396b6a5a0182568a6de24f89c8ee17f01",
+      "size": 7654
+    },
+    {
+      "path": "functions/subject.ts",
+      "sha256": "26d16670c20ccc3e3c7d92734fb0ff9a8d6dc8534183b4213b3ac28c9e4cda7c",
+      "size": 1455
+    },
+    {
+      "path": "functions/text.ts",
+      "sha256": "556d1554dc3a842f18750a5fec4f88ffaaea94ba81714c9a1e793d18e481ee1c",
+      "size": 2750
+    },
+    {
+      "path": "functions/types.ts",
+      "sha256": "a20497aa6e40b684d1fff45d950f26885c1118b49db868d5fde2f77b177b31fa",
+      "size": 3725
+    },
+    {
+      "path": "functions/views.ts",
+      "sha256": "170bd1d3440864532a5813e042a14a8cdb3b1fd57c28096bc5cd2eee19e2a1b0",
+      "size": 5129
+    },
+    {
+      "path": "requirements.json",
+      "sha256": "8a2d45cb1d4bfc6354aa3febc6c4723fbd3ee1b071db4bd9f966b4af106edffd",
+      "size": 1490
+    },
+    {
+      "path": "samples/negative/count-mismatch.json",
+      "sha256": "3cdb44751ab297595e2c91898216d1f7dfc54cd5cb51d958299e55dd077a59a1",
+      "size": 2864
+    },
+    {
+      "path": "samples/negative/join-mismatch.json",
+      "sha256": "b4688069e24687c69cf0d4e339391a10972ceab35e447badaab414473fb66d3a",
+      "size": 2918
+    },
+    {
+      "path": "samples/negative/status-conflict.json",
+      "sha256": "82eb8767ae3cbee0604529f20f202b1f69c12072790bfa12c9fedb77e0118844",
+      "size": 4116
+    },
+    {
+      "path": "samples/positive/counts-consistent.json",
+      "sha256": "e53aa5129ca6c98757baaabee0f29d8cb9020e782482d3e10c2dc945e52ac7b2",
+      "size": 3623
+    },
+    {
+      "path": "samples/positive/traced-with-cases.json",
+      "sha256": "f8e732b30c021c423d1c014d3779bf2bb2d19ed57647771e589e57d1d96a1519",
+      "size": 4773
+    },
+    {
+      "path": "slots.schema.json",
+      "sha256": "851202e03d46a4b40941830a276007f860f657166b31d30da18d0d2268567516",
+      "size": 53
+    },
+    {
+      "path": "tables/codes.json",
+      "sha256": "14bf1bf2742908becd152f2ec765bbe77140c5a6409766726e506d8eeb7be2fc",
+      "size": 3342
+    },
+    {
+      "path": "workflow.json",
+      "sha256": "364cda293029802dc7d3021e0c815a2300e5b79ffdead9bcabe1fd6ac9b9a3dd",
+      "size": 1338
+    }
+  ]
+}

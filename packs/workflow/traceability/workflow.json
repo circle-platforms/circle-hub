@@ -1,0 +1,32 @@
+{
+  "schema": "workflow@1",
+  "inputs": [
+    {
+      "slot": "defects",
+      "role": "subject",
+      "description": "构建的缺陷索引视图：knowledge:index:<产品>:<构建>?kind=defect&key=bug。构建的 release notes 列出的缺陷，一个条目一个缺陷：data.bug 是编号，data.status 是 fixed（已修复）或 known（已知）",
+      "accepts": ["knowledge:index"],
+      "required": true,
+      "many": false
+    },
+    {
+      "slot": "cases",
+      "role": "expected",
+      "description": "同一构建的用例索引视图：knowledge:index:<产品>:<构建>?kind=case&key=defects。按用例文档标题和目录携带的缺陷编号索引用例条目；构建名要和 defects 视图指向同一个知识根（任一名称族的写法都可以）",
+      "accepts": ["knowledge:index"],
+      "required": true,
+      "many": false
+    }
+  ],
+  "parameters": [
+    {
+      "name": "statuses",
+      "description": "计入矩阵的缺陷状态：fixed（已修复）、known（已知）；不写则两个都算",
+      "required": false,
+      "schema": { "type": "array", "items": { "type": "string", "enum": ["fixed", "known"] }, "minItems": 1, "uniqueItems": true }
+    }
+  ],
+  "product": { "id": "apv", "catalogs": [] },
+  "subject": "defects",
+  "projection": { "module": "functions/project.ts" }
+}
