@@ -13,6 +13,7 @@ test('the screen predicates follow the composer border', () => {
   assert.ok(isBusy(COMPOSER_BUSY) && !isBusy(COMPOSER_IDLE));
   assert.ok(isBusy('Retrying… timeout 1/10\n' + COMPOSER_IDLE));
   assert.ok(isBusy('╭──Reflecting… · 2s · ↓ 20────╮\n│ › ▏        │\n╰──── auto ─╯') && isBusy('╭──Thinking… · 12s · ↓ 0────╮'), 'the spinner word is not fixed');
+  assert.ok(isBusy('╭──Cogitating… · 1m 2s · ↓ 2.9k────╮') && isBusy('╭──Thinking… · 1h 3m 20s · ↓ 40k────╮'), 'minutes and hours of a long turn');
   assert.ok(!isBusy('我们先想想…… 这一步花了 5s'), 'text of the conversation is not a spinner');
   assert.ok(!hasComposer('plain shell $ '));
 });
