@@ -63,4 +63,20 @@ describe('readIndexView edge case', () => {
       assert.match(read.message, /entries/);
     }
   });
+
+  it('refuses an entry whose kind is not the view kind, even under a digest key', () => {
+    const defect = defectEntry({ bug: '7601' });
+    const pair = boundPair([defect], []);
+    const model = pair.defects as {
+      entries: Record<string, { entry: string; kind: string; statement: string; data: Record<string, unknown>; reference: string }>;
+    };
+    const digest = 'd'.repeat(64);
+    model.entries[digest] = { entry: digest, kind: 'case', statement: '种类不符的条目', data: { case: 'C-1', defects: ['7601'] }, reference: `tree:${'a'.repeat(64)}/cases/x@${'b'.repeat(64)}` };
+    const read = readIndexView(pair.inputs[0], 'defects', { kind: 'defect', key: 'bug' });
+    assert.ok(!read.ok, 'an entry of another kind is refused');
+    if (!read.ok) {
+      assert.equal(read.code, 'wrong_view');
+      assert.match(read.message, /种类/);
+    }
+  });
 });
