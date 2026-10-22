@@ -586,7 +586,7 @@ test('the engine and the reference agree on random submissions and the fixed bra
   assert.equal(wantRecorded?.layers[0]?.attribution, 'unattributed');
   assert.equal(wantRecorded?.status, 'unsatisfied');
 
-  // Seed 20261223 (SEED + 201): check tier is mandatory on publication; legacy published packs fall back at runtime.
+  // Seed 20261223 (SEED + 201): check tier is mandatory on publication; a check without one is a defect at runtime.
   // 1. Publication refusal: a pack check without declared tier is refused with checks.tier_missing; adding tier is accepted.
   const workflowDir = fileURLToPath(new URL('../../../packs/workflow', import.meta.url));
   const templateGapDir = join(workflowDir, 'template-gap');
@@ -620,7 +620,8 @@ test('the engine and the reference agree on random submissions and the fixed bra
   assert.ok(/任务包 template-gap 的检查 coverage 没有声明 tier/.test(tierMissingProblem.message));
   assert.ok(/声明 blocking、advisory 或模型里的其他档名/.test(tierMissingProblem.fix));
 
-  // 2. Legacy runtime fallback: an existing published pack without tier defaults to advisory without basis.
+  // 2. Runtime: a pack that bypasses publication with a check missing its tier is a pack defect, not a tier guess:
+  // the layer is unchecked with check_error and the producer attribution, and no tier is shown.
   const legacyHit = 'oracle-legacy.hit';
   const legacyPack = pack('oracle-legacy');
   (legacyPack.files['checks.json'] as { json: ChecksFile }).json.checks = (legacyPack.files['checks.json'] as { json: ChecksFile }).json.checks.map((c) =>
@@ -633,7 +634,11 @@ test('the engine and the reference agree on random submissions and the fixed bra
   const tierSeed = SEED + 201;
   const legacyPlan: Plan = { seed: tierSeed, roundsUsed: 0, items: handledItems({ ...supportOutcomes, loose: [{ verdict: 'refute' as const, code: legacyHit, tier: 'blocking' as const }] }), judge, author: null, defects: [] };
   const legacyEngine = await acceptedView(legacyPlan, await start(ITEMS, undefined, 'sess-legacy', undefined, 'oracle-legacy'));
-  assert.equal(shownLayer(legacyEngine, 'i1', 'loose').layer?.tier, 'advisory');
+  const missingTier = shownLayer(legacyEngine, 'i1', 'loose').layer;
+  assert.equal(missingTier?.terminal, 'unchecked');
+  assert.equal(missingTier?.reason, 'check_error');
+  assert.equal(missingTier?.attribution, 'producer_error');
+  assert.equal(missingTier?.tier, undefined, 'no tier is guessed for a check that declares none');
 
   // 3. Every pack in the repository passes checks.json validation (all checks declare explicit tier).
   const entries = await readdir(workflowDir, { withFileTypes: true });

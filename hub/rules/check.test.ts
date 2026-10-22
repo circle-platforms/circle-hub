@@ -33,7 +33,7 @@ describe('runCheck with a core interpreter', () => {
     assert.equal(outcomes[0].tier, 'advisory');
   });
 
-  it('legacy compatibility: an omitted declaration tier falls back to blocking with basis and advisory without basis', async () => {
+  it('an omitted declaration tier leaves the table’s own tier to the interpreter (C05 R[1])', async () => {
     const withBasis = await runCheck({ id: 'c1', interpreter: 'membership@1' }, { table: { ...membership, tier: undefined, basis: '测试条款' }, subject: { code: 'A' }, context: {} });
     assert.equal(withBasis[0].tier, 'blocking');
     const withoutBasis = await runCheck({ id: 'c2', interpreter: 'membership@1' }, { table: { ...membership, tier: undefined, origin: '测试' }, subject: { code: 'A' }, context: {} });
@@ -117,7 +117,7 @@ describe('runCheck with a pack function', () => {
     });
     const ref = `src:${'9'.repeat(64)}`;
     const catalog = buildCatalog({ root: '9'.repeat(64), entries: [{ head: 'gw status' }] });
-    const declaration = { id: 'echo', function: { module: 'checks/echo.ts' }, catalogEntries: true };
+    const declaration = { id: 'echo', function: { module: 'checks/echo.ts' }, catalogEntries: true, tier: 'advisory' as const };
     const bindings = { table: { want: 'x' }, subject: { value: 'y' }, catalog, context: { pack: 'synthetic-review' }, packDir: dir, sourceTexts: { [ref]: 'text' }, sandbox: sandbox() };
     const [o] = await runCheck(declaration, bindings);
     assert.equal(o.verdict, 'refute');
@@ -129,6 +129,27 @@ describe('runCheck with a pack function', () => {
     assert.equal(s.tier, 'advisory');
   });
 
+  it('a pack function without a declared tier is not run: check error, the admin log gets the missing tier, no guess', async () => {
+    const dir = pack({
+      'checks/echo.ts': "export default () => [{ verdict: 'support', statement: '不该跑到', grounds: [], tier: 'blocking' }];",
+    });
+    const errors: unknown[] = [];
+    const [o] = await runCheck(
+      { id: 'echo', function: { module: 'checks/echo.ts' } },
+      { table: { basis: '测试条款' }, subject: {}, context: { pack: 'synthetic-review' }, packDir: dir, sandbox: sandbox(), onError: (e) => errors.push(e) },
+    );
+    assert.equal(o.verdict, 'unknown');
+    assert.equal(o.reason, 'check_error');
+    assert.match(o.statement, /没有声明档位（tier）/);
+    assert.match(o.statement, /不猜档/);
+    assert.equal(o.code, undefined, 'no code: the tier never reaches a layer');
+    assert.equal(errors.length, 1, 'the admin log gets the missing-tier detail');
+    assert.match(String((errors[0] as Error).message), /没有声明档位/);
+    const declared = await runCheck({ id: 'echo', function: { module: 'checks/echo.ts' }, tier: 'blocking', basis: '测试条款' }, { subject: {}, context: { pack: 'synthetic-review' }, packDir: dir, sandbox: sandbox() });
+    assert.equal(declared[0].verdict, 'support', 'a declared tier runs as before');
+    assert.equal(declared[0].tier, 'blocking');
+  });
+
   it('invalid outcomes, a code outside the pack namespace and an empty result are check errors', async () => {
     const dir = pack({
       'bad.ts': "export default () => [{ verdict: 'pass', statement: 'x', grounds: [], tier: 'blocking' }];",
@@ -138,7 +159,7 @@ describe('runCheck with a pack function', () => {
       'object.ts': 'export default () => ({});',
     });
     for (const module of ['bad.ts', 'foreign.ts', 'nocode.ts', 'empty.ts', 'object.ts']) {
-      const [o] = await runCheck({ function: { module } }, { subject: {}, context: { pack: 'synthetic-review' }, packDir: dir, sandbox: sandbox() });
+      const [o] = await runCheck({ function: { module }, tier: 'advisory' }, { subject: {}, context: { pack: 'synthetic-review' }, packDir: dir, sandbox: sandbox() });
       assert.equal(o.verdict, 'unknown', module);
       assert.equal(o.reason, 'check_error', module);
     }
@@ -150,7 +171,7 @@ describe('runCheck with a pack function', () => {
       'throws.ts': "export default () => { throw new Error('x'); };",
       'imports.ts': "import { readFileSync } from 'node:fs'; export default () => [readFileSync];",
     });
-    const run = (module: string, limits = {}) => runCheck({ function: { module }, limits }, { subject: {}, context: { pack: 'synthetic-review' }, packDir: dir, sandbox: sandbox() });
+    const run = (module: string, limits = {}) => runCheck({ function: { module }, limits, tier: 'advisory' }, { subject: {}, context: { pack: 'synthetic-review' }, packDir: dir, sandbox: sandbox() });
     const [timeout] = await run('loop.ts', { timeoutMs: 500 });
     assert.equal(timeout.reason, 'timeout');
     assert.equal(timeout.data?.sandbox, 'SANDBOX_TIMEOUT');
@@ -159,7 +180,7 @@ describe('runCheck with a pack function', () => {
     assert.equal(threw.data?.sandbox, 'FUNCTION_THREW');
     const [imports] = await run('imports.ts');
     assert.equal(imports.data?.sandbox, 'IMPORT_NOT_DECLARED');
-    const [noDir] = await runCheck({ function: { module: 'x.ts' } }, { subject: {}, context: { pack: 'synthetic-review' } });
+    const [noDir] = await runCheck({ function: { module: 'x.ts' }, tier: 'advisory' }, { subject: {}, context: { pack: 'synthetic-review' } });
     assert.equal(noDir.reason, 'missing_input');
   });
 
@@ -170,7 +191,7 @@ describe('runCheck with a pack function', () => {
       'core.ts': "export default () => [{ verdict: 'refute', code: 'core.catalog.not_member', statement: '不对', grounds: [], tier: 'blocking' }];",
       'bare.ts': "export default () => [{ verdict: 'refute', code: 'synthetic-review.', statement: '不对', grounds: [], tier: 'blocking' }];",
     });
-    const [noPack] = await runCheck({ function: { module: 'protocol.ts' } }, { subject: {}, context: {}, packDir: dir, sandbox: sandbox() });
+    const [noPack] = await runCheck({ function: { module: 'protocol.ts' }, tier: 'advisory' }, { subject: {}, context: {}, packDir: dir, sandbox: sandbox() });
     assert.equal(noPack.verdict, 'unknown');
     assert.equal(noPack.reason, 'missing_input');
     for (const [module, packName] of [
@@ -178,7 +199,7 @@ describe('runCheck with a pack function', () => {
       ['protocol.ts', 'synthetic-review'],
       ['bare.ts', 'synthetic-review'],
     ]) {
-      const [o] = await runCheck({ function: { module } }, { subject: {}, context: { pack: packName }, packDir: dir, sandbox: sandbox() });
+      const [o] = await runCheck({ function: { module }, tier: 'advisory' }, { subject: {}, context: { pack: packName }, packDir: dir, sandbox: sandbox() });
       assert.equal(o.verdict, 'unknown', module);
       assert.equal(o.reason, 'check_error', module);
     }
@@ -193,11 +214,11 @@ describe('runCheck with a pack function', () => {
       'integrity.ts': outcome("verdict: 'unknown', reason: 'integrity_unproven'"),
     });
     for (const module of ['abstain.ts', 'skip.ts', 'nocheck.ts']) {
-      const [o] = await runCheck({ function: { module } }, { subject: {}, context: { pack: 'synthetic-review' }, packDir: dir, sandbox: sandbox() });
+      const [o] = await runCheck({ function: { module }, tier: 'advisory' }, { subject: {}, context: { pack: 'synthetic-review' }, packDir: dir, sandbox: sandbox() });
       assert.equal(o.verdict, 'unknown', module);
       assert.equal(o.reason, 'check_error', module);
     }
-    const [kept] = await runCheck({ function: { module: 'integrity.ts' } }, { subject: {}, context: { pack: 'synthetic-review' }, packDir: dir, sandbox: sandbox() });
+    const [kept] = await runCheck({ function: { module: 'integrity.ts' }, tier: 'advisory' }, { subject: {}, context: { pack: 'synthetic-review' }, packDir: dir, sandbox: sandbox() });
     assert.equal(kept.reason, 'integrity_unproven');
   });
 
@@ -224,7 +245,7 @@ describe('runCheck with a pack function', () => {
     const dir = pack({ 'throws.ts': 'export default () => { throw new Error(`failed in ${import.meta.url}`); };' });
     const errors: unknown[] = [];
     const go = () =>
-      runCheck({ id: 'throws', function: { module: 'throws.ts' } }, { subject: {}, context: { pack: 'synthetic-review' }, packDir: dir, sandbox: sandbox(), onError: (e) => errors.push(e) });
+      runCheck({ id: 'throws', function: { module: 'throws.ts' }, tier: 'advisory' }, { subject: {}, context: { pack: 'synthetic-review' }, packDir: dir, sandbox: sandbox(), onError: (e) => errors.push(e) });
     const [first] = await go();
     const [second] = await go();
     assert.equal(first.reason, 'check_error');

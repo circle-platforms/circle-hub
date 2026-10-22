@@ -163,7 +163,7 @@ describe('stopping', () => {
     await until(() => livePids().length === MAX_CONCURRENT);
     const waiters = Array.from({ length: MAX_WAITING }, () => callPackFunction({ packDir: dir, module: 'fn.ts' }, null));
     for (const w of waiters) w.catch(() => {});
-    const [overflow] = await runCheck({ function: { module: 'fn.ts' } }, { subject: {}, context: { pack: 'synthetic-review' }, packDir: dir });
+    const [overflow] = await runCheck({ function: { module: 'fn.ts' }, tier: 'advisory' }, { subject: {}, context: { pack: 'synthetic-review' }, packDir: dir });
     assert.equal(overflow.verdict, 'unknown');
     assert.equal(overflow.reason, 'budget_exhausted');
     const pids = livePids();
