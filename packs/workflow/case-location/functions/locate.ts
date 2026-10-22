@@ -412,6 +412,27 @@ function judgmentOf(answer: LocateAnswer, doubts: readonly Doubt[], fromTree: bo
   };
 }
 
+/** Associated ids in the conclusion: every one of them, grouped by kind （需求、缺陷、未分类）; above 20 in total,
+ * the first 20 in that order and 另有 N 个. These are the ids the capability hands to the user — never a top 3. */
+const MAX_LISTED_IDS = 20;
+
+function groupedIds(answer: LocateAnswer, shownId: (id: string, kind: LinkedId['kind']) => string): string[] {
+  const groups: Array<[string, string[]]> = [];
+  if (answer.requirements.length > 0) groups.push(['需求', answer.requirements.map((id) => shownId(id, 'story'))]);
+  if (answer.defects.length > 0) groups.push(['缺陷', answer.defects.map((id) => shownId(id, 'bug'))]);
+  if (answer.unclassified.length > 0) groups.push(['未分类编号', answer.unclassified.map((id) => shownId(id, null))]);
+  const total = groups.reduce((sum, [, ids]) => sum + ids.length, 0);
+  if (total <= MAX_LISTED_IDS) return groups.map(([label, ids]) => `${label} ${ids.join('、')}`);
+  const parts: string[] = [];
+  let left = MAX_LISTED_IDS;
+  for (const [label, ids] of groups) {
+    if (left === 0) break;
+    parts.push(`${label} ${ids.slice(0, left).join('、')}`);
+    left -= Math.min(left, ids.length);
+  }
+  return [...parts, `另有 ${total - MAX_LISTED_IDS} 个`];
+}
+
 /** The answer in one line of Chinese (statements and item summaries); references and declared readings say what they are. */
 export function described(answer: LocateAnswer): string {
   const parts: string[] = [];
@@ -436,9 +457,7 @@ export function described(answer: LocateAnswer): string {
     if (kind === null && answer.ranged.defects.includes(id)) marks.push('声明的范围：缺陷');
     return marks.length === 0 ? id : `${id}（${marks.join('；')}）`;
   };
-  if (answer.requirements.length > 0) parts.push(`需求 ${listOf(answer.requirements.map((id) => shownId(id, 'story')))}`);
-  if (answer.defects.length > 0) parts.push(`缺陷 ${listOf(answer.defects.map((id) => shownId(id, 'bug')))}`);
-  if (answer.unclassified.length > 0) parts.push(`未分类编号 ${listOf(answer.unclassified.map((id) => shownId(id, null)))}`);
+  parts.push(...groupedIds(answer, shownId));
   return parts.join('；');
 }
 
