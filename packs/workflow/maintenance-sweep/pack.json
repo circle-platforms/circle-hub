@@ -1,15 +1,15 @@
 {
   "schema": "pack@1",
   "id": "maintenance-sweep",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "kind": "workflow",
   "title": "维护巡检",
   "description": "按两个构建的影响视图列出较早构建里需要维护的用例：命令已删除的记阻断，命令定义有差异的记提示并逐字段给出两边的值。只含事实要求项，开始运行时由 Hub 直接算出结果",
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "71fa369e1a35ae1f4013772f0c4296bbcf156715042e69bb05312a56c99c7fe1",
-      "size": 1486
+      "sha256": "422acae8800c328182ce9f3ce669b674d16d7af64578da17e2dec87603167a8a",
+      "size": 1504
     },
     {
       "path": "checks.json",
@@ -23,8 +23,8 @@
     },
     {
       "path": "functions/check.ts",
-      "sha256": "516c8fe2984bfd1c1240b03bf7a3cddf71214a97303d4a2106793a5d9e4a3a73",
-      "size": 9323
+      "sha256": "494e2de45cae0a57927abe2ff85b0bc2b1b60c9afcbcc01b5d766665b8cbbc87",
+      "size": 11583
     },
     {
       "path": "functions/diff.ts",
