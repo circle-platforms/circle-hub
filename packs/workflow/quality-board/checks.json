@@ -1,0 +1,32 @@
+{
+  "schema": "checks@1",
+  "checks": [
+    {
+      "id": "board",
+      "title": "分组指标",
+      "function": { "module": "functions/board.ts" },
+      "applies": "run",
+      "subject": { "module": "functions/subject.ts" },
+      "judges": "subject",
+      "tier": "advisory"
+    },
+    {
+      "id": "thresholds",
+      "title": "阈值提示",
+      "function": { "module": "functions/thresholds.ts" },
+      "applies": "run",
+      "subject": { "module": "functions/subject.ts" },
+      "judges": "subject",
+      "tier": "advisory"
+    },
+    {
+      "id": "totals",
+      "title": "合计",
+      "function": { "module": "functions/totals.ts" },
+      "applies": "run",
+      "subject": { "module": "functions/subject.ts" },
+      "judges": "subject",
+      "tier": "advisory"
+    }
+  ]
+}

@@ -1,0 +1,73 @@
+{
+  "id": "total_undercount",
+  "source": "author",
+  "check": "totals",
+  "note": "合成样例：视图声明未截断，各行加起来 3 个用例而声明共 100 个，视图自相矛盾，合计记不通过（提示档）而不是照写",
+  "subject": {
+    "items": [
+      {
+        "id": "10.6.1/SSL",
+        "location": "src:2b12ed570ecf7e1a3a79ee6b7bfcc5120238d78d912dd925a5ae365cb4b5e280/json@1/p/rows",
+        "fields": {
+          "line": "10.6.1",
+          "module": "SSL",
+          "id": "10.6.1/SSL",
+          "counts": {
+            "cases": 3,
+            "missing": 0,
+            "vague": 0,
+            "negative": 0
+          },
+          "ratios": {
+            "missing": {
+              "num": 0,
+              "den": 3
+            },
+            "vague": {
+              "num": 0,
+              "den": 3
+            },
+            "negative": {
+              "num": 0,
+              "den": 3
+            }
+          },
+          "display": {
+            "missing": 0,
+            "vague": 0,
+            "negative": 0
+          }
+        }
+      }
+    ],
+    "context": {
+      "product": "apv",
+      "names": [
+        "APV",
+        "NSAE"
+      ],
+      "parameters": {},
+      "groups": [
+        {
+          "product": "apv",
+          "build": "Rel_APV_10_6_1_57",
+          "root": "88896053e8847222fbfccf724b2b53ef1d7ef1c71c02f6ed9db214579482ecf7",
+          "view": {
+            "source": "src:2b12ed570ecf7e1a3a79ee6b7bfcc5120238d78d912dd925a5ae365cb4b5e280",
+            "total": 100,
+            "truncated": false,
+            "skipped": 0,
+            "listed_rows": 1
+          }
+        }
+      ]
+    }
+  },
+  "expect": [
+    {
+      "verdict": "refute",
+      "code": "quality-board.total_undercount",
+      "tier": "advisory"
+    }
+  ]
+}

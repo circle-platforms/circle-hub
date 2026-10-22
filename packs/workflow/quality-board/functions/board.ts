@@ -1,0 +1,152 @@
+// The board: one group per (line, module) of the facet view (module null is the group 'unplaced', and so is a null line),
+// rows that split a group by the other fields summed. The metrics are exactly the definitions of the owner's real-sample
+// measurement: a case without an expected result has has_expected false; a case with only vague expected results has
+// has_expected true and vague_expected true; the negative share is negative true over all cases. Ratios are exact fractions
+// {num, den}, rounded only for display. The board check always supports with the metrics as claim data — unless the frozen
+// counts contradict the definitions (counts_inconsistent, advisory), which the pack's own projection never produces.
+import { clip, compareText, guarded, internalError, isRecord } from './text.ts';
+import type { CheckOutcome, FacetViewData, Fraction, GroupBoard, GroupCounts } from './types.ts';
+
+/** The group name of a null line or module. */
+export const UNPLACED = 'unplaced';
+
+/** The item id of a (line, module) pair. */
+export function groupId(line: string | null, module: string | null): string {
+  return `${line ?? UNPLACED}/${module ?? UNPLACED}`;
+}
+
+/** Rounded to four decimal places, for display only. */
+export function displayOf(num: number, den: number): number {
+  return den === 0 ? 0 : Math.round((num / den) * 10000) / 10000;
+}
+
+/** One decimal place with a percent sign, for summaries and statements. */
+export function percentOf(num: number, den: number): string {
+  return `${(den === 0 ? 0 : Math.round((num / den) * 1000) / 10).toFixed(1)}%`;
+}
+
+function fraction(num: number, den: number): Fraction {
+  return { num, den };
+}
+
+/** The one-line summary of a group (at most 200 characters): cases, missing percent, vague percent, negative percent. */
+export function summaryOf(counts: GroupCounts): string {
+  return clip(`用例 ${counts.cases} 个；无期望结果 ${percentOf(counts.missing, counts.cases)}；含糊期望 ${percentOf(counts.vague, counts.cases)}；负面用例 ${percentOf(counts.negative, counts.cases)}`, 200);
+}
+
+/**
+ * The groups of the view: the by fields line and module name the group; every other field (and any extra by field such as
+ * priority) only splits rows and is summed over. Deterministic: groups sorted by id in code-unit order.
+ */
+export function groupBoard(view: FacetViewData): GroupBoard[] {
+  // The map key distinguishes the pair (a field value may contain '/'); the item id is computed after and a collision of
+  // ids between different pairs is detected by the projection (ambiguous_group), never silently merged here.
+  const groups = new Map<string, { line: string | null; module: string | null; counts: GroupCounts }>();
+  for (const row of view.rows) {
+    const line = typeof row.values.line === 'string' ? row.values.line : null;
+    const module = typeof row.values.module === 'string' ? row.values.module : null;
+    const key = JSON.stringify([line, module]);
+    let held = groups.get(key);
+    if (held === undefined) groups.set(key, (held = { line, module, counts: { cases: 0, missing: 0, vague: 0, negative: 0 } }));
+    held.counts.cases += row.count;
+    if (row.values.has_expected === false) held.counts.missing += row.count;
+    if (row.values.has_expected === true && row.values.vague_expected === true) held.counts.vague += row.count;
+    if (row.values.negative === true) held.counts.negative += row.count;
+  }
+  return [...groups.values()]
+    .map((group) => ({
+      line: group.line,
+      module: group.module,
+      id: groupId(group.line, group.module),
+      counts: group.counts,
+      ratios: {
+        missing: fraction(group.counts.missing, group.counts.cases),
+        vague: fraction(group.counts.vague, group.counts.cases),
+        negative: fraction(group.counts.negative, group.counts.cases),
+      },
+      display: {
+        missing: displayOf(group.counts.missing, group.counts.cases),
+        vague: displayOf(group.counts.vague, group.counts.cases),
+        negative: displayOf(group.counts.negative, group.counts.cases),
+      },
+    }))
+    .sort((a, b) => compareText(a.id, b.id));
+}
+
+const TIER = 'advisory' as const;
+
+/** The frozen fields as the projection wrote them, or null when they are not the board shape (a pack defect). */
+export function fieldsOf(fields: unknown): GroupBoard | null {
+  if (!isRecord(fields) || !isRecord(fields.counts) || !isRecord(fields.ratios)) return null;
+  const counts = fields.counts;
+  const keys = ['cases', 'missing', 'vague', 'negative'] as const;
+  if (!keys.every((key) => Number.isInteger(counts[key]) && (counts[key] as number) >= 0)) return null;
+  if (typeof fields.id !== 'string') return null;
+  if (!(fields.line === null || typeof fields.line === 'string') || !(fields.module === null || typeof fields.module === 'string')) return null;
+  return fields as unknown as GroupBoard;
+}
+
+/** Where the frozen counts contradict the definitions (a management board never invents them): the breach, or null. */
+function inconsistencyOf(counts: GroupCounts): string | null {
+  if (counts.missing > counts.cases) return `无期望结果的用例（${counts.missing}）多于用例总数（${counts.cases}）`;
+  if (counts.vague > counts.cases) return `只有含糊期望结果的用例（${counts.vague}）多于用例总数（${counts.cases}）`;
+  if (counts.missing + counts.vague > counts.cases) return `无期望结果的用例与只有含糊期望结果的用例加起来（${counts.missing + counts.vague}）多于用例总数（${counts.cases}）`;
+  if (counts.negative > counts.cases) return `负面用例（${counts.negative}）多于用例总数（${counts.cases}）`;
+  return null;
+}
+
+/** The board outcomes for a subject of the subject builder: one per group, always advisory. */
+export function boardOutcomes(subject: unknown): CheckOutcome[] {
+  const raw = isRecord(subject) ? subject : {};
+  const items = (Array.isArray(raw.items) ? raw.items : []).filter(isRecord);
+  const out: CheckOutcome[] = [];
+  for (const [at, value] of items.entries()) {
+    const id = typeof value.id === 'string' ? value.id : '';
+    if (id === '') continue;
+    const pointer = `/items/${at}/fields`;
+    const location = typeof value.location === 'string' ? value.location : '';
+    const grounds = location === '' ? [] : [location];
+    try {
+      const fields = fieldsOf(value.fields);
+      if (fields === null) {
+        out.push({ verdict: 'unknown', reason: 'check_error', statement: `条目 ${id} 的字段不是质量看板的形状（任务包缺陷）`, grounds: [], tier: TIER, item: id, pointer });
+        continue;
+      }
+      const breach = inconsistencyOf(fields.counts);
+      if (breach !== null) {
+        out.push({
+          verdict: 'refute',
+          code: 'quality-board.counts_inconsistent',
+          statement: `分组 ${id} 的计数组不自洽：${breach}——被判对象自相矛盾，指标不可信`,
+          grounds,
+          tier: TIER,
+          item: id,
+          pointer,
+          data: { line: fields.line, module: fields.module, counts: fields.counts },
+        });
+        continue;
+      }
+      out.push({
+        verdict: 'support',
+        statement: summaryOf(fields.counts),
+        grounds,
+        tier: TIER,
+        item: id,
+        pointer,
+        data: { line: fields.line, module: fields.module, counts: fields.counts, ratios: fields.ratios, display: fields.display },
+      });
+    } catch (error) {
+      out.push({ verdict: 'unknown', reason: 'check_error', statement: `看板检查出错（任务包缺陷）：${internalError(error)}`, grounds: [], tier: TIER, item: id });
+    }
+  }
+  if (out.length === 0) out.push({ verdict: 'unknown', reason: 'check_error', statement: '看板检查的被判对象里没有条目（子对象构建函数没有给出 items）', grounds: [], tier: TIER });
+  return out;
+}
+
+/** Pack check function: PackCheckInput of hub/rules -> check-outcome@1 array. */
+export default function boardCheck(input: unknown): unknown {
+  return guarded<unknown>(
+    () => boardOutcomes(isRecord(input) ? input.subject : undefined),
+    (message) => [{ verdict: 'unknown', reason: 'check_error', statement: `看板检查出错（任务包缺陷）：${message}`, grounds: [], tier: TIER }],
+  );
+}

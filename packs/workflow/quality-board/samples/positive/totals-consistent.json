@@ -1,0 +1,106 @@
+{
+  "id": "totals_consistent",
+  "source": "author",
+  "check": "totals",
+  "note": "合成样例：合计覆盖整个视图（用例 23 个：无期望 2、含糊期望 1、负面 1），并写明看板只覆盖用例索引收录的用例",
+  "subject": {
+    "items": [
+      {
+        "id": "10.6.1/HA",
+        "location": "src:683a8e8857a249b8877c4e498d13808e2afad62ac913c3cfa51788340679269c/json@1/p/rows",
+        "fields": {
+          "line": "10.6.1",
+          "module": "HA",
+          "id": "10.6.1/HA",
+          "counts": {
+            "cases": 20,
+            "missing": 0,
+            "vague": 0,
+            "negative": 0
+          },
+          "ratios": {
+            "missing": {
+              "num": 0,
+              "den": 20
+            },
+            "vague": {
+              "num": 0,
+              "den": 20
+            },
+            "negative": {
+              "num": 0,
+              "den": 20
+            }
+          },
+          "display": {
+            "missing": 0,
+            "vague": 0,
+            "negative": 0
+          }
+        }
+      },
+      {
+        "id": "10.6.1/SSL",
+        "location": "src:683a8e8857a249b8877c4e498d13808e2afad62ac913c3cfa51788340679269c/json@1/p/rows",
+        "fields": {
+          "line": "10.6.1",
+          "module": "SSL",
+          "id": "10.6.1/SSL",
+          "counts": {
+            "cases": 3,
+            "missing": 2,
+            "vague": 1,
+            "negative": 2
+          },
+          "ratios": {
+            "missing": {
+              "num": 2,
+              "den": 3
+            },
+            "vague": {
+              "num": 1,
+              "den": 3
+            },
+            "negative": {
+              "num": 2,
+              "den": 3
+            }
+          },
+          "display": {
+            "missing": 0.6667,
+            "vague": 0.3333,
+            "negative": 0.6667
+          }
+        }
+      }
+    ],
+    "context": {
+      "product": "apv",
+      "names": [
+        "APV",
+        "NSAE"
+      ],
+      "parameters": {},
+      "groups": [
+        {
+          "product": "apv",
+          "build": "Rel_APV_10_6_1_57",
+          "root": "88896053e8847222fbfccf724b2b53ef1d7ef1c71c02f6ed9db214579482ecf7",
+          "view": {
+            "source": "src:683a8e8857a249b8877c4e498d13808e2afad62ac913c3cfa51788340679269c",
+            "total": 23,
+            "truncated": false,
+            "skipped": 0,
+            "listed_rows": 3
+          }
+        }
+      ]
+    }
+  },
+  "expect": [
+    {
+      "verdict": "support",
+      "tier": "advisory"
+    }
+  ]
+}

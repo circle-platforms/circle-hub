@@ -1,0 +1,86 @@
+{
+  "id": "thresholds_exceeded",
+  "source": "author",
+  "check": "thresholds",
+  "note": "合成样例：无期望结果占 40.0% 超过上限 5.0%，含糊期望占 30.0% 超过上限 5.0%，负面用例占 0.0% 低于下限 2.0%——一个分组三个提示档的不通过",
+  "subject": {
+    "items": [
+      {
+        "id": "10.6.1/WebUI",
+        "location": "src:5c0e951586ff3771a685a505f1994b08edc5df0d321f06b3aa8a6d48deff1cba/json@1/p/rows",
+        "fields": {
+          "line": "10.6.1",
+          "module": "WebUI",
+          "id": "10.6.1/WebUI",
+          "counts": {
+            "cases": 10,
+            "missing": 4,
+            "vague": 3,
+            "negative": 0
+          },
+          "ratios": {
+            "missing": {
+              "num": 4,
+              "den": 10
+            },
+            "vague": {
+              "num": 3,
+              "den": 10
+            },
+            "negative": {
+              "num": 0,
+              "den": 10
+            }
+          },
+          "display": {
+            "missing": 0.4,
+            "vague": 0.3,
+            "negative": 0
+          }
+        }
+      }
+    ],
+    "context": {
+      "product": "apv",
+      "names": [
+        "APV",
+        "NSAE"
+      ],
+      "parameters": {},
+      "groups": [
+        {
+          "product": "apv",
+          "build": "Rel_APV_10_6_1_57",
+          "root": "88896053e8847222fbfccf724b2b53ef1d7ef1c71c02f6ed9db214579482ecf7",
+          "view": {
+            "source": "src:5c0e951586ff3771a685a505f1994b08edc5df0d321f06b3aa8a6d48deff1cba",
+            "total": 10,
+            "truncated": false,
+            "skipped": 0,
+            "listed_rows": 3
+          }
+        }
+      ]
+    }
+  },
+  "expect": [
+    {
+      "verdict": "refute",
+      "code": "quality-board.missing_expected",
+      "item": "10.6.1/WebUI",
+      "tier": "advisory"
+    },
+    {
+      "verdict": "refute",
+      "code": "quality-board.vague_expected",
+      "item": "10.6.1/WebUI",
+      "tier": "advisory"
+    },
+    {
+      "verdict": "refute",
+      "code": "quality-board.negative_share",
+      "item": "10.6.1/WebUI",
+      "tier": "advisory"
+    }
+  ]
+}
