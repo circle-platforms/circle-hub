@@ -4,7 +4,7 @@
 // refutations guard the integrity of the frozen subject: a status conflict of the defect entries, and a listed case whose
 // raw defect ids do not carry the bug (the check re-verifies the join instead of trusting the fields).
 import { normalizeId } from './ids.ts';
-import { STATUS_SHORT, statusText } from './matrix.ts';
+import { STATUS_SHORT, statusText, systemNote } from './matrix.ts';
 import { guarded, internalError, isRecord } from './text.ts';
 import type { CaseRef, CheckOutcome, MatrixRow } from './types.ts';
 
@@ -27,12 +27,14 @@ function fieldsOf(item: Item): MatrixRow | null {
     typeof fields.statement !== 'string' ||
     !Array.isArray(fields.references) ||
     (fields.references as unknown[]).some((r) => typeof r !== 'string') ||
+    (fields.systems !== undefined && (!Array.isArray(fields.systems) || (fields.systems as unknown[]).some((s) => typeof s !== 'string'))) ||
     !Array.isArray(cases) ||
     cases.some((c) => !isRecord(c) || typeof c.case !== 'string' || typeof c.title !== 'string' || typeof c.reference !== 'string' || !Array.isArray((c as CaseRef).defects))
   ) {
     return null;
   }
-  return fields;
+  // Runs frozen before the systems field carry none.
+  return fields.systems === undefined ? { ...fields, systems: [] } : fields;
 }
 
 /** The cases-view facts the projection froze, for the unknown reason (skipped sources, a cut view). */
@@ -51,6 +53,7 @@ function dataOf(fields: MatrixRow): Record<string, unknown> {
     statuses: fields.statuses,
     conflict: fields.conflict,
     statement: fields.statement,
+    systems: fields.systems,
     case_count: fields.cases.length,
     cases: fields.cases.map((c) => ({ case: c.case, title: c.title, document: c.document, reference: c.reference })),
   };
@@ -91,7 +94,7 @@ function outcomeOf(item: Item, at: number, fields: MatrixRow, facts: { skipped: 
     return {
       verdict: 'refute',
       code: 'traceability.status_conflict',
-      statement: `缺陷 ${fields.bug} 的状态矛盾（${fields.statuses.map((s) => STATUS_SHORT[s] ?? s).join('、')}）：来源既把它列为已修复又列为已知；追溯到的用例照列（${fields.cases.length} 个），状态以缺陷系统为准`,
+      statement: `缺陷 ${fields.bug} 的状态矛盾（${fields.statuses.map((s) => STATUS_SHORT[s] ?? s).join('、')}）：来源既把它列为已修复又列为已知；追溯到的用例照列（${fields.cases.length} 个），状态以缺陷系统为准${systemNote(fields.systems)}`,
       grounds,
       tier: TIER,
       item: item.id,
@@ -102,7 +105,7 @@ function outcomeOf(item: Item, at: number, fields: MatrixRow, facts: { skipped: 
   if (fields.cases.length > 0) {
     return {
       verdict: 'support',
-      statement: `缺陷 ${fields.bug}（${statusText(fields.statuses)}）：${fields.cases.length} 个已索引用例追溯`,
+      statement: `缺陷 ${fields.bug}（${statusText(fields.statuses)}）：${fields.cases.length} 个已索引用例追溯${systemNote(fields.systems)}`,
       grounds,
       tier: TIER,
       item: item.id,

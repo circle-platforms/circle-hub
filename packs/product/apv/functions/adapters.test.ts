@@ -252,7 +252,7 @@ describe('the producers', () => {
     const fromPage = releaseNotes({ build: knownBuild, slots: { notes: slot('html@1', page) }, params: {} });
     assert.ok(ProducerOutput.safeParse(fromPage).success);
     assert.deepEqual(fromPage.entries.map((e) => [e.kind, e.data.bug, e.fragments[0].selector, e.applicability]), [
-      ['defect', '61001', 'b/2-3', { builds: ['Rel_APV_10_6_1_57'] }],
+      ['defect', '61001', 'a/0', { builds: ['Rel_APV_10_6_1_57'] }],
       ['defect', '61002', 'b/4-5', { builds: ['Rel_APV_10_6_1_57'] }],
       ['defect', '61003', 'b/6', { builds: ['Rel_APV_10_6_1_57'] }],
     ]);

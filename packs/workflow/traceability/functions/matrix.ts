@@ -17,10 +17,15 @@ export function statusText(statuses: readonly string[]): string {
   return statuses.length === 1 ? (STATUS_TEXT[statuses[0]] ?? statuses[0]) : '状态未知';
 }
 
+/** The collision note when the defect entries name more than one system: the matrix joins by the number alone. */
+export function systemNote(systems: readonly string[]): string {
+  return systems.length > 1 ? `；系统 ${systems.join('、')}（两个系统的缺陷号可能撞号）` : '';
+}
+
 /** The item summary: the status and the number of cases; an untraced defect says unknown, never a failure. */
-export function summaryOf(row: Pick<MatrixRow, 'statuses' | 'cases'>): string {
+export function summaryOf(row: Pick<MatrixRow, 'statuses' | 'cases' | 'systems'>): string {
   const traced = row.cases.length > 0 ? `${row.cases.length} 个用例` : '无已索引用例（未知）';
-  return clip(`${statusText(row.statuses)}；${traced}`, 200);
+  return clip(`${statusText(row.statuses)}；${traced}${systemNote(row.systems)}`, 200);
 }
 
 /** A case entry as the matrix lists it: the case's node id (data.node, what the cases producer writes), else data.case,
@@ -70,6 +75,7 @@ export function buildMatrix(defects: IndexViewData, cases: IndexViewData, status
   for (const [bug, group] of groups) {
     const entries = [...group.entries.entries()].sort(([a], [b]) => compareText(a, b));
     const statusList = [...new Set(entries.map(([, entry]) => entry.data.status as string))].sort(compareText);
+    const systemList = [...new Set(entries.map(([, entry]) => entry.data.system).filter((system): system is string => typeof system === 'string' && system !== ''))].sort(compareText);
     const bucket = byBug.get(bug);
     const caseRefs: CaseRef[] = [];
     if (bucket !== undefined) {
@@ -85,6 +91,7 @@ export function buildMatrix(defects: IndexViewData, cases: IndexViewData, status
       references: entries.map(([, entry]) => entry.reference).sort(compareText),
       digests: entries.map(([digest]) => digest),
       cases: caseRefs,
+      systems: systemList,
     });
   }
   rows.sort((a, b) => compareText(a.bug, b.bug));

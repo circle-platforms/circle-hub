@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict';
 import { performance } from 'node:perf_hooks';
 import { describe, it } from 'node:test';
-import { buildMatrix } from './matrix.ts';
+import { buildMatrix, summaryOf } from './matrix.ts';
 import { boundPair, caseEntry, defectEntry, indexViewOf, randomOf, reversed, type ViewEntrySpec } from './test-support.ts';
 import { readIndexView } from './views.ts';
 
@@ -51,6 +51,19 @@ describe('buildMatrix on hand-built views', () => {
   it('a defect no indexed case names has an empty case list', () => {
     const rows = matrixOf([defectEntry({ bug: '7003' })], [caseEntry({ defects: ['7999'], case: 'C-x' })]);
     assert.deepEqual([rows.length, rows[0].cases.length], [1, 0]);
+  });
+
+  it('a bug two systems write is one row naming both, with the collision note in the summary', () => {
+    const rows = matrixOf([defectEntry({ bug: '7020', system: 'plm' }), defectEntry({ bug: '7020', system: 'bugzilla' })], [caseEntry({ defects: ['7020'], case: 'C-9' })]);
+    assert.equal(rows.length, 1, 'the join is by number alone: the two systems collide into one row');
+    assert.deepEqual(rows[0].systems, ['bugzilla', 'plm']);
+    assert.match(summaryOf(rows[0]), /系统 bugzilla、plm（两个系统的缺陷号可能撞号）/);
+    const one = matrixOf([defectEntry({ bug: '7021', system: 'plm' })], []);
+    assert.deepEqual(one[0].systems, ['plm']);
+    assert.doesNotMatch(summaryOf(one[0]), /撞号/);
+    const none = matrixOf([defectEntry({ bug: '7022' })], []);
+    assert.deepEqual(none[0].systems, []);
+    assert.doesNotMatch(summaryOf(none[0]), /撞号/);
   });
 
   it('a case carrying two defects traces both', () => {

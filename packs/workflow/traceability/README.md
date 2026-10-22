@@ -22,7 +22,9 @@ by construction (absence is not proof).
 ## The answer
 
 - **Items** are the defects of the build: id = the bug id after the id normalisation (below), label = the defect summary
-  from the entry statement, summary = status and case count (`已修复；2 个用例`, `已知（未修复）；无已索引用例（未知）`).
+  from the entry statement, summary = status and case count (`已修复；2 个用例`, `已知（未修复）；无已索引用例（未知）`);
+  the defect entries naming more than one system append the systems and the collision note
+  (`系统 bugzilla、plm（两个系统的缺陷号可能撞号）`).
 - **traced** (per item): support when at least one case entry carries the id — the claim data lists the cases (ids, titles,
   documents, sorted by case id) and the grounds are the tree references of the defect entry and the case entries. Otherwise
   unknown (missing input): the reason says no indexed case names the defect, that the index is incomplete by construction,
@@ -39,6 +41,11 @@ by construction (absence is not proof).
 - **Id normalisation** (`ids.ts`): a pure run of ASCII digits loses its leading zeros (`0071009` = `71009`, `000` = `0`);
   anything else compares exactly as written. Bug and story numberings never meet: the case view is keyed by the `defects`
   field, which holds bug ids only.
+- **Two defect systems share one numbering join** (since 1.0.2): the product pack writes `data.system` on fixed-bug entries
+  (`plm`, `bugzilla`, `unknown`). The matrix joins by the normalised number alone and cannot tell which system a number
+  belongs to: a number the two systems share is one row (the systems are listed in `data.systems` and in the summary and
+  the check statement, with the note 两个系统的缺陷号可能撞号). The cases' side is unaffected: it is keyed by the numbers the
+  documents carry.
 - **The join is computed once** by the projection (`matrix.ts`) and frozen in the item fields; the check applies the traced
   rule to the frozen fields and re-verifies every listed case against its raw defect ids. `matrix.ts` is tested against an
   independent double-loop join on a random corpus of 2,000 defects.

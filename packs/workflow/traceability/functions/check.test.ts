@@ -68,6 +68,17 @@ describe('traceOutcomes', () => {
     assert.equal((outcome.data as { cases: unknown[] }).cases.length, 0);
   });
 
+  it('a bug of two systems: the statement carries the systems and the collision note, data.systems lists them', () => {
+    const plm = defectEntry({ bug: '7030', system: 'plm' });
+    const bz = defectEntry({ bug: '7030', system: 'bugzilla' });
+    const kase = caseEntry({ defects: ['7030'], case: 'C-s' });
+    const outcomes = traceOutcomes(subjectOf([plm, bz], [kase]));
+    const outcome = byItem(outcomes, '7030');
+    assert.equal(outcome.verdict, 'support');
+    assert.match(outcome.statement, /系统 bugzilla、plm（两个系统的缺陷号可能撞号）/);
+    assert.deepEqual((outcome.data as { systems: string[] }).systems, ['bugzilla', 'plm']);
+  });
+
   it('the unknown reason says how many listed sources were not read, and whether the index view was cut', () => {
     const defect = defectEntry({ bug: '7003' });
     const outcomes = traceOutcomes(subjectOf([defect], [], { casesView: { skipped: 3, truncated: true } }));
