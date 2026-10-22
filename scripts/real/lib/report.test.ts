@@ -5,7 +5,7 @@ import { renderReport, summary, type Check } from './report.ts';
 const checks: Check[] = [
   { area: '回归范围', name: '10.4.5→10.4.6 命令差', expected: '+14 -11 ~2', actual: '+14 -11 ~2', ok: true, evidence: ['root a', 'root b'] },
   { area: '回归范围', name: '10.4.6→10.5.0 命令差', expected: '+289 -82 ~42', actual: '+288 -82 ~42', ok: false, note: '少一条' },
-  { area: '用例定位', name: '文档 24863', expected: '10.4.6 / 10.4.6-R2-2026/7 / SSL', actual: '10.4.6 / 10.4.6-R2-2026/7 / SSL', ok: true },
+  { area: '用例定位', name: '文档 90001', expected: '10.4.6 / 10.4.6-R2-2026/7 / SSL', actual: '10.4.6 / 10.4.6-R2-2026/7 / SSL', ok: true },
 ];
 
 test('the summary counts by area and in total', () => {
