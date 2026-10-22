@@ -44,7 +44,7 @@ describe('publishing the test-bed pack', { skip }, () => {
     assert.ok(outcome.ok, outcome.ok ? '' : JSON.stringify(outcome.problems, null, 1));
     assert.equal(outcome.created, true);
     const report = outcome.report;
-    assert.deepEqual([report.samples.total, report.samples.passed, report.samples.failed, report.samples.sources.author], [10, 10, 0, 10]);
+    assert.deepEqual([report.samples.total, report.samples.passed, report.samples.failed, report.samples.sources.author], [12, 12, 0, 12]);
     assert.deepEqual(report.failures, []);
     assert.deepEqual(report.unsampled, []);
   });

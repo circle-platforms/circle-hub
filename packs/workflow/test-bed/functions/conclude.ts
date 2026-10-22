@@ -6,7 +6,7 @@ import { formatIp, nextFree, parseIp, parseSubnet, subnetContains, type Subnet }
 import { isRecord } from './common.ts';
 import { bedFacts } from './facts.ts';
 import { parseManifest, DEVICE_TYPE_LABEL, DEVICE_TYPES, type ManifestBed } from './manifest.ts';
-import { matchNeed, pickDevices, type BedMatch, type LeaseEntry, type Need, type NeedDevice } from './match.ts';
+import { matchNeed, pickDevices, type BedMatch, type Installed, type LeaseEntry, type Need, type NeedDevice } from './match.ts';
 
 export type Action = 'search' | 'facts' | 'acquire' | 'extend' | 'release';
 
@@ -111,11 +111,28 @@ export interface SearchFields {
   conclusion: string;
 }
 
-/** One search conclusion per bed (matchNeed's order); the build verdict is 'unknown' until bed-version reports exist. */
+/** The manifest's declared install records (每台设备的 installed): the lease-key record matchNeed reads, and the
+ * alias map of a build name to its base build. Declared, never checked — the conclusions say 声明，未核对 (I03). */
+export function declaredInstalls(beds: readonly ManifestBed[]): { installed: Record<string, Installed>; builds: Record<string, string> } {
+  const installed: Record<string, Installed> = {};
+  const builds: Record<string, string> = {};
+  for (const bed of beds) {
+    for (const device of bed.devices) {
+      const record = device.installed ?? null;
+      if (record === null) continue;
+      installed[`bed/${bed.name}/${device.name}`] = { build: record.build, source: 'declared' };
+      if (record.base !== null) builds[record.build] = record.base;
+    }
+  }
+  return { installed, builds };
+}
+
+/** One search conclusion per bed (matchNeed's order); the build verdict reads the manifest's declared installs. */
 export function searchFields(beds: ManifestBed[], need: BedNeed, leases: Record<string, LeaseEntry>, now: string): SearchFields[] {
-  // Install reports come from the future bed-version workflow; until then every build verdict is unknown (never a
-  // match and never a mismatch), and the conclusion says there is no record.
-  const matches = matchNeed(beds, matchNeedOf(need), {}, {}, leases, now);
+  // The manifest's installed entries are the phase-1 install records (declared, unchecked; the observed tier comes
+  // with the executor). A device without one stays 没有记录（未知）, never a mismatch.
+  const { installed, builds } = declaredInstalls(beds);
+  const matches = matchNeed(beds, matchNeedOf(need), installed, builds, leases, now);
   return matches.map((m) => ({
     bed: m.bed,
     devices_ok: m.devicesOk,
@@ -135,13 +152,19 @@ export interface FactsFields {
   blind: unknown[];
   backends: unknown[];
   unknowns: unknown[];
+  /** The manifest's declared installs of this bed's devices (声明，未核对); empty when none. */
+  installed: Array<{ device: string; build: string; base: string | null }>;
 }
 
 /** One facts conclusion per bed (the manifest's order). */
 export function factsFields(beds: ManifestBed[]): FactsFields[] {
   return beds.map((bed) => {
     const facts = bedFacts(bed);
-    return { bed: bed.name, segments: facts.segments, listeners: facts.listeners, blind: facts.blind, backends: facts.backends, unknowns: facts.unknowns };
+    const installed = bed.devices.flatMap((device) => {
+      const record = device.installed ?? null;
+      return record === null ? [] : [{ device: device.name, build: record.build, base: record.base }];
+    });
+    return { bed: bed.name, segments: facts.segments, listeners: facts.listeners, blind: facts.blind, backends: facts.backends, unknowns: facts.unknowns, installed };
   });
 }
 

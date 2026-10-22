@@ -21,7 +21,7 @@ const gold: TestBedGold = {
 const rec = 'rec:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
 
 const searchRunText = [
-  '运行 run_1 完成：任务包 test-bed@1.0.0',
+  '运行 run_1 完成：任务包 test-bed@1.1.0',
   `完整结果 ${rec}：用 get_nodes 读第一页`,
 ].join('\n');
 
@@ -32,7 +32,7 @@ const searchPage = [
 ].join('\n');
 
 const acquireRunText = [
-  '运行 run_2 完成：任务包 test-bed@1.0.0',
+  '运行 run_2 完成：任务包 test-bed@1.1.0',
   `完整结果 ${rec}：用 get_nodes 读第一页`,
 ].join('\n');
 
@@ -172,9 +172,9 @@ describe('test-bed scenario with extend and release', () => {
   const EXTEND_RUN = `run_${'b'.repeat(26)}`;
   const RELEASE_RUN = `run_${'c'.repeat(26)}`;
   const acquireRunText2 = acquireRunText.replace('运行 run_2', `运行 ${BOOKING}`);
-  const extendRunText = ['运行 ' + EXTEND_RUN + ' 完成：任务包 test-bed@1.0.0', `完整结果 ${rec}：用 get_nodes 读第一页`].join('\n');
+  const extendRunText = ['运行 ' + EXTEND_RUN + ' 完成：任务包 test-bed@1.1.0', `完整结果 ${rec}：用 get_nodes 读第一页`].join('\n');
   const extendPage = [`内容 ${rec}：`, `位置：条目 bed-a；陈述：续期 bed-a 的预订 ${BOOKING}，设备 apv0、client0，延长 3 小时`].join('\n');
-  const releaseRunText = ['运行 ' + RELEASE_RUN + ' 完成：任务包 test-bed@1.0.0', `完整结果 ${rec}：用 get_nodes 读第一页`].join('\n');
+  const releaseRunText = ['运行 ' + RELEASE_RUN + ' 完成：任务包 test-bed@1.1.0', `完整结果 ${rec}：用 get_nodes 读第一页`].join('\n');
   const releasePage = [`内容 ${rec}：`, `位置：条目 bed-a；陈述：释放 bed-a 的预订 ${BOOKING}，设备 apv0、client0`].join('\n');
 
   const makeTurn = (index: number, text = ''): Turn => ({

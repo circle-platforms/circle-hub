@@ -2,7 +2,7 @@
   "id": "facts_support",
   "source": "author",
   "check": "bed",
-  "note": "合成正例：bed-a 的负载均衡地址一个与路由器同段（监听候选）、一个独占另一段（盲地址）；环境事实与冻结清单一致，记支持",
+  "note": "合成正例：bed-a 的负载均衡地址一个与路由器同段（监听候选）、一个独占另一段（盲地址）；apv0 带清单声明的装机记录（NSAE 名，基于 APV 构建）；环境事实与冻结清单一致，记支持",
   "subject": {
     "items": [
       {
@@ -22,7 +22,8 @@
             { "device": "apv0", "address": "192.0.2.74", "subnet": "192.0.2.64/26" }
           ],
           "backends": [],
-          "unknowns": []
+          "unknowns": [],
+          "installed": [{ "device": "apv0", "build": "Rel_NSAE_10_6_1_8", "base": "Rel_APV_10_6_1_8" }]
         }
       }
     ],
@@ -39,7 +40,7 @@
               {
                 "name": "bed-a",
                 "devices": [
-                  { "name": "apv0", "type": "load-balancer", "ipv4": ["192.0.2.10/26", "192.0.2.74/26"], "ipv6": [] },
+                  { "name": "apv0", "type": "load-balancer", "ipv4": ["192.0.2.10/26", "192.0.2.74/26"], "ipv6": [], "installed": { "build": "Rel_NSAE_10_6_1_8", "base": "Rel_APV_10_6_1_8" } },
                   { "name": "router0", "type": "router", "ipv4": ["192.0.2.1/26"], "ipv6": [] }
                 ],
                 "services": [],

@@ -19,7 +19,7 @@
     },
     {
       "name": "need",
-      "description": "需求（search 和 acquire）：devices 为 [{ type, count }]（设备类型 load-balancer、router、client、server、console 各要几台，不写类型时不要求）；build 为要求设备上装的构建（NSAE 名按其基础构建算同一构建，构建记录的来源是声明还是观察照写，没有记录记未知）；hours 为用几小时（acquire 时以此为准）",
+      "description": "需求（search 和 acquire）：devices 为 [{ type, count }]（设备类型 load-balancer、router、client、server、console 各要几台，不写类型时不要求）；build 为要求设备上装的构建（与清单里每台设备的 installed 声明比较：一致或不一致都写“声明，未核对”，NSAE 名按其声明的 base 基础构建算同一构建，没有 installed 的设备记“没有记录（未知）”不当不一致）；hours 为用几小时（acquire 和 extend 时以此为准）",
       "required": false,
       "schema": { "type": "object" }
     },

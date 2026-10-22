@@ -2,9 +2,10 @@
 // synthetic inventory with `doc put` (the named document doc:doc:bed-topology); a user searches and acquires; the
 // second user on the same device is refused with LEASE_UNAVAILABLE and the earliest free moment; the booking's lineage
 // extends and releases it (the honest "你没有持有这个预订" without the predecessor), and another user books the freed
-// device; facts gives the listener and the blind address; a manifest with a duplicate address refuses the whole call
-// with its pointer; a user the pack is not assigned to gets the neutral SOURCE_UNAVAILABLE. Synthetic addresses only
-// (192.0.2.0/24).
+// device; a build requirement compares against the manifest's declared installs (声明，未核对; the NSAE alias counts
+// as its base build; no record stays unknown); facts gives the listener and the blind address; a manifest with a
+// duplicate address refuses the whole call with its pointer; a user the pack is not assigned to gets the neutral
+// SOURCE_UNAVAILABLE. Synthetic addresses only (192.0.2.0/24).
 import assert from 'node:assert/strict';
 import { after, before, describe, test } from 'node:test';
 import { startPostgres, type TemporaryPostgres } from '../../hub/testing/postgres.ts';
@@ -19,7 +20,7 @@ const INVENTORY = {
     {
       name: 'bed-a',
       devices: [
-        { name: 'apv0', type: 'load-balancer', ipv4: ['192.0.2.10/26', '192.0.2.74/26'], ipv6: [] },
+        { name: 'apv0', type: 'load-balancer', ipv4: ['192.0.2.10/26', '192.0.2.74/26'], ipv6: [], installed: { build: 'Rel_APV_10_6_1_8' } },
         { name: 'router0', type: 'router', ipv4: ['192.0.2.1/26'], ipv6: [] },
         { name: 'client0', type: 'client', ipv4: ['192.0.2.80/26'], ipv6: [] },
         { name: 'server0', type: 'server', ipv4: ['192.0.2.90/26'], ipv6: [] },
@@ -31,7 +32,7 @@ const INVENTORY = {
     {
       name: 'bed-b',
       devices: [
-        { name: 'apv1', type: 'load-balancer', ipv4: ['192.0.2.130/26', '192.0.2.194/26'], ipv6: [] },
+        { name: 'apv1', type: 'load-balancer', ipv4: ['192.0.2.130/26', '192.0.2.194/26'], ipv6: [], installed: { build: 'Rel_NSAE_10_6_1_8', base: 'Rel_APV_10_6_1_8' } },
         { name: 'client1', type: 'client', ipv4: ['192.0.2.150/26'], ipv6: [] },
       ],
       services: [],
@@ -246,6 +247,46 @@ describe('scenario 25: test-bed search, facts and acquire through the real Hub',
       parameters: { action: 'acquire', bed: 'bed-b', need: { devices: [{ type: 'load-balancer', count: 1 }], hours: 1 } },
     });
     assert.equal(rebooked.isError, false, `after the release another user books the device: ${rebooked.text.slice(0, 300)}`);
+  });
+
+  test('search with a build requirement: the declared installs answer 声明，未核对, an alias is the same build, no record stays unknown', async () => {
+    const started = await client.call('start_run', {
+      pack: 'test-bed',
+      inputs: { inventory: { external: 'doc:doc:bed-topology' } },
+      parameters: { action: 'search', need: { devices: [{ type: 'load-balancer', count: 1 }], build: 'Rel_APV_10_6_1_8', hours: 2 } },
+    });
+    assert.equal(started.isError, false, started.text.slice(0, 800));
+    const run = (started.out as { run?: { run?: string } }).run?.run;
+    assert.ok(run);
+    const claims = await claimsOf(bed, run);
+    const statements = claims.map((c) => c.statement.text);
+    assert.ok(statements.some((text) => text.includes('bed-a') && text.includes('构建一致（Rel_APV_10_6_1_8，声明，未核对）')), JSON.stringify(statements).slice(0, 500));
+    assert.ok(statements.some((text) => text.includes('bed-b') && text.includes('构建一致（Rel_APV_10_6_1_8，声明，未核对）')), 'bed-b’s NSAE name maps to its base APV build');
+
+    // A need the deciding device has no record for: unknown, never a mismatch.
+    const noRecord = await client.call('start_run', {
+      pack: 'test-bed',
+      inputs: { inventory: { external: 'doc:doc:bed-topology' } },
+      parameters: { action: 'search', need: { devices: [{ type: 'client', count: 1 }], build: 'Rel_APV_10_6_1_8', hours: 2 } },
+    });
+    assert.equal(noRecord.isError, false);
+    const noRecordRun = (noRecord.out as { run?: { run?: string } }).run?.run;
+    assert.ok(noRecordRun);
+    const noRecordClaims = await claimsOf(bed, noRecordRun);
+    assert.ok(noRecordClaims.some((c) => c.statement.text.includes('bed-a') && c.statement.text.includes('没有记录（未知）')), 'client0 has no declared install: unknown');
+    assert.ok(!noRecordClaims.some((c) => c.statement.text.includes('构建不一致')), 'no record is never a mismatch');
+
+    // A mismatch names the upgrade, still declared and unchecked.
+    const mismatch = await client.call('start_run', {
+      pack: 'test-bed',
+      inputs: { inventory: { external: 'doc:doc:bed-topology' } },
+      parameters: { action: 'search', need: { devices: [{ type: 'load-balancer', count: 1 }], build: 'Rel_APV_10_6_1_9', hours: 2 } },
+    });
+    assert.equal(mismatch.isError, false);
+    const mismatchRun = (mismatch.out as { run?: { run?: string } }).run?.run;
+    assert.ok(mismatchRun);
+    const mismatchClaims = await claimsOf(bed, mismatchRun);
+    assert.ok(mismatchClaims.some((c) => c.statement.text.includes('bed-a') && c.statement.text.includes('需要升级到 Rel_APV_10_6_1_9，声明，未核对')), JSON.stringify(mismatchClaims.map((c) => c.statement.text)).slice(0, 500));
   });
 
   test('facts: the listener of bed-a and the blind address of bed-b, computed from the frozen manifest', async () => {

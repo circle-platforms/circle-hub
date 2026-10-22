@@ -100,6 +100,12 @@ describe('matchNeed with a build requirement', () => {
     assert.equal(answer.find((b) => b.bed === 'bed-a')!.buildOk, 'mismatch');
     assert.match(answer.find((b) => b.bed === 'bed-a')!.conclusion, /需要升级/);
   });
+  it('a declared record is shown as declared and unchecked (声明，未核对), on a match and on a mismatch', () => {
+    const match = matchNeed(beds, buildNeed, { 'bed/bed-a/apv0': { build: 'Rel_APV_10_6_1_8', source: 'declared', at: '2026-10-20T00:00:00.000Z' } }, {}, noLeases, NOW);
+    assert.match(match.find((b) => b.bed === 'bed-a')!.conclusion, /构建一致（Rel_APV_10_6_1_8，声明，未核对）/);
+    const mismatch = matchNeed(beds, buildNeed, { 'bed/bed-a/apv0': { build: 'Rel_APV_10_6_1_9', source: 'declared', at: '2026-10-20T00:00:00.000Z' } }, {}, noLeases, NOW);
+    assert.match(mismatch.find((b) => b.bed === 'bed-a')!.conclusion, /构建不一致（装的是 Rel_APV_10_6_1_9，需要升级到 Rel_APV_10_6_1_8，声明，未核对）/);
+  });
   it('no install record at all: unknown, never mismatch; source none', () => {
     const answer = matchNeed(beds, buildNeed, noInstalled, {}, noLeases, NOW);
     const a = answer.find((b) => b.bed === 'bed-a')!;

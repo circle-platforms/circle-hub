@@ -26,16 +26,16 @@ const MANIFEST = {
   ],
 };
 
-function inputOf(parameters: Record<string, unknown>, options: { leases?: Array<{ key: string; until: string; mine?: boolean }> } = {}): unknown {
+function inputOf(parameters: Record<string, unknown>, options: { manifest?: unknown; leases?: Array<{ key: string; until: string; mine?: boolean }> } = {}): unknown {
   return {
-    inputs: [{ slot: 'inventory', external: 'doc:doc:bed-topology', sha256: 'a'.repeat(64), media_type: 'application/json', parser: 'json@1', model: MANIFEST, meta: null }],
+    inputs: [{ slot: 'inventory', external: 'doc:doc:bed-topology', sha256: 'a'.repeat(64), media_type: 'application/json', parser: 'json@1', model: options.manifest ?? MANIFEST, meta: null }],
     parameters,
     context: { product: null, names: [], line: null, build: null, root: null, parameters, groups: [], leases: { now: NOW, entries: options.leases ?? [] } },
   };
 }
 
 /** The subject the check sees, from a real projection output, optionally edited before freezing. */
-function subjectOf(parameters: Record<string, unknown>, options: { leases?: Array<{ key: string; until: string; mine?: boolean }>; edit?: (fields: Record<string, unknown>) => void } = {}): unknown {
+function subjectOf(parameters: Record<string, unknown>, options: { manifest?: unknown; leases?: Array<{ key: string; until: string; mine?: boolean }>; edit?: (fields: Record<string, unknown>) => void } = {}): unknown {
   const out = project(inputOf(parameters, options)) as { items: Array<{ id: string; label: string; location: { parser: string; selector: string }; fields: Record<string, unknown> }>; groups: Array<Record<string, unknown>> };
   assert.ok(Array.isArray(out.items), JSON.stringify(out).slice(0, 300));
   const items = out.items.map((item, at) => {
@@ -154,5 +154,35 @@ describe('bedOutcomes refute and unknown', () => {
     assert.equal(after[0].verdict, 'refute');
     assert.equal(after[0].code, 'test-bed.extend_mismatch');
     assert.match(after[0].statement, /没有持有/);
+  });
+
+  const DECLARED = {
+    schema: 'test-bed-manifest@1',
+    beds: [
+      {
+        name: 'bed-a',
+        devices: [{ name: 'apv0', type: 'load-balancer', ipv4: ['192.0.2.10/26', '192.0.2.74/26'], ipv6: [], installed: { build: 'Rel_NSAE_10_6_1_8', base: 'Rel_APV_10_6_1_8' } }],
+        services: [],
+        reserved: [],
+      },
+    ],
+  };
+
+  it('search with a build requirement: support naming 声明，未核对, refute on a tampered build verdict', () => {
+    const parameters = { need: { devices: [{ type: 'load-balancer', count: 1 }], build: 'Rel_APV_10_6_1_8', hours: 2 } };
+    const good = bedOutcomes(subjectOf(parameters, { manifest: DECLARED }));
+    assert.equal(good[0].verdict, 'support');
+    assert.match(good[0].statement, /声明，未核对/);
+    const bad = bedOutcomes(subjectOf(parameters, { manifest: DECLARED, edit: (fields) => void (fields.build_ok = 'unknown') }));
+    assert.equal(bad[0].verdict, 'refute');
+    assert.equal(bad[0].code, 'test-bed.search_mismatch');
+    assert.match(bad[0].statement, /build_ok/);
+  });
+
+  it('refutes a facts item with a tampered installed list', () => {
+    const outcomes = bedOutcomes(subjectOf({ action: 'facts' }, { manifest: DECLARED, edit: (fields) => void (fields.installed = []) }));
+    assert.equal(outcomes[0].verdict, 'refute');
+    assert.equal(outcomes[0].code, 'test-bed.facts_mismatch');
+    assert.match(outcomes[0].statement, /installed/);
   });
 });

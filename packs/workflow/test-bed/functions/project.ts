@@ -119,7 +119,7 @@ export default function project(input: unknown): Out | Failure {
       items: fields.map((f) => ({
         id: f.bed,
         label: f.bed,
-        summary: `监听 ${f.listeners.length}，盲地址 ${f.blind.length}，后端 ${f.backends.length}，网段 ${f.segments.length}`,
+        summary: `监听 ${f.listeners.length}，盲地址 ${f.blind.length}，后端 ${f.backends.length}，网段 ${f.segments.length}${f.installed.length > 0 ? `，装机声明 ${f.installed.length} 项（声明，未核对）` : ''}`,
         location: locationOf(slot.model, f.bed),
         fields: { action, ...f },
       })),

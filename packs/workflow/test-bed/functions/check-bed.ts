@@ -99,7 +99,7 @@ export function bedOutcomes(subject: unknown): CheckOutcome[] {
           out.push(refute(id, at, 'test-bed.facts_mismatch', `台架 ${String(fields.bed)} 不在清单里`, item.location, { bed: fields.bed }));
           continue;
         }
-        const keys = ['segments', 'listeners', 'blind', 'backends', 'unknowns'] as const;
+        const keys = ['segments', 'listeners', 'blind', 'backends', 'unknowns', 'installed'] as const;
         const diff = differing(fields as Record<string, unknown>, expected as unknown as Record<string, unknown>, keys);
         if (diff.length > 0) {
           out.push(refute(id, at, 'test-bed.facts_mismatch', `台架 ${expected.bed} 的环境事实与冻结清单不符（${diff.join('、')}）`, item.location, { differing: diff }));

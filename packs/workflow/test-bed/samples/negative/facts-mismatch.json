@@ -21,7 +21,8 @@
             { "device": "apv0", "address": "192.0.2.74", "subnet": "192.0.2.64/26" }
           ],
           "backends": [],
-          "unknowns": []
+          "unknowns": [],
+          "installed": []
         }
       }
     ],

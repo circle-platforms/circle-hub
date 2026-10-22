@@ -19,7 +19,8 @@ export interface Need {
 export interface Installed {
   build: string;
   source: 'declared' | 'observed';
-  at: string;
+  /** When the report was made; absent for a manifest declaration (the document carries no per-entry time). */
+  at?: string;
 }
 
 /** A lease as matchNeed sees it: only the key and when it ends. */
@@ -125,12 +126,12 @@ export function matchNeed(
         buildOk = 'match';
         const one = known[0].record!;
         buildSource = one.source;
-        buildText = one.source === 'observed' ? `构建一致（${need.build}，观察）` : `构建一致（${need.build}，声明）`;
+        buildText = one.source === 'observed' ? `构建一致（${need.build}，观察）` : `构建一致（${need.build}，声明，未核对）`;
       } else {
         buildOk = 'mismatch';
         const one = known[0].record!;
         buildSource = one.source;
-        buildText = `构建不一致（装的是 ${one.build}，需要升级到 ${need.build}）`;
+        buildText = `构建不一致（装的是 ${one.build}，需要升级到 ${need.build}${one.source === 'observed' ? '，观察' : '，声明，未核对'}）`;
       }
     }
     const parts: string[] = [];

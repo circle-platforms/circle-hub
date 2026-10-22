@@ -193,6 +193,69 @@ describe('project action extend and release', () => {
   });
 });
 
+describe('project with declared installs in the manifest', () => {
+  const DECLARED = {
+    schema: 'test-bed-manifest@1',
+    beds: [
+      {
+        name: 'bed-a',
+        devices: [
+          { name: 'apv0', type: 'load-balancer', ipv4: ['192.0.2.10/26'], ipv6: [], installed: { build: 'Rel_APV_10_6_1_8' } },
+          { name: 'router0', type: 'router', ipv4: ['192.0.2.1/26'], ipv6: [] },
+        ],
+        services: [],
+        reserved: [],
+      },
+      {
+        name: 'bed-b',
+        devices: [{ name: 'apv1', type: 'load-balancer', ipv4: ['192.0.2.130/26'], ipv6: [], installed: { build: 'Rel_NSAE_10_6_1_8', base: 'Rel_APV_10_6_1_8' } }],
+        services: [],
+        reserved: [],
+      },
+      {
+        name: 'bed-c',
+        devices: [{ name: 'apv2', type: 'load-balancer', ipv4: ['192.0.2.140/26'], ipv6: [] }],
+        services: [],
+        reserved: [],
+      },
+    ],
+  };
+  const needBuild = { devices: [{ type: 'load-balancer', count: 1 }], build: 'Rel_APV_10_6_1_8', hours: 2 };
+
+  it('search: the declared install answers 声明，未核对; an NSAE name based on the APV build is the same build; no record stays unknown', () => {
+    const out = project(input({ need: needBuild }, { manifest: DECLARED }));
+    assert.ok(!('error' in Object(out)), JSON.stringify(out).slice(0, 300));
+    const a = fieldsOf(out, 'bed-a');
+    assert.equal(a.build_ok, 'match');
+    assert.equal(a.build_source, 'declared');
+    assert.match(String(a.conclusion), /构建一致（Rel_APV_10_6_1_8，声明，未核对）/);
+    const b = fieldsOf(out, 'bed-b');
+    assert.equal(b.build_ok, 'match', 'the NSAE name maps to its base build before comparing');
+    assert.match(String(b.conclusion), /构建一致（Rel_APV_10_6_1_8，声明，未核对）/);
+    const c = fieldsOf(out, 'bed-c');
+    assert.equal(c.build_ok, 'unknown', 'no installed: no record, never a mismatch');
+    assert.match(String(c.conclusion), /没有记录（未知）/);
+  });
+
+  it('search: a declared mismatch says 需要升级, still 声明，未核对', () => {
+    const out = project(input({ need: { ...needBuild, build: 'Rel_APV_10_6_1_9' } }, { manifest: DECLARED }));
+    const a = fieldsOf(out, 'bed-a');
+    assert.equal(a.build_ok, 'mismatch');
+    assert.match(String(a.conclusion), /构建不一致（装的是 Rel_APV_10_6_1_8，需要升级到 Rel_APV_10_6_1_9，声明，未核对）/);
+  });
+
+  it('facts: the declared installs ride the item with 声明，未核对 in the summary', () => {
+    const out = project(input({ action: 'facts' }, { manifest: DECLARED }));
+    const a = fieldsOf(out, 'bed-a');
+    assert.deepEqual(a.installed, [{ device: 'apv0', build: 'Rel_APV_10_6_1_8', base: null }]);
+    const items = (out as { items?: Array<{ fields: Record<string, unknown>; summary?: string }> }).items ?? [];
+    const itemA = items.find((item) => item.fields.bed === 'bed-a');
+    assert.match(String(itemA?.summary), /声明，未核对/);
+    const c = fieldsOf(out, 'bed-c');
+    assert.deepEqual(c.installed, [], 'no installs: an empty list, not unknown');
+  });
+});
+
 describe('project on a bad inventory', () => {
   it('refuses the whole call with every problem and its pointer when the manifest is invalid', () => {
     const dup = {
