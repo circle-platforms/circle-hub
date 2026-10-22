@@ -195,7 +195,7 @@ describe('ReferenceUri', () => {
 
 describe('ExternalObjectId', () => {
   test('valid identities round-trip', () => {
-    for (const id of ['tracker:story:42', 'tracker:story:42@7', 'mind-map:document:24863', 'docs:page:a/b/c@2026-10-21T00:00:00Z', 'tracker:bug_report:x:y']) {
+    for (const id of ['tracker:story:42', 'tracker:story:42@7', 'mind-map:document:90001', 'docs:page:a/b/c@2026-10-21T00:00:00Z', 'tracker:bug_report:x:y']) {
       roundTrips(ExternalObjectId, id);
     }
   });

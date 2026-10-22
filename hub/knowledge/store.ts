@@ -1,6 +1,7 @@
-// Record I/O of the knowledge package over the records store: nodes and entries (tree_node), compositions (tree_root),
-// current-root moves (root_pointer), builds, calibration sets and layers (claim), and its own actions. Content-addressed
-// reads are cached: what is behind a node or entry digest never changes, and every read is re-verified against its digest.
+// Record I/O of the knowledge package over the records store: nodes and entries (tree_node), compositions and their parts
+// (tree_root), current-root moves (root_pointer), builds, calibration sets and layers (claim), and its own actions (loads
+// of list sources, memoized producer calls, productions, plan rounds, judgments). Content-addressed reads are cached: what
+// is behind a node, entry or part digest never changes, and every read is re-verified against its digest.
 import { z } from 'zod';
 import {
   KnowledgeBuildBody,
@@ -8,15 +9,19 @@ import {
   KnowledgeCandidateBody,
   KnowledgeEntryBody,
   KnowledgeObservationBody,
+  RecordedBuild,
   RootPointerBody,
   TreeNodeBody,
   TreeRootBody,
+  TreeRootRowsPart,
+  TreeRootSourcesPart,
+  TreeRootUnplacedPart,
   schemas as KNOWLEDGE_SCHEMAS,
 } from '../../contracts/src/knowledge.ts';
-import { BuildInfo } from '../../contracts/src/product.ts';
+import type { BuildInfo } from '../../contracts/src/product.ts';
 import type { ActionKind, ProvenanceType } from '../../contracts/generated/vocabulary.ts';
 import type { RecordKind } from '../../contracts/generated/protocol.ts';
-import { IntegrityError, RECORD_SCHEMAS } from '../records/api.ts';
+import { IntegrityError, RECORD_SCHEMAS, canonicalize, sha256Hex } from '../records/api.ts';
 import type { ActionBody, FindQuery, IndexEntry, RecordStore, StoredRecord, Transaction } from '../records/api.ts';
 import { cutText, entryDigest, nodeDigest, type EntryContent } from './digest.ts';
 import { KnowledgeError } from './errors.ts';
@@ -27,6 +32,9 @@ export const SCHEMAS = {
   node: 'tree_node@1',
   entry: 'knowledge-entry@1',
   root: 'tree_root@1',
+  rowsPart: 'tree_root-rows@1',
+  unplacedPart: 'tree_root-unplaced@1',
+  sourcesPart: 'tree_root-sources@1',
   pointer: 'root_pointer@1',
   build: 'knowledge-build@1',
   calibration: 'knowledge-calibration@1',
@@ -34,6 +42,15 @@ export const SCHEMAS = {
   candidate: 'knowledge-candidate@1',
   action: RECORD_SCHEMAS.action,
 } as const;
+
+/** The part schemas of a large composition and their shapes. */
+export const PART_SHAPES = {
+  [SCHEMAS.rowsPart]: TreeRootRowsPart,
+  [SCHEMAS.unplacedPart]: TreeRootUnplacedPart,
+  [SCHEMAS.sourcesPart]: TreeRootSourcesPart,
+} as const;
+export type PartSchema = keyof typeof PART_SHAPES;
+export type PartBody<S extends PartSchema> = z.infer<(typeof PART_SHAPES)[S]>;
 
 /** Index keys this package writes (all under `knowledge.`, plus the records package's `action.kind`). */
 export const INDEX = {
@@ -57,6 +74,12 @@ export const INDEX = {
   calibration: 'knowledge.calibration',
   observation: 'knowledge.observation.product',
   candidate: 'knowledge.candidate.owner',
+  /** A list source the knowledge package loaded: external id -> its read action. */
+  read: 'knowledge.read',
+  /** A producer call's stored output: memo key -> its generate action. */
+  memo: 'knowledge.memo',
+  /** A composition part: content key -> its record. */
+  part: 'knowledge.part',
   actionKind: 'action.kind',
 } as const;
 
@@ -66,10 +89,16 @@ export const COMPONENTS = {
   sync: 'knowledge.sync@1',
   placement: 'knowledge.placement@1',
   calibration: 'knowledge.calibration@1',
+  /** One producer call of a list slot's batch (memoized). */
+  producer: 'knowledge.producer@1',
+  /** The loads of list sources (reused while younger than max_age_seconds). */
+  sources: 'knowledge.sources@1',
+  /** The knowledge views served as external objects. */
+  views: 'knowledge.views@1',
 } as const;
 
 /** The action kinds (B05 F[0]) this package records; checked against the generated vocabulary at compile time. */
-export const ACTION = { parse: 'parse', generate: 'generate', classify: 'classify' } as const satisfies Record<string, ActionKind>;
+export const ACTION = { parse: 'parse', generate: 'generate', classify: 'classify', read: 'read' } as const satisfies Record<string, ActionKind>;
 
 /** Build names compare without case for lookups (NFC, lower case); the stored name keeps its spelling. */
 export function fold(name: string): string {
@@ -114,6 +143,48 @@ export function buildProblem(product: string, build: BuildInfo): string | null {
   return null;
 }
 
+// ---------------------------------------------------------------- the forms a build is kept in
+
+/** Roles of a build that hold a list (an array of ids as listed, a reference as recorded), sorted. */
+export function listRoles(build: { sources: Record<string, unknown> }): string[] {
+  return Object.keys(build.sources)
+    .filter((role) => typeof build.sources[role] !== 'string')
+    .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+}
+
+/** A build with single roles only, as a build record keeps it. */
+export type ClaimBuild = KnowledgeBuildBody['build'];
+
+/** A build without its list roles: what a build claim keeps and what the port's reads return (README decision 10). */
+export function withoutLists(build: BuildInfo | RecordedBuild): ClaimBuild {
+  const sources: Record<string, string> = {};
+  for (const [role, source] of Object.entries(build.sources)) if (typeof source === 'string') sources[role] = source;
+  return { name: build.name, family: build.family, line: build.line, base: build.base, platform: build.platform, built_at: build.built_at, released_at: build.released_at, sources };
+}
+
+/** One listed role's ids as listed, with the digest of their canonical JSON array (the object that holds them). */
+export interface ListedIds {
+  role: string;
+  list: string;
+  ids: string[];
+}
+
+/** The build as a production records it: every list role by reference ({list, count}), and the lists to keep as objects. */
+export function recordedOf(build: BuildInfo): { build: RecordedBuild; lists: ListedIds[] } {
+  const sources: RecordedBuild['sources'] = {};
+  const lists: ListedIds[] = [];
+  for (const [role, source] of Object.entries(build.sources)) {
+    if (typeof source === 'string') {
+      sources[role] = source;
+      continue;
+    }
+    const list = sha256Hex(canonicalize(source));
+    sources[role] = { list, count: source.length };
+    lists.push({ role, list, ids: [...source] });
+  }
+  return { build: { ...withoutLists(build), sources }, lists };
+}
+
 /** Pointer name of the current root of a product line@version: the line's UTF-8 bytes outside [a-z0-9._-] are written :hh. */
 export function pointerName(product: string, line: string): string {
   let encoded = '';
@@ -138,47 +209,139 @@ function checked<B>(schema: string, body: B): B {
   return body;
 }
 
-/** A bounded map that forgets the least recently used entry. */
+/**
+ * A bounded map that forgets the least recently used entry: at most `max` entries and, when a weight is given, at most
+ * `maxWeight` in total (an entry heavier than that alone is not kept).
+ */
 export class Lru<K, V> {
   readonly #max: number;
-  readonly #map = new Map<K, V>();
-  constructor(max: number) {
+  readonly #maxWeight: number;
+  readonly #map = new Map<K, { value: V; weight: number }>();
+  #weight = 0;
+  constructor(max: number, maxWeight = Number.POSITIVE_INFINITY) {
     this.#max = Math.max(1, max);
+    this.#maxWeight = maxWeight;
+  }
+  get size(): number {
+    return this.#map.size;
+  }
+  get weight(): number {
+    return this.#weight;
   }
   get(key: K): V | undefined {
-    const value = this.#map.get(key);
-    if (value !== undefined) {
+    const held = this.#map.get(key);
+    if (held !== undefined) {
       this.#map.delete(key);
-      this.#map.set(key, value);
+      this.#map.set(key, held);
     }
-    return value;
+    return held?.value;
   }
-  set(key: K, value: V): void {
-    this.#map.delete(key);
-    this.#map.set(key, value);
-    while (this.#map.size > this.#max) this.#map.delete(this.#map.keys().next().value as K);
+  set(key: K, value: V, weight = 0): void {
+    this.delete(key);
+    if (weight > this.#maxWeight) return;
+    this.#map.set(key, { value, weight });
+    this.#weight += weight;
+    while (this.#map.size > this.#max || this.#weight > this.#maxWeight) {
+      const oldest = this.#map.keys().next().value as K;
+      this.delete(oldest);
+    }
   }
   delete(key: K): void {
+    const held = this.#map.get(key);
+    if (held === undefined) return;
+    this.#weight -= held.weight;
     this.#map.delete(key);
   }
 }
+
+/** Most skipped external ids of one list a generate action keeps, so that the next sync can try them again. */
+export const MAX_KEPT_SKIPPED_IDS = 50;
+
+/** One list slot of a production, summarised: the full rows are in the composition (sources and skipped). */
+export const ListDetail = z.object({
+  producer: z.string(),
+  slot: z.string(),
+  /** External ids listed (repeats dropped). */
+  count: z.number(),
+  /** SHA-256 of the canonical JSON of the listed ids in order. */
+  externals: z.string(),
+  /** SHA-256 of the canonical JSON of the [external, sha256] pairs that were used, in order. */
+  loaded: z.string(),
+  /**
+   * SHA-256 of the canonical JSON of the [external, sha256] pairs of every listed object that was read, in order, whether or
+   * not it could then be checked, parsed or used: what a recheck compares (absent in records of earlier versions).
+   */
+  read: z.string().optional(),
+  /** Skipped ids (first 50); `retry` when a later load may succeed (the object could not be read, checked or parsed). */
+  skipped: z.array(z.object({ external: z.string(), reason: z.string(), retry: z.boolean() })),
+  skipped_count: z.number(),
+});
+export type ListDetail = z.infer<typeof ListDetail>;
 
 /** The detail of a generate action: one production of a root, or its failure. Read loosely: later versions may add fields. */
 export const ProduceDetail = z.object({
   sync: z.string().nullable(),
   product: z.string(),
   pack: z.object({ id: z.string(), version: z.string(), digest: z.string() }),
-  build: BuildInfo,
+  /** The build as listed, its list roles by reference (the ids are an object). */
+  build: RecordedBuild,
   root: z.string().nullable(),
   composition: z.string().nullable(),
+  /** The sources of single slots (list sources are summarised in `lists`). */
   sources: z.array(z.object({ producer: z.string(), slot: z.string(), external: z.string(), sha256: z.string() })),
   /** Optional sources that could not be read for this production. */
   missing: z.array(z.object({ producer: z.string(), slot: z.string(), external: z.string().nullable() })).default([]),
+  lists: z.array(ListDetail).default([]),
+  /** Producer calls made and calls answered from stored outputs. */
+  calls: z.object({ made: z.number(), reused: z.number() }).nullable().default(null),
   /** The typed-judgment placement the root depends on: model, threshold, spans placed or not, judge failures. */
   placement: z.object({ model: z.string().nullable(), threshold: z.number().nullable(), spans: z.number(), failed: z.number() }).nullable().default(null),
   reason: z.string().nullable(),
 });
 export type ProduceDetail = z.infer<typeof ProduceDetail>;
+
+/** The detail of a read action of a list source: which stored record the load used. */
+export const ReadDetail = z.object({
+  external: z.string(),
+  revision: z.string().nullable(),
+  /** Digest of the source_artifact record the connector read returned. */
+  artifact: z.string(),
+  sha256: z.string(),
+  size: z.number(),
+  media_type: z.string(),
+});
+export type ReadDetail = z.infer<typeof ReadDetail>;
+
+/** The detail of a generate action of one producer call: the memo key and the stored output object. */
+export const MemoDetail = z.object({
+  key: z.string(),
+  product: z.string(),
+  pack: z.object({ id: z.string(), version: z.string(), digest: z.string() }),
+  producer: z.string(),
+  batch: z.object({ index: z.number(), of: z.number() }),
+  elements: z.number(),
+  output: z.object({ sha256: z.string(), size: z.number(), entries: z.number(), unplaced: z.number(), warnings: z.number() }),
+});
+export type MemoDetail = z.infer<typeof MemoDetail>;
+
+/**
+ * The detail of a generate action (result error) of one producer call that failed in a way a smaller call could avoid
+ * (README decision 19): the same function on the same input fails the same way under the same sandbox limits, so the failure
+ * is used again while the producer limits are `limits`.
+ */
+export const MemoFailureDetail = z.object({
+  key: z.string(),
+  product: z.string(),
+  pack: z.object({ id: z.string(), version: z.string(), digest: z.string() }),
+  producer: z.string(),
+  batch: z.object({ index: z.number(), of: z.number() }),
+  elements: z.number(),
+  failure: z.object({ reason: z.string(), limits: z.record(z.string(), z.unknown()) }),
+});
+export type MemoFailureDetail = z.infer<typeof MemoFailureDetail>;
+
+/** The newest stored outcome of a producer call under a memo key. */
+export type MemoOutcome = { ok: true; detail: MemoDetail } | { ok: false; detail: MemoFailureDetail };
 
 export interface ProduceAction {
   record: StoredRecord<ActionBody>;
@@ -198,12 +361,22 @@ export class KnowledgeStore {
   readonly #nodes: Lru<string, TreeNodeBody>;
   readonly #entries: Lru<string, EntryContent>;
   readonly #compositions: Lru<string, TreeRootBody>;
+  /** Parts read by path lookups, bounded in count and in bytes of their JSON text (default 48 and 64 MiB). */
+  readonly #parts: Lru<string, unknown>;
+  /** Part content keys seen in this process -> the record holding that content. */
+  readonly #partKeys = new Lru<string, string>(20_000);
 
-  constructor(records: RecordStore, options: { nodes?: number; entries?: number; compositions?: number } = {}) {
+  constructor(records: RecordStore, options: { nodes?: number; entries?: number; compositions?: number; parts?: number; partBytes?: number } = {}) {
     this.records = records;
     this.#nodes = new Lru(options.nodes ?? 50_000);
     this.#entries = new Lru(options.entries ?? 50_000);
     this.#compositions = new Lru(options.compositions ?? 8);
+    this.#parts = new Lru(options.parts ?? 48, options.partBytes ?? 64 * 1024 * 1024);
+  }
+
+  /** Parts held by the cache and the bytes of their JSON text (for tests and the console). */
+  get cachedParts(): { parts: number; bytes: number } {
+    return { parts: this.#parts.size, bytes: this.#parts.weight };
   }
 
   // ------------------------------------------------------------ generic
@@ -220,13 +393,15 @@ export class KnowledgeStore {
     return out;
   }
 
-  /** Records of an index value, newest first, until `accept` returns true for one (or the index ends). */
-  async newest<B>(query: Omit<FindQuery, 'cursor' | 'limit' | 'newestFirst'>, accept: (record: StoredRecord<B>) => boolean = () => true, tx?: Transaction): Promise<StoredRecord<B> | null> {
+  /** Records of an index value, newest first, until `accept` returns true for one (or the index ends); the first page holds `first`. */
+  async newest<B>(query: Omit<FindQuery, 'cursor' | 'limit' | 'newestFirst'>, accept: (record: StoredRecord<B>) => boolean = () => true, tx?: Transaction, first = 50): Promise<StoredRecord<B> | null> {
     let cursor: string | null = null;
+    let limit = first;
     do {
-      const page: { items: StoredRecord<B>[]; next: string | null } = await this.records.find<B>({ ...query, limit: 50, cursor, newestFirst: true }, tx);
+      const page: { items: StoredRecord<B>[]; next: string | null } = await this.records.find<B>({ ...query, limit, cursor, newestFirst: true }, tx);
       for (const record of page.items) if (accept(record)) return record;
       cursor = page.next;
+      limit = 50;
     } while (cursor !== null);
     return null;
   }
@@ -353,6 +528,105 @@ export class KnowledgeStore {
     return body.data;
   }
 
+  /**
+   * Stores one part of a large composition in its own transaction, or finds the record that already holds the same content
+   * (parts are shared between roots by content). Returns the record digest.
+   */
+  async putPart<S extends PartSchema>(schema: S, rows: PartBody<S>['rows']): Promise<{ digest: string; created: boolean }> {
+    const body = checked(schema, { rows });
+    const key = sha256Hex(canonicalize({ schema, body }));
+    const known = this.#partKeys.get(key);
+    if (known !== undefined) return { digest: known, created: false };
+    const page = await this.records.find<unknown>({ key: INDEX.part, value: key, kind: 'tree_root', limit: 1 });
+    const existing = page.items[0];
+    if (existing !== undefined && existing.schema === schema) {
+      this.#partKeys.set(key, existing.digest);
+      return { digest: existing.digest, created: false };
+    }
+    // Committed before it is remembered: a remembered key always names a stored record.
+    const record = await this.records.put({ kind: 'tree_root', schema, provenance: 'projected', body, index: [{ key: INDEX.part, value: key }] });
+    this.#partKeys.set(key, record.digest);
+    return { digest: record.digest, created: true };
+  }
+
+  /** A part record, verified against its schema; null when absent. `cache: false` reads it without keeping it (scans). */
+  async part<S extends PartSchema>(schema: S, digest: string, options: { cache?: boolean } = {}): Promise<PartBody<S> | null> {
+    const cacheKey = `${schema}\u0000${digest}`;
+    const cached = this.#parts.get(cacheKey);
+    if (cached !== undefined) return cached as PartBody<S>;
+    const record = await this.records.get<unknown>(digest);
+    if (record === null) return null;
+    if (record.kind !== 'tree_root' || record.schema !== schema) throw new IntegrityError('知识树组成的分段记录种类或模式不对', { detail: { record: digest, schema } });
+    const parsed = PART_SHAPES[schema].safeParse(record.body);
+    if (!parsed.success) throw new IntegrityError(`知识树组成的分段记录不符合 ${schema}`, { detail: { record: digest } });
+    // Weighed by the length of its JSON text, a stand-in for its size in memory.
+    if (options.cache !== false) this.#parts.set(cacheKey, parsed.data, JSON.stringify(record.body).length);
+    return parsed.data as PartBody<S>;
+  }
+
+  // ------------------------------------------------------------ list sources and producer calls
+
+  /** Records that the knowledge package loaded a list source from this stored record (for reuse within max_age_seconds). */
+  async putRead(detail: ReadDetail, startedAt: string, endedAt: string): Promise<void> {
+    if (!indexValueFits(detail.external)) return;
+    const body: ActionBody = {
+      action: ACTION.read,
+      run: null,
+      item: null,
+      inputs: [`src:${detail.sha256}`],
+      component: COMPONENTS.sources,
+      lease: null,
+      started_at: startedAt,
+      ended_at: endedAt,
+      result: 'completed',
+      error_code: null,
+      acceptance: null,
+      codes: [],
+      detail: detail as unknown as Record<string, unknown>,
+    };
+    await this.putAction(body, [{ key: INDEX.read, value: detail.external }]);
+  }
+
+  /** The newest load of a list source, with the time it was read; null when none is recorded. */
+  async latestRead(external: string): Promise<{ detail: ReadDetail; at: string } | null> {
+    if (!indexValueFits(external)) return null;
+    let found: { detail: ReadDetail; at: string } | null = null;
+    await this.newest<ActionBody>({ key: INDEX.read, value: external, kind: 'action' }, (record) => {
+      if (record.body.action !== ACTION.read || record.body.component !== COMPONENTS.sources || record.body.result !== 'completed') return false;
+      const detail = ReadDetail.safeParse(record.body.detail);
+      if (!detail.success || detail.data.external !== external) return false;
+      found = { detail: detail.data, at: record.body.ended_at };
+      return true;
+    });
+    return found;
+  }
+
+  /** The stored output of a producer call under this memo key, newest first; null when none. */
+  async memo(key: string): Promise<MemoDetail | null> {
+    const outcome = await this.memoOutcome(key);
+    return outcome !== null && outcome.ok ? outcome.detail : null;
+  }
+
+  /** The newest stored outcome of a producer call under this memo key: its output, or how it failed; null when none. */
+  async memoOutcome(key: string): Promise<MemoOutcome | null> {
+    let found: MemoOutcome | null = null;
+    await this.newest<ActionBody>({ key: INDEX.memo, value: key, kind: 'action' }, (record) => {
+      if (record.body.action !== ACTION.generate || record.body.component !== COMPONENTS.producer) return false;
+      if (record.body.result === 'completed') {
+        const detail = MemoDetail.safeParse(record.body.detail);
+        if (!detail.success || detail.data.key !== key) return false;
+        found = { ok: true, detail: detail.data };
+        return true;
+      }
+      if (record.body.result !== 'error') return false;
+      const detail = MemoFailureDetail.safeParse(record.body.detail);
+      if (!detail.success || detail.data.key !== key) return false;
+      found = { ok: false, detail: detail.data };
+      return true;
+    });
+    return found;
+  }
+
   static produceOf(record: StoredRecord<ActionBody>): ProduceAction | null {
     if (record.kind !== 'action' || record.body.action !== ACTION.generate) return null;
     const detail = ProduceDetail.safeParse(record.body.detail);
@@ -360,15 +634,20 @@ export class KnowledgeStore {
     return { record, detail: detail.data, completed: record.body.result === 'completed' && detail.data.root !== null && detail.data.composition !== null };
   }
 
-  /** The newest completed production of a product's base build (exact name), or null. */
+  /** The newest completed production of a product's base build (exact name), or null. Reads a few records at first. */
   async latestProduction(product: string, base: string): Promise<ProduceAction | null> {
     let found: ProduceAction | null = null;
-    await this.newest<ActionBody>({ key: INDEX.produce, value: buildKey(product, base), kind: 'action' }, (record) => {
-      const produced = KnowledgeStore.produceOf(record);
-      if (produced === null || !produced.completed || produced.detail.product !== product || produced.detail.build.name !== base) return false;
-      found = produced;
-      return true;
-    });
+    await this.newest<ActionBody>(
+      { key: INDEX.produce, value: buildKey(product, base), kind: 'action' },
+      (record) => {
+        const produced = KnowledgeStore.produceOf(record);
+        if (produced === null || !produced.completed || produced.detail.product !== product || produced.detail.build.name !== base) return false;
+        found = produced;
+        return true;
+      },
+      undefined,
+      4,
+    );
     return found;
   }
 
@@ -412,8 +691,8 @@ export class KnowledgeStore {
   }
 
   /** Build records whose name folds to this one, oldest first. */
-  async buildsNamed(product: string, name: string): Promise<StoredBuild[]> {
-    const records = await this.all<unknown>({ key: INDEX.build, value: buildKey(product, name), kind: 'claim' });
+  async buildsNamed(product: string, name: string, tx?: Transaction): Promise<StoredBuild[]> {
+    const records = await this.all<unknown>({ key: INDEX.build, value: buildKey(product, name), kind: 'claim' }, tx);
     return records.map((record) => KnowledgeStore.buildOf(record)).filter((b): b is StoredBuild => b !== null && b.body.product === product);
   }
 

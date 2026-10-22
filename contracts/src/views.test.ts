@@ -28,6 +28,7 @@ const view = {
   entries: { [H2]: entry(H2, 'definition', 'show x'), [H3]: entry(H3, 'case', 'a case') },
   totals: { changed_paths: 1, attached_from: 1, attached_to: 1 },
   truncated: false,
+  skipped: { from: 0, to: 0 },
   notes: [],
 };
 
@@ -39,6 +40,8 @@ test('an impact view parses and a wrong one is refused', () => {
   assert.ok(!ImpactView.safeParse({ ...view, changed_kinds: ['command'] }).success, 'entry kinds come from the axis');
   assert.ok(!ImpactView.safeParse({ ...view, entries: { nothex: entry(H2, 'definition', 'x') } }).success, 'entries are keyed by digest');
   assert.ok(!ImpactView.safeParse({ ...view, extra: 1 }).success, 'unknown keys are refused');
+  assert.ok(!ImpactView.safeParse({ ...view, skipped: { from: -1, to: 0 } }).success, 'a skipped count is not negative');
+  assert.ok(!ImpactView.safeParse({ ...view, skipped: undefined }).success, 'the skipped counts are always stated');
 });
 
 test('a view entry carries a tree reference, never a source reference', () => {
@@ -64,6 +67,7 @@ test('a facet view counts entries by the values of data fields', () => {
     ],
     total: 15,
     truncated: false,
+    skipped: 0,
     notes: [],
   };
   assert.ok(FacetView.safeParse(facet).success);
@@ -85,6 +89,7 @@ test('an index view maps a data value to the entries that carry it', () => {
     total_keys: 1,
     total_entries: 1,
     truncated: false,
+    skipped: 0,
     notes: [],
   };
   assert.ok(IndexView.safeParse(index).success);

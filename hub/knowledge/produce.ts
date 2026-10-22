@@ -1,29 +1,75 @@
 // Producing the root of one build (K01, K02, K04): read each declared source through the external reader in an admin
-// context, parse it with the core parser for its media type, run each producer function in the sandbox, validate its
-// output, verify every entry (kind, storable text, fragments, path), place what code could not place with the
-// typed-judgment model, build the nodes bottom-up, write nodes (sharing every subtree that already exists), entries, the
-// composition record and the generate action in one transaction. Every body is checked against its schema before it is
-// written. A failure writes a generate action with the reason and nothing else; only a build whose own identity cannot be
-// stored (checked first) is refused without one.
-import type { CompositionBasis, CompositionRow, RefusedEntry, RootCatalog, RootSource, TreeRootBody, UnplacedRow } from '../../contracts/src/knowledge.ts';
+// context, parse it with the core parser for its media type, run each producer function in the sandbox (a list slot in
+// batches, memoized), validate its output, verify every entry (kind, storable text, fragments, path), place what code could
+// not place with the typed-judgment model, build the nodes bottom-up and write them (sharing every subtree that already
+// exists), entries, the composition (one record, or parts beside it when large) and the generate action. Records are
+// written in bounded chunks: entries first, then nodes from the leaves up (a node is stored only once its whole subtree is),
+// then the parts, then the composition record with the generate action in one transaction. Every body is checked against
+// its schema before it is written. A failure writes a generate action with the reason; content-addressed records written
+// before it stay and are shared by the next production. Only a build whose own identity cannot be stored (checked first)
+// is refused without a generate action.
+import type {
+  CompositionBasis,
+  CompositionContentRow,
+  CompositionPartRef,
+  CompositionParts,
+  CompositionRow,
+  RecordedBuild,
+  RefusedEntry,
+  RootCatalog,
+  RootSource,
+  SkippedSource,
+  TreeRootBody,
+  UnplacedRow,
+} from '../../contracts/src/knowledge.ts';
 import { MAX_KEPT_PROBLEMS } from '../../contracts/src/knowledge.ts';
 import { ENTRY_KIND, isEntryKind, labelOf, type EntryKind } from '../../contracts/generated/vocabulary.ts';
-import { BuildInfo, ProducerOutput, expandTemplate } from '../../contracts/src/product.ts';
-import type { KnownBuild, Producer, ProducerInput, TemplateVariable } from '../../contracts/src/product.ts';
+import { BuildInfo, expandTemplate } from '../../contracts/src/product.ts';
+import type { KnownBuild, Producer, ProducerOutput, TemplateVariable } from '../../contracts/src/product.ts';
 import { CatalogEntry } from '../../contracts/src/tables.ts';
 import type { ProductHandle } from '../ports.ts';
-import type { ActionBody, Principal } from '../records/api.ts';
+import { canonicalBytes, canonicalize, sha256Hex, type ActionBody, type Principal, type Transaction } from '../records/api.ts';
 import { pathOf } from '../refs/api.ts';
-import { SANDBOX_ERRORS, SandboxError, callPackFunction } from '../rules/api.ts';
 import { PLACEMENT_CHAIN } from './calibration.ts';
+import { runProducer } from './call.ts';
+import { splitRows } from './composition.ts';
+import { chunks, mapLimited } from './concurrency.ts';
 import { requireAdmin, type KnowledgeContext } from './context.ts';
 import { canonicalSize, compareText, cutText, entryContentOf, entryDigest, type EntryContent } from './digest.ts';
 import { describeError } from './errors.ts';
+import {
+  DEFAULT_BATCH,
+  ISOLATION_BASE_BATCHES,
+  ListLoader,
+  buildDigest,
+  callBatch,
+  emptyProbe,
+  listBatches,
+  uniqueList,
+  type CallTotals,
+  type ElementPeek,
+  type ListCallContext,
+  type ListState,
+} from './lists.ts';
 import { MAX_DESCRIPTION, type PlacementChild, type PlacementOutcome, type PlacementSpan } from './placement.ts';
 import { SourceLoader, type ParsedSource } from './sources.ts';
-import { ACTION, COMPONENTS, INDEX, buildKey, buildProblem, type ProduceDetail } from './store.ts';
+import {
+  ACTION,
+  COMPONENTS,
+  INDEX,
+  MAX_KEPT_SKIPPED_IDS,
+  SCHEMAS,
+  buildKey,
+  buildProblem,
+  listRoles,
+  recordedOf,
+  withoutLists,
+  type ListDetail,
+  type ListedIds,
+  type ProduceDetail,
+} from './store.ts';
 import { TreeBuilder, flatten, type BuiltNode } from './tree.ts';
-import { checkPath, verifyFragment } from './verify.ts';
+import { checkPath, singleSources, verifyFragment, type FragmentSources } from './verify.ts';
 
 /** Longest warning, refusal reason or failure reason kept (characters). */
 const MAX_PROBLEM_TEXT = 1000;
@@ -40,6 +86,10 @@ export interface ProduceInput {
   sync?: string | null;
   /** A loader shared by the builds of one sync, so a source several builds use is read once. */
   loader?: SourceLoader;
+  /** List sources the package stored at most this many seconds ago are used again (default the limit; 0 reads each again). */
+  maxAgeSeconds?: number;
+  /** List sources read at the same time (default the limit listReadConcurrency, 4). */
+  readConcurrency?: number;
   signal?: AbortSignal;
 }
 
@@ -62,6 +112,15 @@ export interface ProduceResult {
   unplaced: number;
   refused: RefusedEntry[];
   refusedCount: number;
+  /** Listed sources the production could not use (first 200), and how many there were. */
+  skipped: SkippedSource[];
+  skippedCount: number;
+  /** Producer calls made in the sandbox and calls answered from stored outputs (memoized batches). */
+  calls: { made: number; reused: number };
+  /** List sources used again from a stored load, and list sources read through the port. */
+  loads: { reused: number; read: number };
+  /** Part records of the composition (0 when it is one record). */
+  parts: number;
   warnings: string[];
 }
 
@@ -69,10 +128,16 @@ export interface ProduceResult {
 export interface PlannedSource {
   producer: string;
   slot: string;
+  /** The external object of a single slot; null for a list slot or when no id could be formed. */
   external: string | null;
+  /** A list slot (many: true): the ids the build lists in the role, in order; null for a single slot or a missing role. */
+  list: string[] | null;
+  many: boolean;
+  /** Objects per call of a list slot. */
+  batch: number;
   optional: boolean;
   basis: CompositionBasis;
-  /** Why no external id could be formed (only when external is null). */
+  /** Why no external id (or list) could be formed. */
   problem: string | null;
 }
 
@@ -86,21 +151,31 @@ export function plannedSources(product: ProductHandle, build: BuildInfo): Planne
       const optional = source.optional === true;
       if ('source' in source) {
         const held = Object.hasOwn(build.sources, source.source) ? build.sources[source.source] : null;
-        // A role that lists several objects is read in batches once the knowledge package supports list slots; until then it is a problem.
+        const basis: CompositionBasis = build.released_at !== null ? 'release_record' : 'declared';
+        if (source.many === true) {
+          // A role holding one id is a list of one.
+          const list = held === null ? null : typeof held === 'string' ? [held] : [...held];
+          out.push({ producer: producer.id, slot, external: null, list, many: true, batch: source.batch ?? DEFAULT_BATCH, optional, basis, problem: list === null ? `构建 ${build.name} 没有 ${source.source} 来源` : null });
+          continue;
+        }
         const external = typeof held === 'string' ? held : null;
         out.push({
           producer: producer.id,
           slot,
           external,
+          list: null,
+          many: false,
+          batch: 0,
           optional,
-          basis: build.released_at !== null ? 'release_record' : 'declared',
-          problem: external === null ? (held === null ? `构建 ${build.name} 没有 ${source.source} 来源` : `构建 ${build.name} 的 ${source.source} 来源是一个列表，列表来源还没有支持`) : null,
+          basis,
+          problem: external === null ? (held === null ? `构建 ${build.name} 没有 ${source.source} 来源` : `构建 ${build.name} 的 ${source.source} 来源是一个列表，生产器的这个输入没有声明 many`) : null,
         });
       } else {
+        const base = { producer: producer.id, slot, list: null, many: false, batch: 0, optional, basis: 'declared' as const };
         try {
-          out.push({ producer: producer.id, slot, external: expandTemplate(source.external, values), optional, basis: 'declared', problem: null });
+          out.push({ ...base, external: expandTemplate(source.external, values), problem: null });
         } catch (error) {
-          out.push({ producer: producer.id, slot, external: null, optional, basis: 'declared', problem: `来源模板 ${source.external} 填不出：${(error as Error).message}` });
+          out.push({ ...base, external: null, problem: `来源模板 ${source.external} 填不出：${(error as Error).message}` });
         }
       }
     }
@@ -122,16 +197,75 @@ export function infoOf(build: KnownBuild | BuildInfo): BuildInfo {
   });
 }
 
+/** A verified entry of a producer's output. */
 interface Collected {
   content: EntryContent & { kind: EntryKind };
   digest: string;
   producer: string;
+  /** Position in the producer's output (all batches concatenated): its entries, or its unplaced spans. */
+  index: number;
+  unplaced: boolean;
   fragments: string[];
   slots: string[];
+  /** Estimated bytes of the entry in a composition row. */
+  bytes: number;
 }
 
-function pushProblem<T>(list: T[], item: T): void {
-  if (list.length < MAX_KEPT_PROBLEMS) list.push(item);
+/** One producer call's verified output, with indices local to the call. */
+interface Verified {
+  /** Entries with a path: its segments and canonical text, shared by every entry at that path. */
+  placed: Array<Collected & { segments: string[]; path: string }>;
+  toPlace: Array<Collected & { section: string }>;
+  refused: RefusedEntry[];
+  refusedCount: number;
+  /** Refusals per declared kind, all of them (catalogs count their own). */
+  refusedKinds: Map<string, number>;
+  warnings: string[];
+  entries: number;
+  spans: number;
+}
+
+/** Problems of one production: refusals, warnings and skipped sources, the first ones kept and all counted. */
+class Problems {
+  refused: RefusedEntry[] = [];
+  refusedCount = 0;
+  /** Refusals per producer and declared kind, all of them. */
+  refusedOf = new Map<string, Map<string, number>>();
+  warnings: string[] = [];
+  warningsCount = 0;
+  skipped: SkippedSource[] = [];
+  skippedCount = 0;
+  /** Skipped list sources per producer, all of them. */
+  skippedOf = new Map<string, number>();
+
+  warn(text: string): void {
+    this.warningsCount++;
+    if (this.warnings.length < MAX_KEPT_PROBLEMS) this.warnings.push(cutText(text, MAX_PROBLEM_TEXT));
+  }
+
+  refuse(item: RefusedEntry): void {
+    this.countRefusal(item.producer, item.kind, 1);
+    this.keep(item);
+  }
+
+  countRefusal(producer: string, kind: string, count: number): void {
+    this.refusedCount += count;
+    const kinds = this.refusedOf.get(producer) ?? new Map<string, number>();
+    kinds.set(kind, (kinds.get(kind) ?? 0) + count);
+    this.refusedOf.set(producer, kinds);
+  }
+
+  keep(item: RefusedEntry): void {
+    if (this.refused.length < MAX_KEPT_PROBLEMS) {
+      this.refused.push({ ...item, kind: cutText(item.kind, 200), path: item.path === null ? null : cutText(item.path, MAX_PROBLEM_TEXT), reason: cutText(item.reason, MAX_PROBLEM_TEXT) });
+    }
+  }
+
+  skip(item: SkippedSource): void {
+    this.skippedCount++;
+    this.skippedOf.set(item.producer, (this.skippedOf.get(item.producer) ?? 0) + 1);
+    if (this.skipped.length < MAX_KEPT_PROBLEMS) this.skipped.push({ ...item, reason: cutText(item.reason, MAX_PROBLEM_TEXT) });
+  }
 }
 
 /** The first line of a statement, as a placement description. */
@@ -163,6 +297,117 @@ function basisOver(slots: ReadonlySet<string>, producerSlotBasis: ReadonlyMap<st
   return bases.size === 1 ? ([...bases][0] as CompositionBasis) : 'declared';
 }
 
+/** Checked paths of one production by the text a producer gave: one check, one segment array and one path text per path. */
+type PathCache = Map<string, ReturnType<typeof checkPath>>;
+
+/** Verifies one producer call's output (K02 R[0], R[3]): kinds, storable text, sizes, fragments in their sources, paths. */
+function verifyOutput(context: KnowledgeContext, producer: string, output: ProducerOutput, sources: FragmentSources, loader: SourceLoader, paths: PathCache): Verified {
+  const out: Verified = { placed: [], toPlace: [], refused: [], refusedCount: 0, refusedKinds: new Map(), warnings: output.warnings, entries: output.entries.length, spans: (output.unplaced ?? []).length };
+  const refuse = (item: RefusedEntry): void => {
+    out.refusedCount++;
+    out.refusedKinds.set(item.kind, (out.refusedKinds.get(item.kind) ?? 0) + 1);
+    if (out.refused.length < MAX_KEPT_PROBLEMS) out.refused.push(item);
+  };
+  const collect = (
+    entry: { kind: string; statement: string; data: Record<string, unknown>; applicability: EntryContent['applicability'] },
+    fragments: ProducerOutput['entries'][number]['fragments'],
+    index: number,
+    unplaced: boolean,
+  ): Collected | string => {
+    // K02 R[3]: only the kinds of the entry_kind axis.
+    if (!isEntryKind(entry.kind)) return `种类“${cutText(entry.kind, 80)}”不是知识条目种类（${ENTRY_KINDS_TEXT}）`;
+    let content: EntryContent;
+    let digest: string;
+    try {
+      // Canonical JSON refuses what cannot be stored (a lone surrogate in any text, a number that is not finite).
+      content = entryContentOf(entry);
+      digest = entryDigest(content);
+    } catch (error) {
+      return `条目内容不能按规范 JSON 保存：${describeError(error)}`;
+    }
+    const statementBytes = Buffer.byteLength(content.statement, 'utf8');
+    if (statementBytes > context.limits.maxStatementBytes) return `陈述超过 ${context.limits.maxStatementBytes} 字节`;
+    const dataBytes = canonicalSize(content.data);
+    if (dataBytes > context.limits.maxDataBytes) return `结构化数据超过 ${context.limits.maxDataBytes} 字节`;
+    const references: string[] = [];
+    const slotNames: string[] = [];
+    for (const fragment of fragments) {
+      const verified = verifyFragment(fragment, sources, loader);
+      if (!verified.ok) return verified.reason;
+      if (!references.includes(verified.value.reference)) references.push(verified.value.reference);
+      slotNames.push(verified.value.slot);
+    }
+    const bytes = statementBytes + dataBytes + references.reduce((sum, r) => sum + r.length, 0) + 400;
+    return { content: { ...content, kind: entry.kind }, digest, producer, index, unplaced, fragments: references, slots: slotNames, bytes };
+  };
+  output.entries.forEach((entry, index) => {
+    let at: { segments: string[]; path: string } | null = null;
+    if (entry.path !== null) {
+      let path = paths.get(entry.path);
+      if (path === undefined) {
+        path = checkPath(entry.path);
+        paths.set(entry.path, path);
+      }
+      if (!path.ok) {
+        refuse({ producer, index, unplaced: false, kind: entry.kind, path: entry.path, reason: path.reason });
+        return;
+      }
+      at = path.value;
+    }
+    const collected = collect(entry, entry.fragments, index, false);
+    if (typeof collected === 'string') {
+      refuse({ producer, index, unplaced: false, kind: entry.kind, path: entry.path, reason: collected });
+      return;
+    }
+    if (at === null) out.toPlace.push({ ...collected, section: '' });
+    else out.placed.push({ ...collected, segments: at.segments, path: at.path });
+  });
+  (output.unplaced ?? []).forEach((span, index) => {
+    const collected = collect({ kind: span.kind, statement: span.text, data: { section: span.section }, applicability: null }, [span.fragment], index, true);
+    if (typeof collected === 'string') {
+      refuse({ producer, index, unplaced: true, kind: span.kind, path: null, reason: collected });
+      return;
+    }
+    out.toPlace.push({ ...collected, section: span.section });
+  });
+  return out;
+}
+
+/** Root rows of a list slot's elements, by the list's order. */
+function sourceRowOf(producer: string, slot: string, source: ParsedSource, basis: CompositionBasis, decidedBy: string): RootSource {
+  return {
+    producer,
+    slot,
+    external: source.external,
+    revision: source.revision,
+    sha256: source.sha256,
+    size: source.size,
+    media_type: source.mediaType,
+    parser: source.parser,
+    artifact: source.artifact.digest,
+    read_tier: source.readTier,
+    basis,
+    decided_by: decidedBy,
+  };
+}
+
+const listDigest = (value: unknown): string => sha256Hex(canonicalize(value));
+
+/**
+ * Keeps the ids of each list role as an object (their canonical JSON array, named by the digest the recorded build cites).
+ * Best effort: the digest is recorded either way; a list that could not be kept is a warning.
+ */
+async function keepLists(context: KnowledgeContext, lists: readonly ListedIds[], problems: Problems): Promise<void> {
+  for (const list of lists) {
+    try {
+      const stored = await context.records.objects.put(canonicalBytes(list.ids), 'application/json');
+      if (stored.sha256 !== list.list) problems.warn(`列表 ${list.role} 存下的对象 ${stored.sha256} 与它的摘要 ${list.list} 不符`);
+    } catch (error) {
+      problems.warn(`列表 ${list.role} 的 ${list.ids.length} 个外部标识没能存成对象（${describeError(error)}）；组成记录里只有它的摘要`);
+    }
+  }
+}
+
 export async function produceTree(context: KnowledgeContext, input: ProduceInput): Promise<ProduceResult> {
   const startedAt = context.now().toISOString();
   const { product } = input;
@@ -172,25 +417,12 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
   const decidedBy = `${product.id}@${product.version}`;
   const lineProduct = product.product.id;
   const sync = input.sync ?? null;
-  const warnings: string[] = [];
-  let warningsCount = 0;
-  const warn = (text: string): void => {
-    warningsCount++;
-    pushProblem(warnings, cutText(text, MAX_PROBLEM_TEXT));
-  };
-  const refused: RefusedEntry[] = [];
-  let refusedCount = 0;
-  // Refusals per producer and declared kind, all of them (not only the kept ones): catalogs count their own.
-  const refusedOf = new Map<string, Map<string, number>>();
-  const refuse = (item: RefusedEntry): void => {
-    refusedCount++;
-    const kinds = refusedOf.get(item.producer) ?? new Map<string, number>();
-    kinds.set(item.kind, (kinds.get(item.kind) ?? 0) + 1);
-    refusedOf.set(item.producer, kinds);
-    pushProblem(refused, { ...item, kind: cutText(item.kind, 200), path: item.path === null ? null : cutText(item.path, MAX_PROBLEM_TEXT), reason: cutText(item.reason, MAX_PROBLEM_TEXT) });
-  };
+  const problems = new Problems();
   const usedSources: ProduceDetail['sources'] = [];
   const missing: ProduceDetail['missing'] = [];
+  const lists: ListDetail[] = [];
+  const totals: CallTotals = { made: 0, reused: 0, timeouts: 0, warnings: [] };
+  let listLoader: ListLoader | null = null;
   const result = (partial: Partial<ProduceResult>): ProduceResult => ({
     ok: false,
     build: build.name,
@@ -204,9 +436,14 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
     entries: 0,
     placedByModel: 0,
     unplaced: 0,
-    refused,
-    refusedCount,
-    warnings,
+    refused: problems.refused,
+    refusedCount: problems.refusedCount,
+    skipped: problems.skipped,
+    skippedCount: problems.skippedCount,
+    calls: { made: totals.made, reused: totals.reused },
+    loads: { reused: listLoader?.reused ?? 0, read: listLoader?.read ?? 0 },
+    parts: 0,
+    warnings: problems.warnings,
     ...partial,
   });
 
@@ -225,10 +462,27 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
   const info = parsedInfo.data;
   const unrecordable = buildProblem(lineProduct, info);
   if (unrecordable !== null) return result({ reason: `${unrecordable}；没有生产，也没有记录` });
+  // Recorded with list roles by reference; the ids are kept once as objects.
+  const recorded = recordedOf(info);
+  let listsKept = false;
+  const keep = async (): Promise<void> => {
+    if (listsKept) return;
+    listsKept = true;
+    await keepLists(context, recorded.lists, problems);
+  };
+  // What every producer receives: the build as listed, without a root (the root is what this production makes; the previous
+  // root would make a producer's output, and so this root, depend on what was produced before, K01 R[1]).
+  const handed: KnownBuild = { ...info, root: null };
+  const handedDigest = buildDigest(handed);
 
   const fail = async (reason: string): Promise<ProduceResult> => {
     const text = cutText(reason, MAX_REASON_TEXT);
-    const action = await writeProduceAction(context, { startedAt, sync, product: lineProduct, pack, info, root: null, composition: null, sources: usedSources, missing, placement: null, reason: text }, null);
+    await keep();
+    const action = await writeProduceAction(
+      context,
+      { startedAt, sync, product: lineProduct, pack, build: recorded.build, root: null, composition: null, sources: usedSources, missing, lists, calls: totals, placement: null, reason: text },
+      null,
+    );
     return result({ reason: text, action });
   };
 
@@ -236,20 +490,34 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
   if (product.product.producers.length === 0) return fail('产品包没有声明生产器');
   const loader = input.loader ?? new SourceLoader({ external: context.external, artifacts: context.records.artifacts, parsers: context.parsers }, by, 'knowledge sync');
   const cap = context.limits.maxBuildBytes;
+  listLoader = new ListLoader(context, loader, {
+    maxAgeSeconds: input.maxAgeSeconds ?? context.limits.listMaxAgeSeconds,
+    concurrency: input.readConcurrency ?? context.limits.listReadConcurrency,
+  });
 
-  // Sources: read, check and parse every declared source once.
   const planned = plannedSources(product, info);
+  for (const producer of product.product.producers) {
+    const many = planned.filter((s) => s.producer === producer.id && s.many);
+    if (many.length > 1) return fail(`生产器 ${producer.id} 声明了 ${many.length} 个列表输入（${many.map((s) => s.slot).join('、')}），一个生产器最多一个`);
+  }
+
+  // Single sources: read, check and parse every declared one once.
   const parsed = new Map<string, ParsedSource>();
   const slotsOf = new Map<string, Map<string, ParsedSource | null>>();
   const sourceRows: RootSource[] = [];
+  const listRows: RootSource[] = [];
   let bytes = 0;
   for (const source of planned) {
     if (input.signal?.aborted) return fail('同步被中止');
+    if (source.many) {
+      if (source.list === null && !source.optional) return fail(`${source.producer}.${source.slot}：${source.problem}`);
+      continue;
+    }
     const slots = slotsOf.get(source.producer) ?? new Map<string, ParsedSource | null>();
     slotsOf.set(source.producer, slots);
     if (source.external === null) {
       if (source.optional) {
-        warn(`${source.producer}.${source.slot}：${source.problem}（可选，跳过）`);
+        problems.warn(`${source.producer}.${source.slot}：${source.problem}（可选，跳过）`);
         slots.set(source.slot, null);
         missing.push({ producer: source.producer, slot: source.slot, external: null });
         continue;
@@ -261,7 +529,7 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
       const read = await loader.read(source.external);
       if (!read.ok) {
         if (source.optional) {
-          warn(`${source.producer}.${source.slot}：${source.external} ${read.reason}（可选，跳过）`);
+          problems.warn(`${source.producer}.${source.slot}：${source.external} ${read.reason}（可选，跳过）`);
           slots.set(source.slot, null);
           missing.push({ producer: source.producer, slot: source.slot, external: source.external });
           continue;
@@ -282,143 +550,146 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
     }
     slots.set(source.slot, loaded);
     usedSources.push({ producer: source.producer, slot: source.slot, external: source.external, sha256: loaded.sha256 });
-    sourceRows.push({
-      producer: source.producer,
-      slot: source.slot,
-      external: source.external,
-      revision: loaded.revision,
-      sha256: loaded.sha256,
-      size: loaded.size,
-      media_type: loaded.mediaType,
-      parser: loaded.parser,
-      artifact: loaded.artifact.digest,
-      read_tier: loaded.readTier,
-      basis: source.basis,
-      decided_by: decidedBy,
-    });
+    sourceRows.push(sourceRowOf(source.producer, source.slot, loaded, source.basis, decidedBy));
   }
   const basisOf = new Map<string, CompositionBasis>();
-  for (const source of planned) if (source.external !== null) basisOf.set(`${source.producer}\u0000${source.slot}`, source.basis);
+  for (const source of planned) if (source.external !== null || source.many) basisOf.set(`${source.producer}\u0000${source.slot}`, source.basis);
 
-  // Producers.
-  const placedEntries: Array<Collected & { segments: string[] }> = [];
+  // Producers: a single call, or one call per batch of the list slot.
+  const placedEntries: Array<Collected & { segments: string[]; path: string }> = [];
   const toPlace: Array<Collected & { section: string }> = [];
   const contents = new Map<string, EntryContent>();
+  const pathCache: PathCache = new Map();
+  // The verified items themselves are kept (their indices moved to the concatenated output), never copied.
+  const take = (producer: string, verified: Verified, offsets: { entries: number; spans: number }): void => {
+    for (const warning of verified.warnings) problems.warn(`${producer}：${warning}`);
+    for (const item of verified.refused) problems.keep({ ...item, index: item.index + (item.unplaced ? offsets.spans : offsets.entries) });
+    for (const [kind, count] of verified.refusedKinds) problems.countRefusal(producer, kind, count);
+    for (const entry of verified.placed) {
+      contents.set(entry.digest, entry.content);
+      entry.index += offsets.entries;
+      placedEntries.push(entry);
+    }
+    for (const entry of verified.toPlace) {
+      contents.set(entry.digest, entry.content);
+      entry.index += entry.unplaced ? offsets.spans : offsets.entries;
+      toPlace.push(entry);
+    }
+    offsets.entries += verified.entries;
+    offsets.spans += verified.spans;
+  };
   for (const producer of product.product.producers) {
     if (input.signal?.aborted) return fail('同步被中止');
     const slots = slotsOf.get(producer.id) ?? new Map<string, ParsedSource | null>();
-    const output = await runProducer(context, product, producer, { build: { ...info, root: build.root }, slots, params: producer.params ?? {} });
-    if (!output.ok) return fail(output.reason);
-    for (const warning of output.value.warnings) warn(`${producer.id}：${warning}`);
-    const collect = (entry: { kind: string; statement: string; data: Record<string, unknown>; applicability: EntryContent['applicability'] }, fragments: ProducerOutput['entries'][number]['fragments']): Collected | string => {
-      // K02 R[3]: only the kinds of the entry_kind axis.
-      if (!isEntryKind(entry.kind)) return `种类“${cutText(entry.kind, 80)}”不是知识条目种类（${ENTRY_KINDS_TEXT}）`;
-      let content: EntryContent;
-      let digest: string;
-      try {
-        // Canonical JSON refuses what cannot be stored (a lone surrogate in any text, a number that is not finite).
-        content = entryContentOf(entry);
-        digest = entryDigest(content);
-      } catch (error) {
-        return `条目内容不能按规范 JSON 保存：${describeError(error)}`;
-      }
-      if (Buffer.byteLength(content.statement, 'utf8') > context.limits.maxStatementBytes) return `陈述超过 ${context.limits.maxStatementBytes} 字节`;
-      if (canonicalSize(content.data) > context.limits.maxDataBytes) return `结构化数据超过 ${context.limits.maxDataBytes} 字节`;
-      const references: string[] = [];
-      const slotNames: string[] = [];
-      for (const fragment of fragments) {
-        const verified = verifyFragment(fragment, slots, loader);
-        if (!verified.ok) return verified.reason;
-        if (!references.includes(verified.value.reference)) references.push(verified.value.reference);
-        slotNames.push(verified.value.slot);
-      }
-      return { content: { ...content, kind: entry.kind }, digest, producer: producer.id, fragments: references, slots: slotNames };
-    };
-    output.value.entries.forEach((entry, index) => {
-      let segments: string[] | null = null;
-      if (entry.path !== null) {
-        const path = checkPath(entry.path);
-        if (!path.ok) {
-          refuse({ producer: producer.id, index, unplaced: false, kind: entry.kind, path: entry.path, reason: path.reason });
-          return;
-        }
-        segments = path.value.segments;
-      }
-      const collected = collect(entry, entry.fragments);
-      if (typeof collected === 'string') {
-        refuse({ producer: producer.id, index, unplaced: false, kind: entry.kind, path: entry.path, reason: collected });
-        return;
-      }
-      contents.set(collected.digest, collected.content);
-      if (segments === null) toPlace.push({ ...collected, section: '' });
-      else placedEntries.push({ ...collected, segments });
+    const list = planned.find((s) => s.producer === producer.id && s.many);
+    if (list === undefined) {
+      totals.made++;
+      const output = await runProducer(context, product, producer, { build: handed, slots, params: producer.params ?? {} });
+      if (!output.ok) return fail(output.reason);
+      take(producer.id, verifyOutput(context, producer.id, output.value, singleSources(slots), loader, pathCache), { entries: 0, spans: 0 });
+      continue;
+    }
+    const outcome = await produceList(context, {
+      product,
+      producer,
+      build: handed,
+      buildDigest: handedDigest,
+      slots,
+      list,
+      cap,
+      loader,
+      listLoader,
+      totals,
+      problems,
+      decidedBy,
+      paths: pathCache,
+      signal: input.signal,
     });
-    (output.value.unplaced ?? []).forEach((span, index) => {
-      const collected = collect({ kind: span.kind, statement: span.text, data: { section: span.section }, applicability: null }, [span.fragment]);
-      if (typeof collected === 'string') {
-        refuse({ producer: producer.id, index, unplaced: true, kind: span.kind, path: null, reason: collected });
-        return;
-      }
-      contents.set(collected.digest, collected.content);
-      toPlace.push({ ...collected, section: span.section });
-    });
+    if (!outcome.ok) return fail(outcome.reason);
+    const offsets = { entries: 0, spans: 0 };
+    for (const verified of outcome.verified) take(producer.id, verified, offsets);
+    listRows.push(...outcome.rows);
+    lists.push(outcome.detail);
   }
+  for (const warning of totals.warnings) problems.warn(warning);
   if (placedEntries.length === 0 && toPlace.length === 0) {
-    return fail(refusedCount > 0 ? `生产器的 ${refusedCount} 个条目都没有通过核对，没有可以挂树的内容` : '生产器没有产出任何条目');
+    return fail(problems.refusedCount > 0 ? `生产器的 ${problems.refusedCount} 个条目都没有通过核对，没有可以挂树的内容` : '生产器没有产出任何条目');
   }
 
-  // Code placement, then the typed-judgment model for the rest.
-  const builder = new TreeBuilder();
-  for (const entry of placedEntries) builder.add(entry.segments, entry.digest);
+  // Code placement, then the typed-judgment model for the rest. A node holds at most maxNodeEntries entries.
+  const builder = new TreeBuilder(context.limits.maxNodeEntries);
+  const full = (entry: Collected, path: string): void => {
+    problems.refuse({ producer: entry.producer, index: entry.index, unplaced: entry.unplaced, kind: entry.content.kind, path, reason: `节点 ${cutText(path, 200)} 已有 ${context.limits.maxNodeEntries} 个条目，达到每个节点的上限` });
+  };
+  const hung: Array<Collected & { segments: string[]; path: string }> = [];
+  for (const entry of placedEntries) {
+    if (builder.add(entry.segments, entry.digest)) hung.push(entry);
+    else full(entry, entry.path);
+  }
+  placedEntries.length = 0;
+  pathCache.clear();
   const spans: PlacementSpan[] = toPlace.map((entry) => ({ key: entry.digest, text: entry.content.statement, section: entry.section, fragment: entry.fragments[0] }));
   let outcomes = new Map<string, PlacementOutcome>();
   let placement: ProduceDetail['placement'] = null;
   if (spans.length > 0) {
     const model = context.placer.model;
     const threshold = model === null ? null : await context.calibration.threshold(PLACEMENT_CHAIN, model);
-    outcomes = await context.placer.place(spans, placementTree(builder, contents), { threshold, context: { product: lineProduct, build: build.name }, onProblem: (text) => warn(`归类：${text}`) });
+    outcomes = await context.placer.place(spans, placementTree(builder, contents), { threshold, context: { product: lineProduct, build: build.name }, onProblem: (text) => problems.warn(`归类：${text}`) });
     // Recorded so that a later sync places again when the judge failed or the chain's calibration changed.
     placement = { model, threshold, spans: outcomes.size, failed: [...outcomes.values()].filter((o) => o.failed).length };
   }
-  const modelPlaced = new Map<string, Map<string, PlacementOutcome>>();
+  const modelHung = new Set<Collected>();
   for (const entry of toPlace) {
     const outcome = outcomes.get(entry.digest);
     if (outcome === undefined || !outcome.placed) continue;
-    builder.add(outcome.segments, entry.digest);
-    const path = pathOf(outcome.segments);
-    const at = modelPlaced.get(path) ?? new Map<string, PlacementOutcome>();
-    at.set(entry.digest, outcome);
-    modelPlaced.set(path, at);
+    if (builder.add(outcome.segments, entry.digest)) modelHung.add(entry);
+    else full(entry, pathOf(outcome.segments));
   }
 
   const root = builder.build();
   const nodes = flatten(root);
 
   // Composition rows: one per (path, entry), producers and fragments merged in order, the basis over every slot.
-  const rows = new Map<string, { row: CompositionRow; producers: Set<string>; slots: Set<string> }>();
+  const rows = new Map<string, Map<string, { row: CompositionRow; producers: Set<string>; slots: Set<string> }>>();
+  /** Estimated bytes of an entry in a row (statement, data, fragments), for the size of parts. */
+  const entryBytes = new Map<string, number>();
   const addRow = (path: string, entry: Collected, placed: PlacementOutcome | undefined): void => {
-    const key = `${path}\u0000${entry.digest}`;
-    let held = rows.get(key);
+    let atPath = rows.get(path);
+    if (atPath === undefined) {
+      atPath = new Map();
+      rows.set(path, atPath);
+    }
+    let held = atPath.get(entry.digest);
     if (held === undefined) {
       const row: CompositionRow = { path, entry: entry.digest, kind: entry.content.kind, producers: [], fragments: [], basis: 'declared', decided_by: decidedBy };
       if (placed !== undefined && placed.model !== null && placed.p !== null && placed.threshold !== null) {
         row.placement = { model: placed.model, p: placed.p, threshold: placed.threshold, judgments: placed.judgments, note: cutText(placed.note, MAX_PROBLEM_TEXT) };
       }
       held = { row, producers: new Set(), slots: new Set() };
-      rows.set(key, held);
+      atPath.set(entry.digest, held);
+      if (!entryBytes.has(entry.digest)) entryBytes.set(entry.digest, entry.bytes);
     }
     held.producers.add(entry.producer);
     for (const slot of entry.slots) held.slots.add(`${entry.producer}\u0000${slot}`);
     for (const fragment of entry.fragments) if (!held.row.fragments.includes(fragment)) held.row.fragments.push(fragment);
   };
-  for (const entry of placedEntries) addRow(pathOf(entry.segments), entry, undefined);
-  for (const entry of toPlace) {
-    const outcome = outcomes.get(entry.digest);
-    if (outcome !== undefined && outcome.placed) addRow(pathOf(outcome.segments), entry, outcome);
+  for (const entry of hung) addRow(entry.path, entry, undefined);
+  hung.length = 0;
+  for (const entry of modelHung) {
+    const outcome = outcomes.get(entry.digest) as PlacementOutcome;
+    addRow(pathOf(outcome.segments), entry, outcome);
   }
-  const composition = [...rows.values()]
-    .map(({ row, producers, slots }) => ({ ...row, producers: [...producers].sort(compareText), basis: basisOver(slots, basisOf) }))
-    .sort((a, b) => compareText(a.path, b.path) || compareText(a.entry, b.entry));
+  // The rows are finished in place: producers sorted, the basis decided over every slot their fragments are in.
+  const composition: CompositionRow[] = [];
+  for (const atPath of rows.values()) {
+    for (const { row, producers, slots } of atPath.values()) {
+      row.producers = [...producers].sort(compareText);
+      row.basis = basisOver(slots, basisOf);
+      composition.push(row);
+    }
+  }
+  rows.clear();
+  composition.sort((a, b) => compareText(a.path, b.path) || compareText(a.entry, b.entry));
 
   // Spans no rule and no calibrated judgment placed: one row per content, every fragment and producer kept.
   const lost = new Map<string, { row: UnplacedRow; producers: Set<string>; slots: Set<string> }>();
@@ -457,56 +728,67 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
     .map(({ row, producers, slots }) => ({ ...row, producers: [...producers].sort(compareText), basis: basisOver(slots, basisOf) }))
     .sort((a, b) => compareText(a.entry, b.entry));
 
-  const catalogs = rootCatalogs(product, composition, unplacedRows, refusedOf, contents);
+  const catalogs = rootCatalogs(product, composition, unplacedRows, problems.refusedOf, problems.skippedOf, contents);
+  const kinds = Object.fromEntries(ENTRY_KIND.map((kind) => [kind, 0])) as Record<EntryKind, number>;
+  for (const row of composition) kinds[row.kind]++;
 
-  // Write everything of the root in one transaction; existing subtrees are shared. A write the store refuses (a body over
-  // the record limit, a record that does not match its schema) fails the build like any other failure.
+  // A large composition goes into parts; a small one stays in its record.
+  const inline = context.limits.inlineRows;
+  const parted = composition.length > inline || unplacedRows.length > inline || listRows.length > inline;
+
   if (input.signal?.aborted) return fail('同步被中止');
-  const producedAt = context.now().toISOString();
-  let written: { created: number; composition: string; action: string; body: TreeRootBody };
+  await keep();
+  let written: { created: number; composition: string; action: string; body: TreeRootBody; parts: number };
   try {
-    written = await context.writes.run(() => context.store.records.withTransaction(async (tx) => {
-      let created = 0;
-      const ensure = async (node: BuiltNode): Promise<void> => {
-        if (await context.store.hasNode(node.digest, tx)) return;
-        for (const child of node.built) await ensure(child);
-        for (const entry of node.entries) {
-          if (!(await context.store.hasEntryFor(lineProduct, entry, tx))) await context.store.putEntry(lineProduct, entry, contents.get(entry) as EntryContent, tx);
-        }
-        await context.store.putNode(node, tx);
-        created++;
-      };
-      await ensure(root);
-      for (const row of unplacedRows) {
-        if (!(await context.store.hasEntryFor(lineProduct, row.entry, tx))) await context.store.putEntry(lineProduct, row.entry, contents.get(row.entry) as EntryContent, tx);
-      }
-      const body: TreeRootBody = {
+    written = await context.writes.run(() =>
+      writeRoot(context, {
         product: lineProduct,
-        version: { line: info.line, build: info.name, family: info.family, platform: info.platform },
-        build: info,
-        root: root.digest,
-        producer: {
-          pack: product.id,
-          version: product.version,
-          digest: product.digest,
-          id: decidedBy,
-          producers: product.product.producers.map((p: Producer) => ({ id: p.id, function: p.function })),
+        root,
+        contents,
+        unplacedRows,
+        parts: parted ? { composition, unplaced: unplacedRows, sources: listRows, entryBytes } : null,
+        body: (parts) => ({
+          product: lineProduct,
+          version: { line: info.line, build: info.name, family: info.family, platform: info.platform },
+          build: recorded.build,
+          root: root.digest,
+          producer: {
+            pack: product.id,
+            version: product.version,
+            digest: product.digest,
+            id: decidedBy,
+            producers: product.product.producers.map((p: Producer) => ({ id: p.id, function: p.function })),
+          },
+          sources: parted ? sourceRows : [...sourceRows, ...listRows],
+          composition: parted ? [] : composition,
+          unplaced: parted ? [] : unplacedRows,
+          ...(parts === null ? {} : { parts }),
+          refused: problems.refused,
+          refused_count: problems.refusedCount,
+          ...(lists.length > 0 ? { skipped: problems.skipped, skipped_count: problems.skippedCount } : {}),
+          catalogs,
+          counts: { nodes: nodes.length, entries: composition.length, placed_by_model: composition.filter((row) => row.placement !== undefined).length, unplaced: unplacedRows.length },
+          kinds,
+          warnings: problems.warnings,
+          warnings_count: problems.warningsCount,
+          produced_at: context.now().toISOString(),
+        }),
+        action: async (record, tx) => {
+          const action = await writeProduceAction(
+            context,
+            { startedAt, sync, product: lineProduct, pack, build: recorded.build, root: root.digest, composition: record, sources: usedSources, missing, lists, calls: totals, placement, reason: null },
+            tx,
+          );
+          // A build produced without a build record (not by a sync) gets one, so that builds are known from their records alone.
+          const named = await context.store.buildsNamed(lineProduct, info.name, tx);
+          if (!named.some((b) => b.body.build.name === info.name)) {
+            const roles = listRoles(info);
+            await context.store.putBuild({ product: lineProduct, build: withoutLists(info), ...(roles.length > 0 ? { lists: roles } : {}), pack, plan: null, sync }, tx);
+          }
+          return action;
         },
-        sources: sourceRows,
-        composition,
-        unplaced: unplacedRows,
-        refused,
-        refused_count: refusedCount,
-        catalogs,
-        counts: { nodes: nodes.length, entries: composition.length, placed_by_model: composition.filter((row) => row.placement !== undefined).length, unplaced: unplacedRows.length },
-        warnings,
-        warnings_count: warningsCount,
-        produced_at: producedAt,
-      };
-      const record = await context.store.putRoot(body, tx);
-      const action = await writeProduceAction(context, { startedAt, sync, product: lineProduct, pack, info, root: root.digest, composition: record.digest, sources: usedSources, missing, placement, reason: null }, tx);
-      return { created, composition: record.digest, action, body };
-    }));
+      }),
+    );
   } catch (error) {
     return fail(`写入知识树时出错：${describeError(error)}`);
   }
@@ -520,20 +802,342 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
     entries: composition.length,
     placedByModel: written.body.counts.placed_by_model,
     unplaced: unplacedRows.length,
+    parts: written.parts,
+  });
+}
+
+interface ListInput {
+  product: ProductHandle;
+  producer: Producer;
+  /** The build as the function receives it, and its digest (part of every memo key). */
+  build: KnownBuild;
+  buildDigest: string;
+  slots: ReadonlyMap<string, ParsedSource | null>;
+  list: PlannedSource;
+  cap: number;
+  loader: SourceLoader;
+  listLoader: ListLoader;
+  totals: CallTotals;
+  problems: Problems;
+  decidedBy: string;
+  paths: PathCache;
+  signal?: AbortSignal;
+}
+
+type ListOutcome = { ok: true; verified: Verified[]; rows: RootSource[]; detail: ListDetail } | { ok: false; reason: string };
+
+/** Why a listed document was not used: it could not be read, or checked and parsed, it is over the byte cap alone, or the producer fails on it alone. */
+type SkipCause = 'read' | 'check' | 'size' | 'producer';
+
+/** Consecutive runs of the elements whose sizes together stay within `cap` (an element over it alone is a run of its own). */
+function withinCap(elements: readonly ParsedSource[], cap: number): ParsedSource[][] {
+  const out: ParsedSource[][] = [];
+  let run: ParsedSource[] = [];
+  let bytes = 0;
+  for (const element of elements) {
+    if (run.length > 0 && bytes + element.size > cap) {
+      out.push(run);
+      run = [];
+      bytes = 0;
+    }
+    run.push(element);
+    bytes += element.size;
+  }
+  if (run.length > 0) out.push(run);
+  return out;
+}
+
+/**
+ * One producer with a list slot: the listed objects in batches of the declared size. A batch is read first (records and
+ * sizes, no bytes), cut into consecutive calls of at most `cap` bytes of documents, and each call's documents are fetched,
+ * checked and parsed only when its turn comes; a call is memoized, split to isolate a document it fails on (README decision
+ * 19) and verified while its documents are parsed. The verified outputs come back in batch order and element order. A
+ * document that cannot be used is skipped and listed; the production fails instead when the producer is not shown to work
+ * on documents, when every document of a batch fails alone, or when more than `maxSkippedShare` of the list is skipped.
+ */
+async function produceList(context: KnowledgeContext, input: ListInput): Promise<ListOutcome> {
+  const { producer, list, problems, cap } = input;
+  const { ids, repeats } = uniqueList(list.list ?? []);
+  if (list.list === null) problems.warn(`${producer.id}.${list.slot}：${list.problem}（可选，按空列表生产）`);
+  if (repeats > 0) problems.warn(`${producer.id}.${list.slot}：列表里有 ${repeats} 个重复的外部对象，各只读一次`);
+  const batches = listBatches(ids, list.batch);
+  const state: ListState = { succeeded: false, isolationCalls: 0, isolationBudget: context.limits.isolationCallsPerBatch * (batches.length + ISOLATION_BASE_BATCHES), failure: null };
+  const ctx: ListCallContext = { context, product: input.product, producer, build: input.build, buildDigest: input.buildDigest, slots: input.slots, list: list.slot, totals: input.totals, state };
+  const probe = emptyProbe(ctx);
+  type Skip = { external: string; reason: string; retry: boolean; cause: SkipCause };
+  const skippedHere: Array<Omit<Skip, 'cause'>> = [];
+  const causes = new Map<SkipCause, number>();
+  let skippedCount = 0;
+  let failedAlone = 0;
+  const skip = (item: Skip): void => {
+    skippedCount++;
+    causes.set(item.cause, (causes.get(item.cause) ?? 0) + 1);
+    if (item.cause === 'producer') failedAlone++;
+    if (skippedHere.length < MAX_KEPT_SKIPPED_IDS) skippedHere.push({ external: item.external, reason: cutText(item.reason, MAX_PROBLEM_TEXT), retry: item.retry });
+    problems.skip({ producer: producer.id, slot: list.slot, external: item.external, reason: item.reason });
+  };
+  const stop = (reason: string): { ok: false; reason: string } => {
+    state.failure ??= reason;
+    return { ok: false, reason };
+  };
+  // A finished batch keeps no parsed document: only its verified entries, the source rows and the [id, digest] pairs.
+  type BatchDone =
+    | { ok: true; verified: Verified[]; rows: RootSource[]; pairs: Array<[string, string]>; read: Array<[string, string]>; skipped: Array<Skip & { position: number }> }
+    | { ok: false; reason: string };
+  const done = await mapLimited(batches, context.limits.batchConcurrency, async (batch): Promise<BatchDone> => {
+    if (input.signal?.aborted) return { ok: false, reason: '同步被中止' };
+    if (state.failure !== null) return { ok: false, reason: state.failure };
+    const position = new Map(batch.externals.map((external, i) => [external, i]));
+    const skipped: Array<Skip & { position: number }> = [];
+    // The digest of every object read, by position: the one loaded when a stored read had to be read again.
+    const readAt: Array<string | undefined> = [];
+    // Records and sizes first: no bytes are fetched before the batch is cut into calls within the cap.
+    const peeks = await Promise.all(batch.externals.map((external) => input.listLoader.peek(external)));
+    const calls: Array<Array<Extract<ElementPeek, { ok: true }>>> = [];
+    let current: Array<Extract<ElementPeek, { ok: true }>> = [];
+    let bytes = 0;
+    peeks.forEach((peek, i) => {
+      if (!peek.ok) {
+        skipped.push({ external: peek.external, reason: peek.reason, retry: true, cause: 'read', position: i });
+        return;
+      }
+      const body = peek.load.artifact.body;
+      readAt[i] = body.sha256;
+      if (body.size > cap) {
+        skipped.push({ external: peek.external, reason: `源文件 ${body.sha256}（${peek.external}）有 ${body.size} 字节，超过一次调用的上限 ${cap} 字节`, retry: false, cause: 'size', position: i });
+        return;
+      }
+      if (current.length > 0 && bytes + body.size > cap) {
+        calls.push(current);
+        current = [];
+        bytes = 0;
+      }
+      current.push(peek);
+      bytes += body.size;
+    });
+    // An empty batch is still one call (an empty list runs the producer once).
+    if (current.length > 0 || calls.length === 0) calls.push(current);
+    const verified: Verified[] = [];
+    const rows: RootSource[] = [];
+    const pairs: Array<[string, string]> = [];
+    let handed = 0;
+    let failedHere = 0;
+    for (const call of calls) {
+      if (state.failure !== null) return { ok: false, reason: state.failure };
+      // Only this call's documents are held: at most `cap` bytes of them per batch at a time.
+      const loads = await Promise.all(call.map((peek) => input.listLoader.materialize(peek, cap)));
+      const elements: ParsedSource[] = [];
+      loads.forEach((load, k) => {
+        const at = position.get(call[k].external) as number;
+        if (load.ok) {
+          elements.push(load.value);
+          readAt[at] = load.value.sha256;
+        } else skipped.push({ external: call[k].external, reason: load.reason, retry: true, cause: 'check', position: at });
+      });
+      // A stored read that failed its checks was read again and may have other bytes: the call is cut again by what loaded.
+      for (const part of elements.length === 0 ? [[]] : withinCap(elements, cap)) {
+        handed += part.length;
+        const called = await callBatch(ctx, { index: batch.index, of: batch.of }, part, probe);
+        if (!called.ok) return { ok: false, reason: `${producer.id} 第 ${batch.index + 1}/${batch.of} 批：${called.reason}` };
+        const failed = new Set(called.failed.map((f) => f.element));
+        failedHere += failed.size;
+        // Producing again fails on these the same way while the pack and the document stay as they are: no retry.
+        for (const item of called.failed) skipped.push({ external: item.element.external, reason: item.reason, retry: false, cause: 'producer', position: position.get(item.element.external) as number });
+        // Verified now, while the call's documents are parsed; each call cites only its own elements.
+        for (const { elements: own, output } of called.outputs) {
+          const byDigest = new Map<string, ParsedSource>();
+          for (const element of own) if (!byDigest.has(element.sha256)) byDigest.set(element.sha256, element);
+          verified.push(verifyOutput(context, producer.id, output, { single: input.slots, list: { slot: list.slot, elements: byDigest } }, input.loader, input.paths));
+        }
+        for (const source of part) {
+          if (failed.has(source)) continue;
+          rows.push(sourceRowOf(producer.id, list.slot, source, list.basis, input.decidedBy));
+          pairs.push([source.external, source.sha256]);
+        }
+      }
+    }
+    if (handed >= 2 && failedHere === handed) {
+      return stop(`${producer.id} 第 ${batch.index + 1}/${batch.of} 批：${handed} 份源文件单独调用生产器都失败，是生产器本身的问题`);
+    }
+    skipped.sort((a, b) => a.position - b.position);
+    const read = batch.externals.flatMap((external, i): Array<[string, string]> => (readAt[i] === undefined ? [] : [[external, readAt[i]]]));
+    return { ok: true, verified, rows, pairs, read, skipped };
+  });
+  const verified: Verified[] = [];
+  const rows: RootSource[] = [];
+  const pairs: Array<[string, string]> = [];
+  const read: Array<[string, string]> = [];
+  for (const batch of done) {
+    if (!batch.ok) return { ok: false, reason: state.failure ?? batch.reason };
+    verified.push(...batch.verified);
+    rows.push(...batch.rows);
+    pairs.push(...batch.pairs);
+    read.push(...batch.read);
+    for (const item of batch.skipped) skip(item);
+  }
+  // A document is blamed only when the producer is shown to work on documents in this production.
+  if (failedAlone > 0 && !state.succeeded) {
+    return { ok: false, reason: `生产器 ${producer.id} 在这次生产里没有成功处理过任何一份列出的源文件（${failedAlone} 份单独调用都失败），是生产器本身的问题` };
+  }
+  if (ids.length > 0 && skippedCount > context.limits.maxSkippedShare * ids.length) {
+    const parts = (
+      [
+        ['read', '读不到'],
+        ['check', '没有通过核对或解析不了'],
+        ['size', '超过字节上限'],
+        ['producer', '生产器处理不了'],
+      ] as const
+    )
+      .filter(([cause]) => (causes.get(cause) ?? 0) > 0)
+      .map(([cause, text]) => `${text} ${causes.get(cause)} 份`);
+    return {
+      ok: false,
+      reason: `列表 ${producer.id}.${list.slot} 列出的 ${ids.length} 份源文件有 ${skippedCount} 份没有用上（${parts.join('、')}），超过 ${Math.round(context.limits.maxSkippedShare * 100)}%，这次不产出根`,
+    };
+  }
+  return {
+    ok: true,
+    verified,
+    rows,
+    detail: {
+      producer: producer.id,
+      slot: list.slot,
+      count: ids.length,
+      externals: listDigest(ids),
+      loaded: listDigest(pairs),
+      read: listDigest(read),
+      skipped: skippedHere,
+      skipped_count: skippedCount,
+    },
+  };
+}
+
+interface WriteInput {
+  product: string;
+  root: BuiltNode;
+  contents: Map<string, EntryContent>;
+  unplacedRows: UnplacedRow[];
+  /** The rows of a large composition, to be split into parts; null for one record. */
+  parts: { composition: CompositionRow[]; unplaced: UnplacedRow[]; sources: RootSource[]; entryBytes: Map<string, number> } | null;
+  body: (parts: CompositionParts | null) => TreeRootBody;
+  action: (composition: string, tx: Transaction) => Promise<string>;
+}
+
+/**
+ * Writes a produced root in bounded chunks: the missing entries, then the missing nodes from the leaves up (a node is stored
+ * only after its whole subtree), then the parts of a large composition, then the composition record and the generate action
+ * in one transaction. Stored nodes are never written again: their subtrees are shared.
+ */
+async function writeRoot(context: KnowledgeContext, input: WriteInput): Promise<{ created: number; composition: string; action: string; body: TreeRootBody; parts: number }> {
+  const store = context.store;
+  const { writeChunk, writeConcurrency } = context.limits;
+  const inChunks = async <T>(items: readonly T[], size: number, write: (item: T, tx: Transaction) => Promise<unknown>): Promise<void> => {
+    await mapLimited(chunks(items, size), writeConcurrency, (chunk) =>
+      store.records.withTransaction(async (tx) => {
+        for (const item of chunk) await write(item, tx);
+      }),
+    );
+  };
+
+  // Nodes not yet stored, level by level from the root; a stored node's subtree is complete and shared.
+  const fresh = new Map<string, BuiltNode>();
+  let level: BuiltNode[] = [input.root];
+  while (level.length > 0) {
+    const seen = new Set<string>();
+    const unseen = level.filter((node) => !fresh.has(node.digest) && !seen.has(node.digest) && (seen.add(node.digest), true));
+    const stored = await mapLimited(unseen, 8, (node) => store.hasNode(node.digest));
+    const next: BuiltNode[] = [];
+    unseen.forEach((node, i) => {
+      if (stored[i]) return;
+      fresh.set(node.digest, node);
+      next.push(...node.built);
+    });
+    level = next;
+  }
+
+  // Entries of the new nodes and of the unplaced rows that are not yet stored for this product.
+  const wanted = new Set<string>();
+  for (const node of fresh.values()) for (const entry of node.entries) wanted.add(entry);
+  for (const row of input.unplacedRows) wanted.add(row.entry);
+  const candidates = [...wanted];
+  const present = await mapLimited(candidates, 8, (entry) => store.hasEntryFor(input.product, entry));
+  const absent = candidates.filter((_, i) => !present[i]);
+  await inChunks(absent, writeChunk, (entry, tx) => store.putEntry(input.product, entry, input.contents.get(entry) as EntryContent, tx));
+
+  // Nodes from the leaves up: every child of a node is stored before the node.
+  const byHeight = new Map<number, BuiltNode[]>();
+  for (const node of fresh.values()) {
+    const at = byHeight.get(node.height);
+    if (at === undefined) byHeight.set(node.height, [node]);
+    else at.push(node);
+  }
+  for (const height of [...byHeight.keys()].sort((a, b) => a - b)) await inChunks(byHeight.get(height) as BuiltNode[], writeChunk, (node, tx) => store.putNode(node, tx));
+
+  // Parts of a large composition: content-addressed, so unchanged parts are found instead of written.
+  let parts: CompositionParts | null = null;
+  let partCount = 0;
+  if (input.parts !== null) {
+    const { composition, unplaced, sources, entryBytes } = input.parts;
+    const contentRow = (row: CompositionRow): CompositionContentRow => {
+      const content = input.contents.get(row.entry) as EntryContent;
+      return { ...row, statement: content.statement, data: content.data, applicability: content.applicability };
+    };
+    // Rows of one kind per part, kinds in code-unit order: a scan by kind reads its own parts, and the parts of a kind
+    // that did not change between two builds (often the cases) are shared even when another kind changed everywhere.
+    const byKind = new Map<string, CompositionRow[]>();
+    for (const row of composition) {
+      const group = byKind.get(row.kind);
+      if (group === undefined) byKind.set(row.kind, [row]);
+      else group.push(row);
+    }
+    const rowParts = [...byKind.keys()].sort(compareText).flatMap((kind) => splitRows(byKind.get(kind) as CompositionRow[], (row) => row.entry, (row) => (entryBytes.get(row.entry) ?? 1000) + row.path.length));
+    const unplacedParts = splitRows(unplaced, (row) => row.entry, (row) => 600 + row.fragments.reduce((s, f) => s + f.length, 0) + row.note.length);
+    const sortedSources = [...sources].sort((a, b) => compareText(a.sha256, b.sha256) || compareText(a.external, b.external));
+    const sourceParts = splitRows(sortedSources, (row) => row.sha256, (row) => 500 + row.external.length);
+    const refs = async <R>(groups: R[][], write: (rows: R[]) => Promise<{ digest: string }>, first: (row: R) => string): Promise<CompositionPartRef[]> =>
+      mapLimited(groups, writeConcurrency, async (group) => ({ record: (await write(group)).digest, rows: group.length, first: first(group[0]), last: first(group[group.length - 1]) }));
+    const rowRefs = await refs(rowParts, (group) => store.putPart(SCHEMAS.rowsPart, group.map(contentRow)), (row) => row.path);
+    parts = {
+      composition: rowRefs.map((ref, i) => ({ ...ref, kind: rowParts[i][0].kind })),
+      unplaced: await refs(unplacedParts, (group) => store.putPart(SCHEMAS.unplacedPart, group), (row) => row.entry),
+      sources: await refs(sourceParts, (group) => store.putPart(SCHEMAS.sourcesPart, group), (row) => row.sha256),
+    };
+    partCount = parts.composition.length + parts.unplaced.length + parts.sources.length;
+  }
+
+  const body = input.body(parts);
+  return store.records.withTransaction(async (tx) => {
+    const record = await store.putRoot(body, tx);
+    const action = await input.action(record.digest, tx);
+    return { created: fresh.size, composition: record.digest, action, body, parts: partCount };
   });
 }
 
 /**
  * The catalogs of the root. Members are the entries of the declared kind, of the declared producer when the catalog names
- * one; a declared-complete catalog stays complete only when no such entry was refused, left unplaced or lacks catalog data.
+ * one; a declared-complete catalog stays complete only when no such entry was refused, left unplaced or lacks catalog data,
+ * and no listed source its producer could have given members from was skipped (C07 R[1]: absence is a fact only for a
+ * complete catalog). Without a declared producer, the skips of every producer count that gave entries of the kind here, or
+ * gave nothing whose kind is known.
  */
 function rootCatalogs(
   product: ProductHandle,
   composition: CompositionRow[],
   unplaced: UnplacedRow[],
   refusedOf: ReadonlyMap<string, ReadonlyMap<string, number>>,
+  skippedOf: ReadonlyMap<string, number>,
   contents: Map<string, EntryContent>,
 ): RootCatalog[] {
+  // The entry kinds each producer gave in this root (placed, unplaced, or declared on a refused entry).
+  const kindsOf = new Map<string, Set<string>>();
+  const gave = (producer: string, kind: string): void => {
+    const kinds = kindsOf.get(producer) ?? new Set<string>();
+    kinds.add(kind);
+    kindsOf.set(producer, kinds);
+  };
+  for (const row of composition) for (const producer of row.producers) gave(producer, row.kind);
+  for (const row of unplaced) for (const producer of row.producers) gave(producer, row.kind);
+  for (const [producer, kinds] of refusedOf) for (const kind of kinds.keys()) if (isEntryKind(kind)) gave(producer, kind);
   return product.product.catalogs.map((catalog) => {
     const ours = (producers: readonly string[]): boolean => catalog.producer === undefined || producers.includes(catalog.producer);
     const rows = composition.filter((row) => row.kind === catalog.entry_kind && ours(row.producers));
@@ -541,11 +1145,21 @@ function rootCatalogs(
     const lost = unplaced.filter((row) => row.kind === catalog.entry_kind && ours(row.producers)).length;
     let refusedHere = 0;
     for (const [producer, kinds] of refusedOf) if (ours([producer])) refusedHere += kinds.get(catalog.entry_kind) ?? 0;
+    let skippedHere = 0;
+    const skippers: string[] = [];
+    for (const [producer, count] of [...skippedOf].sort(([a], [b]) => compareText(a, b))) {
+      const kinds = kindsOf.get(producer);
+      const counts = catalog.producer === undefined ? kinds === undefined || kinds.has(catalog.entry_kind) : producer === catalog.producer;
+      if (!counts || count === 0) continue;
+      skippedHere += count;
+      skippers.push(producer);
+    }
     const reasons: string[] = [];
     if (rows.length === 0) reasons.push(`没有${catalog.producer === undefined ? '' : `生产器 ${catalog.producer} 的`} ${catalog.entry_kind} 种类的条目`);
     if (invalid > 0) reasons.push(`${invalid} 个条目没有可用的目录数据`);
     if (lost > 0) reasons.push(`${lost} 个条目没能挂树`);
     if (refusedHere > 0) reasons.push(`${refusedHere} 个条目没有通过核对`);
+    if (skippedHere > 0) reasons.push(`${skippedHere} 份列出的来源没有用上（生产器 ${skippers.join('、')}）`);
     const complete = catalog.complete && reasons.length === 0;
     return {
       ...catalog,
@@ -565,45 +1179,19 @@ export function catalogData(data: Record<string, unknown>): { words: string[]; s
   return { words: parsed.data.words, signatures: parsed.data.signatures, ...(parsed.data.summary === undefined ? {} : { summary: parsed.data.summary }) };
 }
 
-type ProducerRun = { ok: true; value: ProducerOutput } | { ok: false; reason: string };
-
-async function runProducer(context: KnowledgeContext, product: ProductHandle, producer: Producer, input: { build: KnownBuild; slots: Map<string, ParsedSource | null>; params: Record<string, unknown> }): Promise<ProducerRun> {
-  const slots: ProducerInput['slots'] = {};
-  for (const [slot, source] of input.slots) {
-    slots[slot] = source === null ? null : { sha256: source.sha256, media_type: source.mediaType, parser: source.parser, model: source.document.model };
-  }
-  const payload: ProducerInput = { build: input.build, slots, params: input.params };
-  let output: unknown;
-  try {
-    const run = await callPackFunction(
-      { packDir: product.directory, module: producer.function.module, export: producer.function.export },
-      payload,
-      context.sandbox.producer,
-      { requireOsIsolation: context.sandbox.requireOsIsolation },
-    );
-    output = run.output;
-  } catch (error) {
-    if (error instanceof SandboxError) return { ok: false, reason: `生产器 ${producer.id} 运行失败：${SANDBOX_ERRORS[error.code]}` };
-    return { ok: false, reason: `生产器 ${producer.id} 运行失败：${describeError(error)}` };
-  }
-  const parsed = ProducerOutput.safeParse(output);
-  if (!parsed.success) {
-    const issue = parsed.error.issues[0];
-    return { ok: false, reason: `生产器 ${producer.id} 的输出不符合 producer-output@1：${issue === undefined ? '' : `${issue.path.join('/')} ${issue.message}`}` };
-  }
-  return { ok: true, value: parsed.data };
-}
-
 interface ProduceActionInput {
   startedAt: string;
   sync: string | null;
   product: string;
   pack: { id: string; version: string; digest: string };
-  info: BuildInfo;
+  /** The build as listed, list roles by reference. */
+  build: RecordedBuild;
   root: string | null;
   composition: string | null;
   sources: ProduceDetail['sources'];
   missing: ProduceDetail['missing'];
+  lists: ListDetail[];
+  calls: { made: number; reused: number };
   placement: ProduceDetail['placement'];
   reason: string | null;
 }
@@ -614,11 +1202,13 @@ export async function writeProduceAction(context: KnowledgeContext, input: Produ
     sync: input.sync,
     product: input.product,
     pack: input.pack,
-    build: input.info,
+    build: input.build,
     root: input.root,
     composition: input.composition,
     sources: input.sources,
     missing: input.missing,
+    lists: input.lists,
+    calls: { made: input.calls.made, reused: input.calls.reused },
     placement: input.placement,
     reason: input.reason,
   };
@@ -638,7 +1228,7 @@ export async function writeProduceAction(context: KnowledgeContext, input: Produ
     detail: detail as unknown as Record<string, unknown>,
   };
   const index = [
-    { key: INDEX.produce, value: buildKey(input.product, input.info.name) },
+    { key: INDEX.produce, value: buildKey(input.product, input.build.name) },
     { key: INDEX.produceProduct, value: input.product },
     ...(input.root === null ? [] : [{ key: INDEX.produceRoot, value: input.root }]),
     ...(input.sync === null ? [] : [{ key: INDEX.sync, value: input.sync }]),

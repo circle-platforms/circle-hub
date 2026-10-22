@@ -153,13 +153,13 @@ test('workflow: the subject names an input slot; slots and parameters are unique
 
 test('projection and expected-source functions exchange parsed models and external ids', () => {
   const context = { product: 'widget', names: ['Widget', 'Gadget'], line: '1.2', build: 'Rel_1_2_3', root: sha, parameters: {}, groups: [] };
-  const input = { inputs: [{ slot: 'subject', external: 'agile:mindmap:24863', sha256: sha, media_type: 'application/json', parser: 'kityminder@1', model: { root: {} }, meta: { title: 't', ancestors: ['a', 'b'] } }], parameters: {}, context };
+  const input = { inputs: [{ slot: 'subject', external: 'agile:mindmap:90001', sha256: sha, media_type: 'application/json', parser: 'kityminder@1', model: { root: {} }, meta: { title: 't', ancestors: ['a', 'b'] } }], parameters: {}, context };
   assert.ok(ProjectionInput.safeParse(input).success);
   const item = { id: '1:a', label: 'case', location: { parser: 'kityminder@1', selector: 'n/a' }, fields: { title: 'x' } };
   assert.ok(ProjectionOutput.safeParse({ items: [item], warnings: [] }).success);
   assert.ok(ProjectionOutput.safeParse({ error: { code: 'pack.no_case', message: 'm', fix: 'f' }, warnings: [] }).success);
   assert.ok(!ProjectionOutput.safeParse({ items: [{ ...item, location: 'src:abc' }], warnings: [] }).success, 'the pack gives parser and selector, the Hub forms the reference');
-  assert.ok(ExpectedSourcesOutput.safeParse({ sources: [{ external: 'plm:story:19466', role: 'expected', reason: '标题里的需求号' }], warnings: [] }).success);
+  assert.ok(ExpectedSourcesOutput.safeParse({ sources: [{ external: 'plm:story:31006', role: 'expected', reason: '标题里的需求号' }], warnings: [] }).success);
   assert.ok(!ExpectedSourcesOutput.safeParse({ sources: [{ external: 'plm:story:1', role: 'subject', reason: 'x' }], warnings: [] }).success, 'only expected or hint sources are bound this way');
 });
 

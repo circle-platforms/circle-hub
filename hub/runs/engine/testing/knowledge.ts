@@ -4,7 +4,7 @@
 import { createHash } from 'node:crypto';
 import type { KnownBuild, ProductDeclaration } from '../../../../contracts/src/product.ts';
 import { digestOf, type Principal } from '../../../records/api.ts';
-import type { KnowledgePort, NodesPage, PackHandle, PacksPort, ProductHandle, RootDiff, RootInfo } from '../../../ports.ts';
+import type { EntryDiff, KnowledgePort, NodesPage, PackHandle, PacksPort, ProductHandle, RootDiff, RootInfo } from '../../../ports.ts';
 import type { ReaderIdentity, TreeRead, TreeReader } from '../../../refs/api.ts';
 import { buildCatalog, type CatalogView } from '../../../rules/api.ts';
 import { productPack, writePack } from './packs.ts';
@@ -172,6 +172,9 @@ export class FakeKnowledge implements KnowledgePort {
     return null;
   }
   async diffRoots(): Promise<RootDiff | null> {
+    return null;
+  }
+  async diffEntries(): Promise<EntryDiff | null> {
     return null;
   }
 }

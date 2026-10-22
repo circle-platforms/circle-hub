@@ -1,19 +1,23 @@
 // The reading side of the knowledge tree: permission (the reader is an admin, or a pack assigned to them binds the product of
 // the root; absent and forbidden are the same null, D05 R[3]), get_nodes pages with coverage, the TreeReader hub/refs resolves
 // tree and entry references with (grounds from the version's composition, B01 R[5], K02 R[2]), the closed catalog of a root
-// (C07), the diff of two roots and the provenance of an entry.
+// (C07), the diffs of two roots (paths, and entries of given kinds) and the provenance of an entry. Compositions are read
+// through CompositionView, whether they are one record or parts.
 import { createHash } from 'node:crypto';
-import { EntryKindSchema } from '../../contracts/generated/vocabulary.ts';
-import type { CompositionRow, TreeNodeBody, TreeRootBody } from '../../contracts/src/knowledge.ts';
+import { EntryKindSchema, type ChangeKind, type EntryKind } from '../../contracts/generated/vocabulary.ts';
+import type { CompositionRow, TreeNodeBody } from '../../contracts/src/knowledge.ts';
 import type { Applicability } from '../../contracts/src/product.ts';
 import { TreePath } from '../../contracts/src/reference.ts';
-import type { NodesPage, NodesQuery, NodeViews, RootDiff } from '../ports.ts';
+import { MAX_IMPACT_PATHS } from '../../contracts/src/views.ts';
+import type { EntryDiff, NodesPage, NodesQuery, NodeViews, RootDiff } from '../ports.ts';
 import type { Principal } from '../records/api.ts';
 import { ReferenceSyntaxError, parseReference, pathOf, pathSegments, treeReference } from '../refs/api.ts';
 import type { JsonValue, ReaderIdentity, TreeRead, TreeReader } from '../refs/api.ts';
 import { createCatalogView, type CatalogEntry, type CatalogView } from '../rules/api.ts';
+import { CompositionView, type ReadRow } from './composition.ts';
+import { mapLimited } from './concurrency.ts';
 import type { KnowledgeContext } from './context.ts';
-import { canonicalSize, compareText, cutText, type EntryContent } from './digest.ts';
+import { canonicalSize, compareText, cutText, entryDigest, type EntryContent } from './digest.ts';
 import { catalogData } from './produce.ts';
 import { Lru, type ProduceAction } from './store.ts';
 
@@ -39,13 +43,6 @@ export function applicabilityText(applicability: Applicability | null): string {
   return parts.length === 0 ? '未限定' : parts.join('；');
 }
 
-/** The rows of one composition by path and entry. */
-export interface CompositionIndex {
-  record: string;
-  body: TreeRootBody;
-  rows: Map<string, Map<string, CompositionRow>>;
-}
-
 export interface ProvenanceRow {
   root: string;
   composition: string;
@@ -64,16 +61,6 @@ export interface ProvenanceRow {
   sources: Array<{ sha256: string; external: string; media_type: string; read_tier: string; basis: string; decided_by: string }>;
 }
 
-function indexOf(record: string, body: TreeRootBody): CompositionIndex {
-  const rows = new Map<string, Map<string, CompositionRow>>();
-  for (const row of body.composition) {
-    const at = rows.get(row.path) ?? new Map<string, CompositionRow>();
-    at.set(row.entry, row);
-    rows.set(row.path, at);
-  }
-  return { record, body, rows };
-}
-
 /** Nearest common ancestor of tree paths (K01 R[3]). */
 function commonAncestor(paths: readonly string[][]): string[] {
   if (paths.length === 0) return [];
@@ -86,23 +73,16 @@ function commonAncestor(paths: readonly string[][]): string[] {
   return prefix;
 }
 
-async function mapLimited<T, R>(items: readonly T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
-  const out = new Array<R>(items.length);
-  let next = 0;
-  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
-    while (next < items.length) {
-      const i = next++;
-      out[i] = await fn(items[i]);
-    }
-  });
-  await Promise.all(workers);
-  return out;
+/** One entry with its content, as a node shows it. */
+interface EntryAt {
+  digest: string;
+  content: EntryContent;
 }
 
 export class TreeReading {
   readonly #context: KnowledgeContext;
   readonly #products = new Map<string, { products: Set<string>; at: number }>();
-  readonly #indexes = new Lru<string, CompositionIndex>(8);
+  readonly #views = new Lru<string, CompositionView>(8);
   readonly #catalogs = new Lru<string, CatalogView | null>(8);
 
   constructor(context: KnowledgeContext) {
@@ -153,46 +133,58 @@ export class TreeReading {
   }
 
   /** The composition of the newest production of a root. */
-  async compositionOf(root: string): Promise<CompositionIndex | null> {
+  async compositionOf(root: string): Promise<CompositionView | null> {
     const productions = await this.#context.store.productionsOfRoot(root);
     const latest = productions[productions.length - 1];
     if (latest === undefined) return null;
-    return this.#index(latest);
+    return this.#view(latest);
   }
 
   /** Every composition of a root (one per production, a composition once), newest first. */
-  async compositionsOf(root: string): Promise<CompositionIndex[]> {
+  async compositionsOf(root: string): Promise<CompositionView[]> {
     const productions = await this.#context.store.productionsOfRoot(root);
-    const out: CompositionIndex[] = [];
+    const out: CompositionView[] = [];
     const seen = new Set<string>();
     for (let i = productions.length - 1; i >= 0; i--) {
       const digest = productions[i].detail.composition as string;
       if (seen.has(digest)) continue;
       seen.add(digest);
-      const index = await this.#index(productions[i]);
-      if (index !== null) out.push(index);
+      const view = await this.#view(productions[i]);
+      if (view !== null) out.push(view);
     }
     return out;
   }
 
-  async #index(production: ProduceAction): Promise<CompositionIndex | null> {
+  async #view(production: ProduceAction): Promise<CompositionView | null> {
     const digest = production.detail.composition as string;
-    const cached = this.#indexes.get(digest);
+    const cached = this.#views.get(digest);
     if (cached !== undefined) return cached;
     const body = await this.#context.store.composition(digest);
     if (body === null) return null;
-    const index = indexOf(digest, body);
-    this.#indexes.set(digest, index);
-    return index;
+    const view = new CompositionView(this.#context.store, digest, body);
+    this.#views.set(digest, view);
+    return view;
   }
 
-  async #entries(digests: readonly string[]): Promise<Array<{ digest: string; content: EntryContent }>> {
-    const out: Array<{ digest: string; content: EntryContent }> = [];
-    for (const digest of digests) {
-      const content = await this.#context.store.entry(digest);
-      if (content !== null) out.push({ digest, content });
-    }
-    return out.sort((a, b) => compareText(a.content.kind, b.content.kind) || compareText(a.content.statement, b.content.statement) || compareText(a.digest, b.digest));
+  /**
+   * The entries of a node with their content: from the composition's rows at the path when they carry it (parts), else from
+   * the entry records. Sorted by kind, statement, digest.
+   */
+  async #entriesAt(rows: ReadonlyMap<string, ReadRow> | null, digests: readonly string[]): Promise<EntryAt[]> {
+    const found = await mapLimited(digests, 16, async (digest) => {
+      const content = await this.#contentOf(rows, digest);
+      return content === null ? null : { digest, content };
+    });
+    return found
+      .filter((e): e is EntryAt => e !== null)
+      .sort((a, b) => compareText(a.content.kind, b.content.kind) || compareText(a.content.statement, b.content.statement) || compareText(a.digest, b.digest));
+  }
+
+  /** The content of one entry: a part row's content when it hashes to the digest, else the verified entry record. */
+  async #contentOf(rows: ReadonlyMap<string, ReadRow> | null, digest: string): Promise<EntryContent | null> {
+    const inRow = rows?.get(digest)?.content;
+    if (inRow !== undefined && entryDigest(inRow) === digest) return inRow;
+    return this.#context.store.entry(digest);
   }
 
   // ------------------------------------------------------------ get_nodes
@@ -277,7 +269,8 @@ export class TreeReading {
             walk.next = { o: walk.position, e: start };
             return false;
           }
-          const entries = await this.#entries(node.entries);
+          const rows = composition === null ? null : await composition.rowsAt(path);
+          const entries = await this.#entriesAt(rows, node.entries);
           if (start > 0 && start >= entries.length) {
             walk.invalid = true;
             return false;
@@ -300,7 +293,7 @@ export class TreeReading {
             return false;
           }
           walk.bytes += size;
-          page.push(this.#view(root, segments, digest, node, composition, entries.slice(start, taken)));
+          page.push(this.#nodeView(root, segments, digest, node, rows, entries.slice(start, taken)));
           if (taken < entries.length) {
             walk.split = `节点 ${path} 的条目分在几页里：这一页给出第 ${start + 1} 到第 ${taken} 个（共 ${entries.length} 个），其余在下一页`;
             walk.next = { o: walk.position, e: taken };
@@ -344,9 +337,8 @@ export class TreeReading {
     };
   }
 
-  #view(root: string, segments: string[], digest: string, node: TreeNodeBody, composition: CompositionIndex | null, entries: Array<{ digest: string; content: EntryContent }>): NodeViews[number] {
+  #nodeView(root: string, segments: string[], digest: string, node: TreeNodeBody, rows: ReadonlyMap<string, ReadRow> | null, entries: EntryAt[]): NodeViews[number] {
     const path = pathOf(segments);
-    const rows = composition?.rows.get(path);
     return {
       path,
       reference: treeReference(root, path),
@@ -405,12 +397,12 @@ export class TreeReading {
     const compositions = locked.length > 0 ? locked : all;
     const canonical = pathOf(segments);
     const premises = compositions.map((c) => `rec:${c.record}`);
+    const rowsOf = await Promise.all(compositions.map((c) => c.rowsAt(canonical)));
     const groundsOf = (digests: readonly string[]): { grounds: string[]; tagged: Array<{ composition: string; build: string; grounds: string[] }> } => {
       const grounds: string[] = [];
-      const tagged = compositions.map((c) => {
+      const tagged = compositions.map((c, i) => {
         const own: string[] = [];
-        const rows = c.rows.get(canonical);
-        for (const digest of digests) for (const fragment of rows?.get(digest)?.fragments ?? []) if (!own.includes(fragment)) own.push(fragment);
+        for (const digest of digests) for (const fragment of rowsOf[i].get(digest)?.fragments ?? []) if (!own.includes(fragment)) own.push(fragment);
         for (const fragment of own) if (!grounds.includes(fragment)) grounds.push(fragment);
         return { composition: c.record, build: c.body.build.name, grounds: own };
       });
@@ -418,7 +410,7 @@ export class TreeReading {
     };
     if (entry !== null) {
       if (!found.node.entries.includes(entry)) return null;
-      const content = await this.#context.store.entry(entry);
+      const content = await this.#contentOf(rowsOf[0] ?? null, entry);
       if (content === null) return null;
       const { grounds, tagged } = groundsOf([entry]);
       return {
@@ -435,7 +427,7 @@ export class TreeReading {
         },
       };
     }
-    const entries = await this.#entries(found.node.entries);
+    const entries = await this.#entriesAt(rowsOf[0] ?? null, found.node.entries);
     const { grounds, tagged } = groundsOf(entries.map((e) => e.digest));
     const text = entries.length > 0 ? entries.map((e) => e.content.statement).join('\n\n') : found.node.children.map((c) => c.name).join('\n');
     return {
@@ -469,38 +461,37 @@ export class TreeReading {
     if (!SHA256.test(root)) return null;
     const productions = await this.#context.store.productionsOfRoot(root);
     for (let i = productions.length - 1; i >= 0; i--) {
-      const index = await this.#index(productions[i]);
-      const declaration = index?.body.catalogs.find((c) => c.id === catalogId);
-      if (index === null || declaration === undefined) continue;
-      const key = `${root}\u0000${catalogId}\u0000${index.record}`;
+      const view = await this.#view(productions[i]);
+      const declaration = view?.body.catalogs.find((c) => c.id === catalogId);
+      if (view === null || declaration === undefined) continue;
+      const key = `${root}\u0000${catalogId}\u0000${view.record}`;
       const cached = this.#catalogs.get(key);
       if (cached !== undefined) return cached;
       // Members: entries of the declared kind, of the declared producer when the catalog names one (product@1 catalogs).
       const producer = declaration.producer;
-      const rows = index.body.composition.filter((row) => row.kind === declaration.entry_kind && (producer === undefined || row.producers.includes(producer)));
-      const members = await mapLimited(rows, 16, async (row) => {
-        const content = await this.#context.store.entry(row.entry);
-        const data = content === null ? null : catalogData(content.data);
-        if (data === null) return null;
+      const rows = await view.rowsWithContent(new Set([declaration.entry_kind]), (row) => producer === undefined || row.producers.includes(producer));
+      const kept: Array<{ entry: CatalogEntry; segments: string[] }> = [];
+      for (const row of rows) {
+        const data = catalogData(row.content.data);
+        if (data === null) continue;
         const entry: CatalogEntry = { words: data.words, signatures: data.signatures, reference: treeReference(root, row.path, row.entry) };
         if (data.summary !== undefined) entry.summary = data.summary;
-        return { entry, segments: pathSegments(row.path) };
-      });
-      const kept = members.filter((m): m is { entry: CatalogEntry; segments: string[] } => m !== null);
-      const view =
+        kept.push({ entry, segments: pathSegments(row.path) });
+      }
+      const catalog =
         kept.length === 0
           ? null
           : createCatalogView(
               kept.map((m) => m.entry),
               { reference: treeReference(root, pathOf(commonAncestor(kept.map((m) => m.segments)))), complete: declaration.complete, caseSensitive: declaration.case_sensitive },
             );
-      this.#catalogs.set(key, view);
-      return view;
+      this.#catalogs.set(key, catalog);
+      return catalog;
     }
     return null;
   }
 
-  // ------------------------------------------------------------ diff
+  // ------------------------------------------------------------ diffs
 
   async diff(from: string, to: string): Promise<RootDiff | null> {
     if (!SHA256.test(from) || !SHA256.test(to)) return null;
@@ -535,6 +526,72 @@ export class TreeReading {
     return { from, to, added, removed, modified };
   }
 
+  /**
+   * The nodes whose own entry lists differ between two roots (a node on one side only included), walked in parallel by
+   * digest so that shared subtrees are never read. Each comes with its path and both entry lists.
+   */
+  async changedNodes(from: string, to: string): Promise<Array<{ path: string; before: string[]; after: string[] }> | null> {
+    if (!SHA256.test(from) || !SHA256.test(to)) return null;
+    const store = this.#context.store;
+    if ((await store.node(from)) === null || (await store.node(to)) === null) return null;
+    const out: Array<{ path: string; before: string[]; after: string[] }> = [];
+    const walk = async (segments: string[], a: string | null, b: string | null): Promise<void> => {
+      if (a === b) return;
+      const na = a === null ? null : await store.node(a);
+      const nb = b === null ? null : await store.node(b);
+      const before = na?.entries ?? [];
+      const after = nb?.entries ?? [];
+      if (before.length !== after.length || before.some((e, i) => after[i] !== e)) out.push({ path: pathOf(segments), before, after });
+      const childrenA = new Map((na?.children ?? []).map((c) => [c.name, c.digest]));
+      const childrenB = new Map((nb?.children ?? []).map((c) => [c.name, c.digest]));
+      const names = [...new Set([...childrenA.keys(), ...childrenB.keys()])].sort(compareText);
+      for (const name of names) await walk([...segments, name], childrenA.get(name) ?? null, childrenB.get(name) ?? null);
+    };
+    await walk([], from, to);
+    return out.sort((x, y) => compareText(x.path, y.path));
+  }
+
+  /**
+   * Entry kinds of the entries at one path of a root: from the newest composition's rows at the path, else from the entry
+   * records (null when an entry cannot be found).
+   */
+  async kindsAt(composition: CompositionView | null, path: string, entries: readonly string[]): Promise<Map<string, { kind: string; row: ReadRow | null }>> {
+    const rows = composition === null || entries.length === 0 ? null : await composition.rowsAt(path);
+    const out = new Map<string, { kind: string; row: ReadRow | null }>();
+    await mapLimited(entries, 16, async (entry) => {
+      const row = rows?.get(entry) ?? null;
+      const kind = row?.kind ?? (await this.#context.store.entry(entry))?.kind;
+      if (kind !== undefined) out.set(entry, { kind, row });
+    });
+    return out;
+  }
+
+  /** The version difference over entries of some kinds (KnowledgePort.diffEntries). */
+  async diffEntries(from: string, to: string, options: { kinds: readonly EntryKind[]; limit?: number }): Promise<EntryDiff | null> {
+    const kinds = [...new Set(options.kinds)].filter((k) => EntryKindSchema.safeParse(k).success).sort(compareText);
+    const changes = await this.entryChanges(from, to, new Set(kinds));
+    if (changes === null) return null;
+    // A limit that is not a non-negative safe integer (NaN, infinite, fractional, negative) is the default.
+    const limit = Number.isSafeInteger(options.limit) && (options.limit as number) >= 0 ? (options.limit as number) : MAX_IMPACT_PATHS;
+    return { from, to, kinds, changes: changes.slice(0, limit), total: changes.length, truncated: changes.length > limit };
+  }
+
+  /** Every path whose own entries of the kinds differ, with the change kind, sorted by path. */
+  async entryChanges(from: string, to: string, kinds: ReadonlySet<string>): Promise<Array<{ path: string; change: ChangeKind; before: string[]; after: string[] }> | null> {
+    const nodes = await this.changedNodes(from, to);
+    if (nodes === null) return null;
+    const [fromComposition, toComposition] = await Promise.all([this.compositionOf(from), this.compositionOf(to)]);
+    const out: Array<{ path: string; change: ChangeKind; before: string[]; after: string[] }> = [];
+    for (const node of nodes) {
+      const [a, b] = await Promise.all([this.kindsAt(fromComposition, node.path, node.before), this.kindsAt(toComposition, node.path, node.after)]);
+      const before = node.before.filter((e) => kinds.has(a.get(e)?.kind ?? '')).sort(compareText);
+      const after = node.after.filter((e) => kinds.has(b.get(e)?.kind ?? '')).sort(compareText);
+      if (before.length === after.length && before.every((e, i) => after[i] === e)) continue;
+      out.push({ path: node.path, change: before.length === 0 ? 'added' : after.length === 0 ? 'removed' : 'modified', before, after });
+    }
+    return out;
+  }
+
   // ------------------------------------------------------------ provenance
 
   /** The composition rows behind a tree address (with or without an entry), newest production first; the reader is required. */
@@ -553,15 +610,16 @@ export class TreeReading {
     const out: ProvenanceRow[] = [];
     for (let i = productions.length - 1; i >= 0; i--) {
       const production = productions[i];
-      const index = await this.#index(production);
-      const rows = index?.rows.get(path);
-      if (index === null || rows === undefined) continue;
+      const view = await this.#view(production);
+      if (view === null) continue;
+      const rows = await view.rowsAt(path);
       for (const row of rows.values()) {
         if (parsed.entry !== undefined && row.entry !== parsed.entry) continue;
         const shas = new Set(row.fragments.map((fragment) => fragment.slice(4, 68)));
+        const sources = await view.sourcesOf(shas);
         out.push({
           root: parsed.root,
-          composition: index.record,
+          composition: view.record,
           product: production.detail.product,
           build: production.detail.build.name,
           path,
@@ -572,9 +630,7 @@ export class TreeReading {
           basis: row.basis,
           decided_by: row.decided_by,
           placement: row.placement ?? null,
-          sources: index.body.sources
-            .filter((s) => shas.has(s.sha256))
-            .map((s) => ({ sha256: s.sha256, external: s.external, media_type: s.media_type, read_tier: s.read_tier, basis: s.basis, decided_by: s.decided_by })),
+          sources: sources.map((s) => ({ sha256: s.sha256, external: s.external, media_type: s.media_type, read_tier: s.read_tier, basis: s.basis, decided_by: s.decided_by })),
         });
       }
     }

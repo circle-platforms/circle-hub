@@ -2,42 +2,53 @@
 
 Model elements **K01** (knowledge tree), **K02** (entries), **K03** (three writer layers), **K04** (placement by the typed
 judgment model), **K05** (pinned reads), with **B03** tree references, **B05** actions, **D01 R[8]** (one product, several
-names) and **W09** (the sync is a standing obligation the Hub executes). Other packages import only `hub/knowledge/api.ts`.
-The shapes of the records are registered in `contracts/src/knowledge.ts`.
+names) and **W09** (the sync is a standing obligation the Hub executes). Milestone 2 (brief section 6a, capabilities 4 and
+6) adds list sources read in memoized batches, large roots in bounded records, the entry-level version difference
+(K01 R[1]: the version difference is the regression scope) and the Hub's own views of the tree as external objects
+(`contracts/src/views.ts`). Other packages import only `hub/knowledge/api.ts`. The shapes of the records are registered
+in `contracts/src/knowledge.ts`.
 
 `createKnowledge(options)` returns an object that implements `KnowledgePort` of `hub/ports.ts` exactly (`builds`,
-`resolveBuild`, `currentRoot`, `rootOfBuild`, `rootInfo`, `catalog`, `treeReader`, `getNodes`, `diffRoots`), plus
-`produceTree`, `syncProduct`, `lockRoot`, `moveRoot`, `reconcileLine`, `provenanceOf`, `calibration`, `placement`,
-`layers` and `store`. Its `treeReader` also takes an optional lock (`{ composition }`, see decision 13).
+`resolveBuild`, `currentRoot`, `rootOfBuild`, `rootInfo`, `catalog`, `treeReader`, `getNodes`, `diffRoots`,
+`diffEntries`), plus `produceTree`, `syncProduct`, `lockRoot`, `moveRoot`, `reconcileLine`, `provenanceOf`,
+`calibration`, `placement`, `layers`, `views` and `store`. Its `treeReader` also takes an optional lock
+(`{ composition }`, see decision 13). `createKnowledgeReader(knowledge)` serves the views as an `ExternalReaderPort`.
 
 ```ts
 const knowledge = createKnowledge({
-  records: kit,                       // store, artifacts, pointers, principals of hub/records
+  records: kit,                       // store, artifacts, pointers, principals and objects of hub/records
   parsers: createDefaultRegistry(),   // hub/refs core parsers: the Hub parses, never the pack
   packs,                              // PacksPort (runs)
-  external,                           // ExternalReaderPort (connectors)
+  external,                           // ExternalReaderPort (connectors only: the views are not a source of the tree)
   jev,                                // hub/jev client (HttpJev with the vault key and the pinned model), or null
   sandbox: { requireOsIsolation: true },
   admin,                              // the admin context of standing syncs when a call names none
 });
 const report = await knowledgeSync(knowledge, packs, admin, parseKnowledgeSyncArgs(['--product', 'x', '--line', '1.2']));
 registerCommand(knowledgeCliCommand(async () => ({ knowledge, packs })));   // `circle-hub knowledge sync ...`
+// The run engine reads `knowledge:impact|facets|index:...` ids through the views, every other id through the connectors.
+const engineExternal = routeKnowledgeViews(createKnowledgeReader(knowledge), external);
 ```
 
 | File | Content |
 | --- | --- |
-| `api.ts` | the public surface |
+| `api.ts` | the public surface, `createKnowledgeReader` |
 | `service.ts` | `createKnowledge`: wiring, `buildCalibrationSet`, one sync per product at a time |
-| `produce.ts` | `produceTree`: sources, producers in the sandbox, verification, placement, nodes, composition, generate action |
+| `produce.ts` | `produceTree`: sources, producers in the sandbox (list producers per batch), verification, placement, nodes, composition (parts), chunked writes, generate action |
+| `lists.ts` | list slots: batches, the list loader (read, then fetch and parse; reuse within `max_age_seconds`), memo keys, stored outcomes, the split that isolates a failing document |
+| `call.ts` | one producer call in the sandbox with its output checked |
+| `composition.ts` | content-defined parts of a large composition, `CompositionView` over one record or parts |
+| `views.ts` | the impact, facet and index views, their ids, `routeKnowledgeViews` |
+| `concurrency.ts` | bounded concurrency helpers |
 | `sync.ts` | `syncProduct`: plan rounds, builds, productions, current roots, the report |
 | `builds.ts` | build records, aliases, roots of builds, current-root pointers (`moveRoot`, `reconcileLine`) |
-| `read.ts` | permission, `getNodes`, the `TreeReader`, `catalog`, `diffRoots`, `provenanceOf` |
+| `read.ts` | permission, `getNodes`, the `TreeReader`, `catalog`, `diffRoots`, `diffEntries`, `provenanceOf` |
 | `placement.ts` | hierarchical placement with the typed-judgment client, judgment records and reuse, calibration samples |
 | `calibration.ts` | Wilson lower bound, threshold rule, calibration sets, literal masking |
 | `layers.ts` | observation and candidate layers |
 | `sources.ts`, `verify.ts`, `tree.ts`, `digest.ts`, `store.ts` | reads and refusals, fragment and path checks, the in-memory tree, normalisation, digests and text cutting, record I/O with schema checks |
 | `cli.ts` | `parseKnowledgeSyncArgs`, `knowledgeSync`, `formatSyncReport`, `knowledgeCliCommand` |
-| `test-support.ts` | synthetic product pack with real pack functions, fake `PacksPort` and `ExternalReaderPort`, synthetic build site |
+| `test-support.ts` | synthetic product pack with real pack functions (a list producer over synthetic mind maps among them), fake `PacksPort` and `ExternalReaderPort`, synthetic build site, a deterministic scale corpus |
 
 ## Records
 
@@ -46,6 +57,11 @@ registerCommand(knowledgeCliCommand(async () => ({ knowledge, packs })));   // `
 | node | `tree_node` | `tree_node@1` | `knowledge.node` = node digest |
 | entry | `tree_node` | `knowledge-entry@1` | `knowledge.entry`, `knowledge.entry.product` |
 | composition of a produced root | `tree_root` | `tree_root@1` | `knowledge.root`, `knowledge.root.build`, `knowledge.root.product` |
+| part of a large composition (rows with entry content, unplaced rows, list sources) | `tree_root` | `tree_root-rows@1`, `tree_root-unplaced@1`, `tree_root-sources@1` | `knowledge.part` = content key |
+| read of a list source | `action` (`read`) | `action@1` | `knowledge.read` = external id |
+| one producer call of a list batch (memo: its output, or how it failed) | `action` (`generate`, component `knowledge.producer@1`, result completed or error) | `action@1` | `knowledge.memo` = memo key |
+| the ids of a list role (as listed) | object (canonical JSON array) | | its SHA-256, cited by the build's `{list, count}` |
+| one computed view | `action` (`generate`, component `knowledge.views@1`) | `action@1` | (the read's manifest) |
 | current-root move | `root_pointer` | `root_pointer@1` | `knowledge.pointer` = product/line, `knowledge.pointer.move` |
 | build (what the sync listed) | `claim` | `knowledge-build@1` | `knowledge.build` = product/folded name, `knowledge.build.product`, `knowledge.build.base` |
 | calibration set | `claim` | `knowledge-calibration@1` | `knowledge.calibration` = chain/model |
@@ -123,12 +139,17 @@ catalogs, grounds and provenance.
    describes an option (its own first line would hand over the answer) and every description is masked like the
    passage. `addLabelled` takes an administrator's samples (`origin: declared`).
 10. **Builds and aliases** (K01 R[10], D01 R[8]): the newest record of a name wins; a record is written only when the
-    listed build differs from it. A build whose base differs from its name is an alias and has no tree; aliases are
-    followed to their final base (at most 8 hops, cycle safe, whatever line the base is on) before a root is looked up;
-    names match exactly, else without case when only one spelling exists. Roots are keyed by product and base build; a
-    build produced without a build record is still known through its production. A build whose name or base does not
-    fit the build index (well-formed, no NUL, at most 1000 UTF-8 bytes with the product), whose other text cannot be
-    stored or whose line makes no pointer name is refused before anything of it is written.
+    listed build differs from it. A build record keeps the single roles in `sources` and names the roles that hold a list
+    in `lists`, without their ids: a list that changes writes no new build record (the ids a production read are kept with
+    the production, by reference, decision 16), so records grow with the builds, not with their lists. A build whose base
+    differs from its name is an alias and has no tree; aliases are followed to their final base (at most 8 hops, cycle
+    safe, whatever line the base is on) before a root is looked up; names match exactly, else without case when only one
+    spelling exists. Roots are keyed by product and base build, and found by one indexed lookup per base (its newest
+    completed production; a few records read), never by reading every production. A build produced without a build
+    record (not by a sync) gets one in the production's last transaction (`plan` and `sync` null), so every known build has
+    a record. `builds()`, `resolveBuild()` and `RootInfo.build` carry no list roles. A build whose name or base does not fit
+    the build index (well-formed, no NUL, at most 1000 UTF-8 bytes with the product), whose other text cannot be stored or
+    whose line makes no pointer name is refused before anything of it is written.
 11. **Current roots** (K01 R[6], B05 R[4]): one pointer per product line@version (`knowledge/<product>/<line>`, bytes
     outside `[a-z0-9._-]` written `:hh`); its target is the root of the newest build of the line that has one (release
     date, unreleased last, then build time, then name; aliases count with their final base's root). A move is made by an
@@ -142,15 +163,24 @@ catalogs, grounds and provenance.
 12. **Sync** (W09, brief section 7). Start pages from the declaration (`{product}`, and `{line}` when one line is given),
     each page read once, checked like a source and parsed with the core parser for its media type; the plan function
     gets `{round, options, read, known}` with every page read so far; `options.lines` is set from the caller over the
-    declaration's options. It stops when the plan is done, at `max_rounds` (6) or `max_reads` (300); a limit is a report
-    warning and the last answer's builds are still the plan. Per build: a build the store cannot record (decision 10), a
-    family that is not a name of the product and a recording error each fail that build only; aliases and builds without
-    tree sources are skipped; unreleased own-tree builds are skipped unless a released alias needs them (or
+    declaration's options. Its answer may take the sandbox's largest output (64 MiB, memory 1 GiB). The answer is checked
+    as an envelope first (`fetch`, `done`, `note`, `builds` an array; anything else fails the sync with the reason), then
+    build by build: a build that is not build-info@1 (one bad list id, a list over MAX_LIST_SOURCES) is a failed build of
+    the report and the others go on. It stops when the plan is done, at `max_rounds` (6) or `max_reads` (300); a limit is
+    a report warning and the last answer's builds are still the plan. Per build: a build the store cannot record (decision
+    10), a family that is not a name of the product and a recording error each fail that build only; aliases and builds
+    without tree sources are skipped; unreleased own-tree builds are skipped unless a released alias needs them (or
     `includeUnreleased`). An own-tree build is produced again unless its newest production has the same product pack
     digest, the same production component (`knowledge.produce@1`), the same build as listed now (release date, line,
-    platform, sources), the same external sources (read or missing), when it has model-placed spans the same model and
-    threshold without judge failures, and every optional source that was missing is still unreadable (re-read on every
-    sync, once per external id); `recheck` also re-reads the sources read then and produces when a digest changed.
+    platform, single sources, the roles that hold lists; then every list by its digest), the same external sources (read
+    or missing), when it has model-placed spans the same model and threshold without judge failures, and every optional
+    source that was missing is still unreadable (re-read on every sync, once per external id); `recheck` also re-reads the
+    sources read then and produces when a digest changed. For a list (decision 16) the listed ids must be the same (their
+    digest), the skipped ids kept with `retry` (first 50 per list) are loaded again on every sync and the build is produced
+    again once one loads; `recheck` reads every listed id again through the port (records and digests only: no bytes are
+    fetched and nothing is parsed, so no document is held) and produces when the [id, digest] pairs of what reads now
+    differ from those of every object read then (`ListDetail.read`), whatever was then skipped. Each retried or rechecked
+    load is reduced to its outcome or digest as soon as it is done, at most `listReadConcurrency` at a time.
     Productions run with bounded concurrency (2) under a per-build byte cap (64 MiB); their write phases run one after
     the other in this process, so the nodes two parallel productions share are written once; a failure of one build
     never stops the others; an abort signal is checked between builds; two syncs of one product in one process run one
@@ -174,18 +204,153 @@ catalogs, grounds and provenance.
 14. **Catalog** (C07): the entries of the declared `entry_kind`, of the declared `producer` when the catalog names one,
     with catalog data (`words`, `signatures`, `summary`), each with the reference `tree:<root><path>@<entry>`; an entry
     two producers gave at one path is a member when one of them is the catalog's. `complete` is withdrawn for a root only
-    when such a member was refused, left unplaced or has no catalog data (other producers' losses do not count);
-    `case_sensitive` as declared; the nearest common ancestor of the members is the view's reference; null without
-    members. Views are cached per composition.
+    when such a member was refused, left unplaced or has no catalog data (other producers' losses do not count), or when a
+    listed source its producer could have given members from was skipped (decision 16; C07 R[1]: absence is a fact only
+    for a complete catalog): the catalog's producer, or, when it names none, every producer that gave entries of the kind
+    in the root or gave none whose kind is known; `case_sensitive` as declared; the nearest common ancestor of the members is the view's reference; null without
+    members. Catalog views are cached per composition; the members of a composition in parts are read from the parts of
+    the catalog's kind only (decision 20).
 15. **Layers** (K03): observations are appended by the Hub's own verification runs (the echo must be a stored source;
     no run id) and read with the product, by cursor; candidates belong to their owner only (admins included), rest on
     the owner's own private upload whose quotation is verified with hub/refs, bind the path, the digest of the text at
     the path and the root, and show 被引片段已变（根 X → Y） against another root. Neither enters a root digest.
+16. **List slots** (product@1 `ProducerSource` `many`, `ProducerInput.lists`/`batch`, `FragmentRef.source`). An input
+    `{source, many: true, batch}` reads every external object the build lists in that role (one id is a list of one;
+    repeats are read once, with a warning); a list role read by an input without `many` fails the production, and a
+    producer has at most one list input. The ids are cut into consecutive batches of `batch` (default 50) in list order;
+    an empty list, or a missing role of an optional input, is one empty batch (the producer runs once); a missing role of
+    a required input fails the production. Every element is loaded like a single source (decision 4: the admin's context,
+    the record the connector read returned, shared-credential visibility, model-readable tier, an inspected scan, the core
+    parser for the media type), in two steps: the elements of a batch are read first (their records and sizes, no bytes),
+    the batch is cut into consecutive calls whose documents hold at most `maxBuildBytes` together by those sizes, and a
+    call's documents are fetched, checked and parsed only when its turn comes, so at most `maxBuildBytes` of documents
+    (and their parsed models) are held per batch; a document over `maxBuildBytes` alone is skipped (`retry: false`). At
+    most `listReadConcurrency` (4, option `readConcurrency`) reads or loads run at a time per production,
+    `batchConcurrency` (2) batches at a time. The function gets `lists[slot]` (the call's elements in list order) and
+    `batch: {index, of}` (the batch the call belongs to); its single slots are the same in every call. Outputs are
+    concatenated in batch order and element order (refusal indices count over the concatenation). A fragment in a list
+    slot names its element by `source`, the element's digest; a digest outside its own call's elements is refused (an
+    entry must not depend on another call), and a single slot's fragment that names `source` must name that slot's digest.
+    Each call is verified while its documents are parsed and keeps only verified entries and source rows. A document that
+    cannot be read (`retry: true`), checked or parsed (`retry: true`), that is over the cap alone or that the producer
+    fails on alone (decision 19; both `retry: false`) is skipped: listed with external id and reason in the composition
+    (`skipped`, first 200, `skipped_count`), in the production result and the sync report; its producer's catalogs are
+    no longer complete (decision 14) and every view of the root says so (decision 22). When more than `maxSkippedShare`
+    (0.5) of a list's ids are skipped, for whatever reason, the production fails with the counts by cause: a connector
+    outage or a broken pack never replaces a root (or the current root of a line) with one that lost most of its list,
+    and the sync exits with 1. The build is recorded with each list role by reference, `{list, count}` (`RecordedBuild`
+    in the composition and the generate action), the listed ids kept once as an object named by `list`. The generate
+    action summarises each list (count, digest of the listed ids, digest of the [id, digest] pairs used, digest of the
+    pairs of every object read, the first 50 skipped ids with `retry`); its `sources` and `inputs` keep the single sources
+    only. A list element's basis is that of a build role.
+17. **Stored reads used again** (`max_age_seconds`). Every read of a list element through the port that gives a record
+    writes a `read` action (`knowledge.sources@1`, index `knowledge.read` = external id) naming the source_artifact record
+    and the digest. A later read of the same id within `listMaxAgeSeconds` (86400; option `maxAgeSeconds` per production
+    or sync, CLI `--max-age`; 0 reads every one again) uses that record, and its bytes are fetched through
+    `Artifacts.source` pinned to it, so every check is applied again with the admin of this sync; when one fails now (the
+    record became unreadable, a finding was accepted since and a new read would pass), the object is read again. The age
+    is counted from the read action. A dry run writes no read action. An id too long for the index is always read.
+18. **Memoized producer calls.** A call of a list producer is keyed by SHA-256 of the canonical JSON of everything the
+    function receives: the component (`knowledge.producer@1`), the pack digest, the producer id, its function reference
+    and params, the build as handed to it (by the digest of its canonical JSON, list roles included), the list slot's name
+    with the batch position `{index, of}` and the call's elements in order, and the other slots, each element and slot as
+    `{sha256, media_type, parser}` (null for a missing optional slot). A stored output therefore stands for exactly that
+    call: a list producer may read `input.build` (applicability, the line) and still gets its own build's output, and a
+    root never depends on what was produced before (K01 R[1]). Every producer, with or without a list, receives
+    `build.root: null`: the root is what the production makes, and the previous root a sync knows would make the output
+    (and so the root) depend on production history. The validated output, as canonical JSON, is an object
+    (`Objects.put`), referenced from a `generate` action (component `knowledge.producer@1`, index `knowledge.memo` = key,
+    inputs the `src:` references of the elements and slots). A call that failed in a way a smaller call can avoid
+    (decision 19) is stored the same way with result error and the producer's sandbox limits; under equal limits the
+    failure is used again without running the call. When the key recurs the newest stored outcome is used; an output that
+    does not read back or validate is a miss. A reused output is verified like a fresh one, so reuse never changes a
+    digest. Reported as `calls: {made, reused}` (stored failures among the reused) in the production result, its generate
+    action and the sync report. Invalidation is by key only. An output the object store cannot keep (over its size limit)
+    is computed again next time, with a warning. Producers without a list slot run once per production and are not
+    memoized. Consequence: batches are shared within a build (a changed document re-runs only its call), not across builds
+    or a changed list (Needs, contracts).
+19. **A document the producer fails on.** A call that fails in a way a smaller call can avoid (the function threw, its
+    output was too large or outside producer-output@1, its input over the sandbox limit, the memory limit, the time limit)
+    is split in halves, down to the single document it fails on, which is skipped (`retry: false`). Before any split, the
+    producer must work on an empty batch (one call per production; else the production fails with 是生产器本身的问题).
+    The production fails instead of blaming documents when: no call of the producer with at least one document succeeded
+    in this production (made or stored) while some document failed alone; every document of a batch of two or more
+    failed alone; the calls made to isolate documents (each part of a failed call) reach `isolationCallsPerBatch` (16) ×
+    (the list's batches + 4); or more than `maxTimedOutCalls` (16) calls of the production ran past the time limit. A failed call and its parts are memoized (decision 18), so the next production of the same input replays the
+    split from stored outcomes without a sandbox call. Every other sandbox failure fails the production.
+20. **Large roots in bounded records.** A node holds at most `maxNodeEntries` (20000) entries: further entries for a full
+    node are refused with the reason (in output order, so deterministically), never moved to a made-up path (K01 R[3]).
+    When the composition rows, the unplaced rows or the list sources exceed `inlineRows` (1000), they go to part records
+    beside the `tree_root@1` record: composition rows grouped by kind (code-unit order) with the content of their entry
+    (`tree_root-rows@1`; a scan by kind reads its own parts and views read a root in bulk), unplaced rows by entry
+    (`tree_root-unplaced@1`), list sources by digest then external id (`tree_root-sources@1`). Each group is split at
+    content-defined boundaries (after a row whose entry or source digest's leading 32 bits are 0 modulo 512, once a part
+    has 64 rows; at most 2048 rows or about 2 MiB), so that a change moves only the boundaries around it. A part is
+    content-addressed (index `knowledge.part` = SHA-256 of its canonical schema and body), written in its own
+    transaction and found instead of written again by a later root (unchanged cases of a new build share every part).
+    The `tree_root@1` record then holds the part references (kind, rows, first and last sort key), the single sources,
+    counts, `kinds` (rows per entry kind), refusals, skipped sources and warnings, and empty `composition` and
+    `unplaced`. Writes are chunked: nodes not yet stored are found level by level from the root (a stored node's subtree
+    is complete and shared), the entries of the new nodes and of the unplaced rows not yet stored for the product are
+    checked eight at a time and written `writeChunk` (500) per transaction, `writeConcurrency` (4) transactions at a
+    time, then the nodes by height from the leaves up (a node only after its whole subtree), then the parts, then the
+    composition record with the generate action in one transaction: no root exists before that last transaction.
+    `CompositionView` reads both forms: the rows at a path by binary search over each kind's parts (a cache of at most
+    48 parts and 64 MiB of their JSON text), every row of some kinds part by part without filling the cache. Tree reads (get_nodes, the TreeReader) use
+    a part row's content only when it hashes to the entry digest, else the entry record.
+21. **The entry-level version difference** (`KnowledgePort.diffEntries`, K01 R[1]). Both trees are walked in parallel by
+    digest (equal subtrees are never read) to the nodes whose own entry lists differ, a node on one side only included;
+    the kinds of their entries come from the composition rows at the path (newest composition of each root), else from
+    the entry records. A path is a change when its entries of the given kinds differ: `added` (none before), `removed`
+    (none after), `modified`, with both digest lists sorted; changes are sorted by path text in code units, at most
+    `limit` (default 20000) with `total` and `truncated`. `diffRoots` is unchanged.
+22. **The knowledge views** (`createKnowledgeReader`, `contracts/src/views.ts`). Ids `knowledge:impact:<product>:<from>..<to>`
+    (`changed`, `attached`; default definition, behaviour and case), `knowledge:facets:<product>:<build>?kind=&by=` (one
+    to six distinct field names), `knowledge:index:<product>:<build>?kind=&key=[&only=]` (at most 1000 values); query
+    values comma-separated and percent-decoded; the two builds of an impact id are split at the first literal `..`
+    before decoding (an escaped `.` stays in a name); an unknown or repeated parameter, a kind outside `entry_kind`, a
+    field name outside `DataFieldName`, an empty value or a pinned `@revision` other than the current one is malformed.
+    The product resolves by id or any name, a build of any family and case through its aliases to the root it uses
+    (`rootOfBuild`), shown in its stored spelling; the reader must be an enabled admin or read the product
+    (`PacksPort.readableProducts`). Refusals are `ok: false` with the Chinese reason for the admin log (the engine shows
+    SOURCE_UNAVAILABLE). Every list is cut by its exact canonical bytes against `maxViewBytes` (15 MiB, the core JSON
+    parser of a run reads 16 MiB) less 64 KiB for the fixed fields and notes, and the whole answer is checked once more
+    (trailing items dropped until it fits), so a cut answer is always served; the totals count everything. A root whose
+    composition skipped listed sources (decision 16) gets a note naming the build, the count and the producers: what those
+    sources would give is unknown, not absent. *Impact*: the changes of decision 21 for the changed kinds; placements are
+    the attached entries filed exactly at a changed path in each root (only paths that have some); every named entry once,
+    cited in the later root where it is on the later side of a kept path, else at its first path in the later root when
+    it is there (found by reading the rows of its kind), else in the earlier root; paths kept in path order at
+    MAX_IMPACT_PATHS, MAX_IMPACT_ENTRIES or the byte budget, the content of an entry read only for kept paths; notes for a
+    cut, equal roots and roots without the attached or changed kinds. *Facets*: distinct entries of the kind; a list field
+    counts once per distinct element, a missing field, null and an empty list count as null, a value that is not a scalar
+    as its canonical JSON text (noted); an entry whose field combinations exceed 4096 is counted in `total` only
+    (flagged); at most `facetCombinations` (100000) distinct combinations are collected, later new ones are left out
+    (flagged, the listed rows then being those met first); rows sorted by the canonical JSON text of their values, field by
+    field, in code-unit order (facet-view@1), at most MAX_FACET_ROWS or the byte budget. *Index*: the text of each value
+    (strings as they are, other values as canonical JSON, null and missing never), only the `only` values when given
+    (those without entries are noted), keys in code-unit order, built from pairs (a key is always an own member), at most
+    MAX_INDEX_PER_KEY digests per key and MAX_INDEX_ENTRIES entries or the byte budget, cut before a key; the value
+    `__proto__` is not listed as a key (a JSON reader that builds plain objects would take it for the prototype; noted,
+    counted in `total_keys`); the content of an entry is held during the scan only while the held entries fit the budget,
+    and a listed entry not held is read in a second scan. The answer is built, checked against its schema (the built object
+    is stored, never a parsed copy) and stored as the original (`application/json`, generated by `knowledge.views@1` from
+    `tree:<root>/`, projected, readable by the caller and admins, not shareable) with a `meta` artifact (a Chinese title).
+    When the records' scan of the derived bytes has a hit (text that entered the tree because an administrator accepted a
+    source's findings, say), the entries (impact, index) or rows (facets) whose own text has hits are left out with a note
+    naming their tree references and the answer is computed and stored again; a changed entry with a hit takes its path
+    out of an impact view, an attached one only itself; a hit that remains refuses the read. Revision: the root digests
+    joined by `..`; manifest: a `generate` action of `knowledge.views@1`. Equal content gives equal bytes; a computed
+    answer is kept in memory (4) by request and roots. `routeKnowledgeViews(views, connectors)` gives the run engine one
+    reader; the knowledge service itself reads through the connectors only.
 
 ## Limits
 
 - The plan input holds the parsed model of every page read so far (the contract); a very large site can exceed the
   sandbox input cap (128 MiB here), which fails the sync with the reason.
+- The plan's answer repeats every list in every build that lists it (the contract) and is at most 64 MiB, the sandbox's
+  largest output: about one million listed ids of 60 bytes in one sync (measured: 300 builds of 300 ids of 225 bytes,
+  20 MB, read in about half a second). More fails the sync with the reason (Needs, contracts: declare a list once).
 - Without `recheck`, a source that changes behind the same external id is not noticed (released builds' files do not
   change; manuals mapped by template may). Run `knowledge sync --recheck` after a manual update. A missing optional
   source is noticed when it appears.
@@ -197,11 +362,46 @@ catalogs, grounds and provenance.
   node's child list is never split over pages.
 - The one-sync-per-product rule and the queue of write phases hold within one process; a sync from another process at
   the same time can still write a shared node record twice (harmless: content-addressed, read by digest).
-- `builds()` and the pointer reconciliation scan every build record and production of the product (fine for thousands).
+- `builds()` and the pointer reconciliation read every build record of the product (one per change of a build's
+  identity, never per list change) and one production per base build (an indexed newest-first lookup).
 - A credential found later in a source already in a root does not hide the tree's text; produce again.
 - An entry record is written per product the first time it appears; a subtree shared from another product's root does
   not add records for this product, so `entry:` reads of those entries are answered for the first product's readers only.
-- `diffRoots` and `builds` take no reader (the port); callers check the reader first.
+- `diffRoots`, `diffEntries` and `builds` take no reader (the port); callers check the reader first.
+- Stored producer outputs are shared within a build only: another build, or a changed list of the same build, runs every
+  batch again, because the build (its list included) is part of what a list producer receives (decision 18; measured:
+  the second build of the scale corpus makes all 61 calls in 10.1 s instead of 1 in 8.8 s). Batches stay consecutive
+  slices of the listed ids; content-defined batch boundaries would help only once list calls receive no build (Needs,
+  contracts), since until then any change of the list changes every key.
+- A list producer's entries must depend only on their own document: the Hub calls it on parts of a batch to isolate a
+  document it fails on and to keep a call within the byte cap (decisions 16, 19). A producer that combines documents of
+  one call can give other entries for a split call (the contract says only "not on another batch"; Needs, contracts).
+- A call that timed out is split like any isolatable failure, and how a batch is split then depends on the machine's
+  load: for a producer that follows the rule above the root is the same either way.
+- A plain sync tries again only the first 50 skipped ids of a list; with more, `recheck` reads all of them again.
+- A production with more than half of a list skipped fails (decision 16): a build whose documents are mostly unreadable
+  for a while keeps its last root (or none) until enough of them read again.
+- A node over `maxNodeEntries` refuses the excess entries; nothing splits a node.
+- Chunked writes are not one transaction: a production that fails after some chunks leaves nodes, entries and parts
+  behind (content-addressed and complete bottom-up, shared by the next production), but no root and no completed
+  production.
+- The views trust the entry content in composition parts (the record digest is verified when a part is read and the
+  content was verified when the root was produced); get_nodes and the TreeReader verify each entry digest again.
+- A view answer is cut at `maxViewBytes` so that a run's core JSON parser (16 MiB) can read it; the measured impact
+  view of 400 changed paths with 18,000 attached cases is 13 MB, close to that budget, and the index of 180,000 cases by
+  document is cut at 409 of 3,000 keys (15.6 MB).
+- The views' notes are the only place a reader learns that skipped sources make an answer incomplete: a pack function
+  cannot read them reliably (Needs, contracts: a machine-readable field).
+- A view leaves out an entry whose own text has credential scan hits, even when an administrator accepted the findings
+  of its source and get_nodes shows it: the records package carries no acceptance to bytes derived from a source (Needs,
+  records).
+- Besides the entries it answers with (bounded by the budget), a view holds the digest, path and size of every carrier
+  of its scan (index), every distinct combination up to `facetCombinations` (facets) or the digests of every changed
+  path (impact): that part grows with the root, not with the answer.
+- The caches of computed views (4 answers), part content keys and parts live in one process; another process finds
+  stored parts through the records and computes views again.
+- `builds()`, `resolveBuild()` and `RootInfo.build` carry no list roles (decision 10): a caller that needs the ids a
+  build lists reads them from its production (`{list, count}`, the object of `list`).
 
 ## Deviations from the brief
 
@@ -219,6 +419,29 @@ catalogs, grounds and provenance.
 - Builds whose line the caller did not ask for are not filtered by the driver: the plan function receives the line and
   is the authority.
 - Spans that stop at the root are not hung on the root (K01 R[4], K04 R[3]); deeper stops hang on that node.
+- The memo key identifies every element and slot by `{sha256, media_type, parser}` and adds the production component
+  (`knowledge.producer@1`), not by the digest alone: the function receives all three, and a Hub with another parser
+  version gives other models. It also covers the build and the batch position, which the function receives too.
+- Every producer receives `build.root: null` (ProducerInput.build is a KnownBuild): the root is what the production
+  makes, and handing the previous root would make a root depend on production history (decision 18).
+- A batch the producer fails on is split to find the document instead of failing the production, and a batch over the
+  byte cap is handed in several calls (decisions 16, 19): the contract speaks of one call per batch.
+- A production fails when more than half of a list is skipped, when the producer is not shown to work on documents, or
+  over the isolation budget (decision 19); the brief says only that a failure of one build never stops the others.
+- The plan's answer is checked build by build (a bad build fails alone), not as one sync-plan-output@1 (decision 12).
+- `tree_root@1` gained optional `parts`, `skipped`, `skipped_count` and `kinds`, its `build` keeps list roles by reference
+  (`RecordedBuild`), `knowledge-build@1` keeps single roles only and gained `lists`, and the three part schemas are new,
+  all in place (still no Hub has written them); the integrator should confirm this or ask for `@2`. Composition parts
+  repeat the content of their entries (the entry records stay) so that views and catalogs read a large root in bulk.
+- Facets count a missing field, null and an empty list as null, a value that is not a scalar as its canonical JSON text,
+  and leave out (flagged) an entry whose field combinations exceed 4096; their rows are in code-unit order of the
+  canonical JSON text of the values (facet-view@1 says "the values in code-unit order"; read so, `"1"` sorts before
+  `1`, `10` before `9`, strings before `false`, `null` and `true`). Index keys are the text of the values, so 1 and "1"
+  share a key, and `__proto__` is never a key. A view read also returns a `meta` artifact (its title), and a pinned
+  `@revision` must be current.
+- A view leaves out the entries or rows whose text the credential scan flags, with a note, instead of refusing the read
+  (decision 22).
+- `max_age_seconds` applies to list sources; single sources are read whenever a build is produced, as before.
 
 ## Tests
 
@@ -258,6 +481,96 @@ candidates, reuse, re-placement after a judge failure and after calibration, a q
 description cut inside a surrogate pair, masked calibration samples without the sampled entry and with none questions);
 the layers; the published JSON Schemas of the registered shapes and their kind, level and producer rules.
 
+Milestone 2 (`lists.test.ts`, `memo.test.ts`, `views.test.ts`, `lists-sync.test.ts`, `scale.test.ts`): list slots in
+batches (boundaries and order, element digests in fragments, the summary in the generate action), documents that cannot
+be read or whose connector fails, hostile documents (a credential hit, a JSON document that is no mind map and makes the
+producer throw, a document that crashes it, bytes no core parser takes; each skipped in list order, the producer's
+failures isolated by splitting), a fragment naming a digest outside its batch, a producer that fails on an empty batch
+too, the byte cap of a batch, optional and missing lists, a role of one id, a list read without `many`, two list inputs,
+repeated ids; stored loads used again within `max_age_seconds`, read again with 0, after a day, and after a credential
+finding was accepted; the node entry cap; memoized calls (stored outputs and their records, another build running every
+batch, the same root with and without stored outputs, one changed document re-running only its batch, other tree bytes
+re-running every batch, a previous root not changing a key, the memo key recipe with the build and the batch);
+compositions in parts (the same answers as one record for get_nodes, references,
+provenance and catalogs; parts by kind; parts found instead of written again); the views against hand-computed answers
+(every change kind, attached entries on both sides, case-only changes, the reverse direction, equal roots, kinds no root
+holds, truncation by the byte budget with full totals, diffEntries with limits and unknown roots, facets over scalar,
+list and missing fields, the combination cap, index with `only`, the index byte budget, aliases and product names,
+determinism, the stored answer's readers, the revision pin, the manifest, the permission refusal, a disabled reader,
+unknown products and builds, 17 malformed ids, the router); the sync of a build whose plan lists 500 documents (first
+sync, an idempotent rerun that reads only the failed document again, its appearance re-running one batch, recheck with
+a changed document and without one); and a reduced scale run (300 documents of 20 cases: parts, reuse of every load on a
+second build, shared case parts, the impact view equal to a command-level diff computed from the corpus and placements
+exactly the cases on the changed commands, facets and index equal to the corpus counts).
+
+The review of milestone 2 (`review.test.ts`, one scenario per finding, each failing on the reviewed code and passing now):
+a list producer that fails on every non-empty batch or answers outside the contract (the production fails, the sync
+reports it, no current root moves), a failing document's split replayed from stored failures (one sandbox call on the
+second production), more than half of a list skipped, the isolation budget, a document that times out alone (isolated
+and skipped), a skipped document withdrawing catalog completeness (the catalog's producer, and a catalog naming none)
+and noted by the impact, facet and index views, a list producer that reads `input.build` (its own build's line and
+applicability; the same root as in a fresh database; no change over a previous root), a recheck with 52 documents over
+the cap (skipped, not produced again), `__proto__` beside `constructor` and `toString` as data values (index, `only`,
+facets), a view over an entry whose source's credential findings were accepted (served without it, with its reference
+in a note), lists kept by reference (no ids in the build record, the generate action or the composition; the list
+object; no new build record for a changed list; no list roles in `builds()`, `resolveBuild()`, `rootOfBuild()`), a plan
+answer of 20 MB and a plan build with a bad list id, a batch over the byte cap handed in two calls with no document
+fetched before its call (instrumented `Artifacts.source` and object store), an attached entry that moved to an
+unchanged path cited in the later root, `diffEntries` with NaN, infinite, negative and fractional limits, an escaped
+`..` in a build name, the facet row order over mixed types, an index of 1,200 quote-heavy entries and a facet of 120
+long titles cut by exact bytes and served, distinct facet combinations over the limit, and an index whose listed entry
+is read again in a second scan. To show the failures, the reviewed code was rebuilt in a scratch copy of the worktree
+from the files as read before this change (the original suite gives the same 146 passes there) and the file was run
+against it: 21 of 21 fail, each on the finding's behaviour.
+
+## Scale (measured on this machine)
+
+Measured on 2026-10-22 on the development Mac (macOS, Node 24.17, 15 cores, 48 GB), temporary PostgreSQL from
+`hub/testing`, pack functions in the real sandbox under `sandbox-exec`, by a generator and a measuring script kept outside
+the repository. Corpus: a catalog of 4,000 commands (40 groups of 100, one integer parameter) for build A and the same
+catalog with the range of 400 commands changed for build B; 3,000 KityMinder documents of 60 cases each (180,000 cases,
+36 MB), each case on one command (45 per command), a defect id on every tenth case. Producers: the synthetic command
+producer and list producer of `test-support.ts` (batches of 50). The external reader reads the generated files from disk
+on demand and stores every read as a connector does. Both builds list all 3,000 documents.
+
+| Step | Wall time | What happened |
+| --- | --- | --- |
+| first build | 49.1 s | 3,000 reads, 61 producer calls, 184,000 entries, 4,042 nodes, 332 part records (324 of rows) |
+| second build | 8.8 s | 3,000 loads used again (one read: the new catalog), 60 of 61 calls from stored outputs, 442 new nodes, 316 of 324 row parts shared |
+| impact view A..B | 3.1 s | 400 changed paths, 18,000 attached cases, 18,800 entries, 13.1 MB, not cut |
+| facets (case by module, has_expected) | 1.2 s | 20 rows over 180,000 cases |
+| index (case by defects) | 1.5 s | 50 keys, 18,000 entries, 11.7 MB |
+| the same index again | 0.2 s | answered from the computed-view cache |
+
+Measured again on 2026-10-22 after the review's fixes (same machine and corpus, a measuring script outside the
+repository; the batches of the second build are no longer shared with the first, decision 18):
+
+| Step | Wall time | What happened |
+| --- | --- | --- |
+| first build | 41.6 s | 3,000 reads, 61 producer calls, 184,000 entries, 4,042 nodes, 336 part records |
+| second build | 10.1 s | 3,000 loads used again, 61 of 61 calls made (another build), 442 new nodes |
+| the second build again | 5.6 s | 60 of 61 calls from stored outputs, the same root |
+| impact view A..B | 2.3 s | 400 changed paths, 18,000 attached cases, 13.05 MB, not cut |
+| facets (case by module, has_expected) | 1.3 s | 20 rows over 180,000 cases |
+| index (case by defects) | 1.7 s (0.1 s again, from the cache) | 50 keys, 18,000 entries, 11.7 MB |
+| index (case by document) | 3.7 s | cut at 409 of 3,000 keys, 24,540 of 180,000 entries, 15,640,062 bytes (at most 15,728,640): served |
+
+The resident set of that process (sampled every 100 ms, the corpus and the fake connector's store included) peaked at
+1,901 MiB during the index by document.
+
+Every answer was checked against the corpus: the impact view's changed paths equal the command-level diff the generator
+wrote from the two catalogs, its attached cases are exactly the corpus's cases on those commands, the facets count all
+180,000 cases and the index has the corpus's 50 defect ids. The composition record stays at 126 KB. Memory of the Hub
+process: 1,686 MiB maximum resident set (kernel figure from `/usr/bin/time -l`; 1,669 MiB sampled every 100 ms), most of
+it garbage the collector had not yet reclaimed: with a full collection forced every 500 ms the live heap (heapUsed plus
+external) peaked at 343 MiB and the resident set at 1,001 MiB; with `--max-old-space-size=1024` the run took 51.3 s,
+9.7 s, 2.9 s, 1.5 s and 1.6 s at a 1,184 MiB peak. Two earlier runs before the last memory changes: 57.9 s / 11.7 s /
+5.9 s / 2.2 s / 3.4 s at 1,628 MiB, and 48.9 s / 9.4 s / 3.1 s / 1.4 s / 1.6 s at 1,609 MiB. Not measured: the sandbox
+children (each limited to 1 GiB plus headroom by the producer limits) and PostgreSQL's own memory, real connectors and
+networks, a typed-judgment model placing spans (every synthetic case has a command), and real mind maps (their statements
+and data are larger than the synthetic ones, so the impact view of a real version difference may be cut at the byte
+budget). The suite runs a reduced version (`scale.test.ts`: 300 documents of 20 cases, about 4 s on this machine).
+
 ## Needs from other packages
 
 - **contracts**: (1) vocabulary axes for the composition basis (K01 R[5], R[7]: 产品发布记录、设备回显、声明) and for the
@@ -293,3 +606,44 @@ the layers; the published JSON Schemas of the registered shapes and their kind, 
   `entry_kind` codes (the pack already uses `definition`); since the command tree and the manual both give
   `definition` entries, declare the command catalog with `producer` set to the command-tree producer. Paths must be
   canonical tree path text and fragments must name their slot when a producer has more than one input.
+
+Milestone 2:
+
+- **ports, runs and server (integrator)**: `KnowledgePort.diffEntries` is new in `hub/ports.ts` (with `EntryDiff`); the
+  fakes that implement the port do not compile until they add it: `FakeKnowledge` in
+  `hub/runs/engine/testing/knowledge.ts` and in `hub/server/fakes.ts` (for example
+  `async diffEntries() { return null; }`, or a fake over their toy trees).
+- **server (assembly)**: give the run engine `routeKnowledgeViews(createKnowledgeReader(knowledge), external)` as its
+  `ExternalReaderPort`, and keep the connectors' reader alone as the knowledge service's `external` (the views are not a
+  source of the tree). `KnowledgeRecords` now takes `objects` (the records kit already has it). Register the
+  `knowledge` external type where the console lists resources, if it should appear there.
+- **runs**: none for lists: `builds()`, `resolveBuild()` and `RootInfo.build` carry no list roles any more (decision 10),
+  so the stripping in `hub/runs/engine/target.ts` (`selectCandidate`) is now redundant but harmless.
+- **contracts** (milestone 2, after the review): (1) list calls without build-specific input: `ProducerInput.build`
+  absent (or a fixed, build-free context) for a producer with a list slot, or a `Producer` flag that declares its output
+  independent of the build; the reuse key could then leave the build out again (another build listing the same
+  documents shares every batch) and content-defined batch boundaries would let an inserted document re-run only its
+  neighbourhood. Until then the key covers the build (decision 18). (2) Say on `ProducerSource.many` that an entry must
+  depend only on its own element, not on the other documents of its call: the Hub calls a producer on parts of a batch
+  (decisions 16, 19). (3) A machine-readable completeness field on impact-view@1, facet-view@1 and index-view@1 (for
+  example `unknown: {skipped_sources, producers}`): today the notes alone say that a root's skipped sources make an
+  answer incomplete, and a pack function cannot rely on Chinese text. (4) State the row order of `FacetView.rows`
+  precisely (this package reads "the values in code-unit order" as the canonical JSON text of each value) or change it.
+  (5) Let a plan declare a list once and builds refer to it by role, so that one sync is not bounded by repeating every
+  list in every build (64 MiB of plan answer). (6) Say whether `ProducerInput.lists` may hold more than one slot (this
+  package allows one list input per producer). (7) Say on the views that an answer is cut to fit a run's JSON parser
+  (16 MiB), with the truncated flags already there.
+- **records**: (1) carry an administrator's acceptance of a source's credential findings to generated bytes derived from
+  that source (for example an ingest option naming the admitted sources, accepting findings whose matched text is in
+  their accepted findings, or acceptance by finding fingerprint), so that a view need not leave out an entry that
+  get_nodes shows (decision 22). (2) A batched `find` by many index values (or `get` by many digests) would cut the
+  per-entry existence checks of a first production (184,000 queries on the measured corpus) and the per-document lookups
+  of stored reads.
+- **platform**: consider starting the persistent Hub with `--max-old-space-size=1024` (or 1536): on the measured corpus
+  the resident set stayed at 1.2 GB instead of 1.7 GB at the same speed (see Scale).
+- **packs (agile-case-index)**: list case documents in a stable order, new ones last; give every fragment of a list slot
+  its `source`; make each entry depend on its own document only (the Hub may call the producer on part of a batch); the
+  producer may read `input.build` (the key covers it), at the price of batches not shared across builds; keep the
+  documents it cannot handle rare (more than half of a list skipped fails the production); give cases data fields the
+  views can count (`module`, `line`, `has_expected`, `defects`, ...) as scalars or lists of scalars, and avoid the value
+  `__proto__`.

@@ -4,13 +4,14 @@
 // contracts/generated/schemas/*.json. Keys are `name@major`.
 //
 // Record layout (hub/knowledge/README.md): nodes and entries are `tree_node` records (tree content, never a ground on their
-// own, B01 R[5]), compositions are `tree_root` records, current-root moves are `root_pointer` records, builds, calibration
-// sets, observations and candidates are `claim` records with the schemas below. Digests of nodes and entries cover the
-// normalised content only (K01 R[7], K02 R[4]); see nodeDigest and entryDigest in hub/knowledge.
+// own, B01 R[5]), compositions are `tree_root` records (a large one with `tree_root` part records beside it), current-root
+// moves are `root_pointer` records, builds, calibration sets, observations and candidates are `claim` records with the
+// schemas below. Digests of nodes and entries cover the normalised content only (K01 R[7], K02 R[4]); see nodeDigest and
+// entryDigest in hub/knowledge.
 import { z } from 'zod';
 import { EntryKindSchema, NodeLevelSchema, ProvenanceTypeSchema, ReadTierSchema, type NodeLevel } from '../generated/vocabulary.ts';
 import { IsoTime, PackId, PackVersion, Sha256, UserId, Versioned } from './common.ts';
-import { Applicability, BuildInfo, CatalogDeclaration, PackFunctionRef, ProductId } from './product.ts';
+import { Applicability, BuildInfo, CatalogDeclaration, MAX_LIST_SOURCES, PackFunctionRef, ProductId } from './product.ts';
 import { ExternalObjectId, TreePath, referenceUriOf } from './reference.ts';
 
 // ---------------------------------------------------------------- levels and bases
@@ -35,6 +36,24 @@ export const CompositionBasisSchema = z.enum(COMPOSITION_BASES);
 
 const SrcReferenceUri = referenceUriOf('src');
 const sortedUnique = (values: readonly string[]): boolean => values.every((v, i) => i === 0 || values[i - 1] < v);
+
+// ---------------------------------------------------------------- builds as recorded
+
+/**
+ * A list role of a build (product@1 ProducerSource many) kept by reference, so that no record grows with a list: the ids as
+ * listed, as their canonical JSON array, are the object with this digest.
+ */
+export const ListReference = z.strictObject({
+  list: Sha256.describe('SHA-256 of the canonical JSON array of the listed external ids, as listed: the object that holds them'),
+  count: z.number().int().nonnegative().max(MAX_LIST_SOURCES).describe('ids listed, repeats included'),
+});
+export type ListReference = z.infer<typeof ListReference>;
+
+/** BuildInfo as a production records it (tree_root@1, the generate action): single roles by external id, list roles by reference. */
+export const RecordedBuild = BuildInfo.extend({
+  sources: z.record(z.string(), z.union([ExternalObjectId, ListReference])).describe('external objects by role; a role that holds a list is kept by reference'),
+});
+export type RecordedBuild = z.infer<typeof RecordedBuild>;
 
 /** Ids of the producers of the product pack (product@1 Producer.id) that gave an entry, sorted and unique. */
 const ProducerIds = z
@@ -172,13 +191,72 @@ export type RootCatalog = z.infer<typeof RootCatalog>;
 export const MAX_KEPT_PROBLEMS = 200;
 
 /**
+ * A listed source (an element of a list slot, product@1 ProducerSource many) the production could not use: it could not be
+ * read, checked, parsed or stored, or the producer failed on it alone. It does not stop the production (README decision 16).
+ */
+export const SkippedSource = z.strictObject({
+  producer: z.string().min(1),
+  slot: z.string().min(1),
+  external: ExternalObjectId,
+  reason: z.string(),
+});
+export type SkippedSource = z.infer<typeof SkippedSource>;
+
+/**
+ * A composition row with the content of its entry (tree_root-rows@1 parts): the bulk form views and catalogs read a large
+ * root in, instead of one entry record at a time. The content repeats the entry record; the entry digest covers it.
+ */
+export const CompositionContentRow = CompositionRow.extend({
+  statement: z.string(),
+  data: z.record(z.string(), z.unknown()),
+  applicability: Applicability.nullable(),
+});
+export type CompositionContentRow = z.infer<typeof CompositionContentRow>;
+
+/** One part record of a large composition: its row count and the sort keys of its first and last row. */
+export const CompositionPartRef = z.strictObject({
+  record: Sha256.describe('digest of the part record'),
+  rows: z.number().int().min(1),
+  first: z.string().describe('sort key of the first row: the path (composition rows), the entry digest (unplaced rows) or the source digest (sources)'),
+  last: z.string().describe('sort key of the last row'),
+});
+export type CompositionPartRef = z.infer<typeof CompositionPartRef>;
+
+/** A part of composition rows, all of one entry kind (so that a scan by kind reads its own parts only). */
+export const CompositionRowsPartRef = CompositionPartRef.extend({ kind: EntryKindSchema.describe('the kind of every row of the part') });
+export type CompositionRowsPartRef = z.infer<typeof CompositionRowsPartRef>;
+
+/**
+ * Parts of a large composition. Composition rows are grouped by kind (kinds in code-unit order), each group sorted by path
+ * then entry; unplaced rows are sorted by entry, sources by digest then external id.
+ */
+export const CompositionParts = z.strictObject({
+  composition: z.array(CompositionRowsPartRef).describe('tree_root-rows@1 records'),
+  unplaced: z.array(CompositionPartRef).describe('tree_root-unplaced@1 records'),
+  sources: z.array(CompositionPartRef).describe('tree_root-sources@1 records: the sources of list slots'),
+});
+export type CompositionParts = z.infer<typeof CompositionParts>;
+
+/** Rows of a large composition (tree_root-rows@1), of one kind, sorted by path then entry. Parts are content-addressed and shared between roots. */
+export const TreeRootRowsPart = z.strictObject({ rows: z.array(CompositionContentRow).min(1) });
+export type TreeRootRowsPart = z.infer<typeof TreeRootRowsPart>;
+
+/** Unplaced rows of a large composition (tree_root-unplaced@1), sorted by entry. */
+export const TreeRootUnplacedPart = z.strictObject({ rows: z.array(UnplacedRow).min(1) });
+export type TreeRootUnplacedPart = z.infer<typeof TreeRootUnplacedPart>;
+
+/** Sources of the list slots of a large composition (tree_root-sources@1), sorted by digest then external id. */
+export const TreeRootSourcesPart = z.strictObject({ rows: z.array(RootSource).min(1) });
+export type TreeRootSourcesPart = z.infer<typeof TreeRootSourcesPart>;
+
+/**
  * The composition record of one produced root (tree_root@1, K01 R[5]-R[7]): product line, version identity, root digest,
  * the producing product pack, every source with its basis and decider, and per entry the fragments that provide it.
  */
 export const TreeRootBody = z.strictObject({
   product: ProductId,
   version: z.strictObject({ line: z.string().min(1), build: z.string().min(1), family: z.string().min(1), platform: z.string().min(1).nullable() }),
-  build: BuildInfo.describe('the build the root was produced for, as the sync listed it'),
+  build: RecordedBuild.describe('the build the root was produced for, as the sync listed it (list roles by reference)'),
   root: Sha256.describe('digest of the root node'),
   producer: z.strictObject({
     pack: PackId,
@@ -187,11 +265,14 @@ export const TreeRootBody = z.strictObject({
     id: z.string().min(1).describe('pack id@version'),
     producers: z.array(z.strictObject({ id: z.string().min(1), function: PackFunctionRef })),
   }),
-  sources: z.array(RootSource),
-  composition: z.array(CompositionRow).describe('sorted by path, then entry'),
-  unplaced: z.array(UnplacedRow),
+  sources: z.array(RootSource).describe('every source; with parts, the sources of single slots only (the list sources are in parts.sources)'),
+  composition: z.array(CompositionRow).describe('sorted by path, then entry; empty when the rows are in parts'),
+  unplaced: z.array(UnplacedRow).describe('sorted by entry; empty when the rows are in parts'),
+  parts: CompositionParts.optional().describe('a large composition keeps its rows, unplaced rows and list sources in part records, so that no record grows with the root'),
   refused: z.array(RefusedEntry).max(MAX_KEPT_PROBLEMS),
   refused_count: z.number().int().nonnegative(),
+  skipped: z.array(SkippedSource).max(MAX_KEPT_PROBLEMS).optional().describe('listed sources the production could not use (first 200 kept)'),
+  skipped_count: z.number().int().nonnegative().optional(),
   catalogs: z.array(RootCatalog),
   counts: z.strictObject({
     nodes: z.number().int().nonnegative(),
@@ -199,6 +280,7 @@ export const TreeRootBody = z.strictObject({
     placed_by_model: z.number().int().nonnegative(),
     unplaced: z.number().int().nonnegative(),
   }),
+  kinds: z.record(EntryKindSchema, z.number().int().nonnegative()).optional().describe('composition rows per entry kind'),
   warnings: z.array(z.string()).max(MAX_KEPT_PROBLEMS),
   warnings_count: z.number().int().nonnegative(),
   produced_at: IsoTime,
@@ -227,10 +309,19 @@ export type RootPointerBody = z.infer<typeof RootPointerBody>;
 
 // ---------------------------------------------------------------- builds (kind claim)
 
-/** A build as the product pack's sync listed it (knowledge-build@1). The newest record of a name wins. */
+/**
+ * A build as the product pack's sync listed it (knowledge-build@1). The newest record of a name wins. A role that holds a list
+ * is named in `lists` and left out of `sources`: the ids a production read are kept with that production (by reference), so
+ * a list that changes writes no new build record.
+ */
 export const KnowledgeBuildBody = z.strictObject({
   product: ProductId,
-  build: BuildInfo,
+  build: BuildInfo.extend({ sources: z.record(z.string(), ExternalObjectId).describe('the single roles by external id; a role that holds a list is named in lists') }),
+  lists: z
+    .array(z.string().min(1))
+    .refine((roles) => roles.every((role, i) => i === 0 || roles[i - 1] < role), 'list roles are sorted and unique')
+    .optional()
+    .describe('roles of the build that hold a list, sorted; absent when there is none'),
   pack: z.strictObject({ id: PackId, version: PackVersion, digest: Sha256 }),
   plan: Sha256.nullable().describe('the parse action of the plan round that listed it'),
   sync: z.string().nullable(),
@@ -299,6 +390,9 @@ export const schemas: Record<string, z.ZodType> = {
   'tree_node@1': TreeNodeBody,
   'knowledge-entry@1': KnowledgeEntryBody,
   'tree_root@1': TreeRootBody,
+  'tree_root-rows@1': TreeRootRowsPart,
+  'tree_root-unplaced@1': TreeRootUnplacedPart,
+  'tree_root-sources@1': TreeRootSourcesPart,
   'root_pointer@1': RootPointerBody,
   'knowledge-build@1': KnowledgeBuildBody,
   'knowledge-calibration@1': KnowledgeCalibrationBody,

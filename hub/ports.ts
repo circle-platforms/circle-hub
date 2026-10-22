@@ -2,7 +2,8 @@
 // from its api.ts; a package that needs one takes it as an argument and imports nothing else of the provider. Tests use fakes.
 // A port answers only what its consumers need; whatever else a provider offers stays in the provider's own api.ts.
 import type { z } from 'zod';
-import type { PackKind } from '../contracts/generated/vocabulary.ts';
+import type { EntryKind, PackKind } from '../contracts/generated/vocabulary.ts';
+import type { PathChange } from '../contracts/src/views.ts';
 import type { Coverage } from '../contracts/src/common.ts';
 import type { ChecksFile, KnowledgeFile, PackManifest, RequirementsFile, SlotsFile, WorkflowFile } from '../contracts/src/pack.ts';
 import type { PackSummary } from '../contracts/src/run.ts';
@@ -234,6 +235,21 @@ export interface RootDiff {
   modified: string[];
 }
 
+/**
+ * The entry-level version difference of two roots (K01 R[1]: the version difference is the regression scope): every path
+ * whose own entries of the given kinds differ, with their digests in each root and the change kind (axis change_kind).
+ */
+export interface EntryDiff {
+  from: string;
+  to: string;
+  kinds: EntryKind[];
+  /** Sorted by path (code units of the canonical path text); at most `limit`. */
+  changes: PathChange[];
+  /** Every changed path, also those beyond the limit. */
+  total: number;
+  truncated: boolean;
+}
+
 export interface KnowledgePort {
   /** Builds the knowledge base knows for a product, any name family, newest first. */
   builds(product: string, filter?: { line?: string; released?: boolean }): Promise<KnownBuild[]>;
@@ -255,4 +271,10 @@ export interface KnowledgePort {
   /** Absent and forbidden give the same null (D05 R[3]). */
   getNodes(query: NodesQuery, reader: Principal): Promise<NodesPage | null>;
   diffRoots(from: string, to: string): Promise<RootDiff | null>;
+  /**
+   * Paths whose own entries of `kinds` differ between the roots: added (only in `to`), removed (only in `from`) or modified,
+   * with the digests before and after, sorted by path, at most `limit` (default 20000). Null when a root is unknown. Like
+   * diffRoots it takes no reader: callers check the reader first.
+   */
+  diffEntries(from: string, to: string, options: { kinds: readonly EntryKind[]; limit?: number }): Promise<EntryDiff | null>;
 }

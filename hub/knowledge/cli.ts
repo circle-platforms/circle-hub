@@ -14,13 +14,15 @@ export interface KnowledgeSyncArgs {
   dryRun: boolean;
   recheck: boolean;
   includeUnreleased: boolean;
+  /** List sources stored at most this many seconds ago are used again (null: the service's default; 0 reads every one). */
+  maxAgeSeconds: number | null;
 }
 
-export const KNOWLEDGE_SYNC_USAGE = 'knowledge sync --product <产品名> [--line <版本线>] [--dry-run] [--recheck] [--include-unreleased]';
+export const KNOWLEDGE_SYNC_USAGE = 'knowledge sync --product <产品名> [--line <版本线>] [--dry-run] [--recheck] [--include-unreleased] [--max-age <秒>]';
 
 /** Parses the arguments after `knowledge sync`. Throws KnowledgeError with the usage on anything unknown or missing. */
 export function parseKnowledgeSyncArgs(argv: readonly string[]): KnowledgeSyncArgs {
-  const out: KnowledgeSyncArgs = { product: '', line: null, dryRun: false, recheck: false, includeUnreleased: false };
+  const out: KnowledgeSyncArgs = { product: '', line: null, dryRun: false, recheck: false, includeUnreleased: false, maxAgeSeconds: null };
   const value = (name: string, inline: string | undefined, i: number): [string, number] => {
     if (inline !== undefined) return [inline, i];
     const next = argv[i + 1];
@@ -40,6 +42,13 @@ export function parseKnowledgeSyncArgs(argv: readonly string[]): KnowledgeSyncAr
         let line: string;
         [line, i] = value(name, inline, i);
         out.line = line;
+        break;
+      }
+      case '--max-age': {
+        let text: string;
+        [text, i] = value(name, inline, i);
+        if (!/^(0|[1-9][0-9]{0,9})$/.test(text)) throw new KnowledgeError(`--max-age 要是不小于 0 的整数秒；用法：${KNOWLEDGE_SYNC_USAGE}`);
+        out.maxAgeSeconds = Number(text);
         break;
       }
       case '--dry-run':
@@ -69,6 +78,7 @@ export async function knowledgeSync(knowledge: Knowledge, packs: PacksPort, by: 
     dryRun: args.dryRun,
     recheck: args.recheck,
     includeUnreleased: args.includeUnreleased,
+    ...(args.maxAgeSeconds === null || args.maxAgeSeconds === undefined ? {} : { maxAgeSeconds: args.maxAgeSeconds }),
   });
 }
 

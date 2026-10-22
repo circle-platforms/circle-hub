@@ -1,8 +1,9 @@
 // createKnowledge: wires the knowledge service. It provides KnowledgePort exactly as hub/ports.ts declares it, plus the
 // production, sync, current-root, calibration, placement, provenance and layer operations of this package.
 import type { JevClient } from '../jev/api.ts';
-import type { KnowledgePort, NodesPage, NodesQuery, PacksPort, ProductHandle, RootDiff, RootInfo, ExternalReaderPort } from '../ports.ts';
+import type { EntryDiff, KnowledgePort, NodesPage, NodesQuery, PacksPort, ProductHandle, RootDiff, RootInfo, ExternalReaderPort } from '../ports.ts';
 import type { KnownBuild } from '../../contracts/src/product.ts';
+import type { EntryKind } from '../../contracts/generated/vocabulary.ts';
 import type { Principal } from '../records/api.ts';
 import { pathSegments, type ParserRegistry, type TreeReader } from '../refs/api.ts';
 import type { CatalogView, SandboxLimits } from '../rules/api.ts';
@@ -16,6 +17,7 @@ import { produceTree, type ProduceInput, type ProduceResult } from './produce.ts
 import { TreeReading, type ProvenanceRow, type TreeLock } from './read.ts';
 import { KnowledgeStore } from './store.ts';
 import { syncProduct, type SyncOptions, type SyncReport } from './sync.ts';
+import { KnowledgeViews } from './views.ts';
 
 export interface KnowledgeOptions {
   records: KnowledgeRecords;
@@ -77,6 +79,8 @@ export interface Knowledge extends KnowledgePort {
   calibration: KnowledgeCalibration;
   placement: KnowledgePlacement;
   layers: { observations: ObservationLayer; candidates: CandidateLayer };
+  /** The knowledge views (impact, facets, index); createKnowledgeReader serves them as external objects. */
+  views: KnowledgeViews;
   /** Record access of this package (console and tests). */
   store: KnowledgeStore;
 }
@@ -108,6 +112,7 @@ export function createKnowledge(options: KnowledgeOptions): Knowledge {
   const reading = new TreeReading(context);
   const observations = new ObservationLayer(context, reading);
   const candidates = new CandidateLayer(context, reading);
+  const views = new KnowledgeViews(context, builds, reading);
 
   const buildCalibrationSet = async (input: BuildCalibrationInput): Promise<{ record: string | null; samples: number; state: CalibrationState | null }> => {
     await requireAdmin(context, input.by, '建立校准样例');
@@ -116,10 +121,11 @@ export function createKnowledge(options: KnowledgeOptions): Knowledge {
     const kind = input.kind ?? PLACEMENT_CHAIN;
     const composition = await reading.compositionOf(input.root);
     if (composition === null) return { record: null, samples: 0, state: await calibration.state(kind, model) };
-    const rows = composition.body.composition
-      .filter((row) => row.placement === undefined && row.path !== '/' && (input.kinds === undefined || input.kinds.includes(row.kind)))
-      .sort((a, b) => compareText(a.entry, b.entry) || compareText(a.path, b.path))
-      .slice(0, input.limit ?? 200);
+    const eligible: Array<{ entry: string; path: string; fragments: string[] }> = [];
+    for await (const row of composition.rows(input.kinds === undefined ? undefined : new Set(input.kinds))) {
+      if (row.placement === undefined && row.path !== '/' && (input.kinds === undefined || input.kinds.includes(row.kind))) eligible.push({ entry: row.entry, path: row.path, fragments: row.fragments });
+    }
+    const rows = eligible.sort((a, b) => compareText(a.entry, b.entry) || compareText(a.path, b.path)).slice(0, input.limit ?? 200);
     // The options of a question about one entry: the entry itself never describes an option (its own first line would hand
     // the model the answer), and every description is masked like the passage.
     const childrenAt = async (segments: string[], sampled: string, literals: readonly string[]): Promise<PlacementChild[]> => {
@@ -189,6 +195,7 @@ export function createKnowledge(options: KnowledgeOptions): Knowledge {
     treeReader: (lock?: TreeLock | null): TreeReader => reading.treeReader(lock ?? null),
     getNodes: (query: NodesQuery, reader: Principal): Promise<NodesPage | null> => reading.getNodes(query, reader),
     diffRoots: (from, to): Promise<RootDiff | null> => reading.diff(from, to),
+    diffEntries: (from: string, to: string, diffOptions: { kinds: readonly EntryKind[]; limit?: number }): Promise<EntryDiff | null> => reading.diffEntries(from, to, diffOptions),
 
     // ------------------------------------------------ extras
     produceTree: (input) => produceTree(context, input),
@@ -217,6 +224,7 @@ export function createKnowledge(options: KnowledgeOptions): Knowledge {
       place: (spans, tree, placeOptions) => placer.place(spans, tree, placeOptions),
     },
     layers: { observations, candidates },
+    views,
     store,
   };
 }

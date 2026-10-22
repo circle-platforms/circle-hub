@@ -302,11 +302,19 @@ describe('knowledge sync', () => {
     const failed = await throwing.knowledge.syncProduct(throwing.product, { by: throwing.admin });
     assert.match(failed.error ?? '', /计划函数第 1 轮运行失败：包内函数抛出了错误/);
     assert.deepEqual(failed.builds, []);
+    // A build that is not build-info@1 fails alone (a failed build of the report); an answer outside the envelope stops the sync.
     const invalid = await world(t, { pack: { functions: { 'plan.ts': 'export default function (input: unknown): unknown { return { fetch: [], builds: [{ name: "x" }], done: true }; }' } } });
     standardSite(invalid.external);
     const wrong = await invalid.knowledge.syncProduct(invalid.product, { by: invalid.admin });
-    assert.match(wrong.error ?? '', /sync-plan-output@1/);
+    assert.equal(wrong.error, null);
+    assert.deepEqual(wrong.builds.map((b) => [b.name, b.outcome]), [['x', 'failed']]);
+    assert.match(wrong.builds[0].reason, /第 1 个构建不符合 build-info@1/);
     assert.equal(await count(invalid, INDEX.buildProduct, 'acme', 'claim'), 0);
+    const envelope = await world(t, { pack: { functions: { 'plan.ts': 'export default function (input: unknown): unknown { return { fetch: "site:page:index", builds: [], done: true }; }' } } });
+    standardSite(envelope.external);
+    const broken = await envelope.knowledge.syncProduct(envelope.product, { by: envelope.admin });
+    assert.match(broken.error ?? '', /sync-plan-output@1/);
+    assert.deepEqual(broken.builds, []);
     const none = await world(t, { pack: { declaration: { sync: undefined } } });
     assert.match((await none.knowledge.syncProduct(none.product, { by: none.admin })).error ?? '', /没有声明 sync/);
   });

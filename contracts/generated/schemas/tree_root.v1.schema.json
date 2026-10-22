@@ -114,17 +114,29 @@
                 "pattern": "^[a-z][a-z0-9-]*:[a-z][a-z0-9_-]*:[^@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]+(?:@[^\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]+)?$"
               },
               {
-                "maxItems": 20000,
-                "type": "array",
-                "items": {
-                  "type": "string",
-                  "maxLength": 8192,
-                  "pattern": "^[a-z][a-z0-9-]*:[a-z][a-z0-9_-]*:[^@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]+(?:@[^\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]+)?$"
-                }
+                "type": "object",
+                "properties": {
+                  "list": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$",
+                    "description": "SHA-256 of the canonical JSON array of the listed external ids, as listed: the object that holds them"
+                  },
+                  "count": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 20000,
+                    "description": "ids listed, repeats included"
+                  }
+                },
+                "required": [
+                  "list",
+                  "count"
+                ],
+                "additionalProperties": false
               }
             ]
           },
-          "description": "external objects of this build by role the producers use, for example the command tree; a role may hold a list, for example every case document the build covers; empty for an alias without a tree of its own"
+          "description": "external objects by role; a role that holds a list is kept by reference"
         }
       },
       "required": [
@@ -138,7 +150,7 @@
         "sources"
       ],
       "additionalProperties": false,
-      "description": "the build the root was produced for, as the sync listed it"
+      "description": "the build the root was produced for, as the sync listed it (list roles by reference)"
     },
     "root": {
       "type": "string",
@@ -291,7 +303,8 @@
           "decided_by"
         ],
         "additionalProperties": false
-      }
+      },
+      "description": "every source; with parts, the sources of single slots only (the list sources are in parts.sources)"
     },
     "composition": {
       "type": "array",
@@ -405,7 +418,7 @@
         ],
         "additionalProperties": false
       },
-      "description": "sorted by path, then entry"
+      "description": "sorted by path, then entry; empty when the rows are in parts"
     },
     "unplaced": {
       "type": "array",
@@ -533,7 +546,134 @@
           "note"
         ],
         "additionalProperties": false
-      }
+      },
+      "description": "sorted by entry; empty when the rows are in parts"
+    },
+    "parts": {
+      "description": "a large composition keeps its rows, unplaced rows and list sources in part records, so that no record grows with the root",
+      "type": "object",
+      "properties": {
+        "composition": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "record": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$",
+                "description": "digest of the part record"
+              },
+              "rows": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              },
+              "first": {
+                "type": "string",
+                "description": "sort key of the first row: the path (composition rows), the entry digest (unplaced rows) or the source digest (sources)"
+              },
+              "last": {
+                "type": "string",
+                "description": "sort key of the last row"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "definition",
+                  "behaviour",
+                  "case",
+                  "defect",
+                  "observation"
+                ],
+                "description": "the kind of every row of the part"
+              }
+            },
+            "required": [
+              "record",
+              "rows",
+              "first",
+              "last",
+              "kind"
+            ],
+            "additionalProperties": false
+          },
+          "description": "tree_root-rows@1 records"
+        },
+        "unplaced": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "record": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$",
+                "description": "digest of the part record"
+              },
+              "rows": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              },
+              "first": {
+                "type": "string",
+                "description": "sort key of the first row: the path (composition rows), the entry digest (unplaced rows) or the source digest (sources)"
+              },
+              "last": {
+                "type": "string",
+                "description": "sort key of the last row"
+              }
+            },
+            "required": [
+              "record",
+              "rows",
+              "first",
+              "last"
+            ],
+            "additionalProperties": false
+          },
+          "description": "tree_root-unplaced@1 records"
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "record": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$",
+                "description": "digest of the part record"
+              },
+              "rows": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              },
+              "first": {
+                "type": "string",
+                "description": "sort key of the first row: the path (composition rows), the entry digest (unplaced rows) or the source digest (sources)"
+              },
+              "last": {
+                "type": "string",
+                "description": "sort key of the last row"
+              }
+            },
+            "required": [
+              "record",
+              "rows",
+              "first",
+              "last"
+            ],
+            "additionalProperties": false
+          },
+          "description": "tree_root-sources@1 records: the sources of list slots"
+        }
+      },
+      "required": [
+        "composition",
+        "unplaced",
+        "sources"
+      ],
+      "additionalProperties": false
     },
     "refused": {
       "maxItems": 200,
@@ -581,6 +721,44 @@
       }
     },
     "refused_count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "skipped": {
+      "description": "listed sources the production could not use (first 200 kept)",
+      "maxItems": 200,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "producer": {
+            "type": "string",
+            "minLength": 1
+          },
+          "slot": {
+            "type": "string",
+            "minLength": 1
+          },
+          "external": {
+            "type": "string",
+            "maxLength": 8192,
+            "pattern": "^[a-z][a-z0-9-]*:[a-z][a-z0-9_-]*:[^@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]+(?:@[^\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]+)?$"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "producer",
+          "slot",
+          "external",
+          "reason"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "skipped_count": {
       "type": "integer",
       "minimum": 0,
       "maximum": 9007199254740991
@@ -676,6 +854,32 @@
         "unplaced"
       ],
       "additionalProperties": false
+    },
+    "kinds": {
+      "description": "composition rows per entry kind",
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "enum": [
+          "definition",
+          "behaviour",
+          "case",
+          "defect",
+          "observation"
+        ]
+      },
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 9007199254740991
+      },
+      "required": [
+        "definition",
+        "behaviour",
+        "case",
+        "defect",
+        "observation"
+      ]
     },
     "warnings": {
       "maxItems": 200,

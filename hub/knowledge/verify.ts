@@ -19,18 +19,42 @@ export interface VerifiedFragment {
 }
 
 /**
- * Locates one fragment in the source of its slot. `slots` maps every declared input slot to its parsed source, or null
- * when an optional source could not be read.
+ * The sources one producer call can cite: every single slot (null when an optional source could not be read) and, for a
+ * producer with a list slot, the elements of this call's batch by digest.
  */
-export function verifyFragment(fragment: FragmentRef, slots: ReadonlyMap<string, ParsedSource | null>, loader: SourceLoader): Checked<VerifiedFragment> {
+export interface FragmentSources {
+  single: ReadonlyMap<string, ParsedSource | null>;
+  list: { slot: string; elements: ReadonlyMap<string, ParsedSource> } | null;
+}
+
+/** Sources of a producer without a list slot. */
+export function singleSources(slots: ReadonlyMap<string, ParsedSource | null>): FragmentSources {
+  return { single: slots, list: null };
+}
+
+/**
+ * Locates one fragment in the source it names: the source of its slot, or for a list slot the element of the batch whose
+ * digest the fragment gives as `source` (an element of another batch is not citable: an entry must not depend on another
+ * batch).
+ */
+export function verifyFragment(fragment: FragmentRef, sources: FragmentSources, loader: SourceLoader): Checked<VerifiedFragment> {
   let slot = fragment.slot;
   if (slot === undefined) {
-    if (slots.size !== 1) return { ok: false, reason: '生产器有不止一个输入槽，片段必须写明 slot' };
-    slot = [...slots.keys()][0];
+    const names = [...sources.single.keys(), ...(sources.list === null ? [] : [sources.list.slot])];
+    if (names.length !== 1) return { ok: false, reason: '生产器有不止一个输入槽，片段必须写明 slot' };
+    slot = names[0];
   }
-  if (!slots.has(slot)) return { ok: false, reason: `片段指向的输入槽 ${slot} 没有声明` };
-  const source = slots.get(slot) ?? null;
-  if (source === null) return { ok: false, reason: `输入槽 ${slot} 没有读到源文件` };
+  let source: ParsedSource | null;
+  if (sources.list !== null && slot === sources.list.slot) {
+    if (fragment.source === undefined) return { ok: false, reason: `列表输入槽 ${slot} 的片段必须用 source 写明它在这一批的哪份源文件里（那份源文件的摘要）` };
+    source = sources.list.elements.get(fragment.source) ?? null;
+    if (source === null) return { ok: false, reason: `片段写的源文件 ${fragment.source} 不在这一批的输入槽 ${slot} 里` };
+  } else {
+    if (!sources.single.has(slot)) return { ok: false, reason: `片段指向的输入槽 ${slot} 没有声明` };
+    source = sources.single.get(slot) ?? null;
+    if (source === null) return { ok: false, reason: `输入槽 ${slot} 没有读到源文件` };
+    if (fragment.source !== undefined && fragment.source !== source.sha256) return { ok: false, reason: `片段写的源文件 ${fragment.source} 不是输入槽 ${slot} 的源文件` };
+  }
   try {
     srcFragment(source.sha256, fragment.parser, fragment.selector, fragment.range);
   } catch (error) {

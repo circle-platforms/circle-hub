@@ -176,6 +176,129 @@ export function extraProducer(id: string, params: { entries?: unknown[]; unplace
   return { id, title: '附加生产器', function: { module: 'functions/extra.ts' }, inputs, params };
 }
 
+/**
+ * A list producer over synthetic mind maps (kityminder@1 models in input.lists.cases): every node with a non-empty
+ * `resource` tag list and a priority is a case, its children are the expected results; `[cmd: <group> <command>]` in the
+ * text files it under /commands/<group>/<command> (else it has no path and goes to placement); `#<digits>` in the text are
+ * linked defect ids. Params: `trace` adds a warning naming the batch and its documents; `foreign` makes the first entry of
+ * each batch cite that digest; a document whose root text is THROW, or a model without mind-map nodes, makes it throw.
+ */
+export const CASES_SOURCE = `
+export default function cases(input: any): unknown {
+  const p = input.params ?? {};
+  const list: any[] = input.lists?.cases ?? [];
+  const entries: any[] = [];
+  const warnings: string[] = [];
+  if (p.trace === true) warnings.push('batch ' + input.batch.index + '/' + input.batch.of + ': ' + list.map((d) => d.model.nodes[0].data.id).join(','));
+  const tree = input.slots?.tree;
+  if (p.withTree === true && tree) warnings.push('tree ' + tree.sha256.slice(0, 8));
+  for (const doc of list) {
+    const model = doc.model;
+    const root = model.nodes[0].data;
+    if (root.text === 'THROW') throw new Error('hostile document');
+    model.nodes.forEach((node: any) => {
+      const data = node.data;
+      if (!Array.isArray(data.resource) || data.resource.length === 0 || data.priority === undefined) return;
+      const m = /\\[cmd: ([a-z][a-z0-9]*) ([a-z][a-z0-9]*)\\]/.exec(node.text);
+      const expected = node.children.map((c: number) => model.nodes[c].text);
+      const defects = [...String(node.text).matchAll(/#(\\d+)/g)].map((x: any) => x[1]);
+      const source = p.foreign !== undefined && entries.length === 0 ? p.foreign : doc.sha256;
+      entries.push({
+        kind: 'case',
+        path: m === null ? null : '/commands/' + m[1] + '/' + m[2],
+        statement: node.text + (expected.length > 0 ? '\\n期望：' + expected.join('；') : ''),
+        data: { document: String(root.id), case: String(data.id), priority: data.priority, tags: data.resource, expected, defects, has_expected: expected.length > 0, module: root.module ?? null, line: root.line ?? null },
+        fragments: [{ slot: 'cases', source, parser: 'kityminder@1', selector: node.selector }],
+        applicability: null,
+      });
+    });
+  }
+  return { entries, warnings };
+}
+`;
+
+/** The list producer of synthetic cases: the `cases` role of a build, in batches of `batch`. */
+export function casesProducer(options: { batch?: number; optional?: boolean; params?: Record<string, unknown>; withTree?: boolean } = {}) {
+  const cases = { source: 'cases', many: true, ...(options.batch === undefined ? {} : { batch: options.batch }), ...(options.optional === undefined ? {} : { optional: options.optional }) };
+  return {
+    id: 'cases',
+    title: '用例',
+    function: { module: 'functions/cases.ts' },
+    inputs: options.withTree === true ? { cases, tree: { source: 'tree' } } : { cases },
+    params: { ...(options.params ?? {}), ...(options.withTree === true ? { withTree: true } : {}) },
+  };
+}
+
+export interface SyntheticCase {
+  id: string;
+  text: string;
+  priority?: number;
+  resource?: string[];
+  expected?: string[];
+}
+
+export interface SyntheticCorpus {
+  /** Command catalogs of two builds: the second changes the range of some commands. */
+  catalogA: string;
+  catalogB: string;
+  /** Paths of the commands the second catalog changes (computed here, independently of the Hub). */
+  changedPaths: string[];
+  documents: Array<{ id: string; json: string }>;
+  /** Every case with the command path it is filed under. */
+  cases: Array<{ document: string; id: string; path: string; module: string; defects: string[] }>;
+}
+
+/**
+ * A deterministic corpus for scale checks: `groups` x `commands` commands (`g<k> c<k>`, one int parameter), `documents`
+ * mind maps of `cases` cases each, every case on one command spread over the catalog, a defect id on every tenth case;
+ * the second catalog changes the range of `changed` commands spread evenly.
+ */
+export function syntheticCorpus(options: { documents: number; cases: number; groups: number; commands: number; changed: number }): SyntheticCorpus {
+  const pad = (n: number, width: number): string => String(n).padStart(width, '0');
+  const names: Array<{ group: string; command: string }> = [];
+  for (let g = 0; g < options.groups; g++) for (let c = 0; c < options.commands; c++) names.push({ group: `g${pad(g, 3)}`, command: `c${pad(c, 4)}` });
+  const step = Math.max(1, Math.floor(names.length / Math.max(1, options.changed)));
+  const changed = new Set<number>();
+  for (let k = 0; k < options.changed && k * step < names.length; k++) changed.add(k * step);
+  const catalog = (b: boolean): string => {
+    const groups: Record<string, Array<{ name: string; params: Array<{ name: string; type: 'int'; min: number; max: number }>; help: string }>> = {};
+    names.forEach((n, i) => {
+      (groups[n.group] ??= []).push({ name: n.command, params: [{ name: 'value', type: 'int', min: 0, max: b && changed.has(i) ? 900 : 600 }], help: `set ${n.command}` });
+    });
+    return catalogXml(groups);
+  };
+  const documents: SyntheticCorpus['documents'] = [];
+  const cases: SyntheticCorpus['cases'] = [];
+  for (let d = 0; d < options.documents; d++) {
+    const id = `d${pad(d, 5)}`;
+    const module = `M${d % 10}`;
+    const list: SyntheticCase[] = [];
+    for (let c = 0; c < options.cases; c++) {
+      const target = names[(d * options.cases + c) * 7919 % names.length];
+      const defects = (d + c) % 10 === 0 ? [String(60000 + ((d * 31 + c) % 500))] : [];
+      const caseId = `${id}-${pad(c, 3)}`;
+      list.push({
+        id: caseId,
+        text: `[cmd: ${target.group} ${target.command}] 用例 ${d}-${c} 检查取值${defects.map((x) => ` #${x}`).join('')}`,
+        expected: c % 4 === 0 ? [] : [`返回 ${c}`, ...(c % 3 === 0 ? [`日志 ${c}`] : [])],
+      });
+      cases.push({ document: id, id: caseId, path: `/commands/${target.group}/${target.command}`, module, defects });
+    }
+    documents.push({ id: `store:mindmap:${id}`, json: mindMap({ id, module, line: '1.2' }, list) });
+  }
+  return { catalogA: catalog(false), catalogB: catalog(true), changedPaths: [...changed].map((i) => `/commands/${names[i].group}/${names[i].command}`).sort(), documents, cases };
+}
+
+/** A synthetic KityMinder mind map: the document root, one group node, the cases with their expected results. */
+export function mindMap(doc: { id: string; text?: string; module?: string; line?: string }, cases: readonly SyntheticCase[]): string {
+  const node = (c: SyntheticCase) => ({
+    data: { id: c.id, text: c.text, priority: c.priority ?? 1, resource: c.resource ?? ['功能'] },
+    children: (c.expected ?? []).map((text, k) => ({ data: { id: `${c.id}-e${k}`, text }, children: [] })),
+  });
+  const root = { id: doc.id, text: doc.text ?? `文档 ${doc.id}`, ...(doc.module === undefined ? {} : { module: doc.module }), ...(doc.line === undefined ? {} : { line: doc.line }) };
+  return JSON.stringify({ root: { data: root, children: [{ data: { id: `${doc.id}-g`, text: '分组', priority: 1 }, children: cases.map(node) }] }, template: 'default', theme: 'fresh-blue', version: '1.4.43' });
+}
+
 export interface PackSpec {
   id?: string;
   version?: string;
@@ -195,7 +318,7 @@ export function writeProductPack(root: string, spec: PackSpec = {}): ProductHand
   const id = spec.id ?? 'acme';
   const version = spec.version ?? '1.0.0';
   const directory = realpathSync(mkdtempSync(join(root, `pack-${id}-`)));
-  const functions = { 'plan.ts': PLAN_SOURCE, 'commands.ts': COMMANDS_SOURCE, 'manual.ts': MANUAL_SOURCE, 'extra.ts': EXTRA_SOURCE, 'bulk.ts': BULK_SOURCE, ...(spec.functions ?? {}) };
+  const functions = { 'plan.ts': PLAN_SOURCE, 'commands.ts': COMMANDS_SOURCE, 'manual.ts': MANUAL_SOURCE, 'extra.ts': EXTRA_SOURCE, 'bulk.ts': BULK_SOURCE, 'cases.ts': CASES_SOURCE, ...(spec.functions ?? {}) };
   for (const [name, source] of Object.entries(functions)) {
     const path = join(directory, 'functions', name);
     mkdirSync(dirname(path), { recursive: true });

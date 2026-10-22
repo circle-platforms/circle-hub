@@ -10,10 +10,11 @@ import type { RootInfo } from '../ports.ts';
 import type { ActionBody, PointerState, Principal, StoredRecord } from '../records/api.ts';
 import { requireAdmin, type KnowledgeContext } from './context.ts';
 import { canonicalize } from '../records/api.ts';
+import { mapLimited } from './concurrency.ts';
 import { compareText } from './digest.ts';
 import { KnowledgeError } from './errors.ts';
 import { infoOf } from './produce.ts';
-import { COMPONENTS, KnowledgeStore, buildKey, indexValueFits, pointerName, type ProduceAction, type StoredBuild } from './store.ts';
+import { COMPONENTS, KnowledgeStore, buildKey, indexValueFits, listRoles, pointerName, withoutLists, type ProduceAction, type StoredBuild } from './store.ts';
 
 export { pointerName };
 
@@ -68,31 +69,39 @@ export class Builds {
     return this.#context.store;
   }
 
-  /** The newest record of every build name of a product. */
+  /**
+   * The newest record of every build name of a product. A record changes only when the build's identity does (a list that
+   * changes writes none), and every produced build has one, so this is read without the history of productions.
+   */
   async latestRecords(product: string): Promise<Map<string, StoredBuild>> {
     const out = new Map<string, StoredBuild>();
     for (const build of await this.#store.buildsOf(product)) out.set(build.body.build.name, build);
     return out;
   }
 
-  /** Newest completed production per base build name of a product. */
-  async roots(product: string): Promise<Map<string, ProduceAction>> {
+  /** The newest completed production of each of these base builds, looked up per base (a few records each). */
+  async roots(product: string, bases: Iterable<string>): Promise<Map<string, ProduceAction>> {
+    const unique = [...new Set(bases)];
+    const found = await mapLimited(unique, 8, (base) => this.#store.latestProduction(product, base));
     const out = new Map<string, ProduceAction>();
-    for (const production of await this.#store.productions(product)) if (production.completed) out.set(production.detail.build.name, production);
+    unique.forEach((base, i) => {
+      const production = found[i];
+      if (production !== null) out.set(base, production);
+    });
     return out;
   }
 
   /** Every known build with its final base and that base's production, newest first. */
   async #resolvedAll(product: string): Promise<Resolved[]> {
     const records = await this.latestRecords(product);
-    const roots = await this.roots(product);
     const infos = new Map<string, BuildInfo>();
-    for (const [name, record] of records) infos.set(name, record.body.build);
-    // A build produced without a build record (produceTree called directly) is still known by its production.
-    for (const [name, production] of roots) if (!infos.has(name)) infos.set(name, production.detail.build);
+    for (const [name, record] of records) infos.set(name, withoutLists(record.body.build));
+    const bases = new Map<string, string>();
+    for (const info of infos.values()) bases.set(info.name, finalBase(info, infos));
+    const roots = await this.roots(product, bases.values());
     const out: Resolved[] = [];
     for (const info of infos.values()) {
-      const base = finalBase(info, infos);
+      const base = bases.get(info.name) as string;
       const production = roots.get(base) ?? null;
       out.push({ build: { ...info, root: production?.detail.root ?? null }, base, production });
     }
@@ -104,16 +113,16 @@ export class Builds {
     return (await this.#resolvedAll(product)).map((r) => r.build);
   }
 
-  /** The record a build name (any family, any case when unambiguous) names, or null. */
+  /** The record a build name (any family, any case when unambiguous) names, without its list roles, or null. */
   async #named(product: string, name: string): Promise<BuildInfo | null> {
     const records = await this.#store.buildsNamed(product, name);
     const exact = records.filter((r) => r.body.build.name === name);
-    if (exact.length > 0) return exact[exact.length - 1].body.build;
+    if (exact.length > 0) return withoutLists(exact[exact.length - 1].body.build);
     const names = new Set(records.map((r) => r.body.build.name));
-    if (names.size === 1) return records[records.length - 1].body.build;
+    if (names.size === 1) return withoutLists(records[records.length - 1].body.build);
     if (names.size > 1) return null;
     const produced = await this.#store.latestProduction(product, name);
-    return produced?.detail.build ?? null;
+    return produced === null ? null : withoutLists(produced.detail.build);
   }
 
   /** The record of a name and the last build its alias chain reaches (itself when it is not an alias); null when unknown. */
@@ -133,6 +142,11 @@ export class Builds {
     return { named, last: current };
   }
 
+  /** The record a build name names (exact, else the one spelling that folds to it), aliases not followed; null when unknown. */
+  async named(product: string, name: string): Promise<BuildInfo | null> {
+    return (await this.#chain(product, name))?.named ?? null;
+  }
+
   /** Any build name to the build whose tree it uses, aliases followed; null when unknown. */
   async resolve(product: string, name: string): Promise<KnownBuild | null> {
     const chain = await this.#chain(product, name);
@@ -141,12 +155,13 @@ export class Builds {
     return { ...chain.last, root: production?.detail.root ?? null };
   }
 
+  /** RootInfo of a production; its build without list roles (they are in the composition, by reference). */
   rootInfoOf(production: ProduceAction, product: string): RootInfo {
     return {
       root: production.detail.root as string,
       composition: production.detail.composition as string,
       product,
-      build: { ...production.detail.build, root: production.detail.root },
+      build: { ...withoutLists(production.detail.build), root: production.detail.root },
       produced_at: production.record.body.ended_at,
     };
   }
@@ -197,13 +212,18 @@ export class Builds {
     return latest === undefined ? null : this.rootInfoOf(latest, product);
   }
 
-  /** Stores a build record when it differs from the newest record of its name; true when one was written. */
+  /**
+   * Stores a build record when the build differs from the newest record of its name, list roles named but not kept (a list
+   * that changes is not a new record: the ids a production reads are kept with it); true when one was written.
+   */
   async record(product: string, pack: { id: string; version: string; digest: string }, build: BuildInfo, plan: string | null, sync: string | null): Promise<boolean> {
     const info = infoOf(build);
+    const claim = withoutLists(info);
+    const lists = listRoles(info);
     const existing = (await this.#store.buildsNamed(product, info.name)).filter((r) => r.body.build.name === info.name);
     const newest = existing[existing.length - 1];
-    if (newest !== undefined && canonicalize(newest.body.build) === canonicalize(info)) return false;
-    await this.#store.putBuild({ product, build: info, pack, plan, sync });
+    if (newest !== undefined && canonicalize({ build: newest.body.build, lists: newest.body.lists ?? [] }) === canonicalize({ build: claim, lists })) return false;
+    await this.#store.putBuild({ product, build: claim, ...(lists.length > 0 ? { lists } : {}), pack, plan, sync });
     return true;
   }
 
@@ -229,7 +249,7 @@ export class Builds {
     // The build the pointer names: its own record is on this line, and its alias chain ends at the produced build.
     const buildName = options.build ?? production.detail.build.name;
     const chain = await this.#chain(product, buildName);
-    const named = chain?.named ?? (buildName === production.detail.build.name ? production.detail.build : null);
+    const named = chain?.named ?? (buildName === production.detail.build.name ? withoutLists(production.detail.build) : null);
     if (named === null) throw new KnowledgeError(`不认识构建 ${buildName}`);
     if (named.line !== line) throw new KnowledgeError(`构建 ${named.name} 属于版本线 ${named.line}，不是 ${line}`);
     const base = chain === null ? named.name : baseOf(chain.last);

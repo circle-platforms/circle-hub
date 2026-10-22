@@ -1,0 +1,432 @@
+// The knowledge views as external objects (impact-view@1, facet-view@1, index-view@1) and KnowledgePort.diffEntries,
+// checked against answers computed by hand on two small trees: every change kind, attached entries on both sides, a change
+// of cases only (not a change of definitions), truncation, alias builds and product names, permission refusal, malformed
+// ids, roots without the kind, the revision, determinism (byte-identical answers) and what the run engine reads.
+import assert from 'node:assert/strict';
+import { after, before, describe, test } from 'node:test';
+import { FacetView, ImpactView, IndexView } from '../../contracts/src/views.ts';
+import type { KnownBuild } from '../../contracts/src/product.ts';
+import type { ExternalRead, ExternalReadContext } from '../ports.ts';
+import type { Principal } from '../records/api.ts';
+import { createDefaultRegistry, parserKey, recognize } from '../refs/api.ts';
+import type { TemporaryPostgres } from '../testing/postgres.ts';
+import { createKnowledgeReader, routeKnowledgeViews } from './api.ts';
+import { BASE_CATALOG, DEFAULT_PRODUCERS, casesProducer, catalogXml, extraProducer, makeWorld, mindMap, startPostgres, type World } from './test-support.ts';
+
+let postgres: TemporaryPostgres;
+before(async () => {
+  postgres = await startPostgres();
+});
+after(() => postgres?.stop());
+
+const A = 'Rel_ACME_1_2_15';
+const B = 'Rel_ACME_1_2_16';
+const JSON_TYPE = 'application/json';
+
+function build(name: string, cases: string[]): KnownBuild {
+  return { name, family: 'ACME', line: '1.2', base: name, platform: null, built_at: '2026-01-02T10:00:00.000Z', released_at: '2026-01-05T00:00:00.000Z', sources: { tree: `site:tree:${name}`, cases }, root: null };
+}
+
+interface Fixture {
+  w: World;
+  roots: { a: string; b: string };
+  /** Entry digest by statement's first line, per root. */
+  digests: { a: Map<string, string>; b: Map<string, string> };
+  read(id: string, principal?: Principal): Promise<ExternalRead>;
+  json(read: ExternalRead, principal?: Principal): Promise<{ bytes: Uint8Array; value: unknown }>;
+}
+
+/**
+ * Root A: the base catalog (system reboot/show, net ping/trace); documents d1 (reboot #100, ping #100 #200, trace) and d2
+ * (show, disk list). Root B: reboot's range changed, trace removed, arp and disk list added; documents d1 and d2b (show's
+ * case reworded, disk list unchanged, a new reboot case).
+ */
+async function fixture(t: { after: (fn: () => Promise<void>) => void }, options: Parameters<typeof makeWorld>[1] = {}): Promise<Fixture> {
+  const w = await makeWorld(postgres, { ...options, pack: { declaration: { producers: [DEFAULT_PRODUCERS[0], casesProducer({ batch: 5 })] } } });
+  t.after(() => w.close());
+  w.external.set(`site:tree:${A}`, { bytes: catalogXml(BASE_CATALOG), mediaType: 'application/xml' });
+  w.external.set(`site:tree:${B}`, {
+    bytes: catalogXml({
+      system: [{ ...BASE_CATALOG.system[0], params: [{ name: 'delay', type: 'int', min: 0, max: 900 }] }, BASE_CATALOG.system[1]],
+      net: [BASE_CATALOG.net[0], { name: 'arp', params: [], help: 'show the neighbours' }],
+      disk: [{ name: 'list', params: [], help: 'list the disks' }],
+    }),
+    mediaType: 'application/xml',
+  });
+  w.external.set('store:mindmap:d1', {
+    bytes: mindMap({ id: 'd1', module: 'M1', line: '1.2' }, [
+      { id: 'c1', text: '[cmd: system reboot] 重启 #100', expected: ['成功'] },
+      { id: 'c2', text: '[cmd: net ping] 连通 #100 #200', expected: [] },
+      { id: 'c3', text: '[cmd: net trace] 路由', expected: ['可达'] },
+    ]),
+    mediaType: JSON_TYPE,
+  });
+  w.external.set('store:mindmap:d2', {
+    bytes: mindMap({ id: 'd2', module: 'M2', line: '1.2' }, [
+      { id: 'c4', text: '[cmd: system show] 查看', expected: ['显示'] },
+      { id: 'c5', text: '[cmd: disk list] 列出', expected: [] },
+    ]),
+    mediaType: JSON_TYPE,
+  });
+  w.external.set('store:mindmap:d2b', {
+    bytes: mindMap({ id: 'd2', module: 'M2', line: '1.2' }, [
+      { id: 'c4', text: '[cmd: system show] 查看状态', expected: ['显示'] },
+      { id: 'c5', text: '[cmd: disk list] 列出', expected: [] },
+      { id: 'c6', text: '[cmd: system reboot] 重启后再检查', expected: ['成功'] },
+    ]),
+    mediaType: JSON_TYPE,
+  });
+  const a = await w.knowledge.produceTree({ product: w.product, build: build(A, ['store:mindmap:d1', 'store:mindmap:d2']) });
+  const b = await w.knowledge.produceTree({ product: w.product, build: build(B, ['store:mindmap:d1', 'store:mindmap:d2b']) });
+  assert.equal(a.ok && b.ok, true, `${a.reason} ${b.reason}`);
+  const digestsOf = async (root: string): Promise<Map<string, string>> => {
+    const page = await w.knowledge.getNodes({ root, paths: ['/'], depth: 6 }, w.admin);
+    const out = new Map<string, string>();
+    for (const node of page?.nodes ?? []) for (const entry of node.entries) out.set(entry.statement.split('\n')[0], entry.entry);
+    return out;
+  };
+  const reader = createKnowledgeReader(w.knowledge);
+  const context = (principal: Principal): ExternalReadContext => ({ principal, run: null, purpose: '视图测试' });
+  return {
+    w,
+    roots: { a: a.root as string, b: b.root as string },
+    digests: { a: await digestsOf(a.root as string), b: await digestsOf(b.root as string) },
+    read: (id, principal = w.user) => reader.read(id, context(principal)),
+    async json(read, principal = w.user) {
+      assert.equal(read.ok, true, read.ok ? '' : read.reason);
+      if (!read.ok) throw new Error('not ok');
+      const original = read.artifacts.find((x) => x.name === 'original');
+      assert.ok(original);
+      const source = await w.kit.artifacts.source(principal, original.artifact.body.sha256, { consumer: 'function' });
+      assert.ok(source !== null && source.bytes !== null);
+      return { bytes: source.bytes, value: JSON.parse(new TextDecoder().decode(source.bytes)) };
+    },
+  };
+}
+
+const sorted = (...values: string[]): string[] => [...values].sort();
+
+describe('the impact view (impact-view@1)', () => {
+  test('changes of the changed kinds, the attached entries on both sides, references of the later root first', async (t) => {
+    const f = await fixture(t);
+    const { a, b } = f.digests;
+    const id = `knowledge:impact:acme:${A}..${B}`;
+    const read = await f.read(id);
+    const { value } = await f.json(read);
+    const view = ImpactView.parse(value);
+    assert.equal(read.ok && read.revision, `${f.roots.a}..${f.roots.b}`);
+    assert.deepEqual(view.from, { build: A, root: f.roots.a });
+    assert.deepEqual(view.to, { build: B, root: f.roots.b });
+    assert.deepEqual(view.changed_kinds, ['behaviour', 'definition']);
+    assert.deepEqual(view.attached_kinds, ['case']);
+    const def = (m: Map<string, string>, words: string) => m.get(words) as string;
+    assert.deepEqual(view.changes, [
+      { path: '/commands/disk/list', change: 'added', before: [], after: [def(b, 'disk list')] },
+      { path: '/commands/net/arp', change: 'added', before: [], after: [def(b, 'net arp')] },
+      { path: '/commands/net/trace', change: 'removed', before: [def(a, 'net trace <host:string>')], after: [] },
+      { path: '/commands/system/reboot', change: 'modified', before: [def(a, 'system reboot <delay:int>')], after: [def(b, 'system reboot <delay:int>')] },
+    ]);
+    assert.notEqual(def(a, 'system reboot <delay:int>'), def(b, 'system reboot <delay:int>'), 'the range is part of the definition');
+    const c1 = b.get('[cmd: system reboot] 重启 #100') as string;
+    const c3 = b.get('[cmd: net trace] 路由') as string;
+    const c5 = b.get('[cmd: disk list] 列出') as string;
+    const c6 = b.get('[cmd: system reboot] 重启后再检查') as string;
+    assert.equal(a.get('[cmd: disk list] 列出'), c5, 'the unchanged case is the same entry in both roots');
+    assert.deepEqual(view.placements, [
+      { path: '/commands/disk/list', from: [c5], to: [c5] },
+      { path: '/commands/net/trace', from: [c3], to: [c3] },
+      { path: '/commands/system/reboot', from: [c1], to: sorted(c1, c6) },
+    ]);
+    assert.deepEqual(view.totals, { changed_paths: 4, attached_from: 3, attached_to: 4 });
+    assert.equal(view.truncated, false);
+    assert.deepEqual(view.notes, []);
+    // Every entry named once; references of the later root, or of the earlier one for an entry only there.
+    assert.deepEqual(Object.keys(view.entries), sorted(def(b, 'disk list'), def(b, 'net arp'), def(a, 'net trace <host:string>'), def(a, 'system reboot <delay:int>'), def(b, 'system reboot <delay:int>'), c1, c3, c5, c6));
+    assert.equal(view.entries[c5].reference, `tree:${f.roots.b}/commands/disk/list@${c5}`);
+    assert.equal(view.entries[def(a, 'net trace <host:string>')].reference, `tree:${f.roots.a}/commands/net/trace@${def(a, 'net trace <host:string>')}`);
+    assert.equal(view.entries[def(a, 'system reboot <delay:int>')].reference.startsWith(`tree:${f.roots.a}/`), true);
+    assert.equal(view.entries[c6].kind, 'case');
+    assert.match(view.entries[c6].statement, /重启后再检查\n期望：成功/);
+    assert.deepEqual(view.entries[c1].data.defects, ['100']);
+
+    // The run engine reads it like any external object: the original parses with the core JSON parser.
+    const { bytes } = await f.json(read);
+    const parsed = recognize(createDefaultRegistry(), bytes, JSON_TYPE);
+    assert.equal(parsed === null ? null : parserKey(parsed.parser), 'json@1');
+    const meta = read.ok ? read.artifacts.find((x) => x.name === 'meta') : undefined;
+    assert.ok(meta);
+
+    // The reverse direction swaps added and removed.
+    const reverse = ImpactView.parse((await f.json(await f.read(`knowledge:impact:acme:${B}..${A}`))).value);
+    assert.deepEqual(reverse.changes.map((c) => [c.path, c.change]), [
+      ['/commands/disk/list', 'removed'],
+      ['/commands/net/arp', 'removed'],
+      ['/commands/net/trace', 'added'],
+      ['/commands/system/reboot', 'modified'],
+    ]);
+  });
+
+  test('a change of cases is a change only when cases are the changed kind; attached kinds can be definitions', async (t) => {
+    const f = await fixture(t);
+    const { a, b } = f.digests;
+    const view = ImpactView.parse((await f.json(await f.read(`knowledge:impact:acme:${A}..${B}?changed=case&attached=definition`))).value);
+    assert.deepEqual(view.changes.map((c) => [c.path, c.change]), [
+      ['/commands/system/reboot', 'modified'],
+      ['/commands/system/show', 'modified'],
+    ]);
+    assert.deepEqual(view.changes[1], { path: '/commands/system/show', change: 'modified', before: [a.get('[cmd: system show] 查看')], after: [b.get('[cmd: system show] 查看状态')] });
+    assert.deepEqual(view.placements.map((p) => [p.path, p.from.length, p.to.length]), [
+      ['/commands/system/reboot', 1, 1],
+      ['/commands/system/show', 1, 1],
+    ]);
+    // Equal roots: a valid answer without changes, with the note.
+    const same = ImpactView.parse((await f.json(await f.read(`knowledge:impact:acme:${A}..${A}`))).value);
+    assert.deepEqual(same.changes, []);
+    assert.ok(same.notes.some((note) => /同一个根/.test(note)));
+    // A kind no root holds: still a valid answer, with the notes.
+    const none = ImpactView.parse((await f.json(await f.read(`knowledge:impact:acme:${A}..${B}?changed=behaviour&attached=defect`))).value);
+    assert.deepEqual(none.changes, []);
+    assert.ok(none.notes.some((note) => /没有缺陷种类的条目/.test(note)), none.notes.join('\n'));
+    assert.ok(none.notes.some((note) => /没有行为种类的条目，算不出变化/.test(note)), none.notes.join('\n'));
+  });
+
+  test('a small byte budget cuts the lists in path order; the totals still count everything', async (t) => {
+    // The lists get maxViewBytes less 64 KiB, counted exactly: the four changed paths take 1295, 610, 1368 and 2670 bytes.
+    const f = await fixture(t, { knowledge: { limits: { maxViewBytes: 64 * 1024 + 3500 } } });
+    const view = ImpactView.parse((await f.json(await f.read(`knowledge:impact:acme:${A}..${B}`))).value);
+    assert.equal(view.truncated, true);
+    assert.ok(view.changes.length >= 1 && view.changes.length < 4, String(view.changes.length));
+    assert.deepEqual(view.changes.map((c) => c.path), ['/commands/disk/list', '/commands/net/arp', '/commands/net/trace'].slice(0, view.changes.length));
+    assert.ok(view.placements.every((p) => view.changes.some((c) => c.path === p.path)));
+    for (const digest of [...view.changes.flatMap((c) => [...c.before, ...c.after]), ...view.placements.flatMap((p) => [...p.from, ...p.to])]) assert.ok(digest in view.entries);
+    assert.deepEqual(view.totals, { changed_paths: 4, attached_from: 3, attached_to: 4 });
+    assert.ok(view.notes.some((note) => /截在第 \d+ 个变化路径/.test(note)));
+  });
+});
+
+describe('KnowledgePort.diffEntries', () => {
+  test('paths whose entries of the kinds differ, sorted by path, with digests and the change kind; limit and unknown roots', async (t) => {
+    const f = await fixture(t);
+    const diff = await f.w.knowledge.diffEntries(f.roots.a, f.roots.b, { kinds: ['definition'] });
+    assert.ok(diff !== null);
+    assert.deepEqual(diff.kinds, ['definition']);
+    assert.deepEqual(diff.changes.map((c) => [c.path, c.change, c.before.length, c.after.length]), [
+      ['/commands/disk/list', 'added', 0, 1],
+      ['/commands/net/arp', 'added', 0, 1],
+      ['/commands/net/trace', 'removed', 1, 0],
+      ['/commands/system/reboot', 'modified', 1, 1],
+    ]);
+    assert.equal(diff.total, 4);
+    assert.equal(diff.truncated, false);
+    const cases = await f.w.knowledge.diffEntries(f.roots.a, f.roots.b, { kinds: ['case'] });
+    assert.deepEqual(cases?.changes.map((c) => [c.path, c.before.length, c.after.length]), [
+      ['/commands/system/reboot', 1, 2],
+      ['/commands/system/show', 1, 1],
+    ]);
+    const cut = await f.w.knowledge.diffEntries(f.roots.a, f.roots.b, { kinds: ['definition', 'case'], limit: 2 });
+    assert.deepEqual(cut?.changes.map((c) => c.path), ['/commands/disk/list', '/commands/net/arp']);
+    assert.equal(cut?.total, 5);
+    assert.equal(cut?.truncated, true);
+    assert.deepEqual((await f.w.knowledge.diffEntries(f.roots.a, f.roots.a, { kinds: ['definition'] }))?.changes, []);
+    assert.equal(await f.w.knowledge.diffEntries(f.roots.a, 'e'.repeat(64), { kinds: ['definition'] }), null);
+    assert.deepEqual((await f.w.knowledge.diffEntries(f.roots.a, f.roots.b, { kinds: [] }))?.changes, []);
+    // diffRoots is unchanged: it names every differing path, whatever its kinds.
+    const paths = await f.w.knowledge.diffRoots(f.roots.a, f.roots.b);
+    assert.deepEqual(paths?.added, ['/commands/net/arp']);
+    assert.deepEqual(paths?.removed, []);
+    assert.deepEqual(paths?.modified, ['/commands/disk/list', '/commands/net/trace', '/commands/system/reboot', '/commands/system/show']);
+  });
+});
+
+describe('the facet and index views (facet-view@1, index-view@1)', () => {
+  test('facets count entries by field values; a list field counts per element; rows sorted by the values', async (t) => {
+    const f = await fixture(t);
+    const view = FacetView.parse((await f.json(await f.read(`knowledge:facets:acme:${B}?kind=case&by=module,has_expected`))).value);
+    assert.deepEqual(view.build, { build: B, root: f.roots.b });
+    assert.deepEqual(view.rows, [
+      { values: { module: 'M1', has_expected: false }, count: 1 },
+      { values: { module: 'M1', has_expected: true }, count: 2 },
+      { values: { module: 'M2', has_expected: false }, count: 1 },
+      { values: { module: 'M2', has_expected: true }, count: 2 },
+    ]);
+    assert.equal(view.total, 6);
+    assert.equal(view.truncated, false);
+    // Rows are in code-unit order of the canonical JSON text of their values: "100" and "200" before null.
+    const defects = FacetView.parse((await f.json(await f.read(`knowledge:facets:acme:${B}?kind=case&by=defects`))).value);
+    assert.deepEqual(defects.rows, [
+      { values: { defects: '100' }, count: 2 },
+      { values: { defects: '200' }, count: 1 },
+      { values: { defects: null }, count: 4 },
+    ]);
+    const priority = FacetView.parse((await f.json(await f.read(`knowledge:facets:acme:${A}?kind=case&by=priority,missing`))).value);
+    assert.deepEqual(priority.rows, [{ values: { priority: 1, missing: null }, count: 5 }]);
+    const definitions = FacetView.parse((await f.json(await f.read(`knowledge:facets:acme:${B}?kind=definition&by=words`))).value);
+    assert.equal(definitions.total, 5);
+    assert.deepEqual(definitions.rows.find((r) => r.values.words === 'system')?.count, 2);
+    // A root without entries of the kind is a valid answer with a note.
+    const none = FacetView.parse((await f.json(await f.read(`knowledge:facets:acme:${B}?kind=defect&by=module`))).value);
+    assert.deepEqual([none.total, none.rows], [0, []]);
+    assert.match(none.notes[0], /没有缺陷种类的条目/);
+  });
+
+  test('a list field cross product beyond the combination cap is left out and flagged', async (t) => {
+    const f = await fixture(t);
+    const tags = Array.from({ length: 70 }, (_, i) => `t${i}`);
+    const text = `[cmd: system show] 很多标签 ${Array.from({ length: 70 }, (_, i) => `#${i}`).join(' ')}`;
+    f.w.external.set('store:mindmap:d9', { bytes: mindMap({ id: 'd9', module: 'M9' }, [{ id: 'c9', text, resource: tags, expected: ['x'] }]), mediaType: JSON_TYPE });
+    f.w.external.set('site:tree:Rel_ACME_1_2_17', { bytes: catalogXml(BASE_CATALOG), mediaType: 'application/xml' });
+    const produced = await f.w.knowledge.produceTree({ product: f.w.product, build: build('Rel_ACME_1_2_17', ['store:mindmap:d9']) });
+    assert.equal(produced.ok, true, produced.reason ?? '');
+    const view = FacetView.parse((await f.json(await f.read('knowledge:facets:acme:Rel_ACME_1_2_17?kind=case&by=tags,defects'))).value);
+    assert.equal(view.total, 1);
+    assert.deepEqual(view.rows, []);
+    assert.equal(view.truncated, true);
+    assert.ok(view.notes.some((note) => /超过 4096 种/.test(note)));
+  });
+
+  test('the index maps each value to the entries that carry it; only= keeps the listed values and names those without entries', async (t) => {
+    const f = await fixture(t);
+    const { b } = f.digests;
+    const c1 = b.get('[cmd: system reboot] 重启 #100') as string;
+    const c2 = b.get('[cmd: net ping] 连通 #100 #200') as string;
+    const view = IndexView.parse((await f.json(await f.read(`knowledge:index:acme:${B}?kind=case&key=defects`))).value);
+    assert.deepEqual(view.keys, { '100': sorted(c1, c2), '200': [c2] });
+    assert.deepEqual(Object.keys(view.entries), sorted(c1, c2));
+    assert.equal(view.entries[c2].reference, `tree:${f.roots.b}/commands/net/ping@${c2}`);
+    assert.deepEqual([view.total_keys, view.total_entries, view.truncated], [2, 2, false]);
+    const only = IndexView.parse((await f.json(await f.read(`knowledge:index:acme:${B}?kind=case&key=defects&only=999,200`))).value);
+    assert.deepEqual(only.keys, { '200': [c2] });
+    assert.deepEqual([only.total_keys, only.total_entries], [1, 1]);
+    assert.ok(only.notes.some((note) => note === '这些取值没有条目：999'));
+    const byModule = IndexView.parse((await f.json(await f.read(`knowledge:index:acme:${B}?kind=case&key=module`))).value);
+    assert.deepEqual(Object.fromEntries(Object.entries(byModule.keys).map(([k, v]) => [k, v.length])), { M1: 3, M2: 3 });
+    const none = IndexView.parse((await f.json(await f.read(`knowledge:index:acme:${B}?kind=defect&key=defects`))).value);
+    assert.deepEqual(none.keys, {});
+    assert.match(none.notes[0], /没有缺陷种类的条目/);
+  });
+
+  test('an entry filed at two paths is counted once and cited at its first path', async (t) => {
+    const twice = (path: string) => ({ kind: 'case', path, statement: '两处都有的用例', data: { defects: ['7'] }, fragments: [{ parser: 'xml@1', selector: 'x/catalog/group[1]' }], applicability: null });
+    const w = await makeWorld(postgres, { pack: { declaration: { producers: [DEFAULT_PRODUCERS[0], extraProducer('other', { entries: [twice('/commands/system/show'), twice('/commands/net/ping')] })] } } });
+    t.after(() => w.close());
+    w.external.set(`site:tree:${A}`, { bytes: catalogXml(BASE_CATALOG), mediaType: 'application/xml' });
+    const produced = await w.knowledge.produceTree({ product: w.product, build: { ...build(A, []), sources: { tree: `site:tree:${A}` } } });
+    assert.equal(produced.ok, true, produced.reason ?? '');
+    const reader = createKnowledgeReader(w.knowledge);
+    const json = async (id: string): Promise<unknown> => {
+      const read = await reader.read(id, { principal: w.user, run: null, purpose: 'x' });
+      assert.ok(read.ok, read.ok ? '' : read.reason);
+      const source = await w.kit.artifacts.source(w.user, read.artifacts[0].artifact.body.sha256, { consumer: 'function' });
+      return JSON.parse(new TextDecoder().decode(source?.bytes ?? new Uint8Array()));
+    };
+    const facets = FacetView.parse(await json(`knowledge:facets:acme:${A}?kind=case&by=defects`));
+    assert.deepEqual([facets.total, facets.rows], [1, [{ values: { defects: '7' }, count: 1 }]]);
+    const index = IndexView.parse(await json(`knowledge:index:acme:${A}?kind=case&key=defects`));
+    const [digest] = index.keys['7'];
+    assert.equal(index.entries[digest].reference, `tree:${produced.root}/commands/net/ping@${digest}`, '/commands/net/ping sorts before /commands/system/show');
+  });
+
+  test('an index over the byte budget stops before a key and says so', async (t) => {
+    // The keys M1 and M2 take 1812 and 1805 bytes with their entries, counted exactly.
+    const f = await fixture(t, { knowledge: { limits: { maxViewBytes: 64 * 1024 + 2500 } } });
+    const view = IndexView.parse((await f.json(await f.read(`knowledge:index:acme:${B}?kind=case&key=module`))).value);
+    assert.equal(view.truncated, true);
+    assert.equal(view.total_keys, 2);
+    assert.ok(Object.keys(view.keys).length < 2);
+    assert.ok(view.notes.some((note) => /之前为止/.test(note)));
+  });
+});
+
+describe('ids, readers and stored answers', () => {
+  test('builds resolve through aliases and any case; products by any name; the stored spelling is shown', async (t) => {
+    const f = await fixture(t);
+    await f.w.knowledge.store.putBuild({
+      product: 'acme',
+      build: { name: 'Rel_ZETA_1_2_7', family: 'ZETA', line: '1.2', base: A, platform: null, built_at: null, released_at: '2026-01-07T00:00:00.000Z', sources: {} },
+      pack: { id: 'acme', version: '1.0.0', digest: f.w.product.digest },
+      plan: null,
+      sync: null,
+    });
+    const view = FacetView.parse((await f.json(await f.read('knowledge:facets:ZETA:rel_zeta_1_2_7?kind=case&by=module'))).value);
+    assert.equal(view.product, 'acme');
+    assert.deepEqual(view.build, { build: 'Rel_ZETA_1_2_7', root: f.roots.a });
+    const direct = FacetView.parse((await f.json(await f.read(`knowledge:facets:acme:${A}?kind=case&by=module`))).value);
+    assert.deepEqual(view.rows, direct.rows);
+  });
+
+  test('two reads give byte-identical answers; another reader gets the same bytes in a record of their own', async (t) => {
+    const f = await fixture(t);
+    const id = `knowledge:index:acme:${B}?kind=case&key=defects`;
+    const first = await f.read(id);
+    const second = await f.read(id);
+    assert.ok(first.ok && second.ok);
+    const [x, y] = [first.artifacts[0].artifact, second.artifacts[0].artifact];
+    assert.equal(x.body.sha256, y.body.sha256);
+    assert.equal(x.digest, y.digest, 'the same ingest for the same reader is one record');
+    assert.equal(x.body.media_type, JSON_TYPE);
+    assert.equal(x.body.read_tier, 'model_readable');
+    const admin = await f.read(id, f.w.admin);
+    assert.ok(admin.ok);
+    assert.equal(admin.artifacts[0].artifact.body.sha256, x.body.sha256);
+    assert.notEqual(admin.artifacts[0].artifact.digest, x.digest);
+    assert.equal(await f.w.kit.artifacts.source(f.w.outsider, x.body.sha256, { consumer: 'function' }), null, 'nobody else reads the stored answer');
+    // A pinned revision must be the current one.
+    assert.equal((await f.read(`${id}@${f.roots.b}`)).ok, true);
+    const stale = await f.read(`${id}@${f.roots.a}`);
+    assert.equal(stale.ok, false);
+    assert.match(!stale.ok ? stale.reason : '', /要求修订/);
+    // The manifest is the record of the view's computation.
+    const manifest = await f.w.kit.store.get<{ component: string; inputs: string[] }>(first.manifest);
+    assert.equal(manifest?.body.component, 'knowledge.views@1');
+    assert.deepEqual(manifest?.body.inputs, [`tree:${f.roots.b}/`]);
+  });
+
+  test('a reader without the product, unknown products and builds and malformed ids give ok:false with the real reason', async (t) => {
+    const f = await fixture(t);
+    const reader = createKnowledgeReader(f.w.knowledge);
+    const refusal = async (id: string, principal: Principal = f.w.user): Promise<string> => {
+      const read = await f.read(id, principal);
+      assert.equal(read.ok, false, id);
+      return read.ok ? '' : read.reason;
+    };
+    const good = `knowledge:facets:acme:${B}?kind=case&by=module`;
+    assert.match(await refusal(good, f.w.outsider), /不能读产品 acme 的知识/);
+    const gone = await f.w.kit.principals.createUser(f.w.admin, 'gone');
+    f.w.packs.readers.set(gone.id, new Set(['acme']));
+    await f.w.kit.principals.setDisabled(f.w.admin, gone.id, true);
+    assert.match(await refusal(good, gone), /不能读产品/);
+    assert.match(await refusal(`knowledge:facets:nothing:${B}?kind=case&by=module`), /没有产品 nothing/);
+    assert.match(await refusal('knowledge:facets:acme:Rel_NONE_9_9_9?kind=case&by=module'), /没有构建 Rel_NONE_9_9_9/);
+    const malformed: Array<[string, RegExp]> = [
+      ['knowledge:facets:acme', /不是知识视图的标识/],
+      [`knowledge:graph:acme:${B}`, /没有叫 graph 的知识视图/],
+      [`knowledge:facets:acme:${B}`, /要有参数 kind/],
+      [`knowledge:facets:acme:${B}?kind=case`, /要有参数 by/],
+      [`knowledge:facets:acme:${B}?kind=command&by=module`, /不是知识条目种类/],
+      [`knowledge:facets:acme:${B}?kind=case&by=a,b,c,d,e,f,g`, /1 到 6 个/],
+      [`knowledge:facets:acme:${B}?kind=case&by=Module`, /数据字段名/],
+      [`knowledge:facets:acme:${B}?kind=case&by=module,module`, /重复/],
+      [`knowledge:facets:acme:${B}?kind=case&by=module&kind=case`, /写了两次/],
+      [`knowledge:facets:acme:${B}?kind=case&by=module&limit=3`, /不认识参数 limit/],
+      [`knowledge:facets:acme:${B}?kind=case,definition&by=module`, /只能有一个取值/],
+      [`knowledge:facets:acme:${B}?kind=case&by=module,`, /取值写法不对/],
+      [`knowledge:impact:acme:${B}`, /<起始构建>\.\.<目标构建>/],
+      [`knowledge:impact:acme:${A}..${B}?changed=`, /至少要有一个/],
+      [`knowledge:index:acme:${B}?kind=case`, /要有参数 key/],
+      [`knowledge:index:acme:${B}?kind=case&key=defects&only=`, /1 到 1000 个取值/],
+      [`knowledge:index:acme:%E0%A4%A?kind=case&key=defects`, /百分号转义有误/],
+    ];
+    for (const [id, reason] of malformed) assert.match(await refusal(id), reason, id);
+    // Only knowledge ids of a known view are accepted; the router sends the rest to the other reader.
+    assert.equal(await reader.accepts(good), true);
+    assert.equal(await reader.accepts('knowledge:graph:acme:x'), false);
+    assert.equal(await reader.accepts('site:tree:x'), false);
+    const routed = routeKnowledgeViews(reader, f.w.external);
+    assert.equal(await routed.accepts('site:tree:Rel_ACME_1_2_15'), true);
+    assert.equal(await routed.accepts(good), true);
+    const viaRoute = await routed.read(good, { principal: f.w.user, run: null, purpose: 'x' });
+    assert.equal(viaRoute.ok, true);
+    const tree = await routed.read('site:tree:Rel_ACME_1_2_15', { principal: f.w.admin, run: null, purpose: 'x' });
+    assert.equal(tree.ok, true);
+  });
+});

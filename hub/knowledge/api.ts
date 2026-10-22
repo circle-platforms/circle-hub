@@ -1,8 +1,19 @@
 // Public surface of hub/knowledge: the content-addressed knowledge tree (K01-K05). createKnowledge returns an object that
 // implements KnowledgePort (hub/ports.ts) exactly, plus the production, sync, current-root, calibration, placement,
-// provenance and layer operations of this package. Other packages import only from this file.
+// provenance, layer and view operations of this package. createKnowledgeReader serves the knowledge views as external
+// objects (ExternalReaderPort); routeKnowledgeViews puts it beside the connectors' reader for the run engine. Other packages
+// import only from this file.
+import type { ExternalReaderPort } from '../ports.ts';
+import type { Knowledge } from './service.ts';
+import { viewReader } from './views.ts';
+
 export { createKnowledge } from './service.ts';
 export type { BuildCalibrationInput, Knowledge, KnowledgeCalibration, KnowledgeOptions, KnowledgePlacement } from './service.ts';
+
+/** The knowledge views (`knowledge:impact|facets|index:...`, contracts/src/views.ts) as an ExternalReaderPort. */
+export function createKnowledgeReader(knowledge: Knowledge): ExternalReaderPort {
+  return viewReader(knowledge.views);
+}
 
 export type { KnowledgeLimits, KnowledgeRecords } from './context.ts';
 export { DEFAULT_KNOWLEDGE_LIMITS, DEFAULT_SANDBOX } from './context.ts';
@@ -10,14 +21,33 @@ export { DEFAULT_KNOWLEDGE_LIMITS, DEFAULT_SANDBOX } from './context.ts';
 export type { ProduceInput, ProduceResult, PlannedSource } from './produce.ts';
 export { catalogData, plannedSources } from './produce.ts';
 
+export { DEFAULT_BATCH, buildDigest, listBatches, memoKey, uniqueList } from './lists.ts';
+export type { ListBatch, MemoKeyInput } from './lists.ts';
+
+export { CompositionView, PART_MAX_BYTES, PART_MAX_ROWS, PART_MIN_ROWS, PART_TARGET_ROWS, splitRows } from './composition.ts';
+export type { ReadRow } from './composition.ts';
+
 export type { BuildOutcome, SyncBuildReport, SyncOptions, SyncReport } from './sync.ts';
 export { DEFAULT_MAX_READS, DEFAULT_MAX_ROUNDS } from './sync.ts';
 
 export type { LineReconciliation, MoveRootOptions, MoveRootResult } from './builds.ts';
 export { compareNewestFirst, pointerName } from './builds.ts';
 
-export type { CompositionIndex, ProvenanceRow, TreeLock } from './read.ts';
+export type { ProvenanceRow, TreeLock } from './read.ts';
 export { MAX_NODE_PATHS, UNDECLARED, applicabilityText } from './read.ts';
+
+export type { ViewRequest } from './views.ts';
+export {
+  DEFAULT_ATTACHED_KINDS,
+  DEFAULT_CHANGED_KINDS,
+  KnowledgeViews,
+  MAX_FACET_COMBINATIONS,
+  MAX_ONLY_VALUES,
+  VIEW_SYSTEM,
+  compareValues,
+  parseViewId,
+  routeKnowledgeViews,
+} from './views.ts';
 
 export type { CalibrationState, LabelledSamplesInput, ThresholdResult } from './calibration.ts';
 export { CALIBRATION, PLACEMENT_CHAIN, maskLiterals, thresholdOf, wilsonLowerBound } from './calibration.ts';

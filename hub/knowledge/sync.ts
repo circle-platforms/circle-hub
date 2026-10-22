@@ -4,19 +4,22 @@
 // or producer changed, and move each touched line's current root to its newest build by compare-and-set. Idempotent (an
 // unchanged build is skipped), resumable (every production or failure is a generate action; a rerun skips what is done),
 // bounded (concurrency, per-build bytes, rounds and reads) and reported per build.
-import { SyncPlanOutput, expandTemplate } from '../../contracts/src/product.ts';
-import type { BuildInfo, SyncPlanInput } from '../../contracts/src/product.ts';
+import { z } from 'zod';
+import { BuildInfo, SyncPlanOutput, expandTemplate } from '../../contracts/src/product.ts';
+import type { SyncPlanInput } from '../../contracts/src/product.ts';
 import type { ProductHandle } from '../ports.ts';
-import { canonicalize, newId, type ActionBody, type Principal } from '../records/api.ts';
+import { canonicalize, newId, sha256Hex, type ActionBody, type Principal } from '../records/api.ts';
 import { SANDBOX_ERRORS, SandboxError, callPackFunction } from '../rules/api.ts';
 import type { Builds, LineReconciliation } from './builds.ts';
+import { mapLimited } from './concurrency.ts';
 import { requireAdmin, type KnowledgeContext } from './context.ts';
 import { compareText, cutText } from './digest.ts';
 import { describeError } from './errors.ts';
 import { PLACEMENT_CHAIN } from './calibration.ts';
+import { ListLoader, uniqueList } from './lists.ts';
 import { infoOf, plannedSources, produceTree } from './produce.ts';
 import { SourceLoader } from './sources.ts';
-import { ACTION, COMPONENTS, INDEX, buildProblem, fold } from './store.ts';
+import { ACTION, COMPONENTS, INDEX, buildProblem, fold, listRoles, recordedOf, withoutLists } from './store.ts';
 
 export const DEFAULT_MAX_ROUNDS = 6;
 export const DEFAULT_MAX_READS = 300;
@@ -36,6 +39,10 @@ export interface SyncOptions {
   includeUnreleased?: boolean;
   /** Builds produced at the same time (default the service limit, 2). */
   concurrency?: number;
+  /** List sources stored at most this many seconds ago are used again without a read (default the limit, 86400; 0 reads every one). */
+  maxAgeSeconds?: number;
+  /** List sources read at the same time per production (default the limit, 4). */
+  readConcurrency?: number;
   signal?: AbortSignal;
 }
 
@@ -56,6 +63,10 @@ export interface SyncBuildReport {
   would_produce?: boolean;
   refused?: number;
   unplaced?: number;
+  /** Listed sources the production could not use. */
+  skipped?: number;
+  /** Producer calls made and answered from stored outputs. */
+  calls?: { made: number; reused: number };
 }
 
 export interface SyncReport {
@@ -83,6 +94,18 @@ export interface SyncReport {
 }
 
 type SyncRead = SyncPlanInput['read'][string];
+
+/** A plan answer as checked: its builds that are build-info@1, and those that are not (failed builds of the report). */
+interface PlanAnswer {
+  fetch: string[];
+  builds: BuildInfo[];
+  invalid: Array<{ index: number; raw: unknown; reason: string }>;
+  done: boolean;
+  note?: string;
+}
+
+/** The envelope of sync-plan-output@1 with the builds unchecked: one build that is not build-info@1 fails only itself. */
+const PlanEnvelope = z.strictObject({ fetch: SyncPlanOutput.shape.fetch, builds: z.array(z.unknown()), done: z.boolean(), note: z.string().optional() });
 
 async function pool<T>(items: readonly T[], limit: number, fn: (item: T) => Promise<void>): Promise<void> {
   let next = 0;
@@ -143,7 +166,7 @@ export async function syncProduct(context: KnowledgeContext, builds: Builds, pro
   }
   const read: Record<string, SyncRead> = {};
   let reads = 0;
-  let output: SyncPlanOutput | null = null;
+  let output: PlanAnswer | null = null;
   let planAction: string | null = null;
   for (let round = 1; round <= maxRounds; round++) {
     const fresh: string[] = [];
@@ -186,7 +209,14 @@ export async function syncProduct(context: KnowledgeContext, builds: Builds, pro
   // ---------------------------------------------------------------- builds
   const planned = new Map<string, BuildInfo>();
   for (const build of output.builds) planned.set(build.name, build);
-  report.plan.builds = planned.size;
+  report.plan.builds = planned.size + output.invalid.length;
+  // A build the plan gave that is not build-info@1 fails alone (README decision 12); the others go on.
+  for (const bad of output.invalid) {
+    const raw = typeof bad.raw === 'object' && bad.raw !== null ? (bad.raw as Record<string, unknown>) : {};
+    const text = (value: unknown, fallback: string): string => (typeof value === 'string' && value !== '' ? cutText(value, 200) : fallback);
+    const name = text(raw.name, `（计划的第 ${bad.index + 1} 个构建）`);
+    report.builds.push({ name, family: text(raw.family, '?'), line: text(raw.line, '?'), base: text(raw.base, name), outcome: 'failed', reason: bad.reason, root: null, composition: null });
+  }
   const names = new Set(product.product.names.map((name) => fold(name)));
   const releasedAliasBases = new Set([...planned.values()].filter((b) => b.base !== b.name && b.released_at !== null).map((b) => b.base));
   const pack = { id: product.id, version: product.version, digest: product.digest };
@@ -242,7 +272,19 @@ export async function syncProduct(context: KnowledgeContext, builds: Builds, pro
       return;
     }
     try {
-      results.set(build.name, await processOwnTree(context, product, build, { sync, loader, by, dryRun, recheck: options.recheck === true, signal: options.signal }));
+      results.set(
+        build.name,
+        await processOwnTree(context, product, build, {
+          sync,
+          loader,
+          by,
+          dryRun,
+          recheck: options.recheck === true,
+          signal: options.signal,
+          ...(options.maxAgeSeconds === undefined ? {} : { maxAgeSeconds: options.maxAgeSeconds }),
+          ...(options.readConcurrency === undefined ? {} : { readConcurrency: options.readConcurrency }),
+        }),
+      );
     } catch (error) {
       // A failure of one build never stops the others; the rerun picks it up.
       results.set(build.name, { ...base, outcome: 'failed', reason: `处理时出错：${describeError(error)}`, root: null, composition: null });
@@ -268,14 +310,21 @@ async function processOwnTree(
   context: KnowledgeContext,
   product: ProductHandle,
   build: BuildInfo,
-  options: { sync: string; loader: SourceLoader; by: Principal; dryRun: boolean; recheck: boolean; signal?: AbortSignal },
+  options: { sync: string; loader: SourceLoader; by: Principal; dryRun: boolean; recheck: boolean; signal?: AbortSignal; maxAgeSeconds?: number; readConcurrency?: number },
 ): Promise<SyncBuildReport> {
   const productId = product.product.id;
   const base = { name: build.name, family: build.family, line: build.line, base: build.base };
   const info = infoOf(build);
   const existing = await context.store.latestProduction(productId, build.name);
   const keyOf = (s: { producer: string; slot: string; external: string | null }): string => `${s.producer}\u0000${s.slot}\u0000${s.external ?? ''}`;
-  const plannedKeys = plannedSources(product, info).map(keyOf).sort(compareText);
+  const planned = plannedSources(product, info);
+  const plannedKeys = planned.filter((s) => !s.many).map(keyOf).sort(compareText);
+  const plannedLists = planned
+    .filter((s) => s.many)
+    .map((s) => `${s.producer}\u0000${s.slot}\u0000${sha256Hex(canonicalize(uniqueList(s.list ?? []).ids))}`)
+    .sort(compareText);
+  const cap = context.limits.maxBuildBytes;
+  const concurrency = options.readConcurrency ?? context.limits.listReadConcurrency;
   // Why the newest production no longer stands for this build, or null when it still does (checked cheapest first).
   let changed: string | null = null;
   if (existing !== null) {
@@ -283,7 +332,11 @@ async function processOwnTree(
     if (existing.detail.pack.digest !== product.digest) changed = '生产器变了';
     else if (existing.record.body.component !== COMPONENTS.produce) changed = `Hub 的生产组件变了（${existing.record.body.component} → ${COMPONENTS.produce}）`;
     // The listing changed (released since, other line or platform, other sources): the composition records the build as listed.
-    else if (canonicalize(existing.detail.build) !== canonicalize(info)) changed = '构建信息变了';
+    else if (
+      canonicalize(withoutLists(existing.detail.build)) !== canonicalize(withoutLists(info)) ||
+      canonicalize(listRoles(existing.detail.build)) !== canonicalize(listRoles(info))
+    ) changed = '构建信息变了';
+    else if (canonicalize(existing.detail.build) !== canonicalize(recordedOf(info).build)) changed = '来源列表变了';
     else if (recorded !== null && recorded.spans > 0) {
       // Spans placed by the typed-judgment model depend on the model and the chain's calibration; a judge failure is retried.
       const model = context.placer.model;
@@ -292,9 +345,11 @@ async function processOwnTree(
       else if (recorded.model !== model || recorded.threshold !== threshold) changed = '归类判断的模型或本链的校准变了';
     }
     if (changed === null) {
-      // The same external sources as then (read, or optional and missing).
+      // The same external sources as then (read, or optional and missing), and the same lists.
       const recordedKeys = [...existing.detail.sources, ...existing.detail.missing].map(keyOf).sort(compareText);
       if (recordedKeys.length !== plannedKeys.length || recordedKeys.some((key, i) => key !== plannedKeys[i])) changed = '来源变了';
+      const recordedLists = existing.detail.lists.map((l) => `${l.producer}\u0000${l.slot}\u0000${l.externals}`).sort(compareText);
+      if (changed === null && (recordedLists.length !== plannedLists.length || recordedLists.some((key, i) => key !== plannedLists[i]))) changed = '来源列表变了';
     }
     if (changed === null) {
       // An optional source that was missing is read again every time (one read per sync for a source builds share).
@@ -305,6 +360,15 @@ async function processOwnTree(
         }
       }
     }
+    if (changed === null) {
+      // A listed source that could not be loaded is tried again (the first 50 kept per list): produced again once it loads.
+      // Each load is reduced to whether it worked as soon as it is done, so no document is held after it.
+      const retry = new ListLoader(context, options.loader, { maxAgeSeconds: 0, concurrency, record: !options.dryRun });
+      const ids = existing.detail.lists.flatMap((l) => l.skipped.filter((s) => s.retry).map((s) => s.external));
+      const loaded = await mapLimited(ids, concurrency, async (id) => (await retry.load(id, cap)).ok);
+      const now = ids.find((_, i) => loaded[i]);
+      if (now !== undefined) changed = `列表里跳过的来源 ${now} 现在能用了`;
+    }
     if (changed === null && !options.recheck) {
       return { ...base, outcome: 'skipped', reason: '已有根，来源和生产器都没有变', root: existing.detail.root, composition: existing.detail.composition };
     }
@@ -313,6 +377,32 @@ async function processOwnTree(
       for (const source of existing.detail.sources) {
         const load = await options.loader.read(source.external);
         if (!load.ok || load.artifact.body.sha256 !== source.sha256) unchanged = false;
+      }
+      // Every listed source is read again through the port. The [id, digest] pairs of what reads now must be those of what
+      // was read then (every object read, used or skipped); only the digests are kept, never the documents.
+      if (unchanged && existing.detail.lists.length > 0) {
+        const again = new ListLoader(context, options.loader, { maxAgeSeconds: 0, concurrency, record: !options.dryRun });
+        for (const list of existing.detail.lists) {
+          const source = planned.find((s) => s.many && s.producer === list.producer && s.slot === list.slot);
+          const ids = uniqueList(source?.list ?? []).ids;
+          if (list.read !== undefined) {
+            const digests = await mapLimited(ids, concurrency, async (id) => {
+              const peek = await again.peek(id);
+              return peek.ok ? peek.load.artifact.body.sha256 : null;
+            });
+            const pairs = ids.flatMap((id, i) => (digests[i] === null ? [] : [[id, digests[i]]]));
+            if (sha256Hex(canonicalize(pairs)) !== list.read) unchanged = false;
+            continue;
+          }
+          // A production of an earlier version recorded the pairs used only.
+          const digests = await mapLimited(ids, concurrency, async (id) => {
+            const load = await again.load(id, cap);
+            return load.ok ? load.value.sha256 : null;
+          });
+          const failedThen = new Set(list.skipped.filter((s) => !s.retry).map((s) => s.external));
+          const pairs = ids.flatMap((id, i) => (digests[i] !== null && !failedThen.has(id) ? [[id, digests[i]]] : []));
+          if (sha256Hex(canonicalize(pairs)) !== list.loaded) unchanged = false;
+        }
       }
       if (unchanged) return { ...base, outcome: 'skipped', reason: '已有根，重读后来源摘要没有变', root: existing.detail.root, composition: existing.detail.composition };
       changed = '来源变了';
@@ -329,19 +419,25 @@ async function processOwnTree(
     sync: options.sync,
     loader: options.loader,
     signal: options.signal,
+    ...(options.maxAgeSeconds === undefined ? {} : { maxAgeSeconds: options.maxAgeSeconds }),
+    ...(options.readConcurrency === undefined ? {} : { readConcurrency: options.readConcurrency }),
   });
   if (!produced.ok) return { ...base, outcome: 'failed', reason: produced.reason ?? '生产失败', root: null, composition: null, refused: produced.refusedCount };
   const note = produced.refusedCount > 0 ? `；${produced.refusedCount} 个条目没有通过核对` : '';
+  const skipped = produced.skippedCount > 0 ? `；跳过 ${produced.skippedCount} 份列出的来源（见组成记录）` : '';
+  const calls = produced.calls.reused > 0 ? `；生产器调用 ${produced.calls.made} 次，复用 ${produced.calls.reused} 次` : '';
   const same = existing !== null && existing.detail.root === produced.root ? '（内容与上次相同）' : '';
   const cause = existing === null ? '' : `；重新产出：${changed ?? '来源变了'}`;
   return {
     ...base,
     outcome: 'produced',
-    reason: `产出根，${produced.nodes} 个节点（新写 ${produced.created} 个）、${produced.entries} 个条目${same}${note}${cause}`,
+    reason: `产出根，${produced.nodes} 个节点（新写 ${produced.created} 个）、${produced.entries} 个条目${same}${note}${skipped}${calls}${cause}`,
     root: produced.root,
     composition: produced.composition,
     refused: produced.refusedCount,
     unplaced: produced.unplaced,
+    skipped: produced.skippedCount,
+    calls: produced.calls,
   };
 }
 
@@ -357,7 +453,7 @@ async function readPage(loader: SourceLoader, id: string, maxBytes: number): Pro
   return { ok: true, media_type: mediaType, parser: parsed.value.parser, model: parsed.value.document.model, reason: null };
 }
 
-type PlanRun = { ok: true; value: SyncPlanOutput } | { ok: false; reason: string };
+type PlanRun = { ok: true; value: PlanAnswer } | { ok: false; reason: string };
 
 async function runPlan(context: KnowledgeContext, product: ProductHandle, input: SyncPlanInput): Promise<PlanRun> {
   const declaration = product.product.sync;
@@ -375,18 +471,26 @@ async function runPlan(context: KnowledgeContext, product: ProductHandle, input:
     if (error instanceof SandboxError) return { ok: false, reason: `计划函数第 ${input.round} 轮运行失败：${SANDBOX_ERRORS[error.code]}` };
     return { ok: false, reason: `计划函数第 ${input.round} 轮运行失败：${describeError(error)}` };
   }
-  const parsed = SyncPlanOutput.safeParse(output);
-  if (!parsed.success) {
-    const issue = parsed.error.issues[0];
-    return { ok: false, reason: `计划函数第 ${input.round} 轮的输出不符合 sync-plan-output@1：${issue === undefined ? '' : `${issue.path.join('/')} ${issue.message}`}` };
-  }
-  return { ok: true, value: parsed.data };
+  const issueText = (error: z.ZodError): string => {
+    const issue = error.issues[0];
+    return issue === undefined ? '' : cutText(`${issue.path.join('/')} ${issue.message}`, 300);
+  };
+  const parsed = PlanEnvelope.safeParse(output);
+  if (!parsed.success) return { ok: false, reason: `计划函数第 ${input.round} 轮的输出不符合 sync-plan-output@1：${issueText(parsed.error)}` };
+  const builds: BuildInfo[] = [];
+  const invalid: PlanAnswer['invalid'] = [];
+  parsed.data.builds.forEach((raw, index) => {
+    const build = BuildInfo.safeParse(raw);
+    if (build.success) builds.push(build.data);
+    else invalid.push({ index, raw, reason: `计划给出的第 ${index + 1} 个构建不符合 build-info@1：${issueText(build.error)}` });
+  });
+  return { ok: true, value: { fetch: parsed.data.fetch, builds, invalid, done: parsed.data.done, ...(parsed.data.note === undefined ? {} : { note: parsed.data.note }) } };
 }
 
 /** The parse action of one plan round: the pages read so far as inputs, what the plan answered. */
 async function writePlanAction(
   context: KnowledgeContext,
-  input: { sync: string; product: string; round: number; fresh: number; pages: string[]; output: SyncPlanOutput | null; reason: string | null; startedAt: string; read: Record<string, SyncRead> },
+  input: { sync: string; product: string; round: number; fresh: number; pages: string[]; output: PlanAnswer | null; reason: string | null; startedAt: string; read: Record<string, SyncRead> },
 ): Promise<string> {
   const body: ActionBody = {
     action: ACTION.parse,
@@ -410,6 +514,7 @@ async function writePlanAction(
       failed_pages: Object.values(input.read).filter((r) => !r.ok).length,
       fetch: input.output?.fetch.length ?? null,
       builds: input.output?.builds.length ?? null,
+      invalid_builds: input.output?.invalid.length ?? null,
       done: input.output?.done ?? null,
       // What the pack function wrote is made storable (a lone surrogate would fail the whole sync).
       note: input.output?.note === undefined ? null : cutText(input.output.note, 1000),

@@ -36,10 +36,21 @@ function newNode(name: string): MutableNode {
 
 export class TreeBuilder {
   readonly root: MutableNode = newNode('');
+  /** Most entries one node holds (a node record stays bounded). */
+  readonly maxEntries: number;
 
-  /** Hangs an entry on the node at `segments`, creating the nodes on the way. */
-  add(segments: readonly string[], entry: string): void {
+  constructor(maxEntries = Number.POSITIVE_INFINITY) {
+    this.maxEntries = maxEntries;
+  }
+
+  /**
+   * Hangs an entry on the node at `segments`, creating the nodes on the way. False (and nothing created) when that node
+   * already holds `maxEntries` other entries.
+   */
+  add(segments: readonly string[], entry: string): boolean {
     if (segments.length > MAX_TREE_DEPTH) throw new RangeError(`a tree path has at most ${MAX_TREE_DEPTH} segments`);
+    const found = this.find(segments);
+    if (found !== null && !found.entries.has(entry) && found.entries.size >= this.maxEntries) return false;
     let node = this.root;
     for (const segment of segments) {
       let child = node.children.get(segment);
@@ -50,6 +61,7 @@ export class TreeBuilder {
       node = child;
     }
     node.entries.add(entry);
+    return true;
   }
 
   /** The node at `segments`, or null. */

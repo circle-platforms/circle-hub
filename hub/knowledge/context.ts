@@ -1,6 +1,6 @@
 // What every part of the knowledge service shares: the records it writes, the ports it consumes, the clock and the limits.
 import type { ExternalReaderPort, PacksPort } from '../ports.ts';
-import type { Artifacts, Pointers, Principal, Principals, RecordStore, User } from '../records/api.ts';
+import type { Artifacts, ObjectStore, Pointers, Principal, Principals, RecordStore, User } from '../records/api.ts';
 import type { ParserRegistry } from '../refs/api.ts';
 import type { SandboxLimits } from '../rules/api.ts';
 import type { CalibrationStore } from './calibration.ts';
@@ -14,10 +14,12 @@ export interface KnowledgeRecords {
   artifacts: Artifacts;
   pointers: Pointers;
   principals: Pick<Principals, 'get'>;
+  /** Content-addressed bytes: the stored outputs of producer calls (memoized batches) and the bytes of computed views. */
+  objects: Pick<ObjectStore, 'put' | 'get'>;
 }
 
 export interface KnowledgeLimits {
-  /** Bytes of all sources of one build (default 64 MiB). */
+  /** Bytes of all single sources of one build, and of the documents of one batch of a list slot (default 64 MiB). */
   maxBuildBytes: number;
   /** Builds produced at the same time by one sync (default 2). */
   concurrency: number;
@@ -28,6 +30,32 @@ export interface KnowledgeLimits {
   /** Largest statement of an entry in bytes (default 1 MiB) and its data as canonical JSON (default 4 MiB). */
   maxStatementBytes: number;
   maxDataBytes: number;
+  /** External objects of the list slots of one production read at the same time (default 4). */
+  listReadConcurrency: number;
+  /** A list source the knowledge package stored at most this many seconds ago is used again without a new read (default 86400; 0 reads every one again). */
+  listMaxAgeSeconds: number;
+  /** Batches of one list producer processed at the same time (default 2). */
+  batchConcurrency: number;
+  /** Most entries one node holds; further entries for it are refused (default 20000). */
+  maxNodeEntries: number;
+  /** Rows (composition rows, unplaced rows, list sources) up to which a composition stays in one record (default 1000). */
+  inlineRows: number;
+  /** Records per transaction while a root is written (default 500) and such transactions at the same time (default 4). */
+  writeChunk: number;
+  writeConcurrency: number;
+  /** Largest view answer in bytes of canonical JSON (default 15 MiB: the core JSON parser reads at most 16 MiB). */
+  maxViewBytes: number;
+  /**
+   * Calls a list may make to isolate the documents its producer fails on: this many per batch, plus as many as for four
+   * batches (default 16: about one failing document in every batch of 50). Over it the production fails.
+   */
+  isolationCallsPerBatch: number;
+  /** Producer calls of one production that may run past the sandbox's time limit (default 16); the next one fails the production. */
+  maxTimedOutCalls: number;
+  /** A list whose skipped documents are more than this share of the listed ones fails the production (default 0.5). */
+  maxSkippedShare: number;
+  /** Distinct value combinations one facet view collects (default 100000); later new combinations are left out and flagged. */
+  facetCombinations: number;
 }
 
 export const DEFAULT_KNOWLEDGE_LIMITS: KnowledgeLimits = {
@@ -37,11 +65,27 @@ export const DEFAULT_KNOWLEDGE_LIMITS: KnowledgeLimits = {
   pageBytes: 2 * 1024 * 1024,
   maxStatementBytes: 1024 * 1024,
   maxDataBytes: 4 * 1024 * 1024,
+  listReadConcurrency: 4,
+  listMaxAgeSeconds: 86_400,
+  batchConcurrency: 2,
+  maxNodeEntries: 20_000,
+  inlineRows: 1000,
+  writeChunk: 500,
+  writeConcurrency: 4,
+  maxViewBytes: 15 * 1024 * 1024,
+  isolationCallsPerBatch: 16,
+  maxTimedOutCalls: 16,
+  maxSkippedShare: 0.5,
+  facetCombinations: 100_000,
 };
 
-/** Sandbox limits of the plan and producer functions (raised over the rules defaults: a parsed command tree is large). */
+/**
+ * Sandbox limits of the plan and producer functions (raised over the rules defaults: a parsed command tree is large). The
+ * plan's output may take the sandbox's largest output (64 MiB): every build it lists carries its list roles, about 1 million
+ * listed ids of 60 bytes in one sync.
+ */
 export const DEFAULT_SANDBOX: { plan: Partial<SandboxLimits>; producer: Partial<SandboxLimits> } = {
-  plan: { timeoutMs: 60_000, memoryMb: 512, inputBytes: 128 * 1024 * 1024, outputBytes: 16 * 1024 * 1024 },
+  plan: { timeoutMs: 60_000, memoryMb: 1024, inputBytes: 128 * 1024 * 1024, outputBytes: 64 * 1024 * 1024 },
   producer: { timeoutMs: 120_000, memoryMb: 1024, inputBytes: 128 * 1024 * 1024, outputBytes: 64 * 1024 * 1024 },
 };
 

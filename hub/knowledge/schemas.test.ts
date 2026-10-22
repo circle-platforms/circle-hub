@@ -29,13 +29,39 @@ const EXAMPLES: Record<string, unknown> = {
     unplaced: [
       { entry: H('7'), kind: 'definition', producers: ['manual'], section: 'Ping', fragments: [`src:${H('8')}/markdown@1/b/0/Manual`], basis: 'declared', decided_by: 'acme@1.0.0', stopped_at: '/', candidate: { path: '/commands', model: 'jev-1.13.0', p: 0.8, calibrated: false }, judgments: [H('9')], note: '本链尚未校准' },
     ],
+    parts: { composition: [{ record: H('a'), rows: 2, first: '/commands/net', last: '/commands/system', kind: 'definition' }], unplaced: [], sources: [] },
     refused: [{ producer: 'commands', index: 4, unplaced: false, kind: '', path: '/commands/ghost', reason: '找不到' }],
     refused_count: 1,
+    skipped: [{ producer: 'cases', slot: 'cases', external: 'store:mindmap:7', reason: '读取失败：HTTP 404' }],
+    skipped_count: 1,
     catalogs: [{ id: 'catalog@1', entry_kind: 'definition', producer: 'commands', complete: false, case_sensitive: false, declared_complete: true, members: 1, incomplete_reason: '1 个条目没有通过核对' }],
     counts: { nodes: 4, entries: 1, placed_by_model: 0, unplaced: 1 },
+    kinds: { definition: 1, behaviour: 0, case: 0, defect: 0, observation: 0 },
     warnings: [],
     warnings_count: 0,
     produced_at: '2026-01-06T00:00:00.000Z',
+  },
+  'tree_root-rows@1': {
+    rows: [
+      {
+        path: '/commands/net/ping',
+        entry: H('2'),
+        kind: 'case',
+        producers: ['cases'],
+        fragments: [`src:${H('5')}/kityminder@1/n/c1`],
+        basis: 'release_record',
+        decided_by: 'acme@1.0.0',
+        statement: '验证 ping',
+        data: { defects: ['61061'] },
+        applicability: null,
+      },
+    ],
+  },
+  'tree_root-unplaced@1': {
+    rows: [{ entry: H('7'), kind: 'case', producers: ['cases'], section: '', fragments: [`src:${H('8')}/kityminder@1/n/c2`], basis: 'declared', decided_by: 'acme@1.0.0', stopped_at: '/', candidate: null, judgments: [], note: '没有配置归类判断模型（Jev），片段不挂树' }],
+  },
+  'tree_root-sources@1': {
+    rows: [{ producer: 'cases', slot: 'cases', external: 'store:mindmap:7', revision: null, sha256: H('5'), size: 10, media_type: 'application/json', parser: 'kityminder@1', artifact: H('6'), read_tier: 'model_readable', basis: 'release_record', decided_by: 'acme@1.0.0' }],
   },
   'root_pointer@1': { product: 'acme', line: '1.2', pointer: 'knowledge/acme/1.2', expected: null, root: H('3'), build: 'b1', composition: H('a'), move: H('b'), version: 1, cause: `rec:${H('c')}` },
   'knowledge-build@1': { product: 'acme', build, pack: { id: 'acme', version: '1.0.0', digest: H('4') }, plan: null, sync: 'sync_01jacd5z8q3w7v9h2k4m6n8p0t' },
@@ -76,6 +102,37 @@ test('stored kinds are entry kinds, levels are node levels and the producers of 
     root.composition[0].producers = ['commands'];
     root.unplaced[0].producers = producers;
     assert.equal(schemas['tree_root@1'].safeParse(root).success, false, producers.join(','));
+  }
+});
+
+test('a part holds at least one row of its own shape; the kind counts name every entry kind', () => {
+  for (const id of ['tree_root-rows@1', 'tree_root-unplaced@1', 'tree_root-sources@1']) assert.equal(schemas[id].safeParse({ rows: [] }).success, false, id);
+  const row = (EXAMPLES['tree_root-rows@1'] as { rows: Array<Record<string, unknown>> }).rows[0];
+  const { statement: _statement, ...withoutContent } = row;
+  assert.equal(schemas['tree_root-rows@1'].safeParse({ rows: [withoutContent] }).success, false, 'a part row carries the content of its entry');
+  const root = structuredClone(EXAMPLES['tree_root@1']) as Record<string, unknown>;
+  assert.equal(schemas['tree_root@1'].safeParse({ ...root, kinds: { definition: 1 } }).success, false, 'every kind is counted');
+  assert.equal(schemas['tree_root@1'].safeParse({ ...root, kinds: { ...(root.kinds as object), command: 1 } }).success, false, 'only entry kinds');
+  const { parts: _parts, skipped: _skipped, skipped_count: _count, kinds: _kinds, ...plain } = root;
+  assert.equal(schemas['tree_root@1'].safeParse(plain).success, true, 'a composition in one record, without list sources, is still valid');
+});
+
+test('a build record keeps single roles and names its list roles; a composition keeps a list role by reference', () => {
+  const ajv = new AjvJsonSchemaValidator();
+  const claim = EXAMPLES['knowledge-build@1'] as { build: typeof build };
+  const withList = { ...claim, build: { ...build, sources: { ...build.sources, cases: ['store:mindmap:1'] } } };
+  assert.equal(schemas['knowledge-build@1'].safeParse(withList).success, false, 'zod refuses a list in a build record');
+  assert.equal(ajv.getValidator(published('knowledge-build@1'))(withList).valid, false, 'so does the published schema');
+  for (const lists of [['cases'], []]) assert.equal(schemas['knowledge-build@1'].safeParse({ ...claim, lists }).success, true, lists.join(','));
+  for (const lists of [['b', 'a'], ['a', 'a'], ['']]) assert.equal(schemas['knowledge-build@1'].safeParse({ ...claim, lists }).success, false, lists.join(','));
+  const root = structuredClone(EXAMPLES['tree_root@1']) as { build: Record<string, unknown> };
+  const reference = { list: H('e'), count: 2 };
+  root.build = { ...build, sources: { ...build.sources, cases: reference } };
+  assert.equal(schemas['tree_root@1'].safeParse(root).success, true, 'a list role by reference');
+  assert.equal(ajv.getValidator(published('tree_root@1'))(root).valid, true);
+  for (const cases of [['store:mindmap:1'], { list: H('e') }, { ...reference, count: -1 }, { ...reference, list: 'x' }]) {
+    root.build = { ...build, sources: { ...build.sources, cases } };
+    assert.equal(schemas['tree_root@1'].safeParse(root).success, false, JSON.stringify(cases));
   }
 });
 

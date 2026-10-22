@@ -11,7 +11,7 @@ import type { ActionBody } from '../records/api.ts';
 import type { TemporaryPostgres } from '../testing/postgres.ts';
 import { pointerName } from './builds.ts';
 import { nodeDigest } from './digest.ts';
-import { INDEX, buildKey } from './store.ts';
+import { INDEX, buildKey, withoutLists } from './store.ts';
 import { BASE_CATALOG, DEFAULT_PRODUCERS, STATIC_PLAN_SOURCE, catalogXml, linkPage, listingPage, makeWorld, standardSite, startPostgres, type World } from './test-support.ts';
 
 let postgres: TemporaryPostgres;
@@ -39,7 +39,8 @@ function alias(name: string, base: string, line: string, released: string | null
 
 async function putBuilds(w: World, builds: BuildInfo[]): Promise<void> {
   const pack = { id: w.product.id, version: w.product.version, digest: w.product.digest };
-  for (const info of builds) await w.knowledge.store.putBuild({ product: 'acme', build: info, pack, plan: null, sync: null });
+  // A build record keeps single roles only (these builds have no list role).
+  for (const info of builds) await w.knowledge.store.putBuild({ product: 'acme', build: withoutLists(info), pack, plan: null, sync: null });
 }
 
 describe('current roots move only forward and only by a production', () => {

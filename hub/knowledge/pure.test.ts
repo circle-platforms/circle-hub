@@ -263,12 +263,25 @@ describe('display and placement questions', () => {
 
 describe('knowledge sync arguments', () => {
   test('product, line and flags in both spellings', () => {
-    assert.deepEqual(parseKnowledgeSyncArgs(['--product', 'acme', '--line', '1.3', '--dry-run']), { product: 'acme', line: '1.3', dryRun: true, recheck: false, includeUnreleased: false });
-    assert.deepEqual(parseKnowledgeSyncArgs(['--product=ZETA', '--recheck', '--include-unreleased']), { product: 'ZETA', line: null, dryRun: false, recheck: true, includeUnreleased: true });
+    assert.deepEqual(parseKnowledgeSyncArgs(['--product', 'acme', '--line', '1.3', '--dry-run']), { product: 'acme', line: '1.3', dryRun: true, recheck: false, includeUnreleased: false, maxAgeSeconds: null });
+    assert.deepEqual(parseKnowledgeSyncArgs(['--product=ZETA', '--recheck', '--include-unreleased']), { product: 'ZETA', line: null, dryRun: false, recheck: true, includeUnreleased: true, maxAgeSeconds: null });
+    assert.equal(parseKnowledgeSyncArgs(['--product', 'acme', '--max-age', '0']).maxAgeSeconds, 0);
+    assert.equal(parseKnowledgeSyncArgs(['--product', 'acme', '--max-age=3600']).maxAgeSeconds, 3600);
   });
 
   test('a missing product, a missing value or an unknown argument is refused with the usage', () => {
-    for (const argv of [[], ['--line', '1.3'], ['--product'], ['--product', '--dry-run'], ['--product', 'a', '--force'], ['--product', 'a', '--dry-run=yes'], ['--product', 'a', '--line=']]) {
+    for (const argv of [
+      [],
+      ['--line', '1.3'],
+      ['--product'],
+      ['--product', '--dry-run'],
+      ['--product', 'a', '--force'],
+      ['--product', 'a', '--dry-run=yes'],
+      ['--product', 'a', '--line='],
+      ['--product', 'a', '--max-age', '-1'],
+      ['--product', 'a', '--max-age=1.5'],
+      ['--product', 'a', '--max-age'],
+    ]) {
       assert.throws(() => parseKnowledgeSyncArgs(argv), (error: unknown) => error instanceof KnowledgeError && (error.message.includes(KNOWLEDGE_SYNC_USAGE) || error.message.includes('--line')), argv.join(' '));
     }
   });
