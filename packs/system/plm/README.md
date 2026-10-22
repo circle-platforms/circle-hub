@@ -7,6 +7,7 @@ route one by one (method and path template) and has no write route.
 | Read | Gives |
 | --- | --- |
 | `plm:bug:<id>`, `plm:story:<id>` | the original answer, content `{id, kind, title, fields, html_fields}` (every HTML field as plain text, empty lines dropped) and meta `{id, kind, title: "缺陷 <id> <title>" or "需求 <id> <title>", status}`; an id the service does not know is a failed read (unavailable to callers) |
+| `plm:bugs:<id>+<id>+...` | the original answer, content `{bugs: [{id, status, title}], unread: [<ids>]}` (up to 50 ids, sorted numerically, deduplicated); unreturned ids listed in unread |
 | `plm:products:<any>` | the product list (`GET /plmquery/product/all/`) |
 | `plm:builds:<product id>` | the build list of a product (`GET /plmquery/build/?product=<id>`, a plain array) |
 

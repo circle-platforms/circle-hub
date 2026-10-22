@@ -9,7 +9,7 @@ import { startPostgres, type TemporaryPostgres } from '../../../hub/testing/post
 import { AGILE_ACCOUNT, agileOptions } from '../../../tests/fixtures/agile/index.ts';
 import { WRITE_PATH, plmReply } from '../../../tests/fixtures/plm/index.ts';
 import { artifactBytes, openSystemKit, type SystemKit } from '../testing/kit.ts';
-import { detailPlan, detailProject, htmlText, isHtml } from './functions/plm.ts';
+import { bugsPlan, bugsProject, detailPlan, detailProject, htmlText, isHtml } from './functions/plm.ts';
 
 const profile = SystemProfile.parse(JSON.parse(readFileSync(new URL('./system.json', import.meta.url), 'utf8')));
 
@@ -48,6 +48,45 @@ describe('the read functions', () => {
     assert.deepEqual(projected.artifacts[0].json.fields, { id: '7', title: 'x', steps: 'a' });
     assert.deepEqual(projected.artifacts[0].json.html_fields, ['steps']);
     assert.ok('error' in (detailProject({ external: { type: 'bug', key: '9' }, responses, original: 'detail' }) as object));
+  });
+
+  test('batch bugs plan: sorts numerically, dedupes, enforces 50 limit; invalid keys plan nothing', () => {
+    assert.deepEqual(bugsPlan({ external: { type: 'bugs', key: '70412+31057' } }).requests, [
+      { key: 'detail', route: 'bug-detail', body: { bug_ids: [31057, 70412] } },
+    ]);
+    assert.deepEqual(bugsPlan({ external: { type: 'bugs', key: '31057+31057' } }).requests, [
+      { key: 'detail', route: 'bug-detail', body: { bug_ids: [31057] } },
+    ]);
+    const fifty = Array.from({ length: 50 }, (_, i) => String(i + 1)).join('+');
+    assert.equal(bugsPlan({ external: { type: 'bugs', key: fifty } }).requests.length, 1);
+    const fiftyOne = Array.from({ length: 51 }, (_, i) => String(i + 1)).join('+');
+    assert.deepEqual(bugsPlan({ external: { type: 'bugs', key: fiftyOne } }), { requests: [], done: true });
+    for (const bad of ['', '0', '12+0', 'abc', '1+2+']) {
+      assert.deepEqual(bugsPlan({ external: { type: 'bugs', key: bad } }), { requests: [], done: true }, bad);
+    }
+  });
+
+  test('batch bugs project: keeps raw status untranslated and lists unreturned ids as unread', () => {
+    const responses = {
+      detail: {
+        ok: true,
+        json: {
+          code: 1000,
+          data: [
+            { id: 31057, status: 'resolved', title: '示例网关探活' },
+            { id: '70412', status: 'closed', title: '信标权重' },
+          ],
+        },
+      },
+    };
+    const projected = bugsProject({ external: { type: 'bugs', key: '31057+70412+99999' }, responses, original: 'detail' }) as {
+      artifacts: { name: string; json: { bugs: Array<{ id: string; status: string; title: string | null }>; unread: string[] } }[];
+    };
+    assert.deepEqual(projected.artifacts[0].json.bugs, [
+      { id: '31057', status: 'resolved', title: '示例网关探活' },
+      { id: '70412', status: 'closed', title: '信标权重' },
+    ]);
+    assert.deepEqual(projected.artifacts[0].json.unread, ['99999']);
   });
 });
 
@@ -101,6 +140,18 @@ describe('reads through the connectors', () => {
     assert.equal(builds.length, 3);
     const products = (await artifact(await read('plm:products:all'), 'original')) as { data: unknown[] };
     assert.equal(products.data.length, 2);
+  });
+
+  test('batch bugs through connectors: returns status without translation and unread ids', async () => {
+    const content = (await artifact(await read('plm:bugs:31057+70412+99999'), 'content')) as {
+      bugs: Array<{ id: string; status: string; title: string | null }>;
+      unread: string[];
+    };
+    assert.deepEqual(content.bugs, [
+      { id: '31057', status: 'resolved', title: '示例网关的 HTTP 探活在后端返回 500 时仍判定为健康' },
+      { id: '70412', status: 'closed', title: '信标权重为 0 时仍被调度' },
+    ]);
+    assert.deepEqual(content.unread, ['99999']);
   });
 
   test('nothing ever reached the write route', () => {
