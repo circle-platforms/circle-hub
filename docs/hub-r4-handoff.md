@@ -47,7 +47,7 @@ node bin/circle-hub status          # 持久部署的状态；其他命令见 no
 
 ## 分工（2026-10-22 起）
 
-所有者的决定：代码全部由 Otty 里的其他终端（circle、agy、kimi、grok）写，监督者（Claude）只监控结果、安排工作、复核合并、发布部署、跑真实 Circle 验收。每项任务一个工作树和分支（都从 `hub-redesign` 开出，目录 `~/Public/circle-hub-<名字>`），任务页在 `docs/hub-r4-tasks/`，改完在终端里回报，监督者独立跑测试、安排另一个终端复核，再合并进 `hub-redesign`。
+所有者的决定：代码全部由 Otty 里的其他终端（circle、agy、kimi、grok）写，监督者（Claude）只监控结果、安排工作、复核合并、发布部署、跑真实 Circle 验收。每项任务一个工作树和分支（都从 `hub-redesign` 开出，工作树是仓库旁边名为 `circle-hub-<名字>` 的兄弟目录），任务页在 `docs/hub-r4-tasks/`，改完在终端里回报，监督者独立跑测试、安排另一个终端复核，再合并进 `hub-redesign`。
 
 | 任务 | 任务页 | 工作树（分支） | 终端 | 状态 |
 | --- | --- | --- | --- | --- |
