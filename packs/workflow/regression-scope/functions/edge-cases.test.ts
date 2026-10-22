@@ -101,8 +101,8 @@ describe('regression scope edge cases', () => {
     const reason = {
       path: '/commands/show',
       change: 'modified' as const,
-      before: [],
-      after: [],
+      definition_change: 'modified' as const,
+      references: [`tree:${LATER}/commands/show@${CASE}`],
       case: { entry: CASE, reference: `tree:${LATER}/commands/show@${CASE}` },
     };
     const outcomes = checkOutcomes('uncovered_changes', {

@@ -14,8 +14,8 @@ const ref = (root: string, entry: string) => `tree:${root}/commands/show@${entry
 const reason = (change: 'added' | 'modified' | 'removed') => ({
   path: '/commands/show',
   change,
-  before: [{ entry: BEFORE, kind: 'definition', reference: ref(ROOT, BEFORE) }],
-  after: [{ entry: AFTER, kind: 'definition', reference: ref(LATER, AFTER) }],
+  definition_change: 'modified',
+  references: [ref(ROOT, BEFORE), ref(LATER, AFTER)],
   case: { entry: CASE, reference: ref(LATER, CASE) },
 });
 

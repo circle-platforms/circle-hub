@@ -53,7 +53,7 @@ describe('maintenance sweep edge cases', () => {
       sweep.items.map((item) => item.id),
       ['doc-1:n1'],
     );
-    assert.deepEqual(sweep.items[0].reasons[0].fields, [{ path: '/', before: null, after: null }]);
+    assert.deepEqual(sweep.note.details.find((d) => d.path === sweep.items[0].reasons[0].path)?.fields, [{ path: '/', before: null, after: null }]);
     assert.ok(sweep.warnings.some((warning) => warning.code === 'maintenance-sweep.missing_entry'));
   });
 
@@ -89,9 +89,7 @@ describe('maintenance sweep edge cases', () => {
       code: 'some.other.code',
       path: '/commands/drop',
       change: 'removed' as const,
-      fields: [],
-      before: [{ entry: BEFORE, kind: 'definition', reference: ref(BEFORE, BEFORE) }],
-      after: [],
+      references: [ref(BEFORE, BEFORE)],
       case: { entry: CASE, reference: ref(LATER, CASE) },
     };
     const [outcome] = checkOutcomes('command_exists', {

@@ -16,29 +16,12 @@
           "negative": false,
           "reasons": [
             {
+              "code": "maintenance-sweep.case.command_changed",
               "path": "/commands/show",
               "change": "modified",
-              "code": "maintenance-sweep.case.command_changed",
-              "fields": [
-                {
-                  "path": "/help",
-                  "before": "旧帮助",
-                  "after": "新帮助"
-                }
-              ],
-              "before": [
-                {
-                  "entry": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-                  "kind": "definition",
-                  "reference": "tree:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc/commands/show@bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-                }
-              ],
-              "after": [
-                {
-                  "entry": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
-                  "kind": "definition",
-                  "reference": "tree:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee/commands/show@dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
-                }
+              "references": [
+                "tree:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc/commands/show@bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                "tree:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee/commands/show@dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
               ],
               "case": {
                 "entry": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -49,7 +32,21 @@
         }
       }
     ],
-    "note": null
+    "note": {
+      "details": [
+        {
+          "path": "/commands/show",
+          "change": "modified",
+          "fields": [
+            {
+              "path": "/help",
+              "before": "旧帮助",
+              "after": "新帮助"
+            }
+          ]
+        }
+      ]
+    }
   },
   "expect": [
     {
