@@ -15,9 +15,9 @@ const skip = (await osIsolationAvailable()) ? false : 'no OS network isolation o
 let postgres: TemporaryPostgres;
 let hub: Hub;
 
-const REVIEW = 'knowledge:impact:widget:Rel_W_1_0_1..Rel_W_1_0_2';
-const SKIPPED = 'knowledge:impact:widget:Rel_W_1_0_1..Rel_W_1_0_3';
-const EMPTY = 'knowledge:impact:widget:Rel_W_1_0_0..Rel_W_1_0_2';
+const REVIEW = 'knowledge:impact:widget:Rel_W_1_0_1..Rel_W_1_0_2?attached_fields=document,node,title,priority,negative';
+const SKIPPED = 'knowledge:impact:widget:Rel_W_1_0_1..Rel_W_1_0_3?attached_fields=document,node,title,priority,negative';
+const EMPTY = 'knowledge:impact:widget:Rel_W_1_0_0..Rel_W_1_0_2?attached_fields=document,node,title,priority,negative';
 const bytes = (value: unknown): Uint8Array => new TextEncoder().encode(JSON.stringify(value));
 
 before(async () => {

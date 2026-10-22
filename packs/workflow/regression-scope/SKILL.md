@@ -2,8 +2,8 @@
 
 Hub 按两个构建的影响视图直接算出回归范围：后一构建里，放在新增或修改路径上的用例。不需要你提交结果。范围不是缺陷，没有不通过。
 
-1. 开始运行：pack 写 regression-scope；inputs.impact 绑定一个影响视图，例如 `{"external":"knowledge:impact:<产品>:<起始构建>..<目标构建>"}`。这个任务包不绑定产品线，不要写 product、version、build。
+1. 开始运行：pack 写 regression-scope；inputs.impact 绑定一个影响视图，例如 `{"external":"knowledge:impact:<产品>:<起始构建>..<目标构建>?attached_fields=document,node,title,priority,negative"}`（附着的用例条目只带这五个字段，大版本差也放得下）。这个任务包不绑定产品线，不要写 product、version、build。
 2. 结果在开始运行时就算好了。每个条目是一条范围内的用例，摘要给出优先级、文档、变更的命令数和第一条变更。完整结论在 result.reference 指向的校验结果里，用 get_nodes 按这个 rec: 引用读取。条目多时照回答末尾的说明翻页。
 3. 原样转述每条结论，不补全、不猜测。范围内的用例是支持（事实）。变更路径上没有用例的，记为未知（缺输入），写在跨条目结论里，不是失败：用例索引本来就不完整。后一构建的索引缺少列出的文档时，照结论里的句数转述，未覆盖的路径可能是用例没有被读到。
-4. 可选参数：priorities 只保留列出的优先级；include_added 默认 true，写成 false 时新增路径不进入范围，也不记为未覆盖。
+4. 可选参数：priorities 只保留列出的优先级；include_added 默认 true，写成 false 时新增路径不进入范围，也不记为未覆盖。一次运行最多纳入 4,000 条用例（超出会被拒绝并说明怎么收窄：先用 priorities）；空范围是合法的空结果。
 5. submit_result 不是必需的。要补充看法时可以提交，看法记为模型转述的判断，不改变 Hub 算出的结论。

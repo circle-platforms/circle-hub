@@ -3,7 +3,8 @@
 // projection and check functions of a pack. A view is derived data, never a second source of truth: every entry in it carries
 // its tree reference. The impact view answers "what changed between two builds, and which entries of another kind sit on the
 // changed nodes" (K01 R[1]: the version difference is the regression scope).
-//   knowledge:impact:<product>:<from build>..<to build>[?changed=definition,behaviour&attached=case]
+//   knowledge:impact:<product>:<from build>..<to build>[?changed=definition,behaviour&attached=case][&attached_fields=document,node,title]
+//     (with attached_fields the attached entries carry only those data fields and an empty statement; the changed entries are untouched)
 //   knowledge:facets:<product>:<build>?kind=case&by=line,module,has_expected   (counts of entries by data fields)
 //   knowledge:index:<product>:<build>?kind=case&key=defects[&only=1,2,3][&fields=document,node,title]   (data value -> the entries that carry it;
 //     with fields the entries carry only those data fields and an empty statement, so a big index fits the byte budget)
@@ -16,6 +17,9 @@ import { TreePath, referenceUriOf } from './reference.ts';
 /** Most changed paths and most attached entries one answer holds; beyond it the answer says it is cut and how. */
 export const MAX_IMPACT_PATHS = 20000;
 export const MAX_IMPACT_ENTRIES = 200000;
+
+/** A data field name an entry carries at the top level of its data. */
+export const DataFieldName = z.string().regex(/^[a-z][a-z0-9_]{0,40}$/);
 
 /** An entry of the tree as a view shows it: what it says and where to cite it. */
 export const ViewEntry = z.strictObject({
@@ -51,6 +55,10 @@ export const ImpactView = z.strictObject({
   to: z.strictObject({ build: z.string().min(1), root: Sha256 }),
   changed_kinds: z.array(EntryKindSchema).min(1).describe('the entry kinds whose difference counts as a change; default definition and behaviour'),
   attached_kinds: z.array(EntryKindSchema).describe('the entry kinds listed on the changed nodes; default case'),
+  attached_fields: z
+    .array(DataFieldName)
+    .optional()
+    .describe('the request asked for only these data fields per attached entry: they carry them with an empty statement; absent means full entries (the changed entries are never slimmed)'),
   changes: z.array(PathChange).max(MAX_IMPACT_PATHS),
   placements: z.array(Placement).max(MAX_IMPACT_PATHS).describe('only nodes that hold at least one attached entry'),
   entries: z
@@ -73,8 +81,6 @@ export type ImpactView = z.infer<typeof ImpactView>;
 
 /** Most rows one facet answer holds. */
 export const MAX_FACET_ROWS = 20000;
-/** A data field name an entry carries at the top level of its data. */
-export const DataFieldName = z.string().regex(/^[a-z][a-z0-9_]{0,40}$/);
 
 const FacetValue = z.union([z.string(), z.number(), z.boolean(), z.null()]);
 

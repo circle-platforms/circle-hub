@@ -1,6 +1,7 @@
 // Item projection (W01): the impact view bound to slot `impact` becomes one item per case in the later build that sits
-// on an added or modified path. Zero items is an empty scope and says so. The run engine refuses that projection
-// (W01 R[3]); this function still returns it, and does not invent an item.
+// on an added or modified path. Zero items is an empty scope and says so: since the engine accepts an empty item set
+// (W01 R[3] as clarified), the run starts with an empty result. A scope that would not fit the sandbox's output budget
+// is a clean refusal (too_large), never a sandbox memory failure.
 
 import { scopeOf, readParameters, type ScopeItem } from './scope.ts';
 import { PACK, guarded, isRecord } from './text.ts';
@@ -8,6 +9,14 @@ import { parseView } from './view.ts';
 
 export const SLOT = 'impact';
 const PARSER = 'json@1';
+
+/** Budgets under the sandbox's defaults (8 MiB out): an item costs about 1.4 KB of output with its citations, so 4,000
+ * items stay under 6 MiB. */
+export interface ProjectLimits {
+  maxItems: number;
+  outputBytes: number;
+}
+export const LIMITS: ProjectLimits = { maxItems: 4000, outputBytes: 6 * 1024 * 1024 };
 
 interface Warning {
   code: string;
@@ -35,7 +44,7 @@ function itemOf(item: ScopeItem, sha256: string) {
   };
 }
 
-export function projectItems(input: unknown): unknown {
+export function projectItems(input: unknown, limits: Partial<ProjectLimits> = {}): unknown {
   if (!isRecord(input) || !Array.isArray(input.inputs)) return refusal('invalid_input', '输入里没有 inputs 数组', '按 projection-input@1 传入绑定的源文件');
   const { parameters, ignored } = readParameters(input.parameters);
   if (ignored.length > 0) {
@@ -50,11 +59,20 @@ export function projectItems(input: unknown): unknown {
   const parsed = parseView(source.model);
   if (!parsed.ok) return refusal('not_a_view', parsed.message, '绑定知识库的影响视图（impact-view@1），附着种类为用例');
   const scope = scopeOf(parsed.view, parameters);
-  return {
+  const budget = { ...LIMITS, ...limits };
+  if (scope.items.length > budget.maxItems) {
+    return refusal('too_large', `范围内有 ${scope.items.length} 条用例，一次运行最多 ${budget.maxItems} 条`, '用 priorities 参数收窄范围（例如先只看优先级 1 的），再按优先级分几次运行', scope.warnings.slice(0, 20));
+  }
+  const out = {
     items: scope.items.map((item) => itemOf(item, sha256)),
     groups: [scope.note],
     warnings: scope.warnings.slice(0, 100),
   };
+  const bytes = Buffer.byteLength(JSON.stringify(out), 'utf8');
+  if (bytes > budget.outputBytes) {
+    return refusal('too_large', `投影结果有 ${bytes} 字节（${scope.items.length} 条用例），超过投影函数的输出上限`, '用 priorities 参数收窄范围（例如先只看优先级 1 的），再按优先级分几次运行', scope.warnings.slice(0, 20));
+  }
+  return out;
 }
 
 export default function project(input: unknown): unknown {

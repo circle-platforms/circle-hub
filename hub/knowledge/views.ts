@@ -55,7 +55,7 @@ const NOTE_REFERENCES = 10;
 const PROTO_KEY = '__proto__';
 
 export type ViewRequest =
-  | { type: 'impact'; product: string; from: string; to: string; changed: EntryKind[]; attached: EntryKind[]; revision: string | null }
+  | { type: 'impact'; product: string; from: string; to: string; changed: EntryKind[]; attached: EntryKind[]; attached_fields: string[] | null; revision: string | null }
   | { type: 'facets'; product: string; build: string; kind: EntryKind; by: string[]; revision: string | null }
   | { type: 'index'; product: string; build: string; kind: EntryKind; key: string; only: string[] | null; fields: string[] | null; revision: string | null };
 
@@ -63,7 +63,7 @@ type Parsed<T> = { ok: true; value: T } | { ok: false; reason: string };
 
 /** The query keys each view takes, and which of them it needs. */
 const QUERY = {
-  impact: { keys: ['changed', 'attached'], required: [] },
+  impact: { keys: ['changed', 'attached', 'attached_fields'], required: [] },
   facets: { keys: ['kind', 'by'], required: ['kind', 'by'] },
   index: { keys: ['kind', 'key', 'only', 'fields'], required: ['kind', 'key'] },
 } as const satisfies Record<ViewRequest['type'], { keys: readonly string[]; required: readonly string[] }>;
@@ -143,7 +143,14 @@ export function parseViewId(id: string): Parsed<ViewRequest> {
     if (changed.value.length === 0) return { ok: false, reason: 'changed 至少要有一个条目种类' };
     const attached = kindsOf(query.get('attached') ?? [...DEFAULT_ATTACHED_KINDS], 'attached');
     if (!attached.ok) return attached;
-    return { ok: true, value: { type: 'impact', product, from, to, changed: changed.value, attached: attached.value, revision } };
+    let attached_fields: string[] | null = null;
+    if (query.has('attached_fields')) {
+      const raw = query.get('attached_fields') ?? [];
+      if (raw.length === 0) return { ok: false, reason: 'attached_fields 要列至少一个字段名' };
+      for (const field of raw) if (!DataFieldName.safeParse(field).success) return { ok: false, reason: `字段名 ${cutText(field, 40)} 不对（小写字母开头，只有小写字母、数字和下划线）` };
+      attached_fields = [...new Set(raw)].sort(compareText);
+    }
+    return { ok: true, value: { type: 'impact', product, from, to, changed: changed.value, attached: attached.value, attached_fields, revision } };
   }
   const kindText = one('kind');
   if (!kindText.ok) return kindText;
@@ -317,9 +324,17 @@ export class KnowledgeViews {
    * `exclude` names entries left out (their text has credential scan hits): a changed one takes its path out, an attached
    * one only itself.
    */
-  async impact(product: string, from: At, to: At, changed: readonly EntryKind[], attached: readonly EntryKind[], exclude: ReadonlySet<string> = new Set()): Promise<ImpactView> {
+  async impact(product: string, from: At, to: At, changed: readonly EntryKind[], attached: readonly EntryKind[], attachedFields: readonly string[] | null = null, exclude: ReadonlySet<string> = new Set()): Promise<ImpactView> {
     const changedSet = new Set<string>(changed);
     const attachedSet = new Set<string>(attached);
+    // With attached_fields, entries of the attached kinds carry only those data fields and an empty statement; the changed
+    // entries keep their full data (a diff needs it). The byte accounting uses the slimmed size.
+    const slim = (content: EntryContent): EntryContent => {
+      if (attachedFields === null || !attachedSet.has(content.kind as EntryKind)) return content;
+      const data: Record<string, unknown> = {};
+      for (const field of attachedFields) if (Object.hasOwn(content.data, field)) data[field] = content.data[field];
+      return { kind: content.kind, statement: '', data, applicability: content.applicability };
+    };
     const nodes = (await this.#reading.changedNodes(from.root, to.root)) ?? [];
     const [fromComposition, toComposition] = await Promise.all([this.#reading.compositionOf(from.root), this.#reading.compositionOf(to.root)]);
     const budget = this.#budget;
@@ -338,7 +353,10 @@ export class KnowledgeViews {
     }
     const kept: Item[] = [];
     const named = new Map<string, Named>();
-    const sized = (digest: string, value: Omit<Named, 'bytes'>): Named => ({ ...value, bytes: memberBytes(digest, viewEntry(digest, value.content, value.root, value.path)) });
+    const sized = (digest: string, value: Omit<Named, 'bytes'>): Named => {
+      const content = slim(value.content);
+      return { ...value, content, bytes: memberBytes(digest, viewEntry(digest, content, value.root, value.path)) };
+    };
     let bytes = 0;
     let full = false;
     let changedPaths = 0;
@@ -418,6 +436,7 @@ export class KnowledgeViews {
         notes.push(credentialNote([...excludedEntries.values()]));
         if (excludedPaths.length > 0) notes.push(`变化路径 ${referencesNote(excludedPaths)} 上变化的条目有凭据扫描命中，这些路径没有列出`);
       }
+      if (attachedFields !== null) notes.push(`附着的${attached.map((k) => labelOf('entry_kind', k)).join('、')}条目只带字段 ${attachedFields.join('、')}（attached_fields 参数），陈述为空；变更的条目不受影响`);
       if (from.root === to.root) notes.push(`两个构建用的是同一个根 ${to.root}，没有版本差`);
       for (const [side, composition] of [
         [from, fromComposition],
@@ -447,6 +466,7 @@ export class KnowledgeViews {
         to,
         changed_kinds: [...changed],
         attached_kinds: [...attached],
+        ...(attachedFields !== null ? { attached_fields: [...attachedFields] } : {}),
         changes: items.map((item) => item.change),
         placements: items.flatMap((item) => (item.placement === null ? [] : [item.placement])),
         entries,
@@ -727,8 +747,8 @@ export class KnowledgeViews {
       const to = await resolve(request.to);
       if (typeof to === 'string') return { ok: false, id: bare, reason: to };
       roots = [from.root, to.root];
-      key = canonicalize({ type: request.type, product, from, to, changed: request.changed, attached: request.attached });
-      compute = (exclude) => this.impact(product, from, to, request.changed, request.attached, exclude);
+      key = canonicalize({ type: request.type, product, from, to, changed: request.changed, attached: request.attached, attached_fields: request.attached_fields });
+      compute = (exclude) => this.impact(product, from, to, request.changed, request.attached, request.attached_fields, exclude);
       title = `版本差 ${from.build} → ${to.build}（${product}）`;
     } else {
       const at = await resolve(request.build);

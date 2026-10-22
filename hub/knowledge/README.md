@@ -310,7 +310,7 @@ catalogs, grounds and provenance.
     `limit` (default 20000) with `total` and `truncated`. `diffRoots` is unchanged.
 22. **The knowledge views** (`createKnowledgeReader`, `contracts/src/views.ts`). Ids `knowledge:impact:<product>:<from>..<to>`
     (`changed`, `attached`; default definition, behaviour and case), `knowledge:facets:<product>:<build>?kind=&by=` (one
-    to six distinct field names), `knowledge:index:<product>:<build>?kind=&key=[&only=][&fields=]` (at most 1000 values); query
+    to six distinct field names), `knowledge:index:<product>:<build>?kind=&key=[&only=][&fields=]` (at most 1000 values), and `knowledge:impact:<product>:<from>..<to>[&changed=&attached=][&attached_fields=]`; query
     values comma-separated and percent-decoded; the two builds of an impact id are split at the first literal `..`
     before decoding (an escaped `.` stays in a name); an unknown or repeated parameter, a kind outside `entry_kind`, a
     field name outside `DataFieldName`, an empty value or a pinned `@revision` other than the current one is malformed.
@@ -327,7 +327,10 @@ catalogs, grounds and provenance.
     in the later root where it is on the later side of a kept path, else at its first path in the later root when
     it is there (found by reading the rows of its kind), else in the earlier root; paths kept in path order at
     MAX_IMPACT_PATHS, MAX_IMPACT_ENTRIES or the byte budget, the content of an entry read only for kept paths; notes for a
-    cut, equal roots and roots without the attached or changed kinds. *Facets*: distinct entries of the kind, the rows hung
+    cut, equal roots and roots without the attached or changed kinds. With `attached_fields=<name,…>` the attached entries
+    carry only those data fields and an empty statement, the byte accounting uses the slimmed size, and the changed entries
+    are never slimmed (a diff needs their full data); the answer records the fields it carries (`attached_fields`) and says
+    so in a note. *Facets*: distinct entries of the kind, the rows hung
     on the tree and the unplaced rows of the root (K01 R[4]: they stay under the root, marked unplaced). An entry counts
     once; one that is also hung keeps that path. An unplaced entry is cited at `/`, the existing tree reference
     `tree:<root>/@<digest>`. `total` includes them, and when there are any a note says how many (`未归位条目 N 个，标在根下，计入合计`); the note counts entries (each once, even when a document produced several), never documents or rows.

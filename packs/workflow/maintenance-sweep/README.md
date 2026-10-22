@@ -72,6 +72,10 @@ product pack's cases index is committed.
 ## Limits
 
 - At most 10,000 check outcomes in one call (the engine's cap). The 5,000-case test calls the function directly.
+- A run admits at most 4,000 maintenance items and about 6 MiB of projection output (`maintenance-sweep.too_large`, with
+  the fix: bring the pair closer, crossing fewer version lines). The limit exists because a bigger sweep dies in the
+  sandbox on memory (measured: 25,000 items took about 640 MB against the 256 MB limit). The pack reads the definition
+  entries whole for the diff, so slimming the attached case entries is not its lever; `attached_fields` is not used.
 - `ignore_fields` holds at most 40 names, each at most 80 characters.
 - Warnings kept on a run are the first 100. An empty projection's warnings are kept and carried in the answer's gaps and parse action.
 - A named definition entry that is missing from the view is not treated as “no difference”: the path stays a maintenance

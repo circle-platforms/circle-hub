@@ -75,6 +75,14 @@
       },
       "description": "the entry kinds listed on the changed nodes; default case"
     },
+    "attached_fields": {
+      "description": "the request asked for only these data fields per attached entry: they carry them with an empty statement; absent means full entries (the changed entries are never slimmed)",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_]{0,40}$"
+      }
+    },
     "changes": {
       "maxItems": 20000,
       "type": "array",

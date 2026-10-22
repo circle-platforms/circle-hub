@@ -14,10 +14,10 @@ export const PACK_DIR = fileURLToPath(new URL('./', import.meta.url));
 export const IDENTITY = {
   schema: 'pack@1',
   id: 'regression-scope',
-  version: '1.0.0',
+  version: '1.0.1',
   kind: 'workflow',
   title: '回归范围',
-  description: '按两个构建的影响视图列出后一构建里放在新增或修改路径上的用例；没有用例的变更路径记为未知而不是失败。只含事实要求项，开始运行时由 Hub 直接算出结果',
+  description: '按两个构建的影响视图（瘦身：attached_fields=document,node,title,priority,negative）列出后一构建里放在新增或修改路径上的用例；没有用例的变更路径记为未知而不是失败。一次最多 4,000 条。只含事实要求项，开始运行时由 Hub 直接算出结果',
 } as const;
 
 /** Top-level declaration files and the folders whose files belong to the pack. */
