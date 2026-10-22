@@ -70,7 +70,11 @@ well-formed text). The same reasons go to the admin note of the call they belong
    `BoundInput.meta` names the record. The receiver gets the record as a source; no carry-over is offered across a handover.
 5. **Items.** The location is `srcFragment(sha, parser, selector, range)` of the bound source of the fragment's slot (the
    subject slot by default) and must resolve; the digest is SHA-256 of the canonical `{id, label, fields}` (summary excluded).
-   Duplicate ids and zero items refuse the call; a pack refusal keeps its code when it is under the pack name.
+   Duplicate ids refuse the call; a pack refusal keeps its code when it is under the pack name. A projection that succeeds
+   with zero items is a legal answer, not a refusal (W01 R[3]): the run starts with an empty item list — a production run
+   stores its result (every partition empty, coverage `complete: true, examined: 0, total: 0`, run-level requirements
+   evaluated) — and the answer carries a `runs.empty_items` note and the projection's warnings in its evidence gaps (kept
+   identical on a repeated client key, read back from the parse action).
 6. **Expected sources** are read as the caller, best effort: an unreadable one is listed in the `parse` action as
    `{external, role, reason: 对你不可用}`; the real reason only in the admin log. The function failing never fails the run.
 7. **Structure** (T03 R[3]): every declared item slot key is required in a handled item's record (`[]` says nothing to
@@ -265,7 +269,8 @@ from the candidates the function sees. The others use a temporary PostgreSQL (`h
 one cluster per file) and the real sandbox (macOS `sandbox-exec`); where it is missing (Linux CI) they are skipped, which is not
 a pass. They cover: target choice (alias names, declared builds of the second family, select_build, the default rule, every
 refusal with options), inputs (required, unknown, accepted types, unreadable, fragments, many, unparseable, external objects
-read as the caller with meta), parameters, a projection with no item, absent equals forbidden, client keys (repeat, mismatch,
+read as the caller with meta), parameters, a projection with no item (the pack's own refusal) and a projection with zero
+items (a legal answer: empty production run stored, notes in the answer, repeated client key), absent equals forbidden, client keys (repeat, mismatch,
 another user, expiry, repeat after unassignment, NUL and lone surrogates refused before any read, concurrent starts), Hub-side
 runs; acceptance with exact terminals, satisfaction of a negative case, attribution, claims with their qualifiers, warrants,
 resolutions, premises and validity; verbatim storage (parsed, unparsed, lone surrogate, too deep); arguments the records

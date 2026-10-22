@@ -156,18 +156,21 @@ async function productionOf(ctx: EngineContext, run: StoredRecord<RunRecord>): P
   return stored === null ? null : { reference: recReference(stored.digest), record: stored.digest, result: stored.body, counts: partitionCountsOf(stored.body.partitions) };
 }
 
+/** The gap note of a run without items (an empty item set is a legal answer, W01 R[3]): said in the answer, never hidden. */
+const EMPTY_ITEMS_NOTE = { code: 'runs.empty_items', message: '这次运行没有条目：投影函数成功返回了一个空的条目集（空条目集是合法的结果）' } as const;
+
 /** The warnings of the expected-sources function as gaps: code and message only. */
 const gapsFrom = (warnings: readonly unknown[]): NonNullable<StartRunDetail['gaps']> =>
   warnings.flatMap((w) => (isObject(w) && typeof w.code === 'string' && typeof w.message === 'string' ? [{ code: w.code, message: w.message }] : [])).slice(0, MAX_WARNINGS);
 
 /** The evidence gaps of a stored run, from the parse action start_run wrote: unbound expected sources and the function's warnings. */
-async function gapsOf(ctx: EngineContext, run: string): Promise<Pick<StartRunDetail, 'unavailable' | 'gaps'>> {
-  const parse = (await actionsOf(ctx.deps.records.store, run)).find((a) => a.body.action === 'parse');
+async function gapsOf(ctx: EngineContext, run: RunRecord): Promise<Pick<StartRunDetail, 'unavailable' | 'gaps'>> {
+  const parse = (await actionsOf(ctx.deps.records.store, run.run)).find((a) => a.body.action === 'parse');
   const listed = parse?.body.detail.unavailable;
   const warnings = parse?.body.detail.expected_warnings;
   return {
     unavailable: Array.isArray(listed) ? listed.flatMap((u) => (isObject(u) && typeof u.external === 'string' && isSourceRole(u.role) ? [{ external: u.external, role: u.role }] : [])) : [],
-    gaps: Array.isArray(warnings) ? gapsFrom(warnings) : [],
+    gaps: gapsFrom([...(run.items.length === 0 ? [EMPTY_ITEMS_NOTE, ...((parse?.body.detail.warnings as unknown[]) ?? [])] : []), ...((warnings as unknown[]) ?? [])]),
   };
 }
 
@@ -203,7 +206,7 @@ export async function startRun(ctx: EngineContext, user: Principal, raw: unknown
           throw new Refusal([protocolError('IDEMPOTENCY_MISMATCH', `客户端键 ${key} 已经用于内容不同的 start_run（运行 ${existing.body.run}）`, { path: '/client_key' })]);
         }
         const production = await productionOf(ctx, existing);
-        return { answer: okAnswer(existing.body, production), production, runRecord: existing.digest, ...(await gapsOf(ctx, existing.body.run)) };
+        return { answer: okAnswer(existing.body, production), production, runRecord: existing.digest, ...(await gapsOf(ctx, existing.body)) };
       }
       return fresh();
     });
@@ -419,7 +422,8 @@ async function startFresh(
     production: result,
     runRecord: stored.digest,
     unavailable: expected.unavailable.map(({ external, role }) => ({ external, role })),
-    gaps: gapsFrom(expected.warnings),
+    // A run without items says so in the answer and carries the projection's notes; with items the projection warnings stay in the parse action.
+    gaps: gapsFrom([...(items.length === 0 ? [EMPTY_ITEMS_NOTE, ...projection.warnings] : []), ...expected.warnings]),
   };
 }
 
