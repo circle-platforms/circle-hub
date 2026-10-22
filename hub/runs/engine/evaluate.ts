@@ -386,7 +386,9 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
         hasProducer,
         checks: t.checks.filter((id) => checks.has(id)).length,
         outcomes,
-        handling: isJudgment(t) ? (exclude.has(it.id) ? 'handled' : handling) : null,
+        // A missing item is a gap in a submission that covers items (W07 R[3]). A fact-only pack has no item slot for the
+        // model to omit, and a production run has no submission: those fact checks still run.
+        handling: isJudgment(t) ? (exclude.has(it.id) ? 'handled' : handling) : handling === 'skipped' || (hasItemJudgments && handling === 'not_covered') ? handling : null,
         expectation,
       });
       const routed = applyRouting(raw, t, input.roundsUsed.get(t.key) ?? 0);

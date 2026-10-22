@@ -26,7 +26,7 @@ well-formed text). The same reasons go to the admin note of the call they belong
 | `target.ts` | product line by any name, version line, build (declared, the pack's select_build, or the newest released build with a root), the locked root, one basis claim each |
 | `inputs.ts` | binding inputs to slots: uploads, Hub records (B03 R[4]), external objects read as the caller; parsing with the core parser |
 | `projection.ts` | the projection function in the sandbox, item locations and fingerprints; expected sources read best effort |
-| `submit.ts` | submit_result: store as received, idempotency, supersession, arguments the records cannot hold, structure, exact values, evaluation, a receipt for every call |
+| `submit.ts` | submit_result: store as received, idempotency for the same session and declared model, supersession, arguments the records cannot hold, structure, exact values, evaluation, a receipt for every call |
 | `slots.ts` | the slot schema of RunSummary.slots, the structural check of slot records and cross-item entries, pack JSON Schemas (fail closed) |
 | `exact.ts` | the run scope and exact-value resolution: references, verbatim quotations, commands (T04), locations in the judged source, canonical slot records |
 | `evaluate.ts` | re-running every check, terminals per (item, requirement, layer), status, attribution, claims, errors, partitions |
@@ -124,7 +124,9 @@ well-formed text). The same reasons go to the admin note of the call they belong
     missing input or an unproven closed world is unchecked (unknown, counted in `unknown`), whether the check is an interpreter
     or a pack function and whether it failed in the sandbox or returned an unknown itself; a used-up budget (an interpreter's
     work limit or the sandbox queue) is incomplete. `data.sandbox` is a display hint (`isSandboxFailure`) and steers nothing.
-    Judgments: skipped `declared_skip`, missing `not_covered`, handled `judgment` unless a check refutes, is unknown or ran
+    A declared skip is incomplete (`declared_skip`) and an item the submission does not mention is incomplete
+    (`not_covered`) at every requirement, fact or judgment (W07 R[2]-R[3]). Judgments that are handled stay `judgment`
+    unless a check refutes, is unknown or ran
     out of budget; no slot: unchecked `no_check`, unsatisfied `no_producer`. A requirement that is incomplete for a skipped or
     uncovered item, used-up repair rounds or budget is incomplete at every layer it declares (W07 R[2]-R[3], W02 R[5], P11
     R[3]); otherwise a declared dynamic layer is not run (no check installed, V03 R[1]). A violation is satisfied only when

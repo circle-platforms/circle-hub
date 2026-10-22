@@ -538,26 +538,26 @@ test('the engine and the reference agree on random submissions and the fixed bra
     return JSON.parse(sorted(engineView(got.result))) as { rounds: { used: number; max: number }; errors: { code?: string; item?: string; requirement?: string; rounds_left?: number }[]; items: { item: string; requirements: { requirement: string; status?: string; layers: ShownLayer[] }[] }[] };
   }
 
-  // A04 and the requirement contract name the predecessor run. The engine does not take a predecessor of the same pack as the
-  // author, so the judgment stays independence unknown. Seed 20261126.
+  // A04: a predecessor of the same pack is still the author. A different session and model satisfy the independent judgment.
+  // Seed 20261126.
   const samePackSeed = SEED + 104;
   const sameItems = handledItems(supportOutcomes);
   const sameAuthorRun = await start(ITEMS, undefined, author.session);
   await submit(sameAuthorRun, { seed: samePackSeed, roundsUsed: 0, items: sameItems, judge: author, author: null, defects: [] });
   const sameEngine = await acceptedView({ seed: samePackSeed, roundsUsed: 0, items: sameItems, judge, author, defects: [] }, await start(ITEMS, sameAuthorRun.run, judge.session));
   const sameWant = referenceOf({ seed: samePackSeed, roundsUsed: 0, items: sameItems, judge, author, defects: [] });
-  assert.equal(shownLayer(sameEngine, 'i1', 'indep').status, 'unsatisfied');
+  assert.equal(shownLayer(sameEngine, 'i1', 'indep').status, 'satisfied');
   assert.equal(shownLayer(sameEngine, 'i1', 'indep').layer?.terminal, 'judgment');
   assert.equal(sameWant.items.find((item) => item.item === 'i1')?.requirements.find((requirement) => requirement.requirement === 'indep')?.status, 'satisfied');
 
-  // A later submission on a run already accepted as independent. The reference judges this submission's own session, which is
-  // the author's, so independence is unknown (A04). The engine keeps the requirement satisfied. Seed 20261127.
+  // A later submission of the same body from the author's session. Both sides leave the independent judgment unsatisfied
+  // (A04). Seed 20261127.
   const laterSeed = SEED + 105;
   const laterJudge = { session: author.session, model: 'beta@2' };
   const laterPlan: Plan = { seed: laterSeed, roundsUsed: 0, items: sameItems, judge: laterJudge, author, defects: [] };
   const laterEngine = await acceptedView(laterPlan, continued);
   const laterWant = referenceOf(laterPlan);
-  assert.equal(shownLayer(laterEngine, 'i1', 'indep').status, 'satisfied');
+  assert.equal(shownLayer(laterEngine, 'i1', 'indep').status, 'unsatisfied');
   assert.equal(laterWant.items.find((item) => item.item === 'i1')?.requirements.find((requirement) => requirement.requirement === 'indep')?.status, 'unsatisfied');
 
   // W02 R[5]: a second refutation of a repair code with one round is used up. The engine leaves the counter at 0 and
@@ -608,13 +608,15 @@ test('the engine and the reference agree on random submissions and the fixed bra
   const skipWant = referenceOf(skipPlan);
   const skipFact = shownLayer(skipEngine, 'i1', 'fact');
   const skipJudged = shownLayer(skipEngine, 'i1', 'judged');
-  assert.equal(skipFact.layer?.terminal, 'unchecked');
-  assert.equal(skipFact.layer?.reason, 'missing_input');
+  assert.equal(skipFact.layer?.terminal, 'incomplete');
+  assert.equal(skipFact.layer?.reason, 'declared_skip');
+  assert.equal(skipFact.layer?.attribution, 'unattributed');
   assert.equal(skipJudged.layer?.terminal, 'incomplete');
   assert.equal(skipJudged.layer?.reason, 'declared_skip');
   assert.equal(skipJudged.layer?.attribution, 'unattributed');
   const skipOracle = skipWant.items.find((item) => item.item === 'i1');
   assert.ok(skipOracle?.requirements.every((requirement) => requirement.layers.every((layer) => layer.terminal === 'incomplete' && layer.reason === 'declared_skip' && layer.attribution === 'unattributed')));
+  assert.ok(skipEngine.items.find((item) => item.item === 'i1')?.requirements.every((requirement) => requirement.layers.every((layer) => layer.terminal === 'incomplete' && layer.reason === 'declared_skip' && layer.attribution === 'unattributed')));
 
   // W07 R[3]: a missing item is incomplete at every requirement and named in errors, and the submission stays accepted.
   const missingSeed = SEED + 8;
@@ -632,8 +634,10 @@ test('the engine and the reference agree on random submissions and the fixed bra
     missingEngine.errors.some((error) => error.code === 'core.coverage.shortfall' && error.item === 'i3' && error.rounds_left === 0),
     JSON.stringify(missingEngine.errors),
   );
-  assert.equal(shownLayer(missingEngine, 'i3', 'fact').layer?.reason, 'missing_input');
+  assert.equal(shownLayer(missingEngine, 'i3', 'fact').layer?.terminal, 'incomplete');
+  assert.equal(shownLayer(missingEngine, 'i3', 'fact').layer?.reason, 'not_covered');
   assert.equal(shownLayer(missingEngine, 'i3', 'judged').layer?.reason, 'not_covered');
+  assert.ok(missingEngine.items.find((item) => item.item === 'i3')?.requirements.every((requirement) => requirement.layers.every((layer) => layer.reason === 'not_covered')));
   const missingOracle = missingWant.items.find((item) => item.item === 'i3');
   assert.equal(missingOracle?.reason, 'not_covered');
   assert.ok(missingOracle?.requirements.every((requirement) => requirement.layers.every((layer) => layer.reason === 'not_covered' && layer.attribution === 'unattributed')));

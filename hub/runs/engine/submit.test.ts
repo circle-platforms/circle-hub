@@ -308,8 +308,8 @@ test('items not covered and items skipped are incomplete; not covered is named i
   const missing = itemOf(answer.result!, ITEM.c2);
   assert.deepEqual([missing.partition, (missing.item as { reason?: string }).reason], ['incomplete', 'not_covered']);
   assert.deepEqual(requirementOf(missing.item, 'findings').layers, [{ layer: 'static', terminal: 'incomplete', reason: 'not_covered', attribution: 'producer_error' }]);
-  // the facts of an item are the Hub's and do not depend on the model covering it
-  assert.deepEqual(requirementOf(missing.item, 'structure').layers, [{ layer: 'static', terminal: 'pass' }]);
+  // W07 R[3]: the item the submission does not mention is incomplete at every requirement, facts included.
+  assert.deepEqual(requirementOf(missing.item, 'structure').layers, [{ layer: 'static', terminal: 'incomplete', reason: 'not_covered', attribution: 'producer_error' }]);
   const skipped = itemOf(answer.result!, ITEM.c3);
   assert.deepEqual([skipped.partition, (skipped.item as { reason?: string }).reason], ['incomplete', 'declared_skip']);
   assert.deepEqual(answer.errors.map((e) => [e.code, e.item, e.rounds_left]), [['core.coverage.shortfall', ITEM.c2, 2]]);
@@ -331,10 +331,10 @@ test('a blocking violation of a check on the artifact under verification routed 
 test('repeating a submission returns the stored result without writing or re-running anything', { skip }, async () => {
   const run = await draft();
   const args = submission(run, { [ITEM.c1]: handled(ITEM.c1, [finding(run, ITEM.c1)]) });
-  const first = await h.service.submitResult(h.alice, args, h.call('first-call'));
+  const first = await h.service.submitResult(h.alice, args, h.call('sess-retry'));
   const count = async () => (await h.kit.store.find({ key: INDEX.actionRun, value: run.run, kind: 'action' })).items.length + (await h.kit.store.find({ key: INDEX.submissionRun, value: run.run, kind: 'submission' })).items.length;
   const before = await count();
-  const second = await h.service.submitResult(h.alice, JSON.parse(JSON.stringify(args)), h.call('second-call'));
+  const second = await h.service.submitResult(h.alice, JSON.parse(JSON.stringify(args)), h.call('sess-retry'));
   assert.deepEqual(second, first);
   assert.equal(second.result!.trace, first.result!.trace);
   assert.equal(await count(), before);
