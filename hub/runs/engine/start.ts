@@ -105,46 +105,130 @@ export async function contextLeases(ctx: EngineContext, workflow: LoadedWorkflow
 
 /** Grants the projection's lease requests for the workflow's declared prefix and cap (C3); a refusal answers LEASE_*
  * with the earliest free moment. Returns the granted leases for the run record. */
+export type LeaseRequest = { op?: 'acquire'; keys: string[]; ttl_seconds: number } | { op: 'extend'; keys: string[]; ttl_seconds: number } | { op: 'release'; keys: string[] };
+export type LeaseDone = { op?: 'acquire'; lease: string; keys: string[]; until: string } | { op: 'extend'; lease: string; keys: string[]; until: string } | { op: 'release'; keys: string[]; until: string | null };
+
+/** The run ids of this run's lineage: itself and up to 20 predecessors (D04 R[0]: a booking lease is held by the lineage). */
+async function lineageOf(ctx: EngineContext, runId: string, predecessor: string | undefined): Promise<Set<string>> {
+  const lineage = new Set<string>([runId]);
+  let at: string | undefined = predecessor;
+  for (let depth = 0; depth < 20 && at !== undefined; depth++) {
+    lineage.add(at);
+    const record = await runById(ctx.deps.records.store, at);
+    at = record?.body.predecessor;
+  }
+  return lineage;
+}
+
 export async function grantLeases(
   ctx: EngineContext,
   user: Principal,
   workflow: LoadedWorkflow,
-  requests: ReadonlyArray<{ keys: string[]; ttl_seconds: number }>,
+  requests: ReadonlyArray<LeaseRequest>,
   runId: string,
-): Promise<Array<{ lease: string; keys: string[]; until: string }>> {
+  predecessor: string | undefined,
+): Promise<Array<LeaseDone>> {
   if (requests.length === 0) return [];
   if (ctx.deps.leases === undefined) throw new Refusal([protocolError('SUBMISSION_SCHEMA_VIOLATION', `任务包 ${workflow.pack.id} 的投影要租约，但这个 Hub 没有配置租约服务`, { path: '/pack', fix: '请管理员配置租约服务' })]);
   const declared = workflow.workflow.leases;
-  const prefix = declared?.prefix ?? `${workflow.pack.id}/`;
-  const cap = declared?.max_ttl_seconds ?? 3600;
-  const granted: Array<{ lease: string; keys: string[]; until: string }> = [];
+  if (declared === undefined) {
+    throw new Refusal([
+      protocolError('SUBMISSION_SCHEMA_VIOLATION', `任务包 ${workflow.pack.id} 的投影要租约，但这个工作流没有声明 leases`, { path: `/inputs/${workflow.workflow.subject}`, fix: '联系任务包作者：要租约的工作流在 workflow.json 里声明 leases' }),
+    ]);
+  }
+  const prefix = declared.prefix;
+  const cap = declared.max_ttl_seconds;
+  const now = ctx.now();
+  const lineage = await lineageOf(ctx, runId, predecessor);
+  // Phase 1 — every check, nothing touched: prefixes, TTL shapes, and for extend/release that this run's user is the
+  // row's user and that the row's run sits in this run's lineage (D04 R[0]).
+  const holderRows = await ctx.deps.leases.holders([...new Set(requests.flatMap((request) => request.keys))]);
   for (const request of requests) {
-    if (declared === undefined) {
-      throw new Refusal([
-        protocolError('SUBMISSION_SCHEMA_VIOLATION', `任务包 ${workflow.pack.id} 的投影要取得租约，但这个工作流没有声明 leases`, { path: `/inputs/${workflow.workflow.subject}`, fix: '联系任务包作者：要租约的工作流在 workflow.json 里声明 leases' }),
-      ]);
+    const op = request.op ?? 'acquire';
+    if (!request.keys.every((key) => key.startsWith(prefix))) {
+      throw new Refusal([{ code: 'LEASE_PREFIX', message: `租约键（${request.keys.join('、')}）不在声明的前缀 ${prefix} 下`, fix: `键要以前缀 ${prefix} 开头` }]);
     }
-    let outcome: Awaited<ReturnType<typeof ctx.deps.leases.acquire>>;
-    try {
-      outcome = await ctx.deps.leases.acquire({ keys: request.keys, ttlSeconds: request.ttl_seconds, holder: { user: user.id, run: runId }, prefix, maxTtlSeconds: cap });
-    } catch (error) {
-      // A partial grant never leaks: the keys granted before the failing request are released again before the refusal.
-      await releaseGranted().catch(() => undefined);
-      throw error;
+    if (op === 'release') continue;
+    if (!Number.isInteger((request as { ttl_seconds: number }).ttl_seconds) || (request as { ttl_seconds: number }).ttl_seconds <= 0 || (request as { ttl_seconds: number }).ttl_seconds > cap) {
+      throw new Refusal([{ code: 'LEASE_TTL', message: `租约期限要在 1 到 ${cap} 秒之间`, fix: '缩短租约期限，或请任务包作者调高上限' }]);
     }
-    if (!outcome.ok) {
-      await releaseGranted().catch(() => undefined);
-      const when = 'earliestFree' in outcome && outcome.earliestFree !== undefined ? `，最早空闲时刻 ${outcome.earliestFree}` : '';
-      const fix = outcome.code === 'LEASE_UNAVAILABLE' ? `等最早空闲时刻后再开始，或改用别的键${when}` : '缩短租约期限，或请任务包作者调高上限';
-      throw new Refusal([{ code: outcome.code, message: `要取得的租约（${request.keys.join('、')}）没有拿到${outcome.code === 'LEASE_UNAVAILABLE' ? when : ''}`, fix }]);
-    }
-    granted.push({ lease: outcome.lease, keys: outcome.keys, until: outcome.until });
   }
-  return granted;
-  async function releaseGranted(): Promise<void> {
-    if (granted.length === 0) return;
-    await ctx.deps!.leases!.release({ keys: granted.flatMap((entry) => entry.keys), holder: { user: user.id, run: runId } });
+  for (const request of requests) {
+    const op = request.op ?? 'acquire';
+    if (op === 'acquire') continue;
+    for (const key of request.keys) {
+      const row = holderRows.find((candidate) => candidate.key === key);
+      if (row === undefined) {
+        throw new Refusal([{ code: 'LEASE_UNAVAILABLE', message: `要${op === 'extend' ? '续期' : '释放'}的键 ${key} 上没有租约行`, fix: '先在预订运行里取得这个键' }]);
+      }
+      if (row.user !== user.id || !lineage.has(row.run)) {
+        throw new Refusal([{ code: 'LEASE_UNAVAILABLE', message: `键 ${key} 的租约不在这次运行的血缘持有之下`, fix: '由预订那次运行（或它血缘里的运行，同一用户发起）来续期或释放' }]);
+      }
+      if (row.released || Date.parse(row.expires_at) <= now.getTime()) {
+        throw new Refusal([{ code: 'LEASE_EXPIRED', message: `键 ${key} 的租约已${row.released ? '释放' : '过期'}`, fix: '重新取得租约并重新证明基线' }]);
+      }
+    }
   }
+  // Phase 2 — execute: the extends and releases first (checked above; irreversible), then the acquires. A failing
+  // acquire compensates the acquires already granted; a release or extend already done is never undone (README).
+  const done: Array<LeaseDone> = [];
+  const acquired: Array<{ keys: string[] }> = [];
+  const releaseGranted = async (): Promise<void> => {
+    const keys = acquired.flatMap((entry) => entry.keys);
+    if (keys.length === 0) return;
+    await ctx.deps!.leases!.release({ keys, holder: { user: user.id, run: runId } }).catch(() => undefined);
+  };
+  try {
+    for (const request of requests) {
+      if (request.op === 'extend') {
+        const rows = holderRows.filter((row) => request.keys.includes(row.key));
+        const holder = { user: rows[0]!.user, run: rows[0]!.run };
+        const outcome = await ctx.deps.leases.extend({ keys: request.keys, holder, ttlSeconds: request.ttl_seconds, maxTtlSeconds: cap });
+        if (!outcome.ok) {
+          const message = outcome.code === 'LEASE_TTL' ? `续期（${request.keys.join('、')}）超过累计上限` : `续期（${request.keys.join('、')}）没有成功`;
+          throw new Refusal([{ code: outcome.code, message, fix: outcome.code === 'LEASE_TTL' ? '缩短续期时长，或重新取得租约' : '稍后再试' }]);
+        }
+        done.push({ op: 'extend', lease: outcome.lease, keys: request.keys, until: outcome.until });
+      }
+    }
+    for (const request of requests) {
+      if (request.op === 'release') {
+        const rows = holderRows.filter((row) => request.keys.includes(row.key));
+        const holder = { user: rows[0]!.user, run: rows[0]!.run };
+        const until = rows.reduce((max, row) => (row.expires_at > max ? row.expires_at : max), rows[0]!.expires_at);
+        const outcome = await ctx.deps.leases.release({ keys: request.keys, holder });
+        if (!outcome.ok) {
+          throw new Refusal([{ code: outcome.code, message: `释放（${request.keys.join('、')}）没有成功`, fix: '键可能已被释放或过期，稍后再试' }]);
+        }
+        done.push({ op: 'release', keys: request.keys, until });
+      }
+    }
+    for (const request of requests) {
+      if (request.op !== 'release' && request.op !== 'extend') {
+        let outcome: Awaited<ReturnType<typeof ctx.deps.leases.acquire>>;
+        try {
+          outcome = await ctx.deps.leases.acquire({ keys: request.keys, ttlSeconds: request.ttl_seconds, holder: { user: user.id, run: runId }, prefix, maxTtlSeconds: cap });
+        } catch (error) {
+          await releaseGranted();
+          throw error;
+        }
+        if (!outcome.ok) {
+          await releaseGranted();
+          const when = 'earliestFree' in outcome && outcome.earliestFree !== undefined ? `，最早空闲时刻 ${outcome.earliestFree}` : '';
+          const fix = outcome.code === 'LEASE_UNAVAILABLE' ? `等最早空闲时刻后再开始，或改用别的键${when}` : '缩短租约期限，或请任务包作者调高上限';
+          throw new Refusal([{ code: outcome.code, message: `要取得的租约（${request.keys.join('、')}）没有拿到${outcome.code === 'LEASE_UNAVAILABLE' ? when : ''}`, fix }]);
+        }
+        acquired.push({ keys: outcome.keys });
+        done.push({ lease: outcome.lease, keys: outcome.keys, until: outcome.until });
+      }
+    }
+  } catch (error) {
+    // Only the acquires are compensated: extends and releases are irreversible (the check phase ran them first).
+    if (!(error instanceof Refusal)) await releaseGranted();
+    else await releaseGranted();
+    throw error;
+  }
+  return done;
 }
 
 const SPLIT_FIX = '把被判对象分块（每块分别开运行），按分块评审的做法逐块提交';
@@ -394,9 +478,15 @@ async function startFresh(
   const expected = await bindExpected(ctx, user, workflow, bound, projection.projected, parameters, { ...context, groups: projection.groups }, runId, call.traceId);
   // The leases are granted after the projection asked for them and before anything is stored; every failure from here
   // on compensates by releasing what was granted (D04 R[0]: no lease outlives the run it was taken for).
-  let grantedLeases: Array<{ lease: string; keys: string[]; until: string }> = [];
+  let grantedLeases: Array<LeaseDone> = [];
+  let leaseLineageHolders = new Set<string>();
   try {
-    grantedLeases = await grantLeases(ctx, user, workflow, projection.leaseRequests, runId);
+    grantedLeases = await grantLeases(ctx, user, workflow, projection.leaseRequests, runId, predecessor?.body.run);
+    if (leaseRows !== null && leaseRows.length > 0 && ctx.deps.leases !== undefined) {
+      const lineage = await lineageOf(ctx, runId, predecessor?.body.run);
+      const holders = await ctx.deps.leases.holders(leaseRows.map((row) => row.key));
+      leaseLineageHolders = new Set(holders.filter((row) => row.user === user.id && lineage.has(row.run)).map((row) => row.key));
+    }
 
   let items = projection.items;
   const packId = workflow.pack.id;
@@ -431,6 +521,12 @@ async function startFresh(
     });
   }
 
+  // The frozen rows carry `mine` for the rows held by this run's lineage (D04 R[0]): the projection of a successor
+  // reads it to see which keys it may extend or release. (The view itself was taken before the projection.)
+  const frozenLeaseRows: Array<{ key: string; until: string; mine: boolean }> | null =
+    leaseRows === null
+      ? null
+      : leaseRows.map((row) => ({ ...row, mine: leaseLineageHolders.has(row.key) }));
   const slots = slotSchemaOf(workflow);
   const hub = mode.host === 'hub';
   const session = sessionOf(call);
@@ -460,7 +556,7 @@ async function startFresh(
       ? { client_key: input.client_key, request_digest: requestDigest, client_key_expires_at: new Date(at.getTime() + ctx.clientKeyWindowMs).toISOString() }
       : {}),
     ...(grantedLeases.length > 0 ? { leases: grantedLeases } : {}),
-    ...(leaseRows !== null ? { lease_context: leaseRows } : {}),
+    ...(frozenLeaseRows !== null ? { lease_context: frozenLeaseRows } : {}),
   } satisfies RunRecord);
   const subjectPath = `/inputs/${workflow.workflow.subject}`;
   const runTooLarge = tooLarge(ctx, record, `这个被判对象投影出 ${items.length} 个条目，运行记录`, subjectPath);
@@ -512,8 +608,9 @@ async function startFresh(
   } catch (error) {
     // The granted leases of a start that did not store its run are released at once (compensation): an acquire that
     // refused throws before anything was granted, so only a real failure reaches here with rows held.
-    if (grantedLeases.length > 0 && ctx.deps.leases !== undefined) {
-      await ctx.deps.leases.release({ keys: grantedLeases.flatMap((entry) => entry.keys), holder: { user: user.id, run: runId } }).catch(() => undefined);
+    const acquiredKeys = grantedLeases.filter((entry) => entry.op !== 'extend' && entry.op !== 'release').flatMap((entry) => entry.keys);
+    if (acquiredKeys.length > 0 && ctx.deps.leases !== undefined) {
+      await ctx.deps.leases.release({ keys: acquiredKeys, holder: { user: user.id, run: runId } }).catch(() => undefined);
     }
     throw error;
   }

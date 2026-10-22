@@ -131,30 +131,91 @@
           }
         },
         "lease_requests": {
-          "description": "leases the run asks the Hub to acquire before it is stored (one request: several keys, all or nothing); keys must sit under the workflow's declared prefix and the TTL under its cap",
+          "description": "the lease operations the run asks the Hub to perform before it is stored (extend and release checks run first; a failing acquire later compensates the ones already granted); keys must sit under the workflow's declared prefix and the TTL under its cap",
           "type": "array",
           "items": {
-            "type": "object",
-            "properties": {
-              "keys": {
-                "minItems": 1,
-                "type": "array",
-                "items": {
-                  "type": "string",
-                  "minLength": 1
-                }
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "op": {
+                    "type": "string",
+                    "const": "acquire"
+                  },
+                  "keys": {
+                    "minItems": 1,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "ttl_seconds": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "keys",
+                  "ttl_seconds"
+                ],
+                "additionalProperties": false,
+                "description": "acquire (the default): every key free (or taken over from expired/released rows), all or nothing"
               },
-              "ttl_seconds": {
-                "type": "integer",
-                "exclusiveMinimum": 0,
-                "maximum": 9007199254740991
+              {
+                "type": "object",
+                "properties": {
+                  "op": {
+                    "type": "string",
+                    "const": "extend"
+                  },
+                  "keys": {
+                    "minItems": 1,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "ttl_seconds": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "op",
+                  "keys",
+                  "ttl_seconds"
+                ],
+                "additionalProperties": false,
+                "description": "extend: the lineage-held leases of these keys grow by ttl_seconds from now, inside the cumulative cap"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "op": {
+                    "type": "string",
+                    "const": "release"
+                  },
+                  "keys": {
+                    "minItems": 1,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                },
+                "required": [
+                  "op",
+                  "keys"
+                ],
+                "additionalProperties": false,
+                "description": "release: the lineage-held leases of these keys end now (not undone when the run later fails)"
               }
-            },
-            "required": [
-              "keys",
-              "ttl_seconds"
-            ],
-            "additionalProperties": false
+            ]
           }
         }
       },

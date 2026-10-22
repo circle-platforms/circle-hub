@@ -468,9 +468,15 @@ export const ProjectionOutput = z.union([
     groups: z.array(z.record(z.string(), z.unknown())).optional(),
     warnings: z.array(PackWarning),
     lease_requests: z
-      .array(z.strictObject({ keys: z.array(z.string().min(1)).min(1), ttl_seconds: z.number().int().positive() }))
+      .array(
+        z.union([
+          z.strictObject({ op: z.literal('acquire').optional(), keys: z.array(z.string().min(1)).min(1), ttl_seconds: z.number().int().positive() }).describe('acquire (the default): every key free (or taken over from expired/released rows), all or nothing'),
+          z.strictObject({ op: z.literal('extend'), keys: z.array(z.string().min(1)).min(1), ttl_seconds: z.number().int().positive() }).describe('extend: the lineage-held leases of these keys grow by ttl_seconds from now, inside the cumulative cap'),
+          z.strictObject({ op: z.literal('release'), keys: z.array(z.string().min(1)).min(1) }).describe('release: the lineage-held leases of these keys end now (not undone when the run later fails)'),
+        ]),
+      )
       .optional()
-      .describe('leases the run asks the Hub to acquire before it is stored (one request: several keys, all or nothing); keys must sit under the workflow\'s declared prefix and the TTL under its cap'),
+      .describe('the lease operations the run asks the Hub to perform before it is stored (extend and release checks run first; a failing acquire later compensates the ones already granted); keys must sit under the workflow\'s declared prefix and the TTL under its cap'),
   }),
   PackFailure,
 ]);
