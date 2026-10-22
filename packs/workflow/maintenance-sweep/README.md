@@ -25,16 +25,19 @@ The product name in the tests (`widget`) and the build names (`Rel_W_1_0_1`, `Re
 ## The answer
 
 Each item is one case of the earlier build, id `<document>:<node>`, sorted by id. A case on several maintenance paths is
-one item. Reasons are sorted by path and carry `code`, `path`, `change` and, for a definition change, `fields`.
+one item. Reasons are sorted by path and carry only the index of the path in the run-level details table and `change`
+(`removed` or `modified`) — since 1.3.0 the path string, the field differences and the tree references live once per
+path in `note.details` (a cross-line sweep of 1,147 cases blew the check outputs past the sandbox limit before this
+round; 1.2.0 had repeated the fields and references per item and per outcome). The case data (document, node, priority,
+negative) is written once in `fields`; the title lives once in `label`.
 
 A case is an item when the earlier build places it on a removed path, or on a modified path whose definition data
 differ. An added path is not an item. A change only in entries of kind `behaviour` is not an item. A case that exists
 only in the later build is not an item.
 
 `maintenance-sweep.case.command_removed` is blocking. The statement and `data.fix` say：按替代命令改写这条用例，或者停用它.
-`maintenance-sweep.case.command_changed` is advisory. 结论文字写前 3 处字段差异，全部差异在数据里。`data.fields` lists each difference as `command` (the tree path),
-`path` (a JSON Pointer), `before` and `after`. A key that is absent on one side is distinct from JSON null: `absent` is
-`before` or `after`, and the missing side's value is null.
+`maintenance-sweep.case.command_changed` is advisory. 结论文字写前 3 处字段差异和"另有 M 处"（段落至多 200 字符，保证 2,096 个判定也在输出上限内），全部差异只在运行级详情里各写一份（`note.details` 的 `fields`），判定数据只带原因的详情序号和变更种类。Each difference is `path` (a JSON Pointer), `before` and `after`. A key that is absent on one side is distinct from JSON null: `absent` is
+`before` or `after`, and the missing side's value is null. One ground per claim: the item's own location.
 
 `ignore_fields` drops those names at the top level of each definition before the diff. A nested key of the same name is
 still compared. Several definitions on one side are sorted by canonical JSON. Equal multisets are not a change; otherwise

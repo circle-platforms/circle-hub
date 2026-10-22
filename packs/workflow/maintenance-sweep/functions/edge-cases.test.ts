@@ -53,7 +53,7 @@ describe('maintenance sweep edge cases', () => {
       sweep.items.map((item) => item.id),
       ['doc-1:n1'],
     );
-    assert.deepEqual(sweep.note.details.find((d) => d.path === sweep.items[0].reasons[0].path)?.fields, [{ path: '/', before: null, after: null }]);
+    assert.deepEqual(sweep.note.details[sweep.items[0].reasons[0].detail]?.fields, [{ path: '/', before: null, after: null }]);
     assert.ok(sweep.warnings.some((warning) => warning.code === 'maintenance-sweep.missing_entry'));
   });
 
@@ -84,17 +84,10 @@ describe('maintenance sweep edge cases', () => {
     assert.deepEqual(definitionDiff([{ a: 1 }, { b: 2 }], [{ a: 1 }], []), [{ path: '/1', before: { b: 2 }, after: null, absent: 'after' }]);
   });
 
-  it('refutes command_exists on a removed reason that carries no pack code', () => {
-    const reason = {
-      code: 'some.other.code',
-      path: '/commands/drop',
-      change: 'removed' as const,
-      references: [ref(BEFORE, BEFORE)],
-      case: { entry: CASE, reference: ref(LATER, CASE) },
-    };
+  it('refutes command_exists on a removed change', () => {
     const [outcome] = checkOutcomes('command_exists', {
-      items: [{ id: 'doc-1:n1', location: '', fields: { document: 'doc-1', node: 'n1', title: '甲', reasons: [reason] } }],
-      note: null,
+      items: [{ id: 'doc-1:n1', label: '甲', location: 'src:loc', fields: { document: 'doc-1', node: 'n1', reasons: [{ detail: 0, change: 'removed' }] } }],
+      note: { details: [{ path: '/commands/drop', change: 'removed', fields: [] }] },
     });
     assert.deepEqual([outcome.verdict, outcome.code], ['refute', 'maintenance-sweep.case.command_removed']);
     assert.match(outcome.statement, /已删除/);

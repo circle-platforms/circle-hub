@@ -95,10 +95,13 @@ describe('a production run of maintenance-sweep', { skip }, () => {
     }
     const changed = requirement(located(result, 'doc-3:n1'), 'command_unchanged');
     assert.deepEqual(changed.layers, [{ layer: 'static', terminal: 'violation', code: 'maintenance-sweep.case.command_changed', tier: 'advisory', attribution: 'author_input' }]);
-    assert.deepEqual((changed.claims[0].statement.data as { fields: unknown[] }).fields, [{ command: '/commands/show', path: '/args/0/type', before: 'string', after: 'integer' }]);
+    // The field rows are not repeated on the claims; they live once in the run-level detail rows the reasons index.
+    const storedForDetails = (await hub.service.getRun(hub.alice, run.run))!;
+    const detailRows = (storedForDetails.run.groups?.[0] as { details?: Array<{ path: string; fields: unknown[] }> }).details ?? [];
+    assert.deepEqual(detailRows.find((row) => row.path === '/commands/show')?.fields, [{ path: '/args/0/type', before: 'string', after: 'integer' }]);
     assert.equal(requirement(located(result, 'doc-3:n1'), 'command_exists').layers[0].terminal, 'pass');
     const help = requirement(located(result, 'doc-4:n1'), 'command_unchanged');
-    assert.deepEqual((help.claims[0].statement.data as { fields: unknown[] }).fields, [{ command: '/commands/help', path: '/help', before: '旧帮助', after: '新帮助' }]);
+    assert.deepEqual(detailRows.find((row) => row.path === '/commands/help')?.fields, [{ path: '/help', before: '旧帮助', after: '新帮助' }]);
 
     const unknown = result.cross_item.filter((claim) => claim.statement.verdict === 'unknown');
     assert.equal(unknown.length, 1);
@@ -117,10 +120,15 @@ describe('a production run of maintenance-sweep', { skip }, () => {
       detail.answer.run!.items.map((item) => item.id),
       ['doc-1:n1'],
     );
-    const reasons = detail.answer.run!.items[0].fields.reasons as Array<{ code: string }>;
+    const reasons = detail.answer.run!.items[0].fields.reasons as Array<{ detail: number; change: string }>;
+    const storedForReasons = (await hub.service.getRun(hub.alice, detail.answer.run!.run))!;
+    const reasonDetails = (storedForReasons.run.groups?.[0] as { details?: Array<{ path: string }> }).details ?? [];
     assert.deepEqual(
-      reasons.map((reason) => reason.code),
-      ['maintenance-sweep.case.command_removed', 'maintenance-sweep.case.command_changed'],
+      reasons.map((reason) => [reasonDetails[reason.detail].path, reason.change]),
+      [
+        ['/commands/drop', 'removed'],
+        ['/commands/show', 'modified'],
+      ],
     );
     const item = located(detail.production!.result, 'doc-1:n1');
     assert.equal(requirement(item, 'command_exists').layers[0].terminal, 'violation');

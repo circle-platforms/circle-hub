@@ -3,6 +3,9 @@
 // claimed about cases the index does not hold: when the subject carries the projection note, command_exists adds that
 // unknown (and, when the view was truncated, an integrity unknown). Samples omit the note, so their polarity stays
 // the verdict of the item.
+// A reason on an item is only the index of its path in note.details and the change kind; path strings, field
+// differences and definition references are joined from that run-level table, so an outcome stays small at any
+// scale. One ground per outcome (the item's location).
 
 import { groundsOf } from './sweep.ts';
 import { FIX, PACK, clip, guarded, isRecord } from './text.ts';
@@ -18,11 +21,14 @@ interface ParsedField {
 }
 
 interface ParsedReason {
-  code: string;
-  path: string;
+  detail: number;
   change: 'added' | 'removed' | 'modified';
-  references: string[];
-  case: { entry: string; reference: string };
+}
+
+interface DetailRow {
+  path: string;
+  change: string;
+  fields: ParsedField[];
 }
 
 interface Outcome {
@@ -38,14 +44,16 @@ interface Outcome {
 
 interface Item {
   id: string;
+  label: string;
   fields: { [key: string]: unknown };
+  location?: unknown;
 }
 
 function itemsOf(subject: unknown): Item[] {
   const raw = isRecord(subject) ? subject : {};
   return (Array.isArray(raw.items) ? raw.items : [])
     .filter(isRecord)
-    .map((item) => ({ id: typeof item.id === 'string' ? item.id : '', fields: isRecord(item.fields) ? item.fields : {} }))
+    .map((item) => ({ id: typeof item.id === 'string' ? item.id : '', label: typeof item.label === 'string' ? item.label : '', fields: isRecord(item.fields) ? item.fields : {}, location: item.location }))
     .filter((item) => item.id !== '')
     .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 }
@@ -68,98 +76,41 @@ function fieldsOf(value: unknown): ParsedField[] | null {
   return out;
 }
 
-function reasonsOf(item: Item): ParsedReason[] | null {
+/** The note's detail rows (the paths the reasons index), or none when the subject carries no usable table. */
+function detailRowsOf(subject: unknown): DetailRow[] {
+  const note = noteOf(subject);
+  if (note === null || !Array.isArray(note.details)) return [];
+  const out: DetailRow[] = [];
+  for (const raw of note.details) {
+    if (!isRecord(raw) || typeof raw.path !== 'string' || typeof raw.change !== 'string') continue;
+    out.push({ path: raw.path, change: raw.change, fields: fieldsOf(raw.fields) ?? [] });
+  }
+  return out;
+}
+
+function reasonsOf(item: Item, details: DetailRow[]): ParsedReason[] | null {
   const value = item.fields.reasons;
   if (!Array.isArray(value)) return null;
   const out: ParsedReason[] = [];
   for (const raw of value) {
-    if (!isRecord(raw) || typeof raw.path !== 'string' || (raw.change !== 'added' && raw.change !== 'modified' && raw.change !== 'removed')) return null;
-    const caseRef = isRecord(raw.case) && typeof raw.case.reference === 'string' && typeof raw.case.entry === 'string' ? { entry: raw.case.entry, reference: raw.case.reference } : null;
-    if (caseRef === null) return null;
-    if (!Array.isArray(raw.references) || raw.references.some((r) => typeof r !== 'string')) return null;
-    out.push({ code: typeof raw.code === 'string' ? raw.code : '', path: raw.path, change: raw.change, references: raw.references as string[], case: caseRef });
+    if (!isRecord(raw) || typeof raw.detail !== 'number' || !Number.isInteger(raw.detail) || raw.detail < 0) return null;
+    if (raw.change !== 'added' && raw.change !== 'modified' && raw.change !== 'removed') return null;
+    out.push({ detail: raw.detail, change: raw.change });
   }
   return out;
+}
+
+/** The path of a reason's detail row; a removed or modified reason without its row is a pack defect (check error). */
+function pathOf(details: DetailRow[], reason: ParsedReason): string | null {
+  return reason.detail < details.length ? details[reason.detail].path : null;
 }
 
 function removed(reason: ParsedReason): boolean {
-  return reason.change === 'removed' || reason.code === REMOVED;
+  return reason.change === 'removed';
 }
 
-/** The per-path field differences from the note's details, by path (written once per path; items never repeat them). */
-function detailFieldsOf(note: unknown): Map<string, ParsedField[]> {
-  const raw = isRecord(note) ? note : {};
-  const out = new Map<string, ParsedField[]>();
-  if (!Array.isArray(raw.details)) return out;
-  for (const row of raw.details) {
-    if (!isRecord(row) || typeof row.path !== 'string') continue;
-    const fields = fieldsOf(row.fields);
-    if (fields !== null) out.set(row.path, fields);
-  }
-  return out;
-}
-
-function changed(reason: ParsedReason, fieldsOfPath: Map<string, ParsedField[]>): boolean {
-  return reason.code === CHANGED || (reason.change === 'modified' && (fieldsOfPath.get(reason.path)?.length ?? 0) > 0);
-}
-
-function flatFields(reasons: readonly ParsedReason[], fieldsOfPath: Map<string, ParsedField[]>): Array<{ command: string; path: string; before: unknown; after: unknown; absent?: 'before' | 'after' }> {
-  const out: Array<{ command: string; path: string; before: unknown; after: unknown; absent?: 'before' | 'after' }> = [];
-  for (const reason of reasons) {
-    for (const field of fieldsOfPath.get(reason.path) ?? []) {
-      const row: { command: string; path: string; before: unknown; after: unknown; absent?: 'before' | 'after' } = { command: reason.path, path: field.path, before: field.before, after: field.after };
-      if (field.absent !== undefined) row.absent = field.absent;
-      out.push(row);
-    }
-  }
-  return out;
-}
-
-function commandExists(subject: unknown): Outcome[] {
-  const out: Outcome[] = [];
-  for (const item of itemsOf(subject)) {
-    const reasons = reasonsOf(item);
-    const title = typeof item.fields.title === 'string' ? item.fields.title : item.id;
-    if (reasons === null) {
-      out.push({ verdict: 'unknown', reason: 'check_error', statement: `用例 ${item.id} 没有可读的维护原因`, grounds: [], tier: 'blocking', item: item.id });
-      continue;
-    }
-    const gone = reasons.filter(removed);
-    if (gone.length > 0) {
-      const paths = gone.map((reason) => reason.path).join('、');
-      out.push({
-        verdict: 'refute',
-        code: REMOVED,
-        statement: `用例 ${item.id}（${title}）所在的命令已删除（${paths}）。${FIX}`,
-        grounds: groundsOf(reasons),
-        tier: 'blocking',
-        item: item.id,
-        data: { fix: FIX, paths: gone.map((reason) => reason.path), reasons },
-      });
-      continue;
-    }
-    out.push({
-      verdict: 'support',
-      statement: `用例 ${item.id} 所在的命令仍在。`,
-      grounds: groundsOf(reasons),
-      tier: 'blocking',
-      item: item.id,
-      data: { reasons },
-    });
-  }
-  const note = noteOf(subject);
-  if (note !== null) {
-    const skipped = typeof note.skipped_from === 'number' && note.skipped_from > 0 ? note.skipped_from : 0;
-    const base = '索引没有收录的用例，这里不作结论。';
-    const statement = skipped > 0 ? `较早构建的索引缺少 ${skipped} 份列出的文档，没有维护项并不能证明没有过期的用例。${base}` : base;
-    out.push({ verdict: 'unknown', reason: 'missing_input', statement, grounds: [], tier: 'blocking' });
-    if (note.truncated === true) {
-      const total = typeof note.changed_paths === 'number' ? String(note.changed_paths) : '未知';
-      out.push({ verdict: 'unknown', reason: 'integrity_unproven', statement: `影响视图被截断，列出的路径不是全部（变更路径共 ${total} 条），完整性无法证明。`, grounds: [], tier: 'blocking' });
-    }
-  }
-  if (out.length === 0) out.push({ verdict: 'unknown', reason: 'check_error', statement: '维护巡检的检查里没有用例', grounds: [], tier: 'blocking' });
-  return out;
+function changed(reason: ParsedReason, details: DetailRow[]): boolean {
+  return reason.change === 'modified' && reason.detail < details.length && details[reason.detail].fields.length > 0;
 }
 
 function formatValue(value: unknown): string {
@@ -180,21 +131,22 @@ function formatField(field: ParsedField): string {
   return `${field.path} ${left} → ${right}`;
 }
 
-const MAX_DIFF_SECTION_LEN = 400;
+const MAX_DIFF_SECTION_LEN = 200;
 
-function formatDiffsText(diffs: readonly ParsedReason[], fieldsOfPath: Map<string, ParsedField[]>): string {
+function formatDiffsText(diffs: readonly ParsedReason[], details: DetailRow[]): string {
   if (diffs.length === 0) return '';
 
   const render = (kList: number[]): string => {
     const parts: string[] = [];
     for (let i = 0; i < diffs.length; i++) {
       const diff = diffs[i];
-      const fields = fieldsOfPath.get(diff.path) ?? [];
+      const path = details[diff.detail].path;
+      const fields = details[diff.detail].fields;
       const total = fields.length;
       const k = kList[i];
-      const header = diffs.length === 1 ? `字段差异 ${total} 处：` : `${diff.path} 字段差异 ${total} 处：`;
+      const header = diffs.length === 1 ? `字段差异 ${total} 处：` : `${path} 字段差异 ${total} 处：`;
       if (total === 0) {
-        parts.push(diffs.length === 1 ? '字段差异 0 处' : `${diff.path} 字段差异 0 处`);
+        parts.push(diffs.length === 1 ? '字段差异 0 处' : `${path} 字段差异 0 处`);
         continue;
       }
       if (k >= total) {
@@ -211,7 +163,7 @@ function formatDiffsText(diffs: readonly ParsedReason[], fieldsOfPath: Map<strin
     return parts.join('；');
   };
 
-  const kList = diffs.map((d) => Math.min(3, (fieldsOfPath.get(d.path) ?? []).length));
+  const kList = diffs.map((d) => Math.min(3, details[d.detail].fields.length));
   let text = render(kList);
 
   while (text.length > MAX_DIFF_SECTION_LEN) {
@@ -234,35 +186,94 @@ function formatDiffsText(diffs: readonly ParsedReason[], fieldsOfPath: Map<strin
   return text;
 }
 
-function commandUnchanged(subject: unknown): Outcome[] {
+function commandExists(subject: unknown): Outcome[] {
+  const details = detailRowsOf(subject);
   const out: Outcome[] = [];
-  const fieldsOfPath = detailFieldsOf(noteOf(subject));
   for (const item of itemsOf(subject)) {
-    const reasons = reasonsOf(item);
-    const title = typeof item.fields.title === 'string' ? item.fields.title : item.id;
+    const reasons = reasonsOf(item, details);
+    const title = item.label !== '' ? item.label : item.id;
+    if (reasons === null) {
+      out.push({ verdict: 'unknown', reason: 'check_error', statement: `用例 ${item.id} 没有可读的维护原因`, grounds: [], tier: 'blocking', item: item.id });
+      continue;
+    }
+    const grounds = groundsOf(item);
+    const gone = reasons.filter(removed);
+    if (gone.length > 0) {
+      if (gone.some((reason) => pathOf(details, reason) === null)) {
+        out.push({ verdict: 'unknown', reason: 'check_error', statement: `用例 ${item.id} 的删除原因点名的运行级详情行不存在（任务包缺陷）`, grounds: [], tier: 'blocking', item: item.id });
+        continue;
+      }
+      const paths = gone.map((reason) => pathOf(details, reason)).join('、');
+      out.push({
+        verdict: 'refute',
+        code: REMOVED,
+        statement: `用例 ${item.id}（${title}）所在的命令已删除（${paths}）。${FIX}`,
+        grounds,
+        tier: 'blocking',
+        item: item.id,
+        data: { fix: FIX, paths: gone.map((reason) => details[reason.detail].path), reasons },
+      });
+      continue;
+    }
+    out.push({
+      verdict: 'support',
+      statement: `用例 ${item.id} 所在的命令仍在。`,
+      grounds,
+      tier: 'blocking',
+      item: item.id,
+      data: { reasons },
+    });
+  }
+  const note = noteOf(subject);
+  if (note !== null) {
+    const skipped = typeof note.skipped_from === 'number' && note.skipped_from > 0 ? note.skipped_from : 0;
+    const base = '索引没有收录的用例，这里不作结论。';
+    const statement = skipped > 0 ? `较早构建的索引缺少 ${skipped} 份列出的文档，没有维护项并不能证明没有过期的用例。${base}` : base;
+    out.push({ verdict: 'unknown', reason: 'missing_input', statement, grounds: [], tier: 'blocking' });
+    if (note.truncated === true) {
+      const total = typeof note.changed_paths === 'number' ? String(note.changed_paths) : '未知';
+      out.push({ verdict: 'unknown', reason: 'integrity_unproven', statement: `影响视图被截断，列出的路径不是全部（变更路径共 ${total} 条），完整性无法证明。`, grounds: [], tier: 'blocking' });
+    }
+  }
+  if (out.length === 0) out.push({ verdict: 'unknown', reason: 'check_error', statement: '维护巡检的检查里没有用例', grounds: [], tier: 'blocking' });
+  return out;
+}
+
+function commandUnchanged(subject: unknown): Outcome[] {
+  const details = detailRowsOf(subject);
+  const out: Outcome[] = [];
+  for (const item of itemsOf(subject)) {
+    const reasons = reasonsOf(item, details);
+    const title = item.label !== '' ? item.label : item.id;
     if (reasons === null) {
       out.push({ verdict: 'unknown', reason: 'check_error', statement: `用例 ${item.id} 没有可读的维护原因`, grounds: [], tier: 'advisory', item: item.id });
       continue;
     }
-    const diffs = reasons.filter((reason) => changed(reason, fieldsOfPath));
+    const grounds = groundsOf(item);
+    const modified = reasons.filter((reason) => reason.change === 'modified');
+    if (modified.some((reason) => pathOf(details, reason) === null)) {
+      out.push({ verdict: 'unknown', reason: 'check_error', statement: `用例 ${item.id} 的变更原因点名的运行级详情行不存在（任务包缺陷）`, grounds: [], tier: 'advisory', item: item.id });
+      continue;
+    }
+    const diffs = reasons.filter((reason) => changed(reason, details));
     if (diffs.length > 0) {
-      const paths = diffs.map((reason) => reason.path).join('、');
-      const diffText = formatDiffsText(diffs, fieldsOfPath);
+      const paths = diffs.map((reason) => details[reason.detail].path).join('、');
+      const diffText = formatDiffsText(diffs, details);
       out.push({
         verdict: 'refute',
         code: CHANGED,
         statement: `用例 ${item.id}（${title}）所在命令的定义有变更（${paths}）。${diffText}`,
-        grounds: groundsOf(reasons),
+        grounds,
         tier: 'advisory',
         item: item.id,
-        data: { fields: flatFields(diffs, fieldsOfPath), reasons },
+        data: { reasons },
       });
       continue;
     }
     out.push({
       verdict: 'support',
       statement: `用例 ${item.id} 所在命令的定义没有需要维护的差异。`,
-      grounds: groundsOf(reasons),
+      grounds,
       tier: 'advisory',
       item: item.id,
       data: { reasons },

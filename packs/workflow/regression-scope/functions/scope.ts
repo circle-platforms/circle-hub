@@ -13,24 +13,21 @@ export interface Parameters {
 }
 
 export interface Reason {
-  path: string;
+  /** The index of the path in the run-level details table (note.details); the path string is there, once. */
+  detail: number;
   change: 'added' | 'modified';
-  /** What happened to the command definition on the path, read from the definition entries of both sides. */
-  definition_change: 'added' | 'removed' | 'modified' | 'none';
-  /** Tree references to the changed definition entries of the path (tree:<root>/<path>@<entry>) — the detail lives on
-   * the run-level note, written once per path, never repeated per item. */
-  references: string[];
-  /** One tree reference to the case entry this reason is about (the item's own ground; no body). */
-  case: { entry: string; reference: string };
 }
 
-/** One row per changed path at the run level: the kind, a short line for a person, and (when the definitions differ in
- * fields) the first 3 field diffs with 另有 M 处. Written once in the note; the items cite their path only. */
+/** One row per changed path at the run level: the kind, the definition change, a short line for a person, the first 3
+ * field diffs with 另有 M 处, and the tree references of the changed definition entries. Written once in the note;
+ * the items cite the row by its index, never repeating it. */
 export interface PathDetail {
   path: string;
   change: 'added' | 'removed' | 'modified';
+  definition_change: 'added' | 'removed' | 'modified' | 'none';
   conclusion: string;
   differences: string[];
+  references: string[];
 }
 
 export interface ScopeItem {
@@ -68,7 +65,8 @@ export interface ScopeNote {
   changed_paths: number;
   include_added: boolean;
   message: string;
-  /** One row per changed path (at most 400): the kind, a short line, the first 3 field differences. */
+  /** One row per changed path: the kind, the definition change, a short line, the first 3 field differences and the
+   * tree references of the changed definition entries (the reasons cite a row by its index, so every path has a row). */
   details: PathDetail[];
 }
 
@@ -91,7 +89,7 @@ interface Acc {
   priority: number | null;
   negative: boolean;
   chosen: string;
-  reasons: Map<string, Reason>;
+  reasons: Map<string, Reason['change']>;
 }
 
 const MAX_ID = 200;
@@ -149,7 +147,7 @@ function comparePath(a: PathNote, b: PathNote): number {
  * and some after is added; some before and none after is removed; both with different digests is modified; equal
  * definitions (only behaviour texts moved) or no definition on either side is none.
  */
-function definitionChangeOf(before: Cited[], after: Cited[]): Reason['definition_change'] {
+function definitionChangeOf(before: Cited[], after: Cited[]): PathDetail['definition_change'] {
   const beforeDefinitions = uniqueSorted(before.filter((row) => row.kind === 'definition').map((row) => row.entry));
   const afterDefinitions = uniqueSorted(after.filter((row) => row.kind === 'definition').map((row) => row.entry));
   if (beforeDefinitions.length === 0 && afterDefinitions.length > 0) return 'added';
@@ -193,7 +191,7 @@ function fieldDifferences(before: Cited[], after: Cited[]): string[] {
   return rows;
 }
 
-function conclusionOf(change: Reason['definition_change']): string {
+function conclusionOf(change: PathDetail['definition_change']): string {
   return DEFINITION_CHANGE_LABEL[change];
 }
 
@@ -277,21 +275,9 @@ export function scopeOf(view: NormView, parameters: Parameters): ScopeResult {
         acc.priority = priority;
         acc.negative = negative;
       }
-      // The path detail is computed once per path (detailsOf); every item only points at its path. The case ground is
-      // the smallest digest on the path, by comparison — never the order the view happened to give.
-      const previous = acc.reasons.get(row.path);
-      if (previous === undefined) {
-        const detail = detailsOf(row.path, side, view, warnings, missing);
-        acc.reasons.set(row.path, {
-          path: row.path,
-          change: row.change,
-          definition_change: detail.definitionChange,
-          references: detail.references,
-          case: { entry: digest, reference: entry.reference },
-        });
-      } else if (digest < previous.case.entry) {
-        acc.reasons.set(row.path, { ...previous, case: { entry: digest, reference: entry.reference } });
-      }
+      // The reason only remembers the change kind of its path; the detail row is joined by index after the details
+      // are sorted. The item's ground is the least digest's reference, by comparison — never the view's order.
+      if (acc.reasons.get(row.path) === undefined) acc.reasons.set(row.path, row.change);
     }
     if (!sawCase) uncovered.push(row);
   }
@@ -306,19 +292,23 @@ export function scopeOf(view: NormView, parameters: Parameters): ScopeResult {
   uncovered.sort(comparePath);
   considered.sort(comparePath);
 
-  // The per-path details (once per path): from every side the items' reasons point at.
+  // The per-path details (once per path): the kind, the definition change, a short line, the first 3 field
+  // differences and the tree references of the changed definition entries.
   const detailRows = new Map<string, PathDetail>();
   for (const [path, side] of byPath) {
     const detail = detailsOf(path, side, view, warnings, missing);
-    detailRows.set(path, { path, change: detail.change, conclusion: detail.conclusion, differences: detail.differences.slice(0, 3) });
+    detailRows.set(path, { path, change: detail.change, definition_change: detail.definitionChange, conclusion: detail.conclusion, differences: detail.differences.slice(0, 3), references: detail.references });
   }
-  const details = [...detailRows.values()].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0)).slice(0, 400);
+  const details = [...detailRows.values()].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+  const detailIndex = new Map(details.map((row, index) => [row.path, index]));
 
   const items: ScopeItem[] = kept.map(([id, acc]) => {
-    const reasons = [...acc.reasons.values()].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
-    const first = reasons[0];
+    const reasons = [...acc.reasons.entries()]
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([path, change]) => ({ detail: detailIndex.get(path) as number, change }));
+    const first = details[reasons[0].detail];
     const priority = acc.priority === null ? '未给出' : String(acc.priority);
-    const summary = clip(`优先级 ${priority}；文档 ${acc.document}；${reasons.length} 条命令有变更；${first.path} ${conclusionOf(first.definition_change)}`, MAX_SUMMARY);
+    const summary = clip(`优先级 ${priority}；文档 ${acc.document}；${reasons.length} 条命令有变更；${first.path} ${first.conclusion}`, MAX_SUMMARY);
     return {
       id,
       label: clip(acc.title, MAX_LABEL),
@@ -364,16 +354,8 @@ export function scopeOf(view: NormView, parameters: Parameters): ScopeResult {
   };
 }
 
-const TREE = /^tree:[0-9a-f]{64}\/(?:[^/@]+(?:\/[^/@]+)*)?@[0-9a-f]{64}$/;
-
-/** Tree references of the case entry and of the definition entries named on the reasons. */
-export function groundsOf(reasons: readonly { references: string[]; case: { reference: string } }[]): string[] {
-  const refs: string[] = [];
-  for (const reason of reasons) {
-    if (TREE.test(reason.case.reference)) refs.push(reason.case.reference);
-    for (const reference of reason.references) {
-      if (TREE.test(reference)) refs.push(reference);
-    }
-  }
-  return uniqueSorted(refs);
+/** The one ground of an item's outcome: the item's own location reference (the case entry fragment; definition
+ * references live once per path in note.details, never repeated per claim). */
+export function groundsOf(item: { location?: unknown }): string[] {
+  return typeof item.location === 'string' ? [item.location] : [];
 }

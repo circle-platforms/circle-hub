@@ -111,10 +111,12 @@ describe('maintenance sweep on a hand-built pair of trees', () => {
       ['doc-3:n1', 'doc-4:n1'],
     );
     assert.ok(changed.every((outcome) => outcome.code === 'maintenance-sweep.case.command_changed' && outcome.tier === 'advisory'));
-    const signatureFields = (changed.find((outcome) => outcome.item === 'doc-3:n1')!.data as { fields: Array<{ command: string; path: string; before: unknown; after: unknown }> }).fields;
-    assert.deepEqual(signatureFields, [{ command: '/commands/show', path: '/args/0/type', before: 'string', after: 'integer' }]);
-    const helpFields = (changed.find((outcome) => outcome.item === 'doc-4:n1')!.data as { fields: Array<{ path: string; before: unknown; after: unknown }> }).fields;
-    assert.deepEqual(helpFields, [{ command: '/commands/help', path: '/help', before: '旧帮助', after: '新帮助' }].map((row) => row));
+    // The field rows are not repeated on the outcomes; they live once in the note's detail rows the reasons index.
+    const detailRows = run.output.groups[0].details as Array<{ path: string; fields: Array<{ path: string; before: unknown; after: unknown }> }>;
+    const signatureFields = detailRows.find((row) => row.path === '/commands/show')!.fields;
+    assert.deepEqual(signatureFields, [{ path: '/args/0/type', before: 'string', after: 'integer' }]);
+    const helpFields = detailRows.find((row) => row.path === '/commands/help')!.fields;
+    assert.deepEqual(helpFields, [{ path: '/help', before: '旧帮助', after: '新帮助' }]);
     assert.equal(run.output.items[2].summary, '优先级 1；文档 doc-3；1 处需要维护；/commands/show 修改');
     // A removal-only item is not a definition change. A definition change is not a removed command.
     assert.equal(run.unchanged.find((outcome) => outcome.item === 'doc-2:n2')!.verdict, 'support');
@@ -127,14 +129,16 @@ describe('maintenance sweep on a hand-built pair of trees', () => {
       run.output.items.map((item) => item.id),
       ['doc-1:n1'],
     );
-    const reasons = run.output.items[0].fields.reasons as Array<{ path: string; change: string; code: string }>;
+    const reasons = run.output.items[0].fields.reasons as Array<{ detail: number; change: string }>;
+    const details = run.output.groups[0].details as Array<{ path: string }>;
     assert.deepEqual(
-      reasons.map((reason) => [reason.path, reason.change, reason.code]),
+      reasons.map((reason) => [details[reason.detail].path, reason.change]),
       [
-        ['/commands/drop', 'removed', 'maintenance-sweep.case.command_removed'],
-        ['/commands/show', 'modified', 'maintenance-sweep.case.command_changed'],
+        ['/commands/drop', 'removed'],
+        ['/commands/show', 'modified'],
       ],
     );
+    assert.deepEqual([run.exists[0].code, run.unchanged[0].code], ['maintenance-sweep.case.command_removed', 'maintenance-sweep.case.command_changed']);
     assert.equal(run.output.items[0].fields.negative, true);
     assert.equal(run.exists[0].verdict, 'refute');
     assert.equal(run.unchanged[0].verdict, 'refute');

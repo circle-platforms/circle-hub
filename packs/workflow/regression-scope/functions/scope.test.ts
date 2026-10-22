@@ -26,7 +26,7 @@ function projected(view: { [key: string]: unknown }, parameters: { [key: string]
   }) as { items: Array<{ id: string; label: string; summary: string; location: { selector: string }; fields: { [key: string]: unknown } }>; groups: Array<{ [key: string]: unknown }>; warnings: Array<{ code: string; message: string }>; error?: { code: string } };
   assert.equal(output.error, undefined, JSON.stringify(output.error));
   const subject = {
-    items: output.items.map((item) => ({ id: item.id, location: `src:${SOURCE}/json@1/${item.location.selector}`, fields: item.fields })),
+    items: output.items.map((item) => ({ id: item.id, label: item.label, location: `src:${SOURCE}/json@1/${item.location.selector}`, fields: item.fields })),
     note: output.groups[0],
   };
   return { output, subject, inScope: checkOutcomes('in_scope', subject), uncovered: checkOutcomes('uncovered_changes', subject) };
@@ -56,15 +56,18 @@ describe('regression scope on a hand-built pair of trees', () => {
     assert.equal(both.negative, true);
     assert.equal(both.priority, 1);
     assert.deepEqual(
-      both.reasons.map((reason) => [reason.path, reason.change]),
+      both.reasons.map((reason) => [scope.note.details[reason.detail].path, reason.change]),
       [
         ['/commands/add', 'added'],
         ['/commands/show', 'modified'],
       ],
     );
-    // The slim reason points at the path's tree references (definitions of both sides); the case rides the location.
-    assert.ok(both.reasons[1].references.length > 0, JSON.stringify(both.reasons[1]));
-    for (const reference of both.reasons[1].references) assert.match(reference, /^tree:[0-9a-f]{64}\/commands\/show(@[0-9a-f]{64})?$/);
+    // The slim reason names its detail row by index; the row carries the path's tree references (definitions of both
+    // sides) once, and the item's own ground is its location (no repeated reference in the fields).
+    const showDetail = scope.note.details[both.reasons[1].detail];
+    assert.ok(showDetail.references.length > 0, JSON.stringify(showDetail));
+    for (const reference of showDetail.references) assert.match(reference, /^tree:[0-9a-f]{64}\/commands\/show(@[0-9a-f]{64})?$/);
+    assert.deepEqual(Object.keys(scope.items[0].reasons[0]).sort(), ['change', 'detail']);
     assert.match(both.summary, /^优先级 1；文档 doc-1；2 条命令有变更；\/commands\/add 新增命令$/);
     assert.ok([...both.summary].length <= 200);
     // The earlier build's case on the same modified path is not the later build's case.
@@ -92,12 +95,12 @@ describe('regression scope on a hand-built pair of trees', () => {
     assert.match(run.uncovered[0].statement, /\/commands\/bare（新增）/);
     assert.match(run.uncovered[0].statement, /不是失败/);
     assert.ok(run.inScope.every((outcome) => outcome.verdict === 'support'));
-    // The slim grounds: each reason's case reference plus the path's tree references (no bodies).
+    // One ground per outcome: the item's own location (the case entry fragment); the path's definition references
+    // live once per detail row.
     const grounds = run.inScope.find((outcome) => outcome.item === 'doc-1:n1')!.grounds;
-    const show = run.output.items[0].fields.reasons as Array<{ path: string; references: string[]; case: { reference: string } }>;
-    const wanted = show.flatMap((reason) => [reason.case.reference, ...reason.references]);
-    assert.deepEqual(grounds, [...new Set(wanted)].sort());
-    assert.ok(grounds.every((ref) => ref.startsWith('tree:')), 'every ground is a tree reference');
+    const location = run.subject.items.find((item) => item.id === 'doc-1:n1')!.location;
+    assert.deepEqual(grounds, [location]);
+    assert.ok(grounds.every((ref) => typeof ref === 'string' && ref.startsWith('src:')), 'every ground is the item location reference');
   });
 
   it('does not depend on the order of placements or entries', () => {
@@ -129,9 +132,8 @@ describe('regression scope on a hand-built pair of trees', () => {
     const backward = projected(reversedView(built));
     assert.deepEqual(backward.output.items, forward.output.items, 'the whole item is identical in both orders');
     const entryOf = (run: typeof forward): string => {
-      const reasons = run.output.items[0].fields.reasons as Array<{ path: string; case: { entry: string; reference: string } }>;
-      assert.equal(reasons.length, 1);
-      return reasons[0].case.entry;
+      assert.equal(run.output.items.length, 1);
+      return (run.output.items[0].location as { selector: string }).selector.slice('p/entries/'.length);
     };
     assert.equal(entryOf(backward), entryOf(forward), 'the same digest grounds the reason in both orders');
     const digests = (built.placements as Array<{ to: string[] }>)[0].to;
@@ -154,8 +156,9 @@ describe('regression scope on a hand-built pair of trees', () => {
       run.output.items.map((item) => item.id),
       ['doc-1:n1', 'doc-2:n2', 'doc-5:n1'],
     );
-    const reasons = run.output.items[0].fields.reasons as Array<{ path: string; change: string }>;
-    assert.deepEqual(reasons.map((reason) => reason.path), ['/commands/show']);
+    const reasons = run.output.items[0].fields.reasons as Array<{ detail: number; change: string }>;
+    const details = run.output.groups[0].details as Array<{ path: string }>;
+    assert.deepEqual(reasons.map((reason) => details[reason.detail].path), ['/commands/show']);
     assert.deepEqual(run.output.groups[0].uncovered, []);
     assert.equal(run.uncovered.length, 1);
     assert.equal(run.uncovered[0].verdict, 'support');

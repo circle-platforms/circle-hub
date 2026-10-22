@@ -98,16 +98,17 @@ describe('regression scope edge cases', () => {
   it('derives the uncovered paths from the considered ones when the note names none', () => {
     const CASE = 'a'.repeat(64);
     const LATER = 'e'.repeat(64);
-    const reason = {
-      path: '/commands/show',
-      change: 'modified' as const,
-      definition_change: 'modified' as const,
-      references: [`tree:${LATER}/commands/show@${CASE}`],
-      case: { entry: CASE, reference: `tree:${LATER}/commands/show@${CASE}` },
-    };
+    const reason = { detail: 0, change: 'modified' as const };
     const outcomes = checkOutcomes('uncovered_changes', {
-      items: [{ id: 'doc-1:n1', location: '', fields: { document: 'doc-1', node: 'n1', title: '甲', reasons: [reason] } }],
-      note: { considered: [{ path: '/commands/show', change: 'modified' }, { path: '/commands/bare', change: 'added' }], skipped_to: 0, truncated: false, changed_paths: 2, include_added: true },
+      items: [{ id: 'doc-1:n1', label: '甲', location: `tree:${LATER}/commands/show@${CASE}`, fields: { document: 'doc-1', node: 'n1', reasons: [reason] } }],
+      note: {
+        considered: [{ path: '/commands/show', change: 'modified' }, { path: '/commands/bare', change: 'added' }],
+        details: [{ path: '/commands/show', change: 'modified' }],
+        skipped_to: 0,
+        truncated: false,
+        changed_paths: 2,
+        include_added: true,
+      },
     });
     assert.ok(outcomes.every((outcome) => outcome.verdict !== 'refute'), 'a path with a case in scope is not uncovered');
     assert.equal(outcomes.length, 1);
