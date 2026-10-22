@@ -9,7 +9,7 @@
 // The option names of the table language (unicode, case, whitespace, value and parameter types, within, scope, flags, mode,
 // measure) are written here, not in the model vocabulary: see hub/rules/README.md, "Needs from other packages".
 import { z } from 'zod';
-import { CheckTierSchema, ReasonSchema, VerdictSchema } from '../generated/vocabulary.ts';
+import { CheckTierSchema, MeasureSchema, ReasonSchema, VerdictSchema } from '../generated/vocabulary.ts';
 import { ReferenceUri } from './reference.ts';
 
 /** Limits of the pattern@1 samples, so validating a table stays cheap (the matcher also caps its work on them). */
@@ -331,7 +331,7 @@ export const RangeCheck = z
     z.strictObject({
       values: JsonPath,
       threshold: z
-        .strictObject({ measure: z.enum(['count', 'sum', 'min', 'max']).describe('Aggregate of the selected values'), ...Bounds })
+        .strictObject({ measure: MeasureSchema.describe('Aggregate of the selected values'), ...Bounds })
         .describe('The aggregate of all selected values must lie in the bounds'),
     }),
   ])

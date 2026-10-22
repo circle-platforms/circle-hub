@@ -12,9 +12,14 @@ import {
   LayerSchema,
   LeaseOpSchema,
   PackKindSchema,
+  SAMPLE_SOURCE,
+  SampleSourceSchema,
   SourceRoleSchema,
+  TargetSchema,
   VerdictSchema,
   type PackKind,
+  type SampleSource,
+  type Target,
 } from '../generated/vocabulary.ts';
 import { PACK_FILE_PATHS } from '../generated/protocol.ts';
 import { ItemId, IsoTime, JsonPointer, PackId, PackVersion, Sha256, Versioned } from './common.ts';
@@ -136,7 +141,7 @@ export const RequirementTemplate = z
     key: Key,
     name: z.string().min(1),
     description: z.string().min(1),
-    target: z.enum(['item', 'run']).describe('item: judged for every item; run: one judgment over the whole target (a cross-item claim)'),
+    target: TargetSchema.describe('item: judged for every item; run: one judgment over the whole target (a cross-item claim)'),
     required: z.boolean().describe('a gating run needs every required requirement satisfied (V06 R[2])'),
     done_rule: DoneRuleSchema,
     layers: z.array(LayerSchema).min(1),
@@ -275,7 +280,7 @@ export const CheckEntry = z
     interpreter: Versioned.optional().describe('a core interpreter such as structure@1'),
     function: PackFunctionRef.optional().describe('a pack function with the PackCheckInput of hub/rules'),
     table: PackPath.optional().describe('the table the interpreter reads, under tables/ or policies/'),
-    applies: z.enum(['run', 'item']).describe('run: one subject for all items, built once; item: one subject per item (with its submitted slots)'),
+    applies: TargetSchema.describe('run: one subject for all items, built once; item: one subject per item (with its submitted slots)'),
     subject: PackFunctionRef.optional().describe('builds the subject from RunSubjectInput or ItemSubjectInput; without it the default subject of that input is used'),
     catalog: Versioned.optional().describe('the catalog of the locked root the check consults'),
     judges: SourceRoleSchema.describe('the role of what the check judges (A03): the target, an expected source or the artifact under verification'),
@@ -527,7 +532,8 @@ export type KnowledgeFile = z.infer<typeof KnowledgeFile>;
 // ---------------------------------------------------------------- samples (T02)
 
 /** Where a sample comes from (T02 R[1]); the publish check reports the counts per source. */
-export const SAMPLE_SOURCES = ['author', 'returned_counterexample', 'retained_delivery'] as const;
+export const SAMPLE_SOURCES = SAMPLE_SOURCE;
+export type { SampleSource };
 
 /** What a check must say about the sample subject: every outcome in order, with the fields that must match. */
 export const SampleExpectation = z.strictObject({
@@ -548,7 +554,7 @@ export type SampleUnreadSource = z.infer<typeof SampleUnreadSource>;
 
 export const PackSample = z.strictObject({
   id: Key,
-  source: z.enum(SAMPLE_SOURCES),
+  source: SampleSourceSchema,
   check: Key.describe('the check of checks.json this sample exercises'),
   note: z.string().optional(),
   subject: z.unknown().describe('the subject exactly as the check receives it after the subject builder'),

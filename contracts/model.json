@@ -1,5 +1,5 @@
 {
- "version": 6,
+ "version": 7,
  "elements": [
   {
    "id": "B01",
@@ -1122,6 +1122,9 @@
     "“进已拒收”的适用范围（第四版复核 第 8 行）",
     "未完成记在声明的层（第四版复核 第 2 行）",
     "请求原文先存为源文件（第四版复核 第 17 行）"
+   ],
+   "changes7": [
+    "目标种类进词表 target（条目、运行；W02 F[0]，RequirementTemplate.target 与 CheckEntry.applies 共用）"
    ]
   },
   {
@@ -1810,7 +1813,10 @@
    "changes": [
     "接上凭据扫描（缺口 32）"
    ],
-   "fields": []
+   "fields": [],
+   "changes7": [
+    "度量进词表 measure（个数、总和、最小值、最大值；C04 R[1] 阈值表）"
+   ]
   },
   {
    "id": "C05",
@@ -2068,7 +2074,10 @@
    "changes3": [
     "外部回放结果不进发布记录（审计 33）"
    ],
-   "fields": []
+   "fields": [],
+   "changes7": [
+    "样例来源进词表 sample_source（作者、回流反例、外部留存交付；T02 R[1]）"
+   ]
   },
   {
    "id": "T03",
@@ -2324,7 +2333,10 @@
     "“选项”改称“可选位置”（三版复核 新问题 15）",
     "“可选位置”改称“可选节点”（第四版复核 第 9 行）"
    ],
-   "fields": []
+   "fields": [],
+   "changes7": [
+    "归位方式进词表 placement（只按代码归位、可由 bot 提议归位；K04 原文与决定 15）"
+   ]
   },
   {
    "id": "K05",
@@ -5085,6 +5097,78 @@
     {
      "code": "integrity_unproven",
      "label": "完整性未证明"
+    }
+   ]
+  },
+  {
+   "axis": "sample_source",
+   "label": "样例来源",
+   "owner": "T02",
+   "values": [
+    {
+     "code": "author",
+     "label": "作者"
+    },
+    {
+     "code": "returned_counterexample",
+     "label": "回流反例"
+    },
+    {
+     "code": "retained_delivery",
+     "label": "外部留存交付"
+    }
+   ]
+  },
+  {
+   "axis": "target",
+   "label": "目标种类",
+   "owner": "W02",
+   "values": [
+    {
+     "code": "item",
+     "label": "条目"
+    },
+    {
+     "code": "run",
+     "label": "运行"
+    }
+   ]
+  },
+  {
+   "axis": "measure",
+   "label": "度量",
+   "owner": "C04",
+   "values": [
+    {
+     "code": "count",
+     "label": "个数"
+    },
+    {
+     "code": "sum",
+     "label": "总和"
+    },
+    {
+     "code": "min",
+     "label": "最小值"
+    },
+    {
+     "code": "max",
+     "label": "最大值"
+    }
+   ]
+  },
+  {
+   "axis": "placement",
+   "label": "归位方式",
+   "owner": "K04",
+   "values": [
+    {
+     "code": "code_only",
+     "label": "只按代码归位"
+    },
+    {
+     "code": "judgment_allowed",
+     "label": "可由 bot 提议归位"
     }
    ]
   }
