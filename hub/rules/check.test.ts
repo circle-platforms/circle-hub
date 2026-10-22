@@ -238,16 +238,16 @@ describe('runCheck with a pack function', () => {
     assert.equal(typeof error.detail?.durationMs, 'number');
   });
 
-  it('passes unreadSources to pack function', async () => {
+  it('passes unreadSources with external and slot to pack function', async () => {
     const dir = pack({
       'checks/unread.ts': [
-        'export default function (input: { unread_sources?: { reference: string; reason: string }[] }) {',
+        'export default function (input: { unread_sources?: { reference: string; reason: string; external?: string; slot?: string }[] }) {',
         "  return [{ verdict: 'unknown', reason: 'missing_input', statement: '缺来源', grounds: [], tier: 'advisory', data: { unread: input.unread_sources ?? [] } }];",
         '}',
       ].join('\n'),
     });
     const declaration = { id: 'unread-check', function: { module: 'checks/unread.ts' } };
-    const unread = [{ reference: `src:${'a'.repeat(64)}`, reason: '超过大小上限' }];
+    const unread = [{ reference: `src:${'a'.repeat(64)}`, reason: '超过大小上限', external: 'plm:bugs:123', slot: 'expected' }];
     const bindings = { subject: {}, context: { pack: 'synthetic-review' }, packDir: dir, unreadSources: unread, sandbox: sandbox() };
     const [o] = await runCheck(declaration, bindings);
     assert.equal(o.verdict, 'unknown');

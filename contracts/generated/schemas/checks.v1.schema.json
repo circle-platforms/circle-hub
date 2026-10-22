@@ -124,6 +124,15 @@
                 },
                 "description": "source roles whose bound sources are read into sources for this check"
               },
+              "types": {
+                "description": "external object types system:type whose bound sources are read; when set, sources without external identity are not read",
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9-]*:[a-z][a-z0-9_-]*$"
+                }
+              },
               "max_bytes": {
                 "description": "most bytes read per bound source; at most 1 MiB (default 1 MiB)",
                 "type": "integer",

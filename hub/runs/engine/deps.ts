@@ -1,6 +1,6 @@
 // What the engine is built from: the records kit parts it writes and reads, the ports of the packages built beside it, the
 // parser registry, the sandbox options and the clock. createEngineContext adds the shared caches.
-import type { RecordsKit } from '../../records/api.ts';
+import type { Principals, RecordsKit } from '../../records/api.ts';
 import type { ExternalReaderPort, KnowledgePort, PacksPort, WorkflowStore } from '../../ports.ts';
 import type { LeaseService } from '../../leases/service.ts';
 import { createDefaultRegistry, createDocumentCache, type DocumentCache, type ParserRegistry } from '../../refs/api.ts';
@@ -18,7 +18,10 @@ export interface AdminLogEntry {
 
 export interface RunsEngineDeps {
   /** The records kit parts the engine uses; with `config`, start_run knows the record size limit before it stores anything. */
-  records: Pick<RecordsKit, 'store' | 'objects' | 'artifacts'> & { config?: Pick<RecordsKit['config'], 'limits'> };
+  records: Pick<RecordsKit, 'store' | 'objects' | 'artifacts'> & {
+    config?: Pick<RecordsKit['config'], 'limits'>;
+    principals?: Pick<Principals, 'get'>;
+  };
   workflows: WorkflowStore;
   packs: PacksPort;
   knowledge: KnowledgePort;

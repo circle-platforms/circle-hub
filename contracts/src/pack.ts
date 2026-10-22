@@ -19,6 +19,7 @@ import { PACK_FILE_PATHS } from '../generated/protocol.ts';
 import { ItemId, IsoTime, JsonPointer, PackId, PackVersion, Sha256, Versioned } from './common.ts';
 import { FragmentRef, PackFunctionRef } from './product.ts';
 import { ExternalObjectId, Ground, ReferenceUri } from './reference.ts';
+import { ExternalType } from './resources.ts';
 
 // ---------------------------------------------------------------- paths
 
@@ -257,6 +258,11 @@ export const MAX_CHECK_READ_BYTES = 1024 * 1024; // 1 MiB
 
 export const CheckReads = z.strictObject({
   roles: z.array(SourceRoleSchema).min(1).describe('source roles whose bound sources are read into sources for this check'),
+  types: z
+    .array(ExternalType)
+    .min(1)
+    .optional()
+    .describe('external object types system:type whose bound sources are read; when set, sources without external identity are not read'),
   max_bytes: z.number().int().positive().optional().describe('most bytes read per bound source; at most 1 MiB (default 1 MiB)'),
 });
 export type CheckReads = z.infer<typeof CheckReads>;
@@ -534,6 +540,8 @@ export const SampleExpectation = z.strictObject({
 export const SampleUnreadSource = z.strictObject({
   reference: ReferenceUri,
   reason: z.string().min(1),
+  external: ExternalObjectId.optional().describe('external object identity when the bound source had one'),
+  slot: z.string().optional().describe('input slot when the bound source had one'),
 });
 export type SampleUnreadSource = z.infer<typeof SampleUnreadSource>;
 

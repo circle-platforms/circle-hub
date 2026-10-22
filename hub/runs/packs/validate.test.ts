@@ -413,4 +413,14 @@ test('check reads max_bytes is validated against core limit of 1 MiB', async () 
     f.checks[0].reads = { roles: ['expected'] };
   });
   await accepted(defaultLimit);
+
+  const withTypes = checks((f) => {
+    f.checks[0].reads = { roles: ['expected'], types: ['plm:bugs'] };
+  });
+  await accepted(withTypes);
+
+  const invalidType = checks((f) => {
+    (f.checks[0].reads as any) = { roles: ['expected'], types: ['invalid-no-colon'] };
+  });
+  await refused(invalidType, 'checks.shape', { file: 'checks.json' });
 });

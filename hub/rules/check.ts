@@ -31,12 +31,14 @@ export interface CheckDeclaration {
   catalogEntries?: boolean;
   limits?: Partial<SandboxLimits>;
   /** Bound sources the check declares to read (checks.json reads). */
-  reads?: { roles: SourceRole[]; max_bytes?: number };
+  reads?: { roles: SourceRole[]; types?: string[]; max_bytes?: number };
 }
 
 export interface UnreadSource {
   reference: string;
   reason: string;
+  external?: string;
+  slot?: string;
 }
 
 export interface CheckBindings {
