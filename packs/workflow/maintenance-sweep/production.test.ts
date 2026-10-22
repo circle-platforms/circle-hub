@@ -103,6 +103,22 @@ describe('a production run of maintenance-sweep', { skip }, () => {
     const help = requirement(located(result, 'doc-4:n1'), 'command_unchanged');
     assert.deepEqual(detailRows.find((row) => row.path === '/commands/help')?.fields, [{ path: '/help', before: '旧帮助', after: '新帮助' }]);
 
+    // 命令差总结是 command_unchanged 的跨条目结论：事实，依据是影响视图，整个差都列得出（新增路径注明不进范围）。
+    const summary = result.cross_item.find((claim) => claim.requirement === 'command_unchanged' && claim.statement.verdict === 'support');
+    assert.ok(summary, JSON.stringify(result.cross_item));
+    assert.equal(summary.qualifier.nature, 'fact');
+    assert.equal(summary.grounds.length, 1);
+    assert.ok(summary.grounds[0].startsWith('src:'), '依据是影响视图');
+    assert.ok(summary.statement.text.startsWith('命令差共 5 条（路径、变更种类、前一构建用例数）：'), summary.statement.text);
+    for (const line of [
+      '- /commands/add 新增，前一构建 1 条用例（不进范围）',
+      '- /commands/drop 删除，前一构建 2 条用例',
+      '- /commands/help 修改，前一构建 1 条用例',
+      '- /commands/show 修改，前一构建 1 条用例',
+      '- /commands/text 修改，前一构建 1 条用例',
+    ]) {
+      assert.ok(summary.statement.text.includes(line), line);
+    }
     const unknown = result.cross_item.filter((claim) => claim.statement.verdict === 'unknown');
     assert.equal(unknown.length, 1);
     assert.equal(unknown[0].requirement, 'command_exists');

@@ -1,10 +1,10 @@
 {
   "schema": "pack@1",
   "id": "maintenance-sweep",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "kind": "workflow",
   "title": "维护巡检",
-  "description": "按两个构建的影响视图（限定命令目录：catalog=commands@1）列出较早构建里需要维护的用例：命令已删除的记阻断，命令定义有差异的记提示并逐字段给出两边的值。只含事实要求项，开始运行时由 Hub 直接算出结果",
+  "description": "按两个构建的影响视图（限定命令目录：catalog=commands@1）先按路径列出整个命令差（变更种类、前一构建用例数），再列出较早构建里需要维护的用例：命令已删除的记阻断，命令定义有差异的记提示并逐字段给出两边的值。只含事实要求项，开始运行时由 Hub 直接算出结果",
   "files": [
     {
       "path": "SKILL.md",
@@ -23,8 +23,8 @@
     },
     {
       "path": "functions/check.ts",
-      "sha256": "949b0771812f8108f07a1a5515f56c29395beae4174f5ca05c4d96bb4541fccc",
-      "size": 12054
+      "sha256": "5c3114a066f0400c60209c1e9582c491644291af40211dbf0161726ae1843c39",
+      "size": 15202
     },
     {
       "path": "functions/diff.ts",
@@ -33,8 +33,8 @@
     },
     {
       "path": "functions/project.ts",
-      "sha256": "bf18a7c156f385efcfa0ca4e101722b34696d68431c499d4bd737d6c9056a09c",
-      "size": 7466
+      "sha256": "20927ba906c37ee075c1e2e80437ed393336f7e1a41849655a07cf64d8870336",
+      "size": 7625
     },
     {
       "path": "functions/subject.ts",
@@ -43,8 +43,8 @@
     },
     {
       "path": "functions/sweep.ts",
-      "sha256": "4ef9af3a3b11c6de38c1a2b7c8b835c42239435e5970333d264a3d01e660142d",
-      "size": 12458
+      "sha256": "73f473052d403157ca06b4e597cf4f15daee46552132f224a9ba2aec62a32526",
+      "size": 13149
     },
     {
       "path": "functions/text.ts",
@@ -58,13 +58,13 @@
     },
     {
       "path": "requirements.json",
-      "sha256": "210c6ce9ad0e494a510c21883f4e592deb346db634899c9c4e27d2b5de124500",
-      "size": 1037
+      "sha256": "b88c1371d3f54717cabed87013f8b840d1f6ec8e958b885fd755da1cc31a5c34",
+      "size": 1217
     },
     {
       "path": "samples/negative/command-changed.json",
-      "sha256": "00c92f71374c9b428492ef272747b15aa3df1365fe4c4446bdb5e393b9b8dd29",
-      "size": 1231
+      "sha256": "36ae141cc3e6fa7461f5805b4396204421d0b0784a5350f351df571c1c30a86a",
+      "size": 1431
     },
     {
       "path": "samples/negative/command-removed.json",
@@ -78,8 +78,8 @@
     },
     {
       "path": "samples/positive/definition-unchanged.json",
-      "sha256": "abcbedfd688ec84a918fb457ccd251bb0d8a332cd38ed7140a22125022d7e85f",
-      "size": 1036
+      "sha256": "76246988faee701e4b6284bf77fe12bbf59f711ceca95a40053d6c5af47392a2",
+      "size": 1236
     },
     {
       "path": "slots.schema.json",

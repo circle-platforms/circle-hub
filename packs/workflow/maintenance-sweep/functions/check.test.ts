@@ -26,6 +26,13 @@ function makeSubject(rows: Array<{ path: string; change?: 'removed' | 'modified'
 }
 
 describe('commandUnchanged field difference formatting in statement', () => {
+  /** The item's own outcome (the command-diff summary now leads this check's outcomes; these tests assert the item). */
+  const itemOutcome = (subject: unknown) => {
+    const outcome = checkOutcomes('command_unchanged', subject).find((o) => o.item !== undefined);
+    assert.ok(outcome);
+    return outcome;
+  };
+
   it('formats one field difference with old and new values and retains data.fields', () => {
     const subject = makeSubject([
       {
@@ -33,7 +40,7 @@ describe('commandUnchanged field difference formatting in statement', () => {
         fields: [{ path: '/help', before: '旧帮助', after: '新帮助' }],
       },
     ]);
-    const [outcome] = checkOutcomes('command_unchanged', subject);
+    const outcome = itemOutcome(subject);
     assert.equal(outcome.verdict, 'refute');
     assert.equal(outcome.code, 'maintenance-sweep.case.command_changed');
     assert.equal(
@@ -59,7 +66,7 @@ describe('commandUnchanged field difference formatting in statement', () => {
         ],
       },
     ]);
-    const [outcome] = checkOutcomes('command_unchanged', subject);
+    const outcome = itemOutcome(subject);
     assert.equal(outcome.verdict, 'refute');
     assert.equal(
       outcome.statement,
@@ -82,7 +89,7 @@ describe('commandUnchanged field difference formatting in statement', () => {
         ],
       },
     ]);
-    const [outcome] = checkOutcomes('command_unchanged', subject);
+    const outcome = itemOutcome(subject);
     assert.equal(outcome.verdict, 'refute');
     assert.equal(
       outcome.statement,
@@ -101,7 +108,7 @@ describe('commandUnchanged field difference formatting in statement', () => {
         ],
       },
     ]);
-    const [outcome] = checkOutcomes('command_unchanged', subject);
+    const outcome = itemOutcome(subject);
     assert.equal(outcome.verdict, 'refute');
     assert.equal(
       outcome.statement,
@@ -122,7 +129,7 @@ describe('commandUnchanged field difference formatting in statement', () => {
         fields: [{ path: '/desc', before: longBefore, after: longAfter }],
       },
     ]);
-    const [outcome] = checkOutcomes('command_unchanged', subject);
+    const outcome = itemOutcome(subject);
     assert.equal(outcome.verdict, 'refute');
     const expectedBefore = `${'a'.repeat(59)}…`;
     const expectedAfter = `${'b'.repeat(59)}…`;
@@ -144,7 +151,7 @@ describe('commandUnchanged field difference formatting in statement', () => {
         fields: [{ path: '/config', before: objBefore, after: arrAfter }],
       },
     ]);
-    const [outcome] = checkOutcomes('command_unchanged', subject);
+    const outcome = itemOutcome(subject);
     assert.equal(outcome.verdict, 'refute');
     assert.equal(
       outcome.statement,
@@ -168,7 +175,7 @@ describe('commandUnchanged field difference formatting in statement', () => {
         ],
       },
     ]);
-    const [outcome] = checkOutcomes('command_unchanged', subject);
+    const outcome = itemOutcome(subject);
     assert.equal(outcome.verdict, 'refute');
     assert.equal(
       outcome.statement,
@@ -197,7 +204,7 @@ describe('commandUnchanged field difference formatting in statement', () => {
         ],
       },
     ]);
-    const [outcome] = checkOutcomes('command_unchanged', subject);
+    const outcome = itemOutcome(subject);
     assert.equal(outcome.verdict, 'refute');
     const baseSentence = '用例 doc-1:n1（查看）所在命令的定义有变更（/commands/show）。';
     assert.ok(outcome.statement.startsWith(baseSentence));

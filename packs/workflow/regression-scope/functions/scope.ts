@@ -28,6 +28,8 @@ export interface PathDetail {
   conclusion: string;
   differences: string[];
   references: string[];
+  /** Later-build case entries the view files on this path (the command-diff summary counts them; removed paths have none). */
+  cases: number;
 }
 
 export interface ScopeItem {
@@ -293,11 +295,12 @@ export function scopeOf(view: NormView, parameters: Parameters): ScopeResult {
   considered.sort(comparePath);
 
   // The per-path details (once per path): the kind, the definition change, a short line, the first 3 field
-  // differences and the tree references of the changed definition entries.
+  // differences, the tree references of the changed definition entries and the count of the later-build cases on it.
   const detailRows = new Map<string, PathDetail>();
   for (const [path, side] of byPath) {
     const detail = detailsOf(path, side, view, warnings, missing);
-    detailRows.set(path, { path, change: detail.change, definition_change: detail.definitionChange, conclusion: detail.conclusion, differences: detail.differences.slice(0, 3), references: detail.references });
+    const cases = (placed.get(path)?.to ?? []).filter((digest) => view.entries.get(digest)?.kind === 'case').length;
+    detailRows.set(path, { path, change: detail.change, definition_change: detail.definitionChange, conclusion: detail.conclusion, differences: detail.differences.slice(0, 3), references: detail.references, cases });
   }
   const details = [...detailRows.values()].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   const detailIndex = new Map(details.map((row, index) => [row.path, index]));

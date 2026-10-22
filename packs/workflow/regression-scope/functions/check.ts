@@ -1,9 +1,10 @@
 // Pack checks. in_scope: one support per case, data holding the reasons (each only the detail index and the change
-// kind); a scope is not a defect, so a well-formed item never refutes. uncovered_changes: each changed path with no
-// later-build case is unknown (missing input), a cross-item claim, never a failure. The only refutations are
-// contradictions a well-formed projection does not produce; the publish check requires a negative sample (C05 R[0]).
-// One ground per outcome (the item's case reference); path strings and definition references are joined from the
-// run-level note.details, so an outcome stays small at any scale.
+// kind); a scope is not a defect, so a well-formed item never refutes. uncovered_changes: first the whole command diff
+// as one cross-item fact (one line per changed path with its later-build case count, grounded on the impact view), then
+// each changed path with no later-build case as unknown (missing input), a cross-item claim, never a failure. The only
+// refutations are contradictions a well-formed projection does not produce; the publish check requires a negative sample
+// (C05 R[0]). One ground per outcome (the item's case reference); path strings and definition references are joined from
+// the run-level note.details, so an outcome stays small at any scale.
 
 import { groundsOf } from './scope.ts';
 import { uniqueSorted } from './text.ts';
@@ -19,6 +20,8 @@ interface ParsedReason {
 interface DetailRow {
   path: string;
   change: string;
+  /** Later-build cases on the path, counted by the projection (missing or unreadable counts as 0). */
+  cases: number;
 }
 
 interface Outcome {
@@ -71,7 +74,9 @@ function detailRowsOf(subject: unknown): DetailRow[] {
   if (note === null || !Array.isArray(note.details)) return [];
   const out: DetailRow[] = [];
   for (const raw of note.details) {
-    if (isRecord(raw) && typeof raw.path === 'string' && typeof raw.change === 'string') out.push({ path: raw.path, change: raw.change });
+    if (isRecord(raw) && typeof raw.path === 'string' && typeof raw.change === 'string') {
+      out.push({ path: raw.path, change: raw.change, cases: typeof raw.cases === 'number' && Number.isInteger(raw.cases) && raw.cases >= 0 ? raw.cases : 0 });
+    }
   }
   return out;
 }
@@ -142,6 +147,36 @@ function uncoveredStatement(path: string, change: 'added' | 'modified', skippedT
   return `变更路径 ${path}（${CHANGE_LABEL[change]}）在后一构建里没有用例。用例索引在这里没有条目，所以这不是失败。${skip}`;
 }
 
+/** Most paths the command-diff summary lists; past it the rest is counted and the run-level details hold the full table. */
+const MAX_DIFF_ROWS = 200;
+
+/**
+ * The whole command diff as one cross-item fact, computed from the run-level details: one line per changed path with
+ * the change kind and the later-build case count (removed paths, never in scope, are listed and say so), grounded on
+ * the impact view. It leads this check's outcomes so the diff is visible however many items the answer pages away.
+ */
+function diffSummary(subject: unknown): Outcome {
+  const note = noteOf(subject);
+  const details = detailRowsOf(subject);
+  const includeAdded = note?.include_added !== false;
+  const view = typeof note?.view === 'string' && note.view.startsWith('src:') ? note.view : null;
+  const grounds = view === null ? [] : [view];
+  const total = details.length;
+  if (total === 0) {
+    return { verdict: 'support', statement: '命令差共 0 条：两个构建的命令定义没有差异。', grounds, tier: TIER, data: { changed_paths: 0, listed: 0 } };
+  }
+  // A truncated view: the head says the whole count and that only the listed part follows; completeness stays unknown.
+  const cut = note?.truncated === true && typeof note?.changed_paths === 'number' && note.changed_paths > total ? note.changed_paths : null;
+  const lines = [cut === null ? `命令差共 ${total} 条（路径、变更种类、后一构建用例数）：` : `命令差共 ${cut} 条（影响视图被截断，这 ${total} 条是列出的部分；路径、变更种类、后一构建用例数）：`];
+  for (const row of details.slice(0, MAX_DIFF_ROWS)) {
+    const label = row.change === 'added' || row.change === 'removed' || row.change === 'modified' ? CHANGE_LABEL[row.change] : row.change;
+    const out = row.change === 'removed' || (!includeAdded && row.change === 'added') ? '（不进范围）' : '';
+    lines.push(`- ${row.path} ${label}，后一构建 ${row.cases} 条用例${out}`);
+  }
+  if (total > MAX_DIFF_ROWS) lines.push(`- 另有 ${total - MAX_DIFF_ROWS} 条，完整的表在运行级详情里`);
+  return { verdict: 'support', statement: lines.join('\n'), grounds, tier: TIER, data: { changed_paths: cut ?? total, listed: Math.min(total, MAX_DIFF_ROWS) } };
+}
+
 function uncovered(subject: unknown): Outcome[] {
   const note = noteOf(subject);
   const items = itemsOf(subject);
@@ -201,7 +236,7 @@ function uncovered(subject: unknown): Outcome[] {
 }
 
 export function checkOutcomes(check: string | null, subject: unknown): Outcome[] {
-  if (check === 'uncovered_changes') return uncovered(subject);
+  if (check === 'uncovered_changes') return [diffSummary(subject), ...uncovered(subject)];
   if (check === 'in_scope') return inScope(subject);
   return [{ verdict: 'unknown', reason: 'check_error', statement: '这个函数没有对应的检查', grounds: [], tier: TIER }];
 }

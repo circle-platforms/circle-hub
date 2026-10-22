@@ -77,13 +77,15 @@ export function projectItems(input: unknown, limits: Partial<ProjectLimits> = {}
   const clue = behaviourClue(input, parsed.view);
   if (typeof clue === 'string') return refusal('behaviour_view', clue, 'behaviour 槽绑定同一对构建的 changed=behaviour 视图，或不绑定');
   const scope = scopeOf(parsed.view, parameters);
+  // The run note also names the view itself: the command-diff summary of the check cites it as its ground.
+  const note = { ...scope.note, view: `src:${sha256}` };
   const budget = { ...LIMITS, ...limits };
   if (scope.items.length > budget.maxItems) {
     return refusal('too_large', `范围内有 ${scope.items.length} 条用例，一次运行最多 ${budget.maxItems} 条`, '范围只按命令定义的变化算：先看定义变化是否已经把范围缩小，再用 priorities 参数收窄（例如先只看优先级 1 的），按优先级分几次运行', scope.warnings.slice(0, 20));
   }
   const out = {
     items: scope.items.map((item) => itemOf(item, sha256)),
-    groups: [scope.note, ...(clue !== null ? [clue] : []), ...(parsed.view.catalog === null ? [CATALOG_HINT] : [])],
+    groups: [note, ...(clue !== null ? [clue] : []), ...(parsed.view.catalog === null ? [CATALOG_HINT] : [])],
     warnings: scope.warnings.slice(0, 100),
   };
   const bytes = Buffer.byteLength(JSON.stringify(out), 'utf8');

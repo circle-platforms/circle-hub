@@ -138,10 +138,11 @@ describe('maintenance sweep on a hand-built pair of trees', () => {
         ['/commands/show', 'modified'],
       ],
     );
-    assert.deepEqual([run.exists[0].code, run.unchanged[0].code], ['maintenance-sweep.case.command_removed', 'maintenance-sweep.case.command_changed']);
+    const changed = run.unchanged.find((outcome) => outcome.code === 'maintenance-sweep.case.command_changed');
+    assert.deepEqual([run.exists[0].code, changed?.code], ['maintenance-sweep.case.command_removed', 'maintenance-sweep.case.command_changed']);
     assert.equal(run.output.items[0].fields.negative, true);
     assert.equal(run.exists[0].verdict, 'refute');
-    assert.equal(run.unchanged[0].verdict, 'refute');
+    assert.equal(changed?.verdict, 'refute');
     assert.match(run.output.items[0].summary, /2 处需要维护；\/commands\/drop 删除/);
   });
 

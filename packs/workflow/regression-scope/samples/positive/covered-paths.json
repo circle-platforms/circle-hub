@@ -52,10 +52,25 @@
       "skipped_to": 0,
       "truncated": false,
       "changed_paths": 1,
-      "include_added": true
+      "include_added": true,
+      "details": [
+        {
+          "path": "/commands/show",
+          "change": "modified",
+          "definition_change": "modified",
+          "conclusion": "命令定义有变更",
+          "differences": [],
+          "references": [],
+          "cases": 1
+        }
+      ]
     }
   },
   "expect": [
+    {
+      "verdict": "support",
+      "tier": "advisory"
+    },
     {
       "verdict": "support",
       "tier": "advisory"

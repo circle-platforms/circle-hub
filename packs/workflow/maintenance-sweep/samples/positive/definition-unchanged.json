@@ -31,10 +31,21 @@
           "fields": [],
           "references": []
         }
+      ],
+      "diff": [
+        {
+          "path": "/commands/show",
+          "change": "modified",
+          "cases": 1
+        }
       ]
     }
   },
   "expect": [
+    {
+      "verdict": "support",
+      "tier": "advisory"
+    },
     {
       "verdict": "support",
       "item": "doc-1:n1",

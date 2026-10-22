@@ -111,10 +111,10 @@ describe('regression scope edge cases', () => {
       },
     });
     assert.ok(outcomes.every((outcome) => outcome.verdict !== 'refute'), 'a path with a case in scope is not uncovered');
-    assert.equal(outcomes.length, 1);
-    assert.equal(outcomes[0].verdict, 'unknown');
-    assert.equal(outcomes[0].reason, 'missing_input');
-    assert.match(outcomes[0].statement, /\/commands\/bare/);
+    const unknowns = outcomes.filter((outcome) => outcome.verdict === 'unknown');
+    assert.equal(unknowns.length, 1, JSON.stringify(outcomes));
+    assert.equal(unknowns[0].reason, 'missing_input');
+    assert.match(unknowns[0].statement, /\/commands\/bare/);
   });
 
   it('refuses a second bound impact view', () => {

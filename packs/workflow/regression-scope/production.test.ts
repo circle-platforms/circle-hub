@@ -105,9 +105,27 @@ describe('a production run of regression-scope', { skip }, () => {
     const slimReasons = first.fields.reasons as Array<Record<string, unknown>>;
     assert.ok(slimReasons.every((reason) => JSON.stringify(Object.keys(reason).sort()) === '["change","detail"]'));
     assert.ok(doc1.grounds.every((ref) => ref.startsWith('src:')));
-    const unknown = result.cross_item.filter((claim) => claim.requirement === 'uncovered_changes');
+    // 命令差总结是 uncovered_changes 的第一条跨条目结论：事实，依据是影响视图，整个差都列得出（删除路径注明不进范围）。
+    const cross = result.cross_item.filter((claim) => claim.requirement === 'uncovered_changes');
+    assert.equal(cross.length, 2);
+    const summary = cross[0];
+    assert.equal(summary.statement.verdict, 'support');
+    assert.equal(summary.qualifier.nature, 'fact');
+    assert.equal(summary.grounds.length, 1);
+    assert.ok(summary.grounds[0].startsWith('src:'), '依据是影响视图');
+    assert.ok(summary.statement.text.startsWith('命令差共 6 条（路径、变更种类、后一构建用例数）：'), summary.statement.text);
+    for (const line of [
+      '- /commands/add 新增，后一构建 2 条用例',
+      '- /commands/bare 新增，后一构建 0 条用例',
+      '- /commands/drop 删除，后一构建 0 条用例（不进范围）',
+      '- /commands/extra 修改，后一构建 1 条用例',
+      '- /commands/show 修改，后一构建 1 条用例',
+      '- /commands/text 修改，后一构建 1 条用例',
+    ]) {
+      assert.ok(summary.statement.text.includes(line), line);
+    }
+    const unknown = cross.filter((claim) => claim.statement.verdict === 'unknown');
     assert.equal(unknown.length, 1);
-    assert.equal(unknown[0].statement.verdict, 'unknown');
     assert.equal(unknown[0].statement.reason, 'missing_input');
     assert.equal(unknown[0].qualifier.nature, 'unknown');
     assert.match(unknown[0].statement.text, /\/commands\/bare（新增）/);
@@ -135,9 +153,14 @@ describe('a production run of regression-scope', { skip }, () => {
     assert.deepEqual(stored.run.parameters, { include_added: false });
     assert.deepEqual((stored.run.groups?.[0] as { uncovered: unknown }).uncovered, []);
     const cross = detail.production!.result.cross_item;
-    assert.equal(cross.length, 1);
-    assert.equal(cross[0].statement.verdict, 'support');
-    assert.match(cross[0].statement.text, /都有用例/);
+    assert.equal(cross.length, 2);
+    const [summary, covered] = cross;
+    assert.equal(summary.statement.verdict, 'support');
+    assert.ok(summary.statement.text.startsWith('命令差共 6 条'), summary.statement.text);
+    assert.ok(summary.statement.text.includes('- /commands/add 新增，后一构建 2 条用例（不进范围）'), 'include_added 为 false 时新增路径注明不进范围');
+    assert.ok(summary.statement.text.includes('- /commands/bare 新增，后一构建 0 条用例（不进范围）'), summary.statement.text);
+    assert.equal(covered.statement.verdict, 'support');
+    assert.match(covered.statement.text, /都有用例/);
   });
 
   it('filters by priority without reporting the filtered path as uncovered', async () => {

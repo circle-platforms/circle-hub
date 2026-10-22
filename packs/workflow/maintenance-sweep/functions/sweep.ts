@@ -57,6 +57,9 @@ export interface SweepNote {
   /** One row per changed path (every path the reasons index): the change kind, the field differences and the tree
    * references of that path. */
   details: PathDetail[];
+  /** The whole command diff, one row per changed path with the earlier-build case count on it; the command-diff
+   * summary reads this (details covers only the maintenance paths, this table never drops one). */
+  diff: { path: string; change: 'added' | 'removed' | 'modified'; cases: number }[];
 }
 
 export interface SweepResult {
@@ -243,6 +246,10 @@ export function sweepOf(view: NormView, parameters: Parameters): SweepResult {
 
   const kept = [...byId.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
   const details = [...detailRows.values()].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+  // The whole command diff (added paths and case-less ones included): the summary lists it, whatever needs maintenance.
+  const diff = [...byPath.entries()]
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([path, side]) => ({ path, change: side.change, cases: (placed.get(path)?.from ?? []).filter((digest) => view.entries.get(digest)?.kind === 'case').length }));
   const detailIndex = new Map(details.map((row, index) => [row.path, index]));
   const items: SweepItem[] = kept.map(([id, acc]) => {
     const reasons = [...acc.reasons.entries()]
@@ -287,6 +294,7 @@ export function sweepOf(view: NormView, parameters: Parameters): SweepResult {
       ignore_fields: parameters.ignoreFields,
       message,
       details,
+      diff,
     },
   };
 }

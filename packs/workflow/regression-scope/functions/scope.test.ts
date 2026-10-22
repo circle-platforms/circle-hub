@@ -92,8 +92,9 @@ describe('regression scope on a hand-built pair of trees', () => {
       run.uncovered.filter((outcome) => outcome.verdict === 'unknown').map((outcome) => outcome.reason),
       ['missing_input'],
     );
-    assert.match(run.uncovered[0].statement, /\/commands\/bare（新增）/);
-    assert.match(run.uncovered[0].statement, /不是失败/);
+    const unknown = run.uncovered.find((outcome) => outcome.verdict === 'unknown')!;
+    assert.match(unknown.statement, /\/commands\/bare（新增）/);
+    assert.match(unknown.statement, /不是失败/);
     assert.ok(run.inScope.every((outcome) => outcome.verdict === 'support'));
     // One ground per outcome: the item's own location (the case entry fragment); the path's definition references
     // live once per detail row.
@@ -147,7 +148,7 @@ describe('regression scope on a hand-built pair of trees', () => {
       ['doc-1:n1', 'doc-5:n1'],
     );
     assert.deepEqual(run.output.groups[0].uncovered, [{ path: '/commands/bare', change: 'added' }]);
-    assert.ok(!run.uncovered.some((outcome) => outcome.statement.includes('/commands/extra')));
+    assert.ok(!run.uncovered.some((outcome) => outcome.verdict === 'unknown' && outcome.statement.includes('/commands/extra')), '筛掉的用例不报未覆盖');
   });
 
   it('drops added paths when include_added is false, including from a case that also sits on a modified path', () => {
@@ -160,8 +161,8 @@ describe('regression scope on a hand-built pair of trees', () => {
     const details = run.output.groups[0].details as Array<{ path: string }>;
     assert.deepEqual(reasons.map((reason) => details[reason.detail].path), ['/commands/show']);
     assert.deepEqual(run.output.groups[0].uncovered, []);
-    assert.equal(run.uncovered.length, 1);
-    assert.equal(run.uncovered[0].verdict, 'support');
+    const covered = run.uncovered.find((outcome) => outcome.verdict === 'support' && outcome.statement.includes('都有用例'));
+    assert.ok(covered, JSON.stringify(run.uncovered));
   });
 
   it('says the scope is empty when the pair has no changed path', () => {
@@ -169,8 +170,9 @@ describe('regression scope on a hand-built pair of trees', () => {
     assert.deepEqual(run.output.items, []);
     assert.ok(run.output.warnings.some((warning) => warning.code === 'regression-scope.empty_scope' && warning.message.includes('回归范围是空的')));
     assert.match(String(run.output.groups[0].message), /回归范围是空的/);
-    assert.equal(run.uncovered[0].verdict, 'support');
-    assert.match(run.uncovered[0].statement, /回归范围是空的/);
+    const empty = run.uncovered.find((outcome) => outcome.statement.includes('回归范围是空的'));
+    assert.ok(empty, JSON.stringify(run.uncovered));
+    assert.equal(empty.verdict, 'support');
   });
 
   it('names a skipped later-build index on the unknown outcome and on the run-level note', () => {
@@ -186,7 +188,12 @@ describe('regression scope on a hand-built pair of trees', () => {
   it('does not claim the list is complete when the view is truncated', () => {
     const run = projected(buildImpact([{ path: '/commands/show', change: 'modified', to: [{ document: 'doc-1', node: 'n1', title: '查看', priority: 1 }] }], { truncated: true, changedPaths: 80 }));
     assert.ok(run.uncovered.some((outcome) => outcome.verdict === 'unknown' && outcome.reason === 'integrity_unproven' && outcome.statement.includes('80')));
-    assert.ok(run.uncovered.every((outcome) => outcome.verdict !== 'support'));
+    // 命令差总结只陈述列出的部分，不算完整性的主张；其余结论没有一条说得上完整。
+    assert.ok(
+      run.uncovered
+        .filter((outcome) => !outcome.statement.startsWith('命令差共'))
+        .every((outcome) => outcome.verdict !== 'support'),
+    );
   });
 
   it('reads a numeric document and node, and keeps priority 0', () => {

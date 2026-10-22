@@ -36,19 +36,23 @@ describe('checks on a subject', () => {
   });
 
   it('supports uncovered when every considered path has a later-build case', () => {
-    const [outcome] = checkOutcomes('uncovered_changes', {
+    const outcomes = checkOutcomes('uncovered_changes', {
       items: [item('modified')],
       note: { ...NOTE, considered: [{ path: '/commands/show', change: 'modified' }], uncovered: [], skipped_to: 0, truncated: false, changed_paths: 1, include_added: true },
     });
+    const outcome = outcomes.find((o) => o.statement.includes('都有用例'));
+    assert.ok(outcome, JSON.stringify(outcomes));
     assert.equal(outcome.verdict, 'support');
     assert.equal(outcome.item, undefined);
   });
 
   it('refutes an uncovered path that a case in scope already names', () => {
-    const [outcome] = checkOutcomes('uncovered_changes', {
+    const outcomes = checkOutcomes('uncovered_changes', {
       items: [item('modified')],
       note: { ...NOTE, considered: [{ path: '/commands/show', change: 'modified' }], uncovered: [{ path: '/commands/show', change: 'modified' }], skipped_to: 0, truncated: false, changed_paths: 1 },
     });
-    assert.deepEqual([outcome.verdict, outcome.code], ['refute', 'regression-scope.not_uncovered']);
+    const outcome = outcomes.find((o) => o.code === 'regression-scope.not_uncovered');
+    assert.ok(outcome, JSON.stringify(outcomes));
+    assert.equal(outcome.verdict, 'refute');
   });
 });
