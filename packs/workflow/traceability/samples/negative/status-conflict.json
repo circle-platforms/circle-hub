@@ -1,0 +1,123 @@
+{
+  "id": "status_conflict",
+  "source": "author",
+  "check": "traced",
+  "note": "合成样例：同一个缺陷既列为已修复又列为已知，记不通过（提示档）；没有已索引用例的缺陷记未知（缺输入），从不记为不通过",
+  "subject": {
+    "items": [
+      {
+        "id": "71011",
+        "location": "src:ea49397a0258fff3fd60bfac4a18a60f5c74ddb3ebbc3ee86d8be9b894c6a52d/json@1/p/entries/91b96ea26b9999ea063927296e02c6040084d8d268536c8c8ca5823e38c425ff",
+        "fields": {
+          "bug": "71011",
+          "ids": [
+            "71011"
+          ],
+          "statuses": [
+            "fixed",
+            "known"
+          ],
+          "conflict": true,
+          "statement": "71011 已修复",
+          "references": [
+            "tree:67e914f22d224053b4e7f968c09058ac4cd4bf88e25abce867dbcb03e15f4591/release-notes/91b96ea26b99@91b96ea26b9999ea063927296e02c6040084d8d268536c8c8ca5823e38c425ff",
+            "tree:67e914f22d224053b4e7f968c09058ac4cd4bf88e25abce867dbcb03e15f4591/release-notes/cdb947c277ff@cdb947c277ff100a77126e5785911220cbec2535755a1d111d0cccb130308d61"
+          ],
+          "digests": [
+            "91b96ea26b9999ea063927296e02c6040084d8d268536c8c8ca5823e38c425ff",
+            "cdb947c277ff100a77126e5785911220cbec2535755a1d111d0cccb130308d61"
+          ],
+          "cases": [
+            {
+              "case": "C-111",
+              "title": "矛盾状态的缺陷的用例",
+              "document": "24001",
+              "reference": "tree:67e914f22d224053b4e7f968c09058ac4cd4bf88e25abce867dbcb03e15f4591/cases/339ecf00da11@339ecf00da11ac2cc3c3290764a481e185c60148852b2631d2f37c46b16e1eb3",
+              "defects": [
+                "71011"
+              ],
+              "entry": "339ecf00da11ac2cc3c3290764a481e185c60148852b2631d2f37c46b16e1eb3"
+            }
+          ]
+        }
+      },
+      {
+        "id": "71012",
+        "location": "src:ea49397a0258fff3fd60bfac4a18a60f5c74ddb3ebbc3ee86d8be9b894c6a52d/json@1/p/entries/9621efb62898a4f225fb75f20c32f1d55a9b7542abf7e36d594dd41085406d54",
+        "fields": {
+          "bug": "71012",
+          "ids": [
+            "71012"
+          ],
+          "statuses": [
+            "fixed"
+          ],
+          "conflict": false,
+          "statement": "没有用例的缺陷",
+          "references": [
+            "tree:67e914f22d224053b4e7f968c09058ac4cd4bf88e25abce867dbcb03e15f4591/release-notes/9621efb62898@9621efb62898a4f225fb75f20c32f1d55a9b7542abf7e36d594dd41085406d54"
+          ],
+          "digests": [
+            "9621efb62898a4f225fb75f20c32f1d55a9b7542abf7e36d594dd41085406d54"
+          ],
+          "cases": []
+        }
+      }
+    ],
+    "context": {
+      "product": "apv",
+      "names": [
+        "APV",
+        "NSAE"
+      ],
+      "parameters": {},
+      "groups": [
+        {
+          "product": "apv",
+          "build": "Rel_APV_10_6_1_57",
+          "root": "67e914f22d224053b4e7f968c09058ac4cd4bf88e25abce867dbcb03e15f4591",
+          "statuses": [
+            "fixed",
+            "known"
+          ],
+          "views": {
+            "defects": {
+              "source": "src:ea49397a0258fff3fd60bfac4a18a60f5c74ddb3ebbc3ee86d8be9b894c6a52d",
+              "skipped": 0,
+              "truncated": false,
+              "total_keys": 2,
+              "total_entries": 3,
+              "listed_keys": 2,
+              "listed_entries": 3,
+              "missing": 0
+            },
+            "cases": {
+              "source": "src:35d9c63200a704d77409b2f8edbee7ba7115b985d756a24548582dfa69d16275",
+              "skipped": 0,
+              "truncated": false,
+              "total_keys": 1,
+              "total_entries": 1,
+              "listed_keys": 1,
+              "listed_entries": 1,
+              "missing": 0
+            }
+          }
+        }
+      ]
+    }
+  },
+  "expect": [
+    {
+      "verdict": "refute",
+      "code": "traceability.status_conflict",
+      "item": "71011",
+      "tier": "advisory"
+    },
+    {
+      "verdict": "unknown",
+      "reason": "missing_input",
+      "item": "71012",
+      "tier": "advisory"
+    }
+  ]
+}
