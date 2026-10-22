@@ -200,17 +200,28 @@ interface ScannedDocumentItem {
 }
 
 /** Scans tree nodes to collect all document leaves and their folder ancestors. */
-function scanDocuments(nodes: RawTreeNode[], above: string[] = []): ScannedDocumentItem[] {
-  const documents: ScannedDocumentItem[] = [];
-  const seenDocs = new Set<string>();
+function scanDocuments(nodes: RawTreeNode[], above: string[] = [], rootCases: string[] = []): ScannedDocumentItem[] {
+  const own: ScannedDocumentItem[] = [];
+  const ownIds = new Set<string>();
+  const listed = new Map<string, { ancestors: string[]; depth: number }>();
+
+  // If root lists cases, record them at root depth
+  if (rootCases.length > 0) {
+    const depth = above.length;
+    for (const caseId of rootCases) {
+      if (caseId && !listed.has(caseId)) {
+        listed.set(caseId, { ancestors: [...above], depth });
+      }
+    }
+  }
 
   const traverse = (nodeList: RawTreeNode[], currentAncestors: string[]) => {
     for (const node of nodeList) {
-      const isLeaf = node.children.length === 0;
-      if (isLeaf && node.cases.length === 0) {
-        if (node.id && !seenDocs.has(node.id)) {
-          seenDocs.add(node.id);
-          documents.push({
+      const isLeaf = node.children.length === 0 && node.cases.length === 0;
+      if (isLeaf) {
+        if (node.id && !ownIds.has(node.id)) {
+          ownIds.add(node.id);
+          own.push({
             document: node.id,
             title: node.label,
             ancestors: currentAncestors,
@@ -218,16 +229,13 @@ function scanDocuments(nodes: RawTreeNode[], above: string[] = []): ScannedDocum
         }
       } else {
         const nextAncestors = node.label ? [...currentAncestors, node.label] : currentAncestors;
-        // If folder lists cases that have no inner node, they are captured
+        const depth = nextAncestors.length;
         for (const caseId of node.cases) {
-          if (caseId && !seenDocs.has(caseId)) {
-            // Document listed in folder
-            seenDocs.add(caseId);
-            documents.push({
-              document: caseId,
-              title: '',
-              ancestors: nextAncestors,
-            });
+          if (!caseId) continue;
+          const known = listed.get(caseId);
+          // Deeper folder wins; if same depth, keep the first one ("同一层列了两次取第一次")
+          if (known === undefined || depth > known.depth) {
+            listed.set(caseId, { ancestors: nextAncestors, depth });
           }
         }
         traverse(node.children, nextAncestors);
@@ -236,7 +244,19 @@ function scanDocuments(nodes: RawTreeNode[], above: string[] = []): ScannedDocum
   };
 
   traverse(nodes, above);
-  return documents;
+
+  const out: ScannedDocumentItem[] = [...own];
+  for (const [id, info] of listed) {
+    if (!ownIds.has(id)) {
+      out.push({
+        document: id,
+        title: '',
+        ancestors: info.ancestors,
+      });
+    }
+  }
+
+  return out;
 }
 
 /**
@@ -321,6 +341,7 @@ export function evaluateLocation(doc: ScannedDocumentItem): { location: Document
 export function locationsGold(treeInput: unknown, options?: { root?: string }): LocationsGold {
   let rootId = options?.root ?? '';
   let rootTitle: string | null = null;
+  const rootCases: string[] = [];
 
   if (treeInput && typeof treeInput === 'object') {
     const top = treeInput as Record<string, unknown>;
@@ -328,12 +349,19 @@ export function locationsGold(treeInput: unknown, options?: { root?: string }): 
       const r = top.root as Record<string, unknown>;
       if (typeof r.id === 'string' && !rootId) rootId = r.id;
       if (typeof r.title === 'string') rootTitle = r.title;
+      if (typeof r.label === 'string' && !rootTitle) rootTitle = r.label;
+      if (Array.isArray(r.cases)) rootCases.push(...r.cases.map(String));
+      if (Array.isArray(top.cases)) rootCases.push(...top.cases.map(String));
+    } else if (Array.isArray(top.children) && (top.id || top.label || top.title)) {
+      if (top.id && !rootId) rootId = String(top.id);
+      rootTitle = String(top.label ?? top.title ?? '');
+      if (Array.isArray(top.cases)) rootCases.push(...top.cases.map(String));
     }
   }
 
   const nodes = normalizeTreeNodes(treeInput);
   const startAncestors = rootTitle ? [rootTitle] : [];
-  const scanned = scanDocuments(nodes, startAncestors);
+  const scanned = scanDocuments(nodes, startAncestors, rootCases);
 
   const documents: DocumentLocationGold[] = [];
   const nonconforming: NonconformingDocument[] = [];
