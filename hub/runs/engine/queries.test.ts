@@ -120,3 +120,17 @@ test('resolve_reference on a run the caller may not see gives the same empty sha
   assert.deepEqual(forbidden, { call_result: 'error', errors: [{ code: 'SOURCE_UNAVAILABLE', message: '对你不可用', fix: '无；真实原因只在管理员日志里', path: '/run' }], references: [], diagnostics: [] });
   assert.ok(ResolveReferenceOutput.safeParse({ ...forbidden, trace: '0af7651916cd43dd8448eb211c80319c' }).success);
 });
+
+test('resolve_reference on a run with large bound sources (>65536 candidates) does not blow call stack', { skip }, async () => {
+  const largeDoc = Array.from({ length: 40_000 }, (_, i) => `# 标题${i}\n\n段落${i}\n`).join('\n');
+  const notesRef = await h.upload(h.alice, Buffer.from(largeDoc, 'utf8'), 'text/markdown');
+  const runWithLarge = (await h.service.startRun(h.alice, {
+    pack: 'toy-review',
+    product: 'Meadow',
+    version: '3.2',
+    inputs: { map: { reference: map }, notes: [{ reference: notesRef }] },
+  }, h.call())).run!;
+  const answer = await h.service.resolveReference(h.alice, { run: runWithLarge.run, text: '段落39999', expect: 'quotation' }, h.call());
+  assert.equal(answer.call_result, 'ok');
+  assert.equal(answer.resolution, 'resolved');
+});

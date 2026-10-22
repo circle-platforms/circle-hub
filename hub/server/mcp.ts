@@ -12,7 +12,7 @@ import { SERVER_INSTRUCTIONS } from '../../contracts/src/tools.ts';
 import type { CallLogInput, Principal } from '../records/api.ts';
 import type { ServerDeps } from './api.ts';
 import { mediaTypeOf, readBody, sendRpcError, setCommonHeaders, type BodyBudget } from './http.ts';
-import { MAX_ADMIN_NOTE, clipNote, describeError } from './notes.ts';
+import { MAX_ADMIN_NOTE, clipNote, describeError, describeInternalError } from './notes.ts';
 import { newTraceId, sessionIdOf, traceIdFrom } from './trace.ts';
 import { callTool, internalError, listTools, type CallState, type ToolCall } from './tools.ts';
 
@@ -245,7 +245,7 @@ async function answer(
     } catch (error) {
       state.callResult = 'error';
       if (error instanceof McpError) throw error;
-      state.notes.push(describeError(error));
+      state.notes.push(describeInternalError(error));
       throw internalError(traceId);
     }
   };

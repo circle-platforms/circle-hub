@@ -26,7 +26,7 @@ import type { AuthorOrigin, ProducerOrigin } from './independence.ts';
 import { authorOriginOf, packIdOf } from './lineage.ts';
 import { canSeeRun } from './readers.ts';
 import { carriedItems } from './reuse.ts';
-import { issuesOf, requirementAt, slotProblems } from './slots.ts';
+import { issuesOf, requirementAt, slotProblems, slotSchemaOf } from './slots.ts';
 import {
   actionsOf,
   isVerbatimObject,
@@ -124,7 +124,13 @@ async function storeReceived(
       ctx.log({ traceId, run, what: 'submit_result', detail: `arguments kept as an object: ${describe(error)}` });
     }
   }
-  const bytes = new TextEncoder().encode(JSON.stringify(args));
+  let jsonText: string;
+  try {
+    jsonText = JSON.stringify(args);
+  } catch {
+    jsonText = '{"non_canonical":true}';
+  }
+  const bytes = new TextEncoder().encode(jsonText);
   let object: string | null = null;
   try {
     object = (await objects.put(bytes, 'application/json')).sha256;
@@ -252,7 +258,10 @@ function earlyProblem(kept: Kept, received: ReturnType<typeof receivedDigest>, a
   }
   const deep = tooDeep(args, MAX_SUBMISSION_DEPTH);
   if (deep !== null) {
-    return protocolError('SUBMISSION_SCHEMA_VIOLATION', `提交嵌套超过 ${MAX_SUBMISSION_DEPTH} 层：已原样保存，没有核对`, { path: clipPointer(deep), fix: '减少 data 等字段的嵌套后重交' });
+    return protocolError('SUBMISSION_SCHEMA_VIOLATION', `提交嵌套超过 ${MAX_SUBMISSION_DEPTH} 层：已原样保存，没有核对`, {
+      path: clipPointer(deep),
+      fix: `嵌套超过 ${MAX_SUBMISSION_DEPTH} 层`,
+    });
   }
   return null;
 }
@@ -333,7 +342,8 @@ function remap(path: string | undefined, positions: Positions | null): string | 
  * the not-accepted receipt also names their causes and item-level refutations.
  */
 async function validatePartial(base: Basis, args: Record<string, unknown>, error: z.ZodError | null): Promise<Validated> {
-  const issues = error === null ? [] : withRounds(base.workflow, args, issuesOf(error, ''), base.roundsUsed);
+  const slotSchema = slotSchemaOf(base.workflow)?.schema as Record<string, unknown> | undefined;
+  const issues = error === null ? [] : withRounds(base.workflow, args, issuesOf(error, '', slotSchema), base.roundsUsed);
   const pointed = (field: string): Set<number> =>
     new Set((error?.issues ?? []).flatMap((i) => (i.path[0] === field && typeof i.path[1] === 'number' ? [i.path[1]] : [])));
   const badItems = pointed('items');

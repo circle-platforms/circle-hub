@@ -1,7 +1,7 @@
 // Gold script: the command lines of one exported regression document (an existing agile mind map whose root title
 // names the defect it regresses), computed independently of the Hub. Imports only from gold/cases.ts (itself
-// independent). The case rule is the tagged rule of gold/cases.ts exactly (a case is a node whose `resource` is a
-// non-empty array); the marked rule is NOT implemented here, as the task page says.
+// independent). The case rule follows gold/cases.ts: default 'marked' (tag or mark), and `--case-rule tagged` restricts
+// to tagged nodes.
 //
 // The command lines come from the case title and the labels above the case (the convention the case producer uses:
 // commands resolve from titles and group labels). Each command line is split into a head and its parameter values:
@@ -18,10 +18,10 @@
 // Without the build's command catalog the head/parameter split is a heuristic: a parameter value written with
 // lowercase letters only and no digit (a pool named `cfg` or `poolx`) is read into the head. The same split is
 // applied to the drafts by the compare script, so the two sides stay consistent.
-//   node scripts/real/gold/regression-doc.ts --map <file>:<documentId> [--map <file>:<documentId> ...] --out <gold.json>
+//   node scripts/real/gold/regression-doc.ts --map <file>:<documentId> [--map <file>:<documentId> ...] [--case-rule tagged|marked] --out <gold.json>
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { bugIdsOf, parseMindMap } from './cases.ts';
+import { bugIdsOf, caseNodesOf, parseMindMap } from './cases.ts';
 
 export interface SplitCommand {
   head: string;
@@ -102,19 +102,26 @@ export interface RegressionDocGold {
   cases: RegressionCase[];
 }
 
-/** The gold of one exported regression document: its defect numbers (root title) and its tagged cases' commands. */
-export function regressionDocGold(document: string, map: unknown): RegressionDocGold {
-  const { nodes } = parseMindMap(map);
-  const root = nodes[0];
+/** The gold of one exported regression document: its defect numbers (root title) and its cases' commands. */
+export function regressionDocGold(
+  document: string,
+  map: unknown,
+  options: { caseRule?: 'tagged' | 'marked' } = {},
+): RegressionDocGold {
+  const parsed = parseMindMap(map);
+  const root = parsed.nodes[0];
   const defects = root === undefined ? [] : bugIdsOf(root.text);
   const cases: RegressionCase[] = [];
-  for (const node of nodes) {
-    if (node.resource.length === 0) continue;
+  const caseNodes = caseNodesOf(parsed, options);
+  for (const node of caseNodes) {
     const commands: SplitCommand[] = [];
     for (const line of [...node.ancestors.slice(1), node.text]) commands.push(...splitCommand(line));
     cases.push({ id: node.id === '' ? `@${node.index}` : node.id, title: node.text, commands });
   }
-  if (cases.length === 0) throw new Error(`文档 ${document} 里没有带资源标签的用例节点`);
+  if (cases.length === 0) {
+    const what = options.caseRule === 'tagged' ? '带资源标签的' : '';
+    throw new Error(`文档 ${document} 里没有${what}用例节点`);
+  }
   return { document, defects, cases };
 }
 
@@ -123,13 +130,15 @@ export async function main(argv: string[]): Promise<number> {
     const at = argv.indexOf(`--${name}`);
     return at >= 0 ? argv[at + 1] : undefined;
   };
+  const caseRuleArg = value('case-rule');
+  const caseRule = caseRuleArg === 'tagged' ? 'tagged' : 'marked';
   const outPath = value('out');
   const mapArgs: string[] = [];
   for (let k = 0; k < argv.length; k++) {
     if (argv[k] === '--map' && k + 1 < argv.length) mapArgs.push(argv[k + 1]);
   }
   if (mapArgs.length === 0 || !outPath) {
-    process.stderr.write('用法：node scripts/real/gold/regression-doc.ts --map <file>:<documentId> [--map ...] --out <gold.json>\n');
+    process.stderr.write('用法：node scripts/real/gold/regression-doc.ts --map <file>:<documentId> [--map ...] [--case-rule tagged|marked] --out <gold.json>\n');
     return 2;
   }
   const golds: RegressionDocGold[] = [];
@@ -139,7 +148,7 @@ export async function main(argv: string[]): Promise<number> {
     const documentId = at > 0 ? arg.slice(at + 1) : '';
     try {
       const text = readFileSync(resolve(file), 'utf8');
-      golds.push(regressionDocGold(documentId, JSON.parse(text) as unknown));
+      golds.push(regressionDocGold(documentId, JSON.parse(text) as unknown, { caseRule }));
     } catch (error) {
       process.stderr.write(`读不了脑图 ${arg}：${(error as Error).message.split('\n')[0]}\n`);
       return 1;

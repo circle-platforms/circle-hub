@@ -21,3 +21,40 @@ export function describeError(error: unknown): string {
   if (error instanceof Error) return clipNote(`${error.name}: ${error.message}`, 1500);
   return clipNote(error, 1500);
 }
+
+/**
+ * Strips machine absolute paths from a stack line, keeping function names and repo-relative paths only.
+ */
+export function sanitizeStackLine(line: string): string {
+  const trimmed = line.trim();
+  if (!trimmed.startsWith('at ')) return trimmed;
+  let s = trimmed;
+  const cwd = typeof process !== 'undefined' && process.cwd ? process.cwd() : '';
+  if (cwd) {
+    s = s.replaceAll(`file://${cwd}/`, '').replaceAll(`${cwd}/`, '');
+  }
+  s = s.replace(/(?:file:\/\/)?(?:\/[^:\s)]+?|\b[A-Za-z]:\\[^:\s)]+?)\/(hub|packs|contracts|scripts|tests|references|foundation|node_modules)\//g, '$1/');
+  s = s.replace(/(?:file:\/\/)?\/(?:Users|home|var|tmp|private)[^:\s)]*\/([^/:\s)]+:[0-9]+:[0-9]+)/g, '$1');
+  return s;
+}
+
+/** Formats an error for an internal failure: error name and clipped message followed by sanitized stack frames. */
+export function cleanStack(error: unknown): string {
+  if (!(error instanceof Error)) return clipNote(String(error), 1500);
+  const raw = error.stack ?? `${error.name}: ${error.message}`;
+  const lines = raw.split('\n');
+  const out: string[] = [];
+  const header = `${error.name}: ${clipNote(error.message, 200)}`;
+  out.push(header);
+  for (let i = 1; i < lines.length && out.length < 25; i++) {
+    const line = lines[i].trim();
+    if (!line.startsWith('at ')) continue;
+    out.push(sanitizeStackLine(line));
+  }
+  return clipNote(out.join('\n'), 1800);
+}
+
+/** An error for internal error admin notes: error name, message and repo-relative stack trace. */
+export function describeInternalError(error: unknown): string {
+  return cleanStack(error);
+}

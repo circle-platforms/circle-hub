@@ -4,10 +4,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 import { z } from 'zod';
+import type { ProtocolError } from '../../../contracts/src/common.ts';
 import type { ItemProjection } from '../../../contracts/src/run.ts';
 import { Submission } from '../../../contracts/src/submission.ts';
 import type { LoadedWorkflow } from '../../ports.ts';
-import { packSchema, requirementAt, schemaProblems, slotProblems, slotSchemaOf, unsafeSchema } from './slots.ts';
+import { findSubschema, packSchema, renderExpected, renderShape, requirementAt, schemaProblems, slotProblems, slotSchemaOf, specificFix, unsafeSchema } from './slots.ts';
 import { locatePack, reviewPack, writePack } from './testing/packs.ts';
 import { FakeWorkflowStore } from './testing/workflows.ts';
 
@@ -37,8 +38,8 @@ function submission(value: Record<string, unknown>): Submission {
   return Submission.parse({ run: 'run_01m5h9zh07x7amhg4bwmye5yhw', model: 'm', cross_item: [level], ...value });
 }
 
-function problems(value: Record<string, unknown>): { path?: string; message: string }[] {
-  return slotProblems(review, items, submission(value)).map((p) => ({ path: p.path, message: p.message, code: p.code }));
+function problems(value: Record<string, unknown>): ProtocolError[] {
+  return slotProblems(review, items, submission(value));
 }
 
 test('an item id the run does not have gets a fix that teaches the form (count, exact id example, suffix hint)', () => {
@@ -115,6 +116,15 @@ test('statements: closed codes and ranks, required when declared, counts, data s
   assert.deepEqual(at([finding({ quotes: undefined })]), ['/items/0/slots/findings/0']);
   assert.deepEqual(at([finding({ unknown_field: 1 })]), ['/items/0/slots/findings/0/unknown_field']);
   assert.deepEqual(at([finding({ text: '' })]), ['/items/0/slots/findings/0/text']);
+  const cmdIssue = problems({
+    items: [{ item: 'd:1', handling: 'handled', slots: { findings: [{ ...finding(), commands: ['zone set'] }] } }],
+  });
+  assert.equal(cmdIssue[0].code, 'SUBMISSION_SCHEMA_VIOLATION');
+  assert.equal(cmdIssue[0].path, '/items/0/slots/findings/0/commands/0');
+  assert.equal(
+    cmdIssue[0].fix,
+    '/items/0/slots/findings/0/commands/0 要的是对象 {"command": "<string>", "present"?: <boolean>}，收到的是字符串',
+  );
   const all = problems({ items: [{ item: 'd:1', handling: 'handled', slots: { findings: [finding({ code: 'made_up' })] } }] });
   assert.ok(all.every((p) => (p as { code?: string }).code === 'SUBMISSION_SCHEMA_VIOLATION'));
 });
@@ -177,4 +187,109 @@ test('a statement whose data the pack schema cannot check is a structure violati
   const submission = Submission.parse({ run: 'run_01m5h9zh07x7amhg4bwmye5yhw', model: 'm', items: [{ item: 'd:2', handling: 'handled', slots: { findings: [finding({ data: { suggestion: 'x' } })] } }], cross_item: [level] });
   const problems = slotProblems(odd, items, submission);
   assert.deepEqual(problems.map((p) => [p.code, p.path, p.fix]), [['SUBMISSION_SCHEMA_VIOLATION', '/items/0/slots/findings/0/data', '请联系任务包作者']]);
+});
+
+test('specificFix renders expected shape dynamically from synthetic slot schema and real commands schema', () => {
+  // Synthetic slot schema with arbitrary custom field names
+  const syntheticSchema: Record<string, unknown> = {
+    type: 'object',
+    properties: {
+      custom_slot: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            custom_entries: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  widget_name: { type: 'string' },
+                  is_enabled: { type: 'boolean' },
+                },
+                required: ['widget_name'],
+              },
+            },
+          },
+        },
+      },
+    },
+  };
+
+  // 1. Synthetic schema: object element of array
+  const objIssue = {
+    code: 'invalid_type',
+    expected: 'object',
+    path: ['custom_entries', 0],
+    message: 'Invalid input: expected object, received string',
+  } as unknown as z.ZodIssue;
+  const objFix = specificFix('/items/0/slots/custom_slot/0/custom_entries/0', objIssue, syntheticSchema);
+  assert.deepEqual(objFix, {
+    message: '/items/0/slots/custom_slot/0/custom_entries/0 要的是对象 {"widget_name": "<string>", "is_enabled"?: <boolean>}，收到的是字符串',
+    fix: '/items/0/slots/custom_slot/0/custom_entries/0 要的是对象 {"widget_name": "<string>", "is_enabled"?: <boolean>}，收到的是字符串',
+  });
+
+  // 2. Synthetic schema: array itself
+  const arrIssue = {
+    code: 'invalid_type',
+    expected: 'array',
+    path: ['custom_entries'],
+    message: 'Invalid input: expected array, received string',
+  } as unknown as z.ZodIssue;
+  const arrFix = specificFix('/items/0/slots/custom_slot/0/custom_entries', arrIssue, syntheticSchema);
+  assert.deepEqual(arrFix, {
+    message: '/items/0/slots/custom_slot/0/custom_entries 要的是数组 [{"widget_name": "<string>", "is_enabled"?: <boolean>}]，收到的是字符串',
+    fix: '/items/0/slots/custom_slot/0/custom_entries 要的是数组 [{"widget_name": "<string>", "is_enabled"?: <boolean>}]，收到的是字符串',
+  });
+
+  // 3. Real shape of commands
+  const realCommandsSchema: Record<string, unknown> = {
+    type: 'object',
+    properties: {
+      cases: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            commands: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  command: { type: 'string' },
+                  present: { type: 'boolean' },
+                },
+                required: ['command'],
+              },
+            },
+          },
+        },
+      },
+    },
+  };
+
+  const cmdIssue = {
+    code: 'invalid_type',
+    expected: 'object',
+    path: ['commands', 0],
+    message: 'Invalid input: expected object, received string',
+  } as unknown as z.ZodIssue;
+  const cmdFix = specificFix('/items/0/slots/cases/0/commands/0', cmdIssue, realCommandsSchema);
+  assert.deepEqual(cmdFix, {
+    message: '/items/0/slots/cases/0/commands/0 要的是对象 {"command": "<string>", "present"?: <boolean>}，收到的是字符串',
+    fix: '/items/0/slots/cases/0/commands/0 要的是对象 {"command": "<string>", "present"?: <boolean>}，收到的是字符串',
+  });
+
+  // 4. Fallback when path cannot be reached in schema
+  const fallbackIssue = {
+    code: 'invalid_type',
+    expected: 'number',
+    path: ['unknown_path'],
+    message: 'Invalid input: expected number, received string',
+  } as unknown as z.ZodIssue;
+  const fallbackFix = specificFix('/items/0/slots/unknown_path', fallbackIssue, realCommandsSchema);
+  assert.deepEqual(fallbackFix, {
+    message: '/items/0/slots/unknown_path 要的是数字，收到的是字符串',
+    fix: '/items/0/slots/unknown_path 要的是数字，收到的是字符串',
+  });
 });

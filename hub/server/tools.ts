@@ -28,12 +28,12 @@ import type { CallContext } from '../ports.ts';
 import { RecordsError, isSha256, type Principal } from '../records/api.ts';
 import { ReferenceSyntaxError, UNAVAILABLE_MESSAGE, parseReference, resolveReference, type ReaderIdentity, type Reference } from '../refs/api.ts';
 import type { ServerDeps } from './api.ts';
-import { clipNote, describeError } from './notes.ts';
+import { clipNote, describeError, describeInternalError } from './notes.ts';
 import { recordReaderFor, sourceReaderFor } from './readers.ts';
 import { fallbackText, pageCursorProblem, toolText, type TextContext } from './text.ts';
 import { base64Size, decodeBase64Strict, isMediaType, mediaTypeFor, structureOf } from './upload.ts';
 
-export { describeError } from './notes.ts';
+export { describeError, describeInternalError } from './notes.ts';
 
 /** The call context handed to the services: CallContext plus a way to put the real reason of a neutral answer in the admin note. */
 export interface ServerCallContext extends CallContext {
@@ -160,7 +160,7 @@ export function internalError(trace: string): McpError {
 function fromThrown(tool: ToolName, error: unknown, call: ToolCall): Answer {
   const code = protocolCodeOf(error);
   if (code === null) {
-    call.context.adminNote(describeError(error));
+    call.context.adminNote(describeInternalError(error));
     throw internalError(call.context.traceId);
   }
   if (code === 'SOURCE_UNAVAILABLE') {

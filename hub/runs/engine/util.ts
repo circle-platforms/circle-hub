@@ -41,7 +41,13 @@ export function receivedDigest(value: unknown): { digest: string; canonical: boo
     return { digest: sha256Hex(canonicalize(value)), canonical: true, nonCanonicalPath: null };
   } catch (error) {
     if (!(error instanceof CanonicalizationError)) throw error;
-    return { digest: sha256Hex(JSON.stringify(value) ?? 'null'), canonical: false, nonCanonicalPath: error.path };
+    let text: string;
+    try {
+      text = JSON.stringify(value) ?? 'null';
+    } catch {
+      text = '{"non_canonical":true}';
+    }
+    return { digest: sha256Hex(text), canonical: false, nonCanonicalPath: error.path };
   }
 }
 
