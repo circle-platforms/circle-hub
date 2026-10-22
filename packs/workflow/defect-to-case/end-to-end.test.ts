@@ -1,9 +1,13 @@
 // End to end test of defect-to-case pack through the real engine.
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
+import type { Submission } from '../../../contracts/src/submission.ts';
 import type { ValidationResult } from '../../../contracts/src/validation.ts';
 import { osIsolationAvailable } from '../../../hub/rules/api.ts';
 import { startPostgres, type TemporaryPostgres } from '../../../hub/testing/postgres.ts';
+import { PACK_DIR } from './pack-files.ts';
 import { call, openHub, type Hub } from './testing/hub.ts';
 
 const skip = (await osIsolationAvailable()) ? false : 'no OS network isolation on this machine (sandbox-exec)';
@@ -161,5 +165,30 @@ describe('defect-to-case end to end run', { skip }, () => {
     const skippedItem = result.partitions.incomplete.find((p) => p.item === '71010');
     assert.ok(skippedItem, '71010 should be in incomplete partition');
     assert.equal(skippedItem.reason, 'declared_skip');
+  });
+
+  it('defect-to-case examples/submit-result.json is accepted by submitResult', async () => {
+    const started = await hub.service.startRun(
+      hub.alice,
+      {
+        pack: 'defect-to-case',
+        product: 'apv',
+        build: 'Rel_APV_10_6_1_57',
+        inputs: {
+          defects: [{ external: 'plm:bug:71009' }],
+          indexed_cases: {
+            external: 'knowledge:index:apv:Rel_APV_10_6_1_57?kind=case&key=commands',
+          },
+        },
+      },
+      call('sess-example-start'),
+    );
+    assert.equal(started.call_result, 'ok', JSON.stringify(started.errors));
+    assert.ok(started.run);
+
+    const raw = JSON.parse(await readFile(join(PACK_DIR, 'examples', 'submit-result.json'), 'utf8')) as Record<string, unknown>;
+    const body = { ...raw, run: started.run.run };
+    const answer = await hub.service.submitResult(hub.alice, body as Submission, call('sess-example-sub'));
+    assert.equal(answer.acceptance, 'accepted', JSON.stringify(answer.errors));
   });
 });
