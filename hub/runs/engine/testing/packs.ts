@@ -83,6 +83,8 @@ export interface ReviewOptions {
   dynamicFindings?: boolean;
   /** Give the structure requirement (a check on the target) a `*` repair row, which never applies to the target. */
   subjectRepair?: boolean;
+  /** Ship one externally retained delivered sample for each named check (clears the author-only mark, T02 R[1]). */
+  externalSamples?: string[];
   /** Replace the JSON Schema of the findings' `data`. */
   findingsData?: Record<string, unknown>;
   /** Replace the JSON Schema of the `strict` parameter. */
@@ -235,6 +237,11 @@ export function reviewPack(options: ReviewOptions = {}): PackSpec {
     'functions/grounds.ts': { function: 'review/grounds.ts' },
   };
   if (options.fragile) files[`functions/${options.fragile}.ts`] = { function: `review/${options.fragile}.ts` };
+  for (const check of options.externalSamples ?? []) {
+    files[`samples/external/${check}.json`] = {
+      json: { id: `external_${check}`, source: 'retained_delivery', check, note: '合成外部留存交付样例（占位，发布校验只数来源）', subject: {}, expect: [] },
+    };
+  }
   return { id: 'toy-review', version: options.version ?? '1.0.0', kind: 'workflow', title: '合成用例评审', description: '测试用的合成评审包', files };
 }
 

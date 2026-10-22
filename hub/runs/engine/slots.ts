@@ -239,6 +239,20 @@ export function runRequirementOf(slots: SlotsFile, code: string | undefined): st
   return null;
 }
 
+/** The message for a submitted id the run does not have: it teaches the form instead of only refusing. Real reviews
+ * wrote the sequence number, the bare node id or an invented prefix four times in a row, so the message says how many
+ * items the run has, that an id is written exactly as the first column of start_run's item list, and gives the run's
+ * first id as an example. When the submitted text is exactly the tail of a real id (for instance only the part after the
+ * colon), it adds the one id that ends with — never a guess beyond the run's own items. */
+function unknownItemMessage(submitted: string, items: readonly ItemProjection[]): string {
+  const ids = items.map((it) => it.id);
+  const example = ids[0] ?? '（无）';
+  let message = `条目 ${submitted} 不是本运行的条目：本运行有 ${ids.length} 个条目，编号照 start_run 回执里条目清单第一列原样写（例如 ${example}）`;
+  const ending = ids.filter((id) => id !== submitted && id.endsWith(submitted) && submitted.length < id.length);
+  if (ending.length === 1) message += `；是不是指 ${ending[0]}`;
+  return message;
+}
+
 /**
  * T03 R[3] structure: every item known to the run, every handled item's slot record against the slots file (unknown keys,
  * keys of fact requirements, closed sets, counts, data, evidence), carry-overs only as start_run offered them (contracts
@@ -254,7 +268,7 @@ export function slotProblems(workflow: LoadedWorkflow, items: readonly ItemProje
     const at = pointerOf('items', i);
     const item = byId.get(entry.item);
     if (item === undefined) {
-      out.push(violation(`${at}/item`, `条目 ${entry.item} 不是本运行的条目`));
+      out.push(violation(`${at}/item`, unknownItemMessage(entry.item, items)));
       return;
     }
     if (entry.handling !== 'handled') return;
