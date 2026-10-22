@@ -8,7 +8,7 @@ import type { ExternalRead } from '../../../hub/ports.ts';
 import { startPostgres, type TemporaryPostgres } from '../../../hub/testing/postgres.ts';
 import { AGILE_ACCOUNT, DOCUMENTS, REVIEW_ANCESTORS, REVIEW_TITLE, ROOTS, agileOptions, agileTrees } from '../../../tests/fixtures/agile/index.ts';
 import { artifactBytes, openSystemKit, type SystemKit } from '../testing/kit.ts';
-import { MAX_ROOTS, bodyId, containsTerm, documentsOf, mindmapPlan, mindmapProject, outlineOf, rankDocuments, rootsOf, searchKeyOf, searchPlan, searchProject, termsOf, treePlan } from './functions/agile.ts';
+import { MAX_ROOTS, bodyId, containsTerm, documentsOf, mindmapPlan, mindmapProject, outlineOf, rankDocuments, rootsOf, rootsPlan, searchKeyOf, searchPlan, searchProject, termsOf, treePlan } from './functions/agile.ts';
 
 const profile = SystemProfile.parse(JSON.parse(readFileSync(new URL('./system.json', import.meta.url), 'utf8')));
 
@@ -42,7 +42,48 @@ describe('the read functions', () => {
     assert.deepEqual([review?.title, review?.ancestors], [REVIEW_TITLE, REVIEW_ANCESTORS]);
     assert.ok(docs.every((d) => d.root.id === ROOTS.second));
     const listedOnly = documentsOf({ root: { id: 'r', title: null }, children: [{ label: 'm', id: 'f', cases: ['d9'], children: [{ label: 'x', id: 'd8', cases: [], children: [] }] }] });
-    assert.deepEqual(listedOnly.map((d) => [d.id, d.title, d.ancestors]), [['d9', null, ['m']], ['d8', 'x', ['m']]], 'a case the folder lists comes with the folder, before its subtree');
+    assert.deepEqual(listedOnly.map((d) => [d.id, d.title, d.ancestors]), [['d8', 'x', ['m']], ['d9', null, ['m']]], 'a document with a node of its own first, then those a folder lists without a node');
+  });
+
+  test('the folder lists are cumulative: a document belongs to the deepest folder that lists it, never to the root that lists them all', () => {
+    // The shape of the platform's real trees: the root node of the answer lists every document below it, each folder lists the
+    // documents below that folder, leaves without cases are documents, and a leaf that lists cases is a folder whose documents
+    // have no node of their own.
+    const children = [
+      {
+        label: 'NSAE',
+        id: 1,
+        cases: [11, 12, 13, 14],
+        children: [
+          { label: '030：项目', id: 2, cases: [11, 12], children: [{ label: '060：10.4.6', id: 3, cases: [11, 12], children: [{ label: 'bug to case a', id: 11, cases: [], children: [] }, { label: 'bug to case b', id: 12, cases: [], children: [] }] }] },
+          { label: '101：客户', id: 4, cases: [14], children: [] },
+          { label: '含孤文档的目录', id: 5, cases: [13], children: [] },
+        ],
+      },
+    ];
+    for (const title of [null, 'NSAE']) {
+      const docs = documentsOf({ root: { id: '1', title }, children });
+      const where = Object.fromEntries(docs.map((d) => [d.id, d.ancestors.join(' / ')]));
+      assert.deepEqual(where, {
+        '11': 'NSAE / 030：项目 / 060：10.4.6',
+        '12': 'NSAE / 030：项目 / 060：10.4.6',
+        '14': 'NSAE / 101：客户',
+        '13': 'NSAE / 含孤文档的目录',
+      }, `root title ${String(title)}: the root node is the first folder once, not twice`);
+      assert.equal(docs.length, 4);
+      assert.equal(docs.find((d) => d.id === '11')?.title, 'bug to case a');
+      assert.equal(docs.find((d) => d.id === '13')?.title, null, 'a listed document has no title of its own');
+    }
+    // A response without the root node takes the root title as the first folder.
+    const bare = documentsOf({ root: { id: '1', title: 'NSAE' }, children: children[0].children });
+    assert.deepEqual(bare.find((d) => d.id === '11')?.ancestors, ['NSAE', '030：项目', '060：10.4.6']);
+  });
+
+  test('the roots listing of the real platform: data is an array and the total is a sibling of it', () => {
+    const page1 = { ok: true, json: { code: 1000, msg: 'ok', data: [{ id: 9001, label: 'a' }, { id: 9002, label: 'b' }], total: 23 } };
+    assert.deepEqual(treePlan({ round: 2, external: { key: '7715' }, responses: { 'page-1': page1 } }).requests.map((r) => r.body), [{ page: 2 }, { page: 3 }], 'the pages come from the top-level total');
+    const plan = rootsPlan({ round: 2, settings: { roots: ['7715', '9001'] }, responses: { 'page-1': page1, 'subtree-1': { ok: true, json: { code: 1000, data: [] } }, 'subtree-2': { ok: true, json: { code: 1000, data: [] } } } });
+    assert.deepEqual(plan.requests.map((r) => r.body), [{ page: 2 }, { page: 3 }], 'a configured root without a title asks for the next pages');
   });
 
   test('the tree plan reads only the root pages the total announces', () => {

@@ -106,6 +106,16 @@ async function fixture(t: { after: (fn: () => Promise<void>) => void }, options:
 
 const sorted = (...values: string[]): string[] => [...values].sort();
 
+async function readJson(w: World, id: string): Promise<unknown> {
+  const reader = createKnowledgeReader(w.knowledge);
+  const read = await reader.read(id, { principal: w.user, run: null, purpose: '视图测试' });
+  assert.equal(read.ok, true, read.ok ? '' : read.reason);
+  if (!read.ok) throw new Error('not ok');
+  const source = await w.kit.artifacts.source(w.user, read.artifacts[0].artifact.body.sha256, { consumer: 'function' });
+  assert.ok(source?.bytes);
+  return JSON.parse(new TextDecoder().decode(source.bytes));
+}
+
 describe('the impact view (impact-view@1)', () => {
   test('changes of the changed kinds, the attached entries on both sides, references of the later root first', async (t) => {
     const f = await fixture(t);
@@ -251,6 +261,7 @@ describe('the facet and index views (facet-view@1, index-view@1)', () => {
     ]);
     assert.equal(view.total, 6);
     assert.equal(view.truncated, false);
+    assert.equal(view.notes.some((note) => note.startsWith('未归位')), false);
     // Rows are in code-unit order of the canonical JSON text of their values: "100" and "200" before null.
     const defects = FacetView.parse((await f.json(await f.read(`knowledge:facets:acme:${B}?kind=case&by=defects`))).value);
     assert.deepEqual(defects.rows, [
@@ -294,6 +305,7 @@ describe('the facet and index views (facet-view@1, index-view@1)', () => {
     assert.deepEqual(Object.keys(view.entries), sorted(c1, c2));
     assert.equal(view.entries[c2].reference, `tree:${f.roots.b}/commands/net/ping@${c2}`);
     assert.deepEqual([view.total_keys, view.total_entries, view.truncated], [2, 2, false]);
+    assert.equal(view.notes.some((note) => note.startsWith('未归位')), false);
     const only = IndexView.parse((await f.json(await f.read(`knowledge:index:acme:${B}?kind=case&key=defects&only=999,200`))).value);
     assert.deepEqual(only.keys, { '200': [c2] });
     assert.deepEqual([only.total_keys, only.total_entries], [1, 1]);
@@ -324,6 +336,137 @@ describe('the facet and index views (facet-view@1, index-view@1)', () => {
     const index = IndexView.parse(await json(`knowledge:index:acme:${A}?kind=case&key=defects`));
     const [digest] = index.keys['7'];
     assert.equal(index.entries[digest].reference, `tree:${produced.root}/commands/net/ping@${digest}`, '/commands/net/ping sorts before /commands/system/show');
+  });
+
+  test('facets and index count placed and unplaced entries once and cite an unplaced entry at the root; impact leaves it out', async (t) => {
+    const fragment = [{ parser: 'xml@1', selector: 'x/catalog/group[1]' }];
+    const shared = { kind: 'case', statement: '两处都有的用例', data: { status: 'fixed', defects: ['7'] }, fragments: fragment, applicability: null };
+    const entries = [
+      { ...shared, path: '/commands/system/show' },
+      { ...shared, path: null },
+      { kind: 'case', path: null, statement: '没有命令的用例', data: { status: 'known', defects: ['7', '8'] }, fragments: fragment, applicability: null },
+      { kind: 'case', path: null, statement: '没有缺陷编号的用例', data: { defects: [] }, fragments: fragment, applicability: null },
+      { kind: 'defect', path: null, statement: '已修复 61001', data: { status: 'fixed', bug: '61001' }, fragments: fragment, applicability: null },
+      { kind: 'defect', path: null, statement: '已知 70412', data: { status: 'known', bug: '70412' }, fragments: fragment, applicability: null },
+    ];
+    const w = await makeWorld(postgres, { pack: { declaration: { producers: [DEFAULT_PRODUCERS[0], extraProducer('other', { entries })] } } });
+    t.after(() => w.close());
+    w.external.set(`site:tree:${A}`, { bytes: catalogXml(BASE_CATALOG), mediaType: 'application/xml' });
+    w.external.set(`site:tree:${B}`, { bytes: catalogXml({ ...BASE_CATALOG, net: [...BASE_CATALOG.net, { name: 'arp', params: [] }] }), mediaType: 'application/xml' });
+    const produced = await w.knowledge.produceTree({ product: w.product, build: { ...build(A, []), sources: { tree: `site:tree:${A}` } } });
+    const later = await w.knowledge.produceTree({ product: w.product, build: { ...build(B, []), sources: { tree: `site:tree:${B}` } } });
+    assert.equal(produced.ok && later.ok, true, `${produced.reason} ${later.reason}`);
+    const root = produced.root as string;
+
+    const byStatus = FacetView.parse(await readJson(w, `knowledge:facets:acme:${A}?kind=case&by=status`));
+    assert.deepEqual(byStatus.rows, [
+      { values: { status: 'fixed' }, count: 1 },
+      { values: { status: 'known' }, count: 1 },
+      { values: { status: null }, count: 1 },
+    ]);
+    assert.equal(byStatus.total, 3);
+    assert.ok(byStatus.notes.includes('未归位 2 个，标在根下，计入合计'));
+
+    const byDefects = FacetView.parse(await readJson(w, `knowledge:facets:acme:${A}?kind=case&by=defects`));
+    assert.deepEqual(byDefects.rows, [
+      { values: { defects: '7' }, count: 2 },
+      { values: { defects: '8' }, count: 1 },
+      { values: { defects: null }, count: 1 },
+    ]);
+    assert.equal(byDefects.total, 3);
+
+    const byList = IndexView.parse(await readJson(w, `knowledge:index:acme:${A}?kind=case&key=defects`));
+    const hung = Object.values(byList.entries).find((entry) => entry.statement === '两处都有的用例');
+    const loose = Object.values(byList.entries).find((entry) => entry.statement === '没有命令的用例');
+    assert.ok(hung && loose);
+    assert.equal(hung.reference, `tree:${root}/commands/system/show@${hung.entry}`);
+    assert.equal(loose.reference, `tree:${root}/@${loose.entry}`);
+    assert.deepEqual(byList.keys['7'], sorted(hung.entry, loose.entry));
+    assert.deepEqual(byList.keys['8'], [loose.entry]);
+    assert.deepEqual([byList.total_keys, byList.total_entries], [2, 2]);
+    assert.ok(byList.notes.includes('未归位 2 个，标在根下'));
+
+    const byCaseStatus = IndexView.parse(await readJson(w, `knowledge:index:acme:${A}?kind=case&key=status`));
+    assert.deepEqual(Object.keys(byCaseStatus.keys), ['fixed', 'known']);
+    assert.deepEqual(byCaseStatus.keys.fixed, [hung.entry]);
+    assert.deepEqual(byCaseStatus.keys.known, [loose.entry]);
+    assert.equal(byCaseStatus.entries[loose.entry].reference, `tree:${root}/@${loose.entry}`);
+
+    const defectStatus = IndexView.parse(await readJson(w, `knowledge:index:acme:${A}?kind=defect&key=status`));
+    const fixed = Object.values(defectStatus.entries).find((entry) => entry.statement === '已修复 61001');
+    const known = Object.values(defectStatus.entries).find((entry) => entry.statement === '已知 70412');
+    assert.ok(fixed && known);
+    assert.deepEqual(defectStatus.keys, { fixed: [fixed.entry], known: [known.entry] });
+    assert.equal(fixed.reference, `tree:${root}/@${fixed.entry}`);
+    assert.equal(known.reference, `tree:${root}/@${known.entry}`);
+    assert.equal(fixed.data.bug, '61001');
+    assert.equal(known.data.status, 'known');
+    assert.deepEqual([defectStatus.total_keys, defectStatus.total_entries], [2, 2]);
+    assert.ok(defectStatus.notes.includes('未归位 2 个，标在根下'));
+
+    const byBug = IndexView.parse(await readJson(w, `knowledge:index:acme:${A}?kind=defect&key=bug&only=61001,999`));
+    assert.deepEqual(byBug.keys, { '61001': [fixed.entry] });
+    assert.equal(byBug.entries['61001'] === undefined, true);
+    assert.equal(byBug.entries[fixed.entry].reference, `tree:${root}/@${fixed.entry}`);
+    assert.ok(byBug.notes.some((note) => note === '这些取值没有条目：999'));
+    assert.ok(byBug.notes.includes('未归位 2 个，标在根下'));
+
+    const impact = ImpactView.parse(await readJson(w, `knowledge:impact:acme:${A}..${B}`));
+    assert.ok(impact.changes.length > 0);
+    const statements = new Set(Object.values(impact.entries).map((entry) => entry.statement));
+    for (const text of ['没有命令的用例', '没有缺陷编号的用例', '已修复 61001', '已知 70412']) assert.equal(statements.has(text), false, text);
+    assert.equal(impact.notes.some((note) => note.startsWith('未归位')), false);
+  });
+
+  test('facets and index over 60000 unplaced entries finish within a few seconds', { timeout: 300_000 }, async (t) => {
+    const source = `
+export default function many(input: any): unknown {
+  const n = (input.params && input.params.n) || 0;
+  const entries = new Array(n);
+  const fragments = [{ parser: 'xml@1', selector: 'x/catalog/group[1]' }];
+  for (let i = 0; i < n; i++) {
+    const even = i % 2 === 0;
+    entries[i] = { kind: 'defect', path: null, statement: '未归位 ' + i, data: { status: even ? 'fixed' : 'known', bug: even ? '61001' : '70412' }, fragments, applicability: null };
+  }
+  return { entries, warnings: [] };
+}
+`;
+    const w = await makeWorld(postgres, {
+      pack: {
+        functions: { 'many.ts': source },
+        declaration: {
+          producers: [DEFAULT_PRODUCERS[0], { id: 'many', title: '大量未归位条目', function: { module: 'functions/many.ts' }, inputs: { tree: { source: 'tree' } }, params: { n: 60_000 } }],
+        },
+      },
+    });
+    t.after(() => w.close());
+    w.external.set(`site:tree:${A}`, { bytes: catalogXml(BASE_CATALOG), mediaType: 'application/xml' });
+    const produced = await w.knowledge.produceTree({ product: w.product, build: { ...build(A, []), sources: { tree: `site:tree:${A}` } } });
+    assert.equal(produced.ok, true, produced.reason ?? '');
+    assert.equal(produced.unplaced, 60_000);
+    const root = produced.root as string;
+    const facetStarted = performance.now();
+    const facets = FacetView.parse(await readJson(w, `knowledge:facets:acme:${A}?kind=defect&by=status`));
+    const facetMs = performance.now() - facetStarted;
+    assert.deepEqual(facets.rows, [
+      { values: { status: 'fixed' }, count: 30_000 },
+      { values: { status: 'known' }, count: 30_000 },
+    ]);
+    assert.equal(facets.total, 60_000);
+    assert.ok(facets.notes.includes('未归位 60000 个，标在根下，计入合计'));
+    assert.ok(facetMs < 8_000, `facets took ${facetMs.toFixed(0)} ms`);
+    const indexStarted = performance.now();
+    const index = IndexView.parse(await readJson(w, `knowledge:index:acme:${A}?kind=defect&key=status`));
+    const indexMs = performance.now() - indexStarted;
+    assert.deepEqual([index.total_keys, index.total_entries], [2, 60_000]);
+    assert.deepEqual(Object.keys(index.keys), ['fixed', 'known']);
+    assert.equal(index.keys.fixed.length, 2_000);
+    assert.equal(index.keys.known.length, 2_000);
+    assert.equal(index.truncated, true);
+    const cited = index.entries[index.keys.fixed[0]];
+    assert.equal(cited.reference, `tree:${root}/@${cited.entry}`);
+    assert.ok(index.notes.includes('未归位 60000 个，标在根下'));
+    assert.ok(indexMs < 8_000, `index took ${indexMs.toFixed(0)} ms`);
   });
 
   test('an index over the byte budget stops before a key and says so', async (t) => {

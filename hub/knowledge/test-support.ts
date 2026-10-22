@@ -190,6 +190,7 @@ export default function cases(input: any): unknown {
   const entries: any[] = [];
   const warnings: string[] = [];
   if (p.trace === true) warnings.push('batch ' + input.batch.index + '/' + input.batch.of + ': ' + list.map((d) => d.model.nodes[0].data.id).join(','));
+  if (p.identity === true) warnings.push('identity ' + list.map((d) => (typeof d.external === 'string' ? d.external : '-')).join(','));
   const tree = input.slots?.tree;
   if (p.withTree === true && tree) warnings.push('tree ' + tree.sha256.slice(0, 8));
   for (const doc of list) {

@@ -8,9 +8,15 @@
 // - the base of every listed alias, so that an NSAE name resolves to the build whose tree it uses.
 // A build with its own command tree (an APV name, or an NSAE name of the newest lines) is its own base and carries the
 // sources tree (and fixed_bugs when linked); an NSAE name without a tree is an alias of the build its "based on" chain ends
-// in and carries no sources. Options: include, exclude (globs over page names) and lines (set by the caller).
+// in and carries no sources. Options: include, exclude (globs over page names) and lines (set by the caller); case_index
+// and min_line (cases-sync.ts; product.json leaves case_index off): with case_index on, every build with its own tree also
+// lists its case documents (case_documents) and the agile tree they were located in (case_tree), read from
+// agile:tree:roots (fetched in round 1); while that tree is not read, unreadable or incomplete, the builds with their own
+// tree on min_line or later are not listed (they would list documents), the others are.
 import type { BuildInfo, SyncPlanInput, SyncPlanOutput } from '../../../../contracts/src/product.ts';
 import { hasCommandTree } from './builds.ts';
+import { CASE_TREE_ID } from './cases-rules.ts';
+import { caseDocumentsFor, caseIndexOptions, caseNote, caseSources, caseTree, uncoveredDocuments, type CaseTree } from './cases-sync.ts';
 import { parseListing } from './listing.ts';
 import { compareLines, lineKey } from './naming.ts';
 import { indexBuilds, resolveBase } from './select-build.ts';
@@ -53,6 +59,7 @@ export function planBuilds(input: SyncPlanInput): SyncPlanOutput {
   try {
     const read = (isRecord(input) && isRecord(input.read) ? input.read : {}) as Record<string, Read>;
     const options = optionsOf(isRecord(input) ? input.options : undefined);
+    const caseIndex = caseIndexOptions(isRecord(input) ? input.options : undefined);
     const index = htmlOf(read[INDEX_ID]);
     if (index === null) {
       const reason = read[INDEX_ID]?.reason;
@@ -68,6 +75,13 @@ export function planBuilds(input: SyncPlanInput): SyncPlanOutput {
     };
     for (const hub of plan.hubs) want(listingId(hub.page));
     for (const page of plan.pages) want(listingId(page.page));
+    const cases: CaseTree | null = caseIndex.on ? caseTree(read, caseIndex) : null;
+    if (cases?.status === 'pending') want(CASE_TREE_ID);
+    const lineCache = new Map<string, boolean>();
+    const listedCases = { listed: 0, cut: 0 };
+    // Lines of the builds that listed their case documents, and the builds held back while the tree is not at hand.
+    const caseLines: string[] = [];
+    const withheld = new Set<string>();
 
     // Builds of the listing pages read so far, each with the kind of the page that lists it (mainline wins).
     const listed: Build[] = [];
@@ -123,12 +137,25 @@ export function planBuilds(input: SyncPlanInput): SyncPlanOutput {
       const built = isoTime(build.built);
       const released = isoTime(build.released);
       if (released.partial) partialDates++;
-      const sources: Record<string, string> = {};
+      const sources: Record<string, string | string[]> = {};
       if (base === build.name && hasCommandTree(build)) {
         const tree = fileId(build.files.commandTree?.href ?? '');
         if (tree !== null) sources[SOURCE_ROLES.tree] = tree;
         const bugs = build.files.bugsFixed === undefined ? null : fileId(build.files.bugsFixed.href);
         if (tree !== null && bugs !== null) sources[SOURCE_ROLES.fixedBugs] = bugs;
+        // The case documents of the build's line and earlier ones, by release-train date once the tree is read (cases-sync.ts).
+        // An alias without a tree of its own lists nothing. While the tree is unread there is no train date, so "before
+        // min_line" is the dotted comparison: those builds list nothing whatever the tree holds, and the others wait.
+        if (tree !== null && cases !== null) {
+          const line = lineKey(build.line as string);
+          if (cases.status === 'ready') {
+            const listed = caseDocumentsFor(cases.documents, line, lineCache);
+            Object.assign(sources, caseSources(listed.ids));
+            listedCases.listed += listed.ids.length;
+            listedCases.cut += listed.cut;
+            caseLines.push(line);
+          } else if (compareLines(line, caseIndex.minLine) >= 0) withheld.add(build.name);
+        }
       }
       builds.push({
         name: build.name,
@@ -142,14 +169,19 @@ export function planBuilds(input: SyncPlanInput): SyncPlanOutput {
       });
     }
     builds.sort((a, b) => compareLines(a.line, b.line) || compareText(a.name, b.name));
+    // A build that would list case documents is not listed without them: a root produced now would lose the cases it has.
+    const kept = withheld.size === 0 ? builds : builds.filter((build) => !withheld.has(build.name));
+    const uncovered = cases?.status === 'ready' ? uncoveredDocuments(cases.documents, caseLines) : [];
 
-    const summary = [`读了 ${Object.keys(read).length} 个页面`, `${plan.pages.length} 个列表页`, `列出 ${builds.length} 个构建（${builds.filter((b) => b.released_at !== null).length} 个已发布）`];
+    const summary = [`读了 ${Object.keys(read).length} 个页面`, `${plan.pages.length} 个列表页`, `列出 ${kept.length} 个构建（${kept.filter((b) => b.released_at !== null).length} 个已发布）`];
+    if (withheld.size > 0) summary.push(`找到的 ${withheld.size} 个构建没有列出：用例树读不出来，这次不列构建，免得产出缺少用例的根`);
+    if (cases !== null) summary.push(caseNote(cases, caseIndex, { ...listedCases, withheld: withheld.size, uncovered }));
     if (failed.length > 0) summary.push(`读不出的列表页：${failed.slice(0, 8).join('、')}${failed.length > 8 ? ' 等' : ''}`);
     if (partialDates > 0) summary.push(`${partialDates} 个发布日期只写到月份，记为当月 1 日`);
     if (options.lines !== null) summary.push(`只列版本线 ${[...options.lines].join('、')}`);
     if (notes.length > 0) summary.push(notes.slice(0, 3).join('；'));
     const note = summary.join('；');
-    return { fetch, builds, done: fetch.length === 0, note: note.length > MAX_NOTE ? `${note.slice(0, MAX_NOTE)}…` : note };
+    return { fetch, builds: kept, done: fetch.length === 0, note: note.length > MAX_NOTE ? `${note.slice(0, MAX_NOTE)}…` : note };
   } catch (error) {
     return { fetch: [], builds: [], done: true, note: internalError(error) };
   }

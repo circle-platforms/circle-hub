@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import { DataFieldName } from '../../../../contracts/src/views.ts';
 import releaseNotes, { produceReleaseEntries } from './release-notes.ts';
 import type { ReleaseResult } from './types.ts';
 import { assertTotal, fixtureBytes, hostileInputs, internalWarnings, markdown, markdownDocument, seeded, sliceBytes } from '../testing/test-support.ts';
@@ -13,8 +14,13 @@ describe('release note entries', () => {
   });
 
   it('reads fixed and known issues from lists, tables and HTML tables with their modules', () => {
+    assert.ok(result.entries.every((entry) => !Object.hasOwn(entry.data, 'bugId')));
+    assert.equal(DataFieldName.safeParse('bug').success, true);
+    assert.equal(DataFieldName.safeParse('status').success, true);
+    assert.equal(DataFieldName.safeParse('defects').success, true);
+    assert.equal(DataFieldName.safeParse('bugId').success, false);
     assert.deepEqual(
-      result.entries.map((entry) => [entry.kind, entry.data.status, entry.data.module, entry.data.bugId ?? null, entry.data.text]),
+      result.entries.map((entry) => [entry.kind, entry.data.status, entry.data.module, entry.data.bug ?? null, entry.data.text]),
       [
         ['defect', 'fixed', 'SLB', '61001', 'Bug 61001：HA 切换后虚拟服务的状态显示不正确。'],
         ['defect', 'fixed', 'SLB', '61002', '61002：成员池权重为 0 时调度异常， 修复后不再向该成员转发。'],
@@ -40,7 +46,7 @@ describe('release note entries', () => {
       const located = document.locate(fragment.selector);
       assert.ok(located, fragment.selector);
       const part = fragment.range ? sliceBytes(located.text, fragment.range) : located.text;
-      const id = entry.data.bugId as string | undefined;
+      const id = entry.data.bug as string | undefined;
       if (id !== undefined) assert.ok(part.includes(id), `${fragment.selector} ${part}`);
       // The item text starts in the cited part (tables split it into cells, so only its first characters are compared).
       assert.ok(part.includes(String(entry.data.text).slice(0, 4)), `${fragment.selector} ${part}`);
@@ -63,7 +69,7 @@ describe('release note entries', () => {
     ].join('\n');
     const english = produceReleaseEntries(markdown(text));
     assert.deepEqual([english.product, english.version, english.build, english.released], ['APV', '9.2.1', 'Rel_APV_9_2_1_7', '2026-02-03']);
-    assert.deepEqual(english.entries.map((entry) => [entry.kind, entry.data.status, entry.data.module, entry.data.bugId]), [
+    assert.deepEqual(english.entries.map((entry) => [entry.kind, entry.data.status, entry.data.module, entry.data.bug]), [
       ['defect', 'fixed', null, '7001'],
       ['defect', 'known', null, '7002'],
     ]);
@@ -100,10 +106,10 @@ describe('release note entries', () => {
   it('reads negated headings as known issues, never as fixes', () => {
     const noteWith = (heading: string) => produceReleaseEntries(markdown(`# NSAE 9.8.6 发布说明\n\n## ${heading}\n\n- 61001 SLB 会话保持偶发失效\n`));
     for (const heading of ['未修复问题', '尚未修复的问题', '没有修复的问题', '未能修复的问题', '未解决问题', '尚未解决的问题', 'Unfixed Issues', 'Unresolved Issues', 'Issues Not Fixed', 'Known Issues', '遗留问题']) {
-      assert.deepEqual(noteWith(heading).entries.map((entry) => [entry.kind, entry.data.status, entry.data.bugId]), [['defect', 'known', '61001']], heading);
+      assert.deepEqual(noteWith(heading).entries.map((entry) => [entry.kind, entry.data.status, entry.data.bug]), [['defect', 'known', '61001']], heading);
     }
     for (const heading of ['已修复问题', '修复的问题', '问题修复', '已解决问题', 'Fixed Issues', 'Bug Fixes', 'Resolved Issues']) {
-      assert.deepEqual(noteWith(heading).entries.map((entry) => [entry.kind, entry.data.status, entry.data.bugId]), [['defect', 'fixed', '61001']], heading);
+      assert.deepEqual(noteWith(heading).entries.map((entry) => [entry.kind, entry.data.status, entry.data.bug]), [['defect', 'fixed', '61001']], heading);
     }
     // English names only as whole words: "Prefixed issues" is not a fixed-issue section.
     const prefixed = noteWith('Prefixed issues table');
@@ -114,7 +120,7 @@ describe('release note entries', () => {
   it('keeps HTML table offsets when lower-casing would change the length (İ)', () => {
     const text = '## 已修复问题\n\n<table>\n<tr><td>İİİİ</td><td>x</td></tr>\n<tr><td>61001</td><td>会话保持失效</td></tr>\n</table>\n';
     const doc = markdownDocument(text);
-    const row = produceReleaseEntries(doc.model).entries.find((entry) => entry.data.bugId === '61001');
+    const row = produceReleaseEntries(doc.model).entries.find((entry) => entry.data.bug === '61001');
     assert.ok(row, 'bug 61001 is read');
     assert.equal(row.data.text, '会话保持失效');
     const [fragment] = row.fragments;
@@ -130,7 +136,7 @@ describe('release note entries', () => {
     const start = performance.now();
     const produced = produceReleaseEntries(model);
     const ms = performance.now() - start;
-    assert.deepEqual(produced.entries.map((entry) => entry.data.bugId), ['61001']);
+    assert.deepEqual(produced.entries.map((entry) => entry.data.bug), ['61001']);
     assert.ok(String(produced.entries[0].data.text).startsWith('第一行 续行文字 续行文字'));
     assert.ok(ms < 1500, `took ${ms} ms`);
   });
@@ -140,7 +146,7 @@ describe('release note entries', () => {
     const start = performance.now();
     const produced = produceReleaseEntries(model);
     const ms = performance.now() - start;
-    assert.deepEqual(produced.entries.map((entry) => entry.data.bugId), ['61001']);
+    assert.deepEqual(produced.entries.map((entry) => entry.data.bug), ['61001']);
     assert.ok(ms < 1500, `took ${ms} ms`);
   });
 

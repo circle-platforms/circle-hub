@@ -107,6 +107,29 @@ describe('list slots in batches', () => {
     assert.equal(recorded.sources.length, 1, 'the generate action lists single sources; the list is summarised');
   });
 
+  test('an optional list keeps the root when more than half of its documents cannot be read', async (t) => {
+    const w = await world(t, [DEFAULT_PRODUCERS[0], casesProducer({ batch: 2, optional: true })]);
+    const ids = documents(w, 1, 4);
+    w.external.objects.delete('store:mindmap:d1');
+    w.external.objects.delete('store:mindmap:d2');
+    w.external.objects.delete('store:mindmap:d3');
+    const result = await w.knowledge.produceTree({ product: w.product, build: build('Rel_ACME_1_2_15', ids) });
+    assert.equal(result.ok, true, result.reason ?? '');
+    assert.ok(result.skippedCount >= 3, String(result.skippedCount));
+    assert.ok(result.root);
+  });
+
+  test('a list element is handed to the producer with its external id', async (t) => {
+    const w = await world(t, [DEFAULT_PRODUCERS[0], casesProducer({ batch: 4, params: { identity: true } })]);
+    const ids = documents(w, 1, 2);
+    const result = await w.knowledge.produceTree({ product: w.product, build: build('Rel_ACME_1_2_15', ids) });
+    assert.equal(result.ok, true, result.reason ?? '');
+    const named = result.warnings.find((warning) => warning.includes('identity '));
+    assert.ok(named, result.warnings.join('\n'));
+    assert.match(named, /store:mindmap:d1/);
+    assert.match(named, /store:mindmap:d2/);
+  });
+
   test('a document that cannot be read or whose connector fails is skipped and listed; the rest is produced', async (t) => {
     const w = await world(t, [DEFAULT_PRODUCERS[0], casesProducer({ batch: 2 })]);
     const ids = documents(w, 1, 5);

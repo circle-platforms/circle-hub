@@ -167,8 +167,13 @@ export class ListLoader {
   }
 }
 
-/** One element of a memo key: the source digest with the media type and the core parser that made the model. */
-const elementKey = (source: ParsedSource): { sha256: string; media_type: string; parser: string } => ({ sha256: source.sha256, media_type: source.mediaType, parser: source.parser });
+/** One element of a memo key: the source digest, the media type, the parser, and the external id the function receives. */
+const elementKey = (source: ParsedSource): { sha256: string; media_type: string; parser: string; external: string } => ({
+  sha256: source.sha256,
+  media_type: source.mediaType,
+  parser: source.parser,
+  external: source.external,
+});
 
 /** SHA-256 of the canonical JSON of the build exactly as a producer receives it (ProducerInput.build). */
 export function buildDigest(build: KnownBuild): string {

@@ -853,7 +853,8 @@ function withinCap(elements: readonly ParsedSource[], cap: number): ParsedSource
  * checked and parsed only when its turn comes; a call is memoized, split to isolate a document it fails on (README decision
  * 19) and verified while its documents are parsed. The verified outputs come back in batch order and element order. A
  * document that cannot be used is skipped and listed; the production fails instead when the producer is not shown to work
- * on documents, when every document of a batch fails alone, or when more than `maxSkippedShare` of the list is skipped.
+ * on documents, when every document of a batch fails alone, or when more than `maxSkippedShare` of a required list is
+ * skipped. An optional list (the case index) uses a share of 1, so skipped documents are reported and do not drop the root.
  */
 async function produceList(context: KnowledgeContext, input: ListInput): Promise<ListOutcome> {
   const { producer, list, problems, cap } = input;
@@ -979,7 +980,8 @@ async function produceList(context: KnowledgeContext, input: ListInput): Promise
   if (failedAlone > 0 && !state.succeeded) {
     return { ok: false, reason: `生产器 ${producer.id} 在这次生产里没有成功处理过任何一份列出的源文件（${failedAlone} 份单独调用都失败），是生产器本身的问题` };
   }
-  if (ids.length > 0 && skippedCount > context.limits.maxSkippedShare * ids.length) {
+  const share = list.optional ? 1 : context.limits.maxSkippedShare;
+  if (ids.length > 0 && skippedCount > share * ids.length) {
     const parts = (
       [
         ['read', '读不到'],
@@ -992,7 +994,7 @@ async function produceList(context: KnowledgeContext, input: ListInput): Promise
       .map(([cause, text]) => `${text} ${causes.get(cause)} 份`);
     return {
       ok: false,
-      reason: `列表 ${producer.id}.${list.slot} 列出的 ${ids.length} 份源文件有 ${skippedCount} 份没有用上（${parts.join('、')}），超过 ${Math.round(context.limits.maxSkippedShare * 100)}%，这次不产出根`,
+      reason: `列表 ${producer.id}.${list.slot} 列出的 ${ids.length} 份源文件有 ${skippedCount} 份没有用上（${parts.join('、')}），超过 ${Math.round(share * 100)}%，这次不产出根`,
     };
   }
   return {

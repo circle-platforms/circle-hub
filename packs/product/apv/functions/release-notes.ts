@@ -1,7 +1,8 @@
 // Producer of release note entries from a converted release note (markdown@1 model): the title and the opening blocks
 // give product, version, build and release date; the sections 已修复问题 (fixed) and 遗留问题 (known) hold module
 // subheadings and items (list items, table rows, paragraphs) that cite bug ids. Every item is a defect entry (K02 R[3]);
-// `data.status` says fixed or known. Entries are not placed in the tree by code (path null): the module is their literal
+// `data.status` says fixed or known. `data.bug` is the bug id when one was read (an index key; not `bugId`). Entries are
+// not placed in the tree by code (path null): the module is their literal
 // hint for the typed-judgment model; the build is their applicability.
 import type { Family, FragmentRef, MarkdownModel, ProducedEntry, ReleaseResult } from './types.ts';
 import { idsFromTitle } from './ids.ts';
@@ -315,7 +316,7 @@ export function produceReleaseEntries(model: MarkdownModel): ReleaseResult {
           fragment.range = [offsets[item.start], offsets[item.end]];
         }
         const data: { [key: string]: unknown } = { status: found.status, module, text, build: out.build };
-        if (bugId !== undefined) data.bugId = bugId;
+        if (bugId !== undefined) data.bug = bugId;
         out.entries.push({
           kind: 'defect',
           path: null,
