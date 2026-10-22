@@ -10,17 +10,17 @@ const kase = (id: string | null, text: string, tags: unknown[] = ['Function'], .
 const leaf = (id: string | null, text: string, extra: Record<string, unknown> = {}): Node => node(id, text, extra);
 
 /** Parses a document with the real kityminder@1 parser and takes its cases. */
-function casesIn(root: Node, document = 'd1') {
+function casesIn(root: Node, document = 'd1', options: { caseRule?: 'tagged' | 'marked' } = {}) {
   const bytes = new TextEncoder().encode(JSON.stringify({ root, template: 'right', theme: 'classic', version: '1.4.43' }));
   const parsed = parse(bytes);
   const warnings = warningSink();
-  const out = casesOf(document, parsed.model.nodes, warnings);
+  const out = casesOf(document, parsed.model.nodes, warnings, options);
   /** The cases with the texts of their ancestors in place of their node index. */
   const records = out.cases.map(({ visit, ...rest }) => ({ ...rest, path: casePath(out.nodes, { visit }) }));
   return { ...out, records, warnings: warnings.list(), parsed };
 }
 
-describe('the case rule (case-review caseRule tagged; README deviation 4)', () => {
+describe('the case rule (unified default marked, tagged switch)', () => {
   it('a tagged node is a case; groups, outlines and untagged leaves are not', () => {
     const { cases, untagged } = casesIn(
       node('r', '根', {}, node('g', '分组', { priority: 1 }, kase('c1', '用例一', ['Function'], leaf('e1', '期望一')), leaf('x', '说明', { priority: 2 })), node('o', '提纲'), kase('c2', '没有优先级的用例', ['Stress'])),
@@ -35,9 +35,20 @@ describe('the case rule (case-review caseRule tagged; README deviation 4)', () =
     assert.equal(untagged, 0, 'an untagged priority-2 leaf is not written like a case');
   });
 
-  it('counts untagged nodes written like cases without making them cases, and names them by their selectors', () => {
+  it('default marked rule: untagged nodes written like cases are projected as cases with empty tags', () => {
+    const { cases, untagged, warnings } = casesIn(
+      node('r', '根', {}, node('g', '分组', { priority: 1 }, node('u1', '没有标签的用例', { priority: 2 }, leaf('u1e', '期望')), node('u2', '另一个', { priority: 2 }, leaf(null, '期望')), kase('c1', '有标签的用例', ['Function'], leaf('c1e', '期望')))),
+    );
+    assert.deepEqual(cases.map((c) => c.id), ['d1:u1', 'd1:u2', 'd1:c1']);
+    assert.deepEqual(cases.find((c) => c.id === 'd1:u1')?.tags, []);
+    assert.equal(untagged, 0);
+  });
+
+  it('tagged rule: counts untagged nodes written like cases without making them cases, and names them by their selectors', () => {
     const { cases, untagged, warnings, parsed } = casesIn(
       node('r', '根', {}, node('g', '分组', { priority: 1 }, node('u1', '没有标签的用例', { priority: 2 }, leaf('u1e', '期望')), node('u2', '另一个', { priority: 2 }, leaf(null, '期望')), kase('c1', '有标签的用例', ['Function'], leaf('c1e', '期望')))),
+      'd1',
+      { caseRule: 'tagged' },
     );
     assert.deepEqual(cases.map((c) => c.id), ['d1:c1']);
     assert.equal(untagged, 2);
@@ -45,7 +56,7 @@ describe('the case rule (case-review caseRule tagged; README deviation 4)', () =
     assert.deepEqual(warning?.data, { count: 2, nodes: ['n/u1', 'n/u2'] });
     for (const selector of warning?.data?.nodes as string[]) assert.ok(parsed.locate(selector) !== null, selector);
     // An untagged priority-2 node that holds a tagged node is a group, not a candidate.
-    assert.equal(casesIn(node('r', '根', {}, node('u', '外层', { priority: 2 }, kase('c', '内层')))).untagged, 0);
+    assert.equal(casesIn(node('r', '根', {}, node('u', '外层', { priority: 2 }, kase('c', '内层'))), 'd1', { caseRule: 'tagged' }).untagged, 0);
   });
 
   it('a tagged node with the group priority that holds cases is a group; without cases below it is a case (both directions of README deviation 5)', () => {

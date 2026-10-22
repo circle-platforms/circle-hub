@@ -11,7 +11,7 @@ Model elements A04 (independence), W02 W03 W05, C05 (checks with samples), T02.
 
 | File | Content |
 | --- | --- |
-| `workflow.json` | inputs `target` (role subject: the same mind map, `agile:mindmap` or `application/json`) and `draft` (role artifact under verification: the draft's validation result as `rec:<digest>`, parsed with json@1); the expected-source parameters of the draft pack; catalog `commands@1`; projection `functions/projection.ts`, expected sources `functions/expected.ts` |
+| `workflow.json` | inputs `target` (role subject: the same mind map, `agile:mindmap` or `application/json`) and `draft` (role artifact under verification: the draft's validation result as `rec:<digest>`, parsed with json@1); the expected-source parameters and case-rule parameters (`case_rule`, `case_priority`, `group_priority`, `precondition_priority`) of the draft pack, inherited from the predecessor by default; catalog `commands@1`; projection `functions/projection.ts`, expected sources `functions/expected.ts` |
 | `requirements.json` | `verification` (item, independent judgment, independent of the predecessor, accepts the declared independence; checks dispositions, command_claims and verdict; repair rows, two rounds, for every pack check code and `core.catalog.membership_contradicted`), `suggestions` (run, judgment, not required), `final` (run, independent judgment; check verdict) |
 | `checks.json` | `dispositions` (item, `functions/verify.ts#dispositionsCheck`), `command_claims` (item, catalog@1 `tables/command-claims.json` over `functions/subjects.ts#claimSubject`, catalog `commands@1`) and `verdict` (run, `functions/verify.ts#verdictCheck`), all blocking on the artifact under verification |
 | `slots.schema.json` | item `verification`: codes verified, refuted, partial, new_finding; ranks critical, major, minor; evidence required; data `{ finding?: string, probe?: one of the seven }`; run `suggestions` (code suggestion, ranks critical, major, minor) and `final` (codes PASS, PARTIAL, FAIL; ranks P0-P7; exactly one) |
@@ -67,6 +67,7 @@ as hints), so the verifier can cite it on its own boundary; pass the draft's par
   PARTIAL needs a new finding, a refuted or partly correct draft finding, or a level change (`partial_without_change`). So
   every verifier has a consistent verdict: refuting only minor findings with the level kept is a PARTIAL. Without a verdict,
   or without a draft level to compare where the rule needs one, the outcome is unknown (missing input), never a pass.
+  The verdict check appends the case rule summary line (`用例规则：...`) to its statement and includes `{ case_rule, marked_only }` in its `data`.
 
 Independence (A04): the requirements `verification` and `final` are independent of the predecessor and accept the
 independence the client declares (A04 R[4]): a submission from a session of the draft's lineage, or from a declared model of

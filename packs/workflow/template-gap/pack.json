@@ -1,35 +1,35 @@
 {
   "schema": "pack@1",
   "id": "template-gap",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "kind": "workflow",
   "title": "模板缺口检查",
   "description": "按团队测试用例模板 v3 检查每份测试脑图缺哪些类别，列出每个出现的类别的证据用例；只有事实要求项，开始运行时由 Hub 直接算出结果",
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "26dbe77f4f95948ef403a70786077f35c657fed022b4145439808788ae59ce5d",
-      "size": 3949
+      "sha256": "940bb6ac2112fcca6bab50e492e432b78a44c028b989c642ee1461a278e5a206",
+      "size": 4228
     },
     {
       "path": "checks.json",
-      "sha256": "7554c45cc3c7f3e26ac8d3328dc376d79ed1549301f7a634854f3469a83f60cb",
-      "size": 311
+      "sha256": "d5e8c105b053d87512c247f91ac1ab1676b3996c5f46580049c0b36f4672c883",
+      "size": 337
     },
     {
       "path": "examples/synthetic-gap.km.json",
-      "sha256": "89d0bde75ed3df34d0299f442e4c8cf8f17de38fd0017787cac5b262e26c5d7f",
-      "size": 19097
+      "sha256": "81aa5650aa4a4758425647dd7b1ada6957e8f392bb639182a240dd805b1ae5a1",
+      "size": 19094
     },
     {
       "path": "examples/synthetic-gap.result.json",
-      "sha256": "871080c9aba6363ed3940537e731017d2a7ef3cac7f6ecec63187affe7129c68",
-      "size": 12204
+      "sha256": "02916bb47ddbef1c04801be07a649db3be4c0c47c588d841d120cee15c86f6c6",
+      "size": 12356
     },
     {
       "path": "functions/cases.ts",
-      "sha256": "5ee768e02ea9e3499fe0504e2de21bc8723ec6e36611c0a2593e4d66434c110e",
-      "size": 14813
+      "sha256": "ca52d84a5cd11c1ee3fe92f61421a5ab48dda1ae6b1fc1a4d5df848d649d6e2a",
+      "size": 15514
     },
     {
       "path": "functions/common.ts",
@@ -38,8 +38,8 @@
     },
     {
       "path": "functions/project.ts",
-      "sha256": "cedcaa516b4e4518fca83a7b5eeacf2bac0411bd3fca37b30625af6261ac5f16",
-      "size": 16797
+      "sha256": "ae130894f8c53b713be71bc4aa854d66f8b70b8aafd58eecb43710d1032966ce",
+      "size": 17860
     },
     {
       "path": "functions/subject.ts",
@@ -63,8 +63,8 @@
     },
     {
       "path": "functions/types.ts",
-      "sha256": "1f910165d34cf532990efd5417b1def96c06bed65aa0af1ba5838361418e1b27",
-      "size": 4435
+      "sha256": "1faa86255fb029235b245ac3cdd347ccc311202295c83c0f6e43bbb4bbd595c2",
+      "size": 4593
     },
     {
       "path": "requirements.json",
@@ -123,8 +123,8 @@
     },
     {
       "path": "workflow.json",
-      "sha256": "b50869ff24aeec330e8c2abc0de5c0703543f40f3bd19334bc4a0d9634358843",
-      "size": 2333
+      "sha256": "5ee5a1128db236277537b106576f6fc1fc36be6bba9607ec3e4d464f8ffd1827",
+      "size": 2685
     }
   ]
 }

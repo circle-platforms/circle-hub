@@ -32,7 +32,7 @@ describe('the pack directory', () => {
   it('pack.json lists every pack file with its SHA-256 and size, and nothing else', async () => {
     assert.deepEqual(await manifestProblems(), []);
     const manifest = await readManifest();
-    assert.deepEqual([manifest.id, manifest.version, manifest.kind], ['template-gap', '1.0.0', 'workflow']);
+    assert.deepEqual([manifest.id, manifest.version, manifest.kind], ['template-gap', '1.0.1', 'workflow']);
     assert.deepEqual(manifest.files, await packFiles());
     for (const own of ['README.md', 'api.ts', 'pack.test.ts', 'engine.test.ts', 'testing/bed.ts', 'functions/project.test.ts']) assert.equal(isPackFile(own), false, own);
     const paths = manifest.files.map((f) => f.path);
@@ -73,7 +73,7 @@ describe('the declaration files', () => {
     assert.deepEqual(workflow.product, { catalogs: [] });
     assert.deepEqual(workflow.projection, { module: 'functions/project.ts' });
     assert.equal(workflow.expected_sources, undefined);
-    assert.deepEqual(workflow.parameters.map((p) => [p.name, p.required]), [['skipped', false]]);
+    assert.deepEqual(workflow.parameters.map((p) => [p.name, p.required]), [['skipped', false], ['case_rule', false]]);
     assert.ok(HAN.test(workflow.parameters[0].description) && HAN.test(workflow.inputs[0].description));
     // A skip is the user's declaration, never the model's judgment; an input batch is bounded (the sandbox input, the text).
     assert.match(workflow.parameters[0].description, /只在用户明确说某个类别不适用时写，不按模型自己的判断写/);
@@ -104,7 +104,7 @@ describe('the declaration files', () => {
 
   it('checks.json: coverage@1 over the subject built by functions/subject.ts, per item, judging the subject', () => {
     const { checks } = ChecksFile.parse(json('checks.json'));
-    assert.deepEqual(checks, [{ id: 'coverage', title: '模板类别覆盖', interpreter: 'coverage@1', table: 'tables/template-v3-coverage.json', applies: 'item', subject: { module: 'functions/subject.ts' }, judges: 'subject' }]);
+    assert.deepEqual(checks, [{ id: 'coverage', title: '模板类别覆盖', interpreter: 'coverage@1', table: 'tables/template-v3-coverage.json', applies: 'item', subject: { module: 'functions/subject.ts' }, judges: 'subject', tier: 'advisory' }]);
   });
 
   it('slots.schema.json declares nothing: the model fills no slot', () => {
@@ -187,7 +187,7 @@ describe('codes.json', () => {
     const tagged = (id: unknown, extra: object = {}) => ({ data: { id, text: '用例', priority: 2, resource: ['Function'], ...extra }, children: [] });
     collect(projectDefault(null));
     collect(projectDefault(projectionInput([bind(base)])));
-    collect(projectDefault(projectionInput([bind(outlineDocument())])));
+    collect(projectDefault(projectionInput([bind(outlineDocument())], { case_rule: 'tagged' })));
     collect(projectDefault(projectionInput([bind(base, { external: 'agile:mindmap:1' }), bind(base, { external: 'agile:mindmap:2' })])));
     collect(projectDocuments(projectionInput([bind(base)]), { outputBytes: 1024 }));
     collect(projectDocuments(projectionInput([bind(base)]), { table: { schema: 'x' } }));
@@ -224,7 +224,7 @@ describe('the pack functions', () => {
 
   it('run in the Hub sandbox with the same results as in process', async (t) => {
     if (!(await osIsolationAvailable())) return t.skip('sandbox-exec is not available on this machine');
-    const input = projectionInput([bind(renamed(baseDocument(), 'r0sandbox001'), { external: 'agile:mindmap:900001', meta: { title: '沙箱里的文档', folders: ['甲'] } }), bind(outlineDocument('r0sandbox002'))], {});
+    const input = projectionInput([bind(renamed(baseDocument(), 'r0sandbox001'), { external: 'agile:mindmap:900001', meta: { title: '沙箱里的文档', folders: ['甲'] } }), bind(outlineDocument('r0sandbox002'))], { case_rule: 'tagged' });
     const refused = await callPackFunction({ packDir: staged.path, module: 'functions/project.ts' }, input);
     assert.equal(refused.osIsolation, true);
     assert.deepEqual(refused.output, projectDefault(input));

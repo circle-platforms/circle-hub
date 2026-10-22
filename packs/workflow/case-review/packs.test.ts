@@ -60,6 +60,16 @@ describe('every pack of this package', () => {
       for (const file of manifest.files) assert.ok(!/\.test\.ts$|README|^api\.ts$|^testing\//.test(file.path), file.path);
     });
   }
+
+  it('every check in checks.json across the three packs declares tier', () => {
+    for (const dir of [PACK_DIRECTORIES['case-review'], PACK_DIRECTORIES['case-review-verify'], join(PACK_DIRECTORIES['case-review'], '../template-gap')]) {
+      const checks = JSON.parse(readFileSync(join(dir, 'checks.json'), 'utf8')) as { checks: Array<{ id: string; tier?: string }> };
+      assert.ok(checks.checks.length > 0);
+      for (const check of checks.checks) {
+        assert.ok(check.tier === 'blocking' || check.tier === 'advisory', `${check.id} in ${dir} has tier: ${check.tier}`);
+      }
+    }
+  });
 });
 
 /**

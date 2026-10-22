@@ -167,9 +167,57 @@ export function projection(input: unknown): ProjectionOutput {
   }
   if (draftLevel === null) warnings.note({ code: `${PACK}.draft_level_missing`, message: '初评的验证结果里没有等级（跨条目主张 level）；结论和等级的一致性无法核对', data: { record } });
 
+  const rawParams = isRecord(input.parameters) ? input.parameters : {};
+  const hasTaggedChildOrP2 = new Uint8Array(model.nodes.length);
+  for (let k = model.nodes.length - 1; k >= 0; k--) {
+    const n = model.nodes[k];
+    const data = n.data as Record<string, unknown> | undefined;
+    const tagged = Array.isArray(data?.resource) && data.resource.length > 0;
+    const p2 = data?.priority === 2;
+    if (n.parent !== null && (hasTaggedChildOrP2[k] === 1 || tagged || p2)) {
+      hasTaggedChildOrP2[n.parent] = 1;
+    }
+  }
+  const isCandidateNode = (k: number): boolean => {
+    const n = model.nodes[k];
+    const data = n.data as Record<string, unknown> | undefined;
+    const tagged = Array.isArray(data?.resource) && data.resource.length > 0;
+    if (tagged) return false;
+    const hasChildren = Array.isArray(n.children) && n.children.length > 0;
+    return data?.priority === 2 && hasChildren && hasTaggedChildOrP2[k] === 0;
+  };
+  const isItemUntagged = (item: DraftItem): boolean => {
+    const k = bySelector.get(item.selector);
+    if (k === undefined) return false;
+    const data = model.nodes[k].data as Record<string, unknown> | undefined;
+    return !Array.isArray(data?.resource) || data.resource.length === 0;
+  };
+  const hasUntaggedInDraft = items.some(isItemUntagged);
+  let modelHasOmittedCandidate = false;
+  const draftSelectors = new Set(items.map((i) => i.selector));
+  for (let k = 0; k < model.nodes.length; k++) {
+    if (isCandidateNode(k) && !draftSelectors.has(model.nodes[k].selector)) {
+      modelHasOmittedCandidate = true;
+      break;
+    }
+  }
+
+  const caseRule: 'marked' | 'tagged' =
+    typeof rawParams.case_rule === 'string'
+      ? rawParams.case_rule === 'tagged' ? 'tagged' : 'marked'
+      : hasUntaggedInDraft
+        ? 'marked'
+        : modelHasOmittedCandidate
+          ? 'tagged'
+          : 'marked';
+
+  const filteredItems = caseRule === 'tagged' ? items.filter((item) => !isItemUntagged(item)) : items;
+  const marked_only = caseRule === 'marked' ? filteredItems.filter(isItemUntagged).length : 0;
+  const ruleSummary = `用例规则：${caseRule === 'marked' ? '标签或标记' : '只认标签'}；其中 ${marked_only} 个只靠标记识别（没有标签）`;
+
   // Items in document order of the target.
-  items.sort((a, b) => (bySelector.get(a.selector) ?? 0) - (bySelector.get(b.selector) ?? 0));
-  const out: ProjectedItem[] = items.map((item) => {
+  filteredItems.sort((a, b) => (bySelector.get(a.selector) ?? 0) - (bySelector.get(b.selector) ?? 0));
+  const out: ProjectedItem[] = filteredItems.map((item) => {
     const k = bySelector.get(item.selector) as number;
     const node = model.nodes[k];
     const path: string[] = [];
@@ -186,12 +234,24 @@ export function projection(input: unknown): ProjectionOutput {
         draft_partition: item.partition,
         draft_findings: item.findings,
         draft_level: draftLevel,
+        case_rule: caseRule,
+        marked_only,
       },
     };
   });
   const groups: Record<string, unknown>[] = [
     { kind: 'draft_level', ...(draftLevel !== null ? draftLevel : { reference: null, rank: null, text: '' }) },
-    { kind: 'draft', record, run: typeof result.run === 'string' ? result.run : null, items: items.length, findings: findingCount },
+    {
+      kind: 'draft',
+      record,
+      run: typeof result.run === 'string' ? result.run : null,
+      items: out.length,
+      findings: findingCount,
+      case_rule: caseRule,
+      marked_only,
+      rule_summary: ruleSummary,
+      data: { case_rule: caseRule, marked_only },
+    },
   ];
   return { items: out, groups, warnings: warnings.list() };
 }

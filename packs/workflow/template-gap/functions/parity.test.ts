@@ -30,25 +30,28 @@ describe('parity with case-review', () => {
   });
 
   for (const fixture of FIXTURES) {
-    it(`${fixture}: the same cases, identities and evidence; each pack's own missing categories`, () => {
-      const bytes = fixtureBytes(fixture);
-      const theirs = projectItems({ documents: [{ slot: 'documents', documentId: '880001', model: parse(bytes).model }] });
-      assert.ok(!('error' in theirs), JSON.stringify(theirs).slice(0, 300));
-      const coverage = templateCoverage({ items: theirs.items, template: theirTemplate });
-      assert.ok(!('error' in coverage));
-      const [mine] = project([bind(bytes, { external: 'agile:mindmap:880001' })]).items;
-      assert.equal(mine.fields.caseCount, theirs.items.length);
-      for (const category of coverage.categories) {
-        const own = mine.fields.categories.find((c) => c.id === category.id);
-        assert.ok(own, category.id);
-        assert.deepEqual([own.present, own.count], [category.present, category.count], category.id);
-        // case-review keeps the first 50 in document order; this pack the first MAX_EVIDENCE by id, from all of them.
-        if (category.count <= category.evidence.length) assert.deepEqual(own.evidence, [...category.evidence].sort().slice(0, MAX_EVIDENCE), category.id);
-        else for (const id of own.evidence) assert.ok(theirs.items.some((item) => item.id === id), `${category.id}: ${id}`);
-      }
-      const absent = coverage.categories.filter((category) => !category.present).map((category) => category.id);
-      assert.deepEqual(mine.fields.missing, absent, 'here every absent category is missing');
-      assert.deepEqual(coverage.missing, absent.filter((id) => theirTemplate.categories.find((c) => c.id === id)?.group === 'test_type'), 'case-review: the absent test types');
-    });
+    for (const rule of ['marked', 'tagged'] as const) {
+      it(`${fixture} (case_rule: ${rule}): the same cases, identities and evidence; each pack's own missing categories`, () => {
+        const bytes = fixtureBytes(fixture);
+        const theirs = projectItems({ documents: [{ slot: 'documents', documentId: '880001', model: parse(bytes).model }], parameters: { caseRule: rule } });
+        assert.ok(!('error' in theirs), JSON.stringify(theirs).slice(0, 300));
+        const coverage = templateCoverage({ items: theirs.items, template: theirTemplate });
+        assert.ok(!('error' in coverage));
+        const [mine] = project([bind(bytes, { external: 'agile:mindmap:880001' })], { case_rule: rule }).items;
+        assert.equal(mine.fields.caseCount, theirs.items.length);
+        assert.equal(mine.fields.case_rule, rule);
+        for (const category of coverage.categories) {
+          const own = mine.fields.categories.find((c) => c.id === category.id);
+          assert.ok(own, category.id);
+          assert.deepEqual([own.present, own.count], [category.present, category.count], category.id);
+          // case-review keeps the first 50 in document order; this pack the first MAX_EVIDENCE by id, from all of them.
+          if (category.count <= category.evidence.length) assert.deepEqual(own.evidence, [...category.evidence].sort().slice(0, MAX_EVIDENCE), category.id);
+          else for (const id of own.evidence) assert.ok(theirs.items.some((item) => item.id === id), `${category.id}: ${id}`);
+        }
+        const absent = coverage.categories.filter((category) => !category.present).map((category) => category.id);
+        assert.deepEqual(mine.fields.missing, absent, 'here every absent category is missing');
+        assert.deepEqual(coverage.missing, absent.filter((id) => theirTemplate.categories.find((c) => c.id === id)?.group === 'test_type'), 'case-review: the absent test types');
+      });
+    }
   }
 });

@@ -81,11 +81,16 @@ describe('projection (ProjectionInput -> ProjectionOutput)', () => {
 
   it('maps the workflow parameter names (case_rule) onto the case rule of project.ts', () => {
     const untagged = parseFixture('untagged.km.json').model;
-    const tagged = projectionFn(input(untagged)) as Items | Refusal;
-    const marked = projection(input(untagged, { case_rule: 'marked' }));
-    const taggedCount = 'items' in tagged ? tagged.items.length : 0;
-    assert.ok(items(marked).items.length > taggedCount, 'marked projects the untagged cases');
-    if ('error' in tagged) assert.match(tagged.error.fix, /case_rule/, 'the fix names the workflow parameter');
+    const defaultMarked = projection(input(untagged));
+    assert.equal(items(defaultMarked).items.length, 3, 'marked is default and projects untagged cases');
+    assert.equal(items(defaultMarked).groups[0].case_rule, 'marked');
+    assert.equal(items(defaultMarked).groups[0].marked_only, 3);
+    assert.match(String(items(defaultMarked).groups[0].rule_summary), /用例规则：标签或标记；其中 3 个只靠标记识别（没有标签）/);
+    assert.deepEqual(items(defaultMarked).groups[0].data, { case_rule: 'marked', marked_only: 3 });
+
+    const tagged = projectionFn(input(untagged, { case_rule: 'tagged' })) as Items | Refusal;
+    assert.ok('error' in tagged);
+    assert.match(tagged.error.fix, /case_rule/, 'the fix names the workflow parameter');
   });
 
   it('refuses a target of more than 100 cases with a fix that lists the blocks and their case counts', () => {

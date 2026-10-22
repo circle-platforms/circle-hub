@@ -8,7 +8,8 @@
       "table": "tables/template-v3-coverage.json",
       "applies": "item",
       "subject": { "module": "functions/subject.ts" },
-      "judges": "subject"
+      "judges": "subject",
+      "tier": "advisory"
     }
   ]
 }

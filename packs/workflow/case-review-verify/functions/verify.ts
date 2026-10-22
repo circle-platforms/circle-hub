@@ -126,7 +126,11 @@ export function verdict(input: unknown): CheckOutcome[] {
   })();
   const finalLevel = typeof final.rank === 'string' ? final.rank : null;
   const levelChanged = draftLevel !== null && finalLevel !== null ? draftLevel !== finalLevel : null;
-  const data = { verdict: final.code, level: finalLevel, draft_level: draftLevel, refuted: refuted.length, corrected: corrected.length, new_findings: fresh.length };
+  const firstFields = isRecord(items[0]?.fields) ? (items[0].fields as Record<string, unknown>) : {};
+  const case_rule = (firstFields.case_rule === 'tagged' ? 'tagged' : 'marked') as 'tagged' | 'marked';
+  const marked_only = typeof firstFields.marked_only === 'number' ? firstFields.marked_only : 0;
+  const ruleLine = `用例规则：${case_rule === 'marked' ? '标签或标记' : '只认标签'}；其中 ${marked_only} 个只靠标记识别（没有标签）`;
+  const data = { verdict: final.code, level: finalLevel, draft_level: draftLevel, refuted: refuted.length, corrected: corrected.length, new_findings: fresh.length, case_rule, marked_only };
   const out: CheckOutcome[] = [];
   const add = (code: string, statement: string): void => {
     out.push({ verdict: 'refute', code, statement, grounds: [], tier: TIER, ...own, pointer, data });
@@ -164,7 +168,7 @@ export function verdict(input: unknown): CheckOutcome[] {
       add(CODES.partialWithoutChange, '结论 PARTIAL，但没有新发现，没有推翻或修正初评发现，等级也没有改：PARTIAL 要有其中之一；初评基本正确、没有补充时应为 PASS');
     }
   }
-  if (out.length === 0) out.push({ verdict: 'support', statement: `结论 ${String(final.code)}（等级 ${finalLevel ?? '无'}）与处置一致`, grounds: [], tier: TIER, ...own, pointer, data });
+  if (out.length === 0) out.push({ verdict: 'support', statement: `结论 ${String(final.code)}（等级 ${finalLevel ?? '无'}）与处置一致\n${ruleLine}`, grounds: [], tier: TIER, ...own, pointer, data });
   return out;
 }
 

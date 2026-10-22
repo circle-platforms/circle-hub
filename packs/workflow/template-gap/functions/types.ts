@@ -59,6 +59,9 @@ export type DocumentFields = {
   caseCount: number;
   /** Untagged nodes written like cases (priority 2, children, no case below): not counted, disclosed. */
   untagged: number;
+  case_rule: 'marked' | 'tagged';
+  marked_only: number;
+  data: { case_rule: 'marked' | 'tagged'; marked_only: number };
   /** Every category of the template, in template order. */
   categories: CategoryFact[];
   /** Ids of the required categories (in template v3: every category) no case shows and no skip names, in template order. */
@@ -72,7 +75,7 @@ export type ItemLocation = { parser: 'kityminder@1'; selector: string };
 
 export type DocumentItem = { id: string; label: string; summary: string; location: ItemLocation; fields: DocumentFields };
 
-export type ProjectionResult = { items: DocumentItem[]; warnings: PackWarning[] };
+export type ProjectionResult = { items: DocumentItem[]; groups?: Record<string, unknown>[]; warnings: PackWarning[] };
 export type ProjectionOutcome = ProjectionResult | PackFailure;
 
 /**

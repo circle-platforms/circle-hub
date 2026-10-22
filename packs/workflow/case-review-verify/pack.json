@@ -1,20 +1,20 @@
 {
   "schema": "pack@1",
   "id": "case-review-verify",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "kind": "workflow",
   "title": "测试脑图评审（独立复核）",
   "description": "按团队的复核方法（review-verifier）独立复核 case-review 的初评：逐条处置初评发现、用七个探针找遗漏、质疑等级，给出 PASS、PARTIAL 或 FAIL 和最终等级；只能由与初评不同的会话和模型完成",
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "bef7eae140c190d1266c127a08d6895a29c0c200e8bf791bffb3ec0db9a4bdb5",
-      "size": 6438
+      "sha256": "76de7d00fa80b01a7291c32664ebdd128123a5f113e6052c2d86a27f1fc6550d",
+      "size": 6499
     },
     {
       "path": "checks.json",
-      "sha256": "400b8c1b7a43c7e3074f4984097d508963dc1fb2751e34ad1d698009c9ce0a1e",
-      "size": 1570
+      "sha256": "4e371dcc2303c99e9768263c07c454607475b23bbfd44fc48e69d4c5c8a577ba",
+      "size": 1596
     },
     {
       "path": "examples/start-run.json",
@@ -43,8 +43,8 @@
     },
     {
       "path": "functions/projection.ts",
-      "sha256": "bf4506755ae8ddb25a93e4b6ea761d47c8f6d6af0bf81d309d4c39933ab94161",
-      "size": 13081
+      "sha256": "11f64891d60820408ca405ac2c0b579855d66ffd51c7dd7a0fcec5bf2f88202b",
+      "size": 15535
     },
     {
       "path": "functions/subjects.ts",
@@ -58,13 +58,13 @@
     },
     {
       "path": "functions/types.ts",
-      "sha256": "8088a2fdc795eb3d7fbca9ffe4e6035a5f0a774674d05d56cc2fc190d5fd8f44",
-      "size": 12843
+      "sha256": "a24272bf7147733287bd1a817eee02eb90d4b6efab94820919337853bbaa4597",
+      "size": 12902
     },
     {
       "path": "functions/verify.ts",
-      "sha256": "bddc19caff602125662a43510ce9621e6437c816eca3c9ebd840d57179861d7e",
-      "size": 14053
+      "sha256": "556c1d7d9774f6439e571f1f7adb7ba81ea6cce2969c583fe2f6a1a5d278cc25",
+      "size": 14556
     },
     {
       "path": "requirements.json",
@@ -173,8 +173,8 @@
     },
     {
       "path": "workflow.json",
-      "sha256": "77ccdf8ac647977eb8790cedf7e10e5308710886a9ed8a5402a381023afea46d",
-      "size": 3609
+      "sha256": "c82c8f8e3942e3642f206354f8fa50c726fd2c25ea4ef6ae81b2f9fcbdd1d0d0",
+      "size": 4856
     }
   ]
 }

@@ -8,7 +8,8 @@
       "table": "tables/structure.json",
       "applies": "run",
       "subject": { "module": "functions/subjects.ts", "export": "structureSubject" },
-      "judges": "subject"
+      "judges": "subject",
+      "tier": "blocking"
     },
     {
       "id": "node_ids",
@@ -17,7 +18,8 @@
       "table": "tables/structure-node-ids.json",
       "applies": "run",
       "subject": { "module": "functions/subjects.ts", "export": "structureSubject" },
-      "judges": "subject"
+      "judges": "subject",
+      "tier": "advisory"
     },
     {
       "id": "tags",
@@ -36,7 +38,8 @@
       "applies": "item",
       "subject": { "module": "functions/subjects.ts", "export": "commandSubject" },
       "catalog": "commands@1",
-      "judges": "subject"
+      "judges": "subject",
+      "tier": "blocking"
     },
     {
       "id": "command_claims",
@@ -46,7 +49,8 @@
       "applies": "item",
       "subject": { "module": "functions/subjects.ts", "export": "commandSubject" },
       "catalog": "commands@1",
-      "judges": "artifact_under_verification"
+      "judges": "artifact_under_verification",
+      "tier": "blocking"
     },
     {
       "id": "findings_quotes",
@@ -54,7 +58,8 @@
       "interpreter": "quote@1",
       "table": "tables/findings-quotes.json",
       "applies": "item",
-      "judges": "artifact_under_verification"
+      "judges": "artifact_under_verification",
+      "tier": "blocking"
     },
     {
       "id": "findings_sources",
@@ -73,7 +78,8 @@
       "applies": "item",
       "subject": { "module": "functions/subjects.ts", "export": "scanSubject" },
       "catalog": "commands@1",
-      "judges": "subject"
+      "judges": "subject",
+      "tier": "advisory"
     }
   ]
 }

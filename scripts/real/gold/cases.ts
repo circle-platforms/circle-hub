@@ -1,12 +1,17 @@
 // Gold script: the case counts of exported agile mind maps, computed independently of the Hub. Imports nothing
 // from hub/ or packs/ (its independence is its whole value). The case-node rule is re-implemented from the words
-// of packs/workflow/case-review/README.md: a case is a node whose `resource` is a non-empty array; the children
-// of a case are expected results (leaves), steps (children with children, their leaves expected results) and
-// preconditions (leaves with the precondition priority, default 3); the vague-expected phrase list is copied
-// from the pack's table source (matched whole, folded: NFKC, lower case, no white space, no edge punctuation);
-// negative is a canonical Negative tag; defect ids come from the case title, the ancestor labels and the
-// document's root title (bug markers: bug to case, bug-to-case, bug2case, 缺陷 ...; digits 2..9 long).
-//   node scripts/real/gold/cases.ts --map <file>:<documentId> [--map <file>:<documentId> ...] --out <gold.json>
+// of packs/workflow/case-review/README.md:
+// - default `marked`: a case is either a node whose `resource` is a non-empty array (tagged case), or an untagged
+//   node outside every case carrying the case priority (default 2), having children and holding no case or candidate
+//   (marked case);
+// - `--case-rule tagged`: restricts cases to nodes whose `resource` is a non-empty array;
+// - a tagged node with the group priority (default 1) holding cases is a group, not a case;
+// - inside a case: a leaf is an expected result, unless it carries the precondition priority (default 3); a child
+//   with children is an operation step, and the leaves below it are its expected results; a nested case forms a separate item;
+// - vague-expected phrase list is copied from the pack's table source (matched whole, folded: NFKC, lower case, no white space, no edge punctuation);
+// - negative is a canonical Negative tag;
+// - defect ids come from the case title, the ancestor labels and the document's root title (bug markers: bug to case, bug-to-case, bug2case, 缺陷 ...; digits 2..9 long).
+//   node scripts/real/gold/cases.ts --map <file>:<documentId> [--map <file>:<documentId> ...] [--case-rule tagged|marked] --out <gold.json>
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
@@ -140,46 +145,113 @@ export interface CasesGold {
 
 const PRECONDITION_PRIORITY = 3;
 const CASE_PRIORITY = 2;
+const GROUP_PRIORITY = 1;
 
-export function caseGold(maps: ReadonlyArray<{ document: string; map: unknown }>): CasesGold {
+const OTHER = 0;
+const CASE = 1;
+const GROUP = 2;
+const CANDIDATE = 3;
+const INNER = 4;
+
+export function caseGold(
+  maps: ReadonlyArray<{ document: string; map: unknown }>,
+  options: { caseRule?: 'tagged' | 'marked' } = {},
+): CasesGold {
+  const caseRule = options.caseRule ?? 'marked';
   const documents: GoldDocument[] = [];
   for (const { document: documentId, map } of maps) {
     const { nodes } = parseMindMap(map);
+    const n = nodes.length;
+
+    // 1. Bottom-up: does a node hold a tagged node or a node with case priority?
+    const holds = new Uint8Array(n);
+    for (let v = n - 1; v > 0; v--) {
+      const node = nodes[v];
+      const isTagged = node.resource.length > 0;
+      if (holds[v] === 1 || isTagged || node.priority === CASE_PRIORITY) {
+        if (node.parent !== null) holds[node.parent] = 1;
+      }
+    }
+
+    // 2. Roles, top down.
+    const role = new Uint8Array(n);
+    const within = new Int32Array(n).fill(-1);
+    for (let v = 0; v < n; v++) {
+      const node = nodes[v];
+      const parent = node.parent;
+      const inside = parent === null ? -1 : role[parent] === CASE || role[parent] === CANDIDATE ? parent : within[parent];
+      within[v] = inside;
+      if (node.resource.length > 0) {
+        const isGroup = inside === -1 && node.priority === GROUP_PRIORITY && holds[v] === 1;
+        role[v] = isGroup ? GROUP : CASE;
+      } else if (inside !== -1) {
+        role[v] = INNER;
+      } else if (node.priority === CASE_PRIORITY && node.children.length > 0 && holds[v] === 0) {
+        role[v] = caseRule === 'marked' ? CASE : CANDIDATE;
+      } else if (node.priority !== null) {
+        role[v] = GROUP;
+      } else {
+        role[v] = OTHER;
+      }
+    }
+
+    // 3. Collect cases and their inner steps / expected / preconditions.
     const cases: GoldCase[] = [];
-    // A case is a node whose resource is a non-empty array.
-    for (const node of nodes) {
-      if (node.resource.length === 0) continue;
-      const expected: string[] = [];
-      const steps: GoldStep[] = [];
-      for (const childIndex of node.children) {
-        const child = nodes[childIndex];
-        if (child.children.length > 0) {
-          const stepExpected = child.children.map((i) => nodes[i].text).filter((t) => t.trim() !== '');
-          steps.push({ text: child.text, expected: stepExpected });
-          expected.push(...stepExpected);
-        } else if (child.priority === PRECONDITION_PRIORITY) {
-          // a precondition leaf is not an expected result
+    const caseIndexMap = new Int32Array(n).fill(-1);
+    const stepOf = new Int32Array(n).fill(-1);
+
+    for (let v = 0; v < n; v++) {
+      const node = nodes[v];
+      if (role[v] === CASE) {
+        const negative = node.resource.some((tag) => NEGATIVE_KEYS.has(foldKey(tag)));
+        const group = node.ancestors.length > 1 ? node.ancestors[1] : '';
+        const c: GoldCase = {
+          id: node.id === '' ? `@${node.index}` : node.id,
+          title: node.text,
+          expected: [],
+          steps: [],
+          hasExpected: false,
+          vagueExpected: false,
+          negative,
+          group,
+          defects: bugIdsOf([node.text, ...node.ancestors].join(' ')),
+        };
+        caseIndexMap[v] = cases.length;
+        cases.push(c);
+      } else if (role[v] === INNER) {
+        const owner = within[v];
+        if (owner === -1 || role[owner] !== CASE) continue;
+        const c = cases[caseIndexMap[owner]];
+        const parentStep = node.parent === owner ? -1 : (node.parent !== null ? stepOf[node.parent] : -1);
+        const isLeaf = node.children.length === 0;
+
+        if (isLeaf && node.priority === PRECONDITION_PRIORITY) {
+          // Precondition leaf is not an expected result
+        } else if (parentStep === -1 && !isLeaf) {
+          // A child with children is a step
+          c.steps.push({ text: node.text, expected: [] });
+          stepOf[v] = c.steps.length - 1;
+        } else if (isLeaf) {
+          // Expected result
+          c.expected.push(node.text);
+          if (parentStep !== -1 && parentStep < c.steps.length) {
+            c.steps[parentStep].expected.push(node.text);
+          }
         } else {
-          expected.push(child.text);
+          stepOf[v] = parentStep;
         }
       }
-      const nonBlank = expected.filter((t) => t.trim() !== '');
-      const vague = nonBlank.length > 0 && nonBlank.every((t) => VAGUE_KEYS.has(foldKey(t)));
-      const negative = node.resource.some((tag) => NEGATIVE_KEYS.has(foldKey(tag)));
-      const group = node.ancestors.length > 1 ? node.ancestors[1] : '';
-      cases.push({
-        id: node.id === '' ? `@${node.index}` : node.id,
-        title: node.text,
-        expected,
-        steps,
-        hasExpected: nonBlank.length > 0,
-        vagueExpected: vague,
-        negative,
-        group,
-        defects: bugIdsOf([node.text, ...node.ancestors].join(' ')),
-      });
     }
-    if (cases.length === 0) throw new Error(`文档 ${documentId} 里没有带资源标签的用例节点`);
+
+    // Post-process hasExpected and vagueExpected
+    for (const c of cases) {
+      const nonBlank = c.expected.filter((t) => t.trim() !== '');
+      c.hasExpected = nonBlank.length > 0;
+      c.vagueExpected = nonBlank.length > 0 && nonBlank.every((t) => VAGUE_KEYS.has(foldKey(t)));
+    }
+
+    if (cases.length === 0) throw new Error(`文档 ${documentId} 里没有带${caseRule === 'tagged' ? '资源标签' : '用例标记或资源标签'}的用例节点`);
+
     const groupCounts: Record<string, number> = {};
     for (const c of cases) groupCounts[c.group] = (groupCounts[c.group] ?? 0) + 1;
     documents.push({
@@ -202,12 +274,14 @@ export async function main(argv: string[]): Promise<number> {
     return at >= 0 ? argv[at + 1] : undefined;
   };
   const outPath = value('out');
+  const caseRuleArg = value('case-rule');
+  const caseRule = caseRuleArg === 'tagged' ? 'tagged' : 'marked';
   const mapArgs: string[] = [];
   for (let k = 0; k < argv.length; k++) {
     if (argv[k] === '--map' && k + 1 < argv.length) mapArgs.push(argv[k + 1]);
   }
   if (mapArgs.length === 0 || !outPath) {
-    process.stderr.write('用法：node scripts/real/gold/cases.ts --map <file>:<documentId> [--map ...] --out <gold.json>\n');
+    process.stderr.write('用法：node scripts/real/gold/cases.ts --map <file>:<documentId> [--map ...] [--case-rule tagged|marked] --out <gold.json>\n');
     return 2;
   }
   const maps: Array<{ document: string; map: unknown }> = [];
@@ -224,7 +298,7 @@ export async function main(argv: string[]): Promise<number> {
     }
   }
   try {
-    writeFileSync(outPath, `${JSON.stringify(caseGold(maps), null, 2)}\n`);
+    writeFileSync(outPath, `${JSON.stringify(caseGold(maps, { caseRule }), null, 2)}\n`);
   } catch (error) {
     process.stderr.write(`写不了 ${outPath}：${(error as Error).message.split('\n')[0]}\n`);
     return 1;

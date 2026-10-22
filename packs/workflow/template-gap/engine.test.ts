@@ -52,12 +52,12 @@ describe('publication', { skip }, () => {
     const outcome = bed.publication;
     assert.ok(outcome.ok, JSON.stringify(!outcome.ok && outcome.problems, null, 1));
     assert.equal(outcome.created, true);
-    assert.deepEqual([outcome.version.id, outcome.version.version, outcome.version.kind, outcome.version.withdrawn], ['template-gap', '1.0.0', 'workflow', false]);
+    assert.deepEqual([outcome.version.id, outcome.version.version, outcome.version.kind, outcome.version.withdrawn], ['template-gap', '1.0.1', 'workflow', false]);
     assert.deepEqual([outcome.report.samples.total, outcome.report.samples.passed, outcome.report.unsampled], [6, 6, []]);
     assert.deepEqual(outcome.report.checks.map((c) => [c.check, c.positive, c.negative, c.marks]), [['coverage', 2, 4, ['author_samples_only']]]);
     const store = createWorkflowStore(bed.registry);
     const [summary] = await store.summaries(bed.runner);
-    assert.deepEqual([summary.pack, summary.kind, summary.products], ['template-gap@1.0.0', 'workflow', []]);
+    assert.deepEqual([summary.pack, summary.kind, summary.products], ['template-gap@1.0.1', 'workflow', []]);
     assert.deepEqual(summary.inputs.map((i) => [i.slot, i.role, i.many, i.required]), [['documents', 'subject', true, true]]);
     assert.deepEqual(summary.requirements.map((r) => [r.key, r.accepted_producer, r.layers, r.done_rule, r.repair_rounds]), [['coverage', 'fact', ['static'], 'bookkeeping', 0]]);
     assert.deepEqual(await store.summaries(bed.stranger), []);
@@ -201,13 +201,13 @@ describe('a production run', { skip }, () => {
 describe('refusals at start_run', { skip }, () => {
   it('a document without cases refuses the whole run with the pack fix, and nothing is stored', async () => {
     const runs = (await bed.service.listRuns(bed.runner)).items.length;
-    const alone = await start({ inputs: { documents: [{ external: onAgile('900601', outlineDocument()) }] } });
+    const alone = await start({ inputs: { documents: [{ external: onAgile('900601', outlineDocument()) }] }, parameters: { case_rule: 'tagged' } });
     assert.equal(alone.answer.call_result, 'error');
     assert.ok(StartRunOutput.safeParse({ ...alone.answer, trace: TRACE }).success);
     assert.deepEqual(alone.answer.errors.map((e) => [e.code, e.path]), [['template-gap.no_case', '/inputs/documents']]);
     assert.match(alone.answer.errors[0].message, /900601/);
     assert.match(alone.answer.errors[0].fix ?? '', /打上测试类型标签/);
-    const mixed = await start({ inputs: { documents: [{ external: onAgile('900602', renamed(baseDocument(), 'r0e2emix0001')) }, { external: onAgile('900603', outlineDocument('r0e2emix0002')) }] } });
+    const mixed = await start({ inputs: { documents: [{ external: onAgile('900602', renamed(baseDocument(), 'r0e2emix0001')) }, { external: onAgile('900603', outlineDocument('r0e2emix0002')) }] }, parameters: { case_rule: 'tagged' } });
     assert.deepEqual(mixed.answer.errors.map((e) => e.code), ['template-gap.no_case']);
     assert.match(mixed.answer.errors[0].message, /900603/);
     assert.doesNotMatch(mixed.answer.errors[0].message, /900602/);

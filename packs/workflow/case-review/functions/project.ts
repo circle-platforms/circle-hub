@@ -43,7 +43,7 @@ export const LIMITS = {
 
 type Parameters = { caseRule: CaseRule; casePriority: number; groupPriority: number | null; preconditionPriority: number | null };
 
-const DEFAULTS: Parameters = { caseRule: 'tagged', casePriority: 2, groupPriority: 1, preconditionPriority: 3 };
+const DEFAULTS: Parameters = { caseRule: 'marked', casePriority: 2, groupPriority: 1, preconditionPriority: 3 };
 const CASE_RULES = ['tagged', 'marked'] as const satisfies readonly CaseRule[];
 
 // Compile-time check that the list names every case rule.
@@ -420,7 +420,7 @@ function projectDocument(
       code: `${PACK}.untagged_cases`,
       message: projected
         ? `${untagged.count} 个没有标签的节点按团队模板的用例写法（优先级 ${parameters.casePriority}、有子节点、下面没有别的用例）当用例投影；它们的标签为空，是否反向未知`
-        : `${untagged.count} 个没有标签的节点像用例（优先级 ${parameters.casePriority}、有子节点、下面没有别的用例），按规则 caseRule=tagged 没有投影；把运行参数 caseRule 设为 marked 可以把它们当没有标签的用例投影`,
+        : `${untagged.count} 个没有标签的节点像用例（优先级 ${parameters.casePriority}、有子节点、下面没有别的用例），按规则 caseRule=tagged 没有投影；去掉运行参数 caseRule（或设为 marked）可以把它们当没有标签的用例投影`,
       document: documentId,
       data: { count: untagged.count, projected, nodes: untagged.nodes },
     });
@@ -500,7 +500,7 @@ export function projectItems(input: unknown): ProjectionOutput {
     const hint = candidates > 0 ? `；其中有 ${candidates} 个没有标签的节点像用例（优先级 ${parameters.casePriority}、有子节点）` : '';
     const fix =
       candidates > 0
-        ? '把运行参数 caseRule 设为 marked 重新开始运行，这些没有标签的节点会当作没有标签的用例投影；或者把这些文档从输入里去掉'
+        ? '去掉运行参数 caseRule（或设为 marked）重新开始运行，这些没有标签的节点会当作没有标签的用例投影；或者把这些文档从输入里去掉'
         : '把没有用例的文档从输入里去掉，或者换成测试用例脑图，再重新开始运行';
     return failure('no_case', `${names}里没有用例节点：${rule}${hint}`, fix, warnings.list(), empty.map((entry) => entry.id));
   }

@@ -52,13 +52,15 @@ with their node table, `CoverageSubject` has no `required`, `LIMITS` lost `maxWa
   control characters (the colon separates document and node in a case id). The **title** is the meta title the agile system
   pack gives, else the root text; the **path** is `meta.folders` (top down, the connectors' agile meta), else
   `meta.ancestors`, else empty. The label is the title with white space collapsed (`（无标题）` when blank).
-- **Cases** follow case-review's rule `tagged` (deviation 4): a case is a node with a non-empty `resource`; a tagged node with
-  priority 1 that holds tagged or priority-2 nodes is a group (once nothing like that is below it, it is a case again:
+- **Cases** follow case-review's default rule `marked` (deviation 4): a case is either a node with a non-empty `resource`, or
+  an untagged candidate node outside cases carrying the case priority (default 2), having children and holding no case or
+  candidate (marked case, counted with `tags: []`). Parameter `case_rule: "tagged"` restricts to tagged cases. A tagged node
+  with priority 1 that holds tagged or priority-2 nodes is a group (once nothing like that is below it, it is a case again:
   deviation 5); inside a case a leaf is an expected result unless it has priority 3 (a precondition), a child with children is
-  a step; a tagged node below a case is a case of its own. Untagged nodes written like a case (priority 2, children, no case
-  below) are **not counted** but disclosed: `fields.untagged`, the summary and the warning `template-gap.untagged_cases`. Case
-  ids are exactly case-review's item ids (`<document>:<data.id>`, `#1`, `#2` for copies of a shared id, `@<node index>` without
-  a usable id).
+  a step; a tagged node below a case is a case of its own. Untagged candidate cases are counted in `caseCount` under `marked`
+  and tracked in `fields.marked_only` and `fields.data`; under `tagged` they are not counted but disclosed in `fields.untagged`,
+  the summary and the warning `template-gap.untagged_cases`. Case ids are exactly case-review's item ids (`<document>:<data.id>`,
+  `#1`, `#2` for copies of a shared id, `@<node index>` without a usable id).
 - **Categories.** A category is shown by a canonical test-type tag or by a literal keyword in the case texts it names
   (contains, prefix, equals; NFKC, lower case, white space collapsed, arrows written `->`; a space at a keyword end is a word
   boundary). The template is admitted at every call (closed shape, origin, literal keywords) or the run is refused with
@@ -76,7 +78,7 @@ with their node table, `CoverageSubject` has no `required`, `LIMITS` lost `maxWa
   U+3000, which passes the schema's `minLength`), a document not in the run, or the same document and category named twice
   (deviation 12). A skip is listed apart and never makes a category present.
 - **Summary** (the model reads only id, label and summary; at most 480 characters):
-  `用例 N 个；缺 M 个模板类别：压力测试（stress）、…；参数 skipped 声明跳过 K 个：…；模板类别出现 P/24 个；另有 U 个没有标签…`.
+  `用例 N 个（用例规则：…）；缺 M 个模板类别：压力测试（stress）、…；参数 skipped 声明跳过 K 个：…；模板类别出现 P/24 个；另有 U 个没有标签…`.
   When names and ids do not fit, every category is written by its id only (`缺 M 个模板类别（只列编号）：stress、…`), so
   every missing category is always named (tested on the worst case: all 24 missing, five-digit counts).
 - **Location**: the root node. With one document `n/<root id>`, or `i` when the root id is not unique; with several,
@@ -156,8 +158,10 @@ Tests that run pack functions skip where macOS `sandbox-exec` is missing (that i
 4. **The case rule is case-review's, not quite the brief's.** The brief defines a case as a node with a non-empty `resource`
    and a priority whose children are its expected results. Inherited from case-review (its deviations 1 to 3, measured on its
    real sample): a tagged node without a priority is a case (6 in the sample; dropping them would hide cases); steps and
-   priority-3 preconditions are read (43% of tagged cases use case → step → expected); untagged nodes written like cases are
-   not counted (the brief's tagged rule; about half of the real cases, disclosed). Kept for evidence parity with case-review.
+   priority-3 preconditions are read (43% of tagged cases use case → step → expected). On 2026-10-22, the owner unified the
+   default case rule across packs to `marked` (docs/hub-r4-tasks/union-case-rule.md): untagged candidate cases carrying the
+   case priority are counted as cases (with `tags: []`, evaluating template gaps normally); `case_rule: tagged` remains
+   available as a restrictive switch. Kept for evidence parity with case-review.
 5. **A tagged group node changes role with what is below it** (case-review's rule, kept for parity): a tagged priority-1 node
    that holds cases is a group; with no case below it, it is a case. So 6b's relations fail at such a node in both directions:
    removing every Functional case below a Function-tagged group turns the group into a Functional case (functional stays
@@ -195,7 +199,7 @@ Tests that run pack functions skip where macOS `sandbox-exec` is missing (that i
 
 - The categories other than the six test types are found by keywords (as in case-review): a group named after a category
   counts for every case in it, and whether a per-command category applies needs the commands of the feature.
-- About half of the real cases are untagged (case-review README): under the tagged rule they are not counted.
+- About half of the real cases are untagged (case-review README): under the default marked rule they are counted and projected as cases; under the restrictive tagged rule they are disclosed and not counted.
 - A run takes about 30 documents: the bound inputs of a run are one sandbox input (32 MiB; a 3,000-node document is about
   0.8 MB of parsed model), above which the function never runs and the engine answers with its generic refusal; and every
   document adds a source line and an item line to the start_run text (30,000 characters, then paged).
@@ -239,5 +243,7 @@ Tests that run pack functions skip where macOS `sandbox-exec` is missing (that i
 3. Number copies of a shared id and id-less cases by their content instead of document order, in both packs?
 4. Name an upload by something its order does not change (its root id, or a digest of an order-free form)?
 5. `* → unknown` (the brief) or no row (this pack, deviation 2)?
-6. Should untagged nodes written like cases be counted (case-review `caseRule: marked`)? They are disclosed, not counted.
+6. **Count untagged cases by default**: decided by the owner on 2026-10-22 (docs/hub-r4-tasks/union-case-rule.md). The default
+   case_rule is unified to marked across all packs (template-gap, case-review, case-review-verify), counting untagged candidate
+   nodes as cases with `tags: []`; `tagged` remains available as a restrictive parameter.
 7. Is 20 evidence ids per category enough for the console?

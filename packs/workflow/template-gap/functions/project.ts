@@ -146,6 +146,7 @@ function summaryOf(fields: DocumentFields, template: Template): string {
       parts.push(`参数 skipped 声明跳过 ${fields.skipped.length} 个：${shown.join('、')}${fields.skipped.length > LIMITS.maxNamed ? ' 等' : ''}`);
     }
     parts.push(`模板类别出现 ${fields.categories.filter((category) => category.present).length}/${fields.categories.length} 个`);
+    parts.push(`用例规则：${fields.case_rule === 'marked' ? '标签或标记' : '只认标签'}；其中 ${fields.marked_only} 个只靠标记识别（没有标签）`);
     if (fields.untagged > 0) parts.push(`另有 ${fields.untagged} 个没有标签、写法像用例的节点没有计入`);
     return parts.join('；');
   };
@@ -174,6 +175,7 @@ export function projectDocuments(input: unknown, options: ProjectOptions = {}): 
   const template = readTemplate(options.table ?? TEMPLATE_TABLE);
   if (typeof template === 'string') return failure('template_invalid', `模板表不可用：${template}`, '这是任务包的缺陷：按 template-gap.template@1 改正 tables/template-v3.json');
   const parameters = isRecord(input.parameters) ? input.parameters : {};
+  const caseRule: 'marked' | 'tagged' = parameters.case_rule === 'tagged' ? 'tagged' : 'marked';
 
   const documents: Document[] = [];
   const seen = new Set<string>();
@@ -205,7 +207,7 @@ export function projectDocuments(input: unknown, options: ProjectOptions = {}): 
       );
     }
     const nodes = model.nodes as unknown[];
-    const cases = casesOf(id, nodes, warnings);
+    const cases = casesOf(id, nodes, warnings, { caseRule });
     const metaTitle = isRecord(raw.meta) && typeof raw.meta.title === 'string' && !isBlank(raw.meta.title) ? raw.meta.title : null;
     documents.push({ id, sha256: typeof raw.sha256 === 'string' ? raw.sha256 : '', title: metaTitle ?? rootText(nodes), path: foldersOf(raw.meta), cases });
   }
@@ -218,10 +220,11 @@ export function projectDocuments(input: unknown, options: ProjectOptions = {}): 
   if (empty.length > 0) {
     const names = empty.length === 1 ? `文档 ${empty[0].id} ` : `${empty.length} 份文档（${empty.map((document) => document.id).join('、')}）`;
     const untagged = empty.reduce((sum, document) => sum + document.cases.untagged, 0);
+    const rule = caseRule === 'tagged' ? '用例是标签（resource）不为空的节点' : '用例是标签（resource）不为空的节点，或者带用例优先级 2、有子节点的节点';
     const hint = untagged > 0 ? `；其中有 ${untagged} 个没有标签、写法像用例的节点（优先级 2、有子节点），模板 v3 的用例要带测试类型标签` : '';
     return failure(
       'no_case',
-      `${names}里没有用例节点：用例是标签（resource）不为空的节点${hint}`,
+      `${names}里没有用例节点：${rule}${hint}`,
       untagged > 0 ? '给这些用例节点打上测试类型标签（Functional、Configuration、Integration、Compatibility、Negative、Stress）后重新开始运行，或者把这些文档从输入里去掉' : '把没有用例的文档从输入里去掉，或者换成测试用例脑图，再重新开始运行',
       warnings.list(),
       empty.map((document) => document.id),
@@ -251,19 +254,33 @@ export function projectDocuments(input: unknown, options: ProjectOptions = {}): 
     const categories = categoryFacts(template, document.cases);
     const skipped = skipsFor(document.id, skips, template);
     const skippedIds = new Set(skipped.map((skip) => skip.category));
+    const marked_only = document.cases.markedOnly;
     const fields: DocumentFields = {
       document: document.id,
       title: document.title,
       path: document.path,
       caseCount: document.cases.cases.length,
       untagged: document.cases.untagged,
+      case_rule: caseRule,
+      marked_only,
+      data: { case_rule: caseRule, marked_only },
       categories,
       missing: categories.filter((category) => category.required && !category.present && !skippedIds.has(category.id)).map((category) => category.id),
       skipped,
     };
     return { id: document.id, label: itemLabel(document.title), summary: summaryOf(fields, template), location: locations.get(document.id) as ItemLocation, fields };
   });
-  const result = { items, warnings: warnings.list() };
+  const groups: Record<string, unknown>[] = items.map((item) => ({
+    kind: 'document',
+    id: item.id,
+    title: item.label,
+    cases: item.fields.caseCount,
+    case_rule: item.fields.case_rule,
+    marked_only: item.fields.marked_only,
+    rule_summary: `用例规则：${item.fields.case_rule === 'marked' ? '标签或标记' : '只认标签'}；其中 ${item.fields.marked_only} 个只靠标记识别（没有标签）`,
+    data: item.fields.data,
+  }));
+  const result = { items, groups, warnings: warnings.list() };
   const bytes = utf8Length(JSON.stringify(result));
   if (bytes > outputBytes) {
     return failure('too_large', `投影结果有 ${bytes} 字节（${items.length} 份文档），超过输出上限 ${outputBytes} 字节`, '把文档分成几批，每批单独开始一次运行', [], [...seen].slice(0, CASE_LIMITS.maxNamed));

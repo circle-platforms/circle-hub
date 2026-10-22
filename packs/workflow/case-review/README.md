@@ -29,7 +29,7 @@ Not published (not pack paths): `api.ts` (the package surface and `node packs/wo
 | `stories`, `bugs` | defect-system ids to read instead of the ones found in the title and the folders above the document |
 | `id_ranges`, `bare_ids` | how an id the title does not mark as story or bug is read (`id_ranges: { story?: {min?, max?}, bug?: {...} }`; `bare_ids` both, story, bug, skip) |
 | `spec_search`, `strategy_search`, `history_search`, `max_terms` | the spec search (role expected), the test strategy documents (`manual:qa-search`, role hint, evidence group d) and the similar test lists (`agile:search`, role hint, evidence group e, the reviewed document left out) for the feature words of the title |
-| `case_rule`, `case_priority`, `group_priority`, `precondition_priority` | which nodes are cases (tagged, the default, or marked: also the team template's untagged cases) |
+| `case_rule`, `case_priority`, `group_priority`, `precondition_priority` | which nodes are cases (marked, the default: tagged cases and the team template's marked cases; or tagged: restricted to tagged cases) |
 | `block` | one subtree (a node id, or the node texts from the root down) |
 | `slice` | `{ from, to }`: the cases from..to in document order (from 1, at most 100), inside the block when one is given |
 
@@ -105,16 +105,17 @@ Measured on the 51 sampled real documents (counts only, no content; 47 plain map
 format, three without any priority): 2,712 nodes carry tags, and 3,033 untagged nodes outside every tagged case carry priority
 2, have children and hold no tagged node and no other priority-2 node. Those are cases written without tags: 1,780 have a
 priority-3 precondition and a step, 1,022 a single expected leaf, 197 a step; 2,372 carry a degree and 172 an `autoid`.
-11 maps contain only such cases. The brief's rule (a case is a tagged node) therefore misses about half of the real cases,
-and the owner has to decide the rule (open question 1). Until then:
+11 maps contain only such cases. The brief's rule (a case is a tagged node) therefore misses about half of the real cases;
+the owner decided the unified rule on 2026-10-22 (docs/hub-r4-tasks/union-case-rule.md):
 
-- **Case rule** (run parameter `case_rule`, `caseRule` inside project.ts). `tagged` (default, the brief): a case is a node whose `resource` is a non-empty array.
-  `marked`: also an untagged node outside every case that carries the case priority (`case_priority`, default 2), has children
-  and holds no tagged node and no node with the case priority (the team template's case marker). Such a case has `tags: []`
-  and `negative: null` (unknown); the literal check reports its missing tag. Under `tagged` these nodes are not items and not
-  groups: the warning `case-review.untagged_cases` gives their count and the selectors of the first 20, and the `no_case`
-  refusal names their count and offers `case_rule: marked` as the fix. On the sample: `tagged` projects 37 of 51 documents
-  (2,706 cases), `marked` 48 of 51 (6,045 cases); the three left have no priority at all.
+- **Case rule** (run parameter `case_rule`, `caseRule` inside project.ts). `marked` (default):
+  recognizes tagged nodes as well as untagged nodes outside every case that carry the case priority (`case_priority`, default 2),
+  have children and hold no tagged node and no node with the case priority (the team template's case marker). Such a case has
+  `tags: []` and `negative: null` (unknown); the literal check reports its missing tag. `tagged` (restrictive switch): restricts
+  cases to nodes whose `resource` is a non-empty array. Under `tagged`, untagged candidate nodes are not items and not groups:
+  the warning `case-review.untagged_cases` gives their count and the selectors of the first 20, and the `no_case` refusal names
+  their count and offers removing the restriction or setting `case_rule: marked` as the fix. On the sample: `tagged` projects
+  37 of 51 documents (2,706 cases), `marked` 48 of 51 (6,045 cases); the three left have no priority at all.
 - **Tagged group node.** A tagged node with the group priority (`group_priority`, default 1, `null` turns the rule off) that
   holds tagged nodes or nodes with the case priority is a group: all 8 tagged priority-1 nodes in the sample hold cases (121
   of the 124 nested cases sit below them). One `case-review.tagged_group` warning names the node.
@@ -283,8 +284,8 @@ manifest with `node packs/workflow/case-review/api.ts sign`.
 
 ## Decisions
 
-1. **Case rule**: `tagged` stays the default (the brief's rule; a real document the integrator measured with `scripts/real`
-   projects with it, not repeatable here); `case_rule: marked` projects the team template's untagged cases.
+1. **Case rule**: `marked` is the default (owner decided on 2026-10-22; projects both tagged cases and the team template's marked
+   cases); `case_rule: tagged` restricts to tagged cases.
 2. **Steps and preconditions**: a case's leaves are its expected results, its children with children are steps and a
    priority-3 leaf is a precondition (43% of the sampled tagged cases use steps).
 3. **The open questions of the earlier round are decided**: no canonical tag spelling is mandated (the spelling check is per
@@ -383,8 +384,8 @@ manifest with `node packs/workflow/case-review/api.ts sign`.
 
 ## Open questions
 
-1. **Case rule default** (`tagged` or `marked`): the owner's decision; `tagged` refuses 11 of 48 sampled real maps,
-   `marked` projects 48 of 51.
+1. **Case rule default** (`tagged` or `marked`): decided by the owner on 2026-10-22 (docs/hub-r4-tasks/union-case-rule.md).
+   The default is unified across packs to `marked`; `tagged` remains available as a restrictive switch.
 2. **Id kinds**: the product pack should supply `id_ranges` (the sample suggests stories below 50,000 and bugs from 50,000);
    until then unmarked ids are read as both kinds.
 3. **`findings` of the draft**: `judgment` (as now, so that a draft can be satisfied) or the brief's `independent_judgment`

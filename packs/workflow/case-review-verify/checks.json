@@ -18,7 +18,8 @@
       "applies": "item",
       "subject": { "module": "functions/subjects.ts", "export": "claimSubject" },
       "catalog": "commands@1",
-      "judges": "artifact_under_verification"
+      "judges": "artifact_under_verification",
+      "tier": "blocking"
     },
     {
       "id": "verdict",

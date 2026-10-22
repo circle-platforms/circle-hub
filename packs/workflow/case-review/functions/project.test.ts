@@ -44,7 +44,7 @@ const GROUPS: Array<[string, number]> = [
   ['异常处理', 5],
   ['端点操作', 2],
   ['会话保持', 2],
-  ['端点批量操作', 0],
+  ['端点批量操作', 3],
   ['兼容性', 3],
   ['压力', 3],
   ['配置保存与恢复', 4],
@@ -55,14 +55,14 @@ const GROUPS: Array<[string, number]> = [
   ['待补充', 0],
 ];
 
-describe('projection of the review fixture (caseRule tagged, the default)', () => {
+describe('projection of the review fixture (default: caseRule marked)', () => {
   const { items, groups, unnumbered, warnings } = reviewProjection();
 
-  it('projects the 64 tagged cases; the tagged group node and the three untagged cases are not items', () => {
+  it('projects 67 cases: the 64 tagged cases and the three untagged cases; the tagged group node is not an item', () => {
     assert.equal(review.model.nodes.length, 172);
-    assert.equal(items.length, 64);
+    assert.equal(items.length, 67);
     assert.deepEqual(byTitle(items, '会话保持'), []);
-    for (const title of UNTAGGED) assert.deepEqual(byTitle(items, title), [], title);
+    for (const title of UNTAGGED) assert.equal(byTitle(items, title).length, 1, title);
     for (const title of ['开启会话保持后同一客户端落到同一后端', '会话保持超时后重新调度']) {
       assert.equal(one(items, title).fields.nested, false, title);
       assert.deepEqual(one(items, title).fields.path.slice(-1), ['会话保持']);
@@ -71,11 +71,11 @@ describe('projection of the review fixture (caseRule tagged, the default)', () =
     assert.equal(one(items, '探测超时时间内无响应判定失败').fields.priority, 1);
   });
 
-  it('counts the untagged nodes in the case form in a warning, with selectors of those nodes', () => {
+  it('counts the untagged nodes in the case form in a warning with projected: true', () => {
     const warning = warnings.find((w) => w.code === 'case-review.untagged_cases');
     assert.ok(warning);
     assert.equal(warning.data?.count, 3);
-    assert.equal(warning.data?.projected, false);
+    assert.equal(warning.data?.projected, true);
     const titles = (warning.data?.nodes as string[]).map((selector) => review.locate(selector)?.text);
     assert.deepEqual(titles, UNTAGGED);
   });
@@ -88,7 +88,7 @@ describe('projection of the review fixture (caseRule tagged, the default)', () =
       assert.equal(node.text, item.fields.title);
       assert.equal(review.locate(item.location.selector)?.text, item.fields.title);
     }
-    assert.equal(items.filter((item) => item.location.selector.startsWith('n/')).length, 62);
+    assert.equal(items.filter((item) => item.location.selector.startsWith('n/')).length, 65);
   });
 
   it('builds ids from the document id and data.id; every copy of a duplicated id gets a numbered pack identity', () => {
@@ -119,7 +119,7 @@ describe('projection of the review fixture (caseRule tagged, the default)', () =
     assert.equal(one(items, '后端恢复后重新加入调度').fields.expectedCount, 0);
     assert.deepEqual(one(items, '连续失败达到重试次数后摘除后端').fields.expected, ['后端状态变为 down', '新连接不再转发到该后端']);
     assert.equal(one(items, '连续失败达到重试次数后摘除后端').fields.expectedCount, 2);
-    assert.equal(items.filter((item) => item.fields.expectedCount === 1).length, 62);
+    assert.equal(items.filter((item) => item.fields.expectedCount === 1).length, 65);
   });
 
   it('reads steps (also a step with priority 20) and priority-3 preconditions, with the leaves below a step as its expected results', () => {
@@ -136,7 +136,7 @@ describe('projection of the review fixture (caseRule tagged, the default)', () =
       byTitle(items, '添加 - 端点').map((item) => item.fields.steps[0].text),
       ['relay endpoint add 192.0.2.31 80', 'relay endpoint add 192.0.2.32 8080'],
     );
-    assert.equal(items.filter((item) => item.fields.steps.length > 0).length, 8);
+    assert.equal(items.filter((item) => item.fields.steps.length > 0).length, 9);
   });
 
   it('projects a case below a case as its own item, with a warning, and leaves it out of the outer expected results', () => {
@@ -183,7 +183,8 @@ describe('projection of the review fixture (caseRule tagged, the default)', () =
         '池名称超过 32 个字符',
       ],
     );
-    assert.ok(items.every((item) => item.fields.negative !== null), 'every tagged case has a known negative flag');
+    assert.ok(items.filter((item) => item.fields.tags.length > 0).every((item) => item.fields.negative !== null), 'every tagged case has a known negative flag');
+    assert.equal(items.filter((item) => item.fields.negative === null).length, 3, 'untagged cases have unknown negative flag');
     assert.deepEqual(one(items, '健康检查摘除后端后按剩余后端的权重分配').fields.tags, ['Integration', '20260301ADD']);
     assert.deepEqual(one(items, '探测间隔为 1 秒时每秒探测一次').fields.tagsNormalized, ['Functional']);
   });
@@ -198,7 +199,7 @@ describe('projection of the review fixture (caseRule tagged, the default)', () =
   it('reads autoid, auto and notes', () => {
     assert.deepEqual(
       items.filter((item) => item.fields.automated).map((item) => item.fields.autoid),
-      ['730000000000000101', '730000000000000102'],
+      ['730000000000000101', '730000000000000102', '730000000000000103'],
     );
     assert.deepEqual(
       items.filter((item) => item.fields.hasNote).map((item) => item.fields.title),
@@ -261,19 +262,20 @@ describe('caseRule marked: the team template marker', () => {
     assert.equal(warning?.data?.count, 3);
   });
 
-  it('leaves the tagged items as they are under the default rule', () => {
-    const tagged = marked.items.filter((item) => item.fields.tags.length > 0);
-    assert.deepEqual(tagged, reviewProjection().items);
+  it('caseRule tagged restricts items to tagged cases only', () => {
+    const tagged = project(review.model, '880001', { caseRule: 'tagged' });
+    assert.equal(tagged.items.length, 64);
+    assert.deepEqual(tagged.items, marked.items.filter((item) => item.fields.tags.length > 0));
+    const warning = tagged.warnings.find((w) => w.code === 'case-review.untagged_cases');
+    assert.equal(warning?.data?.projected, false);
+    assert.equal(warning?.data?.count, 3);
   });
 
-  it('refuses the untagged document under the default rule with the count and the parameter as fix, and projects it under marked', () => {
+  it('projects the untagged document under the default marked rule, and refuses it under tagged with the count and the fix', () => {
     const untagged = parseFixture('untagged.km.json').model;
-    const refused = projectItems({ documents: [{ documentId: '31200', model: untagged }] });
-    assert.ok(isFailure(refused));
-    assert.equal(refused.error.code, 'case-review.no_case');
-    assert.match(refused.error.message, /3 个没有标签的节点像用例/);
-    assert.match(refused.error.fix, /caseRule 设为 marked/);
-    const out = project(untagged, '31200', { caseRule: 'marked' });
+    const out = projectItems({ documents: [{ documentId: '31200', model: untagged }] });
+    assert.ok(!isFailure(out));
+    assert.equal(out.items.length, 3);
     assert.deepEqual(
       out.items.map((item) => [item.fields.title, item.fields.priority, item.fields.degree]),
       [
@@ -284,6 +286,12 @@ describe('caseRule marked: the team template marker', () => {
     );
     assert.deepEqual(out.items[2].fields.preconditions, ['无']);
     assert.deepEqual(out.items[2].fields.steps, [{ text: '1.relay endpoint add 192.0.2.52 81\n2.后端不监听 81 端口', expected: ['端点状态为 down'] }]);
+
+    const refused = projectItems({ documents: [{ documentId: '31200', model: untagged }], parameters: { caseRule: 'tagged' } });
+    assert.ok(isFailure(refused));
+    assert.equal(refused.error.code, 'case-review.no_case');
+    assert.match(refused.error.message, /3 个没有标签的节点像用例/);
+    assert.match(refused.error.fix, /caseRule/);
   });
 
   it('takes only an untagged node with the case priority, children and no case below it', () => {
@@ -589,7 +597,7 @@ describe('identity, location and hostile structure', () => {
         caseNode('d', '标签不是数组', 'Function'),
       ]),
     );
-    const { items, groups, warnings } = project(parsed.model);
+    const { items, groups, warnings } = project(parsed.model, '880001', { caseRule: 'tagged' });
     assert.deepEqual(
       items.map((item) => item.fields.title),
       ['空白标签'],
@@ -602,6 +610,13 @@ describe('identity, location and hostile structure', () => {
     assert.deepEqual(
       (untagged?.data?.nodes as string[]).map((selector) => parsed.locate(selector)?.text),
       ['空标签', '没有标签', '标签不是数组'],
+    );
+
+    // Under default marked: all 4 are cases
+    const markedOut = project(parsed.model);
+    assert.deepEqual(
+      markedOut.items.map((item) => item.fields.title),
+      ['空标签', '没有标签', '空白标签', '标签不是数组'],
     );
   });
 
