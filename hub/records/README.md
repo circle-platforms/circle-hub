@@ -171,11 +171,9 @@ Record kinds and schemas this package writes: `source_artifact@1`, `action@1` (v
     itself. Uploads are capped at 256 MiB (the scanner decodes an upload into strings; V8 strings end near 512 Mi
     characters) and requests at 512 MiB. The full list with Chinese descriptions is `HUB_ENVIRONMENT` in
     `hub/config/names.ts`. The keychain item of the vault master key defaults to service `circle-hub`, account
-    `vault-master-key` (the platform's and the brief's name; it was `vault` before 2026-10-22). `CIRCLE_HUB_JEV_MODEL`
-    (default `jev-1.13.0`, `config.jev.model`) names the K04 typed-judgment model for the assembly step; it must be a
-    versioned id (`name-X.Y.Z`, the rule of hub/jev `isVersionedModel`) of at most 128 characters (the bound of the hub/jev
-    client constructor, so a longer id is refused at start instead of when the client is built): a moving alias such as
-    `jev-latest` is refused, because a judgment must record its exact model. **Names only platform commands read** (`PLATFORM_ONLY_ENVIRONMENT`,
+    `vault-master-key` (the platform's and the brief's name; it was `vault` before 2026-10-22). The Hub calls no model
+    (decision 15 of `docs/hub-r4-progress.md`): `CIRCLE_HUB_JEV_MODEL`, which named the typed-judgment model, was removed
+    on 2026-10-22 and is refused as unknown, like every other name the Hub does not read. **Names only platform commands read** (`PLATFORM_ONLY_ENVIRONMENT`,
     today `CIRCLE_HUB_LIBPQ_BIN`) are tolerated and never read, so an operator shell that sets them can run
     `circle-hub serve`; the list is the values of hub/platform `PLATFORM_VARIABLES` that hub/config does not read, and a
     test keeps the two equal. `CIRCLE_HUB_HOME` is not one of them: the platform reads the data root from
@@ -295,9 +293,9 @@ npx tsc --noEmit
 ```
 
 Covered: RFC 8785 vectors (sections 3.2.2-3.2.4, appendix B numbers) and independently computed digest vectors; ids;
-configuration and the retired-name guard (also as a child process), the upload cap, the keychain and Jev model defaults,
-versioned model ids and their 128-character bound, tolerated platform-only names; drift against hub/platform (retired
-names, platform-only names, keychain defaults) and hub/jev (the ids its client constructor takes) in
+configuration and the retired-name guard (also as a child process), the upload cap, the keychain defaults,
+tolerated platform-only names, the removed `CIRCLE_HUB_JEV_MODEL` refused as unknown; drift against hub/platform (retired
+names, platform-only names, keychain defaults) in
 `hub/config/drift.test.ts`; append-only enforcement on every history
 table; idempotent put; exact round trip of NUL and other characters; every contracts schema id accepted and leading-zero,
 upper-case and empty ones refused, on put and on read; `Versioned` component and generator ids; index values by bytes;
@@ -343,8 +341,10 @@ repair, previews, admin and user views, tamper detection; cluster cleanup on SIG
   use of the same kind; the model owner should record it in B02 R[4] and B04 F[0]. Uploads keep B02 R[4] unchanged.
 - **API additions of 2026-10-22** (nothing renamed or removed): `Artifacts.acceptFindings`, `revokeFindings`,
   `FindingsAcceptance`, `ScanAcceptance`, optional `CredentialScan.accepted`, `scanDigest`, `scanAcceptanceKey`;
-  `HubConfig.jev`, `PLATFORM_ONLY_ENVIRONMENT`, `isPlatformOnlyName`, `DEFAULT_KEYCHAIN_SERVICE`, `DEFAULT_KEYCHAIN_ACCOUNT`,
-  `DEFAULT_JEV_MODEL`. Changed behaviour: the newest readable record decides `readable()`, `text()` and `source()`
+  `PLATFORM_ONLY_ENVIRONMENT`, `isPlatformOnlyName`, `DEFAULT_KEYCHAIN_SERVICE`, `DEFAULT_KEYCHAIN_ACCOUNT`.
+  (`HubConfig.jev` and `DEFAULT_JEV_MODEL`, added that day, were removed the same day when the Hub stopped calling any
+  model, decision 15; `CIRCLE_HUB_JEV_MODEL` is refused as unknown now.) Changed behaviour: the newest readable record
+  decides `readable()`, `text()` and `source()`
   (decision 6); the default keychain account is `vault-master-key`; schema ids are checked on read too; **generator ids**
   (`origin.generated.generator`) and **pointer components** (`MoveInput.component`) are checked as contracts `Versioned`
   instead of `^[a-z][a-z0-9_.-]*@[0-9]+$`, so a leading-zero major (`name@01`, `name@00`) that was accepted before is now
@@ -354,7 +354,7 @@ repair, previews, admin and user views, tamper detection; cluster cleanup on SIG
   or record no longer outranks the Hub's records or the reader's own (decision 6); `acceptFindings` refuses a truncated
   scan and bytes no record of which the Hub read or made, and an acceptance never lifts a truncated scan or a record with
   a person as author, at ingest or at read (decision 18); a note on `acceptFindings` or `revokeFindings` that copies text
-  from the lines carrying a finding is refused; `CIRCLE_HUB_JEV_MODEL` is at most 128 characters (decision 12).
+  from the lines carrying a finding is refused.
 - **`CIRCLE_HUB_HOME` is not registered** although the follow-up asked for it: the follow-up also named hub/platform
   `PLATFORM_VARIABLES` as the source of truth, and it has no such name (the platform reads `CIRCLE_HUB_DATA_DIR` and its
   own tests refuse `CIRCLE_HUB_HOME`). If the platform adds it, `drift.test.ts` fails until it is added here.
@@ -385,9 +385,8 @@ repair, previews, admin and user views, tamper detection; cluster cleanup on SIG
   with the runtime role again afterwards (it applies nothing and grants again).
   (2) A Keychain `KeyProvider` (`getKey`, `initKey`; service and account from `config.keychain`); the database password
   from the vault when the database is reached over TCP; `import 'hub/config/guard.ts'` first in every bin entry point;
-  backups of the database, `objects/` and `vault/`. (3) `HUB_CONFIG_VARIABLES` in `hub/platform/environment.ts` already
-  lists `CIRCLE_HUB_JEV_MODEL` (commit 38df467); the service environment does not set it, so the service runs the default
-  `jev-1.13.0` unless the deployment settings pass another versioned id. (The keychain default is now
+  backups of the database, `objects/` and `vault/`. (3) `HUB_CONFIG_VARIABLES` in `hub/platform/environment.ts` mirrors
+  `HUB_ENVIRONMENT`; a test keeps the two equal. (The keychain default is now
   `vault-master-key` on both sides, and hub/config tolerates `CIRCLE_HUB_LIBPQ_BIN`.)
 - **server**: map `RecordsError.code` into `errors` (null means an internal failure); call `callLog.append` once per MCP call
   with the raw arguments (only digest and size are kept), the `Circle-Session-Id` header and the Hub's span id for the call
@@ -398,7 +397,7 @@ repair, previews, admin and user views, tamper detection; cluster cleanup on SIG
   (decision 18): show the admin the line, column and detector of each finding of the `retain_only` record so they can be
   checked in the original system, and never ask for or echo the matched text; ask for a note in the admin's own words (a
   note that copies text around a finding is refused) and pass the refusal messages on as they are (a truncated scan, or
-  bytes only a person supplied, cannot be accepted). Build the typed-judgment client with `config.jev.model`.
+  bytes only a person supplied, cannot be accepted).
 - **refs**: accept a source read whose bytes are withheld by its tier (`ArtifactSource.bytes === null` for retain_only, and
   for function_bytes_only read by a model) and answer with its note without hashing or parsing; today `SourceRead.bytes` is
   required.

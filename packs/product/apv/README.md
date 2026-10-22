@@ -8,7 +8,7 @@ live only here. Other packages use `api.ts` (types, named functions, and `FUNCTI
 
 | File | Content |
 | --- | --- |
-| `product.json` | `product@1` (pack version 1.1.3): names `[APV, NSAE]`; `sync` (start `buildsite:listing:index`, plan `functions/sync.ts`, options `case_index: true`, `min_line: 10.4.2`, 6 rounds, 300 reads); `select_build` `functions/select.ts`; catalog `commands@1` (entry kind `definition`, producer `command-tree`, complete, case-insensitive; no catalog over case entries); producers `command-tree` (slot `tree` <- source role `tree`), `manual` (slots `cli` <- `manual:cli:{line}` and `app` <- `manual:app:{line}`, both optional; `placement: judgment_allowed`), `release-notes` (slot `notes` <- source role `fixed_bugs`, optional), `cases` (list slot `documents` <- role `case_documents`, many, batch 40, optional; `tree` <- role `tree`; `folders` <- role `case_tree`, optional) |
+| `product.json` | `product@1` (pack version 1.1.4): names `[APV, NSAE]`; `sync` (start `buildsite:listing:index`, plan `functions/sync.ts`, options `case_index: true`, `min_line: 10.4.2`, 6 rounds, 300 reads); `select_build` `functions/select.ts`; catalog `commands@1` (entry kind `definition`, producer `command-tree`, complete, case-insensitive; no catalog over case entries); producers `command-tree` (slot `tree` <- source role `tree`), `manual` (slots `cli` <- `manual:cli:{line}` and `app` <- `manual:app:{line}`, both optional; `placement: judgment_allowed`), `release-notes` (slot `notes` <- source role `fixed_bugs`, optional), `cases` (list slot `documents` <- role `case_documents`, many, batch 40, optional; `tree` <- role `tree`; `folders` <- role `case_tree`, optional) |
 | `functions/sync.ts` | the plan (SyncPlanInput -> SyncPlanOutput): every round recomputed from the pages read so far, index -> hub pages -> listing pages (depth 2, dead links tolerated, both name families, platform and customer pages only when `include` opts them in), then the builds; with `case_index`, `agile:tree:roots` and every own-tree build's case documents (`cases-sync.ts`) |
 | `functions/cases.ts` and `cases-*.ts` | the case index: the producer `cases` (`cases.ts`), case nodes (`cases-nodes.ts`), the command catalog, phrase extraction and resolution (`cases-commands.ts`), the sync plan's part (`cases-sync.ts`), shared pack data (`cases-rules.ts`) |
 | `functions/select.ts` | the build choice (SelectBuildInput -> SelectBuildOutput) over `select-build.ts`: the latest released build of the line across both families on the main platform, the other candidates as alternatives |
@@ -130,7 +130,7 @@ Producers (K02, K04, C07)
   entries and manual signatures are `definition`, the manual text under a command `behaviour`, release-note items `defect`. The finer form is data: `data.form` `signature` or
   `text` on manual entries (examples also `data.example`), `data.status` `fixed` or `known` on defects. An unplaced span's
   `kind` is the kind its entry will have.
-- Producer placement: only `manual` declares `placement: "judgment_allowed"` so unplaced manual fragments may go to the typed-judgment model; `command-tree`, `release-notes`, and `cases` keep default `code_only` to prevent internal defects and test case titles from leaving the Hub.
+- Producer placement: only `manual` declares `placement: "judgment_allowed"`, so its unplaced fragments may be offered to the bot for placement proposals; the Hub calls no model and never places them itself (verification is not implemented yet, so today they stay unplaced, marked 未归位). `command-tree`, `release-notes`, and `cases` keep default `code_only` to prevent internal defects and test case titles from leaving the Hub.
 - Command tree: one entry per full command; every `arguments` list is one overload (`id` `k`, fragment `fragments[k-1]`).
   `data` is catalog-entry@1 without `reference`. Types: STRING and XSTRING → string, U16 → int 0..65535, U32 → int
   0..4294967295, DOTTEDIP → ipv4, IPADDR → ipv4 or ipv6, IPMASK → mask or int 0..128; other types → string with a
@@ -147,8 +147,8 @@ Producers (K02, K04, C07)
   leading optional group is skipped): the nearest common node of the variants (K01 R[3]). The blocks after an anchor up to
   the next anchor or heading are text entries at its node. A single-line paragraph without CJK that opens in bold and
   carries signature syntax but does not parse (a source defect, or an unknown head when `heads` is given) ends the
-  command: it and the blocks after it are unplaced, with a warning. Every other block is returned `unplaced` (for the
-  typed-judgment model, K04 R[3]).
+  command: it and the blocks after it are unplaced, with a warning. Every other block is returned `unplaced` (for a
+  placement proposal, K04 R[3]).
 - Manual (catalog JSON): each signature is a signature entry (fragment `p/signatures/<k>/signature_verbatim`). A
   "signature" whose head holds a quoted value or a number after a known head is a worked example: a text entry
   (`example: true`) at the longest known head, else unplaced; never a synthetic path. A number with no known head before
@@ -376,8 +376,9 @@ pack and reviews a mind map against the root it produced.
 
 - **contracts**: a parameter type for "IPv4 or IPv6 address" and one for "dotted mask or prefix length" (or a union of types
   in `CatalogParam`) would replace the overload expansion.
-- **knowledge**: place `path: null` entries and `unplaced` spans with the typed-judgment model (module as the literal hint);
-  without a Jev client they stay unplaced (the fixed-bug entries of a build, for example).
+- **knowledge**: the Hub calls no model (decision 15): `path: null` entries and `unplaced` spans stay unplaced at the
+  root (the fixed-bug entries of a build, for example); the manual fragments the `manual` producer declares wait for the
+  bot's placement proposals, verified by the Hub (not implemented yet).
 - **integrator**: a review that targets an unreleased build (the newest build of a line still in development, under either
   name) needs the sync with `includeUnreleased` for that line, or a released build named at start_run.
 - **knowledge (case index)**: `external` is on the list element and the producer matches documents by it. The slot still
