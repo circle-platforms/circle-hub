@@ -89,6 +89,22 @@ describe('the verbatim quotation vectors shared with hub/rules', () => {
   });
 });
 
+// The two survivors of the acceptance mutation check (M12: case-insensitive matching, M17: an empty quote matches
+// anything) live in this matcher: the shared vectors already say no; these assertions name them so a regression in
+// either direction fails with the mutation's name, not just a vector number.
+describe('the refs-side verbatim matcher names its invariants', () => {
+  it('case stays significant', () => {
+    assert.equal(quoteMatches('Show Version', 'show version'), false);
+    assert.equal(quoteMatches('设置 3 区浇灌 15 分钟', '设置 3 区浇灌 15 分钟'), true);
+  });
+  it('the empty quote and a white-space-only quote never match, not even the empty fragment', () => {
+    assert.equal(quoteMatches('abc', ''), false);
+    assert.equal(quoteMatches('', ''), false);
+    assert.equal(quoteMatches('abc', ' \n\t'), false);
+    assert.equal(locateQuote('abc', ''), null);
+  });
+});
+
 // The matcher reads every white-space run as one space without building a collapsed copy; it must agree with the
 // definition: both sides collapsed and trimmed, then contained.
 describe('the matcher against the definition', () => {

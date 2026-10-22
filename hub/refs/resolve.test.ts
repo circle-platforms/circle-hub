@@ -210,6 +210,24 @@ describe('resolveReference: unavailable looks the same whatever the cause', () =
   });
 });
 
+// The acceptance mutation check's M11: a quotation against a text the consumer may not read is not verified
+// (null, an unknown), never true.
+describe('verifyQuote on unreadable or missing text', () => {
+  it('returns null when the text cannot be read, and false only when it can and differs', async () => {
+    const { ctx } = context();
+    const reference = srcFragment(specSha, 'markdown@1', ['b', '1', '概述', '功能说明', '超时']);
+    const forModel = await resolveReference(reference, ctx);
+    assert.ok(forModel.resolved && !forModel.readable && forModel.text === null, 'the model may not read this text');
+    assert.equal(verifyQuote(forModel, '超时时间以秒计。设为 0 时配置被拒绝。'), null, 'unreadable: not verified, never true (M11)');
+    const forFunction = await resolveReference(reference, { ...ctx, consumer: 'function' });
+    assert.equal(verifyQuote(forFunction, '超时时间以秒计。设为 0 时配置被拒绝。'), true);
+    assert.equal(verifyQuote(forFunction, '超时时间以秒计。设为 1 时配置被拒绝。'), false);
+    const unresolved = await resolveReference(`src:${'0'.repeat(64)}`, ctx);
+    assert.ok(!unresolved.resolved);
+    assert.equal(verifyQuote(unresolved, '任何文字'), null);
+  });
+});
+
 describe('resolveReference: read tiers', () => {
   it('gives a model only the structure of function-only sources, and a function the text', async () => {
     const { ctx } = context();

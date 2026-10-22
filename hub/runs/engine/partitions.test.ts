@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { PARTITION, REASON, STATIC_TERMINAL, type Partition, type Reason } from '../../../contracts/generated/vocabulary.ts';
-import { Partitions, partitionCountsOf, type LayerResult, type RequirementResult } from '../../../contracts/src/validation.ts';
+import { Partitions, partitionCountsOf, type ItemResult, type LayerResult, type RequirementResult } from '../../../contracts/src/validation.ts';
 import { PartitionInvariantError, assertCovering, partitionItems, type PartitionInput } from './partitions.ts';
 import { dynamicLayer } from './terminals.ts';
 
@@ -74,6 +74,26 @@ test('partitions that would miss an item or hold a foreign one fail loudly', () 
   assert.throws(() => partitionItems([input('a', r), input('a', r)], ['a']), PartitionInvariantError);
   const parts = Object.fromEntries(PARTITION.map((p) => [p, []])) as unknown as Partitions;
   assert.throws(() => assertCovering(parts, ['a', 'a']), PartitionInvariantError);
+});
+
+// The acceptance mutation check's M5: the union check is the engine's own invariant — a projection or caller that
+// hands in partitions missing an item must make the assert ring (PartitionInvariantError), not silently pass.
+test('assertCovering rings for every shape of a broken partition set (M5)', () => {
+  const parts = (over: Record<string, unknown[]>): Partitions =>
+    Object.fromEntries(PARTITION.map((p) => [p, over[p] ?? []])) as unknown as Partitions;
+  const item = (id: string): ItemResult =>
+    ({ item: id, label: id, location: LOCATION, requirements: [requirementResult('r', [layer('pass', 'no_check')])] }) as ItemResult;
+  // an item in no partition at all
+  assert.throws(() => assertCovering(parts({}), ['a']), PartitionInvariantError, 'the item set is not covered');
+  // an item that is not this run's
+  assert.throws(() => assertCovering(parts({ delivered: [item('ghost')] }), ['a']), PartitionInvariantError, 'a foreign item');
+  // the same item twice in one partition, and in two partitions
+  assert.throws(() => assertCovering(parts({ delivered: [item('a'), item('a')] }), ['a']), PartitionInvariantError, 'twice in one');
+  assert.throws(() => assertCovering(parts({ delivered: [item('a')], rejected: [item('a')] }), ['a']), PartitionInvariantError, 'in two');
+  // duplicate ids in the wanted list
+  assert.throws(() => assertCovering(parts({ delivered: [item('a')] }), ['a', 'a']), PartitionInvariantError, 'duplicate ids');
+  // and a well-formed set still passes
+  assert.doesNotThrow(() => assertCovering(parts({ delivered: [item('a')], incomplete: [{ ...item('b'), reason: 'timeout' as const }] }), ['a', 'b']));
 });
 
 test('property: for random runs the partitions are disjoint, cover the item set and follow V05 R[3]', () => {
