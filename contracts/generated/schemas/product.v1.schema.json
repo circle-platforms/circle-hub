@@ -230,6 +230,14 @@
               "type": "string"
             },
             "additionalProperties": {}
+          },
+          "placement": {
+            "description": "whether path-less entries may be handed to the typed-judgment service: code_only (default) keeps them unplaced at the root without calling the judgment service, preventing text egress outside the Hub; judgment_allowed permits handing them to the judgment service. Defaults to code_only because fragments leave the Hub",
+            "type": "string",
+            "enum": [
+              "code_only",
+              "judgment_allowed"
+            ]
           }
         },
         "required": [

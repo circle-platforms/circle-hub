@@ -67,6 +67,8 @@ export interface SyncBuildReport {
   skipped?: number;
   /** Producer calls made and answered from stored outputs. */
   calls?: { made: number; reused: number };
+  /** Entries without path not sent to the judgment service per producer. */
+  placement_skipped?: Record<string, number>;
 }
 
 export interface SyncReport {
@@ -426,18 +428,22 @@ async function processOwnTree(
   const note = produced.refusedCount > 0 ? `；${produced.refusedCount} 个条目没有通过核对` : '';
   const skipped = produced.skippedCount > 0 ? `；跳过 ${produced.skippedCount} 份列出的来源（见组成记录）` : '';
   const calls = produced.calls.reused > 0 ? `；生产器调用 ${produced.calls.made} 次，复用 ${produced.calls.reused} 次` : '';
+  const placementSkippedEntries = Object.entries(produced.placementSkipped ?? {}).filter(([, count]) => count > 0);
+  const placementSkippedNote =
+    placementSkippedEntries.length > 0 ? `；${placementSkippedEntries.map(([p, n]) => `${p} 生产器的 ${n} 个条目未发给判断服务`).join('，')}` : '';
   const same = existing !== null && existing.detail.root === produced.root ? '（内容与上次相同）' : '';
   const cause = existing === null ? '' : `；重新产出：${changed ?? '来源变了'}`;
   return {
     ...base,
     outcome: 'produced',
-    reason: `产出根，${produced.nodes} 个节点（新写 ${produced.created} 个）、${produced.entries} 个条目${same}${note}${skipped}${calls}${cause}`,
+    reason: `产出根，${produced.nodes} 个节点（新写 ${produced.created} 个）、${produced.entries} 个条目${same}${note}${skipped}${calls}${placementSkippedNote}${cause}`,
     root: produced.root,
     composition: produced.composition,
     refused: produced.refusedCount,
     unplaced: produced.unplaced,
     skipped: produced.skippedCount,
     calls: produced.calls,
+    ...(placementSkippedEntries.length > 0 ? { placement_skipped: Object.fromEntries(placementSkippedEntries) } : {}),
   };
 }
 
