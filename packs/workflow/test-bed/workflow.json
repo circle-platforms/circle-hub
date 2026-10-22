@@ -1,0 +1,50 @@
+{
+  "schema": "workflow@1",
+  "inputs": [
+    {
+      "slot": "inventory",
+      "role": "subject",
+      "description": "台架清单：管理员用 circle-hub doc put 发布的命名文档（doc:doc:<名字>，由 Hub 的 json@1 核心解析器解析，形状 test-bed-manifest@1）。缺省写 doc:doc:bed-topology；清单有问题时整份拒绝并指出位置",
+      "accepts": ["doc:doc"],
+      "required": true,
+      "many": false
+    }
+  ],
+  "parameters": [
+    {
+      "name": "action",
+      "description": "search（默认）：每个满足设备数量和类型的台架一个条目，写空闲状态、构建是否一致和缺什么；facts：每个台架一个条目，写监听候选、盲地址、后端候选、空闲地址数；acquire：预订台架（extend 和 release 在租约续期与释放的核心改动合并后再加）",
+      "required": false,
+      "schema": { "type": "string", "enum": ["search", "facts", "acquire"] }
+    },
+    {
+      "name": "need",
+      "description": "需求（search 和 acquire）：devices 为 [{ type, count }]（设备类型 load-balancer、router、client、server、console 各要几台，不写类型时不要求）；build 为要求设备上装的构建（NSAE 名按其基础构建算同一构建，构建记录的来源是声明还是观察照写，没有记录记未知）；hours 为用几小时（acquire 时以此为准）",
+      "required": false,
+      "schema": { "type": "object" }
+    },
+    {
+      "name": "bed",
+      "description": "acquire 时指定台架名；不写时按 need 选最佳匹配（设备够、现在 Hub 记录里空闲、构建不冲突的第一个）",
+      "required": false,
+      "schema": { "type": "string", "minLength": 1, "maxLength": 64 }
+    },
+    {
+      "name": "hours",
+      "description": "acquire 的时长（小时）：1 到 8（单次上限 8 小时，包声明的上限；不写时按 need.hours，再没有按 2 小时）",
+      "required": false,
+      "schema": { "type": "integer", "minimum": 1, "maximum": 8 }
+    },
+    {
+      "name": "addresses",
+      "description": "acquire 时要分配的空闲地址：{ segment: <网段>，count: <个数> }。从该台架这个网段扣掉接口地址、保留段和别人占着的地址后取前 count 个，租约键 bed/<台架>/ip/<地址>，与设备的租约同一批取得、同一批释放",
+      "required": false,
+      "schema": { "type": "object" }
+    }
+  ],
+  "product": { "catalogs": [] },
+  "context": ["leases"],
+  "leases": { "prefix": "bed/", "max_ttl_seconds": 28800 },
+  "subject": "inventory",
+  "projection": { "module": "functions/project.ts" }
+}

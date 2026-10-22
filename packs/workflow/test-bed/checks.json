@@ -1,0 +1,14 @@
+{
+  "schema": "checks@1",
+  "checks": [
+    {
+      "id": "bed",
+      "title": "台架结论复核",
+      "function": { "module": "functions/check-bed.ts" },
+      "applies": "run",
+      "subject": { "module": "functions/subject.ts" },
+      "judges": "subject",
+      "tier": "advisory"
+    }
+  ]
+}

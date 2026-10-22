@@ -1,0 +1,55 @@
+{
+  "id": "facts_mismatch",
+  "source": "author",
+  "check": "bed",
+  "note": "合成反例：条目把与路由器同段的地址写成盲地址；检查按冻结清单重算它是监听候选，反驳（facts_mismatch）",
+  "subject": {
+    "items": [
+      {
+        "id": "bed-a",
+        "location": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/json@1/p/beds/0",
+        "fields": {
+          "action": "facts",
+          "bed": "bed-a",
+          "segments": [
+            { "subnet": "192.0.2.0/26", "family": 4, "members": [{ "device": "apv0", "type": "load-balancer", "address": "192.0.2.10" }, { "device": "router0", "type": "router", "address": "192.0.2.1" }], "usable": 62, "free": 60 },
+            { "subnet": "192.0.2.64/26", "family": 4, "members": [{ "device": "apv0", "type": "load-balancer", "address": "192.0.2.74" }], "usable": 62, "free": 61 }
+          ],
+          "listeners": [],
+          "blind": [
+            { "device": "apv0", "address": "192.0.2.10", "subnet": "192.0.2.0/26" },
+            { "device": "apv0", "address": "192.0.2.74", "subnet": "192.0.2.64/26" }
+          ],
+          "backends": [],
+          "unknowns": []
+        }
+      }
+    ],
+    "context": {
+      "groups": [
+        {
+          "action": "facts",
+          "need": { "devices": [], "hours": 2 },
+          "bed": null,
+          "addresses": null,
+          "manifest": {
+            "schema": "test-bed-manifest@1",
+            "beds": [
+              {
+                "name": "bed-a",
+                "devices": [
+                  { "name": "apv0", "type": "load-balancer", "ipv4": ["192.0.2.10/26", "192.0.2.74/26"], "ipv6": [] },
+                  { "name": "router0", "type": "router", "ipv4": ["192.0.2.1/26"], "ipv6": [] }
+                ],
+                "services": [],
+                "reserved": []
+              }
+            ]
+          },
+          "leases": { "now": "2026-10-22T02:00:00.000Z", "entries": [] }
+        }
+      ]
+    }
+  },
+  "expect": [{ "verdict": "refute", "code": "test-bed.facts_mismatch", "tier": "advisory" }]
+}

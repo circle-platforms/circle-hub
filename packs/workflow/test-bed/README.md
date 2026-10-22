@@ -1,13 +1,23 @@
-# packs/workflow/test-bed（函数，P1：清单校验、环境事实、选台架）
+# packs/workflow/test-bed（设备台架：search / facts / acquire）
 
-设备管理包里**不依赖核心改动**的纯函数一半：解析并校验管理员上传的台架清单、算一个台架的环境事实、按需求选台架。输入输出全是 JSON；不碰数据库、网络和文件。设计在 [设备管理包设计](../../docs/hub-r4-device-pack.md)，独立复核在 [复核](../../docs/hub-r4-device-pack-review.md)。
+设备管理包的工作流包（P2 起）：读管理员发布的台架清单（命名文档），按需求搜索台架、算环境事实、预订台架。只含事实要求项，开始运行时由 Hub 直接算出结果。设计在 [设备管理包设计](../../docs/hub-r4-device-pack.md)，独立复核在 [复核](../../docs/hub-r4-device-pack-review.md)。P1 的纯函数（清单校验、环境事实、选台架）在 `functions/`，核心的租约与命名文档已落地（`hub/leases`、`hub/server/docs.ts`）。
 
-本目录现在**只有函数和测试**：`pack.json`、`workflow.json`、`checks.json` 等包文件等核心任务（租约记录种类、`context: ["leases"]`、清单的命名文档）合并后再装（P2 到 P4）。
+- **绑定**：不绑产品线（`product: { "catalogs": [] }`）。输入槽 `inventory` 读命名文档（`accepts: ["doc:doc"]`，json@1 解析，形状 test-bed-manifest@1）；声明 `context: ["leases"]` 和 `leases: { prefix: "bed/", max_ttl_seconds: 28800 }`（单次最多 8 小时，核心的接线在投影返回 `lease_requests` 后取得租约、写进运行记录）。
+- **动作**（参数 `action`）：
+  - `search`（默认）：每个满足设备数量和类型的台架一个条目，结论写空闲状态（只写“Hub 记录里空闲（未排除本地操作）”或“Hub 记录里最早 <时刻> 空闲（未排除本地操作）”）、构建是否一致（装机记录来自 bed-version，还没做，所以现在一律“没有记录（未知）”）、缺什么。
+  - `facts`：每个台架一个条目，监听候选、盲地址、后端候选、每网段空闲地址数（`functions/facts.ts`）。
+  - `acquire`：选定台架（`bed`）或按 `need` 取最佳匹配，投影返回 `lease_requests`（键 `bed/<台架>/<设备>`，要地址时加 `bed/<台架>/ip/<地址>`；期限 `hours`×3600，上限 28800 秒）；取得失败由核心拒绝（`LEASE_UNAVAILABLE` 带最早空闲时刻）。`extend` 和 `release` 等租约续期与释放的改动合并后再加。
+- **检查**：`functions/check-bed.ts` 逐条目用同一份代码（`functions/conclude.ts`）按冻结的清单与租约视图重算，结论与冻结内容一致记支持，矛盾记反驳（`test-bed.search_mismatch`、`test-bed.facts_mismatch`、`test-bed.acquire_mismatch`，提示档）；包只声明一个检查（检查声明 `tier: advisory`，正反例样本在 `samples/`）。
+- **清单**：管理员用 `circle-hub doc put bed-topology <文件>` 发布（见 `examples/bed-topology.json`）；有问题的清单整份拒绝并逐条指出位置（`functions/manifest.ts`）。
+- **验收**：`tests/acceptance/25-test-bed.test.ts`（真实 Hub 全链路：管理员发布清单、搜索、预订、第二人被拒带最早空闲时刻、环境事实、重复地址整份拒、未分配者不可用）；真实 Circle 客户端场景在 `scripts/real/accept/test-bed.ts`（脚本化模型发工具调用；租约键不进客户端文本，gold 独立写设备名、地址和时长，键由它们机械推出）。
 
 ## 函数清单
 
 | 文件 | 导出 | 作用 |
 | --- | --- | --- |
+| `conclude.ts` | `readParameters`、`searchFields`、`factsFields`、`acquirePlan`、`leaseRecord`、`manifestBeds` | 参数规整与三个动作的同一份结论计算（投影与检查共用） |
+| `project.ts` | 默认导出（ProjectionInput -> ProjectionOutput） | 按动作出条目、冻结组（清单、参数、租约视图）和 acquire 的 `lease_requests` |
+| `check-bed.ts` | `bedOutcomes` 与默认导出 | 按冻结内容重算并比对每个条目 |
 | `addresses.ts` | `parseIp`、`parseSubnet`、`parseInterface`、`formatIp`、`formatSubnet`、`subnetOf`、`subnetContains`、`expandRange`、`nextFree`、`segmentUsable`、`parseIpv4ish` | 严格的自写 IPv4/IPv6 解析与格式化、网段包含、带上限的区间迭代、空闲地址选取 |
 | `manifest.ts` | `parseManifest`、`LIMITS`、`DEVICE_TYPES`、`DEVICE_TYPE_LABEL` 及模型类型 | 清单校验：一次列全所有问题（JSON 指针、中文说明、怎么改），成功给规范化模型 |
 | `facts.ts` | `bedFacts` | 一个台架的环境事实：网段与成员、监听候选、盲地址、后端候选、每网段空闲地址数、未知项 |

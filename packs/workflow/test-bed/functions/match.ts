@@ -47,8 +47,9 @@ export interface BedMatch {
 const baseOf = (builds: Record<string, string>, name: string): string => builds[name] ?? name;
 
 /** The pick of devices of one type when the need wants count of them: the ones without an active lease first,
- * then by name; when fewer free ones exist than wanted, leased ones join (the bed then has an earliest-free time). */
-function pickDevices(bed: ManifestBed, leases: Record<string, LeaseEntry>, now: string, type: string, count: number): { picked: string[]; leasedUntil: string[] } {
+ * then by name; when fewer free ones exist than wanted, leased ones join (the bed then has an earliest-free time).
+ * Exported for the acquire projection: the lease keys are the picked devices. */
+export function pickDevices(bed: ManifestBed, leases: Record<string, LeaseEntry>, now: string, type: string, count: number): { picked: string[]; leasedUntil: string[] } {
   const of = bed.devices.filter((d) => d.type === type);
   const active = (device: string): string | null => {
     const entry = leases[`bed/${bed.name}/${device}`];

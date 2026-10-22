@@ -1,0 +1,204 @@
+// conclude: the one computation the search/facts/acquire conclusions rest on, shared by the projection
+// (functions/project.ts) and the check (functions/check-bed.ts), so the check recomputes exactly what the projection
+// computed from the same frozen manifest and lease view. The lease context the workflow declares gives only keys and
+// ends (RunContext.leases; no tokens, no holders), which is all matchNeed and the address allocation need.
+import { formatIp, nextFree, parseIp, parseSubnet, subnetContains, type Subnet } from './addresses.ts';
+import { isRecord } from './common.ts';
+import { bedFacts } from './facts.ts';
+import { parseManifest, DEVICE_TYPE_LABEL, DEVICE_TYPES, type ManifestBed } from './manifest.ts';
+import { matchNeed, pickDevices, type BedMatch, type LeaseEntry, type Need, type NeedDevice } from './match.ts';
+
+export type Action = 'search' | 'facts' | 'acquire';
+
+/** A need as the projection and the check see it (parameters normalized). */
+export interface BedNeed {
+  devices: NeedDevice[];
+  build?: string;
+  hours: number;
+}
+
+/** The frozen lease view (RunContext.leases), or its rows as matchNeed reads them. */
+export interface FrozenLeases {
+  now: string;
+  entries: Array<{ key: string; until: string }>;
+}
+
+export interface Normalized {
+  action: Action;
+  need: BedNeed;
+  bed: string | null;
+  addresses: { segment: string; count: number } | null;
+}
+
+export interface PlanFailure {
+  code: string;
+  message: string;
+  fix: string;
+}
+
+export const MAX_HOURS = 8;
+export const DEFAULT_HOURS = 2;
+
+export const ACTION_LABEL: Record<Action, string> = { search: '搜索台架', facts: '环境事实', acquire: '预订台架' };
+
+/** The rows of the frozen lease view as matchNeed reads them. */
+export function leaseRecord(frozen: FrozenLeases | undefined): Record<string, LeaseEntry> {
+  const out: Record<string, LeaseEntry> = {};
+  for (const entry of frozen?.entries ?? []) {
+    if (typeof entry?.key === 'string' && typeof entry.until === 'string') out[entry.key] = { until: entry.until };
+  }
+  return out;
+}
+
+/** Parameters of a run call: action (default search), need, bed and addresses, every problem named with its fix. */
+export function readParameters(params: Record<string, unknown>): Normalized | PlanFailure {
+  const action: Action = params.action === 'facts' || params.action === 'acquire' ? params.action : 'search';
+  const needRaw = isRecord(params.need) ? params.need : {};
+  const devices: NeedDevice[] = [];
+  const rawDevices = Array.isArray(needRaw.devices) ? needRaw.devices : [];
+  for (const raw of rawDevices) {
+    const type = isRecord(raw) && typeof raw.type === 'string' ? raw.type : '';
+    const count = isRecord(raw) && typeof raw.count === 'number' && Number.isInteger(raw.count) ? raw.count : -1;
+    if (!(DEVICE_TYPES as readonly string[]).includes(type)) {
+      return { code: 'test-bed.bad_need', message: `need.devices 里的设备类型 ${JSON.stringify(type)} 不在五种里（${Object.values(DEVICE_TYPE_LABEL).join('、')}）`, fix: `type 写 ${DEVICE_TYPES.join('、')} 之一` };
+    }
+    if (count < 1 || count > 100) return { code: 'test-bed.bad_need', message: `need.devices 里 ${type} 的数量 ${JSON.stringify(raw.count)} 不是 1 到 100 的整数`, fix: 'count 写 1 到 100 的整数' };
+    devices.push({ type, count });
+  }
+  const build = typeof needRaw.build === 'string' && needRaw.build !== '' ? needRaw.build : undefined;
+  const hoursRaw = params.hours ?? needRaw.hours ?? DEFAULT_HOURS;
+  if (typeof hoursRaw !== 'number' || !Number.isInteger(hoursRaw) || hoursRaw < 1 || hoursRaw > MAX_HOURS) {
+    return { code: 'test-bed.bad_hours', message: `hours ${JSON.stringify(hoursRaw)} 不是 1 到 ${MAX_HOURS} 的整数小时`, fix: `hours 写 1 到 ${MAX_HOURS}（单次最多 ${MAX_HOURS} 小时）` };
+  }
+  const bed = typeof params.bed === 'string' && params.bed !== '' ? params.bed : null;
+  let addresses: Normalized['addresses'] = null;
+  if (params.addresses !== undefined && params.addresses !== null) {
+    if (!isRecord(params.addresses) || typeof params.addresses.segment !== 'string' || parseSubnet(params.addresses.segment) === null) {
+      return { code: 'test-bed.bad_addresses', message: 'addresses.segment 要写一个网段（如 192.0.2.0/26）', fix: 'addresses 写 { "segment": "192.0.2.0/26", "count": 2 }' };
+    }
+    const count = params.addresses.count;
+    if (typeof count !== 'number' || !Number.isInteger(count) || count < 1 || count > 64) {
+      return { code: 'test-bed.bad_addresses', message: `addresses.count ${JSON.stringify(count)} 不是 1 到 64 的整数`, fix: 'count 写 1 到 64' };
+    }
+    addresses = { segment: params.addresses.segment, count };
+  }
+  return { action, need: { devices, build, hours: hoursRaw }, bed, addresses };
+}
+
+const matchNeedOf = (need: BedNeed): Need => ({ devices: need.devices, hours: need.hours, ...(need.build === undefined ? {} : { build: need.build }) });
+
+/** The manifest beds, or the problems the projection fails the whole call with. */
+export function manifestBeds(model: unknown): { ok: true; beds: ManifestBed[] } | { ok: false; problems: Array<{ pointer: string; message: string; fix: string }> } {
+  const parsed = parseManifest(model);
+  if (parsed.ok) return { ok: true, beds: parsed.beds };
+  return { ok: false, problems: parsed.problems };
+}
+
+export interface SearchFields {
+  bed: string;
+  devices_ok: boolean;
+  missing: string[];
+  earliest_free: string | null;
+  build_ok: BedMatch['buildOk'];
+  build_source: BedMatch['buildSource'];
+  spare_devices: number;
+  conclusion: string;
+}
+
+/** One search conclusion per bed (matchNeed's order); the build verdict is 'unknown' until bed-version reports exist. */
+export function searchFields(beds: ManifestBed[], need: BedNeed, leases: Record<string, LeaseEntry>, now: string): SearchFields[] {
+  // Install reports come from the future bed-version workflow; until then every build verdict is unknown (never a
+  // match and never a mismatch), and the conclusion says there is no record.
+  const matches = matchNeed(beds, matchNeedOf(need), {}, {}, leases, now);
+  return matches.map((m) => ({
+    bed: m.bed,
+    devices_ok: m.devicesOk,
+    missing: m.devicesOk ? [] : m.conclusion.split('；'),
+    earliest_free: m.earliestFree,
+    build_ok: m.buildOk,
+    build_source: m.buildSource,
+    spare_devices: m.spareDevices,
+    conclusion: m.conclusion,
+  }));
+}
+
+export interface FactsFields {
+  bed: string;
+  segments: unknown[];
+  listeners: unknown[];
+  blind: unknown[];
+  backends: unknown[];
+  unknowns: unknown[];
+}
+
+/** One facts conclusion per bed (the manifest's order). */
+export function factsFields(beds: ManifestBed[]): FactsFields[] {
+  return beds.map((bed) => {
+    const facts = bedFacts(bed);
+    return { bed: bed.name, segments: facts.segments, listeners: facts.listeners, blind: facts.blind, backends: facts.backends, unknowns: facts.unknowns };
+  });
+}
+
+export interface AcquirePlan {
+  bed: string;
+  devices: string[];
+  addresses: string[];
+  keys: string[];
+  ttl_seconds: number;
+  conclusion: string;
+}
+
+/** The lease request of an acquire: the bed, the picked devices and addresses, the keys and the TTL, or the failure. */
+export function acquirePlan(beds: ManifestBed[], need: BedNeed, bedParam: string | null, addressesParam: Normalized['addresses'], leases: Record<string, LeaseEntry>, now: string): { ok: true; plan: AcquirePlan } | { ok: false; failure: PlanFailure } {
+  const matches = searchFields(beds, need, leases, now);
+  let chosen: SearchFields | undefined;
+  if (bedParam !== null) {
+    chosen = matches.find((m) => m.bed === bedParam);
+    if (chosen === undefined) return { ok: false, failure: { code: 'test-bed.unknown_bed', message: `清单里没有台架 ${bedParam}`, fix: 'bed 写清单里的一个台架名，或不写按 need 选最佳匹配' } };
+    if (!chosen.devices_ok) return { ok: false, failure: { code: 'test-bed.bed_short', message: `台架 ${bedParam} 不满足需求：${chosen.conclusion}`, fix: '换 need 或换台架' } };
+    if (need.build !== undefined && chosen.build_ok === 'mismatch') return { ok: false, failure: { code: 'test-bed.build_mismatch', message: `台架 ${bedParam} 的构建不一致：${chosen.conclusion}`, fix: '先升级，或换构建一致的台架' } };
+  } else {
+    // matchNeed's order is idle first: the first fitting bed is idle when one exists, else the earliest to free; a
+    // taken bed is refused by the Hub's lease grant with LEASE_UNAVAILABLE and the earliest free moment, not here.
+    chosen = matches.find((m) => m.devices_ok && (need.build === undefined || m.build_ok !== 'mismatch'));
+    if (chosen === undefined) {
+      return { ok: false, failure: { code: 'test-bed.no_bed', message: '没有满足需求的台架', fix: '缩小 need；各台架的最早空闲时刻见 search 的结论' } };
+    }
+  }
+  const bed = beds.find((b) => b.name === (chosen as SearchFields).bed) as ManifestBed;
+  const picked: string[] = [];
+  for (const { type, count } of need.devices) picked.push(...pickDevices(bed, leases, now, type, count).picked);
+  picked.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  // Addresses: the free ones of the segment after members, reserved ranges and the ip keys already leased out.
+  const addresses: string[] = [];
+  if (addressesParam !== null) {
+    const subnet = parseSubnet(addressesParam.segment) as Subnet;
+    if (!bed.devices.some((d) => [...d.ipv4, ...d.ipv6].some((a) => a.subnet === addressesParam.segment))) {
+      return { ok: false, failure: { code: 'test-bed.no_segment', message: `台架 ${bed.name} 没有网段 ${addressesParam.segment}`, fix: 'addresses.segment 写台架的一个网段' } };
+    }
+    const taken = new Set<bigint>();
+    for (const device of bed.devices) for (const a of [...device.ipv4, ...device.ipv6]) if (a.subnet === addressesParam.segment) taken.add(a.value);
+    for (const [key, entry] of Object.entries(leases)) {
+      if (key.startsWith(`bed/${bed.name}/ip/`) && Date.parse(entry.until) > Date.parse(now)) {
+        const value = parseIp(key.slice(`bed/${bed.name}/ip/`.length));
+        if (value !== null && subnetContains(subnet, value)) taken.add(value);
+      }
+    }
+    const reserved = new Set<bigint>();
+    for (const range of bed.reserved) for (const value of range.addresses) reserved.add(value);
+    const free = nextFree(subnet, taken, reserved, addressesParam.count);
+    if (free.length < addressesParam.count) {
+      return { ok: false, failure: { code: 'test-bed.not_enough_addresses', message: `台架 ${bed.name} 的网段 ${addressesParam.segment} 只有 ${free.length} 个空闲地址，少于 ${addressesParam.count} 个`, fix: '少要几个，或换网段' } };
+    }
+    for (const value of free) addresses.push(formatIp(subnet.family, value));
+  }
+  if (picked.length === 0 && addresses.length === 0) {
+    return { ok: false, failure: { code: 'test-bed.nothing_to_lease', message: '没有要取得的设备或地址：need.devices 和 addresses 都是空的', fix: '在 need.devices 里要设备，或在 addresses 里要地址' } };
+  }
+  const keys = [...picked.map((device) => `bed/${bed.name}/${device}`), ...addresses.map((address) => `bed/${bed.name}/ip/${address}`)];
+  const parts = [`预订 ${bed.name}`];
+  if (picked.length > 0) parts.push(`设备 ${picked.join('、')}`);
+  if (addresses.length > 0) parts.push(`地址 ${addresses.join('、')}`);
+  parts.push(`${need.hours} 小时`);
+  return { ok: true, plan: { bed: bed.name, devices: picked, addresses, keys, ttl_seconds: need.hours * 3600, conclusion: parts.join('，') } };
+}

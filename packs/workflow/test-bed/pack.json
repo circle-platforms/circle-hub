@@ -1,0 +1,130 @@
+{
+  "schema": "pack@1",
+  "id": "test-bed",
+  "version": "1.0.0",
+  "kind": "workflow",
+  "title": "设备台架",
+  "description": "读管理员发布的台架清单（命名文档），按需求搜索台架（空闲状态、构建一致性、缺什么）、算环境事实（监听候选、盲地址、后端候选、空闲地址数）、预订台架（租约键 bed/<台架>/<设备>，可带地址分配，单次最多 8 小时）；只含事实要求项，开始运行时由 Hub 直接算出结果",
+  "files": [
+    {
+      "path": "SKILL.md",
+      "sha256": "940e59f6335d835e9f7d81f38da7790fc70c9be6d124c3ff85a1637582e988ce",
+      "size": 2498
+    },
+    {
+      "path": "checks.json",
+      "sha256": "673521d7da771093856c4bcbd21f68a0e20e8541a993fdab4cf0a4046607e6bb",
+      "size": 303
+    },
+    {
+      "path": "examples/bed-topology.json",
+      "sha256": "063cc748fc691948ddc657fa2983146eddedc151cb3bc95f7391f8b126a002f7",
+      "size": 1100
+    },
+    {
+      "path": "examples/start-run-acquire.json",
+      "sha256": "5084cdc55079992719f222012f7a0b4577bf2886392609b54e6975df64849d52",
+      "size": 705
+    },
+    {
+      "path": "examples/start-run-facts.json",
+      "sha256": "597c1a58d0b1953acb1c1ca7ed9890f72b48bf1f1fbd14b647488102a2df8fab",
+      "size": 370
+    },
+    {
+      "path": "examples/start-run-search.json",
+      "sha256": "783acb7c195fe98fcba3a3dfd3be25a114caf424fcfe8922c989f1fe6f5c8ca9",
+      "size": 518
+    },
+    {
+      "path": "functions/addresses.ts",
+      "sha256": "ecbb40c7077b1b094bcd634f2f3ffb0ec192882152b8bca474c9bb3890cf7d67",
+      "size": 10335
+    },
+    {
+      "path": "functions/check-bed.ts",
+      "sha256": "525dd27987769b0b3b1183b8f505decf67717060a07c13df20e0764a7a44335d",
+      "size": 9863
+    },
+    {
+      "path": "functions/common.ts",
+      "sha256": "c7c0bce5f3b7852a09c54a777ed9349d01711c7dd8a6cc7b2d1cbf147ad79b46",
+      "size": 879
+    },
+    {
+      "path": "functions/conclude.ts",
+      "sha256": "3fd878098464015c431efd246a9d054d69b1c25112c331eb88300ae561dff7f8",
+      "size": 11626
+    },
+    {
+      "path": "functions/facts.ts",
+      "sha256": "6c063fb4d7a05768a82b1724efa307ef3f9538a7f6566289217774a8c6876a91",
+      "size": 6604
+    },
+    {
+      "path": "functions/manifest.ts",
+      "sha256": "3e988008b9da7677f1b48f207261425132d7ccbc6a94d1e7f5f3e945f95b87fe",
+      "size": 17980
+    },
+    {
+      "path": "functions/match.ts",
+      "sha256": "e4ea8322dd9e658cd7c15830ac441f2f5ac280f06ab32c52b184652ff9d20956",
+      "size": 7204
+    },
+    {
+      "path": "functions/project.ts",
+      "sha256": "e793ba78a69409350b8a39aa786ecdc80ecaa2755110ead3c496b924d1cc9914",
+      "size": 6201
+    },
+    {
+      "path": "functions/subject.ts",
+      "sha256": "ac54432fab175861b7289e1f859446f8106d437006e16a8fec9e3a7aefeacf84",
+      "size": 1827
+    },
+    {
+      "path": "requirements.json",
+      "sha256": "10a330a3d969cc6f1fddade0b65754805af61103b1202462b4c01d71716c8e46",
+      "size": 1164
+    },
+    {
+      "path": "samples/negative/acquire-mismatch.json",
+      "sha256": "f1931c5626c2e057099cc76da7650156d4a8b10d6b7bd8616120581619f8773e",
+      "size": 1793
+    },
+    {
+      "path": "samples/negative/facts-mismatch.json",
+      "sha256": "6f86015e0134c5ff16e325785860300f5284f68a62dfddc6fdd01244725eecfd",
+      "size": 2093
+    },
+    {
+      "path": "samples/negative/search-mismatch.json",
+      "sha256": "aee5839a6803e13c7e3aff8e20193031d32b0b4c68f621106f2fa2758a684897",
+      "size": 1626
+    },
+    {
+      "path": "samples/positive/acquire-support.json",
+      "sha256": "9b0af5688ea5c9b956a53e554f380aac92db096e195730751f8c36bbbb2da75b",
+      "size": 1992
+    },
+    {
+      "path": "samples/positive/facts-support.json",
+      "sha256": "20964ab1eb17f3b83adc5662b14352e1d4c92dea9c30f29c8fd346d7241e34ff",
+      "size": 2159
+    },
+    {
+      "path": "samples/positive/search-support.json",
+      "sha256": "7d2b557653829490a4ea103ed8de9f14ab9dbfc8276436f432d440ffbbaa849d",
+      "size": 1536
+    },
+    {
+      "path": "slots.schema.json",
+      "sha256": "851202e03d46a4b40941830a276007f860f657166b31d30da18d0d2268567516",
+      "size": 53
+    },
+    {
+      "path": "workflow.json",
+      "sha256": "a5f9c141b28623e121d4da181e59b096cc1df49d03812bbbba15a9369b2f389d",
+      "size": 2647
+    }
+  ]
+}
