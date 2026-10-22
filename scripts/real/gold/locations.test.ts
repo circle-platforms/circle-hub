@@ -239,6 +239,89 @@ describe('locations gold generator', () => {
     assert.match(noncon.reason, /不是有效模块名/);
   });
 
+  it('handles cumulative cases in root and intermediate folders: places document in deepest folder and handles leaf document', () => {
+    // Real tree shape:
+    // Root lists all documents in cases: ['950001', '950002', '950003', '950004']
+    // Intermediate line folder lists: ['950001', '950002', '950003']
+    // Train folder lists: ['950001', '950002', '950003']
+    // Module folder lists: ['950001', '950002']
+    // Leaf document: 950002 is a leaf inside module folder (cases: [], children: [])
+    // 950001 is only listed in module folder cases (deepest folder is module)
+    // 950003 is only listed in train folder cases (deepest folder is train -> nonconforming, no module)
+    // 950004 is only listed in root folder cases (deepest folder is root -> nonconforming, no line)
+    const tree = {
+      root: { id: '7716', title: 'NSAE' },
+      cases: ['950001', '950002', '950003', '950004'],
+      children: [
+        {
+          id: '8200',
+          label: '030：NSAE测试项目',
+          cases: ['950001', '950002', '950003'],
+          children: [
+            {
+              id: '8210',
+              label: '060：10.6.1',
+              cases: ['950001', '950002', '950003'],
+              children: [
+                {
+                  id: '8211',
+                  label: '004：10.6.1-R2-2026/7',
+                  cases: ['950001', '950002', '950003'],
+                  children: [
+                    {
+                      id: '8212',
+                      label: '信标',
+                      cases: ['950001', '950002'],
+                      children: [
+                        {
+                          id: '950002',
+                          label: '需求 18002 信标探活配置',
+                          cases: [],
+                          children: [],
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    const gold = locationsGold(tree);
+    assert.equal(gold.root, '7716');
+
+    // 950001: not a leaf node, listed in root, line, train, module.
+    // Must fall into the deepest layer (module: 信标), NOT root!
+    const doc1 = gold.documents.find((d) => d.document === '950001')!;
+    assert.ok(doc1, '950001 must be located');
+    assert.equal(doc1.line, '10.6.1');
+    assert.equal(doc1.train, '10.6.1-R2-2026/7');
+    assert.equal(doc1.module, '信标');
+
+    // 950002: leaf document, also listed in cases of parent folders.
+    // Takes its own upper path (module: 信标) and its title!
+    const doc2 = gold.documents.find((d) => d.document === '950002')!;
+    assert.ok(doc2, '950002 must be located');
+    assert.equal(doc2.line, '10.6.1');
+    assert.equal(doc2.train, '10.6.1-R2-2026/7');
+    assert.equal(doc2.module, '信标');
+    assert.equal(doc2.title, '需求 18002 信标探活配置');
+    assert.deepEqual(doc2.stories, ['18002']);
+
+    // 950003: deepest is train folder (no module) -> nonconforming
+    const noncon3 = gold.nonconforming.find((d) => d.document === '950003')!;
+    assert.ok(noncon3, '950003 must be nonconforming');
+    assert.equal(noncon3.reason, '发布火车下面没有模块层');
+
+    // 950004: deepest is root -> nonconforming
+    const noncon4 = gold.nonconforming.find((d) => d.document === '950004')!;
+    assert.ok(noncon4, '950004 must be nonconforming');
+    assert.equal(noncon4.reason, '缺少版本线节点');
+  });
+
   it('main CLI generates locations gold JSON and handles missing arguments', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'locations-gold-test-'));
     try {
