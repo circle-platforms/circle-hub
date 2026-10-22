@@ -32,7 +32,7 @@ describe('regression-scope scenario', () => {
   const scenario = regressionScope(gold);
   test('starts the run with the impact view of the build pair on turn 0', () => {
     assert.deepEqual(scenario.respond(turn(0)), [
-      { tool: 'hub_start_run', input: { pack: 'regression-scope@1.0.0', product: 'apv', inputs: { impact: { external: 'knowledge:impact:apv:Rel_APV_10_6_1_56..Rel_APV_10_6_1_57' } } } },
+      { tool: 'hub_start_run', input: { pack: 'regression-scope', inputs: { impact: { external: 'knowledge:impact:apv:Rel_APV_10_6_1_56..Rel_APV_10_6_1_57' } } } },
     ]);
     assert.deepEqual(scenario.respond(turn(1)), [{ text: '对比完成。' }]);
   });
@@ -62,7 +62,7 @@ describe('maintenance-sweep scenario', () => {
   const scenario = maintenanceSweep(gold);
   test('starts the run on turn 0', () => {
     assert.deepEqual(scenario.respond(turn(0)), [
-      { tool: 'hub_start_run', input: { pack: 'maintenance-sweep@1.0.0', product: 'apv', inputs: { impact: { external: 'knowledge:impact:apv:Rel_APV_10_6_1_56..Rel_APV_10_6_1_57' } } } },
+      { tool: 'hub_start_run', input: { pack: 'maintenance-sweep', inputs: { impact: { external: 'knowledge:impact:apv:Rel_APV_10_6_1_56..Rel_APV_10_6_1_57' } } } },
     ]);
   });
   test('holds when removed and changed cases sit on their paths with their marks', () => {
@@ -94,11 +94,10 @@ describe('traceability scenario', () => {
       {
         tool: 'hub_start_run',
         input: {
-          pack: 'traceability@1.0.0',
-          product: 'apv',
+          pack: 'traceability',
           inputs: {
             defects: { external: 'knowledge:index:apv:Rel_APV_10_6_1_57?kind=defect&key=bug' },
-            cases: { external: 'knowledge:index:apv:Rel_APV_10_6_1_57?kind=case&key=defects' },
+            cases: { external: 'knowledge:index:apv:Rel_APV_10_6_1_57?kind=case&key=defects&fields=document,node,title' },
           },
         },
       },
@@ -123,7 +122,7 @@ describe('quality-board scenario', () => {
   const scenario = qualityBoard(gold);
   test('starts the run with the facet view on turn 0', () => {
     assert.deepEqual(scenario.respond(turn(0)), [
-      { tool: 'hub_start_run', input: { pack: 'quality-board@1.0.0', product: 'apv', inputs: { facets: { external: 'knowledge:facets:apv:Rel_APV_10_6_1_57?kind=case&by=line,module,has_expected,vague_expected,negative' } } } },
+      { tool: 'hub_start_run', input: { pack: 'quality-board', inputs: { facets: { external: 'knowledge:facets:apv:Rel_APV_10_6_1_57?kind=case&by=line,module,has_expected,vague_expected,negative' } } } },
     ]);
   });
   test('holds on a matching group line with the limitation shown, fails on wrong counts', () => {
@@ -133,5 +132,27 @@ describe('quality-board scenario', () => {
     assert.ok(!allOk(scenario, turnsOf(wrong)));
     const noLimit = good.replace('看板描述的是已索引的用例，不是整套测试。', '');
     assert.ok(!allOk(scenario, turnsOf(noLimit)), 'the limitation must be shown');
+  });
+});
+
+describe('product line unbinding in start_run inputs', () => {
+  test('start_run 输入里没有 product', async () => {
+    const scenarios = [
+      regressionScope({ product: 'apv', earlier: 'b1', later: 'b2', changed: [], removed: [], inScope: [], outOfScope: [] }),
+      maintenanceSweep({ product: 'apv', earlier: 'b1', later: 'b2', cases: [] }),
+      traceability({ product: 'apv', build: 'b1', defects: [] }),
+      qualityBoard({ product: 'apv', build: 'b1', groups: [] }),
+    ];
+    for (const s of scenarios) {
+      const calls = (await s.respond(turn(0))) as Array<{ tool?: string; input?: Record<string, unknown> }>;
+      assert.equal(calls.length, 1);
+      assert.equal(calls[0].tool, 'hub_start_run');
+      assert.ok(calls[0].input !== null && typeof calls[0].input === 'object');
+      assert.equal(
+        Object.hasOwn(calls[0].input, 'product'),
+        false,
+        `${s.name} 的 hub_start_run 输入不应包含 product`,
+      );
+    }
   });
 });

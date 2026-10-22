@@ -22,14 +22,14 @@ export interface BoardGold {
 
 export default function scenario(gold: BoardGold): Scenario {
   const area = '质量看板';
-  const pack = 'quality-board@1.0.0';
+  const pack = 'quality-board';
   return {
     name: 'quality-board',
     area,
     prompt: `请对构建 ${gold.build} 出用例质量看板。`,
     respond: (turn) =>
       turn.index === 0
-        ? [{ tool: 'hub_start_run', input: { pack, product: gold.product, inputs: { facets: { external: `knowledge:facets:${gold.product}:${gold.build}?kind=case&by=line,module,has_expected,vague_expected,negative` } } } }]
+        ? [{ tool: 'hub_start_run', input: { pack, inputs: { facets: { external: `knowledge:facets:${gold.product}:${gold.build}?kind=case&by=line,module,has_expected,vague_expected,negative` } } } }]
         : [{ text: '看板完成。' }],
     check(turns: LoggedTurn[]): Check[] {
       const text = resultTexts(turns).join('\n');
