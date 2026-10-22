@@ -50,7 +50,9 @@ note is present. A truncated view adds `integrity_unproven`.
 1. The pack names no product and no catalog, so a run must not pass `product`, `version` or `build`.
 2. Violation codes carry the pack name (`maintenance-sweep.case.command_removed`, `maintenance-sweep.case.command_changed`). The engine rejects a pack-function code outside that namespace. The short names in the task page are the part after the pack id.
 3. Case data is read as `document`, `node`, `title`, `priority` and `negative`, the same assumption as regression-scope. The cases index is owned by another pack.
-4. A pair with no maintenance item is an empty projection plus a warning that says so. The run engine refuses a projection with no items (W01 R[3]). This pack does not invent an item to get past that refusal.
+4. A pair with no maintenance item is an empty projection plus a warning that says so. An empty item set is a legal answer (W01 R[3]):
+   the run engine accepts an empty projection, stores its validation result with empty partitions and coverage complete
+   at 0 of 0, and notes in the answer that there are no items carrying the pack's explanation.
 5. The positive samples are a case whose reasons are neither a removal nor a definition diff. A well-formed projection does not emit such an item; the samples exist so each check has a support (C05 R[0]).
 
 ## How to test
@@ -71,12 +73,12 @@ product pack's cases index is committed.
 
 - At most 10,000 check outcomes in one call (the engine's cap). The 5,000-case test calls the function directly.
 - `ignore_fields` holds at most 40 names, each at most 80 characters.
-- Warnings kept on a run are the first 100. An empty projection's warnings are dropped by the engine with the refusal.
+- Warnings kept on a run are the first 100. An empty projection's warnings are kept and carried in the answer's gaps and parse action.
 - A named definition entry that is missing from the view is not treated as “no difference”: the path stays a maintenance
   item and the warning names the digest.
 
 ## Needs from other packages
 
-- **runs engine** (`hub/runs/engine/projection.ts`, W01 R[3]): a projection with zero items refuses `start_run` (“投影没有给出任何条目”). A clean pair cannot be stored. Request: accept an empty item list when the projection says why.
+- **runs engine** (`hub/runs/engine/projection.ts`, W01 R[3]): done — empty item sets are accepted as legal answers, storing an empty validation result and carrying the projection's explanation.
 - **product pack** (cases producer): confirm the case entry fields. Until that producer is committed, the real-reader end-to-end test stays a todo.
 - **knowledge pack**: this pack only parses `impact-view@1`.
