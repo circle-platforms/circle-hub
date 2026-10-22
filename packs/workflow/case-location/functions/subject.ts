@@ -1,8 +1,9 @@
-// Subject builder of the locate check (run-subject-input@1 -> the check's subject): the items with their fields and the run
-// facts the scheme needs, which a check function does not receive otherwise (its context names the run, requirement and
-// pack only): the bound product line, all its names and the frozen parameters.
+// Subject builder of the pack's checks (run-subject-input@1 -> the check's subject): the items with their fields and the
+// run facts the scheme needs, which a check function does not receive otherwise (its context names the run, requirement and
+// pack only): the bound product line, all its names, the frozen parameters and, when the workflow asked for them
+// (workflow.json context), the frozen builds of the bound product.
 import { guarded, isRecord, strings } from './text.ts';
-import type { LocateSubject } from './types.ts';
+import type { ContextBuild, LocateSubject } from './types.ts';
 
 export function buildSubject(input: unknown): LocateSubject {
   const raw = isRecord(input) ? input : {};
@@ -18,6 +19,7 @@ export function buildSubject(input: unknown): LocateSubject {
       product: typeof context.product === 'string' ? context.product : null,
       names: strings(context.names),
       parameters: isRecord(context.parameters) ? context.parameters : {},
+      ...(Array.isArray(context.builds) ? { builds: context.builds as ContextBuild[] } : {}),
     },
   };
 }

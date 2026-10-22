@@ -114,6 +114,16 @@
       "additionalProperties": false,
       "description": "the product binding (W03 R[5]): one line, whatever the names it is known by"
     },
+    "context": {
+      "description": "the run-context parts this workflow asks for beyond the defaults, for example builds: the knowledge base builds of the bound product, frozen with the run",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "builds"
+        ]
+      }
+    },
     "subject": {
       "type": "string",
       "pattern": "^[a-z][a-z0-9_]*$",

@@ -28,7 +28,7 @@ export const sha = (text: string): string => createHash('sha256').update(text).d
 
 export const ROOT = sha('synthetic root of Rel_APV_10_6_1_57');
 
-/** The one build the synthetic knowledge base knows, with a root: what a run bound to the line locks. */
+/** The build a run bound to the line locks (the newest released build with a root). */
 export const BUILD: KnownBuild = {
   name: 'Rel_APV_10_6_1_57',
   family: 'APV',
@@ -36,27 +36,55 @@ export const BUILD: KnownBuild = {
   base: 'Rel_APV_10_6_1_57',
   platform: null,
   built_at: '2026-09-01T00:00:00.000Z',
-  released_at: '2026-09-02T00:00:00.000Z',
+  released_at: '2026-09-10T00:00:00.000Z',
   sources: {},
   root: ROOT,
 };
 
-/** A KnowledgePort with one build of line apv; the location pack reads no knowledge, a bound run only locks this root. */
-export class OneBuildKnowledge implements KnowledgePort {
+/**
+ * Every build the synthetic knowledge base knows of the line: both name families (the NSAE alias released before its base,
+ * so the default lock stays on BUILD), a newer released build without a root (1_60) and an unreleased one (1_63), and a
+ * build of another line (10.5.1).
+ */
+export const BUILDS: KnownBuild[] = [
+  BUILD,
+  { name: 'Rel_NSAE_10_6_1_57', family: 'NSAE', line: '10.6.1', base: 'Rel_APV_10_6_1_57', platform: null, built_at: '2026-09-01T00:00:00.000Z', released_at: '2026-09-05T00:00:00.000Z', sources: {}, root: ROOT },
+  { name: 'Rel_APV_10_6_1_60', family: 'APV', line: '10.6.1', base: 'Rel_APV_10_6_1_60', platform: null, built_at: '2026-09-18T00:00:00.000Z', released_at: '2026-09-20T00:00:00.000Z', sources: {}, root: null },
+  { name: 'Rel_APV_10_6_1_63', family: 'APV', line: '10.6.1', base: 'Rel_APV_10_6_1_63', platform: null, built_at: '2026-09-25T00:00:00.000Z', released_at: null, sources: {}, root: null },
+  { name: 'Rel_APV_10_5_1_101', family: 'APV', line: '10.5.1', base: 'Rel_APV_10_5_1_101', platform: null, built_at: '2026-05-01T00:00:00.000Z', released_at: '2026-05-02T00:00:00.000Z', sources: {}, root: sha('synthetic root of Rel_APV_10_5_1_101') },
+];
+
+/** A KnowledgePort with a handful of builds of line apv; the location pack reads the builds through the run context. */
+export class SyntheticKnowledge implements KnowledgePort {
   async builds(product: string, filter?: { line?: string; released?: boolean }): Promise<KnownBuild[]> {
-    return product === 'apv' && (filter?.line === undefined || filter.line === BUILD.line) ? [BUILD] : [];
+    if (product !== 'apv') return [];
+    return BUILDS.filter((b) => (filter?.line === undefined || b.line === filter.line) && (filter?.released === undefined || (b.released_at !== null) === filter.released));
   }
   async resolveBuild(product: string, name: string): Promise<KnownBuild | null> {
-    return product === 'apv' && name.toLowerCase() === BUILD.name.toLowerCase() ? BUILD : null;
+    if (product !== 'apv') return null;
+    const key = name.toLowerCase();
+    const found = BUILDS.find((b) => b.name.toLowerCase() === key);
+    if (found === undefined) return null;
+    return found.base === found.name ? found : (BUILDS.find((b) => b.name === found.base) ?? null);
   }
   async currentRoot(product: string, line: string): Promise<RootInfo | null> {
-    return product === 'apv' && line === BUILD.line ? this.info() : null;
+    if (product !== 'apv') return null;
+    const newest = BUILDS.filter((b) => b.line === line && b.root !== null && b.released_at !== null).sort((a, b) => (b.released_at as string).localeCompare(a.released_at as string))[0];
+    return newest === undefined ? null : this.rootOfBuild(product, newest.name);
   }
   async rootOfBuild(product: string, name: string): Promise<RootInfo | null> {
-    return (await this.resolveBuild(product, name)) === null ? null : this.info();
+    const build = await this.resolveBuild(product, name);
+    if (build === null || build.root === null) return null;
+    return { root: build.root, composition: sha(`composition of ${build.name}`), product, build, produced_at: '2026-09-21T00:00:00.000Z' };
   }
   async rootInfo(root: string): Promise<RootInfo[]> {
-    return root === ROOT ? [this.info()] : [];
+    const out: RootInfo[] = [];
+    for (const build of BUILDS) {
+      if (build.root !== root || build.base !== build.name) continue;
+      const info = await this.rootOfBuild('apv', build.name);
+      if (info !== null) out.push(info);
+    }
+    return out;
   }
   async catalog(): Promise<CatalogView | null> {
     return null;
@@ -72,9 +100,6 @@ export class OneBuildKnowledge implements KnowledgePort {
   }
   async diffEntries(): Promise<null> {
     return null;
-  }
-  private info(): RootInfo {
-    return { root: ROOT, composition: sha('composition of Rel_APV_10_6_1_57'), product: 'apv', build: BUILD, produced_at: '2026-09-03T00:00:00.000Z' };
   }
 }
 
@@ -175,7 +200,7 @@ export async function openHub(postgres: TemporaryPostgres): Promise<Hub> {
       records: kit,
       workflows: createWorkflowStore(registry),
       packs: createPacksPort(registry),
-      knowledge: new OneBuildKnowledge(),
+      knowledge: new SyntheticKnowledge(),
       external,
       now,
       adminLog: (entry) => logs.push(entry),

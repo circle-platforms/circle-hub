@@ -7,6 +7,11 @@
       "code": "case-location.declaration_conflict",
       "when": "调用方声明的产品或版本线与目录树给出的矛盾（产品与目录树的根不是同一产品，或版本线与目录版本层的版本、版本线节点、发布火车对不上）",
       "fix": "去掉或改正参数 product、line；结论按目录树给出"
+    },
+    {
+      "code": "case-location.build_other_line",
+      "when": "目录或标题里写出的构建名属于另一条版本线的已知构建，不是定位到的版本线的构建",
+      "fix": "核对这个文档的版本线；如果文档确实属于那条线，修正目录树"
     }
   ],
   "refusals": [

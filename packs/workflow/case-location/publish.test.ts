@@ -44,18 +44,21 @@ describe('publishing the case-location pack', { skip }, () => {
     assert.ok(outcome.ok, outcome.ok ? '' : JSON.stringify(outcome.problems, null, 1));
     assert.equal(outcome.created, true);
     const report = outcome.report;
-    assert.deepEqual([report.samples.total, report.samples.passed, report.samples.failed, report.samples.sources.author], [5, 5, 0, 5]);
+    assert.deepEqual([report.samples.total, report.samples.passed, report.samples.failed, report.samples.sources.author], [7, 7, 0, 7]);
     assert.deepEqual(report.failures, []);
     assert.deepEqual(report.unsampled, []);
     assert.deepEqual(
       report.checks.map((c) => [c.check, c.positive, c.negative, c.marks]),
-      [['locate', 2, 3, ['author_samples_only']]],
+      [
+        ['locate', 2, 3, ['author_samples_only']],
+        ['candidates', 1, 1, ['author_samples_only']],
+      ],
     );
     assert.deepEqual(
       report.warnings.map((w) => w.rule),
-      ['publish.author_samples_only'],
+      ['publish.author_samples_only', 'publish.author_samples_only'],
     );
-    assert.deepEqual([outcome.version.id, outcome.version.version, outcome.version.kind], ['case-location', '1.0.0', 'workflow']);
+    assert.deepEqual([outcome.version.id, outcome.version.version, outcome.version.kind], ['case-location', '1.1.0', 'workflow']);
     // The same content again is the same publication.
     const again = await registry.publish(owner, await staged());
     assert.ok(again.ok && again.created === false);

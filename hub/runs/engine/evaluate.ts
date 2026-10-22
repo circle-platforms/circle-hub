@@ -159,6 +159,7 @@ export function runContextOf(run: RunRecord): RunContext {
     root: run.root ?? null,
     parameters: run.parameters,
     groups: run.groups ?? [],
+    ...(run.builds !== undefined ? { builds: run.builds } : {}),
   };
 }
 

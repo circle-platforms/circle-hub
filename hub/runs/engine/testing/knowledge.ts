@@ -127,9 +127,12 @@ export class FakePacks implements PacksPort {
 export class FakeKnowledge implements KnowledgePort {
   /** Roots whose catalog is missing (to show a check without its catalog). */
   readonly withoutCatalog = new Set<string>();
+  /** Answer builds in reverse order (a port's order must never change an outcome). */
+  reversedBuilds = false;
 
   async builds(product: string, filter?: { line?: string; released?: boolean }): Promise<KnownBuild[]> {
-    return (BUILDS[product] ?? []).filter((b) => (filter?.line === undefined || b.line === filter.line) && (filter?.released === undefined || (b.released_at !== null) === filter.released));
+    const list = (BUILDS[product] ?? []).filter((b) => (filter?.line === undefined || b.line === filter.line) && (filter?.released === undefined || (b.released_at !== null) === filter.released));
+    return this.reversedBuilds ? [...list].reverse() : list;
   }
   async resolveBuild(product: string, name: string): Promise<KnownBuild | null> {
     const key = name.toLowerCase();

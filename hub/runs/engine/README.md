@@ -110,6 +110,12 @@ well-formed text). The same reasons go to the admin note of the call they belong
     run check's outcomes go to items by `item`; items it gave nothing get its item-less unknowns (a failed check never passes
     silently); item-less outcomes are run-level facts in `cross_item`, as are all outcomes of run-level requirements. An
     outcome whose `data` nests deeper than 32 levels is replaced by an unknown (check error) of that check.
+    The run context (`RunContext`) carries the fixed facts plus, only when the workflow opts in with `context` in
+    workflow.json, `builds`: every build the knowledge base knows for the bound product (both name families, an alias
+    carrying its base, `{name, family, line, base, platform, built_at, released_at, has_root}` without sources or root
+    digests, sorted by line, built_at, name), frozen in the run record like groups so an evaluation after a restart sees the
+    same list. A workflow that did not ask gets nothing and stores nothing; a run bound to no product gets none. The start
+    summary and answer never show it.
 13. **Terminals and status** follow V01 R[6], V03 and P11 R[3]: violation > incomplete > unchecked > pass. An unknown outcome
     is classified by its reason only (`terminals.ts UNKNOWN_TERMINAL`, typed against the vocabulary): a check error, a timeout,
     missing input or an unproven closed world is unchecked (unknown, counted in `unknown`), whether the check is an interpreter

@@ -27,7 +27,7 @@ describe('the pack files', () => {
   it('pack.json lists exactly the pack files with their digests (run pack-files.ts --write after a change)', async () => {
     assert.equal(text('pack.json'), manifestText(await computeManifest()));
     const manifest = PackManifest.parse(json('pack.json'));
-    assert.deepEqual([manifest.id, manifest.version, manifest.kind], ['case-location', '1.0.0', 'workflow']);
+    assert.deepEqual([manifest.id, manifest.version, manifest.kind], ['case-location', '1.1.0', 'workflow']);
     const files = await packFiles();
     assert.ok(files.includes('functions/locate.ts') && files.includes('samples/negative/declared-line-conflict.json'));
     assert.ok(!files.some((f) => f.endsWith('.test.ts') || f === 'functions/test-support.ts' || f === 'README.md' || f === 'pack-files.ts'));
@@ -35,7 +35,7 @@ describe('the pack files', () => {
     assert.ok(!files.some((f) => f.startsWith('examples/') || f.startsWith('testing/')), files.join(', '));
   });
 
-  it('binds one product line and declares the location fact and the build candidates, which no check can judge yet', () => {
+  it('binds one product line, asks for its builds, and declares the location fact and the build candidates check', () => {
     const workflow = WorkflowFile.parse(json('workflow.json'));
     assert.deepEqual(workflow.inputs, [
       { slot: 'documents', role: 'subject', description: workflow.inputs[0].description, accepts: ['agile:mindmap'], required: true, many: true },
@@ -51,21 +51,21 @@ describe('the pack files', () => {
         ['id_ranges', false],
       ],
     );
+    assert.deepEqual(workflow.context, ['builds'], 'the workflow asks for the builds of the bound product (K01 R[10])');
     assert.deepEqual([workflow.subject, workflow.projection, workflow.expected_sources], ['documents', { module: 'functions/project.ts' }, { module: 'functions/expected.ts' }]);
     const requirements = RequirementsFile.parse(json('requirements.json')).requirements;
     assert.deepEqual(
       requirements.map((r) => ({ ...r, name: undefined, description: undefined })),
       [
         { key: 'location', name: undefined, description: undefined, target: 'item', required: true, done_rule: 'bookkeeping', layers: ['static'], accepted_producer: 'fact', checks: ['locate'], error_handling: [] },
-        // The candidates need the builds of the line, which no pack check receives: no check is installed, so every item
-        // shows the requirement unchecked (no check) instead of a fact that leaves them out.
-        { key: 'build_candidates', name: undefined, description: undefined, target: 'item', required: true, done_rule: 'bookkeeping', layers: ['static'], accepted_producer: 'fact', checks: [], error_handling: [] },
+        { key: 'build_candidates', name: undefined, description: undefined, target: 'item', required: true, done_rule: 'bookkeeping', layers: ['static'], accepted_producer: 'fact', checks: ['candidates'], error_handling: [] },
       ],
     );
     assert.match(requirements[1].description, /知识库/);
     const checks = ChecksFile.parse(json('checks.json')).checks;
     assert.deepEqual(checks, [
       { id: 'locate', title: '按目录树定位', function: { module: 'functions/check.ts' }, applies: 'run', subject: { module: 'functions/subject.ts' }, judges: 'subject', tier: 'advisory' },
+      { id: 'candidates', title: '构建候选与写出名核对', function: { module: 'functions/candidates.ts' }, applies: 'run', subject: { module: 'functions/subject.ts' }, judges: 'subject', tier: 'advisory' },
     ]);
     assert.deepEqual(SlotsFile.parse(json('slots.schema.json')), { schema: 'slots@1', item: {}, run: {} });
     assert.ok(/\p{Script=Han}/u.test(text('SKILL.md')) && text('SKILL.md').length < 2000, 'a short Chinese procedure (it is in every start_run answer)');
@@ -89,9 +89,13 @@ describe('the pack files', () => {
     const samples = (PackManifest.parse(JSON.parse(files)).files.map((f) => f.path).filter((p) => p.startsWith('samples/'))).map((path) => ({ path, sample: PackSample.parse(json(path)) }));
     assert.ok(samples.some((s) => s.path.startsWith('samples/positive/')) && samples.some((s) => s.path.startsWith('samples/negative/')));
     for (const { path, sample } of samples) {
-      assert.equal(sample.check, 'locate', path);
+      assert.ok(['locate', 'candidates'].includes(sample.check), path);
       if (path.startsWith('samples/positive/')) assert.ok(sample.expect.every((e) => e.verdict === 'support'), path);
       else assert.ok(sample.expect.some((e) => e.verdict === 'refute'), path);
+    }
+    for (const check of ['locate', 'candidates']) {
+      const own = samples.filter((s) => s.sample.check === check);
+      assert.ok(own.some((s) => s.path.startsWith('samples/positive/')) && own.some((s) => s.path.startsWith('samples/negative/')), `${check}: both polarities`);
     }
   });
 
@@ -104,7 +108,7 @@ describe('the pack files', () => {
       confidence: Array<{ code: string; label: string }>;
     };
     const declared = new Set([...codes.violations, ...codes.refusals, ...codes.warnings].map((c) => c.code));
-    const sources = ['functions/project.ts', 'functions/expected.ts', 'functions/convention.ts', 'functions/check.ts', 'functions/locate.ts'].map(text).join('\n');
+    const sources = ['functions/project.ts', 'functions/expected.ts', 'functions/convention.ts', 'functions/check.ts', 'functions/candidates.ts', 'functions/locate.ts'].map(text).join('\n');
     const used = new Set<string>();
     for (const m of sources.matchAll(/refusal\('([a-z_]+)'/g)) used.add(`case-location.${m[1]}`);
     for (const m of sources.matchAll(/\$\{PACK\}\.([a-z_]+)/g)) used.add(`case-location.${m[1]}`);
@@ -144,10 +148,13 @@ describe('the staged pack', { skip: (await osIsolationAvailable()) ? false : 'no
     const report = await runPublishCheck({ pack: validation.pack, packDir: dir });
     assert.deepEqual(report.failures, [], JSON.stringify(report.failures, null, 1));
     assert.deepEqual(report.unsampled, []);
-    assert.deepEqual([report.samples.total, report.samples.passed, report.samples.failed], [5, 5, 0]);
+    assert.deepEqual([report.samples.total, report.samples.passed, report.samples.failed], [7, 7, 0]);
     assert.deepEqual(
       report.checks.map((c) => [c.check, c.tier, c.positive, c.negative, c.marks]),
-      [['locate', 'advisory', 2, 3, ['author_samples_only']]],
+      [
+        ['locate', 'advisory', 2, 3, ['author_samples_only']],
+        ['candidates', 'advisory', 1, 1, ['author_samples_only']],
+      ],
     );
   });
 });

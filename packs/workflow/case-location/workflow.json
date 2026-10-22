@@ -52,6 +52,7 @@
     }
   ],
   "product": { "id": "apv", "catalogs": [] },
+  "context": ["builds"],
   "subject": "documents",
   "projection": { "module": "functions/project.ts" },
   "expected_sources": { "module": "functions/expected.ts" }

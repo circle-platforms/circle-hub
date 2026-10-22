@@ -1,20 +1,25 @@
 {
   "schema": "pack@1",
   "id": "case-location",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "kind": "workflow",
   "title": "用例定位",
-  "description": "按敏捷测试平台的目录树定出每份测试脑图或每个用例的产品线、版本、版本线、发布火车和模块，列出两族名字的构建候选和标题里关联的需求与缺陷；只含事实要求项，开始运行时由 Hub 直接算出结果",
+  "description": "按敏捷测试平台的目录树定出每份测试脑图或每个用例的产品线、版本、版本线、发布火车和模块，给出定位到的版本线在两个名称族的构建候选（别名解析到它所依据的构建）并核对目录和标题里写出的构建名，以及标题里关联的需求与缺陷；只含事实要求项，开始运行时由 Hub 直接算出结果",
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "eac68aeec8c320f41ab190a9b92918ed5c91d52352e366bb793d4c69ff3aaa2e",
-      "size": 2344
+      "sha256": "63e5af18974e9bfb80c4654c2d94e17f96d5319068cbbc6fcbfefe5ad8935c51",
+      "size": 2736
     },
     {
       "path": "checks.json",
-      "sha256": "985c3dc1667dc4db5c944699c36b3696f2f13c23a5717e4219011dbd6a212e5d",
-      "size": 302
+      "sha256": "0249260526d81ea81a72da84a527a45af8cba630c55da914e5dbbdb2007142de",
+      "size": 580
+    },
+    {
+      "path": "functions/candidates.ts",
+      "sha256": "e8b24545406560d67bc02b17c50c413e7bbcbc17f3974d55ec68e9feefe2b618",
+      "size": 8299
     },
     {
       "path": "functions/check.ts",
@@ -53,8 +58,8 @@
     },
     {
       "path": "functions/subject.ts",
-      "sha256": "9fc09b269b2594c748231335fb870f8d8d35c662a92c9ae66f3994fd48a9dd16",
-      "size": 1367
+      "sha256": "7cede08d20aa87ff605860b7806ba2820865fc7795036d2ea22b8f44e3ae720e",
+      "size": 1578
     },
     {
       "path": "functions/text.ts",
@@ -63,13 +68,18 @@
     },
     {
       "path": "functions/types.ts",
-      "sha256": "daf457edc2a7896e413988abb9e1842f14c0d3044988b69b69b7c52cf24404fb",
-      "size": 7037
+      "sha256": "c5decfa3a28f25d5dfa6e87e7a2b5325470e5d3de38cc275cd7996be5efa997d",
+      "size": 7090
     },
     {
       "path": "requirements.json",
-      "sha256": "8ea04f32ace10557780265663942c39027b118579537e1fe9d6f95e585ce4355",
-      "size": 1415
+      "sha256": "75181210433719009d9853a65f02da9f932fd1acf891ce5597867f34f0f4c6eb",
+      "size": 1597
+    },
+    {
+      "path": "samples/negative/candidates-other-line-and-unknown.json",
+      "sha256": "bec7c0da9dd95afc6fbe04979bf0900d72a22c9bd846a748588acf4b511f06ca",
+      "size": 3433
     },
     {
       "path": "samples/negative/declared-line-conflict.json",
@@ -85,6 +95,11 @@
       "path": "samples/negative/trees-that-are-no-facts.json",
       "sha256": "4a2daa4b38c1a70cab2a734a2ae5af1e8d2727f8ebdcd34ce08a1d644b264993",
       "size": 4315
+    },
+    {
+      "path": "samples/positive/candidates-known.json",
+      "sha256": "1a281846169b4f096f9e0a4a94ce0d102c1a62339b481cc6ca3cbe112643049e",
+      "size": 3362
     },
     {
       "path": "samples/positive/case-item.json",
@@ -103,13 +118,13 @@
     },
     {
       "path": "tables/codes.json",
-      "sha256": "b5ed55f7f5a844ca3a9e776afc1e54948520d3012952405bd85c01a8d0c6c53f",
-      "size": 4678
+      "sha256": "a134b0c3266d16279348e181b2ed7d54b29cf027803a27c06a63259ee4a88379",
+      "size": 4971
     },
     {
       "path": "workflow.json",
-      "sha256": "916019c0d7928ee0845aad3cbcd81b50b5470c9096b2dfb4f380b0a28a1222a5",
-      "size": 3009
+      "sha256": "ef06aed93fd9a7f3a9c180243aea7b921bbd46f30ca4feabc227dff08457385d",
+      "size": 3034
     }
   ]
 }

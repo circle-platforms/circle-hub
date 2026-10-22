@@ -171,6 +171,87 @@
             "additionalProperties": {}
           },
           "description": "the groups the projection function returned, frozen with the run"
+        },
+        "builds": {
+          "description": "every build the knowledge base knows for the bound product, sorted by (line, built_at, name); present only when the workflow asked for it (workflow.context) and the run is bound to a product — absent then means \"not asked\", not \"none known\"",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "description": "build name exactly as listed"
+              },
+              "family": {
+                "type": "string",
+                "minLength": 1,
+                "description": "which of the product names the build carries"
+              },
+              "line": {
+                "type": "string",
+                "minLength": 1,
+                "description": "version line the pack assigns to the build"
+              },
+              "base": {
+                "type": "string",
+                "minLength": 1,
+                "description": "the build whose tree this build uses; equals name when the build has its own tree"
+              },
+              "platform": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "platform or customer branch; null for the main platform"
+              },
+              "built_at": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "released_at": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "null while unreleased"
+              },
+              "has_root": {
+                "type": "boolean",
+                "description": "whether the knowledge base has produced the root of the build’s tree"
+              }
+            },
+            "required": [
+              "name",
+              "family",
+              "line",
+              "base",
+              "platform",
+              "built_at",
+              "released_at",
+              "has_root"
+            ],
+            "additionalProperties": false
+          }
         }
       },
       "required": [

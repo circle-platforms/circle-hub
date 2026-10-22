@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { describe, it } from 'node:test';
 import { callPackFunction, osIsolationAvailable, runCheck } from '../../../../hub/rules/api.ts';
+import candidates from './candidates.ts';
 import check from './check.ts';
 import expected from './expected.ts';
 import locate from './locate.ts';
@@ -32,6 +33,7 @@ const cases: Array<{ module: string; input: unknown; direct: (input: unknown) =>
   { module: 'functions/expected.ts', input: { ...projection, items }, direct: expected },
   { module: 'functions/subject.ts', input: runSubject, direct: subject },
   { module: 'functions/check.ts', input: { check: 'locate', table: null, subject: built, context: { pack: 'case-location' }, sources: {} }, direct: check },
+  { module: 'functions/candidates.ts', input: { check: 'candidates', table: null, subject: built, context: { pack: 'case-location' }, sources: {} }, direct: candidates },
   { module: 'functions/locate.ts', input: { case_id: 'x', root: 'NSAE', ancestors: TREE.ancestors, title: '需求20931', names: ['APV', 'NSAE'], product: 'apv' }, direct: locate },
 ];
 
@@ -54,6 +56,19 @@ describe('pack functions in the Hub sandbox', { skip: available ? false : 'no OS
       outcomes.map((o) => [o.item, o.verdict, o.reason ?? null]),
       [
         ['24301', 'support', null],
+        ['24302', 'unknown', 'missing_input'],
+      ],
+    );
+    // The candidates check through runCheck too: without builds in the context every located line is an unknown, never a pass.
+    const candidatesOut = await runCheck(
+      { id: 'candidates', function: { module: 'functions/candidates.ts' }, tier: 'advisory' },
+      { subject: built, context: { run: 'run_0000000000000000000000000a', requirement: 'build_candidates', pack: 'case-location' }, packDir, sourceTexts: {} },
+    );
+    assert.deepEqual(candidatesOut, candidates({ subject: built }));
+    assert.deepEqual(
+      candidatesOut.map((o) => [o.item, o.verdict, o.reason ?? null]),
+      [
+        ['24301', 'unknown', 'missing_input'],
         ['24302', 'unknown', 'missing_input'],
       ],
     );

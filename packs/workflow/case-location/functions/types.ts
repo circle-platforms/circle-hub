@@ -1,11 +1,11 @@
 // Input and output types of the case-location pack functions. Types only: every import here is erased at run time, so the
 // functions stay self-contained inside the pack (the sandbox admits only modules inside the pack).
 import type { Reason, Verdict } from '../../../../contracts/generated/vocabulary.ts';
-import type { BoundInput, PackWarning, ProjectedItem, RunContext } from '../../../../contracts/src/pack.ts';
+import type { BoundInput, ContextBuild, PackWarning, ProjectedItem, RunContext } from '../../../../contracts/src/pack.ts';
 import type { CheckOutcome } from '../../../../contracts/src/tables.ts';
 import type { KityMinderModel, MindMapNode } from '../../../../hub/refs/api.ts';
 
-export type { BoundInput, CheckOutcome, KityMinderModel, MindMapNode, PackWarning, ProjectedItem, RunContext };
+export type { BoundInput, CheckOutcome, ContextBuild, KityMinderModel, MindMapNode, PackWarning, ProjectedItem, RunContext };
 
 /** Where the version of an answer comes from: the folder labels, the document title only, the caller's parameter, nowhere. */
 export type VersionSource = 'folders' | 'title' | 'parameter' | 'none';
@@ -135,7 +135,7 @@ export type ItemFields = {
 /** What the subject builder gives the check: the items and the run facts the scheme needs. */
 export type LocateSubject = {
   items: Array<{ id: string; location: string; fields: ItemFields }>;
-  context: { product: string | null; names: string[]; parameters: { [key: string]: unknown } };
+  context: { product: string | null; names: string[]; parameters: { [key: string]: unknown }; builds?: ContextBuild[] };
 };
 
 /** One id found in a text: the kind a marker next to it names, or null when none does. */
