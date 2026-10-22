@@ -1,7 +1,7 @@
 {
   "schema": "system@1",
   "title": "敏捷测试平台",
-  "description": "敏捷测试平台的只读访问：根列表、根的整棵子树（agile:tree:<根编号>）、脑图文档（agile:mindmap:<文档编号>，派生 content 为解开的 KityMinder JSON、meta 为标题和从根往下的上级目录）和相似测试清单的检索（agile:search:<检索词，用 + 连接>[+!<文档编号>]，! 开头的部分排除这份文档，只作线索）。每个应答都是 HTTP 200 加信封 {code, msg, data}，code 1000 表示成功。登录：POST /oauth/login/，密码按 Base64(SHA-512(明文)) 发送；成功时令牌在 data.token、到期时间在 data.expire（秒）；任何失败（例如 1005 密码错误）都不重试，停到管理员处理为止，连续失败可能锁定账号。资源设置 roots 列出要读的根编号：一次读取最多读前 10 个（嵌套读取一共最多 20 个，要给刷新留出余量），多出的根不读，读不到根时结果标为不完整。只有读路由，没有写路由。",
+  "description": "敏捷测试平台的只读访问：根的子树（agile:tree:<根编号>；agile:tree:roots 一次读设置 roots 里的每个根，content 为每份文档的编号、标题和从根往下的上级目录）、脑图文档（agile:mindmap:<文档编号>，content 为解开的 KityMinder JSON，meta 为标题和上级目录；agile:case:<文档编号> 只读文档本身，content 多一个成员 agile: {id}，供用例索引）和相似测试清单的检索（agile:search:<检索词，用 + 连接>[+!<文档编号>]，! 开头的部分排除这份文档，只作线索）。应答都是 HTTP 200 加信封 {code, msg, data}，code 1000 表示成功。登录：POST /oauth/login/，密码按 Base64(SHA-512(明文)) 发送；令牌在 data.token、到期时间在 data.expire（秒）；失败不重试，停到管理员处理为止。设置 roots 列出要读的根编号：一次读取最多读前 10 个，读不到根时结果标为不完整。只有读路由。",
   "roles": [
     { "name": "agile-oauth", "description": "登录接口所在的地址（只用于登录，不读数据）" },
     { "name": "agile-api", "description": "平台接口所在的地址；请求头 Authorization 直接带令牌，不加前缀" }
@@ -82,7 +82,7 @@
     {
       "name": "tree",
       "external": "agile:tree",
-      "description": "一个根的整棵子树和根的标题",
+      "description": "一个根的整棵子树和根的标题；键 roots 读配置的每个根（每轮最多 4 个请求），列出全部文档",
       "plan": { "module": "functions/agile.ts", "export": "treePlan" },
       "project": { "module": "functions/agile.ts", "export": "treeProject" },
       "max_requests": 51
@@ -93,6 +93,14 @@
       "description": "一份脑图文档，带标题和上级目录",
       "plan": { "module": "functions/agile.ts", "export": "mindmapPlan" },
       "project": { "module": "functions/agile.ts", "export": "mindmapProject" },
+      "max_requests": 1
+    },
+    {
+      "name": "case",
+      "external": "agile:case",
+      "description": "一份脑图文档本身，供用例索引批量读取：只发一次用例数据请求，不读目录树；content 是 KityMinder JSON，多一个包装成员 agile: {id} 写明文档编号",
+      "plan": { "module": "functions/agile.ts", "export": "casePlan" },
+      "project": { "module": "functions/agile.ts", "export": "caseProject" },
       "max_requests": 1
     },
     {

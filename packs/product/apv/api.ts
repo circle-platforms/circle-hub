@@ -73,10 +73,33 @@ export { commandTree as commandTreeProducer, manual as manualProducer, releaseNo
 export { fixedBugEntries } from './functions/fixed-bugs.ts';
 export { documentLines, folderLine, folderNames } from './functions/documents.ts';
 export { INDEX_ID, SOURCE_ROLES, fileId, fileKey, listingId } from './functions/sources.ts';
+export { cases as casesProducer, caseStatement, elementDocument, elementDocuments, listedIds, storable, treeFolders } from './functions/cases.ts';
+export { MAX_DEPTH as CASE_MAX_DEPTH, MAX_ITEM_ID, caseKeys, caseNodes } from './functions/cases-nodes.ts';
+export type { CaseNode, CaseScan } from './functions/cases-nodes.ts';
+export { commandCatalog, foldText, resolvePhrase, resolvePhrasePaths, textCommands, withoutListNumbers } from './functions/cases-commands.ts';
+export type { CommandCatalog, TextCommands } from './functions/cases-commands.ts';
+export { MAX_CASE_DOCUMENTS, NOTE_EXAMPLES, caseDocumentsFor, caseIndexOptions, caseNote, caseSources, caseTree, isProductRoot, uncoveredDocuments } from './functions/cases-sync.ts';
+export type { CaseCounts, CaseDocument, CaseIndexOptions, CaseTree, Counted } from './functions/cases-sync.ts';
+export {
+  AGILE_ID,
+  CASE_DOCUMENTS_ROLE,
+  CASE_MEMBER,
+  CASE_PREFIX,
+  CASE_RULE,
+  CASE_TREE_ID,
+  CASE_TREE_ROLE,
+  DEFAULT_MIN_LINE,
+  MINDMAP_PREFIX,
+  VAGUE_EXPECTED,
+  isVague,
+  negativeOf,
+  tagKey,
+  vagueKey,
+} from './functions/cases-rules.ts';
 
 /**
  * Sandbox entry points: module path relative to the pack directory and export name. Every one is total over JSON input. The
- * first five are what product.json declares (the product@1 shapes); the rest are the building blocks and later capabilities.
+ * first six are what product.json declares (the product@1 shapes); the rest are the building blocks and later capabilities.
  */
 export const FUNCTIONS = {
   syncPlan: { module: 'functions/sync.ts', export: 'default' },
@@ -84,6 +107,7 @@ export const FUNCTIONS = {
   commandTreeProducer: { module: 'functions/producers.ts', export: 'commandTree' },
   manualProducer: { module: 'functions/producers.ts', export: 'manual' },
   releaseNotesProducer: { module: 'functions/producers.ts', export: 'releaseNotes' },
+  casesProducer: { module: 'functions/cases.ts', export: 'cases' },
   documents: { module: 'functions/documents.ts', export: 'default' },
   listing: { module: 'functions/listing.ts', export: 'default' },
   selectBuild: { module: 'functions/select-build.ts', export: 'default' },

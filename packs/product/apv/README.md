@@ -8,8 +8,9 @@ live only here. Other packages use `api.ts` (types, named functions, and `FUNCTI
 
 | File | Content |
 | --- | --- |
-| `product.json` | `product@1`: names `[APV, NSAE]`; `sync` (start `buildsite:listing:index`, plan `functions/sync.ts`, 6 rounds, 300 reads); `select_build` `functions/select.ts`; catalog `commands@1` (entry kind `definition`, producer `command-tree`, complete, case-insensitive); producers `command-tree` (slot `tree` <- source role `tree`), `manual` (slots `cli` <- `manual:cli:{line}` and `app` <- `manual:app:{line}`, both optional), `release-notes` (slot `notes` <- source role `fixed_bugs`, optional) |
-| `functions/sync.ts` | the plan (SyncPlanInput -> SyncPlanOutput): every round recomputed from the pages read so far, index -> hub pages -> listing pages (depth 2, dead links tolerated, both name families, platform and customer pages only when `include` opts them in), then the builds |
+| `product.json` | `product@1` (pack version 1.1.0): names `[APV, NSAE]`; `sync` (start `buildsite:listing:index`, plan `functions/sync.ts`, options `case_index: true`, `min_line: 10.4.2`, 6 rounds, 300 reads); `select_build` `functions/select.ts`; catalog `commands@1` (entry kind `definition`, producer `command-tree`, complete, case-insensitive; no catalog over case entries); producers `command-tree` (slot `tree` <- source role `tree`), `manual` (slots `cli` <- `manual:cli:{line}` and `app` <- `manual:app:{line}`, both optional), `release-notes` (slot `notes` <- source role `fixed_bugs`, optional), `cases` (list slot `documents` <- role `case_documents`, many, batch 40, optional; `tree` <- role `tree`; `folders` <- role `case_tree`, optional; params `batch: 40`) |
+| `functions/sync.ts` | the plan (SyncPlanInput -> SyncPlanOutput): every round recomputed from the pages read so far, index -> hub pages -> listing pages (depth 2, dead links tolerated, both name families, platform and customer pages only when `include` opts them in), then the builds; with `case_index`, `agile:tree:roots` and every own-tree build's case documents (`cases-sync.ts`) |
+| `functions/cases.ts` and `cases-*.ts` | the case index: the producer `cases` (`cases.ts`), case nodes (`cases-nodes.ts`), the command catalog, phrase extraction and resolution (`cases-commands.ts`), the sync plan's part (`cases-sync.ts`), shared pack data (`cases-rules.ts`) |
 | `functions/select.ts` | the build choice (SelectBuildInput -> SelectBuildOutput) over `select-build.ts`: the latest released build of the line across both families on the main platform, the other candidates as alternatives |
 | `functions/producers.ts` | the producers (ProducerInput -> ProducerOutput) over `command-tree.ts`, `manual.ts`, `release-notes.ts` and `fixed-bugs.ts` (the build site's fixed-bug page, html@1) |
 | `functions/sources.ts` | the build-site external ids (`buildsite:listing:<page>`, `buildsite:file:<link>`, the same rule as the build-site system pack; a test keeps them equal) and the source roles `tree`, `fixed_bugs` |
@@ -47,6 +48,10 @@ and `behaviour` for the text under a command, the fixed-bug list and release not
 | `commands.ts` | `extractCommands` | `{ text, heads }` → command phrases with offsets |
 | `locate.ts` | `locateFromAncestors` | agile tree labels, root first → `{ line, train, module, notes }` |
 | `ids.ts` | `idsFromTitle` | document title → `{ stories, bugs, plm, unclassified }` |
+| `cases.ts` | `cases` (product.json) | ProducerInput (documents batch, tree, folders) → ProducerOutput: one `case` entry per (case, resolved command) |
+| `cases-nodes.ts` | `caseNodes` | kityminder@1 model → the case nodes with title, labels above, tags, priority, expected count, steps, vague, autoid |
+| `cases-commands.ts` | `commandCatalog`, `textCommands`, `resolvePhrase` | xml@1 command tree → catalog; texts → the catalog paths their phrases resolve to |
+| `cases-sync.ts` | `caseTree`, `caseDocumentsFor`, `caseIndexOptions` | the read agile tree → the located documents; a build line → its `case_documents` |
 
 ## Walking the build site (brief section 8)
 
@@ -165,6 +170,72 @@ Text functions
   marker; ids the title does not classify (a leading number, after 回归 or Test-) go to `unclassified`. Versions, dates,
   years, numbers glued to short words and alarm-like numbers in running text are never ids.
 
+## The case index (brief section 6a, capabilities 4 and 6)
+
+Sync (`cases-sync.ts`, called by `sync.ts` when the sync option `case_index` is true; product.json sets it)
+- Round 1 fetches `agile:tree:roots` (the agile system pack's read of every configured root) besides the hub and listing
+  pages; it is read once per sync and parsed as json@1. Documents are taken from the roots titled with a product name
+  (`APV`, `NSAE`, NFKC, case-insensitive, alone or before a non-word mark): both name families, so the first name's root
+  (no versions) is read too; its documents have no line and are counted. Other roots of the resource are counted, not read.
+- Each document is located with `locate.ts` (its ancestors from the root title down, as the mind-map meta has them). A
+  build whose own command tree is listed (`tree`) gets `case_documents`: the `agile:mindmap:<id>` of the documents with a
+  line not later than the build's and not earlier than `min_line` (default 10.4.2, a dotted line; another value is noted
+  and replaced), at most 20,000 (product@1 `MAX_LIST_SOURCES`; more are noted, not listed), ordered by id (numbers by
+  value): new documents come last, so the Hub's consecutive batches of an earlier list stay where they were. It also gets
+  `case_tree: agile:tree:roots`. Aliases (no tree of their own) list nothing. Ids the agile pack cannot read (outside
+  `[0-9A-Za-z_-]{1,64}`) are not listed. The plan note counts the documents read, listed, and not listed by reason: no
+  version line or train above the document, earlier than `min_line`, unreadable id, filed twice (once), other roots.
+- **No build is listed while the tree is not read yet, cannot be read, is not the expected content or is incomplete** (a
+  configured root not read, a root title unknown): a root produced without the case list would lose every case it had,
+  and the views would read the loss as absence. The note says why and how to switch the index off (`case_index: false`).
+  A plan the Hub cuts at a limit before the tree was read lists no build either.
+
+Producer `cases` (`cases.ts`, entry kind `case`; the product pack declares no catalog over case entries)
+- **Case nodes** (`cases-nodes.ts`): the case-review projection's rule, tagged OR marked (`CASE_RULE`: case priority 2,
+  group priority 1, precondition priority 3; a test compares with `packs/workflow/case-review` project.ts under
+  `caseRule: marked` on every fixture map and the corpus): a tagged node is a case unless it is a group (outside every
+  case, group priority, holds tagged or case-priority nodes); an untagged node outside every case with the case priority,
+  children and none of those below is a case too; a node either rule names is one case. Inside a case, leaves are expected
+  results (precondition-priority leaves not), children with children are steps, a case below a case is its own.
+- **Commands** (`cases-commands.ts`): the catalog is the build's command tree read with `produceCommandEntries` (the
+  command-tree producer's own function, so case paths are definition paths). The phrases of the case title and of every
+  label above the case (the mind map's root text included) are found with `commands.ts` `extractCommands`, all distinct
+  texts of a call in one scan (joined by a line no phrase crosses; equal to scanning each alone, tested). A phrase resolves
+  to the longest run of its leading words that is a catalog command, case-insensitive; a word may be a unique prefix of the
+  command word at its place (two letters at least); a command reached through an abbreviation needs two words (an
+  abbreviation alone is no command); the heads handed to extractCommands include the unique prefixes of first words (not
+  English short words) so that an abbreviated first word is found at all; a `no` phrase the catalog lacks resolves to the
+  command it undoes when that exists. A list number glued to a command (`1.widget`, `2）show`) is blanked out first.
+  Written before the resolver ran: the table of `tests/fixtures/case-index/table.ts` (82 rows; 47 that must resolve, 35
+  that must not).
+- **Entries**: ONE entry per (case, resolved command), at the command's path; statement `<document>:<node> | <title>`;
+  data `{document, node, title, path_labels, priority, tags, negative, expected_count, has_expected, vague_expected,
+  steps_count, commands, stories, defects, line, train, module, autoid}` (scalars and lists of scalars: views can count
+  them); one fragment `{slot: documents, source: <element digest>, parser: kityminder@1, selector}` (the parser's selector of
+  the case node, as the case-review items use); applicability null. The data of a case's entries is the same, so its
+  entries share one digest at several paths and the views count the case once. `node` is `data.id` when the parser
+  addresses the node by it, else the position selector. `negative` is the case-review tag rule (null without a tag);
+  `has_expected`: some expected text is not blank; `vague_expected`: there is one and every one that is not blank is a
+  phrase of `VAGUE_EXPECTED`, folded (NFKC, lower case, no white space, no edge punctuation); `line` in `lineKey` form;
+  `stories`, `defects` (`ids.ts` stories and bugs, sorted by value) from the case title, the labels above it, the
+  document's title and folders in the agile tree; `line`, `train`, `module` by `locate.ts` from the document's folders.
+- A case with no command phrase, or none that resolves, gives no entry. Each call ends its warnings with one line:
+  documents, cases, cases indexed (entries), cases without a command phrase and cases whose phrases resolve to nothing,
+  with at most 20 examples (`<document>:<node>「title」`); anomalies get their own line (unknown documents, documents not
+  in the tree, not mind maps, without cases, given twice, malformed models). An entry depends on its own document only.
+- **Which document an element is.** product@1 hands list elements as `{sha256, media_type, parser, model}`, without their
+  external id. The producer takes an element's own `external` when it carries one (the contract change asked for below);
+  else it maps the call's elements onto the build's listed ids (`build.sources.case_documents`, repeats dropped as the Hub
+  drops them) by position, and only when the call holds its whole batch: `batch.of` equals the batches `params.batch` (40,
+  equal to the input's `batch`, tested) gives for the list, and the call holds exactly that batch's count. A call the Hub
+  cut (a document skipped, a split, the byte cap) holds fewer: its documents are unknown (document, line, train and module
+  null, no ids from the document's agile title and folders, statement `未知文档:<node> | <title>`), with a warning, never
+  guessed (see Limits for the batching this relies on). `folders` (`agile:tree:roots`, the same read as the plan's) gives
+  each document's title and folders.
+- Scale: one sandboxed call of 40 documents of 60 cases against a 4,000-command tree and a 3,000-document agile tree
+  took about 0.2 s here (direct call 0.13 s; 6.3 MB in, 1.3 MB out), about 15 s of producer time for a build of 3,000
+  documents (75 calls).
+
 ## Deviations from the brief and the task
 
 - `basis` is `declared` / `projected` (provenance_type axis, A01 R[1]) instead of `declared` / `rule`: the task asked for
@@ -183,6 +254,16 @@ Text functions
 - The manual producer also emits text entries (descriptions, value domains, examples) besides signatures.
 - Release note entries have `path: null`: their subject is a module or a defect, not a command node, and K01 R[3] forbids
   synthetic paths.
+- The `cases` producer has a third input, `folders` (role `case_tree`, `agile:tree:roots`), besides `documents` and
+  `tree`: list elements carry no external id and no meta, so the documents' titles and folders (for `locate.ts` and the
+  ids of document titles and folders) come from the tree the plan located them in; it also declares `params.batch` (the
+  input's batch size) for the positional mapping. Both go once the contract hands elements their external id and meta.
+- The vague phrases: the task names "the vague phrases of the case-review tables", but those tables hold none. The list is
+  this pack's (`VAGUE_EXPECTED` in `cases-rules.ts`, author-written, an open question for the owner) and is matched whole.
+- `stories` and `defects` also take the ids of the document's agile title and folders (a `bug to case <id>` folder links
+  its documents' cases to the defect); unmarked ids (`31057-...`) are neither (the `idsFromTitle` rule).
+- The sync option `case_index` is off when the options do not set it (product.json sets it): a direct call with other
+  options keeps the plan of milestone 1, and a deployment without the agile platform can switch the index off.
 
 ## Limits
 
@@ -201,7 +282,23 @@ Text functions
 - Platform tokens of build names (`HG-K`) and of page names (`hg_k`, `ft_kylinv10`) are kept as written; they are not
   mapped onto each other.
 - The functions were also run, outside the repository, on the read-only samples of 2026-10-21 (the index and a listing
-  page, a command tree, the CLI manual and its catalog, agile titles and labels); nothing from them is in Git.
+  page, a command tree, the CLI manual and its catalog, agile titles and labels); nothing from them is in Git. The case
+  index functions were not run on real documents yet (the integrator's `scripts/real/`).
+- Case index: only the title and the labels above a case are scanned for commands (as asked), not its steps or expected
+  results; about half of the real cases name no extractable command and are counted, not indexed. Abbreviations are
+  unique prefixes of command words; a CLI that accepts others (a fixed short form) is not covered. A phrase whose first
+  word is no catalog word (`health interval ...` without its context word) is not found.
+- Case index: while list elements carry no external id, a call the Hub cut (a skipped document, a split, the byte cap)
+  files its cases with an unknown document (see above): one unreadable document makes the other 39 of its batch unknown
+  until the Hub reads it again. The positional mapping relies on the Hub cutting a list into consecutive batches of the
+  declared size in list order (hub/knowledge decision 16). Another batching (the content-defined boundaries the knowledge
+  README considers) is caught by the count check only in part: batches of 38, 40 and 42 documents would let the second
+  through at a shifted offset and mislabel its documents. hub/knowledge must keep fixed-size batches until list elements
+  carry their external id (Needs).
+- Case index: a renamed folder changes `module`/`line` of a build's cases only when the build is produced again (its list
+  changed, or `knowledge sync --recheck`, which re-reads `agile:tree:roots` and produces every build whose tree digest
+  changed).
+- Case index: a build of a line before `min_line` lists an empty `case_documents` (the producer runs once and says so).
 
 ## How to test
 
@@ -210,6 +307,26 @@ node --test "packs/product/apv/**/*.test.ts"
 node --test packs/workflow/case-review-verify/end-to-end.test.ts   # the sync through the real connectors and knowledge
 npx tsc --noEmit
 ```
+
+Case index tests (fixtures in `tests/fixtures/case-index`: the hand-written command table, two invented command trees whose
+difference is known, a synthetic agile platform with the product's two roots and another product's root, 300 mind maps and
+the truth of every document and case, built while the corpus is built): `cases-commands.test.ts` (every table row against
+both trees, abbreviation, `no` and list-number rules, one scan equal to scans of each text, linear on long hostile text),
+`cases-nodes.test.ts` (every case of the corpus with its contents; parity with the case-review projection under the marked
+rule on the review, template, untagged, outline and tiny maps, the 3,000-node map and every corpus document; cycles,
+shared children, invalid indices, depth), `cases-rules.test.ts` (negative tags equal to case-review's on 2,000 spellings,
+the agile ids, the list limit, vague phrases), `cases-sync.test.ts` (options, product roots, the located documents and the
+reasons, each build's list equal to the truth for nine lines and another `min_line`, new documents last, pending, failed
+and incomplete trees, the plan reading the tree once in round 1 without an extra round, own-tree builds listing their
+documents and aliases nothing, no build while the tree is unreadable or incomplete, hostile input), `cases.test.ts` (every
+entry of a 10.6.1 and a 10.4.6 build equal to the truth in the Hub's own batches (`listBatches`), the later tree,
+counts by reason and at most 20 examples; another document id changes only the key, a renamed tree label changes nothing,
+reversed cases change nothing, a document twice or listed twice doubles nothing, a document alone gives its entries of the
+batch; the positional mapping and the unknown documents of a cut call; hostile input; one batch at scale; the sandbox) and
+`cases-integration.test.ts` (the real registry, connectors and knowledge service: the sync produces both builds, the facet
+view by line and module, the index view by document with the entries' data and the impact view of the two builds (changed
+commands and exactly the cases filed on them) equal to the truth, the NSAE alias reads the APV base's root, a second sync
+skips every build, an agile outage lists no build and moves no current root).
 
 `functions/adapters.test.ts` tests the product.json entry points against the product@1 shapes (good, malformed and hostile
 input); `functions/sandbox.test.ts` and the adapters' sandbox suite run them in the Hub sandbox (skipped where sandbox-exec is
@@ -225,6 +342,26 @@ pack and reviews a mind map against the root it produced.
   without a Jev client they stay unplaced (the fixed-bug entries of a build, for example).
 - **integrator**: a review that targets an unreleased build (the newest build of a line still in development, under either
   name) needs the sync with `includeUnreleased` for that line, or a released build named at start_run.
+- **contracts and knowledge (case index)**: product@1 `ProducerSlot` should carry, for list elements at least, the
+  external object id the element was read from (`external`) and the parsed `meta` artifact of the read (as `BoundInput`
+  does for workflow functions), and hub/knowledge should fill them (`call.ts` `slotOf` has the ParsedSource's `external`).
+  Failing scenario today: a build lists 40 documents in one batch and one of them cannot be read (an agile leaf whose
+  `get_case_data` answers 1004): the Hub skips it and calls the producer with 39 elements, and the producer cannot tell
+  which document each element is; their cases get document, line, train and module null. With `external` the positional
+  mapping, `params.batch` and (with `meta`) the `folders` input can go. The producer already reads `external` when present.
+  Until then hub/knowledge must keep cutting lists into consecutive batches of the declared size in list order (decision
+  16): content-defined boundaries could mislabel documents (Limits).
+- **case-review** (case index): a table of vague expected phrases (the task's "vague phrases of the case-review tables"
+  do not exist); until then `VAGUE_EXPECTED` here is the list, and a test can compare both once the table exists.
+- **knowledge** (case index): the per-batch disclosure lines of the cases producer are warnings of the composition, of
+  which the first 200 are kept; a build of more than about 190 batches (7,600 documents) loses the later lines (the
+  facet view still counts every indexed case). A per-producer sum of counts in the production result would keep them.
+- **integrator**: the first sync with this version re-produces every own-tree build (their sources gain `case_documents`
+  and `case_tree`) and needs the agile platform resource (`settings.roots` with the product's two roots); without it the
+  sync lists no build until the resource is configured or `case_index` is set false. Run `packs/workflow/case-review-
+  verify/end-to-end.test.ts` and `packs/workflow/case-review/packs.test.ts` (not run here, they belong to other owners):
+  the bed's agile resource has no product root (its roots are the shared fixtures' ORBIT/COMET), so its apv builds get an
+  empty case list and the review is unchanged.
 
 Done since the earlier round: the adapters to the product@1 shapes, the build-site external ids and source roles, the
 catalog producer selector (`CatalogDeclaration.producer`), the entry-kind axis (K02 R[3]).

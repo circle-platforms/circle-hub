@@ -6,7 +6,7 @@
   "sync": {
     "start": ["buildsite:listing:index"],
     "plan": { "module": "functions/sync.ts" },
-    "options": { "include": [], "exclude": [] },
+    "options": { "include": [], "exclude": [], "case_index": false, "min_line": "10.4.2" },
     "max_rounds": 6,
     "max_reads": 300
   },
@@ -35,6 +35,16 @@
       "title": "修复的缺陷（构建的修复缺陷清单）",
       "function": { "module": "functions/producers.ts", "export": "releaseNotes" },
       "inputs": { "notes": { "source": "fixed_bugs", "optional": true } }
+    },
+    {
+      "id": "cases",
+      "title": "用例（敏捷平台的测试脑图，按用例涉及的命令归档）",
+      "function": { "module": "functions/cases.ts", "export": "cases" },
+      "inputs": {
+        "documents": { "source": "case_documents", "many": true, "batch": 40, "optional": true },
+        "tree": { "source": "tree" },
+        "folders": { "source": "case_tree", "optional": true }
+      }
     }
   ]
 }
