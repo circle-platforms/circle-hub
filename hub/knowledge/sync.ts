@@ -47,7 +47,7 @@ export interface SyncOptions {
 }
 
 /** Outcome words of the per-build report, as the brief names them; no vocabulary axis holds them yet (README, Needs). */
-export type BuildOutcome = 'produced' | 'skipped' | 'failed';
+export type BuildOutcome = 'produced' | 'skipped' | 'failed' | 'registered';
 
 export interface SyncBuildReport {
   name: string;
@@ -89,7 +89,7 @@ export interface SyncReport {
   };
   builds: SyncBuildReport[];
   pointers: LineReconciliation[];
-  counts: { produced: number; skipped: number; failed: number };
+  counts: { produced: number; registered: number; skipped: number; failed: number };
   warnings: string[];
   /** A failure of the whole sync (no declaration, a broken plan function); builds are then not processed. */
   error: string | null;
@@ -137,7 +137,7 @@ export async function syncProduct(context: KnowledgeContext, builds: Builds, pro
     plan: { rounds: 0, done: false, note: null, builds: 0, reads: 0, failed_reads: [], limits: { rounds: false, reads: false, max_rounds: maxRounds, max_reads: maxReads } },
     builds: [],
     pointers: [],
-    counts: { produced: 0, skipped: 0, failed: 0 },
+    counts: { produced: 0, registered: 0, skipped: 0, failed: 0 },
     warnings: [],
     error: null,
   };
@@ -145,8 +145,7 @@ export async function syncProduct(context: KnowledgeContext, builds: Builds, pro
     report.ended_at = context.now().toISOString();
     for (const build of report.builds) report.counts[build.outcome]++;
     return report;
-  };
-  if (declaration === undefined) {
+  };  if (declaration === undefined) {
     report.error = '产品包没有声明 sync，无法同步';
     return finish();
   }
@@ -256,7 +255,9 @@ export async function syncProduct(context: KnowledgeContext, builds: Builds, pro
       continue;
     }
     if (Object.keys(build.sources).length === 0) {
-      report.builds.push({ ...base, outcome: 'skipped', reason: '没有树的来源' });
+      // A build with no readable source is registered by name only (the plan lists it so the candidates know the
+      // name); it gets no root, is no failure and never floods the skipped list.
+      report.builds.push({ ...base, outcome: 'registered', reason: '没有可读的来源，只登记名字' });
       continue;
     }
     if (build.released_at === null && !releasedAliasBases.has(build.name) && options.includeUnreleased !== true) {

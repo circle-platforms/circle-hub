@@ -218,7 +218,7 @@ describe('createTestHub', () => {
     await hub.addResource({ system_pack: SITE_PACK, name: '合成构建站', environment: 'shared', origins: { 'build-site': hub.stubs!.buildSite.origin } });
     const first = await hub.knowledgeSync('DEMO');
     assert.equal(first.error, null);
-    assert.deepEqual(first.counts, { produced: 1, skipped: 2, failed: 1 });
+    assert.deepEqual(first.counts, { produced: 1, registered: 1, skipped: 2, failed: 1 });
     const again = await hub.knowledgeSync('ALT', { lines: ['2.1.0'] });
     assert.equal(again.counts.produced, 0);
     assert.match(again.builds.find((build) => build.name === 'Rel_DEMO_2_1_0_5')?.reason ?? '', /已有根，来源和生产器都没有变/);

@@ -48,6 +48,9 @@ export const BUILD: KnownBuild = {
  */
 export const BUILDS: KnownBuild[] = [
   BUILD,
+  // The real-data finding: a released build of the line the knowledge base knows by name only (no tree, no base
+  // text, no root) — registered by the sync as a name-only build, still a build candidate.
+  { name: 'Rel_NSAE_10_6_1_11', family: 'NSAE', line: '10.6.1', base: 'Rel_NSAE_10_6_1_11', platform: null, built_at: '2026-08-01T00:00:00.000Z', released_at: '2026-08-02T00:00:00.000Z', sources: {}, root: null },
   { name: 'Rel_NSAE_10_6_1_57', family: 'NSAE', line: '10.6.1', base: 'Rel_APV_10_6_1_57', platform: null, built_at: '2026-09-01T00:00:00.000Z', released_at: '2026-09-05T00:00:00.000Z', sources: {}, root: ROOT },
   { name: 'Rel_APV_10_6_1_60', family: 'APV', line: '10.6.1', base: 'Rel_APV_10_6_1_60', platform: null, built_at: '2026-09-18T00:00:00.000Z', released_at: '2026-09-20T00:00:00.000Z', sources: {}, root: null },
   { name: 'Rel_APV_10_6_1_63', family: 'APV', line: '10.6.1', base: 'Rel_APV_10_6_1_63', platform: null, built_at: '2026-09-25T00:00:00.000Z', released_at: null, sources: {}, root: null },

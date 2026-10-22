@@ -442,7 +442,7 @@ describe('the plan answer (findings: the 16 MiB output cap, one bad build stops 
     const failed = report.builds.find((b) => b.name === B);
     assert.equal(failed?.outcome, 'failed');
     assert.match(failed?.reason ?? '', /第 2 个构建不符合 build-info@1：sources\/cases\/1/);
-    assert.deepEqual(report.counts, { produced: 1, skipped: 0, failed: 1 });
+    assert.deepEqual(report.counts, { produced: 1, registered: 0, skipped: 0, failed: 1 });
   });
 });
 

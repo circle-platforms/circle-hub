@@ -75,7 +75,8 @@ describe('the sync plan', () => {
       sources: { tree: 'buildsite:file:/builds/command_tree-Rel_APV_10_6_1_57.xml', fixed_bugs: 'buildsite:file:/builds/Bugs_Fixed_with_Rel_APV_10_6_1_57.html' },
     });
     assert.ok(byName.has('Rel_APV_10_6_1_54') && byName.has('Rel_APV_10_6_1_40') && byName.has('Rel_APV_10_6_1_37'));
-    assert.ok(!byName.has('Rel_APV_10_6_1_38'), 'a red entry without a release date is not released');
+    // A red entry without a release date is not released: it carries no sources (name only), not its tree.
+    assert.deepEqual([byName.get('Rel_APV_10_6_1_38')?.released_at, byName.get('Rel_APV_10_6_1_38')?.sources], [null, {}]);
     assert.ok(!byName.has('BrandOS-Rel_NSAE-HG-K_10_6_1_3_2_7'), 'another platform is opt-in');
   });
 
@@ -100,7 +101,8 @@ describe('the sync plan', () => {
     assert.equal(newest?.base, 'Rel_NSAE_10_7_1_9');
     assert.deepEqual(newest?.sources, { tree: 'buildsite:file:/builds/command_tree-Rel_NSAE_10_7_1_9.xml' });
     assert.ok(byName.has('Rel_APV_10_7_1_8') && byName.has('Rel_NSAE_10_7_1_8'));
-    assert.ok(!byName.has('Rel_APV_10_6_1_56'), 'an unreleased build that is not the newest of its line is left out');
+    // An unreleased build that is not the newest of its line is listed by name only (no sources).
+    assert.deepEqual([byName.get('Rel_APV_10_6_1_56')?.base, byName.get('Rel_APV_10_6_1_56')?.sources], ['Rel_APV_10_6_1_56', {}]);
   });
 
   it('dates: the listed time as UTC, a month-only release on the first of the month', () => {
@@ -117,6 +119,40 @@ describe('the sync plan', () => {
     assert.ok(platforms.builds.length >= output.builds.length);
     const nothing = planBuilds({ round: 1, options: {}, read: { [INDEX_ID]: { ok: false, media_type: null, parser: null, model: null, reason: 'HTTP 404' } }, known: [] });
     assert.deepEqual([nothing.done, nothing.builds, nothing.fetch], [true, [], []]);
+  });
+
+  it('lists every remaining mainline build of both families as a name-only build: name, family, line, dates, base itself, no sources', () => {
+    // The real-data finding: a line holds dozens of builds (unreleased, Beta, superseded); the knowledge base knew
+    // only those with roots. Every mainline build of a read page is now listed; the rest carry only their name.
+    const rest = (name: string) => {
+      const build = byName.get(name);
+      assert.ok(build, `${name} is listed`);
+      return build;
+    };
+    // An unreleased build with a tree that is not the newest of its line: known by name only.
+    assert.deepEqual(rest('Rel_APV_10_6_1_56'), {
+      name: 'Rel_APV_10_6_1_56',
+      family: 'APV',
+      line: '10.6.1',
+      base: 'Rel_APV_10_6_1_56',
+      platform: null,
+      built_at: '2026-05-10T09:00:00Z',
+      released_at: null,
+      sources: {},
+    });
+    // A duplicate name keeps one copy (the later build time).
+    assert.equal(rest('Rel_APV_10_6_1_55').built_at, '2026-05-04T21:30:00Z');
+    // An unreleased build with a red release mark and no release date, a Beta build without a tree, a build whose
+    // listed build time is malformed: all known by name only.
+    assert.deepEqual([rest('Rel_APV_10_6_1_38').base, rest('Rel_APV_10_6_1_38').sources], ['Rel_APV_10_6_1_38', {}]);
+    assert.deepEqual([rest('Beta_APV_10_6_1_120').base, rest('Beta_APV_10_6_1_120').sources, rest('Beta_APV_10_6_1_120').released_at], ['Beta_APV_10_6_1_120', {}, null]);
+    assert.deepEqual([rest('Rel_APV_10_6_1_36').base, rest('Rel_APV_10_6_1_36').built_at], ['Rel_APV_10_6_1_36', null]);
+    // An NSAE build without a tree and without a base text stays its own base (a name-only build, not a broken alias).
+    assert.deepEqual([rest('Rel_NSAE_10_6_1_12').base, rest('Rel_NSAE_10_6_1_12').sources], ['Rel_NSAE_10_6_1_12', {}]);
+    // A variant of another platform is not a mainline build: still not listed.
+    assert.ok(!byName.has('BrandOS-Rel_NSAE-HG-K_10_6_1_3_2_7.click'), 'another platform is opt-in');
+    // The existing choices keep their sources (nothing about them changed).
+    assert.ok(Object.keys(byName.get('Rel_APV_10_6_1_57')?.sources ?? {}).includes('tree'));
   });
 
   it('is total on hostile input and its output is always sync-plan-output@1', () => {

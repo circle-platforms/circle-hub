@@ -53,7 +53,7 @@ describe('knowledge sync', () => {
       Rel_ACME_1_3_20: 'produced',
       Rel_ZETA_1_3_20: 'produced',
     });
-    assert.deepEqual(report.counts, { produced: 3, skipped: 2, failed: 0 });
+    assert.deepEqual(report.counts, { produced: 3, registered: 0, skipped: 2, failed: 0 });
     const reasons = Object.fromEntries(report.builds.map((b) => [b.name, b.reason]));
     assert.match(reasons.Rel_ACME_1_2_16, /未发布/);
     assert.match(reasons.Rel_ZETA_1_2_7, /别名，使用 Rel_ACME_1_2_15 的树/);
@@ -105,6 +105,48 @@ describe('knowledge sync', () => {
     assert.deepEqual(all.map((b) => b.root === null), [false, false, false, false, true]);
     assert.deepEqual((await w.knowledge.builds('acme', { line: '1.2', released: true })).map((b) => b.name), ['Rel_ZETA_1_2_7', 'Rel_ACME_1_2_15']);
     assert.match(formatSyncReport(report), /\[产出\] Rel_ACME_1_2_15/);
+  });
+
+  test('a build without a readable source is registered by name only: no root, not a failure, a separate count', async (t) => {
+    const w = await world(t);
+    standardSite(w.external);
+    // Two more builds on the 1.2 listing page: one unreleased without a tree, one released without a tree.
+    w.external.set('site:page:rel_acme_1_2', {
+      bytes: listingPage('rel_acme_1_2', [
+        { name: 'Rel_ACME_1_2_15', built: '2026-01-02 10:00:00', released: '2026-01-05', tree: true },
+        { name: 'Rel_ACME_1_2_16', built: '2026-01-09 10:00:00', tree: true },
+        { name: 'Rel_ACME_1_2_17', built: '2026-01-10 10:00:00' },
+        { name: 'Rel_ZETA_1_2_8', built: '2026-01-11 10:00:00', released: '2026-01-12' },
+      ]),
+      mediaType: 'text/html; charset=ISO-8859-1',
+    });
+    const report = await w.knowledge.syncProduct(w.product, { by: w.admin });
+    assert.equal(report.error, null);
+    assert.equal(report.counts.failed, 0);
+    // The outcome word of a name-only registration, and the separate count of the report.
+    assert.equal(report.builds.find((b) => b.name === 'Rel_ACME_1_2_17')?.outcome, 'registered');
+    assert.equal(report.builds.find((b) => b.name === 'Rel_ZETA_1_2_8')?.outcome, 'registered');
+    assert.equal(report.counts.registered, 2);
+    assert.match(report.builds.find((b) => b.name === 'Rel_ACME_1_2_17')?.reason ?? '', /^没有可读的来源，只登记名字$/);
+    // The report text says the two numbers apart.
+    assert.match(formatSyncReport(report), /构建：产出 3，只登记名字 2，跳过 [0-9]+，失败 0/);
+    // builds() knows them, root empty; resolveBuild returns the build itself with root null.
+    const all = await w.knowledge.builds('acme');
+    assert.ok(all.some((b) => b.name === 'Rel_ACME_1_2_17' && b.root === null));
+    const resolved = await w.knowledge.resolveBuild('acme', 'Rel_ACME_1_2_17');
+    assert.equal(resolved?.name, 'Rel_ACME_1_2_17');
+    assert.equal(resolved?.root, null);
+    assert.equal(resolved?.base, 'Rel_ACME_1_2_17');
+    // The line pointer still names a build that has a root, never a name-only build.
+    const current = await w.knowledge.currentRoot('acme', '1.2');
+    assert.ok(current !== null && current.root !== null);
+    assert.notEqual(current.build.name, 'Rel_ACME_1_2_17');
+    assert.notEqual(current.build.name, 'Rel_ZETA_1_2_8');
+    // A rerun registers them again without producing anything.
+    const again = await w.knowledge.syncProduct(w.product, { by: w.admin });
+    assert.equal(again.counts.registered, 2);
+    assert.equal(again.counts.produced, 0);
+    assert.equal(again.counts.failed, 0);
   });
 
   test('a rerun is idempotent: nothing is produced again, no build record repeated, no pointer moved', async (t) => {

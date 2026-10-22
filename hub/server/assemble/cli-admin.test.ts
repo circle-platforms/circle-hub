@@ -1087,8 +1087,9 @@ describe('knowledge', () => {
 
     const first = await admin.run(['knowledge', 'sync', '--product', 'DEMO']);
     assert.equal(first.code, 1, first.text);
-    assert.match(first.text, /构建：产出 1，跳过 2，失败 1/);
+    assert.match(first.text, /构建：产出 1，只登记名字 1，跳过 2，失败 1/);
     assert.match(first.text, /\[产出\] Rel_DEMO_2_1_0_5（DEMO，2\.1\.0）/);
+    assert.match(first.text, /\[登记\] Rel_DEMO_2_1_0_7（DEMO，2\.1\.0）：没有可读的来源，只登记名字/);
     assert.match(first.text, /\[失败\] Rel_DEMO_2_0_0_9（DEMO，2\.0\.0）/);
     assert.match(first.text, /\[跳过\] Rel_ALT_2_1_0_5（ALT，2\.1\.0，基于 Rel_DEMO_2_1_0_5）/);
     assert.match(first.text, /\[跳过\] Rel_DEMO_2_1_0_6/);
@@ -1118,7 +1119,11 @@ describe('knowledge', () => {
     assert.equal((await admin.run(['knowledge', 'sync', '--product', 'DEMO', '--bogus'])).code, 2);
 
     const roots = await expectOk(admin, ['knowledge', 'roots', 'ALT']);
-    assert.match(roots.out[0], /^产品线 demo（DEMO、ALT）：4 个构建，2 条版本线$/);
+    assert.match(roots.out[0], /^产品线 demo（DEMO、ALT）：5 个构建，2 条版本线$/);
+    // Builds with a root come first, one line each; the name-only ones close the line as one count, not a flood.
+    assert.match(roots.out.find((l) => l.includes('版本线 2.1.0：')) ?? '', /^版本线 2\.1\.0：当前根 /);
+    assert.ok(roots.out.some((l) => /^  另有 1 个构建只有名字，还没有根$/.test(l)), roots.text);
+    assert.ok(!roots.out.some((l) => l.startsWith('  Rel_DEMO_2_1_0_7\t')), 'a name-only build has no row of its own');
     assert.ok(roots.out.some((l) => /^版本线 2\.1\.0：当前根 [0-9a-f]{64}（构建 Rel_(DEMO|ALT)_2_1_0_5，产出于 /.test(l)), roots.text);
     assert.ok(roots.out.some((l) => /^版本线 2\.0\.0：还没有当前根$/.test(l)), 'the failed build has no root');
     const rootOf = (build: string) => new RegExp(`^  ${build}\\t.*\\t根 ([0-9a-f]{64})$`).exec(roots.out.find((l) => l.startsWith(`  ${build}\t`)) ?? '')?.[1];

@@ -39,6 +39,7 @@ const CANDIDATES_10_6_1 = [
   { name: 'Rel_APV_10_6_1_60', family: 'APV', base: 'Rel_APV_10_6_1_60', alias: false, platform: null, released: true },
   { name: 'Rel_APV_10_6_1_57', family: 'APV', base: 'Rel_APV_10_6_1_57', alias: false, platform: null, released: true },
   { name: 'Rel_NSAE_10_6_1_57', family: 'NSAE', base: 'Rel_APV_10_6_1_57', alias: true, platform: null, released: true },
+  { name: 'Rel_NSAE_10_6_1_11', family: 'NSAE', base: 'Rel_NSAE_10_6_1_11', alias: false, platform: null, released: true },
   { name: 'Rel_APV_10_6_1_63', family: 'APV', base: 'Rel_APV_10_6_1_63', alias: false, platform: null, released: false },
 ];
 /** The build_candidates outcome per document of the main run: a located line gives its candidates, none is an unknown. */
@@ -141,14 +142,14 @@ describe('a production run of case-location', { skip }, () => {
       assert.equal(candidates.claims.length, 1, id);
       const candidatesClaim = candidates.claims[0];
       assert.equal(candidatesClaim.statement.verdict, expectedCandidates.verdict, id);
-      assert.deepEqual(candidatesClaim.warrant, { producer: 'function', id: 'case-location.candidates@1.1.1', independence: 'judge_not_author' }, id);
+      assert.deepEqual(candidatesClaim.warrant, { producer: 'function', id: 'case-location.candidates@1.1.2', independence: 'judge_not_author' }, id);
       const candidatesData = candidatesClaim.statement.data as { kind: string; line: string | null; candidates: unknown[] };
       assert.equal(candidatesData.kind, 'candidates', id);
       assert.equal(candidatesData.line, expectedCandidates.line, id);
       if (expectedCandidates.verdict === 'support') {
         assert.deepEqual(candidates.layers, [{ layer: 'static', terminal: 'pass' }], id);
         assert.deepEqual(candidatesData.candidates, CANDIDATES_10_6_1, id);
-        assert.match(candidatesClaim.statement.text, /版本线 10\.6\.1 的构建候选 4 个，其中别名 1 个/, id);
+        assert.match(candidatesClaim.statement.text, /版本线 10\.6\.1 的构建候选 5 个，其中别名 1 个/, id);
       } else {
         assert.deepEqual(candidates.layers, [{ layer: 'static', terminal: 'unchecked', reason: 'missing_input', attribution: 'data_gap' }], id);
         assert.match(candidatesClaim.statement.text, /版本线/, id);
@@ -178,7 +179,7 @@ describe('a production run of case-location', { skip }, () => {
       assert.equal(answer.case_id, id);
       assert.equal(answer.source, `agile:mindmap:${id}@1`);
       assert.deepEqual(answer.ancestor_path, [DOCUMENTS[id].root, ...DOCUMENTS[id].ancestors]);
-      assert.deepEqual(claim.warrant, { producer: 'function', id: 'case-location.locate@1.1.1', independence: 'judge_not_author' });
+      assert.deepEqual(claim.warrant, { producer: 'function', id: 'case-location.locate@1.1.2', independence: 'judge_not_author' });
       assert.deepEqual(claim.grounds, [run.items.find((i) => i.id === id)!.location]);
       // The folders are not in the cited node: the claim points at the item's fields, as the run record holds them.
       assert.equal(claim.pointer, `/items/${k}/fields`);
