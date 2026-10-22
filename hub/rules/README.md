@@ -219,11 +219,11 @@ and, on macOS, two short-lived orphan `node` processes for the sweep test (kille
 ## Deviations
 
 - The option names of the table language (`unicode`, `case`, `whitespace`, JSON value types, `within`, `scope`, catalog
-  parameter types, `flags`, `mode`, `measure`) are closed sets written in `tables.ts`, and their Chinese names
-  (`TYPE_TEXT` in `structure.ts`, `PARAM_TYPE_TEXT` in `catalog/params.ts`, `MEASURE_TEXT` in `range.ts`) bypass `labelOf`.
-  None is an axis of the model, so section 10's check (no hand-written enumeration of a vocabulary axis) holds, but the
-  brief's general rule does not: they wait for the axes requested below. The reasons a check may give (`CHECK_REASONS` in
-  `check.ts`) are a typed subset of the `reason` axis, chosen by V01 R[2] and C07 R[1].
+  parameter types, `flags`, `mode`) are closed sets written in `tables.ts`, and their Chinese names (`TYPE_TEXT` in
+  `structure.ts`, `PARAM_TYPE_TEXT` in `catalog/params.ts`) bypass `labelOf` (`measure` comes from the model vocabulary).
+  None of the remaining options is an axis of the model, so section 10's check (no hand-written enumeration of a vocabulary
+  axis) holds, but the brief's general rule does not: they wait for the axes requested below. The reasons a check may give
+  (`CHECK_REASONS` in `check.ts`) are a typed subset of the `reason` axis, chosen by V01 R[2] and C07 R[1].
 - The sandbox's internal codes (`SANDBOX_*`, `FUNCTION_*`, `IMPORT_NOT_DECLARED`) are not in the registry; runCheck turns them
   into unknown outcomes with vocabulary reasons and they never reach a model. New conditions (`queue_full`, `stopping`,
   `os_isolation`, `pack_unreadable`) were added as `detail.reason` values of existing codes rather than as new codes.

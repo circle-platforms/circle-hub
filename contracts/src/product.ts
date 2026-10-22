@@ -4,7 +4,7 @@
 // build choice; the shapes of the functions' inputs and outputs below are the contract between them and the pack authors.
 // Register every record or pack-file schema in `schemas`; contracts/src/index.ts merges them into SCHEMA_REGISTRY.
 import { z } from 'zod';
-import { EntryKindSchema } from '../generated/vocabulary.ts';
+import { EntryKindSchema, PlacementSchema, type Placement } from '../generated/vocabulary.ts';
 import { IsoTime, Sha256, Versioned } from './common.ts';
 import { ExternalObjectId } from './reference.ts';
 
@@ -185,12 +185,10 @@ const SlotName = z.string().regex(/^[a-z][a-z0-9_]*$/);
  *   verifies each proposal with deterministic rules; the Hub never places them itself.
  * Defaults to `code_only` because the Hub calls no model and placement is the bot's job.
  */
-export const ProducerPlacement = z
-  .enum(['code_only', 'judgment_allowed'])
-  .describe(
-    'whether this producer\'s path-less entries may be handed to the bot for placement: code_only (default) keeps them unplaced at the root; judgment_allowed means the Hub offers them to the bot for placement proposals and verifies each proposal with deterministic rules (the path exists, quotes are verbatim from the original, nothing beyond what the producer declared). The Hub calls no model and never places entries itself; the bot flow is not implemented yet',
-  );
-export type ProducerPlacement = z.infer<typeof ProducerPlacement>;
+export const ProducerPlacement = PlacementSchema.describe(
+  'whether this producer\'s path-less entries may be handed to the bot for placement: code_only (default) keeps them unplaced at the root; judgment_allowed means the Hub offers them to the bot for placement proposals and verifies each proposal with deterministic rules (the path exists, quotes are verbatim from the original, nothing beyond what the producer declared). The Hub calls no model and never places entries itself; the bot flow is not implemented yet',
+);
+export type ProducerPlacement = Placement;
 
 /**
  * A producer turns stored sources into knowledge entries with their placement in the tree (K02, K04). The Hub parses every

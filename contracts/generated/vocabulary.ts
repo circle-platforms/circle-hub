@@ -57,6 +57,10 @@ export const AXES = {
   validity_status: { label: '有效条件状态', owner: 'B01', values: [{ code: 'valid', label: '有效' }, { code: 'rule_withdrawn', label: '规则已撤回' }, { code: 'grounds_withdrawn', label: '根据已撤回' }, { code: 'cited_fragment_changed', label: '被引片段已变' }, { code: 'credential_unreadable', label: '含凭据，原文不可读' }, { code: 'premise_failed', label: '依赖的前提失效' }, { code: 'expired', label: '已过期' }, { code: 'contradicted', label: '出现矛盾主张' }] },
   qualifier_mark: { label: '限定标记', owner: 'B01', values: [{ code: 'target_reported', label: '目标自报' }, { code: 'report_for_dispatch', label: '目标对本次派发的报告' }, { code: 'local_ops_not_excluded', label: '未排除本地操作' }, { code: 'human_intervention', label: '有人工干预' }, { code: 'discrimination_not_established', label: '判别力未建立' }, { code: 'semantics_unasserted', label: '语义未断言' }, { code: 'unverified_submission', label: '未经平台验证' }, { code: 'client_preview', label: '客户端预览' }, { code: 'model_relay', label: '模型转述，未经校验' }, { code: 'no_reuse', label: '无复用' }, { code: 'author_samples_only', label: '仅作者样例' }, { code: 'conditional_on_judgment', label: '以判断为前提' }, { code: 'independence_declared', label: '独立性为客户端声明' }, { code: 'not_realtime', label: '非实时' }, { code: 'partial', label: '部分' }] },
   reason: { label: '未知与未完成的原因', owner: 'V03', values: [{ code: 'no_check', label: '未装检查' }, { code: 'check_error', label: '检查出错' }, { code: 'timeout', label: '超时' }, { code: 'missing_input', label: '缺输入' }, { code: 'declared_skip', label: '模型声明跳过' }, { code: 'not_covered', label: '提交未覆盖' }, { code: 'awaiting_step', label: '在等某一步' }, { code: 'output_failed', label: '出件失败' }, { code: 'repair_exhausted', label: '修复轮数用完' }, { code: 'budget_exhausted', label: '预算用完' }, { code: 'integrity_unproven', label: '完整性未证明' }] },
+  sample_source: { label: '样例来源', owner: 'T02', values: [{ code: 'author', label: '作者' }, { code: 'returned_counterexample', label: '回流反例' }, { code: 'retained_delivery', label: '外部留存交付' }] },
+  target: { label: '目标种类', owner: 'W02', values: [{ code: 'item', label: '条目' }, { code: 'run', label: '运行' }] },
+  measure: { label: '度量', owner: 'C04', values: [{ code: 'count', label: '个数' }, { code: 'sum', label: '总和' }, { code: 'min', label: '最小值' }, { code: 'max', label: '最大值' }] },
+  placement: { label: '归位方式', owner: 'K04', values: [{ code: 'code_only', label: '只按代码归位' }, { code: 'judgment_allowed', label: '可由 bot 提议归位' }] },
 } as const;
 
 export type AxisName = keyof typeof AXES;
@@ -547,6 +551,42 @@ export function isReason(value: unknown): value is Reason {
   return (REASON as readonly unknown[]).includes(value);
 }
 
+/** 样例来源 (T02) */
+export const SAMPLE_SOURCE = ['author', 'returned_counterexample', 'retained_delivery'] as const;
+export type SampleSource = (typeof SAMPLE_SOURCE)[number];
+export const SAMPLE_SOURCE_LABEL = { 'author': '作者', 'returned_counterexample': '回流反例', 'retained_delivery': '外部留存交付' } as const satisfies { readonly [K in SampleSource]: string };
+export const SampleSourceSchema = z.enum(SAMPLE_SOURCE);
+export function isSampleSource(value: unknown): value is SampleSource {
+  return (SAMPLE_SOURCE as readonly unknown[]).includes(value);
+}
+
+/** 目标种类 (W02) */
+export const TARGET = ['item', 'run'] as const;
+export type Target = (typeof TARGET)[number];
+export const TARGET_LABEL = { 'item': '条目', 'run': '运行' } as const satisfies { readonly [K in Target]: string };
+export const TargetSchema = z.enum(TARGET);
+export function isTarget(value: unknown): value is Target {
+  return (TARGET as readonly unknown[]).includes(value);
+}
+
+/** 度量 (C04) */
+export const MEASURE = ['count', 'sum', 'min', 'max'] as const;
+export type Measure = (typeof MEASURE)[number];
+export const MEASURE_LABEL = { 'count': '个数', 'sum': '总和', 'min': '最小值', 'max': '最大值' } as const satisfies { readonly [K in Measure]: string };
+export const MeasureSchema = z.enum(MEASURE);
+export function isMeasure(value: unknown): value is Measure {
+  return (MEASURE as readonly unknown[]).includes(value);
+}
+
+/** 归位方式 (K04) */
+export const PLACEMENT = ['code_only', 'judgment_allowed'] as const;
+export type Placement = (typeof PLACEMENT)[number];
+export const PLACEMENT_LABEL = { 'code_only': '只按代码归位', 'judgment_allowed': '可由 bot 提议归位' } as const satisfies { readonly [K in Placement]: string };
+export const PlacementSchema = z.enum(PLACEMENT);
+export function isPlacement(value: unknown): value is Placement {
+  return (PLACEMENT as readonly unknown[]).includes(value);
+}
+
 export interface AxisValues {
   nature: Nature;
   basis_rank: BasisRank;
@@ -602,6 +642,10 @@ export interface AxisValues {
   validity_status: ValidityStatus;
   qualifier_mark: QualifierMark;
   reason: Reason;
+  sample_source: SampleSource;
+  target: Target;
+  measure: Measure;
+  placement: Placement;
 }
 
 const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
@@ -659,6 +703,10 @@ const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
   validity_status: VALIDITY_STATUS_LABEL,
   qualifier_mark: QUALIFIER_MARK_LABEL,
   reason: REASON_LABEL,
+  sample_source: SAMPLE_SOURCE_LABEL,
+  target: TARGET_LABEL,
+  measure: MEASURE_LABEL,
+  placement: PLACEMENT_LABEL,
 };
 
 /** Chinese display label of a vocabulary code. The only place labels come from. */

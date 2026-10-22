@@ -1,6 +1,7 @@
 // range@1: numeric ranges per value, prefixes per value (optionally by whole segments) and thresholds on an aggregate of all
 // selected values. Numbers are JSON numbers (by their shortest decimal text) or decimal strings, compared exactly.
 import { CORE_VIOLATION_CODES, type CoreViolationCode } from '../../../contracts/generated/protocol.ts';
+import { MEASURE_LABEL } from '../../../contracts/generated/vocabulary.ts';
 import { RangeTable, type CheckOutcome } from '../../../contracts/src/tables.ts';
 import { baseFor, quoted, refute, support, unknown } from '../outcome.ts';
 import { normalizeText, trimWhitespace } from '../text.ts';
@@ -72,7 +73,7 @@ function boundsText(b: Bounds): string {
 
 const hasBound = (b: Bounds): boolean => [b.minimum, b.maximum, b.exclusiveMinimum, b.exclusiveMaximum].some((x) => x !== undefined);
 
-const MEASURE_TEXT = { count: '个数', sum: '总和', min: '最小值', max: '最大值' } as const;
+const MEASURE_TEXT = MEASURE_LABEL;
 
 function semantic(table: RangeTable): TableIssue[] {
   const issues: TableIssue[] = pathIssues(table.checks.map((c, i): [string, string] => [`/checks/${i}/values`, c.values]));

@@ -49,8 +49,8 @@
           "applies": {
             "type": "string",
             "enum": [
-              "run",
-              "item"
+              "item",
+              "run"
             ],
             "description": "run: one subject for all items, built once; item: one subject per item (with its submitted slots)"
           },

@@ -3,7 +3,7 @@
 // fix; nothing is published while one problem remains. Product dialect never appears here: only the shapes and the rules.
 import type { z } from 'zod';
 import { CORE_VIOLATION_CODES, PROTOCOL_CODES } from '../../../contracts/generated/protocol.ts';
-import { ERROR_HANDLING, isCheckTier, labelOf, VERDICT, type CheckTier, type PackKind } from '../../../contracts/generated/vocabulary.ts';
+import { ERROR_HANDLING, isCheckTier, labelOf, TARGET, VERDICT, type CheckTier, type PackKind } from '../../../contracts/generated/vocabulary.ts';
 import {
   ChecksFile,
   KnowledgeFile,
@@ -418,7 +418,7 @@ async function validateWorkflow(c: Collector, directory: PackDirectory, policy: 
         c.add(problem('slots.missing_entry', 'slots.schema.json', `要求项 ${r.key} 是${labelOf('accepted_producer', r.accepted_producer)}，slots.schema.json 却没有它的槽位，模型无处可填（requirements.json /requirements/${i}）`, `在 slots.schema.json 的 ${r.target} 下声明 ${r.key}`, { field: `/${r.target}/${r.key}` }));
       }
     }
-    for (const scope of ['item', 'run'] as const) {
+    for (const scope of TARGET) {
       for (const key of Object.keys(slots[scope])) {
         if (!byKey.has(key)) c.add(problem('slots.unknown_requirement', 'slots.schema.json', `slots.schema.json 的 ${scope} 下有 ${key}，但 requirements.json 没有这个要求项`, `删掉它，或者在 requirements.json 里声明要求项 ${key}`, { field: `/${scope}/${key}` }));
       }
