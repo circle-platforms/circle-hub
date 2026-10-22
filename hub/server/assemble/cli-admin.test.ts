@@ -26,6 +26,8 @@ import { loadServerConfig } from '../main.ts';
 import { assembleHub, createAssembly } from './hub.ts';
 import { OPERATOR_TOKEN_VARIABLE, keychainOperatorTokens, memoryOperatorTokens, type OperatorTokenStore } from './operator-token.ts';
 import { openCliHarness, type CliHarness, type Deployment, type RunResult } from './test-cli.ts';
+import { LeaseService } from '../../leases/service.ts';
+import { createPool, Database } from '../../records/db.ts';
 import { AGILE_PACK, PRODUCT_PACK, REVIEW_PACK, SITE_PACK, reviewPack, syncSiteFiles, writeTestPacks } from './test-packs.ts';
 
 const DOCUMENT = 'd7f3k9';
@@ -653,6 +655,74 @@ describe('source', () => {
     const copied = await admin.run(['source', 'accept', sha, '--note', `口令是 ${secret}`]);
     assert.equal(copied.code, 1);
     assert.ok(!copied.text.includes(secret), copied.text);
+  });
+});
+
+describe('lease', () => {
+  const holder = { user: 'usr_0123456789abcdefghjkmnpqrs', run: 'run_0123456789abcdefghjkmnpqrs' };
+
+  /** A lease service over the deployment's database (the runtime role may lease). */
+  const leaseServiceOf = (admin: Admin): LeaseService =>
+    new LeaseService(
+      new Database(
+        createPool(
+          {
+            host: admin.deployment.env.CIRCLE_HUB_DATABASE_SOCKET_DIR as string,
+            port: Number(admin.deployment.env.CIRCLE_HUB_DATABASE_PORT),
+            database: admin.deployment.env.CIRCLE_HUB_DATABASE_NAME as string,
+            user: admin.deployment.env.CIRCLE_HUB_DATABASE_USER as string,
+          },
+          2,
+        ),
+      ),
+    );
+
+  test('list shows the unexpired rows of a prefix with their holders and ends, and nothing without one', async () => {
+    const admin = await setup();
+    const leases = leaseServiceOf(admin);
+    await leases.acquire({ keys: ['meadow/zone-1/target-a', 'meadow/zone-1/target-b'], ttlSeconds: 600, holder, prefix: 'meadow/', maxTtlSeconds: 1200 });
+    const all = await expectOk(admin, ['lease', 'list']);
+    assert.ok(all.out.some((line) => line.startsWith(`meadow/zone-1/target-a\t`)), all.text);
+    assert.ok(all.out.some((line) => line.startsWith(`meadow/zone-1/target-b\t`)), all.text);
+    const filtered = await expectOk(admin, ['lease', 'list', '--prefix', 'meadow/zone-2/']);
+    assert.ok(filtered.out.every((line: string) => !line.startsWith('meadow/')), 'no row of another prefix');
+    for (const line of all.out) assert.ok(!line.includes('lse_'), 'the lease id is internal; the line names key, holder, until');
+    assert.ok(all.out.every((line) => line.split('\t').length >= 3), 'key, run, until on every line');
+  });
+
+  test('release frees the key with a reason; the reason lands in the action record; --reason is required', async () => {
+    const admin = await setup();
+    const leases = leaseServiceOf(admin);
+    await leases.acquire({ keys: ['meadow/zone-9/target-x'], ttlSeconds: 600, holder, prefix: 'meadow/', maxTtlSeconds: 1200 });
+    const missing = await admin.run(['lease', 'release', 'meadow/zone-9/target-x']);
+    assert.equal(missing.code, 2, '--reason is required');
+    const done = await expectOk(admin, ['lease', 'release', 'meadow/zone-9/target-x', '--reason', '维护窗口']);
+    assert.ok(done.out.some((line) => /已释放/.test(line) && /meadow\/zone-9\/target-x/.test(line)), JSON.stringify(done.out));
+    const view = await leases.view('meadow/');
+    assert.ok(!view.entries.some((e: { key: string }) => e.key === 'meadow/zone-9/target-x'), 'the row is free');
+    const log = await leases.actionLog('meadow/zone-9/');
+    const forced = log.find((entry: Record<string, unknown>) => entry.op === 'force_release');
+    assert.ok(forced, 'a force_release action was written');
+    assert.match(JSON.stringify(forced), /维护窗口/, 'the reason is in the action record');
+    const again = await admin.run(['lease', 'release', 'meadow/zone-9/target-x', '--reason', '再来一次']);
+    assert.equal(again.code, 1);
+    assert.match(again.text, /没有租约行/);
+  });
+
+  test('a user who is not an administrator gets the same answer as for a row that does not exist', async () => {
+    const admin = await setup();
+    const leases = leaseServiceOf(admin);
+    await leases.acquire({ keys: ['meadow/zone-4/target-y'], ttlSeconds: 600, holder, prefix: 'meadow/', maxTtlSeconds: 1200 });
+    const userToken = await userWithToken(admin, '丙');
+    const listed = await admin.run(['lease', 'list'], { [OPERATOR_TOKEN_VARIABLE]: userToken });
+    assert.equal(listed.code, 1);
+    assert.match(listed.text, /只有管理员/);
+    const released = await admin.run(['lease', 'release', 'meadow/zone-4/target-y', '--reason', 'r'], { [OPERATOR_TOKEN_VARIABLE]: userToken });
+    assert.equal(released.code, 1);
+    assert.ok(!released.text.includes('meadow/zone-4/target-y'), released.text);
+    assert.match(released.text, /只有管理员|没有租约行/, 'the refusal does not reveal that the row exists');
+    const view = await leases.view('meadow/');
+    assert.ok(view.entries.some((e: { key: string }) => e.key === 'meadow/zone-4/target-y'), 'nothing was released');
   });
 });
 

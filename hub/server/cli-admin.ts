@@ -9,6 +9,8 @@
 // admin goes straight into the item and is never shown. Output is Chinese, made safe for a terminal, and never shows a token
 // or a secret value: secrets and tokens come from standard input only, never from argv.
 import { copyFile, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { LeaseService } from '../leases/service.ts';
+import { createPool, Database } from '../records/db.ts';
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
@@ -47,6 +49,7 @@ export const RESOURCE_USAGE =
 export const SECRET_USAGE = 'secret set <资源> <凭据项>（值从标准输入读，不放在命令行上） | list（只列名字）';
 export const SOURCE_USAGE = 'source held [--limit <条数>] | findings <sha256> | accept <sha256> --note <说明> | withdraw <sha256> [--note <说明>]';
 export const ORIGINAL_USAGE = 'original list [--external <外部标识的前缀>] [--limit <条数>] | export <sha256> --out <文件>';
+export const LEASE_USAGE = 'lease list [--prefix <键前缀>] | release <键> --reason <理由>';
 export const KNOWLEDGE_USAGE = 'knowledge sync --product <产品> [--line <版本线>] [--dry-run] [--recheck] [--include-unreleased] | roots <产品> | diff <根A> <根B>';
 export const INIT_ADMIN_USAGE = 'init-admin <名字>   建第一位管理员，令牌存进钥匙串（账户 operator-token），不显示';
 export const OPERATOR_TOKEN_USAGE =
@@ -120,6 +123,7 @@ class Session {
   readonly envToken: string | null;
   #hub: Promise<AssembledHub> | null = null;
   #tokens: Promise<OperatorTokenStore> | null = null;
+  #leases: Promise<LeaseService> | null = null;
 
   constructor(ctx: CliContext, options: AdminCommandOptions) {
     this.ctx = ctx;
@@ -142,6 +146,12 @@ class Session {
 
   records(): Promise<RecordsKit> {
     return this.ctx.records();
+  }
+
+  /** The lease service over this deployment's database (one pool per invocation, closed with it). */
+  leases(): Promise<LeaseService> {
+    this.#leases ??= (async () => new LeaseService(new Database(createPool(this.config().database, 2))))();
+    return this.#leases;
   }
 
   /** The operator token item of this deployment: its keychain service is resolved as the vault master key's. */
@@ -1004,6 +1014,44 @@ async function originalCommand(session: Session, args: readonly string[]): Promi
   throw new UsageError(`original 的子命令：${ORIGINAL_USAGE}`);
 }
 
+// ---------------------------------------------------------------- lease: the lease table, listed and force-released
+
+/**
+ * The administrator's lease commands: `lease list` shows the unexpired, unreleased rows (key, holder run, until) of a
+ * prefix — never the fencing token or the lease id; `lease release` force-frees a key with a reason that lands in the
+ * action record. Only administrators; a non-administrator gets the same answer as for a row that does not exist.
+ */
+async function leaseCommand(session: Session, args: readonly string[]): Promise<number> {
+  const [sub, ...rest] = args;
+  if (sub === 'list') {
+    const { values } = parse(rest, { prefix: { type: 'string' }, as: { type: 'string' } }, 0);
+    const viewer = await session.viewer(values.as);
+    if (viewer.role !== 'admin') throw new CliError('只有管理员能列出租约');
+    const leases = await session.leases();
+    const view = await leases.view(values.prefix ?? '', true);
+    if (view.entries.length === 0) session.out('没有未到期的租约');
+    for (const entry of view.entries) session.out([entry.key, entry.run, entry.until].join('\t'));
+    return 0;
+  }
+  if (sub === 'release') {
+    const { positionals, values } = parse(rest, { reason: { type: 'string' }, as: { type: 'string' } }, 1);
+    const key = positionals[0] ?? '';
+    if (key === '' || !/^[a-z0-9][a-z0-9:._/-]{0,199}$/.test(key)) throw new UsageError('键的写法不对（小写字母、数字和 :._/-，最长 200）');
+    if (values.reason === undefined || values.reason.trim() === '') throw new UsageError('强制释放要写 --reason <理由>（写进动作记录）');
+    const viewer = await session.viewer(values.as);
+    if (viewer.role !== 'admin') {
+      // The same answer as for a row that does not exist: no existence signal for a non-administrator.
+      throw new CliError('没有租约行');
+    }
+    const leases = await session.leases();
+    const outcome = await leases.forceRelease({ keys: [key], by: viewer.id, reason: values.reason.trim() });
+    if (!outcome.ok) throw new CliError(outcome.code === 'LEASE_NO_ROW' ? '没有租约行' : `没有释放：${outcome.message}`, outcome.code === 'LEASE_NO_ROW' ? '键上没有未到期的租约' : '稍后再试');
+    session.out(`已释放 ${key}（理由：${values.reason.trim()}）`);
+    return 0;
+  }
+  throw new UsageError(`lease 的子命令：${LEASE_USAGE}`);
+}
+
 // ---------------------------------------------------------------- registration
 
 type Handler = (session: Session, args: readonly string[]) => Promise<number>;
@@ -1014,6 +1062,7 @@ const COMMANDS: { name: string; summary: string; handler: Handler }[] = [
   { name: 'secret', summary: SECRET_USAGE.slice('secret '.length), handler: secretCommand },
   { name: 'source', summary: SOURCE_USAGE.slice('source '.length), handler: sourceCommand },
   { name: 'original', summary: ORIGINAL_USAGE.slice('original '.length), handler: originalCommand },
+  { name: 'lease', summary: LEASE_USAGE.slice('lease '.length), handler: leaseCommand },
   { name: 'knowledge', summary: KNOWLEDGE_USAGE.slice('knowledge '.length), handler: knowledgeCommand },
   { name: 'init-admin', summary: INIT_ADMIN_USAGE.slice('init-admin '.length), handler: initAdminCommand },
   { name: 'operator-token', summary: OPERATOR_TOKEN_USAGE.slice('operator-token '.length), handler: operatorTokenCommand },
