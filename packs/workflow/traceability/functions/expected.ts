@@ -16,8 +16,8 @@ export function expectedSources(input: unknown): { sources: ExpectedSource[]; wa
   for (const item of items) {
     const fields = isRecord(item.fields) ? item.fields : {};
     const systems = Array.isArray(fields.systems) ? (fields.systems as string[]) : [];
-    const isBugzillaOnly = systems.includes('bugzilla') && !systems.includes('plm');
-    if (isBugzillaOnly) continue;
+    // Only query PLM when the systems list explicitly includes 'plm'; unknown or other systems are skipped.
+    if (!systems.includes('plm')) continue;
 
     const bug = typeof fields.bug === 'string' && fields.bug !== '' ? fields.bug : item.id;
     if (typeof bug === 'string' && /^[0-9]+$/.test(bug)) {

@@ -4,7 +4,7 @@ import { describe, test } from 'node:test';
 import type { ProjectedItem } from '../../../../contracts/src/pack.ts';
 import { expectedSources, MAX_BUGS_PER_SOURCE } from './expected.ts';
 
-const makeItem = (id: string, systems: string[] = []): ProjectedItem => ({
+const makeItem = (id: string, systems: string[] = ['plm']): ProjectedItem => ({
   id,
   label: `缺陷 ${id}`,
   location: { slot: 'defects', source: 'src', parser: 'json@1', selector: `p/entries/${id}` },
@@ -47,7 +47,7 @@ describe('traceability expectedSources', () => {
     assert.equal(thirdIds[24], '125');
   });
 
-  test('excludes bugzilla-only defects from PLM query to avoid number collisions', () => {
+  test('only queries defects where systems includes plm; excludes bugzilla-only and unknown systems', () => {
     const items = [
       makeItem('160578', ['bugzilla']),
       makeItem('71001', ['plm']),
@@ -57,8 +57,9 @@ describe('traceability expectedSources', () => {
     const out = expectedSources({ items });
     assert.equal(out.sources.length, 1);
     const queriedIds = out.sources[0].external.replace('plm:bugs:', '').split('+');
-    assert.deepEqual(queriedIds, ['71001', '71002', '71003']);
+    assert.deepEqual(queriedIds, ['71001', '71002']);
     assert.ok(!queriedIds.includes('160578'));
+    assert.ok(!queriedIds.includes('71003'));
   });
 
   test('handles empty or malformed inputs gracefully', () => {

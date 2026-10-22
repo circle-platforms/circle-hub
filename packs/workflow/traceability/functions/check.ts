@@ -176,7 +176,7 @@ export function traceOutcomes(
   const facts = caseViewFacts(subject);
   const closedStatuses = readClosedStatuses(table);
   const closedSet = new Set(closedStatuses);
-  const { statuses: plmStatuses, unread: plmUnread } = parsePlmResponses(sources);
+  const { hasPlmSource, statuses: plmStatuses, unread: plmUnread } = parsePlmResponses(sources);
   const out: CheckOutcome[] = [];
   for (const [at, value] of items.entries()) {
     const item: Item = {
@@ -191,7 +191,7 @@ export function traceOutcomes(
         out.push({ verdict: 'unknown', reason: 'check_error', statement: `条目 ${item.id} 的字段不是追溯矩阵的形状（任务包缺陷）`, grounds: [], tier: TIER, item: item.id, pointer: `/items/${at}/fields` });
         continue;
       }
-      const info = defectSystemInfoOf(fields.bug, fields.systems, plmStatuses, plmUnread, closedSet);
+      const info = defectSystemInfoOf(fields.bug, fields.systems, plmStatuses, plmUnread, closedSet, hasPlmSource);
       out.push(outcomeOf(item, at, fields, facts, info));
     } catch (error) {
       out.push({ verdict: 'unknown', reason: 'check_error', statement: `追溯检查出错（任务包缺陷）：${internalError(error)}`, grounds: [], tier: TIER, item: item.id });

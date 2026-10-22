@@ -55,6 +55,7 @@ export interface JoinGold {
   closed_defects: number;
   closed_traced: number;
   closed_untraced: number;
+  status_unknown?: number;
 }
 
 export function joinGold(
@@ -68,15 +69,21 @@ export function joinGold(
   let closedDefects = 0;
   let closedTraced = 0;
   let closedUntraced = 0;
+  let statusUnknown = 0;
 
   const closedStatuses = options?.closedStatuses ?? ['closed'];
   const closedSet = new Set(closedStatuses);
-  let plmMap: Map<string, string> | null = null;
+  let plmMap: Map<string, string | null> | null = null;
   if (options?.plm !== undefined) {
     plmMap = new Map();
     for (const item of options.plm) {
-      if (item && item.id !== undefined && typeof item.status === 'string') {
-        plmMap.set(normalizeId(String(item.id)), item.status.trim());
+      if (item && item.id !== undefined) {
+        const idNorm = normalizeId(String(item.id));
+        if (typeof item.status === 'string' && item.status.trim() !== '') {
+          plmMap.set(idNorm, item.status.trim());
+        } else {
+          plmMap.set(idNorm, null);
+        }
       }
     }
   }
@@ -102,18 +109,34 @@ export function joinGold(
     let closed = false;
 
     if (options?.plm !== undefined) {
-      if (defect.system?.toLowerCase() === 'bugzilla') {
-        defectSystemStatus = null;
-        defectSystemUnknownReason = '系统是 bugzilla，不从 PLM 查询';
-      } else if (plmMap !== null) {
-        const plmStatus = plmMap.get(key);
-        if (plmStatus !== undefined) {
-          defectSystemStatus = plmStatus;
-          closed = closedSet.has(plmStatus);
+      const sys = defect.system?.toLowerCase();
+      if (sys !== 'plm') {
+        if (sys === 'bugzilla') {
+          defectSystemStatus = null;
+          defectSystemUnknownReason = '系统为 bugzilla，不从 PLM 查询';
         } else {
           defectSystemStatus = null;
-          defectSystemUnknownReason = 'PLM 未读到';
+          defectSystemUnknownReason = '缺陷系统不明，不按编号查 PLM';
         }
+      } else {
+        if (plmMap !== null && plmMap.has(key)) {
+          const plmStatus = plmMap.get(key);
+          if (plmStatus !== null && plmStatus !== undefined) {
+            defectSystemStatus = plmStatus;
+            defectSystemUnknownReason = null;
+            closed = closedSet.has(plmStatus);
+          } else {
+            defectSystemStatus = null;
+            defectSystemUnknownReason = '缺陷系统的记录里没有状态';
+          }
+        } else {
+          defectSystemStatus = null;
+          defectSystemUnknownReason = '缺陷系统没有返回这个编号';
+        }
+      }
+
+      if (defectSystemStatus === null) {
+        statusUnknown += 1;
       }
     }
 
@@ -145,6 +168,7 @@ export function joinGold(
     closed_defects: closedDefects,
     closed_traced: closedTraced,
     closed_untraced: closedUntraced,
+    ...(options?.plm !== undefined ? { status_unknown: statusUnknown } : {}),
   };
 }
 

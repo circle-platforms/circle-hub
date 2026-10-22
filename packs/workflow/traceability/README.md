@@ -33,11 +33,11 @@ by construction (absence is not proof).
   and the case entries. Otherwise
   unknown (missing input): the reason says no indexed case names the defect, that the index is incomplete by construction,
   and how many listed sources were not read / whether the index view was cut. When the defect system status cannot be read
-  (unread, timeout, unauthenticated), it is recorded as unknown with a reason, never assumed unclosed. Two advisory refutations guard integrity:
+  or verified (unspecified defect system, bugzilla, source unavailable, record without status, unreturned id), it is recorded as unknown with a distinct reason, never assumed unclosed. Two advisory refutations guard integrity:
   `status_conflict` (the same bug is listed as fixed in one entry and known in another — this happens in real release notes;
   the cases are still listed, the status is left to the defect system) and `join_mismatch` (a listed case's raw defect ids do
   not carry the bug — the check re-verifies the join against the raw ids instead of trusting the frozen fields).
-- **counts** (run level): the counts (defects, traced, untraced, closed defects and their traced/untraced partition, conflicts)
+- **counts** (run level): the counts (defects, traced, untraced, closed defects and their traced/untraced partition, status unknown defects, conflicts)
   as a fact, with the two views' stated totals, truncation and skipped-source counts. Closed statuses are defined in
   `tables/closed-statuses.json` (default `["closed"]`). A view that declares itself complete (not truncated) but lists fewer keys or entries
   than its stated totals contradicts itself, and the counts are refuted (`count_mismatch`) instead of stated.

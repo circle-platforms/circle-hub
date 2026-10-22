@@ -33,6 +33,7 @@ export interface TraceGold {
   closed_defects?: number;
   closed_traced?: number;
   closed_untraced?: number;
+  status_unknown?: number;
 }
 
 /**
@@ -151,8 +152,11 @@ export default function scenario(gold: TraceGold): Scenario {
         }
 
         if (defect.defect_system_status !== undefined) {
-          const expectedStatus = defect.defect_system_status === null ? '未知' : defect.defect_system_status;
-          const statusPattern = new RegExp(`缺陷\\s+${defect.bug}[^\\n]*缺陷系统[：:]\\s*${expectedStatus}`);
+          const expectedStatus = defect.defect_system_status === null
+            ? (defect.defect_system_unknown_reason ? `未知（${defect.defect_system_unknown_reason}）` : '未知')
+            : defect.defect_system_status;
+          const escaped = expectedStatus.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          const statusPattern = new RegExp(`缺陷\\s+${defect.bug}[^\\n]*缺陷系统[：:]\\s*${escaped}`);
           const hasStatus = statusPattern.test(text);
           checks.push({
             area,
@@ -173,6 +177,18 @@ export default function scenario(gold: TraceGold): Scenario {
           expected: expectedCounts,
           actual: hasClosedCounts ? expectedCounts : '统计不一致或未出现',
           ok: hasClosedCounts,
+        });
+      }
+
+      if (gold.status_unknown !== undefined) {
+        const expectedUnknown = `缺陷系统状态未知 ${gold.status_unknown} 个（不算已关闭也不算未关闭）`;
+        const hasUnknownCounts = text.includes(expectedUnknown);
+        checks.push({
+          area,
+          name: '缺陷系统状态未知统计与独立依据一致',
+          expected: expectedUnknown,
+          actual: hasUnknownCounts ? expectedUnknown : '统计不一致或未出现',
+          ok: hasUnknownCounts,
         });
       }
 

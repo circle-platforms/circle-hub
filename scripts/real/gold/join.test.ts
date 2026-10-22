@@ -57,11 +57,13 @@ describe('joinGold', () => {
 
   test('PLM status integration: parses data[].status, calculates closed counts, respects bugzilla exemption and unread', () => {
     const defects = [
-      { bug: '71001', status: 'fixed', module: 'SSL' }, // PLM closed, traced
-      { bug: '71002', status: 'known', module: 'WebUI' }, // PLM resolved, traced (not closed with default)
-      { bug: '71003', status: 'fixed', module: 'CLI' }, // PLM closed, untraced
+      { bug: '71001', status: 'fixed', module: 'SSL', system: 'plm' }, // PLM closed, traced
+      { bug: '71002', status: 'known', module: 'WebUI', system: 'plm' }, // PLM resolved, traced (not closed with default)
+      { bug: '71003', status: 'fixed', module: 'CLI', system: 'plm' }, // PLM closed, untraced
       { bug: '71004', status: 'fixed', module: 'BZ', system: 'bugzilla' }, // Bugzilla, unqueried -> unknown
-      { bug: '71005', status: 'fixed', module: 'SYS' }, // PLM missing -> unread unknown
+      { bug: '71005', status: 'fixed', module: 'SYS', system: 'plm' }, // PLM missing -> unread unknown
+      { bug: '71006', status: 'fixed', module: 'NO_SYS' }, // unspecified system -> unknown
+      { bug: '71007', status: 'fixed', module: 'EMPTY_ST', system: 'plm' }, // PLM record with no status
     ];
     const cases = [
       { document: '9001', id: 'c-1', title: '用例1', defects: ['71001'] },
@@ -72,6 +74,7 @@ describe('joinGold', () => {
       { id: '71002', status: 'resolved', title: '缺陷2' },
       { id: 71003, status: 'closed', title: '缺陷3' },
       { id: 71004, status: 'closed', title: '同号Bugzilla缺陷' }, // should NOT be matched for bugzilla defect
+      { id: 71007, title: '无状态记录' },
     ];
 
     // Default closed-statuses: ['closed']
@@ -79,6 +82,7 @@ describe('joinGold', () => {
     assert.equal(goldDefault.closed_defects, 2); // 71001 and 71003
     assert.equal(goldDefault.closed_traced, 1); // 71001
     assert.equal(goldDefault.closed_untraced, 1); // 71003
+    assert.equal(goldDefault.status_unknown, 4); // 71004, 71005, 71006, 71007
     assert.equal(goldDefault.rows[0].defect_system_status, 'closed');
     assert.equal(goldDefault.rows[0].closed, true);
     assert.equal(goldDefault.rows[1].defect_system_status, 'resolved');
@@ -86,17 +90,24 @@ describe('joinGold', () => {
     assert.equal(goldDefault.rows[2].defect_system_status, 'closed');
     assert.equal(goldDefault.rows[2].closed, true);
     assert.equal(goldDefault.rows[3].defect_system_status, null);
-    assert.match(goldDefault.rows[3].defect_system_unknown_reason ?? '', /bugzilla/);
+    assert.equal(goldDefault.rows[3].defect_system_unknown_reason, '系统为 bugzilla，不从 PLM 查询');
     assert.equal(goldDefault.rows[3].closed, false);
     assert.equal(goldDefault.rows[4].defect_system_status, null);
-    assert.match(goldDefault.rows[4].defect_system_unknown_reason ?? '', /未读到/);
+    assert.equal(goldDefault.rows[4].defect_system_unknown_reason, '缺陷系统没有返回这个编号');
     assert.equal(goldDefault.rows[4].closed, false);
+    assert.equal(goldDefault.rows[5].defect_system_status, null);
+    assert.equal(goldDefault.rows[5].defect_system_unknown_reason, '缺陷系统不明，不按编号查 PLM');
+    assert.equal(goldDefault.rows[5].closed, false);
+    assert.equal(goldDefault.rows[6].defect_system_status, null);
+    assert.equal(goldDefault.rows[6].defect_system_unknown_reason, '缺陷系统的记录里没有状态');
+    assert.equal(goldDefault.rows[6].closed, false);
 
     // Custom closed-statuses: ['closed', 'resolved']
     const goldResolved = joinGold(defects, cases, { plm, closedStatuses: ['closed', 'resolved'] });
     assert.equal(goldResolved.closed_defects, 3); // 71001, 71002, 71003
     assert.equal(goldResolved.closed_traced, 2); // 71001, 71002
     assert.equal(goldResolved.closed_untraced, 1); // 71003
+    assert.equal(goldResolved.status_unknown, 4);
   });
 });
 
@@ -124,8 +135,8 @@ describe('main', () => {
   test('main accepts --plm and --closed-statuses and outputs closed counts', async () => {
     const out = join(dir ??= mkdtempSync(join(tmpdir(), 'gold-join-')), 'join-plm.json');
     const defects = [
-      { bug: '7300', status: 'fixed', module: 'SSL' },
-      { bug: '7400', status: 'fixed', module: 'CLI' },
+      { bug: '7300', status: 'fixed', module: 'SSL', system: 'plm' },
+      { bug: '7400', status: 'fixed', module: 'CLI', system: 'plm' },
     ];
     const cases = [{ document: '9001', id: 'c-1', title: '会话检查', defects: ['7300'] }];
     const plmEnvelope = {
@@ -150,5 +161,6 @@ describe('main', () => {
     assert.equal(written.closed_defects, 2);
     assert.equal(written.closed_traced, 1);
     assert.equal(written.closed_untraced, 1);
+    assert.equal(written.status_unknown, 0);
   });
 });

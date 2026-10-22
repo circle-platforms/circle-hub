@@ -30,12 +30,11 @@
               "title": "追溯到的用例",
               "document": "24001",
               "reference": "tree:67e914f22d224053b4e7f968c09058ac4cd4bf88e25abce867dbcb03e15f4591/cases/fed418ff3e27@fed418ff3e276839213f89fce201ee17fd8229dfc1b36c2a9df9dd8ae9fefc6d",
-              "defects": [
-                "71031"
-              ],
+              "defects": [],
               "entry": "fed418ff3e276839213f89fce201ee17fd8229dfc1b36c2a9df9dd8ae9fefc6d"
             }
-          ]
+          ],
+          "systems": []
         }
       },
       {
@@ -57,7 +56,8 @@
           "digests": [
             "1e0a07c8c7a364f354e6a350b1908def32cd19be1ca86cf279fc337e7e740ce3"
           ],
-          "cases": []
+          "cases": [],
+          "systems": []
         }
       }
     ],
@@ -89,7 +89,7 @@
               "missing": 0
             },
             "cases": {
-              "source": "src:3a7f4d6c5a65e95151f602a1286664a08a68d3620ad8039c974c9c3bedde4f5a",
+              "source": "src:cf77f5c08be115e4f5c25b601e6713731d83a9f17d87a1e36f05d26121c270fa",
               "skipped": 0,
               "truncated": false,
               "total_keys": 1,

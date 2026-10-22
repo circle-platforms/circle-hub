@@ -165,7 +165,7 @@ describe('traceability scenario checks', () => {
           bug: '7402',
           status: 'known',
           defect_system_status: null,
-          defect_system_unknown_reason: '系统是 bugzilla，不从 PLM 查询',
+          defect_system_unknown_reason: '系统为 bugzilla，不从 PLM 查询',
           closed: false,
           cases: [],
         },
@@ -173,6 +173,7 @@ describe('traceability scenario checks', () => {
       closed_defects: 1,
       closed_traced: 1,
       closed_untraced: 0,
+      status_unknown: 1,
     };
 
     const scenario = traceability(goldWithStatus);
@@ -180,12 +181,12 @@ describe('traceability scenario checks', () => {
       '运行 run_1 完成：任务包 traceability',
       '条目（2 个；编号 | 名称 | 摘要）：',
       '- 7300 | 缺陷 7300 | 发布说明：已修复；缺陷系统：closed；1 个用例',
-      '- 7402 | 缺陷 7402 | 发布说明：已知；缺陷系统：未知；无已索引用例（未知）',
+      '- 7402 | 缺陷 7402 | 发布说明：已知；缺陷系统：未知（系统为 bugzilla，不从 PLM 查询）；无已索引用例（未知）',
     ].join('\n');
     const fullResultText = [
       '陈述：缺陷 7300（发布说明：已修复；缺陷系统：closed）：1 个已索引用例追溯：9001:c-1 会话检查，支持，traceability.traced',
-      '陈述：缺陷 7402（发布说明：已知；缺陷系统：未知）：没有已索引的用例标出缺陷 7402，未知，traceability.traced',
-      '跨条目：缺陷 2 个：已追溯 1 个，未追溯 1 个；其中已关闭缺陷 1 个：已追溯 1 个，未追溯 0 个，支持，traceability.counts',
+      '陈述：缺陷 7402（发布说明：已知；缺陷系统：未知（系统为 bugzilla，不从 PLM 查询））：没有已索引的用例标出缺陷 7402，未知，traceability.traced',
+      '跨条目：缺陷 2 个：已追溯 1 个，未追溯 1 个；其中已关闭缺陷 1 个：已追溯 1 个，未追溯 0 个；缺陷系统状态未知 1 个（不算已关闭也不算未关闭），支持，traceability.counts',
     ].join('\n');
 
     const turns = turnsOf([startRunText, fullResultText]);
@@ -200,9 +201,12 @@ describe('traceability scenario checks', () => {
 
     const countsCheck = checks.find((c) => c.name.includes('已关闭缺陷统计'));
     assert.ok(countsCheck && countsCheck.ok);
+
+    const unknownCountsCheck = checks.find((c) => c.name.includes('缺陷系统状态未知统计'));
+    assert.ok(unknownCountsCheck && unknownCountsCheck.ok);
   });
 
-  test('fails when defect system status or closed counts do not match gold', () => {
+  test('fails when defect system status, closed counts, or status unknown counts do not match gold', () => {
     const goldWithStatus: TraceGold = {
       product: 'apv',
       build: 'Rel_APV_10_6_1_57',
@@ -218,6 +222,7 @@ describe('traceability scenario checks', () => {
       closed_defects: 1,
       closed_traced: 1,
       closed_untraced: 0,
+      status_unknown: 0,
     };
 
     const scenario = traceability(goldWithStatus);
@@ -227,7 +232,7 @@ describe('traceability scenario checks', () => {
     ].join('\n');
     const fullResultText = [
       '陈述：缺陷 7300（发布说明：已修复；缺陷系统：resolved）：1 个已索引用例追溯：9001:c-1 会话检查，支持，traceability.traced',
-      '跨条目：缺陷 1 个：已追溯 1 个，未追溯 0 个；其中已关闭缺陷 0 个：已追溯 0 个，未追溯 0 个，支持，traceability.counts',
+      '跨条目：缺陷 1 个：已追溯 1 个，未追溯 0 个；其中已关闭缺陷 0 个：已追溯 0 个，未追溯 0 个；缺陷系统状态未知 1 个（不算已关闭也不算未关闭），支持，traceability.counts',
     ].join('\n');
 
     const turns = turnsOf([startRunText, fullResultText]);
@@ -236,6 +241,53 @@ describe('traceability scenario checks', () => {
     assert.ok(statusCheck && !statusCheck.ok);
     const countsCheck = checks.find((c) => c.name.includes('已关闭缺陷统计'));
     assert.ok(countsCheck && !countsCheck.ok);
+    const unknownCountsCheck = checks.find((c) => c.name.includes('缺陷系统状态未知统计'));
+    assert.ok(unknownCountsCheck && !unknownCountsCheck.ok);
+  });
+
+  test('verifies all distinct unknown reasons for defect system status', () => {
+    const goldDistinct: TraceGold = {
+      product: 'apv',
+      build: 'Rel_APV_10_6_1_57',
+      defects: [
+        { bug: '8001', status: 'fixed', defect_system_status: null, defect_system_unknown_reason: '缺陷系统不明，不按编号查 PLM', closed: false, cases: [] },
+        { bug: '8002', status: 'fixed', defect_system_status: null, defect_system_unknown_reason: '系统为 bugzilla，不从 PLM 查询', closed: false, cases: [] },
+        { bug: '8003', status: 'fixed', defect_system_status: null, defect_system_unknown_reason: '缺陷系统没有返回这个编号', closed: false, cases: [] },
+        { bug: '8004', status: 'fixed', defect_system_status: null, defect_system_unknown_reason: '缺陷系统的记录里没有状态', closed: false, cases: [] },
+        { bug: '8005', status: 'fixed', defect_system_status: null, defect_system_unknown_reason: '缺陷系统没有读到（来源不可用）', closed: false, cases: [] },
+      ],
+      closed_defects: 0,
+      closed_traced: 0,
+      closed_untraced: 0,
+      status_unknown: 5,
+    };
+
+    const scenario = traceability(goldDistinct);
+    const startRunText = [
+      '运行 run_1 完成：任务包 traceability',
+      '- 8001 | 缺陷 8001 | 发布说明：已修复；缺陷系统：未知（缺陷系统不明，不按编号查 PLM）；无已索引用例（未知）',
+      '- 8002 | 缺陷 8002 | 发布说明：已修复；缺陷系统：未知（系统为 bugzilla，不从 PLM 查询）；无已索引用例（未知）',
+      '- 8003 | 缺陷 8003 | 发布说明：已修复；缺陷系统：未知（缺陷系统没有返回这个编号）；无已索引用例（未知）',
+      '- 8004 | 缺陷 8004 | 发布说明：已修复；缺陷系统：未知（缺陷系统的记录里没有状态）；无已索引用例（未知）',
+      '- 8005 | 缺陷 8005 | 发布说明：已修复；缺陷系统：未知（缺陷系统没有读到（来源不可用））；无已索引用例（未知）',
+    ].join('\n');
+    const fullResultText = [
+      '陈述：缺陷 8001（发布说明：已修复；缺陷系统：未知（缺陷系统不明，不按编号查 PLM））：没有已索引的用例标出缺陷 8001，未知，traceability.traced',
+      '陈述：缺陷 8002（发布说明：已修复；缺陷系统：未知（系统为 bugzilla，不从 PLM 查询））：没有已索引的用例标出缺陷 8002，未知，traceability.traced',
+      '陈述：缺陷 8003（发布说明：已修复；缺陷系统：未知（缺陷系统没有返回这个编号））：没有已索引的用例标出缺陷 8003，未知，traceability.traced',
+      '陈述：缺陷 8004（发布说明：已修复；缺陷系统：未知（缺陷系统的记录里没有状态））：没有已索引的用例标出缺陷 8004，未知，traceability.traced',
+      '陈述：缺陷 8005（发布说明：已修复；缺陷系统：未知（缺陷系统没有读到（来源不可用）））：没有已索引的用例标出缺陷 8005，未知，traceability.traced',
+      '跨条目：缺陷 5 个：已追溯 0 个，未追溯 5 个；其中已关闭缺陷 0 个：已追溯 0 个，未追溯 0 个；缺陷系统状态未知 5 个（不算已关闭也不算未关闭），支持，traceability.counts',
+    ].join('\n');
+
+    const turns = turnsOf([startRunText, fullResultText]);
+    const checks = scenario.check(turns);
+    assert.ok(allOk(scenario, turns), JSON.stringify(checks));
+
+    for (const b of ['8001', '8002', '8003', '8004', '8005']) {
+      const c = checks.find((chk) => chk.name.includes(b) && chk.name.includes('缺陷系统状态'));
+      assert.ok(c && c.ok);
+    }
   });
 
   test('handles real client format with "另有" and "根据：tree:" in full result without mistaking tree reference as case ID', () => {
