@@ -157,6 +157,13 @@ describe('the examples', () => {
     const skill = await readFile(join(PACK_DIRECTORIES['case-review'], 'SKILL.md'), 'utf8');
     for (const word of ['`context`', '`predecessor`', '`reuse`']) assert.ok(skill.includes(word), `SKILL.md explains ${word}`);
   });
+
+  it('examples/submit-result.json conforms to the Submission contract', () => {
+    for (const id of ['case-review', 'case-review-verify']) {
+      const submit = Submission.safeParse(example(id, 'submit-result.json'));
+      assert.ok(submit.success, `${id}: ${JSON.stringify(submit.error?.issues?.slice(0, 3))}`);
+    }
+  });
 });
 
 describe('the samples', () => {

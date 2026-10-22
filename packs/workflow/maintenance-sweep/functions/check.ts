@@ -5,7 +5,7 @@
 // the verdict of the item.
 
 import { groundsOf } from './sweep.ts';
-import { FIX, PACK, guarded, isRecord } from './text.ts';
+import { FIX, PACK, clip, guarded, isRecord } from './text.ts';
 
 const REMOVED = `${PACK}.case.command_removed`;
 const CHANGED = `${PACK}.case.command_changed`;
@@ -163,6 +163,77 @@ function commandExists(subject: unknown): Outcome[] {
   return out;
 }
 
+function formatValue(value: unknown): string {
+  if (value === null) return 'null';
+  if (typeof value === 'object') {
+    try {
+      return clip(JSON.stringify(value), 60);
+    } catch {
+      return clip(String(value), 60);
+    }
+  }
+  return clip(String(value), 60);
+}
+
+function formatField(field: ParsedField): string {
+  const left = field.absent === 'before' ? '旧值：无' : `旧 ${formatValue(field.before)}`;
+  const right = field.absent === 'after' ? '新值：无' : `新 ${formatValue(field.after)}`;
+  return `${field.path} ${left} → ${right}`;
+}
+
+const MAX_DIFF_SECTION_LEN = 400;
+
+function formatDiffsText(diffs: readonly ParsedReason[]): string {
+  if (diffs.length === 0) return '';
+
+  const render = (kList: number[]): string => {
+    const parts: string[] = [];
+    for (let i = 0; i < diffs.length; i++) {
+      const diff = diffs[i];
+      const total = diff.fields.length;
+      const k = kList[i];
+      const header = diffs.length === 1 ? `字段差异 ${total} 处：` : `${diff.path} 字段差异 ${total} 处：`;
+      if (total === 0) {
+        parts.push(diffs.length === 1 ? '字段差异 0 处' : `${diff.path} 字段差异 0 处`);
+        continue;
+      }
+      if (k >= total) {
+        const itemsText = diff.fields.map(formatField).join('；');
+        parts.push(`${header}${itemsText}`);
+      } else {
+        const items = diff.fields.slice(0, k);
+        const itemsText = items.map(formatField).join('；');
+        const remaining = total - k;
+        const extra = itemsText ? `；另有 ${remaining} 处` : `另有 ${remaining} 处`;
+        parts.push(`${header}${itemsText}${extra}`);
+      }
+    }
+    return parts.join('；');
+  };
+
+  const kList = diffs.map((d) => Math.min(3, d.fields.length));
+  let text = render(kList);
+
+  while (text.length > MAX_DIFF_SECTION_LEN) {
+    let maxK = -1;
+    let targetIdx = -1;
+    for (let i = diffs.length - 1; i >= 0; i--) {
+      if (kList[i] > maxK && kList[i] > 0) {
+        maxK = kList[i];
+        targetIdx = i;
+      }
+    }
+    if (targetIdx === -1) {
+      text = clip(text, MAX_DIFF_SECTION_LEN);
+      break;
+    }
+    kList[targetIdx]--;
+    text = render(kList);
+  }
+
+  return text;
+}
+
 function commandUnchanged(subject: unknown): Outcome[] {
   const out: Outcome[] = [];
   for (const item of itemsOf(subject)) {
@@ -175,10 +246,11 @@ function commandUnchanged(subject: unknown): Outcome[] {
     const diffs = reasons.filter(changed);
     if (diffs.length > 0) {
       const paths = diffs.map((reason) => reason.path).join('、');
+      const diffText = formatDiffsText(diffs);
       out.push({
         verdict: 'refute',
         code: CHANGED,
-        statement: `用例 ${item.id}（${title}）所在命令的定义有变更（${paths}）。`,
+        statement: `用例 ${item.id}（${title}）所在命令的定义有变更（${paths}）。${diffText}`,
         grounds: groundsOf(reasons),
         tier: 'advisory',
         item: item.id,

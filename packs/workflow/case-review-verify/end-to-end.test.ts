@@ -3,8 +3,11 @@
 // verification pack verifies the draft in another session with another model. The second product (Lumen API, REST endpoints)
 // is reviewed by the same workflow pack: the core knows neither product.
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { after, before, describe, test } from 'node:test';
 import type { ItemProjection, RunSummary } from '../../../contracts/src/run.ts';
+import type { Submission } from '../../../contracts/src/submission.ts';
 import type { RequirementResult, ValidationResult } from '../../../contracts/src/validation.ts';
 import { kityminderParser } from '../../../hub/refs/api.ts';
 import { startPostgres, type TemporaryPostgres } from '../../../hub/testing/postgres.ts';
@@ -12,6 +15,7 @@ import { DOCUMENTS } from '../../../tests/fixtures/agile/index.ts';
 import { compactText, fixtureBytes, largeDocument } from '../../../tests/fixtures/mindmaps/index.ts';
 import { ALIAS, RELEASED } from '../../product/apv/testing/site.ts';
 import { reviewMindmap } from '../../product/lumen-api/testing/store.ts';
+import { PACK_DIRECTORIES } from '../case-review/packaging.ts';
 import { openReviewBed, type ReviewBed } from './testing/bed.ts';
 
 let postgres: TemporaryPostgres;
@@ -335,6 +339,22 @@ describe('the draft review (case-review) and its independent verification (case-
     assert.equal(requirement(answer.result!, negative.id, 'verification').status, 'satisfied');
     const consistent = answer.result!.cross_item.find((c) => c.requirement === 'final' && c.statement.verdict === 'support');
     assert.ok(consistent && /PARTIAL/.test(consistent.statement.text), JSON.stringify(answer.result!.cross_item.map((c) => c.statement)).slice(0, 1500));
+  });
+
+  test('case-review examples/submit-result.json is accepted by submitResult', async () => {
+    const raw = JSON.parse(await readFile(join(PACK_DIRECTORIES['case-review'], 'examples', 'submit-result.json'), 'utf8')) as Record<string, unknown>;
+    const started = await bed.service.startRun(bed.reviewer, { pack: 'case-review', product: 'NSAE', version: '10.6.1', inputs: { subject: { external: MINDMAP } } }, bed.call('sess-example-draft-start'));
+    const body = { ...raw, run: runOf(started).run };
+    const answer = await bed.service.submitResult(bed.reviewer, body as Submission, bed.call('sess-example-draft-sub'));
+    assert.equal(answer.acceptance, 'accepted', JSON.stringify(answer.errors));
+  });
+
+  test('case-review-verify examples/submit-result.json is accepted by submitResult', async () => {
+    const raw = JSON.parse(await readFile(join(PACK_DIRECTORIES['case-review-verify'], 'examples', 'submit-result.json'), 'utf8')) as Record<string, unknown>;
+    const started = await bed.service.startRun(bed.reviewer, { pack: 'case-review-verify', product: 'APV', version: '10.6.1', inputs: { target: { external: MINDMAP }, draft: { reference: `rec:${draftRecord}` } }, predecessor: draft.run }, bed.call('sess-example-verify-start'));
+    const body = { ...raw, run: runOf(started).run };
+    const answer = await bed.service.submitResult(bed.reviewer, body as Submission, bed.call('sess-example-verify-sub'));
+    assert.equal(answer.acceptance, 'accepted', JSON.stringify(answer.errors));
   });
 });
 

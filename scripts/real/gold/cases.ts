@@ -85,7 +85,7 @@ const VAGUE_KEYS = new Set(VAGUE_EXPECTED.map(foldKey));
 const NEGATIVE_KEYS = new Set(['negative', 'neg', '负向', '负面', '反向', '逆向', '异常', '负面测试'].map(foldKey));
 
 const BUG_MARKERS =
-  /(?<![A-Za-z])(?:(?:bu(?:t|gt)[\s_-]*(?:t?o|ro|2)[\s_-]*c[a-z]{0,5}|bugs?[\s_-]*(?:t?o|ro|2)?[\s_-]*c[a-z]{0,5}|缺陷))/gi;
+  /(?<![A-Za-z])(?:bu(?:t|gt)[\s_-]*(?:t?o|ro|2)[\s_-]*c[a-z]{0,5}|bugs?(?:[\s_-]*(?:t?o|ro|2)[\s_-]*c[a-z]{0,5})?|缺陷)/gi;
 const SEPARATOR = /^(?:\s*(?:&|、|,|\+|\/|\band\b|和|及|与)\s*|\s+)(?=[0-9])/i;
 const NOT_ID = /^(?:19|20)[0-9]{2}/;
 

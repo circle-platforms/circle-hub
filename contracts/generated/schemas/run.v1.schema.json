@@ -725,39 +725,115 @@
       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
     },
     "leases": {
-      "description": "the leases the Hub acquired for this run before storing it (the projection's lease_requests, granted); the fencing token stays in the lease table, never in the record",
+      "description": "the lease operations this run performed before it was stored (acquire's grant, extend's new end, release's keys with their former end); the fencing token stays in the lease table, never in the record",
       "type": "array",
       "items": {
-        "type": "object",
-        "properties": {
-          "lease": {
-            "type": "string",
-            "pattern": "^lse_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "op": {
+                "type": "string",
+                "const": "acquire"
+              },
+              "lease": {
+                "type": "string",
+                "pattern": "^lse_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+              },
+              "keys": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "until": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              }
+            },
+            "required": [
+              "lease",
+              "keys",
+              "until"
+            ],
+            "additionalProperties": false
           },
-          "keys": {
-            "minItems": 1,
-            "type": "array",
-            "items": {
-              "type": "string",
-              "minLength": 1
-            }
+          {
+            "type": "object",
+            "properties": {
+              "op": {
+                "type": "string",
+                "const": "extend"
+              },
+              "lease": {
+                "type": "string",
+                "pattern": "^lse_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+              },
+              "keys": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "until": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              }
+            },
+            "required": [
+              "op",
+              "lease",
+              "keys",
+              "until"
+            ],
+            "additionalProperties": false
           },
-          "until": {
-            "type": "string",
-            "format": "date-time",
-            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          {
+            "type": "object",
+            "properties": {
+              "op": {
+                "type": "string",
+                "const": "release"
+              },
+              "keys": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "until": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "op",
+              "keys",
+              "until"
+            ],
+            "additionalProperties": false
           }
-        },
-        "required": [
-          "lease",
-          "keys",
-          "until"
-        ],
-        "additionalProperties": false
+        ]
       }
     },
     "lease_context": {
-      "description": "the frozen lease rows of the workflow's declared prefix at start_run (every holder's rows, no tokens); the run context rebuilds `mine` from the granted leases",
+      "description": "the frozen lease rows of the workflow's declared prefix at start_run (every holder's rows, no tokens), `mine` marking the rows held by this run's lineage (D04 R[0])",
       "type": "array",
       "items": {
         "type": "object",
@@ -770,11 +846,15 @@
             "type": "string",
             "format": "date-time",
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "mine": {
+            "type": "boolean"
           }
         },
         "required": [
           "key",
-          "until"
+          "until",
+          "mine"
         ],
         "additionalProperties": false
       }

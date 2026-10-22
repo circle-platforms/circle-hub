@@ -164,13 +164,13 @@ export function runContextOf(run: RunRecord): RunContext {
   };
 }
 
-/** The lease view the checks see: the frozen pre-projection view (other holders) plus the run's own granted keys as
- * `mine` (rebuilt from the record, so it survives a restart; the run's own rows never sat in the frozen view). */
+/** The lease view the checks see: the frozen pre-projection view, every row the run's own operations named marked
+ * `mine` (its acquisitions and extensions — releases too: the projection decided about them), plus rows held by the
+ * run's lineage (D04 R[0]: a booking lease is held by the lineage, so a successor sees the keys it may operate on). */
 function contextLeasesOf(run: RunRecord): NonNullable<RunContext['leases']> {
-  const granted = new Map((run.leases ?? []).flatMap((entry) => entry.keys.map((key) => [key, entry.until] as const)));
+  const mine = new Set((run.leases ?? []).flatMap((entry) => entry.keys));
   const entries = new Map<string, { key: string; until: string; mine: boolean }>();
-  for (const row of run.lease_context ?? []) entries.set(row.key, { key: row.key, until: row.until, mine: false });
-  for (const [key, until] of granted) entries.set(key, { key, until, mine: true });
+  for (const row of run.lease_context ?? []) entries.set(row.key, { key: row.key, until: row.until, mine: row.mine || mine.has(row.key) });
   return { now: run.started_at, entries: [...entries.values()].sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0)) };
 }
 

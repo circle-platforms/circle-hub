@@ -60,7 +60,57 @@ Hub 自己判定字面问题（空字段、取值、重复用例、节点编号�
 
 文档改过以后重新评审：开始新运行时 `predecessor` 写上一次初评运行的编号。内容没变的条目，start_run 的条目行带“可沿用 rec:…”；提交时这样的条目写 `reuse`（`{"item": "<编号>", "handling": "handled", "reuse": "<那个 rec: 引用>"}`），不写 slots，Hub 核对条目和所引原文没变后沿用原来的发现，检查照常重跑。
 
-## 6. 报告
+## 6. 提交样例
+
+照这个结构写，字段名一个都不要改，只换内容（完整样例见 examples/submit-result.json）：
+
+```json
+{
+  "run": "run_01m5h9zm2nhzbz2hrfjfb6azta",
+  "model": "alpha-drafter 1.0 (scripted, temperature 0)",
+  "items": [
+    {
+      "item": "900103:imyvp5mr10r6",
+      "handling": "handled",
+      "context": "c1c2c3c4c5c6c7c8c9c0c1c2c3c4c5c6c7c8c9c0c1c2c3c4c5c6c7c8c9c0c1c2",
+      "slots": {
+        "findings": [
+          {
+            "text": "只测了一个越界值 61，缺少 0 和超长字符串的边界用例",
+            "code": "edge_case_gap",
+            "rank": "minor",
+            "location": "src:48728fe18b2e89689f4aa1b00063fc3a3ef0c41744a32de6b12a449e01374d5f/kityminder@1/n/imyvp5mr10r6",
+            "quotes": [
+              {
+                "reference": "src:48728fe18b2e89689f4aa1b00063fc3a3ef0c41744a32de6b12a449e01374d5f/kityminder@1/n/imyvp5mr10r6",
+                "text": "widget health interval pool1 61"
+              }
+            ],
+            "commands": [
+              {
+                "command": "widget health interval pool1 61"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "cross_item": [
+    {
+      "nature": "judgment",
+      "statement": "等级理由：覆盖了基本功能，反向用例有覆盖，但兼容性用例不足；证据缺口：命令的已验证测试事实（足迹）还没有",
+      "grounds": [
+        "src:cdee268f7e7db5e216b51d257a349f9d0ca408543bd4f66dd280509ad7c1c750"
+      ],
+      "code": "level",
+      "rank": "P4"
+    }
+  ]
+}
+```
+
+## 7. 报告
 
 复核结束后由初评方用中文写报告，材料取自复核方：每条已证实和新增的发现（位置、说明、引文）、改进建议（补哪些用例、为什么、期望结果）、复核的结论（PASS、PARTIAL、FAIL）和最终等级——结论和等级照复核方的写，不改。证据缺口在报告里单独列出。
 

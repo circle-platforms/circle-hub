@@ -2,7 +2,7 @@
 
 Capability 4b of the architecture brief (section 6a): a fact-only workflow pack bound to no product line. Given an impact
 view of two builds, it lists the cases of the earlier build that need maintenance. A removed command is a blocking
-violation. A changed definition is an advisory violation, field by field, with both values. `start_run` stores the
+violation. A changed definition is an advisory violation: 结论文字写前 3 处字段差异，全部差异在数据里。`start_run` stores the
 validation result; `submit_result` only adds model commentary.
 
 The product name in the tests (`widget`) and the build names (`Rel_W_1_0_1`, `Rel_W_1_0_2`) are synthetic.
@@ -32,7 +32,7 @@ differ. An added path is not an item. A change only in entries of kind `behaviou
 only in the later build is not an item.
 
 `maintenance-sweep.case.command_removed` is blocking. The statement and `data.fix` say：按替代命令改写这条用例，或者停用它.
-`maintenance-sweep.case.command_changed` is advisory. `data.fields` lists each difference as `command` (the tree path),
+`maintenance-sweep.case.command_changed` is advisory. 结论文字写前 3 处字段差异，全部差异在数据里。`data.fields` lists each difference as `command` (the tree path),
 `path` (a JSON Pointer), `before` and `after`. A key that is absent on one side is distinct from JSON null: `absent` is
 `before` or `after`, and the missing side's value is null.
 
