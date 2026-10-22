@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { HUB_TOOLS, INTERNAL_TOOLS_ALLOWED, SERVER_NAME, TOKEN_SECRET, endpointFrom, main, parseArgs, writeHome } from './circle-home.ts';
+import { HUB_TOOLS, INTERNAL_TOOLS_ALLOWED, SERVER_NAME, TOKEN_SECRET, circleEndpoint, endpointFrom, main, parseArgs, writeHome } from './circle-home.ts';
 import { parseEnvText } from './lib/env-file.ts';
 
 // Invented content: section names follow the owner's file layout, every value is made up.
@@ -123,4 +123,91 @@ test('argument errors name the problem and never a value', () => {
   assert.throws(() => parseArgs(['--provider', 'other', '--env-file', 'a', '--home', 'b']), /glm 或 qwen/);
   assert.throws(() => parseArgs(['--provider', 'qwen', '--home', 'b']), /--env-file/);
   assert.throws(() => parseArgs(['bad']), /参数不对/);
+});
+
+// circleEndpoint: the endpoint of a Circle data directory (fake settings.json and credentials.json in a temp dir; the real
+// ~/.circle is never read by a test). Invented content: the address is in example.invalid, the key is made up.
+const CIRCLE_KEY = 'fake-circle-key-1234';
+const CIRCLE_SETTINGS = { version: 1, auth: { protocol: 'anthropic', base_url: 'https://glm.example.invalid/api', model: 'glm-fake-model', api_key_ref: 'api_key' } };
+
+function fakeCircleDir(dir: string, settings: unknown = CIRCLE_SETTINGS, credentials: unknown = { api_key: CIRCLE_KEY }, mode = 0o600): string {
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'settings.json'), `${JSON.stringify(settings)}\n`);
+  writeFileSync(join(dir, 'credentials.json'), `${JSON.stringify(credentials)}\n`);
+  chmodSync(join(dir, 'credentials.json'), mode);
+  return dir;
+}
+
+const throwsWithout = (block: () => unknown, pattern: RegExp): void => {
+  try {
+    block();
+  } catch (error) {
+    const message = (error as Error).message;
+    assert.match(message, pattern);
+    assert.ok(!message.includes(CIRCLE_KEY), 'the error must not carry the key');
+    return;
+  }
+  assert.fail(`expected an error matching ${pattern}`);
+};
+
+test('circleEndpoint reads settings auth and the referenced key, and says only file and key names', () => {
+  const dir = scratch();
+  try {
+    fakeCircleDir(dir);
+    const endpoint = circleEndpoint(dir);
+    assert.equal(endpoint.protocol, 'anthropic');
+    assert.equal(endpoint.baseUrl, 'https://glm.example.invalid/api');
+    assert.equal(endpoint.model, 'glm-fake-model');
+    assert.equal(endpoint.apiKey, CIRCLE_KEY);
+    assert.ok(endpoint.sources.length >= 2 && endpoint.sources.every((s) => /settings\.json|credentials\.json/.test(s) && !s.includes(CIRCLE_KEY) && !s.includes('example.invalid')), 'sources name files and keys only');
+    assert.equal(circleEndpoint(dir, { model: 'other-model' }).model, 'other-model');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('circleEndpoint fails on a missing file, a missing field or an unreadable shape, naming only file and key names', () => {
+  const dir = scratch();
+  try {
+    mkdirSync(dir, { recursive: true });
+    throwsWithout(() => circleEndpoint(dir), /settings\.json/);
+    throwsWithout(() => circleEndpoint(fakeCircleDir(join(dir, 'a'), { version: 1 })), /auth/);
+    throwsWithout(() => circleEndpoint(fakeCircleDir(join(dir, 'b'), { ...CIRCLE_SETTINGS, auth: { ...CIRCLE_SETTINGS.auth, protocol: 'wechat' } })), /protocol/);
+    throwsWithout(() => circleEndpoint(fakeCircleDir(join(dir, 'c'), { ...CIRCLE_SETTINGS, auth: { ...CIRCLE_SETTINGS.auth, base_url: 'not a url' } })), /base_url/);
+    throwsWithout(() => circleEndpoint(fakeCircleDir(join(dir, 'd'), { ...CIRCLE_SETTINGS, auth: { protocol: 'anthropic', base_url: CIRCLE_SETTINGS.auth.base_url, api_key_ref: 'api_key' } })), /model|模型/);
+    throwsWithout(() => circleEndpoint(fakeCircleDir(join(dir, 'e'), { ...CIRCLE_SETTINGS, auth: { ...CIRCLE_SETTINGS.auth, api_key_ref: 'vault:main' } })), /api_key_ref/);
+    throwsWithout(() => circleEndpoint(fakeCircleDir(join(dir, 'f'), undefined, { token: CIRCLE_KEY })), /api_key/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('circleEndpoint warns when the credentials file is looser than 0600 and reads it anyway', () => {
+  const dir = scratch();
+  try {
+    const lines: string[] = [];
+    const endpoint = circleEndpoint(fakeCircleDir(join(dir, 'open'), undefined, undefined, 0o644), { warn: (l) => lines.push(l) });
+    assert.equal(endpoint.apiKey, CIRCLE_KEY);
+    assert.ok(lines.some((l) => /0600/.test(l)), 'a looser mode is warned about');
+    lines.length = 0;
+    circleEndpoint(fakeCircleDir(join(dir, 'tight')), { warn: (l) => lines.push(l) });
+    assert.equal(lines.length, 0, 'a 0600 file is not warned about');
+    for (const line of lines) assert.ok(!line.includes(CIRCLE_KEY));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('writeHome names the environment file as a protected file only when there is one', () => {
+  const dir = scratch();
+  try {
+    const endpoint = endpointFrom(entries, 'qwen');
+    const home = join(dir, 'home');
+    writeHome({ home, hubUrl: 'http://127.0.0.1:7420/mcp' }, endpoint, 't');
+    const settings = JSON.parse(readFileSync(join(home, 'settings.json'), 'utf8'));
+    assert.ok(!('credential_files' in settings), 'no environment file means no protected file entry');
+    assert.equal(settings.auth.model, 'qwen-test-model');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

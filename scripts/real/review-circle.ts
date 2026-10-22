@@ -1,17 +1,22 @@
 // Drives the REAL Circle client in an Otty tab with a REAL model (the owner's configured endpoint) against the deployed Hub:
 // one prompt, the turn is awaited, and the evidence is the Hub's own call log for the time of the run (every tool call with
-// its result code, acceptance and run id) plus the final screen. The model key is read from the owner's environment file at run
-// time into the 0600 files of a dedicated Circle folder and never shown; the Hub token comes from HUB_REAL_TOKEN.
+// its result code, acceptance and run id) plus the final screen. The model endpoint comes either from the owner's environment
+// file (--env-file --provider [--section]) or, with --endpoint-from circle, from the owner's Circle configuration
+// (settings.json auth and credentials.json; --circle-dir, default ~/.circle). It is read at run time into the 0600 files of a
+// dedicated Circle folder and never shown; the screen carries the protocol, the host, the model and the key length. The Hub
+// token comes from HUB_REAL_TOKEN.
 //
 //   HUB_REAL_TOKEN=<token> node scripts/real/review-circle.ts --env-file <file> --provider qwen --model <id> [--section <text>]
 //        --prompt <text> --out <dir> --name <label> [--hub-url ...] [--circle-cli <dist/cli.js>] [--timeout-ms 1800000]
+//   HUB_REAL_TOKEN=<token> node scripts/real/review-circle.ts --endpoint-from circle [--circle-dir <dir>] [--model <id>]
+//        --prompt <text> --out <dir> --name <label> ...
 //        [--home <dir>]   (reuse a folder written by an earlier run, to continue the same conversation context in a new session)
 // The evidence holds real content (test cases, documents): it is written to --out only, never into the repository.
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { endpointFrom, writeHome } from './circle-home.ts';
+import { circleEndpoint, endpointFrom, writeHome, type Endpoint } from './circle-home.ts';
 import { readEnvFile } from './lib/env-file.ts';
 import { createOtty } from './lib/otty.ts';
 import { startCircle } from './lib/circle-session.ts';
@@ -58,11 +63,63 @@ function arg(name: string): string | undefined {
   return at >= 0 ? process.argv[at + 1] : undefined;
 }
 
+/** Where the endpoint of this run comes from: the owner's environment file, or the owner's Circle configuration. */
+export interface EndpointSource {
+  endpoint: Endpoint;
+  /** The environment file that was read, to be named as a protected file; absent for --endpoint-from circle. */
+  envFile?: string;
+  provider?: 'glm' | 'qwen';
+  section?: string;
+}
+
+/**
+ * The endpoint of a review run from its arguments: `--endpoint-from circle` reads the owner's Circle configuration
+ * (`--circle-dir`, default `.circle` under the environment's HOME; the model may be overridden with `--model`), the
+ * arguments of the environment file (`--env-file --provider --model [--section]`) read it as before. The two sources are
+ * mutually exclusive. Warnings (a credentials file looser than 0600) go to `warn`; errors never carry a value.
+ */
+export function endpointSource(argv: string[], env: NodeJS.ProcessEnv, warn: (line: string) => void = () => {}): EndpointSource {
+  const value = (name: string): string | undefined => {
+    const at = argv.indexOf(`--${name}`);
+    return at >= 0 ? argv[at + 1] : undefined;
+  };
+  const from = value('endpoint-from');
+  if (from !== undefined) {
+    if (from !== 'circle') throw new Error('--endpoint-from 只认 circle');
+    for (const other of ['env-file', 'provider', 'section'] as const) {
+      if (value(other) !== undefined) throw new Error(`--endpoint-from circle 和 --${other} 二选一`);
+    }
+    const dir = value('circle-dir') ?? join(env.HOME ?? '', '.circle');
+    return { endpoint: circleEndpoint(dir, { model: value('model'), warn }) };
+  }
+  const envFile = value('env-file');
+  const provider = value('provider');
+  const model = value('model');
+  if (!envFile) throw new Error('缺少 --env-file（或用 --endpoint-from circle）');
+  if (provider !== 'qwen' && provider !== 'glm') throw new Error('缺少 --provider（或用 --endpoint-from circle）');
+  if (!model) throw new Error('缺少 --model（或用 --endpoint-from circle，端点自带模型名）');
+  const section = value('section');
+  return { endpoint: endpointFrom(readEnvFile(envFile), provider, model, section), envFile, provider, section };
+}
+
+/** What the screen may say about the endpoint: the protocol, the host, the model and the key length, nothing else. */
+export function endpointLine(endpoint: Endpoint): string {
+  const host = new URL(endpoint.baseUrl).host;
+  return `模型 ${endpoint.model}，协议 ${endpoint.protocol}，主机 ${host}，密钥长度 ${endpoint.apiKey.length}`;
+}
+
 async function main(): Promise<number> {
-  const [envFile, provider, model, prompt, out, name] = [arg('env-file'), arg('provider'), arg('model'), arg('prompt'), arg('out'), arg('name')];
+  const [prompt, out, name] = [arg('prompt'), arg('out'), arg('name')];
   const token = process.env.HUB_REAL_TOKEN;
-  if (!envFile || (provider !== 'qwen' && provider !== 'glm') || !model || !prompt || !out || !name || !token) {
-    console.error('用法：HUB_REAL_TOKEN=… node scripts/real/review-circle.ts --env-file <文件> --provider qwen|glm --model <模型> --prompt <文字> --out <目录> --name <标签>');
+  if (!prompt || !out || !name || !token) {
+    console.error('用法：HUB_REAL_TOKEN=… node scripts/real/review-circle.ts (--env-file <文件> --provider qwen|glm --model <模型> | --endpoint-from circle [--circle-dir <目录>]) --prompt <文字> --out <目录> --name <标签>');
+    return 2;
+  }
+  let source: EndpointSource;
+  try {
+    source = endpointSource(process.argv.slice(2), process.env, (line) => console.error(`[review] ${line}`));
+  } catch (error) {
+    console.error(`失败：${(error as Error).message}`);
     return 2;
   }
   const hubUrl = arg('hub-url') ?? 'http://127.0.0.1:7420/mcp';
@@ -71,9 +128,8 @@ async function main(): Promise<number> {
   mkdirSync(out, { recursive: true, mode: 0o700 });
   const scratch = mkdtempSync(join(tmpdir(), 'chub-review-'));
   const home = join(scratch, 'home');
-  const endpoint = endpointFrom(readEnvFile(envFile), provider, model, arg('section'));
-  const written = writeHome({ envFile, home, provider, hubUrl }, endpoint, token);
-  console.error(`[review] 专用 Circle 目录已写好；模型 ${endpoint.model}，协议 ${endpoint.protocol}，密钥长度 ${endpoint.apiKey.length}`);
+  const written = writeHome({ envFile: source.envFile, home, provider: source.provider, hubUrl }, source.endpoint, token);
+  console.error(`[review] 专用 Circle 目录已写好；${endpointLine(source.endpoint)}`);
   const started = new Date();
   const otty = createOtty();
   let screen = '';
