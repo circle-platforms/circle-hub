@@ -8,7 +8,7 @@
 import { z } from 'zod';
 import { isSourceRole, type SourceRole } from '../../../contracts/generated/vocabulary.ts';
 import type { ProtocolError } from '../../../contracts/src/common.ts';
-import type { RequirementTemplate, RunContext } from '../../../contracts/src/pack.ts';
+import type { ContextBuild, RequirementTemplate, RunContext } from '../../../contracts/src/pack.ts';
 import { RunRecord, RunSummary, type RequirementSummary } from '../../../contracts/src/run.ts';
 import { StartRunInput, type StartRunOutput } from '../../../contracts/src/tools.ts';
 import { partitionCountsOf, type PartitionCounts, type ValidationResult } from '../../../contracts/src/validation.ts';
@@ -73,10 +73,25 @@ export function requirementSummary(t: RequirementTemplate): RequirementSummary {
   return { key: t.key, name: t.name, description: t.description, layers: t.layers, done_rule: t.done_rule, accepted_producer: t.accepted_producer, repair_rounds: repairRounds(t) };
 }
 
-/** The summary part of a run record, as start_run returns it. */
+/** The summary part of a run record, as start_run returns it (the frozen context extras — groups, builds — stay out). */
 export function summaryOf(record: RunRecord): RunSummary {
-  const { runner: _r, host: _h, trigger: _t, configurer: _c, parameters: _p, policy: _po, executors: _e, groups: _g, client_key: _k, request_digest: _d, client_key_expires_at: _x, ...summary } = record;
+  const { runner: _r, host: _h, trigger: _t, configurer: _c, parameters: _p, policy: _po, executors: _e, groups: _g, builds: _b, client_key: _k, request_digest: _d, client_key_expires_at: _x, ...summary } = record;
   return RunSummary.parse(summary);
+}
+
+const compareText = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+
+/**
+ * The builds of the bound product for a workflow that asked (workflow.context): every build the knowledge base knows, both
+ * name families, an alias carrying its base, sorted by (line, built_at, name); null when the workflow did not ask or the run
+ * is bound to no product — absent then means "not asked", never an empty list.
+ */
+export async function contextBuilds(ctx: EngineContext, workflow: LoadedWorkflow, product: string | null): Promise<ContextBuild[] | null> {
+  if (product === null || !(workflow.workflow.context ?? []).includes('builds')) return null;
+  const known = await ctx.deps.knowledge.builds(product);
+  return known
+    .map((b) => ({ name: b.name, family: b.family, line: b.line, base: b.base, platform: b.platform, built_at: b.built_at, released_at: b.released_at, has_root: b.root !== null }))
+    .sort((a, b) => compareText(a.line, b.line) || compareText(a.built_at ?? '', b.built_at ?? '') || compareText(a.name, b.name));
 }
 
 const SPLIT_FIX = '把被判对象分块（每块分别开运行），按分块评审的做法逐块提交';
@@ -156,18 +171,21 @@ async function productionOf(ctx: EngineContext, run: StoredRecord<RunRecord>): P
   return stored === null ? null : { reference: recReference(stored.digest), record: stored.digest, result: stored.body, counts: partitionCountsOf(stored.body.partitions) };
 }
 
+/** The gap note of a run without items (an empty item set is a legal answer, W01 R[3]): said in the answer, never hidden. */
+const EMPTY_ITEMS_NOTE = { code: 'runs.empty_items', message: '这次运行没有条目：投影函数成功返回了一个空的条目集（空条目集是合法的结果）' } as const;
+
 /** The warnings of the expected-sources function as gaps: code and message only. */
 const gapsFrom = (warnings: readonly unknown[]): NonNullable<StartRunDetail['gaps']> =>
   warnings.flatMap((w) => (isObject(w) && typeof w.code === 'string' && typeof w.message === 'string' ? [{ code: w.code, message: w.message }] : [])).slice(0, MAX_WARNINGS);
 
 /** The evidence gaps of a stored run, from the parse action start_run wrote: unbound expected sources and the function's warnings. */
-async function gapsOf(ctx: EngineContext, run: string): Promise<Pick<StartRunDetail, 'unavailable' | 'gaps'>> {
-  const parse = (await actionsOf(ctx.deps.records.store, run)).find((a) => a.body.action === 'parse');
+async function gapsOf(ctx: EngineContext, run: RunRecord): Promise<Pick<StartRunDetail, 'unavailable' | 'gaps'>> {
+  const parse = (await actionsOf(ctx.deps.records.store, run.run)).find((a) => a.body.action === 'parse');
   const listed = parse?.body.detail.unavailable;
   const warnings = parse?.body.detail.expected_warnings;
   return {
     unavailable: Array.isArray(listed) ? listed.flatMap((u) => (isObject(u) && typeof u.external === 'string' && isSourceRole(u.role) ? [{ external: u.external, role: u.role }] : [])) : [],
-    gaps: Array.isArray(warnings) ? gapsFrom(warnings) : [],
+    gaps: gapsFrom([...(run.items.length === 0 ? [EMPTY_ITEMS_NOTE, ...((parse?.body.detail.warnings as unknown[]) ?? [])] : []), ...((warnings as unknown[]) ?? [])]),
   };
 }
 
@@ -203,7 +221,7 @@ export async function startRun(ctx: EngineContext, user: Principal, raw: unknown
           throw new Refusal([protocolError('IDEMPOTENCY_MISMATCH', `客户端键 ${key} 已经用于内容不同的 start_run（运行 ${existing.body.run}）`, { path: '/client_key' })]);
         }
         const production = await productionOf(ctx, existing);
-        return { answer: okAnswer(existing.body, production), production, runRecord: existing.digest, ...(await gapsOf(ctx, existing.body.run)) };
+        return { answer: okAnswer(existing.body, production), production, runRecord: existing.digest, ...(await gapsOf(ctx, existing.body)) };
       }
       return fresh();
     });
@@ -301,7 +319,9 @@ async function startFresh(
   const target = await resolveTarget(ctx, user, workflow, input, startedAt, call.traceId);
   const runId = newId('run', at.getTime());
   const bound = await bindInputs(ctx, user, workflow, input.inputs, runId, call.traceId);
-  // The projection runs before any group exists; the expected sources and the checks see the frozen groups.
+  // The projection runs before any group exists; the expected sources and the checks see the frozen groups. The builds of
+  // the bound product are known from the target and frozen with the run, so they are the same at projection and evaluation.
+  const builds = await contextBuilds(ctx, workflow, target.product?.product.id ?? null);
   const context: RunContext = {
     product: target.product?.product.id ?? null,
     names: target.product?.product.names ?? [],
@@ -310,6 +330,7 @@ async function startFresh(
     root: target.root?.root ?? null,
     parameters,
     groups: [],
+    ...(builds !== null ? { builds } : {}),
   };
   const projection = await projectItems(ctx, user, workflow, bound, parameters, context, call.traceId);
   const expected = await bindExpected(ctx, user, workflow, bound, projection.projected, parameters, { ...context, groups: projection.groups }, runId, call.traceId);
@@ -371,6 +392,7 @@ async function startFresh(
     ...(hub ? { host: 'hub' as const, trigger: 'standing_obligation' as const, configurer: user.id } : { runner: user.id, host: 'local_circle' as const, trigger: 'session' as const }),
     parameters,
     ...(projection.groups.length > 0 ? { groups: projection.groups } : {}),
+    ...(builds !== null ? { builds } : {}),
     ...(input.client_key !== undefined
       ? { client_key: input.client_key, request_digest: requestDigest, client_key_expires_at: new Date(at.getTime() + ctx.clientKeyWindowMs).toISOString() }
       : {}),
@@ -419,7 +441,8 @@ async function startFresh(
     production: result,
     runRecord: stored.digest,
     unavailable: expected.unavailable.map(({ external, role }) => ({ external, role })),
-    gaps: gapsFrom(expected.warnings),
+    // A run without items says so in the answer and carries the projection's notes; with items the projection warnings stay in the parse action.
+    gaps: gapsFrom([...(items.length === 0 ? [EMPTY_ITEMS_NOTE, ...projection.warnings] : []), ...expected.warnings]),
   };
 }
 

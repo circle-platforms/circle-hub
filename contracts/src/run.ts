@@ -11,6 +11,7 @@ import {
 } from '../generated/vocabulary.ts';
 import { Claim } from './claim.ts';
 import { IsoTime, ItemId, PackId, PackVersion, RunId, Sha256, UserId } from './common.ts';
+import { ContextBuild } from './pack.ts';
 import { ExternalObjectId, ReferenceUri, referenceUriOf } from './reference.ts';
 
 /** One input given to start_run: bytes already uploaded, or an external object the Hub reads (read-only) with the pack's system adapter. Exactly one key. */
@@ -128,6 +129,10 @@ export const RunRecord = RunSummary.extend({
   policy: z.string().optional().describe('version of the global boundary policy table used'),
   executors: Sha256.optional().describe('digest of the executor registry used (W06 F[7]); absent while no executor is registered'),
   groups: z.array(z.record(z.string(), z.unknown())).optional().describe('the groups the projection function returned (structure of the judged source that is not an item), frozen with the run and handed to subject builders'),
+  builds: z
+    .array(ContextBuild)
+    .optional()
+    .describe('the builds of the bound product the workflow asked for (workflow.context), frozen with the run so an evaluation after a restart sees the same list; absent when not asked or not bound to a product'),
   client_key: z.string().min(1).max(200).optional(),
   request_digest: Sha256.optional().describe('SHA-256 of the RFC 8785 canonical JSON of the start_run arguments the client key was bound to; the same key with other arguments is IDEMPOTENCY_MISMATCH (D05 R[4])'),
   client_key_expires_at: IsoTime.optional().describe('end of the window in which repeating the client key returns this run'),

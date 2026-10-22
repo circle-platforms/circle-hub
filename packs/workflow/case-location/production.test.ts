@@ -34,8 +34,20 @@ const EXPECTED: Record<string, { verdict: string; product: [string | null, strin
   '24004': { verdict: 'unknown', product: [null, '合成平台'], version: '10.6.1', source: 'folders', confidence: 'high', line: '10.6.1', train: '10.6.1-R2-2026/7', module: 'SLB', build_names: [], requirements: [], defects: ['61001'], unclassified: [] },
 };
 
-/** The build candidates requirement: no check is installed (the check would need the line's builds), so it is unchecked. */
-const NO_CANDIDATES = [{ layer: 'static', terminal: 'unchecked', reason: 'no_check', attribution: 'unattributed' }];
+/** The candidates of line 10.6.1 as the check lists them (released first by date descending, then unreleased by name). */
+const CANDIDATES_10_6_1 = [
+  { name: 'Rel_APV_10_6_1_60', family: 'APV', base: 'Rel_APV_10_6_1_60', alias: false, platform: null, released: true },
+  { name: 'Rel_APV_10_6_1_57', family: 'APV', base: 'Rel_APV_10_6_1_57', alias: false, platform: null, released: true },
+  { name: 'Rel_NSAE_10_6_1_57', family: 'NSAE', base: 'Rel_APV_10_6_1_57', alias: true, platform: null, released: true },
+  { name: 'Rel_APV_10_6_1_63', family: 'APV', base: 'Rel_APV_10_6_1_63', alias: false, platform: null, released: false },
+];
+/** The build_candidates outcome per document of the main run: a located line gives its candidates, none is an unknown. */
+const CANDIDATES: Record<string, { status: string; verdict: string; line: string | null }> = {
+  '24001': { status: 'satisfied', verdict: 'support', line: '10.6.1' },
+  '24002': { status: 'pending', verdict: 'unknown', line: null },
+  '24003': { status: 'pending', verdict: 'unknown', line: null },
+  '24004': { status: 'satisfied', verdict: 'support', line: '10.6.1' },
+};
 
 before(async () => {
   postgres = await startPostgres();
@@ -48,6 +60,11 @@ before(async () => {
     bytes: new TextEncoder().encode(mindMapJson('24005', smallMap('24005', '31006-SSL证书链'))),
     mediaType: 'application/json',
     meta: { title: '31006-SSL证书链', root: 'NSAE', ancestors: [P0, '060：10.6.1', '004：10.6.1-R2-2026/7', 'SSL'] },
+  });
+  hub.external.put('agile:mindmap:24006', {
+    bytes: new TextEncoder().encode(mindMapJson('24006', smallMap('24006', '回归 Rel_APV_10_5_1_101 会话保持'))),
+    mediaType: 'application/json',
+    meta: { title: '回归 Rel_APV_10_5_1_101 会话保持', root: 'NSAE', ancestors: [P0, '060：10.6.1', '004：10.6.1-R2-2026/7', 'SLB'] },
   });
   hub.external.put('plm:story:20931', { bytes: new TextEncoder().encode('# 需求 20931 证书链校验\n\n设备校验服务器证书链，链不完整时拒绝连接。\n'), mediaType: 'text/markdown', meta: { title: '需求 20931 证书链校验' } });
   hub.external.put('plm:story:31006', { bytes: new TextEncoder().encode('# 需求 31006 证书链\n\n证书链的长度上限可配置。\n'), mediaType: 'text/markdown', meta: { title: '需求 31006 证书链' } });
@@ -108,8 +125,8 @@ describe('a production run of case-location', { skip }, () => {
     const result = production.result;
     assert.ok(ValidationResult.safeParse(result).success);
     assert.deepEqual([result.acceptance, result.errors, result.cross_item], ['accepted', [], []]);
-    // Every item has its build candidates unchecked, so every item counts as unknown.
-    assert.deepEqual(production.counts, { delivered: 4, rejected: 0, quarantined: 0, incomplete: 0, unknown: 4 });
+    // 24002 and 24003 are unknown on both requirements (no version line), 24004 on location (a root of no product line).
+    assert.deepEqual(production.counts, { delivered: 4, rejected: 0, quarantined: 0, incomplete: 0, unknown: 3 });
     assert.deepEqual(production.counts, partitionCountsOf(result.partitions));
     for (const [k, [id, expected]] of Object.entries(EXPECTED).entries()) {
       const { partition, item } = located(result, id);
@@ -119,7 +136,24 @@ describe('a production run of case-location', { skip }, () => {
         ['location', 'build_candidates'],
       );
       const [requirement, candidates] = item.requirements;
-      assert.deepEqual([candidates.layers, candidates.status, candidates.claims], [NO_CANDIDATES, 'pending', []], id);
+      const expectedCandidates = CANDIDATES[id];
+      assert.equal(candidates.status, expectedCandidates.status, id);
+      assert.equal(candidates.claims.length, 1, id);
+      const candidatesClaim = candidates.claims[0];
+      assert.equal(candidatesClaim.statement.verdict, expectedCandidates.verdict, id);
+      assert.deepEqual(candidatesClaim.warrant, { producer: 'function', id: 'case-location.candidates@1.1.0', independence: 'judge_not_author' }, id);
+      const candidatesData = candidatesClaim.statement.data as { kind: string; line: string | null; candidates: unknown[] };
+      assert.equal(candidatesData.kind, 'candidates', id);
+      assert.equal(candidatesData.line, expectedCandidates.line, id);
+      if (expectedCandidates.verdict === 'support') {
+        assert.deepEqual(candidates.layers, [{ layer: 'static', terminal: 'pass' }], id);
+        assert.deepEqual(candidatesData.candidates, CANDIDATES_10_6_1, id);
+        assert.match(candidatesClaim.statement.text, /版本线 10\.6\.1 的构建候选 4 个，其中别名 1 个/, id);
+      } else {
+        assert.deepEqual(candidates.layers, [{ layer: 'static', terminal: 'unchecked', reason: 'missing_input', attribution: 'data_gap' }], id);
+        assert.match(candidatesClaim.statement.text, /版本线/, id);
+        assert.deepEqual(candidatesData.candidates, [], id);
+      }
       assert.equal(requirement.claims.length, 1, id);
       const [claim] = requirement.claims;
       const answer = claim.statement.data as unknown as LocateAnswer;
@@ -144,7 +178,7 @@ describe('a production run of case-location', { skip }, () => {
       assert.equal(answer.case_id, id);
       assert.equal(answer.source, `agile:mindmap:${id}@1`);
       assert.deepEqual(answer.ancestor_path, [DOCUMENTS[id].root, ...DOCUMENTS[id].ancestors]);
-      assert.deepEqual(claim.warrant, { producer: 'function', id: 'case-location.locate@1.0.0', independence: 'judge_not_author' });
+      assert.deepEqual(claim.warrant, { producer: 'function', id: 'case-location.locate@1.1.0', independence: 'judge_not_author' });
       assert.deepEqual(claim.grounds, [run.items.find((i) => i.id === id)!.location]);
       // The folders are not in the cited node: the claim points at the item's fields, as the run record holds them.
       assert.equal(claim.pointer, `/items/${k}/fields`);
@@ -178,7 +212,7 @@ describe('a production run of case-location', { skip }, () => {
     // The document under another root has no product line, but its folders give 10.6.1: the declaration contradicts that too.
     assert.equal(located(result, '24004').item.requirements[0].layers[0].terminal, 'violation');
     assert.equal(located(result, '24003').item.requirements[0].layers[0].terminal, 'unchecked');
-    assert.deepEqual(detail.production!.counts, { delivered: 4, rejected: 0, quarantined: 0, incomplete: 0, unknown: 4 });
+    assert.deepEqual(detail.production!.counts, { delivered: 4, rejected: 0, quarantined: 0, incomplete: 0, unknown: 2 });
   });
 
   it('binds the product line the pack declares when the run names none', async () => {
@@ -222,7 +256,30 @@ describe('a production run of case-location', { skip }, () => {
     );
     const answer = answerOf(detail.production!.result, '24001:24001n2');
     assert.deepEqual([answer.version, answer.module, answer.ancestor_path.slice(-2)], ['10.6.1', 'SSL', ['需求20931 证书链校验', '基本功能']]);
-    assert.deepEqual(detail.production!.counts, { delivered: 2, rejected: 0, quarantined: 0, incomplete: 0, unknown: 2 });
+    assert.deepEqual(detail.production!.counts, { delivered: 2, rejected: 0, quarantined: 0, incomplete: 0, unknown: 0 });
+  });
+
+  it('a written build name of another line is an advisory violation naming that line, beside the candidates of the located one', async () => {
+    const detail = await hub.service.startRunDetailed(hub.alice, { pack: 'case-location', product: 'NSAE', inputs: { documents: [external('24006')] } }, call());
+    assert.equal(detail.answer.call_result, 'ok', JSON.stringify(detail.answer.errors));
+    const result = detail.production!.result;
+    const item = located(result, '24006').item;
+    const candidates = item.requirements.find((r) => r.requirement === 'build_candidates')!;
+    // The candidates of the located line, then the cross-check of the written name: one support and one violation.
+    assert.deepEqual(
+      candidates.claims.map((c) => [c.statement.verdict, c.statement.code ?? null]),
+      [
+        ['support', null],
+        ['refute', 'case-location.build_other_line'],
+      ],
+    );
+    const data = candidates.claims[1].statement.data as { kind: string; name: string; line: string };
+    assert.deepEqual([data.kind, data.name, data.line], ['written_build', 'Rel_APV_10_5_1_101', '10.5.1']);
+    assert.match(candidates.claims[1].statement.text, /属于版本线 10\.5\.1/);
+    // The violation is advisory: the item is delivered, and the build_candidates requirement is unsatisfied.
+    assert.deepEqual(candidates.layers, [{ layer: 'static', terminal: 'violation', code: 'case-location.build_other_line', tier: 'advisory', attribution: 'author_input' }]);
+    assert.equal(candidates.status, 'unsatisfied');
+    assert.deepEqual(detail.production!.counts, { delivered: 1, rejected: 0, quarantined: 0, incomplete: 0, unknown: 0 });
   });
 
   it('keeps the pack from users it is not assigned to, and takes model commentary only as judgments', async () => {

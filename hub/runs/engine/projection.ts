@@ -1,6 +1,8 @@
 // Items (W01) and expected sources. The workflow's projection function runs in the sandbox over the parsed inputs; its
-// output is validated; a refusal or zero items refuses the whole start_run with the pack's fix (W01 R[3]). The Hub forms each
-// item's location reference from its fragment and the bound source, verifies that it resolves and fingerprints the item.
+// output is validated; a refusal refuses the whole start_run with the pack's fix (W01 R[3]: only a source whose own
+// structure yields no items, or ambiguous production input ids, is refused wholesale — a projection that succeeds with an
+// empty item set is a legal answer and the run starts with zero items). The Hub forms each item's location reference from
+// its fragment and the bound source, verifies that it resolves and fingerprints the item.
 // The expected_sources function names external objects to bind; each is read best effort as the caller: a failed read is
 // recorded as unavailable and never fails the run.
 import type { SourceRole } from '../../../contracts/generated/vocabulary.ts';
@@ -72,7 +74,6 @@ export async function projectItems(
   }
   const { items: projected, warnings } = parsed.data;
   const groups = parsed.data.groups ?? [];
-  if (projected.length === 0) throw refusal(path, '投影没有给出任何条目', '检查被判对象：它里面要有任务包能识别的条目');
   const seen = new Set<string>();
   for (const item of projected) {
     if (seen.has(item.id)) throw refusal(path, `投影给出的条目编号 ${item.id} 重复`, '请联系任务包作者：条目编号在一次运行里要唯一', `duplicate item id ${item.id}`);
@@ -90,8 +91,14 @@ export async function projectItems(
     const slot = item.location.slot ?? subject;
     const candidates = bound.filter((b) => b.slot === slot);
     if (candidates.length === 0) throw refusal(path, `条目 ${item.id} 的位置所在的输入槽 ${slot} 没有绑定源文件`, '请联系任务包作者');
+    // A fragment that names its source (FragmentRef.source, the digest of the bound bytes) is resolved in that source only.
+    let tried = candidates;
+    if (item.location.source !== undefined) {
+      tried = candidates.filter((b) => b.sha256 === item.location.source);
+      if (tried.length === 0) throw refusal(path, `条目 ${item.id} 的位置指向的源没有绑定在输入槽 ${slot} 里（${item.location.source.slice(0, 16)}…）`, '请联系任务包作者');
+    }
     const located: string[] = [];
-    for (const candidate of candidates) {
+    for (const candidate of tried) {
       let reference: string;
       try {
         reference = srcFragment(candidate.sha256, item.location.parser, item.location.selector, item.location.range);

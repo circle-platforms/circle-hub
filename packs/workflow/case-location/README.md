@@ -14,8 +14,8 @@ A01 (declared values stay declared), B01/B03 (grounds).
 | --- | --- |
 | `pack.json` | the manifest of exactly the pack files below (`pack-files.ts --write` keeps it current; a test fails when it is stale) |
 | `workflow.json` | input `documents` (subject, `agile:mindmap`, many, required); parameters `product`, `line`, `granularity`, `id_ranges`; `product: { id: "apv", catalogs: [] }`; projection and expected sources |
-| `requirements.json` | `location`: item, fact, static, required, checks `[locate]`; `build_candidates`: item, fact, static, required, no check (see decision 6) |
-| `checks.json` | `locate`: pack function `functions/check.ts`, applies `run`, subject builder `functions/subject.ts`, judges `subject`, advisory |
+| `requirements.json` | `location`: item, fact, static, required, checks `[locate]`; `build_candidates`: item, fact, static, required, checks `[candidates]` |
+| `checks.json` | `locate`: pack function `functions/check.ts`, applies `run`, subject builder `functions/subject.ts`, judges `subject`, advisory; `candidates`: `functions/candidates.ts`, same shape |
 | `slots.schema.json` | empty (`item: {}`, `run: {}`): nothing for a model to fill |
 | `SKILL.md` | the procedure: start the run, read every summary (reading on when the answer is partial), relay every answer unchanged |
 | `functions/locate.ts` | the attribution scheme (pure): `locateItem(input) → { answer, judgment }`, `summaryOf`, `locateInputOf` |
@@ -25,9 +25,10 @@ A01 (declared values stay declared), B01/B03 (grounds).
 | `functions/project.ts` | projection-input@1 → projection-output@1 |
 | `functions/subject.ts` | run-subject-input@1 → the check's subject (items plus product, names, parameters) |
 | `functions/check.ts` | PackCheckInput → check-outcome@1, one outcome per item |
+| `functions/candidates.ts` | the build_candidates check: per item the candidates of the located line from the frozen context builds, then one outcome per written build name |
 | `functions/expected.ts` | expected-sources-input@1 → `plm:story:<id>`, `plm:bug:<id>` with role expected |
 | `tables/codes.json` | every pack code (refusals, warnings, the one violation) and the labels of `version_source` and `confidence` |
-| `samples/positive/*`, `samples/negative/*` | two positive and three negative samples of `locate` (author samples); the negative `trees-that-are-no-facts` holds, beside its declaration conflict, trees that must stay unknown (contradicting levels, mentioned versions), so the publish check also guards the location rules |
+| `samples/positive/*`, `samples/negative/*` | two positive and three negative samples of `locate`, one positive and one negative of `candidates` (author samples); the negative `trees-that-are-no-facts` holds, beside its declaration conflict, trees that must stay unknown (contradicting levels, mentioned versions), so the publish check also guards the location rules |
 | `pack-files.ts` | not a pack file: lists the pack files, writes/checks `pack.json`, stages a publishable copy |
 | `testing/examples.json` | not a pack file: five synthetic examples with hand-written answers (no verified real run exists, T01 F[11]) |
 | `functions/test-support.ts`, `test-hub.ts`, `*.test.ts`, `README.md` | not pack files: tests and their helpers |
@@ -56,7 +57,12 @@ level; **unknown, reason missing_input** (terminal unchecked, attribution data_g
 product line, a version only mentioned or only in the title, a declared version, no version, a version level that
 contradicts itself), with what is known in `data` and the reason leading the statement and the summary; **refute**
 `case-location.declaration_conflict` (advisory) only when a caller's declaration contradicts the tree. The second
-requirement `build_candidates` has no check: every item shows it unchecked (no check), so every item is counted unknown.
+requirement `build_candidates` is a real check (`candidates`, advisory): the candidates are the builds the run's frozen
+context lists for the located version line (both name families, an alias shown with its base, released first by date
+descending, then name); no located line, or a line without any known build, is an unknown (missing input), never a pass.
+Each written build name is classified against the knowledge base's builds: known (a candidate, or the base an alias is based
+on) is a support; known but of another line is an advisory violation (`build_other_line`, naming the line); not known is an
+unknown (the knowledge base lists only the builds of the build site), never a violation.
 
 ## The scheme (decisions)
 
@@ -87,10 +93,11 @@ requirement `build_candidates` has no check: every item shows it unchecked (no c
    of a name family of the bound line; other products' names are left out (noted). Nothing is derived: no twin in the other
    family (older NSAE builds are based on APV builds with other numbers, brief section 8) and no name made from a version.
 6. **Build candidates** (K01 R[10]: the builds of every name family under the version line, aliases resolved to their
-   base) need the line's builds, which no pack check receives. They are a requirement of their own with no check
-   (`checks: []`): the engine records it unchecked (no check) on every item instead of a satisfied fact that leaves them
-   out. A check cannot be installed: the publish check needs a positive and a negative sample of every check (T02 R[0]),
-   and a check without the builds can only answer unknown.
+   base): since 1.1.0 the workflow declares `context: ["builds"]` (workflow@1), the engine hands the knowledge base's builds
+   of the bound product to the run context and freezes them in the run record, and the `candidates` check answers from the
+   frozen list. The candidates are the builds of the located line, released first by date descending, then by name; a
+   candidate whose name differs from its base is an alias (`alias: true`, shown with its base). Before 1.1.0 the requirement
+   had no check (every item showed it unchecked, no_check): the pack could not see the builds.
 7. **Ids.** Read from the document title; from the folders below the version level; and, for a case, from the map path and
    the case text. Only a word right before the number names its kind (`bug`, `缺陷` → defect; `story`, `需求` →
    requirement); the "bug to case" family and `PLM` name a document type and the system, so their numbers are unmarked. A
@@ -162,6 +169,9 @@ node packs/workflow/case-location/pack-files.ts --check
 - `functions/check.test.ts`, `functions/expected.test.ts`: outcomes per item, their pointers and grounds of any reference
   shape, conflicts, an unbound run, malformed subjects, the largest admitted run within the sandbox output limit; bound
   and unread ids, declared ranges, folder ids, the cap.
+- `functions/candidates.test.ts`: the candidates of the located line of both name families (an alias shown with its base,
+  released first by date descending), a written name of another line (advisory violation) and one the knowledge base does
+  not know (unknown), no located line or a line without builds (unknown, never a pass), order independence, 2,000 builds.
 - `functions/sandbox.test.ts`: every entry point in the Hub sandbox equals the direct call; the check through `runCheck`.
 - `pack.test.ts`: `pack.json` current and without examples, contract shapes, the product binding and both requirements,
   parameter schemas zod can enforce, declared codes and labels, the hand-written examples, and the staged pack through
@@ -191,9 +201,9 @@ staged copy: `node packs/workflow/case-location/pack-files.ts --stage <empty dir
 2. "Overrides" are declarations that fill what the tree does not give, are marked, and are refuted where they contradict
    the tree (W03 R[0]). This is also the check's only refutation, which the publish check needs for its negative samples.
 3. Extra answer fields: `unclassified`, `id_sources`, `ranged`, `build_source`, `patch_source`, `declared`, `conflicts`,
-   `notes`. `build_candidates` of the first version is replaced by `build_names` (written names only) and the
-   `build_candidates` requirement (unchecked), because the candidates of the brief ("both name families, aliases
-   resolved") cannot be computed by a pack check today (decisions 5, 6).
+   `notes`. In 1.0.0 `build_candidates` was an unchecked requirement and `build_names` carried the written names only,
+   because a pack check could not see the builds; since 1.1.0 the `candidates` check computes them from the frozen context
+   and cross-checks the written names (decisions 5, 6).
 4. `source` is read as the identity of the source document (the task does not define it).
 5. "Priority order" is read as the order inside one label (build date, then patch, then version, each masking its match).
    "Nearest the root" applies among the version labels; a version only mentioned among other words is a reference version
@@ -211,8 +221,9 @@ staged copy: `node packs/workflow/case-location/pack-files.ts --stage <empty dir
 
 ## Limits
 
-- No build candidates (decision 6); written build names are not checked against the knowledge base, and an NSAE name of an
-  older line is not resolved to the APV build it is based on.
+- The candidates are the knowledge base's builds at the start of the run (frozen with the run record); a name the
+  knowledge base does not know is unknown, never a violation. An NSAE name of an older line is not resolved to the APV
+  build it is based on beyond what the knowledge base's alias records say.
 - Dates written with dots (`7.1`, `10.1 国庆版本`) are read as versions; outside the version level they are only references.
 - A label that is only a version (`802.1`, `1.5`) is a version label; under a root without a version level it would be a
   fact. No such folder was seen in the sampled trees.
@@ -238,14 +249,13 @@ staged copy: `node packs/workflow/case-location/pack-files.ts --stage <empty dir
   a build and locks its root, although the workflow requires no catalog; with no synced build of the line the start is
   refused, and the run summary shows a version line and build that are not the located ones. Request: for a workflow
   without catalogs, bind the line (its names in `RunContext`) without choosing a build or locking a root.
-- **runs engine** (`hub/runs/engine/projection.ts`): `FragmentRef.source` is not used to pick the bound source of an item
-  location; every source of the slot is tried and exactly one must resolve. Honoring `source` would remove
-  `ambiguous_location` refusals for documents whose node ids repeat across the bound documents.
-- **runs engine / contracts** (build candidates, K01 R[10]): give fact-only checks the builds of the bound line with their
-  aliases resolved (for example `RunContext.builds: KnownBuild[]` of the located lines, or a `builds` binding a check can
-  declare, from `KnowledgePort.builds` / `resolveBuild`). Then this pack can install a `build_candidates` check with honest
-  positive and negative samples (a written name the knowledge base does not know, an alias of another line) and drop the
-  unchecked requirement. Until then the requirement has no check.
+- ~~runs engine (`hub/runs/engine/projection.ts`): `FragmentRef.source` picks the bound source of an item location~~
+  **resolved** (hub-builds): a fragment naming its source is resolved in that source only, so node ids repeating across
+  the bound documents no longer force `ambiguous_location`; without `source` the old rule stands.
+- ~~runs engine / contracts (build candidates, K01 R[10])~~ **resolved since 1.1.0** (hub-builds): workflow.json declares
+  `context: ["builds"]`, the engine hands the knowledge base's builds of the bound product to the run context and freezes
+  them in the run record; the `candidates` check answers from it (all lines, so the written-name cross-check can name the
+  line a build belongs to).
 - **runs engine / contracts** (grounds of the folder facts, B01, B03): the engine reads the `meta` artifact of an external
   read (`hub/runs/engine/inputs.ts`) but binds neither it nor the `agile:tree` reads it was derived from as a run source,
   and `BoundInput` carries the parsed meta without its digest, so no claim can cite what the folders rest on. Request: bind

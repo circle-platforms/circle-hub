@@ -16,7 +16,7 @@ import {
   type PackKind,
 } from '../generated/vocabulary.ts';
 import { PACK_FILE_PATHS } from '../generated/protocol.ts';
-import { ItemId, JsonPointer, PackId, PackVersion, Sha256, Versioned } from './common.ts';
+import { ItemId, IsoTime, JsonPointer, PackId, PackVersion, Sha256, Versioned } from './common.ts';
 import { FragmentRef, PackFunctionRef } from './product.ts';
 import { ExternalObjectId, Ground, ReferenceUri } from './reference.ts';
 
@@ -174,6 +174,24 @@ export type RequirementsFile = z.infer<typeof RequirementsFile>;
 
 // ---------------------------------------------------------------- checks.json (C05)
 
+/** A build of the bound product as the run context lists it: no sources and no root digest; `has_root` says the tree exists. */
+export const ContextBuild = z.strictObject({
+  name: z.string().min(1).describe('build name exactly as listed'),
+  family: z.string().min(1).describe('which of the product names the build carries'),
+  line: z.string().min(1).describe('version line the pack assigns to the build'),
+  base: z.string().min(1).describe('the build whose tree this build uses; equals name when the build has its own tree'),
+  platform: z.string().min(1).nullable().describe('platform or customer branch; null for the main platform'),
+  built_at: IsoTime.nullable(),
+  released_at: IsoTime.nullable().describe('null while unreleased'),
+  has_root: z.boolean().describe('whether the knowledge base has produced the root of the build’s tree'),
+});
+export type ContextBuild = z.infer<typeof ContextBuild>;
+
+/** The run-context parts a workflow may ask for beyond the defaults (W06): today only the builds of the bound product. */
+export const CONTEXT_KEY = ['builds'] as const;
+export type ContextKey = (typeof CONTEXT_KEY)[number];
+export const ContextKeySchema = z.enum(CONTEXT_KEY);
+
 /** Facts about the run that checks and pack functions may use. */
 export const RunContext = z.strictObject({
   product: z.string().nullable(),
@@ -183,6 +201,12 @@ export const RunContext = z.strictObject({
   root: Sha256.nullable(),
   parameters: z.record(z.string(), z.unknown()),
   groups: z.array(z.record(z.string(), z.unknown())).describe('the groups the projection function returned, frozen with the run'),
+  builds: z
+    .array(ContextBuild)
+    .optional()
+    .describe(
+      'every build the knowledge base knows for the bound product, sorted by (line, built_at, name); present only when the workflow asked for it (workflow.context) and the run is bound to a product — absent then means "not asked", not "none known"',
+    ),
 });
 export type RunContext = z.infer<typeof RunContext>;
 
@@ -350,6 +374,10 @@ export const WorkflowFile = z
         catalogs: z.array(Versioned).describe('catalogs the product must provide'),
       })
       .describe('the product binding (W03 R[5]): one line, whatever the names it is known by'),
+    context: z
+      .array(ContextKeySchema)
+      .optional()
+      .describe('the run-context parts this workflow asks for beyond the defaults, for example builds: the knowledge base builds of the bound product, frozen with the run'),
     subject: Key.describe('the input slot that holds the judged source'),
     projection: PackFunctionRef.describe('ProjectionInput -> ProjectionOutput: the items of the run (W01)'),
     expected_sources: PackFunctionRef.optional().describe('ExpectedSourcesInput -> ExpectedSourcesOutput: external objects to bind as expected sources'),
@@ -361,6 +389,9 @@ export const WorkflowFile = z
     });
     w.parameters.forEach((p, k) => {
       if (w.parameters.findIndex((x) => x.name === p.name) !== k) ctx.addIssue({ code: 'custom', path: ['parameters', k, 'name'], message: `parameter ${p.name} is declared twice` });
+    });
+    w.context?.forEach((key, k) => {
+      if (w.context!.findIndex((x) => x === key) !== k) ctx.addIssue({ code: 'custom', path: ['context', k], message: `context key ${key} is declared twice` });
     });
   });
 export type WorkflowFile = z.infer<typeof WorkflowFile>;
