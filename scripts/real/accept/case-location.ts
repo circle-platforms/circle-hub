@@ -45,6 +45,50 @@ interface ParsedCandidate {
 /** How many candidates Hub lists in full; mirrors MAX_LISTED in packs/workflow/case-location/functions/candidates.ts. */
 export const MAX_LISTED = 12;
 
+/** Maximum number of result pages to read with hub_get_nodes. */
+export const MAX_PAGES = 6;
+
+/**
+ * Finds the first complete JSON object after "下一页：get_nodes " by counting curly braces,
+ * parses it with JSON.parse, and extracts { reference, cursor }.
+ * Returns null if the marker is not found or JSON has no reference/cursor.
+ */
+export function parseNextCall(text: string): { reference: string; cursor: string } | null {
+  const marker = '下一页：get_nodes ';
+  const at = text.indexOf(marker);
+  if (at < 0) return null;
+  const start = text.indexOf('{', at + marker.length);
+  if (start < 0) return null;
+  if (!/^\s*$/.test(text.slice(at + marker.length, start))) return null;
+
+  let depth = 0;
+  for (let i = start; i < text.length; i++) {
+    if (text[i] === '{') depth++;
+    else if (text[i] === '}') {
+      depth--;
+      if (depth === 0) {
+        const jsonStr = text.slice(start, i + 1);
+        try {
+          const parsed = JSON.parse(jsonStr) as Record<string, unknown>;
+          if (typeof parsed.reference === 'string' && typeof parsed.cursor === 'string') {
+            return { reference: parsed.reference, cursor: parsed.cursor };
+          }
+        } catch {
+          return null;
+        }
+        return null;
+      }
+    }
+  }
+  return null;
+}
+
+/** Extracts the 64-hex rec: reference from the start_run result text. */
+export function parseRecReference(text: string): string | null {
+  const match = /完整结果[^\n]*?\b(rec:[0-9a-fA-F]{64})\b/.exec(text);
+  return match ? match[1] : null;
+}
+
 const compareText = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 
 /** Sorts gold candidates identically to Hub: built time descending, then by name; null/missing built time last. */
@@ -88,14 +132,40 @@ function parseReportedCandidates(text: string): ParsedCandidate[] {
 export default function scenario(gold: LocationGold): Scenario {
   const area = '用例定位';
   const pack = 'case-location';
+  let reference: string | null = null;
+  let pagesRead = 0;
+
   return {
     name: 'case-location',
     area,
     prompt: `请对敏捷平台上的测试脑图 ${gold.document} 做用例定位。`,
-    respond: (turn) =>
-      turn.index === 0
-        ? [{ tool: 'hub_start_run', input: { pack, product: gold.product, inputs: { documents: { external: `agile:mindmap:${gold.document}` } } } }]
-        : [{ text: '定位完成。' }],
+    respond: (turn) => {
+      if (turn.index === 0) {
+        reference = null;
+        pagesRead = 0;
+        return [{ tool: 'hub_start_run', input: { pack, product: gold.product, inputs: { documents: { external: `agile:mindmap:${gold.document}` } } } }];
+      }
+
+      const lastText = turn.toolResults.map((r) => r.text).join('\n');
+      if (reference === null) {
+        reference = parseRecReference(lastText);
+      }
+
+      if (reference !== null && pagesRead === 0) {
+        pagesRead = 1;
+        return [{ tool: 'hub_get_nodes', input: { reference } }];
+      }
+
+      if (pagesRead > 0 && pagesRead < MAX_PAGES) {
+        const next = parseNextCall(lastText);
+        if (next !== null) {
+          pagesRead++;
+          return [{ tool: 'hub_get_nodes', input: { reference: next.reference, cursor: next.cursor } }];
+        }
+      }
+
+      return [{ text: '定位完成。' }];
+    },
     check(turns: LoggedTurn[]): Check[] {
       const text = resultTexts(turns).join('\n');
       const has = (needle: string): boolean => text.includes(needle);

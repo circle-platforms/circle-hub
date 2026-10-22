@@ -82,7 +82,7 @@ export const VAGUE_EXPECTED: readonly string[] = [
 const VAGUE_KEYS = new Set(VAGUE_EXPECTED.map(foldKey));
 
 /** Canonical negative spellings, copied from the pack's tag table source. */
-const NEGATIVE_KEYS = new Set(['negative', 'neg', '负向', '负面', '反向', '逆向', '异常'].map(foldKey));
+const NEGATIVE_KEYS = new Set(['negative', 'neg', '负向', '负面', '反向', '逆向', '异常', '负面测试'].map(foldKey));
 
 const BUG_MARKERS =
   /(?<![A-Za-z])(?:(?:bu(?:t|gt)[\s_-]*(?:t?o|ro|2)[\s_-]*c[a-z]{0,5}|bugs?[\s_-]*(?:t?o|ro|2)?[\s_-]*c[a-z]{0,5}|缺陷))/gi;

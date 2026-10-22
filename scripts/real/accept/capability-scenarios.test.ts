@@ -121,20 +121,44 @@ describe('quality-board scenario', () => {
   const gold: BoardGold = {
     product: 'apv',
     build: 'Rel_APV_10_6_1_57',
+    totals: { cases: 20, missing: 1, vague: 1, negative: 1 },
     groups: [{ label: '10.6/SSL', cases: 20, missing: 1, vague: 1, negative: 1 }],
   };
   const scenario = qualityBoard(gold);
+
   test('starts the run with the facet view on turn 0', () => {
     assert.deepEqual(scenario.respond(turn(0)), [
       { tool: 'hub_start_run', input: { pack: 'quality-board', inputs: { facets: { external: 'knowledge:facets:apv:Rel_APV_10_6_1_57?kind=case&by=line,module,has_expected,vague_expected,negative' } } } },
     ]);
   });
-  test('holds on a matching group line with the limitation shown, fails on wrong counts', () => {
-    const good = '运行 run_4 完成。分组 10.6/SSL：用例 20 个；无期望结果 1 个（5.0%）；含糊期望 1 个（5.0%）；负面用例 1 个（5.0%）。看板描述的是已索引的用例，不是整套测试。';
-    assert.ok(allOk(scenario, turnsOf(good)), JSON.stringify(scenario.check(turnsOf(good))));
-    const wrong = good.replace('用例 20 个', '用例 21 个');
-    assert.ok(!allOk(scenario, turnsOf(wrong)));
-    const noLimit = good.replace('看板描述的是已索引的用例，不是整套测试。', '');
+
+  const baseGood = [
+    '运行 run_4 完成。',
+    '- 10.6/SSL | 用例 20 个；无期望结果 5.0%；含糊期望 5.0%；负面用例 5.0%',
+    '合计：用例 20 个；无期望结果 1 个（5.0%）；含糊期望 1 个（5.0%）；负面用例 1 个（5.0%）。看板描述的是已索引的用例，不是整套测试。',
+  ].join('\n');
+
+  test('holds on a matching total line, percentages and group sum', () => {
+    assert.ok(allOk(scenario, turnsOf(baseGood)), JSON.stringify(scenario.check(turnsOf(baseGood))));
+  });
+
+  test('fails when one total count is off by one', () => {
+    const wrongMissing = baseGood.replace('无期望结果 1 个', '无期望结果 2 个');
+    assert.ok(!allOk(scenario, turnsOf(wrongMissing)), 'one count off by one must fail');
+  });
+
+  test('fails when a percentage is incorrect', () => {
+    const wrongPercent = baseGood.replace('含糊期望 1 个（5.0%）', '含糊期望 1 个（6.0%）');
+    assert.ok(!allOk(scenario, turnsOf(wrongPercent)), 'wrong percentage must fail');
+  });
+
+  test('fails when the sum of group cases does not equal total cases', () => {
+    const wrongGroupSum = baseGood.replace('用例 20 个；无期望结果 5.0%', '用例 19 个；无期望结果 5.0%');
+    assert.ok(!allOk(scenario, turnsOf(wrongGroupSum)), 'group sum mismatch must fail');
+  });
+
+  test('fails when the limitation is missing', () => {
+    const noLimit = baseGood.replace('看板描述的是已索引的用例，不是整套测试。', '');
     assert.ok(!allOk(scenario, turnsOf(noLimit)), 'the limitation must be shown');
   });
 });
