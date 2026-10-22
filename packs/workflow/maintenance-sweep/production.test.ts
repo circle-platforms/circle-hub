@@ -7,7 +7,9 @@ import { ValidationResult, partitionCountsOf, type ItemResult, type RequirementR
 import { osIsolationAvailable } from '../../../hub/rules/api.ts';
 import { startPostgres, type TemporaryPostgres } from '../../../hub/testing/postgres.ts';
 import { buildImpact, reviewSweep } from './functions/test-support.ts';
-import { call, openHub, type Hub } from './test-hub.ts';
+import { createPacksPort } from '../../../hub/runs/api.ts';
+import { callTool } from '../../../hub/server/tools.ts';
+import { EmptyKnowledge, call, openHub, type Hub } from './test-hub.ts';
 
 const skip = (await osIsolationAvailable()) ? false : 'no OS network isolation on this machine (sandbox-exec)';
 let postgres: TemporaryPostgres;
@@ -144,11 +146,51 @@ describe('a production run of maintenance-sweep', { skip }, () => {
     assert.match(unknown.statement.text, /没有维护项并不能证明没有过期的用例/);
   });
 
-  it('refuses a clean pair instead of storing a made-up item', async () => {
+  it('starts a clean pair legally and stores an empty result', async () => {
     const detail = await hub.service.startRunDetailed(hub.alice, { pack: 'maintenance-sweep', inputs: { impact: { external: EMPTY } } }, call());
-    assert.equal(detail.answer.call_result, 'error');
-    assert.equal(detail.production, null);
-    assert.ok(detail.answer.errors.some((error) => error.code === 'SUBMISSION_SCHEMA_VIOLATION' && error.message.includes('投影没有给出任何条目')), JSON.stringify(detail.answer.errors));
+    assert.equal(detail.answer.call_result, 'ok', JSON.stringify(detail.answer.errors));
+    assert.equal(detail.answer.run!.items.length, 0);
+    assert.notEqual(detail.production, null);
+    const production = detail.production!;
+    assert.deepEqual(production.counts, { delivered: 0, rejected: 0, quarantined: 0, incomplete: 0, unknown: 0 });
+    assert.deepEqual(production.result.partitions, { delivered: [], incomplete: [], quarantined: [], rejected: [] });
+    assert.deepEqual(production.result.coverage, { complete: true, examined: 0, total: 0 });
+
+    const gapText = (detail.gaps ?? []).map((g) => `${g.code}：${g.message}`);
+    assert.ok(gapText.some((g) => g.includes('没有条目')), `the answer notes no items: ${gapText.join('; ')}`);
+    assert.ok(
+      gapText.some((g) => g.includes('maintenance-sweep.clean') && g.includes('没有需要维护的用例')),
+      `the answer carries the pack's explanation: ${gapText.join('; ')}`,
+    );
+
+    const stored = (await hub.service.getRun(hub.alice, detail.answer.run!.run))!;
+    assert.deepEqual(stored.latest, { record: production.record, result: production.result });
+
+    const toolCall = {
+      principal: hub.alice,
+      traceId: '4bf92f3577b34da6a3ce929d0e1e0099',
+      sessionId: 'sess-maintenance',
+      context: { traceId: '4bf92f3577b34da6a3ce929d0e1e0099', sessionId: 'sess-maintenance', adminNote: () => {} },
+      state: {},
+    };
+    const deps = {
+      records: hub.kit,
+      runs: hub.service,
+      packs: createPacksPort(hub.registry),
+      knowledge: new EmptyKnowledge(),
+      now: () => new Date(),
+    };
+    const read = await callTool(deps as unknown as Parameters<typeof callTool>[0], toolCall as unknown as Parameters<typeof callTool>[1], 'get_nodes', { reference: detail.answer.result!.reference });
+    assert.equal(read.isError, false);
+    assert.match(read.content[0].text, /覆盖：完整：已查 0，共 0/);
+    assert.match(read.content[0].text, /条目明细：没有条目/);
+    assert.match(read.content[0].text, /索引没有收录的用例，这里不作结论。/);
+    const content = (read.structuredContent as { content: { text: string; reference: string; readable: boolean } }).content;
+    assert.equal(content.reference, detail.answer.result!.reference);
+    assert.equal(content.readable, true);
+    const parsed = JSON.parse(content.text);
+    assert.deepEqual(parsed.partitions, { delivered: [], incomplete: [], quarantined: [], rejected: [] });
+    assert.deepEqual(parsed.coverage, { complete: true, examined: 0, total: 0 });
   });
 
   it('refuses a product on an unbound pack, and keeps the pack from users it is not assigned to', async () => {

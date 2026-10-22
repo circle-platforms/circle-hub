@@ -50,8 +50,9 @@ empty `priorities` array keeps nothing. Input order does not change the output.
 3. A well-formed view never refutes: a scope is not a defect, and a missing case is unknown. The publish check still
    requires a negative sample of every check (C05 R[0], T02). The only refutations are two projection invariants
    (`not_in_scope`, `not_uncovered`) that this pack's projection does not produce. They are declared as such.
-4. An empty scope is an empty projection plus a warning that says so. The run engine refuses a projection with no items
-   (W01 R[3]). This pack does not invent an item to get past that refusal.
+4. An empty scope is an empty projection plus a warning that says so. An empty item set is a legal answer (W01 R[3]):
+   the run engine accepts an empty projection, stores its validation result with empty partitions and coverage complete
+   at 0 of 0, and notes in the answer that there are no items carrying the pack's explanation.
 
 ## How to test
 
@@ -75,11 +76,11 @@ is committed.
 - `ignore` is not a parameter. `priorities` holds at most 64 numbers.
 - `ignore_fields` belongs to maintenance-sweep, not to this pack.
 - Tree references in the view are copied onto the claims. This pack does not resolve them against a knowledge root.
-- Warnings kept on a run are the first 100. An empty projection's warnings are dropped by the engine with the refusal.
+- Warnings kept on a run are the first 100. An empty projection's warnings are kept and carried in the answer's gaps and parse action.
 
 ## Needs from other packages
 
-- **runs engine** (`hub/runs/engine/projection.ts`, W01 R[3]): a projection with zero items refuses `start_run` (“投影没有给出任何条目”). An empty scope and a clean maintenance pair cannot be stored. Request: accept an empty item list when the projection says why.
+- **runs engine** (`hub/runs/engine/projection.ts`, W01 R[3]): done — empty item sets are accepted as legal answers, storing an empty validation result and carrying the projection's explanation.
 - **runs engine** (C05 R[0], T02): every check needs a refuting sample. This pack's refutations are invariants, not defects of a scope. Request: allow a check whose only honest outcomes are support and unknown to publish without a refutation.
 - **product pack** (`packs/product/apv` cases producer, not in this tree): confirm the case entry fields (`document`, `node`, `title`, `priority`, `negative`). Until that producer is committed, the real-reader end-to-end test stays a todo. Tests here use hand-built views.
 - **knowledge pack**: the impact view is served by the Hub's reader. This pack only parses `impact-view@1`.
