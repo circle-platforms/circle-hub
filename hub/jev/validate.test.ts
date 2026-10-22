@@ -3,7 +3,21 @@ import { describe, it } from 'node:test';
 import { JevError, checkQuestion, checkRequest, checkResponse, isQuestionId, isVersionedModel } from './api.ts';
 import type { JevChoiceQuestion, JevRequest } from './api.ts';
 import { hasDuplicateKey, jsonProblem, parseResponseText } from './validate.ts';
-import { MODEL, sampleRequest } from './test-support.ts';
+
+const MODEL = 'jev-1.13.0';
+
+/** A synthetic request exercising the three question types. */
+function sampleRequest(model: string = MODEL): JevRequest {
+  return {
+    model,
+    state: { item: { text: '示例条目：用 demo-cmd 设置示例接口的地址' } },
+    questions: {
+      q1: { type: 'noul', instructions: 'Does `item.text` describe a command?', criteria: { true: 'It names a command', false: 'It does not' } },
+      q2: { type: 'choice', instructions: 'Which section holds `item`?', criteria: { sectionA: 'Network', sectionB: 'System', none: 'No section fits' } },
+      q3: { type: 'score', instructions: 'How specific is `item`?', criteria: ['vague', 'somewhat', 'exact'] },
+    },
+  };
+}
 
 const limits = { pinnedModel: MODEL, maxRequestBytes: 1024 * 1024 };
 

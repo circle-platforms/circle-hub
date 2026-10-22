@@ -2,7 +2,19 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { JevError, SCRIPTED_MODEL, ScriptedJev, checkRequest } from './api.ts';
 import type { JevChoiceAnswer, JevNoulAnswer, JevQuestion, JevRequest, JevScoreAnswer, ScriptedSpec } from './api.ts';
-import { sampleRequest } from './test-support.ts';
+
+/** A synthetic request exercising the three question types. */
+function sampleRequest(model: string = SCRIPTED_MODEL): JevRequest {
+  return {
+    model,
+    state: { item: { text: '示例条目：用 demo-cmd 设置示例接口的地址' } },
+    questions: {
+      q1: { type: 'noul', instructions: 'Does `item.text` describe a command?', criteria: { true: 'It names a command', false: 'It does not' } },
+      q2: { type: 'choice', instructions: 'Which section holds `item`?', criteria: { sectionA: 'Network', sectionB: 'System', none: 'No section fits' } },
+      q3: { type: 'score', instructions: 'How specific is `item`?', criteria: ['vague', 'somewhat', 'exact'] },
+    },
+  };
+}
 
 async function rejection(promise: Promise<unknown>): Promise<JevError> {
   try {
@@ -120,7 +132,7 @@ describe('ScriptedJev', () => {
     assert.ok(Date.now() - started >= 55);
   });
 
-  it('validates scripted answers with the same rules as HttpJev', async () => {
+  it('validates scripted answers with the service rules every client shared', async () => {
     const cases: Array<[string, (question: JevQuestion) => ScriptedSpec, RegExp]> = [
       ['a sum of 2', (q) => (q.type === 'choice' ? { probabilities: { sectionA: 1, sectionB: 0.5, none: 0.5 } } : byType(q)), /概率之和是 2/],
       ['a probability above 1', (q) => (q.type === 'noul' ? { noul: 1.5 } : byType(q)), /q1 的 noul 不是/],
@@ -136,7 +148,7 @@ describe('ScriptedJev', () => {
     }
   });
 
-  it('refuses requests locally exactly like HttpJev and records nothing', async () => {
+  it('refuses requests locally exactly as the removed client did and records nothing', async () => {
     const client = new ScriptedJev(byType, { maxRequestBytes: 4096 });
     const criteria: Record<string, null> = {};
     for (let index = 0; index < 256; index++) criteria[`o${index}`] = null;

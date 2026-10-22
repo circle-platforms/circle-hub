@@ -1,18 +1,9 @@
-// The vault at start-up and the typed-judgment service's key. The vault master key comes from the key provider the records
-// were opened with (hub/platform hubKeyProvider in a deployment): it is only read here, never created, and a missing or
-// wrong key stops `serve` (or refuses the one CLI command that needs it). The key of the typed-judgment service (K04) is a
-// vault entry of its own; when it is absent the knowledge package runs without model placement and the assembly says so.
-import type { HubConfig } from '../../config/index.ts';
-import { HttpJev, isJevApiKey, type JevClient } from '../../jev/api.ts';
+// The vault at start-up. The vault master key comes from the key provider the records were opened with (hub/platform
+// hubKeyProvider in a deployment): it is only read here, never created, and a missing or wrong key stops `serve` (or
+// refuses the one CLI command that needs it). The Hub calls no model (owner decision 2026-10-22): there is no service
+// key of the Hub's own in the vault any more, and an entry left over from before the removal is never read.
 import { checkVaultKey, type RecordsKit } from '../../records/api.ts';
 import { AssemblyError, hintOf, messageOf } from './errors.ts';
-
-/** Vault entry of the typed-judgment service's API key. */
-export const JEV_KEY_ENTRY = 'jev.api-key';
-/** How `secret set` names it: the service as the resource, the key as the entry (`circle-hub secret set jev api-key`). */
-export const JEV_SECRET = { resource: 'jev', entry: 'api-key' } as const;
-/** The key form HttpJev sends (hub/jev), checked when the key is set so that a wrong value is refused at once. */
-export const isJevKey = isJevApiKey;
 
 /** What to do when the key is unavailable and the vault holds nothing yet (the first deployment, or a key that went missing). */
 const FIRST_KEY_HINT = '第一次部署时用 circle-hub key init 建立主密钥；已有密钥库时恢复原来的钥匙串项，不要新建';
@@ -57,26 +48,3 @@ export async function vaultKeyProblem(records: Pick<RecordsKit, 'vault'>): Promi
     return messageOf(error);
   }
 }
-
-export interface JevOptions {
-  /** Base URL of the service (tests: a loopback stub); default the client's. */
-  baseUrl?: string;
-  fetch?: typeof globalThis.fetch;
-}
-
-/**
- * HttpJev pinned to the configured model, with its key read from the vault on every attempt (never kept in memory between
- * calls); null when the vault has no key for the service.
- */
-export async function jevFromVault(records: Pick<RecordsKit, 'vault'>, config: Pick<HubConfig, 'jev'>, options: JevOptions = {}): Promise<JevClient | null> {
-  if (!(await records.vault.has(JEV_KEY_ENTRY))) return null;
-  return new HttpJev({
-    apiKey: async () => (await records.vault.getText(JEV_KEY_ENTRY)) ?? '',
-    model: config.jev.model,
-    ...(options.baseUrl === undefined ? {} : { baseUrl: options.baseUrl }),
-    ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
-  });
-}
-
-/** What the operator is told when the Hub runs without the typed-judgment service. */
-export const NO_JEV_NOTICE = `密钥库里没有类型化判断服务的密钥（条目 ${JEV_KEY_ENTRY}）：知识同步不做模型归类，代码挂不上的片段留在根下、标为未归类；用 circle-hub secret set ${JEV_SECRET.resource} ${JEV_SECRET.entry} 设置后重启 Hub`;

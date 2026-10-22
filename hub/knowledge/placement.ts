@@ -206,7 +206,7 @@ export class Placer {
     for (const span of spans) if (!unique.has(span.key)) unique.set(span.key, span);
     const jev = this.#deps.jev;
     if (jev === null) {
-      for (const span of unique.values()) out.set(span.key, stopped(span, [], null, options.threshold, [], null, '没有配置归类判断模型（Jev），片段不挂树'));
+      for (const span of unique.values()) out.set(span.key, stopped(span, [], null, options.threshold, [], null, '没有归位器（Hub 不调用任何模型），片段留在根下、标为未归位'));
       return out;
     }
     const model = jev.pinnedModel;

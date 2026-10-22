@@ -342,7 +342,28 @@ export default function produce(input: any): unknown {
 }
 `;
 
-export function productPack(version = '1.0.0'): PackDescription {
+const NOTES_SOURCE = `// Synthetic producer: one defect entry per scope, always without a path, for the no-placement tests.
+type El = { name: string; attributes: Record<string, string>; children: Array<El | string> };
+const elements = (node: El): El[] => node.children.filter((c): c is El => typeof c === 'object' && c !== null);
+
+export default function produce(input: any): unknown {
+  const slot = input.slots?.tree;
+  if (!slot || !slot.model || !slot.model.root) return { entries: [], warnings: ['没有命令树'] };
+  const root: El = slot.model.root;
+  const scopes = elements(root).filter((el) => el.name === 'scope');
+  const entries: unknown[] = scopes.map((scope, index) => ({
+    kind: 'defect',
+    path: null,
+    statement: '合成发布说明条目 ' + String(scope.attributes.name ?? index),
+    data: {},
+    fragments: [{ parser: 'xml@1', selector: ['x', root.name, scopes.length > 1 ? 'scope[' + (index + 1) + ']' : 'scope'].join('/') }],
+    applicability: null,
+  }));
+  return { entries, warnings: [] };
+}
+`;
+
+export function productPack(version = '1.0.0', options: { unplaced?: boolean } = {}): PackDescription {
   return {
     id: PRODUCT_PACK,
     version,
@@ -357,10 +378,17 @@ export function productPack(version = '1.0.0'): PackDescription {
         names: PRODUCT_NAMES,
         sync: { start: ['buildsite:listing:index.html'], plan: { module: 'functions/plan.ts' }, max_rounds: 6, max_reads: 50 },
         catalogs: [{ id: 'commands@1', entry_kind: 'definition', producer: 'commands', complete: true, case_sensitive: false }],
-        producers: [{ id: 'commands', title: '命令树', function: { module: 'functions/commands.ts' }, inputs: { tree: { source: 'tree' } } }],
+        producers: [
+          { id: 'commands', title: '命令树', function: { module: 'functions/commands.ts' }, inputs: { tree: { source: 'tree' } } },
+          // A producer that declares its path-less entries placeable by the bot; the Hub never places them itself.
+          ...(options.unplaced === true
+            ? [{ id: 'notes', title: '发布说明', function: { module: 'functions/notes.ts' }, inputs: { tree: { source: 'tree' } }, placement: 'judgment_allowed' }]
+            : []),
+        ],
       },
       'functions/plan.ts': PLAN_SOURCE,
       'functions/commands.ts': COMMANDS_SOURCE,
+      ...(options.unplaced === true ? { 'functions/notes.ts': NOTES_SOURCE } : {}),
     },
   };
 }

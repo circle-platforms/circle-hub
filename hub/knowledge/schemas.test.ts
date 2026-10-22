@@ -58,7 +58,7 @@ const EXAMPLES: Record<string, unknown> = {
     ],
   },
   'tree_root-unplaced@1': {
-    rows: [{ entry: H('7'), kind: 'case', producers: ['cases'], section: '', fragments: [`src:${H('8')}/kityminder@1/n/c2`], basis: 'declared', decided_by: 'acme@1.0.0', stopped_at: '/', candidate: null, judgments: [], note: '没有配置归类判断模型（Jev），片段不挂树' }],
+    rows: [{ entry: H('7'), kind: 'case', producers: ['cases'], section: '', fragments: [`src:${H('8')}/kityminder@1/n/c2`], basis: 'declared', decided_by: 'acme@1.0.0', stopped_at: '/', candidate: null, judgments: [], note: '未归位，留在根下' }],
   },
   'tree_root-sources@1': {
     rows: [{ producer: 'cases', slot: 'cases', external: 'store:mindmap:7', revision: null, sha256: H('5'), size: 10, media_type: 'application/json', parser: 'kityminder@1', artifact: H('6'), read_tier: 'model_readable', basis: 'release_record', decided_by: 'acme@1.0.0' }],

@@ -232,7 +232,7 @@
             "additionalProperties": {}
           },
           "placement": {
-            "description": "whether path-less entries may be handed to the typed-judgment service: code_only (default) keeps them unplaced at the root without calling the judgment service, preventing text egress outside the Hub; judgment_allowed permits handing them to the judgment service. Defaults to code_only because fragments leave the Hub",
+            "description": "whether this producer's path-less entries may be handed to the bot for placement: code_only (default) keeps them unplaced at the root; judgment_allowed means the Hub offers them to the bot for placement proposals and verifies each proposal with deterministic rules (the path exists, quotes are verbatim from the original, nothing beyond what the producer declared). The Hub calls no model and never places entries itself; the bot flow is not implemented yet",
             "type": "string",
             "enum": [
               "code_only",

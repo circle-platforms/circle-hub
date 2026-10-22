@@ -282,7 +282,7 @@ describe('producing a root', () => {
     assert.equal(connections, 0);
   });
 
-  test('without a typed-judgment model, spans the code cannot place are stored and citable but not hung (K01 R[4])', async (t) => {
+  test('without a placer, spans the code cannot place are stored and citable but not hung (K01 R[4])', async (t) => {
     const producers = [
       DEFAULT_PRODUCERS[0],
       { id: 'manual', title: '手册', function: { module: 'functions/manual.ts' }, inputs: { manual: { external: 'store:manual:{product}-{line}' } }, placement: 'judgment_allowed' as const },
@@ -299,7 +299,7 @@ describe('producing a root', () => {
     for (const row of body.unplaced) {
       assert.equal(row.stopped_at, '/');
       assert.equal(row.candidate, null);
-      assert.match(row.note, /没有配置归类判断模型/);
+      assert.match(row.note, /未归位，留在根下/);
       assert.match(row.fragments[0], /^src:[0-9a-f]{64}\/markdown@1\/b\/0\//);
       // Stored and citable: the entry resolves by its digest for a reader of the product.
       const read = await w.knowledge.treeReader().readEntry(row.entry, { user: w.user.id, role: 'user' });

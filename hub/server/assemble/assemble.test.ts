@@ -1,25 +1,21 @@
 // The assembly at start-up: the order of serve (retired names, configuration, records without migrating, then the assembly,
 // then listening) and its failure modes (a retired variable, an unmigrated database, no vault key in a file or in the
 // keychain, with the restore advice when the vault holds entries, a wrong key), a real start that serves the six tools over
-// the real packages, the command-time assembly (no key, no notice), the typed-judgment client taken from the vault entry
-// (against a loopback stub) or left out with a notice, and the call notes (the engine's reasons in the call's note and the
-// operator's log, connector failures only and capped). A temporary socket-only PostgreSQL; no real keychain (a fake
-// security tool), no network beyond loopback.
+// the real packages, the command-time assembly (no key, no notice), and the call notes (the engine's reasons in the call's
+// note and the operator's log, connector failures only and capped). A temporary socket-only PostgreSQL; no real keychain
+// (a fake security tool), no network beyond loopback.
 import assert from 'node:assert/strict';
 import { access } from 'node:fs/promises';
-import { createServer } from 'node:http';
-import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
 import { after, before, describe, test } from 'node:test';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-import { HttpJev, isJevApiKey } from '../../jev/api.ts';
 import { VAULT_KEY_ITEM, hubKeyProvider, type CommandRunner } from '../../platform/api.ts';
 import { checkVaultKey } from '../../records/api.ts';
 import { FileKeyProvider, openRecords } from '../../records/index.ts';
 import { startPostgres, type TemporaryPostgres } from '../../testing/postgres.ts';
 import { openTestRecords } from '../../testing/records.ts';
-import { DEFAULT_JEV_MODEL, type HubConfig } from '../../config/index.ts';
+import { type HubConfig } from '../../config/index.ts';
 import type { AssemblyModule, ListenInfo } from '../api.ts';
 import { loadServerConfig } from '../main.ts';
 import { MAX_ADMIN_NOTE, clipNote } from '../notes.ts';
@@ -27,7 +23,7 @@ import { AssemblyError } from './errors.ts';
 import { assembleHub, createAssembly, createCommandAssembly } from './hub.ts';
 import { CallNotes, MAX_CONNECTOR_NOTES } from './notes.ts';
 import { openCliHarness, type CliHarness } from './test-cli.ts';
-import { JEV_KEY_ENTRY, NO_JEV_NOTICE, isJevKey, vaultKeyProblem } from './vault.ts';
+import { vaultKeyProblem } from './vault.ts';
 
 let harness: CliHarness;
 let postgres: TemporaryPostgres;
@@ -204,7 +200,7 @@ describe('start-up order and failure modes', () => {
     for (let i = 0; i < 400 && url === ''; i++) await new Promise((resolve) => setTimeout(resolve, 25));
     process.stderr.write = write;
     assert.match(url, /^http:\/\/127\.0\.0\.1:\d+$/);
-    assert.ok(operatorLog.some((line) => line.includes(NO_JEV_NOTICE)), 'the missing typed-judgment key is said at start-up');
+    assert.ok(!operatorLog.some((line) => /判断服务|Jev/.test(line)), 'no judgment-service notice: the Hub calls no model');
     try {
       assert.equal((await fetch(`${url}/healthz`)).status, 200);
       const client = new Client({ name: 'assembly-test', version: '0.0.0' });
@@ -248,66 +244,8 @@ function configOf(kit: { dataDir: string; database: HubConfig['database']; confi
     database: kit.database,
     keychain: { service: 'circle-hub-test', account: 'vault' },
     limits: { ...kit.config.limits },
-    jev: { model: DEFAULT_JEV_MODEL },
   };
 }
-
-describe('the typed-judgment client', () => {
-  test('without a vault entry knowledge runs without placement and the assembly says so; with one it is HttpJev on the configured model', async () => {
-    const kit = await openTestRecords({ postgres });
-    try {
-      const config = configOf(kit);
-      const without = await assembleHub(config, kit, { requireOsIsolation: false, log: () => {} });
-      assert.equal(without.jev, null);
-      assert.equal(without.knowledge.placement.model, null);
-      assert.ok(without.notices.includes(NO_JEV_NOTICE));
-      await kit.vault.put(JEV_KEY_ENTRY, 'test-only-key-0f3a9c');
-      const withKey = await assembleHub({ ...config, jev: { model: 'jev-1.14.2' } }, kit, { requireOsIsolation: false, log: () => {} });
-      assert.equal(withKey.jev?.pinnedModel, 'jev-1.14.2');
-      assert.equal(withKey.knowledge.placement.model, 'jev-1.14.2');
-      assert.ok(!withKey.notices.includes(NO_JEV_NOTICE));
-      assert.deepEqual(withKey.deps.products, withKey.packs, 'the console gets the product port');
-    } finally {
-      await kit.close();
-    }
-  });
-
-  test('HttpJev sends the key of jev.api-key to the configured service, read from the vault anew for every request', async () => {
-    const seen: { authorization: string; model: string }[] = [];
-    // A loopback stand-in for the service: it records the Authorization header and answers one noul question.
-    const service = createServer((request, response) => {
-      let body = '';
-      request.setEncoding('utf8');
-      request.on('data', (chunk: string) => (body += chunk));
-      request.on('end', () => {
-        const asked = JSON.parse(body) as { model: string };
-        seen.push({ authorization: String(request.headers.authorization), model: asked.model });
-        response.writeHead(200, { 'content-type': 'application/json' });
-        response.end(JSON.stringify({ model: asked.model, answers: { q1: { type: 'noul', noul: 0.75 } }, usage: { input_tokens: 12, output_tokens: 1 } }));
-      });
-    });
-    await new Promise<void>((resolve) => service.listen(0, '127.0.0.1', resolve));
-    const kit = await openTestRecords({ postgres });
-    try {
-      await kit.vault.put(JEV_KEY_ENTRY, 'test-only-key-first-1');
-      const baseUrl = `http://127.0.0.1:${(service.address() as AddressInfo).port}`;
-      const hub = await assembleHub(configOf(kit), kit, { requireOsIsolation: false, log: () => {}, jevOptions: { baseUrl } });
-      assert.ok(hub.jev !== null);
-      const request = { model: hub.jev.pinnedModel, state: '合成的状态', questions: { q1: { type: 'noul' as const, instructions: '合成的问题' } } };
-      const first = await hub.jev.ask(request);
-      assert.deepEqual(first.answers.q1, { type: 'noul', noul: 0.75 });
-      await kit.vault.put(JEV_KEY_ENTRY, 'test-only-key-second-2');
-      await hub.jev.ask(request);
-      assert.deepEqual(seen, [
-        { authorization: 'Bearer test-only-key-first-1', model: DEFAULT_JEV_MODEL },
-        { authorization: 'Bearer test-only-key-second-2', model: DEFAULT_JEV_MODEL },
-      ], 'the key is taken from the vault for each request, never kept from the first');
-    } finally {
-      await kit.close();
-      await new Promise<void>((resolve) => service.close(() => resolve()));
-    }
-  });
-});
 
 describe('the vault key check', () => {
   test('checkVaultKey of hub/records passes with the vault\'s key, refuses a missing or another key, and adds no entry', async () => {
@@ -335,32 +273,6 @@ describe('the vault key check', () => {
   });
 });
 
-describe('the typed-judgment key rule', () => {
-  test('secret set checks a Jev key with HttpJev\'s own rule (hub/jev isJevApiKey): a key it refuses is never sent, one it accepts is', async () => {
-    const sent: string[] = [];
-    const fetch: typeof globalThis.fetch = async (_url, init) => {
-      sent.push(new Headers(init?.headers).get('authorization') ?? '');
-      const asked = JSON.parse(String(init?.body)) as { model: string };
-      return new Response(JSON.stringify({ model: asked.model, answers: { q1: { type: 'noul', noul: 0.5 } }, usage: { input_tokens: 3, output_tokens: 1 } }), { status: 200, headers: { 'content-type': 'application/json' } });
-    };
-    const request = { model: DEFAULT_JEV_MODEL, state: '合成的状态', questions: { q1: { type: 'noul' as const, instructions: '合成的问题' } } };
-    // Upper-case keys: the answer above never holds them, so HttpJev's echo guard (a key seen in an answer) stays out of it.
-    const keys = ['Z', 'Z'.repeat(4096), 'Z'.repeat(4097), 'ZK=', `ZK${'='.repeat(8)}`, `ZK${'='.repeat(9)}`, 'Z.Y~X+W/V-U_9', 'TWO WORDS', 'LINE\nBREAK', '', '=', 'КЛЮЧ'];
-    for (const key of keys) {
-      const jev = new HttpJev({ apiKey: () => key, model: DEFAULT_JEV_MODEL, baseUrl: 'http://127.0.0.1:9', fetch, retries: 0 });
-      const before = sent.length;
-      const answered = await jev.ask(request).then(
-        () => true,
-        () => false,
-      );
-      assert.equal(isJevKey(key), isJevApiKey(key), 'the assembly uses hub/jev\'s rule');
-      assert.equal(sent.length > before, isJevApiKey(key), `${JSON.stringify(key.slice(0, 12))}…: sent exactly when the rule accepts it`);
-      assert.equal(answered, isJevApiKey(key));
-      if (isJevApiKey(key)) assert.equal(sent.at(-1), `Bearer ${key}`);
-    }
-  });
-});
-
 describe('the command-time assembly', () => {
   test('a CLI command\'s assembly needs no vault key and prints nothing; serve\'s refuses to start and a command\'s own says it did not run', async () => {
     const kit = await openTestRecords({ postgres });
@@ -369,20 +281,12 @@ describe('the command-time assembly', () => {
       { dataDir: kit.dataDir, logDir: join(kit.dataDir, 'logs'), database: kit.database, limits: kit.config.limits },
       { keyProvider: new FileKeyProvider(join(kit.dataDir, 'missing.key')) },
     );
-    const written: string[] = [];
-    const write = process.stderr.write.bind(process.stderr);
     try {
       const admin = (await keyless.principals.bootstrapAdmin('管理员')).user;
       const lines: string[] = [];
-      process.stderr.write = ((chunk: string | Uint8Array, ...rest: unknown[]) => {
-        written.push(String(chunk));
-        return (write as (...args: unknown[]) => boolean)(chunk, ...rest);
-      }) as typeof process.stderr.write;
       const deps = await createCommandAssembly({ requireOsIsolation: false })(configOf(kit), keyless, { stderr: (line) => lines.push(line) });
-      process.stderr.write = write;
       assert.equal(await deps.runs.getRun({ id: admin.id, name: admin.name, role: admin.role }, 'run_00000000000000000000000001'), null, 'a run is read without the key');
-      assert.deepEqual(lines, [], 'no start-up notice for a command (the missing Jev key is serve\'s concern)');
-      assert.ok(!written.some((line) => line.includes(NO_JEV_NOTICE)), 'nothing on the process\'s own stderr');
+      assert.deepEqual(lines, [], 'no start-up notice for a command');
       await assert.rejects(async () => createAssembly({ requireOsIsolation: false, log: () => {} })(configOf(kit), keyless), (error: unknown) => {
         assert.ok(error instanceof AssemblyError);
         assert.match(error.message, /^密钥库主密钥不可用，Hub 不启动：/);
@@ -392,7 +296,6 @@ describe('the command-time assembly', () => {
       const module = (await import('../assemble.ts')) as { assembleCommand?: unknown };
       assert.equal(typeof module.assembleCommand, 'function', 'the module offers it for the server core\'s ctx.deps()');
     } finally {
-      process.stderr.write = write;
       await keyless.close();
       await kit.close();
     }

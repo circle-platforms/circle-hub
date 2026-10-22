@@ -20,7 +20,7 @@ const knowledge = createKnowledge({
   parsers: createDefaultRegistry(),   // hub/refs core parsers: the Hub parses, never the pack
   packs,                              // PacksPort (runs)
   external,                           // ExternalReaderPort (connectors only: the views are not a source of the tree)
-  jev,                                // hub/jev client (HttpJev with the vault key and the pinned model), or null
+  // no jev: the Hub calls no model; only tests inject a scripted judge
   sandbox: { requireOsIsolation: true },
   admin,                              // the admin context of standing syncs when a call names none
 });
@@ -111,8 +111,11 @@ catalogs, grounds and provenance.
 6. **Composition rows** (K01 R[7]): one row per (path, entry) with the sorted ids of every producer that gave the entry
    there and every fragment in order; spans left unplaced are one row per content, again with every fragment and
    producer (equal spans at two places of a manual keep both fragments).
-7. **Placement** (K04). Code places by source structure (entries with a path); entries without a path and the producers'
-   `unplaced` spans go to the typed-judgment client, from the root down, one choice question per level among the
+7. **Placement** (K04). Code places by source structure (entries with a path). The Hub calls no model (owner decision
+   2026-10-22): the production assembly injects no placer, so entries without a path and the producers' `unplaced`
+   spans stay unplaced at the root, marked 未归位, and the production records `placement.spans` 0. The judgment flow
+   below is the shape the bot's placement proposals will be verified against, exercised in this package's tests with a
+   scripted judge: from the root down, one choice question per level among the
    children of the node (option names are the child names where the service takes them, the first line of each child's
    first entry is the description, cut to 160 units on a character boundary; `none` is always the last option). More
    than 254 children are narrowed to those whose name occurs in the span; nothing left or still too many stops there. A
@@ -436,7 +439,7 @@ catalogs, grounds and provenance.
 - Builds whose line the caller did not ask for are not filtered by the driver: the plan function receives the line and
   is the authority.
 - Spans that stop at the root are not hung on the root (K01 R[4], K04 R[3]); deeper stops hang on that node.
-- Typed-judgment placement opt-in: path-less entries only enter placement (`toPlace`) when their producer declares `placement: "judgment_allowed"`. By default (`code_only`), path-less entries stay unplaced at the root without calling the typed-judgment service, preventing text egress outside the Hub; skipped entries are counted per producer in the production record (`placement.skipped`) and sync report.
+- Placement opt-in: path-less entries only enter placement (`toPlace`) when their producer declares `placement: "judgment_allowed"`. By default (`code_only`), path-less entries stay unplaced at the root; skipped entries are counted per producer in the production record (`placement.skipped`) and sync report. The Hub calls no model (owner decision 2026-10-22): even declared entries are never placed by the Hub — they stay unplaced, marked 未归位 — and the Hub will only offer them to the bot for placement proposals and verify each proposal with deterministic rules (not implemented yet).
 - The memo key identifies every element and slot by `{sha256, media_type, parser}` and adds the production component
   (`knowledge.producer@1`), not by the digest alone: the function receives all three, and a Hub with another parser
   version gives other models. It also covers the build and the batch position, which the function receives too.
@@ -614,7 +617,7 @@ budget). The suite runs a reduced version (`scale.test.ts`: 300 documents of 20 
   `KnowledgePort` method takes the product line id, not a product name. If production runs of workflow packs should
   move current roots later, a way to check that a run id is a completed production run of the product.
 - **server**: register `knowledgeCliCommand` in the assembly; pass the knowledge service as `KnowledgePort`; supply the
-  Jev client (`HttpJev` with the vault key and the pinned model of the configuration) and the admin principal; keep
+  admin principal; keep
   `knowledge-candidate@1` claims private to their owner in the record reader (admins included, K03 R[4]) and treat
   `tree_node` records as non-groundable (they already are not in refs' groundable kinds); `provenanceOf` now needs the
   caller's principal.

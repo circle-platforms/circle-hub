@@ -34,8 +34,6 @@ export interface HubConfig {
   database: DatabaseConfig;
   keychain: { service: string; account: string };
   limits: Limits;
-  /** The K04 typed-judgment client: a versioned model id (an alias such as jev-latest is refused). The key comes from the vault. */
-  jev: { model: string };
 }
 
 export interface LoadConfigOptions {
@@ -60,15 +58,10 @@ const SOCKET_PATH_MAX = 103;
 const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_$-]{0,62}$/;
 const KEYCHAIN_NAME = /^[A-Za-z0-9._-]{1,100}$/;
 const SECRET_LIKE = /PASSWORD|PASSWD|SECRET|TOKEN|CREDENTIAL|PRIVATE|API_KEY/;
-/** Same rule as the typed-judgment client's versioned ids (hub/jev isVersionedModel; a test keeps them equal): name-X.Y.Z. */
-const VERSIONED_MODEL = /^[a-z][a-z0-9]*(?:-[a-z][a-z0-9]*)*-(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)$/;
-/** The longest model name the typed-judgment client is built with (hub/jev checks 1 to 128 printable characters). */
-const MODEL_MAX = 128;
 
 export const DEFAULT_KEYCHAIN_SERVICE = 'circle-hub';
 /** The keychain account of the vault master key; the platform package and the brief use the same name. */
 export const DEFAULT_KEYCHAIN_ACCOUNT = 'vault-master-key';
-export const DEFAULT_JEV_MODEL = 'jev-1.13.0';
 
 export class HubConfigError extends Error {
   readonly problems: readonly string[];
@@ -182,13 +175,6 @@ export function loadConfig(
     account: named('CIRCLE_HUB_KEYCHAIN_ACCOUNT', DEFAULT_KEYCHAIN_ACCOUNT, KEYCHAIN_NAME),
   };
 
-  const jevModel = read('CIRCLE_HUB_JEV_MODEL') ?? DEFAULT_JEV_MODEL;
-  if (!VERSIONED_MODEL.test(jevModel)) {
-    problems.push(`CIRCLE_HUB_JEV_MODEL 必须是带确切版本号的模型名，例如 ${DEFAULT_JEV_MODEL}；jev-latest 这类别名会随新版本移动，判断记不下确切版本`);
-  } else if (jevModel.length > MODEL_MAX) {
-    problems.push(`CIRCLE_HUB_JEV_MODEL 最多 ${MODEL_MAX} 个字符（Jev 客户端能接受的模型名长度），现在是 ${jevModel.length} 个`);
-  }
-
   const maxUploadBytes = integer('CIRCLE_HUB_MAX_UPLOAD_BYTES', DEFAULT_LIMITS.maxUploadBytes, ...UPLOAD_RANGE) ?? DEFAULT_LIMITS.maxUploadBytes;
   const maxRecordBytes = integer('CIRCLE_HUB_MAX_RECORD_BYTES', DEFAULT_LIMITS.maxRecordBytes, ...RECORD_RANGE) ?? DEFAULT_LIMITS.maxRecordBytes;
   const minimumRequest = Math.ceil(maxUploadBytes / 3) * 4;
@@ -209,6 +195,5 @@ export function loadConfig(
     database: { host: resolvedDatabaseHost, port: databasePort, database, user },
     keychain,
     limits: { maxUploadBytes, maxRecordBytes, maxRequestBytes },
-    jev: { model: jevModel },
   };
 }

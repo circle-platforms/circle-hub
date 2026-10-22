@@ -1,6 +1,6 @@
 // ScriptedJev: the deterministic judge for tests and development (K04 R[4]). A script answers each question; requests
-// and responses pass through the same validation as HttpJev, so the scripted judge cannot abstain either: picking an
-// explicit 'none' option is the only way to say "nothing fits".
+// and responses pass through the same validation the removed service client had, so the scripted judge cannot abstain
+// either: picking an explicit 'none' option is the only way to say "nothing fits".
 import type { JevClient, JevQuestion, JevRequest, JevResponse, JevState } from './api.ts';
 import { JevError, isJevErrorCode } from './errors.ts';
 import type { JevErrorCode } from './errors.ts';
@@ -41,7 +41,7 @@ export type ScriptedSpec =
 export type ScriptedAnswer = (question: JevQuestion, state: JevState, id: string) => ScriptedSpec | Promise<ScriptedSpec>;
 
 export interface ScriptedJevOptions {
-  /** Default jev-scripted-1.0.0; must carry a 'scripted' segment. Aliases need allowAlias, as with HttpJev. */
+  /** Default jev-scripted-1.0.0; must carry a 'scripted' segment. Aliases need allowAlias, as the removed client did. */
   model?: string;
   allowAlias?: boolean;
   /** The model name the scripted service reports; default the pinned model; must carry a 'scripted' segment. */

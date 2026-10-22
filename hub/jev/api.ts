@@ -1,6 +1,9 @@
-// Public surface of hub/jev: the typed-judgment model client used for knowledge placement (K04). Other packages import
-// only from this file. Only yes/no (noul), single choice and score questions exist here (K04 R[0]); the type names are
-// the vendor's API discriminators, not a vocabulary axis.
+// Public surface of hub/jev: the judgment shapes used for knowledge placement (K04). Other packages import only from
+// this file. Only yes/no (noul), single choice and score questions exist here (K04 R[0]); the type names were the
+// vendor's API discriminators, not a vocabulary axis. The Hub calls no model (owner decision 2026-10-22): the HTTP
+// client that talked to the judgment service is removed, and what remains is the scripted judge for tests and the
+// pure shapes (validation, batching, judgment records, placement decisions) the Hub will use to verify the bot's
+// placement proposals with deterministic rules.
 
 /** JSON data as sent to and returned by the service. */
 export type JevJson = null | boolean | number | string | JevJson[] | { [key: string]: JevJson };
@@ -82,7 +85,7 @@ export interface JevResponse {
   /** One validated answer per question id, in the request's order. */
   answers: { [id: string]: JevAnswer };
   usage: JevUsage;
-  /** x-typesafe-request-id, when the service sent one. */
+  /** The request id the service sent back, when it sent one. */
   requestId?: string;
 }
 
@@ -112,18 +115,6 @@ export {
   isVersionedModel,
 } from './validate.ts';
 export type { CheckedRequest, RequestLimits, ResponseContext } from './validate.ts';
-
-export { DEFAULT_BASE_URL, DEFAULT_MAX_RESPONSE_BYTES, DEFAULT_RETRIES, DEFAULT_TIMEOUT_MS, HttpJev, MAX_RETRY_AFTER_MS, retryAfterMs } from './http.ts';
-export type { HttpJevOptions } from './http.ts';
-
-/**
- * Whether a value has the form of an API key HttpJev sends (its decision 2): an RFC 6750 b64token of 1 to 4096 characters
- * with up to 8 trailing '=', never escaped in JSON and never able to break a header. HttpJev refuses any other key before a
- * request leaves (http.ts keeps the same rule); a key can be checked here when it is stored.
- */
-export function isJevApiKey(value: unknown): value is string {
-  return typeof value === 'string' && /^[A-Za-z0-9._~+/-]{1,4096}={0,8}$/.test(value);
-}
 
 export { SCRIPTED_MODEL, ScriptedJev } from './scripted.ts';
 export type { ScriptedAnswer, ScriptedJevOptions, ScriptedSpec } from './scripted.ts';

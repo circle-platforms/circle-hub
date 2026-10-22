@@ -344,8 +344,8 @@ async function processOwnTree(
       // Spans placed by the typed-judgment model depend on the model and the chain's calibration; a judge failure is retried.
       const model = context.placer.model;
       const threshold = model === null ? null : await context.calibration.threshold(PLACEMENT_CHAIN, model);
-      if (recorded.failed > 0) changed = `上次有 ${recorded.failed} 个片段的归类判断失败`;
-      else if (recorded.model !== model || recorded.threshold !== threshold) changed = '归类判断的模型或本链的校准变了';
+      if (recorded.failed > 0) changed = `上次有 ${recorded.failed} 个片段的归位判断失败`;
+      else if (recorded.model !== model || recorded.threshold !== threshold) changed = '归位的模型或本链的校准变了';
     }
     if (changed === null) {
       // The same external sources as then (read, or optional and missing), and the same lists.
@@ -430,14 +430,13 @@ async function processOwnTree(
   const skipped = produced.skippedCount > 0 ? `；跳过 ${produced.skippedCount} 份列出的来源（见组成记录）` : '';
   const calls = produced.calls.reused > 0 ? `；生产器调用 ${produced.calls.made} 次，复用 ${produced.calls.reused} 次` : '';
   const placementSkippedEntries = Object.entries(produced.placementSkipped ?? {}).filter(([, count]) => count > 0);
-  const placementSkippedNote =
-    placementSkippedEntries.length > 0 ? `；${placementSkippedEntries.map(([p, n]) => `${p} 生产器的 ${n} 个条目未发给判断服务`).join('，')}` : '';
+  const unplacedNote = produced.unplaced > 0 ? `；${produced.unplaced} 个条目未归位，留在根下` : '';
   const same = existing !== null && existing.detail.root === produced.root ? '（内容与上次相同）' : '';
   const cause = existing === null ? '' : `；重新产出：${changed ?? '来源变了'}`;
   return {
     ...base,
     outcome: 'produced',
-    reason: `产出根，${produced.nodes} 个节点（新写 ${produced.created} 个）、${produced.entries} 个条目${same}${note}${skipped}${calls}${placementSkippedNote}${cause}`,
+    reason: `产出根，${produced.nodes} 个节点（新写 ${produced.created} 个）、${produced.entries} 个条目${same}${note}${skipped}${calls}${unplacedNote}${cause}`,
     root: produced.root,
     composition: produced.composition,
     refused: produced.refusedCount,

@@ -17,7 +17,7 @@ Where this page and the model differ, the model wins. How milestone 1 implements
 
 ## What the Hub does
 
-The Hub is a standard MCP server (D06): a local Circle, a bot and other clients share the same tools. The model's loop, planning, slot filling and attribution proposals run in the client; the Hub runs only deterministic functions and typed judgments, and generates no content. It hands out task packs, locks the versions a run uses, validates what comes back at its boundary, resolves exact values to references and keeps everything as append-only records. Effects on shared targets are issued only by the Hub; milestone 1 has no effects.
+The Hub is a standard MCP server (D06): a local Circle, a bot and other clients share the same tools. The model's loop, planning, slot filling and attribution proposals run in the client; the Hub runs only deterministic functions, calls no model, and generates no content. Knowledge work that needs judgment belongs to the bot (on the Circle kernel): the bot submits placement proposals and the Hub verifies them with deterministic rules (the path exists, quotes are verbatim from the original, nothing beyond what was declared); that flow is not implemented yet. It hands out task packs, locks the versions a run uses, validates what comes back at its boundary, resolves exact values to references and keeps everything as append-only records. Effects on shared targets are issued only by the Hub; milestone 1 has no effects.
 
 ## Three invariants
 
@@ -37,7 +37,7 @@ The Hub is a standard MCP server (D06): a local Circle, a bot and other clients 
 | Three invariants | I01–I03 | see above |
 | Component model | C01–C08 | four homes, ownership classes, two forms and two kinds of executable plugin, table, rule, policy table, catalog, capability declaration |
 | Teaching and verification | T01–T04 | task pack, publish record and publish check, boundary validation, reference resolution ("resolve, don't restrict") |
-| Knowledge | K01–K05 | knowledge tree, knowledge entry, three writer layers, classification by a typed-judgment model, pinned fetch and content-hash cache |
+| Knowledge | K01–K05 | knowledge tree, knowledge entry, three writer layers, placement proposed by the bot (Jev) and verified by the Hub, pinned fetch and content-hash cache |
 | Integration and protocol | D01–D07 | integration specification, target premises, effect class and write declaration, effect safety mechanisms, call contract and uniform response, MCP tool surface, executor resource |
 | People and permissions | R01–R03 | permission role (user, administrator), visibility, bot |
 

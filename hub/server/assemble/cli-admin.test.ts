@@ -3,7 +3,7 @@
 // CIRCLE_HUB_TOKEN or the store and every state-changing command refused without it or for a non-admin, read-only commands
 // as the token's account (a keychain item that cannot be read costs a notice), the pack lifecycle, resources and
 // credentials (the portal password kept as the digest its system profile names, values from stdin only; what a running Hub
-// keeps in memory), the typed-judgment key, commands without the vault key, knowledge sync with produced, skipped and
+// keeps in memory), commands without the vault key, knowledge sync with produced, skipped and
 // failed builds, its exit code and a second sync that produces nothing, roots and diffs, and text that could steer a
 // terminal. The external systems are the connectors' loopback stubs; the packs are tiny synthetic ones written to a
 // temporary directory. Every line printed, the assemblies' log lines included, is scanned for secrets.
@@ -13,7 +13,7 @@ import { mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promise
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, test } from 'node:test';
-import { DEFAULT_JEV_MODEL, DEFAULT_LIMITS, type HubConfig } from '../../config/index.ts';
+import { DEFAULT_LIMITS, type HubConfig } from '../../config/index.ts';
 import { agileFixture, passwordDigest, startAgileStub, startBuildSiteStub, type AgileStub, type StubServer } from '../../connectors/testing/api.ts';
 import { OPERATOR_TOKEN_ITEM, VAULT_KEY_ITEM, type CommandRunner } from '../../platform/api.ts';
 import { openRecords, type RecordKind, type RecordsKit, type User } from '../../records/index.ts';
@@ -27,12 +27,10 @@ import { assembleHub, createAssembly } from './hub.ts';
 import { OPERATOR_TOKEN_VARIABLE, keychainOperatorTokens, memoryOperatorTokens, type OperatorTokenStore } from './operator-token.ts';
 import { openCliHarness, type CliHarness, type Deployment, type RunResult } from './test-cli.ts';
 import { AGILE_PACK, PRODUCT_PACK, REVIEW_PACK, SITE_PACK, reviewPack, syncSiteFiles, writeTestPacks } from './test-packs.ts';
-import { JEV_KEY_ENTRY } from './vault.ts';
 
 const DOCUMENT = 'd7f3k9';
 const PASSWORD = 'Synthetic#Pass42';
 const WRONG_PASSWORD = 'Wrong#Pass00';
-const JEV_KEY = 'test-only-key-77aa0c3e';
 
 let harness: CliHarness;
 let requireOsIsolation: boolean;
@@ -41,7 +39,7 @@ let packs: Awaited<ReturnType<typeof writeTestPacks>>;
 let agile: AgileStub;
 let site: StubServer;
 /** Every secret value a test handled: none may appear in any printed line. */
-const secrets = new Set<string>([PASSWORD, passwordDigest(PASSWORD), WRONG_PASSWORD, passwordDigest(WRONG_PASSWORD), JEV_KEY]);
+const secrets = new Set<string>([PASSWORD, passwordDigest(PASSWORD), WRONG_PASSWORD, passwordDigest(WRONG_PASSWORD)]);
 const deployments: Deployment[] = [];
 
 before(async () => {
@@ -287,7 +285,6 @@ describe('init-admin and the operator token', () => {
       database: { host: harness.postgres.socketDir, port: harness.postgres.config.port, database: 'unused', user: 'unused' },
       keychain: { service: 'circle-hub-test', account: 'vault' },
       limits: { ...DEFAULT_LIMITS },
-      jev: { model: DEFAULT_JEV_MODEL },
     };
     const store = Object.assign(memoryOperatorTokens(null, '测试钥匙串'), {
       async write() {
@@ -508,10 +505,9 @@ describe('init-admin and the operator token', () => {
       ['resource', 'disable', 'res_00000000000000000000000000'],
       ['resource', 'enable', 'res_00000000000000000000000000'],
       ['resource', 'reset-login', 'res_00000000000000000000000000'],
-      ['secret', 'set', 'jev', 'api-key'],
       ['knowledge', 'sync', '--product', 'DEMO'],
     ];
-    admin.stdin.push(JEV_KEY);
+    admin.stdin.push('never-read-synthetic-secret');
     for (const argv of changing) {
       const asUser = await admin.run(argv, { [OPERATOR_TOKEN_VARIABLE]: userToken });
       assert.equal(asUser.code, 1, `${argv.join(' ')}: ${asUser.text}`);
@@ -531,7 +527,7 @@ describe('init-admin and the operator token', () => {
       assert.match(without.text, /不要 export CIRCLE_HUB_TOKEN/);
     }
     admin.tokens!.value = stored;
-    assert.deepEqual(admin.stdin, [JEV_KEY], 'no secret was read for a refused command');
+    assert.deepEqual(admin.stdin, ['never-read-synthetic-secret'], 'no secret was read for a refused command');
     await withKit(admin, async (kit) => {
       assert.equal((await kit.store.list({ kind: 'pack_version' })).items.length, 0, 'nothing was published');
       assert.equal(await kit.authorizations.canPublish((await kit.principals.findByName('甲'))!.id), false);
@@ -933,21 +929,11 @@ describe('resource and secret', () => {
     });
     assert.equal(agile.logins, 1);
 
-    admin.stdin.push(JEV_KEY);
-    const jev = await expectOk(admin, ['secret', 'set', 'jev', 'api-key']);
-    assert.match(jev.text, /已设置类型化判断服务的密钥（密钥库条目 jev\.api-key/);
-    assert.match(jev.err.join('\n'), /启动之后才第一次设置的，要重启 Hub 才用上：circle-hub service stop，再 circle-hub service start/);
-    admin.stdin.push('not a key with spaces');
-    assert.equal((await admin.run(['secret', 'set', 'jev', 'api-key'])).code, 1);
-    assert.equal((await admin.run(['secret', 'set', 'jev', 'password'])).code, 2);
-    await withKit(admin, async (kit) => assert.equal(await kit.vault.getText(JEV_KEY_ENTRY), JEV_KEY, 'the refused value changed nothing'));
-
     const names = await expectOk(admin, ['secret', 'list']);
     assert.deepEqual(names.out.sort(), [
       `connector.${id}.password\t资源 ${id} 的凭据 password`,
       `connector.${id}.session\t资源 ${id} 的登录会话`,
       `connector.${id}.username\t资源 ${id} 的凭据 username`,
-      `${JEV_KEY_ENTRY}\t类型化判断服务的密钥`,
     ]);
     const userToken = await userWithToken(admin, '甲');
     assert.equal((await admin.run(['secret', 'list'], { [OPERATOR_TOKEN_VARIABLE]: userToken })).code, 1, 'names are for admins');
@@ -1066,7 +1052,7 @@ describe('resource and secret', () => {
     assert.match(listed.out[0], /\t登录状态读不出：密钥库主密钥不存在；密钥只在显式初始化时创建$/);
     await expectOk(admin, ['resource', 'reset-login', id]);
     admin.stdin.push(PASSWORD);
-    for (const argv of [['secret', 'set', id, 'password'], ['secret', 'set', 'jev', 'api-key'], ['knowledge', 'sync', '--product', 'DEMO']]) {
+    for (const argv of [['secret', 'set', id, 'password'], ['knowledge', 'sync', '--product', 'DEMO']]) {
       const refused = await admin.run(argv);
       assert.equal(refused.code, 1, argv.join(' '));
       assert.match(refused.text, /错误：密钥库主密钥不可用，这个命令要用密钥库，没有执行：密钥库主密钥不存在/, argv.join(' '));
@@ -1093,7 +1079,7 @@ describe('knowledge', () => {
     assert.match(first.text, /\[失败\] Rel_DEMO_2_0_0_9（DEMO，2\.0\.0）/);
     assert.match(first.text, /\[跳过\] Rel_ALT_2_1_0_5（ALT，2\.1\.0，基于 Rel_DEMO_2_1_0_5）/);
     assert.match(first.text, /\[跳过\] Rel_DEMO_2_1_0_6/);
-    assert.ok(first.err.some((line) => line.includes('没有类型化判断服务的密钥')), 'the sync says it runs without placement');
+    assert.doesNotMatch(first.text, /判断服务|模型归类/, 'no judgment-service wording in the sync report');
 
     // Idempotence: the same sources and producer give no new root and no new node.
     const trees = () => withKit(admin, async (kit) => ({ roots: await countRecords(kit, 'tree_root'), nodes: await countRecords(kit, 'tree_node') }));

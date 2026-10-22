@@ -74,7 +74,7 @@
 | **K01** | 知识 | 知识树 | knowledge tree | `implemented` | `hub/knowledge/tree.ts`, `hub/knowledge/store.ts`, `contracts/generated/schemas/tree_root.v1.schema.json`, `contracts/generated/schemas/tree_node.v1.schema.json` | 场景 11, 场景 14, 场景 15 |
 | **K02** | 知识 | 知识条目 | knowledge entry | `implemented` | `contracts/generated/schemas/knowledge-entry.v1.schema.json`, `hub/knowledge/tree.ts`, `hub/knowledge/read.ts` | 场景 11, 场景 14, 场景 15 |
 | **K03** | 知识 | 三层写入 | three writer layers | `implemented` | `hub/knowledge/layers.ts`, `hub/knowledge/sync.ts`, `hub/knowledge/tree.ts` | 场景 11, 场景 14 |
-| **K04** | 知识 | 知识归类 (Jev) | classification by Jev | `implemented` | `hub/knowledge/calibration.ts`, `hub/knowledge/placement.ts` | 场景 11 |
+| **K04** | 知识 | 知识归类 | placement proposed by the bot (Jev), verified by the Hub | `contract only`（bot 提议与 Hub 核验的流程未实现；Hub 不调用任何模型，判断形状保留在代码里） | `hub/jev/api.ts`, `hub/knowledge/placement.ts`, `hub/knowledge/calibration.ts` | 场景 11 |
 | **K05** | 知识 | 本地缓存与获取 | pinned fetch & cache | `hub/knowledge/store.ts`, `hub/knowledge/sync.ts`, `hub/records/artifacts.ts` | 场景 09, 场景 14 |
 | **D01** | 对接与协议 | 对接规范 | integration specification | `implemented` | `hub/connectors/read.ts`, `hub/connectors/routes.ts`, `hub/connectors/http.ts`, `packs/system/agile-platform/functions/agile.ts`, `packs/system/plm/functions/plm.ts` | 场景 01, 场景 09, 场景 16 |
 | **D02** | 对接与协议 | 前提表 | target premises | `implemented` | `contracts/generated/schemas/resource.v1.schema.json`, `hub/connectors/resources.ts`, `hub/records/store.ts` | 场景 09, 场景 16 |
@@ -178,7 +178,7 @@
 
 ### K01-K05 知识
 - **K01-K03 (知识树、条目、三层写入)**：默克尔树寻址、多版本构建根生成、增量同步与树差异比对。已验证（场景 11、场景 14、场景 15）。
-- **K04 (Jev 知识归类)**：未校准片段停留在父节点并标注 `uncalibrated`。已验证（场景 11）。*真实 LLM 的连续概率校准没能验证（采用合成脚本模型）*。
+- **K04 (知识归类)**：bot 提议、Hub 核验的流程未实现。Hub 不调用任何模型：没有路径的条目留在根下标为未归位，生产记录 `placement.spans` 为 0，没有任何到判断服务的出站调用（场景 11）；判断与校准的形状保留在 hub/jev 与 hub/knowledge，供以后核验 bot 的归位提议。
 - **K05 (本地缓存)**：SHA-256 锁定与幂等跳过。已验证（场景 09、场景 14）。
 
 ### D01-D07 对接与协议
@@ -205,9 +205,9 @@
    - 现状：未实现会话接管与人工处置审批流（根据 10-21 所有者决定简化架构）。
    - 审计结论：合约级保留，运行时未实现。
 
-4. **真实大模型连续校准（K04）**：
-   - 现状：验收测试使用 TypeScript 函数模拟的 `scriptedJudge`。
-   - 审计结论：验证了当判断概率不足时片段停留在父节点的机制，但**没能验证**生产环境商业大模型在线校准的准确率。
+4. **bot 归位提议与 Hub 核验（K04）**：
+   - 现状：未实现。所有者 2026-10-22 定：Hub 不调用任何模型，类型化判断服务已从 Hub 拿掉（客户端、密钥、配置、命令）；没有路径的条目留在根下标为未归位。
+   - 审计结论：bot 提交归位提议、Hub 用确定性规则核验的流程**没能验证**（未实现）；Hub 侧"无任何判断调用"已由场景 11 与装配保险测试验证。
 
 5. **执行器资源代理（D07）与服务端 Bot（R03）**：
    - 现状：M1 采用客户端通过 MCP 直连 Hub，未运行沙箱内的无头浏览器或服务端代理 Worker。

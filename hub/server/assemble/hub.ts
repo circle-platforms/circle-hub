@@ -1,8 +1,9 @@
 // assembleHub: the Hub built from the real packages over an opened configuration and records kit. Order: the vault master
 // key (when required: a missing or wrong key stops here, before anything listens), the core parsers, the pack registry and
 // its three ports, the connectors (resources, logins, read plugins) with the ExternalReaderPort and the resource catalog,
-// the typed-judgment client (from the vault, or none), the knowledge service (reading through the connectors alone), the
-// run engine (reading the knowledge views and, for every other id, the connectors), and the ServerDeps the server takes.
+// the knowledge service (reading through the connectors alone), the run engine (reading the knowledge views and, for
+// every other id, the connectors), and the ServerDeps the server takes. The Hub calls no model (owner decision
+// 2026-10-22): knowledge is assembled without a placer, and a judgment-service key left in the vault is never read.
 // Nothing here reads the environment, a file outside the data directory, or a credential value.
 import { join } from 'node:path';
 import type { HubConfig } from '../../config/index.ts';
@@ -13,7 +14,6 @@ import {
   type Connectors,
   type FetchLike,
 } from '../../connectors/api.ts';
-import type { JevClient } from '../../jev/api.ts';
 import { createKnowledge, createKnowledgeReader, routeKnowledgeViews, type Knowledge } from '../../knowledge/api.ts';
 import type { ExternalReaderPort, PackCatalogPort, PacksPort, ResourceCatalogPort, WorkflowStore } from '../../ports.ts';
 import type { Principal, RecordsKit } from '../../records/api.ts';
@@ -31,7 +31,7 @@ import {
 import type { AssembleFunction, CommandIo, ServerDeps } from '../api.ts';
 import { CallNotes, withCallNotes } from './notes.ts';
 import { terminalSafe } from './terminal.ts';
-import { NO_JEV_NOTICE, jevFromVault, requireVaultKey, type JevOptions } from './vault.ts';
+import { requireVaultKey } from './vault.ts';
 
 export interface AssemblyOptions {
   /**
@@ -48,13 +48,6 @@ export interface AssemblyOptions {
   command?: boolean;
   /** Probe sandbox-exec at start-up and say when pack functions cannot run here (default false; serve does it). */
   checkSandbox?: boolean;
-  /**
-   * The typed-judgment client. Default: HttpJev with the vault's key when the vault has one, else none (knowledge then runs
-   * without model placement and the assembly says so). null forces none; tests pass a scripted judge.
-   */
-  jev?: JevClient | null;
-  /** Options of the default HttpJev (a loopback stub in tests). */
-  jevOptions?: JevOptions;
   /** Transport of the connectors; default the global fetch. Tests reach only loopback stubs. */
   fetch?: FetchLike;
   /** Clock of every package and of the server's call log and console sessions. */
@@ -87,12 +80,11 @@ export interface AssembledHub {
   /** The run engine's reader: `knowledge:` ids through the knowledge views, every other id through the connectors. */
   runsExternal: ExternalReaderPort;
   resources: ResourceCatalogPort;
-  jev: JevClient | null;
   knowledge: Knowledge;
   /** The run engine; the connectors' and the registry's failures while it serves a call reach that call's note. */
   runs: RunsEngine;
   notes: CallNotes;
-  /** What the operator should know about this assembly, in Chinese (no model placement, no sandbox-exec, ...). */
+  /** What the operator should know about this assembly, in Chinese (no sandbox-exec, ...). */
   notices: string[];
 }
 
@@ -142,23 +134,19 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
   const external = createExternalReader(connectors);
   const resources = createResourceCatalog(connectors);
 
-  // 5. The typed-judgment client: from the vault, or none.
-  const jev = options.jev !== undefined ? options.jev : await jevFromVault(records, config, options.jevOptions);
-  if (jev === null) notices.push(NO_JEV_NOTICE);
-
-  // 6. Knowledge: it reads its sources through the connectors alone.
+  // 5. Knowledge: it reads its sources through the connectors alone. No placer: the Hub calls no model, so spans the
+  // code cannot place stay unplaced at the root (a producer may declare them for the bot's placement proposals).
   const knowledge = createKnowledge({
     records,
     parsers,
     packs,
     external,
-    jev,
     sandbox: { requireOsIsolation: sandbox.requireOsIsolation },
     ...(now === undefined ? {} : { clock: now }),
     admin: options.knowledgeAdmin ?? null,
   });
 
-  // 7. The run engine: inputs and expected sources of the knowledge views (`knowledge:impact|facets|index:...`) are read
+  // 6. The run engine: inputs and expected sources of the knowledge views (`knowledge:impact|facets|index:...`) are read
   // from the knowledge service, every other id through the connectors. It writes each call's reasons to the call's admin
   // note itself (CallContext.adminNote); the connectors and the registry report through the call notes.
   const runsExternal = routeKnowledgeViews(createKnowledgeReader(knowledge), external);
@@ -189,7 +177,7 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
     ...(now === undefined ? {} : { now }),
     products: packs,
   };
-  return { deps, config, records, parsers, registry, packs, workflows, catalog, connectors, external, runsExternal, resources, jev, knowledge, runs, notes, notices };
+  return { deps, config, records, parsers, registry, packs, workflows, catalog, connectors, external, runsExternal, resources, knowledge, runs, notes, notices };
 }
 
 /**

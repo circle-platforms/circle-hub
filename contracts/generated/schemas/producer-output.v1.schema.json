@@ -21,7 +21,7 @@
                 "type": "null"
               }
             ],
-            "description": "where it hangs; null when code cannot place it (it goes to the typed-judgment model)"
+            "description": "where it hangs; null when code cannot place it (a producer may declare it for the bot's placement proposals)"
           },
           "statement": {
             "type": "string",

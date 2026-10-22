@@ -630,7 +630,8 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
     return fail(problems.refusedCount > 0 ? `生产器的 ${problems.refusedCount} 个条目都没有通过核对，没有可以挂树的内容` : '生产器没有产出任何条目');
   }
 
-  // Code placement, then the typed-judgment model for the rest. A node holds at most maxNodeEntries entries.
+  // Code placement; the Hub calls no model, so what code cannot place stays unplaced at the root (a producer may
+  // declare it for the bot's placement proposals). A node holds at most maxNodeEntries entries.
   const builder = new TreeBuilder(context.limits.maxNodeEntries);
   const full = (entry: Collected, path: string): void => {
     problems.refuse({ producer: entry.producer, index: entry.index, unplaced: entry.unplaced, kind: entry.content.kind, path, reason: `节点 ${cutText(path, 200)} 已有 ${context.limits.maxNodeEntries} 个条目，达到每个节点的上限` });
@@ -646,9 +647,9 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
   let outcomes = new Map<string, PlacementOutcome>();
   let placement: ProduceDetail['placement'] = null;
   const skippedRecord = skippedPlacement.size > 0 ? Object.fromEntries(skippedPlacement) : undefined;
-  if (spans.length > 0) {
-    const model = context.placer.model;
-    const threshold = model === null ? null : await context.calibration.threshold(PLACEMENT_CHAIN, model);
+  const model = context.placer.model;
+  if (spans.length > 0 && model !== null) {
+    const threshold = await context.calibration.threshold(PLACEMENT_CHAIN, model);
     outcomes = await context.placer.place(spans, placementTree(builder, contents), { threshold, context: { product: lineProduct, build: build.name }, onProblem: (text) => problems.warn(`归类：${text}`) });
     // Recorded so that a later sync places again when the judge failed or the chain's calibration changed.
     placement = {
@@ -658,13 +659,14 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
       failed: [...outcomes.values()].filter((o) => o.failed).length,
       ...(skippedRecord !== undefined ? { skipped: skippedRecord } : {}),
     };
-  } else if (skippedRecord !== undefined) {
+  } else if (spans.length > 0 || skippedRecord !== undefined) {
+    // No placer (the Hub calls no model): nobody judges the declared spans; spans counts judged spans only.
     placement = {
       model: null,
       threshold: null,
       spans: 0,
       failed: 0,
-      skipped: skippedRecord,
+      ...(skippedRecord !== undefined ? { skipped: skippedRecord } : {}),
     };
   }
   const modelHung = new Set<Collected>();
@@ -742,7 +744,7 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
               ? null
               : { path: pathOf(outcome.candidate.segments), model: outcome.model, p: outcome.candidate.p, calibrated: outcome.calibrated },
           judgments: outcome?.judgments ?? [],
-          note: cutText(outcome?.note ?? '没有归类', MAX_PROBLEM_TEXT),
+          note: cutText(outcome?.note ?? '未归位，留在根下', MAX_PROBLEM_TEXT),
         },
         producers: new Set(),
         slots: new Set(),
@@ -768,7 +770,7 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
           stopped_at: '/',
           candidate: null,
           judgments: [],
-          note: '生产器未声明交给判断服务',
+          note: '生产器未声明交给 bot 归位，留在根下标为未归位',
         },
         producers: new Set(),
         slots: new Set(),
