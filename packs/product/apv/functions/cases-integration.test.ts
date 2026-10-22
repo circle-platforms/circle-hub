@@ -182,6 +182,18 @@ describe('the sync with the case index', () => {
     assert.equal(impact.truncated, false);
   });
 
+  test('the index returns each placed case under every defect id it lists', async () => {
+    const index = await view<IndexView>(`knowledge:index:apv:${LATE}?kind=case&key=defects`);
+    const expected = new Map<string, number>();
+    for (const { k } of indexedCases('10.6.1', 'b')) for (const id of k.defects) expected.set(id, (expected.get(id) ?? 0) + 1);
+    assert.ok(expected.size > 0);
+    assert.ok(expected.has('61001'));
+    for (const [id, count] of expected) {
+      assert.equal(index.keys[id]?.length, count, id);
+      for (const digest of index.keys[id]) assert.ok((index.entries[digest].data.defects as string[]).includes(id));
+    }
+  });
+
   test('the NSAE name reads the root of the APV build it is based on', async () => {
     const byAlias = await view<FacetView>(`knowledge:facets:apv:${ALIAS}?kind=case&by=module`);
     const byBase = await view<FacetView>(`knowledge:facets:apv:${LATE}?kind=case&by=module`);

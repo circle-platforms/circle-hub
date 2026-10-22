@@ -1,6 +1,6 @@
 // Defect entries of a build's fixed-bug list as the build site publishes it (Bugs_Fixed_with_<build>.html, an html@1 model):
 // a table whose cells are blocks (a bug number cell, then its summary cell) or lines that start with a bug number. Each bug
-// is one defect entry (K02 R[3]) with status fixed, the build as its applicability and the cells it rests on as fragments
+// is one defect entry (K02 R[3]) with status fixed and `data.bug` the id, the build as its applicability and the cells it rests on as fragments
 // (b/<k> or b/<a>-<b>); path null: the typed-judgment model places it (its summary is the hint). The page was not sampled;
 // the structure follows the build site's other pages, so unknown layouts give no entry and a warning, never a guess.
 import type { ProducerOutput } from '../../../../contracts/src/product.ts';
@@ -31,7 +31,7 @@ export function fixedBugEntries(model: unknown, build: string | null): ProducerO
       kind: 'defect',
       path: null,
       statement: summary === '' ? `缺陷 ${id}` : `缺陷 ${id}：${summary}`,
-      data: { status: 'fixed', bugId: id, text: summary, build, form: 'fixed_list' },
+      data: { status: 'fixed', bug: id, text: summary, build, form: 'fixed_list' },
       fragments: [{ parser: PARSER, selector }],
       applicability: build === null ? null : { builds: [build] },
     });

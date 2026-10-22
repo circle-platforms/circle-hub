@@ -152,8 +152,12 @@ Producers (K02, K04, C07)
   Bug Fixes, Resolved Issues) or known issues (遗留问题, 已知问题, Known Issues, Open Issues); a negated heading (未修复,
   尚未修复, 没有修复, 未能修复, 未解决, not fixed, unfixed, unresolved) is known issues, tested first; English names only as
   whole words. The module is the child heading or a module column; items are list items, table rows (pipe, grid, HTML) or
-  paragraphs; the bug id comes from an id column, a bug marker or a leading number. `path` is null (the module is the hint
-  for placement); `applicability` is `{ builds: [build] }`; a part of a block is cited with a byte range. Table scanning
+  paragraphs; the bug id comes from an id column, a bug marker or a leading number and is stored as `data.bug` (the same
+  id a case lists in `data.defects`). `data.status` is `fixed` or `known`. The names `bug`, `status` and `defects` are
+  legal index keys; `bugId` is not, because a data field name is a lower-case word. `path` is null (the module is the hint
+  for placement), so these defect entries stay unplaced and `knowledge:index` does not list them: that view reads placed
+  rows. A placed case is listed under `key=defects`, once per id. `applicability` is `{ builds: [build] }`; a part of a
+  block is cited with a byte range. Table scanning
   is linear (grid cells joined once per row, tags stripped without backtracking, ASCII-only lower-casing so offsets hold).
 
 Text functions

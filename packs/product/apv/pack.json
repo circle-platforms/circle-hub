@@ -53,8 +53,8 @@
     },
     {
       "path": "functions/fixed-bugs.ts",
-      "sha256": "cf678d01ac1e51582c2b91148210a88e5ed87e940d811e88c19302376be42f53",
-      "size": 2819
+      "sha256": "53e5ac7c4c4e0424693f4af65774063ab0166ed823b49ff3dc170aaefe360855",
+      "size": 2839
     },
     {
       "path": "functions/ids.ts",
@@ -88,8 +88,8 @@
     },
     {
       "path": "functions/release-notes.ts",
-      "sha256": "7be726c63aed1079fdac37acf0d5ad59c496f1d930379d41a09c06541e1704b4",
-      "size": 17410
+      "sha256": "f85d4d5bc7554e7301417b7b9cce919de7fcca6e1a79ece47cf726429e5db063",
+      "size": 17483
     },
     {
       "path": "functions/select-build.ts",

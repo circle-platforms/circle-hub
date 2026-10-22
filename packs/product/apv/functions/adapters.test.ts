@@ -210,7 +210,7 @@ describe('the producers', () => {
     const page = html('<html><body><table><tr><th>Bug ID</th><th>Summary</th></tr><tr><td><a href=x?id=61001>61001</a></td><td>HA 切换后状态不对</td></tr><tr><td>61002</td><td>权重为 0 时调度异常</td></tr></table><p>61003: 拼写错误</p></body></html>');
     const fromPage = releaseNotes({ build: knownBuild, slots: { notes: slot('html@1', page) }, params: {} });
     assert.ok(ProducerOutput.safeParse(fromPage).success);
-    assert.deepEqual(fromPage.entries.map((e) => [e.kind, e.data.bugId, e.fragments[0].selector, e.applicability]), [
+    assert.deepEqual(fromPage.entries.map((e) => [e.kind, e.data.bug, e.fragments[0].selector, e.applicability]), [
       ['defect', '61001', 'b/2-3', { builds: ['Rel_APV_10_6_1_57'] }],
       ['defect', '61002', 'b/4-5', { builds: ['Rel_APV_10_6_1_57'] }],
       ['defect', '61003', 'b/6', { builds: ['Rel_APV_10_6_1_57'] }],
