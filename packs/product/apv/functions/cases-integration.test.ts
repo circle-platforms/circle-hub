@@ -149,7 +149,7 @@ describe('the sync with the case index', () => {
     assert.equal(facets.total, cases.length);
     const unplaced = cases.filter((item) => !item.placed).length;
     assert.ok(unplaced > 0);
-    assert.ok(facets.notes.includes(`未归位 ${unplaced} 个，标在根下，计入合计`));
+    assert.ok(facets.notes.includes(`未归位条目 ${unplaced} 个，标在根下，计入合计`));
     assert.equal(facets.skipped, 0);
   });
 
@@ -174,7 +174,7 @@ describe('the sync with the case index', () => {
       }
     }
     const unplaced = cases.filter((item) => !item.placed).length;
-    assert.ok(index.notes.includes(`未归位 ${unplaced} 个，标在根下`));
+    assert.ok(index.notes.includes(`未归位条目 ${unplaced} 个，标在根下`));
   });
 
   test('the impact of the version difference: the changed commands and exactly the cases filed on them in each build', async () => {

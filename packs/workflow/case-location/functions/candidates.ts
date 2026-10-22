@@ -25,31 +25,36 @@ function isBuild(value: unknown): value is ContextBuild {
   );
 }
 
-type Candidate = { name: string; family: string; base: string; alias: boolean; platform: string | null; released: boolean; released_at: string | null };
+type Candidate = { name: string; family: string; base: string; alias: boolean; platform: string | null; built_at: string | null; released: boolean; released_at: string | null };
 
 function candidateOf(build: ContextBuild): Candidate {
-  return { name: build.name, family: build.family, base: build.base, alias: build.name !== build.base, platform: build.platform, released: build.released_at !== null, released_at: build.released_at };
+  return { name: build.name, family: build.family, base: build.base, alias: build.name !== build.base, platform: build.platform, built_at: build.built_at, released: build.released_at !== null, released_at: build.released_at };
 }
 
 const compareText = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 
-/** Released first by date descending, then by name; unreleased last, by name. */
+/** Built time descending, then by name; a build without a built time is last (by name). */
 function orderCandidates(candidates: Candidate[]): Candidate[] {
   return [...candidates].sort((a, b) => {
-    if ((a.released_at === null) !== (b.released_at === null)) return a.released_at === null ? 1 : -1;
-    const byDate = (b.released_at ?? '').localeCompare(a.released_at ?? '');
-    return byDate !== 0 ? byDate : compareText(a.name, b.name);
+    if ((a.built_at === null) !== (b.built_at === null)) return a.built_at === null ? 1 : -1;
+    const byTime = (b.built_at ?? '').localeCompare(a.built_at ?? '');
+    return byTime !== 0 ? byTime : compareText(a.name, b.name);
   });
 }
+
+/** The date-time part of an ISO time stamp as a person reads it (YYYY-MM-DD HH:mm), or the raw string. */
+const builtText = (builtAt: string): string => (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(builtAt) ? `${builtAt.slice(0, 10)} ${builtAt.slice(11, 16)}` : builtAt);
 
 /** The date part of an ISO time stamp, or the raw string when it is not one. */
 const dateOf = (releasedAt: string): string => (/^\d{4}-\d{2}-\d{2}/.test(releasedAt) ? releasedAt.slice(0, 10) : releasedAt);
 
-/** One candidate as a person reads it: build, family, alias base, released state with its date. */
+/** One candidate as a person reads it: build (family) built at a time, an alias with the build it is based on, the
+ * release state written apart (a formal release and the built time are different things). */
 function candidateText(candidate: Candidate): string {
-  const base = candidate.alias ? `依据 ${candidate.base}，` : '';
-  const released = candidate.released ? `${dateOf(candidate.released_at ?? '')} 已发布` : '未发布';
-  return `${candidate.name}（${candidate.family}，${base}${released}）`;
+  const family = `${candidate.name}（${candidate.family}${candidate.alias ? `，基于 ${candidate.base}` : ''}）`;
+  const built = candidate.built_at === null ? '制作时间未知' : `制作于 ${builtText(candidate.built_at)}`;
+  const released = candidate.released ? `，已发布 ${dateOf(candidate.released_at ?? '')}` : '，未发布';
+  return `${family}${built}${released}`;
 }
 
 /** How many candidates the statement writes out; the rest are counted, not listed. */
@@ -85,7 +90,7 @@ function candidatesOutcome(item: string, grounds: string[], pointer: string, lin
   const aliases = ofLine.filter((c) => c.alias).length;
   const listed = ofLine.slice(0, MAX_LISTED).map(candidateText);
   const more = ofLine.length - listed.length;
-  const statement = `版本线 ${line} 的构建候选 ${ofLine.length} 个${aliases > 0 ? `，其中别名 ${aliases} 个（别名解析到它所依据的构建）` : ''}，按发布从新到旧：${listed.join('；')}${more > 0 ? `；另有 ${more} 个` : ''}`;
+  const statement = `版本线 ${line} 的构建候选 ${ofLine.length} 个${aliases > 0 ? `，其中别名 ${aliases} 个（别名基于它所基于的构建）` : ''}，按制作时间从新到旧：${listed.join('；')}${more > 0 ? `；另有 ${more} 个` : ''}`;
   return {
     verdict: 'support',
     statement,
