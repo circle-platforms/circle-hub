@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "maintenance-sweep",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "kind": "workflow",
   "title": "维护巡检",
   "description": "按两个构建的影响视图列出较早构建里需要维护的用例：命令已删除的记阻断，命令定义有差异的记提示并逐字段给出两边的值。只含事实要求项，开始运行时由 Hub 直接算出结果",
@@ -23,8 +23,8 @@
     },
     {
       "path": "functions/check.ts",
-      "sha256": "494e2de45cae0a57927abe2ff85b0bc2b1b60c9afcbcc01b5d766665b8cbbc87",
-      "size": 11583
+      "sha256": "3be922f6ad67f8732f0e745a61e6eb5436e97f5e20346703096db6a8f21f73a0",
+      "size": 11831
     },
     {
       "path": "functions/diff.ts",
@@ -43,8 +43,8 @@
     },
     {
       "path": "functions/sweep.ts",
-      "sha256": "1336740ee5c18fa6d54a0e963d86a7acffff16fdfe1a3f311a4b3b261b99a5cb",
-      "size": 11643
+      "sha256": "5300c8f062ceaae31ab9e0a455339ee282ce7f5bd3a03723dbd7c5647623c144",
+      "size": 12555
     },
     {
       "path": "functions/text.ts",
@@ -63,23 +63,23 @@
     },
     {
       "path": "samples/negative/command-changed.json",
-      "sha256": "f71e1fcdbbb88cf7f20297ebee2676e9dde0a10ed04d10c9f95d8f820954fb7e",
-      "size": 2298
+      "sha256": "02372c439fb6f7ea4b310e1e2a2fc28d6185364204942457a8cb11047108d223",
+      "size": 1978
     },
     {
       "path": "samples/negative/command-removed.json",
-      "sha256": "b418a815c9cdd0c7f1630d103a44983f567a52647d89bb6ad7e84600d61e4beb",
-      "size": 2104
+      "sha256": "edbc96341969b117b6b5fa2a3076f67d2bdc5b41394e055ca54249954749e780",
+      "size": 1667
     },
     {
       "path": "samples/positive/command-still-there.json",
-      "sha256": "db1f3f0a1b1c71b0a189d3a3af0028e3875801fe0edebc74164e5fe46342d818",
-      "size": 1990
+      "sha256": "17dbd0918f3becc5e44801195e6fc35ee4259d5398732ab4649d50dcaa6e5554",
+      "size": 1579
     },
     {
       "path": "samples/positive/definition-unchanged.json",
-      "sha256": "79e8d55b554141586cd3b5f66fe861a1302eaefca448b5e75a8a6745ea3f0ddb",
-      "size": 2015
+      "sha256": "3e4b3347ac5e78d813734ef92453ef587a288adb2905a8cd3b95de096446d63d",
+      "size": 1745
     },
     {
       "path": "slots.schema.json",

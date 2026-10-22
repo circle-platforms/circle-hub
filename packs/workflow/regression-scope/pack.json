@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "regression-scope",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "kind": "workflow",
   "title": "回归范围",
   "description": "按两个构建的影响视图（瘦身：attached_fields=document,node,title,priority,negative）列出后一构建里放在新增或修改路径上的用例；没有用例的变更路径记为未知而不是失败。一次最多 4,000 条。只含事实要求项，开始运行时由 Hub 直接算出结果",
@@ -23,8 +23,8 @@
     },
     {
       "path": "functions/check.ts",
-      "sha256": "26a54f0c6a343f6bf586e0687700084991b52ffdd8e43b5137bcf3a9cdcd4506",
-      "size": 9018
+      "sha256": "cd91f368367e4bdbd604dfe3329069006c1b7200266b918c6ee5247acbe08078",
+      "size": 8803
     },
     {
       "path": "functions/project.ts",
@@ -33,8 +33,8 @@
     },
     {
       "path": "functions/scope.ts",
-      "sha256": "0da12c258f8c4d84d7b054e6e5d32b45849a836ccb56f7b1aa7b76aa2e990bfb",
-      "size": 13366
+      "sha256": "bf16a178415d64d7bfd62ecea8d5ecb6487d8b213173d01be7d5e702afd85e35",
+      "size": 16272
     },
     {
       "path": "functions/subject.ts",
@@ -58,13 +58,13 @@
     },
     {
       "path": "samples/negative/not-in-scope.json",
-      "sha256": "c249b9eb31d4001eeb73d8f5d84df9a50b742b80fedf1cb0a0553c57ae26e7f4",
-      "size": 2048
+      "sha256": "f873616ed28390f922f0582b4b29a30c22385065665e8285e6365f768c7c1b6b",
+      "size": 1686
     },
     {
       "path": "samples/negative/uncovered-overlap.json",
-      "sha256": "96a469c8defc05f30c12cd7587351d538ff33c8aaf84d88e3ff6b327155cbe2e",
-      "size": 2376
+      "sha256": "c92c46bad4b8bbc51ee256a86a601d4dde466dab465852be0f54d78a928cf671",
+      "size": 2014
     },
     {
       "path": "samples/positive/covered-paths.json",
@@ -73,8 +73,8 @@
     },
     {
       "path": "samples/positive/in-scope.json",
-      "sha256": "37e39cd2179f5fd9f8dd46e86d41edaad4bdd42a24ede141de16e1d2fa62d1c4",
-      "size": 1965
+      "sha256": "0761fd8b84501c44ea38e70772db8759bfaa85c2b39d1c5f1f37d0b7de8851cc",
+      "size": 1771
     },
     {
       "path": "slots.schema.json",
