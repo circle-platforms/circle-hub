@@ -1,17 +1,18 @@
-// Sets up a dedicated Circle data folder for a real review run: a model endpoint taken from the owner's environment file, the
-// Hub as an ordinary MCP server, the environment file's name as a protected file, and a hook that lets only the Hub's tools run.
-// The environment file is read here, at run time. Values reach only the 0600 files of the new folder; the screen shows names,
-// presence and lengths. The Hub token comes from the environment variable HUB_REAL_TOKEN, never from a command line.
+// Sets up a dedicated Circle data folder for a real review run: a model endpoint taken from the owner's environment file or
+// read from the owner's Circle configuration (circleEndpoint), the Hub as an ordinary MCP server, the environment file's name
+// as a protected file, and a hook that lets only the Hub's tools run. The environment file and the owner's Circle folder are
+// read here, at run time. Values reach only the 0600 files of the new folder; the screen shows names, presence and lengths.
+// The Hub token comes from the environment variable HUB_REAL_TOKEN, never from a command line.
 //   node scripts/real/circle-home.ts --env-file <file> --home <dir> --provider glm|qwen [--model <id>] [--section <text>]
 //        [--hub-url http://127.0.0.1:7420/mcp] [--workdir <dir>]
-import { chmodSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
 import { pick, readEnvFile, type EnvEntry } from './lib/env-file.ts';
 
 export interface Options {
-  envFile: string;
+  envFile?: string;
   home: string;
-  provider: 'glm' | 'qwen';
+  provider?: 'glm' | 'qwen';
   model?: string;
   section?: string;
   hubUrl: string;
@@ -38,7 +39,7 @@ export interface Endpoint {
 }
 
 /** Picks the endpoint of the provider's section: the Anthropic pair first, then the OpenAI-compatible pair. */
-export function endpointFrom(entries: EnvEntry[], provider: Options['provider'], model?: string, section: string = SECTION_OF[provider]): Endpoint {
+export function endpointFrom(entries: EnvEntry[], provider: 'glm' | 'qwen', model?: string, section: string = SECTION_OF[provider]): Endpoint {
   for (const [protocol, urlKey, keyKey] of [
     ['anthropic', 'ANTHROPIC_BASE_URL', 'ANTHROPIC_API_KEY'],
     ['openai', 'OPENAI_BASE_URL', 'OPENAI_API_KEY'],
@@ -51,6 +52,51 @@ export function endpointFrom(entries: EnvEntry[], provider: Options['provider'],
     return { protocol, baseUrl: url.value, apiKey: key.value, model: chosen, sources: [`${urlKey} 行 ${url.line}`, `${keyKey} 行 ${key.line}`] };
   }
   throw new Error(`环境文件的“${section}”一节里没有可用的地址和密钥对`);
+}
+
+/** The references settings.json auth.api_key_ref may name in credentials.json: the member it names holds the key. */
+const KNOWN_API_KEY_REFS = { api_key: 'api_key' } as const;
+
+/**
+ * The model endpoint of a Circle data directory (the owner's configured endpoint; default ~/.circle, tests use a temp
+ * dir): settings.json's `auth` (protocol, base_url, model, api_key_ref) and the member api_key_ref names in
+ * credentials.json. Read-only: nothing is written, nothing is sent. An unreadable file, a missing field or an unknown
+ * reference is an error naming the file and the key only; a credentials file looser than 0600 is warned about, not refused.
+ */
+export function circleEndpoint(dir: string, options: { model?: string; warn?: (line: string) => void } = {}): Endpoint {
+  const readJson = (name: string): Record<string, unknown> => {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(readFileSync(join(dir, name), 'utf8'));
+    } catch {
+      throw new Error(`Circle 目录的 ${name} 读不到或不是 JSON`);
+    }
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error(`Circle 目录的 ${name} 不是一个对象`);
+    return parsed as Record<string, unknown>;
+  };
+  const settings = readJson('settings.json');
+  const auth = settings.auth;
+  if (auth === null || typeof auth !== 'object' || Array.isArray(auth)) throw new Error('settings.json 里没有 auth（协议、地址、模型名、密钥引用）');
+  const record = auth as Record<string, unknown>;
+  const protocol = record.protocol;
+  if (protocol !== 'anthropic' && protocol !== 'openai') throw new Error('settings.json 的 auth.protocol 不是认识的协议（只认 anthropic、openai）');
+  const baseUrl = record.base_url;
+  if (typeof baseUrl !== 'string' || baseUrl === '' || !/^https?:\/\//.test(baseUrl)) throw new Error('settings.json 的 auth.base_url 不是可用的地址');
+  const model = options.model ?? record.model;
+  if (typeof model !== 'string' || model === '') throw new Error('settings.json 的 auth 里没有模型名');
+  const ref = record.api_key_ref;
+  if (typeof ref !== 'string' || !(ref in KNOWN_API_KEY_REFS)) throw new Error(`settings.json 的 auth.api_key_ref 不是认识的引用（只认 ${Object.keys(KNOWN_API_KEY_REFS).join('、')}）`);
+  const credentials = readJson('credentials.json');
+  const apiKey = credentials[KNOWN_API_KEY_REFS[ref as keyof typeof KNOWN_API_KEY_REFS]];
+  if (typeof apiKey !== 'string' || apiKey === '') throw new Error(`credentials.json 里没有 ${KNOWN_API_KEY_REFS[ref as keyof typeof KNOWN_API_KEY_REFS]}`);
+  if ((statSync(join(dir, 'credentials.json')).mode & 0o777) !== 0o600) options.warn?.('credentials.json 的权限不是 0600（密钥文件应只有所有者可读；继续读取）');
+  return {
+    protocol,
+    baseUrl,
+    model,
+    apiKey,
+    sources: ['settings.json 的 auth（protocol、base_url、model、api_key_ref）', `credentials.json 的 ${ref}`],
+  };
 }
 
 const HOOK = `// Lets only the Hub's tools (and Circle's own todo list) run in this Circle folder; every other tool call is denied.
@@ -102,7 +148,7 @@ export function writeHome(options: Options, endpoint: Endpoint, token: string): 
         mcp_servers: [
           { name: SERVER_NAME, url: options.hubUrl, transport: 'streamable_http', headers: { Authorization: `Bearer \${secret:${TOKEN_SECRET}}` } },
         ],
-        credential_files: [basename(options.envFile)],
+        ...(options.envFile === undefined ? {} : { credential_files: [basename(options.envFile)] }),
         update_check: false,
       },
       null,
@@ -118,7 +164,7 @@ export function writeHome(options: Options, endpoint: Endpoint, token: string): 
   return { files: ['settings.json', 'credentials.json', 'secrets.json', 'hooks.json', 'hooks/hub-only.mjs'], workdir };
 }
 
-export function parseArgs(argv: string[]): Options {
+export function parseArgs(argv: string[]): Options & { envFile: string; provider: 'glm' | 'qwen' } {
   const values = new Map<string, string>();
   for (let i = 0; i < argv.length; i += 2) {
     const key = argv[i];
