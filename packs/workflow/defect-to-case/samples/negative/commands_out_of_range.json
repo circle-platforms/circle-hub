@@ -1,0 +1,63 @@
+{
+  "id": "commands_out_of_range",
+  "source": "author",
+  "check": "commands_catalog",
+  "note": "普通正向用例步骤中的命令参数超出目录定义的取值范围",
+  "subject": {
+    "item": "71009",
+    "location": null,
+    "phrases": [
+      "widget health interval 999"
+    ],
+    "negative": false
+  },
+  "catalog": {
+    "root": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "complete": true,
+    "entries": [
+      {
+        "head": "widget health interval",
+        "signatures": [
+          [
+            {
+              "name": "seconds",
+              "type": "int",
+              "minimum": 1,
+              "maximum": 300
+            }
+          ]
+        ],
+        "summary": "设置健康检查间隔"
+      },
+      {
+        "head": "show health",
+        "signatures": [
+          []
+        ],
+        "summary": "查看健康检查状态"
+      },
+      {
+        "head": "service http port",
+        "signatures": [
+          [
+            {
+              "name": "port",
+              "type": "port",
+              "minimum": 1,
+              "maximum": 65535
+            }
+          ]
+        ],
+        "summary": "设置HTTP服务端口"
+      }
+    ]
+  },
+  "expect": [
+    {
+      "verdict": "refute",
+      "code": "core.catalog.param_out_of_range",
+      "item": "71009",
+      "tier": "blocking"
+    }
+  ]
+}

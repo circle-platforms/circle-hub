@@ -1,0 +1,53 @@
+{
+  "schema": "workflow@1",
+  "inputs": [
+    {
+      "slot": "defects",
+      "role": "subject",
+      "description": "被转用例的缺陷记录（plm:bug:<编号>），1 到 20 个",
+      "accepts": ["plm:bug"],
+      "required": true,
+      "many": true
+    },
+    {
+      "slot": "indexed_cases",
+      "role": "expected",
+      "description": "已索引的用例清单（knowledge:index:<产品>:<构建>?kind=case&key=commands），由 Hub 知识读取器提供，必填",
+      "accepts": ["knowledge:index"],
+      "required": true,
+      "many": false
+    }
+  ],
+  "parameters": [
+    {
+      "name": "max_cases",
+      "description": "每个缺陷起草用例的上限数量，1 到 20，默认 6",
+      "required": false,
+      "schema": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 20
+      }
+    },
+    {
+      "name": "priority",
+      "description": "起草用例的默认优先级（1 到 3），默认 2",
+      "required": false,
+      "schema": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 3
+      }
+    }
+  ],
+  "product": {
+    "catalogs": ["commands@1"]
+  },
+  "subject": "defects",
+  "projection": {
+    "module": "functions/projection.ts"
+  },
+  "expected_sources": {
+    "module": "functions/expected.ts"
+  }
+}

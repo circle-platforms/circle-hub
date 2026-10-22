@@ -1,0 +1,51 @@
+{
+  "id": "shape_invalid",
+  "source": "author",
+  "check": "draft_shape",
+  "note": "起草用例缺少标题、步骤和期望结果且优先级越界",
+  "subject": {
+    "item": "71009",
+    "slots": {
+      "cases": [
+        {
+          "text": "",
+          "data": {
+            "title": "",
+            "priority": 2,
+            "negative": false,
+            "expects_refutation": false,
+            "preconditions": [
+              "SLB服务正常运行"
+            ],
+            "steps": [
+              {
+                "command": "widget health interval 60",
+                "note": "设置间隔为60秒"
+              }
+            ],
+            "expected": [
+              {
+                "text": "健康检查间隔设置成功",
+                "quote": {
+                  "reference": "src:fix_sha",
+                  "text": "健康检查间隔设置成功"
+                }
+              }
+            ],
+            "tags": [
+              "Functional"
+            ]
+          }
+        }
+      ]
+    }
+  },
+  "expect": [
+    {
+      "verdict": "refute",
+      "code": "defect-to-case.shape_invalid",
+      "item": "71009",
+      "tier": "blocking"
+    }
+  ]
+}

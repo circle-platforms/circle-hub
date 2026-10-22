@@ -1,0 +1,79 @@
+{
+  "id": "duplicate_none",
+  "source": "author",
+  "check": "duplicate_check",
+  "note": "起草用例在已有索引中无重复项",
+  "subject": {
+    "item": "71009",
+    "drafts": [
+      {
+        "title": "查看健康检查状态",
+        "priority": 2,
+        "negative": false,
+        "expects_refutation": false,
+        "preconditions": [
+          "SLB服务正常运行"
+        ],
+        "steps": [
+          {
+            "command": "show health"
+          }
+        ],
+        "expected": [
+          {
+            "text": "显示健康"
+          }
+        ],
+        "tags": [
+          "Functional"
+        ]
+      }
+    ],
+    "indexed_cases": {
+      "schema": "index-view@1",
+      "product": "apv",
+      "build": {
+        "build": "Rel_APV_10_6_1_57",
+        "root": "1111111111111111111111111111111111111111111111111111111111111111"
+      },
+      "kind": "case",
+      "key": "commands",
+      "keys": {
+        "show health detail": [
+          "2222222222222222222222222222222222222222222222222222222222222222"
+        ]
+      },
+      "entries": {
+        "2222222222222222222222222222222222222222222222222222222222222222": {
+          "entry": "2222222222222222222222222222222222222222222222222222222222222222",
+          "kind": "case",
+          "statement": "doc_101:node_5 | 健康检查详细信息查看",
+          "reference": "tree:1111111111111111111111111111111111111111111111111111111111111111/commands/show/health@2222222222222222222222222222222222222222222222222222222222222222",
+          "data": {
+            "document": "doc_101",
+            "node": "node_5",
+            "title": "健康检查详细信息查看",
+            "negative": false,
+            "commands": [
+              "show health detail"
+            ],
+            "expected_texts": [
+              "健康检查状态显示正常"
+            ]
+          }
+        }
+      },
+      "total_keys": 1,
+      "total_entries": 1,
+      "truncated": false,
+      "skipped": 0,
+      "notes": []
+    }
+  },
+  "expect": [
+    {
+      "verdict": "support",
+      "item": "71009"
+    }
+  ]
+}

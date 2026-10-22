@@ -1,0 +1,60 @@
+// Type definitions and constants for defect-to-case workflow pack.
+import type { CheckOutcome } from '../../../../contracts/src/tables.ts';
+
+export const PACK = 'defect-to-case';
+
+export const CODES = {
+  SHAPE_INVALID: `${PACK}.shape_invalid`,
+  DUPLICATE_DRAFT: `${PACK}.duplicate_draft`,
+  NEGATIVE_ACCEPTED: `${PACK}.negative_accepted`,
+  UNEXPECTED_REFUTATION: `${PACK}.unexpected_refutation`,
+  QUOTE_MISSING: `${PACK}.quote_missing`,
+  UNSUPPORTED_ENTITY: `${PACK}.unsupported_entity`,
+  DUPLICATE_CASE: `${PACK}.duplicate_case`,
+} as const;
+
+export interface DraftStep {
+  command: string;
+  note?: string;
+  text?: string;
+}
+
+export interface DraftExpected {
+  text: string;
+  quote?: {
+    reference: string;
+    text: string;
+  };
+}
+
+export interface DraftCase {
+  title: string;
+  priority: number;
+  negative: boolean;
+  expects_refutation?: boolean;
+  preconditions?: string[];
+  steps: DraftStep[];
+  expected: DraftExpected[];
+  tags: string[];
+}
+
+export interface DefectItemFields {
+  id: string;
+  kind?: string;
+  title: string;
+  status?: string;
+  fields?: Record<string, unknown>;
+  html_fields?: Record<string, string>;
+  [key: string]: unknown;
+}
+
+export const CANONICAL_CATEGORIES = [
+  'Functional',
+  'Configuration',
+  'Integration',
+  'Compatibility',
+  'Negative',
+  'Stress',
+] as const;
+
+export type CanonicalCategory = (typeof CANONICAL_CATEGORIES)[number];
