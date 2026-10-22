@@ -6,7 +6,7 @@ import templateGap from './accept/template-gap.ts';
 
 const log = [
   { index: 0, tools: [{ name: 'hub_start_run' }], toolResults: [] },
-  { index: 1, tools: [{ name: 'hub_start_run' }], toolResults: [{ id: 't1', text: '运行 run_x：任务包 case-location@1.0.0\n- location 用例定位：满足 1\n产品线 apv（NSAE）；版本 10.4.6（目录，置信度高）；发布火车 10.4.6-R1', isError: false }] },
+  { index: 1, tools: [{ name: 'hub_start_run' }], toolResults: [{ id: 't1', text: '运行 run_x：任务包 case-location@1.0.0\n- location 用例定位：满足 1\n产品线 apv（NSAE）；版本 10.6.1（目录，置信度高）；发布火车 10.6.1-R1', isError: false }] },
 ]
   .map((row) => JSON.stringify(row))
   .join('\n');
@@ -19,14 +19,14 @@ test('the model log is read as turns and the tool results as the client forwarde
 });
 
 test('the case-location scenario starts the run in the first turn and checks the answer against the gold', () => {
-  const s = caseLocation({ document: '90001', product: 'APV', line: '10.4.6', train: '10.4.6-R1' });
+  const s = caseLocation({ document: '90001', product: 'APV', line: '10.6.1', train: '10.6.1-R1' });
   assert.deepEqual(s.respond({ index: 0, system: null, messages: [], tools: [], toolResults: [] }), [
     { tool: 'hub_start_run', input: { pack: 'case-location', product: 'APV', inputs: { documents: { external: 'agile:mindmap:90001' } } } },
   ]);
   assert.deepEqual(s.respond({ index: 1, system: null, messages: [], tools: [], toolResults: [] }), [{ text: '定位完成。' }]);
   const checks = s.check(parseLog(log));
   assert.ok(checks.every((c) => c.ok), JSON.stringify(checks.filter((c) => !c.ok)));
-  const wrong = caseLocation({ document: '90001', product: 'APV', line: '10.5.0' }).check(parseLog(log));
+  const wrong = caseLocation({ document: '90001', product: 'APV', line: '10.7.0' }).check(parseLog(log));
   assert.ok(wrong.some((c) => !c.ok && c.name.includes('版本线')), 'a different line in the gold is a mismatch');
 });
 
