@@ -10,6 +10,7 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import type { LoggedTurn, Scenario } from '../lib/accept.ts';
+import { renderReport } from '../lib/report.ts';
 import type { Turn } from '../scripted-model.ts';
 import caseLocation, {
   parseNextCall,
@@ -487,6 +488,58 @@ describe('case-location scenario with document list (at least 5 documents)', () 
     const turns = turnsOf(text);
     const checks = s.check(turns);
     assert.ok(checks.every((c) => c.ok), JSON.stringify(checks.filter((c) => !c.ok)));
+
+    // plmFound is not an empty check in checks
+    assert.equal(checks.some((c) => c.name.includes('缺陷系统')), false);
+
+    // plmFound is rendered as manual spot check section, not counted in pass/fail
+    assert.deepEqual(s.sections, [
+      {
+        title: '人工抽查（不是场景核对）',
+        lines: [
+          '- 文档 900101：关联编号 17206 在缺陷系统里找到',
+          '- 文档 900102：关联编号 70412 在缺陷系统里找到',
+          '- 文档 900103：关联编号 31057 在缺陷系统里找到',
+          '- 文档 900104：关联编号 19003 在缺陷系统里找到',
+          '- 文档 900105：关联编号 70499 在缺陷系统里未找到',
+        ],
+      },
+    ]);
+
+    const report = renderReport({
+      title: '真实 Circle 客户端验收：case-location',
+      generatedAt: '2026-10-23T00:00:00Z',
+      checks,
+      limits: ['模型的回答是脚本化的'],
+      sections: s.sections,
+    });
+    assert.match(report, /## 人工抽查（不是场景核对）\n\n- 文档 900101：关联编号 17206 在缺陷系统里找到/);
+    assert.match(report, /- 文档 900105：关联编号 70499 在缺陷系统里未找到/);
+    // Not counted in tally
+    assert.match(report, new RegExp(`共 ${checks.length} 项核对，${checks.length} 项相符，0 项不符`));
+  });
+
+  test('single document gold without plmFound has no sections; with plmFound outputs manual spot check section', () => {
+    const withoutPlm = caseLocation({
+      document: '90001',
+      line: '10.6.1',
+    });
+    assert.equal(withoutPlm.sections, undefined);
+
+    const withPlm = caseLocation({
+      document: '90001',
+      line: '10.6.1',
+      plmFound: { '17206': true, '70499': false },
+    });
+    assert.deepEqual(withPlm.sections, [
+      {
+        title: '人工抽查（不是场景核对）',
+        lines: [
+          '- 关联编号 17206 在缺陷系统里找到',
+          '- 关联编号 70499 在缺陷系统里未找到',
+        ],
+      },
+    ]);
   });
 
   test('fails when list has fewer than 5 documents or lacks line/module diversity', () => {

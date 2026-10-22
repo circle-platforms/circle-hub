@@ -79,6 +79,7 @@ export async function run(): Promise<number> {
     generatedAt: new Date().toISOString(),
     checks,
     limits: ['模型的回答是脚本化的：这只证明从客户端到 Hub 再回到模型的整条路和 Hub 在真实数据上的结果，不证明真实模型的评审质量', '证据文件含真实内容，只放在本机，不进 Git'],
+    sections: scenario.sections,
   });
   writeFileSync(join(out, `${scenario.name}.report.md`), report);
   console.log(report);

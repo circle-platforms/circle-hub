@@ -14,12 +14,19 @@ export interface Check {
   note?: string;
 }
 
+export interface ReportSection {
+  title: string;
+  lines: string[];
+}
+
 export interface Report {
   title: string;
   generatedAt: string;
   checks: Check[];
   /** Things the report cannot prove, in plain words. */
   limits: string[];
+  /** Additional sections rendered at the end of the report. */
+  sections?: ReportSection[];
 }
 
 const cell = (text: string): string => text.replaceAll('|', '\\|').replaceAll('\n', ' ');
@@ -46,5 +53,10 @@ export function renderReport(report: Report): string {
     lines.push('');
   }
   lines.push('## 这份报告证明不了的事', '', ...(report.limits.length > 0 ? report.limits.map((l) => `- ${l}`) : ['- （未列出）']), '');
+  if (report.sections && report.sections.length > 0) {
+    for (const sec of report.sections) {
+      lines.push(`## ${sec.title}`, '', ...sec.lines, '');
+    }
+  }
   return lines.join('\n');
 }

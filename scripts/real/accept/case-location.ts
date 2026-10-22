@@ -1,7 +1,8 @@
 // Capability 3, case location, through the real client (architecture 6b):
 // The model starts the production run for a document or a list of documents (at least 5, covering different lines and modules).
 // The Hub's answers are compared with the gold file: version line, release train, module, build candidates,
-// and associated story and defect numbers, with each associated number queried in the defect system via hub-call.
+// and associated story and defect numbers. If the gold includes manual spot-check results in the defect system (plmFound),
+// they are listed at the end of the report as an informative section without affecting pass/fail checks.
 import { resultTexts, type LoggedTurn, type Scenario } from '../lib/accept.ts';
 import {
   MAX_PAGES,
@@ -10,8 +11,7 @@ import {
   parseNextCall,
   parseRecReference,
 } from '../lib/pager.ts';
-import type { Check } from '../lib/report.ts';
-import { callTools, type CallOptions } from '../hub-call.ts';
+import type { Check, ReportSection } from '../lib/report.ts';
 
 export { MAX_PAGES, parseNextCall, parseRecReference };
 
@@ -107,33 +107,25 @@ export function parseReportedCandidates(text: string): ParsedCandidate[] {
   return candidates;
 }
 
-/** Queries defect/story ID in PLM via Hub MCP tools. */
-export async function checkPlmId(
-  options: CallOptions,
-  kind: 'bug' | 'story',
-  id: string,
-): Promise<{ id: string; kind: 'bug' | 'story'; found: boolean; detail?: string }> {
-  try {
-    const results = await callTools(options, [
-      {
-        tool: 'hub_start_run',
-        args: {
-          pack: 'defect-to-case',
-          inputs: {
-            defects: [{ external: `plm:${kind}:${id}` }],
-          },
-        },
-      },
-    ]);
-    const first = results[0];
-    if (!first || first.isError) {
-      return { id, kind, found: false, detail: first?.text };
+/** Builds manual spot-check report section from gold plmFound records. */
+export function buildManualPlmSections(docs: DocumentLocationGold[], isList: boolean): ReportSection[] {
+  const manualLines: string[] = [];
+  for (const doc of docs) {
+    if (doc.plmFound !== undefined) {
+      for (const [id, found] of Object.entries(doc.plmFound)) {
+        const prefix = isList ? `文档 ${doc.document}：` : '';
+        const outcome = found === true ? '在缺陷系统里找到' : found === false ? '在缺陷系统里未找到' : String(found);
+        manualLines.push(`- ${prefix}关联编号 ${id} ${outcome}`);
+      }
     }
-    const notFound = first.text.includes('来源不可用') || first.text.includes('PROJECTION_FAILED') || first.text.includes('SOURCE_UNAVAILABLE');
-    return { id, kind, found: !notFound, detail: first.text };
-  } catch (error) {
-    return { id, kind, found: false, detail: (error as Error).message };
   }
+  if (manualLines.length === 0) return [];
+  return [
+    {
+      title: '人工抽查（不是场景核对）',
+      lines: manualLines,
+    },
+  ];
 }
 
 function checkCandidateBuilds(
@@ -275,10 +267,13 @@ export default function scenario(gold: LocationGold): Scenario {
     ? `请对敏捷平台上的测试脑图 ${docs.map((d) => d.document).join('、')} 做用例定位。`
     : `请对敏捷平台上的测试脑图 ${docs[0].document} 做用例定位。`;
 
+  const manualSections = buildManualPlmSections(docs, isList);
+
   return {
     name: 'case-location',
     area,
     prompt,
+    sections: manualSections.length > 0 ? manualSections : undefined,
     respond: (turn) =>
       pagedRespond(
         turn,
@@ -407,19 +402,6 @@ export default function scenario(gold: LocationGold): Scenario {
                 expected: bugExpected,
                 actual: bugOk ? '一致' : '不一致',
                 ok: bugOk,
-              });
-            }
-          }
-
-          // PLM verification checks
-          if (doc.plmFound !== undefined) {
-            for (const [id, found] of Object.entries(doc.plmFound)) {
-              checks.push({
-                area,
-                name: `${docPrefix}关联编号 ${id} 在缺陷系统里${found ? '找到' : '未找到'}`,
-                expected: found ? '在缺陷系统里找到' : '在缺陷系统里未找到',
-                actual: found ? '在缺陷系统里找到' : '在缺陷系统里未找到',
-                ok: true,
               });
             }
           }

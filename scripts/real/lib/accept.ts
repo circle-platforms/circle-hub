@@ -1,7 +1,7 @@
 // The shared parts of the real-client acceptance: what a scenario is, and how the scripted model's request log is read.
 // (A separate module because the runner awaits its scenario modules at the top level, so a scenario must not import the runner.)
 import type { Respond } from '../scripted-model.ts';
-import type { Check } from './report.ts';
+import type { Check, ReportSection } from './report.ts';
 
 export interface Scenario {
   name: string;
@@ -11,6 +11,8 @@ export interface Scenario {
   respond: Respond;
   /** Decides the checks from what the model was shown. */
   check(turns: LoggedTurn[]): Check[];
+  /** Extra sections for the report, if any (not counted in pass/fail). */
+  sections?: ReportSection[];
 }
 
 export interface LoggedTurn {
