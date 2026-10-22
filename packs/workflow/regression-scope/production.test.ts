@@ -79,7 +79,7 @@ describe('a production run of regression-scope', { skip }, () => {
     );
     assert.deepEqual([first.fields.priority, first.fields.negative], [1, true]);
     assert.deepEqual(
-      // 标识里有字面 @（catalog=commands@1）时引擎的 withRevision 不再拼 @修订（inputs.ts：含 @ 的标识视为已钉定）。
+      // 假读取器回的修订是 "1"，标识末尾已是 @1（catalog=commands@1）：withRevision 视为已钉定，不再重复拼。
       run.sources.map((s) => s.external),
       [REVIEW],
     );

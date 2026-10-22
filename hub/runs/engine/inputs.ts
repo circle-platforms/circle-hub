@@ -40,10 +40,16 @@ interface Read {
 const mediaAccepted = (slot: WorkflowInput, mediaType: string): boolean => slot.accepts.filter((a) => a.includes('/')).some((a) => a.toLowerCase() === essence(mediaType));
 const externalType = (id: string): string => id.split(':').slice(0, 2).join(':');
 
+/** A trailing revision of an external object id: a root or a root pair (the knowledge views), the shape views.ts splitRevision cuts. */
+const TRAILING_REVISION = /@([0-9a-f]{64}(?:\.\.[0-9a-f]{64})?)$/;
+
 /** The external identity with the revision the Hub read, when it can carry one (SourceBinding.external). */
 export function withRevision(id: string, revision: string | null): string {
-  if (revision === null || id.includes('@')) return id;
-  const full = `${id}@${revision}`;
+  // Already pinned: a trailing root or root pair, or exactly the revision that was read — never pinned twice.
+  if (revision === null || TRAILING_REVISION.test(id) || id.endsWith(`@${revision}`)) return id;
+  // A literal @ inside the id (the catalog name of a knowledge view) is percent-escaped, so the identity with its
+  // revision still fits system:type:id[@revision]; the view parser percent-decodes the value back to the same catalog.
+  const full = `${id.replaceAll('@', '%40')}@${revision}`;
   return ExternalObjectId.safeParse(full).success ? full : id;
 }
 
