@@ -643,7 +643,8 @@ describe('submit_result text', () => {
       withinBudget(text, `submit ${n}`);
       const lines = linesOf(text);
       const counts = partitionCountsOf(result.partitions);
-      assert.equal(lines[0], `回执：已受理；分区：已交付 ${counts.delivered}，已拒收 ${counts.rejected}，已隔离 0，未完成 ${counts.incomplete}；未知 ${counts.unknown}`);
+      const why = counts.incomplete === 0 ? '' : `（提交未覆盖 ${counts.incomplete}）`; // the helper leaves these items out of the submission
+      assert.equal(lines[0], `回执：已受理；分区：已交付 ${counts.delivered}，已拒收 ${counts.rejected}，已隔离 0，未完成 ${counts.incomplete}${why}；未知 ${counts.unknown}`);
       assert.ok(!lines.some((l) => l.startsWith('出错')), 'unknown is never an error');
       const at = (prefix: string): number => indexOf(lines, (l) => l.startsWith(prefix));
       const requirementsAt = at('要求项（满足状态与各层终态的条目数）：');

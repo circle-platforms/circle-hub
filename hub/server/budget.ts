@@ -183,18 +183,26 @@ function omissionsOf(prepared: readonly Prepared[], filled: Filled): Omission[] 
   return out;
 }
 
-/** What was left out of each block and what the shown entries shortened, and how to read it. */
-function leftOut(prepared: readonly Prepared[], filled: Filled, fallback: string | undefined): { parts: string[]; mores: string[] } {
-  const parts: string[] = [];
+/**
+ * What the budget left out of each block (`dropped`) and what the renderers shortened in the entries that are shown
+ * (`shortened`, a field over its own length cap: the budget did not cut it), and how to read both.
+ */
+function leftOut(prepared: readonly Prepared[], filled: Filled, fallback: string | undefined): { dropped: string[]; shortened: string[]; mores: string[] } {
+  const dropped: string[] = [];
+  const shortened: string[] = [];
   const mores: string[] = [];
-  let unnamed = 0;
-  const name = (part: string, more: string | null): void => {
-    if (parts.length < MAX_PARTS) parts.push(part);
-    else unnamed++;
+  let unnamedDropped = 0;
+  let unnamedShortened = 0;
+  const readOn = (more: string | null): void => {
     if (more !== null && more !== '') {
       const sentence = oneLine(more).replace(/[。；;]+$/, '');
       if (!mores.includes(sentence) && mores.length < MAX_PARTS) mores.push(sentence);
     }
+  };
+  const nameDropped = (part: string, more: string | null): void => {
+    if (dropped.length < MAX_PARTS) dropped.push(part);
+    else unnamedDropped++;
+    readOn(more);
   };
   prepared.forEach((p, i) => {
     const unit = p.block.unit ?? '内容';
@@ -202,13 +210,13 @@ function leftOut(prepared: readonly Prepared[], filled: Filled, fallback: string
     const first = p.block.first ?? 1;
     if (p.entries.length === 0) {
       if (p.head.length === 0 || filled.headShown[i]) return;
-      name(`${unit} ${p.head.length} 行`, p.block.more?.(0) ?? fallback ?? null);
+      nameDropped(`${unit} ${p.head.length} 行`, p.block.more?.(0) ?? fallback ?? null);
       return;
     }
     const shown = filled.shown[i];
     const total = p.entries.length;
     if (shown >= total) return;
-    name(`${unit} ${total - shown} ${measure}（${range(first + shown, first + total - 1, measure)}）`, p.block.more?.(shown) ?? fallback ?? null);
+    nameDropped(`${unit} ${total - shown} ${measure}（${range(first + shown, first + total - 1, measure)}）`, p.block.more?.(shown) ?? fallback ?? null);
   });
   const groups = new Map<string, { count: number; more: string | null }>();
   for (const o of omissionsOf(prepared, filled)) {
@@ -219,9 +227,15 @@ function leftOut(prepared: readonly Prepared[], filled: Filled, fallback: string
       group.more ??= o.more;
     }
   }
-  for (const [what, group] of groups) name(group.count === 1 ? what : `${what}（${group.count} 处）`, group.more ?? fallback ?? null);
-  if (unnamed > 0) parts.push(`另外 ${unnamed} 处`);
-  return { parts, mores };
+  for (const [what, group] of groups) {
+    const part = group.count === 1 ? what : `${what}（${group.count} 处）`;
+    if (shortened.length < MAX_PARTS) shortened.push(part);
+    else unnamedShortened++;
+    readOn(group.more ?? fallback ?? null);
+  }
+  if (unnamedDropped > 0) dropped.push(`另外 ${unnamedDropped} 处`);
+  if (unnamedShortened > 0) shortened.push(`另外 ${unnamedShortened} 处`);
+  return { dropped, shortened, mores };
 }
 
 /**
@@ -257,9 +271,14 @@ export function softCap(block: Block & { entries: readonly Entry[] }, cap: numbe
   ];
 }
 
-function noteOf(parts: readonly string[], mores: readonly string[], budget: number): string {
-  const said = `${labelOf('qualifier_mark', 'partial')}：这段回答以 ${budget} 个字符为限，略去了${parts.join('、')}。`;
-  return mores.length === 0 ? said : `${said}读其余部分：${mores.join('；')}。`;
+/** The one note: what the budget left out says the budget, what a field cap shortened says the cap (the answer itself was within the budget). */
+function noteOf(dropped: readonly string[], shortened: readonly string[], mores: readonly string[], budget: number): string {
+  const said = [
+    ...(dropped.length > 0 ? [`这段回答以 ${budget} 个字符为限，略去了${dropped.join('、')}`] : []),
+    ...(shortened.length > 0 ? [`有字段超过长度上限被截短：${shortened.join('、')}`] : []),
+  ];
+  const head = `${labelOf('qualifier_mark', 'partial')}：${said.join('；')}。`;
+  return mores.length === 0 ? head : `${head}读其余部分：${mores.join('；')}。`;
 }
 
 function assemble(prepared: readonly Prepared[], filled: Filled, note: string | null, tail: readonly string[]): string {
@@ -291,10 +310,10 @@ export function fit(blocks: readonly Block[], options: FitOptions = {}): Fitted 
   let reserve = Math.min(400, Math.floor(budget / 4));
   for (let round = 0; round < 8; round++) {
     const filled = fill(prepared, Math.max(0, budget - tailSize - reserve));
-    const { parts, mores } = leftOut(prepared, filled, options.fallback);
-    let note = noteOf(parts, mores, budget);
+    const { dropped, shortened, mores } = leftOut(prepared, filled, options.fallback);
+    let note = noteOf(dropped, shortened, mores, budget);
     // A note that would take a third of the answer names the counts only.
-    if (note.length > budget / 3) note = noteOf(parts, options.fallback === undefined ? [] : [options.fallback], budget);
+    if (note.length > budget / 3) note = noteOf(dropped, shortened, options.fallback === undefined ? [] : [options.fallback], budget);
     if (filled.used + note.length + tailSize <= budget) return { text: assemble(prepared, filled, note, tail), cut: true, shown: filled.shown };
     reserve = Math.max(reserve + 200, note.length + 1);
   }

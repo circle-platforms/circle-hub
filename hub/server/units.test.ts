@@ -6,8 +6,9 @@ import { createHash } from 'node:crypto';
 import { test } from 'node:test';
 import { DISPLAY_ORDER } from '../../contracts/generated/protocol.ts';
 import { DYNAMIC_TERMINAL, PARTITION, STATIC_TERMINAL } from '../../contracts/generated/vocabulary.ts';
+import { accepted } from '../../contracts/src/fixtures.ts';
 import { ListTaskPacksInput, StartRunInput } from '../../contracts/src/tools.ts';
-import { LayerResult, isUnknownTerminal, type Partitions } from '../../contracts/src/validation.ts';
+import { LayerResult, ValidationResult, isUnknownTerminal, type Partitions } from '../../contracts/src/validation.ts';
 import { VIEW_SYSTEM } from '../knowledge/api.ts';
 import { createDefaultRegistry } from '../refs/api.ts';
 import { parseTarget } from './app.ts';
@@ -172,6 +173,16 @@ test('the counts line names every partition in vocabulary order and the unknown 
   const empty = Object.fromEntries(PARTITION.map((p) => [p, []])) as unknown as Partitions;
   assert.equal(countsLine('accepted', empty), '回执：已受理；分区：已交付 0，已拒收 0，已隔离 0，未完成 0；未知 0');
   assert.equal(countsLine('not_accepted', undefined), '回执：未受理；没有分区（未受理的提交不分区）');
+});
+
+test('the counts line tells a declared skip from an item the submission did not cover', () => {
+  const { partitions } = ValidationResult.parse(accepted);
+  const line = countsLine('accepted', partitions);
+  assert.match(line, /未完成 1（模型声明跳过 1）/);
+  assert.doesNotMatch(line, /已交付 2（/, 'a partition whose items carry no reason shows none');
+  const mixed = structuredClone(partitions);
+  mixed.incomplete.push({ ...mixed.incomplete[0], item: 'doc-1:n10', reason: 'not_covered' });
+  assert.match(countsLine('accepted', mixed), /未完成 2（模型声明跳过 1，提交未覆盖 1）/);
 });
 
 test('schema issues become protocol errors with JSON Pointers; an unknown key points at the key', () => {

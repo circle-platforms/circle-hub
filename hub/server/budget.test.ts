@@ -97,7 +97,9 @@ test('what a renderer shortened in a shown entry is named in the note even when 
   assert.equal(fitted.cut, true);
   const lines = fitted.text.split('\n');
   assert.deepEqual(lines.slice(0, 4), ['头', '- 甲 长…（共 9000 个字符）', '- 乙', '- 丙 长…（共 9000 个字符）'], 'everything is shown');
-  assert.equal(lines.at(-2), '部分：这段回答以 30000 个字符为限，略去了运行目标名称的超出部分、条目名称的超出部分（2 处）。读其余部分：在控制台查看；读全文：用 get_nodes 读。');
+  assert.equal(lines.at(-2), '部分：有字段超过长度上限被截短：运行目标名称的超出部分、条目名称的超出部分（2 处）。读其余部分：在控制台查看；读全文：用 get_nodes 读。', 'the answer was within the budget: the note blames the field caps, not the budget');
+  const both = fit([{ priority: 0, head: ['头'], entries: [{ lines: ['- 甲 长…（共 9000 个字符）'], omitted: [{ what: '条目名称的超出部分', more: '读全文：用 get_nodes 读' }] }, 'x'.repeat(400)], unit: '条目', measure: '个' }], { budget: 300 });
+  assert.match(both.text, /部分：这段回答以 300 个字符为限，略去了条目 1 个（第 2 个）；有字段超过长度上限被截短：条目名称的超出部分。读其余部分：读全文：用 get_nodes 读。/, 'what the budget dropped and what a cap shortened are told apart');
   const tight = fit([{ priority: 0, head: ['头'] }, { priority: 1, entries: ['x'.repeat(100), { lines: [`- 丙${'y'.repeat(100)}`], omitted: [{ what: '条目名称的超出部分', more: null }] }], unit: '条目', measure: '个' }], { budget: 200 });
   assert.ok(!tight.text.includes('条目名称的超出部分'), 'the shortened entry was not shown, so only its absence is named');
   assert.match(tight.text, /条目 1 个（第 2 个）/);

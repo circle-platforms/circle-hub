@@ -431,7 +431,7 @@ describe('start_run, get_nodes, resolve_reference, submit_result', () => {
     assert.equal(accepted.isError, false, 'an accepted submission with unknown and incomplete items is not an error');
     assert.equal(accepted.structuredContent.acceptance, 'accepted');
     assert.deepEqual(accepted.structuredContent.counts, { delivered: 2, rejected: 0, quarantined: 0, incomplete: 1, unknown: 1 });
-    assert.equal(accepted.content[0].text?.split('\n')[0], '回执：已受理；分区：已交付 2，已拒收 0，已隔离 0，未完成 1；未知 1');
+    assert.equal(accepted.content[0].text?.split('\n')[0], '回执：已受理；分区：已交付 2，已拒收 0，已隔离 0，未完成 1（模型声明跳过 1）；未知 1');
     const repeat = await client.call('submit_result', submission);
     assert.deepEqual((repeat.structuredContent.result as { submission: string }).submission, (accepted.structuredContent.result as { submission: string }).submission);
 

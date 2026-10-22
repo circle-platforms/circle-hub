@@ -22,6 +22,7 @@ import {
   labelOf,
   type Layer,
   type Partition,
+  type Reason,
   type SourceRole,
 } from '../../contracts/generated/vocabulary.ts';
 import type { Claim } from '../../contracts/src/claim.ts';
@@ -169,16 +170,24 @@ function claimText(claim: Claim, clip: Clip, max: number): string {
     .join('；');
 }
 
-/** Items per partition and the items with an unknown terminal (V03 R[4]); unknown is never an error. */
-export function countsText(counts: PartitionCounts): string {
-  return `${axisLabel('partition')}：${PARTITION.map((p) => `${labelOf('partition', p)} ${counts[p]}`).join('，')}；${labelOf('nature', 'unknown')} ${counts.unknown}`;
+/** The reasons of the items a partition holds with a reason (held back, incomplete), counted in order of first use: （模型声明跳过 47，提交未覆盖 3）; nothing when none carries one. */
+function reasonCounts(items: readonly ItemResult[] | undefined): string {
+  const counted = new Map<Reason, number>();
+  for (const item of items ?? []) if ('reason' in item) counted.set(item.reason, (counted.get(item.reason) ?? 0) + 1);
+  return counted.size === 0 ? '' : `（${[...counted].map(([reason, n]) => `${labelOf('reason', reason)} ${n}`).join('，')}）`;
+}
+
+/** Items per partition (a declared skip is told apart from an item the submission did not cover) and the items with an unknown terminal (V03 R[4]); unknown is never an error. */
+export function countsText(counts: PartitionCounts, partitions?: Partitions): string {
+  const shown = PARTITION.map((p) => `${labelOf('partition', p)} ${counts[p]}${reasonCounts(partitions?.[p])}`).join('，');
+  return `${axisLabel('partition')}：${shown}；${labelOf('nature', 'unknown')} ${counts.unknown}`;
 }
 
 /** The partition counts line: receipt, items per partition and the items with an unknown terminal. */
 export function countsLine(acceptance: SubmitOut['acceptance'], partitions: Partitions | undefined): string {
   const receipt = `${axisLabel('acceptance')}：${labelOf('acceptance', acceptance)}`;
   if (partitions === undefined) return `${receipt}；没有分区（未受理的提交不分区）`;
-  return `${receipt}；${countsText(partitionCountsOf(partitions))}`;
+  return `${receipt}；${countsText(partitionCountsOf(partitions), partitions)}`;
 }
 
 // ---------------------------------------------------------------- errors
