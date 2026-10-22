@@ -114,30 +114,30 @@ describe('trace gold generator', () => {
   it('cleanDocId strips agile prefixes, revisions, and file paths', () => {
     assert.equal(cleanDocId('agile:case:900001'), '900001');
     assert.equal(cleanDocId('agile:case:900001@rev2'), '900001');
-    assert.equal(cleanDocId('agile:document:17256'), '17256');
-    assert.equal(cleanDocId('agile:case_document:17258'), '17258');
+    assert.equal(cleanDocId('agile:document:24110'), '24110');
+    assert.equal(cleanDocId('agile:case_document:24112'), '24112');
     assert.equal(cleanDocId('path/to/900001.json'), '900001');
-    assert.equal(cleanDocId('17259.km.json'), '17259');
+    assert.equal(cleanDocId('24113.km.json'), '24113');
   });
 
   it('parseDocumentList parses JSON arrays, objects with sources, and text lines', () => {
-    const jsonArray = JSON.stringify(['17256', '17257']);
-    assert.deepEqual([...parseDocumentList(jsonArray)], ['17256', '17257']);
+    const jsonArray = JSON.stringify(['24110', '24111']);
+    assert.deepEqual([...parseDocumentList(jsonArray)], ['24110', '24111']);
 
     const jsonCaseArray = JSON.stringify(['agile:case:900001', 'agile:case:900002']);
     assert.deepEqual([...parseDocumentList(jsonCaseArray)], ['900001', '900002']);
 
     const jsonSources = JSON.stringify({
       sources: [
-        { slot: 'documents', external: 'agile:document:17256' },
-        { slot: 'documents', external: 'agile:case_document:17258' },
+        { slot: 'documents', external: 'agile:document:24110' },
+        { slot: 'documents', external: 'agile:case_document:24112' },
         { slot: 'documents', external: 'agile:case:900001' },
       ],
     });
-    assert.deepEqual([...parseDocumentList(jsonSources)], ['17256', '17258', '900001']);
+    assert.deepEqual([...parseDocumentList(jsonSources)], ['24110', '24112', '900001']);
 
-    const textLines = '# Comments\n17256\n17259.km.json\nsubdir/17260.json\nagile:case:900001';
-    assert.deepEqual([...parseDocumentList(textLines)], ['17256', '17259', '17260', '900001']);
+    const textLines = '# Comments\n24110\n24113.km.json\nsubdir/24114.json\nagile:case:900001';
+    assert.deepEqual([...parseDocumentList(textLines)], ['24110', '24113', '24114', '900001']);
   });
 
   it('parseDocumentList strips agile:case: prefix and matches 900001.json in case directory', () => {
@@ -171,15 +171,15 @@ describe('trace gold generator', () => {
 
   it('compareCases sorts by numeric document id ascending, then case id ascending', () => {
     const cases = [
-      { id: '17256:d4w55z1j5aw0', title: 'b' },
+      { id: '24110:n00000000005', title: 'b' },
       { id: '9001:c2', title: 'd' },
-      { id: '17256:1a7fd348c3a6', title: 'a' },
+      { id: '24110:n00000000001', title: 'a' },
       { id: '9001:c1', title: 'c' },
     ];
     cases.sort(compareCases);
     assert.deepEqual(
       cases.map((c) => c.id),
-      ['9001:c1', '9001:c2', '17256:1a7fd348c3a6', '17256:d4w55z1j5aw0'],
+      ['9001:c1', '9001:c2', '24110:n00000000001', '24110:n00000000005'],
     );
   });
 
@@ -195,12 +195,12 @@ describe('trace gold generator', () => {
     `;
 
     // Document 9001 covers 900001 and 900003
-    // Document 17256 covers 900001
+    // Document 24110 covers 900001
     const map9001 = makeMindmap('用例文档9001', [
       { id: 'c1', title: '用例1 验证缺陷 bug 900001' },
       { id: 'c2', title: '用例2 验证缺陷 bug 900003' },
     ]);
-    const map17256 = makeMindmap('用例文档17256', [
+    const map24110 = makeMindmap('用例文档24110', [
       { id: 'c3', title: '用例3 验证缺陷 bug 900001' },
     ]);
 
@@ -214,7 +214,7 @@ describe('trace gold generator', () => {
     const gold = traceGold({
       html,
       maps: [
-        { document: '17256', map: map17256 },
+        { document: '24110', map: map24110 },
         { document: '9001', map: map9001 },
       ],
       plm,
@@ -227,7 +227,7 @@ describe('trace gold generator', () => {
     assert.equal(gold.build, 'Rel_TEST_1_0_0_10');
     assert.equal(gold.defects.length, 6);
 
-    // 900001: PLM, closed, traced (two cases: 9001:c1, 17256:c3 in document order)
+    // 900001: PLM, closed, traced (two cases: 9001:c1, 24110:c3 in document order)
     const d1 = gold.defects.find((d) => d.bug === '900001')!;
     assert.equal(d1.system, 'plm');
     assert.equal(d1.defect_system_status, 'closed');
@@ -235,7 +235,7 @@ describe('trace gold generator', () => {
     assert.equal(d1.closed, true);
     assert.deepEqual(d1.cases, [
       { id: '9001:c1', title: '用例1 验证缺陷 bug 900001' },
-      { id: '17256:c3', title: '用例3 验证缺陷 bug 900001' },
+      { id: '24110:c3', title: '用例3 验证缺陷 bug 900001' },
     ]);
 
     // 900002: PLM, active, untraced

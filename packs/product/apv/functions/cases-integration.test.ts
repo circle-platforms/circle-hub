@@ -23,8 +23,8 @@ import { caseStatement } from './cases.ts';
 import { PACK_DIRECTORIES, stagePack } from '../../../workflow/case-review/packaging.ts';
 
 const corpus = caseCorpus({ names: ['APV', 'NSAE'] });
-const EARLY = 'Rel_APV_10_4_6_20';
-const LATE = 'Rel_APV_10_6_1_12';
+const EARLY = 'Rel_APV_10_6_1_12';
+const LATE = 'Rel_APV_10_6_4_20';
 const ALIAS = 'Rel_NSAE_10_6_1_5';
 const latin1 = (value: string): Uint8Array => new Uint8Array(Buffer.from(value, 'latin1'));
 const HTML = 'text/html; charset=ISO-8859-1';
@@ -35,9 +35,9 @@ function site(): Record<string, StaticFile> {
   const files = (build: string): string => `<BLOCKQUOTE> <A href=/builds/DemoOS-${build}.array>http://192.0.2.10/builds/DemoOS-${build}.array</A><BR><A href=/builds/command_tree-${build}.xml>http://192.0.2.10/builds/command_tree-${build}.xml</A><BR></BLOCKQUOTE>`;
   const entry = (build: string, built: string, released: string): string => `<font color=red>${build} (build on  ${built} ): Released on ${released} </font> </br> ${files(build)}`;
   return {
-    '/builds/index.html': { body: latin1(page('Synthetic builds', '<A HREF=rel_apv_10_4_6.html>rel_apv_10_4_6</A><BR><A HREF=rel_apv_10_6_1.html>rel_apv_10_6_1</A><BR><A HREF=rel_nsae_10_6_1.html>rel_nsae_10_6_1</A><BR>')), type: HTML },
-    '/builds/rel_apv_10_4_6.html': { body: latin1(page('APV 10.4.6', entry(EARLY, '2026-03-02 10:00:00', '2026-03-05'))), type: HTML },
-    '/builds/rel_apv_10_6_1.html': { body: latin1(page('APV 10.6.1', entry(LATE, '2026-09-01 10:00:00', '2026-09-03'))), type: HTML },
+    '/builds/index.html': { body: latin1(page('Synthetic builds', '<A HREF=rel_apv_10_6_1.html>rel_apv_10_6_1</A><BR><A HREF=rel_apv_10_6_4.html>rel_apv_10_6_4</A><BR><A HREF=rel_nsae_10_6_1.html>rel_nsae_10_6_1</A><BR>')), type: HTML },
+    '/builds/rel_apv_10_6_1.html': { body: latin1(page('APV 10.6.1', entry(EARLY, '2026-03-02 10:00:00', '2026-03-05'))), type: HTML },
+    '/builds/rel_apv_10_6_4.html': { body: latin1(page('APV 10.6.4', entry(LATE, '2026-09-01 10:00:00', '2026-09-03'))), type: HTML },
     '/builds/rel_nsae_10_6_1.html': { body: latin1(page('NSAE 10.6.1', `<font color=red>${ALIAS} (build on  2026-09-01 11:00:00 ): based on ${LATE} Released on 2026-09-04 </font> </br> <BLOCKQUOTE> <A href=/builds/DemoOS-${ALIAS}.array>http://192.0.2.10/builds/DemoOS-${ALIAS}.array</A><BR></BLOCKQUOTE>`)), type: HTML },
     [`/builds/command_tree-${EARLY}.xml`]: { body: latin1(commandTreeXml(CATALOG_A)), type: 'application/xml' },
     [`/builds/command_tree-${LATE}.xml`]: { body: latin1(commandTreeXml(CATALOG_B)), type: 'application/xml' },
@@ -128,8 +128,8 @@ describe('the sync with the case index', () => {
     assert.equal(first.error, null);
     assert.deepEqual(first.builds.map((b) => [b.name, b.outcome]), [
       [EARLY, 'produced'],
-      [LATE, 'produced'],
       [ALIAS, 'skipped'],
+      [LATE, 'produced'],
     ]);
     assert.ok(first.builds.every((b) => (b.skipped ?? 0) === 0), JSON.stringify(first.builds));
     assert.match(first.plan.note ?? '', /产品的根 2 个（APV、NSAE）/);
@@ -139,7 +139,7 @@ describe('the sync with the case index', () => {
 
   test('facets of the later build: every case by line and module, placed and unplaced, as the corpus has them', async () => {
     const facets = await view<FacetView>(`knowledge:facets:apv:${LATE}?kind=case&by=line,module`);
-    const cases = listedCases('10.6.1', 'b');
+    const cases = listedCases('10.6.4', 'b');
     const expected = new Map<string, number>();
     for (const { doc } of cases) {
       const key = JSON.stringify({ line: doc.line, module: doc.module });
@@ -155,7 +155,7 @@ describe('the sync with the case index', () => {
 
   test('the index of the later build by document: every case of every document, placed and unplaced, with its data', async () => {
     const index = await view<IndexView>(`knowledge:index:apv:${LATE}?kind=case&key=document`);
-    const cases = listedCases('10.6.1', 'b');
+    const cases = listedCases('10.6.4', 'b');
     const byDocument = new Map<string, typeof cases>();
     for (const item of cases) byDocument.set(item.doc.id, [...(byDocument.get(item.doc.id) ?? []), item]);
     assert.deepEqual(Object.keys(index.keys).sort(), [...byDocument.keys()].sort());
@@ -187,8 +187,8 @@ describe('the sync with the case index', () => {
     assert.deepEqual(impact.changes.map((c) => c.path).sort(), CHANGED_COMMANDS.map(commandPath).sort());
     for (const path of CHANGED_COMMANDS.map(commandPath)) {
       const placement = impact.placements.find((p) => p.path === path);
-      const from = indexedCases('10.4.6', 'a').filter(({ k }) => k.commands.a.map(commandPath).includes(path)).length;
-      const to = indexedCases('10.6.1', 'b').filter(({ k }) => k.commands.b.map(commandPath).includes(path)).length;
+      const from = indexedCases('10.6.1', 'a').filter(({ k }) => k.commands.a.map(commandPath).includes(path)).length;
+      const to = indexedCases('10.6.4', 'b').filter(({ k }) => k.commands.b.map(commandPath).includes(path)).length;
       assert.deepEqual([placement?.from.length ?? 0, placement?.to.length ?? 0], [from, to], path);
     }
     assert.ok((impact.placements.find((p) => p.path === commandPath('widget health interval'))?.to.length ?? 0) > 0);
@@ -197,7 +197,7 @@ describe('the sync with the case index', () => {
 
   test('the index returns each case, placed or unplaced, under every defect id it lists', async () => {
     const index = await view<IndexView>(`knowledge:index:apv:${LATE}?kind=case&key=defects`);
-    const cases = listedCases('10.6.1', 'b');
+    const cases = listedCases('10.6.4', 'b');
     const expected = new Map<string, number>();
     for (const { k } of cases) for (const id of k.defects) expected.set(id, (expected.get(id) ?? 0) + 1);
     assert.ok(expected.size > 0);

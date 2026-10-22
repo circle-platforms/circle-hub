@@ -4,7 +4,7 @@
   "check": "commands_refutation",
   "note": "反向用例声明预期被反驳且命令确实被目录反驳",
   "subject": {
-    "item": "71009",
+    "item": "74001",
     "slots": {
       "cases": [
         {
@@ -84,7 +84,7 @@
   "expect": [
     {
       "verdict": "support",
-      "item": "71009"
+      "item": "74001"
     }
   ]
 }

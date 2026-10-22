@@ -271,14 +271,14 @@ describe('the producers', () => {
 
 describe('the version lines of documents', () => {
   it('maps manual folders of both names and version tokens in names to one line', () => {
-    assert.equal(folderLine('rel_apv_10_4_6'), '10.4.6');
-    assert.equal(folderLine('rel_nsae_10_4_6'), '10.4.6');
-    assert.equal(folderLine('rel_apv_10_5_0'), '10.5');
+    assert.equal(folderLine('rel_apv_10_6_4'), '10.6.4');
+    assert.equal(folderLine('rel_nsae_10_6_4'), '10.6.4');
+    assert.equal(folderLine('rel_apv_10_7_0'), '10.7');
     assert.equal(folderLine('rel_other_10_5'), null);
-    assert.deepEqual(folderNames('10.5'), ['rel_apv_10_5', 'rel_apv_10_5_0', 'rel_nsae_10_5', 'rel_nsae_10_5_0']);
-    assert.deepEqual(documentLines('NSAE_10.4.6 会话保持说明'), [{ line: '10.4.6', family: 'NSAE', token: 'NSAE_10.4.6' }]);
-    assert.deepEqual(documentLines('APV V10.5.0 与 10_4_6 的差异').map((d) => d.line), ['10.5', '10.4.6']);
-    assert.deepEqual(documentLines('192.0.2.10 与 2026.05.10 与 10.4.6.17'), [], 'addresses, dates and build numbers are no lines');
+    assert.deepEqual(folderNames('10.7'), ['rel_apv_10_7', 'rel_apv_10_7_0', 'rel_nsae_10_7', 'rel_nsae_10_7_0']);
+    assert.deepEqual(documentLines('NSAE_10.6.4 会话保持说明'), [{ line: '10.6.4', family: 'NSAE', token: 'NSAE_10.6.4' }]);
+    assert.deepEqual(documentLines('APV V10.7.0 与 10_6_4 的差异').map((d) => d.line), ['10.7', '10.6.4']);
+    assert.deepEqual(documentLines('192.0.2.10 与 2026.05.10 与 10.6.4.17'), [], 'addresses, dates and build numbers are no lines');
   });
 });
 

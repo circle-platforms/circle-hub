@@ -76,7 +76,7 @@ export const PackSummary = z.strictObject({
   description: z.string(),
   products: z.array(z.string()).describe('every name of the product line the pack is bound to; all of them name one line'),
   inputs: z.array(InputSlotSummary),
-  parameters: z.array(z.strictObject({ name: z.string(), description: z.string(), required: z.boolean() })),
+  parameters: z.array(z.strictObject({ name: z.string(), description: z.string(), required: z.boolean(), schema: z.record(z.string(), z.unknown()).optional().describe('JSON Schema 2020-12 of the value, as the pack declares it; absent when the pack declares none') })),
   requirements: z.array(RequirementSummary),
 });
 export type PackSummary = z.infer<typeof PackSummary>;

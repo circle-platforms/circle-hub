@@ -1,14 +1,14 @@
 {
   "schema": "pack@1",
   "id": "defect-to-case",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "kind": "workflow",
   "title": "缺陷转用例",
   "description": "从缺陷（现象、修复说明）起草回归测试用例，Hub 核对命令和参数合法性、期望结果引文依据、用例结构及重复用例",
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "9d6c9738c985250255025dc6c977dfa45b6f3111451c889943f6618136d8307d",
+      "sha256": "5d8c5fe3d49f0bb840bcc40b0bdb3998a83efb70cf9fa924b747eedb86d1ca08",
       "size": 5957
     },
     {
@@ -28,7 +28,7 @@
     },
     {
       "path": "examples/submit-result.json",
-      "sha256": "0a3489803f426021576f7de48fda88e8cada348cda886926659fdcb6f668e187",
+      "sha256": "4c11ea6d03d09d9d11cddd258fb26e790ee80d319e2b0c1367398a8adfa3861a",
       "size": 1483
     },
     {
@@ -68,62 +68,62 @@
     },
     {
       "path": "samples/negative/commands_out_of_range.json",
-      "sha256": "4025a885f37f5284fdaad079251d363adc3470b6dac3c2dc5af5e394abc0e6fb",
+      "sha256": "31a4e332ab7f84c9800891d4f0c6d2f55ed4f86a56a84e0d11d45dbf0b7b1516",
       "size": 1378
     },
     {
       "path": "samples/negative/duplicate_found.json",
-      "sha256": "a35575cf562af8965c589edced8fd1ef0a41605d651ec7f374e8ab80fd6f93d2",
+      "sha256": "18f715a24079fce042d506f27d9728794a0d529799d82cb783365d8d3917c324",
       "size": 2225
     },
     {
       "path": "samples/negative/negative_accepted.json",
-      "sha256": "b9032a79e0c33344930515b08cfbf5fe6d96f35e2a83821d669a7bfba94e8196",
+      "sha256": "73e3955cd5e19e3b91a9a3d1b97aadc5eb905686f31bd69c91a3ce1e8a81e8ef",
       "size": 2250
     },
     {
       "path": "samples/negative/quotes_mismatch.json",
-      "sha256": "50b213c90515e12a5f4a198c5247e547560933a1e922e3383680f59fa45339d8",
+      "sha256": "9f080c3eee266f39a1144f73c5c506daf6b81bb8d040675ea4a6b4d4f60ec1b6",
       "size": 681
     },
     {
       "path": "samples/negative/reading_unsupported_entity.json",
-      "sha256": "131f832d67977a41198826ed5d39c6eb9946e335c9c301bfc1ba088526ad6372",
+      "sha256": "1b7135f2eeb65d4a37ab4472b491c2c2278e2bc1de2d5d859f0bed4fb3feb9cc",
       "size": 1353
     },
     {
       "path": "samples/negative/shape_invalid.json",
-      "sha256": "f9d0d87b04e99674e9d4917652764bb482ebee1a6fe63e3b76080ae52eae51fd",
+      "sha256": "a61845b02cedd955cfe09ab4bd591a522c89e639e3e89a8138b3a58a647a2f07",
       "size": 1194
     },
     {
       "path": "samples/positive/commands_valid.json",
-      "sha256": "f55cfc55e337407b13bdb5d6824771ebdb52eab0ba58857bf0778064134b5318",
+      "sha256": "5d4fb5727eb42e2e971be807998ff9d8272d654c3cd4a3318335fc63c768225e",
       "size": 1373
     },
     {
       "path": "samples/positive/duplicate_none.json",
-      "sha256": "2e90b957ca97e2d81d9a7292e44e247e65eaf4a90588e41208578f8d8568bbd8",
+      "sha256": "2a6e0feedfa8c7d362af133a0f4a251937aae20e185f70f5ce75e6cae9b8135e",
       "size": 2109
     },
     {
       "path": "samples/positive/quotes_verbatim.json",
-      "sha256": "82e07cbd97130f48f0cf19b3bd05bf6227bd4f4a398d9366a0bb000d22a82711",
+      "sha256": "fe665b35e336c6797452043f2b61f15cd5695819d0c0be244407a8593a3802e4",
       "size": 639
     },
     {
       "path": "samples/positive/reading_grounded.json",
-      "sha256": "f4d9139e7982bf29e61008c3150bd8b25e59dc9d519006837ca762a0c6f83ca0",
+      "sha256": "d074d48af5fc8cf09b61e4b9e5edf074c880bdc352c180f9fb5001f7534ac78a",
       "size": 1583
     },
     {
       "path": "samples/positive/refutation_valid.json",
-      "sha256": "e45407fff07ff8c686950fd96868ceee31d0a05f380a372f1db38d6d375340e3",
+      "sha256": "ccbc78350284a4b7dc8a7be68b8501cf72b760326edab5f74b08707e39e417db",
       "size": 2193
     },
     {
       "path": "samples/positive/shape_clean.json",
-      "sha256": "80f7bc31d9bca5978730fdbdb7edc5b2246b64c3ab829df5bdac4fa71b41ad3c",
+      "sha256": "0a1a98983f7fbcf4e66d2c04a7fe456cb444373d8afba1c38e9fe38700ab05ec",
       "size": 1543
     },
     {

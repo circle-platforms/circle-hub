@@ -197,9 +197,9 @@ describe('caseGold', () => {
 });
 
 describe('bugIdsOf and defect markers', () => {
-  test('recognizes "Bug 160578 - 标题" on root title and associates 160578 with all cases', () => {
+  test('recognizes "Bug 160001 - 标题" on root title and associates 160001 with all cases', () => {
     const docWithBugRoot = {
-      root: node('Bug 160578 - 自定义格式日志支持', { id: 'root-bug' }, [
+      root: node('Bug 160001 - 自定义格式日志支持', { id: 'root-bug' }, [
         node('配置分组', { id: 'g-1', priority: 1 }, [
           node('用例1', { id: 'c-1', resource: ['Functional'], priority: 2 }, [
             node('期望1', { id: 'e-1' }),
@@ -212,10 +212,10 @@ describe('bugIdsOf and defect markers', () => {
     };
     const gold = caseGold([{ document: '9003', map: docWithBugRoot }]);
     const doc = gold.documents[0];
-    assert.deepEqual(doc.defects, ['160578']);
+    assert.deepEqual(doc.defects, ['160001']);
     assert.equal(doc.cases, 2);
     for (const item of doc.items) {
-      assert.ok(item.defects.includes('160578'), `${item.id} should include 160578`);
+      assert.ok(item.defects.includes('160001'), `${item.id} should include 160001`);
     }
   });
 

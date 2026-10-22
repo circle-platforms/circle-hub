@@ -6,14 +6,14 @@ import type { DraftCase } from '../functions/types.ts';
 
 const ROOT_DIGEST = 'a'.repeat(64);
 
-export const SYNTHETIC_BUG_71009 = {
-  id: '71009',
-  '71009': true,
+export const SYNTHETIC_BUG_74001 = {
+  id: '74001',
+  '74001': true,
   kind: 'bug',
   title: 'SLB健康检查间隔无法保存',
   status: 'closed',
   label: 'SLB健康检查间隔无法保存',
-  location: `src:${'b'.repeat(64)}/plm:bug/71009`,
+  location: `src:${'b'.repeat(64)}/plm:bug/74001`,
   fixReference: `src:${'b'.repeat(64)}/markdown@1/s/fix`,
   fixText: '健康检查间隔设置成功，默认值为 5 秒。',
   fields: {

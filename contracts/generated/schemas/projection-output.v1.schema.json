@@ -140,7 +140,9 @@
                 "properties": {
                   "op": {
                     "type": "string",
-                    "const": "acquire"
+                    "enum": [
+                      "acquire"
+                    ]
                   },
                   "keys": {
                     "minItems": 1,
@@ -168,7 +170,9 @@
                 "properties": {
                   "op": {
                     "type": "string",
-                    "const": "extend"
+                    "enum": [
+                      "extend"
+                    ]
                   },
                   "keys": {
                     "minItems": 1,
@@ -197,7 +201,9 @@
                 "properties": {
                   "op": {
                     "type": "string",
-                    "const": "release"
+                    "enum": [
+                      "release"
+                    ]
                   },
                   "keys": {
                     "minItems": 1,

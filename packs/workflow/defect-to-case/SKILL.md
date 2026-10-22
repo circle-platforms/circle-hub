@@ -55,7 +55,7 @@ Hub 对提交进行两层核对：
   "model": "synthetic-model",
   "items": [
     {
-      "item": "71009",
+      "item": "74001",
       "handling": "handled",
       "slots": {
         "cases": [

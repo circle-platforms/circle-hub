@@ -91,7 +91,7 @@ describe('planSync', () => {
     assert.match(reasons.apv10_6_docker, /名称不符合列表页命名/);
     assert.match(reasons['mailto:builds@example.invalid'], /不是页面链接/);
     assert.match(reasons['http://192.0.2.10/images/apv-10.6.ova'], /不是页面链接/);
-    assert.ok(!plan.pages.concat(plan.skipped as never[]).some((entry) => (entry as { page: string }).page === 'rel_apv_10_5_9'));
+    assert.ok(!plan.pages.concat(plan.skipped as never[]).some((entry) => (entry as { page: string }).page === 'rel_apv_10_7_9'));
   });
 
   it('opts platform and customer pages in by pattern and out by exclusion', () => {

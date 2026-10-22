@@ -146,8 +146,8 @@ describe('one item per document (default)', () => {
 
   it('passes the declarations and refuses parameters it cannot read, with the rule', () => {
     const d = doc('24031', smallMap('24031', 'x'), { title: 'x', ...TREE });
-    const out = items(run([d], { line: '10.5.3' }));
-    assert.match(out.items[0].summary!, /^与声明矛盾（声明的版本线 10\.5\.3 与目录的 10\.6\.1 矛盾）：/);
+    const out = items(run([d], { line: '10.7.3' }));
+    assert.match(out.items[0].summary!, /^与声明矛盾（声明的版本线 10\.7\.3 与目录的 10\.6\.1 矛盾）：/);
     assert.match(items(run([d], { line: 'V10.6' })).items[0].summary!, /^产品线 apv（NSAE）；版本 10\.6\.1/);
     // What the parameter schemas let through (no patterns there) but the scheme cannot use.
     for (const [parameters, named] of [

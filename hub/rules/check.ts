@@ -22,7 +22,8 @@ export interface CheckDeclaration {
   function?: { module: string; export?: string };
   /**
    * Tier of the check's outcomes, in place of the table's; outcomes marked data.negative_case keep their own tier. Without a
-   * tier: the table's for an interpreter; for a pack function, blocking when a basis is given, else advisory.
+   * tier: the table's for an interpreter; a pack function without one is a check error (publication refuses it,
+   * checks.tier_missing; no fallback).
    */
   tier?: CheckTier;
   /** The acceptance contract clause a blocking check relies on (C05 R[1]); for an interpreter the table may give it instead. */
@@ -143,15 +144,17 @@ const tableBasis = (table: unknown): unknown => (typeof table === 'object' && ta
 export async function runCheck(declaration: CheckDeclaration, bindings: CheckBindings): Promise<CheckOutcome[]> {
   const name = declaration.id ?? declaration.interpreter ?? declaration.function?.module ?? '检查';
   const basis = hasBasis(declaration.basis) || (declaration.interpreter !== undefined && hasBasis(tableBasis(bindings.table)));
-  // Legacy compatibility: packs published before the explicit tier rule may omit declaration.tier. When missing, fall back to blocking if there is a basis, else advisory.
-  const base: OutcomeBase = { tier: declaration.tier ?? (basis ? 'blocking' : 'advisory'), grounds: [] };
+  // The tier on an error outcome is inert (a tier reaches a layer only with a code): fixed advisory, never guessed
+  // from a basis. Publication requires every check to declare its tier (checks.tier_missing); there is no fallback.
+  const inert: OutcomeBase = { tier: 'advisory', grounds: [] };
   if ((declaration.interpreter === undefined) === (declaration.function === undefined)) {
-    return [unknown(base, 'check_error', `检查 ${name} 的声明要么用核心解释器，要么用包内函数`)];
+    return [unknown(inert, 'check_error', `检查 ${name} 的声明要么用核心解释器，要么用包内函数`)];
   }
   if (declaration.tier === 'blocking' && !basis) {
-    return [unknown(base, 'check_error', `检查 ${name} 声明为阻断档，却没有写明所依据的验收合同条款（basis，C05 R[1]）`)];
+    return [unknown({ tier: 'blocking', grounds: [] }, 'check_error', `检查 ${name} 声明为阻断档，却没有写明所依据的验收合同条款（basis，C05 R[1]）`)];
   }
   if (declaration.interpreter !== undefined) {
+    // A declaration without tier leaves the table's own tier to the interpreter (tierOf, C05 R[1]).
     const interpreter = getInterpreter(declaration.interpreter);
     if (!interpreter) return [];
     return interpreter.run({
@@ -164,6 +167,19 @@ export async function runCheck(declaration: CheckDeclaration, bindings: CheckBin
       context: bindings.context,
     });
   }
+  if (declaration.tier === undefined) {
+    // A pack function without a declared tier is a pack defect (publication refuses it, checks.tier_missing): do not
+    // run it and do not guess one. Unchecked with check_error (attribution producer_error by reason, V04); the admin
+    // log gets the missing-tier detail.
+    const detail = `检查 ${name} 没有声明档位（tier）：发布时应被拒绝（checks.tier_missing），不猜档`;
+    try {
+      bindings.onError?.(new Error(detail), name);
+    } catch {
+      // The log must not change the outcome.
+    }
+    return [unknown(inert, 'check_error', detail)];
+  }
+  const base: OutcomeBase = { tier: declaration.tier, grounds: [] };
   const fn = declaration.function as { module: string; export?: string };
   const pack = bindings.context.pack;
   // Fail closed: without the pack's name its codes cannot be checked against its namespace.

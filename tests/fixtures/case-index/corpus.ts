@@ -429,10 +429,10 @@ function slots(names: readonly [string, string]): Slot[] {
     line('060：10.4.2', '002：10.4.2-R1-2025/12', '健康检查', 20, '10.4.2', '10.4.2-R1-2025/12'),
     line('060：10.4.2', '002：10.4.2-R1-2025/12', '会话保持', 15, '10.4.2', '10.4.2-R1-2025/12'),
     line('060：10.4.2', '002：10.4.2-R1-2025/12', '池管理', 15, '10.4.2', '10.4.2-R1-2025/12'),
-    line('061：10.4.6', '003：10.4.6-R1-2026/3', '健康检查', 25, '10.4.6', '10.4.6-R1-2026/3'),
-    line('061：10.4.6', '003：10.4.6-R1-2026/3', 'WebUI', 15, '10.4.6', '10.4.6-R1-2026/3'),
-    line('061：10.4.6', '004：10.4.6-R2-2026/7', '日志', 20, '10.4.6', '10.4.6-R2-2026/7'),
-    line('061：10.4.6', '004：10.4.6-R2-2026/7', '认证', 20, '10.4.6', '10.4.6-R2-2026/7'),
+    line('061：10.6.4', '003：10.6.4-R1-2026/11', '健康检查', 25, '10.6.4', '10.6.4-R1-2026/11'),
+    line('061：10.6.4', '003：10.6.4-R1-2026/11', 'WebUI', 15, '10.6.4', '10.6.4-R1-2026/11'),
+    line('061：10.6.4', '004：10.6.4-R2-2027/2', '日志', 20, '10.6.4', '10.6.4-R2-2027/2'),
+    line('061：10.6.4', '004：10.6.4-R2-2027/2', '认证', 20, '10.6.4', '10.6.4-R2-2027/2'),
     line('062：10.5', '005：10.5-主线-2026/8', '网络', 25, '10.5', '10.5-主线-2026/8'),
     line('062：10.5', '005：10.5-主线-2026/8', '系统', 15, '10.5', '10.5-主线-2026/8'),
     line('063：10.6.1', '006：10.6.1-R1-2026/9', '健康检查', 30, '10.6.1', '10.6.1-R1-2026/9'),
@@ -516,9 +516,9 @@ export function caseCorpus(options: { names?: readonly [string, string] } = {}):
   // A leaf whose id the platform cannot serve, and a document filed in a second folder too (the first place counts).
   const project = `030：${names[0]}/${names[1]}测试项目`;
   const badId = 'bad id';
-  file('second', [project, '061：10.4.6', '003：10.4.6-R1-2026/3', '健康检查'], { label: '无法读取的文档', id: badId, cases: [], children: [] });
-  const repeated = truth.find((t) => t.line === '10.4.6')?.id as string;
-  file('second', [project, '061：10.4.6', '004：10.4.6-R2-2026/7', '日志'], { label: '重复挂载的文档', id: repeated, cases: [], children: [] });
+  file('second', [project, '061：10.6.4', '003：10.6.4-R1-2026/11', '健康检查'], { label: '无法读取的文档', id: badId, cases: [], children: [] });
+  const repeated = truth.find((t) => t.line === '10.6.4')?.id as string;
+  file('second', [project, '061：10.6.4', '004：10.6.4-R2-2027/2', '日志'], { label: '重复挂载的文档', id: repeated, cases: [], children: [] });
   const findLabel = (nodes: AgileNode[], label: string): AgileNode | null => {
     for (const node of nodes) {
       if (node.label === label) return node;
@@ -529,10 +529,10 @@ export function caseCorpus(options: { names?: readonly [string, string] } = {}):
   };
   // A release train and a module created before any document. Nothing lists them, so they are empty folders, not documents.
   const emptyFolders = ['8999', '8998'] as const;
-  const lineFolder = findLabel(trees[ROOT_IDS.second], '061：10.4.6');
-  const trainFolder = findLabel(trees[ROOT_IDS.second], '003：10.4.6-R1-2026/3');
-  if (lineFolder === null || trainFolder === null) throw new Error('the corpus is missing the 10.4.6 folders');
-  lineFolder.children.push({ label: '005：10.4.6-R3-2026/11', id: emptyFolders[0], cases: [], children: [] });
+  const lineFolder = findLabel(trees[ROOT_IDS.second], '061：10.6.4');
+  const trainFolder = findLabel(trees[ROOT_IDS.second], '003：10.6.4-R1-2026/11');
+  if (lineFolder === null || trainFolder === null) throw new Error('the corpus is missing the 10.6.4 folders');
+  lineFolder.children.push({ label: '005：10.6.4-R3-2027/5', id: emptyFolders[0], cases: [], children: [] });
   trainFolder.children.push({ label: 'SSL', id: emptyFolders[1], cases: [], children: [] });
   for (const key of ['first', 'second', 'other'] as const) {
     const id = ROOT_IDS[key];

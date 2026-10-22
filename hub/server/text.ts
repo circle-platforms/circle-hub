@@ -351,7 +351,7 @@ function packEntry(p: PackSummary): Entry {
       `  输入 ${clip.field(input.slot, CLIP.code, '输入槽名的超出部分')}（${labelOf('source_role', input.role)}，${required(input.required)}${input.many ? '，可多个' : ''}）：${clip.field(input.description, CLIP.message, '输入说明的超出部分')}；接受 ${clip.field(input.accepts.join('、'), CLIP.line, '接受类型的超出部分')}；写法 ${clip.field(shapes, CLIP.line, '输入写法的超出部分')}`,
     );
   }
-  for (const parameter of p.parameters) lines.push(`  参数 ${clip.field(parameter.name, CLIP.code, '参数名的超出部分')}（${required(parameter.required)}）：${clip.field(parameter.description, CLIP.message, '参数说明的超出部分')}`);
+  for (const parameter of p.parameters) lines.push(`  参数 ${clip.field(parameter.name, CLIP.code, '参数名的超出部分')}（${required(parameter.required)}）：${clip.field(parameter.description, CLIP.message, '参数说明的超出部分')}${parameter.schema !== undefined ? `；模式 ${clip.field(JSON.stringify(parameter.schema), CLIP.line, '参数模式的超出部分')}` : ''}`);
   lines.push(`  示例 start_run：${startRunExample(p)}`);
   for (const r of p.requirements) lines.push(`  要求项 ${requirementFacts(r, clip)}`);
   return clip.entry(lines);

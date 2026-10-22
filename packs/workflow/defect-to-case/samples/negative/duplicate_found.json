@@ -4,7 +4,7 @@
   "check": "duplicate_check",
   "note": "起草用例与已有索引用例命令与标题相同",
   "subject": {
-    "item": "71009",
+    "item": "74001",
     "drafts": [
       {
         "title": "健康检查详细信息查看",
@@ -74,7 +74,7 @@
     {
       "verdict": "refute",
       "code": "defect-to-case.duplicate_case",
-      "item": "71009",
+      "item": "74001",
       "tier": "advisory"
     }
   ]

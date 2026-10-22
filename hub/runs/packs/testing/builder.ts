@@ -216,7 +216,7 @@ export function workflowPack(options: WorkflowOptions = {}): PackDescription {
       'workflow.json': {
         schema: 'workflow@1',
         inputs: [{ slot: 'target', role: 'subject', description: '被判的文档', accepts: ['application/json'], required: true, many: false }],
-        parameters: [{ name: 'strict', description: '严格模式', required: false }],
+        parameters: [{ name: 'strict', description: '严格模式', required: false, schema: { type: 'boolean' } }],
         product,
         subject: 'target',
         projection: { module: 'functions/project.ts' },

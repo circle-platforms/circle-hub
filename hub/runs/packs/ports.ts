@@ -39,7 +39,7 @@ export function packSummary(info: PackVersionInfo, declarations: WorkflowDeclara
     description: info.description,
     products: names,
     inputs: declarations.workflow.inputs.map((i) => ({ slot: i.slot, role: i.role, description: i.description, accepts: [...i.accepts], required: i.required, many: i.many })),
-    parameters: declarations.workflow.parameters.map((p) => ({ name: p.name, description: p.description, required: p.required })),
+    parameters: declarations.workflow.parameters.map((p) => ({ name: p.name, description: p.description, required: p.required, ...(p.schema !== undefined ? { schema: p.schema } : {}) })),
     requirements: declarations.requirements.requirements.map((r) => ({
       key: r.key,
       name: r.name,

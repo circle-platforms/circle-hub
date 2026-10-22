@@ -4,7 +4,7 @@
   "check": "grounded_quotes",
   "note": "期望结果引文与来源文本不符",
   "subject": {
-    "item": "71009",
+    "item": "74001",
     "quotes": [
       {
         "reference": "src:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/markdown@1/s/fix",
@@ -19,7 +19,7 @@
     {
       "verdict": "refute",
       "code": "QUOTE_MISMATCH",
-      "item": "71009",
+      "item": "74001",
       "tier": "blocking"
     }
   ]

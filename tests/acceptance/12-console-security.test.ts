@@ -64,7 +64,7 @@ describe('scenario 12: console and API host, origin, and token security', () => 
     // 2. Non-loopback IP origin on /console/runs GET
     const nonLoopbackConsoleGet = await requestHttp(bed.hub.port, '/console/runs', {
       method: 'GET',
-      headers: { origin: 'http://192.168.1.100:8080' },
+      headers: { origin: 'http://192.0.2.100:8080' },
     });
     assert.equal(nonLoopbackConsoleGet.status, 403, 'non-loopback IP origin returns 403');
     assert.ok(nonLoopbackConsoleGet.body.includes('拒绝：Origin 不是本机来源'));

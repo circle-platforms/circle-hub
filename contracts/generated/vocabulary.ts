@@ -27,6 +27,7 @@ export const AXES = {
   execution_host: { label: '执行宿主', owner: 'W06', values: [{ code: 'local_circle', label: '本地 Circle' }, { code: 'bot', label: 'bot' }, { code: 'hub', label: 'Hub（仅确定性函数）' }] },
   item_handling: { label: '条目处理声明', owner: 'W07', values: [{ code: 'handled', label: '已处理' }, { code: 'skipped', label: '跳过' }] },
   action_kind: { label: '动作种类', owner: 'B05', values: [{ code: 'read', label: '读取' }, { code: 'parse', label: '解析' }, { code: 'generate', label: '生成' }, { code: 'read_back', label: '回读' }, { code: 'validate', label: '边界校验' }, { code: 'dispatch', label: '派发' }, { code: 'classify', label: '归类' }, { code: 'move_root', label: '移动当前根' }, { code: 'lease', label: '租约' }] },
+  lease_op: { label: '租约操作', owner: 'D04', values: [{ code: 'acquire', label: '取得' }, { code: 'extend', label: '续租' }, { code: 'release', label: '释放' }, { code: 'force_release', label: '强制释放' }, { code: 'take_over', label: '接管' }] },
   action_result: { label: '动作结果', owner: 'B05', values: [{ code: 'completed', label: '完成' }, { code: 'error', label: '报错' }, { code: 'unknown', label: '未知' }] },
   acceptance: { label: '回执', owner: 'B05', values: [{ code: 'accepted', label: '已受理' }, { code: 'not_accepted', label: '未受理' }] },
   call_result: { label: '调用结果', owner: 'B08', values: [{ code: 'ok', label: '正常' }, { code: 'error', label: '出错' }, { code: 'transport_failure', label: '传输失败' }] },
@@ -274,6 +275,15 @@ export const ACTION_KIND_LABEL = { 'read': '读取', 'parse': '解析', 'generat
 export const ActionKindSchema = z.enum(ACTION_KIND);
 export function isActionKind(value: unknown): value is ActionKind {
   return (ACTION_KIND as readonly unknown[]).includes(value);
+}
+
+/** 租约操作 (D04) */
+export const LEASE_OP = ['acquire', 'extend', 'release', 'force_release', 'take_over'] as const;
+export type LeaseOp = (typeof LEASE_OP)[number];
+export const LEASE_OP_LABEL = { 'acquire': '取得', 'extend': '续租', 'release': '释放', 'force_release': '强制释放', 'take_over': '接管' } as const satisfies { readonly [K in LeaseOp]: string };
+export const LeaseOpSchema = z.enum(LEASE_OP);
+export function isLeaseOp(value: unknown): value is LeaseOp {
+  return (LEASE_OP as readonly unknown[]).includes(value);
 }
 
 /** 动作结果 (B05) */
@@ -562,6 +572,7 @@ export interface AxisValues {
   execution_host: ExecutionHost;
   item_handling: ItemHandling;
   action_kind: ActionKind;
+  lease_op: LeaseOp;
   action_result: ActionResult;
   acceptance: Acceptance;
   call_result: CallResult;
@@ -618,6 +629,7 @@ const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
   execution_host: EXECUTION_HOST_LABEL,
   item_handling: ITEM_HANDLING_LABEL,
   action_kind: ACTION_KIND_LABEL,
+  lease_op: LEASE_OP_LABEL,
   action_result: ACTION_RESULT_LABEL,
   acceptance: ACCEPTANCE_LABEL,
   call_result: CALL_RESULT_LABEL,

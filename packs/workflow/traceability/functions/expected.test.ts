@@ -49,7 +49,7 @@ describe('traceability expectedSources', () => {
 
   test('only queries defects where systems includes plm; excludes bugzilla-only and unknown systems', () => {
     const items = [
-      makeItem('160578', ['bugzilla']),
+      makeItem('160001', ['bugzilla']),
       makeItem('71001', ['plm']),
       makeItem('71002', ['plm', 'bugzilla']),
       makeItem('71003', []),
@@ -58,7 +58,7 @@ describe('traceability expectedSources', () => {
     assert.equal(out.sources.length, 1);
     const queriedIds = out.sources[0].external.replace('plm:bugs:', '').split('+');
     assert.deepEqual(queriedIds, ['71001', '71002']);
-    assert.ok(!queriedIds.includes('160578'));
+    assert.ok(!queriedIds.includes('160001'));
     assert.ok(!queriedIds.includes('71003'));
   });
 

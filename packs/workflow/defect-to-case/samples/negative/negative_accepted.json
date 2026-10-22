@@ -4,7 +4,7 @@
   "check": "commands_refutation",
   "note": "反向用例声明预期被反驳但命令被目录接受",
   "subject": {
-    "item": "71009",
+    "item": "74001",
     "slots": {
       "cases": [
         {
@@ -85,7 +85,7 @@
     {
       "verdict": "refute",
       "code": "defect-to-case.negative_accepted",
-      "item": "71009",
+      "item": "74001",
       "tier": "blocking"
     }
   ]

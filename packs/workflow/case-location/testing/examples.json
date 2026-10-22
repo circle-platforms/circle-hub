@@ -139,7 +139,7 @@
         "kind": "document",
         "root": "NSAE",
         "ancestors": ["030：APV/NSAE测试项目", "060：10.6.1", "004：10.6.2-R2-2026/7", "SLB"],
-        "title": "bug to case 71009 会话保持",
+        "title": "bug to case 74001 会话保持",
         "source": "agile:mindmap:24006@1",
         "names": ["APV", "NSAE"],
         "product": "apv",
@@ -147,7 +147,7 @@
         "id_ranges": null
       },
       "verdict": "unknown",
-      "summary": "不确定（发布火车与版本线不一致）：产品线 apv（NSAE）；版本 10.6.1（目录，置信度低）；发布火车 10.6.2-R2-2026/7；模块 SLB；未分类编号 71009",
+      "summary": "不确定（发布火车与版本线不一致）：产品线 apv（NSAE）；版本 10.6.1（目录，置信度低）；发布火车 10.6.2-R2-2026/7；模块 SLB；未分类编号 74001",
       "answer": {
         "case_id": "24006",
         "product_line": "apv",
@@ -167,8 +167,8 @@
         "build_names": [],
         "requirements": [],
         "defects": [],
-        "unclassified": ["71009"],
-        "id_sources": [{ "id": "71009", "kind": null, "from": ["title"] }],
+        "unclassified": ["74001"],
+        "id_sources": [{ "id": "74001", "kind": null, "from": ["title"] }],
         "ranged": { "requirements": [], "defects": [] },
         "declared": [],
         "conflicts": []
@@ -186,11 +186,11 @@
         "source": "agile:mindmap:24001@1",
         "names": ["APV", "NSAE"],
         "product": "apv",
-        "declared": { "product": null, "line": "10.5.3" },
+        "declared": { "product": null, "line": "10.7.3" },
         "id_ranges": null
       },
       "verdict": "refute",
-      "summary": "与声明矛盾（声明的版本线 10.5.3 与目录的 10.6.1 矛盾）：产品线 apv（NSAE）；版本 10.6.1（目录，置信度高）；发布火车 10.6.1-R2-2026/7；模块 SSL；需求 20931",
+      "summary": "与声明矛盾（声明的版本线 10.7.3 与目录的 10.6.1 矛盾）：产品线 apv（NSAE）；版本 10.6.1（目录，置信度高）；发布火车 10.6.1-R2-2026/7；模块 SSL；需求 20931",
       "answer": {
         "case_id": "24001",
         "product_line": "apv",
@@ -214,7 +214,7 @@
         "id_sources": [{ "id": "20931", "kind": "story", "from": ["title"] }],
         "ranged": { "requirements": [], "defects": [] },
         "declared": [],
-        "conflicts": [{ "field": "line", "declared": "10.5.3", "tree": "10.6.1" }]
+        "conflicts": [{ "field": "line", "declared": "10.7.3", "tree": "10.6.1" }]
       }
     }
   ]

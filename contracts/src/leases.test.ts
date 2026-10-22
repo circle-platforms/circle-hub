@@ -128,6 +128,53 @@ test('RunRecord gains leases: the lease id, its keys and the until moment', () =
   assert.ok(without.success, 'leases is optional');
 });
 
+test('the lease_op axis holds the five lease operations with D04’s words, and a revision note names the audit', async () => {
+  const axis = model.vocabulary.find((a) => a.axis === 'lease_op');
+  assert.ok(axis, 'the model has a lease_op axis');
+  assert.deepEqual(
+    axis.values.map((v) => [v.code, v.label]),
+    [
+      ['acquire', '取得'],
+      ['extend', '续租'],
+      ['release', '释放'],
+      ['force_release', '强制释放'],
+      ['take_over', '接管'],
+    ],
+  );
+  const d04 = model.elements.find((e) => e.id === 'D04')!;
+  const notes = [...((d04 as { changes6?: string[] }).changes6 ?? [])];
+  assert.ok(notes.some((c) => c.includes('lease_op') && c.includes('核对')), 'a revision note names the audit');
+  const { LEASE_OP, LEASE_OP_LABEL, LeaseOpSchema, isLeaseOp } = await import('../generated/vocabulary.ts');
+  assert.deepEqual([...LEASE_OP], ['acquire', 'extend', 'release', 'force_release', 'take_over']);
+  assert.equal(LEASE_OP_LABEL.force_release, '强制释放');
+  assert.equal(LEASE_OP_LABEL.take_over, '接管');
+  assert.ok(isLeaseOp('take_over') && !isLeaseOp('steal'));
+  assert.ok(LeaseOpSchema.safeParse('force_release').success);
+  assert.ok(!LeaseOpSchema.safeParse('renew').success);
+});
+
+test('lease_requests accepts only acquire, extend and release from the lease_op axis', () => {
+  const sha = '0123456789abcdef'.repeat(4);
+  const item = { id: 'i1', label: '一条', location: { source: sha, parser: 'json@1', selector: '/x' }, fields: {} };
+  for (const request of [
+    { keys: ['bench/a'], ttl_seconds: 60 },
+    { op: 'acquire', keys: ['bench/a'], ttl_seconds: 60 },
+    { op: 'extend', keys: ['bench/a'], ttl_seconds: 60 },
+    { op: 'release', keys: ['bench/a'] },
+  ]) {
+    assert.ok(ProjectionOutput.safeParse({ items: [item], warnings: [], lease_requests: [request] }).success, JSON.stringify(request));
+  }
+  for (const request of [
+    { op: 'force_release', keys: ['bench/a'] },
+    { op: 'take_over', keys: ['bench/a'], ttl_seconds: 60 },
+    { op: 'steal', keys: ['bench/a'] },
+    { op: 'extend', keys: ['bench/a'] },
+    { op: 'release', keys: ['bench/a'], ttl_seconds: 60 },
+  ]) {
+    assert.ok(!ProjectionOutput.safeParse({ items: [item], warnings: [], lease_requests: [request] }).success, JSON.stringify(request));
+  }
+});
+
 test('the lease action detail shape is a zod schema the records package can check', async () => {
   const { LeaseDetail } = await import('../src/records.ts');
   const good = {

@@ -4,9 +4,9 @@
   "check": "draft_shape",
   "note": "起草用例结构完整、字段合法",
   "subject": {
-    "item": "71009",
+    "item": "74001",
     "label": "SLB健康检查间隔无法保存",
-    "location": "src:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/plm:bug/71009",
+    "location": "src:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/plm:bug/74001",
     "fields": {
       "status": "closed",
       "resolution": "fixed",
@@ -52,7 +52,7 @@
   "expect": [
     {
       "verdict": "support",
-      "item": "71009"
+      "item": "74001"
     }
   ]
 }

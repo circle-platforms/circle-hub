@@ -2,7 +2,7 @@
   "id": "declared_line_conflict",
   "source": "author",
   "check": "locate",
-  "note": "合成样例：调用方声明版本线 10.5.3。目录给出 10.6.1 的文档记不通过（声明与目录树矛盾）；APV 根下没有版本层的文档和只有标题里参考版本的文档由声明补上版本线，仍记未知（缺输入），不记不通过",
+  "note": "合成样例：调用方声明版本线 10.7.3。目录给出 10.6.1 的文档记不通过（声明与目录树矛盾）；APV 根下没有版本层的文档和只有标题里参考版本的文档由声明补上版本线，仍记未知（缺输入），不记不通过",
   "subject": {
     "items": [
       {
@@ -51,7 +51,7 @@
         }
       }
     ],
-    "context": { "product": "apv", "names": ["APV", "NSAE"], "parameters": { "line": "10.5.3" } }
+    "context": { "product": "apv", "names": ["APV", "NSAE"], "parameters": { "line": "10.7.3" } }
   },
   "expect": [
     { "verdict": "refute", "code": "case-location.declaration_conflict", "item": "24001", "tier": "advisory" },

@@ -1072,7 +1072,7 @@ function packOf(i: number): PackSummary {
     ],
     parameters: [
       { name: 'depth', description: '评审深度（合成）', required: true },
-      { name: 'strict', description: '严格模式（合成）', required: false },
+      { name: 'strict', description: '严格模式（合成）', required: false, schema: { type: 'boolean' } },
     ],
     requirements: REQUIREMENTS,
   };
@@ -1090,6 +1090,7 @@ describe('list_task_packs, upload_file and resolve_reference texts', () => {
     assert.ok(lines.includes(`  输入 map（被判对象，必填）：被评审的思维导图；接受 application/json、toy:mindmap；写法 {"reference":"src:${'0'.repeat(64)}"} 或 {"external":"toy:mindmap:<编号>"}`));
     assert.ok(lines.includes('  输入 story（期望来源，可选，可多个）：关联的需求；接受 toy:story；写法 {"external":"toy:story:<编号>"}'));
     assert.ok(lines.includes('  参数 depth（必填）：评审深度（合成）'));
+    assert.ok(lines.includes('  参数 strict（可选）：严格模式（合成）；模式 {"type":"boolean"}'), 'a declared value schema is shown');
     assert.ok(!text.includes('生产者种类'));
     const examples = lines.filter((l) => l.startsWith('  示例 start_run：')).map((l) => l.slice('  示例 start_run：'.length));
     assert.equal(examples.length, 2);

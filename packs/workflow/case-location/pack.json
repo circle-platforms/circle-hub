@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "case-location",
-  "version": "1.1.3",
+  "version": "1.2.0",
   "kind": "workflow",
   "title": "用例定位",
   "description": "按敏捷测试平台的目录树定出每份测试脑图或每个用例的产品线、版本、版本线、发布火车和模块，给出定位到的版本线在两个名称族的构建候选（别名解析到它所依据的构建）并核对目录和标题里写出的构建名，以及标题里关联的需求与缺陷；只含事实要求项，开始运行时由 Hub 直接算出结果",
@@ -78,12 +78,12 @@
     },
     {
       "path": "samples/negative/candidates-other-line-and-unknown.json",
-      "sha256": "bec7c0da9dd95afc6fbe04979bf0900d72a22c9bd846a748588acf4b511f06ca",
+      "sha256": "3859e0fe13457e13e18fc887b239c2ed2ae56bc6741304b76da38d6b85a95904",
       "size": 3433
     },
     {
       "path": "samples/negative/declared-line-conflict.json",
-      "sha256": "f42a7cc52df31c8276f04a899b68c8d986bc68c5ed4efb44417f36e60ae090e0",
+      "sha256": "d5e31a4f95c715f6ba96d075aa0d67858cdecaf465f3b0ee1e615195df8ba75f",
       "size": 2321
     },
     {
@@ -93,22 +93,22 @@
     },
     {
       "path": "samples/negative/trees-that-are-no-facts.json",
-      "sha256": "4a2daa4b38c1a70cab2a734a2ae5af1e8d2727f8ebdcd34ce08a1d644b264993",
+      "sha256": "fa9b1bc369a3f4d139989fa60e9b0f467e3007cc24dde8d558d036729981d668",
       "size": 4315
     },
     {
       "path": "samples/positive/candidates-known.json",
-      "sha256": "1a281846169b4f096f9e0a4a94ce0d102c1a62339b481cc6ca3cbe112643049e",
+      "sha256": "94f3f438d6a179c6fa9c0d91fa8716c3318370ad89b918f5e999d422dd784179",
       "size": 3362
     },
     {
       "path": "samples/positive/case-item.json",
-      "sha256": "d809f454887b76a29df69b06c660b993c883cf62e36b6aa3ff4943a4e863160a",
+      "sha256": "d041e9653fd59459ecae4cd4b6af8c05bfcd8710733c544c94a7713d44cd6bce",
       "size": 1073
     },
     {
       "path": "samples/positive/located-by-the-tree.json",
-      "sha256": "8c223c9b833ace5d0af0476c2f992185c2065d4304de395b14620430e1299f7c",
+      "sha256": "b136fc1de1251869216204ab131f561b92ba30484687d1213ffd1c539c813a45",
       "size": 1619
     },
     {

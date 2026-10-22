@@ -107,6 +107,18 @@ test('upload_file takes the file as base64 content in file_path', () => {
   assert.deepEqual(upload?.inputSchema.required, ['file_path']);
 });
 
+test('start_run parameters tells the model where the pack parameters go', () => {
+  const start = tools.find((t) => t.name === 'start_run');
+  const properties = start?.inputSchema.properties as Schema;
+  const parameters = properties.parameters as Schema;
+  assert.ok(parameters, 'start_run input has parameters');
+  assert.equal(typeof parameters.description, 'string', 'parameters has a description for the model');
+  const description = parameters.description as string;
+  assert.ok(!CJK.test(description), 'the description is English');
+  assert.match(description, /list_task_packs/, 'it names the place that lists the parameters');
+  assert.match(description, /\{.*</, 'it shows the object-by-name shape');
+});
+
 test('annotations in tools.json are exactly the D06 table, with start_run open-world as milestone-1 callers see it', () => {
   // Literal values from D06 F[0]-F[5], not a second call of annotationsFor.
   const D06: Record<string, Record<string, boolean>> = {

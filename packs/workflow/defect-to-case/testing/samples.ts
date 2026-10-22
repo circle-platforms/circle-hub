@@ -4,11 +4,11 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { PackSample } from '../../../../contracts/src/pack.ts';
 import { commandSubject, duplicateSubject, quoteSubject } from '../functions/subjects.ts';
-import { SYNTHETIC_BUG_71009, SYNTHETIC_CATALOG_SPEC, SYNTHETIC_INDEX_VIEW, goodDraft } from './fixtures.ts';
+import { SYNTHETIC_BUG_74001, SYNTHETIC_CATALOG_SPEC, SYNTHETIC_INDEX_VIEW, goodDraft } from './fixtures.ts';
 
-const BUG_ID = SYNTHETIC_BUG_71009.id;
-const FIX_REF = SYNTHETIC_BUG_71009.fixReference;
-const FIX_TEXT = SYNTHETIC_BUG_71009.fixText;
+const BUG_ID = SYNTHETIC_BUG_74001.id;
+const FIX_REF = SYNTHETIC_BUG_74001.fixReference;
+const FIX_TEXT = SYNTHETIC_BUG_74001.fixText;
 
 type Entry = { folder: 'positive' | 'negative'; sample: PackSample };
 
@@ -27,9 +27,9 @@ function sample(
 export function samples(): Entry[] {
   const defaultGoodSubject = {
     item: BUG_ID,
-    label: SYNTHETIC_BUG_71009.label,
-    location: SYNTHETIC_BUG_71009.location,
-    fields: SYNTHETIC_BUG_71009.fields,
+    label: SYNTHETIC_BUG_74001.label,
+    location: SYNTHETIC_BUG_74001.location,
+    fields: SYNTHETIC_BUG_74001.fields,
     slots: {
       cases: [
         {

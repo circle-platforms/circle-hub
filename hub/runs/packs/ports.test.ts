@@ -127,7 +127,7 @@ test('summaries: the packs a user may use, with the names of the bound product l
   assert.equal(summary.pack, 'demo-review@1.0.0');
   assert.deepEqual(summary.products, ['Widget', 'Gadget'], 'the line whose catalogs include the required ones, by every name');
   assert.deepEqual(summary.inputs, [{ slot: 'target', role: 'subject', description: '被判的文档', accepts: ['application/json'], required: true, many: false }]);
-  assert.deepEqual(summary.parameters, [{ name: 'strict', description: '严格模式', required: false }]);
+  assert.deepEqual(summary.parameters, [{ name: 'strict', description: '严格模式', required: false, schema: { type: 'boolean' } }], 'each parameter is listed with its name, description and value schema');
   assert.deepEqual(summary.requirements.map((r) => [r.key, r.repair_rounds, r.accepted_producer]), [['titles', 2, 'fact'], ['findings', 0, 'judgment'], ['level', 0, 'judgment']]);
   assert.deepEqual(await store.summaries(bed.carol), []);
   assert.deepEqual(await store.summaries(ghost), []);

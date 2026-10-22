@@ -3,7 +3,7 @@
   "model": "synthetic-model",
   "items": [
     {
-      "item": "71009",
+      "item": "74001",
       "handling": "handled",
       "slots": {
         "cases": [
@@ -11,7 +11,7 @@
             "text": "SLB健康检查间隔配置测试",
             "quotes": [
               {
-                "reference": "src:3ddd7ead4f133d137fd205261456c06ded9ffe14c27cedb10657f2e03c6ee5cb/json@1/p/html_fields/fix",
+                "reference": "src:2b3e0be7e05987ef55c11a6edcfc21d992d5cf5ada92016036580f64ac506034/json@1/p/html_fields/fix",
                 "text": "健康检查间隔设置成功"
               }
             ],
@@ -33,7 +33,7 @@
                 {
                   "text": "健康检查间隔设置成功",
                   "quote": {
-                    "reference": "src:3ddd7ead4f133d137fd205261456c06ded9ffe14c27cedb10657f2e03c6ee5cb/json@1/p/html_fields/fix",
+                    "reference": "src:2b3e0be7e05987ef55c11a6edcfc21d992d5cf5ada92016036580f64ac506034/json@1/p/html_fields/fix",
                     "text": "健康检查间隔设置成功"
                   }
                 }

@@ -37,7 +37,7 @@ describe('order independence', () => {
     const d2 = makeNegativeExpectedRefutationDraft();
 
     const in1 = makeCheckInput({
-      item: '71009',
+      item: '74001',
       slots: {
         cases: [
           { text: d1.title, data: d1 },
@@ -46,7 +46,7 @@ describe('order independence', () => {
       },
     });
     const in2 = makeCheckInput({
-      item: '71009',
+      item: '74001',
       slots: {
         cases: [
           { text: d2.title, data: d2 },
@@ -71,8 +71,8 @@ describe('order independence', () => {
       entries: Object.fromEntries(Object.entries(SYNTHETIC_INDEX_VIEW.entries).reverse()),
     };
 
-    const o1 = checkDuplicate(makeCheckInput({ item: '71009', drafts: [dup, good], indexed_cases: view1 }));
-    const o2 = checkDuplicate(makeCheckInput({ item: '71009', drafts: [good, dup], indexed_cases: view2 }));
+    const o1 = checkDuplicate(makeCheckInput({ item: '74001', drafts: [dup, good], indexed_cases: view1 }));
+    const o2 = checkDuplicate(makeCheckInput({ item: '74001', drafts: [good, dup], indexed_cases: view2 }));
 
     assert.equal(o1.length, o2.length);
     assert.deepEqual(o1.map((x) => x.verdict).sort(), o2.map((x) => x.verdict).sort());

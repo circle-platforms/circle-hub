@@ -44,7 +44,7 @@ export const BUILD: KnownBuild = {
 /**
  * Every build the synthetic knowledge base knows of the line: both name families (the NSAE alias released before its base,
  * so the default lock stays on BUILD), a newer released build without a root (1_60) and an unreleased one (1_63), and a
- * build of another line (10.5.1).
+ * build of another line (10.7.4).
  */
 export const BUILDS: KnownBuild[] = [
   BUILD,
@@ -54,7 +54,7 @@ export const BUILDS: KnownBuild[] = [
   { name: 'Rel_NSAE_10_6_1_57', family: 'NSAE', line: '10.6.1', base: 'Rel_APV_10_6_1_57', platform: null, built_at: '2026-09-01T00:00:00.000Z', released_at: '2026-09-05T00:00:00.000Z', sources: {}, root: ROOT },
   { name: 'Rel_APV_10_6_1_60', family: 'APV', line: '10.6.1', base: 'Rel_APV_10_6_1_60', platform: null, built_at: '2026-09-18T00:00:00.000Z', released_at: '2026-09-20T00:00:00.000Z', sources: {}, root: null },
   { name: 'Rel_APV_10_6_1_63', family: 'APV', line: '10.6.1', base: 'Rel_APV_10_6_1_63', platform: null, built_at: '2026-09-25T00:00:00.000Z', released_at: null, sources: {}, root: null },
-  { name: 'Rel_APV_10_5_1_101', family: 'APV', line: '10.5.1', base: 'Rel_APV_10_5_1_101', platform: null, built_at: '2026-05-01T00:00:00.000Z', released_at: '2026-05-02T00:00:00.000Z', sources: {}, root: sha('synthetic root of Rel_APV_10_5_1_101') },
+  { name: 'Rel_APV_10_7_4_101', family: 'APV', line: '10.7.4', base: 'Rel_APV_10_7_4_101', platform: null, built_at: '2026-05-01T00:00:00.000Z', released_at: '2026-05-02T00:00:00.000Z', sources: {}, root: sha('synthetic root of Rel_APV_10_7_4_101') },
 ];
 
 /** A KnowledgePort with a handful of builds of line apv; the location pack reads the builds through the run context. */

@@ -49,7 +49,7 @@ describe('locations gold generator', () => {
     assert.equal(isModuleName('回归测试'), false);
     assert.equal(isModuleName('用例库'), false);
     assert.equal(isModuleName('需求7001'), false);
-    assert.equal(isModuleName('缺陷160578'), false);
+    assert.equal(isModuleName('缺陷160001'), false);
     assert.equal(isModuleName('bug to case'), false);
     assert.equal(isModuleName('10.6.1'), false);
     assert.equal(isModuleName('10.6.1-R1-2026/5'), false);

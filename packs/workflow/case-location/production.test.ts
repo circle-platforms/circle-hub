@@ -58,17 +58,17 @@ before(async () => {
     hub.external.put(`agile:mindmap:${id}`, { bytes: new TextEncoder().encode(mindMapJson(id, smallMap(id, d.title))), mediaType: 'application/json', meta: { title: d.title, root: d.root, ancestors: d.ancestors } });
   }
   hub.external.put('agile:mindmap:24005', {
-    bytes: new TextEncoder().encode(mindMapJson('24005', smallMap('24005', '31006-SSL证书链'))),
+    bytes: new TextEncoder().encode(mindMapJson('24005', smallMap('24005', '33001-SSL证书链'))),
     mediaType: 'application/json',
-    meta: { title: '31006-SSL证书链', root: 'NSAE', ancestors: [P0, '060：10.6.1', '004：10.6.1-R2-2026/7', 'SSL'] },
+    meta: { title: '33001-SSL证书链', root: 'NSAE', ancestors: [P0, '060：10.6.1', '004：10.6.1-R2-2026/7', 'SSL'] },
   });
   hub.external.put('agile:mindmap:24006', {
-    bytes: new TextEncoder().encode(mindMapJson('24006', smallMap('24006', '回归 Rel_APV_10_5_1_101 会话保持'))),
+    bytes: new TextEncoder().encode(mindMapJson('24006', smallMap('24006', '回归 Rel_APV_10_7_4_101 会话保持'))),
     mediaType: 'application/json',
-    meta: { title: '回归 Rel_APV_10_5_1_101 会话保持', root: 'NSAE', ancestors: [P0, '060：10.6.1', '004：10.6.1-R2-2026/7', 'SLB'] },
+    meta: { title: '回归 Rel_APV_10_7_4_101 会话保持', root: 'NSAE', ancestors: [P0, '060：10.6.1', '004：10.6.1-R2-2026/7', 'SLB'] },
   });
   hub.external.put('plm:story:20931', { bytes: new TextEncoder().encode('# 需求 20931 证书链校验\n\n设备校验服务器证书链，链不完整时拒绝连接。\n'), mediaType: 'text/markdown', meta: { title: '需求 20931 证书链校验' } });
-  hub.external.put('plm:story:31006', { bytes: new TextEncoder().encode('# 需求 31006 证书链\n\n证书链的长度上限可配置。\n'), mediaType: 'text/markdown', meta: { title: '需求 31006 证书链' } });
+  hub.external.put('plm:story:33001', { bytes: new TextEncoder().encode('# 需求 33001 证书链\n\n证书链的长度上限可配置。\n'), mediaType: 'text/markdown', meta: { title: '需求 33001 证书链' } });
   hub.external.put('plm:bug:90220', { bytes: new TextEncoder().encode('缺陷 90220：告警阈值修改后不生效。影响版本 10.6.1。\n'), mediaType: 'text/plain', meta: { title: '缺陷 90220' } });
   hub.external.put('plm:bug:61001', { bytes: new TextEncoder().encode('缺陷 61001：会话保持在切换后失效。\n'), mediaType: 'text/plain' });
 });
@@ -142,7 +142,7 @@ describe('a production run of case-location', { skip }, () => {
       assert.equal(candidates.claims.length, 1, id);
       const candidatesClaim = candidates.claims[0];
       assert.equal(candidatesClaim.statement.verdict, expectedCandidates.verdict, id);
-      assert.deepEqual(candidatesClaim.warrant, { producer: 'function', id: 'case-location.candidates@1.1.3', independence: 'judge_not_author' }, id);
+      assert.deepEqual(candidatesClaim.warrant, { producer: 'function', id: 'case-location.candidates@1.2.0', independence: 'judge_not_author' }, id);
       const candidatesData = candidatesClaim.statement.data as { kind: string; line: string | null; candidates: unknown[] };
       assert.equal(candidatesData.kind, 'candidates', id);
       assert.equal(candidatesData.line, expectedCandidates.line, id);
@@ -179,7 +179,7 @@ describe('a production run of case-location', { skip }, () => {
       assert.equal(answer.case_id, id);
       assert.equal(answer.source, `agile:mindmap:${id}@1`);
       assert.deepEqual(answer.ancestor_path, [DOCUMENTS[id].root, ...DOCUMENTS[id].ancestors]);
-      assert.deepEqual(claim.warrant, { producer: 'function', id: 'case-location.locate@1.1.3', independence: 'judge_not_author' });
+      assert.deepEqual(claim.warrant, { producer: 'function', id: 'case-location.locate@1.2.0', independence: 'judge_not_author' });
       assert.deepEqual(claim.grounds, [run.items.find((i) => i.id === id)!.location]);
       // The folders are not in the cited node: the claim points at the item's fields, as the run record holds them.
       assert.equal(claim.pointer, `/items/${k}/fields`);
@@ -199,16 +199,16 @@ describe('a production run of case-location', { skip }, () => {
   });
 
   it('refutes a declaration that contradicts the tree and fills only what the tree does not give', async () => {
-    const detail = await hub.service.startRunDetailed(hub.alice, { pack: 'case-location', product: 'APV', inputs: ALL, parameters: { line: '10.5.3' } }, call());
+    const detail = await hub.service.startRunDetailed(hub.alice, { pack: 'case-location', product: 'APV', inputs: ALL, parameters: { line: '10.7.3' } }, call());
     assert.equal(detail.answer.call_result, 'ok', JSON.stringify(detail.answer.errors));
     const result = detail.production!.result;
     const conflict = located(result, '24001').item.requirements[0];
     assert.deepEqual(conflict.layers, [{ layer: 'static', terminal: 'violation', code: 'case-location.declaration_conflict', tier: 'advisory', attribution: 'author_input' }]);
     assert.deepEqual([conflict.status, conflict.unsatisfied_reason], ['unsatisfied', 'outcome_mismatch']);
-    assert.deepEqual((conflict.claims[0].statement.data as unknown as LocateAnswer).conflicts, [{ field: 'line', declared: '10.5.3', tree: '10.6.1' }]);
+    assert.deepEqual((conflict.claims[0].statement.data as unknown as LocateAnswer).conflicts, [{ field: 'line', declared: '10.7.3', tree: '10.6.1' }]);
     const filled = located(result, '24002').item.requirements[0];
     const answer = filled.claims[0].statement.data as unknown as LocateAnswer;
-    assert.deepEqual([answer.version, answer.version_source, answer.confidence, answer.declared], ['10.5.3', 'parameter', 'low', ['line', 'version']]);
+    assert.deepEqual([answer.version, answer.version_source, answer.confidence, answer.declared], ['10.7.3', 'parameter', 'low', ['line', 'version']]);
     assert.equal(filled.layers[0].terminal, 'unchecked');
     // The document under another root has no product line, but its folders give 10.6.1: the declaration contradicts that too.
     assert.equal(located(result, '24004').item.requirements[0].layers[0].terminal, 'violation');
@@ -233,14 +233,14 @@ describe('a production run of case-location', { skip }, () => {
     const run = detail.answer.run!;
     assert.deepEqual(
       run.sources.filter((s) => s.role === 'expected').map((s) => s.external),
-      ['plm:story:31006@1', 'plm:bug:90220@1'],
+      ['plm:story:33001@1', 'plm:bug:90220@1'],
     );
     const result = detail.production!.result;
     const ranged = answerOf(result, '24005');
-    assert.deepEqual([ranged.unclassified, ranged.ranged, ranged.declared], [['31006'], { requirements: ['31006'], defects: [] }, []]);
+    assert.deepEqual([ranged.unclassified, ranged.ranged, ranged.declared], [['33001'], { requirements: ['33001'], defects: [] }, []]);
     const claim = located(result, '24005').item.requirements[0].claims[0];
     assert.deepEqual([claim.statement.verdict, claim.qualifier.nature], ['support', 'fact']);
-    assert.match(claim.statement.text, /未分类编号 31006（声明的范围：需求）/);
+    assert.match(claim.statement.text, /未分类编号 33001（声明的范围：需求）/);
     assert.deepEqual(answerOf(result, '24002').ranged, { requirements: [], defects: ['90220'] });
   });
 
@@ -275,8 +275,8 @@ describe('a production run of case-location', { skip }, () => {
       ],
     );
     const data = candidates.claims[1].statement.data as { kind: string; name: string; line: string };
-    assert.deepEqual([data.kind, data.name, data.line], ['written_build', 'Rel_APV_10_5_1_101', '10.5.1']);
-    assert.match(candidates.claims[1].statement.text, /属于版本线 10\.5\.1/);
+    assert.deepEqual([data.kind, data.name, data.line], ['written_build', 'Rel_APV_10_7_4_101', '10.7.4']);
+    assert.match(candidates.claims[1].statement.text, /属于版本线 10\.7\.4/);
     // The violation is advisory: the item is delivered, and the build_candidates requirement is unsatisfied.
     assert.deepEqual(candidates.layers, [{ layer: 'static', terminal: 'violation', code: 'case-location.build_other_line', tier: 'advisory', attribution: 'author_input' }]);
     assert.equal(candidates.status, 'unsatisfied');

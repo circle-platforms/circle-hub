@@ -29,7 +29,7 @@
           "node": null,
           "source": "agile:mindmap:24002@1",
           "root": "NSAE",
-          "ancestors": ["030：APV/NSAE测试项目", "004：10.6.1-R2-2026/7", "SLB", "10.5.3 迁移回归"],
+          "ancestors": ["030：APV/NSAE测试项目", "004：10.6.1-R2-2026/7", "SLB", "10.7.3 迁移回归"],
           "title": "bug 61001 会话保持",
           "path": [],
           "case_title": null

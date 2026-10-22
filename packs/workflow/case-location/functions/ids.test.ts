@@ -24,7 +24,7 @@ describe('ids in titles', () => {
   });
 
   it('reads unmarked numbers at the start of a title, after neutral words and brackets', () => {
-    assert.deepEqual(ids('31006-SSL证书链'), ['?:31006']);
+    assert.deepEqual(ids('33001-SSL证书链'), ['?:33001']);
     assert.deepEqual(ids('146001 146002 两个缺陷的回归'), ['?:146001', '?:146002']);
     assert.deepEqual(ids('回归 - 112233 会话'), ['?:112233']);
     assert.deepEqual(ids('Test-129001-导出'), ['?:129001']);
