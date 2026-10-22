@@ -224,4 +224,39 @@ describe('scenario 21: model violations handling and error routing', () => {
     const actions = await bed.hub.records.store.find({ key: 'runs.action.run', value: verifyRun.run });
     assert.ok(actions.items.length >= 1);
   });
+
+  test('5. validation result exceeding maxRecordBytes returns not_accepted receipt instead of throwing', async () => {
+    // Open a bed with maxRecordBytes capped at 256 KiB
+    const limitedBed = await openBed({ postgres, limits: { maxRecordBytes: 256 * 1024 } });
+    const limitedClient = await limitedBed.connect(limitedBed.reviewer, 'sess-s21-limit');
+    try {
+      const run = await startReview(limitedClient, {
+        product: limitedBed.product.names[0],
+        version: limitedBed.site.LINE,
+        inputs: { subject: { external: `agile:mindmap:${DOCUMENTS.review}` } },
+      });
+      assert.ok(run.run);
+
+      // Normal draft submission on 64 items produces ~496 KiB ValidationResult, exceeding 256 KiB
+      const sub = draft(run);
+      const answer = await limitedClient.call('submit_result', sub);
+      assert.equal(answer.isError, true);
+      assert.equal(answer.out.call_result, 'error');
+      assert.equal(answer.out.acceptance, 'not_accepted');
+
+      const err = answer.out.errors.find((e) => e.code === 'SUBMISSION_SCHEMA_VIOLATION');
+      assert.ok(err, `expected SUBMISSION_SCHEMA_VIOLATION, got: ${JSON.stringify(answer.out.errors)}`);
+      assert.match(err.message, /超过 Hub 一条记录的上限 262144 字节，存不下，没有受理/);
+
+      // Stored action record confirms the not_accepted receipt
+      const actions = await limitedBed.hub.records.store.find({ key: 'runs.action.run', value: run.run });
+      const validateAction = actions.items.find((a) => (a.body as { action?: string }).action === 'validate');
+      assert.ok(validateAction);
+      const body = validateAction.body as { acceptance?: string; codes?: string[] };
+      assert.equal(body.acceptance, 'not_accepted');
+      assert.ok(body.codes?.includes('SUBMISSION_SCHEMA_VIOLATION'));
+    } finally {
+      await limitedBed.close();
+    }
+  });
 });

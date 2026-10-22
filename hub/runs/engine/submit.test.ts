@@ -250,6 +250,29 @@ test('each whole-rejection case answers with its code and path; no partitions; t
   }
 });
 
+// The acceptance mutation check's M12 and M17 as the engine sees them: the quote@1 check the engine runs must
+// refuse a quotation that differs only by case, and a quotation whose text is empty, with QUOTE_MISMATCH.
+test('the engine refuses a case-different quote and an empty quote (M12, M17)', { skip }, async () => {
+  const run = await draft();
+  const at = locationOf(run, ITEM.c1);
+  // The case's title is '设置 3 区浇灌 15 分钟'; a quote in different case must not match it (QUOTE_MISMATCH). An
+  // empty quote is refused even earlier, by the slots schema (minLength, SUBMISSION_SCHEMA_VIOLATION) — either way
+  // the engine never accepts it.
+  const cases: [string, Record<string, unknown>, string, string][] = [
+    ['a case-different ASCII quote', finding(run, ITEM.c1, { quotes: [{ reference: at, text: 'ZONE SET 3 15' }] }), 'QUOTE_MISMATCH', '/items/0/slots/findings/0/quotes/0/text'],
+    ['an empty quote', finding(run, ITEM.c1, { quotes: [{ reference: at, text: '' }] }), 'SUBMISSION_SCHEMA_VIOLATION', '/items/0/slots/findings/0/quotes/0/text'],
+    ['a white-space-only quote', finding(run, ITEM.c1, { quotes: [{ reference: at, text: ' \n' }] }), 'QUOTE_MISMATCH', '/items/0/slots/findings/0/quotes/0/text'],
+  ];
+  for (const [name, bad, code, path] of cases) {
+    const answer = await h.service.submitResult(h.alice, submission(run, { [ITEM.c1]: handled(ITEM.c1, [bad]) }), h.call());
+    valid(answer);
+    assert.deepEqual([answer.call_result, answer.acceptance], ['error', 'not_accepted'], name);
+    assert.equal(answer.errors[0].code, code, name);
+    assert.equal(answer.errors[0].path, path, name);
+    assert.equal(answer.errors[0].requirement, 'findings', name);
+  }
+});
+
 test('a statement the catalog contradicts is a violation routed into repair, never a whole rejection; rounds go down and run out', { skip }, async () => {
   const run = await draft();
   const contradicted = (n: number) => submission(run, { [ITEM.c2]: handled(ITEM.c2, [finding(run, ITEM.c2, { text: `说 zone show 不存在（第 ${n} 次）`, code: 'literal_issue', commands: [{ command: 'zone show', present: false }] })]) });

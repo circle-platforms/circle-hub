@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { after, before, describe, test } from 'node:test';
 import { startPostgres, type TemporaryPostgres } from '../../hub/testing/postgres.ts';
 import { DOCUMENTS } from '../fixtures/agile/index.ts';
-import { openConsole, type ConsoleClient } from './support/console.ts';
+import { openConsole, requestHttp, type ConsoleClient } from './support/console.ts';
 import { openBed, type Bed } from './support/hub.ts';
 import type { McpClient } from './support/mcp.ts';
 
@@ -82,5 +82,37 @@ describe('scenario 7: call log', () => {
     assert.equal(callsHtml.status, 200);
     assert.ok(callsHtml.body.includes(TRACE_ID), 'console calls page contains trace id');
     assert.ok(callsHtml.body.includes('list_task_packs'), 'console calls page contains tool name');
+  });
+
+  test('refused batch JSON-RPC request logs one call log line per request in batch', async () => {
+    // Send a batch request (array of 3 JSON-RPC requests) to /mcp
+    const batchBody = JSON.stringify([
+      { jsonrpc: '2.0', id: 'b1', method: 'tools/call', params: { name: 'list_task_packs', arguments: {} } },
+      { jsonrpc: '2.0', id: 'b2', method: 'tools/call', params: { name: 'list_task_packs', arguments: {} } },
+      { jsonrpc: '2.0', id: 'b3', method: 'tools/call', params: { name: 'list_task_packs', arguments: {} } },
+    ]);
+    const res = await requestHttp(bed.hub.port, '/mcp', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${bed.reviewer.token}`,
+      },
+      body: batchBody,
+    });
+    assert.equal(res.status, 400);
+
+    // Query call log for reviewer
+    const logPage = await bed.hub.records.callLog.query(bed.hub.admin.principal, {
+      userId: bed.reviewer.user.id,
+      newestFirst: false,
+    });
+    const batchCalls = logPage.items.filter((entry) =>
+      entry.admin_note?.includes('JSON-RPC batch refused'),
+    );
+    assert.equal(batchCalls.length, 3, 'exactly 3 call log lines logged, one for each request in the batch');
+    for (let i = 0; i < 3; i++) {
+      assert.equal(batchCalls[i].call_result, 'transport_failure');
+      assert.ok(batchCalls[i].admin_note?.includes(`request ${i + 1} of 3`));
+    }
   });
 });

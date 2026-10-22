@@ -77,6 +77,20 @@ describe('scenario 5: cross-item fact and judgment resting on it', () => {
       if (p !== 'delivered') assert.equal(result.partitions[p].length, 0);
     }
 
+    // Partition union strictly equals run items, and partitions are mutually disjoint
+    const seenPartitionItems = new Set<string>();
+    for (const p of PARTITION) {
+      for (const it of result.partitions[p]) {
+        assert.ok(!seenPartitionItems.has(it.item), `item ${it.item} must not appear in multiple partitions`);
+        seenPartitionItems.add(it.item);
+      }
+    }
+    assert.deepEqual(
+      Array.from(seenPartitionItems).sort(),
+      run.items.map((it) => it.id).sort(),
+      'disjoint union of all partitions strictly equals the set of run items',
+    );
+
     // Counts equal partition items counts
     const counts = answer.out.counts!;
     assert.equal(counts.delivered, run.items.length);
