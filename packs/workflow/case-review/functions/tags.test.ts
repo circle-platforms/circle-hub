@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
 import normalize, { CANONICAL_TAGS, TAG_SPELLINGS, canonicalTags, isNegative, normalizeTag, normalizeTags, tagKey } from './tags.ts';
-import { isFailure, reviewProjection, table } from './test-support.ts';
+import { isFailure, reviewProjection, table } from '../testing/test-support.ts';
 
 describe('normalizeTag', () => {
   it('maps the spellings seen in real documents to the canonical categories', () => {
@@ -93,17 +94,19 @@ describe('the spelling table', () => {
     }
   });
 
-  it('names the same categories as the template table, and tables/tags.json judges spellings by them', () => {
+  it('names the same categories as the template table, and the tag check (advisory) judges spellings by them', () => {
     const template = table('template-v3.json') as { categories: Array<{ tags?: string[] }> };
     assert.deepEqual(
       template.categories.flatMap((category) => category.tags ?? []),
       [...CANONICAL_TAGS],
     );
-    const spelling = table('tags.json') as { schema: string; tier: string; description: string; rules: Array<{ fields: Array<{ path: string; maxItems?: number }> }> };
-    assert.equal(spelling.schema, 'structure@1');
-    assert.equal(spelling.tier, 'advisory');
-    assert.deepEqual(spelling.rules[0].fields.map((field) => [field.path, field.maxItems]), [['/tagVariants', 0]]);
-    for (const tag of CANONICAL_TAGS) assert.ok(spelling.description.includes(tag), tag);
+    const checks = JSON.parse(readFileSync(new URL('../checks.json', import.meta.url), 'utf8')) as { checks: Array<{ id: string; function?: { export: string }; tier?: string; judges: string }> };
+    const tags = checks.checks.find((check) => check.id === 'tags');
+    assert.deepEqual([tags?.function?.export, tags?.tier, tags?.judges], ['tagSpelling', 'advisory', 'subject']);
+    const codes = table('codes.json') as { checks: Array<{ code: string; when: string }> };
+    const variant = codes.checks.find((entry) => entry.code === 'case-review.tag_variant');
+    assert.ok(variant !== undefined);
+    for (const tag of CANONICAL_TAGS) assert.ok(variant.when.includes(tag), tag);
   });
 
   it('maps every tag of the review fixture that names a category', () => {

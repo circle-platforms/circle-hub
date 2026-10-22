@@ -1,0 +1,79 @@
+{
+  "id": "verdict_fail",
+  "source": "author",
+  "check": "verdict",
+  "note": "FAIL：推翻了一条初评定为严重的发现（复核方给推翻定的等级是次要，不影响），等级改了",
+  "subject": {
+    "items": [
+      {
+        "id": "sample:c2",
+        "label": "设置池 c2 的探测间隔",
+        "location": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/n/c2",
+        "fields": {
+          "nodeId": "c2",
+          "path": [
+            "示例文档",
+            "池管理"
+          ],
+          "title": "设置池 c2 的探测间隔",
+          "draft_partition": "delivered",
+          "draft_findings": [
+            {
+              "reference": "rec:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb#/partitions/delivered/1/requirements/2/claims/0",
+              "code": "negative_gap",
+              "rank": "critical",
+              "text": "初评的发现",
+              "location": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/n/c2",
+              "quotes": [
+                {
+                  "reference": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/n/c2",
+                  "text": "设置探测间隔"
+                }
+              ],
+              "commands": []
+            }
+          ],
+          "draft_level": {
+            "reference": "rec:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb#/cross_item/3",
+            "rank": "P3",
+            "text": "等级理由：覆盖全部功能细节，有一些反向用例"
+          }
+        },
+        "slots": {
+          "verification": [
+            {
+              "text": "复核方的处置",
+              "code": "refuted",
+              "rank": "minor",
+              "location": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/n/c2",
+              "quotes": [
+                {
+                  "reference": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/n/c2e",
+                  "text": "显示的探测间隔与设置一致"
+                }
+              ],
+              "data": {
+                "finding": "rec:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb#/partitions/delivered/1/requirements/2/claims/0"
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "cross_item": [
+      {
+        "nature": "judgment",
+        "statement": "结论 FAIL",
+        "grounds": [],
+        "code": "FAIL",
+        "rank": "P5"
+      }
+    ]
+  },
+  "expect": [
+    {
+      "verdict": "support",
+      "item": "sample:c2"
+    }
+  ]
+}

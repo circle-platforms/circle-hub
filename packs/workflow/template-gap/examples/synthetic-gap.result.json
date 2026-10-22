@@ -1,0 +1,389 @@
+{
+  "note": "合成示例：一份没有压力测试用例的脑图（内容是编的），作为上传文件开始运行时 Hub 给出的条目和覆盖检查的结果；条目编号按上传文件的 SHA-256 前 12 位",
+  "input": "examples/synthetic-gap.km.json",
+  "sha256": "89d0bde75ed3df34d0299f442e4c8cf8f17de38fd0017787cac5b262e26c5d7f",
+  "item": {
+    "id": "upload-89d0bde75ed3",
+    "label": "小部件探测测试用例（示例）",
+    "summary": "用例 65 个；缺 1 个模板类别：压力测试（stress）；模板类别出现 23/24 个；另有 1 个没有标签、写法像用例的节点没有计入",
+    "location": {
+      "parser": "kityminder@1",
+      "selector": "n/r0example001"
+    },
+    "fields": {
+      "document": "upload-89d0bde75ed3",
+      "title": "小部件探测测试用例（示例）",
+      "path": [],
+      "caseCount": 65,
+      "untagged": 1,
+      "categories": [
+        {
+          "id": "functional",
+          "label": "功能测试",
+          "group": "test_type",
+          "required": true,
+          "present": true,
+          "count": 19,
+          "evidence": [
+            "upload-89d0bde75ed3:0j9mbggwjytw",
+            "upload-89d0bde75ed3:2zlrkcoz9mr4",
+            "upload-89d0bde75ed3:3td81tprwfs4",
+            "upload-89d0bde75ed3:4wlclalycny1",
+            "upload-89d0bde75ed3:5jp998s5k5lh",
+            "upload-89d0bde75ed3:7i05at912jhi",
+            "upload-89d0bde75ed3:gv8eovpocm23",
+            "upload-89d0bde75ed3:gzcm7ldrqfa7",
+            "upload-89d0bde75ed3:i7dd1j74o4ur",
+            "upload-89d0bde75ed3:jr493b74wl4l",
+            "upload-89d0bde75ed3:k7kd4d8qddqg",
+            "upload-89d0bde75ed3:ofi6w1u55y47",
+            "upload-89d0bde75ed3:q4gngrp4drre",
+            "upload-89d0bde75ed3:rycuaqhi8w9x",
+            "upload-89d0bde75ed3:s2aneti8p9dd",
+            "upload-89d0bde75ed3:u2wenvki1nxw",
+            "upload-89d0bde75ed3:vaujn95az8d8",
+            "upload-89d0bde75ed3:vpp6bkv9luc6",
+            "upload-89d0bde75ed3:ybwqxua4vqej"
+          ]
+        },
+        {
+          "id": "configuration",
+          "label": "配置测试",
+          "group": "test_type",
+          "required": true,
+          "present": true,
+          "count": 19,
+          "evidence": [
+            "upload-89d0bde75ed3:01qbgqo02rm3",
+            "upload-89d0bde75ed3:0f1sd7awiefi",
+            "upload-89d0bde75ed3:1hccmdu8ssig",
+            "upload-89d0bde75ed3:2g1g1d0vhy65",
+            "upload-89d0bde75ed3:4few8h0jrcxe",
+            "upload-89d0bde75ed3:4ltan31kcjqa",
+            "upload-89d0bde75ed3:b9ckh74kaobq",
+            "upload-89d0bde75ed3:be4tibl8k307",
+            "upload-89d0bde75ed3:hxg6y0nsqerm",
+            "upload-89d0bde75ed3:i2pfefpoghe8",
+            "upload-89d0bde75ed3:jfhp3uwle991",
+            "upload-89d0bde75ed3:jsvykub8vild",
+            "upload-89d0bde75ed3:kbig1f2yc6q4",
+            "upload-89d0bde75ed3:lvkk0ejfn1ap",
+            "upload-89d0bde75ed3:o6ccpg02s6ou",
+            "upload-89d0bde75ed3:saqa73tqfrw0",
+            "upload-89d0bde75ed3:v0dyf7d8h0a5",
+            "upload-89d0bde75ed3:v0mcr4ryvsai",
+            "upload-89d0bde75ed3:z04xch3i7ck8"
+          ]
+        },
+        {
+          "id": "integration",
+          "label": "集成测试",
+          "group": "test_type",
+          "required": true,
+          "present": true,
+          "count": 9,
+          "evidence": [
+            "upload-89d0bde75ed3:2g0h89f0w1uf",
+            "upload-89d0bde75ed3:93jureq5up99",
+            "upload-89d0bde75ed3:9nufkipey4f4",
+            "upload-89d0bde75ed3:fzstcob8zis6",
+            "upload-89d0bde75ed3:l0r4glerzq3j",
+            "upload-89d0bde75ed3:lvdxvzfm1hg6",
+            "upload-89d0bde75ed3:nxaakfyiqtum",
+            "upload-89d0bde75ed3:t8da3mog62t8",
+            "upload-89d0bde75ed3:uu88965cspsf"
+          ]
+        },
+        {
+          "id": "compatibility",
+          "label": "兼容性测试",
+          "group": "test_type",
+          "required": true,
+          "present": true,
+          "count": 3,
+          "evidence": [
+            "upload-89d0bde75ed3:b1bl63v94rk3",
+            "upload-89d0bde75ed3:rrgj1uagx1dv",
+            "upload-89d0bde75ed3:uotmwgdkke7b"
+          ]
+        },
+        {
+          "id": "negative",
+          "label": "反向测试",
+          "group": "test_type",
+          "required": true,
+          "present": true,
+          "count": 16,
+          "evidence": [
+            "upload-89d0bde75ed3:2i0r5yfvn3ta",
+            "upload-89d0bde75ed3:58rev5vsqzyw",
+            "upload-89d0bde75ed3:a6gosvhh50zv",
+            "upload-89d0bde75ed3:auch71u6uxce",
+            "upload-89d0bde75ed3:f6eulx5b954g",
+            "upload-89d0bde75ed3:fiwo7utmxxne",
+            "upload-89d0bde75ed3:i579m39pc230",
+            "upload-89d0bde75ed3:nmb6vclhv6bb",
+            "upload-89d0bde75ed3:p8cwxc1ye2np",
+            "upload-89d0bde75ed3:py9uoksarpjw",
+            "upload-89d0bde75ed3:q3r7am57ohue",
+            "upload-89d0bde75ed3:vodmb3tlqxbo",
+            "upload-89d0bde75ed3:wznpmaoyl6xb",
+            "upload-89d0bde75ed3:y34nt14ss7ok",
+            "upload-89d0bde75ed3:y6gok9s3idfh",
+            "upload-89d0bde75ed3:z04xch3i7ck8"
+          ]
+        },
+        {
+          "id": "stress",
+          "label": "压力测试",
+          "group": "test_type",
+          "required": true,
+          "present": false,
+          "count": 0,
+          "evidence": []
+        },
+        {
+          "id": "command_add",
+          "label": "命令的添加",
+          "group": "command",
+          "required": true,
+          "present": true,
+          "count": 3,
+          "evidence": [
+            "upload-89d0bde75ed3:i2pfefpoghe8",
+            "upload-89d0bde75ed3:rycuaqhi8w9x",
+            "upload-89d0bde75ed3:ybwqxua4vqej"
+          ]
+        },
+        {
+          "id": "command_delete",
+          "label": "命令的删除",
+          "group": "command",
+          "required": true,
+          "present": true,
+          "count": 3,
+          "evidence": [
+            "upload-89d0bde75ed3:f6eulx5b954g",
+            "upload-89d0bde75ed3:i2pfefpoghe8",
+            "upload-89d0bde75ed3:kbig1f2yc6q4"
+          ]
+        },
+        {
+          "id": "command_modify",
+          "label": "命令的修改",
+          "group": "command",
+          "required": true,
+          "present": true,
+          "count": 2,
+          "evidence": [
+            "upload-89d0bde75ed3:0f1sd7awiefi",
+            "upload-89d0bde75ed3:2g1g1d0vhy65"
+          ]
+        },
+        {
+          "id": "command_query",
+          "label": "命令的查询",
+          "group": "command",
+          "required": true,
+          "present": true,
+          "count": 3,
+          "evidence": [
+            "upload-89d0bde75ed3:5jp998s5k5lh",
+            "upload-89d0bde75ed3:7i05at912jhi",
+            "upload-89d0bde75ed3:93jureq5up99"
+          ]
+        },
+        {
+          "id": "show_at_maximum",
+          "label": "最大配置下的 show",
+          "group": "command",
+          "required": true,
+          "present": true,
+          "count": 1,
+          "evidence": [
+            "upload-89d0bde75ed3:ybwqxua4vqej"
+          ]
+        },
+        {
+          "id": "no_command",
+          "label": "no 命令",
+          "group": "command",
+          "required": true,
+          "present": true,
+          "count": 3,
+          "evidence": [
+            "upload-89d0bde75ed3:a6gosvhh50zv",
+            "upload-89d0bde75ed3:gzcm7ldrqfa7",
+            "upload-89d0bde75ed3:i7dd1j74o4ur"
+          ]
+        },
+        {
+          "id": "clear_command",
+          "label": "clear 命令",
+          "group": "command",
+          "required": true,
+          "present": true,
+          "count": 1,
+          "evidence": [
+            "upload-89d0bde75ed3:s2aneti8p9dd"
+          ]
+        },
+        {
+          "id": "operation_log",
+          "label": "操作日志",
+          "group": "command",
+          "required": true,
+          "present": true,
+          "count": 3,
+          "evidence": [
+            "upload-89d0bde75ed3:4wlclalycny1",
+            "upload-89d0bde75ed3:58rev5vsqzyw",
+            "upload-89d0bde75ed3:ofi6w1u55y47"
+          ]
+        },
+        {
+          "id": "audit_log",
+          "label": "审计日志",
+          "group": "command",
+          "required": true,
+          "present": true,
+          "count": 3,
+          "evidence": [
+            "upload-89d0bde75ed3:58rev5vsqzyw",
+            "upload-89d0bde75ed3:b9ckh74kaobq",
+            "upload-89d0bde75ed3:ofi6w1u55y47"
+          ]
+        },
+        {
+          "id": "configuration_sync",
+          "label": "配置同步",
+          "group": "configuration",
+          "required": true,
+          "present": true,
+          "count": 2,
+          "evidence": [
+            "upload-89d0bde75ed3:l0r4glerzq3j",
+            "upload-89d0bde75ed3:py9uoksarpjw"
+          ]
+        },
+        {
+          "id": "configuration_save",
+          "label": "配置保存",
+          "group": "configuration",
+          "required": true,
+          "present": true,
+          "count": 2,
+          "evidence": [
+            "upload-89d0bde75ed3:2g0h89f0w1uf",
+            "upload-89d0bde75ed3:jr493b74wl4l"
+          ]
+        },
+        {
+          "id": "configuration_restore",
+          "label": "配置恢复",
+          "group": "configuration",
+          "required": true,
+          "present": true,
+          "count": 2,
+          "evidence": [
+            "upload-89d0bde75ed3:0j9mbggwjytw",
+            "upload-89d0bde75ed3:9nufkipey4f4"
+          ]
+        },
+        {
+          "id": "configuration_clear",
+          "label": "配置清除",
+          "group": "configuration",
+          "required": true,
+          "present": true,
+          "count": 2,
+          "evidence": [
+            "upload-89d0bde75ed3:u2wenvki1nxw",
+            "upload-89d0bde75ed3:wznpmaoyl6xb"
+          ]
+        },
+        {
+          "id": "upgrade_new_to_new",
+          "label": "升级兼容：新版本之间",
+          "group": "upgrade",
+          "required": true,
+          "present": true,
+          "count": 2,
+          "evidence": [
+            "upload-89d0bde75ed3:b1bl63v94rk3",
+            "upload-89d0bde75ed3:saqa73tqfrw0"
+          ]
+        },
+        {
+          "id": "upgrade_old_to_new",
+          "label": "升级兼容：老版本到新版本",
+          "group": "upgrade",
+          "required": true,
+          "present": true,
+          "count": 1,
+          "evidence": [
+            "upload-89d0bde75ed3:rrgj1uagx1dv"
+          ]
+        },
+        {
+          "id": "upgrade_new_to_old",
+          "label": "升级兼容：新版本到老版本",
+          "group": "upgrade",
+          "required": true,
+          "present": true,
+          "count": 2,
+          "evidence": [
+            "upload-89d0bde75ed3:2i0r5yfvn3ta",
+            "upload-89d0bde75ed3:uotmwgdkke7b"
+          ]
+        },
+        {
+          "id": "security",
+          "label": "安全",
+          "group": "other",
+          "required": true,
+          "present": true,
+          "count": 2,
+          "evidence": [
+            "upload-89d0bde75ed3:be4tibl8k307",
+            "upload-89d0bde75ed3:fiwo7utmxxne"
+          ]
+        },
+        {
+          "id": "database",
+          "label": "数据库",
+          "group": "other",
+          "required": true,
+          "present": true,
+          "count": 2,
+          "evidence": [
+            "upload-89d0bde75ed3:2zlrkcoz9mr4",
+            "upload-89d0bde75ed3:y34nt14ss7ok"
+          ]
+        }
+      ],
+      "missing": [
+        "stress"
+      ],
+      "skipped": []
+    }
+  },
+  "outcome": {
+    "verdict": "refute",
+    "code": "core.coverage.shortfall",
+    "statement": "覆盖到的集合没有包含表要求的全部成员：缺 1 个：“stress”",
+    "grounds": [
+      "src:89d0bde75ed3df34d0299f442e4c8cf8f17de38fd0017787cac5b262e26c5d7f/kityminder@1/n/r0example001"
+    ],
+    "tier": "advisory",
+    "item": "upload-89d0bde75ed3",
+    "data": {
+      "required": 24,
+      "covered": 23,
+      "skipped": [],
+      "missing": [
+        "stress"
+      ]
+    }
+  }
+}

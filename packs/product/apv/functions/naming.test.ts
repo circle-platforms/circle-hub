@@ -3,7 +3,7 @@ import { describe, it } from 'node:test';
 import { pathOf, selectorOf } from '../../../../hub/refs/api.ts';
 import { compareLines, lineKey, parseBuildName, parseHubName, parsePageName, sameLine } from './naming.ts';
 import { canonicalJson, compareDotted, globMatch, pathSegments, pathText, selectorText, utf8Offsets } from './util.ts';
-import { randomText, seeded } from './test-support.ts';
+import { randomText, seeded } from '../testing/test-support.ts';
 
 function orNull(run: () => string): string | null {
   try {

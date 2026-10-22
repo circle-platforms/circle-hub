@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import commands, { extractCommands } from './commands.ts';
-import { assertTotal, hostileInputs, internalWarnings, randomText, seeded } from './test-support.ts';
+import { assertTotal, hostileInputs, internalWarnings, randomText, seeded } from '../testing/test-support.ts';
 
 const HEADS = ['show demo status', 'show demo pool', 'demo pool add', 'demo pool mode', 'demo route static', 'enable', 'ping', 'no demo pool', 'show'];
 const phrases = (text: string, heads: string[] = HEADS): string[] => extractCommands({ text, heads }).phrases.map((phrase) => phrase.text);

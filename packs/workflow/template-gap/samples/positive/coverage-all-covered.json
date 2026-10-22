@@ -1,0 +1,45 @@
+{
+  "id": "all_categories_covered",
+  "source": "author",
+  "check": "coverage",
+  "note": "模板 v3 的 24 个类别都有用例显示，没有声明跳过",
+  "subject": {
+    "item": "880001",
+    "location": "src:2215a5b7603f58061e7d3141e51ce96c6fb14b7b99792b9045b1984650ef9f75/kityminder@1/n/r0sample0001",
+    "document": "880001",
+    "covered": [
+      "functional",
+      "configuration",
+      "integration",
+      "compatibility",
+      "negative",
+      "stress",
+      "command_add",
+      "command_delete",
+      "command_modify",
+      "command_query",
+      "show_at_maximum",
+      "no_command",
+      "clear_command",
+      "operation_log",
+      "audit_log",
+      "configuration_sync",
+      "configuration_save",
+      "configuration_restore",
+      "configuration_clear",
+      "upgrade_new_to_new",
+      "upgrade_old_to_new",
+      "upgrade_new_to_old",
+      "security",
+      "database"
+    ],
+    "skipped": []
+  },
+  "expect": [
+    {
+      "verdict": "support",
+      "item": "880001",
+      "tier": "advisory"
+    }
+  ]
+}

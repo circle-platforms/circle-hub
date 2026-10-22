@@ -1,0 +1,130 @@
+{
+  "schema": "pack@1",
+  "id": "template-gap",
+  "version": "1.0.0",
+  "kind": "workflow",
+  "title": "模板缺口检查",
+  "description": "按团队测试用例模板 v3 检查每份测试脑图缺哪些类别，列出每个出现的类别的证据用例；只有事实要求项，开始运行时由 Hub 直接算出结果",
+  "files": [
+    {
+      "path": "SKILL.md",
+      "sha256": "26dbe77f4f95948ef403a70786077f35c657fed022b4145439808788ae59ce5d",
+      "size": 3949
+    },
+    {
+      "path": "checks.json",
+      "sha256": "7554c45cc3c7f3e26ac8d3328dc376d79ed1549301f7a634854f3469a83f60cb",
+      "size": 311
+    },
+    {
+      "path": "examples/synthetic-gap.km.json",
+      "sha256": "89d0bde75ed3df34d0299f442e4c8cf8f17de38fd0017787cac5b262e26c5d7f",
+      "size": 19097
+    },
+    {
+      "path": "examples/synthetic-gap.result.json",
+      "sha256": "871080c9aba6363ed3940537e731017d2a7ef3cac7f6ecec63187affe7129c68",
+      "size": 12204
+    },
+    {
+      "path": "functions/cases.ts",
+      "sha256": "5ee768e02ea9e3499fe0504e2de21bc8723ec6e36611c0a2593e4d66434c110e",
+      "size": 14813
+    },
+    {
+      "path": "functions/common.ts",
+      "sha256": "0aadf0bbb5c1bc504a62ba3e57cb2c8833cea9cb50f1ec638ef35e48e8e3ce78",
+      "size": 2088
+    },
+    {
+      "path": "functions/project.ts",
+      "sha256": "cedcaa516b4e4518fca83a7b5eeacf2bac0411bd3fca37b30625af6261ac5f16",
+      "size": 16797
+    },
+    {
+      "path": "functions/subject.ts",
+      "sha256": "87b6cea694c6a5256b085ffca8e1bc6561dc841491c582b07c8ee26de3462717",
+      "size": 1819
+    },
+    {
+      "path": "functions/tags.ts",
+      "sha256": "82dfb9366c99160a958ca86bb720dae03b5c69d2020faa644ec72952e779f8ce",
+      "size": 3754
+    },
+    {
+      "path": "functions/template.ts",
+      "sha256": "9def3f159a5007131377bf4e9c6a244a91d135f3b5d7f53156f142beef1ed963",
+      "size": 9299
+    },
+    {
+      "path": "functions/text.ts",
+      "sha256": "3bbc1d115408ff9604b6ba4ed2ab5b2d75d9c2e409059638fb27a22962656a1b",
+      "size": 5468
+    },
+    {
+      "path": "functions/types.ts",
+      "sha256": "1f910165d34cf532990efd5417b1def96c06bed65aa0af1ba5838361418e1b27",
+      "size": 4435
+    },
+    {
+      "path": "requirements.json",
+      "sha256": "07ed1d773af01aabc5b825d3cf167da1574f4fbaf10a2371fec35aba931421cf",
+      "size": 634
+    },
+    {
+      "path": "samples/negative/coverage-blank-reason.json",
+      "sha256": "bf2775c82b8c0b1ff08c8454a09443cef98be09215e1dc2085514015a6586919",
+      "size": 1170
+    },
+    {
+      "path": "samples/negative/coverage-nothing-covered.json",
+      "sha256": "55be5f4dfd6973cc14ccc501f93dd4055172f9da4babefa987484c761cd2b428",
+      "size": 703
+    },
+    {
+      "path": "samples/negative/coverage-one-missing.json",
+      "sha256": "a473f8ae851784bedbd691de6de2e1e792261e1c72c8630953d859b9e0b0de84",
+      "size": 1074
+    },
+    {
+      "path": "samples/negative/coverage-other-category-missing.json",
+      "sha256": "bb7b7a1f4d2916f65917600990eee9b04779c472f9f18b8f5d26e3383ec5562a",
+      "size": 1226
+    },
+    {
+      "path": "samples/positive/coverage-all-covered.json",
+      "sha256": "af188f8d841c3a769b79b0edb4e8eb1e5795ceaba182a27c6596e7a2f68aaeeb",
+      "size": 1053
+    },
+    {
+      "path": "samples/positive/coverage-skipped-with-reason.json",
+      "sha256": "afe72c575fddfc6a3703b5d41ed7e7154a50f5ef7a6d1ac0307fafeab029ecb0",
+      "size": 1262
+    },
+    {
+      "path": "slots.schema.json",
+      "sha256": "851202e03d46a4b40941830a276007f860f657166b31d30da18d0d2268567516",
+      "size": 53
+    },
+    {
+      "path": "tables/codes.json",
+      "sha256": "95bf5c6f47455c3075a2a544381f14f1e59916be8577c0486d43aba2d70deea1",
+      "size": 5060
+    },
+    {
+      "path": "tables/template-v3-coverage.json",
+      "sha256": "d9f494e137228782451322440e8386cc782fe049b603c33db59dde03240ea9c3",
+      "size": 1557
+    },
+    {
+      "path": "tables/template-v3.json",
+      "sha256": "6f89cac979578f9a9c607d4fcbe1f345c71b11d7d499fd10a3c9ec0c67d2981b",
+      "size": 6049
+    },
+    {
+      "path": "workflow.json",
+      "sha256": "b50869ff24aeec330e8c2abc0de5c0703543f40f3bd19334bc4a0d9634358843",
+      "size": 2333
+    }
+  ]
+}

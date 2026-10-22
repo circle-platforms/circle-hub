@@ -1,0 +1,145 @@
+{
+ "root": {
+  "data": {
+   "id": "lumenroot",
+   "text": "需求 6101 Lumen API 池管理接口"
+  },
+  "children": [
+   {
+    "data": {
+     "id": "g1",
+     "text": "池的增删查",
+     "priority": 1
+    },
+    "children": [
+     {
+      "data": {
+       "id": "l1",
+       "text": "GET /v1/pools 20",
+       "priority": 2,
+       "resource": [
+        "Functional"
+       ]
+      },
+      "children": [
+       {
+        "data": {
+         "id": "l1e0",
+         "text": "返回最多 20 个池，按名称排序"
+        },
+        "children": []
+       }
+      ]
+     },
+     {
+      "data": {
+       "id": "l2",
+       "text": "POST /v1/pools blue rr",
+       "priority": 2,
+       "resource": [
+        "Functional"
+       ]
+      },
+      "children": [
+       {
+        "data": {
+         "id": "l2e0",
+         "text": "返回 201，GET /v1/pools 里能看到 blue"
+        },
+        "children": []
+       }
+      ]
+     },
+     {
+      "data": {
+       "id": "l3",
+       "text": "DELETE /v1/pools/{id} true",
+       "priority": 2,
+       "resource": [
+        "Functional"
+       ]
+      },
+      "children": [
+       {
+        "data": {
+         "id": "l3e0",
+         "text": "有成员的池也被删除"
+        },
+        "children": []
+       }
+      ]
+     },
+     {
+      "data": {
+       "id": "l4",
+       "text": "GET /v1/pools 500",
+       "priority": 2,
+       "resource": [
+        "Negative"
+       ]
+      },
+      "children": [
+       {
+        "data": {
+         "id": "l4e0",
+         "text": "返回 400，提示 limit 超出范围 1-100"
+        },
+        "children": []
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "data": {
+     "id": "g2",
+     "text": "服务状态",
+     "priority": 1
+    },
+    "children": [
+     {
+      "data": {
+       "id": "l5",
+       "text": "GET /v1/health",
+       "priority": 2,
+       "resource": [
+        "Functional"
+       ]
+      },
+      "children": [
+       {
+        "data": {
+         "id": "l5e0",
+         "text": "返回 200 和服务状态"
+        },
+        "children": []
+       }
+      ]
+     },
+     {
+      "data": {
+       "id": "l6",
+       "text": "GET /v1/health",
+       "priority": 2,
+       "resource": [
+        "Functional"
+       ]
+      },
+      "children": [
+       {
+        "data": {
+         "id": "l6e0",
+         "text": "返回 200 和服务状态"
+        },
+        "children": []
+       }
+      ]
+     }
+    ]
+   }
+  ]
+ },
+ "template": "default",
+ "theme": "fresh-blue",
+ "version": "1.4.43"
+}

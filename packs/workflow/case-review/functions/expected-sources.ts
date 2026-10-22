@@ -8,7 +8,9 @@
 // Only a word right before a number names its kind: bug, 缺陷 (bug); story, 需求 (story). "bug to case" names a document type
 // and "PLM" the system, and real titles put story numbers after both, so the numbers after them are unmarked. An unmarked id
 // takes the kind whose id range alone contains it when the product pack gives the ranges (parameters.idRanges); otherwise both
-// kinds are read (parameters.bareIds) and the read of the one that does not exist reports it unavailable.
+// kinds are read (parameters.bareIds). The defect system numbers stories and bugs apart, so both records may exist and one of
+// them be unrelated to the document: the reason and the warning say so, and the reviewer checks the record's title before
+// citing it (or names the kind with stories / bugs).
 // Release-train labels ("201：3.2.1-主线-2026/06/30"), years, dates and version numbers are not ids.
 import { PACK, failure, guarded, isRecord, warningSink, type WarningSink } from './common.ts';
 import { clip, collapseWhitespace, isBlank, mustEncodeInExternalId, percentEncode, textOf } from './text.ts';
@@ -353,7 +355,7 @@ export function expectedSources(input: unknown): SourcesOutput {
                 : how === 'range'
                   ? `${where}里的编号 ${found.id} 没有标明类型，按缺陷系统的编号范围（参数 idRanges）是${KIND_LABEL[kind]}`
                   : params.bareIds === 'both'
-                    ? `${where}里的编号 ${found.id} 没有标明是需求还是缺陷，需求和缺陷都读取；不存在的那一种读取时记为不可用`
+                    ? `${where}里的编号 ${found.id} 没有标明是需求还是缺陷，需求和缺陷都读取：两种分开编号，都存在时其中一种可能与这份文档无关，引用前先核对记录的标题；不存在的那一种读取时记为不可用`
                     : `${where}里的编号 ${found.id} 没有标明类型，按参数 bareIds 当作${KIND_LABEL[kind]}`;
             bind({ external: `plm:${kind}:${found.id}`, document: documentId, from, text: clip(collapseWhitespace(text), 200).text, marker: found.marker, reason });
           }
@@ -373,7 +375,7 @@ export function expectedSources(input: unknown): SourcesOutput {
       code: `${PACK}.id_kind_unknown`,
       message:
         params.bareIds === 'both'
-          ? `${unknownKind.length} 个编号没有标明是需求还是缺陷（${list}），需求和缺陷都读取；产品包给出缺陷系统的编号范围（参数 idRanges）可以分开`
+          ? `${unknownKind.length} 个编号没有标明是需求还是缺陷（${list}），需求和缺陷都读取；两种分开编号，都存在时其中一种可能与文档无关，引用前先核对记录的标题；给出编号范围（参数 idRanges），或用参数 stories、bugs 直接给出编号，可以只读对的那一种`
           : `${unknownKind.length} 个编号没有标明是需求还是缺陷（${list}），按参数 bareIds=skip 没有读取`,
       data: { ids: named, count: unknownKind.length, read: params.bareIds === 'both' ? 'both' : 'none' },
     });

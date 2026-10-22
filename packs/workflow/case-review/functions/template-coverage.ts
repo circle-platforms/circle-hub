@@ -158,15 +158,11 @@ export function templateCoverage(input: unknown): CoverageOutput {
   }
   const skippedIds = new Set(skipped.map((skip) => skip.category));
 
+  // Evidence ids in code-unit order: the facts of a document never depend on the order of its cases (brief section 6b).
   const categories: CategoryFact[] = template.categories.map((category) => {
-    const evidence: string[] = [];
-    let count = 0;
-    for (const item of items) {
-      if (!shows(category, item)) continue;
-      count += 1;
-      if (evidence.length < MAX_EVIDENCE) evidence.push(item.id);
-    }
-    return { id: category.id, label: category.label, group: category.group, required: category.required, present: count > 0, count, evidence };
+    const showing = items.filter((item) => shows(category, item)).map((item) => item.id);
+    const evidence = [...new Set(showing)].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)).slice(0, MAX_EVIDENCE);
+    return { id: category.id, label: category.label, group: category.group, required: category.required, present: showing.length > 0, count: showing.length, evidence };
   });
   const required = categories.filter((fact) => fact.required).map((fact) => fact.id);
   const covered = categories.filter((fact) => fact.present).map((fact) => fact.id);

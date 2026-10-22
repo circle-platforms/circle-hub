@@ -1,0 +1,40 @@
+{
+  "schema": "workflow@1",
+  "inputs": [
+    {
+      "slot": "documents",
+      "role": "subject",
+      "description": "要检查的测试脑图：敏捷平台的脑图（agile:mindmap:<文档编号>）或上传的 KityMinder 导出（application/json）；可以给多份，每份是一个条目。一次最多约 30 份，文档很大（几千个节点）时更少：再多时回答太长模型读不全，或者输入超过 Hub 的上限，分几次运行",
+      "accepts": ["agile:mindmap", "application/json"],
+      "required": true,
+      "many": true
+    }
+  ],
+  "parameters": [
+    {
+      "name": "skipped",
+      "description": "用户声明不适用的模板类别，只在用户明确说某个类别不适用时写，不按模型自己的判断写。每项 {\"category\": \"<类别编号>\", \"reason\": \"<用户给出的理由，照原话>\"}，只对一份文档跳过时再加 \"document\": \"<文档编号，或 agile:mindmap:<文档编号>，或上传文件的 src:<sha256>>\"；24 个类别的编号见任务包规程；跳过的类别单独列出，不算缺失；写不进这次运行的项（文档不在运行里、理由只有空白、同一份文档的同一个类别写了两项）会让 start_run 不受理并给出修正",
+      "required": false,
+      "schema": {
+        "type": "array",
+        "maxItems": 200,
+        "items": {
+          "type": "object",
+          "properties": {
+            "category": {
+              "type": "string",
+              "enum": ["functional", "configuration", "integration", "compatibility", "negative", "stress", "command_add", "command_delete", "command_modify", "command_query", "show_at_maximum", "no_command", "clear_command", "operation_log", "audit_log", "configuration_sync", "configuration_save", "configuration_restore", "configuration_clear", "upgrade_new_to_new", "upgrade_old_to_new", "upgrade_new_to_old", "security", "database"]
+            },
+            "reason": { "type": "string", "minLength": 1, "maxLength": 1000 },
+            "document": { "type": "string", "minLength": 1, "maxLength": 120 }
+          },
+          "required": ["category", "reason"],
+          "additionalProperties": false
+        }
+      }
+    }
+  ],
+  "product": { "catalogs": [] },
+  "subject": "documents",
+  "projection": { "module": "functions/project.ts" }
+}

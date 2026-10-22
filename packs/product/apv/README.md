@@ -1,14 +1,38 @@
 # packs/product/apv
 
-The pure functions of the APV/NSAE product pack. APV and NSAE are one product with two names: product line `apv`, names
-`APV` and `NSAE` (`PRODUCT_LINE` in `functions/naming.ts`). Model elements: K01 R[10], K02, K04, C03, C07, D01 R[8], W03
-R[0] R[5], T01 F[8]. Other packages use `functions/api.ts` (types, named functions, and `FUNCTIONS`, the sandbox entry
-points).
+The product pack of APV/NSAE: one product line with two names, product line `apv`, names `APV` and `NSAE` (`PRODUCT_LINE`
+in `functions/naming.ts`). Model elements: K01 R[10], K02, K04, C03, C07, D01 R[8], W03 R[0] R[5], T01 F[8]. Product facts
+live only here. Other packages use `api.ts` (types, named functions, and `FUNCTIONS`, the sandbox entry points).
 
-Every entry point is a pure ECMAScript module, `export default function (input: unknown): unknown` (sync-plan also exports
-`syncBuildsFunction`), deterministic and total: bad input gives a result with warnings, never an exception. Only modules
-inside `functions/` are loaded at run time; the imports of Hub types are `import type` and erased. `sandbox.test.ts` runs
-every entry point through `callPackFunction` (sandbox-exec on macOS) and compares with the direct call.
+## The pack
+
+| File | Content |
+| --- | --- |
+| `product.json` | `product@1`: names `[APV, NSAE]`; `sync` (start `buildsite:listing:index`, plan `functions/sync.ts`, 6 rounds, 300 reads); `select_build` `functions/select.ts`; catalog `commands@1` (entry kind `definition`, producer `command-tree`, complete, case-insensitive); producers `command-tree` (slot `tree` <- source role `tree`), `manual` (slots `cli` <- `manual:cli:{line}` and `app` <- `manual:app:{line}`, both optional), `release-notes` (slot `notes` <- source role `fixed_bugs`, optional) |
+| `functions/sync.ts` | the plan (SyncPlanInput -> SyncPlanOutput): every round recomputed from the pages read so far, index -> hub pages -> listing pages (depth 2, dead links tolerated, both name families, platform and customer pages only when `include` opts them in), then the builds |
+| `functions/select.ts` | the build choice (SelectBuildInput -> SelectBuildOutput) over `select-build.ts`: the latest released build of the line across both families on the main platform, the other candidates as alternatives |
+| `functions/producers.ts` | the producers (ProducerInput -> ProducerOutput) over `command-tree.ts`, `manual.ts`, `release-notes.ts` and `fixed-bugs.ts` (the build site's fixed-bug page, html@1) |
+| `functions/sources.ts` | the build-site external ids (`buildsite:listing:<page>`, `buildsite:file:<link>`, the same rule as the build-site system pack; a test keeps them equal) and the source roles `tree`, `fixed_bugs` |
+| `functions/documents.ts` | the version lines of documents: manual folders `rel_apv_<line>` / `rel_nsae_<line>`, version tokens in spec, product and qa names (an NSAE-named document has the same line as the APV-named one) |
+| `functions/locate.ts`, `ids.ts`, `commands.ts` | the agile location rule (ancestor labels -> line, train, module), the story and bug ids of titles, the command extractor (phrases whose first word is a catalog head) |
+| other `functions/*.ts` | the building blocks below (listing parser, naming, builds, sync-plan, select-build, command-tree, manual, release-notes, util, types) |
+
+Not published: `api.ts` (`node packs/product/apv/api.ts check|sign|stage <directory>`), this README, the tests and
+`testing/` (`test-support.ts`, the synthetic fixtures in `testing/fixtures/` and `testing/site.ts`, the small build site of the
+end-to-end test).
+
+The plan lists every released build of a mainline page on the main platform, every released build of an opted-in page, the
+newest build of every version line and name family even when it is not released (released_at null: a line under test may
+have no release yet, and a review may target one), and the base of every listed alias. A build with its own
+command tree (an APV name, or an NSAE name of the newest lines) is its own base and carries the sources `tree` (and
+`fixed_bugs` when linked); an NSAE name without a tree is an alias of the build its "based on" chain ends in and carries no
+sources. Every planned build carries family, line, base, platform and both dates. The knowledge sync produces roots of
+released builds only (unreleased own-tree builds need `includeUnreleased`), moves the line's current root and records the
+aliases: a run started with an NSAE name locks the root of its APV base (end-to-end test).
+
+Entry kinds follow K02 R[3]: the command tree gives `definition` entries, the manual `definition` for signature paragraphs
+and `behaviour` for the text under a command, the fixed-bug list and release notes `defect`; the finer form stays in
+`data.form` and `data.status`.
 
 ## Functions
 
@@ -94,7 +118,7 @@ Producers (K02, K04, C07)
   `applicability` (null means 未声明). Entries never carry a source digest, so unchanged commands of two builds give equal
   entries; the knowledge package adds references.
 - Kinds are the model's (K02 R[3]: 定义、行为、用例、缺陷、观察; the source genre is not a kind, K01 R[0]): command tree
-  and manual entries are `definition`, release-note items `defect`. The finer form is data: `data.form` `signature` or
+  entries and manual signatures are `definition`, the manual text under a command `behaviour`, release-note items `defect`. The finer form is data: `data.form` `signature` or
   `text` on manual entries (examples also `data.example`), `data.status` `fixed` or `known` on defects. An unplaced span's
   `kind` is the kind its entry will have.
 - Command tree: one entry per full command; every `arguments` list is one overload (`id` `k`, fragment `fragments[k-1]`).
@@ -145,8 +169,9 @@ Text functions
 
 - `basis` is `declared` / `projected` (provenance_type axis, A01 R[1]) instead of `declared` / `rule`: the task asked for
   `rule`, but enumerations come only from the generated vocabulary.
-- Entry kinds follow K02 R[3] (`definition`, `defect`), not the task's `command`, `manual_signature`, `manual_text`, `fix`,
-  `known_issue`: the model wins over the task. The task's distinctions are kept in `data.form` and `data.status`.
+- Entry kinds follow K02 R[3] (`definition`, `behaviour`, `defect`), not the task's `command`, `manual_signature`,
+  `manual_text`, `fix`, `known_issue`: the model wins over the task. The task's distinctions are kept in `data.form` and
+  `data.status`.
 - Catalog parameters use the contract's `minimum`, `maximum`, `minLength`, `maxLength` (contracts/src/tables.ts), not
   `min` / `max`.
 - `idsFromTitle` adds `unclassified`: an unmarked number may be a story or a bug in this tracker, so it is not filed as
@@ -161,8 +186,8 @@ Text functions
 
 ## Limits
 
-- Manual text under a command is always `definition`: code cannot tell a definitional sentence from a behavioural one; a
-  later typed judgment could refine it.
+- Manual text under a command is always `behaviour` (decided): code cannot tell a definitional sentence from a behavioural
+  one; a later typed judgment could refine it.
 - `OTHER_FORMS` was derived from one sampled command tree; a help text that says "or" between two addresses also reads
   the argument as a string (no false refutation, a lost type check). Declared `argumentTypes` are the authoritative path;
   none are authored here, because the samples may not be copied into the repository.
@@ -181,38 +206,25 @@ Text functions
 ## How to test
 
 ```
-node --test "packs/product/apv/functions/**/*.test.ts"
+node --test "packs/product/apv/**/*.test.ts"
+node --test packs/workflow/case-review-verify/end-to-end.test.ts   # the sync through the real connectors and knowledge
 npx tsc --noEmit
 ```
 
-`sandbox.test.ts` starts sandboxed child processes (about one second) and is skipped where sandbox-exec is unavailable.
-Fixtures in `functions/fixtures/` are synthetic (invented names, numbers and texts; addresses in 192.0.2.0/24).
+`functions/adapters.test.ts` tests the product.json entry points against the product@1 shapes (good, malformed and hostile
+input); `functions/sandbox.test.ts` and the adapters' sandbox suite run them in the Hub sandbox (skipped where sandbox-exec is
+unavailable). Fixtures in `testing/fixtures/` are synthetic (invented names, numbers and texts; addresses in 192.0.2.0/24).
+The end-to-end test publishes this pack in the real registry, syncs it from `testing/site.ts` through the build-site system
+pack and reviews a mind map against the root it produced.
 
 ## Needs from other packages
 
-- **contracts**: (1) `CatalogDeclaration` selects members by `entry_kind` only. With the model's kinds the build's command
-  tree entries and the manual's signatures and text are all `definition`, so a catalog declared over `definition` would
-  take manual entries (no signatures, "takes no arguments") as commands, and unplaced manual spans would withdraw its
-  completeness. The catalog must come from its authoritative source (C07 R[0]; a manual is never a contract source):
-  please add a member selector beside the kind, for example the producer id. Until then do not declare a catalog over
-  `definition` alone. (2) A vocabulary axis for the K02 R[3] kinds, so producers use generated codes. (3) A parameter type
-  for "IPv4 or IPv6 address" and one for "dotted mask or prefix length" (or a union of types in `CatalogParam`) would
-  replace the overload expansion.
-- **contracts / knowledge / runs**: the entry points do not yet take the shapes of `contracts/src/product.ts`
-  (`sync-plan-input@1` / `sync-plan-output@1`, `select-build-input@1` / `-output@1`, `producer-input@1` /
-  `producer-output@1`): the sync is two functions over html@1 models instead of one round-based plan over external ids,
-  `selectBuild` takes listing builds instead of `KnownBuild`, the producers take the model (or `{ model, params }`)
-  instead of `{ build, slots, params }`, and the release-note result adds `product`, `version`, `build`, `released`, which
-  the strict `producer-output@1` rejects. An adapter needs the build-site system pack's external id scheme and the
-  `BuildInfo.sources` roles, which are not defined yet; a decision on who writes it (this pack's entry points or the
-  callers) is needed.
-- **knowledge**: accept `ProducedEntry`; build `src:<sha256>/<parser>/<selector>[:<from>-<to>]` from `fragments` for the
-  composition record; add `reference: tree:<root><path>` to command entries to get catalog-entry@1; record the aliases of
-  `syncBuilds`, unreleased ones included; walk the site as above (call `planSync` again with the hub pages read); place
-  `path: null` entries and `unplaced` spans with the typed-judgment model (module as the literal hint). The line → manual
-  path map (`/cli/rel_apv_<line>/...`) and any `argumentTypes` belong to the pack's knowledge declaration, not to these
-  functions.
-- **runs**: call `selectBuild` with the bases and aliases the knowledge base knows; record `basis` and `notes` in
-  `target_basis`; read `unclassified` ids by the workflow pack's rule; take line and train from `locateFromAncestors`.
-- **packs (pack files)**: `pack.json`, `capabilities.json` and `knowledge.json` of this product pack are not written here;
-  `FUNCTIONS` lists the entry points they should name.
+- **contracts**: a parameter type for "IPv4 or IPv6 address" and one for "dotted mask or prefix length" (or a union of types
+  in `CatalogParam`) would replace the overload expansion.
+- **knowledge**: place `path: null` entries and `unplaced` spans with the typed-judgment model (module as the literal hint);
+  without a Jev client they stay unplaced (the fixed-bug entries of a build, for example).
+- **integrator**: a review that targets an unreleased build (the newest build of a line still in development, under either
+  name) needs the sync with `includeUnreleased` for that line, or a released build named at start_run.
+
+Done since the earlier round: the adapters to the product@1 shapes, the build-site external ids and source roles, the
+catalog producer selector (`CatalogDeclaration.producer`), the entry-kind axis (K02 R[3]).

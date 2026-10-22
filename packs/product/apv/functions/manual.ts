@@ -4,7 +4,8 @@
 //   after an anchor, up to the next anchor or heading, describe that command; a paragraph written as a signature that does
 //   not parse ends the command; every other block is returned unplaced;
 // - the manual command catalog JSON (schema ist.manual-command-catalog): signatures, value domains, worked examples.
-// Every entry is a definition (K02 R[3]); `data.form` says signature or text.
+// Signatures are definitions and the text under a command (descriptions, value domains, examples) behaviours (K02 R[3]);
+// `data.form` says signature or text.
 import type { EntryKind, FragmentRef, ManualCatalog, ManualResult, MarkdownModel, ProducedEntry, Unplaced } from './types.ts';
 import { asArray, asString, asStrings, guarded, internalError, isRecord, pathText, squeeze, stripNul } from './util.ts';
 
@@ -12,7 +13,9 @@ const MARKDOWN = 'markdown@1';
 const JSON_PARSER = 'json@1';
 const CATALOG_SCHEMA = 'ist.manual-command-catalog';
 const COMMANDS = 'commands';
-const KIND: EntryKind = 'definition';
+/** K02 R[3]: a signature defines a command; the text under it describes its behaviour. */
+const SIGNATURE: EntryKind = 'definition';
+const TEXT: EntryKind = 'behaviour';
 const MAX_VARIANTS = 64;
 const MAX_DEPTH = 8;
 const WORD = /^[A-Za-z0-9?][A-Za-z0-9_.?:/+-]{0,63}$/;
@@ -271,10 +274,11 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, w
       rejected++;
       current = null;
     } else if (current !== null) {
-      entries.push({ kind: KIND, path: current.path, statement: text, data: { words: current.words, form: 'text', block: block.kind }, fragments: [fragment], applicability: null });
+      entries.push({ kind: TEXT, path: current.path, statement: text, data: { words: current.words, form: 'text', block: block.kind }, fragments: [fragment], applicability: null });
       continue;
     }
-    unplaced.push({ fragment, section: sectionPath(block.section), kind: KIND, text });
+    // A paragraph written as a signature stays a definition when unplaced; any other block is text under some command.
+    unplaced.push({ fragment, section: sectionPath(block.section), kind: block.kind === 'paragraph' && looksLikeSignature(text) ? SIGNATURE : TEXT, text });
   }
   if (invalid > 0) warnings.push(`有 ${invalid} 个块格式不对，已跳过`);
   if (rejected > 0) {
@@ -286,7 +290,7 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, w
 function signatureEntry(anchor: Anchor, path: string, fragment: FragmentRef): ProducedEntry {
   const data: { [key: string]: unknown } = { words: anchor.words, form: 'signature', signature: anchor.signature, params: anchor.params };
   if (anchor.variants !== null) data.variants = anchor.variants;
-  return { kind: KIND, path, statement: anchor.signature, data, fragments: [fragment], applicability: null };
+  return { kind: SIGNATURE, path, statement: anchor.signature, data, fragments: [fragment], applicability: null };
 }
 
 const PROMPT = /^\s*[^\s>#()]{0,64}(?:\([^)]{0,64}\))?[>#]\s*(\S.*)$/;
@@ -329,17 +333,17 @@ function fromCatalog(catalog: ManualCatalog, warnings: string[]): ManualResult {
       for (let n = at; n > 0 && head === null; n--) if (known.has(words.slice(0, n).join(' ').toLowerCase())) head = words.slice(0, n);
       const path = head === null ? null : commandPath(head);
       if (head !== null && path !== null) {
-        entries.push({ kind: KIND, path, statement: signature, data: { words: head, form: 'text', example: true }, fragments, applicability: null });
+        entries.push({ kind: TEXT, path, statement: signature, data: { words: head, form: 'text', example: true }, fragments, applicability: null });
         continue;
       }
       if (!words.every((word) => WORD.test(word))) {
-        unplaced.push({ fragment: fragments[0], section: words.join(' ').slice(0, 200), kind: KIND, text: signature });
+        unplaced.push({ fragment: fragments[0], section: words.join(' ').slice(0, 200), kind: TEXT, text: signature });
         continue;
       }
     }
     const path = commandPath(words);
     if (path === null) {
-      unplaced.push({ fragment: fragments[0], section: words.join(' ').slice(0, 200), kind: KIND, text: signature });
+      unplaced.push({ fragment: fragments[0], section: words.join(' ').slice(0, 200), kind: SIGNATURE, text: signature });
       continue;
     }
     const params = asArray(value.params)
@@ -350,7 +354,7 @@ function fromCatalog(catalog: ManualCatalog, warnings: string[]): ManualResult {
       .map((variant) => asStrings(variant))
       .filter((variant) => variant.length > 0);
     if (variants.length > 0) data.variants = variants;
-    entries.push({ kind: KIND, path, statement: signature, data, fragments, applicability: null });
+    entries.push({ kind: SIGNATURE, path, statement: signature, data, fragments, applicability: null });
     const key = words.join(' ').toLowerCase();
     if (!index.has(key)) index.set(key, { path, words });
   }
@@ -362,11 +366,11 @@ function fromCatalog(catalog: ManualCatalog, warnings: string[]): ManualResult {
     const found = index.get(head.toLowerCase());
     const desc = squeeze(value.desc);
     if (found === undefined || param === '') {
-      unplaced.push({ fragment: { parser: JSON_PARSER, selector: `p/value_domains/${k}` }, section: head, kind: KIND, text: desc });
+      unplaced.push({ fragment: { parser: JSON_PARSER, selector: `p/value_domains/${k}` }, section: head, kind: TEXT, text: desc });
       return;
     }
     entries.push({
-      kind: KIND,
+      kind: TEXT,
       path: found.path,
       statement: `${param}: ${desc}`,
       data: { words: found.words, form: 'text', param, values: asStrings(value.enums) },
@@ -387,11 +391,11 @@ function fromCatalog(catalog: ManualCatalog, warnings: string[]): ManualResult {
       for (let n = Math.min(words.length, 16); n > 0 && found === undefined; n--) found = index.get(words.slice(0, n).join(' '));
     }
     if (found === undefined) {
-      unplaced.push({ fragment: { parser: JSON_PARSER, selector: `p/worked_examples/${k}` }, section: '', kind: KIND, text });
+      unplaced.push({ fragment: { parser: JSON_PARSER, selector: `p/worked_examples/${k}` }, section: '', kind: TEXT, text });
       return;
     }
     entries.push({
-      kind: KIND,
+      kind: TEXT,
       path: found.path,
       statement: text,
       data: { words: found.words, form: 'text', example: true },

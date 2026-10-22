@@ -4,7 +4,7 @@ import { CatalogEntry } from '../../../../contracts/src/tables.ts';
 import { createCatalogView, getInterpreter } from '../../../../hub/rules/api.ts';
 import commandTree, { parseLimit, produceCommandEntries } from './command-tree.ts';
 import type { CommandEntryData, ProducedEntry, XmlModel } from './types.ts';
-import { assertTotal, fixtureBytes, hostileInputs, internalWarnings, latin1, seeded, xml, xmlDocument } from './test-support.ts';
+import { assertTotal, fixtureBytes, hostileInputs, internalWarnings, latin1, seeded, xml, xmlDocument } from '../testing/test-support.ts';
 
 const document = xmlDocument(fixtureBytes('command-tree.xml'));
 const result = produceCommandEntries(document.model);

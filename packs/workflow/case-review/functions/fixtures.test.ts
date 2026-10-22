@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
 import { compactText, fixtureFiles, largeDocument, reviewDocument, untaggedDocument, type KmNode } from '../../../../tests/fixtures/mindmaps/documents.ts';
 import { MINDMAP_FIXTURES, fixtureText, type MindmapFixture } from '../../../../tests/fixtures/mindmaps/index.ts';
-import { parseFixture, parseLarge } from './test-support.ts';
+import { parseFixture, parseLarge } from '../testing/test-support.ts';
 
 const walk = (node: KmNode, visit: (node: KmNode) => void): void => {
   visit(node);

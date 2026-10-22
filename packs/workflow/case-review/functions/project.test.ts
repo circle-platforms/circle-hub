@@ -4,7 +4,7 @@ import { ItemProjection } from '../../../../contracts/src/run.ts';
 import { DUPLICATED_ID } from '../../../../tests/fixtures/mindmaps/documents.ts';
 import { fixtureText } from '../../../../tests/fixtures/mindmaps/index.ts';
 import projectDefault, { LIMITS, projectItems } from './project.ts';
-import { assertJson, isFailure, parseFixture, parseLarge, parseText, project, reviewProjection } from './test-support.ts';
+import { assertJson, isFailure, parseFixture, parseLarge, parseText, project, reviewProjection } from '../testing/test-support.ts';
 import type { CaseItem, KityMinderModel, ProjectionResult } from './types.ts';
 
 const review = parseFixture('review-150.km.json');

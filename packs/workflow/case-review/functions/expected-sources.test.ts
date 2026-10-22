@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { ExternalObjectId } from '../../../../contracts/src/reference.ts';
 import sourcesDefault, { expectedSources, extractIds, featureTerms, leadingIds, markedIds, specSearchId } from './expected-sources.ts';
-import { assertJson, isFailure, parseFixture } from './test-support.ts';
+import { assertJson, isFailure, parseFixture } from '../testing/test-support.ts';
 import type { SourcesOutput } from './types.ts';
 
 /** `kind:id`, with `?` for an id whose kind no word names. */

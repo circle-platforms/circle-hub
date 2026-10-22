@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import listing, { parseListing } from './listing.ts';
 import type { Build, HtmlModel } from './types.ts';
-import { assertTotal, fixtureBytes, hostileInputs, html, internalWarnings, latin1, seeded } from './test-support.ts';
+import { assertTotal, fixtureBytes, hostileInputs, html, internalWarnings, latin1, seeded } from '../testing/test-support.ts';
 
 const apv = parseListing(html(fixtureBytes('listing-apv.html')));
 const nsae = parseListing(html(fixtureBytes('listing-nsae.html')));

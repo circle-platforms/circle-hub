@@ -9,7 +9,11 @@ import projectFn from './project.ts';
 import subjectFn from './subject.ts';
 import tagsFn from './tags.ts';
 import templateCoverageFn from './template-coverage.ts';
-import { parseFixture, table } from './test-support.ts';
+import projectionFn from './projection.ts';
+import expectedFn from './expected.ts';
+import { findingSources, tagSpelling } from './checks.ts';
+import { toStructureSubjects } from './subject.ts';
+import { parseFixture, parseLarge, parseText, table } from '../testing/test-support.ts';
 import type { Failure, Warning } from './types.ts';
 
 const TABLES_DIR = new URL('../tables/', import.meta.url);
@@ -18,6 +22,7 @@ const tableFiles = readdirSync(TABLES_DIR).filter((name) => name.endsWith('.json
 type Codes = {
   refusals: Array<{ code: string; when: string; fix: string }>;
   warnings: Array<{ code: string; when: string; fix: string }>;
+  checks: Array<{ code: string; when: string; fix: string }>;
   findings: Array<{ code: string; label: string; when: string }>;
   ranks: Array<{ rank: string; label: string; levels: string[] }>;
   levels: Array<{ level: string; label: string; when: string }>;
@@ -37,11 +42,11 @@ const LEVELS = ['P0', 'P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'P7'];
 describe('the core tables', () => {
   const core = tableFiles.map((name) => ({ name, value: table(name) as { schema?: string } })).filter((entry) => entry.value.schema !== undefined && entry.value.schema in TABLE_SCHEMAS);
 
-  it('cover structure@1, catalog@1, membership@1, coverage@1 and quote@1', () => {
-    assert.deepEqual([...new Set(core.map((entry) => entry.value.schema))].sort(), ['catalog@1', 'coverage@1', 'membership@1', 'quote@1', 'structure@1']);
+  it('cover structure@1, catalog@1, coverage@1 and quote@1 (the closed sets of codes and ranks are in the slot schema)', () => {
+    assert.deepEqual([...new Set(core.map((entry) => entry.value.schema))].sort(), ['catalog@1', 'coverage@1', 'quote@1', 'structure@1']);
     assert.deepEqual(
       core.map((entry) => entry.name),
-      ['catalog.json', 'findings-catalog.json', 'findings-codes.json', 'findings-quotes.json', 'findings-ranks.json', 'structure-node-ids.json', 'structure.json', 'tags.json', 'template-v3-coverage.json'],
+      ['catalog.json', 'cited-commands.json', 'command-claims.json', 'findings-quotes.json', 'structure-node-ids.json', 'structure.json', 'template-v3-coverage.json'],
     );
     assert.deepEqual(
       tableFiles.filter((name) => !core.some((entry) => entry.name === name)),
@@ -79,19 +84,29 @@ describe('the core tables', () => {
     assert.equal(scan.tier, 'advisory');
     assert.equal(scan.basis, undefined);
     assert.equal(scan.negative.tier, 'advisory');
-    const cited = table('findings-catalog.json') as { tier: string; basis: string; claims: { select: string } };
-    assert.equal(cited.tier, 'blocking');
-    assert.match(cited.basis, /^要求项 catalog：/);
-    assert.equal(cited.claims.select, '$.slots.findings[*].commands[*]');
+    const claims = table('command-claims.json') as { tier: string; basis: string; claims: { select: string }; commands?: unknown };
+    assert.equal(claims.tier, 'blocking');
+    assert.match(claims.basis, /^要求项 catalog：/);
+    assert.equal(claims.claims.select, '$.claims[*]');
+    assert.equal(claims.commands, undefined);
+    const cited = table('cited-commands.json') as { tier: string; required: boolean; commands: string[]; claims?: unknown; negative: { tier: string; expect: string[] } };
+    assert.deepEqual([cited.tier, cited.required, cited.commands, cited.claims, cited.negative.tier], ['blocking', true, ['$.phrases'], undefined, 'advisory']);
+    assert.deepEqual(cited.negative.expect, ['core.catalog.param_out_of_range', 'core.catalog.param_type_mismatch', 'core.catalog.arity_mismatch']);
   });
 
-  it('agree with the closed sets declared in codes.json, which are the brief’s', () => {
-    assert.deepEqual((table('findings-codes.json') as { set: { values: string[] } }).set.values, PROBES);
+  it('agree with the closed sets of slots.schema.json, which are the brief’s', () => {
+    const slots = JSON.parse(readFileSync(new URL('../slots.schema.json', import.meta.url), 'utf8')) as {
+      item: { findings: { codes: Array<{ code: string }>; ranks: Array<{ code: string }> } };
+      run: { level: { codes: Array<{ code: string }>; ranks: Array<{ code: string }> } };
+    };
+    assert.deepEqual(slots.item.findings.codes.map((c) => c.code), PROBES);
+    assert.deepEqual(slots.item.findings.ranks.map((r) => r.code), BANDS.map(([band]) => band));
+    assert.deepEqual(slots.run.level.codes.map((c) => c.code), ['level']);
+    assert.deepEqual(slots.run.level.ranks.map((r) => r.code), LEVELS);
     assert.deepEqual(
       codes.findings.map((finding) => finding.code),
       PROBES,
     );
-    assert.deepEqual((table('findings-ranks.json') as { set: { values: string[] } }).set.values, BANDS.map(([band]) => band));
     assert.deepEqual(
       codes.ranks.map((rank) => [rank.rank, rank.levels]),
       BANDS,
@@ -114,10 +129,10 @@ describe('the core tables', () => {
 });
 
 describe('codes.json', () => {
-  const declared = new Set([...codes.refusals, ...codes.warnings].map((entry) => entry.code));
+  const declared = new Set([...codes.refusals, ...codes.warnings, ...codes.checks].map((entry) => entry.code));
 
   it('declares each code once, under the pack name, in Chinese', () => {
-    const all = [...codes.refusals, ...codes.warnings];
+    const all = [...codes.refusals, ...codes.warnings, ...codes.checks];
     assert.equal(declared.size, all.length);
     for (const entry of all) {
       assert.match(entry.code, /^case-review\.[a-z][a-z_]*$/);
@@ -157,6 +172,24 @@ describe('codes.json', () => {
     collect(templateCoverageFn({ items: [null], template: table('template-v3.json'), skipped: ['x'] }));
     collect(subjectFn(null));
     collect(tagsFn(null));
+    // The workflow adapters: refusals of the block parameter and of a target that is too large, and the check codes.
+    const bound = (model: unknown) => ({ inputs: [{ slot: 'subject', external: 'agile:mindmap:880001', sha256: 'a'.repeat(64), media_type: 'application/json', parser: 'kityminder@1', model, meta: null }], parameters: {}, context: { product: null, names: [], line: null, build: null, root: null, parameters: {}, groups: [] } });
+    const reviewInput = bound(review);
+    collect(projectionFn({ ...reviewInput, parameters: { block: 'no-such-node' } }));
+    collect(projectionFn({ ...reviewInput, parameters: { block: ['示例', '没有这个分组'] } }));
+    collect(projectionFn(bound(parseLarge().model)));
+    collect(projectionFn({ ...reviewInput, parameters: { slice: { from: 9, to: 1 } } }));
+    const group = (id: string, cases: string[]) => ({ data: { id, text: '组', priority: 1 }, children: cases.map((c) => ({ data: { id: c, text: 'c', priority: 2, resource: ['x'] }, children: [] })) });
+    const twins = parseText(JSON.stringify({ root: { data: { id: 'r', text: 'r' }, children: [group('g1', ['c1']), group('g2', ['c2'])] } })).model;
+    collect(projectionFn({ ...bound(twins), parameters: { block: ['组'] } }));
+    collect(expectedFn(null));
+    const tagged = (id: string, tags: string[]) => ({ id, location: 'src:x', fields: { document: 'd', title: id, tags, expected: ['e'], path: [] } });
+    for (const outcome of [
+      ...findingSources({ subject: { item: 'i', slots: { findings: [{ text: 't', quotes: [{ reference: 'src:x', text: 'q' }], commands: [{ command: 'widget x 1' }] }, { text: 'u' }] }, evidence: [{ reference: 'src:x', resolved: true, role: 'hint' }] } }),
+      ...tagSpelling({ subject: { subjects: toStructureSubjects([tagged('a', ['Functional']), tagged('b', ['Functional']), tagged('c', ['功能'])]) } }),
+    ]) {
+      if (outcome.code !== undefined) emitted.add(outcome.code);
+    }
     for (const code of emitted) assert.ok(declared.has(code), `${code} is not declared in tables/codes.json`);
     for (const code of declared) assert.ok(emitted.has(code), `${code} is declared but no scenario emits it`);
   });

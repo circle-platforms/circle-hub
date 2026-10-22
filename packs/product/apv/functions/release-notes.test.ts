@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import releaseNotes, { produceReleaseEntries } from './release-notes.ts';
 import type { ReleaseResult } from './types.ts';
-import { assertTotal, fixtureBytes, hostileInputs, internalWarnings, markdown, markdownDocument, seeded, sliceBytes } from './test-support.ts';
+import { assertTotal, fixtureBytes, hostileInputs, internalWarnings, markdown, markdownDocument, seeded, sliceBytes } from '../testing/test-support.ts';
 
 const document = markdownDocument(fixtureBytes('release-note.md'));
 const result = produceReleaseEntries(document.model);

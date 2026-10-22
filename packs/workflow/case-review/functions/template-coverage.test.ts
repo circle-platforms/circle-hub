@@ -3,7 +3,7 @@ import { describe, it } from 'node:test';
 import { getInterpreter } from '../../../../hub/rules/api.ts';
 import { CANONICAL_TAGS } from './tags.ts';
 import coverageDefault, { keywordForm, matchForm, templateCoverage } from './template-coverage.ts';
-import { assertJson, isFailure, parseFixture, parseLarge, project, reviewProjection, table } from './test-support.ts';
+import { assertJson, isFailure, parseFixture, parseLarge, project, reviewProjection, table } from '../testing/test-support.ts';
 import type { CoverageFacts, Template } from './types.ts';
 
 const template = table('template-v3.json') as Template;

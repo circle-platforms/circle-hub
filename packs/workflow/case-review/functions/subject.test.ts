@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import { CheckOutcome as CheckOutcomeShape } from '../../../../contracts/src/tables.ts';
 import { buildCatalog, getInterpreter, type CheckOutcome } from '../../../../hub/rules/api.ts';
+import { tagSpelling } from './checks.ts';
 import subjectDefault, { buildSubjects, contentKey, groupKey, toCatalogSubject, toStructureSubject, toStructureSubjects } from './subject.ts';
-import { assertJson, isFailure, parseFixture, project, reviewProjection, table } from './test-support.ts';
+import { assertJson, isFailure, parseFixture, project, reviewProjection, table } from '../testing/test-support.ts';
 import type { CaseItem, ProjectionResult, StructureSubject } from './types.ts';
 
 const ROOT = 'b'.repeat(64);
@@ -178,31 +180,43 @@ describe('tables/structure-node-ids.json', () => {
   });
 });
 
-describe('tables/tags.json: tag spellings consistent within a document', () => {
-  it('reports the spellings that differ from the usual spelling of their category in the review fixture, at advisory tier', () => {
+describe('the tag check (checks.ts tagSpelling): tag spellings consistent within a document', () => {
+  const tagOutcomes = (subjects: StructureSubject[]): CheckOutcome[] => tagSpelling({ subject: { subjects } });
+  const variantTags = (subject: StructureSubject): string[] => subject.tagVariants.map((v) => v.tag);
+
+  it('reports the spellings that differ from the usual spelling of their category in the review fixture, at advisory tier, naming both', () => {
     const subjects = toStructureSubjects(hubItems());
-    const outcomes = refutations(run('structure@1', 'tags.json', { subjects }));
-    assert.ok(outcomes.every((outcome) => outcome.code === 'core.structure.cardinality' && outcome.tier === 'advisory' && outcome.pointer?.endsWith('/tagVariants')));
+    const outcomes = refutations(tagOutcomes(subjects));
+    assert.ok(outcomes.every((outcome) => outcome.code === 'case-review.tag_variant' && outcome.tier === 'advisory' && outcome.pointer?.endsWith('/tagVariants')));
     assert.equal(outcomes.length, 24);
-    const flagged = new Set(outcomes.flatMap((outcome) => subjects.find((subject) => subject.id === outcome.item)?.tagVariants ?? []));
+    const flagged = new Set(outcomes.flatMap((outcome) => variantTags(subjects.find((subject) => subject.id === outcome.item) as StructureSubject)));
     // Usual spellings in the fixture: Function (15 of 26 Functional tags), Configuration, Integration, Compatibility,
     // Negative, and Stress (a three-way tie goes to the canonical name).
     assert.deepEqual(
       [...flagged].sort(),
       ['Functional', 'function', '[Functional]', '[Functional', '功能', 'configuration', '[Configuration]', 'Configure', '配置', 'compatibility', 'negative', '[Negative]', '负向', 'stress', '压力'].sort(),
     );
+    const configure = outcomes.find((outcome) => outcome.statement.includes('“Configure”'));
+    assert.ok(configure !== undefined && configure.statement.includes('“Configuration”') && configure.statement.includes('Configuration 类'), configure?.statement);
+    assert.ok(!outcomes.some((outcome) => /子节点/.test(outcome.statement)), 'the statement speaks of tags, not of child nodes');
+    for (const outcome of tagOutcomes(subjects)) assert.ok(CheckOutcomeShape.safeParse(outcome).success, JSON.stringify(outcome));
   });
 
   it('reports nothing for a document that writes every category one way, whichever way that is', () => {
     const item = (id: string, document: string, tags: string[]) => ({ id, location: `src:${SOURCE}`, fields: { document, title: id, tags, expected: ['x'], path: [] } });
     const subjects = toStructureSubjects([item('a', 'd1', ['Function']), item('b', 'd1', ['Function', 'R2ADD']), item('c', 'd2', ['功能']), item('d', 'd2', ['功能'])]);
-    assert.deepEqual(refutations(run('structure@1', 'tags.json', { subjects })), []);
+    assert.deepEqual(refutations(tagOutcomes(subjects)), []);
     const mixed = toStructureSubjects([item('a', 'd1', ['Function']), item('b', 'd1', ['Function']), item('c', 'd1', ['功能'])]);
-    assert.deepEqual(mixed.map((subject) => subject.tagVariants), [[], [], ['功能']]);
+    assert.deepEqual(mixed.map((subject) => subject.tagVariants), [[], [], [{ tag: '功能', usual: 'Function', category: 'Functional' }]]);
     const tie = toStructureSubjects([item('a', 'd1', ['功能']), item('b', 'd1', ['Functional'])]);
-    assert.deepEqual(tie.map((subject) => subject.tagVariants), [['功能'], []], 'a tie goes to the canonical spelling');
+    assert.deepEqual(tie.map(variantTags), [['功能'], []], 'a tie goes to the canonical spelling');
     const firstSeen = toStructureSubjects([item('a', 'd1', ['功能']), item('b', 'd1', ['Function'])]);
-    assert.deepEqual(firstSeen.map((subject) => subject.tagVariants), [[], ['Function']], 'without the canonical spelling, the first one seen');
+    assert.deepEqual(firstSeen.map(variantTags), [[], ['Function']], 'without the canonical spelling, the first one seen');
+  });
+
+  it('is total on odd subjects', () => {
+    assert.deepEqual(tagSpelling({ subject: { subjects: [null, { id: 'x', tagVariants: [{ tag: 1 }] }] } }).map((o) => o.verdict), ['support']);
+    assert.deepEqual(tagSpelling(null), []);
   });
 });
 

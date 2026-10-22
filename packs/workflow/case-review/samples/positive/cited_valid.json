@@ -1,0 +1,69 @@
+{
+  "id": "cited_valid",
+  "source": "author",
+  "check": "cited_commands",
+  "note": "发现照用例原样引用的命令行（用例的步骤里有这一行）参数合法",
+  "subject": {
+    "item": "sample:c1",
+    "location": "src:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc/kityminder@1/n/c1",
+    "negative": false,
+    "claims": [],
+    "phrases": [
+      "health interval pool1 30"
+    ],
+    "unquoted": []
+  },
+  "catalog": {
+    "root": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "complete": true,
+    "entries": [
+      {
+        "head": "pool create",
+        "signatures": [
+          [
+            {
+              "name": "name",
+              "type": "string",
+              "maxLength": 32
+            }
+          ]
+        ]
+      },
+      {
+        "head": "health interval",
+        "signatures": [
+          [
+            {
+              "name": "pool",
+              "type": "string"
+            },
+            {
+              "name": "seconds",
+              "type": "int",
+              "minimum": 1,
+              "maximum": 300
+            }
+          ]
+        ]
+      },
+      {
+        "head": "show pool",
+        "signatures": [
+          [],
+          [
+            {
+              "name": "name",
+              "type": "string"
+            }
+          ]
+        ]
+      }
+    ]
+  },
+  "expect": [
+    {
+      "verdict": "support",
+      "item": "sample:c1"
+    }
+  ]
+}

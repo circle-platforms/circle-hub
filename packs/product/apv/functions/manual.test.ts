@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import manual, { canonicalSignature, parseAnchor, produceManualEntries } from './manual.ts';
 import type { ManualCatalog, ManualResult } from './types.ts';
-import { assertTotal, fixtureBytes, hostileInputs, internalWarnings, jsonDocument, markdown, markdownDocument, seeded, utf8 } from './test-support.ts';
+import { assertTotal, fixtureBytes, hostileInputs, internalWarnings, jsonDocument, markdown, markdownDocument, seeded, utf8 } from '../testing/test-support.ts';
 
 const md = markdownDocument(fixtureBytes('manual.md'));
 const fromMarkdown = produceManualEntries(md.model);
@@ -117,8 +117,8 @@ describe('entries from the converted manual', () => {
         ['text', '/commands/demo/pool/add', 'b/5/基本配置/显示命令/其他说明'],
       ],
     );
-    // K02 R[3]: the kind is the model's; the form of the manual text is data.
-    assert.ok(fromMarkdown.entries.every((entry) => entry.kind === 'definition'));
+    // K02 R[3]: a signature is a definition, the text under a command a behaviour; the finer form is data.
+    assert.ok(fromMarkdown.entries.every((entry) => entry.kind === (entry.data.form === 'signature' ? 'definition' : 'behaviour')));
   });
 
   it('ends a command at a paragraph written as a signature that does not parse', () => {
@@ -149,8 +149,8 @@ describe('entries from the converted manual', () => {
     );
     assert.deepEqual(result.unplaced.map((item) => [item.kind, item.text.slice(0, 16)]), [
       ['definition', '**demo acl drop '],
-      ['definition', '该命令用于丢弃流量。'],
-      ['definition', '| 参数 | 说明 |\n|---'],
+      ['behaviour', '该命令用于丢弃流量。'],
+      ['behaviour', '| 参数 | 说明 |\n|---'],
     ]);
     assert.ok(result.warnings.some((warning) => warning.includes('有 1 段写成命令签名的文字不能作为命令锚点')), result.warnings.join('\n'));
   });
@@ -177,12 +177,12 @@ describe('entries from the converted manual', () => {
     assert.deepEqual(
       fromMarkdown.unplaced.map((item) => [item.fragment.selector, item.section, item.kind]),
       [
-        ['b/0/引言', '引言', 'definition'],
-        ['b/0/基本配置', '基本配置', 'definition'],
-        ['b/1/基本配置', '基本配置', 'definition'],
-        ['b/0/基本配置/显示命令/其他说明', '基本配置 / 显示命令 / 其他说明', 'definition'],
+        ['b/0/引言', '引言', 'behaviour'],
+        ['b/0/基本配置', '基本配置', 'behaviour'],
+        ['b/1/基本配置', '基本配置', 'behaviour'],
+        ['b/0/基本配置/显示命令/其他说明', '基本配置 / 显示命令 / 其他说明', 'behaviour'],
         ['b/1/基本配置/显示命令/其他说明', '基本配置 / 显示命令 / 其他说明', 'definition'],
-        ['b/2/基本配置/显示命令/其他说明', '基本配置 / 显示命令 / 其他说明', 'definition'],
+        ['b/2/基本配置/显示命令/其他说明', '基本配置 / 显示命令 / 其他说明', 'behaviour'],
       ],
     );
     // "**demo broken** *\<name*" is written as a signature but its brackets do not close.
@@ -226,7 +226,7 @@ describe('entries from the manual command catalog', () => {
         ['text', '/commands/help', 'Box>help', 'p/worked_examples/1/lines'],
       ],
     );
-    assert.ok(fromCatalog.entries.every((entry) => entry.kind === 'definition'));
+    assert.ok(fromCatalog.entries.every((entry) => entry.kind === (entry.data.form === 'signature' ? 'definition' : 'behaviour')));
     assert.deepEqual(fromCatalog.entries[2].data.variants, [['demo', 'mode', 'on'], ['demo', 'mode', 'off']]);
     assert.deepEqual(fromCatalog.entries[3].data.params, [
       { name: 'network', required: true },
@@ -239,8 +239,8 @@ describe('entries from the manual command catalog', () => {
     assert.deepEqual(
       fromCatalog.unplaced.map((item) => [item.kind, item.section, item.fragment.selector]),
       [
-        ['definition', 'demo unknown', 'p/value_domains/2'],
-        ['definition', '', 'p/worked_examples/2'],
+        ['behaviour', 'demo unknown', 'p/value_domains/2'],
+        ['behaviour', '', 'p/worked_examples/2'],
       ],
     );
     assert.deepEqual(fromCatalog.warnings, ['有 1 条签名格式不对或没有命令词，已跳过']);
@@ -273,7 +273,7 @@ describe('entries from the manual command catalog', () => {
         ['signature', '/commands/demo/v6/6', 'demo v6 6', false],
       ],
     );
-    assert.deepEqual(result.unplaced.map((item) => [item.kind, item.fragment.selector, item.text]), [['definition', 'p/signatures/6/signature_verbatim', 'other “x_server”']]);
+    assert.deepEqual(result.unplaced.map((item) => [item.kind, item.fragment.selector, item.text]), [['behaviour', 'p/signatures/6/signature_verbatim', 'other “x_server”']]);
     for (const entry of result.entries) assert.ok(!/["“”]/.test(entry.path ?? ''), entry.path ?? '');
   });
 

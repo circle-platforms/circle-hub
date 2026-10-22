@@ -1,0 +1,40 @@
+{
+  "schema": "product@1",
+  "id": "apv",
+  "title": "APV / NSAE",
+  "names": ["APV", "NSAE"],
+  "sync": {
+    "start": ["buildsite:listing:index"],
+    "plan": { "module": "functions/sync.ts" },
+    "options": { "include": [], "exclude": [] },
+    "max_rounds": 6,
+    "max_reads": 300
+  },
+  "select_build": { "module": "functions/select.ts" },
+  "catalogs": [
+    { "id": "commands@1", "entry_kind": "definition", "producer": "command-tree", "complete": true, "case_sensitive": false }
+  ],
+  "producers": [
+    {
+      "id": "command-tree",
+      "title": "命令树（构建自带的 command_tree XML）",
+      "function": { "module": "functions/producers.ts", "export": "commandTree" },
+      "inputs": { "tree": { "source": "tree" } }
+    },
+    {
+      "id": "manual",
+      "title": "CLI 手册与应用手册（版本线的手册）",
+      "function": { "module": "functions/producers.ts", "export": "manual" },
+      "inputs": {
+        "cli": { "external": "manual:cli:{line}", "optional": true },
+        "app": { "external": "manual:app:{line}", "optional": true }
+      }
+    },
+    {
+      "id": "release-notes",
+      "title": "修复的缺陷（构建的修复缺陷清单）",
+      "function": { "module": "functions/producers.ts", "export": "releaseNotes" },
+      "inputs": { "notes": { "source": "fixed_bugs", "optional": true } }
+    }
+  ]
+}

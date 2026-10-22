@@ -77,9 +77,14 @@ function readParameters(raw: unknown, warnings: WarningSink): Parameters {
   return out;
 }
 
+/**
+ * The output limit of the call. Infinity (never JSON, so only an in-process caller can pass it) means the caller bounds the
+ * output itself: the run adapter projects the whole document and returns at most one block of it.
+ */
 function readOutputBytes(raw: unknown, warnings: WarningSink): number {
   if (!isRecord(raw) || !Object.hasOwn(raw, 'outputBytes')) return LIMITS.outputBytes;
   const value = raw.outputBytes;
+  if (value === Number.POSITIVE_INFINITY) return value;
   if (typeof value === 'number' && Number.isSafeInteger(value) && value >= 1024) return value;
   warnings.note({
     code: `${PACK}.parameter_ignored`,
@@ -500,6 +505,7 @@ export function projectItems(input: unknown): ProjectionOutput {
     return failure('no_case', `${names}里没有用例节点：${rule}${hint}`, fix, warnings.list(), empty.map((entry) => entry.id));
   }
   const result: ProjectionResult = { items: out.items, groups: out.groups, unnumbered: out.unnumbered, warnings: warnings.list() };
+  if (outputBytes === Number.POSITIVE_INFINITY) return result;
   const bytes = utf8Length(JSON.stringify(result));
   if (bytes > outputBytes) {
     const documents = [...seen];

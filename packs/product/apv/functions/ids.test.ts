@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import ids, { idsFromTitle } from './ids.ts';
-import { assertTotal, hostileInputs, internalWarnings, randomText, seeded } from './test-support.ts';
+import { assertTotal, hostileInputs, internalWarnings, randomText, seeded } from '../testing/test-support.ts';
 
 const of = (title: string) => {
   const { stories, bugs, plm, unclassified } = idsFromTitle(title);
@@ -20,7 +20,7 @@ describe('ids in document titles', () => {
     assert.deepEqual(of('Test List of Bug 161007_SSL子功能'), { ...none, bugs: ['161007'] });
     assert.deepEqual(of('PLM7201-接口超时'), { ...none, plm: ['7201'] });
     assert.deepEqual(of('需求7301 支持新算法'), { ...none, stories: ['7301'] });
-    assert.deepEqual(of('Story#7302 证书扩展'), { ...none, stories: ['7302'] });
+    assert.deepEqual(of('Story#7302 会话保持'), { ...none, stories: ['7302'] });
     assert.deepEqual(of('缺陷 61008：显示错误'), { ...none, bugs: ['61008'] });
   });
 
@@ -50,7 +50,7 @@ describe('ids in document titles', () => {
     assert.deepEqual(of('[回归]161042 161043 - 支持新调度'), { ...none, unclassified: ['161042', '161043'] });
     assert.deepEqual(of('161044 161045支持多个端口'), { ...none, unclassified: ['161044', '161045'] });
     assert.deepEqual(of('Test-161046-cookie flags'), { ...none, unclassified: ['161046'] });
-    assert.deepEqual(of('[7403] 证书请求'), { ...none, unclassified: ['7403'] });
+    assert.deepEqual(of('[7403] 端口复用'), { ...none, unclassified: ['7403'] });
     assert.deepEqual(of('161047回归测试'), { ...none, unclassified: ['161047'] });
   });
 

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import locate, { locateFromAncestors, stripPrefix } from './locate.ts';
-import { assertTotal, hostileInputs, internalWarnings, randomText, seeded } from './test-support.ts';
+import { assertTotal, hostileInputs, internalWarnings, randomText, seeded } from '../testing/test-support.ts';
 
 const ROOT = ['DEMO', '030：产品测试项目'];
 

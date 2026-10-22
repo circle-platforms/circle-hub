@@ -1,0 +1,103 @@
+{
+  "id": "verdict_pass",
+  "source": "author",
+  "check": "verdict",
+  "note": "PASS：全部证实，没有新发现，等级不变，复核方有一段自己从被复核脑图里逐字引用的原文（初评没有引过的期望结果）",
+  "subject": {
+    "items": [
+      {
+        "id": "sample:c1",
+        "label": "设置池 c1 的探测间隔",
+        "location": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/n/c1",
+        "fields": {
+          "nodeId": "c1",
+          "path": [
+            "示例文档",
+            "池管理"
+          ],
+          "title": "设置池 c1 的探测间隔",
+          "draft_partition": "delivered",
+          "draft_findings": [
+            {
+              "reference": "rec:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb#/partitions/delivered/0/requirements/2/claims/0",
+              "code": "coverage_gap",
+              "rank": "major",
+              "text": "初评的发现",
+              "location": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/n/c1",
+              "quotes": [
+                {
+                  "reference": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/n/c1",
+                  "text": "设置探测间隔"
+                }
+              ],
+              "commands": []
+            }
+          ],
+          "draft_level": {
+            "reference": "rec:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb#/cross_item/3",
+            "rank": "P3",
+            "text": "等级理由：覆盖全部功能细节，有一些反向用例"
+          }
+        },
+        "slots": {
+          "verification": [
+            {
+              "text": "复核方的处置",
+              "code": "verified",
+              "rank": "major",
+              "location": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/n/c1",
+              "quotes": [
+                {
+                  "reference": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/n/c1e",
+                  "text": "显示的探测间隔与设置一致"
+                }
+              ],
+              "data": {
+                "finding": "rec:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb#/partitions/delivered/0/requirements/2/claims/0"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "sample:c2",
+        "label": "设置池 c2 的探测间隔",
+        "location": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/n/c2",
+        "fields": {
+          "nodeId": "c2",
+          "path": [
+            "示例文档",
+            "池管理"
+          ],
+          "title": "设置池 c2 的探测间隔",
+          "draft_partition": "delivered",
+          "draft_findings": [],
+          "draft_level": {
+            "reference": "rec:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb#/cross_item/3",
+            "rank": "P3",
+            "text": "等级理由：覆盖全部功能细节，有一些反向用例"
+          }
+        },
+        "slots": {
+          "verification": []
+        }
+      }
+    ],
+    "cross_item": [
+      {
+        "nature": "judgment",
+        "statement": "结论 PASS",
+        "grounds": [],
+        "code": "PASS",
+        "rank": "P3"
+      }
+    ]
+  },
+  "expect": [
+    {
+      "verdict": "support",
+      "item": "sample:c1",
+      "tier": "blocking"
+    }
+  ]
+}

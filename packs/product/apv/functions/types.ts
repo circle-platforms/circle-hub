@@ -2,9 +2,9 @@
 // so the functions stay pure modules inside the pack.
 import type { HtmlModel, MarkdownModel, XmlModel } from '../../../../hub/refs/api.ts';
 import type { CatalogSignature } from '../../../../contracts/src/tables.ts';
-import type { ProvenanceType } from '../../../../contracts/generated/vocabulary.ts';
+import type { EntryKind, ProvenanceType } from '../../../../contracts/generated/vocabulary.ts';
 
-export type { HtmlModel, MarkdownModel, XmlModel };
+export type { EntryKind, HtmlModel, MarkdownModel, XmlModel };
 
 /** Name family of a build or listing page. APV and NSAE name one product line; anything else is `other`. */
 export type Family = 'APV' | 'NSAE' | 'other';
@@ -173,11 +173,9 @@ export type SyncBuildsResult = {
 
 // Producers (command-tree.ts, manual.ts, release-notes.ts) -----------------------------------------------------------
 
-/**
- * Entry kinds: the producer-declared values of K02 R[3] (定义、行为、用例、缺陷、观察). The genre of the source (command
- * tree, manual, release note) is not a kind (K01 R[0]); the finer form is in `data` (form, status).
- */
-export type EntryKind = 'definition' | 'behaviour' | 'case' | 'defect' | 'observation';
+// Entry kinds (EntryKind, imported above) are the entry_kind axis of the generated vocabulary, the producer-declared values of
+// K02 R[3]. The genre of the source (command tree, manual, release note) is not a kind (K01 R[0]); the finer form is in
+// `data` (form, status).
 
 /** Where the content of an entry comes from: a fragment of the parsed source (parser@version and its selector). */
 export type FragmentRef = {

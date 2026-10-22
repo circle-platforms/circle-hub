@@ -1,0 +1,12 @@
+{
+  "schema": "catalog@1",
+  "origin": "决定：case-review-verify 工作流包 verification 要求项（docs/hub-r4-architecture.md 第 6 节：复核方对不熟悉的命令一律对照产品资料，说命令存在或不存在的陈述要按锁定构建的目录核实；第 9 节场景 3：目录有这个命令却说不存在，是违规，经错误处理表进入修复）；被判对象由 functions/subjects.ts 的 claimSubject 产出：一个条目的处置和新发现里带 present 的命令陈述（claims）",
+  "description": "复核方的陈述里写了 present 的命令是一条陈述：present 为 true 说锁定构建的命令目录里有这个命令（参数要符合它的某个签名），present 为 false 说目录里没有。目录说相反时是违规（core.catalog.membership_contradicted），由 verification 要求项的错误处理表送回修复",
+  "tier": "blocking",
+  "basis": "要求项 verification：复核方说命令存在或不存在的陈述与锁定构建的命令目录一致；相反的陈述是复核方的错误，经错误处理表进入修复",
+  "item": "/item",
+  "location": "/location",
+  "catalog": "commands@1",
+  "claims": { "select": "$.claims[*]", "command": "/command", "present": "/present" },
+  "match": { "unicode": "nfkc", "case": "insensitive", "whitespace": "collapse" }
+}

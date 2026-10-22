@@ -1,0 +1,30 @@
+// Subject builder of the locate check (run-subject-input@1 -> the check's subject): the items with their fields and the run
+// facts the scheme needs, which a check function does not receive otherwise (its context names the run, requirement and
+// pack only): the bound product line, all its names and the frozen parameters.
+import { guarded, isRecord, strings } from './text.ts';
+import type { LocateSubject } from './types.ts';
+
+export function buildSubject(input: unknown): LocateSubject {
+  const raw = isRecord(input) ? input : {};
+  const context = isRecord(raw.context) ? raw.context : {};
+  const items = (Array.isArray(raw.items) ? raw.items : []).filter(isRecord).map((item) => ({
+    id: typeof item.id === 'string' ? item.id : '',
+    location: typeof item.location === 'string' ? item.location : '',
+    fields: (isRecord(item.fields) ? item.fields : {}) as LocateSubject['items'][number]['fields'],
+  }));
+  return {
+    items,
+    context: {
+      product: typeof context.product === 'string' ? context.product : null,
+      names: strings(context.names),
+      parameters: isRecord(context.parameters) ? context.parameters : {},
+    },
+  };
+}
+
+export default function subject(input: unknown): unknown {
+  return guarded<unknown>(
+    () => buildSubject(input),
+    () => ({ items: [], context: { product: null, names: [], parameters: {} } }),
+  );
+}

@@ -1,0 +1,17 @@
+{
+  "schema": "requirements@1",
+  "requirements": [
+    {
+      "key": "coverage",
+      "name": "模板类别覆盖",
+      "description": "每份测试脑图覆盖团队测试用例模板 v3 的全部 24 个类别（六种测试类型和按命令、按功能的类别）；没有用例显示、也没有在参数 skipped 里写明理由跳过的类别算缺失。Hub 按模板表直接算出，不需要模型填写",
+      "target": "item",
+      "required": true,
+      "done_rule": "bookkeeping",
+      "layers": ["static"],
+      "accepted_producer": "fact",
+      "checks": ["coverage"],
+      "error_handling": []
+    }
+  ]
+}

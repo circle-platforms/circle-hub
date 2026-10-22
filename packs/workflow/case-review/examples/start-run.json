@@ -1,0 +1,10 @@
+{
+  "note": "示例（合成）：评审敏捷平台上的一份脑图；产品写任一名称即可，构建不写时按产品包的规则选定；用例超过 100 个时加参数 block（按分组）或 slice（按用例顺序分段）；文档改过以后重新评审时 predecessor 写上一次初评运行的编号",
+  "start_run": {
+    "pack": "case-review",
+    "product": "<产品名称>",
+    "version": "<版本线>",
+    "inputs": { "subject": { "external": "agile:mindmap:<文档编号>" } },
+    "parameters": { "case_rule": "tagged" }
+  }
+}

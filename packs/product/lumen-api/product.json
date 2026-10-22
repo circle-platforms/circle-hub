@@ -1,0 +1,25 @@
+{
+  "schema": "product@1",
+  "id": "lumen-api",
+  "title": "Lumen API（合成的 REST 接口产品）",
+  "names": ["Lumen API"],
+  "sync": {
+    "start": ["manual:file:lumen/releases.md"],
+    "plan": { "module": "functions/sync.ts" },
+    "options": {},
+    "max_rounds": 2,
+    "max_reads": 20
+  },
+  "select_build": { "module": "functions/select.ts" },
+  "catalogs": [
+    { "id": "commands@1", "entry_kind": "definition", "producer": "endpoints", "complete": true, "case_sensitive": false }
+  ],
+  "producers": [
+    {
+      "id": "endpoints",
+      "title": "接口参考（每个版本的接口和参数表）",
+      "function": { "module": "functions/endpoints.ts" },
+      "inputs": { "spec": { "source": "spec" } }
+    }
+  ]
+}

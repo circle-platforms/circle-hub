@@ -74,3 +74,32 @@ export function guarded(run: () => unknown): unknown {
     return failure('internal_error', `函数内部出错：${detail.slice(0, 200)}`, '这是任务包的缺陷，请把输入交给任务包维护人');
   }
 }
+
+/** The run parameter names of workflow.json for the names the pure functions use, in their messages and fixes. */
+const NAME_PAIRS: ReadonlyArray<[string, string]> = [
+  ['caseRule', 'case_rule'],
+  ['casePriority', 'case_priority'],
+  ['groupPriority', 'group_priority'],
+  ['preconditionPriority', 'precondition_priority'],
+  ['idRanges', 'id_ranges'],
+  ['bareIds', 'bare_ids'],
+  ['specSearch', 'spec_search'],
+  ['historySearch', 'history_search'],
+  ['strategySearch', 'strategy_search'],
+  ['maxTerms', 'max_terms'],
+];
+const WORKFLOW_NAMES: ReadonlyArray<[RegExp, string]> = NAME_PAIRS.map(([from, to]): [RegExp, string] => [new RegExp(`(?<![A-Za-z_])${from}(?![A-Za-z_])`, 'g'), to]);
+
+export function workflowNames(text: string): string {
+  let out = text;
+  for (const [from, to] of WORKFLOW_NAMES) out = out.replace(from, to);
+  return out;
+}
+
+/** Warnings and a refusal with the workflow's parameter names in their texts. */
+export function withWorkflowNames<T extends { warnings: Warning[]; error?: PackError }>(value: T): T {
+  const warnings = value.warnings.map((w) => ({ ...w, message: workflowNames(w.message) }));
+  if (value.error === undefined) return { ...value, warnings };
+  return { ...value, warnings, error: { ...value.error, message: workflowNames(value.error.message), fix: workflowNames(value.error.fix) } };
+}
+

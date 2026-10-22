@@ -13,7 +13,7 @@ import manual from './manual.ts';
 import releaseNotes from './release-notes.ts';
 import selectBuild from './select-build.ts';
 import planSync, { syncBuildsFunction } from './sync-plan.ts';
-import { fixtureBytes, html, jsonDocument, markdown, xml } from './test-support.ts';
+import { fixtureBytes, html, jsonDocument, markdown, xml } from '../testing/test-support.ts';
 
 const packDir = fileURLToPath(new URL('../', import.meta.url));
 const available = await osIsolationAvailable();

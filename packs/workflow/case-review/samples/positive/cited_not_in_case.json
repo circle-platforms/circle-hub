@@ -1,0 +1,69 @@
+{
+  "id": "cited_not_in_case",
+  "source": "author",
+  "check": "cited_commands",
+  "note": "发现引用了用例里没有的命令行（越界的 999）：那是模型的陈述，不是用例的事实，这里没有要核对的（findings_sources 送回修复）",
+  "subject": {
+    "item": "sample:c1",
+    "location": "src:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc/kityminder@1/n/c1",
+    "negative": false,
+    "claims": [],
+    "phrases": [],
+    "unquoted": [
+      "health interval pool1 999"
+    ]
+  },
+  "catalog": {
+    "root": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "complete": true,
+    "entries": [
+      {
+        "head": "pool create",
+        "signatures": [
+          [
+            {
+              "name": "name",
+              "type": "string",
+              "maxLength": 32
+            }
+          ]
+        ]
+      },
+      {
+        "head": "health interval",
+        "signatures": [
+          [
+            {
+              "name": "pool",
+              "type": "string"
+            },
+            {
+              "name": "seconds",
+              "type": "int",
+              "minimum": 1,
+              "maximum": 300
+            }
+          ]
+        ]
+      },
+      {
+        "head": "show pool",
+        "signatures": [
+          [],
+          [
+            {
+              "name": "name",
+              "type": "string"
+            }
+          ]
+        ]
+      }
+    ]
+  },
+  "expect": [
+    {
+      "verdict": "support",
+      "item": "sample:c1"
+    }
+  ]
+}

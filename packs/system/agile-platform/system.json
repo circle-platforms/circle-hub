@@ -1,0 +1,107 @@
+{
+  "schema": "system@1",
+  "title": "敏捷测试平台",
+  "description": "敏捷测试平台的只读访问：根列表、根的整棵子树（agile:tree:<根编号>）、脑图文档（agile:mindmap:<文档编号>，派生 content 为解开的 KityMinder JSON、meta 为标题和从根往下的上级目录）和相似测试清单的检索（agile:search:<检索词，用 + 连接>[+!<文档编号>]，! 开头的部分排除这份文档，只作线索）。每个应答都是 HTTP 200 加信封 {code, msg, data}，code 1000 表示成功。登录：POST /oauth/login/，密码按 Base64(SHA-512(明文)) 发送；成功时令牌在 data.token、到期时间在 data.expire（秒）；任何失败（例如 1005 密码错误）都不重试，停到管理员处理为止，连续失败可能锁定账号。资源设置 roots 列出要读的根编号：一次读取最多读前 10 个（嵌套读取一共最多 20 个，要给刷新留出余量），多出的根不读，读不到根时结果标为不完整。只有读路由，没有写路由。",
+  "roles": [
+    { "name": "agile-oauth", "description": "登录接口所在的地址（只用于登录，不读数据）" },
+    { "name": "agile-api", "description": "平台接口所在的地址；请求头 Authorization 直接带令牌，不加前缀" }
+  ],
+  "auth": {
+    "kind": "login_token",
+    "header": { "name": "Authorization", "scheme": "raw" },
+    "roles": ["agile-api"],
+    "credentials": [
+      { "name": "username", "digest": "plain", "description": "平台账号" },
+      { "name": "password", "digest": "sha512_base64", "description": "密码，密钥库只保存 Base64(SHA-512(明文))" }
+    ],
+    "login": {
+      "role": "agile-oauth",
+      "method": "POST",
+      "path": "/oauth/login/",
+      "body": { "username": "{username}", "password": "{password}" },
+      "token": "/data/token",
+      "expiry": { "pointer": "/data/expire", "unit": "epoch_seconds" },
+      "envelope": { "code": "/code", "ok": [1000], "message": "/msg" },
+      "max_bytes": 65536,
+      "timeout_ms": 30000
+    }
+  },
+  "envelope": { "code": "/code", "ok": [1000], "expired": [401], "message": "/msg" },
+  "routes": [
+    {
+      "id": "roots",
+      "role": "agile-api",
+      "method": "POST",
+      "path": "/agile/get_root_node/",
+      "body": { "type": "object", "properties": { "page": { "type": "integer", "minimum": 1, "maximum": 1000 } }, "required": ["page"], "additionalProperties": false },
+      "response": "json",
+      "envelope": true,
+      "max_bytes": 1048576,
+      "timeout_ms": 30000,
+      "read": true,
+      "description": "根列表的一页（每页 10 个，带 total；超出末页时重复第一页）"
+    },
+    {
+      "id": "subtree",
+      "role": "agile-api",
+      "method": "POST",
+      "path": "/agile/get_child_node_task/",
+      "body": {
+        "type": "object",
+        "properties": { "id": { "anyOf": [{ "type": "integer", "minimum": 0, "maximum": 999999999999999 }, { "type": "string", "maxLength": 64, "pattern": "^[0-9A-Za-z_-]{1,64}$" }] } },
+        "required": ["id"],
+        "additionalProperties": false
+      },
+      "response": "json",
+      "envelope": true,
+      "max_bytes": 67108864,
+      "timeout_ms": 120000,
+      "read": true,
+      "description": "一个根的整棵子树 [{label, id, cases, children}]；叶子的编号是脑图文档编号"
+    },
+    {
+      "id": "case-data",
+      "role": "agile-api",
+      "method": "POST",
+      "path": "/agile/get_case_data/",
+      "body": {
+        "type": "object",
+        "properties": { "id": { "anyOf": [{ "type": "integer", "minimum": 0, "maximum": 999999999999999 }, { "type": "string", "maxLength": 64, "pattern": "^[0-9A-Za-z_-]{1,64}$" }] } },
+        "required": ["id"],
+        "additionalProperties": false
+      },
+      "response": "json",
+      "envelope": true,
+      "max_bytes": 33554432,
+      "timeout_ms": 60000,
+      "read": true,
+      "description": "一份脑图文档：data 是再编码一次的 KityMinder JSON 字符串"
+    }
+  ],
+  "reads": [
+    {
+      "name": "tree",
+      "external": "agile:tree",
+      "description": "一个根的整棵子树和根的标题",
+      "plan": { "module": "functions/agile.ts", "export": "treePlan" },
+      "project": { "module": "functions/agile.ts", "export": "treeProject" },
+      "max_requests": 51
+    },
+    {
+      "name": "mindmap",
+      "external": "agile:mindmap",
+      "description": "一份脑图文档，带标题和上级目录",
+      "plan": { "module": "functions/agile.ts", "export": "mindmapPlan" },
+      "project": { "module": "functions/agile.ts", "export": "mindmapProject" },
+      "max_requests": 1
+    },
+    {
+      "name": "search",
+      "external": "agile:search",
+      "description": "标题里检索词最多的测试清单（最多五份，前三份带提纲），不含检索词里 ! 排除的文档，只作线索",
+      "plan": { "module": "functions/agile.ts", "export": "searchPlan" },
+      "project": { "module": "functions/agile.ts", "export": "searchProject" },
+      "max_requests": 4
+    }
+  ]
+}

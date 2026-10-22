@@ -4,7 +4,7 @@ import { hasCommandTree } from './builds.ts';
 import { parseListing } from './listing.ts';
 import selectBuildFunction, { compareForRule, indexBuilds, resolveBase, selectBuild } from './select-build.ts';
 import type { Build } from './types.ts';
-import { assertTotal, fixtureBytes, hostileInputs, html, internalWarnings, seeded } from './test-support.ts';
+import { assertTotal, fixtureBytes, hostileInputs, html, internalWarnings, seeded } from '../testing/test-support.ts';
 
 const candidates = [...parseListing(html(fixtureBytes('listing-apv.html'))).builds, ...parseListing(html(fixtureBytes('listing-nsae.html'))).builds];
 // The newest-line regime: NSAE entries with their own command tree and no "based on".

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="ISO-8859-1"?><commands><scope type="global">
+<menu name="orbit" help_string="Orbit commands (synthetic)" user_level="ORBIT_LEVEL_CONFIG">
+<menu name="beacon" help_string="Configure beacons" user_level="ORBIT_LEVEL_CONFIG">
+<item name="add" lock = "ORBIT_LOCK_NONE" func="orbit_beacon_add" help_string="Add a beacon to a ring"><arguments>
+<arg name="" type="STRING" help_string="Ring name" length="" limit="[1 - 32]" optional="NO" default_value=""></arg>
+<arg name="" type="IPADDR" help_string="Beacon address (either address family)" length="" limit="" optional="NO" default_value=""></arg>
+<arg name="" type="U16" help_string="Beacon port" length="" limit="" optional="NO" default_value=""></arg>
+<arg name="" type="U32" help_string="Weight (1 to 100, default 10)" length="" limit="[1 - 100]" optional="YES" default_value="10"></arg>
+</arguments><results></results></item>
+<item name="add" lock = "ORBIT_LOCK_NONE" func="orbit_beacon_add_host" help_string="Add a beacon by host name"><arguments>
+<arg name="" type="STRING" help_string="Ring name" length="" limit="[1 - 32]" optional="NO" default_value=""></arg>
+<arg name="" type="XSTRING" help_string="Beacon address or host name" length="" limit="" optional="NO" default_value=""></arg>
+</arguments><results></results></item>
+<item name="label" lock = "ORBIT_LOCK_NONE" func="orbit_beacon_label" help_string="Type "text" to label the beacon (étiquette)" hidden="yes"><arguments>
+<arg name="" type="STRING" help_string="Ring name" length="" limit="" optional="NO" default_value=""></arg>
+<arg name="" type="STRING" help_string="Label, ie cn=ring,dc=example,dc=invalid" length="64" limit="" optional="YES" default_value="&amp;quot;&amp;quot;"></arg>
+</arguments><results></results></item>
+</menu>
+<item name="mode" lock = "ORBIT_LOCK_NONE" func="orbit_mode" help_string="Set the ring mode"><arguments>
+<arg name="mode" type="STRING" help_string="Mode" length="" limit="{rr|lc|hash}" optional="NO" default_value="&amp;quot;rr&amp;quot;"></arg>
+</arguments><results></results></item>
+</menu>
+<menu name="show" help_string="Show information" user_level="ORBIT_LEVEL_USER">
+<menu name="orbit" help_string="Show orbit information" user_level="ORBIT_LEVEL_USER">
+<item name="status" lock = "ORBIT_LOCK_NONE" func="orbit_show_status" help_string="Show the status"><arguments></arguments><results></results></item>
+<item name="status" lock = "ORBIT_LOCK_NONE" func="orbit_show_ring_status" help_string="Show the status of one ring"><arguments>
+<arg name="" type="STRING" help_string="Ring name (every ring when left out)" length="" limit="" optional="YES" default_value="&amp;quot;all&amp;quot;"></arg>
+</arguments><results></results></item>
+</menu>
+</menu>
+<item name="ping" lock = "ORBIT_LOCK_NONE" func="orbit_ping" help_string="Send echo requests"><arguments><arg name="" type="DOTTEDIP" help_string="Address to probe" length="" limit="" optional="NO" default_value=""></arg></arguments><results></results></item>
+</scope></commands>

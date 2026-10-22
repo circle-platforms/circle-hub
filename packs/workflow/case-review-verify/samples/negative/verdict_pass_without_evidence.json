@@ -1,0 +1,51 @@
+{
+  "id": "verdict_pass_without_evidence",
+  "source": "author",
+  "check": "verdict",
+  "note": "PASS，但复核方只写了空列表，没有一条自己落在被复核脑图里的引用",
+  "subject": {
+    "items": [
+      {
+        "id": "sample:c2",
+        "label": "设置池 c2 的探测间隔",
+        "location": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/n/c2",
+        "fields": {
+          "nodeId": "c2",
+          "path": [
+            "示例文档",
+            "池管理"
+          ],
+          "title": "设置池 c2 的探测间隔",
+          "draft_partition": "delivered",
+          "draft_findings": [],
+          "draft_level": {
+            "reference": "rec:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb#/cross_item/3",
+            "rank": "P3",
+            "text": "等级理由：覆盖全部功能细节，有一些反向用例"
+          }
+        },
+        "slots": {
+          "verification": []
+        }
+      }
+    ],
+    "cross_item": [
+      {
+        "nature": "judgment",
+        "statement": "结论 PASS",
+        "grounds": [
+          "src:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee/markdown@1/s/interval"
+        ],
+        "code": "PASS",
+        "rank": "P3"
+      }
+    ]
+  },
+  "expect": [
+    {
+      "verdict": "refute",
+      "code": "case-review-verify.pass_without_evidence",
+      "item": "sample:c2"
+    }
+  ]
+}

@@ -2,11 +2,12 @@
 // because duplicates and spelling consistency are only visible across items; the catalog table judges one subject each.
 // Duplicates are keyed by (document, path) and the whole content of a case (title, steps, expected results, preconditions):
 // real documents reuse a short title for variants that differ in their steps, and repeat titles under different paths.
-// Tag spelling is judged inside one document: a category written several ways there is an inconsistent field format.
+// Tag spelling is judged inside one document: a category written several ways there is an inconsistent field format; each
+// variant spelling carries the usual spelling of its category in the document (the tag check names both).
 import { PACK, failure, guarded, isRecord, warningSink } from './common.ts';
 import { CANONICAL_TAGS, normalizeTag } from './tags.ts';
 import { codePointLength, collapseWhitespace, fold, textOf, trimWhitespace } from './text.ts';
-import type { CanonicalTag, CatalogSubject, JsonValue, StructureSubject, SubjectOutput } from './types.ts';
+import type { CanonicalTag, CatalogSubject, JsonValue, StructureSubject, SubjectOutput, TagVariant } from './types.ts';
 
 function strings(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
@@ -124,9 +125,12 @@ export function toStructureSubjects(items: readonly unknown[]): StructureSubject
   const subjects = items.map(toStructureSubject);
   const usual = usualSpellings(subjects);
   for (const subject of subjects) {
-    const variants: string[] = [];
+    const variants: TagVariant[] = [];
     for (const tag of subject.categoryTags) {
-      if (usual.get(spellingKey(subject.document, tag)) !== collapseWhitespace(tag) && !variants.includes(tag)) variants.push(tag);
+      const category = normalizeTag(tag).canonical;
+      const spelling = usual.get(spellingKey(subject.document, tag));
+      if (category === null || spelling === undefined || spelling === collapseWhitespace(tag) || variants.some((v) => v.tag === tag)) continue;
+      variants.push({ tag, usual: spelling, category });
     }
     subject.tagVariants = variants;
   }

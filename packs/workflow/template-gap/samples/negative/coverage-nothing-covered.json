@@ -1,0 +1,28 @@
+{
+  "id": "nearly_nothing_covered",
+  "source": "author",
+  "check": "coverage",
+  "note": "用例都没有测试类型标签，文字里只显示了命令的添加；跳过了数据库：其余 22 个类别缺失",
+  "subject": {
+    "item": "880001",
+    "location": "src:2215a5b7603f58061e7d3141e51ce96c6fb14b7b99792b9045b1984650ef9f75/kityminder@1/n/r0sample0001",
+    "document": "880001",
+    "covered": [
+      "command_add"
+    ],
+    "skipped": [
+      {
+        "category": "database",
+        "reason": "不涉及数据库"
+      }
+    ]
+  },
+  "expect": [
+    {
+      "verdict": "refute",
+      "code": "core.coverage.shortfall",
+      "item": "880001",
+      "tier": "advisory"
+    }
+  ]
+}

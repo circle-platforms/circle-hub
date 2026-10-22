@@ -1,0 +1,14 @@
+{
+  "schema": "checks@1",
+  "checks": [
+    {
+      "id": "coverage",
+      "title": "模板类别覆盖",
+      "interpreter": "coverage@1",
+      "table": "tables/template-v3-coverage.json",
+      "applies": "item",
+      "subject": { "module": "functions/subject.ts" },
+      "judges": "subject"
+    }
+  ]
+}

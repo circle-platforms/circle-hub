@@ -1,0 +1,270 @@
+{
+  "schema": "pack@1",
+  "id": "case-review",
+  "version": "1.0.0",
+  "kind": "workflow",
+  "title": "测试脑图评审（初评）",
+  "description": "按团队的评审方法（test-list-review）初评一份测试脑图：Hub 判定字面问题、命令与目录、引文与位置，模型写七类评审发现和 P0-P7 等级；结论由复核任务包 case-review-verify 独立复核",
+  "files": [
+    {
+      "path": "SKILL.md",
+      "sha256": "8e96e67ee3a164fb59fee24265aada0532d4f9869996c8fbb1f306b4663334c8",
+      "size": 8995
+    },
+    {
+      "path": "checks.json",
+      "sha256": "389312ad31bc7fbc7d71b8462335bd848c2f0a3769733b74613922c076746c41",
+      "size": 2959
+    },
+    {
+      "path": "examples/start-run.json",
+      "sha256": "55f3233e460718ed07ea93942f075a4b7efbdf351e3028a3173ca6e1b5ba1638",
+      "size": 556
+    },
+    {
+      "path": "examples/submission.json",
+      "sha256": "1078c35072fecfbdc17a2f640e90be8b0eee6230d0ae969949ae7bc2ea3807af",
+      "size": 1788
+    },
+    {
+      "path": "functions/checks.ts",
+      "sha256": "9fd60a6fad76a88fbe38995484a7fe33e93b3300ef68af3a4e2a449e237f7929",
+      "size": 8250
+    },
+    {
+      "path": "functions/common.ts",
+      "sha256": "d5101160a09a43ffa0c4c02a69cd45bd76d166aa428500e404d59b9f902a49b0",
+      "size": 4131
+    },
+    {
+      "path": "functions/expected-sources.ts",
+      "sha256": "2a23d84f50db5e4ac09f25b7278ba36b528173f9e8446bd2dfe705a03f8b1c14",
+      "size": 21396
+    },
+    {
+      "path": "functions/expected.ts",
+      "sha256": "76c3bc9b788faaadc2c0499a45463680d1a51fe47ca3873d8caca43cdaa28246",
+      "size": 5836
+    },
+    {
+      "path": "functions/lines.ts",
+      "sha256": "8c12649ec999a77a61d116cccb2e009039a9f16b3f44faae9aaaf7b09c71c64e",
+      "size": 4005
+    },
+    {
+      "path": "functions/project.ts",
+      "sha256": "dbf077d6859b603ea49c44094c9fa715fc41f248363b58a2367143eae1bd73e3",
+      "size": 27374
+    },
+    {
+      "path": "functions/projection.ts",
+      "sha256": "2c8ca8cdcdd9e008eb6389d08af56e0ea93b12ad2c1b7fe1b009bbadebba20a4",
+      "size": 20240
+    },
+    {
+      "path": "functions/subject.ts",
+      "sha256": "95be8f43d37ed6eb2559a067d3841139e6f8f8ef2c4b5f1164a666b1e3e6f955",
+      "size": 8518
+    },
+    {
+      "path": "functions/subjects.ts",
+      "sha256": "904bb959100618930d7087123fd333743b805cdd71340747620fe8a2eeb84eef",
+      "size": 3885
+    },
+    {
+      "path": "functions/tags.ts",
+      "sha256": "da839702a5d6b7e488ffa55276cada65a288d17aad61a25eea65a6e5f09ab483",
+      "size": 4639
+    },
+    {
+      "path": "functions/template-coverage.ts",
+      "sha256": "2d0d199729ccb49833b75909e0534f4eb9e891b1a14fc8d6f3aa13421123ab50",
+      "size": 10599
+    },
+    {
+      "path": "functions/text.ts",
+      "sha256": "99a536dad7da8552b82a759abfc78f7308b06796aabc1818e23fb99aab61ab13",
+      "size": 6150
+    },
+    {
+      "path": "functions/types.ts",
+      "sha256": "8088a2fdc795eb3d7fbca9ffe4e6035a5f0a774674d05d56cc2fc190d5fd8f44",
+      "size": 12843
+    },
+    {
+      "path": "requirements.json",
+      "sha256": "d78c0d83af0074abad7baa7db2aee1816f69ea79e20ff8656bbc1dd4e3e64124",
+      "size": 3542
+    },
+    {
+      "path": "samples/negative/cited_negative_case.json",
+      "sha256": "98bf21157dc5c14fcd9db16c7df274467f3031a7ce21a0d45a034261a45f8456",
+      "size": 1514
+    },
+    {
+      "path": "samples/negative/cited_out_of_range.json",
+      "sha256": "eff0e03f4d0ef39748bb1568575284246b9a906a2753b6cb4422549c3e1d0105",
+      "size": 1525
+    },
+    {
+      "path": "samples/negative/claims_contradicted.json",
+      "sha256": "915242d7722dc915dc97d294e72676ffabc57b65539a2bbdd6a17604f6d4535e",
+      "size": 1533
+    },
+    {
+      "path": "samples/negative/node_ids_shared.json",
+      "sha256": "281a2de48d5ba6aacd2189a0b4675290c337a0821d9ac2772e09008d5a5b42fd",
+      "size": 2314
+    },
+    {
+      "path": "samples/negative/quotes_changed.json",
+      "sha256": "aa2ade3aabea7da401897453f40c3043b94b87cdd55bc364fbec6b4c07a65232",
+      "size": 1782
+    },
+    {
+      "path": "samples/negative/scan_out_of_range.json",
+      "sha256": "ff55e5d9ce4e7b3f971ecca23fc270c79ac88e16b106167b37cb85fec9927acf",
+      "size": 1555
+    },
+    {
+      "path": "samples/negative/sources_command_not_in_case.json",
+      "sha256": "a6e1a4146a46288722d0b3a6644fe3368e07ffb8034ff277f04d800907073c65",
+      "size": 2502
+    },
+    {
+      "path": "samples/negative/sources_hint_only.json",
+      "sha256": "28c05498750a4b9c42da90a13c3610d3e9fa9a53681899cfd2a26716682ff1a2",
+      "size": 2755
+    },
+    {
+      "path": "samples/negative/sources_quote_missing.json",
+      "sha256": "34affa4e80ee2fce76331d14076eb10b54b28e3329a4d284bc4e95ab4e71175a",
+      "size": 1866
+    },
+    {
+      "path": "samples/negative/structure_defects.json",
+      "sha256": "8073c04ac567ec8a31baf250af3886163e38cfbec7fcb1d4fb1242eeaafc1df0",
+      "size": 3332
+    },
+    {
+      "path": "samples/negative/structure_priority.json",
+      "sha256": "a06e0bc03fc29d5228dd1414d6876ede6ebe574f81fe629045f3b2c15a3f7e6a",
+      "size": 2272
+    },
+    {
+      "path": "samples/negative/tags_variant.json",
+      "sha256": "bad2e5eef8cd9d9a4943965d038e0430cabb8bb95208d830c5f570f94acb6607",
+      "size": 3419
+    },
+    {
+      "path": "samples/positive/cited_none.json",
+      "sha256": "ec3f2f49feb339b8da6cf056195a5cf72203376ab492b1500151bbf3098fa658",
+      "size": 1392
+    },
+    {
+      "path": "samples/positive/cited_not_in_case.json",
+      "sha256": "a5f9644d1c7d4ad1f192ff5266471f71f00544b63a9f9b84a64d95e990baa103",
+      "size": 1546
+    },
+    {
+      "path": "samples/positive/cited_valid.json",
+      "sha256": "e7ceff9cbc6dc21eac866289c63a473dc9c6bc66433148f498fcbab917f17044",
+      "size": 1455
+    },
+    {
+      "path": "samples/positive/claims_agree.json",
+      "sha256": "9371ba92c42566b1045bf968c7c0af6ce0f8d2efac825aac57f5ad1453d2f096",
+      "size": 1620
+    },
+    {
+      "path": "samples/positive/node_ids_unique.json",
+      "sha256": "c71888c99d5482cdb934eb3caee8cbd988e5c3bdc930eb7309f05b1c2da2a52d",
+      "size": 2214
+    },
+    {
+      "path": "samples/positive/quotes_verbatim.json",
+      "sha256": "e3473854cc447c00e25cd4836c6e80565298943713282d2b67effd0232e9377d",
+      "size": 1749
+    },
+    {
+      "path": "samples/positive/scan_valid.json",
+      "sha256": "57eb329fc992e977328ba1cf2bbded8f8ba914dd07c36e50579723e917782a95",
+      "size": 1517
+    },
+    {
+      "path": "samples/positive/sources_cited_line.json",
+      "sha256": "50255194602473fa1669631ed11274ea93007e8106012693205085453aaeacc7",
+      "size": 2338
+    },
+    {
+      "path": "samples/positive/sources_product.json",
+      "sha256": "4257ad3728873b5440b81498fd8ad2b6089b0092e104e6f5eacc1b6b480b8d4c",
+      "size": 2203
+    },
+    {
+      "path": "samples/positive/structure_clean.json",
+      "sha256": "009dfccce78ac7a8ed1f18fd56f7ec9f77f4748300670133ddbfea9d9dddc1b6",
+      "size": 2169
+    },
+    {
+      "path": "samples/positive/tags_consistent.json",
+      "sha256": "b137aa25f34acbc9c361a810d68aa42d30f4be10b4d6ef19bc2b26ec1ccb19c8",
+      "size": 2216
+    },
+    {
+      "path": "slots.schema.json",
+      "sha256": "6155249d46fe5be3783ac9abfa2a833620a0a1c7205252d7bddb770dfd4b3e4e",
+      "size": 2381
+    },
+    {
+      "path": "tables/catalog.json",
+      "sha256": "6d8c86283195a355e1694ecc12b66aa7d54600608b581750f77aaedcceee4a97",
+      "size": 1335
+    },
+    {
+      "path": "tables/cited-commands.json",
+      "sha256": "c8fdf064dce3b390766bf36e0a8110b0718e0553ec0b945c736e397119485834",
+      "size": 1552
+    },
+    {
+      "path": "tables/codes.json",
+      "sha256": "ce60ab15114d5f1480e2a1320f6f130ecaefba4e62fadb6aaf6f901c4aa2b3e5",
+      "size": 12289
+    },
+    {
+      "path": "tables/command-claims.json",
+      "sha256": "a4ba69d4443fec5b6bf3ba7bc3a1c36d1c6bf21ad3b8fd1e96a0c338aaa82d87",
+      "size": 1300
+    },
+    {
+      "path": "tables/findings-quotes.json",
+      "sha256": "17812479ae6fbb944b571f407333c1a0956970f0cb7f4842cb5866c4d12449bf",
+      "size": 571
+    },
+    {
+      "path": "tables/structure-node-ids.json",
+      "sha256": "f8de2dd3f8eef465a695584c53483f13f3658add5bcda617faa98751ee1201f5",
+      "size": 841
+    },
+    {
+      "path": "tables/structure.json",
+      "sha256": "73c92a112724c0baae690f4fd2a8ea0f8f9a4347b4a3d7df00fb8e62cf50d27c",
+      "size": 1633
+    },
+    {
+      "path": "tables/template-v3-coverage.json",
+      "sha256": "c0b565791ef2bc38321bb5b2b9bbca9015b007deaa7d68aa31e3e17c0c275759",
+      "size": 678
+    },
+    {
+      "path": "tables/template-v3.json",
+      "sha256": "53a6e4417b5253b195c80c922704601e1eab33af63f3261e9e23fb61805caace",
+      "size": 6439
+    },
+    {
+      "path": "workflow.json",
+      "sha256": "f562a0acfe4d94dc2063db45c8346ba1f94e465f1254f71580130663c509e3aa",
+      "size": 5964
+    }
+  ]
+}

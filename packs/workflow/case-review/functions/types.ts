@@ -59,7 +59,10 @@ export type ProjectionParameters = {
   preconditionPriority?: number | null;
 };
 
-/** Set by the Hub, not by the run: the output limit of the sandbox call, so a too large result is a refusal with a fix. */
+/**
+ * Set by the caller, not by the run: the output limit of the sandbox call, so a too large result is a refusal with a fix.
+ * Infinity (in process only) leaves the bound to a caller that returns a part of the result (the run adapter).
+ */
 export type ProjectionLimits = { outputBytes?: number };
 
 export type ProjectionInput = {
@@ -128,10 +131,13 @@ export type ProjectionOutput = ProjectionResult | Failure;
 
 // subject.ts ----------------------------------------------------------------------------------------------------------------
 
+/** A category tag spelled unlike its category usually is in the document: the tag as written, the usual spelling, the category. */
+export type TagVariant = { tag: string; usual: string; category: CanonicalTag };
+
 /** An item as the Hub holds it: like a CaseItem, with `location` already a reference URI. */
 export type ItemLike = { id: string; label?: string; location?: unknown; fields: Partial<CaseFields> & { [key: string]: unknown } };
 
-/** One case as the structure@1 tables judge it (tables/structure.json and tables/tags.json judge the list `subjects`). */
+/** One case as the structure@1 tables and the tag check judge it (tables/structure.json and checks.ts tagSpelling judge the list `subjects`). */
 export type StructureSubject = {
   kind: 'case';
   id: string;
@@ -155,7 +161,7 @@ export type StructureSubject = {
   /** Raw spellings of the tags that map to a category. */
   categoryTags: string[];
   /** Category tags written differently from the usual spelling of their category in the same document. */
-  tagVariants: string[];
+  tagVariants: TagVariant[];
   /** Tags that map to no category (release-specific tags and the like). */
   otherTags: string[];
   expected: string[];

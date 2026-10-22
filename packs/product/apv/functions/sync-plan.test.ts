@@ -4,7 +4,7 @@ import { hasCommandTree } from './builds.ts';
 import { parseListing } from './listing.ts';
 import planSyncFunction, { pageNameOf, planSync, syncBuilds, syncBuildsFunction } from './sync-plan.ts';
 import type { Build } from './types.ts';
-import { assertTotal, fixtureBytes, hostileInputs, html, internalWarnings, seeded } from './test-support.ts';
+import { assertTotal, fixtureBytes, hostileInputs, html, internalWarnings, seeded } from '../testing/test-support.ts';
 
 const index = html(fixtureBytes('index.html'));
 const hub = html(fixtureBytes('hub-apv_10_6_2.html'));

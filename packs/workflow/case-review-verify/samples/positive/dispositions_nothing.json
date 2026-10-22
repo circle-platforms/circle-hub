@@ -1,0 +1,36 @@
+{
+  "id": "dispositions_nothing",
+  "source": "author",
+  "check": "dispositions",
+  "note": "没有初评发现、也没有新发现的条目：空列表",
+  "subject": {
+    "item": "sample:c2",
+    "label": "设置池 c2 的探测间隔",
+    "location": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/n/c2",
+    "fields": {
+      "nodeId": "c2",
+      "path": [
+        "示例文档",
+        "池管理"
+      ],
+      "title": "设置池 c2 的探测间隔",
+      "draft_partition": "delivered",
+      "draft_findings": [],
+      "draft_level": {
+        "reference": "rec:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb#/cross_item/3",
+        "rank": "P3",
+        "text": "等级理由：覆盖全部功能细节，有一些反向用例"
+      }
+    },
+    "slots": {
+      "verification": []
+    },
+    "evidence": []
+  },
+  "expect": [
+    {
+      "verdict": "support",
+      "item": "sample:c2"
+    }
+  ]
+}
