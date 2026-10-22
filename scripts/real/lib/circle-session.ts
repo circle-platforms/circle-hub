@@ -3,7 +3,9 @@
 // composer reads "Processing… · 5s · ↓ 0" (or "Retrying…"), when it is idle the border is plain and the footer carries "ctx".
 import type { Otty, OpenedTab } from './otty.ts';
 
-export const BUSY = /Processing…|Retrying…/;
+// While a turn runs the top border of the composer carries a spinner word, the elapsed seconds and the output tokens
+// ("╭──Processing… · 5s · ↓ 0", "Reflecting… · 2s · ↓ 20", "Retrying…"): the word changes, the shape does not.
+export const BUSY = /Retrying…|…\s·\s\d+s\s·\s↓/;
 const COMPOSER_TOP = /╭[─ ]/;
 const COMPOSER_LINE = /│ › /;
 
