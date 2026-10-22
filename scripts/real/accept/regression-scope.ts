@@ -19,6 +19,8 @@ export interface ScopeGold {
   changed: string[];
   /** removed paths of gold/command-diff.ts (not part of the scope). */
   removed: string[];
+  /** The gold's change kind per path (added/modified/removed): the Hub's answer states each one. */
+  kinds?: Array<{ path: string; kind: 'added' | 'modified' | 'removed' }>;
   /** The cases the gold expects in the scope, each on a changed path. */
   inScope: ScopeCaseGold[];
   /** Item ids the gold expects outside the scope (cases off every changed path). */
@@ -34,7 +36,7 @@ export default function scenario(gold: ScopeGold): Scenario {
     prompt: `请对比 ${gold.earlier} 和 ${gold.later} 两个构建，给出回归范围。`,
     respond: (turn) =>
       turn.index === 0
-        ? [{ tool: 'hub_start_run', input: { pack, inputs: { impact: { external: `knowledge:impact:${gold.product}:${gold.earlier}..${gold.later}` } } } }]
+        ? [{ tool: 'hub_start_run', input: { pack, inputs: { impact: { external: `knowledge:impact:${gold.product}:${gold.earlier}..${gold.later}?changed=definition&attached=case&attached_fields=document,node,title,priority,negative` } } } }]
         : [{ text: '对比完成。' }],
     check(turns: LoggedTurn[]): Check[] {
       const text = resultTexts(turns).join('\n');
@@ -55,7 +57,16 @@ export default function scenario(gold: ScopeGold): Scenario {
         actual: text.includes(id) ? '出现了' : '没有出现',
         ok: !text.includes(id),
       }));
-      return [runStarted(area, turns), ...changedChecks, ...caseChecks, ...outChecks, lengthBounded(area, turns)];
+      // The scope never lists removed paths (they hold no later-build case), so a removed kind is not
+      // checked against the answer text — the path-set check above already proves it is absent.
+      const kindChecks = (gold.kinds ?? []).filter((k) => k.kind !== 'removed').map((k) => ({
+        area,
+        name: `路径 ${k.path} 的变更种类是 ${k.kind}`,
+        expected: `回答里 ${k.path} 标为 ${k.kind}`,
+        actual: new RegExp(`${k.path}[^\\n]{0,40}${k.kind}`).test(text) ? `${k.kind}` : '不是',
+        ok: new RegExp(`${k.path}[^\\n]{0,40}${k.kind}`).test(text),
+      }));
+      return [runStarted(area, turns), ...changedChecks, ...kindChecks, ...caseChecks, ...outChecks, lengthBounded(area, turns)];
     },
   };
 }

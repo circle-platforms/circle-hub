@@ -40,7 +40,7 @@ const both = [
 before(async () => {
   postgres = await startPostgres();
   if (skip) return;
-  hub = await openHub(postgres);
+  hub = await openHub(postgres, {});
   hub.external.put(REVIEW, bytes(buildImpact(reviewSweep())));
   hub.external.put(BOTH, bytes(buildImpact(both)));
   hub.external.put(SKIPPED, bytes(buildImpact(reviewSweep(), { skipped: { from: 3, to: 0 } })));
@@ -205,5 +205,65 @@ describe('a production run of maintenance-sweep', { skip }, () => {
 });
 
 describe('the real knowledge reader', () => {
-  it.todo('runs maintenance-sweep against the real knowledge reader once the product pack cases index is committed');
+  it('runs maintenance-sweep against the real knowledge reader: a synthetic product pack, two builds, real impact view', async () => {
+    const { makeWorld, mindMap, BASE_CATALOG, catalogXml, DEFAULT_PRODUCERS } = await import('../../../hub/knowledge/test-support.ts');
+    const { createKnowledgeReader } = await import('../../../hub/knowledge/api.ts');
+    const XML = 'application/xml';
+    const JSON_TYPE = 'application/json';
+    const CASES_WITH_NODE = `export default function produce(input: any): unknown {
+  const entries: any[] = [];
+  for (const doc of input.lists?.cases ?? []) {
+    const model = doc.model;
+    const root = model.nodes[0].data;
+    model.nodes.forEach((node: any) => {
+      const data = node.data;
+      if (!Array.isArray(data.resource) || data.resource.length === 0 || data.priority === undefined) return;
+      const m = /\\[cmd: ([a-z][a-z0-9]*) ([a-z][a-z0-9]*)\\]/.exec(node.text);
+      entries.push({
+        kind: 'case',
+        path: m === null ? null : '/commands/' + m[1] + '/' + m[2],
+        statement: node.text,
+        data: { document: String(root.id), node: String(data.id), title: node.text, priority: data.priority },
+        fragments: [{ slot: 'cases', source: doc.sha256, parser: 'kityminder@1', selector: node.selector }],
+        applicability: null,
+      });
+    });
+  }
+  return { entries, warnings: [] };
+}
+`;
+    const w = await makeWorld(postgres, {
+      pack: {
+        functions: { 'cases-node.ts': CASES_WITH_NODE },
+        declaration: {
+          producers: [...DEFAULT_PRODUCERS, { id: 'cases', title: '用例', function: { module: 'functions/cases-node.ts' }, inputs: { cases: { source: 'cases', many: true } } }],
+        },
+      },
+    });
+    // The later build narrows ping's parameter range (a definition change); the earlier build's case rides ping, so
+    // the sweep lists it for maintenance.
+    const treeOf = (later: boolean): Uint8Array =>
+      new TextEncoder().encode(catalogXml(later
+        ? { ...BASE_CATALOG, net: BASE_CATALOG.net.map((c: { name: string }) => (c.name === 'ping' ? { ...c, params: [{ name: 'host', type: 'string' as const }, { name: 'count', type: 'int' as const, min: 1, max: 16 }] } : c)) }
+        : BASE_CATALOG));
+    w.external.set('site:tree:Rel_WDG_7_7_7', { bytes: treeOf(false), mediaType: XML });
+    w.external.set('site:tree:Rel_WDG_7_7_8', { bytes: treeOf(true), mediaType: XML });
+    const cases = (id: string, cmd: string): string => {
+      w.external.set(`store:mindmap:${id}`, { bytes: mindMap({ id, module: 'M1' }, [{ id: `${id}-c1`, text: `[cmd: net ${cmd}] 连通检查`, priority: 2 }]), mediaType: JSON_TYPE });
+      return `store:mindmap:${id}`;
+    };
+    const build = (name: string, source: string) => ({ name, family: 'WDG', line: '7.7', base: name, platform: null, built_at: '2026-01-02T10:00:00.000Z', released_at: '2026-01-05T00:00:00.000Z', sources: { tree: `site:tree:${name}`, cases: source }, root: null });
+    const first = await w.knowledge.produceTree({ product: w.product, build: build('Rel_WDG_7_7_7', cases('d1', 'ping')) });
+    assert.equal(first.ok, true, first.reason ?? '');
+    const second = await w.knowledge.produceTree({ product: w.product, build: build('Rel_WDG_7_7_8', cases('d2', 'trace')) });
+    assert.equal(second.ok, true, second.reason ?? '');
+
+    const runHub = await openHub(postgres, { knowledge: createKnowledgeReader(w.knowledge), kit: { kit: w.kit, admin: { id: w.admin.id, name: w.admin.name, role: 'admin' }, alice: { id: w.user.id, name: w.user.name, role: 'user' }, bob: { id: w.outsider.id, name: w.outsider.name, role: 'user' } } });
+    const reference = 'knowledge:impact:acme:Rel_WDG_7_7_7..Rel_WDG_7_7_8?changed=definition&attached=case&attached_fields=document,node,title';
+    const detail = await runHub.service.startRunDetailed(runHub.alice, { pack: 'maintenance-sweep', inputs: { impact: { external: reference } } }, call());
+    assert.equal(detail.answer.call_result, 'ok', JSON.stringify(detail.answer.errors));
+    assert.ok(detail.answer.run!.items.length > 0, 'the real reader answers an impact view the sweep projects');
+    await runHub.close();
+    await w.close();
+  });
 });

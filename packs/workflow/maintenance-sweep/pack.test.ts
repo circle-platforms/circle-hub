@@ -24,7 +24,7 @@ describe('the pack files', () => {
   it('pack.json lists exactly the pack files with their digests (run pack-files.ts --write after a change)', async () => {
     assert.equal(text('pack.json'), manifestText(await computeManifest()));
     const manifest = PackManifest.parse(json('pack.json'));
-    assert.deepEqual([manifest.id, manifest.version, manifest.kind], ['maintenance-sweep', '1.0.2', 'workflow']);
+    assert.deepEqual([manifest.id, manifest.version, manifest.kind], ['maintenance-sweep', '1.1.0', 'workflow']);
     const files = await packFiles();
     assert.ok(files.includes('functions/sweep.ts') && files.includes('functions/diff.ts') && files.includes('samples/negative/command-removed.json') && files.includes('examples/sweep.json'));
     assert.ok(!files.some((f) => f.endsWith('.test.ts') || f === 'functions/test-support.ts' || f === 'README.md' || f === 'pack-files.ts'));
@@ -32,7 +32,7 @@ describe('the pack files', () => {
 
   it('binds no product line and declares the two fact requirements', () => {
     const workflow = WorkflowFile.parse(json('workflow.json'));
-    assert.deepEqual(workflow.inputs.map((input) => [input.slot, input.role, input.accepts, input.required, input.many]), [['impact', 'subject', ['knowledge:impact'], true, false]]);
+    assert.deepEqual(workflow.inputs.map((input) => [input.slot, input.role, input.accepts, input.required, input.many]), [['impact', 'subject', ['knowledge:impact'], true, false], ['behaviour', 'hint', ['knowledge:impact'], false, false]]);
     assert.equal(Object.hasOwn(workflow.product, 'id'), false);
     assert.deepEqual(workflow.product, { catalogs: [] });
     assert.deepEqual(
