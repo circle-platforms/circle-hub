@@ -66,6 +66,9 @@ nav_order: 3
   - 设计文档结论里的第三个闭环（运行结果沉淀回知识）没做：简报把它列在这个里程碑之外，七项能力也不需要它。
   - 暂按稳妥的默认处理、待所有者确认的三件事：19 份含凭据内容的用例文档继续只保留、不进索引；已有的未签名合并提交不改写历史；编译半边等所有者的三样输入。
 - 追溯包 1.0.3（结论列出前 5 个用例）和追溯场景的多行匹配已合并（d30028e）。合并后 `npx tsc --noEmit` 无错误；`node --test --test-concurrency=2` 对追溯包和 `scripts/real` 共 205 项，全部通过。
+- 全量检查（`hub-redesign` 的提示 e64fdfa，本机 macOS）：`npx tsc --noEmit` 无错误；`node tools/gen-contracts.ts --check` 一致；单元测试 `node --test --test-concurrency=3`（合约、hub、packs、scripts、生成器）3,272 项，通过 3,268、失败 0、跳过 1（“没有 sandbox-exec 时默认拒绝运行”，本机有 sandbox-exec）、todo 3（两个是回归范围和维护巡检经真实知识读取器的生产测试，并入 `scope-commands.md`；一个是“仅作者样例”标记，任务页 `check-marks.md`）；文档检查 90 项、验收 74 项、存档 7 项全部通过，`verify:references` 通过。上一次全量里两处旧措辞的失败已不再出现。
+- 部署 e64fdfa（部署前自动备份，健康检查正常），发布 case-review 1.0.2、case-review-verify 1.0.2、defect-to-case 1.0.2、traceability 1.0.3，样例各自全部通过，并分配给评审用户。
+- 追溯的真实客户端验收重跑：40 项核对 39 项相符。剩下 1 项是场景解析错了：结论文字列出的前 5 个用例都在独立依据里（集成者逐个对过），场景把“根据：”后面的 `tree:` 引用也当成了用例号；已交给追溯场景的分支修。
 
 ## 决定
 

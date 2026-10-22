@@ -18,6 +18,7 @@
 2. 手册行为的变化单列成线索：可选输入 `behaviour`（同一对构建的 `changed=behaviour` 视图），只在结论里另起一段写“手册说明有变化的命令 N 条（只作线索，不算进范围）”，最多列 5 条，其余写“另有 M 条”；不进范围，不影响任何计数。
 3. 用例数上限（现在超过 4000 例整次被拒）不变，修正说明里加一句：先看定义变化是否已经把范围缩小。
 4. 场景同步：`scripts/real/accept/regression-scope.ts` 和 `maintenance-sweep.ts` 的变更路径核对，按命令定义的差（独立脚本 `scripts/real/gold/` 里现有的命令树比较）逐条相等，并核对每条路径的变更种类。
-5. 测试先写：没带 `changed=definition` 被拒；手册早有说明的新命令归为“新增”；行为变化只出现在线索段、不进计数；线索超过 5 条时写“另有”。验证：`npx tsc --noEmit`；`node --test --test-concurrency=2` 对两个包和 `scripts/real/**`（数据库测试别和别的终端同时跑）。
+5. 两个包 `production.test.ts` 里各有一个 `it.todo`（“against the real knowledge reader once the product pack cases index is committed”）：用例索引早已合并，把它们做成真测试：合成的产品包、两个构建的根和用例条目，经真实的知识读取器跑一次开始运行。
+6. 测试先写：没带 `changed=definition` 被拒；手册早有说明的新命令归为“新增”；行为变化只出现在线索段、不进计数；线索超过 5 条时写“另有”。验证：`npx tsc --noEmit`；`node --test --test-concurrency=2` 对两个包和 `scripts/real/**`（数据库测试别和别的终端同时跑）。
 
 完成后在终端里回报：提交号、测试数量、没做完或拿不准的地方。
