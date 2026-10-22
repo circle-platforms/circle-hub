@@ -189,19 +189,27 @@ describe('lease operations by lineage (C6)', () => {
     return detail.answer.run!.run;
   };
 
-  it('a successor in the lineage extends: the record names the extend and the end moves as asked', async () => {
+  it('a successor in the lineage extends: the end never shortens, a longer extend moves it', async () => {
     await addOpPack('toy-ext-1', "[{ keys: ['meadow/t1/x'], ttl_seconds: 300 }]");
     await addOpPack('toy-ext-1e', "[{ op: 'extend', keys: ['meadow/t1/x'], ttl_seconds: 120 }]");
+    await addOpPack('toy-ext-1l', "[{ op: 'extend', keys: ['meadow/t1/x'], ttl_seconds: 400 }]");
     const booked = await h.service.startRunDetailed(h.alice, { pack: 'toy-ext-1', inputs: { map: { reference: map } } }, h.call('s-c6-1a'));
     assert.equal(booked.answer.call_result, 'ok', JSON.stringify(booked.answer.errors));
     h.advance(60_000);
-    const detail = await h.service.startRunDetailed(h.alice, { pack: 'toy-ext-1e', inputs: { map: { reference: map } }, predecessor: booked.answer.run!.run }, h.call('s-c6-1b'));
-    assert.equal(detail.answer.call_result, 'ok', JSON.stringify(detail.answer.errors));
-    const record = await storedRun(detail.answer.run!.run);
-    const extend = record.leases?.[0] as { op?: string; keys: string[]; until: string } | undefined;
-    assert.equal(extend?.op, 'extend');
-    assert.deepEqual(extend?.keys, ['meadow/t1/x']);
-    assert.ok(Math.abs(Date.parse(extend!.until) - (Date.parse('2026-10-22T08:00:00.000Z') + 60_000 + 120_000)) < 5_000, `the end is now + 120s: ${extend!.until}`);
+    // 300s remain (until 08:05); extending by 120s would end at 08:03 — never shorter, the end stays 08:05.
+    const shortDetail = await h.service.startRunDetailed(h.alice, { pack: 'toy-ext-1e', inputs: { map: { reference: map } }, predecessor: booked.answer.run!.run }, h.call('s-c6-1b'));
+    assert.equal(shortDetail.answer.call_result, 'ok', JSON.stringify(shortDetail.answer.errors));
+    const shortRecord = await storedRun(shortDetail.answer.run!.run);
+    const shortExtend = shortRecord.leases?.[0] as { op?: string; keys: string[]; until: string } | undefined;
+    assert.equal(shortExtend?.op, 'extend');
+    assert.deepEqual(shortExtend?.keys, ['meadow/t1/x']);
+    assert.ok(Math.abs(Date.parse(shortExtend!.until) - Date.parse('2026-10-22T08:05:00.000Z')) < 5_000, `a shorter ttl does not pull the end earlier: ${shortExtend!.until}`);
+    // 400s from 08:01 ends 08:07:40 > 08:05 — the end moves.
+    const longDetail = await h.service.startRunDetailed(h.alice, { pack: 'toy-ext-1l', inputs: { map: { reference: map } }, predecessor: shortDetail.answer.run!.run }, h.call('s-c6-1c'));
+    assert.equal(longDetail.answer.call_result, 'ok', JSON.stringify(longDetail.answer.errors));
+    const longRecord = await storedRun(longDetail.answer.run!.run);
+    const longExtend = longRecord.leases?.[0] as { op?: string; keys: string[]; until: string } | undefined;
+    assert.ok(Math.abs(Date.parse(longExtend!.until) - (Date.parse('2026-10-22T08:00:00.000Z') + 60_000 + 400_000)) < 5_000, `a longer ttl moves the end: ${longExtend!.until}`);
   });
 
   it('an unrelated user is refused, and so is the same user when the holder run is not in the lineage', async () => {
