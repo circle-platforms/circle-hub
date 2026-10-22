@@ -141,9 +141,13 @@ export function planBuilds(input: SyncPlanInput): SyncPlanOutput {
       mainlineMain.add(build.name);
     }
     const namesOnly: Build[] = [];
+    const namesOnlyBase = new Map<string, string>();
     for (const build of ofProduct) {
       if (!mainlineMain.has(build.name) || chosen.has(build.name)) continue;
-      // An NSAE name whose base resolves keeps that base (still a known alias, read by name only).
+      // A released NSAE name whose base resolves keeps that base (a known alias, read by name only). Every other
+      // mainline build is registered by name only, with the built time the page lists and the base the page's
+      // “based on” names (absent: itself) — the candidates then write both (an unreleased alias does not claim the
+      // base's tree; it stays name-only, unlike a released alias).
       const local: string[] = [];
       const resolved = resolveBase(build, byName, local);
       if (resolved !== null && resolved !== build && build.released !== null) {
@@ -152,6 +156,7 @@ export function planBuilds(input: SyncPlanInput): SyncPlanOutput {
         continue;
       }
       namesOnly.push(build);
+      namesOnlyBase.set(build.name, build.basedOn ?? build.name);
     }
 
     const builds: BuildInfo[] = [];
@@ -195,7 +200,7 @@ export function planBuilds(input: SyncPlanInput): SyncPlanOutput {
       }
       pushBuild(build, base, sources);
     }
-    for (const build of namesOnly) pushBuild(build, build.name, {});
+    for (const build of namesOnly) pushBuild(build, namesOnlyBase.get(build.name) ?? build.name, {});
     builds.sort((a, b) => compareLines(a.line, b.line) || compareText(a.name, b.name));
     // A build that would list case documents is not listed without them: a root produced now would lose the cases it has.
     const kept = withheld.size === 0 ? builds : builds.filter((build) => !withheld.has(build.name));

@@ -36,11 +36,11 @@ const EXPECTED: Record<string, { verdict: string; product: [string | null, strin
 
 /** The candidates of line 10.6.1 as the check lists them (released first by date descending, then unreleased by name). */
 const CANDIDATES_10_6_1 = [
-  { name: 'Rel_APV_10_6_1_60', family: 'APV', base: 'Rel_APV_10_6_1_60', alias: false, platform: null, released: true },
-  { name: 'Rel_APV_10_6_1_57', family: 'APV', base: 'Rel_APV_10_6_1_57', alias: false, platform: null, released: true },
-  { name: 'Rel_NSAE_10_6_1_57', family: 'NSAE', base: 'Rel_APV_10_6_1_57', alias: true, platform: null, released: true },
-  { name: 'Rel_NSAE_10_6_1_11', family: 'NSAE', base: 'Rel_NSAE_10_6_1_11', alias: false, platform: null, released: true },
-  { name: 'Rel_APV_10_6_1_63', family: 'APV', base: 'Rel_APV_10_6_1_63', alias: false, platform: null, released: false },
+  { name: 'Rel_APV_10_6_1_63', family: 'APV', base: 'Rel_APV_10_6_1_63', alias: false, platform: null, built_at: '2026-09-25T00:00:00.000Z', released: false },
+  { name: 'Rel_APV_10_6_1_60', family: 'APV', base: 'Rel_APV_10_6_1_60', alias: false, platform: null, built_at: '2026-09-18T00:00:00.000Z', released: true },
+  { name: 'Rel_APV_10_6_1_57', family: 'APV', base: 'Rel_APV_10_6_1_57', alias: false, platform: null, built_at: '2026-09-01T00:00:00.000Z', released: true },
+  { name: 'Rel_NSAE_10_6_1_57', family: 'NSAE', base: 'Rel_APV_10_6_1_57', alias: true, platform: null, built_at: '2026-09-01T00:00:00.000Z', released: true },
+  { name: 'Rel_NSAE_10_6_1_11', family: 'NSAE', base: 'Rel_NSAE_10_6_1_11', alias: false, platform: null, built_at: '2026-08-01T00:00:00.000Z', released: true },
 ];
 /** The build_candidates outcome per document of the main run: a located line gives its candidates, none is an unknown. */
 const CANDIDATES: Record<string, { status: string; verdict: string; line: string | null }> = {
@@ -142,14 +142,14 @@ describe('a production run of case-location', { skip }, () => {
       assert.equal(candidates.claims.length, 1, id);
       const candidatesClaim = candidates.claims[0];
       assert.equal(candidatesClaim.statement.verdict, expectedCandidates.verdict, id);
-      assert.deepEqual(candidatesClaim.warrant, { producer: 'function', id: 'case-location.candidates@1.1.2', independence: 'judge_not_author' }, id);
+      assert.deepEqual(candidatesClaim.warrant, { producer: 'function', id: 'case-location.candidates@1.1.3', independence: 'judge_not_author' }, id);
       const candidatesData = candidatesClaim.statement.data as { kind: string; line: string | null; candidates: unknown[] };
       assert.equal(candidatesData.kind, 'candidates', id);
       assert.equal(candidatesData.line, expectedCandidates.line, id);
       if (expectedCandidates.verdict === 'support') {
         assert.deepEqual(candidates.layers, [{ layer: 'static', terminal: 'pass' }], id);
         assert.deepEqual(candidatesData.candidates, CANDIDATES_10_6_1, id);
-        assert.match(candidatesClaim.statement.text, /版本线 10\.6\.1 的构建候选 5 个，其中别名 1 个/, id);
+        assert.match(candidatesClaim.statement.text, /版本线 10\.6\.1 的构建候选 5 个，其中别名 1 个（别名基于它所基于的构建），按制作时间从新到旧/, id);
       } else {
         assert.deepEqual(candidates.layers, [{ layer: 'static', terminal: 'unchecked', reason: 'missing_input', attribution: 'data_gap' }], id);
         assert.match(candidatesClaim.statement.text, /版本线/, id);
@@ -179,7 +179,7 @@ describe('a production run of case-location', { skip }, () => {
       assert.equal(answer.case_id, id);
       assert.equal(answer.source, `agile:mindmap:${id}@1`);
       assert.deepEqual(answer.ancestor_path, [DOCUMENTS[id].root, ...DOCUMENTS[id].ancestors]);
-      assert.deepEqual(claim.warrant, { producer: 'function', id: 'case-location.locate@1.1.2', independence: 'judge_not_author' });
+      assert.deepEqual(claim.warrant, { producer: 'function', id: 'case-location.locate@1.1.3', independence: 'judge_not_author' });
       assert.deepEqual(claim.grounds, [run.items.find((i) => i.id === id)!.location]);
       // The folders are not in the cited node: the claim points at the item's fields, as the run record holds them.
       assert.equal(claim.pointer, `/items/${k}/fields`);

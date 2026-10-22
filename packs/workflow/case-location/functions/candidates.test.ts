@@ -38,7 +38,7 @@ function subjectOf(items: Array<{ id: string; location: string; fields: ItemFiel
 const byVerdict = (outcomes: CheckOutcome[], verdict: string): CheckOutcome[] => outcomes.filter((o) => o.verdict === verdict);
 
 describe('candidatesOutcomes', () => {
-  it('the located line gives its builds of both name families, an alias with its base, released first by date descending', () => {
+  it('the located line gives its builds of both name families, an alias with its base, by built time descending', () => {
     const outcomes = candidatesOutcomes(subjectOf([item('24001', '需求20931 证书链校验')]));
     const [candidates] = outcomes;
     assert.deepEqual([candidates.verdict, candidates.tier, candidates.item], ['support', 'advisory', '24001']);
@@ -47,15 +47,46 @@ describe('candidatesOutcomes', () => {
     assert.deepEqual(
       data.candidates.map((c) => [c.name, c.family, c.base, c.alias, c.released]),
       [
-        ['Rel_APV_10_6_1_60', 'APV', 'Rel_APV_10_6_1_60', false, true],
-        ['Rel_NSAE_10_6_1_57', 'NSAE', 'Rel_APV_10_6_1_57', true, true],
-        ['Rel_APV_10_6_1_57', 'APV', 'Rel_APV_10_6_1_57', false, true],
         ['Rel_APV_10_6_1_63', 'APV', 'Rel_APV_10_6_1_63', false, false],
+        ['Rel_APV_10_6_1_60', 'APV', 'Rel_APV_10_6_1_60', false, true],
+        ['Rel_APV_10_6_1_57', 'APV', 'Rel_APV_10_6_1_57', false, true],
+        ['Rel_NSAE_10_6_1_57', 'NSAE', 'Rel_APV_10_6_1_57', true, true],
       ],
     );
     assert.match(candidates.statement, /版本线 10\.6\.1/);
+    assert.match(candidates.statement, /按制作时间从新到旧/);
     assert.match(candidates.statement, /别名/);
     assert.deepEqual(candidates.grounds, [`src:${'24001'.padStart(64, '0')}/kityminder@1/n/24001`]);
+  });
+
+  it('the statement writes the build time of every candidate and its based-on base, and the release state apart', () => {
+    const outcomes = candidatesOutcomes(subjectOf([item('24014', '需求20931 证书链校验')]));
+    const [candidates] = outcomes;
+    // Built time from the page's “build on”, alias with 基于, release state written apart, ordered by built time.
+    assert.match(candidates.statement, /按制作时间从新到旧/);
+    assert.match(candidates.statement, /Rel_APV_10_6_1_60（APV）制作于 2026-09-18 00:00，已发布 2026-09-20/);
+    assert.match(candidates.statement, /Rel_NSAE_10_6_1_57（NSAE，基于 Rel_APV_10_6_1_57）制作于 2026-09-01 00:00，已发布 2026-09-05/);
+    assert.match(candidates.statement, /Rel_APV_10_6_1_63（APV）制作于 2026-09-25 00:00，未发布/);
+    assert.ok(!candidates.statement.includes('按发布从新到旧'), 'the order is by built time now');
+    assert.ok(!candidates.statement.includes('依据'), 'the alias wording is 基于 now');
+    const data = candidates.data as { candidates: Array<{ name: string; built_at: string | null; base: string }> };
+    const withTimes = new Map(data.candidates.map((c) => [c.name, [c.built_at, c.base]] as const));
+    assert.deepEqual(withTimes.get('Rel_APV_10_6_1_60'), ['2026-09-18T00:00:00.000Z', 'Rel_APV_10_6_1_60']);
+    assert.deepEqual(withTimes.get('Rel_NSAE_10_6_1_57'), ['2026-09-01T00:00:00.000Z', 'Rel_APV_10_6_1_57']);
+  });
+
+  it('orders by built time descending, name as the tie-break; a build without a built time is last and says so', () => {
+    const builds: ContextBuild[] = [
+      build('Rel_APV_10_6_1_50', 'APV', '10.6.1', { built_at: '2026-08-01T00:00:00.000Z', released_at: '2026-08-02T00:00:00.000Z' }),
+      build('Rel_APV_10_6_1_57', 'APV', '10.6.1', { built_at: '2026-09-01T00:00:00.000Z', released_at: null }),
+      build('Rel_APV_10_6_1_58', 'APV', '10.6.1', { built_at: '2026-09-01T00:00:00.000Z', released_at: null }),
+      build('Rel_APV_10_6_1_no-time', 'APV', '10.6.1', { built_at: null, released_at: '2026-07-01T00:00:00.000Z' }),
+    ];
+    const outcomes = candidatesOutcomes(subjectOf([item('24015', '需求20931 证书链校验')], builds));
+    const [candidates] = outcomes;
+    const names = (candidates.data as { candidates: Array<{ name: string }> }).candidates.map((c) => c.name);
+    assert.deepEqual(names, ['Rel_APV_10_6_1_57', 'Rel_APV_10_6_1_58', 'Rel_APV_10_6_1_50', 'Rel_APV_10_6_1_no-time']);
+    assert.match(candidates.statement, /Rel_APV_10_6_1_no-time（APV）制作时间未知，已发布 2026-07-01/);
   });
 
   it('a written name equal to a candidate or to the base of an alias is known (support)', () => {
@@ -128,24 +159,24 @@ describe('candidatesOutcomes', () => {
     assert.equal((candidates.data as { candidates: unknown[] }).candidates.length, 51);
   });
 
-  it('the statement names every candidate: build, family, released with its date, an alias with the build it is based on', () => {
+  it('the statement names every candidate: build and family, the built time, an alias with the build it is based on, the release state apart', () => {
     const outcomes = candidatesOutcomes(subjectOf([item('24011', '需求20931 证书链校验')]));
     const [candidates] = outcomes;
-    assert.match(candidates.statement, /Rel_APV_10_6_1_60（APV，2026-09-20 已发布）/);
-    assert.match(candidates.statement, /Rel_NSAE_10_6_1_57（NSAE，依据 Rel_APV_10_6_1_57，2026-09-05 已发布）/);
-    assert.match(candidates.statement, /Rel_APV_10_6_1_57（APV，2026-09-02 已发布）/);
-    assert.match(candidates.statement, /Rel_APV_10_6_1_63（APV，未发布）/);
-    assert.match(candidates.statement, /按发布从新到旧/);
+    assert.match(candidates.statement, /Rel_APV_10_6_1_60（APV）制作于 2026-09-18 00:00，已发布 2026-09-20/);
+    assert.match(candidates.statement, /Rel_NSAE_10_6_1_57（NSAE，基于 Rel_APV_10_6_1_57）制作于 2026-09-01 00:00，已发布 2026-09-05/);
+    assert.match(candidates.statement, /Rel_APV_10_6_1_57（APV）制作于 2026-09-01 00:00，已发布 2026-09-02/);
+    assert.match(candidates.statement, /Rel_APV_10_6_1_63（APV）制作于 2026-09-25 00:00，未发布/);
+    assert.match(candidates.statement, /按制作时间从新到旧/);
   });
 
   it('the statement writes at most the first 12 candidates and counts the rest', () => {
     const many: ContextBuild[] = [];
-    for (let i = 0; i < 20; i++) many.push(build(`Rel_APV_10_6_1_${String(i).padStart(2, '0')}`, 'APV', '10.6.1', { released_at: `2026-09-${String(1 + i).padStart(2, '0')}T00:00:00.000Z` }));
+    for (let i = 0; i < 20; i++) many.push(build(`Rel_APV_10_6_1_${String(i).padStart(2, '0')}`, 'APV', '10.6.1', { built_at: `2026-08-${String(1 + i).padStart(2, '0')}T00:00:00.000Z`, released_at: `2026-09-${String(1 + i).padStart(2, '0')}T00:00:00.000Z` }));
     const outcomes = candidatesOutcomes(subjectOf([item('24012', 'x')], many));
     const [candidates] = outcomes;
     assert.equal((candidates.data as { candidates: unknown[] }).candidates.length, 20);
     assert.match(candidates.statement, /构建候选 20 个/);
-    assert.match(candidates.statement, /Rel_APV_10_6_1_08（APV，2026-09-09 已发布）/, 'the 12th candidate (newest first) is written out');
+    assert.match(candidates.statement, /Rel_APV_10_6_1_08（APV）制作于 2026-08-09 00:00，已发布 2026-09-09/, 'the 12th candidate (newest built first) is written out');
     assert.ok(!candidates.statement.includes('Rel_APV_10_6_1_07（'), 'the 13th candidate is not written out');
     assert.match(candidates.statement, /另有 8 个/);
   });

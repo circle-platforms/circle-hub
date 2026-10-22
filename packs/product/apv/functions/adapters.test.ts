@@ -129,7 +129,8 @@ describe('the sync plan', () => {
       assert.ok(build, `${name} is listed`);
       return build;
     };
-    // An unreleased build with a tree that is not the newest of its line: known by name only.
+    // An unreleased build with a tree that is not the newest of its line: known by name only — with the built time
+    // the page lists, and the base the page's “based on” names (absent: itself).
     assert.deepEqual(rest('Rel_APV_10_6_1_56'), {
       name: 'Rel_APV_10_6_1_56',
       family: 'APV',
@@ -149,6 +150,10 @@ describe('the sync plan', () => {
     assert.deepEqual([rest('Rel_APV_10_6_1_36').base, rest('Rel_APV_10_6_1_36').built_at], ['Rel_APV_10_6_1_36', null]);
     // An NSAE build without a tree and without a base text stays its own base (a name-only build, not a broken alias).
     assert.deepEqual([rest('Rel_NSAE_10_6_1_12').base, rest('Rel_NSAE_10_6_1_12').sources], ['Rel_NSAE_10_6_1_12', {}]);
+    // An unreleased NSAE name with a “based on” text carries that build as its base (the page says so), still name-only.
+    assert.deepEqual([rest('Rel_NSAE_10_6_1_40').base, rest('Rel_NSAE_10_6_1_40').sources, rest('Rel_NSAE_10_6_1_40').built_at], ['Rel_APV_10_6_1_56', {}, '2026-05-18T09:30:00Z']);
+    // A Beta name without a tree carries its built time too.
+    assert.equal(rest('Beta_APV_10_6_1_120').built_at, '2026-02-11T12:00:00Z');
     // A variant of another platform is not a mainline build: still not listed.
     assert.ok(!byName.has('BrandOS-Rel_NSAE-HG-K_10_6_1_3_2_7.click'), 'another platform is opt-in');
     // The existing choices keep their sources (nothing about them changed).
