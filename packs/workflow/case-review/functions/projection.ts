@@ -268,12 +268,15 @@ export function projection(input: unknown): ProjectionOutput {
   if (selected.length > MAX_ITEMS) {
     return failure('too_many_cases', `${where}有 ${inBlock.length} 个用例，超过一次运行最多 ${MAX_ITEMS} 个条目`, tooManyFix(model, projected.groups, inBlock.map(nodeOf), top), warnings, [documentId]);
   }
+  const caseRule = (own.caseRule === 'tagged' ? 'tagged' : 'marked') as 'tagged' | 'marked';
+  const marked_only = caseRule === 'marked' ? selected.filter((item) => item.fields.tags.length === 0).length : 0;
+  const ruleSummary = `用例规则：${caseRule === 'marked' ? '标签或标记' : '只认标签'}；其中 ${marked_only} 个只靠标记识别（没有标签）`;
   const items: ProjectedItem[] = selected.map((item) => ({
     id: item.id,
     label: item.label,
     summary: summaryOf(item),
     location: { slot: SUBJECT_SLOT, parser: item.location.parser, selector: item.location.selector },
-    fields: item.fields as unknown as Record<string, unknown>,
+    fields: { ...(item.fields as unknown as Record<string, unknown>), case_rule: caseRule, marked_only },
   }));
   // The groups the run's cases sit in (with a slice), else every group of the block.
   const holding = new Set<number>();
@@ -289,6 +292,10 @@ export function projection(input: unknown): ProjectionOutput {
     id: documentId,
     title: collapseWhitespace(model.nodes[0]?.text ?? ''),
     cases: selected.length,
+    case_rule: caseRule,
+    marked_only,
+    rule_summary: ruleSummary,
+    data: { case_rule: caseRule, marked_only },
     ...(top !== 0 ? { block: { selector: model.nodes[top].selector, label: collapseWhitespace(model.nodes[top].text), value: JSON.parse(blockValue(model, top)) as unknown } } : {}),
     ...(slice !== null ? { slice: { from: slice.from, to: slice.from + selected.length - 1, of: inBlock.length } } : {}),
   });

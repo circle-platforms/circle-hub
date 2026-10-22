@@ -59,10 +59,10 @@ describe('coverageSubject', () => {
       }
     }
     // With every case below it gone, the tagged group node (priority 1, tag Function) is a case itself (case-review's rule,
-    // README deviation 5), so only Functional is shown.
+    // README deviation 5), so only Functional is shown (along with the untagged candidate case which shows no category).
     const last = projectDocuments(projectionInput([bind(withoutCategory(doc, 'compatibility'))]));
     assert.ok(!('error' in last));
-    assert.deepEqual([last.items[0].fields.caseCount, last.items[0].fields.missing], [1, CATEGORIES.filter((id) => id !== 'functional')]);
+    assert.deepEqual([last.items[0].fields.caseCount, last.items[0].fields.missing], [2, CATEGORIES.filter((id) => id !== 'functional')]);
   });
 
   it('leaves the covered list absent when the item has no category list, so the check is unknown (missing input), not a judgment of nothing', async () => {

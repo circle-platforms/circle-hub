@@ -145,7 +145,17 @@ describe('projection of the draft result onto the target', () => {
     for (const i of out.items) assert.ok(typeof i.summary === 'string' && i.summary.length <= MAX_SUMMARY);
     assert.match(first.summary ?? '', /^初评 1 条发现：coverage_gap\/major｜初评分区 delivered/);
     assert.deepEqual(out.groups[0], { kind: 'draft_level', reference: `rec:${RECORD}#/cross_item/1`, rank: 'P4', text: '等级理由：示例' });
-    assert.deepEqual(out.groups[1], { kind: 'draft', record: RECORD, run: RUN, items: 2, findings: 1 });
+    assert.deepEqual(out.groups[1], {
+      kind: 'draft',
+      record: RECORD,
+      run: RUN,
+      items: 2,
+      findings: 1,
+      case_rule: 'marked',
+      marked_only: 0,
+      rule_summary: '用例规则：标签或标记；其中 0 个只靠标记识别（没有标签）',
+      data: { case_rule: 'marked', marked_only: 0 },
+    });
   });
 
   it('takes the validation result itself when bound below the record, the references carrying its pointer', () => {
@@ -291,6 +301,78 @@ describe('the checks', () => {
     assert.equal(out[0].item, '880001:c1', 'reported on the first handled item');
     const covered = verdict({ subject: { items: [items[0], { ...items[1], slots: { verification: [claim('verified', { data: { finding: ref(1) }, quotes: [{ reference: loc('c2'), text: '设置重试次数' }] })] } }], cross_item: [final('PASS', 'P4')] } });
     assert.deepEqual(covered.map((o) => o.verdict), ['support']);
+  });
+
+  it('primary and verification item IDs match one by one under marked and tagged rules, and inherits draft rule', async () => {
+    const { projectItems } = await import('../../case-review/functions/project.ts');
+    const mindmapWithUntagged = kityminderParser.parse(
+      new TextEncoder().encode(
+        JSON.stringify({
+          root: {
+            data: { id: 'root', text: '需求 20931 示例网关健康检查' },
+            children: [
+              { data: { id: 'g1', text: '基本功能', priority: 1 }, children: [
+                { data: { id: 'c1', text: '设置探测间隔', priority: 2, resource: ['Functional'] }, children: [{ data: { id: 'c1e', text: '间隔生效' }, children: [] }] },
+                { data: { id: 'c2', text: '设置重试次数', priority: 2, resource: ['Functional'] }, children: [{ data: { id: 'c2e', text: '次数生效' }, children: [] }] },
+                { data: { id: 'u1', text: '未打标签用例', priority: 2 }, children: [{ data: { id: 'u1e', text: '未打标签生效' }, children: [] }] },
+              ] },
+            ],
+          },
+        }),
+      ),
+    ).model;
+    const targetInput = { slot: 'target', external: 'agile:mindmap:880001', sha256: TARGET, media_type: 'application/json', parser: 'kityminder@1', model: mindmapWithUntagged, meta: { title: '测试' } };
+
+    // 1. Marked rule (default)
+    const reviewMarked = projectItems({ documents: [{ slot: 'subject', documentId: '880001', model: mindmapWithUntagged }], parameters: { caseRule: 'marked' } });
+    assert.ok(!('error' in reviewMarked));
+    assert.deepEqual(reviewMarked.items.map((i) => i.id), ['880001:c1', '880001:c2', '880001:u1']);
+
+    const draftMarkedResult = draftResult({
+      partitions: {
+        delivered: reviewMarked.items.map((item) => ({ item: item.id, label: item.label, location: loc(item.fields.nodeId as string), requirements: [] })),
+        rejected: [], quarantined: [], incomplete: [],
+      },
+    });
+    const verifyMarked = projected(projection({ inputs: [targetInput, draft(record(draftMarkedResult))], parameters: { case_rule: 'marked' }, context }));
+    assert.deepEqual(verifyMarked.items.map((i) => i.id), reviewMarked.items.map((i) => i.id));
+    assert.equal(verifyMarked.groups[1].case_rule, 'marked');
+    assert.equal(verifyMarked.groups[1].marked_only, 1);
+    assert.match(String(verifyMarked.groups[1].rule_summary), /用例规则：标签或标记；其中 1 个只靠标记识别（没有标签）/);
+
+    // 2. Tagged rule
+    const reviewTagged = projectItems({ documents: [{ slot: 'subject', documentId: '880001', model: mindmapWithUntagged }], parameters: { caseRule: 'tagged' } });
+    assert.ok(!('error' in reviewTagged));
+    assert.deepEqual(reviewTagged.items.map((i) => i.id), ['880001:c1', '880001:c2']);
+
+    const draftTaggedResult = draftResult({
+      partitions: {
+        delivered: reviewTagged.items.map((item) => ({ item: item.id, label: item.label, location: loc(item.fields.nodeId as string), requirements: [] })),
+        rejected: [], quarantined: [], incomplete: [],
+      },
+    });
+    const verifyTagged = projected(projection({ inputs: [targetInput, draft(record(draftTaggedResult))], parameters: { case_rule: 'tagged' }, context }));
+    assert.deepEqual(verifyTagged.items.map((i) => i.id), reviewTagged.items.map((i) => i.id));
+    assert.equal(verifyTagged.groups[1].case_rule, 'tagged');
+    assert.equal(verifyTagged.groups[1].marked_only, 0);
+    assert.match(String(verifyTagged.groups[1].rule_summary), /用例规则：只认标签；其中 0 个只靠标记识别（没有标签）/);
+
+    // 3. Draft used tagged, verify did NOT specify case_rule: verify inherits tagged rule from draft
+    const verifyInherited = projected(projection({ inputs: [targetInput, draft(record(draftTaggedResult))], parameters: {}, context }));
+    assert.deepEqual(verifyInherited.items.map((i) => i.id), reviewTagged.items.map((i) => i.id));
+    assert.equal(verifyInherited.groups[1].case_rule, 'tagged');
+    assert.equal(verifyInherited.groups[1].marked_only, 0);
+  });
+
+  it('verdict check statement includes case_rule summary and data includes case_rule and marked_only', () => {
+    const items = [
+      { id: '880001:c1', label: 'l', location: loc('c1'), fields: { draft_findings: [{ reference: ref(1), rank: 'major' }], draft_level: { rank: 'P4' }, case_rule: 'marked', marked_only: 2 }, slots: { verification: [claim('verified', { data: { finding: ref(1) }, quotes: [{ reference: loc('c1e'), text: '间隔生效' }] })] } },
+    ];
+    const out = verdict({ subject: { items, cross_item: [final('PASS', 'P4')] } });
+    assert.deepEqual(out.map((o) => o.verdict), ['support']);
+    assert.match(out[0].statement, /用例规则：标签或标记；其中 2 个只靠标记识别（没有标签）/);
+    assert.deepEqual((out[0].data as Record<string, unknown>).case_rule, 'marked');
+    assert.deepEqual((out[0].data as Record<string, unknown>).marked_only, 2);
   });
 
   it('report a run-wide problem on the first handled item and point at the verdict', () => {

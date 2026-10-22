@@ -10,8 +10,8 @@
     },
     {
       "code": "case-review.no_case",
-      "when": "文档里没有用例节点（按 caseRule 规则），整批不受理；文档里有没有标签、但写法像用例的节点时，消息里给出个数",
-      "fix": "有像用例的节点时把运行参数 caseRule 设为 marked 重新开始运行；否则把没有用例的文档从输入里去掉"
+      "when": "文档里没有用例节点（默认认带标签或带标记的节点，caseRule=tagged 时只认标签），整批不受理；文档里有没有标签、但写法像用例的节点时，消息里给出个数",
+      "fix": "caseRule=tagged 时去掉该参数（或设为 marked）重新开始运行；否则把没有用例的文档从输入里去掉"
     },
     {
       "code": "case-review.too_large",
@@ -52,8 +52,8 @@
   "warnings": [
     {
       "code": "case-review.untagged_cases",
-      "when": "文档里有没有标签、带用例优先级、有子节点、下面没有别的用例的节点（团队模板的用例写法）：caseRule=tagged 时没有投影，caseRule=marked 时当没有标签的用例投影；data 给出个数和前 20 个节点的定位",
-      "fix": "要评审这些用例时把运行参数 caseRule 设为 marked；或者在脑图里给用例打上标签"
+      "when": "文档里有没有标签、带用例优先级、有子节点、下面没有别的用例的节点（团队模板的用例写法）：默认当没有标签的用例投影，caseRule=tagged 时没有投影；data 给出个数和前 20 个节点的定位",
+      "fix": "默认已将这些节点当没有标签的用例投影；若要排除它们可设运行参数 caseRule=tagged；或者在脑图里给用例打上标签"
     },
     {
       "code": "case-review.tagged_group",

@@ -68,15 +68,28 @@ describe('projectDocuments', () => {
     assert.equal(item.label, '小部件探测 测试用例', 'the label is the listed title with white space collapsed');
     assert.equal(item.fields.title, ' 小部件探测  测试用例 ', 'the title field keeps the title as listed');
     assert.deepEqual(item.fields.path, ['示例产品', '030：示例测试项目', '101：2.1.0', '模块']);
-    assert.deepEqual(Object.keys(item.fields), ['document', 'title', 'path', 'caseCount', 'untagged', 'categories', 'missing', 'skipped']);
+    assert.deepEqual(Object.keys(item.fields), ['document', 'title', 'path', 'caseCount', 'untagged', 'case_rule', 'marked_only', 'data', 'categories', 'missing', 'skipped']);
     assert.deepEqual(item.fields.skipped, []);
     assertGold(item.fields, doc, 'base');
-    assert.deepEqual(out.warnings.map((warning) => warning.code), ['template-gap.untagged_cases', 'template-gap.tagged_group']);
+    assert.deepEqual(out.warnings.map((warning) => warning.code), ['template-gap.tagged_group']);
     // The location is the root node, addressed as the parser addresses it.
     const parsed = parse(bytesOf(doc));
     assert.deepEqual(item.location, { parser: 'kityminder@1', selector: parsed.model.nodes[0].selector });
     assert.equal(parsed.locate(item.location.selector)?.text, doc.title);
-    assert.equal(item.summary, '用例 74 个；24 个模板类别都已覆盖；模板类别出现 24/24 个；另有 1 个没有标签、写法像用例的节点没有计入');
+    assert.match(item.summary, /用例 75 个/);
+    assert.match(item.summary, /用例规则：标签或标记；其中 1 个只靠标记识别（没有标签）/);
+
+    // With case_rule tagged
+    const taggedOut = project([bound], { case_rule: 'tagged' });
+    const [taggedItem] = taggedOut.items;
+    assert.equal(taggedItem.fields.caseCount, 74);
+    assert.equal(taggedItem.fields.untagged, 1);
+    assert.equal(taggedItem.fields.case_rule, 'tagged');
+    assert.equal(taggedItem.fields.marked_only, 0);
+    assert.deepEqual(taggedOut.warnings.map((warning) => warning.code), ['template-gap.untagged_cases', 'template-gap.tagged_group']);
+    assert.match(taggedItem.summary, /用例 74 个/);
+    assert.match(taggedItem.summary, /用例规则：只认标签；其中 0 个只靠标记识别（没有标签）/);
+    assert.match(taggedItem.summary, /另有 1 个没有标签、写法像用例的节点没有计入/);
   });
 
   it('reads the title from the mind-map root and the folders from `ancestors` when the reader gives no title or folders', () => {
@@ -250,7 +263,7 @@ describe('projectDocuments', () => {
     assert.deepEqual(item.fields.missing, ['stress', 'audit_log', 'upgrade_old_to_new']);
     assert.equal(
       item.summary,
-      `用例 ${item.fields.caseCount} 个；缺 3 个模板类别：压力测试（stress）、审计日志（audit_log）、升级兼容：老版本到新版本（upgrade_old_to_new）；参数 skipped 声明跳过 2 个：兼容性测试（compatibility）、数据库（database）；模板类别出现 ${present}/24 个；另有 1 个没有标签、写法像用例的节点没有计入`,
+      `用例 ${item.fields.caseCount} 个；缺 3 个模板类别：压力测试（stress）、审计日志（audit_log）、升级兼容：老版本到新版本（upgrade_old_to_new）；参数 skipped 声明跳过 2 个：兼容性测试（compatibility）、数据库（database）；模板类别出现 ${present}/24 个；用例规则：标签或标记；其中 1 个只靠标记识别（没有标签）`,
     );
   });
 
@@ -274,9 +287,13 @@ describe('projectDocuments', () => {
     const worst = itemOf(km(12_345, 6_789), { external: external() });
     assert.deepEqual(worst.fields.missing, CATEGORIES);
     assert.ok(worst.summary.length <= LIMITS.maxSummary, `${worst.summary.length} characters`);
-    assert.ok(worst.summary.startsWith('用例 12345 个；缺 24 个模板类别（只列编号）：functional、configuration、'), worst.summary);
+    assert.ok(worst.summary.startsWith('用例 19134 个；缺 24 个模板类别（只列编号）：functional、configuration、'), worst.summary);
     for (const id of CATEGORIES) assert.ok(worst.summary.includes(id), id);
-    assert.ok(worst.summary.endsWith('模板类别出现 0/24 个；另有 6789 个没有标签、写法像用例的节点没有计入'), worst.summary);
+    assert.ok(worst.summary.endsWith('模板类别出现 0/24 个；用例规则：标签或标记；其中 6789 个只靠标记识别（没有标签）'), worst.summary);
+
+    const worstTagged = itemOf(km(12_345, 6_789), { external: external() }, { case_rule: 'tagged' });
+    assert.ok(worstTagged.summary.startsWith('用例 12345 个；缺 24 个模板类别（只列编号）：functional、configuration、'), worstTagged.summary);
+    assert.ok(worstTagged.summary.endsWith('用例规则：只认标签；其中 0 个只靠标记识别（没有标签）；另有 6789 个没有标签、写法像用例的节点没有计入'), worstTagged.summary);
     // Skips and missing categories together are at most the 24 categories: still every one named.
     const skipped = CATEGORIES.slice(0, 9).map((category) => ({ category, reason: '用户说不适用' }));
     const mixed = itemOf(km(12_345, 6_789), { external: external() }, { skipped });
@@ -289,17 +306,21 @@ describe('projectDocuments', () => {
 
 describe('refusals (W01 R[3])', () => {
   it('a document without cases refuses the whole run with the fix, naming it and its untagged nodes', () => {
-    const out = refuse([bind(outlineDocument(), { external: external('900031') })]);
-    assert.equal(out.error.code, 'template-gap.no_case');
-    assert.match(out.error.message, /^文档 900031 里没有用例节点：用例是标签（resource）不为空的节点；其中有 1 个没有标签、写法像用例的节点/);
-    assert.match(out.error.fix, /打上测试类型标签/);
-    assert.deepEqual(out.error.documents, ['900031']);
-    const plain = refuse([bind(renamed({ ...outlineDocument(), children: [] }, 'r0empty00001'), { external: external('900032') })]);
+    const plain = refuse([bind(renamed({ ...outlineDocument(), children: [] }, 'r0empty00001'), { external: external('900031') })]);
+    assert.equal(plain.error.code, 'template-gap.no_case');
     assert.match(plain.error.fix, /把没有用例的文档从输入里去掉/);
+    assert.deepEqual(plain.error.documents, ['900031']);
+
+    const taggedRefusal = refuse([bind(outlineDocument(), { external: external('900032') })], { case_rule: 'tagged' });
+    assert.equal(taggedRefusal.error.code, 'template-gap.no_case');
+    assert.match(taggedRefusal.error.message, /^文档 900032 里没有用例节点：用例是标签（resource）不为空的节点；其中有 1 个没有标签、写法像用例的节点/);
+    assert.match(taggedRefusal.error.fix, /打上测试类型标签/);
+    assert.deepEqual(taggedRefusal.error.documents, ['900032']);
   });
 
   it('one document without cases among several refuses the whole batch', () => {
-    const out = refuse([bind(renamed(baseDocument(), 'r0batch00001'), { external: external('900041') }), bind(outlineDocument(), { external: external('900042') })]);
+    const emptyDoc = renamed({ ...outlineDocument(), children: [] }, 'r0empty00002');
+    const out = refuse([bind(renamed(baseDocument(), 'r0batch00001'), { external: external('900041') }), bind(emptyDoc, { external: external('900042') })]);
     assert.equal(out.error.code, 'template-gap.no_case');
     assert.deepEqual(out.error.documents, ['900042']);
   });

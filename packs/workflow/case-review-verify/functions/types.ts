@@ -107,6 +107,8 @@ export type CaseFields = {
   hasNote: boolean;
   /** Sits below another case. */
   nested: boolean;
+  case_rule?: 'marked' | 'tagged';
+  marked_only?: number;
 };
 
 export type CaseItem = { id: string; label: string; location: ItemLocation; fields: CaseFields };

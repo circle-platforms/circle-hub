@@ -143,7 +143,7 @@ export function baseDocument(rootId = 'r0base000001', title = '小部件探测�
     b.case('show pool pool2', ['function'], F, ['command_query'], '列出 pool2 的成员'),
     b.case('探测间隔设为 10 秒', ['Function'], F, [], b.precondition('先删除旧的探测对象'), '间隔为 10 秒'),
     b.case('探测结果计数', ['Function'], F, [], '成功次数加一', '失败次数不变'),
-    b.node('探测超时写入数据库', { priority: 2, untagged: true }, b.expected('超时被记录')),
+    b.node('探测超时默认重试', { priority: 2, untagged: true }, b.expected('超时被记录')),
   );
   const values = b.group(
     '参数取值',
@@ -390,7 +390,8 @@ export interface Gold {
 }
 
 /** What the document is written to show, from the declarations alone. */
-export function goldOf(doc: DocumentSpec, documentId: string): Gold {
+export function goldOf(doc: DocumentSpec, documentId: string, options: { caseRule?: 'tagged' | 'marked' } = {}): Gold {
+  const rule = options.caseRule ?? 'marked';
   const cases = casesWithCategories(doc);
   const byCategory = new Map<string, string[]>();
   for (const { spec, categories } of cases) {
@@ -408,7 +409,9 @@ export function goldOf(doc: DocumentSpec, documentId: string): Gold {
     }
   };
   visit(doc.children);
-  return { caseCount: cases.length, untagged, byCategory };
+  const caseCount = rule === 'marked' ? cases.length + untagged : cases.length;
+  const reportedUntagged = rule === 'marked' ? 0 : untagged;
+  return { caseCount, untagged: reportedUntagged, byCategory };
 }
 
 /** A document without any case: an outline whose nodes carry no tags (groups and plain nodes only). */

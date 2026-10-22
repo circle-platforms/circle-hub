@@ -104,10 +104,13 @@ describe('tables/structure.json (literal) on the review fixture', () => {
 
   it('finds exactly the literal problems the fixture was built with', () => {
     assert.deepEqual(described(subjects, outcomes), [
+      'relay endpoint add 192.0.2.41 80 后 show endpoints core.structure.required_empty /tags',
       'show health 显示所有池的状态 core.structure.duplicate_key',
       'show health 显示所有池的状态 core.structure.duplicate_key',
       'widget session clear pool1 后探测不受影响 core.structure.required_empty',
+      '删除端点后会话迁移到其他端点 core.structure.required_empty /tags',
       '后端恢复后重新加入调度 core.structure.required_empty',
+      '批量添加 16 个端点 core.structure.required_empty /tags',
       '非管理员账号不能修改健康检查 core.structure.type_mismatch',
     ]);
   });
@@ -129,7 +132,7 @@ describe('tables/structure.json (literal) on the review fixture', () => {
     assert.deepEqual(byItem('widget health interval pool1 5', 'core.structure.duplicate_key'), []);
     assert.deepEqual(byItem('widget health retries pool1 3', 'core.structure.duplicate_key'), []);
     assert.deepEqual(byItem('添加 - 端点', 'core.structure.duplicate_key'), []);
-    assert.equal(outcomes.filter((outcome) => outcome.verdict === 'support').length, subjects.length - 5);
+    assert.equal(outcomes.filter((outcome) => outcome.verdict === 'support').length, subjects.length - 8);
   });
 
   it('accepts a case with one expected result per step', () => {

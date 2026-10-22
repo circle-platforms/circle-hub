@@ -68,7 +68,7 @@
     },
     {
       "name": "case_rule",
-      "description": "哪些节点是用例：tagged（默认）是标签（resource）不为空的节点；marked 另外把没有标签、带用例优先级、有子节点、下面没有别的用例的节点当用例（团队模板的写法）",
+      "description": "哪些节点是用例：marked（默认）认带标签或带标记（没有标签、带用例优先级、有子节点、下面没有别的用例）的节点；tagged 限制为只认标签（resource 不为空）",
       "required": false,
       "schema": { "enum": ["tagged", "marked"] }
     },

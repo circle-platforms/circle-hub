@@ -1,14 +1,16 @@
 // The cases of one parsed mind map (ported from the case-review projection, W01), with the identities case-review gives its
 // items, so that the evidence of a template category names the same cases a review run of the document would.
-// - a case is a node whose `resource` (the tag list) is a non-empty array (case-review's caseRule tagged; the brief also asks
-//   for a priority, see README deviation 4);
+// - a case is a node whose `resource` (the tag list) is a non-empty array, or (under the unified default rule `marked`,
+//   2026-10-22 owner decision) an untagged node outside every case that carries the case priority (2), has children and holds
+//   no tagged node and no node with the case priority; under caseRule tagged it is restricted to tagged nodes only;
 // - a tagged node with the group priority (1) outside every case that holds tagged nodes or nodes with the case priority (2)
 //   is a group; once nothing like that is below it, it is a case (case-review's rule, kept for parity; README deviation 5:
 //   removing or adding cases below such a node changes its role);
 // - inside a case: a leaf is an expected result unless it carries the precondition priority (3); a child with children is a
 //   step and the leaves below it are expected results too; a tagged node below a case is a case of its own;
 // - an untagged node outside every case that carries the case priority, has children and holds no tagged node and no node
-//   with the case priority is written like a case of the team template but has no tag: it is counted, not a case.
+//   with the case priority is written like a case of the team template: under marked it is counted as a case with tags: []
+//   (reporting missing tags on template test types); under tagged it is counted as untagged, not a case.
 // Identity (W01 R[2]): `<document>:<data.id>` when the id occurs on one case; every copy of an id several cases share gets
 // `#1`, `#2`, ... in document order; a missing id, or one too long for an item id, gives `@<node index>`.
 // Passes over the visited nodes (walk with an explicit stack, flags from the leaves up, roles, cases) keep it linear; a case
@@ -37,6 +39,8 @@ export type DocumentCases = {
   cases: CaseRecord[];
   /** Untagged nodes written like cases; under the tagged rule they are not cases. */
   untagged: number;
+  markedOnly: number;
+  caseRule: 'marked' | 'tagged';
   /** How often each data.id occurs over all nodes: the parser addresses a node by its id only when it occurs once. */
   ids: Map<string, number>;
   /** data.id of the root node, or null. */
@@ -82,7 +86,13 @@ export function casePath(nodes: NodeTable, record: Pick<CaseRecord, 'visit'>): s
   return path.reverse();
 }
 
-export function casesOf(documentId: string, nodes: readonly unknown[], warnings: WarningSink): DocumentCases {
+export function casesOf(
+  documentId: string,
+  nodes: readonly unknown[],
+  warnings: WarningSink,
+  options: { caseRule?: 'tagged' | 'marked' } = {},
+): DocumentCases {
+  const caseRule = options.caseRule ?? 'marked';
   const n = nodes.length;
   const stats = { malformed: 0, deep: 0, nonTextTags: 0 };
 
@@ -141,7 +151,7 @@ export function casesOf(documentId: string, nodes: readonly unknown[], warnings:
         if (taggedGroups.nodes.length < CASE_LIMITS.maxNamed) taggedGroups.nodes.push(v);
       }
     } else if (inside !== -1) role[v] = INNER;
-    else if (data.priority === PRIORITIES.case && !leaf && holds[v] === 0) role[v] = CANDIDATE;
+    else if (data.priority === PRIORITIES.case && !leaf && holds[v] === 0) role[v] = caseRule === 'marked' ? CASE : CANDIDATE;
     else if (Object.hasOwn(data, 'priority')) role[v] = GROUP;
     else role[v] = OTHER;
   }
@@ -212,15 +222,18 @@ export function casesOf(documentId: string, nodes: readonly unknown[], warnings:
   const caseOf = new Int32Array(visits.length).fill(-1);
   const stepOf = new Int32Array(visits.length).fill(-1);
   const untagged = { count: 0, nodes: [] as string[] };
+  let markedOnly = 0;
   for (let v = 0; v < visits.length; v++) {
     const visit = visits[v];
     if (role[v] === CASE) {
       const tags: string[] = [];
-      for (const entry of visit.data.resource as unknown[]) {
+      const resource = Array.isArray(visit.data.resource) ? (visit.data.resource as unknown[]) : [];
+      for (const entry of resource) {
         const tag = textOf(entry);
         if (tag === null) stats.nonTextTags += 1;
         else tags.push(tag);
       }
+      if (!isTagged(visit.data)) markedOnly += 1;
       caseOf[v] = cases.length;
       cases.push({ id: caseIdentity(visit), nodeId: rawIdOf(visit.data), visit: v, title: visit.text, tags, steps: [], expected: [], preconditions: [] });
     } else if (role[v] === INNER) {
@@ -244,7 +257,7 @@ export function casesOf(documentId: string, nodes: readonly unknown[], warnings:
   if (untagged.count > 0) {
     warnings.note({
       code: `${PACK}.untagged_cases`,
-      message: `${untagged.count} 个没有标签的节点像用例（优先级 ${PRIORITIES.case}、有子节点、下面没有别的用例），没有计入：模板 v3 的用例要带测试类型标签`,
+      message: `${untagged.count} 个没有标签的节点像用例（优先级 ${PRIORITIES.case}、有子节点、下面没有别的用例），按规则 case_rule=tagged 没有计入：模板 v3 的用例要带测试类型标签`,
       document: documentId,
       data: { count: untagged.count, nodes: untagged.nodes },
     });
@@ -285,5 +298,5 @@ export function casesOf(documentId: string, nodes: readonly unknown[], warnings:
   for (const [count, code, message] of counted) if (count > 0) warnings.note({ code: `${PACK}.${code}`, message, document: documentId, data: { count } });
 
   const table: NodeTable = { texts: visits.map((visit) => visit.text), parents: Int32Array.from(visits, (visit) => visit.parent) };
-  return { cases, untagged: untagged.count, ids, rootId: n > 0 ? rawIdOf(dataOf(nodes[0])) : null, nodes: table };
+  return { cases, untagged: untagged.count, markedOnly, caseRule, ids, rootId: n > 0 ? rawIdOf(dataOf(nodes[0])) : null, nodes: table };
 }
