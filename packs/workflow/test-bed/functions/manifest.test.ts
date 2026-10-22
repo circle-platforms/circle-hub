@@ -57,6 +57,31 @@ describe('parseManifest accepts', () => {
     const parsed = parseManifest({ schema: 'test-bed-manifest@1', beds: [] });
     assert.ok(parsed.ok);
   });
+
+  it('installed: build required, base optional, carried as the declared install record', () => {
+    const withInstalled = {
+      schema: 'test-bed-manifest@1',
+      beds: [
+        {
+          name: 'bed-a',
+          devices: [
+            { name: 'apv0', type: 'load-balancer', ipv4: ['192.0.2.10/26'], ipv6: [], installed: { build: 'Rel_APV_10_6_1_8', base: 'Rel_APV_10_6_1_7' } },
+            { name: 'client0', type: 'client', ipv4: ['192.0.2.80/26'], ipv6: [], installed: { build: 'Rel_NSAE_10_6_1_8' } },
+            { name: 'router0', type: 'router', ipv4: ['192.0.2.1/26'], ipv6: [] },
+          ],
+          services: [],
+          reserved: [],
+        },
+      ],
+    };
+    const parsed = parseManifest(withInstalled);
+    assert.ok(parsed.ok, JSON.stringify(parsed.ok ? undefined : parsed.problems));
+    if (!parsed.ok) return;
+    const bed = parsed.beds[0];
+    assert.deepEqual(bed.devices.find((d) => d.name === 'apv0')?.installed, { build: 'Rel_APV_10_6_1_8', base: 'Rel_APV_10_6_1_7' });
+    assert.deepEqual(bed.devices.find((d) => d.name === 'client0')?.installed, { build: 'Rel_NSAE_10_6_1_8', base: null });
+    assert.equal(bed.devices.find((d) => d.name === 'router0')?.installed ?? null, null, 'no installed: no record, never a mismatch');
+  });
 });
 
 describe('parseManifest rejects, listing every problem at once', () => {
@@ -127,6 +152,31 @@ describe('parseManifest rejects, listing every problem at once', () => {
     malformed.beds[0].reserved = ['192.0.2.1'];
     assert.ok(problemsOf(malformed).some((p) => p.pointer === '/beds/0/reserved/0'));
   });
+  it('installed: not an object, missing or empty build, bad base — every problem listed with its pointer', () => {
+    const bad = {
+      schema: 'test-bed-manifest@1',
+      beds: [
+        {
+          name: 'bed-a',
+          devices: [
+            { name: 'apv0', type: 'load-balancer', ipv4: ['192.0.2.10/26'], ipv6: [], installed: 'Rel_APV_10_6_1_8' },
+            { name: 'client0', type: 'client', ipv4: ['192.0.2.80/26'], ipv6: [], installed: { base: 'Rel_APV_10_6_1_7' } },
+            { name: 'router0', type: 'router', ipv4: ['192.0.2.1/26'], ipv6: [], installed: { build: '' } },
+            { name: 'server0', type: 'server', ipv4: ['192.0.2.90/26'], ipv6: [], installed: { build: 'Rel_APV_10_6_1_8', base: 7 } },
+          ],
+          services: [],
+          reserved: [],
+        },
+      ],
+    };
+    const problems = problemsOf(bad);
+    const pointers = problems.map((p) => p.pointer);
+    assert.ok(pointers.includes('/beds/0/devices/0/installed'), JSON.stringify(pointers));
+    assert.ok(pointers.includes('/beds/0/devices/1/installed/build'), 'installed without build');
+    assert.ok(pointers.includes('/beds/0/devices/2/installed/build'), 'empty build');
+    assert.ok(pointers.includes('/beds/0/devices/3/installed/base'), 'base not a string');
+  });
+
   it('several problems at once, each with its own pointer', () => {
     const messy = structuredClone(valid);
     (messy.beds[0].devices[0] as { type: string }).type = 'switch';

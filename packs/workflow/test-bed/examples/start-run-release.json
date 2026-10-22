@@ -1,0 +1,13 @@
+{
+  "comment": "提前释放：booking 和 predecessor 同续期一样写预订那次运行的编号；血缘持有的全部键（设备和地址）立即结束，别人随后就能订。释放不可逆：这次运行随后失败也不会把租约放回去。",
+  "tool": "start_run",
+  "arguments": {
+    "pack": "test-bed",
+    "inputs": { "inventory": { "external": "doc:doc:bed-topology" } },
+    "predecessor": "run_0123456789abcdef",
+    "parameters": {
+      "action": "release",
+      "booking": "run_0123456789abcdef"
+    }
+  }
+}

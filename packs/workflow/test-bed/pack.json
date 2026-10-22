@@ -1,0 +1,170 @@
+{
+  "schema": "pack@1",
+  "id": "test-bed",
+  "version": "1.1.0",
+  "kind": "workflow",
+  "title": "设备台架",
+  "description": "读管理员发布的台架清单（命名文档），按需求搜索台架（空闲状态、构建一致性、缺什么）、算环境事实（监听候选、盲地址、后端候选、空闲地址数）、预订台架（租约键 bed/<台架>/<设备>，可带地址分配，单次最多 8 小时）；只含事实要求项，开始运行时由 Hub 直接算出结果",
+  "files": [
+    {
+      "path": "SKILL.md",
+      "sha256": "44bc7c87c285c576f3ce4f2633262f2bbbd8c0702f3c6d27afee0a2f391214f1",
+      "size": 3884
+    },
+    {
+      "path": "checks.json",
+      "sha256": "673521d7da771093856c4bcbd21f68a0e20e8541a993fdab4cf0a4046607e6bb",
+      "size": 303
+    },
+    {
+      "path": "examples/bed-topology.json",
+      "sha256": "a49f1612f2ba7c9b4bac5518539815d96bc0f0683361a05fab1b721410810651",
+      "size": 1221
+    },
+    {
+      "path": "examples/start-run-acquire.json",
+      "sha256": "5084cdc55079992719f222012f7a0b4577bf2886392609b54e6975df64849d52",
+      "size": 705
+    },
+    {
+      "path": "examples/start-run-extend.json",
+      "sha256": "51302e9ecf40aeb171087a8be04d4d4342638905cd2e508d8b645f60088009af",
+      "size": 758
+    },
+    {
+      "path": "examples/start-run-facts.json",
+      "sha256": "597c1a58d0b1953acb1c1ca7ed9890f72b48bf1f1fbd14b647488102a2df8fab",
+      "size": 370
+    },
+    {
+      "path": "examples/start-run-release.json",
+      "sha256": "73a47e8c41b43aeb1d05c926bd81cb7c63b857dd73c2870e48ae62fac877b581",
+      "size": 539
+    },
+    {
+      "path": "examples/start-run-search.json",
+      "sha256": "c6c40823f0f96953a3d26d825c2d2f75423668bc42eda2dabe4acb9b5352184e",
+      "size": 722
+    },
+    {
+      "path": "functions/addresses.ts",
+      "sha256": "ecbb40c7077b1b094bcd634f2f3ffb0ec192882152b8bca474c9bb3890cf7d67",
+      "size": 10335
+    },
+    {
+      "path": "functions/check-bed.ts",
+      "sha256": "a49bffdd2a5bd86a6fe64c440d9f2c623a521ae044c94126a5f8cddcac837899",
+      "size": 11528
+    },
+    {
+      "path": "functions/common.ts",
+      "sha256": "c7c0bce5f3b7852a09c54a777ed9349d01711c7dd8a6cc7b2d1cbf147ad79b46",
+      "size": 879
+    },
+    {
+      "path": "functions/conclude.ts",
+      "sha256": "7df5bd288a2067e51db34b2d01034e1dd6d23794c139412977e2d772f9fdfac1",
+      "size": 17640
+    },
+    {
+      "path": "functions/facts.ts",
+      "sha256": "6c063fb4d7a05768a82b1724efa307ef3f9538a7f6566289217774a8c6876a91",
+      "size": 6604
+    },
+    {
+      "path": "functions/manifest.ts",
+      "sha256": "86b77a393b9f43b3a0c81d1b80858fc25bffa19a7584e340ed0f804b5ef30dbd",
+      "size": 19866
+    },
+    {
+      "path": "functions/match.ts",
+      "sha256": "47884d03903aaefcdd0d00463a555e5c05cda5dbcfd063fb4b70fb83e3f4ce7d",
+      "size": 7396
+    },
+    {
+      "path": "functions/project.ts",
+      "sha256": "0228aaaa01c293106a3500c8a0935963c9d68e45036d0840ed962bef83bbdc58",
+      "size": 8040
+    },
+    {
+      "path": "functions/subject.ts",
+      "sha256": "ac54432fab175861b7289e1f859446f8106d437006e16a8fec9e3a7aefeacf84",
+      "size": 1827
+    },
+    {
+      "path": "requirements.json",
+      "sha256": "10a330a3d969cc6f1fddade0b65754805af61103b1202462b4c01d71716c8e46",
+      "size": 1164
+    },
+    {
+      "path": "samples/negative/acquire-mismatch.json",
+      "sha256": "f1931c5626c2e057099cc76da7650156d4a8b10d6b7bd8616120581619f8773e",
+      "size": 1793
+    },
+    {
+      "path": "samples/negative/extend-mismatch.json",
+      "sha256": "48683b10bc163b434c403e63b11ab9be1e536faf9b17e7207dce92506449cc85",
+      "size": 2256
+    },
+    {
+      "path": "samples/negative/facts-mismatch.json",
+      "sha256": "aecd48634a4861b95ab51b0ba0fd4365a0f709accfcc474cb2a4cb41570f7bad",
+      "size": 2120
+    },
+    {
+      "path": "samples/negative/release-mismatch.json",
+      "sha256": "0bbe86ab6ddbd1ddee737f8375c6833c75cb172bc66ba0f7851d920396c7ee14",
+      "size": 2200
+    },
+    {
+      "path": "samples/negative/search-build-mismatch.json",
+      "sha256": "56d61e2d3f530a9d621c37b15c3a77ca8fdba8db83f7d4e6f3b688e5b21cf0ff",
+      "size": 1829
+    },
+    {
+      "path": "samples/negative/search-mismatch.json",
+      "sha256": "aee5839a6803e13c7e3aff8e20193031d32b0b4c68f621106f2fa2758a684897",
+      "size": 1626
+    },
+    {
+      "path": "samples/positive/acquire-support.json",
+      "sha256": "9b0af5688ea5c9b956a53e554f380aac92db096e195730751f8c36bbbb2da75b",
+      "size": 1992
+    },
+    {
+      "path": "samples/positive/extend-support.json",
+      "sha256": "26b6218aa844b23a13bd0f13a6563f87189ecae7d1980d73404b9a9c55565e42",
+      "size": 2299
+    },
+    {
+      "path": "samples/positive/facts-support.json",
+      "sha256": "11ed3bad787ccef8abd0cfc6bc8488117ea5296c1c062e1f00710662e5430ec8",
+      "size": 2411
+    },
+    {
+      "path": "samples/positive/release-support.json",
+      "sha256": "a03963aad57e01dc4437444aa0e264acacf417a17c49fe11285e230ddcb27bb0",
+      "size": 2151
+    },
+    {
+      "path": "samples/positive/search-build-support.json",
+      "sha256": "3c3f45ca6a4850b682294d6819d6eaadc85d6d14647c5f076336ca25c89d66eb",
+      "size": 1861
+    },
+    {
+      "path": "samples/positive/search-support.json",
+      "sha256": "7d2b557653829490a4ea103ed8de9f14ab9dbfc8276436f432d440ffbbaa849d",
+      "size": 1536
+    },
+    {
+      "path": "slots.schema.json",
+      "sha256": "851202e03d46a4b40941830a276007f860f657166b31d30da18d0d2268567516",
+      "size": 53
+    },
+    {
+      "path": "workflow.json",
+      "sha256": "0de7c9d8229145b7cbf63d805fd43e5b5a6e13e5c7c88b3132e38ce866da11e6",
+      "size": 3546
+    }
+  ]
+}

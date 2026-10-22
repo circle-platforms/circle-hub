@@ -37,6 +37,9 @@ export interface ManifestDevice {
   type: DeviceType;
   /** Free string, carried verbatim (which product line the device belongs to); null when absent. */
   product: string | null;
+  /** The build the manifest declares the device holds (build required, base its base build when it has another name);
+   * a declaration, never checked against the device (阶段 1; observations come with the executor). Absent: no record. */
+  installed?: { build: string; base: string | null } | null;
   ipv4: InterfaceAddress[];
   ipv6: InterfaceAddress[];
 }
@@ -165,6 +168,26 @@ export function parseManifest(input: unknown): ParsedManifest {
       if (product !== null && product.length > 100) {
         problems.push({ pointer: `${devicePointer}/product`, message: 'product 至多 100 个字符', fix: '缩短或删掉 product' });
       }
+      let installed: ManifestDevice['installed'] = null;
+      const installedRaw = rawDevice.installed;
+      if (installedRaw !== undefined && installedRaw !== null) {
+        if (!isRecord(installedRaw)) {
+          problems.push({ pointer: `${devicePointer}/installed`, message: 'installed 必须是一个对象', fix: '写 { "build": "Rel_APV_10_6_1_8" }（可选 "base"：这个构建基于的基础构建）' });
+        } else {
+          const build = typeof installedRaw.build === 'string' ? installedRaw.build : '';
+          const baseRaw = installedRaw.base;
+          const base = baseRaw === undefined || baseRaw === null ? null : baseRaw;
+          if (build === '' || build.length > 200) {
+            problems.push({ pointer: `${devicePointer}/installed/build`, message: `installed.build 要写 1 到 200 个字符的构建名，收到 ${JSON.stringify(installedRaw.build ?? '')}`, fix: '例如 "Rel_APV_10_6_1_8"' });
+          }
+          if (base !== null && (typeof base !== 'string' || base === '' || base.length > 200)) {
+            problems.push({ pointer: `${devicePointer}/installed/base`, message: `installed.base 要写构建名（这个构建基于的基础构建），收到 ${JSON.stringify(baseRaw ?? '')}`, fix: '例如 NSAE 构建基于的 APV 构建名；没有就删掉 base' });
+          }
+          if (build !== '' && build.length <= 200 && (base === null || (typeof base === 'string' && base !== '' && base.length <= 200))) {
+            installed = { build, base: base as string | null };
+          }
+        }
+      }
       const readAddresses = (family: Family, key: 'ipv4' | 'ipv6'): InterfaceAddress[] => {
         const raw = rawDevice[key];
         const at = `${devicePointer}/${key}`;
@@ -224,6 +247,7 @@ export function parseManifest(input: unknown): ParsedManifest {
         name: dName,
         type: (DEVICE_TYPES as readonly string[]).includes(type as string) ? (type as DeviceType) : 'client',
         product,
+        installed,
         ipv4: readAddresses(4, 'ipv4'),
         ipv6: readAddresses(6, 'ipv6'),
       });

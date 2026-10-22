@@ -19,7 +19,8 @@ export interface Need {
 export interface Installed {
   build: string;
   source: 'declared' | 'observed';
-  at: string;
+  /** When the report was made; absent for a manifest declaration (the document carries no per-entry time). */
+  at?: string;
 }
 
 /** A lease as matchNeed sees it: only the key and when it ends. */
@@ -47,8 +48,9 @@ export interface BedMatch {
 const baseOf = (builds: Record<string, string>, name: string): string => builds[name] ?? name;
 
 /** The pick of devices of one type when the need wants count of them: the ones without an active lease first,
- * then by name; when fewer free ones exist than wanted, leased ones join (the bed then has an earliest-free time). */
-function pickDevices(bed: ManifestBed, leases: Record<string, LeaseEntry>, now: string, type: string, count: number): { picked: string[]; leasedUntil: string[] } {
+ * then by name; when fewer free ones exist than wanted, leased ones join (the bed then has an earliest-free time).
+ * Exported for the acquire projection: the lease keys are the picked devices. */
+export function pickDevices(bed: ManifestBed, leases: Record<string, LeaseEntry>, now: string, type: string, count: number): { picked: string[]; leasedUntil: string[] } {
   const of = bed.devices.filter((d) => d.type === type);
   const active = (device: string): string | null => {
     const entry = leases[`bed/${bed.name}/${device}`];
@@ -124,12 +126,12 @@ export function matchNeed(
         buildOk = 'match';
         const one = known[0].record!;
         buildSource = one.source;
-        buildText = one.source === 'observed' ? `构建一致（${need.build}，观察）` : `构建一致（${need.build}，声明）`;
+        buildText = one.source === 'observed' ? `构建一致（${need.build}，观察）` : `构建一致（${need.build}，声明，未核对）`;
       } else {
         buildOk = 'mismatch';
         const one = known[0].record!;
         buildSource = one.source;
-        buildText = `构建不一致（装的是 ${one.build}，需要升级到 ${need.build}）`;
+        buildText = `构建不一致（装的是 ${one.build}，需要升级到 ${need.build}${one.source === 'observed' ? '，观察' : '，声明，未核对'}）`;
       }
     }
     const parts: string[] = [];
