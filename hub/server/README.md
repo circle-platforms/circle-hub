@@ -445,10 +445,6 @@ uses are tested by the engine (`hub/runs/engine/start-result.test.ts`).
   `hub/runs/api.ts`, so the server uses one rule instead of restating it in `readers.ts` (`runOfRecord`); until then the
   server follows the engine's kinds and shapes (the engine's `readers.ts runOfRecord` takes `run` first, as the server
   does). `canSeeRun` is exported already.
-- **jev**: `isJevApiKey` (exported from `hub/jev/api.ts` in this round, the "one export" this package was allowed) repeats
-  the private `API_KEY` pattern of `http.ts`, which this package may not edit; a test of the assembly pins the two
-  (`assemble.test.ts`, the typed-judgment key rule). Make `http.ts` use one rule (for example move it to `validate.ts`
-  and use it in both), so the pin is no longer needed.
 - **records**: `checkVaultKey(vault)` was added to `hub/records/api.ts` as a function over `Vault.get` (this package may
   edit only `api.ts`, not `vault.ts`); a `Vault.checkKey()` method in `vault.ts`, if records prefer it, would replace it.
 - **contracts / runs**: a `reads_external` flag on `PackSummary` (an external input slot or `expected_sources`), so

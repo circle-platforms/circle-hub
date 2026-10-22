@@ -20,7 +20,7 @@ This is the design that milestone 1 is building; [Status](#status) says what exi
 
 - **Task packs** say what to review and how a result is checked: requirement templates, slot schemas, checks, a procedure for the model and the pack's own deterministic functions. Product, workflow and system packs are separate, and product knowledge lives only in packs, never in the core.
 - **Verified results.** On submission the Hub resolves every exact value to a reference, checks quotations verbatim against the sources, re-runs the pack's checks in a sandbox and computes a terminal state for every item, requirement and layer. Each item lands in exactly one partition, and unknown stays unknown.
-- **A knowledge tree** per product line and version, content-addressed and built from the sources by deterministic parsers and a typed-judgment classifier. A run locks the root it reads.
+- **A knowledge tree** per product line and version, content-addressed and built from the sources by deterministic parsers; placement that needs judgment is proposed by a bot and verified by the Hub (not implemented yet), and the Hub calls no model. A run locks the root it reads.
 
 The contracts define six tools: `list_task_packs`, `upload_file`, `start_run`, `get_nodes`, `resolve_reference` and `submit_result`. Records are append-only and everything else is derived from them. Circle is to connect through an ordinary MCP server entry and shows no Hub-specific interface.
 
