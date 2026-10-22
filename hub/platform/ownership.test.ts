@@ -33,6 +33,7 @@ const COLUMN: Record<string, string> = {
   users: 'name',
   tokens: 'label',
   pointers: 'name',
+  leases: 'key',
 };
 
 /** Everything the application role must never do, each to be refused with 42501 (insufficient_privilege). */
