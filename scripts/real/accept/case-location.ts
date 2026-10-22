@@ -87,13 +87,14 @@ function parseReportedCandidates(text: string): ParsedCandidate[] {
 
 export default function scenario(gold: LocationGold): Scenario {
   const area = '用例定位';
+  const pack = 'case-location';
   return {
     name: 'case-location',
     area,
     prompt: `请对敏捷平台上的测试脑图 ${gold.document} 做用例定位。`,
     respond: (turn) =>
       turn.index === 0
-        ? [{ tool: 'hub_start_run', input: { pack: 'case-location@1.0.0', product: gold.product, inputs: { documents: { external: `agile:mindmap:${gold.document}` } } } }]
+        ? [{ tool: 'hub_start_run', input: { pack, product: gold.product, inputs: { documents: { external: `agile:mindmap:${gold.document}` } } } }]
         : [{ text: '定位完成。' }],
     check(turns: LoggedTurn[]): Check[] {
       const text = resultTexts(turns).join('\n');
