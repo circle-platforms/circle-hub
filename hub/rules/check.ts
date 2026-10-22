@@ -131,6 +131,7 @@ const tableBasis = (table: unknown): unknown => (typeof table === 'object' && ta
 export async function runCheck(declaration: CheckDeclaration, bindings: CheckBindings): Promise<CheckOutcome[]> {
   const name = declaration.id ?? declaration.interpreter ?? declaration.function?.module ?? '检查';
   const basis = hasBasis(declaration.basis) || (declaration.interpreter !== undefined && hasBasis(tableBasis(bindings.table)));
+  // Legacy compatibility: packs published before the explicit tier rule may omit declaration.tier. When missing, fall back to blocking if there is a basis, else advisory.
   const base: OutcomeBase = { tier: declaration.tier ?? (basis ? 'blocking' : 'advisory'), grounds: [] };
   if ((declaration.interpreter === undefined) === (declaration.function === undefined)) {
     return [unknown(base, 'check_error', `检查 ${name} 的声明要么用核心解释器，要么用包内函数`)];

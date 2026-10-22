@@ -2,16 +2,17 @@
 // scripted checks exist only to drive the engine; the expectations come from the reference.
 import assert from 'node:assert/strict';
 import { writeFileSync } from 'node:fs';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { copyFile, mkdir, mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { after, before, test } from 'node:test';
 import type { ProtocolCode } from '../../../contracts/generated/protocol.ts';
 import type { CheckTier, Layer } from '../../../contracts/generated/vocabulary.ts';
 import type { ChecksFile, RequirementsFile, SlotsFile, WorkflowFile } from '../../../contracts/src/pack.ts';
 import type { ItemResult, RequirementResult, ValidationResult } from '../../../contracts/src/validation.ts';
 import type { RunSummary } from '../../../contracts/src/run.ts';
-import { itemCell } from '../../../hub/runs/engine/api.ts';
+import { itemCell, readPackDirectory, validatePack } from '../../../hub/runs/api.ts';
 import { openHarness, sandboxSkip, type Harness } from '../../../hub/runs/engine/testing/harness.ts';
 import { writePack, type PackSpec } from '../../../hub/runs/engine/testing/packs.ts';
 import { startPostgres, type TemporaryPostgres } from '../../../hub/testing/postgres.ts';
@@ -77,7 +78,7 @@ const SPECS: Spec[] = [
   { key: 'recorded', producer: 'fact', layers: ['static'], required: true, check: { id: 'c_recorded', judges: 'artifact_under_verification', tier: 'blocking' }, negative: false, acceptsDeclaredIndependence: false, independent: false, runLevel: false, errorTable: [{ code: HIT, action: 'unknown' }] },
   { key: 'star', producer: 'fact', layers: ['static'], required: true, check: { id: 'c_star', judges: 'subject', tier: 'blocking' }, negative: false, acceptsDeclaredIndependence: false, independent: false, runLevel: false, errorTable: [{ code: '*', action: 'repair', maxRounds: 2 }] },
   { key: 'dyn', producer: 'fact', layers: ['dynamic'], required: true, check: { id: 'c_dyn', judges: 'subject', tier: 'blocking' }, negative: false, acceptsDeclaredIndependence: false, independent: false, runLevel: false, errorTable: [{ code: HIT, action: 'repair', maxRounds: 2 }] },
-  { key: 'loose', producer: 'fact', layers: ['static'], required: false, check: { id: 'c_loose', judges: 'subject', tier: null }, negative: false, acceptsDeclaredIndependence: false, independent: false, runLevel: false, errorTable: [] },
+  { key: 'loose', producer: 'fact', layers: ['static'], required: false, check: { id: 'c_loose', judges: 'subject', tier: 'advisory' }, negative: false, acceptsDeclaredIndependence: false, independent: false, runLevel: false, errorTable: [] },
   { key: 'level', producer: 'judgment', layers: ['static'], required: true, negative: false, acceptsDeclaredIndependence: false, independent: false, runLevel: true, errorTable: [] },
 ];
 
@@ -241,10 +242,9 @@ function randomPlan(seed: number, roundsUsed: number, items: { id: string; negat
       const outcomes: Record<string, Outcome[]> = {};
       for (const spec of SPECS) {
         if (spec.check === undefined) continue;
-        // `loose` omits the check tier (a pinned engine defect). `recorded` is the unknown action (pinned: the engine
-        // turns the refutation into an integrity failure). `both` is not refuted, because a static violation beside a
-        // dynamic layer that was not run is a combination the model does not rank. `dyn` has no static layer.
-        if (spec.key === 'loose' || spec.key === 'both' || spec.key === 'dyn' || spec.key === 'recorded') outcomes[spec.key] = [{ verdict: 'support' }];
+        // `both` is not refuted, because a static violation beside a dynamic layer that was not run is a combination
+        // the model does not rank. `dyn` has no static layer.
+        if (spec.key === 'both' || spec.key === 'dyn') outcomes[spec.key] = [{ verdict: 'support' }];
         else outcomes[spec.key] = [randomOutcome(random, spec.key === 'short' || spec.key === 'star')];
       }
       return { ...item, handling: 'handled', outcomes };
@@ -586,13 +586,70 @@ test('the engine and the reference agree on random submissions and the fixed bra
   assert.equal(wantRecorded?.layers[0]?.attribution, 'unattributed');
   assert.equal(wantRecorded?.status, 'unsatisfied');
 
-  // An omitted check tier does not replace the outcome's tier (checks.json). The engine records advisory.
+  // Seed 20261223 (SEED + 201): check tier is mandatory on publication; legacy published packs fall back at runtime.
+  // 1. Publication refusal: a pack check without declared tier is refused with checks.tier_missing; adding tier is accepted.
+  const workflowDir = fileURLToPath(new URL('../../../packs/workflow', import.meta.url));
+  const templateGapDir = join(workflowDir, 'template-gap');
+  const stagedDir = join(scratch, 'staged-template-gap');
+  await mkdir(stagedDir, { recursive: true });
+  const manifest = JSON.parse(await readFile(join(templateGapDir, 'pack.json'), 'utf8')) as { files: { path: string }[] };
+  for (const file of manifest.files) {
+    const src = join(templateGapDir, file.path);
+    const dest = join(stagedDir, file.path);
+    await mkdir(dirname(dest), { recursive: true });
+    await copyFile(src, dest);
+  }
+  await copyFile(join(templateGapDir, 'pack.json'), join(stagedDir, 'pack.json'));
+
+  const validRead = await readPackDirectory(stagedDir);
+  assert.ok(validRead.ok, JSON.stringify(!validRead.ok ? validRead.problems : []));
+  const validValidation = await validatePack(validRead.pack);
+  assert.equal(validValidation.ok, true, JSON.stringify(!validValidation.ok ? validValidation.problems : []));
+
+  const badChecksFile = JSON.parse(await readFile(join(stagedDir, 'checks.json'), 'utf8')) as ChecksFile;
+  delete (badChecksFile.checks[0] as any).tier;
+  const badFiles = validRead.pack.files.map((f) =>
+    f.path === 'checks.json' ? { ...f, bytes: new TextEncoder().encode(JSON.stringify(badChecksFile)) } : f,
+  );
+  const badValidation = await validatePack({ ...validRead.pack, files: badFiles });
+  assert.equal(badValidation.ok, false);
+  assert.ok(!badValidation.ok);
+  const tierMissingProblem = badValidation.problems.find((p) => p.rule === 'checks.tier_missing');
+  assert.ok(tierMissingProblem);
+  assert.equal(tierMissingProblem.file, 'checks.json');
+  assert.ok(/任务包 template-gap 的检查 coverage 没有声明 tier/.test(tierMissingProblem.message));
+  assert.ok(/声明 blocking、advisory 或模型里的其他档名/.test(tierMissingProblem.fix));
+
+  // 2. Legacy runtime fallback: an existing published pack without tier defaults to advisory without basis.
+  const legacyHit = 'oracle-legacy.hit';
+  const legacyPack = pack('oracle-legacy');
+  (legacyPack.files['checks.json'] as { json: ChecksFile }).json.checks = (legacyPack.files['checks.json'] as { json: ChecksFile }).json.checks.map((c) =>
+    c.id === 'c_loose' ? { ...c, tier: undefined, basis: undefined } : c,
+  );
+  const legacyDir = await writePack(scratch, legacyPack);
+  await harness.workflows.add(legacyDir);
+  harness.workflows.assign(harness.alice.id, 'oracle-legacy');
+
   const tierSeed = SEED + 201;
-  const tierPlan: Plan = { seed: tierSeed, roundsUsed: 0, items: handledItems({ ...supportOutcomes, loose: [{ verdict: 'refute' as const, code: HIT, tier: 'blocking' as const }] }), judge, author: null, defects: [] };
-  const tierEngine = await acceptedView(tierPlan, await start(ITEMS));
-  const tierWant = referenceOf(tierPlan);
-  assert.equal(shownLayer(tierEngine, 'i1', 'loose').layer?.tier, 'advisory');
-  assert.equal(tierWant.items.find((item) => item.item === 'i1')?.requirements.find((requirement) => requirement.requirement === 'loose')?.layers[0]?.tier, 'blocking');
+  const legacyPlan: Plan = { seed: tierSeed, roundsUsed: 0, items: handledItems({ ...supportOutcomes, loose: [{ verdict: 'refute' as const, code: legacyHit, tier: 'blocking' as const }] }), judge, author: null, defects: [] };
+  const legacyEngine = await acceptedView(legacyPlan, await start(ITEMS, undefined, 'sess-legacy', undefined, 'oracle-legacy'));
+  assert.equal(shownLayer(legacyEngine, 'i1', 'loose').layer?.tier, 'advisory');
+
+  // 3. Every pack in the repository passes checks.json validation (all checks declare explicit tier).
+  const entries = await readdir(workflowDir, { withFileTypes: true });
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const checksPath = join(workflowDir, entry.name, 'checks.json');
+    try {
+      const content = JSON.parse(await readFile(checksPath, 'utf8')) as ChecksFile;
+      for (const check of content.checks) {
+        assert.ok(check.tier === 'blocking' || check.tier === 'advisory', `pack ${entry.name} check ${check.id} lacks declared tier`);
+      }
+    } catch (e: any) {
+      if (e.code === 'ENOENT') continue;
+      throw e;
+    }
+  }
 
   // W07 R[2]: a declared skip makes every requirement incomplete at every declared layer.
   const skipSeed = SEED + 7;
