@@ -120,7 +120,8 @@
       "items": {
         "type": "string",
         "enum": [
-          "builds"
+          "builds",
+          "leases"
         ]
       }
     },
@@ -162,6 +163,28 @@
       },
       "required": [
         "module"
+      ],
+      "additionalProperties": false
+    },
+    "leases": {
+      "description": "the lease namespace this workflow may acquire under (the keys of its lease_requests start with the prefix)",
+      "type": "object",
+      "properties": {
+        "prefix": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\/$"
+        },
+        "max_ttl_seconds": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 2592000,
+          "description": "the ceiling of one lease request's TTL and of the cumulative extension (D04 R[0])"
+        }
+      },
+      "required": [
+        "prefix",
+        "max_ttl_seconds"
       ],
       "additionalProperties": false
     }

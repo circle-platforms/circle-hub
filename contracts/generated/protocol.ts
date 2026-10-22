@@ -10,6 +10,9 @@ export const PROTOCOL_CODES = {
   IDENTITY_UNMAPPED: { when: '外部回答映射不到 Hub 用户（B07）', fix: '由管理员补身份映射' },
   RUN_SUPERSEDED: { when: '运行已被新修订取代（W06）', fix: '对新运行提交' },
   CREDENTIAL_IN_UPLOAD: { when: '上传里扫出明文凭据（B02）', fix: '去掉凭据后重传' },
+  LEASE_UNAVAILABLE: { when: '要取得的租约键上有未到期的占用（D04 R[0]）；详情带最早空闲时刻', fix: '等最早空闲时刻后再试，或改用别的键' },
+  LEASE_EXPIRED: { when: '持有的租约已过到期时刻，同一租约的约束失效（D04 R[0]）', fix: '重新取得租约并重新证明基线' },
+  FENCING_STALE: { when: '效果写入携带的围栏令牌落后于目标当前持有的租约令牌（D04 R[0]、R[3]）', fix: '用当前租约的围栏令牌重试该效果' },
 } as const;
 
 export type ProtocolCode = keyof typeof PROTOCOL_CODES;

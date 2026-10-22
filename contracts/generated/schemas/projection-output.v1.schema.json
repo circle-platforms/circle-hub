@@ -129,6 +129,33 @@
             ],
             "additionalProperties": false
           }
+        },
+        "lease_requests": {
+          "description": "leases the run asks the Hub to acquire before it is stored (one request: several keys, all or nothing); keys must sit under the workflow's declared prefix and the TTL under its cap",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "keys": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "ttl_seconds": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "keys",
+              "ttl_seconds"
+            ],
+            "additionalProperties": false
+          }
         }
       },
       "required": [
