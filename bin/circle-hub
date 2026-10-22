@@ -13,6 +13,12 @@ try {
   process.stderr.write(`错误：${error.message}\n${error.hint ? `处理：${error.hint}\n` : ''}`);
   process.exit(1);
 }
+// On the machine that hosts a deployment an operator command needs no exported variables: the deployment settings give the
+// CIRCLE_HUB_* values the service has, for every name the shell has not set (hub/platform/operator-env.ts).
+if (existsSync(local('hub/platform/operator-env.ts'))) {
+  const { operatorEnvironment } = await import(local('hub/platform/operator-env.ts').href);
+  for (const [variable, value] of Object.entries(await operatorEnvironment(process.env))) process.env[variable] ??= value;
+}
 const name = existsSync(local('hub/server/cli.ts')) ? 'hub/server/cli.ts' : 'hub/platform/cli.ts';
 const cli = await import(local(name).href);
 if (typeof cli.main !== 'function') {

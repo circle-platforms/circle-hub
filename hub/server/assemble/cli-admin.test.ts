@@ -8,7 +8,7 @@
 // terminal. The external systems are the connectors' loopback stubs; the packs are tiny synthetic ones written to a
 // temporary directory. Every line printed, the assemblies' log lines included, is scanned for secrets.
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, test } from 'node:test';
@@ -614,6 +614,33 @@ describe('init-admin and the operator token', () => {
     assert.ok(!refused.text.includes(VAULT_KEY_ITEM.label), 'the platform\'s vault key wording, whatever it is, never names this item');
     await withKit(admin, async (kit) => assert.equal(await kit.authorizations.canPublish((await kit.principals.findByName('根管理员'))!.id), true, 'nothing changed'));
     assert.ok(services.length > 0 && services.every((service) => service === 'circle-hub-rehearsal'), services.join(' '));
+  });
+});
+
+describe('pack publish --stage', () => {
+  test('publishes a copy of exactly the files pack.json lists, so a source directory may hold tests and a README', async () => {
+    const admin = await setup();
+    await expectOk(admin, ['pack', 'grant-publish', '根管理员']);
+    const dir = (await writePack(join(packRoot, 'with-extras'), reviewPack('2.0.0'))).dir;
+    await writeFile(join(dir, 'README.md'), '# notes\n');
+    await writeFile(join(dir, 'functions-extra.test.ts'), 'export {};\n');
+    const plain = await admin.run(['pack', 'publish', dir]);
+    assert.equal(plain.code, 1, 'without --stage the extra files are a publish problem');
+    assert.match(plain.text, /manifest\.unlisted_file|illegal_path/);
+    const staged = await expectOk(admin, ['pack', 'publish', dir, '--stage']);
+    assert.match(staged.text, /已发布 demo-check@2\.0\.0/);
+    // A path that leaves the directory is refused before any copy; a listed file that is missing is reported by name.
+    const original = await readFile(join(dir, 'pack.json'), 'utf8');
+    const manifest = JSON.parse(original);
+    await writeFile(join(dir, 'pack.json'), JSON.stringify({ ...manifest, files: manifest.files.map((f: { path: string }, k: number) => (k === 1 ? { ...f, path: '../escape.json' } : f)) }));
+    const escaped = await admin.run(['pack', 'publish', dir, '--stage']);
+    assert.equal(escaped.code, 1);
+    assert.match(escaped.text, /不合法的文件路径/);
+    await writeFile(join(dir, 'pack.json'), original);
+    await rm(join(dir, manifest.files[0].path));
+    const missing = await admin.run(['pack', 'publish', dir, '--stage']);
+    assert.equal(missing.code, 1);
+    assert.ok(missing.text.includes(`${manifest.files[0].path} 不是目录里的普通文件`), missing.text);
   });
 });
 

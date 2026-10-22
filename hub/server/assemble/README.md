@@ -58,7 +58,7 @@ the vault), without the probe and without start-up notices, its log lines on the
 circle-hub init-admin <name>                         # first admin; its token goes into the keychain item, never printed
 circle-hub operator-token set                        # a lost item: an enabled admin's token from stdin into the item
 circle-hub operator-token reissue [--as <admin>]     # a lost or dead item and no admin token in hand: a new one, never printed
-circle-hub pack publish <dir> | grant-publish <user> | revoke-publish <user> | assign <user> <pack> | unassign <user> <pack>
+circle-hub pack publish <dir> [--stage] | grant-publish <user> | revoke-publish <user> | assign <user> <pack> | unassign <user> <pack>
 circle-hub pack retire <pack@version> | activate <product pack> | deactivate <product pack> | list [--as <account>]
 circle-hub resource add <system pack> --name <n> --environment test|shared|production --origin <role>=<url> ...
                     [--allow-plaintext <role>] ... [--setting <key>=<JSON or text>] ...
@@ -130,6 +130,7 @@ circle-hub knowledge roots <product> [--as] | diff <rootA> <rootB> [--as]
   (`密钥库里的登录状态：…`), read fresh by the command; it needs the vault key, which the listing reads once (without it the
   column says why for every resource and the listing still exits 0).
 - **Publication** needs a publish right (B04): `pack grant-publish <user>` is an admin decision; `pack publish` without it
+  `pack publish <dir> --stage` publishes a copy of exactly the files `pack.json` lists (a listed path must be a plain file inside `<dir>`; the publish check still verifies every digest), so a pack's source directory may keep its tests and README beside it. Without `--stage` an extra file is a publish problem (`manifest.unlisted_file`).
   is refused with that fix. A refusal lists every problem (rule, file, field or line, message, fix) on stderr.
 - **knowledge sync** uses hub/knowledge's parser, sync and report text and exits 1 when the sync or any build failed; it
   says on stderr when no Jev key is set. `roots` lists the builds of a line (both name families, aliases with their base,

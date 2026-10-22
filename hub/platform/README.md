@@ -39,6 +39,8 @@ and their labels come from `ENVIRONMENT` and `labelOf('environment', …)`. A `C
 nor the platform knows (a typo such as `CIRCLE_HUB_DATADIR`) stops every command before it runs, as hub/config does.
 `backup`, `restore`, `deploy` and `rollback` print the data root they act on first.
 
+**Operator commands need no exported variables on the machine that hosts a deployment.** `bin/circle-hub` fills every `CIRCLE_HUB_*` name the shell has not set from the deployment settings (`operator-env.ts`: the data root `CIRCLE_HUB_DATA_DIR` names or the default one; the same values `serviceEnvironment` gives the service). An explicit variable wins; with no settings file (a development checkout) nothing is added and the command reports the missing configuration itself.
+
 The server CLI delegates with `isPlatformCommand(argv[0])` and `runPlatformCommand(argv, io)`; `io.allowVariables` names
 the `CIRCLE_HUB_*` variables the server CLI reads itself. `bin/circle-hub` runs `hub/config/guard.ts` first, then
 `hub/server/cli.ts` when present, otherwise `hub/platform/cli.ts`; both export `main(argv): Promise<number>`. A CLI module

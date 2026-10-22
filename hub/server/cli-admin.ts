@@ -8,7 +8,9 @@
 // the only admin. A lost or dead item is replaced without a token by `operator-token reissue`: a new token of an enabled
 // admin goes straight into the item and is never shown. Output is Chinese, made safe for a terminal, and never shows a token
 // or a secret value: secrets and tokens come from standard input only, never from argv.
-import { isAbsolute, resolve } from 'node:path';
+import { copyFile, lstat, mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { ENVIRONMENT, isEnvironment, labelOf, type Environment } from '../../contracts/generated/vocabulary.ts';
 import { HubConfigError, HubEnvironmentError, type HubConfig } from '../config/index.ts';
@@ -39,7 +41,7 @@ export interface AdminCommandOptions {
 }
 
 export const PACK_USAGE =
-  'pack publish <目录> | grant-publish <用户> | revoke-publish <用户> | assign <用户> <任务包> | unassign <用户> <任务包> | retire <任务包@版本> | activate <产品包> | deactivate <产品包> | list';
+  'pack publish <目录> [--stage] | grant-publish <用户> | revoke-publish <用户> | assign <用户> <任务包> | unassign <用户> <任务包> | retire <任务包@版本> | activate <产品包> | deactivate <产品包> | list';
 export const RESOURCE_USAGE =
   'resource add <系统包> --name <名字> --environment <环境> --origin <角色>=<地址> [--allow-plaintext <角色>] [--setting <键>=<值>] | list | disable <资源> | enable <资源> | reset-login <资源>';
 export const SECRET_USAGE = 'secret set <资源> <凭据项>（值从标准输入读，不放在命令行上） | list（只列名字）';
@@ -264,6 +266,40 @@ function problemLine(problem: PackProblem): string {
   return `- [${problem.rule}] ${where}：${problem.message}（处理：${problem.fix}）`;
 }
 
+/**
+ * A temporary directory holding pack.json and the files it lists, copied from `source` (which may hold more: tests, a README).
+ * A listed path must be a plain file inside `source`; the publish check still verifies every digest and refuses anything
+ * the copy lacks. Returns the directory to publish; its parent is the one to remove.
+ */
+async function stagePackDirectory(source: string): Promise<string> {
+  let manifest: { files?: Array<{ path?: unknown }> };
+  try {
+    manifest = JSON.parse(await readFile(join(source, 'pack.json'), 'utf8'));
+  } catch {
+    throw new CliError(`读不出 ${source} 里的 pack.json`, '目录要含 pack.json，它列出包的文件');
+  }
+  if (!Array.isArray(manifest.files)) throw new CliError('pack.json 没有 files 清单', '先按包的工具生成 pack.json');
+  const root = await mkdtemp(join(tmpdir(), 'circle-hub-stage-'));
+  const target = join(root, 'pack');
+  try {
+    await mkdir(target);
+    for (const path of ['pack.json', ...manifest.files.map((f) => f.path)]) {
+      if (typeof path !== 'string' || path.startsWith('/') || path.split('/').some((part) => part === '' || part === '.' || part === '..')) {
+        throw new CliError(`pack.json 里有不合法的文件路径：${String(path).slice(0, 120)}`);
+      }
+      const from = join(source, path);
+      const info = await lstat(from).catch(() => null);
+      if (info === null || !info.isFile()) throw new CliError(`pack.json 列出的 ${path} 不是目录里的普通文件`, '补上这个文件，或重新生成 pack.json');
+      await mkdir(dirname(join(target, path)), { recursive: true });
+      await copyFile(from, join(target, path));
+    }
+    return target;
+  } catch (error) {
+    await rm(root, { recursive: true, force: true });
+    throw error;
+  }
+}
+
 function packIdOf(ref: string, what: string): string {
   const parsed = parsePackRef(ref);
   if (parsed === null || parsed.version !== null) throw new UsageError(`${what}按包号写，不带版本：${ref.slice(0, 120)}`);
@@ -274,11 +310,18 @@ async function packCommand(session: Session, args: readonly string[]): Promise<n
   const [sub, ...rest] = args;
   switch (sub) {
     case 'publish': {
-      const { positionals } = parse(rest, {}, 1);
-      const directory = isAbsolute(positionals[0]) ? positionals[0] : resolve(session.ctx.io.cwd, positionals[0]);
+      const { positionals, values } = parse(rest, { stage: { type: 'boolean' } }, 1);
+      const source = isAbsolute(positionals[0]) ? positionals[0] : resolve(session.ctx.io.cwd, positionals[0]);
       const admin = await session.admin();
       const hub = await session.hub();
-      const outcome = await decided(() => hub.registry.publish(admin, directory));
+      // --stage publishes a copy of exactly the files pack.json lists, so a source directory may hold tests and a README.
+      const staged = values.stage === true ? await stagePackDirectory(source) : null;
+      let outcome;
+      try {
+        outcome = await decided(() => hub.registry.publish(admin, staged ?? source));
+      } finally {
+        if (staged !== null) await rm(dirname(staged), { recursive: true, force: true });
+      }
       if (!outcome.ok) {
         for (const problem of outcome.problems) session.err(problemLine(problem));
         for (const problem of outcome.report?.warnings ?? []) session.err(`注意：${problemLine(problem).slice(2)}`);
