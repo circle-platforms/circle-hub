@@ -10,8 +10,8 @@ import { boundPair, caseEntry, defectEntry, indexViewOf, randomOf, reversed, typ
 import { readIndexView } from './views.ts';
 
 /** Reads the two views and joins them the way the projection does. */
-function matrixOf(defects: ViewEntrySpec[], cases: ViewEntrySpec[], options: { statuses?: string[]; defectsView?: Parameters<typeof indexViewOf>[3]; casesView?: Parameters<typeof indexViewOf>[3] } = {}) {
-  const pair = boundPair(defects, cases, options);
+function matrixOf(defects: ViewEntrySpec[], cases: ViewEntrySpec[], options: { statuses?: string[]; defectsView?: Parameters<typeof indexViewOf>[3]; casesView?: Parameters<typeof indexViewOf>[3] } = {}, slimCases = true) {
+  const pair = boundPair(defects, cases, { ...options, slimCases });
   const dv = readIndexView(pair.inputs[0], 'defects', { kind: 'defect', key: 'bug' });
   const cv = readIndexView(pair.inputs[1], 'cases', { kind: 'case', key: 'defects' });
   assert.ok(dv.ok, 'the defects view reads');
@@ -34,7 +34,8 @@ describe('buildMatrix on hand-built views', () => {
     assert.equal(row.cases.length, 1);
     assert.deepEqual(
       row.cases.map((c) => [c.case, c.title, c.document, c.reference, c.defects]),
-      [['C-1', '校验参数生效', '24001', kase.reference, ['7001']]],
+      // The slim cases view (fields=document,node,title) does not carry the raw defect ids.
+      [['C-1', '校验参数生效', '24001', kase.reference, []]],
     );
   });
 
@@ -111,9 +112,10 @@ describe('buildMatrix on hand-built views', () => {
 
   it('a case id falls back to the entry digest when the entry names none, the title to the statement', () => {
     const bare = caseEntry({ defects: ['7012'] });
+    delete bare.data.node;
     delete bare.data.case;
     delete bare.data.title;
-    const rows = matrixOf([defectEntry({ bug: '7012' })], [bare]);
+    const rows = matrixOf([defectEntry({ bug: '7012' })], [bare], {}, false);
     const [ref] = rows[0].cases;
     assert.equal(ref.case, bare.digest);
     assert.equal(ref.title, bare.statement);

@@ -68,8 +68,10 @@ function outcomeOf(item: Item, at: number, fields: MatrixRow, facts: { skipped: 
   const pointer = `/items/${at}/fields`;
   const caseGrounds = fields.cases.map((c) => c.reference);
   const grounds = [...fields.references, ...caseGrounds];
-  // The join re-verified against the raw ids of each listed case, not trusted.
-  const offending = fields.cases.filter((c) => !c.defects.some((d) => normalizeId(d) === fields.bug));
+  // The join re-verified against the raw ids of each listed case, not trusted. A slim view (fields=document,node,title)
+  // does not carry the raw ids: the index's key mapping is the join's evidence then, and only a case whose raw ids are
+  // present can contradict the bug it is listed under.
+  const offending = fields.cases.filter((c) => c.defects.length > 0 && !c.defects.some((d) => normalizeId(d) === fields.bug));
   if (offending.length > 0) {
     return {
       verdict: 'refute',

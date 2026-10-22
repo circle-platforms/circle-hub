@@ -7,8 +7,8 @@ import { buildMatrix } from './matrix.ts';
 import { boundPair, caseEntry, defectEntry } from './test-support.ts';
 import { readIndexView } from './views.ts';
 
-function matrixOf(defects: Parameters<typeof boundPair>[0], cases: Parameters<typeof boundPair>[1]) {
-  const pair = boundPair(defects, cases);
+function matrixOf(defects: Parameters<typeof boundPair>[0], cases: Parameters<typeof boundPair>[1], slimCases = true) {
+  const pair = boundPair(defects, cases, { slimCases });
   const dv = readIndexView(pair.inputs[0], 'defects', { kind: 'defect', key: 'bug' });
   const cv = readIndexView(pair.inputs[1], 'cases', { kind: 'case', key: 'defects' });
   assert.ok(dv.ok && cv.ok);
@@ -19,12 +19,13 @@ describe('buildMatrix edge cases', () => {
   it('lists a case\'s defect ids deduplicated and in code-unit order', () => {
     // The view keys '7300' and '007300' normalise to one bucket, so the case is reached through both spellings.
     const kase = caseEntry({ defects: ['7400', '7300'], case: 'C-1' });
-    const { rows } = matrixOf([defectEntry({ bug: '7300' })], [kase]);
+    const { rows } = matrixOf([defectEntry({ bug: '7300' })], [kase], false);
     assert.equal(rows.length, 1);
-    // data.defects as written: ['7400', '7300']; deduplicated and sorted in code-unit order.
+    // data.defects as written: ['7400', '7300']; deduplicated and sorted in code-unit order. The slim cases view does not
+    // carry them (fields=document,node,title), so this pins the full view.
     assert.deepEqual(rows[0].cases[0].defects, ['7300', '7400']);
     const twin = caseEntry({ defects: ['7300', '7300'], case: 'C-2' });
-    const again = matrixOf([defectEntry({ bug: '7300' })], [twin]);
+    const again = matrixOf([defectEntry({ bug: '7300' })], [twin], false);
     assert.deepEqual(again.rows[0].cases[0].defects, ['7300'], 'a repeated id is listed once');
   });
 
@@ -42,7 +43,7 @@ describe('buildMatrix edge cases', () => {
     const kase = caseEntry({ defects: ['7500'], case: 'C-1', digest: 'c'.repeat(64) });
     kase.statement = '通过语句给出的标题';
     kase.data.title = '';
-    const { rows } = matrixOf([defectEntry({ bug: '7500' })], [kase]);
+    const { rows } = matrixOf([defectEntry({ bug: '7500' })], [kase], false);
     assert.equal(rows[0].cases[0].title, '通过语句给出的标题');
   });
 });

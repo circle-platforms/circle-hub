@@ -23,10 +23,11 @@ export function summaryOf(row: Pick<MatrixRow, 'statuses' | 'cases'>): string {
   return clip(`${statusText(row.statuses)}；${traced}`, 200);
 }
 
-/** A case entry as the matrix lists it; the digest names the case when the entry carries no data.case. */
+/** A case entry as the matrix lists it: the case's node id (data.node, what the cases producer writes), else data.case,
+ * else the digest. */
 function caseRefOf(digest: string, entry: ViewEntry): CaseRef {
   const data = entry.data;
-  const id = typeof data.case === 'string' && data.case !== '' ? data.case : digest;
+  const id = typeof data.node === 'string' && data.node !== '' ? data.node : typeof data.case === 'string' && data.case !== '' ? data.case : digest;
   const title = typeof data.title === 'string' && data.title !== '' ? data.title : entry.statement;
   const document = typeof data.document === 'string' && data.document !== '' ? data.document : null;
   const defects = [...new Set(strings(data.defects))].sort(compareText);

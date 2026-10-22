@@ -9,7 +9,7 @@ by construction (absence is not proof).
 
 | Path | What it is |
 | --- | --- |
-| `workflow.json` | `workflow@1`: two required inputs — `defects` (subject) and `cases` (expected), both external ids of the Hub's knowledge reader (`knowledge:index:<product>:<build>?kind=defect&key=bug` and `?kind=case&key=defects`); parameter `statuses` (default fixed and known); the pack binds the product line `apv` |
+| `workflow.json` | `workflow@1`: two required inputs — `defects` (subject) and `cases` (expected), both external ids of the Hub's knowledge reader (`knowledge:index:<product>:<build>?kind=defect&key=bug` and `?kind=case&key=defects&fields=document,node,title`, the slim view); parameter `statuses` (default fixed and known); the pack binds no product line (the ids name product and build, so no unrelated build is locked) |
 | `requirements.json` | `traced` (item, fact, bookkeeping) and `counts` (run, fact, bookkeeping), both static layer only |
 | `checks.json` | `traced` and `counts`, both pack functions with `applies: run`, both advisory (the matrix never blocks) |
 | `functions/` | `views.ts` (reading an index view), `matrix.ts` (the join), `project.ts` (items + frozen groups), `subject.ts`, `check.ts`, `counts.ts`, `ids.ts` (the id normalisation), `params.ts`, `text.ts`, `types.ts`; tests beside them |
@@ -42,11 +42,17 @@ by construction (absence is not proof).
 - **The join is computed once** by the projection (`matrix.ts`) and frozen in the item fields; the check applies the traced
   rule to the frozen fields and re-verifies every listed case against its raw defect ids. `matrix.ts` is tested against an
   independent double-loop join on a random corpus of 2,000 defects.
-- **Case identity**: `data.case`, with the entry digest as fallback; the title is `data.title`, else the entry statement;
-  the document is `data.document`, else null.
-- **The two views must agree** on the product and on the knowledge root (alias build names of one root are fine); the views'
-  product must be the run's bound line. A mismatch refuses start_run (`view_mismatch`), because the matrix of two different
-  roots says nothing.
+- **Case identity**: `data.node` (what the cases producer writes), else `data.case`, else the entry digest; the title is
+  `data.title`, else the entry statement; the document is `data.document`, else null.
+- **The two views must agree** on the product and on the knowledge root (alias build names of one root are fine). A
+  mismatch refuses start_run (`view_mismatch`), because the matrix of two different roots says nothing.
+- **The cases view is slim** (since 1.0.1): the workflow asks for `fields=document,node,title`, so the index view fits the
+  byte budget at real-build scale (a full one did not). The cases' raw defect ids are not in the slim entries, so the check's
+  join re-verification applies only where they are (full views, the samples); with slim entries the index's key mapping is
+  the join's evidence.
+- **No product binding** (since 1.0.1): the inputs' external ids already name product and build; binding a line made the
+  engine lock an unrelated build (the newest released one of the line) into the run record. Like regression-scope, the
+  workflow binds nothing (`product: { "catalogs": [] }`).
 - **The two refutations exist** also because the publish check needs a negative sample per check (T02 R[0]); the matrix
   itself never fails on absence. `join_mismatch` cannot occur from the pack's own projection; it guards the frozen subject.
 - The checks never receive the views again: everything they need is frozen in the item fields and the run's `groups` (the
@@ -85,12 +91,10 @@ node --test --test-concurrency=2 "packs/workflow/traceability/**/*.test.ts"
 
 ## Needs from other packages
 
-- **packs/product/apv**: the defect entries of `functions/release-notes.ts` and `functions/fixed-bugs.ts` today write the id
-  as `data.bugId`; this pack's defects view is `key=bug` and reads `data.bug` (the task page's wording). The producers (or the
-  agreed field name) must align before the real-reader run; the pack does not guess field names. The case index (the `cases`
-  producer, in flight in another package) must write `data.case`, `data.title`, `data.document` and `data.defects` (bug ids
-  only) as quoted by the task pages.
-- **hub/knowledge**: nothing new — `index-view@1` as served.
+- ~~packs/product/apv field alignment~~ **resolved**: `release-notes.ts` writes the defect id as `data.bug`; the cases
+  producer writes `document`, `node`, `title`, `defects` (bug ids only). This pack reads `data.bug` and (for a case)
+  `data.node`, else `data.case`, else the digest.
+- **hub/knowledge**: nothing new — `index-view@1` with `fields` as served.
 
 ## Open questions for the owner
 
