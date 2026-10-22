@@ -19,3 +19,7 @@
 5. 验证：`npx tsc --noEmit`；`node tools/gen-contracts.ts --check`；`node --test --test-concurrency=2 "contracts/**/*.test.ts" "hub/knowledge/**/*.test.ts" "packs/workflow/traceability/**/*.test.ts" "packs/workflow/quality-board/**/*.test.ts"`。
 
 完成后在终端里回报：提交号、测试通过/跳过/todo 的数量、没做完或拿不准的地方。
+
+## 补充（同一个分支）：影响视图也要能瘦身，真实的跨版本线对比现在算不出来
+
+真实数据上，回归范围对同一版本线里相邻的两个构建（Rel_APV_10_4_5_62 到 Rel_APV_10_4_5_66）能算出来：18 个用例在范围内、7 条没有用例的变更路径记为未知。但对跨版本线的一对（Rel_APV_10_4_5_66 到 Rel_APV_10_4_6_8）失败：投影函数在沙箱里用了约 790 MB，超过 256 MB 的内存上限（管理员备注：`SANDBOX_VIOLATION … limit memory`），因为影响视图里每个范围内的用例条目都带着完整的 `data` 和陈述。要做的：影响视图加参数 `attached_fields=<字段名,…>`：挂在变更路径上的用例条目只带这些字段、陈述为空串（定义条目和行为条目不变，维护巡检要靠它们的完整数据做差异）；回归范围的输入改用 `attached_fields=document,node,title,priority,negative`（SKILL.md、README、示例、测试同步）；维护巡检不用这个参数（它只要定义条目，已有的 `attached=case` 保持默认行为，请核对它的内存，必要时同样处理）。补测试：同一份大合成视图瘦身前后的字节数对比、带参数时回归范围的投影在 256 MB 内跑完（用 10 万个范围内的用例的合成视图）、字段名不合法的拒绝。做完请在回报里写出这一对构建的视图瘦身后的大小（监督者用真实数据验证）。
