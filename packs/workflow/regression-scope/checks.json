@@ -1,0 +1,23 @@
+{
+  "schema": "checks@1",
+  "checks": [
+    {
+      "id": "in_scope",
+      "title": "用例在回归范围内",
+      "function": { "module": "functions/check.ts" },
+      "applies": "run",
+      "subject": { "module": "functions/subject.ts" },
+      "judges": "subject",
+      "tier": "advisory"
+    },
+    {
+      "id": "uncovered_changes",
+      "title": "没有用例的变更路径",
+      "function": { "module": "functions/check.ts" },
+      "applies": "run",
+      "subject": { "module": "functions/subject.ts" },
+      "judges": "subject",
+      "tier": "advisory"
+    }
+  ]
+}

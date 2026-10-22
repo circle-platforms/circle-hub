@@ -1,0 +1,53 @@
+{
+  "id": "in_scope_case",
+  "source": "author",
+  "check": "in_scope",
+  "note": "合成样例：原因是后一构建的修改路径，检查给出支持",
+  "subject": {
+    "items": [
+      {
+        "id": "doc-1:n1",
+        "location": "tree:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee/commands/show@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "fields": {
+          "document": "doc-1",
+          "node": "n1",
+          "title": "查看部件状态",
+          "priority": 1,
+          "negative": false,
+          "reasons": [
+            {
+              "path": "/commands/show",
+              "change": "modified",
+              "before": [
+                {
+                  "entry": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                  "kind": "definition",
+                  "reference": "tree:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc/commands/show@bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+                }
+              ],
+              "after": [
+                {
+                  "entry": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+                  "kind": "definition",
+                  "reference": "tree:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee/commands/show@dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+                }
+              ],
+              "case": {
+                "entry": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "reference": "tree:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee/commands/show@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "note": null
+  },
+  "expect": [
+    {
+      "verdict": "support",
+      "item": "doc-1:n1",
+      "tier": "advisory"
+    }
+  ]
+}

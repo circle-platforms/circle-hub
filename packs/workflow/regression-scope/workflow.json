@@ -1,0 +1,30 @@
+{
+  "schema": "workflow@1",
+  "inputs": [
+    {
+      "slot": "impact",
+      "role": "subject",
+      "description": "两个构建之间的影响视图（knowledge:impact:<产品>:<起始构建>..<目标构建>）。Hub 的读取器回答 impact-view@1，附着种类为用例",
+      "accepts": ["knowledge:impact"],
+      "required": true,
+      "many": false
+    }
+  ],
+  "parameters": [
+    {
+      "name": "priorities",
+      "description": "只保留这些优先级的用例。不写则全部保留；空列表则一条都不留。优先级未给出的用例在筛选时去掉",
+      "required": false,
+      "schema": { "type": "array", "items": { "type": "number" }, "maxItems": 64 }
+    },
+    {
+      "name": "include_added",
+      "description": "是否把新增路径上的用例算进回归范围。默认 true；false 时新增路径不进入范围，也不记为未覆盖",
+      "required": false,
+      "schema": { "type": "boolean" }
+    }
+  ],
+  "product": { "catalogs": [] },
+  "subject": "impact",
+  "projection": { "module": "functions/project.ts" }
+}

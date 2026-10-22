@@ -1,0 +1,54 @@
+{
+  "id": "definition_unchanged",
+  "source": "author",
+  "check": "command_unchanged",
+  "note": "合成样例：修改路径上没有定义差异，命令定义未变记支持",
+  "subject": {
+    "items": [
+      {
+        "id": "doc-1:n1",
+        "location": "tree:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee/commands/show@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "fields": {
+          "document": "doc-1",
+          "node": "n1",
+          "title": "查看部件状态",
+          "priority": 1,
+          "negative": false,
+          "reasons": [
+            {
+              "path": "/commands/show",
+              "change": "modified",
+              "fields": [],
+              "before": [
+                {
+                  "entry": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                  "kind": "definition",
+                  "reference": "tree:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc/commands/show@bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+                }
+              ],
+              "after": [
+                {
+                  "entry": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+                  "kind": "definition",
+                  "reference": "tree:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee/commands/show@dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+                }
+              ],
+              "case": {
+                "entry": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "reference": "tree:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee/commands/show@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "note": null
+  },
+  "expect": [
+    {
+      "verdict": "support",
+      "item": "doc-1:n1",
+      "tier": "advisory"
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "synthetic": true,
+  "note": "合成示例，不是一次已核对的运行。范围内的用例是事实；没有用例的变更路径是未知，不是失败。",
+  "compare": ["Rel_W_1_0_1", "Rel_W_1_0_2"],
+  "item": {
+    "id": "doc-1:n1",
+    "label": "查看部件状态",
+    "summary": "优先级 1；文档 doc-1；1 条命令有变更；/commands/show 修改",
+    "fields": {
+      "document": "doc-1",
+      "node": "n1",
+      "title": "查看部件状态",
+      "priority": 1,
+      "negative": false
+    }
+  },
+  "uncovered": {
+    "path": "/commands/bare",
+    "change": "added",
+    "verdict": "unknown",
+    "reason": "missing_input"
+  }
+}
