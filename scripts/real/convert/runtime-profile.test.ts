@@ -5,16 +5,18 @@ import { parseRuntimeContract } from '../../../packs/workflow/case-compile/funct
 import { checkCoverage, checkProfile, draftProfile } from './runtime-profile.ts';
 import { convertTopology } from './bed-topology.ts';
 import { topology } from './testing.ts';
+import { checkContractShape } from '../../../packs/workflow/case-compile/functions/checks.ts';
+import { MANIFEST_DOC, goodData, subjectOf } from '../../../packs/workflow/case-compile/functions/test-support.ts';
 function setup() {
   const original = runtimeDocument();
-  const contract = signRuntime({ ...original, entries: [...original.entries.filter((v) => v.f !== 'credential').map((v) => v.f === 'configure' ? { ...v, signature: { ...v.signature, parameters: v.signature.parameters.slice(0, 1), optional: [] } } : v), entry('widget-seat', 'inspect', [{ name: 'query', kind: 'positional_only', required: true, default: null }]), entry('widget-seat', 'opaque', [{ name: 'binary', kind: 'positional_only', required: true, default: null }])] });
-  const profile = { ...profileDocument(contract), synthetic: false, allowed: [...profileDocument(contract).allowed, { object: 'widget-seat', method: 'inspect', parameters: { query: 'device_cli' } }], unopened: [{ object: 'widget-seat', method: 'opaque', parameters: [{ name: 'binary', missing: '合成二进制参数没有角色', reason: '现有角色无法核验', next: '另开包检查任务，增加角色与筛查' }] }], pending: [] };
+  const contract = signRuntime({ ...original, entries: [...original.entries, entry('widget-seat', 'inspect', [{ name: 'query', kind: 'positional_only', required: true, default: null }]), entry('widget-seat', 'opaque', [{ name: 'binary', kind: 'positional_only', required: true, default: null }])] });
+  const profile = { ...profileDocument(contract), synthetic: false, allowed: [...profileDocument(contract).allowed, { object: 'widget-seat', method: 'inspect', parameters: { query: 'device_cli' } }], unopened: [{ object: 'widget-seat', method: 'credential', parameters: [{ name: 'password', missing: '脱敏凭据', reason: '不能传入', next: '核对认证接入' }] }, { object: 'widget-seat', method: 'opaque', parameters: [{ name: 'binary', missing: '合成二进制参数没有角色', reason: '现有角色无法核验', next: '另开包检查任务，增加角色与筛查' }] }], pending: [] };
   const manifest = convertTopology(topology()); return { contract, profile, manifest };
 }
-test('profile draft includes all six enabled combinations and separates explicit unopened parameters', () => {
+test('profile draft includes all seven enabled combinations and separates explicit unopened parameters', () => {
   const { contract, profile, manifest } = setup();
   const draft = draftProfile({ ready: true, device_count: 2 }, manifest, contract, { allowed: profile.allowed, unopened: profile.unopened });
-  assert.equal(draft.allowed.length, 5); assert.equal(draft.unopened.length, 1); assert.ok(draft.pending.length);
+  assert.equal(draft.allowed.length, 5); assert.equal(draft.unopened.length, 2); assert.ok(draft.pending.length);
   assert.ok(draft.allowed.every((v) => v.object !== 'widget-disabled'));
   assert.throws(() => checkProfile(draft, manifest, contract));
   assert.equal(checkProfile(profile, manifest, contract).allowed.length, 5);
@@ -41,4 +43,26 @@ test('deployment publication refuses empty command screens and synthetic identit
   }
   assert.throws(() => checkProfile({ ...deployed, synthetic: true }, manifest, contract), /synthetic.*false.*--check/);
   assert.equal(checkProfile(deployed, manifest, contract).synthetic, false);
+});
+
+test('unmodified contracts allow an optional redacted credential without assigning it a role', () => {
+  const contract = runtimeDocument(); const profile = { ...profileDocument(contract), synthetic: false, pending: [], unopened: [{ object: 'widget-seat', method: 'credential', parameters: [{ name: 'password', missing: '脱敏凭据不能传入', reason: '不能核验凭据值', next: '集成者只读核对认证方式并另开接入任务' }] }] };
+  assert.equal(checkProfile(profile, MANIFEST_DOC, contract).allowed.length, 4);
+  const draft = draftProfile({ ready: true, device_count: 2 }, MANIFEST_DOC, contract, profile);
+  assert.ok(!Object.hasOwn(draft.allowed.find(v => v.method === 'configure')!.parameters, 'auth_token'));
+  assert.ok(draft.unopened.some((v: any) => v.method === 'credential'));
+  const supplied = goodData(); supplied.steps[0].keywords.auth_token = 'synthetic-value';
+  assert.ok(checkContractShape(subjectOf(supplied, { contractDoc: contract, profileDoc: profile })).some(outcome => outcome.code === 'case-compile.param_sensitive'));
+  assert.throws(() => checkProfile({ ...profile, allowed: [...profile.allowed, { object: 'widget-seat', method: 'credential', parameters: {} }], unopened: [] }, MANIFEST_DOC, contract));
+});
+test('optional ordinary parameters require either a role or an explicit never-supplied declaration', () => {
+  const original = runtimeDocument(); const contract = signRuntime({ ...original, entries: original.entries.map(v => v.f === 'shell' ? entry('widget-host', 'shell', [{ name: 'command', kind: 'positional_or_keyword', required: true, default: null }, { name: 'label', kind: 'positional_or_keyword', required: false, default: 'synthetic' }]) : v) });
+  const profile = { ...profileDocument(contract), synthetic: false, pending: [], unopened: [{ object: 'widget-seat', method: 'credential', parameters: [{ name: 'password', missing: '脱敏', reason: '不传凭据', next: '核对接入' }] }] };
+  const parsed = parseRuntimeContract(contract); assert.ok(parsed.ok);
+  assert.throws(() => checkCoverage(profile, parsed.contract));
+  const allowed = profile.allowed.map(v => v.method === 'shell' ? { ...v, unsupplied: ['label'] } : v);
+  assert.doesNotThrow(() => checkCoverage({ ...profile, allowed }, parsed.contract));
+  const supplied = goodData(); supplied.steps[1].keywords.label = 'synthetic-value';
+  assert.ok(checkContractShape(subjectOf(supplied, { contractDoc: contract, profileDoc: { ...profile, allowed } })).some(outcome => outcome.code === 'case-compile.param_unassigned'));
+  for (const unsupplied of [['command'], ['absent'], ['label', 'label']]) assert.throws(() => checkCoverage({ ...profile, allowed: profile.allowed.map(v => v.method === 'shell' ? { ...v, unsupplied } : v) }, parsed.contract));
 });

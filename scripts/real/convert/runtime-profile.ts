@@ -6,6 +6,14 @@ import { argumentsOf, jsonBytes, main, output, readJson, record, requireFact, su
 const pair = (v: { object: unknown; method: unknown }) => JSON.stringify([v.object, v.method]);
 const text = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
 interface Unopened { object: string; method: string; parameters: Array<{ name: string; missing: string; reason: string; next: string }> }
+type Method = RuntimeContract['enabled'][number];
+function unsupplied(method: Method, value: Record<string, unknown>): Set<string> {
+  const names = value.unsupplied ?? [];
+  requireFact(Array.isArray(names) && names.every(name => typeof name === 'string') && new Set(names).size === names.length, 'unsupplied 必须是无重复参数名列表；逐项声明永不传入的可选参数');
+  requireFact(names.every(name => method.parameters.some(p => p.name === name && !p.required) && !(record(value.parameters) && Object.hasOwn(value.parameters, name))), 'unsupplied 含必需、签名外或已定角色的参数；核对签名后只列永不传入的可选参数');
+  return new Set(names);
+}
+const blockedCredentials = (method: Method) => method.parameters.some(p => p.required && p.redacted) || method.parameters.length > 0 && method.parameters.every(p => p.redacted);
 export function draftProfile(environment: unknown, manifest: unknown, rawContract: unknown, decisions?: unknown) {
   const contract = parseRuntimeContract(rawContract); const beds = parseManifest(manifest);
   requireFact(contract.ok && beds.ok && beds.beds.length === 1, '合约或单台架清单无效；先核验原合约并转换完整清单');
@@ -14,19 +22,24 @@ export function draftProfile(environment: unknown, manifest: unknown, rawContrac
   requireFact(decisions === undefined || record(decisions) && Array.isArray(decisions.allowed) && Array.isArray(decisions.unopened), '角色决定文件须有 allowed 和 unopened 列表；按 README 填写');
   const decisionsRecord = record(decisions) ? decisions : {};
   const given = Array.isArray(decisionsRecord.allowed) ? decisionsRecord.allowed : [];
-  const unopened = Array.isArray(decisionsRecord.unopened) ? decisionsRecord.unopened : [];
+  const unopened = Array.isArray(decisionsRecord.unopened) ? [...decisionsRecord.unopened] : [];
+  for (const method of wanted.enabled.filter(blockedCredentials)) {
+    requireFact(!given.some(v => record(v) && pair({ object: v.object, method: v.method }) === pair(method)), '必需脱敏参数或仅有脱敏参数的组合不能开放；集成者核对认证接入并保持未开');
+    if (!unopened.some(v => record(v) && pair({ object: v.object, method: v.method }) === pair(method))) unopened.push({ object: method.object, method: method.method, parameters: method.parameters.filter(p => p.redacted).map(p => ({ name: p.name, missing: '合约未提供可核验的凭据参数', reason: '脱敏凭据不能经工作簿传入', next: '集成者只读核对认证接入并另开合约任务，当前保持未开' })) });
+  }
   const pending: Array<{ pointer: string; missing: string; next: string }> = [];
   const add = (pointer: string, missing: string, next: string) => pending.push({ pointer, missing, next });
   const allowed = wanted.enabled.filter((method) => !unopened.some((v) => record(v) && pair({ object: v.object, method: v.method }) === pair(method))).map((method, i) => {
     const found = given.find((v) => record(v) && pair({ object: v.object, method: v.method }) === pair(method));
     const roles = record(found) && record(found.parameters) ? found.parameters : {};
-    const parameters = Object.fromEntries(method.parameters.map((parameter) => {
+    const omitted = unsupplied(method, record(found) ? found : {});
+    const parameters = Object.fromEntries(method.parameters.filter(p => !p.redacted && !omitted.has(p.name)).map((parameter) => {
       const role = roles[parameter.name];
       if (typeof role === 'string' && FORMAT.parameter_roles.includes(role) && !parameter.redacted) return [parameter.name, role];
       add(`/allowed/${i}/parameters/${parameter.name}`, '签名不能证明参数角色', '集成者核对参数语义后填写包表中的角色；不能归入角色则移到 unopened 并另开包检查任务');
       return [parameter.name, null];
     }));
-    return { object: method.object, method: method.method, parameters };
+    return { object: method.object, method: method.method, parameters, ...(omitted.size ? { unsupplied: [...omitted] } : {}) };
   });
   // Never silently discard an explicit operator decision, including disabled or extra combinations.
   const enabled = new Set(wanted.enabled.map(pair)); const seen = new Set<string>();
@@ -51,7 +64,9 @@ export function checkCoverage(profile: unknown, contract: RuntimeContract): void
     const key = pair({ object: value.object, method: value.method }); const method = enabled.get(key);
     requireFact(method && !seen.has(key), '组合不是启用子集或重复出现；逐项核对 allowed 和 unopened'); seen.add(key);
     if (list === 'allowed') {
-      requireFact(record(value.parameters) && method.parameters.every((p) => !p.redacted && Object.hasOwn(value.parameters as object, p.name) && typeof (value.parameters as Record<string, unknown>)[p.name] === 'string' && FORMAT.parameter_roles.includes((value.parameters as Record<string, string>)[p.name]!)), '启用组合仍有无角色或脱敏参数；定角色或列为未开');
+      requireFact(!blockedCredentials(method), '必需脱敏参数或仅有脱敏参数的组合不能开放；集成者核对认证接入并列为未开');
+      const omitted = unsupplied(method, value);
+      requireFact(record(value.parameters) && method.parameters.every(p => p.redacted && !p.required ? !Object.hasOwn(value.parameters as object, p.name) : omitted.has(p.name) || Object.hasOwn(value.parameters as object, p.name) && typeof (value.parameters as Record<string, unknown>)[p.name] === 'string' && FORMAT.parameter_roles.includes((value.parameters as Record<string, string>)[p.name]!)), '启用组合仍有可传参数无角色；定角色、显式列入 unsupplied 或列为未开');
     } else {
       requireFact(Array.isArray(value.parameters) && value.parameters.length > 0 && value.parameters.every((p: unknown) => record(p) && method.parameters.some((parameter) => parameter.name === p.name) && text(p.missing) && text(p.reason) && text(p.next)), '未开项缺少参数、原因、缺失事实或下一步；补齐后另开包角色检查任务');
     }
