@@ -393,3 +393,13 @@ test('the installed skills hook command handles quoted home paths without shell 
     assert.throws(() => statSync(join(written.workdir, 'synthetic-marker')), /ENOENT/);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('only the installed script spelling can reach a skill send approval hook',async()=>{
+  const {symlinkSync}=await import('node:fs');const f=skillsFixture();
+  try{
+    skillHooks(f,[{source:`let raw='';for await(const part of process.stdin)raw+=part;const input=JSON.parse(raw);console.log(JSON.stringify({decision:input.tool_input.command.includes('t.ts')&&input.tool_input.command.includes('--send')?'ask':'allow',reason:'合成发送确认'}));`}]);
+    assert.equal(f.decide(f.input('execute',{command:`node ${f.script} --send`})).decision,'ask');
+    for(const name of ['T.ts','t.TS'])assert.equal(f.decide(f.input('execute',{command:`node ${join(f.root,'tools',name)} --send`})).decision,'deny');
+    const alias=join(f.root,'tools','alias.ts');symlinkSync(f.script,alias);assert.equal(f.decide(f.input('execute',{command:`node ${alias} --send`})).decision,'deny');
+  }finally{f.close();}
+});

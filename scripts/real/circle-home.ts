@@ -130,7 +130,7 @@ async function skillsGuard(home: string, workspace: string, allowed: string[]): 
   const canonical = (file: string): string => {
     const tail: string[] = []; let parent = path.resolve(file);
     while (!exists(parent)) { const next = path.dirname(parent); if (next === parent) throw new Error('path unavailable'); tail.unshift(path.basename(parent)); parent = next; }
-    return path.resolve(fs.realpathSync(parent), ...tail);
+    return path.resolve(fs.realpathSync.native(parent), ...tail);
   };
   const scriptOf = (command: string, root: string): string | null => {
     let line = command;
@@ -153,7 +153,8 @@ async function skillsGuard(home: string, workspace: string, allowed: string[]): 
     const script = words[1];
     if (words[0] !== 'node' || !script || !path.isAbsolute(script) || script.split(/[\\/]/).includes('..') || script.includes('%') || !script.endsWith('.ts')) return null;
     const lexical = path.resolve(script); if (!under(lexical, path.resolve(home, 'skills')) && !under(lexical, root)) return null;
-    const physical = canonical(lexical); if (!under(physical, root)) return null;
+    const physical = fs.realpathSync.native(lexical); if (!under(physical, root)) return null;
+    if (path.relative(root, physical) !== path.relative(path.resolve(home, 'skills'), lexical)) return null;
     return physical;
   };
   const skillDirectory = (script: string, root: string): string => {
