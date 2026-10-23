@@ -363,3 +363,25 @@ test('review 10: a later refusal cannot erase failed upload evidence or bind tho
   assert.equal(scenario.check([]).find(check => check.name === '上传字节')?.ok, false);
   assert.ok(bound.every(sha => !failed.has(sha)));
 });
+
+test('review 9: absent Hub outputs cannot pass any result-dependent check', () => {
+  const { gold, dir } = goldOf(); const scenario = build(gold as never); scenario.prepare?.(join(dir, 'work'));
+  let results: Turn['toolResults'] = []; let starts = 0;
+  for (let index = 0; index < 100; index++) {
+    const reply = scenario.respond(turn(index, results)) as any[]; if (reply[0]?.text === '检查完成。') break;
+    results = reply.map((call, i) => {
+      if (call.tool === 'hub_upload_file') return { id: `u${i}`, text: `已上传 src:${sha256Of(readFileSync(join(dir, 'work', String(call.input.file_path))))}`, isError: false };
+      if (call.tool === 'hub_start_run') starts++;
+      return { id: `r${i}`, text: '调用结果：出错', isError: true };
+    });
+  }
+  assert.ok(starts > 0);
+  const checks = scenario.check([]);
+  assert.ok(!checks.some(check => check.ok && !['上传字节', '对话没有被压缩'].includes(check.name)));
+  assert.equal(checks.find(check => check.name === '副本回答完整')?.ok, false);
+});
+test('review 9: missing or malformed category output is not interpreted as complete coverage', () => {
+  assert.equal(parseSummary('用例 1 个；没有类别结果', CATEGORIES).valid, false);
+  assert.equal(parseSummary('用例 1 个；缺 2 个模板类别：功能测试（functional）', CATEGORIES).valid, false);
+  assert.equal(parseSummary('用例 1 个；缺 1 个模板类别：不存在（not_in_table）', CATEGORIES).valid, false);
+});

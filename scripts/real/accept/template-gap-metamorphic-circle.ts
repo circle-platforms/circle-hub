@@ -37,20 +37,20 @@ export function parseItemLine(line: string): { item: string; summary: string } |
 }
 
 /** The case count and the missing category ids of an item summary ('（只列编号）' and the covered form included). */
-export function parseSummary(summary: string, categories: readonly TemplateCategory[]): { caseCount: number | null; missing: Set<string> } {
-  const missing = new Set<string>();
-  const count = /用例 (\d+) 个/.exec(summary);
-  const list = /缺 \d+ 个模板类别[^：]*：([^；]+)/.exec(summary.replace('（只列编号）', ''));
-  if (list !== null) {
-    const known = new Set(categories.map((c) => c.id));
-    for (const token of list[1]!.split('、')) {
-      // The named form writes '<label>（<id>）'; the id-only form writes the id alone.
-      const named = /^[^（]+（([^）]+)）$/.exec(token.trim());
-      const id = named?.[1] ?? token.trim();
-      if (known.has(id)) missing.add(id);
-    }
+export function parseSummary(summary: string, categories: readonly TemplateCategory[]): { caseCount: number | null; missing: Set<string>; valid: boolean } {
+  const missing = new Set<string>(); const count = /用例 (\d+) 个/.exec(summary);
+  const list = /缺 (\d+) 个模板类别[^：]*：([^；]+)/.exec(summary.replace('（只列编号）', ''));
+  const known = new Set(categories.map(category => category.id)); let valid = false;
+  if (list) {
+    const tokens = list[2]!.split('、').map(token => /^[^（]+（([^）]+)）$/.exec(token.trim())?.[1] ?? token.trim());
+    tokens.forEach(id => { if (known.has(id)) missing.add(id); });
+    valid = tokens.every(id => known.has(id)) && tokens.length === Number(list[1]) && missing.size === Number(list[1]);
+  } else {
+    const covered = /([0-9]+) 个模板类别都已覆盖/.exec(summary);
+    valid = covered !== null && Number(covered[1]) === categories.length;
   }
-  return { caseCount: count === null ? null : Number(count[1]), missing };
+  const caseCount = count ? Number(count[1]) : null;
+  return { caseCount, missing, valid: valid && caseCount !== null && Number.isSafeInteger(caseCount) && !summary.includes('…（共') };
 }
 
 /** The reference a clipped summary names for the full text (hub/server/text.ts writes it at the clip). A summary
@@ -120,6 +120,8 @@ export default function scenario(gold: GapCircleGold): Scenario {
   let openRun: Array<{ key: string; sha: string }> | null = null;
   let uploadsOfPhase = [0, 0, 0];
   let runsOfPhase = [0, 0, 0];
+  const attempted = new Map<string, Pending>();
+  const notDoneChecks = new Set<string>();
   const uploaded = new Map<string, string>(); // copy key -> sha
   const uploadVerdicts = new Map<string, boolean>();
   const answerOf = new Map<string, { caseCount: number | null; missing: Set<string>; fullSummary: string }>();
@@ -149,7 +151,7 @@ export default function scenario(gold: GapCircleGold): Scenario {
 
   const writeCopy = (p: Pending): string => {
     const bytes = `${JSON.stringify(p.tree)}\n`;
-    writeFileSync(join(workdir, p.name), bytes);
+    writeFileSync(join(workdir, p.name), bytes); attempted.set(p.key, p);
     return sha256Of(bytes);
   };
 
@@ -232,7 +234,7 @@ export default function scenario(gold: GapCircleGold): Scenario {
           }
           const reference = truncationReference(summary);
           if (reference !== null) truncated.set(key, reference);
-          else { const parsed = parseSummary(summary, categories); answerOf.set(key, { caseCount: parsed.caseCount, missing: parsed.missing, fullSummary: summary }); }
+          else { const parsed = parseSummary(summary, categories); if (!parsed.valid) unknown.set(key, '缺少可解析的用例数或完整类别集合'); else answerOf.set(key, { caseCount: parsed.caseCount, missing: parsed.missing, fullSummary: summary }); }
         }
       }
       openRun = null;
@@ -254,7 +256,8 @@ export default function scenario(gold: GapCircleGold): Scenario {
       if (turn.toolResults.some(result => result.isError) || full === null) unknown.set(pendingGetNodes.key, '截断的摘要读不到全文');
       else {
         const parsed = parseSummary(full, categories);
-        answerOf.set(pendingGetNodes.key, { caseCount: parsed.caseCount, missing: parsed.missing, fullSummary: full });
+        if (!parsed.valid) unknown.set(pendingGetNodes.key, '全文缺少可解析的用例数或完整类别集合');
+        else answerOf.set(pendingGetNodes.key, { caseCount: parsed.caseCount, missing: parsed.missing, fullSummary: full });
       }
       pendingGetNodes = null;
     }
@@ -317,7 +320,7 @@ export default function scenario(gold: GapCircleGold): Scenario {
   let checkFindings: Array<{ document: number; caseId: string; runKey: string; why: string }> = [];
   let phaseThreeMap = new Map<string, Array<{ document: number; caseId: string }>>();
   const check = (turns: import('../lib/accept.ts').LoggedTurn[]): Check[] => {
-    void turns;
+    void turns; scoredKeys = new Map(); notDoneChecks.clear();
     const verdict = (name: string, ok: boolean, expected: string, actual: string): Check => ({ area, name, expected, actual, ok });
     const copies: Pending[] = [];
     for (const [d, tree] of trees.entries()) {
@@ -407,16 +410,17 @@ export default function scenario(gold: GapCircleGold): Scenario {
     const aCounts = trees.map((_t, d) => answerOf.get(`a-${d}`)?.caseCount ?? null);
     const originalOk = aCounts.every((n, d) => n === outerIds[d]!.length);
     // 3 单用例副本用例数
-    const cBad = trees.flatMap((_t, d) => outerIds[d]!.map((_id, i) => answerOf.get(`c-${d}-${i}`))).filter((a) => a !== undefined && a.caseCount !== 1).length;
+    const cBad = [...attempted.keys()].filter(key => key.startsWith('c-') && (unknown.has(key) || answerOf.get(key)?.caseCount !== 1)).length;
     // 4 换序
     const b = count('b-');
     const bSameSummary = trees.every((_t, d) => {
       const aS = answerOf.get(`a-${d}`)?.fullSummary;
       const bS = answerOf.get(`b-${d}`)?.fullSummary;
-      return aS === undefined || bS === undefined || aS === bS;
+      return aS !== undefined && bS !== undefined && aS === bS;
     });
     // 5 拆分
-    const splitOk = scored.filter((s) => s.key.startsWith('a-')).every((s) => s.ok);
+    const splitRows = scored.filter(s => s.key.startsWith('a-'));
+    const splitOk = splitRows.length === trees.length && splitRows.every(s => s.ok);
     // 6 类型名标签
     const typeChecks: boolean[] = [];
     for (const [d, tree] of trees.entries()) {
@@ -424,8 +428,8 @@ export default function scenario(gold: GapCircleGold): Scenario {
       for (const [nodeId, ids] of present) {
         const i = outerIds[d]!.indexOf(nodeId);
         const answer = i >= 0 ? answerOf.get(`c-${d}-${i}`) : undefined;
-        if (answer === undefined) continue;
-        for (const id of ids) typeChecks.push(!answer.missing.has(id));
+        if (i < 0 || !attempted.has(`c-${d}-${i}`)) continue;
+        for (const id of ids) typeChecks.push(answer !== undefined && !unknown.has(`c-${d}-${i}`) && !answer.missing.has(id));
       }
     }
     void TYPE_NAMES;
@@ -444,34 +448,38 @@ export default function scenario(gold: GapCircleGold): Scenario {
     };
 
     const checks: Check[] = [
-      verdict('上传字节', uploadBad === 0, `每份副本的 src 是写下字节的 sha256（核对 ${uploadsChecked} 份）`, uploadBad === 0 ? '全部对上' : `${uploadBad} 份对不上或被拒`),
+      verdict('上传字节', uploadsChecked > 0 && uploadBad === 0, `每份副本的 src 是写下字节的 sha256（核对 ${uploadsChecked} 份）`, uploadBad === 0 ? '全部对上' : `${uploadBad} 份对不上或被拒`),
       verdict('原件用例数', originalOk, trees.map((_t, d) => `第 ${d + 1} 份 ${outerIds[d]!.length} 个`).join('、'), aCounts.join('、')),
       verdict('单用例副本用例数', cBad === 0, `每个单用例副本 1 个用例（共 ${trees.reduce((n, _t, d) => n + outerIds[d]!.length, 0)} 份）`, cBad === 0 ? '都是 1' : `${cBad} 份不是 1`),
       verdict('换序', b.ok > 0 && b.bad === 0 && bSameSummary, 'b 的缺失集合与 a 相同，摘要逐字相同', `相符 ${b.ok}，不符 ${b.bad}${bSameSummary ? '' : '，摘要不同'}`),
       verdict('拆分', splitOk, 'a 的缺失集合等于全部 c 的交集', splitOk ? '相符' : '不符'),
-      verdict('类型名标签', typeChecks.every(Boolean), '带类型名标签的用例让对应类别为有', typeChecks.length === 0 ? '这一轮没有带类型名标签的用例' : typeChecks.every(Boolean) ? '相符' : '不符'),
+      verdict('类型名标签', typeChecks.length > 0 && typeChecks.every(Boolean), '带类型名标签的用例让对应类别为有', typeChecks.length === 0 ? '这一轮没有带类型名标签的用例' : typeChecks.every(Boolean) ? '相符' : '不符'),
       verdict('删去', dTarget('d').bad === 0 && dTarget('d').ok > 0, 'd 的目标类别都变成缺', `相符 ${dTarget('d').ok}，不符 ${dTarget('d').bad}`),
       verdict('加回和加入', dTarget('e').bad === 0 && dTarget('f').ok > 0 ? dTarget('f').bad === 0 : false, 'e 和 f 的目标类别都变成有', `e 相符 ${dTarget('e').ok} 不符 ${dTarget('e').bad}；f 相符 ${dTarget('f').ok} 不符 ${dTarget('f').bad}`),
-      verdict('至少两份文档走完三段', trees.length >= 2 && uploadsOfPhase.every((n) => n > 0), '三段都有上传和运行', `上传 ${uploadsOfPhase.join('、')}；运行 ${runsOfPhase.join('、')}`),
+      verdict('至少两份文档走完三段', trees.filter((_tree, d) => [['a', 'b'], ['c'], ['d', 'e', 'f']].every(kinds => scored.some(copy => Number(copy.key.split('-')[1]) === d && kinds.includes(copy.key[0]!)))).length >= 2, '三段都有上传和运行', `上传 ${uploadsOfPhase.join('、')}；运行 ${runsOfPhase.join('、')}`),
       verdict('类型标签类别和关键词类别各至少一类当过目标', (() => {
         const targets = new Set<string>();
-        for (const key of [...phaseThreeMap.keys()]) targets.add(key.split('-')[2]!);
+        for (const key of phaseThreeMap.keys()) if (scoredKeys.has(key) && /^[df]-/.test(key)) targets.add(key.split('-')[2]!);
         const kinds = new Set([...targets].map((id) => categories.find((c) => c.id === id)?.group));
         return kinds.has('test_type') && kinds.size > 1;
       })(), 'd 或 f 的目标里两类都有', (() => {
         const targets = new Set<string>();
-        for (const key of [...phaseThreeMap.keys()]) targets.add(key.split('-')[2]!);
+        for (const key of phaseThreeMap.keys()) if (scoredKeys.has(key) && /^[df]-/.test(key)) targets.add(key.split('-')[2]!);
         const kinds = [...new Set([...targets].map((id) => categories.find((c) => c.id === id)?.group))];
         return kinds.join('、') || '没有目标';
       })()),
       verdict('对话没有被压缩', !compacted, '没有收到没有工具结果的请求', compacted ? '收到过' : '没有'),
-      verdict('包分不出的用例记成发现', (() => {
-        void findings;
-        return true;
-      })(), '跑过单用例运行还定不下类别的用例记成包的发现（见没做的一节）', `${findings.length} 条`),
+
     ];
-    checkFindings = findings;
-    return checks;
+    const missing = [...attempted.keys()].filter(key => !answerOf.has(key) || unknown.has(key));
+    checks.push(verdict('副本回答完整', attempted.size > 0 && missing.length === 0, '每份副本给出完整条目结果', missing.length ? missing.map(key => `${uploaded.get(key)?.slice(0, 12)} 缺结果；下一步核对对应运行回执并修复读取`).join('；') : '完整'));
+    checkFindings = [...new Map(findings.map(finding => [finding.runKey, finding])).values()];
+    const kinds: Record<string, string[]> = { '上传字节': ['a','b','c','d','e','f'], '原件用例数': ['a'], '单用例副本用例数': ['c'], '换序': ['b'], '拆分': ['a'], '类型名标签': ['c'], '删去': ['d'], '加回和加入': ['e','f'] };
+    return checks.filter(check => {
+      const relevant = kinds[check.name];
+      if (relevant && (![...attempted.values()].some(copy => relevant.includes(copy.kind)) || check.name === '类型名标签' && typeChecks.length === 0)) { notDoneChecks.add(check.name); return false; }
+      return true;
+    });
   };
 
   // The sections are computed lazily (accept-circle.ts reads them after check()); the counts come from the scored
@@ -499,7 +507,7 @@ export default function scenario(gold: GapCircleGold): Scenario {
       }
     }
     const findingLines = checkFindings.map((f) => `第 ${f.document + 1} 份文档的用例 ${f.caseId} 包分不出类别（${f.runKey} 的运行：${f.why}）；依赖它的副本没有核对`);
-    sections.push({ title: '没做的副本（按原因）', lines: [...[...reasons.entries()].map(([r, n]) => `${r}：${n} 份`), ...skipped, ...findingLines] });
+    sections.push({ title: '没做的副本（按原因）', lines: [...[...notDoneChecks].map(name => `${name}：没有可核对的副本`), ...[...reasons.entries()].map(([r, n]) => `${r}：${n} 份`), ...skipped, ...findingLines] });
     return sections;
   };
   return {
