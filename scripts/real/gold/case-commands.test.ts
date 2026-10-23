@@ -1,11 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { performance } from 'node:perf_hooks';
-import { caseCommandsGold, commandScanner } from './case-commands.ts';
+import { caseCommandsGold, commandScanner, sha256 } from './case-commands.ts';
 import { CATALOG_A, commandTreeXml } from '../../../tests/fixtures/case-index/catalog.ts';
 import { CASE_COMMAND_TABLE } from '../../../tests/fixtures/case-index/table.ts';
 const xml = commandTreeXml(CATALOG_A);
@@ -57,4 +57,24 @@ test('4000 commands and 20000 cases complete within seconds', () => {
   const gold = caseCommandsGold(tree, maps);
   assert.equal(gold.totals.cases, 20000); assert.equal(gold.totals.unplaced, 0);
   assert.ok(performance.now() - start < 8000);
+});
+
+test('CLI accepts prefixed document ids in manifests and hashes original tree bytes', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'case-command-cli-'));
+  try {
+    const tree = join(dir, 'tree.xml'); const map = join(dir, 'map.json'); const list = join(dir, 'maps.txt'); const out = join(dir, 'gold.json');
+    const bytes = Buffer.concat([Buffer.from('<commands><!--'), Buffer.from([0xe9]), Buffer.from('--><item name="ping"/></commands>')]);
+    writeFileSync(tree, bytes); writeFileSync(map, JSON.stringify({ root: node('case', 'ping') }));
+    writeFileSync(list, `${map}:agile:mindmap:synthetic-doc\n`);
+    const result = spawnSync(process.execPath, ['scripts/real/gold/case-commands.ts', '--tree', tree, '--maps', list, '--out', out], { encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+    const value = JSON.parse(readFileSync(out, 'utf8')); assert.equal(value.tree_sha256, sha256(bytes)); assert.equal(value.cases[0].key, 'synthetic-doc:case');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('step measurement reads direct operation children and excludes nested case steps', () => {
+  const map = { root: node('root', 'root', [node('case', 'plain', [node('step', 'show pools', [node('nonstep', 'widget pool add', [node('expected', 'done', [], false)], false)], false), node('nested', 'plain', [node('nested-step', 'relay endpoint add', [node('expected', 'done', [], false)], false)])])], false) };
+  const result = caseCommandsGold(xml, [{ document: 'synthetic-doc', map }]);
+  assert.deepEqual(result.cases.find((c) => c.node === 'case')!.steps.map((p) => p.path), ['/commands/show/pools']);
+  assert.deepEqual(result.cases.find((c) => c.node === 'nested')!.steps.map((p) => p.path), ['/commands/relay/endpoint/add']);
 });
