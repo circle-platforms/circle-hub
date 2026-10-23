@@ -60,3 +60,11 @@ test('all four kinds reject forged evidence metadata; relation requires exactly 
   assert.equal(ContributionInput.safeParse({...common,kind:'relation'}).success,false);
   assert.equal(ContributionInput.safeParse({...common,kind:'assertion',relation:{kind:'same_subject',other:common.source}}).success,false);
 });
+
+test('admission codes have one core registry and no pack namespaced duplicate', () => {
+  const registry=JSON.parse(readFileSync(new URL('../../../contracts/codes.json',import.meta.url),'utf8'));
+  const admission=registry.codes.filter((entry:{code:string})=>entry.code.startsWith('core.contribution.'));
+  assert.equal(admission.length,10);for(const entry of admission){assert.equal(entry.interpreter,'contribution');assert.ok(entry.when&&entry.fix);}
+  assert.ok(!readdirSync(new URL('./tables/',import.meta.url)).includes('codes.json'));
+  assert.equal(JSON.parse(readFileSync(new URL('./pack.json',import.meta.url),'utf8')).version,'1.0.1');
+});

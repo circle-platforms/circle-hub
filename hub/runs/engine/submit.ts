@@ -452,8 +452,8 @@ async function validate(base: Basis, submission: Submission, before: ProtocolErr
         if(error instanceof ContributionRefusal){
           const statement=`${error.message}；${error.fix}`;
           refusals.set(item.item,statement);
-          admission!.outcomes.set(item.item,[{verdict:'refute',code:`${workflow.pack.id}.${error.rule}`,statement,grounds:[],tier:'blocking',pointer:`/slots/${slot}/0`,data:{fix:error.fix}}]);
-          ctx.log({traceId:call.traceId,run:run.run,what:'contribution.admission',detail:JSON.stringify({rule:error.rule,...error.detail})});
+          admission!.outcomes.set(item.item,[{verdict:'refute',code:error.admissionCode,statement,grounds:[],tier:'blocking',pointer:`/slots/${slot}/0`,data:{fix:error.fix}}]);
+          ctx.log({traceId:call.traceId,run:run.run,what:'contribution.admission',detail:JSON.stringify({code:error.admissionCode,...error.detail})});
           continue;
         }
         if (!(error instanceof KnowledgeError)) throw error;

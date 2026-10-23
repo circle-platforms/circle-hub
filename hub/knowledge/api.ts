@@ -57,7 +57,7 @@ export { MAX_REAL_OPTIONS, belowThreshold, narrowCandidates, optionNames, placem
 
 export { ObservationLayer } from './layers.ts';
 export { ContributionLayer, ContributionRefusal } from './contributions.ts';
-export type { ContributionScope, ContributionOrigin, PreparedContribution } from './contributions.ts';
+export type { ContributionScope, ContributionOrigin, PreparedContribution, ContributionAdmissionCode } from './contributions.ts';
 
 export type { EntryContent, NodeContent } from './digest.ts';
 export { cutText, entryContentOf, entryDigest, nodeDigest, normaliseApplicability, normaliseStatement } from './digest.ts';
