@@ -238,6 +238,7 @@ export class DispatchService {
     if (isDone(events) && !isFrozen(events)) return this.status(by, job);
     const intent = eventOf(events, 'intent');
     if (!intent) throw new Error('没有派发意图；请用 resume 核对未发出的作业');
+    if(!isFrozen(events))throw new Error(`没有待回答的效果未知处置请求；已受理作业须先运行 circle-hub job resume ${job}`);
     if (options.choice === 'keep_unknown') {
       await this.journal.append(binding, 'dispose', 'read_back', 'completed', { disposition: options.choice, decided_by: by.id, decided_at: this.now().toISOString(), uncertain: true, unfreeze: false, next_action: '继续取得原作业审计与结果；不能重交' });
       return this.status(by, job);
@@ -437,8 +438,10 @@ export class DispatchService {
     throw new Error('原作业只读查询待恢复');
   }
   private async pendingRead(binding: JobBinding): Promise<void> {
-    await this.journal.append(binding, 'read_pending', 'read', 'error', { missing_fact: '已有受理回执，原作业状态或结果原件尚未完整取得或保存；不是未执行', request_kind: 'repair', next_action: `只读未成功；修复连接、读取声明或本地存储后运行 circle-hub job resume ${binding.job}；不得重交` });
+    const cycles=(await this.journal.events(binding.job)).filter(e=>e.body.detail.phase==='read_pending').length+1;
+    await this.journal.append(binding, 'read_pending', 'read', 'error', { cycle:cycles, missing_fact: '已有受理回执，原作业状态或结果原件尚未完整取得或保存；不是未执行', request_kind: 'repair', next_action: `只读未成功；修复连接、读取声明或本地存储后运行 circle-hub job resume ${binding.job}；不得重交` });
     await this.journal.append(binding, 'heartbeat', 'read', 'error', { lease_interrupted: true, note: '命令暂停，目标租约连续性未证实；恢复时只读原作业' });
+    if(cycles>=3)await this.unknown(binding,'原作业连续三轮未取得可用状态或结果；并非未执行，请具名管理员修复读取后继续，或按处置请求决定后续');
   }
   private async acquire(binding: JobBinding, d: ExecutorDefinition, client: RpcClient, context: Record<string, unknown>): Promise<RemoteLease> {
     const started={at:this.now().getTime(),mono:performance.now()};

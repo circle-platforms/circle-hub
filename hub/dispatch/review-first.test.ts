@@ -29,3 +29,20 @@ test('R02 rekeying an occupied executor cannot hide an unresolved effect',async 
   await assert.rejects(c.registry.update(c.admin,c.executor.id,{...c.executor.definition,resources:['synthetic/device/c']}),new RegExp(first.job));
   assert.equal(c.calls.filter(n=>n==='send_blob').length,1);
 });
+
+test('R03 accepted work awaiting a readable terminal cannot be disposed as if its effect were unknown',async t=>{
+  for(const choice of ['mark_failed','keep_unknown','reconcile'] as const) {
+    const c=await setup({alter:(name,v)=>name==='inspect_blob'?{ok:false,error:'synthetic unavailable'}:v});t.after(()=>c.close());
+    const state=await c.service.dispatch(c.admin,c.run,c.executor.id);assert.equal(state.outcome,'issued');assert.equal(state.frozen,false);
+    await assert.rejects(c.service.dispose(c.admin,state.job,{choice,remote_id:'synthetic-remote',reason:'synthetic',acceptPossibleDuplicateEffects:true}),/resume/);
+    assert.equal((await c.service.status(c.admin,state.job)).frozen,false);await c.close();
+  }
+});
+
+test('R03 repeated unreadable accepted work escalates to a named disposition request rather than occupying forever',async t=>{
+  const c=await setup({alter:(name,v)=>name==='inspect_blob'?{ok:false,error:'synthetic unavailable'}:v});t.after(()=>c.close());
+  const first=await c.service.dispatch(c.admin,c.run,c.executor.id);
+  await c.service.resume(c.admin,first.job);const third=await c.service.resume(c.admin,first.job);
+  assert.equal(third.frozen,true);assert.equal(c.calls.filter(n=>n==='send_blob').length,1);
+  assert.ok((await c.service.journal.events(first.job)).some(e=>e.body.detail.request_kind==='disposition'));
+});
