@@ -11,6 +11,7 @@ export function readFacets(input: { inputs: unknown[] }, target: { product: stri
   const v = source.model;
   if (!isRecord(v) || v.schema !== 'facet-view@1' || v.product !== target.product || !isRecord(v.build) || typeof v.build.build !== 'string' || !v.build.build || v.build.root !== target.fromRoot || v.kind !== 'case' || !Array.isArray(v.by) || v.by.length !== 1 || v.by[0] !== 'commands') return '分面视图必须是同一产品起始根的 kind=case&by=commands';
   if (typeof v.truncated !== 'boolean' || !Number.isInteger(v.total) || (v.total as number) < 0 || !Number.isInteger(v.skipped) || (v.skipped as number) < 0 || !Array.isArray(v.notes) || v.notes.some((n) => typeof n !== 'string') || !Array.isArray(v.rows)) return '分面视图缺少合式的计数、完整性或说明字段';
+  if ((v.skipped as number) > 0) return `分面视图有 ${v.skipped} 份来源未读，缺少完整的未归位计数；先修复这些来源并重新生产根，再绑定新根的完整分面视图，不能把未读范围当成没有`;
   if (v.truncated) return '分面视图被截断，缺少完整的未归位用例计数；先补取完整的 kind=case&by=commands 分面视图，再开始运行';
   const seen = new Set<unknown>();
   let unplaced = 0;

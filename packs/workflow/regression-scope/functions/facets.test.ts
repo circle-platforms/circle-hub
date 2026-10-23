@@ -44,3 +44,8 @@ test('a projected empty scope does not fabricate a check error', () => {
   const result = projectItems({ inputs: [{ slot: 'impact', sha256: SOURCE, model: view }, facetInput(view)] }) as { items: unknown[]; groups: unknown[] };
   assert.deepEqual(checkOutcomes('in_scope', { items: result.items, note: result.groups[0] }), []);
 });
+
+test('skipped facet sources refuse rather than disclose a false zero', () => {
+  const out = project(0, (v) => { v.model.skipped = 3; });
+  assert.equal(out.error?.code, 'regression-scope.facets_view'); assert.match(out.error?.message ?? '', /3 份来源未读/); assert.match(out.error?.message ?? '', /修复.*重新生产根/); assert.ok(!out.error?.message.includes('0 个用例'));
+});

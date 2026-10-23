@@ -33,8 +33,8 @@
     },
     {
       "path": "functions/facets.ts",
-      "sha256": "432abd5cabfc6abb9005f84f714b0c2d4965fa8d229855ccf1185aba5b2c10db",
-      "size": 2915
+      "sha256": "a7a7c3cfcdafc2cd52de8e467dc1e0e20510653374ec1b2c10dae9d26153aed2",
+      "size": 3153
     },
     {
       "path": "functions/generated/vocabulary.ts",

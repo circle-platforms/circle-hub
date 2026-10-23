@@ -52,3 +52,8 @@ test('index-coverage unknown is identical with and without the facets hint metad
   for (const check of ['command_exists', 'command_unchanged']) assert.deepEqual(checkOutcomes(check, { items: out.items, note: withHint }), checkOutcomes(check, { items: out.items, note: withoutHint }));
   const unknown = checkOutcomes('command_exists', { items: out.items, note: withHint }).find((v) => v.verdict === 'unknown'); assert.ok(unknown); assert.match(unknown.statement, /命令归属事实/);
 });
+
+test('skipped facet sources refuse rather than disclose a false zero', () => {
+  const out = project(0, (v) => { v.model.skipped = 3; });
+  assert.equal(out.error?.code, 'maintenance-sweep.facets_view'); assert.match(out.error?.message ?? '', /3 份来源未读/); assert.match(out.error?.message ?? '', /修复.*重新生产根/); assert.ok(!out.error?.message.includes('0 个用例'));
+});
