@@ -37,9 +37,9 @@ export function satisfiedRecipe(input: { run: unknown; result: unknown; submissi
     const required = itemResult.requirements.filter((v) => isRecord(v) && v.requirement === template.key);
     if (required.length !== 1 || !isRecord(required[0]) || required[0].status !== 'satisfied') throw new Error('计划必需要求项尚未全部满足；工作簿缺输入一项不能掩盖其他未决或反驳');
   }
-  const contract = parseRuntimeContract(jsonBytes(input.contract)); const inventory = parseManifest(jsonBytes(input.inventory));
+  const contract = parseRuntimeContract(jsonBytes(input.contract,'contract')); const inventory = parseManifest(jsonBytes(input.inventory,'inventory'));
   if (!contract.ok || !inventory.ok) throw new Error('绑定合约或台架清单无法重算');
-  const profile = parseProfile(jsonBytes(input.profile), contract.contract, inventory.beds); if (!profile.ok) throw new Error('绑定运行环境配置不合式');
+  const profile = parseProfile(jsonBytes(input.profile,'profile'), contract.contract, inventory.beds); if (!profile.ok) throw new Error('绑定运行环境配置不合式');
   const identity = itemResult.requirements.filter((v) => isRecord(v) && v.requirement === 'contract_methods').flatMap((v) => isRecord(v) && Array.isArray(v.claims) ? v.claims : []).find((v) => isRecord(v) && isRecord(v.statement) && v.statement.verdict === 'support' && isRecord(v.statement.data) && v.statement.data.runtime_version === contract.contract.runtimeVersion && v.statement.data.contract_sha256 === contract.contract.digest);
   if (!identity) throw new Error('缺少与绑定合约匹配的支持身份回执');
   const slots = record(submitted.slots, '缺少 plan 槽'); if (!Array.isArray(slots.plan) || slots.plan.length !== 1) throw new Error('plan 槽不是唯一提交');
@@ -52,8 +52,8 @@ export function satisfiedRecipe(input: { run: unknown; result: unknown; submissi
 export async function main(argv: string[]): Promise<number> {
   try {
     const args = argumentsOf(argv, ['run', 'result', 'submission', 'contract', 'profile', 'inventory', 'out']);
-    const [run, result, submission, contract, profile, inventory] = await Promise.all([readBytes(args.run), readBytes(args.result), readBytes(args.submission), readBytes(args.contract), readBytes(args.profile), readBytes(args.inventory)]);
-    const recipe = satisfiedRecipe({ run: jsonBytes(run), result: jsonBytes(result), submission: jsonBytes(submission), contract, profile, inventory });
+    const [run, result, submission, contract, profile, inventory] = await Promise.all([readBytes(args.run,'run'), readBytes(args.result,'result'), readBytes(args.submission,'submission'), readBytes(args.contract,'contract'), readBytes(args.profile,'profile'), readBytes(args.inventory,'inventory')]);
+    const recipe = satisfiedRecipe({ run: jsonBytes(run,'run'), result: jsonBytes(result,'result'), submission: jsonBytes(submission,'submission'), contract, profile, inventory });
     const bytes = generateWorkbook(recipe); await writeNew(args.out, bytes); process.stdout.write(JSON.stringify({ sha256: sha256(bytes), generator: GENERATOR, bytes: bytes.length }) + '\n'); return 0;
   } catch (error) { process.stderr.write(`生成失败：${error instanceof Error ? error.message : '输入无效'}\n`); return 1; }
 }
