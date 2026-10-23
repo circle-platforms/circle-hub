@@ -42,7 +42,7 @@ test('published relation quote rules have both polarities and published examples
   }
   StartRunInput.parse(JSON.parse(readFileSync(new URL('./examples/start-run.json',import.meta.url),'utf8')));
   const submission=Submission.parse(JSON.parse(readFileSync(new URL('./examples/submit-result.json',import.meta.url),'utf8')));
-  for(const item of submission.items){if(item.handling!=='handled')continue;for(const row of SlotClaim.array().parse(item.slots?.contribution??[]))ContributionInput.parse({...row.data,kind:row.code,statement:row.text});}
+  for(const item of submission.items){if(item.handling!=='handled')continue;for(const row of SlotClaim.array().parse(item.slots?.contribution??[])){const input=ContributionInput.parse({...row.data,kind:row.code,statement:row.text});assert.equal(input.source.reference,`tree:${input.root}${input.path}`);}}
 });
 test('manifest projection is deterministic and refuses malformed input with a correction',()=>{
   const input={inputs:[{slot:'subject',external:null,sha256:'1'.repeat(64),media_type:'application/json',parser:'json@1',model:{items:[{id:'one',title:'one'}]},meta:null}],parameters:{},context:{}};

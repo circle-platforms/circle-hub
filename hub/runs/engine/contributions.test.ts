@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { DOCUMENT_OUTPUT_KIND, TASK_OUTPUT_KIND, VALIDITY_STATUS_LABEL, labelOf } from '../../../contracts/generated/vocabulary.ts';
 import { GetNodesOutput, SubmitResultOutput } from '../../../contracts/src/tools.ts';
 import { KnowledgeContributionBody, KnowledgeContributionView } from '../../../contracts/src/contributions.ts';
-import { CORE_VIOLATION_CODES } from '../../../contracts/generated/protocol.ts';
+import { CORE_VIOLATION_CODES, PROTOCOL_CODES } from '../../../contracts/generated/protocol.ts';
 import { canonicalize, LimitError, type FindQuery, type Transaction } from '../../records/api.ts';
 import { createDefaultRegistry } from '../../refs/api.ts';
 import { startPostgres, type TemporaryPostgres } from '../../testing/postgres.ts';
@@ -283,12 +283,17 @@ test('a nonadmin writes tree-grounded contributions but cannot bind an admin-onl
   const manifest=await w.kit.artifacts.ingest({bytes:new TextEncoder().encode(JSON.stringify({items:DOCUMENT_OUTPUT_KIND.map(id=>({id,title:id}))})),mediaType:'application/json',origin:{upload:{session:'user-session',message:null}},author:{user:w.user.id},provenanceType:'declared',visibility:{readers:[w.user.id],admins:true,packs:[],shareable:false}});
   const input={pack:'knowledge-contribution',product:'Acme',build:w.b.name,inputs:{subject:{reference:`src:${manifest.body.sha256}`}}};
   const started=await w.service.startRun(w.user,input,{...call,sessionId:'user-session'});assert.equal(started.call_result,'ok',JSON.stringify(started.errors));
-  const result=await w.service.submitResult(w.user,{...w.args(),run:started.run!.run},{...call,sessionId:'user-session'});assert.equal(result.result?.contributions?.stored.length,4,JSON.stringify(result.errors));
+  const originalPage=await w.knowledge.getNodes({root:w.root,paths:['/commands/system/show'],depth:0},w.user);assert.ok(originalPage?.nodes[0].reference);
+  const submitted=w.args();for(const item of submitted.items)item.slots.contribution[0].data.source.reference=originalPage.nodes[0].reference;
+  const result=await w.service.submitResult(w.user,{...submitted,run:started.run!.run},{...call,sessionId:'user-session'});assert.equal(result.result?.contributions?.stored.length,4,JSON.stringify(result.errors));
   const page=await w.knowledge.getNodes({root:w.root,paths:['/commands/system/show'],depth:0},w.user);
   assert.ok(page!.nodes[0].contributions!.map(view=>KnowledgeContributionView.parse(view)).every(v=>v.contribution.submitted_by===w.user.id));
   assert.ok(GetNodesOutput.safeParse({call_result:'ok',errors:[],trace:call.traceId,root:w.root,...page}).success);
   const denied=await w.service.startRun(w.user,{...input,inputs:{...input.inputs,originals:{reference:`src:${w.original}`}}},call);
-  assert.equal(denied.call_result,'error');assert.ok(denied.errors.some(e=>e.code==='SOURCE_UNAVAILABLE'&&Boolean(e.fix)));
+  assert.equal(denied.call_result,'error');const neutral=denied.errors.find(e=>e.code==='SOURCE_UNAVAILABLE');assert.equal(neutral?.fix,PROTOCOL_CODES.SOURCE_UNAVAILABLE.fix);
+  const published=(await w.workflows.byDigest(started.run!.pack_digest))!;const skill=published.instructions;
+  assert.ok(!Object.hasOwn((published.readJson('examples/start-run.json') as {inputs:object}).inputs,'originals'));
+  for(const number of ['1.','3.']) {const step=skill.split('\n').find(line=>line.startsWith(number));assert.match(step??'',/非管理员.*tree:.*不绑定 originals/);}
 });
 
 test('node contribution pages are bounded, use limited index queries and resume without loss or duplication',async t=>{
