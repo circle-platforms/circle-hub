@@ -12,9 +12,12 @@ export interface IndexReport {
   incomplete: string[];
   incompleteSummary: IncompleteCategory[];
 }
+export class IndexInputError extends Error {readonly reason:'wrong_view'|'malformed_view'|'gold'|'read'|'json'|'write';constructor(reason:'wrong_view'|'malformed_view'|'gold'|'read'|'json'|'write',message:string){super(message);this.name='IndexInputError';this.reason=reason;}}
+function indexView(raw:unknown):Record<string,any>{if(!record(raw)||raw.schema!=='index-view@1'||raw.kind!=='case'||raw.key!=='document')throw new IndexInputError('wrong_view','需要第 2 步的 kind=case、key=document 索引导出');if(!record(raw.build)||typeof raw.build.root!=='string'||!/^[a-f0-9]{64}$/.test(raw.build.root)||!record(raw.entries)||!record(raw.keys)||typeof raw.truncated!=='boolean')throw new IndexInputError('malformed_view','索引视图格式不对');if(typeof raw.product!=='string'||!raw.product||typeof raw.build.build!=='string'||!raw.build.build||![raw.total_keys,raw.total_entries,raw.skipped].every(v=>typeof v==='number'&&Number.isSafeInteger(v)&&v>=0)||!Array.isArray(raw.notes)||raw.notes.some(v=>typeof v!=='string')||raw.only!==undefined&&(!Array.isArray(raw.only)||raw.only.some(v=>typeof v!=='string')))throw new IndexInputError('malformed_view','索引视图缺少合式的产品、构建、总数、说明或分片范围字段');return raw;}
 export function compareCommandIndex(gold: CommandsGold, views: readonly unknown[]): IndexReport {
-  if (gold.schema !== 'case-commands-gold@1' || !Array.isArray(gold.cases) || !Array.isArray(gold.documents)) throw new Error('金标准格式不对');
-  const incomplete: string[] = [];
+  if (!gold || gold.schema !== 'case-commands-gold@1' || !Array.isArray(gold.cases) || !Array.isArray(gold.documents)) throw new IndexInputError('gold','金标准格式不对');
+  const incomplete: string[] = [];const reasons:IncompleteCategory[]=[];let rejectedViews=0;
+  const gap=(category:string,missing:string,action:string,message:string,count=1)=>{incomplete.push(message);reasons.push({category,count,missing,action});};
   const caseCounts = new Map(gold.documents.map((doc) => [doc, gold.document_cases?.[doc] ?? gold.cases.filter((c) => c.document === doc).length]));
   const expectedDocuments = gold.documents.filter((doc) => (caseCounts.get(doc) ?? 0) > 0);
   const zeroDocuments = gold.documents.filter((doc) => caseCounts.get(doc) === 0);
@@ -31,16 +34,18 @@ export function compareCommandIndex(gold: CommandsGold, views: readonly unknown[
   let full = false;
   let root: string | undefined;
   let product: string | undefined;
-  for (const raw of views) {
-    if (!record(raw) || raw.schema !== 'index-view@1' || raw.kind !== 'case' || raw.key !== 'document' || !record(raw.build) || typeof raw.build.root !== 'string' || !/^[a-f0-9]{64}$/.test(raw.build.root) || !record(raw.entries) || !record(raw.keys) || typeof raw.truncated !== 'boolean') { hubDefects.push('索引视图格式不对'); continue; }
-    if (root !== undefined && (root !== raw.build.root || product !== raw.product)) incomplete.push('索引根或产品不同');
+  for (const value of views) {
+    const identity=record(value)&&value.schema==='index-view@1'&&value.kind==='case'&&value.key==='document';
+    if(identity){if(Array.isArray(value.only))for(const key of value.only)requested.add(documentKey(String(key)));else full=true;}
+    let raw:Record<string,any>;try{raw=indexView(value);}catch(error){if(!(error instanceof IndexInputError))throw error;rejectedViews++;if(error.reason==='wrong_view')gap('视图类型不符','第 2 步的文档用例索引','用第 2 步指定的 key=document、kind=case 引用重新导出',error.message);else hubDefects.push(error.message);continue;}
+    if (root !== undefined && (root !== raw.build.root || product !== raw.product)) gap('根不一致','同一产品和根的分片','重新导出同一产品和构建根的全部分片','索引根或产品不同');
     root = raw.build.root; product = String(raw.product);
     const cut = Array.isArray(raw.cut_keys) ? raw.cut_keys : [];
     for (const key of cut) if (typeof key === 'string') cutDocuments.add(key); else hubDefects.push('cut_keys 含有不是文档键的值');
     if (raw.cut_keys !== undefined && !Array.isArray(raw.cut_keys)) hubDefects.push('cut_keys 不是数组');
-    if (raw.truncated && !cut.length) incomplete.push('索引分片仍被截断：重新按 only= 分成更小的导出');
+    if (raw.truncated && !cut.length) gap('分片截断','完整索引分片','按 only= 分成更小分片后重新导出','索引分片仍被截断：重新按 only= 分成更小的导出');
     if (!Number.isSafeInteger(raw.skipped) || (raw.skipped as number) < 0) hubDefects.push('索引缺少合式的 skipped 元数据');
-    else if (raw.skipped !== 0) incomplete.push('索引有未读来源：修复来源后重新导出');
+    else if (raw.skipped !== 0) gap('未读来源','来源完整性','修复来源并重新生产根，再导出索引','索引有未读来源：修复来源后重新导出');
     if (Array.isArray(raw.only)) for (const key of raw.only) requested.add(documentKey(String(key)));
     else full = true;
     const listed = new Set<string>();
@@ -72,9 +77,9 @@ export function compareCommandIndex(gold: CommandsGold, views: readonly unknown[
       declared.set(key, commands);
     }
   }
-  if (cutDocuments.size) incomplete.push(`单键截断 ${cutDocuments.size} 个文档：缺少完整条目；only= 无法拆开同一文档键，交集成者协调提高单键上限后重导`);
-  if (!views.length) incomplete.push('没有索引视图');
-  if (!full && expectedDocuments.some((doc) => !requested.has(documentKey(doc)))) incomplete.push('分片没有请求全部金标准文档：补导出缺少的 only= 文档');
+  if(cutDocuments.size)gap('单键截断','文档键下被截掉的完整条目','交集成者协调提高单键上限后重导；only= 不能拆开同一键',`单键截断 ${cutDocuments.size} 个文档：缺少完整条目`,cutDocuments.size);
+  if (!views.length) gap('没有视图','索引导出文件','提供完整索引视图及其分片','没有索引视图');
+  if (!full && rejectedViews===0 && expectedDocuments.some((doc) => !requested.has(documentKey(doc)))) gap('缺少分片','金标准文档对应的全部分片','补齐对应 only= 分片再比较','分片没有请求全部金标准文档：补导出缺少的 only= 文档');
   for (const [key, paths] of hub) if (JSON.stringify(sorted(paths)) !== JSON.stringify(sorted(declared.get(key) ?? []))) dataMismatches.add(key);
   const goldMap = new Map(gold.cases.filter((c) => c.comparable).map((c) => [c.key, new Set(c.paths.map((p) => p.path))]));
   const goldKeys = new Set(goldMap.keys()); const hubKeys = new Set(hub.keys());
@@ -106,8 +111,8 @@ export function compareCommandIndex(gold: CommandsGold, views: readonly unknown[
     entry_data_mismatches: dataMismatches.size, hub_entry_defects: hubDefects.length,
   };
   const equal = !hubDefects.length && !onlyGold.length && !onlyHub.length && !different.length && !dataMismatches.size && !counts.documents_gold_only && !counts.documents_hub_only;
-  return { verdict: incomplete.length ? '输入不全' : equal ? '相等' : '不相等', counts, hashes: { gold: sha256(JSON.stringify(table(goldMap))), hub: sha256(JSON.stringify(table(hub))) },
-    details: { hub_entry_defects: hubDefects, documents_zero_case: zeroDocuments, documents_gold_only: difference(expectedDocuments, hubDocs), documents_hub_only: difference(hubDocs, new Set(expectedDocuments)), cases_gold_only: onlyGold, cases_hub_only: onlyHub, paths: different, entry_data_mismatches: sorted(dataMismatches) }, incomplete: sorted(incomplete), incompleteSummary: summarizeIncomplete(incomplete) };
+  return { verdict: hubDefects.length ? '不相等' : incomplete.length ? '输入不全' : equal ? '相等' : '不相等', counts, hashes: { gold: sha256(JSON.stringify(table(goldMap))), hub: sha256(JSON.stringify(table(hub))) },
+    details: { hub_entry_defects: hubDefects, documents_zero_case: zeroDocuments, documents_gold_only: difference(expectedDocuments, hubDocs), documents_hub_only: difference(hubDocs, new Set(expectedDocuments)), cases_gold_only: onlyGold, cases_hub_only: onlyHub, paths: different, entry_data_mismatches: sorted(dataMismatches) }, incomplete: sorted(incomplete), incompleteSummary: mergeIncomplete(reasons) };
 }
 export function renderIndexReport(report: IndexReport): string {
   const labels: Record<string, string> = {
@@ -130,14 +135,14 @@ export function main(argv: string[]): number {
   if (!flags.has('--gold') || !flags.has('--index')) { process.stderr.write(usage); return 2; }
   let phase = '金标准';
   const read = (file: string): unknown => {
-    let text: string; try { text = readFileSync(file, 'utf8'); } catch { throw new Error('文件不可读，请重新导出该类文件'); }
-    try { return JSON.parse(text) as unknown; } catch { throw new Error('不是有效 JSON，请按原样重新导出'); }
+    let text: string; try { text = readFileSync(file, 'utf8'); } catch { throw new IndexInputError('read','文件不可读，请重新导出该类文件'); }
+    try { return JSON.parse(text) as unknown; } catch { throw new IndexInputError('json','不是有效 JSON，请按原样重新导出'); }
   };
   try {
     const gold = read(flags.get('--gold')![0]) as CommandsGold;
     const views = flags.get('--index')!.map((file, i) => { phase = `索引分片 ${i + 1}`; return read(file); });
     phase = '输入核对'; const report = compareCommandIndex(gold, views);
-    if (flags.has('--out')) { phase = '报告输出'; try { writeFileSync(flags.get('--out')![0], `${JSON.stringify(report, null, 2)}\n`); } catch { throw new Error('报告不可写，请换可写的输出位置'); } }
+    if (flags.has('--out')) { phase = '报告输出'; try { writeFileSync(flags.get('--out')![0], `${JSON.stringify(report, null, 2)}\n`); } catch { throw new IndexInputError('write','报告不可写，请换可写的输出位置'); } }
     process.stdout.write(`${renderIndexReport(report)}\n`); return report.verdict === '相等' ? 0 : 1;
   } catch (error) { process.stderr.write(`读取或比较失败：${phase}：${error instanceof Error ? error.message : '输入无效'}\n`); return 1; }
 }
@@ -165,3 +170,5 @@ export function summarizeIncomplete(reasons: readonly string[]): IncompleteCateg
   return [...grouped.values()].sort((a, b) => a.category < b.category ? -1 : a.category > b.category ? 1 : 0);
 }
 export function renderIncomplete(rows: readonly IncompleteCategory[]): string[] { return rows.map((v) => `输入不全：${v.category} ${v.count} 项；缺少${v.missing}；下一步：${v.action}`); }
+
+function mergeIncomplete(rows:readonly IncompleteCategory[]):IncompleteCategory[]{const groups=new Map<string,IncompleteCategory>();for(const row of rows){const previous=groups.get(row.category);if(previous)previous.count+=row.count;else groups.set(row.category,{...row});}return [...groups.values()].sort((a,b)=>a.category<b.category?-1:a.category>b.category?1:0);}
