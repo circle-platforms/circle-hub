@@ -466,7 +466,9 @@ async function validate(base: Basis, submission: Submission, before: ProtocolErr
   const origin: ProducerOrigin = { sessions: [run.session ?? null, sessionOf(call)], model: submission.model };
   const author: AuthorOrigin | null = await authorOriginOf(ctx, run);
   const moved = (errors: ProtocolError[]): ProtocolError[] => errors.map((e) => (positions === null || e.path === undefined ? e : { ...e, path: remap(e.path, positions) }));
-  const rejection = [...withRounds(workflow,submission,attribute(before),roundsUsed), ...moved(withRounds(workflow, submission, attribute([...structure, ...exact.errors]), roundsUsed))];
+  // Partial-schema errors already carry original argument positions and rounds.
+  const prior = before.map(error => { const attributed = attribute([error])[0]; return attributed.requirement === error.requirement ? error : withRounds(workflow, submission, [attributed], roundsUsed)[0]; });
+  const rejection = [...prior, ...moved(withRounds(workflow, submission, attribute([...structure, ...exact.errors]), roundsUsed))];
   const input = {
     run,
     workflow,

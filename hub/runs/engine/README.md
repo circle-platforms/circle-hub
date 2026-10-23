@@ -387,3 +387,5 @@ read; results, run records and production results over the record limit; queries
    Deviations)? The engine keeps the Hub's facts and makes only the judgment requirements incomplete.
 4. Is the family rule of decision 19 acceptable until a declared family exists? It treats any shared word as one family
    (`aster-chat` and `birch-4-chat` share `chat`), which errs towards `not_independent`.
+
+部分结构拒绝保留原参数索引上的要求项与修复轮信息；只在回注槽位被明确重新归属时重算其轮数，不能用压紧后的 cross_item 索引给别的要求项记轮。

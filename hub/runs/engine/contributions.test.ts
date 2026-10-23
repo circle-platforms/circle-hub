@@ -69,7 +69,7 @@ test('a refused digest stays refused after source recovery; a new submission can
   assert.equal(changed.result?.contributions?.stored.length,4,JSON.stringify(changed.errors));
 });
 
-async function setup(t: {after(fn:()=>Promise<void>):void}, options: {task?:boolean;declaredRoot?:boolean;wrappedDeclaration?:boolean;refute?:boolean;acceptedRoot?:boolean;hiddenOriginal?:boolean;pageBytes?:number;treeEntries?:number} = {}) {
+async function setup(t: {after(fn:()=>Promise<void>):void}, options: {ordinary?:boolean;task?:boolean;declaredRoot?:boolean;wrappedDeclaration?:boolean;refute?:boolean;acceptedRoot?:boolean;hiddenOriginal?:boolean;pageBytes?:number;treeEntries?:number} = {}) {
   const w = await makeWorld(postgres,{knowledge:{limits:{pageBytes:options.pageBytes??2*1024*1024}},...(options.treeEntries?{pack:{declaration:{producers:[DEFAULT_PRODUCERS[0],extraProducer('large_tree',{entries:Array.from({length:options.treeEntries},(_,i)=>({kind:'behaviour',path:'/commands/system/show',statement:'合成树条目 '+i+' '+ 'tree '.repeat(400),data:{i},fragments:[{parser:'xml@1',selector:'x/catalog/group[1]'}],applicability:null}))})]}}}:{})}); t.after(()=>w.close());
   const b = build('Rel_ACME_1_2_15');
   w.external.set(b.sources.tree,{bytes:new TextEncoder().encode(catalogXml(BASE_CATALOG)+(options.hiddenOriginal?'<!-- 仅原件中存在的合成说明 -->':'')),mediaType:'application/xml'});
@@ -92,6 +92,11 @@ async function setup(t: {after(fn:()=>Promise<void>):void}, options: {task?:bool
   const original = composition!.sources[0].sha256;
   const workflows = new FakeWorkflowStore();
   const pack = await workflows.add(fileURLToPath(new URL('../../../packs/workflow/knowledge-contribution/',import.meta.url)));
+  if(options.ordinary) {
+    const { contribution: _contribution, ...ordinary } = pack.workflow; pack.workflow = {...ordinary,product:{id:w.product.product.id,catalogs:[]}};
+    pack.requirements.push(...['first','second'].map(key => ({...pack.requirements[0], key, target:'run' as const, required:false, error_handling:[{code:'*',action:'repair' as const,max_rounds:3}]})));
+    pack.slots.run = { first: {min:0,max:1,codes:[{code:'first_code',label:'合成第一项'}]}, second:{min:0,max:1,codes:[{code:'second_code',label:'合成第二项'}]} };
+  }
   if(options.refute) {
     const previous=pack.readJson.bind(pack);
     pack.readJson=path=>path==='tables/shape.json'?{...previous(path) as object,rules:[{fields:[{path:'/not_present',required:true}]}]}:previous(path);
@@ -480,4 +485,15 @@ test('credential-bearing model declarations never enter product-readable contrib
   assert.deepEqual(await w.knowledge.layers.contributions.list(w.root,['/commands/system/show'],w.user),[]);
   const page=await w.knowledge.getNodes({root:w.root,paths:['/commands/system/show'],depth:0},w.user);
   assert.ok(!JSON.stringify(page).includes('synthetic-secret'));
+});
+
+
+test('ordinary partial cross item errors keep original indexes and do not charge another requirement',async t=>{
+  const w=await setup(t,{ordinary:true});
+  const args={...w.args(),cross_item:[{nature:'judgment',statement:'合成无编号项',grounds:[],unexpected:true},{nature:'judgment',statement:'合成第二项',grounds:[],code:'second_code'}]};
+  const result=await w.service.submitResult(w.admin,args,call);
+  const error=result.errors.find(e=>e.path==='/cross_item/0/unexpected'); assert.ok(error,JSON.stringify(result.errors));
+  assert.equal(error.requirement,undefined); assert.equal(error.rounds_left,undefined);
+  const actions=await w.kit.store.find({key:'runs.action.run',value:w.run.run,kind:'action',limit:100});
+  for(const action of actions.items) {const repair=(action.body as {detail?:{repair?:string[]}}).detail?.repair; if(repair) assert.ok(!repair.includes('second'));}
 });
