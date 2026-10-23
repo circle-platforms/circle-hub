@@ -464,11 +464,16 @@ accepted.
   handed to K1 without a selector, because K1 counts such a block as malformed and skips it, so the text would disappear
   from the knowledge with only a count left behind.
 - A paragraph entry cites the source line step one verified verbatim, and a table is mapped as the engine's own rows, one
-  line each, in the order head, body and foot give them, with the delimiter row (`| --- | --- |`) K1's pipe-table reader
-  needs under the header. The delimiter is a produced line and carries no citation; every row line carries that row's own:
-  the range covering the row's verified cells. A row entry therefore cites the line the row is written on, never the
-  header's line and never a byte range inside the mapped text. A row whose cells were not verified is left out of the
-  mapped table and reported with the table's file and line; it never borrows another row's source line.
+  line each, in the order head, body and foot give them: the head row is K1's header, a table the engine reads without a
+  head row gets an empty header line (never a body row promoted into one, and that produced line cites the table's own
+  source range), a cell that spans source lines stays on its row line, and every character reference in a cell is decoded,
+  the numeric ones included. Nothing is regrouped by verified line number, so no row is merged, split, dropped or
+  invented; a table whose rows the engine reads with unequal cell counts is mapped as the engine reports it and reported
+  in the production warnings, with the delimiter row (`| --- | --- |`) K1's pipe-table reader needs under the header. The
+  delimiter is a produced line and cites nothing; every row line carries that row's own citation: the range covering the
+  row's verified cells. A row entry therefore cites the line the row is written on, never the header's line and never a
+  byte range inside the mapped text. A row whose cells were not verified at all is left out of the mapped table and
+  reported with the table's file and line; it never borrows another row's source line.
 - Only an explicit structure gives a signature (task item 6): a command-table row (under a header that names commands, two
   bold runs joined by a slash also split), every line of a `[role=signature]` block (a line without marks gains the bold
   marks the role declares), and a bold signature paragraph that verifies verbatim. A title, ordinary bold prose and an

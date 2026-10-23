@@ -85,15 +85,14 @@ function macroText(text: string): string {
 }
 
 /**
- * The words of a text, for comparison only: tags dropped, character references decoded, inline macros reduced to their
- * text, backslash escapes resolved, inline markup marks dropped, the engine's typographic replacements folded back to
- * ASCII and white space collapsed. A source line and the engine's converted text of that line fold to the same words;
- * two different lines that fold the same are not told apart, which is why a fold never decides a citation by itself
- * (origins.ts takes exactly one candidate, and the engine's own cursor decides among lines that hold the same text) and
- * never becomes a statement.
+ * The words of a text, for comparison only: character references decoded, inline macros reduced to their text,
+ * backslash escapes resolved, inline markup marks dropped, the engine's typographic replacements folded back to ASCII
+ * and white space collapsed. Two different lines that fold the same are not told apart, which is why a fold never
+ * decides a citation by itself (origins.ts takes exactly one candidate, and the engine's own cursor decides among lines
+ * that hold the same text) and never becomes a statement.
  */
-export function plainText(text: string): string {
-  const decoded = decodeReferences(macroText(text).replace(/<[^>]*>/gu, ''));
+function fold(text: string): string {
+  const decoded = decodeReferences(macroText(text));
   let out = '';
   for (let i = 0; i < decoded.length; i++) {
     const ch = decoded[i] as string;
@@ -105,6 +104,16 @@ export function plainText(text: string): string {
     out += TYPOGRAPHIC[ch] ?? ch;
   }
   return squeeze(out);
+}
+
+/** The fold of a source line: `<name>` in what an author wrote is text, so no tag is stripped. */
+export function plainText(text: string): string {
+  return fold(text);
+}
+
+/** The fold of the engine's converted text: its tags are markup, and its character references are the escaped text. */
+export function plainConverted(text: string): string {
+  return fold(text.replace(/<[^>]*>/gu, ''));
 }
 
 /** AsciiDoc inline markup marks dropped and escapes resolved, attributes left as the caller expanded them. */

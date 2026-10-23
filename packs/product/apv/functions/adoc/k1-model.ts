@@ -10,7 +10,7 @@
 // field K1 copies into its fragments is a key of this model, which entries.ts turns into the fragment the Hub verifies.
 import type { Block, Composition, ExpandedModel, VerifiedRange } from './types.ts';
 import type { MarkdownBlock, MarkdownSection } from '../../../../../hub/refs/api.ts';
-import { inlineMarkdown, plainText } from './text.ts';
+import { inlineMarkdown, plainConverted, plainText } from './text.ts';
 import { utf8Offsets } from '../util.ts';
 
 /**
@@ -150,35 +150,46 @@ function cellOrigins(row: ReadonlyArray<{ origins: VerifiedRange[] }>): Verified
   return parts;
 }
 
+/** One table of the mapped model: its text, the citation of every line K1 can cite, and what the engine's own row
+ * model would not let stand (a row with no verified cell, a row whose cell count differs from the header's). */
+interface Table {
+  text: string;
+  rowCites: RowCite[];
+  dropped: number[];
+  cite: Citation | null;
+  misaligned: Array<{ row: number; cells: number; header: number }>;
+}
+
 /**
  * The mapped text of a table and the citation of every line K1 can cite: the engine's own rows, one line each, in the
- * order head, body and foot give them, with the delimiter row K1's pipe-table reader needs under the header (a produced
- * line, never a source line, so it carries no citation). A row whose cells were not verified is left out and reported:
- * it never borrows another row's line. The byte ranges are computed exactly as K1 computes them over this text, so the
- * range in a fragment K1 makes finds the row it names.
+ * order head, body and foot give them, with the head row as K1's header and the delimiter row K1's pipe-table reader
+ * needs under it. Nothing is regrouped by line number, so a row the engine reads as one row stays one row, a cell that
+ * spans source lines stays on its own row line, and a table the engine reads without a head row gets an empty header
+ * line instead of a body row promoted into one. The delimiter and an empty header are produced lines and cite no row of
+ * the source: the delimiter cites nothing, the empty header the table's own range. The byte ranges are computed exactly
+ * as K1 computes them over this text, so the range in a fragment K1 makes finds the row it names.
  */
-function tableOf(block: Block, digestOf: (file: string) => string): { text: string; rowCites: RowCite[]; dropped: number[]; cite: Citation | null } {
-  if (block.rows === undefined) return { text: block.expanded, rowCites: [], dropped: [], cite: mergedCitation(block.origins, digestOf) };
-  const rows = [...block.rows.head, ...block.rows.body, ...block.rows.foot];
-  const kept: Array<{ line: string; cells: number; cite: Citation }> = [];
-  const dropped: number[] = [];
+function tableOf(block: Block, digestOf: (file: string) => string): Table {
+  const none: Table = { text: '', rowCites: [], dropped: [], cite: null, misaligned: [] };
+  if (block.rows === undefined) return { ...none, text: block.expanded, cite: mergedCitation(block.origins, digestOf) };
   const verified: VerifiedRange[] = [];
-  rows.forEach((row, index) => {
+  const rows = [...block.rows.head, ...block.rows.body, ...block.rows.foot].map((row, index) => {
     const origins = cellOrigins(row);
-    for (const origin of origins) if (!verified.some((one) => one === origin)) verified.push(origin);
-    const cite = mergedCitation(origins, digestOf);
-    if (cite === null) {
-      dropped.push(index);
-      return;
-    }
-    const cells = row.map(cellText);
-    kept.push({ line: rowOf(cells), cells: cells.length, cite });
+    for (const origin of origins) if (!verified.includes(origin)) verified.push(origin);
+    return { index, cells: row.map(cellText), cite: mergedCitation(origins, digestOf) };
   });
   const cite = mergedCitation(verified, digestOf);
-  if (kept.length === 0) return { text: '', rowCites: [], dropped, cite: null };
-  const delimiter = rowOf(Array.from({ length: kept[0]!.cells }, () => '---'));
-  const lines = [kept[0]!.line, delimiter, ...kept.slice(1).map((row) => row.line)];
-  const cites: Array<Citation | null> = [kept[0]!.cite, null, ...kept.slice(1).map((row) => row.cite)];
+  const dropped = rows.filter((row) => row.cite === null).map((row) => row.index);
+  const header = block.rows.head.length > 0 ? rows[0]! : null;
+  const cited = header !== null && header.cite !== null;
+  const body = (header === null ? rows : rows.slice(1)).filter((row) => row.cite !== null);
+  if (!cited && body.length === 0) return { ...none, dropped };
+  const cells = cited ? header!.cells.length : body[0]!.cells.length;
+  const headerLine = cited ? rowOf(header!.cells) : rowOf(Array.from({ length: cells }, () => ''));
+  const headerCite = cited ? header!.cite : cite;
+  if (headerCite === null) return { ...none, dropped };
+  const lines = [headerLine, rowOf(Array.from({ length: cells }, () => '---')), ...body.map((row) => rowOf(row.cells))];
+  const cites: Array<Citation | null> = [headerCite, null, ...body.map((row) => row.cite)];
   const text = lines.join('\n');
   // The byte ranges of the lines of this text, as K1's lineRanges computes them: [start of the line, offset of its
   // line break or of the end of the text].
@@ -194,7 +205,13 @@ function tableOf(block: Block, digestOf: (file: string) => string): { text: stri
       line++;
     }
   }
-  return { text, rowCites, dropped, cite };
+  // A table the engine reads with rows of unequal cell count is mapped as the engine reports it and reported: the row
+  // structure is the engine's, never a repair of the source. A row that carries no citation is reported too, so the
+  // shape the engine gave is disclosed even when part of it stays out of the mapped text.
+  const misaligned: Array<{ row: number; cells: number; header: number }> = [];
+  const reference = cited ? header : body[0]!;
+  for (const row of rows) if (row !== reference && row.cells.length !== cells) misaligned.push({ row: row.index, cells: row.cells.length, header: cells });
+  return { text, rowCites, dropped, cite, misaligned };
 }
 
 /** The text this block carries into the mapped model; '' for a container whose children carry its content. */
@@ -215,7 +232,7 @@ function describedEntry(term: Block, value: Block | undefined): { text: string; 
   const origin = term.origins.length === 1 ? term.origins[0]! : null;
   const other = value.origins.length === 1 ? value.origins[0]! : null;
   if (origin === null || other === null || origin.file !== other.file || origin.from !== other.from || origin.to !== other.to) return null;
-  if (plainText(origin.verbatim) !== plainText(`${term.raw}:: ${value.raw}`)) return null;
+  if (plainText(origin.verbatim) !== plainConverted(`${term.raw}:: ${value.raw}`)) return null;
   return { text: `${inlineMarkdown(term.raw)}:: ${inlineMarkdown(value.raw)}`, origin };
 }
 
@@ -281,6 +298,7 @@ export function toK1Model(model: ExpandedModel, composition: Composition, manual
     });
   };
   const uncited: Uncited[] = [];
+  const misaligned: string[] = [];
   for (let at = 0; at < model.blocks.length; at++) {
     const block = model.blocks[at]!;
     if (block.kind === 'section') continue;
@@ -320,9 +338,18 @@ export function toK1Model(model: ExpandedModel, composition: Composition, manual
     for (const row of table?.dropped ?? []) {
       uncited.push(uncitedOf(model, block, `表格的第 ${row + 1} 行（按引擎的行模型数）没有已核对的单元格，这一行没有进映射，也没有借用别的行的来源行`));
     }
+    for (const row of table?.misaligned ?? []) {
+      misaligned.push(`${placeOf(model, block)} 的表格第 ${row.row + 1} 行（按引擎的行模型数）有 ${row.cells} 格，表头有 ${row.header} 格`);
+    }
     emit(block, kindOf(block), text, cite, table === null ? undefined : table.rowCites);
   }
   const warnings: string[] = [];
+  if (misaligned.length > 0) {
+    warnings.push(
+      `有 ${misaligned.length} 个表格行的格数与表头不一致，按引擎给出的行原样映射，没有重组也没有补格：${misaligned.slice(0, 5).join('；')}${misaligned.length > 5 ? ' 等' : ''}。` +
+        '下一步：核对这些表格的列定义和竖线（行末多一个竖线会让引擎多读一格），修好源后按同一修订号重跑。',
+    );
+  }
   if (uncited.length > 0) {
     const shown = uncited.slice(0, 5).map((one) => `${one.kind} ${one.file ?? '展开文本'}${one.line === null ? '' : `:${one.line}`}`).join('、');
     warnings.push(
@@ -341,6 +368,14 @@ function linesOf(selector: string): [number, number] {
   const from = Number(dash < 0 ? body : body.slice(0, dash));
   const to = Number(dash < 0 ? body : body.slice(dash + 1));
   return [Number.isFinite(from) ? from : 1, Number.isFinite(to) ? to : from];
+}
+
+/** Where the engine put a block: the file and line of its own report, or the line of the expanded text. */
+function placeOf(model: ExpandedModel, block: Block): string {
+  const line = block.reportedLine;
+  if (line === null) return '行号不明的块';
+  const file = line >= 1 && line <= model.line_map.length ? model.line_map[line - 1]!.file : null;
+  return file === null ? `展开文本第 ${line} 行` : `${file}:${line}`;
 }
 
 /** A block or row the mapping does not place: what the engine reported for it, where, and why no citation exists. */

@@ -6,8 +6,12 @@
 // citation or a statement. Among several candidates that all hold this exact text, the one at the engine's own cursor is
 // the block's line; a citation is emitted only when one candidate is left, and it is the source line re-read verbatim.
 import { sourceLines } from './input.ts';
-import { plainText } from './text.ts';
+import { plainConverted, plainText } from './text.ts';
 import type { AdocInput, MappedLine, VerifiedRange } from './types.ts';
+
+/** The contexts whose text the engine hands over converted (tags and character references); every other context keeps the
+ * source spelling, so a `<name>` an author wrote stays text and is not folded away as a tag. */
+const CONVERTED: ReadonlySet<string> = new Set(['list_item', 'table_cell', 'section', 'floating_title']);
 
 export interface VerifyContext {
   /** The lines of every original file, when the caller already read them (text@1's own decoding). */
@@ -80,7 +84,7 @@ function lineMatches(kind: string, expected: string, source: string, expand: (te
     if (kind === 'list_item') return source.replace(/^\s*(?:\*+|[-.]|[0-9]+[.)]) +/, '') === expected;
     return source === expected;
   }
-  const want = plainText(expected);
+  const want = (CONVERTED.has(kind) ? plainConverted : plainText)(expected);
   if (want === '') return false;
   return variantsOf(kind, source).some((variant) => plainText(expand(variant)) === want);
 }

@@ -38,18 +38,18 @@
     },
     {
       "path": "functions/adoc/k1-model.ts",
-      "sha256": "08b9c81ec60ea2c12f49b6be7d939a1479111c43475448a054aeb8a0f47ea93a",
-      "size": 17960
+      "sha256": "cdedc8bede0293d2ee4c598edb5d587e0d3e5100cfa1f517e157c56cef1a6306",
+      "size": 20639
     },
     {
       "path": "functions/adoc/origins.ts",
-      "sha256": "89c926188cf456930c4579f150a5858ce8a52c406ee8e0b609aa75c100b449ec",
-      "size": 7825
+      "sha256": "55402877dea098c04f5a290a81338e81f0d5a791f3cadbe6ed919305b30c4796",
+      "size": 8209
     },
     {
       "path": "functions/adoc/text.ts",
-      "sha256": "07d23cd53704ae5b226dfe00cd9900a38702c5e834ef78dba50625f0b1c2896c",
-      "size": 5486
+      "sha256": "8c5d83270b43d59ba8a3c48697a673b11f8bc4bef16c1b2fa44519c43722494c",
+      "size": 5746
     },
     {
       "path": "functions/adoc/types.ts",
