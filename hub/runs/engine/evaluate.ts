@@ -17,6 +17,7 @@ import { MAX_REFERENCE_LENGTH, parseReference, resolveReference, type RecordRead
 import { SandboxError, callPackFunction, runCheck, sourcesFrom, type CatalogView, type CheckOutcome, type SourceView, type UnreadSource } from '../../rules/api.ts';
 import { factClaim, judgmentClaim, rootDigest, statementOf, strongestRole } from './claims.ts';
 import { CHECK_PARALLELISM, type EngineContext } from './deps.ts';
+import { createSubjectBuilder } from './subjects.ts';
 import { describe, fixOf } from './errors.ts';
 import { emptyEvidence, type ExactResult, type ItemEvidence } from './exact.ts';
 import { independenceOf, warrantIndependence, type AuthorOrigin, type ProducerOrigin } from './independence.ts';
@@ -475,11 +476,13 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
     );
     return outcomes.map((o) => bounded(check, o));
   };
-  const buildSubject = async (check: CheckEntry, builderInput: unknown, fallback: () => unknown): Promise<{ subject: unknown } | { failure: CheckOutcome }> => {
+  const subjectBuilder = () => createSubjectBuilder(async (target, subjectInput) =>
+    (await callPackFunction(target, subjectInput, ctx.deps.sandboxLimits, ctx.deps.sandbox)).output);
+  const buildSubject = async (subjectFor: ReturnType<typeof createSubjectBuilder>, check: CheckEntry, builderInput: unknown, fallback: () => unknown): Promise<{ subject: unknown } | { failure: CheckOutcome }> => {
     if (check.subject === undefined) return { subject: fallback() };
     try {
-      const out = await callPackFunction({ packDir: workflow.pack.directory, module: check.subject.module, export: check.subject.export }, builderInput, ctx.deps.sandboxLimits, ctx.deps.sandbox);
-      return { subject: out.output };
+      const subject = await subjectFor({ packDir: workflow.pack.directory, module: check.subject.module, export: check.subject.export }, builderInput);
+      return { subject };
     } catch (error) {
       onError(error, `${check.id} subject`);
       return { failure: builderFailure(check, error) };
@@ -496,6 +499,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
   const allTexts = new Map<string, string>();
   for (const it of items) for (const [k, v] of evidenceOf(it.id).texts) allTexts.set(k, v);
 
+  const runSubjects = subjectBuilder();
   for (const check of used.filter((c) => c.applies === 'run' && (items.length > 0 || exclude.size === 0))) {
     // A run check of item artifacts sees only submitted artifacts. A check of a run-level artifact (for example
     // a final claim) still needs every target's metadata to test coverage, but receives no absent slot property.
@@ -503,7 +507,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
     const checkItems = itemArtifactsOnly ? items.filter(it => !missingItemArtifact(it.id)) : items;
     if (itemArtifactsOnly && checkItems.length === 0) continue;
     const checkedIds = new Set(checkItems.map(it => it.id));
-    const built = await buildSubject(check, { applies: 'run', items: checkItems.map(subjectItem), context }, () => ({
+    const built = await buildSubject(runSubjects, check, { applies: 'run', items: checkItems.map(subjectItem), context }, () => ({
       items: checkItems.map(it => ({ ...subjectItem(it), ...(artifactCheck(check) && missingItemArtifact(it.id) ? {} : { slots: checkedSlotsOf(it.id) }) })),
       cross_item: input.exact?.crossEntries ?? submission?.cross_item ?? [],
     }));
@@ -523,13 +527,14 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
   }
   const perItem = used.filter((c) => c.applies === 'item');
   await mapLimited(items, CHECK_PARALLELISM, async (it) => {
+    const itemSubjects = subjectBuilder();
     const slots = exclude.has(it.id) ? null : checkedSlotsOf(it.id);
     const ev = evidenceOf(it.id);
     for (const check of perItem) {
       if (artifactCheck(check) && missingItemArtifact(it.id)) continue;
       if (judgmentOnly(check) && (handlingOf(it.id) !== 'handled' || exclude.has(it.id) || submission === null)) continue;
       const evidence = slots === null ? [] : ev.evidence;
-      const built = await buildSubject(check, { applies: 'item', item: subjectItem(it), slots, evidence, context }, () => ({
+      const built = await buildSubject(itemSubjects, check, { applies: 'item', item: subjectItem(it), slots, evidence, context }, () => ({
         item: it.id,
         label: it.label,
         location: it.location,
