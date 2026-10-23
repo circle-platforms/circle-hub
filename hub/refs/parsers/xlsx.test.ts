@@ -275,3 +275,9 @@ test('Unicode path metadata cannot conceal raw unsafe names, duplicates or a dif
   refuses(zip([{ name: 'a.xml', localExtra: unicodePath('a.xml', 'b.xml') }]), /路径.*不一致/);
   assert.equal(readXlsxArchive(zip([{ name: 'a.xml', extra: unicodePath('a.xml', 'a.xml') }])).size, 1);
 });
+
+test('resolved shared-string text has a separate aggregate cell-model budget before serialization', { timeout: 5000 }, () => {
+  const shared = `<sst xmlns="${MAIN}"><si><t>${'x'.repeat(100000)}</t></si></sst>`;
+  const sheet = `<worksheet xmlns="${MAIN}"><sheetData><row r="1">${'<c r="A1" t="s"><v>0</v></c>'.repeat(400)}</row></sheetData></worksheet>`;
+  badWorkbook({ shared, sheet }, /模型.*单元格文本.*上限/);
+});

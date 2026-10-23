@@ -5,6 +5,8 @@ import { checkSize, effectiveLimits, mediaTypeEssence, nodesError, selectorChars
 import { MAX_SELECTOR_LENGTH, selectorOf, trySelectorSegments } from '../reference.ts';
 import { xmlParser, type XmlElement } from './xml.ts';
 const KEY = 'xlsx@1';
+/** Sum of UTF-8 value text placed in cells, including each use of a shared string. */
+export const XLSX_CELL_TEXT_LIMIT = 32 * 1024 * 1024;
 /** Hard container caps. Parser options may lower input size, but cannot raise these security limits. */
 export const XLSX_ZIP_LIMITS = Object.freeze({ maxBytes: 16 * 1024 * 1024, maxMembers: 256, maxMemberBytes: 16 * 1024 * 1024, maxExpandedBytes: 32 * 1024 * 1024, maxRatio: 100 });
 const syntax = (message: string): never => { throw new ParseSyntaxError(KEY, message); };
@@ -584,6 +586,7 @@ function parse(bytes: Uint8Array, options: ParseOptions = {}): ParsedDocument<Xl
   }
   const definedNames = children(book, 'definedNames').flatMap((root) => children(root, 'definedName')).map((element) => ({ name: xstring(required(element, 'name')), scope: attribute(element, 'localSheetId') === undefined ? null : integer(attribute(element, 'localSheetId')!, '定义名作用域'), reference: textOf(element) }));
   const sheets: XlsxSheet[] = [];
+  let cellTextBytes = 0;
   const sheetRelations = new Map(bookRelations.map((relationship) => [relationship.id, relationship]));
   const usedSheetParts = new Set<string>();
   // Validate all sheet identities before creating any rows or cells; a cached XML part must not amplify the model.
@@ -627,6 +630,8 @@ function parse(bytes: Uint8Array, options: ParseOptions = {}): ParsedDocument<Xl
             syntax('XLSX 共享字符串部件或索引缺失');
           text = sharedStrings[index];
         }
+        cellTextBytes += Buffer.byteLength(text, 'utf8');
+        if (cellTextBytes > XLSX_CELL_TEXT_LIMIT) forbidden(`XLSX 模型的单元格文本总量超过 UTF-8 字节上限 ${XLSX_CELL_TEXT_LIMIT}`);
         cells.push({ reference, type, text, formula: children(cell, 'f').length > 0, style: attribute(cell, 's') === undefined ? null : integer(attribute(cell, 's')!, '样式号') });
       }
       rows.push({ number, hidden: bool(attribute(row, 'hidden')), cells });

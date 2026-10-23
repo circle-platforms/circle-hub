@@ -378,3 +378,7 @@ ZIP member identity always comes from the raw central filename (UTF-8 with bit 1
 name required in the local header. A version-1 Info-ZIP Unicode Path field is accepted only with a matching raw-name
 CRC and the exact same decoded name, in either header; it never renames a member. Unsafe or duplicate raw names are
 refused before optional metadata can hide them. Invalid or contradictory path metadata is a generic ZIP refusal.
+
+XLSX cell value text has an additional aggregate 32 MiB UTF-8 budget: every resolved shared-string use, inline value
+and v-value is charged before insertion into the model. The shared-string dictionary remains under the ZIP expansion
+cap. A small dictionary referenced many times cannot defer a huge-model failure to sandbox input serialization.
