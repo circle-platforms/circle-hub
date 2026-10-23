@@ -102,6 +102,11 @@
       "code": "case-compile.wait_value",
       "when": "等待不是配置秒数上限内的正整数",
       "fix": "写 ASCII 正整数秒数，且不超过配置 max_wait_seconds"
+    },
+    {
+      "code": "case-compile.expect_value",
+      "when": "断言文字不符合工作簿 G 取值规则",
+      "fix": "断言写成单行原文片段，去掉首尾空白、等号前缀和 {} 或 {0} 占位符"
     }
   ],
   "refusals": [

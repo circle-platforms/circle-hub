@@ -236,6 +236,11 @@
           "code": "REFERENCE_UNRESOLVED",
           "action": "repair",
           "max_rounds": 2
+        },
+        {
+          "code": "case-compile.expect_value",
+          "action": "repair",
+          "max_rounds": 2
         }
       ]
     }

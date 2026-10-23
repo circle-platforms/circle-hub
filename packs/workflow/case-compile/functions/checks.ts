@@ -91,6 +91,7 @@ export function checkExpectedSources(input: unknown): Outcome[] {
   if (!slots.expects.length) return [refute(s, 'expect_without_source', '至少一条期望结果必须带逐字来源并指明它判断的步骤', '/data/expects')];
   for (const [i, expect] of slots.expects.entries()) {
     const pointer = `/data/expects/${i}`;
+    if (expect.text.trim() !== expect.text || /[\r\n\v\f\u0085\u2028\u2029]/.test(expect.text)) out.push(refute(s, 'expect_value', '断言文字必须是单行，首尾没有空白；从引文选择可写入的原文片段', `${pointer}/text`));
     if (!replacedQuote(expect.quote.text, slots.replacements).includes(expect.text)) out.push(refute(s, 'expect_not_in_quote', '期望文字不是套用地址替换表后引文的逐字片段', `${pointer}/text`));
     const step = slots.steps[expect.after - 1]; const allowed = step ? allowedCall(s.profile!, step.object, step.method) : null;
     if (!allowed || !Object.values(allowed.parameters).some((role) => role === 'device_cli' || role === 'host_shell')) out.push(refute(s, 'expect_after', 'after 必须指向设备命令行或主机 shell 步骤，不能指向等待或断言步骤', `${pointer}/after`));

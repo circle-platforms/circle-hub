@@ -41,3 +41,6 @@ test('review 05 catalog normalization cannot introduce an unrepaired quote error
   const value = commandSubject({ item: 'fixture', slots: { plan: [{ data }] }, context: { groups: [{ kind: 'case-compile', contract: CONTRACT_DOC, profile: PROFILE_DOC, manifest: MANIFEST_DOC }] } }) as Record<string, unknown>;
   assert.ok(!Object.hasOwn(value, 'phrases'));
 });
+test('review 06 expectations obey the same single-line and edge-whitespace constraints', () => {
+  for (const text of [' 成功', '成功 ', '第一行\n第二行']) { const data = goodData(); data.expects[0].text = text; data.expects[0].quote.text = text; assert.ok(codes(checkExpectedSources(subjectOf(data))).includes('case-compile.expect_value')); }
+});

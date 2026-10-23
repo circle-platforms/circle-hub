@@ -68,8 +68,8 @@
     },
     {
       "path": "functions/checks.ts",
-      "sha256": "699b4fecaf315258135861c5b9fd631b168f75009846f2caa64f0e8f7b11fbf0",
-      "size": 10919
+      "sha256": "eebc392c51f47c29c1612b2ce64950371c9a7e44983fe12e15d2b1680819ccf2",
+      "size": 11165
     },
     {
       "path": "functions/manifest.ts",
@@ -108,8 +108,8 @@
     },
     {
       "path": "requirements.json",
-      "sha256": "e09672dbb197351d458dd30f30930a579d28683e7798f4223011a06456ff4a7d",
-      "size": 6773
+      "sha256": "24148b00ab226a7f49c2d41c3fe4f5719d4d879c93c0fdf04017e9c46cc9e096",
+      "size": 6897
     },
     {
       "path": "samples/negative/address-off-bed.json",
@@ -378,8 +378,8 @@
     },
     {
       "path": "tables/codes.json",
-      "sha256": "2ea8e16b14e0168c6232ac1c4a046bdb2e7903cd78fed9bf6c1110f0dd58493f",
-      "size": 7124
+      "sha256": "0928c2c91ea5c23bdfbba297880093e41950fad35f46103055b5056e2000a571",
+      "size": 7349
     },
     {
       "path": "tables/commands.json",
