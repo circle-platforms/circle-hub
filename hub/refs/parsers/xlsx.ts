@@ -525,11 +525,17 @@ function parse(bytes: Uint8Array, options: ParseOptions = {}): ParsedDocument<Xl
     syntax('XLSX 内容类型部件无效');
   const defaults = new Map<string, string>();
   const overrides = new Map<string, string>();
-  for (const element of children(types, 'Default'))
-    defaults.set(required(element, 'Extension').toLowerCase(), required(element, 'ContentType'));
-  for (const element of children(types, 'Override'))
-    overrides.set(partTarget('', required(element, 'PartName')), required(element, 'ContentType'));
-  const members = [...archive].map(([name, value]) => ({ name, size: value.length, contentType: name === '[Content_Types].xml' ? 'application/xml' : overrides.get(name) ?? defaults.get(name.split('.').at(-1)!.toLowerCase()) ?? null }));
+  for (const element of children(types, 'Default')) {
+    const extension = asciiFold(required(element, 'Extension'));
+    if (defaults.has(extension)) syntax('XLSX 内容类型默认扩展名重复');
+    defaults.set(extension, required(element, 'ContentType'));
+  }
+  for (const element of children(types, 'Override')) {
+    const name = asciiFold(partTarget('', required(element, 'PartName')));
+    if (overrides.has(name)) syntax('XLSX 内容类型覆盖部件名重复');
+    overrides.set(name, required(element, 'ContentType'));
+  }
+  const members = [...archive].map(([name, value]) => ({ name, size: value.length, contentType: name === '[Content_Types].xml' ? null : overrides.get(asciiFold(name)) ?? defaults.get(asciiFold(name.split('.').at(-1)!)) ?? null }));
   // Opaque XML parts are checked for syntax/repairs only; no style, theme, property, macro or link is interpreted.
   for (const member of members)
     if (/\.(?:xml|rels)$/i.test(member.name) || /(?:\+xml|\/xml)$/.test(mediaTypeEssence(member.contentType ?? '')))

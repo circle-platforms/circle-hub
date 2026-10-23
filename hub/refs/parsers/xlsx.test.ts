@@ -295,3 +295,11 @@ test('OPC rejects ASCII case-equivalent member names and resolves case-equivalen
   const document = parseWorkbook({ relations: `<Relationship Id="case" Type="${DOC_REL}/styles" Target="WORKSHEETS/SHEET1.XML"/>` });
   assert.equal(document.model.sheets.length, 1);
 });
+
+test('content types reject duplicate declarations without inventing their own media type', () => {
+  for (const declarations of [
+    '<Default Extension="xml" ContentType="application/xml"/><Default Extension="XML" ContentType="text/xml"/>',
+    '<Override PartName="/xl/workbook.xml" ContentType="application/xml"/><Override PartName="/XL/WORKBOOK.XML" ContentType="text/xml"/>',
+  ]) badWorkbook({ types: `<Types xmlns="${TYPES}">${declarations}</Types>` }, /内容类型.*重复/);
+  assert.equal(parseWorkbook().model.members.find((member) => member.name === '[Content_Types].xml')!.contentType, null);
+});
