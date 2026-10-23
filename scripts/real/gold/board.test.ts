@@ -196,11 +196,11 @@ test('--placement sends both facets and placement without needing --types or --c
 
 test('the board locator keeps the pack label limits and the pack no-ids rule (closure item 7 probes)', () => {
   const probe = (labels: string[]): { line: string | null; module: string | null } => { const { line, module } = boardLocate(labels); return { line, module }; };
-  // The pack cuts labels at 1000, not 40: a 45-character module under the train is a module in both.
+  // Input labels may be 1000 characters, but the public module-name limit remains 40.
   const longModule = '合'.repeat(45);
-  assert.deepEqual(probe(['10.7', '10.7-R1', longModule]), { line: '10.7', module: longModule });
-  // A prefixed name (the prefix carries a digit, as the pack requires) longer than 36 characters keeps its tail.
-  assert.deepEqual(probe(['10.7', '10.7-R1', `A1B-CD2: ${longModule}`]), { line: '10.7', module: longModule });
+  assert.deepEqual(probe(['10.7', '10.7-R1', longModule]), { line: '10.7', module: null });
+  // Prefix removal does not bypass the module limit.
+  assert.deepEqual(probe(['10.7', '10.7-R1', `A1B-CD2: ${longModule}`]), { line: '10.7', module: null });
   // A bare version-like number is a name for the pack (idsFromTitle finds no id under 4 digits): accepted.
   assert.deepEqual(probe(['10.7', '10.7-R1', '12']), { line: '10.7', module: '12' });
   assert.deepEqual(probe(['10.7', '10.7-R1', '1.2.3.4.5']), { line: '10.7', module: '1.2.3.4.5' });
@@ -211,5 +211,13 @@ test('the board locator keeps the pack label limits and the pack no-ids rule (cl
   assert.deepEqual(probe(['10.7', '10.7-R1', 'PLM 910012']), { line: '10.7', module: null });
   // A leading 4-7 digit number is an id (a leading year is not).
   assert.deepEqual(probe(['10.7', '10.7-R1', '1234 合成']), { line: '10.7', module: null });
-  assert.deepEqual(probe(['10.7', '10.7-R1', '2025 计划']), { line: '10.7', module: '2025 计划' });
+  assert.deepEqual(probe(['10.7', '10.7-R1', '2025 计划']), { line: '10.7', module: null });
+});
+
+test('the published module limit is independent of input truncation and id normalization',()=>{
+ const at=(label:string)=>boardLocate(['10.7','10.7-R1',label]).module;
+ for(const label of ['合'.repeat(40),'A1B-CD2: '+'合'.repeat(40)])assert.equal(at(label),'合'.repeat(40));
+ for(const label of ['合'.repeat(41),'A1B-CD2: '+'合'.repeat(41),'模块x1234','2025 计划'])assert.equal(at(label),null,label);
+ assert.equal(at('模块123'),'模块123');assert.equal(at('缺陷10.7'),'缺陷10.7');
+ assert.equal(at('合'.repeat(40)+' '.repeat(1000)+'尾部'),'合'.repeat(40));
 });

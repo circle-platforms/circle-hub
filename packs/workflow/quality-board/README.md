@@ -140,3 +140,8 @@ Independent id policy: the gold extractors follow the APV README, preserving zer
 source titles, using normalized nonzero keys only for classification/joins, and rejecting zero-only or out-of-bound digit
 runs. Bare ids use the APV 4–7 written-digit range. Dates/versions are excluded before joining. This supersedes the old
 location-gold exception that rejected every leading zero. The separate gold-location branch is aligned by its owner.
+
+Gold closure C: board location independently follows the public APV module rule: labels are truncated to 1000 before
+normalization, but a resulting module name is at most 40 characters and cannot contain four consecutive digits.
+Version and activity labels, and marked identifiers, remain excluded. The 40/41 boundary, prefixed labels and numeric
+control examples are covered without importing the product implementation into the gold.
