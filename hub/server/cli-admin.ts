@@ -47,7 +47,7 @@ export interface AdminCommandOptions {
 export const PACK_USAGE =
   'pack publish <目录> [--stage] | grant-publish <用户> | revoke-publish <用户> | assign <用户> <任务包> | unassign <用户> <任务包> | retire <任务包@版本> | activate <产品包> | deactivate <产品包> | list';
 export const RESOURCE_USAGE =
-  'resource add <系统包> --name <名字> --environment <环境> --origin <角色>=<地址> [--allow-plaintext <角色>] [--setting <键>=<值>] | update <资源> [--system-pack <系统包>（改绑它最新发布的版本）] [--name <名字>] [--environment <环境>] [--origin <角色>=<地址>…] [--allow-plaintext <角色>…] [--setting <键>=<值>…]（给了的项整项替换） | read <资源> <读取名> <键> | list | disable <资源> | enable <资源> | reset-login <资源>';
+  'resource add <系统包> --name <名字> --environment <环境> --origin <角色>=<地址> [--allow-plaintext <角色>] [--setting <键>=<值>] | update <资源> [--system-pack <系统包>（改绑它最新发布的版本）] [--name <名字>] [--environment <环境>] [--origin <角色>=<地址>…] [--allow-plaintext <角色>…] [--setting <键>=<值>…]（给了的项整项替换） | read <资源> <读取名> <键> [--events] | list | disable <资源> | enable <资源> | reset-login <资源>';
 export const SECRET_USAGE = 'secret import --env-file <文件> --key <键名>=<资源>/<凭据项>… [--basic <用户键>:<密码键>=<资源>/<凭据项>] [--dry-run] | set <资源> <凭据项>（值从标准输入读，不放在命令行上） | list（只列名字）';
 export const SOURCE_USAGE = 'source held [--limit <条数>] | findings <sha256> | accept <sha256> --note <说明> | withdraw <sha256> [--note <说明>]';
 export const ORIGINAL_USAGE = 'original list [--external <外部标识的前缀>] [--limit <条数>] | export <sha256> --out <文件>';
@@ -172,9 +172,9 @@ class Session {
    * The assembly over this invocation's records (one per invocation): the vault key is required by the commands that read
    * or write a secret value; its operator's log lines (connector and registry events) go to this command's stderr.
    */
-  hub(requireVaultKey = false, quiet = false): Promise<AssembledHub> {
+  hub(requireVaultKey = false, quiet?: boolean): Promise<AssembledHub> {
     this.#hub ??= (async () =>
-      assembleHub(this.config(), await this.records(), { log: (line) => this.err(line), ...this.options.assembly, ...(quiet ? { log: () => {} } : {}), requireVaultKey, command: true }))();
+      assembleHub(this.config(), await this.records(), { log: (line) => this.err(line), ...this.options.assembly, ...(quiet === undefined ? {} : { log: quiet ? () => {} : (line: string) => this.err(line) }), requireVaultKey, command: true }))();
     return this.#hub;
   }
 
@@ -578,10 +578,10 @@ async function resourceCommand(session: Session, args: readonly string[]): Promi
       return 0;
     }
     case 'read': {
-      const { positionals } = parse(rest, {}, 3);
+      const { positionals, values } = parse(rest, { events: { type: 'boolean' } }, 3);
       const admin = await session.admin();
-      // This probe exposes only the fixed outcome metadata. Remote reasons and object keys stay in the read manifest.
-      const hub = await session.hub(true, true);
+      // Default output is metadata only; --events sends redacted connector diagnostics to stderr for smoke capture.
+      const hub = await session.hub(true, values.events !== true);
       const [resource, readName, key] = positionals;
       const described = await decided(() => hub.connectors.admin.describe(admin, resource));
       if (described === null) throw new CliError('资源不可用');

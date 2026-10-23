@@ -150,8 +150,8 @@ circle-hub knowledge roots <product> [--as] | diff <rootA> <rootB> [--as]
 - **Read-only connector smoke**: `resource read <resource> <read-name> <key>` needs the operator's admin token and
   vault key because the read saves originals and its manifest. It calls `executeRead` with purpose `管理员冒烟读取`.
   Output contains only the bound system pack/read name, completion or failure code, each artifact's declared name,
-  digest and size, and the manifest digest. The command suppresses the assembly's free-text event sink so keys, remote
-  reasons, content and metadata do not reach the terminal. Read details remain in the manifest and administrator records.
+  digest and size, and the manifest digest. The default suppresses the assembly's free-text event sink. `--events` explicitly sends its redacted connector
+  events to stderr for the smoke checker to capture; the checker always requests that channel and never echoes it. Read details remain in the manifest and administrator records.
 - **Integrator smoke script**: `node scripts/real/smoke-connectors.ts --logs <logs> --read <resource>:<read-name>:<key> [--read …]`.
   Per integrator answer 9 on the plan-evidence task, this checks command output (including any command events) and only
   the newly appended bytes of `hub.out.log`/`hub.err.log`; it does not treat CLI reads as MCP calls or export a call log.

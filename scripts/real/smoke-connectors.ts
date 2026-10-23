@@ -88,7 +88,7 @@ export async function runSmoke(options: { logs: string; reads: readonly string[]
     let scratch: string | undefined;
     try {
       const before = await Promise.all(['hub.out.log', 'hub.err.log'].map((name) => snapshot(join(options.logs, name))));
-      const reply = await run(['resource', 'read', request.resource, request.read, request.key]);
+      const reply = await run(['resource', 'read', request.resource, request.read, request.key, '--events']);
       let commandText = `${reply.stdout}\n${reply.stderr}`;
       const header = /^([a-z0-9][a-z0-9._-]*@[0-9]+\.[0-9]+\.[0-9]+(?:-[a-z0-9.-]+)?)\/([a-z0-9][a-z0-9._-]*)：(读取完成|失败（([A-Z_]+)）)$/m.exec(reply.stdout);
       if (header && header[2] === request.read) { result.system = header[1]; result.code = header[4] ?? ''; result.completed = reply.code === 0 && header[3] === '读取完成'; }

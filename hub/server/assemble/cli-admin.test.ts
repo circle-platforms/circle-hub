@@ -1482,3 +1482,16 @@ describe('resource read', () => {
     assert.equal(login.code, 1); assert.match(login.text, /失败（[A-Z_]+）/); assert.ok(!login.text.includes(DOCUMENT));
   });
 });
+
+
+test('review 1: resource read exposes connector diagnostics only with the explicit events flag', async () => {
+  const admin = await setup(); const id = await importResource(admin);
+  const file = await importFile(admin, `PORTAL_USER=reader\nPORTAL_PASSWORD=${PASSWORD}`);
+  await expectOk(admin, importArgs(file, id));
+  const quiet = await expectOk(admin, ['resource', 'read', id, 'mindmap', DOCUMENT]);
+  assert.ok(!quiet.err.some(line => line.includes('read_ok')));
+  const events = await expectOk(admin, ['resource', 'read', id, 'mindmap', DOCUMENT, '--events']);
+  assert.ok(events.err.some(line => line.includes('read_ok')));
+  const failure = await admin.run(['resource', 'read', id, 'mindmap', 'synthetic-missing', '--events']);
+  assert.equal(failure.code, 1); assert.ok(failure.err.some(line => line.includes('read_failed')));
+});

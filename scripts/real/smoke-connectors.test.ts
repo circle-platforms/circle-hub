@@ -14,7 +14,7 @@ test('extracts JSON values and HTML text, excluding digests, short values and re
   assert.deepEqual(responseStrings('<h1>Synthetic confidential title</h1>\n<p>Another synthetic paragraph</p>', key), ['Synthetic confidential title', 'Another synthetic paragraph']);
 });
 
-async function scenario(mode: 'clean' | 'command' | 'escaped' | 'service' | 'failure' | 'export' | 'rotate' | 'corrupt', html = false) {
+async function scenario(mode: 'clean' | 'command' | 'escaped' | 'service' | 'failure' | 'export' | 'rotate' | 'corrupt' | 'events', html = false) {
   const dir = await mkdtemp(join(tmpdir(), 'smoke-synthetic-')); const logs = join(dir, 'logs'); await mkdir(logs);
   const outLog = join(logs, 'hub.out.log'); const errLog = join(logs, 'hub.err.log');
   await writeFile(outLog, `${text}\n`); await writeFile(errLog, ''); // Old content is outside this smoke window.
@@ -22,11 +22,11 @@ async function scenario(mode: 'clean' | 'command' | 'escaped' | 'service' | 'fai
   const printed: string[] = []; const exported: string[] = [];
   const run: SmokeCommand = async (args) => {
     if (args[0] === 'resource') {
-      assert.deepEqual(args, ['resource', 'read', 'res_synthetic', 'document', key]);
+      assert.deepEqual(args, ['resource', 'read', 'res_synthetic', 'document', key, '--events']);
       if (mode === 'service') await appendFile(errLog, JSON.stringify({ message: text }));
       if (mode === 'rotate') await writeFile(outLog, '');
       if (mode === 'failure') return { code: 1, stdout: `demo-system@1.0.0/document：失败（SOURCE_UNAVAILABLE）\n读清单 ${'a'.repeat(64)}\n`, stderr: text };
-      return { code: 0, stdout: `demo-system@1.0.0/document：读取完成\n产物 original ${sha} ${Buffer.byteLength(bytes)} 字节\n读清单 ${'a'.repeat(64)}\n`, stderr: mode === 'command' ? text : mode === 'escaped' ? JSON.stringify(text) : key };
+      return { code: 0, stdout: `demo-system@1.0.0/document：读取完成\n产物 original ${sha} ${Buffer.byteLength(bytes)} 字节\n读清单 ${'a'.repeat(64)}\n`, stderr: mode === 'events' && args.includes('--events') ? '连接器：read_failed ' + JSON.stringify({ reason: text }) : mode === 'command' ? text : mode === 'escaped' ? JSON.stringify(text) : key };
     }
     assert.equal(args[0], 'original'); assert.equal(args[1], 'export');
     const target = args[args.indexOf('--out') + 1]; exported.push(target);
@@ -54,4 +54,9 @@ test('raw and JSON-escaped command leaks and new service-log leaks fail without 
 });
 test('read failure, export failure and rotated logs are failures, never an empty successful check', async () => {
   for (const mode of ['failure', 'export', 'rotate', 'corrupt'] as const) assert.equal((await scenario(mode)).ok, false);
+});
+
+
+test('review 1: smoke requests connector events and detects response text inside a redacted-event channel', async () => {
+  const result = await scenario('events'); assert.equal(result.ok, false); assert.ok(result.hits.command > 0);
 });
