@@ -542,7 +542,9 @@ async function startFresh(
   const slots = slotSchemaOf(workflow);
   const hub = mode.host === 'hub';
   const session = sessionOf(call);
+  const effectRegistry=await ctx.deps.effectRegistry?.snapshot(variables);
   const record: RunRecord = RunRecord.parse({
+    ...(effectRegistry??{}),
     run: runId,
     pack: `${workflow.pack.id}@${workflow.pack.version}`,
     pack_digest: workflow.pack.digest,

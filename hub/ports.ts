@@ -297,3 +297,8 @@ export interface KnowledgePort {
    */
   diffEntries(from: string, to: string, options: { kinds: readonly EntryKind[]; limit?: number }): Promise<EntryDiff | null>;
 }
+
+/** Internal effect-boundary metadata, frozen with the same ordinary-variable snapshot as start_run. */
+export interface EffectRegistryPort {
+ snapshot(variables:import('./records/api.ts').VariableSnapshot):Promise<{policy:string;executors:string}>;
+}

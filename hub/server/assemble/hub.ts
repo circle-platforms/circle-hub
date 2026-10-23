@@ -7,7 +7,7 @@
 // left in the vault is never read.
 // Nothing here reads the environment, a file outside the data directory, or a credential value.
 import { join } from 'node:path';
-import { DispatchService } from '../../dispatch/api.ts';
+import { DispatchService, freezeEffectRegistry } from '../../dispatch/api.ts';
 import type { HubConfig } from '../../config/index.ts';
 import {
   createConnectors,
@@ -175,6 +175,7 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
   const leases = options.leases === null ? undefined : options.leases ?? new LeaseService(leaseDatabase!, { records: records.store, ...(now === undefined ? {} : { now: async () => now() }) });
   let dispatch: DispatchService | null = null;
   const engine = createRunsService({
+    effectRegistry:{snapshot:variables=>freezeEffectRegistry(records,variables)},
     records,
     workflows,
     packs,

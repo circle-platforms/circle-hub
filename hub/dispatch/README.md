@@ -212,3 +212,5 @@ protocol_versions 声明不替代认证。否定结论同时重核查询会话�
 A historical definition without a write declaration retains the existing job/service-on-behalf semantics and its previously supported retry class; executor list explicitly reports 写声明未写. Environment is not guessed: an absent environment prevents dispatch until an administrator updates it. Ordered multi-step writes are outside this round. The request-record integration remains pending hub-unknown-exits; existing action details do not stand for a sent durable request.
 
 允许的效果表随 requirements.json 冻结。资源种类和动作是通用 executor/submit 协议角色，不是目标工具名。参数范围只针对通用作业参数 target、manifest_sha256、build、sha256、items、generator；可以列取值集合，或绑定 policies/ 表及编译时同一个检查。政策引用要求正反例齐全，发布仍运行样例。触发方式取生成词表。运行者收窄效果表不在本轮；包未声明效果表时发布行为兼容，但派发边界不留下旧路。
+
+全局政策表在 policy/boundary.json，按生成词表的效果类、可逆性与环境逐格列出。生产只允许 none/read，测试和共享另允许 job；同步写与通知全部拒绝。表摘要和逐个变量解析后的执行器摘要在 start_run 用同一次变量快照冻结，真实定义另存对象，运行只保存登记对象摘要。内部端口不借运行者身份列管理员清单，也不读密钥值。

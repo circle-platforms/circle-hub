@@ -18,6 +18,7 @@ export interface AdminLogEntry {
 }
 
 export interface RunsEngineDeps {
+  effectRegistry?:import('../../ports.ts').EffectRegistryPort;
   /** The records kit parts the engine uses; with `config`, start_run knows the record size limit before it stores anything. */
   records: Pick<RecordsKit, 'store' | 'objects' | 'artifacts'> & {
     variables: Pick<RecordsKit['variables'], 'snapshot'>;

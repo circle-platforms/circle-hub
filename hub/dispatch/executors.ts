@@ -128,13 +128,26 @@ export class ExecutorRegistry {
     }
     async get(id: string, snapshot?: VariableSnapshot): Promise<RegisteredExecutor | null> { const current = await this.readSource(id); if (!current)
         return null; const resolved = await resolveExecutor(this.records, current.source, snapshot); return { ...current, ...resolved, resolved_digest: sha256Hex(canonicalBytes(resolved.definition)) }; }
-    async sources(by: Principal) { await this.admin(by); const ids = new Set<string>(); let cursor: string | null = null; do {
+    async sources(by: Principal) {await this.admin(by);return this.internalSources();}
+    private async internalSources() { const ids = new Set<string>(); let cursor: string | null = null; do {
         const page = await this.records.authorizations.history({ permission: 'resource_config', limit: 500, cursor });
         for (const r of page.items)
             if (r.body.object.startsWith('executor.'))
                 ids.add(r.body.object.slice(9));
         cursor = page.next;
     } while (cursor); const entries = await Promise.all([...ids].sort().map(id => this.readSource(id))); return entries.filter((e): e is NonNullable<typeof e> => e !== null); }
+    /** Internal start_run snapshot; no secret value is loaded and no caller privileges are borrowed. */
+    async snapshot(variables:VariableSnapshot):Promise<string> {
+      const entries:Record<string,string>={};
+      for(const source of await this.internalSources()) {
+        const resolved=await this.get(source.id,variables);
+        if(!resolved)throw new Error('执行器登记在取快照时改变；请管理员核对配置后重开运行');
+        const object=await this.records.objects.put(canonicalBytes(resolved.definition),'application/json');
+        if(object.sha256!==resolved.resolved_digest)throw new Error('执行器规范摘要不一致；请管理员检查对象库后重开运行');
+        entries[resolved.id]=object.sha256;
+      }
+      return (await this.records.objects.put(canonicalBytes(entries),'application/json')).sha256;
+    }
     async list(by: Principal): Promise<RegisteredExecutor[]> { const sources = await this.sources(by); const entries = await Promise.all(sources.map(e => this.get(e.id))); return entries.filter((e): e is RegisteredExecutor => e !== null); }
     async material(id: string, definition: ExecutorDefinition) { const current = await this.readSource(id); if (!current?.source.enabled)
         throw new ExecutorAccessError('执行器已禁用或不可用；未发请求', '管理员核对源定义并用 executor update 启用后重做原操作'); const name = definition.credential ? secretNameOf(definition.credential) : null; if (!name)

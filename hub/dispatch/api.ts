@@ -10,3 +10,6 @@ export { observationHashes, rpcResponse, toolContent } from './observations.ts';
 export type { BuildKnowledge } from './probes.ts';
 
 export {ExecutorSource,resolveExecutorValues} from './source.ts';
+
+export {freezeEffectRegistry} from './snapshot.ts';
+export {boundaryPolicy,policyAllows} from './policy.ts';
