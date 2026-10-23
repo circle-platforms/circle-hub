@@ -129,7 +129,7 @@ test('the scenario walks the three phases with batch-bounded replies', () => {
 });
 test('a refused start records the batch as unknown, and the scenario still finishes', () => {
   const { gold } = goldOf(); const scenario = build(gold); const result = drive(scenario, undefined, { refuseStart: true });
-  assert.equal(result.done, '检查完成。'); assert.equal(result.checks.find(check => check.name === '副本回答完整')?.ok, false);
+  assert.equal(result.done, '检查完成。'); assert.equal(result.checks.find(check => check.name.endsWith('副本回答完整'))?.ok, false);
   assert.ok(scenario.sections?.some(section => section.lines.some(line => line.includes('开始运行被拒'))));
 });
 
@@ -153,8 +153,8 @@ test('a request with no tool results after the start neither restarts nor advanc
 
 test('check() flags a missed order-independence against a passing honest baseline', () => {
   const { gold } = goldOf(); const result = drive(build(gold), undefined, { mutate: (info, answer) => { if (info.kind === 'b') answer.missing.add('security'); return answer; } });
-  assert.equal(result.checks.find(check => check.name === '换序')?.ok, false);
-  assert.equal(result.checks.find(check => check.name === '上传字节')?.ok, true);
+  assert.equal(result.checks.find(check => check.name.endsWith('换序'))?.ok, false);
+  assert.equal(result.checks.find(check => check.name.endsWith('上传字节'))?.ok, true);
 });
 
 test('uploadIdOf derives the item id from the sha', () => {
@@ -180,7 +180,7 @@ test('gap-metamorphic.ts and the scenario import nothing from hub/ or packs/; th
 function lying(options: FakeOptions, target: string) {
   const { gold } = goldOf(); const honest = drive(build(gold)); assert.ok(honest.checks.every(check => check.ok));
   const wrong = drive(build(gold), undefined, options);
-  assert.equal(wrong.checks.find(check => check.name === target)?.ok, false);
+  assert.equal(wrong.checks.find(check => check.name.endsWith(target))?.ok, false);
   return wrong;
 }
 test('a lying Hub: b loses one category the original names (order independence caught)', () => {
@@ -188,7 +188,7 @@ test('a lying Hub: b loses one category the original names (order independence c
 });
 test('a lying Hub: a single-case copy drops the type-label category its own tag must show', () => {
   const result = lying({ hide: 'functional' }, '类型名标签');
-  assert.deepEqual(result.checks.filter(check => !check.ok).map(check => check.name), ['类型名标签']);
+  assert.equal(result.checks.filter(check => !check.ok).length, 1); assert.ok(result.checks.find(check => !check.ok)!.name.endsWith('类型名标签'));
 });
 test('a lying Hub: the original case count is one short', () => {
   lying({ mutate: (info, answer) => ({ ...answer, count: ['a','b'].includes(info.kind) ? answer.count - 1 : answer.count }) }, '原件用例数');
@@ -197,13 +197,13 @@ test('a lying Hub: a single-case answer loses a category declared by its ancesto
   lying({ mutate: (info, answer) => { if (info.document === 0 && info.kind === 'c' && info.ordinal === 0) answer.missing.add('security'); return answer; } }, '拆分');
 });
 test('a lying Hub: after the join the target category is still missing', () => {
-  lying({ mutate: (info, answer) => { if (info.kind === 'f') answer.missing.add(info.category!); return answer; } }, '加回和加入');
+  lying({ mutate: (info, answer) => { if (info.kind === 'f') answer.missing.add(info.category!); return answer; } }, '加入');
 });
 test('a lying Hub: an upload source does not match the bytes written', () => { lying({ badUpload: true }, '上传字节'); });
 test('a finding names an anonymous case and run when a single-case answer cannot be had', () => {
   const { gold } = goldOf(); const scenario = build(gold);
   const result = drive(scenario, undefined, { mutate: (info, answer) => ({ ...answer, count: info.document === 0 && info.kind === 'c' && info.ordinal === 1 ? 9 : answer.count }) });
-  assert.equal(result.checks.find(check => check.name === '单用例副本用例数')?.ok, false);
+  assert.equal(result.checks.find(check => check.name.endsWith('单用例副本用例数'))?.ok, false);
   assert.ok(scenario.sections?.some(section => section.lines.some(line => line.includes('结果不可核对'))));
 });
 
@@ -264,7 +264,7 @@ test('review 6: every clipped answer is consumed before the next full-summary re
     reply = scenario.respond(turn(index++, [{ id: 'full', text: `内容 ${reference}：模型可读\n本页字符 0-${full.get(reference)!.length}\n${JSON.stringify(full.get(reference))}\n追踪 ${index}`, isError: false }])) as any[];
   }
   assert.equal(reads, 4);
-  assert.equal(scenario.check([]).find(check => check.name === '原件用例数')?.ok, true);
+  assert.equal(scenario.check([]).find(check => check.name.endsWith('原件用例数'))?.ok, true);
 });
 
 test('review 7: full-summary reads match their reference and exclude tier, page metadata and trace', () => {
@@ -297,7 +297,7 @@ test('review 10: upload replies match by source digest even when their order is 
   const uploads = scenario.respond(turn(0)) as any[];
   const results = uploads.map((call, i) => ({ id: `u${i}`, text: `已上传 src:${sha256Of(readFileSync(join(dir, 'work', String(call.input.file_path))))}`, isError: false })).reverse();
   scenario.respond(turn(1, results));
-  assert.equal(scenario.check([]).find(check => check.name === '上传字节')?.ok, true);
+  assert.equal(scenario.check([]).find(check => check.name.endsWith('上传字节'))?.ok, true);
 });
 test('review 10: a later refusal cannot erase failed upload evidence or bind those failed copies', () => {
   const { gold, dir } = goldOf(); const scenario = build(gold as never); scenario.prepare?.(join(dir, 'work'));
@@ -311,7 +311,7 @@ test('review 10: a later refusal cannot erase failed upload evidence or bind tho
       return { id: `r${i}`, text: '调用结果：出错', isError: true };
     });
   }
-  assert.equal(scenario.check([]).find(check => check.name === '上传字节')?.ok, false);
+  assert.equal(scenario.check([]).find(check => check.name.endsWith('上传字节'))?.ok, false);
   assert.ok(bound.every(sha => !failed.has(sha)));
 });
 
@@ -328,8 +328,8 @@ test('review 9: absent Hub outputs cannot pass any result-dependent check', () =
   }
   assert.ok(starts > 0);
   const checks = scenario.check([]);
-  assert.ok(!checks.some(check => check.ok && !['上传字节', '对话没有被压缩'].includes(check.name)));
-  assert.equal(checks.find(check => check.name === '副本回答完整')?.ok, false);
+  assert.ok(!checks.some(check => check.ok && !['上传字节', '对话没有被压缩'].some(name => check.name.endsWith(name))));
+  assert.equal(checks.find(check => check.name.endsWith('副本回答完整'))?.ok, false);
 });
 test('review 9: missing or malformed category output is not interpreted as complete coverage', () => {
   assert.equal(parseSummary('用例 1 个；没有类别结果', CATEGORIES).valid, false);
@@ -345,4 +345,16 @@ test('review 11: reports identify a failed case by ordinal and copy hash, never 
   assert.ok(lines.some(line => line.includes('用例 2') && line.includes(sha)));
   assert.doesNotMatch(JSON.stringify({ checks: result.checks, sections: scenario.sections }), /合成文档甲|合成甲二|\ba2\b/);
   assert.ok(result.names.every(name => /^[0-9]+\.json$/.test(name)));
+});
+
+test('review 14: evidence is per document and copy, and category tallies compare each membership', () => {
+  const { gold } = goldOf(); const scenario = build(gold);
+  const result = drive(scenario, undefined, { mutate: (info, answer) => { if (info.document === 0 && info.kind === 'b') answer.missing.add('security'); return answer; } });
+  const ordered = result.checks.filter(check => check.name.endsWith('换序'));
+  assert.equal(ordered.length, 2); assert.equal(ordered[0]?.ok, false); assert.equal(ordered[1]?.ok, true);
+  const sha = result.infos.find(info => info.document === 0 && info.kind === 'b')!.sha.slice(0, 12);
+  assert.match(ordered[0]!.actual, new RegExp(sha)); assert.match(ordered[0]!.actual, /多出.*security/); assert.match(ordered[0]!.actual, /少掉/);
+  const lines = scenario.sections!.flatMap(section => section.lines);
+  assert.match(lines.find(line => line.startsWith('security（'))!, /b 相符 1 不符 1/);
+  assert.match(lines.find(line => line.startsWith('database（'))!, /b 相符 2 不符 0/);
 });

@@ -166,6 +166,8 @@ export default function scenario(gold: GapCircleGold): Scenario {
     return out;
   };
 
+  const requiredTypes = (document: number, key: string): ReadonlySet<string> => typeNamePresent(trees[document]!, categories).get(key) ?? new Set();
+
   const queuePhaseThree = (): void => {
     const list: Pending[] = [];
     for (const [d, tree] of trees.entries()) {
@@ -318,170 +320,81 @@ export default function scenario(gold: GapCircleGold): Scenario {
 
   void allPending;
 
+  let categoryScores: Array<{ key: string; expected: Set<string>; actual: Set<string> }> = [];
   let scoredKeys = new Map<string, boolean>();
   let checkFindings: Array<{ document: number; caseId: string; runKey: string; why: string }> = [];
   let phaseThreeMap = new Map<string, Array<{ document: number; caseId: string }>>();
   const check = (turns: import('../lib/accept.ts').LoggedTurn[]): Check[] => {
     void turns; scoredKeys = new Map(); notDoneChecks.clear();
     const verdict = (name: string, ok: boolean, expected: string, actual: string): Check => ({ area, name, expected, actual, ok });
-    const copies: Pending[] = [];
-    for (const [d, tree] of trees.entries()) {
-      const plan = planCopies(tree, `doc${d + 1}`, { categories, singleMisses: new Map() });
-      copies.push({ key: `a-${d}`, name: '', tree: plan.a, kind: 'a', contains: [], premise: premiseOf(plan.a, outerIds[d]!) });
-      copies.push({ key: `b-${d}`, name: '', tree: plan.b, kind: 'b', contains: [], premise: premiseOf(plan.b, outerIds[d]!) });
-      outerIds[d]!.forEach((id, i) => copies.push({ key: `c-${d}-${i}`, name: '', tree: plan.c[i]!, kind: 'c', contains: [{ document: d, caseId: id }], premise: premiseOf(plan.c[i]!, [id]) }));
-    }
-    void copies;
-
-    // Every scored copy: the whole missing set compared with the intersection of its contained single-case sets.
     const scored: Array<{ key: string; ok: boolean; expected: Set<string>; actual: Set<string> }> = [];
-    // A single-case answer that cannot be had although its run was made is a FINDING about the pack (this case the
-    // pack cannot categorize), never an unknown: the finding names the case and the run that should have given it.
-    const findings: Array<{ document: number; caseId: string; runKey: string; why: string }> = [];
-    const missesOf = (d: number, caseId: string): ReadonlySet<string> | undefined => {
-      const i = outerIds[d]!.indexOf(caseId);
-      const runKey = `c-${d}-${i}`;
-      const answer = answerOf.get(runKey);
-      if (answer !== undefined && answer.caseCount === 1) return answer.missing;
-      const why = answer === undefined
-        ? (unknown.has(runKey) ? unknown.get(runKey)! : '那次单用例运行没有给出条目行')
-        : `那次运行数出 ${answer.caseCount} 个用例，不是 1 个`;
-      findings.push({ document: d, caseId, runKey, why });
+    const findings: typeof checkFindings = [];
+    const ownerOf = (key: string) => Number(key.split('-')[1]);
+    const countExpected = (key: string) => attempted.get(key)?.premise.expected ?? 1;
+    const missesOf = (document: number, caseId: string): ReadonlySet<string> | undefined => {
+      const ordinal = outerIds[document]!.indexOf(caseId); const key = `c-${document}-${ordinal}`; const answer = answerOf.get(key);
+      if (answer && !unknown.has(key) && answer.caseCount === countExpected(key)) return answer.missing;
+      if (attempted.has(key)) findings.push({ document, caseId, runKey: key, why: answer ? `数出 ${answer.caseCount} 个，独立计数为 ${countExpected(key)} 个` : unknown.get(key) ?? '缺少完整条目结果' });
       return undefined;
     };
-    const containsOf = (key: string): Array<{ document: number; caseId: string }> | undefined => {
-      const d = Number(/^([abcfde])-(\d+)/.exec(key)?.[2] ?? NaN);
-      if (Number.isNaN(d)) return undefined;
-      if (key.startsWith(`a-${d}`) || key.startsWith(`b-${d}`)) return outerIds[d]!.map((caseId) => ({ document: d, caseId }));
-      if (key.startsWith(`c-${d}`)) {
-        const i = Number(key.split('-')[2]);
-        return [{ document: d, caseId: outerIds[d]![i]! }];
+    phaseThreeMap = new Map([...attempted].filter(([, copy]) => ['d','e','f'].includes(copy.kind)).map(([key, copy]) => [key, [...copy.contains]]));
+    for (const [key, answer] of answerOf) {
+      const copy = attempted.get(key); if (!copy || unknown.has(key)) continue;
+      let expected: Set<string>;
+      if (copy.kind === 'b') {
+        const original = answerOf.get(`a-${ownerOf(key)}`); if (!original || unknown.has(`a-${ownerOf(key)}`)) continue;
+        expected = new Set(original.missing);
+      } else if (copy.kind === 'c') {
+        if (answer.caseCount !== countExpected(key)) { copy.contains.forEach(item => missesOf(item.document, item.caseId)); continue; }
+        expected = new Set(answer.missing);
+        for (const id of requiredTypes(ownerOf(key), copy.contains[0]!.caseId)) expected.delete(id);
+      } else {
+        const sets = copy.contains.map(item => missesOf(item.document, item.caseId));
+        if (sets.some(set => set === undefined)) continue;
+        expected = expectedMissing(sets as ReadonlySet<string>[]);
       }
-      // d, e and f copies: their contains were queued in queuePhaseThree; rebuilt the same way for scoring.
-      return phaseThreeContains(key);
-    };
-    const phaseThreeContains = (key: string): Array<{ document: number; caseId: string }> | undefined => phaseThreeMap.get(key);
-    phaseThreeMap = new Map<string, Array<{ document: number; caseId: string }>>();
-    for (const [d, tree] of trees.entries()) {
-      const misses = singleMissesOf(d);
-      const other = trees.length > 1 ? { tree: trees[(d + 1) % trees.length]!, singleMisses: singleMissesOf((d + 1) % trees.length) } : undefined;
-      const plan = planCopies(tree, `doc${d + 1}`, { categories, singleMisses: misses, ...(other === undefined ? {} : { other }) });
-      for (const entry of plan.d) {
-        if ('skipped' in entry) continue;
-        const kept = outerIds[d]!.filter((id) => misses.has(id) && misses.get(id)!.has(entry.category));
-        const unknownCases = outerIds[d]!.filter((id) => !misses.has(id));
-        phaseThreeMap.set(`d-${d}-${entry.category}`, [...kept, ...unknownCases].map((caseId) => ({ document: d, caseId })));
-        if (entry.restored !== undefined) {
-          const owners = outerIds[d]!.filter((id) => misses.has(id) && !misses.get(id)!.has(entry.category));
-          phaseThreeMap.set(`e-${d}-${entry.category}`, [...kept, ...unknownCases, owners[0]!].filter((v) => v !== undefined).map((caseId) => ({ document: d, caseId })));
-        }
-      }
-      for (const entry of plan.f) {
-        if ('skipped' in entry) continue;
-        const bDoc = (d + 1) % trees.length;
-        const bCase = outerCaseIdsOf(trees[bDoc]!).find((id) => singleMissesOf(bDoc).has(id) && !singleMissesOf(bDoc).get(id)!.has(entry.category));
-        const aKnown = outerIds[d]!.filter((id) => misses.has(id));
-        phaseThreeMap.set(`f-${d}-${entry.category}`, [...aKnown.map((caseId) => ({ document: d, caseId })), ...(bCase !== undefined ? [{ document: bDoc, caseId: bCase }] : [])]);
-      }
+      const ok = expected.size === answer.missing.size && [...expected].every(id => answer.missing.has(id));
+      scoredKeys.set(key, ok); scored.push({ key, ok, expected, actual: answer.missing });
     }
-    for (const key of answerOf.keys()) {
-      if (unknown.has(key)) continue;
-      const contains = containsOf(key);
-      if (contains === undefined) continue;
-      const contained = contains.map(({ document, caseId }) => missesOf(document, caseId));
-      if (contained.some((set) => set === undefined)) {
-        // The missing fact is that case's categories and the run that should give them is already recorded as a
-        // finding; scoring this copy again would only repeat it.
-        continue;
-      }
-      const expected = expectedMissing(contained as ReadonlySet<string>[]);
-      const actual = answerOf.get(key)!.missing;
-      const ok = expected.size === actual.size && [...expected].every((id) => actual.has(id));
-      scoredKeys.set(key, ok);
-      scored.push({ key, ok, expected, actual });
-    }
-    const count = (prefix: string): { ok: number; bad: number } => {
-      const own = scored.filter((s) => s.key.startsWith(prefix));
-      return { ok: own.filter((s) => s.ok).length, bad: own.filter((s) => !s.ok).length };
+    categoryScores = scored;
+    const scores = new Map(scored.map(row => [row.key, row]));
+    const digest = (copy: Pending) => uploaded.get(copy.key)?.slice(0, 12) ?? '未上传';
+    const details = (copy: Pending): string => {
+      const row = scores.get(copy.key);
+      if (!row) return `${digest(copy)} 缺少可核对结果或单用例对照；下一步核对对应运行回执`;
+      const extra = [...row.actual].filter(id => !row.expected.has(id)).sort(); const absent = [...row.expected].filter(id => !row.actual.has(id)).sort();
+      return `${digest(copy)} 多出 ${extra.join('、') || '无'}；少掉 ${absent.join('、') || '无'}`;
     };
-
-    // 1 上传字节
-    const uploadsChecked = [...uploaded.keys()].length;
-    const uploadBad = [...uploadVerdicts.values()].filter(ok => !ok).length;
-    // 2 原件用例数
-    const aCounts = trees.map((_t, d) => answerOf.get(`a-${d}`)?.caseCount ?? null);
-    const originalOk = aCounts.every((n, d) => n === outerIds[d]!.length);
-    // 3 单用例副本用例数
-    const cBad = [...attempted.keys()].filter(key => key.startsWith('c-') && (unknown.has(key) || answerOf.get(key)?.caseCount !== 1)).length;
-    // 4 换序
-    const b = count('b-');
-    const bSameSummary = trees.every((_t, d) => {
-      const aS = answerOf.get(`a-${d}`)?.fullSummary;
-      const bS = answerOf.get(`b-${d}`)?.fullSummary;
-      return aS !== undefined && bS !== undefined && aS === bS;
-    });
-    // 5 拆分
-    const splitRows = scored.filter(s => s.key.startsWith('a-'));
-    const splitOk = splitRows.length === trees.length && splitRows.every(s => s.ok);
-    // 6 类型名标签
-    const typeChecks: boolean[] = [];
-    for (const [d, tree] of trees.entries()) {
-      const present = typeNamePresent(tree, categories);
-      for (const [nodeId, ids] of present) {
-        const i = outerIds[d]!.indexOf(nodeId);
-        const answer = i >= 0 ? answerOf.get(`c-${d}-${i}`) : undefined;
-        if (i < 0 || !attempted.has(`c-${d}-${i}`)) continue;
-        for (const id of ids) typeChecks.push(answer !== undefined && !unknown.has(`c-${d}-${i}`) && !answer.missing.has(id));
-      }
+    const checks: Check[] = [];
+    for (const [document] of trees.entries()) {
+      const own = [...attempted.values()].filter(copy => ownerOf(copy.key) === document);
+      const put = (name: string, copies: Pending[], test: (copy: Pending) => boolean, expected: string, describe = details) => {
+        const label = `第 ${document + 1} 份 ${name}`;
+        if (!copies.length) { notDoneChecks.add(label); return; }
+        const bad = copies.filter(copy => !test(copy));
+        checks.push(verdict(label, !bad.length, expected, bad.length ? bad.map(describe).join('；') : `核对 ${copies.length} 份，相符 ${copies.length}`));
+      };
+      const ofKind = (kind: string) => own.filter(copy => copy.kind === kind);
+      put('上传字节', own, copy => uploadVerdicts.get(copy.key) === true, '上传引用等于写下字节的摘要', copy => `${digest(copy)} 上传摘要未核实`);
+      put('原件用例数', ofKind('a'), copy => !unknown.has(copy.key) && answerOf.get(copy.key)?.caseCount === copy.premise.expected, '用例数等于独立计数', copy => `${digest(copy)} 用例 ${answerOf.get(copy.key)?.caseCount ?? '缺结果'}/${copy.premise.expected}`);
+      put('单用例副本用例数', ofKind('c'), copy => !unknown.has(copy.key) && answerOf.get(copy.key)?.caseCount === copy.premise.expected, '用例数等于该副本独立计数', copy => `${digest(copy)} 用例 ${answerOf.get(copy.key)?.caseCount ?? '缺结果'}/${copy.premise.expected}`);
+      put('换序', ofKind('b'), copy => scores.get(copy.key)?.ok === true && answerOf.get(copy.key)?.fullSummary === answerOf.get(`a-${document}`)?.fullSummary, 'b 与 a 缺失集合和摘要逐字相同', copy => `${details(copy)}；${answerOf.get(copy.key)?.fullSummary === answerOf.get(`a-${document}`)?.fullSummary ? '摘要相同' : '摘要不同'}`);
+      put('拆分', ofKind('a'), copy => scores.get(copy.key)?.ok === true, 'a 的缺失集合等于全部 c 的交集');
+      const typed = ofKind('c').filter(copy => requiredTypes(document, copy.contains[0]!.caseId).size > 0);
+      put('类型名标签', typed, copy => {
+        const answer = answerOf.get(copy.key); return !!answer && !unknown.has(copy.key) && [...requiredTypes(document, copy.contains[0]!.caseId)].every(id => !answer.missing.has(id));
+      }, '类型名标签对应类别必须为有');
+      for (const [kind, name] of [['d','删去'],['e','加回'],['f','加入']] as const) put(name, ofKind(kind), copy => scores.get(copy.key)?.ok === true && (kind === 'd' ? answerOf.get(copy.key)!.missing.has(copy.category!) : !answerOf.get(copy.key)!.missing.has(copy.category!)), '全缺失集合相同，且目标类别按变换改变');
     }
-    void TYPE_NAMES;
-    // 7 删去 / 8 加回和加入
-    const dTarget = (kind: 'd' | 'e' | 'f'): { ok: number; bad: number } => {
-      const own = scored.filter((s) => s.key.startsWith(`${kind}-`));
-      let ok = 0;
-      let bad = 0;
-      for (const s of own) {
-        const category = s.key.split('-')[2]!;
-        const targetOk = kind === 'd' ? s.actual.has(category) : !s.actual.has(category);
-        if (s.ok && targetOk) ok += 1;
-        else bad += 1;
-      }
-      return { ok, bad };
-    };
-
-    const checks: Check[] = [
-      verdict('上传字节', uploadsChecked > 0 && uploadBad === 0, `每份副本的 src 是写下字节的 sha256（核对 ${uploadsChecked} 份）`, uploadBad === 0 ? '全部对上' : `${uploadBad} 份对不上或被拒`),
-      verdict('原件用例数', originalOk, trees.map((_t, d) => `第 ${d + 1} 份 ${outerIds[d]!.length} 个`).join('、'), aCounts.join('、')),
-      verdict('单用例副本用例数', cBad === 0, `每个单用例副本 1 个用例（共 ${trees.reduce((n, _t, d) => n + outerIds[d]!.length, 0)} 份）`, cBad === 0 ? '都是 1' : `${cBad} 份不是 1`),
-      verdict('换序', b.ok > 0 && b.bad === 0 && bSameSummary, 'b 的缺失集合与 a 相同，摘要逐字相同', `相符 ${b.ok}，不符 ${b.bad}${bSameSummary ? '' : '，摘要不同'}`),
-      verdict('拆分', splitOk, 'a 的缺失集合等于全部 c 的交集', splitOk ? '相符' : '不符'),
-      verdict('类型名标签', typeChecks.length > 0 && typeChecks.every(Boolean), '带类型名标签的用例让对应类别为有', typeChecks.length === 0 ? '这一轮没有带类型名标签的用例' : typeChecks.every(Boolean) ? '相符' : '不符'),
-      verdict('删去', dTarget('d').bad === 0 && dTarget('d').ok > 0, 'd 的目标类别都变成缺', `相符 ${dTarget('d').ok}，不符 ${dTarget('d').bad}`),
-      verdict('加回和加入', dTarget('e').bad === 0 && dTarget('f').ok > 0 ? dTarget('f').bad === 0 : false, 'e 和 f 的目标类别都变成有', `e 相符 ${dTarget('e').ok} 不符 ${dTarget('e').bad}；f 相符 ${dTarget('f').ok} 不符 ${dTarget('f').bad}`),
-      verdict('至少两份文档走完三段', trees.filter((_tree, d) => [['a', 'b'], ['c'], ['d', 'e', 'f']].every(kinds => scored.some(copy => Number(copy.key.split('-')[1]) === d && kinds.includes(copy.key[0]!)))).length >= 2, '三段都有上传和运行', `上传 ${uploadsOfPhase.join('、')}；运行 ${runsOfPhase.join('、')}`),
-      verdict('类型标签类别和关键词类别各至少一类当过目标', (() => {
-        const targets = new Set<string>();
-        for (const key of phaseThreeMap.keys()) if (scoredKeys.has(key) && /^[df]-/.test(key)) targets.add(key.split('-')[2]!);
-        const kinds = new Set([...targets].map((id) => categories.find((c) => c.id === id)?.group));
-        return kinds.has('test_type') && kinds.size > 1;
-      })(), 'd 或 f 的目标里两类都有', (() => {
-        const targets = new Set<string>();
-        for (const key of phaseThreeMap.keys()) if (scoredKeys.has(key) && /^[df]-/.test(key)) targets.add(key.split('-')[2]!);
-        const kinds = [...new Set([...targets].map((id) => categories.find((c) => c.id === id)?.group))];
-        return kinds.join('、') || '没有目标';
-      })()),
-      verdict('对话没有被压缩', !compacted, '没有收到没有工具结果的请求', compacted ? '收到过' : '没有'),
-
-    ];
     const missing = [...attempted.keys()].filter(key => !answerOf.has(key) || unknown.has(key));
-    checks.push(verdict('副本回答完整', attempted.size > 0 && missing.length === 0, '每份副本给出完整条目结果', missing.length ? missing.map(key => `${uploaded.get(key)?.slice(0, 12)} 缺结果；下一步核对对应运行回执并修复读取`).join('；') : '完整'));
+    checks.push(verdict('副本回答完整', attempted.size > 0 && !missing.length, '每份副本给出完整条目结果', missing.length ? missing.map(key => `${uploaded.get(key)?.slice(0, 12)} 缺结果；下一步核对运行回执和读取解析`).join('；') : '完整'));
+    const completed = trees.filter((_tree, document) => [['a','b'],['c'],['d','e','f']].every(kinds => scored.some(row => ownerOf(row.key) === document && kinds.includes(attempted.get(row.key)!.kind)))).length;
+    checks.push(verdict('至少两份文档走完三段', completed >= 2, '至少 2 份', `${completed} 份；上传 ${uploadsOfPhase.join('、')}；运行 ${runsOfPhase.join('、')}`));
+    const targetGroups = new Set(scored.filter(row => ['d','f'].includes(attempted.get(row.key)!.kind)).map(row => categories.find(category => category.id === attempted.get(row.key)!.category)?.group));
+    checks.push(verdict('类型标签类别和关键词类别各至少一类当过目标', targetGroups.has('test_type') && [...targetGroups].some(group => group !== undefined && group !== 'test_type'), '两类均有实际核对目标', `${targetGroups.size} 类`));
+    checks.push(verdict('对话没有被压缩', !compacted, '没有压缩请求', compacted ? '收到过' : '没有'));
     checkFindings = [...new Map(findings.map(finding => [finding.runKey, finding])).values()];
-    const kinds: Record<string, string[]> = { '上传字节': ['a','b','c','d','e','f'], '原件用例数': ['a'], '单用例副本用例数': ['c'], '换序': ['b'], '拆分': ['a'], '类型名标签': ['c'], '删去': ['d'], '加回和加入': ['e','f'] };
-    return checks.filter(check => {
-      const relevant = kinds[check.name];
-      if (relevant && (![...attempted.values()].some(copy => relevant.includes(copy.kind)) || check.name === '类型名标签' && typeChecks.length === 0)) { notDoneChecks.add(check.name); return false; }
-      return true;
-    });
+    return checks;
   };
 
   // The sections are computed lazily (accept-circle.ts reads them after check()); the counts come from the scored
@@ -490,10 +403,10 @@ export default function scenario(gold: GapCircleGold): Scenario {
     const kindOf = (key: string): string => key.replace(/^([a-z])-.*/, '$1');
     const lines: string[] = [];
     for (const category of categories) {
-      const targeted = [...phaseThreeMap.keys()].filter((k) => k.split('-')[2] === category.id).length;
+      const targeted = categoryScores.filter(row => attempted.get(row.key)?.category === category.id).length;
       const parts = (['a', 'b', 'c', 'd', 'e', 'f'] as const).map((kind) => {
-        const own = [...scoredKeys.entries()].filter(([k]) => kindOf(k) === kind);
-        const ok = own.filter(([, v]) => v).length;
+        const own = categoryScores.filter(row => kindOf(row.key) === kind);
+        const ok = own.filter(row => row.expected.has(category.id) === row.actual.has(category.id)).length;
         return `${kind} 相符 ${ok} 不符 ${own.length - ok}`;
       });
       lines.push(`${category.id}（${category.group === 'test_type' ? '类型标签' : '关键词'}）：${parts.join('；')}；当目标 ${targeted} 次`);
