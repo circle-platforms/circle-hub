@@ -10,7 +10,7 @@ function makeItemInput(drafts: unknown[], groups: Record<string, unknown>[] = []
     item: {
       id: '74001',
       label: 'SLB健康检查间隔无法保存',
-      location: 'src:sha_bug/json@1/#',
+      location: 'src:sha_bug/json@1/p',
       fields: { id: '74001', title: 'SLB健康检查间隔无法保存' },
     },
     slots: {
@@ -45,13 +45,13 @@ describe('subjects', () => {
   });
 
   it('quoteSubject extracts quotation objects from draft expected results', () => {
-    const good = makeGoodDraft({ ref: 'src:sha123/json@1/#/html_fields/fix' });
+    const good = makeGoodDraft({ ref: 'src:sha123/json@1/p/fields/fix' });
     const input = makeItemInput([good]);
 
     const subject = quoteSubject(input) as { item: string; quotes: Array<{ reference: string; text: string }> };
     assert.equal(subject.item, '74001');
     assert.equal(subject.quotes.length, 1);
-    assert.equal(subject.quotes[0].reference, 'src:sha123/json@1/#/html_fields/fix');
+    assert.equal(subject.quotes[0].reference, 'src:sha123/json@1/p/fields/fix');
     assert.equal(subject.quotes[0].text, '健康检查间隔设置成功');
   });
 

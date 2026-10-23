@@ -5,7 +5,7 @@
   "note": "用例步骤中的命令在目录中存在且参数类型和范围合法",
   "subject": {
     "item": "74001",
-    "location": "src:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/plm:bug/74001",
+    "location": "src:345222e457e0a9333587bf2613c8aa690b0d508cab1ae4eb7e3f14ef30e26982/json@1/p/id",
     "phrases": [
       "widget health interval 60"
     ],

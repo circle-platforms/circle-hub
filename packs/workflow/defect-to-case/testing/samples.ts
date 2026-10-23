@@ -1,4 +1,5 @@
 // Sample generator for defect-to-case pack (pack-sample@1).
+import { createHash } from 'node:crypto';
 import { mkdir, readdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -7,8 +8,9 @@ import { commandSubject, duplicateSubject, quoteSubject } from '../functions/sub
 import { SYNTHETIC_BUG_74001, SYNTHETIC_CATALOG_SPEC, SYNTHETIC_INDEX_VIEW, goodDraft } from './fixtures.ts';
 
 const BUG_ID = SYNTHETIC_BUG_74001.id;
-const FIX_REF = SYNTHETIC_BUG_74001.fixReference;
-const FIX_TEXT = SYNTHETIC_BUG_74001.fixText;
+const BUG_DIGEST = createHash('sha256').update(JSON.stringify(SYNTHETIC_BUG_74001)).digest('hex');
+const FIX_REF = `src:${BUG_DIGEST}/json@1/p/fields/${SYNTHETIC_BUG_74001.fix_field}`;
+const FIX_TEXT = SYNTHETIC_BUG_74001.fields.fix;
 
 type Entry = { folder: 'positive' | 'negative'; sample: PackSample };
 
@@ -27,8 +29,8 @@ function sample(
 export function samples(): Entry[] {
   const defaultGoodSubject = {
     item: BUG_ID,
-    label: SYNTHETIC_BUG_74001.label,
-    location: SYNTHETIC_BUG_74001.location,
+    label: SYNTHETIC_BUG_74001.title,
+    location: `src:${BUG_DIGEST}/json@1/p/id`,
     fields: SYNTHETIC_BUG_74001.fields,
     slots: {
       cases: [

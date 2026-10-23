@@ -16,18 +16,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function stripHtml(html: string): string {
-  return html
-    .replace(/<[^>]*>/g, ' ')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&amp;/g, '&')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
 export function projectDefects(input: unknown): ProjectionOutput {
   if (!isRecord(input) || !Array.isArray(input.inputs)) {
     return {
@@ -117,13 +105,8 @@ export function projectDefects(input: unknown): ProjectionOutput {
     const title = typeof model.title === 'string' && model.title.trim() !== '' ? model.title.trim() : (b.meta && typeof b.meta.title === 'string' ? b.meta.title : `缺陷 ${id}`);
     const status = (isRecord(model.fields) && typeof model.fields.status === 'string' ? model.fields.status : (b.meta && typeof b.meta.status === 'string' ? b.meta.status : '未知'));
 
-    // Convert HTML fields to plain text
-    const plainHtmlFields: Record<string, string> = {};
-    if (isRecord(model.html_fields)) {
-      for (const [k, v] of Object.entries(model.html_fields)) {
-        if (typeof v === 'string') plainHtmlFields[k] = stripHtml(v);
-      }
-    }
+    // PLM has already converted HTML values to plain text in fields; html_fields lists their names.
+    const htmlFields = Array.isArray(model.html_fields) ? model.html_fields.filter((name): name is string => typeof name === 'string') : [];
 
     const summaryText = `缺陷 ${id} · ${status} · 起草 0 个用例`;
     const summary = summaryText.length > 200 ? `${summaryText.slice(0, 197)}...` : summaryText;
@@ -147,7 +130,7 @@ export function projectDefects(input: unknown): ProjectionOutput {
         status,
         allowed_quote_sources: { defect: b.sha256, fix_field: fixField, manual: manual.sha256 },
         fields: isRecord(model.fields) ? model.fields : {},
-        html_fields: plainHtmlFields,
+        html_fields: htmlFields,
       },
     });
   }

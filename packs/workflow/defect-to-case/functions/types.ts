@@ -45,7 +45,8 @@ export interface DefectItemFields {
   title: string;
   status?: string;
   fields?: Record<string, unknown>;
-  html_fields?: Record<string, string>;
+  html_fields?: string[];
+  fix_field?: string | null;
   [key: string]: unknown;
 }
 

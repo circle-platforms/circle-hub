@@ -64,7 +64,7 @@ Hub 对提交进行两层核对：
             "text": "SLB健康检查间隔配置测试",
             "quotes": [
               {
-                "reference": "src:3ddd7ead4f133d137fd205261456c06ded9ffe14c27cedb10657f2e03c6ee5cb/json@1/p/html_fields/fix",
+                "reference": "src:345222e457e0a9333587bf2613c8aa690b0d508cab1ae4eb7e3f14ef30e26982/json@1/p/fields/fix",
                 "text": "健康检查间隔设置成功"
               }
             ],
@@ -86,7 +86,7 @@ Hub 对提交进行两层核对：
                 {
                   "text": "健康检查间隔设置成功",
                   "quote": {
-                    "reference": "src:3ddd7ead4f133d137fd205261456c06ded9ffe14c27cedb10657f2e03c6ee5cb/json@1/p/html_fields/fix",
+                    "reference": "src:345222e457e0a9333587bf2613c8aa690b0d508cab1ae4eb7e3f14ef30e26982/json@1/p/fields/fix",
                     "text": "健康检查间隔设置成功"
                   }
                 }

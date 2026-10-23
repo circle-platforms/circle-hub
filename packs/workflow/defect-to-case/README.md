@@ -107,3 +107,5 @@ PLM 部署设置为 `settings.bug_fix_field`，系统包须在缺陷 `content.fi
 只接受本条缺陷 `src:<摘要>/json@1/p/fields/<fix_field>`（可带该字段内的字节范围），或绑定手册的 src 片段。字段名按选择器的独立段解码后精确比较，不收父对象、其他字段、其他缺陷、其他来源。当前接口不能把 tree:/rec: 证明为这两份原件；按集成者决定拒绝这些引用形式，要求改引已绑定原件的 src 片段。
 
 跨包依赖：PLM 系统包尚未提供 content.fix_field；集成者在需求追溯变更合并后安排补齐。本包只用带 fix_field 的合成内容验证；在系统包补齐之前，真实启动将明确拒绝。没有读取或修改真实资源设置。
+
+样例的 PLM 内容按 `{id, kind, title, fields, html_fields, fix_field}` 构造：HTML 已由系统包转成 fields 里的纯文本，html_fields 是字段名列表。`json@1/p/html_fields/fix` 不存在；引用配置为 fix 的示例用 `json@1/p/fields/fix`。字段名含 / 等路径字符时编码为一个选择器段。`reference-shape.test.ts` 通过核心 json@1 解析器定位样例引用，并重算示例内容摘要，避免只在假的字段结构上通过。

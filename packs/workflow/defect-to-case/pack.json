@@ -8,8 +8,8 @@
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "e331fbd4e587e54b498c1bc827b54ef98631cd4feb1b2925908a178b6ce287b9",
-      "size": 7920
+      "sha256": "57dc7131e2ebf78b7672a26bcc8216cbf3ee2d2d8420d5cd9ecc1b3d59458bde",
+      "size": 7910
     },
     {
       "path": "checks.json",
@@ -18,18 +18,18 @@
     },
     {
       "path": "examples/start-run.json",
-      "sha256": "3ff7cab242099c766355c8b71c453ae6f662fc14e495994a504247f83690c4e2",
-      "size": 792
+      "sha256": "b0ffac19f85f2eb74adf1c191749805404cd20d9e3b48f4b57e210319b9bcd14",
+      "size": 864
     },
     {
       "path": "examples/submission.json",
-      "sha256": "3a9bd339fcdfdb04054307e43628afdd52573712abb40cc6b7130f35d5c3e242",
-      "size": 1866
+      "sha256": "a5f325b7a4d83dd8c94a2fac00331c6578d36e52fb65fb0e91f9268798b54cb7",
+      "size": 1916
     },
     {
       "path": "examples/submit-result.json",
-      "sha256": "4c11ea6d03d09d9d11cddd258fb26e790ee80d319e2b0c1367398a8adfa3861a",
-      "size": 1483
+      "sha256": "7bb0820012a8835d94d9909ec080bb75f4ffc6ba0f71c6afb773520a2803e358",
+      "size": 1473
     },
     {
       "path": "functions/checks.ts",
@@ -48,8 +48,8 @@
     },
     {
       "path": "functions/projection.ts",
-      "sha256": "6712de82bbf8973fa7fd6843e4b1e029a0277592cea6612685bfd7031fdb0fab",
-      "size": 6240
+      "sha256": "3119f9cfdb01a534b6b51d6f69d6e26b7c32a5ff04cab269e49175f2b03e9e42",
+      "size": 5925
     },
     {
       "path": "functions/subjects.ts",
@@ -58,8 +58,8 @@
     },
     {
       "path": "functions/types.ts",
-      "sha256": "4d4a2705f7f0860b817c1a7f6c5f37120c2954b231721889e348e5f96700b540",
-      "size": 1454
+      "sha256": "6a73f21dd64875fef224da71231d450ac74c24d08db744a5d8c497596cba7af6",
+      "size": 1469
     },
     {
       "path": "requirements.json",
@@ -78,18 +78,18 @@
     },
     {
       "path": "samples/negative/negative_accepted.json",
-      "sha256": "c812cd13203f3a68a71e5ddc80001155bac3a1597e4423ddd24dd3941dea7d45",
-      "size": 2405
+      "sha256": "8fa5faa406d6b63f1527933a2d2d1a4287263c694736a99b17604d8f1dd3fc96",
+      "size": 2408
     },
     {
       "path": "samples/negative/quotes_mismatch.json",
-      "sha256": "9f080c3eee266f39a1144f73c5c506daf6b81bb8d040675ea4a6b4d4f60ec1b6",
-      "size": 681
+      "sha256": "b6bb1878efc996f0ca0870654e95606c6fae351cb7ae31065f68de882be99ffa",
+      "size": 829
     },
     {
       "path": "samples/negative/reading_unsupported_entity.json",
-      "sha256": "03b709ed42b1dce4fe26bea2026a1006dfeba0d72622aae6b65f67c124e6dc65",
-      "size": 1336
+      "sha256": "500bd1d658659b5d85b6505286d3275a319c334a1692fae69f413920dc530518",
+      "size": 1339
     },
     {
       "path": "samples/negative/shape_invalid.json",
@@ -103,8 +103,8 @@
     },
     {
       "path": "samples/positive/commands_valid.json",
-      "sha256": "52f38519e9c366a8f6137a51ad9b58884d31a0603e053002f95a460c0c5a320b",
-      "size": 1528
+      "sha256": "bd195a63489c8dcaff668cd30127b9f45ad5f5f796c7331bf96b98906c27c22b",
+      "size": 1526
     },
     {
       "path": "samples/positive/duplicate_none.json",
@@ -113,23 +113,23 @@
     },
     {
       "path": "samples/positive/quotes_verbatim.json",
-      "sha256": "fe665b35e336c6797452043f2b61f15cd5695819d0c0be244407a8593a3802e4",
-      "size": 639
+      "sha256": "178bdaff08d95eea0799fb03f4a11ec06c8442900ac12d68cf1b9f891c39be8c",
+      "size": 787
     },
     {
       "path": "samples/positive/reading_grounded.json",
-      "sha256": "25fe2fe2d4d6f3e592c3e1f5514ee9780ee758dd2aaa85d72154eb288dadc73d",
-      "size": 1556
+      "sha256": "09896448cf8c084358d4ec5e2312d24049de923e691a91b40871e9ec4b2a3221",
+      "size": 1913
     },
     {
       "path": "samples/positive/refutation_valid.json",
-      "sha256": "9ef6b8ece9ea066b1e17d021f7d5a149e61a4b9579bc7cff6a734067c9bc0418",
-      "size": 2348
+      "sha256": "4dab5dd37141b081cdc1200c2607e9cf2ad0eccc4afec2837e515d421eb8c65a",
+      "size": 2351
     },
     {
       "path": "samples/positive/shape_clean.json",
-      "sha256": "0a1a98983f7fbcf4e66d2c04a7fe456cb444373d8afba1c38e9fe38700ab05ec",
-      "size": 1543
+      "sha256": "a6a3ba10419344e5325dd97736eb3393573ea62b153a22cde5eb2cb35650c564",
+      "size": 1900
     },
     {
       "path": "samples/positive/sources_allowed.json",
