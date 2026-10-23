@@ -122,7 +122,7 @@ export async function runBatch(config:Pairings,options:BatchOptions,deps:BatchDe
         } catch(error) { if(category==='original_export_or_integrity_defect')throw error; }
         performed('reread_accepted_submission',attempt);
       }
-      if(!object(submission)||submission.run!==run.run||result.submission!==accepted[0].record){category='submission_identity_mismatch';throw new Error(category);}
+      if(!object(submission)||submission.run!==run.run){category='submission_identity_mismatch';throw new Error(category);}
       for(const binding of run.sources){
         const digest=typeof binding.reference==='string'?/^src:([a-f0-9]{64})(?:\/|$)/.exec(binding.reference)?.[1]:undefined;
         if(!digest){if(binding.slot==='defects'||binding.slot==='indexed_cases'){category='source_binding_invalid';throw new Error(category);}continue;}

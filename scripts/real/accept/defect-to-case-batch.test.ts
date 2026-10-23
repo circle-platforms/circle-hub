@@ -18,7 +18,7 @@ function fixture(){
     const record=(i?'f':'e').repeat(64),validation=(i?'2':'1').repeat(64);
     submissions.set(record,{run,items:[{item:'item',slots:{cases:[{data:{title:'SYNTHETIC_DRAFT_TITLE',negative:false,expects_refutation:false,steps:[{command:'widget set 5'}],expected:[{text:'SYNTHETIC_FIX_QUOTATION',quote:{text:'SYNTHETIC_FIX_QUOTATION',reference:`src:${sourceSha}/json@1/p/fix`}}]}}]}}]});
     const requirements=['fields','commands','grounded','not_duplicate','traceability'];
-    const detail={run:{run,pack:'defect-to-case@1.0.0',pack_digest:'b'.repeat(64),root:'a'.repeat(64),sources:[{slot:'defects',reference:`src:${sourceSha}`},{slot:'indexed_cases',reference:`src:${indexSha}`}],requirements:requirements.map(key=>({key,repair_rounds:2}))},submissions:[{record,result:validation,acceptance:'accepted'},{record:'3'.repeat(64),result:null,acceptance:'not_accepted'}],latest:{record:validation,result:{schema:'validation@1',submission:record,rounds:{used:1,max:2},partitions:{delivered:[{item:'item',requirements:requirements.map(requirement=>({requirement,status:'satisfied',claims:[]}))}]}}}};
+    const detail={run:{run,pack:'defect-to-case@1.0.0',pack_digest:'b'.repeat(64),root:'a'.repeat(64),sources:[{slot:'defects',reference:`src:${sourceSha}`},{slot:'indexed_cases',reference:`src:${indexSha}`}],requirements:requirements.map(key=>({key,repair_rounds:2}))},submissions:[{record,result:validation,acceptance:'accepted'},{record:'3'.repeat(64),result:null,acceptance:'not_accepted'}],latest:{record:validation,result:{schema:'validation@1',submission:'4'.repeat(64),rounds:{used:1,max:2},partitions:{delivered:[{item:'item',requirements:requirements.map(requirement=>({requirement,status:'satisfied',claims:[]}))}]}}}};
     details.set(run,detail);
     const map=join(root,`map-${i}.json`);writeFileSync(map,JSON.stringify({root:{data:{text:`缺陷${defect} 回归`,id:'root'},children:[{data:{text:'widget set 5',id:'case',resource:['功能']}}]}}));
     config.pairings.push({defect,build:'Demo_1',commands,manual,regression_map:map,document});
@@ -32,6 +32,7 @@ test('two pairings aggregate counts and select the accepted submission by latest
     const report=await runBatch(f.config,{out:f.out,endpointArgs:['--endpoint-from','circle'],token:'synthetic'},f.deps);
     assert.equal(report.code,0);assert.deepEqual([report.totals.completed,report.totals.drafts,report.totals.domain_support],[2,2,2]);
     assert.deepEqual(f.records,['e'.repeat(64),'f'.repeat(64)]);
+    assert.notEqual(f.details.get('run_synthetic_0').latest.result.submission,f.records[0]);
     assert.notEqual(f.reviews[0][f.reviews[0].indexOf('--out')+1],f.reviews[1][f.reviews[1].indexOf('--out')+1]);
     for(const text of ['SYNTHETIC_DRAFT_TITLE','widget set','SYNTHETIC_FIX_QUOTATION','160001','160002','24110','24111'])assert.ok(!report.text.includes(text),text);
     const detail=readFileSync(join(f.out,'pair-1','details.json'),'utf8');
