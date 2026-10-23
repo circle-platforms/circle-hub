@@ -68,8 +68,8 @@
     },
     {
       "path": "functions/checks.ts",
-      "sha256": "345903c0813674cdf2d81e961889afd760732c440bbbfa4622a342004a72275c",
-      "size": 10350
+      "sha256": "955e2701a79c810313e6e215c9137c4e6d56018426c7d356ed37b5b6b8474c05",
+      "size": 10661
     },
     {
       "path": "functions/manifest.ts",
@@ -108,8 +108,8 @@
     },
     {
       "path": "requirements.json",
-      "sha256": "73578c9e93bcb1a24b7db515f50825ec942f7f11c3d28a829b43081145d2a4b7",
-      "size": 6645
+      "sha256": "e09672dbb197351d458dd30f30930a579d28683e7798f4223011a06456ff4a7d",
+      "size": 6773
     },
     {
       "path": "samples/negative/address-off-bed.json",

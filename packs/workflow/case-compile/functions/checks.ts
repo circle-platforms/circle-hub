@@ -72,6 +72,7 @@ export function checkAddresses(input: unknown): Outcome[] {
   for (const [i, step] of slots.steps.entries()) {
     const method = runtimeMethod(s.contract!, step.object, step.method); const allowed = allowedCall(s.profile!, step.object, step.method);
     const bound = method ? bindArguments(method, step, `/data/steps/${i}`).values : [];
+    for (const v of bound) if (allowed && !Object.hasOwn(allowed.parameters, v.name) && !method?.parameters.some((p) => p.name === v.name && p.redacted)) out.push(refute(s, 'param_unassigned', `参数 ${v.name} 没有角色，地址用途无法核对；请在运行环境配置里给它定角色`, v.pointer));
     const seat = s.profile!.seats.find((v) => v.object === step.object);
     const values = [...step.args.map((value, k) => ({ value, pointer: `/data/steps/${i}/args/${k}` })), ...Object.entries(step.keywords).map(([name, value]) => ({ value, pointer: `/data/steps/${i}/keywords/${name.replaceAll('~', '~0').replaceAll('/', '~1')}` }))];
     for (const v of values) {

@@ -31,3 +31,7 @@ test('review 03 unpaired quotes and final backslashes produce a repairable value
     const data = goodData(); data.steps[0].args = [text]; const result = checkContractShape(subjectOf(data)); assert.ok(codes(result).includes('case-compile.param_value')); assert.ok(result.some((v) => v.statement.includes('引号') || v.statement.includes('反斜杠')));
   }
 });
+test('review 04 address verification cannot report support for a roleless device parameter', () => {
+  const setup = extraParameter('widget-seat', 'configure', 'note'); const data = goodData(); data.steps[0].keywords.note = 'widget address 192.0.2.1';
+  const result = checkAddresses(subjectOf(data, setup)); assert.ok(codes(result).includes('case-compile.param_unassigned')); assert.ok(result.every((v) => v.verdict !== 'support'));
+});
