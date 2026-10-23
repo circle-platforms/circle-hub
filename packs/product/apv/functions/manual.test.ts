@@ -622,6 +622,51 @@ describe('command tables split by row', () => {
   });
 });
 
+describe('tree-independent content', () => {
+  const TEXT = [
+    '# 概述',
+    '',
+    '本手册为合成。命令字面见 `demo pool add`。',
+    '',
+    '## 命令',
+    '',
+    '**demo pool add** *\\<name\\>*',
+    '',
+    '该命令用于添加成员。',
+    '',
+    '**demo probe** *\\<name\\>*',
+    '',
+    '该命令用于探测，仅 hg-k 平台支持。',
+    '',
+    '| 命令 | 说明 |',
+    '| --- | --- |',
+    '| **demo pool add** *\\<name\\>* | 添加成员 |',
+    '| **demo route static** *\\<net\\>* | 静态路由 |',
+    '| **demo pool add** 与 **demo route static** | 配合 |',
+  ].join('\n');
+  const TREE_A = '<commands><scope type="global"><menu name="demo"><menu name="pool"><item name="add" help_string="a"><arguments></arguments></item></menu><menu name="route"><item name="static" help_string="s"><arguments></arguments></item></menu></menu></scope></commands>';
+  const TREE_B = '<commands><scope type="global"><menu name="demo"><menu name="route"><item name="static" help_string="s"><arguments></arguments></item></menu></menu></scope></commands>';
+
+  it('keeps every entry’s digest-bearing content identical across trees; only placement moves (K01 R[1])', () => {
+    const model = markdown(TEXT);
+    const a = produceManualEntries(model, null, { catalog: commandCatalog(xml(TREE_A)).catalog });
+    const b = produceManualEntries(model, null, { catalog: commandCatalog(xml(TREE_B)).catalog });
+    // What entryDigest covers (hub/knowledge/digest.ts): kind, statement, data, applicability — never the tree.
+    const content = (result: ManualResult) => result.entries.map((entry) => canonicalJson({ kind: entry.kind, statement: entry.statement, data: entry.data, applicability: entry.applicability }));
+    assert.deepEqual(content(a), content(b));
+    const pathsA = a.entries.map((entry) => entry.path);
+    const pathsB = b.entries.map((entry) => entry.path);
+    const moved = pathsA.flatMap((path, k) => (path === pathsB[k] ? [] : [k]));
+    assert.deepEqual(moved, [1, 2, 5, 6, 9], 'exactly the entries naming the removed command move');
+    assert.equal(pathsA[1], '/commands/demo/pool/add');
+    assert.equal(pathsB[1], '/manual/manual/概述/命令');
+    assert.equal(pathsA[9], '/commands/demo', 'the two-command row at the common ancestor');
+    assert.equal(pathsB[9], '/manual/manual/概述/命令');
+    // Determinism: the same input twice gives byte-identical entries.
+    assert.equal(canonicalJson(a.entries), canonicalJson(produceManualEntries(model, null, { catalog: commandCatalog(xml(TREE_A)).catalog }).entries));
+  });
+});
+
 describe('applicability from explicit conditions', () => {
   it('reads platforms and models from the sentences written for them; builds stay undeclared on manual entries', () => {
     const result = produceManualEntries(
