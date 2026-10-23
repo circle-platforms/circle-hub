@@ -36,9 +36,30 @@ test('an item the Hub satisfied is a disagreement when the independent domain is
   const hub={partitions:{delivered:[{item:'synthetic-item',requirements:[{requirement:'commands',status:'satisfied'}]}]}};
   assert.equal(domainReport(submission,hub,xml('<arg name="value" type="U16"/>')).items[0].comparison,'different');
 });
-test('a valid negative case needs a refutation and unknown lines are still disclosed separately',()=>{
-  const submission={items:[{item:'i',slots:{cases:[{data:{negative:true,expects_refutation:true,steps:[{command:'widget set 70000\nunrecognized command'}]}}]}}]};
+test('a valid negative case needs a refutation and unmapped argument domains are disclosed separately',()=>{
+  const submission={items:[{item:'i',slots:{cases:[{data:{negative:true,expects_refutation:true,steps:[{command:'widget set 70000\nwidget custom cfg'}]}}]}}]};
   const hub={partitions:{delivered:[{item:'i',requirements:[{requirement:'commands',status:'satisfied'}]}]}};
-  const report=domainReport(submission,hub,xml('<arg name="value" type="U16"/>'));
+  const tree=xml('<arg name="value" type="U16"/>').replace('</menu>', '<item name="custom"><arguments><arg name="value" type="UNMAPPED"/></arguments></item></menu>');
+  const report=domainReport(submission,hub,tree);
   assert.equal(report.items[0].verdict,'support');assert.equal(report.items[0].hasUnknown,true);assert.equal(report.counts.unknown,1);
+});
+test('catalog non-members refute and missing expects_refutation defaults to false',()=>{
+  const submit=(command:string)=>({items:[{item:'i',slots:{cases:[{data:{negative:false,steps:[{command}]}}]}}]});
+  const hub={partitions:{delivered:[{item:'i',requirements:[{requirement:'commands',status:'satisfied'}]}]}};
+  const tree=xml('<arg name="value" type="U16"/>');
+  const good=domainReport(submit('widget set 5'),hub,tree);assert.equal(good.items[0].comparison,'equal');
+  const bad=domainReport(submit('widget absent 5'),hub,tree);assert.equal(bad.counts.refute,1);assert.equal(bad.counts.unknown,0);assert.equal(bad.notMember,1);assert.equal(bad.items[0].comparison,'different');
+});
+test('a legal preparation step plus an invalid negative step is reported as the package step-rule difference',()=>{
+  const submission={items:[{item:'i',slots:{cases:[{data:{negative:true,expects_refutation:true,steps:[{command:'widget set 5'},{command:'widget set 70000'}]}}]}}]};
+  const hub={partitions:{delivered:[{item:'i',requirements:[{requirement:'commands',status:'unsatisfied'}]}]}};
+  const report=domainReport(submission,hub,xml('<arg name="value" type="U16"/>'));
+  assert.equal(report.items[0].verdict,'support');assert.equal(report.items[0].comparison,'different');
+  assert.deepEqual(report.differences.map(d=>d.category),['negative_step_rule']);assert.equal(report.differences[0].draft,1);
+});
+test('a noninteger parameter ignored by simplified refutation matching gets its own diagnostic group',()=>{
+  const submission={items:[{item:'i',slots:{cases:[{data:{negative:true,expects_refutation:true,steps:[{command:'widget set host-name'}]}}]}}]};
+  const hub={partitions:{delivered:[{item:'i',requirements:[{requirement:'commands',status:'unsatisfied'}]}]}};
+  const report=domainReport(submission,hub,xml('<arg name="address" type="IPADDR"/>'));
+  assert.equal(report.items[0].verdict,'support');assert.deepEqual(report.differences.map(d=>d.category),['simplified_refutation_match']);
 });

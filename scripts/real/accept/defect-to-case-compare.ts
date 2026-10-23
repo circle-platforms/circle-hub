@@ -270,7 +270,8 @@ export function renderComparison(comparison: Comparison): string {
   lines.push(p ? `参数组合（只报告）：相同 ${p.same}；同头异参 ${p.different}；文档无命令头 ${p.absent}；文档组合覆盖 ${percent(p.docRatio)}` : '参数：设计缺口；缺构建命令树原件，需集成者 Claude 导出');
   if (p) {
     const items = p.domains.items;
-    lines.push(`取值域：支持 ${p.domains.counts.support}；反驳 ${p.domains.counts.refute}；暂态待补证 ${p.domains.counts.unknown}`);
+    lines.push(`取值域：支持 ${p.domains.counts.support}；反驳 ${p.domains.counts.refute}；其中目录外 ${p.domains.notMember}；暂态待补证 ${p.domains.counts.unknown}`);
+    lines.push(`已知差异分组：逐步判 ${p.domains.items.filter(i => i.differenceCategories.includes('negative_step_rule')).length}；简化匹配 ${p.domains.items.filter(i => i.differenceCategories.includes('simplified_refutation_match')).length}（诊断对照，默认仍不通过）`);
     lines.push(`命令与参数：${items.length > 0 && items.every(i => i.comparison === 'equal' && !i.hasUnknown) ? '通过' : '不通过'}；一致 ${items.filter(i => i.comparison === 'equal').length}；不一致 ${items.filter(i => i.comparison === 'different').length}；待补证条目 ${items.filter(i => i.comparison === 'unknown' || i.hasUnknown).length}`);
   }
   const independent = comparison.quoteOracle;
@@ -311,6 +312,7 @@ export function evidenceQuestions(comparison: Comparison): EvidenceQuestion[] {
   const questions: EvidenceQuestion[] = [];
   if (!comparison.parameters) questions.push({ category: 'design_gap', missing_fact: 'build_command_tree_original', next_action: 'request_command_tree_export', owner: 'Claude' });
   for (const d of comparison.parameters?.domains.details ?? []) for (const [command, outcome] of d.outcomes.entries()) if (outcome.verdict === UNKNOWN) questions.push({ draft: d.draft, command: command + 1, category: 'design_gap', missing_fact: outcome.gap?.fact ?? 'command_domain_rule', next_action: outcome.gap?.action ?? 'request_rule_from_named_integrator', owner: 'Claude' });
+  for (const d of comparison.parameters?.domains.details ?? []) if (d.verdict === UNKNOWN && d.outcomes.every(o => o.verdict !== UNKNOWN)) questions.push({ draft: d.draft, category: 'design_gap', missing_fact: d.outcomes.length === 0 ? 'draft_commands' : 'negative_and_refutation_intent', next_action: 'clarify_intent_or_complete_draft_in_repair_round', owner: 'Claude' });
   for (const d of comparison.quoteOracle.details) if (d.verdict === UNKNOWN || d.category === 'unknown_defect_field') questions.push({ draft: d.draft, expected: d.expected, category: 'design_gap', missing_fact: d.category === 'unknown_defect_field' ? 'fix_field_binding' : d.gap?.fact ?? 'reference_fragment', next_action: d.category === 'unknown_defect_field' ? 'request_fix_field_name' : d.gap?.action ?? 'request_source_export', owner: 'Claude' });
   for (const [item_position, item] of (comparison.parameters?.domains.items ?? []).entries()) if (item.comparison === 'unknown' && !item.hasUnknown) questions.push({ item_position: item_position + 1, category: 'design_gap', missing_fact: 'current_commands_requirement_result', next_action: 'replay_submission_and_read_current_result', owner: 'Claude' });
   for (const [item_position, item] of comparison.quoteOracle.items.entries()) if (item.comparison === 'unknown' && comparison.quoteOracle.counts.unknown === 0) questions.push({ item_position: item_position + 1, category: 'design_gap', missing_fact: 'current_grounded_requirement_result', next_action: 'replay_submission_and_read_current_result', owner: 'Claude' });
@@ -320,6 +322,7 @@ export function evidenceQuestions(comparison: Comparison): EvidenceQuestion[] {
 /** Details contain positions and explanatory categories only, never input strings. */
 export function comparisonDetails(comparison: Comparison): unknown[] {
   return [
+    ...(comparison.parameters?.domains.differences ?? []),
     ...(comparison.parameters?.domains.details.flatMap(d => d.outcomes.map((o, command) => ({ draft: d.draft, command: command + 1, category: o.category }))) ?? []),
     ...comparison.quoteOracle.details.map(d => ({ draft: d.draft, expected: d.expected, category: [d.category, d.verdict, d.reason ?? '', d.scope, d.expectedVerbatim === false ? 'paraphrased' : ''].filter(Boolean).join('.') })),
 

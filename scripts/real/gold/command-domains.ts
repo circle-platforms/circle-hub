@@ -1,6 +1,7 @@
 // Independent value-domain oracle. Only the original XML reader and command tokenizer are shared with other gold scripts.
 import { isIP } from 'node:net';
 import { VERDICT, REASON, REQUIREMENT_STATUS, type Verdict, type RequirementStatus } from '../../../contracts/generated/vocabulary.ts';
+import { parseCommandTree } from './compile-check.ts';
 import { XmlReader, type XmlNode } from './command-diff.ts';
 import { buildCatalog, parseCommandsFromText, normalizeHead, type SplitCommand } from './regression-doc.ts';
 const [SUPPORT, REFUTE, UNKNOWN] = VERDICT;
@@ -11,7 +12,7 @@ export function decodeCommandXml(bytes: Uint8Array): string {
   const encoding = /<\?xml[^>]*encoding=["']([^"']+)["']/i.exec(header)?.[1] ?? 'utf-8';
   return new TextDecoder(encoding, { fatal: true }).decode(bytes);
 }
-export interface DomainResult { verdict: Verdict; category: 'count' | 'type' | 'range' | 'enum' | 'no_check' | 'valid'; reason?: typeof NO_CHECK; gap?: { fact: string; action: string; owner: string } }
+export interface DomainResult { verdict: Verdict; category: 'count' | 'type' | 'range' | 'enum' | 'no_check' | 'valid' | 'not_member'; reason?: typeof NO_CHECK; gap?: { fact: string; action: string; owner: string } }
 type Arg = { type: string; optional: boolean; limit: string; length: string; otherForm: boolean };
 export type Domains = Map<string, Arg[][]>;
 const kids = (n: XmlNode) => n.children.flatMap(c => 'element' in c ? [c.element] : []);
@@ -24,6 +25,7 @@ const unknown = (fact = 'argument_domain_rule'): DomainResult => ({ verdict: UNK
 const result = (category: DomainResult['category']): DomainResult => ({ verdict: category === 'valid' ? SUPPORT : REFUTE, category });
 
 export function commandDomains(xml: string): Domains {
+  const parsed = parseCommandTree(xml);
   const out: Domains = new Map();
   // The shared format reader omits text immediately before a closing tag; retain arg bodies independently for exception disclosure.
   const helpBodies = [...xml.matchAll(/<arg\b[^>]*?(?:\/>|>([\s\S]*?)<\/arg\s*>)/g)].map(m => entity((m[1] ?? '').replace(/<[^>]*>/g, ' ')));
@@ -47,7 +49,16 @@ export function commandDomains(xml: string): Domains {
     for (const child of kids(node)) if (!['arguments', 'arg', 'results'].includes(child.name)) walk(child, words);
   };
   for (const root of XmlReader.read(xml)) walk(root, []);
-  return out;
+  const domains: Domains = new Map();
+  for (const entry of parsed) {
+    const head = normalizeHead(entry.words.join(' '));
+    domains.set(head, entry.overloads.map((args, overload) => args.map((arg, position) => ({
+      type: arg.type.toUpperCase(), optional: arg.optional, limit: arg.limit ?? '', length: arg.length ?? '',
+      otherForm: out.get(head)?.[overload]?.[position]?.otherForm ?? false,
+    }))));
+  }
+  for (const [head, overloads] of [...domains]) if (!domains.has(`no ${head}`)) domains.set(`no ${head}`, overloads);
+  return domains;
 }
 
 function bounds(raw: string): [number, number] | null {
@@ -101,7 +112,7 @@ function checkArg(arg: Arg, value: string): DomainResult {
 
 export function judgeCommand(command: SplitCommand, domains: Domains): DomainResult {
   const overloads = domains.get(normalizeHead(command.head));
-  if (!overloads) return unknown('command_definition');
+  if (!overloads) return result('not_member');
   const outcomes: DomainResult[] = [];
   for (const args of overloads) {
     let states: DomainResult[] = [];
@@ -143,32 +154,76 @@ export function compareStatus(verdict: Verdict, status: RequirementStatus | null
   if (verdict === UNKNOWN || status === null || status === REQUIREMENT_STATUS[2]) return 'unknown';
   return (verdict === SUPPORT) === (status === REQUIREMENT_STATUS[0]) ? 'equal' : 'different';
 }
-export function parsedDraftCommands(draft: LocatedDraft, xml: string): { commands: SplitCommand[]; unrecognized: string[] } {
+export function parsedDraftCommands(draft: LocatedDraft, xml: string): { commands: SplitCommand[]; unrecognized: string[]; located: { step: number; line: number; command: SplitCommand | null }[] } {
   const catalog = buildCatalog(xml);
-  const commands: SplitCommand[] = [], unrecognized: string[] = [];
-  for (const step of draft.data.steps ?? []) if (typeof step.command === 'string') {
-    for (const line of step.command.split(/\r?\n/).filter(v => v.trim() !== '')) {
-      const parsed = parseCommandsFromText(line, catalog); commands.push(...parsed.commands); unrecognized.push(...parsed.unrecognized);
-      if (parsed.commands.length === 0 && parsed.unrecognized.length === 0) unrecognized.push(line);
+  const commands: SplitCommand[] = [], unrecognized: string[] = [], located: { step: number; line: number; command: SplitCommand | null }[] = [];
+  for (const [step, raw] of (draft.data.steps ?? []).entries()) if (typeof raw.command === 'string') {
+    for (const [line, text] of raw.command.split(/\r?\n/).entries()) if (text.trim()) {
+      const parsed = parseCommandsFromText(text, catalog);
+      commands.push(...parsed.commands);unrecognized.push(...parsed.unrecognized);
+      for (const command of parsed.commands) located.push({ step: step + 1, line: line + 1, command });
+      if (parsed.commands.length === 0) { if (parsed.unrecognized.length === 0) unrecognized.push(text); located.push({ step: step + 1, line: line + 1, command: null }); }
     }
   }
-  return { commands, unrecognized };
+  return { commands, unrecognized, located };
+}
+
+// A counterfactual diagnostic only, never the independent answer: whitespace arguments, fixed positions,
+// and integer/port ranges are the two documented simplifications of the package's refutation check.
+function simplifiedStep(raw: string, domains: Domains): boolean {
+  const words = normalizeHead(raw).split(' ').filter(Boolean);
+  for (const [head, overloads] of domains) {
+    const prefix = head.split(' ');
+    if (!prefix.every((w, i) => words[i] === w)) continue;
+    const values = words.slice(prefix.length);
+    for (const args of overloads) {
+      if (values.length < args.filter(a => !a.optional).length || values.length > args.length) continue;
+      const valid = values.every((value, i) => {
+        const arg = args[i];
+        if (!['U16', 'U32'].includes(arg.type) || /[|,]/.test(arg.limit)) return true;
+        const n = Number(value), range = arg.limit ? bounds(arg.limit) : null;
+        return Number.isInteger(n) && n >= Math.max(0, range?.[0] ?? 0) && n <= Math.min(arg.type === 'U16' ? 65535 : 4294967295, range?.[1] ?? Infinity);
+      });
+      if (valid) return true;
+    }
+  }
+  return false;
 }
 export function domainReport(submission: unknown, hub: unknown, xml: string) {
   const domains = commandDomains(xml), drafts = locatedDrafts(submission);
   const details = drafts.map(d => {
     const parsed = parsedDraftCommands(d, xml);
-    const outcomes = [...parsed.commands.map(c => judgeCommand(c, domains)), ...parsed.unrecognized.map(() => unknown())];
+    const outcomes = parsed.located.map(position => ({ ...(position.command ? judgeCommand(position.command, domains) : result('not_member')), step: position.step, line: position.line }));
+    const expects = d.data.expects_refutation === true;
     const verdict = outcomes.length === 0 ? UNKNOWN
-      : d.data.expects_refutation === false ? outcomes.every(o => o.verdict === SUPPORT) ? SUPPORT : outcomes.some(o => o.verdict === REFUTE) ? REFUTE : UNKNOWN
-      : d.data.expects_refutation === true && d.data.negative === true ? outcomes.some(o => o.verdict === REFUTE) ? SUPPORT : outcomes.every(o => o.verdict === SUPPORT) ? REFUTE : UNKNOWN : UNKNOWN;
-    return { draft: d.draft, item: d.item, outcomes, verdict };
+      : !expects ? outcomes.every(o => o.verdict === SUPPORT) ? SUPPORT : outcomes.some(o => o.verdict === REFUTE) ? REFUTE : UNKNOWN
+      : d.data.negative === true ? outcomes.some(o => o.verdict === REFUTE) ? SUPPORT : outcomes.every(o => o.verdict === SUPPORT) ? REFUTE : UNKNOWN : UNKNOWN;
+    const steps = (d.data.steps ?? []).flatMap((step, i) => {
+      if (!step.command?.trim()) return [];
+      const own = outcomes.filter(o => o.step === i + 1);
+      const catalog = own.some(o => o.verdict === REFUTE) ? REFUTE : own.length > 0 && own.every(o => o.verdict === SUPPORT) ? SUPPORT : UNKNOWN;
+      return [{ step: i + 1, catalog, simple: simplifiedStep(step.command, domains) }];
+    });
+    const stepRule = !expects ? verdict : d.data.negative === true ? steps.some(s => s.catalog === SUPPORT) ? REFUTE : steps.length > 0 && steps.every(s => s.catalog === REFUTE) ? SUPPORT : UNKNOWN : UNKNOWN;
+    const simpleRule = expects && d.data.negative === true ? steps.some(s => s.simple) ? REFUTE : SUPPORT : !expects ? steps.every(s => s.simple) ? SUPPORT : REFUTE : UNKNOWN;
+    return { draft: d.draft, item: d.item, outcomes, verdict, steps, stepRule, simpleRule };
   });
+  const differences: { draft: number; step?: number; category: string }[] = [];
+  const aggregate = (values: Verdict[]) => values.some(v => v === REFUTE) ? REFUTE : values.some(v => v === UNKNOWN) ? UNKNOWN : SUPPORT;
   const items = [...new Set(drafts.map(d => d.item))].map(item => {
-    const own = details.filter(d => d.item === item);
-    const verdict = own.some(d => d.verdict === REFUTE) ? REFUTE : own.some(d => d.verdict === UNKNOWN) ? UNKNOWN : SUPPORT;
+    const own = details.filter(d => d.item === item), verdict = aggregate(own.map(d => d.verdict));
     const hasUnknown = own.some(d => d.verdict === UNKNOWN || d.outcomes.some(o => o.verdict === UNKNOWN));
-    return { verdict, hasUnknown, comparison: compareStatus(verdict, requirementStatus(hub, item, 'commands')) };
+    const status = requirementStatus(hub, item, 'commands'), comparison = compareStatus(verdict, status);
+    const start = differences.length;
+    if (comparison === 'different') {
+      if (compareStatus(aggregate(own.map(d => d.stepRule)), status) === 'equal') {
+        for (const d of own.filter(d => d.stepRule !== d.verdict)) for (const step of d.steps.filter(s => s.catalog === SUPPORT)) differences.push({ draft: d.draft, step: step.step, category: 'negative_step_rule' });
+      }
+      if (compareStatus(aggregate(own.map(d => d.simpleRule)), status) === 'equal') {
+        for (const d of own.filter(d => d.simpleRule !== d.verdict)) for (const step of d.steps.filter(s => s.catalog !== UNKNOWN && (s.catalog === SUPPORT) !== s.simple)) differences.push({ draft: d.draft, step: step.step, category: 'simplified_refutation_match' });
+      }
+    }
+    return { verdict, hasUnknown, comparison, differenceCategories: [...new Set(differences.slice(start).map(d => d.category))] };
   });
-  return { counts: Object.fromEntries([SUPPORT, REFUTE, UNKNOWN].map(v => [v, details.flatMap(d => d.outcomes).filter(o => o.verdict === v).length])), items, details: details.map(({ item, ...rest }) => rest) };
+  return { counts: Object.fromEntries([SUPPORT, REFUTE, UNKNOWN].map(v => [v, details.flatMap(d => d.outcomes).filter(o => o.verdict === v).length])), notMember: details.flatMap(d => d.outcomes).filter(o => o.category === 'not_member').length, differences, items, details: details.map(({ item, ...rest }) => rest) };
 }
