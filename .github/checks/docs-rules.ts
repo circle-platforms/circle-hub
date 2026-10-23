@@ -208,7 +208,7 @@ export function localPathProblems(file: string, text: string): string[] {
   return problems;
 }
 
-const BUILD_NAME = new RegExp('(?:Rel' + '|Beta)_[A-Za-z][A-Za-z0-9_-]*_10_[0-5]_[A-Za-z0-9_.-]*', 'g');
+const BUILD_NAME = new RegExp('(?:Rel' + '|Beta)_[A-Za-z][A-Za-z0-9_-]*_10_[0-5](?:_|\\b)[A-Za-z0-9_.-]*', 'gi');
 
 /** Build names from protected version lines belong in deployment data, not repository content. */
 export function buildNameProblems(file: string, text: string): string[] {

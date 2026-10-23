@@ -230,6 +230,18 @@ describe('no protected build names in repository text', () => {
     }
   });
 
+  it('reports protected build names in any case and without a patch suffix', () => {
+    for (const prefix of ['rel', 'REL', 'bEtA']) for (let minor = 0; minor <= 5; minor++) {
+      for (const parts of [[prefix, 'Synthetic', '10', String(minor)], [prefix, 'Synthetic', '10', String(minor), '2']]) {
+        const name = parts.join('_');
+        assert.equal(buildNameProblems('ops/sample.txt', name).length, 1, name);
+      }
+    }
+    for (const name of [['rel', 'Synthetic', '10', '6', '0'], ['BETA', 'Synthetic', '11', '5', '0'], ['rel', 'Synthetic', '10', '50']].map(p => p.join('_'))) {
+      assert.deepEqual(buildNameProblems('ops/sample.txt', name), []);
+    }
+  });
+
   it('accepts other lines, dotted labels, placeholders and the frozen archives', () => {
     for (const name of [ ['Rel', 'Sample', '10', '6', '0'].join('_'), ['Beta', 'Sample', '11', '0', '0'].join('_'), '10.4.2', 'Rel_<family>_<line>_<build>' ]) {
       assert.deepEqual(buildNameProblems('ops/sample.txt', name), []);
