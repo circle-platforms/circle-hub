@@ -244,3 +244,9 @@ test('review 2: an unrelated mark cannot detect a mechanical injection and judgm
   assert.equal(score([duplicated], half).detections[0].mechanical, false);
   assert.equal(score([entry({ kind: 'vague_expected' })], half).detections[0].mechanical, false);
 });
+
+test('review 3: a delivered document-wide gap finds a deleted negative group on another case', () => {
+  const gold = [entry({ kind: 'delete_negative_group', node: 'gone-group', deletedCases: ['gone-case'] })];
+  const scored = score(gold, result([item('remaining', req('findings', [judgment('negative_gap')]))]), { literal: { cases: [{ id: 'remaining', codes: [] }], noUniqueId: [] } });
+  assert.equal(scored.detections[0].draft, true); assert.equal(scored.detections[0].combined, true); assert.equal(scored.detections[0].detected, true);
+});

@@ -176,6 +176,7 @@ export function score(gold: readonly GoldEntry[], result: ResultLike, options: S
     }
   }
   const seen = seenOn(result);
+  const documentGaps = [...seen.values()].filter(s => s.reviewed).flatMap(s => s.findings.filter(code => code === 'negative_gap' || code === 'coverage_gap'));
   const eligible = options.literal === undefined ? undefined : new Set(options.literal.cases.map(c => c.id));
   // Hub gives missing/duplicate ids positional or suffixed identities. Only exact unique raw ids are scoreable;
   // do not guess fallback identities, which may collide with real ids in the same document.
@@ -200,8 +201,8 @@ export function score(gold: readonly GoldEntry[], result: ResultLike, options: S
     if (entry.deletedCases !== undefined && entry.deletedCases.length > 0) {
       const nodes = [entry.node, ...entry.deletedCases];
       const here = nodes.map(at).filter((s): s is Seen => s !== undefined);
-      const findings = [...new Set(here.flatMap((s) => s.findings))];
-      const groupGap = here.some((s) => s.findings.some((code) => code === 'negative_gap' || code === 'coverage_gap'));
+      const findings = [...new Set([...here.flatMap((s) => s.findings), ...documentGaps])];
+      const groupGap = documentGaps.length > 0;
       const draft = findings.length > 0;
       const confirmNodes = nodes.map((n) => verified.get(n)).filter((v): v is NonNullable<typeof v> => v !== undefined);
       const vNew = confirmNodes.some((v) => v.newFindings.length > 0) || verifyGapProbes.length > 0;
