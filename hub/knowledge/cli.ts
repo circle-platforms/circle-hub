@@ -159,10 +159,11 @@ export function formatSyncReport(report: SyncReport): string {
   if (plan.limits.rounds) lines.push(`  达到轮数上限 ${plan.limits.max_rounds}`);
   if (plan.limits.reads) lines.push(`  达到读页上限 ${plan.limits.max_reads}`);
   for (const failed of plan.failed_reads) lines.push(`  读取失败 ${failed.id}：${failed.reason}`);
-  lines.push(`构建：产出 ${report.counts.produced}，只登记名字 ${report.counts.registered}，跳过 ${report.counts.skipped}，失败 ${report.counts.failed}`);
+  lines.push(`${report.scope === undefined ? '构建' : '构建与不分版本'}：产出 ${report.counts.produced}，只登记名字 ${report.counts.registered}，跳过 ${report.counts.skipped}，失败 ${report.counts.failed}`);
   for (const build of report.builds) {
     lines.push(`  [${OUTCOME_TEXT[build.outcome]}] ${build.name}（${build.family}，${build.line}${build.base === build.name ? '' : `，基于 ${build.base}`}）：${build.reason}${build.root ? ` 根 ${build.root}` : ''}`);
   }
+  if(report.scope){const scope=report.scope;lines.push(`  不分版本 [${OUTCOME_TEXT[scope.outcome]}]：构建未声明；${scope.reason}${scope.root ? ` 根 ${scope.root}` : ''}`);}
   for (const pointer of report.pointers) {
     lines.push(`  当前根 ${pointer.line}：${pointer.moved ? `${pointer.from ?? '（无）'} → ${pointer.to}（${pointer.build}）` : pointer.reason}`);
   }

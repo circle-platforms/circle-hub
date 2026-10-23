@@ -23,6 +23,7 @@ import { LinkReading } from './links.ts';
 import { KnowledgeViews } from './views.ts';
 
 export interface KnowledgeOptions {
+  additionalScopeRoots?: (product: string) => Promise<readonly {root:string;composition:string}[]>;
   records: KnowledgeRecords;
   parsers: ParserRegistry;
   packs: PacksPort;
@@ -76,7 +77,7 @@ export interface Knowledge extends KnowledgePort {
   /** What a run locks: the root of a named build (any family), else the current root of the line. */
   lockRoot(product: string, target: { line?: string | null; build?: string | null }): Promise<RootInfo | null>;
   /** An enabled admin moves a current root, with the completed generate action that produced it as `cause` (K01 R[6], B05 R[4]). */
-  moveRoot(product: string, line: string, expected: string | null, root: string, cause: string | null, options?: MoveRootOptions): Promise<MoveRootResult>;
+  moveRoot(product: string, line: string | null, expected: string | null, root: string, cause: string | null, options?: MoveRootOptions): Promise<MoveRootResult>;
   reconcileLine(product: string, line: string, by?: Principal | null): Promise<LineReconciliation>;
   /** Provenance for a reader who may read the root; null for anyone else (absent and forbidden alike). */
   provenanceOf(reference: string, reader: Principal): Promise<ProvenanceRow[] | null>;
@@ -95,6 +96,7 @@ export function createKnowledge(options: KnowledgeOptions): Knowledge {
   const placer = new Placer({ jev: options.jev ?? null, store, now });
   const calibration = new CalibrationStore(store, options.records.principals);
   const context: KnowledgeContext = {
+    additionalScopeRoots: options.additionalScopeRoots,
     records: options.records,
     store,
     parsers: options.parsers,
@@ -113,6 +115,10 @@ export function createKnowledge(options: KnowledgeOptions): Knowledge {
     writes: new WriteQueue(),
   };
   const builds = new Builds(context);
+  context.additionalScopeRoots ??= async product => {
+    const root = await builds.currentRoot(product, null);
+    return root === null ? [] : [{root:root.root,composition:root.composition}];
+  };
   const reading = new TreeReading(context);
   const observations = new ObservationLayer(context, reading);
   const contributions = new ContributionLayer(context, reading);

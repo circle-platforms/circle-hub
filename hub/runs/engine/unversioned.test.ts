@@ -17,7 +17,7 @@ after(async () => {await h?.close();await pg?.stop();});
 const root = 'b'.repeat(64), composition = 'c'.repeat(64);
 test('start locks the product-wide root and boundary accepts exactly the locked root set', async () => {
   const map = await h.upload(h.alice,toyMap(standardDocument()),'application/json');
-  Object.assign(h.knowledge,{unversionedRoot:async () => ({root,composition,product:'meadow',build:null,produced_at:'2026-10-24T00:00:00.000Z'})});
+  Object.assign(h.knowledge,{unversionedRoot:async () => ({root,composition,product:'meadow',build:null,source_count:0,produced_at:'2026-10-24T00:00:00.000Z'})});
   const answer = await h.service.startRun(h.alice,{pack:'toy-review',product:'Meadow',version:'10.6',inputs:{map:{reference:map}}},h.call());
   assert.ok(answer.run,JSON.stringify(answer.errors));
   assert.equal(answer.run.unversioned_root,root);
@@ -39,6 +39,11 @@ test('start locks the product-wide root and boundary accepts exactly the locked 
   const successor = await h.service.startRun(h.alice,{pack:'toy-review',product:'Meadow',version:'10.6',inputs:{map:{reference:map}},predecessor:answer.run.run},h.call());
   assert.ok(successor.run);
   assert.ok(successor.run.items.find(i=>i.id===ITEM.c1)?.reuse,'unchanged product-wide evidence is reusable');
+  Object.assign(h.knowledge,{unversionedRoot:async () => ({root:'e'.repeat(64),composition:'d'.repeat(64),product:'meadow',build:null,source_count:0,produced_at:'2026-10-24T00:00:00.000Z'})});
+  const changed = await h.service.startRun(h.alice,{pack:'toy-review',product:'Meadow',version:'10.6',inputs:{map:{reference:map}},predecessor:answer.run.run},h.call());
+  assert.ok(changed.run);assert.notEqual(changed.run.run,answer.run.run);
+  assert.equal(changed.run.unversioned_root,'e'.repeat(64));
+  assert.ok(changed.run.items.every(i=>i.reuse===undefined));
   Object.assign(h.knowledge,{unversionedRoot:async () => null});
   const absent = await h.service.startRun(h.alice,{pack:'toy-review',product:'Meadow',version:'10.6',inputs:{map:{reference:map}}},h.call());
   assert.ok(absent.run);

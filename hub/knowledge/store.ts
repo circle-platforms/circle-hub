@@ -729,7 +729,7 @@ export class KnowledgeStore {
         provenance: 'observed',
         body: checked(SCHEMAS.pointer, body),
         index: [
-          { key: INDEX.pointer, value: `${body.product}/${body.line}` },
+          { key: INDEX.pointer, value: body.line === null ? body.product : `${body.product}/${body.line}` },
           { key: INDEX.pointerMove, value: body.move },
         ],
       },

@@ -471,7 +471,7 @@ catalogs, grounds and provenance.
 - The memo key identifies every element and slot by `{sha256, media_type, parser}` and adds the production component
   (`knowledge.producer@1`), not by the digest alone: the function receives all three, and a Hub with another parser
   version gives other models. It also covers the build and the batch position, which the function receives too.
-- Every producer receives `build.root: null` (ProducerInput.build is a KnownBuild): the root is what the production
+- Every build producer receives `build.root: null` (ProducerInput.build is a KnownBuild); product-wide producers omit build: the root is what the production
   makes, and handing the previous root would make a root depend on production history (decision 18).
 - A batch the producer fails on is split to find the document instead of failing the production, and a batch over the
   byte cap is handed in several calls (decisions 16, 19): the contract speaks of one call per batch.
@@ -690,7 +690,7 @@ Milestone 2:
   `knowledge` external type where the console lists resources, if it should appear there.
 - **runs**: none for lists: `builds()`, `resolveBuild()` and `RootInfo.build` carry no list roles any more (decision 10),
   so the stripping in `hub/runs/engine/target.ts` (`selectCandidate`) is now redundant but harmless.
-- **contracts** (milestone 2, after the review): (1) list calls without build-specific input: `ProducerInput.build`
+- **contracts** (milestone 2, after the review): (1) Product-wide producers now omit build; cross-build list calls without build-specific input still need a separate declaration: `ProducerInput.build`
   absent (or a fixed, build-free context) for a producer with a list slot, or a `Producer` flag that declares its output
   independent of the build; the reuse key could then leave the build out again (another build listing the same
   documents shares every batch) and content-defined batch boundaries would let an inserted document re-run only its
@@ -860,7 +860,7 @@ resolved variable snapshot for both kinds of production and record its variables
 the composition (decision 44). No variable subsystem or deployment migration is added here.
 
 `KnowledgePort.unversionedRoot?(product)` returns the current product-wide root and
-composition. An older port without this method means no product-wide root. `RootInfo.build`
+composition, including the required `source_count`. An older port without this method means no product-wide root. `RootInfo.build`
 is nullable; build-specific `currentRoot` and `rootOfBuild` retain non-null build results.
 Reading by digest uses the same product permission checks, the product-wide pointer
 for currentness, and displays build provenance as “未声明”. The console labels it “构建未声明”.
@@ -879,3 +879,47 @@ is implied by either display.
 Build differences remain differences of the two build roots alone. Product-wide
 paths never become added/removed paths or regression changes merely because the
 product-wide scope is readable alongside those roots.
+
+### Product-wide views and snapshot handoff
+
+Index and facet scans stream the selected build composition and the product-wide
+composition, deduplicating entry digests. Product-wide entries keep their own tree
+reference, `root` and `build: null`; a facet row records `unversioned_count` and
+`unversioned_root`. Impact includes the product-wide attached entries for reading,
+without adding paths to `changes` or `placements`. Links views expose the scope's
+entries beside the selected composition's relations; they do not invent links
+between roots.
+
+Every view has an `unversioned` snapshot with complete entry/document totals,
+independent of detail limits. Existing totals also include those counts when a
+scope exists. Document counts count distinct nonempty `data.document` strings;
+index counts apply its key/only selection. A missing scope has a definite note and
+the sync action. All bytes, including the scope, pass the existing credential gate.
+Scope composition identity participates in cache/revision identity and artifact
+lineage. Build-only revisions retain their legacy format when no scope is present.
+
+`KnowledgeOptions.additionalScopeRoots` has the same callback shape as hub-view-scope:
+`(product) => Promise<readonly {root, composition}[]>`. Its default reads this package's
+product-wide current pointer. It is the read adapter for omission classification
+when those changes are merged; the ordinary view scan uses the same snapshot.
+Callbacks must return at most one matching product-wide composition. Run reads use
+the stored target basis instead. Before the run is persisted, `ExternalReadContext.unversioned`
+transports that exact snapshot (including explicit null) through input and expected
+source binding. It never follows a pointer after the lock was selected.
+
+Needs: this is the core first step only. The manual-store/openkm readers and APV
+scope declarations/producers remain the separately scheduled second step. Merge
+hub-variables step two first, then reconcile its resolved producer parameters and
+composition variable snapshot at integration; do not deploy this branch independently.
+
+Link pagination cursors carry both the selected composition and the product-wide
+snapshot (including explicit absence). Later pages validate that snapshot against a
+run lock and preserve it across pointer movement. Legacy cursors remain readable.
+`unversioned.skipped_sources` discloses sources omitted during production; index,
+facet and impact skipped counters include these sources, so complete produced-entry
+counts never imply coverage of a source that production could not read.
+
+A catalog tied to a named producer is advertised only in a root where that producer
+runs. Link declaration producer ids are validated against the whole product pack,
+so a valid declaration does not become invalid merely because one producer belongs
+to the other scope; the root retains the declaration snapshot.

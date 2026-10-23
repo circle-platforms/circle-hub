@@ -415,6 +415,7 @@ async function keepLists(context: KnowledgeContext, lists: readonly ListedIds[],
 export async function produceTree(context: KnowledgeContext, input: ProduceInput): Promise<ProduceResult> {
   const startedAt = context.now().toISOString();
   const product = { ...input.product, product: { ...input.product.product, producers: input.product.product.producers.filter(p => (p.unversioned === true) === (input.build === null)) } };
+  product.product.catalogs = product.product.catalogs.filter(catalog => catalog.producer === undefined || product.product.producers.some(producer => producer.id === catalog.producer));
   const build = input.build;
   const by = await requireAdmin(context, input.by, '生产知识树');
   const pack = { id: product.id, version: product.version, digest: product.digest };
@@ -487,11 +488,11 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
   const configured=product.product.links===undefined?undefined:LinkDeclaration.array().max(32).safeParse(product.product.links);
   if(configured&&!configured.success)return fail('产品链接声明无效，修正声明后重新生产');
   const links=configured?.success?configured.data:[];
-  if(links?.some(rule=>[...(rule.source_producers??[]),...(rule.target_producers??[])].some(id=>!product.product.producers.some(producer=>producer.id===id))))return fail('产品链接声明引用了不存在的生产器，修正声明后重新生产');
+  if(links?.some(rule=>[...(rule.source_producers??[]),...(rule.target_producers??[])].some(id=>!input.product.product.producers.some(producer=>producer.id===id))))return fail('产品链接声明引用了不存在的生产器，修正声明后重新生产');
   if(links&&new Set(links.map(rule=>rule.id)).size!==links.length)return fail('产品链接声明编号重复，修正后重新生产');
 
   if (build !== null && build.base !== build.name) return fail(`构建 ${build?.name ?? '不分版本'} 是 ${build.base} 的别名，没有自己的树`);
-  if (product.product.producers.length === 0) return fail('产品包没有声明生产器');
+  if (product.product.producers.length === 0) return fail(input.product.product.producers.length === 0 ? '产品包没有声明生产器' : build === null ? '产品包没有为不分版本范围声明生产器；请产品包作者声明 unversioned 生产器后重试同步' : '产品包没有为构建范围声明生产器；请产品包作者声明构建生产器后重试同步');
   const loader = input.loader ?? new SourceLoader({ external: context.external, artifacts: context.records.artifacts, parsers: context.parsers }, by, 'knowledge sync');
   const cap = context.limits.maxBuildBytes;
   listLoader = new ListLoader(context, loader, {

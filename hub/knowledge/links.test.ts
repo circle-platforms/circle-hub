@@ -373,3 +373,18 @@ test('link request refusals keep their reason and bare id while genuine failures
   t.mock.method(LinkReading.prototype,'page',async()=>{throw new Error('synthetic unexpected page failure');});
   const failed=await reader.read(bare+'@'+f.first.composition,{principal:f.w.admin,run:null,purpose:'synthetic'});assert.ok(!failed.ok);assert.match(failed.reason,/知识视图出错/);
 });
+
+test('link pagination retains the product-wide snapshot when its pointer moves between pages',async t=>{
+ const f=await fixture(t);
+ const producer=Producer.parse({...extraProducer('scope_docs',{entries:[{...content('/scope','case','Scope document'),data:{document:'synthetic-scope'}}]},{tree:{external:'site:tree:links'}}),unversioned:true});
+ f.w.product.product.producers.push(producer);f.w.product.digest='d'.repeat(64);
+ const firstScope=await f.w.knowledge.produceTree({product:f.w.product,build:null});assert.ok(firstScope.ok);
+ await f.w.knowledge.moveRoot('widget',null,null,firstScope.root!,firstScope.action);
+ const first=(await f.json(await f.read('limit=1'))).view;assert.ok(first.next);
+ producer.params={entries:[{...content('/scope','case','Changed scope document'),data:{document:'synthetic-scope'}}]};f.w.product.digest='e'.repeat(64);
+ const nextScope=await f.w.knowledge.produceTree({product:f.w.product,build:null});assert.ok(nextScope.ok);
+ await f.w.knowledge.moveRoot('widget',null,firstScope.root,nextScope.root!,nextScope.action);
+ const second=(await f.json(await f.read('limit=1&cursor='+encodeURIComponent(first.next)))).view;
+ assert.equal(second.unversioned?.composition,firstScope.composition);
+ assert.notEqual(second.unversioned?.composition,nextScope.composition);
+});

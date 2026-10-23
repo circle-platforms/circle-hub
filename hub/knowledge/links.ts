@@ -134,14 +134,14 @@ export class LinkReading {
     if(composition){const body=await this.#context.store.composition(composition);return body?.root===root&&await this.#allowed(body.product,reader)?new CompositionView(this.#context.store,composition,body):null;}
     const productions=await this.#context.store.productionsOfRoot(root),selected=new Map<string,CompositionView>();
     const seen=new Set<string>();
-    for(const p of productions){const key=p.detail.product+'/'+(p.detail.build?.line ?? null);if(seen.has(key)||!await this.#allowed(p.detail.product,reader))continue;seen.add(key);const info=await this.#builds.currentRoot(p.detail.product,(p.detail.build?.line ?? null));if(info?.root!==root)continue;const body=await this.#context.store.composition(info.composition);if(body)selected.set(info.composition,new CompositionView(this.#context.store,info.composition,body));}
+    for(const p of productions){const key=canonicalize([p.detail.product,p.detail.build?.line ?? null]);if(seen.has(key)||!await this.#allowed(p.detail.product,reader))continue;seen.add(key);const info=await this.#builds.currentRoot(p.detail.product,(p.detail.build?.line ?? null));if(info?.root!==root)continue;const body=await this.#context.store.composition(info.composition);if(body)selected.set(info.composition,new CompositionView(this.#context.store,info.composition,body));}
     if(selected.size!==1)return null;return [...selected.values()][0];
   }
   async #allowed(product:string,reader:Principal):Promise<boolean>{
     const user=await this.#context.records.principals.get(reader.id);if(!user||user.disabled)return false;
     return user.role==='admin'||(await this.#context.packs.readableProducts(reader)).has(product);
   }
-  async runLock(run:string,reader:Principal):Promise<{found:boolean;root:string|null;composition:string|null;build?:string;product?:string}>{
+  async runLock(run:string,reader:Principal):Promise<{found:boolean;root:string|null;composition:string|null;build?:string;product?:string;unversioned?:{root:string;composition:string}|null}>{
     if(!RunId.safeParse(run).success)throw new LinkRefusal('运行编号写法不对');
     // Record ids are storage ids; the run writer publishes its logical ids through this index.
     const page=await this.#context.records.store.find({key:'runs.id',value:run,kind:'run',limit:1});
@@ -152,7 +152,11 @@ export class LinkReading {
       const data=claim.statement.data;
       return data?.field==='build'&&data.root===body.root&&Sha256.safeParse(data.composition).success&&claim.validity.bound.includes(String(data.composition))?[String(data.composition)]:[];
     });
-    return {found:true,root:body.root??null,composition:new Set(candidates).size===1?candidates[0]:null,build:body.build,product:body.product};
+    const scopeBasis=body.target_basis.find(c=>c.statement.data?.field==='unversioned_root'&&c.statement.data?.root===body.unversioned_root);
+    const scopeComposition=scopeBasis?.statement.data?.composition;
+    const unversioned=body.unversioned_root===undefined?null:typeof scopeComposition==='string'&&scopeBasis!.validity.bound.includes(scopeComposition)?{root:body.unversioned_root,composition:scopeComposition}:undefined;
+    if(body.unversioned_root!==undefined&&unversioned===undefined)throw new LinkRefusal('运行缺少不分版本的组成快照；恢复运行记录后重读');
+    return {found:true,unversioned,root:body.root??null,composition:new Set(candidates).size===1?candidates[0]:null,build:body.build,product:body.product};
   }
   async facts(composition:CompositionView):Promise<RelationFacts>{
     try{

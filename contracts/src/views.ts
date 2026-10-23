@@ -26,8 +26,19 @@ export const MAX_IMPACT_ENTRIES = 200000;
 /** A data field name an entry carries at the top level of its data. */
 export const DataFieldName = z.string().regex(/^[a-z][a-z0-9_]{0,40}$/);
 
+/** Product-wide provenance and complete counts, independent of detail truncation. */
+export const UnversionedView = z.strictObject({
+  root: Sha256, composition: Sha256, build: z.null(),
+  skipped_sources: z.number().int().nonnegative(),
+  totals: z.strictObject({ entries: z.number().int().nonnegative(), documents: z.number().int().nonnegative() }),
+});
+export type UnversionedView = z.infer<typeof UnversionedView>;
+const ScopeCounts = { unversioned_entries: z.number().int().nonnegative().optional(), unversioned_documents: z.number().int().nonnegative().optional() };
+
 /** An entry of the tree as a view shows it: what it says and where to cite it. */
 export const ViewEntry = z.strictObject({
+  root: Sha256.optional(),
+  build: z.null().optional(),
   entry: Sha256,
   kind: EntryKindSchema,
   statement: z.string(),
@@ -54,6 +65,7 @@ export const Placement = z.strictObject({
 export type Placement = z.infer<typeof Placement>;
 
 export const ImpactView = z.strictObject({
+  unversioned: UnversionedView.nullable().optional(),
   schema: z.literal('impact-view@1'),
   product: z.string().min(1),
   from: z.strictObject({ build: z.string().min(1), root: Sha256 }),
@@ -73,6 +85,7 @@ export const ImpactView = z.strictObject({
     .record(Sha256, ViewEntry)
     .describe('every entry named above by digest, once; the references in it are those of the later root, or of the earlier one for an entry that exists only there'),
   totals: z.strictObject({
+    ...ScopeCounts,
     changed_paths: z.number().int().nonnegative(),
     attached_from: z.number().int().nonnegative(),
     attached_to: z.number().int().nonnegative(),
@@ -93,17 +106,19 @@ export const MAX_FACET_ROWS = 20000;
 const FacetValue = z.union([z.string(), z.number(), z.boolean(), z.null()]);
 
 export const FacetView = z.strictObject({
+  unversioned: UnversionedView.nullable().optional(),
   schema: z.literal('facet-view@1'),
   product: z.string().min(1),
   build: z.strictObject({ build: z.string().min(1), root: Sha256 }),
   kind: EntryKindSchema.describe('the kind of the entries counted'),
   by: z.array(DataFieldName).min(1).max(6).describe('data fields of the entries; a field that holds a list counts the entry once per element, a missing field is null'),
   rows: z
-    .array(z.strictObject({ values: z.record(DataFieldName, FacetValue), count: z.number().int().positive() }))
+    .array(z.strictObject({ values: z.record(DataFieldName, FacetValue), count: z.number().int().positive(), unversioned_count: z.number().int().nonnegative().optional(), unversioned_root: Sha256.optional() }))
     .max(MAX_FACET_ROWS)
     .describe('one row per distinct combination, sorted by the values in code-unit order'),
   total: z.number().int().nonnegative().describe('entries of the kind in the root, whatever the fields'),
   totals: z.strictObject({
+    ...ScopeCounts,
     empty: z.record(DataFieldName, z.number().int().nonnegative()).describe('Entries in the null group of each by field, once per entry per field; includes rows omitted by every truncation limit; zero is explicit'),
   }),
   truncated: z.boolean(),
@@ -131,6 +146,7 @@ export const MAX_INDEX_ENTRIES = 200000;
 export const MAX_INDEX_PER_KEY = 2000;
 
 export const IndexView = z.strictObject({
+  unversioned: UnversionedView.nullable().optional(),
   schema: z.literal('index-view@1'),
   product: z.string().min(1),
   build: z.strictObject({ build: z.string().min(1), root: Sha256 }),
@@ -141,6 +157,7 @@ export const IndexView = z.strictObject({
   fields: z.array(DataFieldName).optional().describe('the request asked for only these data fields per entry: each entry carries them and an empty statement; absent means full entries'),
   only: z.array(z.string()).optional().describe('the requested index values, deduplicated and sorted in UTF-16 code-unit order; absent when the request has no only parameter'),
   cut_keys: z.array(z.string()).optional().describe('listed keys whose entries were cut by MAX_INDEX_PER_KEY, sorted in UTF-16 code-unit order; generated views always include an empty array when none were cut; keys omitted entirely by the byte or entry budget are not included'),
+  totals: z.strictObject(ScopeCounts).optional(),
   total_keys: z.number().int().nonnegative(),
   total_entries: z.number().int().nonnegative(),
   truncated: z.boolean(),
@@ -157,11 +174,13 @@ export const LinkDiagnostic=LinkOccurrence.extend({rule:z.string(),reason:Reason
 export type LinkDiagnostic=z.infer<typeof LinkDiagnostic>;
 export const LinkRuleDiagnostic=z.strictObject({rule:z.string(),namespace:TreePath,reason:ReasonSchema,message:z.string(),next_action:z.string(),unchecked_literals:z.number().int().nonnegative()});
 export type LinkRuleDiagnostic=z.infer<typeof LinkRuleDiagnostic>;
-export const LinkTotals = z.strictObject({ entries: z.number().int().nonnegative(), literals: z.number().int().nonnegative(), links: z.number().int().nonnegative(), drift_literals: z.number().int().nonnegative(), drift_occurrences: z.number().int().nonnegative(),diagnosed_entries:z.number().int().nonnegative().optional(),unchecked_literals:z.number().int().nonnegative().optional() });
+export const LinkTotals = z.strictObject({ ...ScopeCounts, entries: z.number().int().nonnegative(), literals: z.number().int().nonnegative(), links: z.number().int().nonnegative(), drift_literals: z.number().int().nonnegative(), drift_occurrences: z.number().int().nonnegative(),diagnosed_entries:z.number().int().nonnegative().optional(),unchecked_literals:z.number().int().nonnegative().optional() });
 export const Backlinks = z.strictObject({ view_id: z.string().optional().describe('Exact external view id for composition-pinned continuation'), composition: Sha256.nullable(), configured: z.boolean(), total: z.number().int().nonnegative().nullable(), entries: z.array(LinkOccurrence), truncated: z.boolean(), notes: z.array(z.string()) }).refine(value=>value.configured===(value.total!==null)&&(!value.configured||value.composition!==null),'computed backlinks require a pinned composition and total');
 export const LinksView = z.strictObject({
+  unversioned: UnversionedView.nullable().optional(),
   schema: z.literal('links-view@1'), product: z.string(), build: z.strictObject({build:z.string(),root:Sha256}), composition: Sha256,
   configured: z.boolean(), prefix: TreePath, target: TreePath.nullable(), rule: z.string().nullable(),
+  entries: z.record(Sha256, ViewEntry).optional(),
   links: z.array(LinkEdge), drift: z.array(LinkDrift), diagnostics:z.array(LinkDiagnostic).optional(), rule_diagnostics:z.array(LinkRuleDiagnostic).optional(), totals: LinkTotals.nullable(), next: z.string().nullable(), truncated: z.boolean(), notes: z.array(z.string()),
 }).superRefine((value,ctx)=>{
   if(value.configured!==(value.totals!==null))ctx.addIssue({code:'custom',path:['totals'],message:'totals require a frozen declaration'});

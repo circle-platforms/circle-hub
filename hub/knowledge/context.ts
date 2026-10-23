@@ -107,6 +107,7 @@ export class WriteQueue {
 }
 
 export interface KnowledgeContext {
+  additionalScopeRoots?: (product: string) => Promise<readonly {root:string;composition:string}[]>;
   records: KnowledgeRecords;
   store: KnowledgeStore;
   parsers: ParserRegistry;

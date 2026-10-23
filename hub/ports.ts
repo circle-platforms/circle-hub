@@ -95,6 +95,8 @@ export interface ExternalReadContext {
   purpose: string;
   /** Composition already selected by the caller; it is never replaced with a newer production. */
   composition?: string | null;
+  /** Product-wide snapshot selected before the run is persisted; null explicitly means none. */
+  unversioned?: {root:string;composition:string} | null;
   /** Canonical name of the build selected by the run; absent on legacy callers. */
   build?:string;
 }
@@ -270,7 +272,7 @@ export interface EntryDiff {
 
 export interface KnowledgePort {
   /** Current product-wide root; absent on older ports. */
-  unversionedRoot?(product: string): Promise<RootInfo<null> | null>;
+  unversionedRoot?(product: string): Promise<(RootInfo<null> & { source_count: number }) | null>;
   /** Builds the knowledge base knows for a product, any name family, newest first. */
   builds(product: string, filter?: { line?: string; released?: boolean }): Promise<KnownBuild[]>;
   /** Any build name, of any family, to the build record whose tree it uses (aliases resolved). Null when unknown. */

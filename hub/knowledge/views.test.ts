@@ -150,7 +150,7 @@ describe('the impact view (impact-view@1)', () => {
     ]);
     assert.deepEqual(view.totals, { changed_paths: 4, attached_from: 3, attached_to: 4 });
     assert.equal(view.truncated, false);
-    assert.deepEqual(view.notes, []);
+    assert.deepEqual(view.notes, ['这条产品线还没有不分版本的根；下一步：同步这条产品线']);
     // Every entry named once; references of the later root, or of the earlier one for an entry only there.
     assert.deepEqual(Object.keys(view.entries), sorted(def(b, 'disk list'), def(b, 'net arp'), def(a, 'net trace <host:string>'), def(a, 'system reboot <delay:int>'), def(b, 'system reboot <delay:int>'), c1, c3, c5, c6));
     assert.equal(view.entries[c5].reference, `tree:${f.roots.b}/commands/disk/list@${c5}`);

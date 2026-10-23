@@ -9,7 +9,7 @@ import type { BoundInput, WorkflowInput } from '../../../contracts/src/pack.ts';
 import { ExternalObjectId } from '../../../contracts/src/reference.ts';
 import type { InputBinding, SourceBinding } from '../../../contracts/src/run.ts';
 import type { Principal } from '../../records/api.ts';
-import { EXTERNAL_ARTIFACT, type LoadedWorkflow } from '../../ports.ts';
+import { EXTERNAL_ARTIFACT, type LoadedWorkflow, type ExternalReadContext } from '../../ports.ts';
 import { ReferenceSyntaxError, parseReference, parserKey, recognize, type Reference } from '../../refs/api.ts';
 import type { EngineContext } from './deps.ts';
 import { Refusal, protocolError, unavailableError } from './errors.ts';
@@ -62,6 +62,7 @@ export async function bindInputs(
   traceId: string,
   composition?: string | null,
   build?:string,
+  unversioned?: ExternalReadContext['unversioned'],
 ): Promise<BoundSource[]> {
   const { artifacts, store } = ctx.deps.records;
   const errors: ProtocolError[] = [];
@@ -162,7 +163,7 @@ export async function bindInputs(
       gone(path, `no enabled resource reads ${externalType(id)}`);
       return null;
     }
-    const read = await ctx.deps.external.read(id, { principal: user, run: runId, purpose: `运行输入 ${slot.slot}`, ...(composition !== undefined ? {composition} : {}),...(build!==undefined?{build}:{}) });
+    const read = await ctx.deps.external.read(id, { principal: user, run: runId, purpose: `运行输入 ${slot.slot}`, ...(composition !== undefined ? {composition} : {}),...(build!==undefined?{build}:{}),...(unversioned!==undefined?{unversioned}:{}) });
     if (!read.ok) {
       if (read.inputError !== undefined) {
         schemaError(path, read.inputError.message, read.inputError.fix);
