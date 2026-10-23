@@ -34,7 +34,7 @@ test('BOM determines UTF-16 order and XML refuses contradictory declarations', (
   assert.throws(() => xmlParser.parse(utf16('<?xml version="1.0" encoding="UTF-8"?><r/>', false)), ParseEncodingError);
 });
 test('entity-free DOCTYPE is accepted while declarations and references never fetch or expand entities', () => {
-  for (const declaration of ['<!DOCTYPE r>', '<!DOCTYPE r SYSTEM "http://192.0.2.1/never.dtd">', '<!DOCTYPE r [<!-- <!ENTITY fake "unused"> -->]>'])
+  for (const declaration of ['<!DOCTYPE r>', '<!DOCTYPE r SYSTEM "synthetic\nexternal">', '<!DOCTYPE r SYSTEM "http://192.0.2.1/never.dtd">', '<!DOCTYPE r [<!-- <!ENTITY fake "unused"> -->]>'])
     assert.equal(xmlParser.parse(Buffer.from(`${declaration}<r>合成</r>`)).locate('x/r')?.text, '合成');
   for (const declaration of ['<!DOCTYPE r [<!ENTITY x "合成">]>', '<!DOCTYPE r [<!ENTITY % x SYSTEM "http://192.0.2.1/never.dtd">%x;]>'])
     assert.throws(() => xmlParser.parse(Buffer.from(`${declaration}<r/>`)), ParseForbiddenError);
@@ -97,4 +97,13 @@ test('DOCTYPE presence and unread external-subset policy are explicit model stru
   assert.deepEqual(doc.model.doctype, { internalSubset: true, externalSubsetDeclared: true, externalSubsetRead: false });
   assert.equal(doc.summary().doctype, true); assert.equal(doc.summary().internalSubset, true);
   assert.equal(xmlParser.parse(Buffer.from('<x/>')).summary().doctype, false);
+});
+
+for (const value of [
+  '<!DOCTYPE x <!-- [<!ATTLIST x a CDATA "d"> -->]><x/>',
+  '<!DOCTYPE x <? [<!ATTLIST x a CDATA "d"> ?>]><x/>',
+  '<!DOCTYPE x <!-- [<!ENTITY e "v"> -->]><x/>',
+  '<!DOCTYPE x [] <!ATTLIST x a CDATA "d"><x/>',
+]) test('malformed DOCTYPE header or trailing text cannot hide declarations: ' + value, () => {
+  assert.throws(() => xmlParser.parse(Buffer.from(value)));
 });

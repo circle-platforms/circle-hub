@@ -359,13 +359,22 @@ function parse(bytes: Uint8Array, options: ParseOptions = {}): ParsedDocument<Xm
     declaration = { version: decl.version ?? null, encoding: decl.encoding ?? null, standalone: decl.standalone ?? null };
   });
   parser.on('doctype', (value) => {
-    let inside = false; let subsetAt = value.length;
+    let inside = false; let closed = false; let subsetAt = value.length;
+    const headerValid = (header: string): void => {
+      const literal = `(?:"[^"]*"|'[^']*')`;
+      const space = '[ \t\r\n]';
+      const match = new RegExp(String.raw`^${space}*([^ \t\r\n<>\[\]"'?]+)(?:${space}+(?:SYSTEM${space}+${literal}|PUBLIC${space}+${literal}${space}+${literal}))?${space}*$`).exec(header);
+      if (!match) throw new ParseSyntaxError(KEY, 'DOCTYPE 头部语法不对', here());
+      try { new SaxesParser().write(`<${match[1]}/>`).close(); }
+      catch { throw new ParseSyntaxError(KEY, 'DOCTYPE 根名称语法不对', here()); }
+    };
     for (let i = 0; i < value.length; i++) {
-      if (value.startsWith('<!--', i)) {
+      if (closed && !isXmlSpace(value.charCodeAt(i))) throw new ParseSyntaxError(KEY, 'DOCTYPE 内部子集结束后只能有空白', here());
+      if (inside && value.startsWith('<!--', i)) {
         const end = value.indexOf('-->', i + 4);
         if (end < 0) throw new ParseSyntaxError(KEY, 'DOCTYPE 注释没有结束', here());
         i = end + 2;
-      } else if (value.startsWith('<?', i)) {
+      } else if (inside && value.startsWith('<?', i)) {
         const end = value.indexOf('?>', i + 2);
         if (end < 0) throw new ParseSyntaxError(KEY, 'DOCTYPE 内部的处理指令没有结束', here());
         i = end + 1;
@@ -373,15 +382,17 @@ function parse(bytes: Uint8Array, options: ParseOptions = {}): ParsedDocument<Xm
         const end = value.indexOf(value[i], i + 1);
         if (end < 0) throw new ParseSyntaxError(KEY, 'DOCTYPE 外部标识的引号没有结束', here());
         i = end;
-      } else if (value[i] === '[' && !inside) { inside = true; subsetAt = Math.min(subsetAt, i); }
-      else if (value[i] === ']' && inside) inside = false;
+      } else if (value[i] === '[' && !inside) { headerValid(value.slice(0, i)); inside = true; subsetAt = i; }
+      else if (value[i] === ']' && inside) { inside = false; closed = true; }
       else if (inside && !isXmlSpace(value.charCodeAt(i))) {
         if (value.startsWith('<!ENTITY', i)) throw new ParseForbiddenError(KEY, '不接受 DOCTYPE 中的实体声明（防止实体扩展与外部实体）', here());
         if (value.startsWith('<!ATTLIST', i)) throw new ParseForbiddenError(KEY, '当前解析器不处理 DOCTYPE 内部属性声明，不能核实默认属性；请提供显式属性且不依赖内部声明的 XML 导出', here());
         throw new ParseForbiddenError(KEY, 'DOCTYPE 内部子集只支持注释和处理指令，不处理其他内部声明或参数引用；请提供不依赖内部声明的 XML 导出', here());
       }
     }
+    if (inside) throw new ParseSyntaxError(KEY, 'DOCTYPE 内部子集没有结束', here());
     const header = value.slice(0, subsetAt);
+    headerValid(header);
     doctype = { internalSubset: subsetAt !== value.length, externalSubsetDeclared: /^[ \t\r\n]*[^ \t\r\n]+[ \t\r\n]+(?:SYSTEM|PUBLIC)[ \t\r\n]+["']/.test(header), externalSubsetRead: false };
   });
   parser.on('processinginstruction', () => {
