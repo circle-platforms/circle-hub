@@ -13,7 +13,7 @@ const B = 'fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210fedcb
 const DIGEST = 'a'.repeat(64);
 
 interface Entry { item: string; kind?: string; text?: string; rank?: string }
-type Block = { verdict: string | null; level: string | null; entries: Entry[]; partition?: string };
+type Block = { verdict: string | null; level: string | null; entries: Entry[]; partition?: string; hub?: 'support' | 'refute' | 'unknown' };
 
 /** A synthetic verification result: delivered entries with one claim each, a cross_item final (Claim-shaped), one source. */
 function block(spec: Block): Record<string, unknown> {
@@ -27,16 +27,25 @@ function block(spec: Block): Record<string, unknown> {
     ],
   }));
   // The real-data shape: a block that carries entries it did not deliver lists them unfinished (the first half), the
-  // rest of its entries stay delivered.
-  const halved = spec.partition === 'unfinished' ? spec.entries.slice(0, Math.ceil(spec.entries.length / 2)) : [];
+  // rest of its entries stay delivered. 分区只有 delivered、rejected、quarantined、incomplete。
+  const halved = spec.partition !== undefined && spec.partition !== 'delivered' ? spec.entries.slice(0, Math.ceil(spec.entries.length / 2)) : [];
   const unfinished = halved.map((entry) => ({ item: entry.item, label: `用例 ${entry.item}`, location: `src:${DIGEST}/kityminder@1/n/${entry.item}`, requirements: [] }));
-  const partitions: Record<string, unknown[]> = { delivered: spec.partition === 'unfinished' ? delivered.slice(halved.length) : delivered };
-  if (unfinished.length > 0) partitions.unfinished = unfinished;
+  const partitions: Record<string, unknown[]> = { delivered: spec.partition !== undefined && spec.partition !== 'delivered' ? delivered.slice(halved.length) : delivered };
+  if (unfinished.length > 0) partitions[spec.partition as string] = unfinished;
   return {
     schema: 'validation@1',
     locks: { pack: 'case-review-verify@1.0.3', pack_digest: '0'.repeat(64), subject: { digest: DIGEST } },
     partitions,
-    ...(spec.verdict === null ? {} : { cross_item: [{ nature: 'judgment', statement: { text: '结论', code: spec.verdict, rank: spec.level }, grounds: [] }] }),
+    ...(spec.verdict === null
+      ? {}
+      : {
+          cross_item: [
+            // 存储的真实形状：模型的结论主张 pointer 在顶层、code/rank 在 statement 里；Hub 的事实主张可能排在它
+            // 前面，所以按 pointer 对照；Hub 的 final 事实主张带 requirement、pointer 和 statement.verdict。
+            { nature: 'judgment', statement: { code: spec.verdict, rank: spec.level, text: '结论' }, grounds: [], pointer: '/cross_item/0', requirement: 'final' },
+            { requirement: 'final', pointer: '/cross_item/0', statement: { verdict: spec.hub ?? 'support', text: '与处置一致', data: {} }, grounds: [] },
+          ],
+        }),
   };
 }
 
@@ -53,13 +62,13 @@ const reportItemOf = (out: { items?: ProjectedItem[]; error?: { code?: string; m
 };
 
 describe('the projection of case-review-report', () => {
-  it('the worst verdict wins and takes that block\'s level', () => {
+  it('the worst verdict wins and takes that block\'s level and its real reference', () => {
     const out = run([
       { result: block({ verdict: 'PASS', level: 'P3', entries: [{ item: 'c1' }] }) },
       { result: block({ verdict: 'PARTIAL', level: 'P5', entries: [{ item: 'c2' }, { item: 'c3' }] }) },
     ]);
     const report = reportItemOf(out);
-    assert.deepEqual(report.fields.overall, { verdict: 'PARTIAL', level: 'P5' });
+    assert.deepEqual(report.fields.overall, { verdict: 'PARTIAL', level: 'P5', reference: `rec:${'2'.repeat(64)}#/cross_item/0` });
     assert.equal(report.summary, '整体结论码 PARTIAL、等级 P5（最差那块的，照抄）');
     assert.deepEqual((out.items ?? []).filter((i) => i.id !== 'report').map((i) => i.id), ['c1', 'c2', 'c3']);
     const c1 = out.items?.find((i) => i.id === 'c1');
@@ -70,7 +79,7 @@ describe('the projection of case-review-report', () => {
     // The real-data shape: block B carried all 62 entries, its first half unfinished; A delivered them.
     const out = run([
       { result: block({ verdict: 'PASS', level: 'P3', entries: [{ item: 'c1' }] }) },
-      { result: block({ verdict: 'PASS', level: 'P3', partition: 'unfinished', entries: [{ item: 'c1' }, { item: 'c2' }] }) },
+      { result: block({ verdict: 'PASS', level: 'P3', partition: 'incomplete', entries: [{ item: 'c1' }, { item: 'c2' }] }) },
     ]);
     assert.deepEqual((out.items ?? []).filter((i) => i.id !== 'report').map((i) => i.id), ['c1', 'c2']);
     assert.deepEqual(reportItemOf(out).fields.missing_items, []);
@@ -85,13 +94,41 @@ describe('the projection of case-review-report', () => {
     assert.match(out.error?.message ?? '', /c1/);
   });
 
-  it('an item delivered in no block marks the whole unfinished and names it (never PASS)', () => {
+  it('an item delivered in no block makes the overall unknown with the missing items named (no verdict code)', () => {
     const out = run([
       { result: block({ verdict: 'PASS', level: 'P3', entries: [{ item: 'c1' }] }) },
-      { result: block({ verdict: 'PASS', level: 'P3', partition: 'unfinished', entries: [{ item: 'c9' }] }) },
+      { result: block({ verdict: 'PASS', level: 'P3', partition: 'incomplete', entries: [{ item: 'c9' }] }) },
     ]);
     const report = reportItemOf(out);
     assert.deepEqual(report.fields.missing_items, ['c9']);
+    assert.equal(report.fields.overall, null, '有缺漏条目时整体记未知，不给结论码');
+    assert.match(report.summary ?? '', /覆盖不完整/);
+    assert.match(report.summary ?? '', /c9/);
+    assert.doesNotMatch(report.summary ?? '', /结论码/);
+  });
+
+  it('an item only ever in a non-delivered partition (rejected) counts as missing too', () => {
+    const out = run([
+      { result: block({ verdict: 'PASS', level: 'P3', entries: [{ item: 'c1' }] }) },
+      { result: block({ verdict: 'PASS', level: 'P3', partition: 'rejected', entries: [{ item: 'c8' }, { item: 'c7' }] }) },
+    ]);
+    const report = reportItemOf(out);
+    assert.deepEqual(report.fields.missing_items, ['c8']);
+    assert.equal(report.fields.overall, null);
+  });
+
+  it('the Hub refuting (or not knowing) a block\'s final makes the block\'s conclusion unknown', () => {
+    const out = run([
+      { result: block({ verdict: 'PASS', level: 'P3', entries: [{ item: 'c1' }] }) },
+      { result: block({ verdict: 'PARTIAL', level: 'P5', hub: 'refute', entries: [{ item: 'c2' }] }) },
+    ]);
+    assert.equal(reportItemOf(out).fields.overall, null, '被 Hub 驳回的结论不采信');
+    assert.equal(reportItemOf(out).summary, '整体结论未知（各块没有可读结论）');
+    const unknownHub = run([
+      { result: block({ verdict: 'PASS', level: 'P3', entries: [{ item: 'c1' }] }) },
+      { result: block({ verdict: 'PARTIAL', level: 'P5', hub: 'unknown', entries: [{ item: 'c2' }] }) },
+    ]);
+    assert.equal(reportItemOf(unknownHub).fields.overall, null, 'Hub 记未知的结论不采信');
   });
 
   it('a block without a readable final makes the overall unknown', () => {
@@ -124,7 +161,7 @@ describe('the projection of case-review-report', () => {
     ]);
 
     const report = reportItemOf(out);
-    assert.deepEqual(report.fields.overall, { verdict: 'PARTIAL', level: 'P4' });
+    assert.deepEqual(report.fields.overall, { verdict: 'PARTIAL', level: 'P4', reference: `rec:${'1'.repeat(64)}#/cross_item/0` });
     assert.equal(report.summary, '整体结论码 PARTIAL、等级 P4（最差那块的，照抄）');
 
     // Parse overall verdict and level from report summary
@@ -215,10 +252,16 @@ describe('the checks of case-review-report', () => {
     assert.equal(overallCheck({ subject: subjectWith([{ nature: 'judgment', statement: '只有建议', grounds: [], code: 'suggestion' }]) })[0]!.code, 'case-review-report.report_missing', 'no verdict claim at all');
   });
 
-  it('the overall check refuses every verdict when a final was unreadable (the whole is unknown)', () => {
+  it('the overall check records unknown (missing input), not a refusal, when a final was unreadable or items missing', () => {
     const items = [{ id: 'report', label: '评审终稿', location: `src:${DIGEST}/kityminder@1/n/c1`, fields: { overall: null, findings } }];
     const claimsAny = { applies: 'run', items, context: {}, cross_item: [verdictClaim('PARTIAL', 'P4', refs)] };
-    assert.equal(overallCheck({ subject: claimsAny })[0]!.code, 'case-review-report.verdict_mismatch');
+    const out = overallCheck({ subject: claimsAny })[0]!;
+    assert.equal(out.verdict, 'unknown');
+    assert.equal(out.reason, 'missing_input');
+    const withMissing = { applies: 'run', items: [{ id: 'report', label: '评审终稿', location: `src:${DIGEST}/kityminder@1/n/c1`, fields: { overall: null, findings, missing_items: ['c9', 'c10'] } }], context: {}, cross_item: [verdictClaim('PARTIAL', 'P4', refs)] };
+    const outMissing = overallCheck({ subject: withMissing })[0]!;
+    assert.deepEqual([outMissing.verdict, outMissing.reason], ['unknown', 'missing_input']);
+    assert.match(outMissing.statement, /c9/);
   });
 
   it('the report check wants every non-refuted finding cited, none refuted, none invented', () => {

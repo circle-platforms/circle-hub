@@ -30,20 +30,25 @@ function resultOf(model: unknown, meta: Record<string, unknown>): { result: Reco
   return null;
 }
 
-/** The final claim of one block's verification result, with its level, or null when unreadable. */
-export function finalOf(result: Record<string, unknown>): { verdict: Verdict; level: string | null; reference: string } | null {
-  // The record's cross_item holds Claims: the code and rank sit inside the statement.
+/** The final claim of one block's verification result: only the one the Hub itself supported, with its real reference. */
+export function finalOf(result: Record<string, unknown>, record: string): { verdict: Verdict; level: string | null; reference: string } | null {
   const cross = Array.isArray(result.cross_item) ? result.cross_item.filter(isRecord) : [];
-  const final = cross.find((c) => {
-    const statement = isRecord(c.statement) ? c.statement : {};
-    return typeof statement.code === 'string' && statement.code in VERDICT_ORDER;
-  });
-  if (final === undefined) return null;
-  const statement = isRecord(final.statement) ? final.statement : {};
+  // The Hub's own verdict on the block's final: the fact claims of the `final` requirement. A refuted or unknown one
+  // makes the block's conclusion unknown; only the claim the Hub gave a support fact to counts, at its pointer.
+  const hub = cross.filter((c) => c.requirement === 'final' && isRecord(c.statement) && typeof c.statement.verdict === 'string');
+  if (hub.some((c) => (c.statement as { verdict: string }).verdict !== 'support')) return null;
+  const support = hub.find((c) => (c.statement as { verdict: string }).verdict === 'support');
+  const pointer = isRecord(support) && typeof support.pointer === 'string' ? support.pointer : null;
+  if (pointer === null) return null;
+  // The model's final claim carries the same pointer itself (the submission's cross_item index); the Hub's facts may
+  // sit before it in the stored list, so match by pointer, never by position. Its code and rank sit inside `statement`.
+  const claim = cross.find((c) => c.pointer === pointer && isRecord(c.statement) && typeof c.statement.code === 'string' && c.statement.code in VERDICT_ORDER);
+  if (claim === undefined || !isRecord(claim.statement)) return null;
+  const statement = claim.statement as { code: Verdict; rank?: unknown };
   return {
-    verdict: statement.code as Verdict,
+    verdict: statement.code,
     level: typeof statement.rank === 'string' ? statement.rank : null,
-    reference: '',
+    reference: `rec:${record}#${pointer}`,
   };
 }
 
@@ -142,7 +147,7 @@ export default function project(input: unknown): unknown {
       return failure('sources_differ', '各块复核不是同一份源文件（条目位置指向不同构建），不能合成一份终稿', '各块用同一份被评审脑图重新复核，或分别出终稿');
     }
 
-    // Per-item delivery, merged over the blocks: delivered wins over unfinished; delivered twice is a refusal.
+    // Per-item delivery, merged over the blocks: delivered wins over anything not delivered; delivered twice is a refusal.
     const deliveredIn = new Map<string, string[]>();
     const unfinishedIds: Array<{ item: string; block: number }> = [];
     for (let b = 0; b < blocks.length; b++) {
@@ -151,7 +156,8 @@ export default function project(input: unknown): unknown {
           const list = deliveredIn.get(entry.item) ?? [];
           list.push(String(b));
           deliveredIn.set(entry.item, list);
-        } else if (entry.partition === 'unfinished') {
+        } else {
+          // 分区只有 delivered、rejected、quarantined、incomplete：不是 delivered 的都算没交付。
           unfinishedIds.push({ item: entry.item, block: b });
         }
       }
@@ -162,15 +168,17 @@ export default function project(input: unknown): unknown {
     }
 
     // The overall: the worst verdict; the level of the block that gave it; unknown when any final is missing.
-    const finals = blocks.map((b) => finalOf(b.result));
+    const finals = blocks.map((b) => finalOf(b.result, b.record));
     let verdict: Verdict | null = null;
     let level: string | null = null;
+    let reference: string | null = null;
     if (finals.every((f) => f !== null)) {
       for (const f of finals) {
         if (f === null) continue;
         if (verdict === null || VERDICT_ORDER[f.verdict] > VERDICT_ORDER[verdict]) {
           verdict = f.verdict;
           level = f.level;
+          reference = f.reference;
         }
       }
     }
@@ -205,9 +213,13 @@ export default function project(input: unknown): unknown {
     }
 
     const unfinishedAnywhere = unfinishedIds.filter((u) => !deliveredIn.has(u.item));
-    const reportSummary = verdict === null
-      ? '整体结论未知（各块没有可读结论）'
-      : `整体结论码 ${verdict}、等级 ${level ?? '未给'}（最差那块的，照抄）`;
+    const missing = unfinishedAnywhere.map((u) => u.item);
+    // 有缺漏条目时整体记未知（覆盖不完整），列出缺漏条目，不给结论码。
+    const reportSummary = missing.length > 0
+      ? `覆盖不完整：${missing.length} 个条目任何一块都没交付（${missing.slice(0, 10).join('、')}），整体结论未知`
+      : verdict === null
+        ? '整体结论未知（各块没有可读结论）'
+        : `整体结论码 ${verdict}、等级 ${level ?? '未给'}（最差那块的，照抄）`;
     const reportItem: ProjectedItem = {
       id: 'report',
       label: '评审终稿',
@@ -215,9 +227,9 @@ export default function project(input: unknown): unknown {
       location: items[0]?.location ?? { slot: VERIFICATIONS_SLOT, parser: 'json@1', selector: `p/${blocks[0]?.base ?? 'body'}/locks/pack` },
       fields: {
         blocks: blocks.length,
-        overall: verdict === null ? null : { verdict, level },
+        overall: missing.length > 0 || verdict === null ? null : { verdict, level, reference },
         findings: collectFindings(blocks),
-        missing_items: unfinishedAnywhere.map((u) => u.item),
+        missing_items: missing,
       },
     };
     return { items: [...items, reportItem], warnings: [] };
