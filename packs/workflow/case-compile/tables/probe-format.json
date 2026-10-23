@@ -1,9 +1,0 @@
-{
-  "schema": "case-compile.probe-format@1",
-  "purposes": [
-    { "code": "build", "label": "版本" },
-    { "code": "addresses", "label": "接口地址" }
-  ],
-  "max_command_chars": 200,
-  "max_pattern_chars": 1000
-}

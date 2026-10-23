@@ -1,4 +1,3 @@
-import { missingProbes } from '../../../packs/workflow/case-compile/functions/probes.ts';
 import FORMAT from '../../../packs/workflow/case-compile/tables/runtime-profile-format.json' with { type: 'json' };
 import { parseManifest } from '../../../packs/workflow/case-compile/functions/manifest.ts';
 import { parseProfile } from '../../../packs/workflow/case-compile/functions/profile.ts';
@@ -40,8 +39,8 @@ export function draftProfile(environment: unknown, manifest: unknown, rawContrac
       requireFact(record(v.parameters) && Object.keys(v.parameters).every((name) => method.parameters.some((p) => p.name === name)), '角色决定含签名外参数；核对原签名后改正');
     }
   }
-  for (const pointer of ['/synthetic', '/workbook', '/seats', '/hosts', '/denied/device', '/denied/host', '/max_wait_seconds', '/fold_newlines', '/probes']) add(pointer, '缺少运行环境部署事实', '集成者从运行器格式和只读预检填写，重新运行 --check；不得以空列表代替未核对的事实');
-  const profile = { schema: FORMAT.profile_schema, synthetic: null, runtime: { minimum_version: wanted.runtimeVersion, contract_sha256: wanted.digest }, bed: beds.beds[0]!.name, device_count: environment.device_count, max_wait_seconds: null, fold_newlines: null, probes: null, workbook: null, seats: null, hosts: null, allowed, unopened, denied: { device: null, host: null }, pending };
+  for (const pointer of ['/synthetic', '/workbook', '/seats', '/hosts', '/denied/device', '/denied/host', '/max_wait_seconds', '/fold_newlines']) add(pointer, '缺少运行环境部署事实', '集成者从运行器格式和只读预检填写，重新运行 --check；不得以空列表代替未核对的事实');
+  const profile = { schema: FORMAT.profile_schema, synthetic: null, runtime: { minimum_version: wanted.runtimeVersion, contract_sha256: wanted.digest }, bed: beds.beds[0]!.name, device_count: environment.device_count, max_wait_seconds: null, fold_newlines: null, workbook: null, seats: null, hosts: null, allowed, unopened, denied: { device: null, host: null }, pending };
   return profile;
 }
 export function checkCoverage(profile: unknown, contract: RuntimeContract): void {
@@ -67,7 +66,6 @@ export function checkProfile(profile: unknown, manifest: unknown, rawContract: u
   const parsed = parseProfile(profile, contract.contract, beds.beds);
   requireFact(parsed.ok, '配置未通过包解析器；核对角色、身份、座位、主机、等待上限、拒绝表和工作簿字段后重跑 --check');
   requireFact(parsed.profile.seats.every((v) => v.ordinal < parsed.profile.device_count), '座位序号超出预检设备数；重新核对座位顺序');
-  requireFact(missingProbes(parsed.profile.probes ?? [], parsed.profile.seats).length === 0, '座位探测不完整；集成者只读核对每个座位的版本和接口地址命令后填 probes，重跑 --check');
   return parsed.profile;
 }
 export function run(args: string[]): void {

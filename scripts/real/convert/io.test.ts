@@ -47,18 +47,12 @@ test('topology and profile CLIs print only counted digests and staged publicatio
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
-test('case and probe CLIs keep identifiers commands addresses and build values out of stdout', async () => {
-  const { profileDocument } = await import('../../../packs/workflow/case-compile/testing/runtime.ts');
-  const { MANIFEST_DOC } = await import('../../../packs/workflow/case-compile/functions/test-support.ts'); const dir = mkdtempSync(join(tmpdir(), 'convert-'));
+test('case CLI keeps identifiers out of stdout', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'convert-'));
   try {
     const map = { root: { data: { text: 'synthetic-root' }, children: Array.from({ length: 5 }, (_, i) => ({ data: { text: 'synthetic-case', priority: 2, auto: 'YES', autoid: `synthetic-case-${i}` } })) } };
     output(dir, 'map.json', JSON.stringify(map));
     const cases = spawnSync(process.execPath, ['scripts/real/convert/auto-cases.ts', join(dir, 'map.json'), '--out', join(dir, 'cases')], { encoding: 'utf8' });
     assert.equal(cases.status, 0, cases.stderr); assert.match(cases.stdout, /^\{"count":5,"sha256":"[a-f0-9]{64}"\}\n$/);
-    const contract = runtimeDocument(); const profile = { ...profileDocument(contract), probes: [{ seat: 'widget-seat', object: 'widget-seat', method: 'configure', command: 'show fixture-build', purpose: 'build', extract: { pattern: '(?<value>.+)', group: 'value' } }] };
-    output(dir, 'contract.json', JSON.stringify(contract)); output(dir, 'profile.json', JSON.stringify(profile)); output(dir, 'manifest.json', JSON.stringify(MANIFEST_DOC));
-    const probes = spawnSync(process.execPath, ['scripts/real/convert/probes.ts', join(dir, 'contract.json'), join(dir, 'profile.json'), join(dir, 'manifest.json'), '--build', 'synthetic-build', '--out', join(dir, 'probes')], { encoding: 'utf8' });
-    assert.equal(probes.status, 0, probes.stderr); assert.match(probes.stdout, /^\{"count":1,"sha256":"[a-f0-9]{64}"\}\n$/);
-    const draft = JSON.parse(readFileSync(join(dir, 'probes/probes.draft.json'), 'utf8')); assert.equal(draft.pending.length, 1); assert.equal(draft.probes[0].expected, 'synthetic-build');
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
