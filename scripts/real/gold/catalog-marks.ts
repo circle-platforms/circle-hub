@@ -207,7 +207,16 @@ export function judgeCommand(catalog: Catalog, line: string): CommandAnswer {
   if (localRequests.length) return { in_scope: true, code: null, requests: localRequests };
   if (tokens === null) return { in_scope: true, code: null, requests: [request(command.at, '命令行的引号或转义切分规则', '请集成者核对该用例原件中的完整命令行和转义方式，补齐后重跑')] };
   const args = tokens.slice(command.words.length);
-  const signatures = command.signatures.map(signature => signature.args.map(parameter));
+  const signatures = command.signatures.map(signature => {
+    let expansion = 1;
+    return signature.args.map(raw => {
+      if (raw.type.toUpperCase() === 'IPADDR' || raw.type.toUpperCase() === 'IPMASK') {
+        if (expansion * 2 > 32) return parameter({...raw,type:'STRING'});
+        expansion *= 2;
+      }
+      return parameter(raw);
+    });
+  });
   const requests = signatures.flatMap(signature => signature.flatMap(p => p.requests));
   if (requests.length) return { in_scope: true, code: null, requests };
   let arityFits = false;

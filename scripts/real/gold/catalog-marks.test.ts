@@ -349,3 +349,11 @@ test('closure B2 a boundary gap leaves the entire item comparison unscored in ei
   assert.equal(report.summary.not_compared,1);assert.equal(report.not_compared[0].expected.length,1);assert.equal(report.not_compared[0].hub.length,1);
  }
 });
+
+test('closure B3 union expansion keeps at most 32 alternatives per argument list', () => {
+ const args=Array.from({length:6},()=>'<arg type="IPADDR"/>').join('');
+ const catalog=readCatalog(`<catalog><menu name="demo"><item name="acl mesh"><arguments>${args}</arguments></item></menu></catalog>`);
+ const words=['192.0.2.1','192.0.2.2','192.0.2.3','192.0.2.4','192.0.2.5','host.example'];
+ const answer=judgeCommand(catalog,'demo acl mesh '+words.join(' '));assert.equal(answer.code,null);assert.deepEqual(answer.requests,[]);
+ words[4]='host.example';assert.equal(judgeCommand(catalog,'demo acl mesh '+words.join(' ')).code,'core.catalog.param_type_mismatch');
+});
