@@ -48,13 +48,13 @@
     },
     {
       "path": "functions/addresses.ts",
-      "sha256": "5977b7dfdfb37e59de663d11fa354ce4dccef29bec83f8d15683f093de7bce43",
-      "size": 3793
+      "sha256": "60f5f10ee595397e05176f92b361bf8ab88cd96bf833220bcf15207775eab32a",
+      "size": 3827
     },
     {
       "path": "functions/bed.ts",
-      "sha256": "fb4f84a55b93cac7ed67907cb3eb2f961bf398dd5f6748037abbaae955fa79bb",
-      "size": 6882
+      "sha256": "9cf49f9fd78a21cc8c4af7cb1082d0ba87b8fc58249872caeff85b18014fd411",
+      "size": 6914
     },
     {
       "path": "functions/binding.ts",

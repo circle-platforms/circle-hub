@@ -87,3 +87,7 @@ test('review 15 an unreplaced off-bed source points to its replacement repair fi
   const data = goodData(); data.steps[0].args = ['widget address 192.0.2.200']; data.expects[0].quote.text = '原文 192.0.2.200 健康检查间隔设置成功'; data.replacements = [{ case: '192.0.2.200', bed: '192.0.2.90' }];
   const result = checkAddresses(subjectOf(data)); assert.ok(codes(result).includes('case-compile.replacement_missing')); assert.ok(!codes(result).includes('case-compile.address_off_bed'));
 });
+test('review 16 MAC and clock tokens never become off-bed address facts', () => {
+  for (const value of ['widget mac 00:11:22:33:44:55', 'widget clock 12:30:45']) { const data = goodData(); data.steps[0].args = [value]; assert.equal(checkAddresses(subjectOf(data))[0].verdict, 'support'); assert.deepEqual(literalAddresses(value), []); }
+  assert.equal(readAddress(bedsOf()[0], [], '2026-10-23T00:00:00.000Z', '12:30:45').kind, 'not_address');
+});

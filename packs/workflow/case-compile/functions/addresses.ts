@@ -4,7 +4,7 @@ import type { Replacement } from './slots.ts';
 export interface LiteralAddress { text: string; at: number; key: string | null }
 export function literalAddresses(text: string): LiteralAddress[] {
   const out: LiteralAddress[] = [];
-  for (const m of text.matchAll(/(?<![A-Za-z0-9_])(?:\d{1,3}(?:\.\d{1,3}){3}|(?:[0-9a-fA-F]{0,4}:){2,}[0-9a-fA-F:.]*)(?![A-Za-z0-9_])/g)) out.push({ text: m[0], at: m.index, key: addressKey(m[0]) });
+  for (const m of text.matchAll(/(?<![A-Za-z0-9_])(?:\d{1,3}(?:\.\d{1,3}){3}|(?:[0-9a-fA-F]{0,4}:){2,}[0-9a-fA-F:.]*)(?![A-Za-z0-9_])/g)) { const key = addressKey(m[0]); if (key !== null) out.push({ text: m[0], at: m.index, key }); }
   return out;
 }
 /** Substitute only complete numeric address tokens; a short address never changes the prefix of a longer one. */
