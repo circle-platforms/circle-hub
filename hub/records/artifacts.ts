@@ -20,6 +20,7 @@ import type {
   AuthorizationRecord,
   Authorizations,
   CredentialScan,
+  CredentialFindingsPage,
   DerivedScanAcceptance,
   DerivedCoverage,
   DerivedCoverageInput,
@@ -44,7 +45,7 @@ import type { Database } from './db.ts';
 import { digestOf, isSha256, sha256Hex } from './digest.ts';
 import { AccessError, ConflictError, IntegrityError, LimitError, RecordsError } from './errors.ts';
 import { isMediaType } from './objects.ts';
-import { scanDigest, scanForCredentials, scanWithContexts, scanWithMatches } from './scan.ts';
+import { CREDENTIAL_DETECTORS,scanAllCredentials,scanDigest, scanForCredentials, scanWithContexts, scanWithMatches } from './scan.ts';
 import { CoverageContext } from './coverage.ts';
 import { MAX_INDEX_VALUE_BYTES, validateIndex } from './store.ts';
 import { textPreview } from './text.ts';
@@ -245,16 +246,17 @@ export class RecordArtifacts implements Artifacts {
     let prepared = coverage === undefined ? undefined : this.#coverage.get(coverage);
     if (coverage !== undefined && (!prepared || prepared.origin !== digestOf(origin) || prepared.author !== digestOf(author))) throw new TypeError('derivedCoverage must be prepared by these records for this origin and author');
     let assessment = prepared?.assess(bytes);
-    const scan = assessment?.scan ?? this.#scan(bytes);
+    let scan = assessment?.scan ?? this.#scan(bytes);
     const hit = scan.findings.length > 0;
     if (hit && 'upload' in origin) await this.#refuseUpload({sha256,size,mediaType:input.mediaType,origin,author,run,scan});
     if (hit && coverage === undefined && input.derivedSources !== undefined && fromHub(origin,author)) {
       coverage = await this.prepareDerived({origin,author,derivedSources:input.derivedSources});
       prepared = this.#coverage.get(coverage)!;
       assessment = prepared.assess(bytes);
+      scan=assessment.scan;
     }
     const hubLineage = hit && fromHub(origin,author) && (prepared?.valid ?? await this.#hubLineage({body:{origin,author}} as SourceArtifact));
-    const accepted = hubLineage ? await this.#acceptanceOf(sha256,scan) : null;
+    const accepted = hubLineage ? await this.#acceptanceOf(sha256,scan,bytes) : null;
     let derived: DerivedScanAcceptance | null = null;
     if (hit && accepted === null && hubLineage && assessment?.derived && prepared) {
       await prepared.context.refresh(true);
@@ -364,9 +366,30 @@ export class RecordArtifacts implements Artifacts {
     return { artifact: choice.artifact, readable: true, text: preview.text, truncated: preview.truncated };
   }
 
-  async acceptFindings(by: Principal, sha256: string, note?: string | null): Promise<FindingsAcceptance> {
+  async scanFindings(by:Principal,sha256:string,options:{after?:string|null;limit?:number}={}):Promise<CredentialFindingsPage>{
+    await this.#requireAdmin(by,'只有管理员可以分页核对凭据命中');
+    if(!isSha256(sha256))throw new TypeError('sha256 must be a lowercase hex SHA-256');
+    const bytes=await this.#objects.get(sha256);if(!bytes)throw new ConflictError('原件未保存，无法核对扫描命中');
+    const full=scanAllCredentials(bytes);if(!full.complete||full.scan.truncated||!full.scan.inspected)throw new ConflictError('不能完整核对这个原件；请拆分或转换成可检查的文本后重读');
+    const limit=options.limit??100;if(!Number.isSafeInteger(limit)||limit<1||limit>100)throw new TypeError('每页命中要取 1 到 100 项');
+    let at=0;
+    if(options.after){try{const cursor=JSON.parse(Buffer.from(options.after,'base64url').toString());if(cursor.sha!==sha256||cursor.scan!==scanDigest(full.scan)||!Number.isSafeInteger(cursor.at)||cursor.at<1||cursor.at>full.scan.findings.length)throw new Error();at=cursor.at;}catch{throw new ConflictError('命中游标已损坏或不属于此原件；从首页重新核对');}}
+    const findings=full.scan.findings.slice(at,at+limit),end=at+findings.length;
+    const detectors:Record<string,number>={};for(const hit of full.scan.findings)detectors[hit.detector]=(detectors[hit.detector]??0)+1;
+    return {scanner:full.scan.scanner,findings,next:end<full.scan.findings.length?Buffer.from(JSON.stringify({sha:sha256,scan:scanDigest(full.scan),at:end})).toString('base64url'):null,total:full.scan.findings.length,detectors};
+  }
+
+  async acceptFindings(by:Principal,sha256:string,note?:string|null,options:{detectors?:readonly string[];automatic?:boolean}={}):Promise<FindingsAcceptance>{
+    if(!isSha256(sha256))throw new TypeError('sha256 must be a lowercase hex SHA-256');
+    return this.#store.withTransaction(async tx=>{
+      await this.#store.lock(`artifacts.scan-accept:${sha256}`,tx);
+      await this.#requireAdmin(by,'只有管理员可以接受凭据扫描的命中');
+      if(options.automatic){const latest=await this.#store.find<import('./api.ts').AuthorizationBody>({key:'authz.key',value:`${RESOURCE_CONFIG}|${WHOLE_HUB}|${scanAcceptanceKey(sha256)}`,kind:'authorization',limit:1,newestFirst:true},tx);if(latest.items[0]?.body.revoked)throw new ConflictError('管理员已撤回此原件的接受；自动受理不能覆盖撤回决定');}
+      return this.#acceptFindings(by,sha256,note,options);
+    });
+  }
+  async #acceptFindings(by: Principal, sha256: string, note?: string | null,options:{detectors?:readonly string[];automatic?:boolean}={}): Promise<FindingsAcceptance> {
     if (!isSha256(sha256)) throw new TypeError('sha256 must be a lowercase hex SHA-256');
-    await this.#requireAdmin(by, '只有管理员可以接受凭据扫描的命中');
     validNote(note);
     const bytes = await this.#objects.get(sha256);
     if (bytes === null) {
@@ -390,12 +413,26 @@ export class RecordArtifacts implements Artifacts {
         { detail: { sha256 } },
       );
     }
+    if(options.detectors!==undefined){
+      const full=scanAllCredentials(bytes),selected=[...new Set(options.detectors)].sort();
+      if(!full.complete||full.scan.truncated||!full.scan.inspected)throw new ConflictError('扫描不能完整核对；拆分或转换来源后重试，未接受任何命中');
+      const classes=[...new Set(full.scan.findings.map(finding=>finding.detector))];
+      if(selected.length===0||selected.some(detector=>!classes.includes(detector)||!CREDENTIAL_DETECTORS.includes(detector as typeof CREDENTIAL_DETECTORS[number])))throw new TypeError('只能选择此扫描实际命中的检测类');
+      const reason=findingsNote(note,[...full.contexts,...full.matches]);
+      let authorization:AuthorizationRecord|undefined;
+      const classDigest=(detector:string)=>scanDigest({...full.scan,findings:full.scan.findings.filter(finding=>finding.detector===detector)});
+      for(const detector of selected)authorization=await this.#authorizations.configureResource(by,`${scanAcceptanceKey(sha256)}/${detector}`,classDigest(detector),reason);
+      const decisions=await this.#authorizations.resourceConfigs(classes.map(detector=>`${scanAcceptanceKey(sha256)}/${detector}`));
+      const complete=classes.every(detector=>decisions.get(`${scanAcceptanceKey(sha256)}/${detector}`)?.body.bound===classDigest(detector));
+      if(complete)authorization=await this.#authorizations.configureResource(by,scanAcceptanceKey(sha256),scanDigest(full.scan),reason);
+      return {authorization:authorization!,scan:full.scan,detectors:selected,complete};
+    }
     // The decision covers the current scanner's findings of the stored bytes, never a finding list someone hands in.
     const { scan, contexts } = scanWithContexts(bytes);
     if (scan.findings.length === 0) throw new ConflictError('当前的凭据扫描在这份字节里没有命中，不需要接受', { detail: { sha256, scanner: scan.scanner } });
     // A truncated scan binds only the positions it kept: the rest were never shown, and past a pattern's cap never looked for.
     if (scan.truncated) {
-      throw new ConflictError(`命中超过可列出的上限（列出了 ${scan.findings.length} 处，还有更多），管理员无法逐处核对，不能接受`, {
+      throw new ConflictError(`命中超过可列出的上限（列出了 ${scan.findings.length} 处，还有更多），请先用 scanFindings 分页核对，再按检测类显式接受；不能直接接受截断扫描`, {
         detail: { sha256, scanner: scan.scanner, kept: scan.findings.length },
       });
     }
@@ -404,25 +441,31 @@ export class RecordArtifacts implements Artifacts {
     return { authorization, scan };
   }
 
-  async revokeFindings(by: Principal, sha256: string, note?: string | null): Promise<AuthorizationRecord> {
+  async revokeFindings(by:Principal,sha256:string,note?:string|null):Promise<AuthorizationRecord>{
+    if(!isSha256(sha256))throw new TypeError('sha256 must be a lowercase hex SHA-256');
+    return this.#store.withTransaction(async tx=>{await this.#store.lock(`artifacts.scan-accept:${sha256}`,tx);await this.#requireAdmin(by,'只有管理员可以撤回对凭据扫描命中的接受');return this.#revokeFindings(by,sha256,note);});
+  }
+  async #revokeFindings(by: Principal, sha256: string, note?: string | null): Promise<AuthorizationRecord> {
     if (!isSha256(sha256)) throw new TypeError('sha256 must be a lowercase hex SHA-256');
-    await this.#requireAdmin(by, '只有管理员可以撤回对凭据扫描命中的接受');
     const contexts = validNote(note) === null ? [] : await this.#findingContexts(sha256);
+    const reason=findingsNote(note,contexts);
+    for(const detector of CREDENTIAL_DETECTORS){const object=`${scanAcceptanceKey(sha256)}/${detector}`;if(await this.#authorizations.resourceConfig(object))await this.#authorizations.revoke(by,{permission:RESOURCE_CONFIG,subject:WHOLE_HUB,object,note:reason});}
     return this.#authorizations.revoke(by, { permission: RESOURCE_CONFIG, subject: WHOLE_HUB, object: scanAcceptanceKey(sha256), note: findingsNote(note, contexts) });
   }
 
   /** The text around each finding of the stored bytes, for the note check only (never stored). */
   async #findingContexts(sha256: string): Promise<string[]> {
     const bytes = await this.#objects.get(sha256);
-    return bytes === null ? [] : [...scanWithContexts(bytes).contexts,...scanWithMatches(bytes).matches];
+    return bytes === null ? [] : (()=>{const full=scanAllCredentials(bytes);return [...full.contexts,...full.matches];})();
   }
 
   /** The acceptance in force that covers exactly this scan of these bytes, as recorded on an ingested artifact; else null. */
-  async #acceptanceOf(sha256: string, scan: CredentialScan): Promise<ScanAcceptance | null> {
-    // A truncated scan is never covered: its digest binds only the findings it kept.
-    if (scan.truncated) return null;
+  async #acceptanceOf(sha256: string, scan: CredentialScan,bytes?:Uint8Array): Promise<ScanAcceptance | null> {
+    // A truncated stored summary needs a complete fresh scan before the current decision can cover it.
     const configuration = await this.#authorizations.resourceConfig(scanAcceptanceKey(sha256));
-    if (configuration === null || configuration.body.bound !== scanDigest(scan)) return null;
+    if(configuration===null)return null;
+    if(scan.truncated){const original=bytes??await this.#objects.get(sha256);if(!original)return null;const full=scanAllCredentials(original);if(!full.complete||full.scan.truncated||!full.scan.inspected)return null;scan=full.scan;}
+    if(configuration.body.bound!==scanDigest(scan))return null;
     return { by: configuration.body.decided_by, at: configuration.body.decided_at, authorization: configuration.digest };
   }
 
@@ -434,7 +477,7 @@ export class RecordArtifacts implements Artifacts {
   #context(): CoverageContext {
     return new CoverageContext({store:this.#store,objects:this.#objects,authorizations:this.#authorizations,scan:bytes => {
       this.#options.onCredentialScan?.(bytes.byteLength);
-      return scanWithMatches(bytes);
+      return scanAllCredentials(bytes);
     }});
   }
 

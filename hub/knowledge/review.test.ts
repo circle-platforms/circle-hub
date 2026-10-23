@@ -656,7 +656,7 @@ describe('views cut over the byte budget (findings: index estimate below the rea
     assert.deepEqual(cut.entries[digest], all.entries[digest]);
   });
 });
-test('the view budget also charges credential-bearing index keys once and keeps a deterministic prefix', async t => {
+test('a complete accepted scan covers credential-bearing index keys and all entries beyond the old display cap', async t => {
   const w=await world(t,[DEFAULT_PRODUCERS[0],casesProducer({batch:5})]);
   const ids:string[]=[];
   for(let d=0;d<5;d++) {
@@ -674,7 +674,6 @@ test('the view budget also charges credential-bearing index keys once and keeps 
   const expected:string[]=[],keys=new Set<string>();let hits=0;
   for(const entry of entries) {
     const key=String(entry.data?.module),cost=2+(keys.has(key)?0:1);
-    if(hits+cost>100)break;
     hits+=cost;keys.add(key);expected.push(entry.entry);
   }
   const result=await reader(w).read(`knowledge:index:acme:${A}?kind=case&key=module`);assert.ok(result.ok);
@@ -683,13 +682,14 @@ test('the view budget also charges credential-bearing index keys once and keeps 
   const bytes=await w.kit.artifacts.source(w.user,artifact.body.sha256);assert.ok(bytes?.bytes);
   const value=IndexView.parse(JSON.parse(Buffer.from(bytes.bytes).toString()));
   assert.deepEqual(Object.keys(value.entries).sort(),expected);
-  assert.ok(value.notes.some(n=>n.includes(`${200-expected.length} 个条目因整份扫描的命中上限没有留下`)));
+  assert.equal(expected.length,200);assert.equal(hits,405);assert.equal(value.truncated,false);
+  assert.ok(!value.notes.some(n=>n.includes('命中上限没有留下')));
 });
 
 // Inject two single-hit undercounts only into the public per-part estimate. The real private ingest
 // scanner and coverage assessment still run, so this exercises an actual truncated
 // stored answer and the single safe retry, rather than fabricating an ingest receipt.
-test('a truncated whole-answer scan retries once without hit entries and distinguishes fallback omissions', async t => {
+test('the private whole-answer scan verifies covered content beyond the old cap despite a public estimate undercount', async t => {
   const w=await world(t,[DEFAULT_PRODUCERS[0],casesProducer({batch:2})]);
   const ids:string[]=[];
   for (let d=0;d<2;d++) {
@@ -726,17 +726,12 @@ test('a truncated whole-answer scan retries once without hit entries and disting
   const result=await reader(w).read(`knowledge:index:acme:${A}?kind=case&key=module`);
   assert.ok(result.ok,result.ok ? '' : result.reason);
   assert.equal(undercounted,2);
-  assert.equal(answers.length,2,'one initial ingest and exactly one fallback');
-  assert.equal(answers[0].body.scan.truncated,true);
-  assert.equal(answers[0].body.read_tier,'retain_only');
-  assert.equal(answers[1].body.scan.truncated,false);
-  assert.equal(answers[1].body.read_tier,'model_readable');
-  assert.equal(result.artifacts[0].artifact.digest,answers[1].digest);
-  const source=await w.kit.artifacts.source(w.user,answers[1].body.sha256); assert.ok(source?.bytes);
+  assert.equal(answers.length,1,'a complete scan below the maintenance bound needs no omission fallback');
+  assert.equal(answers[0].body.scan.truncated,false);
+  assert.equal(answers[0].body.scan.findings.length,104,'the private scanner counts every hit despite the estimate undercount');
+  assert.equal(answers[0].body.read_tier,'model_readable');
+  const source=await w.kit.artifacts.source(w.user,answers[0].body.sha256);assert.ok(source?.bytes);
   const view=IndexView.parse(JSON.parse(Buffer.from(source.bytes).toString()));
-  assert.deepEqual(view.entries,{}); assert.deepEqual(view.keys,{});
-  assert.equal(view.truncated,true);
-  assert.ok(view.notes.some(note=>note.startsWith('有 1 个条目因整份扫描的命中上限没有留下')));
-  assert.ok(view.notes.some(note=>note==='有 51 个条目原已由来源的受理覆盖，因整份入库扫描仍被截断，在回退时剔掉'));
-  assert.ok(!view.notes.some(note=>/52 个条目因整份扫描/.test(note)));
+  assert.equal(Object.keys(view.entries).length,52);assert.equal(view.truncated,false);
+  assert.ok(!view.notes.some(note=>note.includes('截断')||note.includes('回退')));
 });

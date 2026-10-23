@@ -1,3 +1,4 @@
+import {knowledgeSourceLoader} from './credential-policy.ts';
 // Producing the root of one build (K01, K02, K04): read each declared source through the external reader in an admin
 // context, parse it with the core parser for its media type, run each producer function in the sandbox (a list slot in
 // batches, memoized), validate its output, verify every entry (kind, storable text, fragments, path), place what code could
@@ -517,7 +518,7 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
 
   if (build.base !== build.name) return fail(`构建 ${build.name} 是 ${build.base} 的别名，没有自己的树`);
   if (product.product.producers.length === 0) return fail('产品包没有声明生产器');
-  const loader = input.loader ?? new SourceLoader({ external: context.external, artifacts: context.records.artifacts, parsers: context.parsers, records:context.records.store }, by, 'knowledge sync');
+  const loader = input.loader ?? knowledgeSourceLoader(context,by,'knowledge sync');
   const cap = context.limits.maxBuildBytes;
   listLoader = new ListLoader(context, loader, {
     maxAgeSeconds: input.maxAgeSeconds ?? context.limits.listMaxAgeSeconds,
@@ -556,7 +557,7 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
     }
     let loaded = parsed.get(source.external);
     if (loaded === undefined) {
-      const read = await loader.read(source.external);
+      const read = await loader.read(source.external,source.slot);
       if (!read.ok) {
         if(read.observation){
           sourceFailures.push(read.observation);
@@ -574,7 +575,7 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
       if (bytes + size > cap) {
         return fail(`构建的来源合计超过每个构建 ${cap} 字节的上限：已读 ${bytes} 字节，源文件 ${read.artifact.body.sha256}（${source.external}）还有 ${size} 字节`);
       }
-      const readable = await loader.readable(read, cap - bytes);
+      const readable = await loader.readable(read, cap - bytes,{slot:source.slot});
       if (!readable.ok) return fail(readable.reason);
       const parse = loader.parse(readable.value);
       if (!parse.ok) return fail(parse.reason);
@@ -998,7 +999,7 @@ async function produceList(context: KnowledgeContext, input: ListInput): Promise
     // The digest of every object read, by position: the one loaded when a stored read had to be read again.
     const readAt: Array<string | undefined> = [];
     // Records and sizes first: no bytes are fetched before the batch is cut into calls within the cap.
-    const peeks = await Promise.all(batch.externals.map((external) => input.listLoader.peek(external)));
+    const peeks = await Promise.all(batch.externals.map((external) => input.listLoader.peek(external,{slot:list.slot})));
     const calls: Array<Array<Extract<ElementPeek, { ok: true }>>> = [];
     let current: Array<Extract<ElementPeek, { ok: true }>> = [];
     let bytes = 0;
@@ -1031,7 +1032,7 @@ async function produceList(context: KnowledgeContext, input: ListInput): Promise
     for (const call of calls) {
       if (state.failure !== null) return { ok: false, reason: state.failure };
       // Only this call's documents are held: at most `cap` bytes of them per batch at a time.
-      const loads = await Promise.all(call.map((peek) => input.listLoader.materialize(peek,Math.max(cap,Math.min(peek.load.artifact.body.size,context.sandbox.producer.inputBytes??128*1024*1024)))));
+      const loads = await Promise.all(call.map((peek) => input.listLoader.materialize(peek,Math.max(cap,Math.min(peek.load.artifact.body.size,context.sandbox.producer.inputBytes??128*1024*1024)),list.slot)));
       const elements: ParsedSource[] = [];
       loads.forEach((load, k) => {
         const at = position.get(call[k].external) as number;

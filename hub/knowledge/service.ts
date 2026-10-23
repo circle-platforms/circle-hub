@@ -37,6 +37,7 @@ export interface KnowledgeOptions {
   limits?: Partial<KnowledgeLimits>;
   /** Default admin context of syncs and productions that name none. */
   admin?: Principal | null;
+  credentialAcceptance?:import('./credential-policy.ts').CredentialAcceptanceOptions;
 }
 
 export interface BuildCalibrationInput {
@@ -95,6 +96,8 @@ export interface Knowledge extends KnowledgePort {
 
 export function createKnowledge(options: KnowledgeOptions): Knowledge {
   const now = options.clock ?? (() => new Date());
+  const deadlineHours=options.credentialAcceptance?.deadlineHours??72;
+  if(!Number.isFinite(deadlineHours)||deadlineHours<=0||!Number.isFinite(new Date(now().getTime()+deadlineHours*3600000).getTime()))throw new TypeError('凭据核对期限必须是有效的正数小时');
   const store = new KnowledgeStore(options.records.store);
   const placer = new Placer({ jev: options.jev ?? null, store, now });
   const calibration = new CalibrationStore(store, options.records.principals);
@@ -114,6 +117,7 @@ export function createKnowledge(options: KnowledgeOptions): Knowledge {
     },
     limits: { ...DEFAULT_KNOWLEDGE_LIMITS, ...(options.limits ?? {}) },
     admin: options.admin ?? null,
+    credentialAcceptance:{autoAcceptSources:options.credentialAcceptance?.autoAcceptSources??[],deadlineHours},
     writes: new WriteQueue(),
   };
   const builds = new Builds(context);

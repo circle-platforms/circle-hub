@@ -107,6 +107,7 @@ export class WriteQueue {
 }
 
 export interface KnowledgeContext {
+  credentialAcceptance?:import('./credential-policy.ts').CredentialAcceptanceOptions;
   records: KnowledgeRecords;
   store: KnowledgeStore;
   parsers: ParserRegistry;

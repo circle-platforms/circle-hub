@@ -20,7 +20,7 @@ export interface SourceObservation {external:string;code:string;status:number|nu
 
 export type ExternalLoad =
   | { ok: true; id: string; revision: string | null; artifact: SourceArtifact; manifest?:string|null }
-  | { ok: false; id: string; reason: string; observation?:SourceObservation };
+  | { ok: false; id: string; reason: string; observation?:SourceObservation;retained?:string[] };
 
 /** Stored bytes a parser may read, with the record that decided the read. */
 export interface ReadableSource {
@@ -47,6 +47,8 @@ export interface SourceDeps {
   artifacts: Artifacts;
   parsers: ParserRegistry;
   records?:Pick<RecordStore,'get'>;
+  onCredential?:(load:Extract<ExternalLoad,{ok:true}>,slot?:string)=>Promise<void>;
+  onReadable?:(load:Extract<ExternalLoad,{ok:true}>)=>Promise<void>;
 }
 
 /** The message for a source whose credential scan found something: names the digest and how an administrator unblocks it. */
@@ -67,6 +69,7 @@ export class SourceLoader {
   readonly #purpose: string;
   readonly #reads = new Map<string, Promise<ExternalLoad>>();
   readonly #readWrites=new Map<string,Promise<void>>();
+  readonly #credentialReads=new Map<string,Promise<ExternalLoad>>();
   /** Parsed documents by digest and parser; bytes behind a digest never change. A few large documents at most. */
   readonly #documents = new Lru<string, ParsedDocument>(4);
   /** Which parser recognised the bytes of a digest and media type. */
@@ -92,13 +95,33 @@ export class SourceLoader {
     return pending;
   }
 
-  read(id: string): Promise<ExternalLoad> {
+  read(id: string,slot?:string): Promise<ExternalLoad> {
     let pending = this.#reads.get(id);
     if (pending === undefined) {
       pending = this.#read(id);
       this.#reads.set(id, pending);
     }
-    return pending;
+    return pending.then(load=>{
+      if(load.ok||!load.retained?.length||!this.#deps.onCredential)return load;
+      const key=`${id}\0${slot??''}`;let recovery=this.#credentialReads.get(key);
+      if(!recovery){recovery=this.#recover(load,slot);this.#credentialReads.set(key,recovery);}
+      return recovery;
+    });
+  }
+
+  async #recover(load:Extract<ExternalLoad,{ok:false}>,slot?:string):Promise<ExternalLoad>{
+    let readable=true;
+    for(const digest of load.retained??[]){
+      const record=await this.#deps.records?.get(digest);if(record?.kind!=='source_artifact'){readable=false;continue;}
+      const artifact=record as SourceArtifact;
+      const stored={ok:true as const,id:load.id,artifact,revision:null,manifest:load.observation?.manifest};
+      const current=await this.#deps.artifacts.source(this.#by,artifact.body.sha256,{consumer:'model',record:artifact.digest});
+      if(current?.bytes===null)await this.#deps.onCredential?.(stored,slot);
+      const checked=await this.#deps.artifacts.source(this.#by,artifact.body.sha256,{consumer:'model',record:artifact.digest});
+      if(!checked?.bytes)readable=false;
+    }
+    if(!readable)return load;
+    const retried=this.#read(load.id);this.#reads.set(load.id,retried);return retried;
   }
 
   /** Resuming a saved plan pins a stored observation, never reinterprets it as a fresh connector read. */
@@ -128,7 +151,7 @@ export class SourceLoader {
         external:result.id,code:manifest.error_code,status:manifest.requests.findLast(request=>!request.ok&&request.status!==null)?.status??null,
         at:manifest.ended_at,manifest:result.manifest!,system_pack:manifest.system_pack.id,resource:manifest.resource,
       }:undefined;
-      return {ok:false,id,reason:observation?`读取确定失败：${observation.code}（${observation.status===null?'无 HTTP 状态':`HTTP ${observation.status}`}，${observation.at}）`:`读取失败：${result.reason}`,...(observation?{observation}:{})};
+      return {ok:false,id,reason:observation?`读取确定失败：${observation.code}（${observation.status===null?'无 HTTP 状态':`HTTP ${observation.status}`}，${observation.at}）`:`读取失败：${result.reason}`,...(observation?{observation}:{}),...(observation?.code==='SOURCE_CREDENTIAL'?{retained:[...new Set(manifest!.requests.flatMap(request=>request.artifact===null?[]:[request.artifact]))]}:{})};
     }
     const chosen =
       result.artifacts.find((a) => a.name === EXTERNAL_ARTIFACT.content) ?? result.artifacts.find((a) => a.name === EXTERNAL_ARTIFACT.original);
@@ -141,7 +164,7 @@ export class SourceLoader {
    * the one record the connector read returned: the read is pinned to it, so another record of the same bytes (a newer
    * personal-credential read, say) never decides it.
    */
-  async readable(load: Extract<ExternalLoad, { ok: true }>, maxBytes: number): Promise<Loaded<ReadableSource>> {
+  async readable(load: Extract<ExternalLoad, { ok: true }>, maxBytes: number,context:{slot?:string}={}): Promise<Loaded<ReadableSource>> {
     const body = load.artifact.body;
     const sha256 = body.sha256;
     const id = load.id;
@@ -149,7 +172,11 @@ export class SourceLoader {
       return { ok: false, sha256, reason: `源文件 ${sha256}（${id}）是用个人凭据读到的，个人凭据读到的源文件不进知识树` };
     }
     if (body.size > maxBytes) return { ok: false, sha256, reason: `源文件 ${sha256}（${id}）有 ${body.size} 字节，超过还能读的 ${maxBytes} 字节` };
-    const source = await this.#deps.artifacts.source(this.#by, sha256, { consumer: 'model', record: load.artifact.digest });
+    let source = await this.#deps.artifacts.source(this.#by, sha256, { consumer: 'model', record: load.artifact.digest });
+    if(source?.bytes===null&&source.readTier==='retain_only'&&this.#deps.onCredential){
+      await this.#deps.onCredential(load,context.slot);
+      source=await this.#deps.artifacts.source(this.#by,sha256,{consumer:'model',record:load.artifact.digest});
+    }
     if (source === null) return { ok: false, sha256, reason: `源文件 ${sha256}（${id}）对执行同步的管理员不可读` };
     if (source.bytes === null || source.readTier !== MODEL_READABLE) {
       if (source.readTier === RETAIN_ONLY) return { ok: false, sha256, reason: credentialReason(sha256, id) };
@@ -158,6 +185,7 @@ export class SourceLoader {
     if (!source.artifact.body.scan.inspected) {
       return { ok: false, sha256, reason: `源文件 ${sha256}（${id}）不是凭据扫描能检查的文本，不进知识树` };
     }
+    await this.#deps.onReadable?.(load);
     return {
       ok: true,
       value: {

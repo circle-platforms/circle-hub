@@ -31,7 +31,7 @@ import {
   type ViewEntry,
 } from '../../contracts/src/views.ts';
 import type { ExternalRead, ExternalReadContext, ExternalReaderPort, PacksPort } from '../ports.ts';
-import { canonicalBytes, canonicalize, sha256Hex, CREDENTIAL_FINDING_LIMIT, type DerivedCoverage, type ActionBody, type SourceArtifact } from '../records/api.ts';
+import { canonicalBytes, canonicalize, sha256Hex, MAX_ADMIN_FINDINGS, type DerivedCoverage, type ActionBody, type SourceArtifact } from '../records/api.ts';
 import { pathSegments, treeReference } from '../refs/api.ts';
 import { LinksView } from '../../contracts/src/views.ts';
 import { LinkReading,RelationReadError,LinkRefusal } from './links.ts';
@@ -40,6 +40,8 @@ import type { Builds } from './builds.ts';
 import type { ReadRow } from './composition.ts';
 import type { KnowledgeContext } from './context.ts';
 import { canonicalSize, compareText, cutText, type EntryContent } from './digest.ts';
+import {requestKnowledgeFact} from './requests.ts';
+import {keepProblemRows} from './problem-journal.ts';
 import { describeError } from './errors.ts';
 import type { TreeReading } from './read.ts';
 import { ACTION, COMPONENTS, Lru } from './store.ts';
@@ -411,7 +413,7 @@ export class KnowledgeViews {
       return { kind: content.kind, statement: '', data, applicability: content.applicability };
     };
     const nodes = (await this.#reading.changedNodes(from.root, to.root)) ?? [];
-    const [fromComposition, toComposition] = await Promise.all([this.#reading.compositionOf(from.root), this.#reading.compositionOf(to.root)]);
+    const [fromComposition, toComposition] = await Promise.all([this.#reading.compositionOf(from.root),this.#reading.compositionOf(to.root)]);
     const page=pageState(after,{product,from,to,changed,attached,attachedFields,catalog,compositions:[fromComposition?.record,toComposition?.record],exclude:[...exclude].sort()});
     const budget = this.#budget;
     interface Item {
@@ -965,6 +967,13 @@ export class KnowledgeViews {
         visibility,
         name: `${request.type}-view.json`,
       });
+    const credentialRefusal=async(held:SourceArtifact,references:string[]):Promise<ExternalRead>=>{
+      const excluded=[...new Set([...inputs,...references])];
+      const refs=await keepProblemRows(this.#context,excluded,inputs);
+      const action='管理员按完整引用清单核对来源，修正源头或显式受理已确认的示例后重读视图';
+      const request=await requestKnowledgeFact(this.#context,{kind:'clarification',subject:`视图凭据核对 ${held.body.sha256}`,missing:'视图最后一步仍有未受理凭据命中，未交付这份视图',action,inputs:refs.map(ref=>`rec:${ref.record}`)});
+      return {ok:false,id:bare,reason:`视图 ${held.body.sha256} 有未受理凭据命中，不交给任务包。被排除引用前 ${Math.min(10,excluded.length)} 个：${excluded.slice(0,10).join('、')}；共 ${excluded.length} 个，完整清单：${refs.map(ref=>`rec:${ref.record}`).join('、')}。管理员 ${request.audience_user} 的核对请求 ${request.reference}，期限 ${request.deadline}；${action}`};
+    };
     const tooLarge = (bytes: Uint8Array): string | null => (bytes.byteLength > this.#context.limits.maxViewBytes ? `视图有 ${bytes.byteLength} 字节，超过 ${this.#context.limits.maxViewBytes} 字节` : null);
     let originalBytes = this.#cache.get(key);
     let view: ImpactView | FacetView | IndexView;
@@ -976,7 +985,9 @@ export class KnowledgeViews {
       // Cache the unfiltered answer only. Every use rechecks source acceptance and omissions.
       this.#cache.set(key,originalBytes);
     } else view = JSON.parse(Buffer.from(originalBytes).toString('utf8')) as ImpactView | FacetView | IndexView;
+    const originalReferences=view.schema==='facet-view@1'?[]:Object.values(view.entries).map(entry=>entry.reference);
     const flagged = flaggedParts(view,coverage);
+    if(request.after&&flagged.excluded.size>0)return credentialRefusal(await ingest(originalBytes),originalReferences);
     if (flagged.excluded.size > 0) view = await compute(flagged.excluded);
     const annotate = (value: ImpactView | FacetView | IndexView, covered: number, limited: number, fallback = 0): void => {
       const unit = value.schema === 'facet-view@1' ? '计数行' : '条目';
@@ -984,6 +995,7 @@ export class KnowledgeViews {
       if (limited > 0) value.notes.push(`有 ${limited} 个${unit}因整份扫描的命中上限没有留下；截断扫描不能被覆盖`);
       if (fallback > 0) value.notes.push(`有 ${fallback} 个${unit}原已由来源的受理覆盖，因整份入库扫描仍被截断，在回退时剔掉`);
     };
+    if(flagged.excluded.size>0&&view.next){view.next=null;view.notes.push('本页有未受理凭据，先由管理员处理这些来源或用 only 收窄；处理后从首页重读，不沿偏移后的页继续');}
     const finalKeys = partKeys(view);
     const covered = [...flagged.kept].filter(key => finalKeys.has(key)).length;
     annotate(view,covered,flagged.limited.size);
@@ -997,14 +1009,14 @@ export class KnowledgeViews {
     if (artifact.body.scan.truncated && flagged.eligible.size > 0) {
       view = await compute(flagged.allHits);
       annotate(view,0,flagged.limited.size,covered);
-      if(view.next)view.next=continuationId(bare,view.next,revision);
+        if(view.next)view.next=continuationId(bare,view.next,revision);
       bytes = canonicalBytes(view);
       large = tooLarge(bytes);
       if (large !== null) return {ok:false,id:bare,reason:large};
       artifact = await ingest(bytes);
     }
     if (artifact.body.read_tier !== 'model_readable') {
-      return { ok: false, id: bare, reason: `视图 ${artifact.body.sha256} 的凭据扫描有命中（读取档位“${labelOf('read_tier', artifact.body.read_tier)}”），不交给任务包` };
+      return credentialRefusal(artifact,originalReferences);
     }
     const meta = await this.#context.records.artifacts.ingest({
       bytes: canonicalBytes({ title, view: request.type, product, roots, revision }),
@@ -1092,7 +1104,7 @@ function flaggedParts(view: ImpactView | FacetView | IndexView, coverage: Derive
     if (assessment.scan.findings.length > 0 && !assessment.derived || hitKeys.some(k => !keys.get(k)!.derived)) { excluded.add(key); continue; }
     eligible.add(key);
     const cost = assessment.scan.findings.length + hitKeys.filter(k => !charged.has(k)).reduce((n,k) => n+keys.get(k)!.scan.findings.length,0);
-    if (full || findings + cost > CREDENTIAL_FINDING_LIMIT) { full=true; excluded.add(key); limited.add(key); continue; }
+    if (full || findings + cost > MAX_ADMIN_FINDINGS) { full=true; excluded.add(key); limited.add(key); continue; }
     findings += cost;
     for (const k of associated) charged.add(k);
     kept.add(key);

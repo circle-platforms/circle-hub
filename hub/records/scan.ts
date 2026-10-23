@@ -23,7 +23,7 @@ const MAX_NESTING = 4;
 const BINARY_CONTROL_SHARE = 0.05;
 const SAMPLE_BYTES = 64 * 1024;
 
-type Report = (index: number, matched: string) => void;
+type Report = ((index: number, matched: string) => void)&{limit?:number};
 
 /** Where a hit was found: the decoded (and, inside a quoted string, unescaped) text and the index in it. */
 interface Located {
@@ -127,7 +127,7 @@ function each(text: string, pattern: RegExp, accept: (match: RegExpExecArray) =>
   for (let match = pattern.exec(text); match !== null; match = pattern.exec(text)) {
     if (accept(match)) {
       report(at(match),matched(match));
-      if (++accepted > MAX_FINDINGS) return;
+      if (++accepted > (report.limit??MAX_FINDINGS)) return;
     }
     if (match[0].length === 0) pattern.lastIndex++;
   }
@@ -142,7 +142,7 @@ function eachBounded(text: string, pattern: RegExp, check: (match: RegExpExecArr
     const next = pattern.exec(text);
     if (check(pending, next === null ? text.length : next.index)) {
       report(pending.index, matchText(pending,next === null ? text.length : next.index));
-      if (++accepted > MAX_FINDINGS) return;
+      if (++accepted > (report.limit??MAX_FINDINGS)) return;
     }
     pending = next;
   }
@@ -396,10 +396,10 @@ function escapedLiterals(text: string, visit: (literal: Literal) => boolean): vo
 }
 
 /** Hits in `text`; a hit inside an escaped string is reported at the string's opening quote. */
-function scanText(text: string, depth: number, located: boolean): RawHit[] {
+function scanText(text: string, depth: number, located: boolean, limit=MAX_FINDINGS): RawHit[] {
   const hits: RawHit[] = [];
   for (const detector of DETECTORS) {
-    detector.run(text, (index, matched) => hits.push(located ? { detector: detector.id, index, at: { text, index }, matched } : { detector: detector.id, index }));
+    const report:Report=(index,matched)=>{hits.push(located?{detector:detector.id,index,at:{text,index},matched}:{detector:detector.id,index});};report.limit=limit;detector.run(text,report);
   }
   if (depth >= MAX_NESTING || !text.includes('\\')) return hits;
   const direct = [...hits].sort((a, b) => a.index - b.index);
@@ -416,23 +416,23 @@ function scanText(text: string, depth: number, located: boolean): RawHit[] {
   };
   let literalsWithHits = 0;
   escapedLiterals(text, (literal) => {
-    const inner = scanText(literal.value, depth + 1, located);
+    const inner = scanText(literal.value, depth + 1, located,limit);
     let added = false;
     for (const hit of inner) {
       const covering = coveredBy(hit.detector,literal.start,literal.end);
       if (covering !== null) {
         if (located) {
           (covering.additional ??= []).push(...(hit.matched === undefined ? [] : [hit.matched]),...(hit.additional ?? []));
-          if (inner.length > MAX_FINDINGS || hit.incomplete) covering.incomplete = true;
+          if (inner.length > limit || hit.incomplete) covering.incomplete = true;
         }
         continue;
       }
-      hits.push(located ? { detector: hit.detector, index: literal.start, at: hit.at, matched: hit.matched, additional:hit.additional, incomplete:hit.incomplete || inner.length > MAX_FINDINGS } : { detector: hit.detector, index: literal.start });
+      hits.push(located ? { detector: hit.detector, index: literal.start, at: hit.at, matched: hit.matched, additional:hit.additional, incomplete:hit.incomplete || inner.length > limit } : { detector: hit.detector, index: literal.start });
       added = true;
     }
     // A literal hit after MAX_FINDINGS + 1 earlier literal hits can never be among the first MAX_FINDINGS findings.
     if (added) literalsWithHits++;
-    return literalsWithHits <= MAX_FINDINGS;
+    return literalsWithHits <= limit;
   });
   return hits;
 }
@@ -731,13 +731,13 @@ function contextOf(at: Located | undefined, detector: string): string {
   return text.slice(lineStart, index + (nextEnd < 0 ? after.length : nextEnd));
 }
 
-function scanBytes(bytes: Uint8Array, located: boolean): { scan: CredentialScan; contexts: string[]; matches: string[]; complete: boolean } {
+function scanBytes(bytes: Uint8Array, located: boolean,limit=MAX_FINDINGS): { scan: CredentialScan; contexts: string[]; matches: string[]; complete: boolean } {
   const { views, inspected } = decode(bytes);
   const found = new Map<string, { finding: CredentialFinding; at?: Located; matches: Set<string> }>();
   let complete = true;
   for (const view of views) {
-    const hits = scanText(view.text, 0, located);
-    if (hits.length > MAX_FINDINGS || hits.some(hit => hit.incomplete)) complete = false;
+    const hits = scanText(view.text, 0, located,limit);
+    if (hits.length > limit || hits.some(hit => hit.incomplete)) complete = false;
     if (hits.length === 0) continue;
     hits.sort((a, b) => a.index - b.index || CREDENTIAL_DETECTORS.indexOf(a.detector) - CREDENTIAL_DETECTORS.indexOf(b.detector));
     const indices = [...new Set(hits.map((hit) => hit.index))];
@@ -761,7 +761,7 @@ function scanBytes(bytes: Uint8Array, located: boolean): { scan: CredentialScan;
       a.finding.offset - b.finding.offset ||
       CREDENTIAL_DETECTORS.indexOf(a.finding.detector as CredentialDetector) - CREDENTIAL_DETECTORS.indexOf(b.finding.detector as CredentialDetector),
   );
-  const kept = all.slice(0, MAX_FINDINGS);
+  const kept = all.slice(0, limit);
   const findings = kept.map((entry) => entry.finding);
   const scan = { scanner: CREDENTIAL_SCANNER, inspected, clean: inspected && findings.length === 0, findings, truncated: all.length > findings.length };
   return { scan, contexts: located ? kept.map((entry) => contextOf(entry.at, entry.finding.detector)) : [], matches: kept.flatMap(entry => [...entry.matches]), complete };
@@ -816,3 +816,7 @@ export function scanDigest(scan: CredentialScan): string {
   });
   return digestOf({ scanner: scan.scanner, findings: findings.sort(byPosition) });
 }
+
+/** Administrator rescan; a hard maintenance bound still refuses incomplete scans. No match text leaves records. */
+export const MAX_ADMIN_FINDINGS=100_000;
+export function scanAllCredentials(bytes:Uint8Array){return scanBytes(bytes,true,MAX_ADMIN_FINDINGS);}

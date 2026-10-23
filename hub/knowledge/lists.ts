@@ -85,14 +85,14 @@ export class ListLoader {
   }
 
   /** Never rejects: an object that cannot be read is a failed peek the caller skips. */
-  peek(external: string, options: { maxAgeSeconds?: number } = {}): Promise<ElementPeek> {
+  peek(external: string, options: { maxAgeSeconds?: number;slot?:string } = {}): Promise<ElementPeek> {
     const maxAgeMs = options.maxAgeSeconds === undefined ? this.#maxAgeMs : Math.max(0, options.maxAgeSeconds) * 1000;
     return this.#gate.run(async () => {
       if (maxAgeMs > 0 && !this.#refresh.has(external)) {
         const stored = await this.#stored(external, maxAgeMs).catch(() => null);
         if (stored !== null) return { ok: true, external, load: stored, reused: true, startedAt: this.#context.now().toISOString() };
       }
-      return this.#fresh(external);
+      return this.#fresh(external,options.slot);
     });
   }
 
@@ -100,17 +100,17 @@ export class ListLoader {
    * The bytes of a peeked element, checked and parsed. A stored read that no longer passes a check now (the record became
    * unreadable after withdrawal or its policy changed) is read again through the port. Never rejects.
    */
-  materialize(peek: Extract<ElementPeek, { ok: true }>, maxBytes: number): Promise<ElementLoad> {
+  materialize(peek: Extract<ElementPeek, { ok: true }>, maxBytes: number,slot?:string): Promise<ElementLoad> {
     return this.#gate.run(async () => {
-      const first = await this.#check(peek.load, maxBytes);
+      const first = await this.#check(peek.load, maxBytes,slot);
       if (first.ok) {
         if (peek.reused) this.reused++;
         return { ok: true, value: first.value, reused: peek.reused };
       }
       if (!peek.reused) return { ok: false, reason: first.reason };
-      const again = await this.#fresh(peek.external);
+      const again = await this.#fresh(peek.external,slot);
       if (!again.ok) return { ok: false, reason: again.reason };
-      const second = await this.#check(again.load, maxBytes);
+      const second = await this.#check(again.load, maxBytes,slot);
       return second.ok ? { ok: true, value: second.value, reused: false } : { ok: false, reason: second.reason };
     });
   }
@@ -122,9 +122,9 @@ export class ListLoader {
     return this.materialize(peek, maxBytes);
   }
 
-  async #check(load: Extract<ExternalLoad, { ok: true }>, maxBytes: number): Promise<Loaded<ParsedSource>> {
+  async #check(load: Extract<ExternalLoad, { ok: true }>, maxBytes: number,slot?:string): Promise<Loaded<ParsedSource>> {
     try {
-      const readable = await this.#loader.readable(load, maxBytes);
+      const readable = await this.#loader.readable(load, maxBytes,{slot});
       if (!readable.ok) return readable;
       return this.#loader.parse(readable.value);
     } catch (error) {
@@ -133,12 +133,12 @@ export class ListLoader {
   }
 
   /** A read through the port, recorded (unless a dry run) so that the next load within max_age_seconds uses it again. */
-  async #fresh(external: string): Promise<ElementPeek> {
+  async #fresh(external: string,slot?:string): Promise<ElementPeek> {
     const startedAt = this.#context.now().toISOString();
     this.read++;
     let load: ExternalLoad;
     try {
-      load = await this.#loader.read(external);
+      load = await this.#loader.read(external,slot);
     } catch (error) {
       return { ok: false, external, reason: `${external}：读取或核对时出错（${describeError(error)}）` };
     }

@@ -1,3 +1,4 @@
+import {knowledgeSourceLoader,reconcileCredentialRequests} from './credential-policy.ts';
 // The knowledge sync (W09 standing obligation, executed by the Hub): run the product pack's sync declaration (read the start
 // pages, parse them, ask the plan function which pages to read next, until it is done or a limit is hit, which is reported),
 // store every planned build of every name family, produce the root of every own-tree build that is missing or whose sources
@@ -127,6 +128,7 @@ async function pool<T>(items: readonly T[], limit: number, fn: (item: T) => Prom
 
 export async function syncProduct(context: KnowledgeContext, builds: Builds, product: ProductHandle, options: SyncOptions = {}): Promise<SyncReport> {
   const by = await requireAdmin(context, options.by, '运行知识同步');
+  await reconcileCredentialRequests(context);
   const startedAt = context.now().toISOString();
   const sync = newId('sync');
   const productId = product.product.id;
@@ -156,7 +158,7 @@ export async function syncProduct(context: KnowledgeContext, builds: Builds, pro
     report.error = '产品包没有声明 sync，无法同步';
     return finish();
   }
-  const loader = new SourceLoader({ external: context.external, artifacts: context.records.artifacts, parsers: context.parsers, records:context.records.store }, by, 'knowledge sync');
+  const loader = knowledgeSourceLoader(context,by,'knowledge sync');
 
   // ---------------------------------------------------------------- plan rounds
   const planOptions: Record<string, unknown> = { ...(declaration.options ?? {}), ...(options.options ?? {}) };
