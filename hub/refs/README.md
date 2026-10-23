@@ -299,7 +299,7 @@ are not treated as W/F. The Unicode license is included in unicode-license.txt.
 
 One contextual function decides whitespace for normalization and streaming search. Matching, occurrence counts,
 byte-range pinning and the not-found diagnostic use that rule; ranges still point into the unmodified fragment.
-Rules quotation checking uses the public refs API; ordinary rules table matching retains its original whitespace
+Rules independently implements the same quotation rule and reads the shared vectors; ordinary rules table matching retains its original whitespace
 normalization. Shared vectors test both direct quotation checks and the cached collapsed-fragment path.
 
 ## Independent gold quotation alignment
@@ -352,7 +352,7 @@ or worktree was changed and no real-system script was run; only synthetic tests 
   `QuoteMatch.text` for display); when an `Unresolved` carries `reason`, record unknown with that reason (and, for
   `check_error`, attribution as the error table says) instead of refusing the submission; `reason` is not enumerable
   and never needs stripping.
-- **rules**: none; `hub/rules/quote-vectors.json` is read by the refs tests, so a change to it reaches both packages.
+- **rules**: independently maintain the same quote rule; `hub/rules/quote-vectors.json` is read by the refs tests, so a change to it reaches both packages.
 
 ## xlsx@1
 
@@ -454,3 +454,8 @@ refused. Byte maps retain original sequence boundaries for line, element and HTM
 character or a platform Big5 expansion shares one original sequence. No Unicode normalization is applied.
 The [Encoding Standard](https://encoding.spec.whatwg.org/) documents the decoder API and sequence layouts; legacy
 character mappings follow the installed Node/ICU decoder, including its Big5 special-pair mapping.
+
+Scope disclosure for decision 37: the owner explicitly authorized rules/text.ts, quote.test.ts and its conformance
+fixtures beyond the original quote-vectors-only task path; the rules README update was separately approved. The first
+runtime refs import violated `rules -> refs(types)` and is now removed. This review adds rules-local W/F data; no
+production quotation implementation imports the other. Shared vectors are the independent agreement check.

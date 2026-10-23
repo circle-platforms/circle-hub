@@ -98,10 +98,10 @@ import only `hub/rules/api.ts`.
 - `coverage@1`: required members by value, by reference, by pack set name or selected from the subject; a declared skip
   counts only with a non-empty reason.
 - `membership@1` and `coverage@1` sets by reference: the bound fragment's text must be a JSON array of scalars.
-- `quote@1` uses the public refs quotation API through `text.ts` (decision 37). A whitespace run adjacent to an
+- `quote@1` independently implements the decision-37 rule in `text.ts` with rules-local W/F data. A whitespace run adjacent to an
   East_Asian_Width W/F code point disappears; other interior runs collapse to one space and both ends are trimmed.
   Case, punctuation, character width and normalization form remain significant; empty quotations never match. The
-  29 shared vectors test direct checks, the cached collapsed-fragment path and the interpreter. Ordinary table match
+  29 shared vectors cross-check rules and refs independently and test direct checks, the cached collapsed-fragment path and the interpreter. Ordinary table match
   representations retain their original whitespace normalization; this change affects quotation checking only.
 
 ### Catalog view (C07)
@@ -301,3 +301,5 @@ and the model's fix has the same shape either way.
 A pack-owned generation/read-back failure may return `unknown` with reason `output_failed` from a check. It is a valid
 check outcome, not `check_error`: the requirement's static layer is incomplete and the item enters the incomplete
 partition. Other model/submission-only reasons remain invalid as check outcomes.
+
+Scope note: the owner authorized the rules implementation/tests and this README beyond the original vectors-only task list. Architecture permits only refs type imports; the first runtime delegation was a defect, corrected by a local implementation.

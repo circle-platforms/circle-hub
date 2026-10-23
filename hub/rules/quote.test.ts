@@ -80,3 +80,10 @@ it('quotation whitespace uses East Asian width while ordinary table normalizatio
   assert.equal(quoteInCollapsed(collapseWhitespace('中 \n A'), '中A'), true);
   assert.equal(quoteInCollapsed(collapseWhitespace('set 10 0'), 'set 100'), false);
 });
+
+it('quotation normalization has no runtime dependency on refs', async () => {
+  const { default: ts } = await import('typescript');
+  const source = readFileSync(new URL('./text.ts', import.meta.url), 'utf8');
+  const ast = ts.createSourceFile('text.ts', source, ts.ScriptTarget.Latest, true);
+  for (const statement of ast.statements) if (ts.isImportDeclaration(statement) && ts.isStringLiteral(statement.moduleSpecifier) && statement.moduleSpecifier.text.includes('refs/')) assert.ok(statement.importClause?.isTypeOnly, 'rules may import only refs types');
+});

@@ -1,6 +1,6 @@
 // Text normalization shared by the interpreters: the match representation a table declares (C04 R[2]) and the white space
-// rule of verbatim quotation, which uses hub/refs through its public API. Ordinary table normalization retains its separate whitespace rule.
-import { quoteMatches as matchQuote } from '../refs/api.ts';
+// rule of verbatim quotation, implemented independently here and in refs, with shared conformance vectors. Ordinary table normalization is separate.
+import { isQuotationWide } from './quote-width.ts';
 import type { MatchRepresentation } from '../../contracts/src/tables.ts';
 
 /** Unicode White_Space: tabs and line breaks (U+0009-U+000D, NEL, LS, PS), spaces, NBSP and the ideographic space U+3000. */
@@ -67,12 +67,25 @@ export function codePoints(text: string): number {
   return n;
 }
 
+/** Rules-local quote form; the ordinary table collapseWhitespace function above is unchanged. */
+function quotationForm(text: string): string {
+  return text.replace(/\p{White_Space}+/gu, (run: string, at: number) => {
+    const end = at + run.length;
+    if (at === 0 || end === text.length) return '';
+    const left = Array.from(text.slice(Math.max(0, at - 2), at)).at(-1)!;
+    const right = String.fromCodePoint(text.codePointAt(end)!);
+    return isQuotationWide(left) || isQuotationWide(right) ? '' : ' ';
+  });
+}
+
 /** Verbatim quotation uses the shared contextual whitespace rule. Empty never matches. */
 export function quoteMatches(fragmentText: string, quote: string): boolean {
-  return matchQuote(fragmentText, quote);
+  if (typeof fragmentText !== 'string' || typeof quote !== 'string' || !quote.isWellFormed()) return false;
+  const pattern = quotationForm(quote);
+  return pattern.length > 0 && quotationForm(fragmentText).includes(pattern);
 }
 
 /** A fragment already collapsed by the table cache retains the information needed for contextual quotation matching. */
 export function quoteInCollapsed(collapsedFragment: string, quote: string): boolean {
-  return matchQuote(collapsedFragment, quote);
+  return quoteMatches(collapsedFragment, quote);
 }
