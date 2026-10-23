@@ -22,6 +22,9 @@
    - 不猜默认字段名，不从别的字段兜底。这条缺陷有没有这个字段，由缺陷转用例包自己看 `fields` 判，这个包不重复判。
    - 设置在 system.json 里声明，照 story-trace 对 `build_story_field` 的做法；README 写明这个字段名要由集成者冒烟以后照真实原件核实。
    - 测试：配了；没配；配成空串。
+
+   部署时 `bug_fix_field` 可以写成 `${var:PLM_BUG_FIX_FIELD}`（hub-variables 的 `--setting-var`，逐项改，别的设置不动）；字段名照真实原件核过以后，由集成者用 `var set … --file` 写进持久部署。包的代码和缺陷转用例包里写的 `settings.bug_fix_field` 修正说明都不用改。`plm.test.ts`、`builds-connectors.test.ts` 里设凭据的两处，到时由 hub-variables 改成按名字设密钥。
+
 2. **按名字读构建列表**：照 `plan-evidence.md` 第 4 条做，content 和 story-trace 的形状合起来：
    - 顶层是 `{ product, product_resolution, builds }`；
    - `builds` 每项保留 story-trace 的 `id, stories, scope_note`，再加 `name`。

@@ -15,9 +15,10 @@
   - 轴 `applicability_field`，标签“适用条件字段”，归 K02；
   - 取值：`models` 型号、`platforms` 平台、`builds` 起止构建、`components` 部件、`memory` 内存、`licenses` 许可、`deployment_forms` 部署形态。
 
-- 分支和工作树：`kb-applicability`，目录 `circle-hub-kb-applicability`。等 K1 和 apv-deployment-conventions 第一步合并以后，由集成者从 hub-redesign 开出并通知。先后：
-  - apv-deployment-conventions 第一步（参数可由部署给的写法）单独先合并，这一件开工时第 2 条就能直接照它声明；
+- 分支和工作树：`kb-applicability`，目录 `circle-hub-kb-applicability`。等 K1 和 hub-variables 第二步合并以后，由集成者从 hub-redesign 开出并通知。先后：
+  - hub-variables 第二步（产品包在 `product.json` 的 `variables` 里声明变量，在参数里写 `${var:名字}`）先合并，这一件第 2 条直接照它声明；
   - APV 包里和 kb-links、kb-adoc 第二步改同一批文件（`manual.ts`、`producers.ts`、README、`pack.json`），`hub/knowledge/read.ts` kb-links 和 K2（kb-candidates）也改：合并排在它们后面，pack.json 的版本号和签名以合并后的为准，最后重签；
+  - 也排在 apv-deployment-conventions 的 APV 那一步后面（同一批 APV 文件）；
   - 也加词表轴或重新生成 `vocabulary.ts` 的还有：K2、views-and-notes、kb-links、core-fixes、refs-diagnostics、review-output、hub-unknown-model。轴数写死在三处断言里（`contracts/src/vocab-axes.test.ts`、`vocabulary.test.ts`、`show-element.test.ts`）。后合并的一方重新生成，并改这三处的轴数；
   - kb-unversioned、hub-view-scope 排在这一件后面。
 - 可以改的路径：
@@ -56,11 +57,11 @@
    - 显示文字里字段名来自词表，继承来的带章节路径（读时推出来的）；
    - 新字段在目标前提里显示上面那句。
 2. **闭集**：部件、许可、部署形态只认闭集里的词。
-   - 闭集是 manual 生产器的参数（`product.json` 里的 params），包里默认是空集，什么都不抽；照 apv-deployment-conventions 第一步定的写法（开工时已合并），把这几个参数声明为可由部署给；
-   - 真实的闭集由集成者从手册里只读整理成部署数据，覆盖参数；这一件不碰真实值；
+   - 三个闭集是 `product.json` 里声明的变量 `APV_COMPONENTS`、`APV_LICENSES`、`APV_DEPLOYMENT_FORMS`，都是字符串列表，默认空列表（只给样例和试运行）；manual 生产器的 `params` 写这三个引用；
+   - 真实同步时没设置会拒绝，所以集成者在启用那一版之前设好，空闭集就显式设成 `[]`；真实的闭集由集成者从手册里只读整理，这一件仍不碰真实值；
    - 写法照 K1 平台、型号的规则：“适用于 X”“仅 X 支持”“需要 X 许可”“装有 X 时”“没有 X 时”这一类，每个字段认哪几种写法列在 README；并列的几项要全部认得才算，一项不认得整组不抽；否定、例外、含糊的写法不抽，留在原文。“没有 X 时”记进 components 的 without。
 
-   测试：三个字段各有正例；并列里有一项不认得；否定和例外不抽；“没有 X 时”记 without；默认的空闭集下一个都不抽。
+   测试：三个字段各有正例；并列里有一项不认得；否定和例外不抽；“没有 X 时”记 without；变量设成空列表时一个都不抽。
 3. **内存**：只取紧挨“内存”写明的数值加单位（GB、G、MB、M，换算写进 README），和“不少于、至少、大于、小于、不超过、以上、以下”这类写明的关系；“N G 内存的设备”记成上下限相同。没有数值的（如“内存较大时”）不抽。
 
    测试：几种关系各一例，含端点和不含端点分清；几种单位；没有数值的不抽。

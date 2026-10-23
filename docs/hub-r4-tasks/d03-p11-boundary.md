@@ -23,10 +23,12 @@
   - `w04-rulings-ledger`、`v07-repetition` 也改 `contracts/src/pack.ts`、`hub/runs/packs/validate.ts`、`hub/dispatch/**`，排在这一件后面。
 - 可以改的路径（行号照现在的写，合并以后以函数为准）：
   - `contracts/src/resources.ts`：写声明、executor@1（连同 dispatch-gateway 加的字段，从 `hub/dispatch/definition.ts` 移过来）、effect@1，都登记在它的 `schemas` 里，不改 `index.ts`；
+    - 这一件排在 hub-variables 第一步之后。移的时候连同 hub-variables 加的 `credential`、源定义的模式（`ExecutorSource`）和能写变量的那几处（只有期望值）一起移；写声明和环境类别都只照字面，不许写成变量。
   - `contracts/src/pack.ts`：requirements.json 的允许的效果表；
   - `contracts/model.json`：只加第 2 条点名的词表轴 `effect_trigger`；照生成器重新生成 `contracts/generated/**`；
   - `hub/dispatch/**`；
   - `hub/runs/engine/start.ts`：写运行记录时填 `policy` 和 `executors` 的两行；
+    - hub-variables 也改 `start.ts`，开头读一次变量、参数过凭据扫描，段落不同，这一件照合并后的写。
   - `hub/runs/engine/deps.ts`、`hub/ports.ts`（两边都用的才放这里）、`hub/server/assemble/hub.ts`：第 3 条读政策版本和执行器登记的端口；
   - `hub/runs/api.ts` 和引擎里一个新函数：第 4 条第 7 款按冻结的包版本重跑点名的检查；
   - `hub/runs/packs/validate.ts`：效果表的发布校验；
@@ -69,6 +71,7 @@
    - `hub/dispatch/policy/boundary.json`，按“效果类 × 是否可逆 × 环境类别”放行或拒绝，带正例和反例；版本是它的摘要，随核心发布。
    - 内容照现在的授权：生产环境只放行“无”和“读”；测试和共享环境放行“作业”；“同步写”和“通知”一律拒绝，等所有者另行授权（AGENTS.md：真实系统只读）。
    - start_run 把当时的政策表版本写进 `RunRecord.policy`；把执行器登记写进 `RunRecord.executors`：每个执行器的定义摘要存成一个对象，记录里放这个对象的摘要。派发时政策表版本不同，或所用执行器的定义摘要和这份登记里的不同，就拒绝，下一步是开新修订（照 W06 R[0] 的做法）。别的执行器改了不影响。
+   - `RunRecord.executors` 里每个执行器的定义摘要，用 `start_run` 那一次的变量取值解析后的定义算（和 hub-variables 作业钉住的是同一种）；开跑以后执行器定义引用的变量改了，也算登记变了，派发照样拒绝，下一步开新修订。
    - 怎么读到：架构第 3 节只许 runs 导入 knowledge（api）、rules、refs 和 records；执行器登记在 `hub/dispatch` 的 `ExecutorRegistry`，它的 `list(by)` 对非管理员抛错，而 start_run 是以运行者的身份跑的。所以：
      - `deps.ts` 的 `RunsEngineDeps` 加一个端口，给出政策表版本和登记快照的摘要；
      - 在 `hub/server/assemble/hub.ts` 接上，作为 Hub 内部的读，不核运行者；

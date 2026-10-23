@@ -43,6 +43,7 @@
   别的路径不动。还有几处重叠：
   - hub-pack-findings 第 9 条也改台架包，集成者让两件先后做。
   - 同一批写的几页也碰到这里的文件，段落不同：kb-unversioned 改 `start.ts` 锁根的一段和 `contracts/src/run.ts`；script-distribution 改 `contracts/src/run.ts` 的 PackSummary；gateway-request-ids 第二步改 `hub/dispatch/**`。集成者排先后，后合并的照合并后的契约重新生成 `contracts/generated/**`。
+  - hub-variables 改 `start.ts` 开头读变量的一段和参数的凭据扫描、`hub/server/cli-admin.ts`（var、secret、resource 的命令）、`hub/dispatch/**`（执行器的钥匙和变量）。段落不同，集成者排先后，后合并的照合并后的契约重新生成 `contracts/generated/**`。
 - 规则：同前（不推送、不建 PR、不发布、不部署；不碰 7420、钥匙串、环境配置文件和任何真实系统；测试只用合成数据，版本线 10.6 以后，地址只用 192.0.2.0/24 和 2001:db8::/32；`git commit -s`）。所有者的规矩：
   - 核心里不出现设备、台架这类词：核心只认“声明的前缀下面，一个键前缀有主人”；
   - 令牌不进运行上下文、运行记录、工具回答和控制台；

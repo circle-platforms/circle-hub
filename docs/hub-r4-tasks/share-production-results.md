@@ -44,6 +44,7 @@
     - kb-unversioned 改 `start.ts`（锁根的一段）和 `hub/server/console/pages.ts`（知识页）；
     - hub-unknown-exits 改 `queries.ts`（列出没结的运行和请求）和控制台的 `pages.ts`；
     - kb-links 改 `hub/records/api.ts` 和 `start.ts`。
+    - hub-variables 改 `hub/records/authorizations.ts`（只加在给定事务里写决定的入口）、`api.ts`、`hub/server/cli-admin.ts`、`start.ts` 开头读变量的一段，也加两个词表轴。段落不同，后合并的在先合并的之上重跑测试，改轴数的断言。
 - 规则：同前（不推送、不建 PR、不发布、不部署；不碰 7420、钥匙串、环境配置文件和任何真实系统；测试只用合成数据，版本线 10.6 以后，地址只用 192.0.2.0/24 和 2001:db8::/32；`git commit -s`）。所有者的规矩：
   - 核心里不出现包名和产品名：追溯、看板的分享只在部署时由管理员做；
   - 无权和不存在同样回答“对你不可用”，给同形的空集；

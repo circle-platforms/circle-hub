@@ -77,7 +77,9 @@
 
 10. **第 11 问：TLS 加固定的实验室 CA，只用运行权限的那把密钥。**
     - 集成者先在现有部署和环境配置里只读找这把密钥（只经 `scripts/real/` 的脚本，只打印名字、有无和长度），找到就经标准输入用 `circle-hub executor add` 登记；找不到才请所有者经标准输入给。端点要 https、带固定 CA，`hub/dispatch/definition.ts` 已经这样要求。
+    - hub-variables 第一步部署以后，钥匙经标准输入交给 `circle-hub secret set --name GATEWAY_RUN_KEY`：先登记执行器，定义里写 `"credential": "${secret:GATEWAY_RUN_KEY}"`，`secret set` 才收；`executor add` 不再读标准输入。在那之前照旧经 `executor add` 交，部署以后 `executor update` 加上 `credential` 时迁移过去，不用重交。
     - `device-run.ts` 第 0 步核对：带参数 `--executor <exe_…>`；暂存目录里的执行器定义是 https、带 CA；把 `{...暂存的定义, id: <那个 id>}` 按 `hub/dispatch` 的 ExecutorDefinition 解析（默认值照样补上），规范 JSON 后的 SHA-256 等于 `circle-hub executor list` 给这个 id 打印的摘要；不等就停。每次 `executor update` 以后重做一次第 0 步（第 7 条在第一个用例和后四个之间会更新定义）。
+    - hub-variables 合并以后，第 0 步按 `hub/dispatch` 的源定义模式（`ExecutorSource`）解析暂存的定义（里面可以有 `${var:…}`），照旧比 `executor list` 打印的“定义摘要”（源定义的），另核同一行后面加的解析后摘要；只改变量时不用 `executor update`，源定义的摘要也不变。`device-run.ts` 的这一处和 `28-device-run.test.ts` 由 hub-variables 改。
     - “只有运行权限”的机械核对见 `gateway-request-ids.md` 第 15 条。
 
 11. **第 12 问：** 见 `script-distribution.md`。这一轮集成者照 case-compile 的 SKILL.md 手工放进所有者 Circle 的技能目录，按 `pack.json` 的摘要逐个核对；那一页的 `circle-hub local-tools verify` 合并以后改用它核。上机用的 Circle 主目录由集成者另备：评审用的专用主目录的钩子只放行 Hub 的六个工具和 write_todos，第 5 步要 `execute` 跑 `node <技能目录>/tools/*.ts`，所以上机用另一份主目录，它的钩子放行这一条。
