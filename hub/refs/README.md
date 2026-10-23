@@ -9,7 +9,7 @@ Other packages import only from `hub/refs/api.ts`. refs imports only `contracts/
 | --- | --- |
 | `reference.ts` | `parseReference`, `formatReference`, `normalizeReference`, `sameTarget`, `sameSource`, `srcFragment`, `treeReference`, `recReference`, selector, path and pointer codecs, `MAX_SELECTOR_LENGTH`, `ReferenceSyntaxError` |
 | `parser.ts` | `Parser`, `ParsedDocument`, `Fragment`, limits, typed parse errors, `createParserRegistry`, `recognize` |
-| `parsers/*.ts` | the six core parsers: `kityminder@1`, `xml@1`, `html@1`, `markdown@1`, `json@1`, `text@1` |
+| `parsers/*.ts` | the seven core parsers: `kityminder@1`, `xml@1`, `html@1`, `markdown@1`, `json@1`, `text@1`, `xlsx@1` |
 | `quote.ts` | `quoteMatches`, `locateQuote`, `findQuote`, `candidatesFrom` |
 | `resolve.ts` | `SourceReader`, `TreeReader`, `RecordReader`, `resolveReference`, `verifyQuote`, document cache, `isGroundable` |
 | `canonical-json.ts` | RFC 8785 serialization and `recordDigest`, used to re-verify `rec:` references |
@@ -58,6 +58,7 @@ rec:<record>[#<JSON Pointer>]
 | `markdown@1` | text/markdown, text/x-markdown | `h/<heading>/...` a section; `b/<k>[/<heading>...]` block k directly inside that section, or before the first heading | section or block exactly as written, NUL removed | section from its heading line; block lines |
 | `json@1` | application/json | `p` the document, `p/<token>/...` member names and array indices | strings as they are, other values as JSON | none |
 | `text@1` | text/plain, text/* | `l/<n>` line n (from 1), `l/<a>-<b>` lines a to b (a < b) | the lines joined with LF | from the first line's start to the last line's end |
+| `xlsx@1` | application/vnd.openxmlformats-officedocument.spreadsheetml.sheet | `c/<sheet name>/<A1>`, `n/<name>`, `n/<sheet name>/<local name>`; `i/<sheet>/<row>/<cell>` or `i/n/<name index>` fallback (0-based) | decoded cell value or name reference | none |
 
 `locate` returns null for anything that does not locate exactly one fragment (it never throws for bad selectors) and
 returns the canonical selector in `Fragment.selector`: an XML index path or an explicit `[1]` resolves to the name path.
@@ -132,6 +133,7 @@ escapes such as `\ud83d` get U+FFFD instead, counted in `surrogatesReplaced`; a 
 | markdown@1 | 16 MiB | 6 heading levels | 1 000 000 lines | | 64 Mi |
 | json@1 | 16 MiB | 128 | 2 000 000 values | | 64 Mi |
 | text@1 | 16 MiB | 1 | 1 000 000 lines | | (not needed) |
+| xlsx@1 | 16 MiB (hard ZIP cap) | 100 XML levels | 1 000 000 XML elements across parts | 1 024 per tag | 64 Mi |
 
 parse5 checks each new attribute against all earlier ones of the tag, scope checks walk the open-element stack, and
 misnested markup makes it move nodes between child lists, so hostile input can cost quadratic time. html@1 therefore:
@@ -296,6 +298,9 @@ roots, digest re-verification, ranges, unwritable canonical selectors, cache); c
 
 ## Needs from other packages
 
+- **contracts**: update the stale XLSX example in contracts/model.json (`Service/7/C`) to the frozen xlsx@1
+  name-first grammar above; parser syntax is declared by the parser, and this task does not edit the model.
+
 - **runs / server**: surface the last ParseError message when all parsers for the declared media type refuse.
   Both start_run and upload_file must return that definite reason and a corrective action; recognize currently drops
   it, so this branch cannot claim caller-visible refusal diagnostics until the owners add this handoff. This is an
@@ -355,9 +360,11 @@ of any cell, including an empty style-only cell; empty row declarations and work
 Multi-sheet workbooks, hidden/very-hidden sheets, hidden rows, formulas and values beginning with `=` are accepted as
 structure. No workflow-specific subset is enforced here.
 
-Selectors are `c/<zero-based sheet index>/<A1 reference>` and `n/<zero-based defined-name index>`. If a coordinate occurs
-more than once, each occurrence instead has `i/<sheet index>/<row index>/<cell index>`, all indices zero-based; no
-occurrence is silently discarded. Each fragment's data is the corresponding cell/name object. `byteRange` is null:
+Selectors prefer names: `c/<sheet name>/<A1 reference>`, workbook `n/<defined name>`, and local
+`n/<sheet name>/<defined name>`, with each segment escaped by the refs codec. Duplicate sheet names, duplicate
+coordinates, duplicate scoped names, empty names or name paths above the selector-length cap fall back to
+`i/<sheet index>/<row index>/<cell index>` for cells and `i/n/<defined-name index>` for names (all indices zero-based).
+No ambiguous name selector is listed or resolved; no occurrence is discarded. Each fragment's data is the corresponding cell/name object. `byteRange` is null:
 fragments are decoded from package members, not contiguous ranges in the original ZIP. Lists follow workbook/row/cell
 order, then name order; prefix and limit work as for the other parsers. `summary()` contains counts only, never names,
 paths, value text, formula content or external addresses. XML node/depth/attribute limits and selector budgets also

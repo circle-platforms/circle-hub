@@ -111,12 +111,12 @@ test('xlsx@1 gives cells, member types, names and deterministic selectors withou
   assert.equal(document.model.sheets[0].lastRow, 1);
   assert.deepEqual(document.model.definedNames, [{ name: '合成区域', scope: null, reference: "'合成表'!$A$1:$B$1" }]);
   assert.equal(document.model.members.find((member) => member.name === 'xl/workbook.xml')?.contentType, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml');
-  assert.equal(document.locate('c/0/A1')?.text, '合成文本 & 空白 ');
-  assert.equal(document.locate('n/0')?.text, "'合成表'!$A$1:$B$1");
-  assert.equal(document.locate('c/0/A1')?.byteRange, null);
+  assert.equal(document.locate('c/合成表/A1')?.text, '合成文本 & 空白 ');
+  assert.equal(document.locate('n/合成区域')?.text, "'合成表'!$A$1:$B$1");
+  assert.equal(document.locate('c/合成表/A1')?.byteRange, null);
   for (const selector of document.listSelectors()) assert.equal(document.locate(selector)?.selector, selector);
   for (const invalid of ['c/99/A1', 'c/0/Z999', 'n/99', 'c/00/A1', '%zz', 'n/-1', '__proto__', '']) assert.equal(document.locate(invalid), null);
-  assert.deepEqual(document.listSelectors('c/', { limit: 1 }), ['c/0/A1']);
+  assert.deepEqual(document.listSelectors('c/', { limit: 1 }), ['c/合成表/A1']);
   assert.doesNotMatch(JSON.stringify(document.summary()), /合成文本|合成表|合成区域|10\.7/);
 });
 test('xlsx@1 preserves shared and rich strings, formula flags and cached values, literal equals and cell styles', () => {
@@ -168,7 +168,7 @@ test('xlsx@1 decodes escaped strings once and preserves their whitespace and lit
 });
 test('xlsx@1 resolves namespace prefixes and parent-relative package relationships', () => {
   const document = parseWorkbook({ book: `<s:workbook xmlns:s="${MAIN}" xmlns:q="${DOC_REL}"><s:sheets><s:sheet name="前缀" sheetId="1" q:id="sheet"/></s:sheets></s:workbook>`, sheet: `<s:worksheet xmlns:s="${MAIN}"><s:sheetData><s:row r="1"><s:c r="A1" t="inlineStr"><s:is><s:r><s:t>甲</s:t></s:r><s:r><s:t>乙</s:t></s:r></s:is></s:c></s:row></s:sheetData></s:worksheet>`, relations: `<Relationship Id="styles" Type="${DOC_REL}/styles" Target="../styles.xml"/>`, extra: [{ name: 'styles.xml', text: '<opaque/>' }] });
-  assert.equal(document.locate('c/0/A1')?.text, '甲乙');
+  assert.equal(document.locate('c/前缀/A1')?.text, '甲乙');
   assert.ok(document.model.relationships.some((r) => r.target === '../styles.xml'));
 });
 test('xlsx@1 limits XML structure and selectors and refuses undeclared prefixes and out-of-range shared indices', () => {
@@ -192,9 +192,9 @@ test('xlsx@1 parses a freshly generated workbook from the existing independent E
   sheet.getCell('A10').font = { bold: true };
   book.addWorksheet('隐藏合成', { state: 'hidden' }); book.definedNames.add("'独立合成'!$A$1", '合成名');
   const bytes = Buffer.from(await book.xlsx.writeBuffer()); const document = xlsxParser.parse(bytes);
-  assert.equal(document.locate('c/0/A1')?.text, '共享合成文本'); assert.equal(document.locate('c/0/B1')?.text, '10.7');
+  assert.equal(document.locate('c/独立合成/A1')?.text, '共享合成文本'); assert.equal(document.locate('c/独立合成/B1')?.text, '10.7');
   assert.equal(document.model.sheets[0].rows.find((row) => row.number === 2)?.hidden, true);
-  assert.equal((document.locate('c/0/C2')?.data as { formula: boolean }).formula, true);
+  assert.equal((document.locate('c/独立合成/C2')?.data as { formula: boolean }).formula, true);
   assert.equal(document.model.sheets[0].lastRow, 10); assert.equal(document.model.sheets[1].state, 'hidden');
   assert.ok(document.model.members.some((member) => member.name === 'xl/styles.xml'));
   assert.ok(document.model.definedNames.some((name) => name.name === '合成名'));
@@ -218,11 +218,11 @@ test('xlsx@1 follows workbook relationships instead of assuming workbook and wor
     text: bytes.toString().replaceAll('xl/workbook.xml', 'data/book.xml'),
   }));
   const document = xlsxParser.parse(zip(moved));
-  assert.equal(document.model.sheets[0].part, 'data/worksheets/sheet1.xml'); assert.equal(document.locate('c/0/A1')?.text, '合成文本 & 空白 ');
+  assert.equal(document.model.sheets[0].part, 'data/worksheets/sheet1.xml'); assert.equal(document.locate('c/合成表/A1')?.text, '合成文本 & 空白 ');
 });
 test('xlsx@1 accepts Strict namespaces and refuses a worksheet with a foreign namespace', () => {
   const strict = [...readXlsxArchive(workbook())].map(([name, bytes]) => ({ name, text: bytes.toString().replaceAll(MAIN, 'http://purl.oclc.org/ooxml/spreadsheetml/main').replaceAll(DOC_REL, 'http://purl.oclc.org/ooxml/officeDocument/relationships') }));
-  assert.equal(xlsxParser.parse(zip(strict)).locate('c/0/B1')?.text, '10.7');
+  assert.equal(xlsxParser.parse(zip(strict)).locate('c/合成表/B1')?.text, '10.7');
   badWorkbook({ sheet: '<worksheet xmlns="urn:synthetic:foreign"><sheetData/></worksheet>' }, /工作表部件/);
 });
 
@@ -362,4 +362,19 @@ test('refs records the caller diagnostic handoff required from runs and server',
   const readme = await readFile(new URL('../README.md', import.meta.url), 'utf8');
   assert.match(readme, /runs \/ server[^\n]*last ParseError/);
   assert.match(readme, /start_run and upload_file[^\n]*reason/);
+});
+
+test('canonical XLSX selectors prefer escaped names and fall back for ambiguous or long identities', () => {
+  const normal = parseWorkbook();
+  assert.equal(normal.locate('c/合成表/A1')?.text, '合成文本 & 空白 ');
+  assert.equal(normal.locate('n/合成区域')?.text, "'合成表'!$A$1:$B$1");
+  const named = (name: string, definitions: string) => parseWorkbook({ book: `<workbook xmlns="${MAIN}" xmlns:r="${DOC_REL}"><sheets><sheet name="${name}" sheetId="1" r:id="sheet"/></sheets><definedNames>${definitions}</definedNames></workbook>` });
+  const scoped = named('甲 / 乙', '<definedName name="区域" localSheetId="0">A1</definedName><definedName name="区域">B1</definedName>');
+  assert.ok(scoped.locate('c/甲%20%2F%20乙/A1')); assert.equal(scoped.locate('n/甲%20%2F%20乙/区域')?.text, 'A1'); assert.equal(scoped.locate('n/区域')?.text, 'B1');
+  const duplicate = named('甲', '<definedName name="重复">A1</definedName><definedName name="重复">B1</definedName>');
+  assert.equal(duplicate.locate('n/重复'), null); assert.equal(duplicate.locate('i/n/0')?.text, 'A1'); assert.equal(duplicate.locate('i/n/1')?.text, 'B1');
+  const long = named('甲'.repeat(5000), '<definedName name="长" localSheetId="0">A1</definedName>');
+  assert.ok(long.locate('i/0/0/0')); assert.equal(long.locate('i/n/0')?.text, 'A1');
+  const sameSheets = parseWorkbook({ book: `<workbook xmlns="${MAIN}" xmlns:r="${DOC_REL}"><sheets><sheet name="同名" sheetId="1" r:id="sheet"/><sheet name="同名" sheetId="2" r:id="second"/></sheets></workbook>`, relations: `<Relationship Id="second" Type="${DOC_REL}/worksheet" Target="worksheets/second.xml"/>`, extra: [{ name: 'xl/worksheets/second.xml', text: `<worksheet xmlns="${MAIN}"><sheetData><row><c><v>2</v></c></row></sheetData></worksheet>` }] });
+  assert.equal(sameSheets.locate('c/同名/A1'), null); assert.ok(sameSheets.locate('i/0/0/0')); assert.equal(sameSheets.locate('i/1/0/0')?.text, '2');
 });

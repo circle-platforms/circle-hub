@@ -709,6 +709,12 @@ function parse(bytes: Uint8Array, options: ParseOptions = {}): ParsedDocument<Xl
       throw selectorCharsError(KEY, Math.min(limits.maxSelectorChars, selector.length > MAX_SELECTOR_LENGTH ? MAX_SELECTOR_LENGTH : limits.maxSelectorChars));
     fragments.set(selector, { selector, text, byteRange: null, data });
   };
+  const sheetNameCounts = new Map<string, number>();
+  for (const sheet of sheets) sheetNameCounts.set(sheet.name, (sheetNameCounts.get(sheet.name) ?? 0) + 1);
+  const writable = (segments: string[]): boolean => {
+    try { return segments.every((segment) => segment !== '' && segment.length <= MAX_SELECTOR_LENGTH) && selectorOf(segments).length <= MAX_SELECTOR_LENGTH; }
+    catch { return false; }
+  };
   for (const [s, sheet] of sheets.entries()) {
     const counts = new Map<string, number>();
     for (const row of sheet.rows)
@@ -716,9 +722,19 @@ function parse(bytes: Uint8Array, options: ParseOptions = {}): ParsedDocument<Xl
         counts.set(cell.reference, (counts.get(cell.reference) ?? 0) + 1);
     for (const [r, row] of sheet.rows.entries())
       for (const [c, cell] of row.cells.entries())
-        add(counts.get(cell.reference) === 1 ? ['c', String(s), cell.reference] : ['i', String(s), String(r), String(c)], cell.text, cell);
+        add(counts.get(cell.reference) === 1 && sheetNameCounts.get(sheet.name) === 1 && writable(['c', sheet.name, cell.reference]) ? ['c', sheet.name, cell.reference] : ['i', String(s), String(r), String(c)], cell.text, cell);
   }
-  definedNames.forEach((name, i) => add(['n', String(i)], name.reference, name));
+  const nameCounts = new Map<number | null, Map<string, number>>();
+  for (const name of definedNames) {
+    let scoped = nameCounts.get(name.scope);
+    if (!scoped) { scoped = new Map(); nameCounts.set(name.scope, scoped); }
+    scoped.set(name.name, (scoped.get(name.name) ?? 0) + 1);
+  }
+  definedNames.forEach((name, i) => {
+    const path = name.scope === null ? ['n', name.name] : ['n', sheets[name.scope].name, name.name];
+    const uniqueScope = name.scope === null || sheetNameCounts.get(sheets[name.scope].name) === 1;
+    add(uniqueScope && nameCounts.get(name.scope)!.get(name.name) === 1 && writable(path) ? path : ['i', 'n', String(i)], name.reference, name);
+  });
   cache.clear();
   archive.clear();
   return {
