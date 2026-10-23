@@ -319,6 +319,7 @@ async function keepResult(base: Basis, outcome: Validated): Promise<{ result: St
         const receipt: NonNullable<ValidationResult['contributions']> = { submitted: outcome.prepared!.size+(outcome.refusals?.size??0), stored: [], not_stored: [...(outcome.refusals??new Map())].map(([item,reason])=>({item,reason})) };
         const eligible = new Set(outcome.result.partitions.delivered.filter(item => item.requirements.length > 0 && item.requirements.every(r => r.status === 'satisfied')).map(item => item.item));
         const layer = ctx.deps.knowledge.layers!.contributions;
+        await layer.lockIdentities([...outcome.prepared!].filter(([item]) => eligible.has(item)).map(([, prepared]) => prepared), tx);
         for (const [item, prepared] of outcome.prepared!) {
           if (!eligible.has(item)) {
             const state = Object.values(outcome.result.partitions).flat().find(row => row.item === item);

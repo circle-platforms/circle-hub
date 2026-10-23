@@ -501,3 +501,5 @@ repair, previews, admin and user views, tamper detection; cluster cleanup on SIG
   such a version today.
 - **acceptance**: to run the server as a child process, start the cluster with `startPostgres({ socket: true, passwordless:
   true })` and pass `CIRCLE_HUB_DATABASE_SOCKET_DIR` = `postgres.socketDir`; `CIRCLE_HUB_*` variables never carry a password.
+
+`RecordStore.lock(key, tx)` 为调用方给定事务持有业务键锁，提交或回滚释放；它不新开事务，不改历史。键先加 record-store.business 类型前缀再取 PostgreSQL 哈希，锁命名空间与 artifacts.ingest 不同。多键调用方必须排序取锁。hub-job-dispatch 的唯一业务键另在 37577e99；它合并后由集成者决定是否把本轮回注去重改用该接口，本轮不等待、不改迁移。

@@ -514,3 +514,25 @@ test('the minimum accepted node budget cannot repeat a contribution cursor witho
   }
   assert.ok(complete);assert.equal(seen.size,4);
 });
+
+test('six overlapping equal content submissions share exactly one entry per identity',async t=>{
+  const w=await setup(t);const other=await withReference(w,`src:${w.original}`);
+  const find=w.kit.store.find.bind(w.kit.store);const waits=new Map<string,{count:number;release:()=>void;wait:Promise<void>}>();
+  w.kit.store.find=async(query,tx)=>{
+    const result=await find(query,tx);
+    if(query.key==='knowledge.contribution.identity'&&result.items.length===0){
+      let gate=waits.get(query.value);
+      if(!gate){let release!:()=>void;const wait=new Promise<void>(done=>release=done);gate={count:0,release,wait};waits.set(query.value,gate);setTimeout(release,100);}
+      gate.count++;if(gate.count>=2)gate.release();await gate.wait;
+    }
+    return result;
+  };
+  for(let round=0;round<6;round++){
+    const first=w.args();for(const item of first.items)item.slots.contribution[0].text+=` 合成并发轮 ${round}`;
+    const second={...structuredClone(first),run:other.run,model:'synthetic-other-model'};
+    const results=await Promise.all([w.service.submitResult(w.admin,first,call),w.service.submitResult(w.admin,second,{...call,sessionId:'synthetic-second-session'})]);
+    const references=results.map(result=>result.result?.contributions?.stored.map(value=>value.record).sort());
+    assert.equal(references[0]?.length,4);assert.deepEqual(references[0],references[1],`round ${round}`);
+  }
+  assert.equal((await w.knowledge.layers.contributions.list(w.root,['/commands/system/show'],w.user)).length,24);
+});

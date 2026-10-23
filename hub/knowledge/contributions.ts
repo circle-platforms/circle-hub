@@ -57,6 +57,12 @@ function scanPublicText(texts: readonly string[]): void {
   }
 }
 
+function identityOf(prepared: PreparedContribution): string {
+  return digestOf({product:prepared.product,root:prepared.root,path:prepared.path,kind:prepared.kind,statement:prepared.statement,
+      source:{reference:prepared.source.reference,quote:prepared.source.quote},
+      ...(prepared.relation===undefined?{}:{relation:{kind:prepared.relation.kind,other:{reference:prepared.relation.other.reference,quote:prepared.relation.other.quote}}})});
+}
+
 export class ContributionLayer {
   readonly #context: KnowledgeContext;
   readonly #reading: TreeReading;
@@ -201,12 +207,16 @@ export class ContributionLayer {
       basis_rank: 'judgment', applicability: null };
   }
 
+  /** Lock an entire transaction's identities in one global order before preserving item order in receipts. */
+  async lockIdentities(prepared: readonly PreparedContribution[], tx: Transaction): Promise<void> {
+    for (const key of [...new Set(prepared.map(identityOf))].sort()) await this.#context.store.records.lock(`knowledge.contribution:${key}`, tx);
+  }
+
   /** Called only after every requirement of the item is satisfied; validation result and layer share the transaction. */
   async append(prepared: PreparedContribution, origin: ContributionOrigin, tx: Transaction): Promise<string> {
     scanPublicText([origin.model]);
-    const key = digestOf({product:prepared.product,root:prepared.root,path:prepared.path,kind:prepared.kind,statement:prepared.statement,
-      source:{reference:prepared.source.reference,quote:prepared.source.quote},
-      ...(prepared.relation===undefined?{}:{relation:{kind:prepared.relation.kind,other:{reference:prepared.relation.other.reference,quote:prepared.relation.other.quote}}})});
+    const key = identityOf(prepared);
+    await this.#context.store.records.lock(`knowledge.contribution:${key}`, tx);
     const old = await this.#context.store.records.find({ key: 'knowledge.contribution.identity', value: key, kind: 'claim', limit: 1 }, tx);
     if (old.items.length > 0) return old.items[0].digest;
     const body = KnowledgeContributionBody.parse({ ...prepared, session:origin.session,model:origin.model, submitted_at: this.#context.now().toISOString() });
