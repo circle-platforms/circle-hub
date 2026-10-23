@@ -1,15 +1,12 @@
 // Independent reference and quotation oracle. No judged Hub or pack code is imported.
 import { createHash } from 'node:crypto';
+import { goldQuoteContains } from './quote-widths.ts';
 import { VERDICT, REASON, type Verdict, type Reason } from '../../../contracts/generated/vocabulary.ts';
 import { locatedDrafts, object, requirementStatus, compareStatus } from './command-domains.ts';
 const [SUPPORT, REFUTE, UNKNOWN] = VERDICT;
 const reason = (s: Reason) => REASON.find(v => v === s)!;
 export const sha256 = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
-export function quoteMatches(fragment: string, quote: string): boolean {
-  if (!fragment.isWellFormed() || !quote.isWellFormed()) return false;
-  const compact = (s: string) => s.replace(/\p{White_Space}+/gu, ' ').replace(/^ | $/g, '');
-  const q = compact(quote); return q.length > 0 && compact(fragment).includes(q);
-}
+export const quoteMatches = goldQuoteContains;
 type Target = { scheme: string; digest?: string; parser?: string; segments?: string[]; range?: [number, number] };
 const escape = (s: string, structural: string) => [...s].map(c => /[\p{Cc}\p{Cf}\p{Z}]/u.test(c) || structural.includes(c) || c === '%' ? encodeURIComponent(c) : c).join('');
 function segments(raw: string, structural: string): string[] | null {

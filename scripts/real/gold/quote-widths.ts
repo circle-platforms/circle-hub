@@ -78,3 +78,20 @@ const wideOrFullwidth = new RegExp('[' + [
 ].join('') + ']', 'u');
 
 export const isGoldWideOrFullwidth = (character: string): boolean => wideOrFullwidth.test(character);
+
+/** Decision 37: inspect the code points bordering each complete Unicode whitespace run. */
+export function normalizeGoldQuote(text: string): string {
+  return text.replace(/\p{White_Space}+/gu, (run: string, offset: number) => {
+    const end = offset + run.length;
+    if (offset === 0 || end === text.length) return '';
+    const left = Array.from(text.slice(Math.max(0, offset - 2), offset)).at(-1)!;
+    const right = String.fromCodePoint(text.codePointAt(end)!);
+    return isGoldWideOrFullwidth(left) || isGoldWideOrFullwidth(right) ? '' : ' ';
+  });
+}
+
+export function goldQuoteContains(fragment: string, quote: string): boolean {
+  if (!fragment.isWellFormed() || !quote.isWellFormed()) return false;
+  const needle = normalizeGoldQuote(quote);
+  return needle.length > 0 && normalizeGoldQuote(fragment).includes(needle);
+}

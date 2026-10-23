@@ -75,3 +75,26 @@ for(const terminator of ['\n','\r\n','\r'])test(`final terminator opens no extra
   assert.equal(judgeQuote(`src:${digest}/text@1/l/1-2`,'alpha beta','beta',inputs).verdict,'support');
   for(const selector of ['1-3','3'])assert.equal(judgeQuote(`src:${digest}/text@1/l/${selector}`,'alpha beta','beta',inputs).verdict,'refute');
 });
+
+test('decision 37 flows through fragment and manual judgments and report counts', () => {
+  const bytes = Buffer.from('返回\n成功 set 10 0'), digest = sha256(bytes);
+  const inputs = { sources: new Map([[digest, bytes]]), manual: [bytes], run: { root, sources: [] } };
+  for (const reference of [`src:${digest}/text@1/l/1-2`, `tree:${root}/manual`]) {
+    const finding = judgeQuote(reference, '返回成功 set 10 0', '返回成功', inputs);
+    assert.equal(finding.verdict, 'support');
+    assert.equal(finding.expectedVerbatim, true);
+    assert.equal(judgeQuote(reference, 'set 100', 'set 100', inputs).verdict, 'refute');
+    const submission = { items: [{ item: 'synthetic', slots: { cases: [{ data: { expected: [{ text: '返回成功', quote: { reference, text: '返回成功' } }] } }] } }] };
+    const report = quotesReport(submission, {}, inputs);
+    assert.equal(report.counts.support, 1); assert.equal(report.expectedVerbatim, 1); assert.equal(report.paraphrased, 0);
+  }
+});
+
+for (const [fragment, quote, match] of [
+  ['A\n中文', 'A中文', true], ['中文\tA', '中文A', true], ['Ａ\nB', 'ＡB', true],
+  ['𠀀\r\nA', '𠀀A', true], ['🙂\nA', '🙂A', true],
+  ['set\t10\n0', 'set 10 0', true], ['set 10 0', 'set 100', false],
+  ['a + b', 'a+b', false], ['α β', 'αβ', false], ['ｱ A', 'ｱA', false],
+  ['a\u0085b', 'a b', true], ['中\ufeff文', '中文', false], ['中\ufeff文', '\ufeff', true],
+  ['anything', '\u0085\u3000', false], ['🙂', '\ude42', false], ['é', 'e\u0301', false],
+] as const) test(`decision 37 literal boundary ${JSON.stringify([fragment, quote])}`, () => assert.equal(quoteMatches(fragment, quote), match));
