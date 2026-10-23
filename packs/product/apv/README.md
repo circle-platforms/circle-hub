@@ -373,10 +373,12 @@ third-party engine bytes and the sandbox import allowlist are unmodified.
 
 `model.expanded_text` is the include-expanded text with NUL removed and line endings normalized to LF, keeping the
 conditional directives; `line_map` keeps each line's original file and line number. `blocks` come only from the AST after
-condition evaluation and carry the engine kind, the section level, the title, the author id and role, the section path,
-`raw`/`expanded` and, for a paragraph, the engine's own inline output of that text (`converted`); a block that is an
-example or sits inside one is marked (`example`), and a table keeps its head, body and foot cells. Nothing here promotes
-a listing, a bold run, a title or a role into a command rule.
+condition evaluation and carry the engine kind, the section level, the title, the author id and role, the section path
+(each element with the index of that section's own block, so two sections with the same title stay two sections), the
+heading text as written in the verified source line (`heading`, attributes expanded), `raw`/`expanded` and, for a
+paragraph, the engine's own inline output of that text (`converted`); a block that is an example or sits inside one is
+marked (`example`), and a table keeps its head, body and foot cells. Nothing here promotes a listing, a bold run, a title
+or a role into a command rule.
 
 Every sourcemap line number is only a candidate. The locator tries a verbatim match in a fixed neighbourhood and then
 re-reads the original file's lines independently; only a single match emits `src:<digest>/text@1/l/<a>-<b>` (`l/a` for one
@@ -457,6 +459,16 @@ accepted.
   table's text is only how K1 names a row; the fragment of a row is that row's own source line, with no range. A fragment
   this rewrite cannot resolve (`apv.adoc.fragment_not_cited`) refuses the whole group: no entry goes out citing a
   reference to nothing, and the old root does not move.
+- Section paths follow K1 and have the same shape as markdown@1's. A section is keyed by the node the engine gave for it
+  (the index of its own block, carried by every path element), never by its title text, so two sections with the same title
+  stay two sections and `IPv4/IPv6` is not the parent of `IPv4` and `IPv6`. The segment is the heading's own source text:
+  the attribute references of this family expanded, character references decoded and the inline marks off — never the
+  engine's converted title, which would carry `<code>` and `&#8217;` into the path. Repeated sibling keys are numbered
+  `[k]` from 1, as markdown@1 numbers them (also when a key is empty or already ends in `[digits]`), and the selector is
+  the encoded `h/` path, null past 4096 characters: such a section cannot be cited and its blocks hang at the manual
+  namespace root, which K1 counts in its own warning. A heading that verified on no source line falls back to the engine's
+  own title, plain, cites nothing, and the mapping says so in a warning. Because a segment carries no marks, a title is
+  never read as a signature (task item 6: K1 reads one only from a title that opens with `**`).
 - Nothing is placed that cannot be cited. A container with no text of its own is not mapped (the engine gives a block for
   each of its children, and each carries and cites its own text); a list item is mapped as its own block on its own line,
   and a description-list entry becomes one block for the term and the value of one source line, used only when the two

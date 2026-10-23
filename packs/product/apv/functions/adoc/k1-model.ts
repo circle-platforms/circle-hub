@@ -8,10 +8,10 @@
 // selector as malformed and skips it: the content would disappear from the knowledge with only a count left behind.
 // A block's citation is kept as the chapter file's digest and the plain text@1 line selector (Citation); the selector
 // field K1 copies into its fragments is a key of this model, which entries.ts turns into the fragment the Hub verifies.
-import type { Block, Composition, ExpandedModel, VerifiedRange } from './types.ts';
+import type { Block, Composition, ExpandedModel, Section, VerifiedRange } from './types.ts';
 import type { MarkdownBlock, MarkdownSection } from '../../../../../hub/refs/api.ts';
-import { inlineMarkdown, plainConverted, plainText, squeeze, stripMarks } from './text.ts';
-import { utf8Offsets } from '../util.ts';
+import { decodeReferences, inlineMarkdown, plainConverted, plainText, squeeze, stripMarks } from './text.ts';
+import { selectorText, utf8Offsets } from '../util.ts';
 import { parseAnchor } from '../manual.ts';
 
 /**
@@ -99,6 +99,19 @@ export const K1_KINDS: Readonly<Record<string, string>> = {
 };
 
 const kindOf = (block: Block): string => K1_KINDS[block.kind] ?? block.kind;
+
+/** The longest selector the Hub's reference grammar takes (`MAX_SELECTOR_LENGTH` in hub/refs/reference.ts; the pack
+ * re-implements the reference codecs, because pack code may not import the Hub at run time). */
+const MAX_SELECTOR_LENGTH = 4096;
+const ENDS_IN_ORDINAL = /\[[0-9]+\]$/;
+
+/**
+ * The segment of one heading, spelled as markdown@1 spells it: `[k]` (from 1) is appended when the key repeats among its
+ * siblings, when the key itself ends in `[digits]`, or when it is empty (`segmentFor` in hub/refs/parsers/markdown.ts).
+ */
+function segmentFor(key: string, ordinal: number): string {
+  return ordinal > 1 || key === '' || ENDS_IN_ORDINAL.test(key) ? `${key}[${ordinal}]` : key;
+}
 
 /**
  * The kind K1 reads this block as. An example is reference only and takes no part in judgment (task item 6), so its own
@@ -359,26 +372,72 @@ export interface Mapped {
  * composes `/manual/<name>/<章节路径>` from it); the composition ties the model to its inputs.
  */
 export function toK1Model(model: ExpandedModel, composition: Composition, manualName: string): Mapped {
-  const sections: AdocSection[] = [{ level: 0, title: '', key: '', ordinal: 0, parent: null, children: [], blocks: [], line: 0, end: 0, selector: null, attributes: null, cite: null }];
-  const byPath = new Map<string, number>([['', 0]]);
+  const sections: AdocSection[] = [{ level: 0, title: '', key: '', ordinal: 1, parent: null, children: [], blocks: [], line: 0, end: 0, selector: null, attributes: null, cite: null }];
   const blocks: AdocBlock[] = [];
-  let ordinal = 0;
-  const keyOf = (path: Block['path']): string => path.map((s) => s.title).join('/');
-  const sectionOf = (path: Block['path']): number => {
-    const key = keyOf(path);
-    const known = byPath.get(key);
-    if (known !== undefined) return known;
-    const parent = path.length <= 1 ? 0 : sectionOf(path.slice(0, -1));
-    ordinal += 1;
-    const at = sections.length;
-    const title = path[path.length - 1]!.title;
-    sections.push({ level: path.length, title, key: title, ordinal, parent, children: [], blocks: [], line: 0, end: 0, selector: `h/${key}`, attributes: null, cite: null });
-    sections[parent]!.children.push(at);
-    byPath.set(key, at);
-    return at;
-  };
+  // A section is keyed by the node the engine gave for it (the index of its own block), never by its title text: two
+  // sections with the same title are two sections, and `IPv4/IPv6` is not the parent of `IPv4` and `IPv6`.
+  const headings = new Map<number, Block>();
+  model.blocks.forEach((block, at) => {
+    if (block.kind === 'section') headings.set(at, block);
+  });
   const digestOf = (file: string): string => composition.files.find((one) => one.file === file)?.sha256 ?? '';
   const citationOf = (origin: VerifiedRange): Citation => ({ file: origin.file, sha256: digestOf(origin.file), selector: origin.selector });
+  const byNode = new Map<number, number>();
+  // The encoded and the decoded heading path of every section, built once from the parent's, and the sibling keys that
+  // decide an ordinal — the three markdown@1 keeps for the same rule.
+  const encodedPaths: Array<string | null> = [''];
+  const decodedPaths: Array<string[] | null> = [[]];
+  const childKeys: Array<Map<string, number>> = [new Map()];
+  const unverifiedHeadings: string[] = [];
+  const sectionOf = (path: Block['path']): number => {
+    if (path.length === 0) return 0;
+    const last = path[path.length - 1] as Section;
+    const known = byNode.get(last.at);
+    if (known !== undefined) return known;
+    const parent = sectionOf(path.slice(0, -1));
+    const block = headings.get(last.at) ?? null;
+    // The segment comes from the heading's own source line — the author's words, with the attribute references of this
+    // family expanded and the inline marks off — never from the engine's converted title, which carries tags and
+    // character references into the path. A title with no marks can also never be read as a signature (task item 6).
+    const fromSource = block !== null && block.heading !== null;
+    const title = squeeze(stripMarks(decodeReferences(fromSource ? (block as Block).heading as string : inlineMarkdown(last.title))));
+    if (!fromSource) {
+      unverifiedHeadings.push(`${block === null ? `章节「${title}」` : `${placeOf(model, block)} 的标题「${title}」`}回核不到源行，段用引擎标题的纯文本形式`);
+    }
+    const key = title;
+    const siblings = childKeys[parent] as Map<string, number>;
+    const ordinal = (siblings.get(key) ?? 0) + 1;
+    siblings.set(key, ordinal);
+    const segment = segmentFor(key, ordinal);
+    const encodedSegment = selectorText([segment]);
+    const above = encodedPaths[parent] as string | null;
+    const length = above === null || encodedSegment === null ? Number.POSITIVE_INFINITY : 2 + (above === '' ? 0 : above.length + 1) + encodedSegment.length;
+    const encoded = above === null || encodedSegment === null || length > MAX_SELECTOR_LENGTH ? null : above === '' ? encodedSegment : `${above}/${encodedSegment}`;
+    const at = sections.length;
+    const origin = block?.origins[0] ?? null;
+    encodedPaths.push(encoded);
+    decodedPaths.push(encoded === null ? null : [...(decodedPaths[parent] as string[]), segment]);
+    childKeys.push(new Map());
+    sections.push({
+      level: path.length,
+      title,
+      key,
+      ordinal,
+      parent,
+      children: [],
+      blocks: [],
+      line: 0,
+      end: 0,
+      selector: encoded === null ? null : `h/${encoded}`,
+      attributes: null,
+      cite: origin === null ? null : citationOf(origin),
+    });
+    (sections[parent] as AdocSection).children.push(at);
+    byNode.set(last.at, at);
+    return at;
+  };
+  /** The decoded heading path of a section: what a block's `path` carries, spelled as its `h/` selector is. */
+  const pathOf = (section: number): string[] | null => decodedPaths[section] ?? null;
   /** One mapped block: the citation key K1 carries into its fragments, and the citation the key stands for. */
   const emit = (block: Block, kind: string, text: string, cite: Citation, rowCites?: RowCite[]): void => {
     const section = sectionOf(block.path);
@@ -393,7 +452,7 @@ export function toK1Model(model: ExpandedModel, composition: Composition, manual
       lines: to - from + 1,
       text,
       selector: citeKey(blocks.length),
-      path: block.path.map((s) => s.title),
+      path: pathOf(section),
       cite,
       ...(rowCites === undefined ? {} : { rowCites }),
     });
@@ -467,6 +526,12 @@ export function toK1Model(model: ExpandedModel, composition: Composition, manual
     warnings.push(
       `有 ${misaligned.length} 个表格行的格数与表头不一致，按引擎给出的行原样映射，没有重组也没有补格：${misaligned.slice(0, 5).join('；')}${misaligned.length > 5 ? ' 等' : ''}。` +
         '下一步：核对这些表格的列定义和竖线（行末多一个竖线会让引擎多读一格），修好源后按同一修订号重跑。',
+    );
+  }
+  if (unverifiedHeadings.length > 0) {
+    warnings.push(
+      `有 ${unverifiedHeadings.length} 个章节标题回核不到源行：${unverifiedHeadings.slice(0, 5).join('；')}${unverifiedHeadings.length > 5 ? ' 等' : ''}。` +
+        '下一步：核对这些标题行（定位器已在邻近行做过归一比较），修好源或定位器后按同一修订号重跑。',
     );
   }
   if (unparsed.length > 0) {

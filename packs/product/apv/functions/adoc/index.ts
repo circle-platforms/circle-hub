@@ -19,6 +19,8 @@ function sourceRanges(rows: MappedLine[]): SourceRange[] {
 /** The contexts whose own content is the blocks the engine gives for their children. */
 const LISTS = new Set(['ulist', 'olist', 'dlist']);
 const IMAGE_LINE = /^image::{1,2}/;
+/** The equals-sign marker of a heading line, which the engine's own title never carries. */
+const HEADING_MARKER = /^={1,6}[ \t]+/;
 
 /**
  * The text of a node to verify against the source lines: a heading's title (the engine keeps no source text for it), an
@@ -101,7 +103,7 @@ async function runAdoc(rawInput: unknown, overrides: Partial<Limits> = {}): Prom
       const parentPath = node.parent ? paths.get(node.parent) ?? [] : [];
       const title = typeof node.title === 'string' ? doc.subAttributes(node.title) : null;
       const level = typeof node.level === 'number' ? node.level : parentPath.at(-1)?.level ?? 0;
-      const path = node.context === 'section' ? [...parentPath, { level, title: title ?? '', id: node.getId() ?? null }] : parentPath;
+      const path = node.context === 'section' ? [...parentPath, { level, title: title ?? '', id: node.getId() ?? null, at: blocks.length }] : parentPath;
       paths.set(node, path);
       const at = blocks.length;
       const raw = rawOf(node, expanded.lines);
@@ -112,8 +114,11 @@ async function runAdoc(rawInput: unknown, overrides: Partial<Limits> = {}): Prom
       const example = node.context === 'example' || node.getRole() === 'example' || node.style === 'example' || (node.parent != null && inExample.get(node.parent) === true);
       inExample.set(node, example);
       const listAt = node.context === 'list_item' && node.parent !== null && node.parent !== undefined && LISTS.has(node.parent.context) ? indexOf.get(node.parent) ?? null : null;
+      const heading = (node.context === 'section' || node.context === 'floating_title') && verified.origins.length === 1
+        ? doc.subAttributes(verified.origins[0]!.verbatim.replace(HEADING_MARKER, ''))
+        : null;
       const block: Block = {
-        kind: node.context, level, title, id: node.getId() ?? null, role: node.getRole() ?? null, path, raw,
+        kind: node.context, level, title, id: node.getId() ?? null, role: node.getRole() ?? null, path, raw, heading,
         expanded: node.subAttributes(raw), converted: await inlineOutput(node),
         origin: verified.origins.length === 1 ? verified.origins[0] : null, origins: verified.origins,
         reportedLine: node.sourceLocation?.lineno ?? null, unverifiedReason: verified.origins.length > 0 ? '' : verified.reason, listAt, example,

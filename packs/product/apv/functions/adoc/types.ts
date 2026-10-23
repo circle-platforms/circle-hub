@@ -4,7 +4,12 @@ export interface AdocInput { main: string; revision: string; files: Record<strin
 export interface Limits { files: number; inputBytes: number; expandedBytes: number; includeDepth: number; includes: number; lines: number; conditions: number; blocks: number }
 export interface MappedLine { file: string; line: number; text: string }
 export interface VerifiedRange { file: string; from: number; to: number; selector: string; reference: string; verbatim: string }
-export interface Section { level: number; title: string; id: string | null }
+export interface Section {
+  level: number; title: string; id: string | null;
+  /** The index in `blocks` of this section's own block: the identity a path element carries, so two sections with the
+   * same title stay two sections. */
+  at: number;
+}
 export interface Block {
   kind: string; level: number; title: string | null; id: string | null; role: string | null;
   path: Section[]; raw: string; expanded: string; origin: VerifiedRange | null; origins: VerifiedRange[];
@@ -17,6 +22,9 @@ export interface Block {
   unverifiedReason: string;
   /** For a list item, the index in `blocks` of the list container it belongs to; null for every other block. */
   listAt: number | null;
+  /** For a heading (a section or a discrete title), the heading text as written in the verified source line, with the
+   * marker off and the attribute references expanded; null for every other block and for a heading that verified nowhere. */
+  heading: string | null;
   /** True when this block is an example, or sits inside one: an author-declared example is reference only and never a
    * command rule (task item 6), so the mapping keeps K1 from anchoring it. */
   example: boolean;
