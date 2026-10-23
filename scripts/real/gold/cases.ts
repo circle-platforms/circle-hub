@@ -14,6 +14,7 @@
 //   node scripts/real/gold/cases.ts --map <file>:<documentId> [--map <file>:<documentId> ...] [--case-rule tagged|marked] --out <gold.json>
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { GoldRefusal } from './refusal.ts';
 
 export interface GoldNode {
   index: number;
@@ -92,6 +93,10 @@ const BUG_MARKERS =
   /(?<![A-Za-z])(?:bu(?:t|gt)[\s_-]*(?:t?o|ro|2)[\s_-]*c[a-z]{0,5}|bugs?(?:[\s_-]*(?:t?o|ro|2)[\s_-]*c[a-z]{0,5})?|缺陷)/gi;
 const SEPARATOR = /^(?:\s*(?:&|、|,|\+|\/|\band\b|和|及|与)\s*|\s+)(?=[0-9]{2})/i;
 const NOT_ID = /^(?:19|20)[0-9]{2}/;
+
+
+/** A document with no case nodes: caught by type, never by matching the message text. */
+export class NoCaseNodes extends GoldRefusal {}
 
 /** Bug ids of one text: after each bug marker, digit runs 2..9 long, separated by , &、and. */
 export function bugIdsOf(raw: string): string[] {
@@ -307,7 +312,7 @@ export function caseGold(
       c.vagueExpected = nonBlank.length > 0 && nonBlank.every((t) => VAGUE_KEYS.has(foldKey(t)));
     }
 
-    if (cases.length === 0) throw new Error(`文档 ${documentId} 里没有带${caseRule === 'tagged' ? '资源标签' : '用例标记或资源标签'}的用例节点`);
+    if (cases.length === 0) throw new NoCaseNodes(`文档 ${documentId} 里没有带${caseRule === 'tagged' ? '资源标签' : '用例标记或资源标签'}的用例节点`);
 
     const groupCounts: Record<string, number> = {};
     for (const c of cases) groupCounts[c.group] = (groupCounts[c.group] ?? 0) + 1;

@@ -4,7 +4,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { BoardGold, BoardGroupGold } from '../accept/quality-board.ts';
-import { caseGold } from './cases.ts';
+import { caseGold, NoCaseNodes } from './cases.ts';
 import { locationsGold, lineKey } from './locations.ts';
 import { cleanDocId, GoldRefusal, loadCaseMaps, missingMapDocuments, parseDocumentList } from './trace.ts';
 import { boardLocate } from './board-locate.ts';
@@ -48,7 +48,7 @@ export function boardGold(options: { product: string; build: string; tree: unkno
     const boardLocation = location === undefined ? null : boardLocate([location.title, ...location.ancestors].slice(1));
     let doc;
     try { doc = caseGold([map], { caseRule: options.caseRule }).documents[0]; }
-    catch (error) { if (error instanceof Error && error.message.includes('的用例节点')) { noCases++; continue; } throw error; }
+    catch (error) { if (error instanceof NoCaseNodes) { noCases++; continue; } throw error; }
     const label = `${boardLocation?.line ? lineKey(boardLocation.line) : 'unplaced'}/${boardLocation?.module || 'unplaced'}`;
     const held = groups.get(label) ?? { label, cases: 0, missing: 0, vague: 0, negative: 0 };
     for (const c of doc.items) {
@@ -77,19 +77,35 @@ export function main(argv: string[], print = (line: string) => process.stdout.wr
   const missing = [!tree && '--tree', !cases && '--cases-dir', !docs && '--docs', !product && '--product', !build && '--build', !out && '--out'].filter((f): f is string => f !== false);
   if (missing.length > 0) { process.stderr.write(`缺 ${missing.join('、')}\n用法：node scripts/real/gold/board.ts --tree <敏捷树导出> --cases-dir <目录> --docs <文档清单> --product <产品> --build <构建> [--case-rule marked|tagged] [--types] [--placement | --case-commands <case-commands.json>] --out <文件>\n`); return 2; }
   try {
-    const listed = parseDocumentList(readFileSync(docs!, 'utf8'));
+    let listed: Set<string>;
+    try {
+      listed = parseDocumentList(readFileSync(docs!, 'utf8'));
+    } catch {
+      throw new GoldRefusal('文档清单读不了：先导出这个构建的文档清单');
+    }
     if (listed.size === 0) { process.stderr.write('文档清单是空的：补上这个构建的文档清单\n'); return 1; }
     const maps = loadCaseMaps(cases!, listed);
     // A listed document with no exported map is a missing input: refuse to start and say what to supply (the 10-23
     // incident: a silently dropped document computed the gold on a subset). The check lives in trace.ts, shared.
     const missing = missingMapDocuments(listed, maps);
     if (missing.length > 0) { process.stderr.write(`清单 ${listed.size} 份，导出的脑图缺 ${missing.length} 份：用 circle-hub original export 导出后重跑\n`); return 1; }
-      const gold = boardGold({ types: argv.includes('--types'), product: product!, build: build!, tree: JSON.parse(readFileSync(tree!, 'utf8')), maps, caseRule: value('case-rule') === 'tagged' ? 'tagged' : 'marked' });
+      let treeJson: unknown;
+      try {
+        treeJson = JSON.parse(readFileSync(tree!, 'utf8'));
+      } catch {
+        throw new GoldRefusal('敏捷树导出读不了或不是 JSON：重新导出敏捷树');
+      }
+      const gold = boardGold({ types: argv.includes('--types'), product: product!, build: build!, tree: treeJson, maps, caseRule: value('case-rule') === 'tagged' ? 'tagged' : 'marked' });
     // --case-commands: the unplaced count from the independent case-to-command gold of the gold-case-commands work
     // item (its out JSON: comparable cases with no parsed path; only cases of THIS build's documents count).
     const caseCommandsPath = value('case-commands');
     if (caseCommandsPath !== undefined) {
-      const commands = JSON.parse(readFileSync(caseCommandsPath, 'utf8')) as { cases?: unknown };
+      let commands: { cases?: unknown };
+      try {
+        commands = JSON.parse(readFileSync(caseCommandsPath, 'utf8')) as { cases?: unknown };
+      } catch {
+        throw new GoldRefusal('case-commands 独立答案不是 JSON：按这个构建的清单重跑 case-commands.ts');
+      }
       // The input is validated before anything is counted: a {} file must not read as 0 unplaced cases.
       if (!Array.isArray(commands.cases)) throw new GoldRefusal('case-commands 独立答案里 cases 不是数组：按这个构建的清单重跑 case-commands.ts');
       const listed2 = new Set([...listed].map((d) => d.replace(/^.*:/, '')));
@@ -119,7 +135,8 @@ export function main(argv: string[], print = (line: string) => process.stdout.wr
       process.stderr.write(`${error.line}\n`);
       return 1;
     }
-    process.stderr.write('生成看板独立答案失败：检查原始文件与文档清单\n');
+    // Stage only, never the raw message (item 8): a raw message would carry paths or file content on screen.
+    process.stderr.write(`生成看板独立答案失败（${(error as Error)?.constructor?.name ?? 'Error'}）：检查原始文件与文档清单\n`);
     return 1;
   }
 }

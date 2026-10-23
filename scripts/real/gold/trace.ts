@@ -15,6 +15,8 @@
 //     [--build <build>] \
 //     [--case-rule tagged|marked] \
 //     --out <gold.json>
+import { GoldRefusal } from './refusal.ts';
+export { GoldRefusal };
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, resolve } from 'node:path';
 import type { DefectGold, JoinCaseGold, TraceGold } from '../accept/traceability.ts';
@@ -247,16 +249,6 @@ export function parseDocumentList(raw: string): Set<string> {
   return docs;
 }
 
-/** A refusal the CLI catches by type: the line is decided where it is thrown, never re-parsed from the message. */
-export class GoldRefusal extends Error {
-  readonly line: string;
-  constructor(line: string) {
-    super(line);
-    this.name = 'GoldRefusal';
-    this.line = line;
-  }
-}
-
 /**
  * Listed documents that have no exported map, by every spelling the loader matches. The caller refuses when this
  * is not empty: a silently dropped document computes the gold on a subset (the 10-23 incident).
@@ -271,9 +263,8 @@ export function missingMapDocuments(listed: ReadonlySet<string>, maps: ReadonlyA
  */
 export function loadCaseMaps(casesDir: string, allowedDocs?: Set<string>): Array<{ document: string; map: unknown }> {
   const maps: Array<{ document: string; map: unknown }> = [];
-  const entries = readdirSync(resolve(casesDir)).sort();
-  for (const entry of entries) {
-    if (!entry.endsWith('.json') || entry.startsWith('.')) continue;
+  const entries = readdirSync(resolve(casesDir)).sort().filter((entry) => entry.endsWith('.json') && !entry.startsWith('.'));
+  for (const [ordinal, entry] of entries.entries()) {
     const docId = entry.replace(/\.(?:km\.)?json$/i, '');
     if (
       allowedDocs !== undefined &&
@@ -285,7 +276,12 @@ export function loadCaseMaps(casesDir: string, allowedDocs?: Set<string>): Array
     }
     const fullPath = resolve(casesDir, entry);
     const content = readFileSync(fullPath, 'utf8');
-    maps.push({ document: docId, map: JSON.parse(content) as unknown });
+    try {
+      maps.push({ document: docId, map: JSON.parse(content) as unknown });
+    } catch {
+      // Stage-named at the throw site (item 8): the ordinal only — never the path or the file's content.
+      throw new GoldRefusal(`第 ${ordinal + 1} 份脑图不是 JSON：重新导出脑图`);
+    }
   }
   return maps;
 }
@@ -403,6 +399,15 @@ export function traceGold(options: TraceGoldOptions): TraceGold {
   };
 }
 
+/** Reads the tree export; a stage-named refusal replaces the raw read or parse error (item 8). */
+function readTree(treePath: string): unknown {
+  try {
+    return JSON.parse(readFileSync(resolve(treePath), 'utf8'));
+  } catch {
+    throw new GoldRefusal('敏捷树导出读不了或不是 JSON：重新导出敏捷树');
+  }
+}
+
 export async function main(argv: string[]): Promise<number> {
   const value = (name: string): string | undefined => {
     const at = argv.indexOf(`--${name}`);
@@ -430,7 +435,7 @@ export async function main(argv: string[]): Promise<number> {
 
   if (!fixedPath || !casesDir || !outPath) {
     process.stderr.write(
-      '用法：node scripts/real/gold/trace.ts --fixed <bugs_fixed.html> --cases-dir <dir> [--docs <docs.json>] [--plm <plm.json>...] [--closed-statuses <statuses.json>] [--product <product>] [--build <build>] [--case-rule tagged|marked] --out <gold.json>\n',
+      '用法：node scripts/real/gold/trace.ts --fixed <bugs_fixed.html> --cases-dir <dir> [--docs <docs.json>] [--tree <敏捷树导出>] [--plm <plm.json>...] [--closed-statuses <statuses.json>] [--product <product>] [--build <build>] [--case-rule tagged|marked] --out <gold.json>\n',
     );
     return 2;
   }
@@ -477,7 +482,7 @@ export async function main(argv: string[]): Promise<number> {
 
     const gold = traceGold({
       html,
-      tree: treePath ? JSON.parse(readFileSync(resolve(treePath), 'utf8')) : undefined,
+      tree: treePath === undefined ? undefined : readTree(treePath),
       maps,
       plm,
       closedStatuses,

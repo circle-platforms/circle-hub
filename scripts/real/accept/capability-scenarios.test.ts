@@ -118,6 +118,7 @@ describe('traceability scenario', () => {
       '- 7300 | 缺陷 7300 | 已修复；2 个用例',
       '- 7402 | 缺陷 7402 | 已知；无已索引用例（未知）',
       '陈述：缺陷 7300（已修复）：2 个已索引用例追溯：9001:c-1 会话检查；9001:c-2 证书查看',
+      '已关闭缺陷 1 个：已追溯 1 个，未追溯 0 个。',
     ].join('\n');
     assert.ok(allOk(scenario, turnsOf(good)), JSON.stringify(scenario.check(turnsOf(good))));
     const missing = good.replace('9001:c-1', '9001:wrong-case');

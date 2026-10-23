@@ -170,3 +170,34 @@ test('without --plm and nothing traced the scan says so instead of recommending 
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('failures name their stage and index, never a path, build name or map content', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'gold-scan-stages-'));
+  try {
+    for (const sub of ['fixed', 'cases', 'docs']) mkdirSync(join(dir, sub));
+    writeFileSync(join(dir, 'tree.json'), JSON.stringify(tree));
+    writeFileSync(join(dir, 'fixed/Bugs_Fixed_with_Synthetic_10_7_A.html'), html('910001'));
+    const base = ['scripts/real/gold/trace-scan.ts', '--fixed-dir', join(dir, 'fixed'), '--tree', join(dir, 'tree.json'), '--out', join(dir, 'out.json')];
+    // A per-build docs list that does not exist names the build's scan index, not the path.
+    const noList = spawnSync(process.execPath, [...base, '--cases-dir', join(dir, 'cases'), '--docs-dir', join(dir, 'docs')], { encoding: 'utf8' });
+    assert.equal(noList.status, 1);
+    assert.match(noList.stderr, /#1 的文档清单不存在：先导出这个构建的文档清单/);
+    assert.doesNotMatch(noList.stderr, /Synthetic|docs|91000/);
+    // A malformed mindmap names its ordinal, never the JSON content.
+    writeFileSync(join(dir, 'cases/broken.json'), '{合成标题');
+    const badMap = spawnSync(process.execPath, [...base.slice(0, 2), ...base.slice(2), '--cases-dir', join(dir, 'cases')].filter((_, i, a) => a.indexOf('--out') !== i), { encoding: 'utf8' });
+    const badMapRun = spawnSync(process.execPath, ['scripts/real/gold/trace-scan.ts', '--fixed-dir', join(dir, 'fixed'), '--cases-dir', join(dir, 'cases'), '--tree', join(dir, 'tree.json'), '--out', join(dir, 'out.json')], { encoding: 'utf8' });
+    assert.equal(badMapRun.status, 1);
+    assert.match(badMapRun.stderr, /第 1 份脑图不是 JSON：重新导出脑图/);
+    assert.doesNotMatch(badMapRun.stderr, /合成标题|broken\.json/);
+    writeFileSync(join(dir, 'cases/broken.json'), JSON.stringify(map));
+    // A closed-statuses file that is not JSON is named by stage.
+    writeFileSync(join(dir, 'closed.txt'), 'not json');
+    const badClosed = spawnSync(process.execPath, ['scripts/real/gold/trace-scan.ts', '--fixed-dir', join(dir, 'fixed'), '--cases-dir', join(dir, 'cases'), '--tree', join(dir, 'tree.json'), '--closed-statuses', join(dir, 'closed.txt'), '--out', join(dir, 'out.json')], { encoding: 'utf8' });
+    assert.equal(badClosed.status, 1);
+    assert.match(badClosed.stderr, /关闭状态表不是 JSON：检查导出的关闭状态表/);
+    assert.doesNotMatch(badClosed.stderr, /closed\.txt|not json/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

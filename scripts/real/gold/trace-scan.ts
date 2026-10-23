@@ -16,7 +16,12 @@ export function main(argv: string[], print = (line: string) => process.stdout.wr
     return 1;
   }
   try {
-    const tree = JSON.parse(readFileSync(treePath!, 'utf8'));
+    let tree: unknown;
+    try {
+      tree = JSON.parse(readFileSync(treePath!, 'utf8'));
+    } catch {
+      throw new GoldRefusal('敏捷树导出读不了或不是 JSON：重新导出敏捷树');
+    }
     // Parse the maps once for the whole scan and filter them per build: re-reading every map per build made the
     // integrator's full scan (all builds, no --docs-dir) quadratic.
     const allMaps = loadCaseMaps(casesDir!);
@@ -25,14 +30,37 @@ export function main(argv: string[], print = (line: string) => process.stdout.wr
     for (let i = 0; i < argv.length; i++) if (argv[i] === '--plm') {
       while (i + 1 < argv.length && !argv[i + 1].startsWith('--')) plmPaths.push(...argv[++i].split(','));
     }
-    const plm = plmPaths.length ? parsePlmResponses(plmPaths.map((p) => readFileSync(p, 'utf8'))) : undefined;
+    let plm: ReturnType<typeof parsePlmResponses> | undefined;
+    if (plmPaths.length > 0) {
+      try {
+        plm = parsePlmResponses(plmPaths.map((p) => readFileSync(p, 'utf8')));
+      } catch {
+        throw new GoldRefusal('PLM 原件读不了或不是 JSON：重新导出 plm:bugs:');
+      }
+    }
     const closedPath = value('closed-statuses');
-    const closedStatuses = closedPath ? parseClosedStatuses(JSON.parse(readFileSync(closedPath, 'utf8'))) : undefined;
+    let closedStatuses: ReturnType<typeof parseClosedStatuses> | undefined;
+    if (closedPath) {
+      try {
+        closedStatuses = parseClosedStatuses(JSON.parse(readFileSync(closedPath, 'utf8')));
+      } catch (error) {
+        if (error instanceof GoldRefusal) throw error;
+        throw new GoldRefusal('关闭状态表不是 JSON：检查导出的关闭状态表');
+      }
+    }
     const docsDir = value('docs-dir');
     const buildsRaw = readdirSync(fixedDir!).sort().filter((f) => /^Bugs_Fixed_with_.+\.html$/i.test(f)).map((file, index) => {
       const build = file.replace(/^Bugs_Fixed_with_/i, '').replace(/\.html$/i, '');
       const at = index + 1;
-      const allowed = docsDir ? parseDocumentList(readFileSync(join(docsDir, `${build}.json`), 'utf8')) : undefined;
+      let allowed: Set<string> | undefined;
+      if (docsDir) {
+        try {
+          allowed = parseDocumentList(readFileSync(join(docsDir, `${build}.json`), 'utf8'));
+        } catch {
+          // Stage-named with the build's scan index (item 8): never the path or the raw error.
+          throw new GoldRefusal(`#${at} 的文档清单不存在：先导出这个构建的文档清单`);
+        }
+      }
       // An empty per-build list is not a silent filter-everything (the 10-23 incident class): the build says so and
       // stays out of the ranking.
       if (allowed !== undefined && allowed.size === 0) return { index: at, build, digest: createHash('sha256').update(build).digest('hex').slice(0, 12), emptyList: true as const };
@@ -80,10 +108,9 @@ export function main(argv: string[], print = (line: string) => process.stdout.wr
       process.stderr.write(`${error.line}\n`);
       return 1;
     }
-    const message = (error as Error).message ?? '';
-    if (/closed/i.test(message) || /statuses/i.test(message)) process.stderr.write(`关闭状态表不是数组也不是 {statuses: [...]}\n`);
-    else if (/清单|document/i.test(message)) process.stderr.write(`#k 的文档清单读不了或列的不是数组\n`);
-    else process.stderr.write(`扫描失败：${message.split('\n')[0]?.slice(0, 120) ?? '检查导出文件与文档清单'}\n`);
+    // Anything unexpected is named by stage only (item 8): a raw message would carry paths, build names or map
+    // content onto the screen.
+    process.stderr.write(`扫描失败（${(error as Error)?.constructor?.name ?? 'Error'}）：检查导出文件与文档清单\n`);
     return 1;
   }
 }
