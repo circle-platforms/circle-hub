@@ -71,7 +71,7 @@ function emptyPartitions(): Partitions {
  */
 async function resultForObserver(ctx: EngineContext, run: string, submission: string, session: string | null, model: string | null): Promise<ValidationResult | null> {
   const store = ctx.deps.records.store;
-  for (const action of await actionsOf(store, run)) {
+  for (const action of (await actionsOf(store, run)).reverse()) {
     if (action.body.action !== 'validate' || !isObject(action.body.detail) || action.body.detail.production === true) continue;
     const detail = action.body.detail;
     if (detail.submission !== submission || typeof detail.result !== 'string') continue;
@@ -150,7 +150,7 @@ async function storeReceived(
   return { record: await putSubmission(store, { run, digest: received.digest, body, parses: false, createdAt: at }), why: received.canonical ? 'too_large' : 'canonical' };
 }
 
-export async function submitResult(ctx: EngineContext, user: Principal, args: Record<string, unknown>, call: CallContext): Promise<SubmitAnswer> {
+export async function submitResult(ctx: EngineContext, user: Principal, args: Record<string, unknown>, call: CallContext, refresh = false): Promise<SubmitAnswer> {
   const store = ctx.deps.records.store;
   const runId = isObject(args) && typeof args.run === 'string' ? args.run : null;
   const stored = runId === null ? null : await runById(store, runId);
@@ -160,7 +160,7 @@ export async function submitResult(ctx: EngineContext, user: Principal, args: Re
     return { call_result: 'error', acceptance: 'not_accepted', errors: [unavailableError('/run')] };
   }
   return ctx.lock(`submit:${stored.body.run}`, async () => {
-    try{return await submitLocked(ctx,user,args,call,stored);}
+    try{return await submitLocked(ctx,user,args,call,stored,refresh);}
     catch(error){
       const at=ctx.now().toISOString();
       ctx.log({traceId:call.traceId,run:stored.body.run,what:'submit_result interrupted',detail:describe(error)});
@@ -172,16 +172,16 @@ export async function submitResult(ctx: EngineContext, user: Principal, args: Re
   });
 }
 
-async function submitLocked(ctx: EngineContext, user: Principal, args: Record<string, unknown>, call: CallContext, stored: StoredRecord<RunRecord>): Promise<SubmitAnswer> {
+async function submitLocked(ctx: EngineContext, user: Principal, args: Record<string, unknown>, call: CallContext, stored: StoredRecord<RunRecord>, refresh = false): Promise<SubmitAnswer> {
   const store = ctx.deps.records.store;
   const run = stored.body;
   const received = receivedDigest(args);
   const sessionNow = sessionOf(call);
   const modelNow = typeof args.model === 'string' ? wellFormed(args.model) : null;
-  const repeat = await resultForObserver(ctx, run.run, received.digest, sessionNow, modelNow);
+  const repeat = refresh ? null : await resultForObserver(ctx, run.run, received.digest, sessionNow, modelNow);
   if (repeat !== null) return answerOf(repeat);
   const previous=await resultFor(store,run.run,received.digest);
-  if (previous !== null && (previous.body.contributions !== undefined || (await ctx.deps.workflows.byDigest(run.pack_digest))?.workflow.contribution !== undefined)) return answerOf(previous.body);
+  if (!refresh && previous !== null && (previous.body.contributions !== undefined || (await ctx.deps.workflows.byDigest(run.pack_digest))?.workflow.contribution !== undefined)) return answerOf(previous.body);
 
   const startedAt = ctx.now().toISOString();
   // Arguments canonical JSON cannot carry are never parsed: nothing built from them could be stored.

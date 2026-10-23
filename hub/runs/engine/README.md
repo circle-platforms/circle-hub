@@ -303,8 +303,7 @@ one or every item absent, mixed valid/invalid artifacts, and run-level finals' r
 - An item location must resolve in exactly one source of its slot; a slot with several sources and positional selectors is
   refused (FragmentRef names no source).
 - Commands are split at white space to find heads; quoted arguments are judged by the catalog check, not at resolution.
-- `knowledge.json` (`requires` a complete catalog) is not enforced at start_run: a missing catalog gives unknown outcomes
-  (missing input), an incomplete one unknown absence (integrity unproven), both visible as unchecked terminals.
+- `knowledge.json` requirements are enforced before input binding; missing/incomplete required catalogs refuse the start and name selectable complete builds.
 - Locks are per process. Pack function calls in one evaluation run at most 8 at a time. A lineage is followed for at most 100
   runs; a bound record is walked for model warrants up to 2,000,000 nodes.
 - A submission nests at most 64 levels; check outcome data at most 32. A result must fit one record (`maxRecordBytes`,
@@ -598,3 +597,18 @@ retry instruction; internal exception details go only to administrator notes. ge
 from refusal, including submissions left with no action. Startup/minute maintenance revalidates orphan submissions
 using the session actually recorded by the interrupted call, never the run's start session. Three failed attempts
 lead to a finite named administrator repair request; missing historical session facts likewise go to a named request.
+
+Publication rejects a static fact requirement without checks (`requirements.no_check`) and a dynamic fact requirement
+without an observation contract. Start rejects invalid layer/schema/contribution declarations and records a repair
+request addressed to the recorded pack owner. These pre-run requests bind the published pack digest, without making up
+an unstarted run. Owner-facing requests can be listed without granting access to unrelated run contents.
+`knowledge.requires` is checked before inputs are read; refusals name the missing catalogs and list currently eligible
+builds. A workflow may require an explicit predecessor. Model-driven runs whose line root changes receive a named
+successor request; their frozen roots and prior results remain unchanged. Publication of a fixed pack version answers
+its repair request using the actual pack-version record, then prompts affected runners to open successors.
+
+Hub-observed retain-only source reads produce administrator disposition requests with structured source references.
+Maintenance polls their effective read permission/tier; after acceptance it revalidates with the originally observed
+session and appends a new result/answer. Same-observer lookup returns the newest receipt, and by-submission result lookup
+also returns the newest result. No old result is backfilled. Actual credential echo originals remain excluded from
+acceptance; the next step is a redacted source/new revision. Non-source requests keep their explicit human next action.

@@ -73,6 +73,7 @@ export type WorkflowAbsence = 'unknown' | 'unassigned' | 'withdrawn' | 'disabled
 export interface WorkflowStore {
   /** Owner of a published workflow version, for named B07 repair requests. */
   ownerOf?(digest: string): Promise<string | null>;
+  publicationOf?(digest: string): Promise<string | null>;
   /** A version the user may use: `id` (latest published, assigned to the user) or `id@version`. Unknown, unassigned and withdrawn give the same null. */
   forUser(user: Principal, ref: string): Promise<LoadedWorkflow | null>;
   /**
@@ -151,7 +152,7 @@ export interface RunSubmissionView {
 }
 
 export interface RunRequestView {
-  record:string; run:string; kind:RequestKind; audience:string; due:string; missing:string; next_action:string;
+  record:string; run?:string; pack_digest?:string; sources?:string[]; kind:RequestKind; audience:string; due:string; missing:string; next_action:string;
   source:string; code:string; item?:string; requirement?:string; answered_by:string|null;
 }
 
@@ -167,7 +168,7 @@ export interface RunDetail {
 }
 
 export interface RunsService {
-  listRequests?(user: Principal, run: string): Promise<RunRequestView[]>;
+  listRequests?(user: Principal, run?: string): Promise<RunRequestView[]>;
   /** Absent and forbidden give the same SOURCE_UNAVAILABLE answer with the tool's empty shape. */
   startRun(user: Principal, input: z.infer<typeof StartRunInput>, context: CallContext): Promise<Untraced<z.infer<typeof StartRunOutput>>>;
   /** `args` are the raw arguments of the call: they are stored as received before anything else (W07). */

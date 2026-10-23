@@ -158,7 +158,7 @@ export async function putResult(store: RecordStore, result: ValidationResult, cr
 }
 
 export async function resultFor(store: RecordStore, run: string, submission: string): Promise<StoredRecord<ValidationResult> | null> {
-  const page = await store.find<ValidationResult>({ key: INDEX.resultSubmission, value: `${run}:${submission}`, kind: 'validation_result', limit: 1 });
+  const page = await store.find<ValidationResult>({ key: INDEX.resultSubmission, value: `${run}:${submission}`, kind: 'validation_result', limit: 1, newestFirst:true });
   return page.items[0] ?? null;
 }
 

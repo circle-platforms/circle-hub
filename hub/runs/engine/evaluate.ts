@@ -716,7 +716,15 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
           const administrator = (await ctx.deps.records.principals?.list?.())?.find(p => p.role === 'admin' && !p.disabled)?.id;
           const runner = run.runner ?? run.configurer;
           if (!owner || !administrator || !runner) throw new Error('无法绑定未知出口：缺少包 ownerOf、具名管理员或运行者；请管理员补齐身份读取接线后重验');
-          layers.push(bindRecovery(layer, {owner, administrator, runner, due: new Date(ctx.now().getTime()+24*60*60*1000).toISOString(), location: `${it.id} / ${t.key}`}, outcomes.map(o => o.outcome)));
+          const bound=bindRecovery(layer, {owner, administrator, runner, due: new Date(ctx.now().getTime()+24*60*60*1000).toISOString(), location: `${it.id} / ${t.key}`}, outcomes.map(o => o.outcome));
+          // Only Hub-observed retain-only reads can select administrator acceptance; pack data cannot grant read rights.
+          const retained=[...warmedUnread].filter(([,failure])=>failure.reason==='credential_unreadable').map(([reference])=>reference);
+          for(const [reference,pending] of boundSourceCache)if((await pending).reason==='credential_unreadable'&&!retained.includes(reference))retained.push(reference);
+          if(retained.length&&outcomes.some(o=>o.outcome.verdict==='unknown'&&(o.outcome.reason==='awaiting_step'||o.outcome.reason==='missing_input'))){
+            bound.exit={action:'request',request_kind:'disposition',audience:{user:administrator},due:bound.exit?.due??new Date(ctx.now().getTime()+86400000).toISOString()};
+            bound.missing=`管理员尚未接受只保留的来源：${retained.join('、')}；${bound.missing??''}`;
+          }
+          layers.push(bound);
         } else layers.push(layer);
       }
       const status = requirementStatus({

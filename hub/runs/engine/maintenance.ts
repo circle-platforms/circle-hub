@@ -1,3 +1,4 @@
+import { parseReference } from '../../refs/api.ts';
 import { submitResult } from './submit.ts';
 import { isObject, receivedDigest } from './util.ts';
 import { randomBytes } from 'node:crypto';
@@ -7,16 +8,18 @@ import type { RunRecord } from '../../../contracts/src/run.ts';
 import type { ValidationResult } from '../../../contracts/src/validation.ts';
 import { PARTITION } from '../../../contracts/generated/vocabulary.ts';
 import type { EngineContext } from './deps.ts';
-import { latestAccepted, listRunRecords, putAction, putResult, submissionsOf, actionOfSubmission, actionsOf, isVerbatimObject } from './store.ts';
-import { putRequest, recordResultRequests } from './requests.ts';
+import { latestAccepted, listRunRecords, putAction, putResult, submissionsOf, submissionByDigest, actionOfSubmission, actionsOf, isVerbatimObject } from './store.ts';
+import { putRequest, recordResultRequests, requestRecords, answerRequest } from './requests.ts';
 
 export async function maintainRuns(ctx:EngineContext):Promise<void>{
   let cursor:string|null=null;
   do{
     const page:Page<StoredRecord<RunRecord>>=await listRunRecords(ctx.deps.records.store,{}, {limit:200,cursor});
-    for(const run of page.items){await recoverRun(ctx,run);await ctx.lock(`submit:${run.body.run}`,()=>expireRun(ctx,run));}
+    for(const run of page.items){await rootUpdateRequest(ctx,run);await recoverRun(ctx,run);await ctx.lock(`submit:${run.body.run}`,()=>expireRun(ctx,run));}
     cursor=page.next;
   }while(cursor!==null);
+  await repairedPackRequests(ctx);
+  await acceptedSourceRequests(ctx);
 }
 async function expireRun(ctx:EngineContext,stored:StoredRecord<RunRecord>):Promise<void>{
   const run=stored.body;
@@ -59,5 +62,66 @@ async function recoverRun(ctx:EngineContext,stored:StoredRecord<RunRecord>):Prom
       continue;
     }
     await submitResult(ctx,{id:account.id,name:account.name,role:account.role},submission.body,{traceId:randomBytes(16).toString('hex'),sessionId:historicalSession});
+  }
+}
+
+async function rootUpdateRequest(ctx:EngineContext,stored:StoredRecord<RunRecord>):Promise<void>{
+  const run=stored.body;
+  if(!run.runner||!run.product||!run.version||!run.root||!run.requirements.some(r=>r.accepted_producer!=='fact'))return;
+  const current=await ctx.deps.knowledge.currentRoot(run.product,run.version);
+  if(!current||current.root===run.root)return;
+  const successors=await import('./store.ts').then(m=>m.successorsOf(ctx.deps.records.store,run.run));
+  if(successors.some(s=>s.body.runner===run.runner&&s.body.pack.split('@')[0]===run.pack.split('@')[0]))return;
+  await putRequest(ctx,{run:run.run,kind:'disposition',audience:run.runner,due:new Date(ctx.now().getTime()+86400000).toISOString(),missing:`锁定根 ${run.root} 与当前根 ${current.root} 不同，缺少新根上的复核`,source:stored.digest,code:'awaiting_step',next_action:'运行者用 start_run 以本运行为 predecessor、选当前构建开新修订重跑；原运行和原结果不改写'});
+}
+async function repairedPackRequests(ctx:EngineContext):Promise<void>{
+  for(const request of await requestRecords(ctx)){
+    if(request.answered_by!==null||!request.pack_digest||request.kind!=='repair')continue;
+    const old=await ctx.deps.workflows.byDigest(request.pack_digest);
+    if(!old)continue;
+    const latest=await ctx.deps.packs.pack(old.pack.id);
+    if(!latest||latest.digest===request.pack_digest)continue;
+    const owner=await ctx.deps.workflows.ownerOf?.(latest.digest);
+    const published=await ctx.deps.workflows.publicationOf?.(latest.digest);
+    if(owner!==request.audience||!published)continue;
+    await answerRequest(ctx,request.record,published);
+    // Existing frozen runs still use their own version: the next step is a successor, never rewriting the old run.
+    let cursor:string|null=null;
+    do{
+      const page:Page<StoredRecord<RunRecord>>=await listRunRecords(ctx.deps.records.store,{pack:old.pack.id},{limit:200,cursor});
+      for(const run of page.items){if(run.body.pack_digest!==request.pack_digest||!run.body.runner)continue;
+        await putRequest(ctx,{run:run.body.run,kind:'disposition',audience:run.body.runner,due:new Date(ctx.now().getTime()+86400000).toISOString(),source:published,code:'awaiting_step',missing:'修复后的包版本已发布，旧运行仍锁定原版本',next_action:`运行者用 start_run 以本运行为 predecessor、包 ${latest.id}@${latest.version} 开新修订重跑`});}
+      cursor=page.next;
+    }while(cursor!==null);
+  }
+}
+
+async function acceptedSourceRequests(ctx:EngineContext):Promise<void>{
+  for(const request of await requestRecords(ctx)){
+    if(request.answered_by!==null||!request.run||!request.sources?.length||request.kind!=='disposition')continue;
+    const stored=await import('./store.ts').then(m=>m.runById(ctx.deps.records.store,request.run!));
+    if(!stored)continue;
+    const run=stored.body;
+    const admin=await ctx.deps.records.principals?.get(request.audience);
+    const runner=await ctx.deps.records.principals?.get(run.runner??run.configurer??'');
+    if(!admin||admin.disabled||admin.role!=='admin'||!runner||runner.disabled)continue;
+    let available=true;
+    for(const reference of request.sources){
+      const ref=parseReference(reference);
+      if(ref.scheme!=='src'){available=false;break;}
+      const source=await ctx.deps.records.artifacts.source({id:admin.id,name:admin.name,role:admin.role},ref.sha256,{consumer:'function'});
+      if(!source||source.readTier==='retain_only'||source.bytes===null){available=false;break;}
+    }
+    if(!available)continue;
+    const submission=await submissionByDigest(ctx.deps.records.store,run.run,request.source);
+    if(!submission||!isObject(submission.body)||isVerbatimObject(submission))continue;
+    const action=await actionOfSubmission(ctx.deps.records.store,submission.digest);
+    const session=typeof action?.body.detail.session==='string'?action.body.detail.session:null;
+    if(session===null&&run.requirements.some(r=>r.accepted_producer==='independent_judgment'))continue;
+    const response=await submitResult(ctx,{id:runner.id,name:runner.name,role:runner.role},submission.body,{traceId:randomBytes(16).toString('hex'),sessionId:session},true);
+    if(response.result?.acceptance==='accepted'){
+      const result=await latestAccepted(ctx.deps.records.store,run.run);
+      if(result)await answerRequest(ctx,request.record,result.digest);
+    }
   }
 }

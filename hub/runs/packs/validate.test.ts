@@ -451,3 +451,7 @@ test('reason selectors remain typed causes rather than installed-interpreter cod
   const result=await accepted(requirements(value=>{value.requirements[0].error_handling.unshift({reason:'timeout',action:'repair',max_rounds:2});}));
   assert.ok(!result.pack.warnings.some(warning=>warning.rule==='requirements.code_unused'));
 });
+
+test('static fact layers without checks cannot be newly published',async()=>{
+  await refused(editJson(workflowPack(),'requirements.json',(json:Json)=>{const requirement=json.requirements.find((r:Json)=>r.accepted_producer==='fact');requirement.checks=[];}),'requirements.no_check');
+});

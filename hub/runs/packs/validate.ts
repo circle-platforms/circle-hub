@@ -352,6 +352,8 @@ async function validateWorkflow(c: Collector, directory: PackDirectory, policy: 
     const interpreterOf = new Map((checks?.checks ?? []).map((x) => [x.id, x.interpreter?.split('@')[0]]));
     const used = new Set<string>();
     for (const [i, r] of requirements.requirements.entries()) {
+      if(r.accepted_producer==='fact'&&r.layers.includes('static')&&r.checks.length===0)c.add(problem('requirements.no_check','requirements.json',`要求项 ${r.key} 声明静态事实却没有检查`,'给它安装检查后重新发布',{field:`/requirements/${i}/checks`}));
+      if(r.accepted_producer==='fact'&&r.layers.includes('dynamic')&&!r.observation)c.add(problem('requirements.no_observation','requirements.json',`要求项 ${r.key} 声明动态事实却没有观察合同`,'声明 observation 后重新发布',{field:`/requirements/${i}/observation`}));
       const seen = new Set<string>();
       r.checks.forEach((id, j) => {
         const field = `/requirements/${i}/checks/${j}`;
