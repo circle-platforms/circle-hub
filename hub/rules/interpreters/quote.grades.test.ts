@@ -40,12 +40,12 @@ describe('quote@1 over the graded source view', () => {
     assert.equal(bad[0].code, 'QUOTE_MISMATCH');
   });
 
-  it('a reference whose source is not an input of this run stays unknown', () => {
+  it('a reference whose source is not an input is refuted with a repair path', () => {
     const view = graded({}, () => 'not_bound');
     const out = run(view, { q: [{ t: '片段', r: FRAGMENT }] });
-    assert.equal(out[0].verdict, 'unknown');
-    assert.equal(out[0].reason, 'missing_input');
-    assert.match(out[0].statement, /不是这次运行的输入/);
+    assert.equal(out[0].verdict, 'refute');
+    assert.equal(out[0].code, 'QUOTE_MISMATCH');
+    assert.match(out[0].statement, /不是这次运行的输入.*改引.*输入/);
   });
 
   it('a selector that resolves to no fragment in a bound source is refuted as 片段不存在', () => {
