@@ -18,7 +18,7 @@ import { SandboxError, callPackFunction, runCheck, sourcesFrom, type CatalogView
 import { factClaim, judgmentClaim, rootDigest, statementOf, strongestRole } from './claims.ts';
 import { CHECK_PARALLELISM, type EngineContext } from './deps.ts';
 import { retryRead, type ReadFailureReason } from './retry-read.ts';
-import { createSubjectBuilder } from './subjects.ts';
+import { SubjectCopyError, createSubjectBuilder } from './subjects.ts';
 import { describe, fixOf } from './errors.ts';
 import { emptyEvidence, type ExactResult, type ItemEvidence } from './exact.ts';
 import { independenceOf, warrantIndependence, type AuthorOrigin, type ProducerOrigin } from './independence.ts';
@@ -100,6 +100,11 @@ function sandboxReason(error: SandboxError): Reason {
 
 /** The unknown outcome a failed subject builder gives, marked as a sandbox failure like runCheck's. */
 function builderFailure(check: CheckEntry, error: unknown): CheckOutcome {
+  if (error instanceof SubjectCopyError) return {
+    verdict: 'unknown', reason: 'check_error', tier: check.tier ?? 'advisory', grounds: [],
+    statement: `Hub 复制检查 ${check.id} 的被判对象数据失败；请 Hub 维护人恢复复制能力后重试`,
+    data: { phase: 'subject_copy', module: check.subject?.module ?? null },
+  };
   const sandbox = error instanceof SandboxError;
   const reason: Reason = sandbox ? sandboxReason(error) : 'check_error';
   return {

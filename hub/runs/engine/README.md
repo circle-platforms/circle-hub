@@ -397,8 +397,7 @@ of one run still return the existing receipt without another validation action.
 
 Each evaluation of one submission and locked pack version now creates a separate subject-builder scope for the whole run
 and a short-lived scope for each item. A scope keys by function identity and SHA-256 of the exact JSON input bytes. It
-shares successful construction and in-flight construction, gives each check an independent structured clone of that same
-JSON result, and drops failures so a later check can retry. It never shares across items, submissions, versions or changed
+shares successful construction and in-flight construction, gives each check an independent JSON.parse of the cached JSON text, and drops failures so a later check can retry. It never shares across items, submissions, versions or changed
 inputs, and never shares check outcomes. Item scopes are discarded when that item's checks finish. Sandbox isolation,
 limits, concurrency, MCP timeouts and existing acceptance assertions are unchanged.
 
@@ -441,3 +440,12 @@ A completed result still replays idempotently. The model-facing resolver keeps i
 Pending hub-unknown-model: explicit exit/request ownership and deadlines after retry exhaustion; automatic routing to a
 named administrator or pack author; top-level unread_sources and a storage location on not-accepted results that have no
 fact claims. This change adds no exit field, request contract, split, automatic re-evaluation or interpreter policy change.
+
+
+Subject-copy review: a successful build is serialized once as JSON text, and every check parses an independent value.
+The serializer is the same JSON.stringify used by the isolated function's result boundary; JSON.parse preserves deep
+JSON without structuredClone's lower recursion ceiling. Build failure alone evicts a cache entry. A host serialization
+or parse failure retains the successful build/text and is identified as subject_copy / Hub copy failure, never as
+FUNCTION_THREW. Tests exercise 4000 levels through real isolated builders and both item/run checks, plus an injected copy
+failure, independent mutation, retained launch count and byte-identical completed receipt replay. JSON-wire numeric zero
+is used in fixtures because a child's JSON serialization has already normalized negative zero before the parent sees it.
