@@ -550,6 +550,41 @@ describe('placement against the build’s command tree', () => {
     assert.ok(noHeader.entries.every((entry) => entry.data.form !== 'signature'), 'no signature outside a command header');
   });
 
+
+  it('never splits inside parameter syntax: slashes and commas inside \<…\>, \[…\], \\{…\\} keep the row one signature (closure findings 1 and 16)', () => {
+    // demo route static is a nested menu: menu demo > menu route > item static (the signature words must exist).
+    const tree = commandCatalog(xml('<commands><scope type="global"><menu name="demo"><menu name="pool"><item name="add" help_string="a"><arguments></arguments></item><item name="mode" help_string="m"><arguments></arguments></item></menu><menu name="route"><item name="static" help_string="s"><arguments></arguments></item></menu><item name="probe" help_string="p"><arguments></arguments></item></menu><menu name="ip"><item name="route" help_string="r"><arguments></arguments></item></menu><menu name="show"><item name="ip" help_string="i"><arguments></arguments></item></menu><menu name="interface"><item name="ethernet" help_string="e"><arguments></arguments></item></menu><menu name="acl"><item name="permit" help_string="pe"><arguments></arguments></item></menu></scope></commands>')).catalog;
+    // Under a command header: a slash inside the parameter keeps the definition.
+    for (const row of [
+      '| **demo route static** *\\<network/prefix\\>* | 静态路由 |',
+      '| **ip route** *\\<A.B.C.D/M\\>* | 静态路由 |',
+      '| **interface ethernet** *\\<slot/port\\>* | 接口 |',
+      '| **show ip** *\\[ip/mask\\]* | 显示路由 |',
+    ]) {
+      const result = produceManualEntries(markdown(`# 章\n\n## 配置命令\n\n| 命令 | 说明 |\n|---|---|\n${row}\n`), null, { catalog: tree });
+      const signatures = result.entries.filter((entry) => entry.data.form === 'signature');
+      assert.equal(signatures.length, 1, `${row}: ${JSON.stringify(result.entries.map((e) => [e.data.form, e.path]))}`);
+      const first = signatures[0]; assert.ok(first !== null && (first.path ?? '').startsWith('/commands/'), row);
+    }
+    // In any table: a comma inside the parameter keeps the definition.
+    for (const row of [
+      '| **demo acl permit** *\\<port\\>\\[,\\<port\\>\\]* | 放行 |',
+      '| **demo pool add** *\\<name,weight\\>* | 添加 |',
+      '| **demo pool mode** *\\{tcp,udp\\}* | 模式 |',
+    ]) {
+      const result = produceManualEntries(markdown(`# 章\n\n## 格式\n\n| 格式 | 说明 |\n|---|---|\n${row}\n`), null, { catalog: tree });
+      const signatures = result.entries.filter((entry) => entry.data.form === 'signature');
+      assert.equal(signatures.length, 1, `${row}: ${JSON.stringify(result.entries.map((e) => [e.data.form, e.path]))}`);
+    }
+    // A prose run holding more than connectives never joins two bold runs into one multi-command row.
+    const mention = produceManualEntries(markdown('# 章\n\n## 配置命令\n\n| 命令 | 说明 |\n|---|---|\n| **demo pool add** *\\<name\\>* | 添加成员，相关命令，**demo pool mode** |\n'), null, { catalog: tree });
+    const placed = mention.entries.filter((entry) => entry.data.form === 'signature');
+    assert.equal(placed.length, 1, `the mention row keeps its one definition: ${JSON.stringify(placed.map((e) => e.path))}`);
+    assert.equal(placed[0]!.path, '/commands/demo/pool/add');
+    const rowText = mention.entries.find((entry) => String(entry.statement).includes('相关命令'));
+    assert.ok(rowText !== undefined && (rowText.data.command_literals as string[]).includes('demo pool mode'), 'the mention stays a literal of the row text');
+  });
+
   it('drift follows the placement check for signatures: an extending signature is listed, a variant key never is, and [no] groups place like resolves (second review findings 11, 12, 14, 17, 18, 24)', () => {
     // A tree where demo pool is itself a complete command: **demo pool mode** is missing, and resolves() would
     // wrongly accept the 'demo pool' prefix. Drift must list demo pool mode.

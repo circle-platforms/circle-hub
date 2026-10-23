@@ -633,29 +633,112 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
    * names commands (命令/Command) keeps even one-word rows as signatures.
    */
   const isRowSignature = (anchor: Anchor, headerNamesCommands: boolean): boolean =>
-    headerNamesCommands || anchor.words.length >= 2 || anchor.params.length > 0 || anchor.variants !== null;
+    // In a command column every anchor shape counts (closure 19: 命令/command/commands as a word of the header cell).
+    // In every other column only a cell with parameter or group syntax is a signature (K02 R[3]): a bare bold run,
+    // one word or many, is a value, a parameter name or a term (round robin, enable, rr, VIP).
+    headerNamesCommands || anchor.params.length > 0 || anchor.variants !== null;
+
+  /** A bold cell is a value of the CURRENT command (closure finding 2): its words extend the current command's
+   * words by exactly the command's parameter names, or the cell is one enumerated alternative of the current
+   * signature's variant group. Such rows are value rows, kept in the remainder, never signatures. */
+/** The variant-group alternatives of an anchor as tails after its key words (null when it has none). */
+  const variantTailsOf = (anchor: Anchor): string[] | null => {
+    if (anchor.variants === null) return null;
+    const key = anchor.words.length;
+    const tails = anchor.variants.map((variant) => variant.slice(key).join(' ').toLowerCase()).filter((tail) => tail !== '');
+    return tails.length > 0 ? tails : null;
+  };
+
+  const valueOfCurrent = (cellAnchor: Anchor, currentWords: readonly string[] | null, variantTail: readonly string[] | null): boolean => {
+    if (currentWords === null) return false;
+    const lowered = currentWords.map((word) => word.toLowerCase());
+    if (cellAnchor.params.length > 0 && cellAnchor.words.length === lowered.length + cellAnchor.params.length
+      && cellAnchor.words.slice(0, lowered.length).every((word, k) => word.toLowerCase() === lowered[k])) {
+      const tail = cellAnchor.words.slice(lowered.length).map((word) => word.toLowerCase());
+      return tail.every((word) => cellAnchor.params.some((param) => param.name.toLowerCase() === word || param.name.toLowerCase().split(/[\s_-]+/u).includes(word)));
+    }
+    if (cellAnchor.params.length === 0 && variantTail !== null) {
+      const text = cellAnchor.words.join(' ').toLowerCase();
+      return variantTail.some((option) => option === text);
+    }
+    return false;
+  };
 
   /**
    * The signatures of one table cell: the whole cell is one signature, or a list of signatures joined by bare
    * connectives (与/和/及/或、顿号、逗号、斜线). A bold span inside prose is not a signature (a mention: it is recorded
    * in command_literals only).
    */
+  /**
+   * The bold runs of one cell with the PLAIN text between them. A bold run is a maximal `**…**` span; a between-run
+   * is read only outside parameter syntax: emphasis `*…*`, group brackets {}, [], <> and their contents are skipped,
+   * so a slash or comma inside a parameter never becomes a split point (closure findings 1 and 16).
+   */
+  const boldRuns = (cell: string): Array<{ bold: string; between: string }> => {
+    const out: Array<{ bold: string; between: string }> = [];
+    let at = 0;
+    let between = '';
+    let guard = 0;
+    while (at < cell.length && guard++ < 10000) {
+      const open = cell.indexOf('**', at);
+      if (open < 0) break;
+      // The text before this bold run: emphasis marks and group brackets (with their contents) are part of the
+      // signature's own syntax, so only the characters OUTSIDE them count as a plain between-run.
+      const pending = cell.slice(at, open);
+      let clean = '';
+      let scan = 0;
+      while (scan < pending.length) {
+        const ch = pending[scan]!;
+        if (ch === '*' || ch === '\\') { scan += ch === '\\' && pending[scan + 1] === '*' ? 2 : 1; continue; }
+        if (ch === '{' || ch === '[' || ch === '<') {
+          const close = ch === '{' ? '}' : ch === '[' ? ']' : '>';
+          const end = pending.indexOf(close, scan + 1);
+          scan = end < 0 ? pending.length : end + 1;
+          continue;
+        }
+        clean += ch;
+        scan += 1;
+      }
+      between += clean;
+      const close = cell.indexOf('**', open + 2);
+      if (close < 0) break;
+      // The parameter syntax after the bold head rides with it up to the next bold run's opening '**'. When another
+      // bold run follows, the text between the two runs is a between-run (checked for connectives), never part of
+      // this piece; when none follows, the rest of the cell is the signature's own parameter tail.
+      const nextOpen = cell.indexOf('**', close + 2);
+      if (nextOpen < 0) {
+        out.push({ bold: cell.slice(open + 2, close) + cell.slice(close + 2), between });
+        between = '';
+        at = cell.length;
+      } else {
+        out.push({ bold: cell.slice(open + 2, close), between });
+        between = cell.slice(close + 2, nextOpen);
+        at = nextOpen;
+      }
+    }
+    return out;
+  };
+
   const cellAnchors = (cell: string, headerNamesCommands: boolean): Anchor[] => {
     if (!cell.includes('**')) return [];
-    // The connective runs are CJK connective words and the comma and slash marks (ASCII and full width), so
-    // '**a**, **b**' and '**a**/**b**' split like the CJK forms. A run holding anything else is prose, not a list.
-    // Two bold runs glued by a slash split only under a header that names commands (finding 19's rule stays for
-    // every other table: a plain-character join is one value or term cell, never one glued command).
-        const parts = cell.split(new RegExp(`(${CJK.source}|[，,、]+${headerNamesCommands ? '|[/／]+' : ''})+`, 'u'));
+    // Split ONLY between two bold runs, and only when the plain text between them is nothing but connectives
+    // (与/和/及/或、顿号、逗号；斜线只在命令列，closure 33b62b43). Everything inside emphasis, {} [] <> groups stays
+    // part of one signature, and a between-run holding more than connectives makes the whole cell prose: its bold
+    // span is a mention, recorded in command_literals only.
+    const runs = boldRuns(cell);
+    if (runs.length === 0) return [];
     const out: Anchor[] = [];
-    for (let k = 0; k < parts.length; k++) {
-      if (k % 2 === 1) {
-        if (!/^[与和及或、,，/／\s]*$/.test(parts[k])) return [];
-        continue;
+    for (const [k, run] of runs.entries()) {
+      if (k > 0) {
+        // Only a purely connective plain run continues the list; a slash run does so only in a command column.
+        const connective = /^[与和及或、,，\s]+$/.test(run.between) || (headerNamesCommands && /^[/／\s]+$/.test(run.between));
+        if (!connective) {
+          // A prose run ENDS the list: the bold runs before it (a list of signatures) stay, the rest of the cell is
+          // the row's prose — its bold span is a mention of the LAST listed command, never a separate signature.
+          break;
+        }
       }
-      const piece = parts[k].trim();
-      if (piece === '') continue;
-      const anchor = parseAnchor(piece, heads);
+      const anchor = parseAnchor(`**${run.bold}**`, heads);
       if (anchor === null) return [];
       if (!isRowSignature(anchor, headerNamesCommands)) return [];
       out.push(anchor);
@@ -692,6 +775,7 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
   // a new section or a paragraph written as a signature that does not parse.
   let section: number | null = null;
   let current: { path: string; words: string[] } | null = null;
+  let currentVariantTails: string[] | null = null;
   for (const value of asArray(model.blocks)) {
     if (!isRecord(value) || typeof value.kind !== 'string' || !Number.isInteger(value.section) || typeof value.text !== 'string' || typeof value.selector !== 'string') {
       invalid++;
@@ -716,6 +800,7 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
       entry.applicability = toApplicability(conditionsOf(text));
       entries.push(entry);
       current = { path: placed, words: anchor.words };
+      currentVariantTails = variantTailsOf(anchor);
       continue;
     }
     // A command table is split by row, decided by the manual alone: every row that carries a signature becomes its own
@@ -729,13 +814,22 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
       if (table !== null) {
         const ranges = lineRanges(block.text);
         const header = splitRowOf(table.lines[0] ?? '');
-        const headerNamesCommands = header !== null && header.some((cell) => /^(命令|command)$/i.test(cell.trim()));
+        // The command-naming test is PER COLUMN (closure findings 2 and 19): a cell counts as a signature cell only
+        // when its own column header names commands (命令/command/commands as a word of the header cell); bold words
+        // in every other column are values, parameters and terms (K02 R[3]).
+        const commandColumn = (cellIndex: number): boolean => {
+          if (header === null) return false;
+          const name = header[cellIndex] ?? '';
+          return /(?:^|[^A-Za-z])(?:命令|commands?)(?:$|[^A-Za-z])/i.test(name) || /^(?:命令|commands?)$/i.test(name.trim());
+        };
         const split: ProducedEntry[] = [];
         const remainder: number[] = [];
         const valueLiterals = new Set<string>();
         let signatureRows = 0;
         for (const row of table.rows) {
-          const found = row.cells.flatMap((cell, cellIndex) => cellAnchors(cell, headerNamesCommands).map((cellAnchor) => ({ cell: cellIndex, anchor: cellAnchor })));
+          const found = row.cells.flatMap((cell, cellIndex) => cellAnchors(cell, commandColumn(cellIndex))
+            .filter((cellAnchor) => !valueOfCurrent(cellAnchor, current?.words ?? null, currentVariantTails))
+            .map((cellAnchor) => ({ cell: cellIndex, anchor: cellAnchor })));
           if (found.length === 0) {
             // A bare bold word in a cell is a value, parameter name or term: the row stays in the remainder and the
             // word is a command literal only (a mention, research 2 rule 4), never a signature.
