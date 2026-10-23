@@ -1497,7 +1497,8 @@ describe('resource read', () => {
     const absent = await admin.run(['resource', 'read', 'res_00000000000000000000000000', 'mindmap', DOCUMENT]); assert.equal(absent.code, 1);
     const user = await userWithToken(admin, '冒烟普通用户'); assert.equal((await admin.run(['resource', 'read', id, 'mindmap', DOCUMENT], { [OPERATOR_TOKEN_VARIABLE]: user })).code, 1);
     const missing = await admin.run(['resource', 'read', id, 'mindmap', 'synthetic-missing-document']);
-    assert.equal(missing.code, 1); assert.match(missing.text, /失败（[A-Z_]+）/); assert.doesNotMatch(missing.text, /synthetic-missing-document|404|reason|meta/);
+    // A permitted digest can contain 404: verify the complete declared output instead of scanning digest digits as body text.
+    assert.equal(missing.code, 1); assert.match(missing.text, /^demo-agile@1\.0\.0\/mindmap：失败（[A-Z_]+）\n读清单 [0-9a-f]{64}$/);
     admin.stdin.push(WRONG_PASSWORD); await expectOk(admin, ['secret', 'set', id, 'password']);
     const login = await admin.run(['resource', 'read', id, 'mindmap', DOCUMENT]);
     assert.equal(login.code, 1); assert.match(login.text, /失败（[A-Z_]+）/); assert.ok(!login.text.includes(DOCUMENT));
