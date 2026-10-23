@@ -6,6 +6,7 @@ import { at, type ExecutorDefinition } from './definition.ts';
 import type { JobBinding, Journal } from './journal.ts';
 import { canRetryRead } from './read-policy.ts';
 import { RpcClient, ToolReplyError, type Exchange } from './transport.ts';
+import {PrecheckFactError} from './precheck-failure.ts';
 export type BuildKnowledge = Pick<KnowledgePort,'builds'|'resolveBuild'> & Partial<Pick<KnowledgePort,'rootInfo'>>;
 function addresses(values: unknown[]): string[] {
   return [...new Set(values.map(value=>{
@@ -17,20 +18,22 @@ function addresses(values: unknown[]): string[] {
 }
 export async function assessProbes(records: RecordsKit, knowledge: BuildKnowledge|undefined,binding:JobBinding,d:ExecutorDefinition,client:RpcClient,context:Record<string,unknown>,journal:Journal,sleep:(ms:number)=>Promise<void>):Promise<boolean> {
   const spec=d.probes!; const owner=await records.principals.get(binding.user);
-  if(!owner || !d.manifest_sha256)throw new Error('缺少探测主体或绑定清单；请补齐预订和清单');
-  const source=await records.artifacts.source(owner,d.manifest_sha256,{consumer:'function'});
-  if(!source?.bytes || sha256Hex(source.bytes)!==d.manifest_sha256)throw new Error('绑定清单字节不可读；请恢复清单后重跑预检');
-  const manifest=parseStrictJson(new TextDecoder('utf-8',{fatal:true}).decode(source.bytes));
+  if(!owner || owner.disabled || !d.manifest_sha256)throw new PrecheckFactError('缺少有效探测主体或绑定清单','管理员恢复预订运行的有效主体，核对清单来源及摘要绑定后再采证');
+  let source;
+  try{source=await records.artifacts.source(owner,d.manifest_sha256,{consumer:'function'});}catch{throw new PrecheckFactError('绑定清单的读取前提未成立','管理员核对该清单的可见性、凭据扫描及受理状态，恢复允许函数读取的清单后再采证');}
+  if(!source?.bytes || sha256Hex(source.bytes)!==d.manifest_sha256)throw new PrecheckFactError('绑定清单字节不可读或完整性未通过','管理员按绑定摘要恢复清单原件，核对可见性与受理状态并验证摘要后再采证');
+  let manifest:unknown;
+  try{manifest=parseStrictJson(new TextDecoder('utf-8',{fatal:true}).decode(source.bytes));}catch{throw new PrecheckFactError('绑定清单不是有效的 UTF-8 JSON','管理员读取受限清单原件，修复清单格式并重新发布正确摘要后再采证');}
   const devices=spec.devices!==undefined?at(manifest,spec.devices):undefined;
   const selected=spec.seats.map(seat=>at(manifest,seat.manifest.device));
-  if(!Array.isArray(devices) || !devices.length || devices.length!==selected.length || new Set(selected).size!==devices.length || devices.some(device=>!selected.includes(device)))throw new Error('缺少覆盖清单全部设备的一一对应探测座位；管理员核对设备集合指针和每台设备的探测声明');
-  if(typeof context.build!=='string')throw new Error('缺少锁定构建；请给预订运行或登记预检构建');
+  if(!Array.isArray(devices) || !devices.length || devices.length!==selected.length || new Set(selected).size!==devices.length || devices.some(device=>!selected.includes(device)))throw new PrecheckFactError('缺少覆盖清单全部设备的一一对应探测座位','管理员核对设备集合指针、清单全部设备和各座位声明，补齐一一对应关系后再采证');
+  if(typeof context.build!=='string')throw new PrecheckFactError('缺少锁定构建','管理员提供含锁定构建的预订运行，或在预检上下文登记已核实的构建身份后再采证');
   const names=new Set([context.build]);
   if(knowledge) {
-    if(typeof context.product!=='string')throw new Error('缺少产品绑定，不能核对知识库构建别名；请绑定产品后重跑');
+    if(typeof context.product!=='string')throw new PrecheckFactError('缺少产品绑定，不能核对知识库构建别名','管理员核对预订所属产品并绑定产品身份后再采证');
     const current=await knowledge.resolveBuild(context.product,context.build);
     const base=typeof context.build_base==='string' ? context.build_base : current?.base;
-    if(!base)throw new Error('知识库没有锁定构建的身份记录；同步构建名字与基础名后重跑预检');
+    if(!base)throw new PrecheckFactError('知识库没有锁定构建的身份记录','管理员核对构建出处并同步构建名字与基础名的身份记录后再采证');
     names.add(base);
     if(current?.base===base)names.add(current.name);
     for(const alias of await knowledge.builds(context.product))if(alias.base===base)names.add(alias.name);
@@ -54,7 +57,7 @@ export async function assessProbes(records: RecordsKit, knowledge: BuildKnowledg
     const refs=response?[response.source]:failedSource?[failedSource]:[];
     const artifact=await records.artifacts.ingest({bytes:canonicalBytes({seat:seat.seat,check:key,matched,actual,expected,reason:matched?null:reason}),mediaType:'application/json',origin:{generated:{generator:'dispatch@1',inputs:[`src:${d.manifest_sha256}`,...refs]}},author:{user:null},provenanceType:'projected',visibility:{readers:[binding.user],admins:true,packs:[],shareable:false}});
     assessments.push(`src:${artifact.body.sha256}`);
-    await journal.append(binding,'device_probe','validate','completed',{seat:seat.seat,check:key,matched,lease_digest:sha256Hex(canonicalBytes([context.lease_id,context.lease_token])),...(!matched?{missing_fact:`座位 ${seat.seat} 的 ${key}：${reason}`,next_action:'读取受限核对原件，修正环境或声明后重跑预检'}:{})},[`src:${artifact.body.sha256}`,...refs]);
+    await journal.append(binding,'device_probe','validate','completed',{seat:seat.seat,check:key,matched,lease_digest:sha256Hex(canonicalBytes([context.lease_id,context.lease_token])),...(!matched?{missing_fact:`座位 ${seat.seat} 的 ${key}：${reason}`,next_action:key==='version'?'管理员读取该座位受限原件，按锁定构建及已核实别名核对设备版本，恢复正确构建或修正提取声明后再采证':'管理员读取该座位受限原件，逐一核对清单接口全集与实际接口，恢复缺少的接口事实或修正提取声明后再采证'}:{})},[`src:${artifact.body.sha256}`,...refs]);
     verified=verified && matched;
     if(refused)break probeLoop;
   }

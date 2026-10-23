@@ -28,6 +28,7 @@ function output(s: JobCommandSession, state: JobStatus): void {
   if(state.marks?.length)s.out(`效果标记：${state.marks.map(mark=>labelOf('effect_mark',mark)).join('、')}`);
   if(state.disposition)s.out(`处置：${labelOf('disposition',state.disposition)}；决定人 ${state.decided_by ?? '未记录'}；时间 ${state.decided_at ?? '未记录'}`);
   for(const condition of state.failed_conditions ?? [])s.out(`未满足条件：${JSON.stringify(condition.pointer)}；运算 ${condition.operator}`);
+  for(const check of state.failed_checks ?? [])s.out(`未满足核对：步骤 ${JSON.stringify(check.step)}${check.seat!==undefined?`；座位 ${JSON.stringify(check.seat)}`:''}${check.check!==undefined?`；检查 ${JSON.stringify(check.check)}`:''}；缺事实：${check.missing_fact}；下一步：${check.next_action}`);
   if (state.reason) s.out(`说明：${state.reason}`);
   if (state.missing_fact) s.out(`缺事实：${state.missing_fact}`);
   if (state.result) s.out(`结果引用 ${state.result}`);
