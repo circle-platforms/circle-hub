@@ -217,6 +217,15 @@ export function samples(): Entry[] {
       { sources: { [FIX_REF]: FIX_TEXT } },
     ),
 
+    sample('positive', 'sources_allowed', 'grounded_sources', '只引用本条缺陷的配置修复字段', {
+      item: BUG_ID, allowed_quote_sources: { defect: 'b'.repeat(64), manual: 'c'.repeat(64), fix_field: 'fix' },
+      quotes: [{ reference: `src:${'b'.repeat(64)}/json@1/p/fields/fix`, text: '合成修复说明' }],
+    }, [{ verdict: 'support', item: BUG_ID, tier: 'blocking' }]),
+    sample('negative', 'sources_forbidden', 'grounded_sources', '缺陷步骤字段不是修复说明', {
+      item: BUG_ID, allowed_quote_sources: { defect: 'b'.repeat(64), manual: 'c'.repeat(64), fix_field: 'fix' },
+      quotes: [{ reference: `src:${'b'.repeat(64)}/json@1/p/fields/steps`, text: '合成步骤' }],
+    }, [{ verdict: 'refute', code: 'defect-to-case.quote_source_forbidden', item: BUG_ID, tier: 'blocking' }]),
+
     // 5. grounded_reading
     sample(
       'positive',

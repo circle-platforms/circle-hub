@@ -20,6 +20,16 @@
       ],
       "required": true,
       "many": false
+    },
+    {
+      "slot": "manual",
+      "role": "expected",
+      "description": "运行版本线的手册 manual:cli:<版本线>，投影冻结其原件身份供引文来源核验",
+      "accepts": [
+        "manual:cli"
+      ],
+      "required": true,
+      "many": false
     }
   ],
   "parameters": [

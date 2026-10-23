@@ -35,6 +35,7 @@ describe('defect-to-case end to end run', { skip }, () => {
         product: 'apv',
         build: 'Rel_APV_10_6_1_57',
         inputs: {
+          manual: { external: 'manual:cli:10.6.1' },
           defects: [
             { external: 'plm:bug:74001' },
             { external: 'plm:bug:71010' },
@@ -170,7 +171,7 @@ describe('defect-to-case end to end run', { skip }, () => {
   it('blocks a paraphrased expectation and consumes a repair round when it is resubmitted', async () => {
     const started = await hub.service.startRun(hub.alice, {
       pack: 'defect-to-case', product: 'apv', build: 'Rel_APV_10_6_1_57',
-      inputs: { defects: [{ external: 'plm:bug:74001' }], indexed_cases: { external: 'knowledge:index:apv:Rel_APV_10_6_1_57?kind=case&key=commands&only=show%20health%20detail&fields=commands,document,node,title,negative' } },
+      inputs: { manual: { external: 'manual:cli:10.6.1' }, defects: [{ external: 'plm:bug:74001' }], indexed_cases: { external: 'knowledge:index:apv:Rel_APV_10_6_1_57?kind=case&key=commands&only=show%20health%20detail&fields=commands,document,node,title,negative' } },
     }, call());
     assert.equal(started.call_result, 'ok', JSON.stringify(started.errors));
     const run = started.run!;
@@ -202,6 +203,7 @@ describe('defect-to-case end to end run', { skip }, () => {
         product: 'apv',
         build: 'Rel_APV_10_6_1_57',
         inputs: {
+          manual: { external: 'manual:cli:10.6.1' },
           defects: [{ external: 'plm:bug:74001' }],
           indexed_cases: {
             external: 'knowledge:index:apv:Rel_APV_10_6_1_57?kind=case&key=commands&only=show%20health%20detail&fields=commands,document,node,title,negative',

@@ -44,6 +44,22 @@
       "basis": "要求项 grounded：每个期望结果带有逐字引文，引文必须逐字出现在缺陷修复说明或手册中"
     },
     {
+      "id": "grounded_sources",
+      "title": "引文来源范围核验",
+      "function": {
+        "module": "functions/checks.ts",
+        "export": "checkQuoteSources"
+      },
+      "applies": "item",
+      "subject": {
+        "module": "functions/subjects.ts",
+        "export": "quoteSubject"
+      },
+      "judges": "artifact_under_verification",
+      "tier": "blocking",
+      "basis": "要求项 grounded：引文只许本条缺陷由 settings.bug_fix_field 声明的修复字段，或 manual 输入绑定的同版本线手册，按冻结原件身份核验"
+    },
+    {
       "id": "grounded_reading",
       "title": "期望结果文字逐字核对",
       "function": { "module": "functions/checks.ts", "export": "checkGroundedReading" },

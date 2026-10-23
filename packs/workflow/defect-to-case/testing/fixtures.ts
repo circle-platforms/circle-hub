@@ -10,6 +10,7 @@ export const SYNTHETIC_BUG_74001 = {
   id: '74001',
   '74001': true,
   kind: 'bug',
+  fix_field: 'fix',
   title: 'SLB健康检查间隔无法保存',
   status: 'closed',
   label: 'SLB健康检查间隔无法保存',
@@ -32,6 +33,7 @@ export const SYNTHETIC_BUG_71010_UNCHECKABLE = {
   id: '71010',
   '71010': true,
   kind: 'bug',
+  fix_field: 'fix',
   title: '底层组件内存碎片整理优化',
   status: 'closed',
   label: '底层组件内存碎片整理优化',
@@ -210,3 +212,9 @@ export function makeDuplicateDraft(options: { ref?: string } = {}): DraftCase {
     tags: ['Functional'],
   };
 }
+
+/** A version-line manual bound before projection, matching the real input contract. */
+export const SYNTHETIC_BOUND_MANUAL = {
+  slot: 'manual', external: 'manual:cli:10.6.1', sha256: 'c'.repeat(64),
+  media_type: 'text/markdown', parser: 'markdown@1', model: {}, meta: null,
+};

@@ -107,6 +107,7 @@ export function quoteSubject(input: unknown): unknown {
   return {
     item: itemId,
     quotes,
+    allowed_quote_sources: isRecord(record.item) && isRecord(record.item.fields) ? record.item.fields.allowed_quote_sources : undefined,
   };
 }
 

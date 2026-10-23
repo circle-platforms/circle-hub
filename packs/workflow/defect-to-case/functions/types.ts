@@ -8,6 +8,7 @@ export const CODES = {
   DUPLICATE_DRAFT: `${PACK}.duplicate_draft`,
   NEGATIVE_ACCEPTED: `${PACK}.negative_accepted`,
   UNEXPECTED_REFUTATION: `${PACK}.unexpected_refutation`,
+  QUOTE_SOURCE_FORBIDDEN: `${PACK}.quote_source_forbidden`,
   QUOTE_MISSING: `${PACK}.quote_missing`,
   EXPECT_NOT_IN_QUOTE: `${PACK}.expect_not_in_quote`,
   DUPLICATE_CASE: `${PACK}.duplicate_case`,

@@ -410,6 +410,31 @@ export function checkGroundedReading(input: unknown): CheckOutcome[] {
   return outcomes.length ? outcomes : [{ verdict: 'support', statement: '所有期望结果文字均为各自引文的非空逐字片段（只忽略空白差异）', grounds: [], tier: 'blocking', ...own }];
 }
 
+/** Source identity is frozen by projection, never accepted from submitted draft data. */
+export function checkQuoteSources(input: unknown): CheckOutcome[] {
+  const record = isRecord(input) ? input : {};
+  const subject = isRecord(record.subject) ? record.subject : record;
+  const own = typeof subject.item === 'string' ? { item: subject.item } : {};
+  const allowed = isRecord(subject.allowed_quote_sources) ? subject.allowed_quote_sources : {};
+  const quotes = Array.isArray(subject.quotes) ? subject.quotes : [];
+  const out: CheckOutcome[] = [];
+  const fix = '修正：引用本条缺陷绑定原件的 src:<摘要>/json@1/p/fields/<fix_field>，或 inputs.manual 绑定的同版本线手册 src 片段；tree:/rec: 无法证明来源身份，改引对应原件的 src 片段';
+  for (const [index, value] of quotes.entries()) {
+    const reference = isRecord(value) && typeof value.reference === 'string' ? value.reference : '';
+    let accepted = false;
+    const match = /^src:([0-9a-f]{64})(?:\/([^/]+)\/(.+?)(?::[0-9]+-[0-9]+)?)?$/.exec(reference);
+    if (match && match[1] === allowed.manual) accepted = true;
+    if (match && match[1] === allowed.defect && match[2] === 'json@1') {
+      try {
+        const parts = match[3].split('/').map((part) => decodeURIComponent(part));
+        accepted = parts.length === 3 && parts[0] === 'p' && parts[1] === 'fields' && parts[2] === allowed.fix_field;
+      } catch { accepted = false; }
+    }
+    if (!accepted) out.push({ verdict: 'refute', code: CODES.QUOTE_SOURCE_FORBIDDEN, statement: `第 ${index + 1} 条引文没有指向本条缺陷的配置修复字段或绑定的同版本线手册。${fix}`, grounds: [], tier: 'blocking', pointer: `/quotes/${index}/reference`, ...own });
+  }
+  return out.length ? out : [{ verdict: 'support', statement: '各引文来源均为本条缺陷的配置修复说明字段或绑定的同版本线手册', grounds: [], tier: 'blocking', ...own }];
+}
+
 /** Check 4: checkDuplicate - verifies drafts do not duplicate indexed cases */
 export function checkDuplicate(input: unknown): CheckOutcome[] {
   const record = isRecord(input) ? input : {};

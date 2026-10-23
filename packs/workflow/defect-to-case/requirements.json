@@ -50,16 +50,17 @@
     {
       "key": "grounded",
       "name": "期望结果依据",
-      "description": "每个期望结果带有逐字引文，引自缺陷修复说明（plm:bug 记录的 src: 或 rec: 引用）或锁定构建的手册段落（tree: 或 src: 引用）；引用未解析、缺少引文或引文不符为违规；期望结果文字必须是各自引文的非空逐字片段（只忽略空白差异），改写为阻断违规，退回修复，最多两轮",
+      "description": "每个期望结果带有逐字引文，引自本条缺陷修复说明（PLM 资源 settings.bug_fix_field 经 content.fix_field 给出的字段，src: 原件的 json@1/p/fields/<字段>）或 manual 槽绑定的同版本线手册 src: 片段；tree:/rec: 须改引对应原件的 src: 片段；引用未解析、缺少引文或引文不符为违规；期望结果文字必须是各自引文的非空逐字片段（只忽略空白差异），改写为阻断违规，退回修复，最多两轮",
       "target": "item",
       "required": true,
       "done_rule": "bookkeeping",
       "layers": ["static"],
       "accepted_producer": "fact",
-      "checks": ["grounded_quotes", "grounded_reading"],
+      "checks": ["grounded_quotes", "grounded_sources", "grounded_reading"],
       "error_handling": [
         { "code": "QUOTE_MISMATCH", "action": "repair", "max_rounds": 2 },
         { "code": "REFERENCE_UNRESOLVED", "action": "repair", "max_rounds": 2 },
+        { "code": "defect-to-case.quote_source_forbidden", "action": "repair", "max_rounds": 2 },
         { "code": "defect-to-case.quote_missing", "action": "repair", "max_rounds": 2 },
         { "code": "defect-to-case.expect_not_in_quote", "action": "repair", "max_rounds": 2 }
       ]
