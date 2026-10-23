@@ -170,3 +170,23 @@ Model 10 owns the rules. `keep_unknown` stays the compatibility disposition code
 (source: the model owner, 2026-10-24). The label does not implement scheduling: expiry, reconciliation and request creation
 remain the consuming engine's work. Exit actions come from generated `exit_action`, including automatic reevaluation;
 `keep_unknown` is not an exit action.
+
+### Recovery fields (task item 3; input and history boundaries)
+
+`CheckOutcome` with unknown requires top-level `missing` and `reason`; `data.missing` is not an alias. `exit` is optional
+there: a package need not know the runner or publisher account. The Hub resolves the cause and binds its exit before
+writing a new transitional `LayerResult`. New unchecked, incomplete, not_run and no_verdict layers require `missing` plus
+`exit`. `gaps` retains additional independent causes with their own facts and exits. It supplements the primary cause.
+
+`UnknownExit` uses generated `exit_action` and request_kind. Automatic actions have `audience: {hub:true}`; requests have a
+named `{user: <Hub account id>}` or `{external: {mapping: <rec reference>, identity: <mapped identity>}}`, request_kind and
+an absolute ISO due time. Roles such as “runner” or “admin” are not named recipients. The engine must verify mapping,
+visibility and scheduling; the schema does not perform effects or authorize a recipient. A request kind is forbidden on
+automatic actions. Dates are validated structurally, never against wall time when reading history.
+
+`ValidationResult` is the new-write boundary. `StoredValidationResult` / `readStoredValidationResult` are read-only legacy
+entry points: the latter returns `{result, notices}` with paths and “出口未写” / “缺失事实未写”, without backfilling either
+field in the record. Consumers must switch history rendering to this reader; no historical records are rewritten here.
+The new conditional requirements are also emitted in JSON Schema, not only Zod refinements. The generator's full-snapshot
+symlink test now sizes its capture buffer from the actual serialized expected snapshot; no production or timeout limit is
+changed. hub-unknown-exits must derive actions/create requests, preserve gaps, and use the strict writer after binding exits.

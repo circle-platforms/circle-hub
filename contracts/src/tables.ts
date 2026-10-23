@@ -11,6 +11,7 @@
 // "Needs from other packages".
 import { z } from 'zod';
 import { CheckTierSchema, MeasureSchema, ReasonSchema, VerdictSchema } from '../generated/vocabulary.ts';
+import {MissingFact,UnknownExit,recoveryCondition} from './validation.ts';
 import { ReferenceUri } from './reference.ts';
 
 /** Limits of the pattern@1 samples, so validating a table stays cheap (the matcher also caps its work on them). */
@@ -409,6 +410,8 @@ export type QuoteTable = z.infer<typeof QuoteTable>;
 
 export const CheckOutcome = z
   .strictObject({
+    missing:MissingFact.optional().describe('Required for unknown; the Hub must not guess it from statement or data.missing'),
+    exit:UnknownExit.optional().describe('An optional fully bound exit intent; the Hub resolves a missing exit from the cause before writing a layer result'),
     // Checks support, refute or stay unknown; only judges may abstain (V01).
     verdict: VerdictSchema.exclude(['abstain']),
     code: z.string().min(1).optional().describe('Violation code when refuted: core.*, a protocol code, or a pack code under the pack name'),
@@ -420,7 +423,8 @@ export const CheckOutcome = z
     pointer: JsonPointer.optional().describe('Location inside the subject'),
     data: z.record(z.string(), z.unknown()).optional().describe('Machine-readable parts of the statement'),
   })
-  .meta({ title: 'check-outcome@1', description: 'One outcome of a core interpreter or a pack check function (V01)' });
+  .superRefine((outcome,ctx)=>{if(outcome.verdict==='unknown'){if(outcome.missing===undefined)ctx.addIssue({code:'custom',path:['missing'],message:'an unknown check outcome names its missing fact'});if(outcome.reason===undefined)ctx.addIssue({code:'custom',path:['reason'],message:'an unknown check outcome names its reason'});}})
+  .meta({ ...recoveryCondition('verdict',['unknown'],['missing','reason']), title: 'check-outcome@1', description: 'One outcome of a core interpreter or a pack check function (V01)' });
 export type CheckOutcome = z.infer<typeof CheckOutcome>;
 
 /** Every table kind by its interpreter id. */

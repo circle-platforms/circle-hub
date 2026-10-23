@@ -69,6 +69,8 @@ export const submission = {
   notes: '合成样例',
 };
 
+export const RECOVERY = {missing:'合成的待补工作',exit:{action:'request',request_kind:'repair',audience:{user:USER},due:'2026-11-01T12:00:00.000Z'}} as const;
+
 const delivered = {
   item: 'doc-1:n7',
   label: '端口越界',
@@ -97,7 +99,7 @@ const carried = {
   carried_over: `rec:${H3}#/partitions/delivered/0`,
   requirements: [
     { requirement: 'structure', layers: [{ layer: 'static', terminal: 'pass' }], status: 'satisfied', claims: [] },
-    { requirement: 'catalog', layers: [{ layer: 'static', terminal: 'unchecked', reason: 'no_check' }], status: 'pending', claims: [] },
+    { requirement: 'catalog', layers: [{ layer: 'static', terminal: 'unchecked', reason: 'no_check', ...RECOVERY,missing:'包中未安装的合成检查',exit:{...RECOVERY.exit,audience:{user:ADMIN}} }], status: 'pending', claims: [] },
   ],
 };
 const skipped = {
@@ -105,7 +107,7 @@ const skipped = {
   label: '已废弃',
   location: `src:${H2}/mindmap@1/n8`,
   reason: 'declared_skip',
-  requirements: [{ requirement: 'structure', layers: [{ layer: 'static', terminal: 'incomplete', reason: 'declared_skip' }], status: 'pending', claims: [] }],
+  requirements: [{ requirement: 'structure', layers: [{ layer: 'static', terminal: 'incomplete', reason: 'declared_skip', ...RECOVERY,missing:'被跳过条目的合成提交' }], status: 'pending', claims: [] }],
 };
 
 export const accepted = {
