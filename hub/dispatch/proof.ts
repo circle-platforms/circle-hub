@@ -22,6 +22,7 @@ export function lockedBuildBase(run:RunDetail['run']):string|undefined {
   return bases.values().next().value;
 }
 export async function verifyInput(by: Principal, id: string, d: ExecutorDefinition, records: RecordsKit, runs: VerificationPort, workflows: Pick<WorkflowStore, 'byDigest'>, now: Date): Promise<VerifiedInput> {
+  if(!d.proof.warrant_id)throw new InputVerificationError('缺 proof.warrant_id，须由管理员补齐指定核验函数，不推断或挑选其他函数');
   const detail = await runs.getRun(by, id);
   if (!detail?.run.runner || detail.run.pack.split('@')[0] !== d.proof.package || detail.latest?.result.acceptance !== 'accepted') throw new InputVerificationError('派发前提未满足：要求指定包的最近受理核验运行');
   const workflow = await workflows.byDigest(detail.run.pack_digest);

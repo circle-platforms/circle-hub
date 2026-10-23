@@ -55,7 +55,7 @@ export const ExecutorDefinition = z.strictObject({
   conditions,
   capture_pointers: z.array(pointer).max(100).default([]),
   precheck_reads: z.array(call.extend({ conditions, capture_pointers: z.array(pointer).max(100).default([]) })).max(20).default([]),
-  proof: z.strictObject({ package: z.string().regex(/^[a-z][a-z0-9-]{0,99}$/), manifest_sha256: pointer, requirement: z.string().min(1), warrant_id: z.string().min(1).max(300), slot: z.string().min(1).max(100), plan_run: pointer, sha256: pointer, items: pointer, target: pointer, build: pointer, generator: pointer }),
+  proof: z.strictObject({ package: z.string().regex(/^[a-z][a-z0-9-]{0,99}$/), manifest_sha256: pointer, requirement: z.string().min(1), warrant_id: z.string().min(1).max(300).nullable().default(null), slot: z.string().min(1).max(100), plan_run: pointer, sha256: pointer, items: pointer, target: pointer, build: pointer, generator: pointer }),
 }).superRefine((d, ctx) => {
   const u = new URL(d.endpoint); const host = u.hostname.replace(/^\[|\]$/g, '');
   const loopback = host === '::1' || (isIP(host) === 4 && host.startsWith('127.'));
@@ -136,6 +136,7 @@ function countPayloadBindings(value: unknown): number {
 
 export function registrationMissing(d: ExecutorDefinition): string[] {
   const missing: string[] = [];
+  if (!d.proof.warrant_id) missing.push('proof.warrant_id');
   if (!d.manifest_sha256) missing.push('manifest_sha256');
   if (!d.resources.length) missing.push('resources');
   if (!d.conditions.length) missing.push('conditions');

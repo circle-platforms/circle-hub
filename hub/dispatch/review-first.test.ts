@@ -133,3 +133,15 @@ test('R13 the newest accepted verification is reread and its current record auth
   const intent=(await c.service.journal.events(state.job)).find(e=>e.body.detail.phase==='intent')!;
   assert.equal(intent.body.detail.verification_result,newer);assert.ok(intent.body.inputs.includes(`rec:${newer}`));
 });
+
+test('R14 legacy definitions remain readable and repairable but cannot dispatch without a named verifier',async t=>{
+  const c=await setup();t.after(()=>c.close());const {canonicalBytes}=await import('../records/api.ts');
+  const old=structuredClone(c.executor.definition) as any;delete old.proof.warrant_id;
+  const bytes=canonicalBytes(old);const stored=await c.kit.objects.put(bytes,'application/json');
+  await c.kit.authorizations.configureResource(c.admin,`executor.${c.executor.id}`,stored.sha256);
+  const entries=await c.registry.list(c.admin);assert.equal(entries.length,1);
+  await assert.rejects(c.service.dispatch(c.admin,c.run,c.executor.id),/warrant_id/);assert.equal(c.calls.length,0);
+  await c.registry.disable(c.admin,c.executor.id);
+  await c.registry.update(c.admin,c.executor.id,{...old,proof:{...old.proof,warrant_id:'synthetic.verify@1'}});
+  assert.deepEqual(await c.kit.objects.get(stored.sha256),bytes);
+});
