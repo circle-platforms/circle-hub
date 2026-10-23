@@ -4,7 +4,7 @@
 // (C07), the diffs of two roots (paths, and entries of given kinds) and the provenance of an entry. Compositions are read
 // through CompositionView, whether they are one record or parts.
 import { createHash } from 'node:crypto';
-import { EntryKindSchema, type ChangeKind, type EntryKind, type ValidityStatus } from '../../contracts/generated/vocabulary.ts';
+import { EntryKindSchema, ValidityStatusSchema, type ChangeKind, type EntryKind, type ValidityStatus } from '../../contracts/generated/vocabulary.ts';
 import type { CompositionRow, RootCatalog, TreeNodeBody } from '../../contracts/src/knowledge.ts';
 import type { Applicability } from '../../contracts/src/product.ts';
 import { TreePath } from '../../contracts/src/reference.ts';
@@ -437,8 +437,9 @@ export class TreeReading {
       }
       return hit;
     };
-    type Condition = 'rule_withdrawn' | 'cited_fragment_changed' | 'contradicted';
-    const ORDER: readonly Condition[] = ['rule_withdrawn', 'cited_fragment_changed', 'contradicted'];
+    const CONDITIONS = ValidityStatusSchema.extract(['rule_withdrawn', 'cited_fragment_changed', 'contradicted']);
+    type Condition = (typeof CONDITIONS.options)[number];
+    const ORDER: readonly Condition[] = CONDITIONS.options;
     type Relation = { digest: string; source: string; at: string; other: string; by: string; provenance: string };
     /** Every contradiction relation of these digests: ONE findMany per read (all digests at once — the query count
      * never grows with the entry count); findMany pages internally until exhausted, so nothing is silently capped. */
