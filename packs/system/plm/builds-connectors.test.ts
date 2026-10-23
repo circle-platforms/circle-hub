@@ -131,3 +131,15 @@ test('a non-scalar story field keeps all stories readable through the connector 
   assert.deepEqual(raw.data[0].status, { raw: 'synthetic' });
   assert.deepEqual(raw.data[0].stage, ['synthetic']);
 });
+
+test('oversized enabled external identities route to counted failures through executeRead', async () => {
+  const key = 'Z'.repeat(890); const external = 'plm:builds:' + key;
+  assert.equal(await kit.connectors.reader.accepts(external), true);
+  assert.equal(await kit.connectors.reader.accepts('absent:builds:' + key), false);
+  const before = plm.requests.length;
+  const answer = await kit.connectors.executeRead(resourceId, 'builds', { id: key }, context());
+  assert.equal(answer.ok, false); if (answer.ok) throw new Error('unexpected success');
+  assert.equal(answer.code, 'PLAN_INVALID');
+  assert.match(answer.reason, /901 字节/); assert.match(answer.reason, /900 字节上限/);
+  assert.ok(!answer.reason.includes(key)); assert.equal(plm.requests.length, before);
+});

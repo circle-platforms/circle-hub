@@ -569,3 +569,11 @@ source).
   processes never both send a new (possibly wrong) value? Now each process sends it once at most (Limits).
 
 Pack sandbox error messages reach only the internal administrator-note reason channel after redaction, never persisted read-manifest reasons, nested pack inputs or public tool output (nested diagnostics stay in the administrator log); a terminal plan with no requests or nested reads may use its existing projection error to explain the refusal (the original sentinel is `unavailable`, and no projected success or artifact is accepted).
+
+## Counted external identity failures
+
+A single MAX_EXTERNAL_ID_BYTES budget is used by external parsing and entry refusals. Strict parseExternal still refuses
+oversized values. Routing accepts a shape-valid oversized identity only when its type has an enabled resource, so run
+inputs reach read() and preserve the byte count in the administrator note. executeRead uses the same counted reason
+before any plan, login or request; malformed identities and unknown types do not become accepted reads. Synthetic tests
+cover the real createTestHub start_run path, executeRead, and absence of request/key echoes.

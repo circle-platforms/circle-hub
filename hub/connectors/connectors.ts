@@ -13,7 +13,7 @@ import { ConnectorError, asConnectorError } from './errors.ts';
 import { HttpSource, type ConnectorLog, type FetchLike } from './http.ts';
 import { LoginManager, StaticCredential, type LoginStatus } from './login.ts';
 import { ProfileCache, type LoadedProfile } from './profiles.ts';
-import { ReadEngine, parseExternal, type PackFunctionRunner, type ReadArgs, type ReadOutcome, type ResourceRuntime } from './read.ts';
+import { ReadEngine, externalRoutingType, externalSizeReason, parseExternal, type PackFunctionRunner, type ReadArgs, type ReadOutcome, type ResourceRuntime } from './read.ts';
 import { Redactor } from './redact.ts';
 import { ResourceRegistry, sessionEntry, type AddResourceInput, type ResourceDescription, type ResourceState, type UpdateResourceInput } from './resources.ts';
 import { compileRoutes } from './routes.ts';
@@ -274,9 +274,9 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
   const reader: ExternalReaderPort = {
     async accepts(id: string): Promise<boolean> {
       try {
-        const subject = typeof id === 'string' ? parseExternal(id) : null;
-        if (subject === null) return false;
-        return (await resolve(`${subject.system}:${subject.type}`)).length > 0;
+        const type = typeof id === 'string' ? externalRoutingType(id) : null;
+        if (type === null) return false;
+        return (await resolve(type)).length > 0;
       } catch (error) {
         event('accepts_failed', { reason: asConnectorError(error, 'RESOURCE_UNAVAILABLE').message });
         return false;
@@ -285,7 +285,8 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
     async read(id: string, context: ExternalReadContext): Promise<ExternalRead> {
       const shown = typeof id === 'string' ? id : String(id);
       try {
-        if (typeof id === 'string' && Buffer.byteLength(id, 'utf8') > 900) return { ok: false, id: shown, reason: `外部对象标识是 ${Buffer.byteLength(id, 'utf8')} 字节，超过 900 字节上限；缩短名字集合或改用产品编号后重读` };
+        const sizeReason = typeof id === 'string' ? externalSizeReason(id) : null;
+        if (sizeReason !== null) return { ok: false, id: shown, reason: sizeReason };
         const subject = typeof id === 'string' ? parseExternal(id) : null;
         if (subject === null) return { ok: false, id: shown, reason: `${redactor.text(shown)} 不是外部对象标识` };
         const candidates = await resolve(`${subject.system}:${subject.type}`);
