@@ -198,3 +198,9 @@ test('R26 target lease operations retain lease action kinds and generated operat
     const event=events.find(e=>e.body.detail.phase===phase)!;assert.equal(event.body.action,'lease');assert.equal(event.body.detail.op,op);
   }
 });
+
+test('R27 a completed fence check records its observed drift and continuity limits honestly',async t=>{
+  const c=await setup({mode:'fencing'});t.after(()=>c.close());const state=await c.service.dispatch(c.admin,c.run,c.executor.id);
+  const drift=(await c.service.journal.events(state.job)).find(e=>e.body.detail.phase==='fencing')!;
+  assert.equal(drift.body.result,'completed');assert.equal(drift.body.detail.drift,true);assert.ok(drift.body.detail.missing_fact && drift.body.detail.next_action);
+});

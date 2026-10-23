@@ -157,3 +157,9 @@ reconciled 与原 receipt 分开，统一身份读取器优先保留原回执。
 目标租约 acquire、heartbeat、release 及其原件接收动作使用 lease 动作类型，op 使用生成的 LeaseOp acquire/extend/release。不借读语义解释目标写入；component 和无 keys 区分本地物理租约记录。
 
 验证：R26 及 R01 联合回归通过，租约动作类型反例先失败后通过。
+
+## 27 — 已修复
+
+完成的围栏检查记 completed，保留 drift/expired 这项确定观察；另明确缺少同一 Hub 租约连续性和复用前重新证明基线的动作，不把检查本身记成未知。
+
+验证：R27 动作结果及缺事实/下一步回归先失败后通过。
