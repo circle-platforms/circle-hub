@@ -2,8 +2,8 @@
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { DOCUMENT_OUTPUT_KIND, TASK_OUTPUT_KIND, VALIDITY_STATUS_LABEL } from '../../../contracts/generated/vocabulary.ts';
-import { SubmitResultOutput } from '../../../contracts/src/tools.ts';
+import { DOCUMENT_OUTPUT_KIND, TASK_OUTPUT_KIND, VALIDITY_STATUS_LABEL, labelOf } from '../../../contracts/generated/vocabulary.ts';
+import { GetNodesOutput, SubmitResultOutput } from '../../../contracts/src/tools.ts';
 import { canonicalize, LimitError } from '../../records/api.ts';
 import { createDefaultRegistry } from '../../refs/api.ts';
 import { startPostgres, type TemporaryPostgres } from '../../testing/postgres.ts';
@@ -105,7 +105,7 @@ async function setup(t: {after(fn:()=>Promise<void>):void}, options: {task?:bool
   assert.equal(started.call_result,'ok',JSON.stringify(started.errors));
   const run = started.run!;
   const args = () => ({run:run.run,model:'integration-synthetic@1',items:DOCUMENT_OUTPUT_KIND.map(kind=>({item:kind,handling:'handled',slots:{contribution:[{code:kind,text:`合成${kind}`,data:{root,path:'/commands/system/show',source:{reference:`tree:${root}/commands/system/show`,quote:'show'},...(kind==='relation'?{relation:{kind:'same_subject',other:{reference:`tree:${root}/commands/net/ping`,quote:'ping'}}}:{})}}]}}))});
-  return {...w,root,b,run,service,args,original};
+  return {...w,root,b,run,service,args,original,workflows};
 }
 
 async function withOriginal(w:Awaited<ReturnType<typeof setup>>,sha256:string){
@@ -219,12 +219,16 @@ test('all four document outputs enter only after requirements pass, remain outsi
   const receipt = answer.result!.contributions!;
   assert.equal(receipt.stored.length,4,JSON.stringify(answer.result)); assert.equal(receipt.not_stored.length,0);
   const page = await w.knowledge.getNodes({root:w.root,paths:['/commands/system/show'],depth:0},w.user);
+  assert.ok(GetNodesOutput.safeParse({call_result:'ok',errors:[],trace:call.traceId,root:w.root,...page}).success);
   const entries = page!.nodes[0].contributions!;
   assert.match(toolText('submit_result',{...answer,trace:call.traceId}),/回注：提交 4 条，入层 4 条，未入层 0 条/);
   const rendered=toolText('get_nodes',{call_result:'ok',errors:[],trace:call.traceId,root:w.root,nodes:page!.nodes});
   assert.match(rendered,/回注层/);assert.match(rendered,/提交人/);assert.match(rendered,/依据/);assert.match(rendered,new RegExp(receipt.stored[0].record));
   assert.match(rendered.split('\n').find(line=>line.includes(`rec:${receipt.stored[0].record}`))!,/适用 未声明/);
   assert.deepEqual(entries.map(v=>v.contribution.kind),DOCUMENT_OUTPUT_KIND);
+  const storedRelation=entries.find(v=>v.contribution.kind==='relation')!.contribution.relation!;
+  assert.equal(storedRelation.kind,'same_subject');assert.equal(storedRelation.other.reference,`tree:${w.root}/commands/net/ping`);
+  assert.equal(storedRelation.other.provenance,'projected');assert.ok(storedRelation.other.records.length>0);assert.ok(storedRelation.other.sources.length>0);
   for(const v of entries) {
     assert.equal(v.contribution.submitted_by,w.admin.id);assert.equal(v.contribution.session,'integration-session');
     assert.equal(v.contribution.source.provenance,'projected');assert.equal(v.contribution.basis_rank,'judgment');
@@ -238,6 +242,45 @@ test('all four document outputs enter only after requirements pass, remain outsi
   assert.equal((await w.knowledge.produceTree({product:w.product,build:w.b})).root,w.root);
   const submission = (await w.kit.store.find({key:'runs.submission.run',value:w.run.run,kind:'submission'})).items[0];
   assert.deepEqual(submission.body,args,'contribution submissions are stored in full');
+});
+
+test('a stored contradiction records its endpoints without editing the second node',async t=>{
+  const w=await setup(t);const before=await w.knowledge.getNodes({root:w.root,paths:['/commands/net/ping'],depth:0},w.user);
+  const args=w.args();args.items[3].slots.contribution[0].data.relation!.kind='contradicts';
+  const result=await w.service.submitResult(w.admin,args,call);assert.equal(result.result?.contributions?.stored.length,4);
+  const page=await w.knowledge.getNodes({root:w.root,paths:['/commands/system/show'],depth:0},w.user);
+  const relation=page!.nodes[0].contributions!.find(v=>v.contribution.kind==='relation')!.contribution.relation!;
+  assert.equal(relation.kind,'contradicts');assert.equal(relation.other.reference,`tree:${w.root}/commands/net/ping`);
+  assert.deepEqual((await w.knowledge.getNodes({root:w.root,paths:['/commands/net/ping'],depth:0},w.user))!.nodes,before!.nodes);
+  assert.match(toolText('get_nodes',{call_result:'ok',errors:[],trace:call.traceId,root:w.root,nodes:page!.nodes}),new RegExp(`关系 ${labelOf('relation_kind','contradicts')} →`));
+});
+
+test('every kind reports its own path rule, and quotes use the boundary whitespace comparator',async t=>{
+  const w=await setup(t);
+  for(const kind of DOCUMENT_OUTPUT_KIND){
+    const args=w.args();args.items.find(x=>x.item===kind)!.slots.contribution[0].data.path='/absent';
+    const result=await w.service.submitResult(w.admin,args,call);
+    assert.ok(result.errors.some(e=>e.item===kind&&e.code==='REFERENCE_UNRESOLVED'&&e.message.includes('归位路径在锁定的根里解析不出')));
+    const root=w.args();root.items.find(x=>x.item===kind)!.slots.contribution[0].data.root='f'.repeat(64);
+    const wrong=await w.service.submitResult(w.admin,root,call);assert.ok(wrong.errors.some(e=>e.item===kind&&e.code==='REFERENCE_UNRESOLVED'&&e.message.includes('锁定的产品和根')));
+  }
+  const args=w.args();args.items[0].slots.contribution[0].data.source={reference:`src:${w.original}`,quote:'show   the\n state'};
+  const ok=await w.service.submitResult(w.admin,args,call);assert.equal(ok.result?.contributions?.stored.length,4,JSON.stringify(ok.errors));
+  args.items[0].slots.contribution[0].data.source.quote='show   the\n staXe';const no=await w.service.submitResult(w.admin,args,call);
+  assert.ok(no.errors.some(e=>e.code==='QUOTE_MISMATCH'&&e.message.includes('引文没有逐字')));
+});
+
+test('a nonadmin writes tree-grounded contributions but cannot bind an admin-only original',async t=>{
+  const w=await setup(t);w.workflows.assign(w.user.id,'knowledge-contribution');
+  const manifest=await w.kit.artifacts.ingest({bytes:new TextEncoder().encode(JSON.stringify({items:DOCUMENT_OUTPUT_KIND.map(id=>({id,title:id}))})),mediaType:'application/json',origin:{upload:{session:'user-session',message:null}},author:{user:w.user.id},provenanceType:'declared',visibility:{readers:[w.user.id],admins:true,packs:[],shareable:false}});
+  const input={pack:'knowledge-contribution',product:'Acme',build:w.b.name,inputs:{subject:{reference:`src:${manifest.body.sha256}`}}};
+  const started=await w.service.startRun(w.user,input,{...call,sessionId:'user-session'});assert.equal(started.call_result,'ok',JSON.stringify(started.errors));
+  const result=await w.service.submitResult(w.user,{...w.args(),run:started.run!.run},{...call,sessionId:'user-session'});assert.equal(result.result?.contributions?.stored.length,4,JSON.stringify(result.errors));
+  const page=await w.knowledge.getNodes({root:w.root,paths:['/commands/system/show'],depth:0},w.user);
+  assert.ok(page!.nodes[0].contributions!.every(v=>v.contribution.submitted_by===w.user.id));
+  assert.ok(GetNodesOutput.safeParse({call_result:'ok',errors:[],trace:call.traceId,root:w.root,...page}).success);
+  const denied=await w.service.startRun(w.user,{...input,inputs:{...input.inputs,originals:{reference:`src:${w.original}`}}},call);
+  assert.equal(denied.call_result,'error');assert.ok(denied.errors.some(e=>e.code==='SOURCE_UNAVAILABLE'&&Boolean(e.fix)));
 });
 
 for(const kind of DOCUMENT_OUTPUT_KIND) test(`${kind}: a non-verbatim quotation refuses admission`,async t=>{

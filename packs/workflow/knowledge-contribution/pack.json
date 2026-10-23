@@ -47,6 +47,11 @@
       "size": 818
     },
     {
+      "path": "samples/negative/relation_bad.json",
+      "sha256": "24f5279e40b50d83ca06a3e0e6a0fc60ebbca9d410aacfd7e5730e42921acf7b",
+      "size": 1255
+    },
+    {
       "path": "samples/negative/shape_bad.json",
       "sha256": "8be71faced0b1ee23ed33b40c0429441b79381ec32a6ecf05772cbd012f3a4c1",
       "size": 684
@@ -55,6 +60,11 @@
       "path": "samples/positive/quotes_good.json",
       "sha256": "711913a2e1400b6088a5722cab533c130cb93465ce89153414802bb2e49c4474",
       "size": 790
+    },
+    {
+      "path": "samples/positive/relation_good.json",
+      "sha256": "6efe6a5f7f1ba6494331349efd382086bd01ce25cde43e1c1470411914f81b92",
+      "size": 1228
     },
     {
       "path": "samples/positive/shape_good.json",
