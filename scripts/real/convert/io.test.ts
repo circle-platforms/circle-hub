@@ -35,9 +35,11 @@ test('contract CLI keeps exact bytes in staging and prints only summary and publ
 test('topology and profile CLIs print only counted digests and staged publication commands', async () => {
   const { topology } = await import('./testing.ts'); const dir = mkdtempSync(join(tmpdir(), 'convert-'));
   try {
-    const source = topology(); output(dir, 'topology.json', JSON.stringify(source));
-    const topologyRun = spawnSync(process.execPath, ['scripts/real/convert/bed-topology.ts', join(dir, 'topology.json'), '--out', join(dir, 'inventory')], { encoding: 'utf8' });
-    assert.equal(topologyRun.status, 0, topologyRun.stderr); const topologyLines = topologyRun.stdout.trim().split('\n'); const counts = JSON.parse(topologyLines[0]); assert.equal(counts.count, 2); assert.match(counts.sha256, /^[a-f0-9]{64}$/); assert.deepEqual(counts.services, { http: 1, https: 0, dns: 0 }); assert.equal(counts.reserved, 2); assert.equal(counts.ignored_neighbours, 0); assert.equal(topologyLines[1], 'circle-hub doc put bed-topology test-bed-manifest.json'); assert.equal(topologyLines.length, 2);
+    const { definition } = await import('../../../hub/dispatch/testing/definition.ts');
+    const source = topology(); output(dir, 'topology.json', JSON.stringify({ jsonrpc: '2.0', id: 1, result: { structuredContent: { snapshot: source } } }));
+    output(dir, 'executor.json', JSON.stringify({ ...definition('http://127.0.0.1/mcp'), capture_pointers: ['/snapshot'] }));
+    const topologyRun = spawnSync(process.execPath, ['scripts/real/convert/bed-topology.ts', join(dir, 'topology.json'), '--definition', join(dir, 'executor.json'), '--out', join(dir, 'inventory')], { encoding: 'utf8' });
+    assert.equal(topologyRun.status, 0, topologyRun.stderr); const topologyLines = topologyRun.stdout.trim().split('\n'); const counts = JSON.parse(topologyLines[0]); assert.equal(counts.count, 2); assert.match(counts.original_sha256, /^[a-f0-9]{64}$/); assert.match(counts.canonical_content_sha256, /^[a-f0-9]{64}$/); assert.equal(counts.pointer, '/snapshot'); assert.deepEqual(counts.services, { http: 1, https: 0, dns: 0 }); assert.equal(counts.reserved, 2); assert.equal(counts.ignored_neighbours, 0); assert.equal(topologyLines[1], 'circle-hub doc put bed-topology test-bed-manifest.json'); assert.equal(topologyLines.length, 2);
     const contract = runtimeDocument(); output(dir, 'contract.json', JSON.stringify(contract)); output(dir, 'environment.json', JSON.stringify({ ready: true, device_count: 2 }));
     const args = ['scripts/real/convert/runtime-profile.ts', join(dir, 'environment.json'), join(dir, 'inventory/test-bed-manifest.json'), join(dir, 'contract.json'), '--out', join(dir, 'profile')];
     const draft = spawnSync(process.execPath, args, { encoding: 'utf8' }); assert.equal(draft.status, 0, draft.stderr);

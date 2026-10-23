@@ -1,6 +1,6 @@
 # 离线接入转换
 
-这些 TypeScript 命令由集成者对只读副本运行，不联网、不读取环境或凭据，不执行发布命令。必须指定仓库外的 `--out` 暂存目录；符号链接指向仓库也拒绝。新文件权限为 0600，不覆盖已有文件。标准输出只含个数、SHA-256，以及三份接入文档各自最后一行的发布命令（固定名 runner-contract、bed-topology、runtime-profile）。发布前切换到暂存目录，集成者核对后自行执行该命令。失败退出非零；不会把源数据或底层异常打印到终端。
+这些 TypeScript 命令由集成者对只读副本运行，不联网、不读取环境或凭据，不执行发布命令。必须指定仓库外的 `--out` 暂存目录；符号链接指向仓库也拒绝。新文件权限为 0600，不覆盖已有文件。标准输出只含个数、声明的 JSON 指针、SHA-256，以及三份接入文档各自最后一行的发布命令（固定名 runner-contract、bed-topology、runtime-profile）。发布前切换到暂存目录，集成者核对后自行执行该命令。失败退出非零；不会把源数据或底层异常打印到终端。
 
 ```
 node scripts/real/convert/check-runtime-contract.ts <合约副本> --expect <网关钉住的摘要> --out <暂存目录>
@@ -8,13 +8,15 @@ node scripts/real/convert/check-runtime-contract.ts <合约副本> --expect <网
 
 合约通过 case-compile 原格式解析器重算身份，输出保留原字节。`--expect` 由集成者从部署网关只读获取，不从本地副本自证，不在脚本中预设。打印摘要为原字节摘要，合约自己的规范摘要仍保留在文档中。
 
-真实动作由集成者运行。派发运行脚本和全链路验收等待派发分支合并，本阶段没有联机或上机结果。
+真实动作由集成者运行。本分支只有下述合成全链路和离线管理脚本测试，没有真实联机或上机结果。
 
 ```
-node scripts/real/convert/bed-topology.ts <网关拓扑回答副本> --out <暂存目录>
+node scripts/real/convert/bed-topology.ts <网关原始 RPC 回答> --definition <执行器定义> --out <暂存目录> [--read-index 0] [--capture-index 0]
 ```
 
-输入是含 `topology.devices`、`topology._bed.conf`、`services` 和 `observation.unregistered_neighbours` 的完整回答。源中文设备标签只在转换表中出现一次；设备名、服务主机名和台架名转小写，撞名拒绝。`_mask_assumed` 为真、地址没有前缀、未知标签、重复地址、缺服务或邻居观察均拒绝。保留地址只来自 IPv4 ARP 邻居观察，只保留本台架设备接口网段内的邻居，逐项变成单地址范围，重复观察合并；网段外邻居仅记到私有 topology-accounting.json，屏幕打印排除个数。服务源协议只按一张表转换：http、https → tcp，dns → udp；表外整份拒绝，指出服务序号与 proto 字段。屏幕打印这三类服务个数、保留与排除个数。清单必须同时通过 test-bed 和 case-compile 的解析器；不借助管理地址推断接口，不填默认网段。标准输出摘要是完整源回答的原字节摘要。
+从执行器定义读取 capture_pointers；read-index 0 是主只读核对，1 起对应 precheck_reads，capture-index 选择其中的指针（默认均为 0）。不猜字段名。原始 JSON-RPC/流式回答先用派发公开的同一解码器读取，再按该指针取值、调用核心 RFC 8785 摘要函数；标准输出同时打印指针、原件字节摘要和规范内容摘要。请求号变化只影响原件摘要，内容没有变化时规范摘要不变。指针下必须包含拓扑、服务和观察，派发核对同一指针才覆盖这三者。管理员把打印出的内容摘要登记进对应只读核对条件；已有常量摘要不符则拒绝转换，要求重新采证并更新定义。
+
+选中内容是含 `topology.devices`、`topology._bed.conf`、`services` 和 `observation.unregistered_neighbours` 的完整回答。源中文设备标签只在转换表中出现一次；设备名、服务主机名和台架名转小写，撞名拒绝。`_mask_assumed` 为真、地址没有前缀、未知标签、重复地址、缺服务或邻居观察均拒绝。保留地址只来自 IPv4 ARP 邻居观察，只保留本台架设备接口网段内的邻居，逐项变成单地址范围，重复观察合并；网段外邻居仅记到私有 topology-accounting.json，屏幕打印排除个数。服务源协议只按一张表转换：http、https → tcp，dns → udp；表外整份拒绝，指出服务序号与 proto 字段。屏幕打印这三类服务个数、保留与排除个数。清单必须同时通过 test-bed 和 case-compile 的解析器；不借助管理地址推断接口，不填默认网段。topology-accounting.json 另留两个摘要和所选指针，便于管理员登记时逐项核对。
 
 ```
 node scripts/real/convert/runtime-profile.ts <环境预检回答> <清单> <合约副本> --out <暂存目录> [--decisions <角色决定文件>]
@@ -34,3 +36,4 @@ node scripts/real/convert/auto-cases.ts <脑图原件> --out <暂存目录> [--c
 核心 KityMinder 解析后直接调用包的 extractCases，case_rule 默认 marked，也可显式 tagged，必须与计划运行一致。只选 auto 文字恰好为 YES 的五个，保留文档次序；不是五个则报实际数量并停止。缺失、重复或不精确的 autoid 拒绝。输出 auto-cases.json 含规则及编号列表，标准输出仅个数与源字节摘要。集成者先只读确认脑图是否已有平台文档号，再按任务页绑定；本脚本不猜文档号、不上传。
 
 探测只由执行器定义声明，不放进 runtime-profile。6a125df0 的 profile probes 扩展及旧草稿脚本已撤回，case-compile 的同版本字节回到工作簿分支的基线。执行器定义的 version/interfaces 两项形状由 dispatch-gateway 分支确定；它合并以后再接 probes.ts，当前没有猜造兼容形状或跳过测试。
+

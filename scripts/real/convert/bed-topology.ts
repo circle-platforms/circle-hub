@@ -1,9 +1,10 @@
+import { observation } from './observation.ts';
 import { isIP } from 'node:net';
 import { parseInterface, parseIp, subnetContains } from '../../../packs/workflow/test-bed/functions/addresses.ts';
 import { readFileSync } from 'node:fs';
 import { parseManifest, type DeviceType } from '../../../packs/workflow/test-bed/functions/manifest.ts';
 import { parseManifest as parseCompileManifest } from '../../../packs/workflow/case-compile/functions/manifest.ts';
-import { argumentsOf, jsonBytes, main, output, record, requireFact, sha256 } from './io.ts';
+import { argumentsOf, jsonBytes, main, output, record, readJson, requireFact } from './io.ts';
 // Source label translation, derived from the gateway topology format; no device-name inference.
 const SOURCE_LABELS: Readonly<Record<string, DeviceType>> = { '负载均衡': 'load-balancer', '路由器': 'router', '客户端': 'client', '服务器': 'server', '控制台': 'console' };
 const SERVICE_PROTOCOLS: Readonly<Record<string, 'tcp' | 'udp'>> = { http: 'tcp', https: 'tcp', dns: 'udp' };
@@ -45,11 +46,13 @@ export function topologyReport(raw: unknown) {
 }
 export function convertTopology(raw: unknown) { return topologyReport(raw).manifest; }
 export function run(args: string[]): void {
-  const { files, options } = argumentsOf(args, 1, ['--out']); const bytes = readFileSync(files[0]!);
-  const report = topologyReport(JSON.parse(bytes.toString('utf8'))); const { manifest } = report;
+  const { files, options } = argumentsOf(args, 1, ['--out', '--definition', '--read-index', '--capture-index']); const bytes = readFileSync(files[0]!);
+  requireFact(options['--definition'], '缺少 --definition；请管理员提供带 capture_pointers 的执行器定义，不猜观察指针');
+  const selected = observation(bytes, readJson(options['--definition']), options['--read-index'], options['--capture-index']);
+  const report = topologyReport(selected.value); const { manifest } = report;
   output(options['--out'] ?? '', 'test-bed-manifest.json', jsonBytes(manifest));
-  output(options['--out'] ?? '', 'topology-accounting.json', jsonBytes({ ignored_neighbours: report.ignored_neighbours }));
-  process.stdout.write(JSON.stringify({ count: manifest.beds[0]!.devices.length, sha256: sha256(bytes), services: report.protocols, reserved: manifest.beds[0]!.reserved.length, ignored_neighbours: report.ignored_neighbours.length }) + '\n');
+  output(options['--out'] ?? '', 'topology-accounting.json', jsonBytes({ ...selected.hashes, ignored_neighbours: report.ignored_neighbours }));
+  process.stdout.write(JSON.stringify({ count: manifest.beds[0]!.devices.length, ...selected.hashes, services: report.protocols, reserved: manifest.beds[0]!.reserved.length, ignored_neighbours: report.ignored_neighbours.length }) + '\n');
   process.stdout.write('circle-hub doc put bed-topology test-bed-manifest.json\n');
 }
 main(import.meta.url, run);
