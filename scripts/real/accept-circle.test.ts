@@ -25,7 +25,7 @@ test('the case-location scenario starts the run in the first turn and checks the
   ]);
   assert.deepEqual(s.respond({ index: 1, system: null, messages: [], tools: [], toolResults: [] }), [{ text: '定位完成。' }]);
   const turns = parseLog(log);
-  turns[1].toolResults[0].text += '\n- 90001 | 合成文档 | 产品线 apv；版本 10.6.1（目录，置信度高）；发布火车 10.6.1-R1';
+  turns[1].toolResults[0].text += '\n条目（1 个；编号 | 名称 | 摘要）：\n- 90001 | 合成文档 | 产品线 apv；版本 10.6.1（目录，置信度高）；发布火车 10.6.1-R1';
   const checks = s.check(turns);
   assert.ok(checks.some((c) => !c.ok && c.name.includes('候选')), 'missing candidates are a failed check after starting the scenario');
   const wrong = caseLocation({ document: '90001', product: 'APV', line: '10.7.0' }).check(turns);

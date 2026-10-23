@@ -240,12 +240,19 @@ function extractIdsFromSnippet(snippet: string, marker: string): string[] {
 
 /** No whole-answer fallback: a missing item remains missing even if another item has identical values. */
 export function ownLocationText(lines: readonly string[], document: string): string | null {
-  const pattern = new RegExp('^\\s*-?\\s*(?:doc:)?' + escaped(document) + '\\s*\\|');
-  const rows = [...new Set(lines.filter(line => pattern.test(line)))];
-  if (rows.length === 1) return rows[0];
-  if (rows.length > 1) return null;
   const claims = ownClaimTexts(lines, document, 'location');
-  return claims.length === 1 ? claims[0] : null;
+  if (claims.length === 1) return claims[0];
+  if (claims.length > 1) return null;
+  const pattern = new RegExp('^\\s*-?\\s*(?:doc:)?' + escaped(document) + '\\s*\\|');
+  let itemTable = false; const rows: string[] = [];
+  for (const line of lines) {
+    if (/^条目（.*编号.*名称.*摘要/.test(line)) { itemTable = true; continue; }
+    if (/^(?:问题|内容|完整结果)|^\s*·/.test(line)) itemTable = false;
+    if (!itemTable || !pattern.test(line)) continue;
+    const summary = line.split(' | ')[2] ?? '';
+    if (/产品线|版本 |发布火车|模块 /.test(summary)) rows.push(line);
+  }
+  const unique = [...new Set(rows)]; return unique.length === 1 ? unique[0] : null;
 }
 
 export function extractReportedDocumentData(docId: string, turns: LoggedTurn[]): ReportedDocData {
