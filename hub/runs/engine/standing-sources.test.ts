@@ -45,7 +45,7 @@ test('a standing obligation loses function access when credential acceptance is 
   check.function = { module: 'functions/effective-source.ts' };
   await writeFile(join(h.locate.pack.directory, check.function.module), `export default function(input) {
     const count = Object.keys(input.sources).filter(key => key === 'src:${sha}').length;
-    return [{ verdict: count === 1 ? 'support' : 'unknown', ...(count === 1 ? {} : {reason: 'missing_input'}), statement: count === 1 ? '来源可读' : '来源不可读', grounds: [], tier: 'advisory', data: { count, unread: input.unread_sources } }];
+    return [{ verdict: count === 1 ? 'support' : 'unknown', ...(count === 1 ? {} : {reason: 'missing_input',missing:'缺少可读的合成来源正文'}), statement: count === 1 ? '来源可读' : '来源不可读', grounds: [], tier: 'advisory', data: { count, unread: input.unread_sources } }];
   }`);
   const runChecks = async () => {
     // A fresh context also simulates re-evaluation after a process restart.

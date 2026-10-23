@@ -206,7 +206,7 @@ describe('runCheck with a pack function', () => {
   });
 
   it('a pack check gives only check verdicts and check reasons: no abstention, no model or submission reasons', async () => {
-    const outcome = (fields: string) => `export default () => [{ ${fields}, statement: '结果', grounds: [], tier: 'advisory' }];`;
+    const outcome = (fields: string) => `export default () => [{ ${fields}, statement: '结果', missing: '合成检查所缺事实', grounds: [], tier: 'advisory' }];`;
     const dir = pack({
       'abstain.ts': outcome("verdict: 'abstain'"),
       'skip.ts': outcome("verdict: 'unknown', reason: 'declared_skip'"),
@@ -267,7 +267,7 @@ describe('runCheck with a pack function', () => {
     const dir = pack({
       'checks/unread.ts': [
         'export default function (input: { unread_sources?: { reference: string; reason: string; external?: string; slot?: string }[] }) {',
-        "  return [{ verdict: 'unknown', reason: 'missing_input', statement: '缺来源', grounds: [], tier: 'advisory', data: { unread: input.unread_sources ?? [] } }];",
+        "  return [{ verdict: 'unknown', reason: 'missing_input', missing: '缺少合成来源正文', statement: '缺来源', grounds: [], tier: 'advisory', data: { unread: input.unread_sources ?? [] } }];",
         '}',
       ].join('\n'),
     });

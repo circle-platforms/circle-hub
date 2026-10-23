@@ -92,6 +92,7 @@ export default function check(input) {
     const out = { verdict: o.verdict, statement: '合成检查', grounds: [], tier: o.tier || 'blocking' };
     if (typeof o.code === 'string') out.code = o.code;
     if (typeof o.reason === 'string') out.reason = o.reason;
+    if (o.verdict === 'unknown') out.missing = '合成检查缺少脚本声明的判定事实';
     return out;
   });
 }

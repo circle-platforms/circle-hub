@@ -1,3 +1,4 @@
+import { assertLayers } from './testing/assertions.ts';
 import assert from 'node:assert/strict';
 import {PROTOCOL_CODES} from '../../../contracts/generated/protocol.ts';
 import { after, before, test } from 'node:test';
@@ -85,17 +86,17 @@ test('an accepted submission: terminals, satisfaction, attribution, partitions, 
   // c1: every fact passes; the independent judgment has no predecessor, so its independence is unknown (A04 R[5])
   const c1 = itemOf(result, ITEM.c1);
   assert.equal(c1.partition, 'delivered');
-  assert.deepEqual(requirementOf(c1.item, 'structure').layers, [{ layer: 'static', terminal: 'pass' }]);
-  assert.deepEqual(requirementOf(c1.item, 'findings').layers, [{ layer: 'static', terminal: 'judgment' }]);
+  assertLayers(requirementOf(c1.item, 'structure').layers, [{ layer: 'static', terminal: 'pass' }]);
+  assertLayers(requirementOf(c1.item, 'findings').layers, [{ layer: 'static', terminal: 'judgment' }]);
   assert.deepEqual([requirementOf(c1.item, 'findings').status, requirementOf(c1.item, 'findings').unsatisfied_reason], ['unsatisfied', 'independence_unknown']);
   // c3: a negative case refuted with the expected code is satisfied, advisory, without attribution
   const c3 = requirementOf(itemOf(result, ITEM.c3).item, 'catalog');
-  assert.deepEqual(c3.layers, [{ layer: 'static', terminal: 'violation', code: 'core.catalog.param_out_of_range', tier: 'advisory' }]);
+  assertLayers(c3.layers, [{ layer: 'static', terminal: 'violation', code: 'core.catalog.param_out_of_range', tier: 'advisory' }]);
   assert.equal(c3.status, 'satisfied');
   // c4: the author's input misses the structure: violation attributed to the author, outcome mismatch; delivered
   const c4 = itemOf(result, ITEM.c4);
   assert.equal(c4.partition, 'delivered');
-  assert.deepEqual(requirementOf(c4.item, 'structure').layers, [{ layer: 'static', terminal: 'violation', code: 'core.structure.required_empty', tier: 'blocking', attribution: 'author_input' }]);
+  assertLayers(requirementOf(c4.item, 'structure').layers, [{ layer: 'static', terminal: 'violation', code: 'core.structure.required_empty', tier: 'blocking', attribution: 'author_input' }]);
   assert.equal(requirementOf(c4.item, 'structure').unsatisfied_reason, 'outcome_mismatch');
   // nothing was routed: no errors; rounds of the run
   assert.deepEqual(result.errors, []);
@@ -168,7 +169,7 @@ test('a finding grounded only in a hint source is flagged by its role and does n
   const findings = requirementOf(itemOf(answer.result!, ITEM.c2).item, 'findings');
   const judgment = findings.claims.find((c) => c.warrant.producer === 'model')!;
   assert.equal(judgment.qualifier.source_role, 'hint');
-  assert.deepEqual(findings.layers, [{ layer: 'static', terminal: 'violation', code: 'toy-review.hint_only', tier: 'blocking', attribution: 'producer_error' }]);
+  assertLayers(findings.layers, [{ layer: 'static', terminal: 'violation', code: 'toy-review.hint_only', tier: 'blocking', attribution: 'producer_error' }]);
   assert.deepEqual([findings.status, findings.unsatisfied_reason], ['unsatisfied', 'outcome_mismatch']);
 });
 
@@ -287,7 +288,7 @@ test('a statement the catalog contradicts is a violation routed into repair, nev
     left.push(error.rounds_left!);
     const findings = requirementOf(itemOf(last.result!, ITEM.c2).item, 'findings');
     if (n < 3) {
-      assert.deepEqual(findings.layers, [{ layer: 'static', terminal: 'violation', code: 'core.catalog.membership_contradicted', tier: 'blocking', attribution: 'producer_error' }]);
+      assertLayers(findings.layers, [{ layer: 'static', terminal: 'violation', code: 'core.catalog.membership_contradicted', tier: 'blocking', attribution: 'producer_error' }]);
       assert.equal(itemOf(last.result!, ITEM.c2).partition, 'delivered');
     }
   }
@@ -297,7 +298,7 @@ test('a statement the catalog contradicts is a violation routed into repair, nev
   assert.equal(exhausted.partition, 'incomplete');
   assert.equal((exhausted.item as { reason?: string }).reason, 'repair_exhausted');
   const findings = requirementOf(exhausted.item, 'findings');
-  assert.deepEqual(findings.layers, [{ layer: 'static', terminal: 'incomplete', code: 'core.catalog.membership_contradicted', tier: 'blocking', reason: 'repair_exhausted', attribution: 'producer_error' }]);
+  assertLayers(findings.layers, [{ layer: 'static', terminal: 'incomplete', code: 'core.catalog.membership_contradicted', tier: 'blocking', reason: 'repair_exhausted', attribution: 'producer_error' }]);
   assert.ok(findings.claims.some((c: Claim) => c.warrant.producer === 'model' && c.statement.text.includes('第 3 次')));
   assert.deepEqual(last!.result!.rounds, { used: 2, max: 2 });
   // a corrected statement is delivered again
@@ -331,9 +332,9 @@ test('items not covered and items skipped are incomplete; not covered is named i
   assert.equal(answer.acceptance, 'accepted');
   const missing = itemOf(answer.result!, ITEM.c2);
   assert.deepEqual([missing.partition, (missing.item as { reason?: string }).reason], ['incomplete', 'not_covered']);
-  assert.deepEqual(requirementOf(missing.item, 'findings').layers, [{ layer: 'static', terminal: 'incomplete', reason: 'not_covered', attribution: 'producer_error' }]);
+  assertLayers(requirementOf(missing.item, 'findings').layers, [{ layer: 'static', terminal: 'incomplete', reason: 'not_covered', attribution: 'producer_error' }]);
   // W07 R[3]: the item the submission does not mention is incomplete at every requirement, facts included.
-  assert.deepEqual(requirementOf(missing.item, 'structure').layers, [{ layer: 'static', terminal: 'incomplete', reason: 'not_covered', attribution: 'producer_error' }]);
+  assertLayers(requirementOf(missing.item, 'structure').layers, [{ layer: 'static', terminal: 'incomplete', reason: 'not_covered', attribution: 'producer_error' }]);
   const skipped = itemOf(answer.result!, ITEM.c3);
   assert.deepEqual([skipped.partition, (skipped.item as { reason?: string }).reason], ['incomplete', 'declared_skip']);
   assert.deepEqual(answer.errors.map((e) => [e.code, e.item, e.rounds_left]), [['core.coverage.shortfall', ITEM.c2, 2]]);
@@ -513,7 +514,7 @@ test('checks see canonical references whatever alias the model wrote: a hint-onl
     const answer = await h.service.submitResult(h.alice, submission(run, { [ITEM.c2]: handled(ITEM.c2, [{ text: '历史清单里有类似用例', code: 'coverage_gap', rank: 'minor', grounds: [ground] }]) }), h.call());
     assert.equal(answer.acceptance, 'accepted', JSON.stringify(answer.errors));
     const findings = requirementOf(itemOf(answer.result!, ITEM.c2).item, 'findings');
-    assert.deepEqual(findings.layers, [{ layer: 'static', terminal: 'violation', code: 'toy-review.hint_only', tier: 'blocking', attribution: 'producer_error' }], ground);
+    assertLayers(findings.layers, [{ layer: 'static', terminal: 'violation', code: 'toy-review.hint_only', tier: 'blocking', attribution: 'producer_error' }], ground);
     const judgment = findings.claims.find((c) => c.warrant.producer === 'model')!;
     assert.deepEqual(judgment.grounds, [canonical], 'the claim rests on the canonical reference');
     assert.deepEqual(judgment.resolutions!.map((r) => [r.text, r.references]), [[ground, [canonical]]], 'the model text and its referent side by side (T04 R[1])');

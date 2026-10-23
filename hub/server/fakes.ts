@@ -739,9 +739,10 @@ export class FakeRuns implements RunsService {
     for (const item of run.items) {
       const entry = submission.items.find((i) => i.item === item.id);
       const common = { item: item.id, label: item.label, location: item.location };
+      const recovery={missing:`合成条目 ${item.id} 的未完成工作`,exit:{action:'request' as const,request_kind:'repair' as const,audience:{user:run.runner??run.configurer!},due:new Date(Date.parse(run.started_at)+86400000).toISOString()}};
       if (entry === undefined || entry.handling === 'skipped') {
         const reason = entry === undefined ? 'not_covered' : 'declared_skip';
-        const requirements: RequirementResult[] = run.requirements.map((r) => ({ requirement: r.key, layers: [{ layer: 'static', terminal: 'incomplete', reason }], status: 'pending', claims: [] }));
+        const requirements: RequirementResult[] = run.requirements.map((r) => ({ requirement: r.key, layers: [{ layer: 'static', terminal: 'incomplete', reason,...recovery }], status: 'pending', claims: [] }));
         parts.incomplete.push({ ...common, reason, requirements });
         continue;
       }
@@ -760,7 +761,7 @@ export class FakeRuns implements RunsService {
         }));
       const requirements: RequirementResult[] = [
         slots.unknown === true
-          ? { requirement: 'structure', layers: [{ layer: 'static', terminal: 'unchecked', reason: 'no_check' }], status: 'pending', claims: [] }
+          ? { requirement: 'structure', layers: [{ layer: 'static', terminal: 'unchecked', reason: 'no_check',...recovery }], status: 'pending', claims: [] }
           : { requirement: 'structure', layers: [{ layer: 'static', terminal: 'pass' }], status: 'satisfied', claims: [] },
         { requirement: 'findings', layers: [{ layer: 'static', terminal: 'judgment' }], status: 'satisfied', claims },
       ];
