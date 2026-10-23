@@ -261,3 +261,11 @@ test('review 14: an invalid draft leaves verification explicitly unrun', () => {
   measureReview({ ...options(f.out), source: f.source, plan: f.plan, verify: { args: [], prompt: 'verify' } }, fakeDrivers({ drafts: [{ calls: '', run: () => '{}' }] }), line => lines.push(line));
   assert.ok(lines.some(line => line.includes('复核 未跑（初评无效）'))); assert.ok(!lines.join('').includes('undefined'));
 });
+
+test('review 15: no valid rounds cannot claim that checks passed vacuously', () => {
+  const f = fixtures(document(1), []), lines: string[] = [];
+  measureReview({ ...options(f.out), source: f.source, plan: f.plan }, fakeDrivers({ drafts: [{ calls: '', run: () => '{}' }] }), line => lines.push(line));
+  const pass = lines.find(line => line.startsWith('通过：'))!;
+  assert.ok(!pass.includes('全部查出 是')); assert.ok(!pass.includes('没有误报和漏标 是')); assert.match(pass, /没有有效.*重跑/);
+  assert.ok(lines.some(line => line.includes('有效运行少于 2') && line.includes('补足')));
+});

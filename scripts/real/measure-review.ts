@@ -144,7 +144,7 @@ export function summaryLines(options: { copySha: string; goldSha: string; manual
   const scores = valid.map((r) => r.score!).filter((s): s is Score => s !== undefined);
   const sum = (pick: (s: Score) => number): number => scores.reduce((n, s) => n + pick(s), 0);
   lines.push(
-    `未注入的用例 ${options.untouched} 个：Hub 标记支持 ${sum((s) => s.structure.supported.length)}、误报 ${sum((s) => s.structure.falsePositives.length)}、漏标 ${sum((s) => s.structure.missed.length)}；未独立核对 ${sum((s) => s.otherMarks.total)}（未改动评审里没有的 ${sum((s) => s.otherMarks.fresh)}）；目录类标记还没有独立答案 ${sum(s => s.otherMarks.catalog.total)} 条（未改动评审里没有的 ${sum(s => s.otherMarks.catalog.fresh)} 条）；各次相同 ${options.totals.structureStable === null ? '无从比较' : options.totals.structureStable ? '是' : '否'}；不计分 ${sum((s) => s.literalUnscored) + (scores[0]?.noUniqueId ?? 0)}（data.id 缺失或重复 ${scores[0]?.noUniqueId ?? 0} 个）`,
+    `未注入的用例 ${options.untouched} 个：Hub 标记支持 ${sum((s) => s.structure.supported.length)}、误报 ${sum((s) => s.structure.falsePositives.length)}、漏标 ${sum((s) => s.structure.missed.length)}；未独立核对 ${sum((s) => s.otherMarks.total)}（未改动评审里没有的 ${sum((s) => s.otherMarks.fresh)}）；目录类标记还没有独立答案 ${sum(s => s.otherMarks.catalog.total)} 条（未改动评审里没有的 ${sum(s => s.otherMarks.catalog.fresh)} 条）；各次相同 ${options.totals.structureStable === null ? '没跑（有效运行少于 2 次，补足有效运行后比较）' : options.totals.structureStable ? '是' : '否'}；不计分 ${sum((s) => s.literalUnscored) + (scores[0]?.noUniqueId ?? 0)}（data.id 缺失或重复 ${scores[0]?.noUniqueId ?? 0} 个）`,
   );
   lines.push(
     `未注入的用例上模型的发现：初评 ${sum((s) => s.extras.length)} 个用例（未改动评审里没有的 ${sum((s) => s.extras.filter((e) => !e.inBaseline).length)}），复核新增 ${sum((s) => s.verifyExtras.length)} 个用例`,
@@ -152,7 +152,7 @@ export function summaryLines(options: { copySha: string; goldSha: string; manual
   const mechanicalAllFound = scores.every(s => s.detections.filter(d => d.entry.seen_by === 'mechanical').every(d => d.mechanical));
   const structureClean = scores.every((s) => s.structure.falsePositives.length === 0 && s.structure.missed.length === 0);
   lines.push(
-    `通过：Hub 看得见的注入缺陷全部查出 ${mechanicalAllFound ? '是' : '否'}；未注入用例上没有误报和漏标 ${structureClean ? '是' : '否'}；每次都有效 ${valid.length === options.rounds.length && options.rounds.length > 0 ? '是' : '否'}`,
+    `通过：Hub 看得见的注入缺陷全部查出 ${valid.length === 0 ? '没跑（没有有效运行，按原因重跑初评）' : mechanicalAllFound ? '是' : '否'}；未注入用例上没有误报和漏标 ${valid.length === 0 ? '没跑（没有有效运行，按原因重跑初评）' : structureClean ? '是' : '否'}；每次都有效 ${valid.length === options.rounds.length && options.rounds.length > 0 ? '是' : '否'}`,
   );
   if (options.repeat < 3) lines.push('不构成统计：重复次数少于 3');
   return lines;
