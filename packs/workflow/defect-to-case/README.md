@@ -15,12 +15,16 @@
 | `tables/` | 检查表定义：`commands.json`（`catalog@1` 解释器表）与 `quotes.json`（`quote@1` 解释器表） |
 | `samples/` | 12 个样例（`pack-sample@1`，positive 与 negative 各 6 个），覆盖所有 6 项检查 |
 | `examples/` | 合成示例：`start-run.json`、`submission.json` 与 `submit-result.json` |
-| `pack.json` | 任务包清单（`defect-to-case@1.0.2`，由 packaging.ts / pack-files.ts 签名，包含所有包内文件的相对路径、SHA-256 与文件大小） |
+| `pack.json` | 任务包清单（`defect-to-case@1.2.0`，由 packaging.ts / pack-files.ts 签名，包含所有包内文件的相对路径、SHA-256 与文件大小） |
 
 非任务包发布文件：`api.ts`（外部包与工具接口）、`pack-files.ts`（打包与签名工具）、`README.md`、测试文件（`*.test.ts`）与测试辅助目录（`testing/`）。
 
 ## 版本说明
 
+- **1.2.0**：
+  - `slots.schema.json` 明确 `expected` 每一项的对象模式（必填 `text` 字符串及必填 `quote` 对象，包含必填 `text` 和 `reference`）。
+  - `functions/checks.ts` 的引文缺失提示（`QUOTE_MISSING`）明确指出位置、槽位路径（`/cases/${i}/expected/${j}/quote`）及要求形状。
+  - `SKILL.md` 强调每个期望结果必须自带 quote 对象，严禁放在用例一级。
 - **1.0.2**：
   - `SKILL.md` 新增“提交样例”章节，并提供可直接受理的 `examples/submit-result.json` 样例。
 - **1.0.1**：

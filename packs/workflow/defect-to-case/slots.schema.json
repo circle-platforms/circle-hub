@@ -13,7 +13,24 @@
           "expects_refutation": { "type": "boolean" },
           "preconditions": { "type": "array" },
           "steps": { "type": "array" },
-          "expected": { "type": "array" },
+          "expected": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["text", "quote"],
+              "properties": {
+                "text": { "type": "string" },
+                "quote": {
+                  "type": "object",
+                  "required": ["text", "reference"],
+                  "properties": {
+                    "text": { "type": "string", "description": "修复说明或手册里的逐字原文" },
+                    "reference": { "type": "string", "description": "引用" }
+                  }
+                }
+              }
+            }
+          },
           "tags": { "type": "array" }
         }
       }
