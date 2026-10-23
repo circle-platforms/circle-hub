@@ -10,16 +10,17 @@ All absolute paths, document-library directory names, branch names, version line
 are deployment data. Store their actual values only on the document host, outside Git. The owner or integrator configures and
 runs these jobs. Reading this directory does not authorize connecting to the host or running a sync.
 
-Export these variables in the host's job environment (there are no default host paths):
+Export these variables in the host's job environment (there are no default host paths). These host-side variables use
+`KNOWLEDGE_SYNC_*`; they are not Hub configuration and do not extend the Hub's closed environment namespace:
 
 | Variable | Host-provided value |
 | --- | --- |
-| `CIRCLE_HUB_SYNC_TOOLS_DIR` | Absolute directory containing the existing exporter and converter tools |
-| `CIRCLE_HUB_SYNC_UPLOAD_DIR` | Absolute staging root for exported documents and checked-out manuals |
-| `CIRCLE_HUB_SYNC_MIRROR_DIR` | Absolute mirror output root |
-| `CIRCLE_HUB_SYNC_DIR` | Absolute directory containing these scripts and private export properties |
-| `CIRCLE_HUB_SYNC_MANUAL_BRANCHES` | Space-separated manual checkout directory names (names contain no whitespace) |
-| `CIRCLE_HUB_SYNC_RELEASE_SET_1` through `CIRCLE_HUB_SYNC_RELEASE_SET_4` | One `set upload-directory web-target` triplet per variable; each component contains no whitespace |
+| `KNOWLEDGE_SYNC_TOOLS_DIR` | Absolute directory containing the existing exporter and converter tools |
+| `KNOWLEDGE_SYNC_UPLOAD_DIR` | Absolute staging root for exported documents and checked-out manuals |
+| `KNOWLEDGE_SYNC_MIRROR_DIR` | Absolute mirror output root |
+| `KNOWLEDGE_SYNC_DIR` | Absolute directory containing these scripts and private export properties |
+| `KNOWLEDGE_SYNC_MANUAL_BRANCHES` | Space-separated manual checkout directory names (names contain no whitespace) |
+| `KNOWLEDGE_SYNC_RELEASE_SET_1` through `KNOWLEDGE_SYNC_RELEASE_SET_4` | One `set upload-directory web-target` triplet per variable; each component contains no whitespace |
 
 The four release sets retain their existing order and failure isolation. The private `export-<set>.properties` files name
 the actual OpenKM subtrees and output directories. Replace every angle-bracket placeholder in the example before use; the
@@ -46,7 +47,7 @@ properties file is a template, not an environment-variable expansion mechanism. 
 - `manuals_first_run.sh` performs the first conversion after a fresh manual checkout.
 - `export-release.properties.example` shows a subtree's exporter settings using placeholders.
 
-Cron entries share `flock -n "$CIRCLE_HUB_SYNC_DIR/pipeline.lock"` so these jobs never overlap. Configure the variables in the
+Cron entries share `flock -n "$KNOWLEDGE_SYNC_DIR/pipeline.lock"` so these jobs never overlap. Configure the variables in the
 host's private job environment. Illustrative schedules (script and log paths are placeholders):
 
 ```text

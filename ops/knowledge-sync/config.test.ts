@@ -12,11 +12,11 @@ function scratch(run: (root: string, env: NodeJS.ProcessEnv) => void): void {
     for (const dir of ['bin', 'tools', 'upload', 'mirror', 'sync']) mkdirSync(join(root, dir));
     const env = {
       PATH: `${join(root, 'bin')}:/usr/bin:/bin`,
-      CIRCLE_HUB_SYNC_TOOLS_DIR: join(root, 'tools'),
-      CIRCLE_HUB_SYNC_UPLOAD_DIR: join(root, 'upload'),
-      CIRCLE_HUB_SYNC_MIRROR_DIR: join(root, 'mirror'),
-      CIRCLE_HUB_SYNC_DIR: join(root, 'sync'),
-      CIRCLE_HUB_SYNC_MANUAL_BRANCHES: 'sample-one sample-two',
+      KNOWLEDGE_SYNC_TOOLS_DIR: join(root, 'tools'),
+      KNOWLEDGE_SYNC_UPLOAD_DIR: join(root, 'upload'),
+      KNOWLEDGE_SYNC_MIRROR_DIR: join(root, 'mirror'),
+      KNOWLEDGE_SYNC_DIR: join(root, 'sync'),
+      KNOWLEDGE_SYNC_MANUAL_BRANCHES: 'sample-one sample-two',
       TRACE: join(root, 'trace'),
     };
     for (const tool of ['java', 'python3']) writeFileSync(join(root, 'bin', tool), '#!/bin/bash\nprintf "%s\\n" "$*" >> "$TRACE"\n', { mode: 0o700 });
@@ -57,7 +57,7 @@ test('release pipeline preserves export, staging, conversion and deployment orde
 test('release wrapper keeps four configured triplets in order and continues after failure', () => scratch((root, env) => {
   writeFileSync(join(root, 'sync', 'release_pipeline.sh'), '#!/bin/bash\nprintf "%s\\n" "$*" >> "$TRACE"\n[ "$1" != "sample-one" ]\n', { mode: 0o700 });
   const sets = ['one', 'two', 'three', 'four'].map((n) => `sample-${n} SAMPLE_${n} target-${n}`);
-  for (const [i, set] of sets.entries()) env[`CIRCLE_HUB_SYNC_RELEASE_SET_${i + 1}`] = set;
+  for (const [i, set] of sets.entries()) env[`KNOWLEDGE_SYNC_RELEASE_SET_${i + 1}`] = set;
   runScript('run_release_all.sh', env);
   assert.deepEqual(readFileSync(env.TRACE!, 'utf8').trim().split('\n'), sets);
 }));

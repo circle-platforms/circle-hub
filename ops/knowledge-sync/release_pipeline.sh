@@ -3,13 +3,13 @@
 # Usage: release_pipeline.sh <set> <upload dir name> <web target name>
 #   e.g. release_pipeline.sh sample-set SAMPLE_EXPORT sample-target
 # Steps: export (incremental) -> stage (.doc -> .docx locally, PDFs without a Word twin) -> docx2md -> pdf2md -> deploy.
-# Existing pipelines and settings are not touched; outputs go to $CIRCLE_HUB_SYNC_MIRROR_DIR/release/<web target>.
+# Existing pipelines and settings are not touched; outputs go to $KNOWLEDGE_SYNC_MIRROR_DIR/release/<web target>.
 set -euo pipefail
-W="${CIRCLE_HUB_SYNC_MIRROR_DIR:?Set the host mirror directory}"
+W="${KNOWLEDGE_SYNC_MIRROR_DIR:?Set the host mirror directory}"
 SET="$1"; DIR="$2"; TARGET="$3"
-BASE="${CIRCLE_HUB_SYNC_UPLOAD_DIR:?Set the host upload directory}"
-SYNC="${CIRCLE_HUB_SYNC_DIR:?Set the host sync directory}"
-cd "${CIRCLE_HUB_SYNC_TOOLS_DIR:?Set the host converter directory}"
+BASE="${KNOWLEDGE_SYNC_UPLOAD_DIR:?Set the host upload directory}"
+SYNC="${KNOWLEDGE_SYNC_DIR:?Set the host sync directory}"
+cd "${KNOWLEDGE_SYNC_TOOLS_DIR:?Set the host converter directory}"
 echo "[$(date '+%F %T')] export $SET"
 java -Dokm.config="$SYNC/export-$SET.properties" OkmExport
 echo "[$(date '+%F %T')] stage $DIR"
