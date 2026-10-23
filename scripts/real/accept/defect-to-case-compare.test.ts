@@ -1,6 +1,7 @@
 // Synthetic tests of accept/defect-to-case-compare.ts: the head-overlap ratios, the verbatim report read from the
 // Hub's claims (never recomputed), and the duplicate-set comparison in both directions and the equal case.
 import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
 import { mkdtempSync, rmSync, writeFileSync, readFileSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -279,4 +280,18 @@ test('private details are written only as positions and categories with restrict
     assert.ok(!readFileSync(path,'utf8').includes('PRIVATE_TITLE'));
     assert.equal(statSync(path).mode&0o777,0o600);
   }finally{rmSync(dir,{recursive:true,force:true});}
+});
+test('CLI exit codes follow known command disagreements and successful comparisons',t=>{
+  const dir=mkdtempSync(join(tmpdir(),'d2c-exit-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));
+  t.mock.method(process.stdout,'write',()=>true);
+  const manual=Buffer.from('SYNTHETIC_EXPECTATION');
+  const digest=createHash('sha256').update(manual).digest('hex');
+  const files={gold:docGold,result:{partitions:{delivered:[{item:'74001',requirements:[{requirement:'commands',status:'satisfied'},{requirement:'grounded',status:'satisfied'}]}]}},run:{sources:[]}};
+  for(const [name,value] of Object.entries(files))writeFileSync(join(dir,name),JSON.stringify(value));
+  writeFileSync(join(dir,'manual'),manual);writeFileSync(join(dir,'commands'),'<commands><menu name="widget"><item name="set"><arguments><arg name="" type="U16"/></arguments></item></menu></commands>');
+  for(const [value,expected] of [['5',0],['99999',1]] as const){
+    writeFileSync(join(dir,'drafts'),JSON.stringify(submissionOf({steps:[{command:`widget set ${value}`}],expected:[{text:manual.toString(),quote:{text:manual.toString(),reference:`src:${digest}`}}]})));
+    const args=['gold','drafts','result','commands','manual','run'].flatMap(name=>['--'+name,join(dir,name)]);
+    assert.equal(main(args),expected);
+  }
 });

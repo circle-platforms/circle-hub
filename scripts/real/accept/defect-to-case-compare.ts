@@ -362,7 +362,11 @@ export function main(argv: string[]): number {
     const comparison = computeComparison(gold, submission, result, { commandTreeXml, sources, run, manual, fixField: value('fix-field') });
     if (value('details')) writePrivateJson(value('details')!, { positions: comparisonDetails(comparison), requests: evidenceQuestions(comparison).map(q => ({ ...q, action_status: 'requested' })) });
     process.stdout.write(`${renderComparison(comparison)}\n`);
-    return evidenceQuestions(comparison).length > 0 ? 1 : 0;
+    const parameters=comparison.parameters,quotes=comparison.quoteOracle;
+    const passed=!!parameters&&parameters.domains.items.length>0&&parameters.domains.items.every(item=>item.comparison==='equal'&&!item.hasUnknown)
+      &&quotes.shapes.length===0&&quotes.details.length>0&&quotes.counts.refute===0&&quotes.counts.unknown===0&&quotes.items.every(item=>item.comparison==='equal')
+      &&quotes.details.every(quote=>quote.category==='fix'||quote.category==='manual')&&evidenceQuestions(comparison).length===0;
+    return passed?0:1;
   } catch (error) {
     process.stderr.write('输入或明细写入：不通过\n');
     return 1;
