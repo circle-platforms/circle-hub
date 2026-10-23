@@ -5,7 +5,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { privatePath, writePrivateJson } from '../gold/builds.ts';
-import { capturedResult, readCaptures, resultItems, refusedDocuments } from './location-tree.ts';
+import { capturedResult, readCaptures, resultItems, refusedDocuments, uncertainStarts } from './location-tree.ts';
 
 export interface SampleId {
   id: string;
@@ -53,7 +53,7 @@ export async function main(argv: string[], print: (line: string) => void = line 
       const saved = readCaptures(privatePath(resultDir));
       const items = new Map<string, SampleId>(), missing: MissingFact[] = [];
       const excluded: Array<{ document: string; reason: string }> = [];
-      const accepted = new Set<string>(), refused = refusedDocuments(saved.captures, true);
+      const accepted = new Set<string>(), refused = refusedDocuments(saved.captures, true), uncertain = uncertainStarts(saved.captures);
       const results = new Set<string>(), observed = new Set<string>(), requested = new Set<string>();
       for (const capture of saved.captures) {
         const args = capture.request.args;
@@ -83,7 +83,7 @@ export async function main(argv: string[], print: (line: string) => void = line 
         }
       }
       for (const document of requested) if (!observed.has(document) && !accepted.has(document) && refused.has(document)) excluded.push({ document, reason: refused.get(document)! });
-      for (const document of requested) if (!observed.has(document) && !excluded.some(row => row.document === document)) missing.push({ document, fact: '已请求但未取得的完整 location 结果', next_action: '单独重跑本份文档的 case-location，再读取完整 get_nodes 结果后重新抽样；不能从残缺总体抽样' });
+      for (const document of requested) if (!observed.has(document) && !excluded.some(row => row.document === document)) missing.push({ document, fact: '已请求但未取得的完整 location 结果', next_action: uncertain.has(document) ? '调用超时，先使用原会话、保存的同一 client_key 和相同 start_run 参数取回同一运行；不能新建 key 后重跑。补完整 get_nodes 结果到新的回放目录再抽样' : '单独重跑本份文档的 case-location，再读取完整 get_nodes 结果后重新抽样；不能从残缺总体抽样' });
       for (const item of items.values()) item.documents.sort(compare);
       if (results.size === 0) missing.push({ document: '（结果输入没有可用文档）', fact: '完整定位结果', next_action: '由集成者重跑全树采集，确认 get_nodes 的结构化 content.text 是完整 JSON 后重新抽样' });
       const totals = { stories: [...items.values()].filter(i => i.kind === 'story').length, bugs: [...items.values()].filter(i => i.kind === 'bug').length, unclassified: [...items.values()].filter(i => i.kind === null).length };

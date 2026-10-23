@@ -209,3 +209,16 @@ test('location review 8: version node differences are classified from the origin
   const report = compareLocationTree(nested, captures(result(['940801'], { version: '10.8.1', line: '10.8.1', train: null, module: null, version_source: 'folders' })), [{ line: '10.9.1', candidates: [] }]);
   assert.equal(report.summary.reasons.version_nodes, 1);
 });
+
+test('location review 9: transport loss preserves a client key and never claims the start was refused', async t => {
+  const root = mkdtempSync(join(tmpdir(), 'location-timeout-')); t.after(() => rmSync(root, { recursive: true, force: true }));
+  writeFileSync(join(root, 'tree.json'), JSON.stringify(tree())); writeFileSync(join(root, 'token'), 'synthetic-token');
+  const requests: unknown[] = [], screen: string[] = [];
+  const code = await main(['--tree', join(root, 'tree.json'), '--out', join(root, 'out'), '--collect', '--token-file', join(root, 'token')], { call: async (_options, calls) => { requests.push(calls[0].args); throw new Error('synthetic timeout'); }, print: line => screen.push(line) });
+  assert.equal(code, 2);
+  const details = JSON.parse(readFileSync(join(root, 'out/details.json'), 'utf8'));
+  assert.equal(details.summary.missing.start_refused, 0); assert.equal(details.summary.missing.start_uncertain, 1);
+  assert.ok(typeof (requests[0] as { client_key: unknown }).client_key === 'string');
+  const pending = details.details.not_run[0]; assert.ok(pending.next_action.includes('同一 client_key')); assert.deepEqual(pending.recovery.args, requests[0]);
+  assert.ok(!screen.join('').includes((requests[0] as { client_key: string }).client_key));
+});

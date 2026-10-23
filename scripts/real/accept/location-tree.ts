@@ -49,9 +49,9 @@ ROLLBACK;
 已知记录摘要时可把根条件换成 digest='<生产记录摘要>'。缺记录引用和根时先询问集成者，不执行无范围查询。
 `;
 
-export interface Capture { transport_error?: boolean; request: { tool: string; args: unknown }; response: ToolText }
+export interface Capture { session?: string; transport_error?: boolean; request: { tool: string; args: unknown }; response: ToolText }
 export interface ResultItem { document: string; location: Record<string, unknown> | null; candidates: unknown[] | null }
-type Pending = { document: string; fact: string; next_action: string; next_command?: string };
+type Pending = { document: string; fact: string; next_action: string; next_command?: string; recovery?: { tool: string; args: unknown; session: string | null } };
 type Difference = { document: string; field: string; gold: unknown; actual: unknown; reason: string; next_action?: string };
 type Missing = { document: string; reason: string; next_action: string };
 const object = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -115,12 +115,29 @@ function requestedDocuments(capture: Capture): string[] {
   if (!object(args) || !object(args.inputs)) return [];
   return list(args.inputs.documents).flatMap(input => object(input) && typeof input.external === 'string' && input.external.startsWith('agile:mindmap:') ? [input.external.slice('agile:mindmap:'.length)] : []);
 }
+export function transportFailure(capture: Capture): boolean {
+  if (capture.transport_error) return true;
+  const value = capture.response.structured;
+  return capture.response.isError && !(object(value) && value.call_result === 'error' && list(value.errors).some(error => object(error) && typeof error.code === 'string'));
+}
+export function uncertainStarts(captures: Capture[]): Map<string, { args: unknown; session: string | null }> {
+  const pending = new Map<string, { args: unknown; session: string | null }>();
+  for (const capture of captures) {
+    if (capture.request.tool !== 'start_run') continue;
+    const docs = requestedDocuments(capture), value = capture.response.structured;
+    if (transportFailure(capture)) for (const doc of docs) pending.set(doc, { args: capture.request.args, session: capture.session ?? null });
+    else if (!capture.response.isError && object(value) && value.call_result === 'ok') for (const doc of docs) pending.delete(doc);
+  }
+  return pending;
+}
+
 export function refusedDocuments(captures: Capture[], includeBatch = false): Map<string, string> {
   const refused = new Map<string, string>();
   for (const capture of captures) {
     if (capture.request.tool !== 'start_run') continue;
     const docs = requestedDocuments(capture), answer = capture.response.structured;
-    if (!capture.response.isError && object(answer) && answer.call_result === 'ok') continue;
+    if (!capture.response.isError && object(answer) && answer.call_result === 'ok') { docs.forEach(doc => refused.delete(doc)); continue; }
+    if (transportFailure(capture)) continue;
     const errors = object(answer) ? list(answer.errors) : [];
     const indexed = errors.map(error => object(error) && typeof error.path === 'string' ? /^\/inputs\/documents\/(\d+)(?:\/.*)?$/.exec(error.path) : null);
     const precise = errors.length > 0 && indexed.every(match => match && Number(match[1]) < docs.length);
@@ -144,14 +161,15 @@ export async function collectRuns(documents: string[], out: string, options: Cal
     let transportError = false;
     try { response = (await call(options, [{ tool, args }]))[0] ?? { isError: true, text: '', structured: { call_result: 'error', errors: [] } }; }
     catch { transportError = true; response = { isError: true, text: '', structured: { call_result: 'error', errors: [] } }; }
-    const capture = { request: { tool, args }, response, ...(transportError ? { transport_error: true } : {}) };
+    const capture = { session: options.session, request: { tool, args }, response, ...(transportError ? { transport_error: true } : {}) };
     writePrivateJson(join(directory, `${String(++sequence).padStart(6, '0')}.${tool}.json`), capture);
     return capture;
   };
   const run = async (docs: string[], retry: boolean): Promise<void> => {
     if (!docs.length) return;
-    const capture = await invoke('start_run', { pack: 'case-location', product: 'apv', inputs: { documents: docs.map(document => ({ external: `agile:mindmap:${document}` })) } });
+    const capture = await invoke('start_run', { client_key: 'location-tree-' + hash(JSON.stringify({ out: privatePath(out), session: options.session, documents: docs })).slice(0, 48), pack: 'case-location', product: 'apv', inputs: { documents: docs.map(document => ({ external: `agile:mindmap:${document}` })) } });
     const answer = capture.response.structured;
+    if (transportFailure(capture)) return;
     if (!capture.response.isError && object(answer) && answer.call_result === 'ok') {
       const reference = object(answer.result) ? answer.result.reference : null;
       if (typeof reference === 'string') await invoke('get_nodes', { reference });
@@ -245,7 +263,7 @@ export function compareLocationTree(tree: unknown, captures: Capture[], buildGol
   const summary = {
     documents: gold.length, equal: 0, not_equal: 0, fields: { line: 0, train: 0, module: 0 },
     reasons: { version_nodes: 0, prefix_codes: 0, other: 0 },
-    missing: { start_refused: 0, no_item: 0, no_location_data: 0 }, only_result: 0,
+    missing: { start_refused: 0, start_uncertain: 0, no_item: 0, no_location_data: 0 }, only_result: 0,
     candidates: { equal: 0, not_equal: 0, not_run: 0 },
     facets: undefined as undefined | { only_tree: number; only_view: number; truncated: boolean | null; skipped: number | null; reasons: { no_cases: number; not_mindmap: number; retain_only: number; unknown: number } },
   };
@@ -262,7 +280,7 @@ export function compareLocationTree(tree: unknown, captures: Capture[], buildGol
       if (object(capture.request.args) && typeof capture.request.args.reference === 'string') resultReferences.set(item.document, capture.request.args.reference);
     }
   }
-  const refused = refusedDocuments(captures, true);
+  const refused = refusedDocuments(captures, true), uncertain = uncertainStarts(captures);
   const builds = new Map<string, BuildCandidate[]>();
   for (const value of buildGold) {
     if (!validBuildGold(value)) throw new Error('构建独立答案输入形状无效；下一步：用 builds.ts 重新导出');
@@ -273,9 +291,16 @@ export function compareLocationTree(tree: unknown, captures: Capture[], buildGol
   for (const expected of gold) {
     const rows = byDocument.get(expected.document) ?? [];
     const actual = rows.length === 1 ? rows[0] : null;
-    const category = rows.length === 0 ? (refused.has(expected.document) ? 'start_refused' : 'no_item') : actual?.location && ['line', 'train', 'module'].every(k => actual.location![k] === null || typeof actual.location![k] === 'string') ? null : 'no_location_data';
+    const category = rows.length === 0 ? (uncertain.has(expected.document) ? 'start_uncertain' : refused.has(expected.document) ? 'start_refused' : 'no_item') : actual?.location && ['line', 'train', 'module'].every(k => actual.location![k] === null || typeof actual.location![k] === 'string') ? null : 'no_location_data';
     if (category) {
       summary.missing[category]++;
+      if (category === 'start_uncertain') {
+        const recovery = uncertain.get(expected.document)!;
+        const next_action = '原调用超时或断开，不能认定运行没有开始；使用保存的同一 client_key、原会话和相同请求重开本批，取回同一运行。若原 key 缺失或幂等窗口已过，先由集成者查已有运行，不能生成新 key 重试';
+        details.missing.push({ document: expected.document, reason: '调用超时或连接中断，运行是否已开始待取回', next_action });
+        details.not_run.push({ document: expected.document, fact: '原 start_run 是否已经持久化及其完整结果', next_action, recovery: { tool: 'start_run', args: recovery.args, session: recovery.session } });
+        continue;
+      }
       details.missing.push({ document: expected.document, reason: category === 'start_refused' ? refused.get(expected.document)! : category === 'no_item' ? '结果里没有条目' : '定位数据缺少或有多份冲突', next_action: category === 'start_refused' ? '按错误码检查该文档可读性后单独重跑' : '重读该结果的完整 JSON；仍缺则单独重跑该文档' });
       continue;
     }
@@ -400,13 +425,13 @@ export async function main(argv: string[], deps: { call?: typeof callTools; prin
     const target = join(out, 'details.json'), content = JSON.stringify(details, null, 2) + '\n';
     if (existsSync(target)) { if (readFileSync(privatePath(target), 'utf8') !== content) throw new Error('输出已存在'); }
     else writePrivateJson(target, details);
-    const s = report.summary, missing = s.missing.start_refused + s.missing.no_item + s.missing.no_location_data;
-    print(`树里的文档 ${s.documents} 份；相等 ${s.equal}，不等 ${s.not_equal}（版本线 ${s.fields.line}、火车 ${s.fields.train}、模块 ${s.fields.module}）；缺 ${missing}（开始被拒 ${s.missing.start_refused}、没有条目 ${s.missing.no_item}、没有定位数据 ${s.missing.no_location_data}）；只在结果里 ${s.only_result}`);
+    const s = report.summary, definiteMissing = s.missing.start_refused + s.missing.no_item + s.missing.no_location_data, missing = definiteMissing + s.missing.start_uncertain;
+    print(`树里的文档 ${s.documents} 份；相等 ${s.equal}，不等 ${s.not_equal}（版本线 ${s.fields.line}、火车 ${s.fields.train}、模块 ${s.fields.module}）；缺 ${missing}（开始被拒 ${s.missing.start_refused}、开始状态待取回 ${s.missing.start_uncertain}、没有条目 ${s.missing.no_item}、没有定位数据 ${s.missing.no_location_data}）；只在结果里 ${s.only_result}`);
     print(`不等原因：版本线节点取法 ${s.reasons.version_nodes}、前缀代码 ${s.reasons.prefix_codes}、其他 ${s.reasons.other}`);
     print(`候选：相等 ${s.candidates.equal}，不等 ${s.candidates.not_equal}，没跑 ${s.candidates.not_run}；发布日期不是包的数据字段，不在核对范围`);
     if (s.facets) print(`视图：树有视图无 ${s.facets.only_tree}，视图有树无 ${s.facets.only_view}；truncated=${s.facets.truncated === null ? '没跑' : s.facets.truncated}，skipped=${s.facets.skipped ?? '没跑'}；原因：没有用例节点 ${s.facets.reasons.no_cases}、不是脑图 ${s.facets.reasons.not_mindmap}、凭据只保留 ${s.facets.reasons.retain_only}、原因不明 ${s.facets.reasons.unknown}`);
     print(`树原件 sha256 ${details.tree_sha256}`); print(`结果文件 sha256 ${saved.sha256}`);
-    const fail = s.not_equal + missing + s.only_result + s.candidates.not_equal;
+    const fail = s.not_equal + definiteMissing + s.only_result + s.candidates.not_equal;
     const notRun = report.details.not_run.length;
     print(`没跑的比较项 ${notRun} 项`);
     print(`判定：${fail > 0 ? '不通过' : notRun > 0 ? '没跑完' : '通过'}`);
