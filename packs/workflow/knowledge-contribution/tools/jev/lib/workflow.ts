@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import type { Hub, Piece } from './hub.ts';
 import type { Judge } from './judge.ts';
-import { GENERATED, defaultKind, readPiece, treeReference } from './pieces.ts';
+import { PACK_REF, GENERATED, defaultKind, readPiece, treeReference } from './pieces.ts';
 import { inputDigest, topChoice, shouldDescend, NONE_OPTION, type JevChoiceQuestion } from './api.ts';
 import { maskLiterals, thresholdOf } from './calibration.ts';
 import { narrowCandidates, optionNames, type PlacementChild } from './placement.ts';
@@ -22,10 +22,10 @@ function question(id:string,path:string,children:PlacementChild[]):{question:Jev
 async function calibrationState(store:LocalStore,model:string){const byInput=new Map<string,any>();for(const set of await store.records('calibration.jsonl'))if(set.model===model&&set.chain==='placement.choice')for(const sample of set.samples)byInput.set(sample.input,sample);return {...thresholdOf([...byInput.values()]),total:byInput.size};}
 function limitOf(value:unknown){const number=value===undefined?200:Number(value);need(Number.isSafeInteger(number)&&number>0&&number<=10000,'--limit 必须是 1 到 10000 的整数；缩小这次任务后重跑');return number;}
 async function upload(hub:Hub,value:unknown){const bytes=JSON.stringify(value);const result=await hub.call('upload_file',{file_path:Buffer.from(bytes).toString('base64'),media_type:'application/json',name:'client-contribution.json'});need(result.call_result==='ok'&&result.acceptance==='accepted'&&typeof result.reference==='string','Hub 没有受理上传；按回执修正输入后重跑');return result.reference;}
-async function start(hub:Hub,manifest:unknown,product:string,build:string,key:string){const reference=await upload(hub,manifest);const result=await hub.call('start_run',{pack:GENERATED.pack,product,build,inputs:{subject:{reference}},client_key:key});need(result.call_result==='ok'&&record(result.run)&&typeof result.run.root==='string'&&/^[a-f0-9]{64}$/.test(result.run.pack_digest)&&typeof result.run.run==='string','运行没有锁定根；核对产品、构建和包分配后重跑');return result.run;}
+async function start(hub:Hub,manifest:unknown,product:string,build:string,key:string){const reference=await upload(hub,manifest);const result=await hub.call('start_run',{pack:PACK_REF,product,build,inputs:{subject:{reference}},client_key:key});need(result.call_result==='ok'&&record(result.run)&&typeof result.run.root==='string'&&/^[a-f0-9]{64}$/.test(result.run.pack_digest)&&typeof result.run.run==='string','运行没有锁定根；核对产品、构建和包分配后重跑');return result.run;}
 export async function runWorkflow(action:string,c:Context):Promise<number>{
  const {values:v,hub,judge,store,allowed,model,io}=c;
- if(action==='lock'){need(v.product&&v.build,'lock 缺少产品或构建；补 --product 和 --build');const run=await start(hub,{items:[]},v.product,v.build,inputDigest({lock:true,product:v.product,build:v.build}));await store.write('lock.json',{run:run.run,root:run.root,pack:GENERATED.pack,pack_digest:run.pack_digest},true);io.stdout(`运行 ${run.run}；根 ${run.root}`);return 0;}
+ if(action==='lock'){need(v.product&&v.build,'lock 缺少产品或构建；补 --product 和 --build');const run=await start(hub,{items:[]},v.product,v.build,inputDigest({lock:true,product:v.product,build:v.build}));await store.write('lock.json',{run:run.run,root:run.root,pack:PACK_REF,pack_digest:run.pack_digest},true);io.stdout(`运行 ${run.run}；根 ${run.root}`);return 0;}
  if(action==='submit')return submit(c);
  need(v.root&&/^[a-f0-9]{64}$/.test(v.root)&&typeof v.under==='string'&&v.under.startsWith('/'),'缺少确切根或起点；补 --root 与 --under');const tree=new Tree(hub,v.root);await tree.node(v.under);const limit=action==='calibrate'?limitOf(v.limit):v.limit===undefined?Number.MAX_SAFE_INTEGER:limitOf(v.limit);
  if(action==='calibrate'){
@@ -58,6 +58,6 @@ async function submit(c:Context):Promise<number>{const {values:v,hub,store,io}=c
  const manifest={items:input.items.map((p:any,i:number)=>({id:p.id,title:`${i+1} ${p.data.path}`}))};const run=await start(hub,manifest,v.product,v.build,inputDigest({manifest,product:v.product,build:v.build}));need(input.items.every((p:any)=>p.data.root===run.root)&&input.root===run.root,`place 读取的根与这次锁定根不同；下一步用本次根 ${run.root} 重跑 place 和 submit`);
  const all=await store.records('judgments.jsonl');const wanted=new Set(input.items.flatMap((p:any)=>p.judgments));const judgments=all.filter(value=>wanted.has(inputDigest(value)));need(judgments.length===wanted.size,'提议缺判断记录；用原输出目录重跑 place 后 submit');const notes=await upload(hub,{judgments});
  const items=input.items.map((p:any)=>skip.has(p.id)?{item:p.id,handling:'skipped',reason:skip.get(p.id)}:{item:p.id,handling:'handled',slots:{contribution:[{code:p.code,text:p.text,data:p.data}]}});
- const result=await hub.call('submit_result',{run:run.run,model:GENERATED.pack,items,notes});
- await store.append('run-identities.jsonl',{run:run.run,pack:GENERATED.pack,pack_digest:run.pack_digest});const file='receipt-'+inputDigest(result)+'.json';await store.write(file,result);try{await store.write('receipt.json',result);}catch{/* Earlier receipt stays immutable; the digest-named receipt is this call's result. */}
+ const result=await hub.call('submit_result',{run:run.run,model:`${input.model}（Circle 技能 jev，${GENERATED.id}@${run.pack_digest}）`,items,notes});
+ await store.append('run-identities.jsonl',{run:run.run,pack:PACK_REF,pack_digest:run.pack_digest});const file='receipt-'+inputDigest(result)+'.json';await store.write(file,result);try{await store.write('receipt.json',result);}catch{/* Earlier receipt stays immutable; the digest-named receipt is this call's result. */}
  await store.append('receipts.jsonl',{file,run:run.run,result});for(const text of hub.lastText)io.stdout(text);io.stdout(`回执运行 ${run.run}；${file}`);for(const error of result.errors??[])io.stdout(JSON.stringify(error));if(result.acceptance!=='accepted'||(result.result?.contributions?.not_stored??[]).some((v:any)=>!skip.has(v.item))){io.stderr('有提议未入层；按回执点名条目重跑 place，或用 --skip 条目=理由 标为跳过后再交');return 3;}return 0;}

@@ -23,3 +23,8 @@ test('the skill uses only self-contained builtin imports and vocabulary axes com
  }}};await walk(skill);assert.deepEqual(issues,[]);
  const text=await readFile(new URL('SKILL.md',skill),'utf8');assert.match(text,/^---\nname: jev\n/);assert.ok((/^description: (.+)$/m.exec(text)?.[1]?.length??2000)<=1024);
 });
+
+test('the generated snapshot contains separate identity fields and every generated read tier without a pack digest',async()=>{
+ const {READ_TIER,labelOf}=await import('../../../../contracts/generated/vocabulary.ts');const manifest=JSON.parse(await readFile(new URL('../pack.json',import.meta.url),'utf8'));const snapshot=JSON.parse(await readFile(new URL('generated.json',skill),'utf8'));
+ assert.equal(snapshot.id,manifest.id);assert.equal(snapshot.version,manifest.version);assert.equal(snapshot.pack,undefined);assert.equal(snapshot.pack_digest,undefined);assert.deepEqual(snapshot.axes.read_tier,READ_TIER.map(code=>({code,label:labelOf('read_tier',code)})));assert.equal(snapshot.model_readable,READ_TIER.find(code=>code==='model_readable'));
+});

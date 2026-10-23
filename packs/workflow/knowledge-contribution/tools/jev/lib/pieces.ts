@@ -4,6 +4,7 @@ import { record, need, sha } from './local.ts';
 const generated = JSON.parse(await readFile(new URL('../generated.json', import.meta.url), 'utf8'));
 export const EGRESS = JSON.parse(await readFile(new URL('../egress.json', import.meta.url), 'utf8'));
 export { generated as GENERATED };
+export const PACK_REF = `${generated.id}@${generated.version}`;
 export const defaultKind = (kind: string): boolean => EGRESS.default_entry_kinds.includes(kind);
 export function allowedKinds(send: string[]): Set<string> {
   need(send.every((code) => code === 'src' || generated.axes.entry_kind.some((v: any) => v.code === code)), '--send 类别不存在；使用技能 generated.json 中的条目种类或 src'); return new Set([...EGRESS.default_entry_kinds, ...send]);

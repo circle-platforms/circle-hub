@@ -1,5 +1,6 @@
 {
-  "pack": "knowledge-contribution@1.1.0",
+  "id": "knowledge-contribution",
+  "version": "1.1.0",
   "model_readable": "model_readable",
   "axes": {
     "entry_kind": [

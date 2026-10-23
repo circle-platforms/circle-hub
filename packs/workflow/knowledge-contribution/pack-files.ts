@@ -26,7 +26,7 @@ export function slots() {
 export const VERSION = '1.1.0';
 export function generated() {
   const axis = (name: string, values: readonly string[]) => values.map(code => ({code,label:labelOf(name as 'entry_kind',code as never)}));
-  return {pack: `knowledge-contribution@${VERSION}`, model_readable:READ_TIER.find(code=>code==='model_readable'), axes: {entry_kind:axis('entry_kind',ENTRY_KIND),document_output_kind:axis('document_output_kind',DOCUMENT_OUTPUT_KIND),relation_kind:axis('relation_kind',RELATION_KIND),read_tier:axis('read_tier',READ_TIER)}};
+  return {id:'knowledge-contribution',version:VERSION, model_readable:READ_TIER.find(code=>code==='model_readable'), axes: {entry_kind:axis('entry_kind',ENTRY_KIND),document_output_kind:axis('document_output_kind',DOCUMENT_OUTPUT_KIND),relation_kind:axis('relation_kind',RELATION_KIND),read_tier:axis('read_tier',READ_TIER)}};
 }
 export function egress() { return {default_entry_kinds:ENTRY_KIND.filter(code=>code==='definition'||code==='behaviour'),opt_in_src:'src',max_instructions_chars:2000,max_description_chars:160}; }
 export async function verifyInstall(target: string): Promise<string[]> {
@@ -41,7 +41,7 @@ if(import.meta.main){
   else {
     const files=new Map<string,unknown>([['slots.schema.json',slots()],['tools/jev/generated.json',generated()],['tools/jev/egress.json',egress()]]);
     if(process.argv.includes('--check')){
-      const problems=await manifestProblems(directory);const manifest=JSON.parse(await readFile(join(directory,'pack.json'),'utf8'));if(`${manifest.id}@${manifest.version}`!==generated().pack)problems.push('pack identity differs from generated snapshot');for(const [path,value] of files)if(await readFile(join(directory,path),'utf8')!==JSON.stringify(value,null,2)+'\n')problems.push(path+' differs from generated vocabulary');
+      const problems=await manifestProblems(directory);const manifest=JSON.parse(await readFile(join(directory,'pack.json'),'utf8'));if(manifest.id!==generated().id||manifest.version!==generated().version)problems.push('pack identity differs from generated snapshot');for(const [path,value] of files)if(await readFile(join(directory,path),'utf8')!==JSON.stringify(value,null,2)+'\n')problems.push(path+' differs from generated vocabulary');
       if(problems.length)throw new Error(problems.join('\n'));console.log('knowledge-contribution: generated vocabulary and manifest match');
     }else{
       const path=join(directory,'pack.json');const manifest=JSON.parse(await readFile(path,'utf8'));manifest.version=VERSION;await writeFile(path,JSON.stringify(manifest,null,2)+'\n');

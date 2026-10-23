@@ -113,8 +113,8 @@
     },
     {
       "path": "tools/jev/generated.json",
-      "sha256": "da2ec07af609d250e2dea51f565da0942ccc027c32bbc7966d04a81044dabbaf",
-      "size": 1313
+      "sha256": "01a2b8d5a942cf00ad16ef24aea7d2f22c4e1d04485cfe5ae11d7179fa957188",
+      "size": 1327
     },
     {
       "path": "tools/jev/hooks.json",
@@ -178,8 +178,8 @@
     },
     {
       "path": "tools/jev/lib/pieces.ts",
-      "sha256": "98fe0c7d4298d43c363902a23a637d5e776c58a4d6daeaef69d6ee0eaf968109",
-      "size": 2823
+      "sha256": "299ffc41c818bbab938b8ca7ebb53de9ae8abb56e0f432660948aac0b5fdb3ae",
+      "size": 2887
     },
     {
       "path": "tools/jev/lib/placement.ts",
@@ -203,8 +203,8 @@
     },
     {
       "path": "tools/jev/lib/workflow.ts",
-      "sha256": "96d1b18ef2158d92000b625d43f7fe1bb6b18fdedd63873bfb1acf5a62e0d835",
-      "size": 15455
+      "sha256": "8c5b869a4c398e8a2f3ef5a2b4fbc17a3a9696c5d72509da00b4b97e372db63b",
+      "size": 15509
     },
     {
       "path": "workflow.json",
