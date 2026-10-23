@@ -8,6 +8,7 @@ import { VAGUE_EXPECTED, caseGold, caseNodesOf, foldKey, parseMindMap } from '..
 
 export const PUBLIC_REFUSALS = {
   gold_kind_missing:'标准答案没有 kind：用现在的 inject-defects.ts 重新注入',
+  blank_tags:'这个用例的读法在 gold/cases.ts 和 Hub 之间不一致（空标签）：换一个用例',
   keep_invalid:'--keep 必须为正整数',
   session_json:'会话 JSON 无效，重新导出后重跑',
   session_unreadable:'会话文件不可读，补取后重跑',
@@ -107,11 +108,35 @@ export function caseNodes(tree: MindTree): MindNode[] {
 
 const clone = <T>(value: T): T => structuredClone(value);
 
+/** Compare recognition with raw array presence; cases.ts remains an import-only reference. */
+function rawReading(tree: MindTree, parsed: ReturnType<typeof parseMindMap>, caseRule: 'marked'|'tagged') {
+  const raw: MindNode[] = [];
+  const visit = (node: MindNode): void => {raw.push(node);for(const child of (node.children ?? []).slice(0,1000))visit(child);};
+  visit(tree.root);
+  const view = {nodes:parsed.nodes.map((node,i)=>({...node,resource:Array.isArray(raw[i].data.resource)?raw[i].data.resource!.map(tag=>typeof tag==='string'?tag:''):[]}))};
+  return {raw,cases:caseNodesOf(view,{caseRule})};
+}
+function refuseBlankSubtree(node: MindNode): void {
+  const tags=node.data.resource;
+  if(Array.isArray(tags) && tags.length>0 && tags.every(tag=>typeof tag!=='string' || !tag.trim())) throw new PublicRefusal('blank_tags');
+  for(const child of node.children ?? [])refuseBlankSubtree(child);
+}
+function guardInjectionReading(tree: MindTree,node:MindNode,caseRule:'marked'|'tagged',groupOperation:boolean):void {
+  const parsed=parseMindMap(tree), view=rawReading(tree,parsed,caseRule), index=view.raw.indexOf(node);
+  const oldCase=caseNodesOf(parsed,{caseRule}).some(n=>n.index===index), rawCase=view.cases.some(n=>n.index===index);
+  if(oldCase!==rawCase)throw new PublicRefusal('blank_tags');
+  refuseBlankSubtree(node);
+  if(!groupOperation && !rawCase)throw new InjectionConditionError('target_not_case','目标未被当前 raw-array 规则投影为用例');
+}
+
 /** The document up to and including the n-th case: everything after it is cut, groups that start before it stay. */
 export function firstCases(tree: MindTree, n: number, options: { caseRule?: 'marked' | 'tagged' } = {}): MindTree {
   if (!Number.isSafeInteger(n) || n < 1) throw new PublicRefusal('keep_invalid');
   const copy = clone(tree), parsed = parseMindMap(copy), cases = caseNodesOf(parsed, options);
-  if (cases.length <= n) return copy;
+  const rawView=rawReading(copy,parsed,options.caseRule ?? 'marked');
+  if(JSON.stringify(cases.slice(0,n).map(c=>c.index))!==JSON.stringify(rawView.cases.slice(0,n).map(c=>c.index)))throw new PublicRefusal('blank_tags');
+  for(const selected of cases.slice(0,n))refuseBlankSubtree(rawView.raw[selected.index]);
+  if (cases.length <= n && rawView.cases.length <= n) return copy;
   const selected = new Set(cases.slice(0, n).map(node => node.index)), caseIndices = new Set(cases.map(node => node.index));
   const positions = new Map<MindNode, number>(), ends = new Map<number, number>(); let ordinal = 0;
   const visit = (node: MindNode): void => { const at = ordinal++; positions.set(node, at); for (const child of (node.children ?? []).slice(0, 1000)) visit(child); ends.set(at, ordinal - 1); };
@@ -180,7 +205,7 @@ const expectedLeaves = (caseNode: MindNode): MindNode[] => {
   const out: MindNode[] = [];
   const walk = (node: MindNode): void => {
     for (const child of node.children ?? []) {
-      if (Array.isArray(child.data.resource) && child.data.resource.some(tag => typeof tag === 'string' && tag.trim() !== '')) continue;
+      if (Array.isArray(child.data.resource) && child.data.resource.length > 0) continue;
       if ((child.children ?? []).length === 0) {
         if (child.data.priority === 3) continue;
         out.push(child);
@@ -207,6 +232,7 @@ export function inject(tree: MindTree, plan: readonly Planned[], options: Inject
   for (const [index, { label, seen_by, op }] of plan.entries()) {
     try {
     const { node, parent } = locate(copy, op.node);
+    guardInjectionReading(copy,node,options.caseRule ?? 'marked',op.kind==='delete_negative_group');
 
     if (op.kind === 'delete_negative_group') {
       if (parent === null) throw new InjectionConditionError('root_change', 'the root cannot be deleted');
@@ -330,13 +356,14 @@ export function inject(tree: MindTree, plan: readonly Planned[], options: Inject
 }
 
 export class InjectionRefusal extends Error {
-  readonly reason: InjectionReason;
+  readonly reason: InjectionReason | PublicRefusalReason;
   detail: string;
   constructor(index: number, kind: string, error: unknown) {
     const detail = error instanceof Error ? error.message : String(error);
     const safeKind = ['delete_expected','replace_expected','duplicate','move','replace_command_word','delete_negative_group','contradict_manual','vague_expected'].includes(kind) ? kind : '未识别种类';
-    const reason = error instanceof InjectionConditionError ? error.reason : 'unexpected';
-    super(`计划第 ${index} 条（${safeKind}）：${INJECTION_REASONS[reason]}`);
+    const reason = error instanceof InjectionConditionError || error instanceof PublicRefusal ? error.reason : 'unexpected';
+    const publicReason = error instanceof PublicRefusal ? error.message : INJECTION_REASONS[reason as InjectionReason];
+    super(`计划第 ${index} 条（${safeKind}）：${publicReason}`);
     this.reason = reason;
     this.detail = detail;
   }

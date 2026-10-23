@@ -241,9 +241,9 @@ test('every gold entry carries the injection kind', () => {
   assert.deepEqual(gold.map((g) => g.kind), ['delete_expected', 'duplicate']);
 });
 
-test('review 18: expected leaves use filtered nested-case tags and empty operands are refused', () => {
+test('review 18: blank nested-case tags and empty operands are refused', () => {
   const source: MindTree = { root: group('r', 'synthetic', { data: { id: 'c1', text: 'case', priority: 2, resource: ['configuration'] }, children: [{ data: { id: 'inner', text: 'step', resource: [' '] }, children: [leaf('e', 'before 10')] }] }) };
-  assert.equal(inject(source, [{ label: 'vague', seen_by: 'judgment', op: { kind: 'vague_expected', node: 'c1', text: '正常' } }]).gold.length, 1);
+  assert.throws(()=>inject(source, [{ label: 'vague', seen_by: 'judgment', op: { kind: 'vague_expected', node: 'c1', text: '正常' } }]),e=>e instanceof Error && 'reason' in e && e.reason==='blank_tags');
   for (const over of [{ from: '' }, { quote: ' ' }, { to: '' }]) assert.throws(() => inject(source, [{ label: 'manual', seen_by: 'judgment', op: { kind: 'contradict_manual', node: 'c1', from: 'before', to: 'after', quote: 'before allowed', ...over } }], { manual: { text: 'before allowed', sha256: 'a'.repeat(64) } }));
   const duplicated: MindTree = { root: group('r', 'synthetic', kase('c1', 'first', 'before 10'), kase('c1', 'second', '正常')) };
   assert.throws(() => inject(duplicated, [{ label: 'vague', seen_by: 'judgment', op: { kind: 'vague_expected', node: 'c1', text: '正常' } }]), error => error instanceof Error && 'detail' in error && String(error.detail).includes('没有变成含糊'));
@@ -255,7 +255,7 @@ test('review 19: keep counts marked cases using the selected case rule', () => {
   assert.equal(caseNodesOf(parseMindMap(firstCases(source, 2, { caseRule: 'tagged' })), { caseRule: 'tagged' }).length, 0);
 });
 
-test('closure refusal reasons are fixed at throw sites even when private values resemble another reason', () => {
+test('closure refusal reasons are fixed at throw sites even when private values resemble another reason', async t => {
  const source=document(); source.root.children!.push(group('empty','empty'));
  const manual={text:'manual allows 10',sha256:'a'.repeat(64)};
  const op={kind:'contradict_manual' as const,node:'c3',from:'生成甲',to:'999',quote:'manual allows 10'};
@@ -270,7 +270,7 @@ test('closure refusal reasons are fixed at throw sites even when private values 
   {op:{kind:'delete_negative_group',node:'empty'},reason:'group_empty',line:'分组没有用例'},
   {op:{kind:'delete_expected',node:'private-manual-node'},reason:'node_not_found',line:'目标节点不存在'},
  ];
- for(const c of checks) assert.throws(()=>inject(source,[{label:'synthetic',seen_by:c.seen_by ?? 'judgment',op:c.op}],{manual:c.manual}),e=>e instanceof Error && 'reason' in e && e.reason===c.reason && e.message===`计划第 1 条（${c.op.kind}）：${c.line}`);
+ for(const c of checks) await t.test(c.reason,()=>assert.throws(()=>inject(source,[{label:'synthetic',seen_by:c.seen_by ?? 'judgment',op:c.op}],{manual:c.manual}),e=>e instanceof Error && 'reason' in e && e.reason===c.reason && e.message===`计划第 1 条（${c.op.kind}）：${c.line}`));
 });
 
 test('closure refusal records are new private files and safe refusals keep their actionable text', async t => {
@@ -282,4 +282,16 @@ test('closure refusal records are new private files and safe refusals keep their
  assert.match(readFileSync(join(out,first),'utf8'),/first private detail/);assert.match(readFileSync(join(out,second),'utf8'),/second private detail/);
  assert.equal(statSync(join(out,second)).mode & 0o777,0o600);
  try{score([{node:'synthetic'} as any],{partitions:{delivered:[]}});assert.fail('must refuse');}catch(e){assert.match(refusalSummary(e),/第 1 条.*重新注入/);}
+});
+
+test('closure blank tags: ambiguous targets and keep boundaries refuse without rewriting another case', () => {
+ const blank=kase('blank','blank','inner expected');blank.data.resource=[''];
+ const marked=group('marked','marked',blank,leaf('marked-e','old expected'));marked.data.priority=2;
+ const source:MindTree={root:group('root','synthetic',marked,kase('healthy','healthy','healthy expected'))};
+ const before=JSON.stringify(source);
+ assert.throws(()=>inject(source,[{label:'synthetic',seen_by:'judgment',op:{kind:'vague_expected',node:'marked',text:'正常'}}]),e=>e instanceof Error && 'reason' in e && e.reason==='blank_tags' && e.message.includes('换一个用例'));
+ assert.throws(()=>firstCases(source,1),e=>e instanceof Error && 'reason' in e && e.reason==='blank_tags');
+ assert.equal(JSON.stringify(source),before);
+ const outer=kase('outer','outer','outer expected');outer.children!.push(blank);
+ assert.throws(()=>inject({root:group('root','synthetic',outer)},[{label:'synthetic',seen_by:'judgment',op:{kind:'vague_expected',node:'outer',text:'正常'}}]),e=>e instanceof Error && 'reason' in e && e.reason==='blank_tags');
 });
