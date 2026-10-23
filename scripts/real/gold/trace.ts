@@ -316,7 +316,9 @@ export function traceGold(options: TraceGoldOptions): TraceGold {
   // One lookup table per tree (the per-case linear find made the integrator's full scan quadratic).
   const bugsByDocument = new Map<string, string[]>();
   for (const location of locations) {
-    const bugs = bugIdsOf([location.title, ...location.ancestors].join(' '));
+    // The pack runs ids.ts PER TEXT (APV README 238-239: the case title and each label above it), so the gold
+    // unions each label's ids; joining the texts let an id run continue into the next label's prefix code.
+    const bugs = [...new Set([location.title, ...location.ancestors].flatMap((label) => bugIdsOf(label)))].sort();
     bugsByDocument.set(cleanDocId(location.document), bugs);
   }
   const caseInputs: CaseInput[] = [];

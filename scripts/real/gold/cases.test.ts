@@ -264,3 +264,13 @@ test('tags keep raw entries: blank strings, finite numbers and booleans as text 
   // A case whose only entry is a blank string is still tagged (the index keeps a non-null facet row).
   assert.ok(byId.get('c-blank') !== undefined && byId.get('c-blank')!.length > 0);
 });
+
+test('bugIdsOf reads ids the way the pack ids.ts does: full-width colons, full-width digits, marker labels stay separate', () => {
+  assert.deepEqual(bugIdsOf('缺陷：910010 合成标题'), ['910010'], 'a full-width colon after the marker');
+  assert.deepEqual(bugIdsOf('Bug：910010'), ['910010']);
+  assert.deepEqual(bugIdsOf('缺陷 ９１００１０'), ['910010'], 'full-width digits normalize');
+  // A marker label followed by a different label's prefix code: the id run stops at the next label.
+  // The pack runs per text; a joined run would pick up 101 — the union of per-label calls does not.
+  assert.deepEqual([...new Set(['回归 bug 910013', '101：合成模块'].flatMap((label) => bugIdsOf(label)))], ['910013'], 'per-label union never runs into the next label');
+  assert.deepEqual(bugIdsOf('缺陷910014、910015'), ['910014', '910015'], 'id lists still read');
+});

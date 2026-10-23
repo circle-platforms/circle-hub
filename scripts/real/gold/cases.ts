@@ -90,13 +90,16 @@ const NEGATIVE_KEYS = new Set(['negative', 'neg', '负向', '负面', '反向', 
 
 const BUG_MARKERS =
   /(?<![A-Za-z])(?:bu(?:t|gt)[\s_-]*(?:t?o|ro|2)[\s_-]*c[a-z]{0,5}|bugs?(?:[\s_-]*(?:t?o|ro|2)[\s_-]*c[a-z]{0,5})?|缺陷)/gi;
-const SEPARATOR = /^(?:\s*(?:&|、|,|\+|\/|\band\b|和|及|与)\s*|\s+)(?=[0-9])/i;
+const SEPARATOR = /^(?:\s*(?:&|、|,|\+|\/|\band\b|和|及|与)\s*|\s+)(?=[0-9]{2})/i;
 const NOT_ID = /^(?:19|20)[0-9]{2}/;
 
 /** Bug ids of one text: after each bug marker, digit runs 2..9 long, separated by , &、and. */
-export function bugIdsOf(text: string): string[] {
+export function bugIdsOf(raw: string): string[] {
   const ids: string[] = [];
-  for (const match of text.normalize('NFKC').matchAll(BUG_MARKERS)) {
+  // The pack's ids.ts normalizes once and works on the normalized text: a full-width colon or full-width digits are
+  // part of the id form it reads. Slicing the RAW text after matching on the normalized one lost both (closure 1).
+  const text = raw.normalize('NFKC');
+  for (const match of text.matchAll(BUG_MARKERS)) {
     let at = (match.index ?? 0) + match[0].length;
     at += /^[\s_\-–—:#.]*/.exec(text.slice(at))![0].length;
     for (let guard = 0; guard < 64; guard++) {
@@ -267,7 +270,8 @@ export function caseGold(
           vagueExpected: false,
           negative,
           group,
-          defects: bugIdsOf([node.text, ...node.ancestors].join(' ')),
+          // Per text, as the pack does (the case title and each label above it), then unioned.
+          defects: [...new Set([node.text, ...node.ancestors].flatMap((label) => bugIdsOf(label)))].sort(),
         };
         caseIndexMap[v] = cases.length;
         cases.push(c);
