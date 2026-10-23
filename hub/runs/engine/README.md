@@ -231,9 +231,8 @@ well-formed text). The same reasons go to the admin note of the call they belong
 
 - **Partition step 4** counts only *required* requirements, as V05 R[3] ④ says ("某个必需要求项"); the task says "any declared
   layer". With every requirement required (the case-review packs) both agree.
-- **Facts of skipped or uncovered items.** Only the requirements that accept judgments become incomplete for a skipped or
-  uncovered item (at every layer they declare); fact requirements keep the Hub's own terminal, since the Hub computes them
-  whatever the model did. The current W07 R[2]-R[3] distinguishes target facts from missing artifacts; only a required incomplete requirement forces the incomplete partition.
+- **Facts of skipped or uncovered items.** Judgment requirements and facts that need a missing submitted artifact become incomplete for a skipped or
+  uncovered item; target-only facts keep the Hub's computed terminal. The current W07 R[2]-R[3] distinguishes target facts from missing artifacts; only a required incomplete requirement forces the incomplete partition.
 - **Unknown outcomes** become claims with nature `unknown`, not `fact` (B01: an unknown verdict has no grounds to be a fact).
 - **Default run subject**: `{ items: [{ id, label, location, fields, slots }], cross_item }` — `slots` (the item's slot record
   or null, references canonical) and `cross_item` (the submitted entries, grounds canonical) are added to the documented
@@ -429,7 +428,7 @@ store their retry_attempts, including the first transient failure and the recove
 module and item where applicable, generated reasons, durations and 50/100 ms backoff. Successful first calls do not enlarge this
 retry log. Production start actions and submitted-result actions both retain it. The per-evaluation subject cache
 shares successful construction and exhausted transient failures, and replay of a completed identical submission creates no new attempt or action.
-Exhausted sandbox errors still need the exit/request contract from hub-unknown-model; this step adds no exit field.
+Exhausted sandbox errors now use the named exits and durable requests described below.
 
 Bound check sources are re-read at most three times after unavailable/failed reads, with 50/100 ms backoff; the validation
 action retains read retry attempts. Source/permission absence stays neutral SOURCE_UNAVAILABLE; internal failures
@@ -437,8 +436,7 @@ use registered check_error or integrity_unproven, an unresolved selector REFEREN
 uses missing_input; a pinned text exceeding reads.max_bytes uses budget_exhausted. Deterministic no-text/size limits do not
 repeat identical reads. Free-text diagnostics go only to the admin log. Every affected check outcome carries the actual
 unread list into its fact claim's statement.data.unread_sources even if the pack omits it. This is not a new top-level
-validation field. Read recovery reuses the same bound reference and retains integrity/permission checks. Exit ownership,
-requests, deadlines and whether unread_sources belongs at top level await hub-unknown-model.
+validation field. Read recovery reuses the same bound reference and retains integrity/permission checks. Named exit ownership, durable requests and deadlines are connected below; unread_sources remains structured claim data.
 
 Exact-value resolution retries only SOURCE_UNAVAILABLE carrying an internal check_error or integrity_unproven reason
 (and thrown read failures), using the same three-attempt 50/100 ms policy. Genuine absent/forbidden references and invalid
@@ -449,9 +447,8 @@ requirement/rounds_left. The raw submission is still stored once. Hub-failure ac
 repair attempt, so the identical body can be checked after restoration; genuine errors then consume their normal round.
 A completed result still replays idempotently. The model-facing resolver keeps its neutral return rather than throwing.
 
-Pending hub-unknown-model: explicit exit/request ownership and deadlines after retry exhaustion; automatic routing to a
-named administrator or pack author; top-level unread_sources and a storage location on not-accepted results that have no
-fact claims. This change adds no exit field, request contract, split, automatic re-evaluation or interpreter policy change.
+The exit flow below supplies named administrators/pack authors, finite requests and automatic re-evaluation. Refused
+submissions still retain their original bytes and validation action; unread_sources remains structured evidence.
 
 
 Subject-copy review: a successful build is serialized once as JSON text, and every check parses an independent value.
@@ -521,7 +518,7 @@ Retain-only data quotes preserve structured credential_unreadable evidence in da
 missing administrator acceptance and the administrator acceptance/re-evaluation next action. quote@1 uses awaiting_step
 from the generated Reason axis; credential_unreadable belongs to ValidityStatus and is not a legal CheckOutcome.reason.
 No contract axis is widened. Legacy retain_only views receive the same evidence, and source reads remain single-attempt
-for this deterministic state. Request dispatch and automatic re-evaluation still await the model-owned exit contract.
+for this deterministic state. Named administrator requests and automatic re-evaluation are connected below.
 
 Startup-failure diagnostics retain the actual host errno/message for check and subject onError logging after retry
 exhaustion. Neither the submitted-result receipt nor persisted retry evidence carries those private causes; fixed
@@ -603,9 +600,9 @@ without an observation contract. Start rejects invalid layer/schema/contribution
 request addressed to the recorded pack owner. These pre-run requests bind the published pack digest, without making up
 an unstarted run. Owner-facing requests can be listed without granting access to unrelated run contents.
 `knowledge.requires` is checked before inputs are read; refusals name the missing catalogs and list currently eligible
-builds. A workflow may require an explicit predecessor. Model-driven runs whose line root changes receive a named
-successor request; their frozen roots and prior results remain unchanged. Publication of a fixed pack version answers
-its repair request using the actual pack-version record, then prompts affected runners to open successors.
+builds. A workflow may require an explicit predecessor. Model-driven runs whose selected named build root changes receive a named
+successor request; their frozen roots and prior results remain unchanged. Publication answers a package repair request only when --answer-request explicitly binds it; the actual pack-version
+record is the answer source, and affected runners are prompted to open successors.
 
 Hub-observed retain-only source reads produce administrator disposition requests with structured source references.
 Maintenance polls their effective read permission/tier; after acceptance it revalidates with the originally observed
@@ -621,3 +618,27 @@ new exits and every retained gap remain visible as escaped read-only text.
 The shared core outcome constructor copies the existing concrete detail verbatim into top-level `missing`, without
 changing any interpreter verdict. trunk-fixes-4 may carry the same constructor fix; keep one equivalent version when
 merging. Pack functions still must declare their own missing fact and do not receive this trusted-core normalization.
+
+Run-level unknown facts also enter errors with their cross-item path and remaining rounds, and produce B07 requests;
+there is no `data.missing` alias. Shared request storage is exposed by `hub/requests/api.ts` for the dependent tasks.
+Only settled results are cached: a repeated transitional submission is checked again and can resolve against new facts.
+Legacy missing exits are reported as “出口未写”, with separate named repair requests; re-evaluation appends a new result.
+
+Administrative abandonment is permanent for that run: new submissions are kept verbatim and refused with
+`RUN_ABANDONED`; continuing requires a successor revision. The current run view selects the management projection by
+its real input-action reference rather than confusing later evidence records with a resumption. It preserves old layer
+terminals and unknown counts, marks requirements unsatisfied/abandoned, and cites the old result. If old technical fields
+were unwritten, the new projection explicitly says so and binds only this real management request; the old bytes still
+show “出口未写”. This is an administrative view, not a new target check. Remote execution and safety freezes remain
+independent; pending effect reconciliation continues as its own recorded work.
+
+System deliveries store their exact canonical input in an append-only action and name it through `system_input`. The
+`submission` field is its recomputable digest, shown as “系统交付输入摘要”; these results have only run/system-input
+indexes and cannot satisfy a user-submission cache lookup. Expiration and management deliveries never impersonate a user.
+
+Dispatch integration reads existing journal bindings through the read-only API and calls the existing reconciliation
+entry once per observed state. It never plans, dispatches or resends. Integrity-checked dispatch projections bind the
+exact job, output digest and complete item set; target-reported conclusions remain judgments. Unsettled effects quarantine
+only bound items. A named mark-failed disposition uses `EFFECT_UNKNOWN_DISPOSED`; abandonment is a management choice.
+Neither choice rewrites the original dynamic observation or the physical safety freeze. Private journal references stay
+in administrator-only evidence because they may reach lease material. User requests cite the safe observation record.

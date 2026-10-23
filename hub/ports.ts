@@ -2,7 +2,7 @@
 // from its api.ts; a package that needs one takes it as an argument and imports nothing else of the provider. Tests use fakes.
 // A port answers only what its consumers need; whatever else a provider offers stays in the provider's own api.ts.
 import type { z } from 'zod';
-import type { EntryKind, PackKind, RequestKind } from '../contracts/generated/vocabulary.ts';
+import type { EntryKind, PackKind, RequestKind, ExitAction } from '../contracts/generated/vocabulary.ts';
 import type { PathChange } from '../contracts/src/views.ts';
 import type { Coverage } from '../contracts/src/common.ts';
 import type { ChecksFile, KnowledgeFile, PackManifest, RequirementsFile, SlotsFile, WorkflowFile } from '../contracts/src/pack.ts';
@@ -152,12 +152,13 @@ export interface RunSubmissionView {
 }
 
 export interface RunRequestView {
-  record:string; run?:string; pack_digest?:string; sources?:string[]; kind:RequestKind; audience:string; due:string; missing:string; next_action:string;
+  record:string; answer_action?:ExitAction; run?:string; pack_digest?:string; job?:string; sources?:string[]; kind:RequestKind; audience:string; due:string; missing:string; next_action:string;
   source:string; code:string; item?:string; requirement?:string; answered_by:string|null;
 }
 
 /** Everything the console shows about one run. */
 export interface RunDetail {
+  management?:{record:string;disposition:'abandon';result:string|null};
   run: RunRecord;
   submissions: RunSubmissionView[];
   requests?: RunRequestView[];
@@ -167,7 +168,10 @@ export interface RunDetail {
   production: { record: string; result: ValidationResult } | null;
 }
 
+export interface RunListing extends Page<RunRecord> {requests?:RunRequestView[];open_runs?:string[]}
+
 export interface RunsService {
+  abandonRun?(user:Principal,run:string,request:string,reason:string):Promise<{record:string;result:ValidationResult;decision:string;created:boolean;current:boolean}>;
   listRequests?(user: Principal, run?: string): Promise<RunRequestView[]>;
   /** Absent and forbidden give the same SOURCE_UNAVAILABLE answer with the tool's empty shape. */
   startRun(user: Principal, input: z.infer<typeof StartRunInput>, context: CallContext): Promise<Untraced<z.infer<typeof StartRunOutput>>>;
@@ -177,7 +181,7 @@ export interface RunsService {
   /** Own runs for a user, any run for an admin; null when absent or forbidden. */
   getRun(user: Principal, run: string): Promise<RunDetail | null>;
   /** Own runs for a user, every run for an admin, newest first. */
-  listRuns(user: Principal, query?: { pack?: string; limit?: number; cursor?: string | null }): Promise<Page<RunRecord>>;
+  listRuns(user: Principal, query?: { pack?: string; limit?: number; cursor?: string | null }): Promise<RunListing>;
 }
 
 // ---------------------------------------------------------------- read-only listings for the console

@@ -8,3 +8,5 @@ export { verifyInput, type VerifiedInput, type VerificationPort } from './proof.
 export { observationHashes, rpcResponse, toolContent } from './observations.ts';
 
 export type { BuildKnowledge } from './probes.ts';
+
+export { readRunJobs, type RunJob } from './read-runs.ts';

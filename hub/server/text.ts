@@ -1,3 +1,4 @@
+import { isAbandonedResult } from '../runs/api.ts';
 import { isCallResult, isAcceptance } from '../../contracts/generated/vocabulary.ts';
 // The Chinese plain text of every tool answer (D05 R[0], R[1], R[6]; display rules 0, 4-7 and 11): the only content block,
 // and the only part of a tool result the real Circle client hands to the model (structuredContent never reaches it). Every
@@ -40,7 +41,7 @@ import {
   type SubmitResultOutput,
   type UploadFileOutput,
 } from '../../contracts/src/tools.ts';
-import { PartitionCounts, PartitionItem, Partitions, ValidationResult, partitionCountsOf, type ItemResult, type RequirementResult } from '../../contracts/src/validation.ts';
+import { PartitionCounts, PartitionItem, Partitions, ValidationResult, StoredValidationResult, readStoredValidationResult, partitionCountsOf, type ItemResult, type RequirementResult } from '../../contracts/src/validation.ts';
 import { ReferenceSyntaxError, UNAVAILABLE_MESSAGE, canonicalJson, parseReference, pointerTokens, recReference, srcFragment, withRange, type Reference } from '../refs/api.ts';
 import { TEXT_BUDGET, fit, oneLine, softCap, type Block, type Entry, type Omission } from './budget.ts';
 import { NOT_APPLICABLE, claimFields, coverageText, requirementText, statusText, terminalLabel, terminalSymbol, terminalText, type LayerTerminal } from './claims.ts';
@@ -1132,12 +1133,19 @@ function buildView(c: Content & { text: string }): ContentView {
   if (value === null || typeof value !== 'object' || canonicalJson(value) !== c.text) return { ...text, record: ref.record };
   const record = ref.record;
   if (tokens.length === 0) {
-    const parsed = ValidationResult.safeParse(value);
+    const parsed = StoredValidationResult.safeParse(value);
     if (parsed.success) {
       const result = parsed.data;
+      const notices=readStoredValidationResult(result).notices;
+      const management=isAbandonedResult(result);
+      const unwritten=management?result.cross_item.find(c=>c.warrant.id==='runs.engine@1'&&c.statement.data?.run_disposition==='abandon')?.statement.data?.legacy_unwritten_fields:undefined;
+      const missingExits=notices.filter(n=>n.message==='出口未写'),missingFacts=notices.filter(n=>n.message==='缺失事实未写');
       const head = [
-        `结果 ${c.reference}（运行 ${result.run}）：${countsLine(result.acceptance, result.acceptance === 'accepted' ? result.partitions : undefined)}`,
+        ...(management?['管理放弃：要求项未满足（已放弃）；技术层沿用原记录，未重验；保留未知计数，不改变原效果及冻结。',`原技术记录有 ${typeof unwritten==='number'?unwritten:0} 处字段未写；管理出口不是旧技术出口，原件不回填。`]:[]),
+        `结果 ${c.reference}（运行 ${result.run}）：${result.system_input?'系统交付；'+countsText(partitionCountsOf(result.partitions),result.partitions):countsLine(result.acceptance, result.acceptance === 'accepted' ? result.partitions : undefined)}`,
         `修复轮数：已用 ${result.rounds.used}，最多 ${result.rounds.max}；覆盖：${oneLine(coverageText(result.coverage) ?? '')}；锁定：任务包 ${oneLine(result.locks.pack)}${result.locks.root ? `，知识根 ${result.locks.root}` : ''}`,
+        ...(notices.length?[`旧结果：出口未写 ${missingExits.length} 处，缺失事实未写 ${missingFacts.length} 处；首处 ${notices[0].path}。原记录不回填，请按具名请求补齐事实后重评或开新修订`]:[]),
+        ...(result.system_input?[`系统交付输入摘要 ${result.submission}；来源 ${result.system_input}`]:[]),
         `内容${RESULT_PARTS}`,
       ];
       return { head, lines: resultLayout(result, recReference(record)).lines, unit: '结果', run: result.run, record, tree: null, text: false };

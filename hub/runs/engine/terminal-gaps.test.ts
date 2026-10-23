@@ -21,4 +21,6 @@ test('only explicit premise paths wait for another requirement repair and inheri
   waitForRepairs(results,[{requirement:'source',pointer:'/items/0/slots/source',exit:RECOVERY.exit}]);
   assert.equal(results[0].layers[0].terminal,'incomplete');
   assert.equal(results[0].status,'pending');
+  assert.ok((await import('../../../contracts/src/validation.ts')).LayerResult.safeParse(results[0].layers[0]).success);
+  assert.equal(results[0].layers[0].gaps,undefined,'known waiting work is not an extra unknown');
 });

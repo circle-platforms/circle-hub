@@ -1,5 +1,5 @@
 import { PublishableRequirementsFile } from '../../../contracts/src/pack.ts';
-import { recordResultRequests, putRequest } from './requests.ts';
+import { recordResultRequests, putRequest, answerSuccessorRequests } from './requests.ts';
 import { authorOriginOf } from './lineage.ts';
 import type { ExecutionHost } from '../../../contracts/generated/vocabulary.ts';
 // start_run (W06): check the arguments, answer a repeated client key, authorize the pack, fix the target, bind the inputs,
@@ -376,11 +376,11 @@ export async function startRun(ctx: EngineContext, user: Principal, raw: unknown
   }
 }
 
-async function packRefusal(ctx:EngineContext,workflow:LoadedWorkflow,at:Date,errors:ProtocolError[]):Promise<Refusal>{
+async function packRefusal(ctx:EngineContext,workflow:LoadedWorkflow,at:Date,errors:ProtocolError[],adminNote:string|null=null):Promise<Refusal>{
   const owner=await ctx.deps.workflows.ownerOf?.(workflow.pack.digest);
-  if(!owner)return new Refusal(errors.map(e=>({...e,fix:`${e.fix??''}；管理员须补齐包 ownerOf 身份接线后重试`})));
+  if(!owner)return new Refusal(errors.map(e=>({...e,fix:`${e.fix??''}；管理员须补齐包 ownerOf 身份接线后重试`})),adminNote);
   const request=await putRequest(ctx,{pack_digest:workflow.pack.digest,kind:'repair',audience:owner,due:new Date(at.getTime()+86400000).toISOString(),missing:errors.map(e=>e.message).join('；'),source:workflow.pack.digest,code:'check_error',next_action:'包作者发布修复版本，运行者以原运行为 predecessor 用 start_run 重跑；本次未开始的运行直接重新开始'});
-  return new Refusal(errors.map(e=>({...e,fix:`${e.fix??''}；请求 rec:${request.digest}：${request.body.next_action}`})));
+  return new Refusal(errors.map(e=>({...e,fix:`${e.fix??''}；请求 rec:${request.digest}：${request.body.next_action}`})),adminNote);
 }
 
 async function authorizedStart(
@@ -409,7 +409,7 @@ async function authorizedStart(
     throw new Refusal([protocolError('SUBMISSION_SCHEMA_VIOLATION', '含模型槽位的任务包不能由 Hub 执行（W09 R[3]：常设义务只许确定性函数）', { path: '/pack', fix: '改用只含事实要求项的任务包' })]);
   }
   const unsafe = schemaProblems(workflow);
-  if (unsafe.length > 0) throw await packRefusal(ctx,workflow,at,[protocolError('SUBMISSION_SCHEMA_VIOLATION',`任务包声明的 JSON Schema 不能安全执行：${unsafe.join('；')}`,{path:'/pack',fix:'包作者去掉不支持的模式关键字后发布修复版本'})]);
+  if (unsafe.length > 0) throw await packRefusal(ctx,workflow,at,[protocolError('SUBMISSION_SCHEMA_VIOLATION',`任务包声明的 JSON Schema 不能安全执行：${unsafe.join('；')}`,{path:'/pack',fix:'包作者去掉不支持的模式关键字后发布修复版本'})],`pack ${workflow.pack.id}@${workflow.pack.version} declares schemas the engine cannot enforce: ${unsafe.join('; ')}`);
   return startFresh(ctx, user, input, call, mode, workflow, at, requestDigest);
 }
 
@@ -496,6 +496,7 @@ async function startFresh(
     }
   }
   const runId = newId('run', at.getTime());
+  return ctx.lock(`submit:${runId}`,async()=>{
   const selectedBuild=target.buildName===null?undefined:(await ctx.deps.knowledge.builds(target.product!.product.id)).find(build=>build.name.normalize('NFC').toLowerCase()===target.buildName!.normalize('NFC').toLowerCase())?.name??target.buildName;
 
   const bound = await bindInputs(ctx, user, workflow, input.inputs, runId, call.traceId, target.root?.composition ?? null,selectedBuild);
@@ -644,6 +645,7 @@ async function startFresh(
   });
   if(production!==null)await recordResultRequests(ctx,record,production.evaluation.result);
   const result = production === null ? null : await keepProduction(ctx, stored, production, call);
+  if(predecessor!==null)await answerSuccessorRequests(ctx,predecessor.body,stored);
   return {
     answer: okAnswer(record, result),
     production: result,
@@ -661,6 +663,7 @@ async function startFresh(
     }
     throw error;
   }
+  });
 }
 
 /** The evaluation of a production run, made before its run record is stored (the result names the record's digest). */
@@ -738,4 +741,13 @@ async function keepProduction(ctx: EngineContext, stored: StoredRecord<RunRecord
     detail: { submission: stored.digest, session: sessionOf(call), model: null, repair: [], result: result.digest, production: true, retry_attempts: production.evaluation.retryAttempts },
   });
   return { reference: recReference(result.digest), record: result.digest, result: result.body, counts: partitionCountsOf(result.body.partitions) };
+}
+
+/** Re-evaluate only deterministic production, with the existing frozen run and current authorized source availability. */
+export async function recheckProduction(ctx:EngineContext,stored:StoredRecord<RunRecord>,user:Principal,traceId:string):Promise<ProductionResult|null>{
+  const workflow=await ctx.deps.workflows.byDigest(stored.body.pack_digest);
+  if(!workflow||!isProduction(workflow))return null;
+  const produced=await evaluateProduction(ctx,stored.body,stored.digest,workflow,traceId,user);
+  await recordResultRequests(ctx,stored.body,produced.evaluation.result);
+  return keepProduction(ctx,stored,produced,{traceId,sessionId:stored.body.session??null});
 }

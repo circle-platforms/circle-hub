@@ -9,14 +9,14 @@ import { LAYER, PARTITION, axisLabel, isEnvironment, isItemHandling, labelOf, ty
 import type { Claim } from '../../../contracts/src/claim.ts';
 import type { ProtocolError } from '../../../contracts/src/common.ts';
 import type { RunRecord } from '../../../contracts/src/run.ts';
-import type { ItemResult, LayerResult, RequirementResult, ValidationResult } from '../../../contracts/src/validation.ts';
+import { partitionCountsOf, type ItemResult, type LayerResult, type RequirementResult, type ValidationResult } from '../../../contracts/src/validation.ts';
 import type { RunDetail } from '../../ports.ts';
 import type { CallLogLine, Principal } from '../../records/api.ts';
 import { UNAVAILABLE_MESSAGE } from '../../refs/api.ts';
-import { itemCell } from '../../runs/api.ts';
+import { itemCell, isAbandonedResult } from '../../runs/api.ts';
 import type { ServerDeps } from '../api.ts';
 import { NOT_APPLICABLE, cellText, claimFields, coverageText, terminalKind, terminalText, type LayerTerminal } from '../claims.ts';
-import { countsLine } from '../text.ts';
+import { countsLine, countsText } from '../text.ts';
 import { code, definitions, html, link, page, pre, section, table, type Html, type PageChrome } from './html.ts';
 
 export interface PageContext {
@@ -249,13 +249,16 @@ export async function runPage(ctx: PageContext, runId: string): Promise<PageResu
     ]),
   );
   const factOnly=run.requirements.length>0&&run.requirements.every(requirement=>requirement.accepted_producer==='fact');
-  const primary=factOnly?detail.production:detail.latest;
+  const primary=detail.latest?.result.system_input?detail.latest:factOnly?detail.production:detail.latest;
   const renderResult=(latest:NonNullable<RunDetail['latest']>,recordLabel:string,commentary=false):Html=>{
     const result = latest.result;
-    return html`<p><strong>${commentary ? '模型声明的分区（判断，未采用）：' : ''}${countsLine(result.acceptance, result.acceptance === 'accepted' ? result.partitions : undefined)}</strong></p>
+    const management=isAbandonedResult(result);
+    const unwritten=management?result.cross_item.find(c=>c.warrant.id==='runs.engine@1'&&c.statement.data?.run_disposition==='abandon')?.statement.data?.legacy_unwritten_fields:undefined;
+    return html`<p><strong>${management?'管理放弃（不是目标通过）；':commentary ? '模型声明的分区（判断，未采用）：' : ''}${result.system_input?'系统交付；'+countsText(partitionCountsOf(result.partitions),result.partitions):countsLine(result.acceptance, result.acceptance === 'accepted' ? result.partitions : undefined)}</strong></p>
+${management?html`<p>技术层未重新核验；原记录 ${typeof unwritten==='number'?unwritten:0} 处技术字段未写，原件仍显示“出口未写”；本投影出口仅引用本次真实处置请求。</p>`:''}
 ${definitions([
   [recordLabel, code(latest.record)],
-  ['提交摘要', code(result.submission)],
+  [result.system_input?'系统交付输入摘要':'提交摘要',code(result.submission)],
   ['修复轮数', `已用 ${result.rounds.used}，最多 ${result.rounds.max}`],
   ['覆盖', coverageText(result.coverage) ?? '—'],
   ['锁定', html`任务包 ${result.locks.pack} ${code(result.locks.pack_digest)}${result.locks.root ? html`，知识根 ${code(result.locks.root)}` : ''}${result.locks.policy ? `，政策 ${result.locks.policy}` : ''}`],
@@ -296,6 +299,7 @@ ${section('错误与修正', errorsTable(result.errors))}`;
     body: page(
       ctx.chrome(`运行 ${run.run}`),
       html`${summary}
+${detail.management?section('管理处置',html`<p>目标已放弃；来源 ${link('/console/runs/'+run.run,'运行',{})} ${code(detail.management.record)}。${detail.management.result?'下列为管理交付，技术终态沿用原记录，未重新核验；未知计数保留，旧缺字段只引用此次真实处置请求。':'管理交付投影尚未形成，Hub 将自动重试；旧技术结果仍在原记录中。'}</p>`):''}
 ${section('版本依据', basis)}
 ${section('来源', sources)}
 ${section('要求项', requirements)}

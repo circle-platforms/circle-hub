@@ -1,3 +1,4 @@
+import { readRunJobs } from '../../dispatch/api.ts';
 // assembleHub: the Hub built from the real packages over an opened configuration and records kit. Order: the vault master
 // key (when required: a missing or wrong key stops here, before anything listens), the core parsers, the pack registry and
 // its three ports, the connectors (resources, logins, read plugins) with the ExternalReaderPort and the resource catalog,
@@ -172,7 +173,9 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
   // keep a read-only command from opening a pool it does not need.
   const leaseDatabase = options.leases === undefined ? new Database(createPool(config.database, 2)) : null;
   const leases = options.leases === null ? undefined : options.leases ?? new LeaseService(leaseDatabase!, { records: records.store, ...(now === undefined ? {} : { now: async () => now() }) });
+  let dispatch:DispatchService|null=null;
   const engine = createRunsService({
+    dispatch:{jobs:(by,run)=>dispatch?readRunJobs(records,dispatch,by,run):Promise.resolve([]),reconcile:(by,job)=>{if(!dispatch)throw new Error('派发服务没有接线');return dispatch.resume(by,job);}},
     records,
     workflows,
     packs,
@@ -186,7 +189,7 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
     adminLog: notes.engine,
   });
   const runs = withCallNotes(engine, notes);
-  const dispatch = leases ? new DispatchService({ records, leases, runs, workflows, ...(leaseDatabase ? { close: () => leaseDatabase.end() } : {}), ...(now ? { now } : {}) }) : null;
+  dispatch = leases ? new DispatchService({ records, leases, runs, workflows, ...(leaseDatabase ? { close: () => leaseDatabase.end() } : {}), ...(now ? { now } : {}) }) : null;
 
   const deps: ServerDeps = {
     config,

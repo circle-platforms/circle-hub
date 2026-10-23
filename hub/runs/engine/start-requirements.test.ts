@@ -38,13 +38,22 @@ test('a model-driven frozen run gets a named successor request when its line roo
   const start=await h.service.startRun(h.alice,{pack:'toy-review',product:'Meadow',version:'10.6.1',build:'Rel_MEADOW_10_6_1_7',inputs:{map:{reference:map}}},h.call());
   assert.equal(start.call_result,'ok',JSON.stringify(start.errors));
   const run=start.run!;
-  const original=h.knowledge.currentRoot.bind(h.knowledge);
-  const current=(await original('meadow','10.6.1'))!;
-  h.knowledge.currentRoot=async()=>({...current,root:'b'.repeat(64)});
+  const original=h.knowledge.rootOfBuild.bind(h.knowledge);
+  const current=(await original('meadow',run.build!))!;
+  h.knowledge.rootOfBuild=async()=>({...current,root:'b'.repeat(64)});
   try{
     await h.service.maintain();
     const requests=await h.service.listRequests!(h.alice,run.run);
     assert.ok(requests.some(r=>r.kind==='disposition'&&r.audience===h.alice.id&&r.next_action.includes('predecessor')));
     assert.equal((await h.service.getRun(h.alice,run.run))!.run.root,run.root);
-  }finally{h.knowledge.currentRoot=original;}
+  }finally{h.knowledge.rootOfBuild=original;}
+});
+
+test('a new build on the line never implies a change to the run-selected named build root', {skip},async()=>{
+  const map=await h.upload(h.alice,toyMap(standardDocument()));
+  const started=await h.service.startRun(h.alice,{pack:'toy-review',product:'Meadow',version:'10.6.1',build:'Rel_MEADOW_10_6_1_7',inputs:{map:{reference:map}}},h.call());
+  assert.equal(started.call_result,'ok',JSON.stringify(started.errors));const run=started.run!;
+  const original=h.knowledge.currentRoot.bind(h.knowledge),current=(await original('meadow','10.6.1'))!;
+  h.knowledge.currentRoot=async()=>({...current,root:'c'.repeat(64),build:{...current.build,name:'rel_meadow_10_7_1',base:'rel_meadow_10_7_1',line:'10.7'}});
+  try{await h.service.maintain();assert.ok(!(await h.service.listRequests!(h.alice,run.run)).some(r=>r.kind==='disposition'));}finally{h.knowledge.currentRoot=original;}
 });

@@ -1,3 +1,4 @@
+import { abandonRun } from './management.ts';
 import { maintainRuns } from './maintenance.ts';
 import { requestsOf } from './requests.ts';
 // createRunsService: the RunsService of hub/ports.ts plus the engine's extras (results, runs of a pack, the production result
@@ -72,6 +73,7 @@ export function createRunsService(deps: RunsEngineDeps): RunsEngine {
   let timer:ReturnType<typeof setInterval>|null=null;
   const maintain=():Promise<void>=>ongoing??=(maintainRuns(ctx).finally(()=>{ongoing=null;}));
   return {
+    abandonRun(user,run,request,reason){return abandonRun(ctx,user,run,request,reason);},
     maintain,
     async startMaintenance(){
       await maintain();

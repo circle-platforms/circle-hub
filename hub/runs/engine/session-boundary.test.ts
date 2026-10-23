@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { startPostgres, type TemporaryPostgres } from '../../testing/postgres.ts';
-import { openHarness, sandboxSkip, type Harness } from './testing/harness.ts';
+import { sandboxSkip, type Harness } from './testing/harness.ts';
+import { openRetryHarness as openHarness } from './testing/retry-harness.ts';
 import { standardDocument, toyMap } from './testing/mindmap.ts';
 import { actionsOf, putAction } from './store.ts';
 import { createEngineContext } from './deps.ts';
@@ -19,7 +20,7 @@ test('independent start without a session refuses before input reads, even witho
 });
 test('missing submission session keeps the receipt and never consumes or suppresses the next real repair round', {skip}, async()=>{
   h.review.requirements.find(r=>r.key==='findings')!.independent_of='predecessor';
-  const start=await h.service.startRun(h.alice,{pack:'toy-review',product:'Meadow',version:'3.2',inputs:{map:{reference:map}}},h.call('author-session'));
+  const start=await h.service.startRun(h.alice,{pack:'toy-review',product:'Meadow',version:'10.6.1',build:'Rel_MEADOW_10_6_1_7',inputs:{map:{reference:map}}},h.call('author-session'));
   const run=start.run!;
   const body={run:run.run,model:'synthetic-author',cross_item:[{nature:'judgment',statement:'合成等级',grounds:[],code:'draft_level',rank:'P4'}],items:run.items.map(i=>({item:i.id,handling:'handled',slots:{findings:i.id===run.items[0].id?[{text:'合成目录陈述',code:'edge_case_gap',rank:'major',location:i.location,quotes:[{reference:i.location,text:'设置 3 区浇灌 15 分钟'}],commands:[{command:'zone set',present:false}]}]:[]}}))};
   const refusal=await h.service.submitResult(h.alice,body,h.call(null));
@@ -43,7 +44,7 @@ test('a non-independent start remains valid while an independent successor names
   assert.equal(prior.call_result,'ok');
   const digest='a'.repeat(64);
   await putAction(h.kit.store,{action:'validate',run:prior.run!.run,inputs:[],startedAt:'2026-10-22T09:00:00.000Z',endedAt:'2026-10-22T09:00:00.000Z',acceptance:'accepted',codes:[],detail:{submission:digest,session:null,model:'legacy-synthetic',repair:[],result:null}});
-  const next=await h.service.startRun(h.alice,{pack:'toy-review',product:'Meadow',version:'3.2',inputs:{map:{reference:map}},predecessor:prior.run!.run},h.call('new-session'));
+  const next=await h.service.startRun(h.alice,{pack:'toy-review',product:'Meadow',version:'10.6.1',build:'Rel_MEADOW_10_6_1_7',inputs:{map:{reference:map}},predecessor:prior.run!.run},h.call('new-session'));
   assert.equal(next.call_result,'error');
   assert.ok(next.errors.some(e=>e.message.includes(prior.run!.run)&&e.message.includes(digest)));
 });

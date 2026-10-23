@@ -18,6 +18,7 @@ export interface AdminLogEntry {
 }
 
 export interface RunsEngineDeps {
+  dispatch?: { jobs(by: import('../../records/api.ts').Principal,run:string):Promise<import('../../dispatch/api.ts').RunJob[]>; reconcile(by:import('../../records/api.ts').Principal,job:string):Promise<import('../../dispatch/api.ts').JobStatus> };
   /** The records kit parts the engine uses; with `config`, start_run knows the record size limit before it stores anything. */
   records: Pick<RecordsKit, 'store' | 'objects' | 'artifacts'> & {
     config?: Pick<RecordsKit['config'], 'limits'>;

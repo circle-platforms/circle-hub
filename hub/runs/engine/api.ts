@@ -19,3 +19,5 @@ export { slotSchemaOf } from './slots.ts';
 export { canSeeRun } from './readers.ts';
 
 export type { RequestBody, RequestView } from './requests.ts';
+export { createRequestService } from './requests.ts';
+export { isAbandonedResult } from './management.ts';

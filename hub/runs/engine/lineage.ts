@@ -120,14 +120,14 @@ export async function authorOriginOf(ctx: EngineContext, run: RunRecord): Promis
   if (runs.size === 0 && models.size === 0) return null;
   if (runs.size === 0) complete = false;
   for (const r of runs.values()) {
-    if (r.session === undefined) { complete = false; missingSessions.push(`运行 ${r.run}`); }
+    if (r.session === undefined) { complete = false; missingSessions.push(`运行 ${r.run}（原运行者 ${r.runner??r.configurer??'记录未给出'}）`); }
     else sessions.add(r.session);
     for (const action of await actionsOf(store, r.run)) {
       const body = action.body;
       if (body.action !== 'validate' || !isObject(body.detail) || body.detail.production === true) continue;
       const accepted = body.acceptance === 'accepted';
       if (typeof body.detail.session === 'string') sessions.add(body.detail.session);
-      else if (accepted) { complete = false; missingSessions.push(`已受理提交 ${String(body.detail.submission)}（运行 ${r.run}）`); }
+      else if (accepted) { complete = false; missingSessions.push(`已受理提交 ${String(body.detail.submission)}（运行 ${r.run}，原运行者 ${r.runner??r.configurer??'记录未给出'}）`); }
       if (typeof body.detail.model === 'string') models.add(body.detail.model);
       else if (accepted) complete = false;
     }

@@ -68,7 +68,7 @@ export interface EvaluationInput {
   /** Who produced this submission's judgments; null for a production result. */
   origin: ProducerOrigin | null;
   /** Who produced the work the run judges (lineage.ts); null when the Hub does not know (no predecessor). */
-  author: AuthorOrigin | null;
+  author: (AuthorOrigin & {missingSessions?:string[]}) | null;
   traceId: string;
   /** Items whose own exact values did not resolve: no checks or conclusions for them (a not-accepted submission). */
   exclude?: ReadonlySet<string>;
@@ -691,6 +691,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
     const sourceSha = rootDigest(it.location);
     let rejection: string | null = null;
     const results: RequirementResult[] = [];
+    let handlingErrorRecorded=false;
     const waitingRepairs:Array<{requirement:string;pointer:string;exit:import('../../../contracts/src/validation.ts').UnknownExit}>=[];
     for (const t of itemTemplates) {
       const hasProducer = !isJudgment(t) || itemSlotKeys.has(t.key);
@@ -726,6 +727,15 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
           }
           layers.push(bound);
         } else layers.push(layer);
+      }
+      const missingSessions=[...(input.author?.missingSessions??[]),...(run.session===undefined?[`运行 ${run.run} 的开始会话（原运行者 ${run.runner??run.configurer??'记录未给出'}）`]:[])];
+      if(t.independent_of!==undefined&&independence==='unknown'&&missingSessions.length){
+        const runner=run.runner??run.configurer;
+        if(!runner)throw new Error('历史独立性缺少具名受众');
+        const missing=`缺少被判工作来源会话：${missingSessions.join('；')}`;
+        const gap={reason:'missing_input' as const,missing,exit:{action:'request' as const,request_kind:'repair' as const,audience:{user:runner},due:new Date(ctx.now().getTime()+86400000).toISOString()}};
+        for(const layer of layers)layer.gaps=[...(layer.gaps??[]),gap];
+        errors.push({code:'missing_input',message:missing,item:it.id,requirement:t.key,fix:'请所列原运行者带 Circle-Session-Id，以原工作为 predecessor 开新修订并重新提交，再对新修订开复核运行'});
       }
       const status = requirementStatus({
         layers,
@@ -808,12 +818,17 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
         errors.push({code:outcome.outcome.reason??'check_error',message:outcome.outcome.missing??outcome.outcome.statement,item:it.id,requirement:t.key,path:check?submissionPointer(it.id,check,outcome.outcome.pointer)??'/items':'/items',rounds_left:roundsLeftOf(t),fix:'补齐点名的事实后重交；不能补齐的按具名请求处理'});
       }
       if ((handling === 'skipped' || handling === 'not_covered') && (isJudgment(t) || artifactRequirements.has(t.key))) {
+        handlingErrorRecorded=true;
         problems.add(t.key);
         const reason=entry?.entry.handling==='skipped'?entry.entry.reason:'没有提交这个条目的处理声明';
         errors.push({code:roundsLeftOf(t)===0?'repair_exhausted':handling==='skipped'?'declared_skip':'not_covered',message:`条目 ${it.id}：${reason}`,item:it.id,requirement:t.key,path:entry?pointerOf('items',entry.index):'/items',rounds_left:roundsLeftOf(t),fix:'用 submit_result 对同一运行重交完整提交；完整的新提交仍可取代本次结果'});
       }
       // A reject row applies only to a blocking check on the artifact under verification (terminals.ts rowApplies).
       if (routed.action === 'reject' && rejection === null) rejection = routed.lead?.outcome.code ?? null;
+    }
+    if(entry?.entry.handling==='skipped'&&!handlingErrorRecorded){
+      for(const template of itemTemplates)problems.add(template.key);
+      errors.push({code:'declared_skip',message:`条目 ${it.id} 声明跳过：${entry.entry.reason}；Hub 已照常核对目标事实`,item:it.id,path:pointerOf('items',entry.index),rounds_left:Math.max(0,...itemTemplates.map(roundsLeftOf)),fix:'处理声明不改变 Hub 的目标事实；完整的新提交仍可替代'});
     }
     waitForRepairs(results,waitingRepairs);
     const notCovered = submission !== null && handling === 'not_covered' && itemTemplates.some(t => t.required && (isJudgment(t) || artifactRequirements.has(t.key)));

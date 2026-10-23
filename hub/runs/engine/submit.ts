@@ -1,3 +1,6 @@
+import { abandonDecision } from './management.ts';
+import { isReason } from '../../../contracts/generated/vocabulary.ts';
+import { applyDispatchResults } from './dispatch-results.ts';
 import { recordResultRequests, answerRepairedRequests } from './requests.ts';
 import { ContributionRefusal, KnowledgeError, type PreparedContribution, type ContributionScope } from '../../knowledge/api.ts';
 import type { CheckOutcome } from '../../rules/api.ts';
@@ -16,6 +19,7 @@ import type { ProtocolError } from '../../../contracts/src/common.ts';
 import type { RunRecord } from '../../../contracts/src/run.ts';
 import { CrossItemSubmission, ItemSubmission, Submission } from '../../../contracts/src/submission.ts';
 import type { SubmitResultOutput } from '../../../contracts/src/tools.ts';
+import { PROTOCOL_CODES } from '../../../contracts/generated/protocol.ts';
 import { PARTITION, type Acceptance } from '../../../contracts/generated/vocabulary.ts';
 import { partitionCountsOf, type Partitions, type ValidationResult } from '../../../contracts/src/validation.ts';
 import { CanonicalizationError, LimitError, sha256Hex, type Principal, type StoredRecord } from '../../records/api.ts';
@@ -44,7 +48,7 @@ import {
   successorsOf,
   type VerbatimObjectBody,
 } from './store.ts';
-import { repairRounds } from './terminals.ts';
+import { repairRounds, isUnsettled } from './terminals.ts';
 import { clipPointer, clipText, isObject, pointerOf, receivedDigest, sessionOf, tooDeep, unique, wellFormed } from './util.ts';
 
 export type SubmitAnswer = Untraced<z.infer<typeof SubmitResultOutput>>;
@@ -64,6 +68,10 @@ function emptyPartitions(): Partitions {
   return Object.fromEntries(PARTITION.map((p) => [p, []])) as unknown as Partitions;
 }
 
+function transitional(result:ValidationResult):boolean{
+  return Object.values(result.partitions).flat().some(item=>item.requirements.some(r=>r.layers.some(l=>isUnsettled(l)||(l.gaps?.length??0)>0)))||result.cross_item.some(c=>c.qualifier.nature==='unknown');
+}
+
 /**
  * The result already stored for this submission digest when this call's session and declared model are the ones that
  * produced it (A04: the judge is the session the Hub observed and the model the client declared). A result produced by
@@ -80,6 +88,7 @@ async function resultForObserver(ctx: EngineContext, run: string, submission: st
     if (priorSession === undefined || priorModel === undefined || priorSession !== session || priorModel !== model) continue;
     const record = await store.get<ValidationResult>(detail.result);
     if (record === null || record.kind !== 'validation_result') continue;
+    if(transitional(record.body))continue;
     return record.body;
   }
   return null;
@@ -91,7 +100,7 @@ export async function roundsUsedOf(ctx: EngineContext, run: string): Promise<Map
   const counts = new Map<string, number>();
   for (const action of await actionsOf(ctx.deps.records.store, run)) {
     if (action.body.action !== 'validate' || !isObject(action.body.detail)) continue;
-    if (action.body.detail.hub_error === true || action.body.detail.refusal === 'session_missing') continue;
+    if (action.body.detail.hub_error === true || action.body.detail.refusal === 'session_missing' || action.body.detail.refusal === 'RUN_ABANDONED') continue;
     const { submission, repair } = action.body.detail;
     if (typeof submission !== 'string' || seen.has(submission) || !Array.isArray(repair)) continue;
     seen.add(submission);
@@ -178,10 +187,6 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
   const received = receivedDigest(args);
   const sessionNow = sessionOf(call);
   const modelNow = typeof args.model === 'string' ? wellFormed(args.model) : null;
-  const repeat = refresh ? null : await resultForObserver(ctx, run.run, received.digest, sessionNow, modelNow);
-  if (repeat !== null) return answerOf(repeat);
-  const previous=await resultFor(store,run.run,received.digest);
-  if (!refresh && previous !== null && (previous.body.contributions !== undefined || (await ctx.deps.workflows.byDigest(run.pack_digest))?.workflow.contribution !== undefined)) return answerOf(previous.body);
 
   const startedAt = ctx.now().toISOString();
   // Arguments canonical JSON cannot carry are never parsed: nothing built from them could be stored.
@@ -192,6 +197,12 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
       ? { record: existing, why: isVerbatimObject(existing) ? (received.canonical ? 'too_large' : 'canonical') : null }
       : await storeReceived(ctx, call.traceId, run.run, args, received, parsed?.success === true, startedAt);
   const record = kept.record;
+  const management=await abandonDecision(ctx,run.run);
+  const repeat = refresh||management ? null : await resultForObserver(ctx, run.run, received.digest, sessionNow, modelNow);
+  if (repeat !== null) return answerOf(repeat);
+  const previous=await resultFor(store,run.run,received.digest);
+  if (!refresh && !management && previous !== null && previous.body.acceptance==='accepted' && !transitional(previous.body) && (previous.body.contributions !== undefined || (await ctx.deps.workflows.byDigest(run.pack_digest))?.workflow.contribution !== undefined)) return answerOf(previous.body);
+
   const model = parsed?.success ? parsed.data.model : typeof args.model === 'string' ? wellFormed(args.model) : null;
   const session = sessionOf(call);
   const action = (input: { acceptance: Acceptance | null; codes: string[]; repair: string[]; result: string | null; actionResult?: 'error'; errorCode?: string; extra?: Record<string, unknown> }) =>
@@ -215,6 +226,13 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
   if (successors.length > 0) {
     await action({ acceptance: 'not_accepted', codes: ['RUN_SUPERSEDED'], repair: [], result: null, extra: { superseded_by: successors.map((s) => s.body.run) } });
     return { call_result: 'error', acceptance: 'not_accepted', errors: [protocolError('RUN_SUPERSEDED', `运行 ${run.run} 已被新修订 ${successors[successors.length - 1].body.run} 取代`, { path: '/run' })] };
+  }
+  if(management!==null){
+    const refusal=protocolError('RUN_ABANDONED',PROTOCOL_CODES.RUN_ABANDONED.when,{path:'/run'});
+    const result:ValidationResult={schema:'validation@1',run:run.run,submission:received.digest,acceptance:'not_accepted',errors:[refusal],rounds:{used:0,max:0},partitions:emptyPartitions(),cross_item:[],coverage:{complete:false,examined:0,total:run.items.length,note:'已放弃运行的新输入仍原样保存，不重新核验'},locks:{pack:run.pack,pack_digest:run.pack_digest,...(run.root?{root:run.root}:{})},trace:call.traceId};
+    const saved=await putResult(store,result,ctx.now().toISOString());
+    await action({acceptance:'not_accepted',codes:['RUN_ABANDONED'],repair:[],result:saved.digest,extra:{refusal:'RUN_ABANDONED'}});
+    return answerOf(saved.body);
   }
   const workflow = await ctx.deps.workflows.byDigest(run.pack_digest);
   if (workflow === null) {
@@ -244,7 +262,9 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
   if (sessionMissing) {
     outcome = { ...outcome, result: notAccepted(base, [protocolError('SUBMISSION_SCHEMA_VIOLATION', '独立复核缺少本会话的 id，整份提交未受理', {path:'', fix:'在请求头 Circle-Session-Id 里带上本会话的 id（1 到 200 个可打印 ASCII 字符），把同一份提交原样再交'}), ...outcome.result.errors]), problems: new Set() };
   }
-  await recordResultRequests(ctx,run,outcome.result);
+  if(outcome.result.acceptance==='accepted')await applyDispatchResults(ctx,run,outcome.result);
+  await recordResultRequests(ctx,run,outcome.result,roundsUsed);
+  for(const error of outcome.result.errors)if(error.requirement&&isReason(error.code))outcome.problems.add(error.requirement);
   const saved = await keepResult(base, outcome);
   await answerRepairedRequests(ctx,run,saved.result.body,saved.result.digest);
   await action({
@@ -252,7 +272,7 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
     codes: saved.result.body.acceptance === 'not_accepted' ? unique(saved.result.body.errors.map((e) => e.code)) : [],
     repair: [...saved.problems].sort(),
     result: saved.result.digest,
-    extra: { retry_attempts: saved.retryAttempts, ...(sessionMissing ? {refusal:'session_missing'} : {}) },
+    extra: { reevaluation:refresh,retry_attempts: saved.retryAttempts, ...(sessionMissing ? {refusal:'session_missing'} : {}) },
   });
   return answerOf(saved.result.body);
 }
