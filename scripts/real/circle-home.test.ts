@@ -261,6 +261,11 @@ test('skills screen lists owner followups without exposing the Jev model value o
     assert.equal(main(argv, { HUB_REAL_TOKEN: 'synthetic-token' }, line => lines.push(line)), 0);
     const shown = lines.join('\n'); for (const hint of ['/secrets JEV_API_KEY', '/variables JEV_MODEL', 'local-tools verify --digest', 'pack-files.ts --verify-install']) assert.ok(shown.includes(hint));
     assert.ok(!/synthetic-token|qwen-secret|qwen\.example/.test(shown));
+    const selected = [...argv]; selected[selected.indexOf('--home') + 1] = join(dir, 'selected'); selected.push('--jev-model', 'synthetic-private-model'); lines.length = 0;
+    assert.equal(main(selected, { HUB_REAL_TOKEN: 'synthetic-token', JEV_API_KEY: 'synthetic-never-read-key' }, line => lines.push(line)), 0);
+    assert.ok(!lines.join('\n').includes('/variables JEV_MODEL'));
+    for (const value of ['synthetic-private-model', 'synthetic-never-read-key']) assert.ok(!lines.join('\n').includes(value));
+    assert.deepEqual(JSON.parse(readFileSync(join(dir, 'selected/secrets.json'), 'utf8')), { secrets: { HUB_TOKEN: 'synthetic-token' } });
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
@@ -311,4 +316,80 @@ test('canonical script containment rejects symlinks to scripts outside skills', 
     const outside = join(f.dir, 'outside.ts'); writeFileSync(outside, '// synthetic'); const link = join(f.root, 'tools', 'linked.ts'); symlinkSync(outside, link);
     assert.equal(f.decide(f.input('execute', { command: `node ${link}` })).decision, 'deny');
   } finally { f.close(); }
+});
+
+function skillHooks(f: ReturnType<typeof skillsFixture>, bodies: Array<{ source: string; timeout_ms?: number; tools?: string | string[]; paths?: string[] }>) {
+  const hooks = bodies.map((body, i) => { const file = join(f.root, `hook-${i}.mjs`); writeFileSync(file, body.source); const { source: _source, ...settings } = body; return { name: `synthetic-${i}`, command: `node ${JSON.stringify(file)}`, ...settings }; });
+  writeFileSync(join(f.root, 'hooks.json'), JSON.stringify({ version: 1, hooks: { before_tool: hooks } }));
+}
+test('an unloaded Jev style skill still asks for send and receives the identical redacted input', () => {
+  const f = skillsFixture();
+  try {
+    const copy = join(f.root, 'received.json');
+    skillHooks(f, [{ source: `import{writeFileSync}from'node:fs';let raw='';for await(const x of process.stdin)raw+=x;writeFileSync(${JSON.stringify(copy)},raw);const i=JSON.parse(raw);console.log(JSON.stringify({decision:i.tool_input.command.includes('--send')?'ask':'allow',reason:'合成外发需要确认'}));` }]);
+    const input = f.input('execute', { command: `node ${f.script} --send <<'EOF'\n%JEV_API_KEY%\n%HUB_TOKEN%\nEOF` });
+    assert.equal(f.decide(input).decision, 'ask'); assert.equal(readFileSync(copy, 'utf8'), JSON.stringify(input));
+    assert.equal(f.decide(f.input()).decision, 'allow');
+  } finally { f.close(); }
+});
+test('every matching hook runs and deny wins over ask and allow', () => {
+  const f = skillsFixture();
+  try {
+    const marker = join(f.root, 'last-ran');
+    skillHooks(f, [{ source: 'console.log(JSON.stringify({decision:"ask",reason:"合成确认"}));' }, { source: 'console.log(JSON.stringify({decision:"deny",reason:"合成拒绝"}));' }, { source: `import{writeFileSync}from'node:fs';writeFileSync(${JSON.stringify(marker)},'yes');console.log(JSON.stringify({decision:'allow'}));` }]);
+    const reply = f.decide(f.input()); assert.equal(reply.decision, 'deny'); assert.equal(reply.reason, '合成拒绝'); assert.equal(readFileSync(marker, 'utf8'), 'yes');
+    skillHooks(f, [{ source: 'console.log(JSON.stringify({decision:"ask",reason:"合成确认"}));' }, { source: 'console.log(JSON.stringify({decision:"allow"}));' }]); assert.equal(f.decide(f.input()).decision, 'ask');
+  } finally { f.close(); }
+});
+test('skill hook failures timeouts and non-object outputs fail closed', () => {
+  const f = skillsFixture();
+  try {
+    for (const source of ['', 'process.stdout.write("x".repeat(120000));', 'process.exit(1);', 'process.exit(2);', 'console.log("not JSON");', 'console.log("[]");', 'console.log("null");', 'setInterval(()=>{},1000);']) {
+      skillHooks(f, [{ source, timeout_ms: 100 }]); assert.equal(f.decide(f.input()).decision, 'deny', source);
+    }
+  } finally { f.close(); }
+});
+test('no skill hooks allows while unreadable or malformed declarations deny', () => {
+  const f = skillsFixture();
+  try {
+    assert.equal(f.decide(f.input()).decision, 'allow');
+    for (const value of ['not JSON', '[]', '{"version":2,"hooks":{}}', '{"hooks":{"before_tool":{}}}', '{"hooks":{"before_tool":[{}]}}']) { writeFileSync(join(f.root, 'hooks.json'), value); assert.equal(f.decide(f.input()).decision, 'deny'); }
+    rmSync(join(f.root, 'hooks.json')); mkdirSync(join(f.root, 'hooks.json')); assert.equal(f.decide(f.input()).decision, 'deny');
+  } finally { f.close(); }
+});
+test('tool and path filters follow Circle before_tool matching', () => {
+  const f = skillsFixture();
+  try {
+    skillHooks(f, [{ source: 'console.log(JSON.stringify({decision:"deny"}));', tools: 'read_file' }]); assert.equal(f.decide(f.input()).decision, 'allow');
+    skillHooks(f, [{ source: 'console.log(JSON.stringify({decision:"ask"}));', tools: 'execute|read_file', paths: ['**/*.ts'] }]);
+    assert.equal(f.decide(f.input()).decision, 'allow');
+    const file = join(f.workdir, 'nested', 'x.ts'); mkdirSync(join(f.workdir, 'nested')); writeFileSync(file, '');
+    assert.equal(f.decide(f.input('execute', { command: `node ${f.script}` }, [file])).decision, 'ask');
+    const declaration = JSON.parse(readFileSync(join(f.root, 'hooks.json'), 'utf8')); declaration.hooks.before_tool[0].paths = [join(f.workdir, '**', '*.ts')]; writeFileSync(join(f.root, 'hooks.json'), JSON.stringify(declaration));
+    assert.equal(f.decide(f.input('execute', { command: `node ${f.script}` }, [file])).decision, 'ask');
+  } finally { f.close(); }
+});
+
+
+test('deeply nested installed scripts retain their skill hook and neutral hook JSON permits execution', () => {
+  const f = skillsFixture();
+  try {
+    const nested = join(f.root, 'deep', 'nested', 'tools'); mkdirSync(nested, { recursive: true }); const script = join(nested, 't.ts'); writeFileSync(script, '// synthetic');
+    skillHooks(f, [{ source: 'console.log(JSON.stringify({decision:"ask",reason:"合成确认"}));' }]);
+    assert.equal(f.decide(f.input('execute', { command: `node ${script}` })).decision, 'ask');
+    skillHooks(f, [{ source: 'console.log("{}");' }]); assert.equal(f.decide(f.input()).decision, 'allow');
+  } finally { f.close(); }
+});
+
+
+test('the installed skills hook command handles quoted home paths without shell interpolation', () => {
+  const dir = scratch();
+  try {
+    const home = join(dir, "home ' $(touch synthetic-marker)");
+    const written = writeHome({ home, profile: 'skills', hubUrl: 'https://hub.example.invalid/mcp' }, endpointFrom(entries, 'qwen'), 'synthetic-token');
+    const hooks = JSON.parse(readFileSync(join(home, 'hooks.json'), 'utf8'));
+    const result = spawnSync(hooks.hooks.before_tool[0].command, { cwd: written.workdir, shell: true, input: JSON.stringify({ event: 'before_tool', tool_name: 'hub_start_run', tool_input: {}, paths: [], cwd: written.workdir }), encoding: 'utf8', timeout: 5000 });
+    assert.equal(result.status, 0, result.stderr); assert.equal(JSON.parse(result.stdout).decision, 'allow');
+    assert.throws(() => statSync(join(written.workdir, 'synthetic-marker')), /ENOENT/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });

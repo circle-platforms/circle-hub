@@ -4,7 +4,7 @@
 // read here, at run time. Values reach only the 0600 files of the new folder; the screen shows names, presence and lengths.
 // The Hub token comes from the environment variable HUB_REAL_TOKEN, never from a command line.
 //   node scripts/real/circle-home.ts --env-file <file> --home <dir> --provider glm|qwen [--model <id>] [--section <text>]
-//        [--hub-url http://127.0.0.1:7420/mcp] [--workdir <dir>]
+//        [--hub-url http://127.0.0.1:7420/mcp] [--workdir <dir>] [--profile review|skills] [--jev-model <id>]
 import { chmodSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
 import { pick, readEnvFile, type EnvEntry } from './lib/env-file.ts';
@@ -165,24 +165,115 @@ async function skillsGuard(home: string, workspace: string, allowed: string[]): 
     }
     return root;
   };
+  const { spawn, execFile } = await import('node:child_process');
+  let stopping = false;
+  const globMatches = (file: string, pattern: string, cwd: string): boolean => {
+    try {
+      const normalize = (value: string) => { const normalized = path.normalize(value).replaceAll('\\', '/'); return process.platform === 'win32' ? normalized.toLowerCase() : normalized; };
+      const absolute = canonical(path.resolve(cwd, file));
+      let glob = pattern.trim().replaceAll('\\', '/'); let target: string;
+      if (path.isAbsolute(glob)) {
+        const star = glob.search(/[*?]/); const slash = star < 0 ? -1 : glob.lastIndexOf('/', star);
+        glob = star < 0 ? canonical(glob) : slash >= 0 ? path.join(canonical(glob.slice(0, slash) || path.parse(glob).root), glob.slice(slash + 1)) : glob;
+        target = normalize(absolute);
+      } else {
+        const root = canonical(cwd); if (!under(absolute, root)) return false;
+        target = normalize(path.relative(root, absolute));
+      }
+      glob = normalize(glob); let expression = '^';
+      for (let i = 0; i < glob.length; i++) {
+        const char = glob[i];
+        if (char === '*' && glob[i + 1] === '*') {
+          if (glob[i + 2] === '/') { expression += '(?:.*/)?'; i += 2; }
+          else { expression += '.*'; i++; }
+        } else if (char === '*') expression += '[^/]*';
+        else if (char === '?') expression += '[^/]';
+        else expression += char.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      }
+      return new RegExp(expression + '$').test(target);
+    } catch { return false; }
+  };
+  const matches = (hook: Record<string, unknown>, input: Record<string, unknown>): boolean => {
+    const matcher = hook.tools ?? hook.matcher;
+    if (matcher !== undefined && matcher !== '' && matcher !== '*') {
+      const parts = Array.isArray(matcher) ? matcher : typeof matcher === 'string' ? matcher.split(/[|,]/) : [];
+      const names = parts.map(part => String(part).trim()).filter(part => part && part !== '*');
+      if (names.length && !names.includes(String(input.tool_name))) return false;
+    }
+    const patterns = hook.paths === undefined ? [] : Array.isArray(hook.paths) ? hook.paths : [hook.paths];
+    const globs = patterns.filter((part): part is string => typeof part === 'string').map(part => part.trim()).filter(Boolean);
+    return !globs.length || Array.isArray(input.paths) && input.paths.some(file => typeof file === 'string' && globs.some(glob => globMatches(file, glob, String(input.cwd))));
+  };
+  const runHook = async (hook: Record<string, unknown>, raw: string, cwd: string): Promise<{ decision: string; reason: string }> => {
+    const setting = typeof hook.timeout_ms === 'number' && Number.isFinite(hook.timeout_ms) ? hook.timeout_ms : 30000;
+    const timeout = Math.max(100, Math.min(600000, Math.floor(setting)));
+    return new Promise(done => {
+      const child = spawn(hook.command as string, { cwd, shell: true, detached: process.platform !== 'win32', windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
+      let stdout = '', failed = false, settled = false;
+      let force: ReturnType<typeof setTimeout> | undefined;
+      const kill = (signal: NodeJS.Signals) => {
+        if (!child.pid) return;
+        if (process.platform === 'win32') execFile('taskkill', ['/PID', String(child.pid), '/T', '/F'], () => {});
+        else try { process.kill(-child.pid, signal); } catch { try { child.kill(signal); } catch { /* Already gone. */ } }
+      };
+      const stop = () => { if (failed) return; failed = true; kill('SIGTERM'); force = setTimeout(() => kill('SIGKILL'), 500); };
+      const interrupted = () => { stopping = true; failed = true; kill('SIGKILL'); };
+      process.once('SIGTERM', interrupted); process.once('SIGINT', interrupted);
+      const timer = setTimeout(stop, timeout);
+      const finish = (decision: { decision: string; reason: string }) => {
+        if (settled) return; settled = true; clearTimeout(timer); if (force) clearTimeout(force);
+        process.removeListener('SIGTERM', interrupted); process.removeListener('SIGINT', interrupted); done(decision);
+      };
+      child.stdout.on('data', chunk => { if (failed) return; stdout += chunk.toString('utf8'); if (stdout.length > 100000) stop(); });
+      child.stderr.resume(); child.stdin.on('error', () => {}); child.stdin.end(raw);
+      child.once('error', () => finish({ decision: 'deny', reason: '技能钩子启动失败' }));
+      child.once('close', code => {
+        if (failed || code !== 0) { finish({ decision: 'deny', reason: '技能钩子失败、超时或被停止' }); return; }
+        try {
+          const reply: unknown = JSON.parse(stdout);
+          if (!object(reply)) throw new Error('not an object');
+          const decision = reply.decision === 'deny' || reply.decision === 'ask' ? reply.decision : 'allow';
+          const reason = typeof reply.reason === 'string' ? reply.reason : typeof reply.context === 'string' ? reply.context : '技能钩子的决定';
+          finish({ decision, reason });
+        } catch { finish({ decision: 'deny', reason: '技能钩子未输出 JSON 对象' }); }
+      });
+    });
+  };
+  const delegated = async (script: string, root: string, input: Record<string, unknown>, raw: string) => {
+    const skill = skillDirectory(script, root); const file = path.join(skill, 'hooks.json');
+    if (!exists(file)) return allow();
+    if (!under(canonical(file), skill)) return deny();
+    const declaration: unknown = JSON.parse(fs.readFileSync(file, 'utf8'));
+    if (!object(declaration) || declaration.version !== undefined && declaration.version !== 1 || declaration.hooks !== undefined && !object(declaration.hooks)) return deny();
+    const entries = object(declaration.hooks) ? declaration.hooks.before_tool ?? [] : [];
+    if (!Array.isArray(entries) || entries.length > 100 || entries.some(hook => !object(hook) || typeof hook.command !== 'string' || !hook.command.trim() || hook.command.length > 4000 || hook.command.includes('\0'))) return deny();
+    let strictest = allow();
+    for (const hook of entries as Record<string, unknown>[]) {
+      if (stopping) return deny();
+      if (!matches(hook, input)) continue;
+      const decision = await runHook(hook, raw, String(input.cwd));
+      if (decision.decision === 'deny' || decision.decision === 'ask' && strictest.decision === 'allow') strictest = decision;
+    }
+    return strictest;
+  };
   let raw = ''; process.stdin.setEncoding('utf8'); for await (const chunk of process.stdin) raw += chunk;
   let result = deny();
   try {
     const input: unknown = JSON.parse(raw);
     if (!object(input) || input.event !== 'before_tool' || typeof input.tool_name !== 'string' || !object(input.tool_input)) throw new Error('invalid input');
+    if (input.paths !== undefined && (!Array.isArray(input.paths) || input.paths.some(file => typeof file !== 'string'))) throw new Error('invalid paths');
     if (allowed.includes(input.tool_name)) result = allow();
     else if (['read_file', 'ls', 'glob', 'grep'].includes(input.tool_name)) {
       const root = canonical(workspace);
       if (typeof input.cwd !== 'string' || !path.isAbsolute(input.cwd)) throw new Error('invalid cwd');
       if (Array.isArray(input.paths) && input.paths.length && input.paths.every(file => typeof file === 'string' && file.length > 0 && under(canonical(path.resolve(input.cwd as string, file)), root))) result = allow();
     } else if (input.tool_name === 'execute') {
+      if (Object.keys(input.tool_input).some(key => !['command', 'background', 'timeout'].includes(key)) || input.tool_input.background !== undefined && typeof input.tool_input.background !== 'boolean' || input.tool_input.timeout !== undefined && (typeof input.tool_input.timeout !== 'number' || !Number.isFinite(input.tool_input.timeout))) throw new Error('invalid execute fields');
       if (typeof input.tool_input.command !== 'string' || typeof input.cwd !== 'string' || !path.isAbsolute(input.cwd)) throw new Error('invalid execute');
       const root = path.join(canonical(home), 'skills'); if (canonical(root) !== root) throw new Error('skills root changed');
       const script = scriptOf(input.tool_input.command, root);
       if (script) {
-        // Until delegation is installed, an existing skill hook fails closed.
-        const file = path.join(skillDirectory(script, root), 'hooks.json');
-        result = exists(file) ? deny() : allow();
+        result = await delegated(script, root, input, raw);
       }
     }
   } catch { result = deny(); }
@@ -211,6 +302,7 @@ export function writeHome(options: Options, endpoint: Endpoint, token: string): 
   }
   const hookName = profile === 'skills' ? 'skills-only.mjs' : 'hub-only.mjs';
   const hook = join(home, 'hooks', hookName);
+  const hookArgument = profile === 'review' ? JSON.stringify(hook) : `'${hook.replaceAll("'", `'\\''`)}'`;
   writePrivate(hook, profile === 'review' ? HOOK : `${skillsGuard.toString()}\nawait skillsGuard(${JSON.stringify(home)}, ${JSON.stringify(workdir)}, ${JSON.stringify([...HUB_TOOLS.map(t => `${SERVER_NAME}_${t}`), ...INTERNAL_TOOLS_ALLOWED, 'skill'])});\n`);
   writePrivate(
     join(home, 'settings.json'),
@@ -236,7 +328,7 @@ export function writeHome(options: Options, endpoint: Endpoint, token: string): 
   writePrivate(join(home, 'secrets.json'), `${JSON.stringify({ secrets: { [TOKEN_SECRET]: token } })}\n`);
   writePrivate(
     join(home, 'hooks.json'),
-    `${JSON.stringify({ version: 1, hooks: { before_tool: [{ name: profile === 'skills' ? 'skills tools only' : 'hub tools only', command: `node ${JSON.stringify(hook)}`, timeout_ms: profile === 'skills' ? 600000 : 10000 }] } }, null, 2)}\n`,
+    `${JSON.stringify({ version: 1, hooks: { before_tool: [{ name: profile === 'skills' ? 'skills tools only' : 'hub tools only', command: `node ${hookArgument}`, timeout_ms: profile === 'skills' ? 600000 : 10000 }] } }, null, 2)}\n`,
   );
   return { files: ['settings.json', 'credentials.json', 'secrets.json', 'hooks.json', `hooks/${hookName}`], workdir };
 }
@@ -281,7 +373,7 @@ export function main(argv: string[], env: NodeJS.ProcessEnv, out: (line: string)
     out(`已写入专用 Circle 目录（${written.files.length} 个文件，权限 0600）`);
     out(`模型：${endpoint.model}，协议 ${endpoint.protocol}，密钥长度 ${endpoint.apiKey.length}，来源 ${endpoint.sources.join('、')}`);
     out(`中枢令牌：已存为密钥 ${TOKEN_SECRET}，长度 ${token.length}`);
-    out(`受保护文件：${basename(options.envFile)}；钩子只放行 ${HUB_TOOLS.length} 个中枢工具和待办清单；工作目录为空目录`);
+    out(options.profile === 'skills' ? `受保护文件：${basename(options.envFile)}；技能目录守卫及技能自带钩子生效；只读文件限工作目录` : `受保护文件：${basename(options.envFile)}；钩子只放行 ${HUB_TOOLS.length} 个中枢工具和待办清单；工作目录为空目录`);
     if (options.profile === 'skills') {
       out('技能目录：已建立，权限 0700；变量 HUB_URL：已配置');
       out(`变量 JEV_MODEL：${options.jevModel === undefined ? '未配置' : `已配置，长度 ${options.jevModel.length}`}`);
