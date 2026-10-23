@@ -10,7 +10,7 @@
 // field K1 copies into its fragments is a key of this model, which entries.ts turns into the fragment the Hub verifies.
 import type { Block, Composition, ExpandedModel, Section, VerifiedRange } from './types.ts';
 import type { MarkdownBlock, MarkdownSection } from '../../../../../hub/refs/api.ts';
-import { decodeReferences, inlineMarkdown, plainConverted, plainText, squeeze, stripMarks } from './text.ts';
+import { decodeReferences, inlineMarkdown, plainConverted, plainText, signatureWords, squeeze, stripMarks } from './text.ts';
 import { selectorText, utf8Offsets } from '../util.ts';
 import { parseAnchor } from '../manual.ts';
 
@@ -549,7 +549,7 @@ export function toK1Model(model: ExpandedModel, composition: Composition, manual
       for (let index = 0; index < lines.length; index++) {
         const source = expanded[index] ?? (lines[index] as string);
         if (squeeze(source) === '') continue;
-        const read = readSignatureLine(stripMarks(source));
+        const read = readSignatureLine(signatureWords(source));
         const cite = cites[index] as Citation;
         if (read.spelling !== null) {
           emit(block, 'paragraph', read.spelling, cite);

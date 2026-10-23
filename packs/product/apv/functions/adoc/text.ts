@@ -127,17 +127,84 @@ export function plainConverted(text: string): string {
   return fold(inlineMarkdown(text));
 }
 
-/** AsciiDoc inline markup marks dropped and escapes resolved, attributes left as the caller expanded them. */
+/** The characters AsciiDoc reads as inline markup when they are paired at the edges of a token. */
+const MARK_CHARS = '*_`#+';
+
+const isSpace = (ch: string | undefined): boolean => ch === undefined || /\s/.test(ch);
+
+/** The length of the run of one character at an index. */
+function markRun(text: string, at: number): number {
+  let run = 0;
+  while (text[at + run] === text[at]) run++;
+  return run;
+}
+
+/** The index of the closing run of the same length that ends a token, or -1 when the mark is unpaired. */
+function closingRun(text: string, from: number, ch: string, run: number): number {
+  for (let at = from + run; at < text.length; at++) {
+    if (text[at] !== ch) continue;
+    const length = markRun(text, at);
+    if (length === run && isSpace(text[at + length])) return at;
+    at += length - 1;
+  }
+  return -1;
+}
+
+/**
+ * The paired inline marks AsciiDoc reads as markup dropped, and nothing else: a mark run at the start of a token whose
+ * pair ends a token later in the text. A `_`, `+`, `#` or `` ` `` inside a word is part of the word (`max_conn`,
+ * `aes128+sha`, `C++`, `步骤 #1`), and dropping it would invent a command word or a heading the source does not have. An
+ * unpaired mark stays too: it is text, and a decision about it is not this function's.
+ */
+export function dropPairedMarks(text: string): string {
+  let out = '';
+  for (let at = 0; at < text.length; at++) {
+    const ch = text[at] as string;
+    if (MARK_CHARS.includes(ch) && isSpace(text[at - 1])) {
+      const run = markRun(text, at);
+      const close = closingRun(text, at, ch, run);
+      if (close > at) {
+        out += text.slice(at + run, close);
+        at = close + run - 1;
+        continue;
+      }
+    }
+    out += ch;
+  }
+  return out;
+}
+
+/** Every markup mark character dropped and escapes resolved (comparison and, for now, heading segments). */
 export function stripMarks(text: string): string {
   let out = '';
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i] as string;
-    if (ch === '\\' && i + 1 < text.length) {
-      out += text[++i];
+  for (let at = 0; at < text.length; at++) {
+    const ch = text[at] as string;
+    if (ch === '\\' && at + 1 < text.length) {
+      out += text[++at];
       continue;
     }
     if (MARKS.includes(ch)) continue;
     out += ch;
   }
   return out;
+}
+
+/** Backslash escapes resolved: `\<name\>` is the parameter `<name>`, `\*` a literal asterisk. */
+export function resolveEscapes(text: string): string {
+  if (!text.includes('\\')) return text;
+  let out = '';
+  for (let at = 0; at < text.length; at++) {
+    if (text[at] === '\\' && at + 1 < text.length) out += text[++at];
+    else out += text[at];
+  }
+  return out;
+}
+
+/**
+ * The words of a signature line: the marks the author used to present it dropped where they are markup, the escapes
+ * resolved, and every character of the command words kept. Used where the engine gives no conversion of the line (a
+ * listing is verbatim), so the marks are read by the rule above and not by guessing.
+ */
+export function signatureWords(text: string): string {
+  return resolveEscapes(dropPairedMarks(text));
 }

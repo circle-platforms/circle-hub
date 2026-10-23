@@ -299,3 +299,46 @@ test('a line with an adoc source refuses the transitional catalog by a typed rea
   assert.equal('entries' in refusal, false, 'a refusal carries no entries: it is not an empty production');
   assert.equal(catalogRefusal().message.includes('这一版本线'), true, 'without a family the line is named');
 });
+
+test('a signature line keeps the characters of its command words: only paired marks at token edges go', async () => {
+  const result = await entriesOf({
+    'book.adoc': [
+      '= Book',                                    // 1
+      '',                                          // 2
+      '== 命令',                                    // 3
+      '',                                          // 4
+      '[role=signature]',                           // 5
+      '----',                                       // 6
+      'demo set max_conn <count>',                  // 7
+      'demo health_check add <name>',               // 8
+      'demo cipher add aes128+sha <name>',          // 9
+      '*demo pool del* _<name>_',                   // 10
+      '**demo pool add** *\\<name\\>*',              // 11
+      '----',                                       // 12
+      '',                                          // 13
+      '[cols="2,3",options="header"]',               // 14
+      '|===',                                        // 15
+      '| 命令 | 说明',                                // 16
+      '| *demo health_check show* _<name>_ | 显示',   // 17
+      '|===',                                        // 18
+      '',                                          // 19
+    ].join('\n'),
+  });
+  const signatures = result.entries.filter((entry) => entry.data.form === 'signature');
+  assert.deepEqual(
+    signatures.map((entry) => [String(entry.statement), entry.path, entry.fragments[0]!.selector]),
+    [
+      ['demo set max_conn <count>', '/commands/demo/set/max_conn', 'l/7'],
+      ['demo health_check add <name>', '/commands/demo/health_check/add', 'l/8'],
+      ['demo cipher add aes128+sha <name>', '/commands/demo/cipher/add/aes128+sha', 'l/9'],
+      ['demo pool del <name>', '/commands/demo/pool/del', 'l/10'],
+      ['demo pool add <name>', '/commands/demo/pool/add', 'l/11'],
+      ['demo health_check show <name>', '/commands/demo/health_check/show', 'l/17'],
+    ],
+    JSON.stringify(signatures.map((entry) => [entry.statement, entry.path, entry.data.words])),
+  );
+  // The same command read from a signature block and from a command table row lands on the same node.
+  const words = signatures.map((entry) => (entry.data.words as string[]).join(' '));
+  assert.ok(words.includes('demo health_check add') && words.includes('demo health_check show'), JSON.stringify(words));
+  assert.ok(!words.some((word) => word.includes('healthcheck') || word.includes('maxconn') || word.includes('aes128sha')), JSON.stringify(words));
+});

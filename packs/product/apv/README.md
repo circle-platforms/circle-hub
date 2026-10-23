@@ -533,8 +533,11 @@ accepted.
   K1 reads them as alternatives of the command itself. A line that rule does not read, or that K1 would not accept, is not
   emitted with invented marks.
 - Every line of a `[role=signature]` block is read on its own and cited on its own source line (the block's verified range,
-  line by line), so a line never cites the whole block. A blank line makes no entry; the line's own inline marks are
-  dropped before the rule reads it, so an AsciiDoc-spelled line and a bare one are read alike; and a line the rule does not
+  line by line), so a line never cites the whole block. A blank line makes no entry. A listing is verbatim, so the engine
+  gives no conversion of its lines and the marks are read here — but only the paired ones at token edges
+  (`*demo pool del* _<name>_` reads as `demo pool del <name>`, `\<name\>` as `<name>`), never a character inside a word:
+  `max_conn`, `health_check` and `aes128+sha` keep the command words the source has, so a signature block and a command
+  table row of the same command land on the same node. A line the rule does not
   read stays the ordinary text it is — placed as text on its own line, and reported with its file, line, reason and next
   action (`unparsed` of the mapping and one warning of the production). Nothing is wrapped in bold marks the source does
   not have, so no statement is fabricated and no head/parameter split is guessed.
