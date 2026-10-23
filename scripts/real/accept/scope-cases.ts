@@ -1,5 +1,5 @@
 // Compares the regression scope and maintenance sweep items of a build pair against the
-// independent command diff and get_nodes outputs (acceptance gap 6b, scope-cases).
+// independent command diff and case-command gold (or legacy get_nodes outputs) (acceptance gap 6b, scope-cases).
 // Inputs:
 //   - --diff: independent command diff from scripts/real/gold/command-diff.ts ({ added, removed, modified })
 //   - --earlier-nodes: get_nodes responses for earlier root on changed paths (JSON Lines, paginated by cursor)
@@ -16,8 +16,9 @@
 //   4. Report incomplete input (without judging equality) if:
 //      - any get_nodes response has a next page cursor without a following page in the file;
 //      - or any case entry lacks data (or document/node in data).
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { comparableNode, documentKey, sha256, type CommandsGold } from '../gold/case-commands.ts';
 
 export interface CommandDiff {
   added: string[];
@@ -212,23 +213,26 @@ export interface ScopeCasesReport {
   regression: SetComparison;
   maintenance: SetComparison;
   allEqual: boolean;
+  excluded?: { earlier: number; later: number };
 }
 
 export function computeScopeCases(inputs: {
   diff: CommandDiff;
-  earlierNodesLines: readonly string[];
-  laterNodesLines: readonly string[];
+  earlierNodesLines?: readonly string[];
+  laterNodesLines?: readonly string[];
+  earlierCases?: CommandsGold;
+  laterCases?: CommandsGold;
   regressionRun: RunShowExport;
   maintenanceRun: RunShowExport;
 }): ScopeCasesReport {
   const regressionPaths = new Set<string>([...inputs.diff.added, ...inputs.diff.modified]);
   const maintenancePaths = new Set<string>([...inputs.diff.removed, ...inputs.diff.modified]);
 
-  const earlierParsed = parseGetNodesLines(inputs.earlierNodesLines);
-  const laterParsed = parseGetNodesLines(inputs.laterNodesLines);
+  const earlierParsed = parseGetNodesLines(inputs.earlierNodesLines ?? []);
+  const laterParsed = parseGetNodesLines(inputs.laterNodesLines ?? []);
 
-  const laterCasesResult = extractCasesFromNodes(laterParsed.nodes, regressionPaths);
-  const earlierCasesResult = extractCasesFromNodes(earlierParsed.nodes, maintenancePaths);
+  const laterCasesResult = inputs.laterCases ? casesFromGold(inputs.laterCases, regressionPaths) : extractCasesFromNodes(laterParsed.nodes, regressionPaths);
+  const earlierCasesResult = inputs.earlierCases ? casesFromGold(inputs.earlierCases, maintenancePaths) : extractCasesFromNodes(earlierParsed.nodes, maintenancePaths);
 
   const incompleteReasons: string[] = [
     ...earlierParsed.incompleteReasons.map((r) => `前一个构建：${r}`),
@@ -236,10 +240,12 @@ export function computeScopeCases(inputs: {
     ...earlierCasesResult.incompleteReasons.map((r) => `前一个构建：${r}`),
     ...laterCasesResult.incompleteReasons.map((r) => `后一个构建：${r}`),
   ];
+  if (!!inputs.earlierCases !== !!inputs.laterCases) incompleteReasons.push('前后构建必须同时给 gold');
+  if ((inputs.earlierCases || inputs.laterCases) && (inputs.earlierNodesLines || inputs.laterNodesLines)) incompleteReasons.push('gold 与节点方式不能混用');
   const isIncomplete = incompleteReasons.length > 0;
 
-  const actualRegressionCases = extractCasesFromRun(inputs.regressionRun);
-  const actualMaintenanceCases = extractCasesFromRun(inputs.maintenanceRun);
+  const actualRegressionCases = filterRun(inputs.regressionRun, inputs.laterCases);
+  const actualMaintenanceCases = filterRun(inputs.maintenanceRun, inputs.earlierCases);
 
   const regressionComparison = compareCaseSets(laterCasesResult.cases, actualRegressionCases);
   const maintenanceComparison = compareCaseSets(earlierCasesResult.cases, actualMaintenanceCases);
@@ -254,70 +260,30 @@ export function computeScopeCases(inputs: {
     regression: regressionComparison,
     maintenance: maintenanceComparison,
     allEqual,
+    excluded: { earlier: inputs.earlierCases?.totals.excluded ?? 0, later: inputs.laterCases?.totals.excluded ?? 0 },
   };
 }
 
+function casesFromGold(gold: CommandsGold, paths: ReadonlySet<string>): { cases: Set<string>; incompleteReasons: string[] } {
+  if (gold.schema !== 'case-commands-gold@1' || !Array.isArray(gold.cases)) throw new Error('金标准格式无效');
+  return { cases: new Set(gold.cases.filter((c) => c.comparable && c.paths.some((p) => paths.has(p.path))).map((c) => c.key)), incompleteReasons: [] };
+}
+function filterRun(run: RunShowExport, gold?: CommandsGold): Set<string> {
+  const cases = extractCasesFromRun(run);
+  if (!gold) return cases;
+  const excluded = new Set(gold.cases.filter((c) => !c.comparable).map((c) => c.key));
+  return new Set([...cases].map((key) => documentKey(key)).filter((key) => {
+    const node = key.slice(key.lastIndexOf(':') + 1);
+    return comparableNode(node) && !excluded.has(key);
+  }));
+}
 export function renderReport(report: ScopeCasesReport): string {
-  const lines: string[] = [];
-  lines.push('== 跨版本线回归范围与维护巡检条目核对 ==');
-  lines.push('');
-
-  if (report.isIncomplete) {
-    lines.push('【输入判定】输入不全（不作相等判定）：');
-    for (const reason of report.incompleteReasons) {
-      lines.push(`  - ${reason}`);
-    }
-    lines.push('');
+  const lines = [`路径：回归 ${report.regressionPathsCount}，巡检 ${report.maintenancePathsCount}`, `不比较：前一构建 ${report.excluded?.earlier ?? 0}，后一构建 ${report.excluded?.later ?? 0}`, `输入缺项：${report.incompleteReasons.length}`];
+  for (const [name, comparison] of [['回归范围', report.regression], ['维护巡检', report.maintenance]] as const) {
+    lines.push(`${name}：期望 ${comparison.expectedCount}，运行 ${comparison.actualCount}，共有 ${comparison.sharedCount}，只在运行 ${comparison.onlyInRun.length}，只在期望 ${comparison.onlyInExpected.length}`);
+    lines.push(`${name}差异 SHA-256：${sha256(JSON.stringify({ onlyInRun: comparison.onlyInRun, onlyInExpected: comparison.onlyInExpected }))}`);
   }
-
-  lines.push(`【回归范围】（基于后一个根，新增+修改路径共 ${report.regressionPathsCount} 条）`);
-  lines.push(`  - 期望条目：${report.regression.expectedCount} 个，实际运行：${report.regression.actualCount} 个`);
-  lines.push(`  - 相等：${report.regression.sharedCount} 个，只在运行里：${report.regression.onlyInRun.length} 个，只在期望里：${report.regression.onlyInExpected.length} 个`);
-  if (!report.isIncomplete) {
-    lines.push(`  - 判定：${report.regression.equal ? '完全相等' : '不相等'}`);
-  }
-  if (report.regression.onlyInRun.length > 0) {
-    lines.push(`  - 只在运行里的条目（共 ${report.regression.onlyInRun.length} 条${report.regression.onlyInRun.length > 50 ? '，前 50 条' : ''}）：`);
-    for (const id of report.regression.onlyInRun.slice(0, 50)) {
-      lines.push(`    * ${id}`);
-    }
-  }
-  if (report.regression.onlyInExpected.length > 0) {
-    lines.push(`  - 只在期望里的条目（共 ${report.regression.onlyInExpected.length} 条${report.regression.onlyInExpected.length > 50 ? '，前 50 条' : ''}）：`);
-    for (const id of report.regression.onlyInExpected.slice(0, 50)) {
-      lines.push(`    * ${id}`);
-    }
-  }
-
-  lines.push('');
-  lines.push(`【维护巡检】（基于前一个根，删除+修改路径共 ${report.maintenancePathsCount} 条）`);
-  lines.push(`  - 期望条目：${report.maintenance.expectedCount} 个，实际运行：${report.maintenance.actualCount} 个`);
-  lines.push(`  - 相等：${report.maintenance.sharedCount} 个，只在运行里：${report.maintenance.onlyInRun.length} 个，只在期望里：${report.maintenance.onlyInExpected.length} 个`);
-  if (!report.isIncomplete) {
-    lines.push(`  - 判定：${report.maintenance.equal ? '完全相等' : '不相等'}`);
-  }
-  if (report.maintenance.onlyInRun.length > 0) {
-    lines.push(`  - 只在运行里的条目（共 ${report.maintenance.onlyInRun.length} 条${report.maintenance.onlyInRun.length > 50 ? '，前 50 条' : ''}）：`);
-    for (const id of report.maintenance.onlyInRun.slice(0, 50)) {
-      lines.push(`    * ${id}`);
-    }
-  }
-  if (report.maintenance.onlyInExpected.length > 0) {
-    lines.push(`  - 只在期望里的条目（共 ${report.maintenance.onlyInExpected.length} 条${report.maintenance.onlyInExpected.length > 50 ? '，前 50 条' : ''}）：`);
-    for (const id of report.maintenance.onlyInExpected.slice(0, 50)) {
-      lines.push(`    * ${id}`);
-    }
-  }
-
-  lines.push('');
-  if (report.isIncomplete) {
-    lines.push('【最终结论】输入不全');
-  } else if (report.allEqual) {
-    lines.push('【最终结论】全部相等（回归范围与维护巡检用例均与期望完全一致）');
-  } else {
-    lines.push('【最终结论】存在不一致');
-  }
-
+  lines.push(`判定：${report.isIncomplete ? '输入不全' : report.allEqual ? '相等' : '不相等'}`);
   return lines.join('\n');
 }
 
@@ -328,37 +294,42 @@ export function main(argv: string[] = process.argv.slice(2)): number {
   };
 
   const diffPath = value('diff');
+  const earlierCasesPath = value('earlier-cases');
+  const laterCasesPath = value('later-cases');
   const earlierNodesPath = value('earlier-nodes') ?? value('earlier');
   const laterNodesPath = value('later-nodes') ?? value('later');
   const regressionRunPath = value('regression-run') ?? value('regression');
   const maintenanceRunPath = value('maintenance-run') ?? value('maintenance');
 
-  if (!diffPath || !earlierNodesPath || !laterNodesPath || !regressionRunPath || !maintenanceRunPath) {
+  if (!diffPath || !(earlierCasesPath && laterCasesPath || earlierNodesPath && laterNodesPath) || !!earlierCasesPath !== !!laterCasesPath || !!earlierCasesPath && !!(earlierNodesPath || laterNodesPath) || !regressionRunPath || !maintenanceRunPath) {
     process.stderr.write(
-      '用法：node scripts/real/accept/scope-cases.ts --diff <diff.json> --earlier-nodes <earlier.jsonl> --later-nodes <later.jsonl> --regression-run <reg.json> --maintenance-run <maint.json>\n',
+      '用法：node scripts/real/accept/scope-cases.ts --diff <diff.json> (--earlier-cases <gold.json> --later-cases <gold.json> | --earlier-nodes <earlier.jsonl> --later-nodes <later.jsonl>) --out <report.json> --regression-run <reg.json> --maintenance-run <maint.json>\n',
     );
     return 2;
   }
 
   try {
     const diff = JSON.parse(readFileSync(resolve(diffPath), 'utf8')) as CommandDiff;
-    const earlierLines = readFileSync(resolve(earlierNodesPath), 'utf8').split('\n');
-    const laterLines = readFileSync(resolve(laterNodesPath), 'utf8').split('\n');
+    const earlierLines = earlierNodesPath ? readFileSync(resolve(earlierNodesPath), 'utf8').split('\n') : undefined;
+    const laterLines = laterNodesPath ? readFileSync(resolve(laterNodesPath), 'utf8').split('\n') : undefined;
     const regressionRun = JSON.parse(readFileSync(resolve(regressionRunPath), 'utf8')) as RunShowExport;
     const maintenanceRun = JSON.parse(readFileSync(resolve(maintenanceRunPath), 'utf8')) as RunShowExport;
 
     const report = computeScopeCases({
       diff,
+      earlierCases: earlierCasesPath ? JSON.parse(readFileSync(earlierCasesPath, 'utf8')) as CommandsGold : undefined,
+      laterCases: laterCasesPath ? JSON.parse(readFileSync(laterCasesPath, 'utf8')) as CommandsGold : undefined,
       earlierNodesLines: earlierLines,
       laterNodesLines: laterLines,
       regressionRun,
       maintenanceRun,
     });
 
+    if (value('out')) writeFileSync(value('out')!, `${JSON.stringify(report, null, 2)}\n`);
     process.stdout.write(`${renderReport(report)}\n`);
     return report.allEqual ? 0 : 1;
   } catch (error) {
-    process.stderr.write(`读取输入出错：${(error as Error).message}\n`);
+    process.stderr.write('读取输入出错：检查格式和文件可读性\n');
     return 1;
   }
 }

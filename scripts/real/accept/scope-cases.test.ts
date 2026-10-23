@@ -204,8 +204,8 @@ describe('scope-cases evaluation', () => {
     assert.equal(report.allEqual, false);
 
     const rendered = renderReport(report);
-    assert.match(rendered, /【输入判定】输入不全/);
-    assert.match(rendered, /【最终结论】输入不全/);
+    assert.match(rendered, /输入缺项：/ );
+    assert.match(rendered, /判定：输入不全/);
   });
 
   test('比较的正反例与 50 条上限截断', () => {
@@ -239,8 +239,8 @@ describe('scope-cases evaluation', () => {
       allEqual: false,
     };
     const rendered = renderReport(mockReport);
-    assert.match(rendered, /只在期望里的条目（共 65 条，前 50 条）/);
-    assert.match(rendered, /【最终结论】存在不一致/);
+    assert.match(rendered, /只在期望 65/);
+    assert.match(rendered, /判定：不相等/);
   });
 
   test('extractCasesFromRun handles run.items and direct items with fallback to fields', () => {
@@ -302,4 +302,20 @@ describe('scope-cases evaluation', () => {
     const code2 = main(['--diff', diffFile]);
     assert.equal(code2, 2);
   });
+});
+
+import { caseCommandsGold } from '../gold/case-commands.ts';
+test('gold and legacy expectations agree, additional gold path changes verdict, excluded cases are removed', () => {
+  const xml = '<commands><menu name="widget"><item name="add"/><item name="remove"/></menu></commands>';
+  const map = { root: { data: { text: 'root' }, children: [{ data: { id: 'synthetic-case', text: 'widget add', resource: ['Functional'] } }, { data: { text: 'widget add', resource: ['Functional'] } }] } };
+  const gold = caseCommandsGold(xml, [{ document: 'synthetic-doc', map }]);
+  const diff = { added: ['/commands/widget/add'], removed: [], modified: [] };
+  const runs = { regressionRun: { items: [{ id: 'synthetic-doc:synthetic-case' }, { id: 'synthetic-doc:@2' }] }, maintenanceRun: { items: [] } };
+  const actual = computeScopeCases({ diff, earlierCases: gold, laterCases: gold, ...runs });
+  const legacy = computeScopeCases({ diff, earlierNodesLines: [], laterNodesLines: [JSON.stringify({ nodes: [{ path: '/commands/widget/add', entries: [{ kind: 'case', data: { document: 'synthetic-doc', node: 'synthetic-case' } }] }] })], regressionRun: { items: [{ id: 'synthetic-doc:synthetic-case' }] }, maintenanceRun: { items: [] } });
+  assert.deepEqual(actual.regression, legacy.regression); assert.equal(actual.allEqual, true); assert.equal(actual.excluded?.later, 1);
+  const changed = structuredClone(gold); changed.cases.push({ ...changed.cases.find((c) => c.comparable)!, key: 'synthetic-doc:extra', node: 'extra' });
+  const mismatch = computeScopeCases({ diff, earlierCases: gold, laterCases: changed, ...runs });
+  assert.equal(mismatch.allEqual, false);
+  assert.ok(!renderReport(mismatch).includes('synthetic-doc')); assert.ok(!renderReport(mismatch).includes('/commands/'));
 });
