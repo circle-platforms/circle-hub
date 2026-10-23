@@ -9,5 +9,5 @@ export function dynamicDisposition(reported:DynamicTerminal|null,facts:Readonly<
   const provenance:ProvenanceType='projected';
   const marks:QualifierMark[]=[...DISPATCH_QUALIFICATIONS];
   return {dynamic_terminal:terminal,qualifier:{nature,provenance,marks},accepted_as_fact:false,missing_facts:missing,
-    ...(missing.length?{reason:'integrity_unproven' as Reason,next_action:'管理员补齐目标版本认证、原派发收尾日志和同租约设备观察后重读原作业；不得重交'}:{})};
+    ...(missing.length?{reason:'integrity_unproven' as Reason,next_action:'管理员核对目标版本认证、原派发收尾日志和同租约设备观察，补齐所列缺事实并在后续核验中采用原件；本结果保留无判定，不重交'}:{})};
 }

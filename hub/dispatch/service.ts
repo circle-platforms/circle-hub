@@ -686,15 +686,18 @@ export class DispatchService {
     const attribution=d.result.ownership;
     const ownershipReported=attribution?at(response.value,attribution.pointer):undefined;
     const ownershipReason=attribution?at(response.value,attribution.reason):undefined;
-    const ownership=ownershipCertified && !!attribution && ownershipReported===attribution.value;
-    const ownershipObservation={certified:ownershipCertified,matched:ownership,reported:typeof ownershipReported==='string'?ownershipReported:null,reason:typeof ownershipReason==='string'?ownershipReason:null};
+    const ownershipMatched=!!attribution && ownershipReported===attribution.value;
+    const ownership=ownershipCertified && ownershipMatched;
+    const ownershipObservation={declared:!!attribution,certified:ownershipCertified,matched:ownershipMatched,reported:typeof ownershipReported==='string'?ownershipReported:null,reason:typeof ownershipReason==='string'?ownershipReason:null,source:response.source};
+    const admin=binding.acting_by ?? binding.initiated_by;
+    const ownershipFailure=!attribution?{missing_fact:'执行器尚未声明本次结果的归属字段和唯一归属值',next_action:`请管理员 ${admin} 核对 ${response.source} 并登记 result.ownership 的字段、唯一归属值及原因指针声明；本作业保留无判定，不重交`}:!ownershipMatched?{missing_fact:'本结果未报告声明的唯一归属；具体原因见归属观察及原件',next_action:`请管理员 ${admin} 依据 ${response.source} 检查原派发日志、收集器目录和保留证据，恢复归属或登记该版本的能力缺口；本作业保留无判定，不重交`}:{missing_fact:'本结果的归属值相符，但当前目标版本的归属前提尚未认证',next_action:`请管理员 ${admin} 复核 ${response.source} 的归属证据，为该目标版本登记 result_ownership 认证；认证用于后续核验，本作业保留无判定，不重交`};
     const projected = input.items.map(id => {
       const found = Array.isArray(rows) ? rows.filter(r => at(r, d.result.item_id) === id) : [];
       const reported = complete && found.length === 1 ? mapped(d.result.map, at(found[0], d.result.item_outcome)) ?? null : null;
       const row = found.length === 1 ? found[0] : null;
       const log = d.result.log ? at(row,d.result.log) : undefined;
       const disposition = dynamicDisposition(reported,{owned:ownership,request:!!d.result.request_id && at(response.value,d.result.request_id) === intent.body.detail.request_id,remote:same(at(response.value,d.result.id),remoteId),digest:at(response.value,d.result.sha256) === input.sha256,complete:complete && Array.isArray(rows) && rows.length === input.items.length,unique:found.length === 1,closed:!!d.result.closing_marker && typeof log === 'string' && log.includes(d.result.closing_marker),device:intent.body.detail.device_identity_proven === true && intent.body.detail.device_lease_digest === digestOfValue([remoteLease.id,remoteLease.token]),continuity:!drift && !leaseInterrupted});
-      return {item:id,reported_terminal:reported,...disposition,...(disposition.dynamic_terminal==='no_verdict'?{missing_fact:!ownership?'本结果没有取得已认证的唯一派发归属事实；该值只转述目标报告':'动态完整性事实尚不齐全；见 missing_facts 和下一步',...(!ownership?{next_action:`请管理员 ${binding.acting_by ?? binding.initiated_by} 检查原派发日志、收集器目录和保留证据，恢复唯一归属并认证后重读原作业；该版本缺归属能力时明确登记能力缺口，不以重复读取代替恢复；不得重交`}:{})}:{}),limits:disposition.qualifier.marks.map(mark=>labelOf('qualifier_mark',mark))};
+      return {item:id,reported_terminal:reported,...disposition,...(disposition.dynamic_terminal==='no_verdict'?(!ownership?ownershipFailure:{missing_fact:'动态完整性事实尚不齐全；见 missing_facts 和下一步'}):{}),limits:disposition.qualifier.marks.map(mark=>labelOf('qualifier_mark',mark))};
     });
     const savedLogs = Array.isArray(rows) ? rows.flatMap(row=>[
       ...(d.result.log && typeof at(row,d.result.log)==='string' ? [String(at(row,d.result.log))] : []),
@@ -705,7 +708,8 @@ export class DispatchService {
       origin: { generated: { generator: 'dispatch@1', inputs: [response.source, `src:${input.sha256}`] } }, author: { user: null }, provenanceType: 'projected', visibility: { readers: [binding.user], admins: true, packs: [], shareable: false } });
     await this.journal.append(binding, 'result', 'read_back', 'completed', { reference: `src:${artifact.body.sha256}`, items: projected.length, no_verdict: projected.filter(row=>row.dynamic_terminal==='no_verdict').length }, [response.source]);
     await this.release(binding, client, remoteLease);
-    await this.journal.append(binding, 'complete', 'read_back', 'completed', { done: true, outcome: 'effective' });
+    const unresolved=projected.filter(row=>row.dynamic_terminal==='no_verdict');
+    await this.journal.append(binding, 'complete', 'read_back', 'completed', { done: true, outcome: 'effective',...(unresolved.length?{missing_fact:[...new Set(unresolved.map(row=>'missing_fact' in row?row.missing_fact:'动态完整性事实尚不齐全；见 missing_facts'))].join('；'),next_action:[...new Set(unresolved.map(row=>row.next_action))].join('；')}:{} ) });
     return this.status(by, binding.job);
   }
 }
