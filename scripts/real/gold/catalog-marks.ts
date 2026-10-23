@@ -17,7 +17,7 @@ export interface EvidenceRequest extends Position { fact: string; next_action: s
 interface Argument { name: string; type: string; limit?: string; length?: string; optional: boolean; optionalRaw?: string; help: string; at: Position }
 interface Signature { args: Argument[]; at: Position }
 interface Command { words: string[]; signatures: Signature[]; at: Position }
-export interface Catalog { commands: Command[]; requests: EvidenceRequest[] }
+export interface Catalog { commands: Command[]; requests: EvidenceRequest[]; unnamedItems: number }
 export interface CommandAnswer { in_scope: boolean; code: CoreViolationCode | null; requests: EvidenceRequest[] }
 const RANGE: CoreViolationCode = 'core.catalog.param_out_of_range';
 const TYPE: CoreViolationCode = 'core.catalog.param_type_mismatch';
@@ -25,10 +25,42 @@ const ARITY: CoreViolationCode = 'core.catalog.arity_mismatch';
 export const fold = (value: string): string => value.normalize('NFKC').toLowerCase().replace(/\s+/gu, ' ').trim();
 const request = (at: Position, fact: string, next_action: string): EvidenceRequest => ({ ...at, fact, next_action });
 
+export class CatalogInputError extends Error {
+  readonly reason: 'tree_encoding' | 'tree_structure' | 'source_structure';
+  constructor(reason: CatalogInputError['reason'], message: string) { super(message); this.reason = reason; this.name = 'CatalogInputError'; }
+}
+export function decodeCatalog(bytes: Uint8Array): string {
+  const declaration = Buffer.from(bytes.subarray(0, 256)).toString('ascii');
+  const encoding = /encoding\s*=\s*["']([^"']+)["']/i.exec(declaration)?.[1].toLowerCase() ?? 'utf-8';
+  if (encoding === 'iso-8859-1') return Buffer.from(bytes).toString('latin1');
+  if (encoding !== 'utf-8' && encoding !== 'utf8' && encoding !== 'us-ascii') throw new CatalogInputError('tree_encoding', '命令树编码未实现');
+  if (encoding === 'us-ascii' && bytes.some(b => b > 127)) throw new CatalogInputError('tree_encoding', 'ASCII 命令树含非 ASCII 字节');
+  try { return new TextDecoder('utf-8', { fatal: true }).decode(bytes); }
+  catch { throw new CatalogInputError('tree_encoding', '命令树字节不符合声明编码'); }
+}
+/** Repair only stray quotes inside an attribute; preserve offsets for positioned evidence. */
+function tolerantStartTags(xml: string): string {
+  let quote: string | null = null, tag = false;
+  const chars = xml.split('');
+  for (let i = 0; i < chars.length; i++) {
+    const ch = chars[i];
+    if (!tag) { if (ch === '<') tag = true; continue; }
+    if (quote !== null) {
+      if (ch === quote) {
+        const tail = chars.slice(i + 1, i + 150).join('');
+        if (/^\s*(?:\/?[>?]|[\w:.-]+\s*=)/.test(tail)) quote = null;
+        else chars[i] = quote === '"' ? "'" : '"';
+      }
+    } else if (ch === '"' || ch === "'") quote = ch;
+    else if (ch === '>') tag = false;
+  }
+  return chars.join('');
+}
+
 /** SAX is only an XML reader; menu paths, argument meaning and comparison are implemented here. */
 export function readCatalog(xml: string): Catalog {
-  if (/<!DOCTYPE|<!ENTITY/i.test(xml)) throw new Error('不支持 DTD 或实体声明');
-  const catalog: Catalog = { commands: [], requests: [] };
+  if (/<!DOCTYPE|<!ENTITY/i.test(xml)) throw new CatalogInputError('tree_structure', '不支持 DTD 或实体声明');
+  const catalog: Catalog = { commands: [], requests: [], unnamedItems: 0 };
   const byHead = new Map<string, Command>();
   type Frame = { tag: string; path: string; counts: Map<string, number>; words: string[]; command?: Command; signature?: Signature; arg?: Argument };
   const stack: Frame[] = [];
@@ -51,7 +83,7 @@ export function readCatalog(xml: string): Catalog {
     if (tag.name === 'item') {
       if (parent?.command) catalog.requests.push(request(position(path), '嵌套 item 的命令路径规则', '请集成者提供该 XML 结构的路径规则或导出规范树后重跑'));
       const words = [...frame.words, ...(attrs.name ?? '').normalize('NFKC').trim().split(/\s+/).filter(Boolean)];
-      if (!(attrs.name ?? '').trim()) catalog.requests.push(request(position(path + '/@name'), '命令名称', '请集成者补取该命令名称的原始声明后重新导出树'));
+      if (!(attrs.name ?? '').trim()) { catalog.unnamedItems++; frame.command = undefined; frame.signature = undefined; frame.arg = undefined; stack.push(frame); return; }
       const key = fold(words.join(' '));
       const command = byHead.get(key) ?? { words, signatures: [], at: position(path) };
       byHead.set(key, command); frame.command = command; frame.signature = undefined; frame.arg = undefined;
@@ -67,8 +99,8 @@ export function readCatalog(xml: string): Catalog {
   });
   parser.on('text', text => { const arg = stack.at(-1)?.arg; if (arg) arg.help += text; });
   parser.on('closetag', () => { stack.pop(); });
-  parser.on('error', error => { throw error; });
-  parser.write(xml).close();
+  parser.on('error', error => { throw new CatalogInputError('tree_structure', error.message); });
+  parser.write(tolerantStartTags(xml)).close();
   catalog.commands = [...byHead.values()];
   for (const command of catalog.commands) if (!command.signatures.length) command.signatures.push({ args: [], at: command.at });
   if (!catalog.commands.length) catalog.requests.push({ input: 'tree', pointer: '/', line: 1, column: 1, fact: '可识别的命令定义', next_action: '请集成者确认锁定根并重新导出命令树原件；如确为空目录，补充其声明' });
@@ -151,11 +183,13 @@ function parameterCode(p: Parameter, word: string): CoreViolationCode | null {
 
 /** A known fitting signature proves validity. Different possible failure codes require a rule, not a guess. */
 export function judgeCommand(catalog: Catalog, line: string): CommandAnswer {
-  if (catalog.requests.length) return { in_scope: false, code: null, requests: catalog.requests };
+  if (!catalog.commands.length) return { in_scope: false, code: null, requests: catalog.requests };
   const normalized = line.normalize('NFKC').trim(), tokens = tokenize(normalized);
   const headWords = tokens ?? normalized.split(/\s+/);
   const matches = catalog.commands.filter(c => c.words.every((word, i) => headWords[i] !== undefined && fold(word) === fold(headWords[i]))).sort((a, b) => b.words.length - a.words.length);
   const command = matches[0]; if (!command) return { in_scope: false, code: null, requests: [] };
+  const localRequests = catalog.requests.filter(r => r.pointer.startsWith(command.at.pointer + '/') || r.pointer === command.at.pointer);
+  if (localRequests.length) return { in_scope: true, code: null, requests: localRequests };
   if (tokens === null) return { in_scope: true, code: null, requests: [request(command.at, '命令行的引号或转义切分规则', '请集成者核对该用例原件中的完整命令行和转义方式，补齐后重跑')] };
   const args = tokens.slice(command.words.length);
   const signatures = command.signatures.map(signature => signature.args.map(parameter));
@@ -427,7 +461,7 @@ export function main(argv: string[], say: (line: string) => void = line => proce
   let stage = 'tree';
   try {
     const read = (key: string): Uint8Array => { stage = key; return readFileSync(outsideGit(flags.get('--' + key)!)); };
-    const treeBytes = read('tree'), treeXml = new TextDecoder('utf-8', { fatal: true }).decode(treeBytes);
+    const treeBytes = read('tree'), treeXml = decodeCatalog(treeBytes);
     const sourceBytes = read('source'), runBytes = read('run'), run = parseJson(runBytes);
     stage = 'table'; const declaration = readDeclaration(flags.get('--table'));
     let excludeNodes: string[] = [];

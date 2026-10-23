@@ -20,7 +20,7 @@ import { isAbsolute, join, resolve } from 'node:path';
 import { caseNodes, firstCases, inject, type ManualFragment, type MindTree, type Planned } from './lib/inject.ts';
 import { aggregate, score, type AggregateRun, type ResultLike, type Score } from './lib/score.ts';
 import { literalGold } from './gold/literal.ts';
-import { acceptedSubmissionReference, catalogMarks, catalogGapReport, catalogPreflight, catalogSummary, readCatalogInput, readDeclaration, writeCatalogReport, type CatalogReport } from './gold/catalog-marks.ts';
+import { acceptedSubmissionReference, decodeCatalog, catalogMarks, catalogGapReport, catalogPreflight, catalogSummary, readCatalogInput, readDeclaration, writeCatalogReport, type CatalogReport } from './gold/catalog-marks.ts';
 import { parseCallLog } from './review-circle.ts';
 
 export interface SessionSpec {
@@ -233,7 +233,7 @@ export function measureReview(options: MeasureOptions, drivers: Drivers, say: (l
     let preflight: CatalogReport | undefined;
     try {
       const treeBytes = readCatalogInput(options.tree), declaration = readDeclaration(options.catalogTable);
-      const treeXml = new TextDecoder('utf-8', { fatal: true }).decode(treeBytes);
+      const treeXml = decodeCatalog(treeBytes);
       const requests = catalogPreflight(treeXml, declaration.table);
       if (requests.length) preflight = catalogGapReport(requests, { tree_sha256: createHash('sha256').update(treeBytes).digest('hex'), source_sha256: copySha });
       else catalogInput = { treeXml, table: declaration.table };

@@ -210,3 +210,13 @@ test('malformed receipt fields never appear on the screen as if they were digest
   assert.equal(main(cliArgs(files), line => screen.push(line)), 1);
   assert.ok(!screen.join('').includes('synthetic-private-root-value'));
 });
+
+test('real-shaped Latin-1 trees tolerate stray help quotes and count unnamed items locally', async () => {
+  const { decodeCatalog } = await import('./catalog-marks.ts');
+  const xml = '<?xml version="1.0" encoding="ISO-8859-1"?><commands><scope><menu name="widget"><item name="port" help_string="Type "text" café"><arguments><arg name="n" type="U16"/></arguments></item><item name=""><arguments><arg type="UNKNOWN"/></arguments></item></menu></scope></commands>';
+  const catalog = readCatalog(decodeCatalog(Buffer.from(xml, 'latin1')));
+  assert.equal(catalog.unnamedItems, 1);
+  assert.equal(catalog.commands.length, 1);
+  assert.equal(judgeCommand(catalog, 'widget port 2').code, null);
+  assert.equal(judgeCommand(catalog, 'widget port 2').requests.length, 0);
+});
