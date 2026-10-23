@@ -363,7 +363,7 @@ async function runCommand(args: readonly string[], ctx: CliContext, options: Cli
   out(io, `运行 ${run.run}：任务包 ${run.pack}，开始于 ${run.started_at}`);
   out(io, [run.product && `产品 ${run.product}`, run.version && `版本 ${run.version}`, run.build && `构建 ${run.build}`, run.root && `知识根 ${run.root}`].filter(Boolean).join('，') || '没有锁定产品版本');
   out(io, `条目 ${run.items.length} 个，要求项 ${run.requirements.map((r) => r.key).join('、')}`);
-  out(io, `提交 ${detail.submissions.length} 份：${detail.submissions.map((s) => labelOf('acceptance', s.acceptance)).join('、') || '还没有'}`);
+  out(io, `提交 ${detail.submissions.length} 份：${detail.submissions.map((s) => s.acceptance === null ? '未校验（Hub 中断）' : labelOf('acceptance', s.acceptance)).join('、') || '还没有'}`);
   const latest = detail.latest;
   if (latest === null) io.stdout('还没有校验结果');
   else {

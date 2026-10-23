@@ -35,11 +35,12 @@ export async function getRun(ctx: EngineContext, user: Principal, run: string): 
     const submission = typeof detail.submission === 'string' ? detail.submission : isVerbatimObject(record) ? null : receivedDigest(record.body).digest;
     const result = submission === null ? undefined : byDigest.get(submission);
     const codes = action?.body.codes ?? [];
+    const hubError = action?.body.result === 'error' && detail.hub_error === true;
     submissions.push({
       record: record.digest,
       received_at: record.created_at,
-      acceptance: result?.body.acceptance ?? action?.body.acceptance ?? 'not_accepted',
-      errors: result?.body.errors ?? codes.map((code) => ({ code, message: Object.hasOwn(PROTOCOL_CODES, code) ? PROTOCOL_CODES[code as keyof typeof PROTOCOL_CODES].when : '' })),
+      acceptance: hubError ? null : result?.body.acceptance ?? action?.body.acceptance ?? 'not_accepted',
+      errors: hubError ? [{code: action?.body.error_code ?? 'check_error', message: '未校验（Hub 来源读取失败）', ...(typeof detail.fix === 'string' ? {fix: detail.fix} : {})}] : result?.body.errors ?? codes.map((code) => ({ code, message: Object.hasOwn(PROTOCOL_CODES, code) ? PROTOCOL_CODES[code as keyof typeof PROTOCOL_CODES].when : '' })),
       result: result !== undefined && result.body.acceptance === 'accepted' ? result.digest : null,
     });
   }

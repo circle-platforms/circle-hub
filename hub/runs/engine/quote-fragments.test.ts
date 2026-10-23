@@ -48,7 +48,7 @@ const quoteRun = async (h: Harness, map: string, quote: { text: string; referenc
     h.call(),
   );
   assert.equal(answer.acceptance, 'accepted', JSON.stringify(answer.errors));
-  const row = answer.result!.partitions.delivered!.find((it) => it.item === ITEM.c4)!;
+  const row = Object.values(answer.result!.partitions).flat().find((it) => it.item === ITEM.c4)!;
   return row.requirements.find((r) => r.requirement === 'findings')!;
 };
 
@@ -152,7 +152,7 @@ test('two data-only quote rows over one reference resolve once per evaluation', 
       h.call(),
     );
     assert.equal(answer.acceptance, 'accepted', JSON.stringify(answer.errors));
-    const row = answer.result!.partitions.delivered!.find((it) => it.item === ITEM.c4)!;
+    const row = Object.values(answer.result!.partitions).flat().find((it) => it.item === ITEM.c4)!;
     // Both rows over the one reference are checked (four quote supports: two rows x two checks) with no refute or
     // unknown — one parse served them all.
     const findings = row.requirements.find((r) => r.requirement === 'findings')!;
@@ -278,21 +278,25 @@ test('resolver codes refute parser and range failures even when the message neve
   }
 });
 
-test('a locked tree with no readable text stays unknown, including retained content and failed reads', { skip }, async t => {
+test('a locked tree preserves retained/empty grades and automatically recovers temporary read failures', { skip }, async t => {
   const {h,map}=await open(); t.after(()=>h.close());
   const treeReader=h.knowledge.treeReader();
+  let offlineReads=0;
   t.mock.method(h.knowledge,'treeReader',()=>({...treeReader,hasRoot:()=>true,read:(...args:Parameters<typeof treeReader.read>)=>{
     if (args[1] === '/empty') return {text:null,mediaType:'application/octet-stream',readTier:'model_readable' as const,grounds:[]};
     if (args[1] === '/held') return {text:null,mediaType:'text/plain',readTier:'retain_only' as const,grounds:[]};
-    if (args[1] === '/offline') throw new Error('合成读取失败');
+    if (args[1] === '/offline') { if(++offlineReads < 3) throw new Error('合成读取失败'); return {text:'任意引文',mediaType:'text/plain',readTier:'model_readable' as const,grounds:[]}; }
     if (args[1] === '/missing') return null;
     return treeReader.read(...args);
   }}));
-  for (const [path,message] of [['/held',/含凭据，原文不可读/],['/offline',/取不回/]] as const) {
+  for (const [path,message] of [['/held',/含凭据，原文不可读/]] as const) {
     const result=await quoteRun(h,map,{text:'任意引文',reference:`tree:${ROOTS.meadow329}${path}`});
     assert.ok(!result.claims.some(c=>c.statement.verdict==='refute'));
     assert.ok(result.claims.some(c=>c.statement.verdict==='unknown' && message.test(c.statement.text)));
   }
+  const recovered=await quoteRun(h,map,{text:'任意引文',reference:`tree:${ROOTS.meadow329}/offline`});
+  assert.equal(offlineReads,3);
+  assert.ok(!recovered.claims.some(c=>c.statement.verdict==='unknown'||c.statement.verdict==='refute'));
   const empty=await quoteRun(h,map,{text:'任意引文',reference:`tree:${ROOTS.meadow329}/empty`});
   assert.ok(empty.claims.some(c=>c.statement.verdict==='refute' && c.statement.data?.why==='no_fragment'));
   const missing=await quoteRun(h,map,{text:'任意引文',reference:`tree:${ROOTS.meadow329}/missing`});

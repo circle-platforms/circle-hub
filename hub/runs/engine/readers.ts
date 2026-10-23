@@ -24,12 +24,12 @@ export function principalOf(reader: ReaderIdentity): Principal {
   return { id: reader.user, name: reader.user, role: reader.role };
 }
 
-/** Preserve retain-only metadata so refs can disclose the credential restriction without bytes. */
+/** Preserve retained metadata and unexpected function-read failures; model-only byte withholding stays neutral. */
 export function sourceReader(artifacts: Artifacts, consumer: ProducerKind): SourceReader {
   return {
     async read(sha256, reader) {
       const source = await artifacts.source(principalOf(reader), sha256, { consumer });
-      if (source === null || (source.bytes === null && source.readTier !== 'retain_only')) return null;
+      if (source === null || consumer === 'model' && source.bytes === null && source.readTier !== 'retain_only') return null;
       return { bytes: source.bytes, mediaType: source.mediaType, size: source.size, readTier: source.readTier };
     },
   };

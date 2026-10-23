@@ -27,6 +27,7 @@ import { buildScope, createResolver, recordBytes, resolveSubmission } from './ex
 import type { AuthorOrigin, ProducerOrigin } from './independence.ts';
 import { authorOriginOf, packIdOf } from './lineage.ts';
 import { canSeeRun } from './readers.ts';
+import { HubReadFailure } from './retry-read.ts';
 import { carriedItems } from './reuse.ts';
 import { issuesOf, requirementAt, slotProblems, slotSchemaOf } from './slots.ts';
 import {
@@ -89,6 +90,7 @@ export async function roundsUsedOf(ctx: EngineContext, run: string): Promise<Map
   const counts = new Map<string, number>();
   for (const action of await actionsOf(ctx.deps.records.store, run)) {
     if (action.body.action !== 'validate' || !isObject(action.body.detail)) continue;
+    if (action.body.detail.hub_error === true) continue;
     const { submission, repair } = action.body.detail;
     if (typeof submission !== 'string' || seen.has(submission) || !Array.isArray(repair)) continue;
     seen.add(submission);
@@ -181,7 +183,7 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
   const record = kept.record;
   const model = parsed?.success ? parsed.data.model : typeof args.model === 'string' ? wellFormed(args.model) : null;
   const session = sessionOf(call);
-  const action = (input: { acceptance: Acceptance; codes: string[]; repair: string[]; result: string | null; extra?: Record<string, unknown> }) =>
+  const action = (input: { acceptance: Acceptance | null; codes: string[]; repair: string[]; result: string | null; actionResult?: 'error'; errorCode?: string; extra?: Record<string, unknown> }) =>
     putAction(store, {
       action: 'validate',
       run: run.run,
@@ -189,6 +191,7 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
       startedAt,
       endedAt: ctx.now().toISOString(),
       acceptance: input.acceptance,
+      result: input.actionResult, errorCode: input.errorCode,
       codes: input.codes,
       detail: { submission: received.digest, session, model, repair: input.repair, result: input.result, ...(input.extra ?? {}) },
       submissionRecord: record.digest,
@@ -212,17 +215,27 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
   const base: Basis = { ctx, user, call, run, workflow, digest: received.digest, roundsUsed };
   const early = earlyProblem(kept, received, args);
   let outcome: Validated;
-  if (early !== null) {
-    const errors = withRounds(workflow, args, [early], roundsUsed);
-    outcome = { result: notAccepted(base, errors), problems: requirementsOf(errors) };
-  } else if (parsed?.success === true) outcome = await validate(base, parsed.data, [], null);
-  else outcome = await validatePartial(base, args, parsed?.error ?? null);
+  try {
+    if (early !== null) {
+      const errors = withRounds(workflow, args, [early], roundsUsed);
+      outcome = { result: notAccepted(base, errors), problems: requirementsOf(errors) };
+    } else if (parsed?.success === true) outcome = await validate(base, parsed.data, [], null);
+    else outcome = await validatePartial(base, args, parsed?.error ?? null);
+  } catch (error) {
+    if (!(error instanceof HubReadFailure)) throw error;
+    await action({ acceptance: null, codes: [error.reason], repair: [], result: null,
+      actionResult: 'error', errorCode: error.reason,
+      extra: { hub_error: true, source: error.reference, reason: error.reason, retry_attempts: error.attempts,
+        message: error.message, fix: error.fix } });
+    return { call_result: 'error', acceptance: 'not_accepted', errors: [protocolError('SOURCE_UNAVAILABLE', error.message, { fix: error.fix })] };
+  }
   const saved = await keepResult(base, outcome);
   await action({
     acceptance: saved.result.body.acceptance,
     codes: saved.result.body.acceptance === 'not_accepted' ? unique(saved.result.body.errors.map((e) => e.code)) : [],
     repair: [...saved.problems].sort(),
     result: saved.result.digest,
+    extra: { retry_attempts: saved.retryAttempts },
   });
   return answerOf(saved.result.body);
 }
@@ -243,6 +256,7 @@ interface Validated {
   result: ValidationResult;
   /** Requirements whose problems in this submission count as a repair round. */
   problems: Set<string>;
+  retryAttempts?: Array<Record<string, unknown>>;
   prepared?: Map<string, PreparedContribution>;
   refusals?:Map<string,string>;
   model?: string;
@@ -308,7 +322,7 @@ function notAccepted(base: Basis, errors: ProtocolError[]): ValidationResult {
  * Stores the result. A result a record cannot hold (over the record limit, or nesting canonical JSON refuses) is answered not
  * accepted with SUBMISSION_SCHEMA_VIOLATION and the fix to split the target, so that every call still gets a receipt.
  */
-async function keepResult(base: Basis, outcome: Validated): Promise<{ result: StoredRecord<ValidationResult>; problems: Set<string> }> {
+async function keepResult(base: Basis, outcome: Validated): Promise<{ result: StoredRecord<ValidationResult>; problems: Set<string>; retryAttempts: Array<Record<string, unknown>> }> {
   const { ctx } = base;
   const store = ctx.deps.records.store;
   try {
@@ -332,7 +346,7 @@ async function keepResult(base: Basis, outcome: Validated): Promise<{ result: St
         return putResult(store, { ...outcome.result, contributions: receipt }, ctx.now().toISOString(), tx);
       });
     };
-    return { result: await save(), problems: outcome.problems };
+    return { result: await save(), problems: outcome.problems, retryAttempts: outcome.retryAttempts ?? [] };
   } catch (error) {
     if (!(error instanceof LimitError) && !(error instanceof CanonicalizationError)) throw error;
     ctx.log({ traceId: base.call.traceId, run: base.run.run, what: 'submit_result', detail: `validation result not stored: ${describe(error)}` });
@@ -346,7 +360,7 @@ async function keepResult(base: Basis, outcome: Validated): Promise<{ result: St
       path: '',
       fix: size !== null && limit !== null ? `把被判对象分成至少 ${Math.ceil(size / limit)} 块（每块分别开运行），或缩短陈述和引文后重交` : '把被判对象分块（每块分别开运行），或缩短陈述和引文后重交',
     });
-    return { result: await putResult(store, notAccepted(base, [tooLarge]), ctx.now().toISOString()), problems: new Set() };
+    return { result: await putResult(store, notAccepted(base, [tooLarge]), ctx.now().toISOString()), problems: new Set(), retryAttempts: outcome.retryAttempts ?? [] };
   }
 }
 
@@ -412,8 +426,9 @@ async function validate(base: Basis, submission: Submission, before: ProtocolErr
     return capability!==undefined&&tokens?.[1]==='items'&&tokens[3]==='slots'&&tokens[4]===capability.slot?{...error,requirement:capability.requirement}:error;
   });
   const structure = attribute(slotProblems(workflow, run.items, submission));
-  const scope = await buildScope(ctx, run, workflow, user, 'function');
-  const resolver = createResolver(ctx, scope, 'function');
+  const exactAttempts: Array<Record<string, unknown>> = [];
+  const scope = await buildScope(ctx, run, workflow, user, 'function', exactAttempts);
+  const resolver = createResolver(ctx, scope, 'function', exactAttempts);
   const carried = await carriedItems(ctx, scope, resolver, workflow, run, submission);
   for (const p of carried.problems) structure.push(protocolError('SUBMISSION_SCHEMA_VIOLATION', p.message, { path: p.path, item: p.item }));
   const prepared = workflow.workflow.contribution === undefined ? undefined : new Map<string, PreparedContribution>();
@@ -484,7 +499,7 @@ async function validate(base: Basis, submission: Submission, before: ProtocolErr
   };
   if (rejection.length === 0) {
     const evaluation = await evaluate(ctx, input);
-    return { result: evaluation.result, problems: new Set([...evaluation.problems, ...evaluation.uncovered]), ...(prepared === undefined ? {} : {prepared,refusals,model:submission.model}) };
+    return { result: evaluation.result, problems: new Set([...evaluation.problems, ...evaluation.uncovered]), retryAttempts: [...exactAttempts, ...evaluation.retryAttempts], ...(prepared === undefined ? {} : {prepared,refusals,model:submission.model}) };
   }
   // W08 R[1]: the checks still run on the items whose own values resolved; their refutations are the fix notes.
   const failed = new Set<string>([...exact.failedItems, ...structure.flatMap((e) => (e.item !== undefined ? [e.item] : []))]);
@@ -502,5 +517,6 @@ async function validate(base: Basis, submission: Submission, before: ProtocolErr
   return {
     result,
     problems: new Set([...requirementsOf(rejection), ...evaluation.problems]),
+    retryAttempts: [...exactAttempts, ...evaluation.retryAttempts],
   };
 }

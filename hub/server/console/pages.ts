@@ -270,7 +270,7 @@ ${section('错误与修正', errorsTable(result.errors))}`;
     submissionRows.push([
       code(s.record),
       s.received_at,
-      labelOf('acceptance', s.acceptance),
+      s.acceptance === null ? '未校验（Hub 中断）' : labelOf('acceptance', s.acceptance),
       s.errors.length === 0 ? '' : html`${s.errors.map((e) => html`<div>${code(e.code)} ${e.message}${e.fix ? `；修正：${e.fix}` : ''}${e.rounds_left !== undefined ? `；剩余修复轮数 ${e.rounds_left}` : ''}</div>`)}`,
       s.result ?? '—',
       await submissionContent(ctx, s.record, run.run),

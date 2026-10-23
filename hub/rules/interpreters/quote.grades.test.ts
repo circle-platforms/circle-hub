@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import type { FragmentRead } from '../../../contracts/generated/vocabulary.ts';
 import type { SourceView } from '../types.ts';
-import type { CheckOutcome } from '../../../contracts/src/tables.ts';
+import { CheckOutcome as OutcomeSchema, type CheckOutcome } from '../../../contracts/src/tables.ts';
 import { runCheck } from '../check.ts';
 import { sourcesFrom } from '../api.ts';
 import { getInterpreter } from './registry.ts';
@@ -64,6 +64,18 @@ describe('quote@1 over the graded source view', () => {
     const out = run(sourcesFrom({}), { q: [{ t: '片段', r: FRAGMENT }] });
     assert.equal(out[0].verdict, 'unknown');
   });
+});
+
+it('retain-only quotes wait for administrator acceptance with generated source evidence',()=>{
+  for(const sources of [graded({},()=> 'retain_only'),{text:()=>undefined,unread:()=>({reason:'credential_unreadable' as const,missing_fact:'管理员尚未接受此来源',next_action:'请求管理员接受来源，接受后重新核验'})}]) {
+    const [out]=run(sources,{q:[{t:'合成引文',r:FRAGMENT}]});
+    assert.equal(out.verdict,'unknown');assert.equal(out.reason,'awaiting_step');
+    assert.equal(OutcomeSchema.safeParse(out).success,true);
+    const unread=(out.data?.unread_sources as Array<Record<string,unknown>>)[0];
+    assert.equal(unread.reference,FRAGMENT);assert.equal(unread.reason,'credential_unreadable');
+    assert.match(String(unread.missing_fact),/管理员.*接受/);assert.match(String(unread.next_action),/请求管理员.*接受.*重新核验/);
+    assert.match(out.statement,/含凭据，原文不可读.*管理员.*接受.*重新核验/);
+  }
 });
 
 // Type checking guards the stored grading vocabulary as well as the runtime cases above.

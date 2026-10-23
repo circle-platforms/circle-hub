@@ -663,7 +663,7 @@ async function keepProduction(ctx: EngineContext, stored: StoredRecord<RunRecord
     endedAt,
     acceptance: null,
     codes: [],
-    detail: { submission: stored.digest, session: sessionOf(call), model: null, repair: [], result: result.digest, production: true },
+    detail: { submission: stored.digest, session: sessionOf(call), model: null, repair: [], result: result.digest, production: true, retry_attempts: production.evaluation.retryAttempts },
   });
   return { reference: recReference(result.digest), record: result.digest, result: result.body, counts: partitionCountsOf(result.body.partitions) };
 }
