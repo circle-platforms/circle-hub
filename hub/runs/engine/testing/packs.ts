@@ -73,8 +73,8 @@ const requirement = (r: Partial<RequirementTemplate> & Pick<RequirementTemplate,
 
 export interface ReviewOptions {
   version?: string;
-  /** Add a fact requirement whose only check is a pack function that throws or never returns. */
-  fragile?: 'boom' | 'spin';
+  /** Add a fact requirement whose check throws, times out or returns a synthetic unknown reason. */
+  fragile?: 'boom' | 'spin' | 'output_failed' | 'bogus_reason';
   /** Accept the independence the client declares on findings (default true). */
   acceptsDeclared?: boolean;
   /** Declare the dynamic layer on the catalog requirement too. */

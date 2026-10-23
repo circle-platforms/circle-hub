@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { startPostgres, type TemporaryPostgres } from '../../testing/postgres.ts';
-import { openHarness, sandboxSkip, type Harness, type HarnessOptions } from './testing/harness.ts';
+import { openHarness, sandboxSkip, type Harness } from './testing/harness.ts';
 import { standardDocument, toyMap, ITEM } from './testing/mindmap.ts';
 
 let postgres: TemporaryPostgres;
@@ -35,21 +35,30 @@ const submitAll = async (h: Harness, map: string) => {
 };
 
 test('output_failed keeps the requirement incomplete with that reason and the item unfinished', { skip }, async (t) => {
-  const h = await openHarness(postgres, { review: { dynamicFindings: true }, fragile: 'output_failed' });
+  const h = await openHarness(postgres, { review: { dynamicFindings: true, fragile: 'output_failed' } });
   t.after(() => h.close());
   const map = await h.upload(h.alice, toyMap(standardDocument()));
   const answer = await submitAll(h, map);
-  const rows = [...(answer.result!.partitions.incomplete ?? []), ...(answer.result!.partitions.unfinished ?? [])];
-  assert.ok(rows.length > 0, JSON.stringify(Object.keys(answer.result!.partitions)));
-  const fragile = rows.flatMap((row) => row.requirements).find((r) => r.requirement === 'fragile');
-  assert.ok(fragile !== undefined, JSON.stringify(rows.map((r) => r.requirements.map((x) => x.requirement))));
-  const layer = fragile.layers.find((l) => l.layer === 'static')!;
-  assert.equal(layer.terminal, 'incomplete');
-  assert.equal(layer.reason, 'output_failed');
+  const rows = answer.result!.partitions.incomplete;
+  assert.equal(rows.length,4);
+  assert.deepEqual(answer.counts,{delivered:0,rejected:0,quarantined:0,incomplete:4,unknown:4});
+  for (const row of rows) {
+    assert.equal(row.reason,'output_failed');
+    const fragile = row.requirements.find(r => r.requirement === 'fragile');
+    assert.ok(fragile);
+    const layer = fragile.layers.find(l => l.layer === 'static');
+    assert.equal(layer?.terminal,'incomplete');
+    assert.equal(layer.reason,'output_failed');
+    const unknown = fragile.claims.find(c => c.statement.verdict === 'unknown');
+    assert.ok(unknown);
+    assert.equal(unknown.statement.reason,'output_failed');
+    assert.match(unknown.statement.text,/出件失败/);
+  }
+  assert.ok(!h.logs.some(log => log.what === 'check fragile'));
 });
 
 test('a reason outside the list still turns the check invalid (the old behaviour)', { skip }, async (t) => {
-  const h = await openHarness(postgres, { review: { dynamicFindings: true }, fragile: 'bogus_reason' });
+  const h = await openHarness(postgres, { review: { dynamicFindings: true, fragile: 'bogus_reason' } });
   t.after(() => h.close());
   const map = await h.upload(h.alice, toyMap(standardDocument()));
   const answer = await submitAll(h, map);
@@ -59,6 +68,6 @@ test('a reason outside the list still turns the check invalid (the old behaviour
   const layer = fragile.layers.find((l) => l.layer === 'static')!;
   assert.equal(layer.terminal, 'unchecked');
   assert.equal(layer.reason, 'check_error');
+  assert.deepEqual(answer.counts,{delivered:4,rejected:0,quarantined:0,incomplete:0,unknown:4});
+  assert.ok(fragile.claims.some(c => c.statement.verdict === 'unknown' && c.statement.reason === 'check_error'));
 });
-
-void ({} as HarnessOptions);

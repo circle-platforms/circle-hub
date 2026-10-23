@@ -13,7 +13,7 @@ import type { RequirementResult, ValidationResult } from '../../../contracts/src
 import type { LoadedWorkflow } from '../../ports.ts';
 import { publishCheckMarks } from '../packs/marks.ts';
 import type { Principal } from '../../records/api.ts';
-import { parseReference, resolveReference, type RecordReader, type ResolveContext, type SourceReader } from '../../refs/api.ts';
+import { MAX_REFERENCE_LENGTH, parseReference, resolveReference, type RecordReader, type ResolveContext, type SourceReader } from '../../refs/api.ts';
 import { SandboxError, callPackFunction, runCheck, sourcesFrom, type CatalogView, type CheckOutcome, type SourceView, type UnreadSource } from '../../rules/api.ts';
 import { factClaim, judgmentClaim, rootDigest, statementOf, strongestRole } from './claims.ts';
 import { CHECK_PARALLELISM, type EngineContext } from './deps.ts';
@@ -383,7 +383,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
             return { why: r.code === 'REFERENCE_UNRESOLVED' && (ref.scheme === 'src' || ref.scheme === 'tree') ? 'no_fragment' : 'unavailable' };
           }
           if (r.readTier === 'retain_only') return { why: 'retain_only' };
-          if (r.text === null) return { why: r.fragment === null ? 'no_fragment' : 'unavailable' };
+          if (r.text === null) return { why: 'unavailable' };
           if (Buffer.byteLength(r.text, 'utf8') > capBytes) return { why: 'too_large' };
           return { text: r.text, why: 'bound' };
         };
@@ -405,7 +405,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
   const quotedReferences = new Set<string>();
   /** Every reference-like string in the slot records (an interpreter's table may point at any of them). */
   const collectQuotedReferences = (value: unknown): void => {
-    if (typeof value === 'string' && value.length < 600 && (value.startsWith('src:') || value.startsWith('tree:') || value.startsWith('rec:'))) {
+    if (typeof value === 'string' && value.length <= MAX_REFERENCE_LENGTH && /^(?:src|tree|entry|rec):/.test(value)) {
       quotedReferences.add(value);
     } else if (Array.isArray(value)) {
       for (const item of value) collectQuotedReferences(item);
@@ -422,10 +422,10 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
     why: (reference) => (texts.has(reference) || warmed.has(reference) ? 'bound' : warmedWhy.get(reference) ?? 'unavailable'),
   });
   /** Warm every quoted reference of an item's slot record before its checks run (once per reference per evaluation). */
-  const warmQuoted = async (value: unknown, capBytes: number = MAX_CHECK_READ_BYTES): Promise<void> => {
+  const warmQuoted = async (value: unknown, capBytes: number, texts: ReadonlyMap<string, string>): Promise<void> => {
     collectQuotedReferences(value);
     await Promise.all([...quotedReferences].map(async (reference) => {
-      if (warmed.has(reference) || warmedWhy.has(reference)) return;
+      if (texts.has(reference) || warmed.has(reference) || warmedWhy.has(reference)) return;
       const graded = await gradeFragment(reference, capBytes);
       if (graded.text !== undefined) warmed.set(reference, graded.text);
       else warmedWhy.set(reference, graded.why);
@@ -444,7 +444,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
     }
     const view = check.catalog !== undefined ? (views.get(check.catalog) ?? undefined) : undefined;
     const { boundSources, unreadSources } = await readBoundSources(check);
-    await warmQuoted(subject, check.reads?.max_bytes ?? MAX_CHECK_READ_BYTES);
+    await warmQuoted(subject, check.reads?.max_bytes ?? MAX_CHECK_READ_BYTES, texts);
     const record = { ...Object.fromEntries(texts), ...boundSources, ...Object.fromEntries(warmed) };
     const outcomes = await runCheck(
       {

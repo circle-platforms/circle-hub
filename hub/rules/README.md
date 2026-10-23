@@ -272,6 +272,10 @@ The interpreter asks the run's source view for the fragment a reference resolves
    parses it with the boundary's own parser (hub/refs: parser@version, selector, character range) over a source bound
    to the run — the same code path, never a second parser. One reference is parsed once per evaluation; the declared
    reads' size cap applies to a whole-source fragment, and a retain-only source gives no text (含凭据，原文不可读).
+   `src:` must name a run source; `tree:` must name the run's locked root. `rec:` and `entry:` follow the boundary's
+   visibility and resolver rules: a readable reference is checked, an unresolved one stays unknown. Resolutions are
+   graded by `Unresolved.code`, never by message wording: REFERENCE_UNRESOLVED on a bound source/tree means
+   no_fragment; SOURCE_UNAVAILABLE means unavailable. A resolved object without readable text is also unavailable.
 
 ### Graded outcomes
 
@@ -291,3 +295,8 @@ refusal with the exact position), before any check runs.
 「引用的源文件不是这次运行的输入」和「片段不存在」refute with QUOTE_MISMATCH — the message names the reason and
 `data.why` distinguishes them. Settled: no new vocabulary codes. Every pack's repair rows already ride QUOTE_MISMATCH
 and the model's fix has the same shape either way.
+
+
+A pack-owned generation/read-back failure may return `unknown` with reason `output_failed` from a check. It is a valid
+check outcome, not `check_error`: the requirement's static layer is incomplete and the item enters the incomplete
+partition. Other model/submission-only reasons remain invalid as check outcomes.
