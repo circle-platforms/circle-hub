@@ -1,6 +1,6 @@
 // The apv manual producer through the real knowledge production (K01): the same sources produce the same root twice;
 // a tree change in a command the manual never names leaves the manual subtree byte-identical (the node digest of
-// /manual/cli), while the /commands subtree changes. Synthetic sources only.
+// /manual/cli), while the /commands subtree changes; editing one section of the same source changes only that node and its ancestors. Synthetic sources only.
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
@@ -13,7 +13,7 @@ import { createKnowledge, type Knowledge } from '../../../../hub/knowledge/api.t
 import { FakeExternal, FakePacks } from '../../../../hub/knowledge/test-support.ts';
 import type { ProductHandle } from '../../../../hub/ports.ts';
 import { createDefaultRegistry } from '../../../../hub/refs/api.ts';
-import type { Principal } from '../../../../hub/records/api.ts';
+import { canonicalBytes, type Principal } from '../../../../hub/records/api.ts';
 import { startPostgres, type TemporaryPostgres } from '../../../../hub/testing/postgres.ts';
 import { openTestRecords, type TestRecordsKit } from '../../../../hub/testing/records.ts';
 
@@ -36,7 +36,18 @@ const MANUAL = [
   '| --- | --- |',
   '| **demo pool add** *\\<name\\>* | 添加成员 |',
   '| **demo route static** *\\<net\\>* | 静态路由 |',
+  '',
+  '# 独立章节',
+  '',
+  '这一章的合成正文保持不变。',
+  '',
+  '## 附录',
+  '',
+  '附录的合成正文也保持不变。',
 ].join('\n');
+
+// The same manual with one sentence of the 概述 section edited (the 命令 section untouched).
+const MANUAL_EDITED = MANUAL.replace('本手册为合成。', '本手册为合成，第二版。');
 
 const TREE_A =
   '<commands><scope type="global"><menu name="demo"><menu name="pool"><item name="add" help_string="a"><arguments></arguments></item></menu>' +
@@ -99,11 +110,11 @@ after(async () => {
   await postgres?.stop();
 });
 
-function build(name: string, tree: string): KnownBuild {
+function build(name: string, tree: string, line = '10.6.1'): KnownBuild {
   return {
     name,
     family: 'APV',
-    line: '10.6.1',
+    line,
     base: name,
     platform: null,
     built_at: '2026-05-12T10:20:30Z',
@@ -143,5 +154,68 @@ describe('production with the real manual producer', () => {
       'the manual subtree is shared by the two builds (the manual never names the added command)',
     );
     assert.notEqual(await nodeDigest(second.root as string, ['commands']), await nodeDigest(first.root as string, ['commands']));
+  });
+
+  test('editing one manual section changes only its node and its ancestors to the root', async () => {
+    const source = 'manual:cli:10.6.1';
+    const target = build('Rel_APV_10_6_1_11', 'site:tree:a');
+    type NodeSnapshot = { digest: string; bytes: Uint8Array; entries: Map<string, Uint8Array> };
+    const snapshot = async (root: string): Promise<Map<string, NodeSnapshot>> => {
+      const nodes = new Map<string, NodeSnapshot>();
+      const visit = async (digest: string, names: string[]): Promise<void> => {
+        const node = await knowledge.store.node(digest);
+        assert.ok(node, 'every asserted node must exist');
+        const entries = new Map<string, Uint8Array>();
+        for (const id of node.entries) {
+          const entry = await knowledge.store.entry(id);
+          assert.ok(entry, 'every asserted entry must exist');
+          entries.set(id, canonicalBytes(entry));
+        }
+        nodes.set('/' + names.join('/'), { digest, bytes: canonicalBytes(node), entries });
+        for (const child of node.children) await visit(child.digest, [...names, child.name]);
+      };
+      await visit(root, []);
+      return nodes;
+    };
+    const readsBefore = external.reads.length;
+    const before = await knowledge.produceTree({ product, build: target, by: admin });
+    assert.ok(before.ok, before.reason ?? '');
+    const beforeNodes = await snapshot(before.root as string);
+    const originalReads = external.reads.slice(readsBefore).filter(id => id.startsWith('manual:cli:'));
+    assert.ok(originalReads.length > 0);
+    assert.ok(originalReads.every(id => id === source));
+
+    try {
+      // Re-read exactly the same source identity for exactly the same build; only one paragraph's bytes change.
+      external.set(source, { bytes: MANUAL_EDITED, mediaType: 'text/markdown' });
+      const readsAfter = external.reads.length;
+      const after = await knowledge.produceTree({ product, build: target, by: admin });
+      assert.ok(after.ok, after.reason ?? '');
+      assert.deepEqual(external.reads.slice(readsAfter).filter(id => id.startsWith('manual:cli:')), originalReads);
+      const afterNodes = await snapshot(after.root as string);
+      assert.deepEqual([...afterNodes.keys()].sort(), [...beforeNodes.keys()].sort(), 'no section or command node was added or removed');
+
+      const changed = ['/', '/manual', '/manual/cli', '/manual/cli/概述'];
+      for (const path of [...changed, '/manual/cli/概述/命令', '/manual/cli/独立章节', '/manual/cli/独立章节/附录', '/commands']) {
+        assert.ok(beforeNodes.has(path) && afterNodes.has(path), `the fixture must produce ${path}`);
+      }
+      assert.deepEqual([...beforeNodes.keys()].filter(path => beforeNodes.get(path)!.digest !== afterNodes.get(path)!.digest).sort(), changed.sort());
+      for (const [path, original] of beforeNodes) {
+        const reproduced = afterNodes.get(path)!;
+        if (changed.includes(path)) {
+          assert.notDeepEqual(reproduced.bytes, original.bytes, `${path}: changed node bytes`);
+        } else {
+          assert.equal(reproduced.digest, original.digest, `${path}: unchanged digest`);
+          assert.deepEqual(reproduced.bytes, original.bytes, `${path}: byte-identical node`);
+          assert.deepEqual(reproduced.entries, original.entries, `${path}: byte-identical entry content`);
+        }
+      }
+      const textOf = (node: NodeSnapshot) => [...node.entries.values()].map(bytes => new TextDecoder().decode(bytes)).join('\n');
+      assert.ok(textOf(beforeNodes.get('/manual/cli/概述')!).includes('本手册为合成。'));
+      assert.ok(textOf(afterNodes.get('/manual/cli/概述')!).includes('本手册为合成，第二版。'));
+      assert.ok(!textOf(afterNodes.get('/manual/cli/概述')!).includes('本手册为合成。'));
+    } finally {
+      external.set(source, { bytes: MANUAL, mediaType: 'text/markdown' });
+    }
   });
 });
