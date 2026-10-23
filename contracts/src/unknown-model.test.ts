@@ -77,10 +77,10 @@ test('item 3 publishes the same recovery admission constraints in JSON Schema',(
 
 
 test('item 6 declares empty threshold behavior while omission means failure',()=>{
-  const table={schema:'range@1',origin:'Synthetic threshold rule',checks:[{values:'$.items[*]',threshold:{measure:'min',minimum:1,empty:'pass'}}]};
+  const table={schema:'range@1',origin:'Synthetic threshold rule',checks:[{values:'$.items[*]',threshold:{measure:'min',minimum:1,empty:'support'}}]};
   assert.ok(RangeTable.safeParse({...table,checks:[{values:'$.items[*]',threshold:{measure:'min',minimum:1}}]}).success);
   assert.ok(RangeTable.safeParse(table).success);
-  assert.ok(RangeTable.safeParse({...table,checks:[{values:'$.items[*]',threshold:{measure:'min',minimum:1,empty:'fail'}}]}).success);
+  assert.ok(RangeTable.safeParse({...table,checks:[{values:'$.items[*]',threshold:{measure:'min',minimum:1,empty:'refute'}}]}).success);
   assert.equal(RangeTable.safeParse({...table,checks:[{values:'$.items[*]',threshold:{measure:'min',empty:'unknown'}}]}).success,false);
 });
 

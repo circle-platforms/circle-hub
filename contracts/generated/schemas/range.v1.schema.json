@@ -157,12 +157,12 @@
                     "type": "number"
                   },
                   "empty": {
-                    "default": "fail",
-                    "description": "Only min/max on an empty set: pass or fail, omission means fail; count and sum keep their defined numeric zero",
+                    "default": "refute",
+                    "description": "Only min/max on an empty set: support or refute, omission means refute; count and sum keep their defined numeric zero",
                     "type": "string",
                     "enum": [
-                      "fail",
-                      "pass"
+                      "refute",
+                      "support"
                     ]
                   }
                 },

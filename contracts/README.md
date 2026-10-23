@@ -195,9 +195,10 @@ changed. hub-unknown-exits must derive actions/create requests, preserve gaps, a
 
 The required flags describe a verified refutation (`core.structure.required_empty`, `data.missing`) attributed to whoever
 provided the subject. They never convert a mandatory absent location into unknown. Optional absence is distinct from an
-empty selected collection. `range@1` min/max thresholds accept `empty: fail|pass`, omission meaning fail; count and sum
+empty selected collection. `range@1` min/max thresholds accept `empty: refute|support`, omission meaning refute; count and sum
 keep their defined empty numeric value and do not accept the min/max-only option. This is a table-format selector derived
-from generated terminal codes. Interpreter execution/attribution remains hub-retry-split's work. Complete catalog absence
+from the generated verdict axis. The range interpreter executes the empty min/max decision with `data.empty: true`;
+required-location attribution remains hub-retry-split's work. Complete catalog absence
 is a refutation; an incomplete catalog needs its missing sources and recovery, not a fabricated complete scope. View scope
 fields are deliberately left to the owner of views.ts.
 
