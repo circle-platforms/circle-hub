@@ -397,3 +397,8 @@ are done. Open:
 
 Smoke reports a candidate count. With no checkable text the result fails and asks for a text-bearing read.
 Attribute-only XML/HTML responses are checked by the same rule.
+
+Smoke validates every --read and both regular log files before any CLI read. Failures report fixed causes and next
+actions (log rotation/size, exports, identity mismatch, decoding, or the missing CLI read line with its exit code).
+The protocol-code field contains only registered connector/core codes; local checker failures are separate prose.
+Raw CLI errors, response text and paths are never copied into the report line.

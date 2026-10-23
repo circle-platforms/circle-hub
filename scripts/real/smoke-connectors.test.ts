@@ -92,3 +92,21 @@ test('review 2: attribute-only responses are checked and empty candidate sets ne
     assert.match(empty.output, /没有可核对的文字/); assert.match(empty.output, /下一步/);
   }
 });
+
+test('review 3: preflight rejects missing logs before a read and failures retain fixed actionable causes', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'smoke-preflight-')); let calls = 0;
+  try {
+    await assert.rejects(runSmoke({ logs: root, reads: ['res_synthetic:tree:key'], run: async () => { calls++; return { code: 0, stdout: '', stderr: '' }; }, print: () => {} }), /--logs/);
+    assert.equal(calls, 0);
+  } finally { await rm(root, { recursive: true, force: true }); }
+  for (const [options, reason] of [
+    [{ logs: 'rotate' as const }, /日志.*轮转|截短/],
+    [{ exportFailure: true }, /导出失败/],
+    [{ corrupt: true }, /摘要或大小不符/],
+    [{ exit: 2, stdout: 'synthetic missing header', stderr: 'PRIVATE-SYNTHETIC-REASON' }, /没有输出.*读取行/],
+  ] as const) {
+    const checked = await inspectSynthetic('{"text":"synthetic-checkable-text"}', options);
+    assert.equal(checked.result.ok, false); assert.match(checked.result.reason, reason); assert.match(checked.output, /下一步/);
+    assert.doesNotMatch(checked.output, /PRIVATE-SYNTHETIC-REASON|失败（检查未完成）/);
+  }
+});
