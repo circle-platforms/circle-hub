@@ -20,11 +20,31 @@ export async function maintainRuns(ctx:EngineContext):Promise<void>{
   let cursor:string|null=null;
   do{
     const page:Page<StoredRecord<RunRecord>>=await listRunRecords(ctx.deps.records.store,{}, {limit:200,cursor});
-    for(const run of page.items){const stopped=await abandonDecision(ctx,run.body.run);if(stopped){try{await ctx.lock('submit:'+run.body.run,()=>finishAbandon(ctx,run,stopped));}catch(error){ctx.log({traceId:null,run:run.body.run,what:'management projection retry',detail:String(error)});}await reconcileDispatch(ctx,run);continue;}if(run.body.predecessor){const before=await import('./store.ts').then(m=>m.runById(ctx.deps.records.store,run.body.predecessor!));if(before)await answerSuccessorRequests(ctx,before.body,run);}await reconcileDispatch(ctx,run);await rootUpdateRequest(ctx,run);await legacyResultRequests(ctx,run);await recoverRun(ctx,run);await ctx.lock(`submit:${run.body.run}`,()=>expireRun(ctx,run));}
+    for(const run of page.items){const stopped=await abandonDecision(ctx,run.body.run);if(stopped){await recoverManagement(ctx,run,stopped);await reconcileDispatch(ctx,run);continue;}if(run.body.predecessor){const before=await import('./store.ts').then(m=>m.runById(ctx.deps.records.store,run.body.predecessor!));if(before)await answerSuccessorRequests(ctx,before.body,run);}await reconcileDispatch(ctx,run);await rootUpdateRequest(ctx,run);await legacyResultRequests(ctx,run);await recoverRun(ctx,run);await ctx.lock(`submit:${run.body.run}`,()=>expireRun(ctx,run));}
     cursor=page.next;
   }while(cursor!==null);
   await repairedPackRequests(ctx);
   await acceptedSourceRequests(ctx);
+}
+/** A committed human choice is never repeated; only its deterministic delivery projection is retried. */
+async function recoverManagement(ctx:EngineContext,stored:StoredRecord<RunRecord>,decision:StoredRecord<import('../../records/api.ts').ActionBody>):Promise<void>{
+  const actions=await actionsOf(ctx.deps.records.store,stored.body.run);
+  const failures=actions.filter(a=>a.body.detail.management_interrupted===decision.digest).length;
+  const projected=await ctx.deps.records.store.find({kind:'validation_result',key:'runs.result.system_input',value:'rec:'+decision.digest,limit:1});
+  if(failures>=3&&!projected.items.length){
+    const admin=(await ctx.deps.records.principals?.list?.())?.find(p=>p.role==='admin'&&!p.disabled);
+    if(!admin)throw new Error('管理交付恢复缺少具名管理员');
+    await putRequest(ctx,{run:stored.body.run,kind:'repair',audience:admin.id,due:new Date(ctx.now().getTime()+86400000).toISOString(),source:decision.digest,code:'check_error',missing:'管理选择 rec:'+decision.digest+' 已记录，但三次自动恢复仍未形成交付投影',next_action:'管理员修复记录写入或投影故障后，核对原管理选择，用 circle-hub run abandon '+stored.body.run+' --answer-request <原处置请求摘要> --reason <原理由> 原样重试；只补交付，不重做人的选择、不改旧件'});
+    return;
+  }
+  try{
+    const result=await ctx.lock('submit:'+stored.body.run,()=>finishAbandon(ctx,stored,decision));
+    for(const request of await requestRecords(ctx,stored.body.run))if(request.answered_by===null&&request.source===decision.digest&&request.kind==='repair'&&request.code==='check_error')await answerRequest(ctx,request.record,result.record);
+  }catch(error){
+    ctx.log({traceId:null,run:stored.body.run,what:'management projection retry',detail:String(error)});
+    const at=ctx.now().toISOString();
+    await putAction(ctx.deps.records.store,{action:'validate',run:stored.body.run,inputs:['rec:'+decision.digest],startedAt:at,endedAt:ctx.now().toISOString(),acceptance:null,codes:['check_error'],result:'error',errorCode:'check_error',detail:{management_interrupted:decision.digest,hub_error:true,retry_attempt:failures+1,result:null,fix:'Hub 自动恢复管理交付，三次后转具名管理员修复请求'}});
+  }
 }
 async function expireRun(ctx:EngineContext,stored:StoredRecord<RunRecord>):Promise<void>{
   const run=stored.body;

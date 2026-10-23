@@ -59,3 +59,22 @@ test('an interrupted management projection is visible and recovered without repe
   const restored=(await h.service.getRun(h.alice,run.run))!;assert.ok(restored.latest?.result.system_input);
   assert.equal((await requests.inspect(question.digest))!.answered_by,pending.management!.record);
 });
+
+test('three failed management projections hand the exact remaining work to a named administrator', {skip},async t=>{
+  const map=await h.upload(h.alice,toyMap(standardDocument()));
+  const run=(await h.service.startRun(h.alice,{pack:'toy-locate',inputs:{map:{reference:map}}},h.call())).run!;
+  const stored=(await runById(h.kit.store,run.run))!,requests=createRequestService(h.kit);
+  const question=await requests.write({run:run.run,kind:'disposition',audience:h.alice.id,due:'2026-10-26T00:00:00.000Z',source:stored.digest,code:'awaiting_step',missing:'合成管理交付',next_action:'明确管理选择'});
+  const put=h.kit.store.put.bind(h.kit.store);
+  const mock=t.mock.method(h.kit.store,'put',async(...args:Parameters<typeof put>)=>{if(args[0].kind==='validation_result'&&(args[0].body as {system_input?:string}).system_input)throw new Error('SyntheticPersistentProjectionFailure');return put(...args);});
+  await assert.rejects(h.service.abandonRun!(h.alice,run.run,question.digest,'合成管理选择'));
+  for(let n=0;n<4;n++)await h.service.maintain();
+  const pending=(await h.service.getRun(h.alice,run.run))!;
+  const repair=(await requests.all(run.run)).find(q=>q.kind==='repair'&&q.source===pending.management!.record)!;
+  assert.ok(repair);assert.equal(repair.audience,h.admin.id);assert.ok(repair.next_action.includes('run abandon'));
+  assert.equal(pending.latest,null);
+  mock.mock.restore();
+  await h.service.abandonRun!(h.alice,run.run,question.digest,'合成管理选择');
+  await h.service.maintain();
+  assert.ok((await requests.inspect(repair.record))!.answered_by,'the actual recovered management delivery answers its repair request');
+});

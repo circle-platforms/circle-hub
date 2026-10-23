@@ -238,10 +238,9 @@ well-formed text). The same reasons go to the admin note of the call they belong
   or null, references canonical) and `cross_item` (the submitted entries, grounds canonical) are added to the documented
   `{ items: [...] }` so that a run-level check can judge the submission (the verdict consistency of scenario 15). The default
   item subject is exactly as documented.
-- **A draft's independent findings are never satisfied** without a predecessor (A04 R[5]), nor in a revision of the draft
-  (its predecessor is its own earlier revision, not an author); the case-review draft pack declares `findings` as an
-  independent judgment, so its draft results show `unsatisfied (independence_unknown)` for every handled item. The owner may
-  prefer `judgment` for the draft and `independent_judgment` for the verification.
+- **Draft versus independent verification.** The draft pack has answered this distinction: findings are judgments.
+  A template that explicitly requires independence still needs the predecessor's author lineage (A04 R[5]); a revision
+  does not turn its own author into an independent verifier.
 - **Finding locations**: section 6 of the brief says "finding locations are references into the target ... and into sources
   (tree:, src:)". The engine reads the second half as the evidence (grounds, quotations): SlotClaim.location is "where in the
   judged source the statement applies" and scenario 16 refuses a location that is not in the target.
@@ -378,11 +377,11 @@ read; results, run records and production results over the record limit; queries
 ## Open questions
 
 1. Resolved by the draft pack: findings are judgments. Independent verification requires an observed session at both start and submission.
-2. Should a reuse whose cited content changed between offer and submit be a structure violation (as now) or make the item
-   uncovered (W07 R[3])? Within one run it cannot happen (content-addressed), so only the interim matters.
+2. Current reuse rule: changed cited content is a structure violation. Frozen content-addressed references do not change
+   within a run; this task retains that deterministic rule.
 3. Resolved by W07 R[2]-R[3]: target facts retain Hub terminals; missing item-artifact facts and judgments are incomplete.
-4. Is the family rule of decision 19 acceptable until a declared family exists? It treats any shared word as one family
-   (`aster-chat` and `birch-4-chat` share `chat`), which errs towards `not_independent`.
+4. The family rule of decision 19 remains unchanged, as directed by the integrator: any shared word means one family
+   (`aster-chat` and `birch-4-chat` share `chat`), conservatively yielding `not_independent`.
 
 ### 生产投影的确定说明
 
@@ -404,7 +403,7 @@ real temporary records, including the bytes actually delivered to the sandboxed 
 Checks that use the same pure subject builder previously started another isolated process for each check, even when
 its function and JSON input were identical. The bounded sandbox pool then spent slots rebuilding the same item or run
 subject. The run-keyed submission lock remains unchanged: different runs enter independently, and identical submissions
-of one run still return the existing receipt without another validation action.
+of one run return an existing settled receipt without another validation action. Transitional receipts are rechecked.
 
 Each evaluation of one submission and locked pack version now creates a separate subject-builder scope for the whole run
 and a short-lived scope for each item. A scope keys by function identity and SHA-256 of the exact JSON input bytes. It
@@ -642,3 +641,15 @@ exact job, output digest and complete item set; target-reported conclusions rema
 only bound items. A named mark-failed disposition uses `EFFECT_UNKNOWN_DISPOSED`; abandonment is a management choice.
 Neither choice rewrites the original dynamic observation or the physical safety freeze. Private journal references stay
 in administrator-only evidence because they may reach lease material. User requests cite the safe observation record.
+
+If a committed management choice is left without its delivery projection, maintenance retries projection at most three
+times. Continued failure creates a finite request to an enabled named administrator, identifying the exact choice record
+and the existing `run abandon` retry command. An identical retry completes that choice without repeating it; the actual
+recovered delivery record answers its repair request. Internal write causes remain in administrator notes.
+
+Validation compatibility finding: `tests/acceptance/oracle/differential.test.ts` still starts a driving pack with a static
+fact requirement lacking a check and dynamic fact requirements lacking observation declarations. New admission now
+correctly refuses that pack, so its random differential run does not execute; its 19 pure reference-rule tests pass.
+The driver also documents legacy zero-round behavior. Integrator Claude must align that separate scenario driver and
+its independent expectations with the new admission, round and unknown-error rules, retaining explicit legacy replay
+coverage. This task does not bypass admission or weaken those old comparisons to produce a green result.
