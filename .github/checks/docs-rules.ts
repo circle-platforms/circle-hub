@@ -195,6 +195,18 @@ function archived(file: string): boolean {
   return file.startsWith('foundation/') || file.startsWith('references/');
 }
 
+/** Only normalized network hosts qualify; malformed and machine-local URLs remain checked. */
+function networkPathURL(token:string):boolean {
+  try{
+    const url=new URL(token),host=url.hostname.toLowerCase().replace(/\.+$/,'');
+    if(!host||host==='localhost'||host.endsWith('.localhost')||host==='0.0.0.0'||/^127(?:\.\d{1,3}){3}$/.test(host)||host==='[::1]'||host==='[::]')return false;
+    const mapped=/^\[::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})\]$/.exec(host);
+    if(mapped){const high=parseInt(mapped[1],16),low=parseInt(mapped[2],16);if(high>>>8===127||high===0&&low===0)return false;}
+    if(/\/@fs$/i.test(decodeURIComponent(url.pathname)))return false;
+    return true;
+  }catch{return false;}
+}
+
 /** Machine paths anywhere in tracked text, with explicit file-scoped synthetic fixtures. */
 export function localPathProblems(file: string, text: string): string[] {
   if (archived(file)) return [];
@@ -203,7 +215,8 @@ export function localPathProblems(file: string, text: string): string[] {
     for (const m of line.matchAll(LOCAL_PATH)) {
       // A path segment inside a network URL is not a machine path; file URLs still are.
       const before = line.slice(0, m.index);
-      if (/(?<![A-Za-z0-9+.-])(?:https?|ftps?):\/\/(?!(?:localhost|127(?:\.\d{1,3}){3}|\[::1\])(?:[:/]|$))[^\s"'`<>()|*,?#=\u0080-\uffff]*$/i.test(before) && !/\/@fs$/i.test(before)) continue;
+      const token=/(?<![A-Za-z0-9+.-])(?:https?|ftps?):\/\/[^\s"'`<>()|*,?#=\u0080-\uffff]*$/i.exec(before)?.[0];
+      if(token&&networkPathURL(token))continue;
       // ~/Library is an OS layout template, not a personal absolute path.
       if (m[0] === '~/' && /^~\/Library(?:[\/\s`"',;)]|$)/.test(line.slice(m.index))) continue;
       if ((SYNTHETIC_PATHS[file] ?? []).includes(m[0])) continue;

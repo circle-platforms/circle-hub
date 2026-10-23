@@ -285,6 +285,12 @@ describe('no machine paths in repository text', () => {
     for(const value of ['gcc -I'+home+'include a.c','7z x a.7z -o'+home+'out','cl /Fo'+home+'obj'+slash+' a.c'])assert.equal(localPathProblems('hub/example.test.ts',value).length,1,value);
   });
 
+  it('keeps normalized local hosts out of network URL exemptions', () => {
+    const home='/'+'Users/synthetic/project';
+    for(const host of ['0.0.0.0:8000','127.1:8000','localhost.:8000','app.localhost:5173','[0:0:0:0:0:0:0:1]:8000','[::]:8000','[::ffff:127.0.0.1]:8000','reader@localhost:8000','[not-an-ip]:8000'])assert.equal(localPathProblems('docs/example.md','http://'+host+home).length,1,host);
+    for(const host of ['example.com','192.0.2.1:8000','[2001:db8::1]:8000'])assert.deepEqual(localPathProblems('docs/example.md','http://'+host+home),[],host);
+  });
+
   it('accepts only explicit synthetic fixtures in their named tests and generic tool paths', () => {
     for (const [file, path] of [
       ['hub/platform/layout.test.ts', '/' + 'Users/someone/repo'],
