@@ -43,8 +43,8 @@
     },
     {
       "path": "functions/tables.ts",
-      "sha256": "49229a169fcb9061418edb2eff87655b03560912afe04a3baf496dcb8e4787c9",
-      "size": 15872
+      "sha256": "47aebdc6edf3208e746cb8e30b088e1ba64db9fa4c549ede5d030bc7c8d70c16",
+      "size": 16946
     },
     {
       "path": "requirements.json",

@@ -76,10 +76,21 @@ export function reviewTables(input:TableInput):TableResult {
     if(selected.has(index)){const previous=selected.get(index)!;return failure('overlap','第 '+(input.blocks.indexOf(previous.block)+1)+' 块条目 '+text(previous.entry.item).slice(0,60)+' 与第 '+(input.blocks.indexOf(block)+1)+' 块条目 '+text(entry.item).slice(0,60)+' 交付同一目标节点','重新分块，确保同一节点仅由一块交付；独立复核完成后使用新回执开始终稿');}
     selected.set(index,{entry,block});
   }
+  // Recover source boundaries independently of delivery, including marked candidates.
+  // As in the review projection, a tagged priority-1 container outside any case
+  // remains a group when it holds a case; a tagged node inside a case is nested.
+  const tagged=(index:number)=>Array.isArray(model.nodes[index].data.resource)&&(model.nodes[index].data.resource as unknown[]).length>0;
+  const holds=new Uint8Array(model.nodes.length),inside=new Uint8Array(model.nodes.length),boundaries=new Set<number>();
+  for(let index=model.nodes.length-1;index>0;index--){const parent=model.nodes[index].parent;if(parent!==null&&(holds[index]||tagged(index)||model.nodes[index].data.priority===2))holds[parent]=1;}
+  for(const [index,node] of model.nodes.entries()){
+    const within=node.parent!==null&&(inside[node.parent]===1||boundaries.has(node.parent));
+    inside[index]=within?1:0;
+    if(selected.has(index)||(tagged(index)?within||node.data.priority!==1||!holds[index]:!within&&node.data.priority===2&&node.children.length>0&&!holds[index]))boundaries.add(index);
+  }
   const cases=new Set(selected.keys()),ordered=[...cases].sort((a,b)=>a-b),groupOf=new Map<number,number>();
   for(const index of ordered){
     let outer=index;
-    for(let at=model.nodes[index].parent;at!==null;at=model.nodes[at].parent)if(cases.has(at))outer=at;
+    for(let at=model.nodes[index].parent;at!==null;at=model.nodes[at].parent)if(boundaries.has(at))outer=at;
     groupOf.set(index,model.nodes[outer].parent??0);
   }
   const groups=new Map<number,number[]>();

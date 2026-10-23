@@ -181,3 +181,13 @@ test('frozen character boundaries identify complete subitem prefixes for partial
     assert.ok(result.markdown.slice(range.end).startsWith(index+1<characters.subitems.length?`### ${index+2}.`:'### 跨子项'));
   }
 });
+
+test('a delivered nested case retains its outer source subitem even when the outer case was not delivered',()=>{
+  const model=parse({root:node('root','测试项',[node('sub','探测结果',[
+    node('outer','后端全部不健康',[node('inner','恢复一台后端后',[node('expect','合成期望')],{resource:['Functional'],priority:2})],{resource:['Functional'],priority:2}),
+    node('peer','另一用例',[node('peer-e','合成期望')],{resource:['Functional'],priority:2}),
+  ])])});
+  const out=reviewTables(input(model,[block(['inner','peer'])]));
+  assert.equal(out.counts.subitems.length,1);assert.equal(out.counts.subitems[0].selector,'n/sub');assert.equal(out.counts.subitems[0].counts.cases,2);
+  assert.equal(out.counts.total.cases,2);assert.equal((out.markdown.match(/^### \d+\./gm)??[]).length,1);
+});
