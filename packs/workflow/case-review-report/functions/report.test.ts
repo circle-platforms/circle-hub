@@ -30,6 +30,7 @@ function block(spec: Block): Record<string, unknown> {
   }));
   // The real-data shape: a block that carries entries it did not deliver lists them unfinished (the first half), the
   // rest of its entries stay delivered. 分区只有 delivered、rejected、quarantined、incomplete。
+  for(const entry of delivered)entry.requirements[0].claims.push({qualifier:{nature:'fact'},warrant:{producer:'function',id:'case-review-verify@1'},statement:{verdict:'support',data:{source_facts:[]}}} as any);
   const halved = spec.partition !== undefined && spec.partition !== 'delivered' ? spec.entries.slice(0, Math.ceil(spec.entries.length / 2)) : [];
   const unfinished = halved.map((entry) => ({ item: entry.item, label: `用例 ${entry.item}`, location: `src:${DIGEST}/kityminder@1/n/${entry.item}`, requirements: [] }));
   const partitions: Record<string, unknown[]> = { delivered: spec.partition !== undefined && spec.partition !== 'delivered' ? delivered.slice(halved.length) : delivered };
@@ -317,4 +318,12 @@ describe('the table projection binding',()=>{
       const report=reportItemOf(run(entries));assert.equal(report.fields.overall,null);assert.equal(report.fields.review_tables,undefined);assert.match(report.summary??'',/下一步.*复核.*终稿/);
     }
   });
+});
+
+it('an older verification without the original Hub fact snapshot cannot imply no Hub issues',()=>{
+  const result=block({verdict:'PARTIAL',level:'P5',entries:[{item:'c1'}]});
+  for(const requirement of (result.partitions as any).delivered[0].requirements)requirement.claims=requirement.claims.filter((claim:any)=>claim.warrant?.producer!=='function');
+  const report=reportItemOf(run([{result}]));
+  assert.equal(report.fields.review_tables,undefined);assert.equal(report.fields.overall,null);
+  assert.match(report.summary??'',/初评 Hub 核对快照.*下一步.*新版复核.*终稿/);
 });

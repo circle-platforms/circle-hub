@@ -131,6 +131,16 @@
       "code": "case-review-verify.partial_without_change",
       "when": "检查 verdict：结论 PARTIAL 但没有新发现、没有推翻或修正初评发现，等级也没有改",
       "fix": "写出初评遗漏的问题、推翻或修正的发现，或调整等级；初评基本正确时结论应为 PASS"
+    },
+    {
+      "code": "case-review-verify.suggestion_target_missing",
+      "when": "检查 suggestion_targets：建议没有指向被复核脑图节点的根据，只有期望来源的根据也不算",
+      "fix": "grounds 至少一条指向目标的用例或测试子项节点"
+    },
+    {
+      "code": "case-review-verify.suggestion_incomplete",
+      "when": "检查 suggestion_targets：建议没有完整的补、因为、期望三段，或一段没有内容",
+      "fix": "按“补：<用例>；因为：<原因>；期望：<结果>”写全三段"
     }
   ]
 }

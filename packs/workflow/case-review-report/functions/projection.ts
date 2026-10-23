@@ -215,12 +215,21 @@ export default function project(input: unknown): unknown {
     const missing=[...new Set(unfinishedAnywhere.map(u=>u.item))];
     // 有缺漏条目时整体记未知（覆盖不完整），列出缺漏条目，不给结论码。
     const missingBlocks=finals.flatMap((final,index)=>final===null||final.level===null?[index+1]:[]);
-    const complete=missing.length===0&&missingBlocks.length===0&&verdict!==null;
+    const missingSourceFacts=blocks.flatMap((block,index)=>entriesOf(block.result).filter(entry=>entry.partition==='delivered').flatMap(entry=>{
+      const raw=(isRecord(block.result.partitions)?block.result.partitions:{}).delivered;
+      const item=Array.isArray(raw)?raw.find(value=>isRecord(value)&&value.item===entry.item):undefined;
+      const kept=isRecord(item)&&Array.isArray(item.requirements)&&item.requirements.some(requirement=>isRecord(requirement)&&Array.isArray(requirement.claims)&&requirement.claims.some(claim=>
+        isRecord(claim)&&isRecord(claim.qualifier)&&claim.qualifier.nature==='fact'&&isRecord(claim.warrant)&&claim.warrant.producer==='function'&&isRecord(claim.statement)&&claim.statement.verdict==='support'&&isRecord(claim.statement.data)&&Array.isArray(claim.statement.data.source_facts)));
+      return kept?[]:[{block:index+1,item:entry.item}];
+    }));
+    const complete=missing.length===0&&missingBlocks.length===0&&missingSourceFacts.length===0&&verdict!==null;
     const reportSummary=missing.length>0
       ? '覆盖不完整：'+missing.length+' 个条目任何一块都没交付（'+missing.slice(0,10).join('、')+'）；下一步：把缺的条目重新初评、复核后，再开终稿运行'
       : missingBlocks.length>0
         ? '第 '+missingBlocks.join('、')+' 块缺少可读的结论或等级；下一步：把这些块复核完成后，再开终稿运行'
-        : '整体结论码 '+verdict+'、等级 '+level+'（最差那块的，照抄）';
+        : missingSourceFacts.length>0
+          ? '第 '+missingSourceFacts.map(gap=>gap.block+' 块条目 '+gap.item).join('、')+' 缺少初评 Hub 核对快照；下一步：用新版复核包重新复核这些条目，再开终稿运行'
+          : '整体结论码 '+verdict+'、等级 '+level+'（最差那块的，照抄）';
     const rendered=complete?reviewTables({model:target.model as unknown as TableModel,digest:source,blocks,overall:{verdict:verdict!,level},preconditionPriority:priority as number|null}):null;
     const full=rendered?reviewTables({model:target.model as unknown as TableModel,digest:source,blocks,overall:{verdict:verdict!,level},preconditionPriority:priority as number|null,foldEmpty:false}):null;
     const reportItem: ProjectedItem = {
@@ -235,6 +244,7 @@ export default function project(input: unknown): unknown {
         findings: collectFindings(blocks),
         missing_items:missing,
         missing_blocks:missingBlocks,
+        missing_source_facts:missingSourceFacts,
       },
     };
     return { items:[reportItem,...items],warnings:[] };

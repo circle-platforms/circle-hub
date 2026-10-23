@@ -40,7 +40,12 @@ export function overallCheck(input: unknown): CheckOutcome[] {
   if (computed === null) {
     // 缺了块结论（或条目没交付）时是未知（缺输入），不是驳回：终稿现在判不出来，先补齐再来。
     const missing = Array.isArray(fields.missing_items) ? fields.missing_items.filter((x): x is string => typeof x === 'string') : [];
-    const why = missing.length > 0 ? `有 ${missing.length} 个条目任何一块都没交付（${missing.slice(0, 10).join('、')}），覆盖不完整` : '有块没有可读的结论';
+    const sourceGaps=Array.isArray(fields.missing_source_facts)?fields.missing_source_facts.filter(isRecord):[];
+    const blocks=Array.isArray(fields.missing_blocks)?fields.missing_blocks:[];
+    const why=missing.length>0?'有 '+missing.length+' 个条目任何一块都没交付（'+missing.slice(0,10).join('、')+'），覆盖不完整'
+      :sourceGaps.length>0?'这些条目没有初评 Hub 核对快照（'+sourceGaps.map(gap=>String(gap.item)).slice(0,10).join('、')+'），须用新版复核后重开终稿'
+      :'第 '+blocks.join('、')+' 块没有可读结论或等级';
+
     return [{ verdict: 'unknown', reason: 'missing_input', statement: `${why}，整体结论未知：先补齐再出终稿`, grounds: [], tier: TIER, data: { fix: '把缺的块复核完成（或补齐没交付的条目）后重新开始终稿运行' } }];
   }
   if (claim.code !== computed.verdict) {
