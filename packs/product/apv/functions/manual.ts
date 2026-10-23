@@ -338,11 +338,14 @@ function anchorPathOf(anchor: Anchor, catalog: CommandCatalog | null): string | 
   const direct = existingPath(catalog, anchor.words);
   if (direct !== null) return direct;
   if (anchor.variants === null) return null;
-  const variantPaths = anchor.variants.map((variant) => existingPath(catalog, variant));
-  if (variantPaths.some((path) => path === null)) return null;
   const key = anchor.words.map((word) => word.toLowerCase());
-  const at = anchor.variants.findIndex((variant) => variant.length > key.length && variant.slice(0, key.length).every((word, k) => word.toLowerCase() === key[k]));
-  if (at < 0) return null;
+  // Only the variants that EXTEND the key decide existence: the alternatives a leading optional group adds
+  // ([no] …) are not words of the tree, and resolves() skips them the same way.
+  const extending = anchor.variants.filter((variant) => variant.length >= key.length && variant.slice(0, key.length).every((word, k) => word.toLowerCase() === key[k]));
+  if (extending.length === 0) return null;
+  const variantPaths = extending.map((variant) => existingPath(catalog, variant));
+  if (variantPaths.some((path) => path === null)) return null;
+  const at = 0;
   // The key node exists: it is an ancestor of every variant's node, and the builder stores every ancestor.
   return (variantPaths[at] as string).split('/').slice(0, 2 + key.length).join('/');
 }
@@ -548,12 +551,15 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
   };
   // Every literal found, past the per-entry cap: the drift total counts them all.
   const allLiterals = new Set<string>();
-  // The literals of the signatures placed at /commands resolve by the placement check itself (variants included).
+  // Signature literals are decided by the placement check, never by the leading-run rule: a signature placed at
+  // /commands resolves by placement, and one that is not lists exactly its literals as drift candidates.
   const placedSignatureLiterals = new Set<string>();
+  const unplacedSignatureLiterals = new Set<string>();
   const noteSignature = (entry: ProducedEntry): void => {
     for (const literal of asStrings(entry.data.command_literals)) {
       allLiterals.add(literal);
       if (entry.path?.startsWith('/commands/')) placedSignatureLiterals.add(literal);
+      else unplacedSignatureLiterals.add(literal);
     }
   };
   const putLiterals = (entry: ProducedEntry, kind: string, text: string): void => {
@@ -569,13 +575,15 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
    * an anchor, `section` always; the tree only chooses the path. Applicability comes from the entry's own text alone
    * (K02 F[6]): no condition is inherited from a heading, a sibling block or another row.
    */
-  const textEntry = (init: { path: string; statement: string; block: string; section: number; words?: string[]; fragments: FragmentRef[] }): ProducedEntry => {
+  const textEntry = (init: { path: string; statement: string; block: string; section: number; words?: string[]; fragments: FragmentRef[]; noLiterals?: boolean }): ProducedEntry => {
     // Data stays identical across placements (K01 R[1]) and across heading edits (K02 F[1], R[4]): the section
     // chain is provenance and lives in the fragment selectors and the section-node paths, never in the digest.
     const data: { [key: string]: unknown } = { form: 'text' };
     if (init.words !== undefined) data.words = init.words;
     const entry: ProducedEntry = { kind: TEXT, path: init.path, statement: init.statement, data, fragments: init.fragments, applicability: toApplicability(conditionsOf(init.statement)) };
-    putLiterals(entry, init.block, init.statement);
+    // A multi-command row's own anchors are recorded as signature literals by the caller: its prose must not add them
+    // back as unresolved spans.
+    if (init.noLiterals !== true) putLiterals(entry, init.block, init.statement);
     return entry;
   };
   /** Byte ranges of the lines of a block's text (the fragment text the selectors name). */
@@ -749,7 +757,17 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
             const lca = commonPrefix(found.map(({ anchor: some }) => some.words));
             if (lca.length >= 1) placed = (paths[0] as string).split('/').slice(0, 2 + lca.length).join('/');
           }
-          split.push(textEntry({ path: placed ?? sectionPath(value, block.section), statement: row.cells.join(' | '), block: 'table', section: block.section, fragments: [rowFragment] }));
+          const rowEntry = textEntry({ path: placed ?? sectionPath(value, block.section), statement: row.cells.join(' | '), block: 'table', section: block.section, fragments: [rowFragment], noLiterals: true });
+          // The row's own anchors are signature literals (the placement check decides them), not prose spans.
+          for (const { anchor: some } of found) {
+            const positive = positiveVariantsOf(some);
+            for (const literal of [...new Set((positive ?? [some.words]).map((words) => words.join(' ')))]) {
+              allLiterals.add(literal);
+              if (rowEntry.path?.startsWith('/commands/')) placedSignatureLiterals.add(literal);
+              else unplacedSignatureLiterals.add(literal);
+            }
+          }
+          split.push(rowEntry);
         }
         for (const literal of valueLiterals) allLiterals.add(literal);
         const remainderPath = current !== null ? current.path : sectionPath(value, block.section);
@@ -821,6 +839,7 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
     const unresolved = new Set<string>();
     for (const literal of allLiterals) {
       if (placedSignatureLiterals.has(literal)) continue;
+      if (unplacedSignatureLiterals.has(literal)) { unresolved.add(literal); continue; }
       if (!resolves(catalog, literal)) unresolved.add(literal);
     }
     if (unresolved.size > 0) {
@@ -847,8 +866,18 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
 }
 
 /** A signature's literals are its command words and variants (never the parameters): what read time can match. */
+function positiveVariantsOf(anchor: Anchor): string[][] | null {
+  if (anchor.variants === null) return null;
+  const key = anchor.words.map((word) => word.toLowerCase());
+  const extending = anchor.variants.filter((variant) => variant.length >= key.length && variant.slice(0, key.length).every((word, k) => word.toLowerCase() === key[k]));
+  return extending.length > 0 ? extending : anchor.variants;
+}
+
 function signatureEntry(anchor: Anchor, path: string, fragment: FragmentRef): ProducedEntry {
-  const literals = [...new Set([anchor.words, ...(anchor.variants ?? [])].map((words) => words.join(' ')))].sort(compareText);
+  // The literals are the spellings the author could write: the positive variants when there are any (a bare key of a
+  // variant signature is a menu prefix, and a leading [no] group's alternatives are not words of the tree).
+  const positive = positiveVariantsOf(anchor);
+  const literals = [...new Set((positive ?? [anchor.words]).map((words) => words.join(' ')))].sort(compareText);
   const data: { [key: string]: unknown } = { words: anchor.words, form: 'signature', signature: anchor.signature, params: anchor.params, command_literals: literals };
   if (anchor.variants !== null) data.variants = anchor.variants;
   return { kind: SIGNATURE, path, statement: anchor.signature, data, fragments: [fragment], applicability: null };

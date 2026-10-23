@@ -498,6 +498,31 @@ describe('placement against the build’s command tree', () => {
     assert.ok(commandHeader.entries.some((entry) => entry.data.form === 'signature' && entry.statement.startsWith('enable')), JSON.stringify(commandHeader.entries.map((e) => [e.data.form, e.path])));
   });
 
+
+  it('drift follows the placement check for signatures: an extending signature is listed, a variant key never is, and [no] groups place like resolves (second review findings 11, 12, 14, 17, 18, 24)', () => {
+    // A tree where demo pool is itself a complete command: **demo pool mode** is missing, and resolves() would
+    // wrongly accept the 'demo pool' prefix. Drift must list demo pool mode.
+    const treeWithPool =
+      '<commands><scope type="global"><menu name="demo"><menu name="pool" help_string="p"><item name="add" help_string="a"><arguments></arguments></item></menu></menu></scope></commands>';
+    const extendsTree = commandCatalog(xml(treeWithPool)).catalog;
+    const missing = produceManualEntries(markdown('# 章\n\n**demo pool mode** *\\<name\\>*\n\n该命令用于设置。\n'), null, { catalog: extendsTree });
+    assert.ok(missing.warnings.some((warning) => /漂移候选：demo pool mode/.test(warning)), missing.warnings.join('；'));
+    // A variant signature whose key node exists: only the missing variants are drift, never the bare key.
+    const treeWithDemoRoute = commandCatalog(xml('<commands><scope type="global"><menu name="demo"><menu name="route"><item name="add" help_string="a"><arguments></arguments></item></menu></menu></scope></commands>')).catalog;
+    const variant = produceManualEntries(markdown('# 章\n\n**demo {pool\\|route} add** *\\<name\\>*\n\n该命令用于添加。\n'), null, { catalog: treeWithDemoRoute });
+    assert.ok(variant.warnings.some((warning) => /漂移候选：demo pool add/.test(warning)), variant.warnings.join('；'));
+    assert.ok(!variant.warnings.some((warning) => /漂移候选[^：]*：demo（|demo、|、demo[^ ]/.test(warning) && /：demo/.test(warning)), 'the bare key demo is never a drift candidate');
+    // A leading [no] group places at the key like resolves(): both variants existing is enough.
+    const bothTcpUdp = commandCatalog(xml('<commands><scope type="global"><menu name="demo"><menu name="health"><item name="tcp" help_string="t"><arguments></arguments></item><item name="udp" help_string="u"><arguments></arguments></item></menu></menu></scope></commands>')).catalog;
+    const noGroup = produceManualEntries(markdown('# 章\n\n**[no] demo health {tcp\\|udp}**\n\n该命令用于探测。\n'), null, { catalog: bothTcpUdp });
+    assert.equal(noGroup.entries[0].path, '/commands/demo/health', 'a leading [no] group places at the key when its positive variants exist');
+    assert.ok(!noGroup.warnings.some((warning) => warning.includes('漂移候选')), noGroup.warnings.join('；'));
+    // A multi-command row that the placement check placed lists no drift literal of its own.
+    const rowTree = commandCatalog(xml('<commands><scope type="global"><menu name="demo"><menu name="pool"><item name="add" help_string="a"><arguments></arguments></item></menu><menu name="route"><item name="add" help_string="a2"><arguments></arguments></item><item name="static" help_string="s"><arguments></arguments></item></menu></menu></scope></commands>')).catalog;
+    const row = produceManualEntries(markdown('# 章\n\n## 配置命令\n\n| 命令 | 说明 |\n|---|---|\n| **demo {pool\\|route} add** 与 **demo route static** | 配合 |\n'), null, { catalog: rowTree });
+    assert.ok(!row.warnings.some((warning) => warning.includes('漂移候选')), row.warnings.join('；'));
+  });
+
   it('hangs a variant signature at the common node of its variants when every variant exists', () => {
     const tree =
       '<commands><scope type="global"><menu name="demo"><menu name="pool"><item name="add" help_string="a"><arguments></arguments></item></menu>' +
