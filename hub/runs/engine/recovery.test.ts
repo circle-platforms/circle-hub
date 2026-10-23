@@ -38,3 +38,11 @@ test('declared_skip carries its own missing fact and named exit', () => {
   assert.ok(result.missing?.includes('被跳过条目的'));
   assert.ok(LayerResult.safeParse(result).success);
 });
+
+test('not_covered carries its own missing fact and named exit', () => {
+  const result = bindRecovery({ layer: 'static', terminal: 'unchecked', reason: 'not_covered' }, [], context);
+  assert.equal(result.exit?.request_kind, 'repair');
+  assert.deepEqual(result.exit?.audience, { user: context.runner });
+  assert.ok(result.missing?.includes('未覆盖条目的'));
+  assert.ok(LayerResult.safeParse(result).success);
+});
