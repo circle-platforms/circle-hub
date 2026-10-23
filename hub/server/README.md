@@ -231,6 +231,17 @@ links are fixed paths with encoded query parameters).
   call logs with user/tool/run/time filters and admin notes). Non-admins get the neutral page for admin pages, and absent
   or forbidden runs and roots give the same 404 "对你不可用".
 
+- **Production results**: `/console/results` lists the visible runs whose requirements all accept fact producers,
+  newest first, with `pack` and exact `build` filters. It retains the service's next cursor even when filtering leaves
+  the page empty. `/console/results/<run>` reads `getRun`'s latest result, shows whole-result partition counts via
+  `countsLine`, coverage and cross-item claims, then one row per item (id, label, projection summary and each requirement's
+  static terminal and claims). `terminal` uses the generated static-terminal vocabulary; `offset` pages 500 filtered
+  items at a time. Counts are computed before filtering or paging. Bookkeeping delivery is not an overall pass;
+  unknown terminals keep their own symbol and colour, with the stored claims' missing evidence and next actions shown
+  as recorded. This page does not initiate work or generate missing content. The run link opens the authoritative view.
+  Only the runner and admins can read results; a missing, hidden, malformed or non-production run gives the same neutral
+  404. All existing authentication, Host/Origin checks, read-only methods, CSP and escaping apply unchanged.
+
 ## CLI
 
 `hub/server/cli.ts` exports `main(argv, overrides?): Promise<number>` and never runs on import (bin/circle-hub calls it

@@ -797,6 +797,8 @@ export class FakeRuns implements RunsService {
   }
 
   async listRuns(user: Principal, query: { pack?: string; limit?: number; cursor?: string | null } = {}): Promise<Page<RunRecord>> {
+    const scripted = this.script.take('listRuns');
+    if (scripted !== undefined) return scripted.value as Page<RunRecord>;
     const admin = await isAdmin(this.#records, user);
     const active = await isActive(this.#records, user);
     const all = [...this.runs.values()]
