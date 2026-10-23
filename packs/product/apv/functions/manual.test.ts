@@ -209,10 +209,18 @@ describe('entries from the converted manual', () => {
   });
 
   it('gives fragments the markdown@1 document locates, with the same text', () => {
+    const decoder = new TextDecoder();
     for (const entry of fromMarkdown.entries) {
-      const located = md.locate(entry.fragments[0].selector);
-      assert.ok(located, entry.fragments[0].selector);
-      if (entry.data.form === 'text') assert.equal(located.text.trim(), entry.statement);
+      // A shared table entry cites one fragment per line (the range picks the line out of the block's text).
+      const located = entry.fragments
+        .map((fragment) => {
+          const text = md.locate(fragment.selector)?.text ?? '';
+          const range = (fragment as { range?: [number, number] }).range;
+          return range === undefined ? text : decoder.decode(new TextEncoder().encode(text).slice(range[0], range[1]));
+        })
+        .join('\n');
+      assert.ok(located !== '', entry.fragments[0].selector);
+      if (entry.data.form === 'text') assert.equal(located.replace(/\n+$/, '').trim(), entry.statement.trim());
     }
     for (const item of fromMarkdown.unplaced) assert.equal(md.locate(item.fragment.selector)?.text.trim(), item.text);
   });

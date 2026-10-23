@@ -792,7 +792,7 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
           if (remainder.length > 0) emitRows(remainder, true);
           continue;
         }
-        emitRows(table.rows.map((row) => row.line), false);
+        emitRows(table.rows.map((row) => row.line), true);
         continue;
       }
     }
