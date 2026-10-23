@@ -64,7 +64,7 @@ export interface EvaluationInput {
   /** Who produced the work the run judges (lineage.ts); null when the Hub does not know (no predecessor). */
   author: AuthorOrigin | null;
   traceId: string;
-  /** Items whose own exact values did not resolve: their judgments are not checked (a not-accepted submission). */
+  /** Items whose own exact values did not resolve: no checks or conclusions for them (a not-accepted submission). */
   exclude?: ReadonlySet<string>;
 }
 
@@ -193,7 +193,9 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
   const itemTemplates = templates.filter((t) => t.target === 'item');
   const runTemplates = templates.filter((t) => t.target === 'run');
   const checks = new Map(workflow.checks.map((c) => [c.id, c]));
-  const items = run.items;
+  // Whole-refusal diagnostics must never check unresolved items, including fact checks and run-level subjects.
+  // An accepted submission supplies no exclusions, so skipped and uncovered items keep their normal semantics.
+  const items = run.items.filter(it => !exclude.has(it.id));
   const itemIds = new Set(items.map((it) => it.id));
   const baseBound = [run.pack_digest, ...(run.root !== undefined ? [run.root] : [])];
   const itemDigests = items.map((it) => it.digest).filter((d): d is string => d !== undefined);
@@ -491,7 +493,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
   const allTexts = new Map<string, string>();
   for (const it of items) for (const [k, v] of evidenceOf(it.id).texts) allTexts.set(k, v);
 
-  for (const check of used.filter((c) => c.applies === 'run')) {
+  for (const check of used.filter((c) => c.applies === 'run' && (items.length > 0 || exclude.size === 0))) {
     const built = await buildSubject(check, { applies: 'run', items: items.map(subjectItem), context }, () => ({
       items: items.map((it) => ({ ...subjectItem(it), slots: exclude.has(it.id) ? null : checkedSlotsOf(it.id) })),
       cross_item: input.exact?.crossEntries ?? submission?.cross_item ?? [],
@@ -500,6 +502,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
     const own = new Map<string, CheckOutcome[]>();
     const loose: CheckOutcome[] = [];
     for (const o of outcomes) {
+      if (o.item !== undefined && exclude.has(o.item)) continue;
       if (o.item !== undefined && itemIds.has(o.item)) own.set(o.item, [...(own.get(o.item) ?? []), o]);
       else loose.push(o);
     }

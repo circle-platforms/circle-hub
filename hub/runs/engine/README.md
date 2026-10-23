@@ -154,6 +154,10 @@ well-formed text). The same reasons go to the admin note of the call they belong
     every cause at once. Arguments the records cannot hold as checked JSON or nested deeper than 64 levels are not read at all:
     the receipt is `SUBMISSION_SCHEMA_VIOLATION` at the refused path (cut to whole tokens within 1024 characters), without the
     offending text.
+    Excluded items never enter item checks, run-check subjects or conclusion assembly. When every item is excluded,
+    no check runs. Their missing slots therefore cannot fabricate refutations, fix notes or check repair rounds.
+    Boundary errors and the remaining items' routed checks still supply the receipt; boundary error accounting is unchanged.
+    Accepted submissions have no exclusions: skipped/uncovered handling keeps its existing rules.
 17. **Receipts and size.** Every call that reaches a run gets a stored receipt. A validation result a record cannot hold (over
     `maxRecordBytes`, or nesting canonical JSON refuses) is answered not accepted, `SUBMISSION_SCHEMA_VIOLATION` at `''` with its
     size, the limit and the fix to split the target into at least ⌈size / limit⌉ blocks (the method splits large targets); the
