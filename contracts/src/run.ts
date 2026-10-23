@@ -103,6 +103,7 @@ export const RunSummary = z.strictObject({
   target_basis: z
     .array(Claim)
     .describe('how product, version and build were fixed: one claim each; provenance declared when the caller gave the value, projected when the pack rule chose it, observed when a target echoed it; grounds cite what the choice read'),
+  unversioned_root: Sha256.optional().describe('product-wide knowledge root locked for this run'),
   root: Sha256.optional().describe('knowledge root locked for this run'),
   sources: z.array(SourceBinding).describe('every source bound to the run besides the knowledge root: inputs and the expected sources the pack bound'),
   requirements: z.array(RequirementSummary),

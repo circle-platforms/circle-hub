@@ -7,149 +7,163 @@
       "pattern": "^[a-z][a-z0-9-]{1,40}$"
     },
     "version": {
-      "type": "object",
-      "properties": {
-        "line": {
-          "type": "string",
-          "minLength": 1
-        },
-        "build": {
-          "type": "string",
-          "minLength": 1
-        },
-        "family": {
-          "type": "string",
-          "minLength": 1
-        },
-        "platform": {
-          "anyOf": [
-            {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "line": {
               "type": "string",
               "minLength": 1
             },
-            {
-              "type": "null"
+            "build": {
+              "type": "string",
+              "minLength": 1
+            },
+            "family": {
+              "type": "string",
+              "minLength": 1
+            },
+            "platform": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
             }
-          ]
+          },
+          "required": [
+            "line",
+            "build",
+            "family",
+            "platform"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "null"
         }
-      },
-      "required": [
-        "line",
-        "build",
-        "family",
-        "platform"
-      ],
-      "additionalProperties": false
+      ]
     },
     "build": {
-      "type": "object",
-      "properties": {
-        "name": {
-          "type": "string",
-          "minLength": 1,
-          "description": "build name exactly as listed"
-        },
-        "family": {
-          "type": "string",
-          "minLength": 1,
-          "description": "which of the product names the build carries"
-        },
-        "line": {
-          "type": "string",
-          "minLength": 1,
-          "description": "version line the pack assigns to the build, for example 10.7.6"
-        },
-        "base": {
-          "type": "string",
-          "minLength": 1,
-          "description": "the build whose tree this build uses; equals name when the build has its own tree"
-        },
-        "platform": {
-          "anyOf": [
-            {
-              "type": "string",
-              "minLength": 1
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "description": "platform or customer branch; null for the main platform"
-        },
-        "built_at": {
-          "anyOf": [
-            {
-              "type": "string",
-              "format": "date-time",
-              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "released_at": {
-          "anyOf": [
-            {
-              "type": "string",
-              "format": "date-time",
-              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "description": "null while unreleased"
-        },
-        "sources": {
+      "anyOf": [
+        {
           "type": "object",
-          "propertyNames": {
-            "type": "string"
-          },
-          "additionalProperties": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 8192,
-                "pattern": "^[a-z][a-z0-9-]*:[a-z][a-z0-9_-]*:[^@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]+(?:@[^\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]+)?$"
-              },
-              {
-                "type": "object",
-                "properties": {
-                  "list": {
-                    "type": "string",
-                    "pattern": "^[0-9a-f]{64}$",
-                    "description": "SHA-256 of the canonical JSON array of the listed external ids, as listed: the object that holds them"
-                  },
-                  "count": {
-                    "type": "integer",
-                    "minimum": 0,
-                    "maximum": 20000,
-                    "description": "ids listed, repeats included"
-                  }
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "description": "build name exactly as listed"
+            },
+            "family": {
+              "type": "string",
+              "minLength": 1,
+              "description": "which of the product names the build carries"
+            },
+            "line": {
+              "type": "string",
+              "minLength": 1,
+              "description": "version line the pack assigns to the build, for example 10.7.6"
+            },
+            "base": {
+              "type": "string",
+              "minLength": 1,
+              "description": "the build whose tree this build uses; equals name when the build has its own tree"
+            },
+            "platform": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
                 },
-                "required": [
-                  "list",
-                  "count"
-                ],
-                "additionalProperties": false
-              }
-            ]
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "platform or customer branch; null for the main platform"
+            },
+            "built_at": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "released_at": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "null while unreleased"
+            },
+            "sources": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 8192,
+                    "pattern": "^[a-z][a-z0-9-]*:[a-z][a-z0-9_-]*:[^@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]+(?:@[^\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]+)?$"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "list": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}$",
+                        "description": "SHA-256 of the canonical JSON array of the listed external ids, as listed: the object that holds them"
+                      },
+                      "count": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 20000,
+                        "description": "ids listed, repeats included"
+                      }
+                    },
+                    "required": [
+                      "list",
+                      "count"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              },
+              "description": "external objects by role; a role that holds a list is kept by reference"
+            }
           },
-          "description": "external objects by role; a role that holds a list is kept by reference"
+          "required": [
+            "name",
+            "family",
+            "line",
+            "base",
+            "platform",
+            "built_at",
+            "released_at",
+            "sources"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "null"
         }
-      },
-      "required": [
-        "name",
-        "family",
-        "line",
-        "base",
-        "platform",
-        "built_at",
-        "released_at",
-        "sources"
       ],
-      "additionalProperties": false,
       "description": "the build the root was produced for, as the sync listed it (list roles by reference)"
     },
     "root": {

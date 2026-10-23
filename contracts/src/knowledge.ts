@@ -256,8 +256,8 @@ export type TreeRootSourcesPart = z.infer<typeof TreeRootSourcesPart>;
  */
 export const TreeRootBody = z.strictObject({
   product: ProductId,
-  version: z.strictObject({ line: z.string().min(1), build: z.string().min(1), family: z.string().min(1), platform: z.string().min(1).nullable() }),
-  build: RecordedBuild.describe('the build the root was produced for, as the sync listed it (list roles by reference)'),
+  version: z.strictObject({ line: z.string().min(1), build: z.string().min(1), family: z.string().min(1), platform: z.string().min(1).nullable() }).nullable(),
+  build: RecordedBuild.nullable().describe('the build the root was produced for, as the sync listed it (list roles by reference)'),
   root: Sha256.describe('digest of the root node'),
   producer: z.strictObject({
     pack: PackId,
@@ -297,11 +297,11 @@ export type TreeRootBody = z.infer<typeof TreeRootBody>;
  */
 export const RootPointerBody = z.strictObject({
   product: ProductId,
-  line: z.string().min(1),
+  line: z.string().min(1).nullable(),
   pointer: z.string().min(1),
   expected: Sha256.nullable(),
   root: Sha256,
-  build: z.string().min(1).describe('the build whose root the pointer now names'),
+  build: z.string().min(1).nullable().describe('the build whose root the pointer now names'),
   composition: Sha256.describe('digest of its tree_root record'),
   move: Sha256.describe('digest of the move_root action'),
   version: z.number().int().min(1),

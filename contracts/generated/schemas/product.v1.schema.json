@@ -234,6 +234,10 @@
       "items": {
         "type": "object",
         "properties": {
+          "unversioned": {
+            "description": "only produce the product-wide root; absent or false produces build roots",
+            "type": "boolean"
+          },
           "id": {
             "type": "string",
             "pattern": "^[a-z][a-z0-9_-]*$"

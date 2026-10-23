@@ -201,6 +201,7 @@ export type Partitions = z.infer<typeof Partitions>;
 export const Locks = z.strictObject({
   pack: z.string().describe('pack id@version'),
   pack_digest: Sha256,
+  unversioned_root: Sha256.optional().describe('product-wide knowledge root locked for this run'),
   root: Sha256.optional().describe('knowledge root digest locked at start_run'),
   policy: z.string().optional(),
 });
