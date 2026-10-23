@@ -86,3 +86,18 @@ test('parser diagnostics and explicit bed mapping retain private provenance with
     output(dir, 'bad.json', '{synthetic-private-value'); assert.throws(() => readJson(join(dir, 'bad.json'), '合成输入'), error => error instanceof Error && /合成输入.*JSON.*重跑/.test(error.message) && !error.message.includes('synthetic-private-value'));
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('all conversion entries run through symlinked checkouts and refuse missing inputs with nonzero status', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'convert-entry-'));
+  try {
+    symlinkSync(process.cwd(), join(dir, 'checkout'));
+    const commands: Array<[string, string[]]> = [['auto-cases.ts', ['missing.json']], ['bed-topology.ts', ['missing.json', '--definition', 'missing-executor.json']], ['check-runtime-contract.ts', ['missing.json', '--expect', 'a'.repeat(64)]], ['runtime-profile.ts', ['missing.json', 'missing-inventory.json', 'missing-contract.json']]];
+    for (const [entry, inputs] of commands) {
+      const child = spawnSync(process.execPath, [join(dir, 'checkout/scripts/real/convert', entry), ...inputs, '--out', join(dir, 'out')], { encoding: 'utf8' });
+      assert.equal(child.status, 1, entry); assert.ok(child.stderr.trim().length > 0, entry); assert.equal(child.stdout, '');
+    }
+    const contract = runtimeDocument(); output(dir, 'contract.json', JSON.stringify(contract));
+    const child = spawnSync(process.execPath, [join(dir, 'checkout/scripts/real/convert/check-runtime-contract.ts'), join(dir, 'contract.json'), '--expect', contract.contract_sha256, '--out', join(dir, 'good')], { encoding: 'utf8' });
+    assert.equal(child.status, 0, child.stderr); assert.match(child.stdout, /doc put runner-contract/); assert.equal(readFileSync(join(dir, 'good/runtime-contract.json'), 'utf8'), JSON.stringify(contract));
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});

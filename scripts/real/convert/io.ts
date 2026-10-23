@@ -2,7 +2,7 @@
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, realpathSync, writeFileSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve, basename } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 export const record = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
 export class FactError extends Error {}
 export function requireFact(ok: unknown, message: string): asserts ok { if (!ok) throw new FactError(message); }
@@ -56,7 +56,9 @@ export function argumentsOf(args: string[], positional: number, flags: string[])
   return { files, options };
 }
 export function main(url: string, fn: (args: string[]) => void): void {
-  if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === url) {
+  let entry = false;
+  try { entry = !!process.argv[1] && realpathSync(resolve(process.argv[1])) === realpathSync(fileURLToPath(url)); } catch { /* An imported helper need not have a file argv entry. */ }
+  if (entry) {
     try { fn(process.argv.slice(2)); } catch (error) {
       // Only our own fact errors are safe; input/parser/OS errors may contain deployment values.
       const code = error !== null && typeof error === 'object' && 'code' in error ? String(error.code) : '';
