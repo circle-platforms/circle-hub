@@ -87,3 +87,14 @@ test('a committed intent with a lost database acknowledgement is conservatively 
   assert.equal(state.outcome, 'unknown'); assert.equal(state.frozen, true);
   assert.equal(c.calls.filter(n => n === 'send_blob').length, 0);
 });
+
+test('a process killed after journal admission resumes by request identity without a second submission', {timeout:30000},async t=>{
+  const {setupJournal}=await import('./testing/journal.ts');let child:ChildProcess|undefined;
+  const c=await setupJournal({lost:true,onSubmit:async()=>{child!.kill('SIGKILL');}});t.after(()=>c.close());
+  const w=await worker(c);child=w.child;t.after(()=>child?.kill('SIGKILL'));child.send('go');
+  assert.equal((await w.exited).signal,'SIGKILL');
+  const intent=await c.kit.store.getByKey<any>('action',`dispatch.bytes:${c.payload.body.sha256}:1`);assert.ok(intent);
+  const state=await c.service.resume(c.admin,intent.body.detail.job);
+  assert.equal(state.outcome,'effective');assert.equal(state.frozen,false);
+  assert.equal(c.calls.filter(n=>n==='send_blob').length,1);assert.ok(c.calls.includes('lookup_blob'));
+});

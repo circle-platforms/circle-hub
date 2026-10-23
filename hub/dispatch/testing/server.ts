@@ -12,7 +12,7 @@ export async function startEndpoint(tools: string[], respond: (name: string, arg
     let result: unknown;
     if (rpc.method === 'initialize') result = { protocolVersion: '2025-03-26', capabilities: { tools: {} }, serverInfo: { name: 'synthetic', version: '1' } };
     else if (rpc.method === 'tools/list') result = { tools: tools.map(name => ({ name, inputSchema: { type: 'object' } })) };
-    else result = { structuredContent: await respond(String(rpc.params?.name), (rpc.params?.arguments ?? {}) as Record<string, unknown>, res, rpc.id), content: [] };
+    else { const value = await respond(String(rpc.params?.name), (rpc.params?.arguments ?? {}) as Record<string, unknown>, res, rpc.id); result = { structuredContent:value,content:[],...(value && typeof value==='object' && (value as Record<string,unknown>).ok===false ? {isError:true} : {}) }; }
     if (!res.headersSent && !res.destroyed) { res.writeHead(200, { 'content-type': 'application/json', 'mcp-session-id': 'synthetic-session' }); res.end(JSON.stringify({ jsonrpc: '2.0', id: rpc.id, result })); }
   };
   const server = tls ? createSecureServer(tls, handler) : createServer(handler);

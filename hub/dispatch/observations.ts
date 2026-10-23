@@ -25,9 +25,9 @@ export function toolContent(result: Record<string, unknown>, allowError = false)
   try { return parseStrictJson(text); } catch { throw new Error('目标工具回答不是有效 JSON；回答已保存'); }
 }
 /** The pointer addresses the decoded tool value, never the transport's request id or envelope. */
-export function observationHashes(bytes: Uint8Array, pointer: string): { pointer: string; original_sha256: string; canonical_content_sha256: string } {
+export function observationHashes(bytes: Uint8Array, pointer: string, allowError = false): { pointer: string; original_sha256: string; canonical_content_sha256: string } {
   if (pointer !== '' && !/^\/(?:[^~]|~[01])*$/.test(pointer)) throw new Error('观察指针不是有效 JSON 指针');
-  const value = at(toolContent(rpcResponse(new TextDecoder('utf-8', { fatal: true }).decode(bytes))), pointer);
+  const value = at(toolContent(rpcResponse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)),allowError), pointer);
   if (value === undefined) throw new Error('观察指针缺少事实，不能用 null 代替');
   return { pointer, original_sha256: sha256Hex(bytes), canonical_content_sha256: sha256Hex(canonicalBytes(value)) };
 }

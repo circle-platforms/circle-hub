@@ -29,7 +29,7 @@ export async function setup(options: { mode?: string; alter?: (name: string, val
     if (name === 'inspect_slot') return { build: options.mode === 'build' ? 'wrong' : 'synthetic-build', seats: options.mode === 'seats' ? 0 : 2, reachable: true, topology: { synthetic: true } };
     if (name === 'send_blob') return { request: submittedRequest, ok: options.mode !== 'reject', key: 'synthetic-remote', digest: options.mode === 'receipt-sha' ? 'f'.repeat(64) : submittedSha, ids: options.mode === 'receipt-items' ? ['different'] : submittedIds };
     if (name === 'inspect_blob') return { state: options.mode === 'lost' ? 'vanished' : options.mode === 'unmapped' ? 'unmapped' : ++stateReads <= 2 ? 'working' : 'ended', exit: 0 };
-    if (name === 'read_blob') return { key: 'synthetic-remote', digest: options.mode === 'result-sha' ? 'f'.repeat(64) : submittedSha, submitted: now().toISOString(), rows: options.mode === 'partial' ? [] : [{ id: 'synthetic-case', outcome: 'good' }], complete: options.mode !== 'partial' };
+    if (name === 'read_blob') return { request: submittedRequest, key: 'synthetic-remote', digest: options.mode === 'result-sha' ? 'f'.repeat(64) : submittedSha, submitted: now().toISOString(), rows: options.mode === 'partial' ? [] : [{ id: 'synthetic-case', outcome: 'good' }], complete: options.mode !== 'partial' };
     return { ok: true };
   };
   const endpoint = await startEndpoint([...definition('x').allowed_tools, 'synthetic_admin_reset', ...(options.extraTools ?? [])], async (name, _args, res) => {

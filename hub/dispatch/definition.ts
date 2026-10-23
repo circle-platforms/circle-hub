@@ -46,7 +46,7 @@ export const ExecutorDefinition = z.strictObject({
   conformance: z.strictObject({ payloads: z.array(z.string().min(1).max(4096).regex(/^[A-Za-z0-9+/]*={0,2}$/)).length(2).refine(p => p[0] !== p[1]) }).optional(),
   reconciliation: z.strictObject({ found: pointer, state: pointer, request_id: pointer, sha256: pointer, id: pointer, stage: pointer, reached_device: pointer, gateway_time: pointer, gc_before: pointer, time_scale_ms: z.number().positive().optional(), map: z.record(z.string(),EffectOutcomeSchema) }).optional(),
   status: z.strictObject({ pointer, exit_code: pointer.optional(), map: z.record(z.string(), state) }),
-  result: z.strictObject({ log:pointer.optional(), sessions:pointer.optional(), id: pointer, sha256: pointer, submitted_at: pointer, submitted_at_scale_ms: z.number().positive().optional(), items: pointer, item_id: pointer, item_outcome: pointer, complete: pointer, map: z.record(z.string(), DynamicTerminalSchema) }),
+  result: z.strictObject({ request_id:pointer.optional(), log_stale:pointer.optional(), closing_marker:z.string().min(1).max(2000).optional(), log:pointer.optional(), sessions:pointer.optional(), id: pointer, sha256: pointer, submitted_at: pointer, submitted_at_scale_ms: z.number().positive().optional(), items: pointer, item_id: pointer, item_outcome: pointer, complete: pointer, map: z.record(z.string(), DynamicTerminalSchema) }),
   probes: probes.optional(),
   side_effects: z.array(z.strictObject({message:z.string().min(1).max(2000),marker:z.string().min(1).max(2000).optional()})).max(100).default([]),
   conditions,
@@ -61,6 +61,11 @@ export const ExecutorDefinition = z.strictObject({
   if (new Set(d.resources).size !== d.resources.length || new Set(d.allowed_tools).size !== d.allowed_tools.length) ctx.addIssue({ code: 'custom', message: '资源键和允许工具不得重复' });
   for (const c of [...Object.values(d.calls), ...d.precheck_reads, ...(d.probes ? [d.probes.call] : [])]) if (!d.allowed_tools.includes(c.tool)) ctx.addIssue({ code: 'custom', message: '生命周期调用不在允许工具清单内' });
   if (d.refused_tools.some(name=>d.allowed_tools.includes(name))) ctx.addIssue({code:'custom',message:'同一工具不能既被允许又被拒绝'});
+  if (d.receipt.request_id || d.reconciliation) {
+    if (countBindings(d.calls.submit.arguments,'request_id') !== 1 || countBindings(d.calls.submit.arguments,'not_after') !== 1) ctx.addIssue({code:'custom',message:'请求协议必须各绑定一次请求身份和截止时间'});
+  }
+  if (d.reconciliation && (!d.calls.query || !d.receipt.request_id || countBindings(d.calls.query.arguments,'request_id') !== 1)) ctx.addIssue({code:'custom',message:'查账必须绑定原请求身份并登记回执身份指针'});
+  if (d.probes && ['command','seat_index','lease_id'].some(key=>countBindings(d.probes!.call.arguments,key)!==1))ctx.addIssue({code:'custom',message:'座位探测必须各绑定一次命令、座位序号和本次租约身份'});
   const payload = at(d.calls.submit.arguments, d.payload_argument);
   if (!payload || typeof payload !== 'object' || Array.isArray(payload) || Object.keys(payload).length !== 1 || (payload as Record<string, unknown>).$value !== 'payload_base64' || countPayloadBindings(d.calls.submit.arguments) !== 1) ctx.addIssue({ code: 'custom', message: '提交内容参数必须且只能绑定一次已核验字节' });
   for (const [role, c] of Object.entries(d.calls)) if (role !== 'submit' && countPayloadBindings(c.arguments)) ctx.addIssue({ code: 'custom', message: '非提交角色不能携带工作内容字节' });
@@ -96,6 +101,15 @@ export function mapped<T>(map: Readonly<Record<string, T>>, value: unknown): T |
   const key = String(value); return Object.hasOwn(map, key) ? map[key] : undefined;
 }
 
+function countBindings(value:unknown,key:string):number {
+  if(Array.isArray(value))return value.reduce((n,v)=>n+countBindings(v,key),0);
+  if(value && typeof value==='object') {
+    const o=value as Record<string,unknown>;
+    if(Object.keys(o).length===1 && o.$value===key)return 1;
+    return Object.values(o).reduce<number>((n,v)=>n+countBindings(v,key),0);
+  }
+  return 0;
+}
 function countPayloadBindings(value: unknown): number {
   if (Array.isArray(value)) return value.reduce((n, v) => n + countPayloadBindings(v), 0);
   if (value && typeof value === 'object') {

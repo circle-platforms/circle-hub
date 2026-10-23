@@ -5,7 +5,7 @@ import { definition } from './testing/definition.ts';
 import { setup } from './testing/context.ts';
 import { canonicalBytes } from '../records/api.ts';
 
-export const probes = {command_pattern:'^inspect (?:version|interfaces)$',call:{tool:'inspect_seat',arguments:{seat:{$value:'seat_index'},command:{$value:'command'},ticket:{$value:'lease_id'}}},output:'/output',seats:[0,1].map(index=>({seat:`synthetic-${index}`,index,manifest:{device:`/devices/${index}`,addresses:'/interfaces',address:'/address'},version:{command:'inspect version',pattern:'^version: (?<value>.+)$'},interfaces:{command:'inspect interfaces',pattern:'^address: (?<value>.+)$'}}))};
+import { probes } from './testing/probes.ts';
 
 test('probe commands and exactly one named extraction group are checked against deployment declarations',()=>{
   const base=definition('http://127.0.0.1:1/');
@@ -15,7 +15,7 @@ test('probe commands and exactly one named extraction group are checked against 
 });
 
 test('per-seat version and complete address sets are checked in the dispatch lease before submission',async t=>{
-  for (const mismatch of ['none','version','extra','missing','alias','stale-alias']) {
+  for (const mismatch of ['none','version','extra','missing','alias','stale-alias','historical-alias']) {
     const c=await setup({extraTools:['inspect_seat'],alter:(name,value)=>{
       if(name!=='inspect_seat') return value;
       const args=c.endpoint.calls.filter(e=>e.params.name==='inspect_seat').at(-1)!.params.arguments as Record<string,unknown>;
@@ -27,14 +27,24 @@ test('per-seat version and complete address sets are checked in the dispatch lea
     await c.registry.update(c.admin,c.executor.id,{...c.executor.definition,manifest_sha256:manifest.body.sha256,allowed_tools:[...c.executor.definition.allowed_tools,'inspect_seat'],probes});
     if(mismatch.includes('alias')) {
       c.detail.run.product='synthetic-product';c.detail.run.root='a'.repeat(64);
-      const base={name:'synthetic-build',base:'synthetic-build',root:'a'.repeat(64),family:'synthetic',line:'10.6',platform:null,built_at:null,released_at:null,sources:{}};
-      c.service.options.knowledge={resolveBuild:async()=>base,builds:async()=>[base,{...base,name:'synthetic-alias_10_6',root:mismatch==='stale-alias'?'b'.repeat(64):base.root}]};
+      const base={name:'synthetic-build',base:'synthetic-build',root:(mismatch==='historical-alias'?'b':'a').repeat(64),family:'synthetic',line:'10.6',platform:null,built_at:null,released_at:null,sources:{}};
+      c.service.options.knowledge={resolveBuild:async()=>base,builds:async()=>[base,{...base,name:'synthetic-alias_10_6',root:mismatch==='stale-alias'?'b'.repeat(64):base.root}],rootInfo:async()=>[{root:'a'.repeat(64),composition:'c'.repeat(64),product:'synthetic-product',build:base,produced_at:c.now().toISOString()}]};
     }
-    const good=mismatch==='none'||mismatch==='alias';
+    const good=mismatch==='none'||mismatch==='alias'||mismatch==='historical-alias';
     const result=await c.service.dispatch(c.admin,c.run,c.executor.id);
     assert.equal(result.outcome,good?'effective':'not_dispatched'); assert.equal(result.frozen,false);
     assert.equal(c.calls.filter(n=>n==='send_blob').length,good?1:0);
     assert.ok(c.calls.includes('close_slot'));
     if(good)assert.ok(c.calls.lastIndexOf('inspect_seat')<c.calls.indexOf('send_blob'));
   }
+});
+
+test('persistent probe refusals retry reads three times and never submit',async t=>{
+  const c=await setup({extraTools:['inspect_seat'],alter:(name,value)=>name==='inspect_seat'?{ok:false,error:'synthetic bed busy'}:value});t.after(()=>c.close());
+  await c.registry.update(c.admin,c.executor.id,{...c.executor.definition,allowed_tools:[...c.executor.definition.allowed_tools,'inspect_seat'],probes});
+  // A manifest with no addresses would not reach the transport; version probes still establish retry counts.
+  const state=await c.service.dispatch(c.admin,c.run,c.executor.id);
+  assert.equal(state.outcome,'not_dispatched');assert.equal(state.frozen,false);
+  assert.equal(c.calls.filter(n=>n==='send_blob').length,0);
+  assert.equal(c.calls.filter(n=>n==='inspect_seat').length,12);
 });

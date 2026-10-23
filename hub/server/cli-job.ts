@@ -3,7 +3,7 @@ import { parseArgs } from 'node:util';
 import { readFile, writeFile, mkdir, lstat, realpath } from 'node:fs/promises';
 import { dirname, join, resolve, basename } from 'node:path';
 import { ExecutorRegistry, registrationMissing, observationHashes, type DispatchService, type JobStatus } from '../dispatch/api.ts';
-import type { KnowledgePort } from '../ports.ts';
+import type { BuildKnowledge } from '../dispatch/api.ts';
 import type { Principal, RecordsKit } from '../records/api.ts';
 import { labelOf } from '../../contracts/generated/vocabulary.ts';
 import { readSecret } from './assemble/secret-input.ts';
@@ -17,7 +17,7 @@ export interface JobCommandSession {
   err(line: string): void;
   admin(): Promise<Principal>;
   records(): Promise<RecordsKit>;
-  hub(requireVaultKey?: boolean): Promise<{ dispatch: DispatchService | null; records: RecordsKit; knowledge?: Pick<KnowledgePort,'builds'|'resolveBuild'> }>;
+  hub(requireVaultKey?: boolean): Promise<{ dispatch: DispatchService | null; records: RecordsKit; knowledge?: BuildKnowledge }>;
 }
 async function service(s: JobCommandSession, requireKey = true): Promise<DispatchService> {
   const hub = await s.hub(requireKey); if (hub.dispatch && hub.knowledge) hub.dispatch.options.knowledge = hub.knowledge; if (!hub.dispatch) throw new Error('作业服务没有可用的租约服务'); return hub.dispatch;
@@ -87,7 +87,7 @@ async function exportPrecheck(s: JobCommandSession, dispatch: DispatchService, j
     const protocolPointers = phase === 'query.response' ? Object.values(definition.reconciliation ?? {}) : phase === 'submit.response' ? Object.values(definition.receipt) : [];
     const pointers = [...new Set([...protocolPointers.filter((p): p is string => typeof p === 'string' && (p === '' || p.startsWith('/'))), ...(!protocolPointers.length ? [...(config?.capture_pointers ?? []), ...(config?.conditions ?? []).map(c => c.pointer)] : [])])];
     for (const pointer of pointers) {
-      try { hashes.push({ file, reference, ...observationHashes(source.bytes, pointer) }); }
+      try { hashes.push({ file, reference, ...observationHashes(source.bytes, pointer, phase === 'submit.response') }); }
       catch { hashes.push({ file, reference, pointer, missing_fact: '该指针缺少有效工具回答或字段，不能计算内容摘要' }); }
     }
   }

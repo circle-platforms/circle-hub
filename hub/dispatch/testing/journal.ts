@@ -2,7 +2,7 @@
 import { setup } from './context.ts';
 import { DispatchService } from '../service.ts';
 import { sha256Hex } from '../../records/api.ts';
-export async function setupJournal(options: { lost?: boolean; absent?: boolean; uncertified?: boolean; floorAtDeadline?: boolean; clockBeforeDeadline?: boolean; stopped?: boolean; wrongIdentity?: boolean } = {}) {
+export async function setupJournal(options: { lost?: boolean; absent?: boolean; uncertified?: boolean; floorAtDeadline?: boolean; clockBeforeDeadline?: boolean; stopped?: boolean; wrongIdentity?: boolean; onSubmit?: () => Promise<void> } = {}) {
   const rows = new Map<string, Record<string, unknown>>();
   let c: Awaited<ReturnType<typeof setup>>;
   const admit = () => {
@@ -15,7 +15,7 @@ export async function setupJournal(options: { lost?: boolean; absent?: boolean; 
     rows.set(id,{found:true,state:expired ? 'rejected' : 'started',request:id,digest,...(expired ? {phase:'admission',touched:false} : {key:'synthetic-remote',touched:true}),reply});
     return reply;
   };
-  c = await setup({mode: options.lost ? 'disconnect' : undefined,extraTools:['lookup_blob'],onSubmit:async () => { admit(); },alter:(name,value) => {
+  c = await setup({mode: options.lost ? 'disconnect' : undefined,extraTools:['lookup_blob'],onSubmit:async () => { admit(); await options.onSubmit?.(); },alter:(name,value) => {
     if (name === 'send_blob') return admit();
     if (name !== 'lookup_blob') return value;
     const args = c.endpoint.calls.filter(e => e.params.name === 'lookup_blob').at(-1)!.params.arguments as Record<string,unknown>;

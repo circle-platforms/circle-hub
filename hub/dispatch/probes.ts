@@ -5,6 +5,7 @@ import type { KnowledgePort } from '../ports.ts';
 import { at, type ExecutorDefinition } from './definition.ts';
 import type { JobBinding, Journal } from './journal.ts';
 import { RpcClient, type Exchange } from './transport.ts';
+export type BuildKnowledge = Pick<KnowledgePort,'builds'|'resolveBuild'> & Partial<Pick<KnowledgePort,'rootInfo'>>;
 function addresses(values: unknown[]): string[] {
   return [...new Set(values.map(value=>{
     if(typeof value!=='string') throw new Error('接口地址不是文字');
@@ -13,7 +14,7 @@ function addresses(values: unknown[]): string[] {
     return family===6 ? new URL(`http://[${ip}]/`).hostname.slice(1,-1) : ip;
   }))].sort();
 }
-export async function assessProbes(records: RecordsKit, knowledge: Pick<KnowledgePort,'builds'|'resolveBuild'>|undefined,binding:JobBinding,d:ExecutorDefinition,client:RpcClient,context:Record<string,unknown>,journal:Journal,sleep:(ms:number)=>Promise<void>):Promise<boolean> {
+export async function assessProbes(records: RecordsKit, knowledge: BuildKnowledge|undefined,binding:JobBinding,d:ExecutorDefinition,client:RpcClient,context:Record<string,unknown>,journal:Journal,sleep:(ms:number)=>Promise<void>):Promise<boolean> {
   const spec=d.probes!; const owner=await records.principals.get(binding.user);
   if(!owner || !d.manifest_sha256)throw new Error('缺少探测主体或绑定清单；请补齐预订和清单');
   const source=await records.artifacts.source(owner,d.manifest_sha256,{consumer:'function'});
@@ -23,10 +24,16 @@ export async function assessProbes(records: RecordsKit, knowledge: Pick<Knowledg
   const names=new Set([context.build]);
   if(knowledge) {
     if(typeof context.product!=='string')throw new Error('缺少产品绑定，不能核对知识库构建别名；请绑定产品后重跑');
-    const base=await knowledge.resolveBuild(context.product,context.build);
+    const current=await knowledge.resolveBuild(context.product,context.build);
+    let base=current;
+    if(typeof context.root==='string' && current?.root!==context.root && knowledge.rootInfo) {
+      const history=await knowledge.rootInfo(context.root);
+      const locked=history.find(r=>r.product===context.product && (r.build.name===context.build || r.build.base===context.build || r.build.base===current?.base));
+      base=locked ? {...locked.build,root:locked.root} : null;
+    }
     if(!base || typeof context.root!=='string' || base.root!==context.root)throw new Error('锁定构建的知识根不可核对；请恢复该根与构建绑定后重跑');
     names.add(base.base); names.add(base.name);
-    for(const alias of await knowledge.builds(context.product)) if(alias.base===base.base && alias.root===base.root)names.add(alias.name);
+    for(const alias of await knowledge.builds(context.product)) if(alias.base===base.base && (alias.root===base.root || current?.base===base.base && alias.root===current.root))names.add(alias.name);
   }
   let verified=true; const assessments:string[]=[];
   for(const seat of spec.seats)for(const [key,check] of Object.entries({version:seat.version,interfaces:seat.interfaces})) {

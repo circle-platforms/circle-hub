@@ -1,14 +1,16 @@
 import { canonicalBytes, canonicalize, sha256Hex, type Principal, type RecordsKit } from '../records/api.ts';
 import type { LeaseService, HolderSnapshot } from '../leases/api.ts';
-import type { WorkflowStore, KnowledgePort } from '../ports.ts';
-import type { EffectOutcome, Disposition } from '../../contracts/generated/vocabulary.ts';
+import type { WorkflowStore } from '../ports.ts';
+import { labelOf, type EffectOutcome, type Disposition } from '../../contracts/generated/vocabulary.ts';
 import { at, bind, mapped, registrationMissing, type CallRole, type ExecutorDefinition } from './definition.ts';
 import { ExecutorRegistry } from './executors.ts';
 import { Journal, digestOfValue, eventOf, isDone, isFrozen, newJob, type JobBinding, type Event } from './journal.ts';
 import { RpcClient, object, type Exchange } from './transport.ts';
+import type { BuildKnowledge } from './probes.ts';
+import { dynamicDisposition } from './dynamic.ts';
 import { verifyInput, type VerificationPort } from './proof.ts';
 export interface DispatchOptions {
-  knowledge?: Pick<KnowledgePort,'builds'|'resolveBuild'>;
+  knowledge?: BuildKnowledge;
   records: RecordsKit; leases: Pick<LeaseService, 'holderSnapshot'>; runs: VerificationPort;
   workflows: Pick<WorkflowStore, 'byDigest'>; close?: () => Promise<void>; now?: () => Date; sleep?: (ms: number) => Promise<void>;
 }
@@ -57,7 +59,7 @@ export class DispatchService {
       await client.connect(); lease = await this.acquire(binding, d, client, this.context(binding));
       stop = this.heartbeat(binding, d, client, lease);
       const context = { ...this.context(binding), lease_id: lease.id, lease_token: lease.token };
-      try { const response = await this.read(binding, client, 'precheck', context); verified = this.conditions(d.conditions, response.value, context); } catch { verified = false; }
+      try { const response = await this.retryRead(binding, client, 'precheck', context, Infinity); verified = this.conditions(d.conditions, response.value, context); } catch { verified = false; }
       const extra = await this.extraPrechecks(binding, d, client, context, true);
       const probed = await this.probeSeats(binding,d,client,context);
       verified = verified && extra && probed;
@@ -133,7 +135,7 @@ export class DispatchService {
       remote = await this.acquire(binding, d, session, this.context(binding));
       stop = this.heartbeat(binding, d, session, remote);
       const context: Record<string, unknown> = { ...this.context(binding), lease_id: remote.id, lease_token: remote.token, payload_base64: Buffer.from(source.bytes).toString('base64') };
-      const precheck = await this.read(binding, session, 'precheck', context);
+      const precheck = await this.retryRead(binding, session, 'precheck', context, Infinity);
       if (!this.conditions(d.conditions, precheck.value, context)) throw new Error('只读核对未满足；未提交，请核对当前环境后重新核验');
       if (!await this.extraPrechecks(binding, d, session, context, false)) throw new Error('附加只读核对未满足；未提交，请重新核对缓存来源');
       const deviceIdentity = await this.probeSeats(binding,d,session,context);
@@ -167,7 +169,7 @@ export class DispatchService {
       const ignore = () => {}; process.on('SIGINT', ignore); process.on('SIGTERM', ignore);
       let answer: Exchange;
       try { answer = await session.call('submit', context); } finally { process.off('SIGINT', ignore); process.off('SIGTERM', ignore); }
-      const accepted = mapped(d.receipt.map, at(answer.value, d.receipt.acceptance)) === 'accepted';
+      const accepted = !answer.tool_error && mapped(d.receipt.map, at(answer.value, d.receipt.acceptance)) === 'accepted';
       const remoteId = at(answer.value, d.receipt.id);
       if (d.receipt.request_id && at(answer.value, d.receipt.request_id) !== context.request_id) {
         await this.unknown(binding, '回执请求身份与意图不符；须按原请求记录核对，不能重交', [answer.source], { observed_outcome: 'read_back_mismatch' }); return this.status(by, binding.job);
@@ -216,6 +218,7 @@ export class DispatchService {
     const remote = intent.body.detail.remote_lease as unknown as RemoteLease;
     const stop = this.heartbeat(binding, d, client, remote);
     if (!receipt || isFrozen(events)) { try { return await this.reconcileRequest(by,binding,d,client,stop); } finally { await stop(); } }
+    await this.checkContinuity(binding,d,client,remote);
     try { return await this.observe(by, binding, d, client, receipt!.body.detail.remote_id, intent.body.detail.fences as unknown as HolderSnapshot[], stop); }
     catch { await this.pendingRead(binding); return this.status(by, job); }
     finally { await stop(); }
@@ -265,6 +268,12 @@ export class DispatchService {
     }
   }
 
+  private async checkContinuity(binding:JobBinding,d:ExecutorDefinition,client:RpcClient,lease:RemoteLease):Promise<void> {
+    try {
+      const reply=await this.read(binding,client,'heartbeat',{...this.context(binding),lease_id:lease.id,lease_token:lease.token});
+      if(mapped(d.lease.map,at(reply.value,d.lease.acceptance))!=='accepted')throw new Error('原租约未核实');
+    }catch{await this.journal.append(binding,'heartbeat','read','error',{lease_interrupted:true,missing_fact:'原目标租约已无法核实连续性；动态层不得据此判定',next_action:'继续只读原作业，并核对原租约和设备观察，不重交'});}
+  }
   private async reconcileRequest(by: Principal, binding: JobBinding, d: ExecutorDefinition, client: RpcClient, stop: () => Promise<void>): Promise<JobStatus> {
     const intent = eventOf(await this.journal.events(binding.job),'intent')!;
     const lease = intent.body.detail.remote_lease as unknown as RemoteLease;
@@ -281,6 +290,7 @@ export class DispatchService {
     const identity = at(value,r.request_id) === context.request_id && at(value,r.sha256) === binding.input!.sha256;
     if (found === true && identity && reported === 'issued' && this.opaque(at(value,r.id))) {
       await this.journal.append(binding,'receipt','read_back','completed',{remote_id:at(value,r.id),acceptance:'accepted',outcome:'issued',unfreeze:true,reconciled:true},[response.source]);
+      await this.checkContinuity(binding,d,client,lease);
       try { return await this.observe(by,binding,d,client,at(value,r.id),intent.body.detail.fences as unknown as HolderSnapshot[],stop); }
       catch { await this.pendingRead(binding); return this.status(by,binding.job); }
     }
@@ -314,10 +324,12 @@ export class DispatchService {
         if (!source?.bytes || sha256Hex(source.bytes) !== ref.slice(4)) return false;
       } catch { return false; }
     }
+    const init=eventOf(await this.journal.events(binding.job),'initialize.response');
+    await this.journal.append(binding,'premise','validate','completed',{premise,version:client.serverVersion,definition_sha256:current.digest,certified:true},[...proof.evidence,...(init?.body.inputs ?? [])]);
     return true;
   }
   private async refused(binding: JobBinding, d: ExecutorDefinition, client: RpcClient, answer: Exchange, lease: RemoteLease): Promise<boolean> {
-    if (!d.receipt.stage || !d.receipt.reached_device || mapped(d.receipt.stages,at(answer.value,d.receipt.stage)) !== 'target_rejected' || at(answer.value,d.receipt.reached_device) !== false || !await this.certified(binding,d,client,'request_journal')) return false;
+    if (mapped(d.receipt.map,at(answer.value,d.receipt.acceptance)) !== 'not_accepted' || !d.receipt.stage || !d.receipt.reached_device || mapped(d.receipt.stages,at(answer.value,d.receipt.stage)) !== 'target_rejected' || at(answer.value,d.receipt.reached_device) !== false || !await this.certified(binding,d,client,'request_journal')) return false;
     await this.journal.append(binding,'rejection','read_back','completed',{outcome:'target_rejected',acceptance:'not_accepted',stage:at(answer.value,d.receipt.stage),reached_device:false,unfreeze:true},[answer.source]);
     await this.release(binding,client,lease);
     await this.journal.append(binding,'complete','read_back','completed',{done:true,outcome:'target_rejected',unfreeze:true,next_action:'按拒绝阶段补齐事实后，可用新的请求尝试派发；不要重发原请求'});
@@ -407,7 +419,12 @@ export class DispatchService {
     for (const [index, check] of d.precheck_reads.entries()) {
       let ok = false;
       try {
-        const reply = await client.precheckRead(index, context);
+        let reply: Exchange | undefined;
+        for(let attempt=1;attempt<=3;attempt++) {
+          try{reply=await client.precheckRead(index,context);break;}
+          catch{await this.journal.append(binding,`precheck.${index+1}.retry`,'read','error',{attempt,next_action:attempt<3?'自动重读该来源，未提交':'恢复来源后重跑预检，未提交'});if(attempt<3)await this.sleep(d.poll_ms);}
+        }
+        if(!reply)throw new Error('只读来源连续三次读取失败');
         ok = this.conditions(check.conditions, reply.value, context);
         await this.journal.append(binding, `precheck.${index + 1}`, 'validate', 'completed', { matched: check.conditions.length ? ok : null, ...(check.conditions.length ? {} : { missing_fact: '只读原件已取得，但尚未登记期望条件；请转换核对后 update' }), started_at: reply.started_at, ended_at: reply.received_at }, [reply.source]);
       } catch { await this.journal.append(binding, `precheck.${index + 1}`, 'read', 'error', { missing_fact: '该登记只读核对没有完整应答或期望输入；不能判为通过', next_action: '核对原件和登记条件后重跑预检' }); }
@@ -471,10 +488,14 @@ export class DispatchService {
     }
     await stopHeartbeat();
     const leaseInterrupted = (await this.journal.events(binding.job)).some(e => e.body.detail.lease_interrupted === true);
+    const ownership = await this.certified(binding,d,client,'result_ownership');
     const projected = input.items.map(id => {
       const found = Array.isArray(rows) ? rows.filter(r => at(r, d.result.item_id) === id) : [];
       const reported = complete && found.length === 1 ? mapped(d.result.map, at(found[0], d.result.item_outcome)) ?? null : null;
-      return { item: id, reported_terminal: reported, dynamic_terminal: 'no_verdict', missing_fact: reported === null ? '结果通道不完整或条目没有可解释的报告；请管理员只读补取原作业结果' : '结果按派发身份归属尚未认证；该值只转述目标报告', limits: ['目标对本次派发的报告', '未排除本地操作'] };
+      const row = found.length === 1 ? found[0] : null;
+      const log = d.result.log ? at(row,d.result.log) : undefined;
+      const disposition = dynamicDisposition(reported,{owned:ownership,request:!!d.result.request_id && at(response.value,d.result.request_id) === intent.body.detail.request_id,remote:same(at(response.value,d.result.id),remoteId),digest:at(response.value,d.result.sha256) === input.sha256,complete:complete && Array.isArray(rows) && rows.length === input.items.length,unique:found.length === 1,fresh:!!d.result.log_stale && at(row,d.result.log_stale) === false,closed:!!d.result.closing_marker && typeof log === 'string' && log.includes(d.result.closing_marker),device:intent.body.detail.device_identity_proven === true && intent.body.detail.device_lease_digest === digestOfValue([remoteLease.id,remoteLease.token]),continuity:!drift && !leaseInterrupted});
+      return {item:id,reported_terminal:reported,...disposition,...(disposition.dynamic_terminal==='no_verdict'?{missing_fact:!ownership?'结果按派发身份归属尚未认证；该值只转述目标报告':'动态完整性事实尚不齐全；见 missing_facts 和下一步'}:{}),limits:disposition.qualifier.marks.map(mark=>labelOf('qualifier_mark',mark))};
     });
     const savedLogs = Array.isArray(rows) ? rows.flatMap(row=>[
       ...(d.result.log && typeof at(row,d.result.log)==='string' ? [String(at(row,d.result.log))] : []),
@@ -483,7 +504,7 @@ export class DispatchService {
     const sideEffects = d.side_effects.map(declaration=>declaration.marker ? {message:declaration.message,marker_present:savedLogs.some(log=>log.includes(declaration.marker!)),text:savedLogs.some(log=>log.includes(declaration.marker!))?'本次日志里有这一项的标记':'本次日志里没有这一项的标记',reference:response.source,complete,scope:'只核对本次已保存字节中的标记，不推断动作是否发生'} : {message:declaration.message,text:'运行器会这样做（执行器定义声明，Hub 看不见）',provenance:'declared',definition_sha256:binding.executor_digest});
     const artifact = await this.options.records.artifacts.ingest({ bytes: canonicalBytes({ job: binding.job, sha256: input.sha256, rows: projected, side_effects:sideEffects, executor_declarations: { provenance: 'declared', definition_sha256: binding.executor_digest, limitations: d.limitations }, lease_drift: drift, lease_interrupted: leaseInterrupted, limits: ['目标对本次派发的报告', '未排除本地操作'] }), mediaType: 'application/json',
       origin: { generated: { generator: 'dispatch@1', inputs: [response.source, `src:${input.sha256}`] } }, author: { user: null }, provenanceType: 'projected', visibility: { readers: [binding.user], admins: true, packs: [], shareable: false } });
-    await this.journal.append(binding, 'result', 'read_back', 'completed', { reference: `src:${artifact.body.sha256}`, items: projected.length, no_verdict: projected.length }, [response.source]);
+    await this.journal.append(binding, 'result', 'read_back', 'completed', { reference: `src:${artifact.body.sha256}`, items: projected.length, no_verdict: projected.filter(row=>row.dynamic_terminal==='no_verdict').length }, [response.source]);
     await this.release(binding, client, remoteLease);
     await this.journal.append(binding, 'complete', 'read_back', 'completed', { done: true, outcome: 'effective' });
     return this.status(by, binding.job);

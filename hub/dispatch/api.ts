@@ -6,3 +6,5 @@ export { DispatchService, type DispatchOptions, type JobStatus } from './service
 export { verifyInput, type VerifiedInput, type VerificationPort } from './proof.ts';
 
 export { observationHashes, rpcResponse, toolContent } from './observations.ts';
+
+export type { BuildKnowledge } from './probes.ts';

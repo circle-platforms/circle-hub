@@ -8,7 +8,7 @@ import { rpcResponse, toolContent, containsRpcReply } from './observations.ts';
 import { bind } from './definition.ts';
 export interface ResponseMetadata { received_sha256: string; redacted: boolean; started_at: string; ended_at: string; stream_cut_at_response?: boolean; }
 export type SaveResponse = (bytes: Uint8Array, status: number, operation: string, complete?: boolean, metadata?: ResponseMetadata) => Promise<string>;
-export type Exchange<T = unknown> = { value: T; source: string; received_at: string; started_at: string };
+export type Exchange<T = unknown> = { value: T; source: string; received_at: string; started_at: string; tool_error?: boolean };
 export const object = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
 export class RpcClient {
   readonly definition: ExecutorDefinition;
@@ -79,7 +79,7 @@ export class RpcClient {
   private async invoke(declaration: ExecutorDefinition['calls']['precheck'], context: Readonly<Record<string, unknown>>, operation: string, timeout: number): Promise<Exchange> {
     if (!this.definition.allowed_tools.includes(declaration.tool)) throw new Error('调用不在允许工具清单内');
     const response = await this.rpc('tools/call', { name: declaration.tool, arguments: bind(declaration.arguments, context) }, false, timeout, operation);
-    return { ...response, value: toolContent(response.value, operation === 'submit' || operation === 'query') };
+    return { ...response,tool_error:response.value.isError===true, value: toolContent(response.value, operation === 'submit') };
   }
   private async rpc(method: string, params: unknown, notification = false, timeout = 30000, operation: string = method): Promise<Exchange<Record<string, unknown>>> {
     const id = ++this.#id;
