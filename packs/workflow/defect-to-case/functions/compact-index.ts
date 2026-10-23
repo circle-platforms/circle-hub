@@ -31,6 +31,7 @@ export interface CompactCaseIndex {
   /** A source truncation can hide entire requested buckets. */
   sourceTruncated?: boolean;
   sourceSkipped?: number;
+  invalidMetadata?: boolean;
   notes: string[];
 }
 
@@ -284,6 +285,7 @@ export function buildCompactIndex(
     missingKeys,
     sourceTruncated,
     sourceSkipped,
+    invalidMetadata,
     notes,
   };
 
