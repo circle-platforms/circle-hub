@@ -160,19 +160,19 @@ export class LinkReading {
     for await(const row of composition.contentRows(undefined)){contents.set(row.entry,row.content);owners.set(row.path+"\0"+row.entry,row.producers);}
     // Reachability comes from the node graph; a row alone never invents a target.
     const visit=async(digest:string,names:string[]):Promise<void>=>{
-      const node=await this.#context.store.node(digest);if(!node)throw new RelationReadError(REASON.find(reason=>reason==='integrity_unproven')!,'缺少关联树节点 '+digest,'请集成者 Claude 从已存原件重建缺失节点后重读同一组成');
+      const node=await this.#context.store.node(digest);if(!node)throw new RelationReadError(REASON.find(reason=>reason==='integrity_unproven')!,'缺少关联树节点 '+digest,'管理员从可信备份恢复缺失的记录 '+digest+'（或原件），再重新核验这份组成');
       const kinds:Array<{kind:string;producers:readonly string[]}>=[];
-      for(const id of node.entries){const entry=contents.get(id)??await this.#context.store.entry(id);if(!entry)throw new RelationReadError(REASON.find(reason=>reason==='integrity_unproven')!,'缺少关联树条目 '+id,'请集成者 Claude 从已存原件重建缺失条目后重读同一组成');const producers=owners.get(pathOf(names)+"\0"+id)??[];kinds.push({kind:entry.kind,producers});sources.push({path:pathOf(names),entry:id,content:entry,producers});}
+      for(const id of node.entries){const entry=contents.get(id)??await this.#context.store.entry(id);if(!entry)throw new RelationReadError(REASON.find(reason=>reason==='integrity_unproven')!,'缺少关联树条目 '+id,'管理员从可信备份恢复缺失的记录 '+id+'（或原件），再重新核验这份组成');const producers=owners.get(pathOf(names)+"\0"+id)??[];kinds.push({kind:entry.kind,producers});sources.push({path:pathOf(names),entry:id,content:entry,producers});}
       nodes.set(pathOf(names),relationNode(kinds));
       for(const child of node.children)await visit(child.digest,[...names,child.name]);
     };
     await visit(composition.body.root,[]);
-    for await(const row of composition.unplacedRows()){const content=contents.get(row.entry)??await this.#context.store.entry(row.entry);if(!content)throw new RelationReadError(REASON.find(reason=>reason==='integrity_unproven')!,'缺少未归位关联条目 '+row.entry,'请集成者 Claude 从已存原件重建缺失条目后重读同一组成');sources.push({path:'/',entry:row.entry,content,unplaced:true,producers:row.producers});}
+    for await(const row of composition.unplacedRows()){const content=contents.get(row.entry)??await this.#context.store.entry(row.entry);if(!content)throw new RelationReadError(REASON.find(reason=>reason==='integrity_unproven')!,'缺少未归位关联条目 '+row.entry,'管理员从可信备份恢复缺失的记录 '+row.entry+'（或原件），再重新核验这份组成');sources.push({path:'/',entry:row.entry,content,unplaced:true,producers:row.producers});}
     const result=relationFacts(composition.body.root,composition.body.links,nodes,sources);
     this.#cache.set(composition.record,result,canonicalBytes(result).byteLength);return result;
     }catch(error){
       if(error instanceof RelationReadError)throw error;
-      throw new RelationReadError(REASON.find(reason=>reason==='check_error')!,'关联计算没有产出完整结果','请集成者 Claude 修复关联读取后重新执行本次读取',error);
+      throw new RelationReadError(REASON.find(reason=>reason==='check_error')!,'关联计算没有产出完整结果','请管理员或维护者修复关联计算，再重新执行本次计算',error);
     }
   }
   async page(composition:CompositionView,request:LinkRequest={}):Promise<LinksView>{
@@ -244,7 +244,7 @@ export class LinkReading {
         const viewId="knowledge:links:"+encodeURIComponent(view.body.product)+":"+encodeURIComponent(view.body.version.build)+"?target="+encodeURIComponent(path)+"&composition="+view.record;
         return {view_id:viewId,composition:view.record,configured:true,total:value.total,entries:[...value.entries],truncated:value.total>20,notes:[...index.notes,...(value.total>20?['还有未列出的反向引用；读取 '+viewId+' 并沿游标翻页']:[])]};
       }catch(error){
-        const failure=error instanceof RelationReadError?error:new RelationReadError(REASON.find(reason=>reason==='check_error')!,'关联索引没有产出完整结果','请集成者 Claude 修复关联索引后重新执行本次读取',error);
+        const failure=error instanceof RelationReadError?error:new RelationReadError(REASON.find(reason=>reason==='check_error')!,'关联索引没有产出完整结果','请管理员或维护者修复关联索引，再重新执行本次计算',error);
         return absent(view.record,failure.message+'；下一步：'+failure.nextAction);
       }
     };

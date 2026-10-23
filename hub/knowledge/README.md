@@ -795,3 +795,5 @@ alternatives are counted separately. Malformed groups produce entry diagnostics.
 entry edits. Ordinary-field declarations and their counts keep their existing behavior.
 
 缺少目标目录或目录内没有符合声明种类、生产器的目标时，relationFacts 不判漂移：rule_diagnostics 每条声明一条，写出缺失目录和补齐有效来源后重新生产的动作。totals.unchecked_literals 单列未核对候选，仍计入 literals，绝不计入 drift；备选组在目录不可用时计入主干及展开项的去重候选。生产警告和读时结果共用这一判定，后续有效来源的生产会重新核对。
+
+关联记录完整性缺失按决定 36 处理：提示管理员从可信备份恢复与摘要匹配的缺失记录或原件，再重新核验组成；重建或重读不能证明缺失字节的完整性。计算错误交管理员或维护者修复后重新计算，运行时提示不点开发代理的名字。
