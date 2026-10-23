@@ -302,11 +302,36 @@ byte-range pinning and the not-found diagnostic use that rule; ranges still poin
 Rules quotation checking uses the public refs API; ordinary rules table matching retains its original whitespace
 normalization. Shared vectors test both direct quotation checks and the cached collapsed-fragment path.
 
-## Needs from other packages
+## Independent gold quotation alignment
 
-- **real acceptance / gold**: the current `scripts/real/gold/compile-check.ts` checkVerbatimQuote still uses ordinary
-  whitespace collapse. Schedule an independent update to decision 37 before using it to judge the new quotation rule;
-  that script is outside this task's paths and was not modified or run.
+`compile-check.ts` checkVerbatimQuote now independently implements decision 37. It uses a local regular-expression
+classifier derived directly from Unicode 17.0.0 W/F source data (`scripts/real/gold/quote-widths.ts`, with source digest and Unicode license), with no Hub or pack imports.
+Its ordinary collapseWhitespace utility remains unchanged for the separate expected-text containment contract.
+Missing exported source bytes still produce the existing unknown receipt; this change does not make unavailable evidence pass.
+
+The conformance harness lives in `hub/refs/gold-quotes.test.ts`: only that test imports both implementations. It reads
+the same 29 synthetic rules vectors, adds Chinese hard-wrap, mixed-width, Latin-boundary and Unicode edge cases, and
+compares a deterministic 5000-case synthetic Unicode corpus. Gold expected verdicts in the named vectors are literal
+booleans, not computed from Hub output. A production dependency-closure test rejects imports of Hub or pack modules.
+
+Read-only audit of the 120 local branch heads (committed snapshots, excluding uncommitted work; 39 distinct production
+file versions below scripts/real/gold before this follow-up), plus quotation-related scripts/real call sites:
+
+| Snapshot | Implementation / caller | Current rule and integration action |
+| --- | --- | --- |
+| Current branch | `scripts/real/gold/compile-check.ts`: compileCheck expected-text containment (`case-compile.expect_not_in_quote`); corresponding `packs/workflow/case-compile/functions/checks.ts`: foldText/checkExpectedSources | Still uses ordinary whitespace collapse for the separate package check. A hard wrap can pass the generic source-quotation check and fail this containment check. Arrange package-contract and independent gold alignment together; this follow-up changes checkVerbatimQuote only. |
+| `gold-d2c` at `49e5f13c` | `scripts/real/gold/quotes.ts`: quoteMatches; judgeQuote/quotesReport; called by `scripts/real/accept/defect-to-case-compare.ts` and its batch driver | Unicode White_Space collapses to one space; Chinese hard wraps still differ. After merge, independently align it with decision 37 and run the shared vectors. |
+| `gold-review` at `e41dafd6`, `gold-catalog` at `c50ecb72` | `scripts/real/lib/inject.ts`: noWhiteSpace and the contradict_manual quotation precondition | Deletes all whitespace, including Latin word boundaries. This is an injection guard, not a gold verdict; after merge, have its owner align the guard where it promises a verbatim quotation. |
+| Other local branch snapshots carrying `scripts/real/gold/compile-check.ts` | checkVerbatimQuote and compileCheck expected-text containment | Same old generic checkVerbatimQuote implementation, not an additional independent rule. Preserve this branch's generic quotation fix when merging; no other branch was edited. |
+| `gold-catalog` at `c50ecb72` | `scripts/real/gold/catalog-marks.ts`: quoteFromCase | Command excerpt matching uses NFKC, case folding and token/argument boundaries. It is not the generic verbatim quotation rule; do not replace its command semantics with decision 37. |
+
+The older defect-to-case comparison in this branch reports Hub grounding claims rather than independently matching
+quotation text. The gold-d2c version delegates to gold/quotes.ts above. Other matches in cases, duplicate/title,
+board-location, command and regression-document readers normalize identifiers or command spellings, not verbatim
+quotations. The template-gap driver compares whole summaries. Those comparisons were left unchanged. No other branch
+or worktree was changed and no real-system script was run; only synthetic tests of the pure readers ran.
+
+## Needs from other packages
 
 - **contracts**: update the stale XLSX example in contracts/model.json (`Service/7/C`) to the frozen xlsx@1
   name-first grammar above; parser syntax is declared by the parser, and this task does not edit the model.
