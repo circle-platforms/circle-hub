@@ -114,7 +114,9 @@ export interface LiteralAnswer {
 export function literalGold(map: unknown, options: { caseRule?: 'marked' | 'tagged' } = {}): LiteralAnswer {
   const parsed = parseMindMap(map);
   const raw = rawWalk((map as { root?: unknown }).root, parsed);
-  const cases = caseNodesOf(parsed, { caseRule: options.caseRule ?? 'marked' });
+  // Preserve raw tag-array presence for recognition; validity is checked separately below.
+  const recognized: GoldMap = { nodes: parsed.nodes.map((node, i) => ({ ...node, resource: Array.isArray(raw[i].resource) ? (raw[i].resource as unknown[]).map(tag => typeof tag === 'string' ? tag : '') : [] })) };
+  const cases = caseNodesOf(recognized, { caseRule: options.caseRule ?? 'marked' });
 
   const idsSeen = new Map<string, number>();
   for (const node of parsed.nodes) idsSeen.set(node.id, (idsSeen.get(node.id) ?? 0) + 1);
@@ -124,7 +126,7 @@ export function literalGold(map: unknown, options: { caseRule?: 'marked' | 'tagg
   const readings = new Map<string, CaseReading>();
   for (const node of cases) {
     const id = node.id;
-    const reading = readCase(parsed, node);
+    const reading = readCase(recognized, node);
     readings.set(`${node.index}`, reading);
     if (id === '' || (idsSeen.get(id) ?? 0) > 1) {
       noUnique.push({ id: id === '' ? `@${node.index}` : id, count: idsSeen.get(id) ?? 0, reason: id === '' ? 'data.id 缺失' : 'data.id 重复' });

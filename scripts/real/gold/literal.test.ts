@@ -154,3 +154,9 @@ test('review 7: same folded ancestor labels mean the same duplicate path even ac
   const map = doc(group('r', '合成文档', group('g1', 'ＳＡＭＥ  PATH', kase('a', 'same case', 'same expected')), group('g2', 'same path', kase('b', 'same case', 'same expected'))));
   assert.ok(answerOf(map, 'a').includes(CODE_DUPLICATE_KEY)); assert.ok(answerOf(map, 'b').includes(CODE_DUPLICATE_KEY));
 });
+
+test('review 12: blank-only raw tags still identify a tagged case without priority', () => {
+  const map = doc(group('r', 'synthetic', { data: { id: 'blank-tag', text: 'synthetic', resource: [' '] }, children: [leaf('e', 'expected')] }));
+  const answer = literalGold(map, { caseRule: 'tagged' });
+  assert.ok(answer.cases.find(c => c.id === 'blank-tag')?.codes.includes(CODE_REQUIRED_EMPTY));
+});
