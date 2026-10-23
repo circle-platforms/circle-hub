@@ -170,7 +170,7 @@ describe('maintenance sweep on a hand-built pair of trees', () => {
     const run = projected(buildImpact([]));
     assert.deepEqual(run.output.items, []);
     assert.match(String(run.output.groups[0].message), /没有需要维护的用例/);
-    assert.match(String(run.output.groups[0].message), /巡检只覆盖已归位的用例/);
+    assert.match(String(run.output.groups[0].message), /索引没有收录的用例，这里不作结论/);
   });
 
   it('says a short earlier index is not proof that nothing is stale', () => {

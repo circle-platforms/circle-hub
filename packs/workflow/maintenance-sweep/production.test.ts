@@ -123,7 +123,9 @@ describe('a production run of maintenance-sweep', { skip }, () => {
       assert.ok(summary.statement.text.includes(line), line);
     }
     const unknown = result.cross_item.filter((claim) => claim.statement.verdict === 'unknown');
-    assert.equal(unknown.length, 0);
+    assert.equal(unknown.length, 1);
+    assert.match(unknown[0].statement.text, /命令归属事实/);
+    assert.match(unknown[0].statement.text, /下一步/);
     assert.ok(result.cross_item.every((claim) => !claim.statement.text.includes('个用例没有解析出命令')));
     const stored = (await hub.service.getRun(hub.alice, run.run))!;
     assert.match(String((stored.run.groups?.[0] as { message?: string }).message), /有 4 条用例需要维护/);

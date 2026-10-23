@@ -230,9 +230,9 @@ function commandExists(subject: unknown): Outcome[] {
   const note = noteOf(subject);
   if (note !== null) {
     const skipped = typeof note.skipped_from === 'number' && note.skipped_from > 0 ? note.skipped_from : 0;
-    const base = '索引没有收录的用例，这里不作结论。';
+    const base = '索引没有收录的用例，这里不作结论。缺少索引外或未归位用例的命令归属事实；下一步由客户端提取一页供人工查看，或由集成者安排归位提议，不能把未读范围当成没有。';
     const statement = skipped > 0 ? `较早构建的索引缺少 ${skipped} 份列出的文档，没有维护项并不能证明没有过期的用例。${base}` : base;
-    if (skipped > 0 || !Object.hasOwn(note, 'unplaced')) out.push({ verdict: 'unknown', reason: 'missing_input', statement, grounds: [], tier: 'blocking' });
+    out.push({ verdict: 'unknown', reason: 'missing_input', statement, grounds: [], tier: 'blocking' });
     if (note.truncated === true) {
       const total = typeof note.changed_paths === 'number' ? String(note.changed_paths) : '未知';
       out.push({ verdict: 'unknown', reason: 'integrity_unproven', statement: `影响视图被截断，列出的路径不是全部（变更路径共 ${total} 条），完整性无法证明。`, grounds: [], tier: 'blocking' });

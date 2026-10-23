@@ -23,8 +23,8 @@
     },
     {
       "path": "functions/check.ts",
-      "sha256": "a50027a6ef4924def0f0ea94c63274237406937487ed41b3e64ccf0d59012cf6",
-      "size": 16651
+      "sha256": "f0fe59fbf2617b8f8f059dfcefd3013372baf960442f4e21a36f6f822c0cac8b",
+      "size": 16778
     },
     {
       "path": "functions/diff.ts",
@@ -53,8 +53,8 @@
     },
     {
       "path": "functions/sweep.ts",
-      "sha256": "33baf6677b8452e195750b154f06e08fb97ac7f34bf8ca42355ec7f76508f734",
-      "size": 13530
+      "sha256": "ada39d5692afc59ec12c4427c6b192a4db343777c6cf3c9a612ca80a38867573",
+      "size": 13725
     },
     {
       "path": "functions/text.ts",

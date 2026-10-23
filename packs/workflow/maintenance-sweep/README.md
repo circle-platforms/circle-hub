@@ -119,3 +119,5 @@ The bound facets are hints (A03 R[6]): zero and positive counts produce no suppo
 ## Client acceptance boundary
 
 The scenario requires `caseCommandsUnplaced`: copy `totals.unplaced` from the independent `case-commands.ts` gold for the selected build (later for regression scope, earlier for maintenance sweep). After `start_run`, it reads the **bound** facets source via MCP `get_nodes`, follows every source page and automatically compares its null-row count with that independent count. Missing pages, skipped sources and truncated views fail this mandatory check. Optional `unplaced` separately checks the disclosure sentence in replays containing client text. Numeric correctness is checked automatically; whether the real client follows SKILL, reads the hint and discloses it to the user is accepted by the integrator. No real-client run was performed in this worktree.
+
+Review fix 1: binding a count hint never removes the standing index-coverage missing_input claim. It names the missing command-ownership facts and a bounded review/proposal action; with/without hint metadata yields identical claims.

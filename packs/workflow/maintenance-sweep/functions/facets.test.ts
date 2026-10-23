@@ -45,3 +45,10 @@ test('hint disclosure changes no check claims at zero or a positive count', () =
   const zero = project(0); const positive = project(3);
   for (const check of ['command_exists', 'command_unchanged']) assert.deepEqual(checkOutcomes(check, { items: zero.items, note: zero.groups[0] }), checkOutcomes(check, { items: positive.items, note: positive.groups[0] }));
 });
+
+test('index-coverage unknown is identical with and without the facets hint metadata', () => {
+  const out = project(3); const withHint = out.groups[0];
+  const { unplaced: _count, unplaced_build: _build, ...withoutHint } = withHint;
+  for (const check of ['command_exists', 'command_unchanged']) assert.deepEqual(checkOutcomes(check, { items: out.items, note: withHint }), checkOutcomes(check, { items: out.items, note: withoutHint }));
+  const unknown = checkOutcomes('command_exists', { items: out.items, note: withHint }).find((v) => v.verdict === 'unknown'); assert.ok(unknown); assert.match(unknown.statement, /命令归属事实/);
+});
