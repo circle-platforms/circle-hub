@@ -78,3 +78,14 @@ test('deployment-specific limitations are copied as executor declarations rather
   assert.deepEqual(result.executor_declarations.limitations, ['合成运行环境使用实时文件，内容一致性未认证']);
   assert.ok(result.executor_declarations.definition_sha256);
 });
+
+test('runner declarations are observations of saved literal markers even in an incomplete result',async t=>{
+  const c=await setup({alter:(name,value)=>name==='read_blob'?{...value,complete:false,rows:[{id:'synthetic-case',outcome:'good',log:'SYNTHETIC_PRESENT',sessions:{'synthetic.txt':'another session'}}]}:value});t.after(()=>c.close());
+  await c.registry.update(c.admin,c.executor.id,{...c.executor.definition,result:{...c.executor.definition.result,log:'/log',sessions:'/sessions'},side_effects:[{message:'合成动作一',marker:'SYNTHETIC_PRESENT'},{message:'合成动作二',marker:'SYNTHETIC_ABSENT'},{message:'合成声明'}]});
+  const state=await c.service.dispatch(c.admin,c.run,c.executor.id);const value=await report(c,state.result!);
+  assert.equal(value.side_effects[0].marker_present,true);assert.equal(value.side_effects[1].marker_present,false);
+  assert.match(value.side_effects[0].text,/本次日志里有这一项的标记/);assert.match(value.side_effects[1].text,/本次日志里没有这一项的标记/);
+  assert.match(value.side_effects[2].text,/运行器会这样做（执行器定义声明，Hub 看不见）/);
+  assert.match(value.side_effects[0].reference,/^src:[a-f0-9]{64}$/);
+  assert.equal(value.rows[0].dynamic_terminal,'no_verdict');
+});

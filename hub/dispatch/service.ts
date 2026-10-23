@@ -476,7 +476,12 @@ export class DispatchService {
       const reported = complete && found.length === 1 ? mapped(d.result.map, at(found[0], d.result.item_outcome)) ?? null : null;
       return { item: id, reported_terminal: reported, dynamic_terminal: 'no_verdict', missing_fact: reported === null ? '结果通道不完整或条目没有可解释的报告；请管理员只读补取原作业结果' : '结果按派发身份归属尚未认证；该值只转述目标报告', limits: ['目标对本次派发的报告', '未排除本地操作'] };
     });
-    const artifact = await this.options.records.artifacts.ingest({ bytes: canonicalBytes({ job: binding.job, sha256: input.sha256, rows: projected, executor_declarations: { provenance: 'declared', definition_sha256: binding.executor_digest, limitations: d.limitations }, lease_drift: drift, lease_interrupted: leaseInterrupted, limits: ['目标对本次派发的报告', '未排除本地操作'] }), mediaType: 'application/json',
+    const savedLogs = Array.isArray(rows) ? rows.flatMap(row=>[
+      ...(d.result.log && typeof at(row,d.result.log)==='string' ? [String(at(row,d.result.log))] : []),
+      ...(d.result.sessions && object(at(row,d.result.sessions)) ? Object.values(at(row,d.result.sessions) as Record<string,unknown>).filter((v):v is string=>typeof v==='string') : []),
+    ]) : [];
+    const sideEffects = d.side_effects.map(declaration=>declaration.marker ? {message:declaration.message,marker_present:savedLogs.some(log=>log.includes(declaration.marker!)),text:savedLogs.some(log=>log.includes(declaration.marker!))?'本次日志里有这一项的标记':'本次日志里没有这一项的标记',reference:response.source,complete,scope:'只核对本次已保存字节中的标记，不推断动作是否发生'} : {message:declaration.message,text:'运行器会这样做（执行器定义声明，Hub 看不见）',provenance:'declared',definition_sha256:binding.executor_digest});
+    const artifact = await this.options.records.artifacts.ingest({ bytes: canonicalBytes({ job: binding.job, sha256: input.sha256, rows: projected, side_effects:sideEffects, executor_declarations: { provenance: 'declared', definition_sha256: binding.executor_digest, limitations: d.limitations }, lease_drift: drift, lease_interrupted: leaseInterrupted, limits: ['目标对本次派发的报告', '未排除本地操作'] }), mediaType: 'application/json',
       origin: { generated: { generator: 'dispatch@1', inputs: [response.source, `src:${input.sha256}`] } }, author: { user: null }, provenanceType: 'projected', visibility: { readers: [binding.user], admins: true, packs: [], shareable: false } });
     await this.journal.append(binding, 'result', 'read_back', 'completed', { reference: `src:${artifact.body.sha256}`, items: projected.length, no_verdict: projected.length }, [response.source]);
     await this.release(binding, client, remoteLease);
