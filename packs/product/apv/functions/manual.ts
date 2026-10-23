@@ -341,6 +341,19 @@ function existingPath(catalog: CommandCatalog, words: readonly string[]): string
   return node.path;
 }
 
+/** Whether a literal with a {a|b} group anywhere resolves through at least one expansion of every group. */
+function variantSpellingResolves(catalog: CommandCatalog, literal: string): boolean {
+  if (!/\{[^}]*\|[^}]*\}/u.test(literal)) return false;
+  const expand = (words: string[], at: number): boolean => {
+    if (at >= words.length) return resolves(catalog, words.join(' '));
+    const word = words[at]!;
+    const group = /^\{([^}]*)\}$/u.exec(word);
+    if (group === null) return expand(words, at + 1);
+    return group[1]!.split('|').some((option) => expand([...words.slice(0, at), ...option.trim().split(/\s+/u).filter((token) => token !== ''), ...words.slice(at + 1)], at));
+  };
+  return expand(literal.split(' '), 0);
+}
+
 /** Whether a leading run of the literal's words is a complete command of the catalog (the drift check: exact words). */
 /** A head word never contains the slash: two bold runs glued by a plain character are two commands, not one. */
 const HEAD_WORD = /^[A-Za-z][A-Za-z0-9_-]*$/;
@@ -677,9 +690,12 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
 /** Adds one literal to an entry's command_literals (a mention or a signature spelling), capped as putLiterals caps. */
   const putLiteral = (entry: ProducedEntry, literal: string): void => {
     if (literal === '') return;
+    // A row's mentions are drift candidates like any other literal (c3 item 6): they join allLiterals too.
+    allLiterals.add(literal);
     const literals = asStrings(entry.data.command_literals);
     if (literals.length >= MAX_LITERALS) {
-      entry.data.literals_cut = true;
+      // The documented flag (README:181), the same one putLiterals sets — never an undocumented second name.
+      entry.data.command_literals_cut = true;
       return;
     }
     if (!literals.includes(literal)) entry.data.command_literals = [...literals, literal].sort(compareText);
@@ -1040,7 +1056,9 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
           const rowLiteralSet = new Set<string>();
           for (const { anchor: some } of found) {
             const positive = positiveVariantsOf(some);
-            for (const literal of [...new Set((positive ?? [some.words]).map((words) => words.join(' ')))]) {
+            // Both the positive variants AND the raw spelling the row writes: a prose mention of the row's own
+            // signature (the cell's bold span) never counts as drift against it (c3 item 6).
+            for (const literal of [...new Set([...(positive ?? []), some.words].map((words) => words.join(' ')))]) {
               rowLiteralSet.add(literal);
               allLiterals.add(literal);
             }
@@ -1131,7 +1149,9 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
         if (existingPath(catalog, literal.split(' ')) === null) unresolved.add(literal);
         continue;
       }
-      if (!resolves(catalog, literal)) unresolved.add(literal);
+      // A mention that spells a variant group itself (demo {pool|route} add — the row's own signature) resolves
+      // when ANY expansion resolves; the group token is never a tree word (c3 item 6).
+      if (!resolves(catalog, literal) && !variantSpellingResolves(catalog, literal)) unresolved.add(literal);
     }
     if (unresolved.size > 0) {
       const sorted = [...unresolved].sort(compareText);

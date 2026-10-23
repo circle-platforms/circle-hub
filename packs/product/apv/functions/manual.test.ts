@@ -1121,6 +1121,20 @@ describe('applicability from explicit conditions', () => {
     assert.ok(!variantCurrent.warnings.some((w) => w.includes('漂移候选')), variantCurrent.warnings.join('；'));
   });
 
+
+  it('a prose mention in a placed multi-command row is drift, and the literal cap flags command_literals_cut (closure c3 item 6)', () => {
+    const tree = commandCatalog(xml('<commands><scope type="global"><menu name="demo"><menu name="pool"><item name="add" help_string="a"><arguments></arguments></item><item name="mode" help_string="m"><arguments></arguments></item></menu></menu></scope></commands>')).catalog;
+    const row = produceManualEntries(markdown('# 章\n\n## 配置命令\n\n| 命令 | 说明 |\n|---|---|\n| **demo pool add** 与 **demo pool mode** | 配合，见 `demo pool gone` |\n'), null, { catalog: tree });
+    assert.ok(row.warnings.some((w) => /漂移候选[^：]*：.*demo pool gone/.test(w)), row.warnings.join('；'));
+    // Past the literal cap the row sets the documented flag, never an undocumented one.
+    const many = Array.from({ length: 105 }, (_, i) => `**demo pool cmd${i}**`).join(' 与 ');
+    const cut = produceManualEntries(markdown(`# 章\n\n## 配置命令\n\n| 命令 | 说明 |\n|---|---|\n| ${many} | 说明 |\n`), null, { catalog: tree });
+    const rowEntry = cut.entries.find((entry) => String(entry.statement).includes('cmd0'));
+    assert.ok(rowEntry !== undefined);
+    assert.equal((rowEntry.data as { command_literals_cut?: boolean }).command_literals_cut, true, JSON.stringify(rowEntry.data));
+    assert.equal((rowEntry.data as { literals_cut?: boolean }).literals_cut, undefined, 'the undocumented flag never appears');
+  });
+
   it('a shared multi-row entry carries a condition only when every row states it (closure finding 8)', () => {
     const tree = commandCatalog(xml('<commands><scope type="global"><menu name="demo"><menu name="pool"><item name="add" help_string="a"><arguments></arguments></item></menu></menu></scope></commands>')).catalog;
     // A grid table (not split by row): one row conditioned, one not — the shared entry stays 未声明.
