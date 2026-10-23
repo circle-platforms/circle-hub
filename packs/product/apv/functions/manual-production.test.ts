@@ -142,6 +142,9 @@ describe('production with the real manual producer', () => {
     assert.ok(again.ok, again.reason ?? '');
     assert.equal(again.root, first.root, 'byte-identical reproduction (K01)');
     assert.ok((await nodeDigest(first.root as string, ['manual', 'cli'])) !== null, 'the manual namespace hangs in the root');
+    // Every production namespace the manual producer fills has a non-null digest (closure finding 22): commands
+    // because the tree names them, manual because the namespaces hang in the root above.
+    assert.ok((await nodeDigest(first.root as string, ['commands', 'demo', 'pool', 'add'])) !== null, 'the named command hangs in /commands');
     const warning = JSON.stringify(again);
     assert.ok(!warning.includes('内部错误'), warning);
 
@@ -154,6 +157,27 @@ describe('production with the real manual producer', () => {
       'the manual subtree is shared by the two builds (the manual never names the added command)',
     );
     assert.notEqual(await nodeDigest(second.root as string, ['commands']), await nodeDigest(first.root as string, ['commands']));
+  });
+
+
+  test('renaming a chapter heading leaves every /commands node digest unchanged (a heading is no entry data)', async () => {
+    external.set('manual:cli:10.6.1', { bytes: MANUAL, mediaType: 'text/markdown' });
+    const before = await knowledge.produceTree({ product, build: build('Rel_APV_10_6_1_8', 'site:tree:a'), by: admin });
+    assert.ok(before.ok, before.reason ?? '');
+    // A chapter inserted before 命令 renumbers it: 3 命令 would become 4 命令 in the heading chain.
+    const renumbered = MANUAL.replace('# 命令', '# 4 命令');
+    assert.notEqual(renumbered, MANUAL);
+    external.set('manual:cli:10.6.1', { bytes: renumbered, mediaType: 'text/markdown' });
+    const after = await knowledge.produceTree({ product, build: build('Rel_APV_10_6_1_9', 'site:tree:a'), by: admin });
+    assert.ok(after.ok, after.reason ?? '');
+    for (const names of [['commands', 'demo', 'pool', 'add'], ['commands', 'demo', 'probe'], ['commands', 'demo', 'route', 'static']]) {
+      assert.equal(
+        await nodeDigest(after.root as string, names),
+        await nodeDigest(before.root as string, names),
+        `${names.join('/')} keeps its digest when only a heading changed`,
+      );
+    }
+    external.set('manual:cli:10.6.1', { bytes: MANUAL, mediaType: 'text/markdown' });
   });
 
   test('editing one manual section changes only its node and its ancestors to the root', async () => {

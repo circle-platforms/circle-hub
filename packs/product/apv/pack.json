@@ -48,7 +48,7 @@
     },
     {
       "path": "functions/documents.ts",
-      "sha256": "ef084e1312bbc9a58743664275cfea2c9dbd8342bf6e6dc64c89aef937f1836a",
+      "sha256": "56a96048f95df722085f51a3f24389e1ee204628a1dd67b32d44613ca897c0af",
       "size": 3232
     },
     {
@@ -73,18 +73,18 @@
     },
     {
       "path": "functions/manual.ts",
-      "sha256": "2b4d158dbf619a8de01d5ef3f03be96873473690af70aadb27cdc004de92bd03",
-      "size": 43561
+      "sha256": "d8b0a6d32927f5abacbb60583acb1c237274960827621793f13daab32d9c5500",
+      "size": 63826
     },
     {
       "path": "functions/naming.ts",
-      "sha256": "03198bacf74a2912a9834053fa4d5229f7174b98aea9e3093eddc048613885ee",
+      "sha256": "a3ebd8dad3e791598184440cf7caf168a30446bd1ec23a03f983a9da127c2eee",
       "size": 8645
     },
     {
       "path": "functions/producers.ts",
-      "sha256": "46702c42869b70311e6af87215d02e67a0e21decfa78b7f5efa0efaa9595648e",
-      "size": 6803
+      "sha256": "351961959cd370a57466a6b9638703fbadddfba240a961371305a9ff2f7ad386",
+      "size": 8982
     },
     {
       "path": "functions/release-notes.ts",
@@ -118,8 +118,8 @@
     },
     {
       "path": "functions/types.ts",
-      "sha256": "839877f97830c2ee91046a860b8bf445a50305f65e8125a3b733b7a9e288413e",
-      "size": 13373
+      "sha256": "0cf96fcf26d96ff58a278d5a70163bc788b43637198ff3bfb6ed1fd6315271a1",
+      "size": 13934
     },
     {
       "path": "functions/util.ts",

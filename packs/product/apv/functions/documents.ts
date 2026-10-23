@@ -1,7 +1,7 @@
 // Version lines of the product's documents (product knowledge): the manual folders rel_apv_<line> and rel_nsae_<line> of the
-// manual store, and spec, product and qa documents by the version tokens in their names or titles (APV 10.4.6, NSAE10.4.6,
-// V10.4.6, 10_4_6). APV and NSAE are one product: an NSAE-named document belongs to the same line as the APV-named one.
-// Lines compare as naming.ts lineKey does (10.5 and 10.5.0 are one line). The manual store's own read finds a line's folder
+// manual store, and spec, product and qa documents by the version tokens in their names or titles (APV 10.6.4, NSAE10.6.4,
+// V10.6.4, 10_6_4). APV and NSAE are one product: an NSAE-named document belongs to the same line as the APV-named one.
+// Lines compare as naming.ts lineKey does (10.7 and 10.7.0 are one line). The manual store's own read finds a line's folder
 // by the numbers it ends in; these functions are the product's mapping for the later capabilities (case location, the
 // knowledge of specs per version).
 import { familyOf, lineKey } from './naming.ts';
@@ -13,13 +13,13 @@ const FOLDER = /^rel_(apv|nsae)_([0-9]{1,3}(?:_[0-9]{1,3}){1,3})$/i;
 const TOKEN = /(?<![0-9A-Za-z._])(?:(APV|NSAE)[\s_-]*)?[vV]?([0-9]{1,2}(?:[._][0-9]{1,2}){1,2})(?![0-9]|[._][0-9])/g;
 const MAX_TEXT = 4096;
 
-/** The line of a manual folder (rel_apv_10_4_6 and rel_nsae_10_4_6 are 10.4.6); null for any other name. */
+/** The line of a manual folder (rel_apv_10_6_4 and rel_nsae_10_6_4 are 10.6.4); null for any other name. */
 export function folderLine(name: string): string | null {
   const match = typeof name === 'string' ? FOLDER.exec(name.trim()) : null;
   return match === null ? null : lineKey(match[2].replaceAll('_', '.'));
 }
 
-/** The manual folder names of a line under both names, APV first (10.5 gives rel_apv_10_5 and rel_apv_10_5_0, and the NSAE ones). */
+/** The manual folder names of a line under both names, APV first (10.7 gives rel_apv_10_7 and rel_apv_10_7_0, and the NSAE ones). */
 export function folderNames(line: string): string[] {
   const key = lineKey(line);
   if (!/^[0-9]{1,3}(?:\.[0-9]{1,3}){1,3}$/.test(key)) return [];

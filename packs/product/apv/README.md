@@ -108,7 +108,7 @@ Selection (K01 R[10], W03 R[0], W06 F[6])
 - `basis` is the provenance type: `declared` or `projected`.
 
 Sync plan
-- Hub pages by name: a product name without `rel_` followed only by a version (`apv_10_5`, `apv_10_4_6`) or by no version
+- Hub pages by name: a product name without `rel_` followed only by a version (`apv_10_7`, `apv_10_6_4`) or by no version
   (`apv_trunk`, `apv_10_x_patch`). Their content decides: a hub page read that lists builds is a listing page (warning).
   Hub pages linked from hub pages are beyond depth 2 and skipped with a reason.
 - Listing pages by name: `[rel_]<family>[_<platform>]_<n>_<n>[...]_<tokens>`. Mainline: only the version or a mainline
@@ -151,7 +151,7 @@ Producers (K02, K04, C07)
 - Manual (markdown): the manual hangs in two namespaces. A command anchor (a paragraph that is only the bold head plus
   emphasized parameters, `**demo pool add** *\<name\> \[weight\]*`, also several spans, or a heading written that way)
   hangs at its command node only when the command exists in the build's command tree — /commands nodes are built by the
-  command-tree producer alone; without a tree (a direct call) the literal decides, unchecked. Head groups hold
+  command-tree producer alone; without a tree a DIRECT CALL places by the literal unchecked, while a PRODUCTION with no tree slot or a non-xml@1 tree keeps every signature at its section node (a warning names the missing fact and the next action, and no drift list is computed). Head groups hold
   alternatives of one or more words (`{tcp|probe hello}`); the key is the words before the first `{}`/`[]` group (a
   leading optional group is skipped): the nearest common node of the variants (K01 R[3]). A signature whose command is
   missing stays a definition entry at its section node. The blocks after an anchor, up to the next anchor or heading,
@@ -167,9 +167,14 @@ Producers (K02, K04, C07)
   every one exists and the ancestor is at least one word deeper than /commands; a nearest common ancestor of /commands
   itself is not a placement (real data: over half of the multi-command rows would land there) — the row stays at the
   section node, as does any row naming a missing command. A cell counts as a signature only when the whole cell is a
-  signature or a list of signatures joined by bare connectives; a bold span inside prose is a mention, recorded in
-  `command_literals` only. The header and the rows without a signature (parameter rows) make one remainder text entry,
-  which follows the current command, or stays at the section node. Grid, multiline and simple tables are not split
+  signature or a list of signatures joined by bare connectives (与/和/及/或、顿号、逗号、斜线／; under a header that
+  names commands a slash between two signature-shaped runs splits them, elsewhere a plain-character join is one value
+  or term cell); a bold span inside
+  prose is a mention, recorded in `command_literals` only. A cell holding one bare bold word is a value, a parameter
+  name or a term, never a signature (unless the table header names commands): such rows keep the table's remainder
+  and the word is recorded in `command_literals` only. The header and the rows without a signature make one remainder
+  text entry, which follows the current command, or stays at the section node; a row that states its own condition
+  becomes its own entry with that condition, and the shared entry stays 未声明. Grid, multiline and simple tables are not split
   (their rows are not single lines).
 - Command literals (K05 R[2]): what the author marked — bold spans, backtick spans, the quote pairs “” ‘’ 「」 『』, the
   command lines after a prompt in code blocks, and every signature (its command words and variants) — is recorded as
@@ -342,8 +347,10 @@ Producer `cases` (`cases.ts`, entry kind `case`; the product pack declares no ca
 - The producer is still tied to markdown@1: the fragment parser key, the anchor and literal inline syntax (`**…**`,
   backticks, `*\<param\>*`), the pipe-table row split, the `h/` selector decoding and the block kinds are Markdown's;
   only the section placement reads the neutral block path. The task asks for dependence on a document model with
-  section paths alone; separating a markdown adapter from the placement, literal and applicability logic is left to the
-  adoc task (K4), which can plan for it from this note.
+  section paths alone, and that is what the options give: `fragmentParser` names the input model's parser key and
+  `sectionSelector` renders a section path as that model's selector (defaults: markdown@1 and h/). The adoc producer
+  passes its own pair, so K4's placement reuse needs no change here; only the markdown@1 h/ decoding stays the
+  default inside this producer.
 - Release notes were not sampled: the structure is the one described in the task, so the heading and column patterns may
   need additions once real notes are read.
 - Platform tokens of build names (`HG-K`) and of page names (`hg_k`, `ft_kylinv10`) are kept as written; they are not
@@ -433,11 +440,11 @@ pack and reviews a mind map against the root it produced.
   in `CatalogParam`) would replace the overload expansion.
 - **knowledge**: the Hub calls no model (decision 15): `path: null` entries and `unplaced` spans stay unplaced at the
   root (the fixed-bug entries of a build, for example). The manual producer's markdown path no longer emits unplaced
-  spans; what still waits for the bot's verified placement proposals (K04 R[6]) is the transitional catalog JSON's
-  output. Read-time literal relations now use `product.json.links`, frozen in the selected composition. The production
-  warning and read-time view call the same generic evaluator, with exact or longest-prefix matching declared by the pack.
-  Drift remains a computed fact, never a separate record or a decision about a manual erratum versus a defect. Review and
-  regression-scope consumption is the separately authorized second step.
+  spans; no output of the manual producer waits for placement proposals in production: the markdown path places
+  every block, and catalog spans never reach a production (the catalog JSON is reachable only through direct calls).
+  Read-time literal relations now use `product.json.links`, frozen in the selected composition. Production warnings and
+  the read-time view call the same generic evaluator. Drift remains a fact, not a manual-erratum or defect judgment.
+  Review and regression-scope consumption is the separately authorized second step.
 - **integrator**: a review that targets an unreleased build (the newest build of a line still in development, under either
   name) needs the sync with `includeUnreleased` for that line, or a released build named at start_run.
 - **knowledge (case index)**: `external` is on the list element and the producer matches documents by it. The slot still

@@ -268,10 +268,10 @@ describe('the producers', () => {
       assert.ok(literals.has(literal), literal);
     }
     assert.ok(!out.warnings.some((warning) => warning.includes('漂移')));
-    // Without the tree slot the anchors are placed unchecked.
+    // Without the tree slot no unchecked command path is created.
     const without = manual({ build: knownBuild, slots: { cli: slot('markdown@1', model), app: null }, params: {} });
-    assert.ok(without.warnings.some((w) => w.includes('没有命令树')), without.warnings.join('\n'));
-    assert.ok(without.entries.some((e) => e.path === '/commands/demo/probe'));
+    assert.ok(without.warnings.some((w) => w.includes('命令树不可用') && w.includes('签名留在章节节点') && w.includes('xml@1')), without.warnings.join('\n'));
+    assert.ok(without.entries.every((e) => (e.path ?? '').startsWith('/manual/')), 'no synthetic /commands path without a usable tree');
   });
 
   it('release notes: defects of the build from the site\'s fixed-bug list or a release note', () => {
@@ -301,7 +301,7 @@ describe('the version lines of documents', () => {
     assert.equal(folderLine('rel_apv_10_6_4'), '10.6.4');
     assert.equal(folderLine('rel_nsae_10_6_4'), '10.6.4');
     assert.equal(folderLine('rel_apv_10_7_0'), '10.7');
-    assert.equal(folderLine('rel_other_10_5'), null);
+    assert.equal(folderLine('rel_other_10_9'), null);
     assert.deepEqual(folderNames('10.7'), ['rel_apv_10_7', 'rel_apv_10_7_0', 'rel_nsae_10_7', 'rel_nsae_10_7_0']);
     assert.deepEqual(documentLines('NSAE_10.6.4 会话保持说明'), [{ line: '10.6.4', family: 'NSAE', token: 'NSAE_10.6.4' }]);
     assert.deepEqual(documentLines('APV V10.7.0 与 10_6_4 的差异').map((d) => d.line), ['10.7', '10.6.4']);
@@ -325,3 +325,20 @@ describe('the declared functions in the Hub sandbox', { skip: (await osIsolation
     });
   }
 });
+
+  it('aggregates many command-tree warnings so the manual drift text stays in the kept list (closure finding 10)', () => {
+    const args = Array.from({ length: 210 }, (_, i) => `<arg name="arg${i}" optional="maybe" help_string="h"/>`).join('');
+    const treeXml = `<commands><scope type="global"><menu name="demo"><item name="probe" help_string="p"><arguments>${args}</arguments></item></menu></scope></commands>`;
+    const slots = { tree: slot('xml@1', xml(treeXml)), cli: slot('markdown@1', markdown('**demo gone** *\\<x\\>*\n\n说明。\n')) };
+    const out = manual({ build: knownBuild, slots: { ...slots, app: null }, params: {} });
+    const drift = out.warnings.filter((w) => w.includes('漂移候选'));
+    assert.ok(drift.length > 0, out.warnings.slice(0, 3).join('\n'));
+    const perArg = out.warnings.filter((w) => w.includes('optional 取值'));
+    assert.ok(perArg.length <= 3, `per-argument warnings must aggregate: ${perArg.length}`);
+    assert.ok(perArg.length === 0 || perArg.some((w) => w.includes('同类')), out.warnings.slice(0, 5).join('\n'));
+    // The aggregation lives in the commandTree producer itself.
+    const treeOut = commandTree({ build: knownBuild, params: {}, slots: { tree: slot('xml@1', xml(treeXml)) } });
+    const treePerArg = treeOut.warnings.filter((w) => w.includes('optional 取值'));
+    assert.equal(treePerArg.length, 1, JSON.stringify(treeOut.warnings));
+    assert.ok(treePerArg[0]!.includes('同类 210 处'), treePerArg[0]);
+  });

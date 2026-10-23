@@ -44,7 +44,25 @@ export function commandTree(input: unknown): ProducerOutput {
     if (slot === null || slot === undefined) return empty('没有命令树');
     if (slot.parser !== 'xml@1') return empty(`命令树不是 XML（解析器 ${String(slot.parser)}）`);
     const out = produceCommandEntries(slot.model as XmlModel, paramsOf(input) as CommandTreeParams);
-    return { entries: out.entries as ProducedEntry[], warnings: out.warnings };
+    // The catalog's per-argument notes (optional 取值认不出…) can number in the hundreds; one per site fills the
+    // capped warning list ahead of the structural facts. Aggregate each repeated note into one line with its count
+    // (closure finding 10); unique warnings keep their own lines in first-seen order.
+    const seen = new Map<string, { index: number; count: number }>();
+    const aggregated: string[] = [];
+    for (const warning of out.warnings) {
+      // The same note at the same command (any parameter, any value): one line with the count. The site keeps its
+      // command words; the parameter name and the unread value fold into the count.
+      const key = warning.replace(/(?<=^)[^ ：]+(?: [^ ：]+)*?(?= 参数 )/u, '×').replace(/(?<=× 参数 )[^ ：]+/u, '×') + warning.replace(/^.*?(?:optional 取值|limit|length)/u, '');
+      const at = seen.get(key);
+      if (at === undefined) {
+        seen.set(key, { index: aggregated.length, count: 1 });
+        aggregated.push(warning);
+      } else {
+        at.count += 1;
+        aggregated[at.index] = `${aggregated[at.index]!.replace(/（同类 [0-9]+ 处）$/, '')}（同类 ${at.count} 处）`;
+      }
+    }
+    return { entries: out.entries as ProducedEntry[], warnings: aggregated };
   } catch (error) {
     return empty(internalError(error));
   }
@@ -55,7 +73,9 @@ const withSlot = (fragment: FragmentRef, slot: string): FragmentRef & { slot: st
 /**
  * Manuals of the line: signature paragraphs are definitions (at /commands only when the build's command tree has the
  * command), the text under a command behaviours, every other block hangs at its section node under /manual/<slot>. The
- * `tree` slot (the build's command tree) decides existence and the drift list; without it anchors are placed unchecked.
+ * `tree` slot (the build's command tree) decides existence and the drift list. Two modes: a direct call without a
+ * catalog places by the literal, unchecked; a production with no tree slot or a non-xml@1 tree keeps every signature
+ * at its section node, warns with the missing fact and the next action, and lists no drift.
  */
 export function manual(input: unknown): ProducerOutput {
   const entries: ProducedEntry[] = [];
@@ -67,18 +87,20 @@ export function manual(input: unknown): ProducerOutput {
     let catalog: CommandCatalog | null | undefined;
     const catalogOf = (): CommandCatalog | null => {
       if (catalog !== undefined) return catalog;
-      catalog = null;
+      // Without a usable tree NO /commands path is created (research 2 rule 1): signatures stay at their section
+      // nodes. The missing fact (which commands this build has) and the next action (supply an xml@1 tree) are named.
       const tree = slotOf(input, 'tree');
       if (tree === null || tree === undefined) {
-        warnings.push('没有命令树，签名按字面挂到命令节点（不能核对该节点在本构建里存在），也没有漂移候选清单');
+        warnings.push('命令树不可用（没有 tree 槽）：签名留在章节节点，没有漂移候选清单；给本构建的命令树（xml@1）后重新生产');
         return null;
       }
       if (tree.parser !== 'xml@1') {
-        warnings.push(`命令树不是 XML（解析器 ${String(tree.parser)}），签名按字面挂到命令节点，没有漂移候选清单`);
+        warnings.push(`命令树不可用（解析器是 ${String(tree.parser)}，不是 xml@1）：签名留在章节节点，没有漂移候选清单；给本构建的命令树（xml@1）后重新生产`);
         return null;
       }
       const built = commandCatalog(tree.model as XmlModel);
-      warnings.push(...built.warnings);
+      // The command-tree producer reports the catalog's own warnings; repeating them here only fills the capped
+      // warning list ahead of the manual's drift warning (finding 20).
       catalog = built.catalog;
       return catalog;
     };
@@ -92,7 +114,12 @@ export function manual(input: unknown): ProducerOutput {
         warnings.push(`${name} 手册不是 Markdown（解析器 ${String(slot.parser)}），没有读`);
         continue;
       }
-      const out = produceManualEntries(slot.model as MarkdownModel, heads, { name, catalog: catalogOf() });
+      // With an unusable tree the entries hang at their section nodes: no synthetic /commands path (research 2
+      // rule 1), and the warning above names the missing fact and the next action.
+      const built = catalogOf();
+      const out = built === null
+        ? produceManualEntries(slot.model as MarkdownModel, heads, { name, noTree: true })
+        : produceManualEntries(slot.model as MarkdownModel, heads, { name, catalog: built });
       for (const entry of out.entries) entries.push({ ...entry, fragments: entry.fragments.map((f) => withSlot(f, name)) });
       for (const span of out.unplaced) unplaced.push({ ...span, fragment: withSlot(span.fragment, name) });
       warnings.push(...out.warnings.map((w) => `${name}：${w}`));
