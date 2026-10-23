@@ -50,7 +50,7 @@ export default function check(input: unknown): CheckOutcome[] {
       const selection = selected ? `PLM 构建记录 ${selected.id} ${shown(selected.name, 40)}；` : '';
       const detailNotice = row.plm_returned ? '' : `${row.plm_responded ? `PLM 应答里没有编号 ${row.id}` : 'PLM 需求详情没有读到（来源不可用）'}；${data.next_actions.join('；')}；`;
       let statement = `${selection}${detailNotice}需求 ${row.id}（状态：${status}；阶段：${stage}）：${row.case_count_lower_bound ? `至少 ${row.indexed_match_count ?? row.cases.length} 个已索引条目` : `${row.cases.length} 个已索引用例`}${row.cases.length ? `追溯：${row.cases.slice(0, 5).map(c => `${c.document ?? ''}:${c.case} ${shown(c.title, 30)}`).join('；')}${row.cases.length > 5 ? `；另有 ${row.cases.length - 5} 个` : ''}` : ''}${partial}；${scopeText(row.scope)}`;
-      if (!(row.indexed_match_count ?? row.cases.length)) statement += `；在构建 ${row.build}、知识根 ${facts.root} 的完整需求号索引视图（已读 ${view.listed_entries} 个用例条目）里，没有条目携带需求号 ${row.id}；不推断未索引用例`;
+      if (!(row.indexed_match_count ?? row.cases.length)) statement += `；在构建 ${row.build}、知识根 ${facts.root} 的完整需求号键列表覆盖的索引视图（已读 ${view.listed_entries} 个用例条目）里，没有条目携带需求号 ${row.id}；不推断未索引用例`;
 
       return { ...base, verdict: 'support', statement: clip(statement, 500) };
     });

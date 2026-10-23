@@ -7,7 +7,7 @@ const gold: StoryGold = { product: 'synthetic', build: 'Synthetic_10_6', scope: 
   { story: '21', status: 'synthetic-state', stage: 'synthetic-stage', plm_returned: true, cases: [{ id: '91:c1', title: '合成用例' }] },
   { story: '22', status: null, stage: null, plm_returned: false, cases: [] },
 ] };
-const text = '运行 run_synthetic\n完整结果 rec:' + 'a'.repeat(64) + '\n- 21 | 需求 21 | 1 个用例\n- 22 | 需求 22 | 无已索引用例（完整视图内）\n陈述：需求 21（状态：synthetic-state；阶段：synthetic-stage）：1 个已索引用例追溯：91:c1 合成用例；需求范围依据：声明\n陈述：需求 22（状态：应答未包含该编号；阶段：应答未包含该编号）：0 个已索引用例；PLM 应答里没有编号 22；在知识根中完整需求号索引视图里，没有条目携带需求号 22；不推断未索引用例\n陈述：需求 2 个：已追溯 1 个，未追溯 1 个；PLM 没返回 1 个；PLM 详情未读到 0 个；需求范围依据：声明；PLM 返回的状态不是单个值的有 0 个，没有按状态计数；PLM 返回的阶段不是单个值的有 0 个；原样状态计数：synthetic-state 1 个';
+const text = '运行 run_synthetic\n完整结果 rec:' + 'a'.repeat(64) + '\n- 21 | 需求 21 | 1 个用例\n- 22 | 需求 22 | 无已索引用例（完整视图内）\n陈述：需求 21（状态：synthetic-state；阶段：synthetic-stage）：1 个已索引用例追溯：91:c1 合成用例；需求范围依据：声明\n陈述：需求 22（状态：应答未包含该编号；阶段：应答未包含该编号）：0 个已索引用例；PLM 应答里没有编号 22；在知识根中完整需求号键列表覆盖的索引视图里，没有条目携带需求号 22；不推断未索引用例\n陈述：需求 2 个：已追溯 1 个，未追溯 1 个；PLM 没返回 1 个；PLM 详情未读到 0 个；需求范围依据：声明；PLM 返回的状态不是单个值的有 0 个，没有按状态计数；PLM 返回的阶段不是单个值的有 0 个；原样状态计数：synthetic-state 1 个';
 const turns = (value: string): LoggedTurn[] => [{ index: 0, tools: ['hub_start_run'], toolResults: [] }, { index: 1, tools: [], toolResults: [{ id: '1', text: value, isError: false }] }];
 test('scenario checks individual rows and counts without disclosing ids, titles, state or build in check output', () => {
   const checks = scenario(gold).check(turns(text));

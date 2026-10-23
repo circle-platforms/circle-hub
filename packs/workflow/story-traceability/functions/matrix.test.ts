@@ -26,7 +26,7 @@ test('one item per requested id including unread; exact story join excludes same
   const outcomes = check({ subject: s }) as any[];
   assert.deepEqual(outcomes.map(o => o.verdict), ['support', 'support', 'support']);
   assert.equal(outcomes[2].data.plm_returned, false);
-  assert.match(outcomes[2].statement, /完整需求号索引视图/);
+  assert.match(outcomes[2].statement, /完整需求号键列表覆盖的索引视图/);
   assert.equal(outcomes[2].data.coverage.complete, true);
   assert.ok(outcomes[2].grounds.includes(s.context.groups[0].view.source));
   assert.match(outcomes[2].statement, /10_6/);
@@ -85,13 +85,13 @@ test('empty raw story arrays contradict a key mapping while omitted raw fields p
 });
 
 test('partial views refuse projection and name the missing facts and recovery action', () => {
-  for (const patch of [{ total_keys: 4, truncated: true }, { skipped: 1, notes: ['来源 src:synthetic 不可读'] }, { only: ['21'] }, { total_entries: 3 }]) {
+  for (const patch of [{ total_keys: 4, truncated: true }, { skipped: 1, notes: ['来源 src:synthetic 不可读'] }, { only: ['21'] }]) {
     const i = input(); Object.assign(i.inputs[1].model as any, patch);
     const p = project(i) as any; assert.ok(p.error); assert.match(p.error.message, /缺少|不完整/); assert.match(p.error.fix, /知识同步/);
     if ('notes' in patch) assert.match(p.error.message, /src:synthetic/);
   }
   const i = input(); const view = i.inputs[1].model as any; delete view.entries[Object.keys(view.entries)[0]];
-  assert.ok((project(i) as any).error);
+  assert.ok(!(project(i) as any).error, 'missing bodies do not hide an absent key');
 });
 test('corrupt and conflicting inputs remain refused', () => {
   const i = input(); assert.ok((project({ inputs: [] }) as any).error);
@@ -191,17 +191,11 @@ test('every projection refusal conforms to projection-output and retains its own
   assert.match(refusal.error.fix, /一致原件/);
 });
 
-for (const patch of [{ cut_keys: ['99'], truncated: true }, { cut_keys: ['00021'], truncated: true }, { only: ['00021'], truncated: true }, { total_keys: 99, truncated: true }]) test(`listed matches remain determinate despite ${JSON.stringify(patch)}`, () => {
+for (const patch of [{ cut_keys: ['00021'], truncated: true }, { only: ['00021'], truncated: true }, { total_keys: 99, truncated: true }]) test(`listed matches remain determinate despite ${JSON.stringify(patch)}`, () => {
   const i = input(['21']); Object.assign(i.inputs[1].model as object, patch);
   const s = projected(i); const [outcome] = check({ subject: s }) as any[];
   assert.equal(outcome.verdict, 'support'); assert.match(outcome.statement, /至少 2 个已索引条目/);
   assert.equal(outcome.data.coverage.complete, false);
-});
-test('complete key and entry listings prove an absent id even when an unrelated key was cut', () => {
-  const i = input(['23']); Object.assign(i.inputs[1].model as object, { cut_keys: ['99'], truncated: true });
-  const s = projected(i); const [outcome] = check({ subject: s }) as any[];
-  assert.equal(outcome.verdict, 'support'); assert.equal(outcome.data.case_count, 0);
-  assert.match(outcome.statement, /没有条目携带需求号 23/);
 });
 test('only the undetermined ids refuse and the fix acknowledges normalized-only matching needs', () => {
   const i = input(['21', '23']); Object.assign(i.inputs[1].model as object, { total_keys: 99, truncated: true });
