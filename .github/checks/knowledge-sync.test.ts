@@ -25,7 +25,7 @@ function scratch(run: (root: string, env: NodeJS.ProcessEnv) => void): void {
 }
 
 function runScript(name: string, env: NodeJS.ProcessEnv, args: string[] = []): void {
-  const script = new URL(name, import.meta.url);
+  const script = new URL(`../../ops/knowledge-sync/${name}`, import.meta.url);
   const result = spawnSync('/bin/bash', [script.pathname, ...args], { env, encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
 }

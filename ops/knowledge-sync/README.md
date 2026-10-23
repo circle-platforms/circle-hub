@@ -69,3 +69,10 @@ then remains only in their text. Exact line coverage and directory mappings belo
 
 The owner or integrator removes the two cron entries, the added sync directory, `release/` under the configured mirror root,
 and the added manual output directories. This section describes the procedure; no rollback is performed by these scripts.
+
+## Synthetic verification
+
+`.github/checks/knowledge-sync.test.ts` runs with `npm run test:docs` and is type-checked by
+`npx tsc --noEmit -p .github/checks`; the existing docs CI job runs both. Its executables and directories are synthetic,
+and no conversion service or document host is contacted. Run it alone with
+`node --test --test-concurrency=1 .github/checks/knowledge-sync.test.ts`.
