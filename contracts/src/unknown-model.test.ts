@@ -12,6 +12,7 @@ import {CheckEntry,ErrorHandlingRow,RequirementTemplate} from './pack.ts';
 import {SkippedItem} from './submission.ts';
 import * as resources from './resources.ts';
 import {ReadProjectionOutput,RouteDeclaration} from './resources.ts';
+import {CatalogParam} from './tables.ts';
 import {RangeTable} from './tables.ts';
 import {CheckOutcome} from './tables.ts';
 import {LayerResult} from './validation.ts';
@@ -158,4 +159,15 @@ test('item 9 activates at most one provider of an external type in an environmen
   assert.ok(resources.ReadResourceRoutingSet.safeParse([first,{...second,enabled:false}]).success);
   assert.ok(resources.ReadResourceRoutingSet.safeParse([first,{...second,types:['synthetic:other']}]).success);
   assert.ok(resources.ReadResourceRoutingSet.safeParse([first,{...second,environment:ENVIRONMENT[1]}]).success);
+});
+
+
+test('item 10 catalogs declare host unions and address roles with resolved scalar constraints',()=>{
+  assert.ok(CatalogParam.safeParse({name:'peer',type:'ip_or_hostname',address_role:'synthetic_peer'}).success);
+  assert.ok(CatalogParam.safeParse({name:'host',type:'hostname'}).success);
+  assert.equal(CatalogParam.safeParse({name:'peer',type:'ip_or_hostname',address_role:' '}).success,false);
+  assert.ok(CatalogParam.safeParse({name:'exact',type:'int',minimum:7,maximum:7}).success);
+  assert.ok(CatalogParam.safeParse({name:'ceiling',type:'int',maximum:7}).success);
+  assert.ok(CatalogParam.safeParse({name:'mode',type:'enum',values:['synthetic_one']}).success);
+  assert.equal(CatalogParam.safeParse({name:'raw',type:'int',limit:7}).success,false,'the core must not guess a product-specific scalar limit mode');
 });

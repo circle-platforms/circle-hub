@@ -192,14 +192,15 @@ export type CatalogTable = z.infer<typeof CatalogTable>;
 
 /** Parameter types of a catalog signature. */
 export const CatalogParamType = z
-  .enum(['string', 'int', 'enum', 'ipv4', 'ipv6', 'mask', 'port', 'keyword'])
-  .describe('string: any word (minLength/maxLength); int: decimal integer (minimum/maximum); enum: one of values; ipv4, ipv6: address; mask: dotted IPv4 netmask; port: 0-65535 (minimum/maximum narrow it); keyword: the literal keyword');
+  .enum(['string', 'int', 'enum', 'ipv4', 'ipv6', 'mask', 'port', 'keyword', 'hostname', 'ip_or_hostname'])
+  .describe('string: any word (minLength/maxLength); int: decimal integer (minimum/maximum); enum: one of values; ipv4, ipv6: address; mask: dotted IPv4 netmask; port: 0-65535 (minimum/maximum narrow it); keyword: the literal keyword; hostname: bounded ASCII DNS labels (single-label and trailing-dot names allowed, no URL/IP coercion); ip_or_hostname: IPv4, IPv6 or that hostname according to the bound catalog contract');
 export type CatalogParamType = z.infer<typeof CatalogParamType>;
 
 export const CatalogParam = z
   .strictObject({
     name: z.string().min(1),
     type: CatalogParamType,
+    address_role:z.string().regex(/\S/).optional().describe('Role identifier from the bound published runtime/bed contract, not an inferred core role'),
     optional: z.boolean().optional().describe('The argument may be omitted'),
     default: z.string().optional().describe('Value used when the argument is omitted, as documented by the source'),
     minimum: z.number().optional().describe('int and port: inclusive lower bound'),
@@ -210,7 +211,7 @@ export const CatalogParam = z
     keyword: z.string().min(1).optional().describe('keyword: the literal word; defaults to the parameter name'),
     description: z.string().optional().describe('Descriptive text; descriptive content is excluded when an impact view compares catalog members by syntax'),
   })
-  .describe('One typed parameter of a signature');
+  .describe('One typed parameter of a signature. A producer interprets a scalar source limit by that source format and emits generic constraints: an exact numeric value uses equal minimum/maximum, a ceiling uses maximum, a member uses values, a length uses maxLength; raw limit is not guessed by the core');
 export type CatalogParam = z.infer<typeof CatalogParam>;
 
 export const CatalogSignature = z

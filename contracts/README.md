@@ -245,3 +245,25 @@ Routes can declare finite pagination and same-origin redirect capacities. Each f
 recorded request; the declaration does not enable a hidden transport follow. `ReadResourceRoutingSet` is the activation
 boundary for registry-provided enabled/type/environment facts: different enabled resources cannot claim the same type in
 the same environment. The registry must call it during activation/routing; this task does not alter a real resource.
+
+### Catalog syntax and remaining ownership (task item 10)
+
+The existing catalog table-language primitive list adds `hostname` and `ip_or_hostname`; they are external-format parameter
+types, like the existing int/ipv4/enum syntax, not a new Hub vocabulary axis. `address_role` names a role from the bound
+published runtime contract; the schema never invents a device role. Minimal parameter checks accept bounded ASCII DNS labels
+(single labels, final dot and ASCII punycode spelling), IPv4/IPv6 or that host union; no DNS lookup, URL coercion or real device
+operation happens. New branch tests include synthetic valid/invalid words and declared length bounds.
+
+A raw scalar source `limit` is not accepted as a universal CatalogParam field. The source producer must interpret its own
+format and emit existing semantic constraints: singleton numeric minimum=maximum, numeric ceiling maximum, enum member
+values, or string length maxLength. hub-view-scope owns the APV command-tree translation, actual address-role mapping,
+automatic credential acceptance/scanner pagination and validity evaluation. `not_evaluated` was already in model 10 and its
+generated vocabulary on this baseline. Those runtime operations are not implemented by adding these contract declarations.
+
+### Scope and rollout
+
+Model/theory text for task items 1/2/4 and the high-level rules was already committed by the integrator in model 10; this
+branch does not rewrite it. Besides the explicitly approved label/source note it changes shapes, generated files and tests.
+The strict check-outcome boundary intentionally rejects a new unknown without top-level missing; engines/pack producers that
+still emit the old form must migrate in the dependent tasks. Only history uses the permissive stored-result reader. No
+runtime scheduler, re-evaluation loop, B07 persistence, deadline worker, real read or deployment is claimed by this task.
