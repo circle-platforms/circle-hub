@@ -600,7 +600,7 @@ from refusal, including submissions left with no action. Startup/minute maintena
 using the session actually recorded by the interrupted call, never the run's start session. Three failed attempts
 lead to a finite named administrator repair request; missing historical session facts likewise go to a named request.
 
-Publication rejects a static fact requirement without checks (`requirements.no_check`) and a dynamic fact requirement
+Publication rejects a static fact requirement without checks through the generated publishable shape (`requirements.shape`, at its `checks` field) and a dynamic fact requirement
 without an observation contract. Start rejects invalid layer/schema/contribution declarations and records a repair
 request addressed to the recorded pack owner. These pre-run requests bind the published pack digest, without making up
 an unstarted run. Owner-facing requests can be listed without granting access to unrelated run contents.
