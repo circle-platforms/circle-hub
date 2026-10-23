@@ -6,7 +6,7 @@ import { parseTree } from './command-diff.ts';
 
 export interface Match { path: string; abbreviated: boolean; via_no: boolean; words: number }
 export interface CaseCommands { key: string; document: string; node: string; comparable: boolean; paths: Match[]; steps: Match[] }
-export interface CommandsGold { schema: 'case-commands-gold@1'; tree_sha256: string; documents: string[]; cases: CaseCommands[]; totals: { cases: number; comparable: number; excluded: number; unplaced: number; step_placed: number } }
+export interface CommandsGold { schema: 'case-commands-gold@1'; tree_sha256: string; documents: string[]; document_cases: Record<string, number>; cases: CaseCommands[]; totals: { cases: number; comparable: number; excluded: number; unplaced: number; step_placed: number } }
 interface Trie { children: Map<string, Trie>; prefixes: Map<string, string | null>; path?: string }
 const trie = (): Trie => ({ children: new Map(), prefixes: new Map() });
 // English short words cannot introduce an abbreviated command (README rule, independent small list).
@@ -134,6 +134,7 @@ export function caseCommandsGold(xml: string, maps: readonly { document: string;
   const scan = commandScanner(xml);
   const cases: CaseCommands[] = [];
   const documents = new Set<string>();
+  const document_cases = Object.create(null) as Record<string, number>;
   const union = (texts: string[]): Match[] => {
     const found = new Map<string, Match>();
     for (const text of texts) for (const match of scan(text)) {
@@ -148,6 +149,7 @@ export function caseCommandsGold(xml: string, maps: readonly { document: string;
     documents.add(document);
     const map = parseMindMap(input.map);
     const nodes = caseNodesOf(map);
+    document_cases[document] = nodes.length;
     const caseIndices = new Set(nodes.map((node) => node.index));
     const counts = new Map<string, number>();
     for (const node of nodes) counts.set(node.id, (counts.get(node.id) ?? 0) + 1);
@@ -158,7 +160,7 @@ export function caseCommandsGold(xml: string, maps: readonly { document: string;
     }
   }
   cases.sort((a, b) => a.key < b.key ? -1 : a.key > b.key ? 1 : 0);
-  return { schema: 'case-commands-gold@1', tree_sha256: sha256(Buffer.from(xml)), documents: [...documents].sort(), cases,
+  return { schema: 'case-commands-gold@1', tree_sha256: sha256(Buffer.from(xml)), documents: [...documents].sort(), document_cases, cases,
     totals: { cases: cases.length, comparable: cases.filter((c) => c.comparable).length, excluded: cases.filter((c) => !c.comparable).length,
       unplaced: cases.filter((c) => !c.paths.length).length, step_placed: cases.filter((c) => !c.paths.length && c.steps.length).length } };
 }

@@ -14,6 +14,9 @@ export interface IndexReport {
 export function compareCommandIndex(gold: CommandsGold, views: readonly unknown[]): IndexReport {
   if (gold.schema !== 'case-commands-gold@1' || !Array.isArray(gold.cases) || !Array.isArray(gold.documents)) throw new Error('金标准格式不对');
   const incomplete: string[] = [];
+  const caseCounts = new Map(gold.documents.map((doc) => [doc, gold.document_cases?.[doc] ?? gold.cases.filter((c) => c.document === doc).length]));
+  const expectedDocuments = gold.documents.filter((doc) => (caseCounts.get(doc) ?? 0) > 0);
+  const zeroDocuments = gold.documents.filter((doc) => caseCounts.get(doc) === 0);
   const hub = new Map<string, Set<string>>();
   const hubDocs = new Set<string>();
   const ignored = new Set<string>();
@@ -63,7 +66,7 @@ export function compareCommandIndex(gold: CommandsGold, views: readonly unknown[
     }
   }
   if (!views.length) incomplete.push('没有索引视图');
-  if (!full && gold.documents.some((doc) => !requested.has(documentKey(doc)))) incomplete.push('分片没有请求全部金标准文档：补导出缺少的 only= 文档');
+  if (!full && expectedDocuments.some((doc) => !requested.has(documentKey(doc)))) incomplete.push('分片没有请求全部金标准文档：补导出缺少的 only= 文档');
   for (const [key, paths] of hub) if (JSON.stringify(sorted(paths)) !== JSON.stringify(sorted(declared.get(key) ?? []))) dataMismatches.add(key);
   const goldMap = new Map(gold.cases.filter((c) => c.comparable).map((c) => [c.key, new Set(c.paths.map((p) => p.path))]));
   const goldKeys = new Set(goldMap.keys()); const hubKeys = new Set(hub.keys());
@@ -77,8 +80,9 @@ export function compareCommandIndex(gold: CommandsGold, views: readonly unknown[
   const goldCases = new Map(gold.cases.filter((c) => c.comparable).map((c) => [c.key, c]));
   const table = (map: Map<string, Set<string>>) => sorted(map.keys()).map((key) => [key, sorted(map.get(key)!)]);
   const counts = {
-    documents_both: [...new Set(gold.documents)].filter((doc) => hubDocs.has(doc)).length,
-    documents_gold_only: difference(gold.documents, hubDocs).length, documents_hub_only: difference(hubDocs, new Set(gold.documents)).length,
+    documents_zero_case: zeroDocuments.length,
+    documents_both: [...new Set(expectedDocuments)].filter((doc) => hubDocs.has(doc)).length,
+    documents_gold_only: difference(expectedDocuments, hubDocs).length, documents_hub_only: difference(hubDocs, new Set(expectedDocuments)).length,
     cases_both: shared.length, cases_gold_only: onlyGold.length, cases_hub_only: onlyHub.length,
     excluded_gold: gold.cases.filter((c) => !c.comparable).length, excluded_hub: ignored.size,
     commands_equal: shared.length - different.filter((row) => goldKeys.has(row.key) && hubKeys.has(row.key)).length, commands_different: different.filter((row) => goldKeys.has(row.key) && hubKeys.has(row.key)).length,
@@ -95,11 +99,11 @@ export function compareCommandIndex(gold: CommandsGold, views: readonly unknown[
   };
   const equal = !onlyGold.length && !onlyHub.length && !different.length && !dataMismatches.size && !counts.documents_gold_only && !counts.documents_hub_only;
   return { verdict: incomplete.length ? '输入不全' : equal ? '相等' : '不相等', counts, hashes: { gold: sha256(JSON.stringify(table(goldMap))), hub: sha256(JSON.stringify(table(hub))) },
-    details: { documents_gold_only: difference(gold.documents, hubDocs), documents_hub_only: difference(hubDocs, new Set(gold.documents)), cases_gold_only: onlyGold, cases_hub_only: onlyHub, paths: different, entry_data_mismatches: sorted(dataMismatches) }, incomplete: sorted(incomplete) };
+    details: { documents_zero_case: zeroDocuments, documents_gold_only: difference(expectedDocuments, hubDocs), documents_hub_only: difference(hubDocs, new Set(expectedDocuments)), cases_gold_only: onlyGold, cases_hub_only: onlyHub, paths: different, entry_data_mismatches: sorted(dataMismatches) }, incomplete: sorted(incomplete) };
 }
 export function renderIndexReport(report: IndexReport): string {
   const labels: Record<string, string> = {
-    documents_both: '两边共有文档', documents_gold_only: '只在 gold 的文档', documents_hub_only: '只在 Hub 的文档',
+    documents_zero_case: 'gold 无用例文档', documents_both: '两边共有文档', documents_gold_only: '只在 gold 的文档', documents_hub_only: '只在 Hub 的文档',
     cases_both: '两边共有用例', cases_gold_only: '只在 gold 的用例', cases_hub_only: '只在 Hub 的用例', excluded_gold: 'gold 不比较用例', excluded_hub: 'Hub 不比较用例',
     commands_equal: '命令集合相等用例', commands_different: '命令集合不等用例', paths_gold_only: '只在 gold 的路径', paths_hub_only: '只在 Hub 的路径', paths_gold_abbreviated: '只在 gold 的路径中经缩写识别', paths_gold_via_no: '只在 gold 的路径中经 no 识别', paths_gold_single_word: '只在 gold 的路径中单词命令',
     unplaced_gold: 'gold 全部未归位用例', unplaced_hub: 'Hub 全部未归位用例', unplaced_gold_comparable: 'gold 可比较未归位用例', unplaced_hub_comparable: 'Hub 可比较未归位用例',

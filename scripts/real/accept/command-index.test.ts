@@ -72,3 +72,10 @@ test('mixed-case definition paths survive independent extraction and both consum
   assert.equal(compareCommandIndex(original, [raw]).verdict, '相等');
   const result = computeScopeCases({ diff: { added: [], removed: [], modified: [path] }, earlierCases: original, laterCases: original, regressionRun: { items: [{ id: 'synthetic-doc:cap' }] }, maintenanceRun: { items: [{ id: 'synthetic-doc:cap' }] } }); assert.equal(result.allEqual, true);
 });
+test('listed zero-case documents are measured separately and do not invent missing Hub keys', () => {
+  const empty = caseCommandsGold('<commands><item name="fixture"/></commands>', [{ document: 'empty-doc', map: { root: { data: { text: 'plain root' } } } }]);
+  assert.equal(empty.document_cases['empty-doc'], 0);
+  const raw = { ...view(), entries: {}, keys: {}, only: [] };
+  const result = compareCommandIndex(empty, [raw]); assert.equal(result.verdict, '相等'); assert.equal(result.counts.documents_zero_case, 1); assert.equal(result.counts.documents_gold_only, 0);
+  assert.deepEqual(result.details.documents_zero_case, ['empty-doc']); assert.ok(!renderIndexReport(result).includes('empty-doc'));
+});
