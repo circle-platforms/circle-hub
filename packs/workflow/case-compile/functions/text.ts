@@ -1,0 +1,54 @@
+// Shared helpers of the case-compile pack functions (pure TypeScript, no imports outside the pack).
+
+export const PACK = 'case-compile';
+
+export function isRecord(value: unknown): value is { [key: string]: unknown } {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+export function clip(text: string, max: number): string {
+  return text.length <= max ? text : `${text.slice(0, Math.max(1, max - 1))}…`;
+}
+
+export function uniqueSorted(values: readonly string[]): string[] {
+  return [...new Set(values)].sort();
+}
+
+export interface PackWarning {
+  code: string;
+  message: string;
+}
+
+export function refusal(code: string, message: string, fix: string, warnings: PackWarning[] = []): { error: { code: string; message: string; fix: string }; warnings: PackWarning[] } {
+  return { error: { code: `${PACK}.${code}`, message, fix }, warnings };
+}
+
+/** A check outcome, statement always closed by the two markers (the synthetic one only when the contract is synthetic). */
+export interface Outcome {
+  verdict: 'support' | 'refute' | 'unknown';
+  code?: string;
+  statement: string;
+  grounds: string[];
+  tier: 'blocking' | 'advisory';
+  reason?: 'missing_input' | 'integrity_unproven' | 'check_error';
+  item?: string;
+  data?: { [key: string]: unknown };
+}
+
+/** The two markers every conclusion of this pack carries (task page A.5): never "可以运行". */
+export function markers(synthetic: boolean): string {
+  return synthetic ? '（按合成合约核对；不证明在真实设备上跑得通）' : '（不证明在真实设备上跑得通）';
+}
+
+export function outcome(kind: Outcome['verdict'], statement: string, tier: Outcome['tier'], item: string, extras: Partial<Outcome> = {}): Outcome {
+  return { verdict: kind, statement, grounds: [], tier, item, ...extras };
+}
+
+/** Wraps a check so a defect of the pack itself is a check_error, never an exception across the boundary. */
+export function guarded(run: () => unknown, failure: (message: string) => unknown): unknown {
+  try {
+    return run();
+  } catch (error) {
+    return failure(error instanceof Error ? error.message : String(error));
+  }
+}

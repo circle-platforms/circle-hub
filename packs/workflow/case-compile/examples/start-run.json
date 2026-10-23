@@ -1,0 +1,17 @@
+{
+  "synthetic": true,
+  "note": "合成示例：开始一次 case-compile 运行的输入写法（用例文档用敏捷平台的脑图 external，合约和清单用管理员发布的命名文档）",
+  "pack": "case-compile",
+  "inputs": {
+    "subject": {
+      "external": "agile:mindmap:doc-1"
+    },
+    "contract": {
+      "external": "doc:doc:compile-contract"
+    },
+    "inventory": {
+      "external": "doc:doc:bed-topology"
+    }
+  },
+  "parameters": {}
+}

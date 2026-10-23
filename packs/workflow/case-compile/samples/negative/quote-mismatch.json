@@ -1,0 +1,26 @@
+{
+  "id": "quote_mismatch",
+  "source": "author",
+  "check": "expected_quotes",
+  "note": "合成反例：引文不是来源里的逐字内容",
+  "subject": {
+    "item": "doc-1:c-1",
+    "quotes": [
+      {
+        "reference": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/s/c-1-s1/0",
+        "text": "间隔生效"
+      }
+    ]
+  },
+  "sources": {
+    "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/s/c-1-s1/0": "配置健康检查间隔 widget health interval 60，健康检查间隔设置成功"
+  },
+  "expect": [
+    {
+      "verdict": "refute",
+      "code": "QUOTE_MISMATCH",
+      "item": "doc-1:c-1",
+      "tier": "blocking"
+    }
+  ]
+}

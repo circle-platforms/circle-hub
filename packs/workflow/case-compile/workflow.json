@@ -1,0 +1,41 @@
+{
+  "schema": "workflow@1",
+  "inputs": [
+    {
+      "slot": "subject",
+      "role": "subject",
+      "description": "评审过的用例文档：敏捷平台的脑图（KityMinder 导出的 application/json，kityminder@1 解析）。取用例的规则和 case-review 一样：带标签（resource）或带标记（priority）的节点是用例，case_rule 参数可限制为只认标签",
+      "accepts": ["agile:mindmap", "application/json"],
+      "required": true,
+      "many": false
+    },
+    {
+      "slot": "contract",
+      "role": "expected",
+      "description": "编译合约命名文档（doc:doc:<名字>，json@1 解析，形状 compile-contract@1）：对象和方法、每个方法的参数个数和类型、禁用的（对象，方法）组合、synthetic 声明。缺省写 doc:doc:compile-contract；合约有问题时整份拒绝并指出位置。包里带的是合成合约：每条结论都写“按合成合约核对”和“不证明在真实设备上跑得通”",
+      "accepts": ["doc:doc"],
+      "required": true,
+      "many": false
+    },
+    {
+      "slot": "inventory",
+      "role": "expected",
+      "description": "台架清单命名文档（doc:doc:<名字>，json@1 解析，形状 test-bed-manifest@1，与 test-bed 包同一份）：设备、类型、接口地址、服务、保留段。缺省写 doc:doc:bed-topology；清单有问题时整份拒绝并指出位置",
+      "accepts": ["doc:doc"],
+      "required": true,
+      "many": false
+    }
+  ],
+  "parameters": [
+    {
+      "name": "case_rule",
+      "description": "取用例的规则：marked（默认）带标签或带标记都算用例；tagged 限制为只认标签（resource 不为空）",
+      "required": false,
+      "schema": { "type": "string", "enum": ["tagged", "marked"] }
+    }
+  ],
+  "product": { "catalogs": ["commands@1"] },
+  "context": ["leases"],
+  "subject": "subject",
+  "projection": { "module": "functions/project.ts" }
+}
