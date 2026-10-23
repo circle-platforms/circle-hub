@@ -46,3 +46,11 @@ test('not_covered carries its own missing fact and named exit', () => {
   assert.ok(result.missing?.includes('未覆盖条目的'));
   assert.ok(LayerResult.safeParse(result).success);
 });
+
+test('awaiting_step carries its own missing fact and named exit', () => {
+  const result = bindRecovery({ layer: 'static', terminal: 'unchecked', reason: 'awaiting_step' }, [], context);
+  assert.equal(result.exit?.request_kind, 'repair');
+  assert.deepEqual(result.exit?.audience, { user: context.runner });
+  assert.ok(result.missing?.includes('所等步骤的完'));
+  assert.ok(LayerResult.safeParse(result).success);
+});

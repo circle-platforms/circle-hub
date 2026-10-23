@@ -17,6 +17,7 @@ const RULES: Partial<Record<Reason, Rule>> = {
   missing_input: { missing: "运行所需的已绑定输入事实；下一步：运行者澄清并补齐后以新修订重跑", request: 'clarification', audience: 'runner' },
   declared_skip: { missing: "被跳过条目的提交产物；下一步：运行者补交该条目后自动重核", request: 'repair', audience: 'runner' },
   not_covered: { missing: "未覆盖条目的提交产物；下一步：运行者补交该条目后自动重核", request: 'repair', audience: 'runner' },
+  awaiting_step: { missing: "所等步骤的完成事实；下一步：运行者完成前置修复或请求后自动重核", request: 'repair', audience: 'runner' },
 };
 
 export function bindRecovery(layer: LayerResult, outcomes: readonly CheckOutcome[], context: RecoveryContext): LayerResult {
