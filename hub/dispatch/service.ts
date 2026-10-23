@@ -263,26 +263,26 @@ export class DispatchService {
     }
     if (options.choice !== 'reconcile' || options.remote_id === undefined) throw new Error('本轮只允许核对、保持未知或标记失败；核对必须给远端编号');
     const d = await this.readingDefinition(binding); const client = this.session(binding, d, await this.secret(binding.executor));
+    const originalLease=intent.body.detail.remote_lease as unknown as RemoteLease;
+    const context={...this.context(binding),request_id:intent.body.detail.request_id,not_after:intent.body.detail.not_after,remote_id:options.remote_id,lease_id:originalLease.id,lease_token:originalLease.token};
+    let state!:Exchange;let result!:Exchange;let readable=false;
     try {
       await client.connect();
-      const originalLease = intent.body.detail.remote_lease as unknown as RemoteLease;
-      const context = { ...this.context(binding),request_id:intent.body.detail.request_id,not_after:intent.body.detail.not_after, remote_id: options.remote_id, lease_id: originalLease.id, lease_token: originalLease.token };
-      const state = await this.read(binding, client, 'status', context, true);
-      const result = await this.read(binding, client, 'result', context, true);
+      state=await this.read(binding,client,'status',context,true);result=await this.read(binding,client,'result',context,true);readable=true;
       const rawTime = at(result.value, d.result.submitted_at);
       const time = readDeclaredTime(rawTime,d.result.submitted_at_scale_ms);
       const window = intent.body.detail.window as { from: string; to: string };
       if (!mapped(d.status.map, at(state.value, d.status.pointer)) || !same(at(result.value, d.result.id), options.remote_id) || at(result.value, d.result.sha256) !== binding.input!.sha256 || !Number.isFinite(time) || time < Date.parse(window.from) || time > Date.parse(window.to)) throw new Error('对账身份、摘要或投递窗口不符；查无记录不能证明未执行');
-      await this.journal.append(binding, 'dispose', 'read_back', 'completed', { disposition: 'reconcile', decided_by: by.id, decided_at: this.now().toISOString(), unfreeze: true, remote_id: options.remote_id, effect_mark: 'disposed', identity_matched: true, digest_matched: true, window_matched: true }, [state.source, result.source]);
-      await this.journal.append(binding, 'receipt', 'read_back', 'completed', { remote_id: options.remote_id, reconciled: true, acceptance: 'accepted' }, [result.source]);
-      const lease = intent.body.detail.remote_lease as unknown as RemoteLease;
-      const stop = this.heartbeat(binding, d, client, lease).stop;
-      try { return await this.observe(by, binding, d, client, options.remote_id, intent.body.detail.fences as unknown as HolderSnapshot[], stop); }
-      finally { await stop(); }
-    } catch {
-      await this.journal.append(binding, 'dispose', 'read_back', 'error', { disposition: 'reconcile', decided_by: by.id, decided_at: this.now().toISOString(), unfreeze: false, uncertain: true, missing_fact: '未取得与原派发身份、摘要和时间窗一致的记录', next_action: '管理员继续只读审计；保持未知，或显式确认风险后标记失败' });
-      throw new Error('对账未通过；查无记录不能证明未执行，仍冻结');
+    }catch {
+      await this.journal.append(binding,'reconcile_pending','read_back','error',{unfreeze:false,missing_fact:readable?'已读到原件，但身份、摘要或投递时间不符':'未取得完整可用的对账回答，不等于目标没有记录',next_action:`修复只读连接或映射后重跑 circle-hub job dispose ${job} --reconcile <原远端编号>`});
+      throw new Error(readable?'对账身份、摘要或时间不符，仍冻结':'对账读取尚未成功；修复读取后重试本次对账，仍冻结');
     }
+    await this.journal.append(binding,'dispose','read_back','completed',{disposition:'reconcile',decided_by:by.id,decided_at:this.now().toISOString(),unfreeze:true,remote_id:options.remote_id,effect_mark:'disposed',identity_matched:true,digest_matched:true,window_matched:true},[state.source,result.source]);
+    await this.journal.append(binding,'receipt','read_back','completed',{remote_id:options.remote_id,reconciled:true,acceptance:'accepted'},[result.source]);
+    const stop=this.heartbeat(binding,d,client,originalLease).stop;
+    try{return await this.observe(by,binding,d,client,options.remote_id,intent.body.detail.fences as unknown as HolderSnapshot[],stop);}
+    catch{await this.pendingRead(binding);return this.status(by,job);}
+    finally{await stop();}
   }
 
   private async notSent(binding:JobBinding,client:RpcClient,lease:RemoteLease,stop:()=>Promise<void>,reason:string,sources:string[]=[]):Promise<void> {

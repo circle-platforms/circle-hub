@@ -70,3 +70,14 @@ test('R06 unresolved jobs are discoverable without remembering a lost terminal d
   const jobs=await c.service.list(c.admin,c.executor.id);
   assert.ok(jobs.some(job=>job.job===first.job && job.frozen && job.next_action));
 });
+
+test('R07 an observation failure after a successful reconcile never falsifies the match',async t=>{
+  let statusReads=0;
+  const c=await setup({mode:'reject',alter:(name,v)=>name==='inspect_blob' && ++statusReads>1?{ok:false,error:'synthetic read unavailable'}:v});t.after(()=>c.close());
+  const first=await c.service.dispatch(c.admin,c.run,c.executor.id);
+  const state=await c.service.dispose(c.admin,first.job,{choice:'reconcile',remote_id:'synthetic-remote'});
+  assert.equal(state.frozen,false);assert.equal(state.outcome,'issued');assert.match(state.next_action!,/resume/);
+  const events=await c.service.journal.events(first.job);
+  const match=events.findIndex(e=>e.body.detail.identity_matched===true);
+  assert.ok(match>=0);assert.equal(events.slice(match+1).some(e=>e.body.detail.uncertain===true),false);
+});
