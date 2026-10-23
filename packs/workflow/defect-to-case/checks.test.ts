@@ -6,6 +6,7 @@ import {
   INCOMPLETE_INDEX_VIEW,
   SYNTHETIC_CATALOG,
   SYNTHETIC_INDEX_VIEW,
+  SYNTHETIC_INDEX_VIEW_COMPLETE,
   makeDuplicateDraft,
   makeGoodDraft,
   makeNegativeExpectedRefutationDraft,
@@ -46,6 +47,7 @@ describe('hand-built drafts and checks coverage', () => {
     const groundOutcomes = checkGroundedReading(makeInput({ item: '74001', slots: { cases: [{ text: good.title, data: good }] } }));
     assert.equal(groundOutcomes[0].verdict, 'support');
 
+    // The narrowing now rides the bound URI (narrowed-dedup.test covers its rules); the plain view is complete here.
     const dupOutcomes = checkDuplicate(makeInput({ item: '74001', drafts: [good], indexed_cases: SYNTHETIC_INDEX_VIEW }));
     assert.equal(dupOutcomes[0].verdict, 'support');
   });

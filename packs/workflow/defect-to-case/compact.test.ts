@@ -249,10 +249,16 @@ describe('compact case index and deduplication at real scale', () => {
     assert.ok(!('error' in result));
     const compact = (result.groups![0] as { indexed_cases: Record<string, unknown> }).indexed_cases;
     assert.equal(compact.total, 1, 'only 1 case has commands');
-    assert.equal(compact.unplaced, 2, '2 cases have no commands');
+    // commands: [] is genuinely command-less (unplaced); a missing commands field is an unknown set, counted apart.
+    assert.equal(compact.unplaced, 1, '1 case has an empty command list');
+    assert.equal(compact.unplacedCommands, 1, '1 case has no commands field (unknown set)');
     assert.ok(
-      (compact.notes as string[]).some((n) => n.includes('2') && (n.includes('没有命令') || n.includes('未归位'))),
-      'notes must mention 2 unplaced cases',
+      (compact.notes as string[]).some((n) => n.includes('1') && (n.includes('没有命令') || n.includes('未归位'))),
+      'notes must mention the unplaced case',
+    );
+    assert.ok(
+      (compact.notes as string[]).some((n) => n.includes('commands 字段')),
+      'notes must mention the entry without a commands field',
     );
 
     // A draft matching the unplaced case must NOT be refuted because unplaced cases do not participate in deduplication
@@ -265,6 +271,9 @@ describe('compact case index and deduplication at real scale', () => {
       drafts: [draftMatchingUnplaced],
       indexed_cases: compact,
     });
-    assert.equal(outcome[0].verdict, 'support', 'unplaced cases must not trigger duplicate refutation');
+    // An entry without a commands field keeps "no duplicate" unknown (its set is unknown, not empty); the empty-list
+    // one never triggers a refutation on its own.
+    assert.equal(outcome[0].verdict, 'unknown', 'a missing commands field keeps the no-duplicate claim unknown');
+    assert.ok(outcome[0].statement.includes('commands 字段'));
   });
 });

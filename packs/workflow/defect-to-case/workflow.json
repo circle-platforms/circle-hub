@@ -5,15 +5,19 @@
       "slot": "defects",
       "role": "subject",
       "description": "被转用例的缺陷记录（plm:bug:<编号>），1 到 20 个",
-      "accepts": ["plm:bug"],
+      "accepts": [
+        "plm:bug"
+      ],
       "required": true,
       "many": true
     },
     {
       "slot": "indexed_cases",
       "role": "expected",
-      "description": "已索引的用例清单（knowledge:index:<产品>:<构建>?kind=case&key=commands&fields=document,node,title），由 Hub 知识读取器提供，必填",
-      "accepts": ["knowledge:index"],
+      "description": "已索引的用例清单，收窄到草稿要用的命令：knowledge:index:<产品>:<构建>?kind=case&key=commands&only=<命令路径，逗号分隔，命令里的空格写成 %20、字面逗号写成 %2C>&fields=commands,document,node,title,negative。only 由模型在读完缺陷后、开始运行时写上（和索引的键同一写法）；fields 必须带 commands——收窄后一个条目只出现在列出的键下，靠键拼不回它的命令集合；查重要比的其他字段（反向标记、标题、文档和节点号）也要列上，没列的字段不能拿来比。由 Hub 知识读取器提供，必填",
+      "accepts": [
+        "knowledge:index"
+      ],
       "required": true,
       "many": false
     }
@@ -41,7 +45,9 @@
     }
   ],
   "product": {
-    "catalogs": ["commands@1"]
+    "catalogs": [
+      "commands@1"
+    ]
   },
   "subject": "defects",
   "projection": {

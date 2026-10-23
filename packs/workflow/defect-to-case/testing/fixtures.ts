@@ -104,6 +104,12 @@ export const SYNTHETIC_INDEX_VIEW: IndexView = {
   notes: [],
 };
 
+/** The same view without the narrowing echo: the complete-index rule applies (old behaviour). */
+export const SYNTHETIC_INDEX_VIEW_COMPLETE: IndexView = {
+  ...SYNTHETIC_INDEX_VIEW,
+  notes: [],
+};
+
 export const INCOMPLETE_INDEX_VIEW: IndexView = {
   ...SYNTHETIC_INDEX_VIEW,
   skipped: 3,

@@ -67,7 +67,8 @@ export function projectDefects(input: unknown): ProjectionOutput {
   const indexInput = inputs.find((i) => i.slot === INDEXED_CASES_SLOT);
   const groups: Record<string, unknown>[] = [];
   if (indexInput && isRecord(indexInput.model)) {
-    const compact = buildCompactIndex(indexInput.model);
+    // The narrowing (only=…) lives on the bound URI; the view's own output does not carry it (README Needs).
+    const compact = buildCompactIndex(indexInput.model, undefined, typeof indexInput.external === 'string' ? indexInput.external : null);
     groups.push({ indexed_cases: compact });
   }
 

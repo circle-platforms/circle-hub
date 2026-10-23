@@ -5,6 +5,7 @@ import {
   INCOMPLETE_INDEX_VIEW,
   SYNTHETIC_CATALOG,
   SYNTHETIC_INDEX_VIEW,
+  SYNTHETIC_INDEX_VIEW_COMPLETE,
   makeDuplicateDraft,
   makeGoodDraft,
   makeNegativeExpectedRefutationDraft,
@@ -268,12 +269,12 @@ describe('pack checks', () => {
   });
 
   describe('checkDuplicate', () => {
-    it('supports a draft that is not a duplicate of an indexed case', () => {
+    it('supports a draft that is not a duplicate of an indexed case (complete view)', () => {
       const good = makeGoodDraft();
       const input = makeCheckInput({
         item: '74001',
         drafts: [good],
-        indexed_cases: SYNTHETIC_INDEX_VIEW,
+        indexed_cases: SYNTHETIC_INDEX_VIEW_COMPLETE,
       });
       const outcomes = checkDuplicate(input);
       assert.equal(outcomes.length, 1);
