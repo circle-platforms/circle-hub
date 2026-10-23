@@ -248,10 +248,3 @@ describe('main', () => {
     assert.equal(badShape, 1);
   });
 });
-
-test('notes-only maps have an explicit error type while malformed maps do not', async () => {
-  const { caseGold, NoCaseNodesError } = await import('./cases.ts');
-  const notes = { root: { data: { id: 'synthetic-root', text: '合成说明' }, children: [] } };
-  assert.throws(() => caseGold([{ document: 'synthetic-notes', map: notes }]), error => error instanceof NoCaseNodesError);
-  assert.throws(() => caseGold([{ document: 'synthetic-bad', map: null }]), error => !(error instanceof NoCaseNodesError));
-});

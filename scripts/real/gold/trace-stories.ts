@@ -3,9 +3,224 @@ import type { ProvenanceType } from '../../../contracts/generated/vocabulary.ts'
 import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { caseGold, NoCaseNodesError, parseMindMap } from './cases.ts';
-import { extractAssociatedIds, locationsGold } from './locations.ts';
+import { caseGold, caseNodesOf, parseMindMap } from './cases.ts';
 import { parseDocumentList } from './trace.ts';
+
+const MARKER_REGEX = /(?<![a-z0-9])(?:(bu(?:gt?|t)[\s_-]*(?:t?o|ro|2)[\s_-]*c[a-z]{0,5})|(bugs?)|(stor(?:y|ies))|(plm))|(缺陷)|(需求单?)/gu;
+const INNER_REGEX = /(?:(需求单?)|(缺陷)|(stor(?:y|ies))|(bugs?))(?![a-z])/uy;
+const GLUE_REGEX = /[\s#:\-_~.—–]*/uy;
+const LIST_REGEX = /(?:\s*(?:[&、,，+;；]|and\b|和|及|与)\s*#?|\s+)(?=[0-9]{2})/iuy;
+function sticky(pattern: RegExp, text: string, at: number): string | null {
+  pattern.lastIndex = at;
+  const match = pattern.exec(text);
+  return match === null ? null : match[0];
+}
+
+function idAt(text: string, at: number, min: number, max: number, bare: boolean): { id: string; end: number } | null {
+  let end = at;
+  while (end < text.length && text[end] >= '0' && text[end] <= '9') end += 1;
+  const id = text.slice(at, end);
+  if (id.length < min || id.length > max || /^0+$/.test(id)) return null;
+  const before = text[at - 1] ?? '';
+  const next = text[end] ?? '';
+  const after = text[end + 1] ?? '';
+  const short = id.length <= 4;
+  if (/[0-9]/.test(before) || (before === '.' && /[0-9]/.test(text[at - 2] ?? ''))) return null;
+  if (next === '.' && /[0-9]/.test(after)) return null;
+  if (short && (next === '/' || next === ':') && /[0-9]/.test(after)) return null;
+  if (id.length === 4 && next === '-' && /^[0-9]{1,2}(?:[^0-9]|$)/.test(text.slice(end + 1, end + 4))) return null;
+  if (short && /[a-z]/.test(next)) return null;
+  if (id.length === 8) {
+    const y = Number(id.slice(0, 4));
+    const m = Number(id.slice(4, 6));
+    const d = Number(id.slice(6, 8));
+    if (y >= 1970 && y <= 2099 && m >= 1 && m <= 12 && d >= 1 && d <= 31) return null;
+  }
+  if (/^\s*[年月日号]/u.test(text.slice(end, end + 3))) return null;
+  if (bare && /^\s*:/.test(text.slice(end, end + 3))) return null;
+  return { id, end };
+}
+
+/** Extracts an ID list starting at position `at`. */
+function idList(text: string, at: number, min: number, max: number, bare = false): { ids: string[]; end: number; ends: number[] } {
+  const ids: string[] = [];
+  const ends: number[] = [];
+  let position = at;
+  let end = at;
+  for (let guard = 0; guard < 64; guard++) {
+    const found = idAt(text, position, min, max, bare);
+    if (found === null) break;
+    ids.push(found.id);
+    ends.push(found.end);
+    position = found.end;
+    end = found.end;
+    const separator = sticky(LIST_REGEX, text, position);
+    if (separator === null) break;
+    position += separator.length;
+  }
+  return { ids, end, ends };
+}
+
+function scanMarked(text: string): Array<{ id: string; kind: 'story' | 'bug' | null }> {
+  const out: Array<{ id: string; kind: 'story' | 'bug' | null }> = [];
+  MARKER_REGEX.lastIndex = 0;
+  for (let match = MARKER_REGEX.exec(text); match !== null; match = MARKER_REGEX.exec(text)) {
+    let kind: 'story' | 'bug' | null = null;
+    if (match[1] !== undefined || match[4] !== undefined) {
+      kind = null;
+    } else if (match[2] !== undefined || match[5] !== undefined) {
+      kind = 'bug';
+    } else {
+      kind = 'story';
+    }
+    let position = match.index + match[0].length;
+    position += (sticky(GLUE_REGEX, text, position) ?? '').length;
+    INNER_REGEX.lastIndex = position;
+    const inner = INNER_REGEX.exec(text);
+    if (inner !== null) {
+      kind = (inner[1] !== undefined || inner[3] !== undefined) ? 'story' : 'bug';
+      position += inner[0].length;
+      position += (sticky(GLUE_REGEX, text, position) ?? '').length;
+    }
+    const { ids, end } = idList(text, position, 2, 9);
+    for (const id of ids) out.push({ kind, id });
+    if (ids.length > 0) MARKER_REGEX.lastIndex = Math.max(MARKER_REGEX.lastIndex, end);
+  }
+  return out;
+}
+
+/** Story-only raw-id extraction; no dependency on the case-location leading-zero policy. */
+export function storyIdsOf(title: string, ancestors: string[]): string[] {
+  return [...new Set([title,...ancestors].flatMap(text => scanMarked(text.normalize('NFKC').toLowerCase()))
+    .filter(value => value.kind === 'story').map(value => value.id))].sort();
+}
+
+interface RawTreeNode {
+  id: string;
+  label: string;
+  cases: string[];
+  children: RawTreeNode[];
+}
+
+function normalizeTreeNodes(raw: unknown): RawTreeNode[] {
+  if (!raw || typeof raw !== 'object') return [];
+  const list = Array.isArray(raw)
+    ? raw
+    : Array.isArray((raw as { data?: unknown }).data)
+      ? (raw as { data: unknown[] }).data
+      : Array.isArray((raw as { children?: unknown }).children)
+        ? (raw as { children: unknown[] }).children
+        : [];
+
+  const nodes: RawTreeNode[] = [];
+  for (const item of list) {
+    if (!item || typeof item !== 'object') continue;
+    const obj = item as Record<string, unknown>;
+    const id = obj.id !== undefined ? String(obj.id) : '';
+    const label = typeof obj.label === 'string'
+      ? obj.label
+      : typeof obj.title === 'string'
+        ? obj.title
+        : typeof obj.name === 'string'
+          ? obj.name
+          : typeof obj.text === 'string'
+            ? obj.text
+            : '';
+    const cases = Array.isArray(obj.cases) ? obj.cases.map(String) : [];
+    const children = normalizeTreeNodes(obj.children);
+    nodes.push({ id, label, cases, children });
+  }
+  return nodes;
+}
+
+interface ScannedDocumentItem {
+  document: string;
+  title: string;
+  ancestors: string[];
+}
+
+/** Scans tree nodes to collect all document leaves and their folder ancestors. */
+function scanDocuments(nodes: RawTreeNode[], above: string[] = [], rootCases: string[] = []): ScannedDocumentItem[] {
+  const own: ScannedDocumentItem[] = [];
+  const ownIds = new Set<string>();
+  const listed = new Map<string, { ancestors: string[]; depth: number }>();
+
+  if (rootCases.length > 0) {
+    const depth = above.length;
+    for (const caseId of rootCases) {
+      if (caseId && !listed.has(caseId)) {
+        listed.set(caseId, { ancestors: [...above], depth });
+      }
+    }
+  }
+
+  const traverse = (nodeList: RawTreeNode[], currentAncestors: string[]) => {
+    for (const node of nodeList) {
+      const isLeaf = node.children.length === 0 && node.cases.length === 0;
+      if (isLeaf) {
+        if (node.id && !ownIds.has(node.id)) {
+          ownIds.add(node.id);
+          own.push({
+            document: node.id,
+            title: node.label,
+            ancestors: currentAncestors,
+          });
+        }
+      } else {
+        const nextAncestors = node.label ? [...currentAncestors, node.label] : currentAncestors;
+        const depth = nextAncestors.length;
+        for (const caseId of node.cases) {
+          if (!caseId) continue;
+          const known = listed.get(caseId);
+          if (known === undefined || depth > known.depth) {
+            listed.set(caseId, { ancestors: nextAncestors, depth });
+          }
+        }
+        traverse(node.children, nextAncestors);
+      }
+    }
+  };
+
+  traverse(nodes, above);
+
+  const out: ScannedDocumentItem[] = [...own];
+  for (const [id, info] of listed) {
+    if (!ownIds.has(id)) {
+      out.push({
+        document: id,
+        title: '',
+        ancestors: info.ancestors,
+      });
+    }
+  }
+
+  return out;
+}
+
+function treeStories(treeInput: unknown): Map<string,string[]> {
+  let rootTitle: string | null = null;
+  const rootCases: string[] = [];
+
+  if (treeInput && typeof treeInput === 'object') {
+    const top = treeInput as Record<string, unknown>;
+    if (top.root && typeof top.root === 'object') {
+      const r = top.root as Record<string, unknown>;
+      if (typeof r.title === 'string') rootTitle = r.title;
+      if (typeof r.label === 'string' && !rootTitle) rootTitle = r.label;
+      if (Array.isArray(r.cases)) rootCases.push(...r.cases.map(String));
+      if (Array.isArray(top.cases)) rootCases.push(...top.cases.map(String));
+    } else if (Array.isArray(top.children) && (top.id || top.label || top.title)) {
+      rootTitle = String(top.label ?? top.title ?? '');
+      if (Array.isArray(top.cases)) rootCases.push(...top.cases.map(String));
+    }
+  }
+
+  const nodes = normalizeTreeNodes(treeInput);
+  const startAncestors = rootTitle ? [rootTitle] : [];
+  const scanned = scanDocuments(nodes, startAncestors, rootCases);
+
+  return new Map(scanned.map(doc => [doc.document,storyIdsOf(doc.title,doc.ancestors).map(norm)]));
+}
 
 export type Scalar = string | number | boolean | null;
 const scalar = (value: unknown): Scalar => typeof value === 'string' || typeof value === 'number' && Number.isFinite(value) || typeof value === 'boolean' ? value : null;
@@ -37,22 +252,17 @@ export function parseStoryRecords(raw: unknown): StoryRecord[] {
 export function storyGold(options: { ids: string[]; plm: StoryRecord[]; maps: Array<{ document: string; map: unknown }>; tree: unknown; product: string; build: string; caseRule?: 'marked' | 'tagged'; missingDocuments?: string[] }): StoryGold {
   const ids = parseStoryIds(options.ids);
   const parsed = options.maps.map(({ map }) => parseMindMap(map).nodes);
-  const locations = locationsGold(options.tree);
-  const folderStories = new Map([...locations.documents, ...locations.nonconforming].map(d => [d.document, d.stories.map(norm)]));
+  const folderStories = treeStories(options.tree);
   const cases: Array<{ id: string; title: string; stories: string[] }> = [];
   let documentsWithoutCases = 0;
   for (const [at, { document, map }] of options.maps.entries()) {
     const nodes = parsed[at];
-    let counted;
-    try { counted = caseGold([{ document, map }], { caseRule: options.caseRule ?? 'marked' }).documents[0]; }
-    catch (error) {
-      if (error instanceof NoCaseNodesError) { documentsWithoutCases++; continue; }
-      throw error;
-    }
+    if (caseNodesOf({nodes}, {caseRule:options.caseRule ?? 'marked'}).length === 0) { documentsWithoutCases++; continue; }
+    const counted = caseGold([{document,map}], {caseRule:options.caseRule ?? 'marked'}).documents[0];
     for (const c of counted.items) {
       const node = nodes.find(n => (n.id || `@${n.index}`) === c.id);
       if (!node) throw new Error('用例节点位置缺失');
-      const found = extractAssociatedIds(node.text, node.ancestors).stories.map(norm);
+      const found = storyIdsOf(node.text, node.ancestors).map(norm);
       cases.push({ id: `${document}:${c.id}`, title: c.title, stories: [...found, ...(folderStories.get(document) ?? [])].map(norm) });
     }
   }
