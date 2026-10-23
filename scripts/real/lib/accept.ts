@@ -14,6 +14,8 @@ export interface Scenario {
   /** Writes scenario files into the Circle work directory before the client starts (after writeHome, before
    * startCircle); the scratch directory is still removed whole at the end. */
   prepare?(workdir: string): void | Promise<void>;
+  /** Extra report limits of this scenario, appended after the two fixed ones. */
+  limits?: string[];
   /** Extra sections for the report, if any (not counted in pass/fail). */
   sections?: ReportSection[];
 }

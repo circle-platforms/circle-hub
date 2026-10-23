@@ -79,11 +79,18 @@ export async function run(): Promise<number> {
     title: `真实 Circle 客户端验收：${scenario.name}`,
     generatedAt: new Date().toISOString(),
     checks,
-    limits: ['模型的回答是脚本化的：这只证明从客户端到 Hub 再回到模型的整条路和 Hub 在真实数据上的结果，不证明真实模型的评审质量', '证据文件含真实内容，只放在本机，不进 Git'],
+    limits: [
+      '模型的回答是脚本化的：这只证明从客户端到 Hub 再回到模型的整条路和 Hub 在真实数据上的结果，不证明真实模型的评审质量',
+      '证据文件含真实内容，只放在本机，不进 Git',
+      ...(scenario.limits ?? []),
+    ],
     sections: scenario.sections,
   });
   writeFileSync(join(out, `${scenario.name}.report.md`), report);
-  console.log(report);
+  // Screen: summary lines only (each check's verdict, then the section counts and the total); the report goes to the file.
+  for (const check of checks) console.log(`${check.ok ? '相符' : '不符'}：${check.name}`);
+  const passed = checks.filter((c) => c.ok).length;
+  console.log(`共 ${checks.length} 项核对，${passed} 项相符，${checks.length - passed} 项不符`);
   return checks.every((c) => c.ok) ? 0 : 1;
 }
 
