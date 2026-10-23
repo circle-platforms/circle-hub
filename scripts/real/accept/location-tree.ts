@@ -361,6 +361,8 @@ export async function main(argv: string[], deps: { call?: typeof callTools; prin
     if (!treeFile || !outArg) throw new Error('缺输入');
     stage = '--tree 树原件输入'; next = '由集成者导出用例树原件到仓库外，再补 --tree 重跑';
     const out = privatePath(outArg), treeBytes = readFileSync(privatePath(treeFile)), tree: unknown = JSON.parse(treeBytes.toString('utf8'));
+    const goldDocuments = locationsGold(tree).all ?? [];
+    if (!goldDocuments.length) { print('没跑：--tree 树原件里没有文档；下一步：由集成者重新导出敏捷平台用例树原件后重跑'); return 2; }
     const inputDigests = { builds: [] as string[], production: [] as string[], facets: null as string | null };
     const builds = (values.get('--builds') ?? []).map((file, index) => {
       stage = '第 ' + (index + 1) + ' 份 --builds 构建独立答案输入'; next = '导出两个名称族列表页，运行 builds.ts 生成带 line 的独立答案，再补 --builds 重跑';
@@ -388,7 +390,7 @@ export async function main(argv: string[], deps: { call?: typeof callTools; prin
       const token = readFileSync(privatePath(tokenFile), 'utf8').trim(); if (!token) throw new Error('缺令牌输入');
       const batch = Number(one('--batch') ?? 40), timeoutMs = one('--timeout-ms') === undefined ? undefined : Number(one('--timeout-ms'));
       if (!Number.isSafeInteger(batch) || batch < 1 || batch > 1000 || (timeoutMs !== undefined && (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1))) throw new Error('参数无效');
-      const ids = (locationsGold(tree).all ?? []).map(d => d.document);
+      const ids = goldDocuments.map(d => d.document);
       stage = '--out/runs 新采集目录'; next = '使用全新的仓库外输出目录重跑采集，保留既有 runs 不覆盖';
       await collectRuns(ids, out, { url: one('--url') ?? 'http://127.0.0.1:7420/mcp', token, session: 'location-tree', ...(timeoutMs === undefined ? {} : { timeoutMs }) }, batch, deps.call);
     }

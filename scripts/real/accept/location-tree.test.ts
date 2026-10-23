@@ -179,3 +179,13 @@ test('location review 2: Hub ISO Z and milliseconds compare at source precision 
     assert.equal(compareLocationTree(tree(), captures(raw), [gold]).summary.candidates.not_equal, 1);
   }
 });
+
+test('location review 4: empty or wrong-shaped trees never start calls or pass vacuously', async t => {
+  const root = mkdtempSync(join(tmpdir(), 'location-empty-')); t.after(() => rmSync(root, { recursive: true, force: true }));
+  writeFileSync(join(root, 'token'), 'synthetic-token');
+  for (const [i, value] of [{}, ['not','a','tree'], { root: { id: 'empty' } }].entries()) {
+    const file = join(root, `tree${i}.json`); writeFileSync(file, JSON.stringify(value)); let calls = 0; const screen: string[] = [];
+    assert.equal(await main(['--tree', file, '--out', join(root, `out${i}`), '--collect', '--token-file', join(root, 'token')], { call: async () => { calls++; return []; }, print: s => screen.push(s) }), 2);
+    assert.equal(calls, 0); assert.ok(screen.some(s => s.includes('--tree') && s.includes('重新导出')));
+  }
+});
