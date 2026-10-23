@@ -1,7 +1,7 @@
 import { canonicalBytes, canonicalize, sha256Hex, type Principal, type RecordsKit } from '../records/api.ts';
 import type { LeaseService, HolderSnapshot } from '../leases/api.ts';
 import type { WorkflowStore } from '../ports.ts';
-import type { EffectOutcome } from '../../contracts/generated/vocabulary.ts';
+import type { EffectOutcome, Disposition } from '../../contracts/generated/vocabulary.ts';
 import { at, bind, type CallRole, type ExecutorDefinition } from './definition.ts';
 import { ExecutorRegistry } from './executors.ts';
 import { Journal, digestOfValue, eventOf, isDone, isFrozen, newJob, type JobBinding, type Event } from './journal.ts';
@@ -28,12 +28,13 @@ export class DispatchService {
   async status(by: Principal, job: string): Promise<JobStatus> {
     await this.registry.admin(by); const events = await this.journal.events(job);
     if (!events.length) throw new Error('作业对你不可用');
+    const missingReceipt = !!eventOf(events, 'intent') && !eventOf(events, 'receipt') && !events.some(e => e.body.detail.unfreeze === true);
     const unknown = isFrozen(events); const result = eventOf(events, 'result'); const end = eventOf(events, 'complete');
     const intent = eventOf(events, 'intent'); const receipt = eventOf(events, 'receipt');
     return { job, phase: String(events.at(-1)!.body.detail.phase),
-      outcome: unknown || (intent && !receipt) ? 'unknown' : end?.body.detail.outcome === 'not_dispatched' ? 'not_dispatched' : end ? 'effective' : intent ? 'issued' : 'not_dispatched',
-      frozen: unknown || (!!intent && !receipt), ...(typeof result?.body.detail.reference === 'string' ? { result: result.body.detail.reference } : {}), events: events.length,
-      ...(unknown || (intent && !receipt) ? { next_action: `请管理员取证后运行 circle-hub job dispose ${job} --reconcile <远端作业编号>；不能重交` } : !end ? { next_action: `circle-hub job resume ${job}` } : {}) };
+      outcome: unknown || missingReceipt || (intent && !receipt) ? 'unknown' : end?.body.detail.outcome === 'not_dispatched' ? 'not_dispatched' : end ? 'effective' : intent ? 'issued' : 'not_dispatched',
+      frozen: unknown || missingReceipt, ...(typeof result?.body.detail.reference === 'string' ? { result: result.body.detail.reference } : {}), events: events.length,
+      ...(unknown || missingReceipt ? { next_action: `请管理员取证后运行 circle-hub job dispose ${job} --reconcile <远端作业编号>；不能重交` } : !isDone(events) ? { next_action: `circle-hub job resume ${job}` } : {}) };
   }
   async dispatch(by: Principal, run: string, executor: string): Promise<JobStatus> {
     await this.registry.admin(by);
@@ -123,6 +124,49 @@ export class DispatchService {
     catch { await this.unknown(binding, '状态或结果读取不完整；不能重交，请管理员对账'); return this.status(by, job); }
     finally { await stop(); }
   }
+  async dispose(by: Principal, job: string, options: { choice: Disposition; remote_id?: string; reason?: string; acceptPossibleDuplicateEffects?: boolean }): Promise<JobStatus> {
+    await this.registry.admin(by);
+    const binding = await this.journal.binding(job); const events = await this.journal.events(job);
+    if (isDone(events) && !isFrozen(events)) return this.status(by, job);
+    const intent = eventOf(events, 'intent');
+    if (!intent) throw new Error('没有派发意图；请用 resume 核对未发出的作业');
+    if (options.choice === 'keep_unknown') {
+      await this.journal.append(binding, 'dispose', 'read_back', 'completed', { disposition: options.choice, decided_by: by.id, decided_at: this.now().toISOString(), uncertain: true, unfreeze: false, next_action: '继续取得原作业审计与结果；不能重交' });
+      return this.status(by, job);
+    }
+    if (options.choice === 'mark_failed') {
+      if (!options.reason?.trim() || options.reason.length > 1000) throw new Error('标记失败必须给出非空原因，最多 1000 字符');
+      const confirmed = options.acceptPossibleDuplicateEffects === true;
+      const secret = await this.options.records.vault.getText(`executor.${binding.executor}.bearer`);
+      const reason = secret ? options.reason.split(secret).join('[已隐藏]') : options.reason;
+      await this.journal.append(binding, 'dispose', 'read_back', 'completed', { disposition: options.choice, reason, decided_by: by.id, decided_at: this.now().toISOString(),
+        risk_confirmed: confirmed, confirmed_by: confirmed ? by.id : null, confirmed_at: confirmed ? this.now().toISOString() : null,
+        confirmation: confirmed ? '接受可能重复执行的副作用' : null, unfreeze: confirmed, done: confirmed,
+        original_outcome: 'unknown', effect_mark: 'disposed', ...(confirmed ? { possible_duplicate: true } : { next_action: '仍冻结；需要管理员对账或显式确认接受可能重复执行的副作用' }) });
+      return this.status(by, job);
+    }
+    if (options.choice !== 'reconcile' || !options.remote_id) throw new Error('本轮只允许核对、保持未知或标记失败；核对必须给远端编号');
+    const d = await this.pinned(binding); const client = this.session(binding, d, await this.secret(binding.executor));
+    try {
+      await client.connect();
+      const context = { ...this.context(binding), remote_id: options.remote_id };
+      const state = await this.read(binding, client, 'status', context, true);
+      const result = await this.read(binding, client, 'result', context, true);
+      const time = Date.parse(String(at(result.value, d.result.submitted_at)));
+      const window = intent.body.detail.window as { from: string; to: string };
+      if (!d.status.map[String(at(state.value, d.status.pointer))] || !same(at(result.value, d.result.id), options.remote_id) || at(result.value, d.result.sha256) !== binding.input!.sha256 || !Number.isFinite(time) || time < Date.parse(window.from) || time > Date.parse(window.to)) throw new Error('对账身份、摘要或投递窗口不符；查无记录不能证明未执行');
+      await this.journal.append(binding, 'dispose', 'read_back', 'completed', { disposition: 'reconcile', decided_by: by.id, decided_at: this.now().toISOString(), unfreeze: true, remote_id: options.remote_id, effect_mark: 'disposed', identity_matched: true, digest_matched: true, window_matched: true }, [state.source, result.source]);
+      await this.journal.append(binding, 'receipt', 'read_back', 'completed', { remote_id: options.remote_id, reconciled: true, acceptance: 'accepted' }, [result.source]);
+      const lease = intent.body.detail.remote_lease as unknown as RemoteLease;
+      const stop = this.heartbeat(binding, d, client, lease);
+      try { return await this.observe(by, binding, d, client, options.remote_id, intent.body.detail.fences as unknown as HolderSnapshot[]); }
+      finally { await stop(); }
+    } catch {
+      await this.journal.append(binding, 'dispose', 'read_back', 'error', { disposition: 'reconcile', decided_by: by.id, decided_at: this.now().toISOString(), unfreeze: false, uncertain: true, missing_fact: '未取得与原派发身份、摘要和时间窗一致的记录', next_action: '管理员继续只读审计；保持未知，或显式确认风险后标记失败' });
+      throw new Error('对账未通过；查无记录不能证明未执行，仍冻结');
+    }
+  }
+
   private async reserve(binding: JobBinding): Promise<void> {
     const history = await this.journal.targets(binding.resources);
     const jobs = new Set(history.map(e => String(e.body.detail.job)));
@@ -134,7 +178,7 @@ export class DispatchService {
     await this.options.records.store.withTransaction(async tx => {
       for (const resource of resources) {
         const previous = [...history].reverse().find(e => e.body.detail.phase === 'reservation' && e.body.detail.reserved_resource === resource);
-        const claim = await this.journal.append(binding, 'reservation', 'validate', 'completed', { binding, reserved_resource: resource }, [], `dispatch.reserve:${resource}:${previous?.digest ?? 'first'}`, tx);
+        const claim = await this.journal.append(binding, 'reservation', 'validate', 'completed', { binding, reserved_resource: resource, previous_reservation: previous?.digest ?? null }, previous ? [`rec:${previous.digest}`] : [], `dispatch.reserve:${resource}:${previous?.digest ?? 'first'}`, tx);
         if (!claim.created) throw new Error('另一进程已经预留物理目标；未提交');
       }
     });
