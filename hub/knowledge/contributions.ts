@@ -18,6 +18,7 @@ export interface ContributionScope {
   root: string | null;
   product: string | null;
   composition:string|null;
+  model?: string;
   resolve(reference: string): Promise<{ ok: true; value: { reference: string; text: string | null;
     recordSource?: { sha256: string; record: string; provenance: ProvenanceType; kind:string;schema:string } } } | { ok: false; message: string; code?: ProtocolCode }>;
 }
@@ -48,6 +49,13 @@ export class ContributionRefusal extends KnowledgeError {
   }
 }
 const refuse=(rule:string,message:string,fix='本条先标为 skipped 并写明缺少的根据，其余条目照常提交',detail:Record<string,unknown>={}):never=>{throw new ContributionRefusal(rule,message,fix,detail);};
+
+function scanPublicText(texts: readonly string[]): void {
+  for (const text of texts) {
+    const scan = scanForCredentials(new TextEncoder().encode(text));
+    if (!scan.inspected || scan.truncated || scan.findings.length > 0) refuse('sensitive_text', '回注文字或模型声明未通过完整凭据扫描，缺少可安全公开的文本', '去掉明文凭据并缩短到可完整扫描的文本后重交；凭据保留在 Circle 本地，本条也可先标为 skipped');
+  }
+}
 
 export class ContributionLayer {
   readonly #context: KnowledgeContext;
@@ -178,10 +186,7 @@ export class ContributionLayer {
     };
     const source = await quote(input.source);
     const relation = input.relation === undefined ? undefined : { kind: input.relation.kind, other: await quote(input.relation.other) };
-    for(const text of [input.statement,source.quote,...(relation===undefined?[]:[relation.other.quote])]){
-      const scan=scanForCredentials(new TextEncoder().encode(text));
-      if(!scan.inspected||scan.truncated||scan.findings.length>0)return refuse('sensitive_text','回注文字未通过完整凭据扫描，缺少可安全公开的文本','去掉明文凭据并缩短到可完整扫描的文本后重交；凭据保留在 Circle 本地，本条也可先标为 skipped');
-    }
+    scanPublicText([input.statement, source.quote, scope.model ?? '', ...(relation === undefined ? [] : [relation.other.quote])]);
     if(relation!==undefined&&(source.reference===relation.other.reference||(source.fragment===relation.other.fragment&&(quoteMatches(source.quote,relation.other.quote)||quoteMatches(relation.other.quote,source.quote)))))return refuse('self_relation','关系双方指向同一片段或重叠引文，缺少两个独立的原文端点','改引两个不同片段的规范引用（同一文件须给出各自选择器）后重交；本条先标为 skipped');
     if (!fragments.has(input.path)) fragments.set(input.path, (async () => {
       const fragment = await this.#reading.treeReader({composition:composition.record}).read(input.root, input.path, null, { user: reader.id, role: reader.role });
@@ -198,6 +203,7 @@ export class ContributionLayer {
 
   /** Called only after every requirement of the item is satisfied; validation result and layer share the transaction. */
   async append(prepared: PreparedContribution, origin: ContributionOrigin, tx: Transaction): Promise<string> {
+    scanPublicText([origin.model]);
     const key = digestOf({product:prepared.product,root:prepared.root,path:prepared.path,kind:prepared.kind,statement:prepared.statement,
       source:{reference:prepared.source.reference,quote:prepared.source.quote},
       ...(prepared.relation===undefined?{}:{relation:{kind:prepared.relation.kind,other:{reference:prepared.relation.other.reference,quote:prepared.relation.other.quote}}})});

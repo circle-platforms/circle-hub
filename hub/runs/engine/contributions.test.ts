@@ -470,3 +470,14 @@ test('a revoked source acceptance returns safe markers without changing original
   const raw=await w.kit.store.get(digest);assert.ok('statement'in (raw!.body as object));
   assert.deepEqual(await w.service.submitResult(w.admin,w.args(),call),result);
 });
+
+test('credential-bearing model declarations never enter product-readable contributions',async t=>{
+  const w=await setup(t);const args={...w.args(),model:'synthetic-model https://demo:synthetic-secret@192.0.2.8/v1'};
+  const result=await w.service.submitResult(w.admin,args,call);
+  assert.equal(result.result?.contributions?.stored.length,0);
+  assert.equal(result.result?.contributions?.not_stored.length,4);
+  assert.ok(result.errors.some(error=>error.code==='knowledge-contribution.sensitive_text'));
+  assert.deepEqual(await w.knowledge.layers.contributions.list(w.root,['/commands/system/show'],w.user),[]);
+  const page=await w.knowledge.getNodes({root:w.root,paths:['/commands/system/show'],depth:0},w.user);
+  assert.ok(!JSON.stringify(page).includes('synthetic-secret'));
+});

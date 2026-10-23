@@ -721,3 +721,5 @@ Milestone 2:
   documents it cannot handle rare (more than half of a list skipped fails the production); give cases data fields the
   views can count (`module`, `line`, `has_expected`, `defects`, ...) as scalars or lists of scalars, and avoid the value
   `__proto__`.
+
+回注公开文字的完整凭据扫描包括客户端 model 声明；准入时明确拒绝敏感模型声明，追加边界也复核，避免该声明随共享回注交给产品读者。测试只用合成凭据。
