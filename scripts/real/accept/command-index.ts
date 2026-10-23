@@ -43,7 +43,15 @@ export function compareCommandIndex(gold: CommandsGold, views: readonly unknown[
     const cut = Array.isArray(raw.cut_keys) ? raw.cut_keys : [];
     for (const key of cut) if (typeof key === 'string') cutDocuments.add(key); else hubDefects.push('cut_keys 含有不是文档键的值');
     if (raw.cut_keys !== undefined && !Array.isArray(raw.cut_keys)) hubDefects.push('cut_keys 不是数组');
-    if (raw.truncated && !cut.length) gap('分片截断','完整索引分片','按 only= 分成更小分片后重新导出','索引分片仍被截断：重新按 only= 分成更小的导出');
+    const notes=Array.isArray(raw.notes)?raw.notes.filter((v:unknown):v is string=>typeof v==='string'):[];
+    // These are explicit declarations in the source view, never inferred exception messages.
+    const excluded=notes.some((note:string)=>note.includes('个条目的文字有凭据扫描命中，没有放进这个视图')||note.startsWith('取值 __proto__ 不能作为这个视图的键'));
+    const budgetNote=notes.some((note:string)=>note.startsWith('取值按顺序列到 '));
+    const missingKeys=Number.isSafeInteger(raw.total_keys)&&Object.keys(raw.keys).length<raw.total_keys;
+    const missingEntries=Number.isSafeInteger(raw.total_entries)&&Object.keys(raw.entries).length<raw.total_entries;
+    const budget=missingKeys&&(!excluded||budgetNote);
+    if(raw.truncated&&budget)gap('分片截断','完整索引键及条目','按 only= 分成更小分片后重新导出','索引键没有完整列出：存在预算停止');
+    if(raw.truncated&&(excluded||!budget&&!cut.length&&(missingEntries||!missingKeys)))gap('来源排除','被排除或保留键下的条目及说明','核对 notes 的凭据、保留键说明及引用，用 get_nodes 读取被引条目；无可用引用则交集成者处理，不能靠 only= 恢复','索引条目未完整列出：来源排除或视图未给出完整截断原因');
     if (!Number.isSafeInteger(raw.skipped) || (raw.skipped as number) < 0) hubDefects.push('索引缺少合式的 skipped 元数据');
     else if (raw.skipped !== 0) gap('未读来源','来源完整性','修复来源并重新生产根，再导出索引','索引有未读来源：修复来源后重新导出');
     if (Array.isArray(raw.only)) for (const key of raw.only) requested.add(documentKey(String(key)));
