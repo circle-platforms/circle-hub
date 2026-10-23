@@ -223,7 +223,8 @@ describe('platform CLI', () => {
       assert.match(result.err, /已有主密钥时不需要.*key init/);
       assert.match(result.err, /key status/);
       assert.match(result.err, /主密钥.*丢失.*找不回/);
-      assert.match(result.err, /操作令牌也丢失时才.*operator-token reissue/);
+      assert.match(result.err, /操作令牌也丢失时先.*operator-token reissue/);
+      assert.ok(result.err.indexOf('operator-token reissue')<result.err.indexOf('secret import'));
     } finally { await rm(entry); }
   });
 
@@ -438,4 +439,9 @@ test('closure key init flag refuses a manually occupied configured port before t
  const address=server.address();assert.ok(address && typeof address!=='string');const w=await keyAsideWorld(t,address.port);
  const result=await w.run('key','init','--set-aside-vault');assert.equal(result.code,1);assert.match(result.err,/配置端口.*进程应答/);
  assert.equal(w.system.calls.filter(c=>c.command==='/usr/bin/security').length,0);assert.equal(await readFile(join(w.layout.vault,'sealed'),'utf8'),'synthetic sealed bytes');
+});
+
+test('closure key init recovery order reissues a missing operator token before importing secrets',async t=>{
+ const w=await keyAsideWorld(t);const result=await w.run('key','init');assert.equal(result.code,1);
+ assert.ok(result.err.indexOf('operator-token reissue')<result.err.indexOf('secret import'),result.err);
 });

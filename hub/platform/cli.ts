@@ -187,7 +187,7 @@ const db: Handler = async (args, context, io) => {
 };
 
 const KEY_INIT_REFUSALS = {
-  vault_not_empty: {message:'密钥库非空，不新建主密钥',hint:'已有主密钥时不需要 key init，用 circle-hub key status 查看；只有主密钥丢失且找不回时，才停服务，运行 circle-hub key init --set-aside-vault，将 vault/ 移到 set-aside/<时间>-key-loss/vault 后建立新密钥，再 secret import，最后起服务；操作令牌也丢失时才运行 operator-token reissue'},
+  vault_not_empty: {message:'密钥库非空，不新建主密钥',hint:'已有主密钥时不需要 key init，用 circle-hub key status 查看；只有主密钥丢失且找不回时，才停服务，运行 circle-hub key init --set-aside-vault，将 vault/ 移到 set-aside/<时间>-key-loss/vault 后建立新密钥；操作令牌也丢失时先运行 circle-hub operator-token reissue；然后 circle-hub secret import，最后起服务'},
   service_loaded: {message:'Hub 服务已加载，不移开密钥库或初始化主密钥',hint:'先运行 circle-hub service stop，确认服务停止后再运行 key init --set-aside-vault'},
   port_busy: {message:'配置端口仍有进程应答，不移开密钥库或新建主密钥',hint:'先核对并停妥占用该数据根配置端口的进程，再重试 key init --set-aside-vault'},
   key_present: {message:'主密钥已存在，不移开密钥库且不覆盖密钥',hint:'用 circle-hub key status 核对现有主密钥，保留当前密钥库'},
