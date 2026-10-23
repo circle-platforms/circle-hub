@@ -376,8 +376,8 @@ export function compareCatalogMarks(input: { treeXml: string; source: unknown; s
         const command = original !== undefined && displayCommand(original) === fold(statement.data.command) ? original : statement.data.command;
         const mark = { item: value.item as string, node: target.id, command, code: statement.code, pointer: claim.pointer };
         const expectedNegative = target.negative && [RANGE, TYPE, ARITY].includes(statement.code as CoreViolationCode);
-        if (attribution === null || (!expectedNegative && attribution === CATALOG_VALUES.unattributed)) report.observed.push({ ...mark, output_error: '输出缺少或不一致的静态层归责' });
-        else if (expectedNegative) report.negative_observed.push(mark);
+        if (expectedNegative) report.negative_observed.push(mark);
+        else if (attribution === null || attribution === CATALOG_VALUES.unattributed) report.observed.push({ ...mark, output_error: '输出缺少或不一致的静态层归责' });
         else report.observed.push(mark);
       });
     });

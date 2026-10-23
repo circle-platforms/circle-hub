@@ -274,8 +274,9 @@ test('review 15: no valid rounds cannot claim that checks passed vacuously', () 
   assert.ok(lines.some(line => line.includes('有效运行少于 2') && line.includes('补足')));
 });
 
-const catalogFixture = (t: { after(fn: () => void): void }, over: { provideSubmission?: boolean; code?: string | null } = {}) => {
+const catalogFixture = (t: { after(fn: () => void): void }, over: { provideSubmission?: boolean; code?: string | null; negative?: boolean } = {}) => {
   const tree = document(1); tree.root.children![0].children![0].data.text = 'widget port 21';
+  if (over.negative) tree.root.children![0].children![0].data.resource = ['Negative'];
   const files = fixtures(tree, []); t.after(() => rmSync(files.out, { recursive: true, force: true }));
   const commandTree = join(files.out, 'commands.xml');
   writeFileSync(commandTree, '<catalog version="10.8.1"><menu name="widget"><item name="port"><arguments><arg name="port" type="U16" limit="[1 - 20]"/></arguments></item></menu></catalog>');
@@ -288,7 +289,7 @@ const catalogFixture = (t: { after(fn: () => void): void }, over: { provideSubmi
       const body = Buffer.from(JSON.stringify({ run: 'rn_catalog', items: [{ item: 'doc:c1', handling: 'handled', slots: { findings: [{ text: '合成引用', commands: [{ command: 'widget port 21' }] }] } }] }));
       if (over.provideSubmission !== false) writeFileSync(original.replace('{n}', String(round)), body);
       const code = over.code === undefined ? 'core.catalog.param_out_of_range' : over.code;
-      const delivered = [{ item: 'doc:c1', requirements: [{ requirement: 'catalog', layers: [{ layer: 'static', ...staticFixture('violation', 'author_input') }], claims: code === null ? [] : [{ pointer: '/phrases/0', statement: { verdict: 'refute', code, data: { command: 'widget port 21' } }, qualifier: { nature: 'fact', source_role: 'subject' } }] }] }];
+      const delivered = [{ item: 'doc:c1', requirements: [{ requirement: 'catalog', layers: [{ layer: 'static', ...staticFixture('violation', over.negative ? undefined : 'author_input') }], claims: code === null ? [] : [{ pointer: '/phrases/0', statement: { verdict: 'refute', code, data: { command: 'widget port 21' } }, qualifier: { nature: 'fact', source_role: 'subject' } }] }] }];
       const value = JSON.parse(runDetail({ run: 'rn_catalog', items: 1, sources: [{ reference: `src:${copyShaOf(files.out)}` }], delivered }));
       const manifest = JSON.parse(readFileSync(new URL('../../packs/workflow/case-review/pack.json', import.meta.url), 'utf8'));
       value.run.pack = manifest.id + '@' + manifest.version; value.run.pack_digest = createHash('sha256').update(canonicalJson(manifest)).digest('hex');
@@ -401,4 +402,11 @@ test('Latin-1 measurement tree receipts hash the original bytes rather than re-e
  assert.equal(measureReview({...options(f.out),source:f.source,plan:f.plan,tree:f.commandTree,argumentTypes:f.argumentTypes,submission:f.original},f.driver,()=>{}),0);
  const report=JSON.parse(readFileSync(join(f.out,'r1/catalog/catalog-marks.json'),'utf8'));
  assert.equal(report.inputs.tree_sha256,createHash('sha256').update(bytes).digest('hex'));
+});
+
+test('closure B1 untouched negative expected refutation has no attribution and is not a false positive', t => {
+ const f = catalogFixture(t, {negative:true});
+ assert.equal(measureReview({...options(f.out),source:f.source,plan:f.plan,tree:f.commandTree,argumentTypes:f.argumentTypes,submission:f.original},f.driver,()=>{}),0);
+ const report=JSON.parse(readFileSync(join(f.out,'r1/catalog/catalog-marks.json'),'utf8'));
+ assert.equal(report.negative_observed.length,1);assert.equal(report.extra.length,0);
 });

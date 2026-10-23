@@ -75,7 +75,7 @@ const submission = { run: 'run_synthetic', items: [
 ] };
 const staticFixture = (terminal:StaticTerminal, attribution?:Attribution) => ({layer:'static' satisfies Layer,terminal,...(attribution === undefined ? {} : {attribution})});
 const hubMark = (command = 'widget port 21', code = 'core.catalog.param_out_of_range', role: SourceRole = 'subject', pointer = '/phrases/0') => ({ pointer, statement: { verdict: 'refute' satisfies Verdict, code, data: { command } }, qualifier: { nature: 'fact' satisfies Nature, source_role: role }, warrant: { id: 'catalog@1' } });
-const run = (claims: unknown[] = [hubMark()], attribution: Attribution | null = 'author_input') => ({ run: { run: 'run_synthetic' }, latest: { result: { partitions: { delivered: [{ item: 'doc:case-range', requirements: [{ requirement: 'catalog', layers: [staticFixture('violation',attribution ?? undefined)], claims }] }, { item: 'doc:case-negative', requirements: [{ requirement: 'catalog', layers: [staticFixture('violation','unattributed')], claims: [hubMark('widget port 22')] }] }] } } } });
+const run = (claims: unknown[] = [hubMark()], attribution: Attribution | null = 'author_input') => ({ run: { run: 'run_synthetic' }, latest: { result: { partitions: { delivered: [{ item: 'doc:case-range', requirements: [{ requirement: 'catalog', layers: [staticFixture('violation',attribution ?? undefined)], claims }] }, { item: 'doc:case-negative', requirements: [{ requirement: 'catalog', layers: [staticFixture('violation')], claims: [hubMark('widget port 22')] }] }] } } } });
 
 test('compares attributed cited-command marks and lists negative expected refutations separately', async () => {
   const { compareCatalogMarks } = await import('./catalog-marks.ts');
