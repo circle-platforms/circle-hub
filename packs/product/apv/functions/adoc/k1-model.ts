@@ -529,6 +529,11 @@ export function toK1Model(model: ExpandedModel, composition: Composition, manual
       ...(rowCites === undefined ? {} : { rowCites }),
     });
   };
+  // Every section of the expanded model exists before any block is placed, in document order, so an empty section or one
+  // whose content is all uncited still takes its ordinal among its siblings (markdown@1 numbers every heading, empty or
+  // not) and a later sibling never inherits an earlier sibling's path. The document title (level 0) is not a chapter: the
+  // manual's name comes from the producer, and the engine puts the `==` sections beside it, not under it.
+  for (const block of model.blocks) if (block.kind === 'section' && block.level >= 1) sectionOf(block.path);
   const uncited: Uncited[] = [];
   const unparsed: UnparsedSignature[] = [];
   const misaligned: string[] = [];

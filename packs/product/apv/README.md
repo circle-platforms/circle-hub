@@ -484,8 +484,13 @@ accepted.
   engine's converted title, which would carry `<code>` and `&#8217;` into the path. Repeated sibling keys are numbered
   `[k]` from 1, as markdown@1 numbers them (also when a key is empty or already ends in `[digits]`), and the selector is
   the encoded `h/` path, null past 4096 characters: such a section cannot be cited and its blocks hang at the manual
-  namespace root, which K1 counts in its own warning. A heading that verified on no source line falls back to the engine's
-  own title, plain, cites nothing, and the mapping says so in a warning. Because a segment carries no marks, a title is
+  namespace root, which K1 counts in its own warning. Every section of the expanded model is created before any block is
+  placed, in document order, so an empty section — or one whose content is all uncited — still takes its ordinal among its
+  siblings, a later sibling never inherits an earlier sibling's path, and the numbering does not move when an unrelated
+  block starts or stops verifying. The document title (`=`, level 0) is not a chapter: the manual's name comes from the
+  producer, and the engine puts the `==` sections beside it rather than under it, so a section path never carries the book
+  title. A heading that verified on no source line falls back to the engine's own title, plain, cites nothing, and the
+  mapping says so in a warning. Because a segment carries no marks, a title is
   never read as a signature (task item 6: K1 reads one only from a title that opens with `**`).
 - Nothing is placed that cannot be cited. A container with no text of its own is not mapped (the engine gives a block for
   each of its children, and each carries and cites its own text); a list item is mapped as its own block on its own line,

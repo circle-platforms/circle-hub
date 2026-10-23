@@ -167,6 +167,8 @@ test('a heading that verifies on no source line still gives a path, and the mapp
   section.origins = [];
   section.origin = null;
   section.heading = null;
+  // The section's own path element and the one its blocks carry are the same object before the clone; both are changed.
+  section.path = section.path.map((one) => ({ ...one, title: '<code>demo pool</code> 命令' }));
   content.path = content.path.map((one) => ({ ...one, title: '<code>demo pool</code> 命令' }));
   const mapped = toK1Model(model, out.composition, 'cli');
   assert.equal(mapped.model.sections[1]!.title, 'demo pool 命令', 'the fallback is the engine title with its tags off');
@@ -176,4 +178,61 @@ test('a heading that verifies on no source line still gives a path, and the mapp
   const produced = produceAdocEntries(mapped, { name: 'cli', slot: 'manual' });
   assert.ok(produced.ok, JSON.stringify(produced));
   assert.equal(produced.entries[0]!.path, '/manual/cli/demo%20pool%20命令');
+});
+
+test('an empty section and a section whose content is all uncited still take their ordinal', async () => {
+  const files = {
+    'book.adoc': [
+      '= Synthetic',      // 1
+      '',                 // 2
+      '== 示例',           // 3
+      '',                 // 4
+      '== 示例',           // 5
+      '',                 // 6
+      '第二节正文。',       // 7
+      '',                 // 8
+    ].join('\n'),
+  };
+  const withContent = {
+    'book.adoc': [
+      '= Synthetic',      // 1
+      '',                 // 2
+      '== 示例',           // 3
+      '',                 // 4
+      '第一节的正文。',     // 5
+      '',                 // 6
+      '== 示例',           // 7
+      '',                 // 8
+      '第二节正文。',       // 9
+      '',                 // 10
+    ].join('\n'),
+  };
+  // The first section is empty: markdown@1 numbers every heading, so the second is 示例[2] and its prose hangs there.
+  const empty = await place(files);
+  assert.deepEqual(
+    empty.mapped.model.sections.slice(1).map((section) => [section.title, section.ordinal, section.selector]),
+    [['示例', 1, 'h/示例'], ['示例', 2, 'h/示例[2]']],
+    JSON.stringify(empty.mapped.model.sections),
+  );
+  assert.deepEqual(empty.produced.entries.map((entry) => [String(entry.statement), entry.path]), [['第二节正文。', '/manual/cli/示例[2]']]);
+
+  // The same, with the first section holding a block that cites nothing: its path must not move to the second section,
+  // and the second section's ordinal must not depend on whether an unrelated block verifies.
+  const out = await compile(withContent);
+  const model = structuredClone(out.model);
+  const first = model.blocks.find((block) => block.kind === 'paragraph');
+  assert.ok(first !== undefined && first.raw === '第一节的正文。');
+  first.origins = [];
+  first.origin = null;
+  first.unverifiedReason = '构造的缺口：这个块回核不到原文行';
+  const mapped = toK1Model(model, out.composition, 'cli');
+  assert.equal(mapped.uncited.length, 1, JSON.stringify(mapped.uncited));
+  assert.deepEqual(
+    mapped.model.sections.slice(1).map((section) => [section.title, section.ordinal, section.selector]),
+    [['示例', 1, 'h/示例'], ['示例', 2, 'h/示例[2]']],
+    'the uncited block changes nothing about the numbering',
+  );
+  const produced = produceAdocEntries(mapped, { name: 'cli', slot: 'manual' });
+  assert.ok(produced.ok, JSON.stringify(produced));
+  assert.deepEqual(produced.entries.map((entry) => [String(entry.statement), entry.path]), [['第二节正文。', '/manual/cli/示例[2]']]);
 });
