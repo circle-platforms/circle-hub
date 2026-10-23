@@ -185,8 +185,9 @@ test('a manual whose example URL carries a password is retain_only until an admi
   });
   assert.deepEqual(decision.scan.findings, first.body.scan.findings);
   assert.equal((await kit.authorizations.resourceConfig(scanAcceptanceKey(sha)))?.digest, authorization.digest);
-  // Records are never changed: the retain_only record stays retain_only; the next read of the bytes carries the acceptance.
-  assert.equal((await kit.artifacts.text(admin, sha))?.readable, false);
+  // The immutable record keeps its old tier; effective reads use the current acceptance.
+  assert.equal(first.body.read_tier,'retain_only');
+  assert.equal((await kit.artifacts.text(admin, sha))?.readable,true);
 
   const second = await kit.artifacts.ingest(manualRead(bytes));
   assert.notEqual(second.digest, first.digest);
@@ -524,13 +525,13 @@ test('source() and text() pinned to one record: that record decides when the rea
   assert.equal(await kit.artifacts.source(admin, sha, { record: sha256Hex('no such record') }), null);
   await assert.rejects(kit.artifacts.source(admin, sha, { record: 'not-a-digest' }), TypeError);
   await assert.rejects(kit.artifacts.text(admin, sha, { record: 42 as never }), TypeError);
-  // The credential rule holds for a pinned record too: the record stored before the decision keeps its tier.
+  // The credential rule holds for a pinned record too: current acceptance lifts a historical scan hold.
   const secretBytes = manual(password());
   const secretSha = sha256Hex(secretBytes);
   const before = await kit.artifacts.ingest(manualRead(secretBytes));
   await kit.artifacts.acceptFindings(admin, secretSha);
   const after = await kit.artifacts.ingest(manualRead(secretBytes));
-  assert.equal((await kit.artifacts.source(admin, secretSha, { record: before.digest }))?.readTier, 'retain_only');
+  assert.equal((await kit.artifacts.source(admin, secretSha, { record: before.digest }))?.readTier, 'model_readable');
   assert.equal((await kit.artifacts.source(admin, secretSha, { record: after.digest }))?.readTier, 'model_readable');
   await kit.artifacts.revokeFindings(admin, secretSha);
   const withdrawn = await kit.artifacts.text(admin, secretSha, { record: after.digest });

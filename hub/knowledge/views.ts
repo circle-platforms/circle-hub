@@ -31,7 +31,7 @@ import {
   type ViewEntry,
 } from '../../contracts/src/views.ts';
 import type { ExternalRead, ExternalReadContext, ExternalReaderPort, PacksPort } from '../ports.ts';
-import { canonicalBytes, canonicalize, scanForCredentials, type ActionBody, type SourceArtifact } from '../records/api.ts';
+import { canonicalBytes, canonicalize, CREDENTIAL_FINDING_LIMIT, type DerivedCoverage, type ActionBody, type SourceArtifact } from '../records/api.ts';
 import { treeReference } from '../refs/api.ts';
 import type { Builds } from './builds.ts';
 import type { CompositionView, ReadRow } from './composition.ts';
@@ -835,14 +835,14 @@ export class KnowledgeViews {
       }
     }
     const origin = {generated:{generator:COMPONENTS.views,inputs}};
-    const cover = (bytes: Uint8Array) => this.#context.records.artifacts.coverDerived({bytes,origin,author:{user:null},derivedSources:[...derivedSources]});
+    const coverage = await this.#context.records.artifacts.prepareDerived({origin,author:{user:null},derivedSources:[...derivedSources]});
     const visibility = { readers: [principal.id], admins: true, packs: [], shareable: false };
     const ingest = (bytes: Uint8Array): Promise<SourceArtifact> =>
       this.#context.records.artifacts.ingest({
         bytes,
         mediaType: 'application/json',
         origin,
-        derivedSources:[...derivedSources],
+        derivedCoverage:coverage,
         author: { user: null },
         provenanceType: 'projected',
         visibility,
@@ -859,14 +859,29 @@ export class KnowledgeViews {
       // Cache the unfiltered answer only. Every use rechecks source acceptance and omissions.
       this.#cache.set(key,originalBytes);
     } else view = JSON.parse(Buffer.from(originalBytes).toString('utf8')) as ImpactView | FacetView | IndexView;
-    const flagged = await flaggedParts(view,async value => await cover(canonicalBytes(value)) !== null);
+    const flagged = flaggedParts(view,coverage);
     if (flagged.excluded.size > 0) view = await compute(flagged.excluded);
-    const final = flagged.excluded.size > 0 ? await flaggedParts(view,async value => await cover(canonicalBytes(value)) !== null) : flagged;
-    if (final.covered > 0) view.notes.push(`有 ${final.covered} 个${view.schema === 'facet-view@1' ? '计数行' : '条目'}的凭据命中由来源的受理覆盖；每次读取重新核对受理仍有效`);
-    const bytes = canonicalBytes(view);
-    const large = tooLarge(bytes);
-    if (large !== null) return { ok: false, id: bare, reason: large };
-    const artifact = await ingest(bytes);
+    const annotate = (value: ImpactView | FacetView | IndexView, covered: number, limited: number): void => {
+      const unit = value.schema === 'facet-view@1' ? '计数行' : '条目';
+      if (covered > 0) value.notes.push(`有 ${covered} 个${unit}的凭据命中由来源的受理覆盖；每次读取重新核对受理仍有效`);
+      if (limited > 0) value.notes.push(`有 ${limited} 个${unit}因整份扫描的命中上限没有留下；截断扫描不能被覆盖`);
+    };
+    const finalKeys = partKeys(view);
+    annotate(view,[...flagged.kept].filter(key => finalKeys.has(key)).length,flagged.limited.size);
+    let bytes = canonicalBytes(view);
+    let large = tooLarge(bytes);
+    if (large !== null) return {ok:false,id:bare,reason:large};
+    let artifact = await ingest(bytes);
+    // Keys or other surrounding content can add hits beyond the per-part budget.
+    // Fall back once to the previous safe omission behavior, never scan every prefix.
+    if (artifact.body.scan.truncated && flagged.eligible.size > 0) {
+      view = await compute(flagged.allHits);
+      annotate(view,0,flagged.eligible.size);
+      bytes = canonicalBytes(view);
+      large = tooLarge(bytes);
+      if (large !== null) return {ok:false,id:bare,reason:large};
+      artifact = await ingest(bytes);
+    }
     if (artifact.body.read_tier !== 'model_readable') {
       return { ok: false, id: bare, reason: `视图 ${artifact.body.sha256} 的凭据扫描有命中（读取档位“${labelOf('read_tier', artifact.body.read_tier)}”），不交给任务包` };
     }
@@ -874,7 +889,7 @@ export class KnowledgeViews {
       bytes: canonicalBytes({ title, view: request.type, product, roots, revision }),
       mediaType: 'application/json',
       origin,
-      derivedSources:[...derivedSources],
+      derivedCoverage:coverage,
       author: { user: null },
       provenanceType: 'projected',
       visibility,
@@ -925,21 +940,43 @@ export class KnowledgeViews {
  * The parts of an answer whose own text has credential scan hits: entries by digest (impact and index), rows by the
  * canonical JSON of their values (facets).
  */
-async function flaggedParts(view: ImpactView | FacetView | IndexView, covered: (value: unknown) => Promise<boolean>): Promise<{excluded:Set<string>;covered:number}> {
-  const hit = (value: unknown): boolean => scanForCredentials(canonicalBytes(value)).findings.length > 0;
-  const excluded = new Set<string>();
-  let count = 0;
-  if (view.schema === 'facet-view@1') {
-    for (const row of view.rows) if (hit(row)) {
-      if (await covered(row)) count++;
-      else excluded.add(canonicalize(view.by.map((field) => row.values[field] ?? null)));
-    }
-  } else {
-    for (const [digest,entry] of Object.entries(view.entries)) if (hit(entry)) {
-      if (await covered(entry)) count++; else excluded.add(digest);
-    }
+function partKeys(view: ImpactView | FacetView | IndexView): Set<string> {
+  return new Set(view.schema === 'facet-view@1' ? view.rows.map(row => canonicalize(view.by.map(field => row.values[field] ?? null))) : Object.keys(view.entries));
+}
+
+function flaggedParts(view: ImpactView | FacetView | IndexView, coverage: DerivedCoverage): {excluded:Set<string>;limited:Set<string>;eligible:Set<string>;kept:Set<string>;allHits:Set<string>} {
+  const excluded = new Set<string>(), limited = new Set<string>(), eligible = new Set<string>(), kept = new Set<string>(), allHits = new Set<string>();
+  const parts: Array<[string,unknown]> = view.schema === 'facet-view@1'
+    ? view.rows.map(row => [canonicalize(view.by.map(field => row.values[field] ?? null)),row])
+    : Object.entries(view.entries);
+  parts.sort(([a],[b]) => compareText(a,b));
+  const skeleton = view.schema === 'facet-view@1' ? {...view,rows:[]} : view.schema === 'index-view@1' ? {...view,entries:{},keys:{}} : {...view,entries:{}};
+  const overhead = coverage.assess(canonicalBytes(skeleton));
+  let findings = overhead.scan.findings.length, full = overhead.scan.truncated;
+  // An index key can itself contain a hit. Assess it once and charge it only the
+  // first time a retained entry uses it, including when fields omits the key data.
+  const keys = new Map<string,ReturnType<DerivedCoverage['assess']>>();
+  const memberships = new Map<string,string[]>();
+  if (view.schema === 'index-view@1') for (const [key,entries] of Object.entries(view.keys)) {
+    keys.set(key,coverage.assess(canonicalBytes(key)));
+    for (const entry of entries) { const list=memberships.get(entry) ?? []; list.push(key); memberships.set(entry,list); }
   }
-  return {excluded,covered:count};
+  const charged = new Set<string>();
+  for (const [key,value] of parts) {
+    const assessment = coverage.assess(canonicalBytes(value));
+    const associated = memberships.get(key) ?? [];
+    const hitKeys = associated.filter(k => keys.get(k)!.scan.findings.length > 0);
+    if (!assessment.scan.findings.length && !hitKeys.length) continue;
+    allHits.add(key);
+    if (assessment.scan.findings.length > 0 && !assessment.derived || hitKeys.some(k => !keys.get(k)!.derived)) { excluded.add(key); continue; }
+    eligible.add(key);
+    const cost = assessment.scan.findings.length + hitKeys.filter(k => !charged.has(k)).reduce((n,k) => n+keys.get(k)!.scan.findings.length,0);
+    if (full || findings + cost > CREDENTIAL_FINDING_LIMIT) { full=true; excluded.add(key); limited.add(key); continue; }
+    findings += cost;
+    for (const k of associated) charged.add(k);
+    kept.add(key);
+  }
+  return {excluded,limited,eligible,kept,allHits};
 }
 
 /** The ExternalReaderPort of the knowledge views (`knowledge:impact|facets|index:...`). */

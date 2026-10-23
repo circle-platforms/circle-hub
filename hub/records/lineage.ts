@@ -6,7 +6,7 @@ import { isSha256 } from './digest.ts';
 export type SourceLinks = Map<string, Set<string | null>>;
 
 /** Actual inputs only: source references, pinned source records, or pinned compositions of the named roots. */
-export async function sourceLinks(store: RecordStore, origin: ArtifactOrigin): Promise<SourceLinks | null> {
+export async function sourceLinks(store: Pick<RecordStore,'get'>, origin: ArtifactOrigin): Promise<SourceLinks | null> {
   if (!('generated' in origin)) return null;
   const links: SourceLinks = new Map();
   const add = (sha: string, record: string | null) => {

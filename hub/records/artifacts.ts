@@ -21,6 +21,8 @@ import type {
   Authorizations,
   CredentialScan,
   DerivedScanAcceptance,
+  DerivedCoverage,
+  DerivedCoverageInput,
   DerivedScanInput,
   EffectiveScanAcceptance,
   FindingsAcceptance,
@@ -43,7 +45,7 @@ import { digestOf, isSha256, sha256Hex } from './digest.ts';
 import { AccessError, ConflictError, IntegrityError, LimitError, RecordsError } from './errors.ts';
 import { isMediaType } from './objects.ts';
 import { scanDigest, scanForCredentials, scanWithContexts, scanWithMatches } from './scan.ts';
-import { sourceLinks, hubArtifact } from './lineage.ts';
+import { CoverageContext } from './coverage.ts';
 import { MAX_INDEX_VALUE_BYTES, validateIndex } from './store.ts';
 import { textPreview } from './text.ts';
 
@@ -200,6 +202,7 @@ interface Choice {
 export interface ArtifactsOptions {
   maxBytes: number;
   now: () => Date;
+  onCredentialScan?: (byteLength: number) => void;
 }
 
 export class RecordArtifacts implements Artifacts {
@@ -208,6 +211,7 @@ export class RecordArtifacts implements Artifacts {
   readonly #objects: ObjectStore;
   readonly #authorizations: Authorizations;
   readonly #options: ArtifactsOptions;
+  readonly #coverage = new WeakMap<DerivedCoverage,{context:CoverageContext;valid:boolean;origin:string;author:string;assess:DerivedCoverage['assess']}>();
 
   constructor(db: Database, store: RecordStore, objects: ObjectStore, authorizations: Authorizations, options: ArtifactsOptions) {
     this.#db = db;
@@ -234,16 +238,28 @@ export class RecordArtifacts implements Artifacts {
     if (size > this.#options.maxBytes) {
       throw new LimitError(`文件 ${size} 字节，超过上限 ${this.#options.maxBytes} 字节；不会截断保存`, { detail: { size, limit: this.#options.maxBytes } });
     }
-    const sha256 = sha256Hex(input.bytes);
-    const scan = scanForCredentials(input.bytes);
+    // Admission facts must describe the exact immutable snapshot written after asynchronous source checks.
+    const bytes = Uint8Array.from(input.bytes);
+    const sha256 = sha256Hex(bytes);
+    let coverage = input.derivedCoverage;
+    let prepared = coverage === undefined ? undefined : this.#coverage.get(coverage);
+    if (coverage !== undefined && (!prepared || prepared.origin !== digestOf(origin) || prepared.author !== digestOf(author))) throw new TypeError('derivedCoverage must be prepared by these records for this origin and author');
+    let assessment = prepared?.assess(bytes);
+    const scan = assessment?.scan ?? this.#scan(bytes);
     const hit = scan.findings.length > 0;
-    // Acceptance is for what the Hub reads or makes, never for what a person supplies (B02 R[4]): an upload with a hit is
-    // refused whatever an admin accepted, and a record with a person as author keeps retain_only.
-    if (hit && 'upload' in origin) await this.#refuseUpload({ sha256, size, mediaType: input.mediaType, origin, author, run, scan });
-    const hubLineage = hit && fromHub(origin,author) && await this.#hubLineage({body:{origin,author}} as SourceArtifact,new Set());
-    const accepted = hubLineage ? await this.#acceptanceOf(sha256, scan) : null;
-    const derived = hit && accepted === null && hubLineage && input.derivedSources !== undefined
-      ? await this.coverDerived({bytes:input.bytes,origin,author,derivedSources:input.derivedSources}) : null;
+    if (hit && 'upload' in origin) await this.#refuseUpload({sha256,size,mediaType:input.mediaType,origin,author,run,scan});
+    if (hit && coverage === undefined && input.derivedSources !== undefined && fromHub(origin,author)) {
+      coverage = await this.prepareDerived({origin,author,derivedSources:input.derivedSources});
+      prepared = this.#coverage.get(coverage)!;
+      assessment = prepared.assess(bytes);
+    }
+    const hubLineage = hit && fromHub(origin,author) && (prepared?.valid ?? await this.#hubLineage({body:{origin,author}} as SourceArtifact));
+    const accepted = hubLineage ? await this.#acceptanceOf(sha256,scan) : null;
+    let derived: DerivedScanAcceptance | null = null;
+    if (hit && accepted === null && hubLineage && assessment?.derived && prepared) {
+      await prepared.context.refresh(true);
+      if (prepared.context.validProof(assessment.derived,origin)) derived = assessment.derived;
+    }
     const readTier = hit && accepted === null && derived === null ? RETAIN_ONLY : requestedTier;
     const body: SourceArtifactBody = {
       sha256,
@@ -255,6 +271,7 @@ export class RecordArtifacts implements Artifacts {
       captured_at: capturedAt,
       provenance_type: input.provenanceType,
       read_tier: readTier,
+      requested_read_tier:requestedTier,
       visibility,
       scan: { ...scan, ...(accepted === null ? {} : {accepted}), ...(derived === null ? {} : {derived}) },
     };
@@ -268,6 +285,7 @@ export class RecordArtifacts implements Artifacts {
       provenance_type: input.provenanceType,
       read_tier: readTier,
       visibility,
+      requested_read_tier:requestedTier === RETAIN_ONLY ? requestedTier : undefined,
       accepted: accepted?.authorization,
       derived: derived ?? undefined,
     });
@@ -280,7 +298,7 @@ export class RecordArtifacts implements Artifacts {
       ...('read' in origin ? [{ key: 'artifact.object', value: origin.read.object }] : []),
       ...(author.user === null ? [] : [{ key: 'artifact.author', value: author.user }]),
     ]);
-    await this.#objects.put(input.bytes, input.mediaType);
+    await this.#objects.put(bytes, input.mediaType);
     return this.#store.withTransaction(async (tx) => {
       await this.#db.query('SELECT pg_advisory_xact_lock($1, hashtext($2))', [INGEST_LOCK_SPACE, dedupe], tx);
       const existing = await this.#store.find<SourceArtifactBody>({ key: 'artifact.dedupe', value: dedupe, kind: 'source_artifact', limit: 1 }, tx);
@@ -363,7 +381,7 @@ export class RecordArtifacts implements Artifacts {
     // An acceptance lifts only bytes the Hub read or made (B02 R[4]); what a person supplied it never lifts.
     const all = await this.records(sha256);
     let hub = false;
-    for (const artifact of all) if (!personSupplied(artifact) && await this.#hubLineage(artifact,new Set())) { hub = true; break; }
+    for (const artifact of all) if (!personSupplied(artifact) && await this.#hubLineage(artifact)) { hub = true; break; }
     if (!hub) {
       throw new ConflictError(
         all.length === 0
@@ -408,102 +426,44 @@ export class RecordArtifacts implements Artifacts {
     return { by: configuration.body.decided_by, at: configuration.body.decided_at, authorization: configuration.digest };
   }
 
-  /**
-   * Whether the credential hit of some bytes is lifted now: an acceptance in force covers every scan of the newest scanner
-   * version that found something, none of them truncated (B04 R[1]: checked again at every use, so a withdrawal takes
-   * effect at once).
-   */
-  async #hitAccepted(sha256: string, hits: readonly SourceArtifact[]): Promise<boolean> {
-    if (hits.some((record) => record.body.scan.truncated)) return false;
-    const configuration = await this.#authorizations.resourceConfig(scanAcceptanceKey(sha256));
-    return configuration !== null && hits.every((record) => scanDigest(record.body.scan) === configuration.body.bound);
+  #scan(bytes: Uint8Array): CredentialScan {
+    this.#options.onCredentialScan?.(bytes.byteLength);
+    return scanForCredentials(bytes);
   }
 
-  /** No match text crosses this boundary; callers get source/decision references only. */
-  async coverDerived(input: DerivedScanInput): Promise<DerivedScanAcceptance | null> {
+  #context(): CoverageContext {
+    return new CoverageContext({store:this.#store,objects:this.#objects,authorizations:this.#authorizations,scan:bytes => {
+      this.#options.onCredentialScan?.(bytes.byteLength);
+      return scanWithMatches(bytes);
+    }});
+  }
+
+  async prepareDerived(input: DerivedCoverageInput): Promise<DerivedCoverage> {
     const origin = validOrigin(input.origin), author = validAuthor(input.author);
-    if (!(input.bytes instanceof Uint8Array) || input.bytes.byteLength > this.#options.maxBytes || !fromHub(origin,author) || !('generated' in origin)) return null;
-    if (!Array.isArray(input.derivedSources) || input.derivedSources.some(sha => !isSha256(sha))) return null;
-    const target = {body:{origin,author}} as SourceArtifact;
-    if (!await this.#hubLineage(target,new Set())) return null;
-    return this.#derive(input.bytes,origin,[...new Set(input.derivedSources)],new Set());
+    if (!Array.isArray(input.derivedSources) || input.derivedSources.some(sha => !isSha256(sha))) throw new TypeError('derivedSources must be source byte digests');
+    const context = this.#context();
+    if (fromHub(origin,author)) await context.load([origin]);
+    const {handle,valid} = await context.prepare({...input,origin,author});
+    const assess: DerivedCoverage['assess'] = bytes => {
+      if (!(bytes instanceof Uint8Array) || bytes.byteLength > this.#options.maxBytes) throw new TypeError('coverage bytes exceed the artifact limit');
+      return handle.assess(bytes);
+    };
+    const checked: DerivedCoverage = {assess};
+    this.#coverage.set(checked,{context,valid,origin:digestOf(origin),author:digestOf(author),assess});
+    return checked;
   }
 
-  /** All inputs, including clean ones, must have an entirely Hub-owned ancestry. */
-  async #hubLineage(artifact: SourceArtifact, visiting: Set<string>): Promise<boolean> {
-    if (!hubArtifact(artifact) || visiting.size >= 32) return false;
+  async coverDerived(input: DerivedScanInput): Promise<DerivedScanAcceptance | null> {
+    const coverage = await this.prepareDerived(input);
+    return coverage.assess(input.bytes).derived;
+  }
+
+  async #hubLineage(artifact: SourceArtifact): Promise<boolean> {
+    if (!fromHub(artifact.body.origin,artifact.body.author)) return false;
     if ('read' in artifact.body.origin) return true;
-    const key = artifact.digest;
-    if (key && visiting.has(key)) return false;
-    const path = new Set(visiting); if (key) path.add(key);
-    const links = await sourceLinks(this.#store,artifact.body.origin);
-    if (links === null) return false;
-    for (const [sha,pins] of links) {
-      const records = await this.records(sha);
-      // Each pinned input is an actual edge. A Hub record of equal bytes must not
-      // hide a separate, human-authored edge with the same content digest.
-      for (const pin of pins) {
-        let valid = false;
-        for (const record of records) if ((pin === null || pin === record.digest) && record.body.sha256 === sha && await this.#hubLineage(record,path)) { valid = true; break; }
-        if (!valid) return false;
-      }
-    }
-    return true;
-  }
-
-  /** Fresh effective evidence for one exact record; no cross-read cache survives a withdrawal. */
-  async #effectiveAcceptance(artifact: SourceArtifact, all: readonly SourceArtifact[], visiting: Set<string>): Promise<EffectiveScanAcceptance | null> {
-    if (!hubArtifact(artifact) || visiting.has(artifact.digest) || visiting.size >= 32 || !await this.#hubLineage(artifact,new Set())) return null;
-    const hits = newestHits(all);
-    if (!hits.length || hits.some(record => record.body.scan.truncated)) return null;
-    const bytes = await this.#objects.get(artifact.body.sha256);
-    if (bytes === null) return null;
-    const fresh = scanWithMatches(bytes);
-    if (!fresh.complete || fresh.scan.truncated || !fresh.scan.inspected || hits.some(record => scanDigest(record.body.scan) !== scanDigest(fresh.scan))) return null;
-    const direct = await this.#acceptanceOf(artifact.body.sha256,fresh.scan);
-    if (direct !== null) return {kind:'direct',acceptance:direct};
-    const prior = artifact.body.scan.derived;
-    if (!prior?.sources.length || !('generated' in artifact.body.origin)) return null;
-    const path = new Set(visiting); path.add(artifact.digest);
-    const covered = await this.#derive(bytes,artifact.body.origin,prior.sources.map(source => source.sha256),path,prior);
-    return covered === null ? null : {kind:'derived',acceptance:covered};
-  }
-
-  async #derive(bytes: Uint8Array, origin: ArtifactOrigin, candidates: readonly string[], visiting: Set<string>, prior?: DerivedScanAcceptance): Promise<DerivedScanAcceptance | null> {
-    const target = scanWithMatches(bytes);
-    if (!target.scan.inspected || target.scan.truncated || !target.complete || !target.matches.length) return null;
-    const links = await sourceLinks(this.#store,origin);
-    if (links === null) return null;
-    const sources: DerivedScanAcceptance['sources'] = [];
-    const remaining = new Set(target.matches);
-    for (const sha of candidates) {
-      const pins = links.get(sha);
-      if (!pins) return null;
-      const records = await this.records(sha);
-      const previous = prior?.sources.find(source => source.sha256 === sha);
-      let used = false;
-      for (const record of [...records].reverse()) {
-        if ((!pins.has(null) && !pins.has(record.digest)) || previous && previous.record !== record.digest || record.body.read_tier === RETAIN_ONLY || record.body.sha256 !== sha) continue;
-        const acceptance = await this.#effectiveAcceptance(record,records,visiting);
-        if (acceptance === null) continue;
-        const evidence = acceptance.kind === 'direct' ? [acceptance.acceptance] : acceptance.acceptance.sources.flatMap(source => source.acceptances);
-        const acceptances = [...new Map(evidence.map(a => [a.authorization,a])).values()].sort((a,b) => a.authorization.localeCompare(b.authorization));
-        if (previous && previous.acceptances.map(a => a.authorization).join(',') !== acceptances.map(a => a.authorization).join(',')) continue;
-        const original = await this.#objects.get(sha);
-        if (original === null) continue;
-        const source = scanWithMatches(original);
-        if (!source.scan.inspected || source.scan.truncated || !source.complete) continue;
-        const matched = source.matches.filter(value => remaining.has(value));
-        // At read time every previously used source must still be valid, even if another source could cover it.
-        if (matched.length || previous) {
-          for (const value of matched) remaining.delete(value);
-          sources.push({sha256:sha,record:record.digest,acceptances});
-          used = true; break;
-        }
-      }
-      if (previous && !used) return null;
-    }
-    return remaining.size || !sources.length ? null : {sources};
+    const context = this.#context();
+    await context.load([artifact.body.origin]);
+    return context.hubOrigin(artifact.body.origin);
   }
 
   async #requireAdmin(by: Principal, message: string): Promise<void> {
@@ -545,9 +505,16 @@ export class RecordArtifacts implements Artifacts {
     const chosen = record === null ? await this.#deciding(viewer, all) : await this.#pinned(viewer, all, record);
     if (chosen === null) return null;
     const hits = newestHits(all);
-    const acceptance = hits.length > 0 ? await this.#effectiveAcceptance(chosen,all,new Set()) : null;
+    let acceptance: EffectiveScanAcceptance | null = null;
+    let tier = chosen.body.read_tier;
+    if (hits.length > 0 && fromHub(chosen.body.origin,chosen.body.author)) {
+      const context = this.#context();
+      await context.load([chosen.body.origin],all);
+      acceptance = context.acceptance(chosen);
+      if (acceptance !== null) tier = context.tier(chosen,acceptance);
+    }
     const credential = hits.length > 0 && acceptance === null;
-    return { artifact: chosen, tier: credential ? RETAIN_ONLY : chosen.body.read_tier, credential, ...(acceptance === null ? {} : {acceptance}) };
+    return {artifact:chosen,tier:credential ? RETAIN_ONLY : tier,credential,...(acceptance === null ? {} : {acceptance})};
   }
 
   /** Newest first; another person's upload or record is only the fallback, so no user changes what governs someone else's reads. */

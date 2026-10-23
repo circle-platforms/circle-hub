@@ -5,7 +5,7 @@ import { before, after, test } from 'node:test';
 import pg from 'pg';
 import { startPostgres, type TemporaryPostgres } from '../testing/postgres.ts';
 import { openTestRecords, type TestRecordsKit } from '../testing/records.ts';
-import { canonicalBytes, sha256Hex, type IngestInput, type Principal, type SourceArtifactBody } from './api.ts';
+import { canonicalBytes, sha256Hex, type DerivedCoverageInput, type IngestInput, type Principal, type SourceArtifactBody } from './api.ts';
 
 let postgres: TemporaryPostgres;
 before(async () => { postgres = await startPostgres(); });
@@ -137,4 +137,83 @@ test('acceptance and withdrawal notes cannot copy a decoded match hidden behind 
   await assert.rejects(kit.artifacts.acceptFindings(admin,source.body.sha256,copied),e => e instanceof Error && !e.message.includes(b));
   await kit.artifacts.acceptFindings(admin,source.body.sha256,'合成文档中的虚构写法');
   await assert.rejects(kit.artifacts.revokeFindings(admin,source.body.sha256,copied),e => e instanceof Error && !e.message.includes(b));
+});
+test('a prepared matcher is origin-bound and cannot admit a stale acceptance after withdrawal', async t => {
+  const {kit,admin,admitted} = await world(t); const secret=fake();
+  const source = await admitted(Buffer.from(line(secret)));
+  const input = derived(Buffer.from(`prepared\n${line(secret)}`),[source.body.sha256]);
+  const handle = await kit.artifacts.prepareDerived({origin:input.origin,author:input.author,derivedSources:input.derivedSources!});
+  assert.ok(handle.assess(input.bytes).derived);
+  await assert.rejects(kit.artifacts.ingest({...input,origin:{generated:{generator:'synthetic.other@1',inputs:[]}},derivedCoverage:handle}),TypeError);
+  await kit.artifacts.revokeFindings(admin,source.body.sha256);
+  assert.equal((await kit.artifacts.ingest({...input,derivedCoverage:handle})).body.read_tier,'retain_only');
+});
+test('a current acceptance covers a stored scan hold, while an explicit retention request stays retained', async t => {
+  const {kit,admin} = await world(t); const secret=fake();
+  const input=readInput(Buffer.from(line(secret)));
+  const held=await kit.artifacts.ingest(input);
+  await kit.artifacts.acceptFindings(admin,held.body.sha256,'合成手册的虚构示例');
+  assert.equal(held.body.read_tier,'retain_only');
+  assert.equal((await kit.artifacts.source(admin,held.body.sha256,{record:held.digest}))?.readTier,'model_readable');
+  const output=await kit.artifacts.ingest(derived(Buffer.from(`current\n${line(secret)}`),[held.body.sha256]));
+  assert.equal(output.body.read_tier,'model_readable');
+  const explicit=await kit.artifacts.ingest({...input,readTier:'retain_only'});
+  assert.equal((await kit.artifacts.source(admin,held.body.sha256,{record:explicit.digest}))?.readTier,'retain_only');
+});
+test('read operations over admitted multi-megabyte bytes use stored scan facts without scanning them', async t => {
+  const kit=await openTestRecords({postgres});
+  const {user:admin}=await kit.principals.bootstrapAdmin('合成管理员');
+  const {openRecords} = await import('./index.ts');
+  let scans=0,bytes=0;
+  let counted: Awaited<ReturnType<typeof openRecords>> | undefined;
+  t.after(async()=>{await counted?.close();await kit.close();});
+  counted=await openRecords({dataDir:kit.dataDir,logDir:kit.config.logDir,database:kit.database,limits:kit.config.limits},{migrate:false,keyProvider:kit.keyProvider,onCredentialScan:length=>{scans++;bytes+=length;}});
+  const input=readInput(Buffer.from('synthetic plain text\n'.repeat(100_000)+line(fake())));
+  const held=await counted.artifacts.ingest(input);
+  await counted.artifacts.acceptFindings(admin,held.body.sha256,'合成文件中的虚构示例');
+  let objectReads=0;
+  const get=counted.objects.get.bind(counted.objects);
+  t.mock.method(counted.objects,'get',async (sha: string)=>{objectReads++;return get(sha);});
+  scans=0;bytes=0;
+  assert.equal((await counted.artifacts.source(admin,held.body.sha256,{record:held.digest}))?.bytes?.length,input.bytes.byteLength);
+  assert.equal((await counted.artifacts.text(admin,held.body.sha256))?.readable,true);
+  assert.ok(await counted.artifacts.readable(admin,held.body.sha256));
+  assert.deepEqual({scans,bytes},{scans:0,bytes:0});
+  assert.equal(objectReads,2,'only source() and text() fetch the requested bytes; metadata checks never fetch bytes');
+});
+test('public matcher methods and returned evidence cannot be altered to forge coverage', async t => {
+  const {kit,admin,admitted}=await world(t); const first=fake(),second=fake();
+  const a=await admitted(Buffer.from(line(first))),b=await admitted(Buffer.from(line(second)));
+  const input=derived(Buffer.from(`immutable matcher\n${line(first)}`),[a.body.sha256,b.body.sha256]);
+  const handle=await kit.artifacts.prepareDerived({origin:input.origin,author:input.author,derivedSources:input.derivedSources!});
+  const result=handle.assess(input.bytes); assert.ok(result.derived);
+  const bDecision=b.body.scan.accepted!;
+  result.derived.sources[0]={sha256:b.body.sha256,record:b.digest,acceptances:[bDecision]};
+  handle.assess=()=>result;
+  await kit.artifacts.revokeFindings(admin,a.body.sha256);
+  assert.equal((await kit.artifacts.ingest({...input,derivedCoverage:handle})).body.read_tier,'retain_only');
+});
+test('legacy tiers use an explicit compatibility default rather than treating admission tier as current authority', async t => {
+  const {kit,admin}=await world(t);
+  const held=await kit.artifacts.ingest(readInput(Buffer.from(line(fake()))));
+  const body: SourceArtifactBody=structuredClone(held.body);delete body.requested_read_tier;
+  const legacy=await kit.store.put({kind:'source_artifact',schema:'source_artifact@1',provenance:'observed',body,index:[{key:'artifact.sha256',value:body.sha256}]});
+  const accepted=await kit.artifacts.acceptFindings(admin,body.sha256,'合成旧记录中的虚构示例');
+  assert.equal(legacy.body.read_tier,'retain_only');
+  assert.equal((await kit.artifacts.source(admin,body.sha256,{record:legacy.digest}))?.readTier,'model_readable');
+  // An accepted/covered legacy record that was nevertheless retained proves an explicit retention request.
+  const explicit=await kit.store.put({kind:'source_artifact',schema:'source_artifact@1',provenance:'observed',body:{...body,scan:{...body.scan,accepted:{by:admin.id,at:accepted.authorization.body.decided_at,authorization:accepted.authorization.digest}}},index:[{key:'artifact.sha256',value:body.sha256}]});
+  assert.equal((await kit.artifacts.source(admin,body.sha256,{record:explicit.digest}))?.readTier,'retain_only');
+});
+test('admission snapshots caller-owned bytes before awaiting preparation of source coverage', async t => {
+  const {kit,admitted}=await world(t); const first=fake(),second=fake();
+  const source=await admitted(Buffer.from(line(second)));
+  const bytes=Buffer.from(`mutable\n${line(first)}`), original=Buffer.from(bytes), changed=Buffer.from(`mutable\n${line(second)}`);
+  assert.equal(bytes.length,changed.length);
+  const prepare=kit.artifacts.prepareDerived.bind(kit.artifacts);
+  t.mock.method(kit.artifacts,'prepareDerived',async (input: DerivedCoverageInput)=>{const handle=await prepare(input);bytes.set(changed);return handle;});
+  const output=await kit.artifacts.ingest(derived(bytes,[source.body.sha256]));
+  assert.equal(output.body.sha256,sha256Hex(original));
+  assert.equal(output.body.read_tier,'retain_only');
+  assert.deepEqual(Buffer.from((await kit.artifacts.trustedBytes(output.body.sha256))!),original);
 });

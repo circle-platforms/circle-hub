@@ -95,7 +95,7 @@ export class ListLoader {
 
   /**
    * The bytes of a peeked element, checked and parsed. A stored read that no longer passes a check now (the record became
-   * unreadable, a finding was accepted since and a new read would pass) is read again through the port. Never rejects.
+   * unreadable after withdrawal or its policy changed) is read again through the port. Never rejects.
    */
   materialize(peek: Extract<ElementPeek, { ok: true }>, maxBytes: number): Promise<ElementLoad> {
     return this.#gate.run(async () => {

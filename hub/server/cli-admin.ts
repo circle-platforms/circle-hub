@@ -945,7 +945,7 @@ async function sourceCommand(session: Session, args: readonly string[]): Promise
       const kit = await session.records();
       const accepted = await decided(() => kit.artifacts.acceptFindings(admin, sha, values.note));
       session.out(`已接受 ${sha} 的 ${accepted.scan.findings.length} 处命中（扫描器 ${accepted.scan.scanner}）；之后重新读到同样字节时按正常内容保存。决定记录 ${accepted.authorization.digest}`);
-      session.out('已经被只保留的那次读取不会自己放开：重新运行读它的命令（例如 knowledge sync）');
+      session.out('历史记录的入库档位不改；重新读取时核当前受理，显式要求只保留的策略不放开');
       return 0;
     }
     case 'withdraw': {

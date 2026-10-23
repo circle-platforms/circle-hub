@@ -21,7 +21,7 @@ export { canonicalize, canonicalBytes, CanonicalizationError } from './canonical
 export { sha256Hex, digestOf, recordDigest, isSha256, SHA256_PATTERN } from './digest.ts';
 export { newId, ulid, idTime, isId } from './ids.ts';
 export { RecordsError, IntegrityError, LimitError, AccessError, ConflictError, MigrationError, VaultError } from './errors.ts';
-export { scanForCredentials, scanDigest, CREDENTIAL_SCANNER, CREDENTIAL_DETECTORS } from './scan.ts';
+export { scanForCredentials, scanDigest, CREDENTIAL_SCANNER, CREDENTIAL_FINDING_LIMIT, CREDENTIAL_DETECTORS } from './scan.ts';
 export { textPreview, stripNul } from './text.ts';
 export { maskedForDisplay, FileKeyProvider } from './vault.ts';
 export { WHOLE_HUB, RECORD_SCHEMAS, artifactShareKey, scanAcceptanceKey } from './constants.ts';
@@ -161,6 +161,10 @@ export interface RecordStore {
   /** Appends a record; an identical digest returns the existing record with `created: false`. */
   put<B>(input: RecordInput<B>, tx?: Transaction): Promise<PutResult<B>>;
   get<B = unknown>(digest: string, tx?: Transaction): Promise<StoredRecord<B> | null>;
+  /** Batched verified reads; missing/invalid digests are absent from the map. */
+  getMany<B = unknown>(digests: readonly string[], tx?: Transaction): Promise<Map<string, StoredRecord<B>>>;
+  /** All indexed records for these values in insertion order, in one query (no per-value query or truncation). */
+  findMany<B = unknown>(query: {key: string; values: readonly string[]; kind?: RecordKind}, tx?: Transaction): Promise<StoredRecord<B>[]>;
   getById<B = unknown>(id: string, tx?: Transaction): Promise<StoredRecord<B> | null>;
   find<B = unknown>(query: FindQuery, tx?: Transaction): Promise<Page<StoredRecord<B>>>;
   list<B = unknown>(query: ListQuery, tx?: Transaction): Promise<Page<StoredRecord<B>>>;
@@ -246,11 +250,19 @@ export interface ScanAcceptance {
 
 /** Safe proof: references to source bytes, their deciding records and the admin decisions, never finding text or hashes. */
 export interface DerivedScanAcceptance {
+  /** Target scan identity: metadata digest only, never a hash of matched text. Older receipts bind it through their record. */
+  scanner?: string;
+  scan_digest?: string;
   sources: Array<{ sha256: string; record: string; acceptances: ScanAcceptance[] }>;
 }
 export type EffectiveScanAcceptance =
   | { kind: 'direct'; acceptance: ScanAcceptance }
   | { kind: 'derived'; acceptance: DerivedScanAcceptance };
+/** Opaque, operation-scoped matcher. Exact source matches stay inside records and are never returned. */
+export interface DerivedCoverage {
+  assess(bytes: Uint8Array): {scan: CredentialScan; derived: DerivedScanAcceptance | null};
+}
+export type DerivedCoverageInput = Omit<DerivedScanInput, 'bytes'>;
 export interface DerivedScanInput {
   bytes: Uint8Array;
   origin: ArtifactOrigin;
@@ -290,6 +302,8 @@ export interface SourceArtifactBody {
   captured_at: string;
   provenance_type: ProvenanceType;
   read_tier: ReadTier;
+  /** Requested policy before credential holding; absent on historical records. */
+  requested_read_tier?: ReadTier;
   visibility: Visibility;
   scan: CredentialScan;
 }
@@ -297,6 +311,8 @@ export interface SourceArtifactBody {
 export type SourceArtifact = StoredRecord<SourceArtifactBody>;
 
 export interface IngestInput {
+  /** An opaque matcher prepared for exactly this origin/author; revalidated before admission. */
+  derivedCoverage?: DerivedCoverage;
   /** Source byte digests for a Hub-generated derivative; never a global pool of accepted text. */
   derivedSources?: readonly string[];
   bytes: Uint8Array;
@@ -363,6 +379,8 @@ export interface Artifacts {
    */
   ingest(input: IngestInput): Promise<SourceArtifact>;
   /** In-memory check for Hub-generated parts (for example entries of a view). No bytes or finding text are persisted or returned. */
+  /** Resolve and verify the entire input graph once, select current accepted sources in bulk and scan only those bytes once. */
+  prepareDerived(input: DerivedCoverageInput): Promise<DerivedCoverage>;
   coverDerived(input: DerivedScanInput): Promise<DerivedScanAcceptance | null>;
   /** Every source_artifact record of these bytes, oldest first. No access check: for trusted callers only. */
   records(sha256: string): Promise<SourceArtifact[]>;
@@ -399,8 +417,9 @@ export interface Artifacts {
    * uploads or records with a person as author), when the scan finds nothing, or when it found more than it keeps
    * (`truncated`). A note the credential scanner flags, or one that copies six or more consecutive characters from the
    * lines carrying a finding, is refused (RecordsError) before anything is recorded. It takes effect for read and
-   * generated artifacts the Hub stores afterwards (a connector or generator ingests the bytes again), never for what a
-   * person supplied; other bytes or another finding set (another scanner version) are not covered.
+   * generated artifacts' effective reads, including a historical scan-imposed hold, never for what a person supplied.
+   * The stored tier stays historical; explicit requested retention is preserved. Other bytes, scanner versions or
+   * finding sets are not covered.
    */
   acceptFindings(by: Principal, sha256: string, note?: string | null): Promise<FindingsAcceptance>;
   /**
@@ -499,6 +518,8 @@ export interface Authorizations {
   configureResource(by: Principal, resourceId: string, bound: string, note?: string | null): Promise<AuthorizationRecord>;
   /** Latest active configuration of a resource, or null. */
   resourceConfig(resourceId: string): Promise<AuthorizationRecord | null>;
+  /** Latest active decisions in one verified query; missing/revoked/expired entries are absent. */
+  resourceConfigs(resourceIds: readonly string[]): Promise<Map<string, AuthorizationRecord>>;
   /** One share record per audience member. `object` is the key a reader check uses, for example `src:<sha256>` or a run id. */
   share(by: Principal, object: string, audience: string[], note?: string | null): Promise<AuthorizationRecord[]>;
   unshare(by: Principal, object: string, userId: string, note?: string | null): Promise<AuthorizationRecord>;
@@ -678,6 +699,8 @@ export interface RecordsKit {
 }
 
 export interface OpenRecordsOptions {
+  /** Optional instrumentation: credential-scanner byte counts only, never bytes or matched values. */
+  onCredentialScan?: (byteLength: number) => void;
   /**
    * Default true: apply pending migrations (the connection's role then owns the tables). False for the runtime role, which
    * may only read and append: the schema must already be migrated by the owner (migrateRecords), else MigrationError.

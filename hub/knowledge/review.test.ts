@@ -661,3 +661,32 @@ describe('views cut over the byte budget (findings: index estimate below the rea
     assert.deepEqual(cut.entries[digest], all.entries[digest]);
   });
 });
+test('the view budget also charges credential-bearing index keys once and keeps a deterministic prefix', async t => {
+  const w=await world(t,[DEFAULT_PRODUCERS[0],casesProducer({batch:5})]);
+  const ids:string[]=[];
+  for(let d=0;d<5;d++) {
+    const id=`store:mindmap:budget-${d}`;
+    const module=`sk-SyntheticBudgetToken${d}WithLettersA7349`;
+    const text=mindMap({id:`budget-${d}`,module},Array.from({length:40},(_,i)=>({id:`case-${d}-${i}`,text:`[cmd: system reboot] password = FtpBudget${d}7349`,expected:['ok']})));
+    w.external.set(id,{bytes:text,mediaType:JSON_TYPE});ids.push(id);
+    const source=await w.kit.artifacts.ingest({bytes:Buffer.from(text),mediaType:JSON_TYPE,origin:{read:{object:id}},author:{user:null},provenanceType:'observed',visibility:{readers:[],admins:true,packs:[],shareable:false}});
+    await w.kit.artifacts.acceptFindings(w.admin,source.body.sha256,'合成数据的虚构写法');
+  }
+  const produced=await w.knowledge.produceTree({product:w.product,build:build(A,ids)});assert.ok(produced.root);
+  const nodes=await w.knowledge.getNodes({root:produced.root,paths:['/commands/system/reboot'],depth:0},w.user);assert.ok(nodes);
+  const entries=nodes.nodes[0].entries.filter(e=>e.kind==='case').sort((a,b)=>a.entry<b.entry?-1:1);
+  assert.equal(entries.length,200);
+  const expected:string[]=[],keys=new Set<string>();let hits=0;
+  for(const entry of entries) {
+    const key=String(entry.data?.module),cost=2+(keys.has(key)?0:1);
+    if(hits+cost>100)break;
+    hits+=cost;keys.add(key);expected.push(entry.entry);
+  }
+  const result=await reader(w).read(`knowledge:index:acme:${A}?kind=case&key=module`);assert.ok(result.ok);
+  const artifact=result.artifacts[0].artifact;
+  assert.equal(artifact.body.scan.truncated,false);assert.equal(artifact.body.scan.findings.length,hits);
+  const bytes=await w.kit.artifacts.source(w.user,artifact.body.sha256);assert.ok(bytes?.bytes);
+  const value=IndexView.parse(JSON.parse(Buffer.from(bytes.bytes).toString()));
+  assert.deepEqual(Object.keys(value.entries).sort(),expected);
+  assert.ok(value.notes.some(n=>n.includes(`${200-expected.length} 个条目因整份扫描的命中上限没有留下`)));
+});

@@ -366,11 +366,18 @@ catalogs, grounds and provenance.
     `tree:<root>/`, projected, readable by the caller and admins, not shareable) with a `meta` artifact (a Chinese title).
     Credential acceptance follows only the actual composition(s): the generated origin pins their record digests beside
     the tree roots, and offers their original/derived source byte digests to records (`derivedSources`). Records verifies
-    current acceptance and complete, exact finding coverage in memory; knowledge never receives matched text. An entry
+    current acceptance and complete, exact finding coverage in memory; knowledge never receives matched text. One
+    `prepareDerived` operation batches the actual graph/scan/authorization reads and collects accepted source matches
+    once; all parts and final ingestion share its opaque matcher. An entry
     (impact/index) or row (facets) with complete coverage stays, with a note counting covered entries (facets count rows).
-    Uncovered entries/rows are left out with a note naming their tree references and the answer is computed again;
+    Covered parts are considered in digest order (facet rows in canonical key order), reserving the unchanged 100-hit
+    whole-file budget for fixed content, parts and each retained index key once. A part that would overflow stops later
+    hit-bearing parts being retained; non-hit parts remain. Notes distinguish covered retained parts from parts omitted
+    for the whole-file limit. Uncovered entries/rows are left out with their references and the answer is computed again;
     a changed entry with an uncovered hit takes its path out, an attached one only itself. The complete answer is then
-    ingested and checked again; a remaining uncovered hit refuses the read. The unfiltered answer alone is cached:
+    ingested and checked again; a remaining uncovered hit refuses the read. If serialization context adds unexpected
+    hits that truncate the full scan, one conservative recomputation omits all hit-bearing parts (the previous safe
+    behavior), never rescanning every prefix. The unfiltered answer alone is cached:
     every read rechecks coverage, so a withdrawal filters a warm cache too and never serves the earlier accepted answer. Revision: the root digests
     joined by `..`; manifest: a `generate` action of `knowledge.views@1`. Equal content gives equal bytes; a computed
     answer is kept in memory (4) by request and roots. `routeKnowledgeViews(views, connectors)` gives the run engine one
@@ -558,6 +565,26 @@ is read again in a second scan. To show the failures, the reviewed code was rebu
 from the files as read before this change (the original suite gives the same 146 passes there) and the file was run
 against it: 21 of 21 fail, each on the finding's behaviour.
 
+## Derived acceptance complexity guard
+
+`derived-scale.test.ts` uses real temporary PostgreSQL and synthetic content only. Its root has 3,000 sources,
+20 currently accepted credential-bearing sources and 200 credential-bearing case entries. Historical held records
+are used as source pins; eligibility follows effective acceptance, not their admission-time tier. In digest order,
+100 entries are retained and 100 omitted for the whole-file scan cap; the delivered bytes have exactly 100 findings,
+no truncated scan, and remain model-readable. The view's own truncation flag and notes disclose the omissions.
+
+| Operation | Database queries | Credential-scanner calls | Credential-scanner bytes |
+| --- | ---: | ---: | ---: |
+| Generate view | 42 | 224 | 219402 |
+| Read stored view | 7 | 0 | 0 |
+
+The 224 scans are 20 accepted sources (45910 bytes, collected once), 200 entries, one index key, the fixed skeleton,
+the final complete answer and its meta artifact. Assertions cap generation at 128 queries and read at 16, enforce this
+source/entry-linear call count and a linear byte bound, and refuse any credential scan during a read. SQL and byte
+budgets fail fast; fixture setup is excluded. These are complexity counters, not real-environment latency claims.
+A separate multi-megabyte read test checks that source/text fetch only their requested bytes and readability checks
+fetch no bytes for credential verification. Preview mutation and stale/foreign matcher handles cannot forge admission.
+
 ## Scale (measured on this machine)
 
 Measured on 2026-10-22 on the development Mac (macOS, Node 24.17, 15 cores, 48 GB), temporary PostgreSQL from
@@ -668,12 +695,15 @@ Milestone 2:
   list in every build (64 MiB of plan answer). (6) Say whether `ProducerInput.lists` may hold more than one slot (this
   package allows one list input per producer). (7) Say on the views that an answer is cut to fit a run's JSON parser
   (16 MiB), with the truncated flags already there.
+- **view delivery follow-up**: separately admitted parts/chunks are not implemented. The current whole-file scanner
+  cap is unchanged; budgets omit later hit-bearing entries instead of producing an unreadable answer. A part-wise
+  coverage or delivery format requires a separate decision.
 - **records**: (1) **Done** (records decision 19): `derivedSources`, exact in-memory coverage and source/decision-only
   receipts carry an administrator's acceptance through verified Hub-owned ancestry. Views pin the actual root
   compositions and their source records, check each flagged entry/row through `coverDerived`, and recheck the complete
-  artifact on ingest and every read. No matched-text fingerprint is used or stored. (2) A batched `find` by many index values (or `get` by many digests) would cut the
-  per-entry existence checks of a first production (184,000 queries on the measured corpus) and the per-document lookups
-  of stored reads.
+  artifact on ingest and every read. Preparation is shared across the view, and reads validate immutable scan facts and
+  live decisions without re-scanning source bytes. No matched-text fingerprint is used or stored. (2) **Bulk APIs now available:** coverage uses `findMany`/`getMany`; adoption in the other per-entry existence checks
+  of a first production (184,000 queries on the measured corpus) and stored-read lookups remains a separate follow-up.
 - **platform**: consider starting the persistent Hub with `--max-old-space-size=1024` (or 1536): on the measured corpus
   the resident set stayed at 1.2 GB instead of 1.7 GB at the same speed (see Scale).
 - **packs (agile-case-index)**: list case documents in a stable order, new ones last; give every fragment of a list slot

@@ -12,7 +12,8 @@ export const CREDENTIAL_SCANNER = 'credential-scan@2';
 export const CREDENTIAL_DETECTORS = ['private_key', 'bearer_credential', 'basic_credential', 'jwt', 'password_assignment', 'cloud_key'] as const;
 export type CredentialDetector = (typeof CREDENTIAL_DETECTORS)[number];
 
-const MAX_FINDINGS = 100;
+export const CREDENTIAL_FINDING_LIMIT = 100;
+const MAX_FINDINGS = CREDENTIAL_FINDING_LIMIT;
 /** Quoted strings inside quoted strings are undone this many levels deep. */
 const MAX_NESTING = 4;
 /**
