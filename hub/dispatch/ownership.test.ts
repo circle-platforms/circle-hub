@@ -9,7 +9,7 @@ for(const ownership of ['staging_directory','none','missing','unexpected','stale
     const c=await setup({extraTools:['inspect_seat'],alter:(name,value)=>{
       const args=c.endpoint.calls.filter(e=>e.params.name===name).at(-1)?.params.arguments as Record<string,unknown>;
       if(name==='inspect_seat')return {output:args.command==='inspect version'?'version: synthetic-build':`address: 192.0.2.${Number(args.seat)+1}/24`};
-      if(name==='read_blob')return {...value,...(ownership==='missing'?{}:{ownership:ownership==='stale-constant'?'staging_directory':ownership}),ownership_reason:'ambiguous_reports',rows:[{id:'synthetic-case',outcome:'good',log:'SYNTHETIC_END',stale:ownership==='stale-constant'}]};
+      if(name==='read_blob')return {...value,...(ownership==='missing'?{}:{ownership:ownership==='stale-constant'?'staging_directory':ownership}),ownership_reason:(ownership==='staging_directory'||ownership==='stale-constant')?null:'ambiguous_reports',rows:[{id:'synthetic-case',outcome:'good',log:'SYNTHETIC_END',stale:ownership==='stale-constant'}]};
       return value;
     }});t.after(()=>c.close());
     const manifest=await c.kit.artifacts.ingest({bytes:canonicalBytes({id:'synthetic-bed',devices:[1,2].map(n=>({interfaces:[{address:`192.0.2.${n}/24`}]}))}),mediaType:'application/json',origin:{upload:{session:'synthetic'}},author:{user:c.owner.id},provenanceType:'declared',visibility:{readers:[c.owner.id],admins:true,packs:[],shareable:false}});
