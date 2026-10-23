@@ -37,7 +37,7 @@ function input(parameters: Record<string, unknown>, options: { manifest?: unknow
   return {
     inputs: [{ slot: 'inventory', external: 'doc:doc:bed-topology', sha256: 'a'.repeat(64), media_type: 'application/json', parser: 'json@1', model: options.manifest ?? MANIFEST, meta: null }],
     parameters,
-    context: { product: null, names: [], line: null, build: null, root: null, parameters, groups: [], leases: { now: NOW, entries: options.leases ?? [] } },
+    context: { product: null, names: [], line: null, build: null, root: null, parameters, groups: [], leases: { now: NOW, entries: options.leases ?? [], registrations: [] } },
   };
 }
 
@@ -50,7 +50,7 @@ const fieldsOf = (out: unknown, bed: string): Record<string, unknown> => {
 
 describe('project action search', () => {
   it('lists every bed with the exact idle wording; a short bed says what it lacks; a leased bed names its earliest free moment', () => {
-    const out = project(input({ need: { devices: [{ type: 'client', count: 1 }], hours: 2 } }));
+    const out = project(input({ need: { devices: [{ type: 'client', count: 1 }] } }));
     assert.ok(!('error' in Object(out)), JSON.stringify(out).slice(0, 300));
     const a = fieldsOf(out, 'bed-a');
     assert.equal(a.devices_ok, true);
@@ -59,11 +59,11 @@ describe('project action search', () => {
     const b = fieldsOf(out, 'bed-b');
     assert.equal(b.devices_ok, true, 'one client is enough');
     // bed-b cannot give a load balancer and a client.
-    const out2 = project(input({ need: { devices: [{ type: 'load-balancer', count: 1 }, { type: 'client', count: 1 }], hours: 2 } }));
+    const out2 = project(input({ need: { devices: [{ type: 'load-balancer', count: 1 }, { type: 'client', count: 1 }] } }));
     const b2 = fieldsOf(out2, 'bed-b');
     assert.equal(b2.devices_ok, false);
     assert.deepEqual(b2.missing, ['需要 1 台负载均衡，台架里有 0 台']);
-    const leased = project(input({ need: { devices: [{ type: 'client', count: 1 }], hours: 2 } }, { leases: [{ key: 'bed/bed-a/client0', until: LATER }] }));
+    const leased = project(input({ need: { devices: [{ type: 'client', count: 1 }] } }, { leases: [{ key: 'bed/bed-a/client0', until: LATER }] }));
     const a3 = fieldsOf(leased, 'bed-a');
     assert.equal(a3.earliest_free, LATER);
     assert.match(String(a3.conclusion), new RegExp(`Hub 记录里最早 ${LATER.replaceAll('.', '\\.')} 空闲（未排除本地操作）`));
@@ -71,11 +71,11 @@ describe('project action search', () => {
     assert.ok(group);
     assert.equal(group.action, 'search');
     assert.deepEqual(group.manifest, MANIFEST);
-    assert.deepEqual(group.leases, { now: NOW, entries: [{ key: 'bed/bed-a/client0', until: LATER }] });
+    assert.deepEqual(group.leases, { now: NOW, entries: [{ key: 'bed/bed-a/client0', until: LATER }], registrations: [] });
   });
 
   it('build verdicts stay unknown with no install records (bed-version is not built)', () => {
-    const out = project(input({ need: { devices: [{ type: 'client', count: 1 }], build: 'Rel_APV_10_6_1_57', hours: 2 } }));
+    const out = project(input({ need: { devices: [{ type: 'client', count: 1 }], build: 'Rel_APV_10_6_1_57' } }));
     const a = fieldsOf(out, 'bed-a');
     assert.equal(a.build_ok, 'unknown');
     assert.match(String(a.conclusion), /设备上装的构建没有记录（未知）/);
@@ -118,12 +118,11 @@ describe('project action facts', () => {
 describe('project action acquire', () => {
   it('plans the chosen bed with lease keys for the picked devices, the TTL, and ip keys for addresses', () => {
     const out = project(
-      input({ action: 'acquire', bed: 'bed-a', need: { devices: [{ type: 'load-balancer', count: 1 }, { type: 'client', count: 1 }], hours: 3 }, addresses: { segment: '192.0.2.64/26', count: 2 } }),
+      input({ action: 'acquire', bed: 'bed-a', need: { devices: [{ type: 'load-balancer', count: 1 }, { type: 'client', count: 1 }] }, addresses: { segment: '192.0.2.64/26', count: 2 } }),
     ) as { items?: unknown[]; lease_requests?: Array<{ keys: string[]; ttl_seconds: number }>; groups?: Array<Record<string, unknown>> };
     assert.deepEqual(out.lease_requests, [
       {
         keys: ['bed/bed-a/apv0', 'bed/bed-a/client0', 'bed/bed-a/ip/192.0.2.70', 'bed/bed-a/ip/192.0.2.71'],
-        ttl_seconds: 3 * 3600,
       },
     ]);
     const fields = fieldsOf(out, 'bed-a');
@@ -135,15 +134,15 @@ describe('project action acquire', () => {
   });
 
   it('picks the best match when bed is not given, and refuses a taken or missing bed with its reason', () => {
-    const best = project(input({ action: 'acquire', need: { devices: [{ type: 'client', count: 1 }], hours: 1 } })) as { lease_requests?: Array<{ keys: string[] }> };
+    const best = project(input({ action: 'acquire', need: { devices: [{ type: 'client', count: 1 }] } })) as { lease_requests?: Array<{ keys: string[] }> };
     assert.deepEqual(best.lease_requests?.[0]?.keys, ['bed/bed-a/client0'], 'bed-a wins over bed-b (name order, both fit)');
-    const taken = project(input({ action: 'acquire', bed: 'bed-a', need: { devices: [{ type: 'client', count: 1 }], hours: 1 } }, { leases: [{ key: 'bed/bed-a/client0', until: LATER }] })) as { lease_requests?: Array<{ keys: string[] }> };
+    const taken = project(input({ action: 'acquire', bed: 'bed-a', need: { devices: [{ type: 'client', count: 1 }] } }, { leases: [{ key: 'bed/bed-a/client0', until: LATER }] })) as { lease_requests?: Array<{ keys: string[] }> };
     assert.deepEqual(taken.lease_requests?.[0]?.keys, ['bed/bed-a/client0'], 'a taken device still yields a request: the Hub refuses it with LEASE_UNAVAILABLE and the earliest free moment');
-    const missingBed = project(input({ action: 'acquire', bed: 'bed-z', need: { devices: [{ type: 'client', count: 1 }], hours: 1 } })) as { error?: { code: string } };
+    const missingBed = project(input({ action: 'acquire', bed: 'bed-z', need: { devices: [{ type: 'client', count: 1 }] } })) as { error?: { code: string } };
     assert.equal(missingBed.error?.code, 'test-bed.unknown_bed');
-    const nothing = project(input({ action: 'acquire', bed: 'bed-a', hours: 1 })) as { error?: { code: string } };
+    const nothing = project(input({ action: 'acquire', bed: 'bed-a' })) as { error?: { code: string } };
     assert.equal(nothing.error?.code, 'test-bed.nothing_to_lease');
-    const short = project(input({ action: 'acquire', need: { devices: [{ type: 'client', count: 1 }], hours: 1 }, addresses: { segment: '192.0.2.64/26', count: 60 } })) as { error?: { code: string } };
+    const short = project(input({ action: 'acquire', need: { devices: [{ type: 'client', count: 1 }] }, addresses: { segment: '192.0.2.64/26', count: 60 } })) as { error?: { code: string } };
     assert.equal(short.error?.code, 'test-bed.not_enough_addresses');
   });
 });
@@ -156,20 +155,9 @@ describe('project action extend and release', () => {
     { key: 'bed/bed-b/client1', until: LATER, mine: false },
   ];
 
-  it('extend: the lineage-held keys with the extension TTL, devices and addresses named', () => {
-    const out = project(input({ action: 'extend', booking: 'run_book1', hours: 3 }, { leases: HELD })) as { lease_requests?: unknown[]; groups?: Array<Record<string, unknown>>; items?: Array<{ fields: Record<string, unknown> }> };
-    assert.deepEqual(out.lease_requests, [{ op: 'extend', keys: ['bed/bed-a/apv0', 'bed/bed-a/client0', 'bed/bed-a/ip/192.0.2.70'], ttl_seconds: 10800 }]);
-    assert.equal(out.items?.length, 1);
-    assert.equal(out.items?.[0]?.fields.conclusion, '续期 bed-a 的预订 run_book1，设备 apv0、client0，地址 192.0.2.70，延长 3 小时');
-    const group = out.groups?.[0] as { booking?: string; lease_requests?: unknown[] };
-    assert.equal(group.booking, 'run_book1');
-    assert.deepEqual(group.lease_requests, out.lease_requests, 'the frozen groups carry the same request');
-  });
+  it("reject retired extend: the lineage-held keys with the extension TTL, devices and addresses named",()=>{const out=project(input({action:'extend',booking:'run_book1',hours:3})) as {error?:{code:string;fix:string}};assert.equal(out.error?.code,'test-bed.duration_removed');assert.match(out.error!.fix,/台架预订不限时长/);});
 
-  it('extend: hours falls back to need.hours', () => {
-    const out = project(input({ action: 'extend', booking: 'run_book1', need: { hours: 5 } }, { leases: HELD })) as { lease_requests?: Array<{ ttl_seconds?: number }> };
-    assert.equal(out.lease_requests?.[0]?.ttl_seconds, 5 * 3600);
-  });
+  it("reject retired extend: hours falls back to need.hours",()=>{const out=project(input({action:'acquire',need:{hours:5}})) as {error?:{code:string;fix:string}};assert.equal(out.error?.code,'test-bed.duration_removed');assert.match(out.error!.fix,/台架预订不限时长/);});
 
   it('release: the lineage-held keys without a TTL', () => {
     const out = project(input({ action: 'release', booking: 'run_book1' }, { leases: HELD })) as { lease_requests?: unknown[]; items?: Array<{ fields: Record<string, unknown> }> };
@@ -178,7 +166,7 @@ describe('project action extend and release', () => {
   });
 
   it('refuses honestly when the lineage holds nothing (rows without mine are someone else’s)', () => {
-    const out = project(input({ action: 'extend', booking: 'run_book1', hours: 2 }, { leases: HELD.map((row) => ({ key: row.key, until: row.until })) })) as { error?: { code: string; message: string } };
+    const out = project(input({ action: 'release', booking: 'run_book1' }, { leases: HELD.map((row) => ({ key: row.key, until: row.until })) })) as { error?: { code: string; message: string } };
     assert.equal(out.error?.code, 'test-bed.not_holder');
     assert.match(String(out.error?.message), /^你没有持有这个预订/);
     const released = project(input({ action: 'release', booking: 'run_book1' })) as { error?: { code: string } };
@@ -186,7 +174,7 @@ describe('project action extend and release', () => {
   });
 
   it('requires the booking run id for extend and release', () => {
-    const out = project(input({ action: 'extend', hours: 2 }, { leases: HELD })) as { error?: { code: string } };
+    const out = project(input({ action: 'release' }, { leases: HELD })) as { error?: { code: string } };
     assert.equal(out.error?.code, 'test-bed.bad_booking');
     const rel = project(input({ action: 'release' }, { leases: HELD })) as { error?: { code: string } };
     assert.equal(rel.error?.code, 'test-bed.bad_booking');
@@ -220,7 +208,7 @@ describe('project with declared installs in the manifest', () => {
       },
     ],
   };
-  const needBuild = { devices: [{ type: 'load-balancer', count: 1 }], build: 'Rel_APV_10_6_1_8', hours: 2 };
+  const needBuild = { devices: [{ type: 'load-balancer', count: 1 }], build: 'Rel_APV_10_6_1_8' };
 
   it('search: the declared install answers 声明，未核对; an NSAE name based on the APV build is the same build; no record stays unknown', () => {
     const out = project(input({ need: needBuild }, { manifest: DECLARED }));
@@ -276,4 +264,13 @@ describe('project on a bad inventory', () => {
     assert.equal(out.error?.code, 'test-bed.manifest_invalid');
     assert.ok((out.warnings ?? []).some((w) => w.message.includes('/beds/0/devices/1/ipv4/0')), JSON.stringify(out.warnings).slice(0, 300));
   });
+});
+
+it('rejects removed duration inputs and projects owner registration without a TTL', () => {
+  for(const parameters of [{action:'extend'}, {action:'acquire',hours:1}, {need:{hours:1}}]){
+    const out=project(input(parameters)) as {error?:{fix:string}};
+    assert.match(out.error?.fix??'',/台架预订不限时长，用完由运行释放/);
+  }
+  const registered=project(input({action:'register',bed:'bed-a'})) as {lease_requests?:unknown[]};
+  assert.deepEqual(registered.lease_requests,[{op:'register',prefix:'bed/bed-a/'}]);
 });

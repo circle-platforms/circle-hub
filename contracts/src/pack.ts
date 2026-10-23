@@ -229,6 +229,13 @@ export type ContextKey = (typeof CONTEXT_KEY)[number];
 export const ContextKeySchema = z.enum(CONTEXT_KEY);
 
 /** Facts about the run that checks and pack functions may use. */
+export const LeaseContextRow = z.strictObject({
+  key: z.string().min(1), since: IsoTime, until: IsoTime.nullable(), run: z.string().min(1), mine: z.boolean(),
+  holder: z.strictObject({user:z.string().min(1),name:z.string().min(1)}).optional(),
+  jobs: z.array(z.string().min(1)),
+});
+export const LeaseRegistrationRow = z.strictObject({prefix:z.string().min(1),mine:z.boolean(),
+  owner:z.strictObject({user:z.string().min(1),name:z.string().min(1)}).optional()});
 export const RunContext = z.strictObject({
   product: z.string().nullable(),
   names: z.array(z.string()).describe('every name of the bound product line (all of them name one line); empty when the run has no product'),
@@ -246,9 +253,10 @@ export const RunContext = z.strictObject({
   leases: z
     .strictObject({
       now: IsoTime.describe('the moment the lease table was frozen for this run'),
+      registrations: z.array(LeaseRegistrationRow).default([]),
       entries: z
-        .array(z.strictObject({ key: z.string().min(1), until: IsoTime, mine: z.boolean() }))
-        .describe('the unexpired, unreleased rows of the declared prefixes at the frozen moment; no tokens, no other holders\' names — visibility is undecided (D04 changes5)'),
+        .array(LeaseContextRow)
+        .describe('active rows at the frozen moment; every viewer sees run and since; only registered owners and admins see holder identity; no tokens'),
     })
     .optional()
     .describe('present only when the workflow asked for the leases context (workflow.context)'),
@@ -447,7 +455,7 @@ export const WorkflowFile = z
     leases: z
       .strictObject({
         prefix: z.string().min(1).regex(/\/$/, 'the lease prefix ends with / (keys of this workflow live under it)'),
-        max_ttl_seconds: z.number().int().positive().max(2_592_000).describe('the ceiling of one lease request\'s TTL and of the cumulative extension (D04 R[0])'),
+        max_ttl_seconds: z.number().int().positive().max(2_592_000).optional().describe('the ceiling of one lease request\'s TTL and of the cumulative extension (D04 R[0])'),
       })
       .optional()
       .describe('the lease namespace this workflow may acquire under (the keys of its lease_requests start with the prefix)'),
@@ -524,8 +532,11 @@ export const ProjectionOutput = z.union([
     lease_requests: z
       .array(
         z.union([
-          z.strictObject({ op: LeaseOpSchema.extract(['acquire']).optional(), keys: z.array(z.string().min(1)).min(1), ttl_seconds: z.number().int().positive() }).describe('acquire (the default): every key free (or taken over from expired/released rows), all or nothing'),
+          z.strictObject({ op: LeaseOpSchema.extract(['acquire']).optional(), keys: z.array(z.string().min(1)).min(1), ttl_seconds: z.number().int().positive().optional() }).describe('acquire (the default): every key free (or taken over from expired/released rows), all or nothing'),
           z.strictObject({ op: LeaseOpSchema.extract(['extend']), keys: z.array(z.string().min(1)).min(1), ttl_seconds: z.number().int().positive() }).describe('extend: the lineage-held leases of these keys grow by ttl_seconds from now, inside the cumulative cap'),
+          z.strictObject({ op: LeaseOpSchema.extract(['register']), prefix:z.string().min(1) }),
+          z.strictObject({ op: LeaseOpSchema.extract(['unregister']), prefix:z.string().min(1), reason:z.string().min(1).refine(value => value.trim().length > 0, "reason must contain non-whitespace text") }),
+          z.strictObject({ op: LeaseOpSchema.extract(['force_release']), keys:z.array(z.string().min(1)).min(1), reason:z.string().min(1).refine(value => value.trim().length > 0, "reason must contain non-whitespace text") }),
           z.strictObject({ op: LeaseOpSchema.extract(['release']), keys: z.array(z.string().min(1)).min(1) }).describe('release: the lineage-held leases of these keys end now (not undone when the run later fails)'),
         ]),
       )
