@@ -40,7 +40,7 @@ const fragments=[{parser:'xml@1',selector:'x/catalog'}];
 function content(path:string,kind:string,statement:string,mentions?:string[]){return {path,kind,statement,data:mentions?{mentions}:{},fragments,applicability:null};}
 const entries=[content('/terms/alpha','definition','Alpha'),content('/terms/alpha/long','definition','Long'),content('/terms/branch/leaf','definition','Leaf'),content('/terms/raw','case','Raw'),content('/notes/one','behaviour','One line\nAnother line',['ALPHA host','alpha long value','branch','gone']),content('/notes/two','behaviour','Another source',['branch'])];
 const build:KnownBuild={name:'Rel_WIDGET_10_6_1_1',family:'WIDGET',line:'10.6.1',base:'Rel_WIDGET_10_6_1_1',platform:null,built_at:'2026-10-01T00:00:00Z',released_at:'2026-10-02T00:00:00Z',sources:{tree:'site:tree:links'},root:null};
-async function fixture(t:{after(fn:()=>Promise<void>):void},links:typeof rule[]|null=[rule],limits?:{pageNodes?:number;maxViewBytes?:number},sourceEntries:unknown[]=entries){
+async function fixture(t:{after(fn:()=>Promise<void>):void},links:typeof rule[]|null=[rule],limits?:{pageNodes?:number;maxViewBytes?:number;inlineRows?:number},sourceEntries:unknown[]=entries){
   const w=await makeWorld(postgres,{pack:{id:'widget',names:['WIDGET'],declaration:{catalogs:[],producers:[extraProducer('entities',{entries:sourceEntries})],...(links===null?{}:{links})}},...(limits?{knowledge:{limits}}:{})});t.after(()=>w.close());
   w.external.set('site:tree:links',{bytes:catalogXml({sample:[{name:'node'}]}),mediaType:'application/xml'});
   const first=await w.knowledge.produceTree({product:w.product,build});assert.ok(first.ok,first.reason??'');
@@ -341,4 +341,20 @@ test('malformed relation source diagnostics occur once on the node page rather t
   const page=await f.w.knowledge.getNodes({root:f.first.root!,paths:['/terms'],depth:2},f.w.admin);assert.ok(page);assert.ok(page.nodes.length>2);
   assert.equal((JSON.stringify(page).match(/有不合形状/g)??[]).length,1);
   assert.match(page.coverage.note??'',/不合形状/);assert.ok(page.nodes.every(node=>!node.backlinks?.notes.some(note=>note.includes('不合形状'))));
+});
+
+
+test('root entry reads skip unrelated unplaced parts and reuse a composition membership index',async t=>{
+  const loose=Array.from({length:2200},(_,i)=>({...content('/loose','behaviour','Loose synthetic '+i),path:null}));
+  const f=await fixture(t,[rule],{inlineRows:1},[...entries,content('/','behaviour','Placed root statement'),...loose]);
+  for(const digit of ['d','e']){f.w.product.digest=digit.repeat(64);const next=await f.w.knowledge.produceTree({product:f.w.product,build});assert.ok(next.ok);assert.equal(next.root,f.first.root);}
+  const root=await f.w.knowledge.store.node(f.first.root!);assert.ok(root);assert.equal(root.entries.length,1);
+  const part=f.w.knowledge.store.part.bind(f.w.knowledge.store);let reads=0;
+  t.mock.method(f.w.knowledge.store,'part',async(...args:Parameters<typeof part>)=>{if(args[0]==='tree_root-unplaced@1')reads++;return part(...args);});
+  const reader=f.w.knowledge.treeReader();
+  assert.ok(await reader.read(f.first.root!,'/',root.entries[0],{user:f.w.admin.id,role:'admin'}));assert.equal(reads,0);
+  const comp=await f.w.knowledge.store.composition(f.first.composition!);assert.ok(comp?.parts?.unplaced);assert.ok(comp.parts.unplaced.length>=2);
+  const body=await part('tree_root-unplaced@1',comp.parts.unplaced[0].record);assert.ok(body);const entry=body.rows[0].entry;
+  const first=await reader.read(f.first.root!,'/',entry,{user:f.w.admin.id,role:'admin'});assert.ok(first);assert.ok(reads>0);
+  reads=0;const again=await reader.read(f.first.root!,'/',entry,{user:f.w.admin.id,role:'admin'});assert.ok(again);assert.deepEqual(again,first);assert.equal(reads,0);
 });

@@ -84,6 +84,8 @@ export class TreeReading {
   readonly #context: KnowledgeContext;
   readonly #products = new Map<string, { products: Set<string>; at: number }>();
   readonly #views = new Lru<string, CompositionView>(8);
+  readonly #unplaced = new Lru<string,Map<string,ReadRow>>(8,64*1024*1024);
+  readonly #unplacedPending = new Map<string,Promise<Map<string,ReadRow>>>();
   readonly #catalogs = new Lru<string, CatalogView | null>(8);
 
   #relations: LinkReading | null = null;
@@ -169,6 +171,17 @@ export class TreeReading {
     const view = new CompositionView(this.#context.store, digest, body);
     this.#views.set(digest, view);
     return view;
+  }
+
+  async #unplacedIndex(composition:CompositionView):Promise<Map<string,ReadRow>> {
+    const cached=this.#unplaced.get(composition.record);if(cached)return cached;
+    let pending=this.#unplacedPending.get(composition.record);
+    if(!pending){pending=(async()=>{
+      const rows=new Map<string,ReadRow>();
+      for await(const row of composition.unplacedRows())rows.set(row.entry,{path:'/',entry:row.entry,kind:row.kind,producers:row.producers,fragments:row.fragments,basis:row.basis,decided_by:row.decided_by});
+      this.#unplaced.set(composition.record,rows,canonicalSize([...rows]));return rows;
+    })();this.#unplacedPending.set(composition.record,pending);}
+    try{return await pending;}finally{if(this.#unplacedPending.get(composition.record)===pending)this.#unplacedPending.delete(composition.record);}
   }
 
   /**
@@ -423,8 +436,9 @@ export class TreeReading {
     const unplacedAtRoot=new Set<string>();
     const rowsOf=await Promise.all(compositions.map(async composition=>{
       const rows=new Map(await composition.rowsAt(canonical));
-      if(canonical==='/'&&entry!==null)for await(const row of composition.unplacedRows())if(row.entry===entry){
-        unplacedAtRoot.add(entry);rows.set(entry,{path:'/',entry:row.entry,kind:row.kind,producers:row.producers,fragments:row.fragments,basis:row.basis,decided_by:row.decided_by});
+      if(canonical==='/'&&entry!==null&&!found.node.entries.includes(entry)){
+        const row=(await this.#unplacedIndex(composition)).get(entry);
+        if(row){unplacedAtRoot.add(entry);rows.set(entry,row);}
       }
       return rows;
     }));
