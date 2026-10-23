@@ -203,6 +203,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
   submission?.items.forEach((entry, index) => entries.set(entry.item, { index, entry }));
   const itemSlotKeys = new Set(Object.keys(workflow.slots.item));
   const hasItemJudgments = itemTemplates.some((t) => isJudgment(t) && itemSlotKeys.has(t.key));
+  const artifactRequirements = new Set(itemTemplates.filter(t => t.checks.some(id => checks.get(id)?.judges === 'artifact_under_verification')).map(t => t.key));
   const sets = closedSets(workflow);
   const context = runContextOf(run);
 
@@ -490,25 +491,34 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
   const runOutcomes = new Map<string, { own: Map<string, CheckOutcome[]>; loose: CheckOutcome[] }>();
   const itemOutcomes = new Map<string, Map<string, CheckOutcome[]>>();
   const judgmentOnly = (check: CheckEntry): boolean => (requirementsOf.get(check.id) ?? []).every(isJudgment);
+  const missingItemArtifact = (id: string): boolean => submission !== null && handlingOf(id) !== 'handled';
+  const artifactCheck = (check: CheckEntry): boolean => check.judges === 'artifact_under_verification';
   const allTexts = new Map<string, string>();
   for (const it of items) for (const [k, v] of evidenceOf(it.id).texts) allTexts.set(k, v);
 
   for (const check of used.filter((c) => c.applies === 'run' && (items.length > 0 || exclude.size === 0))) {
-    const built = await buildSubject(check, { applies: 'run', items: items.map(subjectItem), context }, () => ({
-      items: items.map((it) => ({ ...subjectItem(it), slots: exclude.has(it.id) ? null : checkedSlotsOf(it.id) })),
+    // A run check of item artifacts sees only submitted artifacts. A check of a run-level artifact (for example
+    // a final claim) still needs every target's metadata to test coverage, but receives no absent slot property.
+    const itemArtifactsOnly = artifactCheck(check) && (requirementsOf.get(check.id) ?? []).every(t => t.target === 'item');
+    const checkItems = itemArtifactsOnly ? items.filter(it => !missingItemArtifact(it.id)) : items;
+    if (itemArtifactsOnly && checkItems.length === 0) continue;
+    const checkedIds = new Set(checkItems.map(it => it.id));
+    const built = await buildSubject(check, { applies: 'run', items: checkItems.map(subjectItem), context }, () => ({
+      items: checkItems.map(it => ({ ...subjectItem(it), ...(artifactCheck(check) && missingItemArtifact(it.id) ? {} : { slots: checkedSlotsOf(it.id) }) })),
       cross_item: input.exact?.crossEntries ?? submission?.cross_item ?? [],
     }));
-    const outcomes = 'failure' in built ? [built.failure] : await callCheck(check, built.subject, allTexts);
+    const texts = itemArtifactsOnly ? new Map(checkItems.flatMap(it => [...evidenceOf(it.id).texts])) : allTexts;
+    const outcomes = 'failure' in built ? [built.failure] : await callCheck(check, built.subject, texts);
     const own = new Map<string, CheckOutcome[]>();
     const loose: CheckOutcome[] = [];
     for (const o of outcomes) {
-      if (o.item !== undefined && exclude.has(o.item)) continue;
+      if (o.item !== undefined && (exclude.has(o.item) || (itemArtifactsOnly && itemIds.has(o.item) && !checkedIds.has(o.item)))) continue;
       if (o.item !== undefined && itemIds.has(o.item)) own.set(o.item, [...(own.get(o.item) ?? []), o]);
       else loose.push(o);
     }
     // A check that could not judge an item (an unknown without item) leaves that item unknown, never silently passed.
     const failing = loose.filter((o) => o.verdict === 'unknown');
-    if (failing.length > 0) for (const it of items) if (!own.has(it.id)) own.set(it.id, failing);
+    if (failing.length > 0) for (const it of checkItems) if (!own.has(it.id)) own.set(it.id, failing);
     runOutcomes.set(check.id, { own, loose });
   }
   const perItem = used.filter((c) => c.applies === 'item');
@@ -516,6 +526,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
     const slots = exclude.has(it.id) ? null : checkedSlotsOf(it.id);
     const ev = evidenceOf(it.id);
     for (const check of perItem) {
+      if (artifactCheck(check) && missingItemArtifact(it.id)) continue;
       if (judgmentOnly(check) && (handlingOf(it.id) !== 'handled' || exclude.has(it.id) || submission === null)) continue;
       const evidence = slots === null ? [] : ev.evidence;
       const built = await buildSubject(check, { applies: 'item', item: subjectItem(it), slots, evidence, context }, () => ({
@@ -536,7 +547,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
   const outcomesFor = (template: RequirementTemplate, id: string): JudgedOutcome[] =>
     template.checks.flatMap((cid) => {
       const check = checks.get(cid);
-      if (check === undefined) return [];
+      if (check === undefined || (artifactCheck(check) && missingItemArtifact(id))) return [];
       const list = check.applies === 'run' ? (runOutcomes.get(cid)?.own.get(id) ?? []) : (itemOutcomes.get(cid)?.get(id) ?? []);
       return list.map((outcome) => ({ outcome, check: cid, judges: check.judges }));
     });
@@ -608,9 +619,9 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
         hasProducer,
         checks: t.checks.filter((id) => checks.has(id)).length,
         outcomes,
-        // A missing item is a gap in a submission that covers items (W07 R[3]). A fact-only pack has no item slot for the
-        // model to omit, and a production run has no submission: those fact checks still run.
-        handling: isJudgment(t) ? (exclude.has(it.id) ? 'handled' : handling) : handling === 'skipped' || (hasItemJudgments && handling === 'not_covered') ? handling : null,
+        // A missing item artifact is a coverage gap even when its requirement accepts only facts. Pure target
+        // checks keep their existing handling rules; production evaluation has no submitted artifact to omit.
+        handling: isJudgment(t) ? (exclude.has(it.id) ? 'handled' : handling) : handling === 'skipped' || ((hasItemJudgments || (submission !== null && artifactRequirements.has(t.key))) && handling === 'not_covered') ? handling : null,
         expectation,
       });
       const routed = applyRouting(raw, t, input.roundsUsed.get(t.key) ?? 0);
@@ -686,7 +697,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
       // A reject row applies only to a blocking check on the artifact under verification (terminals.ts rowApplies).
       if (routed.action === 'reject' && rejection === null) rejection = routed.lead?.outcome.code ?? null;
     }
-    const notCovered = submission !== null && hasItemJudgments && handling === 'not_covered';
+    const notCovered = submission !== null && (hasItemJudgments || artifactRequirements.size > 0) && handling === 'not_covered';
     if (notCovered) {
       const judged = itemTemplates.filter((t) => isJudgment(t) && itemSlotKeys.has(t.key));
       for (const t of judged) uncovered.add(t.key);
