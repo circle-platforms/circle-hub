@@ -64,6 +64,23 @@ test('each result row retains its partition and partition code or reason',async(
   }
 });
 
+test('requirements show both layers, satisfaction and reason, and dynamic unknowns can be filtered',async()=>{
+  const user=await server.createUser('动态层');const id=await start(user);const cookie=await login(user);
+  const items=server.fakes.runs.runs.get(id)!.production!.result.partitions.delivered;
+  Object.assign(items[0].requirements[0],{layers:[{layer:'static',terminal:'pass'},{layer:'dynamic',terminal:'not_run',reason:'missing_input'}],status:'pending'});
+  Object.assign(items[1].requirements[0],{layers:[{layer:'dynamic',terminal:'fail',code:'synthetic.dynamic_failure'}],status:'unsatisfied',unsatisfied_reason:'outcome_mismatch'});
+  const response=await send(`/console/results/${id}`,cookie);
+  const rows=[...response.body.matchAll(/<tr>([\s\S]*?)<\/tr>/g)].map(match=>match[1]);
+  const first=rows.find(row=>row.includes('<code>entry-0</code>'))!;
+  assert.match(first,/静态：通过/);assert.match(first,/动态：未运行/);assert.match(first,/未决/);assert.match(first,/t-unknown/);
+  const second=rows.find(row=>row.includes('<code>entry-1</code>'))!;
+  assert.match(second,/静态：本层不适用/);assert.match(second,/动态：失败/);assert.match(second,/未满足（终态不符合期望）/);
+  const third=rows.find(row=>row.includes('<code>entry-2</code>'))!;assert.match(third,/动态：本层不适用/);
+  const filtered=await send(`/console/results/${id}?terminal=not_run`,cookie);
+  assert.equal(filtered.status,200);assert.match(filtered.body,/筛选后 1 个/);assert.ok(!filtered.body.includes('<code>entry-1</code>'));
+  assert.equal((await send(`/console/results/${id}?terminal=fail`,cookie)).status,200);
+});
+
 test('production visibility, neutral refusals, admin and list filters', async () => {
   const a = await server.createUser('甲'); const b = await server.createUser('乙');
   const earlier = await start(a); const own = await start(a); const other = await start(b); const review = await start(a, 'review');

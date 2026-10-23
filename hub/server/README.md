@@ -236,8 +236,11 @@ links are fixed paths with encoded query parameters).
   the page empty. `/console/results/<run>` reads `getRun.production`, the start_run result whose submission is the run
   record digest. Later accepted commentary cannot replace its record, counts or claims. It shows partition counts via
   `countsLine`, coverage and cross-item claims, then one row per item (id, label, projection summary and each requirement's
-  static terminal and claims). The table also preserves each item's partition and its code or reason: V05 and display
-  rule 6 require this additional column even though the task brief omitted it. `terminal` uses the generated static-terminal vocabulary; `offset` pages 500 filtered
+  status, both layer terminals and claims). An undeclared layer is labelled 本层不适用. Display rules 4 and 16 require
+  both layers and the satisfaction reason even though the task brief requested static terminals only. The table also
+  preserves each item's partition and its code or reason: V05 and display rule 6 require this additional column even
+  though the task brief omitted it. `terminal` uses the generated union of static and dynamic terminals and matches
+  either layer; `offset` pages 500 filtered
   items at a time. Counts are computed before filtering or paging. Bookkeeping delivery is not an overall pass;
   unknown terminals keep their own symbol and colour, with the stored claims' missing evidence and next actions shown
   as recorded. This page does not initiate work or generate missing content. The run link opens the authoritative view.
