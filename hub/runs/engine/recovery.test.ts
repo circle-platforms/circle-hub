@@ -14,3 +14,11 @@ test('missing check has an explicit fact and a repair exit to its author', () =>
 test('check errors are valid outcomes before reaching the engine', () => {
   assert.ok(unknown({ tier: 'advisory', grounds: [] }, 'check_error', '检查声明没有可用的函数').missing);
 });
+
+test('timeout carries its own missing fact and named exit', () => {
+  const result = bindRecovery({ layer: 'static', terminal: 'unchecked', reason: 'timeout' }, [], context);
+  assert.equal(result.exit?.request_kind, 'repair');
+  assert.deepEqual(result.exit?.audience, { user: context.owner });
+  assert.ok(result.missing?.includes('检查在上限内'));
+  assert.ok(LayerResult.safeParse(result).success);
+});
