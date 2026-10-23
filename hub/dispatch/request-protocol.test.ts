@@ -57,12 +57,12 @@ test('absence proves nonexecution only beyond the deadline and within certified 
   }
 });
 
-test('conformance collects four harmless request journal observations in one lease', async t => {
+test('conformance collects only read-only request journal evidence in one lease', async t => {
   const { setupJournal } = await import('./testing/journal.ts'); const c = await setupJournal({uncertified:true}); t.after(()=>c.close());
   const result = await c.service.conformance(c.admin,c.executor.id);
   const events = await c.service.journal.events(result.job);
-  assert.equal(events.at(-1)!.body.detail.conformance_verified,true);
-  assert.deepEqual(c.calls,['open_slot','lookup_blob','send_blob','send_blob','lookup_blob','close_slot']);
+  assert.equal(events.at(-1)!.body.detail.conformance_verified,false);
+  assert.deepEqual(c.calls,['open_slot','lookup_blob','close_slot']);
   assert.equal(events.some(e=>e.body.detail.phase==='intent'),false);
   assert.ok(result.result);
 });

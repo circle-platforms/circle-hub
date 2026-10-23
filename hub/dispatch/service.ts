@@ -148,7 +148,7 @@ export class DispatchService {
     await this.options.leases.withMutationLock(tx=>this.reserve(binding,tx));
     const material=await this.secret(binding,d);if(material===null)return this.credentialUnavailable(by,binding,true);
     const client = this.session(binding,d,material);
-    let lease: RemoteLease | undefined; const observations: Exchange[] = []; const checks: boolean[] = [];let failure:Record<string,string>|undefined;let ambiguous=false;
+    let lease: RemoteLease | undefined; const observations: Exchange[] = []; const checks: boolean[] = [];let failure:Record<string,string>|undefined;const ambiguous=false;
     try {
       await client.connect(); lease = await this.acquire(binding,d,client,this.context(binding));
       const context = {...this.context(binding),lease_id:lease.id,lease_token:lease.token,request_id:`${binding.job}:absent`,not_after:new Date(this.now().getTime()-d.conformance.expiry_margin_ms-1000).toISOString(),items:[]};
@@ -158,32 +158,13 @@ export class DispatchService {
       const expectedIdentity=requestIdentity(missing.value,r.identity,r.time_scale_ms);
       checks.push(wireTime(at(missing.value,r.gateway_time))>Date.parse(context.not_after)+d.conformance.expiry_margin_ms && !!expectedIdentity && at(missing.value,r.found) === false && Number.isFinite(wireTime(at(missing.value,r.gateway_time))) && Number.isFinite(wireTime(at(missing.value,r.gc_before))) && wireTime(at(missing.value,r.gc_before))>=expectedIdentity.since);
       if(!checks[0]) {const gaps=[...(at(missing.value,r.found)!==false?['探测编号没有取得查空回答']:[]),...(!expectedIdentity?['缺少日志身份、记账起点或完整主体']:[]),...(!(wireTime(at(missing.value,r.gateway_time))>Date.parse(context.not_after)+d.conformance.expiry_margin_ms)?['目标时刻未越过探测截止及声明余量，不能保证按过期拒收']:[]),...(!Number.isFinite(wireTime(at(missing.value,r.gc_before))) || expectedIdentity && wireTime(at(missing.value,r.gc_before))<expectedIdentity.since?['缺少覆盖记账起点的有效保留边界']:[])];failure={missing_fact:gaps.join('；'),next_action:'管理员先核对目标与 Hub 时钟、时区和日志身份声明，取得越过截止及余量的目标时刻后再运行 conformance；本次未提交'};throw new Error('探测过期前提不成立');}
-      context.request_id = `${binding.job}:1`;
-      const first = Buffer.from(d.conformance.payloads[0],'base64'); const second = Buffer.from(d.conformance.payloads[1],'base64');
-      const refused = (v:unknown) => sameRequestIdentity(expectedIdentity,requestIdentity(v,d.receipt.identity,r.time_scale_ms)) && at(v,d.receipt.stage!) === d.conformance!.expected_stage && mapped(d.receipt.map,at(v,d.receipt.acceptance)) === 'not_accepted' && mapped(d.receipt.stages,at(v,d.receipt.stage!)) === 'target_rejected' && at(v,d.receipt.reached_device!) === false;
-      await this.journal.append(binding,'probe_intent','validate','completed',{request_id:context.request_id,not_after:context.not_after,sha256:sha256Hex(first),remote_lease:lease,request_identity:expectedIdentity,request_protocol_version:client.serverVersion,request_protocol_verified:r.protocol_versions.includes(client.serverVersion??'')},[missing.source]);
-      for (const payload of [first,second]) {
-        await this.journal.append(binding,'probe_attempt','validate','completed',{request_id:context.request_id,sha256:sha256Hex(payload)});
-        let reply:Exchange;
-        try{reply=await client.call('submit',{...context,payload_base64:payload.toString('base64'),sha256:sha256Hex(payload)});}
-        catch(error){checks.push(false);if(error instanceof SubmissionNotSentError || error instanceof InvocationDefinitionError){failure={missing_fact:'探测提交明确没有写出请求字节；未取得协议拒收事实',next_action:'管理员核对本地调用声明和连接后重新采证；本次没有调用效果'};break;}ambiguous=true;break;}
-        observations.push(reply);checks.push(refused(reply.value));
-        const remoteId=at(reply.value,d.receipt.id);
-        const safe=mapped(d.receipt.map,at(reply.value,d.receipt.acceptance))==='not_accepted' && mapped(d.receipt.stages,at(reply.value,d.receipt.stage!))==='target_rejected' && at(reply.value,d.receipt.reached_device!)===false && (remoteId===undefined || remoteId===null) && sameRequestIdentity(expectedIdentity,requestIdentity(reply.value,d.receipt.identity,r.time_scale_ms));
-        if(!safe){ambiguous=true;break;}
-        if(!checks.at(-1)){failure={missing_fact:'探测虽明确拒收，但没有取得预期受理阶段的过期拒收事实',next_action:'管理员核对拒收阶段原件及映射，确认截止检查位置；不得仅靠重跑补证'};break;}
-      }
-      if(ambiguous)await this.probeFollowup(by,binding,d,client);
-      else if(checks.length===3) {
-      const recorded = await this.read(binding,client,'query',context); observations.push(recorded);
-      checks.push(sameRequestIdentity(expectedIdentity,requestIdentity(recorded.value,r.identity,r.time_scale_ms)) && at(recorded.value,r.found) === true && at(recorded.value,r.request_id) === context.request_id && at(recorded.value,r.sha256) === sha256Hex(first) && mapped(r.map,at(recorded.value,r.state)) === 'target_rejected' && at(recorded.value,r.reached_device) === false && at(recorded.value,r.stage) === d.conformance.expected_stage && mapped(d.receipt.stages,at(recorded.value,r.stage)) === 'target_rejected');
-      }
+      failure={missing_fact:'只有只读查空原件，缺少已核验的过期拒收和同键去重事实；管理员提供的探测字节未经核验，不得外发，须补受限审计证据',next_action:'管理员从目标自己的受限审计记录只读取证，将完整协议事实、目标版本和证据引用登记到执行器前提；conformance 不提交探测字节'};
     } catch { checks.push(false);failure??={missing_fact:'探测所需的连接、租约或请求记录未完整取得；未确认四项协议事实',next_action:'管理员检查受限调用原件、目标连接和租约配置，恢复缺失的读取事实后再采证'}; }
     finally { if (lease) await this.release(binding,client,lease); }
     const init = eventOf(await this.journal.events(binding.job),'initialize.response');
     const artifact = await this.options.records.artifacts.ingest({bytes:canonicalBytes({target:d.target,version:client.serverVersion,checks,sources:observations.map(o=>o.source)}),mediaType:'application/json',origin:{generated:{generator:'dispatch@1',inputs:[...observations.map(o=>o.source),...(init?.body.inputs.filter(r=>r.startsWith('src:')) ?? [])]}},author:{user:null},provenanceType:'projected',visibility:{readers:[by.id],admins:true,packs:[],shareable:false}});
     await this.journal.append(binding,'result','read_back','completed',{reference:`src:${artifact.body.sha256}`,observations:observations.length},observations.map(o=>o.source));
-    await this.journal.append(binding,'complete','read_back','completed',{done:!ambiguous,effect_accounted:!ambiguous,outcome:ambiguous?'unknown':'not_dispatched',conformance_verified:!ambiguous && checks.length === 4 && checks.every(Boolean),...(failure??{}),next_action:ambiguous?'探测效果未决；只读核对原请求后由管理员处置，不得重跑 conformance':failure?.next_action ?? (checks.length === 4 && checks.every(Boolean) ? '管理员复核这些源记录后，将目标版本和证据引用登记到执行器前提；不会自动认证' : '一致性探测未取得四项相符事实；管理员核对定义和原始回答后重跑 conformance')});
+    await this.journal.append(binding,'complete','read_back','completed',{done:!ambiguous,effect_accounted:!ambiguous,outcome:ambiguous?'unknown':'not_dispatched',conformance_verified:false,readonly_observed:checks.length===1&&checks[0],...(failure??{}),next_action:ambiguous?'探测效果未决；只读核对原请求后由管理员处置，不得重跑 conformance':failure?.next_action ?? (checks.length === 4 && checks.every(Boolean) ? '管理员复核这些源记录后，将目标版本和证据引用登记到执行器前提；不会自动认证' : '一致性探测未取得四项相符事实；管理员核对定义和原始回答后重跑 conformance')});
     return this.status(by,binding.job);
   }
 

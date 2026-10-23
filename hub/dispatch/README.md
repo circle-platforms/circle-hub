@@ -214,3 +214,7 @@ A historical definition without a write declaration retains the existing job/ser
 允许的效果表随 requirements.json 冻结。资源种类和动作是通用 executor/submit 协议角色，不是目标工具名。参数范围只针对通用作业参数 target、manifest_sha256、build、sha256、items、generator；可以列取值集合，或绑定 policies/ 表及编译时同一个检查。政策引用要求正反例齐全，发布仍运行样例。触发方式取生成词表。运行者收窄效果表不在本轮；包未声明效果表时发布行为兼容，但派发边界不留下旧路。
 
 全局政策表在 policy/boundary.json，按生成词表的效果类、可逆性与环境逐格列出。生产只允许 none/read，测试和共享另允许 job；同步写与通知全部拒绝。表摘要和逐个变量解析后的执行器摘要在 start_run 用同一次变量快照冻结，真实定义另存对象，运行只保存登记对象摘要。内部端口不借运行者身份列管理员清单，也不读密钥值。
+
+### P11 与一致性采证
+
+`executor conformance` 只读取请求日志身份、主体、时刻与保留边界，导出受限原件。管理员给的探测字节没有核验运行，不能满足 P11 第 8 款，因此不再提交这两份字节，也不写 `probe_intent`。缺少的过期拒收、同键去重等事实，由管理员从目标自己的受限审计记录只读取证，连同版本与证据引用登记到 `premises`；只读查空不自动认证这些前提。已有探测意图的历史对账继续支持。
