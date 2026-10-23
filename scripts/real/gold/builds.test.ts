@@ -5,7 +5,7 @@
 // - One unreleased build: no release date (released is null)
 // - One build of another version line: excluded when filtering by version line
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, describe, test } from 'node:test';
@@ -181,4 +181,13 @@ test('rejects repository paths and symlinks back into a checkout', () => {
   const link = join(tmpDir!, 'repo-link');
   symlinkSync(new URL('../../../', import.meta.url).pathname, link, 'dir');
   assert.throws(() => privatePath(join(link, 'forbidden.json')));
+});
+
+test('rejects a lexical repository path even when its symlink points outside', () => {
+  const base = writeTemp('guard-placeholder', '');
+  const fake = join(tmpDir!, 'synthetic-checkout');
+  mkdirSync(fake); mkdirSync(join(fake, '.git'));
+  symlinkSync(tmpDir!, join(fake, 'outside'), 'dir');
+  assert.throws(() => privatePath(join(fake, 'outside', 'outside-result.json')));
+  assert.ok(base);
 });

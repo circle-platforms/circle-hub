@@ -188,6 +188,10 @@ export function parseBuildCandidates(html: string | readonly string[], targetLin
 /** Reject any Git checkout, including worktrees and symlinks into a checkout. Values never go into Git. */
 export function privatePath(path: string): string {
   const absolute = resolve(path);
+  for (let cursor = absolute; ; cursor = dirname(cursor)) {
+    if (existsSync(join(cursor, '.git'))) throw new Error('路径必须在 Git 仓库之外');
+    if (dirname(cursor) === cursor) break;
+  }
   let existing = absolute;
   while (!existsSync(existing)) {
     const parent = dirname(existing);
