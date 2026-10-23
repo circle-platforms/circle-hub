@@ -1074,11 +1074,8 @@
         },
         "required": [
           "key",
-          "since",
           "until",
-          "run",
-          "mine",
-          "jobs"
+          "mine"
         ],
         "additionalProperties": false
       }

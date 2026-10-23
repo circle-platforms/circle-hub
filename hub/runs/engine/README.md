@@ -564,3 +564,9 @@ the acting user, reason and original holders. Run records preserve released keys
 append-only. Registration operations use the same projection request boundary. Administrator CLI release uses the same
 read-only job guard. As with the existing release/extend operations, successful ownership changes are irreversible if a
 later acquire or run-record write fails; their action records remain the source of truth.
+
+The final force-release guard runs under the same database lock used by dispatch reservation insertion. It re-reads
+unfinished jobs while the lock is held; a competing reservation rechecks fences in that transaction before it commits.
+The lock is released before connecting to an executor. This closes the gap between a read-only job snapshot and release.
+Historical run@1 lease snapshots remain readable in their original key/until/mine shape and are passed unchanged to
+older pinned packs. Current start_run contexts still require since/run/jobs; no historical identity or time is invented.

@@ -218,3 +218,12 @@ test('a force release preserves the user reason verbatim while rejecting whitesp
   const request=value.lease_requests![0]!;
   assert.equal('reason' in request?request.reason:undefined,'  合成原话  ');
 });
+
+test('historical lease snapshots stay readable without manufacturing current context fields',()=>{
+  const legacy={key:'zone/a/k',until:'2026-10-24T10:00:00.000Z',mine:false};
+  const record={run:'run_0123456789abcdefghjkmnpqrs',pack:'demo@1.0.0',pack_digest:'a'.repeat(64),sources:[],requirements:[],target_basis:[],items:[],instructions:'合成规程',instructions_digest:'b'.repeat(64),started_at:'2026-10-24T08:00:00.000Z',runner:'usr_0123456789abcdefghjkmnpqrs',host:'local_circle',trigger:'session',parameters:{},lease_context:[legacy]};
+  const parsed=RunRecord.safeParse(record);assert.ok(parsed.success,JSON.stringify(parsed.error?.issues));
+  assert.deepEqual(parsed.data.lease_context,[legacy]);
+  assert.ok(!RunContext.safeParse({product:null,names:[],line:null,build:null,root:null,parameters:{},groups:[],leases:{now:record.started_at,entries:[legacy],registrations:[]}}).success,'new run context still requires the complete row');
+  assert.ok(!RunRecord.safeParse({...record,lease_context:[{...legacy,token:1}]}).success);
+});

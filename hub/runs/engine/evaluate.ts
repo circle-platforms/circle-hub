@@ -185,9 +185,10 @@ export function runContextOf(run: RunRecord): RunContext {
  * run's lineage (D04 R[0]: a booking lease is held by the lineage, so a successor sees the keys it may operate on). */
 function contextLeasesOf(run: RunRecord): NonNullable<RunContext['leases']> {
   const mine = new Set((run.leases ?? []).flatMap((entry) => (entry.op === undefined || entry.op === 'acquire' || entry.op === 'extend' || entry.op === 'release') && 'keys' in entry ? entry.keys : []));
-  const entries = new Map<string, NonNullable<RunContext['leases']>['entries'][number]>();
+  const entries = new Map<string, NonNullable<RunRecord['lease_context']>[number]>();
   for (const row of run.lease_context ?? []) entries.set(row.key, { ...row, mine: row.mine || mine.has(row.key) });
-  return { now: run.started_at, registrations: run.lease_registrations ?? [], entries: [...entries.values()].sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0)) };
+  // Old pinned packs receive their old snapshot unchanged; new start_run always freezes complete rows.
+  return { now: run.started_at, registrations: run.lease_registrations ?? [], entries: [...entries.values()].sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0)) } as NonNullable<RunContext['leases']>;
 }
 
 /** rule@version of a check: the core interpreter, or the pack function check of this pack version. */

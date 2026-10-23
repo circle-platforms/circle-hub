@@ -396,3 +396,40 @@ test('two connections registering a prefix or overlapping prefixes have exactly 
     assert.equal(results.filter(r => r.ok).length, 1);
   }
 });
+
+test('the default mutation clock uses its transaction connection instead of starving a bounded pool',async()=>{
+  const original=db.query.bind(db);
+  db.query=async function(text,values=[],tx){
+    if(text==='SELECT now()::timestamptz AS now'||text==='SELECT clock_timestamp()::timestamptz AS now')assert.ok(tx,'mutation clock needs the held transaction connection');
+    return original(text,values,tx);
+  } as typeof db.query;
+  try{
+    const service=new LeaseService(db);
+    assert.ok((await service.acquire({keys:['clock-transaction/k'],prefix:'clock-transaction/',holder})).ok);
+  }finally{db.query=original;}
+});
+
+test('a different user cannot release a known run identity and receives a refusal rather than an exception',async()=>{
+  const service=new LeaseService(db,{now:clock('2026-10-24T08:00:00Z')});
+  assert.ok((await service.acquire({keys:['identity/owned/k'],prefix:'identity/',holder})).ok);
+  const refused=await service.release({keys:['identity/owned/k'],holder:{user:other.user,run:holder.run}});
+  assert.ok(!refused.ok&&refused.code==='LEASE_UNAVAILABLE');
+  assert.equal((await service.holders(['identity/owned/k']))[0]!.released,false);
+});
+
+test('waiting for the mutation lock does not backdate a capped acquisition to transaction start',async()=>{
+  const service=new LeaseService(db);
+  let held!:()=>void;const heldSignal=new Promise<void>(resolve=>held=resolve);
+  let release!:()=>void;const pause=new Promise<void>(resolve=>release=resolve);
+  const blocking=service.withMutationLock(async()=>{held();await pause;});await heldSignal;
+  const original=db.query.bind(db);let waiting!:()=>void;const waitingSignal=new Promise<void>(resolve=>waiting=resolve);
+  db.query=async function(text,values=[],tx){if(text.includes('pg_advisory_xact_lock'))waiting();return original(text,values,tx);} as typeof db.query;
+  const attempt=service.acquire({keys:['clock-wait/k'],prefix:'clock-wait/',ttlSeconds:600,maxTtlSeconds:600,holder});
+  try{
+    await waitingSignal;
+    const checkpoint=(await original<{moment:Date}>('SELECT clock_timestamp() AS moment FROM pg_sleep(0.03)')).rows[0]!.moment;
+    release();await blocking;assert.ok((await attempt).ok);
+    const since=(await original<{acquired_at:Date}>('SELECT acquired_at FROM leases WHERE key=$1',['clock-wait/k'])).rows[0]!.acquired_at;
+    assert.ok(since.getTime()>=checkpoint.getTime(),'acquisition clock must be read after obtaining the lock');
+  }finally{release();await Promise.allSettled([blocking,attempt]);db.query=original;}
+});

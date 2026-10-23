@@ -6,7 +6,7 @@
 // acquires of the same key set in opposite orders cannot deadlock. The vocabulary stays neutral: keys are strings
 // under a prefix; this module names no device, bench or product.
 import { isId, newId } from '../records/ids.ts';
-import { createRecordStore, type RecordStore, type ActionBody, type Page, type StoredRecord } from '../records/api.ts';
+import { createRecordStore, type RecordStore, type ActionBody, type Page, type StoredRecord, type Transaction } from '../records/api.ts';
 import { DEFAULT_LIMITS } from '../config/index.ts';
 import { RECORD_SCHEMAS } from '../records/constants.ts';
 import type { Database, PgTransaction } from '../records/db.ts';
@@ -82,13 +82,13 @@ interface Row {
 /** A lease service over one database; state lives in the table only, so a new object sees the same state. */
 export class LeaseService {
   readonly #db: Database;
-  readonly #now: () => Promise<Date>;
+  readonly #now: (tx?: PgTransaction) => Promise<Date>;
   readonly #records: RecordStore;
 
   constructor(db: Database, options: ServiceOptions = {}) {
     this.#db = db;
     this.#records = options.records ?? createRecordStore(db, { maxRecordBytes: DEFAULT_LIMITS.maxRecordBytes, now: () => new Date() });
-    this.#now = options.now ?? (async () => (await db.query<{ now: Date }>('SELECT now()::timestamptz AS now')).rows[0]!.now);
+    this.#now = options.now ?? (async (tx?: PgTransaction) => (await db.query<{ now: Date }>('SELECT clock_timestamp()::timestamptz AS now',[],tx)).rows[0]!.now);
   }
 
   /** Acquires every key under one lease (all or nothing) for the holder; refusal carries the earliest free moment. */
@@ -195,6 +195,11 @@ export class LeaseService {
     return (await this.#db.query<{prefix:string;owner:string}>('SELECT prefix,owner FROM lease_registrations',[],tx)).rows;
   }
 
+  /** Serialize reservation insertion and guarded release; never hold this lock across network I/O. */
+  async withMutationLock<T>(fn: (tx: Transaction) => Promise<T>): Promise<T> {
+    return this.#db.transaction(async tx=>{await this.#ownershipLock(tx);return fn(tx);});
+  }
+
   async #ownershipLock(tx: PgTransaction): Promise<void> {
     await this.#db.query("SELECT pg_advisory_xact_lock(hashtextextended('leases.registrations',0))", [], tx);
   }
@@ -219,7 +224,7 @@ export class LeaseService {
   }
 
   /** An admin frees keys regardless of the holder, with a reason that lands in the action record. */
-  async forceRelease(input: { keys: string[]; by: string; reason: string; owner?: string }): Promise<ChangeOutcome> {
+  async forceRelease(input: { keys: string[]; by: string; reason: string; owner?: string; guard?: () => Promise<void> }): Promise<ChangeOutcome> {
     if (!input.reason.trim()) return {ok:false,code:'LEASE_UNAVAILABLE',message:'强制释放须写理由'};
     return this.#db.transaction(async (tx) => {
       await this.#ownershipLock(tx);
@@ -234,6 +239,7 @@ export class LeaseService {
       const now = await this.#nowIn(tx);
       const holding = rows.filter((row) => row.released_at === null && (row.expires_at === null || row.expires_at.getTime() > now.getTime()));
       if (holding.length !== new Set(input.keys).size || holding.length === 0) return { ok: false, code: 'LEASE_NO_ROW', message: '这些键上没有租约行' };
+      await input.guard?.();
       const lease = holding[0]!.lease_id;
       const holder: Holder = { user: holding[0]!.user_id, run: holding[0]!.run_id };
       const token = holding.reduce((max, row) => Math.max(max, Number(row.token)), 0) + 1;
@@ -256,8 +262,8 @@ export class LeaseService {
     return rows.rows.map((row) => ({ key: row.key, user: row.user_id, run: row.run_id, released: row.released_at !== null, expires_at: row.expires_at?.toISOString() ?? null }));
   }
 
-  async holderSnapshot(keys: readonly string[]): Promise<HolderSnapshot[]> {
-    const rows = await this.#db.query<Row>('SELECT key, lease_id, token, user_id, run_id, expires_at, released_at FROM leases WHERE key = ANY($1) ORDER BY key', [[...new Set(keys)].sort()]);
+  async holderSnapshot(keys: readonly string[], tx?: Transaction): Promise<HolderSnapshot[]> {
+    const rows = await this.#db.query<Row>('SELECT key, lease_id, token, user_id, run_id, expires_at, released_at FROM leases WHERE key = ANY($1) ORDER BY key', [[...new Set(keys)].sort()],tx);
     return rows.rows.map(row => {
       const fencing = Number(row.token);
       if (!Number.isSafeInteger(fencing) || fencing < 1) throw new Error('租约围栏不能安全表示，请管理员核对');
@@ -323,7 +329,7 @@ export class LeaseService {
       const rows = await this.#rowsLocked(ordered, tx);
       if (rows.length === 0) return { ok: false, code: 'LEASE_NO_ROW', message: `这些键上没有租约行` };
       if (rows.some((row) => (row.run_id !== holder.run || row.user_id !== holder.user))) {
-        return { ok: false, code: 'LEASE_UNAVAILABLE', message: `键 ${rows.find((row) => row.run_id !== holder.run)!.key} 由别的运行持有` };
+        return { ok: false, code: 'LEASE_UNAVAILABLE', message: `键 ${rows.find((row) => row.run_id !== holder.run || row.user_id !== holder.user)!.key} 由别的运行持有` };
       }
       if (rows.some((row) => row.expires_at !== null && row.expires_at.getTime() <= now.getTime())) {
         return { ok: false, code: 'LEASE_EXPIRED', message: `键 ${rows.find((row) => row.expires_at !== null && row.expires_at.getTime() <= now.getTime())!.key} 的租约已过到期时刻` };
@@ -374,7 +380,7 @@ export class LeaseService {
   }
 
   async #nowIn(tx: PgTransaction): Promise<Date> {
-    return this.#now();
+    return this.#now(tx);
   }
 
   async #rowsLocked(keys: string[], tx: PgTransaction): Promise<Row[]> {

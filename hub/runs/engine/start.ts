@@ -205,7 +205,10 @@ export async function grantLeases(
         done.push({op:request.op,prefix:request.prefix,owner:outcome.owner});
       }
       if(request.op==='force_release'){
-        const outcome=await service.forceRelease({keys:request.keys,by:user.id,reason:request.reason,...(user.role==='admin'?{}:{owner:user.id})});
+        const outcome=await service.forceRelease({keys:request.keys,by:user.id,reason:request.reason,guard:async()=>{
+          const jobs=await ctx.deps.leaseJobs!(request.keys);
+          if(jobs.length)refuse('LEASE_UNAVAILABLE','作业 '+jobs.map(job=>job.job).join('、')+' 还没有终态，本地释放停不了网关上的作业','等它结束，或者请管理员用 circle-hub job status 看、用 job dispose 处置');
+        },...(user.role==='admin'?{}:{owner:user.id})});
         if(!outcome.ok)refuse(outcome.code,outcome.message,'重新读取占用和登记后再决定是否释放');
         done.push({op:'force_release',keys:request.keys,reason:request.reason,until:outcome.until,previous_holders:rows.filter(r=>request.keys.includes(r.key)).map(r=>({key:r.key,run:r.run}))});
       }

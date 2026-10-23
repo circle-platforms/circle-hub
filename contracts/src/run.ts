@@ -123,6 +123,12 @@ const CONFIGURED = TriggerSchema.extract(['event_or_schedule', 'standing_obligat
  * Body of a `run` record (run@1): the summary plus what only the Hub needs (W06 F[0]-F[10], W09 F[1], D05 R[4]-R[5]).
  * Phase is derived from records, never stored. A Hub-side run (a standing obligation the Hub executes) has no runner.
  */
+// Earlier run@1 snapshots contain only key/until/mine. They remain immutable and readable.
+const PersistedLeaseContextRow=LeaseContextRow.partial({since:true,run:true,jobs:true}).superRefine((row,ctx)=>{
+  const known=[row.since,row.run,row.jobs].filter(value=>value!==undefined).length;
+  if(known!==0&&known!==3||known===0&&row.holder!==undefined)ctx.addIssue({code:'custom',message:'lease snapshot has either all current facts or the historical key/until/mine shape'});
+});
+
 export const RunRecord = RunSummary.extend({
   runner: UserId.optional().describe('the user the run is executed for; absent only when the Hub itself executes a standing obligation'),
   host: ExecutionHostSchema,
@@ -151,7 +157,7 @@ export const RunRecord = RunSummary.extend({
     .describe('the lease operations this run performed before it was stored (acquire\'s grant, extend\'s new end, release\'s keys with their former end); the fencing token stays in the lease table, never in the record'),
   lease_registrations: z.array(LeaseRegistrationRow).optional(),
   lease_context: z
-    .array(LeaseContextRow)
+    .array(PersistedLeaseContextRow)
     .optional()
     .describe('the frozen lease rows of the workflow\'s declared prefix at start_run (every holder\'s rows, no tokens), `mine` marking the rows held by this run\'s lineage (D04 R[0])'),
 }).superRefine((r, ctx) => {

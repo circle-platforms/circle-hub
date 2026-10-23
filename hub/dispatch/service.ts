@@ -1,4 +1,4 @@
-import { canonicalBytes, canonicalize, sha256Hex, type ActionBody, type Principal, type RecordsKit } from '../records/api.ts';
+import { canonicalBytes, canonicalize, sha256Hex, type ActionBody, type Principal, type RecordsKit, type Transaction } from '../records/api.ts';
 import type { LeaseService, HolderSnapshot } from '../leases/api.ts';
 import type { WorkflowStore } from '../ports.ts';
 import { labelOf, type EffectOutcome, type Disposition, type EffectMark, type RequestKind, type ActionKind, type ActionResult, type LeaseOp, type EffectClass, type RetrySafety, type Signing, isDisposition } from '../../contracts/generated/vocabulary.ts';
@@ -14,7 +14,7 @@ import { dynamicDisposition, DISPATCH_QUALIFICATIONS } from './dynamic.ts';
 import { verifyInput, lockedBuildBase, InputVerificationError, type VerificationPort } from './proof.ts';
 export interface DispatchOptions {
   knowledge?: BuildKnowledge;
-  records: RecordsKit; leases: Pick<LeaseService, 'holderSnapshot'>; runs: VerificationPort;
+  records: RecordsKit; leases: Pick<LeaseService, 'holderSnapshot' | 'withMutationLock'>; runs: VerificationPort;
   workflows: Pick<WorkflowStore, 'byDigest'>; close?: () => Promise<void>; now?: () => Date; sleep?: (ms: number) => Promise<void>;
 }
 export interface JobStatus { failed_checks?:Array<{step:string;seat?:string;check?:string;missing_fact:string;next_action:string}>; failed_conditions?:Array<{pointer:string;operator:string}>; requests?:Array<{id:string;question_sha256:string|null;deadline:string|null}>; marks?:EffectMark[];disposition?:Disposition;decided_by?:string;decided_at?:string; reason?: string; job: string; phase: string; outcome: EffectOutcome; frozen: boolean; result?: string; events: number; next_action?: string; missing_fact?: string; }
@@ -72,12 +72,10 @@ export class DispatchService {
   async activeLeaseJobs(keys: readonly string[]): Promise<Array<{key:string;job:string}>> {
     if (!keys.length) return [];
     const keysSet=new Set(keys);const events=await this.journal.targets(keys);
-    if(events.some(e=>e.integrity_note))throw new Error('作业记录完整性未证明，请管理员从可信记录恢复后核验');
     const jobs=[...new Set(events.map(e=>String(e.body.detail.job)))].sort();
     const rows:Array<{key:string;job:string}>=[];
     for(const job of jobs){
       const history=await this.journal.events(job);
-      if(history.some(e=>e.integrity_note))throw new Error('作业记录完整性未证明，请管理员从可信记录恢复后核验');
       const reservation=history.find(e=>e.body.detail.phase==='reservation');
       const binding=reservation?.body.detail.binding as JobBinding|undefined;
       if(!binding)throw new Error('作业缺少资源登记，请管理员恢复作业登记后核验');
@@ -121,7 +119,7 @@ export class DispatchService {
     const d = registered.definition;
     if (!d.conformance || !d.reconciliation || !d.calls.query || !d.receipt.stage || !d.receipt.reached_device) throw new Error('缺少只读查账、拒绝阶段或一致性探测字节声明；请补齐定义');
     const binding: JobBinding = {job:newJob(),initiated_by:by.id,executor,executor_digest:registered.digest,scope:{target:d.target,origin:new URL(d.endpoint).origin},target_key:digestOfValue([...d.resources].sort()),input:null,user:by.id,resources:d.resources,context:d.precheck_context};
-    await this.reserve(binding);
+    await this.options.leases.withMutationLock(tx=>this.reserve(binding,tx));
     const client = this.session(binding,d,await this.secret(executor));
     let lease: RemoteLease | undefined; const observations: Exchange[] = []; const checks: boolean[] = [];let failure:Record<string,string>|undefined;let ambiguous=false;
     try {
@@ -208,7 +206,7 @@ export class DispatchService {
     const secret = await this.secret(executor);
     const binding: JobBinding = { job: newJob(), initiated_by: by.id, executor, executor_digest: registered.digest, input, user: input.user, resources: d.resources, fences: initial, scope:{target:d.target,origin:new URL(d.endpoint).origin}, target_key: digestOfValue([...d.resources].sort()) };
     if (JSON.stringify(binding).includes(secret)) throw new Error('绑定元数据不能包含执行器密钥');
-    await this.reserve(binding);
+    await this.options.leases.withMutationLock(tx=>this.reserve(binding,tx));
     try { onReserved?.(binding.job); } catch { /* A terminal sink never controls an effect already authorized by the command. */ }
     const session = this.session(binding, d, secret);
     let remote: RemoteLease | undefined; let stop = async () => {}; let pulse:Heartbeat|undefined;
@@ -508,7 +506,8 @@ export class DispatchService {
     return true;
   }
 
-  private async reserve(binding: JobBinding): Promise<void> {
+  private async reserve(binding: JobBinding, tx?: Transaction): Promise<void> {
+    if(binding.fences?.length && !this.sameFences(binding.fences,await this.options.leases.holderSnapshot(binding.resources,tx)))throw new Error('预留前围栏或血缘已改变，尚未提交；重新读取登记和租约后重开核验');
     const definition=await this.pinned(binding);
     // Read the CAS heads before checking occupancy. A reservation committed during
     // that check must either be observed as a blocker or invalidate our CAS head.
