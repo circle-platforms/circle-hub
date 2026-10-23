@@ -19,7 +19,7 @@ nav_order: 2
 
 | 做 | 不做（留在合约里，这个里程碑不实现） |
 |---|---|
-| 六个工具：`list_task_packs`、`upload_file`、`start_run`、`get_nodes`、`resolve_reference`、`submit_result` | 效果与租约 |
+| 六个工具：`list_task_packs`、`upload_file`、`start_run`、`get_nodes`、`resolve_reference`、`submit_result` | 效果（租约在 10-22 随设备管理包的第一阶段做了，见进度） |
 | 用例评审工作流包、产品包，以及敏捷测试平台、PLM 查询服务、构建站、手册库和手册库所据的文档库这几个系统包 | 处置与请求 |
 | 初评与独立复核两次运行，静态层的要求项见架构第 6 节；动态层显示“不适用” | 动态层检查 |
 | 知识树：覆盖两族名字下的每个版本，每个已发布构建一个根（知识同步）；确定性解析器归位，没有路径的条目留在根下标为未归位（bot 提议、Hub 核验的归位流程尚未实现，Hub 不调用任何模型） | 通用的触发与常设义务（知识同步除外）、假设集 |
