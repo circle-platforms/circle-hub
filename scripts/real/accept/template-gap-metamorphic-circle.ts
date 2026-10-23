@@ -296,7 +296,7 @@ export default function scenario(gold: GapCircleGold): Scenario {
       if (queuedRuns.length > 0) {
         openRun = queuedRuns.shift() ?? null;
         runsOfPhase[phase - 1]! += 1;
-        return [{ tool: 'hub_start_run', input: { pack: 'template-gap', inputs: { documents: openRun!.map(({ sha }) => ({ source: `src:${sha}` })) } } }];
+        return [{ tool: 'hub_start_run', input: { pack: 'template-gap', inputs: { documents: openRun!.map(({ sha }) => ({ reference: `src:${sha}` })) } } }];
       }
       if (phase < 3) {
         phase += 1;

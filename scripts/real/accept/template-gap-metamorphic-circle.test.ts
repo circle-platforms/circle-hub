@@ -62,7 +62,7 @@ const drive = (scenario: ReturnType<typeof build>, answers: (file: string) => st
       const full = fullTextOf.get(reference) ?? '内容 ' + reference + '：用例 1 个；缺 2 个模板类别：k-security、k-localization';
       results.push({ id: 'gn', text: JSON.stringify(full), isError: false });
     } else if (tools.length === 1 && tools[0]!.tool === 'hub_start_run') {
-      const shas = ((tools[0]!.input.inputs as { documents: Array<{ source: string }> }).documents).map((d) => d.source.slice(4));
+      const shas = ((tools[0]!.input.inputs as { documents: Array<{ reference: string }> }).documents).map((d) => { assert.deepEqual(Object.keys(d), ['reference']); return d.reference.slice(4); });
       const rows = shas.map((sha) => `upload-${sha.slice(0, 12)} | 文档 | 位置 / | ${answers(shaToName.get(sha) ?? '?')}`);
       results.push({ id: 'run', text: `运行 run_x 完成：\n${rows.join('\n')}`, isError: false });
     }
@@ -253,4 +253,17 @@ test('a finding names the case and the run when a single-case answer cannot be h
   assert.ok(finding !== undefined && finding.includes('a2') && finding.includes('c-0-1'), String(finding));
   const checks = scenario.check([{ index: 0, toolResults: [], tools: [] }]);
   assert.ok(checks.every((c) => c.name !== '单用例副本答案未知' ? true : false));
+});
+
+test('review 1: start_run uses the actual strict reference binding contract', async () => {
+  const { StartRunInput } = await import('../../../contracts/src/tools.ts');
+  const { gold, dir } = goldOf(); const scenario = build(gold as never); scenario.prepare?.(join(dir, 'work'));
+  let results: Turn['toolResults'] = [];
+  for (let index = 0; index < 10; index++) {
+    const reply = scenario.respond(turn(index, results)) as Array<{ tool: string; input: Record<string, unknown> }>;
+    const start = reply.find(call => call.tool === 'hub_start_run');
+    if (start) { assert.equal(StartRunInput.safeParse(start.input).success, true); return; }
+    results = reply.map((call, i) => ({ id: `upload-${i}`, text: `已上传 src:${sha256Of(readFileSync(join(dir, 'work', String(call.input.file_path))))}`, isError: false }));
+  }
+  assert.fail('no start_run call');
 });
