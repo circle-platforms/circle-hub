@@ -383,7 +383,7 @@ test('ZIP failures disclose a specific rule and safe member location without nam
 test('refs documents the installed caller diagnostic handoff', async () => {
   const { readFile } = await import('node:fs/promises');
   const readme = await readFile(new URL('../README.md', import.meta.url), 'utf8');
-  assert.match(readme, /Upload checks the declared format before ingesting bytes/);
+  assert.match(readme, /Upload checks an explicitly given media type/);
   assert.match(readme, /SOURCE_UNPARSEABLE/);
 });
 

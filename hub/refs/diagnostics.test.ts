@@ -45,3 +45,27 @@ test('input binding refuses the same malformed sources with SOURCE_UNPARSEABLE a
     });
   }
 });
+
+test('guessed media types do not reject uploads and the answer explains how to declare the type', async t => {
+  const server = await createTestServer(); t.after(() => server.close());
+  const client = await server.client(server.admin.token); t.after(() => client.close());
+  const args = { file_path: Buffer.from('<p>a<br></p>').toString('base64') };
+  const guessed = await client.call('upload_file', args);
+  assert.equal(guessed.isError, false); assert.equal(guessed.structuredContent.media_type, 'text/plain');
+  assert.equal((guessed.structuredContent.structure as Record<string, unknown>).media_type_guessed, true);
+  assert.match(guessed.content.map(c => c.text ?? '').join('\n'), /猜测.*media_type/);
+  const declared = await client.call('upload_file', { ...args, name: 'broken.xml' });
+  assert.equal(declared.isError, true);
+});
+test('parser limit recovery is assigned from the limit kind for uploads and run binding', async t => {
+  const text = '['.repeat(200) + '0' + ']'.repeat(200);
+  const server = await createTestServer(); t.after(() => server.close());
+  const client = await server.client(server.admin.token); t.after(() => client.close());
+  const answer = await client.call('upload_file', { file_path: Buffer.from(text).toString('base64'), name: 'deep.json' });
+  assert.equal(answer.isError, true);
+  const error = (answer.structuredContent.errors as { fix: string }[])[0]!;
+  assert.match(error.fix, /128/); assert.match(error.fix, /嵌套|拆分/);
+  const ctx = { parsers: createDefaultRegistry(), deps: { records: { artifacts: { source: async () => ({ bytes: Buffer.from(text), mediaType: 'application/json', artifact: { body: {} } }) }, store: {} } } } as unknown as EngineContext;
+  const workflow = { workflow: { inputs: [{ slot: 'file', role: 'subject', required: true, accepts: ['application/json'] }] } } as unknown as LoadedWorkflow;
+  await assert.rejects(bindInputs(ctx, { id: 'synthetic', name: '合成', role: 'user' }, workflow, { file: { reference: `src:${'a'.repeat(64)}` } }, 'synthetic-run', 'synthetic-trace'), (e: unknown) => e instanceof Refusal && /128/.test(e.errors[0]!.fix ?? '') && /嵌套|拆分/.test(e.errors[0]!.fix ?? ''));
+});

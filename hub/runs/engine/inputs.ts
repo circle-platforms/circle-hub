@@ -218,7 +218,7 @@ export async function bindInputs(
       if (read === null) continue;
       let refusal: ProtocolError | null = null;
       const parsed = recognize(ctx.parsers, read.bytes, read.mediaType, {}, (error) => {
-        refusal = protocolError('SOURCE_UNPARSEABLE', `${error.parser}：${error.message}`, { path });
+        refusal = protocolError('SOURCE_UNPARSEABLE', `${error.parser}：${error.message}`, { path, fix: error.fix });
       });
       if (parsed === null) {
         errors.push(refusal ?? protocolError('SOURCE_UNPARSEABLE', `媒体类型 ${read.mediaType} 没有可用的核心解析器`, { path }));

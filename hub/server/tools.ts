@@ -31,7 +31,7 @@ import type { ServerDeps } from './api.ts';
 import { clipNote, describeError, describeInternalError } from './notes.ts';
 import { recordReaderFor, sourceReaderFor } from './readers.ts';
 import { fallbackText, pageCursorProblem, toolText, type TextContext } from './text.ts';
-import { base64Size, decodeBase64Strict, isMediaType, mediaTypeFor, structureOf } from './upload.ts';
+import { base64Size, decodeBase64Strict, isMediaType, mediaTypeFor, mediaTypeIsAuthoritative, structureOf } from './upload.ts';
 
 export { describeError, describeInternalError } from './notes.ts';
 
@@ -266,18 +266,25 @@ async function upload(deps: ServerDeps, call: ToolCall, args: Record<string, unk
   if (name !== undefined && (!NAME.test(name) || !name.isWellFormed())) {
     return errorAnswer('upload_file', [violation('upload_file', '/name', '文件名是 1 到 300 个字符，不含控制字符')]);
   }
-  const mediaType = mediaTypeFor(bytes, given, name);
+  let mediaType = mediaTypeFor(bytes, given, name);
+  const authoritative = mediaTypeIsAuthoritative(given, name);
   let refusal: ProtocolError | null = null;
   let structure: Record<string, unknown> | null = null;
   try {
     structure = structureOf(deps.parsers, bytes, mediaType, (error) => {
-      refusal = { code: error.code, message: `${error.parser}：${error.message}`, fix: PROTOCOL_CODES.SOURCE_UNPARSEABLE.fix };
+      refusal = { code: error.code, message: `${error.parser}：${error.message}`, fix: error.fix };
     });
   } catch (error) {
     call.context.adminNote(`structure summary failed: ${describeError(error)}`);
     throw error;
   }
-  if (refusal) return errorAnswer('upload_file', [refusal]);
+  if (refusal && authoritative) return errorAnswer('upload_file', [refusal]);
+  if (refusal) {
+    const guessed = mediaType;
+    const fallback = structureOf(deps.parsers, bytes, 'text/plain');
+    if (fallback !== null) { mediaType = 'text/plain'; structure = fallback; }
+    structure = { ...(structure ?? {}), media_type_guessed: true, guessed_media_type: guessed, note: '媒体类型由字节猜测，猜测格式未通过核验，文件仍原样保存；请用 media_type 明确指定实际格式后重传，如 application/xml 或 text/html' };
+  }
   let artifact;
   try {
     artifact = await deps.records.artifacts.ingest({

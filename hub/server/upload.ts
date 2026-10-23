@@ -62,6 +62,13 @@ function isUtf8Text(bytes: Uint8Array): boolean {
   return controls <= head.length / 100;
 }
 
+/** An actual declared type or a recognized filename extension is authoritative; byte sniffing is only a hint. */
+export function mediaTypeIsAuthoritative(given: string | undefined, name: string | undefined): boolean {
+  if (given !== undefined) return true;
+  const extension = name === undefined ? undefined : /\.([A-Za-z0-9]{1,10})$/.exec(name)?.[1]?.toLowerCase();
+  return extension !== undefined && Object.hasOwn(BY_EXTENSION, extension);
+}
+
 /** The media type of an upload: the caller's, else by the name's extension, else sniffed; application/octet-stream when unknown. */
 export function mediaTypeFor(bytes: Uint8Array, given: string | undefined, name: string | undefined): string {
   if (given !== undefined) return given;

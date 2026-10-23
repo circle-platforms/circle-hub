@@ -334,6 +334,9 @@ or worktree was changed and no real-system script was run; only synthetic tests 
 
 ## Needs from other packages
 
+- **model / integrator**: align T03 DEF with the owner-approved upload boundary: credential scan plus definite parsing
+  refusals for declared/recognized-extension media types; sniffing alone is advisory and cannot refuse storage.
+
 - **contracts / rules owner**: update the QuoteTable description in contracts/src/tables.ts to decision 37: remove
   W/F-adjacent whitespace, collapse other interior runs and trim ends. Regenerate
   contracts/generated/schemas/quote.v1.schema.json (currently the same stale description) and run gen-contracts --check.
@@ -445,10 +448,10 @@ therefore distinguishable from an empty worksheet without guessing from its file
 
 ## Refusal diagnostics
 
-Upload checks the declared format before ingesting bytes. A definite parser refusal returns SOURCE_UNPARSEABLE, the
+Upload checks an explicitly given media type or recognized filename extension before ingesting bytes. A definite parser refusal returns SOURCE_UNPARSEABLE, the
 parser id, rule/reason and the generated fix; it creates no upload receipt. No candidate parser still permits an opaque
 upload, while input binding refuses that media type explicitly. Successful fallback is still accepted. Input binding
-uses the same last refusal with the input path. Unexpected parser failures stay internal errors. Raw source text and
+uses the same last refusal with the input path. Guessed types are hints: a guessed-format refusal preserves the upload, retries text/plain where possible, and discloses the guess plus how to set media_type. Unexpected parser failures stay internal errors. Raw source text and
 underlying library details are not included; XML assigns a fixed syntax rejection at its library adapter and keeps native prose in detail only; it does not infer reasons from message patterns.
 
 ## Declared encodings (decision 37)
@@ -472,3 +475,7 @@ DTD capability boundary: xml@1 does not implement DTD attribute defaults or toke
 refuses internal ATTLIST and other markup declarations rather than silently showing incomplete attributes; no defaults
 are invented. This is a format capability refusal, not a claim that such XML is invalid. External identifiers are never
 fetched, and doctype metadata discloses that policy. See [XML 1.0 section 5.1](https://www.w3.org/TR/REC-xml/#proc-types).
+
+Limit recovery is constructed by ParseLimitError from its typed limit/max, then passed intact by upload and input
+binding. It is not guessed from message text. Caller-declared/extension formats can refuse; a byte-sniffed format
+cannot by itself reject an upload. The upload-size gate still precedes parsing and keeps its own cap-specific fix.

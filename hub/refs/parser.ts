@@ -1,5 +1,5 @@
 // Parser interface, typed parse errors and the parser registry (B03 F[0]: a parser@version declares the selector grammar).
-import type { ProtocolCode } from '../../contracts/generated/protocol.ts';
+import { PROTOCOL_CODES, type ProtocolCode } from '../../contracts/generated/protocol.ts';
 
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 export type JsonObject = { [key: string]: JsonValue };
@@ -91,12 +91,15 @@ export class ParseError extends Error {
   readonly offset: number | null;
   /** Untranslated detail from the underlying library, for the admin log. */
   readonly detail: string | null;
-  constructor(parser: string, message: string, offset: number | null = null, detail: string | null = null) {
+  /** Recovery is defined where the failure is constructed, not inferred from translated prose. */
+  readonly fix: string;
+  constructor(parser: string, message: string, offset: number | null = null, detail: string | null = null, fix: string = PROTOCOL_CODES.SOURCE_UNPARSEABLE.fix) {
     super(message);
     this.name = 'ParseError';
     this.parser = parser;
     this.offset = offset;
     this.detail = detail;
+    this.fix = fix;
   }
 }
 
@@ -105,7 +108,14 @@ export class ParseLimitError extends ParseError {
   readonly limit: keyof ParseLimits;
   readonly max: number;
   constructor(parser: string, limit: keyof ParseLimits, max: number, message: string, offset: number | null = null) {
-    super(parser, message, offset);
+    const fixes: Record<keyof ParseLimits, string> = {
+      maxBytes: `拆分文件，或上传不超过 ${max} 字节的较小文件`,
+      maxDepth: `减少嵌套至 ${max} 层以内，或拆分文件后重新上传`,
+      maxNodes: `拆分文件或减少节点/值数量至 ${max} 以内后重新上传`,
+      maxAttributes: `减少单个标签的属性数至 ${max} 以内后重新上传`,
+      maxSelectorChars: `缩短定位路径或拆分文件，使定位字符数不超过 ${max} 后重新上传`,
+    };
+    super(parser, message, offset, null, fixes[limit]);
     this.name = 'ParseLimitError';
     this.limit = limit;
     this.max = max;
