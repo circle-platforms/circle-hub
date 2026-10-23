@@ -27,8 +27,8 @@ test('command coverage requires marked even when tagged cases happen to keep mat
   assert.equal(result.item.fields.command_coverage!.commands.length, 0);
 });
 
-test('NFKC and whitespace-only header differences retain the matching revision', () => {
+test('NFKC and whitespace-only header differences require synchronization', () => {
   const result = run(row => { row.title = `  ${row.title.replaceAll('widget', 'ｗｉｄｇｅｔ')}　`; row.path_labels = row.path_labels.map(label => ` ${label}　`); });
-  assert.equal(result.item.fields.command_coverage!.unmatched.length, 0);
-  assert.deepEqual(result.outcomes.map(o => o.verdict), ['support']);
+  assert.equal(result.item.fields.command_coverage!.unmatched.length, 1);
+  assert.ok(result.outcomes.some(o => o.verdict === 'unknown'));
 });

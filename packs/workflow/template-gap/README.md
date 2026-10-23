@@ -41,9 +41,8 @@ broader untagged-count and always-present covered changes; this task does not im
 `template-gap.case_rule_mismatch` conclusion, with a next action to rerun using the default (omit case_rule or use marked).
 Knowledge sync cannot fix a rule mismatch. Uploads always get not_indexed instead of being mistaken for indexed agile data.
 
-Cases connect by (document, case key), plus normalized title and ordered path_labels. The case key is the existing
-case-review-compatible identity; no new key/command parser was added. Header normalization is NFKC plus Unicode whitespace
-collapse/trim, preserving case. Labels keep their ancestor order. If a stable key has a different title or ancestor label,
+Cases connect by (document, case key), plus exact title and ordered path_labels. The case key is the existing
+case-review-compatible identity; no new key/command parser was added. Headers use exact code-unit equality, without NFKC, whitespace folding or trimming. Labels keep their ancestor order. If a stable key has a different title or ancestor label,
 it is not a matching current case revision: withhold its old command membership, report it among unmatched cases, and
 require knowledge sync and a new read/run. Multiple index entries for one matching key count the case once per command.
 Conflicting revisions under one key are also unmatched, not arbitrarily selected.

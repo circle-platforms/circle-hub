@@ -2,7 +2,6 @@
 import { categoryFacts, MAX_EVIDENCE, type Template } from './template.ts';
 import { compareText, type CaseIndex } from './index.ts';
 import type { DocumentCases } from './cases.ts';
-import { collapseWhitespace } from './text.ts';
 import type { CaseCategory, CaseRevisionNodes, CategoryFact, CommandCoverage, Skip } from './types.ts';
 export function caseCategories(template: Template, cases: DocumentCases, facts?: CategoryFact[]): CaseCategory[] {
   const members = new Map(cases.cases.map(c => [c.id, [] as string[]]));
@@ -30,8 +29,8 @@ function unplacedCount(notes: string[]): number | null {
   return descriptions.length === 1 && parsed && Number.isSafeInteger(Number(parsed[1])) ? Number(parsed[1]) : null;
 }
 export function commandCoverage(template: Template, document: string, cases: CaseCategory[], index: CaseIndex | null, skips: Skip[], uploaded = false, lock: { root?: unknown; build?: unknown } = {}, caseRule: 'marked' | 'tagged' = 'marked', nodes?: CaseRevisionNodes): CommandCoverage {
-  const revision = (title: string, labels: string[]): string => JSON.stringify([title, ...labels].map(text => collapseWhitespace(text.normalize('NFKC'))));
-  const normal = (text: string): string => collapseWhitespace(text.normalize('NFKC'));
+  const revision = (title: string, labels: string[]): string => JSON.stringify([title, ...labels]);
+  const normal = (text: string): string => text;
   const forms = nodes?.texts.map(normal) ?? [];
   const rows = new Map<string, { commands: Set<string>; references: Set<string>; revisions: Set<string>; title: string; labels: string[] }>();
   if (index && !uploaded) for (const digest of Object.hasOwn(index.keys, document) ? index.keys[document]! : []) {
