@@ -101,7 +101,9 @@ test('stage zero hashes parsed defaults and refuses HTTP CA omission digest drif
 test('result reporting preserves source qualifications gaps and recovery without replacing them', () => {
   const row = { reported_terminal: 'pass', dynamic_terminal: 'no_verdict', missing_fact: '缺少同租约连续性', missing_facts: ['continuity'], reason: 'integrity_unproven', next_action: '请管理员核对原租约观察；不得重交', qualifier: { nature: 'unknown', provenance: 'projected', marks: ['target_reported', 'report_for_dispatch', 'local_ops_not_excluded'] }, accepted_as_fact: false, limits: ['目标对本次派发的报告', '未排除本地操作'] };
   assert.deepEqual(JSON.parse(reportLines({ rows: [row] })[0]), { case_index: 1, ...row });
-  for (const field of ['missing_fact', 'next_action', 'qualifier', 'accepted_as_fact', 'limits', 'reason']) {
+  for (const optional of ['reason', 'next_action', 'qualifier', 'accepted_as_fact']) { const without: Record<string, unknown> = { ...row }; delete without[optional]; assert.deepEqual(JSON.parse(reportLines({ rows: [without] })[0]), { case_index: 1, ...without }); }
+  assert.throws(() => reportLines({ rows: [{ ...row, limits: ['目标对本次派发的报告'] }] }), /limits/);
+  for (const field of ['missing_fact', 'limits']) {
     const bad: Record<string, unknown> = { ...row }; delete bad[field]; if (field === 'missing_fact') delete bad.missing_facts;
     assert.throws(() => reportLines({ rows: [bad] }), new RegExp(field === 'missing_fact' ? 'missing_fact' : field));
   }
@@ -111,4 +113,16 @@ test('batch qualifications are derived from each result source rather than a fix
   const { batchQualifications } = await import('./device-run.ts');
   const row = { reported_terminal: 'pass', dynamic_terminal: 'pass', qualifier: { nature: 'judgment', provenance: 'projected', marks: ['target_reported', 'report_for_dispatch'] }, accepted_as_fact: false, limits: ['合成结果限定'] };
   assert.deepEqual(batchQualifications([{ rows: [row], qualifier_marks: ['target_reported'], limits: ['合成批次限定'] }]), [{ case_index: 1, rows: [{ case_index: 1, qualifier: row.qualifier, accepted_as_fact: false, limits: row.limits }], qualifier_marks: ['target_reported'], limits: ['合成批次限定'] }]);
+});
+
+test('producer no verdict rows remain printable and aggregate without optional metadata', async () => {
+  const { batchQualifications } = await import('./device-run.ts');
+  for (const reported_terminal of ['pass', null]) {
+    const missing_fact = reported_terminal === null ? '结果通道不完整或条目没有可解释的报告；请管理员只读补取原作业结果' : '结果按派发身份归属尚未认证；该值只转述目标报告';
+    const row = { item: 'synthetic-case', reported_terminal, dynamic_terminal: 'no_verdict', missing_fact, limits: ['目标对本次派发的报告', '未排除本地操作'] };
+    assert.deepEqual(JSON.parse(reportLines({ rows: [row] })[0]), { case_index: 1, reported_terminal, dynamic_terminal: row.dynamic_terminal, missing_fact, limits: row.limits });
+    assert.deepEqual(batchQualifications([{ rows: [row], limits: row.limits }]), [{ case_index: 1, rows: [{ case_index: 1, missing_fact, limits: row.limits }], limits: row.limits }]);
+    const fields: Record<string, unknown> = JSON.parse(reportLines({ rows: [row] })[0]);
+    for (const optional of ['reason', 'next_action', 'qualifier', 'accepted_as_fact']) assert.ok(!Object.hasOwn(fields, optional));
+  }
 });

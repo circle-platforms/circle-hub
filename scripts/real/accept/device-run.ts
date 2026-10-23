@@ -6,7 +6,7 @@ import { readFileSync, writeFileSync, renameSync, existsSync, appendFileSync } f
 import { join, resolve, dirname } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createInterface } from 'node:readline/promises';
-import { EffectOutcomeSchema, DynamicTerminalSchema } from '../../../contracts/generated/vocabulary.ts';
+import { EffectOutcomeSchema, DynamicTerminalSchema, labelOf } from '../../../contracts/generated/vocabulary.ts';
 import { canonicalBytes, sha256Hex, parseStrictJson } from '../../../hub/records/api.ts';
 import { ExecutorDefinition, type JobStatus } from '../../../hub/dispatch/api.ts';
 import { staging, FactError, requireFact } from '../convert/io.ts';
@@ -63,14 +63,9 @@ export function reportLines(value: unknown): string[] {
     const reported = r.reported_terminal == null ? null : DynamicTerminalSchema.safeParse(r.reported_terminal);
     requireFact(reported === null || reported.success, '目标报告的结论码不认识；请管理员按结果源核对，不能据此继续');
     if (verdict.data === 'no_verdict') {
-      const need = (ok: unknown, field: string) => requireFact(ok, `/rows/${index}/${field} 缺少无判定结果的说明；请管理员按结果源引用补取原作业的缺口、限定和下一步，暂停本例，不重发`);
+      const need = (ok: unknown, field: string) => requireFact(ok, `/rows/${index}/${field} 缺少无判定结果的缺口或限定说明；请管理员核对派发服务版本和原作业记录，修复结果导出后重读原作业，保留检查点并暂停本例，不重发`);
       need(text(r.missing_fact).trim() || Array.isArray(r.missing_facts) && r.missing_facts.length > 0 && r.missing_facts.every(v => typeof v === 'string' && v.trim()), 'missing_fact 或 missing_facts');
-      need(text(r.reason).trim(), 'reason'); need(text(r.next_action).trim(), 'next_action');
-      const qualifier = object(r.qualifier) ? r.qualifier : r;
-      need(text(qualifier.nature).trim(), 'qualifier.nature'); need(text(qualifier.provenance).trim(), 'qualifier.provenance');
-      need(Array.isArray(qualifier.marks) && qualifier.marks.length > 0 && qualifier.marks.every(v => typeof v === 'string' && v.trim()), 'qualifier.marks');
-      need(typeof r.accepted_as_fact === 'boolean', 'accepted_as_fact');
-      need(Array.isArray(r.limits) && r.limits.length > 0 && r.limits.every(v => typeof v === 'string' && v.trim()), 'limits');
+      need(Array.isArray(r.limits) && r.limits.every(v => typeof v === 'string' && v.trim()) && r.limits.includes(labelOf('qualifier_mark', 'local_ops_not_excluded')), 'limits');
     }
     return JSON.stringify({ case_index: index + 1, reported_terminal: reported === null ? null : reported.data, dynamic_terminal: verdict.data, ...copied(r, qualificationFields) });
   });

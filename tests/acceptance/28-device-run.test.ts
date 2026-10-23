@@ -13,6 +13,7 @@ import { CONTRACT_DOC as BASE_CONTRACT, PROFILE_DOC as BASE_PROFILE, MANIFEST_DO
 import { signRuntime, entry } from '../../packs/workflow/case-compile/testing/runtime.ts';
 import { satisfiedRecipe } from '../../packs/workflow/case-compile/scripts/generate-workbook.ts';
 import { generateWorkbook } from '../../packs/workflow/case-compile/functions/generate.ts';
+import { reportLines, batchQualifications } from '../../scripts/real/accept/device-run.ts';
 import { createScriptedModel } from '../../scripts/real/scripted-model.ts';
 import { createTestHub, type TestHub, type TestUser } from '../../hub/server/testing-real.ts';
 import { mkdtemp, rm, writeFile, readFile } from 'node:fs/promises';
@@ -110,7 +111,9 @@ async function verify(p: Awaited<ReturnType<typeof plan>>, index = 0, changed = 
 async function resultReport(state: JobStatus) {
   assert.match(state.result!, /^src:[a-f0-9]{64}$/);
   const source = await bed.hub.records.artifacts.source(bed.reviewer.principal, state.result!.slice(4));
-  assert.ok(source?.bytes); return JSON.parse(Buffer.from(source.bytes).toString());
+  assert.ok(source?.bytes); const report = JSON.parse(Buffer.from(source.bytes).toString());
+  assert.ok(reportLines(report).length > 0); assert.equal(batchQualifications([report]).length, 1);
+  return report;
 }
 
 before(async () => {

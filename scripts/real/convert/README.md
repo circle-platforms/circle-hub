@@ -99,4 +99,4 @@ CLI 必须指向待验收的同一部署，管理员身份由集成者按现有 
 收尾诊断：runtime-contract 与 runtime-profile 使用包解析器给出的固定原因，保留安全字段指针（含 reviewed）和修正动作；dispatch/status/kind 的格式缺口要求核对并另开格式表任务，摘要不符则补取网关钉住的合约及摘要。清单解析器的源值仍不显示在终端；完整问题列表保存到 --out 下的 parser-diagnostics.json（0600，不覆盖），请集成者私下核对该记录后重跑。转换器不通过匹配异常消息猜原因。
 
 
-另一家族第 12 条：逐用例输出原样保留结果源的 missing_fact、missing_facts、reason、next_action、qualifier（nature/provenance/marks）、accepted_as_fact 和 limits，不用脚本写死的建议覆盖具体动作。无判定行缺少缺口、原因、下一步或限定信息时，点名缺少的字段并停止，要求管理员补取原结果；旧结果缺少这些字段也不能由脚本猜补。批次结束或重读已完成批次时，重新导出每份结果原件，核对字节摘要、作业、工作簿摘要和用例身份后，逐份汇总实际限定信息；不从固定标签推导。仅作离线管理脚本回归，没有运行真实入口。
+另一家族第 12 条：逐用例输出原样保留结果源的 missing_fact、missing_facts、reason、next_action、qualifier（nature/provenance/marks）、accepted_as_fact 和 limits，不用脚本写死的建议覆盖具体动作。无判定行只要求已存的 missing_fact 或 missing_facts，以及 limits 中的“未排除本地操作”限定；reason、next_action、qualifier、accepted_as_fact 等补充元数据有则原样抄，没有不补造，也不据此阻断当前派发服务的结果。缺少必需缺口或限定时，点名字段，要求管理员核对派发服务版本与原作业记录、修复结果导出后重读，保留检查点且不重发。批次结束或重读已完成批次时，重新导出每份结果原件，核对字节摘要、作业、工作簿摘要和用例身份后，逐份汇总实际限定信息；不从固定标签推导。仅作离线管理脚本回归，没有运行真实入口。
