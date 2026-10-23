@@ -11,7 +11,7 @@ import {
   TriggerSchema,
 } from '../generated/vocabulary.ts';
 import { Claim } from './claim.ts';
-import { IsoTime, ItemId, LeaseId, PackId, PackVersion, RunId, Sha256, UserId } from './common.ts';
+import { Versioned, IsoTime, ItemId, LeaseId, PackId, PackVersion, RunId, Sha256, UserId } from './common.ts';
 import { ContextBuild } from './pack.ts';
 import { ExternalObjectId, ReferenceUri, referenceUriOf } from './reference.ts';
 
@@ -54,6 +54,7 @@ export const RequirementSummary = z.strictObject({
   layers: z.array(LayerSchema).describe('the judgment layers this requirement is judged on; other layers are not applicable'),
   done_rule: DoneRuleSchema,
   accepted_producer: AcceptedProducerSchema,
+  observation:Versioned.optional().describe('The declared P07 observation contract for the dynamic layer'),
   repair_rounds: z.number().int().nonnegative(),
 });
 export type RequirementSummary = z.infer<typeof RequirementSummary>;
@@ -112,6 +113,7 @@ export const RunSummary = z.strictObject({
   predecessor: RunId.optional(),
   session: z.string().optional().describe('client session id observed from the request header'),
   started_at: IsoTime,
+  submission_due:IsoTime.optional().describe('Absolute submission deadline; absent only on historical runs, never inferred by readers'),
 });
 export type RunSummary = z.infer<typeof RunSummary>;
 
@@ -152,8 +154,14 @@ export const RunRecord = RunSummary.extend({
     .describe('the frozen lease rows of the workflow\'s declared prefix at start_run (every holder\'s rows, no tokens), `mine` marking the rows held by this run\'s lineage (D04 R[0])'),
 }).superRefine((r, ctx) => {
   if (r.host === 'hub') {
-    if (r.runner !== undefined) ctx.addIssue({ code: 'custom', path: ['runner'], message: 'a run the Hub executes has no runner' });
-    if (r.trigger !== 'standing_obligation') ctx.addIssue({ code: 'custom', path: ['trigger'], message: 'the Hub executes only standing obligations (W06 F[1])' });
+    if(r.trigger==='standing_obligation'){
+      if(r.runner!==undefined)ctx.addIssue({code:'custom',path:['runner'],message:'a standing obligation keeps its legacy configurer identity'});
+    }else{
+      if(r.trigger!=='event_or_schedule')ctx.addIssue({code:'custom',path:['trigger'],message:'an automatic successor is event triggered'});
+      if(r.runner===undefined)ctx.addIssue({code:'custom',path:['runner'],message:'an automatic successor preserves the original named runner'});
+      if(r.predecessor===undefined)ctx.addIssue({code:'custom',path:['predecessor'],message:'an automatic successor names the original run'});
+      if(r.requirements.some(requirement=>requirement.accepted_producer!=='fact'))ctx.addIssue({code:'custom',path:['requirements'],message:'the Hub succeeds only fact-producing runs'});
+    }
   } else if (r.runner === undefined) {
     ctx.addIssue({ code: 'custom', path: ['runner'], message: 'a run executed by a client or a bot names its runner' });
   }
@@ -165,4 +173,6 @@ export const RunRecord = RunSummary.extend({
     ctx.addIssue({ code: 'custom', path: ['client_key'], message: 'client_key, request_digest and client_key_expires_at go together' });
   }
 });
+/** Strict new-write shape; the base RunRecord remains a historical reader. */
+export const NewRunRecord=RunRecord.safeExtend({submission_due:IsoTime}).refine(value=>Date.parse(value.submission_due)>Date.parse(value.started_at),{path:['submission_due'],message:'the submission deadline is later than run creation'});
 export type RunRecord = z.infer<typeof RunRecord>;

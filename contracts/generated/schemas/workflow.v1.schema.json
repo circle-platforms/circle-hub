@@ -6,6 +6,11 @@
       "type": "string",
       "const": "workflow@1"
     },
+    "predecessor": {
+      "description": "The service must reject start_run without an explicit predecessor; not an independent_of inference",
+      "type": "string",
+      "const": "required"
+    },
     "inputs": {
       "minItems": 1,
       "type": "array",

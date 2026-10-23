@@ -98,7 +98,7 @@
               "type": "string",
               "maxLength": 512,
               "pattern": "^\\$(?:\\.(?:\\*|[A-Za-z_\\u0080-￿][A-Za-z0-9_\\u0080-￿]*)|\\[(?:\\*|-?(?:0|[1-9][0-9]*)|'(?:[^'\\\\]|\\\\.)*'|\"(?:[^\"\\\\]|\\\\.)*\")\\])*$",
-              "description": "Members taken from the subject itself; a missing location is unknown (missing input)"
+              "description": "Members taken from the subject itself; a missing required location refutes core.structure.required_empty and names it in data.missing"
             }
           },
           "required": [
@@ -118,7 +118,7 @@
         "pattern": "^\\$(?:\\.(?:\\*|[A-Za-z_\\u0080-￿][A-Za-z0-9_\\u0080-￿]*)|\\[(?:\\*|-?(?:0|[1-9][0-9]*)|'(?:[^'\\\\]|\\\\.)*'|\"(?:[^\"\\\\]|\\\\.)*\")\\])*$",
         "description": "RFC 9535 JSONPath selecting values of the subject; only member names, indexes and wildcards are allowed"
       },
-      "description": "Subject locations listing the covered members; when every one is missing the check is unknown (missing input)"
+      "description": "Subject locations listing the covered members; missing required locations refute core.structure.required_empty with data.missing"
     },
     "skipped": {
       "type": "object",
