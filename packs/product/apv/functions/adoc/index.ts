@@ -1,0 +1,96 @@
+// Stage one: a deterministic expansion/AST adapter. No knowledge registration, signatures, roots, network or storage writes.
+import type { AstNode } from './vendor/core.mjs';
+import { document, conditionValue, engineSession } from './engine.ts';
+import { AdocFailure, canonical, ENGINE, fail, initialReport, LIMITS, POLICY, sha256, sourceLines, validate } from './input.ts';
+import { expandIncludes } from './includes.ts';
+import { verifyOrigin } from './origins.ts';
+import type { AdocResult, Block, Composition, Limits, MappedLine, Section, SourceRange } from './types.ts';
+
+function sourceRanges(rows: MappedLine[]): SourceRange[] {
+  const out: SourceRange[] = [];
+  for (const row of rows) {
+    const last = out.at(-1);
+    if (last?.file === row.file && last.to + 1 === row.line) { last.to++; last.lines++; }
+    else out.push({ file: row.file, from: row.line, to: row.line, lines: 1 });
+  }
+  return out;
+}
+
+async function runAdoc(rawInput: unknown, overrides: Partial<Limits> = {}): Promise<AdocResult> {
+  try {
+    for (const [key, value] of Object.entries(overrides)) if (!Object.hasOwn(LIMITS, key) || !Number.isSafeInteger(value) || value < 1 || value > LIMITS[key as keyof Limits]) fail('invalid_budget', '测试预算只能收紧，不能提高生产策略上限');
+    const limits = { ...LIMITS, ...overrides };
+    const input = validate(rawInput, limits);
+    const report = initialReport(input);
+    const originals = new Map(Object.entries(input.files).map(([file, value]) => [file, sourceLines(file, value.text).map((row) => row.text)]));
+    const noteUnverified = (note: typeof report.unverified[number]): void => { report.unverified_count++; if (report.unverified.length < 100) report.unverified.push(note); else report.unverified_examples_truncated = true; };
+    const expanded = await expandIncludes(input, limits);
+    const text = expanded.lines.map((row) => row.text).join('\n');
+    report.unused_files = Object.keys(input.files).filter((file) => !expanded.used.has(file));
+    for (const row of expanded.lines) if (/^={7,}\s+/.test(row.text)) report.invalid_headings.push({ file: row.file, line: row.line, text: row.text });
+    const { doc, logger } = await document(text, input.main, input.attributes ?? {}, false);
+    const reader = doc.getReader(), processLine = reader.processLine.bind(reader);
+    const branchAt = new Map(expanded.branches.map((branch) => [branch.start, branch]));
+    reader.processLine = async (line: string) => {
+      const branch = branchAt.get(reader.cursor.lineno - 1);
+      if (branch && branch.retained === undefined) {
+        const parent = branch.parent === null ? null : expanded.branches[branch.parent - 1];
+        branch.retained = parent?.retained === false ? false : await conditionValue(branch.directive, input.main, { ...doc.getAttributes() });
+      }
+      return processLine(line);
+    };
+    await doc.parse();
+    report.engine_messages = logger.messages.map(({ severity, text }) => ({ severity, text }));
+    if (logger.messages.some((m) => m.severity === 'ERROR' || m.severity === 'FATAL' || /\bunterminated \S+ block\b/i.test(m.text))) fail('engine_parse', '引擎报告结构错误，整组没有产出：' + logger.messages.map((m) => m.text).join('；').slice(0, 1000));
+    const excluded = new Set<number>(), controls = new Set<number>();
+    for (const branch of expanded.branches) {
+      if (branch.retained === undefined) fail('conditional_context', '条件指令所在上下文没有被引擎求值，不能猜测分支', expanded.lines[branch.start].file, expanded.lines[branch.start].line);
+      controls.add(branch.start); if (!branch.inline) controls.add(branch.end);
+      const removed = branch.retained ? [] : branch.inline ? [expanded.lines[branch.start]] : expanded.lines.slice(branch.start + 1, branch.end);
+      if (!branch.retained) for (let i = branch.start; i <= branch.end; i++) excluded.add(i);
+      const row = expanded.lines[branch.start];
+      report.conditions.push({ id: branch.id, directive: branch.directive, file: row.file, line: row.line, retained: branch.retained, parent: branch.parent, removed: sourceRanges(removed), removed_lines: removed.length });
+    }
+    const visible = new Set(expanded.lines.map((_, i) => i).filter((i) => !excluded.has(i) && (!controls.has(i) || branchAt.get(i)?.inline === true)));
+    const blocks: Block[] = [];
+    const paths = new Map<AstNode, Section[]>();
+    const nodes = doc.findBy();
+    if (nodes.length > limits.blocks) fail('block_budget', '结构节点数量超过限制');
+    for (const node of nodes) {
+      if (node.context === 'document' || node.context === 'table_cell') continue;
+      doc.playbackAttributes(node.attributes);
+      const parentPath = node.parent ? paths.get(node.parent) ?? [] : [];
+      const title = typeof node.title === 'string' ? doc.subAttributes(node.title) : null;
+      const level = typeof node.level === 'number' ? node.level : parentPath.at(-1)?.level ?? 0;
+      const path = node.context === 'section' ? [...parentPath, { level, title: title ?? '', id: node.getId() ?? null }] : parentPath;
+      paths.set(node, path);
+      const raw = node.context === 'section' ? node.title ?? '' : node.getSource?.() ?? node.text ?? '';
+      const verified = verifyOrigin(raw, node.context, node.sourceLocation?.lineno, expanded.lines, visible, input, originals);
+      const block: Block = { kind: node.context, level, title, id: node.getId() ?? null, role: node.getRole() ?? null, path, raw, expanded: node.subAttributes(raw), origin: verified.origins.length === 1 ? verified.origins[0] : null, origins: verified.origins };
+      if (!verified.origins.length) noteUnverified({ block: blocks.length, kind: node.context, reported_line: node.sourceLocation?.lineno ?? null, reason: verified.reason, next_action: '已自动尝试 sourcemap 邻近行逐字回读；仍不能唯一定位时不生成引用，交下一阶段定位器修复后重跑' });
+      else if (verified.flat !== node.sourceLocation?.lineno) report.remapped.push({ block: blocks.length, reported_line: node.sourceLocation!.lineno, verified_line: verified.flat! });
+      if (node.rows) {
+        block.rows = {};
+        for (const part of ['head', 'body', 'foot'] as const) block.rows[part] = node.rows[part].map((row) => row.map((cell) => {
+          const raw = cell.text ?? '';
+          const source = verifyOrigin(raw, 'table_cell', cell.sourceLocation?.lineno, expanded.lines, visible, input, originals);
+          if (!source.origins.length) noteUnverified({ block: blocks.length, kind: 'table_cell', reported_line: cell.sourceLocation?.lineno ?? null, reason: source.reason, next_action: '已自动回读候选行但不能逐字唯一核对；本单元格不生成引用，修复定位器后重跑' });
+          return { raw, expanded: cell.subAttributes(raw), origins: source.origins };
+        }));
+      }
+      blocks.push(block);
+    }
+    report.engine_messages = logger.messages.map(({ severity, text }) => ({ severity, text }));
+    if (logger.messages.some((m) => m.severity === 'ERROR' || m.severity === 'FATAL' || /\bunterminated \S+ block\b/i.test(m.text))) fail('engine_parse', '引擎报告结构错误，整组没有产出：' + logger.messages.map((m) => m.text).join('；').slice(0, 1000));
+    const identity = { schema: 'apv-adoc-composition@1' as const, main: input.main, revision: input.revision, files: Object.entries(input.files).map(([file, value]) => ({ file, sha256: value.sha256 })), attributes: input.attributes ?? {}, engine: ENGINE, policy: POLICY, limits };
+    const composition: Composition = { ...identity, sha256: sha256(canonical(identity)) };
+    return { ok: true, composition, model: { schema: 'apv-adoc-expanded@1', expanded_text: text, line_map: expanded.lines.map(({ file, line }) => ({ file, line })), blocks }, report };
+  } catch (error) {
+    if (error instanceof AdocFailure) return { ok: false, error: { code: `apv.adoc.${error.code}`, message: error.message, next_action: '补齐或修正指出的原始事实，按同一修订号重新取得整组文件后重跑；失败结果不能替换旧知识根', ...(error.file ? { file: error.file } : {}), ...(error.line ? { line: error.line } : {}) } };
+    return { ok: false, error: { code: 'apv.adoc.engine_error', message: '引擎无法完成整组展开，未返回部分模型', next_action: '检查输入语法和引擎沙箱错误，修复后按同一修订号重跑；不得应用部分结果' } };
+  }
+}
+export async function compileAdoc(rawInput: unknown, overrides: Partial<Limits> = {}): Promise<AdocResult> {
+  return engineSession(() => runAdoc(rawInput, overrides));
+}
+export default compileAdoc;

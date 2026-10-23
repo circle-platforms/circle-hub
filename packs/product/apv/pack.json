@@ -7,6 +7,56 @@
   "description": "APV 与 NSAE 是同一个产品的两个名字：构建站同步（两族名字、每个版本线）、敏捷平台用例文档的清单、选构建规则、命令目录与命令树、手册、修复缺陷和用例索引的知识生产器",
   "files": [
     {
+      "path": "functions/adoc/README.md",
+      "sha256": "1f8a651408cfe85b3bee758559ed79101b748e00ca0984ae331297a306610956",
+      "size": 7786
+    },
+    {
+      "path": "functions/adoc/engine.ts",
+      "sha256": "9621cb0b7201d24f11c97a0569455025858306ce96bee25727d9416d9fa44805",
+      "size": 2957
+    },
+    {
+      "path": "functions/adoc/includes.ts",
+      "sha256": "9ab224df79161214f253a911138907b0b80b1fea2dee95d36574c2f3e0d8f7ee",
+      "size": 4625
+    },
+    {
+      "path": "functions/adoc/index.ts",
+      "sha256": "c7bd009538e22641c3337505109145aace8f1bbe502c097060edaeb3c00de134",
+      "size": 8690
+    },
+    {
+      "path": "functions/adoc/input.ts",
+      "sha256": "a33f5b3199bf66427594992f4d0164662f46f494935aaabce1b9f0aa1ab7c254",
+      "size": 6082
+    },
+    {
+      "path": "functions/adoc/origins.ts",
+      "sha256": "4454767a5348c0a99435762148f3000728a1fb4e7ba0c319a8ed009cb7ef933e",
+      "size": 3146
+    },
+    {
+      "path": "functions/adoc/types.ts",
+      "sha256": "13ba75f5b0d9cf4dd921f8bc813450ca3b0ee44d40cf147a3b4d0be6f117f04f",
+      "size": 2600
+    },
+    {
+      "path": "functions/adoc/vendor/LICENSE.txt",
+      "sha256": "5dc8600d56eb0cae83dcdecde260d5b5568e7a5431fb9a9cf7906d02818bac7e",
+      "size": 1147
+    },
+    {
+      "path": "functions/adoc/vendor/core.d.mts",
+      "sha256": "be7f6495cacb26b1412c073584a994d833c521c1986aeabad211c29ea05a0c0e",
+      "size": 1254
+    },
+    {
+      "path": "functions/adoc/vendor/core.mjs",
+      "sha256": "5a8785bf8dc39a216170b836bb274957f079f77e5f40b33453c988f85de9203d",
+      "size": 990496
+    },
+    {
       "path": "functions/builds.ts",
       "sha256": "68af6e099fead50fcd8cadbe380a8eb2d55241ecb03c1e72546f75f34cf86075",
       "size": 1382
