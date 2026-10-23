@@ -73,19 +73,46 @@ test('the same inputs twice give the same bytes; changing one family changes onl
   assert.ok(changed.ok);
   assert.equal(changed.families.APV!.composition.sha256, first.families.APV!.composition.sha256, 'the untouched family keeps its identity');
   assert.notEqual(changed.families.NSAE!.composition.sha256, first.families.NSAE!.composition.sha256, 'the changed family changes its identity');
-  assert.ok(changed.families.NSAE!.attributes_origin.configured === false && 'brand-nsae' in changed.families.NSAE!.composition.attributes === false || Object.keys(changed.families.NSAE!.composition.attributes).length === 0);
+  // An explicit empty set is a declared set with no attributes: the two facts are asserted apart, so neither hides the
+  // other.
+  assert.equal(changed.families.NSAE!.attributes.declared, true);
+  assert.deepEqual(changed.families.NSAE!.attributes.values, {});
+  assert.deepEqual(Object.keys(changed.families.NSAE!.composition.attributes), []);
 });
 
-test('a family without a configured set produces with the default (all unset) and the record says so — no unknown', async () => {
+test('a family the parameter names no key for produces with the pack default and says exactly that', async () => {
   const out = await compileFamilies(inputOf(filesOf('共用正文。'), { APV: { 'brand-apv': true } }), ['APV', 'NSAE']);
   assert.ok(out.ok, JSON.stringify(out));
   const nsae = out.families.NSAE!;
   assert.deepEqual(Object.keys(nsae.composition.attributes).length, 0, 'the default is the empty set');
-  assert.equal(nsae.attributes_origin.configured, false);
-  assert.match(nsae.attributes_origin.note, /这一族的属性集没有配置/);
-  assert.match(nsae.attributes_origin.note, /管理员配上以后重新同步/);
+  assert.equal(nsae.attributes.declared, false);
+  assert.deepEqual(Object.keys(nsae.attributes.values), []);
+  assert.match(nsae.attributes.note, /参数里没有这一族的键/);
+  assert.match(nsae.attributes.note, /包的默认值/);
+  assert.match(nsae.attributes.note, /param_sources/);
+  // The producer claims no origin it cannot know: the note names the set it used and the Hub's record, nothing else.
+  assert.ok(!nsae.attributes.note.includes('部署'), nsae.attributes.note);
+  assert.ok(!nsae.attributes.note.includes('集成者'), nsae.attributes.note);
   const nsaeText = modelOf(nsae).blocks.map((b) => b.text).join('\n');
   assert.ok(!nsaeText.includes('APV 品牌说明') && !nsaeText.includes('NSAE 品牌说明'), 'no brand line without its attribute');
+});
+
+test('an explicit empty set is a declared set, and a synthetic set is not called deployment data', async () => {
+  const out = await compileFamilies(inputOf(filesOf('共用正文。'), { APV: { 'brand-apv': true }, NSAE: {} }), ['APV', 'NSAE']);
+  assert.ok(out.ok, JSON.stringify(out));
+  const apv = out.families.APV!;
+  const nsae = out.families.NSAE!;
+  assert.equal(nsae.attributes.declared, true, 'the parameter named this family, with an empty set');
+  assert.deepEqual(Object.keys(nsae.attributes.values), []);
+  assert.equal(apv.attributes.declared, true);
+  assert.deepEqual(apv.attributes.values, { 'brand-apv': true });
+  for (const family of [apv, nsae]) {
+    // Where the set came from is the Hub's record; this producer says only which set it used.
+    assert.ok(!family.attributes.note.includes('部署数据'), family.attributes.note);
+    assert.ok(!family.attributes.note.includes('集成者从源里'), family.attributes.note);
+    assert.match(family.attributes.note, /生产器不自己记来源/);
+  }
+  assert.notEqual(apv.composition.sha256, nsae.composition.sha256, 'a different attribute set is a different identity');
 });
 
 test('one family failing fails the whole group: no partial result', async () => {

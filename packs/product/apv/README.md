@@ -520,13 +520,19 @@ accepted.
 - `families.ts` (decision 35): every name family runs the expansion with its own attribute set and gets its own document
   model. The manual name carries the family, spelled `<manual>-<family lower-cased>` (`cli-apv`, `cli-nsae`), and both
   copies hang under the manual namespace of the same version line. An attribute-set key must be one of the `names` in
-  `product.json`, or the group is refused. A family without a configured set produces with the pack default (all unset,
-  like today's markdown) and the composition record and the sync report say "this family's attribute set is not
-  configured" with the next step (an administrator configures it, then the sync runs again) — never an unknown. Each family
-  records the attribute set it used and where that set came from (the pack default, or deployment data); the conditional
-  branches are reported per family. Any family's expansion failure fails the group and returns no partial result, so the
-  old knowledge root does not move. The real attribute names and values are deployment data: the integrator collects them
-  read-only from the source and overrides the parameter through the mechanism of apv-deployment-conventions.
+  `product.json`, or the group is refused (`apv.adoc.family_not_a_name`). The conditional branches are reported per family,
+  and any family's expansion failure fails the group and returns no partial result, so the old knowledge root does not
+  move.
+- What a family records about its attribute set is only what this producer was given: whether the parameter named the
+  family (`attributes.declared` — an explicit empty set is declared, and a synthetic set is as declared as a real one), the
+  set it ran with (`attributes.values`, which the composition record also carries) and a note saying which set was used.
+  The producer claims no origin it cannot know: where an attribute set came from is the Hub's record, `param_sources` of
+  apv-deployment-conventions step one, which this task only reads. Until that record exists, "this family's attribute set
+  is not configured" is not written here; a family the parameter names no key for produces with the pack default (all
+  unset, like today's markdown), its note says exactly that and names the `param_sources` step as the way to tell a
+  configured set from an unconfigured one, and nothing is recorded as unknown. The real attribute names and values are
+  deployment data: the integrator collects them read-only from the source and overrides the parameter through that
+  mechanism.
 
 ## Deviations from the brief and the task
 
