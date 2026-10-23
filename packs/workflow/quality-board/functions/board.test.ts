@@ -99,7 +99,7 @@ describe('groupBoard', () => {
 
   it('equals an independent plain-loop computation on a random corpus of 100,000 synthetic cases', () => {
     const random = randomOf(20261022);
-    const lines = ['10.6.1', '10.6.0', '10.5.1', null, '10.4.6', '10.5.0'];
+    const lines = ['10.6.1', '10.6.0', '10.7.1', null, '10.8.6', '10.7.0'];
     const modules = ['SSL', 'HA', 'SLB', 'WebUI', '系统', '网络', '认证', null, '日志', '升级', '授权', '审计'];
     const corpus: CorpusCase[] = [];
     for (let i = 0; i < 100000; i++) {

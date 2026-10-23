@@ -418,7 +418,7 @@ catalogs, grounds and provenance.
 - `diffRoots`, `diffEntries` and `builds` take no reader (the port); callers check the reader first.
 - Stored producer outputs are shared within a build only: another build, or a changed list of the same build, runs every
   batch again, because the build (its list included) is part of what a list producer receives (decision 18; measured:
-  the second build of the scale corpus makes all 61 calls in 10.1 s instead of 1 in 8.8 s). Batches stay consecutive
+  the second build of the scale corpus makes all 61 calls in 10,100 ms instead of 1 in 8.8 s). Batches stay consecutive
   slices of the listed ids; content-defined batch boundaries would help only once list calls receive no build (Needs,
   contracts), since until then any change of the list changes every key.
 - A list producer's entries must depend only on their own document: the Hub calls it on parts of a batch to isolate a
@@ -619,7 +619,7 @@ repository; the batches of the second build are no longer shared with the first,
 | Step | Wall time | What happened |
 | --- | --- | --- |
 | first build | 41.6 s | 3,000 reads, 61 producer calls, 184,000 entries, 4,042 nodes, 336 part records |
-| second build | 10.1 s | 3,000 loads used again, 61 of 61 calls made (another build), 442 new nodes |
+| second build | 10,100 ms | 3,000 loads used again, 61 of 61 calls made (another build), 442 new nodes |
 | the second build again | 5.6 s | 60 of 61 calls from stored outputs, the same root |
 | impact view A..B | 2.3 s | 400 changed paths, 18,000 attached cases, 13.05 MB, not cut |
 | facets (case by module, has_expected) | 1.3 s | 20 rows over 180,000 cases |

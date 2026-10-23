@@ -286,7 +286,7 @@ test('declaration files follow their contract shapes', async () => {
 
 test('versions have one spelling, and each kind keeps to its own declaration files', async () => {
   await refused({ ...base, version: '1.01.0' }, 'manifest.version', { file: 'pack.json', field: '/version' });
-  await accepted({ ...base, version: '10.0.12' });
+  await accepted({ ...base, version: '11.0.12' });
   await refused(withFiles(productPack(), { 'workflow.json': base.files['workflow.json'] }), 'manifest.foreign_file', { file: 'pack.json' });
   await refused(withFiles(productPack(), { 'samples/positive/s.json': base.files['samples/positive/titles-good.json'] }), 'samples.unknown_check');
   await refused(withFiles(systemPack(), { 'checks.json': base.files['checks.json'] }), 'manifest.foreign_file');

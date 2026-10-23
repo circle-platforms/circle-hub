@@ -328,7 +328,7 @@ describe('no protected build names in repository text', () => {
   });
 
   it('accepts other lines, dotted labels, placeholders and the frozen archives', () => {
-    for (const name of [ ['Rel', 'Sample', '10', '6', '0'].join('_'), ['Beta', 'Sample', '11', '0', '0'].join('_'), '10.4.2', 'Rel_<family>_<line>_<build>' ]) {
+    for (const name of [ ['Rel', 'Sample', '10', '6', '0'].join('_'), ['Beta', 'Sample', '11', '0', '0'].join('_'), '10.6.2', 'Rel_<family>_<line>_<build>' ]) {
       assert.deepEqual(buildNameProblems('ops/sample.txt', name), []);
     }
     const protectedName = ['Rel', 'Sample', '10', '0', '0'].join('_');

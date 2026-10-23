@@ -741,7 +741,7 @@ describe('metamorphic properties', () => {
     assert.ok(versioned.length >= 30);
     for (const row of versioned) {
       const before = locate(inputOf(row));
-      for (const quote of ['9.9.9 迁移引用', 'SSL（11.0.1 引入）', '兼容 10.2.8.3 升级']) {
+      for (const quote of ['9.9.9 迁移引用', 'SSL（11.0.1 引入）', '兼容 10.8.8.3 升级']) {
         // At the end: nothing but the path and the notes change.
         const appended = locate(inputOf(row, { ancestors: [...row.ancestors, quote] }));
         const { ancestor_path: _a, notes: _n, ...rest } = appended;
@@ -768,7 +768,7 @@ describe('metamorphic properties', () => {
     const agreeing = locateItem(inputOf(row, { ancestors: ['061：10.6.1', ...row.ancestors] }));
     assert.deepEqual([agreeing.answer.version, agreeing.judgment.verdict], ['10.6.1', 'support']);
     // Without a version level the mention nearest the root is the reference version.
-    const nearest = locate(inputOf(row, { ancestors: [P0, 'APV 9.9 系列', '专项 10.5 回归'] }));
+    const nearest = locate(inputOf(row, { ancestors: [P0, 'APV 9.9 系列', '专项 10.7 回归'] }));
     assert.deepEqual([nearest.version, nearest.version_source, nearest.confidence], ['9.9', 'folders', 'low']);
   });
 

@@ -77,7 +77,7 @@ not known is an unknown (the knowledge base lists only the builds of the build s
    system pack lists the root title first). The names reach the check through the subject builder.
 2. **Version level and version.** Version labels are the convention's line nodes (prefix code + a pure version), the first
    release train (prefix code + version + separator + more) and labels that are only a version in the owner's expression
-   over the whole label (`10.6.1`, `V10.7.0`, `NSAE_10.5.3`, after an optional prefix code). The version level runs from the
+   over the whole label (`10.6.1`, `V10.7.0`, `NSAE_10.7.3`, after an optional prefix code). The version level runs from the
    root to the train, else to the first line node, else to the first version label, and includes every line node of the
    path. The version is the level's version nearest the root, confidence high, when every version of the level names one
    version line (first three numbers compared as lines: `10.6.1.57` and `10.6.1` agree, `10.6` and `10.6.1` do not).
@@ -232,7 +232,7 @@ staged copy: `node packs/workflow/case-location/pack-files.ts --stage <empty dir
 - The candidates are the knowledge base's builds at the start of the run (frozen with the run record); a name the
   knowledge base does not know is unknown, never a violation. An NSAE name of an older line is not resolved to the APV
   build it is based on beyond what the knowledge base's alias records say.
-- Dates written with dots (`7.1`, `10.1 国庆版本`) are read as versions; outside the version level they are only references.
+- Dates written with dots (`7.1`, `7.1 七月版本`) are read as versions; outside the version level they are only references.
 - A label that is only a version (`802.1`, `1.5`) is a version label; under a root without a version level it would be a
   fact. No such folder was seen in the sampled trees.
 - A spaced quantity of five digits or more at the start of a title (`10000 并发握手`) reads as an id; glued ones do not.
@@ -306,3 +306,6 @@ staged copy: `node packs/workflow/case-location/pack-files.ts --stage <empty dir
 case-location@1.3.1 改用生成词表的类型及包内运行时快照。包内函数的运行时依赖仍只来自包内文件和已允许的依赖。functions/generated/vocabulary.ts 由 tools/gen-contracts.ts 按本包使用的轴生成，带“生成物，勿手改”文件头；它计入 pack.json 摘要。node tools/gen-contracts.ts --check 同时核对这些快照。词表更新导致包内字节变化时，必须升版并重签清单，不复用已发布版本。
 
 编号范围的 min/max 是 JSON 对象键，不属于 measure 轴；直接读取经校验的输入字段，不携带 measure 快照。
+
+
+case-location@1.3.3 只把注释中的版本示例换成合成线，解析规则不变；包内文件字节改变，升补丁版本并重签清单。
