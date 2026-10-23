@@ -16,7 +16,7 @@ import type {
   RequirementStatus,
 } from '../../../contracts/generated/vocabulary.ts';
 import type { ErrorHandlingRow, RequirementTemplate } from '../../../contracts/src/pack.ts';
-import type { LayerResult, RequirementResult } from '../../../contracts/src/validation.ts';
+import { UnknownExit, type LayerResult, type RequirementResult } from '../../../contracts/src/validation.ts';
 import type { CheckOutcome } from '../../rules/api.ts';
 import { valueAt } from './util.ts';
 
@@ -238,6 +238,51 @@ const BY_REASON = {
   budget_exhausted: 'transient',
   integrity_unproven: 'data_gap',
 } as const satisfies Record<Reason, Attribution>;
+
+/** V03 R[11]-R[15]: after bounded check/read recovery, unresolved facts go to a named person. */
+export const EXIT_BY_REASON = {
+  no_check: { recipient: 'owner', kind: 'repair' },
+  check_error: { recipient: 'owner', kind: 'repair' },
+  timeout: { recipient: 'owner', kind: 'repair' },
+  missing_input: { recipient: 'runner', kind: 'clarification' },
+  integrity_unproven: { recipient: 'administrator', kind: 'repair' },
+  budget_exhausted: { recipient: 'owner', kind: 'repair' },
+  declared_skip: { recipient: 'runner', kind: 'repair' },
+  not_covered: { recipient: 'runner', kind: 'repair' },
+  awaiting_step: { recipient: 'runner', kind: 'repair' },
+  output_failed: { recipient: 'runner', kind: 'repair' },
+  repair_exhausted: { recipient: 'runner', kind: 'repair' },
+} as const satisfies Record<Reason, { recipient: keyof Pick<RecoveryContext, 'runner' | 'owner' | 'administrator'>; kind: NonNullable<UnknownExit['request_kind']> }>;
+
+export interface RecoveryContext {
+  runner: string;
+  owner: string;
+  administrator: string;
+  due: string;
+  location: string;
+}
+
+/** Bind new results only. Stored results are read through readStoredValidationResult, never passed here. */
+export function bindRecovery(layer: LayerResult, context: RecoveryContext, outcomes: readonly CheckOutcome[] = []): LayerResult {
+  if (!isUnsettled(layer)) return layer;
+  const reason = layer.reason ?? 'check_error';
+  const gap = (cause: Reason, missing: string) => {
+    const policy = EXIT_BY_REASON[cause];
+    return { reason: cause, missing, exit: UnknownExit.parse({ action: 'request', request_kind: policy.kind,
+      audience: { user: context[policy.recipient] }, due: context.due }) };
+  };
+  const distinct = new Map<string, ReturnType<typeof gap>>();
+  for (const outcome of outcomes) {
+    if (outcome.verdict !== 'unknown') continue;
+    const cause = outcome.reason ?? 'check_error';
+    const missing = outcome.missing ?? outcome.statement;
+    distinct.set(JSON.stringify([cause, missing]), gap(cause, missing));
+  }
+  const selected = [...distinct.values()].find(g => g.reason === reason)
+    ?? gap(reason, `${context.location}：缺少${reason === 'not_covered' || reason === 'declared_skip' || reason === 'repair_exhausted' ? '完整的条目提交' : '该层可核验的结果'}（${reason}）`);
+  const rest = [...distinct.values()].filter(g => g !== selected);
+  return { ...layer, ...selected, ...(rest.length ? { gaps: rest } : {}) };
+}
 
 /** V04: attribution of a violation by the role of what the refuting check judges (A03). */
 const BY_ROLE = {

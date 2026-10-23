@@ -21,7 +21,7 @@ export interface RunsEngineDeps {
   /** The records kit parts the engine uses; with `config`, start_run knows the record size limit before it stores anything. */
   records: Pick<RecordsKit, 'store' | 'objects' | 'artifacts'> & {
     config?: Pick<RecordsKit['config'], 'limits'>;
-    principals?: Pick<Principals, 'get'>;
+    principals?: Pick<Principals, 'get'> & Partial<Pick<Principals, 'list'>>;
   };
   workflows: WorkflowStore;
   packs: PacksPort;

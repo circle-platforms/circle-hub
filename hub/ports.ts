@@ -71,6 +71,8 @@ export type WorkflowAbsence = 'unknown' | 'unassigned' | 'withdrawn' | 'disabled
 
 /** What the engine needs of the pack registry (provided by runs/packs, consumed by runs/engine and the server). */
 export interface WorkflowStore {
+  /** Owner of a published workflow version, for named B07 repair requests. */
+  ownerOf?(digest: string): Promise<string | null>;
   /** A version the user may use: `id` (latest published, assigned to the user) or `id@version`. Unknown, unassigned and withdrawn give the same null. */
   forUser(user: Principal, ref: string): Promise<LoadedWorkflow | null>;
   /**

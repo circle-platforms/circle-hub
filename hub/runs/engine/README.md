@@ -545,3 +545,13 @@ effective read permissions, not a trusted byte bypass. Unexpected function-read 
 K2 admission exclusions are applied before subject priming and before forming item function batches. Its transactional
 contribution writes and identity locks stay atomic with the result, and both successful saves and fallback refusals retain
 retry evidence. This merge changes no timeout, caller scope, generated contract or real-system configuration.
+
+## Unknown exits
+
+New transitional layer results bind every missing fact to a named, finite exit before partition validation.
+`EXIT_BY_REASON` exhausts the generated cause vocabulary; a pack cannot choose another account through its exit.
+Check outcomes require top-level `missing`; `data.missing` remains refutation evidence, never its alias.
+The workflow port reads the recorded pack owner; the records account port selects an enabled administrator.
+Missing identity wiring refuses evaluation rather than inventing a recipient. Requests use a 24-hour response window.
+Stored results are never passed through this new-write binding; missing historical exits remain “出口未写”.
+The following commits connect these exits to durable requests and automatic maintenance.
