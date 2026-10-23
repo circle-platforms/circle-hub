@@ -100,7 +100,7 @@ export function judgeRun(
   shown: string,
   expect: { packPrefix: string; subjectSha?: string; caseCount?: number; predecessor?: string },
 ): { ok: true; run: string; detail: RunLike; result: ResultLike } | { ok: false; reason: InvalidReason; run?: string; detail?: RunLike } {
-  const accepted = [...new Set(parseCallLog(calls).filter((l) => l.run !== null && l.acceptance !== null).map((l) => l.run as string))];
+  const accepted = [...new Set(parseCallLog(calls).filter((l) => l.run !== null && l.acceptance === 'accepted').map((l) => l.run as string))];
   if (accepted.length === 0) return { ok: false, reason: '没有受理' };
   if (accepted.length > 1) return { ok: false, reason: '不止一个运行' };
   const run = accepted[0]!;
@@ -242,7 +242,7 @@ export function measureReview(options: MeasureOptions, drivers: Drivers, say: (l
 
 const packOf = (detail: RunLike): string => detail.run.pack;
 const draftRunJson = (drivers: Drivers, review: { calls: string }, dir: string): string | null => {
-  const run = [...new Set(parseCallLog(review.calls).filter((l) => l.run !== null && l.acceptance !== null).map((l) => l.run as string))][0];
+  const run = [...new Set(parseCallLog(review.calls).filter((l) => l.run !== null && l.acceptance === 'accepted').map((l) => l.run as string))][0];
   if (run === undefined) return null;
   const shown = drivers.show(run);
   if (shown.code !== 0) return null;
@@ -250,7 +250,7 @@ const draftRunJson = (drivers: Drivers, review: { calls: string }, dir: string):
   return shown.json;
 };
 const verifyCodeJson = (drivers: Drivers, review: { calls: string }, dir: string): string | null => {
-  const run = [...new Set(parseCallLog(review.calls).filter((l) => l.run !== null && l.acceptance !== null).map((l) => l.run as string))][0];
+  const run = [...new Set(parseCallLog(review.calls).filter((l) => l.run !== null && l.acceptance === 'accepted').map((l) => l.run as string))][0];
   if (run === undefined) return null;
   const shown = drivers.show(run);
   if (shown.code !== 0) return null;

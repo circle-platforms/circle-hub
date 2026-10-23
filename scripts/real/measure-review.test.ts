@@ -217,3 +217,11 @@ test('review 1: judgment-only injections never fail the mechanical exit gate', (
   assert.equal(measureReview({ ...options(f.out), source: f.source, plan: f.plan, repeat: 3 }, drivers, line => lines.push(line)), 0);
   assert.ok(lines.some(line => line.includes('Hub 看得见的注入缺陷全部查出 是')));
 });
+
+test('review 5: refused runs do not shadow the one accepted run in a repaired session', () => {
+  const f = fixtures(document(1), []), calls = callLine('rn_abandoned', 'not_accepted') + '\n' + callLine('rn_final', 'accepted');
+  const detail = () => runDetail({ run: 'rn_final', items: 1, sources: [{ reference: `src:${copyShaOf(f.out)}` }], delivered: [{ item: 'doc:c1', requirements: [] }] });
+  const driver = fakeDrivers({ drafts: [{ calls, run: detail }] });
+  assert.equal(measureReview({ ...options(f.out), source: f.source, plan: f.plan }, driver, () => {}), 0);
+  assert.equal(judgeRun(calls, detail(), { packPrefix: 'case-review@' }).ok, true);
+});
