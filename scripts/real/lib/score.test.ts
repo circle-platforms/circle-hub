@@ -250,3 +250,9 @@ test('review 3: a delivered document-wide gap finds a deleted negative group on 
   const scored = score(gold, result([item('remaining', req('findings', [judgment('negative_gap')]))]), { literal: { cases: [{ id: 'remaining', codes: [] }], noUniqueId: [] } });
   assert.equal(scored.detections[0].draft, true); assert.equal(scored.detections[0].combined, true); assert.equal(scored.detections[0].detected, true);
 });
+
+test('review 4: incomplete literal entries are counted but never supported falsely or missed', () => {
+  const answer = { cases: [{ id: 'c1', codes: ['core.structure.required_empty'] }], noUniqueId: [] };
+  const scored = score([], result([], [item('c1', req('literal', [refute('core.structure.required_empty')], { terminal: 'incomplete', attribution: 'unattributed' }))]), { literal: answer });
+  assert.equal(scored.literalUnscored, 1); assert.deepEqual(scored.structure, { supported: [], falsePositives: [], missed: [] });
+});

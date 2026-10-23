@@ -266,7 +266,7 @@ export function score(gold: readonly GoldEntry[], result: ResultLike, options: S
   let literalUnscored = 0;
   for (const [node, s] of seen) {
     if (touched.has(node)) continue;
-    if (s.literalUnscored) literalUnscored += 1;
+    if (s.literalUnscored) { literalUnscored += 1; continue; }
     for (const code of s.marks) {
       if (!isStructure(code)) {
         const inBaseline = (before.get(node)?.marks ?? []).includes(code);
@@ -287,7 +287,7 @@ export function score(gold: readonly GoldEntry[], result: ResultLike, options: S
   }
   if (options.literal !== undefined) {
     for (const answer of options.literal.cases) {
-      if (touched.has(answer.id)) continue;
+      if (touched.has(answer.id) || seen.get(answer.id)?.literalUnscored) continue;
       for (const code of answer.codes) {
         if (!isStructure(code)) continue;
         const hub = [...seen.get(answer.id)?.marks ?? []].includes(code);
