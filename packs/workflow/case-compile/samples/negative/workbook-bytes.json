@@ -541,7 +541,7 @@
     "generation": {
       "plan_run": "run_00000000000000000000000000",
       "build": "Fixture_Build_A",
-      "generator": "case-compile@2.3.4"
+      "generator": "case-compile@2.3.5"
     },
     "workbook": {
       "model": {
@@ -639,7 +639,7 @@
                   {
                     "reference": "F1",
                     "type": "inlineStr",
-                    "text": "case-compile@2.3.4",
+                    "text": "case-compile@2.3.5",
                     "formula": false,
                     "style": null
                   },

@@ -15,7 +15,7 @@ function outcomeOf(id: string, at: number, location: unknown, answer: LocateAnsw
   const data = answer as unknown as Record<string, unknown>;
   const common = { statement: judgment.statement, grounds, tier: TIER, item: id, pointer: `/items/${at}/fields`, data };
   if (judgment.verdict === 'refute') return { verdict: 'refute', code: judgment.code, ...common };
-  if (judgment.verdict === 'unknown') return { verdict: 'unknown', reason: judgment.reason, ...common };
+  if (judgment.verdict === 'unknown') return { verdict: 'unknown', missing: '当前条目的定位事实：' + (answer.missing.join('、') || judgment.brief), reason: judgment.reason, ...common };
   return { verdict: 'support', ...common };
 }
 
@@ -33,10 +33,10 @@ export function locateOutcomes(subject: unknown): CheckOutcome[] {
       out.push(outcomeOf(id, at, item.location, answer, judgment));
     } catch (error) {
       const message = internalError(error);
-      out.push(outcomeOf(id, at, item.location, emptyAnswer(id, message), { verdict: 'unknown', reason: 'check_error', statement: `定位出错（任务包缺陷）：${message}`, brief: '定位出错' }));
+      out.push(outcomeOf(id, at, item.location, emptyAnswer(id, message), { verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + (`定位出错（任务包缺陷）：${message}`), reason: 'check_error', statement: `定位出错（任务包缺陷）：${message}`, brief: '定位出错' }));
     }
   }
-  if (out.length === 0) out.push({ verdict: 'unknown', reason: 'check_error', statement: '定位检查的被判对象里没有条目（子对象构建函数没有给出 items）', grounds: [], tier: TIER });
+  if (out.length === 0) out.push({ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + ('定位检查的被判对象里没有条目（子对象构建函数没有给出 items）'), reason: 'check_error', statement: '定位检查的被判对象里没有条目（子对象构建函数没有给出 items）', grounds: [], tier: TIER });
   return out;
 }
 
@@ -44,6 +44,6 @@ export function locateOutcomes(subject: unknown): CheckOutcome[] {
 export default function locateCheck(input: unknown): unknown {
   return guarded<unknown>(
     () => locateOutcomes(isRecord(input) ? input.subject : undefined),
-    (message) => [{ verdict: 'unknown', reason: 'check_error', statement: `定位检查出错（任务包缺陷）：${message}`, grounds: [], tier: TIER }],
+    (message) => [{ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + (`定位检查出错（任务包缺陷）：${message}`), reason: 'check_error', statement: `定位检查出错（任务包缺陷）：${message}`, grounds: [], tier: TIER }],
   );
 }

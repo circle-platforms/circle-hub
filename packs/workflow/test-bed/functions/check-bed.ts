@@ -9,6 +9,7 @@ import { isAction, acquirePlan, extendPlan, factsFields, leaseRecord, manifestBe
 const TIER = 'advisory' as const;
 
 interface CheckOutcome {
+  missing?: string;
   verdict: Extract<Verdict, 'support' | 'refute' | 'unknown'>;
   reason?: string;
   code?: string;
@@ -68,9 +69,9 @@ export function bedOutcomes(subject: unknown): CheckOutcome[] {
   const raw = isRecord(subject) ? subject : {};
   const items = Array.isArray(raw.items) ? (raw.items as SubjectItem[]) : [];
   const frozen = frozenOf(subject);
-  if (frozen === null) return [{ verdict: 'unknown', reason: 'check_error', statement: '运行的 groups 里没有冻结的清单或参数（任务包缺陷）', grounds: [], tier: TIER }];
+  if (frozen === null) return [{ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + ('运行的 groups 里没有冻结的清单或参数（任务包缺陷）'), reason: 'check_error', statement: '运行的 groups 里没有冻结的清单或参数（任务包缺陷）', grounds: [], tier: TIER }];
   const manifest = manifestBeds(frozen.manifest);
-  if (!manifest.ok) return [{ verdict: 'unknown', reason: 'check_error', statement: '冻结的清单不再能解析（任务包缺陷）', grounds: [], tier: TIER }];
+  if (!manifest.ok) return [{ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + ('冻结的清单不再能解析（任务包缺陷）'), reason: 'check_error', statement: '冻结的清单不再能解析（任务包缺陷）', grounds: [], tier: TIER }];
   const leases = leaseRecord(frozen.leases);
   const out: CheckOutcome[] = [];
   for (const [at, item] of items.entries()) {
@@ -151,12 +152,12 @@ export function bedOutcomes(subject: unknown): CheckOutcome[] {
         out.push(support(id, at, plan.conclusion, item.location, { booking: plan.booking, keys: plan.keys, ...(action === 'extend' ? { ttl_seconds: (plan as ExtendPlan).ttl_seconds } : {}), conclusion: plan.conclusion }));
         continue;
       }
-      out.push({ verdict: 'unknown', reason: 'check_error', statement: `条目 ${id} 的动作 ${JSON.stringify(action)} 不认识（任务包缺陷）`, grounds: typeof item.location === 'string' ? [item.location] : [], tier: TIER, item: id, pointer: `/items/${at}/fields` });
+      out.push({ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + (`条目 ${id} 的动作 ${JSON.stringify(action)} 不认识（任务包缺陷）`), reason: 'check_error', statement: `条目 ${id} 的动作 ${JSON.stringify(action)} 不认识（任务包缺陷）`, grounds: typeof item.location === 'string' ? [item.location] : [], tier: TIER, item: id, pointer: `/items/${at}/fields` });
     } catch (error) {
-      out.push({ verdict: 'unknown', reason: 'check_error', statement: `台架结论复核出错（任务包缺陷）：${error instanceof Error ? error.message : String(error)}`, grounds: [], tier: TIER, item: id });
+      out.push({ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + (`台架结论复核出错（任务包缺陷）：${error instanceof Error ? error.message : String(error)}`), reason: 'check_error', statement: `台架结论复核出错（任务包缺陷）：${error instanceof Error ? error.message : String(error)}`, grounds: [], tier: TIER, item: id });
     }
   }
-  if (out.length === 0) out.push({ verdict: 'unknown', reason: 'check_error', statement: '台架结论复核的被判对象里没有条目（子对象构建函数没有给出 items）', grounds: [], tier: TIER });
+  if (out.length === 0) out.push({ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + ('台架结论复核的被判对象里没有条目（子对象构建函数没有给出 items）'), reason: 'check_error', statement: '台架结论复核的被判对象里没有条目（子对象构建函数没有给出 items）', grounds: [], tier: TIER });
   return out;
 }
 
@@ -165,6 +166,6 @@ export default function bedCheck(input: unknown): unknown {
   try {
     return bedOutcomes(isRecord(input) ? input.subject : undefined);
   } catch (error) {
-    return [{ verdict: 'unknown', reason: 'check_error', statement: `台架结论复核出错（任务包缺陷）：${error instanceof Error ? error.message : String(error)}`, grounds: [], tier: TIER }];
+    return [{ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + (`台架结论复核出错（任务包缺陷）：${error instanceof Error ? error.message : String(error)}`), reason: 'check_error', statement: `台架结论复核出错（任务包缺陷）：${error instanceof Error ? error.message : String(error)}`, grounds: [], tier: TIER }];
   }
 }

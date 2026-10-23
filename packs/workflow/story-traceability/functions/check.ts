@@ -29,7 +29,7 @@ export function detailOf(row: Row, sources: unknown, unread: unknown = []): Row 
   return { ...row, references: refs, plm_returned: true, plm_responded: true, status: scalar(r.status), stage: scalar(r.stage), fields_absent: absent(r), fields_nonscalar: nonscalar(r), title: typeof r.title === 'string' ? r.title : null };
 }
 
-export const checkError = (): CheckOutcome[] => [{ verdict: 'unknown', reason: 'check_error', tier: 'advisory', grounds: [], statement: '需求追溯检查缺少有效事实；下一步：把运行编号交给任务包维护人修复后重跑' }];
+export const checkError = (): CheckOutcome[] => [{ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + ('需求追溯检查缺少有效事实；下一步：把运行编号交给任务包维护人修复后重跑'), reason: 'check_error', tier: 'advisory', grounds: [], statement: '需求追溯检查缺少有效事实；下一步：把运行编号交给任务包维护人修复后重跑' }];
 export default function check(input: unknown): CheckOutcome[] {
   try {
     if (!isRecord(input)) return checkError();
