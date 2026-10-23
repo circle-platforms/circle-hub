@@ -204,7 +204,7 @@ test('a finding names an anonymous case and run when a single-case answer cannot
   const { gold } = goldOf(); const scenario = build(gold);
   const result = drive(scenario, undefined, { mutate: (info, answer) => ({ ...answer, count: info.document === 0 && info.kind === 'c' && info.ordinal === 1 ? 9 : answer.count }) });
   assert.equal(result.checks.find(check => check.name === '单用例副本用例数')?.ok, false);
-  assert.ok(scenario.sections?.some(section => section.lines.some(line => line.includes('包分不出类别'))));
+  assert.ok(scenario.sections?.some(section => section.lines.some(line => line.includes('结果不可核对'))));
 });
 
 test('review 1: start_run uses the actual strict reference binding contract', async () => {
@@ -335,4 +335,14 @@ test('review 9: missing or malformed category output is not interpreted as compl
   assert.equal(parseSummary('用例 1 个；没有类别结果', CATEGORIES).valid, false);
   assert.equal(parseSummary('用例 1 个；缺 2 个模板类别：功能测试（functional）', CATEGORIES).valid, false);
   assert.equal(parseSummary('用例 1 个；缺 1 个模板类别：不存在（not_in_table）', CATEGORIES).valid, false);
+});
+
+test('review 11: reports identify a failed case by ordinal and copy hash, never node text or ids', () => {
+  const { gold } = goldOf(); const scenario = build(gold);
+  const result = drive(scenario, undefined, { mutate: (info, answer) => ({ ...answer, count: info.document === 0 && info.kind === 'c' && info.ordinal === 1 ? 9 : answer.count }) });
+  const sha = result.infos.find(info => info.document === 0 && info.kind === 'c' && info.ordinal === 1)!.sha.slice(0, 12);
+  const lines = scenario.sections!.flatMap(section => section.lines);
+  assert.ok(lines.some(line => line.includes('用例 2') && line.includes(sha)));
+  assert.doesNotMatch(JSON.stringify({ checks: result.checks, sections: scenario.sections }), /合成文档甲|合成甲二|\ba2\b/);
+  assert.ok(result.names.every(name => /^[0-9]+\.json$/.test(name)));
 });

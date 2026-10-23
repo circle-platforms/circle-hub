@@ -60,7 +60,7 @@ export function truncationReference(summary: string): string | null {
   const at = /全文 (rec:[0-9a-f]{64}#\/items\/[0-9]+)(?=）)/.exec(summary);
   if (at !== null) return at[1]!;
   if (summary.includes('（只列编号）')) {
-    throw new Error(`摘要已截断（只列编号），但认不出全文引用的格式：${summary.slice(0, 200)}`);
+    throw new Error('摘要已截断但认不出全文引用；需要修复读取解析');
   }
   return null;
 }
@@ -149,7 +149,9 @@ export default function scenario(gold: GapCircleGold): Scenario {
   };
   queuePhase(1);
 
+  let copyOrdinal = 0;
   const writeCopy = (p: Pending): string => {
+    p.name = `${String(++copyOrdinal).padStart(5, '0')}.json`;
     const bytes = `${JSON.stringify(p.tree)}\n`;
     writeFileSync(join(workdir, p.name), bytes); attempted.set(p.key, p);
     return sha256Of(bytes);
@@ -506,7 +508,7 @@ export default function scenario(gold: GapCircleGold): Scenario {
         if ('skipped' in entry) skipped.push(`第 ${d + 1} 份文档 ${entry.category}：${entry.skipped.reason}——${entry.skipped.detail}`);
       }
     }
-    const findingLines = checkFindings.map((f) => `第 ${f.document + 1} 份文档的用例 ${f.caseId} 包分不出类别（${f.runKey} 的运行：${f.why}）；依赖它的副本没有核对`);
+    const findingLines = checkFindings.map(f => `第 ${f.document + 1} 份文档，用例 ${outerIds[f.document]!.indexOf(f.caseId) + 1}，副本 ${uploaded.get(f.runKey)?.slice(0, 12) ?? '未上传'} 结果不可核对：${f.why}；依赖副本没有核对`);
     sections.push({ title: '没做的副本（按原因）', lines: [...[...notDoneChecks].map(name => `${name}：没有可核对的副本`), ...[...reasons.entries()].map(([r, n]) => `${r}：${n} 份`), ...skipped, ...findingLines] });
     return sections;
   };

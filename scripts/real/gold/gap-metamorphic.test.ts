@@ -189,3 +189,8 @@ test('review 8: joining is skipped if any base-document single-case answer is un
   const candidate = plan.f.find(entry => entry.category === 'negative');
   assert.ok(candidate && 'skipped' in candidate && candidate.skipped.reason === '单用例副本答案未知');
 });
+
+test('review 11: transformation errors never echo a supplied node identifier', () => {
+  const tree = doc(group('r', '合成', kase('c1', '合成用例', '成功')));
+  assert.throws(() => singleByKey(tree, 'PRIVATE-SYNTHETIC-NODE', 'review11'), (error: unknown) => error instanceof Error && !error.message.includes('PRIVATE-SYNTHETIC-NODE'));
+});

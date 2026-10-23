@@ -119,7 +119,7 @@ export function reversed(tree: MindTree, seed: string): MindTree {
 export function singleCase(tree: MindTree, caseId: string, seed: string): MindTree {
   const map = mapOf(tree);
   const caseNode = map.nodes[Number(caseId)];
-  if (caseNode === undefined) throw new Error(`没有这个用例 ${caseId}`);
+  if (caseNode === undefined) throw new Error('缺少指定用例索引');
   const chain: number[] = [];
   for (let at = caseNode.index; map.nodes[at]!.parent !== null; at = map.nodes[at]!.parent!) chain.unshift(map.nodes[at]!.parent!);
   let kept: MindNode = clone(originalNode(tree, caseNode));
@@ -160,7 +160,7 @@ export function withRestored(tree: MindTree, removed: readonly string[], caseId:
   const copy = clone(tree);
   const map = mapOf(original);
   const caseNode = map.nodes[Number(caseId)];
-  if (caseNode === undefined) throw new Error(`没有这个用例 ${caseId}`);
+  if (caseNode === undefined) throw new Error('缺少指定用例索引');
   const parent = caseNode.parent === null ? null : map.nodes[caseNode.parent]!;
   const node = clone(originalNode(original, caseNode));
   const path: number[] = [];
@@ -190,7 +190,7 @@ export function withJoined(a: MindTree, b: MindTree, category: string, singleCas
   const copy = clone(a);
   const bMap = mapOf(b);
   const first = outerCaseKeysOf(b).find((id) => !(singleCaseMissesOfB.get(id) ?? new Set()).has(category) && singleCaseMissesOfB.has(id));
-  if (first === undefined) throw new Error(`B 里没有单用例副本显示 ${category} 为有的用例`);
+  if (first === undefined) throw new Error('未找到显示目标类别的单用例副本');
   const caseNode = bMap.nodes[Number(first)]!;
   const chain: number[] = [];
   for (let at = caseNode.index; bMap.nodes[at]!.parent !== null; at = bMap.nodes[at]!.parent!) chain.unshift(bMap.nodes[at]!.parent!);
@@ -264,7 +264,7 @@ export function planCopies(tree: MindTree, seed: string, options: PlanOptions): 
   const ids = outerCaseKeysOf(tree);
   const known = ids.filter((id) => singleMisses.has(id));
   const unknown = ids.filter((id) => !singleMisses.has(id));
-  const undecided: SkipReason[] = unknown.map((id) => ({ reason: '单用例副本答案未知', detail: id }));
+  const undecided: SkipReason[] = unknown.map((id) => ({ reason: '单用例副本答案未知', detail: `第 ${ids.indexOf(id) + 1} 个用例缺少答案` }));
 
   const a = clone(tree);
   a.root.data.id = renewedId(tree, `${seed}-a`);
@@ -281,7 +281,7 @@ export function planCopies(tree: MindTree, seed: string, options: PlanOptions): 
     if (unknown.length > 0 && unknown.some((id) => (singleMisses.get(id) ?? new Set()).size === 0)) {
       // An unknown case might carry every category: the premise (each copy's case count = the sum of its single-case
       // counts) still holds, but the target set cannot be decided. Recorded, not guessed.
-      d.push({ category, skipped: { reason: '单用例副本答案未知', detail: `未知的用例：${unknown.join('、')}` } });
+      d.push({ category, skipped: { reason: '单用例副本答案未知', detail: `缺少 ${unknown.length} 个单用例答案` } });
       continue;
     }
     if (owners.length === known.length && known.length > 0) {
