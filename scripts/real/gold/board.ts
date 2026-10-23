@@ -74,17 +74,18 @@ export function boardGold(options: { product: string; build: string; tree: unkno
 export function main(argv: string[], print = (line: string) => process.stdout.write(`${line}\n`)): number {
   const value = (key: string) => { const i = argv.indexOf(`--${key}`); return i < 0 ? undefined : argv[i + 1]; };
   const tree = value('tree'), cases = value('cases-dir'), docs = value('docs'), product = value('product'), build = value('build'), out = value('out');
-  if (!tree || !cases || !docs || !product || !build || !out) return 2;
+  const missing = [!tree && '--tree', !cases && '--cases-dir', !docs && '--docs', !product && '--product', !build && '--build', !out && '--out'].filter((f): f is string => f !== false);
+  if (missing.length > 0) { process.stderr.write(`缺 ${missing.join('、')}\n用法：node scripts/real/gold/board.ts --tree <敏捷树导出> --cases-dir <目录> --docs <文档清单> --product <产品> --build <构建> [--case-rule marked|tagged] [--types] --out <文件>\n`); return 2; }
   try {
-    const listed = parseDocumentList(readFileSync(docs, 'utf8'));
+    const listed = parseDocumentList(readFileSync(docs!, 'utf8'));
     if (listed.size === 0) { process.stderr.write('文档清单是空的：补上这个构建的文档清单\n'); return 1; }
-    const maps = loadCaseMaps(cases, listed);
+    const maps = loadCaseMaps(cases!, listed);
     // A listed document with no exported map is a missing input: refuse to start and say what to supply (the 10-23
     // incident: a silently dropped document computed the gold on a subset).
     const loaded = new Set(maps.map((m) => m.document));
     const missing = [...listed].filter((docId) => !loaded.has(docId) && !loaded.has(docId.replace(/^agile:case:/, '')) && !loaded.has(docId.replace(/^.*:/, '')));
     if (missing.length > 0) { process.stderr.write(`清单 ${listed.size} 份，导出的脑图缺 ${missing.length} 份：用 circle-hub original export 导出后重跑\n`); return 1; }
-    const gold = boardGold({ types: argv.includes('--types'), product, build, tree: JSON.parse(readFileSync(tree, 'utf8')), maps, caseRule: value('case-rule') === 'tagged' ? 'tagged' : 'marked' });
+    const gold = boardGold({ types: argv.includes(''--types'), product, build, tree: JSON.parse(readFileSync(tree!, 'utf8')), maps, caseRule: value('case-rule') === 'tagged' ? 'tagged' : 'marked' });
     writeFileSync(out, `${JSON.stringify(gold, null, 2)}\n`);
     print(`清单 ${listed.size} 份，导出的脑图 ${gold.documents.count} 份，其中不在树里 ${gold.documents.not_in_tree} 份，没有用例 ${gold.documents.no_cases} 份`);
     print(`分组 ${gold.groups!.length} 组；用例 ${gold.totals!.cases}；无期望 ${gold.totals!.missing}；含糊 ${gold.totals!.vague}；负面 ${gold.totals!.negative}`);

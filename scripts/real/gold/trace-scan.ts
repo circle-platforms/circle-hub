@@ -1,6 +1,6 @@
 // Independent build scan over exported originals only. No Hub or pack runtime imports.
 import { createHash } from 'node:crypto';
-import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadCaseMaps, parseDocumentList, parsePlmResponses, traceGold } from './trace.ts';
@@ -9,7 +9,12 @@ import { parseClosedStatuses } from './join.ts';
 export function main(argv: string[], print = (line: string) => process.stdout.write(`${line}\n`)): number {
   const value = (key: string) => { const i = argv.indexOf(`--${key}`); return i < 0 ? undefined : argv[i + 1]; };
   const fixedDir = value('fixed-dir'), casesDir = value('cases-dir'), treePath = value('tree'), out = value('out');
-  if (!fixedDir || !casesDir || !treePath || !out) return 2;
+  const missing = [!fixedDir && '--fixed-dir', !casesDir && '--cases-dir', !treePath && '--tree', !out && '--out'].filter((f): f is string => f !== false);
+  if (missing.length > 0) { process.stderr.write(`缺 ${missing.join('、')}\n用法：node scripts/real/gold/trace-scan.ts --fixed-dir <目录> --cases-dir <目录> --tree <敏捷树导出> [--docs-dir <目录>] [--plm <文件>…] [--closed-statuses <文件>] [--case-rule marked|tagged] --out <文件>\n`); return 2; }
+  if (!existsSync(fixedDir) || readdirSync(fixedDir).filter((f) => /^Bugs_Fixed_with_.+\.html$/i.test(f)).length === 0) {
+    process.stderr.write('没有 Bugs_Fixed_with_<构建>.html：先导出修复缺陷页\n');
+    return 1;
+  }
   try {
     const tree = JSON.parse(readFileSync(treePath, 'utf8'));
     const plmPaths: string[] = [];
@@ -42,6 +47,12 @@ export function main(argv: string[], print = (line: string) => process.stdout.wr
       if (!ranked[0]?.closed_traced) print('没有找到已追溯的已关闭缺陷');
     }
     return 0;
-  } catch { process.stderr.write('扫描失败：检查导出文件、文档清单和关闭状态表\n'); return 1; }
+  } catch (error) {
+    const message = (error as Error).message ?? '';
+    if (/closed/i.test(message) || /statuses/i.test(message)) process.stderr.write(`关闭状态表不是数组也不是 {statuses: [...]}\n`);
+    else if (/清单|document/i.test(message)) process.stderr.write(`#k 的文档清单读不了或列的不是数组\n`);
+    else process.stderr.write(`扫描失败：${message.split('\n')[0]?.slice(0, 120) ?? '检查导出文件与文档清单'}\n`);
+    return 1;
+  }
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) process.exitCode = main(process.argv.slice(2));

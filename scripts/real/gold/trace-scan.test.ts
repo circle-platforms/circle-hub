@@ -93,3 +93,25 @@ test('without --plm the closed counts are unread, printed as such, and the next 
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('missing flags are named one by one, and an empty fixed-dir is refused with its own message', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'gold-scan-usage-'));
+  try {
+    const none = spawnSync(process.execPath, ['scripts/real/gold/trace-scan.ts'], { encoding: 'utf8' });
+    assert.equal(none.status, 2);
+    assert.match(none.stderr, /缺 --fixed-dir、--cases-dir、--tree、--out/);
+    const partial = spawnSync(process.execPath, ['scripts/real/gold/trace-scan.ts', '--fixed-dir', join(dir, 'f')], { encoding: 'utf8' });
+    assert.equal(partial.status, 2);
+    assert.match(partial.stderr, /缺 --cases-dir、--tree、--out/);
+    assert.ok(!(partial.stderr.split('\n')[0] ?? '').includes('--fixed-dir'), 'the given flag is not named as missing');
+    mkdirSync(join(dir, 'cases'));
+    writeFileSync(join(dir, 'cases/doc-a.json'), JSON.stringify(map));
+    writeFileSync(join(dir, 'tree.json'), JSON.stringify(tree));
+    mkdirSync(join(dir, 'f'));
+    const emptyFixed = spawnSync(process.execPath, ['scripts/real/gold/trace-scan.ts', '--fixed-dir', join(dir, 'f'), '--cases-dir', join(dir, 'cases'), '--tree', join(dir, 'tree.json'), '--out', join(dir, 'out.json')], { encoding: 'utf8' });
+    assert.equal(emptyFixed.status, 1);
+    assert.match(emptyFixed.stderr, /没有 Bugs_Fixed_with_<构建>\.html：先导出修复缺陷页/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
