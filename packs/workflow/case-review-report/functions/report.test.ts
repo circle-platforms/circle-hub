@@ -327,3 +327,11 @@ it('an older verification without the original Hub fact snapshot cannot imply no
   assert.equal(report.fields.review_tables,undefined);assert.equal(report.fields.overall,null);
   assert.match(report.summary??'',/初评 Hub 核对快照.*下一步.*新版复核.*终稿/);
 });
+
+it('the initial reviewer procedure ends both single-block and multi-block reviews through the table report',()=>{
+  const skill=readFileSync(new URL('../../case-review/SKILL.md',import.meta.url),'utf8');
+  const final=skill.split('## 7. 报告')[1].split('## 参数')[0];
+  assert.match(skill.split('## 2.')[0],/不分块也.*case-review-report/);
+  assert.match(final,/case-review-report/);assert.match(final,/review_tables/);assert.match(final,/原样/);
+  assert.doesNotMatch(final,/每条已证实和新增的发现（位置、说明、引文）/);
+});

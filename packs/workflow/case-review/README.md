@@ -13,7 +13,7 @@ K04. Everything product-specific comes from the product pack the run binds (name
 | `requirements.json` | `literal` (fact, item: checks structure, node_ids, tags), `catalog` (fact, item: cited_commands, command_claims; a negative case expects `core.catalog.param_out_of_range`, `param_type_mismatch` or `arity_mismatch`), `findings` (judgment, item: findings_quotes, command_claims, findings_sources; repair rows, two rounds, for `core.catalog.membership_contradicted`, `case-review.hint_only`, `case-review.location_missing`, `case-review.quote_missing`, `case-review.command_not_in_case`, `QUOTE_MISMATCH`), `level` (judgment, run) |
 | `checks.json` | eight checks (table below); `case_commands` is listed by no requirement: the optional scan, off |
 | `slots.schema.json` | item `findings`: codes the seven probe names, ranks critical, major, minor (with their level bands), evidence required (the check `findings_sources` asks for a verbatim quotation besides), at most 20; run `level`: code `level`, ranks P0-P7 with the brief's definitions, exactly one |
-| `SKILL.md` | the drafter's procedure (about 4,000 characters): target, blocks and slices, the six evidence groups in order and how to read them, findings (location, verbatim quotation, command lines as the case writes them), severity bands, levels, submission with the context digest, repair, revision runs with `predecessor` and `reuse`, the Chinese report |
+| `SKILL.md` | the drafter's procedure (about 4,000 characters): target, blocks and slices, the six evidence groups in order and how to read them, findings (location, verbatim quotation, command lines as the case writes them), severity bands, levels, submission with the context digest, repair, revision runs with `predecessor` and `reuse`, the mandatory case-review-report table view after every review (single block included), followed by short overall prose |
 | `functions/` | the adapters (`projection.ts`, `expected.ts`, `subjects.ts`, `checks.ts`) on the pure functions (`project.ts`, `expected-sources.ts`, `subject.ts`, `lines.ts`, `tags.ts`, `template-coverage.ts`, `text.ts`, `common.ts`, `types.ts`) |
 | `tables/` | the check tables, `codes.json` (every pack code with Chinese when/fix, the finding codes, bands and levels), the template tables |
 | `samples/` | 23 samples (`pack-sample@1`, source author; 11 positive, 12 negative) written by `testing/samples.ts`: every check has positive and negative ones |
@@ -448,3 +448,7 @@ node --test --test-concurrency=1 packs/workflow/case-review/packs.test.ts
 | case-review/packs.test.ts（含全仓扫描） | 17 | 16 | 1 | 0 |
 
 合计 1,188 项，1,186 通过、1 失败、1 跳过。唯一失败是上列 K2 的 6 处扫描命中，未加任何基线或例外，也未改 K2 文件；合并 K2 后仍需重跑。跳过项为本机没有 sandbox-exec 时默认拒绝运行的反向环境测试，本机具备 sandbox-exec，不能将它计作通过。npx tsc --noEmit、node tools/gen-contracts.ts --check 均通过；未做真实系统验收。每条问题的改前失败日志、全量测试日志留在 Git 外。
+
+
+评审最后一步（决定 35，集成者 2026-10-23）：不分块也开 case-review-report，target 与各块一致，precondition_priority 沿用初评。
+按终稿包说明逐页读取并原样贴出 review_tables，再写简短评审意见、等级理由和证据缺口，不逐条转录发现或另写建议。
