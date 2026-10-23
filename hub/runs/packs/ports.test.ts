@@ -40,6 +40,8 @@ test('forUser: an assigned user gets the loaded workflow; unknown, unassigned, w
   await bed.kit.authorizations.assign(bed.admin, bed.bob.id, 'widget');
   const store = createWorkflowStore(bed.registry);
 
+  assert.equal(await store.ownerOf?.(version.digest), bed.alice.id);
+  assert.equal(await store.ownerOf?.('e'.repeat(64)), null);
   const loaded = await store.forUser(bed.bob, 'demo-review');
   assert.ok(loaded);
   assert.deepEqual({ ...loaded.pack, directory: undefined }, { id: 'demo-review', version: '1.0.0', digest: version.digest, kind: 'workflow', directory: undefined });

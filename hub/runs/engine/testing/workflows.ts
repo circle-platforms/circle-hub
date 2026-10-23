@@ -11,6 +11,8 @@ import type { LoadedWorkflow, WorkflowStore } from '../../../ports.ts';
 import { requirementSummary } from '../start.ts';
 
 export class FakeWorkflowStore implements WorkflowStore {
+  owner: string | null = null;
+  async ownerOf(_digest: string): Promise<string | null> { return this.owner; }
   readonly #byDigest = new Map<string, LoadedWorkflow>();
   readonly #versions = new Map<string, LoadedWorkflow[]>();
   readonly #assigned = new Map<string, Set<string>>();

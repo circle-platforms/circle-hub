@@ -29,6 +29,7 @@ import { identityOf, principalOf, recordReader, sourceReader } from './readers.t
 import { runRequirementOf } from './slots.ts';
 import {
   applyRouting,
+  bindRecovery,
   dynamicLayer,
   expectationFor,
   repairRounds,
@@ -705,7 +706,17 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
         expectation,
       });
       const routed = applyRouting(raw, t, input.roundsUsed.get(t.key) ?? 0);
-      const layers = t.layers.map((layer) => (layer === 'static' ? staticLayer(routed, expectation) : dynamicLayer(routed)));
+      const unresolved = t.layers.map((layer) => (layer === 'static' ? staticLayer(routed, expectation) : dynamicLayer(routed)));
+      const layers = [] as typeof unresolved;
+      for (const layer of unresolved) {
+        if (layer.terminal === 'unchecked' || layer.terminal === 'incomplete' || layer.terminal === 'not_run' || layer.terminal === 'no_verdict') {
+          const owner = await ctx.deps.workflows.ownerOf?.(run.pack_digest);
+          const administrator = (await ctx.deps.records.principals?.list?.())?.find(p => p.role === 'admin' && !p.disabled)?.id;
+          const runner = run.runner ?? run.configurer;
+          if (!owner || !administrator || !runner) throw new Error('无法绑定未知出口：缺少包 ownerOf、具名管理员或运行者；请管理员补齐身份读取接线后重验');
+          layers.push(bindRecovery(layer, {owner, administrator, runner, due: new Date(ctx.now().getTime()+24*60*60*1000).toISOString(), location: `${it.id} / ${t.key}`}, outcomes.map(o => o.outcome)));
+        } else layers.push(layer);
+      }
       const status = requirementStatus({
         layers,
         hasProducer,
