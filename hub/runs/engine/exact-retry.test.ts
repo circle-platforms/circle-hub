@@ -45,6 +45,7 @@ for (const mode of ['recover', 'exhaust', 'absence']) test(`exact source ${mode}
       const attempts = ((await actions())[0].body.detail.retry_attempts as Array<Record<string, unknown>>).filter(attempt => attempt.operation === 'exact_source');
       assert.deepEqual(attempts.map(attempt => attempt.attempt), [1, 2, 3]); return;
     }
+    assert.ok(h.logs.some(entry => entry.detail.includes('SyntheticPrivateReadFailure')));
     assert.equal(answer.acceptance, 'not_accepted'); assert.equal(answer.result, undefined);
     assert.deepEqual(answer.errors.map(error => error.code), ['SOURCE_UNAVAILABLE']);
     assert.ok(answer.errors.every(error => error.rounds_left === undefined && error.requirement === undefined));

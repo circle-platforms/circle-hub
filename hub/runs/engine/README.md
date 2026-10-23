@@ -415,8 +415,8 @@ separation, byte-preserving result copies, mutation isolation, an input snapshot
 Transient check-function and subject-builder attempts run through the sandbox's bounded retry policy. Validation actions
 store their retry_attempts, including the first transient failure and the recovery or final failure, with operation,
 module and item where applicable, fixed codes, durations and 50/100 ms backoff. Successful first calls do not enlarge this
-retry log. Production start actions and submitted-result actions both retain it. The per-evaluation subject cache still
-shares successful construction only, and replay of a completed identical submission creates no new attempt or action.
+retry log. Production start actions and submitted-result actions both retain it. The per-evaluation subject cache
+shares successful construction and exhausted transient failures, and replay of a completed identical submission creates no new attempt or action.
 Exhausted sandbox errors still need the exit/request contract from hub-unknown-model; this step adds no exit field.
 
 Bound check sources are re-read at most three times after unavailable/failed reads, with 50/100 ms backoff; the validation
@@ -492,3 +492,6 @@ catalog construction. Exhausted function-side failures use the same HubReadFailu
 Exhausted sandbox failures are marked by parent-only object identity and retained in the subject scope for the rest of
 one evaluation. Checks sharing that exact input/module reuse the same bounded failure cycle; a new input or evaluation
 gets a fresh cycle. Ordinary build failures and Hub-copy failures keep their separate existing policies.
+
+Resolver diagnostics from both runner and Hub evaluation contexts, exact references and exhausted scope reads retain
+the actual cause only in the administrator log. Caller answers, stored unread_sources and retry evidence contain no raw error text.

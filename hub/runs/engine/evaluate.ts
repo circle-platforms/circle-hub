@@ -272,6 +272,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
       records: recordReader(ctx.deps.records.store),
       consumer: 'function',
       documents: ctx.documents,
+      onDiagnostic: diagnostic => ctx.log({traceId:input.traceId,run:run.run,what:'check source',detail:`${diagnostic.reference}: ${diagnostic.message}`}),
     };
   } else {
     // Hub standing obligation: Hub's own system read path
@@ -307,6 +308,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
       records: systemRecords,
       consumer: 'function',
       documents: ctx.documents,
+      onDiagnostic: diagnostic => ctx.log({traceId:input.traceId,run:run.run,what:'check source',detail:`${diagnostic.reference}: ${diagnostic.message}`}),
     };
   }
 

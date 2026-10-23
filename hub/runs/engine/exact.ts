@@ -31,7 +31,7 @@ import {
 import type { CatalogView } from '../../rules/api.ts';
 import type { EngineContext } from './deps.ts';
 import { HubReadFailure, retryRead } from './retry-read.ts';
-import { protocolError } from './errors.ts';
+import { describe, protocolError } from './errors.ts';
 import { recordReader, sourceReader } from './readers.ts';
 import { resultsOf } from './store.ts';
 import { pointerOf, valueAt } from './util.ts';
@@ -65,6 +65,7 @@ export async function buildScope(ctx: EngineContext, run: RunRecord, workflow: L
         if (attempt.retry || attempt.attempt > 1) attempts.push({operation:'exact_source', reference, ...attempt});
       });
     } catch (error) {
+      ctx.log({traceId:null,run:run.run,what:'exact scope read',detail:describe(error)});
       if (consumer === 'function') throw new HubReadFailure(reference, 'check_error', attempts);
       throw error;
     }
@@ -181,6 +182,7 @@ export function createResolver(ctx: EngineContext, scope: RunScope, consumer: 'f
     records: recordReader(store),
     consumer,
     documents: ctx.documents,
+    onDiagnostic: (diagnostic: {reference:string;message:string}) => ctx.log({traceId:null,run:scope.reader.run ?? null,what:'exact source',detail:`${diagnostic.reference}: ${diagnostic.message}`}),
   } as const;
   const run = async (reference: string, scoped: boolean): Promise<ValueOutcome> => {
     let ref: Reference;
@@ -207,7 +209,7 @@ export function createResolver(ctx: EngineContext, scope: RunScope, consumer: 'f
           && result.code === 'SOURCE_UNAVAILABLE' && result.reason !== undefined ? { reason: result.reason, retry: true } : null,
           attempt => { if (attempt.retry || attempt.attempt > 1) attempts.push({ operation: 'exact_source', reference: canonical, ...attempt }); });
       } catch (error) {
-        ctx.log({ traceId: null, run: scope.reader.run ?? null, what: 'exact source', detail: 'bound source read threw after retries' });
+        ctx.log({ traceId: null, run: scope.reader.run ?? null, what: 'exact source', detail: describe(error) });
         if (consumer === 'function') throw new HubReadFailure(canonical, 'check_error', attempts);
         return { ok: false, message: `引用解析不出（${UNAVAILABLE_MESSAGE}）` };
       }
