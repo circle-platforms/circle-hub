@@ -46,3 +46,8 @@ Needs: none.
 合成验证：`node --test --test-concurrency=1 "packs/system/plm/*.test.ts"`；覆盖数字键、唯一名字、未找到、歧义、空构建列表、两族名字归一化、修复字段配置与未配置，并在临时 PostgreSQL、回环桩服务和真实连接器沙箱中核对实际请求次数与内容。未改既有桩数据；真实产品名和构建 name 字段仍由集成者冒烟核实。
 
 第二步的 case-review 要求项与独立金标准不在本次改动中，等待集成者通知。
+
+Batch story fields `status` and `stage` preserve JSON scalar values (including numbers, booleans and explicit null).
+`fields_absent` names fields the successful original did not contain; no missing lifecycle value is inferred.
+The unreleased package stays at 1.2.0; story projection fixes only require re-signing this manifest.
+

@@ -1,15 +1,15 @@
 {
   "schema": "pack@1",
   "id": "story-traceability",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "kind": "workflow",
   "title": "需求追溯矩阵",
-  "description": "用户给出的需求编号或管理员配置的构建记录需求范围到已索引用例的矩阵；只核验事实，保留原样状态和阶段，缺用例记未知并明确后续动作，不绑定产品线",
+  "description": "用户给出的需求编号或管理员配置的构建记录需求范围到已索引用例的矩阵；只核验事实，保留原样状态和阶段，只报告完整索引覆盖内的事实，部分视图拒绝，不绑定产品线",
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "1b079e4cee5a3e2a15a9a3d507da4fa8af2a5f016a7b61ebd57cd6bf438e0e83",
-      "size": 2446
+      "sha256": "d1887fb8448d632565f8379281fa46fc00a052dde9171ca71371747f7fe20153",
+      "size": 2292
     },
     {
       "path": "checks.json",
@@ -18,18 +18,23 @@
     },
     {
       "path": "functions/check.ts",
-      "sha256": "4283c3205d08b557f995f7a8488643aca59982742b2a3d31aaf1300f70b3489c",
-      "size": 5213
+      "sha256": "70fa18d8ad150a7beed82e347cc5e55a723a22cae56f2009e66e879508a05113",
+      "size": 5622
     },
     {
       "path": "functions/counts.ts",
-      "sha256": "bfa6e86fed25cbebdba5d303f0469fbe409f56eccda2a37ce4df41f09665f5ef",
-      "size": 2097
+      "sha256": "da3f24e23e22d66123bd87ae832d084ca9d9a94e373d2e4b390e7f6183080318",
+      "size": 2607
     },
     {
       "path": "functions/expected.ts",
-      "sha256": "06a16d532511485ae588f622027e7ae70fdd4eda26d56a8f484813d31529b710",
-      "size": 650
+      "sha256": "42bbbe7e9aaa3d07b62b67032f5eb2b52799678d6638146ba5e42f0b051601fb",
+      "size": 628
+    },
+    {
+      "path": "functions/generated/vocabulary.ts",
+      "sha256": "a87d3e3e7f6a5d8b537a5fde8e6b7cd8742393b6a66da6fca5e0ec745d647e71",
+      "size": 459
     },
     {
       "path": "functions/ids.ts",
@@ -37,9 +42,19 @@
       "size": 230
     },
     {
+      "path": "functions/plm-fields.ts",
+      "sha256": "aed3119d65084799d2c2716e52c4c32307901a695e6ec73cf1606b7763fe83ce",
+      "size": 1012
+    },
+    {
       "path": "functions/project.ts",
-      "sha256": "b9c49450ac6bf38f086a1e0a17a2e3d41bdb7d23604aed266c13858b2e6c497d",
-      "size": 7676
+      "sha256": "a0034913300a3cdb671a73ffdb5da903f55b132ce787412281173d927306fdc1",
+      "size": 9626
+    },
+    {
+      "path": "functions/scope.ts",
+      "sha256": "d3fd7b56e668ce473b1f1e9baab9715accf265ab722cc0129901535bae8f11c5",
+      "size": 429
     },
     {
       "path": "functions/subject.ts",
@@ -53,38 +68,38 @@
     },
     {
       "path": "functions/types.ts",
-      "sha256": "d0d6c17792836a4793fc25f1700d772f66154938cf5c84d9554caf9059859843",
-      "size": 1575
+      "sha256": "5f5f1ff547626cdfd8e1d7ceeb4f3596a54d93be516e1c7a1177d65001d8b82c",
+      "size": 1622
     },
     {
       "path": "functions/views.ts",
-      "sha256": "ec4500ae609fc61dd342bcc13358eb0388bbf188acf5a6aa407e1fa702545437",
-      "size": 5135
+      "sha256": "fc53dd3bf5afe7b38c74ef2e52e519f399656f7b31793ed7c9190a078a6f2031",
+      "size": 5240
     },
     {
       "path": "requirements.json",
-      "sha256": "0049d4dc1268cb182ef5e3429d87ac3c2397c3d6c08078b5ab598a0663b42d4e",
+      "sha256": "7b86848e14eb06d3181fd0caaf8342c26ba1cec5659b870c41690716545a2992",
       "size": 1025
     },
     {
       "path": "samples/negative/counts.json",
-      "sha256": "4b49f4ae90497a4605f0cf8249481c2aa0ee11fed39693a3a96e3e6b0705de90",
-      "size": 2063
+      "sha256": "8491f1540cf680455abace2f184eee3b58d3f943c72c6ebb333141ecb2b6a859",
+      "size": 2143
     },
     {
       "path": "samples/negative/traced.json",
-      "sha256": "fbf815b4b532d75437e17b5820053af9d8a7f7201359a58376a130bfa66df923",
-      "size": 2062
+      "sha256": "aa2c1022cbcc7ac75f7fe7adb61143ca5c71f5191f27306a0331e113eae2552c",
+      "size": 2142
     },
     {
       "path": "samples/positive/counts.json",
-      "sha256": "31329ead25050a2d6335fd519cf02476d3c1810069d5c962fa793f64fd183948",
-      "size": 2014
+      "sha256": "6212c60897ded1fa7e303747e35ce2739136782ea93d74a186e3e0d7cd0c5a89",
+      "size": 2094
     },
     {
       "path": "samples/positive/traced.json",
-      "sha256": "b8a3df2bcc56893eefa4e799ecd9399ff3658c5ba0459a0541b4bdcc61e11e45",
-      "size": 2014
+      "sha256": "c1fbd8bcab14b418f412bfb396050cf8fa4387ab9cd70e23187fa0cf0f9e9334",
+      "size": 2094
     },
     {
       "path": "slots.schema.json",

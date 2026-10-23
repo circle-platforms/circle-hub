@@ -19,12 +19,12 @@ describe('synthetic story production run', { skip }, () => {
     assert.deepEqual(result.answer.run?.items.map(i => i.id), ['21', '22']);
     assert.ok(result.production);
     assert.equal(result.production.result.acceptance, 'accepted');
-    assert.deepEqual(result.production.counts, { delivered: 2, rejected: 0, quarantined: 0, incomplete: 0, unknown: 1 });
+    assert.deepEqual(result.production.counts, { delivered: 2, rejected: 0, quarantined: 0, incomplete: 0, unknown: 0 });
     const count = result.production.result.cross_item.find(c => c.requirement === 'counts')!;
     assert.deepEqual([count.statement.data?.stories, count.statement.data?.traced, count.statement.data?.plm_unread], [2, 1, 1]);
     const unknown = result.production.result.partitions.delivered.find(i => i.item === '22')!;
-    assert.equal(unknown.requirements[0].claims[0].statement.verdict, 'unknown');
-    assert.match(unknown.requirements[0].claims[0].statement.text, /请管理员运行知识同步，完成后重跑/);
+    assert.equal(unknown.requirements[0].claims[0].statement.verdict, 'support');
+    assert.match(unknown.requirements[0].claims[0].statement.text, /完整需求号索引视图/);
   });
   test('build-derived scope reads details automatically and records its origin', async () => {
     const casesId = `knowledge:index:apv:${BUILD.name}?kind=case&key=stories&fields=document,node,title`;
@@ -32,9 +32,20 @@ describe('synthetic story production run', { skip }, () => {
     const result = await hub.service.startRunDetailed(hub.alice, { pack: 'story-traceability', inputs: { build: { external: 'plm:builds:5' }, cases: { external: casesId } }, parameters: { build_id: '7' } }, call());
     assert.equal(result.answer.call_result, 'ok', JSON.stringify(result.answer.errors));
     assert.ok(result.production);
-    assert.match(result.answer.run!.items[0].summary!, /需求范围取自构建记录/);
+    assert.match(result.answer.run!.items[0].summary!, /需求范围依据：观察/);
     const total = result.production.result.cross_item.find(c => c.requirement === 'counts')!;
     assert.equal(total.statement.data?.plm_unread, 1);
+  });
+
+  test('an expected batch read failure is counted as unavailable rather than as a missing id', async () => {
+    const casesId = `knowledge:index:apv:${BUILD.name}?kind=case&key=stories&fields=document,node,title`;
+    hub.views.put('plm:builds:5', { builds: [{ id: '7', stories: ['31', '32'] }] });
+    const result = await hub.service.startRunDetailed(hub.alice, { pack: 'story-traceability', inputs: { build: { external: 'plm:builds:5' }, cases: { external: casesId } }, parameters: { build_id: '7' } }, call());
+    assert.equal(result.answer.call_result, 'ok', JSON.stringify(result.answer.errors));
+    const total = result.production!.result.cross_item.find(c => c.requirement === 'counts')!;
+    assert.equal(total.statement.data?.plm_unread, 0); assert.equal(total.statement.data?.plm_unavailable, 2);
+    assert.equal(result.production!.counts.unknown, 0);
+    assert.ok(hub.views.reads.includes('plm:stories:31+32'));
   });
 
 });

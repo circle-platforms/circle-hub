@@ -3,17 +3,17 @@ import { test } from 'node:test';
 import scenario from './story-traceability.ts';
 import type { StoryGold } from '../gold/trace-stories.ts';
 import type { LoggedTurn } from '../lib/accept.ts';
-const gold: StoryGold = { product: 'synthetic', build: 'Synthetic_10_6', scope: '需求范围由用户提供', documents: 1, missing_documents: [], traced: 1, untraced: 1, plm_unread: 1, statuses: [{ status: 'synthetic-state', count: 1 }], stories: [
+const gold: StoryGold = { product: 'synthetic', build: 'Synthetic_10_6', scope: 'declared', documents: 1, documents_without_cases: 0, missing_documents: [], traced: 1, untraced: 1, plm_unread: 1, statuses: [{ status: 'synthetic-state', count: 1 }], stories: [
   { story: '21', status: 'synthetic-state', stage: 'synthetic-stage', plm_returned: true, cases: [{ id: '91:c1', title: '合成用例' }] },
   { story: '22', status: null, stage: null, plm_returned: false, cases: [] },
 ] };
-const text = '运行 run_synthetic\n完整结果 rec:' + 'a'.repeat(64) + '\n- 21 | 需求 21 | 1 个用例\n- 22 | 需求 22 | 无已索引用例（未知）\n陈述：需求 21（状态：synthetic-state；阶段：synthetic-stage）：1 个已索引用例追溯：91:c1 合成用例；需求范围由用户提供\n陈述：需求 22（状态：未知；阶段：未知）：0 个已索引用例；PLM 未返回；请管理员运行知识同步，完成后重跑\n陈述：需求 2 个：已追溯 1 个，未追溯 1 个；PLM 没返回 1 个；需求范围由用户提供；原样状态计数：synthetic-state 1 个';
+const text = '运行 run_synthetic\n完整结果 rec:' + 'a'.repeat(64) + '\n- 21 | 需求 21 | 1 个用例\n- 22 | 需求 22 | 无已索引用例（完整视图内）\n陈述：需求 21（状态：synthetic-state；阶段：synthetic-stage）：1 个已索引用例追溯：91:c1 合成用例；需求范围依据：声明\n陈述：需求 22（状态：应答未包含该编号；阶段：应答未包含该编号）：0 个已索引用例；PLM 应答里没有编号 22；在知识根中完整需求号索引视图里，没有条目携带需求号 22；不推断未索引用例\n陈述：需求 2 个：已追溯 1 个，未追溯 1 个；PLM 没返回 1 个；PLM 详情未读到 0 个；需求范围依据：声明；原样状态计数：synthetic-state 1 个';
 const turns = (value: string): LoggedTurn[] => [{ index: 0, tools: ['hub_start_run'], toolResults: [] }, { index: 1, tools: [], toolResults: [{ id: '1', text: value, isError: false }] }];
 test('scenario checks individual rows and counts without disclosing ids, titles, state or build in check output', () => {
   const checks = scenario(gold).check(turns(text));
   assert.ok(checks.every(c => c.ok), JSON.stringify(checks));
   assert.doesNotMatch(JSON.stringify(checks), /91:c1|synthetic-state|Synthetic_10_6|合成用例|需求 21|需求 22/);
-  for (const bad of [text.replace('91:c1', '91:wrong'), text.replace('1 个已索引用例追溯', '2 个已索引用例追溯'), text.replace('无已索引用例（未知）', '2 个用例'), text.replace('阶段：synthetic-stage', '阶段：wrong'), text.replace('PLM 没返回 1 个', 'PLM 没返回 0 个'), text.replace('synthetic-state 1 个', 'wrong 1 个')]) {
+  for (const bad of [text.replace('91:c1', '91:wrong'), text.replace('1 个已索引用例追溯', '2 个已索引用例追溯'), text.replace('无已索引用例（完整视图内）', '2 个用例'), text.replace('无已索引用例（完整视图内）', '无已索引用例（未知）'), text.replace('阶段：synthetic-stage', '阶段：wrong'), text.replace('PLM 没返回 1 个', 'PLM 没返回 0 个'), text.replace('PLM 详情未读到 0 个', 'PLM 详情未读到 1 个'), text.replace('synthetic-state 1 个', 'wrong 1 个')]) {
     assert.ok(scenario(gold).check(turns(bad)).some(c => !c.ok));
   }
 });

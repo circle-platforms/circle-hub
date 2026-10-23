@@ -17,8 +17,8 @@ test('batch stories preserves status and stage separately and reports missing id
     detail: { json: { data: [{ id: 2, status: 'synthetic-status', stage: 'synthetic-stage', title: '合成需求' }, { id: '8', stage: 'synthetic-stage' }] } },
   } }) as { artifacts: Array<{ json: unknown }> };
   assert.deepEqual(result.artifacts[0].json, { stories: [
-    { id: '2', status: 'synthetic-status', stage: 'synthetic-stage', title: '合成需求' },
-    { id: '8', status: null, stage: 'synthetic-stage', title: null },
+    { id: '2', status: 'synthetic-status', stage: 'synthetic-stage', title: '合成需求', fields_absent: [] },
+    { id: '8', status: null, stage: 'synthetic-stage', title: null, fields_absent: ['status'] },
   ], unread: ['9'] });
   assert.ok('error' in (storiesProject({ external: { type: 'stories', key: '2' }, responses: {} }) as object));
 });

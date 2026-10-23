@@ -1,12 +1,15 @@
 // Pure projection: caller-supplied ids, or ids explicitly declared by a configured build record.
 import type { BoundInput, ProjectedItem } from '../../../../contracts/src/pack.ts';
+import { absent, scalar, type Scalar } from './plm-fields.ts';
+import type { ProvenanceType } from '../../../../contracts/generated/vocabulary.ts';
+import { scopeText } from './scope.ts';
 import { normalizeId } from './ids.ts';
 import { isRecord, strings, shown, utf8Length } from './text.ts';
 import { readIndexView } from './views.ts';
 
-export type Story = { id: string; status: string | null; stage: string | null; title: string | null };
+export type Story = { id: string; status: Scalar; stage: Scalar; fields_absent: string[]; title: string | null };
 export type Case = { case: string; title: string; document: string | null; reference: string; stories: string[] | null };
-export type Row = Story & { plm_returned: boolean; cases: Case[]; references: string[]; build: string; scope: string };
+export type Row = Story & { plm_returned: boolean; plm_responded: boolean; cases: Case[]; references: string[]; build: string; scope: ProvenanceType };
 export const validId = (id: string): boolean => /^[1-9][0-9]{0,14}$/.test(normalizeId(id));
 const fail = (message: string, fix: string) => ({ error: { code: 'story-traceability.invalid_input', message, fix } });
 
@@ -19,18 +22,21 @@ export function projectItems(input: unknown): unknown {
   const read = readIndexView(caseInputs[0], 'cases', { kind: 'case', key: 'stories' });
   if (!read.ok) return fail(read.message, read.fix);
   const view = read.view;
+  const incomplete = view.truncated || view.skipped > 0 || view.missing > 0 || view.cut_keys.length > 0 || view.total_keys !== Object.keys(view.keys).length || view.total_entries !== Object.keys(view.entries).length || view.only !== null;
+  if (incomplete) return fail(`缺少知识根 ${view.root} 的完整需求号索引：截断 ${view.truncated}；未读来源 ${view.skipped}；缺正文 ${view.missing}；裁剪键 ${view.cut_keys.join('、') || '无'}；键 ${Object.keys(view.keys).length}/${view.total_keys}；条目 ${Object.keys(view.entries).length}/${view.total_entries}；来源说明：${view.notes.join('；') || '视图没有提供未读来源标识，需读取该根的来源清单定位'}${view.only ? '；视图仅限指定键' : ''}`, '请管理员按来源说明读取该知识根的来源清单，恢复缺失来源并运行知识同步；消除视图截断或裁剪，重新绑定完整 cases 视图后重跑');
+
   const rows = new Map<string, Row>();
   const locations = new Map<string, { source: string; selector: string; slot: string }>();
-  const scope = storyInputs.length > 0 ? '需求范围由用户提供' : '需求范围取自构建记录';
+  const scope: ProvenanceType = storyInputs.length > 0 ? 'declared' : 'observed';
   function add(raw: string, record: unknown, source: BoundInput, selector: string) {
     if (!validId(raw)) throw new Error('需求编号应为最多 15 位正整数');
     const id = normalizeId(raw);
     const r = isRecord(record) ? record : null;
     const next: Row = { id, title: r && typeof r.title === 'string' ? r.title : null,
-      status: r && typeof r.status === 'string' ? r.status : null, stage: r && typeof r.stage === 'string' ? r.stage : null,
-      plm_returned: r !== null, cases: [], references: [`src:${source.sha256}/json@1/${selector}`], build: view.build, scope };
+      status: r ? scalar(r.status) : null, stage: r ? scalar(r.stage) : null, fields_absent: r ? absent(r) : [],
+      plm_returned: r !== null, plm_responded: r !== null || source.slot === 'stories' && isRecord(source.model) && Array.isArray(source.model.unread) && source.model.unread.some(value => normalizeId(String(value)) === id), cases: [], references: [`src:${source.sha256}/json@1/${selector}`], build: view.build, scope };
     const previous = rows.get(id);
-    if (previous && previous.plm_returned && next.plm_returned && JSON.stringify([previous.status, previous.stage, previous.title]) !== JSON.stringify([next.status, next.stage, next.title])) throw new Error('同一需求的 PLM 原件内容冲突，请重新导出一致原件');
+    if (previous && previous.plm_returned && next.plm_returned && JSON.stringify([previous.status, previous.stage, previous.title, previous.fields_absent]) !== JSON.stringify([next.status, next.stage, next.title, next.fields_absent])) throw new Error('同一需求的 PLM 原件内容冲突，请重新导出一致原件');
     if (!previous || (!previous.plm_returned && next.plm_returned)) { rows.set(id, next); locations.set(id, { source: source.sha256, selector, slot: source.slot }); }
   }
   if (storyInputs.length > 0) {
@@ -52,14 +58,16 @@ export function projectItems(input: unknown): unknown {
     if (buildInputs.length !== 1 || typeof params.build_id !== 'string') return fail('缺少需求编号', '请给出需求编号；可选绑定 PLM 构建列表并明确 build_id');
     const source = buildInputs[0];
     if (!source.external?.startsWith('plm:builds:')) return fail('构建槽不是 PLM 构建列表', '绑定 plm:builds:<产品编号>');
-    if (!validId(params.build_id)) return fail('构建编号无效', '明确给出 build_id 正整数编号');
+    const buildId = normalizeId(params.build_id.trim());
+    if (!validId(buildId)) return fail('构建编号无效', '明确给出 build_id 正整数编号');
     const model = isRecord(source.model) ? source.model : {};
-    const builds = Array.isArray(model.builds) ? model.builds : [];
-    const at = builds.findIndex(b => isRecord(b) && String(b.id) === params.build_id);
+    if (!Array.isArray(model.builds)) return fail('PLM 构建列表没有 builds 数组', '重新绑定有效的 PLM 构建列表原件，或向用户索取需求编号');
+    const builds = model.builds;
+    const at = builds.findIndex(b => isRecord(b) && normalizeId(String(b.id).trim()) === buildId);
     const build = builds[at];
-    if (!isRecord(build) || !Array.isArray(build.stories) || build.stories.length === 0) {
-      return fail(`构建记录里没有需求字段，请给出需求编号；${isRecord(build) && typeof build.scope_note === 'string' ? build.scope_note : '缺少指定构建记录'}`, '向用户索取需求编号；请管理员核实 PLM 资源 settings.build_story_field 和构建记录原件');
-    }
+    if (!isRecord(build)) return fail(`PLM 构建列表未包含规范化编号 ${buildId}`, '请用户确认构建编号，或直接提供需求编号');
+    if (!Array.isArray(build.stories)) return fail(`构建记录 ${buildId} 未提供可用的需求编号数组；${typeof build.scope_note === 'string' ? build.scope_note : '当前投影未说明原始字段名或配置'}`, '请管理员核对 settings.build_story_field 和构建记录原件，或向用户索取需求编号');
+    if (build.stories.length === 0) return fail(`构建记录 ${buildId} 的需求编号数组为空`, '请用户提供要核对的需求编号，或请管理员确认该构建的需求范围；不把空数组解释成字段缺失');
     for (const id of build.stories) add(String(id), null, source, `p/builds/${at}`);
   }
   if (rows.size === 0 || rows.size > 8000) return fail('需求范围为空或超过 8000 条', '提供非空需求编号列表；超限则分批运行');
@@ -79,11 +87,11 @@ export function projectItems(input: unknown): unknown {
     row.cases = [...(byId.get(row.id)?.values() ?? [])].sort((a, b) => a.case < b.case ? -1 : a.case > b.case ? 1 : (a.reference < b.reference ? -1 : a.reference > b.reference ? 1 : 0));
     const loc = locations.get(row.id)!;
     return { id: row.id, label: shown(`需求 ${row.id}${row.title ? ` ${row.title}` : ''}`),
-      summary: shown(`${row.cases.length ? `${row.cases.length} 个用例` : '无已索引用例（未知）'}；${scope}`),
+      summary: shown(`${row.cases.length ? `${row.cases.length} 个用例` : '无已索引用例（完整视图内）'}；${scopeText(scope)}`),
       location: { slot: loc.slot, source: loc.source, parser: 'json@1', selector: loc.selector }, fields: row as unknown as Record<string, unknown> };
   });
   const facts = { product: view.product, build: view.build, root: view.root, scope, view: { source: view.source, truncated: view.truncated, skipped: view.skipped, missing: view.missing,
-    total_keys: view.total_keys, total_entries: view.total_entries, listed_keys: Object.keys(view.keys).length, listed_entries: Object.keys(view.entries).length } };
+    cut_keys: view.cut_keys, only: view.only, total_keys: view.total_keys, total_entries: view.total_entries, listed_keys: Object.keys(view.keys).length, listed_entries: Object.keys(view.entries).length } };
   const result = { items, groups: [facts], warnings: read.warnings };
   if (utf8Length(JSON.stringify(result)) > 5 * 1024 * 1024) return fail('投影结果超过 5 MiB', '把需求编号列表分成更小的批次');
   return result;
