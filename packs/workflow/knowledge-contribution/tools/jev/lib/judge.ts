@@ -6,11 +6,15 @@ import { need, record, sha, Refusal, type LocalStore } from './local.ts';
 import type { Piece } from './hub.ts';
 export interface Work { state: Record<string, string>; questions: Record<string, JevQuestion>; pieces: Piece[] }
 export class Judge {
+  stopped:string|null=null;
+  attempts=0; sentFragments=new Map<string,string>(); failures=new Map<string,string>();
   model: string; client: HttpJev; store: LocalStore; send: string[]; cache = new Map<string, JevJudgmentRecord>();
   constructor(model: string, key: () => string, baseUrl: string | undefined, store: LocalStore, send: string[], options: Partial<HttpJevOptions> = {}) {
     this.model = model; this.store = store; this.send = send;
     this.client = new HttpJev({ ...options, apiKey: key, model, baseUrl, onAttempt: async (event) => {
+      this.attempts++;
       const fragments = Object.entries(event.request.state).map(([id, value]) => ({ id, sha256: sha(typeof value === 'string' ? value : JSON.stringify(value)), bytes: Buffer.byteLength(typeof value === 'string' ? value : JSON.stringify(value)), ...this.activePieces.get(id) }));
+      for(const fragment of fragments){if(fragment.reference&&fragment.kind)this.sentFragments.set(fragment.reference,fragment.kind);}
       await store.append('requests.jsonl', { at: new Date().toISOString(), request_digest: inputDigest(event.request), fragments, send, questions: Object.keys(event.request.questions), attempts: event.attempt, http_status: event.status, request_id: event.requestId, result: event.result });
     } });
   }
@@ -25,6 +29,7 @@ export class Judge {
     const stateDigest = inputDigest(work.state); const answers: Record<string, JevJudgmentRecord> = {}; const pending: Record<string, JevQuestion> = {};
     for (const [id, question] of Object.entries(work.questions)) { const key = reuseKey({ model: this.model, question, stateDigest })!; const old = this.cache.get(key); if (old) answers[id] = old; else pending[id] = question; }
     if (Object.keys(pending).length === 0) return { answers, failed: [] };
+    if(this.stopped){for(const id of Object.keys(pending))this.failures.set(id,this.stopped);return {answers,failed:Object.keys(pending)};}
     const send = async (questions: Record<string, JevQuestion>, split: boolean): Promise<string[]> => {
       const actual = { ...checked.request, questions };
       try {
@@ -36,10 +41,12 @@ export class Judge {
         }
         return [];
       } catch (error) {
-        const code = record(error) ? error.code : null; // Error properties are read directly below.
         const typed = error as { code?: string };
         if (split && typed.code === 'JEV_TOO_LARGE' && Object.keys(questions).length > 1) { const ids = Object.keys(questions); const middle = Math.ceil(ids.length / 2); return [...await send(Object.fromEntries(ids.slice(0, middle).map((id) => [id, questions[id]!])), false), ...await send(Object.fromEntries(ids.slice(middle).map((id) => [id, questions[id]!])), false)]; }
         if (error instanceof Refusal) throw error;
+        const action=typed.code==='JEV_UNAUTHORIZED'?'密钥被拒；所有者换密钥后重跑':typed.code==='JEV_RATE_LIMITED'?'服务限流；等几秒或 Retry-After 指定时间后重跑':typed.code==='JEV_TOO_LARGE'?'请求太大；少放片段后重跑':typed.code==='JEV_BAD_RESPONSE'?'应答未通过校验；核对确切模型版本和服务端后重跑':'服务不可用或本地超时；稍后重跑，已有回答复用；本地超时不证明对方没处理，可能已计费';
+        if(typed.code==='JEV_UNAUTHORIZED'||typed.code==='JEV_RATE_LIMITED'||typed.code==='JEV_BAD_RESPONSE'||typed.code==='JEV_UNAVAILABLE')this.stopped=action;
+        for(const id of Object.keys(questions))this.failures.set(id,action);
         return Object.keys(questions);
       }
     };
@@ -59,5 +66,5 @@ export function questionWork(input: unknown, pieces: Piece[], model: string): Wo
   need(grouped.size > 0, '至少填写一道题；按 ask 样例重跑');
   const out: Work[] = [];
   for (const group of grouped.values()) { const ids = Object.keys(group.questions); for (let i = 0; i < ids.length; i += 10) out.push({ state: group.state, questions: Object.fromEntries(ids.slice(i, i + 10).map((id) => [id, group.questions[id]!])), pieces: pieces.filter((p) => Object.hasOwn(group.state, p.id)) }); }
-  for (const work of out) checkRequest({model,state:work.state,questions:work.questions},{pinnedModel:model,maxRequestBytes:16*1024*1024}); return out;
+  for (const work of out) {checkRequest({model,state:work.state,questions:work.questions},{pinnedModel:model,maxRequestBytes:16*1024*1024});const base=estimateTokens(JSON.stringify(work.state))+256;need(base+estimateTokens(JSON.stringify(work.questions))+32*Object.keys(work.questions).length<=48000&&Object.values(work.questions).every(q=>base+estimateTokens(JSON.stringify(q))+32<=24000),'题目或片段超过令牌预算；减少片段和选项说明后重跑');} return out;
 }

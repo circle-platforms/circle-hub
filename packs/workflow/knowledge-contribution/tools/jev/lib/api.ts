@@ -1,10 +1,4 @@
-// Public surface of hub/jev: the judgment shapes used for knowledge placement (K04). Other packages import only from
-// this file. Only yes/no (noul), single choice and score questions exist here (K04 R[0]); the type names were the
-// vendor's API discriminators, not a vocabulary axis. The Hub calls no model (owner decision 2026-10-22): the HTTP
-// client that talked to the judgment service is removed, and what remains is the scripted judge for tests and the
-// pure shapes (validation, batching, judgment records, placement decisions) the Hub will use to verify the bot's
-// placement proposals with deterministic rules.
-
+// Standalone client judgment shapes; Hub runtime never imports this directory.
 /** JSON data as sent to and returned by the service. */
 export type JevJson = null | boolean | number | string | JevJson[] | { [key: string]: JevJson };
 

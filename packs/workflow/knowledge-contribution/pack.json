@@ -8,8 +8,8 @@
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "5a8f9ad7679d00edd339635686606774c54ee4c0157e50affaeb36d46eb21ede",
-      "size": 2057
+      "sha256": "ea0dcfec2b5019e7ffb3f4bf323a4c95d93f0054f20386e8f7d15c6e7da9c96c",
+      "size": 2202
     },
     {
       "path": "checks.json",
@@ -92,24 +92,54 @@
       "size": 900
     },
     {
+      "path": "tools/jev/SKILL.md",
+      "sha256": "2f017da3f384ff98588682c8527c49364c0b519f70f88b382d91c3d092ffede8",
+      "size": 5285
+    },
+    {
       "path": "tools/jev/egress.json",
       "sha256": "f52697c6e959913c053e61df368ec792543f7a2f399a5468a4a4248022e95183",
       "size": 158
     },
     {
+      "path": "tools/jev/examples/ask.json",
+      "sha256": "12b7c50c8fc3b9dcc58d5295d562acdddbd3cac874cdd0168d272fb51473f281",
+      "size": 648
+    },
+    {
+      "path": "tools/jev/examples/proposals.json",
+      "sha256": "866bb5561bb1cb0a41cc8ca7c7f1bf1da6bea3ddc66f2804d115b3ff121e5124",
+      "size": 949
+    },
+    {
       "path": "tools/jev/generated.json",
-      "sha256": "347cb96f4b5565dfa438c3fa5be84ae1a9d3a2397da96796d58076542a46bc25",
-      "size": 984
+      "sha256": "da2ec07af609d250e2dea51f565da0942ccc027c32bbc7966d04a81044dabbaf",
+      "size": 1313
+    },
+    {
+      "path": "tools/jev/hooks.json",
+      "sha256": "eea571812944787cbfebefd602cc0b9f6f92e1bf683df0bc6aa7fade275006e6",
+      "size": 718
+    },
+    {
+      "path": "tools/jev/jev.ts",
+      "sha256": "484b25fa47e0440457dd7d58db6e4ed1592fd37100486f3086528f68f0dae364",
+      "size": 5235
     },
     {
       "path": "tools/jev/lib/api.ts",
-      "sha256": "13e6ae5975ad961d53727ede60c6e08960102786edf7efcedf9526425f83205e",
-      "size": 4886
+      "sha256": "3f554059a0586dca009db429beedf0097be28e8e3fb5402d3d79f70903882244",
+      "size": 4338
     },
     {
       "path": "tools/jev/lib/batch.ts",
       "sha256": "21bb26876138a386e86a1eb709b857debc8abaa3f1b6b81962f606e9ebdc2a0d",
       "size": 14041
+    },
+    {
+      "path": "tools/jev/lib/calibration.ts",
+      "sha256": "b38508541fbefc7a4fbfd28c6636c2f552cfd79505b74de3cd85768e0eda0247",
+      "size": 3900
     },
     {
       "path": "tools/jev/lib/canonical.ts",
@@ -128,28 +158,33 @@
     },
     {
       "path": "tools/jev/lib/http.ts",
-      "sha256": "b734b7c80181df23c0f97d35041c2ddc396ca05236720228db11b44cd5b7f338",
-      "size": 22572
+      "sha256": "67fdc4fa0deded7fa5e50da1550ac45f78c79f39755e5b40ed0bb6dbbd437789",
+      "size": 23229
     },
     {
       "path": "tools/jev/lib/hub.ts",
-      "sha256": "1b56bfa2fa61b4281ec55db674d7f4f3b5d48755f0fbc23788f20ffd9c6bfa53",
-      "size": 2861
+      "sha256": "619a5f2c7c98522fdd602f973e4d0a7295d5a1554292bf2b2e46b46ee40d96a5",
+      "size": 3002
     },
     {
       "path": "tools/jev/lib/judge.ts",
-      "sha256": "25226f0d6875b8bf0aa70ae95e322387b32fc007868ec9200411b946ad2a899a",
-      "size": 7223
+      "sha256": "b8450b94b12f11678b7ebd386a122b4b0e11ecf22b37f7984770028305e68cd5",
+      "size": 8597
     },
     {
       "path": "tools/jev/lib/local.ts",
-      "sha256": "f6a10fa3e0b09701b28febd69f09e94a2b739ada99d04e2da96d5ef3476d287c",
-      "size": 5419
+      "sha256": "25d42807984fa8a691d7ab2e05dc01f51d403aaf0e571eef63a8e0e120455f67",
+      "size": 6157
     },
     {
       "path": "tools/jev/lib/pieces.ts",
-      "sha256": "9b41c389ea02d266d9daa5bc4ebcb88dbd134cc6aa0597d31bae2d0ff34297db",
-      "size": 2666
+      "sha256": "98fe0c7d4298d43c363902a23a637d5e776c58a4d6daeaef69d6ee0eaf968109",
+      "size": 2823
+    },
+    {
+      "path": "tools/jev/lib/placement.ts",
+      "sha256": "f484b17d7b8ba03619eab8435af84fa812fc311ddfd131e86efc043a68601d8a",
+      "size": 1445
     },
     {
       "path": "tools/jev/lib/record.ts",
@@ -165,6 +200,11 @@
       "path": "tools/jev/lib/validate.ts",
       "sha256": "7777fabb8efdac145b2ecc9dbc3a3aa81b8903c44d46dfc864c64d7c8f6594ca",
       "size": 19515
+    },
+    {
+      "path": "tools/jev/lib/workflow.ts",
+      "sha256": "96d1b18ef2158d92000b625d43f7fe1bb6b18fdedd63873bfb1acf5a62e0d835",
+      "size": 15455
     },
     {
       "path": "workflow.json",

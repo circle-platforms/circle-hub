@@ -4,8 +4,8 @@ import type { AddressInfo } from 'node:net';
 import { GetNodesOutput } from '../../../../contracts/src/tools.ts';
 import { ScriptedJev, type JevRequest } from '../../../../hub/jev/api.ts';
 export const MODEL = 'jev-scripted-10.6.0';
-export const JEV_KEY = 'synthetic-jev-credential-abcdef';
-export const HUB_KEY = 'synthetic-hub-credential-ghijkl';
+export const JEV_KEY = 'FictJeV_K8rZ9yX7vW6uT5sR4qP3nM2';
+export const HUB_KEY = 'FictHub_L2mN3pQ4rS5tU6vW7xY8zA9bC0';
 export const ROOT = 'a'.repeat(64);
 export const digest = (n: number) => n.toString(16).padStart(64, '0');
 export function entry(kind: string, text: string, n: number, path: string, data: Record<string,unknown> = {}) { return { entry: digest(n), kind, statement: text, reference: `tree:${ROOT}${path}@${digest(n)}`, applicability: '合成适用条件', data }; }

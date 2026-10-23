@@ -1,7 +1,7 @@
 import { need, record, secureUrl, type LocalStore } from './local.ts';
 export interface Piece { id: string; reference: string; kind: string; text: string; sha256: string; bytes: number }
 export class Hub {
-  url: URL; token: string; guard: (v: unknown) => void; id = 0; initialized = false;
+  url: URL; token: string; guard: (v: unknown) => void; id = 0; initialized = false; lastText: string[] = [];
   constructor(url: string, token: string, guard: (v: unknown) => void) { this.url = secureUrl(url); this.token = token; this.guard = guard; }
   async rpc(method: string, params: unknown): Promise<any> {
     const id = ++this.id; const response = await fetch(this.url, { method: 'POST', headers: { authorization: `Bearer ${this.token}`, 'content-type': 'application/json', accept: 'application/json, text/event-stream' }, body: JSON.stringify({ jsonrpc: '2.0', id, method, params }), redirect: 'manual', signal: AbortSignal.timeout(60_000) });
@@ -11,7 +11,7 @@ export class Hub {
   }
   async call(name: string, args: unknown): Promise<any> {
     if (!this.initialized) { await this.rpc('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'jev-skill', version: '1.1.0' } }); this.initialized = true; }
-    const result = await this.rpc('tools/call', { name, arguments: args }); const value = result.structuredContent;
+    const result = await this.rpc('tools/call', { name, arguments: args }); this.lastText=(result.content??[]).filter((v:any)=>v.type==='text'&&typeof v.text==='string').map((v:any)=>v.text); const value = result.structuredContent;
     need(record(value), 'Hub 缺少结构化应答；更新客户端连接后重跑'); return value;
   }
   async nodes(root: string, paths: string[], depth = 1): Promise<any[]> {

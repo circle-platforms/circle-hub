@@ -21,7 +21,7 @@ export async function readPiece(hub: Hub, id: string, reference: string, allowed
   } else { need(/^src:[a-f0-9]{64}\//.test(reference), '只收 tree: 条目或带选择器的 src: 片段引用；重新读取精确引用'); kind = 'src'; }
   need(allowed.has(kind), '该种类默认不外发；需要本次明确 --send 并经所有者确认，或改用允许的手册片段');
   const value = await hub.call('get_nodes', { reference }); const content = value.content;
-  need(value.call_result === 'ok' && record(content) && content.read_tier === 'model_readable' && content.readable === true && typeof content.text === 'string', '源不是 model_readable 或没有可读原文；按 Hub 的读取说明补齐可读源后重跑，不能选择加入绕过档位');
+  need(value.call_result === 'ok' && record(content) && content.read_tier === generated.model_readable && content.readable === true && typeof content.text === 'string', `源不是${generated.axes.read_tier.find((v:any)=>v.code===generated.model_readable).label}或没有可读原文；Hub 说明：${typeof content?.note==='string'?JSON.stringify(content.note):'没有可外发的正文'}；补齐可读源后重跑，不能选择加入绕过档位`);
   const text = statement ?? content.text; need(typeof text === 'string' && text !== '', '片段没有原文；从 Hub 补取后重跑');
   return { id, reference, kind, text, sha256: sha(text), bytes: Buffer.byteLength(text) };
 }

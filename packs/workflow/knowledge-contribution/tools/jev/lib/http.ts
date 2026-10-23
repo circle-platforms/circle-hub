@@ -24,7 +24,7 @@ const TOKEN_LIMIT_MARKER = 'max_tokens_exceeded';
 // This many consecutive key characters in anything the service sent count as an echo of the key.
 const KEY_ECHO_RUN = 12;
 // RFC 6750 b64token: never escaped in JSON text and never able to break a header.
-const API_KEY = /^[A-Za-z0-9._~+/-]{1,4096}={0,8}$/;
+const API_KEY = /^[A-Za-z0-9._~+/-]+=*$/;
 const REQUEST_ID = /^[A-Za-z0-9._:-]{1,128}$/;
 const REASON = /^[a-z][a-z0-9_.]{0,63}$/;
 const SECONDS = /^\d+(?:\.\d+)?$/;
@@ -372,7 +372,7 @@ export class HttpJev implements JevClient {
       const message = error === KEY_TIMEOUT ? `取 Jev API 密钥超时（${this.#timeoutMs} 毫秒）` : '取 Jev API 密钥失败';
       return fault('JEV_UNAUTHORIZED', message, false, { sent: false });
     }
-    if (typeof supplied !== 'string' || !API_KEY.test(supplied)) {
+    if (typeof supplied !== 'string' || supplied.length>4096 || !API_KEY.test(supplied)) {
       return fault('JEV_UNAUTHORIZED', 'Jev API 密钥为空或含不允许的字符', false, { sent: false });
     }
     return supplied;
@@ -408,11 +408,13 @@ export class HttpJev implements JevClient {
       } catch (error) {
         return lost(error);
       }
+      if([...response.headers.values()].some(value=>echoes(value))){await response.body?.cancel().catch(()=>{});return fault('JEV_BAD_RESPONSE','Jev 应答头回显密钥，整份丢弃',false,{status:response.status});}
       const header = response.headers.get(REQUEST_ID_HEADER);
       const requestId = header !== null && REQUEST_ID.test(header) && !echoes(header) ? header : null;
       const status = response.status;
       if (status !== 200) {
         const read = await readBody(response, ERROR_BODY_BYTES, true);
+        if(read.kind==='ok'){const text=new TextDecoder().decode(read.bytes);if(echoes(text))return fault('JEV_BAD_RESPONSE','Jev 应答回显密钥，整份丢弃',false,{status,requestId});try{if(echoes(JSON.stringify(JSON.parse(text))))return fault('JEV_BAD_RESPONSE','Jev 应答回显密钥，整份丢弃',false,{status,requestId});}catch{}}
         const scan = read.kind === 'ok' ? scanErrorBody(read.bytes, read.truncated) : { reasons: [], tokenLimit: false };
         scan.reasons = scan.reasons.filter((reason) => !echoes(reason));
         return statusFault(status, scan, requestId, response.headers);
@@ -433,7 +435,8 @@ export class HttpJev implements JevClient {
       const context: ResponseContext = { pinnedModel: this.pinnedModel, requestId, attempts: attempt, status };
       let validated: JevResponse;
       try {
-        validated = checkResponse(checked.request, parseResponseText(text, context), context);
+        const parsed=parseResponseText(text,context);if(echoes(JSON.stringify(parsed)))return echoed;
+        validated = checkResponse(checked.request, parsed, context);
       } catch (error) {
         // Validation messages quote nothing the service sent; the check stays as a guard.
         if (error instanceof JevError && !echoes(error.message)) throw error;

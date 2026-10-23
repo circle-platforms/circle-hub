@@ -1,4 +1,4 @@
-# knowledge-contribution 1.0.0
+# knowledge-contribution 1.1.0
 
 所有者 2026-10-23 傍晚决定：候选留在 Circle 本地。Circle 的整合技能判定成为事实后开独立回注运行；Hub 核对原文、来源和归位，要求项全部满足才入回注层。依据是新版 `docs/hub-r4-tasks/kb-candidates.md`、知识库方向第二节及 K03、W07 R[4]、P10、K02 F[6]。
 
@@ -40,3 +40,26 @@
 `node pack-files.ts` 从生成词表写槽位声明并重签本目录；`node pack-files.ts --check` 核对生成槽位和清单。包测试还通过真实目录读取及发布校验器验证，运行测试使用临时 PostgreSQL、合成产品根和沙箱，没有真实资料或设备。
 
 签名流程、尚未入根来源只绑片段/修订、Circle 本地整合技能不属于本版。矛盾关系读侧标记由 K3 分支实现；本包提供集中关系形状，不冒充已经完成矛盾裁定。模型其他段落仍有旧候选隐私措辞（例如 B02 R[3]）；本次按负责人指定的模型改写范围处理 K03/W07/P10/K02 和 knowledge_layer，旧措辞由集成者一并对齐，运行时没有新增或保留候选写通道。
+
+## Circle 的 Jev 技能（1.1.0）
+
+技能位于 tools/jev，自成一体，Node 24 直接运行，只用 Node 内置模块和 fetch。Hub 核心、知识层、包内函数不导入它；它不会把 Jev 密钥交给 Hub。技能脚本从 Circle 执行命令的标准输入读取密钥，既不读环境密钥，也不读 Circle 文件或钥匙串。官方接口说明见 [TypeSafe System One](https://docs.typesafe.ai/api/system-one)；本版有意保留仓库对 noul/choice/score 的字符串问题子集，服务商增加的其他能力不在技能接口中。
+
+先按 pack.json 下载并核对整个包，再将其中 tools/jev 的已列文件原样复制到 集成者另备的 Circle 主目录的 skills/jev（不是把整个回注包当技能安装）；运行 `node packs/workflow/knowledge-contribution/pack-files.ts --verify-install <安装目录>` 逐项核大小、SHA-256、缺项、额外文件和链接。不要改写目录内的脚本、hooks.json、egress.json 或 generated.json。generated.json 中“包号”仅指 id@版本，本版 knowledge-contribution@1.1.0；它不能存整份清单摘要，否则自引用。真实身份核对仍以 pack.json 的规范清单摘要和每文件摘要为准。`pack-files.ts --check` 同时比对四个词表轴及外发策略快照，重签命令无参数。
+
+默认只向 Jev 发送 Hub 原树中的定义、行为和题目；默认不发用例、缺陷、观察或 src。选择加入只在本次 --send 生效；技能加载后钩子才要求确认，另备主目录也须安装同一钩子；档位必须是 model_readable，不能选择加入绕过。条目的种类、原文、引用以 Hub 返回为准，输入文件自报的 text/kind 无效。子节点说明永不取用例、缺陷或观察。问题最多 2000 字、选项说明最多 160 字；脚本不能证明模型撰写的问题里没有夹带受限原文，规程明确禁止。判断和请求记录保存在 Circle 的工作目录内，不在仓库，不进 Hub；submit 只上传这批提议引用的判断记录（题目、候选、摘要、版本、概率、用量等），以 notes 的 src 引用使判断可追查，不上传 Jev 凭据或 state 原文。
+
+ask 的拒收、概率及模型校验、令牌估算、分批与复用键照保留的 hub/jev 纯规则改写；客户端传输由已移除的旧客户端改写。真实地址只用 HTTPS，回环假服务可 HTTP；scripted 模型只能对回环端点。每次尝试读取本进程 stdin 提供的密钥，密钥只进对应服务的 Authorization 头，不进请求体、记录、错误或终端。应答含密钥或连续 12 个字符时整份丢弃，不跟随重定向。请求每批最多 10 题，保守预算 48000/24000，默认并发 2；429/529/408/5xx/断网/超时重试两次；Retry-After 超过 60 秒直接失败；401/403 停止；413/上下文超限拆半一次。重跑复用同版本、同问题、同候选顺序和同 state 摘要的记录；改一片段只影响依赖该片段的批次。
+
+校准以当前提供根的原树 entries 为金标，排除 contributions。按集成者的明确前提，只提供 Hub 按决定 15 停止判断归位以后生产的根，历史含判断挂法的根不得提供。当前 get_nodes 没有逐条挂法字段，客户端不能机械证明每条的挂法；后续须由核心在条目上提供挂法，本任务没有补这个接口。校准按条目摘要排序、遮路径字面及 data.words，在每个已知层级提问；子节点说明也遮字且排除被抽条目。阈值按 placement.choice 和确切模型，样例按 input 后来覆盖先前集合，使用至少 30 个且 Wilson 下界不低于 0.95 的最低概率。30 个全对仍可能不足，不能放宽规则。--dry-run 只读 Hub、计数，不问 Jev；去掉该参数才调用。
+
+place 保留停法、下一步、候选、阈值、版本、概率及判断记录摘要；没有校准只留候选，不出提议。原文和树不由技能改写。提议仅有槽位需要的 code/text/data；版本和 p 只在 text 中，不向 data 增加置信分数。submit 开独立回注运行、核根、上传判断记录、提交，并原样交付 Hub 回执文字。data 里的概率、模型自报依据等字段仍被本包拒收。首次 receipt.json 不覆盖，后续按摘要命名，receipts.jsonl 只追加。未受理必须照回执修正或逐条写理由跳过，不能声称已经入层。
+
+旧 hub/jev、placement.ts、calibration.ts 只剩纯规则和测试形状；客户端不导入它们，通过对照测试保证收拒、复用身份、遮字和阈值一致。开发只用回环脚本化假 Jev；真实服务首次合成内容调用、技能安装和持久部署回注由集成者在所有者存好密钥后验收。
+
+
+本技能不能装到评审专用主目录：那里只放行 Hub 六个工具及 write_todos，技能工具和 execute 都被拒绝。集成者另备主目录，钩子放行技能工具及 execute 执行 `node <技能目录>/jev/jev.ts`（这里技能目录指该主目录的 skills），并在这个主目录存 JEV_API_KEY、HUB_TOKEN、JEV_MODEL、HUB_URL。技能 hooks.json 仅在会话加载技能后生效，不能保证直接执行脚本也出现确认卡片；集成者会把同一条 --send 的 ask 钩子同时装进该主目录自己的 hooks.json。主目录和钩子配置不由本分支修改。
+
+read_tier 的全部取值和标签同样由 pack-files.ts 写进 generated.json，运行时从快照读取，--check 比对。submit_result.model 只写包 id@版本；Jev 确切版本仍在提议陈述与判断记录里。需要精确包身份时取 start_run 回答的 run.pack_digest，保存于 lock.json 或 run-identities.jsonl，不写进 generated.json。
+
+判断记录上传不绑定为可共享运行输入，仅经 submit_result.notes 的 src 引用关联；上传只对本人和管理员可见，普通回注读者不能据此查看判断记录。因此 K04 R[5] 的记录可查只对提交人和管理员成立，这是本版限制，不声称对所有回注读者成立。

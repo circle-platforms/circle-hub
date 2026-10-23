@@ -1,5 +1,6 @@
 {
   "pack": "knowledge-contribution@1.1.0",
+  "model_readable": "model_readable",
   "axes": {
     "entry_kind": [
       {
@@ -49,6 +50,20 @@
       {
         "code": "contradicts",
         "label": "互相矛盾"
+      }
+    ],
+    "read_tier": [
+      {
+        "code": "model_readable",
+        "label": "模型可读"
+      },
+      {
+        "code": "function_bytes_only",
+        "label": "只许函数按引用读字节"
+      },
+      {
+        "code": "retain_only",
+        "label": "只保留"
       }
     ]
   }

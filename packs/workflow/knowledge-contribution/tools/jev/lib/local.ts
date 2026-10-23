@@ -1,5 +1,5 @@
-import { createHash } from 'node:crypto';
-import { appendFile, lstat, mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
+import { createHash, randomUUID } from 'node:crypto';
+import { appendFile, lstat, mkdir, readFile, realpath, rename, writeFile } from 'node:fs/promises';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
 export const record = (v: unknown): v is Record<string, any> => v !== null && typeof v === 'object' && !Array.isArray(v);
 export const sha = (v: string | Uint8Array): string => createHash('sha256').update(v).digest('hex');
@@ -36,6 +36,12 @@ export class LocalStore {
     await mkdir(target, { recursive: true, mode: 0o700 }); need((await realpath(target)).startsWith(root + sep), '输出目录不在工作目录；选择普通子目录'); return new LocalStore(target, guard);
   }
   async append(name: string, value: unknown) { this.guard(value); const file = resolve(this.directory, name); const stat = await lstat(file).catch(() => null); need(!stat || stat.isFile() && !stat.isSymbolicLink() && stat.nlink === 1, '记录文件含链接；换普通输出目录'); await appendFile(file, JSON.stringify(value) + '\n', { mode: 0o600 }); }
-  async write(name: string, value: unknown) { this.guard(value); const file = resolve(this.directory, name); need(file.startsWith(this.directory + sep), '输出文件不能离开结果目录'); await mkdir(resolve(file, '..'), { recursive: true, mode: 0o700 }); await writeFile(file, JSON.stringify(value, null, 2) + '\n', { mode: 0o600, flag: 'wx' }); }
+  async write(name: string, value: unknown, replace = false) {
+    this.guard(value); const file=resolve(this.directory,name);need(file.startsWith(this.directory+sep),'输出文件不能离开结果目录');
+    const rel=relative(this.directory,resolve(file,'..'));let parent=this.directory;
+    for(const part of rel.split(sep).filter(Boolean)){parent=resolve(parent,part);const stat=await lstat(parent).catch(()=>null);need(!stat||stat.isDirectory()&&!stat.isSymbolicLink(),'结果目录不能含链接');if(!stat)await mkdir(parent,{mode:0o700});}
+    const bytes=JSON.stringify(value,null,2)+'\n';const stat=await lstat(file).catch(()=>null);if(stat){need(stat.isFile()&&!stat.isSymbolicLink()&&stat.nlink===1,'结果文件不能含链接');if(await readFile(file,'utf8')===bytes)return;need(replace,'已有回执不覆盖；使用新的输出目录或查看已有回执');}
+    if(!replace)await writeFile(file,bytes,{mode:0o600,flag:'wx'});else{const temp=file+'.'+randomUUID()+'.tmp';await writeFile(temp,bytes,{mode:0o600,flag:'wx'});await rename(temp,file);}
+  }
   async records(name: string): Promise<any[]> { const file = resolve(this.directory, name); const stat = await lstat(file).catch(() => null); if (!stat) return []; need(stat.isFile() && !stat.isSymbolicLink() && stat.nlink === 1, '记录文件不能是链接；核对输出目录'); const text = await readFile(file, 'utf8'); this.guard(text); return text.trim() === '' ? [] : text.trimEnd().split('\n').map((line) => JSON.parse(line)); }
 }
