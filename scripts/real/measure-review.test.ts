@@ -198,3 +198,13 @@ test('node-id refutations on fallback identities are disclosed without failing t
   assert.ok(lines.some(l => l.includes('误报 0、漏标 0') && l.includes('data.id 缺失或重复 3 个')));
   assert.ok(!lines.join('\n').includes('same#'));
 });
+
+test('measurement reports each catalog mark as lacking an independent answer without judging it', () => {
+  const { out, source, plan: planPath } = fixtures(document(1), []);
+  const delivered = [{ item: 'doc:c1', requirements: [{ requirement: 'catalog', layers: [{ terminal: 'violation', attribution: 'author_input' }], claims: ['core.catalog.not_member', 'core.catalog.param_out_of_range'].map(code => ({ statement: { verdict: 'refute', code }, qualifier: { nature: 'fact', source_role: 'subject' } })) }] }];
+  const drivers = fakeDrivers({ drafts: [{ calls: callLine('rn_synthetic', 'accepted'), run: () => runDetail({ items: 1, sources: [{ reference: `src:${copyShaOf(out)}` }], delivered }) }] });
+  const lines: string[] = [];
+  assert.equal(measureReview({ ...options(out), source, plan: planPath }, drivers, line => lines.push(line)), 0);
+  assert.ok(lines.some(l => l.includes('目录类标记还没有独立答案 2 条')));
+  assert.ok(!lines.join('\n').includes('core.catalog'));
+});

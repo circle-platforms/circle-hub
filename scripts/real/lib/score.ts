@@ -77,10 +77,9 @@ export interface Score {
   recall: { mechanical: [number, number]; judgment: [number, number] };
   /** Marks of the Hub on cases no defect was injected into, split by code family. */
   structure: StructureCompare;
-  /** Marks with no independent answer yet (tag_variant, catalog): their total and the ones the baseline did not have.
-   * The missing fact is the independent case-to-command extraction; the next action is the gold-case-commands work
-   * item, whose answer plugs in here. Until then these are counted, never judged. */
-  otherMarks: { total: number; fresh: number };
+  /** Marks with no independent answer yet: count claims, never adjudicate them. Command paths alone do not give
+   * an independent answer for catalog claims: the cited command lines and parameters need a separate tree parser. */
+  otherMarks: { total: number; fresh: number; catalog: { total: number; fresh: number }; entries: Extra[] };
   /** Literal static-layer entries that are neither pass nor violation: counted apart, never scored. */
   literalUnscored: number;
   /** Cases without a unique data.id in the copy: counted apart, never scored. */
@@ -255,15 +254,21 @@ export function score(gold: readonly GoldEntry[], result: ResultLike, options: S
 
   // The untouched cases: the Hub's structure marks against the independent answer, everything else counted only.
   const structure: StructureCompare = { supported: [], falsePositives: [], missed: [] };
-  const otherMarks = { total: 0, fresh: 0 };
+  const otherMarks: Score['otherMarks'] = { total: 0, fresh: 0, catalog: { total: 0, fresh: 0 }, entries: [] };
   let literalUnscored = 0;
   for (const [node, s] of seen) {
     if (touched.has(node)) continue;
     if (s.literalUnscored) literalUnscored += 1;
     for (const code of s.marks) {
       if (!isStructure(code)) {
+        const inBaseline = (before.get(node)?.marks ?? []).includes(code);
         otherMarks.total += 1;
-        if (!(before.get(node)?.marks ?? []).includes(code)) otherMarks.fresh += 1;
+        if (!inBaseline) otherMarks.fresh += 1;
+        otherMarks.entries.push({ node, codes: [code], inBaseline });
+        if (code.startsWith('core.catalog.')) {
+          otherMarks.catalog.total += 1;
+          if (!inBaseline) otherMarks.catalog.fresh += 1;
+        }
         continue;
       }
       const answer = options.literal?.cases.find((c) => c.id === node)?.codes ?? [];
@@ -370,8 +375,8 @@ export function render(s: Score): string[] {
     `只有模型判断才看得见的缺陷：初评发现 ${pct(s.recall.judgment)}，其中被复核证实 ${s.detections.filter((d) => d.entry.seen_by === 'judgment' && d.confirmed).length}，复核另有发现 ${s.detections.filter((d) => d.entry.seen_by === 'judgment' && d.verify).length}`,
     '',
     s.structureCompared
-      ? `未注入的用例上的字面标记：支持 ${s.structure.supported.length}、误报 ${s.structure.falsePositives.length}、漏标 ${s.structure.missed.length}；未独立核对 ${s.otherMarks.total}（未改动评审里没有的 ${s.otherMarks.fresh}）；不计分 ${s.literalUnscored + s.noUniqueId}（data.id 缺失或重复 ${s.noUniqueId} 个）`
-      : `未注入的用例上的字面标记：没有比对（缺副本的独立答案，补法：score-injection.ts 带 --copy 重新计分）`,
+      ? `未注入的用例上的字面标记：支持 ${s.structure.supported.length}、误报 ${s.structure.falsePositives.length}、漏标 ${s.structure.missed.length}；未独立核对 ${s.otherMarks.total}（未改动评审里没有的 ${s.otherMarks.fresh}）；目录类标记还没有独立答案 ${s.otherMarks.catalog.total} 条（未改动评审里没有的 ${s.otherMarks.catalog.fresh} 条）；不计分 ${s.literalUnscored + s.noUniqueId}（data.id 缺失或重复 ${s.noUniqueId} 个）`
+      : `未注入的用例上的字面标记：没有比对（缺副本的独立答案，补法：score-injection.ts 带 --copy 重新计分）；目录类标记还没有独立答案 ${s.otherMarks.catalog.total} 条（未改动评审里没有的 ${s.otherMarks.catalog.fresh} 条）`,
     `未注入的用例上模型的发现：初评 ${s.extras.length} 个用例（未改动评审里没有的 ${s.extras.filter((e) => !e.inBaseline).length}），复核新增 ${s.verifyExtras.length} 个用例`,
   ];
   return lines;
@@ -395,6 +400,9 @@ export function detail(s: Score): string {
   for (const m of s.structure.supported) lines.push(`- 支持：${m.node} ${m.code}`);
   for (const m of s.structure.falsePositives) lines.push(`- 误报：${m.node} ${m.code}`);
   for (const m of s.structure.missed) lines.push(`- 漏标：${m.node} ${m.code}`);
+  lines.push('', '还没有独立答案的标记（只计条数，不作为支持、误报或漏标）：');
+  for (const m of s.otherMarks.entries) lines.push(`- ${m.node} ${m.codes.join('、')}：还没有独立答案${m.inBaseline ? '（未改动评审里也有）' : '（未改动评审里没有）'}`);
+  lines.push('下一步：由集成者排期，另行解析命令树并核对被引用的命令行和参数；用例的命令路径不提供这份独立答案');
   lines.push('', '未注入的用例上模型的发现：');
   for (const e of s.extras) lines.push(`- ${e.node}：${e.codes.join('、')}${e.inBaseline ? '（未改动的评审里也有）' : ''}`);
   for (const n of s.verifyExtras) lines.push(`- 复核新增：${n}`);

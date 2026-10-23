@@ -170,7 +170,7 @@ test('the screen lines carry no node ids, titles or texts; the detail file does'
 
 test('catalog refutations of model command statements stay separate from subject marks', () => {
   const commandClaim = { statement: { verdict: 'refute', code: 'core.catalog.not_member' }, qualifier: { nature: 'fact', source_role: 'artifact_under_verification' } };
-  const subjectClaim = { statement: { verdict: 'refute', code: 'core.catalog.value_out_of_range' }, qualifier: { nature: 'fact', source_role: 'subject' } };
+  const subjectClaim = { statement: { verdict: 'refute', code: 'core.catalog.param_out_of_range' }, qualifier: { nature: 'fact', source_role: 'subject' } };
   const layer = { terminal: 'violation', attribution: 'author_input' };
   const gold = [entry({ node: 'c1', seen_by: 'mechanical', kind: 'replace_command_word' })];
   const onlyModel = score(gold, result([item('c1', req('catalog', [commandClaim], layer))]));
@@ -181,7 +181,7 @@ test('catalog refutations of model command statements stay separate from subject
     { statement: { verdict: 'refute', code: 'synthetic.judgment' }, qualifier: { nature: 'judgment', source_role: 'subject' } },
     { statement: { verdict: 'refute', code: 'synthetic.no_role' }, qualifier: { nature: 'fact' } },
   ], layer))]));
-  assert.deepEqual(mixed.detections[0]!.seen.marks, ['core.catalog.value_out_of_range']);
+  assert.deepEqual(mixed.detections[0]!.seen.marks, ['core.catalog.param_out_of_range']);
   assert.equal(mixed.detections[0]!.draft, false);
 });
 
@@ -213,4 +213,24 @@ test('unidentifiable injected nodes are excluded from recall and repeated aggreg
   const judged = result([item('same#1', req('literal', [refute('core.structure.required_empty')], { terminal: 'violation', attribution: 'author_input' }))]);
   assert.deepEqual(score(gold, judged, { literal: answer }).recall.mechanical, [0, 0]);
   assert.equal(aggregate(gold, [{ result: judged, valid: true }], answer).kinds[0]!.injected, 0);
+});
+
+test('untouched catalog marks are counted per claim and explicitly have no independent answer', () => {
+  const base = result([item('catalog-case', req('catalog', [refute('core.catalog.not_member')], { terminal: 'violation', attribution: 'author_input' }))]);
+  const judged = result([
+    item('catalog-case', req('catalog', [refute('core.catalog.not_member'), refute('core.catalog.param_out_of_range')], { terminal: 'violation', attribution: 'author_input' })),
+    item('tag-case', req('literal', [refute('case-review.tag_variant')], { terminal: 'violation', attribution: 'author_input' })),
+  ]);
+  const scored = score([], judged, { baseline: base, literal: { cases: [{ id: 'catalog-case', codes: [] }, { id: 'tag-case', codes: [] }], noUniqueId: [] } });
+  assert.deepEqual(scored.otherMarks.catalog, { total: 2, fresh: 1 });
+  assert.equal(scored.otherMarks.total, 3);
+  assert.equal(scored.otherMarks.fresh, 2);
+  assert.deepEqual(scored.structure, { supported: [], falsePositives: [], missed: [] });
+  assert.match(render(scored).join('\n'), /目录类标记还没有独立答案 2 条（未改动评审里没有的 1 条）/);
+  const file = detail(scored);
+  assert.match(file, /catalog-case.*core.catalog.param_out_of_range.*还没有独立答案/);
+  assert.match(file, /另行解析命令树并核对被引用的命令行和参数/);
+  const screen = render(scored).join('\n');
+  assert.doesNotMatch(screen, /catalog-case|tag-case|core.catalog/);
+  assert.match(render(score([], judged, { baseline: base })).join('\n'), /目录类标记还没有独立答案 2 条/);
 });
