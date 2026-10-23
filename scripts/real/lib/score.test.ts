@@ -1,3 +1,4 @@
+import type { Attribution, StaticTerminal, Reason } from '../../../contracts/generated/vocabulary.ts';
 // Tests of the review scoring (task gold-review step 3). Fixtures are synthetic run results; the mind maps behind
 // the literal answers are synthetic too.
 import assert from 'node:assert/strict';
@@ -13,13 +14,13 @@ const doc = (root: MindNode): MindTree => ({ root });
 
 interface Req {
   requirement: string;
-  layers: Array<{ terminal: string; code?: string; tier?: string; attribution?: string }>;
+  layers: Array<{ terminal: StaticTerminal; code?: string; tier?: string; attribution?: Attribution; reason?: Reason }>;
   claims: Array<{ statement: { code?: string; verdict?: string; data?: { probe?: string } }; qualifier?: { nature?: string; source_role?: string } }>;
 }
 
 const req = (requirement: string, claims: Req['claims'], layer: Partial<Req['layers'][number]> = {}): Req => ({
   requirement,
-  layers: [{ terminal: layer.terminal ?? 'pass', ...(layer.code === undefined ? {} : { code: layer.code }), ...(layer.attribution === undefined ? {} : { attribution: layer.attribution }) }],
+  layers: [{ terminal: layer.terminal ?? 'pass', ...(layer.code === undefined ? {} : { code: layer.code }), ...(layer.attribution === undefined ? {} : { attribution: layer.attribution }), ...(layer.reason === undefined ? {} : { reason: layer.reason }) }],
   claims,
 });
 
@@ -42,7 +43,7 @@ test('a Hub refute inside the findings requirement is not a model finding; only 
 test('two refutes on one case both count; an expected refutation (unattributed) never marks', () => {
   const gold: GoldEntry[] = [entry({ seen_by: 'mechanical', kind: 'delete_expected', node: 'c1' })];
   const two = score(gold, result([item('c1',
-    req('literal', [refute('core.structure.required_empty'), refute('core.structure.type_mismatch')], { terminal: 'violation', attribution: 'subject' }),
+    req('literal', [refute('core.structure.required_empty'), refute('core.structure.type_mismatch')], { terminal: 'violation', attribution: 'author_input' }),
   )]));
   assert.deepEqual(two.detections[0]?.seen.marks.sort(), ['core.structure.required_empty', 'core.structure.type_mismatch']);
   const expected = score(gold, result([item('c1', req('literal', [refute('core.structure.required_empty')], { terminal: 'violation' }))]));
@@ -62,21 +63,21 @@ test('structure marks on untouched cases: supported, false positive and missed, 
   // The answer has a1 required_empty (its expectation is blank) and b2 required_empty (blank title).
   // Hub marks a1 required_empty (supported) and a1 duplicate_key (the answer does not have it: false positive);
   // Hub marks b2 type_mismatch (the answer does not have it: false positive) and misses b2 required_empty.
-  const scored = score(gold, result([item('a1', req('literal', [refute('core.structure.required_empty'), refute('core.structure.duplicate_key')], { terminal: 'violation', attribution: 'subject' })), item('b2', req('literal', [refute('core.structure.type_mismatch')], { terminal: 'violation', attribution: 'subject' })), item('touched', req('literal', [], { terminal: 'violation', attribution: 'subject' }))]), { literal: answer });
+  const scored = score(gold, result([item('a1', req('literal', [refute('core.structure.required_empty'), refute('core.structure.duplicate_key')], { terminal: 'violation', attribution: 'author_input' })), item('b2', req('literal', [refute('core.structure.type_mismatch')], { terminal: 'violation', attribution: 'author_input' })), item('touched', req('literal', [], { terminal: 'violation', attribution: 'author_input' }))]), { literal: answer });
   assert.deepEqual(scored.structure.supported, [{ node: 'a1', code: 'core.structure.required_empty' }]);
   assert.deepEqual(scored.structure.falsePositives, [{ node: 'a1', code: 'core.structure.duplicate_key' }, { node: 'b2', code: 'core.structure.type_mismatch' }]);
   assert.deepEqual(scored.structure.missed, [{ node: 'b2', code: 'core.structure.required_empty' }]);
 });
 
 test('a literal static layer that is neither pass nor violation is counted apart, never scored', () => {
-  const scored = score([entry({ node: 'c1' })], result([item('c2', req('literal', [], { terminal: 'skipped' })), item('c1', req('findings', [judgment('case-review.vague')]))]));
+  const scored = score([entry({ node: 'c1' })], result([item('c2', req('literal', [], { terminal: 'incomplete', reason: 'declared_skip' })), item('c1', req('findings', [judgment('case-review.vague')]))]));
   assert.equal(scored.literalUnscored, 1);
 });
 
 test('marks with no independent answer (tag_variant, catalog) are counted with their fresh ones', () => {
   const gold: GoldEntry[] = [entry({ node: 'c1' })];
-  const base = result([item('c2', req('catalog', [refute('core.catalog.not_member')], { terminal: 'violation', attribution: 'subject' }))]);
-  const now = result([item('c1', req('findings', [judgment('case-review.vague')])), item('c2', req('catalog', [refute('core.catalog.not_member')], { terminal: 'violation', attribution: 'subject' })), item('c3', req('literal', [refute('case-review.tag_variant')], { terminal: 'violation', attribution: 'subject' }))]);
+  const base = result([item('c2', req('catalog', [refute('core.catalog.not_member')], { terminal: 'violation', attribution: 'author_input' }))]);
+  const now = result([item('c1', req('findings', [judgment('case-review.vague')])), item('c2', req('catalog', [refute('core.catalog.not_member')], { terminal: 'violation', attribution: 'author_input' })), item('c3', req('literal', [refute('case-review.tag_variant')], { terminal: 'violation', attribution: 'author_input' }))]);
   const scored = score(gold, now, { baseline: base });
   assert.equal(scored.otherMarks.total, 2);
   assert.equal(scored.otherMarks.fresh, 1, 'the baseline already had c2\'s catalog mark');
@@ -128,14 +129,14 @@ test('aggregate: injections × valid runs per kind, four channels, one invalid r
     entry({ seen_by: 'judgment', kind: 'contradict_manual', node: 'b' }),
   ];
   const runA = result([
-    item('a', req('literal', [refute('core.structure.required_empty')], { terminal: 'violation', attribution: 'subject' })),
+    item('a', req('literal', [refute('core.structure.required_empty')], { terminal: 'violation', attribution: 'author_input' })),
     item('b', req('findings', [judgment('case-review.wrong_value')])),
-    item('u', req('literal', [refute('core.structure.required_empty')], { terminal: 'violation', attribution: 'subject' })),
+    item('u', req('literal', [refute('core.structure.required_empty')], { terminal: 'violation', attribution: 'author_input' })),
   ]);
   const runB = result([
-    item('a', req('literal', [refute('core.structure.required_empty')], { terminal: 'violation', attribution: 'subject' })),
+    item('a', req('literal', [refute('core.structure.required_empty')], { terminal: 'violation', attribution: 'author_input' })),
     item('b', req('findings', [])),
-    item('u', req('literal', [refute('core.structure.duplicate_key')], { terminal: 'violation', attribution: 'subject' })),
+    item('u', req('literal', [refute('core.structure.duplicate_key')], { terminal: 'violation', attribution: 'author_input' })),
   ]);
   const verifyB = result([item('b', req('verification', [{ statement: { code: 'new_finding', data: { probe: 'manual_check' } } }]))]);
   const runs = [
@@ -159,7 +160,7 @@ test('the screen lines carry no node ids, titles or texts; the detail file does'
   const gold: GoldEntry[] = [entry({ node: 'c1' })];
   const scored = score(gold, result([
     item('c1', req('findings', [judgment('case-review.vague')])),
-    item('u9', req('findings', [judgment('case-review.vague')]), req('literal', [refute('core.structure.required_empty')], { terminal: 'violation', attribution: 'subject' })),
+    item('u9', req('findings', [judgment('case-review.vague')]), req('literal', [refute('core.structure.required_empty')], { terminal: 'violation', attribution: 'author_input' })),
   ]), { literal: literalGold(map) });
   const screen = render(scored).join('\n');
   for (const secret of ['c1', 'u9', '标题甲', '标题乙', 'run:x']) assert.ok(!screen.includes(secret), `the screen leaks ${secret}`);
@@ -171,7 +172,7 @@ test('the screen lines carry no node ids, titles or texts; the detail file does'
 test('catalog refutations of model command statements stay separate from subject marks', () => {
   const commandClaim = { statement: { verdict: 'refute', code: 'core.catalog.not_member' }, qualifier: { nature: 'fact', source_role: 'artifact_under_verification' } };
   const subjectClaim = { statement: { verdict: 'refute', code: 'core.catalog.param_out_of_range' }, qualifier: { nature: 'fact', source_role: 'subject' } };
-  const layer = { terminal: 'violation', attribution: 'author_input' };
+  const layer: Req['layers'][number] = { terminal: 'violation', attribution: 'author_input' };
   const gold = [entry({ node: 'c1', seen_by: 'mechanical', kind: 'replace_command_word' })];
   const onlyModel = score(gold, result([item('c1', req('catalog', [commandClaim], layer))]));
   assert.equal(onlyModel.detections[0]!.mechanical, false);
@@ -269,3 +270,12 @@ test('review 16: draft recall and combined recall remain separately labeled afte
   assert.deepEqual(scored.recall.judgment, [1, 1]);
   assert.ok(render(scored).some(line => line.includes('初评发现 1/1') && line.includes('合起来 0/1')));
 });
+
+// Compile-time negative fixtures ensure future handwritten values are rejected.
+const invalidFixtures = () => {
+  // @ts-expect-error Subject is a source role, not an attribution.
+  req('literal', [], { attribution: 'subject' });
+  // @ts-expect-error A declared skip is incomplete with a reason, not a terminal.
+  req('literal', [], { terminal: 'skipped' });
+};
+void invalidFixtures;

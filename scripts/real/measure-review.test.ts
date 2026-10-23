@@ -1,3 +1,4 @@
+import type { Attribution, StaticTerminal, Reason } from '../../contracts/generated/vocabulary.ts';
 // Tests of the repeated measurement driver (task gold-review step 4) with fake sessions and a fake `run show`: no
 // real client, no real model, no real Hub. The fixtures are synthetic mind maps and run details.
 import assert from 'node:assert/strict';
@@ -8,6 +9,8 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import type { MindNode, MindTree, Planned } from './lib/inject.ts';
 import { judgeRun, measureReview, outAllowed, parseSession, type Drivers, type MeasureOptions, type SessionSpec } from './measure-review.ts';
+
+const staticFixture = (terminal: StaticTerminal, attribution?: Attribution, reason?: Reason) => ({ terminal, ...(attribution === undefined ? {} : { attribution }), ...(reason === undefined ? {} : { reason }) });
 
 const leaf = (id: string, text: string): MindNode => ({ data: { id, text }, children: [] });
 const kase = (id: string, text: string, expected: string, tag = 'configuration'): MindNode => ({ data: { id, text, resource: [tag], priority: 2 }, children: [leaf(`${id}e`, expected)] });
@@ -85,7 +88,7 @@ const copyShaOf = (out: string): string => createHash('sha256').update(readFileS
 test('three valid rounds with the Hub finding everything: exit 0, scores written, screen clean', () => {
   const { out, source, plan: planPath } = fixtures(document(3), plan);
   const delivered = [
-    { item: 'run:x:case:c1', requirements: [{ requirement: 'literal', layers: [{ terminal: 'violation', attribution: 'subject' }], claims: [{ statement: { verdict: 'refute', code: 'core.structure.required_empty' }, qualifier: { nature: 'fact', source_role: 'subject' } }] }] },
+    { item: 'run:x:case:c1', requirements: [{ requirement: 'literal', layers: [staticFixture('violation', 'author_input')], claims: [{ statement: { verdict: 'refute', code: 'core.structure.required_empty' }, qualifier: { nature: 'fact', source_role: 'subject' } }] }] },
     { item: 'run:x:case:c2', requirements: [] },
     { item: 'run:x:case:c3', requirements: [] },
   ];
@@ -190,7 +193,7 @@ test('node-id refutations on fallback identities are disclosed without failing t
     kase('healthy', '健康用例', '合成期望丁'),
   )) };
   const { out, source, plan: planPath } = fixtures(tree, []);
-  const delivered = ['same#1', 'same#2', '@6'].map(id => ({ item: `doc:${id}`, requirements: [{ requirement: 'literal', layers: [{ terminal: 'violation', attribution: 'author_input' }], claims: [{ statement: { verdict: 'refute', code: id.startsWith('@') ? 'core.structure.required_empty' : 'core.structure.duplicate_key' }, qualifier: { nature: 'fact', source_role: 'subject' } }] }] }));
+  const delivered = ['same#1', 'same#2', '@6'].map(id => ({ item: `doc:${id}`, requirements: [{ requirement: 'literal', layers: [staticFixture('violation', 'author_input')], claims: [{ statement: { verdict: 'refute', code: id.startsWith('@') ? 'core.structure.required_empty' : 'core.structure.duplicate_key' }, qualifier: { nature: 'fact', source_role: 'subject' } }] }] }));
   delivered.push({ item: 'doc:healthy', requirements: [] });
   const drivers = fakeDrivers({ drafts: [{ calls: callLine('rn_synthetic', 'accepted'), run: () => runDetail({ items: 4, sources: [{ reference: `src:${copyShaOf(out)}` }], delivered }) }] });
   const lines: string[] = [];
@@ -201,7 +204,7 @@ test('node-id refutations on fallback identities are disclosed without failing t
 
 test('measurement reports each catalog mark as lacking an independent answer without judging it', () => {
   const { out, source, plan: planPath } = fixtures(document(1), []);
-  const delivered = [{ item: 'doc:c1', requirements: [{ requirement: 'catalog', layers: [{ terminal: 'violation', attribution: 'author_input' }], claims: ['core.catalog.not_member', 'core.catalog.param_out_of_range'].map(code => ({ statement: { verdict: 'refute', code }, qualifier: { nature: 'fact', source_role: 'subject' } })) }] }];
+  const delivered = [{ item: 'doc:c1', requirements: [{ requirement: 'catalog', layers: [staticFixture('violation', 'author_input')], claims: ['core.catalog.not_member', 'core.catalog.param_out_of_range'].map(code => ({ statement: { verdict: 'refute', code }, qualifier: { nature: 'fact', source_role: 'subject' } })) }] }];
   const drivers = fakeDrivers({ drafts: [{ calls: callLine('rn_synthetic', 'accepted'), run: () => runDetail({ items: 1, sources: [{ reference: `src:${copyShaOf(out)}` }], delivered }) }] });
   const lines: string[] = [];
   assert.equal(measureReview({ ...options(out), source, plan: planPath }, drivers, line => lines.push(line)), 0);
@@ -212,7 +215,7 @@ test('measurement reports each catalog mark as lacking an independent answer wit
 test('review 1: judgment-only injections never fail the mechanical exit gate', () => {
   const planned: Planned[] = [...plan, { label: '含糊期望', seen_by: 'judgment', op: { kind: 'vague_expected', node: 'c2', text: '正常' } }];
   const f = fixtures(document(3), planned), lines: string[] = [];
-  const delivered = [{ item: 'doc:c1', requirements: [{ requirement: 'literal', layers: [{ terminal: 'violation', attribution: 'author_input' }], claims: [{ statement: { verdict: 'refute', code: 'core.structure.required_empty' }, qualifier: { nature: 'fact', source_role: 'subject' } }] }] }];
+  const delivered = [{ item: 'doc:c1', requirements: [{ requirement: 'literal', layers: [staticFixture('violation', 'author_input')], claims: [{ statement: { verdict: 'refute', code: 'core.structure.required_empty' }, qualifier: { nature: 'fact', source_role: 'subject' } }] }] }];
   const drivers = fakeDrivers({ drafts: Array.from({ length: 3 }, () => ({ calls: callLine('rn_mixed', 'accepted'), run: () => runDetail({ run: 'rn_mixed', items: 3, sources: [{ reference: `src:${copyShaOf(f.out)}` }], delivered }) })) });
   assert.equal(measureReview({ ...options(f.out), source: f.source, plan: f.plan, repeat: 3 }, drivers, line => lines.push(line)), 0);
   assert.ok(lines.some(line => line.includes('Hub 看得见的注入缺陷全部查出 是')));
@@ -244,7 +247,7 @@ test('review 11: invalid or empty baselines refuse startup and valid rounds are 
   writeFileSync(join(baseline, 'mutated.json'), JSON.stringify(document(2)));
   const sha = createHash('sha256').update(readFileSync(join(baseline, 'mutated.json'))).digest('hex');
   const before = [
-    [{ item: 'doc:c1', requirements: [{ requirement: 'catalog', layers: [{ terminal: 'violation', attribution: 'author_input' }], claims: [{ statement: { verdict: 'refute', code: 'core.catalog.not_member' }, qualifier: { nature: 'fact', source_role: 'subject' } }] }] }],
+    [{ item: 'doc:c1', requirements: [{ requirement: 'catalog', layers: [staticFixture('violation', 'author_input')], claims: [{ statement: { verdict: 'refute', code: 'core.catalog.not_member' }, qualifier: { nature: 'fact', source_role: 'subject' } }] }] }],
     [{ item: 'doc:c2', requirements: [{ requirement: 'findings', layers: [], claims: [{ statement: { code: 'synthetic-finding' }, qualifier: { nature: 'judgment' } }] }] }],
   ];
   before.forEach((delivered, i) => { const dir = join(baseline, `r${i + 1}`); mkdirSync(dir); writeFileSync(join(dir, 'score.json'), '{}'); writeFileSync(join(dir, 'draft.run.json'), runDetail({ items: 2, sources: [{ reference: `src:${sha}` }], delivered })); });
