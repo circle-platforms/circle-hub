@@ -444,7 +444,7 @@ fact claims. This change adds no exit field, request contract, split, automatic 
 
 Subject-copy review: a successful build is serialized once as JSON text, and every check parses an independent value.
 The serializer is the same JSON.stringify used by the isolated function's result boundary; JSON.parse preserves deep
-JSON without structuredClone's lower recursion ceiling. Build failure alone evicts a cache entry. A host serialization
+JSON without structuredClone's lower recursion ceiling. Only non-exhausted build failures evict a cache entry. A host serialization
 or parse failure retains the successful build/text and is identified as subject_copy / Hub copy failure, never as
 FUNCTION_THREW. Tests exercise 4000 levels through real isolated builders and both item/run checks, plus an injected copy
 failure, independent mutation, retained launch count and byte-identical completed receipt replay. JSON-wire numeric zero
@@ -488,3 +488,7 @@ The existing protocol code remains until the model owner supplies a dedicated Hu
 
 Exact-read retry also covers command quotation candidates, bound record reads, predecessor result scope and locked
 catalog construction. Exhausted function-side failures use the same HubReadFailure receipt and do not charge a repair round.
+
+Exhausted sandbox failures are marked by parent-only object identity and retained in the subject scope for the rest of
+one evaluation. Checks sharing that exact input/module reuse the same bounded failure cycle; a new input or evaluation
+gets a fresh cycle. Ordinary build failures and Hub-copy failures keep their separate existing policies.

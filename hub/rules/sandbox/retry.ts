@@ -2,6 +2,10 @@
 import { setTimeout } from 'node:timers/promises';
 import { SandboxError, type SandboxErrorCode } from './errors.ts';
 
+const exhausted = new WeakSet<SandboxError>();
+/** Parent-only identity marker: a completed retry policy, never sent to a pack or record. */
+export function isExhaustedFunctionFailure(error: unknown): boolean { return error instanceof SandboxError && exhausted.has(error); }
+
 export interface FunctionAttempt {
   attempt: number;
   timeoutMs: number;
@@ -34,7 +38,7 @@ export async function retryFunction<T>(execute: () => Promise<T>, timeoutMs: num
       notify({ attempt, timeoutMs, durationMs: Date.now() - started, delayMs, retry,
         ...(error instanceof SandboxError ? { code: error.code,
           ...(typeof error.detail.reason === 'string' ? { reason: error.detail.reason } : {}) } : {}) });
-      if (!retry) throw error;
+      if (!retry) { if (transientFunctionFailure(error)) exhausted.add(error); throw error; }
       await setTimeout(delayMs);
     }
   }

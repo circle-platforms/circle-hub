@@ -1,6 +1,6 @@
 // Pure subject construction shared only inside one evaluation of one locked workflow version.
 import { createHash } from 'node:crypto';
-import type { PackFunctionTarget } from '../../rules/api.ts';
+import { isExhaustedFunctionFailure, type PackFunctionTarget } from '../../rules/api.ts';
 
 export class SubjectCopyError extends Error {
   constructor(cause: unknown) { super('Hub 无法复制被判对象数据', { cause }); this.name = 'SubjectCopyError'; }
@@ -32,8 +32,8 @@ export function createSubjectBuilder(build: Build): Build {
     let output: unknown;
     try { output = await task.build; }
     catch (error) {
-      // Only an actual failed build is evicted. Copy failures keep its successful value/text.
-      if (pending.get(key) === task) pending.delete(key);
+      // An exhausted transient build is shared; other failed builds are evicted. Copy failures keep its successful value/text.
+      if (!isExhaustedFunctionFailure(error) && pending.get(key) === task) pending.delete(key);
       throw error;
     }
     try {

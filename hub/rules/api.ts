@@ -34,3 +34,5 @@ export function sourcesFrom(texts: Readonly<Record<string, string>> | ReadonlyMa
   const record = texts as Readonly<Record<string, string>>;
   return { text: (reference) => (Object.hasOwn(record, reference) ? record[reference] : undefined) };
 }
+
+export { isExhaustedFunctionFailure } from './sandbox/retry.ts';
