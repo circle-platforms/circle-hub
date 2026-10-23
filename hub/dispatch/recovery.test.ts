@@ -1,0 +1,67 @@
+import assert from 'node:assert/strict';
+import { spawn, type ChildProcess } from 'node:child_process';
+import { test } from 'node:test';
+import { setup } from './testing/context.ts';
+
+async function worker(c: Awaited<ReturnType<typeof setup>>) {
+  const child = spawn(process.execPath, [new URL('./testing/worker.ts', import.meta.url).pathname], { stdio: ['pipe', 'pipe', 'pipe', 'ipc'] });
+  let output = ''; let errors = ''; child.stdout!.on('data', b => output += b); child.stderr!.on('data', b => errors += b);
+  const exited = new Promise<{ code: number | null; signal: string | null; output: string; errors: string }>(resolve => child.once('exit', (code, signal) => resolve({ code, signal, output, errors })));
+  const ready = new Promise<void>(resolve => child.once('message', () => resolve()));
+  child.stdin!.end(JSON.stringify({ config: { ...c.kit.config, database: c.kit.database }, now: c.now().toISOString(), detail: c.detail, admin: c.admin, executor: c.executor.id }));
+  await Promise.race([ready, exited.then(e => { throw new Error(`synthetic worker exited before ready: ${e.code}`); })]);
+  return { child, exited };
+}
+
+test('two independent processes dispatching identical bytes produce exactly one successful submission', { timeout: 30000 }, async t => {
+  const c = await setup(); t.after(() => c.close());
+  const a = await worker(c); const b = await worker(c); t.after(() => { a.child.kill('SIGKILL'); b.child.kill('SIGKILL'); });
+  a.child.send('go'); b.child.send('go');
+  const outcomes = await Promise.all([a.exited, b.exited]);
+  assert.equal(outcomes.filter(o => o.code === 0).length, 1, JSON.stringify(outcomes));
+  assert.equal(c.calls.filter(n => n === 'send_blob').length, 1);
+  assert.ok(c.sawIntentAtSubmit);
+});
+
+test('a process killed during submission is recovered as unknown and never submits again', { timeout: 30000 }, async t => {
+  let child: ChildProcess | undefined;
+  const c = await setup({ onSubmit: async () => { child!.kill('SIGKILL'); } }); t.after(() => c.close());
+  const w = await worker(c); child = w.child; t.after(() => child?.kill('SIGKILL')); child.send('go');
+  const exit = await w.exited; assert.equal(exit.signal, 'SIGKILL');
+  const intent = await c.kit.store.getByKey<any>('action', `dispatch.bytes:${c.payload.body.sha256}`);
+  assert.ok(intent);
+  const state = await c.service.resume(c.admin, intent.body.detail.job);
+  assert.equal(state.outcome, 'unknown'); assert.equal(state.frozen, true);
+  assert.equal(c.calls.filter(n => n === 'send_blob').length, 1);
+  await assert.rejects(c.service.dispatch(c.admin, c.run, c.executor.id));
+});
+
+test('timeout, disconnect, rejection, inconsistent receipt and unknown states freeze without retry or release', async t => {
+  for (const mode of ['timeout', 'disconnect', 'reject', 'receipt-sha', 'receipt-items', 'lost', 'unmapped']) {
+    const c = await setup({ mode, timeout: 20 }); t.after(() => c.close());
+    const state = await c.service.dispatch(c.admin, c.run, c.executor.id);
+    assert.equal(state.outcome, 'unknown', mode); assert.equal(state.frozen, true, mode);
+    assert.equal(c.calls.filter(n => n === 'send_blob').length, 1, mode);
+    await c.service.resume(c.admin, state.job);
+    assert.equal(c.calls.filter(n => n === 'send_blob').length, 1, mode);
+    assert.equal(c.calls.includes('close_slot'), false, mode);
+    assert.ok((await c.service.journal.events(state.job)).some(e => e.body.detail.request_kind === 'disposition'));
+  }
+});
+
+test('an accepted job resumes status reads after restart without a new submission', { timeout: 30000 }, async t => {
+  let child: ChildProcess | undefined; let killed = false;
+  const c = await setup({ alter: (name, value) => {
+    if (name === 'inspect_blob') {
+      if (!killed) { killed = true; child!.kill('SIGKILL'); return { state: 'working' }; }
+      return { state: 'ended' };
+    }
+    return value;
+  } }); t.after(() => c.close());
+  const w = await worker(c); child = w.child; t.after(() => child?.kill('SIGKILL')); child.send('go');
+  assert.equal((await w.exited).signal, 'SIGKILL');
+  const intent = await c.kit.store.getByKey<any>('action', `dispatch.bytes:${c.payload.body.sha256}`);
+  const state = await c.service.resume(c.admin, intent!.body.detail.job);
+  assert.equal(state.outcome, 'effective'); assert.equal(state.frozen, false);
+  assert.equal(c.calls.filter(n => n === 'send_blob').length, 1);
+});
