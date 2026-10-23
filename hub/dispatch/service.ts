@@ -1,6 +1,6 @@
 import { canonicalBytes, canonicalize, sha256Hex, type Principal, type RecordsKit } from '../records/api.ts';
 import type { LeaseService, HolderSnapshot } from '../leases/api.ts';
-import type { WorkflowStore } from '../ports.ts';
+import type { WorkflowStore, KnowledgePort } from '../ports.ts';
 import type { EffectOutcome, Disposition } from '../../contracts/generated/vocabulary.ts';
 import { at, bind, mapped, registrationMissing, type CallRole, type ExecutorDefinition } from './definition.ts';
 import { ExecutorRegistry } from './executors.ts';
@@ -8,6 +8,7 @@ import { Journal, digestOfValue, eventOf, isDone, isFrozen, newJob, type JobBind
 import { RpcClient, object, type Exchange } from './transport.ts';
 import { verifyInput, type VerificationPort } from './proof.ts';
 export interface DispatchOptions {
+  knowledge?: Pick<KnowledgePort,'builds'|'resolveBuild'>;
   records: RecordsKit; leases: Pick<LeaseService, 'holderSnapshot'>; runs: VerificationPort;
   workflows: Pick<WorkflowStore, 'byDigest'>; close?: () => Promise<void>; now?: () => Date; sleep?: (ms: number) => Promise<void>;
 }
@@ -48,7 +49,7 @@ export class DispatchService {
     const booked = booking ? await this.options.runs.getRun(by, booking) : null;
     if (booking && !booked) throw new Error('预订运行对你不可用');
     const binding: JobBinding = { job: newJob(), initiated_by: by.id, executor, executor_digest: registered.digest, target_key: digestOfValue([...d.resources].sort()), input: null,
-      user: booked?.run.runner ?? by.id, resources: [], context: { ...d.precheck_context, ...(booked?.run.build ? { build: booked.run.build } : {}), target: d.target, ...(d.resources.length ? { seats: d.resources.length } : {}), ...(d.manifest_sha256 ? { manifest_sha256: d.manifest_sha256 } : {}) } };
+      user: booked?.run.runner ?? by.id, resources: [], context: { ...d.precheck_context, ...(booked?.run.build ? { build: booked.run.build } : {}), ...(booked?.run.product ? {product:booked.run.product} : {}), ...(booked?.run.root ? {root:booked.run.root} : {}), target: d.target, ...(d.resources.length ? { seats: d.resources.length } : {}), ...(d.manifest_sha256 ? { manifest_sha256: d.manifest_sha256 } : {}) } };
     await this.journal.append(binding, 'reservation', 'validate', 'completed', { binding, read_only: true });
     const client = this.session(binding, d, await this.secret(executor));
     let lease: RemoteLease | undefined; let stop = async () => {}; let verified = false;
@@ -58,7 +59,8 @@ export class DispatchService {
       const context = { ...this.context(binding), lease_id: lease.id, lease_token: lease.token };
       try { const response = await this.read(binding, client, 'precheck', context); verified = this.conditions(d.conditions, response.value, context); } catch { verified = false; }
       const extra = await this.extraPrechecks(binding, d, client, context, true);
-      verified = verified && extra;
+      const probed = await this.probeSeats(binding,d,client,context);
+      verified = verified && extra && probed;
     } catch { verified = false; }
     finally { await stop(); if (lease) await this.release(binding, client, lease); }
     await this.journal.append(binding, 'complete', 'validate', 'completed', { done: true, outcome: 'not_dispatched', readonly_verified: verified, registration_ready: registrationMissing(d).length === 0, registration_missing: registrationMissing(d),
@@ -134,6 +136,8 @@ export class DispatchService {
       const precheck = await this.read(binding, session, 'precheck', context);
       if (!this.conditions(d.conditions, precheck.value, context)) throw new Error('只读核对未满足；未提交，请核对当前环境后重新核验');
       if (!await this.extraPrechecks(binding, d, session, context, false)) throw new Error('附加只读核对未满足；未提交，请重新核对缓存来源');
+      const deviceIdentity = await this.probeSeats(binding,d,session,context);
+      if (!deviceIdentity) throw new Error('逐座位只读探测不符；见受限探测原件中的座位及 version/interfaces 核对');
       const latest = await this.registry.get(executor);
       if (!latest?.definition.enabled || latest.digest !== registered.digest) throw new Error('执行器配置已变；未提交，请按当前配置重新核验');
       await this.registry.admin(by);
@@ -151,7 +155,7 @@ export class DispatchService {
         if (!gate.created) throw new Error('作业已经恢复或关闭，不能再提交');
         const ordinal = attempt === 1 ? await this.journal.append(binding, 'sequence', 'validate', 'completed', { sequence }, [], `dispatch.sequence:${input.lineage}:${sequence}`, tx) : { created: true };
         if (!ordinal.created) throw new Error('血缘次序已由另一派发占用；未提交');
-        const intent = await this.journal.append(binding, 'intent', 'dispatch', 'completed', { intent_key: key, request_id: context.request_id, attempt, not_after: notAfter, sequence, action_digest: actionDigest,
+        const intent = await this.journal.append(binding, 'intent', 'dispatch', 'completed', { intent_key: key, request_id: context.request_id, device_identity_proven: !!d.probes && deviceIdentity, device_lease_digest: digestOfValue([context.lease_id,context.lease_token]), attempt, not_after: notAfter, sequence, action_digest: actionDigest,
           dispatch_binding_digest: digestOfValue([input.run, input.item, input.sha256, fresh, remote]), target_key: binding.target_key, effect_class: 'job', retry_safety: 'unsafe', signing: 'service_on_behalf', on_behalf_of: input.user,
           before_state_bound: false, fences: fresh, remote_lease: remote, window: { from: this.now().toISOString(), to: notAfter } }, [`src:${input.sha256}`, `rec:${input.result}`], `dispatch.bytes:${input.sha256}:${attempt}`, tx);
         if (!intent.created) throw new Error('这份字节已经写过意图；未重复提交');
@@ -350,7 +354,7 @@ export class DispatchService {
     if (!bytes) throw new Error('冻结的执行器定义缺失');
     const { ExecutorDefinition: schema } = await import('./definition.ts'); return schema.parse(JSON.parse(new TextDecoder().decode(bytes)));
   }
-  private context(binding: JobBinding): Record<string, unknown> { return { ...binding.context, job: binding.job, user: binding.user, actor: binding.acting_by ?? binding.initiated_by, target: binding.input?.target ?? binding.context?.target, build: binding.input?.build ?? binding.context?.build, sha256: binding.input?.sha256, items: binding.input?.items, seats: binding.context?.seats ?? (binding.resources.length ? binding.resources.length : undefined), manifest_sha256: binding.input?.manifest_sha256 ?? binding.context?.manifest_sha256 }; }
+  private context(binding: JobBinding): Record<string, unknown> { return { ...binding.context, job: binding.job, user: binding.user, actor: binding.acting_by ?? binding.initiated_by, product:binding.input?.product ?? binding.context?.product, root:binding.input?.root ?? binding.context?.root, target: binding.input?.target ?? binding.context?.target, build: binding.input?.build ?? binding.context?.build, sha256: binding.input?.sha256, items: binding.input?.items, seats: binding.context?.seats ?? (binding.resources.length ? binding.resources.length : undefined), manifest_sha256: binding.input?.manifest_sha256 ?? binding.context?.manifest_sha256 }; }
   private session(binding: JobBinding, d: ExecutorDefinition, secret: string): RpcClient {
     return new RpcClient(d, secret, `${binding.user}/${binding.job}`, async (bytes, status, operation, complete = true, metadata) => {
       const captured = await this.journal.raw(binding, bytes, operation, complete);
@@ -392,6 +396,11 @@ export class DispatchService {
       if (c.at_least !== undefined) return typeof actual === 'number' && typeof bind(c.at_least, context) === 'number' && actual >= (bind(c.at_least, context) as number);
       return actual !== undefined && digestOfValue(actual) === bind(c.sha256, context);
     });
+  }
+  private async probeSeats(binding: JobBinding, d: ExecutorDefinition, client: RpcClient, context: Record<string,unknown>): Promise<boolean> {
+    if (!d.probes) return true;
+    const { assessProbes } = await import('./probes.ts');
+    return assessProbes(this.options.records,this.options.knowledge,binding,d,client,context,this.journal,this.sleep);
   }
   private async extraPrechecks(binding: JobBinding, d: ExecutorDefinition, client: RpcClient, context: Record<string, unknown>, collectAll: boolean): Promise<boolean> {
     let verified = true;

@@ -5,6 +5,7 @@ import { canonicalize, isSha256 } from '../records/api.ts';
 import { at, type ExecutorDefinition } from './definition.ts';
 export type VerificationPort = Pick<RunsService, 'getRun'>;
 export interface VerifiedInput {
+  product?: string; root?: string;
   run: string; user: string; lineage: string; ancestors: string[]; item: string; items: string[];
   plan_run: string; sha256: string; target: string; manifest_sha256: string; build: string; generator: unknown; result: string;
 }
@@ -56,5 +57,5 @@ export async function verifyInput(by: Principal, id: string, d: ExecutorDefiniti
     ancestor = predecessor ? await runs.getRun(by, predecessor) : null;
     if (predecessor && !ancestor) throw new Error('预订前驱不可读取');
   }
-  return { run: id, plan_run: planRun, user: owner.id, lineage: ancestors.at(-1)!, ancestors, item: detail.run.items[0].id, items: ids as string[], sha256, target, manifest_sha256: manifest, build, generator, result: detail.latest.record };
+  return { ...(detail.run.product ? {product:detail.run.product} : {}), ...(detail.run.root ? {root:detail.run.root} : {}), run: id, plan_run: planRun, user: owner.id, lineage: ancestors.at(-1)!, ancestors, item: detail.run.items[0].id, items: ids as string[], sha256, target, manifest_sha256: manifest, build, generator, result: detail.latest.record };
 }

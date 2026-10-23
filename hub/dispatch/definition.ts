@@ -10,6 +10,23 @@ const certificate = z.strictObject({ version: z.string().min(1).max(200), eviden
 const acceptance = z.record(z.string(), AcceptanceSchema);
 const state = z.strictObject({ action_result: ActionResultSchema.optional(), acceptance: AcceptanceSchema.optional(), effect_outcome: EffectOutcomeSchema.optional(), dynamic_terminal: DynamicTerminalSchema.optional() }).refine(s => Object.keys(s).length > 0);
 const conditions = z.array(z.strictObject({ pointer, equals: z.unknown().optional(), at_least: z.union([z.number(), valueRef]).optional(), sha256: z.union([z.string().regex(/^[a-f0-9]{64}$/), valueRef]).optional() }).refine(c => Number(Object.hasOwn(c, 'equals')) + Number(c.at_least !== undefined) + Number(c.sha256 !== undefined) === 1)).max(100).default([]);
+function compiled(pattern: string): boolean { try { new RegExp(pattern); return true; } catch { return false; } }
+function oneNamedGroup(pattern: string): boolean {
+  if (!compiled(pattern)) return false;
+  let groups = 0, bracket = false;
+  for (let i=0;i<pattern.length;i++) {
+    if (pattern[i] === '\\') { i++; continue; }
+    if (pattern[i] === '[') bracket=true; else if (pattern[i] === ']') bracket=false;
+    if (!bracket && pattern.slice(i,i+3) === '(?<' && !['=','!'].includes(pattern[i+3])) groups++;
+  }
+  return groups === 1;
+}
+const extraction = z.strictObject({command:z.string().min(1).max(10000),pattern:z.string().min(1).max(2000).refine(oneNamedGroup)});
+const probes = z.strictObject({command_pattern:z.string().min(1).max(2000).refine(p=>p.startsWith('^') && p.endsWith('$') && compiled(p)),call,output:pointer,seats:z.array(z.strictObject({seat:z.string().min(1).max(200),index:z.number().int().min(0),manifest:z.strictObject({device:pointer,addresses:pointer,address:pointer}),version:extraction,interfaces:extraction})).min(1).max(100)}).superRefine((p,ctx)=>{
+  const match = new RegExp(p.command_pattern);
+  if (new Set(p.seats.map(s=>s.seat)).size !== p.seats.length || new Set(p.seats.map(s=>s.index)).size !== p.seats.length) ctx.addIssue({code:'custom',message:'探测座位名称和序号不得重复'});
+  for (const seat of p.seats) for (const step of [seat.version,seat.interfaces]) if (!match.test(step.command)) ctx.addIssue({code:'custom',message:'探测命令不符合声明的命令形状'});
+});
 export const ExecutorDefinition = z.strictObject({
   schema: z.literal('executor@1'), id: z.string().regex(/^exe_[0-9a-hjkmnp-tv-z]{26}$/).optional(), enabled: z.boolean().default(true),
   target: z.string().min(1).max(200), manifest_sha256: z.string().regex(/^[a-f0-9]{64}$/).nullable().default(null), endpoint: z.string().url().max(2048), ca: z.string().max(65536),
@@ -29,6 +46,7 @@ export const ExecutorDefinition = z.strictObject({
   reconciliation: z.strictObject({ found: pointer, state: pointer, request_id: pointer, sha256: pointer, id: pointer, stage: pointer, reached_device: pointer, gateway_time: pointer, gc_before: pointer, time_scale_ms: z.number().positive().optional(), map: z.record(z.string(),EffectOutcomeSchema) }).optional(),
   status: z.strictObject({ pointer, exit_code: pointer.optional(), map: z.record(z.string(), state) }),
   result: z.strictObject({ id: pointer, sha256: pointer, submitted_at: pointer, submitted_at_scale_ms: z.number().positive().optional(), items: pointer, item_id: pointer, item_outcome: pointer, complete: pointer, map: z.record(z.string(), DynamicTerminalSchema) }),
+  probes: probes.optional(),
   conditions,
   capture_pointers: z.array(pointer).max(100).default([]),
   precheck_reads: z.array(call.extend({ conditions, capture_pointers: z.array(pointer).max(100).default([]) })).max(20).default([]),
@@ -39,11 +57,11 @@ export const ExecutorDefinition = z.strictObject({
   if (u.username || u.password || u.search || u.hash || (u.protocol !== 'https:' && !(u.protocol === 'http:' && loopback))) ctx.addIssue({ code: 'custom', message: '端点必须固定为 HTTPS，明文只允许回环，地址不带凭据、查询或片段' });
   if (u.protocol === 'https:') try { new X509Certificate(d.ca); } catch { ctx.addIssue({ code: 'custom', message: 'HTTPS 需要固定 CA 证书' }); }
   if (new Set(d.resources).size !== d.resources.length || new Set(d.allowed_tools).size !== d.allowed_tools.length) ctx.addIssue({ code: 'custom', message: '资源键和允许工具不得重复' });
-  for (const c of [...Object.values(d.calls), ...d.precheck_reads]) if (!d.allowed_tools.includes(c.tool)) ctx.addIssue({ code: 'custom', message: '生命周期调用不在允许工具清单内' });
+  for (const c of [...Object.values(d.calls), ...d.precheck_reads, ...(d.probes ? [d.probes.call] : [])]) if (!d.allowed_tools.includes(c.tool)) ctx.addIssue({ code: 'custom', message: '生命周期调用不在允许工具清单内' });
   const payload = at(d.calls.submit.arguments, d.payload_argument);
   if (!payload || typeof payload !== 'object' || Array.isArray(payload) || Object.keys(payload).length !== 1 || (payload as Record<string, unknown>).$value !== 'payload_base64' || countPayloadBindings(d.calls.submit.arguments) !== 1) ctx.addIssue({ code: 'custom', message: '提交内容参数必须且只能绑定一次已核验字节' });
   for (const [role, c] of Object.entries(d.calls)) if (role !== 'submit' && countPayloadBindings(c.arguments)) ctx.addIssue({ code: 'custom', message: '非提交角色不能携带工作内容字节' });
-  if (d.precheck_reads.some(c => countPayloadBindings(c.arguments))) ctx.addIssue({ code: 'custom', message: '只读核对不能携带工作内容字节' });
+  if ([...d.precheck_reads,...(d.probes ? [d.probes.call] : [])].some(c => countPayloadBindings(c.arguments))) ctx.addIssue({ code: 'custom', message: '只读核对不能携带工作内容字节' });
 });
 export type ExecutorDefinition = z.infer<typeof ExecutorDefinition>;
 export type CallRole = keyof ExecutorDefinition['calls'];

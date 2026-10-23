@@ -70,6 +70,9 @@ export class RpcClient {
     if (!declaration) throw new Error('只读核对没有登记');
     return this.invoke(declaration, context, `precheck.${index + 1}`, declaration.timeout_ms);
   }
+  async declaredRead(declaration: NonNullable<ExecutorDefinition['probes']>['call'], context: Readonly<Record<string,unknown>>, operation: string): Promise<Exchange> {
+    return this.invoke(declaration,context,operation,declaration.timeout_ms);
+  }
   private async invoke(declaration: ExecutorDefinition['calls']['precheck'], context: Readonly<Record<string, unknown>>, operation: string, timeout: number): Promise<Exchange> {
     if (!this.definition.allowed_tools.includes(declaration.tool)) throw new Error('调用不在允许工具清单内');
     const response = await this.rpc('tools/call', { name: declaration.tool, arguments: bind(declaration.arguments, context) }, false, timeout, operation);
