@@ -39,6 +39,7 @@ test('the actual submit session must advertise a declared request protocol versi
   const c=await setupJournal({supportedVersions:['2']});t.after(()=>c.close());
   const state=await c.service.dispatch(c.admin,c.run,c.executor.id);
   assert.equal(state.outcome,'not_dispatched');assert.equal(c.calls.includes('send_blob'),false);
+  assert.match(state.reason!,/投递会话版本/);assert.match(state.next_action!,/版本.*协议|版本.*支持/);
   assert.equal((await c.service.journal.events(state.job)).some(e=>e.body.detail.phase==='intent'),false);
 });
 

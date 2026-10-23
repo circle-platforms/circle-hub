@@ -221,11 +221,15 @@ export class DispatchService {
       let requestSnapshot:Record<string,unknown>={};let requestSources:string[]=[];
       if(d.reconciliation) {
         const r=d.reconciliation;
-        if(!r.identity || !d.receipt.identity || !session.serverVersion || !r.protocol_versions.includes(session.serverVersion))throw new Error('投递会话版本未登记请求协议支持，或缺少身份字段声明；管理员核对该版本并更新定义后重新派发，尚未提交');
+        if(!r.identity || !d.receipt.identity)throw new PrecheckFactError('缺少查询或投递回答的日志身份字段声明','管理员核对目标协议，补齐查询与投递回答的身份、起点及主体字段声明后重新派发；尚未提交');
+        if(!session.serverVersion || !r.protocol_versions.includes(session.serverVersion))throw new PrecheckFactError('投递会话版本未登记请求协议支持','管理员核对发送会话版本及协议证据，登记该版本支持或更换受支持版本后重新派发；尚未提交');
         const response=await this.retryRead(binding,session,'query',context,Infinity);
         const identity=requestIdentity(response.value,r.identity,r.time_scale_ms);
         const clock=readDeclaredTime(at(response.value,r.gateway_time),r.time_scale_ms),floor=readDeclaredTime(at(response.value,r.gc_before),r.time_scale_ms);
-        if(at(response.value,r.found)!==false || !identity || !Number.isFinite(clock) || !Number.isFinite(floor) || clock<floor || floor<identity.since)throw new Error('缺少本租约下投递前的可靠请求日志身份、完整主体或记账边界；管理员核对查询原件与声明后重跑预检，尚未提交');
+        if(at(response.value,r.found)!==false || !identity || !Number.isFinite(clock) || !Number.isFinite(floor) || clock<floor || floor<identity.since) {
+          const gaps=[...(at(response.value,r.found)!==false?['本请求号的查空记录']:[]),...(!identity?['可靠日志身份、完整主体及记账起点']:[]),...(!Number.isFinite(clock) || !Number.isFinite(floor)?['符合声明格式的目标时刻与回收边界']:[]),...(clock<floor || identity && floor<identity.since?['覆盖记账起点且不晚于目标时刻的回收边界']:[])];
+          throw new PrecheckFactError(`投递前缺少本租约下的${gaps.join('、')}`,'管理员读取本租约的查询原件，核对日志身份、主体、目标时钟与边界声明，恢复可靠记账事实后重新派发；尚未提交');
+        }
         const initialization=eventOf(await this.journal.events(binding.job),'initialize.response');
         requestSnapshot={request_identity:identity,request_protocol_version:session.serverVersion,request_protocol_verified:true};requestSources=[...new Set([response.source,...(initialization?.body.inputs??[])])];
         await this.journal.append(binding,'request_identity','validate','completed',requestSnapshot,requestSources);
@@ -281,7 +285,7 @@ export class DispatchService {
         else await this.unknown(binding, '提交未取得完整可信回执；缺远端作业身份或结果，必须管理员对账');
       }
       else {
-        await this.journal.append(binding, 'complete', 'validate', 'completed', { done: true, outcome: 'not_dispatched', ...(error instanceof CapabilityPolicyError || error instanceof InvocationDefinitionError || error instanceof InputVerificationError ? {public_reason:error.message} : {}), reason: session.redact(error instanceof Error ? error.message.toWellFormed().slice(0, 1000) : '前提核对出错'), next_action: '核对只读条件、租约和执行器定义后重新核验；没有提交' });
+        await this.journal.append(binding, 'complete', 'validate', 'completed', { done: true, outcome: 'not_dispatched', ...(error instanceof CapabilityPolicyError || error instanceof InvocationDefinitionError || error instanceof InputVerificationError || error instanceof PrecheckFactError ? {public_reason:error.message} : {}),...(error instanceof PrecheckFactError?{missing_fact:error.missing_fact}:{}), reason: session.redact(error instanceof Error ? error.message.toWellFormed().slice(0, 1000) : '前提核对出错'), next_action:error instanceof PrecheckFactError?error.next_action:'核对只读条件、租约和执行器定义后重新核验；没有提交' });
         if (remote) await this.release(binding, session, remote);
       }
       return await this.status(by, binding.job);
@@ -465,7 +469,7 @@ export class DispatchService {
     if (!current || current.definition.target !== d.target || current.definition.endpoint !== d.endpoint || current.definition.ca !== d.ca) return false;
     const proof = current.definition.premises[premise];
     const version=delivery?delivery.version:client.serverVersion;
-    if (!proof || typeof version!=='string' || proof.version !== version || delivery && !current.definition.reconciliation?.protocol_versions.includes(version)) return false;
+    if (!proof || typeof version!=='string' || proof.version !== version || delivery && version!==client.serverVersion || delivery && !current.definition.reconciliation?.protocol_versions.includes(version)) return false;
     const by = await this.options.records.principals.get(binding.acting_by ?? binding.initiated_by);
     if (!by || by.disabled) return false;
     for (const ref of proof.evidence) {

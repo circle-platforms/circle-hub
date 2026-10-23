@@ -2,7 +2,7 @@
 import { setup } from './context.ts';
 import { DispatchService } from '../service.ts';
 import { sha256Hex } from '../../records/api.ts';
-export async function setupJournal(options: { lost?: boolean; absent?: boolean; uncertified?: boolean; floorAtDeadline?: boolean; clockBeforeDeadline?: boolean; clockAsText?: boolean; rejected?:boolean; stopped?: boolean; wrongIdentity?: boolean; onSubmit?: () => Promise<void>; deadlinePrecheck?: boolean; pendingReads?: number; identityChange?:'epoch'|'subject'|'since'|'missing'; receiptChange?:boolean; floorBeforeSince?:boolean; supportedVersions?:string[]; deviceReached?:boolean|null; clockLagMs?:number; admitExpired?:boolean; serverVersion?:()=>string } = {}) {
+export async function setupJournal(options: { lost?: boolean; absent?: boolean; uncertified?: boolean; floorAtDeadline?: boolean; clockBeforeDeadline?: boolean; clockAsText?: boolean; rejected?:boolean; stopped?: boolean; wrongIdentity?: boolean; onSubmit?: () => Promise<void>; deadlinePrecheck?: boolean; pendingReads?: number; identityChange?:'epoch'|'subject'|'since'|'missing'; receiptChange?:boolean; floorBeforeSince?:boolean; supportedVersions?:string[]; deviceReached?:boolean|null; clockLagMs?:number; admitExpired?:boolean; serverVersion?:()=>string; beforeIdentityMissing?:boolean } = {}) {
   let queries = 0;
   const rows = new Map<string, Record<string, unknown>>();
   let c!: Awaited<ReturnType<typeof setup>>;
@@ -28,7 +28,7 @@ export async function setupJournal(options: { lost?: boolean; absent?: boolean; 
     const row = rows.get(String(args.request));
     const before=!submitted;
     const original=identity();
-    const current=before?original:{...original,...(options.identityChange==='epoch'?{epoch:'replacement-journal'}:{}),...(options.identityChange==='subject'?{principal:{...original.principal,account:'different-account'}}:{}),...(options.identityChange==='since'?{since:original.since+1}:{}),...(options.identityChange==='missing'?{epoch:undefined}:{})};
+    const current=before?{...original,...(options.beforeIdentityMissing?{epoch:undefined}:{})}:{...original,...(options.identityChange==='epoch'?{epoch:'replacement-journal'}:{}),...(options.identityChange==='subject'?{principal:{...original.principal,account:'different-account'}}:{}),...(options.identityChange==='since'?{since:original.since+1}:{}),...(options.identityChange==='missing'?{epoch:undefined}:{})};
     if (!row || options.absent) return {...current,found:false,clock:!before && options.clockAsText ? '9999' : (before?c.clock.ms-(options.clockLagMs??0):(!before && options.clockBeforeDeadline ? deadline : deadline+1))/1000,floor:!before && options.floorBeforeSince?original.since-1:(!before && options.floorAtDeadline ? deadline/1000 : original.since)};
     if(++queries <= (options.pendingReads ?? 0))return {...row,...current,state:'received',key:undefined,touched:null};
     return {ok:true,...row,...current,...(options.rejected?{state:'rejected',phase:'admission',touched:false,key:undefined}:{}),...(Object.hasOwn(options,'deviceReached')?{touched:options.deviceReached}:{}),...(options.stopped ? {state:'not_started',touched:Object.hasOwn(options,'deviceReached')?options.deviceReached:false,key:undefined} : {}),...(options.wrongIdentity ? {request:'other-request'} : {})};
