@@ -151,3 +151,9 @@ reconciled 与原 receipt 分开，统一身份读取器优先保留原回执。
 动作报错码改由调用点显式传入，不再根据 phase 借用定义不符的 SOURCE_UNAVAILABLE/LEASE_UNAVAILABLE。没有适合的共享码时保留确切结果和补证说明，不编新码。
 
 验证：R25 远端心跳失败的空码回归先失败后通过。Needs：共享合约日后如需单独区分远端读取失败、回读不符、远端租约连续性缺失，请由合约所有者定义；本包不私造码。
+
+## 26 — 已修复
+
+目标租约 acquire、heartbeat、release 及其原件接收动作使用 lease 动作类型，op 使用生成的 LeaseOp acquire/extend/release。不借读语义解释目标写入；component 和无 keys 区分本地物理租约记录。
+
+验证：R26 及 R01 联合回归通过，租约动作类型反例先失败后通过。

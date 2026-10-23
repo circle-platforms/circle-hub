@@ -190,3 +190,11 @@ test('R25 remote renewal failures do not borrow unrelated core lease conflict co
   const failures=(await c.service.journal.events(state.job)).filter(e=>e.body.detail.phase==='heartbeat' && e.body.result==='error');
   assert.ok(failures.length);assert.ok(failures.every(e=>e.body.error_code===null && e.body.codes.length===0));
 });
+
+test('R26 target lease operations retain lease action kinds and generated operations',async t=>{
+  const c=await setup();t.after(()=>c.close());const state=await c.service.dispatch(c.admin,c.run,c.executor.id);
+  const events=await c.service.journal.events(state.job);
+  for(const [phase,op] of [['acquire','acquire'],['release','release']]) {
+    const event=events.find(e=>e.body.detail.phase===phase)!;assert.equal(event.body.action,'lease');assert.equal(event.body.detail.op,op);
+  }
+});
