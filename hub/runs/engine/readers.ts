@@ -54,6 +54,11 @@ export function recordReader(store: RecordStore): RecordReader {
     async read(digest, reader) {
       const record = await store.get(digest);
       if (record === null) return null;
+      // K03 R[4]: candidate records are never an admin bypass into another person's private evidence.
+      if (record.kind === 'claim' && record.schema === 'knowledge-candidate@1') {
+        if (!isObject(record.body) || record.body.owner !== reader.user) return null;
+        return { kind: record.kind, schema: record.schema, provenance: record.provenance, created_at: record.created_at, body: record.body };
+      }
       if (reader.role !== 'admin') {
         const run = runOfRecord(record);
         if (run === null) return null;

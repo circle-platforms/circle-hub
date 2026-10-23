@@ -377,7 +377,11 @@ function uploadText(v: UploadOut): string {
   const blocks: Block[] = [{ priority: 0, head }];
   if (v.errors.length > 0) blocks.push({ priority: 1, head: ['错误与修正：'], entries: errorList(v.errors, CLIP, false).entries, unit: '错误', measure: '个', more: fixFirst });
   if (v.acceptance === 'accepted') {
-    if (v.structure === undefined) blocks.push({ priority: 1, head: ['没有核心解析器认出这份文件'] });
+    if(v.knowledge_layer==='candidate'){
+      const privateView=v.visibility?.readers.length===1&&v.visibility.admins===false&&v.visibility.shareable===false;
+      blocks.push({priority:0,head:[`候选根据：${privateView?'只本人可见，管理员不可读，不可分享':labelOf('knowledge_layer',v.knowledge_layer)}`,...(v.evidence_gaps??[]).map(oneLine)]});
+    }
+    else if (v.structure === undefined) blocks.push({ priority: 1, head: ['没有核心解析器认出这份文件'] });
     else {
       const read = v.reference === undefined ? null : `读原文：${readCall(v.reference)}`;
       const structure = structureLines(v.structure, read);
@@ -1340,6 +1344,13 @@ function submitText(v: SubmitOut, context: TextContext): string {
     if (record !== null) head.push(`存下的结果 ${record}（用 get_nodes 按引用读；也可${toConsole}）`);
   }
   const blocks: Block[] = [{ priority: 0, head }];
+  if(v.candidate_receipt!==undefined){
+    const c=v.candidate_receipt;
+    blocks.push({priority:0,head:[`候选 ${c.count} 条：入层 ${c.accepted+c.deduplicated} 条（新入 ${c.accepted} 条，已有 ${c.deduplicated} 条），没入层 ${c.rejected} 条`],entries:c.errors.map(e=>{
+      const index=/^\/candidates\/(\d+)$/.exec(e.path??'');
+      return {lines:[`${index?`第 ${Number(index[1])+1} 条`:'候选字段'}：${oneLine(e.message)}${e.fix?`；修正：${oneLine(e.fix)}`:''}`],omitted:[]};
+    }),unit:'候选修正',measure:'条',more:()=>null});
+  }
   if (accepted) blocks.push({ priority: 0, head: ['要求项（满足状态与各层终态的条目数）：', ...requirementCounts(result)] });
   if (v.errors.length > 0) {
     const whole = (i: number): string | null => (record !== null ? `${record}#/errors/${i}` : null);

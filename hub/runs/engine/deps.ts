@@ -3,6 +3,7 @@
 import type { Principals, RecordsKit } from '../../records/api.ts';
 import type { ExternalReaderPort, KnowledgePort, PacksPort, WorkflowStore } from '../../ports.ts';
 import type { LeaseService } from '../../leases/service.ts';
+import type { CandidateLayer } from '../../knowledge/api.ts';
 import { createDefaultRegistry, createDocumentCache, type DocumentCache, type ParserRegistry } from '../../refs/api.ts';
 import type { SandboxLimits, SandboxOptions } from '../../rules/api.ts';
 import { createKeyedLock, wellFormed } from './util.ts';
@@ -24,7 +25,7 @@ export interface RunsEngineDeps {
   };
   workflows: WorkflowStore;
   packs: PacksPort;
-  knowledge: KnowledgePort;
+  knowledge: KnowledgePort & {layers?:{candidates:Pick<CandidateLayer,'prepareDocuments'|'appendPrepared'|'sourceMetadata'>}};
   external: ExternalReaderPort;
   /** Core parsers; default the six of hub/refs. */
   parsers?: ParserRegistry;

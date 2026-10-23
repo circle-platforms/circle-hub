@@ -172,6 +172,46 @@
     },
     "notes": {
       "type": "string"
+    },
+    "task_outputs": {
+      "description": "task-specific ranking, selection and scoring; kept in the run submission only",
+      "maxItems": 1000,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "output": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$"
+          },
+          "value": {}
+        },
+        "required": [
+          "output",
+          "value"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "candidate_summary": {
+      "description": "Hub-owned count and digest; the candidate content is never stored in this record",
+      "type": "object",
+      "properties": {
+        "count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "count",
+        "sha256"
+      ],
+      "additionalProperties": false
     }
   },
   "required": [

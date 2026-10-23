@@ -551,6 +551,84 @@
       ],
       "additionalProperties": false
     },
+    "outputs": {
+      "description": "the locked pack declares document candidate and task output destinations; never candidate content",
+      "type": "object",
+      "properties": {
+        "documents": {
+          "default": [],
+          "maxItems": 32,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]{0,63}$"
+              },
+              "input": {
+                "description": "the workflow input slot whose document fragments this output may reference",
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]{0,63}$"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "classification",
+                  "placement_proposal",
+                  "assertion",
+                  "relation"
+                ]
+              },
+              "max_items": {
+                "default": 100,
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 100
+              }
+            },
+            "required": [
+              "id",
+              "kind",
+              "max_items"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "tasks": {
+          "default": [],
+          "maxItems": 32,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]{0,63}$"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "ranking",
+                  "selection",
+                  "score"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "kind"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "documents",
+        "tasks"
+      ],
+      "additionalProperties": false
+    },
     "instructions": {
       "type": "string",
       "description": "the pack procedure, plain text"

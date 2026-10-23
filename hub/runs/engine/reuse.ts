@@ -9,7 +9,7 @@
 import type { Claim } from '../../../contracts/src/claim.ts';
 import type { ProtocolError } from '../../../contracts/src/common.ts';
 import type { ItemProjection, RunRecord } from '../../../contracts/src/run.ts';
-import { Submission, type ItemSubmission } from '../../../contracts/src/submission.ts';
+import { RecordedSubmission as Submission, type ItemSubmission } from '../../../contracts/src/submission.ts';
 import type { ItemResult, ValidationResult } from '../../../contracts/src/validation.ts';
 import type { Principal, StoredRecord } from '../../records/api.ts';
 import type { LoadedWorkflow } from '../../ports.ts';

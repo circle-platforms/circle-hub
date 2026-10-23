@@ -2,8 +2,8 @@
 // Every answer conforms to its output schema, a protocol error included: the envelope plus the tool's empty shape (D05 R[3]),
 // never invented run ids, locks or digests.
 import { z } from 'zod';
-import { AcceptanceSchema, EntryKindSchema, NodeLevelSchema, PackKindSchema, ReadTierSchema, ResolutionSchema, SourceRoleSchema } from '../generated/vocabulary.ts';
-import { Coverage, Envelope, ItemId, PackId, RunId, Sha256 } from './common.ts';
+import { AcceptanceSchema, KnowledgeLayerSchema, EntryKindSchema, NodeLevelSchema, PackKindSchema, ReadTierSchema, ResolutionSchema, SourceRoleSchema } from '../generated/vocabulary.ts';
+import { Coverage, Envelope, ItemId, PackId, ProtocolError, RunId, Sha256, UserId } from './common.ts';
 import { ExternalObjectId, Ground, ReferenceUri, TreePath, referenceUriOf } from './reference.ts';
 import { InputBinding, PackSummary, RunSummary } from './run.ts';
 import { Submission } from './submission.ts';
@@ -67,6 +67,7 @@ export const UploadFileInput = z.strictObject({
     .meta({ contentEncoding: 'base64', contentMediaType: 'application/octet-stream' })
     .describe('The file to upload. Give the local path; the client sends the file bytes.'),
   media_type: z.string().optional().describe('Media type if known, for example text/markdown'),
+  knowledge_layer: KnowledgeLayerSchema.extract(['candidate']).optional().describe('candidate: a private session excerpt for the owner-only candidate layer; absent means an ordinary upload'),
   name: z.string().optional().describe('Original file name, for display'),
 });
 // safeExtend: the receipt, optional in the envelope, is required here, and the envelope's refinements stay.
@@ -77,6 +78,9 @@ export const UploadFileOutput = Envelope.safeExtend({
   size: z.number().int().nonnegative().optional(),
   media_type: z.string().optional(),
   structure: z.record(z.string(), z.unknown()).optional().describe('Summary from the parser that recognised the file'),
+  evidence_gaps: z.array(z.string()).optional().describe('metadata not supplied by the current client; candidate excerpts currently have no message id'),
+  knowledge_layer: KnowledgeLayerSchema.extract(['candidate']).optional(),
+  visibility: z.strictObject({readers:z.array(UserId).length(1),admins:z.literal(false),shareable:z.literal(false)}).optional().describe('candidate excerpt visibility; absent on ordinary uploads'),
 }).superRefine((o, ctx) => {
   if (o.acceptance !== 'accepted') {
     if (o.reference !== undefined) issue(ctx, ['reference'], 'an upload that is not accepted has no reference');
@@ -202,6 +206,7 @@ export const SubmitResultOutput = Envelope.safeExtend({
     'The validation result (validation@1) when the submission was validated against a run you may use; absent on a protocol error such as an unknown or unavailable run. A repeated submission returns the stored result, whose trace is that of the call that produced it',
   ),
   counts: PartitionCounts.optional().describe('Counts derived from result.partitions, only when the submission was accepted'),
+  candidate_receipt: z.strictObject({ count:z.number().int().nonnegative(), sha256:Sha256, accepted:z.number().int().nonnegative(), deduplicated:z.number().int().nonnegative(), rejected:z.number().int().nonnegative(), records:z.array(Sha256), errors:z.array(ProtocolError) }).optional().describe('independent candidate receipt; never changes the primary validation result or repair rounds'),
 }).superRefine((o, ctx) => {
   if (o.result !== undefined && o.result.acceptance !== o.acceptance) issue(ctx, ['result', 'acceptance'], 'the receipt and the validation result agree');
   if (o.acceptance !== 'accepted') {

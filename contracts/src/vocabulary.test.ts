@@ -11,8 +11,8 @@ const model = JSON.parse(readFileSync(new URL('../model.json', import.meta.url),
 const exported = vocabulary as unknown as Record<string, unknown>;
 const pascal = (s: string): string => s.split('_').map((p) => p[0].toUpperCase() + p.slice(1)).join('');
 
-test('the model declares 58 axes and the generated AXES lists exactly those, in order', () => {
-  assert.equal(model.vocabulary.length, 58);
+test('the model declares 61 axes and the generated AXES lists exactly those, in order', () => {
+  assert.equal(model.vocabulary.length, 61);
   assert.deepEqual(Object.keys(AXES), model.vocabulary.map((a) => a.axis));
 });
 
@@ -24,7 +24,7 @@ for (const axis of model.vocabulary) {
     const entry = AXES[axis.axis as AxisName];
     assert.equal(entry.label, axis.label);
     assert.equal(entry.owner, axis.owner);
-    assert.deepEqual(entry.values, axis.values);
+    assert.deepEqual(entry.values, axis.values.map(({code,label})=>({code,label})), 'semantic descriptions remain in the model; the generated label table publishes codes and labels');
     assert.equal(axisLabel(axis.axis as AxisName), axis.label);
 
     assert.deepEqual(exported[C], codes, `${C} lists the codes`);

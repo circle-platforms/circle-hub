@@ -544,6 +544,7 @@ async function startFresh(
     requirements: workflow.requirements.map(requirementSummary),
     items,
     ...(slots !== undefined ? { slots } : {}),
+    ...(workflow.workflow.outputs !== undefined ? { outputs: workflow.workflow.outputs } : {}),
     instructions: workflow.instructions,
     instructions_digest: workflow.instructionsDigest,
     ...(predecessor !== null ? { predecessor: predecessor.body.run } : {}),

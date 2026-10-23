@@ -3,6 +3,7 @@
 // The runs package validates a pack against these shapes at publish, freezes the parts a run uses at start_run and runs the
 // engine on them; the packs package writes packs in these shapes. Product dialect is data and pack functions, never core code.
 // Register every record or pack-file schema in `schemas`; contracts/src/index.ts merges them into SCHEMA_REGISTRY.
+import { WorkflowOutputs } from './candidates.ts';
 import { z } from 'zod';
 import {
   AcceptedProducerSchema,
@@ -411,6 +412,7 @@ export const WorkflowFile = z
     subject: Key.describe('the input slot that holds the judged source'),
     projection: PackFunctionRef.describe('ProjectionInput -> ProjectionOutput: the items of the run (W01)'),
     expected_sources: PackFunctionRef.optional().describe('ExpectedSourcesInput -> ExpectedSourcesOutput: external objects to bind as expected sources'),
+    outputs: WorkflowOutputs.optional().describe('declared document outputs enter the owner-only candidate layer; task outputs remain in run records'),
     leases: z
       .strictObject({
         prefix: z.string().min(1).regex(/\/$/, 'the lease prefix ends with / (keys of this workflow live under it)'),
@@ -424,6 +426,7 @@ export const WorkflowFile = z
       ctx.addIssue({ code: 'custom', path: ['leases'], message: 'a workflow that declares leases asks for the leases context (context: ["leases"])' });
     }
     if (!w.inputs.some((i) => i.slot === w.subject)) ctx.addIssue({ code: 'custom', path: ['subject'], message: 'the subject names an input slot' });
+    w.outputs?.documents.forEach((out,i)=>{if(out.input!==undefined&&!w.inputs.some(input=>input.slot===out.input))ctx.addIssue({code:'custom',path:['outputs','documents',i,'input'],message:'a document output names a declared input slot'});});
     w.inputs.forEach((i, k) => {
       if (w.inputs.findIndex((x) => x.slot === i.slot) !== k) ctx.addIssue({ code: 'custom', path: ['inputs', k, 'slot'], message: `slot ${i.slot} is declared twice` });
     });

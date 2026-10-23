@@ -61,6 +61,9 @@ export const AXES = {
   target: { label: '目标种类', owner: 'W02', values: [{ code: 'item', label: '条目' }, { code: 'run', label: '运行' }] },
   measure: { label: '度量', owner: 'C04', values: [{ code: 'count', label: '个数' }, { code: 'sum', label: '总和' }, { code: 'min', label: '最小值' }, { code: 'max', label: '最大值' }] },
   placement: { label: '归位方式', owner: 'K04', values: [{ code: 'code_only', label: '只按代码归位' }, { code: 'judgment_allowed', label: '可由 bot 提议归位' }] },
+  document_output_kind: { label: '按文档的产出种类', owner: 'K03', values: [{ code: 'classification', label: '分类' }, { code: 'placement_proposal', label: '归位提议' }, { code: 'assertion', label: '声明' }, { code: 'relation', label: '关系' }] },
+  task_output_kind: { label: '按任务的产出种类', owner: 'W07', values: [{ code: 'ranking', label: '排序' }, { code: 'selection', label: '取舍' }, { code: 'score', label: '分数' }] },
+  relation_kind: { label: '关系种类', owner: 'K03', values: [{ code: 'same_subject', label: '说的是同一件事' }, { code: 'contradicts', label: '互相矛盾' }] },
 } as const;
 
 export type AxisName = keyof typeof AXES;
@@ -587,6 +590,33 @@ export function isPlacement(value: unknown): value is Placement {
   return (PLACEMENT as readonly unknown[]).includes(value);
 }
 
+/** 按文档的产出种类 (K03) */
+export const DOCUMENT_OUTPUT_KIND = ['classification', 'placement_proposal', 'assertion', 'relation'] as const;
+export type DocumentOutputKind = (typeof DOCUMENT_OUTPUT_KIND)[number];
+export const DOCUMENT_OUTPUT_KIND_LABEL = { 'classification': '分类', 'placement_proposal': '归位提议', 'assertion': '声明', 'relation': '关系' } as const satisfies { readonly [K in DocumentOutputKind]: string };
+export const DocumentOutputKindSchema = z.enum(DOCUMENT_OUTPUT_KIND);
+export function isDocumentOutputKind(value: unknown): value is DocumentOutputKind {
+  return (DOCUMENT_OUTPUT_KIND as readonly unknown[]).includes(value);
+}
+
+/** 按任务的产出种类 (W07) */
+export const TASK_OUTPUT_KIND = ['ranking', 'selection', 'score'] as const;
+export type TaskOutputKind = (typeof TASK_OUTPUT_KIND)[number];
+export const TASK_OUTPUT_KIND_LABEL = { 'ranking': '排序', 'selection': '取舍', 'score': '分数' } as const satisfies { readonly [K in TaskOutputKind]: string };
+export const TaskOutputKindSchema = z.enum(TASK_OUTPUT_KIND);
+export function isTaskOutputKind(value: unknown): value is TaskOutputKind {
+  return (TASK_OUTPUT_KIND as readonly unknown[]).includes(value);
+}
+
+/** 关系种类 (K03) */
+export const RELATION_KIND = ['same_subject', 'contradicts'] as const;
+export type RelationKind = (typeof RELATION_KIND)[number];
+export const RELATION_KIND_LABEL = { 'same_subject': '说的是同一件事', 'contradicts': '互相矛盾' } as const satisfies { readonly [K in RelationKind]: string };
+export const RelationKindSchema = z.enum(RELATION_KIND);
+export function isRelationKind(value: unknown): value is RelationKind {
+  return (RELATION_KIND as readonly unknown[]).includes(value);
+}
+
 export interface AxisValues {
   nature: Nature;
   basis_rank: BasisRank;
@@ -646,6 +676,9 @@ export interface AxisValues {
   target: Target;
   measure: Measure;
   placement: Placement;
+  document_output_kind: DocumentOutputKind;
+  task_output_kind: TaskOutputKind;
+  relation_kind: RelationKind;
 }
 
 const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
@@ -707,6 +740,9 @@ const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
   target: TARGET_LABEL,
   measure: MEASURE_LABEL,
   placement: PLACEMENT_LABEL,
+  document_output_kind: DOCUMENT_OUTPUT_KIND_LABEL,
+  task_output_kind: TASK_OUTPUT_KIND_LABEL,
+  relation_kind: RELATION_KIND_LABEL,
 };
 
 /** Chinese display label of a vocabulary code. The only place labels come from. */

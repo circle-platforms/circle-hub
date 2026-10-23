@@ -1,5 +1,5 @@
 {
- "version": 7,
+ "version": 8,
  "elements": [
   {
    "id": "B01",
@@ -1315,6 +1315,9 @@
     "候选部分不进提交记录（三版复核 新问题 20）",
     "原样保存的例外与提交摘要的范围（第四版复核 第 7 行）",
     "未完成记在声明的层（第四版复核 第 2 行）"
+   ],
+   "changes8": [
+    "所有者 2026-10-23 知识库方向（docs/hub-r4-kb-direction.md 第二节）：按任务产出使用 task_output_kind，只进运行记录；候选正文、条数和候选摘要均不进主提交摘要，候选另做本人范围的内容幂等。"
    ]
   },
   {
@@ -2294,7 +2297,10 @@
     "候选内容不进提交记录（三版复核 新问题 20）",
     "候选的根据不对管理员可见（第四版复核 新问题 20 残留）"
    ],
-   "fields": []
+   "fields": [],
+   "changes8": [
+    "所有者 2026-10-23 知识库方向（docs/hub-r4-kb-direction.md 第二节）：按文档产出使用 document_output_kind；关系名使用 relation_kind。same_subject 的标签“说的是同一件事”只表示两段说的是同一议题，不表示内容等价。"
+   ]
   },
   {
    "id": "K04",
@@ -3269,6 +3275,11 @@
    "conflict": "受理轴用“已受理/未受理”，没用 E3-121 里的“已接受/已拒绝”。",
    "resolution": "“已接受/已拒绝”是我在画布里替换“收下/退回”时写的，不是你的原话；“受理”是提交与请求处理的通行说法，也避开了分区“已拒收”和效果结局“目标拒绝”。回执扩到上传和效果写入。决定表第 11 行同时推荐恢复“回执”一词（VOC:19），所以这条随第 11 行待你决定。",
    "status": "待你决定"
+  },
+  {
+   "conflict": "知识库按文档/按任务产出及关系名在实现草稿中被手写为枚举或自由键。",
+   "resolution": "所有者 2026-10-23 知识库方向（docs/hub-r4-kb-direction.md 第二节）及本任务确认：document_output_kind、relation_kind 归 K03；task_output_kind 归 W07。英文代码与中文标签由模型生成；same_subject 表示两段说的是同一议题，不表示内容等价。",
+   "status": "已改"
   }
  ],
  "untraceable": [
@@ -5169,6 +5180,64 @@
     {
      "code": "judgment_allowed",
      "label": "可由 bot 提议归位"
+    }
+   ]
+  },
+  {
+   "axis": "document_output_kind",
+   "label": "按文档的产出种类",
+   "owner": "K03",
+   "values": [
+    {
+     "code": "classification",
+     "label": "分类"
+    },
+    {
+     "code": "placement_proposal",
+     "label": "归位提议"
+    },
+    {
+     "code": "assertion",
+     "label": "声明"
+    },
+    {
+     "code": "relation",
+     "label": "关系"
+    }
+   ]
+  },
+  {
+   "axis": "task_output_kind",
+   "label": "按任务的产出种类",
+   "owner": "W07",
+   "values": [
+    {
+     "code": "ranking",
+     "label": "排序"
+    },
+    {
+     "code": "selection",
+     "label": "取舍"
+    },
+    {
+     "code": "score",
+     "label": "分数"
+    }
+   ]
+  },
+  {
+   "axis": "relation_kind",
+   "label": "关系种类",
+   "owner": "K03",
+   "values": [
+    {
+     "code": "same_subject",
+     "label": "说的是同一件事",
+     "description": "两段说的是同一议题，不表示内容等价"
+    },
+    {
+     "code": "contradicts",
+     "label": "互相矛盾"
     }
    ]
   }

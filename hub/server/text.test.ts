@@ -1223,3 +1223,14 @@ test('recordDigest gives the digest hub/refs checks a record against (the in-mem
   assert.equal(pages.length, 1);
   assert.ok(pages[0].includes(`- ${result.partitions.delivered[0].item} | `));
 });
+
+test('candidate excerpt and candidate submission receipts reach the model without private body text',()=>{
+  const privateUpload=UploadFileOutput.parse({call_result:'ok',errors:[],acceptance:'accepted',reference:SUBJECT,sha256:H('b'),size:100,media_type:'text/plain',trace:TRACE,knowledge_layer:'candidate',visibility:{readers:['usr_0123456789abcdefghjkmnpqrs'],admins:false,shareable:false},evidence_gaps:['缺少消息 id，已记为 null']});
+  const uploaded=toolText('upload_file',privateUpload);
+  assert.match(uploaded,/候选根据：只本人可见/);assert.match(uploaded,/管理员不可读/);assert.match(uploaded,/缺少消息 id/);
+  const receipt={count:3,sha256:H('c'),accepted:1,deduplicated:1,rejected:1,records:[H('d')],errors:[{code:'QUOTE_MISMATCH',path:'/candidates/2',message:'候选引文与所引来源不逐字一致',fix:'照抄原文后重交这条候选'}]};
+  const main=SubmitResultOutput.parse({call_result:'ok',errors:[],acceptance:'accepted',result:resultWith({delivered:[]}),counts:{delivered:0,rejected:0,quarantined:0,incomplete:0,unknown:0},trace:TRACE,candidate_receipt:receipt});
+  const shown=toolText('submit_result',main);
+  assert.match(shown,/候选 3 条：入层 2 条/);assert.match(shown,/新入 1 条，已有 1 条/);assert.match(shown,/没入层 1 条/);
+  assert.match(shown,/第 3 条.*照抄原文后重交这条候选/);
+});

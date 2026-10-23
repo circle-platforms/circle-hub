@@ -41,6 +41,9 @@ import {
 } from './store.ts';
 import { repairRounds } from './terminals.ts';
 import { clipPointer, clipText, isObject, receivedDigest, sessionOf, tooDeep, unique, wellFormed } from './util.ts';
+import { candidateEnvelope } from './candidate-envelope.ts';
+import { submitCandidates } from './candidate-submit.ts';
+import type { CandidateSummary } from '../../../contracts/src/candidates.ts';
 
 export type SubmitAnswer = Untraced<z.infer<typeof SubmitResultOutput>>;
 
@@ -153,10 +156,15 @@ export async function submitResult(ctx: EngineContext, user: Principal, args: Re
     ctx.log({ traceId: call.traceId, run: named, what: 'submit_result', detail: named === null ? 'no run id in the arguments' : `run ${named} is unknown or not visible to ${user.id}` });
     return { call_result: 'error', acceptance: 'not_accepted', errors: [unavailableError('/run')] };
   }
-  return ctx.lock(`submit:${stored.body.run}`, () => submitLocked(ctx, user, args, call, stored));
+  const envelope = candidateEnvelope(args,new Set(stored.body.outputs?.documents.map(output=>output.id)??[]));
+  return ctx.lock(`submit:${stored.body.run}`, async () => {
+    const answer = await submitLocked(ctx,user,envelope.ordinary,call,stored,envelope.summary);
+    const candidate_receipt = await submitCandidates(ctx,user,stored.body,envelope);
+    return candidate_receipt===undefined?answer:{...answer,candidate_receipt};
+  });
 }
 
-async function submitLocked(ctx: EngineContext, user: Principal, args: Record<string, unknown>, call: CallContext, stored: StoredRecord<RunRecord>): Promise<SubmitAnswer> {
+async function submitLocked(ctx: EngineContext, user: Principal, args: Record<string, unknown>, call: CallContext, stored: StoredRecord<RunRecord>,candidateSummary:CandidateSummary|null=null): Promise<SubmitAnswer> {
   const store = ctx.deps.records.store;
   const run = stored.body;
   const received = receivedDigest(args);
@@ -172,7 +180,7 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
   const kept: Kept =
     existing !== null
       ? { record: existing, why: isVerbatimObject(existing) ? (received.canonical ? 'too_large' : 'canonical') : null }
-      : await storeReceived(ctx, call.traceId, run.run, args, received, parsed?.success === true, startedAt);
+      : await storeReceived(ctx, call.traceId, run.run, candidateSummary===null?args:{...args,candidate_summary:candidateSummary}, received, parsed?.success === true, startedAt);
   const record = kept.record;
   const model = parsed?.success ? parsed.data.model : typeof args.model === 'string' ? wellFormed(args.model) : null;
   const session = sessionOf(call);
@@ -185,7 +193,7 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
       endedAt: ctx.now().toISOString(),
       acceptance: input.acceptance,
       codes: input.codes,
-      detail: { submission: received.digest, session, model, repair: input.repair, result: input.result, ...(input.extra ?? {}) },
+      detail: { submission: received.digest, session, model, repair: input.repair, result: input.result, ...(candidateSummary===null?{}:{candidate_summary:candidateSummary}), ...(input.extra ?? {}) },
       submissionRecord: record.digest,
     });
 
@@ -379,6 +387,8 @@ async function validatePartial(base: Basis, args: Record<string, unknown>, error
 async function validate(base: Basis, submission: Submission, before: ProtocolError[], positions: Positions | null): Promise<Validated> {
   const { ctx, user, call, run, workflow, roundsUsed } = base;
   const structure = slotProblems(workflow, run.items, submission);
+  const taskOutputs = new Set(workflow.workflow.outputs?.tasks.map(output=>output.id)??[]);
+  for(const [i,output]of (submission.task_outputs??[]).entries())if(!taskOutputs.has(output.output))structure.push(protocolError('SUBMISSION_SCHEMA_VIOLATION','任务产出未在工作流的按任务通道中声明',{path:`/task_outputs/${i}`,fix:'按锁定工作流 outputs.tasks 声明的编号提交排序、取舍或分数'}));
   const scope = await buildScope(ctx, run, workflow, user, 'function');
   const resolver = createResolver(ctx, scope, 'function');
   const carried = await carriedItems(ctx, scope, resolver, workflow, run, submission);

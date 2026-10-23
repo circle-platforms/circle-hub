@@ -1,7 +1,7 @@
 // Queries for the server and the console (R02): a user sees their own runs, an admin every run, a Hub-side run only an
 // admin; absent and forbidden give the same null or the same empty page. Phase and counts are derived, never stored.
 import { PROTOCOL_CODES } from '../../../contracts/generated/protocol.ts';
-import { Submission } from '../../../contracts/src/submission.ts';
+import { RecordedSubmission as Submission } from '../../../contracts/src/submission.ts';
 import type { RunRecord } from '../../../contracts/src/run.ts';
 import type { ValidationResult } from '../../../contracts/src/validation.ts';
 import { RecordsError, type Page, type Principal, type StoredRecord } from '../../records/api.ts';

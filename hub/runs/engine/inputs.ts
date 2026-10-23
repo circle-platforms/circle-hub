@@ -96,6 +96,11 @@ export async function bindInputs(
         gone(path, source === null ? 'source absent or not readable by the caller' : `bytes withheld (${source.readTier})`);
         return null;
       }
+      const body = source.artifact.body;
+      if ('upload' in body.origin && !body.visibility.admins && !body.visibility.shareable) {
+        schemaError(path, '候选会话摘录只能用于候选通道，不能作为普通运行输入', '把文档作为运行输入，摘录只放在 candidates 的根据里');
+        return null;
+      }
       if (!mediaAccepted(slot, source.mediaType)) {
         schemaError(path, `输入槽 ${slot.slot} 不接受媒体类型 ${source.mediaType}（接受：${slot.accepts.join('、')}）`);
         return null;
@@ -114,6 +119,11 @@ export async function bindInputs(
       const record = await recordReader(store).read(ref.record, identityOf(user));
       if (record === null) {
         gone(path, 'record absent or not visible to the caller');
+        return null;
+      }
+      const privateUpload=record.kind==='source_artifact'&&isObject(record.body)&&isObject(record.body.origin)&&'upload' in record.body.origin&&isObject(record.body.visibility)&&record.body.visibility.admins===false&&record.body.visibility.shareable===false;
+      if((record.kind==='claim'&&record.schema==='knowledge-candidate@1')||privateUpload){
+        schemaError(path,'私有候选及其会话摘录不能作为普通运行输入','只在 candidates 通道中引用私有根据');
         return null;
       }
       const bytes = recordBytes(record, ref.pointer);

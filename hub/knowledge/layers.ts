@@ -5,12 +5,18 @@
 // - Candidate layer: a person's candidates, visible to that person only (admins included, K03 R[4]); bound to the node
 //   path, the cited fragment's digest and the root (K03 R[5]); grounded in an uploaded session excerpt whose quotation is
 //   verified before the candidate is stored (K03 R[4], R[6]).
+import { CandidateProposal, type DocumentOutput } from '../../contracts/src/candidates.ts';
+import type { z } from 'zod';
+import type { Transaction } from '../records/api.ts';
+import { canonicalBytes, canonicalize } from '../records/api.ts';
+import { candidateSource, type CandidateSourceScope } from './candidate-source.ts';
 import { KnowledgeCandidateBody, KnowledgeObservationBody } from '../../contracts/src/knowledge.ts';
 import type { Applicability } from '../../contracts/src/product.ts';
 import { labelOf, type PermissionRole, type ValidityStatus } from '../../contracts/generated/vocabulary.ts';
 import type { Page, Principal } from '../records/api.ts';
 import { sha256Hex } from '../records/api.ts';
-import { ReferenceSyntaxError, parseReference, pathOf, pathSegments, resolveReference, verifyQuote, type SourceReader } from '../refs/api.ts';
+import { ReferenceSyntaxError, parseReference, formatReference, pathOf, pathSegments, resolveReference, verifyQuote, type SourceReader } from '../refs/api.ts';
+import { normaliseStatement } from './digest.ts';
 import type { KnowledgeContext } from './context.ts';
 import { KnowledgeError } from './errors.ts';
 import type { TreeReading } from './read.ts';
@@ -48,11 +54,12 @@ export class ObservationLayer {
 }
 
 export interface CandidateInput {
-  root: string;
-  path: string;
+  root?: string;
+  path?: string;
   statement: string;
   /** The uploaded session excerpt (src reference) and the quotation from it the candidate rests on. */
-  ground: { reference: string; quote: string };
+  ground: { reference: string; quote: string; session_excerpt?: boolean };
+  scope?: CandidateSourceScope;
   applicability?: Applicability | null;
 }
 
@@ -64,9 +71,26 @@ export interface CandidateView {
   note: string | null;
 }
 
+export interface DocumentCandidateRequest {
+  declaration: z.infer<typeof DocumentOutput>;
+  proposal: CandidateProposal;
+}
+export interface PreparedCandidates { readonly count:number; readonly sha256:string }
+export interface CandidateWriteReceipt { records:string[]; accepted:number; deduplicated:number }
+export type CandidateGroundPolicy = boolean;
+
+function candidateIdentity(owner:string,row:DocumentCandidateRequest,privateGround:boolean):string {
+  const quote=(q:{reference:string;quote:string})=>({reference:formatReference(parseReference(q.reference)),quote:q.quote.replace(/\s+/gu,' ').trim()});
+  const p=row.proposal,ref=parseReference(p.source.reference);
+  const binding=p.binding??(ref.scheme==='tree'?{root:ref.root,path:ref.path}:null);
+  return sha256Hex(canonicalize({owner,kind:row.declaration.kind,statement:normaliseStatement(p.statement),source:quote(p.source),ground:quote(p.ground??p.source),privateGround,
+    binding:binding===null?null:{root:binding.root,path:pathOf(pathSegments(binding.path))},relation:p.relation?{name:p.relation.name,other:quote(p.relation.other)}:null}));
+}
+
 export class CandidateLayer {
   readonly #context: KnowledgeContext;
   readonly #reading: TreeReading;
+  readonly #prepared = new WeakMap<PreparedCandidates,{owner:string;requests:DocumentCandidateRequest[];model:string;policy:CandidateGroundPolicy;scope?:CandidateSourceScope;bodies:KnowledgeCandidateBody[];identities:string[];existing:string[]}>();
 
   constructor(context: KnowledgeContext, reading: TreeReading) {
     this.#context = context;
@@ -85,52 +109,107 @@ export class CandidateLayer {
     return read === null ? null : sha256Hex(read.text);
   }
 
-  async add(owner: Principal, input: CandidateInput): Promise<string> {
-    const account = await this.#account(owner);
-    let path: string;
-    try {
-      path = pathOf(pathSegments(input.path));
-    } catch (error) {
-      if (error instanceof ReferenceSyntaxError) throw new KnowledgeError(`路径写法不对：${error.message}`, { code: 'REFERENCE_UNRESOLVED' });
-      throw error;
+  async add(owner:Principal,input:CandidateInput):Promise<string>{
+    if(input.applicability!=null)throw new KnowledgeError('候选不能增添来源未声明的适用条件',{code:'SUBMISSION_SCHEMA_VIOLATION'});
+    const quote={reference:input.ground.reference,quote:input.ground.quote};
+    const scope=input.scope??this.#documentScope(input.root);
+    const declaration={id:'legacy',kind:'assertion' as const,max_items:1};
+    const proposal={output:'legacy',statement:input.statement,source:quote,
+      ...(input.root===undefined&&input.path===undefined?{}:{binding:{root:input.root!,path:input.path!}})};
+    const prepared=await this.prepareDocuments(owner,[{declaration,proposal}],'(declared)',input.ground.session_excerpt===true,scope);
+    return (await this.appendPrepared(owner,prepared)).records[0];
+  }
+
+  #documentScope(root?:string):CandidateSourceScope{
+    return {begin:async owner=>({resolve:async reference=>{
+      const ref=parseReference(reference);
+      if(ref.scheme==='src')return {reference,text:'',provenance:'declared'}; // actual source and grade are read below
+      if(ref.scheme!=='tree'||(root!==undefined&&ref.root!==root))return null;
+      const result=await resolveReference(ref,{reader:{user:owner.id,role:owner.role},parsers:this.#context.parsers,trees:this.#reading.treeReader(),consumer:'model'});
+      const metadata=result.resolved?await this.sourceMetadata(owner,result.reference):null;
+      return result.resolved&&result.text!==null&&metadata!==null?{reference:result.reference,text:result.text,...metadata}:null;
+    }})};
+  }
+
+  /** Metadata of the actual immutable tree record, never a model-supplied provenance label. */
+  async sourceMetadata(owner:Principal,reference:string):Promise<{provenance:import('../../contracts/generated/vocabulary.ts').ProvenanceType;record:string}|null>{
+    const account=await this.#account(owner),ref=parseReference(reference);
+    if(ref.scheme!=='tree'||!(await this.#reading.mayReadRoot(account,ref.root)))return null;
+    const at=await this.#reading.nodeAt(ref.root,pathSegments(ref.path));
+    if(at===null||(ref.entry!==undefined&&!at.node.entries.includes(ref.entry)))return null;
+    const page=await this.#context.store.records.find({key:ref.entry===undefined?INDEX.node:INDEX.entry,value:ref.entry??at.digest,kind:'tree_node',limit:1});
+    const record=page.items[0];return record?{provenance:record.provenance,record:record.digest}:null;
+  }
+
+  /** Verify a whole batch without persisting content. Its opaque handle cannot be forged or altered by a caller. */
+  async prepareDocuments(owner:Principal,requests:readonly DocumentCandidateRequest[],model:string,policy:CandidateGroundPolicy,scope?:CandidateSourceScope):Promise<PreparedCandidates> {
+    const snapshot=structuredClone(requests) as DocumentCandidateRequest[];
+    const account=await this.#account(owner),reader={id:account.id,name:account.id,role:account.role};
+    const scoped=scope===undefined?await this.#documentScope().begin(reader):await scope.begin(reader);
+    const bodies:KnowledgeCandidateBody[]=[],identities:string[]=[],existing:string[]=[];
+    const counts=new Map<string,number>();
+    for(const row of snapshot){
+      const parsed=CandidateProposal.safeParse(row.proposal);
+      if(!parsed.success)throw new KnowledgeError('候选形状不合格，不能自报来源、依据等级或适用条件',{code:'SUBMISSION_SCHEMA_VIOLATION'});
+      const p=parsed.data,d=row.declaration;
+      if(d.id!==p.output || (counts.get(d.id)??0)>=d.max_items)throw new KnowledgeError('候选超出工作流声明',{code:'SUBMISSION_SCHEMA_VIOLATION'});
+      counts.set(d.id,(counts.get(d.id)??0)+1);
+      if((d.kind==='placement_proposal' && p.binding===undefined)||(d.kind==='relation')!==(p.relation!==undefined))throw new KnowledgeError('候选种类与工作流声明不一致',{code:'SUBMISSION_SCHEMA_VIOLATION'});
+      const identity=candidateIdentity(account.id,row,p.ground!==undefined||policy);
+      const prior=await this.#context.store.records.find({key:'knowledge.candidate.identity',value:`${account.id}:${identity}`,kind:'claim',limit:1});
+      if(prior.items[0]){existing.push(prior.items[0].digest);continue;}
+      const source=await candidateSource(this.#context,reader,p.source,false,scoped);
+      const ground=p.ground??p.source;
+      if(p.ground!==undefined || policy)await candidateSource(this.#context,reader,ground,true,p.ground===undefined?scoped:undefined);
+      let anchor:{product?:string;root?:string;path?:string;cited_fragment:string;source_revision?:string};
+      const sourceRef=parseReference(source.reference);
+      const binding=p.binding??(sourceRef.scheme==='tree'?{root:sourceRef.root,path:sourceRef.path}:undefined);
+      if(binding!==undefined){
+        const path=pathOf(pathSegments(binding.path));
+        const fragment=await this.#fragmentDigest(binding.root,path,account);
+        if(fragment===null)throw new KnowledgeError('提议路径在依据根中不可解析',{code:'REFERENCE_UNRESOLVED'});
+        const products=await this.#reading.productsOfRoot(binding.root);
+        anchor={product:[...products].sort()[0],root:binding.root,path,cited_fragment:fragment};
+      }else{
+        const ref=parseReference(source.reference);
+        anchor={cited_fragment:source.fragment,source_revision:ref.scheme==='src'?ref.sha256:ref.scheme==='tree'?ref.root:ref.scheme==='rec'?ref.record:ref.entry};
+      }
+      const relation=p.relation===undefined?undefined:{name:p.relation.name,other:await candidateSource(this.#context,reader,p.relation.other,false,scoped)};
+      const body=KnowledgeCandidateBody.parse({...anchor,owner:account.id,statement:normaliseStatement(p.statement),ground,applicability:null,
+        kind:d.kind,output:d.id,model,basis_rank:parseReference(source.reference).scheme==='rec'||(relation!==undefined&&parseReference(relation.other.reference).scheme==='rec')?'relay':'judgment',source,...(relation===undefined?{}:{relation})});
+      bodies.push(body);
+      identities.push(identity);
     }
-    const cited = await this.#fragmentDigest(input.root, path, account);
-    if (cited === null) throw new KnowledgeError('对你不可用', { code: 'SOURCE_UNAVAILABLE' });
-    let ground;
-    try {
-      ground = parseReference(input.ground.reference);
-    } catch (error) {
-      if (error instanceof ReferenceSyntaxError) throw new KnowledgeError(`根据的引用写法不对：${error.message}`, { code: 'REFERENCE_UNRESOLVED' });
-      throw error;
-    }
-    if (ground.scheme !== 'src') throw new KnowledgeError('候选的根据要先作为源文件上传（会话摘录），再用 src 引用', { code: 'REFERENCE_UNRESOLVED' });
-    // The excerpt is the owner's own upload, private to them (K03 R[4]).
-    const artifact = await this.#context.records.artifacts.readable({ id: account.id, name: account.id, role: account.role }, ground.sha256);
-    const own = artifact !== null && 'upload' in artifact.body.origin && artifact.body.author.user === account.id && !artifact.body.visibility.admins;
-    if (!own) throw new KnowledgeError('候选的根据必须是你本人上传、只对你可见的会话摘录', { code: 'SOURCE_UNAVAILABLE' });
-    const sources: SourceReader = {
-      read: async (sha256) => {
-        const source = await this.#context.records.artifacts.source({ id: account.id, name: account.id, role: account.role }, sha256, { consumer: 'model' });
-        return source === null || source.bytes === null ? null : { bytes: source.bytes, mediaType: source.mediaType, size: source.size, readTier: source.readTier };
-      },
+    const handle=Object.freeze({count:snapshot.length,sha256:sha256Hex(canonicalBytes(snapshot))});
+    this.#prepared.set(handle,{owner:account.id,requests:snapshot,model,policy,scope,bodies,identities,existing});
+    return handle;
+  }
+
+  /** Recheck live source access immediately before a transaction; never evaluate source I/O inside that transaction. */
+  async recheckDocuments(owner:Principal,handle:PreparedCandidates):Promise<PreparedCandidates>{
+    const saved=this.#prepared.get(handle);
+    if(saved===undefined||saved.owner!==owner.id)throw new KnowledgeError('候选核验凭据无效',{code:'SOURCE_UNAVAILABLE'});
+    return this.prepareDocuments(owner,saved.requests,saved.model,saved.policy,saved.scope);
+  }
+
+  /** Append only the private bodies we verified. The run stores the batch count/digest, never these bodies. */
+  async appendPrepared(owner:Principal,handle:PreparedCandidates,tx?:Transaction):Promise<CandidateWriteReceipt>{
+    const saved=this.#prepared.get(handle);
+    if(saved===undefined||saved.owner!==owner.id)throw new KnowledgeError('候选核验凭据无效',{code:'SOURCE_UNAVAILABLE'});
+    if(tx===undefined){const fresh=await this.recheckDocuments(owner,handle);return this.#context.store.records.withTransaction(transaction=>this.appendPrepared(owner,fresh,transaction));}
+    const write=async(transaction:Transaction)=>{
+      const records:string[]=[...saved.existing];let accepted=0,deduplicated=saved.existing.length;
+      for(const [i,body]of saved.bodies.entries()){
+        const identity=saved.identities[i];
+        const existing=await this.#context.store.records.find({key:'knowledge.candidate.identity',value:`${owner.id}:${identity}`,kind:'claim',limit:1},transaction);
+        if(existing.items[0]){records.push(existing.items[0].digest);deduplicated++;continue;}
+        const record=await this.#context.store.putClaim(SCHEMAS.candidate,'candidate',body,[{key:INDEX.candidate,value:owner.id},{key:'knowledge.candidate.identity',value:`${owner.id}:${identity}`}],transaction);
+        records.push(record.digest);
+        accepted++;
+      }
+      return {records:[...new Set(records)],accepted,deduplicated};
     };
-    const resolved = await resolveReference(ground, { reader: { user: account.id, role: account.role }, parsers: this.#context.parsers, sources });
-    const verdict = verifyQuote(resolved, input.ground.quote);
-    if (verdict !== true) throw new KnowledgeError(verdict === false ? '引文与根据的原文对不上（逐字核对）' : '根据的原文不可读，无法核对引文', { code: verdict === false ? 'QUOTE_MISMATCH' : 'REFERENCE_UNRESOLVED' });
-    const products = await this.#reading.productsOfRoot(input.root);
-    const body = KnowledgeCandidateBody.safeParse({
-      owner: account.id,
-      product: [...products].sort()[0],
-      root: input.root,
-      path,
-      cited_fragment: cited,
-      statement: input.statement,
-      ground: { reference: resolved.resolved ? resolved.reference : input.ground.reference, quote: input.ground.quote },
-      applicability: input.applicability ?? null,
-    });
-    if (!body.success) throw new KnowledgeError('候选不合格');
-    const record = await this.#context.store.putClaim(SCHEMAS.candidate, 'candidate', body.data, [{ key: INDEX.candidate, value: account.id }]);
-    return record.digest;
+    return tx===undefined?this.#context.store.records.withTransaction(write):write(tx);
   }
 
   /** The owner's own candidates (nobody else's, admins included), with their status against the root the owner reads. */
@@ -143,7 +222,7 @@ export class CandidateLayer {
       if (candidate === null || candidate.owner !== account.id) continue;
       let status: CandidateView['status'] = 'valid';
       let note: string | null = null;
-      if (readerRoot !== null && readerRoot !== candidate.root) {
+      if (readerRoot !== null && candidate.root !== undefined && candidate.path !== undefined && readerRoot !== candidate.root) {
         const now = await this.#fragmentDigest(readerRoot, candidate.path, account);
         if (now !== candidate.cited_fragment) {
           status = 'cited_fragment_changed';

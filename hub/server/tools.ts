@@ -276,7 +276,9 @@ async function upload(deps: ServerDeps, call: ToolCall, args: Record<string, unk
       author: { user: call.principal.id, declared: null },
       provenanceType: 'declared',
       // B02 R[3]: what is uploaded for a run is visible to its uploader and to admins; widening goes through a share.
-      visibility: { readers: [call.principal.id], admins: true, packs: [], shareable: true },
+      visibility: parsed.data.knowledge_layer === 'candidate'
+        ? { readers: [call.principal.id], admins: false, packs: [], shareable: false }
+        : { readers: [call.principal.id], admins: true, packs: [], shareable: true },
       readTier: 'model_readable',
       name: name ?? null,
     });
@@ -292,7 +294,8 @@ async function upload(deps: ServerDeps, call: ToolCall, args: Record<string, unk
   }
   let structure: Record<string, unknown> | null = null;
   try {
-    structure = structureOf(deps.parsers, bytes, artifact.body.media_type);
+    // Do not expose private excerpt previews or parser diagnostics in an admin note.
+    if (parsed.data.knowledge_layer !== 'candidate') structure = structureOf(deps.parsers, bytes, artifact.body.media_type);
   } catch (error) {
     call.context.adminNote(`structure summary failed: ${describeError(error)}`);
   }
@@ -306,6 +309,11 @@ async function upload(deps: ServerDeps, call: ToolCall, args: Record<string, unk
     size: artifact.body.size,
     media_type: artifact.body.media_type,
     ...(structure === null ? {} : { structure }),
+    ...(parsed.data.knowledge_layer === 'candidate' ? {
+      knowledge_layer: parsed.data.knowledge_layer,
+      visibility: {readers:[call.principal.id],admins:false,shareable:false},
+      evidence_gaps: ['来源缺少消息 id：当前客户端未提供，已记为 null；会话 id 取自 circle-session-id 请求头'],
+    } : {}),
   };
 }
 
