@@ -15,7 +15,7 @@ test('tools are checked before calling, extra management tools are never called,
   assert.equal((result.value as any).echo, 'Bearer [已隐藏]');
   assert.ok(saved.some(s => s.includes('echo')));
   assert.ok(saved.every(s => !s.includes('synthetic-secret')));
-  assert.ok(server.calls.every(c => c.headers.authorization === 'Bearer synthetic-secret' && c.headers['x-circle-hub-operator'] === 'synthetic-job'));
+  assert.ok(server.calls.every(c => c.headers.authorization === 'Bearer synthetic-secret' && c.headers['x-circle-hub-actor'] === 'synthetic-job'));
   assert.deepEqual(server.calls.filter(c => c.method === 'tools/call').map(c => c.params.name), ['inspect_slot']);
 });
 
@@ -86,4 +86,15 @@ test('a complete matching SSE response is accepted even when the server keeps it
   let boundary = false;
   const client = new RpcClient(ExecutorDefinition.parse(cfg), 'synthetic-secret', 'synthetic-job', async (_bytes, _status, role, _complete, metadata) => { if (role === 'precheck') boundary = metadata?.stream_cut_at_response === true; return 'src:' + 'a'.repeat(64); });
   await client.connect(); assert.equal(((await client.call('precheck', {})).value as any).ok, true); assert.equal(boundary, true);
+});
+
+test('the represented actor header comes only from deployment data and invalid actors never reach the endpoint', async t => {
+  const server = await startEndpoint(definition('x').allowed_tools, () => ({ ok: true })); t.after(() => server.close());
+  const d = ExecutorDefinition.parse({ ...definition(server.endpoint), actor: { header: 'X-Circle-Hub-Actor', pattern: '^[A-Za-z0-9][A-Za-z0-9._@/-]{0,127}$', max_length: 128 } });
+  const client = new RpcClient(d, 'synthetic-secret', 'synthetic-user/synthetic-job', async () => 'src:' + 'a'.repeat(64));
+  await client.connect();
+  assert.ok(server.calls.every(c => c.headers['x-circle-hub-actor'] === 'synthetic-user/synthetic-job' && c.headers['x-circle-hub-operator'] === undefined));
+  const count = server.calls.length;
+  await assert.rejects(async () => new RpcClient(d, 'synthetic-secret', 'invalid actor', async () => 'src:' + 'a'.repeat(64)).connect());
+  assert.equal(server.calls.length, count);
 });

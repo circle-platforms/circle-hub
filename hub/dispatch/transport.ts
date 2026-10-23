@@ -21,6 +21,7 @@ export class RpcClient {
   #protocol = LATEST_PROTOCOL_VERSION;
   constructor(definition: ExecutorDefinition, secret: string, job: string, save: SaveResponse, now: () => Date = () => new Date()) {
     this.definition = definition; this.#secret = secret; this.#job = job; this.#save = save; this.#now = now;
+    if (definition.actor && (job.length > definition.actor.max_length || /[\r\n]/.test(job) || !new RegExp(definition.actor.pattern).test(job))) throw new Error('代表身份不符合执行器声明；修正代表身份约束后再连接，尚未发请求');
     if (!secret || /[\r\n]/.test(secret)) throw new Error('执行器密钥缺失或无效');
   }
   redact(text: string): string {
@@ -85,7 +86,7 @@ export class RpcClient {
       };
       const req = (u.protocol === 'https:' ? httpsRequest : httpRequest)(u, {
         method: 'POST', agent: false, ...(u.protocol === 'https:' ? { ca: this.definition.ca, rejectUnauthorized: true } : {}),
-        headers: { authorization: `Bearer ${this.#secret}`, 'content-type': 'application/json', accept: 'application/json, text/event-stream', 'x-circle-hub-operator': this.#job,
+        headers: { authorization: `Bearer ${this.#secret}`, 'content-type': 'application/json', accept: 'application/json, text/event-stream', ...(this.definition.actor ? { [this.definition.actor.header]: this.#job } : {}),
           'mcp-protocol-version': this.#protocol, ...(this.#session ? { 'mcp-session-id': this.#session } : {}) },
       }, res => {
         status = res.statusCode ?? 0;

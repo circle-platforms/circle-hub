@@ -2,6 +2,7 @@
 export function definition(endpoint: string) {
   return {
     schema: 'executor@1', enabled: true, target: 'synthetic-bed', manifest_sha256: 'a'.repeat(64), endpoint, ca: '',
+    actor: { header: 'X-Circle-Hub-Actor', pattern: '^[A-Za-z0-9][A-Za-z0-9._@/-]{0,127}$', max_length: 128 },
     precheck_context: { build: 'synthetic-build' },
     resources: ['synthetic/device/a', 'synthetic/device/b'], max_run_ms: 9000, max_bytes: 1048576,
     poll_ms: 20, submit_timeout_ms: 300000,

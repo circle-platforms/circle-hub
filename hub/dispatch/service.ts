@@ -250,7 +250,7 @@ export class DispatchService {
   }
   private context(binding: JobBinding): Record<string, unknown> { return { ...binding.context, job: binding.job, user: binding.user, actor: binding.acting_by ?? binding.initiated_by, target: binding.input?.target ?? binding.context?.target, build: binding.input?.build ?? binding.context?.build, sha256: binding.input?.sha256, items: binding.input?.items, seats: binding.context?.seats ?? (binding.resources.length ? binding.resources.length : undefined), manifest_sha256: binding.input?.manifest_sha256 ?? binding.context?.manifest_sha256 }; }
   private session(binding: JobBinding, d: ExecutorDefinition, secret: string): RpcClient {
-    return new RpcClient(d, secret, binding.job, async (bytes, status, operation, complete = true, metadata) => {
+    return new RpcClient(d, secret, `${binding.user}/${binding.job}`, async (bytes, status, operation, complete = true, metadata) => {
       const captured = await this.journal.raw(binding, bytes, operation, complete);
       const source = captured.reference;
       await this.journal.append(binding, `${operation}.response`, operation === 'submit' ? 'dispatch' : 'read', complete ? 'completed' : 'error', { http_status: status, complete, source_record: captured.record, ...metadata }, [source, captured.record]);
