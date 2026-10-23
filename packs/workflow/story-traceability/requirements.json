@@ -1,0 +1,37 @@
+{
+  "schema": "requirements@1",
+  "requirements": [
+    {
+      "key": "traced",
+      "name": "需求追溯",
+      "description": "完整知识根索引内的连接或缺少连接均为有覆盖范围的事实；部分视图在投影拒绝并指明缺失来源及同步修复动作。PLM 未返回的编号仍保留为条目",
+      "target": "item",
+      "required": true,
+      "done_rule": "bookkeeping",
+      "layers": [
+        "static"
+      ],
+      "accepted_producer": "fact",
+      "checks": [
+        "traced"
+      ],
+      "error_handling": []
+    },
+    {
+      "key": "counts",
+      "name": "需求追溯统计",
+      "description": "需求数、已追溯、未追溯、PLM 未返回及原样状态分组计数；视图声明未截断却少于总数则反驳",
+      "target": "run",
+      "required": true,
+      "done_rule": "bookkeeping",
+      "layers": [
+        "static"
+      ],
+      "accepted_producer": "fact",
+      "checks": [
+        "counts"
+      ],
+      "error_handling": []
+    }
+  ]
+}
