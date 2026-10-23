@@ -263,7 +263,11 @@
           "product": "{id}"
         }
       },
-      "max_requests": 1
+      "max_requests": 1,
+      "project": {
+        "module": "functions/plm.ts",
+        "export": "buildsProject"
+      }
     }
   ]
 }

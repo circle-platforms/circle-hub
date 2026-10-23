@@ -29,3 +29,5 @@ Needs: none.
 `plm:stories:<编号>+<编号>+…` 使用现有只读需求详情路由；最多 50 个编号，数值排序、去重。内容为 `{stories: [{id,status,stage,title}], unread: [...]}`。状态和阶段独立保留原样；缺字段为 null，未返回编号单列，不推断已交付或已关闭。调用方把更多编号分成每组至多 50 个。
 
 合成验证：`node --test --test-concurrency=1 packs/system/plm/*.test.ts`。真实需求状态与阶段取值由集成者核实，当前不需要新词表轴。
+
+可选构建需求范围：`plm:builds:<产品编号>` 的原件仍保留原样数组，新增 content `{builds: [{id,stories,scope_note}]}`。管理员在资源设置里配置 `settings.build_story_field`，字段名需先核实真实原件；只接受该顶层字段的正整数编号数组（数字或字符串），不猜字段、不解析自由文本。没配置、字段缺失或形状错误时 stories 为 null，scope_note 指出具体缺口并请求用户给出编号。合成测试中的字段名只是结构示例，不能作为真实字段默认值。

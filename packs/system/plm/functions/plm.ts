@@ -186,3 +186,21 @@ export function storiesProject(input: unknown): unknown {
     { name: 'meta', media_type: 'application/json', json: { count: stories.length, unread: unread.length } },
   ] };
 }
+
+/** Build scope is deployment configuration, never a guessed field or free-text parsing. */
+export function buildsProject(input: unknown): unknown {
+  const { responses, original } = partsOf(input);
+  const data = responses[original]?.json;
+  if (!Array.isArray(data)) return { error: { code: 'plm.no_records', message: '构建列表不是数组' } };
+  const settings = isRecord(input) && isRecord(input.settings) ? input.settings : {};
+  const field = typeof settings.build_story_field === 'string' && settings.build_story_field !== '' ? settings.build_story_field : null;
+  const builds = data.filter(isRecord).map(record => {
+    const raw = field !== null && Object.hasOwn(record, field) ? record[field] : undefined;
+    const valid = Array.isArray(raw) && raw.every(id => {
+      const text = idText(id); return text !== null && ID.test(text.replace(/^0+/, '') || '0');
+    });
+    const stories = valid ? [...new Set((raw as unknown[]).map(id => String(id).replace(/^0+/, '') || '0'))].sort((a, b) => Number(a) - Number(b)) : null;
+    return { id: idText(record.id), stories, scope_note: valid ? '需求范围取自构建记录' : `构建记录里没有需求字段，请给出需求编号；${field === null ? '缺少设置 settings.build_story_field' : `字段 ${field} 缺失或不是需求编号数组`}` };
+  });
+  return { artifacts: [{ name: 'content', media_type: 'application/json', json: { builds } }] };
+}
