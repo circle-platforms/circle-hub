@@ -248,3 +248,19 @@ describe('main', () => {
     assert.equal(badShape, 1);
   });
 });
+
+test('tags keep raw entries: blank strings, finite numbers and booleans as text (like the index)', () => {
+  const map = { root: { data: { text: '合成' }, children: [
+    { data: { id: 'c-blank', text: '空白标签用例', resource: [''], priority: 2 }, children: [] },
+    { data: { id: 'c-num', text: '数字标签用例', resource: [3, 'Functional'], priority: 2 }, children: [] },
+    { data: { id: 'c-bool', text: '布尔标签用例', resource: [true], priority: 2 }, children: [] },
+    { data: { id: 'c-null', text: '空值标签用例', resource: [null, 'Functional'], priority: 2 }, children: [] },
+  ] } };
+  const byId = new Map(caseGold([{ document: "synthetic-doc", map }], {}).documents[0]!.items.map((c) => [c.id, c.tags]));
+  assert.deepEqual(byId.get('c-blank'), [''], 'a blank string is a tag');
+  assert.deepEqual(byId.get('c-num'), ['3', 'Functional'], 'a finite number is a tag as text');
+  assert.deepEqual(byId.get('c-bool'), ['true'], 'a boolean is a tag as text');
+  assert.deepEqual(byId.get('c-null'), ['Functional'], 'null is no tag at all');
+  // A case whose only entry is a blank string is still tagged (the index keeps a non-null facet row).
+  assert.ok(byId.get('c-blank') !== undefined && byId.get('c-blank')!.length > 0);
+});

@@ -20,6 +20,8 @@ export interface GoldNode {
   id: string;
   text: string;
   resource: string[];
+  /** The raw tag entries as text (blank strings kept, finite numbers and booleans as text) — what the index keeps. */
+  rawTags: string[];
   priority: number | null;
   /** The text labels of the ancestors of this node, outermost (the root) first. */
   ancestors: string[];
@@ -44,11 +46,13 @@ export function parseMindMap(value: unknown): GoldMap {
     if (typeof record !== 'object' || record === null) throw new Error(`第 ${nodes.length + 1} 个节点的 data 不是对象`);
     const text = typeof record.text === 'string' ? record.text : record.text === null ? '' : String(record.text);
     const id = typeof record.id === 'string' ? record.id : typeof record.id === 'number' ? String(record.id) : '';
-    const resource = Array.isArray(record.resource) ? record.resource.filter((t): t is string => typeof t === 'string' && t.trim() !== '') : [];
+    const resourceRaw = Array.isArray(record.resource) ? record.resource : [];
+    const resourceTags = resourceRaw.map((t) => (typeof t === 'string' ? t : (typeof t === 'number' && Number.isFinite(t)) || typeof t === 'boolean' ? String(t) : null)).filter((t): t is string => t !== null);
+    const resource = resourceTags.filter((t) => t.trim() !== '');
     const priority = typeof record.priority === 'number' && Number.isInteger(record.priority) ? record.priority : null;
     const childrenRaw = (raw as { children?: unknown }).children;
     const index = nodes.length;
-    nodes.push({ index, id, text, resource, priority, ancestors, children: [], parent });
+    nodes.push({ index, id, text, resource, rawTags: resourceTags, priority, ancestors, children: [], parent });
     const list = Array.isArray(childrenRaw) ? childrenRaw : [];
     for (const child of list.slice(0, 1000)) {
       nodes[index].children.push(walk(child, index, [...ancestors, text]));
@@ -179,7 +183,7 @@ export function caseNodesOf(
     const parent = node.parent;
     const inside = parent === null ? -1 : role[parent] === CASE || role[parent] === CANDIDATE ? parent : within[parent];
     within[v] = inside;
-    if (node.resource.length > 0) {
+    if (node.rawTags.length > 0) {
       const isGroup = inside === -1 && node.priority === GROUP_PRIORITY && holds[v] === 1;
       role[v] = isGroup ? GROUP : CASE;
     } else if (inside !== -1) {
@@ -214,7 +218,8 @@ export function caseGold(
     const holds = new Uint8Array(n);
     for (let v = n - 1; v > 0; v--) {
       const node = nodes[v];
-      const isTagged = node.resource.length > 0;
+      // Tagged means a non-empty raw resource array (the pack's isTagged), blanks included.
+      const isTagged = node.rawTags.length > 0;
       if (holds[v] === 1 || isTagged || node.priority === CASE_PRIORITY) {
         if (node.parent !== null) holds[node.parent] = 1;
       }
@@ -228,7 +233,7 @@ export function caseGold(
       const parent = node.parent;
       const inside = parent === null ? -1 : role[parent] === CASE || role[parent] === CANDIDATE ? parent : within[parent];
       within[v] = inside;
-      if (node.resource.length > 0) {
+      if (node.rawTags.length > 0) {
         const isGroup = inside === -1 && node.priority === GROUP_PRIORITY && holds[v] === 1;
         role[v] = isGroup ? GROUP : CASE;
       } else if (inside !== -1) {
@@ -255,7 +260,7 @@ export function caseGold(
         const c: GoldCase = {
           id: node.id === '' ? `@${node.index}` : node.id,
           title: node.text,
-          tags: [...node.resource],
+          tags: [...node.rawTags],
           expected: [],
           steps: [],
           hasExpected: false,
