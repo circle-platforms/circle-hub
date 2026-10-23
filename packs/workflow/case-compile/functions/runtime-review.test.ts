@@ -50,3 +50,6 @@ test('review 07 dynamic shell syntax cannot bypass the host rejection boundary',
 test('review 08 rejection matching uses the same NFKC text as the command catalog', () => {
   const data = goodData(); data.steps[0].args = ['ｓｙｓｔｅｍ　ｃｙｃｌｅ']; assert.ok(codes(checkContractShape(subjectOf(data))).includes('case-compile.device_command_denied'));
 });
+test('review 09 noncanonical IPv4 notations cannot hide a host target', () => {
+  for (const text of ['ping -c 1 3221226234', 'ping -c 1 0xc00002fa', 'ping -c 1 192.0.762', 'curl http://0300.0.02.0372/']) { const data = goodData(); data.steps[1].args = [text]; assert.ok(codes(checkAddresses(subjectOf(data))).includes('case-compile.address_notation'), text); }
+});

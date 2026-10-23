@@ -112,6 +112,11 @@
       "code": "case-compile.host_shell_dynamic",
       "when": "主机 shell 含扩展、命令分隔或重定向语法",
       "fix": "改成单一显式命令，不用变量、命令替换、glob、管道、分号或重定向绕开文字核对"
+    },
+    {
+      "code": "case-compile.address_notation",
+      "when": "主机命令包含非标准 IPv4 数字记法，目标不能唯一核对",
+      "fix": "地址写标准点分四段；十六进制、八进制、短点分或长整数形式不用于主机网络目标；非地址数据需拆出明确用途"
     }
   ],
   "refusals": [

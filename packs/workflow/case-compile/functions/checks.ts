@@ -6,7 +6,7 @@ import { parseManifest, addressKey, type ManifestBed } from './manifest.ts';
 import { readAddress, type LeaseRow } from './bed.ts';
 import { readSlots, type PlanSlots } from './slots.ts';
 import { bindArguments, hasBalancedCommandText } from './binding.ts';
-import { literalAddresses, replacedQuote, deniedCommand, isHostLiteral } from './addresses.ts';
+import { literalAddresses, replacedQuote, deniedCommand, isHostLiteral, hasAmbiguousIpv4 } from './addresses.ts';
 interface CheckSubject { item: string; location: string | null; data: unknown; contract: RuntimeContract | null; profile: RuntimeProfile | null; beds: ManifestBed[]; leases: LeaseRow[]; now: string }
 function subjectOf(input: unknown): CheckSubject {
   const raw = isRecord(input) && isRecord(input.subject) ? input.subject : {};
@@ -61,7 +61,8 @@ export function checkAddresses(input: unknown): Outcome[] {
     if (source) from.add(source); if (target) to.add(target);
     if (readAddress(bed, s.leases, s.now, replacement.bed).kind === 'off_bed') out.push(refute(s, 'address_off_bed', '替换后的地址不在本台架或本血缘分配集合里', `/data/replacements/${i}/bed`));
   }
-  const examine = (value: string, pointer: string, device: string | null): void => {
+  const examine = (value: string, pointer: string, device: string | null, role?: string): void => {
+    if (role === 'host_shell' && hasAmbiguousIpv4(value)) out.push(refute(s, 'address_notation', '主机命令含非标准 IPv4 数字记法，无法唯一核对目标；如为地址请写标准点分四段，如非地址请拆出并明确用途', pointer));
     for (const address of literalAddresses(value)) {
       if (!isHostLiteral(address, value, bed)) continue;
       count++;
@@ -79,7 +80,7 @@ export function checkAddresses(input: unknown): Outcome[] {
     const values = [...step.args.map((value, k) => ({ value, pointer: `/data/steps/${i}/args/${k}` })), ...Object.entries(step.keywords).map(([name, value]) => ({ value, pointer: `/data/steps/${i}/keywords/${name.replaceAll('~', '~0').replaceAll('/', '~1')}` }))];
     for (const v of values) {
       const parameter = bound.find((b) => b.pointer === v.pointer);
-      examine(v.value, v.pointer, parameter && allowed?.parameters[parameter.name] === 'device_cli' ? seat?.device ?? null : null);
+      examine(v.value, v.pointer, parameter && allowed?.parameters[parameter.name] === 'device_cli' ? seat?.device ?? null : null, parameter ? allowed?.parameters[parameter.name] : undefined);
     }
   }
   slots.expects.forEach((v, i) => examine(v.text, `/data/expects/${i}/text`, null));

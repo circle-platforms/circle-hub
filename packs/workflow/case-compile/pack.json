@@ -48,8 +48,8 @@
     },
     {
       "path": "functions/addresses.ts",
-      "sha256": "3cdca6bc43ba3604222e112d57c864fdcf66baa87a3ed753763b899461a342c2",
-      "size": 2793
+      "sha256": "5977b7dfdfb37e59de663d11fa354ce4dccef29bec83f8d15683f093de7bce43",
+      "size": 3793
     },
     {
       "path": "functions/bed.ts",
@@ -68,8 +68,8 @@
     },
     {
       "path": "functions/checks.ts",
-      "sha256": "0219538d8d78b1314301992047fe56631a687f907d4900552acd77fbe44a5d40",
-      "size": 11414
+      "sha256": "6300154c67bd48f4dd5609abfe56f57efeac734d27eb97b942b52c6dfc7c4ed8",
+      "size": 11767
     },
     {
       "path": "functions/manifest.ts",
@@ -108,8 +108,8 @@
     },
     {
       "path": "requirements.json",
-      "sha256": "a01a4e17e2cf43ddc92531138eaa92f0a75b916b0a8263b343488059ab03e3f3",
-      "size": 7027
+      "sha256": "ff5fe6aead1cd044d86b320fe43b9343dfa096b52c8e375e05ccf71cf1ed4a16",
+      "size": 7155
     },
     {
       "path": "samples/negative/address-off-bed.json",
@@ -378,8 +378,8 @@
     },
     {
       "path": "tables/codes.json",
-      "sha256": "135b07591d7dc1233392b1753fbe830b4707675002a8393ddc8339fec0e6875f",
-      "size": 7609
+      "sha256": "74074ecee7968f492532802a2d66646c288921deb7fd579bb5c21225b6d14cdb",
+      "size": 7925
     },
     {
       "path": "tables/commands.json",

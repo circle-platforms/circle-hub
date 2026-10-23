@@ -37,3 +37,18 @@ export function isHostLiteral(token: LiteralAddress, text: string, bed: import('
   }
   return true;
 }
+
+/** Noncanonical inet_aton-like targets in opaque host commands are unsupported, not declared off-bed facts. */
+export function hasAmbiguousIpv4(text: string): boolean {
+  for (const match of text.matchAll(/(?<![A-Za-z0-9_.:])(?:0x[0-9a-f]+|[0-9]+)(?:\.(?:0x[0-9a-f]+|[0-9]+)){0,3}(?![A-Za-z0-9_.:])/gi)) {
+    const parts = match[0].split('.');
+    if (parts.length === 4 && parts.every((v) => /^(?:0|[1-9][0-9]{0,2})$/.test(v) && Number(v) <= 255)) continue;
+    if (parts.length === 1 && /^[0-9]+$/.test(parts[0]) && Number(parts[0]) < 16777216) continue;
+    try {
+      const values = parts.map((part) => /^0x/i.test(part) ? BigInt(part) : /^0[0-7]+$/.test(part) ? BigInt('0o' + part.slice(1)) : BigInt(part));
+      const lastBits = BigInt(8 * (5 - values.length));
+      if (values.slice(0, -1).every((v) => v <= 255n) && values.at(-1)! < (1n << lastBits)) return true;
+    } catch { /* A malformed numeric token is not silently converted into a different address. */ }
+  }
+  return false;
+}

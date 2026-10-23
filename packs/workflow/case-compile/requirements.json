@@ -156,6 +156,11 @@
           "code": "case-compile.param_unassigned",
           "action": "repair",
           "max_rounds": 2
+        },
+        {
+          "code": "case-compile.address_notation",
+          "action": "repair",
+          "max_rounds": 2
         }
       ]
     },
