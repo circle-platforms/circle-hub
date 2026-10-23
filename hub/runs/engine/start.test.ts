@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { PROTOCOL_CODES } from '../../../contracts/generated/protocol.ts';
 import { after, before, test } from 'node:test';
 import { RunRecord } from '../../../contracts/src/run.ts';
 import { StartRunOutput } from '../../../contracts/src/tools.ts';
@@ -171,7 +172,7 @@ test('inputs: required slots, unknown slots, accepted types, readable references
   const unparsed = await start({ map: { reference: garbage } });
   assert.deepEqual(unparsed.errors.map((e) => [e.code, e.path]), [['SOURCE_UNPARSEABLE', '/inputs/map']]);
   assert.match(unparsed.errors[0].message, /json@1.*不是有效的 JSON/);
-  assert.equal(unparsed.errors[0].fix, '上传能按声明格式解析的文件，或换用对应的解析器');
+  assert.equal(unparsed.errors[0].fix, PROTOCOL_CODES.SOURCE_UNPARSEABLE.fix);
   // a slot that takes many sources binds each with the slot's role
   const one = await h.upload(h.alice, new TextEncoder().encode('# 历史清单一\n\n设置 2 区浇灌。\n'), 'text/markdown');
   const two = await h.upload(h.alice, new TextEncoder().encode('历史清单二：查看分区。\n'), 'text/plain');
