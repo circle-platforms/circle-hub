@@ -6,7 +6,7 @@ import { parseManifest, addressKey, type ManifestBed } from './manifest.ts';
 import { readAddress, type LeaseRow } from './bed.ts';
 import { readSlots, type PlanSlots } from './slots.ts';
 import { bindArguments } from './binding.ts';
-import { literalAddresses, replacedQuote, deniedCommand } from './addresses.ts';
+import { literalAddresses, replacedQuote, deniedCommand, isHostLiteral } from './addresses.ts';
 interface CheckSubject { item: string; location: string | null; data: unknown; contract: RuntimeContract | null; profile: RuntimeProfile | null; beds: ManifestBed[]; leases: LeaseRow[]; now: string }
 function subjectOf(input: unknown): CheckSubject {
   const raw = isRecord(input) && isRecord(input.subject) ? input.subject : {};
@@ -61,6 +61,7 @@ export function checkAddresses(input: unknown): Outcome[] {
   }
   const examine = (value: string, pointer: string, device: string | null): void => {
     for (const address of literalAddresses(value)) {
+      if (!isHostLiteral(address, value, bed)) continue;
       count++;
       const found = readAddress(bed, s.leases, s.now, address.text);
       if (found.kind === 'off_bed') { out.push(refute(s, 'address_off_bed', `字面地址 ${address.text} 不在本台架或本血缘分配集合里`, pointer)); continue; }

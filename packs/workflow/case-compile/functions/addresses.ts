@@ -19,3 +19,21 @@ export function deniedCommand(text: string, denied: readonly string[]): boolean 
   const normalized = text.replace(/["'`\\]/g, '').toLowerCase().replace(/\s+/g, ' ');
   return denied.some((raw) => { const key = raw.toLowerCase().replace(/\s+/g, ' ').replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); return new RegExp(`(^|[^a-z0-9_])${key}($|[^a-z0-9_])`).test(normalized); });
 }
+
+/** Host-address classification excludes explicit prefixes and the bed's network/broadcast or mask literals. */
+export function isHostLiteral(token: LiteralAddress, text: string, bed: import('./manifest.ts').ManifestBed): boolean {
+  if (!token.key) return true; // Invalid colon tokens are handled separately by the lexical classifier.
+  const known = bed.devices.flatMap((v) => [...v.ipv4, ...v.ipv6]);
+  if (known.some((v) => addressKey(v.address) === token.key)) return true;
+  const tail = text.slice(token.at + token.text.length); const before = text.slice(0, token.at);
+  if (/^\/[0-9]{1,3}(?![0-9])/.test(tail) && !/https?:\/\/$/i.test(before)) return false;
+  if (token.key.startsWith('ipv4:')) {
+    const value = BigInt('0x' + token.key.slice('ipv4:'.length)); const all = 0xffffffffn;
+    if ((value & (value + 1n)) === 0n || (((all ^ value) & ((all ^ value) + 1n)) === 0n)) return false;
+    for (const iface of known.filter((v) => v.family === 'ipv4')) {
+      const host = (1n << BigInt(32 - iface.prefix)) - 1n; const network = iface.value & (all ^ host);
+      if (value === network || value === (network | host)) return false;
+    }
+  }
+  return true;
+}

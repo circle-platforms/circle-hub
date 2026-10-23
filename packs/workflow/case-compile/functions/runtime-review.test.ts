@@ -21,3 +21,8 @@ test('review 01 host arguments without roles and unbounded waits are rejected wi
   assert.ok(codes(checkContractShape(subjectOf(data, setup))).includes('case-compile.param_unassigned'));
   for (const value of ['abc', '99999999']) { const bad = goodData(); bad.steps[2].args = [value]; assert.ok(codes(checkContractShape(subjectOf(bad))).includes('case-compile.wait_value')); }
 });
+test('review 02 netmasks wildcard masks and network prefixes are not off-bed host addresses', () => {
+  for (const text of ['widget config 192.0.2.10 255.255.255.192', 'widget route 0.0.0.0 0.0.0.0 192.0.2.10', 'widget acl 192.0.2.0 0.0.0.63', 'widget route 192.0.2.224/27', 'widget broadcast 192.0.2.63']) {
+    const data = goodData(); data.steps[0].args = [text]; assert.equal(checkAddresses(subjectOf(data))[0].verdict, 'support', text);
+  }
+});

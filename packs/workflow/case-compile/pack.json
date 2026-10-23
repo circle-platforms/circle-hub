@@ -48,8 +48,8 @@
     },
     {
       "path": "functions/addresses.ts",
-      "sha256": "0136afbb10599a0d7c9ebbca5db2c33f746b9bd4222bb86119750d84b9b1828d",
-      "size": 1584
+      "sha256": "24491d67a4c402f1b5e5d91f2432518a258e9e62b48c5a62c7671a73f5a51ee9",
+      "size": 2757
     },
     {
       "path": "functions/bed.ts",
@@ -68,8 +68,8 @@
     },
     {
       "path": "functions/checks.ts",
-      "sha256": "1c90faea5260cee19107f8cdb81a30d7c42a34ee052f4aa4fcadbee8190857d7",
-      "size": 10278
+      "sha256": "345903c0813674cdf2d81e961889afd760732c440bbbfa4622a342004a72275c",
+      "size": 10350
     },
     {
       "path": "functions/manifest.ts",
