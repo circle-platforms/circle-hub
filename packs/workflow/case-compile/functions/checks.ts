@@ -15,8 +15,8 @@ function subjectOf(input: unknown): CheckSubject {
   return { item: typeof raw.item === 'string' ? raw.item : '', location: typeof raw.location === 'string' ? raw.location : null, data: raw.data, contract: contract.ok ? contract.contract : null, profile: profile?.ok ? profile.profile : null, beds: manifest.ok ? manifest.beds : [], leases: Array.isArray(raw.leases) ? raw.leases as LeaseRow[] : [], now: typeof raw.now === 'string' ? raw.now : new Date(0).toISOString() };
 }
 const TIER = 'blocking' as const;
-function support(s: CheckSubject, statement: string, data?: Record<string, unknown>): Outcome { return { verdict: 'support', statement: statement + markers(s.profile?.synthetic === true), grounds: s.location ? [s.location] : [], tier: TIER, item: s.item, ...(data ? { data } : {}) }; }
-function refute(s: CheckSubject, code: string, statement: string, pointer: string): Outcome { return { verdict: 'refute', code: `case-compile.${code}`, statement: statement + markers(s.profile?.synthetic === true), grounds: s.location ? [s.location] : [], tier: TIER, item: s.item, pointer }; }
+function support(s: CheckSubject, statement: string, data?: Record<string, unknown>): Outcome { return { verdict: 'support', statement: statement + markers(s.profile?.synthetic === true, s.contract ?? undefined), grounds: s.location ? [s.location] : [], tier: TIER, item: s.item, ...(data ? { data } : {}) }; }
+function refute(s: CheckSubject, code: string, statement: string, pointer: string): Outcome { return { verdict: 'refute', code: `case-compile.${code}`, statement: statement + markers(s.profile?.synthetic === true, s.contract ?? undefined), grounds: s.location ? [s.location] : [], tier: TIER, item: s.item, pointer }; }
 function prerequisites(s: CheckSubject): Outcome[] | null { return s.contract && s.profile ? null : [{ verdict: 'unknown', reason: 'check_error', statement: '冻结的合约、配置或清单无法重算；缺少匹配身份的完整输入，客户端须请求管理员重新发布并开始新运行。不证明在真实设备上跑得通。', grounds: [], tier: TIER, item: s.item }]; }
 function slotsOf(s: CheckSubject): { slots: PlanSlots; errors: null } | { slots: null; errors: Outcome[] } {
   const read = readSlots(s.data);
@@ -40,7 +40,7 @@ export function checkContractShape(input: unknown): Outcome[] {
       if (role === 'host_shell' && deniedCommand(v.value, s.profile!.denied.host)) out.push(refute(s, 'host_command_denied', `第 ${i + 1} 步命中发布配置的主机命令拒绝表`, v.pointer));
     }
   }
-  return out.length ? out : [support(s, `${read.slots.steps.length} 步调用符合启用合约与本轮允许集合，签名和值均已核对`)];
+  return out.length ? out : [support(s, `${read.slots.steps.length} 步调用符合启用合约与本轮允许集合，签名和值均已核对`, { runtime_version: s.contract!.runtimeVersion, contract_sha256: s.contract!.digest })];
 }
 export function checkAddresses(input: unknown): Outcome[] {
   const s = subjectOf(input); const missing = prerequisites(s); if (missing) return missing;
