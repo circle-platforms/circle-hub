@@ -122,10 +122,13 @@ test('injected cases are excluded and repeated citations are compared as occurre
 import { createHash } from 'node:crypto';
 import { canonicalJson } from './compile-check.ts';
 const table = JSON.parse(readFileSync(new URL('../../../packs/workflow/case-review/tables/cited-commands.json', import.meta.url), 'utf8'));
+const tableBytes = Buffer.from(JSON.stringify(table));
+const packManifest = {schema:'pack@1', id:'case-review', version:'1.0.0', files:[{path:'tables/cited-commands.json',sha256:createHash('sha256').update(tableBytes).digest('hex'),size:tableBytes.length}]};
 const bytes = Buffer.from(JSON.stringify(submission));
 const sourceBytes = Buffer.from(JSON.stringify(source));
 const receiptRun = () => {
   const value = run() as unknown as { run: Record<string, unknown>; latest: { result: Record<string, unknown> } };
+  value.run.pack = 'case-review@1.0.0'; value.run.pack_digest = createHash('sha256').update(canonicalJson(packManifest)).digest('hex');
   value.run.root = 'a'.repeat(64);
   value.run.sources = [{ role: 'subject', reference: `src:${createHash('sha256').update(sourceBytes).digest('hex')}` }];
   Object.assign(value.latest.result, { run: 'run_synthetic', acceptance: 'accepted', submission: createHash('sha256').update(canonicalJson(submission)).digest('hex') });
@@ -134,32 +137,32 @@ const receiptRun = () => {
 
 test('canonical submission identity accepts whitespace and key-order changes', async () => {
   const { catalogMarks } = await import('./catalog-marks.ts');
-  const value = catalogMarks({ argumentTypes: [], treeXml: tree, sourceBytes, run: receiptRun(), submissionBytes: bytes, table });
+  const value = catalogMarks({ packManifest, tableBytes, argumentTypes: [], treeXml: tree, sourceBytes, run: receiptRun(), submissionBytes: bytes, table });
   assert.equal(value.summary.supported, 1); assert.equal(value.requests.length, 0);
-  const changed = catalogMarks({ argumentTypes: [], treeXml: tree, sourceBytes, run: receiptRun(), submissionBytes: Buffer.concat([bytes, Buffer.from('\n')]), table });
+  const changed = catalogMarks({ packManifest, tableBytes, argumentTypes: [], treeXml: tree, sourceBytes, run: receiptRun(), submissionBytes: Buffer.concat([bytes, Buffer.from('\n')]), table });
   assert.equal(changed.requests.length, 0);
   assert.equal(changed.supported.length, 1);
 });
 test('missing original bytes or the latest accepted digest creates an actionable positioned design gap', async () => {
   const { catalogMarks } = await import('./catalog-marks.ts');
-  const missing = catalogMarks({ argumentTypes: [], treeXml: tree, sourceBytes, run: receiptRun(), table });
+  const missing = catalogMarks({ packManifest, tableBytes, argumentTypes: [], treeXml: tree, sourceBytes, run: receiptRun(), table });
   assert.ok(missing.requests.some(r => r.next_action.includes('get_nodes') && r.next_action.includes('--submission')));
   const value = receiptRun(); delete value.latest.result.submission;
-  const gap = catalogMarks({ argumentTypes: [], treeXml: tree, sourceBytes, run: value, submissionBytes: bytes, table });
+  const gap = catalogMarks({ packManifest, tableBytes, argumentTypes: [], treeXml: tree, sourceBytes, run: value, submissionBytes: bytes, table });
   assert.ok(gap.requests.some(r => r.pointer === '/latest/result/submission'));
 });
 test('scope drift refuses adjudication and states that only resolved is implemented', async () => {
   const { catalogMarks } = await import('./catalog-marks.ts');
-  const changed = catalogMarks({ argumentTypes: [], treeXml: tree, sourceBytes, run: receiptRun(), submissionBytes: bytes, table: { ...table, scope: 'all' } });
+  const changed = catalogMarks({ packManifest, tableBytes, argumentTypes: [], treeXml: tree, sourceBytes, run: receiptRun(), submissionBytes: bytes, table: { ...table, scope: 'all' } });
   assert.equal(changed.expected.length, 0);
   assert.ok(changed.requests.some(r => r.pointer === '/scope' && r.fact.includes('resolved')));
 });
 test('source identity, malformed submissions and missing case evidence are never accepted as zero errors', async () => {
   const { catalogMarks } = await import('./catalog-marks.ts');
-  const badSource = catalogMarks({ argumentTypes: [], treeXml: tree, sourceBytes: Buffer.from(JSON.stringify({ ...source, unused: true })), run: receiptRun(), submissionBytes: bytes, table });
+  const badSource = catalogMarks({ packManifest, tableBytes, argumentTypes: [], treeXml: tree, sourceBytes: Buffer.from(JSON.stringify({ ...source, unused: true })), run: receiptRun(), submissionBytes: bytes, table });
   assert.ok(badSource.requests.some(r => r.input === 'source'));
   const value = receiptRun(); value.latest.result.submission = createHash('sha256').update('{broken').digest('hex');
-  assert.ok(catalogMarks({ argumentTypes: [], treeXml: tree, sourceBytes, run: value, submissionBytes: Buffer.from('{broken'), table }).requests.length);
+  assert.ok(catalogMarks({ packManifest, tableBytes, argumentTypes: [], treeXml: tree, sourceBytes, run: value, submissionBytes: Buffer.from('{broken'), table }).requests.length);
 });
 
 import { mkdtempSync, readFileSync as read, rmSync, statSync, writeFileSync } from 'node:fs';
@@ -167,12 +170,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 const privateInputs = (t: { after(fn: () => void): void }) => {
   const directory = mkdtempSync(join(tmpdir(), 'gold-catalog-')); t.after(() => rmSync(directory, { recursive: true, force: true }));
-  const files = { tree: join(directory, 'tree.xml'), source: join(directory, 'source.json'), run: join(directory, 'run.json'), submission: join(directory, 'submission.json'), types: join(directory, 'types.json'), table: join(directory, 'table.json'), out: join(directory, 'report') };
+  const files = { tree: join(directory, 'tree.xml'), source: join(directory, 'source.json'), run: join(directory, 'run.json'), submission: join(directory, 'submission.json'), manifest: join(directory, 'pack.json'), types: join(directory, 'types.json'), table: join(directory, 'table.json'), out: join(directory, 'report') };
+  writeFileSync(files.manifest, JSON.stringify(packManifest));
   writeFileSync(files.types, '[]');
   writeFileSync(files.tree, tree); writeFileSync(files.source, sourceBytes); writeFileSync(files.run, JSON.stringify(receiptRun())); writeFileSync(files.submission, bytes); writeFileSync(files.table, JSON.stringify(table));
   return files;
 };
-const cliArgs = (files: ReturnType<typeof privateInputs>) => ['--argument-types', files.types, '--tree', files.tree, '--source', files.source, '--run', files.run, '--submission', files.submission, '--table', files.table, '--out', files.out];
+const cliArgs = (files: ReturnType<typeof privateInputs>) => ['--manifest', files.manifest, '--argument-types', files.types, '--tree', files.tree, '--source', files.source, '--run', files.run, '--submission', files.submission, '--table', files.table, '--out', files.out];
 
 test('CLI writes detailed evidence only to private immutable files and screens counts and digests', async t => {
   const { main } = await import('./catalog-marks.ts'); const files = privateInputs(t), screen: string[] = [];
@@ -278,4 +282,12 @@ test('partial argument citations request a declared boundary rule rather than sh
   const report=compareCatalogMarks({treeXml:tree,source:own,submission,run:run()});
   assert.ok(report.requests.some(r=>r.input==='table' && r.pointer==='/match/boundary' && r.next_action));
   assert.equal(report.expected.length,0); assert.equal(report.extra.length,0);
+});
+
+test('the table bytes and canonical manifest must bind to the run locked pack', async () => {
+ const {catalogMarks}=await import('./catalog-marks.ts');
+ for(const changed of [{packManifest:{...packManifest,version:'other'}},{tableBytes:Buffer.concat([tableBytes,Buffer.from(' ')])}]) {
+ const report=catalogMarks({packManifest,tableBytes,argumentTypes:[],treeXml:tree,sourceBytes,run:receiptRun(),submissionBytes:bytes,table,...changed});
+ assert.equal(report.expected.length,0); assert.ok(report.requests.some(r=>r.input==='manifest' || r.input==='table'));
+ }
 });

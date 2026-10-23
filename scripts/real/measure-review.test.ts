@@ -290,6 +290,8 @@ const catalogFixture = (t: { after(fn: () => void): void }, over: { provideSubmi
       const code = over.code === undefined ? 'core.catalog.param_out_of_range' : over.code;
       const delivered = [{ item: 'doc:c1', requirements: [{ requirement: 'catalog', layers: [{ layer: 'static', ...staticFixture('violation', 'author_input') }], claims: code === null ? [] : [{ pointer: '/phrases/0', statement: { verdict: 'refute', code, data: { command: 'widget port 21' } }, qualifier: { nature: 'fact', source_role: 'subject' } }] }] }];
       const value = JSON.parse(runDetail({ run: 'rn_catalog', items: 1, sources: [{ reference: `src:${copyShaOf(files.out)}` }], delivered }));
+      const manifest = JSON.parse(readFileSync(new URL('../../packs/workflow/case-review/pack.json', import.meta.url), 'utf8'));
+      value.run.pack = manifest.id + '@' + manifest.version; value.run.pack_digest = createHash('sha256').update(canonicalJson(manifest)).digest('hex');
       value.run.root = 'a'.repeat(64); value.run.sources[0].role = 'subject';
       value.latest.result.run = 'rn_catalog'; value.latest.result.submission = createHash('sha256').update(canonicalJson(JSON.parse(body.toString()))).digest('hex');
       return { code: 0, json: JSON.stringify(value) };

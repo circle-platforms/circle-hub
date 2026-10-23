@@ -3,6 +3,7 @@ import { isAttribution } from '../../../contracts/generated/vocabulary.ts';
 // node scripts/real/gold/catalog-marks.ts --tree <locked command XML> --source <mindmap original>
 //   --run <run-show.json> [--submission <original submission bytes>] [--gold <injection gold.json>]
 //   [--table <cited-commands.json>] --out <new private directory>
+// --manifest <pack.json> binds the table bytes and run.pack_digest to the locked pack version.
 // --argument-types <JSON array> supplies the locked-root overrides: [{command,position,type,origin}], including [].
 // Only scope=resolved is implemented. Unknown types, constraints and missing receipts produce positioned requests.
 import { canonicalJson } from './compile-check.ts';
@@ -369,7 +370,7 @@ export interface CatalogReport extends CatalogComparison {
 }
 export interface CatalogInputs {
   treeXml: string; sourceBytes: Uint8Array; run: unknown; submissionBytes?: Uint8Array;
-  table: unknown; excludeNodes?: readonly string[]; argumentTypes?: readonly DeclaredArgumentType[];
+  table: unknown; packManifest?: unknown; tableBytes?: Uint8Array; excludeNodes?: readonly string[]; argumentTypes?: readonly DeclaredArgumentType[];
 }
 const sha256 = (bytes: string | Uint8Array): string => createHash('sha256').update(bytes).digest('hex');
 const parseJson = (bytes: Uint8Array): unknown => JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes).replace(/^\uFEFF/, ''));
@@ -406,6 +407,10 @@ export function catalogMarks(input: CatalogInputs): CatalogReport {
   const inputs = { tree_sha256: sha256(input.treeXml), source_sha256: sha256(input.sourceBytes), submission_sha256: input.submissionBytes === undefined ? null : (() => { try { return sha256(canonicalJson(parseJson(input.submissionBytes))); } catch { return null; } })(), expected_submission_sha256: wanted, locked_root: typeof record.root === 'string' ? record.root : null };
   const requests = tableRequests(input.table);
   const add = (where: string, pointer: string, fact: string, next_action: string): void => { requests.push(request({ input: where, pointer }, fact, next_action)); };
+  const manifest = object(input.packManifest) ? input.packManifest : {};
+  const tableEntry = array(manifest.files).find(f => object(f) && f.path === 'tables/cited-commands.json');
+  if (record.pack !== manifest.id + '@' + manifest.version || record.pack_digest !== sha256(canonicalJson(manifest))) add('manifest', '/', '运行锁定包的版本与规范清单摘要', '请集成者取运行 run.pack 对应版本的 pack.json，通过 --manifest 传入；不能使用当前检出替代锁定版本');
+  if (!input.tableBytes || !object(tableEntry) || tableEntry.sha256 !== sha256(input.tableBytes)) add('table', '/', '目录表原始字节与锁定清单的摘要', '请集成者取锁定包 tables/cited-commands.json 原字节，通过 --table 和 --manifest 传入后重跑');
   const recordRef = acceptedSubmissionReference(run) ?? '<run.submissions 中 result 等于 latest.record 的 record>';
   if (input.argumentTypes === undefined) add('argument-types', '/', '锁定根生产参数中的 argumentTypes 声明（允许空数组）', '请集成者从锁定根对应生产记录导出声明数组，每项为 {command, position, type, origin}，保存为 Git 外 JSON，通过 --argument-types 传入后重跑');
   const exportSubmission = '由集成者执行 node scripts/real/hub-call.ts --token-env HUB_REAL_TOKEN --structured <仓库外新输出.jsonl> get_nodes ' + JSON.stringify(JSON.stringify({ reference: recordRef })) + '，逐页跟随 next/cursor 拼接 content.text，保存为提交 JSON 后用 --submission <该文件> 重跑；缺记录映射时先重导出 circle-hub run show <运行> --json 的 submissions；按规范 JSON 摘要绑定，允许格式化';
@@ -439,9 +444,9 @@ export function catalogMarks(input: CatalogInputs): CatalogReport {
 }
 
 /** Public declaration bytes are read, never imported as executable target code. */
-export function readDeclaration(file?: string): { table: unknown; bytes: Uint8Array } {
+export function readDeclaration(file?: string, manifestFile?: string): { table: unknown; bytes: Uint8Array; manifest: unknown } {
   const bytes = readFileSync(file ?? new URL('../../../packs/workflow/case-review/tables/cited-commands.json', import.meta.url));
-  return { table: parseJson(bytes), bytes };
+  return { table: parseJson(bytes), bytes, manifest: JSON.parse(readFileSync(manifestFile ?? new URL('../../../packs/workflow/case-review/pack.json', import.meta.url), 'utf8')) };
 }
 
 function outsideGit(path: string): string {
@@ -475,7 +480,7 @@ function emptyGap(at: Position, fact: string, next_action: string): CatalogRepor
 export function main(argv: string[], say: (line: string) => void = line => process.stdout.write(line + '\n')): number {
   const flags = new Map<string, string>();
   for (let i = 0; i < argv.length; i += 2) {
-    if (!['--tree', '--source', '--run', '--out', '--submission', '--gold', '--table', '--argument-types'].includes(argv[i]) || !argv[i + 1] || argv[i + 1].startsWith('--') || flags.has(argv[i])) { say('设计缺口 1；下一步：给出有效的输入参数与仓库外新输出目录'); return 1; }
+    if (!['--tree', '--source', '--run', '--out', '--submission', '--gold', '--table', '--manifest', '--argument-types'].includes(argv[i]) || !argv[i + 1] || argv[i + 1].startsWith('--') || flags.has(argv[i])) { say('设计缺口 1；下一步：给出有效的输入参数与仓库外新输出目录'); return 1; }
     flags.set(argv[i], argv[i + 1]);
   }
   if (!['--tree', '--source', '--run', '--out'].every(key => flags.has(key))) { say('设计缺口 1；缺 --tree、--source、--run 或 --out；下一步：补齐这些输入后重跑'); return 1; }
@@ -487,7 +492,7 @@ export function main(argv: string[], say: (line: string) => void = line => proce
     const read = (key: string): Uint8Array => { stage = key; return readFileSync(outsideGit(flags.get('--' + key)!)); };
     const treeBytes = read('tree'), treeXml = decodeCatalog(treeBytes);
     const sourceBytes = read('source'), runBytes = read('run'), run = parseJson(runBytes);
-    stage = 'table'; const declaration = readDeclaration(flags.get('--table'));
+    stage = 'table'; const declaration = readDeclaration(flags.get('--table'), flags.get('--manifest'));
     let excludeNodes: string[] = [];
     if (flags.has('--gold')) {
       const value = parseJson(read('gold'));
@@ -496,7 +501,7 @@ export function main(argv: string[], say: (line: string) => void = line => proce
     }
     const submissionBytes = flags.has('--submission') ? read('submission') : undefined;
     const argumentTypes = flags.has('--argument-types') ? readArgumentTypes(read('argument-types')) : undefined;
-    report = catalogMarks({ treeXml, sourceBytes, run, submissionBytes, table: declaration.table, excludeNodes, argumentTypes });
+    report = catalogMarks({ treeXml, sourceBytes, run, submissionBytes, table: declaration.table, tableBytes: declaration.bytes, packManifest: declaration.manifest, excludeNodes, argumentTypes });
     report.inputs.tree_sha256 = sha256(treeBytes);
     Object.assign(report.inputs, { table_sha256: sha256(declaration.bytes), run_sha256: sha256(runBytes) });
   } catch {
@@ -519,8 +524,12 @@ export function catalogGapReport(requests: EvidenceRequest[], inputs: Partial<Ca
   const report = emptyGap({ input: 'run', pointer: '/' }, '', '');
   return { ...report, requests, summary: { ...report.summary, design_gaps: requests.length }, inputs: { ...report.inputs, ...inputs } };
 }
-export function catalogPreflight(treeXml: string, table: unknown): EvidenceRequest[] {
+export function catalogPreflight(treeXml: string, table: unknown, binding?: { manifest: unknown; bytes: Uint8Array }): EvidenceRequest[] {
   const requests = tableRequests(table);
+  if (binding) {
+    const entry = object(binding.manifest) ? array(binding.manifest.files).find(f => object(f) && f.path === 'tables/cited-commands.json') : null;
+    if (!object(entry) || entry.sha256 !== sha256(binding.bytes)) requests.push(request({input:'manifest',pointer:'/files'}, '目录表与包清单文件摘要相符', '请集成者提供同一锁定包版本的 --table 与 --catalog-manifest 后重跑'));
+  }
   if (requests.length) return requests;
   try { return readCatalog(treeXml).requests; }
   catch { return [request({ input: 'tree', pointer: '/' }, '可完整解析的锁定根命令树', '请集成者补取正确编码和结构的命令树原件后重跑；评审尚未启动')]; }
