@@ -266,34 +266,41 @@ export function compareCatalogMarks(input: { treeXml: string; source: unknown; s
   walk(object(input.source) ? input.source.root : null, '/root');
   type Own = { id: string; negative: boolean; lines: string[]; at: Position };
   const own = new Map<string, Own>();
-  for (const node of cases) {
+  for (const [caseIndex, node] of cases.entries()) {
     if (excluded.has(node.id)) continue;
     const at = { input: 'source', pointer: `${sourcePointers[node.index]}/data/id` };
-    if (!node.id || unique.get(node.id) !== 1) { report.requests.push(request(at, '可唯一对应本用例的 data.id', '请集成者补取此位置与运行条目的唯一身份映射，再重跑；不靠末尾相似的编号硬配')); continue; }
-    const item = reading.find(r => r.id === node.id)!;
+    const identity = node.id && unique.get(node.id) === 1 ? node.id : '@' + node.index;
+    const item = reading[caseIndex];
     const preconditions: string[] = [];
     const visit = (index: number): void => { for (const child of parsed.nodes[index].children) { if (indices.has(child)) continue; const n = parsed.nodes[child]; if (!n.children.length && n.priority === 3) preconditions.push(n.text); visit(child); } };
     visit(node.index);
-    own.set(node.id, { id: node.id, negative: item.negative, lines: [...item.title.split('\n'), ...item.steps.flatMap(step => step.text.split('\n')), ...item.expected, ...preconditions], at });
+    own.set(identity, { id: identity, negative: item.negative, lines: [...item.title.split('\n'), ...item.steps.flatMap(step => step.text.split('\n')), ...item.expected, ...preconditions], at });
   }
   report.summary.cases = own.size;
   const run = object(input.run) ? input.run : {}, runRecord = object(run.run) ? run.run : {};
   const projections = array(runRecord.items);
   const mapped = new Map<string, Own | null>();
-  const identify = (item: string, at: Position): Own | null => {
+  const identify = (item: string, at: Position, needsEvidence = false): Own | null => {
     if (mapped.has(item)) return mapped.get(item)!;
     const projection = projections.find(p => object(p) && (p.id === item || p.item === item));
+    const positional = object(projection) && typeof projection.location === 'string' ? /\/kityminder@1\/i((?:\/\d+)*)$/.exec(projection.location) : null;
+    if (positional) {
+      const pointer = '/root' + positional[1].split('/').filter(Boolean).map(k => '/children/' + Number(k)).join('') + '/data/id';
+      const found = [...own.values()].find(o => o.at.pointer === pointer);
+      if (found) { mapped.set(item, found); return found; }
+    }
     const declared = object(projection) && object(projection.fields) ? projection.fields.nodeId : undefined;
     const matches = typeof declared === 'string' ? [...own.values()].filter(o => o.id === declared) : [...own.values()].filter(o => o.id === item || item.endsWith(':' + o.id));
     if (matches.length === 1) { mapped.set(item, matches[0]); return matches[0]; }
     if ([...excluded].some(node => node === item || item.endsWith(':' + node))) { mapped.set(item, null); return null; }
-    report.requests.push(request(at, '运行条目与原件用例的唯一对应', '请集成者补该条目的 fields.nodeId 和原件 data.id 映射，再重跑')); mapped.set(item, null); return null;
+    if (needsEvidence) report.requests.push(request(at, '有命令引文的运行条目与原件位置的唯一对应', '请集成者重导出 run show 中本条目的 location 位置选择器后重跑，不能靠重复编号猜测'));
+    return null;
   };
   const phrases = new Map<string, string[]>(), blocked = new Set<string>();
   const submitted = object(input.submission) ? input.submission : {};
   array(submitted.items).forEach((entry, i) => {
     if (!object(entry) || typeof entry.item !== 'string') { report.requests.push(request({ input: 'submission', pointer: `/items/${i}` }, '条目身份', '补取原始提交里这一项的 item 字段后重跑')); return; }
-    const at = { input: 'submission', pointer: `/items/${i}` }, target = identify(entry.item, at);
+    const at = { input: 'submission', pointer: `/items/${i}` }, target = identify(entry.item, at, object(entry.slots) && array(entry.slots.findings).some(f => object(f) && array(f.commands).some(c => object(c) && typeof c.command === 'string' && c.present === undefined)));
     if (!target || entry.handling === 'skipped' || entry.reuse !== undefined) return;
     if (!object(entry.slots) || !Array.isArray(entry.slots.findings)) { report.requests.push(request({ ...at, pointer: at.pointer + '/slots/findings' }, '本条目明确的发现列表（可为空数组）', '导出本次最新受理提交的完整 slots.findings 后重跑；缺字段不能当空列表')); return; }
     const owned: Array<{ command: string; at: Position }> = [];

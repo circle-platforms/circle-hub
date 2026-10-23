@@ -257,3 +257,17 @@ test('undeclared constraint and token choices request positioned rules instead o
     assert.ok(result.requests.every(r=>r.pointer && r.next_action && r.line));
   }
 });
+
+test('fallback cases without citations do not block a run and position selectors bind cited cases', async () => {
+  const {compareCatalogMarks}=await import('./catalog-marks.ts');
+  const own=structuredClone(source); own.root.children[0].data.id='duplicate'; own.root.children[1].data.id='duplicate';
+  const empty={items:[{item:'fallback',handling:'handled',slots:{findings:[]}}]};
+  const untouched=compareCatalogMarks({treeXml:tree,source:own,submission:empty,run:{latest:{result:{partitions:{}}}}});
+  assert.equal(untouched.requests.length,0);
+  const submitted={items:[{...submission.items[0],item:'fallback'}]};
+  const shown=run() as any;
+  shown.run.items=[{id:'fallback',location:`src:${'b'.repeat(64)}/kityminder@1/i/0`}];
+  shown.latest.result.partitions.delivered=[{item:'fallback',requirements:[{requirement:'catalog',layers:[{layer:'static',terminal:'violation',attribution:'author_input'}],claims:[hubMark()]}]}];
+  const compared=compareCatalogMarks({treeXml:tree,source:own,submission:submitted,run:shown});
+  assert.equal(compared.requests.length,0); assert.equal(compared.supported.length,1);
+});
