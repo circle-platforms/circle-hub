@@ -64,7 +64,7 @@ The sibling workflow traceability must adopt the same bounded absence/positive-l
 uses missing_input for absent ids and is outside this task's edits. No package/runtime import crosses that boundary.
 Version 1.0.3 is re-signed with these per-id semantics.
 
-Closure B3: story-id extraction is local to trace-stories.ts; the shared locations/cases files are restored to their pre-story-change bytes. Leading-zero policy alignment for case-location remains with its integrator. Notes-only documents are classified from parsed case nodes before extraction, never from exception text.
+Closure B3: story-id extraction is local to trace-stories.ts. That fix removed story-specific edits to shared locations/cases; this merge now keeps the canonical mainline gold implementations and their published APV rules. The shared gold follows the published mainline APV identifier rule; the story-only extraction remains local. Notes-only documents are classified from parsed case nodes before extraction, never from exception text.
 
 ## Non-scalar PLM observations
 
@@ -85,3 +85,9 @@ count unless its raw aliases are cut, keys/sources are incomplete, only is set, 
 exclusions may affect it. Credential exclusion notes keep positive counts conservative; core must expose per-key excluded
 counts (and a structured exclusion flag) to remove that conservatism without interpreting notes. Undetermined ids can be
 omitted to run the determinate remainder. Unrelated per-key cuts alone do not lower an uncut row count.
+
+Integration with hub-redesign 956d65f1 keeps PLM 1.3.2 and story-traceability 1.0.8, the larger versions on the two sides.
+Selected-build identity/size recovery, per-id index coverage, and non-scalar PLM observations are combined. The actual
+PLM-to-workflow projection regression remains alongside signed-contract tests; neither relies solely on hand-written markers.
+The story-only oracle keeps its own id extraction and uses the canonical independent case-node helper from mainline.
+Both manifests are regenerated from the merged runtime bytes.

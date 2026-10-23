@@ -48,6 +48,19 @@ test('one non-scalar field never hides the batch and is marked apart from null a
   assert.deepEqual(content.stories[2].fields_absent, ['status', 'stage']);
 });
 
+test('real PLM projection feeds workflow non-scalar counts without hand-written markers', async () => {
+  const { default: project } = await import('../../workflow/story-traceability/functions/project.ts');
+  const { default: counts } = await import('../../workflow/story-traceability/functions/counts.ts');
+  const { boundView, indexViewOf } = await import('../../workflow/traceability/functions/test-support.ts');
+  const output=storiesProject({external:{type:'stories',key:'21+22'},original:'detail',responses:{detail:{json:{code:1000,data:[{id:21,status:{value:'synthetic'},stage:['synthetic']},{id:22,status:null,stage:null}]}}}}) as {artifacts:Array<{json:unknown}>};
+  assert.ok(output.artifacts,'a non-scalar field must not discard the batch');
+  const projected=project({inputs:[boundView('stories',output.artifacts[0].json as Record<string,unknown>,'plm:stories:21+22'),boundView('cases',indexViewOf('case','stories',[]))]}) as any;
+  assert.ok(!projected.error,JSON.stringify(projected.error));
+  const [total]=counts({subject:{items:projected.items,context:{groups:projected.groups}}});
+  assert.equal(total.data?.status_nonscalar,1);assert.equal(total.data?.stage_nonscalar,1);
+  assert.deepEqual(total.data?.statuses,[{status:null,count:1}]);
+});
+
 test('the signed stories contract documents every observed field category without inventing unknowns', async()=>{
   const {readFile}=await import('node:fs/promises');
   const system=JSON.parse(await readFile(new URL('./system.json',import.meta.url),'utf8'));

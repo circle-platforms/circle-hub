@@ -4,6 +4,7 @@
 import { createHash } from 'node:crypto';
 import type { PermissionRole } from '../../../contracts/generated/vocabulary.ts';
 import { join } from 'node:path';
+import type { PermissionRole } from '../../../contracts/generated/vocabulary.ts';
 import type { KnownBuild } from '../../../contracts/src/product.ts';
 import type { ExternalRead, ExternalReadContext, ExternalReaderPort, KnowledgePort, NodesPage, RootDiff, RootInfo } from '../../../hub/ports.ts';
 import type { Artifacts, Principal } from '../../../hub/records/api.ts';
