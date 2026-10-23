@@ -155,7 +155,7 @@ class Session {
 
   /** The lease service over this deployment's database (one pool per invocation, closed with it). */
   leases(): Promise<LeaseService> {
-    this.#leases ??= (async () => new LeaseService(new Database(createPool(this.config().database, 2))))();
+    this.#leases ??= (async () => new LeaseService(new Database(createPool(this.config().database, 2)),{records:(await this.records()).store}))();
     return this.#leases;
   }
 

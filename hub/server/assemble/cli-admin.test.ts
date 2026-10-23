@@ -1311,3 +1311,13 @@ test('R32 a fresh administrator command exposes noncanonical action diagnostics 
   const result=await admin.run(['records','verify','--kind','action']);assert.equal(result.code,0,result.text);
   assert.match(result.text,/正文不是规范写法/);assert.match(result.text,new RegExp(digest));assert.doesNotMatch(result.text,/SYNTHETIC_PRIVATE_DIAGNOSTIC/);
 });
+
+test('R33 lease release honors the configured record byte limit atomically',async t=>{
+  const admin=await setup({deployment:{extra:{CIRCLE_HUB_MAX_RECORD_BYTES:'65536'}}});
+  const kit=await admin.kit();t.after(()=>kit.close());const db=new Database(createPool(loadServerConfig(admin.deployment.env).database,2));t.after(()=>db.end());
+  const {newId}=await import('../../records/api.ts');const user=await kit.principals.findByName('根管理员');assert.ok(user);
+  const leases=new LeaseService(db,{records:kit.store});const key='synthetic/r33';
+  const acquired=await leases.acquire({keys:[key],prefix:'synthetic/',ttlSeconds:60,maxTtlSeconds:3600,holder:{user:user.id,run:newId('run')}});assert.equal(acquired.ok,true);
+  const result=await admin.run(['lease','release',key,'--reason','合成限额原因'.repeat(10000)]);
+  assert.notEqual(result.code,0);assert.equal((await leases.holderSnapshot([key]))[0].released,false);
+});
