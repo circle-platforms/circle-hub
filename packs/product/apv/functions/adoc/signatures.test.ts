@@ -8,6 +8,7 @@ import { test } from 'node:test';
 import { compileAdoc } from './index.ts';
 import { toK1Model } from './k1-model.ts';
 import { produceManualEntries } from '../manual.ts';
+import { produceAdocEntries } from './entries.ts';
 import type { MarkdownModel } from '../../../../../hub/refs/api.ts';
 
 /** The mapped model of one compile, with the mapping's report checked (nothing left uncited). */
@@ -23,9 +24,14 @@ const compile = async (files: Record<string, string>, attributes: Record<string,
   return out;
 };
 
+/** The whole adoc chain over one group: expansion, mapping, K1's placement and the fragment rewrite. */
 const entriesOf = async (files: Record<string, string>, attributes: Record<string, string | boolean> = {}) => {
   const out = await compile(files, attributes);
-  return produceManualEntries(modelOf(out), null, { name: 'cli' });
+  const mapped = toK1Model(out.model, out.composition, 'cli');
+  assert.deepEqual(mapped.uncited, [], JSON.stringify(mapped.uncited));
+  const produced = produceAdocEntries(mapped, { name: 'cli', slot: 'manual' });
+  assert.ok(produced.ok, JSON.stringify(produced));
+  return produced;
 };
 
 test('a [role=signature] listing block is a signature; its params ride along', async () => {
@@ -38,38 +44,63 @@ test('a [role=signature] listing block is a signature; its params ride along', a
   assert.deepEqual((signature.data.params as Array<{ name: string }>).map((p) => p.name), ['name', 'weight']);
 });
 
-test('a verbatim bold signature paragraph is a signature; a title, prose bold and an example never are', async () => {
+test('an AsciiDoc signature paragraph is a signature, in bold and italic or as one monospace line', async () => {
   const result = await entriesOf({
     'book.adoc': [
-      '= Book',
-      '',
-      '== 配置命令',
-      '',
-      '**demo route static** *\\<net\\>*',
-      '',
-      '该命令用于配置路由。',
-      '',
-      '=== **demo pool mode** *\\<name\\>*',
-      '',
-      '小节标题不是签名。',
-      '',
-      '配置后可以 **demo pool mode** 查看结果。',
-      '',
-      '==== 示例',
-      '',
-      '----',
-      '**demo probe** *\\<target\\>*',
-      '----',
-      '',
-      '以上示例仅供参考。',
+      '= Book',                                  // 1
+      '',                                        // 2
+      '== 配置命令',                               // 3
+      '',                                        // 4
+      '*demo route static* _\\<net\\>_',        // 5
+      '',                                        // 6
+      '该命令用于配置路由。',                        // 7
+      '',                                        // 8
+      '*demo pool add* _<name>_ _[interval]_',   // 9
+      '',                                        // 10
+      '`demo pool show <name>`',                 // 11
+      '',                                        // 12
+      '+demo pool del <name>+',                  // 13
+      '',                                        // 14
+      '=== *demo pool mode* _<name>_',           // 15
+      '',                                        // 16
+      '小节标题不是签名。',                          // 17
+      '',                                        // 18
+      '配置后可以 *demo pool mode* 查看结果。',       // 19
+      '',                                        // 20
+      '==== 示例',                                 // 21
+      '',                                        // 22
+      '----',                                     // 23
+      '*demo probe* _<target>_',                  // 24
+      '----',                                     // 25
+      '',                                        // 26
+      '以上示例仅供参考。',                          // 27
+      '',                                        // 28
     ].join('\n'),
   });
-  const signatures = result.entries.filter((entry) => entry.data.form === 'signature').map((entry) => entry.statement);
-  assert.deepEqual([...signatures].sort(), ['demo route static <net>'], JSON.stringify(signatures));
-  // The example block cites no signature of its own; its literal may be recorded as a mention, never a definition.
-  const exampleText = result.entries.find((entry) => String(entry.statement).includes('以上示例仅供参考'));
-  assert.ok(exampleText !== undefined);
-  assert.ok(!result.entries.some((entry) => entry.path === '/commands/demo/probe'), 'an example block places no command');
+  const signatures = result.entries.filter((entry) => entry.data.form === 'signature');
+  assert.deepEqual(
+    signatures.map((entry) => [String(entry.statement), entry.path, entry.fragments[0]!.selector]).sort(),
+    [
+      ['demo pool add <name> [interval]', '/commands/demo/pool/add', 'l/9'],
+      ['demo pool del <name>', '/commands/demo/pool/del', 'l/13'],
+      ['demo pool show <name>', '/commands/demo/pool/show', 'l/11'],
+      ['demo route static <net>', '/commands/demo/route/static', 'l/5'],
+    ],
+    JSON.stringify(signatures.map((entry) => [entry.statement, entry.path, entry.fragments])),
+  );
+  assert.deepEqual(
+    (signatures.find((entry) => entry.statement === 'demo pool add <name> [interval]')!.data.params as Array<{ name: string; required: boolean }>).map((param) => [param.name, param.required]),
+    [['name', true], ['interval', false]],
+  );
+  // A title that reads as a signature is still a title, and a bold run inside prose is a mention, never a definition.
+  assert.ok(!result.entries.some((entry) => String(entry.statement) === 'demo pool mode <name>'), JSON.stringify(result.entries.map((entry) => entry.statement)));
+  const prose = result.entries.find((entry) => String(entry.statement).includes('查看结果'));
+  assert.ok(prose !== undefined);
+  assert.ok(prose.data.form !== 'signature');
+  assert.ok((prose.data.command_literals as string[] | undefined ?? []).includes('demo pool mode'), JSON.stringify(prose.data));
+  // The listing under a heading named 示例 cites no signature of its own.
+  assert.ok(result.entries.some((entry) => String(entry.statement).includes('以上示例仅供参考')));
+  assert.ok(!result.entries.some((entry) => entry.path === '/commands/demo/probe'), 'an example listing places no command');
 });
 
 test('command-table rows are signatures under a header that names commands; value rows are not (K1 rules apply)', async () => {

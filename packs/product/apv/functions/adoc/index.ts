@@ -35,6 +35,18 @@ function rawOf(node: AstNode, lines: MappedLine[]): string {
   return node.getSource?.() ?? node.text ?? '';
 }
 
+/**
+ * The engine's own inline output of a block whose source text it keeps (a paragraph), so the mapping can read the
+ * author's markup as the engine converts it instead of re-implementing AsciiDoc inline semantics. The contexts that
+ * already hand over converted text (a list item, a table cell) and the ones that are verbatim (a listing) are not
+ * converted again, and a container is never asked: its content would be rendered a second time.
+ */
+async function inlineOutput(node: AstNode): Promise<string> {
+  if (node.context !== 'paragraph' || typeof node.getContent !== 'function') return '';
+  const value = await node.getContent();
+  return typeof value === 'string' ? value : '';
+}
+
 /** Whether a node carries text of its own, which a reader would lose when the block is not placed. */
 function hasOwnText(node: AstNode, raw: string): boolean {
   return raw !== '' || node.context === 'image';
@@ -97,7 +109,8 @@ async function runAdoc(rawInput: unknown, overrides: Partial<Limits> = {}): Prom
       const listAt = node.context === 'list_item' && node.parent !== null && node.parent !== undefined && LISTS.has(node.parent.context) ? indexOf.get(node.parent) ?? null : null;
       const block: Block = {
         kind: node.context, level, title, id: node.getId() ?? null, role: node.getRole() ?? null, path, raw,
-        expanded: node.subAttributes(raw), origin: verified.origins.length === 1 ? verified.origins[0] : null, origins: verified.origins,
+        expanded: node.subAttributes(raw), converted: await inlineOutput(node),
+        origin: verified.origins.length === 1 ? verified.origins[0] : null, origins: verified.origins,
         reportedLine: node.sourceLocation?.lineno ?? null, unverifiedReason: verified.origins.length > 0 ? '' : verified.reason, listAt,
       };
       // A container with no text of its own has nothing to verify: its content is carried by the blocks the engine gives

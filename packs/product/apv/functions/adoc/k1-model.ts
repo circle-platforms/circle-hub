@@ -10,8 +10,9 @@
 // field K1 copies into its fragments is a key of this model, which entries.ts turns into the fragment the Hub verifies.
 import type { Block, Composition, ExpandedModel, VerifiedRange } from './types.ts';
 import type { MarkdownBlock, MarkdownSection } from '../../../../../hub/refs/api.ts';
-import { inlineMarkdown, plainConverted, plainText } from './text.ts';
+import { inlineMarkdown, plainConverted, plainText, squeeze } from './text.ts';
 import { utf8Offsets } from '../util.ts';
+import { parseAnchor } from '../manual.ts';
 
 /**
  * One fragment of one chapter file: the file's digest and the text@1 line selector of the verified range, kept apart.
@@ -99,21 +100,63 @@ export const K1_KINDS: Readonly<Record<string, string>> = {
 
 const kindOf = (block: Block): string => K1_KINDS[block.kind] ?? block.kind;
 
+/** A group token of a signature line: `<name>`, `[weight]`, `{add|del}`. */
+const GROUP = /^([<[{])[\s\S]*[>\]}]$/;
+/** A word of a command head, spelled as K1's anchor grammar reads it. */
+const WORD = /^[A-Za-z0-9?][A-Za-z0-9_.?:/+-]{0,63}$/;
+
+/** Whether every group of a line is closed: `<name`, `name>` and `[a<b]` are no signature. */
+function groupsBalanced(text: string): boolean {
+  let depth = 0;
+  for (const ch of text) {
+    if (ch === '<' || ch === '[' || ch === '{') depth++;
+    else if (ch === '>' || ch === ']' || ch === '}') depth--;
+    if (depth < 0) return false;
+  }
+  return depth === 0;
+}
+
 /**
- * K1's signature grammar: bold head then italic params. asciidoctor collapses `**head** *\<param\>*` into one
- * strong run (`<strong>head &lt;param&gt;</strong>`, the angle marks escaped as `\<`), and keeps two strong runs
- * as `**head** **\<param\>**`. Both become `**head** *\<param\>*`, the one spelling parseAnchor accepts.
+ * The spelling K1's anchor grammar reads for a signature line whose parts the source does not mark (a whole-line
+ * monospace paragraph, a line of a signature block): the words before the first parameter group are the command head and
+ * every group after it is a parameter. An alternative group (`{add|del}`) and an optional group that words follow
+ * (`[no] demo pool add`) stay in the head, because K1 reads them as alternatives of the command itself, not as a
+ * parameter. Null when the line has no head word, a head token is no command word, a group is not closed, or K1 would
+ * not read the result as an anchor: such a line is not a signature and is reported instead of being emitted with marks
+ * this mapping invented.
  */
-function signatureShape(text: string): string {
-  const decoded = text.replace(/&lt;/gu, '<').replace(/&gt;/gu, '>').replace(/&amp;/gu, '&');
-  let out = decoded.replace(/\*\*([^*]+)\*\*\s+\*\*(\\?[<[][\s\S]*?[>\]])\*\*/gu, '**$1** *$2*');
-  out = out.replace(/\*\*([^*]+) (\\?[<[][\s\S]*?[>\]])\*\*/gu, '**$1** *$2*');
-  return out;
+export function signatureSpelling(plain: string): string | null {
+  const text = squeeze(plain);
+  if (text === '' || /[\r\n]/.test(text) || !groupsBalanced(text)) return null;
+  const tokens = text.split(' ');
+  const head: string[] = [];
+  const params: string[] = [];
+  for (let at = 0; at < tokens.length; at++) {
+    const token = tokens[at] as string;
+    if (GROUP.test(token) === false) {
+      (params.length > 0 ? params : head).push(token);
+      continue;
+    }
+    const followedByWord = tokens.slice(at + 1).some((later) => GROUP.test(later) === false);
+    if (params.length === 0 && (token.includes('|') || (token.startsWith('[') && followedByWord))) head.push(token);
+    else params.push(token);
+  }
+  if (head.length === 0 || head.some((token) => GROUP.test(token) === false && WORD.test(token) === false)) return null;
+  const spelling = `**${head.join(' ')}**${params.length > 0 ? ` *${params.join(' ')}*` : ''}`;
+  return parseAnchor(spelling, null) === null ? null : spelling;
+}
+
+/** A paragraph that is one monospace line: the engine's single code span, or the source's own `+…+` spelling of it. */
+function monospaceLine(block: Block): string | null {
+  const span = /^<code>([\s\S]*)<\/code>$/.exec(block.converted.trim());
+  if (span !== null) return inlineMarkdown(span[1] as string);
+  const marked = /^\+([\s\S]*)\+$/.exec(squeeze(block.expanded));
+  return marked === null ? null : marked[1] as string;
 }
 
 /** One cell's text in the mapped table: the engine's own inline output in K1's spelling, kept on one row line. */
 function cellText(cell: { raw: string }): string {
-  return signatureShape(inlineMarkdown(cell.raw)).replaceAll('|', '\\|').replaceAll('\n', ' ');
+  return inlineMarkdown(cell.raw).replaceAll('|', '\\|').replaceAll('\n', ' ');
 }
 
 /** One row line of the mapped table text, in the `|`-pipe spelling K1's manual producer splits. */
@@ -221,11 +264,22 @@ function tableOf(block: Block, digestOf: (file: string) => string): Table {
  * verbatim, while every other block gives the attribute-expanded text in the reader's inline spelling.
  */
 function textOf(block: Block): string {
-  // A list item's own text is already the engine's converted text; the other contexts keep their source text in `raw`
-  // and their attribute-expanded source text in `expanded` (step one replays the body attribute state before reading).
+  // A list item's own text is already the engine's converted text; a listing or literal block is verbatim (the engine
+  // substitutes nothing inside it), so it stays as written; every other block gives the engine's inline output of its
+  // own source line, or the attribute-expanded source text where the engine keeps no conversion.
   if (block.kind === 'list_item') return inlineMarkdown(block.raw).trim();
   if (block.kind === 'listing' || block.kind === 'literal') return block.raw;
-  return inlineMarkdown(block.expanded);
+  if (block.kind === 'paragraph') {
+    // A whole-line monospace paragraph is a signature line the author marked as such (task item 6): the engine's code
+    // span, or the source's `+…+` spelling, which the engine renders as plain text. A line that reads as no signature
+    // stays the code span it is.
+    const monospace = monospaceLine(block);
+    if (monospace !== null) {
+      const signature = signatureSpelling(monospace);
+      if (signature !== null) return signature;
+    }
+  }
+  return inlineMarkdown(block.converted !== '' ? block.converted : block.expanded);
 }
 
 /**

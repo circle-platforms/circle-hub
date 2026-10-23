@@ -28,8 +28,8 @@
     },
     {
       "path": "functions/adoc/index.ts",
-      "sha256": "57f0daba03d7baa795da7a96f1e911135947e600d04c5a264104a13db21acb0d",
-      "size": 11271
+      "sha256": "65e7a9720b196b0efdd4f57b109df633bcb95a96b8db6f3b91ad26c0f01f622e",
+      "size": 12011
     },
     {
       "path": "functions/adoc/input.ts",
@@ -38,8 +38,8 @@
     },
     {
       "path": "functions/adoc/k1-model.ts",
-      "sha256": "96eab54fc7de3e7383863ebd63525014d9eea4db6897b04a8526f0c3b835d4fb",
-      "size": 21129
+      "sha256": "5439e5d96b1dcb9d3553a98ef64dfa16d938b112baf59b5ff465dac8ac7dff3f",
+      "size": 23919
     },
     {
       "path": "functions/adoc/origins.ts",
@@ -53,8 +53,8 @@
     },
     {
       "path": "functions/adoc/types.ts",
-      "sha256": "1b90be96d3e698e2f43b591e3accfdf318cb6a9a1dd195d91c5cb79c1ae38e87",
-      "size": 3384
+      "sha256": "1bbf6742599963ffb66a01ddebc6affe79159f6feb9ba9ce243c9a20e054c4aa",
+      "size": 3642
     },
     {
       "path": "functions/adoc/vendor/LICENSE.txt",
@@ -63,8 +63,8 @@
     },
     {
       "path": "functions/adoc/vendor/core.d.mts",
-      "sha256": "be7f6495cacb26b1412c073584a994d833c521c1986aeabad211c29ea05a0c0e",
-      "size": 1254
+      "sha256": "2a2c9f4cae2711497c2c540c43e0da4b2d6f3766ae65e45e3dc69c655fbffbda",
+      "size": 1408
     },
     {
       "path": "functions/adoc/vendor/core.mjs",

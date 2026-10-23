@@ -4,6 +4,8 @@ export interface AstNode {
   sourceLocation?: { lineno: number }; title?: string | null; text?: string;
   rows?: { head: AstNode[][]; body: AstNode[][]; foot: AstNode[][] };
   getSource?(): string; getId(): string | undefined; getRole(): string | undefined;
+  /** The engine's own inline output of this node's content (a paragraph's converted text); a promise in this build. */
+  getContent?(): Promise<string>;
   getItems?(): AstNode[]; subAttributes(text: string): string;
 }
 export interface EngineReader {

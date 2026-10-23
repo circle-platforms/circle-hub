@@ -8,6 +8,9 @@ export interface Section { level: number; title: string; id: string | null }
 export interface Block {
   kind: string; level: number; title: string | null; id: string | null; role: string | null;
   path: Section[]; raw: string; expanded: string; origin: VerifiedRange | null; origins: VerifiedRange[];
+  /** The engine's own inline output of this block's content ('' for the contexts that have none): markup converted,
+   * attribute references substituted, character references and typographic replacements as the engine renders them. */
+  converted: string;
   /** The line the engine reported for this block: a candidate only, `origins` is what was verified against the original. */
   reportedLine: number | null;
   /** Why this block has no verified origin ('' when it has one, or has no text of its own to verify). */
