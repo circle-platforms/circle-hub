@@ -231,6 +231,15 @@ describe('no machine paths in repository text', () => {
     for (const path of paths) assert.equal(localPathProblems('hub/example.ts', path).length, 1, path);
   });
 
+  it('recognizes Windows Users casing and forward slashes without case-folding POSIX paths', () => {
+    const slash = String.fromCharCode(92);
+    for (const path of ['c:' + slash + 'users' + slash + 'operator/project', 'C:' + slash + 'USERS' + slash + 'operator', 'C:' + '/' + 'users/operator/project', 'c:' + slash.repeat(2) + 'uSeRs' + slash.repeat(2) + 'operator']) {
+      assert.equal(localPathProblems('code/example.ts', path).length, 1, path);
+    }
+    assert.deepEqual(localPathProblems('docs/example.md', '/' + 'users/operator/project'), []);
+    assert.deepEqual(localPathProblems('docs/example.md', 'https://example.com/users/operator/project'), []);
+  });
+
   it('ignores network URLs without hiding file URLs or an adjacent local path', () => {
     for (const text of ['see https://example.com/home/docs/start', 'https://api.example.com/v1/Users/42/profile', '`https://example.com/home/docs`', '[page](https://example.com/home/docs)']) {
       assert.deepEqual(localPathProblems('docs/example.md', text), [], text);
