@@ -30,3 +30,11 @@ test('the report attributes case command ownership to the supplied Hub index vie
   assert.equal(report.commandOwnership,'hub_index_input');
   assert.match(renderRecount(report),/命令归属取自 Hub.*index-view@1/);
 });
+for(const mode of ['pending','unknown_claim'])test(`a decided draft differs from undecided Hub output: ${mode}`,()=>{
+  const result=hub(),requirement=result.partitions.delivered[0].requirements[0];
+  if(mode==='pending')requirement.status='pending';
+  else (requirement.claims as any[]).push({statement:{verdict:'unknown',reason:'missing_input',text:'起草用例“Ａ   CASE”未核对'}});
+  const report=recountDuplicates([view({})],draft,xml,result);
+  assert.equal(report.different,1);assert.equal(report.unknown,0);assert.equal(report.passed,false);
+  assert.equal(report.details[0].hubOutputMissing,true);
+});
