@@ -101,9 +101,13 @@ async function plan(booked: string, index = 0, repair = false) {
 async function verify(p: Awaited<ReturnType<typeof plan>>, index = 0, changed = false) {
   const payload = Buffer.from(p.payload);
   if (changed) { const at = payload.indexOf('pool-a'); assert.ok(at >= 0); payload[at + 5] = 'b'.charCodeAt(0); assert.equal(payload.filter((v, i) => v !== p.payload[i]).length, 1); }
+  if (changed) {
+    const refused=await client.call('upload_file',{file_path:payload.toString('base64'),name:'synthetic.xlsx',media_type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+    assert.equal(refused.isError,true);assert.equal(refused.out.acceptance,'not_accepted');assert.ok(refused.out.errors.some(e=>e.code==='SOURCE_UNPARSEABLE'&&/xlsx@1.*CRC/.test(e.message)&&e.fix));assert.equal(refused.out.reference,undefined);
+    return {run:p.run,result:null,ref:null};
+  }
   const ref = await client.upload(payload, 'synthetic.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   const input = { ...p.input, predecessor: p.run, parameters: { autoid: ids[index], plan_run: p.run }, inputs: { ...startInputs(), workbook: { reference: ref } } };
-  if (changed) { const refused = await client.call('start_run', input); assert.equal(refused.isError, true); assert.ok(refused.out.errors.some(e => e.code === 'SUBMISSION_SCHEMA_VIOLATION')); return { run: p.run, result: null, ref }; }
   const second = await start(input);
   const result = (await client.call('submit_result', submission(second.run!.run, index))).out;
   return { run: second.run!.run, result, ref };
