@@ -10,8 +10,7 @@
           "bucket": { "type": "string" },
           "blocks": { "type": "array" },
           "steps": { "type": "array" },
-          "expects": { "type": "array" },
-          "plan_json": { "type": "string" }
+          "expects": { "type": "array" }
         }
       }
     }

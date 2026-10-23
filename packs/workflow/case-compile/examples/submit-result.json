@@ -1,6 +1,6 @@
 {
   "synthetic": true,
-  "note": "合成示例：对 examples/start-run.json 那次运行的一次完整提交（模型：受限结构填槽；plan_json 由确定性生成规则从槽位出，照 SKILL.md 第 4 步）",
+  "note": "合成示例：对 examples/start-run.json 那次运行的一次完整提交（模型只按受限结构填槽：bucket、blocks、steps、expects 和 quotes；执行计划由 Hub 从槽位生成，不由模型写）",
   "run": "run_01m5h9zh07x7amhg4bwmye5yhw",
   "model": "synthetic-model",
   "items": [
@@ -10,7 +10,7 @@
       "slots": {
         "plan": [
           {
-            "text": "健康检查间隔配置测试的执行计划（4 步，1 个期望结果）",
+            "text": "健康检查间隔配置测试的执行计划槽位（4 步，1 个期望结果）",
             "quotes": [
               {
                 "reference": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/s/c-1-s1/0",
@@ -63,8 +63,7 @@
                     "text": "健康检查间隔设置成功"
                   }
                 }
-              ],
-              "plan_json": "{\"bed\":\"bed-a\",\"blocks\":[\"setup\"],\"case\":\"doc-1:c-1\",\"expects\":[{\"source\":\"src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/s/c-1-s1/0\",\"text\":\"健康检查间隔设置成功\"}],\"schema\":\"exec-plan@1\",\"steps\":[{\"method\":\"listen\",\"n\":1,\"object\":\"dut\",\"params\":{\"address\":\"192.0.2.10\",\"port\":8080}},{\"method\":\"cli\",\"n\":2,\"object\":\"dut\",\"params\":{\"line\":\"widget health interval 60\"}},{\"method\":\"request\",\"n\":3,\"object\":\"client\",\"params\":{\"count\":3,\"target\":\"192.0.2.90\"}},{\"method\":\"respond\",\"n\":4,\"object\":\"server\",\"params\":{\"backend\":\"192.0.2.90\",\"status\":200}}]}"
+              ]
             }
           }
         ]
@@ -76,7 +75,7 @@
       "slots": {
         "plan": [
           {
-            "text": "会话保持基本功能测试的执行计划（1 步，1 个期望结果）",
+            "text": "会话保持基本功能测试的执行计划槽位（1 步，1 个期望结果）",
             "quotes": [
               {
                 "reference": "src:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/kityminder@1/s/c-2-s1/0",
@@ -103,8 +102,7 @@
                     "text": "会话保持生效"
                   }
                 }
-              ],
-              "plan_json": "{\"bed\":\"bed-a\",\"blocks\":[],\"case\":\"doc-1:c-2\",\"expects\":[{\"source\":\"src:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/kityminder@1/s/c-2-s1/0\",\"text\":\"会话保持生效\"}],\"schema\":\"exec-plan@1\",\"steps\":[{\"method\":\"cli\",\"n\":1,\"object\":\"dut\",\"params\":{\"line\":\"widget session persistence cookie\"}}]}"
+              ]
             }
           }
         ]

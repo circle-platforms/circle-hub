@@ -1,7 +1,9 @@
-// The restricted slots the model fills and the deterministic generator (compile design section 2, P05): a plan is a
-// pure function of the slots — the same case compiles to the same bytes twice. The generator emits the JSON form of
-// the execution plan (exec-plan@1; the workbook format waits for the owner). The Hub re-generates from the submitted
-// slots and compares byte for byte; a plan that is not exactly what the slots generate is not accepted.
+// The restricted slots the model fills and the deterministic generator (compile design section 2, P05): the model
+// only fills the slots — bucket, blocks, steps, expects and the quotes; the plan is a pure function of them, produced
+// here (the pack owns the generator until the core grows a generation step and artifact storage). The generator emits
+// the JSON form of the execution plan (exec-plan@1; the workbook format waits for the owner). A second reader parses
+// the produced text back and compares it with the slots item by item; only a consistent re-read supports.
+import { createHash } from 'node:crypto';
 import { isRecord } from './text.ts';
 import { lookupMethod, orderedParams, type Contract } from './contract.ts';
 
@@ -25,8 +27,6 @@ export interface PlanSlots {
   blocks: string[];
   steps: PlanStep[];
   expects: PlanExpect[];
-  /** The canonical JSON text of the generated plan, as submitted. */
-  planJson: string;
 }
 
 export interface SlotProblem {
@@ -82,9 +82,7 @@ export function readSlots(data: unknown): { ok: true; slots: PlanSlots } | { ok:
       expects.push({ text: expect.text, quote: quote ?? { reference: '', text: '' } });
     }
   }
-  const planJson = typeof raw.plan_json === 'string' ? raw.plan_json : null;
-  if (planJson === null) problem('/plan_json', '执行计划的 JSON 文本不是字符串');
-  return problems.length > 0 ? { ok: false, problems } : { ok: true, slots: { bucket: bucket as string, blocks, steps, expects, planJson: planJson as string } };
+  return problems.length > 0 ? { ok: false, problems } : { ok: true, slots: { bucket: bucket as string, blocks, steps, expects } };
 }
 
 /** Canonical JSON: object members sorted by code unit, arrays in order, no whitespace (the plan's byte-exact form). */
@@ -96,6 +94,11 @@ export function canonicalJson(value: unknown): string {
     .sort()
     .map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`)
     .join(',')}}`;
+}
+
+/** The sha256 of the generated plan text (crypto is a pure builtin the sandbox admits). */
+export function sha256Hex(text: string): string {
+  return createHash('sha256').update(text, 'utf8').digest('hex');
 }
 
 export interface ExecPlan {
@@ -110,7 +113,8 @@ export interface ExecPlan {
 /**
  * The plan the slots generate (deterministic): blocks sorted, steps numbered from 1 in slot order with their
  * parameters in the contract's declaration order (defaults filled), expected results citing their quote reference.
- * Null when a step's required parameters are missing — a shape problem the contract check names instead.
+ * Null when a step's required parameters are missing or a method is not in the contract — a shape problem the
+ * contract check names instead.
  */
 export function generatePlan(caseId: string, slots: PlanSlots, contract: Contract): ExecPlan | null {
   const steps: ExecPlan['steps'] = [];
@@ -135,4 +139,62 @@ export function generatePlan(caseId: string, slots: PlanSlots, contract: Contrac
 export function generatePlanJson(caseId: string, slots: PlanSlots, contract: Contract): string | null {
   const plan = generatePlan(caseId, slots, contract);
   return plan === null ? null : canonicalJson(plan);
+}
+
+/** The second reader (P05): parses an exec-plan@1 text back, strictly; null when it is not that shape. */
+export function parsePlan(text: string): ExecPlan | null {
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  if (!isRecord(value) || value.schema !== 'exec-plan@1') return null;
+  if (typeof value.case !== 'string' || value.case === '') return null;
+  if (typeof value.bed !== 'string' || value.bed === '') return null;
+  if (!Array.isArray(value.blocks) || value.blocks.some((block) => typeof block !== 'string')) return null;
+  if (!Array.isArray(value.steps)) return null;
+  const steps: ExecPlan['steps'] = [];
+  for (const [i, step] of value.steps.entries()) {
+    if (!isRecord(step) || step.n !== i + 1) return null;
+    if (typeof step.object !== 'string' || step.object === '' || typeof step.method !== 'string' || step.method === '' || !isRecord(step.params)) return null;
+    steps.push({ n: i + 1, object: step.object, method: step.method, params: step.params });
+  }
+  if (!Array.isArray(value.expects)) return null;
+  const expects: ExecPlan['expects'] = [];
+  for (const expect of value.expects) {
+    if (!isRecord(expect) || typeof expect.text !== 'string' || typeof expect.source !== 'string') return null;
+    expects.push({ text: expect.text, source: expect.source });
+  }
+  return { schema: 'exec-plan@1', case: value.case, bed: value.bed, blocks: value.blocks as string[], steps, expects };
+}
+
+/**
+ * The re-read plan against the slots, item by item: bed, blocks, the steps with their parameters as the contract
+ * orders them, and every expected result with its source. The mismatch descriptions, empty when consistent.
+ */
+export function diffPlan(slots: PlanSlots, plan: ExecPlan, contract: Contract): string[] {
+  const diffs: string[] = [];
+  if (plan.bed !== slots.bucket) diffs.push(`台架 ${plan.bed} 不是槽位的 ${slots.bucket}`);
+  const blocks = [...slots.blocks].sort();
+  if (plan.blocks.length !== blocks.length || plan.blocks.some((block, i) => block !== blocks[i])) diffs.push(`块 ${plan.blocks.join('、') || '（无）'} 不是槽位的 ${blocks.join('、') || '（无）'}`);
+  if (plan.steps.length !== slots.steps.length) diffs.push(`步骤 ${plan.steps.length} 步，槽位 ${slots.steps.length} 步`);
+  for (const [i, step] of slots.steps.entries()) {
+    const read = plan.steps[i];
+    if (read === undefined) break;
+    if (read.object !== step.object || read.method !== step.method) {
+      diffs.push(`第 ${i + 1} 步是 ${read.object}.${read.method}，槽位是 ${step.object}.${step.method}`);
+      continue;
+    }
+    const method = lookupMethod(contract, step.object, step.method);
+    const wanted = method === null ? null : orderedParams(method, step.params);
+    if (wanted === null || canonicalJson(read.params) !== canonicalJson(wanted)) diffs.push(`第 ${i + 1} 步的参数和槽位按合约展开的不一致`);
+  }
+  if (plan.expects.length !== slots.expects.length) diffs.push(`期望结果 ${plan.expects.length} 个，槽位 ${slots.expects.length} 个`);
+  for (const [i, expect] of slots.expects.entries()) {
+    const read = plan.expects[i];
+    if (read === undefined) break;
+    if (read.text !== expect.text || read.source !== expect.quote.reference) diffs.push(`第 ${i + 1} 个期望结果或它的来源和槽位不一致`);
+  }
+  return diffs;
 }

@@ -2,7 +2,7 @@
   "id": "plan_deterministic",
   "source": "author",
   "check": "deterministic_plan",
-  "note": "合成正例：plan_json 与槽位确定性生成的逐字节相同",
+  "note": "合成正例：Hub 从槽位生成执行计划并回读一致，支持结论写出 sha256",
   "subject": {
     "item": "doc-1:c-1",
     "location": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/s/c-1-s1/0",
@@ -52,8 +52,7 @@
             "text": "健康检查间隔设置成功"
           }
         }
-      ],
-      "plan_json": "{\"bed\":\"bed-a\",\"blocks\":[\"setup\"],\"case\":\"doc-1:c-1\",\"expects\":[{\"source\":\"src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/s/c-1-s1/0\",\"text\":\"健康检查间隔设置成功\"}],\"schema\":\"exec-plan@1\",\"steps\":[{\"method\":\"listen\",\"n\":1,\"object\":\"dut\",\"params\":{\"address\":\"192.0.2.10\",\"port\":8080}},{\"method\":\"cli\",\"n\":2,\"object\":\"dut\",\"params\":{\"line\":\"widget health interval 60\"}},{\"method\":\"request\",\"n\":3,\"object\":\"client\",\"params\":{\"count\":3,\"target\":\"192.0.2.90\"}},{\"method\":\"respond\",\"n\":4,\"object\":\"server\",\"params\":{\"backend\":\"192.0.2.90\",\"status\":200}}]}"
+      ]
     },
     "contract": {
       "schema": "compile-contract@1",
