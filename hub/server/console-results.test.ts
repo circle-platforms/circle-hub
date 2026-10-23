@@ -4,6 +4,7 @@ import { after, before, test } from 'node:test';
 import { PARTITION, STATIC_TERMINAL } from '../../contracts/generated/vocabulary.ts';
 import { partitionCountsOf } from '../../contracts/src/validation.ts';
 import { countsLine } from './text.ts';
+import { probeConsole } from '../../scripts/real/console-page.ts';
 import { defaultPacks, fakeWorkflowPack } from './fakes.ts';
 import { createTestServer, type TestServer, type TestUser } from './testing.ts';
 
@@ -38,7 +39,7 @@ async function start(user: TestUser, pack = 'facts', count = 3) {
 
 test('production visibility, neutral refusals, admin and list filters', async () => {
   const a = await server.createUser('甲'); const b = await server.createUser('乙');
-  const own = await start(a); const other = await start(b); const review = await start(a, 'review');
+  const earlier = await start(a); const own = await start(a); const other = await start(b); const review = await start(a, 'review');
   const cookie = await login(a);
   const missing = await send(`/console/results/run_${'z'.repeat(26)}`, cookie);
   for (const id of [other, review, 'bad', `run_${'z'.repeat(26)}`]) {
@@ -46,9 +47,11 @@ test('production visibility, neutral refusals, admin and list filters', async ()
     assert.equal(page.status, 404); assert.equal(page.body, missing.body); assert.match(page.body, /对你不可用/);
   }
   const list = await send('/console/results?pack=facts&build=synthetic-10.7', cookie);
-  assert.equal(list.status, 200); assert.ok(list.body.includes(own)); assert.ok(!list.body.includes(other)); assert.ok(!list.body.includes(review));
+  assert.equal(list.status, 200); assert.ok(list.body.indexOf(own) < list.body.indexOf(earlier)); assert.ok(list.body.includes(own)); assert.ok(!list.body.includes(other)); assert.ok(!list.body.includes(review));
   assert.ok(!(await send('/console/results?build=absent', cookie)).body.includes(own));
   const admin = await login(server.admin);
+  const adminList = await send('/console/results', admin);
+  assert.ok(adminList.body.includes(own)); assert.ok(adminList.body.includes(other));
   for (const id of [own, other]) assert.equal((await send(`/console/results/${id}`, admin)).status, 200);
 });
 
@@ -87,10 +90,14 @@ test('1200 items have three pages, stable whole-result counts, summaries, claims
     assert.equal((page.body.match(/<tbody>[\s\S]*?<\/tbody>/g) ?? []).flatMap((body) => body.match(/<tr>/g) ?? []).length, i === 2 ? 200 : 500);
     assert.match(page.body, /跨条目主张/); assert.match(page.body, /补采/);
   }
+  const ids = pages.flatMap((page) => [...page.body.matchAll(/<code>(entry-[0-9]+)<\/code>/g)].map((match) => match[1]));
+  assert.equal(ids.length, 1200); assert.equal(new Set(ids).size, 1200);
   assert.match(pages[0].body, /合成摘要0/); assert.match(pages[0].body, /class="t-unknown"/);
   const unknown = await send(`/console/results/${id}?terminal=unchecked`, cookie);
   assert.equal((unknown.body.match(/<tbody>[\s\S]*?<\/tbody>/g) ?? []).flatMap((body) => body.match(/<tr>/g) ?? []).length, 240);
   assert.doesNotMatch(unknown.body, /✓|✗/);
+  assert.match(unknown.body, /class="t-unknown">？ 静态：未核对/);
+  assert.doesNotMatch(unknown.body, /<strong>[^<]*通过/);
   assert.equal((await send(`/console/results/${id}?terminal=bogus`, cookie)).status, 400);
   stored.latest = null;
   assert.match((await send(`/console/results/${id}`, cookie)).body, /还没有校验结果/);
@@ -103,4 +110,13 @@ test('a filtered empty list page retains the service cursor', async () => {
   server.fakes.runs.script.answerNext('listRuns', { items: [{ ...run, build: 'other' }], next: 'synthetic-cursor' });
   const page = await send('/console/results?build=synthetic-10.7&pack=facts', cookie);
   assert.match(page.body, /没有运行/); assert.match(page.body, /下一页/); assert.match(page.body, /cursor=synthetic-cursor/);
+});
+
+
+test('the owner probe logs in, reads the actual console and logs out on synthetic records', async () => {
+  const user = await server.createUser('探测联测');
+  const id = await start(user, 'facts', 7);
+  const stats = await probeConsole({ url: server.url, path: `/console/results/${id}`, token: user.token });
+  assert.equal(stats.status, 200); assert.equal(stats.csp, true); assert.equal(stats.scripts, 0);
+  assert.equal(stats.externalAddresses, 0); assert.deepEqual(stats.tableRows, [7]); assert.equal(stats.logoutStatus, 303);
 });
