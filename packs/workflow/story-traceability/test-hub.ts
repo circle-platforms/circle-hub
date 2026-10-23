@@ -1,6 +1,7 @@
 // Test harness of the story-traceability pack against the real Hub parts (not part of the pack): a records kit in a temporary
 // PostgreSQL, the real pack registry (publish check included) and run engine, a synthetic product pack of a line named APV
 // and NSAE, a knowledge base with one build and root, and a fake knowledge reader serving hand-built index views.
+import type {PermissionRole} from '../../../contracts/generated/vocabulary.ts';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import type { KnownBuild } from '../../../contracts/src/product.ts';
@@ -170,7 +171,7 @@ export async function openHub(postgres: TemporaryPostgres): Promise<Hub> {
       now,
       adminLog: (entry) => logs.push(entry),
     });
-    const principal = (u: { id: string; name: string; role: 'user' | 'admin' }): Principal => ({ id: u.id, name: u.name, role: u.role });
+    const principal = (u: { id: string; name: string; role: Extract<PermissionRole, 'user' | 'admin'> }): Principal => ({ id: u.id, name: u.name, role: u.role });
     return {
       kit,
       registry,
