@@ -29,7 +29,7 @@ function goldOf(): { gold: any; dir: string } {
 }
 interface CopyInfo { name: string; tree: MindTree; sha: string; document: number; kind: string; category?: string; ordinal?: number }
 interface Answer { count: number; missing: Set<string> }
-interface FakeOptions { mutate?: (info: CopyInfo, answer: Answer) => Answer; hide?: string; badUpload?: boolean; refuseStart?: boolean; dropRows?: boolean }
+interface FakeOptions { mutate?: (info: CopyInfo, answer: Answer) => Answer; hide?: string; badUpload?: boolean; refuseStart?: boolean; dropRows?: boolean; dropSingleRow?: boolean }
 function truth(tree: MindTree): Answer {
   const map = parseMindMap(tree); const raw: any[] = []; const walk = (node: any) => { raw.push(node); (node.children ?? []).forEach(walk); }; walk(tree.root);
   const cases = caseNodesOf(map); const present = new Set<string>();
@@ -75,7 +75,7 @@ function drive(scenario: ReturnType<typeof build>, answerText?: (file: string) =
             const summary = answerText?.(info.name) ?? summaryOf(answer); full.set(`${record}#/items/${at}/summary`, summary);
             return { id: uploadIdOf(info.sha), label: String(info.tree.root.data.text), summary, location: `src:${info.sha}`, fields: {} };
           });
-          const value = StartRunOutput.parse({ call_result: 'ok', trace: token, errors: [], run: { run: `run_${run.toString(36).padStart(26, '0')}`, pack: 'template-gap@1.0.0', pack_digest: sha256Of('synthetic-pack'), target_basis: [], sources: [], requirements: [], items: options.dropRows ? [] : items, instructions: '合成规程', instructions_digest: sha256Of('synthetic-instructions'), started_at: '2026-01-01T00:00:00.000Z' }, result: { reference: `rec:${sha256Of(`synthetic-result-${run}`)}`, counts: { delivered: items.length, rejected: 0, quarantined: 0, incomplete: 0, unknown: 0 } } });
+          const value = StartRunOutput.parse({ call_result: 'ok', trace: token, errors: [], run: { run: `run_${run.toString(36).padStart(26, '0')}`, pack: 'template-gap@1.0.0', pack_digest: sha256Of('synthetic-pack'), target_basis: [], sources: [], requirements: [], items: options.dropRows ? [] : options.dropSingleRow && copies.some(c=>c?.kind==='c') ? items.filter(item=>item.id!==uploadIdOf(copies.find(c=>c?.kind==='c' && c.document===0)!.sha)) : items, instructions: '合成规程', instructions_digest: sha256Of('synthetic-instructions'), started_at: '2026-01-01T00:00:00.000Z' }, result: { reference: `rec:${sha256Of(`synthetic-result-${run}`)}`, counts: { delivered: items.length, rejected: 0, quarantined: 0, incomplete: 0, unknown: 0 } } });
           text = toolText('start_run', value, { paging: true, record });
         }
       } else {
@@ -433,4 +433,11 @@ test('review 22: explicit screen count lines include phases, categories and not-
   const output = summaryLines(result.checks, lines).join('\n');
   assert.match(output, /共 [0-9]+ 项核对/); assert.doesNotMatch(output, /合成文档甲|合成甲一|\ba1\b/);
   assert.deepEqual(summaryLines([{ area: '合成', name: '合成核对', ok: true, expected: 'PRIVATE-SYNTHETIC', actual: 'PRIVATE-SYNTHETIC' }]), ['相符：合成核对', '共 1 项核对，1 项相符，0 项不符']);
+});
+
+test('closure unknown phase-two batch never feeds phase-three copies or agreement-looking evidence', () => {
+ const {gold}=goldOf();gold.batch=20;const scenario=build(gold);const result=drive(scenario,undefined,{dropSingleRow:true});
+ assert.equal(result.infos.filter(info=>['d','e','f'].includes(info.kind)).length,0);
+ const lines=scenario.sections?.flatMap(s=>s.lines).join('\n') ?? '';assert.match(lines,/单用例副本答案未知/);
+ for(const check of result.checks.filter(c=>c.name.includes('单用例副本用例数'))){assert.ok(!/用例 \d+\/\d+/.test(check.actual));assert.ok(check.actual.includes('条目数与这一批的份数不符'));}
 });

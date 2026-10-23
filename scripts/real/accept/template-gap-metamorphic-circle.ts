@@ -179,7 +179,7 @@ export default function scenario(gold: GapCircleGold): Scenario {
     const out = new Map<string, ReadonlySet<string>>();
     for (const [i, id] of outerIds[d]!.entries()) {
       const answer = answerOf.get(`c-${d}-${i}`);
-      if (answer !== undefined && answer.caseCount === singleCounts[d]!.get(id)) out.set(id, answer.missing);
+      if (answer !== undefined && !unknown.has(`c-${d}-${i}`) && answer.caseCount === singleCounts[d]!.get(id)) out.set(id, answer.missing);
     }
     return out;
   };
@@ -248,9 +248,10 @@ export default function scenario(gold: GapCircleGold): Scenario {
           if (parsed !== null) items.set(parsed.item, parsed.summary);
         }
         if (items.size !== openRun.length) {
-          for (const { key } of openRun) if (!items.has(uploadIdOf(''))) unknown.set(key, '条目数与这一批的份数不符');
+          for (const { key } of openRun) unknown.set(key, '条目数与这一批的份数不符');
         }
         for (const { key, sha } of openRun) {
+          if (unknown.has(key)) continue;
           const summary = items.get(uploadIdOf(sha));
           if (summary === undefined) {
             if (!unknown.has(key)) unknown.set(key, '条目数与这一批的份数不符');
@@ -356,7 +357,7 @@ export default function scenario(gold: GapCircleGold): Scenario {
     const missesOf = (document: number, caseId: string): ReadonlySet<string> | undefined => {
       const ordinal = outerIds[document]!.indexOf(caseId); const key = `c-${document}-${ordinal}`; const answer = answerOf.get(key);
       if (answer && !unknown.has(key) && answer.caseCount === countExpected(key)) return answer.missing;
-      if (attempted.has(key)) findings.push({ document, caseId, runKey: key, why: answer ? `数出 ${answer.caseCount} 个，独立计数为 ${countExpected(key)} 个` : unknown.get(key) ?? '缺少完整条目结果' });
+      if (attempted.has(key)) findings.push({ document, caseId, runKey: key, why: unknown.get(key) ?? (answer ? `数出 ${answer.caseCount} 个，独立计数为 ${countExpected(key)} 个` : '缺少完整条目结果') });
       return undefined;
     };
     phaseThreeMap = new Map([...attempted].filter(([, copy]) => ['d','e','f'].includes(copy.kind)).map(([key, copy]) => [key, [...copy.contains]]));
@@ -382,6 +383,7 @@ export default function scenario(gold: GapCircleGold): Scenario {
     const scores = new Map(scored.map(row => [row.key, row]));
     const digest = (copy: Pending) => uploaded.get(copy.key)?.slice(0, 12) ?? '未上传';
     const details = (copy: Pending): string => {
+      if (unknown.has(copy.key)) return `${digest(copy)} ${unknown.get(copy.key)}`;
       const row = scores.get(copy.key);
       if (!row) return `${digest(copy)} 缺少可核对结果或单用例对照；下一步核对对应运行回执`;
       const extra = [...row.actual].filter(id => !row.expected.has(id)).sort(); const absent = [...row.expected].filter(id => !row.actual.has(id)).sort();
@@ -398,8 +400,8 @@ export default function scenario(gold: GapCircleGold): Scenario {
       };
       const ofKind = (kind: string) => own.filter(copy => copy.kind === kind);
       put('上传字节', own, copy => uploadVerdicts.get(copy.key) === true, '上传引用等于写下字节的摘要', copy => `${digest(copy)} 上传摘要未核实`);
-      put('原件用例数', ofKind('a'), copy => !unknown.has(copy.key) && answerOf.get(copy.key)?.caseCount === copy.premise.expected, '用例数等于独立计数', copy => `${digest(copy)} 用例 ${answerOf.get(copy.key)?.caseCount ?? '缺结果'}/${copy.premise.expected}`);
-      put('单用例副本用例数', ofKind('c'), copy => !unknown.has(copy.key) && answerOf.get(copy.key)?.caseCount === copy.premise.expected, '用例数等于该副本独立计数', copy => `${digest(copy)} 用例 ${answerOf.get(copy.key)?.caseCount ?? '缺结果'}/${copy.premise.expected}`);
+      put('原件用例数', ofKind('a'), copy => !unknown.has(copy.key) && answerOf.get(copy.key)?.caseCount === copy.premise.expected, '用例数等于独立计数', copy => unknown.has(copy.key) ? `${digest(copy)} ${unknown.get(copy.key)}` : `${digest(copy)} 用例 ${answerOf.get(copy.key)?.caseCount ?? '缺结果'}/${copy.premise.expected}`);
+      put('单用例副本用例数', ofKind('c'), copy => !unknown.has(copy.key) && answerOf.get(copy.key)?.caseCount === copy.premise.expected, '用例数等于该副本独立计数', copy => unknown.has(copy.key) ? `${digest(copy)} ${unknown.get(copy.key)}` : `${digest(copy)} 用例 ${answerOf.get(copy.key)?.caseCount ?? '缺结果'}/${copy.premise.expected}`);
       put('换序', ofKind('b'), copy => scores.get(copy.key)?.ok === true && answerOf.get(copy.key)?.fullSummary === answerOf.get(`a-${document}`)?.fullSummary, 'b 与 a 缺失集合和摘要逐字相同', copy => `${details(copy)}；${answerOf.get(copy.key)?.fullSummary === answerOf.get(`a-${document}`)?.fullSummary ? '摘要相同' : '摘要不同'}`);
       put('拆分', ofKind('a'), copy => scores.get(copy.key)?.ok === true, 'a 的缺失集合等于全部 c 的交集');
       const typed = ofKind('c').filter(copy => requiredTypes(document, copy.contains[0]!.caseId).size > 0);
