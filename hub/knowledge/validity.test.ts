@@ -103,9 +103,25 @@ describe('cited_fragment_changed compares the cited root X with the reader\'s ro
     assert.equal(validity.status, 'cited_fragment_changed');
   });
 
-  test('without a lock there is no reader root to compare: valid, nothing claimed', async (t) => {
+  test('outside a run, the current pointer moved to Y: reading X flags changed with both roots and the holds-on-X note (K01 R[6])', async (t) => {
     const w = await produced(t);
-    await editedRoot(w);
+    const yRoot = await editedRoot(w);
+    // Outside a run there is no lock: the reader's root is the line's current-root pointer, which now names Y.
+    const cause = (await w.knowledge.store.productionsOfRoot(yRoot))[0]!.record.digest;
+    const moved = await w.knowledge.moveRoot(w.product.product.id, '1.2', null, yRoot, cause);
+    assert.equal(moved.moved, true, JSON.stringify(moved).slice(0, 200));
+    const read = await w.knowledge.treeReader().read(w.root, PATH, w.entry, { user: w.user.id, role: 'user' as const });
+    const validity = read!.validity as { status: string; cited_root?: string; reader_root?: string; conditions: Array<{ condition: string; source: string }> };
+    assert.equal(validity.status, 'cited_fragment_changed', JSON.stringify(validity));
+    assert.equal(validity.cited_root, w.root);
+    assert.equal(validity.reader_root, yRoot);
+    const condition = validity.conditions.find((c) => c.condition === 'cited_fragment_changed')!;
+    assert.match(condition.source, /仍成立/);
+    assert.ok(condition.source.includes(w.root) && condition.source.includes(yRoot));
+  });
+
+  test('outside a run, the current pointer still names X: valid', async (t) => {
+    const w = await produced(t);
     const read = await w.knowledge.treeReader().read(w.root, PATH, w.entry, { user: w.user.id, role: 'user' as const });
     const validity = read!.validity as { status: string };
     assert.equal(validity.status, 'valid');

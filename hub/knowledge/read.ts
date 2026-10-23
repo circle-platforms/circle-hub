@@ -15,7 +15,7 @@ import { ReferenceSyntaxError, parseReference, pathOf, pathSegments, treeReferen
 import type { JsonValue, ReaderIdentity, TreeRead, TreeReader } from '../refs/api.ts';
 import { createCatalogView, type CatalogEntry, type CatalogView } from '../rules/api.ts';
 import { CompositionView, type ReadRow } from './composition.ts';
-import { CONTRADICTION } from './store.ts';
+import { CONTRADICTION, pointerName } from './store.ts';
 import { mapLimited } from './concurrency.ts';
 import type { KnowledgeContext } from './context.ts';
 import { canonicalSize, compareText, cutText, entryDigest, type EntryContent } from './digest.ts';
@@ -416,7 +416,17 @@ export class TreeReading {
     // the root of the composition the reader's lock names: X ≠ Y and Y's entry at the same path differs or is absent
     // (K03 R[5]). The same root never flags (roots are content-addressed); without a lock there is no reader root to
     // compare against, and nothing is claimed, honestly.
-    const readerRoot = bound === null ? null : (await this.#context.store.composition(bound))?.root ?? null;
+    // The reader's root Y (K01 R[6], K03 R[5]): in a run, the root of the composition the lock names; outside a run,
+    // the CURRENT-ROOT POINTER of the product line the cited root belongs to. When the pointer cannot be taken (the
+    // line has no root yet) there is no Y and nothing is claimed, honestly (README).
+    const readerRoot = bound !== null
+      ? (await this.#context.store.composition(bound))?.root ?? null
+      : await (async () => {
+          const body = all[0]?.body;
+          if (body === undefined) return null;
+          const pointer = await this.#context.records.pointers.get(pointerName(body.product, body.version.line));
+          return pointer?.target ?? null;
+        })();
     // Pack lookups of one read are cached (a withdrawn version is asked once, not once per row).
     const packCache = new Map<string, Promise<boolean>>();
     const withdrawn = (ref: string): Promise<boolean> => {
@@ -467,7 +477,7 @@ export class TreeReading {
         const view = (await this.compositionsOf(readerRoot))[0];
         const yRows = view === undefined ? null : await view.rowsAt(canonical);
         if (yRows === null || !yRows.has(digests[0]!)) {
-          conditions.push({ condition: 'cited_fragment_changed', source: `引用根 ${root}，读者根 ${readerRoot}` });
+          conditions.push({ condition: 'cited_fragment_changed', source: `引用根 ${root}，读者根 ${readerRoot}；主张在 ${root} 上仍成立` });
         }
       }
       // contradicted: relations this reader may see — their own candidate relations and the Hub's deterministic ones
