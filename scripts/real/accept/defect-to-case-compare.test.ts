@@ -78,7 +78,7 @@ describe('the verbatim report reads the Hub’s claims, never re-judged', () => 
     const comparison = computeComparison(docGold, submissionOf(draft('a', 'show health')), resultWith([refuteQuoteClaim]));
     assert.equal(comparison.quotes.allVerbatim, false);
     assert.equal(comparison.quotes.problems.length, 1);
-    assert.match(renderComparison(comparison), /refute：第 1 个起草用例第 1 个期望结果/);
+    assert.match(renderComparison(comparison), /引文问题 1 条/);
   });
 
   test('no grounded claim at all is not "all verbatim"', () => {
@@ -143,7 +143,7 @@ describe('the duplicate sets: exact identity against the Hub’s flagged set', (
     assert.equal(h.docRatio, 1);
     assert.deepEqual(h.unrecognizedInDoc, ['function', 'stress']);
     const text = renderComparison(comparison);
-    assert.match(text, /已有文档未识别的命令行：function、stress/);
+    assert.match(text, /未识别文档行 2/);
   });
 
   const syntheticXml = `<?xml version="1.0" encoding="ISO-8859-1"?>
@@ -229,7 +229,7 @@ describe('the duplicate sets: exact identity against the Hub’s flagged set', (
     assert.equal(h.draftHeads, 1);
     assert.deepEqual(h.unrecognizedInDrafts, ['custom_tool action 123']);
     const text = renderComparison(comparison);
-    assert.match(text, /草稿里目录找不到的命令行：custom_tool action 123/);
+    assert.match(text, /未识别草稿行 1/);
   });
 
   test('main CLI accepts --commands and outputs comparison with catalog split', () => {
@@ -251,4 +251,10 @@ describe('the duplicate sets: exact identity against the Hub’s flagged set', (
       rmSync(dir, { recursive: true, force: true });
     }
   });
+});
+
+test('rendered output contains no synthetic title, command or quotation', () => {
+  const comparison = computeComparison(docGold, submissionOf(draft('SYNTHETIC_TITLE', 'widget health interval pool1 5', 'SYNTHETIC_QUOTE')), resultWith([refuteQuoteClaim], [dupClaim('SYNTHETIC_TITLE')]));
+  const text = renderComparison(comparison);
+  for (const secret of ['SYNTHETIC_TITLE', 'widget health interval', 'SYNTHETIC_QUOTE', refuteQuoteClaim.statement.text]) assert.ok(!text.includes(secret));
 });

@@ -12,8 +12,9 @@
 //    computes from gold and submission against the set the Hub's duplicate check flagged
 //    (defect-to-case.duplicate_case claims), and whether the two sets are equal.
 //   node scripts/real/accept/defect-to-case-compare.ts --gold <gold.json> --drafts <submission.json> --result <validation.json>
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, realpathSync, lstatSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { resolve, dirname } from 'node:path';
 import {
   buildCatalog,
   normalizeHead,
@@ -239,26 +240,42 @@ export function renderComparison(comparison: Comparison): string {
   const lines: string[] = ['缺陷转用例与已有回归文档的比对', ''];
   lines.push(`1. 命令头重叠（只报告，不判通过）：草稿用到 ${h.draftHeads} 个命令头，已有文档用到 ${h.docHeads} 个，共同 ${h.shared} 个`);
   lines.push(`   草稿的命令头里已有文档也用到的比例：${percent(h.draftRatio)}；已有文档的命令头里草稿也用到的比例：${percent(h.docRatio)}`);
-  if (h.missingInDoc.length > 0) lines.push(`   草稿有、已有文档没有：${h.missingInDoc.join('、')}`);
-  if (h.missingInDrafts.length > 0) lines.push(`   已有文档有、草稿没有：${h.missingInDrafts.join('、')}`);
-  if (h.unrecognizedInDoc && h.unrecognizedInDoc.length > 0) {
-    lines.push(`   已有文档未识别的命令行：${h.unrecognizedInDoc.join('、')}`);
-  }
-  if (h.unrecognizedInDrafts && h.unrecognizedInDrafts.length > 0) {
-    lines.push(`   草稿里目录找不到的命令行：${h.unrecognizedInDrafts.join('、')}`);
-  }
+  lines.push(`   草稿独有 ${h.missingInDoc.length}；文档独有 ${h.missingInDrafts.length}；未识别文档行 ${h.unrecognizedInDoc?.length ?? 0}；未识别草稿行 ${h.unrecognizedInDrafts?.length ?? 0}`);
   lines.push('');
   lines.push(`2. 期望结果的引文（读 Hub 的判定，不重做）：grounded 主张 ${q.claims} 条，支持 ${q.support} 条`);
   lines.push(q.allVerbatim ? '   每条期望结果的引用都已被 Hub 判为逐字' : '   不是每条引用都被判为逐字：');
-  for (const problem of q.problems) lines.push(`   - ${problem}`);
+  lines.push(`   引文问题 ${q.problems.length} 条`);
   lines.push('');
   lines.push('3. 与已有用例完全相同（命令头和参数值都相同）的草稿：');
-  lines.push(`   gold 算出的集合（${d.goldIdentical.length}）：${d.goldIdentical.length > 0 ? d.goldIdentical.join('、') : '（空）'}`);
-  lines.push(`   Hub 查重标出的集合（${d.hubFlagged.length}）：${d.hubFlagged.length > 0 ? d.hubFlagged.join('、') : '（空）'}`);
-  lines.push(`   两个集合${d.equal ? '相等' : '不相等'}`);
-  for (const title of d.onlyGold) lines.push(`   - 只在 gold 的集合里：${title}`);
-  for (const title of d.onlyHub) lines.push(`   - 只在 Hub 标出的集合里：${title}`);
+  lines.push(`   gold 集合 ${d.goldIdentical.length}；Hub 集合 ${d.hubFlagged.length}；仅 gold ${d.onlyGold.length}；仅 Hub ${d.onlyHub.length}`);
+  lines.push(`   集合比对：${d.equal ? '通过' : '不通过'}`);
   return lines.join('\n');
+}
+
+/** Refuse repository destinations, including symlinked paths and other worktrees. */
+export function outsideGit(path: string): string {
+  const full = resolve(path);
+  let ancestor = full;
+  while (!existsSync(ancestor)) ancestor = dirname(ancestor);
+  if (existsSync(full) && lstatSync(full).isSymbolicLink()) throw new Error('unsafe destination');
+  const actual = realpathSync(ancestor);
+  const folder = lstatSync(actual).isDirectory() ? actual : dirname(actual);
+  if (spawnSync('git', ['-C', folder, 'rev-parse', '--is-inside-work-tree'], { encoding: 'utf8' }).stdout.trim() === 'true') throw new Error('repository destination');
+  return full;
+}
+
+export function writePrivateJson(path: string, value: unknown): void {
+  const full = outsideGit(path);
+  mkdirSync(dirname(full), { recursive: true, mode: 0o700 });
+  writeFileSync(full, JSON.stringify(value, null, 2) + '\n', { mode: 0o600, flag: 'wx' });
+}
+
+/** Details contain positions and explanatory categories only, never input strings. */
+export function comparisonDetails(comparison: Comparison): unknown[] {
+  return [
+    ...comparison.quotes.problems.map((_, quote) => ({ quote: quote + 1, category: 'hub_quote_problem' })),
+    ...comparison.duplicates.goldIdentical.map((_, draft) => ({ draft: draft + 1, category: 'legacy_document_command_match' })),
+  ];
 }
 
 export function main(argv: string[]): number {
@@ -277,7 +294,7 @@ export function main(argv: string[]): number {
     try {
       commandTreeXml = readFileSync(resolve(commandsPath), 'utf8');
     } catch (error) {
-      process.stderr.write(`读不了命令树文件 ${commandsPath}：${(error as Error).message.split('\n')[0]}\n`);
+      process.stderr.write('输入读取：不通过\n');
       return 1;
     }
   }
@@ -285,10 +302,12 @@ export function main(argv: string[]): number {
     const gold = JSON.parse(readFileSync(resolve(goldPath), 'utf8')) as unknown;
     const submission = JSON.parse(readFileSync(resolve(draftsPath), 'utf8')) as unknown;
     const result = JSON.parse(readFileSync(resolve(resultPath), 'utf8')) as unknown;
-    process.stdout.write(`${renderComparison(computeComparison(gold, submission, result, { commandTreeXml }))}\n`);
+    const comparison = computeComparison(gold, submission, result, { commandTreeXml });
+    if (value('details')) writePrivateJson(value('details')!, comparisonDetails(comparison));
+    process.stdout.write(`${renderComparison(comparison)}\n`);
     return 0;
   } catch (error) {
-    process.stderr.write(`读不了输入：${(error as Error).message.split('\n')[0]}\n`);
+    process.stderr.write('输入或明细写入：不通过\n');
     return 1;
   }
 }
