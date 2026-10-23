@@ -413,3 +413,7 @@ Until that API exists, import temporarily mirrors the current 1–4096 character
 including raw Basic components and the composed header. Tests compare rejected boundaries with ResourceAdmin itself.
 All resources are validated before any write, in dry-run too; I/O failures after validation remain independent writes
 and completed resources are disclosed immediately. No connector implementation is changed by this task.
+
+Import reports empty values separately from missing keys. Either refuses the entire import, explicitly says no
+credentials were written, and points to correcting the named keys and repeating --dry-run. Target errors reuse the
+resource-list and credential-name hints of secret set.

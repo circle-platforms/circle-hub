@@ -1363,7 +1363,7 @@ describe('secret import', () => {
     }
     const emptyFile = await importFile(admin, `PORTAL_USER=\nPORTAL_PASSWORD=${value}`);
     const empty = await admin.run(importArgs(emptyFile, id));
-    assert.equal(empty.code, 1); assert.match(empty.text, /PORTAL_USER：找到，长度 0/);
+    assert.equal(empty.code, 1); assert.match(empty.text, /PORTAL_USER：是空的/);
     assert.deepEqual(await withKit(admin, (kit) => kit.vault.list()), []);
     const linked = join(admin.deployment.dataDir, 'linked.env');
     await symlink(join(admin.deployment.dataDir, 'synthetic.env'), linked);
@@ -1518,4 +1518,20 @@ test('review 5: dry-run and real import validate every value before the first wr
   const args = ['secret', 'import', '--env-file', file, '--key', `PORTAL_USER=${first}/username`];
   await expectOk(admin, [...args, '--dry-run']); await expectOk(admin, args);
   assert.equal((await withKit(admin, kit => kit.vault.getText(`connector.${first}.username`)))?.length, 4096);
+});
+
+
+test('review 6: missing and empty keys refuse explicitly with corrective hints and no writes', async () => {
+  const admin = await setup(); const id = await importResource(admin);
+  for (const body of [`PORTAL_USER=reader`, `PORTAL_USER=\nPORTAL_PASSWORD=${PASSWORD}`]) {
+    const file = await importFile(admin, body); const result = await admin.run(importArgs(file, id));
+    assert.equal(result.code, 1); assert.match(result.text, /未写入任何凭据/); assert.match(result.text, /--dry-run/);
+    assert.deepEqual(await withKit(admin, kit => kit.vault.list()), []);
+    if (body.includes('PORTAL_USER=\n')) assert.match(result.text, /PORTAL_USER：是空的/);
+  }
+  const missing = join(admin.deployment.dataDir, 'not-opened.env');
+  const resource = await admin.run(['secret', 'import', '--env-file', missing, '--key', 'USER=res_00000000000000000000000000/username']);
+  assert.match(resource.text, /resource list/);
+  const credential = await admin.run(['secret', 'import', '--env-file', missing, '--key', `USER=${id}/absent`]);
+  assert.match(credential.text, /它的凭据项是/); assert.doesNotMatch(credential.text, /环境文件/);
 });

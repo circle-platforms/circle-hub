@@ -677,21 +677,22 @@ async function secretCommand(session: Session, args: readonly string[]): Promise
         if (targets.has(`${resource}/${entry}`)) throw new CliError('同一个凭据项不能写两次');
         targets.add(`${resource}/${entry}`);
         const described = await decided(() => hub.connectors.admin.describe(admin, resource));
-        if (described === null) throw new CliError(`没有资源 ${resource}`);
+        if (described === null) throw new CliError(`没有资源 ${resource.slice(0, 80)}`, '用 circle-hub resource list 查看资源号');
         const credential = described.credentials.find((credential) => credential.name === entry);
-        if (credential === undefined) throw new CliError(`资源 ${resource} 没有凭据项 ${entry}`);
+        if (credential === undefined) throw new CliError(`资源 ${resource} 没有凭据项 ${entry.slice(0, 80)}`, `它的凭据项是 ${described.credentials.map(item => item.name).join('、') || '（无）'}`);
         mappings.push({ keys, resource, entry, rule: credential.digest });
       }
     }
     const keys = [...new Set(mappings.flatMap((mapping) => mapping.keys))];
     const found = await readNamedEnvironment(values['env-file'], keys);
-    let missing = false;
+    const missing: string[] = []; const empty: string[] = [];
     for (const key of keys) {
       const value = found.get(key);
-      if (value === undefined) { session.out(`${key}：没有`); missing = true; }
-      else { session.out(`${key}：找到，长度 ${value.length}`); if (value.length === 0) missing = true; }
+      if (value === undefined) { session.out(`${key}：没有`); missing.push(key); }
+      else if (!value.length) { session.out(`${key}：是空的`); empty.push(key); }
+      else session.out(`${key}：找到，长度 ${value.length}`);
     }
-    if (missing) return 1;
+    if (missing.length || empty.length) throw new CliError(`凭据导入已拒绝；缺少键 ${missing.join('、') || '无'}；空值键 ${empty.join('、') || '无'}；未写入任何凭据`, '在环境文件里补上这些键的有效行后重跑，先加 --dry-run');
     for (const key of keys) {
       const problem = importValueProblem(found.get(key)!);
       if (problem) throw new CliError(`键 ${key} ${problem}；未写入任何凭据`, '在环境文件中修正该键的有效值，先用 --dry-run 核对后重跑');
