@@ -1,0 +1,175 @@
+{
+  "schema": "pack@1",
+  "id": "case-compile",
+  "version": "1.0.0",
+  "kind": "workflow",
+  "title": "用例编译",
+  "description": "模型按受限结构把评审过的用例编成执行计划，Hub 在边界上核对：步骤的（对象，方法）对合约、字面地址对台架、命令和参数对构建的命令目录、期望结果有逐字来源、执行计划确定性重读一致。结论都是事实或未知；合约是合成的时每条结论写“按合成合约核对”，所有结论写“不证明在真实设备上跑得通”",
+  "files": [
+    {
+      "path": "SKILL.md",
+      "sha256": "f280695e4f839711908d76e091a29acff363fb8b88ef0984a61f2f3fbb6f4dfb",
+      "size": 4376
+    },
+    {
+      "path": "checks.json",
+      "sha256": "e9730b80ba3dbc2f76193385dcc3dbee152eb3e7127c1bc68a131f2e40565308",
+      "size": 3300
+    },
+    {
+      "path": "examples/bed-topology.json",
+      "sha256": "065761f34baffe1dd6338844aa86af2710e160a6adca1896e7a69744319e6d6a",
+      "size": 1548
+    },
+    {
+      "path": "examples/compile-contract.json",
+      "sha256": "d722d61be31b19f40d1c488cfbffbdb5dcc6959b1967e118c26127b189c04faf",
+      "size": 2236
+    },
+    {
+      "path": "examples/start-run.json",
+      "sha256": "4b90322849ab0913f7b15b54928fdb90773764d2a75dccddef45d812a572eb71",
+      "size": 467
+    },
+    {
+      "path": "examples/submit-result.json",
+      "sha256": "a4f88cf9a822bc063acaebb3194f399c57ca5bdc7d249f9356c93c7d3dd1c680",
+      "size": 4612
+    },
+    {
+      "path": "functions/bed.ts",
+      "sha256": "080fd4b0e80cf7d58726b8bf855333815cb79e8d1a473d7263ee424f60859c00",
+      "size": 5685
+    },
+    {
+      "path": "functions/cases.ts",
+      "sha256": "f440b985455d5f88753030cb3d0ef073f1d91887c690f311f1acc340509627c2",
+      "size": 5269
+    },
+    {
+      "path": "functions/checks.ts",
+      "sha256": "a5923c46c09bba6b01411d859cd2a1caf9713171bfb2e1e5e077c0b92444bdbb",
+      "size": 10336
+    },
+    {
+      "path": "functions/contract.ts",
+      "sha256": "d9824e9302f27d049f063f0eeb5e4fcf362c7b383a346a5c8d69c6921bc79556",
+      "size": 14949
+    },
+    {
+      "path": "functions/manifest.ts",
+      "sha256": "6a8575cbda6396c40050c34f47d63a0933f3292401d00ec502ed4cd90733aef4",
+      "size": 14373
+    },
+    {
+      "path": "functions/plan.ts",
+      "sha256": "dabd53f3387a93858e6f548ba01063ffe81bba32e85332ec4427ca7b782be870",
+      "size": 6711
+    },
+    {
+      "path": "functions/project.ts",
+      "sha256": "f7875a90927786fa7205ee2ed22ad15880b7774304eb341ed4938a1be0350328",
+      "size": 7513
+    },
+    {
+      "path": "functions/subject.ts",
+      "sha256": "9fdc5ad0277acba54aa591e65ec16a099b708725fc3b3c2a64e155e288082710",
+      "size": 4380
+    },
+    {
+      "path": "functions/text.ts",
+      "sha256": "f3b78b8b4f1ba8c07f8ec6f33b186d1930e7ef5eb9fe21f0cf86b240d6565de0",
+      "size": 2147
+    },
+    {
+      "path": "requirements.json",
+      "sha256": "d9bc330be9bdb192e27967cff62bcf9c8360e8d11c24ad633c9678535685f079",
+      "size": 3277
+    },
+    {
+      "path": "samples/negative/commands-out-of-range.json",
+      "sha256": "67c61d0d5e6cba9419f05b64a3772673473397578b7561208c0af9a2796adb44",
+      "size": 1365
+    },
+    {
+      "path": "samples/negative/expect-without-source.json",
+      "sha256": "9223e1c50382a564b24a206b01d2f9e7aafc6ef3cbd622343f73af681a2a295d",
+      "size": 7081
+    },
+    {
+      "path": "samples/negative/listen-blind.json",
+      "sha256": "4ad9539f5f26f0e7312705d8b09a6e13d3c753156a0563d8f108270f67f4def1",
+      "size": 6246
+    },
+    {
+      "path": "samples/negative/method-forbidden.json",
+      "sha256": "43541f992ff0fb098407e91aa67f902eba9d6885de32ce8c0339eea93036132d",
+      "size": 6175
+    },
+    {
+      "path": "samples/negative/plan-tampered.json",
+      "sha256": "9a1d077cc2dd2a53696b737f839e5f248136e8557fb3e880a14b4d1ae36e5699",
+      "size": 6966
+    },
+    {
+      "path": "samples/negative/quote-mismatch.json",
+      "sha256": "fb03a8fd4e58f6aaf262946045d4f2d9baca31d91992ae0cfedf48a22ffa926a",
+      "size": 725
+    },
+    {
+      "path": "samples/positive/addresses-valid.json",
+      "sha256": "73d016ac50077a635e9d42e62a6ab41b5cab878e28ab173f0cd50785efc50392",
+      "size": 6884
+    },
+    {
+      "path": "samples/positive/commands-valid.json",
+      "sha256": "2dfa9c907efe022b24ea9bdabf31b0db27d147569321c2cb536928d61216c386",
+      "size": 1318
+    },
+    {
+      "path": "samples/positive/contract-valid.json",
+      "sha256": "9da4d348b1335da49ffe3c9303b82936395d10db1e33783a4438feaf5499475f",
+      "size": 6902
+    },
+    {
+      "path": "samples/positive/expects-sourced.json",
+      "sha256": "eead3c987788ea704ce39761741919f3c8a182a2764bd69c8f583c5eb7becd35",
+      "size": 6875
+    },
+    {
+      "path": "samples/positive/plan-deterministic.json",
+      "sha256": "882b185271eefb8646380249de3a839cfb7def52bbf2e3f261d74ec64867b54d",
+      "size": 6896
+    },
+    {
+      "path": "samples/positive/quotes-verbatim.json",
+      "sha256": "346528f64c805dd10fbfbae8306c0ed68fbf2d8462b7ce31fe8d98c3f201378a",
+      "size": 722
+    },
+    {
+      "path": "slots.schema.json",
+      "sha256": "7801fd017cf29a0fc2d64f82106f4af19fe5b15887eae4a4660354b8a343bbdd",
+      "size": 401
+    },
+    {
+      "path": "tables/codes.json",
+      "sha256": "1a8815269682b2c229756f40949c035b1149642ca069fffdf108211ab9d6f4a0",
+      "size": 6413
+    },
+    {
+      "path": "tables/commands.json",
+      "sha256": "25cec5ca91f5db6759dfdbfa82af6d265bc8df9d01483a8b29c2e01cbe458820",
+      "size": 788
+    },
+    {
+      "path": "tables/quotes.json",
+      "sha256": "e6a545dac545eeaea2e12482dadebe2540235a8090da1bfe9c8212676625ab47",
+      "size": 547
+    },
+    {
+      "path": "workflow.json",
+      "sha256": "347daebb61bd60f4852d2752ea14fdcce6b2a293dc1295ee4bc409b407341dc5",
+      "size": 1954
+    }
+  ]
+}

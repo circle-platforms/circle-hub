@@ -1,0 +1,101 @@
+# packs/workflow/case-compile
+
+The compile half of test automation, phase A (task page `docs/hub-r4-tasks/case-compile.md`, design
+`docs/hub-r4-compile-design.md`): the model compiles each reviewed case into an execution plan inside a restricted
+structure (model W05 — bucket, blocks, operators and expected sources are finite sets), and the Hub re-runs every
+check at the boundary: (object, method) against the contract, literal addresses against the bed, commands and
+parameters against the build's command catalog, an explicit verbatim source on every expected result, and determinism
+(the plan is re-generated from the submitted slots and compared byte for byte). Everything runs on a synthetic
+contract and a synthetic bed; every conclusion says 按合成合约核对 (when the contract declares `synthetic: true`) and
+不证明在真实设备上跑得通, never "可以运行".
+
+## Files
+
+| Path | Content |
+| --- | --- |
+| `workflow.json` | inputs `subject` (the reviewed mind map, `agile:mindmap`/`application/json`), `contract` (`doc:doc`, compile-contract@1) and `inventory` (`doc:doc`, test-bed-manifest@1); parameter `case_rule`; `product: { catalogs: ["commands@1"] }`; `context: ["leases"]` |
+| `requirements.json` | `contract_methods`, `bed_addresses`, `commands_known`, `expected_grounded`, `plan_deterministic`; all fact, item, static, blocking |
+| `checks.json` | `contract_shape`, `bed_addresses`, `expected_sources`, `deterministic_plan` (functions); `commands_catalog` (catalog@1), `expected_quotes` (quote@1); all blocking, judges the artifact under verification |
+| `slots.schema.json` | item slot `plan` (one claim per case): `bucket`, `blocks`, `steps`, `expects`, `plan_json` |
+| `functions/contract.ts` | compile-contract@1 parsing (whole-document problems with pointers), method lookup, parameter validation |
+| `functions/manifest.ts`, `functions/bed.ts` | test-bed-manifest@1 parsing and the bed-facts rules (listeners, blind addresses, backends) — this pack's own copies, see Decisions 2 |
+| `functions/cases.ts` | case extraction from the kityminder@1 model, the case-review rule (tags or marks; `case_rule: tagged` narrows to tags, marked-only counted) |
+| `functions/plan.ts` | the restricted slots reader, the canonical JSON form, the deterministic plan generator (exec-plan@1) |
+| `functions/project.ts`, `functions/subject.ts`, `functions/checks.ts` | projection (items per case, the raw documents frozen into the run group), subject builders, the four function checks |
+| `tables/commands.json`, `tables/quotes.json` | catalog@1 and quote@1 interpreter tables |
+| `tables/codes.json` | violation, refusal and warning codes |
+| `samples/positive/*`, `samples/negative/*` | one positive and one negative sample of each check (author samples) |
+| `examples/` | the synthetic contract, the synthetic bed, a start-run example and a full submission example — all synthetic |
+| `pack-files.ts`, `functions/test-support.ts`, `*.test.ts`, `README.md` | not pack files |
+
+## The restricted structure and the deterministic plan
+
+Per case the model submits one `plan` claim: `bucket` (a bed of the inventory), `blocks` (`setup`/`teardown` only),
+`steps` of `(object, method, params)` — only what the contract declares, forbidden pairs never, parameters by the
+contract's arity and types; contract parameters marked `command: true` carry command lines (checked against the locked
+build's `commands@1` by the catalog@1 interpreter), parameters marked `address: listen|backend|target|virtual` carry
+literal addresses (checked against the bed facts and the lineage leases) — and `expects`, each with a verbatim
+`quote`. `plan_json` is the canonical JSON text of the plan the slots deterministically generate (`functions/plan.ts`;
+SKILL.md step 4 documents the exact rule for the model); the deterministic check re-generates and compares byte for
+byte. The workbook format and the execution entry stay owner-provided (design section 1); only the JSON form exists
+for now.
+
+## Decisions
+
+1. **The contract shape is the pack's** (task page A.2): compile-contract@1 — objects and their methods with typed
+   parameters (arity, ranges, enum values, keywords, address roles, command flags), forbidden (object, method) pairs,
+   and the `synthetic` declaration. The sample contract in `examples/` is invented, names and values copied from no
+   old system. When the owner's real contract does not fit this shape, the pack's validation function is what changes.
+2. **Bed facts are this pack's own copy.** Pack functions may load only modules inside the pack, so the manifest
+   parser and the bed-facts rules of `packs/workflow/test-bed` cannot be imported — `functions/manifest.ts` and
+   `functions/bed.ts` re-implement the same shape and rules (the inventory document itself is shared, unchanged). The
+   drift watch: `functions/bed.test.ts` pins the same listener/blind/backend outcomes as the test-bed fixtures. A
+   cross-pack facts library is a core gap, reported in Needs.
+3. **Checks recompute from raw documents.** The projection freezes the raw contract and manifest into the run group;
+   the checks re-parse them there (a parsed manifest holds bigints and could never serialize into samples).
+4. **Conclusions are facts or unknowns, never "可以运行".** Every statement of this pack's function checks closes with
+   the two markers: 按合成合约核对 when the contract is synthetic, and 不证明在真实设备上跑得通 always. An unreadable
+   slot shape is unknown (the shape refute belongs to `contract_shape`), not a failure of another check. The catalog@1
+   and quote@1 interpreter outcomes are generated by the core and cannot carry pack text; the two markers reach the
+   answer through the projection's run note and every function claim, and the model relays both sentences per SKILL.md
+   step 1. Marking the interpreter outcomes themselves would take a core change, which this pack may not touch.
+5. **"分配到的地址" is the run's lineage leases**: an address with a live `bed/<bed>/ip/<address>` lease marked `mine`
+   in the frozen lease view resolves as allocated (`workflow.json` declares `context: ["leases"]`); everything else
+   that is not a device interface address is off the bed and refused.
+
+## Limits
+
+- At most 10 problems per item per check; shape problems of the slots are reported by `contract_shape` alone.
+- The plan slot holds one claim per case; `plan_json` is the canonical text (keys sorted, no whitespace) of
+  exec-plan@1.
+- Expected sources are verbatim quotes resolvable at the Hub boundary (src:/rec:/tree:). A defect fix note or a manual
+  page that should ground expectations must be readable as a reference — publish it as a named document and cite its
+  rec: reference; there is no extra input slot for evidence documents in phase A.
+- The run's product line and build are locked at start_run among the lines declaring `commands@1`; the command check
+  reads the locked catalog only.
+
+## Needs from other packages
+
+- **Core / pack infrastructure: cross-pack reuse of bed facts.** Today a pack function may not import another pack's
+  modules, so the manifest parser and bed-facts rules are copied here from `packs/workflow/test-bed` with a drift
+  watch in tests. A core-level shared facts library (or pack-versioned library imports) would remove the copy. Reported
+  to the integrator with the task result.
+- **Owner: the real compile contract** (compile-contract@1 published via `circle-hub doc put`, e.g. as
+  `doc:compile-contract`), the workbook format and the execution entry (design section 1). Until then every conclusion
+  stays marked synthetic.
+- **Owner: evidence binding for expected sources beyond the case document** — if a check should cite defect fix notes
+  or manuals as first-class inputs, an `evidence` input slot (`doc:doc`, many) is the follow-up; phase A cites rec:
+  references of named documents instead.
+
+## How to test
+
+```
+node --test --test-concurrency=3 "packs/workflow/case-compile/**/*.test.ts"
+npx tsc --noEmit
+node packs/workflow/case-compile/pack-files.ts --check
+```
+
+The function tests cover the contract (positive and each negative), the address rules, the expected sources, the
+deterministic generator (byte-identical twice), the extraction and the projection refusals. `publish.test.ts` publishes
+through the real registry (temporary PostgreSQL; skipped where `sandbox-exec` is absent — a skip is not a pass).
+`production.test.ts` runs start_run + submit_result against the real engine with fake externals.

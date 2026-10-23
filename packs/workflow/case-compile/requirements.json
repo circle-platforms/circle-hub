@@ -1,0 +1,77 @@
+{
+  "schema": "requirements@1",
+  "requirements": [
+    {
+      "key": "plan",
+      "name": "执行计划",
+      "description": "模型按受限结构为每个用例编一份执行计划：桶（台架）、块（setup/teardown）、步骤（对象，方法，参数）、期望结果（带逐字引文）和由槽位确定性生成的 plan_json。槽位内容由下面五个事实要求项逐项核对，这一项是模型自己的计划",
+      "target": "item",
+      "required": true,
+      "done_rule": "bookkeeping",
+      "layers": ["static"],
+      "accepted_producer": "judgment",
+      "checks": [],
+      "error_handling": []
+    },
+    {
+      "key": "contract_methods",
+      "name": "步骤调用符合合约",
+      "description": "执行计划每一步的（对象，方法）在合约里、没被禁用，参数个数和类型对。结论都是事实或未知；合约是合成的时每条结论写“按合成合约核对”，所有结论写“不证明在真实设备上跑得通”",
+      "target": "item",
+      "required": true,
+      "done_rule": "bookkeeping",
+      "layers": ["static"],
+      "accepted_producer": "fact",
+      "checks": ["contract_shape"],
+      "error_handling": []
+    },
+    {
+      "key": "bed_addresses",
+      "name": "字面地址对得上台架",
+      "description": "每个字面地址解析成台架上的设备接口地址或分配到的地址：监听地址是被测设备的接口且同网段有触发设备，盲地址不当监听或虚拟地址，后端地址是服务器设备的地址，台架之外的地址拒绝",
+      "target": "item",
+      "required": true,
+      "done_rule": "bookkeeping",
+      "layers": ["static"],
+      "accepted_producer": "fact",
+      "checks": ["bed_addresses"],
+      "error_handling": []
+    },
+    {
+      "key": "commands_known",
+      "name": "命令在目标构建的命令目录里",
+      "description": "执行计划里的命令行在目标构建的命令目录（commands@1）里存在，参数类型和取值在范围内（catalog@1 解释器核对）",
+      "target": "item",
+      "required": true,
+      "done_rule": "bookkeeping",
+      "layers": ["static"],
+      "accepted_producer": "fact",
+      "checks": ["commands_catalog"],
+      "error_handling": []
+    },
+    {
+      "key": "expected_grounded",
+      "name": "期望结果有逐字来源",
+      "description": "每个期望结果带逐字引文（用例原文、缺陷修复说明或手册的片段），不是模型自己写的；引文在 Hub 边界逐字核对",
+      "target": "item",
+      "required": true,
+      "done_rule": "bookkeeping",
+      "layers": ["static"],
+      "accepted_producer": "fact",
+      "checks": ["expected_sources", "expected_quotes"],
+      "error_handling": []
+    },
+    {
+      "key": "plan_deterministic",
+      "name": "反复编译结果相同",
+      "description": "执行计划由确定性生成器从槽位出（JSON 形式）：Hub 从提交的槽位重新生成，与提交的执行计划逐字节比对，不一致记不通过",
+      "target": "item",
+      "required": true,
+      "done_rule": "bookkeeping",
+      "layers": ["static"],
+      "accepted_producer": "fact",
+      "checks": ["deterministic_plan"],
+      "error_handling": []
+    }
+  ]
+}

@@ -177,18 +177,71 @@ describe('pack checks', () => {
       assert.equal(outcomes[0].verdict, 'support');
     });
 
-    it('refutes an expected result with no quotation', () => {
+    it('refutes an expected result with no quotation, quote at case level, or quote missing reference', () => {
+      // 缺 quote
       const noQuote = {
         ...makeGoodDraft(),
         expected: [{ text: '健康检查正常', quote: null as never }],
       };
-      const input = makeCheckInput({
+      const input1 = makeCheckInput({
         item: '74001',
         slots: { cases: [{ text: noQuote.title, data: noQuote }] },
       });
-      const outcomes = checkGroundedReading(input);
-      assert.equal(outcomes[0].verdict, 'refute');
-      assert.equal(outcomes[0].code, CODES.QUOTE_MISSING);
+      const outcomes1 = checkGroundedReading(input1);
+      assert.equal(outcomes1[0].verdict, 'refute');
+      assert.equal(outcomes1[0].code, CODES.QUOTE_MISSING);
+      assert.ok(outcomes1[0].statement.includes('/cases/0/expected/0/quote'));
+      assert.ok(outcomes1[0].statement.includes('{"text":'));
+      assert.ok(outcomes1[0].statement.includes('"reference":'));
+      assert.equal(outcomes1[0].pointer, '/cases/0/expected/0/quote');
+
+      // quote 放在用例一级
+      const caseLevel = {
+        ...makeGoodDraft(),
+        expected: [{ text: '用例一级带引文' }],
+      };
+      const input2 = makeCheckInput({
+        item: '74001',
+        slots: {
+          cases: [
+            {
+              text: caseLevel.title,
+              quote: { reference: 'src:sha1', text: '健康检查间隔设置成功' },
+              quotes: [{ reference: 'src:sha1', text: '健康检查间隔设置成功' }],
+              data: caseLevel,
+            },
+          ],
+        },
+      });
+      const outcomes2 = checkGroundedReading(input2);
+      assert.equal(outcomes2[0].verdict, 'refute');
+      assert.equal(outcomes2[0].code, CODES.QUOTE_MISSING);
+      assert.ok(outcomes2[0].statement.includes('/cases/0/expected/0/quote'));
+      assert.ok(outcomes2[0].statement.includes('{"text":'));
+      assert.ok(outcomes2[0].statement.includes('"reference":'));
+      assert.equal(outcomes2[0].pointer, '/cases/0/expected/0/quote');
+
+      // quote 缺 reference
+      const missingRef = {
+        ...makeGoodDraft(),
+        expected: [
+          {
+            text: '健康检查间隔设置成功',
+            quote: { reference: '', text: '健康检查间隔设置成功' },
+          },
+        ],
+      };
+      const input3 = makeCheckInput({
+        item: '74001',
+        slots: { cases: [{ text: missingRef.title, data: missingRef }] },
+      });
+      const outcomes3 = checkGroundedReading(input3);
+      assert.equal(outcomes3[0].verdict, 'refute');
+      assert.equal(outcomes3[0].code, CODES.QUOTE_MISSING);
+      assert.ok(outcomes3[0].statement.includes('/cases/0/expected/0/quote'));
+      assert.ok(outcomes3[0].statement.includes('{"text":'));
+      assert.ok(outcomes3[0].statement.includes('"reference":'));
+      assert.equal(outcomes3[0].pointer, '/cases/0/expected/0/quote');
     });
 
     it('refutes an expected result introducing an unsupported number or on/off state', () => {

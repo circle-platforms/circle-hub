@@ -1,0 +1,262 @@
+{
+  "id": "plan_tampered",
+  "source": "author",
+  "check": "deterministic_plan",
+  "note": "合成反例：plan_json 被手写改动（端口 8080 改成 8081），与槽位生成的不一致",
+  "subject": {
+    "item": "doc-1:c-1",
+    "location": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/s/c-1-s1/0",
+    "data": {
+      "bucket": "bed-a",
+      "blocks": [
+        "setup"
+      ],
+      "steps": [
+        {
+          "object": "dut",
+          "method": "listen",
+          "params": {
+            "address": "192.0.2.10",
+            "port": 8080
+          }
+        },
+        {
+          "object": "dut",
+          "method": "cli",
+          "params": {
+            "line": "widget health interval 60"
+          }
+        },
+        {
+          "object": "client",
+          "method": "request",
+          "params": {
+            "target": "192.0.2.90",
+            "count": 3
+          }
+        },
+        {
+          "object": "server",
+          "method": "respond",
+          "params": {
+            "backend": "192.0.2.90",
+            "status": 200
+          }
+        }
+      ],
+      "expects": [
+        {
+          "text": "健康检查间隔设置成功",
+          "quote": {
+            "reference": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/s/c-1-s1/0",
+            "text": "健康检查间隔设置成功"
+          }
+        }
+      ],
+      "plan_json": "{\"bed\":\"bed-a\",\"blocks\":[\"setup\"],\"case\":\"doc-1:c-1\",\"expects\":[{\"source\":\"src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/s/c-1-s1/0\",\"text\":\"健康检查间隔设置成功\"}],\"schema\":\"exec-plan@1\",\"steps\":[{\"method\":\"listen\",\"n\":1,\"object\":\"dut\",\"params\":{\"address\":\"192.0.2.10\",\"port\":8081}},{\"method\":\"cli\",\"n\":2,\"object\":\"dut\",\"params\":{\"line\":\"widget health interval 60\"}},{\"method\":\"request\",\"n\":3,\"object\":\"client\",\"params\":{\"count\":3,\"target\":\"192.0.2.90\"}},{\"method\":\"respond\",\"n\":4,\"object\":\"server\",\"params\":{\"backend\":\"192.0.2.90\",\"status\":200}}]}"
+    },
+    "contract": {
+      "schema": "compile-contract@1",
+      "synthetic": true,
+      "objects": [
+        {
+          "name": "dut",
+          "methods": [
+            {
+              "name": "cli",
+              "params": [
+                {
+                  "name": "line",
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "command": true
+                }
+              ]
+            },
+            {
+              "name": "save",
+              "params": []
+            },
+            {
+              "name": "reboot",
+              "params": []
+            },
+            {
+              "name": "listen",
+              "params": [
+                {
+                  "name": "address",
+                  "type": "ipv4",
+                  "address": "listen"
+                },
+                {
+                  "name": "port",
+                  "type": "port"
+                }
+              ]
+            },
+            {
+              "name": "listen6",
+              "params": [
+                {
+                  "name": "address",
+                  "type": "ipv6",
+                  "address": "listen"
+                }
+              ]
+            },
+            {
+              "name": "vip",
+              "params": [
+                {
+                  "name": "address",
+                  "type": "ipv4",
+                  "address": "virtual"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "client",
+          "methods": [
+            {
+              "name": "request",
+              "params": [
+                {
+                  "name": "target",
+                  "type": "ipv4",
+                  "address": "target"
+                },
+                {
+                  "name": "count",
+                  "type": "int",
+                  "minimum": 1,
+                  "maximum": 1000,
+                  "optional": true,
+                  "default": "1"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "server",
+          "methods": [
+            {
+              "name": "respond",
+              "params": [
+                {
+                  "name": "backend",
+                  "type": "ipv4",
+                  "address": "backend"
+                },
+                {
+                  "name": "status",
+                  "type": "int",
+                  "minimum": 100,
+                  "maximum": 599
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "forbidden": [
+        {
+          "object": "dut",
+          "method": "reboot"
+        }
+      ]
+    },
+    "manifest": {
+      "schema": "test-bed-manifest@1",
+      "beds": [
+        {
+          "name": "bed-a",
+          "devices": [
+            {
+              "name": "dut0",
+              "type": "load-balancer",
+              "product": "widget",
+              "ipv4": [
+                "192.0.2.10/26",
+                "192.0.2.74/26"
+              ],
+              "ipv6": [
+                "2001:db8:1::10/64"
+              ]
+            },
+            {
+              "name": "dut1",
+              "type": "load-balancer",
+              "product": "widget",
+              "ipv4": [
+                "192.0.2.130/26"
+              ],
+              "ipv6": []
+            },
+            {
+              "name": "router0",
+              "type": "router",
+              "product": null,
+              "ipv4": [
+                "192.0.2.1/26"
+              ],
+              "ipv6": [
+                "2001:db8:1::1/64"
+              ]
+            },
+            {
+              "name": "client0",
+              "type": "client",
+              "product": null,
+              "ipv4": [
+                "192.0.2.80/26"
+              ],
+              "ipv6": []
+            },
+            {
+              "name": "server0",
+              "type": "server",
+              "product": null,
+              "ipv4": [
+                "192.0.2.90/26"
+              ],
+              "ipv6": []
+            },
+            {
+              "name": "console0",
+              "type": "console",
+              "product": null,
+              "ipv4": [
+                "192.0.2.140/26"
+              ],
+              "ipv6": []
+            }
+          ],
+          "services": [
+            {
+              "host": "server0",
+              "ip": "192.0.2.90",
+              "proto": "tcp",
+              "port": 80
+            }
+          ],
+          "reserved": []
+        }
+      ]
+    },
+    "leases": [],
+    "now": "2026-10-23T02:00:00.000Z"
+  },
+  "expect": [
+    {
+      "verdict": "refute",
+      "code": "case-compile.plan_mismatch",
+      "item": "doc-1:c-1",
+      "tier": "blocking"
+    }
+  ]
+}

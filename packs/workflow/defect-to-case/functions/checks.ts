@@ -395,15 +395,17 @@ export function checkGroundedReading(input: unknown): CheckOutcome[] {
 
     for (let j = 0; j < draft.expected.length; j++) {
       const exp = draft.expected[j];
+      const pointer = `/cases/${i}/expected/${j}/quote`;
       const at = `${prefix}第 ${j + 1} 个期望结果`;
 
       if (!exp.quote || !exp.quote.reference || !exp.quote.text || !exp.quote.text.trim()) {
         outcomes.push({
           verdict: 'refute',
           code: CODES.QUOTE_MISSING,
-          statement: `${at}缺少逐字引文（quote）：每个期望结果必须提供所引用的原文及引用地址`,
+          statement: `${at}（${pointer}）缺少逐字引文（quote）：每个期望结果必须自带 quote，要求的形状为 {"text": "<修复说明或手册里的逐字原文>", "reference": "<引用>"}`,
           grounds: [],
           tier: 'blocking',
+          pointer,
           ...own,
         });
         continue;

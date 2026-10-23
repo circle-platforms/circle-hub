@@ -1,0 +1,38 @@
+{
+  "schema": "case-compile.codes@1",
+  "origin": "决定：case-compile 在 Hub 边界重跑编译核对（编译设计第 2 节）；结论都是事实或未知，带“按合成合约核对”（合约是合成的时）和“不证明在真实设备上跑得通”",
+  "description": "任务包函数给出的反驳码、拒绝码和警告码。函数代码里的标签与这里一致（pack.test.ts 核对）。解释器给出的码（core.catalog.*、QUOTE_MISMATCH）属核心，不在这里列",
+  "violations": [
+    { "code": "case-compile.slots_invalid", "when": "提交的槽位形状不对：bucket 不是字符串、blocks 或 steps 或 expects 不是数组、步骤缺对象或方法、参数不是对象、plan_json 不是字符串", "fix": "按 SKILL.md 的受限结构填槽；执行计划的 JSON 文本由确定性生成规则从槽位出" },
+    { "code": "case-compile.block_unknown", "when": "blocks 里有有限集（setup、teardown）之外的块", "fix": "块只写 setup 或 teardown" },
+    { "code": "case-compile.method_unknown", "when": "步骤的（对象，方法）不在合约里", "fix": "只用合约声明的对象和方法；要新的（对象，方法）先改合约文档（所有者发布）" },
+    { "code": "case-compile.method_forbidden", "when": "步骤用了合约禁用的（对象，方法）组合（例如重启类）", "fix": "换合约不禁用的组合；禁用的组合不能出现在执行计划里" },
+    { "code": "case-compile.param_arity", "when": "参数个数不对：缺了必填参数，或写了合约没有声明的参数", "fix": "按合约的参数表写：必填的一个不少，未声明的一个不写" },
+    { "code": "case-compile.param_type", "when": "参数值的类型和合约声明的类型不符（int 要整数、enum 要在取值里、keyword 要是那个字面词、地址族要对）", "fix": "按合约声明的类型改参数值" },
+    { "code": "case-compile.param_range", "when": "参数值越界：int 或 port 超出 minimum/maximum，字符串长度超出 minLength/maxLength", "fix": "把取值改回合约声明的范围" },
+    { "code": "case-compile.bed_unknown", "when": "bucket 不是清单里的台架名", "fix": "bucket 写清单（doc:doc:bed-topology）里的台架名" },
+    { "code": "case-compile.address_off_bed", "when": "字面地址不是台架上的设备接口地址，也不是这次运行血缘里分配到的地址", "fix": "地址写台架清单里的设备接口地址，或先经 test-bed 预订分配" },
+    { "code": "case-compile.listen_not_dut", "when": "监听地址不是被测设备（load-balancer）的接口地址", "fix": "监听地址写被测设备的接口地址" },
+    { "code": "case-compile.listen_blind", "when": "监听地址所在的网段上没有触发设备（盲地址）", "fix": "换同网段有触发设备的被测设备接口，或在清单里补触发设备（所有者改清单）" },
+    { "code": "case-compile.backend_not_server", "when": "后端地址不是服务器设备的接口地址（也不是清单 services 里的服务地址）", "fix": "后端地址写服务器设备的接口地址或清单 services 的服务地址" },
+    { "code": "case-compile.address_blind", "when": "盲地址（所在网段没有触发设备）被当成虚拟地址", "fix": "盲地址不能当监听或虚拟地址；换同网段有触发设备的地址或分配到的地址" },
+    { "code": "case-compile.expect_without_source", "when": "期望结果没有逐字引文（quote 缺 reference 或 text），或一份计划一个期望结果都没有", "fix": "每个期望结果都带 quote：reference 指到用例原文、缺陷修复说明或手册的片段，text 是逐字内容" },
+    { "code": "case-compile.plan_mismatch", "when": "提交的 plan_json 和 Hub 从槽位确定性重新生成的执行计划逐字节不同", "fix": "执行计划只由槽位出：按 SKILL.md 的确定性生成规则重写 plan_json，不要手写或改写生成结果" }
+  ],
+  "refusals": [
+    { "code": "case-compile.no_subject", "when": "输入槽 subject 里没有用例文档", "fix": "在 inputs.subject 里绑定评审过的用例脑图（agile:mindmap 或 application/json）" },
+    { "code": "case-compile.subject_not_mindmap", "when": "用例文档不是 kityminder@1 解析的脑图", "fix": "绑定敏捷平台导出的 KityMinder 脑图" },
+    { "code": "case-compile.no_contract", "when": "输入槽 contract 里没有合约文档", "fix": "在 inputs.contract 里写命名文档 {\"external\": \"doc:doc:compile-contract\"}（管理员用 circle-hub doc put 发布）" },
+    { "code": "case-compile.contract_invalid", "when": "合约文档有问题（形状不是 compile-contract@1），整份拒绝并列出问题", "fix": "按合约的形状（compile-contract@1）改正后重新发布" },
+    { "code": "case-compile.no_inventory", "when": "输入槽 inventory 里没有台架清单", "fix": "在 inputs.inventory 里写命名文档 {\"external\": \"doc:doc:bed-topology\"}" },
+    { "code": "case-compile.manifest_invalid", "when": "台架清单有问题（形状不是 test-bed-manifest@1），整份拒绝并列出问题", "fix": "按清单的形状（test-bed-manifest@1）改正后重新发布" },
+    { "code": "case-compile.invalid_parameter", "when": "case_rule 不是 tagged 或 marked", "fix": "case_rule 写 tagged 或 marked（默认 marked）" },
+    { "code": "case-compile.internal_error", "when": "投影函数内部出错（任务包缺陷）", "fix": "把输入交给任务包维护人" }
+  ],
+  "warnings": [
+    { "code": "case-compile.no_cases", "when": "文档里按规则取不到用例", "fix": "无。空范围是合法的空结果；确认文档里的用例节点带标签或标记" },
+    { "code": "case-compile.candidate_only", "when": "case_rule 为 tagged 时，只靠标记识别的节点只计数不投影", "fix": "要这些节点成为用例，给它们加标签（resource），或改用默认规则" },
+    { "code": "case-compile.contract_problem", "when": "合约文档的一个问题（contract_invalid 整份拒绝的逐条列表）", "fix": "照各条的指出的位置和改法修正合约文档" },
+    { "code": "case-compile.manifest_problem", "when": "台架清单的一个问题（manifest_invalid 整份拒绝的逐条列表）", "fix": "照各条的指出的位置和改法修正清单文档" }
+  ]
+}
