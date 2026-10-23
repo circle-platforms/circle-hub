@@ -166,3 +166,20 @@ test('R22 recovered target evidence is not fabricated as an original receipt',as
   assert.equal(state.outcome,'effective');const events=await c.service.journal.events(first.job);
   assert.equal(events.filter(e=>e.body.detail.phase==='receipt').length,0);assert.ok(events.some(e=>e.body.detail.phase==='reconciled' && e.body.detail.acceptance==='accepted'));
 });
+
+test('R23 answering one request never implicitly answers another request',async()=>{
+  const {isFrozen}=await import('./journal.ts');
+  const request=(digest:string)=>({digest,body:{detail:{phase:'unknown',uncertain:true,request_kind:'disposition',question_sha256:digest}}}) as any;
+  const a=request('a'.repeat(64)),b=request('b'.repeat(64));
+  const answer={digest:'c'.repeat(64),body:{detail:{unfreeze:true,answers:[`rec:${a.digest}`]}}} as any;
+  assert.equal(isFrozen([a,b,answer]),true);
+});
+
+test('R23 disposition answers cite the concrete question and automatic rereads are not repair requests',async t=>{
+  const c=await setup({mode:'reject'});t.after(()=>c.close());const first=await c.service.dispatch(c.admin,c.run,c.executor.id);
+  const question=(await c.service.journal.events(first.job)).find(e=>e.body.detail.phase==='unknown')!;
+  assert.match(String(question.body.detail.question_sha256),/^[a-f0-9]{64}$/);assert.ok(question.body.detail.deadline && question.body.detail.channel);
+  await c.service.dispose(c.admin,first.job,{choice:'keep_unknown'});
+  const answer=(await c.service.journal.events(first.job)).find(e=>e.body.detail.disposition==='keep_unknown')!;
+  assert.ok(answer.body.inputs.includes(`rec:${question.digest}`));assert.ok((answer.body.detail.answers as string[]).includes(`rec:${question.digest}`));
+});

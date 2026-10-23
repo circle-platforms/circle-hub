@@ -46,14 +46,19 @@ export class Journal {
   }
 }
 export const newJob = () => sha256Hex(newId('job'));
-export function isFrozen(events: readonly Event[]): boolean {
-  let frozen = false;
-  for (const e of events) {
-    if (e.body.detail.uncertain === true) frozen = true;
-    if (e.body.detail.unfreeze === true) frozen = false;
+export function openRequests(events:readonly Event[]):Event[] {
+  const pending=new Map<string,Event>();
+  for(const event of events) {
+    const d=event.body.detail;
+    if(d.uncertain===true && !Array.isArray(d.answers))pending.set(event.digest,event);
+    if(d.unfreeze===true) {
+      if(Array.isArray(d.answers)){for(const ref of d.answers)if(typeof ref==='string' && ref.startsWith('rec:'))pending.delete(ref.slice(4));}
+      else for(const [key,request] of pending)if(!request.body.detail.question_sha256)pending.delete(key);
+    }
   }
-  return frozen;
+  return [...pending.values()];
 }
+export function isFrozen(events:readonly Event[]):boolean{return openRequests(events).length>0;}
 export const isDone = (events: readonly Event[]) => events.some(e => e.body.detail.done === true);
 export const eventOf = (events: readonly Event[], phase: string) => [...events].reverse().find(e => e.body.detail.phase === phase);
 export const digestOfValue = (value: unknown) => sha256Hex(canonicalBytes(value));
