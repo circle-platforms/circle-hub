@@ -1,21 +1,10 @@
-// Gold verification for case compilation (docs/hub-r4-tasks/case-compile.md, capability E1-E3).
-// Independent by design: imports nothing from hub/, packs/ or contracts/.
-//
-// Re-calculates step-by-step checks defined in section A.4:
-//   1. Contract method: (object, method) in contract, not disabled, argument count and parameter types match;
-//   2. Test bed addresses:
-//      - all literal addresses must resolve to device interface or allocated addresses on the bed;
-//      - addresses outside the bed are rejected;
-//      - listener address must be on a load-balancer (SUT) interface and have trigger devices (router, client) on the same subnet;
-//      - blind addresses (load-balancer on a subnet without trigger device) cannot be used as listeners or VIPs;
-//      - backend address must be on a server device;
-//   3. Command catalog: commands and parameters exist in the target build command tree, values within bounds;
-//   4. Expected sources: each expectation has a source reference and verbatim quotation;
-//   5. Output mandatory conclusions: "按合成合约核对" (when synthetic) and "不证明在真实设备上跑得通".
+// Independent compile-contract@1 / test-bed-manifest@1 reader. No Hub or pack imports.
+// node scripts/real/gold/compile-check.ts --run run.json --submission submission.json
+//   --contract contract.json --bed bed.json [--commands tree.xml] [--sources sources.json]
+// Sources must be independently exported reference -> fragment text, never the model's quotes.
 import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
-
-// ---------------------------------------------------------------- IP & Subnet Helpers
+import { createHash } from 'node:crypto';
+import { isIP } from 'node:net';
 
 export function parseIpv4(ip: string): bigint | null {
   const parts = ip.trim().split('.');
@@ -49,7 +38,8 @@ export function parseIpv6(ip: string): bigint | null {
     leftParts = s.split(':');
   }
 
-  if (leftParts.length + rightParts.length > 8) return null;
+  if (doubleColon < 0 && leftParts.length !== 8) return null;
+  if (doubleColon >= 0 && leftParts.length + rightParts.length >= 8) return null;
 
   const fillZeros = 8 - (leftParts.length + rightParts.length);
   const fullParts = [
@@ -121,197 +111,170 @@ export function cleanIp(ipWithOptionalPrefix: string): string {
   return slash >= 0 ? ipWithOptionalPrefix.slice(0, slash).trim() : ipWithOptionalPrefix.trim();
 }
 
-// ---------------------------------------------------------------- Test Bed Manifest & Facts
 
-export interface RawDevice {
-  name: string;
-  type: 'load-balancer' | 'router' | 'client' | 'server' | 'console' | string;
-  ipv4?: Array<{ address: string; subnet?: string } | string>;
-  ipv6?: Array<{ address: string; subnet?: string } | string>;
-  interfaces?: Array<{ address: string; subnet?: string } | string>;
+type Obj = Record<string, unknown>;
+const obj = (v: unknown): v is Obj => v !== null && typeof v === 'object' && !Array.isArray(v);
+const str = (v: unknown): v is string => typeof v === 'string';
+export type Verdict = 'pass' | 'fail' | 'unknown';
+interface Answer { verdict: Verdict; reason?: string }
+const pass = (): Answer => ({ verdict: 'pass' });
+const fail = (reason: string): Answer => ({ verdict: 'fail', reason });
+const unknown = (reason: string): Answer => ({ verdict: 'unknown', reason });
+const ipKey = (s: string): string => isIP(s) === 4 ? `4:${parseIpv4(s)}` : isIP(s) === 6 ? `6:${parseIpv6(s)}` : '';
+
+export interface ContractParamDef {
+  name: string; type: string; optional?: boolean; default?: string;
+  minimum?: number; maximum?: number; minLength?: number; maxLength?: number;
+  values?: string[]; keyword?: string; address?: 'listen' | 'backend' | 'target' | 'virtual'; command?: boolean;
 }
-
+export interface CompileContract {
+  schema: 'compile-contract@1'; synthetic: boolean;
+  objects: Array<{name: string; methods: Array<{name: string; params: ContractParamDef[]}>}>;
+  forbidden: Array<{object: string; method: string}>;
+}
 export interface RawBedManifest {
-  name?: string;
-  devices: RawDevice[];
-  services?: Array<{ host: string; ip: string; port: number; proto: string }>;
-  reserved?: Array<{ start?: string; end?: string; range?: string } | string>;
+  schema: 'test-bed-manifest@1';
+  beds: Array<{name: string; devices: Array<{name: string; type: string; product: string | null; ipv4: string[]; ipv6: string[]}>;
+    services: Array<{host: string; ip: string; proto: string; port: number}>; reserved: unknown[]}>;
+}
+export interface PlanData {
+  bucket: string; blocks: string[];
+  steps: Array<{object: string; method: string; params: Record<string, unknown>}>;
+  expects: Array<{text: string; quote: {reference: string; text: string}}>;
+}
+export interface Submission {
+  run: string; model: string;
+  items: Array<{item: string; handling: string; slots?: {plan?: Array<{text: string; quotes?: Array<{reference: string; text: string}>; data: PlanData}>}}>;
+}
+export interface HubClaim { pointer?: string; statement: {text: string; verdict?: string; data?: Obj; code?: string} }
+export interface HubRequirement {
+  requirement: string; layers: Array<{layer: string; terminal: string}>; claims: HubClaim[];
+}
+export interface RunShowExport {
+  run: {run: string; started_at: string; items: Array<{id: string}>;
+    lease_context?: Array<{key: string; until: string; mine: boolean}>};
+  latest?: {submission?: unknown; result?: {run: string; submission: string; partitions: Record<string, Array<{item: string; requirements: HubRequirement[]}>>}} | null;
+}
+export type CheckType = 'contract' | 'address' | 'command' | 'quotation' | 'plan';
+export interface StepVerdict extends Answer { item: string; stepIndex: number; checkType: CheckType; pointer: string }
+export interface PlanReceipt { item: string; plan: string; sha256: string }
+export interface CompileCheckResult {
+  allPassed: boolean; notes: string[]; stepVerdicts: StepVerdict[]; plans: PlanReceipt[];
+  comparison: {equal: boolean; differences: string[]};
 }
 
-export interface BedInterface {
-  device: string;
-  deviceType: string;
-  address: string;
-  subnetStr: string;
-  subnet: ParsedSubnet | null;
-}
-
-export interface TestBedFacts {
-  bedName: string;
-  allDeviceIps: Set<string>;
-  allReservedIps: Set<string>;
-  deviceByIp: Map<string, { name: string; type: string }>;
-  interfaces: BedInterface[];
-  listenerCandidates: Set<string>;
-  blindAddresses: Set<string>;
-  backendCandidates: Set<string>;
-  subnets: Array<{
-    subnet: string;
-    parsed: ParsedSubnet | null;
-    devices: Array<{ name: string; type: string; address: string }>;
-    hasTrigger: boolean;
-  }>;
-}
-
-const TRIGGER_TYPES = new Set(['router', 'client']);
-
-export function computeTestBedFacts(manifest: RawBedManifest): TestBedFacts {
-  const bedName = manifest.name ?? 'test-bed';
-  const allDeviceIps = new Set<string>();
-  const allReservedIps = new Set<string>();
-  const deviceByIp = new Map<string, { name: string; type: string }>();
-  const interfaces: BedInterface[] = [];
-
-  for (const dev of manifest.devices ?? []) {
-    const devIps: Array<{ ip: string; subnetText?: string }> = [];
-    const collect = (item: { address: string; subnet?: string } | string) => {
-      if (typeof item === 'string') {
-        const slash = item.indexOf('/');
-        const ip = cleanIp(item);
-        devIps.push({ ip, subnetText: slash >= 0 ? item : undefined });
-      } else if (item && typeof item === 'object') {
-        const ip = cleanIp(item.address);
-        devIps.push({ ip, subnetText: item.subnet ?? item.address });
-      }
-    };
-
-    for (const item of dev.ipv4 ?? []) collect(item);
-    for (const item of dev.ipv6 ?? []) collect(item);
-    for (const item of dev.interfaces ?? []) collect(item);
-
-    for (const { ip, subnetText } of devIps) {
-      allDeviceIps.add(ip);
-      deviceByIp.set(ip, { name: dev.name, type: dev.type });
-      const parsed = subnetText ? parseSubnet(subnetText) : null;
-      interfaces.push({
-        device: dev.name,
-        deviceType: dev.type,
-        address: ip,
-        subnetStr: subnetText ?? '',
-        subnet: parsed,
-      });
-    }
-  }
-
-  // Group interfaces by subnet
-  const subnetMap = new Map<string, {
-    parsed: ParsedSubnet | null;
-    devices: Array<{ name: string; type: string; address: string }>;
-    hasTrigger: boolean;
-  }>();
-
-  for (const iface of interfaces) {
-    if (!iface.subnetStr) continue;
-    let entry = subnetMap.get(iface.subnetStr);
-    if (!entry) {
-      entry = { parsed: iface.subnet, devices: [], hasTrigger: false };
-      subnetMap.set(iface.subnetStr, entry);
-    }
-    entry.devices.push({ name: iface.device, type: iface.deviceType, address: iface.address });
-    if (TRIGGER_TYPES.has(iface.deviceType)) {
-      entry.hasTrigger = true;
-    }
-  }
-
-  // Classify listener, blind, backend
-  const listenerCandidates = new Set<string>();
-  const blindAddresses = new Set<string>();
-  const backendCandidates = new Set<string>();
-
-  for (const iface of interfaces) {
-    if (iface.deviceType === 'server') {
-      backendCandidates.add(iface.address);
-    }
-    if (iface.deviceType === 'load-balancer') {
-      const subInfo = iface.subnetStr ? subnetMap.get(iface.subnetStr) : undefined;
-      if (subInfo && subInfo.hasTrigger) {
-        listenerCandidates.add(iface.address);
-      } else {
-        blindAddresses.add(iface.address);
+/** Validate exported documents instead of assuming a cast proves their shape. */
+function contractProblem(v: unknown): string | null {
+  if (!obj(v) || v.schema !== 'compile-contract@1' || typeof v.synthetic !== 'boolean' || !Array.isArray(v.objects) || !Array.isArray(v.forbidden)) return '合约不是 compile-contract@1';
+  const names = new Set<string>();
+  for (const o of v.objects) {
+    if (!obj(o) || !str(o.name) || !o.name || names.has(o.name) || !Array.isArray(o.methods)) return '合约对象格式错误或重名';
+    names.add(o.name);
+    const methods = new Set<string>();
+    for (const m of o.methods) {
+      if (!obj(m) || !str(m.name) || !m.name || methods.has(m.name) || !Array.isArray(m.params)) return '合约方法格式错误或重名';
+      methods.add(m.name);
+      const params = new Set<string>();
+      for (const p of m.params) {
+        if (!obj(p) || !str(p.name) || !p.name || params.has(p.name) || !['string','int','number','boolean','ipv4','ipv6','mask','port','enum','keyword'].includes(String(p.type))) return '合约参数格式或类型未知';
+        params.add(p.name);
+        if (p.optional !== undefined && typeof p.optional !== 'boolean' || p.default !== undefined && !str(p.default) || p.command !== undefined && typeof p.command !== 'boolean') return '合约可选参数格式错误';
+        if (p.address !== undefined && !['listen','backend','target','virtual'].includes(String(p.address))) return '合约地址角色未知';
+        for (const k of ['minimum','maximum','minLength','maxLength']) if (p[k] !== undefined && (typeof p[k] !== 'number' || !Number.isFinite(p[k]))) return '合约参数范围错误';
+        if (p.type === 'enum' && (!Array.isArray(p.values) || p.values.length === 0 || !p.values.every(str))) return '合约枚举错误';
+        if (p.type === 'keyword' && p.keyword !== undefined && !str(p.keyword)) return '合约关键字错误';
       }
     }
   }
-
-  // Also services count as backend candidates
-  for (const s of manifest.services ?? []) {
-    const sIp = cleanIp(s.ip);
-    backendCandidates.add(sIp);
-    allDeviceIps.add(sIp);
+  if (!v.forbidden.every(f => obj(f) && str(f.object) && str(f.method))) return '合约禁用组合格式错误';
+  return null;
+}
+function bedProblem(v: unknown): string | null {
+  if (!obj(v) || v.schema !== 'test-bed-manifest@1' || !Array.isArray(v.beds)) return '清单不是 test-bed-manifest@1';
+  const beds = new Set<string>();
+  for (const b of v.beds) {
+    if (!obj(b) || !str(b.name) || beds.has(b.name) || !Array.isArray(b.devices) || !Array.isArray(b.services) || !Array.isArray(b.reserved)) return '台架格式错误或重名';
+    beds.add(b.name);
+    const devices = new Set<string>();
+    const ips = new Set<string>();
+    for (const d of b.devices) {
+      if (!obj(d) || !str(d.name) || devices.has(d.name) || !['load-balancer','router','client','server','console'].includes(String(d.type)) || !(d.product === null || str(d.product))) return '台架设备格式错误';
+      devices.add(d.name);
+      for (const [key, family] of [['ipv4',4],['ipv6',6]] as const) {
+        if (!Array.isArray(d[key])) return '台架接口列表缺失';
+        for (const cidr of d[key]) {
+          if (!str(cidr) || !parseSubnet(cidr) || isIP(cleanIp(cidr)) !== family || ips.has(ipKey(cleanIp(cidr)))) return '台架接口格式错误或重复';
+          ips.add(ipKey(cleanIp(cidr)));
+        }
+      }
+    }
+    for (const s of b.services) if (!obj(s) || !str(s.host) || !devices.has(s.host) || !str(s.ip) || !isIP(s.ip) || !ips.has(ipKey(s.ip))) return '台架服务地址无设备接口来源';
   }
-
-  const subnetsList = [...subnetMap.entries()].map(([subnet, data]) => ({
-    subnet,
-    parsed: data.parsed,
-    devices: data.devices,
-    hasTrigger: data.hasTrigger,
-  }));
-
-  return {
-    bedName,
-    allDeviceIps,
-    allReservedIps,
-    deviceByIp,
-    interfaces,
-    listenerCandidates,
-    blindAddresses,
-    backendCandidates,
-    subnets: subnetsList,
-  };
+  return null;
+}
+function planProblem(v: unknown): string | null {
+  if (!obj(v) || !str(v.bucket) || !v.bucket || !Array.isArray(v.blocks) || !v.blocks.every(b => b === 'setup' || b === 'teardown')) return '计划 bucket 或 blocks 格式错误';
+  if ('plan_json' in v || 'plan' in v) return '槽位不能再提交计划文本';
+  if (!Array.isArray(v.steps) || v.steps.length === 0 || !v.steps.every(s => obj(s) && str(s.object) && str(s.method) && obj(s.params))) return '计划 steps 格式错误';
+  if (!Array.isArray(v.expects) || v.expects.length === 0 || !v.expects.every(e => obj(e) && str(e.text) && e.text.trim() && obj(e.quote) && str(e.quote.reference) && str(e.quote.text))) return '计划 expects 缺少期望或逐字来源';
+  return null;
+}
+function methodOf(c: CompileContract, object: string, method: string) {
+  return c.objects.find(o => o.name === object)?.methods.find(m => m.name === method);
+}
+function valueProblem(p: ContractParamDef, value: unknown, lexical = false): string | null {
+  const n = lexical && str(value) && /^-?(?:0|[1-9]\d*)(?:\.\d+)?$/.test(value) ? Number(value) : value;
+  let ok: boolean;
+  switch (p.type) {
+    case 'int': case 'port': ok = typeof n === 'number' && Number.isSafeInteger(n) && (p.type !== 'port' || n >= 0 && n <= 65535); break;
+    case 'number': ok = typeof n === 'number' && Number.isFinite(n); break;
+    case 'boolean': ok = typeof value === 'boolean' || lexical && (value === 'true' || value === 'false'); break;
+    case 'ipv4': ok = str(value) && isIP(value) === 4; break;
+    case 'ipv6': ok = str(value) && isIP(value) === 6; break;
+    case 'enum': ok = str(value) && !!p.values?.includes(value); break;
+    case 'keyword': ok = value === (p.keyword ?? p.name); break;
+    case 'mask': {
+      const mask = str(value) && isIP(value) === 4 ? parseIpv4(value) : null;
+      const inverse = mask === null ? -1n : 0xffffffffn ^ mask;
+      ok = inverse >= 0n && (inverse & (inverse+1n)) === 0n; break;
+    }
+    default: ok = str(value);
+  }
+  if (!ok) return `参数 ${p.name} 类型或枚举不匹配（${p.type}）`;
+  if (typeof n === 'number' && (p.minimum !== undefined && n < p.minimum || p.maximum !== undefined && n > p.maximum)) return `参数 ${p.name} 超出范围`;
+  if (str(value) && (p.minLength !== undefined && [...value].length < p.minLength || p.maxLength !== undefined && [...value].length > p.maxLength)) return `参数 ${p.name} 长度超出范围`;
+  return null;
+}
+export function checkContractMethod(c: CompileContract, object: string, method: string, params: Record<string, unknown>): Answer {
+  const m = methodOf(c, object, method);
+  if (!m) return fail(`（${object}，${method}）未在合约中定义`);
+  if (c.forbidden.some(f => f.object === object && f.method === method)) return fail(`（${object}，${method}）已被合约禁用`);
+  for (const key of Object.keys(params)) if (!m.params.some(p => p.name === key)) return fail(`未声明参数 ${key}`);
+  for (const p of m.params) {
+    if (!Object.hasOwn(params, p.name)) {
+      if (p.optional || p.default !== undefined) continue;
+      return fail(`缺少必填参数 ${p.name}`);
+    }
+    const problem = valueProblem(p, params[p.name]);
+    if (problem) return fail(problem);
+  }
+  return pass();
 }
 
-export type AddressRole = 'listener' | 'backend' | 'client' | 'any';
-
-export function checkBedAddress(
-  facts: TestBedFacts,
-  rawAddress: string,
-  role: AddressRole = 'any',
-): { ok: boolean; verdict: 'pass' | 'fail'; reason?: string } {
-  const ip = cleanIp(rawAddress);
-
-  // Rule 1: Every address must exist on the bed
-  const onBed = facts.allDeviceIps.has(ip) || facts.allReservedIps.has(ip);
-  if (!onBed) {
-    return { ok: false, verdict: 'fail', reason: `台架之外的地址一律拒绝：地址 ${ip} 未在台架清单中声明` };
+export function checkBedAddress(bed: RawBedManifest['beds'][number], raw: string, role: string, allocated: readonly string[] = []): Answer {
+  const key = ipKey(raw);
+  if (!key) return fail(`无效字面地址 ${raw}`);
+  const interfaces = bed.devices.flatMap(d => [...d.ipv4,...d.ipv6].map(cidr => ({device: d, ip: cleanIp(cidr), subnet: parseSubnet(cidr)!})));
+  const match = interfaces.find(i => ipKey(i.ip) === key);
+  if (!match && !allocated.some(a => ipKey(a) === key)) return fail(`台架之外的地址一律拒绝：${raw}`);
+  if (role === 'listen' && match?.device.type !== 'load-balancer') return fail('监听地址必须是被测设备的接口地址');
+  if (role === 'backend' && match?.device.type !== 'server') return fail('后端地址必须是服务器设备的接口地址');
+  if ((role === 'listen' || role === 'virtual') && match?.device.type === 'load-balancer') {
+    const trigger = interfaces.some(i => ['router','client'].includes(i.device.type) && i.subnet.family === match.subnet.family && i.subnet.prefix === match.subnet.prefix && i.subnet.network === match.subnet.network);
+    if (!trigger) return fail('盲地址不能当监听或虚拟地址：同网段没有触发设备');
   }
-
-  if (role === 'listener') {
-    // Must be on load-balancer
-    const dev = facts.deviceByIp.get(ip);
-    if (!dev || dev.type !== 'load-balancer') {
-      return { ok: false, verdict: 'fail', reason: `监听地址必须是被测设备的接口地址：地址 ${ip} 属于 ${dev?.type ?? '非负载均衡设备'}` };
-    }
-    // Must not be blind (subnet must have trigger device)
-    if (facts.blindAddresses.has(ip)) {
-      return { ok: false, verdict: 'fail', reason: `盲地址不能当监听或虚拟地址：地址 ${ip} 所在网段没有触发设备` };
-    }
-    if (!facts.listenerCandidates.has(ip)) {
-      return { ok: false, verdict: 'fail', reason: `监听地址所在网段没有触发设备（盲地址）：地址 ${ip}` };
-    }
-    return { ok: true, verdict: 'pass' };
-  }
-
-  if (role === 'backend') {
-    if (!facts.backendCandidates.has(ip)) {
-      const dev = facts.deviceByIp.get(ip);
-      return { ok: false, verdict: 'fail', reason: `后端地址必须是服务器设备的地址：地址 ${ip} 属于 ${dev?.type ?? '未知设备'}` };
-    }
-    return { ok: true, verdict: 'pass' };
-  }
-
-  return { ok: true, verdict: 'pass' };
+  return pass();
 }
-
-// ---------------------------------------------------------------- Command Tree XML Parser
 
 type XmlNode = { name: string; attributes: Record<string, string>; children: XmlElementChild[] };
 type XmlElementChild = { text: string } | { element: XmlNode };
@@ -337,21 +300,22 @@ class XmlReader {
         continue;
       }
       roots.push(this.element());
-      if (roots.length > 200) break;
+      if (roots.length > 200) throw new Error('XML 根节点过多');
     }
     return roots;
   }
   private element(): XmlNode {
     this.at++; // skip <
     const nameMatch = /^[A-Za-z0-9_.-]+/.exec(this.text.slice(this.at));
-    const name = nameMatch ? nameMatch[0] : '';
+    if (!nameMatch) throw new Error('XML 元素名无效');
+    const name = nameMatch[0];
     this.at += name.length;
     const attributes: Record<string, string> = {};
     for (;;) {
       this.spaces();
       if (this.at >= this.text.length || this.text[this.at] === '>' || this.text.startsWith('/>', this.at)) break;
       const keyMatch = /^[A-Za-z0-9_.-]+/.exec(this.text.slice(this.at));
-      if (!keyMatch) break;
+      if (!keyMatch) throw new Error('XML 属性无效');
       const key = keyMatch[0];
       this.at += key.length;
       this.spaces();
@@ -362,32 +326,40 @@ class XmlReader {
         if (quote === '"' || quote === "'") {
           this.at++;
           const endQuote = this.text.indexOf(quote, this.at);
-          const val = endQuote >= 0 ? this.text.slice(this.at, endQuote) : '';
+          if (endQuote < 0) throw new Error('XML 属性未闭合');
+          const val = this.text.slice(this.at, endQuote);
           attributes[key] = val;
           this.at = endQuote >= 0 ? endQuote + 1 : this.text.length;
-        }
-      }
+        } else throw new Error('XML 属性需要引号');
+      } else throw new Error('XML 属性缺少等号');
     }
     this.spaces();
     if (this.text.startsWith('/>', this.at)) {
       this.at += 2;
       return { name, attributes, children: [] };
     }
-    if (this.text[this.at] === '>') this.at++;
+    if (this.text[this.at] !== '>') throw new Error('XML 开始标签未闭合');
+    this.at++;
     const children: XmlElementChild[] = [];
     for (;;) {
       const nextTag = this.text.indexOf('<', this.at);
-      if (nextTag < 0) break;
+      if (nextTag < 0) throw new Error('XML 元素未闭合');
       if (nextTag > this.at) {
         children.push({ text: this.text.slice(this.at, nextTag) });
         this.at = nextTag;
       }
       if (this.text.startsWith('</', this.at)) {
         const closeEnd = this.text.indexOf('>', this.at);
+        if (closeEnd < 0 || this.text.slice(this.at+2,closeEnd).trim() !== name) throw new Error('XML 结束标签不匹配');
         this.at = closeEnd >= 0 ? closeEnd + 1 : this.text.length;
         break;
       }
-      children.push({ element: this.element() });
+      if (this.text.startsWith('<!--',this.at) || this.text.startsWith('<?',this.at)) {
+        const endMarker = this.text.startsWith('<!--',this.at) ? '-->' : '?>';
+        const end = this.text.indexOf(endMarker,this.at);
+        if (end < 0) throw new Error('XML 注释未闭合');
+        this.at = end + endMarker.length;
+      } else children.push({ element: this.element() });
     }
     return { name, attributes, children };
   }
@@ -396,435 +368,253 @@ class XmlReader {
   }
 }
 
-export interface CommandArgDef {
-  name: string;
-  type?: string;
-  length?: string;
-  range?: string;
-  optional?: boolean;
+
+interface CommandArg { name: string; type: string; limit?: string; length?: string; optional: boolean; default?: string }
+export interface CatalogCommand { words: string[]; overloads: CommandArg[][] }
+export function parseCommandTree(xml: string): CatalogCommand[] {
+  // Reject unsupported XML rather than silently invent an empty catalog.
+  if (/<!DOCTYPE|<!ENTITY/i.test(xml) || !xml.includes('<')) throw new Error('命令树不是受支持的 XML');
+  const decode = (v: string) => v.replace(/&(amp|lt|gt|quot|apos);/g, (_, k: string) => ({amp:'&',lt:'<',gt:'>',quot:'"',apos:"'"}[k]!)).replace(/&#(x[0-9a-f]+|[0-9]+);/gi, (_, k: string) => String.fromCodePoint(k[0].toLowerCase() === 'x' ? parseInt(k.slice(1),16) : Number(k)));
+  const children = (n: XmlNode) => n.children.flatMap(c => 'element' in c ? [c.element] : []);
+  const byPath = new Map<string, CatalogCommand>();
+  const walk = (n: XmlNode, prefix: string[]): void => {
+    const words = decode(n.attributes.name ?? '').trim().split(/\s+/).filter(Boolean);
+    if (n.name === 'item') {
+      if (!words.length) return;
+      const all = [...prefix,...words];
+      const key = all.join(' ').toLowerCase();
+      const entry = byPath.get(key) ?? {words: all, overloads: []};
+      const lists = children(n).filter(c => c.name === 'arguments');
+      for (const list of lists) entry.overloads.push(children(list).filter(c => c.name === 'arg').map((a, i) => ({
+        name: decode(a.attributes.name ?? `arg${i+1}`), type: a.attributes.type ?? 'STRING', limit: a.attributes.limit !== undefined ? decode(a.attributes.limit) : a.attributes.range === undefined ? undefined : decode(a.attributes.range),
+        length: a.attributes.length, optional: /^(yes|y|true|1)$/i.test(a.attributes.optional ?? ''),
+        default: a.attributes.default_value === undefined ? undefined : decode(decode(a.attributes.default_value)),
+      })));
+      if (!lists.length) entry.overloads.push([]);
+      byPath.set(key, entry); return;
+    }
+    for (const c of children(n)) if (!['arguments','arg','results'].includes(c.name)) walk(c, n.name === 'menu' ? [...prefix,...words] : prefix);
+  };
+  for (const root of XmlReader.read(xml)) walk(root, []);
+  if (!byPath.size) throw new Error('命令树没有命令定义');
+  return [...byPath.values()];
+}
+function tokens(line: string): string[] | null {
+  const matches = line.match(/"[^"\\]*(?:\\.[^"\\]*)*"|'[^']*'|[^\s"']+/g) ?? [];
+  let rest = line;
+  for (const t of matches) rest = rest.replace(t, '');
+  if (rest.trim()) return null;
+  return matches.map(t => t.startsWith('"') ? JSON.parse(t) as string : t.startsWith("'") ? t.slice(1,-1) : t);
+}
+function argProblem(a: CommandArg, v: string): string | null {
+  const type = a.type.toUpperCase();
+  const int = /^(0|[1-9]\d*)$/.test(v) ? Number(v) : NaN;
+  if (type === 'U16' && (!Number.isSafeInteger(int) || int > 65535) || type === 'U32' && (!Number.isSafeInteger(int) || int > 4294967295)) return `参数 ${a.name} 整数类型不匹配`;
+  if (type === 'DOTTEDIP' && isIP(v) !== 4 || type === 'IPADDR' && !isIP(v) || type === 'IPMASK' && !(isIP(v) === 4 || Number.isInteger(int) && int <= 128)) return `参数 ${a.name} 地址类型不匹配`;
+  for (const [raw, length] of [[a.limit, !['U16','U32'].includes(type)], [a.length,true]] as const) {
+    if (!raw) continue;
+    const r = /^[\[(]?\s*(-?\d+)\s*(?:-|~|\.\.|to)\s*(-?\d+)\s*[\])]?$/.exec(raw);
+    const en = /^[{[(]?\s*([^\s|,{}()[\]]+(?:\s*[|,]\s*[^\s|,{}()[\]]+)+)\s*[}\])]?$/.exec(raw);
+    const n = length ? v.length : int;
+    if (r ? n < Number(r[1]) || n > Number(r[2]) : /^\d+$/.test(raw) ? n > Number(raw) : en ? !en[1].split(/\s*[|,]\s*/).includes(v) : false) return `参数 ${a.name} 超出范围 ${raw}`;
+    if (!r && !en && !/^\d+$/.test(raw)) return `未知参数约束 ${raw}`;
+  }
+  return null;
+}
+export function checkCatalogCommand(catalog: CatalogCommand[], line: string): Answer {
+  let ts: string[] | null;
+  try { ts = tokens(line); } catch { return fail('命令行引号格式错误'); }
+  if (!ts) return fail('命令行引号格式错误');
+  const words = ts;
+  const candidates = catalog.filter(c => c.words.every((w,i) => w.toLowerCase() === words[i]?.toLowerCase())).sort((a,b) => b.words.length-a.words.length);
+  const cmd = candidates[0];
+  if (!cmd) return fail('命令不存在于目标构建的命令树中');
+  const args = words.slice(cmd.words.length);
+  const problems: string[] = [];
+  for (const overload of cmd.overloads) {
+    // Optional arguments can appear before required ones; explore both consume and omit.
+    const match = (i: number, j: number): boolean => {
+      if (i === overload.length) return j === args.length;
+      const a = overload[i];
+      if ((a.optional || a.default !== undefined) && match(i+1,j)) return true;
+      if (j >= args.length) { problems.push(`缺少命令参数 ${a.name}`); return false; }
+      const p = argProblem(a,args[j]);
+      if (p) { problems.push(p); return false; }
+      return match(i+1,j+1);
+    };
+    if (match(0,0)) return pass();
+  }
+  return fail(problems.join('；') || '命令参数个数错误');
+}
+export const collapseWhitespace = (s: string): string => s.replace(/\s+/g,' ').trim();
+export function checkVerbatimQuote(sources: ReadonlyMap<string,string>, reference: string, quote: string): Answer {
+  if (!quote.trim() || !reference.trim()) return fail('期望结果缺少逐字引文或来源');
+  if (!/^(src|rec|tree):/.test(reference)) return fail('期望来源不是 src:/rec:/tree: 引用');
+  const fragment = sources.get(reference);
+  if (fragment === undefined) return unknown(`来源 ${reference} 无法读取或未绑定`);
+  return collapseWhitespace(fragment).includes(collapseWhitespace(quote)) ? pass() : fail('引文不是来源的逐字片段');
+}
+// Serialize directly: JSON.stringify on a sorted object would re-order integer-like keys.
+export function canonicalJson(v: unknown): string {
+  if (Array.isArray(v)) return `[${v.map(canonicalJson).join(',')}]`;
+  if (obj(v)) return `{${Object.keys(v).sort().map(k => `${JSON.stringify(k)}:${canonicalJson(v[k])}`).join(',')}}`;
+  const text = JSON.stringify(v);
+  if (text === undefined) throw new Error('非 JSON 值');
+  return text;
+}
+export function generatePlan(item: string, data: PlanData, contract: CompileContract): PlanReceipt {
+  const plan = canonicalJson({schema:'exec-plan@1',case:item,bed:data.bucket,blocks:[...data.blocks].sort(),
+    steps:data.steps.map((s,i) => {
+      const params: Record<string,unknown> = Object.create(null) as Record<string,unknown>;
+      const method = methodOf(contract,s.object,s.method);
+      if (!method) throw new Error('方法不在合约内，不能生成计划');
+      for (const p of method.params) {
+        if (Object.hasOwn(s.params,p.name)) params[p.name] = s.params[p.name];
+        else if (p.default !== undefined) params[p.name] = p.default;
+        else if (!p.optional) throw new Error(`必填参数 ${p.name} 没有值或 default`);
+      }
+      return {n:i+1,object:s.object,method:s.method,params};
+    }), expects:data.expects.map(e => ({text:e.text,source:e.quote.reference}))});
+  return {item,plan,sha256:createHash('sha256').update(plan,'utf8').digest('hex')};
+}
+const requirementOf: Record<CheckType,string> = {contract:'contract_methods',address:'bed_addresses',command:'commands_known',quotation:'expected_grounded',plan:'plan_deterministic'};
+const aggregate = (answers: readonly Answer[]): Verdict => answers.some(a => a.verdict === 'fail') ? 'fail' : answers.some(a => a.verdict === 'unknown') ? 'unknown' : 'pass';
+export function compareCompileVerdicts(hub: readonly StepVerdict[], gold: readonly StepVerdict[]): {equal:boolean; differences:string[]} {
+  const differences: string[] = [];
+  const key = (v: StepVerdict) => `${v.item}/${v.checkType}/${v.stepIndex}/${v.pointer}`;
+  const hm = new Map<string,StepVerdict>();
+  for (const h of hub) { if (hm.has(key(h))) differences.push(`重复 Hub 判定 ${key(h)}`); hm.set(key(h),h); }
+  for (const g of gold) {
+    const h = hm.get(key(g));
+    if (!h || h.verdict !== g.verdict) differences.push(`判定不同 ${key(g)}：Hub ${h?.verdict ?? '缺失'}，独立答案 ${g.verdict}`);
+    hm.delete(key(g));
+  }
+  for (const k of hm.keys()) differences.push(`多余 Hub 判定 ${k}`);
+  return {equal: differences.length === 0,differences};
 }
 
-export interface CatalogCommand {
-  path: string;
-  words: string[];
-  arguments: CommandArgDef[];
-}
-
-export interface CommandCatalog {
-  commandsByPath: Map<string, CatalogCommand>;
-}
-
-export function parseCommandTree(xml: string): CommandCatalog {
-  const roots = XmlReader.read(xml);
-  const commandsByPath = new Map<string, CatalogCommand>();
-
-  const walk = (node: XmlNode, prefixWords: string[]) => {
-    if (node.name === 'item') {
-      const itemName = (node.attributes.name ?? '').trim();
-      const itemWords = itemName.split(/\s+/).filter(Boolean);
-      if (itemWords.length === 0) return;
-      const fullWords = [...prefixWords, ...itemWords];
-      const path = `/commands/${fullWords.join('/')}`;
-
-      const argsList: CommandArgDef[] = [];
-      for (const ch of node.children) {
-        if ('element' in ch && ch.element.name === 'arguments') {
-          for (const argChild of ch.element.children) {
-            if ('element' in argChild && argChild.element.name === 'arg') {
-              const a = argChild.element.attributes;
-              argsList.push({
-                name: a.name ?? '',
-                type: a.type,
-                length: a.length,
-                range: a.range,
-                optional: a.optional === 'yes' || a.optional === 'true',
-              });
-            }
+export function compileCheck(inputs: {run: RunShowExport; submission: Submission; contract: unknown; bed: unknown; commandTreeXml?: string; sources?: ReadonlyMap<string,string>}): CompileCheckResult {
+  const {run,submission} = inputs;
+  const stepVerdicts: StepVerdict[] = [], plans: PlanReceipt[] = [], differences: string[] = [];
+  const notes = ['不证明在真实设备上跑得通'];
+  if (obj(inputs.contract) && inputs.contract.synthetic === true) notes.unshift('按合成合约核对');
+  const cp = contractProblem(inputs.contract), bp = bedProblem(inputs.bed);
+  const contract = inputs.contract as CompileContract, manifest = inputs.bed as RawBedManifest;
+  let catalog: CatalogCommand[] | undefined, catalogError = '缺少命令树原件';
+  if (inputs.commandTreeXml !== undefined) try { catalog = parseCommandTree(inputs.commandTreeXml); } catch (e) { catalogError = `命令树不可读：${(e as Error).message}`; }
+  const runItems = run.run?.items;
+  if (!Array.isArray(runItems) || !runItems.length) differences.push('缺少运行条目');
+  if (!submission.run || submission.run !== run.run?.run) differences.push('提交与运行编号不一致');
+  const submitted = submission.items ?? [];
+  const ids = submitted.map(i => i.item);
+  if (!ids.length || new Set(ids).size !== ids.length) differences.push('提交条目为空或重复');
+  const expectedIds = new Set((runItems ?? []).map(i => i.id));
+  if (ids.length !== expectedIds.size || ids.some(i => !expectedIds.has(i))) differences.push('提交与运行条目集合不一致');
+  const result = run.latest?.result;
+  if (result?.run !== submission.run || result?.submission !== createHash('sha256').update(canonicalJson(submission)).digest('hex')) differences.push('结论没有绑定这份提交的运行编号和摘要');
+  const resultItems = Object.values(result?.partitions ?? {}).flat();
+  if (!resultItems.length) differences.push('缺少 latest.result.partitions 结构化结论');
+  if (resultItems.length !== expectedIds.size || new Set(resultItems.map(i => i.item)).size !== resultItems.length || resultItems.some(i => !expectedIds.has(i.item))) differences.push('结论与运行条目集合不一致');
+  for (const [index, entry] of submitted.entries()) {
+    const base = `/items/${index}/slots/plan/0/data`;
+    const add = (type: CheckType, step: number, pointer: string, a: Answer) => stepVerdicts.push({item:entry.item,stepIndex:step,checkType:type,pointer,...a});
+    const claims = entry.slots?.plan;
+    const data = claims?.[0]?.data;
+    const shape = entry.handling !== 'handled' || !Array.isArray(claims) || claims.length !== 1 ? '条目必须 handled 并提交一份 plan 主张' : planProblem(data);
+    if (shape || cp || bp) {
+      add('contract',0,base,shape ? fail(shape) : unknown(cp ?? bp!));
+      for (const t of ['address','command','quotation','plan'] as const) add(t,0,base,unknown(shape ?? cp ?? bp!));
+    } else {
+      const d = data!;
+      const bed = manifest.beds.find(b => b.name === d.bucket);
+      const leases = run.run.lease_context;
+      const start = Date.parse(run.run.started_at);
+      const allocated = (leases ?? []).filter(l => l.mine && Date.parse(l.until) > start && l.key.startsWith(`bed/${d.bucket}/ip/`)).map(l => l.key.slice(`bed/${d.bucket}/ip/`.length));
+      const address = (v: string, role: string): Answer => {
+        if (!bed) return unknown('台架不存在');
+        const answer = checkBedAddress(bed,v,role,allocated);
+        return answer.verdict === 'fail' && answer.reason?.startsWith('台架之外') && (!leases || !Number.isFinite(start))
+          ? unknown('缺少冻结的租约视图或运行时间，无法判断分配地址') : answer;
+      };
+      if (!bed) add('address',0,`${base}/bucket`,fail('台架不存在'));
+      for (const [i,s] of d.steps.entries()) {
+        const ptr = `${base}/steps/${i}`;
+        add('contract',i+1,ptr,checkContractMethod(contract,s.object,s.method,s.params));
+        const m = methodOf(contract,s.object,s.method);
+        if (!m) {
+          add('address',i+1,ptr,unknown('方法未知，无法确定地址参数'));
+          add('command',i+1,ptr,unknown('方法未知，无法确定命令参数')); continue;
+        }
+        for (const p of m.params) {
+          const v = s.params[p.name] ?? p.default;
+          if (p.address && v !== undefined) add('address',i+1,`${ptr}/params/${p.name}`,!str(v) ? fail('地址参数不是字面地址') : address(v,p.address));
+          if (p.command && v !== undefined) add('command',i+1,`${ptr}/params/${p.name}`,!str(v) ? fail('命令不是字符串') : catalog ? checkCatalogCommand(catalog,v) : unknown(catalogError));
+        }
+        // Unannotated literal IPs must also stay on the selected bed.
+        for (const [k,v] of Object.entries(s.params)) {
+          if (!str(v) || m.params.find(p => p.name === k)?.address) continue;
+          for (const token of v.split(/\s+/).map(t => t.replace(/^[\"'[(]+|[\"'\]),;]+$/g,''))) {
+            if (!isIP(cleanIp(token))) continue;
+            add('address',i+1,`${ptr}/params/${k}`,address(cleanIp(token),'target'));
           }
         }
       }
-
-      commandsByPath.set(path, { path, words: fullWords, arguments: argsList });
-      return;
-    }
-
-    for (const ch of node.children) {
-      if ('element' in ch) {
-        const elem = ch.element;
-        if (elem.name === 'item') {
-          walk(elem, prefixWords);
-        } else if (elem.name === 'menu') {
-          const menuName = (elem.attributes.name ?? '').trim();
-          const menuWords = menuName.split(/\s+/).filter(Boolean);
-          walk(elem, [...prefixWords, ...menuWords]);
-        } else if (elem.name !== 'arguments' && elem.name !== 'arg') {
-          walk(elem, prefixWords);
+      for (const [i,e] of d.expects.entries()) {
+        let a = checkVerbatimQuote(inputs.sources ?? new Map(),e.quote.reference,e.quote.text);
+        if (!collapseWhitespace(e.quote.text).includes(collapseWhitespace(e.text))) a = fail('期望结果不是所引原文的逐字片段');
+        if (!claims![0].quotes?.some(q => q.reference === e.quote.reference && q.text === e.quote.text)) a = fail('主张顶层 quotes 缺少期望引文');
+        add('quotation',i+1,`${base}/expects/${i}`,a);
+      }
+      try {
+        {
+          const receipt = generatePlan(entry.item,d,contract); plans.push(receipt);
+          const reqs = resultItems.filter(i => i.item === entry.item).flatMap(i => i.requirements).filter(r => r.requirement === 'plan_deterministic');
+          const planClaims = reqs.flatMap(r => r.claims).filter(c => c.statement.verdict === 'support' && (c.statement.data?.plan !== undefined || c.statement.data?.sha256 !== undefined));
+          if (planClaims.length !== 1) add('plan',0,base,unknown('缺少或重复 Hub 计划文本和 sha256 结论'));
+          else {
+            const h = planClaims[0].statement.data!;
+            add('plan',0,base,h.plan === receipt.plan && h.sha256 === receipt.sha256 ? pass() : fail('Hub 计划文本或 sha256 与独立生成不一致'));
+          }
         }
-      }
+      } catch (e) { add('plan',0,base,unknown(`出件失败（output_failed）：${(e as Error).message}`)); }
     }
-  };
-
-  for (const root of roots) {
-    walk(root, []);
-  }
-
-  return { commandsByPath };
-}
-
-export function checkCatalogCommand(
-  catalog: CommandCatalog,
-  commandPath: string,
-  args?: Record<string, string | number>,
-): { ok: boolean; verdict: 'pass' | 'fail'; reason?: string } {
-  const normPath = commandPath.startsWith('/commands/') ? commandPath : `/commands/${commandPath.replace(/^\/+/, '')}`;
-  const def = catalog.commandsByPath.get(normPath);
-  if (!def) {
-    return { ok: false, verdict: 'fail', reason: `命令不存在于目标构建的命令树中：${normPath}` };
-  }
-
-  if (args) {
-    for (const [argName, val] of Object.entries(args)) {
-      const argDef = def.arguments.find((a) => a.name === argName);
-      if (!argDef) {
-        return { ok: false, verdict: 'fail', reason: `命令 ${normPath} 没有声明参数 ${argName}` };
+    // Public Hub results expose requirement terminals, not one positive claim per step.
+    // Compare at that actual granularity; independent per-parameter outcomes remain above.
+    const rows = resultItems.filter(i => i.item === entry.item);
+    for (const type of Object.keys(requirementOf) as CheckType[]) {
+      const key = requirementOf[type];
+      const reqs = rows.flatMap(i => i.requirements).filter(r => r.requirement === key);
+      const layers = reqs.flatMap(r => r.layers).filter(l => l.layer === 'static');
+      const gold = aggregate(stepVerdicts.filter(v => v.item === entry.item && v.checkType === type));
+      const actual = layers.length !== 1 ? undefined : layers[0].terminal === 'pass' ? 'pass' : layers[0].terminal === 'violation' ? 'fail' : layers[0].terminal === 'unchecked' ? 'unknown' : undefined;
+      if (reqs.length !== 1 || actual !== gold) differences.push(`${entry.item}/${key}：Hub ${actual ?? '缺失或非事实终态'}，独立答案 ${gold}`);
+      if (actual === 'fail' && gold === 'fail') {
+        // Refutations must identify the same failing step/parameter. Missing pointers are
+        // missing evidence, never an excuse to accept an aggregate failure keyword.
+        const local = stepVerdicts.filter(v => v.item === entry.item && v.checkType === type && v.verdict === 'fail');
+        const refutes = reqs.flatMap(r => r.claims).filter(c => c.statement.verdict === 'refute');
+        const relative = (p: string) => p.startsWith(base) ? p.slice(base.length) || '/' : p;
+        const localPointers = new Set(local.map(v => relative(v.pointer)));
+        const hubPointers = new Set(refutes.flatMap(c => c.pointer ? [relative(c.pointer)] : []));
+        if (!refutes.length || refutes.some(c => !c.pointer) || localPointers.size !== hubPointers.size || [...localPointers].some(p => !hubPointers.has(p))) differences.push(`${entry.item}/${key}：不通过的位置缺失或不同，不能确认逐步一致`);
       }
 
-      // Check numeric bounds if range specified
-      if (argDef.range && typeof val === 'number') {
-        const [minStr, maxStr] = argDef.range.split('..');
-        const min = Number(minStr);
-        const max = Number(maxStr);
-        if (val < min || val > max) {
-          return { ok: false, verdict: 'fail', reason: `参数 ${argName} 的取值 ${val} 超出范围 ${argDef.range}` };
-        }
-      }
-
-      // Check integer types
-      if (argDef.type === 'U16') {
-        const n = Number(val);
-        if (!Number.isSafeInteger(n) || n < 0 || n > 65535) {
-          return { ok: false, verdict: 'fail', reason: `参数 ${argName} 必须是 U16（0..65535），收到 ${val}` };
-        }
-      }
-      if (argDef.type === 'U32') {
-        const n = Number(val);
-        if (!Number.isSafeInteger(n) || n < 0 || n > 4294967295) {
-          return { ok: false, verdict: 'fail', reason: `参数 ${argName} 必须是 U32（0..4294967295），收到 ${val}` };
-        }
-      }
     }
   }
-
-  return { ok: true, verdict: 'pass' };
+  return {allPassed:stepVerdicts.length > 0 && stepVerdicts.every(v => v.verdict === 'pass') && differences.length === 0,notes,stepVerdicts,plans,comparison:{equal:differences.length === 0,differences}};
 }
-
-// ---------------------------------------------------------------- Verbatim Quotation Verification
-
-export function collapseWhitespace(text: string): string {
-  let out = '';
-  let word = '';
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
-    if (/\s/.test(ch)) {
-      if (word !== '') {
-        out = out === '' ? word : `${out} ${word}`;
-        word = '';
-      }
-    } else {
-      word += ch;
-    }
+export function main(argv: string[] = process.argv.slice(2)): number {
+  const value = (k: string) => { const i = argv.indexOf(`--${k}`); return i < 0 ? undefined : argv[i+1]; };
+  if (!['run','submission','contract','bed'].every(k => value(k))) {
+    process.stderr.write('用法：compile-check.ts --run <运行.json> --submission <提交.json> --contract <合约.json> --bed <台架.json> [--commands <命令树.xml>] [--sources <来源.json>]\n'); return 2;
   }
-  if (word !== '') out = out === '' ? word : `${out} ${word}`;
-  return out;
-}
-
-export function quoteMatches(fragmentText: string, quote: string): boolean {
-  const q = collapseWhitespace(quote);
-  return q !== '' && collapseWhitespace(fragmentText).includes(q);
-}
-
-export function checkVerbatimQuote(
-  sources: ReadonlyMap<string, string>,
-  sourceRef: string,
-  quote: string,
-): { ok: boolean; verdict: 'pass' | 'fail' | 'unknown'; reason?: string } {
-  if (!quote || quote.trim() === '') {
-    return { ok: false, verdict: 'fail', reason: '期望结果缺少逐字引文' };
-  }
-  if (!sourceRef || sourceRef.trim() === '') {
-    return { ok: false, verdict: 'fail', reason: '期望结果缺少来源引用' };
-  }
-  const fragment = sources.get(sourceRef);
-  if (fragment === undefined) {
-    return { ok: false, verdict: 'unknown', reason: `引用的来源片段 ${sourceRef} 无法读取或未绑定` };
-  }
-  if (!quoteMatches(fragment, quote)) {
-    return { ok: false, verdict: 'fail', reason: `期望结果的引文不是来源 ${sourceRef} 的逐字片段` };
-  }
-  return { ok: true, verdict: 'pass' };
-}
-
-// ---------------------------------------------------------------- Contract Method Verification
-
-export interface ContractParamDef {
-  name: string;
-  type?: 'string' | 'number' | 'boolean' | 'object' | 'array' | string;
-  required?: boolean;
-}
-
-export interface ContractMethodDef {
-  object: string;
-  method: string;
-  params?: ContractParamDef[];
-  disabled?: boolean;
-}
-
-export interface CompileContract {
-  synthetic?: boolean;
-  methods: ContractMethodDef[];
-  disabledCombinations?: Array<{ object: string; method: string }>;
-}
-
-export function checkContractMethod(
-  contract: CompileContract,
-  object: string,
-  method: string,
-  args?: Record<string, unknown>,
-): { ok: boolean; verdict: 'pass' | 'fail'; reason?: string } {
-  const def = contract.methods.find((m) => m.object === object && m.method === method);
-  if (!def) {
-    return { ok: false, verdict: 'fail', reason: `（对象，方法）组合 （${object}, ${method}）未在合约中定义` };
-  }
-
-  // Check disabled
-  const explicitlyDisabled = def.disabled === true;
-  const inDisabledList = (contract.disabledCombinations ?? []).some(
-    (c) => c.object === object && c.method === method,
-  );
-  if (explicitlyDisabled || inDisabledList) {
-    return { ok: false, verdict: 'fail', reason: `方法 （${object}, ${method}）已被合约禁用（例如重启类操作）` };
-  }
-
-  // Check arguments
-  if (def.params && args) {
-    for (const p of def.params) {
-      if (p.required && !(p.name in args)) {
-        return { ok: false, verdict: 'fail', reason: `方法 （${object}, ${method}）缺少必填参数 ${p.name}` };
-      }
-      if (p.name in args && p.type) {
-        const actualVal = args[p.name];
-        const actualType = typeof actualVal;
-        if (p.type === 'number' && actualType !== 'number') {
-          return { ok: false, verdict: 'fail', reason: `参数 ${p.name} 类型不匹配：期望 number，收到 ${actualType}` };
-        }
-        if (p.type === 'string' && actualType !== 'string') {
-          return { ok: false, verdict: 'fail', reason: `参数 ${p.name} 类型不匹配：期望 string，收到 ${actualType}` };
-        }
-        if (p.type === 'boolean' && actualType !== 'boolean') {
-          return { ok: false, verdict: 'fail', reason: `参数 ${p.name} 类型不匹配：期望 boolean，收到 ${actualType}` };
-        }
-      }
-    }
-  }
-
-  return { ok: true, verdict: 'pass' };
-}
-
-// ---------------------------------------------------------------- Overall Compile Verification
-
-export interface ExecutionPlanStep {
-  id?: string;
-  name?: string;
-  object?: string;
-  method?: string;
-  args?: Record<string, unknown>;
-  addresses?: Array<{ ip: string; role?: AddressRole }>;
-  command?: { path: string; args?: Record<string, string | number> };
-  expectation?: { sourceRef: string; quote: string };
-}
-
-export interface ExecutionPlan {
-  caseId?: string;
-  name?: string;
-  steps: ExecutionPlanStep[];
-}
-
-export interface StepVerdict {
-  stepIndex: number;
-  stepId?: string;
-  checkType: 'contract' | 'address' | 'command' | 'quotation';
-  verdict: 'pass' | 'fail' | 'unknown';
-  reason?: string;
-}
-
-export interface CompileCheckResult {
-  allPassed: boolean;
-  notes: string[];
-  stepVerdicts: StepVerdict[];
-}
-
-export function compileCheck(inputs: {
-  plan: ExecutionPlan;
-  contract: CompileContract;
-  bed: RawBedManifest;
-  commandTreeXml?: string;
-  sources?: Map<string, string>;
-}): CompileCheckResult {
-  const facts = computeTestBedFacts(inputs.bed);
-  const catalog = inputs.commandTreeXml ? parseCommandTree(inputs.commandTreeXml) : null;
-  const sources = inputs.sources ?? new Map<string, string>();
-
-  const stepVerdicts: StepVerdict[] = [];
-  const notes: string[] = [];
-
-  if (inputs.contract.synthetic) {
-    notes.push('按合成合约核对');
-  }
-  notes.push('不证明在真实设备上跑得通');
-
-  for (let i = 0; i < inputs.plan.steps.length; i++) {
-    const step = inputs.plan.steps[i];
-    const stepId = step.id ?? `step_${i + 1}`;
-
-    // 1. Contract check
-    if (step.object && step.method) {
-      const cRes = checkContractMethod(inputs.contract, step.object, step.method, step.args);
-      stepVerdicts.push({
-        stepIndex: i + 1,
-        stepId,
-        checkType: 'contract',
-        verdict: cRes.verdict,
-        reason: cRes.reason,
-      });
-    }
-
-    // 2. Address check
-    if (step.addresses && step.addresses.length > 0) {
-      for (const addr of step.addresses) {
-        const aRes = checkBedAddress(facts, addr.ip, addr.role ?? 'any');
-        stepVerdicts.push({
-          stepIndex: i + 1,
-          stepId,
-          checkType: 'address',
-          verdict: aRes.verdict,
-          reason: aRes.reason,
-        });
-      }
-    }
-
-    // 3. Command catalog check
-    if (step.command) {
-      if (!catalog) {
-        stepVerdicts.push({
-          stepIndex: i + 1,
-          stepId,
-          checkType: 'command',
-          verdict: 'unknown',
-          reason: '缺少命令树原件，无法核对命令目录',
-        });
-      } else {
-        const cmdRes = checkCatalogCommand(catalog, step.command.path, step.command.args);
-        stepVerdicts.push({
-          stepIndex: i + 1,
-          stepId,
-          checkType: 'command',
-          verdict: cmdRes.verdict,
-          reason: cmdRes.reason,
-        });
-      }
-    }
-
-    // 4. Expectation / quotation check
-    if (step.expectation) {
-      const qRes = checkVerbatimQuote(sources, step.expectation.sourceRef, step.expectation.quote);
-      stepVerdicts.push({
-        stepIndex: i + 1,
-        stepId,
-        checkType: 'quotation',
-        verdict: qRes.verdict,
-        reason: qRes.reason,
-      });
-    }
-  }
-
-  const allPassed = stepVerdicts.length > 0 && stepVerdicts.every((v) => v.verdict === 'pass');
-
-  return {
-    allPassed,
-    notes,
-    stepVerdicts,
-  };
-}
-
-export function compareCompileVerdicts(
-  hubVerdicts: readonly StepVerdict[],
-  goldVerdicts: readonly StepVerdict[],
-): { equal: boolean; differences: string[] } {
-  const differences: string[] = [];
-
-  if (hubVerdicts.length !== goldVerdicts.length) {
-    differences.push(`判定步数不一致：Hub 判定 ${hubVerdicts.length} 项，独立答案判定 ${goldVerdicts.length} 项`);
-  }
-
-  const maxLen = Math.max(hubVerdicts.length, goldVerdicts.length);
-  for (let i = 0; i < maxLen; i++) {
-    const h = hubVerdicts[i];
-    const g = goldVerdicts[i];
-    if (!h) {
-      differences.push(`第 ${i + 1} 项缺少 Hub 判定，独立答案判定为 ${g.verdict}（${g.checkType}）`);
-      continue;
-    }
-    if (!g) {
-      differences.push(`第 ${i + 1} 项缺少独立答案判定，Hub 判定为 ${h.verdict}（${h.checkType}）`);
-      continue;
-    }
-    if (h.verdict !== g.verdict) {
-      differences.push(`第 ${i + 1} 项判定不同（${h.checkType}）：Hub 为 ${h.verdict}，独立答案为 ${g.verdict}`);
-    }
-  }
-
-  return { equal: differences.length === 0, differences };
-}
-
-// ---------------------------------------------------------------- CLI
-
-export async function main(argv: string[] = process.argv.slice(2)): Promise<number> {
-  const value = (name: string): string | undefined => {
-    const at = argv.indexOf(`--${name}`);
-    return at >= 0 ? argv[at + 1] : undefined;
-  };
-
-  const planPath = value('plan');
-  const contractPath = value('contract');
-  const bedPath = value('bed');
-  const commandsPath = value('commands');
-  const sourcesPath = value('sources');
-
-  if (!planPath || !contractPath || !bedPath) {
-    process.stderr.write('用法：node scripts/real/gold/compile-check.ts --plan <plan.json> --contract <contract.json> --bed <bed.json> [--commands <tree.xml>] [--sources <sources.json>]\n');
-    return 2;
-  }
-
   try {
-    const plan = JSON.parse(readFileSync(resolve(planPath), 'utf8')) as ExecutionPlan;
-    const contract = JSON.parse(readFileSync(resolve(contractPath), 'utf8')) as CompileContract;
-    const bed = JSON.parse(readFileSync(resolve(bedPath), 'utf8')) as RawBedManifest;
-    const commandTreeXml = commandsPath ? readFileSync(resolve(commandsPath), 'utf8') : undefined;
-    const sources = sourcesPath
-      ? new Map<string, string>(Object.entries(JSON.parse(readFileSync(resolve(sourcesPath), 'utf8')) as Record<string, string>))
-      : undefined;
-
-    const result = compileCheck({ plan, contract, bed, commandTreeXml, sources });
-    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-    return result.allPassed ? 0 : 1;
-  } catch (error) {
-    process.stderr.write(`读取输入出错：${(error as Error).message}\n`);
-    return 1;
-  }
+    const json = (k: string): unknown => JSON.parse(readFileSync(value(k)!,'utf8'));
+    const sources = value('sources') ? json('sources') : {};
+    if (!obj(sources) || !Object.values(sources).every(str)) throw new Error('来源必须是引用到原文字符串的映射');
+    const result = compileCheck({run:json('run') as RunShowExport,submission:json('submission') as Submission,contract:json('contract'),bed:json('bed'),
+      commandTreeXml:value('commands') ? readFileSync(value('commands')!,'utf8') : undefined,sources:new Map(Object.entries(sources) as Array<[string,string]>)});
+    process.stdout.write(`${JSON.stringify(result,null,2)}\n`); return result.allPassed ? 0 : 1;
+  } catch (e) { process.stderr.write(`输入不可读取：${(e as Error).message}\n`); return 1; }
 }
-
-if (process.argv[1] !== undefined && process.argv[1].endsWith('gold/compile-check.ts')) {
-  void main().then((code) => {
-    process.exitCode = code;
-  });
-}
+if (process.argv[1]?.endsWith('gold/compile-check.ts')) process.exitCode = main();
