@@ -3,7 +3,7 @@
 Hub 直接算出一个构建的用例质量看板：每个（版本线、模块）分组的用例数、无期望结果占比、只有含糊期望结果占比、负面用例占比，以及整个构建的合计。不需要你提交结果。
 
 1. 开始运行：pack 写 quality-board；inputs.facets 写 `{"external": "knowledge:facets:<产品>:<构建>?kind=case&by=line,module,has_expected,vague_expected,negative"}`（可以在 by 里加 priority 等字段，不影响分组）。这个任务包不绑定产品线：不要写 product、version、build——输入里的外部标识已经写明产品和构建，运行不会去锁定别的构建。
-2. 结果在开始运行时就算好了：每个条目是一个分组（条目编号是 `<版本线>/<模块>`，没有归组的版本线或模块是 unplaced），摘要是“用例数和三项占比”，完整结论在 result.reference 指向的校验结果里。逐条结论用 get_nodes 读取；条目多时照回答末尾的说明接着读。
+2. 结果在开始运行时就算好了：每个条目是一个分组（条目编号是 `<版本线>/<模块>`，没有归组的版本线或模块是 unplaced），摘要是“用例数、三项个数和占比”，完整结论在 result.reference 指向的校验结果里。逐条结论用 get_nodes 读取；条目多时照回答末尾的说明接着读。
 3. 原样转述每个分组的指标和阈值结论，不补全、不猜测：
    - 占比是精确分数（结论数据里是 num/den），转述用展示值（四位小数或一位百分数）；“超过上限”“低于下限”是提示档的不通过，等于阈值不算越界。
    - 三个阈值可以用参数调整：max_missing_ratio、max_vague_ratio（默认 0.05）、min_negative_ratio（默认 0.02）。

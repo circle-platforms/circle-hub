@@ -38,7 +38,7 @@ describe('boardOutcomes', () => {
     assert.equal(outcomes.length, 1);
     const [outcome] = outcomes;
     assert.deepEqual([outcome.verdict, outcome.tier, outcome.item, outcome.pointer], ['support', 'advisory', '10.6.1/SSL', '/items/0/fields']);
-    assert.equal(outcome.statement, '用例 20 个；无期望结果 10.0%；含糊期望 0.0%；负面用例 10.0%');
+    assert.equal(outcome.statement, '用例 20 个；无期望结果 2 个（10.0%）；含糊期望 0 个（0.0%）；负面用例 2 个（10.0%）');
     const data = outcome.data as { counts: { cases: number; missing: number }; ratios: { missing: { num: number; den: number } }; display: { missing: number } };
     assert.deepEqual(data.counts, { cases: 20, missing: 2, vague: 0, negative: 2 });
     assert.deepEqual(data.ratios.missing, { num: 2, den: 20 });

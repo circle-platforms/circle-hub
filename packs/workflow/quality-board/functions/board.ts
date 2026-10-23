@@ -31,7 +31,7 @@ function fraction(num: number, den: number): Fraction {
 
 /** The one-line summary of a group (at most 200 characters): cases, missing percent, vague percent, negative percent. */
 export function summaryOf(counts: GroupCounts): string {
-  return clip(`用例 ${counts.cases} 个；无期望结果 ${percentOf(counts.missing, counts.cases)}；含糊期望 ${percentOf(counts.vague, counts.cases)}；负面用例 ${percentOf(counts.negative, counts.cases)}`, 200);
+  return clip(`用例 ${counts.cases} 个；无期望结果 ${counts.missing} 个（${percentOf(counts.missing, counts.cases)}）；含糊期望 ${counts.vague} 个（${percentOf(counts.vague, counts.cases)}）；负面用例 ${counts.negative} 个（${percentOf(counts.negative, counts.cases)}）`, 200);
 }
 
 /**

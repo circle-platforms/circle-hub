@@ -71,9 +71,9 @@ describe('a production run of quality-board', { skip }, () => {
     assert.deepEqual(
       run.items.map((i) => [i.id, i.summary]),
       [
-        ['10.6.1/SSL', '用例 20 个；无期望结果 5.0%；含糊期望 5.0%；负面用例 5.0%'],
-        ['10.6.1/WebUI', '用例 10 个；无期望结果 40.0%；含糊期望 30.0%；负面用例 0.0%'],
-        ['10.6.1/unplaced', '用例 2 个；无期望结果 0.0%；含糊期望 0.0%；负面用例 100.0%'],
+        ['10.6.1/SSL', '用例 20 个；无期望结果 1 个（5.0%）；含糊期望 1 个（5.0%）；负面用例 1 个（5.0%）'],
+        ['10.6.1/WebUI', '用例 10 个；无期望结果 4 个（40.0%）；含糊期望 3 个（30.0%）；负面用例 0 个（0.0%）'],
+        ['10.6.1/unplaced', '用例 2 个；无期望结果 0 个（0.0%）；含糊期望 0 个（0.0%）；负面用例 2 个（100.0%）'],
       ],
     );
 
@@ -101,7 +101,7 @@ describe('a production run of quality-board', { skip }, () => {
     assert.deepEqual(metrics.ratios.missing, { num: 1, den: 20 });
     assert.deepEqual([metrics.display.missing, metrics.display.negative], [0.05, 0.05]);
     assert.equal(board.claims[0].statement.verdict, 'support');
-    assert.deepEqual(board.claims[0].warrant, { producer: 'function', id: 'quality-board.board@1.0.1', independence: 'judge_not_author' });
+    assert.deepEqual(board.claims[0].warrant, { producer: 'function', id: 'quality-board.board@1.0.2', independence: 'judge_not_author' });
     assert.deepEqual(ssl.requirements[1].claims.map((c) => c.statement.verdict), ['support']);
 
     const webui = located(result, '10.6.1/WebUI');

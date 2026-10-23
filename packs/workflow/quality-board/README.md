@@ -22,7 +22,7 @@ of the whole view and the thresholds as advisory signals.
 ## The answer
 
 - **Items** are the (line, module) groups of the view: id = `<line>/<module>` (`unplaced` for a null line or module),
-  label = the pair, summary at most 200 characters (`用例 20 个；无期望结果 5.0%；含糊期望 5.0%；负面用例 5.0%`).
+  label = the pair, summary at most 200 characters (`用例 20 个；无期望结果 1 个（5.0%）；含糊期望 1 个（5.0%）；负面用例 1 个（5.0%）`).
 - **board** (per item): always support, the metrics as claim data — counts and the ratios as exact fractions `{num, den}`,
   plus numbers rounded (4 decimal places) for display only. Nothing is rounded before the final ratio.
 - **thresholds** (per item, advisory): a refutation with `quality-board.missing_expected`, `quality-board.vague_expected` or
@@ -100,3 +100,5 @@ node --test --test-concurrency=2 "packs/workflow/quality-board/**/*.test.ts"
 ## Open questions for the owner
 
 - None.
+
+Since 1.0.2, group summaries disclose the exact metric counts alongside percentages. Synthetic samples are regenerated from the same frozen counts.
