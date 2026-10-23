@@ -85,7 +85,7 @@ export interface ParserRegistry {
 
 /** A parse failure the caller can show. The registered code is the one start_run uses when an input does not parse. */
 export class ParseError extends Error {
-  readonly code: ProtocolCode = 'SUBMISSION_SCHEMA_VIOLATION';
+  readonly code: ProtocolCode = 'SOURCE_UNPARSEABLE';
   readonly parser: string;
   /** Byte offset of the problem when known. */
   readonly offset: number | null;
@@ -262,19 +262,23 @@ export function createParserRegistry(parsers: readonly Parser[] = []): ParserReg
   return registry;
 }
 
-/** Tries the parsers for a media type in order and returns the first that accepts the bytes. Only parse errors are swallowed. */
+/** Tries the parsers for a media type in order and returns the first that accepts the bytes. An optional callback receives only the last ParseError if all candidates refuse; no source text or library detail is added. */
 export function recognize(
   registry: ParserRegistry,
   bytes: Uint8Array,
   mediaType: string,
   options: ParseOptions = {},
+  onRejected?: (error: ParseError) => void,
 ): { parser: Parser; document: ParsedDocument } | null {
+  let last: ParseError | null = null;
   for (const parser of registry.forMediaType(mediaType)) {
     try {
       return { parser, document: parser.parse(bytes, { ...options, mediaType }) };
     } catch (error) {
       if (!(error instanceof ParseError)) throw error;
+      last = error;
     }
   }
+  if (last) onRejected?.(last);
   return null;
 }

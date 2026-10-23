@@ -380,11 +380,11 @@ test('ZIP failures disclose a specific rule and safe member location without nam
   assert.throws(() => xlsxParser.parse(workbook(), { maxNodes: 21 }), (error: unknown) => error instanceof ParseLimitError && error.max === 21 && /21/.test(error.message));
 });
 
-test('refs records the caller diagnostic handoff required from runs and server', async () => {
+test('refs documents the installed caller diagnostic handoff', async () => {
   const { readFile } = await import('node:fs/promises');
   const readme = await readFile(new URL('../README.md', import.meta.url), 'utf8');
-  assert.match(readme, /runs \/ server[^\n]*last ParseError/);
-  assert.match(readme, /start_run and upload_file[^\n]*reason/);
+  assert.match(readme, /Upload checks the declared format before ingesting bytes/);
+  assert.match(readme, /SOURCE_UNPARSEABLE/);
 });
 
 test('canonical XLSX selectors prefer escaped names and fall back for ambiguous or long identities', () => {

@@ -267,6 +267,17 @@ async function upload(deps: ServerDeps, call: ToolCall, args: Record<string, unk
     return errorAnswer('upload_file', [violation('upload_file', '/name', '文件名是 1 到 300 个字符，不含控制字符')]);
   }
   const mediaType = mediaTypeFor(bytes, given, name);
+  let refusal: ProtocolError | null = null;
+  let structure: Record<string, unknown> | null = null;
+  try {
+    structure = structureOf(deps.parsers, bytes, mediaType, (error) => {
+      refusal = { code: error.code, message: `${error.parser}：${error.message}`, fix: PROTOCOL_CODES.SOURCE_UNPARSEABLE.fix };
+    });
+  } catch (error) {
+    call.context.adminNote(`structure summary failed: ${describeError(error)}`);
+    throw error;
+  }
+  if (refusal) return errorAnswer('upload_file', [refusal]);
   let artifact;
   try {
     artifact = await deps.records.artifacts.ingest({
@@ -289,12 +300,6 @@ async function upload(deps: ServerDeps, call: ToolCall, args: Record<string, unk
       });
     }
     throw error;
-  }
-  let structure: Record<string, unknown> | null = null;
-  try {
-    structure = structureOf(deps.parsers, bytes, artifact.body.media_type);
-  } catch (error) {
-    call.context.adminNote(`structure summary failed: ${describeError(error)}`);
   }
   const sha256 = artifact.body.sha256;
   return {

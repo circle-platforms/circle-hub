@@ -220,9 +220,9 @@ update is retained and disclosed to the integrator as a scope deviation; this re
 
 1. `Parser.parse` is synchronous for the core parsers. A pack-provided parser run in the sandbox would need an
    asynchronous adapter; none exists in milestone 1.
-2. `ParseError.code` is `SUBMISSION_SCHEMA_VIOLATION`, the closest registered code (start_run refuses an input that does
-   not parse, which is an item projection failure). resolveReference maps parse failures to `REFERENCE_UNRESOLVED`
-   itself. A dedicated code is requested below.
+2. `ParseError.code` is `SOURCE_UNPARSEABLE` (decision 37). resolveReference continues to map fragment parsing
+   failures to `REFERENCE_UNRESOLVED`. recognize keeps its first-success/null API; its optional onRejected callback
+   receives only the last ParseError when every candidate refuses, with no callback on success or an empty registry.
 3. Reference objects hold canonical (escaped) text in `selector`, `path` and `pointer` instead of decoded values, which
    keeps the parser's selector opaque to refs and makes text and object exact inverses. For ordinary pointers the
    field is literally the RFC 6901 pointer.
@@ -305,15 +305,9 @@ roots, digest re-verification, ranges, unwritable canonical selectors, cache); c
 - **contracts**: update the stale XLSX example in contracts/model.json (`Service/7/C`) to the frozen xlsx@1
   name-first grammar above; parser syntax is declared by the parser, and this task does not edit the model.
 
-- **runs / server**: surface the last ParseError message when all parsers for the declared media type refuse.
-  Both start_run and upload_file must return that definite reason and a corrective action; recognize currently drops
-  it, so this branch cannot claim caller-visible refusal diagnostics until the owners add this handoff. This is an
-  integration need outside the XLSX parser task's allowed paths.
 
-- **contracts**: (1) a protocol code for "the source does not parse with the declared parser" (for example
-  `SOURCE_UNPARSEABLE`, fix "上传能按声明格式解析的文件，或换用对应的解析器"), or confirmation that
-  `SUBMISSION_SCHEMA_VIOLATION` is meant; (2) move RFC 8785 `canonicalize` into contracts so hub/records and hub/refs
-  share one implementation (until then `recordDigest` here must stay byte-identical to the records digest); (3) update
+- **contracts**: move RFC 8785 `canonicalize` into contracts so hub/records and hub/refs
+  share one implementation (until then `recordDigest` here must stay byte-identical to the records digest); update
   the stale reference example in contracts/src/reference.ts to `src:<sha256>/kityminder@1/n/<data.id>`.
 - **records**: implement `SourceReader` (bytes, media type, recorded size, read tier; null for absent and forbidden
   alike). `Artifacts.source()` withholds bytes by consumer; refs enforces the tier itself and needs the bytes of
@@ -411,3 +405,11 @@ is not interpreted by this model, so hiddenRows is not a statement about column 
 
 Each sheet preserves `relationshipId` and literal `relationshipType`; an empty chartsheet or another opaque part is
 therefore distinguishable from an empty worksheet without guessing from its filename or dropping its identity.
+
+## Refusal diagnostics
+
+Upload checks the declared format before ingesting bytes. A definite parser refusal returns SOURCE_UNPARSEABLE, the
+parser id, rule/reason and the generated fix; it creates no upload receipt. No candidate parser still permits an opaque
+upload, while input binding refuses that media type explicitly. Successful fallback is still accepted. Input binding
+uses the same last refusal with the input path. Unexpected parser failures stay internal errors. Raw source text and
+underlying library details are not included; XML exposes a rule classification and keeps library text in detail only.
