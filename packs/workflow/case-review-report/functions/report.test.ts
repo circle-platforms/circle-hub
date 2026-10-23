@@ -448,3 +448,19 @@ it('documents report behavior by version without private review narration or com
   const testing=readme.split('## 测试')[1];assert.doesNotMatch(testing,/本轮第|私有提交|完整投影/);
   assert.match(readme,/决定 42/);assert.doesNotMatch(readme,/\b[0-9a-f]{8,40}\b/);
 });
+
+it('pending verification names its unsettled layer reason and missing fact before requesting evidence recovery',()=>{
+  const result=block({verdict:'PARTIAL',level:'P4',entries:[{item:'c1'}]});
+  Object.assign((result.partitions as any).delivered[0].requirements[0],{status:'pending',layers:[{layer:'static',terminal:'unchecked',reason:'integrity_unproven'}],claims:[{qualifier:{nature:'fact'},statement:{verdict:'unknown',text:'合成目录未声明完整'}}]});
+  const out=run([{result}]);assert.equal(out.error?.code,'case-review-report.block_unsettled');assert.match(out.error?.message??'',/未决.*静态.*未核对.*完整性未证明.*合成目录未声明完整/);assert.match(out.error?.fix??'',/复核回答.*缺失事实.*下一步.*重新核对/);assert.doesNotMatch(out.error?.fix??'',/换.*家族|修复并重交/);
+});
+it('no producer and independence unknown refusals request the missing contribution rather than generic repairs',()=>{
+  for(const [reason,expected]of [['no_producer',/提交.*缺失.*判断/],['independence_unknown',/另开会话.*不同模型家族.*复核/]] as const){
+    const result=block({verdict:'PARTIAL',level:'P4',entries:[{item:'c1'}]});Object.assign((result.partitions as any).delivered[0].requirements[0],{status:'unsatisfied',unsatisfied_reason:reason});
+    const out=run([{result}]);assert.match(out.error?.fix??'',expected);assert.doesNotMatch(out.error?.fix??'',/先按.*修复/);assert.doesNotMatch(out.error?.message??'',new RegExp(reason));
+  }
+});
+it('repair refusals preserve the first stored error corrective action',()=>{
+  const result=block({verdict:'PARTIAL',level:'P4',entries:[{item:'c1'}]});result.errors=[{code:'case-review-verify.synthetic_error',fix:'请修正合成位置并保留原文',item:'c1'}];
+  const out=run([{result}]);assert.match(out.error?.fix??'',/请修正合成位置并保留原文.*重交.*复核/);
+});

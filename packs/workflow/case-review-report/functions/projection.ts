@@ -10,6 +10,7 @@ import type { Independence } from '../../../../contracts/generated/vocabulary.ts
 import type { ProjectedItem, ProjectionOutput } from '../../../../contracts/src/pack.ts';
 import { failure, guarded, isRecord } from './common.ts';
 import {reviewTables,type TableModel} from './tables.ts';
+import { labelOf, isRequirementStatus, isUnsatisfiedReason, isReason, isStaticTerminal, isDynamicTerminal, type StaticTerminal, type DynamicTerminal } from './generated/vocabulary.ts';
 import labels from '../tables/labels.json' with {type:'json'};
 
 export const VERIFICATIONS_SLOT = 'verifications';
@@ -113,21 +114,43 @@ function legacySnapshot(result: Record<string, unknown>): boolean {
 }
 
 /** Admission is decided from stored structured statuses, never from human error text. */
+const STATIC_UNSETTLED = { pass:false, violation:false, judgment:false, unchecked:true, incomplete:true } satisfies Record<StaticTerminal,boolean>;
+const DYNAMIC_UNSETTLED = { pass:false, fail:false, no_verdict:true, not_run:true, incomplete:true } satisfies Record<DynamicTerminal,boolean>;
 function unsettled(result: Record<string, unknown>, block: number): ReturnType<typeof failure> | null {
-  const next = `先按第 ${block} 块的回执修复并重交复核；轮数耗尽或独立性不足时，另开会话、换不同模型家族重新复核，再用新回执开始终稿`;
+  const independentNext = `另开会话、换不同模型家族重新复核第 ${block} 块，再用新回执开始终稿`;
+  const repairNext = `修复后重交第 ${block} 块复核，核对满足后再用新回执开始终稿`;
   const errors = Array.isArray(result.errors) ? result.errors.filter(isRecord) : [];
-  if (errors.length) { const error = errors[0]; return failure('block_unsettled', `第 ${block} 块仍有核对错误：条目 ${String(error.item ?? '跨条目')}，码 ${String(error.code ?? '未提供')}；共 ${errors.length} 条`, next); }
+  if (errors.length) {
+    const error = errors[0];
+    return failure('block_unsettled', `第 ${block} 块仍有核对错误：条目 ${String(error.item ?? '跨条目')}，码 ${String(error.code ?? '未提供')}；共 ${errors.length} 条`, `${typeof error.fix === 'string' && error.fix ? error.fix : '先按该块回执中这条错误的修正动作处理'}；${repairNext}`);
+  }
   const partitions = isRecord(result.partitions) ? result.partitions : {};
   const claims: Record<string, unknown>[] = Array.isArray(result.cross_item) ? result.cross_item.filter(isRecord).filter(claim=>claim.requirement==='final') : [];
   for (const item of Array.isArray(partitions.delivered) ? partitions.delivered.filter(isRecord) : []) {
     for (const requirement of Array.isArray(item.requirements) ? item.requirements.filter(isRecord) : []) {
-      if (requirement.status !== 'satisfied') return failure('block_unsettled', `第 ${block} 块条目 ${String(item.item)} 的 ${String(requirement.requirement)} 未满足：${String(requirement.unsatisfied_reason ?? requirement.status ?? '缺少状态')}`, next);
+      const status = isRequirementStatus(requirement.status) ? requirement.status : null;
+      const who = `第 ${block} 块条目 ${String(item.item)} 的 ${String(requirement.requirement)}`;
+      if (status === 'pending') {
+        const layers = Array.isArray(requirement.layers) ? requirement.layers.filter(isRecord) : [];
+        const layer = layers.find(v => v.layer === 'static' ? isStaticTerminal(v.terminal) && STATIC_UNSETTLED[v.terminal] : v.layer === 'dynamic' && isDynamicTerminal(v.terminal) && DYNAMIC_UNSETTLED[v.terminal]);
+        const terminal = layer?.layer === 'static' && isStaticTerminal(layer.terminal) ? labelOf('layer','static')+'层 '+labelOf('static_terminal',layer.terminal) : layer?.layer === 'dynamic' && isDynamicTerminal(layer.terminal) ? labelOf('layer','dynamic')+'层 '+labelOf('dynamic_terminal',layer.terminal) : '缺少未决层终态';
+        const reason = isReason(layer?.reason) ? labelOf('reason',layer.reason) : typeof layer?.reason === 'string' ? '本版词表未登记的原因 '+layer.reason : '缺少原因';
+        const fact = (Array.isArray(requirement.claims) ? requirement.claims.filter(isRecord) : []).find(c => isRecord(c.qualifier) && c.qualifier.nature === 'fact' && isRecord(c.statement) && c.statement.verdict === 'unknown');
+        const missing = fact && isRecord(fact.statement) && typeof fact.statement.text === 'string' ? '；缺失事实：'+fact.statement.text : '；缺失事实见该块复核回答';
+        return failure('block_unsettled', `${who} ${labelOf('requirement_status',status)}；${terminal}；原因：${reason}${missing}`, `先读取第 ${block} 块复核回答中该要求项的缺失事实及下一步并执行，补齐可核验的来源和证据后重新核对或重交该块，再开始终稿`);
+      }
+      if (status !== 'satisfied') {
+        const reason = isUnsatisfiedReason(requirement.unsatisfied_reason) ? requirement.unsatisfied_reason : null;
+        const message = `${who} ${status ? labelOf('requirement_status',status) : '缺少有效状态'}：${reason ? labelOf('unsatisfied_reason',reason) : '缺少未满足原因'}`;
+        const next = reason === 'independence_unknown' ? independentNext : reason === 'no_producer' ? `提交第 ${block} 块该要求项缺失的判断，受理并核对满足后再开始终稿` : reason === 'outcome_mismatch' ? `先按第 ${block} 块回执修复该要求项；${repairNext}` : `按第 ${block} 块回执补齐该要求项状态与原因并完成要求，再重新核对后开始终稿`;
+        return failure('block_unsettled', message, next);
+      }
       claims.push(...(Array.isArray(requirement.claims) ? requirement.claims.filter(isRecord) : []));
     }
   }
   for (const claim of claims) {
     if (!isRecord(claim.qualifier) || claim.qualifier.nature !== 'judgment' || !isRecord(claim.warrant) || claim.warrant.producer !== 'model') continue;
-    if (!established(claim.warrant.independence)) return failure('block_unsettled', `第 ${block} 块条目 ${String(claim.item ?? '跨条目')} 的复核独立性未成立`, next);
+    if (!established(claim.warrant.independence)) return failure('block_unsettled', `第 ${block} 块条目 ${String(claim.item ?? '跨条目')} 的复核独立性未成立`, independentNext);
   }
   return null;
 }

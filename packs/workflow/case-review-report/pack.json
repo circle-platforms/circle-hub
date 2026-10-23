@@ -37,9 +37,14 @@
       "size": 1158
     },
     {
+      "path": "functions/generated/vocabulary.ts",
+      "sha256": "6e6a6840515f72b28aeaf7dad219046d097000375510d476ab8323ef78df2335",
+      "size": 4163
+    },
+    {
       "path": "functions/projection.ts",
-      "sha256": "04b99e9e06ef675f37ff38fb55851d1a485ffcf2bb75e43f28f61697757e1663",
-      "size": 22577
+      "sha256": "67102133bd582d2b93ac4d4288d6936ab8cb9346182b2fa852c5df8df71e4b4b",
+      "size": 25588
     },
     {
       "path": "functions/tables.ts",
