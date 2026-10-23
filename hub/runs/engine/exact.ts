@@ -142,7 +142,7 @@ export type ValueOutcome = { ok: true; value: ResolvedValue } | { ok: false; mes
 
 export interface Resolver {
   /** Resolves inside the run scope; `scoped: false` only for the predecessor's statements a carry-over brings along. */
-  resolve(reference: string, options?: { scoped?: boolean }): Promise<ValueOutcome>;
+  resolve(reference: string, options?: { scoped?: boolean; grounds?: boolean }): Promise<ValueOutcome>;
 }
 
 export function scopeProblem(ref: Reference, scope: RunScope): string | null {
@@ -171,7 +171,7 @@ export function createResolver(ctx: EngineContext, scope: RunScope, consumer: Ex
     consumer,
     documents: ctx.documents,
   } as const;
-  const run = async (reference: string, scoped: boolean): Promise<ValueOutcome> => {
+  const run = async (reference: string, scoped: boolean, grounds: boolean): Promise<ValueOutcome> => {
     let ref: Reference;
     let canonical: string;
     try {
@@ -192,6 +192,7 @@ export function createResolver(ctx: EngineContext, scope: RunScope, consumer: Ex
       } else if (ref.scheme === 'entry') return { ok: false, message: scopeProblem(ref, scope) ?? '' };
       const result = await resolveReference(ref, context);
       if (!result.resolved) return { ok: false, message: result.code === 'SOURCE_UNAVAILABLE' ? `引用解析不出（${UNAVAILABLE_MESSAGE}）` : result.message };
+      if (grounds && !result.groundable) return { ok: false, message: '这类记录不能作根据（B01 R[4]），请改引结果、动作或效果记录' };
       for (const ground of result.grounds ?? []) {
         let innerCanonical: string;
         try {
@@ -211,9 +212,9 @@ export function createResolver(ctx: EngineContext, scope: RunScope, consumer: Ex
   return {
     resolve(reference, options = {}) {
       const scoped = options.scoped !== false;
-      const key = `${scoped ? 's' : 'u'}\u0000${reference}`;
+      const key = `${scoped ? 's' : 'u'}${options.grounds ? 'g' : 't'}\u0000${reference}`;
       let found = cache.get(key);
-      if (!found) cache.set(key, (found = run(reference, scoped)));
+      if (!found) cache.set(key, (found = run(reference, scoped, options.grounds === true)));
       return found;
     },
   };
@@ -409,7 +410,7 @@ export async function resolveStatement(
     }
   }
   for (const [k, ground] of (claim.grounds ?? []).entries()) {
-    const r = await resolver.resolve(ground, { scoped });
+    const r = await resolver.resolve(ground, { scoped, grounds: true });
     if (r.ok) {
       take(`${at}/grounds/${k}`, ground, r.value, true);
       out.grounds.push(r.value.reference);
@@ -422,7 +423,7 @@ export async function resolveStatement(
   }
   const quoted: QuotePlace[] = [];
   for (const [k, quote] of (claim.quotes ?? []).entries()) {
-    const r = await resolver.resolve(quote.reference, { scoped });
+    const r = await resolver.resolve(quote.reference, { scoped, grounds: true });
     if (!r.ok) {
       const isCycle = r.message.startsWith('成环的引用：');
       fail('REFERENCE_UNRESOLVED', `${at}/quotes/${k}/reference`, `引文的引用解析不出：${r.message}`, undefined, isCycle ? r.message : undefined);
@@ -526,7 +527,7 @@ export async function resolveSubmission(
     const out: ClaimEvidence = { resolutions: [], roles: [], bound: [], grounds: [], canonical: { text: entry.statement } };
     const copy = structuredClone(entry);
     for (const [k, ground] of entry.grounds.entries()) {
-      const r = await resolver.resolve(ground);
+      const r = await resolver.resolve(ground, { grounds: true });
       if (r.ok) {
         out.resolutions.push({ pointer: `${at}/grounds/${k}`, text: ground, resolution: 'resolved', references: [r.value.reference] });
         out.bound.push(r.value.digest);

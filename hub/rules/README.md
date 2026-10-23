@@ -307,3 +307,5 @@ partition. Other model/submission-only reasons remain invalid as check outcomes.
 `SourceView.why`, the engine's fragment cache and its warmed grades use the generated `FragmentRead` type from the
 model's T04 `fragment_read` axis. Resolution state, unknown reason and read tier keep their own meanings; none is used
 as a substitute for the fragment read state. Authority and the refined grades are recorded in [progress decision 36](../../docs/hub-r4-progress.md).
+
+The boundary applies B01 R[4] to quotation references and grounds, including cross-item grounds. Record targets and locations remain resolvable without being promoted to grounds. Its cache separates those uses.
