@@ -16,7 +16,7 @@ import { after, before, describe, test } from 'node:test';
 import { DEFAULT_LIMITS, type HubConfig } from '../../config/index.ts';
 import { agileFixture, passwordDigest, startAgileStub, startBuildSiteStub, type AgileStub, type StubServer } from '../../connectors/testing/api.ts';
 import { keychainKeyProvider, keychainStore, runCommand, OPERATOR_TOKEN_ITEM, VAULT_KEY_ITEM, type KeyProvider, type CommandRunner } from '../../platform/api.ts';
-import { openRecords, type RecordKind, type RecordsKit, type User } from '../../records/index.ts';
+import { openRecords, type SourceArtifactBody, type RecordKind, type RecordsKit, type User } from '../../records/index.ts';
 import { osIsolationAvailable } from '../../rules/api.ts';
 import { withFiles, writePack } from '../../runs/api.ts';
 import type { AssemblyModule, CliContext } from '../api.ts';
@@ -1425,5 +1425,35 @@ describe('reimport after key loss', () => {
       if (keychain) await runner('/usr/bin/security', ['delete-keychain', file]);
       await rm(file, { force: true });
     }
+  });
+});
+
+describe('resource read', () => {
+  test('a read prints only declared names, outcome codes and artifact sizes and digests', async () => {
+    const admin = await setup(); const id = await importResource(admin);
+    const file = await importFile(admin, `PORTAL_USER=reader\nPORTAL_PASSWORD=${PASSWORD}`);
+    await expectOk(admin, importArgs(file, id));
+    const result = await expectOk(admin, ['resource', 'read', id, 'mindmap', DOCUMENT]);
+    assert.match(result.text, /demo-agile@1\.0\.0\/mindmap：读取完成/);
+    assert.match(result.text, /产物 original [0-9a-f]{64} [0-9]+ 字节/); assert.match(result.text, /读清单 [0-9a-f]{64}/);
+    assert.ok(!result.text.includes(DOCUMENT));
+    // All response strings of at least eight characters must stay out of command output.
+    const kit = await admin.kit();
+    try {
+      const originals = await kit.store.list<SourceArtifactBody>({ kind: 'source_artifact', limit: 100 });
+      for (const original of originals.items) {
+        const bytes = await kit.artifacts.trustedBytes(original.body.sha256); if (!bytes) continue;
+        let value: unknown; try { value = JSON.parse(Buffer.from(bytes).toString()); } catch { continue; }
+        const walk = (v: unknown): void => { if (typeof v === 'string' && v.length >= 8 && !/^[0-9a-f]{64}$/.test(v)) assert.ok(!result.text.includes(v)); else if (v && typeof v === 'object') for (const child of Object.values(v)) walk(child); }; walk(value);
+      }
+    } finally { await kit.close(); }
+    const badRead = await admin.run(['resource', 'read', id, 'undeclared', DOCUMENT]); assert.equal(badRead.code, 1); assert.ok(!badRead.text.includes(DOCUMENT));
+    const absent = await admin.run(['resource', 'read', 'res_00000000000000000000000000', 'mindmap', DOCUMENT]); assert.equal(absent.code, 1);
+    const user = await userWithToken(admin, '冒烟普通用户'); assert.equal((await admin.run(['resource', 'read', id, 'mindmap', DOCUMENT], { [OPERATOR_TOKEN_VARIABLE]: user })).code, 1);
+    const missing = await admin.run(['resource', 'read', id, 'mindmap', 'synthetic-missing-document']);
+    assert.equal(missing.code, 1); assert.match(missing.text, /失败（[A-Z_]+）/); assert.doesNotMatch(missing.text, /synthetic-missing-document|404|reason|meta/);
+    admin.stdin.push(WRONG_PASSWORD); await expectOk(admin, ['secret', 'set', id, 'password']);
+    const login = await admin.run(['resource', 'read', id, 'mindmap', DOCUMENT]);
+    assert.equal(login.code, 1); assert.match(login.text, /失败（[A-Z_]+）/); assert.ok(!login.text.includes(DOCUMENT));
   });
 });
