@@ -224,7 +224,7 @@ export function reversedView(view: { [key: string]: unknown }): { [key: string]:
 }
 // Bind the required synthetic disclosure input for existing projection scenarios.
 export function facetInput(view: { [key: string]: unknown }, unplaced = 0): { [key: string]: unknown } {
-  return { slot: 'facets', sha256: SOURCE, model: { schema: 'facet-view@1', product: view.product, build: structuredClone(view.from), kind: 'case', by: ['commands'], rows: unplaced ? [{ values: { commands: null }, count: unplaced }] : [], total: unplaced, truncated: false, skipped: 0, notes: [] } };
+  return { slot: 'facets', sha256: SOURCE, model: { schema: 'facet-view@1', product: view.product, build: structuredClone(view.from), kind: 'case', by: ['commands'], rows: unplaced ? [{ values: { commands: null }, count: unplaced }] : [], total: unplaced, truncated: false, skipped: (view.skipped as {from:number;to:number})?.from ?? 0, notes: [] } };
 }
 import { projectItems as rawProject, LIMITS } from './project.ts';
 export { LIMITS };

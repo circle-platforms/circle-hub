@@ -18,9 +18,10 @@ let hub: Hub;
 
 const REVIEW = 'knowledge:impact:widget:Rel_W_1_0_1..Rel_W_1_0_2?catalog=commands@1';
 const BOTH = 'knowledge:impact:widget:Rel_W_1_0_1..Rel_W_1_0_3?catalog=commands@1';
-const SKIPPED = 'knowledge:impact:widget:Rel_W_1_0_1..Rel_W_1_0_4?catalog=commands@1';
+const SKIPPED = 'knowledge:impact:widget:Rel_W_1_0_3..Rel_W_1_0_4?catalog=commands@1';
 const EMPTY = 'knowledge:impact:widget:Rel_W_1_0_0..Rel_W_1_0_2?catalog=commands@1';
 const FACETS = 'knowledge:facets:widget:Rel_W_1_0_1?kind=case&by=commands';
+const FACETS_SKIPPED='knowledge:facets:widget:'+SKIPPED.split('knowledge:impact:widget:')[1].split('?')[0].split('..')[0]+'?kind=case&by=commands';
 const bytes = (value: unknown): Uint8Array => new TextEncoder().encode(JSON.stringify(value));
 
 const both = [
@@ -46,7 +47,10 @@ before(async () => {
   hub.external.put(FACETS, bytes(facetInput(buildImpact([])).model));
   hub.external.put(REVIEW, bytes(buildImpact(reviewSweep(), { catalog: 'commands@1' })));
   hub.external.put(BOTH, bytes(buildImpact(both, { catalog: 'commands@1' })));
-  hub.external.put(SKIPPED, bytes(buildImpact(reviewSweep(), { catalog: 'commands@1', skipped: { from: 3, to: 0 } })));
+  const skippedView=buildImpact(reviewSweep(), { catalog: 'commands@1', skipped: { from: 3, to: 0 } });
+  const selectedBuilds=SKIPPED.split('knowledge:impact:widget:')[1].split('?')[0].split('..');
+  (skippedView.from as {build:string}).build=selectedBuilds[0];(skippedView.to as {build:string}).build=selectedBuilds[1];
+  hub.external.put(SKIPPED,bytes(skippedView));hub.external.put(FACETS_SKIPPED,bytes(facetInput(skippedView).model));
   hub.external.put(EMPTY, bytes(buildImpact([], { catalog: 'commands@1' })));
 });
 after(async () => {
@@ -165,7 +169,7 @@ describe('a production run of maintenance-sweep', { skip }, () => {
   });
 
   it('says a short earlier index is not proof that nothing is stale', async () => {
-    const detail = await hub.service.startRunDetailed(hub.alice, { pack: 'maintenance-sweep', inputs: { impact: { external: SKIPPED }, facets: { external: FACETS } } }, call());
+    const detail = await hub.service.startRunDetailed(hub.alice, { pack: 'maintenance-sweep', inputs: { impact: { external: SKIPPED }, facets: { external: FACETS_SKIPPED } } }, call());
     assert.equal(detail.answer.call_result, 'ok', JSON.stringify(detail.answer.errors));
     const unknown = detail.production!.result.cross_item.find((claim) => claim.statement.reason === 'missing_input')!;
     assert.match(unknown.statement.text, /较早构建的索引缺少 3 份列出的文档/);

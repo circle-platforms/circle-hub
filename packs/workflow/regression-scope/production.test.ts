@@ -20,6 +20,7 @@ const REVIEW = 'knowledge:impact:widget:Rel_W_1_0_1..Rel_W_1_0_2?attached_fields
 const SKIPPED = 'knowledge:impact:widget:Rel_W_1_0_1..Rel_W_1_0_3?attached_fields=document,node,title,priority,negative&catalog=commands@1';
 const EMPTY = 'knowledge:impact:widget:Rel_W_1_0_0..Rel_W_1_0_2?attached_fields=document,node,title,priority,negative&catalog=commands@1';
 const FACETS = 'knowledge:facets:widget:Rel_W_1_0_2?kind=case&by=commands';
+const FACETS_SKIPPED='knowledge:facets:widget:'+SKIPPED.split('knowledge:impact:widget:')[1].split('?')[0].split('..')[1]+'?kind=case&by=commands';
 const bytes = (value: unknown): Uint8Array => new TextEncoder().encode(JSON.stringify(value));
 
 before(async () => {
@@ -27,7 +28,10 @@ before(async () => {
   if (skip) return;
   hub = await openHub(postgres, {});
   hub.external.put(REVIEW, bytes(buildImpact(reviewChanges(), { ...reviewOptions(), catalog: 'commands@1' })));
-  hub.external.put(SKIPPED, bytes(buildImpact(reviewChanges(), { ...reviewOptions(), catalog: 'commands@1', skipped: { from: 0, to: 4 } })));
+  const skippedView=buildImpact(reviewChanges(), { ...reviewOptions(), catalog: 'commands@1', skipped: { from: 0, to: 4 } });
+  const selectedBuilds=SKIPPED.split('knowledge:impact:widget:')[1].split('?')[0].split('..');
+  (skippedView.from as {build:string}).build=selectedBuilds[0];(skippedView.to as {build:string}).build=selectedBuilds[1];
+  hub.external.put(SKIPPED,bytes(skippedView));hub.external.put(FACETS_SKIPPED,bytes(facetInput(skippedView).model));
   hub.external.put(EMPTY, bytes(buildImpact([], { catalog: 'commands@1' })));
   hub.external.put(FACETS, bytes(facetInput(buildImpact([])).model));
 });
@@ -180,7 +184,7 @@ describe('a production run of regression-scope', { skip }, () => {
   });
 
   it('says the later build index is short when the view skipped listed documents', async () => {
-    const detail = await hub.service.startRunDetailed(hub.alice, { pack: 'regression-scope', inputs: { impact: { external: SKIPPED }, facets: { external: FACETS } } }, call());
+    const detail = await hub.service.startRunDetailed(hub.alice, { pack: 'regression-scope', inputs: { impact: { external: SKIPPED }, facets: { external: FACETS_SKIPPED } } }, call());
     assert.equal(detail.answer.call_result, 'ok', JSON.stringify(detail.answer.errors));
     const unknown = detail.production!.result.cross_item.find((claim) => claim.statement.reason === 'missing_input')!;
     assert.match(unknown.statement.text, /缺少 4 份列出的文档/);

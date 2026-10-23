@@ -47,10 +47,12 @@ test('a projected empty scope does not fabricate a check error', () => {
 
 test('skipped facet sources refuse rather than disclose a false zero', () => {
   const out = project(0, (v) => { v.model.skipped = 3; });
-  assert.equal(out.error?.code, 'regression-scope.facets_view'); assert.match(out.error?.message ?? '', /3 份来源未读/); assert.match(out.error?.message ?? '', /修复.*重新生产根/); assert.ok(!out.error?.message.includes('0 个用例'));
+  assert.equal(out.error?.code, 'regression-scope.facets_view'); assert.match(out.error?.message ?? '', /skipped 不一致/); assert.ok(!out.error?.message.includes('0 个用例'));
 });
 
 test('deterministic truncation names notes and requests a real repair instead of a retry loop', () => {
   const result = project(0, (v) => { v.model.truncated = true; v.model.notes = ['合成字节预算截断']; });
   assert.match(result.error?.message ?? '', /合成字节预算截断/); assert.match(result.error?.fix ?? '', /不自动重试/); assert.match(result.error?.fix ?? '', /集成者/);
 });
+
+test('closure 01 skipped sources remain a disclosed lower bound when both views agree',()=>{const view=buildImpact([],{skipped:{from:0,to:4}});const facet=facetInput(view,2) as any;facet.model.skipped=4;const out=projectItems({inputs:[{slot:'impact',sha256:SOURCE,model:view},facet]}) as any;assert.ok(!out.error,JSON.stringify(out.error));assert.match(out.groups[0].message,/至少 2 个用例没有解析出命令/);assert.match(out.groups[0].message,/4 份来源未读/);});

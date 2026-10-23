@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "regression-scope",
-  "version": "1.7.0",
+  "version": "1.8.0",
   "kind": "workflow",
   "title": "回归范围",
   "description": "按两个构建的影响视图（限定命令目录：catalog=commands@1；瘦身：attached_fields=document,node,title,priority,negative）先按路径列出整个命令差（变更种类、后一构建用例数），再列出后一构建里放在新增或修改路径上的用例；没有用例的变更路径记为未知而不是失败。一次最多 4,000 条。只含事实要求项，开始运行时由 Hub 直接算出结果",
@@ -28,8 +28,8 @@
     },
     {
       "path": "functions/facets.ts",
-      "sha256": "af873c6d602aa89aa152deae07694ce142f2bf0e28e7aaddc2ad9c39b0841cf1",
-      "size": 3483
+      "sha256": "4843f856b6ba9d49a9e4bc4845cf626d58c9f6206973c48f62c2e3ef351de624",
+      "size": 4250
     },
     {
       "path": "functions/generated/vocabulary.ts",
@@ -38,8 +38,8 @@
     },
     {
       "path": "functions/project.ts",
-      "sha256": "d4578631c2369bd7348e43821a9c89a93e5aa407118db55c419558c786f11f29",
-      "size": 8136
+      "sha256": "ac23bb06d4f5ea11f21e3689a61ca76c3f662789b1cd4e21b59e997fa33c7ce1",
+      "size": 8184
     },
     {
       "path": "functions/scope.ts",

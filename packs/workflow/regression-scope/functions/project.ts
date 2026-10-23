@@ -6,7 +6,7 @@
 import { scopeOf, readParameters, type ScopeItem } from './scope.ts';
 import { PACK, guarded, isRecord } from './text.ts';
 import { parseView } from './view.ts';
-import { readFacets, unplacedMessage, FACETS_FIX } from './facets.ts';
+import { FacetsError, readFacets, unplacedMessage, FACETS_FIX } from './facets.ts';
 
 export const SLOT = 'impact';
 const BEHAVIOUR_SLOT = 'behaviour';
@@ -77,8 +77,7 @@ export function projectItems(input: unknown, limits: Partial<ProjectLimits> = {}
   // The behaviour view of the same pair of builds (optional): never in the scope, only a clue paragraph.
   const clue = behaviourClue(input, parsed.view);
   if (typeof clue === 'string') return refusal('behaviour_view', clue, 'behaviour 槽绑定同一对构建的 changed=behaviour 视图，或不绑定');
-  const facets = readFacets({ inputs: input.inputs }, parsed.view);
-  if (typeof facets === 'string') return refusal('facets_view', facets, FACETS_FIX);
+  let facets;try{facets=readFacets({ inputs: input.inputs }, parsed.view);}catch(error){if(error instanceof FacetsError)return refusal('facets_view',error.message,error.fix);throw error;}
   const scope = scopeOf(parsed.view, parameters);
   // The run note also names the view itself: the command-diff summary of the check cites it as its ground.
   const note = { ...scope.note, view: `src:${sha256}`, unplaced: facets.unplaced, unplaced_build: facets.build, message: `${scope.note.message} ${unplacedMessage(facets)}` };
