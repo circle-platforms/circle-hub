@@ -14,10 +14,10 @@ const item = (node: string, opts: { literal?: string; catalog?: string; findings
 const result = (delivered: ItemLike[], incomplete: ItemLike[] = []): ResultLike => ({ partitions: { delivered, rejected: [], quarantined: [], incomplete } });
 
 const gold: GoldEntry[] = [
-  { label: '期望结果缺失', seen_by: 'mechanical', node: 'c3', note: '' },
-  { label: '重复的用例', seen_by: 'mechanical', node: 'c1', copy: 'cc', note: '' },
-  { label: '期望结果含糊', seen_by: 'judgment', node: 'c4', note: '' },
-  { label: '用例放错分组', seen_by: 'judgment', node: 'c5', note: '' },
+  { label: '期望结果缺失', seen_by: 'mechanical', kind: 'delete_expected', node: 'c3', note: '' },
+  { label: '重复的用例', seen_by: 'mechanical', kind: 'duplicate', node: 'c1', copy: 'cc', note: '' },
+  { label: '期望结果含糊', seen_by: 'judgment', kind: 'replace_expected', node: 'c4', note: '' },
+  { label: '用例放错分组', seen_by: 'judgment', kind: 'move', node: 'c5', note: '' },
 ];
 
 test('a defect is found by the kind of check that is able to see it; the claims without a code are not findings', () => {
@@ -54,7 +54,7 @@ test('a kind with no defects says so instead of dividing by zero', () => {
 
 test('scoring nonexistent command injection against catalog check (positive and negative)', () => {
   const cmdGold: GoldEntry[] = [
-    { label: '构建里不存在的命令', seen_by: 'mechanical', node: 'c1', from: 'add', to: 'insert_bogus', note: '' },
+    { label: '构建里不存在的命令', seen_by: 'mechanical', kind: 'replace_command_word', node: 'c1', from: 'add', to: 'insert_bogus', note: '' },
   ];
   const pos = score(cmdGold, result([item('c1', { catalog: 'core.catalog.membership_contradicted' })]));
   assert.equal(pos.recall.mechanical[0], 1);
@@ -75,6 +75,7 @@ test('scoring deleted negative group injection against model judgment (positive 
     {
       label: '删掉一组反向用例',
       seen_by: 'judgment',
+      kind: 'delete_negative_group',
       node: 'g_neg',
       deletedCases: ['c_neg1', 'c_neg2'],
       note: '删掉了只含反向用例的分组 g_neg',

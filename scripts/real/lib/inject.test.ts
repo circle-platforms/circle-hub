@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { caseNodes, firstCases, inject, type MindNode, type MindTree, type Planned } from './inject.ts';
+import { createHash } from 'node:crypto';
+import { caseNodes, firstCases, inject, type ManualFragment, type MindNode, type MindTree, type Planned } from './inject.ts';
 
 const leaf = (id: string, text: string): MindNode => ({ data: { id, text }, children: [] });
 const kase = (id: string, text: string, expected: string, tag = 'configuration'): MindNode => ({ data: { id, text, resource: [tag], priority: 2 }, children: [leaf(`${id}e`, expected)] });
@@ -156,4 +157,85 @@ test('delete_negative_group deletes a group containing only negative cases and r
 
   // original doc untouched
   assert.equal(doc.root.children?.length, 2);
+});
+
+const manualDoc = (): MindTree => ({
+  root: group('r', '文档',
+    group('g1', '配置',
+      kase('c1', 'widget pool add pool1', ' aging 时间为 3600 秒 ', 'configuration'),
+      kase('c2', 'widget pool delete pool1', '删除成功', 'configuration'),
+    ),
+  ),
+});
+
+const FRAGMENT = 'widget pool add 命令的 aging 参数取值范围是 60 到 604800 秒，缺省 3600 秒。';
+const fragmentOf = (text: string): ManualFragment => ({ text, sha256: createHash('sha256').update(text).digest('hex') });
+
+test('contradict_manual replaces the word in the first expected result containing it and records quote and fragment sha256', () => {
+  const source = manualDoc();
+  const plan: Planned[] = [{ label: '期望与手册矛盾', seen_by: 'judgment', op: { kind: 'contradict_manual', node: 'c1', from: '3600', to: '36000', quote: '取值范围是 60 到 604800 秒' } }];
+  const { tree, gold } = inject(source, plan, { manual: fragmentOf(FRAGMENT) });
+  const c1 = caseNodes(tree).find((n) => n.data.id === 'c1')!;
+  assert.equal(c1.children?.[0]?.data.text, ' aging 时间为 36000 秒 ');
+  assert.equal(caseNodes(source).find((n) => n.data.id === 'c1')?.children?.[0]?.data.text, ' aging 时间为 3600 秒 ');
+  assert.deepEqual(gold.map((g) => [g.kind, g.node, g.from, g.to, g.quote, g.manual_sha256]), [
+    ['contradict_manual', 'c1', '3600', '36000', '取值范围是 60 到 604800 秒', fragmentOf(FRAGMENT).sha256],
+  ]);
+});
+
+test('contradict_manual refuses: no fragment, quote not verbatim, to inside quote, no expected containing from, wrong seen_by, target not a case by the rule', () => {
+  const op = (over: Partial<Extract<Planned['op'], { kind: 'contradict_manual' }>>): Planned => ({ label: 'x', seen_by: 'judgment', op: { kind: 'contradict_manual', node: 'c1', from: '3600', to: '36000', quote: '取值范围是 60 到 604800 秒', ...over } });
+  const bad = (plan: Planned[], options?: { manual?: ManualFragment; caseRule?: 'tagged' }): void => assert.throws(() => inject(manualDoc(), plan, options));
+  bad([op({})]); // plan has the kind but no fragment was given
+  bad([op({ quote: '取值范围是 60 到 999999 秒' })], { manual: fragmentOf(FRAGMENT) }); // not verbatim from the fragment
+  bad([op({ quote: '缺省 3600 秒', to: '3600' })], { manual: fragmentOf(FRAGMENT) }); // to appears in quote
+  bad([op({ from: '不存在的词' })], { manual: fragmentOf(FRAGMENT) }); // no expected result contains from
+  bad([{ label: 'x', seen_by: 'mechanical', op: op({}).op }], { manual: fragmentOf(FRAGMENT) }); // seen_by not judgment
+  bad([op({ node: 'g1' })], { manual: fragmentOf(FRAGMENT) }); // a group is not a case
+});
+
+test('contradict_manual refuses a marked-only case under the tagged rule', () => {
+  const doc: MindTree = { root: group('r', '文档', group('g1', '配置', { data: { id: 'm1', text: '未打标用例', priority: 2 }, children: [leaf('m1e', ' aging 时间为 3600 秒 ')] })) };
+  const plan: Planned[] = [{ label: 'x', seen_by: 'judgment', op: { kind: 'contradict_manual', node: 'm1', from: '3600', to: '36000', quote: '取值范围是 60 到 604800 秒' } }];
+  assert.throws(() => inject(doc, plan, { manual: fragmentOf(FRAGMENT), caseRule: 'tagged' }));
+  const { gold } = inject(doc, plan, { manual: fragmentOf(FRAGMENT), caseRule: 'marked' });
+  assert.equal(gold.length, 1);
+});
+
+test('vague_expected replaces every expected result with the same vague phrase and only that case turns vague', () => {
+  const source = manualDoc();
+  const plan: Planned[] = [{ label: '期望全部含糊', seen_by: 'judgment', op: { kind: 'vague_expected', node: 'c2', text: '正常' } }];
+  const { tree, gold } = inject(source, plan);
+  const c2 = caseNodes(tree).find((n) => n.data.id === 'c2')!;
+  assert.deepEqual(c2.children?.map((c) => c.data.text), ['正常']);
+  assert.equal(gold[0]?.kind, 'vague_expected');
+  assert.equal(caseNodes(source).find((n) => n.data.id === 'c2')?.children?.[0]?.data.text, '删除成功');
+});
+
+test('vague_expected refuses: phrase outside the list, no expected results, already all vague, wrong seen_by', () => {
+  const doc = (): MindTree => ({
+    root: group('r', '文档',
+      group('g1', '配置',
+        kase('c1', 'widget pool add pool1', '老化时间为 3600 秒', 'configuration'),
+        kase('c2', '只有前置条件', '成功', 'configuration'),
+        kase('c3', '已经含糊', '正常', 'configuration'),
+      ),
+    ),
+  });
+  const noExpected: MindTree = { root: group('r', '文档', group('g1', '配置', { data: { id: 'c2', text: '只有前置条件', resource: ['configuration'], priority: 2 }, children: [{ data: { id: 'c2p', text: '先清空', priority: 3 }, children: [] }] })) };
+  const bad = (over: Partial<Extract<Planned['op'], { kind: 'vague_expected' }>>, tree?: MindTree): void =>
+    assert.throws(() => inject(tree ?? doc(), [{ label: 'x', seen_by: 'judgment', op: { kind: 'vague_expected', node: 'c1', text: '正常', ...over } }]));
+  bad({ text: '一点都不含糊的话' }); // not in the vague list (by foldKey)
+  bad({ node: 'c2' }, noExpected); // only a priority-3 precondition, no expected results
+  bad({ node: 'c3' }); // already all vague
+  assert.throws(() => inject(doc(), [{ label: 'x', seen_by: 'mechanical', op: { kind: 'vague_expected', node: 'c1', text: '正常' } }]));
+});
+
+test('every gold entry carries the injection kind', () => {
+  const plan: Planned[] = [
+    { label: '期望结果缺失', seen_by: 'mechanical', op: { kind: 'delete_expected', node: 'c1' } },
+    { label: '重复的用例', seen_by: 'mechanical', op: { kind: 'duplicate', node: 'c2' } },
+  ];
+  const { gold } = inject(manualDoc(), plan);
+  assert.deepEqual(gold.map((g) => g.kind), ['delete_expected', 'duplicate']);
 });
