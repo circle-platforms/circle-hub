@@ -82,8 +82,9 @@ Parser details:
   fields as given, ordered child indices, the parent index (the parent chain) and the canonical selector. Duplicate or
   missing ids are reported (`duplicateIds`, `missingIds`); such nodes, ids starting with `@`, and ids whose `n/`
   selector would be too long are addressed by position. Numeric ids and texts are written as decimal text.
-- **xml@1** uses saxes. Entity-free DOCTYPE declarations are accepted, including external identifiers which are
-  never fetched. An actual ENTITY declaration outside comments and quoted identifiers is refused before expansion.
+- **xml@1** uses saxes. Entity-free external DOCTYPE identifiers are accepted and never fetched. Internal subsets accept only comments
+  and processing instructions; entities, attribute lists, other markup declarations and parameter references are refused.
+  The model and summary record DOCTYPE presence and that external subsets were not read.
   Charset precedence is BOM, media-type charset, then XML declaration; contradictory BOM declarations are refused.
   UTF-8, BOM-marked UTF-16LE/BE, GB18030, GBK, Big5, true ISO-8859-1 and US-ASCII are supported. Start tags whose attribute values contain their own quote character or a
   `<` are repaired before parsing by swapping those characters for unused private-use placeholders (same length, so
@@ -461,3 +462,8 @@ runtime refs import violated `rules -> refs(types)` and is now removed. This rev
 production quotation implementation imports the other. Shared vectors are the independent agreement check.
 
 HTML encoding refusals label the declaration source (media-type charset or meta) at the throw site. Unsupported source labels stay in ParseError.detail only and are never interpolated into caller messages.
+
+DTD capability boundary: xml@1 does not implement DTD attribute defaults or tokenized-attribute normalization. It
+refuses internal ATTLIST and other markup declarations rather than silently showing incomplete attributes; no defaults
+are invented. This is a format capability refusal, not a claim that such XML is invalid. External identifiers are never
+fetched, and doctype metadata discloses that policy. See [XML 1.0 section 5.1](https://www.w3.org/TR/REC-xml/#proc-types).

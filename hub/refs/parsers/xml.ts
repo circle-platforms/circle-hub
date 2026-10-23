@@ -68,6 +68,8 @@ export type XmlElement = {
 export type XmlModel = {
   charset: string;
   declaration: { version: string | null; encoding: string | null; standalone: string | null } | null;
+  /** The parser records DTD presence/read policy; internal markup declarations are not interpreted. */
+  doctype?: { internalSubset: boolean; externalSubsetDeclared: boolean; externalSubsetRead: false } | null;
   root: XmlElement;
   comments: number;
   processingInstructions: number;
@@ -346,6 +348,7 @@ function parse(bytes: Uint8Array, options: ParseOptions = {}): ParsedDocument<Xm
   const open: number[] = [];
   let pending: { name: string; start: number; problems: string[]; attributes: number } | null = null;
   let declaration: XmlModel['declaration'] = null;
+  let doctype: NonNullable<XmlModel['doctype']> | null = null;
   let comments = 0;
   let processingInstructions = 0;
   let attributeTotal = 0;
@@ -356,12 +359,30 @@ function parse(bytes: Uint8Array, options: ParseOptions = {}): ParsedDocument<Xm
     declaration = { version: decl.version ?? null, encoding: decl.encoding ?? null, standalone: decl.standalone ?? null };
   });
   parser.on('doctype', (value) => {
+    let inside = false; let subsetAt = value.length;
     for (let i = 0; i < value.length; i++) {
-      if (value.startsWith('<!--', i)) { const end = value.indexOf('-->', i + 4); i = end < 0 ? value.length : end + 2; }
-      else if (value.startsWith('<?', i)) { const end = value.indexOf('?>', i + 2); if (end < 0) throw new ParseSyntaxError(KEY, 'DOCTYPE 内部的处理指令没有结束', here()); i = end + 1; }
-      else if (value[i] === '"' || value[i] === "'") { const end = value.indexOf(value[i], i + 1); i = end < 0 ? value.length : end; }
-      else if (value.startsWith('<!ENTITY', i)) throw new ParseForbiddenError(KEY, '不接受 DOCTYPE 中的实体声明（防止实体扩展与外部实体）', here());
+      if (value.startsWith('<!--', i)) {
+        const end = value.indexOf('-->', i + 4);
+        if (end < 0) throw new ParseSyntaxError(KEY, 'DOCTYPE 注释没有结束', here());
+        i = end + 2;
+      } else if (value.startsWith('<?', i)) {
+        const end = value.indexOf('?>', i + 2);
+        if (end < 0) throw new ParseSyntaxError(KEY, 'DOCTYPE 内部的处理指令没有结束', here());
+        i = end + 1;
+      } else if (!inside && (value[i] === '"' || value[i] === "'")) {
+        const end = value.indexOf(value[i], i + 1);
+        if (end < 0) throw new ParseSyntaxError(KEY, 'DOCTYPE 外部标识的引号没有结束', here());
+        i = end;
+      } else if (value[i] === '[' && !inside) { inside = true; subsetAt = Math.min(subsetAt, i); }
+      else if (value[i] === ']' && inside) inside = false;
+      else if (inside && !isXmlSpace(value.charCodeAt(i))) {
+        if (value.startsWith('<!ENTITY', i)) throw new ParseForbiddenError(KEY, '不接受 DOCTYPE 中的实体声明（防止实体扩展与外部实体）', here());
+        if (value.startsWith('<!ATTLIST', i)) throw new ParseForbiddenError(KEY, '当前解析器不处理 DOCTYPE 内部属性声明，不能核实默认属性；请提供显式属性且不依赖内部声明的 XML 导出', here());
+        throw new ParseForbiddenError(KEY, 'DOCTYPE 内部子集只支持注释和处理指令，不处理其他内部声明或参数引用；请提供不依赖内部声明的 XML 导出', here());
+      }
     }
+    const header = value.slice(0, subsetAt);
+    doctype = { internalSubset: subsetAt !== value.length, externalSubsetDeclared: /^[ \t\r\n]*[^ \t\r\n]+[ \t\r\n]+(?:SYSTEM|PUBLIC)[ \t\r\n]+["']/.test(header), externalSubsetRead: false };
   });
   parser.on('processinginstruction', () => {
     processingInstructions++;
@@ -456,7 +477,7 @@ function parse(bytes: Uint8Array, options: ParseOptions = {}): ParsedDocument<Xm
   flats.forEach((flat, index) => {
     for (const child of flat.children) nested[index].children.push(typeof child === 'string' ? child : nested[child]);
   });
-  const model: XmlModel = { charset, declaration, root: nested[0], comments, processingInstructions, nulRemoved };
+  const model: XmlModel = { charset, declaration, doctype, root: nested[0], comments, processingInstructions, nulRemoved };
 
   // Selector lengths, without building any selector: the step of every element (`name` or `name[k]`), the length of
   // its name path and of its position path. The canonical selector is the name path when it fits, else the position
@@ -686,6 +707,10 @@ function parse(bytes: Uint8Array, options: ParseOptions = {}): ParsedDocument<Xm
       return {
         parser: KEY,
         charset,
+        doctype: doctype !== null,
+        internalSubset: doctype?.internalSubset ?? false,
+        externalSubsetDeclared: doctype?.externalSubsetDeclared ?? false,
+        externalSubsetRead: false,
         elements: count,
         attributes: attributeTotal,
         depth,

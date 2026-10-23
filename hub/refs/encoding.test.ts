@@ -87,3 +87,14 @@ test('DTD processing instructions cannot hide declarations or create false ENTIT
   assert.equal(xmlParser.parse(Buffer.from('<!DOCTYPE x [<?pi <!ENTITY ?>]><x/>')).model.root.name, 'x');
   assert.equal(xmlParser.parse(Buffer.from(`<!DOCTYPE x [<?pi "'< !ENTITY ?> <!-- <!ENTITY a "b"> -->]><x/>`)).model.root.name, 'x');
 });
+
+test('XML refuses uninterpreted internal declarations instead of losing defaulted attributes', () => {
+  assert.throws(() => xmlParser.parse(Buffer.from('<!DOCTYPE cmd [<!ATTLIST cmd mode CDATA "disabled">]><cmd name="x"/>')), (error: unknown) => error instanceof ParseForbiddenError && /属性声明/.test(error.message));
+  assert.throws(() => xmlParser.parse(Buffer.from('<!DOCTYPE cmd [<!ELEMENT cmd EMPTY>]><cmd/>')), ParseForbiddenError);
+});
+test('DOCTYPE presence and unread external-subset policy are explicit model structure', () => {
+  const doc = xmlParser.parse(Buffer.from('<!DOCTYPE x SYSTEM "http://192.0.2.1/never.dtd" [<!-- synthetic --><?pi synthetic?>]><x/>'));
+  assert.deepEqual(doc.model.doctype, { internalSubset: true, externalSubsetDeclared: true, externalSubsetRead: false });
+  assert.equal(doc.summary().doctype, true); assert.equal(doc.summary().internalSubset, true);
+  assert.equal(xmlParser.parse(Buffer.from('<x/>')).summary().doctype, false);
+});
