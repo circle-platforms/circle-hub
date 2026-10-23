@@ -1,5 +1,5 @@
 // Declarative literal relations over immutable tree content, with interpretation pinned to a composition.
-import { LINK_MATCH,REASON } from '../../contracts/generated/vocabulary.ts';
+import { LINK_MATCH,REASON,type Reason } from '../../contracts/generated/vocabulary.ts';
 import { LinkDeclaration, type LinkDeclaration as Rule } from '../../contracts/src/product.ts';
 import type { Backlinks, LinkEdge, LinkDrift, LinksView,LinkDiagnostic } from '../../contracts/src/views.ts';
 import { RunRecord } from '../../contracts/src/run.ts';
@@ -23,6 +23,12 @@ export function relationNode(entries:readonly {kind:string;producers:readonly st
 
 export interface RelationFacts { links: LinkEdge[]; drift: LinkDrift[]; entries: number; literals: number;diagnostics:LinkDiagnostic[] }
 export interface LinkRequest { prefix?: string; target?: string | null; rule?: string | null; cursor?: string | null; limit?: number;build?:string }
+export class RelationReadError extends Error {
+  readonly reason:Reason;
+  readonly nextAction:string;
+  constructor(reason:Reason,message:string,nextAction:string,cause?:unknown){super(message,{cause});this.name='RelationReadError';this.reason=reason;this.nextAction=nextAction;}
+}
+interface CompactRelations {targets:Map<string,{total:number;entries:Backlinks['entries']}>;notes:string[]}
 const summaryOf=(text:string)=>cutText(text.replace(/\s+/gu,' ').trim(),160);
 const beneath=(path:string,prefix:string)=>prefix==='/'||path===prefix||path.startsWith(prefix+'/');
 const rulesOf=(value:unknown):Rule[]=>{
@@ -101,6 +107,7 @@ export function relationFacts(root:string,declarations:readonly Rule[],nodes:Rel
 export class LinkReading {
   readonly #context:KnowledgeContext;readonly #builds:Builds;
   readonly #cache=new Lru<string,RelationFacts>(4,64*1024*1024);
+  readonly #compact=new Lru<string,CompactRelations>(4,64*1024*1024);
   constructor(context:KnowledgeContext,builds:Builds){this.#context=context;this.#builds=builds;}
   async compositionFor(root:string,reader:Principal,composition?:string|null):Promise<CompositionView|null>{
     if(composition){const body=await this.#context.store.composition(composition);return body?.root===root&&await this.#allowed(body.product,reader)?new CompositionView(this.#context.store,composition,body):null;}
@@ -127,23 +134,28 @@ export class LinkReading {
     return {found:true,root:body.root??null,composition:new Set(candidates).size===1?candidates[0]:null,build:body.build,product:body.product};
   }
   async facts(composition:CompositionView):Promise<RelationFacts>{
+    try{
     const cached=this.#cache.get(composition.record);if(cached)return cached;
-    if(composition.body.links===undefined)throw new Error('这份组成没有链接声明快照；下一步：重新生产这条线，并用新组成读取');
+    if(composition.body.links===undefined)throw new RelationReadError(REASON.find(reason=>reason==='no_check')!,'这份组成没有链接声明快照','重新生产这条线，并用新组成读取');
     if(composition.body.links.length===0)return {links:[],drift:[],diagnostics:[],entries:0,literals:0};
     const nodes=new Map<string,RelationNode>(),sources:LiteralSource[]=[],contents=new Map<string,EntryContent>(),owners=new Map<string,readonly string[]>();
     for await(const row of composition.contentRows(undefined)){contents.set(row.entry,row.content);owners.set(row.path+"\0"+row.entry,row.producers);}
     // Reachability comes from the node graph; a row alone never invents a target.
     const visit=async(digest:string,names:string[]):Promise<void>=>{
-      const node=await this.#context.store.node(digest);if(!node)throw new Error('组成引用的树节点缺失，需要修复存储后重读');
+      const node=await this.#context.store.node(digest);if(!node)throw new RelationReadError(REASON.find(reason=>reason==='integrity_unproven')!,'缺少关联树节点 '+digest,'请集成者 Claude 从已存原件重建缺失节点后重读同一组成');
       const kinds:Array<{kind:string;producers:readonly string[]}>=[];
-      for(const id of node.entries){const entry=contents.get(id)??await this.#context.store.entry(id);if(!entry)throw new Error('树条目缺失，需要修复存储后重读');const producers=owners.get(pathOf(names)+"\0"+id)??[];kinds.push({kind:entry.kind,producers});sources.push({path:pathOf(names),entry:id,content:entry,producers});}
+      for(const id of node.entries){const entry=contents.get(id)??await this.#context.store.entry(id);if(!entry)throw new RelationReadError(REASON.find(reason=>reason==='integrity_unproven')!,'缺少关联树条目 '+id,'请集成者 Claude 从已存原件重建缺失条目后重读同一组成');const producers=owners.get(pathOf(names)+"\0"+id)??[];kinds.push({kind:entry.kind,producers});sources.push({path:pathOf(names),entry:id,content:entry,producers});}
       nodes.set(pathOf(names),relationNode(kinds));
       for(const child of node.children)await visit(child.digest,[...names,child.name]);
     };
     await visit(composition.body.root,[]);
-    for await(const row of composition.unplacedRows()){const content=contents.get(row.entry)??await this.#context.store.entry(row.entry);if(!content)throw new Error('未归位条目缺失，需要修复存储后重读');sources.push({path:'/',entry:row.entry,content,unplaced:true,producers:row.producers});}
+    for await(const row of composition.unplacedRows()){const content=contents.get(row.entry)??await this.#context.store.entry(row.entry);if(!content)throw new RelationReadError(REASON.find(reason=>reason==='integrity_unproven')!,'缺少未归位关联条目 '+row.entry,'请集成者 Claude 从已存原件重建缺失条目后重读同一组成');sources.push({path:'/',entry:row.entry,content,unplaced:true,producers:row.producers});}
     const result=relationFacts(composition.body.root,composition.body.links,nodes,sources);
     this.#cache.set(composition.record,result,canonicalBytes(result).byteLength);return result;
+    }catch(error){
+      if(error instanceof RelationReadError)throw error;
+      throw new RelationReadError(REASON.find(reason=>reason==='check_error')!,'关联计算没有产出完整结果','请集成者 Claude 修复关联读取后重新执行本次读取',error);
+    }
   }
   async page(composition:CompositionView,request:LinkRequest={}):Promise<LinksView>{
     const prefix=request.prefix??'/',target=request.target??null,rule=request.rule??null;
@@ -178,10 +190,10 @@ export class LinkReading {
     if(at<flat.length){output.next=Buffer.from(JSON.stringify({q:key,o:at,c:composition.record})).toString('base64url');output.truncated=true;}
     return output;
   }
-  async backlinks(root:string,path:string,reader:Principal,composition?:string|null):Promise<Backlinks|undefined>{
+  async prepareBacklinks(root:string,reader:Principal,composition?:string|null,selected?:CompositionView|null):Promise<(path:string)=>Promise<Backlinks|undefined>>{
     const absent=(record:string|null,note:string):Backlinks=>({composition:record,configured:false,total:null,entries:[],truncated:false,notes:[note]});
-    if(composition===null)return absent(null,'这个运行没有锁定组成快照；下一步：以同样的输入新开运行，锁定组成后再读关联');
-    const view=await this.compositionFor(root,reader,composition);
+    if(composition===null)return async()=>absent(null,'这个运行没有锁定组成快照；下一步：以同样的输入新开运行，锁定组成后再读关联');
+    const view=selected===undefined?await this.compositionFor(root,reader,composition):selected;
     if(!view){
       const candidates:CompositionView[]=[];
       for(const production of await this.#context.store.productionsOfRoot(root)){
@@ -189,15 +201,34 @@ export class LinkReading {
         if(body&&body.links?.length!==0&&await this.#allowed(body.product,reader))candidates.push(new CompositionView(this.#context.store,record,body));
       }
       candidates.sort((a,b)=>compareText(a.record,b.record));
-      const candidate=candidates[0];if(!candidate)return undefined;
-      const id='knowledge:links:'+encodeURIComponent(candidate.body.product)+':'+encodeURIComponent(candidate.body.version.line)+'?target='+encodeURIComponent(path)+'&composition='+candidate.record;
-      return absent(null,'这个历史根没有选定唯一组成；下一步：按明确的组成读取关联视图 '+id);
+      const candidate=candidates[0];if(!candidate)return async()=>undefined;
+      return async(path:string)=>absent(null,'这个历史根没有选定唯一组成；下一步：按明确的组成读取关联视图 '+'knowledge:links:'+encodeURIComponent(candidate.body.product)+':'+encodeURIComponent(candidate.body.version.line)+'?target='+encodeURIComponent(path)+'&composition='+candidate.record);
     }
-    if(view.body.links===undefined)return absent(view.record,'这份组成没有链接声明快照；下一步：重新生产这条线，并用新组成读取');
-    if(view.body.links.length===0||!view.body.links.some(rule=>beneath(pathOf(pathSegments(path).map(word=>normalizedWord(rule,word))),pathOf(pathSegments(rule.namespace).map(word=>normalizedWord(rule,word))))))return undefined;
-    const facts=await this.facts(view),unique=new Map<string,LinkEdge>();
-    for(const edge of facts.links)if(edge.target===path)unique.set(edge.reference,edge);
-    const all=[...unique.values()].sort((a,b)=>compareText(a.reference,b.reference));
-    return {composition:view.record,configured:true,total:all.length,entries:all.slice(0,20).map(({reference,path,summary})=>({reference,path,summary})),truncated:all.length>20,notes:all.length>20?['还有未列出的反向引用；按此组成读取反向视图继续翻页']:[]};
+    if(view.body.links===undefined)return async()=>absent(view.record,'这份组成没有链接声明快照；下一步：重新生产这条线，并用新组成读取');
+    if(view.body.links.length===0)return async()=>undefined;
+    let pending:Promise<CompactRelations>|undefined;
+    const compact=()=>pending??=(async()=>{
+      const cached=this.#compact.get(view.record);if(cached)return cached;
+      const facts=await this.facts(view),grouped=new Map<string,Map<string,Backlinks['entries'][number]>>();
+      for(const edge of facts.links){const sources=grouped.get(edge.target)??new Map();sources.set(edge.reference,{reference:edge.reference,path:edge.path,summary:edge.summary});grouped.set(edge.target,sources);}
+      const targets=new Map([...grouped].map(([target,sources])=>{
+        const rows=[...sources.values()].sort((a,b)=>compareText(a.reference,b.reference));return [target,{total:rows.length,entries:rows.slice(0,20)}] as const;
+      }));
+      const result={targets,notes:facts.diagnostics.length?['有不合形状的来源字段未计入关联；修正生产器并重新生产后重读']:[]};
+      this.#compact.set(view.record,result,canonicalBytes([...targets]).byteLength);return result;
+    })();
+    return async(path:string)=>{
+      if(!view.body.links!.some(rule=>beneath(pathOf(pathSegments(path).map(word=>normalizedWord(rule,word))),pathOf(pathSegments(rule.namespace).map(word=>normalizedWord(rule,word))))))return undefined;
+      try{
+        const index=await compact(),value=index.targets.get(path)??{total:0,entries:[]};
+        return {composition:view.record,configured:true,total:value.total,entries:[...value.entries],truncated:value.total>20,notes:[...index.notes,...(value.total>20?['还有未列出的反向引用；按此组成读取反向视图继续翻页']:[])]};
+      }catch(error){
+        const failure=error instanceof RelationReadError?error:new RelationReadError(REASON.find(reason=>reason==='check_error')!,'关联索引没有产出完整结果','请集成者 Claude 修复关联索引后重新执行本次读取',error);
+        return absent(view.record,failure.message+'；下一步：'+failure.nextAction);
+      }
+    };
+  }
+  async backlinks(root:string,path:string,reader:Principal,composition?:string|null):Promise<Backlinks|undefined>{
+    return (await this.prepareBacklinks(root,reader,composition))(path);
   }
 }

@@ -16,7 +16,8 @@ import { LINK_MATCH } from '../../contracts/generated/vocabulary.ts';
 import { LinkDeclaration,Producer, type KnownBuild } from '../../contracts/src/product.ts';
 import { LinksView } from '../../contracts/src/views.ts';
 import { createKnowledgeReader } from './api.ts';
-import { resolveLiteral } from './links.ts';
+import { resolveLiteral,LinkReading } from './links.ts';
+import {Lru} from './store.ts';
 import { catalogXml,extraProducer,makeWorld,startPostgres,type World } from './test-support.ts';
 import type { TemporaryPostgres } from '../testing/postgres.ts';
 import type { ExternalReadContext } from '../ports.ts';
@@ -244,4 +245,26 @@ test('start_run binds a named links view through a workflow input before persist
   const result=await service.startRun(f.w.user,{pack:'links-input',product:'WIDGET',build:alias.name,inputs:{view:{external:'knowledge:links:widget:'+alias.name}}},{traceId:'1'.repeat(32),sessionId:null});
   assert.equal(result.call_result,'ok',JSON.stringify(result.errors));assert.equal(captured?.build,alias.name);assert.equal(captured?.composition,f.first.composition);
   assert.equal(result.run?.items[0].fields.composition,f.first.composition);assert.equal(result.run?.items[0].fields.links,2);
+});
+
+test('a node page builds relations once even when full relation facts cannot enter the shared cache',async t=>{
+  const f=await fixture(t),set=Lru.prototype.set,facts=LinkReading.prototype.facts;let calls=0,rejectCompact=true;
+  t.mock.method(Lru.prototype,'set',function(this:Lru<unknown,unknown>,key:unknown,value:unknown,weight?:number){
+    if(value!==null&&typeof value==='object'&&(('links'in value&&'drift'in value)||(rejectCompact&&'targets'in value)))return;
+    return set.call(this,key,value,weight);
+  });
+  t.mock.method(LinkReading.prototype,'facts',async function(this:LinkReading,...args:Parameters<typeof facts>){calls++;return facts.apply(this,args);});
+  const page=await f.w.knowledge.getNodes({root:f.first.root!,paths:['/terms'],depth:2},f.w.admin);assert.ok(page);assert.ok(page.nodes.length>2);
+  assert.equal(calls,1);assert.equal(page.nodes.find(node=>node.path==='/terms/alpha')?.backlinks?.total,1);
+  rejectCompact=false;
+  await f.w.knowledge.getNodes({root:f.first.root!,paths:['/terms'],depth:2},f.w.admin);assert.equal(calls,2);
+  await f.w.knowledge.getNodes({root:f.first.root!,paths:['/terms'],depth:2},f.w.admin);assert.equal(calls,2,'the compact per-target cache is reusable without retaining full literals');
+});
+test('a missing unrelated relation node preserves the requested definitions and gives a positioned repair action',async t=>{
+  const f=await fixture(t),root=await f.w.knowledge.store.node(f.first.root!);assert.ok(root);
+  const missing=root.children.find(child=>child.name==='notes')!.digest,read=f.w.knowledge.store.node.bind(f.w.knowledge.store);
+  t.mock.method(f.w.knowledge.store,'node',async(digest:string)=>digest===missing?null:read(digest));
+  const page=await f.w.knowledge.getNodes({root:f.first.root!,paths:['/terms/alpha'],depth:0},f.w.admin);
+  assert.ok(page);assert.equal(page.nodes[0].entries[0].statement,'Alpha');
+  assert.ok(page.coverage.note?.includes(missing));assert.match(page.coverage.note??'',/下一步.*重建.*重读/);
 });

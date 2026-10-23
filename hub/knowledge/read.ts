@@ -333,8 +333,9 @@ export class TreeReading {
     if (skippedCount > 0) notes.push(`一次最多读 ${MAX_NODE_PATHS} 个路径，其余 ${skippedCount} 个没有读：${skipped.join('、')}${skippedCount > skipped.length ? '…' : ''}`);
     let relationRoom=Math.max(0,pageBytes-walk.bytes);
     let relationNoteShown=false;
-    if(this.#relations)for(const node of page){
-      const backlinks=await this.#relations.backlinks(root,node.path,reader,hint===null?null:relationComposition?.record);
+    const relations=await this.#relations?.prepareBacklinks(root,reader,hint===null?null:relationComposition?.record,relationComposition);
+    if(relations)for(const node of page){
+      const backlinks=await relations(node.path);
       if(backlinks&&!backlinks.configured){if(!relationNoteShown){notes.push(...backlinks.notes);relationNoteShown=true;}continue;}
       if(backlinks){
         let used=canonicalSize({...backlinks,entries:[]}),kept=0;

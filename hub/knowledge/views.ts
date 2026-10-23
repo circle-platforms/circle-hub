@@ -34,7 +34,7 @@ import type { ExternalRead, ExternalReadContext, ExternalReaderPort, PacksPort }
 import { canonicalBytes, canonicalize, CREDENTIAL_FINDING_LIMIT, type DerivedCoverage, type ActionBody, type SourceArtifact } from '../records/api.ts';
 import { pathSegments, treeReference } from '../refs/api.ts';
 import { LinksView } from '../../contracts/src/views.ts';
-import { LinkReading } from './links.ts';
+import { LinkReading,RelationReadError } from './links.ts';
 import { CompositionView } from './composition.ts';
 import type { Builds } from './builds.ts';
 import type { ReadRow } from './composition.ts';
@@ -788,6 +788,7 @@ export class KnowledgeViews {
     try {
       return await this.#read(id, context, startedAt);
     } catch (error) {
+      if(error instanceof RelationReadError)return {ok:false,id:splitRevision(id).body,reason:error.message+'；下一步：'+error.nextAction};
       if (error instanceof ImpactRefusal) return { ok: false, id: splitRevision(id).body, reason: error.message };
       return { ok: false, id, reason: `知识视图出错：${describeError(error)}` };
     }
