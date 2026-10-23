@@ -5,7 +5,7 @@ const declaration={id:'demo',function:{module:'demo.ts'},tier:'advisory' as cons
 const bindings={packDir:'/synthetic',subject:{},context:{pack:'demo'}};
 test('pack unknowns require top-level missing; data.missing cannot substitute it',async()=>{
   for(const output of [[{verdict:'unknown',reason:'missing_input',statement:'缺原件',grounds:[],tier:'advisory',data:{missing:'原件'}}],[{verdict:'unknown',reason:'missing_input',statement:'缺原件',grounds:[],tier:'advisory',missing:'原件正文'}]]){
-    const result=await runCheck(declaration,{...bindings,functionRunner:async()=>({output,stdout:'',stderr:'',durationMs:0,truncated:{stdout:false,stderr:false},osIsolation:false})});
+    const result=await runCheck(declaration,{...bindings,functionRunner:async()=>({output,stdout:'',stderr:'',durationMs:0,truncated:false,osIsolation:false})});
     assert.ok(result[0].missing);
     assert.equal(result[0].reason,'missing' in output[0]?'missing_input':'check_error');
   }
