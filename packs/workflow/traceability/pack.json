@@ -1,15 +1,15 @@
 {
   "schema": "pack@1",
   "id": "traceability",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "kind": "workflow",
   "title": "追溯矩阵",
   "description": "构建的缺陷到用例的追溯矩阵：release notes 列出的缺陷条目和瘦身（fields=document,node,title）的用例索引，每个缺陷有没有已索引的用例携带它的编号；没有已索引用例的记未知（用例索引按构造不完整，不等于没有），从不记为不通过；不绑定产品线（输入的外部标识写明产品和构建）；只含事实要求项，开始运行时由 Hub 直接算出结果",
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "0a6e6caf42d021b240351130bc0a7dc8934c55a3939e5c27a272944ca601bc6a",
-      "size": 3614
+      "sha256": "2e10414b2082517fc3e99b2f6413d445a19dd23b7f036205b30ffc3ef4712f82",
+      "size": 4409
     },
     {
       "path": "checks.json",
@@ -18,13 +18,13 @@
     },
     {
       "path": "functions/check.ts",
-      "sha256": "6096e65cb7a1b9ad38590cf2a58a7989daf3ffba5615bdf9e8d42956c24c3c77",
-      "size": 10696
+      "sha256": "fb7082b910f80d099582767321ef9a1196c3ee116ba885bda1768d3eef84560b",
+      "size": 11877
     },
     {
       "path": "functions/counts.ts",
-      "sha256": "584c9677379399ff85042a8a8e42efd218d1e47b8ea66087c69000320101690e",
-      "size": 6317
+      "sha256": "923912e5b43cb0ddfa9b23b087a9e83e430e395248cf9f1042c4bda6f4153c36",
+      "size": 6560
     },
     {
       "path": "functions/expected.ts",
@@ -38,8 +38,8 @@
     },
     {
       "path": "functions/matrix.ts",
-      "sha256": "c9ec9f15eff21421648d9e476b6f335e813edfce4e5d0b014e054f010f9a5cbd",
-      "size": 5745
+      "sha256": "6a909bd8a89bf45c2cb55ad92004a260e18ac4bc208987c985b71af2bb566b72",
+      "size": 7331
     },
     {
       "path": "functions/params.ts",
@@ -48,13 +48,13 @@
     },
     {
       "path": "functions/plm-status.ts",
-      "sha256": "17b26797cfb8b49b79858428e0bc5d07b1509414ab764b1ba3e0812b1f79a552",
-      "size": 5203
+      "sha256": "7844e0775bbe8b0d189d3e75bea6415594a179c2a335d4d5888c14ef22ecb06e",
+      "size": 5338
     },
     {
       "path": "functions/project.ts",
-      "sha256": "71de634eda92bef78836e272e4e9200396b6a5a0182568a6de24f89c8ee17f01",
-      "size": 7654
+      "sha256": "272f79f2e58e016bab5cf224c51acb1e2203017302110c0fe4a20dc9842bd9d0",
+      "size": 8285
     },
     {
       "path": "functions/subject.ts",
@@ -68,8 +68,8 @@
     },
     {
       "path": "functions/types.ts",
-      "sha256": "a59013e08f02fe07d159cc1d40cb2335a2eda6a681cd1fe24cf63a3adf1ee8f8",
-      "size": 3982
+      "sha256": "00642d4068866708930874e4fcd7ef71f1fa218fd3af7436dc9db299502e9be2",
+      "size": 4120
     },
     {
       "path": "functions/views.ts",
@@ -83,28 +83,33 @@
     },
     {
       "path": "samples/negative/count-mismatch.json",
-      "sha256": "152ee79bdf1b1c6250da53f1da20904f3b889cbbb45fff90b7a1cb6855daacc0",
-      "size": 2850
+      "sha256": "c622ac793613a9d23a2491515d98011014ecf4af9bae47d08026da11aa7a6a41",
+      "size": 2881
     },
     {
       "path": "samples/negative/join-mismatch.json",
-      "sha256": "623e0c14962e29e42fc71ae1e4bbec8052ca09f82ee3e8b6ad3c941757bd0e47",
-      "size": 2943
+      "sha256": "ee6b777328d5de32769e96c2c377cf2084cc421c45df88d680ac8f6772103ac5",
+      "size": 2974
     },
     {
       "path": "samples/negative/status-conflict.json",
-      "sha256": "ed26ef01cb5916d434c424495ebe0c13cdd6393af9bf8c5644dbeb87722cfaab",
-      "size": 4127
+      "sha256": "f9cff4a65dfbce34e821a2510876b8b18e60ae40b54e3e48929f136a4da3409a",
+      "size": 4189
+    },
+    {
+      "path": "samples/negative/system-collision.json",
+      "sha256": "558e0f6090441a53f3cfb57135d8828259f147e7f5fbc044830a13728c40a52f",
+      "size": 5447
     },
     {
       "path": "samples/positive/counts-consistent.json",
-      "sha256": "94b5b19fb344e50b267adb01335370274731a4e2313e1798c5aaf8120b7b18d4",
-      "size": 3634
+      "sha256": "341f7612ace565076d7543e8c21fcde60c9bda032ae2fff8c077d7c9e762e7b3",
+      "size": 3696
     },
     {
       "path": "samples/positive/traced-with-cases.json",
-      "sha256": "60aeb2ed18762b39b07ff0306c595138eb48614f06db03402acd24f376df48a4",
-      "size": 4706
+      "sha256": "ae4f98e14e97e17273a533aeee23f10eb152a9aeb5f0535071e2157a000645be",
+      "size": 4768
     },
     {
       "path": "slots.schema.json",
@@ -118,13 +123,13 @@
     },
     {
       "path": "tables/codes.json",
-      "sha256": "14bf1bf2742908becd152f2ec765bbe77140c5a6409766726e506d8eeb7be2fc",
-      "size": 3342
+      "sha256": "90b67c45952a54a400950df6a9bf34c0ba5e75a9c30ca18a647929430e9149d0",
+      "size": 3735
     },
     {
       "path": "workflow.json",
-      "sha256": "26008c96d95f9814711faf92842e2e30df74f438be599cb18d6fd0ca4a1fd5d4",
-      "size": 1606
+      "sha256": "31bcc3f92ae9a65eae6d25b8e1dfa36253a22494994a0618c6ded2b98255afc6",
+      "size": 1716
     }
   ]
 }

@@ -44,13 +44,13 @@ describe('publishing the traceability pack', { skip }, () => {
     assert.ok(outcome.ok, outcome.ok ? '' : JSON.stringify(outcome.problems, null, 1));
     assert.equal(outcome.created, true);
     const report = outcome.report;
-    assert.deepEqual([report.samples.total, report.samples.passed, report.samples.failed, report.samples.sources.author], [5, 5, 0, 5]);
+    assert.deepEqual([report.samples.total, report.samples.passed, report.samples.failed, report.samples.sources.author], [6, 6, 0, 6]);
     assert.deepEqual(report.failures, []);
     assert.deepEqual(report.unsampled, []);
     assert.deepEqual(
       report.checks.map((c) => [c.check, c.positive, c.negative, c.marks]),
       [
-        ['traced', 1, 2, ['author_samples_only']],
+        ['traced', 1, 3, ['author_samples_only']],
         ['counts', 1, 1, ['author_samples_only']],
       ],
     );
@@ -58,7 +58,7 @@ describe('publishing the traceability pack', { skip }, () => {
       report.warnings.map((w) => w.rule),
       ['publish.author_samples_only', 'publish.author_samples_only'],
     );
-    assert.deepEqual([outcome.version.id, outcome.version.version, outcome.version.kind], ['traceability', '1.0.5', 'workflow']);
+    assert.deepEqual([outcome.version.id, outcome.version.version, outcome.version.kind], ['traceability', '1.0.6', 'workflow']);
     // The same content again is the same publication.
     const again = await registry.publish(owner, await staged());
     assert.ok(again.ok && again.created === false);
@@ -70,7 +70,7 @@ describe('publishing the traceability pack', { skip }, () => {
     const sample = JSON.parse(await readFile(path, 'utf8')) as { expect: Array<{ code?: string }> };
     sample.expect[0].code = 'traceability.no_such_code';
     await writeFile(path, `${JSON.stringify(sample, null, 2)}\n`);
-    await signPack(dir, { version: '1.0.6' });
+    await signPack(dir, { version: '1.0.7' });
     const outcome = await registry.publish(owner, dir);
     assert.ok(!outcome.ok);
     assert.ok(outcome.problems.some((p) => p.rule === 'publish.sample_failed' && p.message.includes('status_conflict')), JSON.stringify(outcome.problems, null, 1));
@@ -79,7 +79,7 @@ describe('publishing the traceability pack', { skip }, () => {
   it('refuses a version without a negative sample of the counts check', async () => {
     const dir = await staged();
     await rm(join(dir, 'samples/negative/count-mismatch.json'));
-    await signPack(dir, { version: '1.0.6' });
+    await signPack(dir, { version: '1.0.7' });
     const outcome = await registry.publish(owner, dir);
     assert.ok(!outcome.ok);
     assert.ok(outcome.problems.some((p) => p.rule === 'publish.unsampled'), JSON.stringify(outcome.problems, null, 1));
