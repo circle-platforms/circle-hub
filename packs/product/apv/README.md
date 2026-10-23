@@ -500,7 +500,10 @@ accepted.
   its own citation, because a fragment has to hold the words its entry claims; when the text's lines do not map one to one
   onto the ranges, the block is reported instead of being cited on its first range alone. A block whose text step one
   could not verify stays out of the model and is returned in
-  `uncited` with its kind, file, line, reason and next action, plus one warning line for the production: it is never
+  `uncited` with its kind, reason, next action and its place — the chapter file and that file's own line, because the
+  engine reports a line of the expanded text, which in an included chapter is no line a reader can open; the expanded line
+  is kept beside it as `expanded_line`, for the line map and step one's report. The misaligned-table and unverified-heading
+  warnings name the same place. One warning line for the production goes with it: a block is never
   handed to K1 without a selector, because K1 counts such a block as malformed and skips it, so the text would disappear
   from the knowledge with only a count left behind.
 - A paragraph entry cites the source line step one verified verbatim, and a table is mapped as the engine's own rows, one

@@ -247,3 +247,31 @@ test('a paragraph that runs across an include boundary cites each chapter file f
     JSON.stringify(produced.entries.map((entry) => [entry.statement, entry.fragments])),
   );
 });
+
+test('a report names the chapter file and that file\'s own line, not the line of the expanded text', async () => {
+  const out = await compile({
+    'book.adoc': '= Synthetic\n\ninclude::ch1.adoc[]\n\ninclude::ch2.adoc[]\n',
+    'ch1.adoc': '== 第一章\n\n第一节正文。\n',
+    // A checklist item: the engine drops the `[x]` mark, so no source line folds to the item's text and it is reported.
+    'ch2.adoc': '== 第二章\n\n* [x] 保存配置\n\n第二节正文。\n',
+  }, 'book.adoc');
+  const mapped = toK1Model(out.model, out.composition, 'cli');
+  assert.equal(mapped.uncited.length, 1, JSON.stringify(mapped.uncited));
+  const uncited = mapped.uncited[0]!;
+  assert.equal(uncited.file, 'ch2.adoc');
+  assert.equal(uncited.line, 3, 'the chapter\'s own line, which is what a reader opens');
+  assert.equal(uncited.expanded_line, 9, 'the line of the expanded text is kept apart, for the line map and step one\'s report');
+  assert.notEqual(uncited.line, uncited.expanded_line, 'the two line numbers are not the same in an included chapter');
+  assert.ok(mapped.warnings.some((warning) => warning.includes('ch2.adoc:3') && !warning.includes('ch2.adoc:9')), mapped.warnings.join('；'));
+  // What is cited is placed, and the entries of the chapter keep their own paths.
+  const produced = produceAdocEntries(mapped, { name: 'cli', slot: 'manual' });
+  assert.ok(produced.ok, JSON.stringify(produced));
+  assert.deepEqual(
+    produced.entries.map((entry) => [String(entry.statement), entry.path, entry.fragments[0]!.selector]),
+    [
+      ['第一节正文。', '/manual/cli/第一章', 'l/3'],
+      ['第二节正文。', '/manual/cli/第二章', 'l/5'],
+    ],
+    JSON.stringify(produced.entries.map((entry) => [entry.statement, entry.path, entry.fragments])),
+  );
+});

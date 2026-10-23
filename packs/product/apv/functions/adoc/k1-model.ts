@@ -401,8 +401,11 @@ function describedEntry(term: Block, value: Block | undefined): { text: string; 
 
 export interface Uncited {
   kind: string;
+  /** The chapter file, and that file's own line number — what a reader opens. */
   file: string | null;
   line: number | null;
+  /** The same block's line in the expanded text (the engine's own number), kept apart for the line map and step one's report. */
+  expanded_line: number | null;
   reason: string;
   next_action: string;
 }
@@ -630,7 +633,7 @@ export function toK1Model(model: ExpandedModel, composition: Composition, manual
     );
   }
   if (uncited.length > 0) {
-    const shown = uncited.slice(0, 5).map((one) => `${one.kind} ${one.file ?? '展开文本'}${one.line === null ? '' : `:${one.line}`}`).join('、');
+    const shown = uncited.slice(0, 5).map((one) => `${one.kind} ${one.file ?? '展开文本'}${one.line === null ? `第 ${one.expanded_line} 行` : `:${one.line}`}`).join('、');
     warnings.push(
       `有 ${uncited.length} 个块或表格行回核不到原文行，没有交给落点代码（不给它们发引用，也不让它们被当成“格式不对”悄悄丢掉）：${shown}${uncited.length > 5 ? ' 等' : ''}。` +
         '下一步：按这些文件和行号核对源行，修好源或定位器后按同一修订号重跑；在那之前这些文字没有进知识。',
@@ -649,23 +652,24 @@ function linesOf(selector: string): [number, number] {
   return [Number.isFinite(from) ? from : 1, Number.isFinite(to) ? to : from];
 }
 
-/** Where the engine put a block: the file and line of its own report, or the line of the expanded text. */
+/** Where the engine put a block: its chapter file and that file's own line, or the expanded line when the file is unknown. */
 function placeOf(model: ExpandedModel, block: Block): string {
-  const line = block.reportedLine;
-  if (line === null) return '行号不明的块';
-  const file = line >= 1 && line <= model.line_map.length ? model.line_map[line - 1]!.file : null;
-  return file === null ? `展开文本第 ${line} 行` : `${file}:${line}`;
+  return placeOfLine(model, block.reportedLine).place;
 }
 
-/** A block or row the mapping does not place: what the engine reported for it, where, and why no citation exists. */
+/**
+ * A block or row the mapping does not place: what the engine reported for it, where, and why no citation exists. The place
+ * is the chapter file and that file's own line — the engine reports a line of the expanded text, which in an included
+ * chapter is not a line of any file a reader can open; the expanded line is kept beside it.
+ */
 function uncitedOf(model: ExpandedModel, block: Block, reason: string): Uncited {
-  const line = block.reportedLine;
-  const file = line !== null && line >= 1 && line <= model.line_map.length ? model.line_map[line - 1]!.file : null;
+  const place = placeOfLine(model, block.reportedLine);
   return {
     kind: block.kind,
-    file,
-    line,
+    file: place.file,
+    line: place.line,
+    expanded_line: block.reportedLine,
     reason: reason === '' ? (block.unverifiedReason === '' ? '没有已核对的原文行' : block.unverifiedReason) : reason,
-    next_action: '按文件和行号核对源行（定位器已在 sourcemap 邻近行做过逐字比较，含结构标记、属性展开、行内标记、字符引用和排版替换的归一）；修好源或定位器后按同一修订号重跑',
+    next_action: '按文件和行号核对源行（定位器已在 sourcemap 邻近行做过逐字比较，含结构标记、属性展开、行内标记与宏、字符引用和排版替换的归一）；修好源或定位器后按同一修订号重跑',
   };
 }
