@@ -278,3 +278,17 @@ History rendering is connected through `readStoredValidationResult` and `StoredP
 counts, requirement states, problem lists and item blocks for legacy omissions. Missing recovery fields are disclosed as
 “出口未写” and “缺失事实未写”, including partition/item pointers and paged results. Reading never backfills those fields
 or changes stored bytes; current admission remains strict.
+
+### Required vocabulary scan for contract changes
+
+In addition to focused contract tests and generation checks, run:
+
+```sh
+node --test --test-concurrency=1 --test-name-pattern='uses generated axes' packs/workflow/case-review/packs.test.ts
+```
+
+The existing `.github/workflows/checks.yml` Unit tests job runs `npm run test:unit`; its `packs/**/*.test.ts` pattern
+already includes this scan. No extra CI job or relaxed exception is needed. Review item 6's old dispatch comparisons are
+fixed on this baseline. The narrow scan still reports unrelated lease_op comparisons in `hub/server/cli-admin.ts` and
+`packs/workflow/test-bed/functions/check-bed.ts`; those remain visible failures, not exclusions or verified passes.
+Their owners must fix the generated types; this branch does not edit the pack's unknown producers.
