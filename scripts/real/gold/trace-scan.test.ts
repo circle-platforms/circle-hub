@@ -130,3 +130,43 @@ test('the listed-versus-loaded document check is shared: a listed document witho
   assert.deepEqual(missing, ['doc-a', 'doc-c'], 'doc-b matches through its agile:case: spelling');
   assert.deepEqual(missingMapDocuments(listed, [{ document: 'doc-a' }, { document: 'doc-b' }, { document: 'doc-c' }]), []);
 });
+
+test('a partly read PLM prints an at-least closed count and ends on the unread statuses with their next action', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'gold-scan-partial-plm-'));
+  try {
+    for (const sub of ['fixed', 'cases', 'docs']) mkdirSync(join(dir, sub));
+    writeFileSync(join(dir, 'cases/doc-a.json'), JSON.stringify(map));
+    // One folder names both bugs, so both builds trace the case.
+    const treeBoth = [{ id: 'folder', label: '缺陷 910001、910002', cases: [], children: [{ id: 'doc-a', label: '合成文档', children: [] }] }];
+    writeFileSync(join(dir, 'tree.json'), JSON.stringify(treeBoth));
+    // PLM covers only build #1's defect: build #2's traced defect stays status-unknown, and nothing is closed.
+    writeFileSync(join(dir, 'plm.json'), JSON.stringify({ bugs: [{ id: '910001', status: 'open' }] }));
+    writeFileSync(join(dir, 'fixed/Bugs_Fixed_with_Synthetic_10_7_A.html'), html('910001'));
+    writeFileSync(join(dir, 'fixed/Bugs_Fixed_with_Synthetic_10_7_B.html'), html('910002'));
+    writeFileSync(join(dir, 'docs/Synthetic_10_7_A.json'), JSON.stringify(['doc-a']));
+    writeFileSync(join(dir, 'docs/Synthetic_10_7_B.json'), JSON.stringify(['doc-a']));
+    const run = spawnSync(process.execPath, ['scripts/real/gold/trace-scan.ts', '--fixed-dir', join(dir, 'fixed'), '--cases-dir', join(dir, 'cases'), '--tree', join(dir, 'tree.json'), '--docs-dir', join(dir, 'docs'), '--plm', join(dir, 'plm.json'), '--out', join(dir, 'out.json')], { encoding: 'utf8' });
+    assert.equal(run.status, 0, run.stderr);
+    assert.match(run.stdout, /#2：缺陷 1；已追溯 1；已关闭 ≥0（1 个状态未读），其中已追溯 0；状态未知 1/);
+    assert.match(run.stdout, /#2 有 1 个已追溯缺陷状态未读：对 #2 开追溯运行，导出 plm:bugs: 原件后加 --plm 重扫/);
+    assert.ok(!run.stdout.includes('没有找到已追溯的已关闭缺陷'), 'the absence line names the unread statuses instead');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('without --plm and nothing traced the scan says so instead of recommending #1', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'gold-scan-notraced-'));
+  try {
+    for (const sub of ['fixed', 'cases']) mkdirSync(join(dir, sub));
+    writeFileSync(join(dir, 'tree.json'), JSON.stringify(tree));
+    // No mindmaps at all: every defect is untraced.
+    writeFileSync(join(dir, 'fixed/Bugs_Fixed_with_Synthetic_10_7_D.html'), html('910001'));
+    const run = spawnSync(process.execPath, ['scripts/real/gold/trace-scan.ts', '--fixed-dir', join(dir, 'fixed'), '--cases-dir', join(dir, 'cases'), '--tree', join(dir, 'tree.json'), '--out', join(dir, 'out.json')], { encoding: 'utf8' });
+    assert.equal(run.status, 0, run.stderr);
+    assert.match(run.stdout, /没有已追溯的缺陷/);
+    assert.doesNotMatch(run.stdout, /建议 #1/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

@@ -46,22 +46,33 @@ export function main(argv: string[], print = (line: string) => process.stdout.wr
       // Without --plm the closed counts were never read: they stay null (unread), never 0 (the owner's rule — an
       // unknown is transient and names the missing fact and the next action).
       const unread = plm === undefined;
-      return { index: at, build, digest: createHash('sha256').update(build).digest('hex').slice(0, 12), defects: gold.defects.length, traced: gold.defects.filter((d) => d.cases.length > 0).length, closed: unread ? null : gold.closed_defects ?? 0, closed_traced: unread ? null : gold.closed_traced ?? 0, status_unknown: unread ? null : gold.status_unknown ?? 0 };
+      // A traced defect whose status PLM never answered (a partly exported plm:bugs: original).
+      const unreadTraced = gold.defects.filter((d) => d.cases.length > 0 && (d.defect_system_status === undefined || d.defect_system_status === null) && d.defect_system_unknown_reason !== undefined && d.defect_system_unknown_reason !== null).length;
+      return { index: at, build, digest: createHash('sha256').update(build).digest('hex').slice(0, 12), defects: gold.defects.length, traced: gold.defects.filter((d) => d.cases.length > 0).length, closed: unread ? null : gold.closed_defects ?? 0, closed_traced: unread ? null : gold.closed_traced ?? 0, status_unknown: unread ? null : gold.status_unknown ?? 0, unread_traced: unread ? null : unreadTraced };
     });
     const builds = buildsRaw.filter((b) => !('emptyList' in b));
-    const scans = builds as Array<{ index: number; build: string; digest: string; defects: number; traced: number; closed: number | null; closed_traced: number | null; status_unknown: number | null }>;
+    const scans = builds as Array<{ index: number; build: string; digest: string; defects: number; traced: number; closed: number | null; closed_traced: number | null; status_unknown: number | null; unread_traced: number | null }>;
     const read = scans.filter((b) => b.closed_traced !== null);
     const ranked = [...(read.length > 0 ? read : scans)].sort((a, b) => (b.closed_traced ?? 0) - (a.closed_traced ?? 0) || b.traced - a.traced || a.index - b.index);
     const recommendation = ranked[0]?.traced ? ranked[0].index : null;
     writeFileSync(resolve(out!), `${JSON.stringify({ document_filter: docsDir ? '按构建的文档清单筛选' : '没有按构建的文档清单筛选，使用全部脑图', builds: buildsRaw, recommendation }, null, 2)}\n`);
     for (const b of buildsRaw) if ('emptyList' in b) print(`#${b.index} 的文档清单是空的：这个构建没有列出文档，不进建议`);
     const unreadPlm = plm === undefined;
-    for (const b of scans) print(`#${b.index}：缺陷 ${b.defects}；已追溯 ${b.traced}；${unreadPlm ? '已关闭 未读（没给 --plm）；其中已追溯 未读；状态未知 未读（没给 --plm）' : `已关闭 ${b.closed}，其中已追溯 ${b.closed_traced}；状态未知 ${b.status_unknown}`}`);
+    for (const b of scans) print(`#${b.index}：缺陷 ${b.defects}；已追溯 ${b.traced}；${unreadPlm ? '已关闭 未读（没给 --plm）；其中已追溯 未读；状态未知 未读（没给 --plm）' : `${(b.status_unknown ?? 0) > 0 ? `已关闭 ≥${b.closed}（${b.status_unknown} 个状态未读）` : `已关闭 ${b.closed}`}，其中已追溯 ${b.closed_traced}；状态未知 ${b.status_unknown}`}`);
+    const nothingTraced = scans.every((b) => b.traced === 0);
     if (unreadPlm) {
-      print(`没给 PLM 原件，已关闭数未知：按已追溯数建议 #${recommendation ?? 1}；导出 plm:bugs: 原件后加 --plm --closed-statuses 重扫`);
+      // Nothing traced anywhere is a fact, not a default recommendation.
+      if (nothingTraced) print('没有已追溯的缺陷');
+      else print(`没给 PLM 原件，已关闭数未知：按已追溯数建议 #${recommendation ?? 1}；导出 plm:bugs: 原件后加 --plm --closed-statuses 重扫`);
     } else {
       if (recommendation !== null) print(`建议用 #${recommendation}`);
-      if (!ranked[0]?.closed_traced) print('没有找到已追溯的已关闭缺陷');
+      if (!ranked[0]?.closed_traced) {
+        // A traced defect whose status was never read names the build and the next action: the unknown is
+        // transient, never a bare absence.
+        const unreadBuild = scans.filter((b) => (b.unread_traced ?? 0) > 0).sort((a, b) => (b.unread_traced ?? 0) - (a.unread_traced ?? 0) || a.index - b.index)[0];
+        if (unreadBuild !== undefined) print(`#${unreadBuild.index} 有 ${unreadBuild.unread_traced} 个已追溯缺陷状态未读：对 #${unreadBuild.index} 开追溯运行，导出 plm:bugs: 原件后加 --plm 重扫`);
+        else print('没有找到已追溯的已关闭缺陷');
+      }
     }
     return 0;
   } catch (error) {
