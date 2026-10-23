@@ -169,7 +169,7 @@ describe('index metadata fields take precedence over URI and cap inference', () 
     const checked = outcome(view, NARROWED);
     assert.deepEqual(checked.compact.only, ['widget health interval']);
     assert.equal(checked.result.verdict, 'unknown');
-    assert.equal(outcome(view, NARROWED, duplicate).result.verdict, 'unknown');
+    assert.equal(outcome(view, NARROWED, duplicate).result.verdict, 'refute');
   });
 
   it('a truncated narrowed view stays unknown even with authoritative metadata', () => {
@@ -249,10 +249,25 @@ describe('requested keys missing from narrowed views', () => {
     assert.equal(check(view).verdict, 'support');
     assert.equal(check({ ...view, truncated: true }).verdict, 'unknown');
   });
-  it('truncation stays unknown even when a visible candidate looks like a duplicate', () => {
+  it('a visible duplicate remains refuted in a truncated source view', () => {
     const compact = buildCompactIndex({ ...SYNTHETIC_INDEX_VIEW, only: ['show health detail'], cut_keys: [], truncated: true });
     const result = checkDuplicate(inputOf({ drafts: [{ ...draft, title: '健康检查详细信息查看' }], indexed_cases: compact }))[0];
-    assert.equal(result.verdict, 'unknown');
-    assert.match(result.statement, /截断/);
+    assert.equal(result.verdict, 'refute');
+    assert.equal(result.code, 'defect-to-case.duplicate_case');
   });
+});
+
+ it('one visible duplicate does not suppress another draft needing coverage', () => {
+ const compact = buildCompactIndex({ ...SYNTHETIC_INDEX_VIEW, only: ['show health detail'], cut_keys: ['show health detail'], truncated: true });
+ const drafts = ['健康检查详细信息查看', '另一份合成用例'].map(title => ({ ...goodDraft({ title }), steps: [{ command: 'show health detail' }] }));
+ const results = checkDuplicate(inputOf({drafts, indexed_cases: compact}));
+ assert.ok(results.some(r => r.verdict === 'refute'));
+ assert.ok(results.some(r => r.verdict === 'unknown' && r.statement.includes('另一份合成用例') && /重新读取/.test(r.statement)));
+});
+
+it('compacting preserves the exact skipped-document fact needed to repair coverage', () => {
+  const compact = buildCompactIndex({ ...SYNTHETIC_INDEX_VIEW, only: ['show health detail'], cut_keys: [], truncated: false, skipped: 3 });
+  const result = checkDuplicate(inputOf({ drafts: [{ ...goodDraft(), steps: [{ command: 'show health detail' }] }], indexed_cases: compact }))[0];
+  assert.equal(result.verdict, 'unknown');
+  assert.match(result.statement, /缺少 3 份文档.*补取.*重新读取/);
 });
