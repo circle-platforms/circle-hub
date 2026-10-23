@@ -222,7 +222,7 @@ export class LinkReading {
       }
       candidates.sort((a,b)=>compareText(a.record,b.record));
       const candidate=candidates[0];if(!candidate)return async()=>undefined;
-      return async(path:string)=>absent(null,'这个历史根没有选定唯一组成；下一步：按明确的组成读取关联视图 '+'knowledge:links:'+encodeURIComponent(candidate.body.product)+':'+encodeURIComponent(candidate.body.version.line)+'?target='+encodeURIComponent(path)+'&composition='+candidate.record);
+      return async(path:string)=>absent(null,'这个根没有唯一当前组成；下一步：按明确的组成读取关联视图 '+'knowledge:links:'+encodeURIComponent(candidate.body.product)+':'+encodeURIComponent(candidate.body.version.build)+'?target='+encodeURIComponent(path)+'&composition='+candidate.record);
     }
     if(view.body.links===undefined)return async()=>absent(view.record,'这份组成没有链接声明快照；下一步：重新生产这条线，并用新组成读取');
     if(view.body.links.length===0)return async()=>undefined;

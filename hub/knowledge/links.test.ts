@@ -222,8 +222,7 @@ test('named alias targets use the frozen composition while another named build w
   assert.equal((await f.json(await reader.read('knowledge:links:widget:'+build.line,legacy))).view.composition,f.first.composition);
 });
 
-test('start_run binds a named links view through a workflow input before persisting the alias target',async t=>{
-  const f=await fixture(t),alias={...build,name:'Rel_ALIAS_10_6_1_3',base:build.name};await keepBuild(f.w,alias);
+async function linksWorkflow(t:{after(fn:()=>Promise<void>):void},f:Awaited<ReturnType<typeof fixture>>){
   const directory=await mkdtemp(join(tmpdir(),'links-binding-'));t.after(()=>rm(directory,{recursive:true,force:true}));
   const path=await writePack(directory,{id:'links-input',version:'1.0.0',kind:'workflow',title:'合成关联输入',description:'合成关联读取',
     files:{
@@ -236,6 +235,11 @@ test('start_run binds a named links view through a workflow input before persist
       'functions/project.ts':"export default function(input:any){const value=input.inputs[0].model;return {items:[{id:'view',label:'合成关联',location:{slot:'view',parser:'json@1',selector:'p/schema'},fields:{composition:value.composition,links:value.totals.links}}],warnings:[]};}",
     }});
   const workflows=new FakeWorkflowStore();await workflows.add(path);workflows.assign(f.w.user.id,'links-input');
+  return workflows;
+}
+test('start_run binds a named links view through a workflow input before persisting the alias target',async t=>{
+  const f=await fixture(t),alias={...build,name:'Rel_ALIAS_10_6_1_3',base:build.name};await keepBuild(f.w,alias);
+  const workflows=await linksWorkflow(t,f);
   const reader=createKnowledgeReader(f.w.knowledge);let captured:ExternalReadContext|undefined;
   const external={accepts:(id:string)=>reader.accepts(id),read:async(id:string,context:ExternalReadContext)=>{
     captured=context;
@@ -306,4 +310,24 @@ test('production drift warnings truncate only complete literals with an explicit
   const details=warning.split('（漂移事实）：')[1].slice(0,-2).split('、');
   assert.ok(details.length>0&&details.length<40);assert.ok(details.every(value=>literals.includes(value)));
   assert.ok(warning.split('（漂移事实）：')[1].length<=800);
+});
+
+
+test('a historical composition hint binds through start_run while another build is the target',async t=>{
+  const f=await fixture(t);f.w.product.product.producers=[Producer.parse(extraProducer('entities',{entries:[...entries,content('/new','behaviour','New root')]}))];f.w.product.digest='f'.repeat(64);
+  assert.ok((await f.w.knowledge.produceTree({product:f.w.product,build})).ok);await f.w.knowledge.reconcileLine('widget',build.line,f.w.admin);
+  const other={...build,name:'Rel_WIDGET_10_6_2_1',base:'Rel_WIDGET_10_6_2_1',line:'10.6.2'};
+  const produced=await f.w.knowledge.produceTree({product:f.w.product,build:other});assert.ok(produced.ok);await f.w.knowledge.reconcileLine('widget',other.line,f.w.admin);
+  const page=await f.w.knowledge.getNodes({root:f.first.root!,paths:['/terms/alpha'],depth:0},f.w.admin);assert.ok(page);
+  const hint=page.coverage.note?.match(/knowledge:links:[^\s；]+/u)?.[0];assert.ok(hint);
+  const workflows=await linksWorkflow(t,f),external=createKnowledgeReader(f.w.knowledge);
+  const service=createRunsService({records:f.w.kit,workflows,packs:f.w.packs,knowledge:f.w.knowledge,external,sandbox:{requireOsIsolation:await osIsolationAvailable()}});
+  const result=await service.startRun(f.w.user,{pack:'links-input',product:'WIDGET',build:other.name,inputs:{view:{external:hint}}},{traceId:'2'.repeat(32),sessionId:null});
+  assert.equal(result.call_result,'ok',JSON.stringify(result.errors));assert.equal(result.run?.items[0].fields.composition,f.first.composition);
+});
+test('a root current on multiple lines reports an ambiguous current composition rather than history',async t=>{
+  const f=await fixture(t),other={...build,name:'Rel_WIDGET_10_6_2_1',base:'Rel_WIDGET_10_6_2_1',line:'10.6.2'};
+  assert.ok((await f.w.knowledge.produceTree({product:f.w.product,build:other})).ok);await f.w.knowledge.reconcileLine('widget',other.line,f.w.admin);
+  const page=await f.w.knowledge.getNodes({root:f.first.root!,paths:['/terms/alpha'],depth:0},f.w.admin);assert.ok(page);
+  assert.match(page.coverage.note??'',/没有唯一当前组成/);assert.doesNotMatch(page.coverage.note??'',/历史根/);
 });
