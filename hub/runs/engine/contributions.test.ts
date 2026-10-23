@@ -368,13 +368,23 @@ test('a layer write failure rolls back every contribution before the not-accepte
 });
 
 
-test('a revoked source acceptance withholds contribution copies without changing historical receipts',async t=>{
+test('a revoked source acceptance returns safe markers without changing original records or receipts',async t=>{
   const w=await setup(t,{acceptedRoot:true});const result=await w.service.submitResult(w.admin,w.args(),call);
   assert.equal(result.result?.contributions?.stored.length,4,JSON.stringify(result.errors));
   const digest=result.result!.contributions!.stored[0].record;
   assert.ok(await w.knowledge.layers.contributions.read(digest,w.user));
   await w.kit.artifacts.revokeFindings(w.admin,w.original,'结束合成演练');
   assert.equal(await w.knowledge.layers.contributions.read(digest,w.user),null);
-  assert.deepEqual(await w.knowledge.layers.contributions.list(w.root,['/commands/system/show'],w.user),[]);
+  const views=await w.knowledge.layers.contributions.list(w.root,['/commands/system/show'],w.user);
+  assert.equal(views.length,4);
+  for(const view of views){
+    assert.equal(view.status,'credential_unreadable');assert.match(view.note??'',/管理员/);
+    assert.ok(!('statement'in view.contribution));assert.ok(!('quote'in view.contribution.source));
+    if(view.contribution.relation)assert.ok(!('quote'in view.contribution.relation.other));
+  }
+  const node=await w.knowledge.getNodes({root:w.root,paths:['/commands/system/show'],depth:0},w.user);
+  const text=toolText('get_nodes',{call_result:'ok',errors:[],trace:call.traceId,root:w.root,nodes:node!.nodes});
+  assert.match(text,/含凭据，原文不可读/);assert.match(text,/管理员/);
+  const raw=await w.kit.store.get(digest);assert.ok('statement'in (raw!.body as object));
   assert.deepEqual(await w.service.submitResult(w.admin,w.args(),call),result);
 });

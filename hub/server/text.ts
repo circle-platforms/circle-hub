@@ -963,6 +963,10 @@ function nodeEntry(node: KnowledgeNode, root: string, room: number): Entry {
   for (const view of node.contributions ?? []) {
     const c = view.contribution;
     const clip = new Clip(`rec:${view.record}`);
+    if(!('statement'in c)){
+      entries.push({text:`  · [${labelOf('knowledge_layer',c.layer)}] ${clip.field(view.note??labelOf('validity_status',view.status),CLIP.field,'受限说明的超出部分')}；来源 ${c.source.reference}；提交人 ${c.submitted_by}；时间 ${c.submitted_at}；依据 ${labelOf('basis_rank',c.basis_rank)}；引用 rec:${view.record}`,omitted:clip.omitted});
+      continue;
+    }
     entries.push({ text: `  · [${labelOf('knowledge_layer', c.layer)} / ${labelOf('document_output_kind', c.kind)}] ${clip.field(c.statement, CLIP.field, '回注陈述的超出部分')}；来源 ${c.source.reference}（${labelOf('provenance_type',c.source.provenance)}）；适用 ${clip.field(applicabilityText(c.applicability),CLIP.name,'适用条件的超出部分')}；提交人 ${c.submitted_by}；时间 ${c.submitted_at}；依据 ${labelOf('basis_rank',c.basis_rank)}；引用 rec:${view.record}${view.note === null ? '' : '；'+view.note}${c.relation === undefined ? '' : '；关系 '+labelOf('relation_kind',c.relation.kind)+' → '+c.relation.other.reference}`, omitted: clip.omitted });
   }
   const children = node.children.map((child) => {

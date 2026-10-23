@@ -36,6 +36,12 @@ export const KnowledgeContributionBody=z.strictObject({
   basis_rank:BasisRankSchema,applicability:Applicability.nullable(),
 });
 export type KnowledgeContributionBody=z.infer<typeof KnowledgeContributionBody>;
-export const KnowledgeContributionView=z.strictObject({record:Sha256,contribution:KnowledgeContributionBody,
-  status:ValidityStatusSchema.extract(['valid','cited_fragment_changed']),note:z.string().nullable()});
+export const WithheldContributionSource=ContributionSource.omit({quote:true});
+export const WithheldContributionBody=KnowledgeContributionBody.omit({statement:true,source:true,relation:true}).extend({
+  source:WithheldContributionSource,relation:ContributionRelationRecord.omit({other:true}).extend({other:WithheldContributionSource}).optional(),
+});
+export const KnowledgeContributionView=z.union([
+  z.strictObject({record:Sha256,contribution:KnowledgeContributionBody,status:ValidityStatusSchema.extract(['valid','cited_fragment_changed']),note:z.string().nullable()}),
+  z.strictObject({record:Sha256,contribution:WithheldContributionBody,status:ValidityStatusSchema.extract(['credential_unreadable']),note:z.string()}),
+]);
 export type KnowledgeContributionView=z.infer<typeof KnowledgeContributionView>;

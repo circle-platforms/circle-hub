@@ -1,6 +1,6 @@
 // K03: deterministic admission beside the tree. The caller supplies the run boundary's scoped resolver;
 // it never supplies an evidence grade, provenance or an applicability declaration.
-import { ContributionInput, ContributionSource, KnowledgeContributionBody, type KnowledgeContributionView } from '../../contracts/src/contributions.ts';
+import { ContributionInput, ContributionSource, KnowledgeContributionBody, WithheldContributionBody, type KnowledgeContributionView } from '../../contracts/src/contributions.ts';
 import type { RootSource } from '../../contracts/src/knowledge.ts';
 import type { ProtocolCode } from '../../contracts/generated/protocol.ts';
 import { labelOf, type ProvenanceType } from '../../contracts/generated/vocabulary.ts';
@@ -24,6 +24,7 @@ export interface ContributionOrigin {
   run: string; submission: string; session: string | null; model: string;
 }
 export type PreparedContribution = Omit<KnowledgeContributionBody, 'submitted_at' | 'run' | 'submission' | 'session' | 'model'>;
+interface GroundState {visible:boolean;held:boolean}
 interface Preparation {
   composition: CompositionView;
   originals: Map<string, RootSource>;
@@ -210,11 +211,14 @@ export class ContributionLayer {
   async read(digest: string, reader: Principal): Promise<StoredRecord | null> {
     const record = await this.#context.records.store.get(digest);
     const body = record === null ? null : KnowledgeStore.contributionOf(record);
-    return body !== null && await this.mayRead(body.product, reader) && await this.#groundsReadable(body, reader, new Map()) ? record : null;
+    if(body===null||!(await this.mayRead(body.product,reader)))return null;
+    const state=await this.#groundsState(body,reader,new Map());
+    return state.visible&&!state.held?record:null;
   }
 
   /** A copied quotation does not bypass a later credential hold on its original. Tier-aware reads do not rescan. */
-  async #groundsReadable(body: KnowledgeContributionBody, reader: Principal, cache: Map<string, Promise<boolean>>): Promise<boolean> {
+  async #groundsState(body: KnowledgeContributionBody, reader: Principal, cache: Map<string, Promise<GroundState>>): Promise<GroundState> {
+    let held=false;
     for (const source of [body.source, ...(body.relation === undefined ? [] : [body.relation.other])]) {
       const tree = parseReference(source.reference).scheme === 'tree';
       for (const digest of source.records) {
@@ -225,20 +229,36 @@ export class ContributionLayer {
         if (readable === undefined) {
           readable = (async () => {
             const record = await this.#context.records.store.get(digest);
-            if (record === null) return false;
-            if (record.kind !== 'source_artifact') return tree;
+            if (record === null) return {visible:false,held:false};
+            if (record.kind !== 'source_artifact') return {visible:tree,held:false};
             const original = record as SourceArtifact;
-            if (!original.body.visibility.admins) return false;
+            if (!original.body.visibility.admins) return {visible:false,held:false};
             const principal = tree ? await this.#custodian(reader) : reader;
-            const current = await this.#context.records.artifacts.source(principal, original.body.sha256, {consumer:'model',record:digest});
-            return current !== null && current.bytes !== null;
+            const current = await this.#context.records.artifacts.source(principal, original.body.sha256, {consumer:tree?'function':'model',record:digest});
+            if(current===null)return {visible:false,held:false};
+            if(current.bytes!==null)return {visible:true,held:false};
+            return {visible:current.readTier==='retain_only',held:current.readTier==='retain_only'};
           })();
           cache.set(key, readable);
         }
-        if (!(await readable)) return false;
+        const state=await readable;if(!state.visible)return state;held ||= state.held;
       }
     }
-    return true;
+    return {visible:true,held};
+  }
+
+  #withheld(record:string,body:KnowledgeContributionBody):KnowledgeContributionView {
+    const {statement:_statement,source,relation,...metadata}=body;const {quote:_quote,...safeSource}=source;
+    const safeOther=relation===undefined?undefined:(({quote:_quote,...rest})=>rest)(relation.other);
+    return {record,contribution:WithheldContributionBody.parse({...metadata,source:safeSource,...(relation===undefined?{}:{relation:{kind:relation.kind,other:safeOther}})}),status:'credential_unreadable',
+      note:`${labelOf('validity_status','credential_unreadable')}；缺少当前可供模型读取的原件，须由管理员核查扫描结论；确属误报才受理后重读，真凭据须清理并重新采集；不要转述陈述或引文`};
+  }
+
+  async readView(digest:string,reader:Principal):Promise<KnowledgeContributionView|null>{
+    const record=await this.#context.records.store.get(digest);const body=record===null?null:KnowledgeStore.contributionOf(record);
+    if(body===null||!(await this.mayRead(body.product,reader)))return null;
+    const state=await this.#groundsState(body,reader,new Map());if(!state.visible)return null;
+    return state.held?this.#withheld(digest,body):{record:digest,contribution:body,status:'valid',note:null};
   }
 
   async list(root: string, paths: readonly string[], reader: Principal): Promise<KnowledgeContributionView[]> {
@@ -251,11 +271,12 @@ export class ContributionLayer {
     const out: KnowledgeContributionView[] = [];
     const digests = new Map<string, string | null>();
     const endpoints=new Map<string,Promise<string|null>>();
-    const readable = new Map<string, Promise<boolean>>();
+    const readable = new Map<string, Promise<GroundState>>();
     for (const record of records) {
       const body = KnowledgeStore.contributionOf(record);
       if (body === null || !paths.includes(body.path)) continue;
-      if (!(await this.#groundsReadable(body, reader, readable))) continue;
+      const state=await this.#groundsState(body,reader,readable);if(!state.visible)continue;
+      if(state.held){out.push(this.#withheld(record.digest,body));continue;}
       if (!digests.has(body.path)) {
         const fragment = await this.#reading.treeReader().read(root, body.path, null, { user: reader.id, role: reader.role });
         digests.set(body.path, fragment === null ? null : sha256Hex(fragment.text));

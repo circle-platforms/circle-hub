@@ -431,6 +431,15 @@ async function readReference(deps: ServerDeps, call: ToolCall, reference: string
     if (!(error instanceof ReferenceSyntaxError)) throw error;
     return { answer: errorAnswer('get_nodes', [{ code: 'REFERENCE_UNRESOLVED', message: `引用格式不对：${error.message}`, fix: PROTOCOL_CODES.REFERENCE_UNRESOLVED.fix }]) };
   }
+  if(parsed.scheme==='rec'){
+    const layer=(deps.knowledge as typeof deps.knowledge&{layers?:{contributions:ContributionLayer}}).layers?.contributions;
+    const view=await layer?.readView(parsed.record,call.principal);
+    if(view?.status==='credential_unreadable'){
+      if(cursor!==null){const problem=pageCursorProblem(reference,cursor);if(problem!==null)return {answer:errorAnswer('get_nodes',[violation('get_nodes','/cursor',problem,CURSOR_FIX)])};}
+      // A dynamic access marker is not a rewritten record. Never send a redacted body under the original digest.
+      return {answer:{call_result:'ok',errors:[],content:{reference,read_tier:'retain_only',readable:false,sha256:parsed.record,note:view.note,structure:{status:view.status,record:view.record}}}};
+    }
+  }
   // A withheld source (retain_only) comes back from the reader with null bytes; refs answers it with the note and without
   // evaluating the selector, so absent and withheld follow refs' one rule.
   const sources = sourceReaderFor(deps.records, call.principal, 'function', note);
