@@ -1,6 +1,6 @@
 # 需求追溯矩阵
 
-独立工作流包 story-traceability 1.0.4。按任务页 gold-trace 第 5 条实现；Hub 仅分发和核验，用户给出的需求编号是主路径。编号精确数字规范化，需求号只连接 stories 键，不读取 defects。按请求编号分别核对覆盖范围：已列出的连接给确定事实，部分明细给条目下限；只有没有连接且覆盖范围无法证明的编号才拒绝；无连接是锁定知识根完整需求号索引覆盖内的确定事实，不推出未索引用例不存在。PLM 未返回仍是条目，状态和阶段各自保留原样，不定义已交付。
+独立工作流包 story-traceability 1.0.5。按任务页 gold-trace 第 5 条实现；Hub 仅分发和核验，用户给出的需求编号是主路径。编号精确数字规范化，需求号只连接 stories 键，不读取 defects。按请求编号分别核对覆盖范围：已列出的连接给确定事实，部分明细给条目下限；只有没有连接且覆盖范围无法证明的编号才拒绝；无连接是锁定知识根完整需求号索引覆盖内的确定事实，不推出未索引用例不存在。PLM 未返回仍是条目，状态和阶段各自保留原样，不定义已交付。
 
 可选构建路径由 PLM 资源 settings.build_story_field 指定真实顶层编号数组，配合 build 槽和 build_id。字段名属于管理员部署数据，不是用户参数。缺配置或字段时拒绝并向用户索取编号。范围依据在事实数据用 provenance_type 的 observed，用户范围用 declared；摘要通过生成的 labelOf 显示标签。主路径优先，避免混合两种范围。一个条目最多一份一致 PLM 详情；批次冲突拒绝，不采用最后写入。
 
@@ -44,8 +44,8 @@ Closure review 1: projection refusals carry warnings: [] as projection-output@1 
 
 A listed key supplies a determinate positive index fact even if cut or missing entry bodies. indexed_match_count counts
 unique digest links; case_count remains readable bodies. Partial/cut/only views say at least N indexed entries and never
-claim an absent story from an empty returned subset. Only requested ids without links need the complete global key and
-entry listing, no skipped source, no missing bodies and no only filter to establish absence. Unrelated cuts do not refuse
+claim an absent story from an empty returned subset. Only requested ids without links need the complete global key
+listing, no skipped source and no only filter to establish absence. Unrelated cuts do not refuse
 a run whose requested facts are already determined. A refusal lists only undetermined ids. Counts cover those requested
 identities; partial detail is stated as a lower bound rather than an impossible instruction to remove a fixed core cap.
 
@@ -70,3 +70,9 @@ status_nonscalar and stage_nonscalar are top-level summary counts, not new vocab
 the possibly long status list, in both summary data and the statement: PLM 返回的状态不是单个值的有 k 个，没有按状态计数.
 A long-state regression checks that the non-scalar counts remain in the first 500 characters. The independent raw-input
 gold and its checker use the same rule; a missing counter or an invented null group fails verification. Version 1.0.4.
+
+Closure B1: absence uses the complete key listing, not entry totals or unrelated missing bodies. Each row keeps an exact
+count unless its raw aliases are cut, keys/sources are incomplete, only is set, its own bodies are missing, or credential
+exclusions may affect it. Credential exclusion notes keep positive counts conservative; core must expose per-key excluded
+counts (and a structured exclusion flag) to remove that conservatism without interpreting notes. Undetermined ids can be
+omitted to run the determinate remainder. Unrelated per-key cuts alone do not lower an uncut row count.

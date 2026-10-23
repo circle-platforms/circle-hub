@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "story-traceability",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "kind": "workflow",
   "title": "需求追溯矩阵",
   "description": "用户给出的需求编号或管理员配置的构建记录需求范围到已索引用例的矩阵；只核验事实，保留原样状态和阶段，按请求编号报告已列出的确定命中与条目下限，仅拒绝无法判断的编号，不绑定产品线",
@@ -18,8 +18,8 @@
     },
     {
       "path": "functions/check.ts",
-      "sha256": "df6b8aa3373c208cc915a6f9e6f90791ddbc19857caedc3ecaccaed982de9266",
-      "size": 5982
+      "sha256": "fd2d0159f4bbc64389a33cfd6893603bb45632f48dc4b15264435e908eb0f684",
+      "size": 6000
     },
     {
       "path": "functions/counts.ts",
@@ -48,8 +48,8 @@
     },
     {
       "path": "functions/project.ts",
-      "sha256": "5779df8fc6a0b32892b32b2cf80e2a69bf8c180f8383e2c0688e8f285c279871",
-      "size": 11202
+      "sha256": "70295e3b89fb91e97bd57c5f06193e5be4bd71da099fe335e91623b31fb9fc01",
+      "size": 11492
     },
     {
       "path": "functions/scope.ts",

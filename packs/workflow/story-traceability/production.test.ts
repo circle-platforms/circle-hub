@@ -24,7 +24,7 @@ describe('synthetic story production run', { skip }, () => {
     assert.deepEqual([count.statement.data?.stories, count.statement.data?.traced, count.statement.data?.plm_unread], [2, 1, 1]);
     const unknown = result.production.result.partitions.delivered.find(i => i.item === '22')!;
     assert.equal(unknown.requirements[0].claims[0].statement.verdict, 'support');
-    assert.match(unknown.requirements[0].claims[0].statement.text, /完整需求号索引视图/);
+    assert.match(unknown.requirements[0].claims[0].statement.text, /完整需求号键列表覆盖的索引视图/);
   });
   test('build-derived scope reads details automatically and records its origin', async () => {
     const casesId = `knowledge:index:apv:${BUILD.name}?kind=case&key=stories&fields=document,node,title`;

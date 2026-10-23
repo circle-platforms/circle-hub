@@ -89,20 +89,22 @@ export function projectItems(input: unknown): unknown {
         stories: Object.hasOwn(data, 'stories') ? strings(data.stories) : null });
     }
   }
-  const absenceComplete = view.only === null && view.skipped === 0 && view.missing === 0
-    && view.total_keys === Object.keys(view.keys).length && view.total_entries === Object.keys(view.entries).length;
+  const absenceComplete = view.only === null && view.skipped === 0 && view.total_keys === Object.keys(view.keys).length;
   const undetermined: string[] = [];
   for (const row of rows.values()) {
     const digests = digestsById.get(row.id) ?? new Set<string>();
     row.indexed_match_count = digests.size;
-    row.case_count_lower_bound = digests.size > 0 && (view.truncated || view.skipped > 0 || view.missing > 0
-      || view.cut_keys.length > 0 || view.only !== null || view.total_keys !== Object.keys(view.keys).length
-      || view.total_entries !== Object.keys(view.entries).length);
+    const ownKeys = Object.keys(view.keys).filter(key => normalizeId(key) === row.id);
+    const missingBodies = [...digests].some(digest => view.entries[digest] === undefined);
+    // The current core signals credential exclusions only in notes, without their per-key counts.
+    const excluded = view.notes.some(note => note.includes('凭据扫描命中'));
+    row.case_count_lower_bound = digests.size > 0 && (ownKeys.some(key => view.cut_keys.includes(key))
+      || !absenceComplete || missingBodies || excluded || view.truncated && view.cut_keys.length === 0);
     row.coverage_complete = digests.size > 0 ? !row.case_count_lower_bound : absenceComplete;
     if (digests.size === 0 && !absenceComplete) undetermined.push(row.id);
   }
   if (undetermined.length) return fail(`缺少需求 ${undetermined.join('、')} 的完整规范化编号检索：知识根 ${view.root}，键 ${Object.keys(view.keys).length}/${view.total_keys}，正文 ${Object.keys(view.entries).length}/${view.total_entries}，未读来源 ${view.skipped}；来源说明：${view.notes.join('；') || '请读取该根的来源清单定位未读来源'}；不能据此判断没有条目`,
-    '先核对这些编号在索引中的原始键写法，可用 only=<原始键> 视图取得命中；未命中仍不能证明不存在。请核心维护人提供按规范化编号匹配的 only= 及完整性标记（见 README Needs），再绑定明确覆盖这些编号的视图；来源确实缺失时由管理员恢复来源并运行知识同步');
+    `可先去掉无法确定的编号 ${undetermined.join('、')} 后重新运行其余编号；先核对这些编号在索引中的原始键写法，可用 only=<原始键> 视图取得命中；未命中仍不能证明不存在。请核心维护人提供按规范化编号匹配的 only= 及完整性标记（见 README Needs），再绑定明确覆盖这些编号的视图；来源确实缺失时由管理员恢复来源并运行知识同步`);
   const items: ProjectedItem[] = [...rows.values()].sort((a, b) => Number(a.id) - Number(b.id)).map(row => {
     row.cases = [...(byId.get(row.id)?.values() ?? [])].sort((a, b) => a.case < b.case ? -1 : a.case > b.case ? 1 : (a.reference < b.reference ? -1 : a.reference > b.reference ? 1 : 0));
     const loc = locations.get(row.id)!;

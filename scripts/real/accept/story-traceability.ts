@@ -35,7 +35,7 @@ export default function scenario(gold: StoryGold): Scenario {
         const claim = text.split(/\r?\n/).find(l => l.includes(`需求 ${row.story}（状态：`)) ?? '';
         add(`${label} 条目存在`, lines.length > 0);
         if (row.cases.length === 0) {
-          add(`${label} 缺用例为覆盖范围内的确定事实`, lines.some(l => l.includes('无已索引用例（完整视图内）')) && claim.includes('完整需求号索引视图') && claim.includes(`没有条目携带需求号 ${row.story}`) && !claim.includes('下一步'));
+          add(`${label} 缺用例为覆盖范围内的确定事实`, lines.some(l => l.includes('无已索引用例（完整视图内）')) && claim.includes('完整需求号键列表覆盖的索引视图') && claim.includes(`没有条目携带需求号 ${row.story}`) && !claim.includes('下一步'));
         } else {
           const count = new RegExp(`需求 ${escape(row.story)}（[^\\n]*?）：([0-9]+) 个已索引用例追溯：`).exec(claim);
           const section = claim.split('已索引用例追溯：')[1]?.split(/；另有|；来源部分|；需求范围/)[0] ?? '';
