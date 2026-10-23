@@ -44,7 +44,9 @@ export async function getRun(ctx: EngineContext, user: Principal, run: string): 
     });
   }
   const latest = await latestAccepted(store, run);
-  return { run: stored.body, submissions, latest: latest === null ? null : { record: latest.digest, result: latest.body } };
+  const production = results.find(result => result.body.submission === stored.digest);
+  return { run: stored.body, submissions, latest: latest === null ? null : { record: latest.digest, result: latest.body },
+    production: production === undefined ? null : {record:production.digest,result:production.body} };
 }
 
 export async function listRuns(ctx: EngineContext, user: Principal, query: { pack?: string; limit?: number; cursor?: string | null } = {}): Promise<Page<RunRecord>> {

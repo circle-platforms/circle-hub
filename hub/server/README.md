@@ -231,6 +231,44 @@ links are fixed paths with encoded query parameters).
   call logs with user/tool/run/time filters and admin notes). Non-admins get the neutral page for admin pages, and absent
   or forbidden runs and roots give the same 404 "对你不可用".
 
+- **Production results**: `/console/results` lists the visible runs whose requirements all accept fact producers,
+  newest first, with `pack` and exact `build` filters. It retains the service's next cursor even when filtering leaves
+  the page empty. A paginated scan is marked 部分; filtering a complete scan reports how many runs were examined and
+  listed without a partial marker. A complete empty match says 没有符合筛选的生产运行; a partial empty page states its examined range;
+  it never claims global absence from a partial scan (display rule 7). `/console/results/<run>` reads `getRun.production`, the start_run result whose submission is the run
+  record digest, labelled 生产结果记录（start_run 计算）. Later accepted commentary cannot replace its record, counts or claims.
+  The authoritative run page uses that same production result as its partition list and displays the latest later accepted
+  result separately as 模型评论（判断）; its counts are labelled 判断，未采用, with per-item judgment claims, the original model handling declarations and cross-item claims. Commentary never reuses the adopted/open/request group titles. The results page identifies that commentary record when present.
+  If the production record is absent, both pages name the missing start_run result explicitly, distinguish any accepted
+  commentary, show the run start time, and ask the reader to refresh the same page first: run storage may precede production-result storage. Only if the refreshed page still lacks the result does it suggest a new run with the same inputs and a new client_key; replaying the old key
+  would return the old run. Neither page starts or repairs a run. It shows partition counts via
+  `countsLine`, coverage and cross-item claims, then one row per item (id, label, projection summary and each requirement's
+  status, both layer terminals and claims). An undeclared layer is labelled 本层不适用. Display rules 4 and 16 require
+  both layers and the satisfaction reason even though the task brief requested static terminals only. The table also
+  preserves each item's partition and its code or reason: V05 and display rule 6 require this additional column even
+  though the task brief omitted it. `terminal` uses the generated union of static and dynamic terminals and matches
+  either layer; `offset` pages 500 filtered
+  items at a time. Counts are computed before filtering or paging. Bookkeeping delivery is not an overall pass;
+  unknown terminals keep their own symbol and colour, with the stored claims' missing evidence and next actions shown
+  as recorded. This page does not initiate work or generate missing content. The run link opens the authoritative view.
+  Only the runner and admins can read results; a missing, hidden, malformed or non-production run gives the same neutral
+  404. All existing authentication, Host/Origin checks, read-only methods, CSP and escaping apply unchanged.
+
+- **Integrator probe**: `node scripts/real/console-page.ts --token-file <file> --path <console path> [--url <Hub origin>]`
+  signs in through the CSRF form, reads one page and signs out in a `finally` block. It only accepts a loopback HTTP
+  origin and console paths, and follows no redirects. Output contains only status codes, CSP presence,
+  script/external-address counts, table body row counts and the first 12 hex characters of the body hash. CSRF input
+  values are replaced by a fixed marker for this hash, so independent sessions can compare the same page; other content
+  remains covered. External-address counts parse HTML attributes by local name: href/src/srcset/imagesrcset/action/formaction/poster/data,
+  ping/background/cite/manifest/icon, CSS url(), @import and image-set() image strings in styles, SVG presentation url() attributes, meta refresh targets (bare or URL= targets after a semicolon, comma or whitespace),
+  and recursively parsed srcdoc and noscript content. Values with a scheme or protocol-relative address (including slash/backslash spellings) count. SVG set/animate targeting URL attributes also inspect to/from/by and each semicolon-separated values entry; numeric attributes remain plain values. This includes srcset
+  and ping candidates. Displayed text, comments, CSS content/type strings and raw-text bodies such as textarea and script are not resource references. HTML and nested srcdoc are scanned with scripting both enabled and disabled; the larger resource count is reported, so noscript raw-text parsing cannot hide a reference. The CSP field reports header presence, as required by the task, and does not validate directive values. Page content,
+  paths, tokens and raw exception messages are never printed. A non-200 page, absent CSP, scripts or external addresses
+  makes the command fail. Synthetic tests are in `console-results.test.ts` and `console-page.test.ts`; actual deployment
+  and real-data checks belong to the integrator.
+
+The refresh target reader follows the [HTML shared declarative refresh steps](https://html.spec.whatwg.org/multipage/semantics.html#shared-declarative-refresh-steps); image-set string handling follows [CSS Images Level 4](https://drafts.csswg.org/css-images-4/#image-set-notation). These are syntax scans only: the probe does not follow any discovered resource URL.
+
 ## CLI
 
 `hub/server/cli.ts` exports `main(argv, overrides?): Promise<number>` and never runs on import (bin/circle-hub calls it
