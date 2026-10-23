@@ -172,15 +172,25 @@ const prune = (node: MindNode, drop: ReadonlySet<string>): boolean => {
 
 /** e: on the d copy, put the document-order-first removed case back under its original parent. */
 export function withRestored(tree: MindTree, removed: readonly string[], caseId: string, original: MindTree, seed: string): MindTree {
-  void removed;
   const copy = clone(tree);
   const map = mapOf(original);
   const caseNode = map.nodes.find((n) => n.id === caseId);
   if (caseNode === undefined) throw new Error(`没有这个用例 ${caseId}`);
   const parent = caseNode.parent === null ? null : map.nodes[caseNode.parent]!;
   const node = clone(originalNode(original, caseNode));
-  const parentInCopy = parent === null ? copy.root : locate(copy, parsedId(parent));
-  if (parentInCopy === null) throw new Error(`放不回去：找不到父节点 ${parsedId(parent!)}`);
+  const path: number[] = [];
+  for (let at = parent?.index ?? 0; map.nodes[at]!.parent !== null; at = map.nodes[at]!.parent!) {
+    const above = map.nodes[map.nodes[at]!.parent!]!; path.unshift(above.children.indexOf(at));
+  }
+  let parentInCopy: MindNode = copy.root; let originalParent = original.root;
+  const dropped = new Set(removed);
+  for (const slot of path) {
+    const siblings = originalParent.children ?? [];
+    const keptSlot = siblings.slice(0, slot).filter(child => !dropped.has(idOf(child))).length;
+    const next = parentInCopy.children?.[keptSlot];
+    if (!next || !siblings[slot]) throw new Error('放不回去：缺少原始父节点路径');
+    parentInCopy = next; originalParent = siblings[slot]!;
+  }
   parentInCopy.children = [...(parentInCopy.children ?? []), node];
   copy.root.data.id = renewedId(original, seed);
   return copy;

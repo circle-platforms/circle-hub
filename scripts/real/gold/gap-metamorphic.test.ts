@@ -159,3 +159,10 @@ test('review 4: presence is the complement of the intersection, including hetero
   assert.ok(plan.f.some(entry => entry.category === 'database' && 'copy' in entry));
   assert.ok(!plan.f.some(entry => entry.category === 'security'));
 });
+
+test('review 12: a root child is restored after the copy root is renewed', () => {
+  const original = doc(group('private-root', '合成根', kase('c1', '甲', '成功'), kase('c2', '乙', '成功')));
+  const d = withoutCategory(original, new Map([['c1', new Set<string>()], ['c2', new Set(['security'])]]), 'security', 'review12-d');
+  const e = withRestored(d, ['c1'], 'c1', original, 'review12-e');
+  assert.deepEqual(outerCaseIdsOf(e), ['c2', 'c1']);
+});
