@@ -28,14 +28,14 @@ test('CLI requires document scope, excludes outside documents and prints counts 
     assert.equal(JSON.parse(readFileSync(join(root, 'out.json'), 'utf8')).stories[2].cases.length, 0);
     assert.equal(run('docs.json', false).status, 1, 'a bare --plm flag is not evidence of a successful response');
     writeFileSync(join(root, 'maps/91.json'), JSON.stringify({ root: node('合成占用 ' + Array.from({ length: 90 }, (_, i) => String(i + 10)).join(' '), 'root', [node('需求 01', 'case', [node('期望', 'e')], ['Functional'])]) }));
-    const exhausted = run('docs.json'); assert.equal(exhausted.status, 1); assert.match(exhausted.stderr, /位宽 2，尚缺 1 个占位值/);
+    const exhausted = run('docs.json'); assert.equal(exhausted.status, 0, exhausted.stderr);
     assert.doesNotMatch(exhausted.stdout + exhausted.stderr, /合成占用|Synthetic_10_6|需求 01/);
     writeFileSync(join(root, 'empty.json'), '[]');
     assert.notEqual(run('empty.json').status, 0);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-test('zero-prefix compatibility preserves raw digit width and document identifiers', () => {
+test('raw identifier extraction preserves digit width and document identifiers', () => {
   const m = { root: node('需求 00001', 'root', [node('需求 000000002', 'c1', [node('期望', 'e1')], ['Functional'])]) };
   const t = { id: 'root', label: '需求 00003', children: [{ id: '00091', label: '合成目录', children: [] }] };
   const gold = storyGold({ ids: ['1', '2', '3'], plm: [], maps: [{ document: '00091', map: m }], tree: t, product: 'synthetic', build: 'Synthetic_10_6' });
@@ -70,4 +70,14 @@ test('story originals require a successful raw PLM envelope, never projected con
   const rows = [{ id: 21, status: 3, stage: 'synthetic' }];
   assert.deepEqual(parseStoryRecords({ code: 1000, data: rows }), rows);
   for (const raw of [rows, { stories: rows, unread: [] }, { data: rows }, { code: '1000', data: rows }, { code: 1005, data: rows }, { code: 1000, data: { stories: rows } }]) assert.throws(() => parseStoryRecords(raw), /PLM 原件/);
+});
+
+test('ordinary step and time numbers cannot exhaust the identifier oracle', () => {
+  const steps = Array.from({ length: 90 }, (_, index) => node(`ping 192.0.2.${index + 10}`, `step${index}`));
+  const corpus = { root: node('需求 00021', 'root', [
+    node('合成用例', 'case-one', steps, ['Functional']),
+    node('合成用例 09:30 定时检查', 'case-two', [node('期望', 'expected')], ['Functional']),
+  ]) };
+  const gold = storyGold({ ids: ['21'], plm: [], maps: [{ document: 'synthetic-doc', map: corpus }], tree: [], product: 'synthetic', build: 'Synthetic_10_6' });
+  assert.equal(gold.stories[0].cases.length, 2);
 });

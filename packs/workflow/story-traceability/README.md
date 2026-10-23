@@ -58,3 +58,5 @@ refusal explicitly hands this missing capability to the core maintainer rather t
 The sibling workflow traceability must adopt the same bounded absence/positive-lower-bound decision; its check.ts still
 uses missing_input for absent ids and is outside this task's edits. No package/runtime import crosses that boundary.
 Version 1.0.3 is re-signed with these per-id semantics.
+
+Closure review 3: adopted the shared raw-id extraction fix from gold-trace 36455d4 and removed the stand-in allocation entirely. Label numbers and dates no longer compete for a global or local numeric pool. The independent oracle still imports no Hub or pack runtime. Notes-only maps are classified by NoCaseNodesError at the throw site, never by matching exception messages.

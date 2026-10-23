@@ -3,7 +3,7 @@ import type { ProvenanceType } from '../../../contracts/generated/vocabulary.ts'
 import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { caseGold, parseMindMap } from './cases.ts';
+import { caseGold, NoCaseNodesError, parseMindMap } from './cases.ts';
 import { extractAssociatedIds, locationsGold } from './locations.ts';
 import { parseDocumentList } from './trace.ts';
 
@@ -16,45 +16,6 @@ const record = (v: unknown): v is Record<string, unknown> => v !== null && typeo
 const norm = (id: string): string => id.replace(/^0+/, '') || '0';
 const isId = (id: string): boolean => /^[0-9]{1,15}$/.test(id) && norm(id) !== '0';
 
-
-// Temporary compatibility until the integrator merges the shared extractor fix (gold-trace 36455d4).
-// Use collision-free, equal-width numeric stand-ins only inside labels, then restore and normalise extracted ids.
-// Keeping the width preserves the extractor's version/date/short-number boundary rules; document ids never change.
-class CompatibilityError extends Error {}
-function zeroPrefixCompatibility(raw: unknown) {
-  const labels: string[] = [];
-  const collect = (value: unknown): void => {
-    if (Array.isArray(value)) { value.forEach(collect); return; }
-    if (!record(value)) return;
-    for (const [key, child] of Object.entries(value)) {
-      if (typeof child === 'string' && ['label', 'title', 'name', 'text'].includes(key)) labels.push(child.normalize('NFKC'));
-      else collect(child);
-    }
-  };
-  collect(raw);
-  const runs = labels.flatMap(label => label.match(/[0-9]+/g) ?? []);
-  const occupied = new Set(runs);
-  const tokens = [...new Set(runs.filter(id => id.length >= 2 && id.length <= 9 && id.startsWith('0')))];
-  const forward = new Map<string, string>(); const backward = new Map<string, string>();
-  const date = (text: string): boolean => text.length === 8 && Number(text.slice(0, 4)) >= 1970 && Number(text.slice(0, 4)) <= 2099 && Number(text.slice(4, 6)) >= 1 && Number(text.slice(4, 6)) <= 12 && Number(text.slice(6, 8)) >= 1 && Number(text.slice(6, 8)) <= 31;
-  for (let width = 2; width <= 9; width++) {
-    const pending = tokens.filter(id => id.length === width).sort(); let candidate = 10 ** (width - 1);
-    for (const [at, id] of pending.entries()) {
-      while (candidate < 10 ** width && (occupied.has(String(candidate)) || date(String(candidate)))) candidate++;
-      if (candidate >= 10 ** width) throw new CompatibilityError(`编号兼容空间不足：位宽 ${width}，尚缺 ${pending.length - at} 个占位值`);
-      const standIn = String(candidate++); occupied.add(standIn); forward.set(id, standIn); backward.set(standIn, norm(id));
-    }
-  }
-  const encode = (text: string): string => text.normalize('NFKC').replace(/[0-9]+/g, id => forward.get(id) ?? id);
-  const decode = (id: string): string => backward.get(id) ?? norm(id);
-  const tree = (value: unknown): unknown => {
-    if (Array.isArray(value)) return value.map(tree);
-    if (!record(value)) return value;
-    return Object.fromEntries(Object.entries(value).map(([key, child]) => [key,
-      typeof child === 'string' && ['label', 'title', 'name', 'text'].includes(key) ? encode(child) : tree(child)]));
-  };
-  return { encode, decode, tree };
-}
 
 export function parseStoryIds(raw: unknown): string[] {
   const list = Array.isArray(raw) ? raw : record(raw) && Array.isArray(raw.stories) ? raw.stories : null;
@@ -69,9 +30,8 @@ export function parseStoryRecords(raw: unknown): StoryRecord[] {
 export function storyGold(options: { ids: string[]; plm: StoryRecord[]; maps: Array<{ document: string; map: unknown }>; tree: unknown; product: string; build: string; caseRule?: 'marked' | 'tagged'; missingDocuments?: string[] }): StoryGold {
   const ids = parseStoryIds(options.ids);
   const parsed = options.maps.map(({ map }) => parseMindMap(map).nodes);
-  const compatibility = zeroPrefixCompatibility([options.tree, parsed.flatMap(nodes => nodes.map(node => ({ text: node.text })))]);
-  const locations = locationsGold(compatibility.tree(options.tree));
-  const folderStories = new Map([...locations.documents, ...locations.nonconforming].map(d => [d.document, d.stories.map(compatibility.decode)]));
+  const locations = locationsGold(options.tree);
+  const folderStories = new Map([...locations.documents, ...locations.nonconforming].map(d => [d.document, d.stories.map(norm)]));
   const cases: Array<{ id: string; title: string; stories: string[] }> = [];
   let documentsWithoutCases = 0;
   for (const [at, { document, map }] of options.maps.entries()) {
@@ -79,13 +39,13 @@ export function storyGold(options: { ids: string[]; plm: StoryRecord[]; maps: Ar
     let counted;
     try { counted = caseGold([{ document, map }], { caseRule: options.caseRule ?? 'marked' }).documents[0]; }
     catch (error) {
-      if (error instanceof Error && /^文档 .* 里没有带(?:资源标签|用例标记或资源标签)的用例节点$/.test(error.message)) { documentsWithoutCases++; continue; }
+      if (error instanceof NoCaseNodesError) { documentsWithoutCases++; continue; }
       throw error;
     }
     for (const c of counted.items) {
       const node = nodes.find(n => (n.id || `@${n.index}`) === c.id);
       if (!node) throw new Error('用例节点位置缺失');
-      const found = extractAssociatedIds(compatibility.encode(node.text), node.ancestors.map(compatibility.encode)).stories.map(compatibility.decode);
+      const found = extractAssociatedIds(node.text, node.ancestors).stories.map(norm);
       cases.push({ id: `${document}:${c.id}`, title: c.title, stories: [...found, ...(folderStories.get(document) ?? [])].map(norm) });
     }
   }
@@ -130,6 +90,6 @@ export function main(argv: string[]): number {
     writeFileSync(resolve(value('out')!), text);
     process.stdout.write(`需求 ${gold.stories.length}；已追溯 ${gold.traced}；未追溯 ${gold.untraced}；PLM 未返回 ${gold.plm_unread}；文档 ${maps.length}；无用例文档 ${gold.documents_without_cases}；缺原件 ${missingDocuments.length}；SHA-256 ${createHash('sha256').update(text).digest('hex').slice(0, 12)}；${missingDocuments.length ? '不通过' : '通过'}\n`);
     return missingDocuments.length ? 1 : 0;
-  } catch (error) { process.stderr.write(error instanceof CompatibilityError ? `生成需求独立答案不通过；${error.message}\n` : '生成需求独立答案不通过；请核对输入原件和编号清单\n'); return 1; }
+  } catch (error) { process.stderr.write('生成需求独立答案不通过；请核对输入原件和编号清单\n'); return 1; }
 }
 if (import.meta.main) process.exitCode = main(process.argv.slice(2));
