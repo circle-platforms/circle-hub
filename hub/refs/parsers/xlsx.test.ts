@@ -345,3 +345,14 @@ test('non-worksheet sheets disclose the relationship id and literal type', () =>
     assert.equal(sheet.relationshipId, 'sheet'); assert.equal(sheet.relationshipType, `${DOC_REL}/${type}`); assert.deepEqual(sheet.rows, []);
   }
 });
+
+test('ZIP failures disclose a specific rule and safe member location without names', () => {
+  const deflated = deflateRawSync(Buffer.from('synthetic text'));
+  for (const [compressed, size, reason] of [[deflated.subarray(0, -1), 14, /流不完整/], [deflated, 2, /实际解压大小超过声明/], [Buffer.from([0xff, 0xff]), 14, /Deflate 数据损坏/]] as const) {
+    assert.throws(() => readXlsxArchive(zip([{ name: 'private-name.xml', method: 8, compressed, size }])), (error: unknown) => {
+      assert.ok(error instanceof ParseError); assert.match(error.message, reason); assert.match(error.message, /成员 1/); assert.equal(error.offset, 0); assert.ok(!error.message.includes('private-name')); return true;
+    });
+  }
+  for (const [name, reason] of [['../a.xml', /路径段/], ['a'.repeat(600), /路径长度/], ['a\\b.xml', /反斜杠/]] as const) refuses(zip([{ name }]), reason);
+  assert.throws(() => xlsxParser.parse(workbook(), { maxNodes: 21 }), (error: unknown) => error instanceof ParseLimitError && error.max === 21 && /21/.test(error.message));
+});

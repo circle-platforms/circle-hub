@@ -18,6 +18,11 @@ const CP437 = 'ÇüéâäàåçêëèïîìÄÅÉæÆôöòûùÿÖÜ¢£¥₧ƒ
 export function readXlsxArchive(input: Uint8Array): Map<string, Buffer> {
   if (!(input instanceof Uint8Array))
     throw new TypeError('bytes must be a Uint8Array');
+  let memberOffset: number | null = null;
+  let memberOrdinal: number | null = null;
+  const located = (message: string): string => memberOrdinal === null ? message : `ZIP 成员 ${memberOrdinal}：${message}`;
+  const syntax = (message: string): never => { throw new ParseSyntaxError(KEY, located(message), memberOffset); };
+  const forbidden = (message: string): never => { throw new ParseForbiddenError(KEY, located(message), memberOffset); };
   const limits = XLSX_ZIP_LIMITS;
   if (input.length > limits.maxBytes)
     throw new ParseLimitError(KEY, 'maxBytes', limits.maxBytes, `ZIP 总字节数超过上限 ${limits.maxBytes}`);
@@ -82,6 +87,7 @@ export function readXlsxArchive(input: Uint8Array): Map<string, Buffer> {
     syntax('ZIP 中央目录位置或大小不一致');
   fits(directoryAt, directorySize, directoryEnd);
   type Entry = {
+    ordinal: number;
     name: string;
     nameBytes: Buffer;
     version: number;
@@ -137,7 +143,9 @@ export function readXlsxArchive(input: Uint8Array): Map<string, Buffer> {
     const extra = bytes.readUInt16LE(position + 30);
     const comment = bytes.readUInt16LE(position + 32);
     fits(position, 46 + nameLength + extra + comment, directoryEnd);
-    const entry: Entry = { name: '', nameBytes: bytes.subarray(position + 46, position + 46 + nameLength), version: bytes.readUInt16LE(position + 6), flags: bytes.readUInt16LE(position + 8), method: bytes.readUInt16LE(position + 10), crc: bytes.readUInt32LE(position + 16), compressed: bytes.readUInt32LE(position + 20), size: bytes.readUInt32LE(position + 24), at: bytes.readUInt32LE(position + 42) };
+    const entry: Entry = { ordinal: i + 1, name: '', nameBytes: bytes.subarray(position + 46, position + 46 + nameLength), version: bytes.readUInt16LE(position + 6), flags: bytes.readUInt16LE(position + 8), method: bytes.readUInt16LE(position + 10), crc: bytes.readUInt32LE(position + 16), compressed: bytes.readUInt32LE(position + 20), size: bytes.readUInt32LE(position + 24), at: bytes.readUInt32LE(position + 42) };
+    memberOrdinal = entry.ordinal;
+    memberOffset = entry.at;
     flagsOk(entry.flags);
     if (entry.method !== 0 && entry.method !== 8)
       syntax('OOXML ZIP 压缩方法只支持存储和 Deflate');
@@ -156,6 +164,7 @@ export function readXlsxArchive(input: Uint8Array): Map<string, Buffer> {
         entry[field] = Number(n);
         cursor += 8;
       }
+    memberOffset = entry.at;
     const attributes = bytes.readUInt32LE(position + 38);
     const kind = (attributes >>> 16) & 0xf000;
     if (kind !== 0 && kind !== 0x8000 && kind !== 0x4000)
@@ -167,8 +176,15 @@ export function readXlsxArchive(input: Uint8Array): Map<string, Buffer> {
       syntax('ZIP 成员路径不是 UTF-8');
     }
     const path = entry.name.endsWith('/') ? entry.name.slice(0, -1) : entry.name;
-    if (!path || entry.name.length > 512 || /[\\:\u0000-\u001f\u007f]/.test(entry.name) || path.split('/').some((part) => part === '' || part === '.' || part === '..'))
-      forbidden('ZIP 成员路径不安全或过长');
+    if (!path) forbidden('ZIP 成员路径为空');
+    if (entry.name.length > 512) forbidden('ZIP 成员路径长度超过上限 512');
+    if (entry.name.includes('\\')) forbidden('ZIP 成员路径含反斜杠');
+    if (entry.name.includes(':')) forbidden('ZIP 成员路径含冒号');
+    if (/[\u0000-\u001f\u007f]/.test(entry.name)) forbidden('ZIP 成员路径含控制字符');
+    const segments = path.split('/');
+    if (segments.includes('')) forbidden('ZIP 成员路径段为空');
+    if (segments.includes('.')) forbidden('ZIP 成员路径段为点');
+    if (segments.includes('..')) forbidden('ZIP 成员路径段为父级段');
     if (seen.has(asciiFold(entry.name)))
       syntax('ZIP 成员路径重复');
     seen.add(asciiFold(entry.name));
@@ -193,6 +209,8 @@ export function readXlsxArchive(input: Uint8Array): Map<string, Buffer> {
       syntax('ZIP 本地成员不连续、重叠或有附加数据');
     fits(entry.at, 30, directoryAt);
     const at = entry.at;
+    memberOrdinal = entry.ordinal;
+    memberOffset = at;
     if (bytes.readUInt32LE(at) !== 0x04034b50)
       syntax('ZIP 本地头签名不对');
     const nameLength = bytes.readUInt16LE(at + 26);
@@ -261,7 +279,11 @@ export function readXlsxArchive(input: Uint8Array): Map<string, Buffer> {
       catch (error) {
         if (error instanceof ParseError)
           throw error;
-        syntax('ZIP 解压失败、流不完整或实际解压大小超过声明上限');
+        const code = (error as NodeJS.ErrnoException).code;
+        if (code === 'ERR_BUFFER_TOO_LARGE') syntax('ZIP 实际解压大小超过声明上限');
+        if (code === 'Z_BUF_ERROR') syntax('ZIP Deflate 流不完整');
+        if (code === 'Z_DATA_ERROR') syntax('ZIP Deflate 数据损坏');
+        syntax('ZIP Deflate 解压器失败');
       }
     }
     if (content!.length !== entry.size)
@@ -459,8 +481,10 @@ function parse(bytes: Uint8Array, options: ParseOptions = {}): ParsedDocument<Xl
       root = xml.model.root;
     }
     catch (error) {
-      if (error instanceof ParseLimitError)
+      if (error instanceof ParseLimitError) {
+        if (error.limit === 'maxNodes') throw nodesError(KEY, limits.maxNodes);
         throw new ParseLimitError(KEY, error.limit, error.max, error.message);
+      }
       if (error instanceof ParseError && error.parser === KEY)
         throw error;
       if (error instanceof ParseError)
@@ -479,7 +503,7 @@ function parse(bytes: Uint8Array, options: ParseOptions = {}): ParsedDocument<Xl
       if (++nodeCount > limits.maxNodes)
         throw nodesError(KEY, limits.maxNodes);
       if (raw.irregular !== null)
-        forbidden('XLSX 部件 XML 被修复过或起始标签不规范');
+        forbidden('XLSX 部件 XML 起始标签不规范');
       const own: NamespaceScope = { parent: scope, bindings: new Map() };
       for (const [name, value] of Object.entries(raw.attributes))
         if (name === 'xmlns')
