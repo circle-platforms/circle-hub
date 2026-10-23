@@ -28,7 +28,7 @@ A01 (declared values stay declared), B01/B03 (grounds).
 | `functions/candidates.ts` | the build_candidates check: per item the candidates of the located line from the frozen context builds, then one outcome per written build name |
 | `functions/expected.ts` | expected-sources-input@1 → `plm:story:<id>`, `plm:bug:<id>` with role expected |
 | `tables/codes.json` | every pack code (refusals, warnings, the one violation) and the labels of `version_source` and `confidence` |
-| `samples/positive/*`, `samples/negative/*` | two positive and three negative samples of `locate`, one positive and one negative of `candidates` (author samples); the negative `trees-that-are-no-facts` holds, beside its declaration conflict, trees that must stay unknown (contradicting levels, mentioned versions), so the publish check also guards the location rules |
+| `samples/positive/*`, `samples/negative/*` | three positive and four negative samples of `locate`, one positive and one negative of `candidates` (author samples); the negative `trees-that-are-no-facts` holds, beside its declaration conflict, definite version conflicts and missing version-level facts (mentioned versions), so the publish check also guards the location rules |
 | `pack-files.ts` | not a pack file: lists the pack files, writes/checks `pack.json`, stages a publishable copy |
 | `testing/examples.json` | not a pack file: five synthetic examples with hand-written answers (no verified real run exists, T01 F[11]) |
 | `functions/test-support.ts`, `test-hub.ts`, `*.test.ts`, `README.md` | not pack files: tests and their helpers |
@@ -47,6 +47,7 @@ The `data` of each item's `location` outcome, and so of its claim (`claim.statem
 | `ancestor_path` | root, folders, and for a case the document title and the map path, top down |
 | `source` | the external identity (with revision) of the document the answer was read from |
 | `build_names` | build names written in the folders, the title or the map, verbatim, of the line's name families; not checked, not resolved |
+| `version_values`, `missing` | version-level values with original labels and depths; missing source facts and the corrective action in the statement |
 | `requirements`, `defects`, `unclassified` | linked ids: marked by a word as story or bug, or unmarked |
 | `id_sources` | per linked id: its kind and every place it was read (`title`, `folders`, `map`) |
 | `ranged` | the unclassified ids the caller's `id_ranges` assign a kind (a declaration, apart from the tree facts) |
@@ -54,9 +55,8 @@ The `data` of each item's `location` outcome, and so of its claim (`claim.statem
 
 How it is reported: **support** (a fact claim) when the tree gives the product line by its root and a consistent version
 level; **unknown, reason missing_input** (terminal unchecked, attribution data_gap) when the scheme cannot answer (no
-product line, a version only mentioned or only in the title, a declared version, no version, a version level that
-contradicts itself), with what is known in `data` and the reason leading the statement and the summary; **refute**
-`case-location.declaration_conflict` (advisory) only when a caller's declaration contradicts the tree. The second
+product line, a version only mentioned or only in the title, a declared version, no version), with what is known in `data` and the reason leading the statement and the summary; **refute**
+`case-location.version_conflict` for a contradictory version level, or `case-location.declaration_conflict` when a caller's declaration contradicts a consistent tree (advisory). The second
 requirement `build_candidates` is a real check (`candidates`, advisory): the candidates are the builds the run's frozen
 context lists for the located version line (both name families, an alias shown with the base it is based on, by built
 time descending — a build the knowledge base knows by name only, without a root yet, is a candidate the same
@@ -76,14 +76,14 @@ not known is an unknown (the knowledge base lists only the builds of the build s
    Anything else: `product_name` as the tree names it, no line. A first ancestor equal to the root is dropped (the agile
    system pack lists the root title first). The names reach the check through the subject builder.
 2. **Version level and version.** Version labels are the convention's line nodes (prefix code + a pure version), the first
-   release train (prefix code + version + separator + more) and labels that are only a version in the owner's expression
-   over the whole label (`10.6.1`, `V10.7.0`, `NSAE_10.7.3`, after an optional prefix code). The version level runs from the
+   release train (prefix code + version + separator + more; the first such label), labels containing a bound-family build name, and labels that are only a version in the owner's expression
+   over the whole label (`10.6.1`, `V10.7.0`, `NSAE_10.7.3`, `NSAE_10.5.3`, after an optional prefix code). The version level runs from the
    root to the train, else to the first line node, else to the first version label, and includes every line node of the
    path. The version is the level's version nearest the root, confidence high, when every version of the level names one
    version line (first three numbers compared as lines: `10.6.1.57` and `10.6.1` agree, `10.6` and `10.6.1` do not).
    Otherwise the tree contradicts itself (several line nodes, a train of another line, a version label of another line):
-   confidence low, unknown, both values kept (`version` nearest the root, `line` and `train` by the convention), the
-   disagreement leads the summary. Without a version level a version mentioned in a folder name among other words is a
+   confidence low for the selected version, definite advisory refutation case-location.version_conflict, every value kept in version_values with its original label and one-based depth (`version` nearest the root, `line` and `train` by the convention), the
+   disagreement leads the summary. A declaration matching one or none of those values is described but never changes the code to declaration_conflict. Without a version level a version mentioned in a folder name among other words is a
    reference version (`802.1Q VLAN`, `Chrome 120.0 兼容`, `NSAE_10.6.1.57_专项`: confidence low, unknown), then the title's
    (low), then none (the APV-named root: version unknown, not an error). Every other version is a quote (notes). The
    scheme's guards stay (protocol versions, quantities, addresses), also on line and train nodes.
@@ -97,6 +97,10 @@ not known is an unknown (the knowledge base lists only the builds of the build s
 5. **Build names.** Only names written in the folders, the title or the map (`Rel|Beta_<family>[-PLATFORM]_n_n...`), verbatim,
    of a name family of the bound line; other products' names are left out (noted). Nothing is derived: no twin in the other
    family (older NSAE builds are based on APV builds with other numbers, brief section 8) and no name made from a version.
+   A bound-family build name inside the version level supplies its version line: four or more numbers use the first
+   three, three numbers use the first two, two use both. Below the level it remains a reference. Notes identify the name
+   that supplied the version. Conflicting lines have separate candidate lists and no single line is silently chosen for
+   the written-name cross-check.
 6. **Build candidates** (K01 R[10]: the builds of every name family under the version line, aliases resolved to their
    base): since 1.1.0 the workflow declares `context: ["builds"]` (workflow@1), the engine hands the knowledge base's builds
    of the bound product to the run context and freezes them in the run record, and the `candidates` check answers from the
@@ -105,7 +109,7 @@ not known is an unknown (the knowledge base lists only the builds of the build s
    had no check (every item showed it unchecked, no_check): the pack could not see the builds.
 7. **Ids.** Read from the document title; from the folders below the version level; and, for a case, from the map path and
    the case text. Only a word right before the number names its kind (`bug`, `缺陷` → defect; `story`, `需求` →
-   requirement); the "bug to case" family and `PLM` name a document type and the system, so their numbers are unmarked. A
+   requirement); the "bug to case" family names a defect, including existing misspellings; an intervening type marker wins. PLM alone remains unmarked. A
    bare leading number is an id only at the start of the title or of a document folder in the module place (a label there
    that is not a module), with five to seven digits and no Han text or unit glued to it (case-review measured 947 of 949
    unmarked ids at 10,000 or more; `8080 端口`, `4094 VLAN`, `10000并发`, `1000条` are quantities). Deeper folders and the
@@ -121,7 +125,7 @@ not known is an unknown (the knowledge base lists only the builds of the build s
 9. **Declarations** (`product`, `line`). A declared product fills the product only when there is no root (marked in
    `declared`, answer unknown). With a root the root's product is kept: a declared product is a conflict when the root is a
    name of the line and the declaration is not, or when the root is not a name of the line and the declaration differs from
-   it; in an unbound run that cannot be decided and is only noted. A declared line is compared with every value the tree
+   it; in an unbound run that cannot be decided and is only noted. On a consistent tree, a declared line is compared with every value the tree
    gives at the version level (the reported version, the line node, the train's version): any disagreement is a conflict.
    Without a version level it fills `line` (and the version when there is none, `version_source: parameter`), marked, the
    answer unknown. A value the parameter schema lets through but the rules cannot read refuses the start with
@@ -167,7 +171,7 @@ node packs/workflow/case-location/pack-files.ts --check
   declared line, build dates and patches in the title or deeper folders, quantities at the start, folder and map ids, a
   range given alone, declared products beside another root, mentioned versions); metamorphic properties (another root
   name changes only the product; a deeper mention changes neither version nor confidence; a mention above the level is a
-  quote, a version label above it that disagrees makes the answer unknown; the order of the line's names does not matter;
+  quote, a version label above it that disagrees proves a conflict; the order of the line's names does not matter;
   no build name that is not written); totality on hostile and 400 random inputs (every fact has a consistent level);
   bounds.
 - `functions/convention.test.ts`, `functions/ids.test.ts`: the label rules, version labels, the scheme and its guards,
@@ -224,8 +228,7 @@ staged copy: `node packs/workflow/case-location/pack-files.ts --stage <empty dir
 9. Ids are read from the title, the folders below the version level and the case's map (the task: "named in the title";
    the second review asked for folders, as case-review reads them). Unmarked leading numbers need five digits.
 10. Every outcome becomes a claim; the engine records an unknown outcome as a claim of nature unknown, not a fact.
-11. A tree that contradicts itself is unknown, not a fact with a note (the second review; open question 1 lets the owner
-    choose otherwise).
+11. Decision 35 item 18 makes a contradictory version level a definite advisory conflict with every source label retained.
 
 ## Limits
 
@@ -288,18 +291,17 @@ staged copy: `node packs/workflow/case-location/pack-files.ts --stage <empty dir
 - **packs integrator**: publish through `pack-files.ts --stage`; assign the pack to users; the knowledge base needs a root
   of some build of the line before runs can start (see the first item).
 
-## Open questions for the owner
+## 已定（决定 35 第 18 项）
 
-1. A version level that contradicts itself (`010：9.8` above `020：10.6`, a train of another line) is unknown with both
-   values kept. Should it instead be a fact with the nearest root winning?
-2. Should a build name written in a folder (`Rel_NSAE_10_6_1_57 回归`) count as the folder version? The scheme reads dotted
-   versions only, so today it is listed in `build_names` and the version stays unknown.
-3. Are the guards and the version labels acceptable beside the stated expression: a version mentioned among other words is
-   only a reference (low), a label that is only a version is a version label (high)?
-4. Ids after "bug to case": unmarked (here and in case-review) or defects (the product pack's `ids.ts`)? With the defect
-   system's id ranges as a deployment default most of them would be classified and read.
-5. Folder ids: are ids in folder labels below the version level links of every document under them (as read now), and is
-   a bare leading number of five digits at the start of a document folder in the module place an id?
+1. 版本层自相矛盾是确定的冲突（提示档）；最近根的值保留在 version，所有值及目录原文、层数写入 version_values。
+2. 本产品构建名目录提供版本：四个以上数字取前三个，三个数字取前两个；版本层以下仍只作引用。
+3. 混在其他字里的版本仍为引用；单独版本标签为版本。缺版本层时 missing 写明缺的事实，陈述写整理目录或用 line 声明的下一步。
+4. “bug to case”一族编号按缺陷读，PLM 仍未分类，挨着编号的类型词优先。绑定理由写明约定；PLM 存在核验留待第二步。
+5. 版本层以下目录编号关联下面每份文档，文档粒度和用例粒度相同。
+
+编号先按写出来的位数核对长度：带标记 2 到 9 位，不带标记 5 到 7 位。全零串不是编号；非零编号按 NFKC 后的十进制数字去掉前导零。原文未变时 id 本身是原文；有变化时，case-location 的 id_sources[].spellings 和 APV ids 的 spellings 保存原文（含全角数字）。陈述与绑定理由用原文，类型仍是身份的一部分。两个包各自实现同一规则，不跨包运行时导入。
+
+构建候选按冲突的每条版本线分别列出，先报告目录冲突。声明不消除版本层冲突：报告声明与哪些目录值一致，码优先用 version_conflict，不再另报版本声明冲突。第二步的 PLM 有/没有观察尚未实现，第一步不将绑定成功当作存在证明。
 
 ## 生成词表与包版本
 
@@ -307,5 +309,6 @@ case-location@1.3.1 改用生成词表的类型及包内运行时快照。包内
 
 编号范围的 min/max 是 JSON 对象键，不属于 measure 轴；直接读取经校验的输入字段，不携带 measure 快照。
 
-
 case-location@1.3.3 只把注释中的版本示例换成合成线，解析规则不变；包内文件字节改变，升补丁版本并重签清单。
+
+1.4.0 applies the settled conventions and decimal identifier normalization; APV ids is re-signed without changing its version, pending integrator alignment with K1.

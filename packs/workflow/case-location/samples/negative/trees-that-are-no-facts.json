@@ -2,7 +2,7 @@
   "id": "trees_that_are_no_facts",
   "source": "author",
   "check": "locate",
-  "note": "合成样例：调用方声明产品 NSAE。根“合成平台”的文档与声明矛盾，记不通过；目录自相矛盾的（发布火车属于别的版本线、有几个版本线节点）和版本只是目录名里顺带提到的（NSAE_10.9.1.37_专项、802.1Q VLAN）都记未知（缺输入），不当事实；按约定写的旧版本线目录和其中原样写出的构建名记支持",
+  "note": "合成样例：调用方声明产品 NSAE。根“合成平台”的文档与声明矛盾，记不通过；目录自相矛盾的（发布火车属于别的版本线、有几个版本线节点）确定记冲突；版本只是目录名里顺带提到的（NSAE_10.9.1.37_专项、802.1Q VLAN）都记未知（缺输入），不当事实；按约定写的旧版本线目录和其中原样写出的构建名记支持",
   "subject": {
     "items": [
       {
@@ -100,8 +100,8 @@
   },
   "expect": [
     { "verdict": "refute", "code": "case-location.declaration_conflict", "item": "24101", "tier": "advisory" },
-    { "verdict": "unknown", "reason": "missing_input", "item": "24102", "tier": "advisory" },
-    { "verdict": "unknown", "reason": "missing_input", "item": "24103", "tier": "advisory" },
+    { "verdict": "refute", "code": "case-location.version_conflict", "item": "24102", "tier": "advisory" },
+    { "verdict": "refute", "code": "case-location.version_conflict", "item": "24103", "tier": "advisory" },
     { "verdict": "unknown", "reason": "missing_input", "item": "24104", "tier": "advisory" },
     { "verdict": "unknown", "reason": "missing_input", "item": "24105", "tier": "advisory" },
     { "verdict": "support", "item": "24106", "tier": "advisory" }

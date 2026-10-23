@@ -20,7 +20,7 @@ export type Confidence = 'high' | 'low' | 'none';
 /** Where a linked id was read: the document title, the folders below the version level, the mind map (case items). */
 export type IdSource = 'title' | 'folders' | 'map';
 /** One linked id: the kind a word next to it names (null: unmarked) and every place it was read, in reading order. */
-export type LinkedId = { id: string; kind: 'story' | 'bug' | null; from: IdSource[] };
+export type LinkedId = { id: string; kind: 'story' | 'bug' | null; from: IdSource[]; spellings?: string[] };
 /** An item is a whole document or one case node of it. */
 export type ItemKind = 'document' | 'case';
 export type Granularity = ItemKind;
@@ -65,6 +65,10 @@ export type LocateAnswer = {
   product_line: string | null;
   product_name: string | null;
   version: string | null;
+  /** Every version-level value with its original label and one-based depth below the root. */
+  version_values: Array<{ version: string; level: number; label: string }>;
+  /** Missing source facts to obtain before the location can be confirmed. */
+  missing: string[];
   /** Build date, eight digits as written (build20260315). */
   build: string | null;
   patch: string | null;
@@ -139,4 +143,4 @@ export type LocateSubject = {
 };
 
 /** One id found in a text: the kind a marker next to it names, or null when none does. */
-export type FoundId = { kind: 'story' | 'bug' | null; id: string };
+export type FoundId = { kind: 'story' | 'bug' | null; id: string; spellings?: string[] };
