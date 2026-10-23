@@ -490,6 +490,12 @@ accepted.
   alternative group (`{add|del}`) and an optional group that words follow (`[no] demo pool add`) stay in the head because
   K1 reads them as alternatives of the command itself. A line that rule does not read, or that K1 would not accept, is not
   emitted with invented marks.
+- Every line of a `[role=signature]` block is read on its own and cited on its own source line (the block's verified range,
+  line by line), so a line never cites the whole block. A blank line makes no entry; the line's own inline marks are
+  dropped before the rule reads it, so an AsciiDoc-spelled line and a bare one are read alike; and a line the rule does not
+  read stays the ordinary text it is — placed as text on its own line, and reported with its file, line, reason and next
+  action (`unparsed` of the mapping and one warning of the production). Nothing is wrapped in bold marks the source does
+  not have, so no statement is fabricated and no head/parameter split is guessed.
 - A title, ordinary bold prose and an example are never a signature. Step one marks every block that is an example or sits
   inside one (the `====` block, or a block whose role or style says example, and all their children), and the mapping hands
   K1 such a block as reference content: never as a paragraph, the one kind K1 reads anchors from, and never as a table,

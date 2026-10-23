@@ -36,12 +36,76 @@ const entriesOf = async (files: Record<string, string>, attributes: Record<strin
 
 test('a [role=signature] listing block is a signature; its params ride along', async () => {
   const result = await entriesOf({
-    'book.adoc': '= Book\n\n== 命令\n\n[role=signature]\n----\n**demo pool add** *\\<name\\> \[weight\]*\n----\n\n该命令用于添加成员。\n',
+    'book.adoc': '= Book\n\n== 命令\n\n[role=signature]\n----\n*demo pool add* _<name> [weight]_\n----\n\n该命令用于添加成员。\n',
   });
   const signature = result.entries.find((entry) => entry.data.form === 'signature');
   assert.ok(signature !== undefined, JSON.stringify(result.entries.map((e) => [e.data.form, e.path])));
   assert.equal(signature.path, '/commands/demo/pool/add');
-  assert.deepEqual((signature.data.params as Array<{ name: string }>).map((p) => p.name), ['name', 'weight']);
+  assert.equal(String(signature.statement), 'demo pool add <name> [weight]');
+  assert.deepEqual(
+    (signature.data.params as Array<{ name: string; required: boolean }>).map((param) => [param.name, param.required]),
+    [['name', true], ['weight', false]],
+  );
+});
+
+test('every line of a signature block is read on its own, cited on its own line, and a line that reads as no signature is reported', async () => {
+  const out = await compile({
+    'book.adoc': [
+      '= Book',                            // 1
+      '',                                  // 2
+      '== 命令',                            // 3
+      '',                                  // 4
+      '[role=signature]',                  // 5
+      '----',                              // 6
+      'demo pool add <name> [weight]',     // 7
+      '*demo pool del* _<name>_',          // 8
+      '',                                  // 9
+      'demo pool timeout seconds',         // 10
+      '配置成员池。',                        // 11
+      '----',                              // 12
+      '',                                  // 13
+    ].join('\n'),
+  });
+  const mapped = toK1Model(out.model, out.composition, 'cli');
+  assert.deepEqual(mapped.uncited, [], JSON.stringify(mapped.uncited));
+  const produced = produceAdocEntries(mapped, { name: 'cli', slot: 'manual' });
+  assert.ok(produced.ok, JSON.stringify(produced));
+  // A blank line makes no entry, and no line is wrapped in marks the source does not have.
+  assert.ok(
+    produced.entries.every((entry) => !/^\*{3,}/.test(String(entry.statement)) && String(entry.statement) !== '****'),
+    JSON.stringify(produced.entries.map((entry) => entry.statement)),
+  );
+  assert.deepEqual(
+    produced.entries.filter((entry) => entry.data.form === 'signature').map((entry) => [String(entry.statement), entry.path, entry.fragments[0]!.selector]),
+    [
+      ['demo pool add <name> [weight]', '/commands/demo/pool/add', 'l/7'],
+      ['demo pool del <name>', '/commands/demo/pool/del', 'l/8'],
+      ['demo pool timeout seconds', '/commands/demo/pool/timeout/seconds', 'l/10'],
+    ],
+    JSON.stringify(produced.entries.map((entry) => [entry.data.form, entry.statement, entry.fragments])),
+  );
+  assert.deepEqual(
+    (produced.entries.find((entry) => entry.statement === 'demo pool add <name> [weight]')!.data.params as Array<{ name: string; required: boolean }>).map((param) => [param.name, param.required]),
+    [['name', true], ['weight', false]],
+    'a group is a parameter, not a variant of the command',
+  );
+  assert.equal(
+    produced.entries.some((entry) => String(entry.statement) === 'demo pool del <name> [weight]'),
+    false,
+    'the second line is read on its own and does not inherit the first line’s parameter',
+  );
+  assert.deepEqual((produced.entries.find((entry) => entry.statement === 'demo pool del <name>')!.data.variants ?? null), null, 'no variants are invented for a plain line');
+  // The line that reads as no signature stays the text it is, on its own line, and is reported with file, line, reason.
+  assert.deepEqual(
+    mapped.unparsed.map((one) => ({ file: one.file, line: one.line, text: one.text, reason: one.reason !== '', next_action: one.next_action !== '' })),
+    [{ file: 'book.adoc', line: 11, text: '配置成员池。', reason: true, next_action: true }],
+    JSON.stringify(mapped.unparsed),
+  );
+  const kept = produced.entries.find((entry) => String(entry.statement) === '配置成员池。');
+  assert.ok(kept !== undefined, JSON.stringify(produced.entries.map((entry) => entry.statement)));
+  assert.equal(kept.data.form, 'text');
+  assert.equal(kept.fragments[0]!.selector, 'l/11');
+  assert.ok(produced.warnings.some((warning) => warning.includes('读不成命令签名') && warning.includes('book.adoc:11')), produced.warnings.join('；'));
 });
 
 test('an AsciiDoc signature paragraph is a signature, in bold and italic or as one monospace line', async () => {

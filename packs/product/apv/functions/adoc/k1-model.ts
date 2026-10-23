@@ -10,7 +10,7 @@
 // field K1 copies into its fragments is a key of this model, which entries.ts turns into the fragment the Hub verifies.
 import type { Block, Composition, ExpandedModel, VerifiedRange } from './types.ts';
 import type { MarkdownBlock, MarkdownSection } from '../../../../../hub/refs/api.ts';
-import { inlineMarkdown, plainConverted, plainText, squeeze } from './text.ts';
+import { inlineMarkdown, plainConverted, plainText, squeeze, stripMarks } from './text.ts';
 import { utf8Offsets } from '../util.ts';
 import { parseAnchor } from '../manual.ts';
 
@@ -135,9 +135,13 @@ function groupsBalanced(text: string): boolean {
  * not read the result as an anchor: such a line is not a signature and is reported instead of being emitted with marks
  * this mapping invented.
  */
-export function signatureSpelling(plain: string): string | null {
+/** One signature line read: the spelling K1 reads, or why the line is no signature. */
+export type SignatureLine = { spelling: string; problem: null } | { spelling: null; problem: string };
+
+export function readSignatureLine(plain: string): SignatureLine {
   const text = squeeze(plain);
-  if (text === '' || /[\r\n]/.test(text) || !groupsBalanced(text)) return null;
+  if (text === '' || /[\r\n]/.test(text)) return { spelling: null, problem: '这一行没有文字' };
+  if (!groupsBalanced(text)) return { spelling: null, problem: '这一行的尖括号、方括号或花括号不配对' };
   const tokens = text.split(' ');
   const head: string[] = [];
   const params: string[] = [];
@@ -151,9 +155,26 @@ export function signatureSpelling(plain: string): string | null {
     if (params.length === 0 && (token.includes('|') || (token.startsWith('[') && followedByWord))) head.push(token);
     else params.push(token);
   }
-  if (head.length === 0 || head.some((token) => GROUP.test(token) === false && WORD.test(token) === false)) return null;
+  if (head.length === 0) return { spelling: null, problem: '第一个参数组之前没有命令词' };
+  if (head.some((token) => GROUP.test(token) === false && WORD.test(token) === false)) {
+    return { spelling: null, problem: '命令词位置上有不是命令词的文字（例如中文说明或标点）' };
+  }
   const spelling = `**${head.join(' ')}**${params.length > 0 ? ` *${params.join(' ')}*` : ''}`;
-  return parseAnchor(spelling, null) === null ? null : spelling;
+  return parseAnchor(spelling, null) === null ? { spelling: null, problem: '这一行按 K1 的锚点语法读不成命令签名' } : { spelling, problem: null };
+}
+
+export function signatureSpelling(plain: string): string | null {
+  return readSignatureLine(plain).spelling;
+}
+
+/** One citation per source line of a block, from the block's own verified ranges; null when they do not line up. */
+function lineCitations(block: Block, digestOf: (file: string) => string, count: number): Citation[] | null {
+  const out: Citation[] = [];
+  for (const origin of block.origins) {
+    const lines = origin.verbatim.split('\n').length;
+    for (let at = 0; at < lines; at++) out.push({ file: origin.file, sha256: digestOf(origin.file), selector: `l/${origin.from + at}` });
+  }
+  return out.length === count ? out : null;
 }
 
 /** A paragraph that is one monospace line: the engine's single code span, or the source's own `+…+` spelling of it. */
@@ -317,10 +338,20 @@ export interface Uncited {
 /** What one mapping of the expanded model gives: the K1 model, the report lines of the production, and the blocks that
  * could not be cited and therefore are not in the model (never a block without a citation: K1 counts one as malformed
  * and skips it, so the content would vanish with only a count left behind). */
+/** A line the author declared a signature that reads as none: kept as ordinary text, reported, never given marks. */
+export interface UnparsedSignature {
+  file: string | null;
+  line: number | null;
+  text: string;
+  reason: string;
+  next_action: string;
+}
+
 export interface Mapped {
   model: AdocModel;
   warnings: string[];
   uncited: Uncited[];
+  unparsed: UnparsedSignature[];
 }
 
 /**
@@ -368,22 +399,40 @@ export function toK1Model(model: ExpandedModel, composition: Composition, manual
     });
   };
   const uncited: Uncited[] = [];
+  const unparsed: UnparsedSignature[] = [];
   const misaligned: string[] = [];
   for (let at = 0; at < model.blocks.length; at++) {
     const block = model.blocks[at]!;
     if (block.kind === 'section') continue;
     if (block.kind === 'listing' && block.role === 'signature' && !block.example) {
-      // The explicit signature structure: each line becomes one paragraph anchor (a bare line gains the bold marks
-      // the role declares; a marked line stays as written), citing the line's own verified origin.
-      const origin = block.origins[0] ?? null;
-      if (origin === null) {
-        uncited.push(uncitedOf(model, block, 'signature 块的行没有已核对的原文行'));
+      // The explicit signature structure: every line is read on its own, by the explicit rule, and cited on its own
+      // source line. A blank line carries nothing. A line the rule does not read stays the ordinary text it is and is
+      // reported with its file, line and reason: no line is emitted with bold marks this mapping invented.
+      const lines = block.raw.split('\n');
+      const cites = lineCitations(block, digestOf, lines.length);
+      if (cites === null) {
+        uncited.push(uncitedOf(model, block, 'signature 块的行与已核对的原文行对不上，不能逐行发引用'));
         continue;
       }
-      for (const line of block.raw.split('\n')) {
-        const marked = /^\*\*/.test(line) ? line : `**${line}**`;
-        const lineOrigin = block.origins.find((one) => one.verbatim.split('\n').includes(line)) ?? origin;
-        emit(block, 'paragraph', marked, citationOf(lineOrigin));
+      const expanded = block.expanded.split('\n');
+      for (let index = 0; index < lines.length; index++) {
+        const source = expanded[index] ?? (lines[index] as string);
+        if (squeeze(source) === '') continue;
+        const read = readSignatureLine(stripMarks(source));
+        const cite = cites[index] as Citation;
+        if (read.spelling !== null) {
+          emit(block, 'paragraph', read.spelling, cite);
+          continue;
+        }
+        const [line] = linesOf(cite.selector);
+        unparsed.push({
+          file: cite.file,
+          line,
+          text: source,
+          reason: read.problem,
+          next_action: '签名行应写成命令词后跟参数组（<必选>、[可选] 或 {a|b}）；核对这一行的括号与命令词，修好源后按同一修订号重跑',
+        });
+        emit(block, 'paragraph', source, cite);
       }
       continue;
     }
@@ -420,6 +469,13 @@ export function toK1Model(model: ExpandedModel, composition: Composition, manual
         '下一步：核对这些表格的列定义和竖线（行末多一个竖线会让引擎多读一格），修好源后按同一修订号重跑。',
     );
   }
+  if (unparsed.length > 0) {
+    const shown = unparsed.slice(0, 5).map((one) => `${one.file ?? '展开文本'}${one.line === null ? '' : `:${one.line}`}`).join('、');
+    warnings.push(
+      `有 ${unparsed.length} 行声明为签名的文字读不成命令签名，按原文当作普通文字挂在所在章节，没有补加粗记号：${shown}${unparsed.length > 5 ? ' 等' : ''}。` +
+        `原因是 ${[...new Set(unparsed.map((one) => one.reason))].join('；')}。${unparsed[0]!.next_action}。`,
+    );
+  }
   if (uncited.length > 0) {
     const shown = uncited.slice(0, 5).map((one) => `${one.kind} ${one.file ?? '展开文本'}${one.line === null ? '' : `:${one.line}`}`).join('、');
     warnings.push(
@@ -428,7 +484,7 @@ export function toK1Model(model: ExpandedModel, composition: Composition, manual
     );
   }
   void manualName;
-  return { model: { charset: 'utf-8', lines: model.line_map.length, sections, blocks, nulRemoved: 0 }, warnings, uncited };
+  return { model: { charset: 'utf-8', lines: model.line_map.length, sections, blocks, nulRemoved: 0 }, warnings, uncited, unparsed };
 }
 
 /** The first and last line of a text@1 line selector. */
