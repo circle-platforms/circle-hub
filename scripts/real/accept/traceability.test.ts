@@ -5,6 +5,7 @@
 // - 个数对但用例号不属于 gold 的不符: count matches but statement case id not in gold -> fails
 // - 个数差一: reported case count differs by one -> fails
 // - 未知行被写成有用例: defect with no cases is reported as having cases -> fails
+import { createHash } from 'node:crypto';
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import type { LoggedTurn, Scenario } from '../lib/accept.ts';
@@ -22,6 +23,7 @@ const turnsOf = (texts: string[]): LoggedTurn[] => {
   ];
 };
 
+const hash = (s: string) => createHash('sha256').update(s).digest('hex').slice(0, 12);
 const allOk = (scenario: Scenario, turns: LoggedTurn[]): boolean => scenario.check(turns).every((c) => c.ok);
 
 describe('traceability scenario checks', () => {
@@ -31,6 +33,7 @@ describe('traceability scenario checks', () => {
     defects: [
       {
         bug: '7300',
+        closed: true,
         status: 'fixed',
         cases: [
           { id: '9001:c-1', title: '会话检查' },
@@ -61,9 +64,9 @@ describe('traceability scenario checks', () => {
     const turns = turnsOf([startRunText, fullResultText]);
     const checks = scenario.check(turns);
     assert.ok(allOk(scenario, turns), JSON.stringify(checks));
-    const knownCheck = checks.find((c) => c.name.includes('7300'));
+    const knownCheck = checks.find((c) => c.name.includes(hash('7300')));
     assert.ok(knownCheck && knownCheck.ok);
-    const unknownCheck = checks.find((c) => c.name.includes('7402'));
+    const unknownCheck = checks.find((c) => c.name.includes(hash('7402')));
     assert.ok(unknownCheck && unknownCheck.ok && unknownCheck.actual === '无已索引用例（未知）');
   });
 
@@ -84,7 +87,7 @@ describe('traceability scenario checks', () => {
     const turns = turnsOf([startRunText, fullResultText]);
     const checks = scenario.check(turns);
     assert.ok(allOk(scenario, turns), JSON.stringify(checks));
-    const unknownCheck = checks.find((c) => c.name.includes('7402'));
+    const unknownCheck = checks.find((c) => c.name.includes(hash('7402')));
     assert.ok(unknownCheck && unknownCheck.ok && unknownCheck.actual === '无已索引用例（未知）');
   });
 
@@ -103,9 +106,9 @@ describe('traceability scenario checks', () => {
 
     const turns = turnsOf([startRunText, fullResultText]);
     const checks = scenario.check(turns);
-    const knownCheck = checks.find((c) => c.name.includes('7300'));
+    const knownCheck = checks.find((c) => c.name.includes(hash('7300')));
     assert.ok(knownCheck && !knownCheck.ok);
-    assert.match(knownCheck.actual, /用例号不属于独立依据/);
+    assert.match(knownCheck.actual, /不属于独立依据的用例/);
   });
 
   test('fails when case count is off by one (个数差一)', () => {
@@ -123,7 +126,7 @@ describe('traceability scenario checks', () => {
 
     const turns = turnsOf([startRunText, fullResultText]);
     const checks = scenario.check(turns);
-    const knownCheck = checks.find((c) => c.name.includes('7300'));
+    const knownCheck = checks.find((c) => c.name.includes(hash('7300')));
     assert.ok(knownCheck && !knownCheck.ok);
     assert.match(knownCheck.actual, /用例数不一致/);
   });
@@ -143,7 +146,7 @@ describe('traceability scenario checks', () => {
 
     const turns = turnsOf([startRunText, fullResultText]);
     const checks = scenario.check(turns);
-    const unknownCheck = checks.find((c) => c.name.includes('7402'));
+    const unknownCheck = checks.find((c) => c.name.includes(hash('7402')));
     assert.ok(unknownCheck && !unknownCheck.ok);
   });
 
@@ -193,10 +196,10 @@ describe('traceability scenario checks', () => {
     const checks = scenario.check(turns);
     assert.ok(allOk(scenario, turns), JSON.stringify(checks));
 
-    const statusCheck7300 = checks.find((c) => c.name.includes('7300') && c.name.includes('缺陷系统状态'));
+    const statusCheck7300 = checks.find((c) => c.name.includes(hash('7300')) && c.name.includes('缺陷系统状态'));
     assert.ok(statusCheck7300 && statusCheck7300.ok);
 
-    const statusCheck7402 = checks.find((c) => c.name.includes('7402') && c.name.includes('缺陷系统状态'));
+    const statusCheck7402 = checks.find((c) => c.name.includes(hash('7402')) && c.name.includes('缺陷系统状态'));
     assert.ok(statusCheck7402 && statusCheck7402.ok);
 
     const countsCheck = checks.find((c) => c.name.includes('已关闭缺陷统计'));
@@ -237,7 +240,7 @@ describe('traceability scenario checks', () => {
 
     const turns = turnsOf([startRunText, fullResultText]);
     const checks = scenario.check(turns);
-    const statusCheck = checks.find((c) => c.name.includes('7300') && c.name.includes('缺陷系统状态'));
+    const statusCheck = checks.find((c) => c.name.includes(hash('7300')) && c.name.includes('缺陷系统状态'));
     assert.ok(statusCheck && !statusCheck.ok);
     const countsCheck = checks.find((c) => c.name.includes('已关闭缺陷统计'));
     assert.ok(countsCheck && !countsCheck.ok);
@@ -282,10 +285,12 @@ describe('traceability scenario checks', () => {
 
     const turns = turnsOf([startRunText, fullResultText]);
     const checks = scenario.check(turns);
-    assert.ok(allOk(scenario, turns), JSON.stringify(checks));
+    assert.ok(checks.filter((c) => c.name !== '已关闭且已追溯的缺陷至少 1 个').every((c) => c.ok), JSON.stringify(checks));
+    assert.equal(checks.find((c) => c.name === '已关闭且已追溯的缺陷至少 1 个')?.ok, false);
+    assert.doesNotMatch(JSON.stringify(checks), /800[1-5]|9001|会话检查/);
 
     for (const b of ['8001', '8002', '8003', '8004', '8005']) {
-      const c = checks.find((chk) => chk.name.includes(b) && chk.name.includes('缺陷系统状态'));
+      const c = checks.find((chk) => chk.name.includes(hash(b)) && chk.name.includes('缺陷系统状态'));
       assert.ok(c && c.ok);
     }
   });

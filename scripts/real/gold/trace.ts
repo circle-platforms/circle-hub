@@ -18,8 +18,9 @@
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, resolve } from 'node:path';
 import type { DefectGold, JoinCaseGold, TraceGold } from '../accept/traceability.ts';
+import { locationsGold } from './locations.ts';
 import { caseGold } from './cases.ts';
-import { joinGold, type CaseInput, type DefectInput } from './join.ts';
+import { joinGold, parseClosedStatuses, type CaseInput, type DefectInput } from './join.ts';
 
 export type BugSystem = 'plm' | 'bugzilla' | 'unknown';
 
@@ -257,7 +258,6 @@ export function loadCaseMaps(casesDir: string, allowedDocs?: Set<string>): Array
     const docId = entry.replace(/\.(?:km\.)?json$/i, '');
     if (
       allowedDocs !== undefined &&
-      allowedDocs.size > 0 &&
       !allowedDocs.has(docId) &&
       !allowedDocs.has(entry) &&
       !allowedDocs.has(`agile:case:${docId}`)
@@ -296,6 +296,7 @@ export function compareCases(a: JoinCaseGold, b: JoinCaseGold): number {
 
 export interface TraceGoldOptions {
   html: string;
+  tree?: unknown;
   maps: Array<{ document: string; map: unknown }>;
   plm?: Array<{ id: string | number; status?: string; [key: string]: unknown }>;
   closedStatuses?: string[];
@@ -311,6 +312,7 @@ export function traceGold(options: TraceGoldOptions): TraceGold {
   const parsedDefects = parseFixedBugsHtml(options.html);
   const caseRule = options.caseRule ?? 'marked';
 
+  const locations = options.tree === undefined ? [] : locationsGold(options.tree).all ?? [];
   const caseInputs: CaseInput[] = [];
   for (const item of options.maps) {
     try {
@@ -321,7 +323,7 @@ export function traceGold(options: TraceGoldOptions): TraceGold {
             document: doc.document,
             id: c.id,
             title: c.title,
-            defects: c.defects,
+            defects: [...new Set([...c.defects, ...(locations.find((l) => cleanDocId(l.document) === cleanDocId(doc.document))?.bugs ?? [])])],
           });
         }
       }
@@ -377,6 +379,7 @@ export async function main(argv: string[]): Promise<number> {
   const fixedPath = value('fixed');
   const casesDir = value('cases-dir');
   const docsPath = value('docs');
+  const treePath = value('tree');
   const closedPath = value('closed-statuses');
   const productArg = value('product');
   const buildArg = value('build');
@@ -419,9 +422,7 @@ export async function main(argv: string[]): Promise<number> {
     let closedStatuses: string[] | undefined;
     if (closedPath) {
       const rawClosed: unknown = JSON.parse(readFileSync(resolve(closedPath), 'utf8'));
-      if (Array.isArray(rawClosed)) {
-        closedStatuses = rawClosed.filter((s): s is string => typeof s === 'string');
-      }
+      closedStatuses = parseClosedStatuses(rawClosed);
     }
 
     let build = buildArg;
@@ -437,6 +438,7 @@ export async function main(argv: string[]): Promise<number> {
 
     const gold = traceGold({
       html,
+      tree: treePath ? JSON.parse(readFileSync(resolve(treePath), 'utf8')) : undefined,
       maps,
       plm,
       closedStatuses,
