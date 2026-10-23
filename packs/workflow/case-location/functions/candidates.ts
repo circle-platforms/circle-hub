@@ -84,7 +84,7 @@ function candidatesOutcome(item: string, grounds: string[], pointer: string, lin
       data: { kind: 'candidates', line: null, candidates: [] },
     };
   }
-  const ofLine = orderCandidates(builds.filter((b) => b.line === line).map(candidateOf));
+  const ofLine = orderCandidates(builds.filter((b) => lineKey(b.line) === lineKey(line)).map(candidateOf));
   if (ofLine.length === 0) {
     return {
       verdict: 'unknown',
@@ -120,7 +120,7 @@ function writtenOutcome(item: string, grounds: string[], pointer: string, name: 
   const data = { kind: 'written_build', name };
   const conflict = conflictLines !== null && conflictLines.length > 1;
   const prefix = conflict ? '目录版本层自相矛盾；' : '';
-  const belongs = (buildLine: string): boolean => conflictLines?.some((entry) => entry === lineKey(buildLine)) ?? false;
+  const belongs = (buildLine: string): boolean => conflictLines?.some((entry) => lineKey(entry) === lineKey(buildLine)) ?? false;
   // Known to the located line: the name of a candidate, or the base one alias is based on.
   const known = candidates.find((c) => fold(c.name) === folded) ?? candidates.find((c) => fold(c.base) === folded);
   if (known !== undefined) {
@@ -217,10 +217,17 @@ export function candidatesOutcomes(subject: unknown): CheckOutcome[] {
     try {
       const answer = locate(locateInputOf(id, value.fields, context));
       const located = candidateLine(answer);
-      const candidates = located === null ? [] : orderCandidates(builds.filter((b) => b.line === located).map(candidateOf));
-      const lines = [...new Set(answer.version_values.map(v => lineKey(lineOfVersion(v.version))))];
+      const candidates = located === null ? [] : orderCandidates(builds.filter((b) => lineKey(b.line) === lineKey(located)).map(candidateOf));
+      // One original line per lineKey. Matching uses lineKey, so 10.7.0 still finds builds stored as 10.7.0; the statement keeps the trailing zero.
+      const byKey = new Map<string, string>();
+      for (const versionValue of answer.version_values) {
+        const raw = lineOfVersion(versionValue.version);
+        const key = lineKey(raw);
+        if (!byKey.has(key)) byKey.set(key, raw);
+      }
+      const lines = [...byKey.keys()];
       if (lines.length > 1) {
-        for (const line of lines) {
+        for (const line of byKey.values()) {
           const outcome = candidatesOutcome(id, grounds, pointer, line, builds);
           out.push({ ...outcome, statement: `目录版本层自相矛盾，分别列出候选；${outcome.statement}` });
         }
@@ -237,7 +244,7 @@ export function candidatesOutcomes(subject: unknown): CheckOutcome[] {
         });
       } else out.push(candidatesOutcome(id, grounds, pointer, located, builds));
       const conflictLines = lines.length > 1 ? lines : null;
-      const writtenCandidates = conflictLines === null ? candidates : orderCandidates(builds.filter(build => conflictLines.some(line => line === lineKey(build.line))).map(candidateOf));
+      const writtenCandidates = conflictLines === null ? candidates : orderCandidates(builds.filter(build => conflictLines.some(line => lineKey(line) === lineKey(build.line))).map(candidateOf));
       for (const name of answer.build_names) out.push(writtenOutcome(id, grounds, pointer, name, conflictLines === null ? located : null, builds, writtenCandidates, conflictLines));
     } catch (error) {
       out.push({ verdict: 'unknown', reason: 'check_error', statement: `构建候选检查出错（任务包缺陷）：${internalError(error)}`, grounds, tier: TIER, item: id, pointer });

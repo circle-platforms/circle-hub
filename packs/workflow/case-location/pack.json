@@ -18,8 +18,8 @@
     },
     {
       "path": "functions/candidates.ts",
-      "sha256": "ded6e050d81d1d014e6de182d4bae1c10d0553b79d335b6a3ff0e747be1da640",
-      "size": 13364
+      "sha256": "097f27fc4575cf8de0cb45efb5f2cbc5b69ac5b2d0d00d6b2d701eac3d338285",
+      "size": 13768
     },
     {
       "path": "functions/check.ts",
