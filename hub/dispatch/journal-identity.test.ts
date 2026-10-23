@@ -66,3 +66,15 @@ test('conformance rejects identity changes between observation and admission rep
   const state=await c.service.conformance(c.admin,c.executor.id);
   assert.equal((await c.service.journal.events(state.job)).at(-1)!.body.detail.conformance_verified,false);
 });
+
+for(const stopped of [false,true]) {
+  test(`a ${stopped?'negative':'startup'} record without a start marker cannot invent a device fact`,async t=>{
+    const c=await setupJournal({lost:true,stopped,deviceReached:null});t.after(()=>c.close());
+    const state=await c.service.dispatch(c.admin,c.run,c.executor.id);
+    assert.equal(state.outcome,'unknown');assert.equal(state.frozen,true);
+    assert.equal(c.calls.includes('inspect_blob'),false);
+    assert.ok(state.missing_fact);assert.ok(state.next_action);
+    const events=await c.service.journal.events(state.job);
+    assert.equal(events.some(e=>e.body.detail.phase==='reconciled' && e.body.detail.reached_device===false),false);
+  });
+}

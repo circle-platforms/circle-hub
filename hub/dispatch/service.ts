@@ -359,7 +359,7 @@ export class DispatchService {
     const reported = mapped(r.map,at(value,r.state));
     const identity = at(value,r.request_id) === context.request_id && at(value,r.sha256) === binding.input!.sha256;
     const knownIdentity=receiptOf(await this.journal.events(binding.job));
-    if (found === true && identity && reported === 'issued' && this.opaque(at(value,r.id)) && (!knownIdentity || same(knownIdentity.body.detail.remote_id,at(value,r.id)))) {
+    if (found === true && identity && reported === 'issued' && at(value,r.reached_device)===true && this.opaque(at(value,r.id)) && (!knownIdentity || same(knownIdentity.body.detail.remote_id,at(value,r.id)))) {
       await this.answerRequests(binding,'reconciled','read_back','completed',{remote_id:at(value,r.id),acceptance:'accepted',outcome:'issued',unfreeze:true,reconciled:true},[response.source]);
       await this.checkContinuity(binding,d,client,lease);
       try { return await this.observe(by,binding,d,client,at(value,r.id),intent.body.detail.fences as unknown as HolderSnapshot[],stop); }
@@ -390,6 +390,7 @@ export class DispatchService {
       if(at(value,r.sha256)!==binding.input!.sha256)missing.push('记录字节摘要与原意图不符');
       if(!reported)missing.push('该目标状态尚未登记映射');
       if(reported==='issued' && !this.opaque(at(value,r.id)))missing.push('启动记录缺少有效远端编号');
+      if(reported==='issued' && at(value,r.reached_device)!==true)missing.push('缺少设备开始标记；尚未确定是否触达，不能当作已发出或未触达');
       if((reported==='target_rejected' || reported==='proven_not_executed') && at(value,r.reached_device)!==false)missing.push('记录未明确证明未触达设备');
       if(reported==='target_rejected' && mapped(d.receipt.stages,at(value,r.stage))!=='target_rejected')missing.push('拒绝阶段未获明确映射');
     }
