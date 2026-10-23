@@ -168,8 +168,8 @@
     },
     {
       "path": "tools/jev/lib/judge.ts",
-      "sha256": "a52fc2f5820105d37bb32bff873333856290b16f8c09862afae9bdc667b41ab0",
-      "size": 9324
+      "sha256": "75a1fada20d40fb8f77b8452c6fc3e0a850d2cc333a76890ccaf2297eff65c62",
+      "size": 9894
     },
     {
       "path": "tools/jev/lib/local.ts",
@@ -203,8 +203,8 @@
     },
     {
       "path": "tools/jev/lib/workflow.ts",
-      "sha256": "93b582424ce92fbb53ff97976c5772a2213e963da408f5436acc556534090b77",
-      "size": 18855
+      "sha256": "9f74af1f4bee9f3e2b24711635a8410d1099f1ffa886c1f84be7e1a77ba91638",
+      "size": 19008
     },
     {
       "path": "workflow.json",

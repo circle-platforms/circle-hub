@@ -13,7 +13,7 @@ function egressQuestion(question:JevQuestion):void {
 export interface Work { state: Record<string, string>; questions: Record<string, JevQuestion>; pieces: Piece[] }
 export class Judge {
   stopped:string|null=null;
-  attempts=0; sentFragments=new Map<string,string>(); failures=new Map<string,string>();
+  attempts=0; sentFragments=new Map<string,string>(); failures=new Map<string,string>(); unanswered=new Map<string,{code:string;estimate:number;message:string}>();
   model: string; client: HttpJev; store: LocalStore; send: string[]; cache = new Map<string, JevJudgmentRecord>();
   constructor(model: string, key: () => string, baseUrl: string | undefined, store: LocalStore, send: string[], options: Partial<HttpJevOptions> = {}) {
     this.model = model; this.store = store; this.send = send;
@@ -32,11 +32,13 @@ export class Judge {
     for(const question of Object.values(work.questions))egressQuestion(question);
     const checked = checkRequest(request, { pinnedModel: this.model, maxRequestBytes: 16 * 1024 * 1024 });
     const stateTokens = estimateTokens(JSON.stringify(work.state)) + 256;
-    need(Object.keys(work.questions).length <= 10 && stateTokens + estimateTokens(JSON.stringify(work.questions)) + 32 * Object.keys(work.questions).length <= 48_000 && Object.values(work.questions).every((q) => stateTokens + estimateTokens(JSON.stringify(q)) + 32 <= 24_000), '片段或题目太大；减少片段后重跑');
+    const oversized:string[]=[];const eligible:Record<string,JevQuestion>={};
+    for(const [id,q] of Object.entries(work.questions)){const estimate=stateTokens+estimateTokens(JSON.stringify(q))+32;if(estimate>24000){const message=`${id}：片段和节点选项估算 ${estimate} 令牌，超过单题 24,000 上限，没有提问；下一步拆分该条目或从 --pieces 去掉；选项过多时缩小节点或选项说明`;this.failures.set(id,message);this.unanswered.set(id,{code:'oversized',estimate,message});oversized.push(id);}else eligible[id]=q;}
+    need(Object.keys(eligible).length<=10&&stateTokens+estimateTokens(JSON.stringify(eligible))+32*Object.keys(eligible).length<=48000||Object.keys(eligible).length===0,'整批超过 48,000 令牌；拆成更小批次重跑');
     const stateDigest = inputDigest(work.state); const answers: Record<string, JevJudgmentRecord> = {}; const pending: Record<string, JevQuestion> = {};
-    for (const [id, question] of Object.entries(work.questions)) { const key = reuseKey({ model: this.model, question, stateDigest })!; const old = this.cache.get(key); if (old) answers[id] = old; else pending[id] = question; }
-    if (Object.keys(pending).length === 0) return { answers, failed: [] };
-    if(this.stopped){for(const id of Object.keys(pending))this.failures.set(id,this.stopped);return {answers,failed:Object.keys(pending)};}
+    for (const [id, question] of Object.entries(eligible)) { const key = reuseKey({ model: this.model, question, stateDigest })!; const old = this.cache.get(key); if (old) answers[id] = old; else pending[id] = question; }
+    if (Object.keys(pending).length === 0) return { answers, failed: oversized };
+    if(this.stopped){for(const id of Object.keys(pending))this.failures.set(id,this.stopped);return {answers,failed:[...oversized,...Object.keys(pending)]};}
     const send = async (questions: Record<string, JevQuestion>, split: boolean): Promise<string[]> => {
       const actual = { ...checked.request, questions };
       try {
@@ -57,7 +59,7 @@ export class Judge {
         return Object.keys(questions);
       }
     };
-    return { answers, failed: await send(pending, true) };
+    return { answers, failed: [...oversized,...await send(pending, true)] };
   }
 }
 export function questionWork(input: unknown, pieces: Piece[], model: string): Work[] {
