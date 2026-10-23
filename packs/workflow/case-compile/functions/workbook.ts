@@ -102,7 +102,11 @@ export default function check(input: unknown): Outcome[] {
   const s = isRecord(input) && isRecord(input.subject) ? input.subject : {};
   const item = typeof s.item === 'string' ? s.item : undefined;
   const unknown = (reason: NonNullable<Outcome['reason']>, statement: string): Outcome[] => [{ verdict: 'unknown', reason, statement, grounds: [], tier: 'blocking', ...(item ? { item } : {}) }];
-  if (!s.workbook) return unknown('missing_input', '缺少客户端生成的工作簿。先将计划要求项修到满足，再自动运行本包脚本、上传并以计划为前驱开新运行绑定 workbook 和 plan_run；不证明在真实设备上跑得通。');
+  if (!s.workbook) {
+    const identity = parseRuntimeContract(s.contract);
+    const basis = identity.ok && isRecord(s.profile) && typeof s.profile.synthetic === 'boolean' ? markers(s.profile.synthetic, identity.contract) : '（不证明在真实设备上跑得通）';
+    return unknown('missing_input', '缺少客户端生成的工作簿。先将计划要求项修到满足，再自动运行本包脚本、上传并以计划为前驱开新运行绑定 workbook 和 plan_run' + basis);
+  }
   const raw = isRecord(s.workbook) ? s.workbook : {}; const generation = isRecord(s.generation) ? s.generation : {};
   const contract = parseRuntimeContract(s.contract); const inventory = parseManifest(s.manifest); const slots = readSlots(s.data); const fields = generationFields(s.fields);
   const profile = contract.ok && inventory.ok ? parseProfile(s.profile, contract.contract, inventory.beds) : null;

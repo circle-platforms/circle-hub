@@ -48,3 +48,13 @@ test('normalizer CLI reports both digests and a client-normalization disclosure'
     const result = spawnSync(process.execPath, ['packs/workflow/case-compile/scripts/normalize-mindmap.ts', '--in', source, '--out', out], { encoding: 'utf8' }); assert.equal(result.status, 0, result.stderr); const data = JSON.parse(result.stdout); assert.equal(data.before_sha256, sha256(readFileSync(source))); assert.equal(data.after_sha256, sha256(readFileSync(out))); assert.match(data.note, /客户端规整/); assert.ok(!result.stdout.includes(dir));
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+test('staging publishes identical client bytes under tools and the staged entry remains executable', async () => {
+  const { stage } = await import('../pack-files.ts'); const dir = mkdtempSync(join(tmpdir(), 'staged-workbook-cli-'));
+  try {
+    const root = await stage(join(dir, 'pack')); const manifest = JSON.parse(readFileSync(join(root, 'pack.json'), 'utf8'));
+    for (const name of ['files.ts', 'normalize-mindmap.ts', 'generate-workbook.ts']) { const entry = manifest.files.find((v: { path: string }) => v.path === `tools/${name}`); assert.ok(entry); assert.equal(entry.sha256, sha256(readFileSync(join(root, 'tools', name)))); assert.equal(entry.sha256, sha256(readFileSync(`packs/workflow/case-compile/scripts/${name}`))); }
+    const f = fixture(); const args: string[] = [];
+    for (const [key, value] of Object.entries(f)) { const path = join(dir, `${key}.json`); writeFileSync(path, value instanceof Uint8Array ? value : JSON.stringify(value)); args.push(`--${key}`, path); }
+    const result = spawnSync(process.execPath, [join(root, 'tools/generate-workbook.ts'), ...args, '--out', join(dir, 'artifact.xlsx')], { encoding: 'utf8' }); assert.equal(result.status, 0, result.stderr); assert.equal(JSON.parse(result.stdout).generator, GENERATOR);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});

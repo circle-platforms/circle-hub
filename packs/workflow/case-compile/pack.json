@@ -8,8 +8,8 @@
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "70e83e8b81773a7ee0e4f858c72d6ddaebcf2ae4a2d1d9a6e722a48a902b0901",
-      "size": 3644
+      "sha256": "36c3105e1c7af143a8282e278ff3347449e6e2ba61d68894c3a32179a8cb3213",
+      "size": 4538
     },
     {
       "path": "checks.json",
@@ -123,8 +123,8 @@
     },
     {
       "path": "functions/workbook.ts",
-      "sha256": "153365e2441190f75bbd5ec26036c21429a92185fa930209e4aa8ca3eece4492",
-      "size": 15767
+      "sha256": "0f9076c48d2bde1ed63acae33b82211e333011428261ce3b9f8d21e6aa91906b",
+      "size": 15993
     },
     {
       "path": "functions/xlsx-model.ts",
@@ -453,13 +453,13 @@
     },
     {
       "path": "tools/generate-workbook.ts",
-      "sha256": "3306d35880f719f61146eef6259371ec3bcd96d87d1acf55248ae725da619a3e",
-      "size": 7676
+      "sha256": "d6f9836b6f6b7d4cf691c79285176a0fc2a08fdb291935a85b83f44fbb1380e2",
+      "size": 7744
     },
     {
       "path": "tools/normalize-mindmap.ts",
-      "sha256": "468fcf5cc8199f9206b15fcefe1b590970a15635f9d62471a5576a46ab93b595",
-      "size": 2561
+      "sha256": "1ece0b27f801f492acb538bdb0a7f7a997e645ac7e126a4ab7a52b830fcdd85c",
+      "size": 2629
     },
     {
       "path": "workflow.json",

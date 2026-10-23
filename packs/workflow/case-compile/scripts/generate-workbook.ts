@@ -1,4 +1,5 @@
 // Offline recipe verification and artifact generation. Every source is read from the explicitly named local file.
+import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import REQUIREMENTS from '../requirements.json' with { type: 'json' };
@@ -56,4 +57,4 @@ export async function main(argv: string[]): Promise<number> {
     const bytes = generateWorkbook(recipe); await writeNew(args.out, bytes); process.stdout.write(JSON.stringify({ sha256: sha256(bytes), generator: GENERATOR, bytes: bytes.length }) + '\n'); return 0;
   } catch (error) { process.stderr.write(`生成失败：${error instanceof Error ? error.message : '输入无效'}\n`); return 1; }
 }
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) process.exitCode = await main(process.argv.slice(2));
+if (process.argv[1] && realpathSync(resolve(process.argv[1])) === realpathSync(fileURLToPath(import.meta.url))) process.exitCode = await main(process.argv.slice(2));
