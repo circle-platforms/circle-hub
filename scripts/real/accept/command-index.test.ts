@@ -56,3 +56,9 @@ test('unplaced totals include excluded ids but set comparisons exclude them', ()
   const report = compareCommandIndex(input, [raw]);
   assert.equal(report.verdict, '相等'); assert.equal(report.counts.unplaced_gold, 2); assert.equal(report.counts.unplaced_hub, 2); assert.equal(report.counts.unplaced_both, 1);
 });
+
+test('a missing key with skipped sources is incomplete, never evidence of absence', () => {
+  const raw = view(); raw.entries = {}; raw.keys = {}; raw.skipped = 1;
+  assert.equal(compareCommandIndex(gold, [raw]).verdict, '输入不全');
+  for (const skipped of [undefined, -1]) assert.equal(compareCommandIndex(gold, [{ ...view(), skipped }]).verdict, '输入不全');
+});

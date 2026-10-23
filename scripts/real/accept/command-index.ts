@@ -30,7 +30,7 @@ export function compareCommandIndex(gold: CommandsGold, views: readonly unknown[
     if (root !== undefined && (root !== raw.build.root || product !== raw.product)) incomplete.push('索引根或产品不同');
     root = raw.build.root; product = String(raw.product);
     if (raw.truncated || (Array.isArray(raw.cut_keys) && raw.cut_keys.length)) incomplete.push('索引分片仍被截断：重新按 only= 分成更小的导出');
-    if (typeof raw.skipped === 'number' && raw.skipped > 0) incomplete.push('索引有未读来源：修复来源后重新导出');
+    if (raw.skipped !== 0) incomplete.push('索引有未读来源：修复来源后重新导出');
     if (Array.isArray(raw.only)) for (const key of raw.only) requested.add(documentKey(String(key)));
     else full = true;
     const listed = new Set<string>();
