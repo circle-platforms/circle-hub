@@ -60,9 +60,9 @@ export class Judge {
         if (split && typed.code === 'JEV_TOO_LARGE' && Object.keys(questions).length > 1) { const ids = Object.keys(questions); const middle = Math.ceil(ids.length / 2); return [...await send(Object.fromEntries(ids.slice(0, middle).map((id) => [id, questions[id]!])), false), ...await send(Object.fromEntries(ids.slice(middle).map((id) => [id, questions[id]!])), false)]; }
         if (error instanceof Refusal) throw error;
         if(!(error instanceof JevError))throw error;
-        const status=error.status;const badQuestion=error.code==='JEV_BAD_REQUEST'&&(status===400||status===422||status===null);const badPlan=error.code==='JEV_BAD_REQUEST'&&!badQuestion;
-        const action=error.code==='JEV_UNAUTHORIZED'?'密钥被拒；所有者换密钥后重跑':error.code==='JEV_RATE_LIMITED'?'服务限流；等几秒或 Retry-After 指定时间后重跑':error.code==='JEV_TOO_LARGE'?'请求太大；少放片段后重跑':error.code==='JEV_BAD_RESPONSE'?'应答未通过校验；核对确切模型版本和服务端后重跑':badQuestion?`服务拒收这道题（HTTP ${status??'未发送'}）；改题后重跑`:badPlan?`端点或账户被拒（HTTP ${status}）；核对 --base-url 或账户`:status!==null?`服务不可用（HTTP ${status}），对方未处理；稍后重跑，已有回答复用`:`${error.message}；稍后重跑，已有回答复用；本地超时或连接中断不证明对方没处理，可能已计费`;
-        if(badPlan||error.code==='JEV_UNAUTHORIZED'||error.code==='JEV_RATE_LIMITED'||error.code==='JEV_BAD_RESPONSE'||error.code==='JEV_UNAVAILABLE')this.stopped=action;
+        const status=error.status;const redirect=status!==null&&status>=300&&status<400;const badQuestion=error.code==='JEV_BAD_REQUEST'&&(status===400||status===422||status===null);const badPlan=error.code==='JEV_BAD_REQUEST'&&!badQuestion;const generated=work.action==='place'||work.action==='calibrate';
+        const action=redirect?`服务要求重定向（HTTP ${status}），没有跟随；核对 --base-url`:error.code==='JEV_UNAUTHORIZED'?'密钥被拒；所有者换密钥后重跑':error.code==='JEV_RATE_LIMITED'?`服务限流或过载（HTTP ${status}）；等几秒或 Retry-After 指定时间后重跑`:error.code==='JEV_TOO_LARGE'?(generated?'服务拒收技能生成的题目：超过服务预算；报告集成者核对接口':'请求太大；少放片段后重跑'):error.code==='JEV_BAD_RESPONSE'?'应答未通过校验；核对确切模型版本和服务端后重跑':badQuestion?(generated?`服务拒收技能生成的题目（HTTP ${status??'未发送'}）；报告集成者核对接口`:`服务拒收这道题（HTTP ${status??'未发送'}）；改题后重跑`):badPlan?`端点或账户被拒（HTTP ${status}）；核对 --base-url 或账户`:status!==null?`服务不可用（HTTP ${status}）；对方是否已处理不确定，可能已计费；稍后重跑，已有回答复用`:`${error.message}；稍后重跑，已有回答复用；本地超时或连接中断不证明对方没处理，可能已计费`;
+        if(redirect||badPlan||error.code==='JEV_UNAUTHORIZED'||error.code==='JEV_RATE_LIMITED'||error.code==='JEV_BAD_RESPONSE'||error.code==='JEV_UNAVAILABLE')this.stopped=action;
         for(const id of Object.keys(questions))this.failures.set(id,action);
         return Object.keys(questions);
       }
