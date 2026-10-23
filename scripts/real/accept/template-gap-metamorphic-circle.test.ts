@@ -63,7 +63,7 @@ const drive = (scenario: ReturnType<typeof build>, answers: (file: string) => st
       results.push({ id: 'gn', text: JSON.stringify(full), isError: false });
     } else if (tools.length === 1 && tools[0]!.tool === 'hub_start_run') {
       const shas = ((tools[0]!.input.inputs as { documents: Array<{ reference: string }> }).documents).map((d) => { assert.deepEqual(Object.keys(d), ['reference']); return d.reference.slice(4); });
-      const rows = shas.map((sha) => `upload-${sha.slice(0, 12)} | 文档 | 位置 / | ${answers(shaToName.get(sha) ?? '?')}`);
+      const rows = shas.map((sha) => `- upload-${sha.slice(0, 12)} | 文档 | ${answers(shaToName.get(sha) ?? '?')} | 位置 /`);
       results.push({ id: 'run', text: `运行 run_x 完成：\n${rows.join('\n')}`, isError: false });
     }
     lastResults = results;
@@ -266,4 +266,8 @@ test('review 1: start_run uses the actual strict reference binding contract', as
     results = reply.map((call, i) => ({ id: `upload-${i}`, text: `已上传 src:${sha256Of(readFileSync(join(dir, 'work', String(call.input.file_path))))}`, isError: false }));
   }
   assert.fail('no start_run call');
+});
+
+test('review 2: real Hub item rows include a dash, title separators and a final location column', () => {
+  assert.deepEqual(parseItemLine('- upload-0123456789ab | 合成 | 标题 | 用例 2 个；24 个模板类别都已覆盖 | 位置 src:synthetic'), { item: 'upload-0123456789ab', summary: '用例 2 个；24 个模板类别都已覆盖' });
 });

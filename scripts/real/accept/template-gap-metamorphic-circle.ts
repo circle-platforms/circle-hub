@@ -25,7 +25,7 @@ export interface GapCircleGold {
 
 /** One item row: "<item> | <label> | 位置 <path> | <summary>" — the summary holds no ' | ', a title may. */
 export function parseItemLine(line: string): { item: string; summary: string } | null {
-  const parts = line.split(' | ');
+  const parts = line.replace(/^- /, '').split(' | ');
   if (parts.length < 2) return null;
   const item = parts[0] ?? '';
   if (!/^upload-[0-9a-f]{12}$/.test(item)) return null;
