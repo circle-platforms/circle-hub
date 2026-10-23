@@ -10,6 +10,7 @@ import { createRecordStore, type RecordStore, type ActionBody, type Page, type S
 import { DEFAULT_LIMITS } from '../config/index.ts';
 import { RECORD_SCHEMAS } from '../records/constants.ts';
 import type { Database, PgTransaction } from '../records/db.ts';
+import type { LeaseOp } from '../../contracts/generated/vocabulary.ts';
 import { LeaseDetail } from '../../contracts/src/records.ts';
 
 /** The holder of a lease: the user and the run (a lease is held by a run, D04 R[0]). */
@@ -183,7 +184,11 @@ export class LeaseService {
 
   async holderSnapshot(keys: readonly string[]): Promise<HolderSnapshot[]> {
     const rows = await this.#db.query<Row>('SELECT key, lease_id, token, user_id, run_id, expires_at, released_at FROM leases WHERE key = ANY($1) ORDER BY key', [[...new Set(keys)].sort()]);
-    return rows.rows.map(row => ({ key: row.key, lease: row.lease_id, fencing: Number(row.token), user: row.user_id, run: row.run_id, released: row.released_at !== null, expires_at: row.expires_at.toISOString() }));
+    return rows.rows.map(row => {
+      const fencing = Number(row.token);
+      if (!Number.isSafeInteger(fencing) || fencing < 1) throw new Error('租约围栏不能安全表示，请管理员核对');
+      return { key: row.key, lease: row.lease_id, fencing, user: row.user_id, run: row.run_id, released: row.released_at !== null, expires_at: row.expires_at.toISOString() };
+    });
   }
 
   /** The unexpired, unreleased rows under a prefix, for the run context (no tokens, no holders). */
@@ -248,7 +253,7 @@ export class LeaseService {
 
   /** The shared body of extend and release: rows locked FOR UPDATE, every update must affect its row, and the
    * service's own clock decides (no caller-supplied moment: a caller could lie a lease young again). */
-  async #change(keys: string[], holder: Holder, op: 'extend' | 'release', ttlSeconds: number, maxTtlSeconds: number | undefined): Promise<ChangeOutcome> {
+  async #change(keys: string[], holder: Holder, op: Extract<LeaseOp, 'extend' | 'release'>, ttlSeconds: number, maxTtlSeconds: number | undefined): Promise<ChangeOutcome> {
     const ordered = [...keys].sort();
     return this.#db.transaction(async (tx) => {
       const now = await this.#nowIn(tx);
@@ -322,7 +327,7 @@ export class LeaseService {
     return row.rows[0]?.expires_at.toISOString() ?? null;
   }
 
-  async #appendAction(tx: PgTransaction, op: 'acquire' | 'extend' | 'release' | 'force_release' | 'take_over', lease: string, keys: string[], holder: Holder, until: string, token: number, extra: Record<string, unknown> = {}): Promise<void> {
+  async #appendAction(tx: PgTransaction, op: LeaseOp, lease: string, keys: string[], holder: Holder, until: string, token: number, extra: Record<string, unknown> = {}): Promise<void> {
     const detail = LeaseDetail.parse({ op, lease, keys, holder, until, token });
     const startedAt = new Date().toISOString();
     const body: ActionBody = {

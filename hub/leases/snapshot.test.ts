@@ -47,3 +47,23 @@ test('lease changes use the configured record store in the same transaction and 
   await assert.rejects(leases.acquire({ keys: ['synthetic/store'], holder, prefix: 'synthetic/', ttlSeconds: 300, maxTtlSeconds: 600 }), /synthetic record limit/);
   assert.equal(writes, 1); assert.deepEqual(await leases.holderSnapshot(['synthetic/store']), []);
 });
+
+test('configured record size limits roll back oversized Unicode lease audit data', async t => {
+  const kit = await openTestRecords({ limits: { maxRecordBytes: 1024 } }); t.after(() => kit.close());
+  const db = new Database(createPool(kit.database, 2)); t.after(() => db.end());
+  const leases = new LeaseService(db, { records: kit.store });
+  const holder = { user: newId('usr'), run: newId('run') };
+  assert.ok((await leases.acquire({ keys: ['synthetic/limit'], holder, prefix: 'synthetic/', ttlSeconds: 300, maxTtlSeconds: 600 })).ok);
+  await assert.rejects(leases.forceRelease({ keys: ['synthetic/limit'], by: holder.user, reason: '合成原因'.repeat(200) }), /超过上限/);
+  assert.equal((await leases.holderSnapshot(['synthetic/limit']))[0].released, false);
+  assert.equal((await kit.store.find({ key: 'action.run', value: holder.run })).items.length, 1);
+});
+
+test('snapshots never round unsafe database fencing integers', async t => {
+  const kit = await openTestRecords(); t.after(() => kit.close());
+  const db = new Database(createPool(kit.database, 2)); t.after(() => db.end());
+  const leases = new LeaseService(db); const holder = { user: newId('usr'), run: newId('run') };
+  await leases.acquire({ keys: ['synthetic/unsafe-fence'], holder, prefix: 'synthetic/', ttlSeconds: 300, maxTtlSeconds: 600 });
+  await db.query('UPDATE leases SET token=$1 WHERE key=$2', ['9007199254740993', 'synthetic/unsafe-fence']);
+  await assert.rejects(leases.holderSnapshot(['synthetic/unsafe-fence']), /不能安全表示/);
+});
