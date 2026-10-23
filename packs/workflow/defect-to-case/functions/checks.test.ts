@@ -191,10 +191,10 @@ describe('pack checks', () => {
       const outcomes1 = checkGroundedReading(input1);
       assert.equal(outcomes1[0].verdict, 'refute');
       assert.equal(outcomes1[0].code, CODES.QUOTE_MISSING);
-      assert.ok(outcomes1[0].statement.includes('/cases/0/expected/0/quote'));
+      assert.ok(outcomes1[0].statement.includes('/slots/cases/0/data/expected/0/quote'));
       assert.ok(outcomes1[0].statement.includes('{"text":'));
       assert.ok(outcomes1[0].statement.includes('"reference":'));
-      assert.equal(outcomes1[0].pointer, '/cases/0/expected/0/quote');
+      assert.equal(outcomes1[0].pointer, '/slots/cases/0/data/expected/0/quote');
 
       // quote 放在用例一级
       const caseLevel = {
@@ -217,10 +217,10 @@ describe('pack checks', () => {
       const outcomes2 = checkGroundedReading(input2);
       assert.equal(outcomes2[0].verdict, 'refute');
       assert.equal(outcomes2[0].code, CODES.QUOTE_MISSING);
-      assert.ok(outcomes2[0].statement.includes('/cases/0/expected/0/quote'));
+      assert.ok(outcomes2[0].statement.includes('/slots/cases/0/data/expected/0/quote'));
       assert.ok(outcomes2[0].statement.includes('{"text":'));
       assert.ok(outcomes2[0].statement.includes('"reference":'));
-      assert.equal(outcomes2[0].pointer, '/cases/0/expected/0/quote');
+      assert.equal(outcomes2[0].pointer, '/slots/cases/0/data/expected/0/quote');
 
       // quote 缺 reference
       const missingRef = {
@@ -239,10 +239,10 @@ describe('pack checks', () => {
       const outcomes3 = checkGroundedReading(input3);
       assert.equal(outcomes3[0].verdict, 'refute');
       assert.equal(outcomes3[0].code, CODES.QUOTE_MISSING);
-      assert.ok(outcomes3[0].statement.includes('/cases/0/expected/0/quote'));
+      assert.ok(outcomes3[0].statement.includes('/slots/cases/0/data/expected/0/quote'));
       assert.ok(outcomes3[0].statement.includes('{"text":'));
       assert.ok(outcomes3[0].statement.includes('"reference":'));
-      assert.equal(outcomes3[0].pointer, '/cases/0/expected/0/quote');
+      assert.equal(outcomes3[0].pointer, '/slots/cases/0/data/expected/0/quote');
     });
 
     it('refutes an expected result introducing an unsupported number or on/off state', () => {

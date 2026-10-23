@@ -33,8 +33,8 @@
     },
     {
       "path": "functions/checks.ts",
-      "sha256": "e365190b822b7e0e9c76d521d3ba870f6dd425ab349555cb0722c0e957580f84",
-      "size": 26879
+      "sha256": "edc353ae1dcd13129ccf864187e2cdb9ae15f06cac800fc4ff47f4f403deac30",
+      "size": 27469
     },
     {
       "path": "functions/compact-index.ts",
@@ -53,8 +53,8 @@
     },
     {
       "path": "functions/subjects.ts",
-      "sha256": "5402c71f1efc0d742a6c7a2816022a36dbe8163ea0afddc9bb26a65860fe0b5b",
-      "size": 4676
+      "sha256": "23b8db9a994b3c7e8965275c683e4946a9c9077d51f9fae821db2aba99731615",
+      "size": 5068
     },
     {
       "path": "functions/types.ts",
@@ -113,8 +113,8 @@
     },
     {
       "path": "samples/positive/quotes_verbatim.json",
-      "sha256": "178bdaff08d95eea0799fb03f4a11ec06c8442900ac12d68cf1b9f891c39be8c",
-      "size": 787
+      "sha256": "83bf9f7d901cd05b385ef6115634a190d786c1f169851a341d4b12084699a8db",
+      "size": 829
     },
     {
       "path": "samples/positive/reading_grounded.json",

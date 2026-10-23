@@ -184,6 +184,7 @@ describe('defect-to-case end to end run', { skip }, () => {
     const error = result.errors.find((e) => e.code === 'defect-to-case.expect_not_in_quote');
     assert.ok(error, JSON.stringify(result.errors));
     assert.equal(error.rounds_left, 2);
+    assert.equal(error.path, '/items/0/slots/cases/0/data/expected/0/text');
     assert.match(error.message, /修正/);
     const item = Object.values(result.partitions).flat().find((i) => i.item === '74001')!;
     assert.equal(item.requirements.find((r) => r.requirement === 'grounded')?.status, 'unsatisfied');

@@ -73,10 +73,10 @@ describe('hand-built drafts and checks coverage', () => {
     const out1 = checkGroundedReading(makeInput({ item: '74001', slots: { cases: [{ text: noQuote.title, data: noQuote }] } }));
     assert.equal(out1[0].verdict, 'refute');
     assert.equal(out1[0].code, CODES.QUOTE_MISSING);
-    assert.ok(out1[0].statement.includes('/cases/0/expected/0/quote'));
+    assert.ok(out1[0].statement.includes('/slots/cases/0/data/expected/0/quote'));
     assert.ok(out1[0].statement.includes('{"text":'));
     assert.ok(out1[0].statement.includes('"reference":'));
-    assert.equal(out1[0].pointer, '/cases/0/expected/0/quote');
+    assert.equal(out1[0].pointer, '/slots/cases/0/data/expected/0/quote');
 
     // quote 放在用例一级
     const quoteAtCaseLevel = {
@@ -100,10 +100,10 @@ describe('hand-built drafts and checks coverage', () => {
     );
     assert.equal(out2[0].verdict, 'refute');
     assert.equal(out2[0].code, CODES.QUOTE_MISSING);
-    assert.ok(out2[0].statement.includes('/cases/0/expected/0/quote'));
+    assert.ok(out2[0].statement.includes('/slots/cases/0/data/expected/0/quote'));
     assert.ok(out2[0].statement.includes('{"text":'));
     assert.ok(out2[0].statement.includes('"reference":'));
-    assert.equal(out2[0].pointer, '/cases/0/expected/0/quote');
+    assert.equal(out2[0].pointer, '/slots/cases/0/data/expected/0/quote');
 
     // quote 缺 reference
     const quoteMissingRef = {
@@ -118,10 +118,10 @@ describe('hand-built drafts and checks coverage', () => {
     const out3 = checkGroundedReading(makeInput({ item: '74001', slots: { cases: [{ text: quoteMissingRef.title, data: quoteMissingRef }] } }));
     assert.equal(out3[0].verdict, 'refute');
     assert.equal(out3[0].code, CODES.QUOTE_MISSING);
-    assert.ok(out3[0].statement.includes('/cases/0/expected/0/quote'));
+    assert.ok(out3[0].statement.includes('/slots/cases/0/data/expected/0/quote'));
     assert.ok(out3[0].statement.includes('{"text":'));
     assert.ok(out3[0].statement.includes('"reference":'));
-    assert.equal(out3[0].pointer, '/cases/0/expected/0/quote');
+    assert.equal(out3[0].pointer, '/slots/cases/0/data/expected/0/quote');
 
     // 多个期望结果中的第二个缺 quote
     const secondMissing = {
@@ -134,8 +134,8 @@ describe('hand-built drafts and checks coverage', () => {
     const out4 = checkGroundedReading(makeInput({ item: '74001', slots: { cases: [{ text: secondMissing.title, data: secondMissing }] } }));
     assert.equal(out4[0].verdict, 'refute');
     assert.equal(out4[0].code, CODES.QUOTE_MISSING);
-    assert.ok(out4[0].statement.includes('/cases/0/expected/1/quote'));
-    assert.equal(out4[0].pointer, '/cases/0/expected/1/quote');
+    assert.ok(out4[0].statement.includes('/slots/cases/0/data/expected/1/quote'));
+    assert.equal(out4[0].pointer, '/slots/cases/0/data/expected/1/quote');
   });
 
   it('4. refuses expected result containing number or command or on/off state not in quote', () => {

@@ -14,7 +14,7 @@ test('a paraphrase with no new entity is blocking and gives a correction and poi
   assert.equal(out[0].verdict, 'refute');
   assert.equal(out[0].code, 'defect-to-case.expect_not_in_quote');
   assert.equal(out[0].tier, 'blocking');
-  assert.equal(out[0].pointer, '/cases/0/expected/0/text');
+  assert.equal(out[0].pointer, '/slots/cases/0/data/expected/0/text');
   assert.match(out[0].statement, /修正/);
 });
 test('verbatim fragments allow only whitespace folding, never case or punctuation changes or empty text', () => {

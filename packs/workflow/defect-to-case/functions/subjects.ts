@@ -90,17 +90,14 @@ export function commandSubject(input: unknown): unknown {
 export function quoteSubject(input: unknown): unknown {
   const record = isRecord(input) ? input : {};
   const itemId = extractItemId(record);
-  const drafts = extractDrafts(record.slots);
-
-  const quotes: Array<{ reference: string; text: string }> = [];
-  for (const draft of drafts) {
-    for (const exp of draft.expected) {
-      if (exp.quote && exp.quote.reference && exp.quote.text) {
-        quotes.push({
-          reference: exp.quote.reference,
-          text: exp.quote.text,
-        });
-      }
+  const slots = isRecord(record.slots) ? record.slots : {};
+  const quotes: Array<{ reference: string; text: string; case: number; expected: number }> = [];
+  for (const [caseIndex, claim] of (Array.isArray(slots.cases) ? slots.cases : []).entries()) {
+    if (!isRecord(claim)) continue;
+    const data = isRecord(claim.data) ? claim.data : claim;
+    for (const [expectedIndex, exp] of (Array.isArray(data.expected) ? data.expected : []).entries()) {
+      if (!isRecord(exp) || !isRecord(exp.quote) || typeof exp.quote.reference !== 'string' || typeof exp.quote.text !== 'string' || !exp.quote.reference || !exp.quote.text) continue;
+      quotes.push({ reference: exp.quote.reference, text: exp.quote.text, case: caseIndex, expected: expectedIndex });
     }
   }
 

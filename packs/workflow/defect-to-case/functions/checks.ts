@@ -396,7 +396,7 @@ export function checkGroundedReading(input: unknown): CheckOutcome[] {
   const outcomes: CheckOutcome[] = [];
   for (const [i, draft] of extractDrafts(subject.slots).entries()) {
     for (const [j, exp] of draft.expected.entries()) {
-      const pointer = `/cases/${i}/expected/${j}/quote`;
+      const pointer = `/slots/cases/${i}/data/expected/${j}/quote`;
       const at = `第 ${i + 1} 个起草用例第 ${j + 1} 个期望结果`;
       if (!exp.quote || !exp.quote.reference || !foldQuoteText(exp.quote.text)) {
         outcomes.push({ verdict: 'refute', code: CODES.QUOTE_MISSING, statement: `${at}（${pointer}）缺少逐字引文（quote）；修正：每个期望结果自带 {"text": "<修复说明或手册里的逐字原文>", "reference": "<引用>"}`, grounds: [], tier: 'blocking', pointer, ...own });
@@ -404,7 +404,7 @@ export function checkGroundedReading(input: unknown): CheckOutcome[] {
       }
       const expected = foldQuoteText(exp.text);
       if (expected === '' || !foldQuoteText(exp.quote.text).includes(expected)) {
-        outcomes.push({ verdict: 'refute', code: CODES.EXPECT_NOT_IN_QUOTE, statement: `${at}文字不是所附引文的逐字片段（只忽略空白差异）；修正：从这段修复说明或手册引文逐字摘取非空的期望文字，不得改写，再提交修复`, grounds: [exp.quote.reference], tier: 'blocking', pointer: `/cases/${i}/expected/${j}/text`, ...own });
+        outcomes.push({ verdict: 'refute', code: CODES.EXPECT_NOT_IN_QUOTE, statement: `${at}文字不是所附引文的逐字片段（只忽略空白差异）；修正：从这段修复说明或手册引文逐字摘取非空的期望文字，不得改写，再提交修复`, grounds: [exp.quote.reference], tier: 'blocking', pointer: `/slots/cases/${i}/data/expected/${j}/text`, ...own });
       }
     }
   }
@@ -419,7 +419,10 @@ export function checkQuoteSources(input: unknown): CheckOutcome[] {
   const allowed = isRecord(subject.allowed_quote_sources) ? subject.allowed_quote_sources : {};
   const quotes = Array.isArray(subject.quotes) ? subject.quotes : [];
   const out: CheckOutcome[] = [];
-  const fix = '修正：引用本条缺陷绑定原件的 src:<摘要>/json@1/p/fields/<fix_field>，或 inputs.manual 绑定的同版本线手册 src 片段；tree:/rec: 无法证明来源身份，改引对应原件的 src 片段';
+  const segment = (field: string) => [...field].map((ch) => /[%/:\p{Cc}\p{Cf}\p{Z}]/u.test(ch) ? encodeURIComponent(ch) : ch).join('');
+  const fixRef = `src:${allowed.defect}/json@1/p/fields/${segment(typeof allowed.fix_field === 'string' ? allowed.fix_field : '')}`;
+  const fix = `修正：引用本条缺陷修复说明 ${fixRef}` + (typeof allowed.manual === 'string' ? `，或手册 src:${allowed.manual}/<解析器>/<片段>` : '；当前未绑定手册，不允许其他来源') + '；tree:/rec: 请改引对应绑定原件的 src 片段';
+
   for (const [index, value] of quotes.entries()) {
     const reference = isRecord(value) && typeof value.reference === 'string' ? value.reference : '';
     let accepted = false;
@@ -431,7 +434,8 @@ export function checkQuoteSources(input: unknown): CheckOutcome[] {
         accepted = parts.length === 3 && parts[0] === 'p' && parts[1] === 'fields' && parts[2] === allowed.fix_field;
       } catch { accepted = false; }
     }
-    if (!accepted) out.push({ verdict: 'refute', code: CODES.QUOTE_SOURCE_FORBIDDEN, statement: `第 ${index + 1} 条引文没有指向本条缺陷的配置修复字段或绑定的同版本线手册。${fix}`, grounds: [], tier: 'blocking', pointer: `/quotes/${index}/reference`, ...own });
+    const position = isRecord(value) && Number.isInteger(value.case) && Number.isInteger(value.expected) ? `第 ${(value.case as number) + 1} 个起草用例第 ${(value.expected as number) + 1} 个期望结果` : `第 ${index + 1} 条引文`;
+    if (!accepted) out.push({ verdict: 'refute', code: CODES.QUOTE_SOURCE_FORBIDDEN, statement: `${position}的引用 ${reference} 没有指向本条缺陷的配置修复字段或绑定的同版本线手册。${fix}`, grounds: [], tier: 'blocking', pointer: `/quotes/${index}/reference`, ...own });
   }
   return out.length ? out : [{ verdict: 'support', statement: '各引文来源均为本条缺陷的配置修复说明字段或绑定的同版本线手册', grounds: [], tier: 'blocking', ...own }];
 }
