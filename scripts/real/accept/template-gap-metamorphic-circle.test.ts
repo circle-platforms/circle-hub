@@ -1,8 +1,9 @@
 // Synthetic independent category declarations, formatted through the real Hub text renderer.
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, isAbsolute } from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { afterEach, test } from 'node:test';
 import { StartRunInput, StartRunOutput, UploadFileOutput, GetNodesOutput } from '../../../contracts/src/tools.ts';
 import { toolText } from '../../../hub/server/text.ts';
@@ -405,4 +406,17 @@ test('review 20: nested tagged cases contribute types and counts inside the oute
   const wrong = drive(build(gold), undefined, { hide: 'negative' });
   assert.equal(wrong.checks.find(check => check.name.startsWith('第 1 份') && check.name.endsWith('类型名标签'))?.ok, false);
   assert.equal(wrong.checks.filter(check => !check.ok).length, 1);
+});
+
+
+test('review 21: a real preparation failure removes its isolated token home before the runner exits', () => {
+  const root = mkdtempSync(join(tmpdir(), 'gap-runner-cleanup-')); dirs.push(root); const temp = join(root, 'tmp'); mkdirSync(temp);
+  const module = join(root, 'scenario.ts'); const gold = join(root, 'gold.json'); const out = join(root, 'out');
+  writeFileSync(gold, '{}');
+  writeFileSync(module, `export default function () { return { name: 'synthetic', area: '合成', prompt: '', respond: () => [{text:'done'}], check: () => [], prepare: () => { throw new Error('Synthetic preparation failure'); } }; }`);
+  const token = 's'.repeat(43);
+  const child = spawnSync(process.execPath, ['scripts/real/accept-circle.ts', '--scenario', module, '--gold', gold, '--out', out, '--hub-url', 'http://127.0.0.1:1/mcp'], { encoding: 'utf8', timeout: 10000, env: { PATH: process.env.PATH, HOME: root, TMPDIR: temp, HUB_REAL_TOKEN: token } });
+  assert.notEqual(child.status, 0); assert.match(child.stderr, /Synthetic preparation failure/);
+  assert.ok(!(child.stdout + child.stderr).includes(token));
+  assert.deepEqual(readdirSync(temp), []);
 });
