@@ -26,7 +26,7 @@
   "parameters": [
     {
       "name": "skipped",
-      "description": "用户声明不适用的模板类别，只在用户明确说某个类别不适用时写，不按模型自己的判断写。每项 {\"category\": \"<类别编号>\", \"reason\": \"<用户给出的理由，照原话>\"}，只对一份文档跳过时再加 \"document\": \"<文档编号，或 agile:mindmap:<文档编号>，或上传文件的 src:<sha256>>\"；24 个类别的编号见任务包规程；跳过的类别单独列出，不算缺失；写不进这次运行的项（文档不在运行里、理由只有空白、同一份文档的同一个类别写了两项）会让 start_run 不受理并给出修正",
+      "description": "用户声明不适用的模板类别，只在用户明确说某个类别不适用时写，不按模型自己的判断写。每项 {\"category\": \"<类别编号>\", \"reason\": \"<用户给出的理由，照原话>\"}，只对一份文档跳过时再加 \"document\": \"<文档编号，或 agile:mindmap:<文档编号>，或上传文件的 src:<sha256>>\"；24 个类别的编号见任务包规程；跳过的类别单独列出，不算缺失；写不进这次运行的项（文档不在运行里、理由只有空白、同一份文档的同一个类别写了两项）会让 start_run 不受理并给出修正；可选 command 写索引中的命令路径，只跳过该命令的 command 组类别；不写 command 时维持文档级跳过并应用于该文档的每个命令",
       "required": false,
       "schema": {
         "type": "array",
@@ -72,6 +72,11 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 120
+            },
+            "command": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
             }
           },
           "required": [

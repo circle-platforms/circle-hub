@@ -6,7 +6,9 @@
 // Refusals of the whole call: an input that is not a parsed mind map, a document listed twice, a skip the pack cannot apply
 // (the caller's own parameter, never dropped silently), a document with no case, documents whose root nodes cannot be told
 // apart, and a result above the output limit.
-import { readCaseIndex } from './index.ts';
+import { caseCategories, commandCoverage, indexedCommands } from './commands.ts';
+import type { CaseIndex } from './index.ts';
+import { compareText, readCaseIndex } from './index.ts';
 import TEMPLATE_TABLE from '../tables/template-v3.json' with { type: 'json' };
 import { CASE_LIMITS, casesOf, idSelector, type DocumentCases } from './cases.ts';
 import { PACK, failure, guarded, isRecord, warningSink } from './common.ts';
@@ -69,7 +71,7 @@ function rootText(nodes: readonly unknown[]): string {
   return isRecord(root.data) ? (textOf(root.data.text) ?? '') : '';
 }
 
-type Document = { id: string; sha256: string; title: string; path: string[]; cases: DocumentCases };
+type Document = { uploaded: boolean; id: string; sha256: string; title: string; path: string[]; cases: DocumentCases };
 
 type SkipEntry = Skip & { document: string | null };
 
@@ -89,14 +91,15 @@ function skipTarget(value: string, bySha: ReadonlyMap<string, string>): string {
  * document of this run, each (document, category) at most once. A skip the pack cannot apply refuses the run with a fix
  * rather than being dropped, so the caller learns that the declaration did not take effect.
  */
-function readSkips(raw: unknown, template: Template, documents: readonly Document[]): SkipEntry[] | PackFailure {
+function readSkips(raw: unknown, template: Template, documents: readonly Document[], caseIndex: CaseIndex | null): SkipEntry[] | PackFailure {
   if (raw === undefined) return [];
   const ids = documents.map((document) => document.id);
   const listed = `${ids.slice(0, CASE_LIMITS.maxNamed).join('、')}${ids.length > CASE_LIMITS.maxNamed ? ` 等 ${ids.length} 份` : ''}`;
-  const fix = `skipped 的每一项写模板里的类别编号和用户给出的理由（不能只有空白）；document 写这次运行里的文档编号（${listed}），或者不写 document，让这一项对所有文档生效；同一份文档的同一个类别只写一项`;
+  const fix = `skipped 的每一项写模板里的类别编号和用户给出的理由（不能只有空白）；document 写这次运行里的文档编号（${listed}），或者不写 document，让这一项对所有文档生效；同一份文档的同一个类别和命令只写一项；command 写已绑定索引的命令路径，仅跳过该命令，不写 command 则对整份文档和它的每个命令生效`;
   if (!Array.isArray(raw)) return failure('skip_invalid', '参数 skipped 不是数组', fix);
   const known = new Set(template.categories.map((category) => category.id));
   const inRun = new Set(ids);
+  const commandCategories = new Set(template.categories.filter(c => c.group === 'command').map(c => c.id));
   const bySha = new Map(documents.map((document) => [document.sha256, document.id]));
   const problems: string[] = [];
   const out: SkipEntry[] = [];
@@ -110,13 +113,20 @@ function readSkips(raw: unknown, template: Template, documents: readonly Documen
     if (entry.document !== undefined && typeof entry.document !== 'string') return void problems.push(`${at}的 document 不是文字`);
     const document = typeof entry.document === 'string' ? skipTarget(entry.document, bySha) : null;
     if (document !== null && !inRun.has(document)) return void problems.push(`${at}写的文档 ${clip(entry.document as string, 60).text} 不在这次运行里`);
-    for (const target of document === null ? ids : [document]) {
-      const key = `${target}\u0000${category}`;
+    if (entry.command !== undefined && (typeof entry.command !== 'string' || isBlank(entry.command) || !commandCategories.has(category))) return void problems.push(`${at}的 command 要写已解析的命令路径，category 只允许 command 组的类别`);
+    const command = typeof entry.command === 'string' ? entry.command : undefined;
+    const targets = (document === null ? ids : [document]).filter(id => command === undefined || indexedCommands(caseIndex, id).includes(command));
+    if (!targets.length || command !== undefined && document !== null && !targets.includes(document)) return void problems.push(`${at}的命令不在该文档的已绑定索引里；绑定包含该命令的 case_index 后重跑`);
+    for (const target of targets) {
+      const prefix = `${target}\u0000${category}\u0000`;
+      const key = `${prefix}${command ?? ''}`;
       const earlier = named.get(key);
-      if (earlier !== undefined) return void problems.push(`${at}和第 ${earlier + 1} 项都对文档 ${target} 跳过类别 ${category}`);
+      if (earlier !== undefined) return void problems.push(`${at}和第 ${earlier + 1} 项都对文档 ${target} 跳过类别 ${category}${command === undefined ? '' : `（命令 ${command}）`}`);
+      const overlap = command === undefined ? [...named.keys()].find(k => k.startsWith(prefix)) : named.has(prefix) ? prefix : undefined;
+      if (overlap !== undefined) return void problems.push(`${at}与第 ${(named.get(overlap) ?? 0) + 1} 项对同一文档、类别和命令重复跳过`);
       named.set(key, index);
     }
-    out.push({ category, reason: entry.reason, document });
+    out.push({ category, reason: entry.reason, document, ...(command !== undefined ? { command } : {}) });
   });
   if (problems.length === 0) return out;
   const shown = problems.slice(0, LIMITS.maxSkipProblems).join('；');
@@ -126,7 +136,7 @@ function readSkips(raw: unknown, template: Template, documents: readonly Documen
 /** The skips that apply to one document, in template order. */
 function skipsFor(document: string, entries: readonly SkipEntry[], template: Template): Skip[] {
   const chosen = new Map<string, string>();
-  for (const entry of entries) if (entry.document === null || entry.document === document) chosen.set(entry.category, entry.reason);
+  for (const entry of entries) if (entry.command === undefined && (entry.document === null || entry.document === document)) chosen.set(entry.category, entry.reason);
   return template.categories.filter((category) => chosen.has(category.id)).map((category) => ({ category: category.id, reason: chosen.get(category.id) as string }));
 }
 
@@ -210,7 +220,7 @@ export function projectDocuments(input: unknown, options: ProjectOptions = {}): 
     const nodes = model.nodes as unknown[];
     const cases = casesOf(id, nodes, warnings, { caseRule });
     const metaTitle = isRecord(raw.meta) && typeof raw.meta.title === 'string' && !isBlank(raw.meta.title) ? raw.meta.title : null;
-    documents.push({ id, sha256: typeof raw.sha256 === 'string' ? raw.sha256 : '', title: metaTitle ?? rootText(nodes), path: foldersOf(raw.meta), cases });
+    documents.push({ uploaded: typeof raw.external !== 'string' || !raw.external.startsWith('agile:mindmap:'), id, sha256: typeof raw.sha256 === 'string' ? raw.sha256 : '', title: metaTitle ?? rootText(nodes), path: foldersOf(raw.meta), cases });
   }
   if (documents.length === 0) return failure('invalid_input', `输入槽 ${SUBJECT_SLOT} 里没有要检查的脑图`, '在 inputs.documents 里给出至少一份脑图', warnings.list());
 
@@ -218,7 +228,7 @@ export function projectDocuments(input: unknown, options: ProjectOptions = {}): 
   const caseIndex = readCaseIndex(input, agileDocuments);
   if (caseIndex !== null && 'error' in caseIndex) return { ...caseIndex, warnings: warnings.list() };
 
-  const skips = readSkips(parameters.skipped, template, documents);
+  const skips = readSkips(parameters.skipped, template, documents, caseIndex);
   if (!Array.isArray(skips)) return { ...skips, warnings: warnings.list() };
 
   const empty = documents.filter((document) => document.cases.cases.length === 0);
@@ -255,6 +265,9 @@ export function projectDocuments(input: unknown, options: ProjectOptions = {}): 
     );
   }
 
+  const memberships = new Map(documents.map(document => [document.id, caseCategories(template, document.cases)]));
+  const commandSkips = (id: string): Skip[] => skips.filter(s => s.document === null || s.document === id).map(({ category, reason, command }) => ({ category, reason, ...(command !== undefined ? { command } : {}) })).sort((a,b) => template.categories.findIndex(c => c.id === a.category) - template.categories.findIndex(c => c.id === b.category) || compareText(a.command ?? '', b.command ?? ''));
+  const lock = isRecord(input.context) ? input.context : {};
   const items: DocumentItem[] = documents.map((document) => {
     const categories = categoryFacts(template, document.cases);
     const skipped = skipsFor(document.id, skips, template);
@@ -270,12 +283,16 @@ export function projectDocuments(input: unknown, options: ProjectOptions = {}): 
       marked_only,
       data: { case_rule: caseRule, marked_only },
       categories,
+      command_coverage: commandCoverage(template, document.id, memberships.get(document.id)!, caseIndex, commandSkips(document.id), document.uploaded, lock),
       missing: categories.filter((category) => category.required && !category.present && !skippedIds.has(category.id)).map((category) => category.id),
       skipped,
     };
     return { id: document.id, label: itemLabel(document.title), summary: summaryOf(fields, template), location: locations.get(document.id) as ItemLocation, fields };
   });
   const groups: Record<string, unknown>[] = items.map((item) => ({
+    command_cases: memberships.get(item.id)!,
+    command_skips: commandSkips(item.id),
+    uploaded: documents.find(d => d.id === item.id)!.uploaded,
     kind: 'document',
     id: item.id,
     title: item.label,

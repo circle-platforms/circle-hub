@@ -1,0 +1,50 @@
+// Command membership is read only from the admitted index; category membership uses the existing template matcher.
+import { categoryFacts, MAX_EVIDENCE, type Template } from './template.ts';
+import { compareText, type CaseIndex } from './index.ts';
+import type { DocumentCases } from './cases.ts';
+import type { CaseCategory, CommandCoverage, Skip } from './types.ts';
+export function caseCategories(template: Template, cases: DocumentCases): CaseCategory[] {
+  const members = new Map(cases.cases.map(c => [c.id, [] as string[]]));
+  for (const category of categoryFacts(template, cases, { evidenceLimit: Infinity }))
+    for (const id of category.evidence) members.get(id)!.push(category.id);
+  return [...members].sort(([a], [b]) => compareText(a, b)).map(([id, categories]) => ({ id, categories }));
+}
+export function indexedCommands(index: CaseIndex | null, document: string): string[] {
+  if (!index) return [];
+  return [...new Set((Object.hasOwn(index.keys, document) ? index.keys[document]! : []).flatMap(d => index.entries[d]!.data.commands as string[]))].sort(compareText);
+}
+function unplacedCount(notes: string[]): number | null {
+  const descriptions = notes.filter(n => n.includes('未归位'));
+  if (!descriptions.length) return 0;
+  const parsed = /^未归位条目 ([0-9]+) 个，标在根下$/.exec(descriptions[0]!);
+  return descriptions.length === 1 && parsed && Number.isSafeInteger(Number(parsed[1])) ? Number(parsed[1]) : null;
+}
+export function commandCoverage(template: Template, document: string, cases: CaseCategory[], index: CaseIndex | null, skips: Skip[], uploaded = false, lock: { root?: unknown; build?: unknown } = {}): CommandCoverage {
+  const rows = new Map<string, { commands: Set<string>; references: Set<string> }>();
+  if (index && !uploaded) for (const digest of Object.hasOwn(index.keys, document) ? index.keys[document]! : []) {
+    const entry = index.entries[digest]!; const node = entry.data.node as string;
+    let row = rows.get(node); if (!row) { row = { commands: new Set(), references: new Set() }; rows.set(node, row); }
+    for (const command of entry.data.commands as string[]) row.commands.add(command);
+    row.references.add(entry.reference);
+  }
+  const unmatched: string[] = [];
+  const matched = cases.flatMap(fact => {
+    const key = fact.id.slice(document.length + 1); const row = rows.get(key);
+    if (!row || !fact.id.startsWith(`${document}:`)) { unmatched.push(fact.id); return []; }
+    return [{ fact, row }];
+  });
+  const categories = template.categories.filter(c => c.group === 'command');
+  const commands = (uploaded ? [] : indexedCommands(index, document)).map(command => {
+    const chosen = matched.filter(m => m.row.commands.has(command));
+    const skipped = categories.flatMap(category => {
+      const skip = skips.find(s => s.category === category.id && (s.command === undefined || s.command === command));
+      return skip ? [{ ...skip }] : [];
+    });
+    const facts = categories.map(category => {
+      const evidence = chosen.filter(m => m.fact.categories.includes(category.id)).sort((a,b) => compareText(a.fact.id,b.fact.id));
+      return { id: category.id, label: category.label, group: category.group, required: true, present: evidence.length > 0, count: evidence.length, evidence: evidence.slice(0, MAX_EVIDENCE).map(m => m.fact.id), references: [...new Set(evidence.slice(0, MAX_EVIDENCE).flatMap(m => [...m.row.references]))].sort(compareText) };
+    });
+    return { command, caseCount: chosen.length, categories: facts, missing: facts.filter(c => !c.present && !skipped.some(s => s.category === c.id)).map(c => c.id), skipped, references: [...new Set(chosen.flatMap(m => [...m.row.references]))].sort(compareText) };
+  });
+  return { bound: index !== null, uploaded, documentIndexed: index !== null && Object.hasOwn(index.keys, document), root: index?.build.root ?? (typeof lock.root === 'string' ? lock.root : null), build: index?.build.build ?? (typeof lock.build === 'string' ? lock.build : null), caseCount: cases.length, matchedCases: matched.length, unmatched: unmatched.sort(compareText), commandlessCases: matched.filter(m => m.row.commands.size === 0).length, truncated: index?.truncated ?? false, skippedSources: index?.skipped ?? 0, cutKeys: index?.cut_keys ?? [], unplacedRoot: index ? unplacedCount(index.notes) : null, notes: index?.notes ?? [], commands };
+}

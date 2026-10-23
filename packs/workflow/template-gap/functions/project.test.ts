@@ -68,7 +68,7 @@ describe('projectDocuments', () => {
     assert.equal(item.label, '小部件探测 测试用例', 'the label is the listed title with white space collapsed');
     assert.equal(item.fields.title, ' 小部件探测  测试用例 ', 'the title field keeps the title as listed');
     assert.deepEqual(item.fields.path, ['示例产品', '030：示例测试项目', '101：2.1.0', '模块']);
-    assert.deepEqual(Object.keys(item.fields), ['document', 'title', 'path', 'caseCount', 'untagged', 'case_rule', 'marked_only', 'data', 'categories', 'missing', 'skipped']);
+    assert.deepEqual(Object.keys(item.fields), ['document', 'title', 'path', 'caseCount', 'untagged', 'case_rule', 'marked_only', 'data', 'categories', 'command_coverage', 'missing', 'skipped']);
     assert.deepEqual(item.fields.skipped, []);
     assertGold(item.fields, doc, 'base');
     assert.deepEqual(out.warnings.map((warning) => warning.code), ['template-gap.tagged_group']);
