@@ -21,3 +21,10 @@ export function indexView(cases: IndexedCase[], only = [...new Set(cases.map(c =
 export function bindIndex(view: unknown): BoundInput {
   return { slot: 'case_index', external: `knowledge:index:${PRODUCT}:${BUILD}?kind=case&key=document&only=${(view as IndexView).only?.join(',') ?? ''}&fields=document,node,commands`, sha256: digest(JSON.stringify(view)), media_type: 'application/json', parser: 'json@1', model: view, meta: null };
 }
+
+/** Assign invented command paths to the fixture's declared case nodes, without parsing their text. */
+export function assignedCases(document: import('./mindmap.ts').DocumentSpec, id: string, commands: (node: string) => string[] = () => ['CLI/widget/probe']): IndexedCase[] {
+  const out: IndexedCase[] = [];
+  const walk = (nodes: import('./mindmap.ts').NodeSpec[]) => { for (const node of nodes) { if (node.kind === 'case' || node.kind === 'node' && node.untagged) out.push({ document: id, node: node.id, commands: commands(node.id) }); walk(node.children); } };
+  walk(document.children); return out;
+}

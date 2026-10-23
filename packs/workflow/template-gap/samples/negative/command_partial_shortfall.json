@@ -1,0 +1,249 @@
+{
+  "id": "command_partial_shortfall",
+  "source": "author",
+  "check": "command_coverage",
+  "note": "来源不全且已知类别不齐：命令和文档各给一条带出口的缺输入；补来源和类别即 command_all 正例",
+  "subject": {
+    "item": "900001",
+    "document": "900001",
+    "location": "src:5a830d27fc8a18b75c35c8c230b63e0ee866834a4bc60d909e6e6a1e0877dc4a/kityminder@1/i",
+    "uploaded": false,
+    "cases": [
+      {
+        "id": "900001:case0",
+        "categories": []
+      },
+      {
+        "id": "900001:case1",
+        "categories": [
+          "command_delete"
+        ]
+      },
+      {
+        "id": "900001:case2",
+        "categories": [
+          "command_modify"
+        ]
+      },
+      {
+        "id": "900001:case3",
+        "categories": [
+          "command_query"
+        ]
+      },
+      {
+        "id": "900001:case4",
+        "categories": [
+          "show_at_maximum"
+        ]
+      },
+      {
+        "id": "900001:case5",
+        "categories": [
+          "no_command"
+        ]
+      },
+      {
+        "id": "900001:case6",
+        "categories": [
+          "clear_command"
+        ]
+      },
+      {
+        "id": "900001:case7",
+        "categories": [
+          "operation_log"
+        ]
+      },
+      {
+        "id": "900001:case8",
+        "categories": [
+          "audit_log"
+        ]
+      }
+    ],
+    "case_count": 9,
+    "skipped": [],
+    "index": {
+      "schema": "index-view@1",
+      "product": "synthetic-template",
+      "build": {
+        "build": "Rel_MEADOW_10_6_8_1",
+        "root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c"
+      },
+      "kind": "case",
+      "key": "document",
+      "keys": {
+        "900001": [
+          "30ffa1b731dbb491b3e17833985844fdf1416774a6a565fbcadbd30e5347679b",
+          "43d06bd4fb3ec1d0d8c5ba01585d64b26da4562b02bd534f6c29dddd45f97cd7",
+          "7c45f9d38ac1bf17314f1b66a68a62185e853a6dae972c1653b8de27cb2dc2e0",
+          "7e30e209dc7da2c4cb83d8b495ac2a95cb2717db329c27cbe7664938ee9d1ab6",
+          "8df68d743f5fa182017d4134b80d158edd752b22f7dd1c86452d82fe56e8b17d",
+          "8f26a7139f44bae6210b4fbb10bb25c184c16422197bc75583ffdac2d062794d",
+          "a564cbf8e26ee01e133210c2d3b0c7422548ed54f72968c7461b79d7c63feb8b",
+          "f24983d6ecad3a452696104b9a74b62304bc1ca8348dd3519773ab6ad583a906",
+          "fe8683acb7df5f432006609316fe4541a4ba2aa86c6402cf7a285c8c473bb806"
+        ]
+      },
+      "entries": {
+        "30ffa1b731dbb491b3e17833985844fdf1416774a6a565fbcadbd30e5347679b": {
+          "entry": "30ffa1b731dbb491b3e17833985844fdf1416774a6a565fbcadbd30e5347679b",
+          "kind": "case",
+          "statement": "",
+          "data": {
+            "document": "900001",
+            "node": "case0",
+            "commands": [
+              "CLI/widget/probe"
+            ]
+          },
+          "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@30ffa1b731dbb491b3e17833985844fdf1416774a6a565fbcadbd30e5347679b"
+        },
+        "a564cbf8e26ee01e133210c2d3b0c7422548ed54f72968c7461b79d7c63feb8b": {
+          "entry": "a564cbf8e26ee01e133210c2d3b0c7422548ed54f72968c7461b79d7c63feb8b",
+          "kind": "case",
+          "statement": "",
+          "data": {
+            "document": "900001",
+            "node": "case1",
+            "commands": [
+              "CLI/widget/probe"
+            ]
+          },
+          "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@a564cbf8e26ee01e133210c2d3b0c7422548ed54f72968c7461b79d7c63feb8b"
+        },
+        "fe8683acb7df5f432006609316fe4541a4ba2aa86c6402cf7a285c8c473bb806": {
+          "entry": "fe8683acb7df5f432006609316fe4541a4ba2aa86c6402cf7a285c8c473bb806",
+          "kind": "case",
+          "statement": "",
+          "data": {
+            "document": "900001",
+            "node": "case2",
+            "commands": [
+              "CLI/widget/probe"
+            ]
+          },
+          "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@fe8683acb7df5f432006609316fe4541a4ba2aa86c6402cf7a285c8c473bb806"
+        },
+        "8df68d743f5fa182017d4134b80d158edd752b22f7dd1c86452d82fe56e8b17d": {
+          "entry": "8df68d743f5fa182017d4134b80d158edd752b22f7dd1c86452d82fe56e8b17d",
+          "kind": "case",
+          "statement": "",
+          "data": {
+            "document": "900001",
+            "node": "case3",
+            "commands": [
+              "CLI/widget/probe"
+            ]
+          },
+          "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@8df68d743f5fa182017d4134b80d158edd752b22f7dd1c86452d82fe56e8b17d"
+        },
+        "43d06bd4fb3ec1d0d8c5ba01585d64b26da4562b02bd534f6c29dddd45f97cd7": {
+          "entry": "43d06bd4fb3ec1d0d8c5ba01585d64b26da4562b02bd534f6c29dddd45f97cd7",
+          "kind": "case",
+          "statement": "",
+          "data": {
+            "document": "900001",
+            "node": "case4",
+            "commands": [
+              "CLI/widget/probe"
+            ]
+          },
+          "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@43d06bd4fb3ec1d0d8c5ba01585d64b26da4562b02bd534f6c29dddd45f97cd7"
+        },
+        "7c45f9d38ac1bf17314f1b66a68a62185e853a6dae972c1653b8de27cb2dc2e0": {
+          "entry": "7c45f9d38ac1bf17314f1b66a68a62185e853a6dae972c1653b8de27cb2dc2e0",
+          "kind": "case",
+          "statement": "",
+          "data": {
+            "document": "900001",
+            "node": "case5",
+            "commands": [
+              "CLI/widget/probe"
+            ]
+          },
+          "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@7c45f9d38ac1bf17314f1b66a68a62185e853a6dae972c1653b8de27cb2dc2e0"
+        },
+        "f24983d6ecad3a452696104b9a74b62304bc1ca8348dd3519773ab6ad583a906": {
+          "entry": "f24983d6ecad3a452696104b9a74b62304bc1ca8348dd3519773ab6ad583a906",
+          "kind": "case",
+          "statement": "",
+          "data": {
+            "document": "900001",
+            "node": "case6",
+            "commands": [
+              "CLI/widget/probe"
+            ]
+          },
+          "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@f24983d6ecad3a452696104b9a74b62304bc1ca8348dd3519773ab6ad583a906"
+        },
+        "8f26a7139f44bae6210b4fbb10bb25c184c16422197bc75583ffdac2d062794d": {
+          "entry": "8f26a7139f44bae6210b4fbb10bb25c184c16422197bc75583ffdac2d062794d",
+          "kind": "case",
+          "statement": "",
+          "data": {
+            "document": "900001",
+            "node": "case7",
+            "commands": [
+              "CLI/widget/probe"
+            ]
+          },
+          "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@8f26a7139f44bae6210b4fbb10bb25c184c16422197bc75583ffdac2d062794d"
+        },
+        "7e30e209dc7da2c4cb83d8b495ac2a95cb2717db329c27cbe7664938ee9d1ab6": {
+          "entry": "7e30e209dc7da2c4cb83d8b495ac2a95cb2717db329c27cbe7664938ee9d1ab6",
+          "kind": "case",
+          "statement": "",
+          "data": {
+            "document": "900001",
+            "node": "case8",
+            "commands": [
+              "CLI/widget/probe"
+            ]
+          },
+          "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@7e30e209dc7da2c4cb83d8b495ac2a95cb2717db329c27cbe7664938ee9d1ab6"
+        }
+      },
+      "fields": [
+        "document",
+        "node",
+        "commands"
+      ],
+      "only": [
+        "900001"
+      ],
+      "cut_keys": [],
+      "total_keys": 1,
+      "total_entries": 9,
+      "truncated": false,
+      "skipped": 2,
+      "notes": [
+        "未归位条目 3 个，标在根下"
+      ]
+    },
+    "index_reference": "src:6229b4bd8b5287df1751d042ffa570fa925adf9722794b2d3c0d5877544af62f",
+    "scope": [
+      "900001"
+    ],
+    "lock": {
+      "product": "synthetic-template",
+      "build": "Rel_MEADOW_10_6_8_1",
+      "root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c"
+    }
+  },
+  "expect": [
+    {
+      "verdict": "unknown",
+      "reason": "missing_input",
+      "item": "900001",
+      "tier": "advisory"
+    },
+    {
+      "verdict": "unknown",
+      "reason": "missing_input",
+      "item": "900001",
+      "tier": "advisory"
+    }
+  ]
+}

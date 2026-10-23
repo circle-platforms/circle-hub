@@ -263,7 +263,7 @@ describe('projectDocuments', () => {
     assert.deepEqual(item.fields.missing, ['stress', 'audit_log', 'upgrade_old_to_new']);
     assert.equal(
       item.summary,
-      `用例 ${item.fields.caseCount} 个；缺 3 个模板类别：压力测试（stress）、审计日志（audit_log）、升级兼容：老版本到新版本（upgrade_old_to_new）；参数 skipped 声明跳过 2 个：兼容性测试（compatibility）、数据库（database）；模板类别出现 ${present}/24 个；用例规则：标签或标记；其中 1 个只靠标记识别（没有标签）`,
+      `用例 ${item.fields.caseCount} 个；按命令：0 个命令，0 个缺类别；缺 case_index；缺 3 个模板类别：压力测试（stress）、审计日志（audit_log）、升级兼容：老版本到新版本（upgrade_old_to_new）；参数 skipped 声明跳过 2 个：兼容性测试（compatibility）、数据库（database）；模板类别出现 ${present}/24 个；用例规则：标签或标记；其中 1 个只靠标记识别（没有标签）`,
     );
   });
 
@@ -287,13 +287,16 @@ describe('projectDocuments', () => {
     const worst = itemOf(km(12_345, 6_789), { external: external() });
     assert.deepEqual(worst.fields.missing, CATEGORIES);
     assert.ok(worst.summary.length <= LIMITS.maxSummary, `${worst.summary.length} characters`);
-    assert.ok(worst.summary.startsWith('用例 19134 个；缺 24 个模板类别（只列编号）：functional、configuration、'), worst.summary);
+    assert.ok(worst.summary.startsWith('用例 19134 个；按命令：0 个命令，0 个缺类别；缺 case_index；缺 24 个模板类别（只列编号）：functional、configuration、'), worst.summary);
     for (const id of CATEGORIES) assert.ok(worst.summary.includes(id), id);
     assert.ok(worst.summary.endsWith('模板类别出现 0/24 个；用例规则：标签或标记；其中 6789 个只靠标记识别（没有标签）'), worst.summary);
 
     const worstTagged = itemOf(km(12_345, 6_789), { external: external() }, { case_rule: 'tagged' });
-    assert.ok(worstTagged.summary.startsWith('用例 12345 个；缺 24 个模板类别（只列编号）：functional、configuration、'), worstTagged.summary);
-    assert.ok(worstTagged.summary.endsWith('用例规则：只认标签；其中 0 个只靠标记识别（没有标签）；另有 6789 个没有标签、写法像用例的节点没有计入'), worstTagged.summary);
+    assert.ok(worstTagged.summary.startsWith('用例 12345 个；按命令：0 个命令，0 个缺类别；缺 case_index；缺 24 个模板类别（只列编号）：functional、configuration、'), worstTagged.summary);
+    assert.ok(worstTagged.summary.length <= LIMITS.maxSummary);
+    assert.match(worstTagged.summary, /用例规则：只认标签/);
+    assert.match(worstTagged.summary, /(?:未计入未标签 6789 个|另有 6789 个没有标签、写法像用例的节点没有计入)/);
+    for (const id of CATEGORIES) assert.ok(worstTagged.summary.includes(id), id);
     // Skips and missing categories together are at most the 24 categories: still every one named.
     const skipped = CATEGORIES.slice(0, 9).map((category) => ({ category, reason: '用户说不适用' }));
     const mixed = itemOf(km(12_345, 6_789), { external: external() }, { skipped });

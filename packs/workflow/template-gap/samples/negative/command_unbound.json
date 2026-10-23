@@ -1,0 +1,88 @@
+{
+  "id": "command_unbound",
+  "source": "author",
+  "check": "command_coverage",
+  "note": "缺用例索引；补绑即 command_all 正例，陈述必须给出重跑动作",
+  "subject": {
+    "item": "900001",
+    "document": "900001",
+    "location": "src:5a830d27fc8a18b75c35c8c230b63e0ee866834a4bc60d909e6e6a1e0877dc4a/kityminder@1/i",
+    "uploaded": false,
+    "cases": [
+      {
+        "id": "900001:case0",
+        "categories": [
+          "command_add"
+        ]
+      },
+      {
+        "id": "900001:case1",
+        "categories": [
+          "command_delete"
+        ]
+      },
+      {
+        "id": "900001:case2",
+        "categories": [
+          "command_modify"
+        ]
+      },
+      {
+        "id": "900001:case3",
+        "categories": [
+          "command_query"
+        ]
+      },
+      {
+        "id": "900001:case4",
+        "categories": [
+          "show_at_maximum"
+        ]
+      },
+      {
+        "id": "900001:case5",
+        "categories": [
+          "no_command"
+        ]
+      },
+      {
+        "id": "900001:case6",
+        "categories": [
+          "clear_command"
+        ]
+      },
+      {
+        "id": "900001:case7",
+        "categories": [
+          "operation_log"
+        ]
+      },
+      {
+        "id": "900001:case8",
+        "categories": [
+          "audit_log"
+        ]
+      }
+    ],
+    "case_count": 9,
+    "skipped": [],
+    "index": null,
+    "index_reference": "src:6229b4bd8b5287df1751d042ffa570fa925adf9722794b2d3c0d5877544af62f",
+    "scope": [
+      "900001"
+    ],
+    "lock": {
+      "product": "synthetic-template",
+      "build": "Rel_MEADOW_10_6_8_1",
+      "root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c"
+    }
+  },
+  "expect": [
+    {
+      "verdict": "unknown",
+      "reason": "missing_input",
+      "item": "900001",
+      "tier": "advisory"
+    }
+  ]
+}

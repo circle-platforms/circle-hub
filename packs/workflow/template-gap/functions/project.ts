@@ -147,8 +147,15 @@ function skipsFor(document: string, entries: readonly SkipEntry[], template: Tem
 function summaryOf(fields: DocumentFields, template: Template): string {
   const labels = new Map(template.categories.map((category) => [category.id, category.label]));
   const uncovered = fields.categories.filter((category) => category.required && !category.present).length;
-  const compose = (name: (id: string) => string, note: string): string => {
+  const compose = (name: (id: string) => string, note: string, brief = false): string => {
     const parts = [`用例 ${fields.caseCount} 个`];
+    const command = fields.command_coverage;
+    if (command) {
+      const partial = command.truncated || command.skippedSources > 0 || command.cutKeys.includes(fields.document) || command.unmatched.length > 0 || command.unplacedRoot === null;
+      const missing = partial ? 0 : command.commands.filter(row => row.missing.length > 0).length;
+      const note = command.uploaded ? '；上传文件不在索引里' : !command.bound ? '；缺 case_index'  : partial ? '；索引待补，知识同步后重跑，未判覆盖完整' : !command.documentIndexed ? '；文档不在索引里' : command.commands.length === 0 ? '；用例未解析出命令' : '';
+      parts.push(`按命令：${command.commands.length} 个命令，${missing} 个缺类别${note}`);
+    }
     if (fields.missing.length > 0) parts.push(`缺 ${fields.missing.length} 个模板类别${note}：${fields.missing.map(name).join('、')}`);
     else if (uncovered > 0) parts.push(`模板类别没有缺失（${uncovered} 个声明跳过）`);
     else parts.push(`${fields.categories.length} 个模板类别都已覆盖`);
@@ -157,13 +164,15 @@ function summaryOf(fields: DocumentFields, template: Template): string {
       parts.push(`参数 skipped 声明跳过 ${fields.skipped.length} 个：${shown.join('、')}${fields.skipped.length > LIMITS.maxNamed ? ' 等' : ''}`);
     }
     parts.push(`模板类别出现 ${fields.categories.filter((category) => category.present).length}/${fields.categories.length} 个`);
-    parts.push(`用例规则：${fields.case_rule === 'marked' ? '标签或标记' : '只认标签'}；其中 ${fields.marked_only} 个只靠标记识别（没有标签）`);
-    if (fields.untagged > 0) parts.push(`另有 ${fields.untagged} 个没有标签、写法像用例的节点没有计入`);
+    parts.push(brief ? `用例规则：${fields.case_rule === 'marked' ? '标签或标记' : '只认标签'}；仅标记 ${fields.marked_only} 个` : `用例规则：${fields.case_rule === 'marked' ? '标签或标记' : '只认标签'}；其中 ${fields.marked_only} 个只靠标记识别（没有标签）`);
+    if (fields.untagged > 0) parts.push(brief ? `未计入未标签 ${fields.untagged} 个` : `另有 ${fields.untagged} 个没有标签、写法像用例的节点没有计入`);
     return parts.join('；');
   };
   const full = compose((id) => `${labels.get(id) ?? id}（${id}）`, '');
   if (full.length <= LIMITS.maxSummary) return full;
-  return clip(compose((id) => id, '（只列编号）'), LIMITS.maxSummary).text;
+  const ids = compose((id) => id, '（只列编号）');
+  if (ids.length <= LIMITS.maxSummary) return ids;
+  return clip(compose((id) => id, '（只列编号）', true), LIMITS.maxSummary).text;
 }
 
 function itemLabel(title: string): string {
@@ -302,7 +311,10 @@ export function projectDocuments(input: unknown, options: ProjectOptions = {}): 
     rule_summary: `用例规则：${item.fields.case_rule === 'marked' ? '标签或标记' : '只认标签'}；其中 ${item.fields.marked_only} 个只靠标记识别（没有标签）`,
     data: item.fields.data,
   }));
-  if (caseIndex !== null) groups.push({ kind: 'case_index', view: caseIndex });
+  if (caseIndex !== null) {
+    const source = input.inputs.filter(isRecord).find(i => i.slot === 'case_index');
+    groups.push({ kind: 'case_index', view: caseIndex, reference: typeof source?.sha256 === 'string' && SHA256.test(source.sha256) ? `src:${source.sha256}` : null });
+  }
   const result = { items, groups, warnings: warnings.list() };
   const bytes = utf8Length(JSON.stringify(result));
   if (bytes > outputBytes) {
