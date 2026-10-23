@@ -41,7 +41,7 @@ test('complete slot schema rejects legacy data and nonempty blocks', () => {
 });
 test('each runtime plan rule has paired positive and negative author samples', () => {
   const positive = readdirSync(join(PACK_DIR, 'samples/positive')).sort(); const negative = readdirSync(join(PACK_DIR, 'samples/negative')).sort();
-  assert.deepEqual(positive, negative); assert.equal(positive.length, 34);
+  assert.deepEqual(positive, negative); assert.equal(positive.length, 35);
   const coverage = new Set<string>();
   for (const name of positive) {
     const yes = json(`samples/positive/${name}`); const no = json(`samples/negative/${name}`);

@@ -1,4 +1,6 @@
 // Verify authored plans against original runner identities, runtime profile, manifest, and frozen lineage addresses.
+import { encodeG, GSyntaxError } from './g-syntax.ts';
+import { gOptions } from './generate.ts';
 import { isRecord, markers, type Outcome } from './text.ts';
 import { parseRuntimeContract, runtimeMethod, type RuntimeContract } from './runtime-contract.ts';
 import { parseProfile, allowedCall, type RuntimeProfile } from './profile.ts';
@@ -37,6 +39,7 @@ export function checkContractShape(input: unknown): Outcome[] {
     if (!method) { out.push(refute(s, 'method_forbidden', `第 ${i + 1} 步不是合约启用的组合`, at)); continue; }
     const allowed = allowedCall(s.profile!, step.object, step.method) ?? { object: step.object, method: step.method, parameters: Object.create(null) as Record<string, string> };
     if (Object.values(allowed.parameters).some((role) => role === 'literal_assertion')) { out.push(refute(s, 'assertion_in_steps', '断言写进 expects，带引文和 after', at)); continue; }
+    try { encodeG(step,gOptions(step.object,step.method,s.contract!,s.profile!)); } catch(error) { if(error instanceof GSyntaxError)out.push(refute(s,'param_value',`G 写法 ${error.rule}：${error.message}；修正该步骤后自动重核`,at+'/G')); else throw error; }
     const bound = bindArguments(method, step, at);
     for (const v of bound.problems) out.push(refute(s, v.code, `第 ${i + 1} 步：${v.message}`, v.pointer));
     for (const v of bound.values) {
