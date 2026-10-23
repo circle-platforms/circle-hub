@@ -159,8 +159,7 @@
                   }
                 },
                 "required": [
-                  "keys",
-                  "ttl_seconds"
+                  "keys"
                 ],
                 "additionalProperties": false,
                 "description": "acquire (the default): every key free (or taken over from expired/released rows), all or nothing"

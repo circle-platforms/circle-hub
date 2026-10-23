@@ -197,3 +197,8 @@ test('the lease action detail shape is a zod schema the records package can chec
   assert.ok(!LeaseDetail.safeParse({ ...good, holder: { user: 'usr_0123456789abcdefghjkmnpqrs', run: 'not-a-run' } }).success);
   assert.ok(!LeaseDetail.safeParse({ ...good, token: 'seven' }).success);
 });
+
+test('uncapped workflows accept a lease acquisition without a deadline', () => {
+  assert.ok(WorkflowFile.safeParse(workflow({ leases: { prefix: 'zone/' }, context: ['leases'] })).success);
+  assert.ok(ProjectionOutput.safeParse({ items: [], warnings: [], lease_requests: [{ keys: ['zone/a/k'] }] }).success);
+});

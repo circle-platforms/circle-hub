@@ -80,7 +80,7 @@ const ECHO_CHECK = `export default function echo(input: unknown): unknown {
 
 function leasesPack(
   id: string,
-  options: { declare?: { prefix: string; max_ttl_seconds: number }; askContext?: boolean; projection: string } ,
+  options: { declare?: { prefix: string; max_ttl_seconds?: number }; askContext?: boolean; projection: string } ,
 ): PackSpec {
   const workflow: Record<string, unknown> = {
     schema: 'workflow@1',
@@ -313,4 +313,26 @@ describe('lease operations by lineage (C6)', () => {
     const fresh = await rowsOf('s-c6-8c', 'toy-lease-read-2');
     assert.equal(fresh.find((row) => row.key === 'meadow/lin/1')?.mine, false, 'without the lineage the same row is not mine');
   });
+});
+
+it('an uncapped booking rejects any extension before mutation and releases only through its lineage', async () => {
+  const add = async (id: string, requests: string) => {
+    await h.workflows.add(await writePack(packRoot, leasesPack(id, { declare: { prefix: 'meadow/' }, askContext: true, projection: opProjection(requests) })));
+    h.workflows.assign(h.alice.id, id);
+  };
+  await add('toy-endless', "[{ keys: ['meadow/endless/k'] }]");
+  await add('toy-endless-release', "[{ op: 'release', keys: ['meadow/endless/k'] }]");
+  await add('toy-endless-extend', "[{ keys: ['meadow/endless/untouched'] }, { op: 'extend', keys: ['meadow/endless/k'], ttl_seconds: 60 }]");
+  const start = (pack: string, predecessor?: string) => h.service.startRunDetailed(h.alice, { pack, inputs: { map: { reference: map } }, ...(predecessor ? { predecessor } : {}) }, h.call(`endless-${pack}`));
+  const booking = await start('toy-endless');
+  assert.equal(booking.answer.call_result, 'ok', JSON.stringify(booking.answer.errors));
+  const booked = booking.answer.run!.run;
+  assert.equal((await storedRun(booked)).leases![0]!.until, null);
+  const extended = await start('toy-endless-extend', booked);
+  assert.equal(extended.answer.errors[0]?.code, 'LEASE_TTL');
+  assert.match(extended.answer.errors[0]!.message, /不到期/);
+  assert.deepEqual((await leases.view('meadow/endless/')).entries.map(e => e.key), ['meadow/endless/k']);
+  assert.equal((await start('toy-endless-release')).answer.errors[0]?.code, 'LEASE_UNAVAILABLE');
+  assert.equal((await start('toy-endless-release', booked)).answer.call_result, 'ok');
+  assert.equal((await leases.view('meadow/endless/')).entries.length, 0);
 });

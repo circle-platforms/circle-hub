@@ -163,6 +163,7 @@ export const MIGRATIONS: readonly Migration[] = Object.freeze([
   { version: 1, name: 'records', sql: V1_RECORDS },
   { version: 2, name: 'leases', sql: V2_LEASES },
   { version: 3, name: 'record_keys', sql: V3_RECORD_KEYS },
+  { version: 4, name: 'unbounded_leases', sql: 'ALTER TABLE leases ALTER COLUMN expires_at DROP NOT NULL;' },
 ]);
 
 /** Tables and what the runtime role may do with them; nothing else (no DELETE, no TRUNCATE, no DDL, not the owner). */

@@ -339,3 +339,18 @@ function runRecord(run: string): Record<string, unknown> {
     runner: holder.user,
   };
 }
+
+test('an uncapped lease has no expiry, cannot extend, survives time and releases only for its holder', async () => {
+  const service = new LeaseService(db, { now: clock('2026-10-24T08:00:00Z') });
+  const held = await service.acquire({ keys: ['endless/a/k'], holder, prefix: 'endless/' });
+  assert.ok(held.ok, JSON.stringify(held));
+  assert.equal(held.until, null);
+  const later = new LeaseService(db, { now: clock('2036-10-24T08:00:00Z') });
+  assert.deepEqual((await later.view('endless/')).entries.map(e => e.until), [null]);
+  const denied = await later.extend({ keys: ['endless/a/k'], holder, ttlSeconds: 60 });
+  assert.ok(!denied.ok && denied.code === 'LEASE_TTL');
+  assert.match(denied.message, /不到期，不用续/);
+  assert.ok(!(await later.release({ keys: ['endless/a/k'], holder: other })).ok);
+  assert.ok((await later.release({ keys: ['endless/a/k'], holder })).ok);
+  assert.equal((await later.view('endless/')).entries.length, 0);
+});

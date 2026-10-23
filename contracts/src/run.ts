@@ -140,14 +140,14 @@ export const RunRecord = RunSummary.extend({
   client_key_expires_at: IsoTime.optional().describe('end of the window in which repeating the client key returns this run'),
   leases: z
     .array(z.union([
-      z.strictObject({ op: z.literal('acquire').optional(), lease: LeaseId, keys: z.array(z.string().min(1)).min(1), until: IsoTime }),
-      z.strictObject({ op: z.literal('extend'), lease: LeaseId, keys: z.array(z.string().min(1)).min(1), until: IsoTime }),
+      z.strictObject({ op: z.literal('acquire').optional(), lease: LeaseId, keys: z.array(z.string().min(1)).min(1), until: IsoTime.nullable() }),
+      z.strictObject({ op: z.literal('extend'), lease: LeaseId, keys: z.array(z.string().min(1)).min(1), until: IsoTime.nullable() }),
       z.strictObject({ op: z.literal('release'), keys: z.array(z.string().min(1)).min(1), until: IsoTime.nullable() }),
     ]))
     .optional()
     .describe('the lease operations this run performed before it was stored (acquire\'s grant, extend\'s new end, release\'s keys with their former end); the fencing token stays in the lease table, never in the record'),
   lease_context: z
-    .array(z.strictObject({ key: z.string().min(1), until: IsoTime, mine: z.boolean() }))
+    .array(z.strictObject({ key: z.string().min(1), until: IsoTime.nullable(), mine: z.boolean() }))
     .optional()
     .describe('the frozen lease rows of the workflow\'s declared prefix at start_run (every holder\'s rows, no tokens), `mine` marking the rows held by this run\'s lineage (D04 R[0])'),
 }).superRefine((r, ctx) => {

@@ -40,3 +40,8 @@ Snapshots reject fences outside JavaScript's safe integer range rather than roun
 
 租约动作的取值类型统一来自生成词表 `LeaseOp`；内部续租/释放共用路径使用其 `Extract` 子集，
 不另写租约操作轴。
+
+A workflow may omit `max_ttl_seconds`: its acquisitions have `until: null`, with no wall-clock expiry.
+Every active-row query, trusted snapshot, orphan cleanup and release treats null as unbounded.
+Extending such rows is refused before mutation; a lineage releases them explicitly. Capped workflows keep their TTL
+and cumulative extension rules. Migration 4 only removes the expiry NOT NULL constraint; applied migrations stay fixed.

@@ -223,7 +223,7 @@ export const RunContext = z.strictObject({
     .strictObject({
       now: IsoTime.describe('the moment the lease table was frozen for this run'),
       entries: z
-        .array(z.strictObject({ key: z.string().min(1), until: IsoTime, mine: z.boolean() }))
+        .array(z.strictObject({ key: z.string().min(1), until: IsoTime.nullable(), mine: z.boolean() }))
         .describe('the unexpired, unreleased rows of the declared prefixes at the frozen moment; no tokens, no other holders\' names — visibility is undecided (D04 changes5)'),
     })
     .optional()
@@ -421,7 +421,7 @@ export const WorkflowFile = z
     leases: z
       .strictObject({
         prefix: z.string().min(1).regex(/\/$/, 'the lease prefix ends with / (keys of this workflow live under it)'),
-        max_ttl_seconds: z.number().int().positive().max(2_592_000).describe('the ceiling of one lease request\'s TTL and of the cumulative extension (D04 R[0])'),
+        max_ttl_seconds: z.number().int().positive().max(2_592_000).optional().describe('the ceiling of one lease request\'s TTL and of the cumulative extension (D04 R[0])'),
       })
       .optional()
       .describe('the lease namespace this workflow may acquire under (the keys of its lease_requests start with the prefix)'),
@@ -498,7 +498,7 @@ export const ProjectionOutput = z.union([
     lease_requests: z
       .array(
         z.union([
-          z.strictObject({ op: LeaseOpSchema.extract(['acquire']).optional(), keys: z.array(z.string().min(1)).min(1), ttl_seconds: z.number().int().positive() }).describe('acquire (the default): every key free (or taken over from expired/released rows), all or nothing'),
+          z.strictObject({ op: LeaseOpSchema.extract(['acquire']).optional(), keys: z.array(z.string().min(1)).min(1), ttl_seconds: z.number().int().positive().optional() }).describe('acquire (the default): every key free (or taken over from expired/released rows), all or nothing'),
           z.strictObject({ op: LeaseOpSchema.extract(['extend']), keys: z.array(z.string().min(1)).min(1), ttl_seconds: z.number().int().positive() }).describe('extend: the lineage-held leases of these keys grow by ttl_seconds from now, inside the cumulative cap'),
           z.strictObject({ op: LeaseOpSchema.extract(['release']), keys: z.array(z.string().min(1)).min(1) }).describe('release: the lineage-held leases of these keys end now (not undone when the run later fails)'),
         ]),

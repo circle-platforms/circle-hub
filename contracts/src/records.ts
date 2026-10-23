@@ -15,7 +15,7 @@ export const LeaseDetail = z.strictObject({
   lease: z.string().min(1).describe('the lease identity (lse_…) the keys are held under'),
   keys: z.array(z.string().min(1)).min(1),
   holder: z.strictObject({ user: z.string().min(1), run: RunId }).describe('the user and the run that hold the lease'),
-  until: z.string().min(1).describe('the end moment of the lease after this operation (ISO time)'),
+  until: z.string().min(1).nullable().describe('the end moment of the lease after this operation (ISO time)'),
   token: z.number().int().nonnegative().describe('the fencing token after this operation: monotonic per key row'),
 });
 

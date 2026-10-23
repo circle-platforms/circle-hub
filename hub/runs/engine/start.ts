@@ -99,7 +99,7 @@ export async function contextBuilds(ctx: EngineContext, workflow: LoadedWorkflow
 }
 
 /** The frozen lease rows of the workflow's declared prefix (W06, D04 R[0]), for the run context; null when it did not ask. */
-export async function contextLeases(ctx: EngineContext, workflow: LoadedWorkflow): Promise<Array<{ key: string; until: string }> | null> {
+export async function contextLeases(ctx: EngineContext, workflow: LoadedWorkflow): Promise<Array<{ key: string; until: string | null }> | null> {
   if (!(workflow.workflow.context ?? []).includes('leases')) return null;
   if (ctx.deps.leases === undefined) throw new Refusal([protocolError('SUBMISSION_SCHEMA_VIOLATION', `任务包 ${workflow.pack.id} 声明了租约，但这个 Hub 没有配置租约服务`, { path: '/pack', fix: '请管理员配置租约服务' })]);
   const prefix = workflow.workflow.leases?.prefix ?? `${workflow.pack.id}/`;
@@ -109,8 +109,8 @@ export async function contextLeases(ctx: EngineContext, workflow: LoadedWorkflow
 
 /** Grants the projection's lease requests for the workflow's declared prefix and cap (C3); a refusal answers LEASE_*
  * with the earliest free moment. Returns the granted leases for the run record. */
-export type LeaseRequest = { op?: 'acquire'; keys: string[]; ttl_seconds: number } | { op: 'extend'; keys: string[]; ttl_seconds: number } | { op: 'release'; keys: string[] };
-export type LeaseDone = { op?: 'acquire'; lease: string; keys: string[]; until: string } | { op: 'extend'; lease: string; keys: string[]; until: string } | { op: 'release'; keys: string[]; until: string | null };
+export type LeaseRequest = { op?: 'acquire'; keys: string[]; ttl_seconds?: number } | { op: 'extend'; keys: string[]; ttl_seconds: number } | { op: 'release'; keys: string[] };
+export type LeaseDone = { op?: 'acquire'; lease: string; keys: string[]; until: string | null } | { op: 'extend'; lease: string; keys: string[]; until: string | null } | { op: 'release'; keys: string[]; until: string | null | null };
 
 /** The run ids of this run's lineage: itself and up to 20 predecessors (D04 R[0]: a booking lease is held by the lineage). */
 async function lineageOf(ctx: EngineContext, runId: string, predecessor: string | undefined): Promise<Set<string>> {
@@ -153,6 +153,10 @@ export async function grantLeases(
       throw new Refusal([{ code: 'LEASE_PREFIX', message: `租约键（${request.keys.join('、')}）不在声明的前缀 ${prefix} 下`, fix: `键要以前缀 ${prefix} 开头` }]);
     }
     if (op === 'release') continue;
+    if (cap === undefined) {
+      if (op === 'extend') throw new Refusal([{ code: 'LEASE_TTL', message: '这个前缀的租约不到期，不用续', fix: '不用续期，用完由血缘释放' }]);
+      continue;
+    }
     if (!Number.isInteger((request as { ttl_seconds: number }).ttl_seconds) || (request as { ttl_seconds: number }).ttl_seconds <= 0 || (request as { ttl_seconds: number }).ttl_seconds > cap) {
       throw new Refusal([{ code: 'LEASE_TTL', message: `租约期限要在 1 到 ${cap} 秒之间`, fix: '缩短租约期限，或请任务包作者调高上限' }]);
     }
@@ -168,7 +172,7 @@ export async function grantLeases(
       if (row.user !== user.id || !lineage.has(row.run)) {
         throw new Refusal([{ code: 'LEASE_UNAVAILABLE', message: `键 ${key} 的租约不在这次运行的血缘持有之下`, fix: '由预订那次运行（或它血缘里的运行，同一用户发起）来续期或释放' }]);
       }
-      if (row.released || Date.parse(row.expires_at) <= now.getTime()) {
+      if (row.released || (row.expires_at !== null && Date.parse(row.expires_at) <= now.getTime())) {
         throw new Refusal([{ code: 'LEASE_EXPIRED', message: `键 ${key} 的租约已${row.released ? '释放' : '过期'}`, fix: '重新取得租约并重新证明基线' }]);
       }
     }
@@ -199,7 +203,7 @@ export async function grantLeases(
       if (request.op === 'release') {
         const rows = holderRows.filter((row) => request.keys.includes(row.key));
         const holder = { user: rows[0]!.user, run: rows[0]!.run };
-        const until = rows.reduce((max, row) => (row.expires_at > max ? row.expires_at : max), rows[0]!.expires_at);
+        const until = rows.reduce((max, row) => (row.expires_at === null || max === null ? null : row.expires_at > max ? row.expires_at : max), rows[0]!.expires_at);
         const outcome = await ctx.deps.leases.release({ keys: request.keys, holder });
         if (!outcome.ok) {
           throw new Refusal([{ code: outcome.code, message: `释放（${request.keys.join('、')}）没有成功`, fix: '键可能已被释放或过期，稍后再试' }]);
@@ -534,7 +538,7 @@ async function startFresh(
 
   // The frozen rows carry `mine` for the rows held by this run's lineage (D04 R[0]): the projection of a successor
   // reads it to see which keys it may extend or release. (The view itself was taken before the projection.)
-  const frozenLeaseRows: Array<{ key: string; until: string; mine: boolean }> | null =
+  const frozenLeaseRows: Array<{ key: string; until: string | null; mine: boolean }> | null =
     leaseRows === null
       ? null
       : leaseRows.map((row) => ({ ...row, mine: leaseLineageHolders.has(row.key) }));

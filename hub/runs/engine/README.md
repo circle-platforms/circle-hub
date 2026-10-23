@@ -545,3 +545,8 @@ effective read permissions, not a trusted byte bypass. Unexpected function-read 
 K2 admission exclusions are applied before subject priming and before forming item function batches. Its transactional
 contribution writes and identity locks stay atomic with the result, and both successful saves and fallback refusals retain
 retry evidence. This merge changes no timeout, caller scope, generated contract or real-system configuration.
+
+A lease declaration without `max_ttl_seconds` grants no-expiry reservations (`until: null`). Acquire needs no TTL;
+extend is refused for the whole request before effects, and release still requires the same user and predecessor
+lineage. Capped workflows keep their existing validation. The trusted dispatch boundary treats a null expiry as
+unbounded; fences, holder identity and lineage remain mandatory.
