@@ -17,6 +17,8 @@ export interface Options {
   section?: string;
   hubUrl: string;
   workdir?: string;
+  profile?: 'review' | 'skills';
+  jevModel?: string;
 }
 
 export const SERVER_NAME = 'hub';
@@ -127,10 +129,12 @@ export interface Written {
 }
 
 export function writeHome(options: Options, endpoint: Endpoint, token: string): Written {
+  const profile = options.profile ?? 'review';
+  if (profile !== 'review' && profile !== 'skills') throw new Error('--profile 只能是 review 或 skills');
   const home = resolve(options.home);
   const workdir = resolve(options.workdir ?? join(home, 'work'));
   if (existsSync(join(home, 'settings.json'))) throw new Error('目标目录里已经有 settings.json：换一个新目录，不覆盖');
-  for (const dir of [home, join(home, 'hooks'), workdir]) {
+  for (const dir of [home, join(home, 'hooks'), workdir, ...(profile === 'skills' ? [join(home, 'skills')] : [])]) {
     mkdirSync(dir, { recursive: true, mode: 0o700 });
     chmodSync(dir, 0o700);
   }
@@ -150,6 +154,7 @@ export function writeHome(options: Options, endpoint: Endpoint, token: string): 
         ],
         ...(options.envFile === undefined ? {} : { credential_files: [basename(options.envFile)] }),
         update_check: false,
+        ...(profile === 'skills' ? { variables: { HUB_URL: options.hubUrl, ...(options.jevModel === undefined ? {} : { JEV_MODEL: options.jevModel }) } } : {}),
       },
       null,
       2,
@@ -177,6 +182,8 @@ export function parseArgs(argv: string[]): Options & { envFile: string; provider
     if (!v) throw new Error(`缺少 --${name}`);
     return v;
   };
+  const profile = values.get('profile') ?? 'review';
+  if (profile !== 'review' && profile !== 'skills') throw new Error('--profile 只能是 review 或 skills');
   const provider = need('provider');
   if (provider !== 'glm' && provider !== 'qwen') throw new Error('--provider 只能是 glm 或 qwen');
   return {
@@ -187,6 +194,8 @@ export function parseArgs(argv: string[]): Options & { envFile: string; provider
     section: values.get('section'),
     hubUrl: values.get('hub-url') ?? 'http://127.0.0.1:7420/mcp',
     workdir: values.get('workdir'),
+    profile,
+    jevModel: values.get('jev-model'),
   };
 }
 
@@ -201,6 +210,13 @@ export function main(argv: string[], env: NodeJS.ProcessEnv, out: (line: string)
     out(`模型：${endpoint.model}，协议 ${endpoint.protocol}，密钥长度 ${endpoint.apiKey.length}，来源 ${endpoint.sources.join('、')}`);
     out(`中枢令牌：已存为密钥 ${TOKEN_SECRET}，长度 ${token.length}`);
     out(`受保护文件：${basename(options.envFile)}；钩子只放行 ${HUB_TOOLS.length} 个中枢工具和待办清单；工作目录为空目录`);
+    if (options.profile === 'skills') {
+      out('技能目录：已建立，权限 0700；变量 HUB_URL：已配置');
+      out(`变量 JEV_MODEL：${options.jevModel === undefined ? '未配置' : `已配置，长度 ${options.jevModel.length}`}`);
+      out('所有者下一步：/secrets JEV_API_KEY（脚本不读取或保存该密钥）');
+      if (options.jevModel === undefined) out('所有者下一步：/variables JEV_MODEL');
+      out('技能装进 skills/ 后分别核对：local-tools verify --digest、pack-files.ts --verify-install');
+    }
     return 0;
   } catch (error) {
     out(`失败：${(error as Error).message}`);

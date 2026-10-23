@@ -211,3 +211,55 @@ test('writeHome names the environment file as a protected file only when there i
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// Frozen before adding profiles; normalize only the scratch home prefix, never JSON formatting.
+const REVIEW_BYTES = {
+  'settings.json': '23ad030ae047db362be96316b6a9539f15eb269e9e15eabcfb5f9af680d48c49',
+  'credentials.json': 'bae342f65c624745582bb94cf7ff51b0e3f6e3ff608454fff61df217e2947425',
+  'secrets.json': '080e2cbabac7df441bfe6e720f4c067a37955a50779ce58d981977031c6a79e5',
+  'hooks.json': '70f9cde0f4fb7678c956fc84e390497e87426185f22302e08435abb40011b90d',
+  'hooks/hub-only.mjs': 'd6aba984c5d307c65457d90390638f57e2caff8512e519e1eb2c469353a7449c',
+};
+test('default and explicit review preserve every pre-profile file byte', async () => {
+  const { createHash } = await import('node:crypto'); const dir = scratch(); const home = join(dir, 'home');
+  try {
+    for (const profile of [undefined, 'review'] as const) {
+      rmSync(home, { recursive: true, force: true });
+      const written = writeHome({ home, profile, envFile: 'synthetic.env', hubUrl: 'http://127.0.0.1:12345/mcp' }, { protocol: 'anthropic', baseUrl: 'https://model.example.invalid', model: 'synthetic-model', apiKey: 'synthetic-model-key', sources: [] }, 'synthetic-hub-token');
+      for (const file of written.files) {
+        const bytes = readFileSync(join(home, file), 'utf8').replaceAll(home, '<HOME>');
+        assert.equal(createHash('sha256').update(bytes).digest('hex'), REVIEW_BYTES[file as keyof typeof REVIEW_BYTES], `${profile ?? 'default'} ${file}`);
+      }
+    }
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+test('profile arguments default to review and accept only the two named profiles', () => {
+  const args = ['--env-file', 'synthetic.env', '--home', 'home', '--provider', 'qwen'];
+  assert.equal(parseArgs(args).profile, 'review');
+  assert.equal(parseArgs([...args, '--profile', 'skills', '--jev-model', 'synthetic-jev']).jevModel, 'synthetic-jev');
+  assert.throws(() => parseArgs([...args, '--profile', 'unknown']), /profile/);
+});
+test('skills settings add only named variables and a private empty skills directory', () => {
+  const dir = scratch();
+  try {
+    for (const jevModel of [undefined, 'synthetic-jev']) {
+      const home = join(dir, jevModel ? 'selected' : 'unset');
+      const written = writeHome({ home, hubUrl: 'https://hub.example.invalid/mcp', profile: 'skills', jevModel }, endpointFrom(entries, 'qwen'), 'synthetic-token');
+      const settings = JSON.parse(readFileSync(join(home, 'settings.json'), 'utf8'));
+      assert.deepEqual(settings.variables, { HUB_URL: 'https://hub.example.invalid/mcp', ...(jevModel ? { JEV_MODEL: jevModel } : {}) });
+      assert.deepEqual(JSON.parse(readFileSync(join(home, 'secrets.json'), 'utf8')), { secrets: { HUB_TOKEN: 'synthetic-token' } });
+      assert.equal(statSync(join(home, 'skills')).mode & 0o777, 0o700);
+      for (const f of written.files) assert.equal(statSync(join(home, f)).mode & 0o777, 0o600);
+    }
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+test('skills screen lists owner followups without exposing the Jev model value or any key', () => {
+  const dir = scratch();
+  try {
+    const envFile = join(dir, 'synthetic.env'); writeFileSync(envFile, ENV); const lines: string[] = [];
+    const argv = ['--env-file', envFile, '--home', join(dir, 'home'), '--provider', 'qwen', '--profile', 'skills'];
+    assert.equal(main(argv, { HUB_REAL_TOKEN: 'synthetic-token' }, line => lines.push(line)), 0);
+    const shown = lines.join('\n'); for (const hint of ['/secrets JEV_API_KEY', '/variables JEV_MODEL', 'local-tools verify --digest', 'pack-files.ts --verify-install']) assert.ok(shown.includes(hint));
+    assert.ok(!/synthetic-token|qwen-secret|qwen\.example/.test(shown));
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
