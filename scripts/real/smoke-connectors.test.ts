@@ -60,3 +60,35 @@ test('read failure, export failure and rotated logs are failures, never an empty
 test('review 1: smoke requests connector events and detects response text inside a redacted-event channel', async () => {
   const result = await scenario('events'); assert.equal(result.ok, false); assert.ok(result.hits.command > 0);
 });
+
+async function inspectSynthetic(body: string | Buffer, options: { stderr?: string; exit?: number; stdout?: string; logs?: 'missing' | 'rotate'; exportFailure?: boolean; corrupt?: boolean } = {}) {
+  const root = await mkdtemp(join(tmpdir(), 'smoke-review-')); const bytes = Buffer.isBuffer(body) ? body : Buffer.from(body); const sha = createHash('sha256').update(bytes).digest('hex');
+  const lines: string[] = []; const commands: string[][] = [];
+  const out = join(root, 'hub.out.log'); const err = join(root, 'hub.err.log');
+  await writeFile(out, 'previous'); if (options.logs !== 'missing') await writeFile(err, '');
+  const run: SmokeCommand = async args => {
+    commands.push(args);
+    if (args[0] === 'resource') {
+      if (options.logs === 'rotate') await writeFile(out, '');
+      return { code: options.exit ?? 0, stdout: options.stdout ?? `demo-system@1.0.0/tree：读取完成\n产物 original ${sha} ${bytes.length} 字节\n读清单 ${'a'.repeat(64)}\n`, stderr: options.stderr ?? '' };
+    }
+    if (options.exportFailure) return { code: 1, stdout: '', stderr: 'synthetic export failure' };
+    await writeFile(args.at(-1)!, options.corrupt ? Buffer.concat([bytes, Buffer.from('extra')]) : bytes);
+    return { code: 0, stdout: '', stderr: '' };
+  };
+  try {
+    const [result] = await runSmoke({ logs: root, reads: ['res_synthetic:tree:synthetic-key'], run, print: line => lines.push(line) });
+    return { result: result!, output: lines.join('\n'), commands };
+  } finally { await rm(root, { recursive: true, force: true }); }
+}
+
+test('review 2: attribute-only responses are checked and empty candidate sets never pass', async () => {
+  const body = '<commands><menu name="synthetic-menu-alpha"><item name=synthetic-item-beta /></menu></commands>';
+  const leaked = await inspectSynthetic(body, { stderr: 'synthetic-menu-alpha synthetic-item-beta' });
+  assert.equal(leaked.result.ok, false); assert.ok(leaked.result.hits.command > 0); assert.ok(leaked.result.candidates >= 2);
+  assert.ok(!leaked.output.includes('synthetic-menu-alpha'));
+  for (const body of ['{"count":123}', '{"word":"short"}']) {
+    const empty = await inspectSynthetic(body); assert.equal(empty.result.ok, false); assert.equal(empty.result.candidates, 0);
+    assert.match(empty.output, /没有可核对的文字/); assert.match(empty.output, /下一步/);
+  }
+});

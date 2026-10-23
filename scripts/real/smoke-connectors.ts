@@ -27,7 +27,10 @@ export function responseStrings(body: string, key: string): string[] {
       else if (item && typeof item === 'object') for (const child of Object.values(item)) pending.push(child);
     }
     strings.reverse();
-  } else strings.push(...body.split(/<[^>]*>|\r?\n/).map((part) => part.trim()));
+  } else {
+    strings.push(...body.split(/<[^>]*>|\r?\n/).map(part => part.trim()));
+    for (const match of body.matchAll(/(?:^|[\s<])[^\s"'<>/=`]+\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/g)) strings.push(match[1] ?? match[2] ?? match[3] ?? '');
+  }
   return [...new Set(strings)].filter((value) => value.length >= 8 && !/^[0-9a-f]{64}$/i.test(value) && !key.includes(value));
 }
 
@@ -66,6 +69,8 @@ export interface SmokeResult {
   completed: boolean;
   code: string;
   artifacts: number;
+  candidates: number;
+  reason: string;
   bytes: number;
   commandLines: number;
   serviceLines: number;
@@ -84,7 +89,7 @@ export async function runSmoke(options: { logs: string; reads: readonly string[]
   if (!requests.length) throw new Error('no reads');
   const results: SmokeResult[] = [];
   for (const request of requests) {
-    const result: SmokeResult = { system: '系统包未取得', read: request.read, completed: false, code: '检查未完成', artifacts: 0, bytes: 0, commandLines: 0, serviceLines: 0, hits: { command: 0, service: 0 }, ok: false };
+    const result: SmokeResult = { system: '系统包未取得', read: request.read, completed: false, code: '检查未完成', artifacts: 0, candidates: 0, reason: '', bytes: 0, commandLines: 0, serviceLines: 0, hits: { command: 0, service: 0 }, ok: false };
     let scratch: string | undefined;
     try {
       const before = await Promise.all(['hub.out.log', 'hub.err.log'].map((name) => snapshot(join(options.logs, name))));
@@ -108,11 +113,13 @@ export async function runSmoke(options: { logs: string; reads: readonly string[]
       }
       const serviceText = (await Promise.all(before.map(appended))).join('\n');
       result.commandLines = lineCount(commandText); result.serviceLines = lineCount(serviceText);
-      result.hits = { command: hitsIn(commandText, candidates), service: hitsIn(serviceText, candidates) };
-      result.ok = result.completed && exported && result.hits.command === 0 && result.hits.service === 0;
+      const unique = [...new Set(candidates)]; result.candidates = unique.length;
+      if (!unique.length) result.reason = '应答里没有可核对的文字；下一步选择应答包含至少八个字符文字的读取';
+      result.hits = { command: hitsIn(commandText, unique), service: hitsIn(serviceText, unique) };
+      result.ok = result.completed && exported && result.candidates > 0 && result.hits.command === 0 && result.hits.service === 0;
     } catch { result.ok = false; }
     finally { if (scratch) await rm(scratch, { recursive: true, force: true }); }
-    print(`${result.system}/${result.read}：${result.completed ? '读取完成' : `失败（${result.code}）`}，产物 ${result.artifacts} 个共 ${result.bytes} 字节，命令输出 ${result.commandLines} 行、服务日志 ${result.serviceLines} 行，命中 ${result.hits.command + result.hits.service}（命令输出 ${result.hits.command}、服务日志 ${result.hits.service}）：${result.ok ? '通过' : '不通过'}`);
+    print(`${result.system}/${result.read}：${result.completed ? '读取完成' : `失败（${result.code}）`}，产物 ${result.artifacts} 个共 ${result.bytes} 字节，命令输出 ${result.commandLines} 行、服务日志 ${result.serviceLines} 行，候选文字 ${result.candidates} 条，命中 ${result.hits.command + result.hits.service}（命令输出 ${result.hits.command}、服务日志 ${result.hits.service}）：${result.ok ? '通过' : '不通过'}${result.reason ? `；原因：${result.reason}` : ''}`);
     results.push(result);
   }
   return results;

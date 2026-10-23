@@ -156,7 +156,7 @@ circle-hub knowledge roots <product> [--as] | diff <rootA> <rootB> [--as]
   Per integrator answer 9 on the plan-evidence task, this checks command output (including any command events) and only
   the newly appended bytes of `hub.out.log`/`hub.err.log`; it does not treat CLI reads as MCP calls or export a call log.
   Each response artifact is exported to a temporary 0700 directory and checked against its reported SHA-256 and size,
-  then removed. JSON string values or HTML/text fragments of at least eight characters are searched raw and JSON-escaped
+  then removed. JSON string values or markup attributes/text fragments of at least eight characters are searched raw and JSON-escaped
   in both outputs, excluding standalone digests and text already in the request key. Only counts and hit locations are
   printed. Completion, intact exports and zero hits are all required; missing, rotated, truncated or unreadable logs,
   undecodable text artifacts and export failures cannot pass. A log increment over 64 MiB also refuses the check.
@@ -394,3 +394,6 @@ are done. Open:
 - Should `serve` refuse to start where sandbox-exec is missing (now a notice: the console and listings still work)?
 - Should a dry-run `knowledge sync` need the operator token? It does now, because its reads store source artifacts.
 - Should `init-admin` also grant the first admin the publish right (now an explicit `pack grant-publish`)?
+
+Smoke reports a candidate count. With no checkable text the result fails and asks for a text-bearing read.
+Attribute-only XML/HTML responses are checked by the same rule.
