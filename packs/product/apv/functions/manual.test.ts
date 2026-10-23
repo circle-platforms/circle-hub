@@ -1160,6 +1160,18 @@ describe('applicability from explicit conditions', () => {
     assert.equal((rowEntry.data as { literals_cut?: boolean }).literals_cut, undefined, 'the undocumented flag never appears');
   });
 
+
+  it('a command column that is not the first column keeps every other cell of the row (cursor regression)', () => {
+    const tree = commandCatalog(xml('<commands><scope type="global"><menu name="demo"><menu name="pool"><item name="add" help_string="a"><arguments></arguments></item></menu></menu></scope></commands>')).catalog;
+    const swapped = produceManualEntries(markdown('# 章\n\n## 配置命令\n\n| 说明 | 命令 |\n|---|---|\n| 添加成员 | **demo pool add** *\\<name\\>* |\n'), null, { catalog: tree });
+    const def = swapped.entries.find((entry) => entry.kind === 'definition');
+    assert.ok(def !== undefined, JSON.stringify(swapped.entries.map((e) => [e.kind, e.path])));
+    assert.equal(def.path, '/commands/demo/pool/add');
+    const described = swapped.entries.find((entry) => entry.kind !== 'definition' && String(entry.statement).includes('添加成员'));
+    assert.ok(described !== undefined, JSON.stringify(swapped.entries.map((e) => [e.kind, String(e.statement).slice(0, 30)])));
+    assert.ok(!String(described.statement).includes('demo pool add'), 'the description never becomes the signature cell');
+  });
+
   it('a shared multi-row entry carries a condition only when every row states it (closure finding 8)', () => {
     const tree = commandCatalog(xml('<commands><scope type="global"><menu name="demo"><menu name="pool"><item name="add" help_string="a"><arguments></arguments></item></menu></menu></scope></commands>')).catalog;
     // A grid table (not split by row): one row conditioned, one not — the shared entry stays 未声明.

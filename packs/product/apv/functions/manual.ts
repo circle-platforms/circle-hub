@@ -1025,10 +1025,12 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
         const valueOnlyRows = new Set<number>();
         let signatureRows = 0;
         for (const row of table.rows) {
+          // The cell field is the COLUMN index: the value-of-current filter runs inside the per-cell map, so a
+          // filtered-out anchor never shifts the column a surviving anchor reports (cursor regression of 916e6222).
           const anchorsOf = row.cells.flatMap((cell, cellIndex) => cellAnchors(cell, commandColumn(cellIndex)));
-          const found = anchorsOf
+          const found = row.cells.flatMap((cell, cellIndex) => cellAnchors(cell, commandColumn(cellIndex))
             .filter((cellAnchor) => !valueOfCurrent(cellAnchor, current?.words ?? null, current?.variantTails ?? null, current?.params ?? []))
-            .map((cellAnchor, cellIndex) => ({ cell: cellIndex, anchor: cellAnchor }));
+            .map((cellAnchor) => ({ cell: cellIndex, anchor: cellAnchor })));
           if (found.length === 0) {
             // A bare bold word is a value, parameter name or term: the row stays in the remainder. Its bold spans are
             // recorded as literals by the remainder's own putLiterals, as written — no word-level sweep (closure 5/21).
