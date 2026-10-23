@@ -152,9 +152,13 @@ function summaryOf(fields: DocumentFields, template: Template): string {
     const command = fields.command_coverage;
     if (command) {
       const partial = command.truncated || command.skippedSources > 0 || command.cutKeys.includes(fields.document) || command.unmatched.length > 0 || command.unplacedRoot === null;
-      const missing = partial ? 0 : command.commands.filter(row => row.missing.length > 0).length;
-      const note = command.uploaded ? '；上传文件不在索引里' : command.rule_mismatch ? '；规则不一致，用默认 marked 重跑' : !command.bound ? '；缺 case_index'  : partial ? '；索引待补，知识同步后重跑，未判覆盖完整' : !command.documentIndexed ? '；文档不在索引里' : command.commands.length === 0 ? '；用例未解析出命令' : '';
-      parts.push(`按命令：${command.commands.length} 个命令，${missing} 个缺类别${note}`);
+      const missing = command.commands.filter(row => row.missing.length > 0).length;
+      if (command.uploaded) parts.push('按命令：上传文件不在索引里');
+      else if (command.rule_mismatch) parts.push('按命令：规则不一致，用默认 marked 重跑');
+      else if (!command.bound) parts.push('按命令：未计算，缺 case_index');
+      else if (partial) parts.push(`按命令：已读 ${command.commands.length} 个命令，${missing} 个潜在缺口待补证，知识同步后重跑，未判覆盖完整`);
+      else if (!command.documentIndexed) parts.push('按命令：文档不在索引里');
+      else parts.push(`按命令：${command.commands.length} 个命令，${missing} 个缺类别${command.commands.length === 0 ? '；用例未解析出命令' : ''}`);
     }
     if (fields.missing.length > 0) parts.push(`缺 ${fields.missing.length} 个模板类别${note}：${fields.missing.map(name).join('、')}`);
     else if (uncovered > 0) parts.push(`模板类别没有缺失（${uncovered} 个声明跳过）`);

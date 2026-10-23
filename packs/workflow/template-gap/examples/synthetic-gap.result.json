@@ -5,7 +5,7 @@
   "item": {
     "id": "upload-81aa5650aa4a",
     "label": "小部件探测测试用例（示例）",
-    "summary": "用例 66 个；缺 1 个模板类别：压力测试（stress）；模板类别出现 23/24 个；用例规则：标签或标记；其中 1 个只靠标记识别（没有标签）",
+    "summary": "用例 66 个；按命令：上传文件不在索引里；缺 1 个模板类别：压力测试（stress）；模板类别出现 23/24 个；用例规则：标签或标记；其中 1 个只靠标记识别（没有标签）",
     "location": {
       "parser": "kityminder@1",
       "selector": "n/r0example001"
@@ -368,6 +368,92 @@
           ]
         }
       ],
+      "command_coverage": {
+        "case_rule": "marked",
+        "rule_mismatch": false,
+        "bound": false,
+        "uploaded": true,
+        "documentIndexed": false,
+        "root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c",
+        "build": "Rel_MEADOW_10_6_8_1",
+        "caseCount": 66,
+        "matchedCases": 0,
+        "unmatched": [
+          "upload-81aa5650aa4a:01qbgqo02rm3",
+          "upload-81aa5650aa4a:0f1sd7awiefi",
+          "upload-81aa5650aa4a:0j9mbggwjytw",
+          "upload-81aa5650aa4a:1hccmdu8ssig",
+          "upload-81aa5650aa4a:2g0h89f0w1uf",
+          "upload-81aa5650aa4a:2g1g1d0vhy65",
+          "upload-81aa5650aa4a:2i0r5yfvn3ta",
+          "upload-81aa5650aa4a:2zlrkcoz9mr4",
+          "upload-81aa5650aa4a:3td81tprwfs4",
+          "upload-81aa5650aa4a:4few8h0jrcxe",
+          "upload-81aa5650aa4a:4ltan31kcjqa",
+          "upload-81aa5650aa4a:4wlclalycny1",
+          "upload-81aa5650aa4a:58rev5vsqzyw",
+          "upload-81aa5650aa4a:5jp998s5k5lh",
+          "upload-81aa5650aa4a:7i05at912jhi",
+          "upload-81aa5650aa4a:93jureq5up99",
+          "upload-81aa5650aa4a:9nufkipey4f4",
+          "upload-81aa5650aa4a:a6gosvhh50zv",
+          "upload-81aa5650aa4a:auch71u6uxce",
+          "upload-81aa5650aa4a:b1bl63v94rk3",
+          "upload-81aa5650aa4a:b9ckh74kaobq",
+          "upload-81aa5650aa4a:be4tibl8k307",
+          "upload-81aa5650aa4a:f6eulx5b954g",
+          "upload-81aa5650aa4a:fiwo7utmxxne",
+          "upload-81aa5650aa4a:fzstcob8zis6",
+          "upload-81aa5650aa4a:gv8eovpocm23",
+          "upload-81aa5650aa4a:gzcm7ldrqfa7",
+          "upload-81aa5650aa4a:hxg6y0nsqerm",
+          "upload-81aa5650aa4a:i2pfefpoghe8",
+          "upload-81aa5650aa4a:i579m39pc230",
+          "upload-81aa5650aa4a:i7dd1j74o4ur",
+          "upload-81aa5650aa4a:jfhp3uwle991",
+          "upload-81aa5650aa4a:jr493b74wl4l",
+          "upload-81aa5650aa4a:jsvykub8vild",
+          "upload-81aa5650aa4a:k7kd4d8qddqg",
+          "upload-81aa5650aa4a:kbig1f2yc6q4",
+          "upload-81aa5650aa4a:l0r4glerzq3j",
+          "upload-81aa5650aa4a:lvdxvzfm1hg6",
+          "upload-81aa5650aa4a:lvkk0ejfn1ap",
+          "upload-81aa5650aa4a:nmb6vclhv6bb",
+          "upload-81aa5650aa4a:nxaakfyiqtum",
+          "upload-81aa5650aa4a:o6ccpg02s6ou",
+          "upload-81aa5650aa4a:ofi6w1u55y47",
+          "upload-81aa5650aa4a:p8cwxc1ye2np",
+          "upload-81aa5650aa4a:py9uoksarpjw",
+          "upload-81aa5650aa4a:q3r7am57ohue",
+          "upload-81aa5650aa4a:q4gngrp4drre",
+          "upload-81aa5650aa4a:rrgj1uagx1dv",
+          "upload-81aa5650aa4a:rycuaqhi8w9x",
+          "upload-81aa5650aa4a:s2aneti8p9dd",
+          "upload-81aa5650aa4a:saqa73tqfrw0",
+          "upload-81aa5650aa4a:t8da3mog62t8",
+          "upload-81aa5650aa4a:u2wenvki1nxw",
+          "upload-81aa5650aa4a:uotmwgdkke7b",
+          "upload-81aa5650aa4a:uu88965cspsf",
+          "upload-81aa5650aa4a:v0dyf7d8h0a5",
+          "upload-81aa5650aa4a:v0mcr4ryvsai",
+          "upload-81aa5650aa4a:v99unez89wsx",
+          "upload-81aa5650aa4a:vaujn95az8d8",
+          "upload-81aa5650aa4a:vodmb3tlqxbo",
+          "upload-81aa5650aa4a:vpp6bkv9luc6",
+          "upload-81aa5650aa4a:wznpmaoyl6xb",
+          "upload-81aa5650aa4a:y34nt14ss7ok",
+          "upload-81aa5650aa4a:y6gok9s3idfh",
+          "upload-81aa5650aa4a:ybwqxua4vqej",
+          "upload-81aa5650aa4a:z04xch3i7ck8"
+        ],
+        "commandlessCases": 0,
+        "truncated": false,
+        "skippedSources": 0,
+        "cutKeys": [],
+        "unplacedRoot": null,
+        "notes": [],
+        "commands": []
+      },
       "missing": [
         "stress"
       ],
@@ -391,5 +477,25 @@
         "stress"
       ]
     }
-  }
+  },
+  "command_outcomes": [
+    {
+      "tier": "advisory",
+      "item": "upload-81aa5650aa4a",
+      "grounds": [
+        "src:81aa5650aa4a4758425647dd7b1ada6957e8f392bb639182a240dd805b1ae5a1/kityminder@1/n/r0example001",
+        "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/"
+      ],
+      "verdict": "refute",
+      "code": "template-gap.not_indexed",
+      "statement": "上传文件 upload-81aa5650aa4a 不在用例索引里；根 3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c，构建 Rel_MEADOW_10_6_8_1。下一步：用敏捷平台的文档编号重跑",
+      "data": {
+        "document": "upload-81aa5650aa4a",
+        "root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c",
+        "build": "Rel_MEADOW_10_6_8_1",
+        "scope": "document",
+        "next_action": "用敏捷平台的文档编号重跑"
+      }
+    }
+  ]
 }
