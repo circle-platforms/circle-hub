@@ -57,6 +57,7 @@ type Missing = { document: string; reason: string; next_action: string };
 const object = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
 const list = (v: unknown): unknown[] => Array.isArray(v) ? v : [];
 const hash = (bytes: string | Uint8Array): string => createHash('sha256').update(bytes).digest('hex');
+const builtSecond = (value: unknown): unknown => typeof value === 'string' ? value.replace(/\.\d+(?=Z?$)/, '').replace(/Z$/, '') : value;
 const norm = (v: string): string => v.normalize('NFKC').trim();
 const idOf = (value: unknown): string | null => typeof value === 'string' && value !== '' ? value.replace(/^doc:/, '') : null;
 
@@ -309,7 +310,7 @@ export function compareLocationTree(tree: unknown, captures: Capture[], buildGol
       const expectedFields = { name: g.name, family: g.family, base: g.base, alias: g.name !== g.base, built_at: g.built, released: g.released !== null };
       for (const [field, fact] of Object.entries(expectedFields)) {
         if (!Object.hasOwn(value, field)) { unread = true; details.not_run.push({ document: expected.document, fact: '第 ' + (index + 1) + ' 个候选的 ' + field + ' 字段', next_action: readAction }); continue; }
-        if (value[field] !== fact) details.candidates.push({ document: expected.document, field: `candidates/${index}/${field}`, gold: fact, actual: value[field], reason: '字段不等' });
+        if ((field === 'built_at' ? builtSecond(value[field]) !== builtSecond(fact) : value[field] !== fact)) details.candidates.push({ document: expected.document, field: `candidates/${index}/${field}`, gold: fact, actual: value[field], reason: '字段不等' });
       }
     });
     if (unread) summary.candidates.not_run++;

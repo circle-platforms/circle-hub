@@ -169,3 +169,13 @@ test('unavailable facet explanations are not-run rather than an overall verified
   const details = JSON.parse(readFileSync(join(root, 'out/details.json'), 'utf8'));
   assert.ok(details.details.not_run.some((row: { document: string; next_command: string }) => row.document === '940801' && row.next_command.includes('READ ONLY')));
 });
+
+test('location review 2: Hub ISO Z and milliseconds compare at source precision without hiding a different second', () => {
+  const gold = { line: '10.8.1', candidates: [{ name: 'Rel_APV_10_8_1_41', family: 'APV', base: 'Rel_APV_10_8_1_41', built: '2026-08-20T12:30:40', released: null }] };
+  for (const built_at of ['2026-08-20T12:30:40Z', '2026-08-20T12:30:40.000Z']) {
+    const raw = result(); raw.partitions.delivered[0].requirements[1].claims[0].statement.data = { candidates: [{ name: gold.candidates[0].name, family: 'APV', base: gold.candidates[0].base, alias: false, built_at, released: false }] };
+    assert.equal(compareLocationTree(tree(), captures(raw), [gold]).summary.candidates.equal, 1);
+    (raw.partitions.delivered[0].requirements[1].claims[0].statement.data.candidates as { built_at: string }[])[0].built_at = '2026-08-20T12:30:41Z';
+    assert.equal(compareLocationTree(tree(), captures(raw), [gold]).summary.candidates.not_equal, 1);
+  }
+});
