@@ -1,9 +1,30 @@
 {
   "schema": "case-compile.runtime-profile-format@1",
   "profile_schema": "runtime-profile@1",
-  "parameter_roles": ["device_cli", "host_shell", "literal_assertion", "wait"],
-  "closed_dispatches": ["execute_registry", "checkpoint_v2_three_argument"],
+  "parameter_roles": [
+    "device_cli",
+    "host_shell",
+    "literal_assertion",
+    "wait"
+  ],
+  "closed_dispatches": [
+    "execute_registry",
+    "checkpoint_v2_three_argument"
+  ],
   "header_columns": 9,
-  "manifest_device_types": ["load-balancer", "router", "client", "server", "console"],
-  "manifest_protocols": ["tcp", "udp"]
+  "manifest_device_types": [
+    "load-balancer",
+    "router",
+    "client",
+    "server",
+    "console"
+  ],
+  "manifest_protocols": [
+    "tcp",
+    "udp"
+  ],
+  "trigger_types": [
+    "router",
+    "client"
+  ]
 }

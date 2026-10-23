@@ -2,9 +2,10 @@
 // interface addresses, services and reserved ranges. Same shape as the test-bed pack's manifest (the inventory named
 // document is shared); the parser here is this pack's own compact copy — pack functions may not import across packs
 // (see README, Needs). Any problem refuses the whole document, each with its pointer and fix.
+import FORMAT from '../tables/runtime-profile-format.json' with { type: 'json' };
 import { isRecord } from './text.ts';
 
-export const DEVICE_TYPES = ['load-balancer', 'router', 'client', 'server', 'console'] as const;
+export const DEVICE_TYPES = FORMAT.manifest_device_types;
 export type DeviceType = (typeof DEVICE_TYPES)[number];
 
 export interface IfaceAddress {
@@ -48,6 +49,7 @@ export interface Problem {
 export type ParsedManifest = { ok: true; beds: ManifestBed[] } | { ok: false; problems: Problem[] };
 
 const LIMITS = { beds: 200, devices: 100, addressesPerFamily: 16, reserved: 4096 };
+const BED_NAME = /^[a-z0-9-]{1,64}$/;
 const DEVICE_NAME = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 
 function problem(pointer: string, message: string, fix: string): Problem {
@@ -89,7 +91,7 @@ function parseV6(text: string): bigint | null {
   const right = halves.length === 2 ? groupsOf(halves[1] ?? '') : [];
   if (left === null || right === null) return null;
   const missing = 8 - left.length - right.length;
-  if (missing < 0 || (halves.length === 1 && left.length !== 8)) return null;
+  if (missing < 0 || (halves.length === 2 && missing === 0) || (halves.length === 1 && left.length !== 8)) return null;
   const groups = [...left, ...Array<number>(missing).fill(0), ...right];
   let value = 0n;
   for (const group of groups) value = (value << 16n) | BigInt(group);
@@ -112,6 +114,7 @@ export function parseInterface(family: 'ipv4' | 'ipv6', text: string): IfaceAddr
   const slash = text.indexOf('/');
   if (slash < 0) return null;
   const address = text.slice(0, slash);
+  if (!/^\d{1,3}$/.test(text.slice(slash + 1))) return null;
   const prefix = Number(text.slice(slash + 1));
   const bits = family === 'ipv4' ? 32 : 128;
   if (!Number.isInteger(prefix) || prefix < 0 || prefix > bits) return null;
@@ -197,8 +200,8 @@ export function parseManifest(input: unknown): ParsedManifest {
   const bedNames = new Set<string>();
   for (const [bi, rawBed] of (Array.isArray(input.beds) ? input.beds : []).entries()) {
     const at = `/beds/${bi}`;
-    if (!isRecord(rawBed) || typeof rawBed.name !== 'string' || !DEVICE_NAME.test(rawBed.name)) {
-      problems.push(problem(`${at}/name`, '台架名不对', '小写字母或数字开头，只用小写字母、数字、下划线和连字符'));
+    if (!isRecord(rawBed) || typeof rawBed.name !== 'string' || !BED_NAME.test(rawBed.name)) {
+      problems.push(problem(`${at}/name`, '台架名不对', '台架名只用小写字母、数字和连字符，至多 64 个字符'));
       continue;
     }
     if (bedNames.has(rawBed.name)) problems.push(problem(at, `台架 ${rawBed.name} 重复`, '台架名不能重复'));
@@ -217,13 +220,14 @@ export function parseManifest(input: unknown): ParsedManifest {
         for (const iface of [...device.ipv4, ...device.ipv6]) {
           const key = `${iface.family}:${iface.value.toString(16)}`;
           const held = addressOwners.get(key);
-          if (held !== undefined && held !== device.name) problems.push(problem(`${at}/devices/${di}`, `地址 ${iface.address} 同时属于 ${held} 和 ${device.name}`, '同一台架内一个地址只能属于一台设备'));
+          if (held !== undefined) problems.push(problem(`${at}/devices/${di}`, `地址 ${iface.address} 同时属于 ${held} 和 ${device.name}`, '同一台架内一个地址只能属于一台设备'));
           else addressOwners.set(key, device.name);
         }
         devices.push(device);
       });
     }
     const services: ManifestService[] = [];
+    if (rawBed.services === undefined) problems.push(problem(`${at}/services`, '缺少 services 数组', '没有服务也要写 services: []'));
     if (rawBed.services !== undefined) {
       if (!Array.isArray(rawBed.services)) problems.push(problem(`${at}/services`, `台架 ${rawBed.name} 的 services 不是数组`, 'services 写 {host, ip, proto, port} 的数组'));
       else {
@@ -235,7 +239,7 @@ export function parseManifest(input: unknown): ParsedManifest {
           }
           const host = devices.find((device) => device.name === rawService.host);
           if (host === undefined) problems.push(problem(`${sat}/host`, `服务的主机 ${rawService.host} 不是这台架的设备`, 'host 写这台架 devices 里的设备名'));
-          const onHost = host !== undefined && [...host.ipv4, ...host.ipv6].some((iface) => iface.address === rawService.ip);
+          const onHost = host !== undefined && [...host.ipv4, ...host.ipv6].some((iface) => addressKey(iface.address) === addressKey(rawService.ip as string));
           if (host !== undefined && !onHost) problems.push(problem(`${sat}/ip`, `服务的地址 ${rawService.ip} 不是 ${rawService.host} 的接口地址`, 'ip 写该设备的接口地址（不带前缀）'));
           const proto = rawService.proto === 'udp' ? 'udp' : rawService.proto === 'tcp' ? 'tcp' : null;
           if (proto === null) problems.push(problem(`${sat}/proto`, `服务的协议 ${String(rawService.proto)} 不是 tcp 或 udp`, 'proto 写 tcp 或 udp'));
@@ -246,6 +250,7 @@ export function parseManifest(input: unknown): ParsedManifest {
       }
     }
     const reserved: ManifestBed['reserved'] = [];
+    if (rawBed.reserved === undefined) problems.push(problem(`${at}/reserved`, '缺少 reserved 数组', '没有保留段也要写 reserved: []'));
     if (rawBed.reserved !== undefined) {
       if (!Array.isArray(rawBed.reserved)) problems.push(problem(`${at}/reserved`, `台架 ${rawBed.name} 的 reserved 不是数组`, 'reserved 写 "起始地址-结束地址" 的数组'));
       else {
@@ -271,6 +276,8 @@ export function parseManifest(input: unknown): ParsedManifest {
             problems.push(problem(rat, `保留段 ${item} 超过 ${LIMITS.reserved} 个地址`, '把保留段划小'));
             continue;
           }
+          const inside = devices.some((device) => [...device.ipv4, ...device.ipv6].some((iface) => iface.family === family && (start & mask(family, iface.prefix)) === (iface.value & mask(family, iface.prefix)) && (end & mask(family, iface.prefix)) === (iface.value & mask(family, iface.prefix))));
+          if (!inside) { problems.push(problem(rat, '保留段不在台架任何网段里', '保留段两端必须在台架的同一个网段内')); continue; }
           const addresses: bigint[] = [];
           for (let value = start; value <= end; value += 1n) addresses.push(value);
           reserved.push({ family, addresses, text: item });

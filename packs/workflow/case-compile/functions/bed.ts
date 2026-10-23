@@ -3,9 +3,10 @@
 // addresses (a DUT interface on a segment without any), backends (server interfaces and the declared services), and
 // the devices without any interface address as unknowns. Address use in a plan is judged from these facts plus the
 // run's lineage leases (allocated addresses); every comparison is by the numeric address key, never by notation.
+import FORMAT from '../tables/runtime-profile-format.json' with { type: 'json' };
 import { addressKey, type ManifestBed } from './manifest.ts';
 
-export const TRIGGER_TYPES: ReadonlySet<string> = new Set(['router', 'client']);
+export const TRIGGER_TYPES: ReadonlySet<string> = new Set(FORMAT.trigger_types);
 
 export interface SegmentFact {
   subnet: string;
@@ -73,7 +74,7 @@ export function bedFacts(bed: ManifestBed): BedFacts {
     }
   }
   for (const service of bed.services) {
-    const bare = backends.findIndex((fact) => fact.address === service.ip && fact.service === null);
+    const bare = backends.findIndex((fact) => addressKey(fact.address) === addressKey(service.ip) && fact.service === null);
     if (bare >= 0) backends.splice(bare, 1);
     backends.push({ device: service.host, address: service.ip, service: `${service.host}:${service.port}/${service.proto}` });
   }

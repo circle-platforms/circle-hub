@@ -5,7 +5,8 @@
 // group so every check recomputes from them. An invalid contract or manifest refuses the whole call with every
 // problem and its pointer.
 import { isRecord, refusal, type PackWarning } from './text.ts';
-import { parseContract, type Contract } from './contract.ts';
+import { parseRuntimeContract } from './runtime-contract.ts';
+import { parseProfile } from './profile.ts';
 import { parseManifest, type ManifestBed } from './manifest.ts';
 import { documentIdOf, extractCases, type CaseRule } from './cases.ts';
 
@@ -50,13 +51,13 @@ export function projectItems(input: unknown): unknown {
   if (contractSlot === undefined || contractSlot.model === null || contractSlot.model === undefined) {
     return refusal('no_contract', '没有编译合约', '在 inputs.contract 里写命名文档 {"external": "doc:doc:compile-contract"}（管理员用 circle-hub doc put 发布）');
   }
-  const contractRead = parseContract(contractSlot.model);
+  const contractRead = parseRuntimeContract(contractSlot.model);
   if (!contractRead.ok) {
     const first = contractRead.problems[0];
     return refusal(
       'contract_invalid',
       `编译合约有 ${contractRead.problems.length} 个问题，整份拒绝`,
-      first === undefined ? '按合约的形状（compile-contract@1）改正后重新发布' : `${first.pointer === '' ? '整份' : first.pointer}：${first.fix}`,
+      first === undefined ? '按合约的运行器原格式改正后重新发布' : `${first.pointer === '' ? '整份' : first.pointer}：${first.fix}`,
       problemWarnings('case-compile.contract_problem', contractRead.problems),
     );
   }
@@ -74,6 +75,10 @@ export function projectItems(input: unknown): unknown {
       problemWarnings('case-compile.manifest_problem', manifestRead.problems),
     );
   }
+  const profileSlot = slotOf(inputs, 'profile');
+  if (!profileSlot || profileSlot.model == null) return refusal('no_profile', '没有运行环境配置', '在 inputs.profile 绑定发布的 runtime-profile@1 命名文档');
+  const profileRead = parseProfile(profileSlot.model, contractRead.contract, manifestRead.beds);
+  if (!profileRead.ok) return refusal('profile_invalid', `运行环境配置有 ${profileRead.problems.length} 个问题，整份拒绝`, profileRead.problems[0].fix, problemWarnings('case-compile.profile_problem', profileRead.problems));
   const parameters = isRecord(params.parameters) ? params.parameters : {};
   if (parameters.case_rule !== undefined && parameters.case_rule !== 'tagged' && parameters.case_rule !== 'marked') {
     return refusal('invalid_parameter', `case_rule 的取值 ${String(parameters.case_rule)} 无效`, 'case_rule 写 tagged 或 marked（默认 marked）');
@@ -112,6 +117,7 @@ export function projectItems(input: unknown): unknown {
         kind: 'case-compile',
         contract: contractSlot.model,
         manifest: inventorySlot.model,
+        profile: profileSlot.model,
         leases: { now: typeof frozenLeases.now === 'string' ? frozenLeases.now : new Date(0).toISOString(), entries: Array.isArray(frozenLeases.entries) ? frozenLeases.entries : [] },
         case_rule: rule,
         marked_only: extraction.markedOnly,
