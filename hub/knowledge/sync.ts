@@ -19,6 +19,7 @@ import { describeError } from './errors.ts';
 import { PLACEMENT_CHAIN } from './calibration.ts';
 import { ListLoader, uniqueList } from './lists.ts';
 import { infoOf, plannedSources, produceTree } from './produce.ts';
+import {readProblemRows} from './problem-journal.ts';
 import { SourceLoader } from './sources.ts';
 import { ACTION, COMPONENTS, INDEX, buildProblem, fold, listRoles, recordedOf, withoutLists } from './store.ts';
 
@@ -346,6 +347,12 @@ async function processOwnTree(
   const info = infoOf(build);
   const existing = await context.store.latestProduction(productId, build.name);
   const keyOf = (s: { producer: string; slot: string; external: string | null }): string => `${s.producer}\u0000${s.slot}\u0000${s.external ?? ''}`;
+  const oldSkipped=existing?.detail.problem_chunks
+    ? await readProblemRows(context,existing.detail.problem_chunks.skipped)
+    : existing?.detail.lists.flatMap(list=>list.skipped_count>list.skipped.length
+      ? (plannedSources(product,info).find(source=>source.producer===list.producer&&source.slot===list.slot)?.list??[]).map(external=>({external}))
+      : list.skipped)??[];
+  const refreshSources=new Set<string>(oldSkipped.map(row=>row.external));
   const planned = plannedSources(product, info);
   const plannedKeys = planned.filter((s) => !s.many).map(keyOf).sort(compareText);
   const plannedLists = planned
@@ -393,10 +400,11 @@ async function processOwnTree(
       // A listed source that could not be loaded is tried again (the first 50 kept per list): produced again once it loads.
       // Each load is reduced to whether it worked as soon as it is done, so no document is held after it.
       const retry = new ListLoader(context, options.loader, { maxAgeSeconds: 0, concurrency, record: !options.dryRun });
-      const ids = existing.detail.lists.flatMap((l) => l.skipped.filter((s) => s.retry).map((s) => s.external));
+      const ids=[...refreshSources];
       const loaded = await mapLimited(ids, concurrency, async (id) => (await retry.load(id, cap)).ok);
       const now = ids.find((_, i) => loaded[i]);
       if (now !== undefined) changed = `列表里跳过的来源 ${now} 现在能用了`;
+      else if(ids.length>0)changed=`上次跳过 ${ids.length} 份来源，本次全部重试`;
     }
     if (changed === null && !options.recheck) {
       return { ...base, outcome: 'skipped', reason: '已有根，来源和生产器都没有变', root: existing.detail.root, composition: existing.detail.composition };
@@ -446,6 +454,8 @@ async function processOwnTree(
     build: { ...info, root: existing?.detail.root ?? null },
     by: options.by,
     sync: options.sync,
+    retrySkipped:true,
+    refreshSources,
     loader: options.loader,
     signal: options.signal,
     ...(options.maxAgeSeconds === undefined ? {} : { maxAgeSeconds: options.maxAgeSeconds }),

@@ -202,7 +202,8 @@ describe('documents the producer fails on (findings: callBatch blame, the empty 
     assert.deepEqual(result.skipped.map((s) => s.external), [ids[0]]);
     assert.match(result.skipped[0].reason, /超过了时间上限/);
     assert.equal(result.entries, 4 + 2);
-    assert.equal((await detail(w, result.action)).lists[0].skipped[0].retry, false);
+    assert.equal((await detail(w, result.action)).lists[0].skipped[0].retry, true);
+    assert.equal((await detail(w, result.action)).lists[0].skipped[0].reason_code, 'timeout');
   });
 });
 
@@ -305,7 +306,7 @@ describe('the memo key covers what the function receives (finding: build and bat
 });
 
 describe('recheck (finding: more than 50 documents skipped for good make every recheck produce again)', () => {
-  test('a recheck with more than 50 documents skipped for good finds nothing changed', { timeout: 120_000 }, async (t) => {
+  test('oversized documents are tried alone and an unchanged successful root can be reused', { timeout: 120_000 }, async (t) => {
     const tree = Buffer.byteLength(catalogXml(BASE_CATALOG), 'utf8');
     const w = await world(t, [DEFAULT_PRODUCERS[0], casesProducer()], { pack: { functions: { 'plan.ts': STATIC_PLAN_SOURCE } }, knowledge: { limits: { maxBuildBytes: tree + 4000 } } });
     const ids = documents(w, 1, 110);
@@ -315,12 +316,12 @@ describe('recheck (finding: more than 50 documents skipped for good make every r
     const first = await w.knowledge.syncProduct(w.product, { by: w.admin, options: plan });
     const row = first.builds.find((b) => b.name === A);
     assert.equal(row?.outcome, 'produced', row?.reason);
-    assert.ok((row?.skipped ?? 0) > 50, `more than 50 documents skipped for good (${row?.skipped})`);
+    assert.equal(row?.skipped,0,'large documents are tried alone rather than omitted');
     const recheck = await w.knowledge.syncProduct(w.product, { by: w.admin, options: plan, recheck: true });
     const again = recheck.builds.find((b) => b.name === A);
     assert.equal(again?.outcome, 'skipped', again?.reason);
     assert.match(again?.reason ?? '', /重读后来源摘要没有变/);
-    assert.equal(row?.skipped, 52, 'only the big documents, each over the cap alone');
+    assert.equal(row?.skipped, 0, 'the batching budget does not exclude individual documents');
   });
 });
 

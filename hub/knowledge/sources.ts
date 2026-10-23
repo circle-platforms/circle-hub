@@ -61,6 +61,7 @@ export class SourceLoader {
   readonly #by: Principal;
   readonly #purpose: string;
   readonly #reads = new Map<string, Promise<ExternalLoad>>();
+  readonly #readWrites=new Map<string,Promise<void>>();
   /** Parsed documents by digest and parser; bytes behind a digest never change. A few large documents at most. */
   readonly #documents = new Lru<string, ParsedDocument>(4);
   /** Which parser recognised the bytes of a digest and media type. */
@@ -79,10 +80,16 @@ export class SourceLoader {
     return this.#reads.has(id);
   }
 
+  /** Several builds/loaders may consume one port observation; record it once, retrying a failed persistence. */
+  recordReadOnce(id:string,artifact:string,persist:()=>Promise<void>):Promise<void>{
+    const key=`${id}\0${artifact}`;let pending=this.#readWrites.get(key);
+    if(!pending){pending=Promise.resolve().then(persist);this.#readWrites.set(key,pending);const written=pending;void pending.catch(()=>{if(this.#readWrites.get(key)===written)this.#readWrites.delete(key);});}
+    return pending;
+  }
+
   read(id: string): Promise<ExternalLoad> {
     let pending = this.#reads.get(id);
     if (pending === undefined) {
-      this.readCount++;
       pending = this.#read(id);
       this.#reads.set(id, pending);
     }
@@ -90,6 +97,7 @@ export class SourceLoader {
   }
 
   async #read(id: string): Promise<ExternalLoad> {
+    this.readCount++;
     let result;
     try {
       result = await this.#deps.external.read(id, { principal: this.#by, run: null, purpose: this.#purpose });

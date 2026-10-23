@@ -19,6 +19,7 @@ import {
   schemas as KNOWLEDGE_SCHEMAS,
 } from '../../contracts/src/knowledge.ts';
 import type { BuildInfo } from '../../contracts/src/product.ts';
+import { ReasonSchema } from '../../contracts/generated/vocabulary.ts';
 import type { ActionKind, ProvenanceType } from '../../contracts/generated/vocabulary.ts';
 import type { RecordKind } from '../../contracts/generated/protocol.ts';
 import { IntegrityError, RECORD_SCHEMAS, canonicalize, sha256Hex } from '../records/api.ts';
@@ -282,7 +283,7 @@ export const ListDetail = z.object({
    */
   read: z.string().optional(),
   /** Skipped ids (first 50); `retry` when a later load may succeed (the object could not be read, checked or parsed). */
-  skipped: z.array(z.object({ external: z.string(), reason: z.string(), retry: z.boolean() })),
+  skipped: z.array(z.object({ external: z.string(), reason: z.string(), retry: z.boolean(), reason_code:ReasonSchema.optional() })),
   skipped_count: z.number(),
 });
 export type ListDetail = z.infer<typeof ListDetail>;
@@ -314,6 +315,7 @@ export const ProduceDetail = z.object({
     })
     .nullable()
     .default(null),
+  problem_chunks:z.object({warnings:z.array(z.object({record:z.string(),sha256:z.string(),rows:z.number()})),refused:z.array(z.object({record:z.string(),sha256:z.string(),rows:z.number()})),skipped:z.array(z.object({record:z.string(),sha256:z.string(),rows:z.number()}))}).optional(),
   reason: z.string().nullable(),
 });
 export type ProduceDetail = z.infer<typeof ProduceDetail>;
@@ -354,7 +356,7 @@ export const MemoFailureDetail = z.object({
   producer: z.string(),
   batch: z.object({ index: z.number(), of: z.number() }),
   elements: z.number(),
-  failure: z.object({ reason: z.string(), limits: z.record(z.string(), z.unknown()) }),
+  failure: z.object({ reason: z.string(), reason_code:ReasonSchema.optional(), limits: z.record(z.string(), z.unknown()) }),
 });
 export type MemoFailureDetail = z.infer<typeof MemoFailureDetail>;
 
