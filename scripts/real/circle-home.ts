@@ -242,9 +242,10 @@ async function skillsGuard(home: string, workspace: string, allowed: string[]): 
       child.once('close', code => {
         if (failed || code !== 0) { finish({ decision: 'deny', reason: '技能钩子失败、超时或被停止' }); return; }
         try {
-          const reply: unknown = JSON.parse(stdout);
+          const reply: unknown = JSON.parse(stdout.trim());
           if (!object(reply)) throw new Error('not an object');
-          const decision = reply.decision === 'deny' || reply.decision === 'ask' ? reply.decision : 'allow';
+          const word = typeof reply.decision === 'string' ? reply.decision.trim() : '';
+          const decision = word === 'deny' || word === 'ask' ? word : 'allow';
           const reason = typeof reply.reason === 'string' ? reply.reason : typeof reply.context === 'string' ? reply.context : '技能钩子的决定';
           finish({ decision, reason });
         } catch { finish({ decision: 'deny', reason: '技能钩子未输出 JSON 对象' }); }

@@ -412,3 +412,13 @@ test('glob patterns cannot escape the workspace independently of their reported 
     assert.equal(f.decide(f.input('read_file',{path:'large_tool_results/example'},[join(f.workdir,'large_tool_results/example')])).decision,'allow','Circle-owned offload reads retain their existing semantics');
   }finally{f.close();}
 });
+
+test('padded delegated decisions retain their deny and ask strength while empty output still denies',()=>{
+  const f=skillsFixture();
+  try{
+    for(const [word,decision]of [['deny ','deny'],['ask\n','ask'],[' ask','ask'],['allow ','allow']]){
+      skillHooks(f,[{source:`console.log(JSON.stringify({decision:${JSON.stringify(word)},reason:'合成带空白决定'}));`}]);assert.equal(f.decide(f.input()).decision,decision);
+    }
+    skillHooks(f,[{source:'process.stdout.write("   ");'}]);assert.equal(f.decide(f.input()).decision,'deny');
+  }finally{f.close();}
+});
