@@ -45,7 +45,15 @@ test('result page keeps the production record and counts after accepted model co
   const result=await send(`/console/results/${id}`,cookie);
   assert.match(result.body,new RegExp(original.record));
   assert.ok(result.body.includes(countsLine(original.result.acceptance,original.result.partitions)));
-  assert.ok(!result.body.includes(stored.latest!.record));assert.ok(!result.body.includes('模型评论独立标记'));
+  assert.match(result.body,/生产结果记录（start_run 计算）/);
+  assert.ok(result.body.includes(stored.latest!.record));assert.match(result.body,/后续受理的模型评论/);
+  assert.ok(!result.body.includes('模型评论独立标记'));
+  const run=await send(`/console/runs/${id}`,cookie);
+  const main=run.body.split('<h2>分区清单</h2>')[1].split('<h2>模型评论（判断）</h2>')[0];
+  assert.ok(main.includes(original.record));assert.ok(main.includes(countsLine(original.result.acceptance,original.result.partitions)));
+  assert.ok(!main.includes(countsLine(stored.latest!.result.acceptance,stored.latest!.result.partitions)));
+  const commentary=run.body.split('<h2>模型评论（判断）</h2>')[1];assert.ok(commentary);assert.ok(commentary.includes(stored.latest!.record));assert.ok(commentary.includes('模型评论独立标记'));
+
 });
 
 test('each result row retains its partition and partition code or reason',async()=>{

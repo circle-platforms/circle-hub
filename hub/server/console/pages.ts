@@ -222,15 +222,13 @@ export async function runPage(ctx: PageContext, runId: string): Promise<PageResu
       r.repair_rounds,
     ]),
   );
-  const latest = detail.latest;
-  let results: Html;
-  if (latest === null) {
-    results = html`<p class="empty">还没有校验结果</p>`;
-  } else {
+  const factOnly=run.requirements.length>0&&run.requirements.every(requirement=>requirement.accepted_producer==='fact');
+  const primary=factOnly?detail.production:detail.latest;
+  const renderResult=(latest:NonNullable<RunDetail['latest']>,recordLabel:string):Html=>{
     const result = latest.result;
-    results = html`<p><strong>${countsLine(result.acceptance, result.acceptance === 'accepted' ? result.partitions : undefined)}</strong></p>
+    return html`<p><strong>${countsLine(result.acceptance, result.acceptance === 'accepted' ? result.partitions : undefined)}</strong></p>
 ${definitions([
-  ['校验结果记录', code(latest.record)],
+  [recordLabel, code(latest.record)],
   ['提交摘要', code(result.submission)],
   ['修复轮数', `已用 ${result.rounds.used}，最多 ${result.rounds.max}`],
   ['覆盖', coverageText(result.coverage) ?? '—'],
@@ -240,7 +238,10 @@ ${definitions([
 ${partitionGroups(result, run)}
 ${section('跨条目主张（不计入分区）', result.cross_item.length === 0 ? html`<p class="empty">没有</p>` : html`${result.cross_item.map(claimBlock)}`)}
 ${section('错误与修正', errorsTable(result.errors))}`;
-  }
+  };
+  const results=primary===null?html`<p class="empty">还没有校验结果</p>`:renderResult(primary,factOnly?'生产结果记录（start_run 计算）':'校验结果记录');
+  const commentary=factOnly&&detail.latest!==null&&detail.latest.record!==primary?.record
+    ? section('模型评论（判断）',html`<p class="notice">后续受理的模型评论，以下判断不替代 start_run 计算的生产结果。</p>${renderResult(detail.latest,'模型评论结果记录')}`):'';
   // Display rule 3: what was submitted, unverified, side by side with the platform's receipt and result.
   const submissionRows: unknown[][] = [];
   for (const s of detail.submissions) {
@@ -270,6 +271,7 @@ ${section('来源', sources)}
 ${section('要求项', requirements)}
 ${section(`条目（${run.items.length}）`, items)}
 ${section('分区清单', results)}
+${commentary}
 ${section('提交与回执', submissions)}
 ${section('调用日志', callTable(calls.items, ctx.admin, await names(ctx, calls.items)))}`,
     ),

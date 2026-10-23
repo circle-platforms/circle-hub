@@ -235,7 +235,9 @@ links are fixed paths with encoded query parameters).
   newest first, with `pack` and exact `build` filters. It retains the service's next cursor even when filtering leaves
   the page empty. A filtered or paginated scan is marked 部分, and an empty page says how many runs it examined;
   it never claims global absence from a partial scan (display rule 7). `/console/results/<run>` reads `getRun.production`, the start_run result whose submission is the run
-  record digest. Later accepted commentary cannot replace its record, counts or claims. It shows partition counts via
+  record digest, labelled 生产结果记录（start_run 计算）. Later accepted commentary cannot replace its record, counts or claims.
+  The authoritative run page uses that same production result as its partition list and displays the latest later accepted
+  result separately as 模型评论（判断）; the results page identifies that commentary record when present. It shows partition counts via
   `countsLine`, coverage and cross-item claims, then one row per item (id, label, projection summary and each requirement's
   status, both layer terminals and claims). An undeclared layer is labelled 本层不适用. Display rules 4 and 16 require
   both layers and the satisfaction reason even though the task brief requested static terminals only. The table also
