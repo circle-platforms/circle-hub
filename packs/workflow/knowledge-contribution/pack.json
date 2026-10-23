@@ -168,8 +168,8 @@
     },
     {
       "path": "tools/jev/lib/judge.ts",
-      "sha256": "b8450b94b12f11678b7ebd386a122b4b0e11ecf22b37f7984770028305e68cd5",
-      "size": 8597
+      "sha256": "810e4ce5a17a28deee26aa9cbf2540de1e9dbcdc18ac8702903eabb2053a0b01",
+      "size": 8964
     },
     {
       "path": "tools/jev/lib/local.ts",

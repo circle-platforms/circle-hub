@@ -60,11 +60,15 @@ export function questionWork(input: unknown, pieces: Piece[], model: string): Wo
     need(isQuestionId(id), '题目标识不合格；用字母数字下划线或连字符'); const question = checkQuestion(id, raw);
     need(Array.from(question.instructions).length <= 2000, 'instructions 超过 2000 字；缩短问题，不能夹带受限正文');
     if (question.type === 'choice') need(Object.values(question.criteria).every((v) => v === null || Array.from(v).length <= 160), '选项说明超过 160 字；缩短说明');
-    const refs = [...question.instructions.matchAll(/`([^`]+)`/g)].map((m) => m[1]!.split(/[.\[]/)[0]!).filter((key) => Object.hasOwn(all, key));
+    const refs = [...JSON.stringify(question).matchAll(/`([^`]+)`/g)].map((m) => m[1]!.split(/[.\[]/)[0]!).filter((key) => Object.hasOwn(all, key));
     const ids = refs.length ? [...new Set(refs)].sort() : Object.keys(all); const key = JSON.stringify(ids); const group = grouped.get(key) ?? { state: Object.fromEntries(ids.map((key) => [key, all[key]!])), questions: {} }; group.questions[id] = question; grouped.set(key, group);
   }
   need(grouped.size > 0, '至少填写一道题；按 ask 样例重跑');
   const out: Work[] = [];
-  for (const group of grouped.values()) { const ids = Object.keys(group.questions); for (let i = 0; i < ids.length; i += 10) out.push({ state: group.state, questions: Object.fromEntries(ids.slice(i, i + 10).map((id) => [id, group.questions[id]!])), pieces: pieces.filter((p) => Object.hasOwn(group.state, p.id)) }); }
+  for (const group of grouped.values()) {
+    const base=estimateTokens(JSON.stringify(group.state))+256;let questions:Record<string,JevQuestion>={};let tokens=base;
+    const close=()=>{if(Object.keys(questions).length)out.push({state:group.state,questions,pieces:pieces.filter(p=>Object.hasOwn(group.state,p.id))});questions={};tokens=base;};
+    for(const [id,question]of Object.entries(group.questions)){const cost=estimateTokens(JSON.stringify({[id]:question}))+32;need(base+cost<=24000,'单题和片段超过令牌预算；减少片段或选项说明后重跑');if(Object.keys(questions).length>=10||tokens+cost>48000)close();questions[id]=question;tokens+=cost;}close();
+  }
   for (const work of out) {checkRequest({model,state:work.state,questions:work.questions},{pinnedModel:model,maxRequestBytes:16*1024*1024});const base=estimateTokens(JSON.stringify(work.state))+256;need(base+estimateTokens(JSON.stringify(work.questions))+32*Object.keys(work.questions).length<=48000&&Object.values(work.questions).every(q=>base+estimateTokens(JSON.stringify(q))+32<=24000),'题目或片段超过令牌预算；减少片段和选项说明后重跑');} return out;
 }

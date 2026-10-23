@@ -19,3 +19,7 @@ test('reuse identity records token estimates and batch planning match the pure r
   assert.equal(client.reuseKey(input), reference.reuseKey(input)); assert.equal(client.estimateTokens('合成 manual 123'), reference.estimateTokens('合成 manual 123'));
   const items = [{ id: 'passage', piece: 'synthetic manual', question: request.questions.q }]; assert.deepEqual(client.planBatches(items), reference.planBatches(items));
 });
+
+test('ask planning splits sendable question groups by token budget and preserves their exact state',async()=>{
+ const {questionWork}=await import('../tools/jev/lib/judge.ts');const question={type:'choice',instructions:'Classify `p`',criteria:Object.fromEntries(Array.from({length:60},(_,i)=>['option-'+i,'合成说明'.repeat(30)]))};const raw={schema:'jev-ask@1',questions:Object.fromEntries(Array.from({length:10},(_,i)=>['q'+i,question]))};const pieces=[{id:'p',reference:'synthetic-ref',kind:'definition',text:'synthetic manual',sha256:'a'.repeat(64),bytes:16}];const plan=questionWork(raw,pieces,model);assert.ok(plan.length>1);assert.equal(plan.reduce((n,b)=>n+Object.keys(b.questions).length,0),10);assert.ok(plan.every(b=>b.state.p==='synthetic manual'));
+});
