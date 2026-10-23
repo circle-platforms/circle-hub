@@ -105,7 +105,7 @@ test('review 19 decision 35 opens every enabled pair and all bed interfaces with
   const data = goodData(); data.steps[0].args = ['widget address 192.0.2.1']; assert.equal(checkAddresses(subjectOf(data))[0].verdict, 'support');
   const doc = structuredClone(CONTRACT_DOC); doc.entries.push({ ...entry('widget-host', 'fixture_action', [{ name: 'command', kind: 'positional_or_keyword', required: true, default: null }]), dispatch: 'execute_registry' }); const signed = signRuntime(doc); const rawProfile = profileDocument(signed);
   rawProfile.allowed.push({ object: 'widget-host', method: 'fixture_action', parameters: { command: 'host_shell' } } as any); rawProfile.hosts.push({ object: 'widget-host', method: 'fixture_action', device: 'client0' });
-  assert.equal(parseProfile(rawProfile, contractOf(signed), bedsOf()).ok, true);
+  assert.equal(parseProfile(rawProfile, contractOf(signed), bedsOf()).ok, false);
   const missingRoleProfile = profileDocument(signed); const target = goodData(); target.steps[1].method = 'fixture_action';
   const result = checkContractShape(subjectOf(target, { contractDoc: signed, profileDoc: missingRoleProfile })); assert.ok(!codes(result).includes('case-compile.method_not_allowed')); assert.ok(codes(result).includes('case-compile.param_unassigned'));
 });

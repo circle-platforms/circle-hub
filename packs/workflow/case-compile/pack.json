@@ -78,8 +78,8 @@
     },
     {
       "path": "functions/profile.ts",
-      "sha256": "c2cccc94f3f4a77fe4df86b0761677602a5675d27534b2b983525476c448b5a3",
-      "size": 9530
+      "sha256": "c09c6d0b72ce5bc986bcce082600945c0b45c5f90699b0bcea67c135fd5c2cdc",
+      "size": 10047
     },
     {
       "path": "functions/project.ts",
@@ -88,8 +88,8 @@
     },
     {
       "path": "functions/runtime-contract.ts",
-      "sha256": "7666a6114a724cc55a5981bdeda2035cda31079f2197ad247af176a2de4da8a1",
-      "size": 10694
+      "sha256": "74e3700a403d1d72dc30620bd2d2a84aa075613e74a5befefa630caa0524ad85",
+      "size": 10748
     },
     {
       "path": "functions/slots.ts",
@@ -108,8 +108,8 @@
     },
     {
       "path": "requirements.json",
-      "sha256": "576b5956eab4c3cfe17170e0eb429483c10c4a46972443eb3be5d3a012d0432b",
-      "size": 6991
+      "sha256": "a4a05a5bc035b2773d624e223120c5af12f9635b24b961fa1e89855e48603dd5",
+      "size": 7169
     },
     {
       "path": "samples/negative/address-off-bed.json",
@@ -495,6 +495,11 @@
       "path": "tables/commands.json",
       "sha256": "b072a75eef2e71e647f79d96c7e5687b45dc4492edd59140361f5f768168d8e0",
       "size": 838
+    },
+    {
+      "path": "tables/dispatch-roles.json",
+      "sha256": "ff576b8bd81a9b065bcbba0f8e10a8ce1bd9e3fa4a9acb8ca6ef15eba0e61993",
+      "size": 1520
     },
     {
       "path": "tables/quotes.json",

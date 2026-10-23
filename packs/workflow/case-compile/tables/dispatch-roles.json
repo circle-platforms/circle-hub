@@ -1,0 +1,61 @@
+{
+  "schema": "case-compile.dispatch-roles@1",
+  "dispatches": [
+    {
+      "dispatch": "direct_method_call",
+      "roles": [
+        "device_cli",
+        "host_shell",
+        "literal_assertion",
+        "wait"
+      ],
+      "missing": null,
+      "next": null
+    },
+    {
+      "dispatch": "cmd_primitive",
+      "roles": [
+        "device_cli",
+        "host_shell",
+        "literal_assertion",
+        "wait"
+      ],
+      "missing": null,
+      "next": null
+    },
+    {
+      "dispatch": "execute_registry",
+      "roles": [],
+      "missing": "这类参数不是可按现有规则核验的命令文字；G 规则和拒绝表不能覆盖其语义",
+      "next": "case-compile 为它增加角色和完整检查，另写一页；当前草稿单列为未开"
+    },
+    {
+      "dispatch": "checkpoint_two_argument",
+      "roles": [
+        "device_cli",
+        "host_shell",
+        "literal_assertion",
+        "wait"
+      ],
+      "missing": null,
+      "next": null
+    },
+    {
+      "dispatch": "checkpoint_v2_three_argument",
+      "roles": [],
+      "missing": "这类参数不是可按现有规则核验的命令文字；G 规则和拒绝表不能覆盖其语义",
+      "next": "case-compile 为它增加角色和完整检查，另写一页；当前草稿单列为未开"
+    },
+    {
+      "dispatch": "builtin_special_case",
+      "roles": [
+        "device_cli",
+        "host_shell",
+        "literal_assertion",
+        "wait"
+      ],
+      "missing": null,
+      "next": null
+    }
+  ]
+}

@@ -1,4 +1,5 @@
 // Deployment profile owned by this pack; it assigns meaning absent from the runner's signature contract.
+import DISPATCH from '../tables/dispatch-roles.json' with {type:'json'};
 import FORMAT from '../tables/runtime-profile-format.json' with { type: 'json' };
 import { isRecord } from './text.ts';
 import { runtimeMethod, type RuntimeContract, type Problem } from './runtime-contract.ts';
@@ -70,12 +71,16 @@ export function parseProfile(value: unknown, contract: RuntimeContract, beds: re
     if (!isRecord(raw)) { issue(at, '允许组合不是对象'); continue; }
     const method = runtimeMethod(contract, String(raw.object), String(raw.method));
     if (!method) issue(at, '允许组合不在合约启用集合里');
+    const declared=DISPATCH.dispatches.find(v=>v.dispatch===method?.dispatch);
+    const roleIssue=(pointer:string)=>problems.push({pointer,message:declared?.missing??'派发方式缺少可核验角色声明',fix:declared?.next??'按包格式表补齐派发角色及检查，另写一页后重新发布'});
+    if(!declared||!declared.roles.length)roleIssue(at);
     const pair = JSON.stringify([raw.object, raw.method]); if (pairs.has(pair)) issue(at, '允许组合重复'); pairs.add(pair);
     if (!isRecord(raw.parameters)) issue(`${at}/parameters`, '没有参数角色映射对象');
     const parameters = Object.create(null) as Record<string, string>;
     for (const [name, role] of Object.entries(isRecord(raw.parameters) ? raw.parameters : {})) {
       const pat = `${at}/parameters/${name.replaceAll('~', '~0').replaceAll('/', '~1')}`;
       const param = method?.parameters.find((v) => v.name === name);
+      if(typeof role==='string'&&!declared?.roles.includes(role))roleIssue(pat);
       if (!param || param.redacted) issue(pat, '参数不在签名里或是脱敏凭据参数');
       if (typeof role !== 'string' || !FORMAT.parameter_roles.includes(role)) issue(pat, '不认识的参数角色');
       if (role === 'device_cli' && !seats.some((v) => v.object === raw.object)) issue(pat, '设备命令参数没有匹配的座位');
