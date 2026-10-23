@@ -732,7 +732,7 @@ conditions are runtime refinements in addition to the generated JSON Schemas.
 `exact` requires the complete literal path (and the kind when declared). `longest_prefix` picks the longest leading path
 whose node has the declared kind. Remaining words are returned as written, without interpreting their values. A mere middle
 node does not qualify. Drift groups retain the literal, its attempted path, last reachable path and source-entry references;
-unplaced occurrences use directly readable `entry:` references (their filter path is `/`), never invented tree membership;
+unplaced occurrences use citable root tree references, resolved only against readable selected-composition rows;
 no diagnosis of correction versus defect is made. Production and reading invoke the same generic evaluator. No relation writes
 nodes, changes entry content, or adds a drift record.
 

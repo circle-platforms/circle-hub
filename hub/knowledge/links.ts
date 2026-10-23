@@ -79,7 +79,7 @@ export function relationFacts(root:string,declarations:readonly Rule[],nodes:Rel
     if(rule.source_producers!==undefined&&!rule.source_producers.some(producer=>source.producers?.includes(producer)))continue;
     if(!Object.hasOwn(source.content.data,rule.field))continue;
     const raw=source.content.data[rule.field];
-    const reference=source.unplaced?'entry:'+source.entry:treeReference(root,source.path,source.entry),occurrence={reference,path:source.path,summary:summaryOf(source.content.statement)};
+    const reference=treeReference(root,source.unplaced?'/':source.path,source.entry),occurrence={reference,path:source.path,summary:summaryOf(source.content.statement)};
     const values=typeof raw==='string'?[raw]:Array.isArray(raw)&&raw.every(value=>typeof value==='string')?raw:null;
     if(values===null){
       entries.add(reference);

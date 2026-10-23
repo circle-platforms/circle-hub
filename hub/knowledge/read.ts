@@ -414,10 +414,19 @@ export class TreeReading {
     const all = await this.compositionsOf(root);
     // A lock on another root's composition does not apply here: every composition of this root grounds the read.
     const locked = bound === null ? [] : all.filter((c) => c.record === bound);
-    const compositions = locked.length > 0 ? locked : all;
+    const compositions:CompositionView[]=[];
+    for(const composition of locked.length>0?locked:all)if(await this.mayReadProducts({id:reader.user},[composition.body.product]))compositions.push(composition);
+    if(compositions.length===0)return null;
     const canonical = pathOf(segments);
     const premises = compositions.map((c) => `rec:${c.record}`);
-    const rowsOf = await Promise.all(compositions.map((c) => c.rowsAt(canonical)));
+    const unplacedAtRoot=new Set<string>();
+    const rowsOf=await Promise.all(compositions.map(async composition=>{
+      const rows=new Map(await composition.rowsAt(canonical));
+      if(canonical==='/'&&entry!==null)for await(const row of composition.unplacedRows())if(row.entry===entry){
+        unplacedAtRoot.add(entry);rows.set(entry,{path:'/',entry:row.entry,kind:row.kind,producers:row.producers,fragments:row.fragments,basis:row.basis,decided_by:row.decided_by});
+      }
+      return rows;
+    }));
     const groundsOf = (digests: readonly string[]): { grounds: string[]; tagged: Array<{ composition: string; build: string; grounds: string[] }> } => {
       const grounds: string[] = [];
       const tagged = compositions.map((c, i) => {
@@ -429,7 +438,7 @@ export class TreeReading {
       return { grounds, tagged };
     };
     if (entry !== null) {
-      if (!found.node.entries.includes(entry)) return null;
+      if(!found.node.entries.includes(entry)&&!unplacedAtRoot.has(entry))return null;
       const content = await this.#contentOf(rowsOf[0] ?? null, entry);
       if (content === null) return null;
       const { grounds, tagged } = groundsOf([entry]);

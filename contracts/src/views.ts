@@ -139,7 +139,7 @@ export const IndexView = z.strictObject({
 export type IndexView = z.infer<typeof IndexView>;
 
 // ---------------------------------------------------------------- literal relations pinned to a composition
-export const LinkOccurrence = z.strictObject({ reference: z.union([referenceUriOf('tree').refine(value=>/@[a-f0-9]{64}$/.test(value),'an entry reference is required'),referenceUriOf('entry')]), path: TreePath, summary: z.string() });
+export const LinkOccurrence = z.strictObject({ reference: referenceUriOf('tree').refine(value=>/@[a-f0-9]{64}$/.test(value),'a citable tree entry reference is required'), path: TreePath, summary: z.string() });
 export const LinkEdge = LinkOccurrence.extend({ rule: z.string(), literal: z.string(), target: TreePath, remainder: z.array(z.string()) });
 export const LinkDrift = z.strictObject({ rule: z.string(), literal: z.string(), spellings:z.array(z.string()).optional(), attempted_path: TreePath.nullable(), stopped_at: TreePath, total: z.number().int().nonnegative(), occurrences: z.array(LinkOccurrence) });
 export const LinkDiagnostic=LinkOccurrence.extend({rule:z.string(),reason:ReasonSchema,message:z.string(),next_action:z.string()});
@@ -154,7 +154,7 @@ export const LinksView = z.strictObject({
   if(value.configured!==(value.totals!==null))ctx.addIssue({code:'custom',path:['totals'],message:'totals require a frozen declaration'});
   if(!value.configured&&(value.links.length>0||value.drift.length>0||value.next!==null))ctx.addIssue({code:'custom',path:['configured'],message:'a missing declaration provides no computed detail'});
   const occurrences=[...value.links,...value.drift.flatMap(group=>group.occurrences),...(value.diagnostics??[])];
-  for(const occurrence of occurrences)if(!occurrence.reference.startsWith('entry:')&&!occurrence.reference.startsWith(`tree:${value.build.root}${occurrence.path}@`))ctx.addIssue({code:'custom',path:['links'],message:'a source reference must belong to this root and path'});
+  for(const occurrence of occurrences)if(!occurrence.reference.startsWith(`tree:${value.build.root}${occurrence.path}@`))ctx.addIssue({code:'custom',path:['links'],message:'a source reference must belong to this root and path'});
   if(value.totals&&(value.links.length>value.totals.links||value.drift.length>value.totals.drift_literals))ctx.addIssue({code:'custom',path:['totals'],message:'page details exceed totals'});
 });
 export type LinkOccurrence = z.infer<typeof LinkOccurrence>;

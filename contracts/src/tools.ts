@@ -171,7 +171,7 @@ export const GetNodesOutput = Envelope.extend({
   if (nodes.length > 0 && o.root === undefined) issue(ctx, ['root'], 'nodes come with the root they belong to');
   if (o.root === undefined) return;
   nodes.forEach((node, i) => {
-    for(const linked of node.backlinks?.entries??[])if(!linked.reference.startsWith('entry:')&&!linked.reference.startsWith(`tree:${o.root}${linked.path}@`))issue(ctx,['nodes',i,'backlinks'],'a related source must belong to this root and path');
+    for(const linked of node.backlinks?.entries??[])if(!linked.reference.startsWith(`tree:${o.root}${linked.path}@`))issue(ctx,['nodes',i,'backlinks'],'a related source must belong to this root and path');
     const address = `tree:${o.root}${node.path}`;
     if (node.reference !== address) issue(ctx, ['nodes', i, 'reference'], `the reference of this node is ${address}`);
     node.entries.forEach((entry, j) => {

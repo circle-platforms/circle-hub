@@ -130,12 +130,15 @@ test('an existing run is found by its writer index and cannot be redirected to a
 
 });
 
-test('unplaced occurrences retain directly resolvable entry references rather than invented tree membership',async t=>{
+test('unplaced occurrences use citable root addresses resolved against their selected composition',async t=>{
   const unplaced={...content('/notes/unplaced','behaviour','Unplaced note',['gone']),path:null};
   const f=await fixture(t,[rule],undefined,[...entries,unplaced]);
   const view=(await f.json(await f.read())).view,occurrence=view.drift.flatMap(group=>group.occurrences).find(source=>source.summary==='Unplaced note');
-  assert.ok(occurrence);assert.match(occurrence.reference,/^entry:[a-f0-9]{64}$/);
-  assert.equal((await f.w.knowledge.store.entry(occurrence.reference.slice(6)))?.statement,'Unplaced note');
+  assert.ok(occurrence);assert.ok(occurrence.reference.startsWith('tree:'+f.first.root+'/@'));
+  const entry=occurrence.reference.split('@').at(-1)!;
+  const read=await f.w.knowledge.treeReader({composition:f.first.composition}).read(f.first.root!,'/',entry,{user:f.w.admin.id,role:'admin'});
+  assert.equal(read?.text,'Unplaced note');assert.ok(read?.grounds?.length);
+  assert.equal(await f.w.knowledge.treeReader().read(f.first.root!,'/',entry,{user:f.w.outsider.id,role:'user'}),null);
   assert.equal(view.totals?.drift_occurrences,4);
 });
 
@@ -267,4 +270,16 @@ test('a missing unrelated relation node preserves the requested definitions and 
   const page=await f.w.knowledge.getNodes({root:f.first.root!,paths:['/terms/alpha'],depth:0},f.w.admin);
   assert.ok(page);assert.equal(page.nodes[0].entries[0].statement,'Alpha');
   assert.ok(page.coverage.note?.includes(missing));assert.match(page.coverage.note??'',/下一步.*重建.*重读/);
+});
+
+test('equal root content does not expose an unplaced row from an unreadable product composition',async t=>{
+  const f=await fixture(t),privateEntry={...content('/private','behaviour','Private synthetic note',['gone']),path:null};
+  const hidden={...f.w.product,id:'hidden',product:{...f.w.product.product,id:'hidden',names:['HIDDEN'],producers:[Producer.parse(extraProducer('entities',{entries:[...entries,privateEntry]}))]}};
+  f.w.packs.add(hidden);
+  t.mock.method(f.w.packs,'readableProducts',async()=>new Set(['widget']));
+  const produced=await f.w.knowledge.produceTree({product:hidden,build});assert.ok(produced.ok,produced.reason??'');assert.equal(produced.root,f.first.root);
+  const composition=await f.w.knowledge.store.composition(produced.composition!);assert.ok(composition);
+  const entry=composition.unplaced[0].entry;
+  assert.equal(await f.w.knowledge.treeReader().read(f.first.root!,'/',entry,{user:f.w.user.id,role:'user'}),null);
+  assert.equal((await f.w.knowledge.treeReader().read(f.first.root!,'/',entry,{user:f.w.admin.id,role:'admin'}))?.text,'Private synthetic note');
 });
