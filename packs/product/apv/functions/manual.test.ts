@@ -377,7 +377,7 @@ describe('manual section placement', () => {
 
   it('hangs a block at the manual root when its section path cannot be written, with a warning', () => {
     // A hand-written model whose block points at a section that does not exist.
-    const model = { sections: [], blocks: [{ kind: 'paragraph', section: 3, index: 0, line: 0, lines: 1, text: '孤儿块。', selector: 'b/0' }] };
+    const model = { level: 0, key: '', charset: 'utf-8', lines: 0, nulRemoved: 0, sections: [], blocks: [{ kind: 'paragraph', section: 3, index: 0, line: 0, lines: 1, text: '孤儿块。', selector: 'b/0' }] };
     const result = produceManualEntries(model as unknown as MarkdownModel);
     assert.deepEqual(result.entries.map((entry) => entry.path), ['/manual/manual']);
     assert.ok(result.warnings.some((warning) => warning.includes('1 个块指向不存在的章节')), result.warnings.join('\n'));
@@ -946,8 +946,8 @@ describe('applicability from explicit conditions', () => {
       { kind: 'paragraph', section: 1, text: '**demo probe** *\\<name\\>*', selector: 'l/0-1' },
       { kind: 'paragraph', section: 1, text: '探测说明。', selector: 'l/2-3' },
     ];
-    const model = { sections: [{ title: '手册', parent: null, selector: 'l/0-99', path: [] }, { title: '配置命令', parent: 0, selector: 'l/0-99', path: ['配置命令'] }], blocks };
-    const result = produceManualEntries(model, null, { catalog: tree, fragmentParser: 'text@1' });
+    const model = { level: 0, key: '', charset: 'utf-8', lines: 0, nulRemoved: 0, sections: [{ title: '手册', parent: null, selector: 'l/0-99', path: [] }, { title: '配置命令', parent: 0, selector: 'l/0-99', path: ['配置命令'] }], blocks };
+    const result = produceManualEntries(model as unknown as Parameters<typeof produceManualEntries>[0], null, { catalog: tree, fragmentParser: 'text@1' });
     const anchor = result.entries.find((entry) => entry.kind === 'definition');
     assert.ok(anchor !== undefined, JSON.stringify(result.entries.map((e) => [e.kind, String(e.statement)])));
     assert.equal(anchor.path, '/commands/demo/probe');
@@ -955,7 +955,7 @@ describe('applicability from explicit conditions', () => {
     assert.ok(text !== undefined);
     assert.equal(text.path, '/commands/demo/probe');
     // A missing command hangs at the model's section path, and the fragments carry the model's parser key.
-    const missing = produceManualEntries({ sections: model.sections, blocks: [{ kind: 'paragraph', section: 1, text: '**demo gone** *\\<x\\>*', selector: 'l/0-1' }] }, null, { catalog: tree, fragmentParser: 'text@1' });
+    const missing = produceManualEntries({ charset: 'utf-8', lines: 0, nulRemoved: 0, sections: model.sections, blocks: [{ kind: 'paragraph', section: 1, text: '**demo gone** *\\<x\\>*', selector: 'l/0-1' }] } as unknown as Parameters<typeof produceManualEntries>[0], null, { catalog: tree, fragmentParser: 'text@1' });
     const missingAnchor = missing.entries.find((entry) => entry.kind === 'definition');
     assert.ok(missingAnchor !== undefined);
     assert.equal(missingAnchor.path, '/manual/manual/配置命令');

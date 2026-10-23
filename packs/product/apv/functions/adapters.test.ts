@@ -337,9 +337,15 @@ describe('the declared functions in the Hub sandbox', { skip: (await osIsolation
     const perArg = out.warnings.filter((w) => w.includes('optional 取值'));
     assert.ok(perArg.length <= 3, `per-argument warnings must aggregate: ${perArg.length}`);
     assert.ok(perArg.length === 0 || perArg.some((w) => w.includes('同类')), out.warnings.slice(0, 5).join('\n'));
-    // The aggregation lives in the commandTree producer itself.
+    // The aggregation lives in the commandTree producer itself, keyed on the note KIND: distinct unreadable values
+    // fold too, so the drift warning never lands past the capped list (closure c3 item 8).
     const treeOut = commandTree({ build: knownBuild, params: {}, slots: { tree: slot('xml@1', xml(treeXml)) } });
     const treePerArg = treeOut.warnings.filter((w) => w.includes('optional 取值'));
     assert.equal(treePerArg.length, 1, JSON.stringify(treeOut.warnings));
     assert.ok(treePerArg[0]!.includes('同类 210 处'), treePerArg[0]);
+    const distinctXml = `<commands><scope type="global"><menu name="demo"><item name="probe" help_string="p"><arguments>${Array.from({ length: 210 }, (_, i) => `<arg name="arg${i}" optional="maybe${i}" help_string="h"/>`).join('')}</arguments></item></menu></scope></commands>`;
+    const distinctOut = commandTree({ build: knownBuild, params: {}, slots: { tree: slot('xml@1', xml(distinctXml)) } });
+    const distinctPerArg = distinctOut.warnings.filter((w) => w.includes('optional 取值'));
+    assert.equal(distinctPerArg.length, 1, JSON.stringify(distinctOut.warnings.slice(0, 3)));
+    assert.ok(distinctPerArg[0]!.includes('同类 210 处'), distinctPerArg[0]);
   });

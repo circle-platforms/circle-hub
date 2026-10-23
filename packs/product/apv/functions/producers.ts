@@ -50,9 +50,13 @@ export function commandTree(input: unknown): ProducerOutput {
     const seen = new Map<string, { index: number; count: number }>();
     const aggregated: string[] = [];
     for (const warning of out.warnings) {
-      // The same note at the same command (any parameter, any value): one line with the count. The site keeps its
-      // command words; the parameter name and the unread value fold into the count.
-      const key = warning.replace(/(?<=^)[^ ：]+(?: [^ ：]+)*?(?= 参数 )/u, '×').replace(/(?<=× 参数 )[^ ：]+/u, '×') + warning.replace(/^.*?(?:optional 取值|limit|length)/u, '');
+      // The KIND of note alone decides the fold (c3 item 8): site, parameter name and unread value are all stripped,
+      // so 210 distinct unreadable values still fold into one line and the drift warning stays inside the capped
+      // list. The kept line names the first site and example; the count covers every occurrence.
+      const key = /optional 取值/u.test(warning) ? 'optional'
+        : /limit/u.test(warning) ? 'limit'
+          : /length/u.test(warning) ? 'length'
+            : warning;
       const at = seen.get(key);
       if (at === undefined) {
         seen.set(key, { index: aggregated.length, count: 1 });
