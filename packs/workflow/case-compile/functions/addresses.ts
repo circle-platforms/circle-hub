@@ -16,8 +16,8 @@ export function replacedQuote(text: string, replacements: readonly Replacement[]
 }
 export function deniedCommand(text: string, denied: readonly string[]): boolean {
   // Adjacent shell quoting and escaping cannot hide a denied spelling. No shell or Python is executed.
-  const normalized = text.replace(/["'`\\]/g, '').toLowerCase().replace(/\s+/g, ' ');
-  return denied.some((raw) => { const key = raw.toLowerCase().replace(/\s+/g, ' ').replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); return new RegExp(`(^|[^a-z0-9_])${key}($|[^a-z0-9_])`).test(normalized); });
+  const normalized = text.normalize('NFKC').replace(/["'`\\]/g, '').toLowerCase().replace(/\s+/g, ' ');
+  return denied.some((raw) => { const key = raw.normalize('NFKC').toLowerCase().replace(/\s+/g, ' ').replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); return new RegExp(`(^|[^a-z0-9_])${key}($|[^a-z0-9_])`).test(normalized); });
 }
 
 /** Host-address classification excludes explicit prefixes and the bed's network/broadcast or mask literals. */

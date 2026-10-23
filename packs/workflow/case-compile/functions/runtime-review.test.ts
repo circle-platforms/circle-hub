@@ -47,3 +47,6 @@ test('review 06 expectations obey the same single-line and edge-whitespace const
 test('review 07 dynamic shell syntax cannot bypass the host rejection boundary', () => {
   for (const text of ['/sbin/re*boot', '/sbin/re?oot', 'r$()eboot', 'echo ready; reboot']) { const data = goodData(); data.steps[1].args = [text]; assert.ok(codes(checkContractShape(subjectOf(data))).includes('case-compile.host_shell_dynamic')); }
 });
+test('review 08 rejection matching uses the same NFKC text as the command catalog', () => {
+  const data = goodData(); data.steps[0].args = ['ｓｙｓｔｅｍ　ｃｙｃｌｅ']; assert.ok(codes(checkContractShape(subjectOf(data))).includes('case-compile.device_command_denied'));
+});

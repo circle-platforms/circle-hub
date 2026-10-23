@@ -48,8 +48,8 @@
     },
     {
       "path": "functions/addresses.ts",
-      "sha256": "24491d67a4c402f1b5e5d91f2432518a258e9e62b48c5a62c7671a73f5a51ee9",
-      "size": 2757
+      "sha256": "3cdca6bc43ba3604222e112d57c864fdcf66baa87a3ed753763b899461a342c2",
+      "size": 2793
     },
     {
       "path": "functions/bed.ts",
