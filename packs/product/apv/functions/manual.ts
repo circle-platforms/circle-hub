@@ -13,7 +13,7 @@
 //   the author marked (bold, backticks, quotes, command lines in code blocks, signatures) are recorded as written in
 //   `data.command_literals`, never resolved at production time. Placement still uses the tree (the existence checks),
 //   so two builds share the manual subtree exactly when their trees place the manual's signatures the same way (K01
-//   R[1]); with a tree, the literals it cannot resolve are listed in the warnings as drift candidates.
+//   R[1]); the complete literals are checked by the shared relation evaluator using the product declaration.
 // - the manual command catalog JSON (schema ist.manual-command-catalog): signatures, value domains, worked examples.
 // Signatures are definitions and the text under a command (descriptions, value domains, examples) behaviours (K02 R[3]);
 // `data.form` says signature or text.
@@ -229,11 +229,6 @@ type Block = { kind: string; section: number; text: string; selector: string };
 
 const MANUAL_NS = 'manual';
 const DEFAULT_MANUAL_NAME = 'manual';
-/** An entry's author-marked command literals are capped so a padded block cannot bloat a stored entry. */
-const MAX_LITERALS = 100;
-/** The drift warning's list of names fits one stored warning (the count before it stays exact). */
-const MAX_DRIFT_TEXT = 800;
-
 const LITERAL_FIRST = /^[a-z?][a-z0-9_.?-]{0,63}$/;
 const MAX_LITERAL = 200;
 const MAX_LITERAL_WORDS = 16;
@@ -310,21 +305,6 @@ function existingPath(catalog: CommandCatalog, words: readonly string[]): string
     node = next;
   }
   return node.path;
-}
-
-/** Whether a leading run of the literal's words is a complete command of the catalog (the drift check: exact words). */
-function resolves(catalog: CommandCatalog, literal: string): boolean {
-  let words = literal.split(' ');
-  // A leading optional or required group ([no], {no|clear}) is not a word of the tree.
-  if (words.length > 0 && /^(?:\[.*\]|\{.*\})$/.test(words[0])) words = words.slice(1);
-  let node = catalog.root;
-  for (const word of words) {
-    const next = node.children.get(word.toLowerCase());
-    if (next === undefined) return false;
-    node = next;
-    if (node.path !== null) return true;
-  }
-  return false;
 }
 
 /**
@@ -493,23 +473,11 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
     }
     return path;
   };
-  // Every literal found, past the per-entry cap: the drift total counts them all.
-  const allLiterals = new Set<string>();
-  // The literals of the signatures placed at /commands resolve by the placement check itself (variants included).
-  const placedSignatureLiterals = new Set<string>();
-  const noteSignature = (entry: ProducedEntry): void => {
-    for (const literal of asStrings(entry.data.command_literals)) {
-      allLiterals.add(literal);
-      if (entry.path?.startsWith('/commands/')) placedSignatureLiterals.add(literal);
-    }
-  };
   const putLiterals = (entry: ProducedEntry, kind: string, text: string): void => {
     const found = kind === 'code_block' ? codeLiterals(text) : kind === 'html_block' ? [] : proseLiterals(text);
     const unique = [...new Set(found)].sort(compareText);
-    for (const literal of unique) allLiterals.add(literal);
     if (unique.length === 0) return;
-    entry.data.command_literals = unique.slice(0, MAX_LITERALS);
-    if (unique.length > MAX_LITERALS) entry.data.command_literals_cut = true;
+    entry.data.command_literals = unique;
   };
   /**
    * A behaviour entry. `data` has the same shape whatever the tree says (K01 R[1]): `words` whenever the block follows
@@ -550,7 +518,7 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
     const placed = anchorPathOf(anchor, catalog) ?? sectionEntryPath(index);
     headingAnchors.set(index, { anchor, path: placed });
     const entry = signatureEntry(anchor, placed, { parser: MARKDOWN, selector: section.selector as string });
-    noteSignature(entry);
+
     entry.applicability = toApplicability(conditionsOf(section.title));
     entries.push(entry);
   });
@@ -626,7 +594,7 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
       // the blocks after it follow it there (same data as at a command node: the tree only chooses the path).
       const placed = anchorPathOf(anchor, catalog) ?? sectionPath(value, block.section);
       const entry = signatureEntry(anchor, placed, fragment);
-      noteSignature(entry);
+
       entry.applicability = toApplicability(conditionsOf(text));
       entries.push(entry);
       current = { path: placed, words: anchor.words };
@@ -658,7 +626,7 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
             const { cell, anchor: one } = found[0];
             const path = anchorPathOf(one, catalog) ?? sectionPath(value, block.section);
             const signature = signatureEntry(one, path, rowFragment);
-            noteSignature(signature);
+
             signature.applicability = toApplicability(conditionsOf(rowText));
             split.push(signature);
             const described = row.cells.filter((cellText, k) => k !== cell && cellText !== '');
@@ -706,30 +674,7 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
     entries.push(entry);
   }
 
-  // The literals the build's tree cannot resolve are drift candidates of the production (never nodes of their own).
-  // A signature placed at /commands resolves by the placement check itself (its variants included); every other literal
-  // resolves when a leading run of its words is a complete command. The count covers every literal found, past the
-  // per-entry cap; the listed names are cut to fit one stored warning (the core keeps 1000 characters per warning).
-  if (catalog !== null) {
-    const unresolved = new Set<string>();
-    for (const literal of allLiterals) {
-      if (placedSignatureLiterals.has(literal)) continue;
-      if (!resolves(catalog, literal)) unresolved.add(literal);
-    }
-    if (unresolved.size > 0) {
-      const sorted = [...unresolved].sort(compareText);
-      let shown = '';
-      let counted = 0;
-      for (const literal of sorted) {
-        const next = shown === '' ? literal : `${shown}、${literal}`;
-        if (next.length > MAX_DRIFT_TEXT) break;
-        shown = next;
-        counted++;
-      }
-      warnings.push(`有 ${sorted.length} 个命令字面在本构建的命令树里解析不到，是漂移候选：${shown}${counted < sorted.length ? ' 等' : ''}`);
-    }
-  }
-
+  // Drift is evaluated by the shared relation reader against the complete produced tree and its frozen declarations.
   if (invalid > 0) warnings.push(`有 ${invalid} 个块格式不对，已跳过`);
   if (rejected > 0) {
     warnings.push(`有 ${rejected} 段写成命令签名的文字不能作为命令锚点（括号不配对、转义多余或首词不是已知命令），这些段落及其后的块不归到前一条命令，挂在所在章节节点`);

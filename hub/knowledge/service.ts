@@ -17,6 +17,7 @@ import { produceTree, type ProduceInput, type ProduceResult } from './produce.ts
 import { TreeReading, type ProvenanceRow, type TreeLock } from './read.ts';
 import { KnowledgeStore } from './store.ts';
 import { syncProduct, type SyncOptions, type SyncReport } from './sync.ts';
+import { LinkReading } from './links.ts';
 import { KnowledgeViews } from './views.ts';
 
 export interface KnowledgeOptions {
@@ -113,7 +114,9 @@ export function createKnowledge(options: KnowledgeOptions): Knowledge {
   const reading = new TreeReading(context);
   const observations = new ObservationLayer(context, reading);
   const candidates = new CandidateLayer(context, reading);
-  const views = new KnowledgeViews(context, builds, reading);
+  const relations = new LinkReading(context, builds);
+  reading.setRelations(relations);
+  const views = new KnowledgeViews(context, builds, reading, relations);
 
   const buildCalibrationSet = async (input: BuildCalibrationInput): Promise<{ record: string | null; samples: number; state: CalibrationState | null }> => {
     await requireAdmin(context, input.by, '建立校准样例');

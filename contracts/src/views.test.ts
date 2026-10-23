@@ -50,7 +50,7 @@ test('a view entry carries a tree reference, never a source reference', () => {
 });
 
 test('the view is registered for the generated schemas', () => {
-  assert.deepEqual(Object.keys(schemas), ['impact-view@1', 'facet-view@1', 'index-view@1']);
+  assert.deepEqual(Object.keys(schemas), ['links-view@1', 'impact-view@1', 'facet-view@1', 'index-view@1']);
 });
 
 test('a facet view counts entries by the values of data fields', () => {

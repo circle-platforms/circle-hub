@@ -155,3 +155,14 @@ test('names, digests, runs and the acting account are validated', async (t) => {
   assert.equal(await kit.pointers.get('Bad Name'), null);
   assert.equal(await kit.pointers.get('p'), null);
 });
+
+test('an explicit same-target refresh compares the previous action and cannot overwrite another refresh', async (t) => {
+  const kit=await openTestRecords({postgres});t.after(()=>kit.close());
+  const initial=await kit.pointers.move({name:'knowledge/refresh',expected:null,next:root('stable')});assert.ok(initial.moved);
+  const input={name:'knowledge/refresh',expected:root('stable'),next:root('stable'),refresh:true,expected_action:initial.pointer.action};
+  const results=await Promise.all([kit.pointers.move(input),kit.pointers.move(input)]);
+  assert.equal(results.filter(result=>result.moved).length,1);
+  const current=await kit.pointers.get(input.name);assert.equal(current?.target,root('stable'));assert.equal(current?.version,2);assert.notEqual(current?.action,initial.pointer.action);
+  assert.equal((await kit.pointers.history(input.name)).items.length,2);
+  await assert.rejects(kit.pointers.move({...input,expected_action:undefined}),TypeError);
+});

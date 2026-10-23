@@ -455,7 +455,7 @@ async function startFresh(
   if (predecessor !== null) await checkLineage(ctx, user, workflow, input, predecessor.body);
   const target = await resolveTarget(ctx, user, workflow, input, startedAt, call.traceId);
   const runId = newId('run', at.getTime());
-  const bound = await bindInputs(ctx, user, workflow, input.inputs, runId, call.traceId);
+  const bound = await bindInputs(ctx, user, workflow, input.inputs, runId, call.traceId, target.root?.composition ?? null);
   // The projection runs before any group exists; the expected sources and the checks see the frozen groups. The builds of
   // the bound product are known from the target and frozen with the run, so they are the same at projection and evaluation.
   const builds = await contextBuilds(ctx, workflow, target.product?.product.id ?? null);
@@ -483,7 +483,7 @@ async function startFresh(
     ...(leaseRows !== null ? { leases: { now: startedAt, entries: leaseRows.map((row) => ({ key: row.key, until: row.until, mine: leaseLineageHolders.has(row.key) })) } } : {}),
   };
   const projection = await projectItems(ctx, user, workflow, bound, parameters, context, call.traceId);
-  const expected = await bindExpected(ctx, user, workflow, bound, projection.projected, parameters, { ...context, groups: projection.groups }, runId, call.traceId);
+  const expected = await bindExpected(ctx, user, workflow, bound, projection.projected, parameters, { ...context, groups: projection.groups }, runId, call.traceId, target.root?.composition ?? null);
   // The leases are granted after the projection asked for them and before anything is stored; every failure from here
   // on compensates by releasing what was granted (D04 R[0]: no lease outlives the run it was taken for).
   let grantedLeases: Array<LeaseDone> = [];

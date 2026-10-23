@@ -4,9 +4,9 @@
 // build choice; the shapes of the functions' inputs and outputs below are the contract between them and the pack authors.
 // Register every record or pack-file schema in `schemas`; contracts/src/index.ts merges them into SCHEMA_REGISTRY.
 import { z } from 'zod';
-import { EntryKindSchema, PlacementSchema, type Placement } from '../generated/vocabulary.ts';
+import { EntryKindSchema, LINK_MATCH, LinkMatchSchema, PlacementSchema, type Placement } from '../generated/vocabulary.ts';
 import { IsoTime, Sha256, Versioned } from './common.ts';
-import { ExternalObjectId } from './reference.ts';
+import { ExternalObjectId, TreePath } from './reference.ts';
 
 /** Product line id, for example the id of its product pack. */
 export const ProductId = z.string().regex(/^[a-z][a-z0-9-]{1,40}$/, 'lowercase letters, digits and hyphens');
@@ -264,6 +264,20 @@ export const ProducerOutput = z.strictObject({
 });
 export type ProducerOutput = z.infer<typeof ProducerOutput>;
 
+/** A declarative relation from a literal data field to a namespace; no product dialect enters the reader. */
+export const LinkDeclaration = z.strictObject({
+  id: z.string().regex(/^[a-z][a-z0-9_-]{0,40}$/),
+  field: z.string().regex(/^[a-z][a-z0-9_]{0,40}$/),
+  namespace: TreePath,
+  match: LinkMatchSchema,
+  entry_kind: EntryKindSchema.optional().describe('required by longest-prefix matching; optional restriction for exact matching'),
+  normalize: z.strictObject({ lowercase: z.boolean().optional(), nfc: z.boolean().optional(), nfkc: z.boolean().optional(), strip_nul: z.boolean().optional() }).optional(),
+}).superRefine((value, ctx) => {
+  if (value.match === LINK_MATCH[1] && value.entry_kind === undefined) ctx.addIssue({code:'custom',path:['entry_kind'],message:'longest-prefix matching needs a declared entry kind'});
+  if (value.normalize?.nfc && value.normalize?.nfkc) ctx.addIssue({code:'custom',path:['normalize'],message:'choose one Unicode normalization form'});
+});
+export type LinkDeclaration = z.infer<typeof LinkDeclaration>;
+
 export const ProductDeclaration = z
   .strictObject({
     schema: z.literal('product@1'),
@@ -272,6 +286,7 @@ export const ProductDeclaration = z
     names: z.array(z.string().min(1)).min(1).describe('every name of the product; each resolves to this line'),
     sync: SyncDeclaration.optional(),
     select_build: PackFunctionRef.optional().describe('SelectBuildInput -> SelectBuildOutput; without it the newest released build of the line is chosen'),
+    links: z.array(LinkDeclaration).max(32).optional(),
     catalogs: z.array(CatalogDeclaration),
     producers: z.array(Producer),
   })
@@ -288,6 +303,8 @@ export const ProductDeclaration = z
       });
     unique('catalogs', p.catalogs.map((c) => c.id));
     unique('producers', p.producers.map((x) => x.id));
+    const ids = (p.links ?? []).map(rule => rule.id);
+    if (new Set(ids).size !== ids.length) ctx.addIssue({code:'custom',path:['links'],message:'link ids must be unique'});
     const producers = new Set(p.producers.map((x) => x.id));
     p.catalogs.forEach((c, i) => {
       if (c.producer !== undefined && !producers.has(c.producer)) {

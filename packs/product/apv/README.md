@@ -8,7 +8,7 @@ live only here. Other packages use `api.ts` (types, named functions, and `FUNCTI
 
 | File | Content |
 | --- | --- |
-| `product.json` | `product@1` (pack version 1.2.0): names `[APV, NSAE]`; `sync` (start `buildsite:listing:index`, plan `functions/sync.ts`, options `case_index: true`, `min_line: 10.4.2`, 6 rounds, 300 reads); `select_build` `functions/select.ts`; catalog `commands@1` (entry kind `definition`, producer `command-tree`, complete, case-insensitive; no catalog over case entries); producers `command-tree` (slot `tree` <- source role `tree`), `manual` (slots `cli` <- `manual:cli:{line}` and `app` <- `manual:app:{line}`, both optional, `tree` <- role `tree` for the existence check and the drift list; `placement: judgment_allowed`), `release-notes` (slot `notes` <- source role `fixed_bugs`, optional), `cases` (list slot `documents` <- role `case_documents`, many, batch 40, optional; `tree` <- role `tree`; `folders` <- role `case_tree`, optional) |
+| `product.json` | `product@1` (pack version 1.3.0): names `[APV, NSAE]`; `sync` (start `buildsite:listing:index`, plan `functions/sync.ts`, options `case_index: true`, `min_line: 10.4.2`, 6 rounds, 300 reads); `select_build` `functions/select.ts`; catalog `commands@1` (entry kind `definition`, producer `command-tree`, complete, case-insensitive; no catalog over case entries); producers `command-tree` (slot `tree` <- source role `tree`), `manual` (slots `cli` <- `manual:cli:{line}` and `app` <- `manual:app:{line}`, both optional, `tree` <- role `tree` for the existence check and the drift list; `placement: judgment_allowed`), `release-notes` (slot `notes` <- source role `fixed_bugs`, optional), `cases` (list slot `documents` <- role `case_documents`, many, batch 40, optional; `tree` <- role `tree`; `folders` <- role `case_tree`, optional) |
 | `functions/sync.ts` | the plan (SyncPlanInput -> SyncPlanOutput): every round recomputed from the pages read so far, index -> hub pages -> listing pages (depth 2, dead links tolerated, both name families, platform and customer pages only when `include` opts them in), then the builds; with `case_index`, `agile:tree:roots` and every own-tree build's case documents (`cases-sync.ts`) |
 | `functions/cases.ts` and `cases-*.ts` | the case index: the producer `cases` (`cases.ts`), case nodes (`cases-nodes.ts`), the command catalog, phrase extraction and resolution (`cases-commands.ts`), the sync plan's part (`cases-sync.ts`), shared pack data (`cases-rules.ts`) |
 | `functions/select.ts` | the build choice (SelectBuildInput -> SelectBuildOutput) over `select-build.ts`: the latest released build of the line across both families on the main platform, the other candidates as alternatives |
@@ -173,12 +173,13 @@ Producers (K02, K04, C07)
   (their rows are not single lines).
 - Command literals (K05 R[2]): what the author marked — bold spans, backtick spans, the quote pairs “” ‘’ 「」 『』, the
   command lines after a prompt in code blocks, and every signature (its command words and variants) — is recorded as
-  written in `data.command_literals` (sorted, deduped, capped at 100 per block with `command_literals_cut`), never
+  written in `data.command_literals` (sorted and deduped, retained in full; core entry-byte limits still reject oversized output), never
   resolved at production time. What an entry's digest covers never depends on the build's tree, so two builds share the
   manual subtree exactly when their trees place the manual's signatures the same way (K01 R[1]). Resolution belongs to
-  read time, against the locked root's /commands (not implemented; Needs). With a tree, the literals it cannot resolve
-  are listed in the production warnings as drift candidates: the count covers every literal found (past the per-entry
-  cap), and the listed names are cut to fit one stored warning (800 characters, then 等).
+  read time, against the composition's declaration snapshot and its root's /commands. Production warnings use the
+  same declaration and resolver as the read view: totals cover all retained literals, while warning details are cut
+  to fit one stored warning (800 characters, then 等). A drift is a missing target in this root, without a judgment
+  about the manual or implementation.
 - Applicability (K02 F[6]): only what an entry's own text says explicitly, and only the fields the contract holds; a
   table row's condition is read from that row alone, and nothing is inherited from a heading, a sibling block or another
   row (a section-wide rule waits on the owner's decision). `适用于 X 平台` and `仅 X 平台支持` give `platforms`, X only
@@ -433,11 +434,10 @@ pack and reviews a mind map against the root it produced.
 - **knowledge**: the Hub calls no model (decision 15): `path: null` entries and `unplaced` spans stay unplaced at the
   root (the fixed-bug entries of a build, for example). The manual producer's markdown path no longer emits unplaced
   spans; what still waits for the bot's verified placement proposals (K04 R[6]) is the transitional catalog JSON's
-  output. A read-time view resolving `data.command_literals` against the locked root's /commands (exact match, K05
-  R[2]) is not implemented; until then the production warnings list the literals the tree cannot resolve, as drift
-  candidates. Follow-up task (registered by the integrator, not part of this one): the drift candidates become
-  queryable drift records (a view by root and command path, readable by review and regression-scope uses); whether a
-  drift is a manual erratum or a defect candidate is a judgment and stays with Circle or a human, never the Hub.
+  output. Read-time literal relations now use `product.json.links`, frozen in the selected composition. The production
+  warning and read-time view call the same generic evaluator, with exact or longest-prefix matching declared by the pack.
+  Drift remains a computed fact, never a separate record or a decision about a manual erratum versus a defect. Review and
+  regression-scope consumption is the separately authorized second step.
 - **integrator**: a review that targets an unreleased build (the newest build of a line still in development, under either
   name) needs the sync with `includeUnreleased` for that line, or a released build named at start_run.
 - **knowledge (case index)**: `external` is on the list element and the producer matches documents by it. The slot still
@@ -459,3 +459,18 @@ pack and reviews a mind map against the root it produced.
 
 Done since the earlier round: the adapters to the product@1 shapes, the build-site external ids and source roles, the
 catalog producer selector (`CatalogDeclaration.producer`), the entry-kind axis (K02 R[3]).
+
+## Literal links (1.3.0)
+
+`product.json.links` declares `manual-literals`: `command_literals` targets `/commands`, uses `longest_prefix` and the
+`definition` entry kind, and applies only lower-casing and NUL removal. White-space tokenization is fixed. A middle node
+without that kind is not a target; the longest eligible prefix is the target and the remaining words keep their original
+spelling. A literal with no eligible prefix is drift, including its last reachable node; this is no judgment about a manual
+correction or a product defect. Production diagnostics and read-time views use the same evaluator and declaration snapshot.
+
+All distinct literals are retained, including more than 100 in one block. The existing core statement/data byte limits still
+reject an oversized entry. View paging limits detail only, retaining complete totals. The minor release changes the product
+profile and producer bytes, so the pack is 1.3.0 and is re-signed, not published by this task.
+
+`functions/manual-links.test.ts` covers ordinary trailing values and all 150 missing literals of one paragraph against real
+synthetic production and the paged view. No live resource, client or model is used.

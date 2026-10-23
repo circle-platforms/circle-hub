@@ -574,6 +574,9 @@ export interface PointerState {
 
 export interface MoveInput {
   name: string;
+  /** Explicit metadata refresh without changing the target, guarded by the previous move. */
+  refresh?: boolean;
+  expected_action?: string | null;
   /** Expected current target; null when the pointer must not exist yet. */
   expected: string | null;
   next: string;

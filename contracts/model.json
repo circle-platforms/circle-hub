@@ -2364,7 +2364,10 @@
    "changes4": [
     "锁定根标为待确认（三版复核 新问题 19）"
    ],
-   "fields": []
+   "fields": [],
+   "changes": [
+    "链接匹配方式进词表 link_match：精确匹配、最长前缀匹配（来源：集成者 2026-10-23，kb-links）"
+   ]
   },
   {
    "id": "D01",
@@ -5170,6 +5173,15 @@
      "code": "judgment_allowed",
      "label": "可由 bot 提议归位"
     }
+   ]
+  },
+  {
+   "axis": "link_match",
+   "label": "链接匹配方式",
+   "owner": "K05",
+   "values": [
+    { "code": "exact", "label": "精确匹配" },
+    { "code": "longest_prefix", "label": "最长前缀匹配" }
    ]
   }
  ],

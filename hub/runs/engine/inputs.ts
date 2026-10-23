@@ -60,6 +60,7 @@ export async function bindInputs(
   inputs: Record<string, InputBinding | InputBinding[]>,
   runId: string,
   traceId: string,
+  composition?: string | null,
 ): Promise<BoundSource[]> {
   const { artifacts, store } = ctx.deps.records;
   const errors: ProtocolError[] = [];
@@ -160,7 +161,7 @@ export async function bindInputs(
       gone(path, `no enabled resource reads ${externalType(id)}`);
       return null;
     }
-    const read = await ctx.deps.external.read(id, { principal: user, run: runId, purpose: `运行输入 ${slot.slot}` });
+    const read = await ctx.deps.external.read(id, { principal: user, run: runId, purpose: `运行输入 ${slot.slot}`, ...(composition !== undefined ? {composition} : {}) });
     if (!read.ok) {
       gone(path, read.reason);
       return null;

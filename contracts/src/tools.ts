@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { AcceptanceSchema, EntryKindSchema, NodeLevelSchema, PackKindSchema, ReadTierSchema, ResolutionSchema, SourceRoleSchema } from '../generated/vocabulary.ts';
 import { Coverage, Envelope, ItemId, PackId, RunId, Sha256 } from './common.ts';
 import { ExternalObjectId, Ground, ReferenceUri, TreePath, referenceUriOf } from './reference.ts';
+import { Backlinks } from './views.ts';
 import { InputBinding, PackSummary, RunSummary } from './run.ts';
 import { Submission } from './submission.ts';
 import { PartitionCounts, ValidationResult, partitionCountsOf } from './validation.ts';
@@ -143,6 +144,7 @@ const KnowledgeNode = z.strictObject({
   digest: Sha256,
   children: z.array(z.strictObject({ name: z.string(), path: TreePath, digest: Sha256 })),
   entries: z.array(NodeEntry),
+  backlinks: Backlinks.optional(),
 });
 
 export const GetNodesOutput = Envelope.extend({
@@ -169,6 +171,7 @@ export const GetNodesOutput = Envelope.extend({
   if (nodes.length > 0 && o.root === undefined) issue(ctx, ['root'], 'nodes come with the root they belong to');
   if (o.root === undefined) return;
   nodes.forEach((node, i) => {
+    for(const linked of node.backlinks?.entries??[])if(!linked.reference.startsWith('entry:')&&!linked.reference.startsWith(`tree:${o.root}${linked.path}@`))issue(ctx,['nodes',i,'backlinks'],'a related source must belong to this root and path');
     const address = `tree:${o.root}${node.path}`;
     if (node.reference !== address) issue(ctx, ['nodes', i, 'reference'], `the reference of this node is ${address}`);
     node.entries.forEach((entry, j) => {

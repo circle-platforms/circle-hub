@@ -24,7 +24,7 @@ import type {
 } from '../../contracts/src/knowledge.ts';
 import { MAX_KEPT_PROBLEMS } from '../../contracts/src/knowledge.ts';
 import { ENTRY_KIND, isEntryKind, labelOf, type EntryKind } from '../../contracts/generated/vocabulary.ts';
-import { BuildInfo, expandTemplate } from '../../contracts/src/product.ts';
+import { BuildInfo, expandTemplate, LinkDeclaration } from '../../contracts/src/product.ts';
 import type { KnownBuild, Producer, ProducerOutput, TemplateVariable } from '../../contracts/src/product.ts';
 import { CatalogEntry } from '../../contracts/src/tables.ts';
 import type { ProductHandle } from '../ports.ts';
@@ -68,6 +68,7 @@ import {
   type ListedIds,
   type ProduceDetail,
 } from './store.ts';
+import { relationFacts } from './links.ts';
 import { TreeBuilder, flatten, type BuiltNode } from './tree.ts';
 import { checkPath, singleSources, verifyFragment, type FragmentSources } from './verify.ts';
 
@@ -488,6 +489,11 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
     return result({ reason: text, action });
   };
 
+  const configured=product.product.links===undefined?undefined:LinkDeclaration.array().max(32).safeParse(product.product.links);
+  if(configured&&!configured.success)return fail('产品链接声明无效，修正声明后重新生产');
+  const links=configured?.success?configured.data:undefined;
+  if(links&&new Set(links.map(rule=>rule.id)).size!==links.length)return fail('产品链接声明编号重复，修正后重新生产');
+
   if (build.base !== build.name) return fail(`构建 ${build.name} 是 ${build.base} 的别名，没有自己的树`);
   if (product.product.producers.length === 0) return fail('产品包没有声明生产器');
   const loader = input.loader ?? new SourceLoader({ external: context.external, artifacts: context.records.artifacts, parsers: context.parsers }, by, 'knowledge sync');
@@ -785,6 +791,15 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
     .map(({ row, producers, slots }) => ({ ...row, producers: [...producers].sort(compareText), basis: basisOver(slots, basisOf) }))
     .sort((a, b) => compareText(a.entry, b.entry));
 
+  if(links!==undefined){
+    try {
+      const kinds=new Map(nodes.map(node=>[node.path,new Set(node.entries.map(id=>contents.get(id)!.kind))]));
+      const sources=[...composition.map(row=>({path:row.path,entry:row.entry,content:contents.get(row.entry)!})),...unplacedRows.map(row=>({path:'/',entry:row.entry,content:contents.get(row.entry)!,unplaced:true}))];
+      const facts=relationFacts(root.digest,links,kinds,sources);
+      for(const rule of links){const groups=facts.drift.filter(group=>group.rule===rule.id);if(groups.length)problems.warn(`链接声明 ${rule.id}：有 ${groups.length} 个字面在此根没有可匹配目标（漂移事实）：${cutText(groups.map(g=>g.literal).join('、'),800)}`);}
+    }catch(error){return fail(`链接声明无法核对：${describeError(error)}`);}
+  }
+
   const catalogs = rootCatalogs(product, composition, unplacedRows, problems.refusedOf, problems.skippedOf, contents);
   const kinds = Object.fromEntries(ENTRY_KIND.map((kind) => [kind, 0])) as Record<EntryKind, number>;
   for (const row of composition) kinds[row.kind]++;
@@ -824,6 +839,7 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
           refused_count: problems.refusedCount,
           ...(lists.length > 0 ? { skipped: problems.skipped, skipped_count: problems.skippedCount } : {}),
           catalogs,
+          ...(links===undefined?{}:{links}),
           counts: { nodes: nodes.length, entries: composition.length, placed_by_model: composition.filter((row) => row.placement !== undefined).length, unplaced: unplacedRows.length },
           kinds,
           warnings: problems.warnings,

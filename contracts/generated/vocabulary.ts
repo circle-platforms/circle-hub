@@ -61,6 +61,7 @@ export const AXES = {
   target: { label: '目标种类', owner: 'W02', values: [{ code: 'item', label: '条目' }, { code: 'run', label: '运行' }] },
   measure: { label: '度量', owner: 'C04', values: [{ code: 'count', label: '个数' }, { code: 'sum', label: '总和' }, { code: 'min', label: '最小值' }, { code: 'max', label: '最大值' }] },
   placement: { label: '归位方式', owner: 'K04', values: [{ code: 'code_only', label: '只按代码归位' }, { code: 'judgment_allowed', label: '可由 bot 提议归位' }] },
+  link_match: { label: '链接匹配方式', owner: 'K05', values: [{ code: 'exact', label: '精确匹配' }, { code: 'longest_prefix', label: '最长前缀匹配' }] },
 } as const;
 
 export type AxisName = keyof typeof AXES;
@@ -587,6 +588,15 @@ export function isPlacement(value: unknown): value is Placement {
   return (PLACEMENT as readonly unknown[]).includes(value);
 }
 
+/** 链接匹配方式 (K05) */
+export const LINK_MATCH = ['exact', 'longest_prefix'] as const;
+export type LinkMatch = (typeof LINK_MATCH)[number];
+export const LINK_MATCH_LABEL = { 'exact': '精确匹配', 'longest_prefix': '最长前缀匹配' } as const satisfies { readonly [K in LinkMatch]: string };
+export const LinkMatchSchema = z.enum(LINK_MATCH);
+export function isLinkMatch(value: unknown): value is LinkMatch {
+  return (LINK_MATCH as readonly unknown[]).includes(value);
+}
+
 export interface AxisValues {
   nature: Nature;
   basis_rank: BasisRank;
@@ -646,6 +656,7 @@ export interface AxisValues {
   target: Target;
   measure: Measure;
   placement: Placement;
+  link_match: LinkMatch;
 }
 
 const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
@@ -707,6 +718,7 @@ const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
   target: TARGET_LABEL,
   measure: MEASURE_LABEL,
   placement: PLACEMENT_LABEL,
+  link_match: LINK_MATCH_LABEL,
 };
 
 /** Chinese display label of a vocabulary code. The only place labels come from. */

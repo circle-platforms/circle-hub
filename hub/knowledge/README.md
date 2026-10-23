@@ -718,3 +718,55 @@ Milestone 2:
   documents it cannot handle rare (more than half of a list skipped fails the production); give cases data fields the
   views can count (`module`, `line`, `has_expected`, `defects`, ...) as scalars or lists of scalars, and avoid the value
   `__proto__`.
+
+
+## Composition-pinned literal relations (kb-links, first step)
+
+The product's optional `links` array declares `id`, a top-level literal `field`, a target `namespace`, generated `link_match`,
+and an `entry_kind` (required for longest-prefix matching). Only declared boolean normalizers are supported: `lowercase`,
+`nfc`, `nfkc` and `strip_nul`; NFC and NFKC are mutually exclusive. Omission means unchanged spelling. Tokenization is by
+white space, one word per path segment; canonical tree-path encoding preserves reserved characters. Unknown declaration keys,
+unknown modes/kinds, conflicting normalizers and duplicate ids refuse production before any source is read. Some cross-field
+conditions are runtime refinements in addition to the generated JSON Schemas.
+
+`exact` requires the complete literal path (and the kind when declared). `longest_prefix` picks the longest leading path
+whose node has the declared kind. Remaining words are returned as written, without interpreting their values. A mere middle
+node does not qualify. Drift groups retain the literal, its attempted path, last reachable path and source-entry references;
+unplaced occurrences use directly readable `entry:` references (their filter path is `/`), never invented tree membership;
+no diagnosis of correction versus defect is made. Production and reading invoke the same generic evaluator. No relation writes
+nodes, changes entry content, or adds a drift record.
+
+The snapshot is in the append-only `tree_root` composition, never the node digest. A new declaration may therefore produce
+the same tree under a new composition. A same-target pointer refresh is explicit, records another move and compares the
+observed pointer action as well as its target; a stale concurrent refresh writes nothing. Existing pointer callers still
+refuse an accidental same-target move. Legacy compositions are not rewritten: their view reports that the composition has
+no link declaration, with null totals and the next action of reproducing the line.
+
+External read: `knowledge:links:<product>:<line>?prefix=<source-path>&target=<target-path>&rule=<id>&limit=<1..200>`;
+all filters are optional. With no read lock it selects that line's current pointer composition. `composition=<digest>` and
+the cursor pin continuation; a cursor is bound to composition, filters and offset and is refused on a different query.
+A run uses its locked composition, never the latest production of the root. Each page carries complete `totals` (distinct
+source references, literal occurrences, links, drift groups and drift occurrences), `next`, and detail-only `truncated`.
+The same composition and request produce identical canonical bytes. Cache entries are keyed by composition and recheck
+permissions on every external read; output artifacts retain the existing derived-credential gate.
+
+### Minimal composition plumbing and K2 merge handoff
+
+`RootInfo.composition` already exists and is stored in the build target-basis claim's `statement.data.composition`.
+`start.ts` now passes it to `inputs.ts` and `projection.ts`, which forward optional `ExternalReadContext.composition`.
+This is needed BEFORE the run record exists. An explicit null means a run has no target root and lets the source view lock
+its own line pointer; an omitted value on an existing run is resolved from the stored target-basis claim.
+`server/tools.ts` forwards the stored composition through optional `NodesQuery.composition` for node reads of that run's
+root; explicit null on a legacy run prevents substituting a current declaration. No judgment, producer selection or workflow
+behavior is changed by this plumbing. K2's composition-lock repair touches these same files: align the optional field rather
+than letting either side reconstruct a newer composition. Node cursors also retain the selected composition across pointer
+refreshes. Node replies show only reverse references and one-line summaries, with the full total when rows are cut.
+
+### Local synthetic measurement
+
+`links-performance.test.ts`: 20,001 stored entries, including 20,000 literal-bearing notes, one definition, 100 note nodes,
+10,000 links and 10,000 drift occurrences in one drift group. On the local macOS temporary PostgreSQL run, a cold read took
+313.9 ms, a warm read 14.7 ms; a 10-detail page was 3,676 bytes. These are synthetic local timings, not deployment or real-source
+acceptance. Tests also cover exact and longest-prefix positives/negatives, grouped drift, source-prefix and target filters,
+unchanged bytes for an old composition after a same-root refresh, stale-pointer refusal, legacy snapshots and declaration
+rejection. Views can be bound as ordinary external inputs; review and version-difference pack consumption is the second step.

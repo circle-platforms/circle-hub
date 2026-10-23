@@ -414,27 +414,23 @@ describe('author-marked command literals', () => {
     assert.ok(result.entries.every((entry) => entry.data.command_literals === undefined));
   });
 
-  it('dedupes a repeated literal and caps one block’s literals at 100', () => {
+  it('dedupes a repeated literal and retains the complete literal list', () => {
     const mention = `${Array.from({ length: 120 }, (_, k) => `**demo c${k}**`).join('，')}，**demo c0** 再提一次。`;
     const result = produceManualEntries(markdown(`# 章\n\n${mention}\n`));
     const literals = result.entries[0].data.command_literals as string[];
-    assert.equal(literals.length, 100);
+    assert.equal(literals.length, 120);
     assert.equal(literals[0], 'demo c0');
-    assert.equal(result.entries[0].data.command_literals_cut, true);
+    assert.equal(result.entries[0].data.command_literals_cut, undefined);
   });
 
-  it('counts every literal in the drift total, past the per-entry cap, and keeps the list inside one stored warning', () => {
+  it('keeps all 150 literals for shared whole-root drift evaluation', () => {
     const mention = Array.from({ length: 150 }, (_, k) => `**demo missing${k}**`).join('，');
     const catalog = commandCatalog(xml('<commands><scope type="global"><menu name="demo"><item name="present" help_string="p"><arguments></arguments></item></menu></scope></commands>')).catalog;
     const result = produceManualEntries(markdown(`# 章\n\n${mention}\n`), null, { catalog });
     const entry = result.entries[0];
-    assert.equal((entry.data.command_literals as string[]).length, 100);
-    assert.equal(entry.data.command_literals_cut, true);
-    const drift = result.warnings.find((warning) => warning.includes('漂移候选'));
-    assert.ok(drift, result.warnings.join('\n'));
-    assert.ok(drift.includes('有 150 个命令字面'), drift);
-    assert.ok(drift.endsWith(' 等'), drift);
-    assert.ok(drift.length < 1000, `${drift.length} characters`);
+    assert.equal((entry.data.command_literals as string[]).length, 150);
+    assert.equal(entry.data.command_literals_cut, undefined);
+    assert.ok(!result.warnings.some(warning => warning.includes('漂移')), 'the isolated producer makes no whole-root drift claim');
   });
 });
 
@@ -497,16 +493,13 @@ describe('placement against the build’s command tree', () => {
     const catalog = commandCatalog(xml(tree)).catalog;
     const result = produceManualEntries(markdown('**demo acl permit {tcp\\|udp}** *\\<source_ip\\>*\n\n该命令用于放行。\n'), null, { catalog });
     assert.deepEqual(result.entries[0].path, '/commands/demo/acl/permit');
-    assert.ok(!result.warnings.some((warning) => warning.includes('漂移候选')), 'no false drift entry for a placed signature');
+    assert.deepEqual(result.entries[0].data.command_literals, ['demo acl permit', 'demo acl permit tcp', 'demo acl permit udp']);
   });
 
-  it('lists the literals the tree cannot resolve as drift candidates in the warnings', () => {
+  it('retains resolvable and unresolved literals without judging them in isolation', () => {
     const text = '**demo pool add** *\\<name\\>*\n\n该命令用于添加成员。\n\n**demo probe** *\\<name\\>*\n\n该命令用于探测，先执行 “demo pool create”。\n';
     const result = produceManualEntries(markdown(text), null, { catalog });
-    const drift = result.warnings.find((warning) => warning.includes('漂移候选'));
-    assert.ok(drift, result.warnings.join('\n'));
-    assert.ok(drift.includes('有 2 个命令字面') && drift.includes('demo probe') && drift.includes('demo pool create'), drift);
-    assert.ok(!drift.includes('demo pool add'), 'resolvable literals are not drift');
+    assert.deepEqual([...new Set(result.entries.flatMap(entry => (entry.data.command_literals as string[] | undefined) ?? []))].sort(), ['demo pool add', 'demo pool create', 'demo probe']);
   });
 });
 

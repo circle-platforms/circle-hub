@@ -181,3 +181,11 @@ test('a produced entry needs a source fragment and a well-formed path', () => {
 test('every registered schema key is name@major', () => {
   for (const key of Object.keys(schemas)) assert.match(key, /^[a-z][a-z0-9_-]*@(?:0|[1-9][0-9]*)$/);
 });
+
+test('literal links accept only the generated matching modes and declared normalization flags', () => {
+  const rule={id:'mentions',field:'mentions',namespace:'/terms',match:'longest_prefix',entry_kind:'definition',normalize:{lowercase:true}};
+  assert.ok(ProductDeclaration.safeParse({...declaration,links:[rule]}).success);
+  for(const bad of [{...rule,match:'approximate'},{...rule,extra:true},{...rule,entry_kind:undefined},{...rule,normalize:{lowercase:true,guess:true}},{...rule,normalize:{nfc:true,nfkc:true}}])assert.ok(!ProductDeclaration.safeParse({...declaration,links:[bad]}).success);
+  assert.ok(!ProductDeclaration.safeParse({...declaration,links:[rule,rule]}).success);
+  assert.ok(ProductDeclaration.safeParse({...declaration,links:[{...rule,match:'exact',entry_kind:undefined,normalize:undefined}]}).success);
+});

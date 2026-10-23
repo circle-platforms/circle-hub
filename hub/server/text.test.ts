@@ -1223,3 +1223,10 @@ test('recordDigest gives the digest hub/refs checks a record against (the in-mem
   assert.equal(pages.length, 1);
   assert.ok(pages[0].includes(`- ${result.partitions.delivered[0].item} | `));
 });
+
+test('get_nodes renders only relation references and one-line summaries, retaining the full backlink count',()=>{
+  const root='a'.repeat(64),composition='b'.repeat(64),source=`tree:${root}/notes/one@${'c'.repeat(64)}`;
+  const answer=GetNodesOutput.parse({call_result:'ok',errors:[],trace:TRACE,root,nodes:[{path:'/terms/alpha',reference:`tree:${root}/terms/alpha`,name:'alpha',level:'leaf',digest:'d'.repeat(64),children:[],entries:[],backlinks:{composition,configured:true,total:75,entries:[{reference:source,path:'/notes/one',summary:'一行合成摘要'}],truncated:true,notes:['还有 74 个反向引用']} }]});
+  const text=toolText('get_nodes',answer);
+  assert.match(text,/反向关联共 75 个条目/);assert.ok(text.includes(source));assert.ok(text.includes('一行合成摘要'));assert.match(text,/反向关联条目 74 个/);
+});

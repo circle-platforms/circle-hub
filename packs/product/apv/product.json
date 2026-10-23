@@ -11,6 +11,9 @@
     "max_reads": 300
   },
   "select_build": { "module": "functions/select.ts" },
+  "links": [
+    { "id": "manual-literals", "field": "command_literals", "namespace": "/commands", "match": "longest_prefix", "entry_kind": "definition", "normalize": { "lowercase": true, "strip_nul": true } }
+  ],
   "catalogs": [
     { "id": "commands@1", "entry_kind": "definition", "producer": "command-tree", "complete": true, "case_sensitive": false }
   ],

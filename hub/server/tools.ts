@@ -396,10 +396,12 @@ const getNodes: Handler = async (deps, call, args) => {
     return readReference(deps, call, input.reference, input.run, cursor);
   }
   let root = input.root;
+  let composition: string | null | undefined;
   if (input.run !== undefined) {
     const detail = await runDetail(input.run);
     if (detail === null) return { answer: errorAnswer('get_nodes', [unavailable()]) };
     root ??= detail.run.root;
+    if(root===detail.run.root){composition=null;const ids=detail.run.target_basis.flatMap(claim=>{const data=claim.statement.data;return data&&data.root===root&&typeof data.composition==='string'?[data.composition]:[];});if(new Set(ids).size===1)composition=ids[0];}
     if (root === undefined) {
       note(`run ${input.run} locked no knowledge root`);
       return { answer: errorAnswer('get_nodes', [unavailable()]) };
@@ -408,7 +410,7 @@ const getNodes: Handler = async (deps, call, args) => {
   if (root === undefined) {
     return { answer: errorAnswer('get_nodes', [violation('get_nodes', '', '要给出 run、root 或 reference 之一', '给出 start_run 返回的 run，或一个知识根，或一个引用')]) };
   }
-  const page = await deps.knowledge.getNodes({ root, paths: input.paths ?? ['/'], depth: input.depth ?? 1, cursor }, call.principal);
+  const page = await deps.knowledge.getNodes({ root, paths: input.paths ?? ['/'], depth: input.depth ?? 1, cursor, ...(composition !== undefined ? {composition} : {}) }, call.principal);
   if (page === null) {
     note(`knowledge root ${root} (paths ${clipNote(JSON.stringify(input.paths ?? ['/']), 300)}) is absent or not readable by ${call.principal.id}`);
     return { answer: errorAnswer('get_nodes', [unavailable()]) };
