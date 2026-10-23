@@ -257,7 +257,7 @@ export function score(gold: readonly GoldEntry[], result: ResultLike, options: S
 
   const recallOf = (kind: GoldEntry['seen_by']): [number, number] => {
     const own = detections.filter((d) => d.entry.seen_by === kind);
-    return [own.filter((d) => d.detected).length, own.length];
+    return [own.filter((d) => kind === 'judgment' ? d.draft : d.mechanical).length, own.length];
   };
 
   // The untouched cases: the Hub's structure marks against the independent answer, everything else counted only.
@@ -382,7 +382,7 @@ export function render(s: Score): string[] {
   const pct = ([found, total]: [number, number]): string => (total === 0 ? '无' : `${found}/${total}`);
   const lines = [
     `Hub 自己的字面检查看得见的缺陷：查出 ${pct(s.recall.mechanical)}`,
-    `只有模型判断才看得见的缺陷：初评发现 ${pct(s.recall.judgment)}，其中被复核证实 ${s.detections.filter((d) => d.entry.seen_by === 'judgment' && d.confirmed).length}，复核另有发现 ${s.detections.filter((d) => d.entry.seen_by === 'judgment' && d.verify).length}`,
+    `只有模型判断才看得见的缺陷：初评发现 ${pct(s.recall.judgment)}，合起来 ${pct([s.detections.filter(d => d.entry.seen_by === 'judgment' && d.combined).length, s.detections.filter(d => d.entry.seen_by === 'judgment').length])}，其中被复核证实 ${s.detections.filter((d) => d.entry.seen_by === 'judgment' && d.confirmed).length}，复核另有发现 ${s.detections.filter((d) => d.entry.seen_by === 'judgment' && d.verify).length}`,
     '',
     s.structureCompared
       ? `未注入的用例上的字面标记：支持 ${s.structure.supported.length}、误报 ${s.structure.falsePositives.length}、漏标 ${s.structure.missed.length}；未独立核对 ${s.otherMarks.total}（未改动评审里没有的 ${s.otherMarks.fresh}）；目录类标记还没有独立答案 ${s.otherMarks.catalog.total} 条（未改动评审里没有的 ${s.otherMarks.catalog.fresh} 条）；不计分 ${s.literalUnscored + s.noUniqueId}（data.id 缺失或重复 ${s.noUniqueId} 个）`

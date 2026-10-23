@@ -262,3 +262,10 @@ test('review 9: structure is scored once per case and code while raw claims rema
   const scored = score([], result([item('c1', req('literal', [refute('core.structure.required_empty'), refute('core.structure.required_empty')], { terminal: 'violation', attribution: 'author_input' }))]), { literal: answer });
   assert.equal(scored.structure.supported.length, 1);
 });
+
+test('review 16: draft recall and combined recall remain separately labeled after verification refutes a finding', () => {
+  const gold = [entry({ kind: 'vague_expected' })];
+  const scored = score(gold, result([item('c1', req('findings', [judgment('vague')]))]), { verify: result([item('c1', req('verification', [judgment('refuted')]))]) });
+  assert.deepEqual(scored.recall.judgment, [1, 1]);
+  assert.ok(render(scored).some(line => line.includes('初评发现 1/1') && line.includes('合起来 0/1')));
+});
