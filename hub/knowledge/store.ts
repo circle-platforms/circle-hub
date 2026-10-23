@@ -104,7 +104,7 @@ export const COMPONENTS = {
 } as const;
 
 /** The action kinds (B05 F[0]) this package records; checked against the generated vocabulary at compile time. */
-export const ACTION = { parse: 'parse', generate: 'generate', classify: 'classify', read: 'read' } as const satisfies Record<string, ActionKind>;
+export const ACTION = { parse: 'parse', generate: 'generate', classify: 'classify', read: 'read' } as const satisfies Partial<Record<ActionKind, ActionKind>>;
 
 /** Build names compare without case for lookups (NFC, lower case); the stored name keeps its spelling. */
 export function fold(name: string): string {

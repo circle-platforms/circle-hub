@@ -342,6 +342,9 @@ as a substitute for the fragment read state. Authority and the refined grades ar
 
 The boundary applies B01 R[4] to quotation references and grounds, including cross-item grounds. Record targets and locations remain resolvable without being promoted to grounds. Its cache separates those uses.
 
+片段读取 integrity_unproven 沿用原因轴同码标签“完整性未证明”（决定 36 的模型负责人补充）。
+这类未知须由管理员从可信备份恢复记录或原始字节后重新核验；unavailable 只表示暂时读取故障。
+
 Scope note: the owner authorized the rules implementation/tests and this README beyond the original vectors-only task list. Architecture permits only refs type imports; the first runtime delegation was a defect, corrected by a local implementation.
 
 Stale contract wording: QuoteTable in contracts/src/tables.ts and generated quote.v1.schema.json still describe every

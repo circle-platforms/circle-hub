@@ -1,3 +1,4 @@
+import { CHANGE_KIND } from './generated/vocabulary.ts';
 import type { ChangeKind, Verdict, CheckTier, Reason as UnknownReason } from '../../../../contracts/generated/vocabulary.ts';
 // Pack checks. command_exists: a case on a removed path is a blocking refutation. command_unchanged: first the whole
 // command diff as one cross-item fact (one line per changed path with its earlier-build case count, grounded on the
@@ -97,8 +98,9 @@ function reasonsOf(item: Item, details: DetailRow[]): ParsedReason[] | null {
   const out: ParsedReason[] = [];
   for (const raw of value) {
     if (!isRecord(raw) || typeof raw.detail !== 'number' || !Number.isInteger(raw.detail) || raw.detail < 0) return null;
-    if (raw.change !== 'added' && raw.change !== 'modified' && raw.change !== 'removed') return null;
-    out.push({ detail: raw.detail, change: raw.change });
+    const change=CHANGE_KIND.find(kind=>kind===raw.change);
+    if(change===undefined)return null;
+    out.push({ detail: raw.detail, change });
   }
   return out;
 }
@@ -291,7 +293,7 @@ function diffSummaries(subject: unknown): Outcome[] {
     return `命令差共 ${cut} 条（影响视图被截断，这 ${total} 条是列出的部分；${which}路径、变更种类、前一构建用例数）：`;
   };
   const lines = rows.slice(0, MAX_DIFF_ROWS).map((row) => {
-    const label = row.change === 'added' || row.change === 'removed' || row.change === 'modified' ? CHANGE_LABEL[row.change] : row.change;
+    const label = (CHANGE_KIND as readonly string[]).includes(row.change) ? CHANGE_LABEL[row.change as ChangeKind] : row.change;
     return `- ${row.path} ${label} ${row.cases} 条${row.change === 'added' ? '（不进范围）' : ''}`;
   });
   const listed = lines.length;

@@ -24,7 +24,7 @@ function fixture(){
     const map=join(root,`map-${i}.json`);writeFileSync(map,JSON.stringify({root:{data:{text:`缺陷${defect} 回归`,id:'root'},children:[{data:{text:'widget set 5',id:'case',resource:['功能']}}]}}));
     config.pairings.push({defect,build:'Demo_1',commands,manual,regression_map:map,document});
   }
-  
+
   const deps:BatchDeps={assertAdmin:async()=>{},now:()=>new Date('2026-10-23T00:00:00Z'),review:async args=>{reviews.push(args);return {complete:true,calls:JSON.stringify({at:'2026-10-23T00:00:00Z',tool:'start_run',run:`run_synthetic_${args[args.indexOf('--prompt')+1].includes('160002')?1:0}`})};},show:async id=>details.get(id),submission:async record=>{records.push(record);return submissions.get(record);},exportOriginal:async(sha,path)=>{const b=originals.get(sha);if(!b)throw new Error('missing synthetic original');writeFileSync(path,b);}};
   return {root,out,config,deps,records,reviews,details,submissions,originals,close:()=>rmSync(root,{recursive:true,force:true})};
 }

@@ -1,3 +1,4 @@
+import { CHANGE_KIND } from './generated/vocabulary.ts';
 import type { ChangeKind } from '../../../../contracts/generated/vocabulary.ts';
 // Regression scope (capability 4a). A case is in scope when the later build places it on an added or modified path.
 // One case on several such paths is one item. Removed paths are neither in scope nor uncovered. A changed path with no
@@ -207,7 +208,7 @@ export function scopeOf(view: NormView, parameters: Parameters): ScopeResult {
     const prior = byPath.get(change.path);
     const before = uniqueSorted([...(prior?.before ?? []), ...change.before]);
     const after = uniqueSorted([...(prior?.after ?? []), ...change.after]);
-    let kind: Side['change'] = change.change === 'added' || change.change === 'removed' || change.change === 'modified' ? change.change : 'modified';
+    let kind: Side['change'] = (CHANGE_KIND as readonly string[]).includes(change.change) ? change.change as ChangeKind : 'modified';
     if (prior !== undefined && prior.change !== kind) {
       if (before.length === 0 && after.length > 0) kind = 'added';
       else if (after.length === 0 && before.length > 0) kind = 'removed';

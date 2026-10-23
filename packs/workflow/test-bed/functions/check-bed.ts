@@ -4,7 +4,7 @@ import type { Verdict } from '../../../../contracts/generated/vocabulary.ts';
 // frozen fields equal the recomputation; refute (test-bed.<action>_mismatch) with the fields that differ. Grounds are
 // the item's location (its bed in the inventory document) and the fields it was checked against.
 import { isRecord } from './common.ts';
-import { acquirePlan, extendPlan, factsFields, leaseRecord, manifestBeds, readParameters, releasePlan, searchFields, type Action, type BedNeed, type ExtendPlan, type FrozenLeases } from './conclude.ts';
+import { isAction, acquirePlan, extendPlan, factsFields, leaseRecord, manifestBeds, readParameters, releasePlan, searchFields, type Action, type BedNeed, type ExtendPlan, type FrozenLeases } from './conclude.ts';
 
 const TIER = 'advisory' as const;
 
@@ -131,7 +131,7 @@ export function bedOutcomes(subject: unknown): CheckOutcome[] {
         out.push(support(id, at, plan.conclusion, item.location, { bed: plan.bed, devices: plan.devices, addresses: plan.addresses, keys: plan.keys, ttl_seconds: plan.ttl_seconds, conclusion: plan.conclusion }));
         continue;
       }
-      if (action === 'extend' || action === 'release') {
+      if (isAction(action) && (action === 'extend' || action === 'release')) {
         const held = action === 'extend' ? extendPlan(frozen.leases, frozen.booking ?? '', frozen.need.hours) : releasePlan(frozen.leases, frozen.booking ?? '');
         const code = action === 'extend' ? 'test-bed.extend_mismatch' : 'test-bed.release_mismatch';
         if (!held.ok) {

@@ -21,6 +21,7 @@ test('pack vocabulary targets contain only their required axes and deterministic
     if (path.includes('regression-scope') || path.includes('maintenance-sweep')) {
       assert.match(text, /export const ENTRY_KIND =/);
       assert.match(text, /export const CHANGE_KIND =/);
+      assert.match(text, /export const CHANGE_KIND_LABEL:/);
       assert.ok(!text.includes('export const MEASURE ='));
     } else {
       assert.match(text, /export const MEASURE =/);

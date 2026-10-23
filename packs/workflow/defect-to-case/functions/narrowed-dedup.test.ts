@@ -262,12 +262,39 @@ describe('requested keys missing from narrowed views', () => {
  const drafts = ['健康检查详细信息查看', '另一份合成用例'].map(title => ({ ...goodDraft({ title }), steps: [{ command: 'show health detail' }] }));
  const results = checkDuplicate(inputOf({drafts, indexed_cases: compact}));
  assert.ok(results.some(r => r.verdict === 'refute'));
- assert.ok(results.some(r => r.verdict === 'unknown' && r.statement.includes('另一份合成用例') && /重新读取/.test(r.statement)));
+ assert.ok(results.some(r => r.verdict === 'unknown' && r.statement.includes('另一份合成用例') && /集成者/.test(r.statement)));
 });
 
 it('compacting preserves the exact skipped-document fact needed to repair coverage', () => {
   const compact = buildCompactIndex({ ...SYNTHETIC_INDEX_VIEW, only: ['show health detail'], cut_keys: [], truncated: false, skipped: 3 });
   const result = checkDuplicate(inputOf({ drafts: [{ ...goodDraft(), steps: [{ command: 'show health detail' }] }], indexed_cases: compact }))[0];
   assert.equal(result.verdict, 'unknown');
-  assert.match(result.statement, /缺少 3 份文档.*补取.*重新读取/);
+  assert.match(result.statement, /缺少 3 份文档.*新根/);
+});
+
+it('skipped composition sources cannot be repaired by rereading an absent key', () => {
+  const command = 'widget health interval';
+  const compact = buildCompactIndex({ ...SYNTHETIC_INDEX_VIEW, only: [command], cut_keys: [], truncated: false, skipped: 3 });
+  assert.deepEqual(compact.missingKeys, []);
+  const result = checkDuplicate(inputOf({ drafts: [{ ...goodDraft(), steps: [{ command }] }], indexed_cases: compact }))[0];
+  assert.equal(result.verdict, 'unknown');
+  assert.match(result.statement, /3 份文档.*新根/);
+  assert.doesNotMatch(result.statement, /提高预算|重新读取这些键/);
+});
+it('per-key caps name a capability gap rather than an impossible budget increase', () => {
+  const compact = buildCompactIndex({ ...SYNTHETIC_INDEX_VIEW, only: ['show health detail'], cut_keys: ['show health detail'], truncated: true });
+  const result = checkDuplicate(inputOf({ drafts: [{ ...goodDraft({ title: '合成的新草稿' }), steps: [{ command: 'show health detail' }] }], indexed_cases: compact }))[0];
+  assert.equal(result.verdict, 'unknown');
+  assert.match(result.statement, /每键上限.*集成者/);
+  assert.doesNotMatch(result.statement, /提高预算/);
+});
+
+it('c3 skipped sources and a draft outside only name both independent recovery steps',()=>{
+ const compact=buildCompactIndex({...SYNTHETIC_INDEX_VIEW,only:['show health detail'],cut_keys:[],truncated:false,skipped:3});
+ const outcome=checkDuplicate(inputOf({drafts:[goodDraft()],indexed_cases:compact}))[0];assert.equal(outcome.verdict,'unknown');assert.equal(outcome.reason,'integrity_unproven');
+ assert.match(outcome.statement,/3 份文档.*新根/);assert.match(outcome.statement,/草稿命令.*only/);
+});
+it('c3 malformed cut keys name core metadata rather than nonexistent missing sources',()=>{
+ const compact=buildCompactIndex({...SYNTHETIC_INDEX_VIEW,only:['widget health interval'],cut_keys:'show health detail',truncated:false,skipped:0});
+ const outcome=checkDuplicate(inputOf({drafts:[goodDraft()],indexed_cases:compact}))[0];assert.equal(outcome.verdict,'unknown');assert.match(outcome.statement,/only.*cut_keys.*字段形状无效/);assert.match(outcome.statement,/集成者/);assert.doesNotMatch(outcome.statement,/修复缺失来源/);
 });

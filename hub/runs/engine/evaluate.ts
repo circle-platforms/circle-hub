@@ -395,6 +395,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
             // By the resolver's own code: REFERENCE_UNRESOLVED means the reference resolves to nothing inside the
             // bound thing (no such fragment — the model can fix the selector or the quote); SOURCE_UNAVAILABLE means
             // the read genuinely failed. Scope and groundability have their own grades and remedies.
+            if (r.reason === 'integrity_unproven') return { why: 'integrity_unproven' };
             return { why: r.code === 'REFERENCE_UNRESOLVED' ? 'no_fragment' : 'unavailable' };
           }
           if (!r.groundable) return { why: 'not_groundable' };

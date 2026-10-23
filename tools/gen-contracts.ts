@@ -92,6 +92,7 @@ export function packVocabularyFiles(root: string = REPO_ROOT): Record<string, st
       const constant = upper(name), type = pascal(name);
       out.push(`export const ${constant} = [${axis.values.map(v => q(v.code)).join(', ')}] as const;\n`);
       out.push(`export type ${type} = (typeof ${constant})[number];\n`);
+      if (!target.labels && name === 'change_kind') out.push(`export const ${constant}_LABEL: Readonly<Record<${type}, string>> = ${JSON.stringify(Object.fromEntries(axis.values.map(v => [v.code, v.label])))};\n`);
       if (target.labels) {
         out.push(`export const ${constant}_LABEL = { ${axis.values.map(v => `${q(v.code)}: ${q(v.label)}`).join(', ')} } as const satisfies Record<${type}, string>;\n`);
         out.push(`export function is${type}(value: unknown): value is ${type} { return typeof value === 'string' && (${constant} as readonly string[]).includes(value); }\n`);

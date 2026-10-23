@@ -47,6 +47,7 @@ export const quoteInterpreter = defineInterpreter({
           else if (why === 'malformed') outcomes.push(refuteProtocol(base, 'QUOTE_MISMATCH', '引用写法不对，请使用 src:<摘要>、tree:<根>/<路径>@<条目> 或 rec:<记录>#/<字段>', { pointer, grounds: [ref], data: { quote: text.value, reference: ref, why } }));
           else if (why === 'no_fragment') outcomes.push(refuteProtocol(base, 'QUOTE_MISMATCH', `引用 ${ref} 的片段不存在`, { pointer, grounds: [ref], data: { quote: text.value, reference: ref, why } }));
           else if (why === 'too_large') outcomes.push(refuteProtocol(base, 'QUOTE_MISMATCH', `引用 ${ref} 的片段超过大小上限，请改引更小的片段`, { pointer, grounds: [ref], data: { quote: text.value, reference: ref, why } }));
+          else if (why === 'integrity_unproven') outcomes.push(unknown(base, 'integrity_unproven', `引用 ${ref} 的完整性未证明；缺与摘要一致的可信原文，请管理员从可信备份恢复记录或原始字节后重新核验`, { pointer, grounds: [ref], data: { why } }));
           else if (why === 'unavailable') outcomes.push(unknown(base, 'missing_input', `引用 ${ref} 的源文件暂时取不回；缺该片段的可读原文，请重读后重评`, { pointer, grounds: [ref] }));
           else outcomes.push(unknown(base, 'missing_input', `引用 ${ref} 的片段尚未读到；缺片段原文，请重新读取并重评`, { pointer, grounds: [ref] }));
           continue;

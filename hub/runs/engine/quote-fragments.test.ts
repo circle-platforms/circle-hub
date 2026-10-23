@@ -5,6 +5,8 @@
 // once per evaluation. The retain-only and over-cap grades are covered at the interpreter level (quote.grades.test.ts).
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
+import type { ActionBody } from '../../records/api.ts';
+import { INDEX } from './store.ts';
 import { startPostgres, type TemporaryPostgres } from '../../testing/postgres.ts';
 import { openHarness, sandboxSkip, type Harness } from './testing/harness.ts';
 import { ROOTS } from './testing/knowledge.ts';
@@ -23,18 +25,17 @@ after(async function afterHook() {
 /** The expected texts of the standard document's cases (each case's expected subnode, id suffix e0). */
 const EXPECTED: Record<string, string> = { c1: '3 区开始浇灌，15 分钟后停止', c2: '列出 8 个分区的状态' };
 
-/** A run whose c4 findings slot carries the quote deep in data (data.expected_quote); returns the findings requirement. */
-const quoteRun = async (h: Harness, map: string, quote: { text: string; reference: string }, notes?: string) => {
+/** Submit a run whose c4 findings slot carries the quote deep in data (data.expected_quote). */
+const submitQuote = async (h: Harness, map: string, quote: { text: string; reference: string }, notes?: string, afterBind?: () => void) => {
   const run = (await h.service.startRun(h.alice, { pack: 'toy-review', product: 'Meadow', version: '3.2', inputs: { map: { reference: map }, ...(notes ? { notes: [{ reference: notes }] } : {}) } }, h.call())).run!;
+  afterBind?.();
   const reference = quote.reference === '@c2expected'
     ? expectedRef(map, run).replace('c1aaaaaaaaaae0','c2bbbbbbbbbbe0')
     : quote.reference === '@c1expected' ? expectedRef(map, run) : quote.reference;
   // The top-level quotes row carries a boundary-resolvable reference (the slot rule wants one); the data row is the
   // one under test — its reference never passes through the boundary.
   const topLevel = expectedRef(map, run);
-  const answer = await h.service.submitResult(
-    h.alice,
-    {
+  const submission = {
       run: run.run,
       model: 'aster-7',
       items: [
@@ -44,9 +45,13 @@ const quoteRun = async (h: Harness, map: string, quote: { text: string; referenc
         { item: ITEM.c4, handling: 'handled', slots: { findings: [{ text: '期望来源引文', code: 'edge_case_gap', rank: 'major', quotes: [{ reference: topLevel, text: EXPECTED.c1 }], data: { expected_quote: { text: quote.text, reference } } }] } },
       ],
       cross_item: [{ nature: 'judgment', statement: '一般', grounds: [], code: 'draft_level', rank: 'P4' }],
-    },
-    h.call(),
-  );
+    };
+  const answer = await h.service.submitResult(h.alice,submission,h.call());
+  return {answer,run,submission};
+};
+/** Accepted validation helper; Hub-failure cases inspect submitQuote directly. */
+const quoteRun = async (...args:Parameters<typeof submitQuote>) => {
+  const {answer}=await submitQuote(...args);
   assert.equal(answer.acceptance, 'accepted', JSON.stringify(answer.errors));
   const row = Object.values(answer.result!.partitions).flat().find((it) => it.item === ITEM.c4)!;
   return row.requirements.find((r) => r.requirement === 'findings')!;
@@ -314,4 +319,33 @@ test('valid data-only references longer than 600 characters use the boundary len
   const result=await quoteRun(h,map,{text:'知识树',reference});
   assert.equal(result.claims.filter(c=>c.statement.verdict==='support' && c.statement.text.includes('逐字一致')).length,2);
   assert.ok(!result.claims.some(c=>c.statement.verdict==='refute'||c.statement.verdict==='unknown'));
+});
+
+test('a corrupted bound record preserves the integrity cause through Hub retry refusal and restoration', { skip }, async t => {
+  const { h, map } = await open(); t.after(() => h.close());
+  h.review.workflow.inputs.find(i => i.slot === 'notes')!.accepts.push('application/json');
+  const owner = (await h.service.startRun(h.alice, { pack: 'toy-review', product: 'Meadow', version: '3.2', inputs: { map: { reference: map } } }, h.call())).run!;
+  const action = await h.kit.store.put({ kind: 'action', schema: 'action@1', provenance: 'observed', body: { run: owner.run, text: '合成记录片段' } });
+  const original = h.kit.store.get.bind(h.kit.store);
+  let tampered = false;
+  t.mock.method(h.kit.store, 'get', async (digest: string) => {
+    const record = await original(digest);
+    return tampered && record !== null && digest === action.digest ? { ...record, body: { ...(record.body as object), text: '被改动的合成字节' } } : record;
+  });
+  const {answer,run,submission} = await submitQuote(h, map, { text: '合成记录片段', reference: `rec:${action.digest}#/text` }, `rec:${action.digest}`, () => { tampered = true; });
+  assert.equal(answer.call_result,'error');assert.equal(answer.acceptance,'not_accepted');assert.equal(answer.result,undefined);
+  assert.deepEqual(answer.errors.map(e=>e.code),['SOURCE_UNAVAILABLE']);
+  assert.ok(answer.errors.every(e=>e.rounds_left===undefined && e.requirement===undefined));
+  assert.match(answer.errors[0].fix ?? '',/管理员.*恢复.*原样重交.*不计修复轮/);
+  const actions=(await h.kit.store.find<ActionBody>({key:INDEX.actionRun,value:run.run,kind:'action'})).items.filter(r=>r.body.action==='validate');
+  assert.equal(actions.length,1);const failed=actions[0].body;
+  assert.equal(failed.result,'error');assert.equal(failed.error_code,'integrity_unproven');assert.equal(failed.acceptance,null);
+  assert.equal(failed.detail.hub_error,true);assert.equal(failed.detail.reason,'integrity_unproven');assert.deepEqual(failed.detail.repair,[]);
+  const attempts=(failed.detail.retry_attempts as Array<Record<string,unknown>>).filter(a=>a.operation==='read');
+  assert.deepEqual(attempts.map(a=>a.attempt),[1,2,3]);
+  assert.equal((await h.kit.store.find({key:INDEX.resultRun,value:run.run,kind:'validation_result'})).items.length,0);
+  tampered=false;
+  const restored=await h.service.submitResult(h.alice,submission,h.call());
+  assert.equal(restored.acceptance,'accepted',JSON.stringify(restored.errors));assert.equal(restored.result?.rounds.used,0);
+
 });

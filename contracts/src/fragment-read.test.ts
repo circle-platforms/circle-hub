@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, globSync } from 'node:fs';
+import { relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
-import { AXES } from '../contracts/generated/vocabulary.ts';
+import { AXES } from '../generated/vocabulary.ts';
 
 test('fragment grades and provenance implement integrator decision 36', () => {
   assert.deepEqual(AXES.fragment_read.values, [
@@ -16,6 +18,13 @@ test('fragment grades and provenance implement integrator decision 36', () => {
     { code: 'unavailable', label: '暂时读不到' },
     { code: 'integrity_unproven', label: '完整性未证明' },
   ]);
-  const model = readFileSync(new URL('../contracts/model.json', import.meta.url), 'utf8');
+  const model = readFileSync(new URL('../model.json', import.meta.url), 'utf8');
   assert.match(model, /fragment_read[^\n]*决定 36/);
+});
+
+test('the fragment vocabulary pin is included by the unit test runner', () => {
+  const root = fileURLToPath(new URL('../../', import.meta.url));
+  const scripts = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).scripts;
+  const patterns = [...scripts['test:unit'].matchAll(/"([^" ]+\.test\.ts)"|(tools\/[^ ]+\.test\.ts)/g)].map((m: RegExpMatchArray) => m[1] ?? m[2]);
+  assert.ok(patterns.some((pattern: string) => globSync(pattern, { cwd: root }).includes(relative(root, fileURLToPath(import.meta.url)))));
 });

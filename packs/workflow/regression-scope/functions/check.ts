@@ -1,3 +1,4 @@
+import { CHANGE_KIND } from './generated/vocabulary.ts';
 import type { ChangeKind, Verdict, Reason as UnknownReason } from '../../../../contracts/generated/vocabulary.ts';
 // Pack checks. in_scope: one support per case, data holding the reasons (each only the detail index and the change
 // kind); a scope is not a defect, so a well-formed item never refutes. uncovered_changes: first the whole command diff
@@ -63,8 +64,9 @@ function reasonsOf(item: Item, details: DetailRow[]): ParsedReason[] | null {
   const out: ParsedReason[] = [];
   for (const raw of value) {
     if (!isRecord(raw) || typeof raw.detail !== 'number' || !Number.isInteger(raw.detail) || raw.detail < 0 || raw.detail >= details.length) return null;
-    if (raw.change !== 'added' && raw.change !== 'modified' && raw.change !== 'removed') return null;
-    out.push({ detail: raw.detail, change: raw.change });
+    const change=CHANGE_KIND.find(kind=>kind===raw.change);
+    if(change===undefined)return null;
+    out.push({ detail: raw.detail, change });
   }
   return out;
 }
@@ -96,8 +98,11 @@ function pathNotes(value: unknown): Array<{ path: string; change: Extract<Change
   if (!Array.isArray(value)) return null;
   const out: Array<{ path: string; change: Extract<ChangeKind, Extract<ChangeKind, Extract<ChangeKind, 'added' | 'modified'>>> }> = [];
   for (const raw of value) {
-    if (!isRecord(raw) || typeof raw.path !== 'string' || (raw.change !== 'added' && raw.change !== 'modified')) continue;
-    out.push({ path: raw.path, change: raw.change });
+    if (!isRecord(raw) || typeof raw.path !== 'string') continue;
+    const change=CHANGE_KIND.find(kind=>kind===raw.change);
+    if(change===undefined)continue;
+    if(change!=='added' && change!=='modified')continue;
+    out.push({ path: raw.path, change });
   }
   out.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   return out;
@@ -178,7 +183,7 @@ function diffSummaries(subject: unknown): Outcome[] {
     return `命令差共 ${cut} 条（影响视图被截断，这 ${total} 条是列出的部分；${which}路径、变更种类、后一构建用例数）：`;
   };
   const rows = details.slice(0, MAX_DIFF_ROWS).map((row) => {
-    const label = row.change === 'added' || row.change === 'removed' || row.change === 'modified' ? CHANGE_LABEL[row.change] : row.change;
+    const label = (CHANGE_KIND as readonly string[]).includes(row.change) ? CHANGE_LABEL[row.change as ChangeKind] : row.change;
     const out = row.change === 'removed' || (!includeAdded && row.change === 'added') ? '（不进范围）' : '';
     return `- ${row.path} ${label} ${row.cases} 条${out}`;
   });

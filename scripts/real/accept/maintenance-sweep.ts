@@ -68,4 +68,3 @@ export default function scenario(gold: SweepGold): Scenario {
     },
   };
 }
-
