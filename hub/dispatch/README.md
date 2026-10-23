@@ -97,7 +97,7 @@ version 的单个提取值须逐字等于锁定构建的名字、基础名或知
 
 结果先核远端身份及 S，不符整份不采用并冻结。每个输入条目只取唯一对应的报告，额外、缺失、重复或不完整条目不给动态判决。目标原样词按定义映射，另存 reported_terminal，不能冒充 Hub 的事实。
 
-`result.request_id/log/log_stale/closing_marker/sessions` 分别声明结果请求回显、每条日志、过期标记、字面收尾标记和会话位置。动态 pass/fail 要求：结果归属前提在当前版本有效；请求、远端编号、S 相符；通道和条目完整唯一；日志明确不过期且含收尾标记；本次同租约逐座位观察通过；围栏和租约连续性没有中断。任何一项不足都记 no_verdict、integrity_unproven，列 missing_facts 和补证动作。
+`result.request_id/log/closing_marker/sessions` 分别声明结果请求回显、每条日志、字面收尾标记和会话位置。动态 pass/fail 要求：结果归属前提在当前版本有效；请求、远端编号、S 相符；通道和条目完整唯一；唯一归属目录的日志含收尾标记；本次同租约逐座位观察通过；围栏和租约连续性没有中断。任何一项不足都记 no_verdict、integrity_unproven，列 missing_facts 和补证动作。
 
 此外 `result.ownership: {pointer, value, reason}` 声明该结果回答的归属字段、唯一归属的精确目标取值和原因字段。只有当前结果明确等于这个正面取值，且版本归属前提有效，才满足 owned；缺字段、否定值或未登记值都不通过。运行结果保存这一项的观察和原因，不把版本认证当成本次唯一归属的替代。缺唯一归属时，下一步是具名管理员检查原派发日志、收集器目录和保留证据，恢复归属或明确登记该版本的能力缺口；重复读取本身不能恢复已丢失的归属。
 
@@ -151,3 +151,16 @@ conformance 在同执行器/目标/端点及物理资源范围事务预留，提
 派发登记要求非空 refused_tools 和逐座位 probes，缺失时不得提交；缺探测的执行路径也返回不通过。新增 probes.devices 声明清单中的设备数组位置，预检按对象身份核设备全集与座位选中对象一一对应，数量相等仍不能重复选中同一台，不能遗漏清单设备。此指针缺失的旧定义仍可读，但不具备派发登记。合成夹具也完整提供清单设备、受限权限目录和同租约探测，不靠关闭准入保护通过其他测试。
 
 Needs：hub-device-run 分支的 scripts/real/accept/device-run.ts 尚不在本工作树；合并时入口第 0 步还应独立比较 probes.seats 与清单设备数并检查拒绝工具非空。核心登记和实际派发已分别拒绝缺声明与不完整设备覆盖，不依赖脚本替它守边界。
+
+### pi 复核第 8 条
+
+动态层删除独立的 fresh 格，不再把 result.log_stale 的 false 当成新鲜度观察；该声明只为旧定义可读而保留，不参与判定。当前网关在派发目录归属模式下的 log_stale 是常量，不证明文件时间或日志新鲜度。
+
+| 格 | 依据 |
+| --- | --- |
+| owned | 当前版本的归属认证，加本份结果 result.ownership 指针等于声明的唯一归属值 |
+| request / remote / digest | result.request_id、result.id、result.sha256 与冻结意图、原回执一致 |
+| complete / unique | result.complete、items 和 item_id，逐一核输入条目数量与唯一性 |
+| closed | 本次唯一归属目录日志 result.log 含声明的 closing_marker |
+| device | 同租约逐座位探测通过且租约摘要与原意图一致 |
+| continuity | Hub 持有租约未换身份、围栏不倒退且未过期，远端心跳无中断 |
