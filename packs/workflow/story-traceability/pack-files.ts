@@ -14,10 +14,10 @@ export const PACK_DIR = fileURLToPath(new URL('./', import.meta.url));
 export const IDENTITY = {
   schema: 'pack@1',
   id: 'story-traceability',
-  version: '1.0.2',
+  version: '1.0.3',
   kind: 'workflow',
   title: '需求追溯矩阵',
-  description: '用户给出的需求编号或管理员配置的构建记录需求范围到已索引用例的矩阵；只核验事实，保留原样状态和阶段，只报告完整索引覆盖内的事实，部分视图拒绝，不绑定产品线',
+  description: '用户给出的需求编号或管理员配置的构建记录需求范围到已索引用例的矩阵；只核验事实，保留原样状态和阶段，按请求编号报告已列出的确定命中与条目下限，仅拒绝无法判断的编号，不绑定产品线',
 } as const;
 
 /**

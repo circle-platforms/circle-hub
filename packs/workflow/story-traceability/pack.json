@@ -1,15 +1,15 @@
 {
   "schema": "pack@1",
   "id": "story-traceability",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "kind": "workflow",
   "title": "需求追溯矩阵",
-  "description": "用户给出的需求编号或管理员配置的构建记录需求范围到已索引用例的矩阵；只核验事实，保留原样状态和阶段，只报告完整索引覆盖内的事实，部分视图拒绝，不绑定产品线",
+  "description": "用户给出的需求编号或管理员配置的构建记录需求范围到已索引用例的矩阵；只核验事实，保留原样状态和阶段，按请求编号报告已列出的确定命中与条目下限，仅拒绝无法判断的编号，不绑定产品线",
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "d1887fb8448d632565f8379281fa46fc00a052dde9171ca71371747f7fe20153",
-      "size": 2292
+      "sha256": "8093bc7796d7c1d114203bc4741fb58f6989a038748307304e247c71fa3b97b9",
+      "size": 2440
     },
     {
       "path": "checks.json",
@@ -18,13 +18,13 @@
     },
     {
       "path": "functions/check.ts",
-      "sha256": "70fa18d8ad150a7beed82e347cc5e55a723a22cae56f2009e66e879508a05113",
-      "size": 5622
+      "sha256": "d9a7a741636ad9f767165953c851b199a702d1af5e7f3ba2b592865881ebc25f",
+      "size": 5823
     },
     {
       "path": "functions/counts.ts",
-      "sha256": "da3f24e23e22d66123bd87ae832d084ca9d9a94e373d2e4b390e7f6183080318",
-      "size": 2607
+      "sha256": "2417e0eacc9e960bd574444f6fa676bed5c95dedfdd99fc7a0b22cf0fa4e750f",
+      "size": 2613
     },
     {
       "path": "functions/expected.ts",
@@ -48,8 +48,8 @@
     },
     {
       "path": "functions/project.ts",
-      "sha256": "d5035a38d9b86c04683fdab18e3f9df7864cb8d5fd3ab288d13e876aacdca245",
-      "size": 9942
+      "sha256": "e38a6193867224a515f1fd7ad5b693558e6a4e2b0e86e2f0a40793c7dd657e59",
+      "size": 11048
     },
     {
       "path": "functions/scope.ts",

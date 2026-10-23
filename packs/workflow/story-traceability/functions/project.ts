@@ -9,7 +9,7 @@ import { readIndexView } from './views.ts';
 
 export type Story = { id: string; status: Scalar; stage: Scalar; fields_absent: string[]; title: string | null };
 export type Case = { case: string; title: string; document: string | null; reference: string; stories: string[] | null };
-export type Row = Story & { plm_returned: boolean; plm_responded: boolean; cases: Case[]; references: string[]; build: string; scope: ProvenanceType };
+export type Row = Story & { plm_returned: boolean; plm_responded: boolean; indexed_match_count: number; case_count_lower_bound: boolean; coverage_complete: boolean; cases: Case[]; references: string[]; build: string; scope: ProvenanceType };
 export const validId = (id: string): boolean => /^[1-9][0-9]{0,14}$/.test(normalizeId(id));
 class ProjectionRefusal extends Error {
   readonly fix: string;
@@ -26,8 +26,7 @@ export function projectItems(input: unknown): unknown {
   const read = readIndexView(caseInputs[0], 'cases', { kind: 'case', key: 'stories' });
   if (!read.ok) return fail(read.message, read.fix);
   const view = read.view;
-  const incomplete = view.truncated || view.skipped > 0 || view.missing > 0 || view.cut_keys.length > 0 || view.total_keys !== Object.keys(view.keys).length || view.total_entries !== Object.keys(view.entries).length || view.only !== null;
-  if (incomplete) return fail(`缺少知识根 ${view.root} 的完整需求号索引：截断 ${view.truncated}；未读来源 ${view.skipped}；缺正文 ${view.missing}；裁剪键 ${view.cut_keys.join('、') || '无'}；键 ${Object.keys(view.keys).length}/${view.total_keys}；条目 ${Object.keys(view.entries).length}/${view.total_entries}；来源说明：${view.notes.join('；') || '视图没有提供未读来源标识，需读取该根的来源清单定位'}${view.only ? '；视图仅限指定键' : ''}`, '请管理员按来源说明读取该知识根的来源清单，恢复缺失来源并运行知识同步；消除视图截断或裁剪，重新绑定完整 cases 视图后重跑');
+
 
   const rows = new Map<string, Row>();
   const locations = new Map<string, { source: string; selector: string; slot: string }>();
@@ -38,7 +37,7 @@ export function projectItems(input: unknown): unknown {
     const r = isRecord(record) ? record : null;
     const next: Row = { id, title: r && typeof r.title === 'string' ? r.title : null,
       status: r ? scalar(r.status) : null, stage: r ? scalar(r.stage) : null, fields_absent: r ? absent(r) : [],
-      plm_returned: r !== null, plm_responded: r !== null || source.slot === 'stories' && isRecord(source.model) && Array.isArray(source.model.unread) && source.model.unread.some(value => normalizeId(String(value)) === id), cases: [], references: [`src:${source.sha256}/json@1/${selector}`], build: view.build, scope };
+      plm_returned: r !== null, plm_responded: r !== null || source.slot === 'stories' && isRecord(source.model) && Array.isArray(source.model.unread) && source.model.unread.some(value => normalizeId(String(value)) === id), indexed_match_count: 0, case_count_lower_bound: false, coverage_complete: false, cases: [], references: [`src:${source.sha256}/json@1/${selector}`], build: view.build, scope };
     const previous = rows.get(id);
     if (previous && previous.plm_returned && next.plm_returned && JSON.stringify([previous.status, previous.stage, previous.title, previous.fields_absent]) !== JSON.stringify([next.status, next.stage, next.title, next.fields_absent])) throw new ProjectionRefusal('同一需求的 PLM 原件内容冲突', '请重新导出一致原件并重新绑定需求来源');
     if (!previous || (!previous.plm_returned && next.plm_returned)) { rows.set(id, next); locations.set(id, { source: source.sha256, selector, slot: source.slot }); }
@@ -76,10 +75,13 @@ export function projectItems(input: unknown): unknown {
   }
   if (rows.size === 0 || rows.size > 8000) return fail('需求范围为空或超过 8000 条', '提供非空需求编号列表；超限则分批运行');
   const byId = new Map<string, Map<string, Case>>();
+  const digestsById = new Map<string, Set<string>>();
   for (const [key, digests] of Object.entries(view.keys)) {
     const id = normalizeId(key);
     const bucket = byId.get(id) ?? new Map<string, Case>(); byId.set(id, bucket);
+    const matches = digestsById.get(id) ?? new Set<string>(); digestsById.set(id, matches);
     for (const digest of digests) {
+      matches.add(digest);
       const entry = view.entries[digest]; if (!entry) continue;
       const data = entry.data;
       bucket.set(digest, { case: typeof data.node === 'string' ? data.node : digest, title: typeof data.title === 'string' ? data.title : entry.statement,
@@ -87,11 +89,25 @@ export function projectItems(input: unknown): unknown {
         stories: Object.hasOwn(data, 'stories') ? strings(data.stories) : null });
     }
   }
+  const absenceComplete = view.only === null && view.skipped === 0 && view.missing === 0
+    && view.total_keys === Object.keys(view.keys).length && view.total_entries === Object.keys(view.entries).length;
+  const undetermined: string[] = [];
+  for (const row of rows.values()) {
+    const digests = digestsById.get(row.id) ?? new Set<string>();
+    row.indexed_match_count = digests.size;
+    row.case_count_lower_bound = digests.size > 0 && (view.truncated || view.skipped > 0 || view.missing > 0
+      || view.cut_keys.length > 0 || view.only !== null || view.total_keys !== Object.keys(view.keys).length
+      || view.total_entries !== Object.keys(view.entries).length);
+    row.coverage_complete = digests.size > 0 ? !row.case_count_lower_bound : absenceComplete;
+    if (digests.size === 0 && !absenceComplete) undetermined.push(row.id);
+  }
+  if (undetermined.length) return fail(`缺少需求 ${undetermined.join('、')} 的完整规范化编号检索：知识根 ${view.root}，键 ${Object.keys(view.keys).length}/${view.total_keys}，正文 ${Object.keys(view.entries).length}/${view.total_entries}，未读来源 ${view.skipped}；来源说明：${view.notes.join('；') || '请读取该根的来源清单定位未读来源'}；不能据此判断没有条目`,
+    '先核对这些编号在索引中的原始键写法，可用 only=<原始键> 视图取得命中；未命中仍不能证明不存在。请核心维护人提供按规范化编号匹配的 only= 及完整性标记（见 README Needs），再绑定明确覆盖这些编号的视图；来源确实缺失时由管理员恢复来源并运行知识同步');
   const items: ProjectedItem[] = [...rows.values()].sort((a, b) => Number(a.id) - Number(b.id)).map(row => {
     row.cases = [...(byId.get(row.id)?.values() ?? [])].sort((a, b) => a.case < b.case ? -1 : a.case > b.case ? 1 : (a.reference < b.reference ? -1 : a.reference > b.reference ? 1 : 0));
     const loc = locations.get(row.id)!;
     return { id: row.id, label: shown(`需求 ${row.id}${row.title ? ` ${row.title}` : ''}`),
-      summary: shown(`${row.cases.length ? `${row.cases.length} 个用例` : '无已索引用例（完整视图内）'}；${scopeText(scope)}`),
+      summary: shown(`${row.indexed_match_count ? `${row.case_count_lower_bound ? '至少 ' : ''}${row.indexed_match_count} 个已索引条目` : '无已索引用例（完整视图内）'}；${scopeText(scope)}`),
       location: { slot: loc.slot, source: loc.source, parser: 'json@1', selector: loc.selector }, fields: row as unknown as Record<string, unknown> };
   });
   const facts = { product: view.product, build: view.build, root: view.root, scope, view: { source: view.source, truncated: view.truncated, skipped: view.skipped, missing: view.missing,

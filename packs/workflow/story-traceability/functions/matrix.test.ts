@@ -85,7 +85,7 @@ test('empty raw story arrays contradict a key mapping while omitted raw fields p
 });
 
 test('partial views refuse projection and name the missing facts and recovery action', () => {
-  for (const patch of [{ truncated: true }, { skipped: 1, notes: ['来源 src:synthetic 不可读'] }, { cut_keys: ['21'] }, { total_entries: 3 }]) {
+  for (const patch of [{ total_keys: 4, truncated: true }, { skipped: 1, notes: ['来源 src:synthetic 不可读'] }, { only: ['21'] }, { total_entries: 3 }]) {
     const i = input(); Object.assign(i.inputs[1].model as any, patch);
     const p = project(i) as any; assert.ok(p.error); assert.match(p.error.message, /缺少|不完整/); assert.match(p.error.fix, /知识同步/);
     if ('notes' in patch) assert.match(p.error.message, /src:synthetic/);
@@ -189,4 +189,31 @@ test('every projection refusal conforms to projection-output and retains its own
   const refusal = project({ inputs: [...conflicting.inputs, second] }) as any;
   assert.match(refusal.error.message, /同一需求的 PLM 原件内容冲突/);
   assert.match(refusal.error.fix, /一致原件/);
+});
+
+for (const patch of [{ cut_keys: ['99'], truncated: true }, { cut_keys: ['00021'], truncated: true }, { only: ['00021'], truncated: true }, { total_keys: 99, truncated: true }]) test(`listed matches remain determinate despite ${JSON.stringify(patch)}`, () => {
+  const i = input(['21']); Object.assign(i.inputs[1].model as object, patch);
+  const s = projected(i); const [outcome] = check({ subject: s }) as any[];
+  assert.equal(outcome.verdict, 'support'); assert.match(outcome.statement, /至少 2 个已索引条目/);
+  assert.equal(outcome.data.coverage.complete, false);
+});
+test('complete key and entry listings prove an absent id even when an unrelated key was cut', () => {
+  const i = input(['23']); Object.assign(i.inputs[1].model as object, { cut_keys: ['99'], truncated: true });
+  const s = projected(i); const [outcome] = check({ subject: s }) as any[];
+  assert.equal(outcome.verdict, 'support'); assert.equal(outcome.data.case_count, 0);
+  assert.match(outcome.statement, /没有条目携带需求号 23/);
+});
+test('only the undetermined ids refuse and the fix acknowledges normalized-only matching needs', () => {
+  const i = input(['21', '23']); Object.assign(i.inputs[1].model as object, { total_keys: 99, truncated: true });
+  const refusal = project(i) as any;
+  assert.match(refusal.error.message, /需求 23.*完整/); assert.doesNotMatch(refusal.error.message, /需求 21/);
+  assert.match(refusal.error.fix, /only=/); assert.match(refusal.error.fix, /规范化/);
+  assert.doesNotMatch(refusal.error.fix, /消除视图截断/);
+});
+test('listed digest links without bodies are positive index facts, not an absence claim', () => {
+  const i = input(['21']); const view = i.inputs[1].model as any; view.entries = {};
+  const s = projected(i); const [outcome] = check({ subject: s }) as any[];
+  assert.equal(outcome.verdict, 'support'); assert.equal(outcome.data.indexed_match_count, 2);
+  assert.match(outcome.statement, /至少 2 个已索引条目/);
+  assert.doesNotMatch(outcome.statement, /没有条目携带/);
 });
