@@ -24,7 +24,7 @@ function fixture(){
     config.pairings.push({defect,build:'Demo_1',commands,manual,regression_map:map,document});
   }
   
-  const deps:BatchDeps={now:()=>new Date('2026-10-23T00:00:00Z'),review:async args=>{reviews.push(args);return {complete:true,calls:JSON.stringify({at:'2026-10-23T00:00:00Z',tool:'start_run',run:`run_synthetic_${args[args.indexOf('--prompt')+1].includes('160002')?1:0}`})};},show:async id=>details.get(id),submission:async record=>{records.push(record);return submissions.get(record);},exportOriginal:async(sha,path)=>{const b=originals.get(sha);if(!b)throw new Error('missing synthetic original');writeFileSync(path,b);}};
+  const deps:BatchDeps={assertAdmin:async()=>{},now:()=>new Date('2026-10-23T00:00:00Z'),review:async args=>{reviews.push(args);return {complete:true,calls:JSON.stringify({at:'2026-10-23T00:00:00Z',tool:'start_run',run:`run_synthetic_${args[args.indexOf('--prompt')+1].includes('160002')?1:0}`})};},show:async id=>details.get(id),submission:async record=>{records.push(record);return submissions.get(record);},exportOriginal:async(sha,path)=>{const b=originals.get(sha);if(!b)throw new Error('missing synthetic original');writeFileSync(path,b);}};
   return {root,out,config,deps,records,reviews,details,submissions,originals,close:()=>rmSync(root,{recursive:true,force:true})};
 }
 test('two pairings aggregate counts and select the accepted submission by latest.record, without revealing content',async()=>{
@@ -43,7 +43,7 @@ test('two pairings aggregate counts and select the accepted submission by latest
 });
 test('a root title without the pairing defect is refused without launching the client',async()=>{
   const f=fixture();try{f.config.pairings=f.config.pairings.slice(0,1);f.config.pairings[0].defect='160009';
-    const report=await runBatch(f.config,{out:f.out,endpointArgs:[],token:'synthetic'},f.deps);assert.equal(report.code,1);assert.equal(f.reviews.length,0);assert.match(report.text,/root_defect_mismatch/);
+    const report=await runBatch(f.config,{out:f.out,endpointArgs:[],token:'synthetic'},f.deps);assert.equal(report.code,2);assert.equal(f.reviews.length,0);assert.match(report.text,/root_defect_mismatch/);
   }finally{f.close();}
 });
 test('an iteration without a defect-to-case run is reported separately',async()=>{
@@ -61,7 +61,7 @@ test('the last eligible validation wins, while a later run without a validation 
 test('incomplete index coverage cannot pass a batch',async()=>{
   const f=fixture();try{f.config.pairings=f.config.pairings.slice(0,1);
     const original=f.deps.exportOriginal;f.deps.exportOriginal=async(sha,path)=>{await original(sha,path);const text=readFileSync(path,'utf8');if(text.includes('index-view@1'))writeFileSync(path,text.replace('"truncated":false','"truncated":true'));};
-    const report=await runBatch(f.config,{out:f.out,endpointArgs:[],token:'synthetic'},f.deps);assert.equal(report.code,1);assert.match(report.text,/original_export_or_integrity_defect/);
+    const report=await runBatch(f.config,{out:f.out,endpointArgs:[],token:'synthetic'},f.deps);assert.equal(report.code,1);assert.match(report.text,/export_integrity_mismatch/);
   }finally{f.close();}
 });
 test('CLI refuses usage errors without touching any external dependency',async()=>{
@@ -146,6 +146,7 @@ test('fake child stdout and stderr for every process stay in private pairing evi
         writeFileSync(join(out,'pair.calls.jsonl'),JSON.stringify({at:new Date().toISOString(),tool:'start_run',run:'run_synthetic_0'}));
         return {status:0,stdout:marker,stderr:marker};
       }
+      if(args[1]==='original'&&args[2]==='list'){calls.push('admin');return {status:0,stdout:marker,stderr:marker};}
       if(args[1]==='run'){calls.push('show');return {status:0,stdout:JSON.stringify(f.details.get('run_synthetic_0')),stderr:marker};}
       calls.push('export');writeFileSync(args[args.indexOf('--out')+1],f.originals.get(args[3])!);return {status:0,stdout:marker,stderr:marker};
     },async(_options,requests)=>requests.map(request=>{
@@ -155,10 +156,10 @@ test('fake child stdout and stderr for every process stay in private pairing evi
     const report=await runBatch(f.config,{out:f.out,endpointArgs:[],token:'synthetic'},deps);
     assert.equal(report.code,0);assert.ok(!report.text.includes(marker));assert.ok(!report.text.includes('PRIVATE_SYNTHETIC_TOKEN'));
     assert.equal(report.text.split('\n').filter(line=>line.startsWith('配对 ')).length,1);
-    assert.deepEqual(calls,['review','show','export','export']);
+    assert.deepEqual(calls,['admin','review','show','export','export']);
     const files=(dir:string):string[]=>readdirSync(dir,{withFileTypes:true}).flatMap(entry=>entry.isDirectory()?files(join(dir,entry.name)):[join(dir,entry.name)]);
     const captures=files(f.out).filter(path=>/process-.*\.(stdout|stderr)\.txt$/.test(path));
-    assert.equal(captures.length,8);assert.ok(captures.some(path=>readFileSync(path,'utf8').includes(marker)));
+    assert.equal(captures.length,10);assert.ok(captures.some(path=>readFileSync(path,'utf8').includes(marker)));
     for(const path of captures)assert.equal(statSync(path).mode&0o777,0o600);
   }finally{f.close();}
 });
@@ -171,4 +172,26 @@ test('the negative preparation-step difference is counted by item with positiona
     const details=JSON.parse(readFileSync(join(f.out,'pair-1','details.json'),'utf8'));
     assert.ok(details.positions.some((p:any)=>p.draft===1&&p.step===1&&p.category==='negative_step_rule'));
   }finally{f.close();}
+});
+
+test('every pairing is checked before the first client is launched',async()=>{
+  const f=fixture();try{f.config.pairings[1].commands=join(f.root,'absent.xml');
+    const report=await runBatch(f.config,{out:f.out,endpointArgs:[],token:'synthetic'},f.deps);
+    assert.equal(report.code,2);assert.equal(f.reviews.length,0);assert.match(report.text,/配对 2\/2.*commands/);assert.doesNotMatch(report.text,/absent.xml/);
+  }finally{f.close();}
+});
+test('admin preflight refuses before client work and export permission failures are not Hub defects',async()=>{
+  const f=fixture();try{let clients=0;f.deps.review=async()=>{clients++;throw new Error('PRIVATE_CLIENT');};
+    f.deps.assertAdmin=async()=>{throw new Error('PRIVATE_TOKEN');};
+    const report=await runBatch(f.config,{out:f.out,endpointArgs:[],token:'synthetic'},f.deps);
+    assert.equal(report.code,2);assert.equal(clients,0);assert.match(report.text,/admin_preflight/);assert.equal(report.totals.defects,0);assert.doesNotMatch(report.text,/PRIVATE/);
+  }finally{f.close();}
+});
+test('client and export failures keep their own causes without claiming integrity defects',async()=>{
+  for(const mode of ['client','export']){const f=fixture();try{f.config.pairings=f.config.pairings.slice(0,1);
+    if(mode==='client')f.deps.review=async()=>{throw new Error('PRIVATE_FAILURE');};
+    else f.deps.exportOriginal=async()=>{throw new Error('PRIVATE_FAILURE');};
+    const report=await runBatch(f.config,{out:f.out,endpointArgs:[],token:'synthetic'},f.deps);
+    assert.equal(report.code,1);assert.equal(report.totals.defects,0);assert.match(report.text,mode==='client'?/client_run_failed/:/export_refused/);assert.doesNotMatch(report.text,/PRIVATE/);
+  }finally{f.close();}}
 });

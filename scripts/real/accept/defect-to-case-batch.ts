@@ -6,7 +6,7 @@ import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { REQUIREMENT_STATUS, VERDICT } from '../../../contracts/generated/vocabulary.ts';
 import { regressionDocGold } from '../gold/regression-doc.ts';
-import { object, locatedDrafts, decodeCommandXml } from '../gold/command-domains.ts';
+import { object, locatedDrafts, decodeCommandXml, commandDomains } from '../gold/command-domains.ts';
 import { sha256 } from '../gold/quotes.ts';
 import { recountDuplicates } from '../gold/dup-recount.ts';
 import { parseCallLog } from '../review-circle.ts';
@@ -19,6 +19,7 @@ export interface Pairing {defect:string;build:string;commands:string;manual:stri
 export interface Pairings {product:string;prompt:string;fix_field:string;pairings:Pairing[]}
 export interface BatchOptions {out:string;endpointArgs:string[];token:string;url?:string}
 export interface BatchDeps {
+  assertAdmin(evidenceDir:string):Promise<void>;
   review(args:string[],out:string):Promise<{calls:string;complete:boolean}>;
   show(run:string):Promise<unknown>;
   submission(record:string):Promise<unknown>;
@@ -44,20 +45,32 @@ function gates(c:Comparison) {
 }
 export async function runBatch(config:Pairings,options:BatchOptions,deps:BatchDeps):Promise<{code:number;text:string;totals:Record<string,number>}> {
   validatePairings(config);
+  const prepared=[];
+  for(const [position,pair] of config.pairings.entries()){
+    let field='commands',cause='pairing_input_invalid';
+    try{
+      const commandBytes=readFileSync(outsideGit(pair.commands)),xml=decodeCommandXml(commandBytes);commandDomains(xml);
+      field='manual';const manual=readFileSync(outsideGit(pair.manual));
+      field='regression_map';const mapBytes=readFileSync(outsideGit(pair.regression_map)),map=JSON.parse(mapBytes.toString('utf8'));
+      const gold=regressionDocGold(pair.document,map,{commandTreeXml:xml});
+      if(!gold.defects.includes(pair.defect)){cause='root_defect_mismatch';throw new Error();}
+      field='indexes';for(const path of pair.indexes??[])JSON.parse(readFileSync(outsideGit(path),'utf8'));
+      prepared.push({commandBytes,xml,manual,mapBytes,gold});
+    }catch{return {code:2,text:`配对 ${position+1}/${config.pairings.length}：输入不通过；字段 ${field}；${cause}`,totals:{pairs:config.pairings.length,completed:0,failed:1,defects:0}};}
+  }
   const out=outsideGit(options.out);mkdirSync(out,{recursive:true,mode:0o700});
   if(readdirSync(out).length!==0)throw new Error('output is not empty');chmodSync(out,0o700);
+  const preflightDir=join(out,'pair-1');mkdirSync(preflightDir,{mode:0o700});
+  try{await deps.assertAdmin(preflightDir);}catch{lockEvidence(preflightDir);return {code:2,text:'配对 1：输入不通过；字段 token；admin_preflight',totals:{pairs:config.pairings.length,completed:0,failed:1,defects:0}};}
   const lines:string[]=[],totals:Record<string,number>={pairs:config.pairings.length,completed:0,known_step_rule_items:0,known_simplified_match_items:0,command_gate_pass:0,quote_gate_pass:0,origin_gate_pass:0,duplicate_gate_pass:0,design_gaps:0,defects:0,failed:0,recovery_actions:0,drafts:0,commands:0,domain_support:0,domain_refute:0,domain_unknown:0,quote_support:0,quote_refute:0,quote_unknown:0,paraphrased:0,head_draft:0,head_doc:0,head_shared:0,pair_draft:0,pair_doc:0,pair_shared:0,parameter_same:0,parameter_different:0,parameter_absent:0,expected_verbatim:0,necessary_only:0,expected_branch_affected:0};
   for(const [position,pair] of config.pairings.entries()) {
-    const ordinal=position+1,dir=join(out,`pair-${ordinal}`);mkdirSync(dir,{mode:0o700});
+    const ordinal=position+1,dir=join(out,`pair-${ordinal}`);mkdirSync(dir,{recursive:true,mode:0o700});
     const pairLine=lines.length;
     let category='pairing_originals_missing',seenRuns=0;
     const actions:{position:number;attempt:number;category:string}[]=[],requests:EvidenceQuestion[]=[];
     const performed=(category:string,attempt:number)=>{actions.push({position:actions.length+1,attempt,category});totals.recovery_actions++;};
     try {
-      const commandBytes=readFileSync(outsideGit(pair.commands)),xml=decodeCommandXml(commandBytes),manual=readFileSync(outsideGit(pair.manual));
-      const mapBytes=readFileSync(outsideGit(pair.regression_map)),map=JSON.parse(mapBytes.toString('utf8'));
-      const gold=regressionDocGold(pair.document,map,{commandTreeXml:xml});
-      if(!gold.defects.includes(pair.defect)){category='root_defect_mismatch';throw new Error(category);}
+      const {commandBytes,xml,manual,mapBytes,gold}=prepared[position];
       const prompt=config.prompt.replace(/\{(defect|product|build)\}/g,(_,key:string)=>key==='product'?config.product:pair[key as 'defect'|'build']);
       let selected:any;
       const allRuns=new Map<string,any>();
@@ -65,6 +78,7 @@ export async function runBatch(config:Pairings,options:BatchOptions,deps:BatchDe
       for(let attempt=1;attempt<=2&&!selected;attempt++) {
         const reviewDir=join(dir,`review-${attempt}`);mkdirSync(reviewDir,{mode:0o700});
         const from=deps.now().getTime();
+        category='client_run_failed';
         const review=await deps.review([...options.endpointArgs,'--prompt',prompt,'--out',reviewDir,'--name','pair'],reviewDir);
         const to=deps.now().getTime();lockEvidence(reviewDir);
         if(attempt>1)performed('rerun_unfinished_client_work',attempt);
@@ -96,16 +110,17 @@ export async function runBatch(config:Pairings,options:BatchOptions,deps:BatchDe
       const obtain=async(digest:string,recovery=false):Promise<Uint8Array>=>{
         if(sources.has(digest))return sources.get(digest)!;
         const source=++sourcePosition;
+        let integrityMismatch=false;
         for(let attempt=1;attempt<=2;attempt++) {
           const path=join(dir,`${digest}.attempt-${attempt}`);
           if(recovery||attempt>1)performed('export_original_and_recompute',attempt);
           try {
             await deps.exportOriginal(digest,path);const bytes=readFileSync(path);chmodSync(path,0o600);
-            if(sha256(bytes)!==digest)continue;
+            if(sha256(bytes)!==digest){integrityMismatch=true;continue;}
             renameSync(path,join(dir,digest));sources.set(digest,bytes);return bytes;
           }catch{}
         }
-        category='original_export_or_integrity_defect';
+        category=integrityMismatch?'export_integrity_mismatch':'export_refused';
         requests.push({category:'design_gap',missing_fact:`verified_source_original_${source}`,next_action:'repair_original_export_then_rerun',owner:'Claude'});
         throw new Error(category);
       };
@@ -119,7 +134,7 @@ export async function runBatch(config:Pairings,options:BatchOptions,deps:BatchDe
             submission=JSON.parse(new TextDecoder('utf8',{fatal:true}).decode(bytes));
           } else submission=body;
           if(object(submission)&&submission.run===run.run)break;
-        } catch(error) { if(category==='original_export_or_integrity_defect')throw error; }
+        } catch(error) { if(category==='export_integrity_mismatch'||category==='export_refused')throw error; }
         performed('reread_accepted_submission',attempt);
       }
       if(!object(submission)||submission.run!==run.run){category='submission_identity_mismatch';throw new Error(category);}
@@ -171,7 +186,7 @@ export async function runBatch(config:Pairings,options:BatchOptions,deps:BatchDe
 
       writePrivateJson(join(dir,'details.json'),{pair:ordinal,category:ok?'passed':requests.length?'design_gap':'comparison_defect',positions:[...comparisonDetails(comparison),...(hubOutputMissing?[{category:'hub_output_missing'}]:[])],duplicates:duplicates.details});
     }catch{
-      const definite=['root_defect_mismatch','source_binding_invalid','index_root_mismatch','submission_identity_mismatch','original_export_or_integrity_defect','index_view_schema_or_identity_defect','invalid_run'].includes(category);
+      const definite=['root_defect_mismatch','source_binding_invalid','index_root_mismatch','submission_identity_mismatch','export_integrity_mismatch','index_view_schema_or_identity_defect','invalid_run'].includes(category);
       if(definite)totals.defects++;
       if(!requests.length)requests.push({category:definite?'confirmed_defect':'design_gap',missing_fact:category,next_action:category==='no_defect_to_case_run'||category==='client_work_incomplete'?'complete_client_task_after_automatic_retry':'repair_inputs_or_source_interface_then_rerun',owner:'Claude'});
       totals.design_gaps+=requests.length;totals.failed++;
@@ -215,10 +230,10 @@ export function createBatchDeps(options:BatchOptions,processRunner?:ProcessRunne
   };
   const cli=(args:string[],dir=activeDir)=>{
     if(!dir)throw new Error('no pairing evidence directory');
-    const output=captured(['bin/circle-hub',...args],dir,args[0]==='run'?'run-show':'original-export');
+    const output=captured(['bin/circle-hub',...args],dir,args[0]==='run'?'run-show':args[1]==='list'?'admin-preflight':'original-export');
     if(output.status!==0)throw new Error('hub command failed');return output.stdout;
   };
-  return {now:()=>new Date(),
+  return {assertAdmin:async(dir)=>{cli(['original','list','--limit','1','--external','gold-preflight:'],dir);},now:()=>new Date(),
     review:async(args,out)=>{activeDir=out;const child=captured(['scripts/real/review-circle.ts',...args],out,'review-circle');return {complete:child.status===0,calls:readFileSync(join(out,'pair.calls.jsonl'),'utf8')};},
     show:async(run)=>JSON.parse(cli(['run','show',run,'--json'])),
     submission:async(record)=>{const [reply]=await tools({url:options.url??'http://127.0.0.1:7420/mcp',token:options.token,session:'gold-d2c'},[{tool:'get_nodes',args:{reference:`rec:${record}`}}]);if(reply.isError||!object(reply.structured)||!object(reply.structured.content)||typeof reply.structured.content.text!=='string')throw new Error('submission unavailable');return JSON.parse(reply.structured.content.text);},
@@ -230,7 +245,8 @@ export async function main(argv=process.argv.slice(2),injected?:BatchDeps):Promi
   const endpointArgs:string[]=[],allowed=new Set(['--endpoint-from','--circle-dir','--env-file','--provider','--model','--section','--hub-url','--circle-cli','--timeout-ms']);
   for(let i=0;i<argv.length;i++){if(['--pairings','--out'].includes(argv[i])){i++;continue;}if(!allowed.has(argv[i])||!argv[i+1]||argv[i+1].startsWith('--')){process.stderr.write('用法参数：不通过\n');return 2;}endpointArgs.push(argv[i],argv[++i]);}
   if(!value('pairings')||!value('out')||(!injected&&!process.env.HUB_REAL_TOKEN)){process.stderr.write('用法：--pairings <清单> --out <Git 外空目录>；令牌来自 HUB_REAL_TOKEN\n');return 2;}
-  let config:Pairings;try{config=validatePairings(JSON.parse(readFileSync(outsideGit(value('pairings')!),'utf8')));const target=outsideGit(value('out')!);if(existsSync(target)&&(!lstatSync(target).isDirectory()||readdirSync(target).length!==0))throw new Error('invalid output');}catch{process.stderr.write('配对清单：不通过\n');return 2;}
+  let inputField='--pairings';
+  let config:Pairings;try{config=validatePairings(JSON.parse(readFileSync(outsideGit(value('pairings')!),'utf8')));inputField='--out';const target=outsideGit(value('out')!);if(existsSync(target)&&(!lstatSync(target).isDirectory()||readdirSync(target).length!==0))throw new Error('invalid output');}catch{process.stderr.write(`输入不通过：${inputField}\n`);return 2;}
   if(!injected){
     const mode=value('endpoint-from');
     if(mode!==undefined?(mode!=='circle'||['env-file','provider','section'].some(k=>value(k)!==undefined)):(!value('env-file')||!['qwen','glm'].includes(value('provider')??'')||!value('model'))){process.stderr.write('端点参数：不通过\n');return 2;}
