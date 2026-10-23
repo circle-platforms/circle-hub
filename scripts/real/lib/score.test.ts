@@ -286,6 +286,8 @@ test('closure deleted groups combine only confirmed draft gaps and all document-
  for(const disposition of ['refuted','verified','partial']) {
   const scored=score(gold,draft,{verify:result([item('remaining',req('verification',[judgment(disposition)]))])});
   assert.equal(scored.detections[0].combined,disposition!=='refuted');
+  assert.equal(scored.detections[0].detected,disposition!=='refuted');
+  assert.match(detail(scored), disposition === 'refuted' ? /漏掉/ : /查出/);
   assert.equal(scored.detections[0].confirmed,disposition!=='refuted');
  }
  const answer={cases:[{id:'healthy',codes:[]}],noUniqueId:[{id:'same',count:2,reason:'duplicate'}]};

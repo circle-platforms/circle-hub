@@ -219,7 +219,7 @@ export function score(gold: readonly GoldEntry[], result: ResultLike, options: S
         verify: vNew,
         confirmed: vConfirmed,
         combined: options.verify === undefined ? draft : vConfirmed || vNew,
-        detected: draft || vNew || groupGap,
+        detected: options.verify === undefined ? draft || groupGap : vConfirmed || vNew,
       };
     }
 
