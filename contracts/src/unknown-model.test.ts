@@ -10,11 +10,13 @@ import {accepted,copy,runRecord,summary} from './fixtures.ts';
 import * as pack from './pack.ts';
 import {CheckEntry,ErrorHandlingRow,RequirementTemplate} from './pack.ts';
 import {SkippedItem} from './submission.ts';
+import * as resources from './resources.ts';
+import {ReadProjectionOutput,RouteDeclaration} from './resources.ts';
 import {RangeTable} from './tables.ts';
 import {CheckOutcome} from './tables.ts';
 import {LayerResult} from './validation.ts';
 import * as validation from './validation.ts';
-import {DISPOSITION,EXIT_ACTION,labelOf} from '../generated/vocabulary.ts';
+import {DISPOSITION,ENVIRONMENT,EXIT_ACTION,labelOf} from '../generated/vocabulary.ts';
 
 test('item 4 preserves the disposition code while naming its time-bounded meaning',()=>{
   assert.ok(DISPOSITION.includes('keep_unknown'));
@@ -132,4 +134,28 @@ test('item 8 allows only fact-producing automatic successors with a named runner
   assert.equal(RunRecord.safeParse({...value,predecessor:undefined}).success,false);
   assert.equal(RunRecord.safeParse({...value,runner:undefined}).success,false);
   assert.equal(RunRecord.safeParse({...value,requirements:value.requirements.map(requirement=>({...requirement,accepted_producer:'judgment'}))}).success,false);
+});
+
+
+test('item 9 represents a determinate absent observation separately from a read error',()=>{
+  const absent={code:'SOURCE_ABSENT',system:'synthetic-system',object:'synthetic:record:one',observed_at:due};
+  assert.ok(ReadProjectionOutput.safeParse({artifacts:[],absent}).success);
+  assert.equal(ReadProjectionOutput.safeParse({artifacts:[],absent:{...absent,observed_at:undefined}}).success,false);
+  assert.equal(ReadProjectionOutput.safeParse({error:{code:'SOURCE_UNAVAILABLE',message:'not available'},absent}).success,false);
+  assert.equal(ReadProjectionOutput.safeParse({artifacts:[{name:'content',media_type:'text/plain',text:'found'}],absent}).success,false);
+});
+test('item 9 allows explicit finite pagination and same-origin redirects on read routes',()=>{
+  const route={id:'read',role:'primary',method:'GET',path:'/records',response:'text',max_bytes:1024,read:true,pagination:{max_pages:4},redirects:{same_origin:true,max_hops:2}};
+  assert.ok(RouteDeclaration.safeParse(route).success);
+  assert.equal(RouteDeclaration.safeParse({...route,redirects:{same_origin:false,max_hops:2}}).success,false);
+  assert.equal(RouteDeclaration.safeParse({...route,pagination:{max_pages:0}}).success,false);
+});
+
+
+test('item 9 activates at most one provider of an external type in an environment',()=>{
+  const first={resource:'res_'+'1'.repeat(26),environment:ENVIRONMENT[0],enabled:true,types:['synthetic:record']},second={...first,resource:'res_'+'2'.repeat(26)};
+  assert.equal(resources.ReadResourceRoutingSet.safeParse([first,second]).success,false);
+  assert.ok(resources.ReadResourceRoutingSet.safeParse([first,{...second,enabled:false}]).success);
+  assert.ok(resources.ReadResourceRoutingSet.safeParse([first,{...second,types:['synthetic:other']}]).success);
+  assert.ok(resources.ReadResourceRoutingSet.safeParse([first,{...second,environment:ENVIRONMENT[1]}]).success);
 });

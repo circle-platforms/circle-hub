@@ -233,3 +233,15 @@ event successor must name its predecessor and runner and contain only fact requi
 reader remains supported. The service must prove the same runner and actual root-update event from records, not merely
 trust these shape fields. `RequirementSummary.observation` exposes the declared dynamic observation identity when copied.
 run.ts also changes in hub-read-absence; the integrator must retain both sets of optional historical fields when merging.
+
+### Read absence and routing declarations (task item 9)
+
+`ReadProjectionOutput` can return `artifacts: []` plus `absent: {code: SOURCE_ABSENT, system, object, observed_at, responses?}`.
+It is an observation of a named object, not an error or a permission denial. Found content and incomplete lookup cannot be
+mixed with whole-object absence; the JSON Schema repeats those constraints. The service must verify actual responses,
+permission and timestamps and bind originals before treating it as observed (hub-read-absence's work).
+
+Routes can declare finite pagination and same-origin redirect capacities. Each follow-up is a separately planned, allowed,
+recorded request; the declaration does not enable a hidden transport follow. `ReadResourceRoutingSet` is the activation
+boundary for registry-provided enabled/type/environment facts: different enabled resources cannot claim the same type in
+the same environment. The registry must call it during activation/routing; this task does not alter a real resource.
