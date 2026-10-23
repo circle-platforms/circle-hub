@@ -554,9 +554,8 @@ export function checkDuplicate(input: unknown): CheckOutcome[] {
   // A hand-built compact index may predate the field; undefined means un-narrowed.
   const only = compactIndex.only ?? null;
   const capped = new Set((compactIndex.cappedKeys ?? []).map(normalizeCommand));
-  // Decidable: some key of the draft's command set sits in only AND is not one of the possibly-cut keys. A key that
-  // listed exactly the per-key cap (2000) may have been truncated by the core (a prose note only), so a draft whose
-  // whole intersection falls on capped keys stays unknown.
+  // Decidable: some key of the draft's command set sits in only AND is not cut. cut_keys is authoritative;
+  // for older views only, a key at the per-key cap is possibly cut. An intersection entirely on such keys stays unknown.
   const keyState = (cmds: readonly string[]): { covered: boolean; onlyCapped: boolean } => {
     const normalized = [...new Set(cmds.map(normalizeCommand).filter((c) => c !== ''))];
     if (normalized.length === 0) return { covered: only === null, onlyCapped: false };
@@ -630,13 +629,13 @@ export function checkDuplicate(input: unknown): CheckOutcome[] {
       ...own,
     });
   }
-  // Drafts whose whole intersection with only sits on possibly-cut keys: unknown (the cap may have hidden a duplicate).
+  // An intersection entirely on cut or possibly-cut keys cannot prove absence of duplicates.
   if (cappedOnly.size > 0) {
     const sample = [...cappedOnly][0] as { title?: string };
     outcomes.push({
       verdict: 'unknown',
       reason: 'integrity_unproven',
-      statement: `起草用例“${sample.title ?? '（无标题）'}”的命令所在键的条目正好列到每键上限 ${2000} 个，可能被截断，无法断定未重复`,
+      statement: `起草用例“${sample.title ?? '（无标题）'}”的命令所在键受每键上限影响，已截断或无法证明未截断，无法断定未重复`,
       grounds: [],
       tier: 'advisory',
       ...own,

@@ -15,12 +15,15 @@
 | `tables/` | 检查表定义：`commands.json`（`catalog@1` 解释器表）与 `quotes.json`（`quote@1` 解释器表） |
 | `samples/` | 12 个样例（`pack-sample@1`，positive 与 negative 各 6 个），覆盖所有 6 项检查 |
 | `examples/` | 合成示例：`start-run.json`、`submission.json` 与 `submit-result.json` |
-| `pack.json` | 任务包清单（`defect-to-case@1.4.0`，由 packaging.ts / pack-files.ts 签名，包含所有包内文件的相对路径、SHA-256 与文件大小） |
+| `pack.json` | 任务包清单（`defect-to-case@1.5.0`，由 packaging.ts / pack-files.ts 签名，包含所有包内文件的相对路径、SHA-256 与文件大小） |
 
 非任务包发布文件：`api.ts`（外部包与工具接口）、`pack-files.ts`（打包与签名工具）、`README.md`、测试文件（`*.test.ts`）与测试辅助目录（`testing/`）。
 
 ## 版本说明
 
+- **1.5.0**：
+  - 紧凑索引逐字段优先读取视图的 `only` 和 `cut_keys`，与绑定 URI 或条目数量冲突时以字段为准，空数组同样有效。仅缺失字段沿用旧视图的 URI / 每键 2000 条上限推断，并在 `notes` 写明“按 URI 和上限推断”；存在但形状无效的字段不回退，也不证明完整。
+  - `cut_keys: []` 不再把恰好 2000 条误判为截断；明确截断的键即使少于 2000 条，未见重复仍记未知，已见重复仍驳回。
 - **1.4.0**：
   - 查重的命令比较改为按命令头：草稿每条命令行先按锁定构建的命令目录解析出命令头（词序列里最长的、在目录里存在的前缀），收窄范围判定和按命令集合分桶都按命令头集合算。此前拿整条命令行（带参数）去和索引的命令路径键比，两边永远对不上，收窄判定把每条草稿都记未知、分桶也永远落空。
   - `checks.json` 的 `duplicate_check` 声明 `catalog: "commands@1"`，检查函数照 `hub/rules/check.ts` 的 `catalogEntries` 写法拿到目录条目。解析不出命令头的行，命令检查本来就会驳回；查重把这条草稿记未知并写明原因。
@@ -77,7 +80,7 @@
 
 ```bash
 # 运行 defect-to-case 单元测试与端到端集成测试
-node --test --test-concurrency=2 "packs/workflow/defect-to-case/**/*.test.ts"
+node --test --test-concurrency=1 "packs/workflow/defect-to-case/**/*.test.ts"
 
 # 执行 TypeScript 静态类型检查
 npx tsc --noEmit
@@ -86,4 +89,4 @@ npx tsc --noEmit
 
 ## 需要别的包做的事
 
-- 索引视图应当把 `only` 和被截断的键作为机器可读的字段给出：现在视图的回答里既没有 `only_keys` 字段，也没有「only=…」的说明，收窄只能从绑定的 URI 的查询参数里读；每个键的条目上限（2000）截断也只有一句 prose 说明，只能靠「正好列到 2000」推断。这两条都是核心（hub/knowledge 的视图）要给的，给了以后这个包可以不再推断。
+- **已做（1.5.0）**：核心视图已提供 `only` 和 `cut_keys`，本包已按字段消费；仅对缺少相应字段的老视图按 URI 和上限推断，并在说明里披露。

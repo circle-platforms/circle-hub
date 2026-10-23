@@ -1,7 +1,6 @@
 // The decidability rules of deduplication on a narrowed index, at real scale. Three sources of truth:
-// - The narrowing comes from the bound URI's only=… parameter (comma-separated, each percent-decoded, a trailing
-//   @<64-hex> or @<hex>..<hex> revision stripped first); the view's own output carries no only field (README Needs).
-// - The core caps every key at 2000 entries and says so in prose only: a key listing exactly the cap may have been cut.
+// - only and cut_keys come from the source view when present. Legacy views fall back to URI parsing
+//   and the 2000-entry cap, with an explicit inference note.
 // - Case entries carry no expected-text field: the comparison rests on the command-set key, the negative flag and the
 //   title. A draft is decidable when some key of its command set sits in only and not every such key is possibly cut.
 import assert from 'node:assert/strict';
@@ -85,17 +84,17 @@ describe('dedup narrowed by the bound URI', () => {
   });
 });
 
-describe('the per-key cap of the core (2000 entries)', () => {
-  /** A view whose single key lists exactly MAX_INDEX_PER_KEY digests: possibly cut (a prose note is all the core gives). */
-  const cappedView = (): IndexView => {
-    const digests = Array.from({ length: MAX_INDEX_PER_KEY }, (_, i) => String(i + 1).padStart(64, '0'));
-    const entries: IndexView['entries'] = {};
-    for (const digest of digests) {
-      entries[digest] = { ...SYNTHETIC_INDEX_VIEW.entries[HEX2]!, entry: digest, data: { ...SYNTHETIC_INDEX_VIEW.entries[HEX2]!.data } };
-    }
-    return { ...SYNTHETIC_INDEX_VIEW, keys: { 'show health detail': digests }, entries, total_keys: 1, total_entries: digests.length };
-  };
+/** A legacy view with exactly MAX_INDEX_PER_KEY digests under one key: possibly cut. */
+const cappedView = (): IndexView => {
+  const digests = Array.from({ length: MAX_INDEX_PER_KEY }, (_, i) => String(i + 1).padStart(64, '0'));
+  const entries: IndexView['entries'] = {};
+  for (const digest of digests) {
+    entries[digest] = { ...SYNTHETIC_INDEX_VIEW.entries[HEX2]!, entry: digest, data: { ...SYNTHETIC_INDEX_VIEW.entries[HEX2]!.data } };
+  }
+  return { ...SYNTHETIC_INDEX_VIEW, keys: { 'show health detail': digests }, entries, total_keys: 1, total_entries: digests.length };
+};
 
+describe('the per-key cap of the core (2000 entries)', () => {
   it('the compact index names the key as possibly cut and the check keeps such drafts unknown', () => {
     const compact = buildCompactIndex(cappedView(), 64 * 1024 * 1024, NARROWED);
     assert.ok(isCompactIndex(compact));
@@ -141,4 +140,96 @@ describe('entries without a commands field', () => {
     assert.equal(outcomes[0].verdict, 'unknown');
     assert.match(outcomes[0].statement, /commands 字段/);
   });
+});
+
+
+describe('index metadata fields take precedence over URI and cap inference', () => {
+  const draftOnKey = { ...goodDraft(), steps: [{ command: 'show health detail', note: '查看' }] };
+  const duplicate = { ...draftOnKey, title: '健康检查详细信息查看' };
+  const outcome = (view: unknown, external: string, draft = draftOnKey) => {
+    const compact = buildCompactIndex(view, 64 * 1024 * 1024, external);
+    return { compact, result: checkDuplicate(inputOf({ drafts: [draft], indexed_cases: compact }))[0] };
+  };
+
+  it('uses only from the view even when the URI names another command: support, refute and unknown', () => {
+    const view = { ...SYNTHETIC_INDEX_VIEW, only: ['show health detail'], cut_keys: [] };
+    const external = 'knowledge:index:p:b?kind=case&key=commands&only=widget%20health%20interval';
+    const good = outcome(view, external);
+    assert.deepEqual(good.compact.only, ['show health detail']);
+    assert.deepEqual(good.compact.cappedKeys, []);
+    assert.equal(good.result.verdict, 'support');
+    assert.ok(!good.compact.notes.some(note => note.includes('按 URI 和上限推断')));
+    assert.equal(outcome(view, external, duplicate).result.verdict, 'refute');
+    const outside = { ...draftOnKey, steps: [{ command: 'widget health interval 60', note: '设置' }] };
+    assert.equal(outcome(view, external, outside).result.verdict, 'unknown');
+  });
+
+  it('does not widen a view to a command named only by the URI', () => {
+    const view = { ...SYNTHETIC_INDEX_VIEW, only: ['widget health interval'], cut_keys: [] };
+    const checked = outcome(view, NARROWED);
+    assert.deepEqual(checked.compact.only, ['widget health interval']);
+    assert.equal(checked.result.verdict, 'unknown');
+    assert.equal(outcome(view, NARROWED, duplicate).result.verdict, 'unknown');
+  });
+
+  it('uses fields with no narrowing parameter in the URI, including an explicit empty only list', () => {
+    const external = 'knowledge:index:p:b?kind=case&key=commands';
+    const view = { ...SYNTHETIC_INDEX_VIEW, truncated: true, only: ['show health detail'], cut_keys: [] };
+    assert.equal(outcome(view, external).result.verdict, 'support');
+    assert.equal(outcome({ ...view, only: [] }, NARROWED).result.verdict, 'unknown');
+  });
+
+  it('an explicit empty cut_keys keeps a key with exactly 2000 entries decidable', () => {
+    const view = { ...cappedView(), only: ['show health detail'], cut_keys: [] };
+    const checked = outcome(view, NARROWED);
+    assert.deepEqual(checked.compact.cappedKeys, []);
+    assert.equal(checked.result.verdict, 'support');
+    assert.equal(outcome(view, NARROWED, duplicate).result.verdict, 'refute');
+  });
+
+  it('an explicitly cut key is unknown below 2000 entries, but a visible duplicate is still refuted', () => {
+    const view = { ...SYNTHETIC_INDEX_VIEW, only: ['show health detail'], cut_keys: ['show health detail'] };
+    const checked = outcome(view, NARROWED);
+    assert.deepEqual(checked.compact.cappedKeys, ['show health detail']);
+    assert.equal(checked.result.verdict, 'unknown');
+    assert.match(checked.result.statement, /每键上限/);
+    assert.doesNotMatch(checked.result.statement, /正好列到/);
+    assert.equal(outcome(view, NARROWED, duplicate).result.verdict, 'refute');
+  });
+
+  it('old views infer URI narrowing and per-key cuts, and disclose the inference', () => {
+    const good = outcome(SYNTHETIC_INDEX_VIEW, NARROWED);
+    assert.equal(good.result.verdict, 'support');
+    assert.deepEqual(good.compact.only, ['show health detail']);
+    assert.ok(good.compact.notes.some(note => note.includes('按 URI 和上限推断')));
+    const cut = outcome(cappedView(), NARROWED);
+    assert.equal(cut.result.verdict, 'unknown');
+    assert.deepEqual(cut.compact.cappedKeys, ['show health detail']);
+    assert.ok(cut.compact.notes.some(note => note.includes('按 URI 和上限推断')));
+    assert.equal(outcome(SYNTHETIC_INDEX_VIEW, NARROWED, duplicate).result.verdict, 'refute');
+  });
+
+  it('falls back separately for each absent field', () => {
+    const only = outcome({ ...cappedView(), only: ['widget health interval'] }, NARROWED);
+    assert.deepEqual(only.compact.only, ['widget health interval']);
+    assert.deepEqual(only.compact.cappedKeys, ['show health detail']);
+    assert.equal(only.result.verdict, 'unknown');
+    assert.ok(only.compact.notes.some(note => note.includes('按 URI 和上限推断')));
+    const cut = outcome({ ...cappedView(), cut_keys: [] }, NARROWED);
+    assert.equal(cut.result.verdict, 'support');
+    assert.deepEqual(cut.compact.cappedKeys, []);
+    assert.deepEqual(cut.compact.only, ['show health detail']);
+    assert.ok(cut.compact.notes.some(note => note.includes('按 URI 和上限推断')));
+  });
+
+  it('present malformed metadata cannot borrow the URI or claim completeness', () => {
+    for (const fields of [{ only: null, cut_keys: [] }, { only: ['show health detail'], cut_keys: [123] }]) {
+      const checked = outcome({ ...SYNTHETIC_INDEX_VIEW, ...fields }, NARROWED);
+      assert.equal(checked.compact.complete, false);
+      assert.equal(checked.result.verdict, 'unknown');
+      assert.ok(checked.compact.notes.some(note => note.includes('字段形状无效')));
+      assert.ok(!checked.compact.notes.some(note => note.includes('按 URI 和上限推断')));
+    }
+  });
+
 });
