@@ -5,6 +5,7 @@
 // support; known but of another line is an advisory violation (the document names a build of a line it was not located
 // into); not known is an unknown — the knowledge base lists only the builds of the build site, never a violation. No
 // located line, or a line without any known build, is an unknown with the reason, never a pass.
+import { lineKey, lineOfVersion } from './convention.ts';
 import { locate, locateInputOf } from './locate.ts';
 import { fold, guarded, internalError, isRecord, isReference } from './text.ts';
 import type { CheckOutcome, ContextBuild, LocateSubject } from './types.ts';
@@ -173,7 +174,13 @@ export function candidatesOutcomes(subject: unknown): CheckOutcome[] {
     try {
       const answer = locate(locateInputOf(id, value.fields, context));
       const candidates = answer.line === null ? [] : orderCandidates(builds.filter((b) => b.line === answer.line).map(candidateOf));
-      out.push(candidatesOutcome(id, grounds, pointer, answer.line, builds));
+      const lines = [...new Set(answer.version_values.map(v => lineKey(lineOfVersion(v.version))))];
+      if (lines.length > 1) {
+        for (const line of lines) {
+          const outcome = candidatesOutcome(id, grounds, pointer, line, builds);
+          out.push({ ...outcome, statement: `目录版本层自相矛盾，分别列出候选；${outcome.statement}` });
+        }
+      } else out.push(candidatesOutcome(id, grounds, pointer, answer.line, builds));
       for (const name of answer.build_names) out.push(writtenOutcome(id, grounds, pointer, name, answer.line, builds, candidates));
     } catch (error) {
       out.push({ verdict: 'unknown', reason: 'check_error', statement: `构建候选检查出错（任务包缺陷）：${internalError(error)}`, grounds, tier: TIER, item: id, pointer });

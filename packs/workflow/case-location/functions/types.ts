@@ -65,6 +65,8 @@ export type LocateAnswer = {
   product_line: string | null;
   product_name: string | null;
   version: string | null;
+  /** Every version-level value with its original label and one-based depth below the root. */
+  version_values: Array<{ version: string; level: number; label: string }>;
   /** Build date, eight digits as written (build20260315). */
   build: string | null;
   patch: string | null;

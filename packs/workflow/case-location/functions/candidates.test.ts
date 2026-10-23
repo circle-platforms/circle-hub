@@ -191,3 +191,13 @@ describe('candidatesOutcomes', () => {
     assert.match(written[0].statement, /写出的构建名 Rel_APV_10_6_1_58 是候选 Rel_NSAE_10_6_1_58 所依据的构建/);
   });
 });
+
+it('conflicting version levels list both lines separately with the conflict first', () => {
+  const outcomes = candidatesOutcomes(subjectOf([item('synthetic', '合成文档', ['060：10.6.1', '061：10.7.4'])]));
+  const candidates = outcomes.filter(outcome => outcome.data?.kind === 'candidates');
+  assert.deepEqual(candidates.map(outcome => outcome.data?.line), ['10.6.1', '10.7.4']);
+  for (const outcome of candidates) {
+    assert.match(outcome.statement, /^目录.*自相矛盾/);
+    assert.ok((outcome.data?.candidates as unknown[]).length > 0);
+  }
+});

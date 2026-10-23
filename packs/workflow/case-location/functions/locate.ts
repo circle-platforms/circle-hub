@@ -115,6 +115,7 @@ type Level = {
   labels: ReadonlySet<number>;
   /** Why the level contradicts itself, or null. */
   disagreement: Doubt | null;
+  values: Array<{ at: number; value: string }>;
 };
 
 /**
@@ -125,7 +126,7 @@ function versionLevel(labels: readonly Label[], conv: Convention): Level {
   const pure = labels.map(pureVersionOf);
   const firstPure = pure.findIndex((v) => v !== null);
   const end = conv.trainAt >= 0 ? conv.trainAt : conv.lineNodes.length > 0 ? conv.lineNodes[0].at : firstPure;
-  if (end < 0) return { end: -1, value: null, labels: new Set(), disagreement: null };
+  if (end < 0) return { end: -1, value: null, labels: new Set(), disagreement: null, values: [] };
   const values: Array<{ at: number; value: string }> = [];
   for (let at = 0; at <= end; at++) {
     const node = conv.lineNodes.find((n) => n.at === at);
@@ -134,7 +135,7 @@ function versionLevel(labels: readonly Label[], conv: Convention): Level {
     else if (pure[at] !== null) values.push({ at, value: pure[at]! });
   }
   for (const n of conv.lineNodes) if (n.at > end) values.push({ at: n.at, value: n.line });
-  const level = { end, value: values[0].value, labels: new Set(values.map((v) => v.at)) };
+  const level = { end, values, value: values[0].value, labels: new Set(values.map((v) => v.at)) };
   if (unique(values.map((v) => lineOf(v.value))).length <= 1) return { ...level, disagreement: null };
   const distinct = (list: readonly string[]): string[] => list.filter((v, k) => list.findIndex((w) => lineOf(w) === lineOf(v)) === k);
   const lines = distinct(conv.lineNodes.map((n) => n.line));
@@ -323,7 +324,10 @@ export function locateItem(input: LocateInput): { answer: LocateAnswer; judgment
       // Against every value the tree gives at the version level: the version it reports, the line node and the train.
       const tree = unique([version, conv.lineAt >= 0 ? conv.line : null, conv.trainVersion].filter((v): v is string => v !== null));
       const against = tree.find((v) => !versionsAgree(declared.line!, v));
-      if (against !== undefined) conflicts.push({ field: 'line', declared: declared.line, tree: against });
+      if (level.disagreement !== null) {
+        const matching = level.values.filter(v => versionsAgree(declared.line!, v.value)).map(v => v.value);
+        note(notes, `调用方声明的版本线 ${declared.line} ${matching.length ? `与 ${unique(matching).join('、')} 一致` : '与版本层的每个值都不一致'}，声明不消除目录版本层的冲突`);
+      } else if (against !== undefined) conflicts.push({ field: 'line', declared: declared.line, tree: against });
       else note(notes, `调用方声明的版本线 ${declared.line} 与目录给出的 ${listOf(tree)} 一致`);
     } else {
       line = declared.line;
@@ -364,6 +368,7 @@ export function locateItem(input: LocateInput): { answer: LocateAnswer; judgment
     product_line: productLine,
     product_name: productName,
     version,
+    version_values: level.values.map(v => ({ version: v.value, level: v.at + 1, label: ancestors[v.at] })),
     build: build.value,
     patch: patch.value,
     line,
@@ -397,6 +402,11 @@ export function locate(input: LocateInput): LocateAnswer {
 
 function judgmentOf(answer: LocateAnswer, doubts: readonly Doubt[], fromTree: boolean): Judgment {
   const basis = fromTree ? `（${FOLDERS_BASIS}）` : '';
+  if (unique(answer.version_values.map(v => lineOf(v.version))).length > 1) {
+    const why = doubts.find(d => d.text.includes('版本层自相矛盾'));
+    const declaration = answer.notes.filter(n => n.startsWith('调用方声明的版本线')).join('；');
+    return { verdict: 'refute', code: 'case-location.version_conflict', statement: `目录版本层自相矛盾：${why?.text ?? answer.version_values.map(v => v.version).join('、')}。${declaration}${declaration ? '；' : ''}下一步由整理敏捷平台目录的人把文档放到一条版本线下，或开始运行时用参数 line 声明（标为声明）。已知${basis}：${described(answer)}`, brief: why?.brief ?? '版本层自相矛盾' };
+  }
   if (answer.conflicts.length > 0) {
     const parts = answer.conflicts.map((c) => (c.field === 'line' ? `版本线 ${c.declared} 与目录给出的版本 ${c.tree} 矛盾` : `产品${quoted(c.declared)}与目录树的根${quoted(c.tree)}矛盾`));
     const brief = answer.conflicts.map((c) => (c.field === 'line' ? `声明的版本线 ${c.declared} 与目录的 ${c.tree} 矛盾` : `声明的产品${quoted(c.declared)}与根${quoted(c.tree)}矛盾`));
@@ -463,7 +473,7 @@ export function described(answer: LocateAnswer): string {
 
 /** The one-line summary of an item that the model reads next to its id and label: the answer, and why it is not a fact. */
 export function summaryOf(answer: LocateAnswer, judgment: Judgment): string {
-  const lead = judgment.verdict === 'support' ? '' : `${judgment.verdict === 'refute' ? '与声明矛盾' : '不确定'}（${judgment.brief}）：`;
+  const lead = judgment.verdict === 'support' ? '' : `${judgment.verdict === 'refute' ? (judgment.code === 'case-location.version_conflict' ? '目录版本层自相矛盾' : '与声明矛盾') : '不确定'}（${judgment.brief}）：`;
   return shown(`${lead}${described(answer)}`, 240);
 }
 
@@ -494,6 +504,7 @@ export function emptyAnswer(id: string, message: string): LocateAnswer {
     product_line: null,
     product_name: null,
     version: null,
+    version_values: [],
     build: null,
     patch: null,
     line: null,
