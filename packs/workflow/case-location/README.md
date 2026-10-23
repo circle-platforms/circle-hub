@@ -300,3 +300,9 @@ staged copy: `node packs/workflow/case-location/pack-files.ts --stage <empty dir
    system's id ranges as a deployment default most of them would be classified and read.
 5. Folder ids: are ids in folder labels below the version level links of every document under them (as read now), and is
    a bare leading number of five digits at the start of a document folder in the module place an id?
+
+## 生成词表与包版本
+
+case-location@1.3.1 改用生成词表的类型及包内运行时快照。包内函数的运行时依赖仍只来自包内文件和已允许的依赖。functions/generated/vocabulary.ts 由 tools/gen-contracts.ts 按本包使用的轴生成，带“生成物，勿手改”文件头；它计入 pack.json 摘要。node tools/gen-contracts.ts --check 同时核对这些快照。词表更新导致包内字节变化时，必须升版并重签清单，不复用已发布版本。
+
+编号范围的 min/max 是 JSON 对象键，不属于 measure 轴；直接读取经校验的输入字段，不携带 measure 快照。

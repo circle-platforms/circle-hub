@@ -1,3 +1,4 @@
+import type { ExecutionHost } from '../../../contracts/generated/vocabulary.ts';
 // start_run (W06): check the arguments, answer a repeated client key, authorize the pack, fix the target, bind the inputs,
 // project the items, bind the expected sources, offer carry-overs, freeze everything in a run record and, for a pack whose
 // requirements are all facts, compute the validation result at once (a production run; the same path serves runs the Hub
@@ -61,7 +62,7 @@ export interface StartRunDetail {
 
 export interface StartMode {
   /** local_circle for a caller's session; hub for a standing obligation the Hub executes (W06 F[1], W09 R[3]). */
-  host: 'local_circle' | 'hub';
+  host: Extract<ExecutionHost, 'local_circle' | 'hub'>;
 }
 
 /** A pack whose requirements are all facts needs no model input: start_run computes its result (production run). */

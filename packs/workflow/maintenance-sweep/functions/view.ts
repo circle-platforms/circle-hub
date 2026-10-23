@@ -1,3 +1,4 @@
+import { ENTRY_KIND, CHANGE_KIND } from './generated/vocabulary.ts';
 // impact-view@1 as this pack reads it. The shape is contracts/src/views.ts; this parser does not import it, because a pack
 // function may load only modules inside the pack. A view that is not that shape is refused, not guessed.
 
@@ -7,8 +8,8 @@ const SHA = /^[0-9a-f]{64}$/;
 const PATH = /^\/(?:[^/@]+(?:\/[^/@]+)*)?$/;
 const TREE = /^tree:[0-9a-f]{64}\/(?:[^/@]+(?:\/[^/@]+)*)?@[0-9a-f]{64}$/;
 const CATALOG = /^[a-z][a-z0-9_.-]*@(?:0|[1-9][0-9]*)$/;
-const KINDS = new Set(['definition', 'behaviour', 'case', 'defect', 'observation']);
-const CHANGES = new Set(['added', 'removed', 'modified']);
+const KINDS = new Set<string>(ENTRY_KIND);
+const CHANGES = new Set<string>(CHANGE_KIND);
 
 export interface Cited {
   entry: string;

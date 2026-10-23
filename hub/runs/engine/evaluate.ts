@@ -3,7 +3,7 @@
 // requirement status, the claims and the partitions. A run-level check gets one subject built from all items, an item check
 // one subject per item; outcomes are assigned to items by their item id and an outcome without an item is a run-level fact.
 import { CORE_VIOLATION_CODES } from '../../../contracts/generated/protocol.ts';
-import type { PermissionRole, Reason, SourceRole } from '../../../contracts/generated/vocabulary.ts';
+import type { FragmentRead, PermissionRole, Reason, SourceRole } from '../../../contracts/generated/vocabulary.ts';
 import type { Claim } from '../../../contracts/src/claim.ts';
 import type { ProtocolError } from '../../../contracts/src/common.ts';
 import { MAX_CHECK_READ_BYTES, type CheckEntry, type RequirementTemplate, type RunContext, type SlotClaim, type SubjectItem } from '../../../contracts/src/pack.ts';
@@ -13,16 +13,16 @@ import type { RequirementResult, ValidationResult } from '../../../contracts/src
 import type { LoadedWorkflow } from '../../ports.ts';
 import { publishCheckMarks } from '../packs/marks.ts';
 import type { Principal } from '../../records/api.ts';
-import { MAX_REFERENCE_LENGTH, parseReference, resolveReference, type RecordReader, type ResolveContext, type SourceReader } from '../../refs/api.ts';
+import { MAX_REFERENCE_LENGTH, parseReference, resolveReference, type ResolveContext } from '../../refs/api.ts';
 import { SandboxError, callPackFunction, runCheck, sourcesFrom, type CatalogView, type CheckOutcome, type SourceView, type UnreadSource } from '../../rules/api.ts';
 import { factClaim, judgmentClaim, rootDigest, statementOf, strongestRole } from './claims.ts';
 import { CHECK_PARALLELISM, type EngineContext } from './deps.ts';
 import { createSubjectBuilder } from './subjects.ts';
 import { describe, fixOf } from './errors.ts';
-import { emptyEvidence, type ExactResult, type ItemEvidence } from './exact.ts';
+import { buildScope, scopeProblem, emptyEvidence, type ExactResult, type ItemEvidence } from './exact.ts';
 import { independenceOf, warrantIndependence, type AuthorOrigin, type ProducerOrigin } from './independence.ts';
 import { partitionItems, type PartitionInput } from './partitions.ts';
-import { identityOf, recordReader, sourceReader } from './readers.ts';
+import { identityOf, principalOf, recordReader, sourceReader } from './readers.ts';
 import { runRequirementOf } from './slots.ts';
 import {
   applyRouting,
@@ -255,37 +255,15 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
       documents: ctx.documents,
     };
   } else {
-    // Hub standing obligation: Hub's own system read path
-    const systemSources: SourceReader = {
-      async read(sha256) {
-        const records = await ctx.deps.records.artifacts.records(sha256);
-        const first = records[0];
-        if (first !== undefined && first.body.read_tier === 'retain_only') {
-          return { bytes: null, mediaType: first.body.media_type, size: first.body.size, readTier: first.body.read_tier };
-        }
-        const bytes = await ctx.deps.records.artifacts.trustedBytes(sha256);
-        if (bytes === null) return null;
-        return {
-          bytes,
-          mediaType: first?.body.media_type ?? 'application/octet-stream',
-          size: bytes.byteLength,
-          readTier: first?.body.read_tier ?? 'function_bytes_only',
-        };
-      },
-    };
-    const systemRecords: RecordReader = {
-      async read(digest) {
-        const record = await ctx.deps.records.store.get(digest);
-        if (record === null) return null;
-        return { kind: record.kind, schema: record.schema, provenance: record.provenance, created_at: record.created_at, body: record.body };
-      },
-    };
+    // Standing obligations read as their configuring admin through the same effective-tier gate as ordinary runs.
+    const configurer = run.configurer ?? 'hub';
+    const user = ctx.deps.records.principals !== undefined ? await ctx.deps.records.principals.get(configurer) : null;
     resolveCtx = {
-      reader: { user: 'hub', role: 'admin', run: run.run },
+      reader: { user: configurer, role: user?.role ?? 'user', run: run.run },
       parsers: ctx.parsers,
-      sources: systemSources,
+      sources: sourceReader(ctx.deps.records.artifacts, 'function'),
       trees: ctx.deps.knowledge.treeReader(),
-      records: systemRecords,
+      records: recordReader(ctx.deps.records.store),
       consumer: 'function',
       documents: ctx.documents,
     };
@@ -304,7 +282,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
             return { resolved: false, text: null, reason: result.message };
           }
           if (result.text === null) {
-            return { resolved: true, text: null, reason: result.note ?? '内容没有文本' };
+            return { resolved: true, text: null, reason: result.readTier === 'retain_only' ? '含凭据，原文不可读；缺管理员接受来源的事实，请请求管理员接受，接受后自动重评' : result.note ?? '内容没有文本' };
           }
           const byteLength = Buffer.byteLength(result.text, 'utf8');
           return { resolved: true, text: result.text, byteLength };
@@ -367,39 +345,35 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
   // appears only inside slot data — the boundary's own parser over any source bound to this run. One parse per
   // reference per evaluation (quotedReferences warms them before the checks run, once); the declared reads' size cap
   // applies to a whole-source fallback, like readBoundSources.
-  const fragmentCache = new Map<string, Promise<{ text?: string; why: string }>>();
-  const gradeFragment = (reference: string, capBytes: number = MAX_CHECK_READ_BYTES): Promise<{ text?: string; why: string }> => {
+  let fragmentScope: ReturnType<typeof buildScope> | undefined;
+  const fragmentCache = new Map<string, Promise<{ text?: string; why: FragmentRead }>>();
+  const gradeFragment = (reference: string, capBytes: number = MAX_CHECK_READ_BYTES): Promise<{ text?: string; why: FragmentRead }> => {
     let pending = fragmentCache.get(reference);
     if (pending === undefined) {
-      pending = (async () => {
+      pending = (async (): Promise<{ text?: string; why: FragmentRead }> => {
         let ref: ReturnType<typeof parseReference>;
         try {
           ref = parseReference(reference);
         } catch {
-          return { why: 'unavailable' };
+          return { why: 'malformed' };
         }
-        const finish = async (r: Awaited<ReturnType<typeof resolveReference>>): Promise<{ text?: string; why: string }> => {
+        const finish = async (r: Awaited<ReturnType<typeof resolveReference>>): Promise<{ text?: string; why: FragmentRead }> => {
           if (!r.resolved) {
             // By the resolver's own code: REFERENCE_UNRESOLVED means the reference resolves to nothing inside the
             // bound thing (no such fragment — the model can fix the selector or the quote); SOURCE_UNAVAILABLE means
-            // the read genuinely failed. For a reference that is not src or a locked tree, unresolved also lands here
-            // as unavailable: an honest unknown, never a refutation.
-            return { why: r.code === 'REFERENCE_UNRESOLVED' && (ref.scheme === 'src' || ref.scheme === 'tree') ? 'no_fragment' : 'unavailable' };
+            // the read genuinely failed. Scope and groundability have their own grades and remedies.
+            return { why: r.code === 'REFERENCE_UNRESOLVED' ? 'no_fragment' : 'unavailable' };
           }
+          if (!r.groundable) return { why: 'not_groundable' };
           if (r.readTier === 'retain_only') return { why: 'retain_only' };
-          if (r.text === null) return { why: 'unavailable' };
+          if (r.text === null) return { why: 'no_fragment' };
           if (Buffer.byteLength(r.text, 'utf8') > capBytes) return { why: 'too_large' };
           return { text: r.text, why: 'bound' };
         };
-        if (ref.scheme === 'src') {
-          // The source must be an input of this run: the run's own scope decides, never the artifact store alone.
-          const bound = (run.sources ?? []).some((s) => s.reference.startsWith(`src:${ref.sha256}`));
-          if (!bound) return { why: 'not_bound' };
-        } else if (ref.scheme === 'tree') {
-          // A tree reference is bound exactly when its root is the root this run locked.
-          if (run.root === undefined || ref.root !== run.root) return { why: 'not_bound' };
-        }
-        // rec: and every other scheme follow the boundary's own rule — resolvable reads, unresolved stays unknown.
+        // Share the boundary's scope, including predecessor results and the ban on standalone entries.
+        const scope = await (fragmentScope ??= buildScope(ctx, run, workflow, principalOf(resolveCtx.reader), 'function'));
+        if (ref.scheme === 'entry') return { why: 'entry_unaddressed' };
+        if (scopeProblem(ref, scope) !== null) return { why: 'not_bound' };
         return finish(await resolveReference(ref, resolveCtx));
       })();
       fragmentCache.set(reference, pending);
@@ -418,7 +392,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
     }
   };
   const warmed = new Map<string, string>();
-  const warmedWhy = new Map<string, string>();
+  const warmedWhy = new Map<string, FragmentRead>();
   const gradedSourceView = (texts: ReadonlyMap<string, string>): SourceView => ({
     text: (reference) => texts.get(reference) ?? warmed.get(reference),
     // A reference never warmed (not collected, or the warm pass failed) reads as unavailable: an honest

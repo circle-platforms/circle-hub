@@ -388,6 +388,15 @@ read; results, run records and production results over the record limit; queries
 4. Is the family rule of decision 19 acceptable until a declared family exists? It treats any shared word as one family
    (`aster-chat` and `birch-4-chat` share `chat`), which errs towards `not_independent`.
 
+### Standing obligations and current read tiers
+
+A standing obligation reads source bytes as its configuring administrator through
+`artifacts.source(..., { consumer: 'function' })`, just as an ordinary run uses the effective-tier source reader.
+It never uses `trustedBytes` or the first original's historical tier for pack checks. A withdrawn acceptance or a new
+credential finding therefore withholds the bytes on re-evaluation and makes the dependent check unknown.
+`standing-sources.test.ts` exercises an original from an earlier scanner, its accepted current scan and withdrawal with
+real temporary records, including the bytes actually delivered to the sandboxed check.
+
 ## Concurrent submission subject construction
 
 Checks that use the same pure subject builder previously started another isolated process for each check, even when

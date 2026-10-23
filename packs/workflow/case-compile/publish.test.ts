@@ -51,7 +51,7 @@ describe('publishing the case-compile pack', { skip }, () => {
         ['deterministic_plan', 1, 1],
       ],
     );
-    assert.deepEqual([outcome.version.id, outcome.version.version, outcome.version.kind], ['case-compile', '1.3.0', 'workflow']);
+    assert.deepEqual([outcome.version.id, outcome.version.version, outcome.version.kind], ['case-compile', '1.3.1', 'workflow']);
     const again = await registry.publish(owner, await stage(join(temp.path, 'staged-again')));
     assert.equal(again.ok && again.created, false, '同样内容再发布不新建版本');
   });

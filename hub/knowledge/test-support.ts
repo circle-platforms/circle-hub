@@ -1,3 +1,4 @@
+import type { Placement, ReadTier } from '../../contracts/generated/vocabulary.ts';
 // Test support for hub/knowledge: a synthetic product pack written to a temporary directory with real pack functions (run
 // in the sandbox), fakes of PacksPort and ExternalReaderPort, and a synthetic build site that mirrors the structure of the
 // real one (index -> hub pages -> listing pages, builds of two name families, aliases, a dead link), never its content.
@@ -176,7 +177,7 @@ export function extraProducer(
   id: string,
   params: { entries?: unknown[]; unplaced?: unknown[]; warnings?: string[] },
   inputs: Record<string, unknown> = { tree: { source: 'tree' } },
-  placement?: 'code_only' | 'judgment_allowed',
+  placement?: Placement,
 ) {
   return { id, title: '附加生产器', function: { module: 'functions/extra.ts' }, inputs, params, ...(placement !== undefined ? { placement } : {}) };
 }
@@ -391,7 +392,7 @@ export class FakePacks implements PacksPort {
 }
 
 export type FakeObject =
-  | { bytes: string | Uint8Array; mediaType: string; readTier?: 'model_readable' | 'function_bytes_only'; personal?: boolean }
+  | { bytes: string | Uint8Array; mediaType: string; readTier?: Extract<ReadTier, 'model_readable' | 'function_bytes_only'>; personal?: boolean }
   | { fail: string };
 
 /** An external reader over in-memory objects: a read stores the bytes as a connector read with a shared credential. */

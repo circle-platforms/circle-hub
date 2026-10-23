@@ -1,3 +1,4 @@
+import type { ChangeKind } from '../../../../contracts/generated/vocabulary.ts';
 // Maintenance sweep (capability 4b). A case of the earlier build needs maintenance when it sits on a removed path, or
 // on a modified path whose definition data differ. A behaviour-only change is not an item. An added path is not an
 // item. One case on several such paths is one item. Output order follows ids and paths, never the order of the view.
@@ -14,7 +15,7 @@ export interface Parameters {
 export interface Reason {
   /** The index of the path in the run-level details table (note.details); the path string is there, once. */
   detail: number;
-  change: 'removed' | 'modified';
+  change: Extract<ChangeKind, Extract<ChangeKind, Extract<ChangeKind, 'removed' | 'modified'>>>;
 }
 
 /** One row per changed path at the run level: the change kind, the field differences (the check reads 字段差异 N 处
@@ -22,7 +23,7 @@ export interface Reason {
  * never repeat it. */
 export interface PathDetail {
   path: string;
-  change: 'removed' | 'modified';
+  change: Extract<ChangeKind, Extract<ChangeKind, Extract<ChangeKind, 'removed' | 'modified'>>>;
   fields: FieldDiff[];
   references: string[];
 }
@@ -59,7 +60,7 @@ export interface SweepNote {
   details: PathDetail[];
   /** The whole command diff, one row per changed path with the earlier-build case count on it; the command-diff
    * summary reads this (details covers only the maintenance paths, this table never drops one). */
-  diff: { path: string; change: 'added' | 'removed' | 'modified'; cases: number }[];
+  diff: { path: string; change: ChangeKind; cases: number }[];
 }
 
 export interface SweepResult {
@@ -69,7 +70,7 @@ export interface SweepResult {
 }
 
 interface Side {
-  change: 'added' | 'removed' | 'modified';
+  change: ChangeKind;
   before: string[];
   after: string[];
 }
@@ -81,7 +82,7 @@ interface Acc {
   priority: number | null;
   negative: boolean;
   chosen: string;
-  reasons: Map<string, 'removed' | 'modified'>;
+  reasons: Map<string, Extract<ChangeKind, Extract<ChangeKind, Extract<ChangeKind, 'removed' | 'modified'>>>>;
 }
 
 const MAX_ID = 200;

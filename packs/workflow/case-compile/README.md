@@ -138,3 +138,7 @@ The function tests cover the contract (positive and each negative), the address 
 deterministic generator (byte-identical twice), the extraction and the projection refusals. `publish.test.ts` publishes
 through the real registry (temporary PostgreSQL; skipped where `sandbox-exec` is absent — a skip is not a pass).
 `production.test.ts` runs start_run + submit_result against the real engine with fake externals.
+
+## 生成词表与包版本
+
+case-compile@1.3.1 改用生成词表的类型。包内函数的运行时依赖仍只来自包内文件和已允许的依赖。词表更新导致包内字节变化时，必须升版并重签清单，不复用已发布版本。

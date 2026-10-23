@@ -13,7 +13,7 @@ import type { ProtocolError } from '../../../contracts/src/common.ts';
 import type { RunRecord } from '../../../contracts/src/run.ts';
 import { CrossItemSubmission, ItemSubmission, Submission } from '../../../contracts/src/submission.ts';
 import type { SubmitResultOutput } from '../../../contracts/src/tools.ts';
-import { PARTITION } from '../../../contracts/generated/vocabulary.ts';
+import { PARTITION, type Acceptance } from '../../../contracts/generated/vocabulary.ts';
 import { partitionCountsOf, type Partitions, type ValidationResult } from '../../../contracts/src/validation.ts';
 import { CanonicalizationError, LimitError, sha256Hex, type Principal, type StoredRecord } from '../../records/api.ts';
 import type { CallContext, LoadedWorkflow, Untraced } from '../../ports.ts';
@@ -176,7 +176,7 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
   const record = kept.record;
   const model = parsed?.success ? parsed.data.model : typeof args.model === 'string' ? wellFormed(args.model) : null;
   const session = sessionOf(call);
-  const action = (input: { acceptance: 'accepted' | 'not_accepted'; codes: string[]; repair: string[]; result: string | null; extra?: Record<string, unknown> }) =>
+  const action = (input: { acceptance: Acceptance; codes: string[]; repair: string[]; result: string | null; extra?: Record<string, unknown> }) =>
     putAction(store, {
       action: 'validate',
       run: run.run,
