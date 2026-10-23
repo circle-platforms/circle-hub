@@ -342,7 +342,7 @@ export class DispatchService {
     const known=receiptOf(events)?.body.detail.remote_id;
     const remoteId=options.remote_id ?? known;
     if(known!==undefined && options.remote_id!==undefined && !same(known,remoteId))throw new Error('已有原回执，不得改绑为其他远端编号；请按原作业对账');
-    if (options.choice !== 'reconcile' || remoteId === undefined) throw new Error('本轮只允许核对、保持未知或标记失败；核对必须给远端编号');
+    if (options.choice !== 'reconcile' || remoteId === undefined) throw new Error(`本轮只允许${labelOf('disposition','reconcile')}、${labelOf('disposition','keep_unknown')}或${labelOf('disposition','mark_failed')}；核对必须给远端编号`);
     const d = await this.readingDefinition(binding); const client = this.session(binding, d, await this.secret(binding.executor));
     const originalLease=intent.body.detail.remote_lease as unknown as RemoteLease;
     const context={...this.context(binding),request_id:intent.body.detail.request_id,not_after:intent.body.detail.not_after,remote_id:remoteId,lease_id:originalLease.id,lease_token:originalLease.token};

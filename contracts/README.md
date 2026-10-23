@@ -163,3 +163,10 @@ and never part of drift counts. Rule diagnostics are separate from malformed sou
 entry reference. Prefix/rule filters apply to the unchecked totals as they do to checked source occurrences.
 
 经集成者作为契约负责人授权，core.contribution.* 收录核心回注准入核对的十个码。codes.json 的历史 interpreter 字段在这里表示核心发出方 contribution，不表示新增已安装解释器；when/fix 只在核心登记。凭据拒绝沿用 CREDENTIAL_IN_UPLOAD。
+
+## Unknown-sweep contract handoff
+
+Model 10 owns the rules. `keep_unknown` stays the compatibility disposition code; its generated label is now 带期限的暂缓
+(source: the model owner, 2026-10-24). The label does not implement scheduling: expiry, reconciliation and request creation
+remain the consuming engine's work. Exit actions come from generated `exit_action`, including automatic reevaluation;
+`keep_unknown` is not an exit action.
