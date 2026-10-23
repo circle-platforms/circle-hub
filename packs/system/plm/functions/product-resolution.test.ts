@@ -37,7 +37,7 @@ test('numeric keys disclose declared identity separately from a verified product
 });
 
 test('key and product failures identify the actual rule and offending row with a usable fallback', () => {
-  for (const [key, rule] of [['1234567890', /9 位/], ['Alpha+', /第 2.*为空/], ['Alpha+%ZZ', /第 2.*百分号/]]) {
+  for (const [key, rule] of [['1234567890', /9 位/], ['Alpha+', /第 2.*为空/], ['Alpha+%ZZ', /第 2.*百分号/]] as const) {
     const out = buildsProject({ external: { type: 'builds', key }, responses: {}, original: 'products' }) as any;
     assert.equal(out.error.code, 'plm.invalid_key'); assert.match(out.error.message, rule);
   }

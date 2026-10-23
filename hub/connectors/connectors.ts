@@ -285,6 +285,7 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
     async read(id: string, context: ExternalReadContext): Promise<ExternalRead> {
       const shown = typeof id === 'string' ? id : String(id);
       try {
+        if (typeof id === 'string' && Buffer.byteLength(id, 'utf8') > 900) return { ok: false, id: shown, reason: `外部对象标识是 ${Buffer.byteLength(id, 'utf8')} 字节，超过 900 字节上限；缩短名字集合或改用产品编号后重读` };
         const subject = typeof id === 'string' ? parseExternal(id) : null;
         if (subject === null) return { ok: false, id: shown, reason: `${redactor.text(shown)} 不是外部对象标识` };
         const candidates = await resolve(`${subject.system}:${subject.type}`);

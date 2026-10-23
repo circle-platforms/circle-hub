@@ -2,13 +2,15 @@
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { startAgileStub, startStub, type AgileStub, type StubServer } from '../../../hub/connectors/testing/api.ts';
+import type { ReadManifest } from '../../../contracts/src/resources.ts';
 import { startPostgres, type TemporaryPostgres } from '../../../hub/testing/postgres.ts';
 import { AGILE_ACCOUNT, agileOptions } from '../../../tests/fixtures/agile/index.ts';
 import { plmReply } from '../../../tests/fixtures/plm/index.ts';
 import { artifactBytes, openSystemKit, type SystemKit } from '../testing/kit.ts';
 
 let postgres: TemporaryPostgres, kit: SystemKit, agile: AgileStub, plm: StubServer;
-let writes = 0;
+let writes = 0, productFailure = false;
+let resourceId: string;
 const products = [
   { id: 410, name: 'Synthetic / Alternate' }, { id: '411', name: 'Empty' },
   { id: 412, name: 'Both / Shared' }, { id: 413, name: 'Shared / Both' },
@@ -20,7 +22,7 @@ before(async () => {
   agile = await startAgileStub(agileOptions());
   plm = await startStub((r) => {
     if (agile.tokens.has(r.headers.authorization ?? '')) {
-      if (r.method === 'GET' && r.path === '/plmquery/product/all/') return reply({ code: 1000, data: products });
+      if (r.method === 'GET' && r.path === '/plmquery/product/all/') return reply(productFailure ? { code: 4321, msg: 'synthetic-failure', data: null } : { code: 1000, data: products });
       if (r.method === 'GET' && r.path === '/plmquery/build/') return reply(r.query.product === '410' ? builds : []);
       if (r.method === 'POST' && r.path === '/plmquery/bug/detail/') return reply({ code: 1000, data: [{ id: 910001, title: '合成缺陷', repair_notes: '<p>合成修复说明</p>' }] });
     }
@@ -31,6 +33,7 @@ before(async () => {
     origins: { 'plm-oauth': agile.origin, 'plm-api': plm.origin }, allow_plaintext: [agile.origin, plm.origin],
     settings: { bug_fix_field: 'repair_notes', build_story_field: 'synthetic_links' },
   });
+  resourceId = id;
   await kit.connectors.admin.setCredential(kit.admin, id, 'username', AGILE_ACCOUNT.username);
   await kit.connectors.admin.setCredential(kit.admin, id, 'password', AGILE_ACCOUNT.password);
 });
@@ -72,4 +75,44 @@ test('numeric keys still use one build request; a uniquely resolved product can 
   assert.deepEqual(plm.requests.slice(at).map((r) => r.path), ['/plmquery/build/']);
   assert.deepEqual(await read('Empty'), { product: { id: '411', name: 'Empty' }, product_resolution: 'resolved', builds: [] });
   assert.equal(writes, 0);
+});
+
+const context = () => ({ principal: kit.user, run: null, purpose: '合成读取清单核对' });
+test('failed product envelopes stop after one request and retain the precise transport failure', async () => {
+  const at = plm.requests.length; productFailure = true;
+  try {
+    const out = await kit.connectors.executeRead(resourceId, 'builds', { id: 'Synthetic+Alternate' }, context());
+    assert.equal(out.ok, false);
+    if (out.ok) throw new Error('unexpected success');
+    assert.equal(out.code, 'SOURCE_ENVELOPE_ERROR'); assert.ok(out.manifest);
+    const stored = await kit.records.store.get<ReadManifest>(out.manifest!);
+    assert.equal(stored!.body.result, 'error'); assert.equal(stored!.body.coverage.complete, false);
+    assert.deepEqual(plm.requests.slice(at).map(r => r.path), ['/plmquery/product/all/']);
+  } finally { productFailure = false; }
+});
+test('an invalid alias key produces PLAN_INVALID with the package reason and no request', async () => {
+  const at = plm.requests.length;
+  const out = await kit.connectors.executeRead(resourceId, 'builds', { id: 'Synthetic+' }, context());
+  assert.equal(out.ok, false); if (out.ok) throw new Error('unexpected success');
+  assert.equal(out.code, 'PLAN_INVALID'); assert.match(out.reason, /plm.invalid_key/); assert.match(out.reason, /第 2.*为空/);
+  assert.equal(plm.requests.length, at);
+});
+test('an external id beyond 900 UTF-8 bytes gives a counted limit reason without echoing the key', async () => {
+  const at = plm.requests.length; const id = 'plm:builds:' + 'Z'.repeat(890);
+  assert.equal(Buffer.byteLength(id), 901);
+  const out = await kit.connectors.reader.read(id, context());
+  assert.equal(out.ok, false); if (out.ok) throw new Error('unexpected success');
+  assert.match(out.reason, /901/); assert.match(out.reason, /900.*字节/); assert.ok(!out.reason.includes('Z'.repeat(30)));
+  assert.equal(plm.requests.length, at);
+});
+test('unresolved manifests identify the product original and explicitly incomplete build coverage', async () => {
+  const out = await kit.connectors.executeRead(resourceId, 'builds', { id: 'Absent' }, context());
+  assert.ok(out.ok, out.ok ? '' : out.reason);
+  const record = await kit.records.store.get<ReadManifest>(out.manifest);
+  assert.equal(record!.body.original, 'products');
+  assert.deepEqual(record!.body.coverage, { complete: false, examined: 1, total: 1, note: record!.body.coverage.note });
+  assert.match(record!.body.coverage.note!, /尚未读取构建列表/); assert.match(record!.body.coverage.note!, /plm:builds:/);
+  const original = out.artifacts.find(a => a.name === 'original')!;
+  const bytes = await artifactBytes(kit, original.artifact.body.sha256);
+  assert.deepEqual(JSON.parse(new TextDecoder().decode(bytes)), { code: 1000, data: products });
 });

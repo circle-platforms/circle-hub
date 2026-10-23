@@ -54,9 +54,12 @@ test('zero or multiple matches never issue a build request or invent an empty re
 });
 test('malformed keys or responses refuse without guessing names or empty build lists', () => {
   for (const key of ['', 'Synthetic+', '%ZZ', '1234567890']) assert.deepEqual(buildsPlan(request(key)).requests, []);
-  assert.ok('error' in (buildsProject({ ...request(), responses: { products: { json: {} } }, original: 'products' }) as object));
-  assert.ok('error' in (buildsProject({ ...request(), responses: productResponse([{ id: 410, name: null as unknown as string }]), original: 'products' }) as object));
-  assert.ok('error' in (buildsProject({ ...request('410'), responses: { builds: { json: {} } }, original: 'builds' }) as object));
+  const malformed = buildsProject({ ...request(), responses: { products: { json: {} } }, original: 'products' }) as any;
+  assert.equal(malformed.error.code, 'plm.no_products'); assert.match(malformed.error.message, /data.*数组.*plm:builds:/);
+  const missingName = buildsProject({ ...request(), responses: productResponse([{ id: 410, name: null as unknown as string }]), original: 'products' }) as any;
+  assert.equal(missingName.error.code, 'plm.no_products'); assert.match(missingName.error.message, /第 1.*410.*name/);
+  const badBuilds = buildsProject({ ...request('410'), responses: { builds: { json: {} } }, original: 'builds' }) as any;
+  assert.equal(badBuilds.error.code, 'plm.no_records'); assert.match(badBuilds.error.message, /构建列表不是数组.*重新读取/);
 });
 test('profile declares the fix setting and the two-request build planner', () => {
   const profile = JSON.parse(readFileSync(new URL('./system.json', import.meta.url), 'utf8'));
