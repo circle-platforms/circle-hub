@@ -16,7 +16,7 @@ export const putRequest=(ctx:EngineContext,input:RequestBody)=>service(ctx).writ
 export const answerRequest=(ctx:EngineContext,request:string,source:string)=>service(ctx).answer(request,source);
 export const requestRecords=(ctx:EngineContext,run?:string):Promise<RequestView[]>=>service(ctx).all(run);
 export const requestsOf=(ctx:EngineContext,by:Principal,run?:string):Promise<RequestView[]>=>service(ctx).list(by,run);
-export async function recordResultRequests(ctx:EngineContext,run:RunRecord,result:ValidationResult,roundsUsed:ReadonlyMap<string,number>=new Map()):Promise<void>{
+export async function recordResultRequests(ctx:EngineContext,run:RunRecord,result:ValidationResult,roundsUsed:ReadonlyMap<string,number>=new Map(),input?:unknown):Promise<void>{
   if(isAbandonedResult(result))return;
   for(const error of result.errors){
     if(error.rounds_left!==0||!error.requirement||error.code!=='repair_exhausted'&&(run.requirements.find(r=>r.key===error.requirement)?.repair_rounds??0)===0)continue;
@@ -69,7 +69,8 @@ export async function recordResultRequests(ctx:EngineContext,run:RunRecord,resul
   const disposed=new Set(result.partitions.rejected.filter(i=>i.code==='EFFECT_UNKNOWN_DISPOSED').map(i=>i.item));
   for(const item of Object.values(result.partitions).flat())for(const requirement of item.requirements)for(const layer of requirement.layers){
     if(layer.layer==='dynamic'&&(disposed.has(item.item)||requirement.unsatisfied_reason==='abandoned')&&layer.reason!=='check_error')continue;
-    const gaps=[...(layer.missing&&layer.exit?[{missing:layer.missing,exit:layer.exit,reason:layer.reason??'check_error'}]:[]),...(layer.gaps??[])];
+    const primary=layer.missing&&layer.exit?{missing:layer.missing,exit:layer.exit,reason:layer.reason??'check_error'}:null;
+    const gaps=[...(primary?[primary]:[]),...(layer.gaps??[])];
     for(const gap of gaps){
       if(gap.exit.action!=='request'||!('user'in gap.exit.audience))continue;
       const observation=workflow?.requirements.find(r=>r.key===requirement.requirement)?.observation;
@@ -82,7 +83,7 @@ export async function recordResultRequests(ctx:EngineContext,run:RunRecord,resul
         const rows=claim.statement.data?.unread_sources;
         return Array.isArray(rows)?rows.flatMap(row=>typeof row==='object'&&row!==null&&'reason'in row&&row.reason==='credential_unreadable'&&'reference'in row&&ReferenceUri.safeParse(row.reference).success?[String(row.reference)]:[]):[];
       });
-      const request=await putRequest(ctx,{run:run.run,...(EXIT_BY_REASON[gap.reason].recipient==='owner'&&observation!=='dispatch@1'&&gap.exit.request_kind==='repair'?{pack_digest:run.pack_digest}:{}),...(sources.length?{sources:[...new Set(sources)]}:{}),kind:gap.exit.request_kind!,audience:gap.exit.audience.user,due:gap.exit.due,missing:gap.missing,next_action,source:result.submission,code:layer.code??gap.reason,item:item.item,requirement:requirement.requirement});
+      const request=await putRequest(ctx,{run:run.run,...(EXIT_BY_REASON[gap.reason].recipient==='owner'&&observation!=='dispatch@1'&&gap.exit.request_kind==='repair'?{pack_digest:run.pack_digest}:{}),...(sources.length?{sources:[...new Set(sources)]}:{}),kind:gap.exit.request_kind!,audience:gap.exit.audience.user,due:gap.exit.due,missing:gap.missing,next_action,source:result.submission,code:gap===primary?layer.code??gap.reason:gap.reason,item:item.item,requirement:requirement.requirement});
       gap.exit.due=request.body.due;
       const recipient=await ctx.deps.records.principals?.get(request.body.audience);
       if(recipient&&recipient.role!=='admin'&&recipient.id!==run.runner){
@@ -91,10 +92,12 @@ export async function recordResultRequests(ctx:EngineContext,run:RunRecord,resul
         await putRequest(ctx,{run:run.run,kind:'clarification',audience:admin.id,due:gap.exit.due,missing:'包作者 '+recipient.id+' 不在本运行可见范围内，缺少经审核可交给作者的最小复现',next_action:'管理员用 get_nodes 核对请求 rec:'+request.digest+'，在 Circle 中制作经许可的最小复现后交给具名包作者；由作者发布修复版本。原运行和原件不自动分享',source:result.submission,code:'awaiting_step',item:item.item,requirement:requirement.requirement});
       }
 
-      const error=result.errors.find(e=>e.item===item.item&&e.requirement===requirement.requirement&&(e.code===gap.reason||e.code===layer.code));
-      const hint=`请求 rec:${request.digest}，受众 ${request.body.audience}，期限 ${request.body.due}：${next_action}`;
-      if(error){if(!error.fix?.includes('rec:'+request.digest))error.fix=`${error.fix??''}；${hint}`;}
-      else result.errors.push({code:gap.reason,message:gap.missing,item:item.item,requirement:requirement.requirement,fix:hint});
+      const error=result.errors.find(e=>e.item===item.item&&e.requirement===requirement.requirement&&(gap===primary?(e.code===gap.reason||e.code===layer.code):e.code===gap.reason&&e.message===gap.missing));
+      const hint=`缺失事实：${gap.missing}；请求 rec:${request.digest}，受众 ${request.body.audience}，期限 ${request.body.due}：${next_action}`;
+      const rounds_left=Math.max(0,(run.requirements.find(r=>r.key===requirement.requirement)?.repair_rounds??0)-(roundsUsed.get(requirement.requirement)??0));
+      const path=requestPath(input,item.item);
+      if(error){error.path??=path;error.rounds_left??=rounds_left;if(!error.fix?.includes('rec:'+request.digest))error.fix=`${error.fix??''}；${hint}`;}
+      else result.errors.push({code:gap.reason,message:gap.missing,item:item.item,requirement:requirement.requirement,path,rounds_left,fix:hint});
     }
   }
 }
@@ -128,4 +131,12 @@ export async function answerSuccessorRequests(ctx:EngineContext,previous:RunReco
     if(request.source!==before.digest){const source=await ctx.deps.records.store.get<{pack:string;digest:string}>(request.source);if(source?.kind!=='pack_version'||source.body.pack!==previous.pack.split('@')[0]||source.body.digest!==next.body.pack_digest)continue;}
     try{await answerRequest(ctx,request.record,next.digest);}catch(error){if(!(error instanceof ConflictError))throw error;}
   }
+}
+
+/** Point into the received submission order, never the projection order or a fabricated slot. */
+function requestPath(input:unknown,item:string):string{
+  const items=typeof input==='object'&&input!==null&&'items'in input?input.items:undefined;
+  if(!Array.isArray(items))return '';
+  const at=items.findIndex(value=>typeof value==='object'&&value!==null&&value.item===item);
+  return at<0?'/items':'/items/'+at;
 }

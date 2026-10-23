@@ -694,3 +694,7 @@ The workflow port reads the recorded pack owner; the records account port select
 Missing identity wiring refuses evaluation rather than inventing a recipient. Requests use a 24-hour response window.
 Stored results are never passed through this new-write binding; missing historical exits remain “出口未写”.
 The following commits connect these exits to durable requests and automatic maintenance.
+
+Supplementary recovery gaps keep their own cause codes and receipt rows even beside a settled violation. Request
+projection fills remaining rounds and uses the received submission's actual item order for paths; it never treats a
+projection index or an invented slot as a submitted location. The primary terminal and partition do not change.

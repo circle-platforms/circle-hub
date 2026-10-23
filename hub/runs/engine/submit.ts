@@ -263,7 +263,7 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
     outcome = { ...outcome, result: notAccepted(base, [protocolError('SUBMISSION_SCHEMA_VIOLATION', '独立复核缺少本会话的 id，整份提交未受理', {path:'', fix:'在请求头 Circle-Session-Id 里带上本会话的 id（1 到 200 个可打印 ASCII 字符），把同一份提交原样再交'}), ...outcome.result.errors]), problems: new Set() };
   }
   if(outcome.result.acceptance==='accepted')await applyDispatchResults(ctx,run,outcome.result);
-  await recordResultRequests(ctx,run,outcome.result,roundsUsed);
+  await recordResultRequests(ctx,run,outcome.result,roundsUsed,args);
   for(const error of outcome.result.errors)if(error.requirement&&isReason(error.code))outcome.problems.add(error.requirement);
   const saved = await keepResult(base, outcome);
   await answerRepairedRequests(ctx,run,saved.result.body,saved.result.digest);
