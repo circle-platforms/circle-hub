@@ -16,7 +16,7 @@ import {
   type RunContext,
 } from '../../../contracts/src/pack.ts';
 import type { ItemProjection, SourceBinding } from '../../../contracts/src/run.ts';
-import { digestOf, type Principal } from '../../records/api.ts';
+import { digestOf, type VariableSnapshot, type Principal } from '../../records/api.ts';
 import { EXTERNAL_ARTIFACT, type LoadedWorkflow } from '../../ports.ts';
 import { ReferenceSyntaxError, resolveReference, srcFragment } from '../../refs/api.ts';
 import { callPackFunction } from '../../rules/api.ts';
@@ -156,6 +156,7 @@ export async function bindExpected(
   traceId: string,
   composition?: string | null,
   build?:string,
+  variables?:VariableSnapshot,
 ): Promise<ExpectedBinding> {
   const fn = workflow.workflow.expected_sources;
   const empty: ExpectedBinding = { sources: [], unavailable: [], warnings: [] };
@@ -191,7 +192,7 @@ export async function bindExpected(
         miss('no enabled resource reads this external object type');
         continue;
       }
-      const read = await ctx.deps.external.read(wanted.external, { principal: user, run: runId, purpose: '期望来源', ...(composition !== undefined ? {composition} : {}),...(build!==undefined?{build}:{}) });
+      const read = await ctx.deps.external.read(wanted.external, { principal: user, run: runId, variables, purpose: '期望来源', ...(composition !== undefined ? {composition} : {}),...(build!==undefined?{build}:{}) });
       if (!read.ok) {
         miss(read.reason);
         continue;

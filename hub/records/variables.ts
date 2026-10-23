@@ -227,7 +227,7 @@ export class RecordVariables {
             throw new VariableError('这里只能引用普通变量，密钥只许用于凭据项');
         const decision = frozen.get(ref.name);
         if (!decision)
-            throw new VariableError(`变量 ${ref.name} 没有设置：先 circle-hub var set ${ref.name}`, ref.name);
+            throw new VariableError(snapshot ? `本次变量快照缺少 ${ref.name} 的决定：先确认 circle-hub var set ${ref.name}，再重开运行或同步` : `变量 ${ref.name} 没有设置：先 circle-hub var set ${ref.name}`, ref.name);
         values.set(ref.name, await this.valueAt(ref.name, decision));
         uses.push({ at: at + '#' + ref.at, name: ref.name, decision });
     } return { value: resolveValue(value, (_kind, name) => values.get(name)), uses }; }
