@@ -231,7 +231,7 @@ function originalPaths(tree: unknown): Map<string, string[]> {
 
 function mismatchReason(field: string, expected: string | null, actual: string | null, data: Record<string, unknown>, path: readonly string[]): string {
   if (expected !== null && actual !== null && norm(stripPrefix(actual).text) === norm(expected)) return '前缀代码';
-  if (field === 'line' && expected !== null && actual !== null && data.version_source === 'tree' && path.some(p => lineKey(stripPrefix(p).text) === lineKey(actual))) return '版本线节点取法';
+  if (field === 'line' && expected !== null && actual !== null && path.some(p => lineKey(stripPrefix(p).text) === lineKey(actual))) return '版本线节点取法';
   return '其他';
 }
 

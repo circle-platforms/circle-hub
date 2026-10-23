@@ -146,11 +146,11 @@ test('production input accepts database record arrays and documents the required
 test('classifies only reproducible prefix and version-node differences', () => {
   const prefix = compareLocationTree(tree(), captures(result(['940801'], { module: '183：合成模块甲' })), emptyBuilds);
   assert.equal(prefix.summary.reasons.prefix_codes, 1);
-  const fabricated = compareLocationTree(tree(), captures(result(['940801'], { version: '10.9.1', line: '10.9.1', version_source: 'tree', ancestor_path: ['181：10.8.1', '184：10.9.1'] })), emptyBuilds);
+  const fabricated = compareLocationTree(tree(), captures(result(['940801'], { version: '10.9.1', line: '10.9.1', version_source: 'folders', ancestor_path: ['181：10.8.1', '184：10.9.1'] })), emptyBuilds);
   assert.equal(fabricated.summary.reasons.version_nodes, 0, 'the checked output cannot invent an ancestor');
   const nested = { root: { id: 'root', label: '合成产品' }, children: [{ id: 'first', label: '181：10.8.1', children: [{ id: 'last', label: '184：10.9.1', children: [{ id: '940801', label: '合成文档', children: [] }] }] }] };
   const expected = locationsGold(nested).all![0];
-  const selected = compareLocationTree(nested, captures(result(['940801'], { version: '10.8.1', line: '10.8.1', train: expected.train, module: expected.module, version_source: 'tree' })), [{ line: expected.line!, candidates: [] }]);
+  const selected = compareLocationTree(nested, captures(result(['940801'], { version: '10.8.1', line: '10.8.1', train: expected.train, module: expected.module, version_source: 'folders' })), [{ line: expected.line!, candidates: [] }]);
   assert.equal(selected.summary.reasons.version_nodes, 1);
 });
 test('production records of another facet root do not explain this root', () => {
@@ -202,4 +202,10 @@ test('location review 7: missing Hub candidate output is wrong rather than missi
   const report = compareLocationTree(tree(), captures(raw), emptyBuilds);
   assert.equal(report.summary.candidates.not_equal, 1); assert.equal(report.summary.candidates.not_run, 0);
   assert.ok(report.details.candidates.some(row => row.reason.includes('缺候选') && row.next_action));
+});
+
+test('location review 8: version node differences are classified from the original path with documented sources', () => {
+  const nested = { root: { id: 'r', label: '合成产品' }, children: [{ id: 'first', label: '181：10.8.1', children: [{ id: 'last', label: '184：10.9.1', children: [{ id: '940801', label: '合成文档', children: [] }] }] }] };
+  const report = compareLocationTree(nested, captures(result(['940801'], { version: '10.8.1', line: '10.8.1', train: null, module: null, version_source: 'folders' })), [{ line: '10.9.1', candidates: [] }]);
+  assert.equal(report.summary.reasons.version_nodes, 1);
 });
