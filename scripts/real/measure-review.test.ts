@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import type { MindNode, MindTree, Planned } from './lib/inject.ts';
-import { judgeRun, measureReview, outAllowed, type Drivers, type MeasureOptions, type SessionSpec } from './measure-review.ts';
+import { judgeRun, measureReview, outAllowed, parseSession, type Drivers, type MeasureOptions, type SessionSpec } from './measure-review.ts';
 
 const leaf = (id: string, text: string): MindNode => ({ data: { id, text }, children: [] });
 const kase = (id: string, text: string, expected: string, tag = 'configuration'): MindNode => ({ data: { id, text, resource: [tag], priority: 2 }, children: [leaf(`${id}e`, expected)] });
@@ -233,4 +233,8 @@ test('review 6: accepted evidence survives a nonzero client exit and failed retr
   const g = fixtures(document(1), []), lines: string[] = [];
   assert.equal(measureReview({ ...options(g.out), source: g.source, plan: g.plan }, { ...driver, show: () => ({ code: 1, json: '' }) }, s => lines.push(s)), 1);
   assert.ok(lines.some(l => l.includes('取不到运行'))); assert.ok(!lines.some(l => l.includes('任务包不对')));
+});
+
+test('review 10: endpoint session arguments cannot override driver prompt or output flags', () => {
+  for (const flag of ['--prompt', '--out', '--name']) assert.throws(() => parseSession(JSON.stringify({ args: [flag, 'private-value'], prompt: 'synthetic' }), 'draft'), /驱动/);
 });

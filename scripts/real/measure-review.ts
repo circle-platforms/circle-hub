@@ -38,6 +38,8 @@ export interface Drivers {
 export const realDrivers: Drivers = {
   review: (spec, prompt, out, name) => {
     const run = spawnSync('node', [resolve(import.meta.dirname, 'review-circle.ts'), ...spec.args, '--prompt', prompt, '--out', out, '--name', name], { cwd: resolve(import.meta.dirname, '../..'), encoding: 'utf8', env: process.env });
+    writeFileSync(join(out, name + '.stdout.txt'), run.stdout ?? '', { mode: 0o600 });
+    writeFileSync(join(out, name + '.stderr.txt'), run.stderr ?? '', { mode: 0o600 });
     return { code: run.status ?? 1, calls: existsSync(join(out, `${name}.calls.jsonl`)) ? readFileSync(join(out, `${name}.calls.jsonl`), 'utf8') : '' };
   },
   show: (run) => {
@@ -47,7 +49,7 @@ export const realDrivers: Drivers = {
 };
 
 /** The fixed invalid reasons (task step 4): nothing else may be said on the screen. */
-export type InvalidReason = '没有受理' | '不止一个运行' | '评审对象不是副本' | '条目数不对' | '任务包不对' | '前驱不对' | '取不到运行';
+export type InvalidReason = '没有受理' | '不止一个运行' | '评审对象不是副本' | '条目数不对' | '任务包不对' | '前驱不对' | '取不到运行' | '启动参数不完整';
 
 interface RunLike {
   run: { run: string; pack: string; predecessor?: string; items: Array<{ item: string }>; sources: Array<{ role?: string; reference?: string }> };
@@ -92,6 +94,7 @@ export function parseSession(text: string, where: string): SessionSpec {
   if (!Array.isArray(value.args) || value.args.some((a) => typeof a !== 'string') || typeof value.prompt !== 'string') {
     throw new Error(`${where} 的会话 json 要是 { "args": [...], "prompt": "..." }`);
   }
+  if ((value.args as string[]).some(arg => ['--prompt','--out','--name'].some(flag => arg === flag || arg.startsWith(flag + '=')))) throw new Error('会话参数包含驱动保留的标志');
   return { args: value.args as string[], prompt: value.prompt };
 }
 
@@ -200,7 +203,7 @@ export function measureReview(options: MeasureOptions, drivers: Drivers, say: (l
     const draftPrompt = options.draft.prompt.replaceAll('{copy}', join(options.out, 'mutated.json'));
     const draft = drivers.review(options.draft, draftPrompt, dir, 'draft');
     writeFileSync(join(dir, 'draft.client-status.json'), JSON.stringify({ code: draft.code }), { mode: 0o600 });
-    const draftJudged = judgeRun(draft.calls, draftRunJson(drivers, draft, dir) !== null ? String(readFileSync(join(dir, 'draft.run.json'), 'utf8')) : '{}', { packPrefix: 'case-review@', subjectSha: copySha, caseCount });
+    const draftJudged = draft.code === 2 ? { ok: false as const, reason: '启动参数不完整' as InvalidReason } : judgeRun(draft.calls, draftRunJson(drivers, draft, dir) !== null ? String(readFileSync(join(dir, 'draft.run.json'), 'utf8')) : '{}', { packPrefix: 'case-review@', subjectSha: copySha, caseCount });
     let round: RoundOutcome;
     if (draftJudged.ok) {
       writeFileSync(join(dir, 'draft.run.json'), JSON.stringify(draftJudged.detail, null, 2));
@@ -211,7 +214,7 @@ export function measureReview(options: MeasureOptions, drivers: Drivers, say: (l
         const verifyPrompt = options.verify.prompt.replaceAll('{copy}', join(options.out, 'mutated.json')).replaceAll('{draft_run}', draftJudged.run);
         const verifyRun = drivers.review(options.verify, verifyPrompt, dir, 'verify');
         writeFileSync(join(dir, 'verify.client-status.json'), JSON.stringify({ code: verifyRun.code }), { mode: 0o600 });
-        const verifyJudged = judgeRun(verifyRun.calls, verifyCodeJson(drivers, verifyRun, dir) ?? '{}', { packPrefix: 'case-review-verify@', predecessor: draftJudged.run });
+        const verifyJudged = verifyRun.code === 2 ? { ok: false as const, reason: '启动参数不完整' as InvalidReason } : judgeRun(verifyRun.calls, verifyCodeJson(drivers, verifyRun, dir) ?? '{}', { packPrefix: 'case-review-verify@', predecessor: draftJudged.run });
         if (verifyJudged.ok) {
           writeFileSync(join(dir, 'verify.run.json'), JSON.stringify(verifyJudged.detail, null, 2));
           round = { n, draftPack: packOf(draftJudged.detail), draftValid: true, draftRun: draftJudged.run, verifyPack: packOf(verifyJudged.detail), verifyValid: true, verifyRun: verifyJudged.run };
@@ -270,6 +273,7 @@ export function outAllowed(out: string): boolean {
 }
 
 function main(): number {
+  if (!process.env.HUB_REAL_TOKEN) { console.error('缺少 HUB_REAL_TOKEN：由集成者提供令牌后再启动，评审未运行'); return 2; }
   const [source, plan, out] = [arg('source'), arg('plan'), arg('out')];
   const draftPath = arg('draft');
   const repeat = Number(arg('repeat') ?? 3);
