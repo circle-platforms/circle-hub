@@ -32,7 +32,7 @@ export const ExecutorDefinition = z.strictObject({
   retry_safety: RetrySafetySchema.refine(v=>v==='unsafe' || v==='dedup_window').default('unsafe'),
   target: z.string().min(1).max(200), manifest_sha256: z.string().regex(/^[a-f0-9]{64}$/).nullable().default(null), endpoint: z.string().url().max(2048), ca: z.string().max(65536),
   premises: z.strictObject({ request_journal: certificate.optional(), result_ownership: certificate.optional() }).default({}),
-  actor: z.strictObject({ header: z.string().regex(/^[A-Za-z][A-Za-z0-9-]{0,127}$/).refine(h => !['authorization', 'cookie', 'host', 'content-length', 'content-type', 'accept', 'mcp-session-id', 'mcp-protocol-version'].includes(h.toLowerCase())), pattern: z.string().min(1).max(500).refine(p => { try { new RegExp(p); return p.startsWith('^') && p.endsWith('$'); } catch { return false; } }), max_length: z.number().int().min(1).max(512) }).optional(),
+  actor: z.strictObject({ header: z.string().regex(/^[A-Za-z][A-Za-z0-9-]{0,127}$/).refine(h => !h.toLowerCase().startsWith('mcp-') && !['authorization', 'cookie', 'host', 'content-length', 'content-type', 'accept', 'mcp-session-id', 'mcp-protocol-version'].includes(h.toLowerCase())), pattern: z.string().min(1).max(500).refine(p => { try { new RegExp(p); return p.startsWith('^') && p.endsWith('$'); } catch { return false; } }), max_length: z.number().int().min(1).max(512) }).optional(),
   limitations: z.array(z.string().min(1).max(1000)).max(50).default([]),
   precheck_context: z.record(z.string(), z.unknown()).default({}),
   resources: z.array(z.string().regex(/^[a-z0-9][a-z0-9:._/-]{0,199}$/)).max(100).default([]),

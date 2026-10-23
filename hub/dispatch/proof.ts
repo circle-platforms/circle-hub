@@ -55,7 +55,7 @@ export async function verifyInput(by: Principal, id: string, d: ExecutorDefiniti
   const sourceHas = (sha: string) => detail.run.sources.some(s => new RegExp(`^src:${sha}(?:/|$)`).test(s.reference));
   if (!detail.run.sources.some(s => s.slot === d.proof.slot && s.role === 'artifact_under_verification' && new RegExp(`^src:${sha256}(?:/|$)`).test(s.reference))) throw new InputVerificationError('核验字节不在执行器声明的待判定产物槽位；请重开核验运行');
   if (!sourceHas(sha256) || !sourceHas(manifest)) throw new InputVerificationError('核验事实的字节或清单没有绑定到该运行');
-  if (target !== d.target || manifest !== d.manifest_sha256) throw new InputVerificationError(`台架名或清单身份不符：核验清单 ${manifest}，执行器期望 ${d.manifest_sha256} 不符；下一步：用当前清单重跑核验运行`);
+  if (target !== d.target || manifest !== d.manifest_sha256) throw new InputVerificationError(`目标名或清单身份不符：核验清单 ${manifest}，执行器期望 ${d.manifest_sha256} 不符；下一步：用当前清单重跑核验运行`);
   if (detail.run.build !== undefined && detail.run.build !== build) throw new InputVerificationError('核验事实构建与运行锁定构建不符；请重跑核验');
   const owner = await records.principals.get(detail.run.runner);
   if (!owner || owner.disabled) throw new InputVerificationError('核验运行的发起用户不可用');

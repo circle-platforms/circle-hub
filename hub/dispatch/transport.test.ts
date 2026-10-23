@@ -127,3 +127,7 @@ test('published parameter names prevent silent legacy fallback when request bind
   await assert.rejects(client.call('submit',{request_id:'id:1',not_after:'2026-10-23T00:00:00Z',payload_base64:'YQ==',sha256:'a'.repeat(64),items:[],lease_id:'lease'}),/参数名/);
   assert.equal(server.calls.filter(c=>c.method==='tools/call').length,0);
 });
+
+test('R21 representation cannot occupy any reserved MCP header namespace',()=>{
+  assert.equal(ExecutorDefinition.safeParse({...definition('http://127.0.0.1:1/'),actor:{header:'Mcp-Future-Protocol-Field',pattern:'^.*$',max_length:128}}).success,false);
+});
