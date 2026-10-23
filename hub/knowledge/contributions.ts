@@ -1,5 +1,8 @@
 // K03: deterministic admission beside the tree. The caller supplies the run boundary's scoped resolver;
 // it never supplies an evidence grade, provenance or an applicability declaration.
+import {readFile} from 'node:fs/promises';
+import {join} from 'node:path';
+import {ProductDeclaration} from '../../contracts/src/product.ts';
 import { ContributionInput, ContributionSource, KnowledgeContributionBody, WithheldContributionBody, MAX_NODE_CONTRIBUTIONS, type KnowledgeContributionPageView, type KnowledgeContributionView } from '../../contracts/src/contributions.ts';
 import type { RootSource } from '../../contracts/src/knowledge.ts';
 import { CORE_VIOLATION_CODES, PROTOCOL_CODES, type CoreViolationCode, type ProtocolCode } from '../../contracts/generated/protocol.ts';
@@ -167,6 +170,7 @@ export class ContributionLayer {
       }
       else if (ref.scheme === 'tree' && ref.root === input.root) {
         const rows = await composition.rowsAt(ref.path);
+        if(ref.path==='/'&&ref.entry!==undefined)for await(const row of composition.unplacedRows())if(row.entry===ref.entry)rows.set(row.entry,{...row,path:'/'});
         for (const row of rows.values()) if (ref.entry === undefined || row.entry === ref.entry) for (const f of row.fragments) {
           const ground = parseReference(f);
           if (ground.scheme === 'src') shas.push(ground.sha256);
@@ -194,6 +198,23 @@ export class ContributionLayer {
         records: [...new Set([...records, ...(resolved.value.recordSource === undefined ? [] : [resolved.value.recordSource.record])])], sources: shas };
     };
     const source = await quote(input.source);
+    if(input.kind === 'placement_proposal') {
+      const ref=parseReference(input.source.reference);
+      const producers=new Set<string>();
+      const matches=(row:{entry:string;fragments:string[]})=>ref.scheme==='tree'
+        ? ref.root===input.root && (ref.entry!==undefined ? ref.entry===row.entry : 'path' in row && row.path===ref.path)
+        : ref.scheme==='src' && row.fragments.some(fragment=>fragment===input.source.reference || (input.source.reference===`src:${ref.sha256}` && fragment.startsWith(`src:${ref.sha256}/`)));
+      for await(const row of composition.rows()) if(matches(row))row.producers.forEach(id=>producers.add(id));
+      for await(const row of composition.unplacedRows())if(matches(row))row.producers.forEach(id=>producers.add(id));
+      if(producers.size===0)return fail('归位提议缺少可定位到生产器的原条目或原文片段；用 get_nodes 返回的条目引用重交','REFERENCE_UNRESOLVED');
+      const producer=composition.body.producer;
+      const pack=await this.#context.packs.pack(`${producer.pack}@${producer.version}`);
+      if(pack===null||pack.digest!==producer.digest)return fail('缺少产出此组成的原包版本；恢复该版本后重交','REFERENCE_UNRESOLVED');
+      const declaration=ProductDeclaration.parse(JSON.parse(await readFile(join(pack.directory,'product.json'),'utf8')));
+      if([...producers].some(id=>declaration.producers.find(p=>p.id===id)?.placement!=='judgment_allowed'))
+        return fail('原条目的生产器未允许 bot 提议归位；仅接受声明 judgment_allowed 的生产器所产出的条目');
+    }
+
     const relation = input.relation === undefined ? undefined : { kind: input.relation.kind, other: await quote(input.relation.other) };
     scanPublicText([input.statement, source.quote, scope.model ?? '', scope.session ?? '', ...(relation === undefined ? [] : [relation.other.quote])]);
     if(relation!==undefined&&(source.reference===relation.other.reference||(source.fragment===relation.other.fragment&&(quoteMatches(source.quote,relation.other.quote)||quoteMatches(relation.other.quote,source.quote)))))return refuse("core.contribution.self_relation", '关系双方指向同一片段或重叠引文，缺少两个独立的原文端点');

@@ -273,7 +273,7 @@ function produce(elements: readonly unknown[], documents: ReadonlyArray<string |
     }
     return at;
   };
-  for (const doc of docs) for (const node of doc.cases) [node.title, ...node.path].forEach(indexOf);
+  for (const doc of docs) for (const node of doc.cases) [node.title, ...node.path, ...node.bodyTexts].forEach(indexOf);
   const scanned = textCommands(catalog, texts);
   for (const warning of scanned.warnings) warnings.push(`${where}${warning}`);
 
@@ -306,7 +306,7 @@ function produce(elements: readonly unknown[], documents: ReadonlyArray<string |
     doc.cases.forEach((node, k) => {
       counts.cases++;
       const key = doc.keys[k];
-      const results = [node.title, ...node.path].map((text) => scanned.results[textIndex.get(text) as number]);
+      const results = [node.title, ...node.path, ...node.bodyTexts].map((text) => scanned.results[textIndex.get(text) as number]);
       const paths = [...new Set(results.flatMap((r) => r.paths))].sort(compareText);
       if (paths.length === 0) {
         counts.toPlace++;
@@ -357,9 +357,9 @@ function produce(elements: readonly unknown[], documents: ReadonlyArray<string |
   const toPlace =
     counts.toPlace === 0
       ? ''
-      : `，${counts.toPlace} 个用例的命令代码归不了档，各给一条不带路径的条目，交给归类判断（Jev）定位置，没有校准的判断时不挂树、可引用：` +
+      : `，${counts.toPlace} 个用例没引用目录里的任何命令，各保留一条可引用的不带路径条目：` +
         [
-          ...(counts.noPhrase > 0 ? [`${counts.noPhrase} 个的标题和上级节点里没有能提取的命令短语${examplesText(examples, 'no_phrase')}`] : []),
+          ...(counts.noPhrase > 0 ? [`${counts.noPhrase} 个的标题、上级节点、步骤和预期行里没有能提取的命令短语${examplesText(examples, 'no_phrase')}`] : []),
           ...(counts.unresolved > 0 ? [`${counts.unresolved} 个提取到的命令短语在这个构建的命令目录里都解析不出${examplesText(examples, 'unresolved')}`] : []),
         ].join('，');
   warnings.push(`${where}${counts.documents} 份文档、${counts.cases} 个用例；${counts.filed} 个用例按命令归档${toPlace}；共 ${entries.length} 条`);

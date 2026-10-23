@@ -520,3 +520,6 @@ contracts and matcher change owned by codex-b. Those fields are not emitted befo
 
 未打有效标签的用例在 data.tags_note 和陈述中写明“正负向和测试类型未声明”；negative 仍是 null，
 不能据此推断正向或任何测试类型。空白标签与未打标签相同。
+
+用例命令归位把标题、上级节点、步骤、预期文本送进同一个命令解析器。没有任何目录命中时明确计数
+“没引用目录里的任何命令”，保留可引用的未归位条目；bot 可经 placement_proposal 提议，Hub 核验。

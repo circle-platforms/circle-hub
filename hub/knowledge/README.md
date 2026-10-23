@@ -858,3 +858,8 @@ unreadable roots remain neutral. Listing parser failures carry a determined fail
 不能给 valid。原件按锁定的来源记录重新核验档位，确定的撤回或凭据不可读照实列出；未能评估的条件
 带缺失事实、补取动作、具名管理员、请求引用和期限，核对请求去重存成动作。负面条件仍优先于
 not_evaluated，只有适用检查全已评估且没有失效事实才给 valid。没有 expiry 字段的树条目不虚构到期条件。
+
+归位提议沿用 placement_proposal 回注通道。准入从锁定组成的原条目/片段找到生产器，按组成记的包版本和
+摘要读取已发布的 product.json，所有相关生产器都须声明 judgment_allowed；不得用新版本的允许去改旧
+组成的权限。目标路径存在和引文逐字核验沿用 K2，未归位条目在根下的引用也可核验；Hub 不调用模型、
+不把提议改成自己的事实或直接修改根。

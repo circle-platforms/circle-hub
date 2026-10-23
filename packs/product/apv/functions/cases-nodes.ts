@@ -30,6 +30,8 @@ export type CaseNode = {
   /** Every expected text that is not blank is a vague phrase (false when there is none). */
   vague: boolean;
   steps: number;
+  /** Step and expected-result text, kept for the same deterministic command scan as titles. */
+  bodyTexts: string[];
   autoid: string | null;
   /** Named by the tagged rule (else by the marked rule only). */
   tagged: boolean;
@@ -151,6 +153,7 @@ export function caseNodes(model: unknown): CaseScan {
         hasExpected: false,
         vague: true,
         steps: 0,
+        bodyTexts: [],
         autoid: autoid === null || isBlank(autoid) ? null : autoid,
         tagged: isTagged(visit.data),
       });
@@ -159,6 +162,7 @@ export function caseNodes(model: unknown): CaseScan {
       const state = states[stateOf[owner]];
       const parentStep = visit.parent === owner ? -1 : stepOf[visit.parent];
       if (visit.leaf && visit.data.priority === CASE_RULE.preconditionPriority) continue;
+      state.bodyTexts.push(visit.text);
       if (parentStep === -1 && !visit.leaf) {
         state.steps += 1;
         stepOf[v] = state.steps;

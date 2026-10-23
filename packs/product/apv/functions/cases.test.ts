@@ -164,7 +164,7 @@ describe('the case entries of the corpus', () => {
       if (head === null) continue;
       counted += Number(head[2]);
       named += Number(head[3]);
-      none += Number(/(\d+) 个的标题和上级节点里没有能提取的命令短语/.exec(warning)?.[1] ?? 0);
+      none += Number(/(\d+) 个的标题、上级节点、步骤和预期行里没有能提取的命令短语/.exec(warning)?.[1] ?? 0);
       unresolved += Number(/(\d+) 个提取到的命令短语在这个构建的命令目录里都解析不出/.exec(warning)?.[1] ?? 0);
     }
     assert.equal(counted, all.length);
