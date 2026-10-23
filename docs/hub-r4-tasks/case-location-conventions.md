@@ -66,8 +66,8 @@
 
 ## 集成者补的一条（2026-10-23 晚）
 
-- 编号的前导零统一成去零规范化：比对和判断身份时去掉前导零（全是零的记成 0），数据里同时保留原文写法，显示和引文都用原文。
-- `packs/workflow/case-location/functions/ids.ts` 和 `packs/product/apv/functions/ids.ts` 用同一条规则，各写测试：0、00、0123、带前导零的六位数。
+- 编号的前导零统一成去零规范化：长度下限照旧（带标记的 2 到 9 位，不带标记的 5 到 7 位，按写出来的位数算）；规范化只去掉非零数前面的零，全是零的串不是编号；数据里同时保留原文写法，显示和引文都用原文。（10-23 晚按审读更正：先前一句“全是零的记成 0”写错了。）
+- `packs/workflow/case-location/functions/ids.ts` 和 `packs/product/apv/functions/ids.ts` 用同一条规则，各写测试：0 和 00 都不是编号；0123 规范成 123；带前导零的六位数；“bug 1”照旧不是编号。可改路径加上 `packs/product/apv/functions/ids.ts`、`ids.test.ts` 和 APV 的 `pack.json`（K1、kb-links、kb-adoc 也重签这个 pack.json，合并时集成者对齐）。core-fixes 现在发的是 case-location 1.3.2，目标仍是 1.4.0。
 - 原因：gold-trace 的终端报告两个包现在一个拒绝前导零、一个保留，追溯和定位会对不上。
 - APV 的 `ids.ts` 改了以后重签它的 `pack.json`，但不升版本：K1 正把 APV 升到 1.2.0，合并时由集成者对齐版本并重签。
 
