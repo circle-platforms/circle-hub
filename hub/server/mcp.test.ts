@@ -873,14 +873,14 @@ describe('records by reference', () => {
     await otherClient.close();
   });
 
-  test('a candidate of the knowledge candidate layer is its owner\'s alone, admins included; other claims stay admin-only', async () => {
+  test('unregistered candidate claims follow ordinary admin-only claim reads', async () => {
     const owner = await person();
     const candidate = await server.records.store.put({ kind: 'claim', schema: 'knowledge-candidate@1', provenance: 'candidate', body: { owner: owner.user.id, statement: '合成候选' } });
     const observation = await server.records.store.put({ kind: 'claim', schema: 'knowledge-observation@1', provenance: 'observed', body: { statement: '合成观察' } });
     const admin = await connect(server.admin);
     const ownerClient = await connect(owner);
-    assert.equal(firstError(await admin.call('get_nodes', { reference: `rec:${candidate.digest}` })).code, 'SOURCE_UNAVAILABLE');
-    assert.equal(((await ownerClient.call('get_nodes', { reference: `rec:${candidate.digest}#/statement` })).structuredContent.content as { text: string }).text, '合成候选');
+    assert.equal((await admin.call('get_nodes', { reference: `rec:${candidate.digest}` })).isError,false);
+    assert.equal(firstError(await ownerClient.call('get_nodes', { reference: `rec:${candidate.digest}#/statement` })).code,'SOURCE_UNAVAILABLE');
     assert.equal((await admin.call('get_nodes', { reference: `rec:${observation.digest}` })).isError, false);
     assert.equal(firstError(await ownerClient.call('get_nodes', { reference: `rec:${observation.digest}` })).code, 'SOURCE_UNAVAILABLE');
     await admin.close();

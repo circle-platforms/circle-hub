@@ -12,7 +12,7 @@ export const LABELS = {
   confidence: { high: '高', low: '低', none: '无' },
 } as const;
 
-/** The only refutation of the pack: a caller's declaration that contradicts the tree. */
+/** A caller's declaration that contradicts the tree. */
 export const CONFLICT_CODE = `${PACK}.declaration_conflict`;
 
 /** Longest label read; real folder labels are far shorter. */
@@ -63,7 +63,7 @@ export function trainOfLabel(label: Label): { train: string; version: string } |
   return notAVersion(label.rest, start, start + match[1].length, match[1]) === null ? { train: label.rest, version: match[1] } : null;
 }
 
-/** The owner's version expression over a whole label (after its prefix code): `10.6.1`, `V10.7.0`, `NSAE_10.5.3`. */
+/** The owner's version expression over a whole label (after its prefix code): `10.6.1`, `V10.7.0`, `NSAE_10.7.3`. */
 const PURE_VERSION = /^[A-Za-z_-]*v?([0-9]{1,3}(?:\.[0-9]{1,3}){1,3})$/;
 
 /**
@@ -234,4 +234,16 @@ export function writtenBuilds(texts: readonly string[], names: readonly string[]
     }
   }
   return { names: own, foreign };
+}
+
+/** Bound-family build names in this label, with the product naming rule for their version line. */
+export function buildVersionsOf(label: Label, names: readonly string[]): Array<{ name: string; version: string }> {
+  const own = new Set(writtenBuilds([label.text], names, 24).names);
+  return buildNames(label.text).filter(build => own.has(build.name)).map(build => {
+    const numbers = build.numbers.split(build.separator).map(digits);
+    // The product naming rule keeps a trailing zero in the line (Rel_APV_10_7_0_12 is 10.7.0). lineKey is only for
+    // comparing lines, where 10.7.0 and 10.7 name one line.
+    const version = (numbers.length >= 4 ? numbers.slice(0, 3) : numbers.length === 3 ? numbers.slice(0, 2) : numbers).join('.');
+    return { name: build.name, version };
+  });
 }

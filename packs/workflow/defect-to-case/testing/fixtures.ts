@@ -7,43 +7,19 @@ import type { DraftCase } from '../functions/types.ts';
 const ROOT_DIGEST = 'a'.repeat(64);
 
 export const SYNTHETIC_BUG_74001 = {
-  id: '74001',
-  '74001': true,
-  kind: 'bug',
-  title: 'SLB健康检查间隔无法保存',
-  status: 'closed',
-  label: 'SLB健康检查间隔无法保存',
-  location: `src:${'b'.repeat(64)}/plm:bug/74001`,
-  fixReference: `src:${'b'.repeat(64)}/markdown@1/s/fix`,
-  fixText: '健康检查间隔设置成功，默认值为 5 秒。',
+  id: '74001', kind: 'bug', title: 'SLB健康检查间隔无法保存', fix_field: 'fix',
   fields: {
-    status: 'closed',
-    resolution: 'fixed',
-    severity: 'major',
-    assignedTo: 'tester1',
+    id: '74001', title: 'SLB健康检查间隔无法保存', status: 'closed', resolution: 'fixed', severity: 'major', assignedTo: 'synthetic-tester',
+    steps: '进入合成页面，修改间隔后保存',
+    fix: '修复说明：修复参数范围校验，修复保存后不生效的问题。命令行配置 widget health interval <1-300>。期望结果：健康检查间隔设置成功，系统运行正常。',
   },
-  html_fields: {
-    steps: '<p>1. 进入 SLB 页面</p><p>2. 修改健康检查间隔为 60 秒</p><p>3. 点击保存</p>',
-    fix: '<p>修复说明：修改 health interval 参数范围校验，修复保存后不生效的问题。命令行配置 widget health interval &lt;1-300&gt;。期望结果：健康检查间隔设置成功，系统运行正常。</p>',
-  },
+  html_fields: ['steps', 'fix'],
 };
 
 export const SYNTHETIC_BUG_71010_UNCHECKABLE = {
-  id: '71010',
-  '71010': true,
-  kind: 'bug',
-  title: '底层组件内存碎片整理优化',
-  status: 'closed',
-  label: '底层组件内存碎片整理优化',
-  location: `src:${'b'.repeat(64)}/plm:bug/71010`,
-  fields: {
-    status: 'closed',
-    resolution: 'fixed',
-  },
-  html_fields: {
-    steps: '<p>内部优化任务</p>',
-    fix: '<p>代码内部重构与碎片整理，无外部可测命令行或行为变化。</p>',
-  },
+  id: '71010', kind: 'bug', title: '底层组件内存碎片整理优化', fix_field: 'fix',
+  fields: { id: '71010', title: '底层组件内存碎片整理优化', status: 'closed', resolution: 'fixed', steps: '内部优化任务', fix: '代码内部重构与碎片整理，无外部可测命令行或行为变化。' },
+  html_fields: ['steps', 'fix'],
 };
 
 export const MANUAL_PASSAGE = '配置命令行 service http port <1-65535>。期望结果：服务端口修改成功，HTTP服务正常监听。';
@@ -210,3 +186,9 @@ export function makeDuplicateDraft(options: { ref?: string } = {}): DraftCase {
     tags: ['Functional'],
   };
 }
+
+/** A version-line manual bound before projection, matching the real input contract. */
+export const SYNTHETIC_BOUND_MANUAL = {
+  slot: 'manual', external: 'manual:cli:10.6.1', sha256: 'c'.repeat(64),
+  media_type: 'text/markdown', parser: 'markdown@1', model: {}, meta: null,
+};

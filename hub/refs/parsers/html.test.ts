@@ -156,11 +156,11 @@ describe('html@1 behaviour', () => {
     assert.equal(htmlParser.parse(latin1('<meta charset="iso-8859-1"><p>é</p>')).model.charset, 'windows-1252');
     assert.equal(htmlParser.parse(utf8('<p>中文</p>')).model.charset, 'utf-8');
     assert.throws(() => htmlParser.parse(latin, { mediaType: 'text/html; charset=utf-8' }), ParseEncodingError);
-    assert.throws(() => htmlParser.parse(new Uint8Array([0xfe, 0xff, 0, 0x3c])), ParseEncodingError);
+    assert.throws(() => htmlParser.parse(new Uint8Array([0xfe, 0xff, 0])), ParseEncodingError);
     assert.throws(() => htmlParser.parse(utf8('<p>x</p>'), { mediaType: 'text/html; charset=no-such-charset' }), ParseEncodingError);
     const gbk = htmlParser.parse(new Uint8Array([0x3c, 0x70, 0x3e, 0xd6, 0xd0, 0xce, 0xc4, 0x3c, 0x2f, 0x70, 0x3e]), { mediaType: 'text/html; charset=gbk' });
     assert.equal(gbk.model.blocks[0].text, '中文');
-    assert.equal(gbk.model.blocks[0].range, null, 'no byte ranges for multi-byte legacy charsets');
+    assert.deepEqual(gbk.model.blocks[0].range, [3, 7], 'multi-byte legacy charsets retain source ranges');
   });
 
   it('enforces depth, node and attribute limits', () => {

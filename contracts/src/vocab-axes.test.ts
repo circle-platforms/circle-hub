@@ -36,10 +36,10 @@ const model = JSON.parse(readFileSync(new URL('../model.json', import.meta.url),
   vocabulary: Array<{ axis: string; label: string; owner: string; values: Array<{ code: string; label: string }> }>;
 };
 
-test('model version is 7 and vocabulary has 59 axes', () => {
-  assert.equal(model.version, 7);
-  assert.equal(MODEL_VERSION, 7);
-  assert.equal(model.vocabulary.length, 59);
+test('model version is 10 and vocabulary has 65 axes', () => {
+  assert.equal(model.version, 10);
+  assert.equal(MODEL_VERSION, 10);
+  assert.equal(model.vocabulary.length, 65);
 });
 
 test('sample_source axis holds T02 R[1] terms with owner T02 and revision note', () => {

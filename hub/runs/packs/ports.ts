@@ -2,7 +2,7 @@
 // WorkflowStore (what a run needs of a workflow pack) and PackCatalogPort (the console listing). Absent, unassigned,
 // withdrawn and unknown give the same null or empty answer; the account is re-read on every call.
 import type { PackSummary } from '../../../contracts/src/run.ts';
-import type { LoadedWorkflow, PackCatalogPort, PackHandle, PackListing, PacksPort, ProductHandle, WorkflowStore } from '../../ports.ts';
+import type { LoadedWorkflow, PackCatalogPort, PackHandle, PackListing, PacksPort, ProductHandle, WorkflowAbsence, WorkflowStore } from '../../ports.ts';
 import type { Principal } from '../../records/api.ts';
 import type { ActiveProduct, PackRegistry } from './registry.ts';
 import type { PackVersionInfo, WorkflowDeclarations } from './types.ts';
@@ -126,6 +126,17 @@ export function createWorkflowStore(registry: PackRegistry): WorkflowStore {
       if (account === null || parsed === null || !(await registry.canUse(account.id, parsed.id))) return null;
       const info = await registry.resolve(ref);
       return info === null ? null : load(info);
+    },
+    async absence(user: Principal, ref: string): Promise<WorkflowAbsence | null> {
+      const account = await registry.account(user);
+      if (account === null) return 'disabled';
+      const parsed = parsePackRef(ref);
+      if (parsed?.version == null) return 'unknown';
+      const info = await registry.getVersion(parsed.id, parsed.version);
+      if (info === null) return 'unknown';
+      if (info.withdrawn) return 'withdrawn';
+      if (!(await registry.canUse(account.id, parsed.id))) return 'unassigned';
+      return null;
     },
     async byDigest(digest: string): Promise<LoadedWorkflow | null> {
       const info = await registry.byDigest(digest);

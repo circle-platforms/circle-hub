@@ -4,6 +4,7 @@
 import { isAbsolute } from 'node:path';
 import { z } from 'zod';
 import { PROTOCOL_CODES } from '../../contracts/generated/protocol.ts';
+import { ReasonSchema } from '../../contracts/generated/vocabulary.ts';
 import type { CheckTier, Reason, SourceRole } from '../../contracts/generated/vocabulary.ts';
 import { CheckOutcome as CheckOutcomeShape, type CatalogEntry, type CheckOutcome } from '../../contracts/src/tables.ts';
 import type { CatalogView } from './catalog/view.ts';
@@ -40,6 +41,8 @@ export interface UnreadSource {
   reason: string;
   external?: string;
   slot?: string;
+  missing_fact?: string;
+  next_action?: string;
 }
 
 export interface CheckBindings {
@@ -57,6 +60,8 @@ export interface CheckBindings {
   /** Sources that could not be read or exceeded max bytes. */
   unreadSources?: ReadonlyArray<UnreadSource>;
   sandbox?: SandboxOptions;
+  /** Trusted parent runner; outcomes are still validated normally. Not supplied by pack input. */
+  functionRunner?: typeof callPackFunction;
   /**
    * Receives the error behind an unknown outcome with what outcomes leave out (stack, timings, host paths, captured output),
    * for the admin log. Outcomes keep only a stable, path-free part.
@@ -81,7 +86,7 @@ const Outcomes = z.array(CheckOutcomeShape).max(10_000);
  * Reasons a check gives for unknown: check error, timeout and missing input (V01 R[2]), an unproven closed world (C07 R[1]) and
  * a used-up budget and a pack-owned output/read-back failure (P05 R[0]). The others belong to models, submissions and runs.
  */
-const CHECK_REASONS: readonly Reason[] = ['check_error', 'timeout', 'missing_input', 'integrity_unproven', 'budget_exhausted', 'output_failed'];
+const CHECK_REASONS: readonly Reason[] = ReasonSchema.extract(['check_error', 'timeout', 'missing_input', 'integrity_unproven', 'budget_exhausted', 'output_failed']).options;
 
 /** Problems with outcomes a pack function returned: verdict shape, reasons, and the code namespace of the pack. */
 function outcomeProblems(outcomes: CheckOutcome[], pack: string): string | undefined {
@@ -202,7 +207,7 @@ export async function runCheck(declaration: CheckDeclaration, bindings: CheckBin
     ...(declaration.catalogEntries && bindings.catalog ? { catalog: entriesOf(bindings.catalog) } : {}),
   };
   try {
-    const result = await callPackFunction({ packDir: bindings.packDir, module: fn.module, export: fn.export }, input, declaration.limits, bindings.sandbox);
+    const result = await (bindings.functionRunner ?? callPackFunction)({ packDir: bindings.packDir, module: fn.module, export: fn.export }, input, declaration.limits, bindings.sandbox);
     const parsed = Outcomes.safeParse(result.output);
     if (!parsed.success) return [unknown(base, 'check_error', `包内函数 ${name} 的输出不是 check-outcome@1 数组`, { data: { issues: parsed.error.issues.slice(0, 5).map((i) => i.message) } })];
     const problem = outcomeProblems(parsed.data, pack);

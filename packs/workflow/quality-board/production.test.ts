@@ -7,13 +7,15 @@ import { StartRunOutput, SubmitResultOutput } from '../../../contracts/src/tools
 import { ValidationResult, partitionCountsOf, type ItemResult } from '../../../contracts/src/validation.ts';
 import { osIsolationAvailable } from '../../../hub/rules/api.ts';
 import { startPostgres, type TemporaryPostgres } from '../../../hub/testing/postgres.ts';
-import { facetRow, facetViewOf } from './functions/test-support.ts';
+import { facetRow, facetViewOf, placementFor } from './functions/test-support.ts';
 import { BUILD, ROOT, call, openHub, type Hub } from './test-hub.ts';
 
 const skip = (await osIsolationAvailable()) ? false : 'no OS network isolation on this machine (sandbox-exec)';
 let postgres: TemporaryPostgres;
 let hub: Hub;
 
+const PLACEMENT_ID = `knowledge:facets:apv:${BUILD.name}?kind=case&by=commands`;
+const TAGS_ID = `knowledge:facets:apv:${BUILD.name}?kind=case&by=line,module,tags`;
 const FACETS_ID = `knowledge:facets:apv:${BUILD.name}?kind=case&by=line,module,has_expected,vague_expected,negative`;
 
 // The view: SSL within the thresholds (20 cases: 1 missing, 1 vague, 1 negative — exactly at both maxima, not violations),
@@ -42,6 +44,7 @@ before(async () => {
   if (skip) return;
   hub = await openHub(postgres);
   hub.views.put(FACETS_ID, facetViewOf(ROWS));
+  hub.views.put(PLACEMENT_ID, placementFor(facetViewOf(ROWS), 2).model as Record<string, unknown>);
 });
 after(async () => {
   await hub?.close();
@@ -50,7 +53,7 @@ after(async () => {
 
 describe('a production run of quality-board', { skip }, () => {
   it('computes and stores the board at start_run: metrics as fact claims, threshold violations advisory, never blocking', async () => {
-    const detail = await hub.service.startRunDetailed(hub.alice, { pack: 'quality-board', inputs: { facets: { external: FACETS_ID } } }, call());
+    const detail = await hub.service.startRunDetailed(hub.alice, { pack: 'quality-board', inputs: { facets: { external: FACETS_ID }, placement: { external: PLACEMENT_ID } } }, call());
     assert.equal(detail.answer.call_result, 'ok', JSON.stringify(detail.answer.errors));
     assert.ok(StartRunOutput.safeParse({ ...detail.answer, trace: '4bf92f3577b34da6a3ce929d0e0e4736' }).success);
     const run = detail.answer.run!;
@@ -66,14 +69,14 @@ describe('a production run of quality-board', { skip }, () => {
     );
     assert.deepEqual(
       run.sources.map((s) => [s.slot, s.role, s.external]),
-      [['facets', 'subject', `${FACETS_ID}@${ROOT}`]],
+      [['facets', 'subject', `${FACETS_ID}@${ROOT}`], ['placement', 'hint', `${PLACEMENT_ID}@${ROOT}`]],
     );
     assert.deepEqual(
       run.items.map((i) => [i.id, i.summary]),
       [
-        ['10.6.1/SSL', '用例 20 个；无期望结果 5.0%；含糊期望 5.0%；负面用例 5.0%'],
-        ['10.6.1/WebUI', '用例 10 个；无期望结果 40.0%；含糊期望 30.0%；负面用例 0.0%'],
-        ['10.6.1/unplaced', '用例 2 个；无期望结果 0.0%；含糊期望 0.0%；负面用例 100.0%'],
+        ['10.6.1/SSL', '用例 20 个；无期望结果 1 个（5.0%）；含糊期望 1 个（5.0%）；负面用例 1 个（5.0%）'],
+        ['10.6.1/WebUI', '用例 10 个；无期望结果 4 个（40.0%）；含糊期望 3 个（30.0%）；负面用例 0 个（0.0%）'],
+        ['10.6.1/unplaced', '用例 2 个；无期望结果 0 个（0.0%）；含糊期望 0 个（0.0%）；负面用例 2 个（100.0%）'],
       ],
     );
 
@@ -101,7 +104,7 @@ describe('a production run of quality-board', { skip }, () => {
     assert.deepEqual(metrics.ratios.missing, { num: 1, den: 20 });
     assert.deepEqual([metrics.display.missing, metrics.display.negative], [0.05, 0.05]);
     assert.equal(board.claims[0].statement.verdict, 'support');
-    assert.deepEqual(board.claims[0].warrant, { producer: 'function', id: 'quality-board.board@1.0.1', independence: 'judge_not_author' });
+    assert.deepEqual(board.claims[0].warrant, { producer: 'function', id: 'quality-board.board@1.1.0', independence: 'judge_not_author' });
     assert.deepEqual(ssl.requirements[1].claims.map((c) => c.statement.verdict), ['support']);
 
     const webui = located(result, '10.6.1/WebUI');
@@ -133,8 +136,29 @@ describe('a production run of quality-board', { skip }, () => {
     assert.deepEqual(view.latest, { record: production.record, result });
   });
 
+  it('reads the optional tag view and required placement through the production engine', async () => {
+    hub.views.put(TAGS_ID, facetViewOf([
+      facetRow({ line: '10.6.1', module: 'SSL', tags: 'Functional' }, 10),
+      facetRow({ line: '10.6.1', module: 'SSL', tags: 'function' }, 10),
+      facetRow({ line: '10.6.1', module: 'SSL', tags: null }, 10),
+      facetRow({ line: '10.6.1', module: 'WebUI', tags: null }, 10),
+      facetRow({ line: '10.6.1', module: null, tags: 'Stress' }, 2),
+    ], { by: ['line', 'module', 'tags'], total: 32 }));
+    const detail = await hub.service.startRunDetailed(hub.alice, { pack: 'quality-board', inputs: { facets: [{ external: FACETS_ID }, { external: TAGS_ID }], placement: { external: PLACEMENT_ID } } }, call());
+    assert.equal(detail.answer.call_result, 'ok', JSON.stringify(detail.answer.errors));
+    const result = detail.production!.result;
+    const ssl = located(result, '10.6.1/SSL');
+    const data = ssl.requirements.find((r) => r.requirement === 'board')!.claims[0].statement.data as { counts: { cases: number }; coverage: { present: string[]; missing: string[]; untagged: number } };
+    assert.equal(data.counts.cases, 20);
+    assert.deepEqual(data.coverage.present, ['功能测试']);
+    assert.equal(data.coverage.untagged, 10);
+    assert.equal(data.coverage.missing.length, 5);
+    assert.match(result.cross_item.find((c) => c.requirement === 'totals')!.statement.text, /2 个用例没有解析出命令/);
+    assert.ok(hub.views.reads.some((id) => id.startsWith(TAGS_ID)));
+  });
+
   it('moves the thresholds with the parameters', async () => {
-    const detail = await hub.service.startRunDetailed(hub.alice, { pack: 'quality-board', inputs: { facets: { external: FACETS_ID } }, parameters: { max_missing_ratio: 0.5, max_vague_ratio: 0.5, min_negative_ratio: 0 } }, call());
+    const detail = await hub.service.startRunDetailed(hub.alice, { pack: 'quality-board', inputs: { facets: { external: FACETS_ID }, placement: { external: PLACEMENT_ID } }, parameters: { max_missing_ratio: 0.5, max_vague_ratio: 0.5, min_negative_ratio: 0 } }, call());
     assert.equal(detail.answer.call_result, 'ok', JSON.stringify(detail.answer.errors));
     const result = detail.production!.result;
     const webui = located(result, '10.6.1/WebUI');
@@ -146,12 +170,12 @@ describe('a production run of quality-board', { skip }, () => {
   });
 
   it('keeps the pack from users it is not assigned to, and takes model commentary only as judgments', async () => {
-    const refused = await hub.service.startRun(hub.bob, { pack: 'quality-board', inputs: { facets: { external: FACETS_ID } } }, call());
+    const refused = await hub.service.startRun(hub.bob, { pack: 'quality-board', inputs: { facets: { external: FACETS_ID }, placement: { external: PLACEMENT_ID } } }, call());
     assert.deepEqual(
       refused.errors.map((e) => e.code),
       ['SOURCE_UNAVAILABLE'],
     );
-    const detail = await hub.service.startRunDetailed(hub.alice, { pack: 'quality-board', inputs: { facets: { external: FACETS_ID } } }, call());
+    const detail = await hub.service.startRunDetailed(hub.alice, { pack: 'quality-board', inputs: { facets: { external: FACETS_ID }, placement: { external: PLACEMENT_ID } } }, call());
     const run = detail.answer.run!;
     const answer = await hub.service.submitResult(hub.alice, { run: run.run, model: 'scripted-model@test', items: [], cross_item: [{ nature: 'judgment', statement: '看板与预期一致', grounds: [run.items[0].location] }] }, call());
     assert.ok(SubmitResultOutput.safeParse({ ...answer, trace: '4bf92f3577b34da6a3ce929d0e0e4736' }).success);

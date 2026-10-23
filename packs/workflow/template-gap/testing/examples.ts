@@ -5,6 +5,12 @@
 import { writeFile } from 'node:fs/promises';
 import { runCheck, type CheckOutcome } from '../../../../hub/rules/api.ts';
 import { PACK_DIR, signManifest } from '../api.ts';
+import { commandOutcomes } from '../functions/command-check.ts';
+import { commandSubject } from '../functions/command-subject.ts';
+import { projectDocuments } from '../functions/project.ts';
+import { isFailure } from '../functions/common.ts';
+import { LOCK } from './index.ts';
+import { writeCommandSamples } from './command-samples.ts';
 import { coverageSubject } from '../functions/subject.ts';
 import type { DocumentItem } from '../functions/types.ts';
 import { baseDocument, render, renamed, withoutCategory } from './mindmap.ts';
@@ -19,6 +25,7 @@ export interface ExampleResult {
   sha256: string;
   item: DocumentItem;
   outcome: CheckOutcome;
+  command_outcomes: CheckOutcome[];
 }
 
 /** The example document as uploaded bytes: compact JSON like an export of the mind-map tool. */
@@ -28,7 +35,9 @@ export function exampleBytes(): Uint8Array {
 
 export async function exampleResult(bytes: Uint8Array = exampleBytes()): Promise<ExampleResult> {
   const sha = sha256(bytes);
-  const [item] = project([bind(bytes)]).items;
+  const projected = projectDocuments({ inputs: [bind(bytes)], parameters: {}, context: LOCK });
+  if (isFailure(projected)) throw new Error(projected.error.message);
+  const [item] = projected.items;
   const location = `src:${sha}/${item.location.parser}/${item.location.selector}`;
   const subject = coverageSubject({ applies: 'item', item: { id: item.id, label: item.label, location, fields: item.fields }, slots: null, evidence: [], context: CONTEXT });
   const [outcome] = await runCheck({ id: 'coverage', interpreter: 'coverage@1' }, { table: table('template-v3-coverage.json'), subject, context: { pack: 'template-gap', requirement: 'coverage', sets: {} } });
@@ -38,6 +47,7 @@ export async function exampleResult(bytes: Uint8Array = exampleBytes()): Promise
     sha256: sha,
     item,
     outcome,
+    command_outcomes: commandOutcomes(commandSubject({ item: { ...item, location }, context: { ...LOCK, groups: projected.groups } })),
   };
 }
 
@@ -45,6 +55,7 @@ if (import.meta.main) {
   const bytes = exampleBytes();
   await writeFile(`${PACK_DIR}${EXAMPLE_INPUT}`, bytes);
   await writeFile(`${PACK_DIR}${EXAMPLE_RESULT}`, `${JSON.stringify(await exampleResult(bytes), null, 2)}\n`);
+  await writeCommandSamples(PACK_DIR);
   const manifest = await signManifest();
   console.log(`wrote ${EXAMPLE_INPUT} and ${EXAMPLE_RESULT}; pack.json lists ${manifest.files.length} files`);
 }

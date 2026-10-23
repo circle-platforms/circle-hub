@@ -66,10 +66,19 @@ export interface LoadedWorkflow {
   readJson(path: string): unknown;
 }
 
+/** Why forUser had no workflow. null from absence means the version is published, assigned and not withdrawn. */
+export type WorkflowAbsence = 'unknown' | 'unassigned' | 'withdrawn' | 'disabled';
+
 /** What the engine needs of the pack registry (provided by runs/packs, consumed by runs/engine and the server). */
 export interface WorkflowStore {
   /** A version the user may use: `id` (latest published, assigned to the user) or `id@version`. Unknown, unassigned and withdrawn give the same null. */
   forUser(user: Principal, ref: string): Promise<LoadedWorkflow | null>;
+  /**
+   * Admin-log reason when forUser returned null. Does not extract the pack. null means the version is published, assigned
+   * and not withdrawn, so the caller has another reason (for example the manifest has no tools/).
+   * Optional so a store that only implements forUser keeps the combined note.
+   */
+  absence?(user: Principal, ref: string): Promise<WorkflowAbsence | null>;
   /** The exact version a run froze, by pack digest. Answers even after a withdrawal, so that existing runs can be read and finished. */
   byDigest(digest: string): Promise<LoadedWorkflow | null>;
   /** list_task_packs: the packs the user may use, with their requirements and inputs. Product and system packs never appear. */
@@ -103,11 +112,12 @@ export interface ExternalArtifact {
  * Result of reading one external object. On success the artifact named `original` is the response as received (stored by
  * SHA-256 before anything interprets it) and the others are artifacts derived from it by the system pack's projection. When a
  * `content` artifact exists it is what a consumer parses; otherwise the original is. A failure is never an exception: `reason`
- * is for the admin log, callers show the neutral SOURCE_UNAVAILABLE.
+ * is for the admin log; inputError is a deterministic caller-input problem safe for an authorized reader,
+ * while other failures show the neutral SOURCE_UNAVAILABLE.
  */
 export type ExternalRead =
   | { ok: true; id: string; revision: string | null; artifacts: ExternalArtifact[]; manifest: string }
-  | { ok: false; id: string; reason: string };
+  | { ok: false; id: string; reason: string; inputError?: { message: string; fix: string } };
 
 export interface ExternalReaderPort {
   /** Whether some enabled resource declares this external object type (`system:type:id`). */
@@ -132,7 +142,7 @@ export interface RunSubmissionView {
   /** Digest of the stored submission record. */
   record: string;
   received_at: string;
-  acceptance: Acceptance;
+  acceptance: Acceptance | null;
   errors: ProtocolError[];
   /** Digest of the validation_result record, when the submission was accepted. */
   result: string | null;
@@ -144,6 +154,8 @@ export interface RunDetail {
   submissions: RunSubmissionView[];
   /** The latest validation result (an accepted submission, or the result of a production run), with its record digest. */
   latest: { record: string; result: ValidationResult } | null;
+  /** The result computed at start_run (submission equals this run record's digest), never a later commentary result. */
+  production: { record: string; result: ValidationResult } | null;
 }
 
 export interface RunsService {

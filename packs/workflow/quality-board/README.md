@@ -9,7 +9,7 @@ of the whole view and the thresholds as advisory signals.
 
 | Path | What it is |
 | --- | --- |
-| `workflow.json` | `workflow@1`: one required input `facets` (subject), the external id `knowledge:facets:<product>:<build>?kind=case&by=line,module,has_expected,vague_expected,negative` (the caller may add `priority`); the threshold parameters; the pack binds no product line (the id names product and build, so no unrelated build is locked) |
+| `workflow.json` | `workflow@1`: required `facets` (subject, one count view and optionally one tag view) and `placement` (hint, one commands view), the external id `knowledge:facets:<product>:<build>?kind=case&by=line,module,has_expected,vague_expected,negative` (the caller may add `priority`); the threshold parameters; the pack binds no product line (the id names product and build, so no unrelated build is locked) |
 | `requirements.json` | `board` (item, fact, bookkeeping), `thresholds` (item, fact, advisory), `totals` (run, fact), all static layer only |
 | `checks.json` | `board`, `thresholds`, `totals`: pack functions with `applies: run`, all advisory — the board never blocks, these are management signals, not defects |
 | `functions/` | `views.ts` (reading the facet view), `board.ts` (the grouping, the metrics, the board check), `thresholds.ts`, `totals.ts`, `project.ts`, `subject.ts`, `text.ts`, `types.ts`; tests beside them |
@@ -22,7 +22,7 @@ of the whole view and the thresholds as advisory signals.
 ## The answer
 
 - **Items** are the (line, module) groups of the view: id = `<line>/<module>` (`unplaced` for a null line or module),
-  label = the pair, summary at most 200 characters (`用例 20 个；无期望结果 5.0%；含糊期望 5.0%；负面用例 5.0%`).
+  label = the pair, summary at most 200 characters (`用例 20 个；无期望结果 1 个（5.0%）；含糊期望 1 个（5.0%）；负面用例 1 个（5.0%）`).
 - **board** (per item): always support, the metrics as claim data — counts and the ratios as exact fractions `{num, den}`,
   plus numbers rounded (4 decimal places) for display only. Nothing is rounded before the final ratio.
 - **thresholds** (per item, advisory): a refutation with `quality-board.missing_expected`, `quality-board.vague_expected` or
@@ -38,11 +38,21 @@ of the whole view and the thresholds as advisory signals.
 - **The metric definitions are the ones of the owner's real-sample measurement**, quoted in the task page: a case without an
   expected result has `has_expected` false; a case with only vague expected results has `has_expected` true and
   `vague_expected` true; the negative share is `negative` true over all cases. No others are invented.
-- **The "resolvable command" share is not stated**: `facet-view@1` carries no such field today, so the totals note states the
-  limitation without a number ("state its share when the view carries it" — it never carries it yet). Since 1.0.1 the note
-  matches the case index as it is: every case of an indexed document has an entry (a case whose commands resolve nowhere is
-  an unplaced entry, counted), and only sources not read are outside the board; the earlier wording ("only cases that name a
-  resolvable command are indexed") was outdated.
+- **Unplaced cases (1.1.0)**: `placement` is mandatory and reads `by=commands`, on the same product and root as
+  the count view. Only the `commands: null` row is counted, once; non-null command rows can repeat a case and are not
+  summed. The count is disclosed in totals (`N 个用例没有解析出命令`), without a threshold or a new requirement.
+  An absent null row in a complete view means zero. If the view is truncated and has no null row, projection refuses:
+  the missing fact is the unplaced count; the fix asks for a complete same-root view and identifies the current
+  knowledge interface's inability to page/filter facets. It does not finish as an unknown result.
+- **Test types (1.1.0)**: the optional second `facets` view is exactly `by=line,module,tags`; it must share product, root
+  and total with the count view. Two count views or another combination refuse. Tags are kept out of the count view:
+  list-valued fields repeat rows per value. `tag-table.ts` copies the six types and aliases declared by template-gap;
+  `tag-table-consistency.test.ts` requires exact types, labels and aliases on both sides, and `coverage.test.ts` compares normalization with that pack on thousands of spellings. Per group the board states the
+  types observed, the types with no observed tag and the exact empty-tag count, never a per-type case count. Unknown
+  labels are tagged cases, not untagged ones. Several spellings on one case prove presence once.
+  Truncation or skipped sources qualify absence as “在已读的来源里没看到” and “部分”; a missing null-tag row in a truncated
+  view gives no invented zero. The claim names the follow-up action and SKILL requires the caller to perform it.
+  The other 18 template categories need title/path/steps/expected text absent from this view; only template-gap reads them.
 - **The violation codes live in the pack namespace.** The task page names `quality.missing_expected` etc.; the Hub requires a
   pack function's codes under `<pack>.` (hub/rules/check.ts), so they are `quality-board.missing_expected`,
   `quality-board.vague_expected`, `quality-board.negative_share`.
@@ -64,7 +74,7 @@ of the whole view and the thresholds as advisory signals.
 ## How to test
 
 ```
-node --test --test-concurrency=2 "packs/workflow/quality-board/**/*.test.ts"
+node --test --test-concurrency=1 "packs/workflow/quality-board/**/*.test.ts"
 ```
 
 - `functions/board.test.ts`: hand-built facet views (known counts, a null module, a null line, rows that split a group by
@@ -94,9 +104,44 @@ node --test --test-concurrency=2 "packs/workflow/quality-board/**/*.test.ts"
 
 - ~~packs/product/apv~~ **resolved**: the `cases` producer writes `document`, `line`, `module`, `priority`, `negative`,
   `has_expected`, `vague_expected` as quoted (single-valued), which the board reads.
-- **hub/knowledge**: nothing new — `facet-view@1` as served. If a later view version carries the share of cases that name a
-  resolvable command, the totals note can state it.
+- **hub/knowledge**: the integrator accepted a temporary refusal for truncated placement without the null group
+  (gold-trace task discussion, 2026-10-23). The durable fix is an untruncatable unplaced summary field after K2; current
+  `facet-view@1` supports neither `only=` nor pagination. This pack must switch to that field when available. Package
+  functions verify bound inputs; they cannot fetch more inputs themselves. Source omissions require source sync before retry.
+- **Acceptance gold**: `gold/board.ts --types` reads raw exported mindmaps/tree/documents, copies declarations only and
+  independently classifies raw tags. It verifies attribution/counts, not the build's document selection. `BoardGold.unplaced`
+  may carry the independent command-index measurement. A run against quality-board 1.1+ must bind the required
+  placement slot: `gold/board.ts` does that with one of `--placement`, `--case-commands <json>` or `--types`, and the
+  scenario checks the number whenever the gold supplies it.
+- The integrator confirmed (2026-10-23) that test types are team-template content, not a core vocabulary axis.
+- No new vocabulary axis or violation code is needed: the six types are pack table content; existing refusals are reused.
 
 ## Open questions for the owner
 
-- None.
+- No unresolved product decision. The knowledge summary capability remains a cross-package dependency, recorded above.
+
+Since 1.0.2, group summaries disclose the exact metric counts alongside percentages. Synthetic samples are regenerated from the same frozen counts.
+
+1.1.0 validation: synthetic fixtures only, a 100,000-case independent comparison and order reversal, sandbox checks,
+registry publication and a temporary PostgreSQL production run with a fake knowledge reader. These checks do not prove
+results on real business inputs; the integrator runs the real scans and acceptance after publication.
+
+Privacy update (integrator, 2026-10-23): acceptance group names use ordinals only. The scan prints build ordinals, never hashes of names. The board prints a digest of metric counts only, excluding line and module labels. Private `--out` files retain correspondence.
+
+Gold closure A: --case-commands validates the consumed measurement fields, document coverage and per-document counts against
+its case rows before counting paths. A listed document with zero case rows is an observed zero, not a missing export;
+contradictory metadata and malformed paths are refused with a fixed rerun instruction. No Hub/pack runtime is imported.
+
+Gold closure B: --placement only asks the scenario to bind placement and require the Hub count sentence; it omits
+unplaced unless --case-commands provided an independent measurement. An observed zero remains a strict comparison,
+while a count that was not measured is never invented as zero. Missing Hub output still fails the check.
+
+Independent id policy: the gold extractors follow the APV README, preserving zero padding in output spellings and raw
+source titles, using normalized nonzero keys only for classification/joins, and rejecting zero-only or out-of-bound digit
+runs. Bare ids use the APV 4–7 written-digit range. Dates/versions are excluded before joining. This supersedes the old
+location-gold exception that rejected every leading zero. The separate gold-location branch is aligned by its owner.
+
+Gold closure C: board location independently follows the public APV module rule: labels are truncated to 1000 before
+normalization, but a resulting module name is at most 40 characters and cannot contain four consecutive digits.
+Version and activity labels, and marked identifiers, remain excluded. The 40/41 boundary, prefixed labels and numeric
+control examples are covered without importing the product implementation into the gold.

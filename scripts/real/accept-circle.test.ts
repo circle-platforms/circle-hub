@@ -24,9 +24,11 @@ test('the case-location scenario starts the run in the first turn and checks the
     { tool: 'hub_start_run', input: { pack: 'case-location', product: 'APV', inputs: { documents: { external: 'agile:mindmap:90001' } } } },
   ]);
   assert.deepEqual(s.respond({ index: 1, system: null, messages: [], tools: [], toolResults: [] }), [{ text: '定位完成。' }]);
-  const checks = s.check(parseLog(log));
-  assert.ok(checks.every((c) => c.ok), JSON.stringify(checks.filter((c) => !c.ok)));
-  const wrong = caseLocation({ document: '90001', product: 'APV', line: '10.7.0' }).check(parseLog(log));
+  const turns = parseLog(log);
+  turns[1].toolResults[0].text += '\n条目（1 个；编号 | 名称 | 摘要）：\n- 90001 | 合成文档 | 产品线 apv；版本 10.6.1（目录，置信度高）；发布火车 10.6.1-R1';
+  const checks = s.check(turns);
+  assert.ok(checks.some((c) => !c.ok && c.name.includes('候选')), 'missing candidates are a failed check after starting the scenario');
+  const wrong = caseLocation({ document: '90001', product: 'APV', line: '10.7.0' }).check(turns);
   assert.ok(wrong.some((c) => !c.ok && c.name.includes('版本线')), 'a different line in the gold is a mismatch');
 });
 

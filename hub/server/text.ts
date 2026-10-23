@@ -1,3 +1,4 @@
+import { isCallResult, isAcceptance } from '../../contracts/generated/vocabulary.ts';
 // The Chinese plain text of every tool answer (D05 R[0], R[1], R[6]; display rules 0, 4-7 and 11): the only content block,
 // and the only part of a tool result the real Circle client hands to the model (structuredContent never reaches it). Every
 // text is laid out within TEXT_BUDGET (budget.ts): the facts a model works from come first (receipt and counts, the state of
@@ -7,6 +8,7 @@
 // says it pages (TextContext.paging); otherwise byte ranges and text@1 line ranges of sources, record pointers and the
 // console page. structuredContent keeps the whole answer as JSON.
 import { createHash } from 'node:crypto';
+import { applicabilityText } from '../knowledge/api.ts';
 import type { z } from 'zod';
 import { REFERENCE_FORMS } from '../../contracts/generated/protocol.ts';
 import {
@@ -960,6 +962,16 @@ function nodeEntry(node: KnowledgeNode, root: string, room: number): Entry {
     const data = entry.data === undefined ? '' : `；数据 ${clip.field(JSON.stringify(entry.data), CLIP.data, '条目数据的超出部分')}`;
     return { text: `  · [${labelOf('entry_kind', entry.kind)}] ${statement}（适用 ${clip.field(entry.applicability, CLIP.name, '适用条件的超出部分')}）；引用 ${entry.reference}${data}`, omitted: clip.omitted };
   });
+  for (const view of node.contributions ?? []) {
+    const clip = new Clip(`rec:${view.record}`);
+    const c = view.contribution;
+    if(c===undefined){entries.push({text:`  · [${labelOf('knowledge_layer','contribution')}] ${clip.field(view.note,CLIP.field,'回注说明的超出部分')}；引用 rec:${view.record}`,omitted:clip.omitted});continue;}
+    if(!('statement'in c)){
+      entries.push({text:`  · [${labelOf('knowledge_layer',c.layer)}] ${clip.field(view.note??labelOf('validity_status',view.status),CLIP.field,'受限说明的超出部分')}；来源 ${c.source.reference}；提交人 ${c.submitted_by}；时间 ${c.submitted_at}；依据 ${labelOf('basis_rank',c.basis_rank)}；引用 rec:${view.record}`,omitted:clip.omitted});
+      continue;
+    }
+    entries.push({ text: `  · [${labelOf('knowledge_layer', c.layer)} / ${labelOf('document_output_kind', c.kind)}] ${clip.field(c.statement, CLIP.field, '回注陈述的超出部分')}；来源 ${c.source.reference}（${labelOf('provenance_type',c.source.provenance)}）；适用 ${clip.field(applicabilityText(c.applicability),CLIP.name,'适用条件的超出部分')}；提交人 ${c.submitted_by}；时间 ${c.submitted_at}；依据 ${labelOf('basis_rank',c.basis_rank)}；引用 rec:${view.record}${view.note === null ? '' : '；'+view.note}${c.relation === undefined ? '' : '；关系 '+labelOf('relation_kind',c.relation.kind)+' → '+c.relation.other.reference}`, omitted: clip.omitted });
+  }
   const children = node.children.map((child) => {
     const clip = new Clip(null, page);
     return { text: `  子节点 ${child.path} ${clip.field(child.name, CLIP.name, '子节点名称的超出部分')}`, omitted: clip.omitted };
@@ -991,7 +1003,7 @@ function nodeEntry(node: KnowledgeNode, root: string, room: number): Entry {
     if(total!==null&&shown<total)omitted.push({what:`反向关联条目 ${total-shown} 个`,more:`反向视图还有记录：${node.backlinks.view_id ?? "请用同一运行重新读取节点以取得视图标识"}，读取后沿视图游标翻页`});
   }
   if (keptEntries < entries.length) {
-    const left = node.entries.slice(keptEntries).map((e) => e.reference);
+    const left = [...node.entries.map(e => e.reference), ...(node.contributions ?? []).map(e => `rec:${e.record}`)].slice(keptEntries);
     let listed = 0;
     let size = 0;
     while (listed < left.length && (listed === 0 || size + left[listed].length + 1 <= 3000)) size += left[listed++].length + 1;
@@ -1351,6 +1363,12 @@ function submitText(v: SubmitOut, context: TextContext): string {
     if (result.trace !== v.trace) head.push(`结果出自追踪 ${result.trace} 的那次调用（同一提交的重复调用返回存下的结果）`);
     if (record !== null) head.push(`存下的结果 ${record}（用 get_nodes 按引用读；也可${toConsole}）`);
   }
+  if (result?.contributions !== undefined) {
+    const c = result.contributions;
+    head.push(`回注：提交 ${c.submitted} 条，入层 ${c.stored.length} 条，未入层 ${c.not_stored.length} 条`);
+    for (const entry of c.stored) head.push(`回注条目 ${oneLine(entry.item)}：rec:${entry.record}`);
+    for (const entry of c.not_stored) head.push(`未入层条目 ${oneLine(entry.item)}：${oneLine(entry.reason)}`);
+  }
   const blocks: Block[] = [{ priority: 0, head }];
   if (accepted) blocks.push({ priority: 0, head: ['要求项（满足状态与各层终态的条目数）：', ...requirementCounts(result)] });
   if (v.errors.length > 0) {
@@ -1448,9 +1466,9 @@ export function fallbackText(tool: string, value: unknown, context: TextContext 
   const lines: string[] = [];
   let run: string | null = null;
   try {
-    if (v.call_result === 'ok' || v.call_result === 'error') lines.push(`${axisLabel('call_result')}：${labelOf('call_result', v.call_result)}`);
+    if (isCallResult(v.call_result)) lines.push(`${axisLabel('call_result')}：${labelOf('call_result', v.call_result)}`);
     const result = recordsOf(v.result);
-    if (v.acceptance === 'accepted' || v.acceptance === 'not_accepted') {
+    if (isAcceptance(v.acceptance)) {
       const partitions = v.acceptance === 'accepted' ? Partitions.safeParse(result.partitions) : null;
       lines.push(countsLine(v.acceptance, partitions?.success === true ? partitions.data : undefined));
     }

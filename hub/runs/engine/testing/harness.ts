@@ -1,3 +1,4 @@
+import type { PermissionRole } from '../../../../contracts/generated/vocabulary.ts';
 // Test harness of the runs engine: a records kit in a temporary PostgreSQL database, three accounts, the toy packs in a
 // temporary directory, fakes of the ports built beside the engine, a clock the tests can move, and the service.
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -59,7 +60,7 @@ export async function sandboxSkip(): Promise<string | false> {
   return (await osIsolationAvailable()) ? false : 'operating-system isolation for pack functions (sandbox-exec) is not available here';
 }
 
-const principal = (u: { id: string; name: string; role: 'user' | 'admin' }): Principal => ({ id: u.id, name: u.name, role: u.role });
+const principal = (u: { id: string; name: string; role: PermissionRole }): Principal => ({ id: u.id, name: u.name, role: u.role });
 
 let traceCounter = 1;
 export function traceId(): string {

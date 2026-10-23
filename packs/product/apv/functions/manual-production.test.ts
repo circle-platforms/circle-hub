@@ -24,6 +24,8 @@ const MANUAL = [
   '',
   '## 命令',
   '',
+  '本章列出生成命令，说明见各条。',
+  '',
   '**demo pool add** *\\<name\\>*',
   '',
   '该命令用于添加成员。',
@@ -49,13 +51,17 @@ const MANUAL = [
 // The same manual with one sentence of the 概述 section edited (the 命令 section untouched).
 const MANUAL_EDITED = MANUAL.replace('本手册为合成。', '本手册为合成，第二版。');
 
+// The trees hold EVERY command the manual names (demo probe included: closure c3 item 9 — a digest compared as
+// null on both sides proves nothing about the node it names).
 const TREE_A =
   '<commands><scope type="global"><menu name="demo"><menu name="pool"><item name="add" help_string="a"><arguments></arguments></item></menu>' +
-  '<menu name="route"><item name="static" help_string="s"><arguments></arguments></item></menu></menu></scope></commands>';
+  '<menu name="route"><item name="static" help_string="s"><arguments></arguments></item></menu>' +
+  '<item name="probe" help_string="p"><arguments></arguments></item></menu></scope></commands>';
 // TREE_B adds one command the manual never names.
 const TREE_B =
   '<commands><scope type="global"><menu name="demo"><menu name="pool"><item name="add" help_string="a"><arguments></arguments></item></menu>' +
   '<menu name="route"><item name="static" help_string="s"><arguments></arguments></item></menu>' +
+  '<item name="probe" help_string="p"><arguments></arguments></item>' +
   '<item name="other" help_string="o"><arguments></arguments></item></menu></scope></commands>';
 
 /** The FakeExternal of the knowledge tests, plus the manual-store external ids. */
@@ -171,11 +177,11 @@ describe('production with the real manual producer', () => {
     const after = await knowledge.produceTree({ product, build: build('Rel_APV_10_6_1_9', 'site:tree:a'), by: admin });
     assert.ok(after.ok, after.reason ?? '');
     for (const names of [['commands', 'demo', 'pool', 'add'], ['commands', 'demo', 'probe'], ['commands', 'demo', 'route', 'static']]) {
-      assert.equal(
-        await nodeDigest(after.root as string, names),
-        await nodeDigest(before.root as string, names),
-        `${names.join('/')} keeps its digest when only a heading changed`,
-      );
+      const beforeDigest = await nodeDigest(before.root as string, names);
+      const afterDigest = await nodeDigest(after.root as string, names);
+      assert.ok(beforeDigest !== null, `${names.join('/')} exists before the rename`);
+      assert.ok(afterDigest !== null, `${names.join('/')} exists after the rename`);
+      assert.equal(afterDigest, beforeDigest, `${names.join('/')} keeps its digest when only a heading changed`);
     }
     external.set('manual:cli:10.6.1', { bytes: MANUAL, mediaType: 'text/markdown' });
   });

@@ -83,7 +83,7 @@ export const MAX_LIST_SOURCES = 20000;
 export const BuildInfo = z.strictObject({
   name: z.string().min(1).describe('build name exactly as listed'),
   family: z.string().min(1).describe('which of the product names the build carries'),
-  line: z.string().min(1).describe('version line the pack assigns to the build, for example 10.4.6'),
+  line: z.string().min(1).describe('version line the pack assigns to the build, for example 10.7.6'),
   base: z.string().min(1).describe('the build whose tree this build uses; equals name when the build has its own tree'),
   platform: z.string().min(1).nullable().describe('platform or customer branch; null for the main platform'),
   built_at: IsoTime.nullable(),

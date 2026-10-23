@@ -55,8 +55,9 @@ export { CALIBRATION, PLACEMENT_CHAIN, maskLiterals, thresholdOf, wilsonLowerBou
 export type { PlaceOptions, PlacementChild, PlacementOutcome, PlacementSpan, PlacementTree } from './placement.ts';
 export { MAX_REAL_OPTIONS, belowThreshold, narrowCandidates, optionNames, placementNote, placementQuestion, questionId, sampleInput } from './placement.ts';
 
-export type { CandidateInput, CandidateView } from './layers.ts';
-export { CandidateLayer, ObservationLayer } from './layers.ts';
+export { ObservationLayer } from './layers.ts';
+export { ContributionLayer, ContributionRefusal } from './contributions.ts';
+export type { ContributionScope, ContributionOrigin, PreparedContribution, ContributionAdmissionCode } from './contributions.ts';
 
 export type { EntryContent, NodeContent } from './digest.ts';
 export { cutText, entryContentOf, entryDigest, nodeDigest, normaliseApplicability, normaliseStatement } from './digest.ts';

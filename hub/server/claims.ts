@@ -70,7 +70,7 @@ export function claimFields(claim: Claim): [DisplayLabel, string][] {
 }
 
 /** Symbols of terminal states: success, failure, judgment, unknown (its own) and not complete. */
-export const SYMBOL = { pass: '✓', failure: '✗', judgment: '◇', unknown: '？', incomplete: '…' } as const;
+export const SYMBOL = { pass: '✓', failure: '✗', judgment: '◇', unknown: '？', incomplete: '…' } as const satisfies Partial<Record<StaticTerminal | DynamicTerminal | 'failure' | 'unknown', string>>;
 
 /** What a terminal is for display: the key of its symbol, and of its colour on the console (display rule 5). */
 export type TerminalKind = keyof typeof SYMBOL;

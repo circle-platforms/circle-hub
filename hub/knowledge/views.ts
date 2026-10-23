@@ -47,8 +47,8 @@ import { ACTION, COMPONENTS, Lru } from './store.ts';
 /** The system of the Hub's own knowledge views in external object ids. */
 export const VIEW_SYSTEM = 'knowledge';
 /** Default kinds of an impact view: what counts as a change, and what is listed on the changed nodes. */
-export const DEFAULT_CHANGED_KINDS: readonly EntryKind[] = ['definition', 'behaviour'];
-export const DEFAULT_ATTACHED_KINDS: readonly EntryKind[] = ['case'];
+export const DEFAULT_CHANGED_KINDS: readonly EntryKind[] = EntryKindSchema.extract(['definition', 'behaviour']).options;
+export const DEFAULT_ATTACHED_KINDS: readonly EntryKind[] = EntryKindSchema.extract(['case']).options;
 /** Most values of one entry's field combinations a facet view counts (a cross product of list fields). */
 export const MAX_FACET_COMBINATIONS = 4096;
 /** Most values an index view's `only` names. */

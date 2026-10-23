@@ -2,11 +2,11 @@
 // (tree_root), current-root moves (root_pointer), builds, calibration sets and layers (claim), and its own actions (loads
 // of list sources, memoized producer calls, productions, plan rounds, judgments). Content-addressed reads are cached: what
 // is behind a node, entry or part digest never changes, and every read is re-verified against its digest.
+import { KNOWLEDGE_CONTRIBUTION_SCHEMA, KnowledgeContributionBody } from '../../contracts/src/contributions.ts';
 import { z } from 'zod';
 import {
   KnowledgeBuildBody,
   KnowledgeCalibrationBody,
-  KnowledgeCandidateBody,
   KnowledgeEntryBody,
   KnowledgeObservationBody,
   RecordedBuild,
@@ -39,7 +39,7 @@ export const SCHEMAS = {
   build: 'knowledge-build@1',
   calibration: 'knowledge-calibration@1',
   observation: 'knowledge-observation@1',
-  candidate: 'knowledge-candidate@1',
+  contribution: KNOWLEDGE_CONTRIBUTION_SCHEMA,
   action: RECORD_SCHEMAS.action,
 } as const;
 
@@ -51,6 +51,11 @@ export const PART_SHAPES = {
 } as const;
 export type PartSchema = keyof typeof PART_SHAPES;
 export type PartBody<S extends PartSchema> = z.infer<(typeof PART_SHAPES)[S]>;
+
+/** The indexed key of a contradiction relation between two claims (B01 R[2]): a claim record whose body says
+ * relation: 'contradicts' and the other claim's tree address. The candidate layer (another terminal) proposes these;
+ * a deterministic rule may too. Reading computes the flag, never adjudicates (K-direction §5). */
+export const CONTRADICTION = 'knowledge.claim.contradiction';
 
 /** Index keys this package writes (all under `knowledge.`, plus the records package's `action.kind`). */
 export const INDEX = {
@@ -64,6 +69,7 @@ export const INDEX = {
   produceRoot: 'knowledge.produce.root',
   produceProduct: 'knowledge.produce.product',
   sync: 'knowledge.sync',
+  contradiction: CONTRADICTION,
   build: 'knowledge.build',
   buildProduct: 'knowledge.build.product',
   buildBase: 'knowledge.build.base',
@@ -73,7 +79,7 @@ export const INDEX = {
   judgmentInput: 'knowledge.jev.input',
   calibration: 'knowledge.calibration',
   observation: 'knowledge.observation.product',
-  candidate: 'knowledge.candidate.owner',
+  contribution: 'knowledge.contribution.product',
   /** A list source the knowledge package loaded: external id -> its read action. */
   read: 'knowledge.read',
   /** A producer call's stored output: memo key -> its generate action. */
@@ -98,7 +104,7 @@ export const COMPONENTS = {
 } as const;
 
 /** The action kinds (B05 F[0]) this package records; checked against the generated vocabulary at compile time. */
-export const ACTION = { parse: 'parse', generate: 'generate', classify: 'classify', read: 'read' } as const satisfies Record<string, ActionKind>;
+export const ACTION = { parse: 'parse', generate: 'generate', classify: 'classify', read: 'read' } as const satisfies Partial<Record<ActionKind, ActionKind>>;
 
 /** Build names compare without case for lookups (NFC, lower case); the stored name keeps its spelling. */
 export function fold(name: string): string {
@@ -778,9 +784,9 @@ export class KnowledgeStore {
     return body.success ? body.data : null;
   }
 
-  static candidateOf(record: StoredRecord<unknown>): KnowledgeCandidateBody | null {
-    if (record.schema !== SCHEMAS.candidate) return null;
-    const body = KnowledgeCandidateBody.safeParse(record.body);
+  static contributionOf(record: StoredRecord<unknown>): KnowledgeContributionBody | null {
+    if (record.schema !== SCHEMAS.contribution) return null;
+    const body = KnowledgeContributionBody.safeParse(record.body);
     return body.success ? body.data : null;
   }
 }

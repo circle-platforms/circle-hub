@@ -4,7 +4,7 @@
 //   - a signature hangs at its command node only when the command exists in the build's command tree (a DIRECT call
 //     without a catalog places by the literal, unchecked; a PRODUCTION with no tree slot or a non-xml@1 tree keeps
 //     every signature at its section node, warns with the missing fact and the next action, and lists no drift) (`/commands` nodes
-//     are built by the command-tree producer alone); without a tree the literal decides, unchecked;
+//     are built by the command-tree producer alone).
 //   - a pipe table whose rows carry signatures is split by row: a one-signature row hangs at its command when it exists
 //     and every command of a multi-command row exists (then the row hangs at their nearest common ancestor when that
 //     is at least one word deeper than /commands — /commands itself is not a placement); rows without a signature
@@ -254,7 +254,7 @@ function isNoise(kind: string, text: string): boolean {
   return NOISE_BLOCKS.has(kind) || text === '' || (kind === 'html_block' && /^<!--[\s\S]*?-->$/.test(text.trim()));
 }
 
-type Section = { title: string; parent: number | null; selector: string | null };
+type Section = { title: string; parent: number | null; selector: string | null; path: string[] | null };
 type Block = { kind: string; section: number; text: string; selector: string };
 
 const MANUAL_NS = 'manual';
@@ -355,7 +355,7 @@ function anchorPathOf(anchor: Anchor, catalog: CommandCatalog | null, options: P
   if (anchor.variants === null) return null;
   const key = anchor.words.map((word) => word.toLowerCase());
   // Only the variants that EXTEND the key decide existence: the alternatives a leading optional group adds
-  // ([no] …) are not words of the tree, and resolves() skips them the same way.
+  // ([no] …) are not words of the tree.
   const extending = anchor.variants.filter((variant) => variant.length >= key.length && variant.slice(0, key.length).every((word, k) => word.toLowerCase() === key[k]));
   if (extending.length === 0) return null;
   const variantPaths = extending.map((variant) => existingPath(catalog, variant));
@@ -407,6 +407,8 @@ const TRIGGERS = [/适用于/gu];
 
 /** The clause boundaries: a candidate series runs to the next of these, and negations are looked for back to one. */
 const CLAUSE_END = /[。；：\n]/;
+/** The end of a sub-clause: a comma starts a new remark, so a series' own checks stop here (c3 item 4). */
+const SUB_CLAUSE_END = /[，,]/;
 
 /**
  * The conditions one text declares, per field — read linearly, never by a backtracking series regex. For every
@@ -456,11 +458,18 @@ function conditionsOf(text: string): Conditions {
     }
     positions.push(...loose, ...tight);
     for (const itemsAt of positions) {
-      const before = slice.slice(Math.max(0, itemsAt - 64), itemsAt);
+      // Negations and widening words count only within the trigger's OWN sub-clause (back to the previous comma
+      // or the clause start): a remark like 无需重启， or 不同…， before it does not suppress the condition (c3 item 4).
+      let windowStart = Math.max(0, itemsAt - 64);
+      for (let k = itemsAt - 1; k >= windowStart; k -= 1) {
+        if (SUB_CLAUSE_END.test(slice[k] ?? '')) { windowStart = k + 1; break; }
+      }
+      const before = slice.slice(windowStart, itemsAt);
       if (CLAUSE_NEGATION.test(before) || ALSO_BEFORE.test(before)) continue;
-      // A 仅/只 candidate is tight only at the clause start (the whole clause is the series: 仅 hg-k 平台支持…).
-      const isTight = tight.includes(itemsAt);
-      if (isTight && !/(?:平台|系列|机型|型号)\s*支持/u.test(slice)) continue;
+      // Every 仅/只 candidate is a restriction ONLY in the documented form — the series noun itself followed by
+      // 支持 ('仅 hg-k 平台支持', c3 item 2): a mid-clause 仅 about one platform's difference is not one.
+      const isOnlyCandidate = tight.includes(itemsAt) || loose.includes(itemsAt);
+      if (isOnlyCandidate && !/(?:平台|系列|机型|型号)\s*支持/u.test(slice)) continue;
       // The candidate series: at most CLAUSE_BOUND characters from the trigger.
       const candidate = slice.slice(itemsAt, Math.min(slice.length, itemsAt + CLAUSE_BOUND)).trim();
       const read = readSeries(candidate);
@@ -481,8 +490,10 @@ function readSeries(candidate: string): { platforms: string[]; models: string[] 
   const NOUN_RE = /(平台|系列|机型|型号)(\s*支持)?/u;
   let rest = candidate;
   const tokensByField: { platforms: string[]; models: string[] } = { platforms: [], models: [] };
+  const tokensOk = (): boolean => tokensByField.platforms.length + tokensByField.models.length > 0;
   let field: 'platforms' | 'models' | null = null;
   let nounAteSupport = false;
+  let afterConnective = false;
   const itemSplit = new RegExp(`\\s*(?:${CONNECTIVES.map(escapeRe).join('|')})\\s*`, 'u');
   let guard = 0;
   for (;;) {
@@ -503,8 +514,15 @@ function readSeries(candidate: string): { platforms: string[]; models: string[] 
         rest = afterConnective;
         continue;
       }
+      // The quiet tail: a start-build tail (自 <版本> 起…), a possessive tail (starts with 的, only when the noun
+      // ate its own 支持), or plain Han prose with no field noun, connective, ETC word or negation in its own
+      // sub-clause (平台环境, 系列设备 — c3 item 4). An unfinished item after a connective is none of these.
       const startTailHere = /^自\s*\S+\s*起/.test(left.trim());
-      if (left.trim() !== '' && !startTailHere && !/^的/u.test(left.trim())) return null;
+      const tailSub = (() => { const at = SUB_CLAUSE_END.exec(left); return at === null ? left : left.slice(0, at.index); })();
+      // Plain Han prose ends the series ONLY when no connective asked for another item (物理设备 after 和 is an
+      // unfinished item: the series stays unread — closure 14).
+      const quietHan = !afterConnective && tailSub.trim() !== '' && !/(?:平台|系列|机型|型号)/u.test(tailSub) && !CONNECTIVES.some((word) => tailSub.includes(word)) && !ETC.test(tailSub) && !CLAUSE_NEGATION.test(tailSub);
+      if (left.trim() !== '' && !startTailHere && !(quietHan && tokensOk()) && !(/^的/u.test(left.trim()) && nounAteSupport)) return null;
       break;
     }
     if (head.index > CLAUSE_WINDOW) return null;
@@ -519,17 +537,31 @@ function readSeries(candidate: string): { platforms: string[]; models: string[] 
     if (field !== 'platforms' && !pieceTokens.every((token) => MODEL_ATOM.test(token) && !PRODUCT_NAMES_LOWER.has(token.toLowerCase()))) return null;
     tokensByField[field].push(...pieceTokens);
     nounAteSupport = head[2] !== undefined;
+    afterConnective = false;
     rest = rest.slice(head.index + head[0].length);
     if (rest.trim() === '') break;
-    if (ETC.test(rest) || CLAUSE_NEGATION.test(rest) || /^\\s*外/.test(rest)) return null;
-    const connective = new RegExp(`^\\s*(?:${CONNECTIVES.map(escapeRe).join('|')})\\s*`, 'u').exec(rest);
+    // Forward checks stop at the sub-clause end: a remark after a comma is not part of the series (c3 item 4).
+    const subEnd = (() => { const at = SUB_CLAUSE_END.exec(rest); return at === null ? rest.length : at.index; })();
+    const own = rest.slice(0, subEnd);
+    if (ETC.test(own) || CLAUSE_NEGATION.test(own) || /^\s*(?:外|除外)/u.test(own)) return null;
+    const connective = new RegExp(`^\s*(?:${CONNECTIVES.map(escapeRe).join('|')})\s*`, 'u').exec(rest);
     if (connective !== null) {
-      rest = rest.slice(connective[0].length);
+      const next = rest.slice(connective[0].length);
+      const afterSub = (() => { const at = SUB_CLAUSE_END.exec(next); return at === null ? next : next.slice(0, at.index); })();
+      // A comma connective before a remark (，用于配置成员) ends the series quietly: the remark is not a list item.
+      if (SUB_CLAUSE_END.test(connective[0]) && !/(?:平台|系列|机型|型号)/u.test(afterSub)) break;
+      afterConnective = true;
+      rest = next;
       continue;
     }
     if (NOUN_RE.test(rest.trim())) continue;
+    // A leftover is quiet when it is a start-build tail (自 <版本> 起…), a possessive tail (starts with 的, only
+    // when the noun ate its own 支持 — c3 item 2), or plain Han prose with no field noun, connective, ETC word or
+    // negation in its own sub-clause (平台环境, 系列设备 — c3 item 4). Anything else keeps the series unread.
     const startTail = /^自\s*\S+\s*起/.test(rest.trim());
-    if (rest.trim() !== '' && !startTail && !/^的/u.test(rest.trim()) && !nounAteSupport) return null;
+    const restSub = rest.slice(0, (() => { const at = SUB_CLAUSE_END.exec(rest); return at === null ? rest.length : at.index; })());
+    const quietHan = restSub.trim() !== '' && !/(?:平台|系列|机型|型号)/u.test(restSub) && !CONNECTIVES.some((word) => restSub.includes(word)) && !ETC.test(restSub) && !CLAUSE_NEGATION.test(restSub);
+    if (rest.trim() !== '' && !startTail && !quietHan && !(/^的/u.test(rest.trim()) && nounAteSupport)) return null;
     break;
   }
   if (field === null) return null;
@@ -550,9 +582,12 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
   const name = typeof options.name === 'string' && options.name !== '' ? options.name : DEFAULT_MANUAL_NAME;
   const catalog = options.catalog ?? null;
   const sections: Section[] = asArray(model.sections).map((value) => {
-    if (!isRecord(value)) return { title: '', parent: null, selector: null };
+    if (!isRecord(value)) return { title: '', parent: null, selector: null, path: null };
     const parent = Number.isInteger(value.parent) ? (value.parent as number) : null;
-    return { title: asString(value.title) ?? '', parent, selector: asString(value.selector) };
+    // A model whose sections are not cited by h/ selectors (an adoc model with text@1 l/<a>-<b> ranges) can carry
+    // its own decoded path array; the h/ decoding stays the markdown@1 fallback (c3 item 7, K4).
+    const path = Array.isArray(value.path) && value.path.every((part) => typeof part === 'string') ? (value.path as string[]) : null;
+    return { title: asString(value.title) ?? '', parent, selector: asString(value.selector), path };
   });
   // The title chain of every section (top first), for the readable `section` of an entry's data.
   const titleChains: string[][] = sections.map((_, index) => {
@@ -575,6 +610,8 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
   /** Decoded segments of a section's heading path (the block.path spelling), null when the section cannot be cited. */
   const sectionSegments = (index: number): string[] | null => {
     if (index === 0) return [];
+    const own = sections[index]?.path;
+    if (own !== null && own !== undefined) return own;
     const selector = sections[index]?.selector;
     if (typeof selector !== 'string' || !selector.startsWith('h/')) return null;
     try {
@@ -701,7 +738,7 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
     return tails.length > 0 ? tails : null;
   };
 
-  const valueOfCurrent = (cellAnchor: Anchor, currentWords: readonly string[] | null, variantTail: readonly string[] | null): boolean => {
+  const valueOfCurrent = (cellAnchor: Anchor, currentWords: readonly string[] | null, variantTail: readonly string[] | null, currentParams: readonly { name: string }[] = []): boolean => {
     if (currentWords === null) return false;
     const lowered = currentWords.map((word) => word.toLowerCase());
     if (cellAnchor.params.length > 0 && cellAnchor.words.length === lowered.length + cellAnchor.params.length
@@ -711,8 +748,14 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
     }
     if (cellAnchor.params.length === 0 && variantTail !== null) {
       const text = cellAnchor.words.join(' ').toLowerCase();
-      return variantTail.some((option) => option === text);
+      if (variantTail.some((option) => option === text)) return true;
     }
+    // A cell whose HEAD equals one of the current signature's parameter names (with or without its value syntax,
+    // weight / weight <1-100>), or one enumerated alternative of its variant group, is a value row (c3 item 5,
+    // previous finding 2's asked rule).
+    const headText = cellAnchor.words.map((word) => word.toLowerCase()).join(' ');
+    if (headText !== '' && !lowered.includes(headText) && currentParams.some((param) => param.name.toLowerCase() === headText)) return true;
+    if (variantTail !== null && headText !== '' && !lowered.includes(headText) && variantTail.some((option) => option === headText)) return true;
     return false;
   };
 
@@ -726,45 +769,69 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
    * is read only outside parameter syntax: emphasis `*…*`, group brackets {}, [], <> and their contents are skipped,
    * so a slash or comma inside a parameter never becomes a split point (closure findings 1 and 16).
    */
-  const boldRuns = (cell: string): Array<{ bold: string; between: string }> => {
-    const out: Array<{ bold: string; between: string }> = [];
+  const boldRuns = (cell: string): Array<{ bold: string; between: string; start: number; end: number; proseTail?: boolean }> => {
+    const out: Array<{ bold: string; between: string; start: number; end: number; proseTail?: boolean }> = [];
     let at = 0;
     let between = '';
     let guard = 0;
     while (at < cell.length && guard++ < 10000) {
       const open = cell.indexOf('**', at);
       if (open < 0) break;
-      // The text before this bold run: emphasis marks and group brackets (with their contents) are part of the
-      // signature's own syntax, so only the characters OUTSIDE them count as a plain between-run.
-      const pending = cell.slice(at, open);
-      let clean = '';
-      let scan = 0;
-      while (scan < pending.length) {
-        const ch = pending[scan]!;
-        if (ch === '*' || ch === '\\') { scan += ch === '\\' && pending[scan + 1] === '*' ? 2 : 1; continue; }
-        if (ch === '{' || ch === '[' || ch === '<') {
-          const close = ch === '{' ? '}' : ch === '[' ? ']' : '>';
-          const end = pending.indexOf(close, scan + 1);
-          scan = end < 0 ? pending.length : end + 1;
-          continue;
-        }
-        clean += ch;
-        scan += 1;
-      }
-      between += clean;
       const close = cell.indexOf('**', open + 2);
       if (close < 0) break;
-      // The parameter syntax after the bold head rides with it up to the next bold run's opening '**'. When another
-      // bold run follows, the text between the two runs is a between-run (checked for connectives), never part of
-      // this piece; when none follows, the rest of the cell is the signature's own parameter tail.
       const nextOpen = cell.indexOf('**', close + 2);
       if (nextOpen < 0) {
-        out.push({ bold: cell.slice(open + 2, close) + cell.slice(close + 2), between });
+        // The tail after the last bold close rides with the signature ONLY when it is signature syntax (emphasis
+        // marks, escaped marks, parameter brackets with their contents, white space): plain words and notes after
+        // the head make the whole cell prose (closure c3 item 1) — they are never re-wrapped in bold.
+        const tail = cell.slice(close + 2);
+        let tailScan = 0;
+        let tailOk = true;
+        while (tailScan < tail.length) {
+          const ch = tail[tailScan]!;
+          if (ch === '\\') { tailScan += tail[tailScan + 1] === '*' ? 2 : 1; continue; }
+          if (ch === '{' || ch === '[' || ch === '<') {
+            const closeCh = ch === '{' ? '}' : ch === '[' ? ']' : '>';
+            const end = tail.indexOf(closeCh, tailScan + 1);
+            if (end < 0) { tailOk = false; break; }
+            tailScan = end + 1;
+            continue;
+          }
+          if (ch === '*' || /\s/u.test(ch)) { tailScan += 1; continue; }
+          tailOk = false;
+          break;
+        }
+        if (!tailOk) {
+          out.push({ bold: '', between, start: open, end: cell.length, proseTail: true });
+        } else {
+          out.push({ bold: cell.slice(open + 2, close) + cell.slice(close + 2), between, start: open, end: cell.length });
+        }
         between = '';
         at = cell.length;
       } else {
-        out.push({ bold: cell.slice(open + 2, close), between });
-        between = cell.slice(close + 2, nextOpen);
+        // Split the mid at its last signature syntax: the parameters ride with their run VERBATIM, the remaining
+        // run is the separator (a connective, or prose — the caller decides), never part of this piece.
+        const mid = cell.slice(close + 2, nextOpen);
+        let midScan = 0;
+        let syntaxEnd = 0;
+        while (midScan < mid.length) {
+          const ch = mid[midScan]!;
+          if (ch === '\\') { midScan += mid[midScan + 1] === '*' ? 2 : 1; syntaxEnd = midScan; continue; }
+          if (ch === '{' || ch === '[' || ch === '<') {
+            const closeCh = ch === '{' ? '}' : ch === '[' ? ']' : '>';
+            const end = mid.indexOf(closeCh, midScan + 1);
+            if (end < 0) break;
+            midScan = end + 1;
+            syntaxEnd = midScan;
+            continue;
+          }
+          if (ch === '*') { midScan += 1; syntaxEnd = midScan; continue; }
+          if (/\s/u.test(ch)) { midScan += 1; continue; }
+          break;
+        }
+        const syntax = mid.slice(0, syntaxEnd);
+        out.push({ bold: cell.slice(open + 2, close) + syntax, between, start: open, end: close + 2 + syntaxEnd });
+        between = mid.slice(syntaxEnd).trim();
         at = nextOpen;
       }
     }
@@ -773,27 +840,44 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
 
   const cellAnchors = (cell: string, headerNamesCommands: boolean): Anchor[] => {
     if (!cell.includes('**')) return [];
-    // Split ONLY between two bold runs, and only when the plain text between them is nothing but connectives
-    // (与/和/及/或、顿号、逗号；斜线只在命令列，closure 33b62b43). Everything inside emphasis, {} [] <> groups stays
-    // part of one signature, and a between-run holding more than connectives makes the whole cell prose: its bold
-    // span is a mention, recorded in command_literals only.
+    // The pieces of one cell: bold runs with the parameter syntax that rides with them, split ONLY at a plain
+    // connective run (与/和/及/或、顿号、逗号；斜线只在命令列). A bold span that follows another with NO separator
+    // rides with it (a bold keyword or parameter — README 151-153: an anchor may span several runs); a prose run
+    // ends the list, the bold runs before it stay signatures and the rest of the cell is the row's prose.
     const runs = boldRuns(cell);
     if (runs.length === 0) return [];
+    if (runs.some((run) => run.proseTail === true)) return [];
+    // Text before the FIRST bold run (先执行 **demo pool create**) is prose: the whole cell is prose and its bold
+    // span is a mention (c3 item 3) — a definition comes only from a signature cell.
+    const firstRun = runs[0]!;
+    if (cell.slice(0, firstRun.start).trim() !== '') return [];
     const out: Anchor[] = [];
+    let acceptedEnd = -1;
+    let outStart = -1;
     for (const [k, run] of runs.entries()) {
       if (k > 0) {
-        // Only a purely connective plain run continues the list; a slash run does so only in a command column.
-        const connective = /^[与和及或、,，\s]+$/.test(run.between) || (headerNamesCommands && /^[/／\s]+$/.test(run.between));
-        if (!connective) {
-          // A prose run ENDS the list: the bold runs before it (a list of signatures) stay, the rest of the cell is
-          // the row's prose — its bold span is a mention of the LAST listed command, never a separate signature.
-          break;
+        const connective = run.between.trim() !== '' && (/^[与和及或、,，\s]+$/.test(run.between) || (headerNamesCommands && /^[/／\s]+$/.test(run.between)));
+        const prose = run.between.trim() !== '' && !connective;
+        if (prose) break;
+        if (run.between.trim() === '' && acceptedEnd >= 0) {
+          // Fold into one signature: re-parse the cell from the first run's bold open through this run's syntax.
+          const merged = parseAnchor(cell.slice(outStart, run.end), heads);
+          if (merged !== null && isRowSignature(merged, headerNamesCommands)) {
+            out.pop();
+            out.push(merged);
+            acceptedEnd = run.end;
+            continue;
+          }
+          return [];
         }
       }
-      const anchor = parseAnchor(`**${run.bold}**`, heads);
-      if (anchor === null) return [];
-      if (!isRowSignature(anchor, headerNamesCommands)) return [];
+      // Parse THIS run's own syntax, bold marks intact (re-wrapping run.bold would double the closing stars of a
+      // ***-closed run; slicing from the cell start would swallow the connective before it).
+      const anchor = parseAnchor(cell.slice(run.start, run.end), heads);
+      if (anchor === null || !isRowSignature(anchor, headerNamesCommands)) return [];
       out.push(anchor);
+      acceptedEnd = run.end;
+      if (outStart < 0) outStart = run.start;
     }
     return out;
   };
@@ -826,8 +910,10 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
   // The command the blocks describe: set by a heading anchor when its section starts, by a paragraph anchor, and ended by
   // a new section or a paragraph written as a signature that does not parse.
   let section: number | null = null;
-  let current: { path: string; words: string[] } | null = null;
-  let currentVariantTails: string[] | null = null;
+  // The current command's own state: words, parameter names and variant-group alternatives. Every assignment sets
+  // ALL of it (a heading anchor, a paragraph anchor, a new section or a rejected signature) — a stale variant tail
+  // from an earlier command never reaches a later one (c3 item 5).
+  let current: { path: string; words: string[]; params: { name: string }[]; variantTails: string[] | null } | null = null;
   for (const value of asArray(model.blocks)) {
     if (!isRecord(value) || typeof value.kind !== 'string' || !Number.isInteger(value.section) || typeof value.text !== 'string' || typeof value.selector !== 'string') {
       invalid++;
@@ -837,7 +923,7 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
     if (block.section !== section) {
       section = block.section;
       const heading = headingAnchors.get(block.section);
-      current = heading !== undefined && heading.path !== null ? { path: heading.path, words: heading.anchor.words } : null;
+      current = heading !== undefined && heading.path !== null ? { path: heading.path, words: heading.anchor.words, params: heading.anchor.params.map((param) => ({ name: param.name })), variantTails: variantTailsOf(heading.anchor) } : null;
     }
     const text = blockText(block.text);
     if (isNoise(block.kind, text)) continue;
@@ -851,8 +937,7 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
 
       entry.applicability = toApplicability(conditionsOf(text));
       entries.push(entry);
-      current = { path: placed, words: anchor.words };
-      currentVariantTails = variantTailsOf(anchor);
+      current = { path: placed, words: anchor.words, params: anchor.params.map((param) => ({ name: param.name })), variantTails: variantTailsOf(anchor) };
       continue;
     }
     // A command table is split by row, decided by the manual alone: every row that carries a signature becomes its own
@@ -872,18 +957,28 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
         const commandColumn = (cellIndex: number): boolean => {
           if (header === null) return false;
           const name = header[cellIndex] ?? '';
-          return /(?:^|[^A-Za-z])(?:命令|commands?)(?:$|[^A-Za-z])/i.test(name) || /^(?:命令|commands?)$/i.test(name.trim());
+          // A closed list only (c3 item 3): 命令说明/命令模式/命令功能 DESCRIBE or qualify the command and are
+          // value columns, where a bold span is a value or a mention, never a signature.
+          const COMMAND_COLUMN_HEADERS = /^(?:命令|命令格式|命令名称|命令行|CLI 命令|命令行格式|Command|Commands|Command Syntax)$/i;
+          return COMMAND_COLUMN_HEADERS.test(name.trim());
         };
         const split: ProducedEntry[] = [];
         const remainder: number[] = [];
+        // Rows whose bold cells are ALL values of the current command: their bold spans are values, not mentions,
+        // and no command literals are recorded from them (c3 item 5).
+        const valueOnlyRows = new Set<number>();
         let signatureRows = 0;
         for (const row of table.rows) {
+          // The cell field is the COLUMN index: the value-of-current filter runs inside the per-cell map, so a
+          // filtered-out anchor never shifts the column a surviving anchor reports (cursor regression of 916e6222).
+          const anchorsOf = row.cells.flatMap((cell, cellIndex) => cellAnchors(cell, commandColumn(cellIndex)));
           const found = row.cells.flatMap((cell, cellIndex) => cellAnchors(cell, commandColumn(cellIndex))
-            .filter((cellAnchor) => !valueOfCurrent(cellAnchor, current?.words ?? null, currentVariantTails))
+            .filter((cellAnchor) => !valueOfCurrent(cellAnchor, current?.words ?? null, current?.variantTails ?? null, current?.params ?? []))
             .map((cellAnchor) => ({ cell: cellIndex, anchor: cellAnchor })));
           if (found.length === 0) {
             // A bare bold word is a value, parameter name or term: the row stays in the remainder. Its bold spans are
             // recorded as literals by the remainder's own putLiterals, as written — no word-level sweep (closure 5/21).
+            if (anchorsOf.length > 0) valueOnlyRows.add(row.line);
             remainder.push(row.line);
             continue;
           }
@@ -946,8 +1041,10 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
               statement: lines.join('\n'),
               block: 'table',
               section: block.section,
-              fragments: (withHeader ? [0] : []).concat(quiet).map((line) => ({ parser: MARKDOWN, selector: block.selector, range: ranges[line] }) as FragmentRef),
+              fragments: (withHeader ? [0] : []).concat(quiet).map((line) => ({ parser: parserOf(options), selector: block.selector, range: ranges[line] }) as FragmentRef),
               ...(current !== null ? { words: current.words } : {}),
+              // A remainder made only of value rows records no command literals (their bold spans are values).
+              ...(quiet.every((line) => valueOnlyRows.has(line)) ? { noLiterals: true } : {}),
             }),
           );
         };
@@ -978,7 +1075,7 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
   // Drift is evaluated by the shared relation reader against the complete produced tree and its frozen declarations.
   if (invalid > 0) warnings.push(`有 ${invalid} 个块格式不对，已跳过`);
   if (rejected > 0) {
-    warnings.push(`有 ${rejected} 段写成命令签名的文字不能作为命令锚点（括号不配对、转义多余或首词不是已知命令），这些段落及其后的块不归到前一条命令，挂在所在章节节点`);
+    warnings.push(`有 ${rejected} 段写成命令签名的文字不能作为命令锚点（括号不配对、转义多余、首词不是已知命令或斜杠头），这些段落及其后的块不归到前一条命令，挂在所在章节节点`);
   }
   if (missingSection > 0) warnings.push(`有 ${missingSection} 个块指向不存在的章节，挂在手册命名空间的根下`);
   if (unwritable > 0) warnings.push(`有 ${unwritable} 个块的章节路径写不出（过长或含写不出的字符），挂在手册命名空间的根下`);

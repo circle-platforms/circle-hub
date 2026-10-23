@@ -30,9 +30,9 @@ orphan sweep, then `assemble(config, records)`, then `listen()`. `assemble` = `c
 1. **Vault master key**: `requireVaultKey` reads it through the key provider the records were opened with
    (`hubKeyProvider` of hub/platform in a deployment) and checks it against the vault. A missing key, a locked keychain or a
    key that does not open the vault stops the process with `AssemblyError` and the next step. When the vault already holds
-   entries (listing names needs no key) the advice is always to restore the original keychain item and never to run
-   `circle-hub key init` (a new key cannot open them), whatever the key provider suggests; only an empty vault gets the
-   provider's advice (`key init` for a missing item). Nothing creates a key.
+   entries (listing names needs no key), prefer restoring the original keychain item: a new key cannot open old entries.
+   If that item cannot be recovered, follow the **Irrecoverable key loss** procedure in Secrets below using
+   `circle-hub key init --set-aside-vault`; plain `key init` is only for an empty vault. Startup never creates a key.
 2. sandbox-exec is probed; where it is missing a notice says pack functions cannot run (pack functions always run with
    `requireOsIsolation: true` in the deployed Hub).
 3. Core parsers (`createDefaultRegistry`), the pack registry (`createPackRegistry`, extraction under `<data dir>/packs`,
@@ -114,13 +114,35 @@ circle-hub knowledge roots <product> [--as] | diff <rootA> <rootB> [--as]
 - **Cutting off one's own token.** `token revoke` of the operator token's own token and `user disable` of its own account
   are carried out (revocation must stay possible for a leak); afterwards the command says on stderr that the operator token
   no longer works and how to get a new one (`operator-token reissue`, after deleting the dead item).
-- **Secrets** come from stdin only (a terminal reads without echo: special keys such as arrows, function keys and the
+- **Secrets**: `secret set` reads from stdin only (a terminal reads without echo: special keys such as arrows, function keys and the
   bracketed-paste markers are not text, backspace deletes, Ctrl-U clears, a terminal that closes first refuses; a pipe or
   file is read whole, one trailing line break removed). The resource and the credential are checked before a value is
   asked for (`ResourceAdmin.describe`: the credential names and digest rules, never a value). A credential is stored by
   `ResourceAdmin.setCredential`, which keeps a `sha512_base64` credential (the agile portal's password) as
   Base64(SHA-512(value)) only; the output names the rule, never the value.
   `secret list` prints entry names and what they are, never a value, a length or a digest.
+  The plan's “secrets import” is implemented as `secret import` (no plural alias):
+  `secret import --env-file <file> --key <KEY>=<resource>/<credential>… [--basic <USER_KEY>:<PASSWORD_KEY>=<resource>/<credential>] [--dry-run]`.
+  It requires an admin token and, except for dry run, a usable vault key before opening the file. All resource/credential
+  targets and duplicate targets are checked first. The reader accepts only a plain UTF-8 file up to 64 KiB, rejects NUL
+  and duplicate requested active keys, ignores comments/section markers and retains only named keys. Errors disclose no
+  path or line content. Each key is reported only as found/absent and length; a missing or empty key prevents every write.
+  Basic combines the two named values into the whole authorization header (a colon in the username is refused).
+  Before opening the file it requires the bound system declaration to name that credential as a plain, raw static
+  Authorization header; hashed passwords, login usernames and bearer-prefixed headers are refused. A synthetic
+  static-header pack and loopback stub verify the actual Authorization header on a successful read.
+  Dry run only checks; real writes use `setCredentials` once per resource to invalidate its login once after all its
+  credentials are stored. Resources are independent writes: each completed resource is reported immediately, so a later
+  resource failure cannot hide an earlier write. Neither raw values, fragments nor digests of values appear in output.
+
+- **Irrecoverable key loss**: stop the service, then run `circle-hub key init --set-aside-vault`.
+  It takes the platform lock, refuses a loaded service, a busy configured port or a present key, moves only `vault/`
+  to a unique `set-aside/<timestamp>-key-loss/vault`, recreates the empty vault with mode 0700 and initializes the key.
+  The database and objects stay in place. Run `circle-hub operator-token reissue` only if that item was lost too,
+  then `secret import` to reimport the named credentials, then start the service. A new key cannot open old entries.
+  Plain `key init` refuses a nonempty vault before touching the keychain. `resource list` remains available without
+  the master key; commands needing secrets refuse before opening the environment file. Synthetic tests use temporary
+  file keys and explicitly targeted temporary keychain files; they verify logins before loss and after reimport.
 - **Login state.** `secret set <res> <credential>` and `resource reset-login <res>` remove the resource's session entry in
   the vault (`connector.<res>.session`). A running Hub reads that entry again before a read that needs the credential (and
   when its login status is shown; hub/connectors, "Between processes"): a stop or a cool-down it holds ends then and it
@@ -129,6 +151,20 @@ circle-hub knowledge roots <product> [--as] | diff <rootA> <rootB> [--as]
   (`密钥库里的登录状态：…`), read fresh by the command; it needs the vault key, which the listing reads once (without it the
   column says why for every resource and the listing still exits 0).
 - **Changing a resource** (`resource update <resource> [--system-pack <pack>] [--name] [--environment] [--origin role=url]… [--allow-plaintext role]… [--setting k=v]…`): an item that is given replaces the whole item (all origins, all plaintext declarations, all settings); `--system-pack manual-store` rebinds the resource to the latest published version of that system pack (a published version never takes effect on its own: reads check the digest the definition binds). Credentials are not touched; set again those the new version declares.
+- **Read-only connector smoke**: `resource read <resource> <read-name> <key>` needs the operator's admin token and
+  vault key because the read saves originals and its manifest. It calls `executeRead` with purpose `管理员冒烟读取`.
+  Output contains only the bound system pack/read name, completion or failure code, each artifact's declared name,
+  digest and size, and the manifest digest. The default suppresses the assembly's free-text event sink. `--events` explicitly sends its redacted connector
+  events to stderr for the smoke checker to capture; the checker always requests that channel and never echoes it. Read details remain in the manifest and administrator records.
+- **Integrator smoke script**: `node scripts/real/smoke-connectors.ts --logs <logs> --read <resource>:<read-name>:<key> [--read …]`.
+  Per integrator answer 9 on the plan-evidence task, this checks command output (including any command events) and only
+  the newly appended bytes of `hub.out.log`/`hub.err.log`; it does not treat CLI reads as MCP calls or export a call log.
+  Each response artifact is exported to a temporary 0700 directory and checked against its reported SHA-256 and size,
+  then removed. JSON string values or markup attributes/text fragments of at least eight characters are searched raw and JSON-escaped
+  in both outputs, excluding standalone digests and text already in the request key. Only counts and hit locations are
+  printed. Completion, intact exports and zero hits are all required; missing, rotated, truncated or unreadable logs,
+  non-UTF8 text artifacts without encoding-independent ASCII canaries and export failures cannot pass. A log increment over 64 MiB also refuses the check.
+  Reads are sequential, never retried; actual connector smoke runs belong to the integrator, not these synthetic tests.
 - **Held-back sources** (B02 R[4]): a read whose bytes the credential scan flags is stored `retain_only`: no function gets its text. `source held` lists scan-hit sources (sha256, size, the external object, detectors), with current effective tier and direct/derived/no acceptance, `source findings <sha256>` shows each finding as a position and the shape of the line around it (letters as x, digits as 9), never the value, `source accept <sha256> --note <why>` records an administrator's acceptance bound to that exact scan (the note may not copy the matched text), and `source withdraw <sha256>` takes it back. An acceptance lifts only bytes the Hub read or made, never an upload, and never a truncated scan; stored tiers remain historical: current acceptance lifts a scan-imposed hold, while an explicit requested retain-only policy stays in force. Derived coverage is established once at admission; ordinary reads validate stored scan facts and live dependency decisions without re-scanning source bytes (records decisions 19–20).
 - **Publication** needs a publish right (B04): `pack grant-publish <user>` is an admin decision; `pack publish` without it
   `pack publish <dir> --stage` publishes a copy of exactly the files `pack.json` lists (a listed path must be a plain file inside `<dir>`; the publish check still verifies every digest), so a pack's source directory may keep its tests and README beside it. Without `--stage` an extra file is a publish problem (`manifest.unlisted_file`).
@@ -362,3 +398,26 @@ are done. Open:
 - Should `serve` refuse to start where sandbox-exec is missing (now a notice: the console and listings still work)?
 - Should a dry-run `knowledge sync` need the operator token? It does now, because its reads store source artifacts.
 - Should `init-admin` also grant the first admin the publish right (now an explicit `pack grant-publish`)?
+
+Smoke reports a candidate count. With no checkable text the result fails and asks for a text-bearing read.
+Attribute-only XML/HTML responses are checked by the same rule.
+
+Smoke validates every --read and both regular log files before any CLI read. Failures report fixed causes and next
+actions (log rotation/size, exports, identity mismatch, decoding, or the missing CLI read line with its exit code).
+The protocol-code field contains only registered connector/core codes; local checker failures are separate prose.
+Raw CLI errors, response text and paths are never copied into the report line.
+
+Smoke decodes strict UTF-8 first. If that fails, it keeps only wholly ASCII canaries, whose text is invariant under the supported ASCII-compatible encodings; it does not guess a charset.
+NUL-bearing originals or non-UTF8 originals without an ASCII canary fail with a fixed encoding-limit reason and a request for a UTF-8 read. The read outcome stays separate. A non-UTF8 check covers only these ASCII canaries, not the text in other encodings.
+
+## Needs from connectors
+
+Export a reusable credential-value check from hub/connectors/api.ts so CLI dry-run and writes share exactly one rule.
+Until that API exists, import temporarily mirrors the current 1–4096 character rule and rejects C0/DEL controls,
+including raw Basic components and the composed header. Tests compare rejected boundaries with ResourceAdmin itself.
+All resources are validated before any write, in dry-run too; I/O failures after validation remain independent writes
+and completed resources are disclosed immediately. No connector implementation is changed by this task.
+
+Import reports empty values separately from missing keys. Either refuses the entire import, explicitly says no
+credentials were written, and points to correcting the named keys and repeating --dry-run. Target errors reuse the
+resource-list and credential-name hints of secret set.

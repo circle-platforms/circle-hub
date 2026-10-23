@@ -29,7 +29,7 @@
           "line": {
             "type": "string",
             "minLength": 1,
-            "description": "version line the pack assigns to the build, for example 10.4.6"
+            "description": "version line the pack assigns to the build, for example 10.7.6"
           },
           "base": {
             "type": "string",

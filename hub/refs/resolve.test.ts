@@ -130,7 +130,7 @@ describe('resolveReference: source fragments', () => {
     const missing = await resolveReference(srcFragment(mapSha, 'kityminder@1', 'n/no-such-node'), ctx);
     assert.ok(!missing.resolved && missing.code === 'REFERENCE_UNRESOLVED' && /找不到/.test(missing.message));
     const before = reads.length;
-    const unknown = await resolveReference(srcFragment(mapSha, 'xlsx@1', 'Service/7/C'), ctx);
+    const unknown = await resolveReference(srcFragment(mapSha, 'xlsx@999', 'Service/7/C'), ctx);
     assert.ok(!unknown.resolved && unknown.code === 'REFERENCE_UNRESOLVED' && /没有登记/.test(unknown.message));
     assert.equal(reads.length, before, 'the parser is checked before the source is read');
     const wrongParser = await resolveReference(srcFragment(mapSha, 'xml@1', 'x/a'), ctx);
@@ -285,7 +285,7 @@ describe('resolveReference: read tiers', () => {
     });
     const shapes = answers.map(({ reference: _reference, ...rest }) => JSON.stringify(rest));
     assert.equal(new Set(shapes).size, 1, 'every probe gets the same answer');
-    const unknownParser = await resolveReference(srcFragment(secretSha, 'xlsx@1', 'a'), ctx);
+    const unknownParser = await resolveReference(srcFragment(secretSha, 'xlsx@999', 'a'), ctx);
     assert.ok(!unknownParser.resolved && unknownParser.code === 'REFERENCE_UNRESOLVED', 'an unregistered parser is refused for every source alike');
   });
 
@@ -460,5 +460,23 @@ describe('document cache and fragment digests', () => {
 
   it('digests fragment text', () => {
     assert.equal(fragmentDigest({ text: 'abc' }), 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad');
+  });
+});
+
+describe('resolveReference: the validity of a record claim (B01 R[3])', () => {
+  const recordOf = (validity: Record<string, unknown>) => ({ kind: 'claim', schema: 'claim@1', provenance: 'observed', created_at: '2026-10-21T08:00:00.000Z', body: { at: '1970-01-01T00:00:00.000Z', validity } });
+
+  it('re-reads expires_at against the injected clock: the same record expires or not as the clock moves', async () => {
+    const record = recordOf({ status: 'valid', bound: [], expires_at: '2030-01-01T00:00:00.000Z', premises: [] }) as unknown as RecordRead;
+    const digest = recordDigest(record);
+    const at = (extra: Partial<ResolveContext>): { validity: { status: string } } => {
+      void extra;
+      return {} as { validity: { status: string } };
+    };
+    void at;
+    const before = await resolveReference(`rec:${digest}`, { ...context({ records: { read: () => record }, now: () => new Date('2029-12-31T23:59:59.000Z') }).ctx });
+    assert.equal(((before as unknown as { validity: { status: string } }).validity).status, 'valid', 'the injected clock is before the expiry');
+    const after = await resolveReference(`rec:${digest}`, { ...context({ records: { read: () => record }, now: () => new Date('2030-01-02T00:00:00.000Z') }).ctx });
+    assert.equal(((after as unknown as { validity: { status: string } }).validity).status, 'expired', 'the injected clock is past the expiry');
   });
 });

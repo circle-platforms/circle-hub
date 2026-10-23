@@ -21,7 +21,9 @@ export interface ExtractedCase {
   id: string;
   title: string;
   tags: string[];
-  priority: number | null;
+  priority: string | null;
+  autoid: string | null;
+  auto: string | null;
   negative: boolean;
   steps: CaseStep[];
   expected: string[];
@@ -31,6 +33,7 @@ export interface ExtractedCase {
 
 export interface Extraction {
   cases: ExtractedCase[];
+  impreciseAutoids: Array<{ node: string; selector: string | null; pointer: string }>;
   /** Cases identified by the mark alone (no tags), counted for the summary. */
   markedOnly: number;
   /** Nodes that are marked but carry no tags, not projected under the tagged rule. */
@@ -62,12 +65,16 @@ function tagsOf(data: { [key: string]: unknown }): string[] {
 }
 
 function priorityOf(data: { [key: string]: unknown }): number | null {
-  const priority = data.priority;
+  const priority = typeof data.priority === 'string' && /^[1-9]$/.test(data.priority) ? Number(data.priority) : data.priority;
   return typeof priority === 'number' && Number.isInteger(priority) && priority >= 1 && priority <= 9 ? priority : null;
 }
 
-function textOf(node: MindNode): string {
-  return node.text.trim();
+function textOf(node: MindNode): string { return node.text; }
+// Strings are opaque metadata. Safe scalars retain their textual form; imprecise numeric ids cannot be recovered.
+function metadata(value: unknown): string | null {
+  if (typeof value === 'string') return value;
+  if (typeof value === 'boolean' || typeof value === 'number' && Number.isSafeInteger(value)) return String(value);
+  return null;
 }
 
 /** The document id of a bound mind map: the external id's name, the parser meta id, else the root node's id. */
@@ -84,6 +91,7 @@ export function documentIdOf(external: string | null, meta: { [key: string]: unk
 export function extractCases(model: unknown, rule: CaseRule): Extraction {
   const nodes = nodesOf(model);
   const cases: ExtractedCase[] = [];
+  const impreciseAutoids: Extraction['impreciseAutoids'] = [];
   let markedOnly = 0;
   let candidates = 0;
   const visit = (index: number): void => {
@@ -93,6 +101,7 @@ export function extractCases(model: unknown, rule: CaseRule): Extraction {
     const priority = priorityOf(node.data);
     const isCase = tags.length > 0 || priority === CASE_PRIORITY;
     if (isCase) {
+      if (typeof node.data.autoid === 'number' && !Number.isSafeInteger(node.data.autoid)) impreciseAutoids.push({ pointer: `/nodes/${index}/data/autoid`, node: typeof node.data.id === 'string' ? node.data.id : `n${index}`, selector: node.selector });
       if (tags.length === 0) {
         if (rule === 'tagged') {
           candidates++;
@@ -119,11 +128,18 @@ export function extractCases(model: unknown, rule: CaseRule): Extraction {
           steps.push({ text: textOf(child), expected: stepExpected });
         }
       }
+      // A case body with only a leaf expectation is one authored operation; no steps are invented or rewritten.
+      if (steps.length === 0 && expected.length === 1) {
+        steps.push({ text: textOf(node), expected: [...expected] });
+        expected.length = 0;
+      }
       cases.push({
         id: typeof node.data.id === 'string' && node.data.id !== '' ? node.data.id : `n${index}`,
         title: textOf(node),
         tags,
-        priority,
+        priority: metadata(node.data.priority),
+        autoid: metadata(node.data.autoid),
+        auto: metadata(node.data.auto),
         negative: node.data.negative === true,
         steps,
         expected,
@@ -135,5 +151,5 @@ export function extractCases(model: unknown, rule: CaseRule): Extraction {
   };
   if (nodes.length > 0) for (const childIndex of nodes[0].children) visit(childIndex);
   const ruleSummary = `用例规则：${rule === 'marked' ? '标签或标记' : '只认标签'}；其中 ${markedOnly} 个只靠标记识别（没有标签）`;
-  return { cases, markedOnly, candidates, ruleSummary };
+  return { cases, impreciseAutoids, markedOnly, candidates, ruleSummary };
 }

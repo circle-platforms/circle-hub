@@ -567,3 +567,19 @@ source).
   every request)? Now a reset ends stops and cool-downs only; a new credential is used at the next login.
 - Should the first request carrying a new static value also be marked in the session entry, as a login is, so that two
   processes never both send a new (possibly wrong) value? Now each process sends it once at most (Limits).
+
+Pack sandbox error messages reach only the internal administrator-note reason channel after redaction, never persisted read-manifest reasons, nested pack inputs or public tool output (nested diagnostics stay in the administrator log); a terminal plan with no requests or nested reads may use its existing projection error to explain the refusal (the original sentinel is `unavailable`, and no projected success or artifact is accepted).
+
+## Counted external identity failures
+
+A single MAX_EXTERNAL_ID_BYTES budget is used by external parsing and entry refusals. Strict parseExternal still refuses
+oversized values. Routing accepts a shape-valid oversized identity only when its type has an enabled resource, so run
+inputs reach read() and preserve the byte count in the administrator note. executeRead uses the same counted reason
+before any plan, login or request; malformed identities and unknown types do not become accepted reads. Synthetic tests
+cover the real createTestHub start_run path, executeRead, and absence of request/key echoes.
+
+External-id size advice in core is deliberately generic (缩短读取键后重读). Product-specific name-set or product-id advice remains in the system pack. The non-PLM oversized-key regression checks the actual reader entry.
+
+Counted identity refusals carry a typed inputError only for an active Hub reader. The engine exposes this deterministic
+caller-input fact only after workflow access checks, using its existing input-schema code and a shortening instruction.
+Other read failures stay neutral; neither the supplied key nor resource existence/permission is disclosed by this field.

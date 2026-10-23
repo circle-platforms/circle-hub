@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { ImpactView } from '../../../../contracts/src/views.ts';
 import { checkOutcomes } from './check.ts';
-import { projectItems } from './project.ts';
+import { projectItems } from './test-support.ts';
 import { scopeOf } from './scope.ts';
 import { buildImpact, reversedView, reviewChanges, reviewOptions, SOURCE, type ChangeSpec } from './test-support.ts';
 import { parseView } from './view.ts';
@@ -191,7 +191,7 @@ describe('regression scope on a hand-built pair of trees', () => {
     // 命令差总结只陈述列出的部分，不算完整性的主张；其余结论没有一条说得上完整。
     assert.ok(
       run.uncovered
-        .filter((outcome) => !outcome.statement.startsWith('命令差共'))
+        .filter((outcome) => !outcome.statement.startsWith('命令差共') && !outcome.statement.includes('个用例没有解析出命令'))
         .every((outcome) => outcome.verdict !== 'support'),
     );
   });

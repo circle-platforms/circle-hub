@@ -73,7 +73,7 @@ describe('the locate check', () => {
   });
 
   it('refutes a declaration that contradicts the tree and stays unknown for what it fills in', () => {
-    const outcomes = locateOutcomes(buildSubject(runSubject(BOUND, { line: '10.5.3' })));
+    const outcomes = locateOutcomes(buildSubject(runSubject(BOUND, { line: '10.7.3' })));
     assert.deepEqual(
       outcomes.map((o) => [o.item, o.verdict, o.code ?? o.reason ?? null]),
       [
@@ -82,8 +82,8 @@ describe('the locate check', () => {
         ['24103', 'unknown', 'missing_input'],
       ],
     );
-    assert.deepEqual(outcomes[0].data?.conflicts, [{ field: 'line', declared: '10.5.3', tree: '10.6.1' }]);
-    assert.deepEqual([outcomes[1].data?.version, outcomes[1].data?.version_source, outcomes[1].data?.declared], ['10.5.3', 'parameter', ['line', 'version']]);
+    assert.deepEqual(outcomes[0].data?.conflicts, [{ field: 'line', declared: '10.7.3', tree: '10.6.1' }]);
+    assert.deepEqual([outcomes[1].data?.version, outcomes[1].data?.version_source, outcomes[1].data?.declared], ['10.7.3', 'parameter', ['line', 'version']]);
   });
 
   it('leaves every product line undecided when the run names none', () => {

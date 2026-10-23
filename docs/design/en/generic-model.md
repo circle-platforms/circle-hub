@@ -4,7 +4,7 @@ nav_order: 7
 
 # Generic model
 
-The design authority is [contracts/model.json](https://github.com/circle-platforms/circle-hub/blob/main/contracts/model.json): version 5, 73 elements in 11 groups, 53 vocabulary axes, plus classification rules, display rules, format proposals and the decided pending items. This page is a summary. The definitions, fields and rules of the elements are the model's; read them with `tools/show-element.ts`:
+The design authority is [contracts/model.json](https://github.com/circle-platforms/circle-hub/blob/main/contracts/model.json): version 10, 73 elements in 11 groups, 64 vocabulary axes, plus classification rules, display rules, format proposals and the decided pending items. This page is a summary. The definitions, fields and rules of the elements are the model's; read them with `tools/show-element.ts`:
 
 ```sh
 node tools/show-element.ts B01 W06          # definition, fields and rules of elements
@@ -80,11 +80,11 @@ Error codes are registered and generated too, into `contracts/generated/protocol
 
 ## What milestone 1 uses
 
-Which package implements which elements is in section 4 of the architecture brief. Milestone 1 uses six tools only: `list_task_packs`, `upload_file`, `start_run`, `get_nodes`, `resolve_reference`, `submit_result`. Kept in the contracts and not implemented in milestone 1: effect writes and leases (B06, D04, the write declarations of D03), dispositions and requests (B07), dynamic layer checks (P07), triggers and standing obligations (W09; except the knowledge sync the Hub runs, see section 6 of the architecture brief), hypothesis sets (V08), writing one's own candidate layer (the candidate layer of K03), browser and device executors (the executor part of D07), and xlsx and zip parsing. The read part of D03 and the resource part of D07 are implemented by the connectors package.
+Which package implements which elements is in section 4 of the architecture brief. Milestone 1 uses six tools only: `list_task_packs`, `upload_file`, `start_run`, `get_nodes`, `resolve_reference`, `submit_result`. Kept in the contracts and not implemented in milestone 1: effect writes and leases (B06, D04, the write declarations of D03), dispositions and requests (B07), dynamic layer checks (P07), triggers and standing obligations (W09; except the knowledge sync the Hub runs, see section 6 of the architecture brief), hypothesis sets (V08), browser and device executors (the executor part of D07), and xlsx and zip parsing. The read part of D03 and the resource part of D07 are implemented by the connectors package. Under decision 25 candidates remain on the client and facts enter through separate contribution runs; there is no own-candidate-layer write entry.
 
 ## Decisions
 
-All 19 pending items of the model were settled as recommended on 2026-10-21: 17 are decided and 2 are deferred, as recommended, until the first workflow that needs them (new tools and their names; the channel for taking over a managed session, the block-language editor and the delivery of local tools). Read them with `node tools/show-element.ts --pending`. The four that affect milestone 1 and the other decisions are recorded in the [Hub r4 progress](../../hub-r4-progress.md#决定).
+The model currently has 20 pending items: 18 are decided and 2 are deferred until the first workflow that needs them (new tools and their names; the channel for taking over a managed session and the block-language editor). Local-tool delivery is appended as a separate decided item under decision 35, without shifting existing indexes. Read them with `node tools/show-element.ts --pending`. The four that affect milestone 1 and the other decisions are recorded in the [Hub r4 progress](../../hub-r4-progress.md#决定).
 
 ---
 

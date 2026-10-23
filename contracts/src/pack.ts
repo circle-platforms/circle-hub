@@ -3,6 +3,7 @@
 // The runs package validates a pack against these shapes at publish, freezes the parts a run uses at start_run and runs the
 // engine on them; the packs package writes packs in these shapes. Product dialect is data and pack functions, never core code.
 // Register every record or pack-file schema in `schemas`; contracts/src/index.ts merges them into SCHEMA_REGISTRY.
+import { WorkflowOutputs } from './contributions.ts';
 import { z } from 'zod';
 import {
   AcceptedProducerSchema,
@@ -26,6 +27,10 @@ import { ItemId, IsoTime, JsonPointer, PackId, PackVersion, Sha256, Versioned } 
 import { FragmentRef, PackFunctionRef } from './product.ts';
 import { ExternalObjectId, Ground, ReferenceUri } from './reference.ts';
 import { ExternalType } from './resources.ts';
+
+/** A subject builder may name refuted prerequisites; unknown shapes remain ordinary subjects. */
+export const SubjectBlocked = z.strictObject({blocked:z.array(z.strictObject({check:z.string().regex(/^[a-z][a-z0-9_]*$/),pointer:JsonPointer,code:z.string().min(1)})).min(1).max(100)});
+export type SubjectBlocked = z.infer<typeof SubjectBlocked>;
 
 // ---------------------------------------------------------------- paths
 
@@ -411,6 +416,8 @@ export const WorkflowFile = z
     subject: Key.describe('the input slot that holds the judged source'),
     projection: PackFunctionRef.describe('ProjectionInput -> ProjectionOutput: the items of the run (W01)'),
     expected_sources: PackFunctionRef.optional().describe('ExpectedSourcesInput -> ExpectedSourcesOutput: external objects to bind as expected sources'),
+    contribution: z.strictObject({slot:Key,requirement:Key}).optional().describe('a dedicated knowledge-contribution run; slot holds the artifact and requirement names its item-level fact verification'),
+    outputs: WorkflowOutputs.optional().describe('task-specific outputs stay in ordinary run submissions'),
     leases: z
       .strictObject({
         prefix: z.string().min(1).regex(/\/$/, 'the lease prefix ends with / (keys of this workflow live under it)'),
@@ -566,6 +573,7 @@ export const PackSample = z.strictObject({
 export type PackSample = z.infer<typeof PackSample>;
 
 export const schemas: Record<string, z.ZodType> = {
+  'subject-blocked@1': SubjectBlocked,
   'pack@1': PackManifest,
   'requirements@1': RequirementsFile,
   'checks@1': ChecksFile,

@@ -1,0 +1,28 @@
+{
+  "id": "sources_forbidden",
+  "source": "author",
+  "check": "grounded_sources",
+  "note": "缺陷步骤字段不是修复说明",
+  "subject": {
+    "item": "74001",
+    "allowed_quote_sources": {
+      "defect": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "manual": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "fix_field": "fix"
+    },
+    "quotes": [
+      {
+        "reference": "src:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/json@1/p/fields/steps",
+        "text": "合成步骤"
+      }
+    ]
+  },
+  "expect": [
+    {
+      "verdict": "refute",
+      "code": "defect-to-case.quote_source_forbidden",
+      "item": "74001",
+      "tier": "blocking"
+    }
+  ]
+}

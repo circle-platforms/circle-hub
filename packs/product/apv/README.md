@@ -166,14 +166,19 @@ Producers (K02, K04, C07)
   other cells). A row with several commands hangs one text entry at their nearest common ancestor over ALL of them when
   every one exists and the ancestor is at least one word deeper than /commands; a nearest common ancestor of /commands
   itself is not a placement (real data: over half of the multi-command rows would land there) — the row stays at the
-  section node, as does any row naming a missing command. A cell counts as a signature only when the whole cell is a
-  signature or a list of signatures joined by bare connectives (与/和/及/或、顿号、逗号、斜线／; under a header that
-  names commands a slash between two signature-shaped runs splits them, elsewhere a plain-character join is one value
-  or term cell); a bold span inside
-  prose is a mention, recorded in `command_literals` only. A cell holding one bare bold word is a value, a parameter
-  name or a term, never a signature (unless the table header names commands): such rows keep the table's remainder
-  and the word is recorded in `command_literals` only. The header and the rows without a signature make one remainder
-  text entry, which follows the current command, or stays at the section node; a row that states its own condition
+  section node, as does any row naming a missing command. The cell rule is PER COLUMN (closure findings 2 and 19):
+  a column whose header is one of the command terms (命令、命令格式、命令名称、命令行、CLI 命令、Command、Commands、
+  Command Syntax) takes every signature-shaped run; in every other column a bold span needs parameter or group syntax
+  to be a signature — a bare bold run, one word or many, is a value, a parameter name or a term. Text before the
+  first bold run of a cell is prose: the whole cell is prose and its bold span is a mention, recorded in
+  `command_literals` only; a prose run between two bold runs ends the list (the runs before it stay signatures, the
+  rest is the row's prose), while a run of bare connectives (与/和/及/或、顿号、逗号；斜线 only in a command column)
+  continues the list. A bold span that follows another with no separator at all rides with it: an anchor may span
+  several runs (a bold keyword or parameter of the same signature). A cell whose bold head equals one of the current
+  command's parameter names, or one enumerated alternative of its variant group, is a value row: such rows keep the
+  table's remainder, and a remainder made only of value rows records no `command_literals`. The header and the rows
+  without a signature make one remainder text entry, which follows the current command, or stays at the section node;
+  a row that states its own condition
   becomes its own entry with that condition, and the shared entry stays 未声明. Grid, multiline and simple tables are not split
   (their rows are not single lines).
 - Literal relations (K05 R[2]): prose and code mentions are stored in `data.command_literals` and use the declared
@@ -229,10 +234,15 @@ Text functions
 - `locateFromAncestors`: prefix codes are three letters or digits with a digit, optionally grouped, before an ASCII or
   full-width colon (NFKC). The first `<version>-<suffix>` label is the train, the nearest line label above it the line
   (else the line comes from the train); the label right under the train is the module when it is a plain name (no ids, no
-  version, not a test activity).
+  version, not a test activity). Input labels are truncated at 1000 characters before normalization; a module name
+  is at most 40 characters, and a name containing four or more consecutive digits is not a module name.
 - `idsFromTitle`: bug, story (`需求`, `Story#`) and PLM markers, misspellings seen in real titles included; lists after a
   marker; ids the title does not classify (a leading number, after 回归 or Test-) go to `unclassified`. Versions, dates,
-  years, numbers glued to short words and alarm-like numbers in running text are never ids.
+  years, numbers glued to short words and alarm-like numbers in running text are never ids. Preserve the original
+  spelling of every identifier; for identity comparisons, remove leading zeros only from nonzero identifiers. A digit
+  run consisting entirely of zeros is not an identifier. Length bounds are checked before removing leading zeros:
+  2–9 digits after a marker, 4–7 digits for an unclassified leading identifier. These rules follow the current mainline
+  `packs/product/apv/functions/ids.ts` implementation (the module-name limits are enforced by `functions/locate.ts`).
 
 ## The case index (brief section 6a, capabilities 4 and 6)
 
@@ -351,9 +361,11 @@ Producer `cases` (`cases.ts`, entry kind `case`; the product pack declares no ca
   backticks, `*\<param\>*`), the pipe-table row split, the `h/` selector decoding and the block kinds are Markdown's;
   only the section placement reads the neutral block path. The task asks for dependence on a document model with
   section paths alone, and that is what the options give: `fragmentParser` names the input model's parser key and
-  `sectionSelector` renders a section path as that model's selector (defaults: markdown@1 and h/). The adoc producer
-  passes its own pair, so K4's placement reuse needs no change here; only the markdown@1 h/ decoding stays the
-  default inside this producer.
+  `sectionSelector` renders a section path as that model's selector (defaults: markdown@1 and h/). A model whose
+  sections are cited another way (text@1 l/<a>-<b> line ranges) can instead carry its own decoded `path` array per
+  section: the producer uses it as-is and never decodes h/ then. `sectionSelector` cannot turn a section path into a
+  line range — an adoc model supplies either its own `path` arrays or selectors it can build from a path. The adoc
+  producer needs no change here for placement; only the markdown@1 h/ decoding stays the default.
 - Release notes were not sampled: the structure is the one described in the task, so the heading and column patterns may
   need additions once real notes are read.
 - Platform tokens of build names (`HG-K`) and of page names (`hg_k`, `ft_kylinv10`) are kept as written; they are not
@@ -398,7 +410,7 @@ Producer `cases` (`cases.ts`, entry kind `case`; the product pack declares no ca
   case producer does not ask for it. The roots read asks for listing pages up to the round budget (about 17, cap 50), so
   a configured root listed after page 10 is titled when the budget reaches its page. Empty folders are `listed: false`
   and are not case documents. That behavior was already in `functions/agile.ts`. The saved 1.1.1 manifest did not match
-  those bytes, so this task signs the pack as 1.2.0 and does not change the read.
+  those bytes, so the integrated pack is signed as 1.3.0 and does not change the read.
 
 ## How to test
 
@@ -493,3 +505,10 @@ profile and producer bytes, so the pack is 1.3.0 and is re-signed, not published
 
 `functions/manual-links.test.ts` covers ordinary trailing values and all 150 missing literals of one paragraph against real
 synthetic production and the paged view. No live resource, client or model is used.
+
+
+The model-10/K1 merge retains explicit section paths, bounded condition parsing, complete signature cells, command-column
+classification and current-parameter/value-row state. K1's standalone drift accumulator and its 100-literal cap stay retired:
+signature groups use the declared exact primary/alternatives rule, other cells retain prose mentions, and Hub production and
+reading share one evaluator. The c3 row regressions now check that evaluator and all 105 retained signature groups instead
+of depending on a truncated field or a producer-local warning.

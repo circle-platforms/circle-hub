@@ -58,8 +58,8 @@
     },
     {
       "path": "functions/ids.ts",
-      "sha256": "9d497bfe571b963a0d324489c96e0e69b36dba2f8f8ce6107eb691e95048a792",
-      "size": 5997
+      "sha256": "0e4a4abb64774805ef04940d0d4fe9d4898235620f4313ff2df464a8d5075e42",
+      "size": 8528
     },
     {
       "path": "functions/listing.ts",
@@ -73,8 +73,8 @@
     },
     {
       "path": "functions/manual.ts",
-      "sha256": "3f5db0ba6fd785e9db5d1da12c377c72f6e1e07ff7c622c4a1364b7501473563",
-      "size": 61919
+      "sha256": "0586847ded7460810f8cc5637f622bd1e590fadb364359d6be69b2f5d58f27cd",
+      "size": 70097
     },
     {
       "path": "functions/naming.ts",
@@ -83,8 +83,8 @@
     },
     {
       "path": "functions/producers.ts",
-      "sha256": "351961959cd370a57466a6b9638703fbadddfba240a961371305a9ff2f7ad386",
-      "size": 8982
+      "sha256": "07329c717bb647e5c186288de374322b27f996e0fa85d6845d9742412a51c56c",
+      "size": 9097
     },
     {
       "path": "functions/release-notes.ts",

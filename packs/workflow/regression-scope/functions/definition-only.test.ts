@@ -6,7 +6,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { buildImpact, reviewChanges } from './test-support.ts';
-import { projectItems } from './project.ts';
+import { projectItems } from './test-support.ts';
 
 const SOURCE = 'a'.repeat(64);
 const BEHAVIOUR_SOURCE = 'b'.repeat(64);

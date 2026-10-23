@@ -46,7 +46,7 @@ export type CategoryFact = {
 };
 
 /** A category declared skipped with its reason (run parameter `skipped`). */
-export type Skip = { category: string; reason: string };
+export type Skip = { category: string; reason: string; command?: string };
 
 /** The fields of one document item. */
 export type DocumentFields = {
@@ -64,6 +64,7 @@ export type DocumentFields = {
   data: { case_rule: 'marked' | 'tagged'; marked_only: number };
   /** Every category of the template, in template order. */
   categories: CategoryFact[];
+  command_coverage?: CommandCoverage;
   /** Ids of the required categories (in template v3: every category) no case shows and no skip names, in template order. */
   missing: string[];
   /** The skips the run parameter `skipped` declares for this document, in template order. */
@@ -90,4 +91,15 @@ export type CoverageSubject = {
   /** Ids of the categories some case shows. */
   covered?: string[];
   skipped: Skip[];
+};
+
+/** Frozen per-case category membership, before evidence lists are capped for display. */
+export type CaseCategory = { id: string; visit: number; categories: string[] };
+export type CaseRevisionNodes = { texts: string[]; parents: number[] };
+export type CommandFact = { command: string; caseCount: number; categories: (CategoryFact & { references: string[] })[]; missing: string[]; skipped: Skip[]; references: string[] };
+export type CommandCoverage = {
+  case_rule: 'marked' | 'tagged'; rule_mismatch: boolean; bound: boolean; uploaded: boolean; documentIndexed: boolean; root: string | null; build: string | null;
+  caseCount: number; matchedCases: number; unmatched: string[]; orphaned: string[]; pending_commands: string[]; pending_skips: Skip[]; commandlessCases: number;
+  truncated: boolean; skippedSources: number; cutKeys: string[]; unplacedRoot: number | null; notes: string[];
+  commands: CommandFact[];
 };

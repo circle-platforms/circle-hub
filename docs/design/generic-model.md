@@ -4,7 +4,7 @@ nav_order: 5
 
 # 通用模型
 
-设计的权威是 [contracts/model.json](https://github.com/circle-platforms/circle-hub/blob/main/contracts/model.json)：第 5 版，11 组 73 个元素，53 个词表轴，另有分类规则、展示规则、格式提案和已定的待定项。本页是摘要。元素的定义、字段和规则以模型为准，用 `tools/show-element.ts` 读：
+设计的权威是 [contracts/model.json](https://github.com/circle-platforms/circle-hub/blob/main/contracts/model.json)：第 10 版，11 组 73 个元素，64 个词表轴，另有分类规则、展示规则、格式提案和已定的待定项。本页是摘要。元素的定义、字段和规则以模型为准，用 `tools/show-element.ts` 读：
 
 ```sh
 node tools/show-element.ts B01 W06          # 元素的定义、字段与规则
@@ -76,15 +76,15 @@ Hub 是标准 MCP 服务器（D06）：本地 Circle、bot 和其他客户端共
 
 每个条目恰好落在一个分区里：分区两两不交，并集等于条目集；跨条目主张单独列出，不计入分区（V05）。要求项只在它声明的判定层上有终态，其余层显示“本层不适用”（V03）。
 
-错误码也有登记，同样生成到 `contracts/generated/protocol.ts`：协议码 `PROTOCOL_CODES` 来自模型（例如 `QUOTE_MISMATCH`、`SOURCE_UNAVAILABLE`），核心解释器的违规码 `CORE_VIOLATION_CODES`（`core.<解释器>.<码>`）来自 `contracts/codes.json`；任务包的码挂在包名下，例如 `case-review.<码>`。缺失与无权一律返回 `SOURCE_UNAVAILABLE`，显示“对你不可用”。引用有四种形式：`src:`（源文件或片段）、`tree:`（知识树节点）、`entry:`（知识条目）、`rec:`（Hub 记录）。
+错误码也有登记，同样生成到 `contracts/generated/protocol.ts`：协议码 `PROTOCOL_CODES` 来自模型（例如 `QUOTE_MISMATCH`、`SOURCE_UNAVAILABLE`），核心部件的违规码 `CORE_VIOLATION_CODES`（`core.<部件>.<码>`）来自 `contracts/codes.json`；登记表的历史字段 `interpreter` 表示发出该码的核心部件，不表示可安装的解释器。包校验判断错误处理行是否用得上时：解释器发出的码核对该要求项的检查是否使用对应解释器；回注准入发出的 `core.contribution.*` 核对 `workflow.contribution.requirement` 是否指向该要求项。码表不增加字段；任务包的码挂在包名下，例如 `case-review.<码>`。缺失与无权一律返回 `SOURCE_UNAVAILABLE`，显示“对你不可用”。引用有四种形式：`src:`（源文件或片段）、`tree:`（知识树节点）、`entry:`（知识条目）、`rec:`（Hub 记录）。
 
 ## 第一个里程碑用到哪些
 
-各包实现哪些元素见架构文档第 4 节。只用六个工具：`list_task_packs`、`upload_file`、`start_run`、`get_nodes`、`resolve_reference`、`submit_result`。留在合约里、这个里程碑不实现的有：效果写入与租约（B06、D04，D03 的写声明），处置与请求（B07），动态层检查（P07），触发与常设义务（W09；由 Hub 执行的知识同步除外，见架构文档第 6 节），假设集（V08），写本人候选层（K03 的候选层），浏览器与设备执行器（D07 的执行器部分），以及 xlsx 与 zip 解析。D03 的读部分与 D07 的资源部分由 connectors 包实现。
+各包实现哪些元素见架构文档第 4 节。只用六个工具：`list_task_packs`、`upload_file`、`start_run`、`get_nodes`、`resolve_reference`、`submit_result`。留在合约里、这个里程碑不实现的有：效果写入与租约（B06、D04，D03 的写声明），处置与请求（B07），动态层检查（P07），触发与常设义务（W09；由 Hub 执行的知识同步除外，见架构文档第 6 节），假设集（V08），浏览器与设备执行器（D07 的执行器部分），以及 xlsx 与 zip 解析。D03 的读部分与 D07 的资源部分由 connectors 包实现。候选按决定 25 留在客户端本地，成为事实后通过单独的回注运行交 Hub 核验，不提供写本人候选层的入口。
 
 ## 已定的决定
 
-模型的 19 项待定都按推荐处理（2026-10-21）：17 项已定，2 项按推荐暂缓到第一个需要它们的工作流接入时再定（新增工具与命名；人工接管受管会话的通道、块语言编辑界面、本地工具的下发）。用 `node tools/show-element.ts --pending` 查看。影响这个里程碑的四项和其他决定记在 [Hub r4 进度](../hub-r4-progress.md#决定)。
+模型当前有 20 项待定事项：18 项已定，2 项暂缓到第一个需要它们的工作流接入时再定（新增工具与命名；人工接管受管会话的通道、块语言编辑界面）；本地工具下发按决定 35 单列在末尾，原条目的编号不移动。用 `node tools/show-element.ts --pending` 查看。影响这个里程碑的四项和其他决定记在 [Hub r4 进度](../hub-r4-progress.md#决定)。
 
 ---
 

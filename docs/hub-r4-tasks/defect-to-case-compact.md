@@ -1,6 +1,6 @@
 # 任务：缺陷转用例在真实用例索引上跑不起来：投影把整个索引视图放进了输出
 
-真实数据上第一次用真实模型跑 `defect-to-case`（缺陷 130348，索引视图 `knowledge:index:apv:Rel_APV_10_4_6_8?kind=case&key=commands`）：`start_run` 失败，管理员备注是 `SANDBOX_OUTPUT_TOO_LARGE`（投影函数的输出超过沙箱的 8 MiB 上限）。原因在 `packs/workflow/defect-to-case/functions/projection.ts`：`groups.push({ indexed_cases: indexInput.model })` 把整个索引视图（真实的有 12 到 15 MB）当作“分组”原样放进输出，随运行冻结，再交给去重检查。合成测试里的视图只有几条，所以没暴露。
+真实数据上第一次用真实模型跑 `defect-to-case`（一个真实缺陷，索引视图 `knowledge:index:apv:<构建>?kind=case&key=commands`）：`start_run` 失败，管理员备注是 `SANDBOX_OUTPUT_TOO_LARGE`（投影函数的输出超过沙箱的 8 MiB 上限）。原因在 `packs/workflow/defect-to-case/functions/projection.ts`：`groups.push({ indexed_cases: indexInput.model })` 把整个索引视图（真实的有 12 到 15 MB）当作“分组”原样放进输出，随运行冻结，再交给去重检查。合成测试里的视图只有几条，所以没暴露。
 
 - 分支和工作树：`hub-d2c2`，目录 `circle-hub-d2c2`
 - 可以改的路径：`packs/workflow/defect-to-case/**`。别的路径不动；需要引擎或合约配合的写进回报。

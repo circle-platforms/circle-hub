@@ -26,7 +26,7 @@ import {
   type QuotationUnit,
 } from '../parser.ts';
 import { trySelectorSegments } from '../reference.ts';
-import { decodeSingleByte, decodeUtf8, isUtf8Label, isWindows1252Label, removeNul, type ByteOffsets } from '../text-decoding.ts';
+import { bomCharset, decodeEncoding, legacyCharset, decodeSingleByte, decodeUtf8, isUtf8Label, isWindows1252Label, removeNul, type ByteOffsets } from '../text-decoding.ts';
 
 const KEY = 'html@1';
 // Nodes count elements, text nodes and template contents.
@@ -163,13 +163,11 @@ function metaCharset(bytes: Uint8Array): string | null {
 }
 
 function decode(bytes: Uint8Array, mediaType: string | undefined): { text: string; charset: string; offsets: ByteOffsets | null } {
-  if ((bytes[0] === 0xfe && bytes[1] === 0xff) || (bytes[0] === 0xff && bytes[1] === 0xfe)) throw new ParseEncodingError(KEY, '不支持 UTF-16 编码的 HTML');
-  if (bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) {
-    const decoded = decodeUtf8(KEY, bytes);
-    return { text: decoded.text, charset: 'utf-8', offsets: decoded.offsets };
-  }
-  let label = mediaTypeCharset(mediaType) ?? metaCharset(bytes) ?? (isUtf8(bytes) ? 'utf-8' : 'windows-1252');
-  if (label.startsWith('utf-16')) label = 'utf-8';
+  const marker = bomCharset(bytes);
+  if (marker) return decodeEncoding(KEY, bytes, marker);
+  const parameter = mediaTypeCharset(mediaType);
+  let label = parameter ?? metaCharset(bytes) ?? (isUtf8(bytes) ? 'utf-8' : 'windows-1252');
+  if (parameter === null && label.startsWith('utf-16')) label = 'utf-8';
   if (isUtf8Label(label)) {
     const decoded = decodeUtf8(KEY, bytes);
     return { text: decoded.text, charset: 'utf-8', offsets: decoded.offsets };
@@ -178,11 +176,13 @@ function decode(bytes: Uint8Array, mediaType: string | undefined): { text: strin
     const decoded = decodeSingleByte(KEY, bytes, 'windows-1252');
     return { text: decoded.text, charset: 'windows-1252', offsets: decoded.offsets };
   }
+  const legacy = legacyCharset(label);
+  if (legacy) return decodeEncoding(KEY, bytes, legacy);
   let decoder: TextDecoder;
   try {
     decoder = new TextDecoder(label);
   } catch {
-    throw new ParseEncodingError(KEY, `不支持的字符编码：${label}`);
+    throw new ParseEncodingError(KEY, parameter === null ? 'HTML <meta> 声明了不支持的字符编码' : 'HTML 媒体类型 charset 声明了不支持的字符编码', null, label);
   }
   // Other legacy encodings decode, but without byte ranges.
   return { text: decoder.decode(bytes), charset: decoder.encoding, offsets: null };
@@ -212,7 +212,7 @@ function guardedAdapter(limits: Required<ParseLimits>, stats: { nodes: number; d
   const charge = (steps: number): void => {
     stats.work += steps;
     if (stats.work > budget) {
-      throw new ParseLimitError(KEY, 'maxNodes', limits.maxNodes, `HTML 结构过于混乱：重排节点的工作量超过节点数上限 ${limits.maxNodes} 的 ${WORK_PER_NODE} 倍`);
+      throw new ParseLimitError(KEY, 'maxNodes', limits.maxNodes, `HTML 结构过于混乱：重排节点的工作量超过节点数上限 ${limits.maxNodes} 的 ${WORK_PER_NODE} 倍`, null, '减少错位嵌套或表格外移的内容，或拆分 HTML 文件后重新上传');
     }
   };
   const count = (): void => {
@@ -306,7 +306,7 @@ function guardedAdapter(limits: Required<ParseLimits>, stats: { nodes: number; d
       const present = new Set(recipient.attrs.map((attribute) => attribute.name));
       for (const attribute of attrs) {
         if (present.has(attribute.name)) continue;
-        if (recipient.attrs.length + 1 > limits.maxAttributes) throw attributesError(KEY, limits.maxAttributes);
+        if (recipient.attrs.length + 1 > limits.maxAttributes) throw new ParseLimitError(KEY, 'maxAttributes', limits.maxAttributes, `重复 html/body 标签合并后的累计属性数超过上限 ${limits.maxAttributes}`, null, `合并重复 html/body 标签，使累计属性数不超过 ${limits.maxAttributes} 后重新上传`);
         present.add(attribute.name);
         recipient.attrs.push(attribute);
       }
@@ -359,7 +359,7 @@ function parse(bytes: Uint8Array, options: ParseOptions = {}): ParsedDocument<Ht
     if (chain.list === null) {
       listed += chain.depth;
       if (listed > wrapperBudget) {
-        throw new ParseLimitError(KEY, 'maxNodes', limits.maxNodes, `HTML 的格式标签嵌套过深且文字过多：各段文字列出的格式标签总数超过节点数上限 ${limits.maxNodes} 的 ${WRAPPERS_PER_NODE} 倍`);
+        throw new ParseLimitError(KEY, 'maxNodes', limits.maxNodes, `HTML 的格式标签嵌套过深且文字过多：各段文字列出的格式标签总数超过节点数上限 ${limits.maxNodes} 的 ${WRAPPERS_PER_NODE} 倍`, null, '减少格式标签的嵌套，或拆分 HTML 文件后重新上传');
       }
       const list = new Array<HtmlWrapper>(chain.depth);
       for (let at: WrapperChain | null = chain, k = chain.depth - 1; at !== null; at = at.parent, k--) list[k] = at.wrapper;

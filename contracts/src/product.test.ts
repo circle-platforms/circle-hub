@@ -125,7 +125,7 @@ test('pack function references stay inside functions/', () => {
 
 test('templates expand only known variables into valid external ids', () => {
   assert.deepEqual(templateVariables('manual:cli:{line}'), ['line']);
-  assert.equal(expandTemplate('manual:cli:{line}', { line: '10.4.6' }), 'manual:cli:10.4.6');
+  assert.equal(expandTemplate('manual:cli:{line}', { line: '10.7.6' }), 'manual:cli:10.7.6');
   assert.equal(expandTemplate('site:command-tree:{build}', { build: 'Rel_X_1_2' }), 'site:command-tree:Rel_X_1_2');
   assert.throws(() => expandTemplate('manual:cli:{version}', { line: '1' }), /unknown template variable/);
   assert.throws(() => expandTemplate('manual:cli:{line}', {}), /needs \{line\}/);

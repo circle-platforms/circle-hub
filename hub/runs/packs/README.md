@@ -260,3 +260,9 @@ test file (`hub/testing/postgres.ts`) for the registry and port tests, and run p
 - Should the W02 F[7] `reject` rule refuse instead of warn?
 - A withdrawal that would put a colliding version in use is refused with the fix to deactivate first. Should it instead
   deactivate the pack itself as part of the admin's decision?
+
+## 本地工具的发布与下发
+
+发布时从 tools/ 的每个代码文件出发，复用模块扫描器核对它及其相对导入的模块：ES 模块、Node 可擦除的 TypeScript 语法、仅清单内文件及 Node 内置模块。代码文件是 `.ts`、`.mts`、`.js`、`.mjs`。`.cjs` 和 `.cts` 直接拒绝。第三方包、包外路径、CommonJS、`createRequire`、`getBuiltinModule('module')` 和无法静态核对的动态导入被拒，问题用 tools.*，带文件、行和修正动作；脚本无需导出函数。此政策允许全部 Node 内置模块，区别于 SANDBOX_IMPORT_POLICY 的纯计算限制：本地工具会在客户端读写文件，不在 Hub 沙箱中运行。`import { builtinModules } from 'node:module'` 这种具名导入仍然可以，只要不是 `createRequire`。
+
+下发保留作者发布的原字节，不改写文件、不重新打包。它不是 MCP 工具，Circle 中没有专用界面；客户端工具的结果只作“客户端预览”，算数的是 Hub 在沙箱中的重新核验。没有 tools/ 的包继续使用原有发布规则。

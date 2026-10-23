@@ -1,3 +1,4 @@
+import type { Reason as UnknownReason } from '../../../contracts/generated/vocabulary.ts';
 // Values a table selects from the subject, and closed sets resolved by value, by reference or by name.
 import type { ClosedSet } from '../../../contracts/src/tables.ts';
 import { locate, type Selected } from '../json.ts';
@@ -42,7 +43,7 @@ export function scalarText(value: unknown): string | undefined {
   return undefined;
 }
 
-export type ResolvedSet = { ok: true; values: string[]; ground?: string } | { ok: false; reason: 'missing_input' | 'check_error'; detail: string };
+export type ResolvedSet = { ok: true; values: string[]; ground?: string } | { ok: false; reason: Extract<UnknownReason, 'missing_input' | 'check_error'>; detail: string };
 
 /** Members of a closed set. A reference must resolve to a bound fragment whose text is a JSON array of scalars. */
 export function resolveSet(set: ClosedSet, request: CheckRequest): ResolvedSet {
