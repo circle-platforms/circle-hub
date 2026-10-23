@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync, readdirSync, lstatSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import ts from 'typescript';
+import {createHash} from 'node:crypto';
 import { PackManifest, WorkflowFile, RequirementsFile, SlotsFile } from '../../../contracts/src/pack.ts';
 import { computeManifest, packFiles, PACK_DIR } from './pack-files.ts';
 import { parseRuntimeContract } from './functions/runtime-contract.ts';
@@ -83,4 +84,12 @@ test('every emitted pack code and every pack repair code is declared',()=>{
 
 test('published skill heading never advertises a stale pack version',()=>{
  const heading=read('SKILL.md').split('\n')[0];const title='# 用例编译与工作簿核验';assert.ok(heading===title||heading===`${title} ${json('pack.json').version}`,heading);
+});
+
+test('repository manifest paths directly name ordinary files with their declared bytes',()=>{
+  for(const file of json('pack.json').files) {
+    const path=join(PACK_DIR,file.path);assert.equal(lstatSync(path).isFile(),true,file.path);
+    const bytes=readFileSync(path);assert.equal(bytes.byteLength,file.size,file.path);
+    assert.equal(createHash('sha256').update(bytes).digest('hex'),file.sha256,file.path);
+  }
 });
