@@ -5,6 +5,17 @@
 # Steps: export (incremental) -> stage (.doc -> .docx locally, PDFs without a Word twin) -> docx2md -> pdf2md -> deploy.
 # Existing pipelines and settings are not touched; outputs go to $KNOWLEDGE_SYNC_MIRROR_DIR/release/<web target>.
 set -euo pipefail
+# Validate before reading deployment paths or invoking an exporter or converter.
+if [ "$#" -ne 3 ]; then
+  echo '[fail] release triplet malformed' >&2
+  exit 2
+fi
+for field in "$@"; do
+  if ! [[ "$field" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]; then
+    echo '[fail] release triplet malformed' >&2
+    exit 2
+  fi
+done
 W="${KNOWLEDGE_SYNC_MIRROR_DIR:?Set the host mirror directory}"
 SET="$1"; DIR="$2"; TARGET="$3"
 BASE="${KNOWLEDGE_SYNC_UPLOAD_DIR:?Set the host upload directory}"

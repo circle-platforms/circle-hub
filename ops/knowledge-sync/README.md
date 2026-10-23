@@ -22,6 +22,10 @@ Export these variables in the host's job environment (there are no default host 
 | `KNOWLEDGE_SYNC_MANUAL_BRANCHES` | Space-separated manual checkout directory names (names contain no whitespace) |
 | `KNOWLEDGE_SYNC_RELEASE_SET_1` through `KNOWLEDGE_SYNC_RELEASE_SET_4` | One `set upload-directory web-target` triplet per variable; each component contains no whitespace |
 
+Each triplet has exactly three fields, each matching `^[A-Za-z0-9][A-Za-z0-9._-]*$`: plain names, not paths or glob patterns.
+Malformed slots are logged and skipped before export, staging, conversion or deployment; the other slots still run.
+The wrapper exits 1 if any slot is malformed; valid-slot execution keeps its existing order and failure isolation.
+The direct pipeline validates the same three arguments before reading deployment paths.
 The four release sets retain their existing order and failure isolation. The private `export-<set>.properties` files name
 the actual OpenKM subtrees and output directories. Replace every angle-bracket placeholder in the example before use; the
 properties file is a template, not an environment-variable expansion mechanism. Keep private files mode 600 and out of Git.
