@@ -47,3 +47,13 @@ test('one non-scalar field never hides the batch and is marked apart from null a
   assert.deepEqual(content.stories[1].fields_nonscalar, []);
   assert.deepEqual(content.stories[2].fields_absent, ['status', 'stage']);
 });
+
+test('the signed stories contract documents every observed field category without inventing unknowns', async()=>{
+  const {readFile}=await import('node:fs/promises');
+  const system=JSON.parse(await readFile(new URL('./system.json',import.meta.url),'utf8'));
+  const description=system.reads.find((profile:{external:string})=>profile.external==='plm:stories').description as string;
+  const output=storiesProject({external:{type:'stories',key:'21+22+23'},original:'detail',responses:{detail:{json:{data:[{id:21,status:{text:'synthetic'},stage:null},{id:22}]}}}}) as {artifacts:Array<{json:{stories:Array<Record<string,unknown>>;unread:string[]}}>};
+  assert.deepEqual(output.artifacts[0].json.unread,['23']);
+  for(const field of ['fields_nonscalar','fields_absent','unread'])assert.ok(description.includes(field),field+' must be documented');
+  assert.match(description,/标量/);assert.match(description,/原件/);assert.doesNotMatch(description,/列为未知/);
+});

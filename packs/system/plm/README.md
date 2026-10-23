@@ -26,7 +26,7 @@ Needs: none.
 
 ## 批量需求读取
 
-`plm:stories:<编号>+<编号>+…` 使用现有只读需求详情路由；最多 50 个编号，数值排序、去重。内容为 `{stories: [{id,status,stage,title}], unread: [...]}`。状态和阶段独立保留原样；缺字段为 null，未返回编号单列，不推断已交付或已关闭。调用方把更多编号分成每组至多 50 个。
+`plm:stories:<编号>+<编号>+…` 使用现有只读需求详情路由；最多 50 个编号，数值排序、去重。内容为 `{stories: [{id,status,stage,title,fields_absent,fields_nonscalar}], unread: [...]}`。标量状态和阶段独立保留原样；缺字段以 null 占位并列入 fields_absent，非标量值以 null 占位并列入 fields_nonscalar，原值保留在原件；应答未包含的编号列入 unread，是确定的应答事实，不推断已交付或已关闭。调用方把更多编号分成每组至多 50 个。
 
 合成验证：`node --test --test-concurrency=1 packs/system/plm/*.test.ts`。真实需求状态与阶段取值由集成者核实，当前不需要新词表轴。
 
@@ -49,7 +49,7 @@ Needs: none.
 
 Batch story fields `status` and `stage` preserve JSON scalar values (including numbers, booleans and explicit null).
 `fields_absent` names fields the successful original did not contain; no missing lifecycle value is inferred.
-The unreleased package stays at 1.2.0; story projection fixes only require re-signing this manifest.
+The current 1.3.2 manifest signs the read description and function bytes together; raw originals remain unchanged.
 
 复核 3：构建 content 每条新增 fields，逐字保留原始记录的全部 JSON 标量字段（含数字 id、name、布尔、null）；数组和对象不混作标量。顶层 id/name/stories 维持已有接口，原始 name 不 trim、不另取字段兜底。原件不变，workflow 通过 name 与绑定视图和可信构建上下文核对同构建、同根，再在条目 data/陈述中指明选中记录。
 
@@ -71,4 +71,8 @@ placeholder; fields_absent remains separate. Its original raw JSON is retained i
 consumer reports status_nonscalar and stage_nonscalar as observed counts, excluding these fields from scalar grouping;
 this is a known observation, not an unknown lifecycle state. Other stories in the same batch remain readable.
 
-Version 1.3.1 closes the counted external-id entry path with the connector core and retains pack-specific name/id advice only here. The paired story-traceability 1.0.6 stores build identity once and keeps the raw scalar fields in this content. Both manifests are re-signed; no live deployment is part of this change.
+Version 1.3.1 closes the counted external-id entry path with the connector core. Normal connector callers see its generic byte-limit refusal before the pack plan runs; the pack-specific name/id hint is only a defensive direct-call check, not a reachable connector reply. The paired story-traceability 1.0.6 stores build identity once and keeps the raw scalar fields in this content. Both manifests are re-signed; no live deployment is part of this change.
+
+Closure c3 #2: signed stories text distinguishes scalar, absent and non-scalar fields and the observed unread list.
+The connector owns the identity byte limit and normal callers receive its generic shortening instruction; this package
+does not claim its defensive direct-call size advice is visible through the connector.

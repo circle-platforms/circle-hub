@@ -233,7 +233,7 @@
     {
       "name": "stories",
       "external": "plm:stories",
-      "description": "多个需求的详情列表（编号用 + 连接，至多 50 个）：保留原样状态、阶段和标题，未返回的编号列为未知",
+      "description": "多个需求的详情列表（编号用 + 连接，至多 50 个）：标量状态与阶段原样保留；非单个值置 null 并列入 fields_nonscalar，原值在原件；缺字段列入 fields_absent；标题保留；应答未包含的编号列入 unread",
       "plan": {
         "module": "functions/plm.ts",
         "export": "storiesPlan"
