@@ -6,7 +6,8 @@ import { PACK_REF, GENERATED, defaultKind, readPiece, treeReference } from './pi
 import { inputDigest, topChoice, shouldDescend, NONE_OPTION, type JevChoiceQuestion } from './api.ts';
 import { maskLiterals, thresholdOf } from './calibration.ts';
 import { narrowCandidates, optionNames, type PlacementChild } from './placement.ts';
-import { cut, need, record, sha, type LocalStore } from './local.ts';
+import { checkModel } from './validate.ts';
+import { secureUrl, cut, need, record, sha, type LocalStore } from './local.ts';
 interface Context { values: any; hub: Hub; judge: Judge|null; store: LocalStore; allowed: Set<string>; model:string; io:{cwd:string;stdout:(v:string)=>void;stderr:(v:string)=>void} }
 const within=(path:string,under:string)=>under==='/'||path===under||path.startsWith(under+'/');
 const segments=(path:string)=>path==='/'?[]:path.slice(1).split('/').map(decodeURIComponent);
@@ -49,14 +50,35 @@ export async function runWorkflow(action:string,c:Context):Promise<number>{
    if(calibration.threshold===null){reason='本确切版本没有合格校准；下一步运行 calibrate 并补足样例后重跑 place';break;}if(top.isNone){reason='选择 none，停在当前节点';break;}if(top.margin===0){reason='最高概率并列，停在当前节点';break;}if(!shouldDescend(judgment.answer,calibration.threshold)){reason='概率低于校准阈值，停在当前节点';break;}const name=prepared.options.get(top.choice);const child=narrowed.find(v=>v.name===name);need(child,'回答不对应已读子节点；重新读取后重跑');path=child.path;probability=top.p;supporting=inputDigest(judgment);descended++;if(depth===63)reason='到达 64 层读取上限；用当前节点作起点继续 place';
   }
   const outcome={reference:piece.reference,path:descended?path:null,stopped_at:path,reason,p:probability,threshold:calibration.threshold,model,judgments,candidate,unanswered:missing};outcomes.push(outcome);
-  if(descended&&!missing){const code=GENERATED.axes.document_output_kind.find((v:any)=>v.code==='placement_proposal')!.code;proposals.push({id:'p_'+treeReference(piece.reference).entry.slice(0,16),code,text:`归位提议：放到 ${path}。归类判断：Jev@${model}，p=${probability!.toFixed(2)}，只影响位置（阈值 ${calibration.threshold}，校准样例 ${calibration.total} 个）`,data:{root:v.root,path,source:{reference:piece.reference,quote:cut(piece.text.split('\n')[0]!,200)}},supporting_judgment:supporting,judgments});}
+  if(descended&&!missing){const code=GENERATED.axes.document_output_kind.find((v:any)=>v.code==='placement_proposal')!.code;proposals.push({id:'p_'+treeReference(piece.reference).entry.slice(0,16),code,text:proposalText(path,model,probability!,calibration),data:{root:v.root,path,source:{reference:piece.reference,quote:cut(piece.text.split('\n')[0]!,200)}},supporting_judgment:supporting,judgments});}
  }
  await store.write('placement.json',{model,root:v.root,items:outcomes},true);await store.write('proposals.json',{model,root:v.root,items:proposals},true);io.stdout(`归类判断：Jev@${model}；候选 ${outcomes.length}，提议 ${proposals.length}；只影响位置；停法和补取动作见 placement.json`);return failed?3:0;
 }
-async function submit(c:Context):Promise<number>{const {values:v,hub,store,io}=c;need(v.proposals&&v.product&&v.build,'submit 缺少 --proposals、--product 或 --build；补齐后重跑');const input=JSON.parse(await readFile(resolve(io.cwd,v.proposals),'utf8'));store.guard(input);need(record(input)&&Array.isArray(input.items)&&typeof input.model==='string','提议文件不完整；重跑 place');const skip=new Map<string,string>();for(const value of v.skip??[]){const at=value.indexOf('=');need(at>0&&value.slice(at+1).trim()!=='','--skip 须为条目=具体理由');skip.set(value.slice(0,at),value.slice(at+1));}
+function proposalText(path:string,model:string,p:number,calibration:{threshold:number|null;total:number}){return `归位提议：放到 ${path}。归类判断：Jev@${model}，p=${p.toFixed(2)}，只影响位置（阈值 ${calibration.threshold}，校准样例 ${calibration.total} 个）`;}
+export async function verifyProposals(input:any,hub:Hub,store:LocalStore){
+ checkModel(input.model,false);secureUrl(hub.url.href,input.model);
+ const all=new Map((await store.records('judgments.jsonl')).map(value=>[inputDigest(value),value]));const calibration=await calibrationState(store,input.model);need(calibration.threshold!==null,'提议缺合格校准；运行 calibrate 后重跑 place');
+ const tree=new Tree(hub,input.root);const allowed=new Set<string>(GENERATED.axes.entry_kind.map((v:any)=>v.code));const used=new Map<string,any>();
+ for(const p of input.items){
+  need(record(p)&&record(p.data)&&record(p.data.source)&&Array.isArray(p.judgments)&&p.judgments.length>0,'提议缺判断链；用原输出目录重跑 place');
+  const source=treeReference(p.data.source.reference);need(source.root===input.root&&p.data.root===input.root&&p.id==='p_'+source.entry.slice(0,16),'提议身份或根不符；重跑 place');
+  need(p.code===GENERATED.axes.document_output_kind.find((v:any)=>v.code==='placement_proposal')!.code,'提议种类不是归位提议；重跑 place');
+  const piece=await tree.piece('source',p.data.source.reference,allowed);need(p.data.source.quote===cut(piece.text.split('\n')[0]!,200),'提议引文被修改；重跑 place');
+  let path:string|null=null;let supporting:string|null=null;let probability:number|null=null;let stopped=false;
+  for(const hash of p.judgments){const r=all.get(hash);need(r&&r.requested_model===input.model&&r.returned_model===input.model&&r.exact_model===input.model,'提议缺判断记录或模型不一致；用原确切版本重跑 place');need(!stopped,'停止后的判断不能下降；重跑 place');
+   const prefix=`Classify the passage \`${r.question_id}\` under knowledge node `;const suffix='. Choose a child or none.';need(typeof r.instructions==='string'&&r.instructions.startsWith(prefix)&&r.instructions.endsWith(suffix),'判断不是归位问题；重跑 place');const at=r.instructions.slice(prefix.length,-suffix.length);need(at.startsWith('/')&&(path===null||path===at),'判断链路径不连续；重跑 place');path=at;
+   const id='q'+inputDigest({piece:piece.sha256,path}).slice(0,40);const narrowed=narrowCandidates(await tree.children(path),piece.text);need(narrowed,'判断节点不能提问；重跑 place');const prepared=question(id,path,narrowed);
+   need(r.question_type==='choice'&&r.question_id===id&&r.input_digest===inputDigest(piece.text)&&r.state_digest===inputDigest({[id]:piece.text})&&inputDigest(r.candidates)===inputDigest(Object.entries(prepared.question.criteria).map(([name,description])=>({name,description})))&&r.instructions===prepared.question.instructions,'判断输入或选项不符；回读树后重跑 place');
+   const top=topChoice(r.answer);if(shouldDescend(r.answer,calibration.threshold!)){const name=prepared.options.get(top.choice);const child=narrowed.find(v=>v.name===name);need(child,'判断缺目标子节点；重跑 place');path=child.path;supporting=hash;probability=top.p;}else stopped=true;used.set(hash,r);
+  }
+  need(supporting!==null&&probability!==null&&supporting===p.supporting_judgment&&path===p.data.path,'提议目标或支持判断不符；重跑 place');need(p.text===proposalText(path!,input.model,probability!,calibration),'提议模型、概率或校准文字被修改；重跑 place');
+ }
+ return [...used.values()];
+}
+async function submit(c:Context):Promise<number>{const {values:v,hub,store,io}=c;need(v.proposals&&v.product&&v.build,'submit 缺少 --proposals、--product 或 --build；补齐后重跑');const input=JSON.parse(await readFile(resolve(io.cwd,v.proposals),'utf8'));store.guard(input);need(record(input)&&Array.isArray(input.items)&&typeof input.model==='string','提议文件不完整；重跑 place');const judgments=await verifyProposals(input,hub,store);const skip=new Map<string,string>();for(const value of v.skip??[]){const at=value.indexOf('=');need(at>0&&value.slice(at+1).trim()!=='','--skip 须为条目=具体理由');skip.set(value.slice(0,at),value.slice(at+1));}
  need([...skip.keys()].every(id=>input.items.some((p:any)=>p.id===id)),'--skip 指向清单外条目；从回执照抄本批条目标识和理由后重跑');
  const manifest={items:input.items.map((p:any,i:number)=>({id:p.id,title:`${i+1} ${p.data.path}`}))};const run=await start(hub,manifest,v.product,v.build,inputDigest({manifest,product:v.product,build:v.build}));need(input.items.every((p:any)=>p.data.root===run.root)&&input.root===run.root,`place 读取的根与这次锁定根不同；下一步用本次根 ${run.root} 重跑 place 和 submit`);
- const all=await store.records('judgments.jsonl');const wanted=new Set(input.items.flatMap((p:any)=>p.judgments));const judgments=all.filter(value=>wanted.has(inputDigest(value)));need(judgments.length===wanted.size,'提议缺判断记录；用原输出目录重跑 place 后 submit');const notes=await upload(hub,{judgments});
+ const notes=await upload(hub,{judgments});
  const items=input.items.map((p:any)=>skip.has(p.id)?{item:p.id,handling:'skipped',reason:skip.get(p.id)}:{item:p.id,handling:'handled',slots:{contribution:[{code:p.code,text:p.text,data:p.data}]}});
  const result=await hub.call('submit_result',{run:run.run,model:`${input.model}（Circle 技能 jev，${GENERATED.id}@${run.pack_digest}）`,items,notes});
  await store.append('run-identities.jsonl',{run:run.run,pack:PACK_REF,pack_digest:run.pack_digest});const file='receipt-'+inputDigest(result)+'.json';await store.write(file,result);try{await store.write('receipt.json',result);}catch{/* Earlier receipt stays immutable; the digest-named receipt is this call's result. */}
