@@ -273,15 +273,17 @@ The interpreter asks the run's source view for the fragment a reference resolves
    to the run — the same code path, never a second parser. One reference is parsed once per evaluation; the declared
    reads' size cap applies to a whole-source fragment, and a retain-only source gives no text (含凭据，原文不可读).
    `src:` must name a run source; `tree:` must name the run's locked root. `rec:` must be bound to the run (including predecessor results) and resolve to a groundable result or Hub action/effect (B01 R[4]). Standalone `entry:` references cannot be grounds (B01 R[5]). Out-of-scope references refute with QUOTE_MISMATCH; decision 36 defines separate correction grades for non-groundable records and standalone entries. Resolutions are
-   graded by `Unresolved.code`, never by message wording: REFERENCE_UNRESOLVED on a bound source/tree means
-   no_fragment; SOURCE_UNAVAILABLE means unavailable. A resolved object without readable text is also unavailable.
+   graded by `Unresolved.code`, never by message wording: REFERENCE_UNRESOLVED on a bound reference means
+   no_fragment; SOURCE_UNAVAILABLE means unavailable. A resolved retain-only object stays retain_only; an otherwise
+   readable object with no text has no_fragment.
 
 ### Graded outcomes
 
 - 引用不在本运行范围内：驳回 QUOTE_MISMATCH，改引本运行绑定的输入。不能作根据、条目未写树地址及格式错误按决定 36 分别说明修正办法。
 - 源文件绑定了但选择器解析不出片段（片段不存在）：驳回。
 - 引文不逐字：驳回 QUOTE_MISMATCH。
-- 真读不到（源文件取不回、超过大小上限、只保留）：未知，说明照实写原因。
+- 不能作根据、缺树地址、引用写法不对、片段不存在或超过大小上限：分别按决定 36 的状态驳回，并给出修正办法。
+- 只保留：未知，缺管理员接受来源的事实，请请求管理员接受，接受后自动重评。真正暂时取不回：未知，请重读再评。
 
 ### Why packs no longer need to copy a quote into the top-level quotes array
 

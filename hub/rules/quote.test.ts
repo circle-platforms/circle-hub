@@ -54,7 +54,7 @@ describe('shared quotation vectors', () => {
     }
   });
 
-  it('an unbound or invalid reference is unknown, never a mismatch', () => {
+  it('missing evidence stays unknown while malformed references are refuted', () => {
     const table = { schema: 'quote@1', origin: '测试', quotes: [{ select: '$.quotes[*]', text: '/text', reference: '/reference' }] };
     const outcomes = quoteInterpreter.run({
       interpreter: 'quote@1',
@@ -64,10 +64,10 @@ describe('shared quotation vectors', () => {
       context: {},
     });
     assert.deepEqual(
-      outcomes.map((o) => [o.verdict, o.reason]),
+      outcomes.map((o) => [o.verdict, o.reason ?? o.code]),
       [
         ['unknown', 'missing_input'],
-        ['unknown', 'missing_input'],
+        ['refute', 'QUOTE_MISMATCH'],
         ['unknown', 'missing_input'],
       ],
     );

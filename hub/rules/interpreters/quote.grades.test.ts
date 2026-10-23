@@ -1,8 +1,4 @@
-// quote@1 with the graded source view: the interpreter asks for a fragment by reference and the view answers with why
-// the text is missing — not bound to this run (unknown), no such fragment in a bound
-// source (the model can fix the selector or the quote: refute), or genuinely unreadable (retain-only, over the size
-// cap, the source cannot be fetched: unknown, honestly). The run's own lazy fallback (evaluate.ts) supplies the same
-// grading for references that appear only inside slot data, parsed by the boundary's own parser.
+// Decision 36: permanent defects refute with distinct correction paths; retained and temporarily unreadable text stays unknown.
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import type { FragmentRead } from '../../../contracts/generated/vocabulary.ts';
@@ -56,7 +52,7 @@ describe('quote@1 over the graded source view', () => {
   });
 
   it('a genuinely unreadable source stays unknown, with the honest reason', () => {
-    for (const [why, expected] of [['retain_only', /含凭据，原文不可读/], ['too_large', /超过大小上限/], ['unavailable', /取不回/]] as const) {
+    for (const [why, expected] of [['retain_only', /含凭据，原文不可读/], ['unavailable', /取不回/]] as const) {
       const view = graded({}, () => why);
       const out = run(view, { q: [{ t: '片段', r: FRAGMENT }] });
       assert.equal(out[0].verdict, 'unknown', why);
@@ -76,3 +72,12 @@ const invalidGrade: SourceView = { text: () => undefined,
   why: () => 'invented_grade',
 };
 void invalidGrade;
+
+it('permanent quote defects have distinct grades and actionable refutations', () => {
+ for (const [why, remedy] of [['not_groundable', /B01.*结果.*动作.*效果/], ['entry_unaddressed', /tree:<根>\/<路径>@<条目>/], ['malformed', /src:<摘要>/], ['too_large', /更小的片段/]] as const) {
+ const out = run(graded({}, () => why), {q:[{t:'片段',r:FRAGMENT}]})[0];
+ assert.equal(out.verdict,'refute'); assert.equal(out.code,'QUOTE_MISMATCH'); assert.equal(out.data?.why,why); assert.match(out.statement,remedy);
+ }
+ for (const [why,remedy] of [['retain_only',/管理员.*接受.*重评/],['unavailable',/重读/]] as const) assert.match(run(graded({},()=>why),{q:[{t:'片段',r:FRAGMENT}]})[0].statement,remedy);
+ const malformed=run(graded({},()=> 'malformed'),{q:[{t:'片段',r:'src:bad'}]})[0]; assert.equal(malformed.verdict,'refute'); assert.equal(malformed.data?.why,'malformed');
+});

@@ -359,24 +359,24 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
         try {
           ref = parseReference(reference);
         } catch {
-          return { why: 'unavailable' };
+          return { why: 'malformed' };
         }
         const finish = async (r: Awaited<ReturnType<typeof resolveReference>>): Promise<{ text?: string; why: FragmentRead }> => {
           if (!r.resolved) {
             // By the resolver's own code: REFERENCE_UNRESOLVED means the reference resolves to nothing inside the
             // bound thing (no such fragment — the model can fix the selector or the quote); SOURCE_UNAVAILABLE means
-            // the read genuinely failed. For a reference that is not src or a locked tree, unresolved also lands here
-            // as unavailable: an honest unknown, never a refutation.
-            return { why: r.code === 'REFERENCE_UNRESOLVED' && (ref.scheme === 'src' || ref.scheme === 'tree') ? 'no_fragment' : 'unavailable' };
+            // the read genuinely failed. Scope and groundability have their own grades and remedies.
+            return { why: r.code === 'REFERENCE_UNRESOLVED' ? 'no_fragment' : 'unavailable' };
           }
-          if (!r.groundable) return { why: 'not_bound' };
+          if (!r.groundable) return { why: 'not_groundable' };
           if (r.readTier === 'retain_only') return { why: 'retain_only' };
-          if (r.text === null) return { why: 'unavailable' };
+          if (r.text === null) return { why: 'no_fragment' };
           if (Buffer.byteLength(r.text, 'utf8') > capBytes) return { why: 'too_large' };
           return { text: r.text, why: 'bound' };
         };
         // Share the boundary's scope, including predecessor results and the ban on standalone entries.
         const scope = await (fragmentScope ??= buildScope(ctx, run, workflow, principalOf(resolveCtx.reader), 'function'));
+        if (ref.scheme === 'entry') return { why: 'entry_unaddressed' };
         if (scopeProblem(ref, scope) !== null) return { why: 'not_bound' };
         return finish(await resolveReference(ref, resolveCtx));
       })();
