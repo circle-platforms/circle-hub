@@ -25,3 +25,8 @@ test('skipped documents are disclosed, and missing Hub evidence is unknown',()=>
   const v=view({a:entry('a','d1')});v.skipped=2;
   const report=recountDuplicates([v],draft,xml,{});assert.equal(report.skipped,2);assert.equal(report.unknown,1);assert.match(renderRecount(report),/只覆盖读到的文档/);
 });
+test('the report attributes case command ownership to the supplied Hub index view',()=>{
+  const report=recountDuplicates([view({a:entry('a','d1')})],draft,xml,hub('d1'));
+  assert.equal(report.commandOwnership,'hub_index_input');
+  assert.match(renderRecount(report),/命令归属取自 Hub.*index-view@1/);
+});

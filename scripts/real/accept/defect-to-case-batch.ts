@@ -204,6 +204,7 @@ export async function runBatch(config:Pairings,options:BatchOptions,deps:BatchDe
   lines.push(`引文：${totals.quote_gate_pass===totals.pairs?'通过':'不通过'}；通过配对 ${totals.quote_gate_pass}/${totals.pairs}`);
   lines.push(`引文来源：${totals.origin_gate_pass===totals.pairs?'通过':'不通过'}；通过配对 ${totals.origin_gate_pass}/${totals.pairs}`);
   lines.push(`查重：${totals.duplicate_gate_pass===totals.pairs?'通过':'不通过'}；通过配对 ${totals.duplicate_gate_pass}/${totals.pairs}`);
+  lines.push('输入边界：用例的命令归属取自 Hub 导出的 index-view@1；本批独立重算查重，原件到命令归属由回归范围用例验收另行核验');
   const code=totals.completed===totals.pairs&&totals.failed===0&&totals.design_gaps===0&&totals.defects===0?0:1;
   lines.push(`批跑：${code===0?'通过':'不通过（缺陷或设计缺口，未完成）'}`);writePrivateJson(join(out,'summary.json'),totals);
   return {code,text:lines.join('\n'),totals};
