@@ -111,7 +111,7 @@ export function idsFromTitle(title: string): TitleIds {
         rawIds.push({ kind, id, raw });
       }
     }
-    const bare = idList(text, leadingStart(text), 5, 7);
+    const bare = idList(text, leadingStart(text), 4, 7);
     // A leading four-digit year (2025 ...) is not an id, and neither is anything listed after it.
     if (!(bare.length > 0 && bare[0].end - bare[0].start === 4 && Number(bare[0].id) >= 1900 && Number(bare[0].id) <= 2099)) {
       for (const found of bare) if (!classified.has(found.id)) {

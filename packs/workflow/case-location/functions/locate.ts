@@ -53,7 +53,14 @@ const FORM_LABEL: Readonly<Record<Exclude<SchemeKind, 'version'>, string>> = { b
 
 type Notes = string[];
 /** Why an answer is not a fact: in full (the statement) and in a few words (the summary lead). */
-type Doubt = { text: string; brief: string };
+type Doubt = { text: string; brief: string; missing?: string; next?: string };
+
+/** What is missing when the folders have no version level, decided from whether line was already declared. */
+function missingVersionNext(declaredLine: string | null): string {
+  return declaredLine === null
+    ? '缺少目录里的版本层；下一步由整理敏捷平台目录的人补齐版本层，或开始运行时用参数 line 声明（结论标为声明）。'
+    : '缺少目录里的版本层；下一步由整理敏捷平台目录的人把文档放到声明的版本线下；版本线已经声明，整理目录后才能核对。';
+}
 
 function note(notes: Notes, text: string): void {
   if (notes.length < LIMITS.maxNotes && !notes.includes(text)) notes.push(text);
@@ -260,7 +267,7 @@ export function locateItem(input: LocateInput): { answer: LocateAnswer; judgment
       version = mention;
       versionSource = 'folders';
       confidence = 'low';
-      versionDoubts.push({ text: `版本只是目录名里顺带提到的（${mention}），目录里没有版本层（版本线节点、发布火车或只写版本的目录）`, brief: '版本只是目录名里提到的' });
+      versionDoubts.push({ text: `版本只是目录名里顺带提到的（${mention}），目录里没有版本层（版本线节点、发布火车或只写版本的目录）`, brief: '版本只是目录名里提到的', missing: '目录里的版本层', next: missingVersionNext(declared.line) });
     } else if (titled !== undefined) {
       version = titled;
       versionSource = 'title';
@@ -323,11 +330,11 @@ export function locateItem(input: LocateInput): { answer: LocateAnswer; judgment
     else conflicts.push({ field: 'product', declared: declared.product, tree: productName! });
   }
   if (productLine === null) {
-    if (!bound) productDoubts.push({ text: '产品线定不出（运行没有绑定产品线）', brief: '运行没有绑定产品线' });
-    else if (root === null && declared.product !== null) productDoubts.push({ text: `产品线定不出（没有目录树的根，调用方声明的产品${quoted(declared.product)}不是这条产品线的名称）`, brief: `声明的产品${quoted(declared.product)}不是产品名称` });
-    else if (root === null) productDoubts.push({ text: '产品线定不出（没有目录树的根）', brief: '没有目录树的根' });
-    else productDoubts.push({ text: `产品线定不出（目录树的根${quoted(root)}不是产品线的名称）`, brief: `根${quoted(root)}不是产品名称` });
-  } else if (filled.includes('product_line')) productDoubts.push({ text: '产品线来自调用方声明，未经目录树核对', brief: '产品线是声明的' });
+    if (!bound) productDoubts.push({ text: '产品线定不出（运行没有绑定产品线）', brief: '运行没有绑定产品线', missing: '运行绑定的产品线', next: '下一步开始这次运行时绑定这条产品线。' });
+    else if (root === null && declared.product !== null) productDoubts.push({ text: `产品线定不出（没有目录树的根，调用方声明的产品${quoted(declared.product)}不是这条产品线的名称）`, brief: `声明的产品${quoted(declared.product)}不是产品名称`, missing: '目录树的根', next: '下一步把文档放到产品的根目录下，目录才能核对声明的产品。' });
+    else if (root === null) productDoubts.push({ text: '产品线定不出（没有目录树的根）', brief: '没有目录树的根', missing: '目录树的根', next: '下一步把文档放到产品的根目录下。' });
+    else productDoubts.push({ text: `产品线定不出（目录树的根${quoted(root)}不是产品线的名称）`, brief: `根${quoted(root)}不是产品名称`, missing: '作为产品线名称的根目录', next: '下一步把文档放到产品的根目录下。' });
+  } else if (filled.includes('product_line')) productDoubts.push({ text: '产品线来自调用方声明，未经目录树核对', brief: '产品线是声明的', missing: '目录树对产品线的核对', next: '下一步把文档放到产品的根目录下，才能核对声明的产品。' });
 
   let line = conv.line ?? labels.slice(0, level.end + 1).flatMap(label => buildVersionsOf(label, names))[0]?.version ?? null;
   if (declared.line !== null) {
@@ -352,9 +359,9 @@ export function locateItem(input: LocateInput): { answer: LocateAnswer; judgment
       note(notes, `版本线取自调用方声明（参数 line）${declared.line}，未经目录树核对`);
     }
   }
-  if (versionSource === 'title') versionDoubts.push({ text: `版本只在标题里（参考版本 ${version}）`, brief: '版本只在标题里' });
-  else if (versionSource === 'parameter') versionDoubts.push({ text: '版本来自调用方声明，未经目录树核对', brief: '版本是声明的' });
-  else if (versionSource === 'none') versionDoubts.push({ text: '目录里没有版本层，版本未知', brief: '没有版本层' });
+  if (versionSource === 'title') versionDoubts.push({ text: `版本只在标题里（参考版本 ${version}）`, brief: '版本只在标题里', missing: '目录里的版本层', next: missingVersionNext(declared.line) });
+  else if (versionSource === 'parameter') versionDoubts.push({ text: '版本来自调用方声明，未经目录树核对', brief: '版本是声明的', missing: '目录里的版本层', next: missingVersionNext(declared.line) });
+  else if (versionSource === 'none') versionDoubts.push({ text: '目录里没有版本层，版本未知', brief: '没有版本层', missing: '目录里的版本层', next: missingVersionNext(declared.line) });
 
   // ---- build names as written, of the line's families
   const builds = writtenBuilds([...ancestors, ...(title !== null ? [title] : []), ...path, ...(caseTitle !== null ? [caseTitle] : [])], names, LIMITS.maxBuildNames);
@@ -380,7 +387,11 @@ export function locateItem(input: LocateInput): { answer: LocateAnswer; judgment
     product_name: productName,
     version,
     version_values: level.values.map(v => ({ version: v.value, level: v.at + 1, label: ancestors[v.at] })),
-    missing: level.value === null ? ['目录里的版本层'] : [],
+    missing: unique([
+      ...(level.value === null ? ['目录里的版本层'] : []),
+      ...productDoubts.flatMap((doubt) => doubt.missing === undefined ? [] : [doubt.missing]),
+      ...versionDoubts.flatMap((doubt) => doubt.missing === undefined ? [] : [doubt.missing]),
+    ]),
     build: build.value,
     patch: patch.value,
     line,
@@ -418,7 +429,13 @@ function judgmentOf(answer: LocateAnswer, doubts: readonly Doubt[], fromTree: bo
     const why = doubts.find(d => d.text.includes('版本层自相矛盾'));
     const matching = declaredLine === null ? [] : answer.version_values.filter(value => versionsAgree(declaredLine, value.version)).map(value => value.version);
     const declaration = declaredLine === null ? '' : `调用方声明的版本线 ${declaredLine} ${matching.length ? `与 ${unique(matching).join('、')} 一致` : '与版本层的每个值都不一致'}，声明不消除目录版本层的冲突`;
-    return { verdict: 'refute', code: 'case-location.version_conflict', statement: `目录版本层自相矛盾：${why?.text ?? answer.version_values.map(v => v.version).join('、')}。${declaration}${declaration ? '；' : ''}下一步由整理敏捷平台目录的人把文档放到一条版本线下，或开始运行时用参数 line 声明（标为声明）。已知${basis}：${described(answer)}`, brief: why?.brief ?? '版本层自相矛盾' };
+    const productConflicts = answer.conflicts.filter((conflict) => conflict.field === 'product');
+    const productText = productConflicts.map((conflict) => `调用方声明的产品${quoted(conflict.declared)}与目录树的根${quoted(conflict.tree)}矛盾`).join('；');
+    const productBrief = productConflicts.map((conflict) => `声明的产品${quoted(conflict.declared)}与根${quoted(conflict.tree)}矛盾`).join('，');
+    const step = declaredLine === null
+      ? '下一步由整理敏捷平台目录的人把文档放到一条版本线下，或开始运行时用参数 line 声明（标为声明）。'
+      : '下一步由整理敏捷平台目录的人把文档放到一条版本线下；版本线已经声明，整理目录后才能核对。';
+    return { verdict: 'refute', code: 'case-location.version_conflict', statement: `目录版本层自相矛盾：${why?.text ?? answer.version_values.map(v => v.version).join('、')}。${declaration}${declaration ? '；' : ''}${productText === '' ? '' : `${productText}；`}${step}已知${basis}：${described(answer)}`, brief: [why?.brief ?? '版本层自相矛盾', productBrief].filter((part) => part !== '').join('，') };
   }
   if (answer.conflicts.length > 0) {
     const parts = answer.conflicts.map((c) => (c.field === 'line' ? `版本线 ${c.declared} 与目录给出的版本 ${c.tree} 矛盾` : `产品${quoted(c.declared)}与目录树的根${quoted(c.tree)}矛盾`));
@@ -430,7 +447,7 @@ function judgmentOf(answer: LocateAnswer, doubts: readonly Doubt[], fromTree: bo
   return {
     verdict: 'unknown',
     reason: 'missing_input',
-    statement: `定位不确定：${doubts.map((d) => d.text).join('；')}。${answer.missing.includes('目录里的版本层') ? '缺少目录里的版本层；下一步由整理敏捷平台目录的人补齐版本层，或开始运行时用参数 line 声明（结论标为声明）。' : ''}已知${basis}：${described(answer)}`,
+    statement: `定位不确定：${doubts.map((d) => d.text).join('；')}。${doubts.flatMap((doubt) => doubt.next === undefined ? [] : [doubt.next]).join('')}已知${basis}：${described(answer)}`,
     brief: doubts.map((d) => d.brief).join('，'),
   };
 }

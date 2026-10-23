@@ -722,7 +722,7 @@ describe('the associated ids in the conclusion', () => {
 
 describe('metamorphic properties', () => {
   const comparable = (answer: LocateAnswer, hasRoot: boolean): Record<string, unknown> => {
-    const { product_line: _l, product_name: _n, notes: _o, ancestor_path, ...rest } = answer;
+    const { product_line: _l, product_name: _n, notes: _o, missing: _m, ancestor_path, ...rest } = answer;
     return { ...rest, ancestor_path: ancestor_path.slice(hasRoot ? 1 : 0) };
   };
   const plain = ROWS.filter((r) => r.declared?.product === undefined && r.id !== 'root-repeated-as-folder');
@@ -734,7 +734,10 @@ describe('metamorphic properties', () => {
         const after = locate(inputOf(row, { root }));
         assert.deepEqual(comparable(after, true), comparable(before, row.root !== null), `${row.id} under ${root}`);
         if (root !== '合成平台' && !row.unbound) assert.equal(after.product_line, 'apv', `${row.id} under ${root}`);
-        if (root === '合成平台') assert.deepEqual([after.product_line, after.product_name], [null, '合成平台']);
+        if (root === '合成平台') {
+          assert.deepEqual([after.product_line, after.product_name], [null, '合成平台']);
+          if (!row.unbound) assert.ok(after.missing.includes('作为产品线名称的根目录'), `${row.id} names the missing root`);
+        }
       }
     }
   });

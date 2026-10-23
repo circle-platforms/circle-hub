@@ -61,6 +61,15 @@ function candidateText(candidate: Candidate): string {
 /** How many candidates the statement writes out; the rest are counted, not listed. */
 const MAX_LISTED = 12;
 
+/** The version line used to list candidates. A located line is kept as stored. A version level with no line node
+ * uses that version's own line (first three numbers, leading zeros removed, trailing zeros kept) so 10.7.0 still
+ * matches the knowledge base. lineKey would collapse 10.7.0 to 10.7 and miss those builds. */
+function candidateLine(answer: { line: string | null; version: string | null; version_values: readonly unknown[] }): string | null {
+  if (answer.line !== null) return answer.line;
+  if (answer.version === null || answer.version_values.length === 0) return null;
+  return answer.version.split('.').slice(0, 3).map((part) => part.replace(/^0+(?=[0-9])/, '')).join('.');
+}
+
 /** The candidates outcome of one item: support with the list, or unknown with the reason (never a pass without a list). */
 function candidatesOutcome(item: string, grounds: string[], pointer: string, line: string | null, builds: ContextBuild[]): CheckOutcome {
   if (line === null) {
@@ -103,17 +112,28 @@ function candidatesOutcome(item: string, grounds: string[], pointer: string, lin
   };
 }
 
-/** The cross-check of one written build name against the knowledge base's builds. */
-function writtenOutcome(item: string, grounds: string[], pointer: string, name: string, line: string | null, builds: ContextBuild[], candidates: Candidate[]): CheckOutcome {
+/** The cross-check of one written build name against the knowledge base's builds. `conflictLines` is the set of
+ * lines the version level named when it contradicts itself; membership is by lineKey, and the statement names the
+ * build's own line and those conflicting lines. */
+function writtenOutcome(item: string, grounds: string[], pointer: string, name: string, line: string | null, builds: ContextBuild[], candidates: Candidate[], conflictLines: readonly string[] | null): CheckOutcome {
   const folded = fold(name);
   const data = { kind: 'written_build', name };
+  const conflict = conflictLines !== null && conflictLines.length > 1;
+  const prefix = conflict ? '目录版本层自相矛盾；' : '';
+  const belongs = (buildLine: string): boolean => conflictLines?.some((entry) => entry === lineKey(buildLine)) ?? false;
   // Known to the located line: the name of a candidate, or the base one alias is based on.
   const known = candidates.find((c) => fold(c.name) === folded) ?? candidates.find((c) => fold(c.base) === folded);
   if (known !== undefined) {
     const isBase = fold(known.name) !== folded;
+    const knownLine = builds.find((build) => fold(build.name) === fold(known.name))?.line;
+    const statement = conflict
+      ? (isBase
+        ? `${prefix}写出的构建名 ${name} 是冲突版本线之一 ${knownLine} 的候选 ${known.name} 所依据的构建`
+        : `${prefix}写出的构建名 ${name} 是冲突版本线之一 ${knownLine} 的构建`)
+      : (isBase ? `写出的构建名 ${name} 是候选 ${known.name} 所依据的构建` : `写出的构建名 ${name} 是定位到的版本线的构建`);
     return {
       verdict: 'support',
-      statement: isBase ? `写出的构建名 ${name} 是候选 ${known.name} 所依据的构建` : `写出的构建名 ${name} 是定位到的版本线的构建`,
+      statement,
       grounds,
       tier: TIER,
       item,
@@ -123,6 +143,29 @@ function writtenOutcome(item: string, grounds: string[], pointer: string, name: 
   }
   const elsewhere = builds.find((b) => fold(b.name) === folded);
   if (elsewhere !== undefined) {
+    if (conflict && conflictLines !== null) {
+      if (belongs(elsewhere.line)) {
+        return {
+          verdict: 'support',
+          statement: `${prefix}写出的构建名 ${name} 是冲突版本线之一 ${elsewhere.line} 的构建`,
+          grounds,
+          tier: TIER,
+          item,
+          pointer,
+          data: { ...data, build: elsewhere.name, line: elsewhere.line },
+        };
+      }
+      return {
+        verdict: 'refute',
+        code: 'case-location.build_other_line',
+        statement: `${prefix}写出的构建名 ${name} 属于版本线 ${elsewhere.line}，不是冲突版本线 ${conflictLines.join('、')} 的构建`,
+        grounds,
+        tier: TIER,
+        item,
+        pointer,
+        data: { ...data, line: elsewhere.line },
+      };
+    }
     if (line !== null && elsewhere.line !== line) {
       return {
         verdict: 'refute',
@@ -173,19 +216,29 @@ export function candidatesOutcomes(subject: unknown): CheckOutcome[] {
     const pointer = `/items/${at}/fields`;
     try {
       const answer = locate(locateInputOf(id, value.fields, context));
-      const candidates = answer.line === null ? [] : orderCandidates(builds.filter((b) => b.line === answer.line).map(candidateOf));
+      const located = candidateLine(answer);
+      const candidates = located === null ? [] : orderCandidates(builds.filter((b) => b.line === located).map(candidateOf));
       const lines = [...new Set(answer.version_values.map(v => lineKey(lineOfVersion(v.version))))];
       if (lines.length > 1) {
         for (const line of lines) {
           const outcome = candidatesOutcome(id, grounds, pointer, line, builds);
           out.push({ ...outcome, statement: `目录版本层自相矛盾，分别列出候选；${outcome.statement}` });
         }
-      } else out.push(candidatesOutcome(id, grounds, pointer, answer.line, builds));
-      const writtenCandidates = lines.length > 1 ? orderCandidates(builds.filter(build => lines.includes(build.line)).map(candidateOf)) : candidates;
-      for (const name of answer.build_names) {
-        const outcome = writtenOutcome(id, grounds, pointer, name, lines.length > 1 ? null : answer.line, builds, writtenCandidates);
-        out.push(lines.length > 1 ? { ...outcome, statement: `目录版本层自相矛盾；${outcome.statement.replace('定位到的版本线', '冲突版本线之一')}` } : outcome);
-      }
+      } else if (located === null && answer.version_values.length > 0) {
+        out.push({
+          verdict: 'unknown',
+          reason: 'missing_input',
+          statement: '版本层没有版本线节点，定不出构建候选；下一步由整理敏捷平台目录的人在版本层写上版本线节点。',
+          grounds,
+          tier: TIER,
+          item: id,
+          pointer,
+          data: { kind: 'candidates', line: null, candidates: [] },
+        });
+      } else out.push(candidatesOutcome(id, grounds, pointer, located, builds));
+      const conflictLines = lines.length > 1 ? lines : null;
+      const writtenCandidates = conflictLines === null ? candidates : orderCandidates(builds.filter(build => conflictLines.some(line => line === lineKey(build.line))).map(candidateOf));
+      for (const name of answer.build_names) out.push(writtenOutcome(id, grounds, pointer, name, conflictLines === null ? located : null, builds, writtenCandidates, conflictLines));
     } catch (error) {
       out.push({ verdict: 'unknown', reason: 'check_error', statement: `构建候选检查出错（任务包缺陷）：${internalError(error)}`, grounds, tier: TIER, item: id, pointer });
     }

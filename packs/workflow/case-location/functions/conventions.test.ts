@@ -62,6 +62,46 @@ test('zero-padded identifiers use normalized identity and original display text'
   assert.match(judgment.statement, /缺陷 001234/);
 });
 
+test('a root that is not a product name names what is missing and the next action', () => {
+  const { answer, judgment } = locateItem({ ...context, root: '合成平台', ancestors: ['060：10.6.1'] });
+  assert.equal(judgment.verdict, 'unknown');
+  assert.ok(answer.missing.includes('作为产品线名称的根目录'));
+  assert.match(judgment.statement, /下一步把文档放到产品的根目录下/);
+});
+
+test('an unbound run names the missing product binding and the next action', () => {
+  const { answer, judgment } = locateItem({ ...context, names: [], product: null, ancestors: ['060：10.6.1'] });
+  assert.equal(judgment.verdict, 'unknown');
+  assert.ok(answer.missing.includes('运行绑定的产品线'));
+  assert.match(judgment.statement, /下一步开始这次运行时绑定这条产品线/);
+});
+
+test('a declared line with no version level is not answered by declaring line again', () => {
+  const { answer, judgment } = locateItem({ ...context, ancestors: ['通用用例', '基础功能'], declared: { line: '10.9.1' } });
+  assert.equal(judgment.verdict, 'unknown');
+  assert.ok(answer.missing.includes('目录里的版本层'));
+  assert.match(judgment.statement, /下一步/);
+  assert.equal(judgment.statement.includes('用参数 line 声明'), false);
+  assert.match(judgment.statement, /整理敏捷平台目录/);
+});
+
+test('a version conflict keeps a declared product that contradicts the root', () => {
+  const { answer, judgment } = locateItem({ ...context, ancestors: ['060：10.6.1', '061：10.7.1'], declared: { product: 'OTHERPRODUCT' } });
+  assert.equal(judgment.verdict, 'refute');
+  assert.equal('code' in judgment && judgment.code, 'case-location.version_conflict');
+  assert.equal(answer.conflicts.some(conflict => conflict.field === 'product' && conflict.declared === 'OTHERPRODUCT' && conflict.tree === 'NSAE'), true);
+  assert.match(judgment.statement, /OTHERPRODUCT/);
+  assert.match(judgment.statement, /目录树的根“NSAE”/);
+  assert.match(judgment.brief, /OTHERPRODUCT/);
+});
+
+test('a build folder of 10.7.0 does not agree with a declared line 10.7.1', () => {
+  const { answer, judgment } = locateItem({ ...context, ancestors: ['Rel_APV_10_7_0_12 回归'], declared: { line: '10.7.1' } });
+  assert.equal(answer.line, '10.7.0');
+  assert.equal(judgment.verdict, 'refute');
+  assert.equal(answer.conflicts.some(conflict => conflict.field === 'line' && conflict.declared === '10.7.1' && conflict.tree === '10.7.0'), true);
+});
+
 test('a declaration matching a conflicting value remains visible even when the note list is full', () => {
   const ancestors = [...Array.from({ length: 20 }, (_, index) => `build20261399 合成目录${index}`), '060：10.6.1', '061：10.7.1'];
   const result = locateItem({ ...context, ancestors, declared: { line: '10.6.1' } });

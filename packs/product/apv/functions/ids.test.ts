@@ -43,14 +43,14 @@ describe('ids in document titles', () => {
   });
 
   it('returns unmarked leading ids as unclassified', () => {
-    assert.deepEqual(of('7401-日志导出支持压缩'), none);
+    assert.deepEqual(of('7401-日志导出支持压缩'), { ...none, unclassified: ['7401'] });
     assert.deepEqual(of('回归 - 161090 会话表'), { ...none, unclassified: ['161090'] });
     assert.deepEqual(of('二轮回归-161040-支持批量导入'), { ...none, unclassified: ['161040'] });
-    assert.deepEqual(of('回归测试-7402 161041-日志分级'), none);
+    assert.deepEqual(of('回归测试-7402 161041-日志分级'), { ...none, unclassified: ['7402', '161041'] });
     assert.deepEqual(of('[回归]161042 161043 - 支持新调度'), { ...none, unclassified: ['161042', '161043'] });
     assert.deepEqual(of('161044 161045支持多个端口'), { ...none, unclassified: ['161044', '161045'] });
     assert.deepEqual(of('Test-161046-cookie flags'), { ...none, unclassified: ['161046'] });
-    assert.deepEqual(of('[7403] 端口复用'), none);
+    assert.deepEqual(of('[7403] 端口复用'), { ...none, unclassified: ['7403'] });
     assert.deepEqual(of('161047回归测试'), { ...none, unclassified: ['161047'] });
   });
 
@@ -131,7 +131,7 @@ it('rejects single marked digits and all-zero strings before normalization', () 
 it('applies written digit lengths before stripping only nonzero leading zeros', () => {
   for (const [title, expected] of [
     ['bug 01', ['1']], ['bug 000000001', ['1']], ['bug 0000000001', []],
-    ['0123 合成文档', []], ['00123 合成文档', ['123']],
+    ['0123 合成文档', ['123']], ['00123 合成文档', ['123']],
     ['001234 合成文档', ['1234']], ['00000001 合成文档', []],
   ] as const) {
     const found = idsFromTitle(title);
