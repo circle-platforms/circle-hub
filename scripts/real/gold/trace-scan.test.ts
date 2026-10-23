@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { parseClosedStatuses } from './join.ts';
-import { traceGold, loadCaseMaps } from './trace.ts';
+import { traceGold, loadCaseMaps, parseDocumentList, missingMapDocuments } from './trace.ts';
 
 const map = { root: { data: { text: '合成标题' }, children: [{ data: { id: 'case-a', text: '合成用例', resource: ['Functional'] } }] } };
 const tree = [{ id: 'folder', label: '缺陷 910001', cases: [], children: [{ id: 'doc-a', label: '合成文档', children: [] }] }];
@@ -43,11 +43,19 @@ test('scan recommends the sole closed traced build and prints only hashes and co
     for (const build of ['Synthetic_10_7_A', 'Synthetic_10_7_B', 'Synthetic_10_7_C']) assert.ok(!run.stdout.includes(createHash('sha256').update(build).digest('hex').slice(0, 12)));
     const report = JSON.parse(readFileSync(join(dir, 'out.json'), 'utf8'));
     assert.equal(report.builds[1].closed_traced, 1);
+    // An empty per-build list is not a silent filter-everything: the build says so and stays out of the ranking.
     writeFileSync(join(dir, 'docs/Synthetic_10_7_B.json'), '[]');
     assert.equal(loadCaseMaps(join(dir, 'cases'), new Set()).length, 0);
     const filtered = spawnSync(process.execPath, args, { encoding: 'utf8' });
     assert.equal(filtered.status, 0, filtered.stderr);
+    assert.match(filtered.stdout, /#2 的文档清单是空的：这个构建没有列出文档，不进建议/);
     assert.match(filtered.stdout, /没有找到已追溯的已关闭缺陷/);
+    // A listed document with no exported map is a missing input: refuse and name the counts (no content on screen).
+    writeFileSync(join(dir, 'docs/Synthetic_10_7_B.json'), JSON.stringify(['doc-a', 'doc-b', 'doc-c']));
+    const refused = spawnSync(process.execPath, args, { encoding: 'utf8' });
+    assert.equal(refused.status, 1, refused.stderr);
+    assert.match(refused.stderr, /#2 的文档清单 3 份，导出的脑图缺 2 份：用 circle-hub original export 导出后重跑/);
+    assert.doesNotMatch(refused.stderr, /Synthetic_10_7_B|doc-b|91000|合成/);
     const allDocsArgs = args.filter((_, i) => i !== args.indexOf('--docs-dir') && i !== args.indexOf('--docs-dir') + 1);
     assert.equal(spawnSync(process.execPath, allDocsArgs, { encoding: 'utf8' }).status, 0);
     assert.match(JSON.parse(readFileSync(join(dir, 'out.json'), 'utf8')).document_filter, /没有按构建/);
@@ -114,4 +122,11 @@ test('missing flags are named one by one, and an empty fixed-dir is refused with
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('the listed-versus-loaded document check is shared: a listed document without a map is named, never dropped', () => {
+  const listed = parseDocumentList(JSON.stringify(['doc-a', 'agile:case:doc-b', 'doc-c']));
+  const missing = missingMapDocuments(listed, [{ document: 'doc-b' }]);
+  assert.deepEqual(missing, ['doc-a', 'doc-c'], 'doc-b matches through its agile:case: spelling');
+  assert.deepEqual(missingMapDocuments(listed, [{ document: 'doc-a' }, { document: 'doc-b' }, { document: 'doc-c' }]), []);
 });

@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import type { BoardGold, BoardGroupGold } from '../accept/quality-board.ts';
 import { caseGold } from './cases.ts';
 import { locationsGold, lineKey } from './locations.ts';
-import { cleanDocId, loadCaseMaps, parseDocumentList } from './trace.ts';
+import { cleanDocId, loadCaseMaps, missingMapDocuments, parseDocumentList } from './trace.ts';
 import { boardLocate } from './board-locate.ts';
 
 // Independent normalization over a copied declaration, never a pack-computed result.
@@ -81,9 +81,8 @@ export function main(argv: string[], print = (line: string) => process.stdout.wr
     if (listed.size === 0) { process.stderr.write('文档清单是空的：补上这个构建的文档清单\n'); return 1; }
     const maps = loadCaseMaps(cases!, listed);
     // A listed document with no exported map is a missing input: refuse to start and say what to supply (the 10-23
-    // incident: a silently dropped document computed the gold on a subset).
-    const loaded = new Set(maps.map((m) => m.document));
-    const missing = [...listed].filter((docId) => !loaded.has(docId) && !loaded.has(docId.replace(/^agile:case:/, '')) && !loaded.has(docId.replace(/^.*:/, '')));
+    // incident: a silently dropped document computed the gold on a subset). The check lives in trace.ts, shared.
+    const missing = missingMapDocuments(listed, maps);
     if (missing.length > 0) { process.stderr.write(`清单 ${listed.size} 份，导出的脑图缺 ${missing.length} 份：用 circle-hub original export 导出后重跑\n`); return 1; }
       const gold = boardGold({ types: argv.includes('--types'), product: product!, build: build!, tree: JSON.parse(readFileSync(tree!, 'utf8')), maps, caseRule: value('case-rule') === 'tagged' ? 'tagged' : 'marked' });
     // --case-commands: the unplaced count from the independent case-to-command gold of the gold-case-commands work

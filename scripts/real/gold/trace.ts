@@ -247,6 +247,25 @@ export function parseDocumentList(raw: string): Set<string> {
   return docs;
 }
 
+/** A refusal the CLI catches by type: the line is decided where it is thrown, never re-parsed from the message. */
+export class GoldRefusal extends Error {
+  readonly line: string;
+  constructor(line: string) {
+    super(line);
+    this.name = 'GoldRefusal';
+    this.line = line;
+  }
+}
+
+/**
+ * Listed documents that have no exported map, by every spelling the loader matches. The caller refuses when this
+ * is not empty: a silently dropped document computes the gold on a subset (the 10-23 incident).
+ */
+export function missingMapDocuments(listed: ReadonlySet<string>, maps: ReadonlyArray<{ document: string }>): string[] {
+  const loaded = new Set(maps.map((m) => m.document));
+  return [...listed].filter((docId) => !loaded.has(docId) && !loaded.has(docId.replace(/^agile:case:/, '')) && !loaded.has(docId.replace(/^.*:/, '')));
+}
+
 /**
  * Loads mindmap files from casesDir, optionally filtered by allowedDocs.
  */
@@ -423,9 +442,15 @@ export async function main(argv: string[]): Promise<number> {
     if (docsPath) {
       const rawDocs = readFileSync(resolve(docsPath), 'utf8');
       allowedDocs = parseDocumentList(rawDocs);
+      if (allowedDocs.size === 0) throw new GoldRefusal('文档清单是空的：补上这个构建的文档清单');
     }
 
     const maps = loadCaseMaps(casesDir, allowedDocs);
+    if (allowedDocs !== undefined) {
+      // A listed document with no exported map is a missing input: refuse to start and say what to supply.
+      const missing = missingMapDocuments(allowedDocs, maps);
+      if (missing.length > 0) throw new GoldRefusal(`文档清单 ${allowedDocs.size} 份，导出的脑图缺 ${missing.length} 份：用 circle-hub original export 导出后重跑`);
+    }
 
     let plm: Array<{ id: string | number; status?: string }> | undefined;
     if (plmPaths.length > 0) {
@@ -464,6 +489,11 @@ export async function main(argv: string[]): Promise<number> {
     writeFileSync(resolve(outPath), `${JSON.stringify(gold, null, 2)}\n`);
     return 0;
   } catch (error) {
+    // A refusal prints its own decided line; anything else is named by stage, never by raw message (item 8).
+    if (error instanceof GoldRefusal) {
+      process.stderr.write(`${error.line}\n`);
+      return 1;
+    }
     process.stderr.write(`生成独立追溯答案失败：${(error as Error).message.split('\n')[0]}\n`);
     return 1;
   }

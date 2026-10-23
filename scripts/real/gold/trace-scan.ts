@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { loadCaseMaps, parseDocumentList, parsePlmResponses, traceGold } from './trace.ts';
+import { GoldRefusal, loadCaseMaps, missingMapDocuments, parseDocumentList, parsePlmResponses, traceGold } from './trace.ts';
 import { parseClosedStatuses } from './join.ts';
 
 export function main(argv: string[], print = (line: string) => process.stdout.write(`${line}\n`)): number {
@@ -29,22 +29,34 @@ export function main(argv: string[], print = (line: string) => process.stdout.wr
     const closedPath = value('closed-statuses');
     const closedStatuses = closedPath ? parseClosedStatuses(JSON.parse(readFileSync(closedPath, 'utf8'))) : undefined;
     const docsDir = value('docs-dir');
-    const builds = readdirSync(fixedDir!).sort().filter((f) => /^Bugs_Fixed_with_.+\.html$/i.test(f)).map((file, index) => {
+    const buildsRaw = readdirSync(fixedDir!).sort().filter((f) => /^Bugs_Fixed_with_.+\.html$/i.test(f)).map((file, index) => {
       const build = file.replace(/^Bugs_Fixed_with_/i, '').replace(/\.html$/i, '');
+      const at = index + 1;
       const allowed = docsDir ? parseDocumentList(readFileSync(join(docsDir, `${build}.json`), 'utf8')) : undefined;
+      // An empty per-build list is not a silent filter-everything (the 10-23 incident class): the build says so and
+      // stays out of the ranking.
+      if (allowed !== undefined && allowed.size === 0) return { index: at, build, digest: createHash('sha256').update(build).digest('hex').slice(0, 12), emptyList: true as const };
       const maps = allowed === undefined ? allMaps : allMaps.filter((m) => allowed.has(m.document) || allowed.has(`${m.document}.json`) || allowed.has(`agile:case:${m.document}`));
+      if (allowed !== undefined) {
+        // A listed document with no exported map is a missing input: refuse and name the counts, never drop silently.
+        const missing = missingMapDocuments(allowed, maps);
+        if (missing.length > 0) throw new GoldRefusal(`#${at} 的文档清单 ${allowed.size} 份，导出的脑图缺 ${missing.length} 份：用 circle-hub original export 导出后重跑`);
+      }
       const gold = traceGold({ html: readFileSync(join(fixedDir!, file), 'utf8'), tree, maps, plm, closedStatuses, build, caseRule: value('case-rule') === 'tagged' ? 'tagged' : 'marked' });
       // Without --plm the closed counts were never read: they stay null (unread), never 0 (the owner's rule — an
       // unknown is transient and names the missing fact and the next action).
       const unread = plm === undefined;
-      return { index: index + 1, build, digest: createHash('sha256').update(build).digest('hex').slice(0, 12), defects: gold.defects.length, traced: gold.defects.filter((d) => d.cases.length > 0).length, closed: unread ? null : gold.closed_defects ?? 0, closed_traced: unread ? null : gold.closed_traced ?? 0, status_unknown: unread ? null : gold.status_unknown ?? 0 };
+      return { index: at, build, digest: createHash('sha256').update(build).digest('hex').slice(0, 12), defects: gold.defects.length, traced: gold.defects.filter((d) => d.cases.length > 0).length, closed: unread ? null : gold.closed_defects ?? 0, closed_traced: unread ? null : gold.closed_traced ?? 0, status_unknown: unread ? null : gold.status_unknown ?? 0 };
     });
-    const read = builds.filter((b) => b.closed_traced !== null) as Array<typeof builds[number]>;
-    const ranked = [...(read.length > 0 ? read : builds)].sort((a, b) => (b.closed_traced ?? 0) - (a.closed_traced ?? 0) || b.traced - a.traced || a.index - b.index);
+    const builds = buildsRaw.filter((b) => !('emptyList' in b));
+    const scans = builds as Array<{ index: number; build: string; digest: string; defects: number; traced: number; closed: number | null; closed_traced: number | null; status_unknown: number | null }>;
+    const read = scans.filter((b) => b.closed_traced !== null);
+    const ranked = [...(read.length > 0 ? read : scans)].sort((a, b) => (b.closed_traced ?? 0) - (a.closed_traced ?? 0) || b.traced - a.traced || a.index - b.index);
     const recommendation = ranked[0]?.traced ? ranked[0].index : null;
-    writeFileSync(resolve(out!), `${JSON.stringify({ document_filter: docsDir ? '按构建的文档清单筛选' : '没有按构建的文档清单筛选，使用全部脑图', builds, recommendation }, null, 2)}\n`);
+    writeFileSync(resolve(out!), `${JSON.stringify({ document_filter: docsDir ? '按构建的文档清单筛选' : '没有按构建的文档清单筛选，使用全部脑图', builds: buildsRaw, recommendation }, null, 2)}\n`);
+    for (const b of buildsRaw) if ('emptyList' in b) print(`#${b.index} 的文档清单是空的：这个构建没有列出文档，不进建议`);
     const unreadPlm = plm === undefined;
-    for (const b of builds) print(`#${b.index}：缺陷 ${b.defects}；已追溯 ${b.traced}；${unreadPlm ? '已关闭 未读（没给 --plm）；其中已追溯 未读；状态未知 未读（没给 --plm）' : `已关闭 ${b.closed}，其中已追溯 ${b.closed_traced}；状态未知 ${b.status_unknown}`}`);
+    for (const b of scans) print(`#${b.index}：缺陷 ${b.defects}；已追溯 ${b.traced}；${unreadPlm ? '已关闭 未读（没给 --plm）；其中已追溯 未读；状态未知 未读（没给 --plm）' : `已关闭 ${b.closed}，其中已追溯 ${b.closed_traced}；状态未知 ${b.status_unknown}`}`);
     if (unreadPlm) {
       print(`没给 PLM 原件，已关闭数未知：按已追溯数建议 #${recommendation ?? 1}；导出 plm:bugs: 原件后加 --plm --closed-statuses 重扫`);
     } else {
@@ -53,6 +65,10 @@ export function main(argv: string[], print = (line: string) => process.stdout.wr
     }
     return 0;
   } catch (error) {
+    if (error instanceof GoldRefusal) {
+      process.stderr.write(`${error.line}\n`);
+      return 1;
+    }
     const message = (error as Error).message ?? '';
     if (/closed/i.test(message) || /statuses/i.test(message)) process.stderr.write(`关闭状态表不是数组也不是 {statuses: [...]}\n`);
     else if (/清单|document/i.test(message)) process.stderr.write(`#k 的文档清单读不了或列的不是数组\n`);
