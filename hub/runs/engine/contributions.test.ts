@@ -6,7 +6,7 @@ import { DOCUMENT_OUTPUT_KIND, TASK_OUTPUT_KIND, VALIDITY_STATUS_LABEL, labelOf 
 import { GetNodesOutput, SubmitResultOutput } from '../../../contracts/src/tools.ts';
 import { KnowledgeContributionBody, KnowledgeContributionView } from '../../../contracts/src/contributions.ts';
 import { CORE_VIOLATION_CODES, PROTOCOL_CODES } from '../../../contracts/generated/protocol.ts';
-import { canonicalize, LimitError, type FindQuery, type Transaction } from '../../records/api.ts';
+import { canonicalBytes,canonicalize, LimitError, type FindQuery, type Transaction } from '../../records/api.ts';
 import { createDefaultRegistry } from '../../refs/api.ts';
 import { startPostgres, type TemporaryPostgres } from '../../testing/postgres.ts';
 import { makeWorld, catalogXml, BASE_CATALOG, DEFAULT_PRODUCERS, extraProducer } from '../../knowledge/test-support.ts';
@@ -70,8 +70,8 @@ test('a refused digest stays refused after source recovery; a new submission can
   assert.equal(changed.result?.contributions?.stored.length,4,JSON.stringify(changed.errors));
 });
 
-async function setup(t: {after(fn:()=>Promise<void>):void}, options: {ordinary?:boolean;task?:boolean;declaredRoot?:boolean;wrappedDeclaration?:boolean;refute?:boolean;acceptedRoot?:boolean;hiddenOriginal?:boolean;pageBytes?:number;treeEntries?:number} = {}) {
-  const w = await makeWorld(postgres,{knowledge:{limits:{pageBytes:options.pageBytes??2*1024*1024}},...(options.treeEntries?{pack:{declaration:{producers:[DEFAULT_PRODUCERS[0],extraProducer('large_tree',{entries:Array.from({length:options.treeEntries},(_,i)=>({kind:'behaviour',path:'/commands/system/show',statement:'合成树条目 '+i+' '+ 'tree '.repeat(400),data:{i},fragments:[{parser:'xml@1',selector:'x/catalog/group[1]'}],applicability:null}))})]}}}:{})}); t.after(()=>w.close());
+async function setup(t: {after(fn:()=>Promise<void>):void}, options: {ordinary?:boolean;task?:boolean;declaredRoot?:boolean;wrappedDeclaration?:boolean;refute?:boolean;acceptedRoot?:boolean;hiddenOriginal?:boolean;pageBytes?:number;treeEntries?:number;nodePath?:string} = {}) {
+  const w = await makeWorld(postgres,{knowledge:{limits:{pageBytes:options.pageBytes??2*1024*1024}},...((options.treeEntries||options.nodePath)?{pack:{declaration:{producers:[DEFAULT_PRODUCERS[0],extraProducer('large_tree',{entries:Array.from({length:options.treeEntries??1},(_,i)=>({kind:'behaviour',path:options.nodePath??'/commands/system/show',statement:'合成树条目 '+i+' '+ 'tree '.repeat(400),data:{i},fragments:[{parser:'xml@1',selector:'x/catalog/group[1]'}],applicability:null}))})]}}}:{})}); t.after(()=>w.close());
   const b = build('Rel_ACME_1_2_15');
   w.external.set(b.sources.tree,{bytes:new TextEncoder().encode(catalogXml(BASE_CATALOG)+(options.hiddenOriginal?'<!-- 仅原件中存在的合成说明 -->':'')),mediaType:'application/xml'});
   if(options.declaredRoot || options.wrappedDeclaration) {
@@ -111,7 +111,7 @@ async function setup(t: {after(fn:()=>Promise<void>):void}, options: {ordinary?:
   const started = await service.startRun(w.admin,{pack:'knowledge-contribution',product:'Acme',build:b.name,inputs:{subject:{reference:`src:${manifest.body.sha256}`},originals:{reference:`src:${original}`}}},call);
   assert.equal(started.call_result,'ok',JSON.stringify(started.errors));
   const run = started.run!;
-  const args = () => ({run:run.run,model:'integration-synthetic@1',items:DOCUMENT_OUTPUT_KIND.map(kind=>({item:kind,handling:'handled',slots:{contribution:[{code:kind,text:`合成${kind}`,data:{root,path:'/commands/system/show',source:{reference:`tree:${root}/commands/system/show`,quote:'show'},...(kind==='relation'?{relation:{kind:'same_subject',other:{reference:`tree:${root}/commands/net/ping`,quote:'ping'}}}:{})}}]}}))});
+  const args = () => ({run:run.run,model:'integration-synthetic@1',items:DOCUMENT_OUTPUT_KIND.map(kind=>({item:kind,handling:'handled',slots:{contribution:[{code:kind,text:`合成${kind}`,data:{root,path:options.nodePath??'/commands/system/show',source:{reference:`tree:${root}/commands/system/show`,quote:'show'},...(kind==='relation'?{relation:{kind:'same_subject',other:{reference:`tree:${root}/commands/net/ping`,quote:'ping'}}}:{})}}]}}))});
   return {...w,root,b,run,service,args,original,workflows};
 }
 
@@ -508,15 +508,10 @@ test('the minimum accepted node budget cannot repeat a contribution cursor witho
   const w=await setup(t,{pageBytes:1024});await w.service.submitResult(w.admin,w.args(),call);
   let cursor:string|null=null;const seen=new Set<string>();let complete=false;
   for(let count=0;count<16;count++){
-    try {
-      const page=await w.knowledge.getNodes({root:w.root,paths:['/commands/system/show'],depth:0,cursor},w.user);assert.ok(page);
-      for(const node of page.nodes)for(const contribution of node.contributions??[])seen.add(contribution.record);
-      if(page.next===null){complete=true;break;}
-      assert.notEqual(page.next,cursor,'an empty page must not point back to itself');cursor=page.next;
-    } catch(error) {
-      assert.ok(error instanceof Error && 'code'in error && error.code==='SOURCE_UNAVAILABLE');
-      assert.match(error.message,/预算.*引用.*管理员.*第一页/);return;
-    }
+    const page=await w.knowledge.getNodes({root:w.root,paths:['/commands/system/show'],depth:0,cursor},w.user);assert.ok(page);
+    for(const node of page.nodes)for(const contribution of node.contributions??[])seen.add(contribution.record);
+    if(page.next===null){complete=true;break;}
+    assert.notEqual(page.next,cursor,'an empty page must not point back to itself');cursor=page.next;
   }
   assert.ok(complete);assert.equal(seen.size,4);
 });
@@ -559,4 +554,48 @@ test('admission refusal codes and fixes come from the core registry rather than 
   const w=await setup(t);const args=w.args();args.items[0].slots.contribution[0].data.source={reference:`tree:${w.root}/commands/system`,quote:'reboot'};
   const result=await w.service.submitResult(w.admin,args,call);const error=result.errors.find(error=>error.item==='classification'&&error.code==='core.contribution.source_not_original');
   assert.ok(error,JSON.stringify(result.errors));assert.equal(error.fix,CORE_VIOLATION_CODES['core.contribution.source_not_original'].fix);
+});
+
+test('credential-bearing session headers are refused before append and never reach public node or record reads',async t=>{
+  const w=await setup(t),layer=w.knowledge.layers.contributions;
+  const secret='synthetic-session-secret',session='https://probe:'+secret+'@192.0.2.44/v1';
+  const append=layer.append.bind(layer);let calls=0;
+  t.mock.method(layer,'append',async(...args:Parameters<typeof append>)=>{calls++;return append(...args);});
+  const result=await w.service.submitResult(w.admin,w.args(),{...call,sessionId:session});
+  assert.equal(result.result?.contributions?.stored.length,0);assert.equal(calls,0);
+  assert.equal(result.result?.contributions?.not_stored.length,4);assert.ok(result.errors.some(error=>error.code==='CREDENTIAL_IN_UPLOAD'));
+  const records=await w.kit.store.find({key:'knowledge.contribution.product',value:w.product.product.id,kind:'claim',limit:100});assert.equal(records.items.length,0);
+  const page=await w.knowledge.getNodes({root:w.root,paths:['/commands/system/show'],depth:0},w.user);assert.ok(!JSON.stringify(page).includes(secret));
+  const safe=await w.service.submitResult(w.admin,{...w.args(),notes:'safe session control'},call);assert.equal(safe.result?.contributions?.stored.length,4);
+  for(const item of safe.result!.contributions!.stored){const record=await layer.read(item.record,w.user);assert.ok(record);assert.ok(!JSON.stringify(record).includes(secret));assert.equal((record.body as {session:string}).session,call.sessionId);}
+});
+
+test('append scans the actual session again before an identity can reuse a public record',async t=>{
+  const w=await setup(t),layer=w.knowledge.layers.contributions,append=layer.append.bind(layer);
+  t.mock.method(layer,'append',async(...[prepared,origin,tx]:Parameters<typeof append>)=>append(prepared,{...origin,session:'https://probe:synthetic-append-secret@192.0.2.44/v1'},tx));
+  await assert.rejects(w.service.submitResult(w.admin,w.args(),call),error=>error instanceof Error&&'admissionCode'in error&&error.admissionCode==='CREDENTIAL_IN_UPLOAD');
+  assert.deepEqual(await layer.list(w.root,['/commands/system/show'],w.user),[]);
+});
+
+
+for(const budget of [16384,2*1024*1024])test('contribution continuation progresses in the large-node size window at budget '+budget,async t=>{
+  const path='/notes/'+'n'.repeat(220),w=await setup(t,{pageBytes:budget,nodePath:path});
+  const base=await w.knowledge.getNodes({root:w.root,paths:[path],depth:0},w.user);assert.ok(base);
+  const bare={...base.nodes[0],entries:[],children:[]};
+  const room=budget-512-canonicalBytes([bare]).length;assert.ok(room<budget-1024);
+  const probe=w.args();probe.model='m';for(const item of probe.items)item.slots.contribution[0].text+=' size probe';
+  const control=await w.service.submitResult(w.admin,probe,call);assert.equal(control.result?.contributions?.stored.length,4);
+  const view=await w.knowledge.layers.contributions.readView(control.result!.contributions!.stored[0].record,w.user);assert.ok(view);
+  const target=Math.floor((room+budget-1024)/2),length=target-canonicalBytes(view).length+1;assert.ok(length>0);
+  const args=w.args();args.model='m'.repeat(length);for(const item of args.items)item.slots.contribution[0].text+=' size other';
+  const result=await w.service.submitResult(w.admin,args,call);assert.equal(result.result?.contributions?.stored.length,4,JSON.stringify(result.errors));
+  const full=await w.knowledge.layers.contributions.readView(result.result!.contributions!.stored[0].record,w.user);assert.ok(full);
+  const size=canonicalBytes(full).length;assert.ok(size>room&&size<=budget-1024,'the old deferral threshold has no room for this view');
+  const seen=new Set<string>();let cursor:string|null=null,complete=false,markers=0;
+  for(let count=0;count<24;count++){
+    const page=await w.knowledge.getNodes({root:w.root,paths:[path],depth:0,cursor},w.user);assert.ok(page);
+    for(const node of page.nodes)for(const item of node.contributions??[]){assert.ok(!seen.has(item.record));seen.add(item.record);if(item.contribution===undefined)markers++;}
+    if(page.next===null){complete=true;break;}assert.notEqual(page.next,cursor);cursor=page.next;
+  }
+  assert.ok(complete);assert.equal(seen.size,8);assert.ok(markers>=4);
 });

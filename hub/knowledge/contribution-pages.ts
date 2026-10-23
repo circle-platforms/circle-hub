@@ -21,7 +21,6 @@ export async function contributionNodes(context:KnowledgeContext,reading:TreeRea
     }catch{throw new KnowledgeError('回注分页游标不属于本次查询；保持原 root、paths、depth 从第一页重读',{code:'REFERENCE_UNRESOLVED'});}
   }else if(!(await layer.has(query.root,reader)))return reading.getNodes(query,reader);
   const budget=context.limits.pageBytes;
-  if(budget<1024)throw new KnowledgeError('节点页预算不足以显示记录引用；请管理员提高 pageBytes 后重读',{code:'SOURCE_UNAVAILABLE'});
   const base=await reading.getNodes({...query,cursor:state.b},reader,Math.max(1024,Math.floor(budget/2)));
   if(base===null)return null;
   if(state.n>=base.nodes.length&&base.nodes.length>0)throw new KnowledgeError('回注分页位置已失效；按原查询从第一页重读',{code:'REFERENCE_UNRESOLVED'});

@@ -19,6 +19,7 @@ export interface ContributionScope {
   product: string | null;
   composition:string|null;
   model?: string;
+  session?: string|null;
   resolve(reference: string): Promise<{ ok: true; value: { reference: string; text: string | null;
     recordSource?: { sha256: string; record: string; provenance: ProvenanceType; kind:string;schema:string } } } | { ok: false; message: string; code?: ProtocolCode }>;
 }
@@ -55,7 +56,7 @@ const refuse = (code: ContributionAdmissionCode, message: string, detail: Record
 function scanPublicText(texts: readonly string[]): void {
   for (const text of texts) {
     const scan = scanForCredentials(new TextEncoder().encode(text));
-    if (!scan.inspected || scan.truncated || scan.findings.length > 0) refuse("CREDENTIAL_IN_UPLOAD", '回注文字或模型声明未通过完整凭据扫描，缺少可安全公开的文本');
+    if (!scan.inspected || scan.truncated || scan.findings.length > 0) refuse("CREDENTIAL_IN_UPLOAD", '回注文字、模型声明或会话标识未通过完整凭据扫描，缺少可安全公开的文本');
   }
 }
 
@@ -194,7 +195,7 @@ export class ContributionLayer {
     };
     const source = await quote(input.source);
     const relation = input.relation === undefined ? undefined : { kind: input.relation.kind, other: await quote(input.relation.other) };
-    scanPublicText([input.statement, source.quote, scope.model ?? '', ...(relation === undefined ? [] : [relation.other.quote])]);
+    scanPublicText([input.statement, source.quote, scope.model ?? '', scope.session ?? '', ...(relation === undefined ? [] : [relation.other.quote])]);
     if(relation!==undefined&&(source.reference===relation.other.reference||(source.fragment===relation.other.fragment&&(quoteMatches(source.quote,relation.other.quote)||quoteMatches(relation.other.quote,source.quote)))))return refuse("core.contribution.self_relation", '关系双方指向同一片段或重叠引文，缺少两个独立的原文端点');
     if (!fragments.has(input.path)) fragments.set(input.path, (async () => {
       const fragment = await this.#reading.treeReader({composition:composition.record}).read(input.root, input.path, null, { user: reader.id, role: reader.role });
@@ -216,7 +217,7 @@ export class ContributionLayer {
 
   /** Called only after every requirement of the item is satisfied; validation result and layer share the transaction. */
   async append(prepared: PreparedContribution, origin: ContributionOrigin, tx: Transaction): Promise<string> {
-    scanPublicText([origin.model]);
+    scanPublicText([origin.model,origin.session??'']);
     const key = identityOf(prepared);
     await this.#context.store.records.lock(`knowledge.contribution:${key}`, tx);
     const old = await this.#context.store.records.find({ key: 'knowledge.contribution.identity', value: key, kind: 'claim', limit: 1 }, tx);
@@ -298,11 +299,7 @@ export class ContributionLayer {
     const budget=Math.max(0,options.bytes??this.#context.limits.pageBytes);let bytes=0,scanned=0;
     const cache={digests:new Map<string,string|null>(),endpoints:new Map<string,Promise<string|null>>(),readable:new Map<string,Promise<GroundState>>()};
     const items:KnowledgeContributionPageView[]=[];
-    const deferred = () => {
-      const next = encode();
-      if (items.length === 0 && next !== null && next === options.cursor) throw new KnowledgeError('回注页预算不足以承载当前节点的引用标记；请管理员提高 pageBytes 后，保持原查询从第一页重读', {code:'SOURCE_UNAVAILABLE',detail:{budget,path}});
-      return {items,next};
-    };
+    const deferred = () => ({items,next:encode()});
     while(at<products.length&&items.length<limit&&scanned<MAX_NODE_CONTRIBUTIONS*4){
       const before=cursor;const selected=await this.#context.store.records.find({key:'knowledge.contribution.node',value:digestOf({product:products[at],path}),kind:'claim',cursor,limit:1,newestFirst:true});
       const record=selected.items[0];scanned++;
@@ -312,10 +309,10 @@ export class ContributionLayer {
       if(view!==undefined){
         let shown:KnowledgeContributionPageView=view;let size=canonicalSize(view)+1;
         if(size>budget-bytes){
-          if(items.length>0||size<=this.#context.limits.pageBytes-1024)return deferred();
+          if(items.length>0)return deferred();
           shown={record:view.record,status:view.status,note:(view.note??'')+'；本条回注超过节点页字节上限，缺少本页正文；用 get_nodes 按 rec:'+view.record+' 游标分段读取'};
           size=canonicalSize(shown)+1;
-          if(size>budget-bytes)return deferred();
+          // The first reference marker may exceed this soft budget; consuming it guarantees cursor progress.
         }
         items.push(shown);bytes+=size;
       }

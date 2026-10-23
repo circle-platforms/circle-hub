@@ -420,7 +420,7 @@ async function validate(base: Basis, submission: Submission, before: ProtocolErr
   const refusals=new Map<string,string>();
   const admission=capability===undefined?undefined:{requirement:capability.requirement,outcomes:new Map<string,CheckOutcome[]>()};
   const contributionScope: ContributionScope = {
-          model:submission.model,
+          model:submission.model,session:sessionOf(call),
           composition:(()=>{const value=run.target_basis.find(c=>c.statement.data?.field==='build'&&c.statement.data?.root===run.root)?.statement.data?.composition;return typeof value==='string'?value:null;})(),
           root:run.root ?? null, product:run.product ?? null, resolve:async reference => {
             const resolved = await resolver.resolve(reference);

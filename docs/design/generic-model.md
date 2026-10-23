@@ -76,7 +76,7 @@ Hub 是标准 MCP 服务器（D06）：本地 Circle、bot 和其他客户端共
 
 每个条目恰好落在一个分区里：分区两两不交，并集等于条目集；跨条目主张单独列出，不计入分区（V05）。要求项只在它声明的判定层上有终态，其余层显示“本层不适用”（V03）。
 
-错误码也有登记，同样生成到 `contracts/generated/protocol.ts`：协议码 `PROTOCOL_CODES` 来自模型（例如 `QUOTE_MISMATCH`、`SOURCE_UNAVAILABLE`），核心解释器的违规码 `CORE_VIOLATION_CODES`（`core.<解释器>.<码>`）来自 `contracts/codes.json`；任务包的码挂在包名下，例如 `case-review.<码>`。缺失与无权一律返回 `SOURCE_UNAVAILABLE`，显示“对你不可用”。引用有四种形式：`src:`（源文件或片段）、`tree:`（知识树节点）、`entry:`（知识条目）、`rec:`（Hub 记录）。
+错误码也有登记，同样生成到 `contracts/generated/protocol.ts`：协议码 `PROTOCOL_CODES` 来自模型（例如 `QUOTE_MISMATCH`、`SOURCE_UNAVAILABLE`），核心部件的违规码 `CORE_VIOLATION_CODES`（`core.<部件>.<码>`）来自 `contracts/codes.json`；登记表的历史字段 `interpreter` 表示发出该码的核心部件，不表示可安装的解释器。包校验判断错误处理行是否用得上时：解释器发出的码核对该要求项的检查是否使用对应解释器；回注准入发出的 `core.contribution.*` 核对 `workflow.contribution.requirement` 是否指向该要求项。码表不增加字段；任务包的码挂在包名下，例如 `case-review.<码>`。缺失与无权一律返回 `SOURCE_UNAVAILABLE`，显示“对你不可用”。引用有四种形式：`src:`（源文件或片段）、`tree:`（知识树节点）、`entry:`（知识条目）、`rec:`（Hub 记录）。
 
 ## 第一个里程碑用到哪些
 
