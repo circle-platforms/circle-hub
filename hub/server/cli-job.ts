@@ -8,7 +8,7 @@ import { labelOf } from '../../contracts/generated/vocabulary.ts';
 import { readSecret } from './assemble/secret-input.ts';
 import { UsageError } from './errors.ts';
 export const EXECUTOR_USAGE = 'add <定义文件> | update <执行器> <定义文件> [--secret] | list | disable <执行器>（密钥只从标准输入读）';
-export const JOB_USAGE = 'precheck --executor <执行器> [--booking <运行>] [--save <目录>] | dispatch --run <核验运行> --executor <执行器> | status|resume <作业摘要> | dispose <作业摘要> --reconcile <编号> | --keep-unknown | --mark-failed --reason <原因> [--accept-possible-duplicate-effects] [--numeric-id（对账编号显式为整数）]';
+export const JOB_USAGE = 'conformance --executor <执行器> [--save <目录>] | precheck --executor <执行器> [--booking <运行>] [--save <目录>] | dispatch --run <核验运行> --executor <执行器> | status|resume <作业摘要> | dispose <作业摘要> --reconcile <编号> | --keep-unknown | --mark-failed --reason <原因> [--accept-possible-duplicate-effects] [--numeric-id（对账编号显式为整数）]';
 export interface JobCommandSession {
   ctx: { io: { cwd: string } };
   options: { readSecret?: (label: string) => Promise<string> };
@@ -73,17 +73,18 @@ async function exportPrecheck(s: JobCommandSession, dispatch: DispatchService, j
   if (!definitionBytes) throw new Error('冻结的执行器定义不可读取');
   const { ExecutorDefinition } = await import('../dispatch/api.ts');
   const definition = ExecutorDefinition.parse(JSON.parse(new TextDecoder().decode(definitionBytes)));
-  const refs = [...new Set(events.filter(e => /^precheck(?:\.[0-9]+)?\.response$/.test(String(e.body.detail.phase))).flatMap(e => e.body.inputs).filter(r => /^src:[a-f0-9]{64}$/.test(r)))];
+  const refs = [...new Set(events.filter(e => /^(?:precheck(?:\.[0-9]+)?|query|submit)\.response$/.test(String(e.body.detail.phase))).flatMap(e => e.body.inputs).filter(r => /^src:[a-f0-9]{64}$/.test(r)))];
   const by = await s.admin(); const records = await s.records(); let count = 0; const hashes: Array<Record<string, unknown>> = [];
   for (const reference of refs) {
     const source = await records.artifacts.source(by, reference.slice(4), { consumer: 'function' });
     if (!source?.bytes) throw new Error('预检原件的读取策略未放行，不能导出');
     const file = `observation-${++count}.json`;
     await writeFile(join(target, file), source.bytes, { mode: 0o600, flag: 'wx' });
-    const phase = String(events.find(e => e.body.inputs.includes(reference) && /^precheck(?:\.[0-9]+)?\.response$/.test(String(e.body.detail.phase)))?.body.detail.phase);
+    const phase = String(events.find(e => e.body.inputs.includes(reference) && /^(?:precheck(?:\.[0-9]+)?|query|submit)\.response$/.test(String(e.body.detail.phase)))?.body.detail.phase);
     const step = /^precheck\.([0-9]+)\.response$/.exec(phase);
     const config = step ? definition.precheck_reads[Number(step[1]) - 1] : definition;
-    const pointers = [...new Set([...(config?.capture_pointers ?? []), ...(config?.conditions ?? []).map(c => c.pointer)])];
+    const protocolPointers = phase === 'query.response' ? Object.values(definition.reconciliation ?? {}) : phase === 'submit.response' ? Object.values(definition.receipt) : [];
+    const pointers = [...new Set([...protocolPointers.filter((p): p is string => typeof p === 'string' && (p === '' || p.startsWith('/'))), ...(!protocolPointers.length ? [...(config?.capture_pointers ?? []), ...(config?.conditions ?? []).map(c => c.pointer)] : [])])];
     for (const pointer of pointers) {
       try { hashes.push({ file, reference, ...observationHashes(source.bytes, pointer) }); }
       catch { hashes.push({ file, reference, pointer, missing_fact: '该指针缺少有效工具回答或字段，不能计算内容摘要' }); }
@@ -100,10 +101,15 @@ export async function jobCommand(s: JobCommandSession, args: readonly string[]):
     'keep-unknown': { type: 'boolean' }, 'mark-failed': { type: 'boolean' }, reason: { type: 'string' }, 'accept-possible-duplicate-effects': { type: 'boolean' }, 'numeric-id': { type: 'boolean' },
   } }); } catch { throw new UsageError('命令参数写法无效；密钥只从标准输入读取'); }
   const { positionals, values } = parsed;
-  const flags: Record<string, Record<string, boolean>> = { precheck: { executor: true, booking: true, save: true }, dispatch: { run: true, executor: true }, status: {}, resume: {}, dispose: { reconcile: true, 'keep-unknown': true, 'mark-failed': true, reason: true, 'accept-possible-duplicate-effects': true, 'numeric-id': true } };
+  const flags: Record<string, Record<string, boolean>> = { conformance: { executor: true, save: true }, precheck: { executor: true, booking: true, save: true }, dispatch: { run: true, executor: true }, status: {}, resume: {}, dispose: { reconcile: true, 'keep-unknown': true, 'mark-failed': true, reason: true, 'accept-possible-duplicate-effects': true, 'numeric-id': true } };
   if (!sub || !Object.hasOwn(flags, sub) || Object.keys(values).some(key => !Object.hasOwn(flags[sub], key))) throw new UsageError('该子命令不能使用这些参数');
   const by = await s.admin(); const dispatch = await service(s, sub !== 'status');
   try {
+  if (sub === 'conformance' && values.executor && positionals.length === 0) {
+    const state = await dispatch.conformance(by,values.executor); output(s,state);
+    if (values.save) s.out(`已导出观察 ${await exportPrecheck(s,dispatch,state.job,values.save)} 份`);
+    return (await dispatch.journal.events(state.job)).some(e=>e.body.detail.conformance_verified === true) ? 0 : 1;
+  }
   if (sub === 'precheck' && values.executor && positionals.length === 0) {
     const state = await dispatch.precheck(by, values.executor, values.booking); output(s, state);
     if (values.save) s.out(`已导出观察 ${await exportPrecheck(s, dispatch, state.job, values.save)} 份`);

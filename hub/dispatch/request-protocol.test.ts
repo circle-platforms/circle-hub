@@ -52,3 +52,24 @@ test('a lost reply is reconciled by request without resubmission or requiring ne
   assert.equal((await c.service.resume(c.admin,result.job)).outcome,'effective');
   assert.equal(c.calls.filter(n => n === 'send_blob').length, 1);
 });
+
+test('absence proves nonexecution only beyond the deadline and within certified retention coverage', async t => {
+  const { setupJournal } = await import('./testing/journal.ts');
+  for (const options of [{absent:true},{absent:true,uncertified:true},{absent:true,floorAtDeadline:true},{absent:true,clockBeforeDeadline:true},{stopped:true},{wrongIdentity:true}]) {
+    const c = await setupJournal({lost:true,...options}); t.after(()=>c.close());
+    const result = await c.service.dispatch(c.admin,c.run,c.executor.id);
+    const proven = !('uncertified' in options || 'floorAtDeadline' in options || 'clockBeforeDeadline' in options || 'wrongIdentity' in options);
+    assert.equal(result.outcome,proven ? 'proven_not_executed' : 'unknown'); assert.equal(result.frozen,!proven);
+    assert.equal(c.calls.filter(n=>n==='send_blob').length,1);
+  }
+});
+
+test('conformance collects four harmless request journal observations in one lease', async t => {
+  const { setupJournal } = await import('./testing/journal.ts'); const c = await setupJournal({uncertified:true}); t.after(()=>c.close());
+  const result = await c.service.conformance(c.admin,c.executor.id);
+  const events = await c.service.journal.events(result.job);
+  assert.equal(events.at(-1)!.body.detail.conformance_verified,true);
+  assert.deepEqual(c.calls,['open_slot','lookup_blob','send_blob','send_blob','lookup_blob','close_slot']);
+  assert.equal(events.some(e=>e.body.detail.phase==='intent'),false);
+  assert.ok(result.result);
+});

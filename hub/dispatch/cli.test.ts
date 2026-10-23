@@ -84,3 +84,12 @@ test('numeric audit ids require an explicit flag and unsafe integers are rejecte
   assert.equal(await jobCommand(s, ['dispose', job.job, '--reconcile', '17', '--numeric-id']), 0);
   assert.equal(c.calls.filter(n => n === 'send_blob').length, 1);
 });
+
+test('conformance CLI exports evidence without printing deployment data or submitting a dispatch intent', async t => {
+  const { setupJournal } = await import('./testing/journal.ts'); const c = await setupJournal({uncertified:true}); t.after(()=>c.close()); const s = session(c);
+  const save = join(c.kit.dataDir,'conformance');
+  assert.equal(await jobCommand(s,['conformance','--executor',c.executor.id,'--save',save]),0);
+  assert.equal((await readdir(save)).length,5);
+  assert.doesNotMatch(s.lines.join('\n'),/synthetic-secret|synthetic-bed|synthetic-remote|127\.0\.0\.1/);
+  assert.ok(s.lines.some(line=>line.includes('结果引用 src:')));
+});

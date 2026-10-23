@@ -66,6 +66,39 @@ export class DispatchService {
     return this.status(by, binding.job);
   }
 
+  async conformance(by: Principal, executor: string): Promise<JobStatus> {
+    await this.registry.admin(by); const registered = await this.registry.get(executor);
+    if (!registered?.definition.enabled) throw new Error('执行器不可用或已禁用');
+    const d = registered.definition;
+    if (!d.conformance || !d.reconciliation || !d.calls.query || !d.receipt.stage || !d.receipt.reached_device) throw new Error('缺少只读查账、拒绝阶段或一致性探测字节声明；请补齐定义');
+    const binding: JobBinding = {job:newJob(),initiated_by:by.id,executor,executor_digest:registered.digest,target_key:digestOfValue([...d.resources].sort()),input:null,user:by.id,resources:[],context:d.precheck_context};
+    await this.journal.append(binding,'reservation','validate','completed',{binding,read_only:true});
+    const client = this.session(binding,d,await this.secret(executor));
+    let lease: RemoteLease | undefined; const observations: Exchange[] = []; const checks: boolean[] = [];
+    try {
+      await client.connect(); lease = await this.acquire(binding,d,client,this.context(binding));
+      const context = {...this.context(binding),lease_id:lease.id,lease_token:lease.token,request_id:`${binding.job}:absent`,not_after:new Date(this.now().getTime()-1000).toISOString(),items:[]};
+      const missing = await this.read(binding,client,'query',context); observations.push(missing);
+      const r = d.reconciliation;
+      const wireTime = (v:unknown) => typeof v === 'number' && r.time_scale_ms !== undefined ? v*r.time_scale_ms : typeof v === 'string' ? Date.parse(v) : NaN;
+      checks.push(at(missing.value,r.found) === false && Number.isFinite(wireTime(at(missing.value,r.gateway_time))) && Number.isFinite(wireTime(at(missing.value,r.gc_before))));
+      context.request_id = `${binding.job}:1`;
+      const first = Buffer.from(d.conformance.payloads[0],'base64'); const second = Buffer.from(d.conformance.payloads[1],'base64');
+      const refused = (v:unknown) => mapped(d.receipt.map,at(v,d.receipt.acceptance)) === 'not_accepted' && mapped(d.receipt.stages,at(v,d.receipt.stage!)) === 'target_rejected' && at(v,d.receipt.reached_device!) === false;
+      for (const payload of [first,second]) {
+        const reply = await client.call('submit',{...context,payload_base64:payload.toString('base64'),sha256:sha256Hex(payload)}); observations.push(reply); checks.push(refused(reply.value));
+      }
+      const recorded = await this.read(binding,client,'query',context); observations.push(recorded);
+      checks.push(at(recorded.value,r.found) === true && at(recorded.value,r.request_id) === context.request_id && at(recorded.value,r.sha256) === sha256Hex(first) && mapped(r.map,at(recorded.value,r.state)) === 'target_rejected' && at(recorded.value,r.reached_device) === false && mapped(d.receipt.stages,at(recorded.value,r.stage)) === 'target_rejected');
+    } catch { checks.push(false); }
+    finally { if (lease) await this.release(binding,client,lease); }
+    const init = eventOf(await this.journal.events(binding.job),'initialize.response');
+    const artifact = await this.options.records.artifacts.ingest({bytes:canonicalBytes({target:d.target,version:client.serverVersion,checks,sources:observations.map(o=>o.source)}),mediaType:'application/json',origin:{generated:{generator:'dispatch@1',inputs:[...observations.map(o=>o.source),...(init?.body.inputs.filter(r=>r.startsWith('src:')) ?? [])]}},author:{user:null},provenanceType:'projected',visibility:{readers:[by.id],admins:true,packs:[],shareable:false}});
+    await this.journal.append(binding,'result','read_back','completed',{reference:`src:${artifact.body.sha256}`,observations:observations.length},observations.map(o=>o.source));
+    await this.journal.append(binding,'complete','read_back','completed',{done:true,outcome:'not_dispatched',conformance_verified:checks.length === 4 && checks.every(Boolean),next_action:checks.length === 4 && checks.every(Boolean) ? '管理员复核这些源记录后，将目标版本和证据引用登记到执行器前提；不会自动认证' : '一致性探测未取得四项相符事实；管理员核对定义和原始回答后重跑 conformance'});
+    return this.status(by,binding.job);
+  }
+
   async dispatch(by: Principal, run: string, executor: string, onReserved?: (job: string) => void): Promise<JobStatus> {
     await this.registry.admin(by);
     const registered = await this.registry.get(executor);
@@ -79,7 +112,7 @@ export class DispatchService {
     for (const prior of attempts) {
       const priorJob = String(prior.body.detail.job); const priorEvents = await this.journal.events(priorJob);
       const end = eventOf(priorEvents,'complete'); const pinned = await this.journal.binding(priorJob);
-      if (!end || isFrozen(priorEvents) || !['target_rejected','proven_not_executed'].includes(String(end.body.detail.outcome)) || pinned.input?.run !== input.run || pinned.executor_digest !== registered.digest) throw new Error(`这份字节已有派发意图；作业摘要 ${priorJob}；只能查询或对账，不能重交`);
+      if (!end || isFrozen(priorEvents) || !['target_rejected','proven_not_executed'].includes(String(end.body.detail.outcome)) || pinned.input?.run !== input.run || digestOfValue({...await this.pinned(pinned),premises:{}}) !== digestOfValue({...d,premises:{}})) throw new Error(`这份字节已有派发意图；作业摘要 ${priorJob}；只能查询或对账，不能重交`);
     }
     const attempt = attempts.length + 1;
     const source = await this.options.records.artifacts.source({ id: input.user, name: '', role: 'user' }, input.sha256, { consumer: 'function' });
@@ -266,7 +299,9 @@ export class DispatchService {
   }
 
   private async certified(binding: JobBinding, d: ExecutorDefinition, client: RpcClient, premise: keyof ExecutorDefinition['premises']): Promise<boolean> {
-    const proof = d.premises[premise];
+    const current = await this.registry.get(binding.executor);
+    if (!current || current.definition.target !== d.target || current.definition.endpoint !== d.endpoint || current.definition.ca !== d.ca) return false;
+    const proof = current.definition.premises[premise];
     if (!proof || proof.version !== client.serverVersion) return false;
     const by = await this.options.records.principals.get(binding.acting_by ?? binding.initiated_by);
     if (!by || by.disabled) return false;

@@ -25,6 +25,7 @@ export const ExecutorDefinition = z.strictObject({
   calls: z.strictObject({ acquire: call, heartbeat: call, release: call, precheck: call, submit: call, status: call, result: call, query: call.optional() }),
   lease: z.strictObject({ id: pointer, token: pointer, ttl_ms: pointer, ttl_scale_ms: z.number().positive().default(1), acceptance: pointer, map: acceptance }),
   receipt: z.strictObject({ stage: pointer.optional(), reached_device: pointer.optional(), stages: z.record(z.string(), EffectOutcomeSchema).default({}), request_id: pointer.optional(), acceptance: pointer, map: acceptance, id: pointer, sha256: pointer, items: pointer }),
+  conformance: z.strictObject({ payloads: z.array(z.string().min(1).max(4096).regex(/^[A-Za-z0-9+/]*={0,2}$/)).length(2).refine(p => p[0] !== p[1]) }).optional(),
   reconciliation: z.strictObject({ found: pointer, state: pointer, request_id: pointer, sha256: pointer, id: pointer, stage: pointer, reached_device: pointer, gateway_time: pointer, gc_before: pointer, time_scale_ms: z.number().positive().optional(), map: z.record(z.string(),EffectOutcomeSchema) }).optional(),
   status: z.strictObject({ pointer, exit_code: pointer.optional(), map: z.record(z.string(), state) }),
   result: z.strictObject({ id: pointer, sha256: pointer, submitted_at: pointer, submitted_at_scale_ms: z.number().positive().optional(), items: pointer, item_id: pointer, item_outcome: pointer, complete: pointer, map: z.record(z.string(), DynamicTerminalSchema) }),
