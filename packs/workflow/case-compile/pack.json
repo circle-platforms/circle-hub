@@ -83,8 +83,8 @@
     },
     {
       "path": "functions/generate.ts",
-      "sha256": "2f8fcd9ed1610eb04c967df4e0d2b4a496c5ddca9f301f42f9f31af917356ef2",
-      "size": 11934
+      "sha256": "47aadc7d361b2a1c7264fd2394bc0b3c5517bcf64698833f2488a3f4f0f0541b",
+      "size": 11909
     },
     {
       "path": "functions/manifest.ts",
@@ -123,8 +123,8 @@
     },
     {
       "path": "functions/workbook.ts",
-      "sha256": "a2e6549cbd005c739386a648438b18adcdf3f6e3fb47d24a7f904c592d36ac52",
-      "size": 16891
+      "sha256": "7ffc5cf4fdb2959ef6caf9a722fb1cb1b69c508ea16f20317fb17be18d543c25",
+      "size": 16859
     },
     {
       "path": "functions/xlsx-model.ts",
@@ -313,8 +313,8 @@
     },
     {
       "path": "samples/negative/workbook-bytes.json",
-      "sha256": "4397f9d5b1082d9d58b36399ea3c48f490d449bcf021d57e2d612ac3075cdac7",
-      "size": 29371
+      "sha256": "7a65abe67f3e67a1d7278c900e7284b5e80f7a7e24ba97dfac0db6d06bfa3f23",
+      "size": 29365
     },
     {
       "path": "samples/positive/address-off-bed.json",
@@ -488,8 +488,8 @@
     },
     {
       "path": "samples/positive/workbook-bytes.json",
-      "sha256": "7cd5514ec2106bef4aea6c2e512b2d245b41583ef02cbc1133624d61bf52067c",
-      "size": 29325
+      "sha256": "65e6a67de6a67d61519c58b3f835470e02a4ecd4f63a50108af48e830565d16a",
+      "size": 29319
     },
     {
       "path": "slots.schema.json",

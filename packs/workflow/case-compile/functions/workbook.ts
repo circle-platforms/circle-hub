@@ -86,7 +86,7 @@ export function readWorkbook(input: unknown, recipe: GenerationInput): WorkbookR
   let row = 4;
   for (const [i, step] of plan.steps.entries()) {
     const actual = executionByRow.get(row); const cells = grid(row);
-    if (!actual || actual.assertion || actual.object !== step.object || actual.method !== step.method || canonicalJson(actual.args) !== canonicalJson(step.args) || canonicalJson(actual.keywords) !== canonicalJson(step.keywords) || cells[2] !== String(FORMAT.statement_type) || cells[1] !== (recipe.fields.priority ?? '') || cells[3] !== (recipe.fields.steps[i]?.text ?? recipe.fields.title)) issue('step', `/sheets/0/rows/${row - 1}`, '执行行逐个回读后与槽位或原文字段不一致');
+    if (!actual || actual.assertion || actual.object !== step.object || actual.method !== step.method || canonicalJson(actual.args) !== canonicalJson(step.args) || canonicalJson(actual.keywords) !== canonicalJson(step.keywords) || cells[2] !== String(FORMAT.statement_type) || cells[1] !== (recipe.fields.priority ?? '') || cells[3] !== (recipe.fields.title)) issue('step', `/sheets/0/rows/${row - 1}`, '执行行逐个回读后与槽位或原文字段不一致');
     row++;
     const allowed = allowedCall(profile, step.object, step.method);
     for (const expect of plan.expects.filter((v) => v.after === i + 1)) {

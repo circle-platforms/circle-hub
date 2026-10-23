@@ -570,7 +570,7 @@
           },
           {
             "name": "xl/worksheets/sheet1.xml",
-            "size": 3404,
+            "size": 3398,
             "contentType": "application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"
           }
         ],
@@ -771,7 +771,7 @@
                   {
                     "reference": "D4",
                     "type": "inlineStr",
-                    "text": "原始配置步骤",
+                    "text": "合成用例",
                     "formula": false,
                     "style": null
                   },
@@ -976,7 +976,7 @@
           }
         ]
       },
-      "sha256": "2117f477ce2064a326322555e6443d51a77627caf9fd5cef044895a4f1848315"
+      "sha256": "6de6f08e8a629288db37974be5f43de00d64e8991bbc5ea1ca895c5f836f270f"
     }
   },
   "expect": [

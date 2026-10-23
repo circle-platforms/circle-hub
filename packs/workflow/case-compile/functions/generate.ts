@@ -59,7 +59,7 @@ export function generateWorkbook(input: GenerationInput): Uint8Array {
     const seat = profile.seats.find((v) => v.object === step.object);
     if (seat && seat.ordinal >= profile.device_count) reject(`/steps/${i}`, '座位序号超出预检设备数；派发前还须重核实际设备数');
     let g: string; try { g = encodeG(step, gOptions(step.object, step.method, contract, profile)); } catch (e) { return reject(`/steps/${i}/G`, e instanceof Error ? e.message : 'G 无法往返'); }
-    rows.push([i === 0 ? fields.autoid : '', fields.priority ?? '', FORMAT.statement_type, fields.steps[i]?.text ?? fields.title, step.object, step.method, g]);
+    rows.push([i === 0 ? fields.autoid : '', fields.priority ?? '', FORMAT.statement_type, fields.title, step.object, step.method, g]);
     for (const [k, expect] of slots.expects.entries()) if (expect.after === i + 1) {
       if (!Object.values(allowed!.parameters).some((v) => v === 'device_cli' || v === 'host_shell')) reject(`/expects/${k}/after`, '期望不能跟在等待或断言之后');
       if (!hasSingleLineValue(expect.text)) reject(`/expects/${k}/text`, '断言必须是有效单行原文，没有边缘空白、公式前缀或占位符');
