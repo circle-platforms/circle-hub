@@ -68,7 +68,7 @@ import {
   type ListedIds,
   type ProduceDetail,
 } from './store.ts';
-import { relationFacts,relationNode } from './links.ts';
+import { literalWarningDetails,relationFacts,relationNode } from './links.ts';
 import { TreeBuilder, flatten, type BuiltNode } from './tree.ts';
 import { checkPath, singleSources, verifyFragment, type FragmentSources } from './verify.ts';
 
@@ -799,7 +799,7 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
       const sources=[...composition.map(row=>({path:row.path,entry:row.entry,content:contents.get(row.entry)!,producers:row.producers})),...unplacedRows.map(row=>({path:'/',entry:row.entry,content:contents.get(row.entry)!,producers:row.producers,unplaced:true}))];
       const facts=relationFacts(root.digest,links,kinds,sources);
       for(const diagnostic of facts.diagnostics)problems.warn(diagnostic.message+"；"+diagnostic.reference+"；下一步："+diagnostic.next_action);
-      for(const rule of links){const groups=facts.drift.filter(group=>group.rule===rule.id);if(groups.length)problems.warn(`链接声明 ${rule.id}：有 ${groups.length} 个字面在此根没有可匹配目标（漂移事实）：${cutText(groups.map(g=>g.literal).join('、'),800)}`);}
+      for(const rule of links){const groups=facts.drift.filter(group=>group.rule===rule.id);if(groups.length)problems.warn(`链接声明 ${rule.id}：有 ${groups.length} 个字面在此根没有可匹配目标（漂移事实）：${literalWarningDetails(groups.map(g=>g.literal))}`);}
     }catch(error){return fail(`链接声明无法核对：${describeError(error)}`);}
   }
 

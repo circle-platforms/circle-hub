@@ -781,3 +781,6 @@ get_nodes prepares relations once per request and retains a compact per-composit
 Backlinks exclude source entries hung at the target itself. Node text reserves room for its own entries and children first,
 then relation summaries. Every computed backlink block supplies `view_id`, an exact build-and-composition-pinned external
 id for reading the complete reverse view; a detail limit never changes the count.
+
+Production drift warnings preserve the exact group count. Their detail list fits 800 characters by retaining whole literals
+and appending ` 等` when more remain; a literal longer than the detail budget is deferred intact to the relation view.

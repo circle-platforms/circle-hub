@@ -295,3 +295,14 @@ test('backlinks omit target-local sources and offer a callable composition-pinne
   const reader=createKnowledgeReader(f.w.knowledge);
   const read=await reader.read(view,{principal:f.w.admin,run:null,purpose:'synthetic'});assert.ok(read.ok);
 });
+
+
+test('production drift warnings truncate only complete literals with an explicit remainder marker',async t=>{
+  const literals=Array.from({length:40},(_,i)=>'missing'+String(i).padStart(2,'0')+'x'.repeat(35));
+  const f=await fixture(t,[rule],undefined,[...entries.filter(e=>e.kind==='definition'),content('/notes/list','behaviour','Synthetic drift list',literals)]);
+  const warning=f.first.warnings.find(w=>w.includes('（漂移事实）：'))!;
+  assert.ok(warning.includes('有 40 个字面'));assert.ok(warning.endsWith(' 等'));
+  const details=warning.split('（漂移事实）：')[1].slice(0,-2).split('、');
+  assert.ok(details.length>0&&details.length<40);assert.ok(details.every(value=>literals.includes(value)));
+  assert.ok(warning.split('（漂移事实）：')[1].length<=800);
+});

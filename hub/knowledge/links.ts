@@ -233,3 +233,17 @@ export class LinkReading {
     return (await this.prepareBacklinks(root,reader,composition))(path);
   }
 }
+
+
+/** Keep warning details at literal boundaries; the caller reports the complete count. */
+export function literalWarningDetails(literals:readonly string[],max=800):string {
+  const kept:string[]=[];let size=0;
+  for(const literal of literals){
+    const next=size+(kept.length?1:0)+literal.length;
+    const suffix=kept.length+1<literals.length?2:0;
+    if(next+suffix>max)break;
+    kept.push(literal);size=next;
+  }
+  if(kept.length===literals.length)return kept.join('、');
+  return (kept.length?kept.join('、'):'完整字面见关联视图')+' 等';
+}
