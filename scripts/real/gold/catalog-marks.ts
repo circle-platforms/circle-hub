@@ -1,3 +1,4 @@
+import { isAttribution } from '../../../contracts/generated/vocabulary.ts';
 // Independent cited-command oracle. No Hub or pack implementation is imported.
 // node scripts/real/gold/catalog-marks.ts --tree <locked command XML> --source <mindmap original>
 //   --run <run-show.json> [--submission <original submission bytes>] [--gold <injection gold.json>]
@@ -235,7 +236,7 @@ export function judgeCommand(catalog: Catalog, line: string): CommandAnswer {
   return { in_scope: true, code: null, requests: [request(command.at, '多个参数或签名失败时错误码的选择规则', '请集成者明确这些签名及参数位置之间的错误码选择规则，补充规则和样例后重跑；不照抄被核实现的优先级')] };
 }
 
-export interface Mark { item: string; node: string; command: string; code: string; pointer: string }
+export interface Mark { item: string; node: string; command: string; code: string; pointer: string; output_error?: string }
 export interface CatalogComparison {
   expected: Mark[]; observed: Mark[]; supported: Mark[]; missed: Mark[]; extra: Mark[];
   negative_expected: Mark[]; negative_observed: Mark[]; requests: EvidenceRequest[];
@@ -244,7 +245,7 @@ export interface CatalogComparison {
 const object = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value);
 const array = (value: unknown): unknown[] => Array.isArray(value) ? value : [];
 const displayCommand = (value: string): string => fold((tokenize(value.normalize('NFKC')) ?? [value]).join(' '));
-const markKey = (mark: Mark): string => JSON.stringify([mark.item, mark.pointer, displayCommand(mark.command), mark.code]);
+const markKey = (mark: Mark): string => JSON.stringify([mark.item, mark.pointer, displayCommand(mark.command), mark.code, mark.output_error ?? null]);
 
 /** Comparison uses the submitted phrases as its population, never the Hub's refutations as the oracle. */
 export function compareCatalogMarks(input: { treeXml: string; source: unknown; submission: unknown; run: unknown; excludeNodes?: readonly string[]; caseRule?: 'marked' | 'tagged'; argumentTypes?: readonly DeclaredArgumentType[] }): CatalogComparison {
@@ -328,7 +329,7 @@ export function compareCatalogMarks(input: { treeXml: string; source: unknown; s
     array(value.requirements).forEach((requirement, j) => {
       if (!object(requirement) || requirement.requirement !== 'catalog') return;
       const layers = array(requirement.layers), staticLayer = layers.find(l => object(l) && l.layer === 'static');
-      const attributed = object(staticLayer) && typeof staticLayer.attribution === 'string' && staticLayer.attribution !== 'unattributed';
+      const attribution = object(staticLayer) && isAttribution(staticLayer.attribution) ? staticLayer.attribution : null;
       array(requirement.claims).forEach((claim, k) => {
         if (!object(claim) || !object(claim.statement) || !object(claim.qualifier)) return;
         const statement = claim.statement, qualifier = claim.qualifier;
@@ -341,8 +342,10 @@ export function compareCatalogMarks(input: { treeXml: string; source: unknown; s
         const original = phrases.get(value.item as string)?.[Number(claim.pointer.slice('/phrases/'.length))];
         const command = original !== undefined && displayCommand(original) === fold(statement.data.command) ? original : statement.data.command;
         const mark = { item: value.item as string, node: target.id, command, code: statement.code, pointer: claim.pointer };
-        if (attributed) report.observed.push(mark);
-        else if (target.negative) report.negative_observed.push(mark);
+        const expectedNegative = target.negative && [RANGE, TYPE, ARITY].includes(statement.code as CoreViolationCode);
+        if (attribution === null || (!expectedNegative && attribution === 'unattributed')) report.observed.push({ ...mark, output_error: '输出缺少或不一致的静态层归责' });
+        else if (expectedNegative) report.negative_observed.push(mark);
+        else report.observed.push(mark);
       });
     });
   });

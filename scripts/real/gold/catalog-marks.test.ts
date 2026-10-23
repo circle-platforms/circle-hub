@@ -73,7 +73,7 @@ const submission = { run: 'run_synthetic', items: [
   { item: 'doc:case-negative', handling: 'handled', slots: { findings: [{ text: '合成反向发现', commands: [{ command: 'widget port 22' }] }] } },
 ] };
 const hubMark = (command = 'widget port 21', code = 'core.catalog.param_out_of_range', role = 'subject', pointer = '/phrases/0') => ({ pointer, statement: { verdict: 'refute', code, data: { command } }, qualifier: { nature: 'fact', source_role: role }, warrant: { id: 'catalog@1' } });
-const run = (claims: unknown[] = [hubMark()], attribution: string | null = 'author_input') => ({ run: { run: 'run_synthetic' }, latest: { result: { partitions: { delivered: [{ item: 'doc:case-range', requirements: [{ requirement: 'catalog', layers: [{ layer: 'static', terminal: 'violation', ...(attribution ? { attribution } : {}) }], claims }] }, { item: 'doc:case-negative', requirements: [{ requirement: 'catalog', layers: [{ layer: 'static', terminal: 'pass' }], claims: [hubMark('widget port 22')] }] }] } } } });
+const run = (claims: unknown[] = [hubMark()], attribution: string | null = 'author_input') => ({ run: { run: 'run_synthetic' }, latest: { result: { partitions: { delivered: [{ item: 'doc:case-range', requirements: [{ requirement: 'catalog', layers: [{ layer: 'static', terminal: 'violation', ...(attribution ? { attribution } : {}) }], claims }] }, { item: 'doc:case-negative', requirements: [{ requirement: 'catalog', layers: [{ layer: 'static', terminal: 'violation', attribution: 'unattributed' }], claims: [hubMark('widget port 22')] }] }] } } } });
 
 test('compares attributed cited-command marks and lists negative expected refutations separately', async () => {
   const { compareCatalogMarks } = await import('./catalog-marks.ts');
@@ -236,4 +236,16 @@ test('malformed declaration arrays have a fixed input reason at their own bounda
   assert.throws(()=>readArgumentTypes(Buffer.from(value)),e=>e instanceof CatalogInputError && e.reason==='argument_types');
  }
  assert.deepEqual(readArgumentTypes(Buffer.from('[]')),[]);
+});
+
+test('expected negative citations stay separate when an unexpected model claim owns the layer attribution', async () => {
+  const {compareCatalogMarks}=await import('./catalog-marks.ts');
+  const shown=run() as any;
+  const negative=shown.latest.result.partitions.delivered[1].requirements[0];
+  negative.layers=[{layer:'static',terminal:'violation',attribution:'producer_error'}];
+  negative.claims.push(hubMark('widget port 22','core.catalog.membership_contradicted','subject','/claims/0'));
+  const report=compareCatalogMarks({treeXml:tree,source,submission,run:shown});
+  assert.equal(report.negative_observed.length,1); assert.equal(report.extra.length,0);
+  const missing=compareCatalogMarks({treeXml:tree,source,submission,run:run([hubMark()],null)});
+  assert.equal(missing.extra.length,1); assert.equal(missing.missed.length,1);
 });
