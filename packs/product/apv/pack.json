@@ -38,8 +38,8 @@
     },
     {
       "path": "functions/adoc/k1-model.ts",
-      "sha256": "cdedc8bede0293d2ee4c598edb5d587e0d3e5100cfa1f517e157c56cef1a6306",
-      "size": 20639
+      "sha256": "96eab54fc7de3e7383863ebd63525014d9eea4db6897b04a8526f0c3b835d4fb",
+      "size": 21129
     },
     {
       "path": "functions/adoc/origins.ts",
@@ -48,8 +48,8 @@
     },
     {
       "path": "functions/adoc/text.ts",
-      "sha256": "8c5d83270b43d59ba8a3c48697a673b11f8bc4bef16c1b2fa44519c43722494c",
-      "size": 5746
+      "sha256": "b80becab40c47ce4e12a89203df1694c53e783625ac306f1a7a8d6d315e2e07e",
+      "size": 6352
     },
     {
       "path": "functions/adoc/types.ts",

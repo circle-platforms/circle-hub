@@ -9,6 +9,7 @@ import { test } from 'node:test';
 import { compileFamilies, familyManualName } from './families.ts';
 import { toK1Model } from './k1-model.ts';
 import { produceManualEntries } from '../manual.ts';
+import { produceAdocEntries } from './entries.ts';
 import type { MarkdownModel } from '../../../../../hub/refs/api.ts';
 
 /** The mapped model of one family, with the mapping's report checked (nothing left uncited). */
@@ -94,4 +95,45 @@ test('one family failing fails the whole group: no partial result', async () => 
   if (out.ok) { assert.fail('the group must fail'); return; }
   assert.ok(out.error.message.includes('旧知识根') || out.error.next_action.includes('旧知识根'), JSON.stringify(out));
   assert.ok(true, 'no partial family result is returned');
+});
+
+test('an attribute reference reaches each family\'s statement with that family\'s own value, and the fragment stays on the source line', async () => {
+  const files = {
+    'book.adoc': [
+      '= Book',                       // 1
+      '',                             // 2
+      '== 配置',                       // 3
+      '',                             // 4
+      '本手册介绍 {product} 的配置。',   // 5
+      '',                             // 6
+      '{product} 支持热备，见 {product} 手册。', // 7
+      '',                             // 8
+    ].join('\n'),
+  };
+  const out = await compileFamilies(inputOf(files, { APV: { product: 'APV' }, NSAE: { product: 'NSAE' } }), ['APV', 'NSAE']);
+  assert.ok(out.ok, JSON.stringify(out));
+  const statements = (family: 'APV' | 'NSAE', name: string): string[] => {
+    const one = out.families[family]!;
+    const mapped = toK1Model(one.model, one.composition, name);
+    assert.deepEqual(mapped.uncited, [], JSON.stringify(mapped.uncited));
+    const produced = produceAdocEntries(mapped, { name, slot: 'manual' });
+    assert.ok(produced.ok, JSON.stringify(produced));
+    return produced.entries.map((entry) => String(entry.statement));
+  };
+  const apv = statements('APV', 'cli-apv');
+  const nsae = statements('NSAE', 'cli-nsae');
+  assert.ok(apv.includes('本手册介绍 APV 的配置。'), JSON.stringify(apv));
+  assert.ok(nsae.includes('本手册介绍 NSAE 的配置。'), JSON.stringify(nsae));
+  assert.ok(apv.includes('APV 支持热备，见 APV 手册。'), JSON.stringify(apv));
+  assert.ok(nsae.includes('NSAE 支持热备，见 NSAE 手册。'), JSON.stringify(nsae));
+  assert.ok(!apv.concat(nsae).some((statement) => statement.includes('{product}')), 'no placeholder survives into a statement');
+  // The fragment stays on the verified source line, which still holds the placeholder: the statement carries what the
+  // family's attribute set says (K02 R[4]), the citation carries what the author wrote.
+  const one = out.families.APV!;
+  const mapped = toK1Model(one.model, one.composition, 'cli-apv');
+  const block = mapped.model.blocks.find((candidate) => candidate.text === '本手册介绍 APV 的配置。');
+  assert.ok(block !== undefined, JSON.stringify(mapped.model.blocks.map((candidate) => candidate.text)));
+  assert.equal(block.cite.selector, 'l/5');
+  const source = files['book.adoc']!.split('\n')[4];
+  assert.equal(source, '本手册介绍 {product} 的配置。', 'the cited line is the source line with the placeholder');
 });

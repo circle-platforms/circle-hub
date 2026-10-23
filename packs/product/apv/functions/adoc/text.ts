@@ -28,18 +28,29 @@ export function squeeze(text: string): string {
   return (text.includes('\u0000') ? text.replaceAll('\u0000', '') : text).replace(/\s+/g, ' ').trim();
 }
 
+/** The presentation tags the engine wraps inline markup in, and what a reader's spelling uses for them. */
+const TAGGED: ReadonlyArray<readonly [RegExp, string]> = [
+  [/<strong>([\s\S]*?)<\/strong>/giu, '**$1**'],
+  [/<b>([\s\S]*?)<\/b>/giu, '**$1**'],
+  [/<code>([\s\S]*?)<\/code>/giu, '`$1`'],
+  [/<tt>([\s\S]*?)<\/tt>/giu, '`$1`'],
+  [/<em>([\s\S]*?)<\/em>/giu, '*$1*'],
+  [/<i>([\s\S]*?)<\/i>/giu, '*$1*'],
+];
+
+/** Tags that carry no words of their own: the wrapper goes, its text stays. */
+const WRAPPERS = /<\/?(?:span|sub|sup|a|abbr|cite|q|mark|small|big|font|u|s|strike|kbd|keycap|menuref|btn)\b[^>]*>/giu;
+
 /**
- * The engine's inline output (HTML-ish tags and character references) in the markdown-shaped inline spelling K1's
- * placement code reads: strong to `**…**`, em to `*…*`, code to backticks, every character reference decoded. Any other
- * tag is dropped and its text kept, because a manual statement carries words, not presentation.
+ * The engine's inline output (its presentation tags and character references) in the markdown-shaped inline spelling
+ * K1's placement code reads: strong to `**…**`, em to `*…*`, code to backticks, every character reference decoded. Only
+ * the tags the engine produces for markup are touched; anything else stays as the text it is, because a `<name>` an
+ * author wrote is a parameter placeholder and not a tag.
  */
 export function inlineMarkdown(text: string): string {
-  const marked = text
-    .replace(/<strong>([\s\S]*?)<\/strong>/giu, '**$1**')
-    .replace(/<code>([\s\S]*?)<\/code>/giu, '`$1`')
-    .replace(/<em>([\s\S]*?)<\/em>/giu, '*$1*')
-    .replace(/<[^>]*>/gu, '');
-  return decodeReferences(marked);
+  let out = text;
+  for (const [pattern, replacement] of TAGGED) out = out.replace(pattern, replacement);
+  return decodeReferences(out.replace(WRAPPERS, ''));
 }
 
 /** The replacements the engine makes for author-written punctuation, folded back to what an author types. */
@@ -111,9 +122,9 @@ export function plainText(text: string): string {
   return fold(text);
 }
 
-/** The fold of the engine's converted text: its tags are markup, and its character references are the escaped text. */
+/** The fold of the engine's converted text: its markup tags and character references are the source's marks and text. */
 export function plainConverted(text: string): string {
-  return fold(text.replace(/<[^>]*>/gu, ''));
+  return fold(inlineMarkdown(text));
 }
 
 /** AsciiDoc inline markup marks dropped and escapes resolved, attributes left as the caller expanded them. */

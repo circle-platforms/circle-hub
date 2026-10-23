@@ -214,12 +214,18 @@ function tableOf(block: Block, digestOf: (file: string) => string): Table {
   return { text, rowCites, dropped, cite, misaligned };
 }
 
-/** The text this block carries into the mapped model; '' for a container whose children carry its content. */
+/**
+ * The text this block carries into the mapped model; '' for a container whose children carry its content. A statement
+ * carries what the source says under this family's attribute set (K02 R[4] lets it differ from the source line, and the
+ * fragment stays on the verified range): the engine substitutes nothing inside a listing or literal block, so those stay
+ * verbatim, while every other block gives the attribute-expanded text in the reader's inline spelling.
+ */
 function textOf(block: Block): string {
-  // A list item's own text is the engine's converted text: the reader's spelling (markdown-shaped inline marks), not
-  // the engine's tags. A listing stays verbatim (the engine substitutes nothing inside it).
+  // A list item's own text is already the engine's converted text; the other contexts keep their source text in `raw`
+  // and their attribute-expanded source text in `expanded` (step one replays the body attribute state before reading).
   if (block.kind === 'list_item') return inlineMarkdown(block.raw).trim();
-  return block.raw;
+  if (block.kind === 'listing' || block.kind === 'literal') return block.raw;
+  return inlineMarkdown(block.expanded);
 }
 
 /**

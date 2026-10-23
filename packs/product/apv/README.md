@@ -474,6 +474,10 @@ accepted.
   row's verified cells. A row entry therefore cites the line the row is written on, never the header's line and never a
   byte range inside the mapped text. A row whose cells were not verified at all is left out of the mapped table and
   reported with the table's file and line; it never borrows another row's source line.
+- A statement carries what the source says under the family's own attribute set: every block gives its attribute-expanded
+  text, except a listing or literal block, which the engine leaves verbatim and which stays verbatim here. A brand word
+  written `{product}` therefore reaches each copy with that family's value, while the fragment stays on the verified
+  source line, which still holds the placeholder (K02 R[4]: a statement need not be the source verbatim).
 - Only an explicit structure gives a signature (task item 6): a command-table row (under a header that names commands, two
   bold runs joined by a slash also split), every line of a `[role=signature]` block (a line without marks gains the bold
   marks the role declares), and a bold signature paragraph that verifies verbatim. A title, ordinary bold prose and an
