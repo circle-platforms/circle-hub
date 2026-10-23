@@ -44,7 +44,25 @@ export function commandTree(input: unknown): ProducerOutput {
     if (slot === null || slot === undefined) return empty('没有命令树');
     if (slot.parser !== 'xml@1') return empty(`命令树不是 XML（解析器 ${String(slot.parser)}）`);
     const out = produceCommandEntries(slot.model as XmlModel, paramsOf(input) as CommandTreeParams);
-    return { entries: out.entries as ProducedEntry[], warnings: out.warnings };
+    // The catalog's per-argument notes (optional 取值认不出…) can number in the hundreds; one per site fills the
+    // capped warning list ahead of the structural facts. Aggregate each repeated note into one line with its count
+    // (closure finding 10); unique warnings keep their own lines in first-seen order.
+    const seen = new Map<string, { index: number; count: number }>();
+    const aggregated: string[] = [];
+    for (const warning of out.warnings) {
+      // The same note at the same command (any parameter, any value): one line with the count. The site keeps its
+      // command words; the parameter name and the unread value fold into the count.
+      const key = warning.replace(/(?<=^)[^ ：]+(?: [^ ：]+)*?(?= 参数 )/u, '×').replace(/(?<=× 参数 )[^ ：]+/u, '×') + warning.replace(/^.*?(?:optional 取值|limit|length)/u, '');
+      const at = seen.get(key);
+      if (at === undefined) {
+        seen.set(key, { index: aggregated.length, count: 1 });
+        aggregated.push(warning);
+      } else {
+        at.count += 1;
+        aggregated[at.index] = `${aggregated[at.index]!.replace(/（同类 [0-9]+ 处）$/, '')}（同类 ${at.count} 处）`;
+      }
+    }
+    return { entries: out.entries as ProducedEntry[], warnings: aggregated };
   } catch (error) {
     return empty(internalError(error));
   }

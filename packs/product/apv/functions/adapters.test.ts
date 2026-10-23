@@ -326,3 +326,20 @@ describe('the declared functions in the Hub sandbox', { skip: (await osIsolation
     });
   }
 });
+
+  it('aggregates many command-tree warnings so the manual drift text stays in the kept list (closure finding 10)', () => {
+    const args = Array.from({ length: 210 }, (_, i) => `<arg name="arg${i}" optional="maybe" help_string="h"/>`).join('');
+    const treeXml = `<commands><scope type="global"><menu name="demo"><item name="probe" help_string="p"><arguments>${args}</arguments></item></menu></scope></commands>`;
+    const slots = { tree: slot('xml@1', xml(treeXml)), cli: slot('markdown@1', markdown('**demo gone** *\\<x\\>*\n\n说明。\n')) };
+    const out = manual({ build: knownBuild, slots: { ...slots, app: null }, params: {} });
+    const drift = out.warnings.filter((w) => w.includes('漂移候选'));
+    assert.ok(drift.length > 0, out.warnings.slice(0, 3).join('\n'));
+    const perArg = out.warnings.filter((w) => w.includes('optional 取值'));
+    assert.ok(perArg.length <= 3, `per-argument warnings must aggregate: ${perArg.length}`);
+    assert.ok(perArg.length === 0 || perArg.some((w) => w.includes('同类')), out.warnings.slice(0, 5).join('\n'));
+    // The aggregation lives in the commandTree producer itself.
+    const treeOut = commandTree({ build: knownBuild, params: {}, slots: { tree: slot('xml@1', xml(treeXml)) } });
+    const treePerArg = treeOut.warnings.filter((w) => w.includes('optional 取值'));
+    assert.equal(treePerArg.length, 1, JSON.stringify(treeOut.warnings));
+    assert.ok(treePerArg[0]!.includes('同类 210 处'), treePerArg[0]);
+  });
