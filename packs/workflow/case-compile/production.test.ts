@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { satisfiedRecipe } from './scripts/generate-workbook.ts';
+import { satisfiedRecipe } from './tools/generate-workbook.ts';
 import { generateWorkbook, GENERATOR } from './functions/generate.ts';
 // Real run engine and temporary PostgreSQL; every contract, profile, document, device and model is synthetic.
 import assert from 'node:assert/strict';

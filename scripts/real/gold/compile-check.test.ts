@@ -1,4 +1,4 @@
-// Synthetic fixtures only. The pack is read through public examples, never imported/executed.
+// Frozen synthetic v1 fixtures only; no Hub or pack implementation is imported/executed.
 import assert from 'node:assert/strict';
 import { readFileSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -12,7 +12,7 @@ import {
   type CompileContract, type RawBedManifest, type Submission, type RunShowExport, type StepVerdict,
 } from './compile-check.ts';
 
-export const example = (name: string): unknown => JSON.parse(readFileSync(new URL(`../../../packs/workflow/case-compile/examples/${name}.json`,import.meta.url),'utf8'));
+export const example = (name: string): unknown => JSON.parse(readFileSync(new URL(`./fixtures/compile-contract-v1/${name}.json`,import.meta.url),'utf8'));
 const contract = example('compile-contract') as CompileContract;
 const bed = example('bed-topology') as RawBedManifest;
 const commandTreeXml = `<commands><scope><menu name="widget"><menu name="health"><item name="interval"><arguments><arg name="seconds" type="U16" limit="[1 - 120]"/></arguments></item></menu><menu name="session"><item name="persistence"><arguments><arg name="mode" type="STRING" limit="{cookie|source}"/></arguments></item></menu></menu></scope></commands>`;
@@ -37,7 +37,7 @@ export const data = (f: ReturnType<typeof fixture>) => f.submission.items[0].slo
 export const rebind = (f: ReturnType<typeof fixture>) => { f.run.latest!.result!.submission = digest(f.submission); };
 const has = (f: ReturnType<typeof fixture>, type: StepVerdict['checkType'], verdict: StepVerdict['verdict']) => compileCheck(f).stepVerdicts.some(v => v.checkType === type && v.verdict === verdict);
 
-test('public examples pass independent checks including the published plan bytes and digest', () => {
+test('frozen synthetic v1 inputs pass independent checks including fixed plan bytes and digest', () => {
   const r = compileCheck(fixture());
   assert.equal(r.allPassed,true,JSON.stringify(r));
   assert.equal(r.plans.length,2);
