@@ -94,3 +94,8 @@ test('review 16 MAC and clock tokens never become off-bed address facts', () => 
 test('review 17 assertion formula prefixes and placeholders are rejected before workbook generation', () => {
   for (const text of ['=成功', '{}', '{0}', '值\u0001尾']) { const data = goodData(); data.expects[0].text = text; data.expects[0].quote.text = text; assert.ok(codes(checkExpectedSources(subjectOf(data))).includes('case-compile.expect_value')); }
 });
+test('review 18 every imprecise case id has its source pointer and a lossless-input action', () => {
+  const model = structuredClone(MINDMAP_MODEL); for (const index of [2, 5]) (model.nodes[index].data as Record<string, unknown>).autoid = Number(AUTOID);
+  const result = projectItems(projectionInput(model)) as { error: { code: string }; warnings: Array<{ message: string }> };
+  assert.equal(result.error.code, 'case-compile.autoid_imprecise'); assert.equal(result.warnings.length, 2); assert.ok(result.warnings.every((v) => /\/data\/autoid/.test(v.message) && /无损|文本/.test(v.message)));
+});

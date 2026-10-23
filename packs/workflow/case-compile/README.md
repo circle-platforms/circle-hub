@@ -76,3 +76,5 @@ The repository vocabulary scan currently has eight existing matches in six files
 Review 14: the task-page runner annex governs G behavior, including empty-cell None, retained escapes, keyword conversion after outer-quote removal and wait int conversion. No default or unsplit single-line primitive behavior is inferred from names.
 
 Review 16: only successfully parsed IP tokens enter address membership checks. MAC/time/invalid numeric tokens do not become off-bed facts. Dotted-quad version strings are lexically ambiguous with IPv4; this generic layer cannot infer their meaning from prose, so a typed catalog/profile and explicit data context are needed to disambiguate them. No DNS or target probe is performed by the pack.
+
+Review 18 / Needs: every unsafe numeric autoid has its flat-model pointer and original selector in refusal diagnostics. Re-export source ids as text; a core-owner lossless numeric parser is needed if textual export is unavailable. Rounded values are never used to reconstruct an id.

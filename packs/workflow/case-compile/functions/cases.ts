@@ -33,7 +33,7 @@ export interface ExtractedCase {
 
 export interface Extraction {
   cases: ExtractedCase[];
-  impreciseAutoids: Array<{ node: string; selector: string | null }>;
+  impreciseAutoids: Array<{ node: string; selector: string | null; pointer: string }>;
   /** Cases identified by the mark alone (no tags), counted for the summary. */
   markedOnly: number;
   /** Nodes that are marked but carry no tags, not projected under the tagged rule. */
@@ -101,7 +101,7 @@ export function extractCases(model: unknown, rule: CaseRule): Extraction {
     const priority = priorityOf(node.data);
     const isCase = tags.length > 0 || priority === CASE_PRIORITY;
     if (isCase) {
-      if (typeof node.data.autoid === 'number' && !Number.isSafeInteger(node.data.autoid)) impreciseAutoids.push({ node: typeof node.data.id === 'string' ? node.data.id : `n${index}`, selector: node.selector });
+      if (typeof node.data.autoid === 'number' && !Number.isSafeInteger(node.data.autoid)) impreciseAutoids.push({ pointer: `/nodes/${index}/data/autoid`, node: typeof node.data.id === 'string' ? node.data.id : `n${index}`, selector: node.selector });
       if (tags.length === 0) {
         if (rule === 'tagged') {
           candidates++;

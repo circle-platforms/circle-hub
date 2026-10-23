@@ -216,6 +216,11 @@
       "code": "case-compile.profile_problem",
       "when": "运行环境配置逐条问题",
       "fix": "按指针处理"
+    },
+    {
+      "code": "case-compile.autoid_problem",
+      "when": "一个用例的数字 autoid 无法保证原始精度",
+      "fix": "按节点指针从原件取得文本编号或请求核心无损解析"
     }
   ]
 }
