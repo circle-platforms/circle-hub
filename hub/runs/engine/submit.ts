@@ -496,8 +496,8 @@ async function validate(base: Basis, submission: Submission, before: ProtocolErr
     const items = submission.items.filter(item => item.handling === 'handled');
     result.contributions = {
       submitted: items.length, stored: [], not_stored: items.map(item => ({item:item.item,
-        reason: rejection.filter(error => error.item === item.item).map(error => error.fix ?? error.message).join('；')
-          || '整份提交未受理，未入回注层；按边界修正说明修复后，用 submit_result 重交本次运行'})),
+        reason: refusals.get(item.item) ?? (rejection.filter(error => error.item === item.item).map(error => error.fix ?? error.message).join('；')
+          || '整份提交未受理，未入回注层；按边界修正说明修复后，用 submit_result 重交本次运行')})),
     };
   }
   return {

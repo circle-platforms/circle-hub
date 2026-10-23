@@ -389,3 +389,5 @@ read; results, run records and production results over the record limit; queries
    (`aster-chat` and `birch-4-chat` share `chat`), which errs towards `not_independent`.
 
 部分结构拒绝保留原参数索引上的要求项与修复轮信息；只在回注槽位被明确重新归属时重算其轮数，不能用压紧后的 cross_item 索引给别的要求项记轮。
+
+整份提交因其他条目被拒绝时，回注 not_stored 优先保留该条目自身的准入拒绝及 skipped/补件动作，不用一般重交文案覆盖它。

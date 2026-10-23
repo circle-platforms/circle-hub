@@ -536,3 +536,14 @@ test('six overlapping equal content submissions share exactly one entry per iden
   }
   assert.equal((await w.knowledge.layers.contributions.list(w.root,['/commands/system/show'],w.user)).length,24);
 });
+
+test('whole rejection retains each contribution policy refusal and its skip action',async t=>{
+  const w=await setup(t);
+  const uploaded=await w.kit.artifacts.ingest({bytes:new TextEncoder().encode('synthetic session statement'),mediaType:'text/plain',origin:{upload:{session:'synthetic-private-session',message:null}},author:{user:w.admin.id},provenanceType:'declared',visibility:{readers:[w.admin.id],admins:true,packs:[],shareable:false}});
+  const run=await withOriginal(w,uploaded.body.sha256);const args={...w.args(),run:run.run};
+  args.items[0].slots.contribution[0].data.source={reference:`src:${uploaded.body.sha256}`,quote:'synthetic session statement'};
+  args.items[1].slots.contribution[0].data.source.quote='synthetic nonmatching quote';
+  const result=await w.service.submitResult(w.admin,args,call);assert.equal(result.acceptance,'not_accepted');assert.ok(result.errors.some(error=>error.code==='QUOTE_MISMATCH'));
+  const policy=result.errors.find(error=>error.item==='classification'&&error.code==='knowledge-contribution.signature_required');assert.ok(policy);
+  const receipt=result.result?.contributions?.not_stored.find(row=>row.item==='classification');assert.ok(receipt);assert.match(receipt.reason,/署名.*skipped/);assert.ok(!receipt.reason.includes('按边界修正说明'));
+});
