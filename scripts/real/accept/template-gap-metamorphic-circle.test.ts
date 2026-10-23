@@ -380,3 +380,12 @@ test('review 17: words and protocol code names inside a document label do not re
   for (const document of gold.documents) { const tree = JSON.parse(readFileSync(document.file, 'utf8')); tree.root.data.text = '合成出错处理 no_case CREDENTIAL_IN_UPLOAD'; writeFileSync(document.file, JSON.stringify(tree)); }
   const result = drive(build(gold)); assert.ok(result.checks.every(check => check.ok), JSON.stringify(result.checks.filter(check => !check.ok)));
 });
+
+test('review 18: a complete id-only form is not a clip and an unrecognized clip ends with a recorded failure', () => {
+  assert.equal(truncationReference('用例 1 个；缺 1 个模板类别（只列编号）：security'), null);
+  const { gold } = goldOf(); const scenario = build(gold);
+  const result = drive(scenario, () => '用例 2 个；缺 12 个模板类别：集成测试（integration）、兼容性…（共 353 个字符）');
+  assert.match(result.done, /停止|不符/); assert.ok(result.checks.some(check => !check.ok && check.name.includes('读取格式')));
+  assert.ok(result.infos.every(info => ['a','b'].includes(info.kind)));
+  assert.match(JSON.stringify(scenario.sections), /下一步|修复/);
+});

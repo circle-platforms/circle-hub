@@ -60,7 +60,7 @@ export function parseSummary(summary: string, categories: readonly TemplateCateg
 export function truncationReference(summary: string): string | null {
   const at = /全文 (rec:[0-9a-f]{64}#\/items\/[0-9]+)(?=）)/.exec(summary);
   if (at !== null) return at[1]!;
-  if (summary.includes('（只列编号）')) {
+  if (/…（共 [0-9]+ 个字符/.test(summary)) {
     throw new Error('摘要已截断但认不出全文引用；需要修复读取解析');
   }
   return null;
@@ -137,6 +137,8 @@ export default function scenario(gold: GapCircleGold): Scenario {
   const unknown = new Map<string, string>(); // copy key -> fixed reason
   const truncated = new Map<string, string>(); // copy key -> reference to read
   let compacted = false;
+  let fatal: { key: string; run: number; item: number } | null = null;
+  const halted = () => `核对停止：第 ${fatal!.run} 次运行，第 ${fatal!.item} 项摘要缺少可识别全文引用；下一步修复读取解析后重跑`;
 
   const pendingOf = (tree: MindTree, seed: string): { tree: MindTree; name: string } => ({ tree, name: '' });
   void pendingOf;
@@ -221,6 +223,7 @@ export default function scenario(gold: GapCircleGold): Scenario {
   const allPending = (): Pending[] => queue;
 
   const respond = (turn: Turn): Array<{ tool: string; input: Record<string, unknown> } | { text: string }> => {
+    if (fatal) return [{ text: halted() }];
     if (turn.toolResults.length === 0 && turn.index > 0) {
       compacted = true;
       return [{ text: '继续。' }];
@@ -246,7 +249,8 @@ export default function scenario(gold: GapCircleGold): Scenario {
             if (!unknown.has(key)) unknown.set(key, '条目数与这一批的份数不符');
             continue;
           }
-          const reference = truncationReference(summary);
+          let reference: string | null;
+          try { reference = truncationReference(summary); } catch { unknown.set(key, '摘要缺少可识别的全文引用；下一步修复读取解析'); if (!fatal) fatal = { key, run: runsOfPhase.reduce((a, b) => a + b, 0), item: openRun.findIndex(copy => copy.key === key) + 1 }; continue; }
           if (reference !== null) truncated.set(key, reference);
           else { const parsed = parseSummary(summary, categories); if (!parsed.valid) unknown.set(key, '缺少可解析的用例数或完整类别集合'); else answerOf.set(key, { caseCount: parsed.caseCount, missing: parsed.missing, fullSummary: summary }); }
         }
@@ -265,6 +269,7 @@ export default function scenario(gold: GapCircleGold): Scenario {
       }
       lastUploaded = [];
     }
+    if (fatal) return [{ text: halted() }];
     if (pendingGetNodes !== null && turn.toolResults.length > 0) {
       const full = summaryOfGetNodes(turn.toolResults[0]?.text ?? '', pendingGetNodes.reference);
       if (turn.toolResults.some(result => result.isError) || full === null) unknown.set(pendingGetNodes.key, '截断的摘要读不到全文');
@@ -396,6 +401,7 @@ export default function scenario(gold: GapCircleGold): Scenario {
       }, '类型名标签对应类别必须为有');
       for (const [kind, name] of [['d','删去'],['e','加回'],['f','加入']] as const) put(name, ofKind(kind), copy => scores.get(copy.key)?.ok === true && (kind === 'd' ? answerOf.get(copy.key)!.missing.has(copy.category!) : !answerOf.get(copy.key)!.missing.has(copy.category!)), '全缺失集合相同，且目标类别按变换改变');
     }
+    if (fatal) checks.push(verdict('摘要读取格式', false, '截断摘要提供可识别的全文引用', `${uploaded.get(fatal.key)?.slice(0, 12)}；${halted()}`));
     const missing = [...attempted.keys()].filter(key => !answerOf.has(key) || unknown.has(key));
     checks.push(verdict('副本回答完整', attempted.size > 0 && !missing.length, '每份副本给出完整条目结果', missing.length ? missing.map(key => `${uploaded.get(key)?.slice(0, 12)} 缺结果；下一步核对运行回执和读取解析`).join('；') : '完整'));
     const completed = trees.filter((_tree, document) => [['a','b'],['c'],['d','e','f']].every(kinds => scored.some(row => ownerOf(row.key) === document && kinds.includes(attempted.get(row.key)!.kind)))).length;
