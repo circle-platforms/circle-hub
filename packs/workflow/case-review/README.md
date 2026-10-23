@@ -410,7 +410,7 @@ case-review@1.0.4 改用生成词表的类型及包内运行时快照。包内�
 | hub/server/tools.ts | 508 | call_result | K2 |
 | hub/runs/engine/submit.ts | 179 | acceptance | K2，合并后由 core-fixes 补完剩余 |
 
-行号是本任务工作树的定位，不代表 K2 分支合并后的行号。第 4 项需要新增的轴只有已获模型负责人授权的 T04 `fragment_read`；其他命中使用既有轴。
+行号是本任务工作树的定位，不代表 K2 分支合并后的行号。第 4 项需要新增的轴只有由[进度页决定 36](../../../docs/hub-r4-progress.md)授权并细分的 T04 `fragment_read`；其他命中使用既有轴。
 
 ### 本次验证记录（第 4 项尚未完成）
 

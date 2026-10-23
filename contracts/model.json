@@ -2145,7 +2145,7 @@
    ],
    "changes": [
     "引文范围包括本次上传的被判对象（画布修正 31）",
-    "新增 fragment_read 片段读取状态轴；来源：集成者 2026-10-23 终审：检查时的片段分级不能手写取值"
+    "新增并细分 fragment_read 片段读取状态轴；来源：进度页决定 36，集成者 2026-10-23 作为模型负责人授权：检查时的片段分级不能手写取值"
    ],
    "changes3": [
     "解析范围扩到全部已绑定输入（复核 P4.G5）",
@@ -5184,19 +5184,31 @@
     },
     {
      "code": "not_bound",
-     "label": "未绑定到本运行"
+     "label": "不是这次运行的输入"
+    },
+    {
+     "code": "not_groundable",
+     "label": "这类记录不能作根据"
+    },
+    {
+     "code": "entry_unaddressed",
+     "label": "知识条目单独引用了，没写树地址"
+    },
+    {
+     "code": "malformed",
+     "label": "引用写法不对"
     },
     {
      "code": "no_fragment",
      "label": "找不到片段"
     },
     {
-     "code": "retain_only",
-     "label": "只保留不可读"
-    },
-    {
      "code": "too_large",
      "label": "超过大小上限"
+    },
+    {
+     "code": "retain_only",
+     "label": "只保留、不可读"
     },
     {
      "code": "unavailable",
