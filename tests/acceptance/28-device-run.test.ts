@@ -5,11 +5,11 @@ import { after, before, beforeEach, describe, test } from 'node:test';
 import { startPostgres, type TemporaryPostgres } from '../../hub/testing/postgres.ts';
 import { osIsolationAvailable } from '../../hub/rules/api.ts';
 import { createDefaultRegistry, recognize } from '../../hub/refs/api.ts';
-import { sha256Hex } from '../../hub/records/api.ts';
+import { sha256Hex, type ActionBody } from '../../hub/records/api.ts';
 import { ExecutorDefinition, type JobStatus } from '../../hub/dispatch/api.ts';
 import { definition } from '../../hub/dispatch/testing/definition.ts';
 import { startEndpoint } from '../../hub/dispatch/testing/server.ts';
-import { CONTRACT_DOC as BASE_CONTRACT, PROFILE_DOC as BASE_PROFILE, MANIFEST_DOC, goodData } from '../../packs/workflow/case-compile/functions/test-support.ts';
+import { CONTRACT_DOC as BASE_CONTRACT, PROFILE_DOC as BASE_PROFILE, MANIFEST_DOC as BASE_MANIFEST, goodData } from '../../packs/workflow/case-compile/functions/test-support.ts';
 import { signRuntime, entry } from '../../packs/workflow/case-compile/testing/runtime.ts';
 import { satisfiedRecipe } from '../../packs/workflow/case-compile/tools/generate-workbook.ts';
 import { generateWorkbook } from '../../packs/workflow/case-compile/functions/generate.ts';
@@ -27,7 +27,9 @@ import type { StartRunOutput, SubmitResultOutput } from '../../contracts/src/too
 import type { z } from 'zod';
 
 const CONTRACT_DOC = signRuntime({ ...BASE_CONTRACT, entries: [...BASE_CONTRACT.entries, entry('widget-seat', 'inspect', [{ name: 'query', kind: 'positional_only', required: true, default: null }])] });
-const PROFILE_DOC = { ...BASE_PROFILE, runtime: { ...BASE_PROFILE.runtime, contract_sha256: CONTRACT_DOC.contract_sha256 }, allowed: [...BASE_PROFILE.allowed, { object: 'widget-seat', method: 'inspect', parameters: { query: 'device_cli' }, reviewed: true }] };
+// Keep both address families in the single interface list used by declared per-device probes.
+const MANIFEST_DOC={...BASE_MANIFEST,beds:BASE_MANIFEST.beds.map(bed=>({...bed,devices:bed.devices.map(device=>({...device,interfaces:[...device.ipv4,...device.ipv6]}))}))};
+const PROFILE_DOC = { ...BASE_PROFILE, device_count:MANIFEST_DOC.beds[0].devices.length, runtime: { ...BASE_PROFILE.runtime, contract_sha256: CONTRACT_DOC.contract_sha256 }, allowed: [...BASE_PROFILE.allowed, { object: 'widget-seat', method: 'inspect', parameters: { query: 'device_cli' }, reviewed: true }] };
 const skip = await osIsolationAvailable() ? false : 'sandbox-exec absent: real isolated pack execution unavailable';
 const ids = ['990000000000000041', '990000000000000042'];
 const line = 'widget health interval pool-a 60';
@@ -42,7 +44,7 @@ let endpoint: Awaited<ReturnType<typeof startEndpoint>>;
 let executor: string;
 const itemIds = new Map<string, string>();
 let lose = false; let mismatch = false; let submissions = 0; let releases = 0;
-let latest: { key: string; digest: string; ids: string[]; submitted: string; payload: Buffer };
+let latest: { request:string; key: string; digest: string; ids: string[]; submitted: string; payload: Buffer };
 const dispatch = () => { assert.ok(bed.hub.hub.dispatch); return bed.hub.hub.dispatch; };
 const startInputs = () => ({ subject: { reference: subject }, contract: { external: 'doc:doc:runner-contract' }, profile: { external: 'doc:doc:runtime-profile' }, inventory: { external: 'doc:doc:bed-topology' } });
 async function start(args: Record<string, unknown>): Promise<z.infer<typeof StartRunOutput>> {
@@ -134,24 +136,30 @@ before(async () => {
   // The three deployment documents pass the real administrator publication boundary.
   for (const [id, value] of [['runner-contract', CONTRACT_DOC], ['runtime-profile', PROFILE_DOC], ['bed-topology', MANIFEST_DOC]] as const) await bed.hub.hub.docs.put(bed.hub.admin.principal, id, bytes(value), { fileName: `${id}.json` });
   subject = await client.upload(original, 'synthetic-cases.json');
-  endpoint = await startEndpoint(definition('x').allowed_tools, async (name, args, response) => {
+  endpoint = await startEndpoint([...definition('x').allowed_tools,'inspect_seat'], async (name, args, response) => {
     if (name === 'open_slot' || name === 'touch_slot') return { ok: true, ticket: 'synthetic-ticket', token: 'synthetic-fence', ttl: 60000 };
     if (name === 'close_slot') { releases++; return { ok: true }; }
-    if (name === 'inspect_slot') return { build: bed.site.RELEASED, seats: mismatch ? 1 : 2, reachable: true };
+    if (name === 'inspect_slot') return { build: bed.site.RELEASED, seats: mismatch ? 1 : PROFILE_DOC.device_count, reachable: true };
+    if(name==='inspect_seat'){const device=MANIFEST_DOC.beds[0].devices[Number(args.seat)];assert.ok(device);return {output:args.command==='inspect version'?`version: ${bed.site.RELEASED}`:device.interfaces.map(address=>`address: ${address}`).join('\n')};}
     if (name === 'send_blob') {
       submissions++; const payload = Buffer.from(String(args.blob), 'base64');
-      assert.ok(await bed.hub.records.store.getByKey('action', `dispatch.bytes:${sha256Hex(payload)}`), 'intent committed before submission');
-      latest = { key: `synthetic-remote-${submissions}`, digest: sha256Hex(payload), ids: args.ids as string[], submitted: new Date().toISOString(), payload };
+      const intents=await bed.hub.records.store.findMany<ActionBody>({kind:'action',key:'dispatch.bytes',values:[sha256Hex(payload)]});const intent=intents.find(row=>row.body.detail.phase==='intent'&&row.body.detail.request_id===args.request);assert.ok(intent,'matching request intent committed before submission');assert.ok(intent.body.inputs.includes(`src:${sha256Hex(payload)}`));assert.equal((await bed.hub.records.store.getByKey('action',`dispatch.bytes:${sha256Hex(payload)}:${intent.body.detail.attempt}`))?.digest,intent.digest);
+      assert.equal(typeof args.request,'string');latest = { request:String(args.request), key: `synthetic-remote-${submissions}`, digest: sha256Hex(payload), ids: args.ids as string[], submitted: new Date().toISOString(), payload };
       assert.equal(args.digest, latest.digest);
       if (lose) { response.destroy(); return {}; }
-      return { ok: true, key: latest.key, digest: latest.digest, ids: latest.ids };
+      return { request:latest.request, ok: true, key: latest.key, digest: latest.digest, ids: latest.ids };
     }
     if (name === 'inspect_blob') return { state: 'ended', exit: 0 };
     if (name === 'read_blob') return { ...latest, rows: latest.ids.map(id => ({ id, outcome: 'good' })), complete: true };
     return {};
   });
   const raw = definition(endpoint.endpoint);
-  const configured = ExecutorDefinition.parse({ ...raw, target: 'bed-a', manifest_sha256: sha256Hex(bytes(MANIFEST_DOC)), resources: MANIFEST_DOC.beds[0].devices.map(d => `bed/bed-a/${d.name}`), precheck_context: { build: bed.site.RELEASED }, proof: { ...raw.proof, package: 'case-compile', slot: 'workbook', warrant_id: `case-compile.workbook_verified@${CASE_COMPILE_PACK.version}` } });
+  const configured = ExecutorDefinition.parse({ ...raw, target:'bed-a', manifest_sha256:sha256Hex(bytes(MANIFEST_DOC)),
+    resources:MANIFEST_DOC.beds[0].devices.map(d=>`bed/bed-a/${d.name}`),precheck_context:{build:bed.site.RELEASED,product:bed.product.line},
+    allowed_tools:[...raw.allowed_tools,'inspect_seat'],refused_tools:['synthetic_admin_reset'],conditions:raw.conditions.map(condition=>condition.pointer==='/seats'?{...condition,at_least:PROFILE_DOC.device_count}:condition),
+    probes:{devices:'/beds/0/devices',command_pattern:'^inspect (?:version|interfaces)$',call:{tool:'inspect_seat',arguments:{seat:{$value:'seat_index'},command:{$value:'command'},ticket:{$value:'lease_id'}}},output:'/output',
+      seats:MANIFEST_DOC.beds[0].devices.map((device,index)=>({seat:device.name,index,manifest:{device:`/beds/0/devices/${index}`,addresses:'/interfaces',address:''},version:{command:'inspect version',pattern:'^version: (?<value>.+)$'},interfaces:{command:'inspect interfaces',pattern:'^address: (?<value>.+)$'}}))},
+    result:{...raw.result,request_id:'/request'},proof:{...raw.proof,package:'case-compile',slot:'workbook',warrant_id:`case-compile.workbook_verified@${CASE_COMPILE_PACK.version}`} });
   executor = (await dispatch().registry.add(bed.hub.admin.principal, configured, 'synthetic-dispatch-key')).id;
 });
 after(async () => { await client?.close(); await endpoint?.close(); await bed?.hub.close(); await postgres?.stop(); if (staged) await rm(staged, { recursive: true, force: true }); });
