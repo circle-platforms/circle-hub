@@ -7,14 +7,14 @@
   "description": "APV 与 NSAE 是同一个产品的两个名字：构建站同步（两族名字、每个版本线）、敏捷平台用例文档的清单、选构建规则、命令目录与命令树、手册、修复缺陷和用例索引的知识生产器",
   "files": [
     {
-      "path": "functions/adoc/README.md",
-      "sha256": "026a48b36308a4ca9d681d176ff0e7299eec6a9957604b48e7f41cb653002b9a",
-      "size": 10211
-    },
-    {
       "path": "functions/adoc/engine.ts",
       "sha256": "9621cb0b7201d24f11c97a0569455025858306ce96bee25727d9416d9fa44805",
       "size": 2957
+    },
+    {
+      "path": "functions/adoc/families.ts",
+      "sha256": "74dd6ebc425d110f3e7ffcd502fa4f5ff98f306b4300adf9ccb5ad2e67de08d4",
+      "size": 3913
     },
     {
       "path": "functions/adoc/includes.ts",
@@ -30,6 +30,11 @@
       "path": "functions/adoc/input.ts",
       "sha256": "a33f5b3199bf66427594992f4d0164662f46f494935aaabce1b9f0aa1ab7c254",
       "size": 6082
+    },
+    {
+      "path": "functions/adoc/k1-model.ts",
+      "sha256": "5bda98483341b7245244119f64a7120d4e5ead596d257a8ca8ea18d36dd7e702",
+      "size": 8930
     },
     {
       "path": "functions/adoc/origins.ts",

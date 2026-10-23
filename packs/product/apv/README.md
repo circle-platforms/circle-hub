@@ -14,6 +14,7 @@ live only here. Other packages use `api.ts` (types, named functions, and `FUNCTI
 | `functions/select.ts` | the build choice (SelectBuildInput -> SelectBuildOutput) over `select-build.ts`: the latest released build of the line across both families on the main platform, the other candidates as alternatives |
 | `functions/producers.ts` | the producers (ProducerInput -> ProducerOutput) over `command-tree.ts`, `manual.ts`, `release-notes.ts` and `fixed-bugs.ts` (the build site's fixed-bug page, html@1) || `functions/sources.ts` | the build-site external ids (`buildsite:listing:<page>`, `buildsite:file:<link>`, the same rule as the build-site system pack; a test keeps them equal) and the source roles `tree`, `fixed_bugs` |
 | `functions/documents.ts` | the version lines of documents: manual folders `rel_apv_<line>` / `rel_nsae_<line>`, version tokens in spec, product and qa names (an NSAE-named document has the same line as the APV-named one) |
+| `functions/adoc/` | the adoc producer (K4): the restricted expansion and intermediate model of step one (`index.ts` over `includes.ts`, `origins.ts`, `input.ts`, `engine.ts`, `types.ts`), the K1 mapping and the per-family runs of step two (`k1-model.ts`, `families.ts`), and the pinned third-party engine in `vendor/` (the bundle, its license, and the declarations of the API this adapter uses) |
 | `functions/locate.ts`, `ids.ts`, `commands.ts` | the agile location rule (ancestor labels -> line, train, module), the story and bug ids of titles, the command extractor (phrases whose first word is a catalog head) |
 | other `functions/*.ts` | the building blocks below (listing parser, naming, builds, sync-plan, select-build, command-tree, manual, release-notes, util, types) |
 
@@ -57,6 +58,9 @@ list and release notes `defect`; the finer form stays in
 | `cases-nodes.ts` | `caseNodes` | kityminder@1 model → the case nodes with title, labels above, tags, priority, expected count, steps, vague, autoid |
 | `cases-commands.ts` | `commandCatalog`, `textCommands`, `resolvePhrase` | xml@1 command tree → catalog; texts → the catalog paths their phrases resolve to |
 | `cases-sync.ts` | `caseTree`, `caseDocumentsFor`, `caseIndexOptions` | the read agile tree → the located documents; a build line → its `case_documents` |
+| `adoc/index.ts` | `compileAdoc` | `{ main, revision, files, attributes? }` of one manual group on one SVN revision → `{ ok: true, composition, model, report }` (the expanded intermediate model) or `{ ok: false, error }` for the whole group |
+| `adoc/k1-model.ts` | `toK1Model` | the expanded model, its composition and the family's manual name → the markdown@1-shaped model K1's `produceManualEntries` reads |
+| `adoc/families.ts` | `compileFamilies`, `familyManualName` | `{ main, revision, families, familyAttributes }` and the product's names → one expanded model, composition and report per name family, or one group failure |
 
 ## Walking the build site (brief section 8)
 
@@ -299,6 +303,155 @@ Producer `cases` (`cases.ts`, entry kind `case`; the product pack declares no ca
 - Scale: one sandboxed call of 40 documents of 60 cases against a 4,000-command tree and a 3,000-document agile tree
   took about 0.2 s here (direct call 0.13 s; 6.3 MB in, 1.3 MB out), about 15 s of producer time for a build of 3,000
   documents (75 calls).
+
+## The adoc producer (K4)
+
+`functions/adoc/index.ts` exports `compileAdoc(input)` (also the default export). Step one is the restricted expansion:
+the file table, conditions and attributes, source-line verification, the composition identity and the whole-group
+refusal. It registers no knowledge producer, changes no sync plan and does not read signatures, value domains or
+`catalog.json`. Step two maps that intermediate model onto K1's document model and runs it once per name family; the
+placement code in `manual.ts` is not changed by it.
+
+### Input and composition identity
+
+The input is `{main, revision, files, attributes?}`, where `files` maps a relative path to `{text, revision, sha256}`:
+
+- `text` is the UTF-8 original decoded, keeping NUL bytes and CRLF; a text whose NUL bytes are already gone while the
+  original digest is declared is refused, and so is a lone surrogate. `revision` is the SVN revision the whole group was
+  read at and every file must carry it (not each file's last-changed revision). The bytes of every declared file,
+  including the ones nothing includes, are digest-checked first.
+- `attributes` defaults to empty, that is "all unset" like today's markdown reading; a value is a single-line string or
+  a boolean. Whether an external attribute overrides a definition in the source follows the engine's own precedence.
+  Names are lower-cased as the engine does; a case-folded duplicate, a clock attribute, an execution-policy attribute and
+  a value that could inject a preprocessor directive are refused.
+- The composition record holds the main file, the revision, the sorted file/digest table, the declared attributes, the
+  engine version and digest, the expansion policy and the budgets; its `sha256` is the canonical-JSON digest of that
+  identity object. A real composition record still has to bind this intermediate product and the pack version when the
+  producer is wired into a production.
+
+Success returns `{ok: true, composition, model, report}`; failure returns only `{ok: false, error}`, with no applicable
+partial model and no digest, and the error names the gap and the next action. The same input gives the same JSON bytes;
+the insertion order of the file and attribute objects does not change the output, and a different attribute set changes
+the identity. `compileAdoc` is pure and never writes a knowledge root; a step-two caller must treat a failure as the
+failure of the whole group, keep the old root and never commit the remaining chapters after skipping a bad one.
+
+The budgets are fixed: 128 files, 16 MiB of originals, 8 MiB expanded, 16 include levels, 512 includes, 250000 lines,
+1024 conditional branches, 250000 engine nodes. A test may tighten them through the second argument; the production
+default entry takes no budget override from the input. The producer sandbox's own time, memory and JSON size limits still
+apply outside.
+
+### Includes, conditions and attributes
+
+Only `include::relative[]` of a file in the table is expanded, recursively and in order of appearance — never by the
+digits in a file name. An include path may be composed of the source attributes actually in effect: the engine reads the
+prefix and the adapter replays the state through the public playback API, without rewriting the engine's attribute
+rules. No paragraph separator is invented; an author who wants a paragraph or a chapter break keeps the blank line.
+
+A missing file, a URI, an absolute, parent or backslash path, any include option, an include inside a condition (even an
+unselected branch), a cycle and every budget overrun refuse the whole group. An include that is not alone on its line and
+an unsupported conditional syntax are refused too, so the engine's built-in include I/O is never reached. Files the main
+file does not include are listed in `unused_files` only and do not enter the book.
+
+The pinned engine evaluates ifdef and ifndef, including their OR/AND and single-line forms; ifeval is not supported. The
+report gives, per branch, the directive text, the source file and line, whether the branch is retained, the parent branch
+and the removed source ranges with their line counts. Nested branches are reported separately, never as one whole-book
+difference, and no paragraph is dropped quietly. To observe the engine's attribute state at the same moment, the condition
+check uses a small predicate probe with a fixed marker and counts toward the parent branch's state; the original document
+is still parsed by the main engine, so there is no second implementation of ifdef.
+
+Body attribute changes are replayed during the AST walk with the public `document.playbackAttributes(node.attributes)`;
+`raw` and `expanded` are kept apart. Any use, definition or conditional reference of docdate, doctime, docdatetime,
+docyear, localdate, localtime, localdatetime or localyear is refused, including inside an unselected branch; no engine
+clock, object identity or environment metadata is emitted.
+
+Logging uses the public LoggerManager in a serialized session that is restored at the end; the `load.logger` option, which
+would trigger a `node:async_hooks` dynamic import, is not passed. Concurrent calls in one process are serialized too. The
+third-party engine bytes and the sandbox import allowlist are unmodified.
+
+### The intermediate model and the source lines
+
+`model.expanded_text` is the include-expanded text with NUL removed and line endings normalized to LF, keeping the
+conditional directives; `line_map` keeps each line's original file and line number. `blocks` come only from the AST after
+condition evaluation and carry the engine kind, the section level, the title, the author id and role, the section path and
+`raw`/`expanded`; a table keeps its head, body and foot cells. Nothing here promotes a listing, a bold run, a title or a
+role into a command rule.
+
+Every sourcemap line number is only a candidate. The locator tries a verbatim match in a fixed neighbourhood and then
+re-reads the original file's lines independently; only a single match emits `src:<digest>/text@1/l/<a>-<b>` (`l/a` for one
+line), and the verbatim text that text@1 would return is kept with it. Source lines that are not contiguous, or lines of
+another file, become separate origins: no continuous range is invented. NUL removal and CR/LF splitting follow text@1,
+while the file digest stays over the original bytes.
+
+A block or cell that cannot be verified uniquely has no reference. `unverified_count` gives the total, `unverified` keeps
+the first 100 diagnostics and `unverified_examples_truncated` is true past that. The model keeps the empty `origins`
+explicitly: having a sourcemap is never taken for a proven position. A container with no source text of its own (a table
+container) gets no invented range either; its cells are verified one by one.
+
+Per file the report counts NUL, CRLF, LF and CR; a UTF-8 BOM is reported as 3 extra bytes and is dropped when lines are
+re-read, while the digest still covers it. A line with more equals signs than a legal heading is listed in
+`invalid_headings` and not promoted to a section; engine messages stay in the report, and an error or an unterminated
+block refuses the group.
+
+### The third-party engine
+
+- Upstream `@asciidoctor/core@4.1.1`, taken outside the repository with `npm pack --ignore-scripts`;
+  `package/build/browser/index.js` was copied byte for byte to `vendor/core.mjs`, 990496 bytes.
+- SHA-256 `5a8785bf8dc39a216170b836bb274957f079f77e5f40b33453c988f85de9203d`, equal to the digest pinned in
+  `docs/hub-r4-research/adoc-sandbox.md`.
+- `vendor/LICENSE.txt` is the LICENSE of the upstream tag v4.1.1 byte for byte, SHA-256
+  `5dc8600d56eb0cae83dcdecde260d5b5568e7a5431fb9a9cf7906d02818bac7e`, with the MIT copyright and permission notice kept
+  complete.
+- `core.d.mts` declares only the API this adapter uses. There is no npm runtime dependency, no install script, no patch
+  of the library and no new sandbox permission.
+
+### Synthetic scale
+
+2026-10-23, macOS arm64, Node v24.17.0, single concurrency, one cold sandbox process. The profile quoted is the public
+`DEFAULT_SANDBOX.producer` of `hub/knowledge/api.ts`: 120000 ms, memoryMb 1024, 128 MiB of JSON input, 64 MiB of output.
+The RSS watchdog's own 192 MiB of overhead was not raised and no configuration was changed.
+
+One group of 12 table-dense chapters, 3146572 bytes: wall clock 1041 ms, parse and extract plus one serialization of the
+result 752.8 ms, peak process RSS 647008 KiB (631.8 MiB), heap at the end 244540504 bytes, output JSON 42004120 bytes.
+The RSS was sampled after the first serialization of the result, so it is not the kernel peak of the later transfer stage;
+the transfer stays under the original watchdog. This is one round of synthetic capacity evidence, not an SLA, and it does
+not show that real adoc of any syntax or size works.
+
+The tests run with `node --test --test-concurrency=1 "packs/product/apv/functions/adoc/*.test.ts"`. A cold process gives
+the same bytes under a different Date and Math.random, and the same sandbox still refuses the network, file writes and
+child processes. Where the environment gives no OS network isolation the sandbox evidence is skipped explicitly instead of
+being weakened into a pass. Every check so far uses synthetic originals: no real manual and no knowledge root has been
+accepted.
+
+### Step two: the K1 document model, explicit signatures and the name families
+
+- `k1-model.ts` maps the expanded model to the markdown@1 shape: the `=` levels become sections (a `[discrete]` heading is
+  a block, not a section; a `=======` line is reported by step one and stays an ordinary block), blocks carry their section
+  path, and the references are text@1 `l/<a>-<b>` line selectors (a table block's reference is the first verified source
+  among its cells). K1's placement code (`produceManualEntries` in `manual.ts`) applies to the result unchanged: signatures
+  hang at /commands, table rows split, text entries hang at their section node.
+- A paragraph entry cites the RAW source line (the one step one verified verbatim), not the engine's inline HTML:
+  `**cmd** *\<param\>*` as written is K1's signature grammar. A table's rows are rebuilt from the verified line numbers
+  (the engine splits a multi-cell row into single-cell rows) and one delimiter row (`| --- | --- |`) is synthesized so the
+  markdown pipe-table reader accepts it; the synthesized delimiter is a produced line, never a source line, and the
+  fragment references point at source rows only.
+- Only an explicit structure gives a signature (task item 6): a command-table row (under a header that names commands, two
+  bold runs joined by a slash also split), every line of a `[role=signature]` block (a line without marks gains the bold
+  marks the role declares), and a bold signature paragraph that verifies verbatim. A title, ordinary bold prose and an
+  example are never a signature, and an example block is reference only (K1 records its lines as code literals and never
+  hangs a command on them).
+- A version line with an adoc source stops the transitional `catalog.json` reading:
+  `produceManualEntries(..., { adocSource: true })` refuses an `ist.manual-command-catalog` input outright and names the
+  next step; a line without an adoc source reads it as before.
+- `families.ts` (decision 35): every name family runs the expansion with its own attribute set and gets its own document
+  model. The manual name carries the family, spelled `<manual>-<family lower-cased>` (`cli-apv`, `cli-nsae`), and both
+  copies hang under the manual namespace of the same version line. An attribute-set key must be one of the `names` in
+  `product.json`, or the group is refused. A family without a configured set produces with the pack default (all unset,
+  like today's markdown) and the composition record and the sync report say "this family's attribute set is not
+  configured" with the next step (an administrator configures it, then the sync runs again) — never an unknown. Each family
+  records the attribute set it used and where that set came from (the pack default, or deployment data); the conditional
+  branches are reported per family. Any family's expansion failure fails the group and returns no partial result, so the
+  old knowledge root does not move. The real attribute names and values are deployment data: the integrator collects them
+  read-only from the source and overrides the parameter through the mechanism of apv-deployment-conventions.
 
 ## Deviations from the brief and the task
 
