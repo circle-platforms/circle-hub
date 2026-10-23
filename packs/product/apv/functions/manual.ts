@@ -253,7 +253,7 @@ function isNoise(kind: string, text: string): boolean {
   return NOISE_BLOCKS.has(kind) || text === '' || (kind === 'html_block' && /^<!--[\s\S]*?-->$/.test(text.trim()));
 }
 
-type Section = { title: string; parent: number | null; selector: string | null };
+type Section = { title: string; parent: number | null; selector: string | null; path: string[] | null };
 type Block = { kind: string; section: number; text: string; selector: string };
 
 const MANUAL_NS = 'manual';
@@ -614,9 +614,12 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
   const name = typeof options.name === 'string' && options.name !== '' ? options.name : DEFAULT_MANUAL_NAME;
   const catalog = options.catalog ?? null;
   const sections: Section[] = asArray(model.sections).map((value) => {
-    if (!isRecord(value)) return { title: '', parent: null, selector: null };
+    if (!isRecord(value)) return { title: '', parent: null, selector: null, path: null };
     const parent = Number.isInteger(value.parent) ? (value.parent as number) : null;
-    return { title: asString(value.title) ?? '', parent, selector: asString(value.selector) };
+    // A model whose sections are not cited by h/ selectors (an adoc model with text@1 l/<a>-<b> ranges) can carry
+    // its own decoded path array; the h/ decoding stays the markdown@1 fallback (c3 item 7, K4).
+    const path = Array.isArray(value.path) && value.path.every((part) => typeof part === 'string') ? (value.path as string[]) : null;
+    return { title: asString(value.title) ?? '', parent, selector: asString(value.selector), path };
   });
   // The title chain of every section (top first), for the readable `section` of an entry's data.
   const titleChains: string[][] = sections.map((_, index) => {
@@ -639,6 +642,8 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
   /** Decoded segments of a section's heading path (the block.path spelling), null when the section cannot be cited. */
   const sectionSegments = (index: number): string[] | null => {
     if (index === 0) return [];
+    const own = sections[index]?.path;
+    if (own !== null && own !== undefined) return own;
     const selector = sections[index]?.selector;
     if (typeof selector !== 'string' || !selector.startsWith('h/')) return null;
     try {

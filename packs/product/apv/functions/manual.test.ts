@@ -937,6 +937,31 @@ describe('applicability from explicit conditions', () => {
 
 
 
+
+  it('a model whose sections carry their own path arrays hangs anchors under those paths (closure c3 item 7)', () => {
+    const tree = commandCatalog(xml('<commands><scope type="global"><menu name="demo"><menu name="pool"><item name="add" help_string="a"><arguments></arguments></item></menu><item name="probe" help_string="p"><arguments></arguments></item></menu></scope></commands>')).catalog;
+    // Sections cited by text@1 line ranges carry path arrays: an anchor whose command exists still places by the
+    // tree, and a missing command hangs at the model's own section path (not at the manual root, not by decoding h/).
+    const blocks = [
+      { kind: 'paragraph', section: 1, text: '**demo probe** *\\<name\\>*', selector: 'l/0-1' },
+      { kind: 'paragraph', section: 1, text: '探测说明。', selector: 'l/2-3' },
+    ];
+    const model = { sections: [{ title: '手册', parent: null, selector: 'l/0-99', path: [] }, { title: '配置命令', parent: 0, selector: 'l/0-99', path: ['配置命令'] }], blocks };
+    const result = produceManualEntries(model, null, { catalog: tree, fragmentParser: 'text@1' });
+    const anchor = result.entries.find((entry) => entry.kind === 'definition');
+    assert.ok(anchor !== undefined, JSON.stringify(result.entries.map((e) => [e.kind, String(e.statement)])));
+    assert.equal(anchor.path, '/commands/demo/probe');
+    const text = result.entries.find((entry) => entry.data.form === 'text');
+    assert.ok(text !== undefined);
+    assert.equal(text.path, '/commands/demo/probe');
+    // A missing command hangs at the model's section path, and the fragments carry the model's parser key.
+    const missing = produceManualEntries({ sections: model.sections, blocks: [{ kind: 'paragraph', section: 1, text: '**demo gone** *\\<x\\>*', selector: 'l/0-1' }] }, null, { catalog: tree, fragmentParser: 'text@1' });
+    const missingAnchor = missing.entries.find((entry) => entry.kind === 'definition');
+    assert.ok(missingAnchor !== undefined);
+    assert.equal(missingAnchor.path, '/manual/manual/配置命令');
+    assert.ok((missingAnchor.fragments ?? []).every((fragment) => fragment.parser === 'text@1'));
+  });
+
   it('reads a condition followed by a comma remark or a quiet tail, and bounds negation checks at the sub-clause (closure c3 item 4)', () => {
     const positives = [
       '适用于 hg-k 平台，用于配置成员。',

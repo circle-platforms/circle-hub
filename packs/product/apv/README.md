@@ -350,9 +350,11 @@ Producer `cases` (`cases.ts`, entry kind `case`; the product pack declares no ca
   backticks, `*\<param\>*`), the pipe-table row split, the `h/` selector decoding and the block kinds are Markdown's;
   only the section placement reads the neutral block path. The task asks for dependence on a document model with
   section paths alone, and that is what the options give: `fragmentParser` names the input model's parser key and
-  `sectionSelector` renders a section path as that model's selector (defaults: markdown@1 and h/). The adoc producer
-  passes its own pair, so K4's placement reuse needs no change here; only the markdown@1 h/ decoding stays the
-  default inside this producer.
+  `sectionSelector` renders a section path as that model's selector (defaults: markdown@1 and h/). A model whose
+  sections are cited another way (text@1 l/<a>-<b> line ranges) can instead carry its own decoded `path` array per
+  section: the producer uses it as-is and never decodes h/ then. `sectionSelector` cannot turn a section path into a
+  line range — an adoc model supplies either its own `path` arrays or selectors it can build from a path. The adoc
+  producer needs no change here for placement; only the markdown@1 h/ decoding stays the default.
 - Release notes were not sampled: the structure is the one described in the task, so the heading and column patterns may
   need additions once real notes are read.
 - Platform tokens of build names (`HG-K`) and of page names (`hg_k`, `ft_kylinv10`) are kept as written; they are not
