@@ -241,13 +241,45 @@ test('command-table rows are signatures under a header that names commands; valu
   assert.ok(enableRow !== undefined && enableRow.path === '/commands/demo/pool/state', 'the value rows stay with their command');
 });
 
-test('a source problem is reported, never guessed: a signature block that does not verify cites nothing', async () => {
-  const out = await compile({ 'book.adoc': '= Book\n\n== 命令\n\n[role=signature]\n----\ndemo one\n----\n' });
-  // A one-word unmarked line in a role=signature block: K1's isRowSignature keeps it (params absent, one word) only
-  // under a command header; in a signature block the role itself is the explicit structure, so the entry exists.
-  const result = produceManualEntries(modelOf(out), null, { name: 'cli' });
-  const signature = result.entries.find((entry) => entry.data.form === 'signature' && String(entry.statement).startsWith('demo one'));
-  assert.ok(signature !== undefined, JSON.stringify(result.entries.map((e) => [e.data.form, String(e.statement).slice(0, 20)])));
+test('a signature block that verifies on no source line is reported and cites nothing', async () => {
+  const out = await compile({
+    'book.adoc': [
+      '= Book',                    // 1
+      '',                          // 2
+      '== 命令',                    // 3
+      '',                          // 4
+      '说明如下。',                  // 5
+      'demo pool add <name>',      // 6
+      '[role=signature]',          // 7
+      '----',                      // 8
+      'demo pool add <name>',      // 9
+      '----',                      // 10
+      '',                          // 11
+    ].join('\n'),
+  });
+  // The text the block holds stands on two lines inside the locator's neighbourhood and at neither of them the engine's
+  // own cursor, so no line is proven for it: the block keeps empty origins and says why.
+  const listing = out.model.blocks.find((block) => block.kind === 'listing');
+  assert.ok(listing !== undefined);
+  assert.deepEqual(listing.origins, []);
+  assert.match(listing.unverifiedReason, /候选行不唯一/);
+  const mapped = toK1Model(out.model, out.composition, 'cli');
+  assert.deepEqual(mapped.unparsed, [], 'a line that is not cited is never read as a signature');
+  assert.deepEqual(
+    mapped.uncited.map((one) => ({ kind: one.kind, file: one.file, line: one.line, reason: /候选行不唯一/.test(one.reason), next_action: one.next_action !== '' })),
+    [{ kind: 'listing', file: 'book.adoc', line: 8, reason: true, next_action: true }],
+    JSON.stringify(mapped.uncited),
+  );
+  const produced = produceAdocEntries(mapped, { name: 'cli', slot: 'manual' });
+  assert.ok(produced.ok, JSON.stringify(produced));
+  assert.deepEqual(produced.entries.filter((entry) => entry.data.form === 'signature'), [], 'no signature is invented for an uncited block');
+  // The paragraph that holds the same words is cited on its own lines, and K1 counts no malformed block.
+  const prose = produced.entries.find((entry) => String(entry.statement).includes('demo pool add'));
+  assert.ok(prose !== undefined, JSON.stringify(produced.entries.map((entry) => entry.statement)));
+  assert.equal(prose.data.form, 'text');
+  assert.equal(prose.fragments[0]!.selector, 'l/5-6');
+  assert.deepEqual(produced.warnings.filter((warning) => /个块格式不对，已跳过/.test(warning)), [], 'K1 skips nothing: it was handed no block without a citation');
+  assert.ok(produced.warnings.some((warning) => warning.includes('回核不到原文行') && warning.includes('book.adoc:8')), produced.warnings.join('；'));
 });
 
 test('with an adoc source, the transitional catalog reading is off: a catalog input is refused, not read', () => {

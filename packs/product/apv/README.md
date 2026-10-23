@@ -672,6 +672,11 @@ pack and reviews a mind map against the root it produced.
 
 ## Needs from other packages
 
+- **integrator (adoc)**: the adoc producer is not wired into `product.json` yet (no slot for a group of chapter files, and
+  decision 35's `attributes.<family>` parameter keys wait for apv-deployment-conventions step one), so two checks stop at
+  this package: that a family's failure leaves the old knowledge root where it is, asserted here only as "no partial
+  result is returned", needs a knowledge sync to be seen on a root; and "this family's attribute set is not configured"
+  can only be written from `param_sources`, which this producer must not guess. Both are follow-ups for the wiring step.
 - **contracts**: a parameter type for "IPv4 or IPv6 address" and one for "dotted mask or prefix length" (or a union of types
   in `CatalogParam`) would replace the overload expansion.
 - **knowledge**: the Hub calls no model (decision 15): `path: null` entries and `unplaced` spans stay unplaced at the

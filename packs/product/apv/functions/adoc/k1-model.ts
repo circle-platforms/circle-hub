@@ -470,7 +470,7 @@ export function toK1Model(model: ExpandedModel, composition: Composition, manual
       const lines = block.raw.split('\n');
       const cites = lineCitations(block, digestOf, lines.length);
       if (cites === null) {
-        uncited.push(uncitedOf(model, block, 'signature 块的行与已核对的原文行对不上，不能逐行发引用'));
+        uncited.push(uncitedOf(model, block, block.origins.length === 0 ? '' : 'signature 块的行与已核对的原文行对不上，不能逐行发引用'));
         continue;
       }
       const expanded = block.expanded.split('\n');

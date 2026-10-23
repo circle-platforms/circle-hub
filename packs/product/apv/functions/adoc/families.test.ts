@@ -115,13 +115,27 @@ test('an explicit empty set is a declared set, and a synthetic set is not called
   assert.notEqual(apv.composition.sha256, nsae.composition.sha256, 'a different attribute set is a different identity');
 });
 
-test('one family failing fails the whole group: no partial result', async () => {
+test('one family failing fails the whole group: a typed reason, no partial result, the old root stays', async () => {
+  // Only NSAE fails: a clock attribute in its own set. APV's expansion would succeed, and nothing of it is returned.
+  const out = await compileFamilies(inputOf(filesOf('共用正文。'), { APV: { 'brand-apv': true }, NSAE: { docdate: '2026-10-24' } }), ['APV', 'NSAE']);
+  assert.equal(out.ok, false, JSON.stringify(out));
+  if (out.ok) return;
+  assert.equal(out.error.code, 'apv.adoc.clock_attribute', 'the refusal is decided by its code, not by reading a message');
+  assert.ok(out.error.message.includes('NSAE'), `the failing family is named: ${out.error.message}`);
+  assert.equal('families' in out, false, 'no family result at all, so nothing partial can be applied');
+  assert.match(out.error.next_action, /旧知识根/);
+});
+
+test('a group every family fails on is refused the same way, by the code of the failure', async () => {
   const files: Record<string, string> = filesOf('共用正文。');
   files['broken.adoc'] = '== Broken\n\ninclude::missing.adoc[]\n';
   const out = await compileFamilies({ ...inputOf(files, { APV: {}, NSAE: {} }), main: 'broken.adoc' }, ['APV', 'NSAE']);
-  if (out.ok) { assert.fail('the group must fail'); return; }
-  assert.ok(out.error.message.includes('旧知识根') || out.error.next_action.includes('旧知识根'), JSON.stringify(out));
-  assert.ok(true, 'no partial family result is returned');
+  assert.equal(out.ok, false, JSON.stringify(out));
+  if (out.ok) return;
+  assert.equal(out.error.code, 'apv.adoc.include_missing');
+  assert.ok(out.error.message.includes('APV'), 'the first family that failed is named');
+  assert.equal('families' in out, false);
+  assert.match(out.error.next_action, /旧知识根/);
 });
 
 test('an attribute reference reaches each family\'s statement with that family\'s own value, and the fragment stays on the source line', async () => {
