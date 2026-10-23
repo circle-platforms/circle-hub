@@ -57,4 +57,9 @@
    - 技能自带的钩子：它回 ask，结果就是 ask；它失败、超时、输出不是 JSON，结果是 deny；没有 hooks.json，结果是 allow。
    - 合成一份 jev 那样的 `hooks.json`（带 `--send` 就回 ask）：没载入技能，也得到 ask。
 
+## 集成者答复（2026-10-24 凌晨）
+
+- **03:57，给 codex-e 的待通知排期**：trunk-fixes 和 jev-skill 都合入 hub-redesign 后，授权把 hub-redesign 合进本分支；合入条件与开始时机由集成者通知，不把这条待通知记录当成已经完成合并。
+- 核对扫描覆盖全部目标脚本。Jev 的 `lib/local.ts` 中 `rename(temp, file)` 已由集成者按调用点复核，按该调用点摘要登记；不是把 rename 整类操作或任意改写放行，也不授权修改 Jev 业务代码。
+
 完成后在终端里回报：提交号、测试数量、没做完或拿不准的地方。真实主目录由集成者建。
