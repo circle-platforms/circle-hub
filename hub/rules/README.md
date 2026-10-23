@@ -318,3 +318,7 @@ fatal to the physical batch even when caught. Per-item and aggregate JSON budget
 The engine falls back to original individual calls for aggregate failure and never falls back after stopping. The trusted
 functionRunner binding only replaces parent execution; every runCheck output still receives the same schema/namespace/tier
 validation. Neither callback nor batch mode is supplied by pack JSON or an MCP client. No module process survives an eval.
+
+Timeout retry scope: only engine checks and subject builders opt in, only wall-clock timeouts and at most once.
+CPU-limit failures and other callers (knowledge, connectors and projections) keep a single timeout attempt; their own
+split/timeout policies apply. Startup failures keep the bounded backoff. Declared maximum-limit escalation awaits the model.

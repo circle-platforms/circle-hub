@@ -197,6 +197,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
   const retryAttempts: Array<Record<string, unknown>> = [];
   const sandboxFor = (operation: string, module?: string, item?: string, extra: Record<string, unknown> = {}): SandboxOptions => ({
     ...ctx.deps.sandbox,
+    retryWallTimeout: true,
     onAttempt: attempt => {
       if (attempt.retry || attempt.attempt > 1) retryAttempts.push({ operation, ...extra,
         ...(module !== undefined ? { module } : {}), ...(item !== undefined ? { item } : {}), ...attempt });

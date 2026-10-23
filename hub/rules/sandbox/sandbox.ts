@@ -39,6 +39,8 @@ export interface SandboxLimits {
 }
 
 export interface SandboxOptions {
+  /** Engine checks/subjects only: retry a wall-clock timeout once under the same cap. */
+  retryWallTimeout?: boolean;
   /**
    * Default true: refuse to run (SANDBOX_UNAVAILABLE) where sandbox-exec cannot deny the network, because Node 24's permission
    * model does not. Only synthetic test environments without it may pass false; the result then reports osIsolation false.
@@ -277,7 +279,7 @@ async function executePack(
       if (epoch !== stopEpoch) throw new SandboxError('SANDBOX_UNAVAILABLE', { reason: 'stopping' });
       return runChild(pack, inputText, lim, os, batch);
     });
-  }, lim.timeoutMs, options.onAttempt);
+  }, lim.timeoutMs, options.onAttempt, options);
 }
 
 function runChild(pack: PreparedPack, inputText: string, lim: SandboxLimits, os: boolean, batch: boolean): Promise<SandboxResult> {

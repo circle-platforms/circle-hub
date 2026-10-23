@@ -36,7 +36,7 @@ for (const operation of ['check', 'subject']) test(`recovered ${operation} attem
     const started = await h.service.startRun(h.alice, { pack: 'toy-review', product: 'Meadow', version: '10.6.1', build: 'Rel_MEADOW_10_6_1_7', inputs: { map: { reference: source } } }, h.call());
     assert.ok(started.run, JSON.stringify(started.errors)); const run = started.run;
     childProcess.spawn = ((...args: Parameters<typeof spawn>) => {
-      if (args[1]?.some(arg => String(arg).endsWith('/bootstrap.ts')) && failures++ === 0) throw new SandboxError('SANDBOX_TIMEOUT');
+      if (args[1]?.some(arg => String(arg).endsWith('/bootstrap.ts')) && failures++ === 0) throw new SandboxError('SANDBOX_TIMEOUT', { limit: 'time' });
       return spawn(...args);
     }) as typeof spawn;
     syncBuiltinESMExports();
