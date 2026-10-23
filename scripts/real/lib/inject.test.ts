@@ -272,3 +272,14 @@ test('closure refusal reasons are fixed at throw sites even when private values 
  ];
  for(const c of checks) assert.throws(()=>inject(source,[{label:'synthetic',seen_by:c.seen_by ?? 'judgment',op:c.op}],{manual:c.manual}),e=>e instanceof Error && 'reason' in e && e.reason===c.reason && e.message===`计划第 1 条（${c.op.kind}）：${c.line}`);
 });
+
+test('closure refusal records are new private files and safe refusals keep their actionable text', async t => {
+ const {recordRefusal,refusalSummary}=await import('./inject.ts');const {score}=await import('./score.ts');
+ const {mkdtempSync,readFileSync,rmSync,statSync}=await import('node:fs');const {tmpdir}=await import('node:os');const {join}=await import('node:path');
+ const out=mkdtempSync(join(tmpdir(),'refusal-records-'));t.after(()=>rmSync(out,{recursive:true,force:true}));
+ const first=recordRefusal(out,new Error('first private detail'));const second=recordRefusal(out,new Error('second private detail'));
+ assert.ok(first && second && first!==second);
+ assert.match(readFileSync(join(out,first),'utf8'),/first private detail/);assert.match(readFileSync(join(out,second),'utf8'),/second private detail/);
+ assert.equal(statSync(join(out,second)).mode & 0o777,0o600);
+ try{score([{node:'synthetic'} as any],{partitions:{delivered:[]}});assert.fail('must refuse');}catch(e){assert.match(refusalSummary(e),/第 1 条.*重新注入/);}
+});

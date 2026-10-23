@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -14,6 +14,8 @@ test('review 8: CLI refusals hide plan values and save full diagnostics privatel
   assert.equal(run.status, 1);
   for (const value of ['private-case-id', 'private-label', 'private-manual-quote', 'private-title']) assert.ok(!(run.stdout + run.stderr).includes(value));
   assert.match(run.stderr, /计划第 1 条/);
-  assert.ok(readFileSync(join(out, 'refusal.txt'), 'utf8').includes('private-manual-quote'));
-  assert.equal(statSync(join(out, 'refusal.txt')).mode & 0o777, 0o600);
+  const files=readdirSync(out).filter(name=>name.startsWith('refusal-') && name.endsWith('.txt'));
+  assert.equal(files.length,1);assert.ok(run.stderr.includes(files[0]));
+  assert.ok(readFileSync(join(out,files[0]),'utf8').includes('private-manual-quote'));
+  assert.equal(statSync(join(out,files[0])).mode & 0o777,0o600);
 });

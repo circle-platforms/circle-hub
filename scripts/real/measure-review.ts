@@ -321,8 +321,8 @@ function main(): number {
     );
     return code;
   } catch (error) {
-    recordRefusal(out, error);
-    console.error('拒绝：' + refusalSummary(error));
+    const diagnostic = recordRefusal(out, error);
+    console.error('拒绝：' + refusalSummary(error) + (diagnostic ? '；私有诊断 ' + diagnostic : '；私有诊断未保存，改用 Git 外可写目录后重跑'));
     return 1;
   }
 }

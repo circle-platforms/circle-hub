@@ -1,3 +1,4 @@
+import { PublicRefusal } from './inject.ts';
 // Scores the review of a copy with injected defects against the gold written down at injection time (brief section
 // 6b, review; task gold-review step 3). The Hub's own marks (a refuted fact claim of the literal and catalog
 // requirements on an attributed static layer) and the model's findings (judgment claims of the findings requirement)
@@ -172,7 +173,7 @@ export interface ScoreOptions {
 export function score(gold: readonly GoldEntry[], result: ResultLike, options: ScoreOptions = {}): Score {
   for (const [index, entry] of gold.entries()) {
     if (typeof (entry as { kind?: unknown }).kind !== 'string') {
-      throw new Error(`标准答案第 ${index + 1} 条没有 kind：用现在的 inject-defects.ts 重新注入`);
+      throw new PublicRefusal('gold_kind_missing', index + 1);
     }
   }
   const seen = seenOn(result);

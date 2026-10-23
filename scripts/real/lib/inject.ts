@@ -1,10 +1,25 @@
 // Injects known defects into a copy of a KityMinder export and writes down what was injected, so that the review of the copy
 // can be scored against an answer that is independent of the Hub (brief section 6b, review). The source is never changed; the
 // copy and the gold hold real content and belong outside Git.
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, realpathSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { VAGUE_EXPECTED, caseGold, caseNodesOf, foldKey, parseMindMap } from '../gold/cases.ts';
+
+export const PUBLIC_REFUSALS = {
+  gold_kind_missing:'标准答案没有 kind：用现在的 inject-defects.ts 重新注入',
+  keep_invalid:'--keep 必须为正整数',
+  session_shape:'会话 JSON 要有字符串 args 数组和 prompt，从会话文件修正后重跑',
+  session_reserved:'会话 args 含驱动保留标志，从会话文件删除后重跑',
+} as const;
+export type PublicRefusalReason = keyof typeof PUBLIC_REFUSALS;
+export class PublicRefusal extends Error {
+  readonly reason: PublicRefusalReason;
+  constructor(reason: PublicRefusalReason, index?: number) {
+    super(reason === 'gold_kind_missing' ? `标准答案第 ${index ?? 1} 条没有 kind：用现在的 inject-defects.ts 重新注入` : PUBLIC_REFUSALS[reason]);
+    this.reason = reason; this.name = 'PublicRefusal';
+  }
+}
 
 const INJECTION_REASONS = {
   node_not_found:'目标节点不存在', root_change:'根节点不能执行此操作', group_not_group:'目标是用例，不是分组',
@@ -92,7 +107,7 @@ const clone = <T>(value: T): T => structuredClone(value);
 
 /** The document up to and including the n-th case: everything after it is cut, groups that start before it stay. */
 export function firstCases(tree: MindTree, n: number, options: { caseRule?: 'marked' | 'tagged' } = {}): MindTree {
-  if (!Number.isSafeInteger(n) || n < 1) throw new Error('--keep 必须为正整数');
+  if (!Number.isSafeInteger(n) || n < 1) throw new PublicRefusal('keep_invalid');
   const copy = clone(tree), parsed = parseMindMap(copy), cases = caseNodesOf(parsed, options);
   if (cases.length <= n) return copy;
   const selected = new Set(cases.slice(0, n).map(node => node.index)), caseIndices = new Set(cases.map(node => node.index));
@@ -324,8 +339,8 @@ export class InjectionRefusal extends Error {
     this.detail = detail;
   }
 }
-export function refusalSummary(error: unknown): string { return error instanceof InjectionRefusal ? error.message : '输入或计分条件不满足；请按私有诊断补齐输入后重跑'; }
-export function recordRefusal(out: string | undefined, error: unknown): void {
+export function refusalSummary(error: unknown): string { return error instanceof InjectionRefusal || error instanceof PublicRefusal ? error.message : '输入或计分条件不满足；请按私有诊断补齐输入后重跑'; }
+export function recordRefusal(out: string | undefined, error: unknown): string | undefined {
   if (!out) return;
   const path = resolve(out);
   const check = (start: string) => { for (let at = start; ; at = dirname(at)) { if (existsSync(join(at, '.git'))) throw new Error('拒绝写入 Git'); if (dirname(at) === at) break; } };
@@ -333,6 +348,8 @@ export function recordRefusal(out: string | undefined, error: unknown): void {
     check(path); let parent = path; while (!existsSync(parent)) parent = dirname(parent);
     check(resolve(realpathSync(parent), relative(parent, path)));
     mkdirSync(path, { recursive: true, mode: 0o700 });
-    writeFileSync(join(path, 'refusal.txt'), error instanceof InjectionRefusal ? error.detail : error instanceof Error ? error.stack ?? error.message : String(error), { flag: 'wx', mode: 0o600 });
+    const name = 'refusal-' + new Date().toISOString().replace(/[:.]/g,'-') + '-' + process.pid + '-' + randomUUID() + '.txt';
+    writeFileSync(join(path, name), error instanceof InjectionRefusal ? error.detail : error instanceof Error ? error.stack ?? error.message : String(error), { flag: 'wx', mode: 0o600 });
+    return name;
   } catch { /* Never expose the original error when its private record cannot be written. */ }
 }
