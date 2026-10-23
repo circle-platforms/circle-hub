@@ -98,3 +98,11 @@ test('the represented actor header comes only from deployment data and invalid a
   await assert.rejects(async () => new RpcClient(d, 'synthetic-secret', 'invalid actor', async () => 'src:' + 'a'.repeat(64)).connect());
   assert.equal(server.calls.length, count);
 });
+
+test('forbidden capabilities stop at tools listing before any lifecycle tool call',async t=>{
+  const server=await startEndpoint([...definition('x').allowed_tools,'synthetic_admin_reset'],()=>({ok:true}));t.after(()=>server.close());
+  const d=ExecutorDefinition.parse({...definition(server.endpoint),refused_tools:['synthetic_admin_reset']});
+  const client=new RpcClient(d,'synthetic-secret','synthetic-job',async()=> 'src:'+'a'.repeat(64));
+  await assert.rejects(client.connect(),/密钥权限超出运行权限/);
+  assert.equal(server.calls.filter(c=>c.method==='tools/call').length,0);
+});

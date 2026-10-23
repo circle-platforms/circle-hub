@@ -53,7 +53,10 @@ export class RpcClient {
     do {
       const page = await this.rpc('tools/list', cursor ? { cursor } : {});
       if (!Array.isArray(page.value.tools)) throw new Error('目标工具清单无效');
-      for (const tool of page.value.tools) if (object(tool) && typeof tool.name === 'string') seen.add(tool.name);
+      for (const tool of page.value.tools) if (object(tool) && typeof tool.name === 'string') {
+        if (this.definition.refused_tools.includes(tool.name)) throw new Error('密钥权限超出运行权限；换成仅运行权限的密钥后重跑，未调用任何工具');
+        seen.add(tool.name);
+      }
       const next = page.value.nextCursor;
       if (next !== undefined && (typeof next !== 'string' || visited.has(next) || visited.size >= 100)) throw new Error('目标工具清单分页无效');
       cursor = typeof next === 'string' ? next : undefined; if (cursor) visited.add(cursor);
