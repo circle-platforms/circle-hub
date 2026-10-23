@@ -189,3 +189,20 @@ test('var set cannot change a binding selected through an older stored source re
  await assert.rejects(variableCommand(f.session,['set','DEMO_BIND','--file','bind.json','--reason','DEMO_CHANGE']),/绑定|引用/);
  assert.equal(await f.kit.variables.valueAt('DEMO_BIND',(await f.kit.variables.snapshot()).get('DEMO_BIND')!),'build');
 });
+
+test('product publication names hide secret and deployment collisions behind one boolean',async t=>{
+ const f=await setup(t);
+ const {productVariableNameAvailable}=await import('./variables.ts');
+ const check=(name:string)=>f.kit.store.withTransaction(async tx=>{
+   await f.kit.variables.lockNames([name],tx);
+   return productVariableNameAvailable(f.kit,name,tx);
+ });
+ assert.equal(await check('DEMO_FREE'),true);
+ await f.kit.variables.setSecrets(f.admin,[{name:'DEMO_PRIVATE',value:f.value,digest_rule:'plain',consumers:[{definition:(await f.definition('DEMO_PRIVATE')).id,item:'password',sends_to:'b'.repeat(64)}]}],'合成密钥');
+ assert.equal(await check('DEMO_PRIVATE'),false);
+ const definition=await f.definition();
+ (definition.body as any).settings={choice:'${var:DEMO_CHOICE}'};
+ const object=await f.kit.objects.put(canonicalBytes(definition.body),'application/json');
+ await f.kit.authorizations.configureResource(f.admin,definition.id,object.sha256,'合成设置');
+ assert.equal(await check('DEMO_CHOICE'),false);
+});

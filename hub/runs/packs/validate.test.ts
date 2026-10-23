@@ -467,3 +467,29 @@ test('publication refuses reject by reason even when an artifact blocking check 
   const pack=checks(file=>{file.checks[0].judges='artifact_under_verification';});
   await refused(editJson<Json>(pack,'requirements.json',file=>{file.requirements[0].error_handling=[{reason:'check_error',action:'reject'}];}),'requirements.shape',{field:'/requirements/0/error_handling/0/action'});
 });
+
+
+test('product variable declarations accept a referenced synthetic default and reject invalid contracts', async () => {
+  const declared = () => editJson<Json>(productPack(), 'product.json', p => {
+    p.variables = [{name:'DEMO_OPTIONS',description:'Synthetic options',schema:{type:'array',items:{type:'string'}},default:[]}];
+    p.producers[0].params = {options:'${var:DEMO_OPTIONS}'};
+  });
+  await accepted(declared());
+  for (const edit of [
+    (p:Json) => { delete p.variables[0].default; },
+    (p:Json) => { p.variables[0].default = 1; },
+    (p:Json) => { p.variables[0].schema = {type:'string',pattern:'.*'}; p.variables[0].default='demo'; },
+    (p:Json) => { p.variables.push(p.variables[0]); },
+    (p:Json) => { p.variables[0].name='DEMO_PASSWORD'; },
+    (p:Json) => { delete p.producers[0].params; },
+    (p:Json) => { p.title='${var:DEMO_OPTIONS}'; },
+    (p:Json) => { p.producers[0].params.options='${var:DEMO_MISSING}'; },
+    (p:Json) => { p.producers[0].params.options='${secret:DEMO_OPTIONS}'; },
+    (p:Json) => { p.producers[0].params.options='prefix ${var:DEMO_OPTIONS}'; },
+  ]) {
+    const outcome=await validated(editJson<Json>(declared(),'product.json',edit));
+    assert.equal(outcome.ok,false);
+  }
+  await refused(withFiles(systemPack(),{'SKILL.md':'Use ${var:DEMO_OPTIONS}'}),'variables.reference');
+  await refused(withFiles(workflowPack(),{'SKILL.md':'Use ${var:DEMO_OPTIONS}'}),'variables.reference');
+});

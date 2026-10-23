@@ -266,3 +266,7 @@ test file (`hub/testing/postgres.ts`) for the registry and port tests, and run p
 发布时从 tools/ 的每个代码文件出发，复用模块扫描器核对它及其相对导入的模块：ES 模块、Node 可擦除的 TypeScript 语法、仅清单内文件及 Node 内置模块。代码文件是 `.ts`、`.mts`、`.js`、`.mjs`。`.cjs` 和 `.cts` 直接拒绝。第三方包、包外路径、CommonJS、`createRequire`、`getBuiltinModule('module')` 和无法静态核对的动态导入被拒，问题用 tools.*，带文件、行和修正动作；脚本无需导出函数。此政策允许全部 Node 内置模块，区别于 SANDBOX_IMPORT_POLICY 的纯计算限制：本地工具会在客户端读写文件，不在 Hub 沙箱中运行。`import { builtinModules } from 'node:module'` 这种具名导入仍然可以，只要不是 `createRequire`。
 
 下发保留作者发布的原字节，不改写文件、不重新打包。它不是 MCP 工具，Circle 中没有专用界面；客户端工具的结果只作“客户端预览”，算数的是 Hub 在沙箱中的重新核验。没有 tools/ 的包继续使用原有发布规则。
+
+产品包可在 `product@1.variables` 声明普通变量。默认值必须合模式，只用于合成发布样例与试运行；发布时不读取部署值。引用只能占满 `sync.options` 或生产器 `params` 中的一个值，其他文件与其他包种类不接受引用。模式复用运行参数的 `packSchema`，不能执行的模式拒绝。默认值是否属于合成业务数据由发布者负责，Hub 的凭据扫描照常执行，不能机械证明数据的业务来源。
+
+变量名字归首个已提交发布决定的包永久所有，撤回也不释放；同包各版模式规范 JSON 必须相同，默认值可变。跨进程产品发布在数据库事务内串行，依次锁定排序后的名字，在同一事务核对历史发布、密钥和部署引用并写发布决定。`variableNameAvailable(name, tx)` 是装配注入的只读端口，缺失时声明变量的发布拒绝；冲突不披露类型，统一“名字不可用”。

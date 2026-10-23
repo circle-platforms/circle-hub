@@ -57,9 +57,9 @@ export async function configurationRows(kit: RecordsKit, tx?: Transaction): Prom
     } while (cursor);
     return new Map([...latest].filter(([, row]) => !row.body.revoked));
 }
-export async function deploymentDefinitions(kit: RecordsKit): Promise<DeploymentDefinition[]> {
+export async function deploymentDefinitions(kit: RecordsKit, tx?: Transaction): Promise<DeploymentDefinition[]> {
     const out = [];
-    for (const [key, row] of await configurationRows(kit)) {
+    for (const [key, row] of await configurationRows(kit, tx)) {
         if (!row.body.bound)
             continue;
         const bytes = await kit.objects.get(row.body.bound);
@@ -645,3 +645,10 @@ function validateSecretInput(input: SecretWrite) {
     }
 }
 import { validateSecret } from '../../contracts/src/variables.ts';
+
+/** Never reveals whether a collision is a secret or a deployment consumer. Called with the name locked. */
+export async function productVariableNameAvailable(kit: RecordsKit, name: string, tx: Transaction): Promise<boolean> {
+ const secret=await kit.store.find({kind:'authorization',key:'authz.key',value:`resource_config|${WHOLE_HUB}|secret:${name}`,limit:1},tx);
+ if(secret.items.length)return false;
+ return !(await deploymentDefinitions(kit,tx)).some(d=>d.references.some(r=>r.name===name));
+}

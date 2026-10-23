@@ -378,3 +378,31 @@ test('a version is extracted read-only once published, and a second registry ove
   await assert.rejects(bed.registry.extractPack('f'.repeat(64)), ConflictError);
   await assert.rejects(bed.registry.extractPack('../../etc'), ConflictError);
 });
+
+test('published variable names belong permanently to one pack and keep their schema', async t => {
+  const bed=await testbed(t);
+  const registry=bed.second({variableNameAvailable:async()=>true});
+  const source=(id:string,version:string, schema:unknown={type:'array',items:{type:'string'}}, fallback:unknown=[])=>editJson<Json>(productPack({id,version}),'product.json',p=>{
+    p.variables=[{name:'DEMO_OPTIONS',description:'Synthetic options',schema,default:fallback}];
+    p.producers[0].params={options:'${var:DEMO_OPTIONS}'};
+  });
+  const publish=async(pack:ReturnType<typeof source>)=>registry.publish(bed.alice,(await bed.write(pack)).dir);
+  assert.equal((await publish(source('demo-first','1.0.0'))).ok,true);
+  const other=await publish(source('demo-second','1.0.0'));
+  assert.equal(other.ok,false); if(!other.ok)assert.equal(other.problems[0].message,'名字不可用');
+  const changed=await publish(source('demo-first','1.1.0',{type:'string'},'demo'));
+  assert.equal(changed.ok,false);
+  assert.equal((await publish(source('demo-first','1.2.0',undefined,['demo']))).ok,true);
+  await registry.retire(bed.admin,'demo-first','1.0.0');
+  await registry.retire(bed.admin,'demo-first','1.2.0');
+  assert.equal((await publish(source('demo-second','1.1.0'))).ok,false);
+});
+
+test('two registries racing for one variable name grant exactly one publication',async t=>{
+ const bed=await testbed(t);
+ const dirs=await Promise.all(['demo-left','demo-right'].map(id=>bed.write(editJson<Json>(productPack({id}),'product.json',p=>{
+   p.variables=[{name:'DEMO_RACING',description:'Synthetic',schema:{type:'integer'},default:1}];p.producers[0].params={n:'${var:DEMO_RACING}'};
+ }))));
+ const outcomes=await Promise.all(dirs.map(d=>bed.second({variableNameAvailable:async()=>true}).publish(bed.alice,d.dir)));
+ assert.equal(outcomes.filter(o=>o.ok).length,1);
+});

@@ -4,6 +4,7 @@
 // build choice; the shapes of the functions' inputs and outputs below are the contract between them and the pack authors.
 // Register every record or pack-file schema in `schemas`; contracts/src/index.ts merges them into SCHEMA_REGISTRY.
 import { z } from 'zod';
+import { VariableDeclaration, referencesIn, VariableInputError } from './variables.ts';
 import { EntryKindSchema, LINK_MATCH, LinkMatchSchema, PlacementSchema, type Placement } from '../generated/vocabulary.ts';
 import { IsoTime, Sha256, Versioned } from './common.ts';
 import { ExternalObjectId, TreePath } from './reference.ts';
@@ -288,6 +289,7 @@ export const ProductDeclaration = z
     schema: z.literal('product@1'),
     id: ProductId,
     title: z.string().min(1),
+    variables: z.array(VariableDeclaration).optional(),
     names: z.array(z.string().min(1)).min(1).describe('every name of the product; each resolves to this line'),
     sync: SyncDeclaration.optional(),
     select_build: PackFunctionRef.optional().describe('SelectBuildInput -> SelectBuildOutput; without it the newest released build of the line is chosen'),
@@ -296,6 +298,31 @@ export const ProductDeclaration = z
     producers: z.array(Producer),
   })
   .superRefine((p, ctx) => {
+    const declared = new Set<string>();
+    for (const [i, variable] of (p.variables ?? []).entries()) {
+      if (declared.has(variable.name)) ctx.addIssue({code:'custom',path:['variables',i,'name'],message:'variable name is repeated'});
+      declared.add(variable.name);
+    }
+    const checkKeys = (value:unknown):void => {
+      if(!value || typeof value!=='object')return;
+      for(const [key,child] of Object.entries(value)){
+        if(/\$\{(?:var|secret):/i.test(key))ctx.addIssue({code:'custom',path:[],message:'variable references are values, not property names'});
+        checkKeys(child);
+      }
+    };
+    checkKeys(p);
+    const used = new Set<string>();
+    try {
+      for (const ref of referencesIn(p)) {
+        const allowed = ref.at.startsWith('/sync/options/') || /^\/producers\/[0-9]+\/params\//.test(ref.at);
+        if (ref.kind !== 'var' || !allowed || !declared.has(ref.name)) ctx.addIssue({code:'custom',path:[],message:`${ref.at}: only declared ordinary variables in sync.options or producer params`});
+        used.add(ref.name);
+      }
+    } catch (error) {
+      if (!(error instanceof VariableInputError)) throw error;
+      ctx.addIssue({code:'custom',path:[],message:error.message});
+    }
+    for (const name of declared) if (!used.has(name)) ctx.addIssue({code:'custom',path:['variables'],message:`${name}: declared but not referenced`});
     const lower = new Set<string>();
     p.names.forEach((n, i) => {
       const k = n.normalize('NFC').toLowerCase();
