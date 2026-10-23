@@ -35,3 +35,14 @@ test('numeric keys disclose declared identity separately from a verified product
   assert.equal(out.artifacts[0].json.note, out.note);
   assert.deepEqual(buildsPlan({ external: { type: 'builds', key: '999999999' } }).requests, [{ key: 'builds', route: 'builds', query: { product: '999999999' } }]);
 });
+
+test('key and product failures identify the actual rule and offending row with a usable fallback', () => {
+  for (const [key, rule] of [['1234567890', /9 位/], ['Alpha+', /第 2.*为空/], ['Alpha+%ZZ', /第 2.*百分号/]]) {
+    const out = buildsProject({ external: { type: 'builds', key }, responses: {}, original: 'products' }) as any;
+    assert.equal(out.error.code, 'plm.invalid_key'); assert.match(out.error.message, rule);
+  }
+  for (const [rows, expected] of [[[{ id: 410, name: 'Alpha/Beta' }, { id: 411 }], /第 2.*411.*name/], [[{ id: '1234567890', name: 'Alpha/Beta' }], /第 1.*1.*9.*位/]] as const) {
+    const out = buildsProject(request([...rows])) as any;
+    assert.equal(out.error.code, 'plm.no_products'); assert.match(out.error.message, expected); assert.match(out.error.message, /plm:builds:/);
+  }
+});

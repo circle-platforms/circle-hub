@@ -201,28 +201,41 @@ const PRODUCT_ID = /^[0-9]{1,9}$/;
 const nameKey = (value: string): string => value.normalize('NFKC').trim().toLowerCase();
 
 /** Split before decoding: a percent-encoded plus belongs to one name. */
-function buildKey(key: string): BuildKey | null {
-  if (/^[0-9]+$/.test(key)) return PRODUCT_ID.test(key) ? { id: key } : null;
-  if (!key || key.length > 4096) return null;
-  try {
-    const names = [...new Set(key.split('+').map((part) => nameKey(decodeURIComponent(part))))];
-    return names.length && names.every((name) => name !== '' && !name.includes('/')) ? { names } : null;
-  } catch { return null; }
+function buildKey(key: string): { key: BuildKey } | { error: string } {
+  if (!key) return { error: '构建读取键为空；给出产品编号，或每族名字单独编码后用 + 连接' };
+  if (Buffer.byteLength('plm:builds:' + key) > 900) return { error: '外部对象标识超过 900 字节上限；缩短名字集合或使用 plm:builds:<产品编号>' };
+  if (/^[0-9]+$/.test(key)) return PRODUCT_ID.test(key) ? { key: { id: key } } : { error: '产品编号超过 9 位；请核对编号或按产品名字读取' };
+  const names: string[] = [];
+  for (const [index, part] of key.split('+').entries()) {
+    let name: string;
+    try { name = nameKey(decodeURIComponent(part)); }
+    catch { return { error: '第 ' + (index + 1) + ' 个名字的百分号编码无效；每族名字用 URI 编码后以 + 连接' }; }
+    if (!name) return { error: '第 ' + (index + 1) + ' 个名字为空；补齐该族名字或删除多余的 + 分隔符' };
+    if (name.includes('/')) return { error: '第 ' + (index + 1) + ' 个名字里不能有 /；每族名字单独编码后用 + 连接' };
+    if (!names.includes(name)) names.push(name);
+  }
+  return { key: { names } };
 }
 
 type ProductChoice = { product: Product | null; resolution: Resolution; candidates?: Product[] };
 /** The caller's numeric identity is explicit; names need exactly one matching product row. */
-function chooseProduct(key: BuildKey, responses: Record<string, Response>): ProductChoice | null {
+function chooseProduct(key: BuildKey, responses: Record<string, Response>): ProductChoice | { error: string } {
   if ('id' in key) return { product: { id: key.id, name: null }, resolution: 'resolved' };
   const response = responses.products;
   const data = isRecord(response?.json) ? response.json.data : undefined;
-  if (response?.ok === false || !Array.isArray(data) || data.some((item) => !isRecord(item) || typeof item.name !== 'string')) return null;
+  const fallback = '；下一步核对该行原件，或改用 plm:builds:<产品编号>';
+  if (response?.ok === false) return { error: '产品列表请求未成功；核对读取记录和访问，或改用 plm:builds:<产品编号>' };
+  if (!Array.isArray(data)) return { error: '产品列表的 data 不是数组；核对原始应答，或改用 plm:builds:<产品编号>' };
+  for (const [index, row] of data.entries()) {
+    if (!isRecord(row)) return { error: '产品列表第 ' + (index + 1) + ' 行不是对象' + fallback };
+    if (typeof row.name !== 'string') return { error: '产品列表第 ' + (index + 1) + ' 行（id=' + String(row.id ?? '未给出').slice(0, 40) + '）的 name 不是字符串' + fallback };
+  }
   const matches = data.filter((item) => isRecord(item) && typeof item.name === 'string' &&
     key.names.every((name) => (item.name as string).normalize('NFKC').split('/').map((alias) => alias.trim().toLowerCase()).includes(name)));
   const distinct = new Map<string, Product>();
   for (const row of matches) {
     const id = idText(row.id);
-    if (id === null || !PRODUCT_ID.test(id)) return null;
+    if (id === null || !PRODUCT_ID.test(id)) return { error: '匹配产品列表第 ' + (data.indexOf(row) + 1) + ' 行的 id 不是 1 到 9 位数字' + fallback };
     if (!distinct.has(id)) distinct.set(id, { id, name: row.name as string });
   }
   const candidates = [...distinct.values()];
@@ -233,24 +246,23 @@ function chooseProduct(key: BuildKey, responses: Record<string, Response>): Prod
 /** Numeric keys read one build list; name keys first resolve the product, with at most two requests. */
 export function buildsPlan(input: unknown): PlanOutput {
   const { type, key: raw, responses } = partsOf(input);
-  const key = type === 'builds' ? buildKey(raw) : null;
-  if (key === null) return { requests: [], done: true };
+  const parsed = type === 'builds' ? buildKey(raw) : { error: '读取类型不是 builds' };
+  if ('error' in parsed) return { requests: [], done: true };
+  const key = parsed.key;
   if ('names' in key && !Object.hasOwn(responses, 'products')) return { requests: [{ key: 'products', route: 'products' }], done: false };
   const choice = chooseProduct(key, responses);
-  if (!choice?.product) return { requests: [], original: 'products', done: true };
+  if ('error' in choice || !choice.product) return { requests: [], original: 'products', done: true };
   return { requests: Object.hasOwn(responses, 'builds') ? [] : [{ key: 'builds', route: 'builds', query: { product: choice.product.id } }], original: 'builds', done: true };
 }
 
 /** Build scope is deployment configuration, never a guessed field or free-text parsing. */
 export function buildsProject(input: unknown): unknown {
   const { type, key: rawKey, responses, original } = partsOf(input);
-  const key = type === 'builds' ? buildKey(rawKey) : null;
-  if (key === null) {
-    let slash = false; try { slash = rawKey.split('+').some((part) => nameKey(decodeURIComponent(part)).includes('/')); } catch { /* Other key errors are reported separately. */ }
-    return { error: { code: 'plm.invalid_key', message: slash ? '名字里不能有 /；每族名字单独编码后用 + 连接' : '构建列表标识无效：提供产品编号，或逐个 URI 编码后以 + 连接的产品名字' } };
-  }
+  const parsed = type === 'builds' ? buildKey(rawKey) : { error: '读取类型不是 builds' };
+  if ('error' in parsed) return { error: { code: 'plm.invalid_key', message: parsed.error } };
+  const key = parsed.key;
   const choice = chooseProduct(key, responses);
-  if (choice === null) return { error: { code: 'plm.no_products', message: '产品列表不能证明产品身份；重新读取产品列表并核实 id 和 name 字段' } };
+  if ('error' in choice) return { error: { code: 'plm.no_products', message: choice.error } };
   if (choice.product === null) {
     const cause = choice.resolution === 'ambiguous' ? '多个不同产品编号同时匹配请求名字' : '没有产品同时包含全部请求名字';
     const note = ('下一步：核对名字，或明确使用 plm:builds:<产品编号> 重新读取（由集成者核实编号后配置）；尚未读取构建列表。原因：' + cause).slice(0, 500);
