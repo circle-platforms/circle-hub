@@ -209,10 +209,10 @@ export async function openHub(postgres: TemporaryPostgres): Promise<Hub> {
       meta: { title: `缺陷 71010 ${SYNTHETIC_BUG_71010_UNCHECKABLE.title}`, status: 'closed' },
     });
     // Put synthetic index view
-    external.put('knowledge:index:apv:Rel_APV_10_6_1_57?kind=case&key=commands', {
-      bytes: new TextEncoder().encode(JSON.stringify(SYNTHETIC_INDEX_VIEW)),
-      mediaType: 'application/json',
-    });
+    const indexBytes = new TextEncoder().encode(JSON.stringify(SYNTHETIC_INDEX_VIEW));
+    external.put('knowledge:index:apv:Rel_APV_10_6_1_57?kind=case&key=commands', { bytes: indexBytes, mediaType: 'application/json' });
+    // The narrowed spelling the run binds (only=<commands> + the fields the check compares).
+    external.put('knowledge:index:apv:Rel_APV_10_6_1_57?kind=case&key=commands&only=show%20health%20detail&fields=commands,document,node,title,negative,expected_texts', { bytes: indexBytes, mediaType: 'application/json' });
     // Put synthetic manual
     external.put('manual:cli:10.6.1', {
       bytes: new TextEncoder().encode(MANUAL_PASSAGE),

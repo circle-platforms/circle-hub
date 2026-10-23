@@ -14,14 +14,8 @@ export function expectedSources(input: unknown): ExpectedSourcesOutput {
 
   const sources: ExpectedSource[] = [];
 
-  // Bind command/case index view if product and build are known
-  if (product && build) {
-    sources.push({
-      external: `knowledge:index:${product}:${build}?kind=case&key=commands`,
-      role: 'expected',
-      reason: '已索引的用例清单，用来核对起草的用例是否重复',
-    });
-  }
+  // The dedup index is bound by the run's own inputs (indexed_cases), narrowed with only=<commands> by the model; the
+  // automatic un-narrowed binding doubled the byte budget for nothing and is gone.
 
   // Bind CLI manual if line is known
   if (line) {

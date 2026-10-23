@@ -101,6 +101,12 @@ export const SYNTHETIC_INDEX_VIEW: IndexView = {
   total_entries: 1,
   truncated: false,
   skipped: 0,
+  notes: ['only=show health detail'],
+};
+
+/** The same view without the narrowing echo: the complete-index rule applies (old behaviour). */
+export const SYNTHETIC_INDEX_VIEW_COMPLETE: IndexView = {
+  ...SYNTHETIC_INDEX_VIEW,
   notes: [],
 };
 

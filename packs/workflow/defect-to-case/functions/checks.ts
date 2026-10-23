@@ -502,11 +502,27 @@ export function checkDuplicate(input: unknown): CheckOutcome[] {
   const outcomes: CheckOutcome[] = [];
   const buckets = compactIndex.by_commands ?? {};
 
+  // The narrowed keys (only=…), normalized the same way as the bucket keys. Null: the view is complete (no narrowing).
+  // A hand-built compact index may predate the field; undefined means un-narrowed.
+  const only = compactIndex.only ?? null;
+  const decidable = (cmds: readonly string[]): boolean => {
+    if (only === null) return true;
+    const normalized = new Set(cmds.map(normalizeCommand).filter((c) => c !== ''));
+    if (normalized.size === 0) return true;
+    return only.some((k) => normalized.has(normalizeCommand(k)));
+  };
+  const undecidable = new Set<unknown>();
+  for (const draft of drafts) {
+    const cmds = draft.steps.map((s) => s.command).filter(Boolean);
+    if (!decidable(cmds)) undecidable.add(draft);
+  }
+
   for (let i = 0; i < drafts.length; i++) {
     const draft = drafts[i];
     const draftCmds = draft.steps.map((s) => s.command).filter(Boolean);
     const draftKey = commandSetKey(draftCmds);
     if (!draftKey) continue;
+    if (undecidable.has(draft)) continue;
 
     const candidates = buckets[draftKey];
     if (!candidates || candidates.length === 0) continue;
@@ -556,7 +572,34 @@ export function checkDuplicate(input: unknown): CheckOutcome[] {
     }
   }
 
+  // A draft outside the narrowing is unknown on its own (the index does not cover its commands).
+  if (undecidable.size > 0) {
+    const sample = [...undecidable][0] as { title?: string; steps?: Array<{ command?: string }> };
+    const cmds = (sample.steps ?? []).map((s) => s.command).filter((c): c is string => typeof c === 'string').join('、');
+    outcomes.push({
+      verdict: 'unknown',
+      reason: 'missing_input',
+      statement: `起草用例“${sample.title ?? '（无标题）'}”用的命令（${cmds}）不在索引收窄的命令里，索引没有收窄到它用的命令，无法核对重复`,
+      grounds: [],
+      tier: 'advisory',
+      ...own,
+    });
+  }
   if (outcomes.length > 0) return outcomes;
+
+  // Entries without a commands field: their command sets are unknown, "no duplicate" cannot be claimed for them.
+  if ((compactIndex.unplacedCommands ?? 0) > 0) {
+    return [
+      {
+        verdict: 'unknown',
+        reason: 'integrity_unproven',
+        statement: `未发现重复用例，但索引里有 ${compactIndex.unplacedCommands} 个条目没有带 commands 字段，无法断定未重复`,
+        grounds: [],
+        tier: 'advisory',
+        ...own,
+      },
+    ];
+  }
 
   // No duplicate found: check if index has dropped cases or is incomplete
   if (!compactIndex.complete || compactIndex.dropped > 0) {

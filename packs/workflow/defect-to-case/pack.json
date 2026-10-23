@@ -1,15 +1,15 @@
 {
   "schema": "pack@1",
   "id": "defect-to-case",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "kind": "workflow",
   "title": "缺陷转用例",
   "description": "从缺陷（现象、修复说明）起草回归测试用例，Hub 核对命令和参数合法性、期望结果引文依据、用例结构及重复用例",
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "1b2b3b3ad9c4a497d4f724ef66aef068979a4d135ad3340bf0de3a04e091d887",
-      "size": 6517
+      "sha256": "234b652e4d50373908ba2101ebc186269e132d08bd9f16b885d907166b1fff55",
+      "size": 6966
     },
     {
       "path": "checks.json",
@@ -18,8 +18,8 @@
     },
     {
       "path": "examples/start-run.json",
-      "sha256": "aa7f3ed66711d982c0d1958323b37be7f0ddc96f8898a6afc5fddcbbce16a22e",
-      "size": 683
+      "sha256": "d6af1f7ff2aafaa2b09fe80d84a211354be803a297ce6a0db0ee404304e11034",
+      "size": 807
     },
     {
       "path": "examples/submission.json",
@@ -33,18 +33,18 @@
     },
     {
       "path": "functions/checks.ts",
-      "sha256": "b1a82c5317f1e1b4d66db109a6d123218f48407fbbd2781cda6fa5dcfd6e6706",
-      "size": 20192
+      "sha256": "663f74966a4bac518b4691c6aab4be010b297ac8c3d233175d19b716b09925b6",
+      "size": 22149
     },
     {
       "path": "functions/compact-index.ts",
-      "sha256": "18d047957a7b0b9b99e672d17a9dfb277c2cdbb20b485230877ddb046bce6b4a",
-      "size": 6721
+      "sha256": "1898342918cc03bfdd286eb378527ee2d546f965622b5df0d03007fe71c57eea",
+      "size": 8632
     },
     {
       "path": "functions/expected.ts",
-      "sha256": "8e06d776cf2b2b4f2f7325ae2f93e2df8d5a0e17daf99d8181ff15f22697d523",
-      "size": 1426
+      "sha256": "7ff2e7d0791039a6bf18c0dfa86ab5e5f0491342a045340dade6abe150a2794d",
+      "size": 1321
     },
     {
       "path": "functions/projection.ts",
@@ -143,8 +143,8 @@
     },
     {
       "path": "workflow.json",
-      "sha256": "21a748fa27ff8afc8729dee47e3924f8227a3fe48012eee279cd9cbcd5777e17",
-      "size": 1317
+      "sha256": "3dbf33f429b045bb2041d04011057709e3de912da4ecffdd054435e87aecd080",
+      "size": 1848
     }
   ]
 }

@@ -18,6 +18,10 @@ export interface CompactCaseIndex {
   dropped: number;
   complete: boolean;
   unplaced: number;
+  /** Entries whose data carried no commands field (their command set is unknown, not empty). */
+  unplacedCommands: number;
+  /** The keys the source view was narrowed to (only=…), null when the view is complete. */
+  only: string[] | null;
   notes: string[];
 }
 
@@ -60,6 +64,25 @@ export function buildCompactIndex(
   const model = isRecord(indexModel) ? indexModel : {};
   const sourceTruncated = model.truncated === true;
   const sourceSkipped = typeof model.skipped === 'number' ? model.skipped : 0;
+  // The narrowed keys (only=…) as the Hub echoes them in the view's notes; null when the view is complete.
+  const onlyOf = (m: Record<string, unknown>): string[] | null => {
+    if (Array.isArray(m.only_keys)) {
+      const keys = m.only_keys.filter((k): k is string => typeof k === 'string' && k !== '');
+      return keys.length > 0 ? keys : null;
+    }
+    if (Array.isArray(m.notes)) {
+      for (const note of m.notes) {
+        if (typeof note !== 'string') continue;
+        const m2 = /^only=(.+)$/.exec(note.trim());
+        if (m2 !== null) {
+          const keys = m2[1]!.split(',').map((k) => k.trim()).filter((k) => k !== '');
+          if (keys.length > 0) return keys;
+        }
+      }
+    }
+    return null;
+  };
+  const only = onlyOf(model);
 
   const rawEntries = isRecord(model.entries)
     ? Object.values(model.entries)
@@ -90,6 +113,7 @@ export function buildCompactIndex(
   const buckets = new Map<string, CompactCaseItem[]>();
   let total = 0;
   let unplaced = 0;
+  let unplacedCommands = 0;
 
   for (let i = 0; i < rawEntries.length; i++) {
     const raw = rawEntries[i];
@@ -100,13 +124,22 @@ export function buildCompactIndex(
     const reference = typeof raw.reference === 'string' ? raw.reference : '';
 
     let commands: string[] = [];
+    let commandsKnown = false;
     if (Array.isArray(data.commands)) {
       commands = (data.commands as unknown[]).filter((c): c is string => typeof c === 'string');
-    } else if (digest && entryCommandsMap && entryCommandsMap.has(digest)) {
+      commandsKnown = true;
+    } else if (only === null && digest && entryCommandsMap && entryCommandsMap.has(digest)) {
+      // Without narrowing the keys rebuild the whole set; after narrowing an entry appears only under the listed
+      // keys, so the keys no longer reconstruct it — the field is the only source.
       commands = entryCommandsMap.get(digest)!;
+      commandsKnown = commands.length > 0;
     }
 
     const key = commandSetKey(commands);
+    if (!commandsKnown) {
+      unplacedCommands++;
+      continue;
+    }
     if (key === '') {
       unplaced++;
       continue;
@@ -171,9 +204,16 @@ export function buildCompactIndex(
   }
 
   let dropped = total - keptCount;
-  let complete = dropped === 0 && !sourceTruncated && sourceSkipped === 0;
+  // With narrowing (only=…), the listed keys' completeness is what the check needs; a truncated source beyond them
+  // does not block the decidable drafts. Without narrowing, the old rule stands: the whole view must be complete.
+  let complete = only !== null
+    ? dropped === 0 && sourceSkipped === 0
+    : dropped === 0 && !sourceTruncated && sourceSkipped === 0;
 
   const notes: string[] = [];
+  if (unplacedCommands > 0) {
+    notes.push(`有 ${unplacedCommands} 个用例没有带 commands 字段，命令集合未知，无法参与去重`);
+  }
   if (unplaced > 0) {
     notes.push(`有 ${unplaced} 个用例没有命令（未归位），不参与去重`);
   }
@@ -194,6 +234,8 @@ export function buildCompactIndex(
     dropped,
     complete,
     unplaced,
+    unplacedCommands,
+    only,
     notes,
   };
 
