@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "knowledge-contribution",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "kind": "workflow",
   "title": "知识回注",
   "description": "Circle 整合技能回注，Hub 按锁定根核对原文和归位，不改变原文或根",
@@ -90,6 +90,81 @@
       "path": "tables/shape.json",
       "sha256": "d4347bb495377df531840f53330056b6a64803424657246fdc7ff681c5e7a139",
       "size": 900
+    },
+    {
+      "path": "tools/jev/egress.json",
+      "sha256": "f52697c6e959913c053e61df368ec792543f7a2f399a5468a4a4248022e95183",
+      "size": 158
+    },
+    {
+      "path": "tools/jev/generated.json",
+      "sha256": "347cb96f4b5565dfa438c3fa5be84ae1a9d3a2397da96796d58076542a46bc25",
+      "size": 984
+    },
+    {
+      "path": "tools/jev/lib/api.ts",
+      "sha256": "13e6ae5975ad961d53727ede60c6e08960102786edf7efcedf9526425f83205e",
+      "size": 4886
+    },
+    {
+      "path": "tools/jev/lib/batch.ts",
+      "sha256": "21bb26876138a386e86a1eb709b857debc8abaa3f1b6b81962f606e9ebdc2a0d",
+      "size": 14041
+    },
+    {
+      "path": "tools/jev/lib/canonical.ts",
+      "sha256": "41bd37810817e11cc01c4d4e790d611ee4da78b658d03db6ad3638b6cb02fdda",
+      "size": 3722
+    },
+    {
+      "path": "tools/jev/lib/decide.ts",
+      "sha256": "8b9c44a4ceb843fc73c80ea5324e08a77525f0d8ec5ced6c85d673d085ba8c9f",
+      "size": 3062
+    },
+    {
+      "path": "tools/jev/lib/errors.ts",
+      "sha256": "09ed2af9814d1dd77191571a7c623d258ba6f34a2352b93e15fceaf46752d4f2",
+      "size": 2056
+    },
+    {
+      "path": "tools/jev/lib/http.ts",
+      "sha256": "b734b7c80181df23c0f97d35041c2ddc396ca05236720228db11b44cd5b7f338",
+      "size": 22572
+    },
+    {
+      "path": "tools/jev/lib/hub.ts",
+      "sha256": "1b56bfa2fa61b4281ec55db674d7f4f3b5d48755f0fbc23788f20ffd9c6bfa53",
+      "size": 2861
+    },
+    {
+      "path": "tools/jev/lib/judge.ts",
+      "sha256": "25226f0d6875b8bf0aa70ae95e322387b32fc007868ec9200411b946ad2a899a",
+      "size": 7223
+    },
+    {
+      "path": "tools/jev/lib/local.ts",
+      "sha256": "f6a10fa3e0b09701b28febd69f09e94a2b739ada99d04e2da96d5ef3476d287c",
+      "size": 5419
+    },
+    {
+      "path": "tools/jev/lib/pieces.ts",
+      "sha256": "9b41c389ea02d266d9daa5bc4ebcb88dbd134cc6aa0597d31bae2d0ff34297db",
+      "size": 2666
+    },
+    {
+      "path": "tools/jev/lib/record.ts",
+      "sha256": "65faf9d010e1cba6101cd6af79754ac1363d8d0ebd296a8271a780c8b7987aa6",
+      "size": 7213
+    },
+    {
+      "path": "tools/jev/lib/tokens.ts",
+      "sha256": "079b80c78f3435ef5e2a87fc5d3508f557a37e320f89a0d7109f378e4ec95436",
+      "size": 1479
+    },
+    {
+      "path": "tools/jev/lib/validate.ts",
+      "sha256": "7777fabb8efdac145b2ecc9dbc3a3aa81b8903c44d46dfc864c64d7c8f6594ca",
+      "size": 19515
     },
     {
       "path": "workflow.json",
